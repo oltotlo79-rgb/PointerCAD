@@ -1,0 +1,10 @@
+# gitフックはshが読むので、Windowsでも必ずLFで取り出す。
+# CRLFになると1行目の #!/bin/sh が壊れ、フックが動かないまま
+# コミットやpushが通ってしまう(ORIGAMI3での実測に基づく先回り対策)。
+scripts/hooks/pre-commit text eol=lf
+scripts/hooks/pre-push text eol=lf
+
+# PowerShellスクリプトはBOM付きUTF-8を維持する(BOM無しだと
+# Windows PowerShell 5.1 がANSIとして読み、日本語が化けて構文エラーになる。
+# 2026-09-01 に本リポジトリで実測)。改行はCRLFのままでよい。
+*.ps1 text

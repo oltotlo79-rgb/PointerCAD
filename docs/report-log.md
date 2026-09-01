@@ -1,0 +1,33 @@
+# PointerCAD 報告記録
+
+タスクごとに、統括(Claude)が利用者への報告と同じ内容をここへ記録する(`rules/01-役割と委譲.md` §1-⑥)。
+会話だけで報告を終えない。判断・原因・実測値・未確認事項を残し、同じ調査を繰り返さないため。
+
+## 記入様式
+
+```markdown
+## YYYY-MM-DD HH:mm 表題
+
+- **依頼**: 利用者の指示の要約
+- **実施**: 何をしたか(委譲した場合は担当・モデル・理由も1行で)
+- **判断と根拠**: 下した判断と、その根拠(実測値・差分・出力)
+- **残件**: 未完了・未確認の事項(無ければ「なし」)
+```
+
+新しい記録を上へ追加する(新しい順)。
+
+---
+
+## 2026-09-01 22:53 作業規約とハーネスの整備
+
+- **依頼**: ORIGAMI3を参考に、規約・rules・ハーネスを作成する。rulesは docs 配下ではなくリポジトリ直下 `rules/` に置く(利用者指示)。
+- **実施**: ORIGAMI3の `CLAUDE.md`・`AGENTS.md`・`docs/rules/`(01〜06)・`.claude/settings.json`・フック・`scripts/check.ps1`・gitフック・CIを読み、PointerCADのTypeScriptスタックへ適合させて作成した。作成物: `CLAUDE.md`、`AGENTS.md`、`rules/00〜06`、`.claude/settings.json`+`block-direct-package-managers.ps1`(+自己試験)、`scripts/check.ps1`、`scripts/hooks/pre-commit`・`pre-push`、`scripts/install-hooks.ps1`、`.github/workflows/ci.yml`、`.gitignore`、本記録の器。
+- **判断と根拠**: ①検査はcheck.ps1へ単一正本化し、gitフック・CIから同一実行(ORIGAMI3のci.yml食い違い失敗の教訓)。②ORIGAMI3の停滞監視・receipt署名等の大型機構は現段階では手順運用とし、施行区分を `rules/00` へ明記。③フックはfail-open。④`.ps1`はBOM付きUTF-8で保存(PowerShell 5.1がBOM無しをANSIと解釈し日本語が化けて構文エラーになる実測を確認)。検証: フック自己試験26/26合格、check.ps1はP0未着手SKIP合格、`core.hooksPath=scripts/hooks` 設定済み。
+- **残件**: `check-release-ready.ps1`(P8予定)、報告記録の機械検査(検討)。CIはリモート未設定のため未実行。
+
+## 2026-09-01 要件定義書の作成
+
+- **依頼**: 自作CADデスクトップアプリの要件定義に付き合い、要件定義書を docs 配下へ作成する。
+- **実施**: 要件ヒアリング(用途・配布形態・対応OS・モデリング方式・入出力形式・製図規格・UI言語・ライセンス・ねじ穴表現・アセンブリ拘束・Web版位置づけ・技術スタック)を実施し、`docs/requirements.md` v1.0 を作成・コミットした。
+- **判断と根拠**: 技術スタックはTypeScript + OCCT(WASM) + Three.js + React + Electron + Cloudflare Pagesを採用。フル機能Web版要件と配布容易性からPython案・C++案・Rust案を比較の上で却下(比較表は会話で提示し利用者が承認)。
+- **残件**: 要件定義書の利用者レビュー。承認後にP0実装計画の作成へ進む。

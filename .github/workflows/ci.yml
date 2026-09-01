@@ -1,0 +1,35 @@
+# PointerCAD CI: 手元・gitフックと同じ scripts/check.ps1 を実行する(検査の単一正本)。
+# 検査コマンドをこのファイルへ直接書かない(rules/03-品質ゲート.md §7.2)。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: リポジトリの取得
+        uses: actions/checkout@v4
+
+      - name: Node.js の準備
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: pnpm の準備 (corepack)
+        if: ${{ hashFiles('package.json') != '' }}
+        shell: pwsh
+        run: corepack enable
+
+      - name: 一括検査 (scripts/check.ps1)
+        shell: pwsh
+        run: ./scripts/check.ps1 -Install

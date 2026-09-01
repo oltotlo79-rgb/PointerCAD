@@ -1,0 +1,24 @@
+# 依存とビルド成果物
+node_modules/
+dist/
+out/
+build/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# E2E
+playwright-report/
+test-results/
+
+# 環境・エディタ
+.env
+.env.*
+.DS_Store
+Thumbs.db
+
+# Claude Code ローカル設定(共有しない)
+.claude/settings.local.json
+
+# 一時作業
+scratchpad/

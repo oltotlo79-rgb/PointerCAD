@@ -1,0 +1,35 @@
+#!/bin/sh
+# PointerCAD pre-push フック: push前に scripts/check.ps1 の全検査を通す。
+# 根拠: rules/03-品質ゲート.md §7。有効化は scripts/install-hooks.ps1。
+# CIも同じ check.ps1 を実行する(検査の単一正本)。
+
+hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$hook_dir/../.." && pwd)
+check_script="$repo_root/scripts/check.ps1"
+
+if [ ! -f "$check_script" ]; then
+    printf '%s\n' "[NG] 検査スクリプトが見つからないため push を中止します: $check_script" >&2
+    exit 1
+fi
+
+if command -v powershell.exe >/dev/null 2>&1; then
+    powershell_command=powershell.exe
+elif command -v pwsh >/dev/null 2>&1; then
+    powershell_command=pwsh
+elif command -v powershell >/dev/null 2>&1; then
+    powershell_command=powershell
+else
+    printf '%s\n' '[NG] PowerShell が見つからないため push を中止します' >&2
+    exit 127
+fi
+
+"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root"
+check_status=$?
+
+if [ "$check_status" -ne 0 ]; then
+    printf '%s\n' "[NG] 事前検査が失敗したため push を中止します (終了コード: $check_status)" >&2
+    exit "$check_status"
+fi
+
+printf '%s\n' '[OK] push前検査に合格しました'
+exit 0

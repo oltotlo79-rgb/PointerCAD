@@ -13,14 +13,21 @@ function Invoke-HookCase {
     param(
         [string]$Command,
         [string]$ToolName = 'PowerShell',
-        [string]$EventName = 'PreToolUse'
+        [string]$EventName = 'PreToolUse',
+        [switch]$IncludeAgentId,
+        [object]$AgentId = 'a71238ef5128e805a'
     )
 
-    $payload = @{
+    $payloadMap = [ordered]@{
         hook_event_name = $EventName
         tool_name       = $ToolName
         tool_input      = @{ command = $Command }
-    } | ConvertTo-Json -Compress -Depth 4
+    }
+    # -IncludeAgentId を付けたときだけ agent_id を入力へ含める(サブエージェント発の模擬)
+    if ($IncludeAgentId) {
+        $payloadMap['agent_id'] = $AgentId
+    }
+    $payload = $payloadMap | ConvertTo-Json -Compress -Depth 4
 
     $output = $payload | & powershell.exe -NoLogo -NoProfile -NonInteractive `
         -ExecutionPolicy Bypass -File $hookPath 2>$null
@@ -96,6 +103,53 @@ if (-not (Invoke-HookCase -Command 'pnpm install' -ToolName 'Read')) {
 else {
     Write-Host '[NG] 対象外ツールを拒否しました' -ForegroundColor Red
     $failures++
+}
+
+# 作業担当(サブエージェント)発だけを通す判別の試験。
+# agent_id はサブエージェント発の呼出にだけ付く。存在し、かつ空でないときだけ通す。
+$agentCases = @(
+    [pscustomobject]@{
+        Label = 'agent_id が非空(作業担当発)は通す'
+        Include = $true; Value = 'a71238ef5128e805a'
+        Tool = 'PowerShell'; Command = 'pnpm install'; ShouldDeny = $false
+    },
+    [pscustomobject]@{
+        Label = 'agent_id が非空(作業担当発・Bashツール)は通す'
+        Include = $true; Value = 'a71238ef5128e805a'
+        Tool = 'Bash'; Command = 'npm ci'; ShouldDeny = $false
+    },
+    [pscustomobject]@{
+        Label = 'agent_id が無い(統括発)は拒否する'
+        Include = $false; Value = $null
+        Tool = 'PowerShell'; Command = 'pnpm install'; ShouldDeny = $true
+    },
+    [pscustomobject]@{
+        Label = 'agent_id が空文字なら拒否する'
+        Include = $true; Value = ''
+        Tool = 'PowerShell'; Command = 'pnpm install'; ShouldDeny = $true
+    },
+    [pscustomobject]@{
+        Label = 'agent_id が null なら拒否する'
+        Include = $true; Value = $null
+        Tool = 'PowerShell'; Command = 'pnpm install'; ShouldDeny = $true
+    },
+    [pscustomobject]@{
+        Label = 'agent_id が空白だけなら拒否する'
+        Include = $true; Value = '   '
+        Tool = 'PowerShell'; Command = 'pnpm install'; ShouldDeny = $true
+    }
+)
+
+foreach ($case in $agentCases) {
+    $denied = [bool](Invoke-HookCase -Command $case.Command -ToolName $case.Tool `
+            -IncludeAgentId:$case.Include -AgentId $case.Value)
+    if ($denied -eq $case.ShouldDeny) {
+        Write-Host ('[OK] {0}: {1}' -f $case.Label, $case.Command) -ForegroundColor Green
+    }
+    else {
+        Write-Host ('[NG] {0}: {1}' -f $case.Label, $case.Command) -ForegroundColor Red
+        $failures++
+    }
 }
 
 Write-Host ''

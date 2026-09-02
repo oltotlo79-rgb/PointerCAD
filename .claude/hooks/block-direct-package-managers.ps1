@@ -260,6 +260,15 @@ try {
         exit 0
     }
 
+    # 作業担当(サブエージェント)発の呼出は通す。禁止しているのは統括の直接実行だけで、
+    # 作業担当は pnpm 等を実行してよい(rules/01-役割と委譲.md §1、rules/02-禁止事項.md)。
+    # フック入力の agent_id はサブエージェント発の呼出にだけ付き、統括(メインセッション)には付かない。
+    # 存在し、かつ空でないときだけ通す(無い・空文字・null・空白だけの場合は従来どおり拒否)。
+    $agentId = [string]$hookInput.agent_id
+    if (-not [string]::IsNullOrWhiteSpace($agentId)) {
+        exit 0
+    }
+
     $command = [string]$hookInput.tool_input.command
     if (-not (Test-CommandText $command)) {
         exit 0

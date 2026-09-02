@@ -30,3 +30,7 @@ export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
   DEFAULT_FACE_COLOR, findFeature, nextFeatureId, nextFeatureName, removeFeature, replaceFeature,
 } from './sketch/createSketchDocument.js';
+export type { ResolveContext, ResolveOutcome } from './sketch/resolveCoordinate.js';
+export {
+  resolveCoordinate, resolvePointReference, vertexKey,
+} from './sketch/resolveCoordinate.js';

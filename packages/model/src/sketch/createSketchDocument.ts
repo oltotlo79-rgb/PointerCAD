@@ -13,6 +13,7 @@ import type {
   SketchDocument,
   SketchFeature,
   SketchFeatureKind,
+  SketchPointFeature,
 } from './types.js';
 
 /** 面の既定の塗り色(FR-310、§0.a-0.5)。 */
@@ -100,7 +101,7 @@ export function createPointFeature(
   document: SketchDocument,
   at: CoordinateInput,
   planeId: WorkPlaneId = DEFAULT_WORK_PLANE_ID,
-): SketchFeature {
+): SketchPointFeature {
   return {
     id: nextFeatureId(document, 'point'),
     name: nextFeatureName(document, 'point'),

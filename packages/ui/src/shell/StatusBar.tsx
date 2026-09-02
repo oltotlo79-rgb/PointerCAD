@@ -2,6 +2,7 @@ import type { WorkPlaneId } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import type { SketchToolId } from '../sketch/numericInput.js';
+import type { SnapKind } from '../sketch/snapMath.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { AlertIcon, MouseIcon, PlaneIcon, SnapIcon } from './icons.js';
 
@@ -19,6 +20,15 @@ const GUIDE_KEYS = {
   face: 'statusBar.guide.face',
 } as const satisfies Record<SketchToolId, MessageKey>;
 
+/** いま何に吸い付いているかの案内(FR-107、NFR-UX-7)。 */
+const SNAP_GUIDE_KEYS = {
+  endpoint: 'statusBar.snap.endpoint',
+  intersection: 'statusBar.snap.intersection',
+  midpoint: 'statusBar.snap.midpoint',
+  center: 'statusBar.snap.center',
+  grid: 'statusBar.snap.grid',
+} as const satisfies Record<SnapKind, MessageKey>;
+
 /** 作図面の表記。ツールバーの区画名と同じ言葉にする。 */
 const PLANE_KEYS = {
   xy: 'toolbar.plane.xy',
@@ -26,10 +36,16 @@ const PLANE_KEYS = {
   yz: 'toolbar.plane.yz',
 } as const satisfies Record<WorkPlaneId, MessageKey>;
 
+/** 帯に出す1文。何の失敗かで頭の言葉を変える。 */
+interface StatusFailure {
+  readonly prefix: string;
+  readonly text: string;
+}
+
 /**
  * 下端のステータスバー(要件§7.1、FR-905)。
  *
- * 左は今の状況を1文で伝える(道具ごとの操作ガイド / 計算中 / 失敗)。
+ * 左は今の状況を1文で伝える(失敗 / 計算中 / 吸着中の案内 / 道具ごとの操作ガイド)。
  * 右は「作図面」「吸着」「単位」を小さな札で常に見せる。
  * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
  */
@@ -37,13 +53,26 @@ export function StatusBar(): React.JSX.Element {
   const isComputing = useAppStore((state) => state.isComputing);
   const errorMessage = useAppStore((state) => state.errorMessage);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
+  const faceErrorKey = useAppStore((state) => state.faceErrorKey);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   const snapEnabled = useAppStore((state) => state.snapEnabled);
+  const snapIndicator = useAppStore((state) => state.snapIndicator);
 
-  // スケッチの解決に失敗したときも、計算の失敗と同じ帯で最初の理由を見せる(FR-504)。
+  /*
+   * 面を張れなかったことは、いま押した Enter への返事なので最初に出す。頭の言葉は
+   * 「面を作れませんでした:」で、計算の失敗の「計算に失敗しました:」とは重ねない。
+   * 続いて計算そのものの失敗、最後にスケッチの解決の失敗(FR-504)。
+   */
   const sketchFailure = sketchErrors.length === 0 ? null : sketchErrors[0].message;
-  const failure = errorMessage ?? sketchFailure;
+  const failure: StatusFailure | null =
+    faceErrorKey !== null
+      ? { prefix: t('statusBar.faceError'), text: t(faceErrorKey) }
+      : errorMessage !== null
+        ? { prefix: t('statusBar.error'), text: errorMessage }
+        : sketchFailure !== null
+          ? { prefix: t('statusBar.error'), text: sketchFailure }
+          : null;
   const className = failure === null ? 'pcad-statusbar' : 'pcad-statusbar pcad-statusbar--error';
 
   return (
@@ -52,12 +81,19 @@ export function StatusBar(): React.JSX.Element {
         {failure !== null ? (
           <>
             <AlertIcon size={14} />
-            <span className="pcad-statusbar__text">{`${t('statusBar.error')} ${failure}`}</span>
+            <span className="pcad-statusbar__text">{`${failure.prefix} ${failure.text}`}</span>
           </>
         ) : isComputing ? (
           <>
             <span className="pcad-spinner" aria-hidden="true" />
             <span className="pcad-statusbar__text">{t('statusBar.loading')}</span>
+          </>
+        ) : snapIndicator !== null ? (
+          <>
+            <SnapIcon size={14} />
+            <span className="pcad-statusbar__text">
+              {t(SNAP_GUIDE_KEYS[snapIndicator.kind])}
+            </span>
           </>
         ) : (
           <>

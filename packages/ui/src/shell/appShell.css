@@ -42,6 +42,20 @@
   --pcad-viewport-top: #2a2e37;
   --pcad-viewport-bottom: #1b1e24;
 
+  /*
+   * 面の塗り色の見本 8 色(FR-310、§0.a-0.5)。既定は 1 番目。
+   * 暗い下地で見分けられるよう明度をそろえてある。
+   * 履歴へ保存する値の正本は PropertyPanel.tsx の FACE_COLORS で、ここはその写し。
+   */
+  --pcad-swatch-1: #7aa2f7;
+  --pcad-swatch-2: #7dcfff;
+  --pcad-swatch-3: #9ece6a;
+  --pcad-swatch-4: #e0af68;
+  --pcad-swatch-5: #f7768e;
+  --pcad-swatch-6: #bb9af7;
+  --pcad-swatch-7: #c0caf5;
+  --pcad-swatch-8: #8c93a3;
+
   /* 浮いた要素の下地 */
   --pcad-overlay: rgb(30 33 40 / 88%);
 
@@ -389,8 +403,79 @@ button.pcad-tree__row:focus-visible {
   outline-offset: -2px;
 }
 
+/*
+ * 要素の行。1 行の中に「選ぶ」「失敗の印」「削除」を並べるので、行そのものは器にして
+ * 押せる部分を中のボタンへ移す(入れ子のボタンは作れないため)。
+ */
 .pcad-tree__row--child {
-  padding-left: 26px;
+  padding: 0 var(--pcad-space-1) 0 0;
+}
+
+.pcad-tree__select {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0 0 0 26px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.pcad-tree__select:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+/* 選んでいる行はアクセントの淡い面、指を乗せている行は一段明るい面で示す(FR-106)。 */
+.pcad-tree__row--selected {
+  background: var(--pcad-accent-soft);
+}
+
+.pcad-tree__row--hovered {
+  background: var(--pcad-surface-raised);
+}
+
+.pcad-tree__row--selected.pcad-tree__row--hovered {
+  background: var(--pcad-accent-soft-hover);
+}
+
+/* 計算できていない印(FR-504)。理由はホバーの吹き出しで出す。 */
+.pcad-tree__alert {
+  display: inline-flex;
+  flex: none;
+  color: var(--pcad-danger);
+  cursor: help;
+}
+
+.pcad-tree__delete {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--pcad-text-faint);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pcad-radius-small);
+  transition: color var(--pcad-transition);
+}
+
+.pcad-tree__delete:hover {
+  color: var(--pcad-danger);
+  background: var(--pcad-surface-raised);
+}
+
+.pcad-tree__delete:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
 }
 
 .pcad-tree__chevron {
@@ -448,6 +533,151 @@ button.pcad-tree__row:focus-visible {
   font-variant-numeric: tabular-nums;
   color: var(--pcad-text);
   text-align: right;
+}
+
+/* 計算できていない理由(FR-504)。区画の頭に赤で出し、操作は止めない。 */
+.pcad-panel__error {
+  padding: var(--pcad-space-2) var(--pcad-space-3);
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-danger-text);
+  background: var(--pcad-danger-surface);
+}
+
+/* 1 点ぶんの欄のまとまり(位置・始点・終点・中心・基準点)。 */
+.pcad-coordinate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-1);
+  padding: 0 var(--pcad-space-3) var(--pcad-space-2);
+}
+
+.pcad-coordinate__title {
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  font-weight: 600;
+  color: var(--pcad-text-muted);
+}
+
+/* 絶対 / 相対 / 極 の 3 つを等幅で並べる(その場入力のタブと同じ形)。 */
+.pcad-coordinate__modes .pcad-button {
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+.pcad-coordinate__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-1);
+  padding: 0 var(--pcad-space-3) var(--pcad-space-2);
+}
+
+/* 座標のまとまりの中では、外側の余白が二重に付かないようにする。 */
+.pcad-coordinate .pcad-coordinate__fields {
+  padding: 0;
+}
+
+/* 面の境界(FR-309)。選んだ順にそのまま並べる。 */
+.pcad-boundary {
+  padding: 0 var(--pcad-space-3);
+  margin: 0;
+  list-style: none;
+  counter-reset: pcad-boundary;
+}
+
+.pcad-boundary__row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  height: 22px;
+  font: inherit;
+  color: var(--pcad-text);
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pcad-radius-small);
+}
+
+.pcad-boundary__row::before {
+  counter-increment: pcad-boundary;
+  content: counter(pcad-boundary) ".";
+  color: var(--pcad-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.pcad-boundary__row:hover {
+  background: var(--pcad-surface-raised);
+}
+
+.pcad-boundary__row:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+/* 面の塗り色の見本(FR-310、§0.a-0.5)。8 色を 1 行に並べる。 */
+.pcad-swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: var(--pcad-space-1);
+  padding: 0 var(--pcad-space-3);
+}
+
+.pcad-swatch {
+  width: 100%;
+  padding: 0;
+  aspect-ratio: 1;
+  cursor: pointer;
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+}
+
+.pcad-swatch:hover {
+  border-color: var(--pcad-border-strong);
+}
+
+/* いま使っている色は枠で示す(FR-310)。 */
+.pcad-swatch[aria-pressed="true"] {
+  border-color: var(--pcad-accent);
+  box-shadow: 0 0 0 2px var(--pcad-accent);
+}
+
+.pcad-swatch:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: 1px;
+}
+
+.pcad-swatch--1 {
+  background: var(--pcad-swatch-1);
+}
+
+.pcad-swatch--2 {
+  background: var(--pcad-swatch-2);
+}
+
+.pcad-swatch--3 {
+  background: var(--pcad-swatch-3);
+}
+
+.pcad-swatch--4 {
+  background: var(--pcad-swatch-4);
+}
+
+.pcad-swatch--5 {
+  background: var(--pcad-swatch-5);
+}
+
+.pcad-swatch--6 {
+  background: var(--pcad-swatch-6);
+}
+
+.pcad-swatch--7 {
+  background: var(--pcad-swatch-7);
+}
+
+.pcad-swatch--8 {
+  background: var(--pcad-swatch-8);
 }
 
 /* ===== ビューポート ===== */

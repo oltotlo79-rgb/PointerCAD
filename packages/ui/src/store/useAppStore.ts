@@ -2,6 +2,8 @@ import {
   createEmptySketchDocument,
   DEFAULT_WORK_PLANE_ID,
   dotVec3,
+  removeFeature,
+  replaceFeature,
   resolveSketch,
   WORK_PLANE_IDS,
   WORK_PLANES,
@@ -10,6 +12,7 @@ import {
   type ResolvedSketch,
   type SketchDocument,
   type SketchError,
+  type SketchFeature,
   type SketchMesh,
   type SketchRecomputeResult,
   type Vec3,
@@ -17,6 +20,8 @@ import {
 } from '@pointercad/model';
 import { create } from 'zustand';
 
+import type { MessageKey } from '../i18n/t.js';
+import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputState, SketchToolId } from '../sketch/numericInput.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import type { OrbitState } from '../viewport/cameraMath.js';
@@ -52,6 +57,12 @@ export interface AppState {
    * あってストアからは読めないので、ビューポートが増加に気づいて今の視点を渡し返す。
    */
   readonly matchWorkPlaneRequestCount: number;
+  /**
+   * ビューポートへ焦点を戻す要求を数える。canvas を持っているのは
+   * `attachSketchInteraction` だけなので、増加に気づいた向こう側が焦点を移す。
+   * 道具を選んだ直後に Enter が効くようにするため(NFR-UX-1、NFR-UX-4)。
+   */
+  readonly focusViewportRequestCount: number;
   /** ビューポート区画の大きさ(画素)。その場入力を端で折り返すのに使う。 */
   readonly viewportSize: readonly [number, number];
 
@@ -84,6 +95,12 @@ export interface AppState {
   readonly pendingStart: CoordinateInput | null;
   /** いま吸い付いている場所。無ければ null(FR-107)。 */
   readonly snapIndicator: SnapIndicator | null;
+  /**
+   * 面を張れなかった理由の文言キー(FR-309、NFR-UX-5)。履歴には何も積まれていないので
+   * `sketchErrors` には出てこない。計算そのものの失敗(`errorMessage`)とは別に持ち、
+   * ステータスバーが「面を作れませんでした:」の言い回しで出す。
+   */
+  readonly faceErrorKey: MessageKey | null;
 
   // 動作を変える口はメソッド宣言ではなくプロパティ関数型で書く。メソッド宣言だと
   // useAppStore((state) => state.setX) のように取り出したとき @typescript-eslint/unbound-method
@@ -96,6 +113,8 @@ export interface AppState {
   readonly setDisplayStyle: (displayStyle: DisplayStyle) => void;
   readonly setShowGrid: (showGrid: boolean) => void;
   readonly requestHomeView: () => void;
+  /** ビューポート(canvas)へ焦点を戻してほしい、と頼む。 */
+  readonly requestViewportFocus: () => void;
   readonly setViewportSize: (size: readonly [number, number]) => void;
 
   readonly setActiveTool: (tool: SketchToolId) => void;
@@ -108,6 +127,16 @@ export interface AppState {
   readonly setSketch: (sketch: SketchDocument) => void;
   /** 再計算の結果を反映する。 */
   readonly applySketch: (sketch: SketchDocument, result: SketchRecomputeResult) => void;
+  /**
+   * 履歴の 1 つを差し替える(FR-311)。式を直したときに 1 文字ごとに呼ばれる。
+   * 下流は再計算で追従し、壊れたものは `sketchErrors` に出る(FR-504)。
+   */
+  readonly replaceSketchFeature: (featureId: string, feature: SketchFeature) => void;
+  /**
+   * 履歴の 1 つを取り除く。参照していた要素が壊れても止めず、理由を出すだけにする
+   * (FR-504、NFR-RE-1)。消えたものは選択とホバーからも外す。
+   */
+  readonly removeSketchFeature: (featureId: string) => void;
   readonly setSelection: (ids: readonly string[]) => void;
   readonly toggleSelection: (id: string) => void;
   readonly setHovered: (id: string | null) => void;
@@ -122,6 +151,8 @@ export interface AppState {
   readonly closeNumericInput: () => void;
   readonly setPendingStart: (start: CoordinateInput | null) => void;
   readonly setSnapIndicator: (indicator: SnapIndicator | null) => void;
+  /** 面を張れなかった理由を出す・消す。 */
+  readonly setFaceError: (key: MessageKey | null) => void;
 }
 
 /** カメラから注視点へ向かう単位ベクトル。Z 軸が上の球面座標から作る。 */
@@ -182,6 +213,7 @@ export function createInitialSketchState(): Pick<
   | 'numericInputAnchor'
   | 'pendingStart'
   | 'snapIndicator'
+  | 'faceErrorKey'
 > {
   // 起動時は空のスケッチから始める(§0.a-0.2、NFR-UX-6 の空状態ガイドと揃える)。
   const sketch = createEmptySketchDocument();
@@ -201,6 +233,7 @@ export function createInitialSketchState(): Pick<
     numericInputAnchor: null,
     pendingStart: null,
     snapIndicator: null,
+    faceErrorKey: null,
   };
 }
 
@@ -215,6 +248,7 @@ export const useAppStore = create<AppState>()((set) => ({
   showGrid: true,
   homeViewRequestCount: 0,
   matchWorkPlaneRequestCount: 0,
+  focusViewportRequestCount: 0,
   viewportSize: [0, 0],
   ...createInitialSketchState(),
 
@@ -242,6 +276,9 @@ export const useAppStore = create<AppState>()((set) => ({
   requestHomeView: () => {
     set((state) => ({ homeViewRequestCount: state.homeViewRequestCount + 1 }));
   },
+  requestViewportFocus: () => {
+    set((state) => ({ focusViewportRequestCount: state.focusViewportRequestCount + 1 }));
+  },
   setViewportSize: (viewportSize) => {
     set({ viewportSize });
   },
@@ -255,6 +292,7 @@ export const useAppStore = create<AppState>()((set) => ({
       numericInputAnchor: null,
       pendingStart: null,
       snapIndicator: null,
+      faceErrorKey: null,
     });
   },
   setWorkPlane: (workPlaneId) => {
@@ -281,14 +319,33 @@ export const useAppStore = create<AppState>()((set) => ({
       documentName: sketch.name,
     });
   },
+  replaceSketchFeature: (featureId, feature) => {
+    // 計算中の印は立てない。プロパティ欄は 1 文字打つごとにここへ来るので、印を立てると
+    // ビューポートの札が打つたびに点滅する。再計算は attachSketchRecompute が拾い、
+    // 終わり次第そのまま形が動く(NFR-PF-1 の「常時のループを回さない」と同じ考え)。
+    set((state) => ({ sketch: replaceFeature(state.sketch, featureId, feature) }));
+  },
+  removeSketchFeature: (featureId) => {
+    set((state) => ({
+      sketch: removeFeature(state.sketch, featureId),
+      isComputing: true,
+      selection: state.selection.filter((id) => featureIdOf(id) !== featureId),
+      hoveredElementId:
+        state.hoveredElementId !== null && featureIdOf(state.hoveredElementId) === featureId
+          ? null
+          : state.hoveredElementId,
+    }));
+  },
   setSelection: (selection) => {
-    set({ selection });
+    // 選び直したら、直前に断られた面の理由は用済みなので消す(NFR-UX-5)。
+    set({ selection, faceErrorKey: null });
   },
   toggleSelection: (id) => {
     set((state) => ({
       selection: state.selection.includes(id)
         ? state.selection.filter((selected) => selected !== id)
         : [...state.selection, id],
+      faceErrorKey: null,
     }));
   },
   setHovered: (hoveredElementId) => {
@@ -321,6 +378,9 @@ export const useAppStore = create<AppState>()((set) => ({
   },
   setSnapIndicator: (snapIndicator) => {
     set({ snapIndicator });
+  },
+  setFaceError: (faceErrorKey) => {
+    set({ faceErrorKey });
   },
 }));
 

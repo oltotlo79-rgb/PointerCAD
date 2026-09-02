@@ -15,8 +15,10 @@ import {
   type SketchDocument,
   type SketchRecomputeResult,
 } from '@pointercad/model';
+import { expressionValueFromNumber } from '@pointercad/expression';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { setFeatureField } from '../sketch/featureSummary.js';
 import { createNumericInput } from '../sketch/numericInput.js';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
 import {
@@ -79,6 +81,7 @@ beforeEach(() => {
     isComputing: false,
     errorMessage: null,
     matchWorkPlaneRequestCount: 0,
+    focusViewportRequestCount: 0,
     viewportSize: [0, 0],
   });
 });
@@ -211,6 +214,67 @@ describe('画面の状態(rules/04: ストア1本)', () => {
   it('連続してかくかどうかを切り替えられる(FR-307)', () => {
     useAppStore.getState().setChaining(false);
     expect(useAppStore.getState().chaining).toBe(false);
+  });
+});
+
+describe('履歴の差し替えと取り除き(FR-311、FR-504)', () => {
+  it('式を直すと履歴が入れ替わる(打つたびの点滅を避けるため計算中の印は立てない)', () => {
+    const sketch = documentWithPoint();
+    useAppStore.getState().setSketch(sketch);
+    useAppStore.getState().applySketch(sketch, resultFor(sketch));
+
+    const target = sketch.features[0];
+    useAppStore
+      .getState()
+      .replaceSketchFeature(
+        target.id,
+        setFeatureField(target, 'at.x', expressionValueFromNumber(7)),
+      );
+
+    const state = useAppStore.getState();
+    expect(state.isComputing).toBe(false);
+    expect(state.sketch.features).toHaveLength(1);
+    const changed = state.sketch.features[0];
+    if (changed.kind !== 'point' || changed.at.mode !== 'absolute') {
+      throw new Error('絶対座標の点が残るはず');
+    }
+    expect(changed.at.x.value).toBe(7);
+    expect(changed.at.y.value).toBe(2);
+  });
+
+  it('取り除くと選択とホバーからも外れる(点列の 1 点を指していても外れる)', () => {
+    const sketch = documentWithPoint();
+    const id = sketch.features[0].id;
+    useAppStore.getState().setSketch(sketch);
+    useAppStore.getState().setSelection([`${id}#0`]);
+    useAppStore.getState().setHovered(`${id}#0`);
+
+    useAppStore.getState().removeSketchFeature(id);
+
+    const state = useAppStore.getState();
+    expect(state.sketch.features).toEqual([]);
+    expect(state.selection).toEqual([]);
+    expect(state.hoveredElementId).toBeNull();
+    expect(state.isComputing).toBe(true);
+  });
+
+  it('面を張れなかった理由を持ち、選び直すと消える(NFR-UX-5)', () => {
+    useAppStore.getState().setFaceError('face.error.tooFewPoints');
+    expect(useAppStore.getState().faceErrorKey).toBe('face.error.tooFewPoints');
+
+    useAppStore.getState().setSelection(['point-1']);
+    expect(useAppStore.getState().faceErrorKey).toBeNull();
+
+    useAppStore.getState().setFaceError('face.error.mixedBoundary');
+    useAppStore.getState().toggleSelection('line-1');
+    expect(useAppStore.getState().faceErrorKey).toBeNull();
+  });
+
+  it('ビューポートへ焦点を戻す要求を数える(道具を選んだ直後の Enter に使う)', () => {
+    expect(useAppStore.getState().focusViewportRequestCount).toBe(0);
+    useAppStore.getState().requestViewportFocus();
+    useAppStore.getState().requestViewportFocus();
+    expect(useAppStore.getState().focusViewportRequestCount).toBe(2);
   });
 });
 

@@ -154,7 +154,11 @@ function activateTool(id: SketchToolId, pressed: boolean): void {
   const step = INITIAL_STEPS[next];
   if (step !== null) {
     store.openNumericInput(createNumericInput(next, step), viewportCenterAnchor());
+    return;
   }
+  // 選択と面はクリックとキーで進める道具。押した直後の焦点はボタンに残るので、
+  // ビューポートへ戻してもらう。そうしないと面を選んだ直後の Enter が効かない(NFR-UX-4)。
+  store.requestViewportFocus();
 }
 
 /**

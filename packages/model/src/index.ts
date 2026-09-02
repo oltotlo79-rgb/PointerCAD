@@ -46,3 +46,7 @@ export {
   findSketch, findSolid, liveBodyIds, nextSolidId, nextSolidName, PART_SCHEMA_VERSION,
   removeSolid, replaceSketch, replaceSolid, setActiveSketch, SOLID_LABELS,
 } from './part/createPartDocument.js';
+export type { PushUndoOptions, UndoStack } from './history/undoStack.js';
+export {
+  canRedo, canUndo, createUndoStack, pushUndo, redo, undo, UNDO_COALESCE_MS, UNDO_LIMIT,
+} from './history/undoStack.js';

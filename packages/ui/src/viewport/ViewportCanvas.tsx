@@ -13,11 +13,16 @@ import { createViewportScene } from './createViewportScene.js';
  * 視点の正本は `attachCameraControls` が持ち、画面状態(投影・表示スタイル・方眼・メッシュ)は
  * Zustand ストアから読む(rules/04-設計の規律.md)。描画は入力・状態変化・大きさの変化があった
  * ときだけ次の描画機会に1回行い、常時のループは回さない(NFR-PF-1)。
+ *
+ * 描いたことは `subscribeDraw` で購読者へ知らせる。ビューキューブは自前のループを持たず、
+ * この通知に相乗りして同じ描画機会に1回だけ描く。
  */
 export function ViewportCanvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /** ビューキューブが `getOrbit` / `setOrbit` を借りるための入口。 */
   const controlsRef = useRef<CameraControls | null>(null);
+  /** ビューポートが描いたことを知りたい人たち(いまはビューキューブだけ)。 */
+  const drawListenersRef = useRef(new Set<() => void>());
   /** 初回描画では `controlsRef` がまだ空なので、用意できてからビューキューブを出す。 */
   const [controlsReady, setControlsReady] = useState(false);
 
@@ -29,6 +34,15 @@ export function ViewportCanvas(): React.JSX.Element {
     controlsRef.current?.setOrbit(next);
   }, []);
 
+  /** ビューポートが描き直したときに呼ばれる。戻り値を呼ぶと購読をやめる。 */
+  const subscribeDraw = useCallback((listener: () => void): (() => void) => {
+    const listeners = drawListenersRef.current;
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) {
@@ -36,12 +50,17 @@ export function ViewportCanvas(): React.JSX.Element {
     }
 
     const scene = createViewportScene(canvas);
+    const listeners = drawListenersRef.current;
     let frameId = 0;
 
     function draw(): void {
       frameId = 0;
       const { projection, displayStyle, showGrid } = useAppStore.getState();
       scene.render(controls.getOrbit(), projection, displayStyle, showGrid);
+      // 本体を描いた後にだけ知らせる。視点はこの時点で確定している。
+      for (const listener of listeners) {
+        listener();
+      }
     }
 
     /** 同じ描画機会に何度呼ばれても描画は1回にまとめる。 */
@@ -97,7 +116,9 @@ export function ViewportCanvas(): React.JSX.Element {
         tabIndex={0}
         aria-label={t('viewport.label')}
       />
-      {controlsReady ? <ViewCube getOrbit={getOrbit} setOrbit={setOrbit} /> : null}
+      {controlsReady ? (
+        <ViewCube getOrbit={getOrbit} setOrbit={setOrbit} subscribeDraw={subscribeDraw} />
+      ) : null}
     </>
   );
 }

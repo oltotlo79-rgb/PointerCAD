@@ -19,14 +19,17 @@ export interface AppState {
   /** ホーム視点への復帰要求を数える(FR-108)。増えるたびにビューポートが反応する。 */
   readonly homeViewRequestCount: number;
 
-  setDocument(name: string, featureNames: readonly string[]): void;
-  setMesh(mesh: PartMesh): void;
-  setComputing(isComputing: boolean): void;
-  setError(message: string | null): void;
-  setProjection(projection: ProjectionMode): void;
-  setDisplayStyle(displayStyle: DisplayStyle): void;
-  setShowGrid(showGrid: boolean): void;
-  requestHomeView(): void;
+  // 動作を変える口はメソッド宣言ではなくプロパティ関数型で書く。メソッド宣言だと
+  // useAppStore((state) => state.setX) のように取り出したとき @typescript-eslint/unbound-method
+  // に触れるため(計画書 P1 §0.a-0.12)。
+  readonly setDocument: (name: string, featureNames: readonly string[]) => void;
+  readonly setMesh: (mesh: PartMesh) => void;
+  readonly setComputing: (isComputing: boolean) => void;
+  readonly setError: (message: string | null) => void;
+  readonly setProjection: (projection: ProjectionMode) => void;
+  readonly setDisplayStyle: (displayStyle: DisplayStyle) => void;
+  readonly setShowGrid: (showGrid: boolean) => void;
+  readonly requestHomeView: () => void;
 }
 
 export const useAppStore = create<AppState>()((set) => ({

@@ -233,7 +233,8 @@ describe('形状キャッシュ(鍵つき・容量上限つきの LRU)', () => {
   });
 
   it('容量の既定は SHAPE_CACHE_CAPACITY 件で、超えた分だけ追い出す', () => {
-    expect(SHAPE_CACHE_CAPACITY).toBe(64);
+    // 100 フィーチャーの部品(NFR-PF-3)と 200 段の Undo(FR-505)を一度に覚えられる大きさ。
+    expect(SHAPE_CACHE_CAPACITY).toBe(256);
     const cache = createShapeCache<FakeHandle>();
     expect(cache.capacity).toBe(SHAPE_CACHE_CAPACITY);
 

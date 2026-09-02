@@ -8,11 +8,12 @@ import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import { createViewportScene } from './createViewportScene.js';
 
 /**
- * 3D ビューポート(FR-101、FR-102、FR-104、FR-105、FR-108)。
+ * 3D ビューポート(FR-101、FR-102、FR-104、FR-105、FR-106、FR-108、FR-310)。
  *
- * 視点の正本は `attachCameraControls` が持ち、画面状態(投影・表示スタイル・方眼・メッシュ)は
- * Zustand ストアから読む(rules/04-設計の規律.md)。描画は入力・状態変化・大きさの変化があった
- * ときだけ次の描画機会に1回行い、常時のループは回さない(NFR-PF-1)。
+ * 視点の正本は `attachCameraControls` が持ち、画面状態(投影・表示スタイル・方眼・メッシュ・
+ * スケッチ・ホバー・選択・かく面)は Zustand ストアから読む(rules/04-設計の規律.md)。
+ * 描画は入力・状態変化・大きさの変化があったときだけ次の描画機会に1回行い、
+ * 常時のループは回さない(NFR-PF-1)。
  *
  * 描いたことは `subscribeDraw` で購読者へ知らせる。ビューキューブは自前のループを持たず、
  * この通知に相乗りして同じ描画機会に1回だけ描く。
@@ -81,12 +82,34 @@ export function ViewportCanvas(): React.JSX.Element {
     observer.observe(canvas);
 
     scene.resize(canvas.clientWidth, canvas.clientHeight);
-    scene.setMesh(useAppStore.getState().mesh);
+    const initial = useAppStore.getState();
+    scene.setMesh(initial.mesh);
+    scene.setSketch(initial.resolvedSketch, initial.sketchMesh);
+    scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
+    scene.setWorkPlane(initial.workPlaneId);
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
       if (next.mesh !== previous.mesh) {
         scene.setMesh(next.mesh);
+      }
+      // スケッチの形と、カーネルが返した面(FR-105、FR-310)。
+      if (
+        next.resolvedSketch !== previous.resolvedSketch ||
+        next.sketchMesh !== previous.sketchMesh
+      ) {
+        scene.setSketch(next.resolvedSketch, next.sketchMesh);
+      }
+      // ホバー・選択の強調(FR-106)。
+      if (
+        next.hoveredElementId !== previous.hoveredElementId ||
+        next.selection !== previous.selection
+      ) {
+        scene.setSketchHighlight(next.hoveredElementId, next.selection);
+      }
+      // かく面が変わったら矩形の向きを変える(§0.a-0.3)。
+      if (next.workPlaneId !== previous.workPlaneId) {
+        scene.setWorkPlane(next.workPlaneId);
       }
       // ホーム視点への復帰要求(FR-108)。数が増えたときだけ戻す。
       if (next.homeViewRequestCount !== previous.homeViewRequestCount) {

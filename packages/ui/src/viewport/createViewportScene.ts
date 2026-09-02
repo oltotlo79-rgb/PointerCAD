@@ -1,7 +1,22 @@
-import type { PartMesh } from '@pointercad/model';
+import {
+  DEFAULT_WORK_PLANE_ID,
+  WORK_PLANES,
+  type PartMesh,
+  type ResolvedSketch,
+  type SketchMesh,
+  type Vec3,
+  type WorkPlane,
+  type WorkPlaneId,
+} from '@pointercad/model';
 import * as THREE from 'three';
 
 import type { DisplayStyle, ProjectionMode } from '../store/useAppStore.js';
+import {
+  buildSketchGeometry,
+  EMPTY_RESOLVED_SKETCH,
+  NO_HIGHLIGHT,
+  type SketchHighlight,
+} from './buildSketchGeometry.js';
 import {
   cameraPosition,
   clamp,
@@ -10,12 +25,23 @@ import {
   VERTICAL_FIELD_OF_VIEW,
   type OrbitState,
 } from './cameraMath.js';
+import { createSketchLayer } from './createSketchLayer.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
 
 /** ビューポートの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
 export interface ViewportScene {
   render(orbit: OrbitState, projection: ProjectionMode, displayStyle: DisplayStyle, showGrid: boolean): void;
   setMesh(mesh: PartMesh | null): void;
+  /** スケッチの表示を差し替える(FR-105、FR-310)。 */
+  setSketch(sketch: ResolvedSketch, mesh: SketchMesh | null): void;
+  /** ホバー・選択の強調を差し替える(FR-106)。 */
+  setSketchHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
+  /** いま描いている作図面(§0.a-0.3)。薄い矩形で向きを示す。 */
+  setWorkPlane(id: WorkPlaneId): void;
+  /** ワールド座標を canvas 上の画素座標へ。まだ一度も描いていない・画面の外なら null。 */
+  worldToScreen(point: Vec3): readonly [number, number] | null;
+  /** canvas 上の画素座標から、作図面の上の点を求める。平面と視線が平行なら null。 */
+  screenToPlanePoint(x: number, y: number, plane: WorkPlane): Vec3 | null;
   resize(widthPixels: number, heightPixels: number): void;
   dispose(): void;
 }
@@ -250,6 +276,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   axisLines.renderOrder = 1;
   gridGroup.add(axisLines);
 
+  const sketchLayer = createSketchLayer();
+  sketchLayer.setWorkPlane(WORK_PLANES[DEFAULT_WORK_PLANE_ID]);
+  scene.add(sketchLayer.group);
+
   let currentSpacing = 0;
 
   /** 方眼と XYZ 軸を作り直す(FR-104)。間隔が変わったときだけ呼ぶ。 */
@@ -258,6 +288,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     grid.geometry = buildGridGeometry(spacing);
     axisLines.geometry.dispose();
     axisLines.geometry = buildAxisGeometry(axisLength(spacing));
+    // 作図面の矩形は方眼と同じ広がりにする。
+    sketchLayer.setWorkPlaneExtent(gridExtent(spacing));
     currentSpacing = spacing;
   }
   rebuildGrid(gridSpacing(HOME_ORBIT.distance));
@@ -266,6 +298,22 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let hasMesh = false;
   let width = 1;
   let height = 1;
+
+  /** スケッチの現在値。組み立て直すのは変化したときだけ(NFR-PF-1)。 */
+  let resolvedSketch: ResolvedSketch = EMPTY_RESOLVED_SKETCH;
+  let sketchMesh: SketchMesh | null = null;
+  let sketchHighlight: SketchHighlight = NO_HIGHLIGHT;
+  let sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
+
+  /** 最後に描いたときのカメラ。画面座標との行き来はこれが決まってからでないとできない。 */
+  let lastCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  const scratch = new THREE.Vector3();
+  const intersection = new THREE.Vector3();
+  const pickPlane = new THREE.Plane();
+  const planeNormal = new THREE.Vector3();
+  const planeOrigin = new THREE.Vector3();
 
   return {
     setMesh(mesh): void {
@@ -292,6 +340,46 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       hasMesh = true;
     },
 
+    setSketch(nextSketch, nextMesh): void {
+      resolvedSketch = nextSketch;
+      sketchMesh = nextMesh;
+      sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
+    },
+
+    setSketchHighlight(hoveredElementId, selection): void {
+      sketchHighlight = { hoveredElementId, selection };
+      sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
+    },
+
+    setWorkPlane(id): void {
+      sketchLayer.setWorkPlane(WORK_PLANES[id]);
+    },
+
+    worldToScreen(point): readonly [number, number] | null {
+      if (lastCamera === null) {
+        return null;
+      }
+      scratch.set(point[0], point[1], point[2]).project(lastCamera);
+      // 視点の後ろ(z > 1)や手前の切り取り面より近い点は画面に無い。
+      if (scratch.z < -1 || scratch.z > 1) {
+        return null;
+      }
+      return [((scratch.x + 1) / 2) * width, ((1 - scratch.y) / 2) * height];
+    },
+
+    screenToPlanePoint(x, y, plane): Vec3 | null {
+      if (lastCamera === null) {
+        return null;
+      }
+      pointerNdc.set((x / width) * 2 - 1, -((y / height) * 2 - 1));
+      raycaster.setFromCamera(pointerNdc, lastCamera);
+      planeNormal.set(plane.normal[0], plane.normal[1], plane.normal[2]);
+      planeOrigin.set(plane.origin[0], plane.origin[1], plane.origin[2]);
+      pickPlane.setFromNormalAndCoplanarPoint(planeNormal, planeOrigin);
+      const hit = raycaster.ray.intersectPlane(pickPlane, intersection);
+      return hit === null ? null : [hit.x, hit.y, hit.z];
+    },
+
     resize(widthPixels, heightPixels): void {
       width = Math.max(widthPixels, 1);
       height = Math.max(heightPixels, 1);
@@ -309,6 +397,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       // 形が無い間は面も稜線も出さない(空状態の案内だけを見せる)。
       solid.visible = hasMesh && displayStyle !== 'wireframe';
       edges.visible = hasMesh && displayStyle !== 'shaded';
+
+      // スケッチは組み立て直したときだけ並びを差し替える(同じ結果なら表示の入切だけ)。
+      sketchLayer.update(sketchBundle, displayStyle);
 
       const edgeColor = displayStyle === 'wireframe' ? EDGE_COLOR_WIREFRAME : EDGE_COLOR_OVER_SOLID;
       if (edgeColor !== currentEdgeColor) {
@@ -337,10 +428,13 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       camera.lookAt(orbit.target[0], orbit.target[1], orbit.target[2]);
       camera.updateProjectionMatrix();
 
+      // 画面座標との行き来(worldToScreen / screenToPlanePoint)はこのカメラで行う。
+      lastCamera = camera;
       renderer.render(scene, camera);
     },
 
     dispose(): void {
+      sketchLayer.dispose();
       grid.geometry.dispose();
       axisLines.geometry.dispose();
       lineMaterial.dispose();

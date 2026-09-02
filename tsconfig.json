@@ -8,6 +8,7 @@
     { "path": "./packages/model" },
     { "path": "./packages/drawing" },
     { "path": "./packages/io" },
-    { "path": "./packages/ui" }
+    { "path": "./packages/ui" },
+    { "path": "./apps/web" }
   ]
 }

@@ -1,6 +1,8 @@
 # 依存とビルド成果物
 node_modules/
 dist/
+# apps/* は Vite の成果物(dist/)と型の出力先(dist-types/)を分けている
+dist-types/
 out/
 build/
 .vite/

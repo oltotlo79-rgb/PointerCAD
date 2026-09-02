@@ -496,6 +496,134 @@ button.pcad-tree__row:focus-visible {
   margin: 0;
 }
 
+/* ===== その場数値入力(NFR-UX-2) ===== */
+
+/*
+ * ビューポートの中に浮かぶ小さな入力パネル。位置は基準点から右下へずらした画素値を
+ * style で与える(NumericInputPopover.tsx)。下地は半透明にせず、3D の絵の上でも
+ * 文字と欄が読める濃さにする。
+ */
+.pcad-popover {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  width: 260px;
+  padding: var(--pcad-space-3);
+  color: var(--pcad-text);
+  background: var(--pcad-surface);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius);
+  box-shadow: var(--pcad-shadow-raised);
+}
+
+.pcad-popover__title {
+  font-size: var(--pcad-font-size-heading);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--pcad-text-muted);
+}
+
+/* 座標の指定方法(絶対 / 相対 / 極)。3 つを等幅で並べる。 */
+.pcad-popover__modes .pcad-button {
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+.pcad-popover__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-1);
+}
+
+.pcad-field {
+  display: grid;
+  grid-template-columns: 3.2em minmax(0, 1fr) auto;
+  gap: 2px var(--pcad-space-1);
+  align-items: center;
+}
+
+.pcad-field__label {
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+}
+
+.pcad-field__input {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 3px var(--pcad-space-1);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-text);
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+}
+
+.pcad-field__input:focus-visible {
+  border-color: var(--pcad-accent);
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+.pcad-field__unit {
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+}
+
+/* 評価値(FR-202)と間違いの理由(FR-204)を出す行。欄の真下に置く。 */
+.pcad-field__message {
+  grid-column: 2 / 4;
+  min-height: 1.2em;
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  line-height: 1.4;
+  color: var(--pcad-text-muted);
+}
+
+/* 間違いは打った瞬間に赤で示す(NFR-UX-5、FR-204)。 */
+.pcad-field__message--error {
+  color: var(--pcad-danger-text);
+}
+
+.pcad-field--error .pcad-field__input {
+  color: var(--pcad-danger-text);
+  border-color: var(--pcad-danger);
+}
+
+.pcad-popover__hint {
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+}
+
+.pcad-popover__actions {
+  display: flex;
+  gap: var(--pcad-space-2);
+  justify-content: flex-end;
+}
+
+/* 決定は主たる操作なので、押していなくてもアクセントの淡い面で示す。 */
+.pcad-popover__actions .pcad-button--action {
+  color: var(--pcad-text);
+  background: var(--pcad-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
+}
+
+.pcad-popover__actions .pcad-button--action:hover {
+  background: var(--pcad-accent-soft-hover);
+}
+
+/* 決められないときは押しても作られない。文字は 4.5:1 以上を保つ muted のままにする。 */
+.pcad-popover__actions .pcad-button[aria-disabled="true"] {
+  color: var(--pcad-text-muted);
+  cursor: not-allowed;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--pcad-border);
+}
+
 /* 計算中を示す回転印。 */
 .pcad-spinner {
   flex: none;

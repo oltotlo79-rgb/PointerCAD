@@ -57,6 +57,7 @@
   "numericInput.title.arc": "円弧の形",
   "numericInput.title.pointArrayBase": "点列の基準点",
   "numericInput.title.pointArray": "点列の並べ方",
+  "numericInput.modeGroupLabel": "位置の決め方",
   "numericInput.mode.absolute": "絶対",
   "numericInput.mode.relative": "相対",
   "numericInput.mode.polar": "極",
@@ -84,8 +85,8 @@
   "numericInput.tooltip.dy": "基準の点から奥方向へのずれ",
   "numericInput.tooltip.dz": "基準の点から上方向へのずれ",
   "numericInput.tooltip.distance": "基準の点からの長さ",
-  "numericInput.tooltip.azimuth": "かく面の中での向き(度)",
-  "numericInput.tooltip.elevation": "かく面から持ち上げる角度(度)",
+  "numericInput.tooltip.azimuth": "作図面の中での向き(度)",
+  "numericInput.tooltip.elevation": "作図面から持ち上げる角度(度)",
   "numericInput.tooltip.radius": "円弧の半径",
   "numericInput.tooltip.startAngle": "円弧の始まりの角度(度)",
   "numericInput.tooltip.endAngle": "円弧の終わりの角度(度)。開始角との差が 360 度なら円になります",
@@ -98,5 +99,6 @@
   "numericInput.cancel": "取消",
   "numericInput.commitTooltip": "この値で作ります(Enter)",
   "numericInput.cancelTooltip": "やめます(Esc)",
+  "numericInput.keyHint": "Tab で次の欄、Enter で決定、Esc で取消",
   "bootstrap.rootMissing": "画面の土台が見つかりません。"
 }

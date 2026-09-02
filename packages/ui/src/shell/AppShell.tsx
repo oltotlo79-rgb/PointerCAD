@@ -1,6 +1,7 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
+import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
@@ -24,13 +25,31 @@ const ViewportCanvas = lazy(async () => {
 export function AppShell(): React.JSX.Element {
   const isComputing = useAppStore((state) => state.isComputing);
   const featureCount = useAppStore((state) => state.sketch.features.length);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  /** ビューポートの大きさ(画素)。その場入力を端で折り返すためだけに使う表示用の控え。 */
+  const [viewportSize, setViewportSize] = useState<readonly [number, number]>([0, 0]);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (element === null) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      setViewportSize([element.clientWidth, element.clientHeight]);
+    });
+    observer.observe(element);
+    setViewportSize([element.clientWidth, element.clientHeight]);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   return (
     <div className="pcad-shell">
       <Toolbar />
       <div className="pcad-shell__body">
         <FeatureTree />
-        <div className="pcad-viewport">
+        <div className="pcad-viewport" ref={viewportRef}>
           <Suspense
             fallback={
               <div className="pcad-viewport__overlay">
@@ -58,6 +77,19 @@ export function AppShell(): React.JSX.Element {
               <p className="pcad-viewport__empty-text">{t('emptyState.firstStep')}</p>
             </div>
           ) : null}
+          {/*
+            その場数値入力(NFR-UX-2)。開いているときだけ自分で姿を現す。
+            決めた値から何を作るかはスケッチの道具側の役目なので、ここでは受け取るだけにして
+            履歴へ積む処理は計画書 タスク21 で差し替える。閉じるのと連続描画の続きは
+            ポップアップ自身が行う。
+          */}
+          <NumericInputPopover
+            viewportWidth={viewportSize[0]}
+            viewportHeight={viewportSize[1]}
+            onCommit={() => {
+              // タスク21 でここが履歴への追加になる。
+            }}
+          />
         </div>
         <PropertyPanel />
       </div>

@@ -48,5 +48,7 @@
   "viewCube.left": "左",
   "viewCube.top": "上",
   "viewCube.bottom": "下",
-  "emptyState.firstStep": "点をプロットして最初の形を作りましょう。"
+  "emptyState.firstStep": "点をプロットして最初の形を作りましょう。",
+  "viewport.loading": "3D 表示を読み込んでいます…",
+  "bootstrap.rootMissing": "画面の土台が見つかりません。"
 }

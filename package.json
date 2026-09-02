@@ -1,0 +1,30 @@
+{
+  "name": "pointercad",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --build --pretty",
+    "lint": "eslint .",
+    "test": "pnpm --recursive --if-present run test",
+    "build": "pnpm --recursive --if-present run build",
+    "e2e": "playwright test --config e2e/playwright.config.ts",
+    "clean": "tsc --build --clean"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-react-hooks": "catalog:",
+    "globals": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

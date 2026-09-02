@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist/tools",
+    "types": ["node"]
+  },
+  // TypeScript は include の結果が0件でも、files か references のどちらかが
+  // 書かれていれば TS18003 を出さない。空の files を置くことで、対象の設定ファイルが
+  // まだ1つも無い段階でも tsc --build が通り、かつ include はそのまま残るので
+  // 後続タスクで *.config.ts / e2e/**/*.ts が増えたら自動で型検査に入る。
+  "files": [],
+  "include": [
+    "*.config.ts",
+    "packages/*/*.config.ts",
+    "apps/*/*.config.ts",
+    "e2e/**/*.ts"
+  ]
+}

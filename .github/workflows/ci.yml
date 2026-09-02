@@ -28,6 +28,9 @@ jobs:
       - name: pnpm の準備 (corepack)
         if: ${{ hashFiles('package.json') != '' }}
         shell: pwsh
+        env:
+          # 非対話環境で corepack がダウンロード確認を待って止まるのを防ぐ。
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
         run: corepack enable
 
       - name: 一括検査 (scripts/check.ps1)

@@ -1,5 +1,5 @@
 #!/bin/sh
-# PointerCAD pre-commit フック: コミット前に scripts/check.ps1 の全検査を通す。
+# PointerCAD pre-commit フック: コミット前に scripts/check.ps1 の検査(E2E を除く4つ)を通す。
 # 根拠: rules/03-品質ゲート.md §7。有効化は scripts/install-hooks.ps1。
 
 hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -22,7 +22,7 @@ else
     exit 127
 fi
 
-"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root"
+"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Commit
 check_status=$?
 
 if [ "$check_status" -ne 0 ]; then

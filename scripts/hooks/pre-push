@@ -1,5 +1,5 @@
 #!/bin/sh
-# PointerCAD pre-push フック: push前に scripts/check.ps1 の全検査を通す。
+# PointerCAD pre-push フック: push前に scripts/check.ps1 の全検査(E2E を含む5つ)を通す。
 # 根拠: rules/03-品質ゲート.md §7。有効化は scripts/install-hooks.ps1。
 # CIも同じ check.ps1 を実行する(検査の単一正本)。
 
@@ -23,7 +23,7 @@ else
     exit 127
 fi
 
-"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root"
+"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Push
 check_status=$?
 
 if [ "$check_status" -ne 0 ]; then

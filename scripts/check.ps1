@@ -1,11 +1,12 @@
 ﻿# PointerCAD 一括検査スクリプト(Windows PowerShell 5.1 / pwsh 対応)
 # rules/03-品質ゲート.md §7.1 の検査を順に実行し、いずれかが失敗したら非0で終了する。
 #   (0) 作業ツリーの状態記録(検査前後で比較し、テストによる追跡ファイル書換を検出)
-#   (1) pnpm run typecheck
-#   (2) pnpm run lint
-#   (3) pnpm run test
-#   (4) pnpm run build
-#   (5) pnpm run test:e2e(スクリプトが定義されている場合のみ)
+#   (1) pnpm run typecheck      -Level Commit / Push の両方
+#   (2) pnpm run lint           -Level Commit / Push の両方
+#   (3) pnpm run test           -Level Commit / Push の両方
+#   (4) pnpm run build          -Level Commit / Push の両方
+#   (5) pnpm run test:e2e       -Level Push のときだけ(スクリプトが定義されている場合)
+# 既定は -Level Push(全部)。pre-commit だけが -Level Commit を渡す。
 # ルート package.json が無い間(P0未着手)は検査対象なしとして合格扱い。
 # typecheck / lint / test / build のスクリプト欠落は失敗(fail-closed)。
 # 検査の単一正本: CI(.github/workflows/ci.yml)とgitフックもこのスクリプトを実行する。
@@ -14,7 +15,11 @@
 [CmdletBinding()]
 param(
     [string]$RepositoryRoot = "",
-    [switch]$Install
+    [switch]$Install,
+    # Commit: 型検査・書き方・ユニットテスト・組み立ての4つ(pre-commit 用)
+    # Push  : 上記に E2E を足した5つ(pre-push、CI、統括の手動実行の既定)
+    [ValidateSet("Commit", "Push")]
+    [string]$Level = "Push"
 )
 
 $scriptDirectory = [string]$PSScriptRoot
@@ -84,13 +89,18 @@ try {
         Invoke-Check "(0) pnpm install --frozen-lockfile" pnpm @("install", "--frozen-lockfile")
     }
 
+    $runE2E = ($Level -eq "Push") -and $hasE2E
     $totalChecks = 4
-    if ($hasE2E) { $totalChecks = 5 }
+    if ($runE2E) { $totalChecks = 5 }
     Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
     Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
     Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
     Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
-    if ($hasE2E) {
+    if ($runE2E) {
+        # Playwright のブラウザは初回だけ取得され、2回目以降は即座に終わる。
+        # ここで面倒を見ることで .github/workflows/ci.yml を変えずに済み、
+        # 検査の単一正本(rules/03-品質ゲート.md §7.2)を保てる。
+        Invoke-Check "(準備) Playwright のブラウザ確認" pnpm @("exec", "playwright", "install", "chromium")
         Invoke-Check "(5/$totalChecks) pnpm run test:e2e" pnpm @("run", "test:e2e")
     }
 

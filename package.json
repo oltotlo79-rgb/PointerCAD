@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "test": "pnpm --recursive --if-present run test",
     "build": "pnpm --recursive --if-present run build",
-    "e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "clean": "tsc --build --clean"
   },
   "devDependencies": {

@@ -117,7 +117,9 @@ export function parse(source: string): Node {
       const after = peek();
       if (after !== null && after.type === 'leftParenthesis') {
         index += 1;
-        const args = parseArguments(token.position);
+        // 閉じ括弧が足りないときの位置は、関数名ではなく開き括弧を指す。括弧の式と
+        // 関数呼び出しで同じ場所を指すよう統一する(docs/報告記録.md 2026-09-02 18:23 の判断③)。
+        const args = parseArguments(after.position);
         return { kind: 'call', name: token.text, args, position: token.position };
       }
       if (token.text === 'pi' || token.text === 'π') {
@@ -132,7 +134,8 @@ export function parse(source: string): Node {
     throw new ExpressionFailure(expressionError('unexpectedToken', token.text, token.position));
   }
 
-  function parseArguments(callPosition: number): readonly Node[] {
+  /** openPosition は引数列の開き括弧の位置。閉じ括弧が足りないときの報告に使う。 */
+  function parseArguments(openPosition: number): readonly Node[] {
     const args: Node[] = [];
     const first = peek();
     if (first !== null && first.type === 'rightParenthesis') {
@@ -143,7 +146,7 @@ export function parse(source: string): Node {
       args.push(parseAddExpr());
       const token = peek();
       if (token === null) {
-        throw new ExpressionFailure(expressionError('unclosedParenthesis', '', callPosition));
+        throw new ExpressionFailure(expressionError('unclosedParenthesis', '', openPosition));
       }
       if (token.type === 'comma') {
         index += 1;

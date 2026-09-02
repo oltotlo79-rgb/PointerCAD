@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ExpressionFailure } from './errors.js';
+import { ExpressionFailure, type ExpressionError } from './errors.js';
 import { normalizeExpressionSource, tokenize, type Token } from './tokenize.js';
 
 /**
@@ -8,6 +8,12 @@ import { normalizeExpressionSource, tokenize, type Token } from './tokenize.js';
  * エスケープで書く(docs/報告記録.md 2026-09-02 15:09 の教訓)。
  */
 const FULL_WIDTH_SPACE = '\u3000';
+
+/**
+ * 絵文字(U+1F600)。UTF-16 では 2 単位を占めるサロゲートペアで、片割れだけを取り出すと
+ * 読めない文字になる。エスケープで書くのは全角空白と同じ理由。
+ */
+const GRINNING_FACE = '\u{1F600}';
 
 /** 検査を読みやすくするため「型:文字列@位置」の列へ直す。 */
 function summarize(tokens: readonly Token[]): string[] {
@@ -24,6 +30,19 @@ function codeOf(source: string): string {
     throw error;
   }
   return 'エラーになりませんでした';
+}
+
+/** 失敗したときのエラー内容を取り出す。エラーにならなければテストを落とす。 */
+function failureOf(source: string): ExpressionError {
+  try {
+    tokenize(source);
+  } catch (error) {
+    if (error instanceof ExpressionFailure) {
+      return error.detail;
+    }
+    throw error;
+  }
+  throw new Error(`エラーになりませんでした: ${source}`);
 }
 
 describe('字句解析(FR-201)', () => {
@@ -88,6 +107,24 @@ describe('字句解析(FR-201)', () => {
 
   it('使えない文字は位置つきで unexpectedCharacter', () => {
     expect(codeOf('1@2')).toBe('unexpectedCharacter');
+    expect(failureOf('1@2').position).toBe(1);
+    expect(failureOf('1@2').message).toBe('使えない文字があります: 「@」(2 文字目)');
+  });
+
+  it('絵文字(サロゲートペア)は丸ごと1文字として文言へ出す', () => {
+    const detail = failureOf(`1+${GRINNING_FACE}`);
+    expect(detail.code).toBe('unexpectedCharacter');
+    // 片割れ(U+D83D)ではなく絵文字がそのまま入る。位置は UTF-16 の添字(0 始まり)。
+    expect(detail.message).toBe(`使えない文字があります: 「${GRINNING_FACE}」(3 文字目)`);
+    expect(detail.position).toBe(2);
+  });
+
+  it('全角の置き換えはサロゲートペアを壊さず、長さも変えない', () => {
+    // 位置が元の式とずれないことが前提なので、変換の前後で長さが変わらないことを固定する。
+    const source = `１＋${GRINNING_FACE}`;
+    const normalized = normalizeExpressionSource(source);
+    expect(normalized).toBe(`1+${GRINNING_FACE}`);
+    expect(normalized.length).toBe(source.length);
   });
 
   it('長すぎる式は tooLong', () => {

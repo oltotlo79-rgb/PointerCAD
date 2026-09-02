@@ -149,9 +149,11 @@ describe('構文解析(FR-201)', () => {
   });
 
   it('閉じ括弧が足りないと unclosedParenthesis', () => {
-    // 位置は、括弧の式なら開き括弧、関数呼び出しなら関数名の先頭を指す(計画書 タスク5 手順2)。
+    // 位置は括弧の式でも関数呼び出しでも「開き括弧」を指す。同じ意味の失敗が同じ場所を
+    // 指すよう統一した(docs/報告記録.md 2026-09-02 18:23 の判断③)。
     expect(codeAt('(1+2')).toBe('unclosedParenthesis@0');
-    expect(codeAt('root(1,2')).toBe('unclosedParenthesis@0');
+    expect(codeAt('root(1,2')).toBe('unclosedParenthesis@4');
+    expect(codeAt('sqrt(1')).toBe('unclosedParenthesis@4');
     expect(codeAt('1+((2)')).toBe('unclosedParenthesis@2');
     expect(failureOf('(1+2').message).toBe('閉じ括弧 ) が足りません。');
   });

@@ -63,9 +63,22 @@ function isIdentifierPart(character: string): boolean {
 }
 
 /**
+ * 添字の位置にある1文字を、コードポイント単位で取り出す。絵文字のように UTF-16 で
+ * 2 単位を占める文字を半分に切らないため(docs/報告記録.md 2026-09-02 18:10 の残件)。
+ * 切れた片割れを文言へ入れると「使えない文字があります: 「□」」のように読めない字が出る。
+ * 範囲外では空文字を返し、どの判定にも当たらない。
+ */
+function characterAt(text: string, index: number): string {
+  const codePoint = text.codePointAt(index);
+  return codePoint === undefined ? '' : String.fromCodePoint(codePoint);
+}
+
+/**
  * 式を字句へ分ける。分けられない文字があれば ExpressionFailure を投げる。
- * 範囲外の添字で undefined を扱わずに済むよう、文字の取り出しは charAt を使う
- * (範囲外では空文字を返し、どの判定にも当たらない)。
+ * 数字・名前の続きの判定は 1 単位ずつで足りる(該当する文字はすべて UTF-16 で 1 単位)ので
+ * charAt を使い、字句の先頭の1文字だけ characterAt でコードポイント単位に取る。
+ * 位置は UTF-16 の添字のままとする。式の入力欄(タスク18)がカーソル位置を
+ * `HTMLInputElement.selectionStart` で扱い、これも UTF-16 の添字であるため。
  */
 export function tokenize(source: string): readonly Token[] {
   if (source.length > EXPRESSION_MAX_LENGTH) {
@@ -77,7 +90,7 @@ export function tokenize(source: string): readonly Token[] {
   let index = 0;
 
   while (index < text.length) {
-    const character = text.charAt(index);
+    const character = characterAt(text, index);
 
     if (SPACE_CHARACTERS.has(character)) {
       index += 1;

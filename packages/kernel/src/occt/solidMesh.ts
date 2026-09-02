@@ -1,0 +1,107 @@
+import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
+
+import type { SolidBodyMesh, TessellationOptions } from '../types.js';
+import { extractEdges } from './extractEdges.js';
+import { tessellate } from './tessellate.js';
+
+/**
+ * BRepGProp.VolumeProperties_1 の OnlyClosed に渡す値。
+ *
+ * 2026-09-03 に Node で実測した結果(計画書 §1.2 の未確認点 2):
+ *   10 × 20 × 30 の箱     OnlyClosed=false → 6000 / OnlyClosed=true → 6000
+ *   同じ箱を縫合した立体   OnlyClosed=false → 6000 / OnlyClosed=true → 6000
+ *   箱の 5 面だけの開いた殻 OnlyClosed=false → 4800 / OnlyClosed=true → 0
+ *
+ * 閉じた立体ではどちらでも同じ値になるので false を採る。
+ * 閉じ切らなかった形で 0 ではなく途中までの値が出るほうが、
+ * 「縫合が閉じなかった」ことに気づきやすく原因を追いやすいため(FR-504)。
+ * 閉じているかどうかは hasSolid と isValidShape で別に判定する。
+ */
+const VOLUME_ONLY_CLOSED = false;
+
+/**
+ * 立体の体積(mm³)。
+ * 閉じていない形では 0 に近い値や負の値が出るので、呼び出し側が妥当性も見る。
+ */
+export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
+  const properties = new oc.GProp_GProps_1();
+  try {
+    // 第 4・第 5 引数は SkipShared と UseTriangulation。
+    // 共有面を飛ばさず、三角形近似ではなく厳密な面で積分する(既定の精度)。
+    oc.BRepGProp.VolumeProperties_1(shape, properties, VOLUME_ONLY_CLOSED, false, false);
+    return properties.Mass();
+  } finally {
+    properties.delete();
+  }
+}
+
+/**
+ * B-rep として妥当か(自己交差・不正な向きが無いか)。
+ * 第 2 引数 true は曲面そのものの検査も行う指定、第 3 引数 false は並列実行しない指定。
+ * IsValid_2() は引数を取らない版で、構築時に渡した形を検査する
+ * (IsValid_1(S) は部分形状を指定する版なので使わない)。
+ */
+export function isValidShape(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
+  const analyzer = new oc.BRepCheck_Analyzer(shape, true, false);
+  try {
+    return analyzer.IsValid_2();
+  } finally {
+    analyzer.delete();
+  }
+}
+
+/**
+ * 形が閉じたソリッドを 1 つ以上含むか。
+ *
+ * tessellate.ts と同じく TopExp_Explorer を使わず TopExp.MapShapes_2 で部分形状を集め、
+ * ShapeType() の値どうしの比較でソリッドを選ぶ。opencascade.js の型定義では
+ * 列挙の各値(TopAbs_SOLID 等)が空の型 `{}` になっており、列挙を引数に取る
+ * TopExp_Explorer.Init は強制変換なしでは型検査を通せないため。
+ * MapShapes_2 は形そのものも含めて数えるので、単体のソリッドでも true になる。
+ */
+export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
+  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
+  try {
+    // 第 3・第 4 引数は「向きと位置を親からたどって積み上げる」指定で、
+    // TopExp_Explorer と同じ結果になる既定値。
+    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+    const solidType = oc.TopAbs_ShapeEnum.TopAbs_SOLID;
+    const subShapeCount = subShapes.Size();
+    for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
+      if (subShapes.FindKey(subShapeIndex).ShapeType() === solidType) {
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    subShapes.delete();
+  }
+}
+
+/**
+ * 表示用データを 1 回でまとめて作る(FR-105、FR-310)。
+ * 面の三角形は tessellate、稜線は extractEdges が作り、ここでは体積を足して束ねるだけ。
+ * 返す値は TypedArray と数値・文字列だけなので、そのまま Comlink 越しに渡せる。
+ * 形の解放は呼び出し側の責任(この関数は shape を消費しない)。
+ */
+export function buildSolidBodyMesh(
+  oc: OpenCascadeInstance,
+  id: string,
+  shape: TopoDS_Shape,
+  options: TessellationOptions = {},
+): SolidBodyMesh {
+  const surface = tessellate(oc, shape, options);
+  const edges = extractEdges(oc, shape, options);
+
+  return {
+    id,
+    positions: surface.positions,
+    normals: surface.normals,
+    indices: surface.indices,
+    edgePositions: edges.positions,
+    triangleCount: surface.triangleCount,
+    faceCount: surface.faceCount,
+    edgeCount: edges.edgeCount,
+    volume: measureVolume(oc, shape),
+  };
+}

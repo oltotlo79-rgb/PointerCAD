@@ -1,10 +1,25 @@
 /**
- * ファイル入出力(要件 FR-8xx)。.pcad / STEP / STL / 3MF / OBJ / glTF は P2 以降で実装する。
- * P0 ではスキーマバージョンと対応形式の一覧だけを定義する。
+ * ファイル入出力(要件 FR-8xx)。P2 で .pcad の document.json の読み書きを実装する。
+ * STEP / STL / 3MF / OBJ / glTF は P4 以降。
  */
 
-/** .pcad の document.json に埋め込むスキーマバージョン(要件§8)。 */
-export const PCAD_SCHEMA_VERSION = 1;
+// .pcad の書式の版と封筒(要件§8、§0.a-0.3)。
+export {
+  PCAD_APP_NAME,
+  PCAD_SCHEMA_VERSION,
+  SCHEMA_MIGRATIONS,
+  type PcadEnvelope,
+  type SchemaMigration,
+} from './pcad/schema.js';
+// 部品文書と document.json の相互変換(FR-801、FR-202)。
+export {
+  parseDocument,
+  serializeDocument,
+  type ParseDocumentResult,
+  type ParseError,
+  type ParseErrorCode,
+  type SerializeOptions,
+} from './pcad/documentJson.js';
 
 export type ExportFormat = 'step' | 'stl' | '3mf' | 'obj' | 'glb';
 export type ImportFormat = 'step' | 'stl' | 'obj';

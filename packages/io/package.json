@@ -14,6 +14,9 @@
   "scripts": {
     "test": "vitest run"
   },
+  "dependencies": {
+    "@pointercad/model": "workspace:*"
+  },
   "devDependencies": {
     "vitest": "catalog:"
   }

@@ -7,6 +7,7 @@
     { "path": "./packages/kernel" },
     { "path": "./packages/model" },
     { "path": "./packages/drawing" },
-    { "path": "./packages/io" }
+    { "path": "./packages/io" },
+    { "path": "./packages/ui" }
   ]
 }

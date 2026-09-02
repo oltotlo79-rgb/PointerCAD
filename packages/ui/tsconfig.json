@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.json"],
+  "references": [
+    { "path": "../drawing" },
+    { "path": "../expression" },
+    { "path": "../help-content" },
+    { "path": "../io" },
+    { "path": "../model" }
+  ]
+}

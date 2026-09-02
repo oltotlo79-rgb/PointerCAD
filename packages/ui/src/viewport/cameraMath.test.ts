@@ -1,0 +1,108 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  cameraPosition,
+  clamp,
+  HOME_ORBIT,
+  MAX_DISTANCE,
+  MAX_ELEVATION,
+  MIN_DISTANCE,
+  orbit,
+  ORBIT_RADIANS_PER_PIXEL,
+  orthographicFrustumHeight,
+  pan,
+  worldUnitsPerPixel,
+  zoom,
+} from './cameraMath.js';
+
+describe('視点の回転(FR-101)', () => {
+  it('横に 100 ピクセル動かすと方位角が 0.8 ラジアン減る', () => {
+    const rotated = orbit(HOME_ORBIT, 100, 0);
+    expect(rotated.azimuth).toBeCloseTo(HOME_ORBIT.azimuth - 100 * ORBIT_RADIANS_PER_PIXEL, 12);
+    expect(rotated.azimuth).toBeCloseTo(Math.PI / 4 - 0.8, 12);
+  });
+
+  it('縦に動かしても仰角は真上・真下を越えない', () => {
+    expect(orbit(HOME_ORBIT, 0, 100_000).elevation).toBeCloseTo(MAX_ELEVATION, 12);
+    expect(orbit(HOME_ORBIT, 0, -100_000).elevation).toBeCloseTo(-MAX_ELEVATION, 12);
+  });
+
+  it('回転しても距離と注視点は変わらない', () => {
+    const rotated = orbit(HOME_ORBIT, 37, -21);
+    expect(rotated.distance).toBe(HOME_ORBIT.distance);
+    expect(rotated.target).toEqual(HOME_ORBIT.target);
+  });
+});
+
+describe('拡大・縮小(FR-101)', () => {
+  it('ホイール 1 段で距離が 1.1 倍になる', () => {
+    expect(zoom({ ...HOME_ORBIT, distance: 100 }, 100).distance).toBeCloseTo(110, 12);
+  });
+
+  it('逆向きのホイール 1 段で距離が 1.1 分の 1 になる', () => {
+    expect(zoom({ ...HOME_ORBIT, distance: 100 }, -100).distance).toBeCloseTo(100 / 1.1, 12);
+  });
+
+  it('距離は下限と上限で止まる', () => {
+    expect(zoom({ ...HOME_ORBIT, distance: MIN_DISTANCE }, -100_000).distance).toBe(MIN_DISTANCE);
+    expect(zoom({ ...HOME_ORBIT, distance: MAX_DISTANCE }, 100_000).distance).toBe(MAX_DISTANCE);
+  });
+});
+
+describe('ホーム視点(FR-108)', () => {
+  it('等角視になり、カメラ位置の 3 成分が等しい', () => {
+    const [x, y, z] = cameraPosition(HOME_ORBIT);
+    const expected = 200 / Math.sqrt(3);
+    expect(expected).toBeCloseTo(115.47005383792515, 12);
+    expect(x).toBeCloseTo(expected, 9);
+    expect(y).toBeCloseTo(expected, 9);
+    expect(z).toBeCloseTo(expected, 9);
+  });
+
+  it('注視点をずらすとカメラ位置も同じだけずれる', () => {
+    const [x, y, z] = cameraPosition({ ...HOME_ORBIT, target: [10, 20, 30] });
+    const expected = 200 / Math.sqrt(3);
+    expect(x).toBeCloseTo(expected + 10, 9);
+    expect(y).toBeCloseTo(expected + 20, 9);
+    expect(z).toBeCloseTo(expected + 30, 9);
+  });
+});
+
+describe('平行移動(FR-101)', () => {
+  it('1 ピクセルあたりの移動量が画角と距離から決まる', () => {
+    // 導出: 2 × 100 × tan(25°) / 1000 = 0.0932615…(計画書の 0.0932602… は算出誤り。2026-09-02 統括承認)
+    expect(worldUnitsPerPixel(100, 1000)).toBeCloseTo(0.0932615, 6);
+  });
+
+  it('真上から見ているとき、右へ 10 ピクセル動かすと注視点が -Y へ動く', () => {
+    const state = { azimuth: 0, elevation: MAX_ELEVATION, distance: 100, target: [0, 0, 0] } as const;
+    const moved = pan(state, 10, 0, 1000);
+    const scale = worldUnitsPerPixel(100, 1000);
+    expect(moved.target[0]).toBeCloseTo(0, 9);
+    expect(moved.target[1]).toBeCloseTo(-10 * scale, 9);
+    expect(moved.target[2]).toBeCloseTo(0, 9);
+  });
+
+  it('平行移動しても向きと距離は変わらない', () => {
+    const moved = pan(HOME_ORBIT, 12, 34, 800);
+    expect(moved.azimuth).toBe(HOME_ORBIT.azimuth);
+    expect(moved.elevation).toBe(HOME_ORBIT.elevation);
+    expect(moved.distance).toBe(HOME_ORBIT.distance);
+  });
+});
+
+describe('投影の切り替え(FR-102)', () => {
+  it('平行投影の表示高さは距離に比例する', () => {
+    // 導出: 2 × 100 × tan(25°) = 93.26153…(計画書の 93.2602… は算出誤り。2026-09-02 統括承認)
+    expect(orthographicFrustumHeight(100)).toBeCloseTo(93.26153, 4);
+    expect(orthographicFrustumHeight(200)).toBeCloseTo(2 * 93.26153, 4);
+  });
+});
+
+describe('clamp', () => {
+  it('範囲の内外を正しく丸める', () => {
+    expect(clamp(5, 0, 10)).toBe(5);
+    expect(clamp(-1, 0, 10)).toBe(0);
+    expect(clamp(11, 0, 10)).toBe(10);
+  });
+});

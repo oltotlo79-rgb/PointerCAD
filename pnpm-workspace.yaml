@@ -13,7 +13,7 @@ catalog:
   "@types/three": 0.185.4
   "@vitejs/plugin-react": 6.1.1
   comlink: 4.4.2
-  electron: 44.1.1
+  electron: 44.1.0
   eslint: 10.9.1
   eslint-plugin-react-hooks: 7.1.1
   globals: 17.11.0
@@ -27,7 +27,11 @@ catalog:
   vitest: 4.1.11
   zustand: 5.0.15
 
-# Electron はインストール後スクリプトでバイナリを取得する。pnpm 10 以降は
-# 既定でインストール後スクリプトを実行しないため、明示的に許可する。
+# pnpm 10 以降は既定でインストール後スクリプトを実行しないため、明示的に許可する。
+# 記述場所はここ(pnpm-workspace.yaml)で pnpm 11.25.0 に認識される(`pnpm config list` で確認)。
+# ただし electron 44 は package.json に postinstall を持たず、バイナリは
+# 初回の `electron .` 実行時か `install-electron` コマンドで取得される(タスク16 実測)。
+# そのためこの許可は electron に対しては現状働かない。将来 postinstall が復活した場合と、
+# 他の依存が増えた場合に備えて残す。
 onlyBuiltDependencies:
   - electron

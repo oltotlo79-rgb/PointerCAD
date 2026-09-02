@@ -22,7 +22,14 @@ const layerRules = [
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', 'playwright-report/**', 'test-results/**'],
+    ignores: [
+      '**/dist/**',
+      // apps/* の型出力先(tsconfig の outDir)。生成物なので点検の対象にしない。
+      '**/dist-types/**',
+      '**/node_modules/**',
+      'playwright-report/**',
+      'test-results/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

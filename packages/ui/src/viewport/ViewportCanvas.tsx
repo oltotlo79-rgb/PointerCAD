@@ -1,8 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
+import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import { createViewportScene } from './createViewportScene.js';
 
 /**
@@ -14,8 +16,18 @@ import { createViewportScene } from './createViewportScene.js';
  */
 export function ViewportCanvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  /** タスク13 のビューキューブが `getOrbit` / `setOrbit` を借りるための入口。 */
+  /** ビューキューブが `getOrbit` / `setOrbit` を借りるための入口。 */
   const controlsRef = useRef<CameraControls | null>(null);
+  /** 初回描画では `controlsRef` がまだ空なので、用意できてからビューキューブを出す。 */
+  const [controlsReady, setControlsReady] = useState(false);
+
+  const getOrbit = useCallback((): OrbitState => {
+    return controlsRef.current?.getOrbit() ?? HOME_ORBIT;
+  }, []);
+
+  const setOrbit = useCallback((next: OrbitState): void => {
+    controlsRef.current?.setOrbit(next);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -41,6 +53,7 @@ export function ViewportCanvas(): React.JSX.Element {
 
     const controls = attachCameraControls(canvas, requestDraw);
     controlsRef.current = controls;
+    setControlsReady(true);
 
     const observer = new ResizeObserver(() => {
       scene.resize(canvas.clientWidth, canvas.clientHeight);
@@ -72,15 +85,19 @@ export function ViewportCanvas(): React.JSX.Element {
       controls.detach();
       scene.dispose();
       controlsRef.current = null;
+      setControlsReady(false);
     };
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="pcad-viewport__canvas"
-      tabIndex={0}
-      aria-label={t('viewport.label')}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="pcad-viewport__canvas"
+        tabIndex={0}
+        aria-label={t('viewport.label')}
+      />
+      {controlsReady ? <ViewCube getOrbit={getOrbit} setOrbit={setOrbit} /> : null}
+    </>
   );
 }

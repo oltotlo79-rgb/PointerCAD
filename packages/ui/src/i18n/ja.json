@@ -24,6 +24,8 @@
   "statusBar.unit": "単位: mm",
   "statusBar.error": "計算に失敗しました:",
   "viewport.label": "3D ビューポート",
+  "viewCube.label": "ビューキューブ",
+  "viewCube.tooltip": "面・辺・角をクリックするとその向きから見ます。ドラッグで向きを変えられます。",
   "viewCube.front": "前",
   "viewCube.back": "後",
   "viewCube.right": "右",

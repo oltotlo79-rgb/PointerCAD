@@ -119,8 +119,13 @@
   position: absolute;
   top: 12px;
   right: 12px;
+  display: block;
   width: 120px;
   height: 120px;
+  cursor: pointer;
+
+  /* 視点操作をブラウザのスクロールや長押しに横取りさせない。 */
+  touch-action: none;
 }
 
 .pcad-statusbar {

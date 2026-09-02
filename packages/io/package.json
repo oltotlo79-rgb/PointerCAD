@@ -15,7 +15,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pointercad/model": "workspace:*"
+    "@pointercad/model": "workspace:*",
+    "fflate": "catalog:"
   },
   "devDependencies": {
     "vitest": "catalog:"

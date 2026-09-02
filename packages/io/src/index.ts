@@ -6,6 +6,7 @@
 // .pcad の書式の版と封筒(要件§8、§0.a-0.3)。
 export {
   PCAD_APP_NAME,
+  PCAD_DOCUMENT_KIND,
   PCAD_SCHEMA_VERSION,
   SCHEMA_MIGRATIONS,
   type PcadEnvelope,
@@ -20,6 +21,17 @@ export {
   type ParseErrorCode,
   type SerializeOptions,
 } from './pcad/documentJson.js';
+// .pcad(ZIP コンテナ)の読み書き(FR-801、要件§8)。
+export {
+  PCAD_DOCUMENT_ENTRY,
+  PCAD_THUMBNAIL_ENTRY,
+  readPcadFile,
+  writePcadFile,
+  type ReadPcadFileError,
+  type ReadPcadFileErrorCode,
+  type ReadPcadFileResult,
+  type WritePcadFileOptions,
+} from './pcad/pcadFile.js';
 
 export type ExportFormat = 'step' | 'stl' | '3mf' | 'obj' | 'glb';
 export type ImportFormat = 'step' | 'stl' | 'obj';

@@ -20,10 +20,22 @@ export const PCAD_SCHEMA_VERSION = 2;
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
 
+/**
+ * 封筒に書く種別(要件§8 の「種別(part / assembly / drawing)」、統括の決定
+ * docs/報告記録.md 2026-09-03 07:58 の⑤)。
+ *
+ * このアプリが書き出すのは部品(part)だけなので、書き出しでは常にこの値を書く。
+ * 読み手は `part` 以外を理由つきで断る。将来アセンブリや図面を足すときは、
+ * この定数ではなく読み手の受け入れる一覧を広げる(書き出す側は種類ごとに決まった値を書く)。
+ */
+export const PCAD_DOCUMENT_KIND = 'part';
+
 /** `document.json` の中身(封筒)。ここに書いたものだけを保存し、それ以外は保存しない。 */
 export interface PcadEnvelope {
   /** 書式の版。部品文書の `schemaVersion` と同じ値。 */
   readonly schema: number;
+  /** 中身の種別。部品ファイルは常に `PCAD_DOCUMENT_KIND`。 */
+  readonly kind: typeof PCAD_DOCUMENT_KIND;
   /** 常に `PCAD_APP_NAME`。 */
   readonly app: string;
   /** 保存した時刻(ISO 8601、UTC)。 */

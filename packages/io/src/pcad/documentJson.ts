@@ -51,7 +51,13 @@ import {
   type ExpressionValueJson,
   type FieldProblem,
 } from './guards.js';
-import { PCAD_APP_NAME, PCAD_SCHEMA_VERSION, SCHEMA_MIGRATIONS, type PcadEnvelope } from './schema.js';
+import {
+  PCAD_APP_NAME,
+  PCAD_DOCUMENT_KIND,
+  PCAD_SCHEMA_VERSION,
+  SCHEMA_MIGRATIONS,
+  type PcadEnvelope,
+} from './schema.js';
 
 /** 判別に使う文字列の一覧。`as` を使わずに型から取り出す。 */
 const COORDINATE_MODES: readonly CoordinateInput['mode'][] = ['absolute', 'relative', 'polar'];
@@ -285,6 +291,8 @@ export function serializeDocument(document: PartDocument, options: SerializeOpti
   const envelope: PcadEnvelope = {
     // 封筒の版は文書の版と同じ値を書く(統括の決定④)。
     schema: document.schemaVersion,
+    // このアプリが書き出すのは部品だけなので、種別は常に part(要件§8)。
+    kind: PCAD_DOCUMENT_KIND,
     app: PCAD_APP_NAME,
     savedAt: options.savedAt ?? new Date().toISOString(),
     document: serializePartDocument(document),
@@ -964,6 +972,8 @@ export type ParseErrorCode =
   | 'invalidJson'
   /** PointerCAD の部品ファイルの封筒になっていない。 */
   | 'notPcad'
+  /** PointerCAD のファイルではあるが、部品ではない種別(アセンブリ・図面)。 */
+  | 'unsupportedKind'
   /** 版が古すぎて、今の版まで持ち上げる手立てが無い。 */
   | 'unsupportedOldVersion'
   /** 版が新しすぎる(このアプリより後の版で保存された)。 */
@@ -1042,6 +1052,19 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
   const app = readString(raw, 'app', '');
   if (!app.ok || app.value !== PCAD_APP_NAME) {
     return fail('notPcad', NOT_PCAD_MESSAGE);
+  }
+  // 種別は封筒の欄なので、中身を読む前に見る(統括の決定、要件§8)。
+  // 欄そのものが無い・文字列でないものは PointerCAD の封筒になっていないので notPcad、
+  // 文字列だが part でないものは「PointerCAD のファイルだが、この種類はまだ読めない」と分けて断る。
+  const kind = readString(raw, 'kind', '');
+  if (!kind.ok) {
+    return fail('notPcad', NOT_PCAD_MESSAGE);
+  }
+  if (kind.value !== PCAD_DOCUMENT_KIND) {
+    return fail(
+      'unsupportedKind',
+      `この形式の種類(${kind.value})にはまだ対応していません。`,
+    );
   }
   const savedAt = readString(raw, 'savedAt', '');
   if (!savedAt.ok) {

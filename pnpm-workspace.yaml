@@ -17,6 +17,7 @@ catalog:
   electron: 44.1.0
   eslint: 10.9.1
   eslint-plugin-react-hooks: 7.1.1
+  fflate: 0.8.3
   globals: 17.11.0
   opencascade.js: 2.0.0-beta.b5ff984
   react: 19.2.8

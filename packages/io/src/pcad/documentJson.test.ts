@@ -14,7 +14,12 @@ import {
   type ParseError,
 } from './documentJson.js';
 import type { ExpressionValueJson } from './guards.js';
-import { PCAD_APP_NAME, PCAD_SCHEMA_VERSION, SCHEMA_MIGRATIONS } from './schema.js';
+import {
+  PCAD_APP_NAME,
+  PCAD_DOCUMENT_KIND,
+  PCAD_SCHEMA_VERSION,
+  SCHEMA_MIGRATIONS,
+} from './schema.js';
 
 /** 検査で時刻を固定する(保存時刻が違っても文字列が同じであることを確かめるため)。 */
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
@@ -185,6 +190,7 @@ function rawDocument(overrides: Record<string, unknown> = {}): Record<string, un
 function rawFile(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     schema: PCAD_SCHEMA_VERSION,
+    kind: PCAD_DOCUMENT_KIND,
     app: PCAD_APP_NAME,
     savedAt: SAVED_AT,
     document: rawDocument(),
@@ -223,11 +229,19 @@ describe('.pcad の版(§0.a-0.3、統括の決定④)', () => {
 });
 
 describe('部品文書の書き出し(serializeDocument)', () => {
-  it('封筒に版・アプリ名・保存時刻・文書を書く', () => {
+  it('封筒に版・種別・アプリ名・保存時刻・文書を書く', () => {
     const text = serializeDocument(createEmptyPartDocument(), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
+    expect(text).toContain(`"kind": "${PCAD_DOCUMENT_KIND}"`);
     expect(text).toContain(`"app": "${PCAD_APP_NAME}"`);
     expect(text).toContain(`"savedAt": "${SAVED_AT}"`);
+  });
+
+  it('書き出す種別はいつでも part(部品)である(要件§8)', () => {
+    expect(PCAD_DOCUMENT_KIND).toBe('part');
+    const text = serializeDocument(richDocument(), { savedAt: SAVED_AT });
+    expect(text).not.toContain('"kind": "assembly"');
+    expect(text).not.toContain('"kind": "drawing"');
   });
 
   it('インデントは 2 で、末尾に改行が 1 つだけ付く', () => {
@@ -273,6 +287,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(
       `{
   "schema": 2,
+  "kind": "part",
   "app": "PointerCAD",
   "savedAt": "2026-09-03T01:23:45.678Z",
   "document": {
@@ -418,6 +433,36 @@ describe('読み込みの断り方(FR-504、NFR-UX-5)', () => {
     expect(error.message).toContain('PointerCAD の部品ファイルではないようです');
   });
 
+  it('種別の欄が無ければ PointerCAD のファイルではないと断る(統括の決定、要件§8)', () => {
+    const file = JSON.stringify({
+      schema: PCAD_SCHEMA_VERSION,
+      app: PCAD_APP_NAME,
+      savedAt: SAVED_AT,
+      document: rawDocument(),
+    });
+    const error = expectError(parseDocument(file));
+    expect(error.code).toBe('notPcad');
+    expect(error.message).toContain('PointerCAD の部品ファイルではないようです');
+  });
+
+  it('種別が part でなければ、その種別を添えてまだ対応していないと断る', () => {
+    const error = expectError(parseDocument(rawFile({ kind: 'assembly' })));
+    expect(error.code).toBe('unsupportedKind');
+    expect(error.message).toContain('assembly');
+    expect(error.message).toContain('まだ対応していません');
+  });
+
+  it('種別が図面でも同じように断る(P2 は部品だけを読む)', () => {
+    const error = expectError(parseDocument(rawFile({ kind: 'drawing' })));
+    expect(error.code).toBe('unsupportedKind');
+    expect(error.message).toContain('drawing');
+  });
+
+  it('種別が文字列でなければ PointerCAD のファイルではないと断る', () => {
+    const error = expectError(parseDocument(rawFile({ kind: 2 })));
+    expect(error.code).toBe('notPcad');
+  });
+
   it('版 3 は「新しい版で保存されています」と断る', () => {
     const error = expectError(parseDocument(rawFile({ schema: 3 })));
     expect(error.code).toBe('unsupportedNewVersion');
@@ -490,7 +535,12 @@ describe('読み込みの断り方(FR-504、NFR-UX-5)', () => {
   });
 
   it('文書の欄そのものが無ければ断る', () => {
-    const file = JSON.stringify({ schema: PCAD_SCHEMA_VERSION, app: PCAD_APP_NAME, savedAt: SAVED_AT });
+    const file = JSON.stringify({
+      schema: PCAD_SCHEMA_VERSION,
+      kind: PCAD_DOCUMENT_KIND,
+      app: PCAD_APP_NAME,
+      savedAt: SAVED_AT,
+    });
     const error = expectError(parseDocument(file));
     expect(error.code).toBe('missingField');
     expect(error.message).toContain('document');

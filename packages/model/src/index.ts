@@ -19,3 +19,14 @@ export {
   planeToWorld, polarOffset, projectOntoPlane, radiansToDegrees,
   WORK_PLANE_IDS, WORK_PLANES, worldToPlane,
 } from './sketch/planeMath.js';
+export type {
+  CoordinateInput, PointReference, ResolvedArc, ResolvedCurve, ResolvedFace,
+  ResolvedPoint, ResolvedSegment, ResolvedSketch, SketchArcFeature, SketchDocument,
+  SketchElementRef, SketchError, SketchErrorCode, SketchFaceFeature, SketchFaceMesh,
+  SketchFeature, SketchFeatureKind, SketchLineFeature, SketchMesh, SketchPointArrayFeature,
+  SketchPointFeature,
+} from './sketch/types.js';
+export {
+  absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
+  DEFAULT_FACE_COLOR, findFeature, nextFeatureId, nextFeatureName, removeFeature, replaceFeature,
+} from './sketch/createSketchDocument.js';

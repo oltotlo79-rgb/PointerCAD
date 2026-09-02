@@ -23,6 +23,7 @@
   "statusBar.loading": "形を計算しています…",
   "statusBar.unit": "単位: mm",
   "statusBar.error": "計算に失敗しました:",
+  "viewport.label": "3D ビューポート",
   "viewCube.front": "前",
   "viewCube.back": "後",
   "viewCube.right": "右",

@@ -88,9 +88,19 @@
 }
 
 .pcad-viewport__canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
+
+  /* 視点操作をブラウザのスクロールや長押しに横取りさせない。 */
+  touch-action: none;
+}
+
+.pcad-viewport__canvas:focus-visible {
+  outline: 2px solid #0e639c;
+  outline-offset: -2px;
 }
 
 .pcad-viewport__empty-state {

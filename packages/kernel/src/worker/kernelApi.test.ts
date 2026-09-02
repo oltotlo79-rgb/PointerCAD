@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
-import type { CurveSpec } from '../types.js';
+import type { CurveSpec, SolidProgress, SolidStepRequest } from '../types.js';
 import { createKernelApi } from './kernelApi.js';
 
 /** XY 平面の 10×10 の正方形を、隣り合う頂点をつなぐ 4 本の線分で表す。 */
@@ -12,29 +12,80 @@ const SQUARE_CURVES: readonly CurveSpec[] = [
   { kind: 'segment', from: [0, 10, 0], to: [0, 0, 0] },
 ];
 
+/** XY 平面の 40×30 の長方形。Z へ 10 押し出すと 40·30·10 = 12000 mm³(手計算)。 */
+const RECTANGLE_CURVES: readonly CurveSpec[] = [
+  { kind: 'segment', from: [0, 0, 0], to: [40, 0, 0] },
+  { kind: 'segment', from: [40, 0, 0], to: [40, 30, 0] },
+  { kind: 'segment', from: [40, 30, 0], to: [0, 30, 0] },
+  { kind: 'segment', from: [0, 30, 0], to: [0, 0, 0] },
+];
+const RECTANGLE_EXTRUDE_VOLUME = 12000;
+
+/** 40×30 の長方形を Z へ distance だけ押し出す 1 段。鍵は検査ごとに変える。 */
+function extrudeStep(id: string, key: string, distance: number): SolidStepRequest {
+  return {
+    key,
+    id,
+    label: id,
+    visible: true,
+    step: {
+      kind: 'extrude',
+      profile: RECTANGLE_CURVES,
+      direction: [0, 0, 1],
+      distance,
+    },
+  };
+}
+
 describe('KernelApi', () => {
   const api = createKernelApi(loadOcctForNode);
 
-  it('箱のメッシュを1回の呼び出しで面・稜線ともに返す', async () => {
-    const mesh = await api.tessellateBox({ dx: 10, dy: 20, dz: 30 });
-    expect(mesh.faceCount).toBe(6);
-    expect(mesh.triangleCount).toBe(12);
-    expect(mesh.edgeCount).toBe(12);
-    expect(mesh.positions.length).toBe(72);
-    expect(mesh.indices.length).toBe(36);
-    expect(mesh.edgePositions.length).toBe(72);
-  });
-
-  it('粗さを指定しても直方体の三角形数は変わらない', async () => {
-    const mesh = await api.tessellateBox(
-      { dx: 10, dy: 20, dz: 30 },
-      { linearDeflection: 0.01, angularDeflection: 0.1 },
+  it('履歴の段から立体のメッシュを作り、進捗を段ごとに知らせる', async () => {
+    const progress: SolidProgress[] = [];
+    const result = await api.recomputeSolids(
+      { steps: [extrudeStep('extrude-1', 'api-extrude', 10)], generation: 1 },
+      {},
+      (value) => {
+        progress.push(value);
+      },
     );
-    expect(mesh.triangleCount).toBe(12);
+
+    expect(result.failures).toEqual([]);
+    expect(result.cancelled).toBe(false);
+    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0].id).toBe('extrude-1');
+    expect(result.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+    expect(result.bodies[0].faceCount).toBe(6);
+    expect(result.bodies[0].edgeCount).toBe(12);
+    expect(progress).toEqual([
+      { stepId: 'extrude-1', index: 0, total: 1, label: 'extrude-1' },
+    ]);
   });
 
-  it('寸法が不正なら理由つきで失敗する', async () => {
-    await expect(api.tessellateBox({ dx: -1, dy: 1, dz: 1 })).rejects.toThrow(/箱の寸法は正の数/);
+  it('同じ鍵の依頼を続けて呼ぶと、窓口が持つキャッシュが効く(NFR-PF-3)', async () => {
+    const request = {
+      steps: [extrudeStep('extrude-1', 'api-cache', 10)],
+      generation: 1,
+    };
+
+    const first = await api.recomputeSolids(request);
+    expect(first.cacheHits).toBe(0);
+
+    const second = await api.recomputeSolids(request);
+    expect(second.cacheHits).toBe(1);
+    expect(second.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+  });
+
+  it('作れない段は例外にせず、理由つきの失敗として返す(FR-504)', async () => {
+    const result = await api.recomputeSolids({
+      steps: [extrudeStep('extrude-1', 'api-bad', 0), extrudeStep('extrude-2', 'api-good', 10)],
+      generation: 1,
+    });
+
+    expect(result.failures).toEqual([
+      { id: 'extrude-1', message: '押し出す長さは 0 より大きい数にしてください。' },
+    ]);
+    expect(result.bodies.map((body) => body.id)).toEqual(['extrude-2']);
   });
 
   it('スケッチの曲線を折れ線にして返す', async () => {

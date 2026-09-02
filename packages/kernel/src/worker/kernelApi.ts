@@ -1,29 +1,46 @@
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 
-import { extractEdges } from '../occt/extractEdges.js';
-import { makeBox } from '../occt/makeBox.js';
 import { makePlanarFace } from '../occt/makePlanarFace.js';
 import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
 import { tessellate } from '../occt/tessellate.js';
 import type {
-  BoxParameters,
   FaceMeshData,
-  MeshData,
   SketchTessellation,
   SketchTessellationFailure,
   SketchTessellationRequest,
+  SolidRecomputeRequest,
+  SolidRecomputeResult,
   TessellationOptions,
 } from '../types.js';
+// 窓口の名前と実体の名前が同じだと読み分けにくいので、実体は別名で取り込む。
+import {
+  recomputeSolids as runSolidRecompute,
+  type CachedSolid,
+  type SolidCancelToken,
+  type SolidProgressCallback,
+} from './recomputeSolids.js';
+import { createShapeCache } from './shapeCache.js';
 
 /** UI 側から Comlink 越しに呼べる幾何カーネルの窓口。 */
 export interface KernelApi {
-  /** 直方体を作って表示用メッシュを返す。 */
-  tessellateBox(parameters: BoxParameters, options?: TessellationOptions): Promise<MeshData>;
   /** スケッチの曲線を折れ線に、閉ループを面にする(FR-309)。 */
   tessellateSketch(
     request: SketchTessellationRequest,
     options?: TessellationOptions,
   ): Promise<SketchTessellation>;
+  /**
+   * 部品の履歴を先頭から計算し直し、表示用のボディを返す(FR-401〜404、FR-504)。
+   *
+   * onProgress と cancelToken は Comlink.proxy で包んだ関数を渡す。
+   * cancelToken が true を返すと、段と段の間で残りを打ち切って cancelled: true で返る
+   * (1 段の演算そのものは途中で止められない。NFR-PF-4)。
+   */
+  recomputeSolids(
+    request: SolidRecomputeRequest,
+    options?: TessellationOptions,
+    onProgress?: SolidProgressCallback,
+    cancelToken?: SolidCancelToken,
+  ): Promise<SolidRecomputeResult>;
 }
 
 /**
@@ -31,27 +48,12 @@ export interface KernelApi {
  * ブラウザでは loadOcctForBrowser、Node のテストでは loadOcctForNode を渡す。
  */
 export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): KernelApi {
-  return {
-    async tessellateBox(parameters, options = {}): Promise<MeshData> {
-      const oc = await loadOcct();
-      const handle = makeBox(oc, parameters);
-      try {
-        const surface = tessellate(oc, handle.shape, options);
-        const edges = extractEdges(oc, handle.shape, options);
-        return {
-          positions: surface.positions,
-          normals: surface.normals,
-          indices: surface.indices,
-          edgePositions: edges.positions,
-          triangleCount: surface.triangleCount,
-          faceCount: surface.faceCount,
-          edgeCount: edges.edgeCount,
-        };
-      } finally {
-        handle.delete();
-      }
-    },
+  // 形状キャッシュは窓口 1 つにつき 1 つ。再計算をまたいで残すことで、
+  // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
+  // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない(2026-09-03 統括判断)。
+  const cache = createShapeCache<CachedSolid>();
 
+  return {
     async tessellateSketch(sketch, options = {}): Promise<SketchTessellation> {
       const oc = await loadOcct();
       const curvePolylines: Float32Array[] = [];
@@ -94,6 +96,16 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
       }
 
       return { curvePolylines, faces, failures };
+    },
+
+    async recomputeSolids(
+      request,
+      options = {},
+      onProgress,
+      cancelToken,
+    ): Promise<SolidRecomputeResult> {
+      const oc = await loadOcct();
+      return runSolidRecompute({ oc, cache }, request, options, onProgress, cancelToken);
     },
   };
 }

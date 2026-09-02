@@ -5,21 +5,9 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { SewStepSpec, TessellationOptions } from '../types.js';
+import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace, type OcctFaceHandle } from './makePlanarFace.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
-
-/**
- * OCCT の立体と、その立体を作るために確保した領域の解放手続き
- * (makeBox.ts の OcctShapeHandle と同じ形)。
- *
- * 計画書 タスク4 はこの型を makeSolidSweep.ts(タスク3)から取り込む形で書かれているが、
- * 本タスクの着手時点で makeSolidSweep.ts は未作成のため、同じ形をここで定義している。
- * 輸出をまとめるタスク7 で置き場を 1 か所へ寄せる。
- */
-export interface OcctSolidHandle {
-  readonly shape: TopoDS_Shape;
-  delete(): void;
-}
 
 /**
  * 縫合に要る面の最小の枚数(§0.a-0.7)。
@@ -87,7 +75,7 @@ export function sewSolid(
   oc: OpenCascadeInstance,
   spec: SewStepSpec,
   options: TessellationOptions = {},
-): OcctSolidHandle {
+): OcctShapeHandle {
   if (spec.profiles.length < MINIMUM_PROFILE_COUNT) {
     throw new Error('立体にするには面が 2 枚以上必要です。');
   }

@@ -1,14 +1,9 @@
-import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
+import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { ExtrudeStepSpec, RevolveStepSpec, TessellationOptions, Vec3Tuple } from '../types.js';
+import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
-
-/** OCCT の形と、その形を作るために確保した領域の解放手続き(makeBox.ts の OcctShapeHandle と同じ形)。 */
-export interface OcctSolidHandle {
-  readonly shape: TopoDS_Shape;
-  delete(): void;
-}
 
 /** OCCT が確保した領域を持ち、まとめて解放できるもの。 */
 interface OcctDeletable {
@@ -103,7 +98,7 @@ export function makeExtrudeSolid(
   oc: OpenCascadeInstance,
   spec: ExtrudeStepSpec,
   options: TessellationOptions = {},
-): OcctSolidHandle {
+): OcctShapeHandle {
   if (!Number.isFinite(spec.distance) || spec.distance <= 0) {
     throw new Error('押し出す長さは 0 より大きい数にしてください。');
   }
@@ -157,7 +152,7 @@ export function makeRevolveSolid(
   oc: OpenCascadeInstance,
   spec: RevolveStepSpec,
   options: TessellationOptions = {},
-): OcctSolidHandle {
+): OcctShapeHandle {
   if (!Number.isFinite(spec.angle) || spec.angle <= 0 || spec.angle > MAX_REVOLVE_ANGLE) {
     throw new Error('回転の角度は 0 より大きく 360 度以下にしてください。');
   }

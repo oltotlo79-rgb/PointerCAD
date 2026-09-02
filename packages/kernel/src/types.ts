@@ -146,6 +146,12 @@ export interface BooleanStepSpec {
   readonly toolKey: string;
 }
 
+/**
+ * 和・差・積の別(FR-404)。
+ * 依頼の型 BooleanStepSpec から取り出すので、依頼と実装で選択肢が食い違わない。
+ */
+export type BooleanOperation = BooleanStepSpec['operation'];
+
 export type SolidStepSpec = ExtrudeStepSpec | RevolveStepSpec | SewStepSpec | BooleanStepSpec;
 
 /** 履歴 1 段ぶんの依頼。 */
@@ -205,7 +211,12 @@ export interface SolidRecomputeResult {
 
 /** 計算中の進み具合。段を始める前に 1 回ずつ知らせる(NFR-PF-4)。 */
 export interface SolidProgress {
-  readonly done: number;
+  /** これから計算する段の識別子(SolidStepRequest.id と同じ)。 */
+  readonly stepId: string;
+  /** これから計算する段の位置。0 から始まる。画面には index + 1 を出す。 */
+  readonly index: number;
+  /** 段の総数。 */
   readonly total: number;
+  /** 画面に出す段の名前(SolidStepRequest.label と同じ)。 */
   readonly label: string;
 }

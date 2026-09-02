@@ -5,15 +5,10 @@ import type {
   TopoDS_Shape,
 } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { BooleanStepSpec } from '../types.js';
+// 和・差・積の別 BooleanOperation は、依頼の型と同じ場所(types.ts)に置いてある。
+import type { BooleanOperation } from '../types.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
-
-/**
- * 和・差・積の別(FR-404)。
- * 依頼の型 BooleanStepSpec から取り出すので、依頼と実装で選択肢が食い違わない。
- */
-export type BooleanOperation = BooleanStepSpec['operation'];
 
 /**
  * これ未満の体積(mm³)は「何も残らなかった」とみなす。

@@ -6,7 +6,12 @@ export type {
   RecomputeResult,
 } from './types.js';
 export { createBoxPartDocument, DEFAULT_BOX_SIZE } from './createBoxPartDocument.js';
-export { createKernelBridge, type KernelBridge } from './kernelBridge.js';
+export {
+  createKernelBridge,
+  type KernelBridge,
+  type SketchFaceFailure,
+  type SketchTessellationOutcome,
+} from './kernelBridge.js';
 export { recomputePart } from './recompute.js';
 export type { Vec3 } from './sketch/vec3.js';
 export {
@@ -34,3 +39,9 @@ export type { ResolveContext, ResolveOutcome } from './sketch/resolveCoordinate.
 export {
   resolveCoordinate, resolvePointReference, vertexKey,
 } from './sketch/resolveCoordinate.js';
+export {
+  arcPointAt, curveEnd, curveStart, fitPlaneNormal, isFullCircle, isPlanar,
+  MAX_POINT_ARRAY_COUNT, resolveSketch,
+} from './sketch/resolveSketch.js';
+export type { SketchRecomputeResult } from './sketch/recomputeSketch.js';
+export { recomputeSketch, reevaluateDocument } from './sketch/recomputeSketch.js';

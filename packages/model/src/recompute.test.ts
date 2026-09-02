@@ -16,7 +16,12 @@ const EMPTY_MESH: PartMesh = {
 function createFakeBridge(
   tessellateBox: KernelBridge['tessellateBox'],
 ): KernelBridge {
-  return { tessellateBox, dispose: vi.fn() };
+  return {
+    tessellateBox,
+    // 部品の再計算はスケッチの面を作らない。呼ばれたら分かるように失敗させる。
+    tessellateSketchFaces: () => Promise.reject(new Error('このテストでは面を作らない')),
+    dispose: vi.fn(),
+  };
 }
 
 describe('部品の再計算', () => {

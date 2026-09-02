@@ -30,3 +30,30 @@ export interface TessellationOptions {
 
 export const DEFAULT_LINEAR_DEFLECTION = 0.1;
 export const DEFAULT_ANGULAR_DEFLECTION = 0.5;
+
+/** 3 次元の点・向き。単位は mm(NFR-RE-3)。 */
+export type Vec3Tuple = readonly [number, number, number];
+
+/** 2 点を結ぶ線分(FR-304)。 */
+export interface SegmentSpec {
+  readonly kind: 'segment';
+  readonly from: Vec3Tuple;
+  readonly to: Vec3Tuple;
+}
+
+/**
+ * 円弧(FR-305、中心+半径+開始角+終了角)。
+ * 角度はラジアンで、xAxis の向きを 0 とし normal まわりに正。
+ * 終了角 − 開始角の絶対値が 2π 以上なら全周の円になる。
+ */
+export interface ArcSpec {
+  readonly kind: 'arc';
+  readonly center: Vec3Tuple;
+  readonly normal: Vec3Tuple;
+  readonly xAxis: Vec3Tuple;
+  readonly radius: number;
+  readonly startAngle: number;
+  readonly endAngle: number;
+}
+
+export type CurveSpec = SegmentSpec | ArcSpec;

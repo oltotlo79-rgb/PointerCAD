@@ -16,7 +16,7 @@ catalog:
   electron: 44.1.1
   eslint: 10.9.1
   eslint-plugin-react-hooks: 7.1.1
-  globals: 17.12.0
+  globals: 17.11.0
   opencascade.js: 2.0.0-beta.b5ff984
   react: 19.2.8
   react-dom: 19.2.8
@@ -26,9 +26,6 @@ catalog:
   vite: 8.2.2
   vitest: 4.1.11
   zustand: 5.0.15
-
-minimumReleaseAgeExclude:
-  - globals@17.12.0
 
 # Electron はインストール後スクリプトでバイナリを取得する。pnpm 10 以降は
 # 既定でインストール後スクリプトを実行しないため、明示的に許可する。

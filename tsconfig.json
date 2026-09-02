@@ -1,6 +1,10 @@
 {
   "files": [],
   "references": [
-    { "path": "./tsconfig.tools.json" }
+    { "path": "./tsconfig.tools.json" },
+    { "path": "./packages/expression" },
+    { "path": "./packages/help-content" },
+    { "path": "./packages/drawing" },
+    { "path": "./packages/io" }
   ]
 }

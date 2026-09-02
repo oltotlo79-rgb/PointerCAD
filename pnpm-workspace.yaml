@@ -13,6 +13,7 @@ catalog:
   "@types/three": 0.185.4
   "@vitejs/plugin-react": 6.1.1
   comlink: 4.4.2
+  decimal.js: 10.6.0
   electron: 44.1.0
   eslint: 10.9.1
   eslint-plugin-react-hooks: 7.1.1

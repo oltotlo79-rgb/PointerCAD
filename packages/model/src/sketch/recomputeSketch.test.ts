@@ -25,7 +25,6 @@ const EMPTY_OUTCOME: SketchTessellationOutcome = { mesh: { faces: [] }, failures
  */
 function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
   return {
-    tessellateBox: () => Promise.reject(new Error('このテストでは箱を作らない')),
     tessellateSketchFaces: () => Promise.resolve(EMPTY_OUTCOME),
     dispose: () => undefined,
     ...overrides,

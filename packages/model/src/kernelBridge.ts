@@ -16,7 +16,6 @@ import {
 import * as Comlink from 'comlink';
 
 import type { ResolvedCurve, ResolvedFace, SketchFaceMesh, SketchMesh } from './sketch/types.js';
-import type { PartMesh } from './types.js';
 
 /** 面 1 枚を作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
 export interface SketchFaceFailure {
@@ -36,7 +35,6 @@ export interface SketchTessellationOutcome {
 
 /** model から幾何カーネルへの唯一の接点。ここ以外から kernel を呼ばない。 */
 export interface KernelBridge {
-  tessellateBox(dx: number, dy: number, dz: number): Promise<PartMesh>;
   /** 面の一覧をカーネルへ渡し、表示用の三角形を受け取る(FR-309)。 */
   tessellateSketchFaces(faces: readonly ResolvedFace[]): Promise<SketchTessellationOutcome>;
   dispose(): void;
@@ -113,17 +111,6 @@ export function createKernelBridge(): KernelBridge {
   const remote = Comlink.wrap<KernelApi>(worker);
 
   return {
-    async tessellateBox(dx, dy, dz): Promise<PartMesh> {
-      const mesh = await remote.tessellateBox({ dx, dy, dz });
-      return {
-        positions: mesh.positions,
-        normals: mesh.normals,
-        indices: mesh.indices,
-        edgePositions: mesh.edgePositions,
-        triangleCount: mesh.triangleCount,
-      };
-    },
-
     async tessellateSketchFaces(faces): Promise<SketchTessellationOutcome> {
       if (faces.length === 0) {
         return { mesh: { faces: [] }, failures: [] };

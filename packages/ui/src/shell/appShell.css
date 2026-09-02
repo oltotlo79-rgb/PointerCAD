@@ -1,0 +1,130 @@
+.pcad-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  min-height: 0;
+  font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  font-size: 13px;
+  color: #e6e6e6;
+  background: #1e1e1e;
+}
+
+.pcad-shell__body {
+  display: grid;
+  grid-template-columns: 240px 1fr 280px;
+  min-height: 0;
+}
+
+.pcad-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 10px;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.pcad-toolbar__group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.pcad-toolbar__button {
+  padding: 4px 10px;
+  color: inherit;
+  cursor: pointer;
+  background: #333336;
+  border: 1px solid #45454a;
+  border-radius: 3px;
+}
+
+.pcad-toolbar__button[aria-pressed="true"] {
+  background: #0e639c;
+  border-color: #1b80c4;
+}
+
+.pcad-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: #252526;
+}
+
+.pcad-panel--left {
+  border-right: 1px solid #3c3c3c;
+}
+
+.pcad-panel--right {
+  border-left: 1px solid #3c3c3c;
+}
+
+.pcad-panel__title {
+  padding: 6px 10px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b9b9b9;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.pcad-panel__list {
+  padding: 4px 10px;
+  margin: 0;
+  list-style: none;
+}
+
+.pcad-panel__empty {
+  padding: 10px;
+  color: #9a9a9a;
+}
+
+.pcad-viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #2b2b2e;
+}
+
+.pcad-viewport__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pcad-viewport__empty-state {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  padding: 6px 12px;
+  color: #cfcfcf;
+  background: rgb(0 0 0 / 45%);
+  border-radius: 4px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.pcad-viewcube {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 120px;
+  height: 120px;
+}
+
+.pcad-statusbar {
+  display: flex;
+  gap: 16px;
+  padding: 4px 10px;
+  background: #007acc;
+  border-top: 1px solid #3c3c3c;
+}
+
+.pcad-statusbar__spacer {
+  flex: 1;
+}
+
+.pcad-statusbar--error {
+  background: #a1260d;
+}

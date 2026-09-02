@@ -1,12 +1,80 @@
+/*
+ * PointerCAD 画面シェルの見た目。
+ *
+ * 色・書体・間隔・角丸はすべて :root のカスタムプロパティ(--pcad-*)に集約し、
+ * 個々の規則へ色を直書きしない。見た目を変えるときはトークンだけを触れば済むようにする。
+ */
+
+:root {
+  /* ブラウザ既定の下地(スクロールバー・選択色など)も暗色に揃える。 */
+  color-scheme: dark;
+
+  /* 面 */
+  --pcad-bg: #16181d;
+  --pcad-surface: #1e2128;
+  --pcad-surface-raised: #262a33;
+  --pcad-border: #30353f;
+  --pcad-border-strong: #3d434f;
+
+  /* 文字 */
+  --pcad-text: #e8eaf0;
+  --pcad-text-muted: #9aa3b2;
+  --pcad-text-faint: #6b7380;
+
+  /* 強調 */
+  --pcad-accent: #4f8cff;
+  --pcad-accent-hover: #6b9eff;
+  --pcad-accent-active: #3a74e0;
+  --pcad-accent-soft: rgb(79 140 255 / 16%);
+  --pcad-accent-soft-hover: rgb(79 140 255 / 24%);
+  --pcad-accent-border: rgb(79 140 255 / 45%);
+
+  /* 状態(成功・注意は今後の機能のために定義だけしておく) */
+  --pcad-success: #3ddc97;
+  --pcad-warning: #ffb454;
+  --pcad-danger: #ff5c5c;
+
+  /* 失敗の帯。半透明を重ねると下地しだいで濃さが変わるため、混色後の値を持つ。 */
+  --pcad-danger-surface: #38242a;
+  --pcad-danger-text: #ff8f8f;
+
+  /* ビューポートの奥行き(canvas は透明で、この下地が透ける) */
+  --pcad-viewport-top: #2a2e37;
+  --pcad-viewport-bottom: #1b1e24;
+
+  /* 浮いた要素の下地 */
+  --pcad-overlay: rgb(30 33 40 / 88%);
+
+  /* 書体 */
+  --pcad-font: "Segoe UI", "Yu Gothic UI", "Meiryo", "Noto Sans JP", system-ui, sans-serif;
+  --pcad-font-size: 13px;
+  --pcad-font-size-heading: 12px;
+  --pcad-font-size-small: 11px;
+
+  /* 形と間隔 */
+  --pcad-radius: 6px;
+  --pcad-radius-small: 4px;
+  --pcad-space-1: 4px;
+  --pcad-space-2: 8px;
+  --pcad-space-3: 12px;
+  --pcad-space-4: 16px;
+  --pcad-shadow: 0 1px 2px rgb(0 0 0 / 40%);
+  --pcad-shadow-raised: 0 4px 14px rgb(0 0 0 / 45%);
+  --pcad-transition: 120ms ease;
+}
+
+/* ===== 全体の骨格 ===== */
+
 .pcad-shell {
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100%;
   min-height: 0;
-  font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
-  font-size: 13px;
-  color: #e6e6e6;
-  background: #1e1e1e;
+  font-family: var(--pcad-font);
+  font-size: var(--pcad-font-size);
+  line-height: 1.5;
+  color: var(--pcad-text);
+  background: var(--pcad-bg);
 }
 
 .pcad-shell__body {
@@ -15,76 +83,354 @@
   min-height: 0;
 }
 
+/* アイコンは文字の色に従い、縮まない。 */
+.pcad-icon {
+  flex: none;
+}
+
+/* ===== ツールバー ===== */
+
 .pcad-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  padding: 6px 10px;
-  background: #252526;
-  border-bottom: 1px solid #3c3c3c;
+  gap: var(--pcad-space-3);
+  align-items: flex-end;
+  padding: var(--pcad-space-2) var(--pcad-space-3);
+  user-select: none;
+  background: var(--pcad-surface);
+  border-bottom: 1px solid var(--pcad-border);
 }
 
+.pcad-toolbar__brand {
+  display: flex;
+  gap: var(--pcad-space-2);
+  align-items: center;
+  height: 30px;
+  padding-right: var(--pcad-space-1);
+}
+
+.pcad-toolbar__mark {
+  color: var(--pcad-accent);
+}
+
+.pcad-toolbar__wordmark {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--pcad-text);
+}
+
+/* モードのタブ(モデリング / アセンブリ / 図面) */
+.pcad-toolbar__modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius);
+}
+
+.pcad-toolbar__spacer {
+  flex: 1 1 auto;
+}
+
+/* 機能グループ(区画名+操作). 区画名は説明のツールチップを持つ。 */
 .pcad-toolbar__group {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: 3px;
   align-items: center;
 }
 
-.pcad-toolbar__button {
-  padding: 4px 10px;
-  color: inherit;
-  cursor: pointer;
-  background: #333336;
-  border: 1px solid #45454a;
-  border-radius: 3px;
+.pcad-toolbar__group-label {
+  font-size: var(--pcad-font-size-small);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--pcad-text-muted);
+  cursor: help;
 }
 
-.pcad-toolbar__button[aria-pressed="true"] {
-  background: #0e639c;
-  border-color: #1b80c4;
+/* ===== 操作要素(タブ・ボタン・セグメント) ===== */
+
+.pcad-tab,
+.pcad-button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font: inherit;
+  color: var(--pcad-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pcad-radius-small);
+  transition:
+    background-color var(--pcad-transition),
+    color var(--pcad-transition);
 }
+
+.pcad-tab {
+  height: 24px;
+  padding: 0 var(--pcad-space-3);
+}
+
+.pcad-button {
+  height: 26px;
+  padding: 0 10px;
+}
+
+.pcad-tab:hover,
+.pcad-button:hover {
+  color: var(--pcad-text);
+  background: var(--pcad-surface-raised);
+}
+
+.pcad-tab:active,
+.pcad-button:active {
+  color: var(--pcad-text);
+  background: var(--pcad-border-strong);
+}
+
+.pcad-tab:focus-visible,
+.pcad-button:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+/* 選択中: アクセントの淡い面+細い枠。アイコンだけアクセント色にする。 */
+.pcad-tab[aria-pressed="true"],
+.pcad-button[aria-pressed="true"] {
+  color: var(--pcad-text);
+  background: var(--pcad-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
+}
+
+.pcad-tab[aria-pressed="true"] .pcad-icon,
+.pcad-button[aria-pressed="true"] .pcad-icon {
+  color: var(--pcad-accent);
+}
+
+.pcad-tab[aria-pressed="true"]:hover,
+.pcad-button[aria-pressed="true"]:hover {
+  background: var(--pcad-accent-soft-hover);
+}
+
+.pcad-tab[aria-pressed="true"]:hover .pcad-icon,
+.pcad-button[aria-pressed="true"]:hover .pcad-icon {
+  color: var(--pcad-accent-hover);
+}
+
+/* 使えないもの(準備中のモード)。押しても何も起きないことを見た目で示す。 */
+.pcad-tab[aria-disabled="true"] {
+  color: var(--pcad-text-faint);
+  cursor: not-allowed;
+}
+
+.pcad-tab[aria-disabled="true"]:hover,
+.pcad-tab[aria-disabled="true"]:active {
+  color: var(--pcad-text-faint);
+  background: transparent;
+}
+
+/* 押しボタン(トグルでないもの)は、押した瞬間だけアクセント寄りにする。 */
+.pcad-button--action:active {
+  color: var(--pcad-text);
+  background: var(--pcad-accent-active);
+}
+
+/* 連なった選択肢。溝(暗い下地)の中に丸いボタンが並ぶ形。 */
+.pcad-segmented {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius);
+}
+
+/* ===== 左右のパネル ===== */
 
 .pcad-panel {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
-  background: #252526;
+  overflow: hidden;
+  background: var(--pcad-surface);
 }
 
 .pcad-panel--left {
-  border-right: 1px solid #3c3c3c;
+  border-right: 1px solid var(--pcad-border);
 }
 
 .pcad-panel--right {
-  border-left: 1px solid #3c3c3c;
+  border-left: 1px solid var(--pcad-border);
 }
 
 .pcad-panel__title {
-  padding: 6px 10px;
+  flex: none;
+  padding: var(--pcad-space-2) var(--pcad-space-3);
   margin: 0;
-  font-size: 12px;
+  font-size: var(--pcad-font-size-heading);
   font-weight: 600;
-  color: #b9b9b9;
-  border-bottom: 1px solid #3c3c3c;
+  letter-spacing: 0.04em;
+  color: var(--pcad-text-muted);
+  user-select: none;
+  border-bottom: 1px solid var(--pcad-border);
 }
 
-.pcad-panel__list {
-  padding: 4px 10px;
+.pcad-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pcad-border-strong) transparent;
+}
+
+/* 何も無いときの案内(NFR-UX-6)。 */
+.pcad-panel__empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  align-items: center;
+  padding: var(--pcad-space-4) var(--pcad-space-3);
+  margin: 0;
+  color: var(--pcad-text-muted);
+  text-align: center;
+}
+
+.pcad-panel__empty .pcad-icon {
+  color: var(--pcad-text-faint);
+}
+
+.pcad-panel__empty-text {
+  margin: 0;
+}
+
+/* ===== モデルブラウザ(ツリー) ===== */
+
+.pcad-tree {
+  padding: var(--pcad-space-1) 0;
+  margin: 0;
+  list-style: none;
+  user-select: none;
+}
+
+.pcad-tree__children {
+  position: relative;
+  padding: 0;
   margin: 0;
   list-style: none;
 }
 
-.pcad-panel__empty {
-  padding: 10px;
-  color: #9a9a9a;
+/* 階層の深さを示す縦の細線。 */
+.pcad-tree__children::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 15px;
+  width: 1px;
+  content: "";
+  background: var(--pcad-border);
 }
+
+.pcad-tree__row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  height: 26px;
+  padding: 0 var(--pcad-space-3) 0 var(--pcad-space-2);
+  font: inherit;
+  color: var(--pcad-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  transition: background-color var(--pcad-transition);
+}
+
+button.pcad-tree__row {
+  cursor: pointer;
+}
+
+.pcad-tree__row:hover {
+  background: var(--pcad-surface-raised);
+}
+
+button.pcad-tree__row:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+.pcad-tree__row--child {
+  padding-left: 26px;
+}
+
+.pcad-tree__chevron {
+  color: var(--pcad-text-muted);
+  transition: transform var(--pcad-transition);
+}
+
+.pcad-tree__chevron--open {
+  transform: rotate(90deg);
+}
+
+.pcad-tree__icon {
+  color: var(--pcad-text-muted);
+}
+
+.pcad-tree__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== プロパティ ===== */
+
+.pcad-section {
+  padding: var(--pcad-space-2) 0 var(--pcad-space-3);
+}
+
+.pcad-section__title {
+  padding: 0 var(--pcad-space-3) var(--pcad-space-1);
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--pcad-text-muted);
+}
+
+.pcad-properties {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--pcad-space-1) var(--pcad-space-2);
+  align-items: baseline;
+  padding: 0 var(--pcad-space-3);
+  margin: 0;
+}
+
+.pcad-properties__key {
+  overflow: hidden;
+  color: var(--pcad-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pcad-properties__value {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-text);
+  text-align: right;
+}
+
+/* ===== ビューポート ===== */
 
 .pcad-viewport {
   position: relative;
   min-width: 0;
   min-height: 0;
-  background: #2b2b2e;
+
+  /* canvas は透明なので、この縦グラデーションが地の色になる。 */
+  background: linear-gradient(180deg, var(--pcad-viewport-top) 0%, var(--pcad-viewport-bottom) 100%);
 }
 
 .pcad-viewport__canvas {
@@ -99,47 +445,169 @@
 }
 
 .pcad-viewport__canvas:focus-visible {
-  outline: 2px solid #0e639c;
+  outline: 2px solid var(--pcad-accent);
   outline-offset: -2px;
 }
 
+/* 計算中の札。中央に浮かせる。操作の邪魔をしない。 */
+.pcad-viewport__overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.pcad-card {
+  display: flex;
+  gap: var(--pcad-space-2);
+  align-items: center;
+  padding: var(--pcad-space-2) var(--pcad-space-3);
+  color: var(--pcad-text);
+  background: var(--pcad-overlay);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius);
+  box-shadow: var(--pcad-shadow-raised);
+}
+
+/* 空状態ガイド(NFR-UX-6)。計算が終わって、まだ形が無いときだけ出す。 */
 .pcad-viewport__empty-state {
   position: absolute;
-  bottom: 16px;
+  bottom: var(--pcad-space-4);
   left: 50%;
-  padding: 6px 12px;
-  color: #cfcfcf;
-  background: rgb(0 0 0 / 45%);
-  border-radius: 4px;
+  display: flex;
+  gap: var(--pcad-space-2);
+  align-items: center;
+  padding: var(--pcad-space-2) var(--pcad-space-3);
+  color: var(--pcad-text);
+  background: var(--pcad-overlay);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius);
+  box-shadow: var(--pcad-shadow);
   transform: translateX(-50%);
   pointer-events: none;
 }
 
+.pcad-viewport__empty-state .pcad-icon {
+  color: var(--pcad-accent);
+}
+
+.pcad-viewport__empty-text {
+  margin: 0;
+}
+
+/* 計算中を示す回転印。 */
+.pcad-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--pcad-border-strong);
+  border-top-color: var(--pcad-accent);
+  border-radius: 50%;
+  animation: pcad-spin 800ms linear infinite;
+}
+
+@keyframes pcad-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 動きを減らす設定のときは、止めずにゆっくり回す。 */
+@media (prefers-reduced-motion: reduce) {
+  .pcad-spinner {
+    animation-duration: 2400ms;
+  }
+
+  .pcad-tab,
+  .pcad-button,
+  .pcad-tree__row,
+  .pcad-tree__chevron,
+  .pcad-viewcube {
+    transition: none;
+  }
+}
+
+/* ===== ビューキューブ ===== */
+
 .pcad-viewcube {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: var(--pcad-space-3);
+  right: var(--pcad-space-3);
   display: block;
   width: 120px;
   height: 120px;
   cursor: pointer;
+  border-radius: 50%;
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 45%));
+  transition: background-color var(--pcad-transition);
 
   /* 視点操作をブラウザのスクロールや長押しに横取りさせない。 */
   touch-action: none;
 }
 
+.pcad-viewcube:hover {
+  background: rgb(255 255 255 / 6%);
+}
+
+.pcad-viewcube:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: 2px;
+}
+
+/* ===== ステータスバー ===== */
+
 .pcad-statusbar {
   display: flex;
-  gap: 16px;
-  padding: 4px 10px;
-  background: #007acc;
-  border-top: 1px solid #3c3c3c;
+  gap: var(--pcad-space-3);
+  align-items: center;
+  height: 28px;
+  padding: 0 var(--pcad-space-3);
+  color: var(--pcad-text-muted);
+  user-select: none;
+  background: var(--pcad-surface);
+  border-top: 1px solid var(--pcad-border);
+}
+
+.pcad-statusbar__message {
+  display: flex;
+  gap: var(--pcad-space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.pcad-statusbar__message .pcad-icon {
+  color: var(--pcad-text-faint);
+}
+
+.pcad-statusbar__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pcad-statusbar__spacer {
-  flex: 1;
+  flex: 1 1 auto;
 }
 
+.pcad-statusbar__unit {
+  flex: none;
+  padding: 0 var(--pcad-space-2);
+  font-size: var(--pcad-font-size-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-text-muted);
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border);
+  border-radius: 999px;
+}
+
+/* 計算が失敗したときの帯。 */
 .pcad-statusbar--error {
-  background: #a1260d;
+  color: var(--pcad-danger-text);
+  background: var(--pcad-danger-surface);
+  border-top: 1px solid var(--pcad-danger);
+}
+
+.pcad-statusbar--error .pcad-icon {
+  color: var(--pcad-danger);
 }

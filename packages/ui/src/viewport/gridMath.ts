@@ -31,3 +31,33 @@ export function gridExtent(spacing: number): number {
 export function axisLength(spacing: number): number {
   return gridExtent(spacing);
 }
+
+/** 主線(濃い線)を入れる間隔。原点から数えて 5 本ごとに 1 本を主線にする(FR-104)。 */
+export const MAJOR_GRID_INTERVAL = 5;
+
+/** 原点から数えて index 本目(負は反対側)の方眼線が主線かどうか。 */
+export function isMajorGridLine(index: number): boolean {
+  return index % MAJOR_GRID_INTERVAL === 0;
+}
+
+/** 方眼が薄まらずに見える範囲。広がり(gridExtent)に対する比で表す。 */
+export const GRID_FADE_START_RATIO = 0.35;
+
+/**
+ * 遠くの方眼を薄くするための不透明度(0 〜 1)。
+ *
+ * 原点から `extent * GRID_FADE_START_RATIO` までは 1 のままで、そこから外へ向かって
+ * 一次関数で減り、広がりの端(`extent`)で 0 になる。端が四角く切れて見えないよう、
+ * 距離は軸ごとではなく原点からの直線距離で測る。
+ */
+export function gridFadeOpacity(distanceFromOrigin: number, extent: number): number {
+  if (extent <= 0) {
+    return 0;
+  }
+  const ratio = distanceFromOrigin / extent;
+  if (ratio <= GRID_FADE_START_RATIO) {
+    return 1;
+  }
+  const faded = (1 - ratio) / (1 - GRID_FADE_START_RATIO);
+  return Math.min(Math.max(faded, 0), 1);
+}

@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import { join } from 'node:path';
 
 import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './appProtocol.js';
@@ -23,7 +23,14 @@ function createMainWindow(): void {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
-    backgroundColor: '#1e1e1e',
+    // これより狭いとツールバーの機能グループが折り返して読みにくくなる。
+    minWidth: 960,
+    minHeight: 600,
+    // 画面の用意ができるまで出さない。白い一瞬の画面を見せないため。
+    show: false,
+    autoHideMenuBar: true,
+    // 画面本体の地の色(appShell.css の --pcad-bg)と合わせる。
+    backgroundColor: '#16181d',
     title: 'PointerCAD',
     webPreferences: {
       preload: preloadPath,
@@ -33,10 +40,16 @@ function createMainWindow(): void {
     },
   });
 
+  window.once('ready-to-show', () => {
+    window.show();
+  });
+
   void window.loadURL(devServerUrl ?? APP_ENTRY_URL);
 }
 
 void app.whenReady().then(() => {
+  // 既定のメニューバー(File / Edit / View / Window)は使わないので消す。
+  Menu.setApplicationMenu(null);
   handleAppScheme(rendererRoot);
   createMainWindow();
 

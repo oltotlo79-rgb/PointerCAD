@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import { cameraPosition, type OrbitState } from '../viewport/cameraMath.js';
-import { createFaceTexture, FACE_LABEL_KEYS } from './faceTexture.js';
+import { createFaceTexture, CUBE_FACES } from './faceTexture.js';
 import {
   regionFromLocalPoint,
   REGION_THRESHOLD,
@@ -45,8 +45,17 @@ const MAX_PIXEL_RATIO = 2;
 
 /** ホバー中の領域を示す板を、面からわずかに浮かせる量。面と重なってちらつくのを防ぐ。 */
 const HIGHLIGHT_LIFT = 0.012;
-const HIGHLIGHT_COLOR = 0x2f9bff;
+/** 画面全体で共通のアクセント色。押せる場所であることを一目で分かるようにする(NFR-UX-7)。 */
+const HIGHLIGHT_COLOR = 0x4f8cff;
 const HIGHLIGHT_OPACITY = 0.42;
+
+/** 立方体の稜線の色。面の地の色より一段暗くして、角の位置を読み取れるようにする。 */
+const EDGE_COLOR = 0x8a91a0;
+/**
+ * 稜線を面よりわずかに外へ広げる倍率。面とちょうど同じ位置だと深度が競って線が途切れる。
+ * 一辺 120 画素の表示で 0.4% は 0.3 画素未満なので、太って見えることはない。
+ */
+const EDGE_SCALE = 1.004;
 
 /** 領域の板の中心。面の中央(0)ならキューブの中心、端(±1)なら外寄りに置く。 */
 function highlightCenter(sign: AxisSign): number {
@@ -75,17 +84,28 @@ export function createViewCubeScene(canvas: HTMLCanvasElement, sizePixels: numbe
   const scene = new THREE.Scene();
 
   // 面の文字を確実に読ませたいので、光の当たり方に左右されない材質で描く。
-  const materials = FACE_LABEL_KEYS.map(
-    (key) => new THREE.MeshBasicMaterial({ map: createFaceTexture(key) }),
+  // 面ごとの明暗は光ではなく地の色で付ける(向きを変えても各面の明るさが変わらないので、
+  // どの面を見ているかが色でも分かる)。
+  const materials = CUBE_FACES.map(
+    (face) => new THREE.MeshBasicMaterial({ map: createFaceTexture(face.labelKey, face.fillColor) }),
   );
-  const cube = new THREE.Mesh(
-    new THREE.BoxGeometry(CUBE_HALF_SIZE * 2, CUBE_HALF_SIZE * 2, CUBE_HALF_SIZE * 2),
-    materials,
+  const cubeGeometry = new THREE.BoxGeometry(
+    CUBE_HALF_SIZE * 2,
+    CUBE_HALF_SIZE * 2,
+    CUBE_HALF_SIZE * 2,
   );
+  const cube = new THREE.Mesh(cubeGeometry, materials);
   // three.js の既定は Y 上、本アプリは Z 上。立方体を倒して軸の意味を合わせる。
-  // 向き(+90 度)と面の並びの対応は faceTexture.ts の FACE_LABEL_KEYS の注釈を参照。
+  // 向き(+90 度)と面の並びの対応は faceTexture.ts の CUBE_FACES の注釈を参照。
   cube.rotation.x = Math.PI / 2;
   scene.add(cube);
+
+  // 12 本の稜線。立方体の子にして向きを合わせ、当たり判定(intersectObject の非再帰)からは外す。
+  const edgeGeometry = new THREE.EdgesGeometry(cubeGeometry);
+  const edgeMaterial = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
+  const cubeEdges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+  cubeEdges.scale.setScalar(EDGE_SCALE);
+  cube.add(cubeEdges);
 
   // ホバー中の面・辺・頂点を示す板(NFR-UX-7)。位置と大きさは領域ごとに付け替える。
   const highlightMaterial = new THREE.MeshBasicMaterial({
@@ -194,6 +214,8 @@ export function createViewCubeScene(canvas: HTMLCanvasElement, sizePixels: numbe
         material.map?.dispose();
         material.dispose();
       }
+      edgeGeometry.dispose();
+      edgeMaterial.dispose();
       highlight.geometry.dispose();
       highlightMaterial.dispose();
       renderer.dispose();

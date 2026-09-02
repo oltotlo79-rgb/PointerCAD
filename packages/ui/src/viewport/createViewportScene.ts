@@ -4,12 +4,13 @@ import * as THREE from 'three';
 import type { DisplayStyle, ProjectionMode } from '../store/useAppStore.js';
 import {
   cameraPosition,
+  clamp,
   HOME_ORBIT,
   orthographicFrustumHeight,
   VERTICAL_FIELD_OF_VIEW,
   type OrbitState,
 } from './cameraMath.js';
-import { axisLength, gridExtent, gridSpacing } from './gridMath.js';
+import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
 
 /** ビューポートの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
 export interface ViewportScene {
@@ -29,19 +30,169 @@ const NEAR_PLANE = 0.05;
 const FAR_PLANE = 200_000;
 
 /** 面の上に重ねる稜線は暗く、稜線だけのときは背景から浮くよう明るくする(FR-105)。 */
-const EDGE_COLOR_OVER_SOLID = 0x101014;
+const EDGE_COLOR_OVER_SOLID = 0x0f1115;
 const EDGE_COLOR_WIREFRAME = 0xd6dae2;
 
+/** 立体の色味。艶を抑えた樹脂のような明るい灰にして、面の向きの差を読み取りやすくする。 */
+const SOLID_COLOR = 0xb8bfcc;
+const SOLID_ROUGHNESS = 0.55;
+const SOLID_METALNESS = 0.05;
+
+/** 方眼の色。副線は背景から浮きすぎない濃さに、主線はその一段上に置く(FR-104)。 */
+const GRID_MINOR_COLOR = 0x343945;
+const GRID_MAJOR_COLOR = 0x454b59;
+
+interface AxisDefinition {
+  readonly color: number;
+  readonly direction: readonly [number, number, number];
+}
+
+/** 原点を通る 3 本の軸。色は X 赤・Y 緑・Z 青(FR-104)。 */
+const AXES: readonly AxisDefinition[] = [
+  { color: 0xe5484d, direction: [1, 0, 0] },
+  { color: 0x46a758, direction: [0, 1, 0] },
+  { color: 0x3e63dd, direction: [0, 0, 1] },
+];
+
+/** 軸 1 本を何本の線分に割るか。頂点ごとの薄まりを線の途中でも効かせるために分ける。 */
+const AXIS_SEGMENTS_PER_SIDE = 40;
+
+/** 空と地面の色で全体を起こす補助光。真上は白、地面側は背景に馴染む暗い灰。 */
+const SKY_COLOR = 0xffffff;
+const GROUND_COLOR = 0x3a3f4a;
+const HEMISPHERE_INTENSITY = 0.9;
+
+/** 面の明暗差を作る主光源。視点の右上前方に置き、カメラに追従させる。 */
+const KEY_LIGHT_INTENSITY = 0.8;
+const KEY_LIGHT_AZIMUTH_OFFSET = 0.55;
+const KEY_LIGHT_ELEVATION_OFFSET = 0.5;
+/** 真上・真下から照らすと上面と側面の差が消えるので、仰角に上限を設ける。 */
+const KEY_LIGHT_MAX_ELEVATION = 1.2;
+
+/** 位置(3 個)と色+不透明度(4 個)を並べて貯める、線分列の下書き。 */
+interface LineBuffer {
+  readonly positions: number[];
+  readonly colors: number[];
+}
+
+function createLineBuffer(): LineBuffer {
+  return { positions: [], colors: [] };
+}
+
+/**
+ * 線分を 1 本足す。両端の不透明度は原点からの距離で決め、遠いほど薄くする。
+ * 端点どうしの間は GPU が補間するので、長い線は呼び出し側で細かく割って渡す。
+ */
+function pushFadedSegment(
+  buffer: LineBuffer,
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+  color: THREE.Color,
+  extent: number,
+): void {
+  for (const point of [from, to]) {
+    buffer.positions.push(point[0], point[1], point[2]);
+    buffer.colors.push(
+      color.r,
+      color.g,
+      color.b,
+      gridFadeOpacity(Math.hypot(point[0], point[1], point[2]), extent),
+    );
+  }
+}
+
+function toLineGeometry(buffer: LineBuffer): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(buffer.positions, 3));
+  // 4 個組にすると three.js が頂点ごとの不透明度として扱う(USE_COLOR_ALPHA)。
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(buffer.colors, 4));
+  return geometry;
+}
+
+/**
+ * 方眼(主線と副線)の線分列を作る(FR-104)。
+ *
+ * 原点を通る 2 本は軸として別に描くのでここでは引かない。同じ位置に 2 本重ねると
+ * 深度が競って縞模様になるため、重ねない作りにして縞模様そのものを起こさせない。
+ */
+function buildGridGeometry(spacing: number): THREE.BufferGeometry {
+  const extent = gridExtent(spacing);
+  const halfCount = Math.round(extent / spacing);
+  const minorColor = new THREE.Color(GRID_MINOR_COLOR);
+  const majorColor = new THREE.Color(GRID_MAJOR_COLOR);
+  const buffer = createLineBuffer();
+
+  for (let line = -halfCount; line <= halfCount; line += 1) {
+    if (line === 0) {
+      continue;
+    }
+    const color = isMajorGridLine(line) ? majorColor : minorColor;
+    const offset = line * spacing;
+    for (let cell = -halfCount; cell < halfCount; cell += 1) {
+      const from = cell * spacing;
+      const to = (cell + 1) * spacing;
+      pushFadedSegment(buffer, [from, offset, 0], [to, offset, 0], color, extent);
+      pushFadedSegment(buffer, [offset, from, 0], [offset, to, 0], color, extent);
+    }
+  }
+
+  return toLineGeometry(buffer);
+}
+
+/** 原点を通る XYZ 軸の線分列を作る(FR-104)。方眼と同じ薄まり方をさせる。 */
+function buildAxisGeometry(length: number): THREE.BufferGeometry {
+  const buffer = createLineBuffer();
+
+  for (const axis of AXES) {
+    const color = new THREE.Color(axis.color);
+    for (let step = -AXIS_SEGMENTS_PER_SIDE; step < AXIS_SEGMENTS_PER_SIDE; step += 1) {
+      const from = (step / AXIS_SEGMENTS_PER_SIDE) * length;
+      const to = ((step + 1) / AXIS_SEGMENTS_PER_SIDE) * length;
+      pushFadedSegment(
+        buffer,
+        [axis.direction[0] * from, axis.direction[1] * from, axis.direction[2] * from],
+        [axis.direction[0] * to, axis.direction[1] * to, axis.direction[2] * to],
+        color,
+        length,
+      );
+    }
+  }
+
+  return toLineGeometry(buffer);
+}
+
 export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  // 背景は CSS(.pcad-viewport の縦グラデーション)に任せ、描画結果だけを重ねる。
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio, MAX_PIXEL_RATIO));
-  renderer.setClearColor(0x2b2b2e, 1);
+  renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
-  scene.add(new THREE.AmbientLight(0xffffff, 1.4));
-  const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
-  keyLight.position.set(1, 1, 2);
+
+  const skyLight = new THREE.HemisphereLight(SKY_COLOR, GROUND_COLOR, HEMISPHERE_INTENSITY);
+  // 半球光の「空」の向きは position が決める。Z 上の座標系に合わせる。
+  skyLight.position.set(0, 0, 1);
+  scene.add(skyLight);
+
+  const keyLight = new THREE.DirectionalLight(0xffffff, KEY_LIGHT_INTENSITY);
   scene.add(keyLight);
+
+  /** 主光源を視点の右上前方へ置き直す。どの向きから見ても隣り合う面に明暗差が出る。 */
+  function updateKeyLight(orbit: OrbitState): void {
+    const azimuth = orbit.azimuth + KEY_LIGHT_AZIMUTH_OFFSET;
+    const elevation = clamp(
+      orbit.elevation + KEY_LIGHT_ELEVATION_OFFSET,
+      -KEY_LIGHT_MAX_ELEVATION,
+      KEY_LIGHT_MAX_ELEVATION,
+    );
+    const horizontal = Math.cos(elevation);
+    // 平行光は向きだけを使うので、既定の目標(原点)から見た単位ベクトルを置けばよい。
+    keyLight.position.set(
+      horizontal * Math.cos(azimuth),
+      horizontal * Math.sin(azimuth),
+      Math.sin(elevation),
+    );
+  }
 
   const perspectiveCamera = new THREE.PerspectiveCamera(
     (VERTICAL_FIELD_OF_VIEW * 180) / Math.PI,
@@ -58,9 +209,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   const solid = new THREE.Mesh(
     new THREE.BufferGeometry(),
     new THREE.MeshStandardMaterial({
-      color: 0xb0b6c0,
-      roughness: 0.65,
-      metalness: 0.05,
+      color: SOLID_COLOR,
+      roughness: SOLID_ROUGHNESS,
+      metalness: SOLID_METALNESS,
       side: THREE.DoubleSide,
       // 面と稜線を同時に出すとき、稜線が面に埋もれてちらつくのを防ぐ(FR-105)。
       polygonOffset: true,
@@ -78,48 +229,43 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   edges.visible = false;
   scene.add(edges);
 
+  /**
+   * 方眼と軸で共有する線の材質。頂点ごとの色と不透明度をそのまま使うので材質色は白のまま。
+   * 深度は書かないので、立体に隠れることはあっても線どうしが互いを隠すことはない。
+   */
+  const lineMaterial = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+  });
+
   const gridGroup = new THREE.Group();
   scene.add(gridGroup);
-  let grid: THREE.GridHelper | null = null;
-  let axes: THREE.AxesHelper | null = null;
+
+  const grid = new THREE.LineSegments(new THREE.BufferGeometry(), lineMaterial);
+  gridGroup.add(grid);
+
+  const axisLines = new THREE.LineSegments(new THREE.BufferGeometry(), lineMaterial);
+  // 軸は方眼より後に描いて前面に出す(重なりはないが、半透明どうしの順序を決めておく)。
+  axisLines.renderOrder = 1;
+  gridGroup.add(axisLines);
+
   let currentSpacing = 0;
+
+  /** 方眼と XYZ 軸を作り直す(FR-104)。間隔が変わったときだけ呼ぶ。 */
+  function rebuildGrid(spacing: number): void {
+    grid.geometry.dispose();
+    grid.geometry = buildGridGeometry(spacing);
+    axisLines.geometry.dispose();
+    axisLines.geometry = buildAxisGeometry(axisLength(spacing));
+    currentSpacing = spacing;
+  }
+  rebuildGrid(gridSpacing(HOME_ORBIT.distance));
 
   let currentEdgeColor = EDGE_COLOR_OVER_SOLID;
   let hasMesh = false;
   let width = 1;
   let height = 1;
-
-  function disposeGrid(): void {
-    if (grid !== null) {
-      gridGroup.remove(grid);
-      grid.dispose();
-      grid = null;
-    }
-    if (axes !== null) {
-      gridGroup.remove(axes);
-      axes.dispose();
-      axes = null;
-    }
-  }
-
-  /** 方眼と XYZ 軸を作り直す(FR-104)。間隔はカメラ距離で段階的に変わる。 */
-  function rebuildGrid(spacing: number): void {
-    disposeGrid();
-
-    const extent = gridExtent(spacing);
-    grid = new THREE.GridHelper(extent * 2, Math.round((extent * 2) / spacing), 0x5a5a60, 0x3a3a40);
-    // GridHelper は XZ 平面に作られるので、Z が上の座標系へ倒す。
-    grid.rotation.x = Math.PI / 2;
-    gridGroup.add(grid);
-
-    // X 赤・Y 緑・Z 青(AxesHelper の既定)。方眼の中心線と重なるので後から描く。
-    axes = new THREE.AxesHelper(axisLength(spacing));
-    axes.renderOrder = 1;
-    gridGroup.add(axes);
-
-    currentSpacing = spacing;
-  }
-  rebuildGrid(gridSpacing(HOME_ORBIT.distance));
 
   return {
     setMesh(mesh): void {
@@ -170,6 +316,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
         currentEdgeColor = edgeColor;
       }
 
+      updateKeyLight(orbit);
+
       const [x, y, z] = cameraPosition(orbit);
       const aspect = width / height;
       const camera = projection === 'perspective' ? perspectiveCamera : orthographicCamera;
@@ -193,7 +341,11 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     },
 
     dispose(): void {
-      disposeGrid();
+      grid.geometry.dispose();
+      axisLines.geometry.dispose();
+      lineMaterial.dispose();
+      skyLight.dispose();
+      keyLight.dispose();
       solid.geometry.dispose();
       solid.material.dispose();
       edges.geometry.dispose();

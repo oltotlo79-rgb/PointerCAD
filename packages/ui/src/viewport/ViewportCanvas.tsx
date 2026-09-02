@@ -11,7 +11,7 @@ import { createViewportScene } from './createViewportScene.js';
 /**
  * 3D ビューポート(FR-101、FR-102、FR-104、FR-105、FR-106、FR-108、FR-310)。
  *
- * 視点の正本は `attachCameraControls` が持ち、画面状態(投影・表示スタイル・方眼・メッシュ・
+ * 視点の正本は `attachCameraControls` が持ち、画面状態(投影・表示スタイル・方眼・
  * スケッチ・ホバー・選択・作図面)は Zustand ストアから読む(rules/04-設計の規律.md)。
  * 描画は入力・状態変化・大きさの変化があったときだけ次の描画機会に1回行い、
  * 常時のループは回さない(NFR-PF-1)。
@@ -86,16 +86,12 @@ export function ViewportCanvas(): React.JSX.Element {
 
     scene.resize(canvas.clientWidth, canvas.clientHeight);
     const initial = useAppStore.getState();
-    scene.setMesh(initial.mesh);
     scene.setSketch(initial.resolvedSketch, initial.sketchMesh);
     scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
     scene.setWorkPlane(initial.workPlaneId);
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
-      if (next.mesh !== previous.mesh) {
-        scene.setMesh(next.mesh);
-      }
       // スケッチの形と、カーネルが返した面(FR-105、FR-310)。
       if (
         next.resolvedSketch !== previous.resolvedSketch ||

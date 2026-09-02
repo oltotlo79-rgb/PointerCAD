@@ -1,7 +1,6 @@
 import {
   DEFAULT_WORK_PLANE_ID,
   WORK_PLANES,
-  type PartMesh,
   type ResolvedSketch,
   type SketchMesh,
   type Vec3,
@@ -31,7 +30,6 @@ import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine }
 /** ビューポートの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
 export interface ViewportScene {
   render(orbit: OrbitState, projection: ProjectionMode, displayStyle: DisplayStyle, showGrid: boolean): void;
-  setMesh(mesh: PartMesh | null): void;
   /** スケッチの表示を差し替える(FR-105、FR-310)。 */
   setSketch(sketch: ResolvedSketch, mesh: SketchMesh | null): void;
   /** ホバー・選択の強調を差し替える(FR-106)。 */
@@ -54,15 +52,6 @@ const MAX_PIXEL_RATIO = 2;
 
 const NEAR_PLANE = 0.05;
 const FAR_PLANE = 200_000;
-
-/** 面の上に重ねる稜線は暗く、稜線だけのときは背景から浮くよう明るくする(FR-105)。 */
-const EDGE_COLOR_OVER_SOLID = 0x0f1115;
-const EDGE_COLOR_WIREFRAME = 0xd6dae2;
-
-/** 立体の色味。艶を抑えた樹脂のような明るい灰にして、面の向きの差を読み取りやすくする。 */
-const SOLID_COLOR = 0xb8bfcc;
-const SOLID_ROUGHNESS = 0.55;
-const SOLID_METALNESS = 0.05;
 
 /** 方眼の色。副線は背景から浮きすぎない濃さに、主線はその一段上に置く(FR-104)。 */
 const GRID_MINOR_COLOR = 0x343945;
@@ -232,32 +221,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   const orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, -FAR_PLANE, FAR_PLANE);
   orthographicCamera.up.copy(UP_AXIS);
 
-  const solid = new THREE.Mesh(
-    new THREE.BufferGeometry(),
-    new THREE.MeshStandardMaterial({
-      color: SOLID_COLOR,
-      roughness: SOLID_ROUGHNESS,
-      metalness: SOLID_METALNESS,
-      side: THREE.DoubleSide,
-      // 面と稜線を同時に出すとき、稜線が面に埋もれてちらつくのを防ぐ(FR-105)。
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    }),
-  );
-  solid.visible = false;
-  scene.add(solid);
-
-  const edges = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({ color: EDGE_COLOR_OVER_SOLID }),
-  );
-  edges.visible = false;
-  scene.add(edges);
-
   /**
    * 方眼と軸で共有する線の材質。頂点ごとの色と不透明度をそのまま使うので材質色は白のまま。
-   * 深度は書かないので、立体に隠れることはあっても線どうしが互いを隠すことはない。
+   * 深度は書かないので、方眼と軸が互いを隠すことはない。下書き(スケッチ)は
+   * createSketchLayer.ts の renderOrder でこの上に出る。
    */
   const lineMaterial = new THREE.LineBasicMaterial({
     vertexColors: true,
@@ -294,8 +261,6 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   }
   rebuildGrid(gridSpacing(HOME_ORBIT.distance));
 
-  let currentEdgeColor = EDGE_COLOR_OVER_SOLID;
-  let hasMesh = false;
   let width = 1;
   let height = 1;
 
@@ -316,30 +281,6 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   const planeOrigin = new THREE.Vector3();
 
   return {
-    setMesh(mesh): void {
-      solid.geometry.dispose();
-      edges.geometry.dispose();
-
-      if (mesh === null) {
-        hasMesh = false;
-        solid.geometry = new THREE.BufferGeometry();
-        edges.geometry = new THREE.BufferGeometry();
-        return;
-      }
-
-      const surfaceGeometry = new THREE.BufferGeometry();
-      surfaceGeometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
-      surfaceGeometry.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
-      surfaceGeometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-      solid.geometry = surfaceGeometry;
-
-      const edgeGeometry = new THREE.BufferGeometry();
-      edgeGeometry.setAttribute('position', new THREE.BufferAttribute(mesh.edgePositions, 3));
-      edges.geometry = edgeGeometry;
-
-      hasMesh = true;
-    },
-
     setSketch(nextSketch, nextMesh): void {
       resolvedSketch = nextSketch;
       sketchMesh = nextMesh;
@@ -394,18 +335,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       }
       gridGroup.visible = showGrid;
 
-      // 形が無い間は面も稜線も出さない(空状態の案内だけを見せる)。
-      solid.visible = hasMesh && displayStyle !== 'wireframe';
-      edges.visible = hasMesh && displayStyle !== 'shaded';
-
       // スケッチは組み立て直したときだけ並びを差し替える(同じ結果なら表示の入切だけ)。
       sketchLayer.update(sketchBundle, displayStyle);
-
-      const edgeColor = displayStyle === 'wireframe' ? EDGE_COLOR_WIREFRAME : EDGE_COLOR_OVER_SOLID;
-      if (edgeColor !== currentEdgeColor) {
-        edges.material.color.setHex(edgeColor);
-        currentEdgeColor = edgeColor;
-      }
 
       updateKeyLight(orbit);
 
@@ -440,10 +371,6 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       lineMaterial.dispose();
       skyLight.dispose();
       keyLight.dispose();
-      solid.geometry.dispose();
-      solid.material.dispose();
-      edges.geometry.dispose();
-      edges.material.dispose();
       renderer.dispose();
     },
   };

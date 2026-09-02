@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
 import { orbit, type OrbitState } from '../viewport/cameraMath.js';
@@ -17,6 +17,16 @@ const CUBE_SIZE_PIXELS = 120;
 const DRAG_THRESHOLD_PIXELS = 4;
 
 const PRIMARY_BUTTON = 0;
+
+/**
+ * 面を押して視点が移った直後に、ホバーの丸い下地を消しておくための打ち消し。
+ *
+ * CSS の `.pcad-viewcube:hover` は指が同じ場所に留まっている限り外れないので、
+ * ポインタが動かなくても下地が残ってしまう(docs/報告記録.md 2026-09-03 00:06 の (c))。
+ * 要素に直接書いた指定は CSS の規則より強いため、ここで背景を打ち消す。
+ * 次にポインタが動いたら外し、ふつうのホバーへ戻す。
+ */
+const HOVER_SUPPRESSED_STYLE: React.CSSProperties = { background: 'transparent' };
 
 /** クリックで始まった視点の移り変わり。 */
 interface ViewTransition {
@@ -51,9 +61,14 @@ export interface ViewCubeProps {
  * 描画も常時のループを持たず、本体ビューポートが描いた通知(subscribeDraw)に相乗りして
  * 同じ描画機会に 1 回だけ描く。自前でこまを進めるのはクリックの遷移中だけで、遷移が終われば
  * 予約を止める。待機中に requestAnimationFrame が回り続けないようにするため(NFR-PF-1)。
+ *
+ * 面を押して視点が移り始めたら、指が止まったままでも強調(面の青と丸い下地)を消す。
+ * 押した後も光ったままだと、まだ押せる場所を指しているのか区別が付かないため(NFR-UX-7)。
  */
 export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // ホバーの見た目だけの一時状態なのでストアへは載せない(rules/04-設計の規律.md)。
+  const [hoverSuppressed, setHoverSuppressed] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -113,6 +128,18 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       drawOnce();
     };
 
+    /** いまホバーの下地を打ち消しているか。変わったときだけ描き直しを頼む。 */
+    let hoverSuppressedNow = false;
+
+    /** ホバーの丸い下地を消す・戻す。 */
+    const suppressHover = (next: boolean): void => {
+      if (hoverSuppressedNow === next) {
+        return;
+      }
+      hoverSuppressedNow = next;
+      setHoverSuppressed(next);
+    };
+
     // ビューポートが描いたら、同じ視点でビューキューブも描き直す。
     const unsubscribeDraw = subscribeDraw(drawOnce);
 
@@ -141,6 +168,8 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
 
     const onPointerMove = (event: PointerEvent): void => {
       if (!dragging) {
+        // 指が動いたらふつうのホバーへ戻す(直前のクリックで消していても)。
+        suppressHover(false);
         setHighlighted(pickAt(event));
         return;
       }
@@ -156,6 +185,8 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
         // 予約済みのこまは stepTransition が transition === null を見て自分で止める。
         transition = null;
         highlighted = null;
+        // 回し始めれば指は動いている。ふつうのホバーへ戻してよい。
+        suppressHover(false);
         // setOrbit がビューポートの描画を予約し、その通知でビューキューブも描き直る。
         setOrbit(orbit(getOrbit(), deltaX, deltaY));
       }
@@ -175,10 +206,16 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       releaseCapture(event);
 
       const region = pickAt(event);
-      setHighlighted(region);
       if (movedDistance > DRAG_THRESHOLD_PIXELS || region === null) {
+        // 回し終わり、または立方体の外。指のある場所のホバーを出し直すだけ。
+        setHighlighted(region);
         return;
       }
+
+      // ここから視点が移る。指が止まったままでも強調は残さない(面の青も丸い下地も消す)。
+      // pointerleave を待つと、押した場所から動かさない限り強調が残り続けるため。
+      setHighlighted(null);
+      suppressHover(true);
 
       // 遷移中に押し直されたら、前の遷移は今の視点から引き継いで打ち切る。
       const current = getOrbit();
@@ -192,6 +229,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
     const onPointerCancel = (event: PointerEvent): void => {
       dragging = false;
       releaseCapture(event);
+      suppressHover(false);
       setHighlighted(null);
     };
 
@@ -202,6 +240,8 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
 
     const onPointerLeave = (): void => {
       if (!dragging) {
+        // 出ていけば CSS のホバーも外れるので、打ち消しはもう要らない。
+        suppressHover(false);
         setHighlighted(null);
       }
     };
@@ -242,6 +282,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
     <canvas
       ref={canvasRef}
       className="pcad-viewcube"
+      style={hoverSuppressed ? HOVER_SUPPRESSED_STYLE : undefined}
       width={CUBE_SIZE_PIXELS}
       height={CUBE_SIZE_PIXELS}
       aria-label={t('viewCube.label')}

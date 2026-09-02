@@ -1,20 +1,10 @@
-export { t, MESSAGE_KEYS, type MessageKey } from './i18n/t.js';
-export {
-  attachSketchRecompute,
-  createInitialSketchState,
-  useAppStore,
-  workPlaneForOrbit,
-  type AppState,
-  type DisplayStyle,
-  type ProjectionMode,
-  type SketchRecomputer,
-} from './store/useAppStore.js';
-export type {
-  CoordinateMode,
-  NumericInputState,
-  SketchToolId,
-} from './sketch/numericInput.js';
-export type { SnapKind } from './sketch/snapMath.js';
-export { AppShell } from './shell/AppShell.js';
+/**
+ * `@pointercad/ui` の公開口。
+ *
+ * 使う側は `apps/web` と `apps/desktop` の入口だけで、必要なのは画面そのもの
+ * (`PointerCadApp`)と、起動に失敗したときの文言を引く `t` の 2 つ(要件§1.5、NFR-MA-5)。
+ * パッケージの中どうしは実ファイルを直に読み合うので、ここへ並べる必要はない。
+ * 誰も使わない輸出を並べておくと、消してよいものが分からなくなるため置かない。
+ */
+export { t } from './i18n/t.js';
 export { PointerCadApp } from './app/PointerCadApp.js';
-export { HOME_ORBIT, type OrbitState } from './viewport/cameraMath.js';

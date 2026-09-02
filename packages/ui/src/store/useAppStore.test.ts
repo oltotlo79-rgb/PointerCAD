@@ -77,7 +77,6 @@ beforeEach(() => {
     ...createInitialSketchState(),
     documentName: '',
     featureNames: [],
-    mesh: null,
     isComputing: false,
     errorMessage: null,
     matchWorkPlaneRequestCount: 0,

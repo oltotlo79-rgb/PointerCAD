@@ -8,7 +8,6 @@ import {
   WORK_PLANE_IDS,
   WORK_PLANES,
   type CoordinateInput,
-  type PartMesh,
   type ResolvedSketch,
   type SketchDocument,
   type SketchError,
@@ -44,8 +43,9 @@ export interface SnapIndicator {
 export interface AppState {
   readonly documentName: string;
   readonly featureNames: readonly string[];
-  readonly mesh: PartMesh | null;
+  /** 再計算(解決とカーネル)の最中か。計算中の札を出すのに使う。 */
   readonly isComputing: boolean;
+  /** 再計算そのものが投げた失敗。ステータスバーがそのまま見せる(FR-504)。 */
   readonly errorMessage: string | null;
   readonly projection: ProjectionMode;
   readonly displayStyle: DisplayStyle;
@@ -106,8 +106,7 @@ export interface AppState {
   // useAppStore((state) => state.setX) のように取り出したとき @typescript-eslint/unbound-method
   // に触れるため(計画書 P1 §0.a-0.12、docs/報告記録.md 2026-09-02 15:28 の残件②)。
   readonly setDocument: (name: string, featureNames: readonly string[]) => void;
-  readonly setMesh: (mesh: PartMesh) => void;
-  readonly setComputing: (isComputing: boolean) => void;
+  /** 再計算が投げた失敗を出す・消す。計算中の印はここで下ろす。 */
   readonly setError: (message: string | null) => void;
   readonly setProjection: (projection: ProjectionMode) => void;
   readonly setDisplayStyle: (displayStyle: DisplayStyle) => void;
@@ -240,7 +239,6 @@ export function createInitialSketchState(): Pick<
 export const useAppStore = create<AppState>()((set) => ({
   documentName: '',
   featureNames: [],
-  mesh: null,
   isComputing: false,
   errorMessage: null,
   projection: 'perspective',
@@ -254,12 +252,6 @@ export const useAppStore = create<AppState>()((set) => ({
 
   setDocument: (documentName, featureNames) => {
     set({ documentName, featureNames });
-  },
-  setMesh: (mesh) => {
-    set({ mesh, errorMessage: null, isComputing: false });
-  },
-  setComputing: (isComputing) => {
-    set({ isComputing });
   },
   setError: (errorMessage) => {
     set({ errorMessage, isComputing: false });

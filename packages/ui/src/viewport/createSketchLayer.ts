@@ -71,6 +71,20 @@ const WORK_PLANE_BORDER_OPACITY = 0.35;
 
 const EMPHASES: readonly SketchEmphasis[] = ['none', 'hovered', 'selected'];
 
+/**
+ * 描く順。数が大きいほど後に描かれ、画面では前に出る。
+ *
+ * 下書きの点・線・円弧は**面より必ず前**に出す。面に隠れると座標を確かめられず、
+ * 下書きとして用を成さないため(FR-105、NFR-UX-1)。three.js は不透明なものを先に、
+ * 半透明なものを後にまとめて描くので、半透明の面より後へ回すには点・線も
+ * 「半透明」の側に置く必要がある(透け具合は 1 のままなので色も太さも変わらない)。
+ * そのうえで `depthTest: false` を付け、面や方眼の奥にあっても隠れないようにする。
+ * 面の `depthWrite: false` は据え置きなので、面どうしの前後は今までどおり。
+ */
+const FACE_OUTLINE_RENDER_ORDER = 2;
+const CURVE_RENDER_ORDER = 3;
+const POINT_RENDER_ORDER = 4;
+
 type PointsObject = THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
 type LinesObject = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
@@ -96,17 +110,37 @@ export interface SketchLayer {
 }
 
 function createPoints(color: number): PointsObject {
-  return new THREE.Points(
+  const object = new THREE.Points(
     new THREE.BufferGeometry(),
-    new THREE.PointsMaterial({ color, size: POINT_SIZE_PIXELS, sizeAttenuation: false }),
+    new THREE.PointsMaterial({
+      color,
+      size: POINT_SIZE_PIXELS,
+      sizeAttenuation: false,
+      // 面より後に描くための「半透明」扱い。透け具合は 1 のままなので色は変わらない。
+      transparent: true,
+      // 面の奥にある点も隠さない。前後は renderOrder だけで決める。
+      depthTest: false,
+      depthWrite: false,
+    }),
   );
+  object.renderOrder = POINT_RENDER_ORDER;
+  return object;
 }
 
-function createLines(color: number): LinesObject {
-  return new THREE.LineSegments(
+function createLines(color: number, renderOrder: number): LinesObject {
+  const object = new THREE.LineSegments(
     new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({ color, linewidth: CURVE_WIDTH_PIXELS }),
+    new THREE.LineBasicMaterial({
+      color,
+      linewidth: CURVE_WIDTH_PIXELS,
+      // 点と同じ理由(面より後に描き、面の奥でも隠れない)。太さは変えない。
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }),
   );
+  object.renderOrder = renderOrder;
+  return object;
 }
 
 function createPointSet(): DrawSet<PointsObject> {
@@ -120,12 +154,12 @@ function createPointSet(): DrawSet<PointsObject> {
   };
 }
 
-function createLineSet(baseColor: number): DrawSet<LinesObject> {
+function createLineSet(baseColor: number, renderOrder: number): DrawSet<LinesObject> {
   return {
     objects: {
-      none: createLines(baseColor),
-      hovered: createLines(HOVERED_COLOR),
-      selected: createLines(SELECTED_COLOR),
+      none: createLines(baseColor, renderOrder),
+      hovered: createLines(HOVERED_COLOR, renderOrder),
+      selected: createLines(SELECTED_COLOR, renderOrder),
     },
     hasData: { none: false, hovered: false, selected: false },
   };
@@ -201,7 +235,8 @@ function createSquareBorderGeometry(): THREE.BufferGeometry {
 export function createSketchLayer(): SketchLayer {
   const group = new THREE.Group();
 
-  // 作図面 → 面 → 縁 → 線 → 点 の順に足す。小さいものほど後に描いて上に出す。
+  // 作図面 → 面 → 縁 → 線 → 点 の順に足す。前後は足した順ではなく renderOrder が決める
+  // (作図面 -1 → 面 0 → 縁 2 → 線 3 → 点 4)。小さいものほど後に描いて上に出す。
   const workPlaneGroup = new THREE.Group();
   const workPlaneFill = new THREE.Mesh(
     new THREE.PlaneGeometry(1, 1),
@@ -232,8 +267,8 @@ export function createSketchLayer(): SketchLayer {
   const faceGroup = new THREE.Group();
   group.add(faceGroup);
 
-  const outlines = createLineSet(FACE_OUTLINE_COLOR);
-  const curves = createLineSet(CURVE_COLOR);
+  const outlines = createLineSet(FACE_OUTLINE_COLOR, FACE_OUTLINE_RENDER_ORDER);
+  const curves = createLineSet(CURVE_COLOR, CURVE_RENDER_ORDER);
   const points = createPointSet();
   for (const emphasis of EMPHASES) {
     group.add(outlines.objects[emphasis]);

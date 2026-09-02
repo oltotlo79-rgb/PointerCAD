@@ -383,6 +383,17 @@ function resolveFace(
     }
     curves.push({ kind: 'segment', featureId: feature.id, from, to });
   }
+  // 一直線上の点だけでは平面が定まらない。同じ平面に乗らない(notPlanar)とは分けて伝える(§2.3)。
+  if (fitPlaneNormal(pickedPoints) === null) {
+    return {
+      ok: false,
+      error: error(
+        feature.id,
+        'collinear',
+        '選んだ点が一直線に並んでいるため、面を張れませんでした。3 点目を線から外してください。',
+      ),
+    };
+  }
   if (!isPlanar(pickedPoints)) {
     return {
       ok: false,

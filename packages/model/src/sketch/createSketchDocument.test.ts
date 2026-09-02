@@ -23,6 +23,7 @@ import type {
   SketchFaceFeature,
   SketchLineFeature,
   SketchPointArrayFeature,
+  SketchPointFeature,
 } from './types.js';
 
 /** テストの中で式を書くための補助。評価できない式はテストの誤りとして落とす。 */
@@ -169,6 +170,44 @@ describe('スケッチ文書の履歴操作(FR-501、FR-505 の土台)', () => {
     expect(findFeature(document, feature.id)).toEqual(moved);
     document = removeFeature(document, feature.id);
     expect(findFeature(document, feature.id)).toBeUndefined();
+  });
+
+  /** 点1・点2 を作り、点1 を削除した状態の文書を返す(§0.a-0.19 の検査で使い回す)。 */
+  function documentWithFirstPointRemoved(): { document: SketchDocument; second: SketchPointFeature } {
+    let document = createEmptySketchDocument();
+    const first = createPointFeature(document, absoluteCoordinate(0, 0, 0));
+    document = appendFeature(document, first);
+    const second = createPointFeature(document, absoluteCoordinate(10, 0, 0));
+    document = appendFeature(document, second);
+    expect(first.name).toBe('点1');
+    expect(first.id).toBe('point-1');
+    expect(second.name).toBe('点2');
+    expect(second.id).toBe('point-2');
+    document = removeFeature(document, first.id);
+    return { document, second };
+  }
+
+  it('点1・点2 から点1 を削除した次の名前は点3(既存の最大連番+1、§0.a-0.19)', () => {
+    const { document } = documentWithFirstPointRemoved();
+    expect(nextFeatureName(document, 'point')).toBe('点3');
+  });
+
+  it('点1・点2 から点1 を削除した次の id は point-3(名前と同じ方式、§0.a-0.19)', () => {
+    const { document } = documentWithFirstPointRemoved();
+    expect(nextFeatureId(document, 'point')).toBe('point-3');
+  });
+
+  it('全部消したら名前・id とも点1・point-1 に戻る(重複する相手がいないため、§0.a-0.19)', () => {
+    const { document, second } = documentWithFirstPointRemoved();
+    const emptied = removeFeature(document, second.id);
+    expect(nextFeatureName(emptied, 'point')).toBe('点1');
+    expect(nextFeatureId(emptied, 'point')).toBe('point-1');
+  });
+
+  it('線分の連番は点と独立(点1 の後の最初の線分は 線分1・line-1)', () => {
+    const { document } = documentWithFirstPointRemoved();
+    expect(nextFeatureName(document, 'line')).toBe('線分1');
+    expect(nextFeatureId(document, 'line')).toBe('line-1');
   });
 
   it('末尾を取り除くと直前の状態と同じ履歴になる(取り消しの土台、FR-505)', () => {

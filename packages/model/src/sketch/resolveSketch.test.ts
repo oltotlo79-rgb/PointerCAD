@@ -624,6 +624,26 @@ describe('スケッチ全体の解決(タスク11)', () => {
     ).toBe('degenerate');
   });
 
+  it('一直線に並んだ3点は collinear(notPlanar とは区別する、P2 タスク1・P1 の残件)', () => {
+    // p1=(0,0,0), p2=(10,0,0), p9=(20,0,0) は同一直線上(重複点ではない)。
+    const onLine: SketchFeature = {
+      id: 'p9', name: '点9', planeId: 'xy', kind: 'point', at: absoluteCoordinate(20, 0, 0),
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'p1' }, { featureId: 'p2' }, { featureId: 'p9' }],
+      color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(POINT_A, POINT_B, onLine, face));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('collinear');
+    expect(resolved.errors[0].featureId).toBe('f1');
+    expect(resolved.errors[0].message).toBe(
+      '選んだ点が一直線に並んでいるため、面を張れませんでした。3 点目を線から外してください。',
+    );
+  });
+
   it('同じ平面に乗らない点・線は断る(FR-309)', () => {
     // 四面体の 4 頂点は同じ平面に乗らない。
     const apex: SketchFeature = {

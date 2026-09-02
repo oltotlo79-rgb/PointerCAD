@@ -159,6 +159,8 @@ export type SketchErrorCode =
   | 'degenerate'
   | 'notClosed'
   | 'notPlanar'
+  /** 面の境界に選んだ点が一直線に並んでいて平面が定まらない(§2.3、P1 の残件)。 */
+  | 'collinear'
   | 'tooFewPoints'
   | 'mixedBoundary'
   | 'kernelFailed';

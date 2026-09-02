@@ -5,9 +5,11 @@ const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
 
 export default defineConfig({
   testDir: './tests',
-  // 50MB の WASM を読み込むため、通常の Web アプリより長く待つ。
+  // 50MB の WASM を読み込むため、通常の Web アプリより長く待つ(この2値は変えない)。
   timeout: 180_000,
-  expect: { timeout: 120_000 },
+  // 個々の expect の上限。カーネル読込み等の長い待ちは spec 側で明示しているため、
+  // ここは通常の失敗検出を速くするために短くする(P2 タスク1、P1 の残件)。
+  expect: { timeout: 30_000 },
   reporter: [['list']],
   use: {
     ...devices['Desktop Chrome'],

@@ -37,21 +37,63 @@ export function createEmptySketchDocument(): SketchDocument {
   return { id: 'sketch-1', name: 'スケッチ1', features: [] };
 }
 
-/** 種類ごとに 1 から数えた名前を作る(「点1」「線分2」…)。 */
-export function nextFeatureName(document: SketchDocument, kind: SketchFeatureKind): string {
-  const used = document.features.filter((feature) => feature.kind === kind).length;
-  return `${KIND_LABELS[kind]}${String(used + 1)}`;
+/**
+ * 「点1」「押し出し3」のような名前から末尾の連番を読む(§2.3、§0.a-0.19)。
+ * `label` で始まらない、または残りが数字だけでなければ 0(まだ連番が無いものとして扱う)。
+ */
+export function nameSerial(name: string, label: string): number {
+  if (!name.startsWith(label)) {
+    return 0;
+  }
+  const rest = name.slice(label.length);
+  if (!/^[0-9]+$/.test(rest)) {
+    return 0;
+  }
+  const parsed = Number(rest);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** 種類ごとに重ならない id を作る。 */
-export function nextFeatureId(document: SketchDocument, kind: SketchFeatureKind): string {
-  let serial = document.features.length + 1;
-  let candidate = `${kind}-${String(serial)}`;
-  while (document.features.some((feature) => feature.id === candidate)) {
-    serial += 1;
-    candidate = `${kind}-${String(serial)}`;
+/** `usedValues` の中で `label` から始まるものの連番の最大値。無ければ 0。 */
+function maxSerial(usedValues: Iterable<string>, label: string): number {
+  let max = 0;
+  for (const value of usedValues) {
+    const serial = nameSerial(value, label);
+    if (serial > max) {
+      max = serial;
+    }
   }
-  return candidate;
+  return max;
+}
+
+/**
+ * 同じ種類の既存の名前の最大連番 + 1 の名前を作る(§2.3、§0.a-0.19)。
+ * 「点1」「点2」から「点1」を消しても、残る「点2」の次は「点3」になり重複しない。
+ * 全部消せば「点1」に戻るが、そのとき重複する相手はいない。
+ */
+export function nextSerialName(usedNames: Iterable<string>, label: string): string {
+  return `${label}${String(maxSerial(usedNames, label) + 1)}`;
+}
+
+/** 同じ接頭辞の既存 id の最大連番 + 1 の id を作る(名前と同じ方式、§2.3)。 */
+export function nextSerialId(usedIds: Iterable<string>, prefix: string): string {
+  return `${prefix}${String(maxSerial(usedIds, prefix) + 1)}`;
+}
+
+/** 種類ごとに、既存の名前の最大連番 + 1 の名前を作る(「点1」「線分2」…、§0.a-0.19)。 */
+export function nextFeatureName(document: SketchDocument, kind: SketchFeatureKind): string {
+  const label = KIND_LABELS[kind];
+  const usedNames = document.features
+    .filter((feature) => feature.kind === kind)
+    .map((feature) => feature.name);
+  return nextSerialName(usedNames, label);
+}
+
+/** 種類ごとに、既存の id の最大連番 + 1 の id を作る(§0.a-0.19)。 */
+export function nextFeatureId(document: SketchDocument, kind: SketchFeatureKind): string {
+  const usedIds = document.features
+    .filter((feature) => feature.kind === kind)
+    .map((feature) => feature.id);
+  return nextSerialId(usedIds, `${kind}-`);
 }
 
 /** 履歴の末尾へ足す。元の文書は変えない(P2 の Undo の土台)。 */

@@ -17,13 +17,19 @@ import {
   GridIcon,
   HomeIcon,
   LineToolIcon,
+  MatchViewIcon,
   OrthographicIcon,
   PerspectiveIcon,
   PlotPointIcon,
   PointArrayToolIcon,
   ShadedIcon,
   ShadedWithEdgesIcon,
+  SnapCenterIcon,
+  SnapEndpointIcon,
+  SnapGridIcon,
   SnapIcon,
+  SnapIntersectionIcon,
+  SnapMidpointIcon,
   WireframeIcon,
   type IconProps,
 } from './icons.js';
@@ -84,29 +90,48 @@ const PLANES = [
   readonly tooltipKey: MessageKey;
 }[];
 
-/** 吸着の種別(FR-107、§0.a-0.10)。畳まずに並べて、いま何が効くかを一目で分かるようにする。 */
+/**
+ * 吸着の種別(FR-107、§0.a-0.10)。畳まずに並べて、いま何が効くかを一目で分かるようにする。
+ *
+ * 5 つとも図柄だけのボタンにして幅を詰める。名前は読み上げ名(aria-label)と
+ * ツールチップの先頭が担うので、見た目からも読み上げからも失われない(FR-904、NFR-UX-7)。
+ */
 const SNAP_KINDS_UI = [
   {
     kind: 'endpoint',
     labelKey: 'toolbar.snap.endpoint',
     tooltipKey: 'toolbar.snap.endpointTooltip',
+    Icon: SnapEndpointIcon,
   },
   {
     kind: 'intersection',
     labelKey: 'toolbar.snap.intersection',
     tooltipKey: 'toolbar.snap.intersectionTooltip',
+    Icon: SnapIntersectionIcon,
   },
   {
     kind: 'midpoint',
     labelKey: 'toolbar.snap.midpoint',
     tooltipKey: 'toolbar.snap.midpointTooltip',
+    Icon: SnapMidpointIcon,
   },
-  { kind: 'center', labelKey: 'toolbar.snap.center', tooltipKey: 'toolbar.snap.centerTooltip' },
-  { kind: 'grid', labelKey: 'toolbar.snap.grid', tooltipKey: 'toolbar.snap.gridTooltip' },
+  {
+    kind: 'center',
+    labelKey: 'toolbar.snap.center',
+    tooltipKey: 'toolbar.snap.centerTooltip',
+    Icon: SnapCenterIcon,
+  },
+  {
+    kind: 'grid',
+    labelKey: 'toolbar.snap.grid',
+    tooltipKey: 'toolbar.snap.gridTooltip',
+    Icon: SnapGridIcon,
+  },
 ] as const satisfies readonly {
   readonly kind: SnapKind;
   readonly labelKey: MessageKey;
   readonly tooltipKey: MessageKey;
+  readonly Icon: (props: IconProps) => React.JSX.Element;
 }[];
 
 /**
@@ -167,6 +192,11 @@ function activateTool(id: SketchToolId, pressed: boolean): void {
  * 左から「製品名 → モードのタブ → スケッチ → 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」
  * の機能グループを並べる。どのグループも区画名を頭に置き、いま選ばれているものを
  * アクセント色の面で示す(NFR-UX-7)。状態の正本は Zustand ストア1本(rules/04-設計の規律.md)。
+ *
+ * 横幅の方針: 1440 画素の窓で 1 段に収まることを条件にする。かき込む道具(スケッチ)と
+ * 続けてかくは文字を残し、見え方の切り替えや吸着の種別など図柄で分かるものは図柄だけの
+ * ボタン(`pcad-button--icon`)にして詰める。図柄だけのボタンには必ず読み上げ名
+ * (aria-label)と、名前で始まるツールチップを付ける(FR-904、NFR-UX-7)。
  */
 export function Toolbar(): React.JSX.Element {
   const projection = useAppStore((state) => state.projection);
@@ -260,13 +290,14 @@ export function Toolbar(): React.JSX.Element {
           */}
           <button
             type="button"
-            className="pcad-button pcad-button--compact"
+            className="pcad-button pcad-button--icon"
             title={t('toolbar.plane.matchViewTooltip')}
+            aria-label={t('toolbar.plane.matchView')}
             onClick={() => {
               useAppStore.getState().requestMatchWorkPlaneToView();
             }}
           >
-            {t('toolbar.plane.matchView')}
+            <MatchViewIcon />
           </button>
         </div>
       </div>
@@ -281,30 +312,34 @@ export function Toolbar(): React.JSX.Element {
         <span className="pcad-toolbar__group-label" title={t('toolbar.projection.tooltip')}>
           {t('toolbar.projection.groupLabel')}
         </span>
+        {/*
+          奥へ集まる線と平行なままの線という、見え方そのものを写した図柄なので
+          文字を添えずに並べる。名前は読み上げ名とツールチップが持つ。
+        */}
         <div className="pcad-segmented">
           <button
             type="button"
-            className="pcad-button"
-            title={t('toolbar.projection.perspective')}
+            className="pcad-button pcad-button--icon"
+            title={t('toolbar.projection.perspectiveTooltip')}
+            aria-label={t('toolbar.projection.perspective')}
             aria-pressed={projection === 'perspective'}
             onClick={() => {
               useAppStore.getState().setProjection('perspective');
             }}
           >
             <PerspectiveIcon />
-            {t('toolbar.projection.perspectiveShort')}
           </button>
           <button
             type="button"
-            className="pcad-button"
-            title={t('toolbar.projection.orthographic')}
+            className="pcad-button pcad-button--icon"
+            title={t('toolbar.projection.orthographicTooltip')}
+            aria-label={t('toolbar.projection.orthographic')}
             aria-pressed={projection === 'orthographic'}
             onClick={() => {
               useAppStore.getState().setProjection('orthographic');
             }}
           >
             <OrthographicIcon />
-            {t('toolbar.projection.orthographicShort')}
           </button>
         </div>
       </div>
@@ -317,42 +352,46 @@ export function Toolbar(): React.JSX.Element {
         <span className="pcad-toolbar__group-label" title={t('toolbar.displayStyle.tooltip')}>
           {t('toolbar.displayStyle.groupLabel')}
         </span>
+        {/*
+          3 つの図柄がそのまま見え方(塗りだけ / 塗りと稜線 / 線だけ)を写しているので、
+          文字を添えずに図柄だけで並べる。名前は読み上げ名とツールチップが持つ。
+        */}
         <div className="pcad-segmented">
           <button
             type="button"
-            className="pcad-button"
+            className="pcad-button pcad-button--icon"
             title={t('toolbar.displayStyle.shaded')}
+            aria-label={t('toolbar.displayStyle.shaded')}
             aria-pressed={displayStyle === 'shaded'}
             onClick={() => {
               useAppStore.getState().setDisplayStyle('shaded');
             }}
           >
             <ShadedIcon />
-            {t('toolbar.displayStyle.shadedShort')}
           </button>
           <button
             type="button"
-            className="pcad-button"
+            className="pcad-button pcad-button--icon"
             title={t('toolbar.displayStyle.shadedWithEdges')}
+            aria-label={t('toolbar.displayStyle.shadedWithEdges')}
             aria-pressed={displayStyle === 'shadedWithEdges'}
             onClick={() => {
               useAppStore.getState().setDisplayStyle('shadedWithEdges');
             }}
           >
             <ShadedWithEdgesIcon />
-            {t('toolbar.displayStyle.shadedWithEdgesShort')}
           </button>
           <button
             type="button"
-            className="pcad-button"
+            className="pcad-button pcad-button--icon"
             title={t('toolbar.displayStyle.wireframe')}
+            aria-label={t('toolbar.displayStyle.wireframe')}
             aria-pressed={displayStyle === 'wireframe'}
             onClick={() => {
               useAppStore.getState().setDisplayStyle('wireframe');
             }}
           >
             <WireframeIcon />
-            {t('toolbar.displayStyle.wireframeShort')}
           </button>
         </div>
       </div>
@@ -362,17 +401,18 @@ export function Toolbar(): React.JSX.Element {
           {t('toolbar.support.groupLabel')}
         </span>
         <div className="pcad-segmented">
+          {/* 方眼の図柄そのままなので文字は添えない。「続けてかく」は図柄で表しにくいので残す。 */}
           <button
             type="button"
-            className="pcad-button"
+            className="pcad-button pcad-button--icon"
             title={t('toolbar.grid.tooltip')}
+            aria-label={t('toolbar.grid.label')}
             aria-pressed={showGrid}
             onClick={() => {
               useAppStore.getState().setShowGrid(!showGrid);
             }}
           >
             <GridIcon />
-            {t('toolbar.grid.label')}
           </button>
           <button
             type="button"
@@ -410,8 +450,9 @@ export function Toolbar(): React.JSX.Element {
             <button
               key={entry.kind}
               type="button"
-              className="pcad-button pcad-button--compact"
+              className="pcad-button pcad-button--icon"
               title={t(entry.tooltipKey)}
+              aria-label={t(entry.labelKey)}
               aria-pressed={snapKinds.includes(entry.kind)}
               aria-disabled={!snapEnabled}
               onClick={() => {
@@ -421,7 +462,7 @@ export function Toolbar(): React.JSX.Element {
                 }
               }}
             >
-              {t(entry.labelKey)}
+              <entry.Icon />
             </button>
           ))}
         </div>
@@ -434,14 +475,14 @@ export function Toolbar(): React.JSX.Element {
         <div className="pcad-segmented">
           <button
             type="button"
-            className="pcad-button pcad-button--action"
+            className="pcad-button pcad-button--action pcad-button--icon"
             title={t('toolbar.home.tooltip')}
+            aria-label={t('toolbar.home.label')}
             onClick={() => {
               useAppStore.getState().requestHomeView();
             }}
           >
             <HomeIcon />
-            {t('toolbar.home.shortLabel')}
           </button>
         </div>
       </div>

@@ -104,12 +104,16 @@
 
 /* ===== ツールバー ===== */
 
+/*
+ * 区画のあいだの余白は 8px。1440 画素の窓で全区画が 1 段に収まる幅に合わせてある
+ * (1 段に必要な幅の実測は docs/報告記録.md を参照)。
+ */
 .pcad-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--pcad-space-3);
+  gap: var(--pcad-space-2);
   align-items: flex-end;
-  padding: var(--pcad-space-2) var(--pcad-space-3);
+  padding: var(--pcad-space-2);
   user-select: none;
   background: var(--pcad-surface);
   border-bottom: 1px solid var(--pcad-border);
@@ -144,6 +148,10 @@
   border-radius: var(--pcad-radius);
 }
 
+/*
+ * 左寄せの区画群と右寄せの区画群のあいだを押し広げる隙間。
+ * 窓が狭いときは §狭い窓 でここが行の区切りになる。
+ */
 .pcad-toolbar__spacer {
   flex: 1 1 auto;
 }
@@ -164,15 +172,51 @@
   cursor: help;
 }
 
+/* ===== 窓が狭いときのツールバー ===== */
+
+/*
+ * 1280 画素より狭い窓では製品名の文字を省き、印(立方体)だけを残す。
+ * ここまで狭いと道具の並びを保つほうが、名前を出し続けるより役に立つため。
+ */
+@media (max-width: 1279px) {
+  .pcad-toolbar__wordmark {
+    display: none;
+  }
+
+  .pcad-toolbar__brand {
+    padding-right: 0;
+  }
+}
+
+/*
+ * 1400 画素以下では 1 段に収まらないので、崩れた折り返しに任せず 2 段に分ける。
+ * 隙間を行いっぱいに広げて区切りにし、「かき込む道具(製品名・モード・スケッチ・作図面)」を
+ * 上の段、「見え方の設定(投影・表示・補助・吸着・視点)」を下の段へ置く。
+ * 区切りそのものを段のあいだの余白にするので、行の余白は 0 にする。
+ */
+@media (max-width: 1400px) {
+  .pcad-toolbar {
+    row-gap: 0;
+  }
+
+  .pcad-toolbar__spacer {
+    flex-basis: 100%;
+    height: var(--pcad-space-2);
+  }
+}
+
 /* ===== 操作要素(タブ・ボタン・セグメント) ===== */
 
 .pcad-tab,
 .pcad-button {
   display: inline-flex;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
   font: inherit;
   color: var(--pcad-text-muted);
+
+  /* 幅の見積もりを狂わせないよう、ボタンの中で文字を折り返させない。 */
+  white-space: nowrap;
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -184,12 +228,12 @@
 
 .pcad-tab {
   height: 24px;
-  padding: 0 var(--pcad-space-3);
+  padding: 0 var(--pcad-space-2);
 }
 
 .pcad-button {
   height: 26px;
-  padding: 0 10px;
+  padding: 0 var(--pcad-space-2);
 }
 
 .pcad-tab:hover,
@@ -245,10 +289,15 @@
   background: transparent;
 }
 
-/* 吸着の種別など、文字だけの小さなボタン。高さは揃えたまま幅と字だけを詰める。 */
-.pcad-button--compact {
-  padding: 0 var(--pcad-space-2);
-  font-size: var(--pcad-font-size-small);
+/*
+ * 図柄だけのボタン(吸着の種別・表示の切り替え・グリッド・ホーム・視点に合わせる)。
+ * 高さと同じ 26px の正方形にして、押せる面を文字つきのボタンと同じ大きさに保つ。
+ * 名前は読み上げ名(aria-label)とツールチップが担う(Toolbar.tsx、FR-904)。
+ */
+.pcad-button--icon {
+  justify-content: center;
+  width: 26px;
+  padding: 0;
 }
 
 /*

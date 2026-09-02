@@ -62,26 +62,28 @@ export function LayersIcon(props: IconProps): React.JSX.Element {
   );
 }
 
-/** 透視投影。視点へ集まる線で表す。 */
+/** 透視投影。画面の線から、奥の 1 点へ集まっていく 2 本の線で表す。 */
 export function PerspectiveIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>
       <path d="M2.5 2.5v11" />
-      <path d="M2.5 3.6 12.6 7.5" />
-      <path d="M2.5 12.4 12.6 8.5" />
+      <path d="M2.5 3.6 10.8 6.8" />
+      <path d="M2.5 12.4 10.8 9.2" />
       <circle cx="13.2" cy="8" r="0.9" fill="currentColor" stroke="none" />
     </SvgIcon>
   );
 }
 
-/** 平行投影。平行なままの線で表す。 */
+/**
+ * 平行投影。透視投影と同じ画面の線から、奥へ「平行なまま」伸びる 2 本の線で表す。
+ * 2 つを並べたとき、線が集まるか平行のままかだけが違って見えるようにしてある。
+ */
 export function OrthographicIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>
       <path d="M2.5 2.5v11" />
-      <path d="M13.5 2.5v11" />
-      <path d="M2.5 5.5h11" />
-      <path d="M2.5 10.5h11" />
+      <path d="M2.5 4.4h11" />
+      <path d="M2.5 11.6h11" />
     </SvgIcon>
   );
 }
@@ -265,12 +267,95 @@ export function PlaneIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/**
+ * 視点に合わせる。上に目、下に作図面を置いて「いま見ている向きの面にする」を表す。
+ * 文字を出さないボタンで使うので、名前はツールチップと読み上げ名が担う。
+ */
+export function MatchViewIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M1.6 5.2c2.2-3 8.6-3 10.8 0-2.2 3-8.6 3-10.8 0z" />
+      <circle cx="7" cy="5.2" r="1.3" />
+      <path d="M2.6 13.4 5.8 9.4h7.6l-3.2 4z" />
+    </SvgIcon>
+  );
+}
+
 /** 吸着。折れた線と、その角に重なる丸で「この点に合わせる」を表す。 */
 export function SnapIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>
       <path d="M2 12.6 8 8l6-4.6" />
       <circle cx="8" cy="8" r="2.6" />
+    </SvgIcon>
+  );
+}
+
+/*
+ * 吸着の種別 5 つ。どれも「吸い付く場所」を、画面に出る印(.pcad-snap-marker)と同じ
+ * 中を塗らない四角(一辺 4.8)で示し、線はその手前で止めて四角を潰さない。
+ * 何に吸い付くかは、四角のまわりの線の描き方だけで描き分ける。
+ */
+
+/** 端点。線の先に四角を置く。四角が線の途中でなく端にあることが目印。 */
+export function SnapEndpointIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.2 13.8 8.6 7.25" />
+      <rect x="8.6" y="2.4" width="4.8" height="4.8" />
+    </SvgIcon>
+  );
+}
+
+/** 交点。斜めに交わる 2 本の線が四角のところで出会う。 */
+export function SnapIntersectionIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.4 2.4 5.6 5.6" />
+      <path d="M13.6 2.4 10.4 5.6" />
+      <path d="M2.4 13.6 5.6 10.4" />
+      <path d="M13.6 13.6 10.4 10.4" />
+      <rect x="5.6" y="5.6" width="4.8" height="4.8" />
+    </SvgIcon>
+  );
+}
+
+/** 中点。両端に印のある線の、ちょうどまんなかに四角を置く。 */
+export function SnapMidpointIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.6 5.6v4.8" />
+      <path d="M13.4 5.6v4.8" />
+      <path d="M2.6 8h3" />
+      <path d="M10.4 8h3" />
+      <rect x="5.6" y="5.6" width="4.8" height="4.8" />
+    </SvgIcon>
+  );
+}
+
+/** 中心。円の中心に四角を置く。 */
+export function SnapCenterIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="5.7" />
+      <rect x="5.6" y="5.6" width="4.8" height="4.8" />
+    </SvgIcon>
+  );
+}
+
+/** 方眼。等間隔に並ぶ点の中の 1 つに、縦横の格子線とともに四角を置く。 */
+export function SnapGridIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 2.2v3.4" />
+      <path d="M8 10.4v3.4" />
+      <path d="M2.2 8h3.4" />
+      <path d="M10.4 8h3.4" />
+      <circle cx="3.1" cy="3.1" r="0.85" fill="currentColor" stroke="none" />
+      <circle cx="12.9" cy="3.1" r="0.85" fill="currentColor" stroke="none" />
+      <circle cx="3.1" cy="12.9" r="0.85" fill="currentColor" stroke="none" />
+      <circle cx="12.9" cy="12.9" r="0.85" fill="currentColor" stroke="none" />
+      <rect x="5.6" y="5.6" width="4.8" height="4.8" />
     </SvgIcon>
   );
 }

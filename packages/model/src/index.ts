@@ -36,3 +36,13 @@ export {
 } from './sketch/resolveSketch.js';
 export type { SketchRecomputeResult } from './sketch/recomputeSketch.js';
 export { recomputeSketch, reevaluateDocument } from './sketch/recomputeSketch.js';
+export type {
+  BooleanFeature, BooleanOperation, ExtrudeFeature, PartDocument, RevolveAxis, RevolveFeature,
+  SewFeature, SketchFaceRef, SketchLineRef, SolidFeature, SolidFeatureKind,
+} from './part/types.js';
+export type { SolidLabelKey } from './part/createPartDocument.js';
+export {
+  addSketch, appendSolid, consumedBodyIds, createEmptyPartDocument, DEFAULT_SEW_TOLERANCE_MM,
+  findSketch, findSolid, liveBodyIds, nextSolidId, nextSolidName, PART_SCHEMA_VERSION,
+  removeSolid, replaceSketch, replaceSolid, setActiveSketch, SOLID_LABELS,
+} from './part/createPartDocument.js';

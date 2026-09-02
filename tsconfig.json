@@ -5,6 +5,7 @@
     { "path": "./packages/expression" },
     { "path": "./packages/help-content" },
     { "path": "./packages/kernel" },
+    { "path": "./packages/model" },
     { "path": "./packages/drawing" },
     { "path": "./packages/io" }
   ]

@@ -22,8 +22,8 @@ const ViewportCanvas = lazy(async () => {
  * 区画は増やさない(rules/04-設計の規律.md、要件§7.1)。
  */
 export function AppShell(): React.JSX.Element {
-  const mesh = useAppStore((state) => state.mesh);
   const isComputing = useAppStore((state) => state.isComputing);
+  const featureCount = useAppStore((state) => state.sketch.features.length);
 
   return (
     <div className="pcad-shell">
@@ -51,8 +51,8 @@ export function AppShell(): React.JSX.Element {
                 <span>{t('statusBar.loading')}</span>
               </div>
             </div>
-          ) : mesh === null ? (
-            /* 計算が終わって、まだ形が無いときだけ最初の一歩を案内する(NFR-UX-6)。 */
+          ) : featureCount === 0 ? (
+            /* 計算が終わって、まだ何もかいていないときだけ最初の一歩を案内する(NFR-UX-6)。 */
             <div className="pcad-viewport__empty-state">
               <PlotPointIcon size={18} />
               <p className="pcad-viewport__empty-text">{t('emptyState.firstStep')}</p>

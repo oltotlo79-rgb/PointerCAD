@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import { expect, test } from '@playwright/test';
 
-test('Web 版が起動し、幾何カーネルが計算した箱がビューポートに描かれる', async ({ page }) => {
+test('Web 版が起動し、空のスケッチの案内が出る', async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -26,10 +26,9 @@ test('Web 版が起動し、幾何カーネルが計算した箱がビューポ�
   expect(size?.width ?? 0).toBeGreaterThan(100);
   expect(size?.height ?? 0).toBeGreaterThan(100);
 
-  // 幾何カーネル(Worker + OCCT)の計算が終わると、三角形の数がプロパティ欄に出る。
-  // OCCT の初期化に時間がかかるため、待ち時間を長めに取る。
-  await expect(page.locator('.pcad-panel--right')).toContainText('三角形の数');
-  await expect(page.locator('.pcad-panel--right')).toContainText('12', { timeout: 120_000 });
+  // 起動直後はまだ何もかいていないので、最初の一歩の案内が出る(NFR-UX-6、§0.a-0.2)。
+  // 幾何カーネル(Worker + OCCT)を通る経路は、面を張るタスク23 の sketch.spec.ts が受け持つ。
+  await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
 
   // ビューキューブも常時表示されている(FR-103)。
   await expect(page.locator('canvas.pcad-viewcube')).toBeVisible();

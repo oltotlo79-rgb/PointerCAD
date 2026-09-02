@@ -1,41 +1,24 @@
-import { createBoxPartDocument, createKernelBridge, recomputePart } from '@pointercad/model';
+import { createKernelBridge, recomputeSketch } from '@pointercad/model';
 import { useEffect } from 'react';
 
 import { AppShell } from '../shell/AppShell.js';
-import { useAppStore } from '../store/useAppStore.js';
+import { attachSketchRecompute } from '../store/useAppStore.js';
 
 /**
  * アプリの入口。Web 版とデスクトップ版で同じものを使う(要件§1.5、機能差を作らない)。
- * 起動時に「直方体1個の部品」を作り、Worker 内の幾何カーネルで計算して表示する(要件§6.3)。
+ *
+ * 起動時は空のスケッチから始め(§0.a-0.2、NFR-UX-6)、履歴が変わるたびに再計算する
+ * (要件§6.3)。`recomputeSketch` は面が 1 枚も無ければカーネルを呼ばないので、
+ * 起動直後に 50MB の WASM は読み込まれない。最初に面を作ったときに読み込みが起き、
+ * そのあいだは計算中の札が出る。
  */
 export function PointerCadApp(): React.JSX.Element {
   useEffect(() => {
-    const store = useAppStore.getState();
-    const document = createBoxPartDocument();
-    store.setDocument(
-      document.name,
-      document.features.map((feature) => feature.name),
-    );
-    store.setComputing(true);
-
     const bridge = createKernelBridge();
-    let cancelled = false;
-
-    void (async () => {
-      const result = await recomputePart(document, bridge);
-      if (cancelled) {
-        return;
-      }
-      if (result.status === 'ok') {
-        useAppStore.getState().setMesh(result.mesh);
-      } else {
-        // 計算に失敗してもアプリは落とさず、理由を画面に出す(FR-504、NFR-RE-1)。
-        useAppStore.getState().setError(result.message);
-      }
-    })();
+    const detach = attachSketchRecompute((document) => recomputeSketch(document, bridge));
 
     return () => {
-      cancelled = true;
+      detach();
       bridge.dispose();
     };
   }, []);

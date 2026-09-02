@@ -57,3 +57,48 @@ export interface ArcSpec {
 }
 
 export type CurveSpec = SegmentSpec | ArcSpec;
+
+/** 閉ループ 1 本から平面の面を 1 枚作る依頼(FR-309)。 */
+export interface PlanarFaceRequest {
+  /** 呼び出し側が付ける識別子。結果の対応づけに使う。 */
+  readonly id: string;
+  readonly curves: readonly CurveSpec[];
+}
+
+/** スケッチ 1 つ分のテッセレーションの依頼。 */
+export interface SketchTessellationRequest {
+  /** 面になっていない線・円弧。折れ線にして返す。 */
+  readonly curves: readonly CurveSpec[];
+  readonly faces: readonly PlanarFaceRequest[];
+}
+
+/** 面 1 枚分の表示用データ。MeshData と同じ並び方をする。 */
+export interface FaceMeshData {
+  readonly id: string;
+  /** 頂点座標。x, y, z の順に 3 個ずつ並ぶ。 */
+  readonly positions: Float32Array;
+  /** 頂点法線。positions と同じ長さ。 */
+  readonly normals: Float32Array;
+  /** 三角形の頂点番号。3 個ずつ並ぶ。 */
+  readonly indices: Uint32Array;
+  readonly triangleCount: number;
+  /** 面の外周の稜線。線分1本あたり 6 個(始点 xyz + 終点 xyz)。面の縁を描くのに使う。 */
+  readonly boundaryPositions: Float32Array;
+  /** 外周を作っている曲線の本数。 */
+  readonly boundaryEdgeCount: number;
+}
+
+/** 面を作れなかった依頼と、その理由(利用者へそのまま見せる日本語)。 */
+export interface SketchTessellationFailure {
+  readonly id: string;
+  readonly message: string;
+}
+
+/** スケッチ 1 つ分のテッセレーションの結果。 */
+export interface SketchTessellation {
+  /** 依頼の curves と同じ並びの折れ線。1 本あたり x, y, z が 3 個ずつ並ぶ。 */
+  readonly curvePolylines: readonly Float32Array[];
+  readonly faces: readonly FaceMeshData[];
+  /** 面を作れなかった依頼。1 枚失敗しても止めずに返す(FR-504)。 */
+  readonly failures: readonly SketchTessellationFailure[];
+}

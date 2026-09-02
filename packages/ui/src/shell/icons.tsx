@@ -201,3 +201,86 @@ export function EmptyBoxIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+/** 矢印のカーソル。選択の道具に使う。 */
+export function CursorIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.5 2.2v9.6l2.6-2.5 1.7 3.6 1.9-.9-1.7-3.5h3.6z" />
+    </SvgIcon>
+  );
+}
+
+/** 線分。2 つの端点を結ぶ線で表す。 */
+export function LineToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4.7 11.3 11.3 4.7" />
+      <circle cx="3.4" cy="12.6" r="1.5" />
+      <circle cx="12.6" cy="3.4" r="1.5" />
+    </SvgIcon>
+  );
+}
+
+/** 円弧。四分円と、その中心の点で表す。 */
+export function ArcToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.5 12.5A9 9 0 0 0 12.5 3.5" />
+      <circle cx="3.5" cy="3.5" r="1" fill="currentColor" stroke="none" />
+      <path d="M3.5 3.5 9.9 9.9" strokeDasharray="1.8 1.8" />
+    </SvgIcon>
+  );
+}
+
+/** 点列。一直線に等間隔で並ぶ 4 つの点。 */
+export function PointArrayToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="2.6" cy="8" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="6.2" cy="8" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="9.8" cy="8" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="13.4" cy="8" r="1.15" fill="currentColor" stroke="none" />
+    </SvgIcon>
+  );
+}
+
+/** 面。斜めに見た平行四辺形を塗って表す。 */
+export function FaceToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M1.8 11.2 6.2 4.8h8l-4.4 6.4z" fill="currentColor" fillOpacity={0.35} />
+    </SvgIcon>
+  );
+}
+
+/** かく面。斜めに見た平行四辺形に、方眼の線を1本ずつ入れて表す。 */
+export function PlaneIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M1.8 11.2 6.2 4.8h8l-4.4 6.4z" />
+      <path d="M4 8h8" />
+      <path d="M5.8 11.2 10.2 4.8" />
+    </SvgIcon>
+  );
+}
+
+/** 吸着。折れた線と、その角に重なる丸で「この点に合わせる」を表す。 */
+export function SnapIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 12.6 8 8l6-4.6" />
+      <circle cx="8" cy="8" r="2.6" />
+    </SvgIcon>
+  );
+}
+
+/** 続けてかく。つながった 2 つの輪で表す。 */
+export function ChainIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="5.9" cy="8" r="3.3" />
+      <circle cx="10.1" cy="8" r="3.3" />
+    </SvgIcon>
+  );
+}

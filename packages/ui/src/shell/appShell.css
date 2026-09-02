@@ -231,6 +231,34 @@
   background: transparent;
 }
 
+/* 吸着の種別など、文字だけの小さなボタン。高さは揃えたまま幅と字だけを詰める。 */
+.pcad-button--compact {
+  padding: 0 var(--pcad-space-2);
+  font-size: var(--pcad-font-size-small);
+}
+
+/*
+ * いま押しても効かないボタン(吸着が切のときの種別)。選ばれている印(アクセントの面)を
+ * 消して、効かないことを見た目で示す(NFR-UX-5)。文字は --pcad-text-muted のままにして
+ * コントラスト 4.5:1 以上を保つ(docs/報告記録.md 2026-09-02 16:51 の失敗)。
+ */
+.pcad-button[aria-disabled="true"] {
+  color: var(--pcad-text-muted);
+  cursor: not-allowed;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pcad-button[aria-disabled="true"]:hover,
+.pcad-button[aria-disabled="true"]:active {
+  color: var(--pcad-text-muted);
+  background: transparent;
+}
+
+.pcad-button[aria-disabled="true"] .pcad-icon {
+  color: var(--pcad-text-muted);
+}
+
 /* 押しボタン(トグルでないもの)は、押した瞬間だけアクセント寄りにする。 */
 .pcad-button--action:active {
   color: var(--pcad-text);
@@ -716,6 +744,16 @@ button.pcad-tree__row:focus-visible {
 
 .pcad-statusbar__spacer {
   flex: 1 1 auto;
+}
+
+/* いまのかく面と吸着の状態。単位の札の左へ小さく並べる(FR-905)。 */
+.pcad-statusbar__state {
+  display: flex;
+  flex: none;
+  gap: var(--pcad-space-1);
+  align-items: center;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
 }
 
 .pcad-statusbar__unit {

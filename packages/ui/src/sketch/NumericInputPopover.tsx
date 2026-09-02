@@ -4,11 +4,11 @@ import { ExpressionField } from './ExpressionField.js';
 import {
   applyNumericInputKey,
   COORDINATE_MODES,
-  createNumericInput,
   evaluateNumericInput,
   isCoordinateStep,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
+  nextNumericInput,
   NUMERIC_INPUT_KEYS,
   reduceNumericInput,
   STEP_TITLE_KEYS,
@@ -48,37 +48,6 @@ export function clampAnchor(
     left: Math.min(Math.max(anchor[0] + OFFSET_PIXELS, EDGE_MARGIN_PIXELS), maxLeft),
     top: Math.min(Math.max(anchor[1] + OFFSET_PIXELS, EDGE_MARGIN_PIXELS), maxTop),
   };
-}
-
-/**
- * 決定した後に続けて聞くこと(§2.9 の「確定した後」)。
- *
- * 線分・円弧・点列は 2 段階でひと組なので、前半を決めたら連続描画の入切に関わらず後半へ進む。
- * 後半まで終わったときは、連続描画が入なら次の 1 本を同じ手順で聞き直し(FR-307)、切なら閉じる。
- * 相対・極の基準点は `DEFAULT_COORDINATE_BASE`(直前に作った点)なので、開き直すだけで
- * 直前の端点からの続きになる。
- */
-export function nextNumericInput(
-  state: NumericInputState,
-  chaining: boolean,
-): NumericInputState | null {
-  switch (state.step) {
-    case 'lineStart':
-      return createNumericInput(state.toolId, 'lineEnd');
-    case 'arcCenter':
-      return createNumericInput(state.toolId, 'arcShape');
-    case 'pointArrayBase':
-      return createNumericInput(state.toolId, 'pointArrayShape');
-    case 'point':
-      // 点は 1 段階で終わるので、同じ指定方法のまま次の点を聞く。
-      return chaining ? createNumericInput(state.toolId, 'point', state.mode) : null;
-    case 'lineEnd':
-      return chaining ? createNumericInput(state.toolId, 'lineEnd') : null;
-    case 'arcShape':
-      return chaining ? createNumericInput(state.toolId, 'arcCenter') : null;
-    case 'pointArrayShape':
-      return chaining ? createNumericInput(state.toolId, 'pointArrayBase') : null;
-  }
 }
 
 /**

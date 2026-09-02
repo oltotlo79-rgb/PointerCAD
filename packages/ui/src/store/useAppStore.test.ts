@@ -78,11 +78,13 @@ beforeEach(() => {
     mesh: null,
     isComputing: false,
     errorMessage: null,
+    matchWorkPlaneRequestCount: 0,
+    viewportSize: [0, 0],
   });
 });
 
 describe('画面の状態(rules/04: ストア1本)', () => {
-  it('起動時は空のスケッチで、道具は選択、かく面は XY(§0.a-0.2、§0.a-0.3)', () => {
+  it('起動時は空のスケッチで、道具は選択、作図面は XY(§0.a-0.2、§0.a-0.3)', () => {
     const state = useAppStore.getState();
     expect(state.sketch.features).toEqual([]);
     expect(state.resolvedSketch.points).toEqual([]);
@@ -94,6 +96,8 @@ describe('画面の状態(rules/04: ストア1本)', () => {
     expect(state.hoveredElementId).toBeNull();
     expect(state.numericInput).toBeNull();
     expect(state.numericInputAnchor).toBeNull();
+    expect(state.pendingStart).toBeNull();
+    expect(state.snapIndicator).toBeNull();
   });
 
   it('スナップは既定で入、種別は 5 つとも有効(§0.a-0.10)', () => {
@@ -154,8 +158,12 @@ describe('画面の状態(rules/04: ストア1本)', () => {
     expect(useAppStore.getState().snapKinds).toContain('grid');
   });
 
-  it('道具を変えるとポップアップを閉じる(取りかけの操作を持ち越さない)', () => {
+  it('道具を変えるとポップアップを閉じ、取りかけの始点と吸着の印も落とす', () => {
     useAppStore.getState().openNumericInput(createNumericInput('point', 'point'), [10, 20]);
+    useAppStore.getState().setPendingStart(absoluteCoordinate(1, 2, 3));
+    useAppStore
+      .getState()
+      .setSnapIndicator({ screen: [30, 40], kind: 'endpoint', elementId: 'point-1' });
     expect(useAppStore.getState().numericInput).not.toBeNull();
     expect(useAppStore.getState().numericInputAnchor).toEqual([10, 20]);
 
@@ -163,6 +171,29 @@ describe('画面の状態(rules/04: ストア1本)', () => {
     expect(useAppStore.getState().activeTool).toBe('line');
     expect(useAppStore.getState().numericInput).toBeNull();
     expect(useAppStore.getState().numericInputAnchor).toBeNull();
+    expect(useAppStore.getState().pendingStart).toBeNull();
+    expect(useAppStore.getState().snapIndicator).toBeNull();
+  });
+
+  it('取りかけの始点を出し入れできる(線分の始点・円弧の中心・点列の基準)', () => {
+    const start = absoluteCoordinate(1, 2, 3);
+    useAppStore.getState().setPendingStart(start);
+    expect(useAppStore.getState().pendingStart).toBe(start);
+    useAppStore.getState().setPendingStart(null);
+    expect(useAppStore.getState().pendingStart).toBeNull();
+  });
+
+  it('吸着の印を出し入れできる(FR-107)', () => {
+    const indicator = { screen: [12, 34], kind: 'grid', elementId: null } as const;
+    useAppStore.getState().setSnapIndicator(indicator);
+    expect(useAppStore.getState().snapIndicator).toEqual(indicator);
+    useAppStore.getState().setSnapIndicator(null);
+    expect(useAppStore.getState().snapIndicator).toBeNull();
+  });
+
+  it('ビューポートの大きさを持つ(ポップアップの折り返しに使う)', () => {
+    useAppStore.getState().setViewportSize([800, 600]);
+    expect(useAppStore.getState().viewportSize).toEqual([800, 600]);
   });
 
   it('ポップアップの中身だけを書き換えられる(1 文字ごとの再評価に使う)', () => {
@@ -183,7 +214,7 @@ describe('画面の状態(rules/04: ストア1本)', () => {
   });
 });
 
-describe('かく面(§0.a-0.3)', () => {
+describe('作図面(§0.a-0.3)', () => {
   it('作図面を明示的に切り替えられる', () => {
     useAppStore.getState().setWorkPlane('yz');
     expect(useAppStore.getState().workPlaneId).toBe('yz');
@@ -214,6 +245,16 @@ describe('かく面(§0.a-0.3)', () => {
     useAppStore.getState().matchWorkPlaneToView(orbitFrom(90, 10));
     expect(useAppStore.getState().workPlaneId).toBe('xz');
     useAppStore.getState().matchWorkPlaneToView(orbitFrom(0, 80));
+    expect(useAppStore.getState().workPlaneId).toBe('xy');
+  });
+
+  it('「視点に合わせる」の要求は数で伝える(視点の正本はビューポートにある)', () => {
+    // ストアは視点を持たないので、押されたことだけを数えてビューポートに渡し返させる。
+    expect(useAppStore.getState().matchWorkPlaneRequestCount).toBe(0);
+    useAppStore.getState().requestMatchWorkPlaneToView();
+    useAppStore.getState().requestMatchWorkPlaneToView();
+    expect(useAppStore.getState().matchWorkPlaneRequestCount).toBe(2);
+    // 数えるだけで作図面は変わらない。
     expect(useAppStore.getState().workPlaneId).toBe('xy');
   });
 });

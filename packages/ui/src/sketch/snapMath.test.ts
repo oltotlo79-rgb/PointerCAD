@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  WORK_PLANES, type ResolvedArc, type ResolvedSegment, type ResolvedSketch, type Vec3,
+  WORK_PLANES, type ResolvedArc, type ResolvedPoint, type ResolvedSegment, type ResolvedSketch,
+  type Vec3,
 } from '@pointercad/model';
 
 import {
@@ -32,6 +33,18 @@ const ARC_SKETCH: ResolvedSketch = {
   points: [],
   segments: [],
   arcs: [QUARTER_ARC],
+  faces: [],
+  errors: [],
+};
+
+/** 点フィーチャー 1 つと、点列 `pa1` の 2 番目の点。 */
+const LONE_POINT: ResolvedPoint = { id: 'point-1', featureId: 'point-1', position: [1, 2, 3] };
+const ARRAY_POINT: ResolvedPoint = { id: 'pa1#2', featureId: 'pa1', position: [4, 5, 6] };
+
+const POINT_SKETCH: ResolvedSketch = {
+  points: [LONE_POINT, ARRAY_POINT],
+  segments: [],
+  arcs: [],
   faces: [],
   errors: [],
 };
@@ -99,8 +112,12 @@ describe('スナップ(FR-107)', () => {
     expect(kinds.filter((kind) => kind === 'midpoint')).toHaveLength(2);
     expect(kinds.filter((kind) => kind === 'intersection')).toHaveLength(1);
     expect(kinds.filter((kind) => kind === 'grid')).toHaveLength(1);
-    expect(candidates).toContainEqual({ kind: 'midpoint', position: [5, 0, 0], featureId: 'l1' });
-    expect(candidates).toContainEqual({ kind: 'grid', position: [0, 0, 0], featureId: null });
+    expect(candidates).toContainEqual({
+      kind: 'midpoint', position: [5, 0, 0], featureId: 'l1', elementId: 'l1',
+    });
+    expect(candidates).toContainEqual({
+      kind: 'grid', position: [0, 0, 0], featureId: null, elementId: null,
+    });
     // 落とす先が無ければ格子点の候補は作らない。
     expect(collectSnapCandidates(SKETCH, WORK_PLANES.xy, 5, null)).toHaveLength(7);
   });
@@ -116,7 +133,17 @@ describe('スナップ(FR-107)', () => {
     expect(candidates[2].kind).toBe('midpoint');
     expect(candidates[2].position[0]).toBeCloseTo(7.0710678118654755, 9);
     expect(candidates[2].position[1]).toBeCloseTo(7.0710678118654755, 9);
-    expect(candidates[3]).toEqual({ kind: 'center', position: [0, 0, 0], featureId: 'a1' });
+    expect(candidates[3]).toEqual({
+      kind: 'center', position: [0, 0, 0], featureId: 'a1', elementId: 'a1',
+    });
+  });
+
+  it('点の候補は elementId で 1 点を指す。点列の n 番目は `featureId#n`(FR-311 の土台)', () => {
+    const candidates = collectSnapCandidates(POINT_SKETCH, WORK_PLANES.xy, 5, null);
+    expect(candidates).toEqual([
+      { kind: 'endpoint', position: [1, 2, 3], featureId: 'point-1', elementId: 'point-1' },
+      { kind: 'endpoint', position: [4, 5, 6], featureId: 'pa1', elementId: 'pa1#2' },
+    ]);
   });
 
   it('判定半径の中では優先度が距離に勝ち、同じ優先度なら画面距離の近い方を選ぶ', () => {
@@ -127,7 +154,7 @@ describe('スナップ(FR-107)', () => {
     // 交点・中点・格子点の方が近いが、半径 12 の中では優先度の高い端点が勝つ。
     // 端点どうしでは最も近い (5,5,0) が選ばれる。
     expect(chooseSnap(candidates, project, [5, 2], SNAP_RADIUS_PIXELS, ALL_KINDS)).toEqual({
-      kind: 'endpoint', position: [5, 5, 0], featureId: 'l2',
+      kind: 'endpoint', position: [5, 5, 0], featureId: 'l2', elementId: 'l2',
     });
   });
 
@@ -136,7 +163,7 @@ describe('スナップ(FR-107)', () => {
     // 端点を切ると、次に優先度の高い交点が選ばれる。
     expect(
       chooseSnap(candidates, project, [5, 2], SNAP_RADIUS_PIXELS, without('endpoint')),
-    ).toEqual({ kind: 'intersection', position: [5, 0, 0], featureId: 'l1' });
+    ).toEqual({ kind: 'intersection', position: [5, 0, 0], featureId: 'l1', elementId: 'l1' });
     // 交点も切ると中点。
     expect(
       chooseSnap(candidates, project, [5, 2], SNAP_RADIUS_PIXELS, without('endpoint', 'intersection'))
@@ -145,7 +172,7 @@ describe('スナップ(FR-107)', () => {
     // グリッドだけ残せば格子点。
     expect(
       chooseSnap(candidates, project, [5, 2], SNAP_RADIUS_PIXELS, new Set<SnapKind>(['grid'])),
-    ).toEqual({ kind: 'grid', position: [5, 0, 0], featureId: null });
+    ).toEqual({ kind: 'grid', position: [5, 0, 0], featureId: null, elementId: null });
     // すべて切れば何にも吸い付かない。
     expect(chooseSnap(candidates, project, [5, 2], SNAP_RADIUS_PIXELS, new Set())).toBeNull();
     // 半径の外。最も近い候補でも 495 画素離れている。

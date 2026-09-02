@@ -5,6 +5,7 @@ import {
   resolveSketch,
   WORK_PLANE_IDS,
   WORK_PLANES,
+  type CoordinateInput,
   type PartMesh,
   type ResolvedSketch,
   type SketchDocument,
@@ -26,6 +27,15 @@ export type ProjectionMode = 'perspective' | 'orthographic';
 /** 表示スタイル 3 種(FR-105)。 */
 export type DisplayStyle = 'shaded' | 'shadedWithEdges' | 'wireframe';
 
+/** いま吸い付いている場所。印を出すのに使う(FR-107)。 */
+export interface SnapIndicator {
+  /** ビューポートの左上を原点とした画面座標(画素)。 */
+  readonly screen: readonly [number, number];
+  readonly kind: SnapKind;
+  /** 吸い付いた先の要素。方眼の交点は要素を持たないので null。 */
+  readonly elementId: string | null;
+}
+
 export interface AppState {
   readonly documentName: string;
   readonly featureNames: readonly string[];
@@ -37,10 +47,17 @@ export interface AppState {
   readonly showGrid: boolean;
   /** ホーム視点への復帰要求を数える(FR-108)。増えるたびにビューポートが反応する。 */
   readonly homeViewRequestCount: number;
+  /**
+   * 「視点に合わせる」の要求を数える(§0.a-0.3)。視点の正本は `attachCameraControls` に
+   * あってストアからは読めないので、ビューポートが増加に気づいて今の視点を渡し返す。
+   */
+  readonly matchWorkPlaneRequestCount: number;
+  /** ビューポート区画の大きさ(画素)。その場入力を端で折り返すのに使う。 */
+  readonly viewportSize: readonly [number, number];
 
   /** 選んでいる道具(FR-301〜309)。 */
   readonly activeTool: SketchToolId;
-  /** かく面(要件§4.3、§0.a-0.3)。既定は XY。 */
+  /** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
   readonly workPlaneId: WorkPlaneId;
   /** スケッチの履歴。保存されるのはこれだけ(要件§8)。 */
   readonly sketch: SketchDocument;
@@ -63,6 +80,10 @@ export interface AppState {
   readonly numericInput: NumericInputState | null;
   /** ポップアップを出す画面座標。 */
   readonly numericInputAnchor: readonly [number, number] | null;
+  /** 線分の始点・円弧の中心・点列の基準として先に決めた座標。まだ無ければ null。 */
+  readonly pendingStart: CoordinateInput | null;
+  /** いま吸い付いている場所。無ければ null(FR-107)。 */
+  readonly snapIndicator: SnapIndicator | null;
 
   // 動作を変える口はメソッド宣言ではなくプロパティ関数型で書く。メソッド宣言だと
   // useAppStore((state) => state.setX) のように取り出したとき @typescript-eslint/unbound-method
@@ -75,9 +96,12 @@ export interface AppState {
   readonly setDisplayStyle: (displayStyle: DisplayStyle) => void;
   readonly setShowGrid: (showGrid: boolean) => void;
   readonly requestHomeView: () => void;
+  readonly setViewportSize: (size: readonly [number, number]) => void;
 
   readonly setActiveTool: (tool: SketchToolId) => void;
   readonly setWorkPlane: (id: WorkPlaneId) => void;
+  /** 今の視点に最も近い作図面へ移してほしい、とビューポートへ頼む(§0.a-0.3)。 */
+  readonly requestMatchWorkPlaneToView: () => void;
   /** 今の視点に最も近い作図面へ移る(§0.a-0.3 の「視点に合わせる」)。 */
   readonly matchWorkPlaneToView: (orbit: OrbitState) => void;
   /** 履歴を差し替える。計算中の印を立てるだけで、解決はしない。 */
@@ -96,6 +120,8 @@ export interface AppState {
   ) => void;
   readonly updateNumericInput: (state: NumericInputState) => void;
   readonly closeNumericInput: () => void;
+  readonly setPendingStart: (start: CoordinateInput | null) => void;
+  readonly setSnapIndicator: (indicator: SnapIndicator | null) => void;
 }
 
 /** カメラから注視点へ向かう単位ベクトル。Z 軸が上の球面座標から作る。 */
@@ -154,6 +180,8 @@ export function createInitialSketchState(): Pick<
   | 'chaining'
   | 'numericInput'
   | 'numericInputAnchor'
+  | 'pendingStart'
+  | 'snapIndicator'
 > {
   // 起動時は空のスケッチから始める(§0.a-0.2、NFR-UX-6 の空状態ガイドと揃える)。
   const sketch = createEmptySketchDocument();
@@ -171,6 +199,8 @@ export function createInitialSketchState(): Pick<
     chaining: true,
     numericInput: null,
     numericInputAnchor: null,
+    pendingStart: null,
+    snapIndicator: null,
   };
 }
 
@@ -184,6 +214,8 @@ export const useAppStore = create<AppState>()((set) => ({
   displayStyle: 'shadedWithEdges',
   showGrid: true,
   homeViewRequestCount: 0,
+  matchWorkPlaneRequestCount: 0,
+  viewportSize: [0, 0],
   ...createInitialSketchState(),
 
   setDocument: (documentName, featureNames) => {
@@ -210,13 +242,26 @@ export const useAppStore = create<AppState>()((set) => ({
   requestHomeView: () => {
     set((state) => ({ homeViewRequestCount: state.homeViewRequestCount + 1 }));
   },
+  setViewportSize: (viewportSize) => {
+    set({ viewportSize });
+  },
 
   setActiveTool: (activeTool) => {
-    // 道具を変えたら入力中のポップアップは閉じる(取りかけの操作を持ち越さない、NFR-UX-3)。
-    set({ activeTool, numericInput: null, numericInputAnchor: null });
+    // 道具を変えたら入力中のポップアップを閉じ、取りかけの始点と吸着の印も落とす
+    // (取りかけの操作を持ち越さない、NFR-UX-3)。
+    set({
+      activeTool,
+      numericInput: null,
+      numericInputAnchor: null,
+      pendingStart: null,
+      snapIndicator: null,
+    });
   },
   setWorkPlane: (workPlaneId) => {
     set({ workPlaneId });
+  },
+  requestMatchWorkPlaneToView: () => {
+    set((state) => ({ matchWorkPlaneRequestCount: state.matchWorkPlaneRequestCount + 1 }));
   },
   matchWorkPlaneToView: (orbit) => {
     set({ workPlaneId: workPlaneForOrbit(orbit) });
@@ -270,6 +315,12 @@ export const useAppStore = create<AppState>()((set) => ({
   },
   closeNumericInput: () => {
     set({ numericInput: null, numericInputAnchor: null });
+  },
+  setPendingStart: (pendingStart) => {
+    set({ pendingStart });
+  },
+  setSnapIndicator: (snapIndicator) => {
+    set({ snapIndicator });
   },
 }));
 

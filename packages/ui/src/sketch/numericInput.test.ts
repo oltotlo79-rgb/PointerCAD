@@ -14,6 +14,7 @@ import {
   isCoordinateStep,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
+  nextNumericInput,
   NUMERIC_INPUT_KEYS,
   NUMERIC_INPUT_STEPS,
   reduceNumericInput,
@@ -280,5 +281,52 @@ describe('その場数値入力の状態(NFR-UX-1〜5)', () => {
       expect(MESSAGE_KEYS).toContain(key);
       expect(t(key).length, key).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('決めた後に続けて聞くこと(§2.9「確定した後」、FR-307)', () => {
+  it('2 段階の道具は、前半を決めたら「続けてかく」の入切に関わらず後半へ進む', () => {
+    const pairs = [
+      ['line', 'lineStart', 'lineEnd'],
+      ['arc', 'arcCenter', 'arcShape'],
+      ['pointArray', 'pointArrayBase', 'pointArrayShape'],
+    ] as const;
+    for (const [toolId, step, expected] of pairs) {
+      for (const chaining of [false, true]) {
+        const next = nextNumericInput(createNumericInput(toolId, step), chaining);
+        expect(next?.step, `${step} → ${expected}`).toBe(expected);
+        expect(next?.toolId).toBe(toolId);
+      }
+    }
+  });
+
+  it('「続けてかく」が切なら、ひと組を終えたところで閉じる', () => {
+    const endings = ['point', 'lineEnd', 'arcShape', 'pointArrayShape'] as const;
+    for (const step of endings) {
+      expect(nextNumericInput(createNumericInput('point', step), false), step).toBeNull();
+    }
+  });
+
+  it('「続けてかく」が入なら、次のひと組の最初の段階へ戻る(FR-307)', () => {
+    expect(nextNumericInput(createNumericInput('line', 'lineEnd'), true)?.step).toBe('lineEnd');
+    expect(nextNumericInput(createNumericInput('arc', 'arcShape'), true)?.step).toBe('arcCenter');
+    expect(nextNumericInput(createNumericInput('pointArray', 'pointArrayShape'), true)?.step).toBe(
+      'pointArrayBase',
+    );
+  });
+
+  it('点は同じ座標モードのまま次の点を聞く(打ち直しの手間を増やさない)', () => {
+    const polar = createNumericInput('point', 'point', 'polar');
+    const next = nextNumericInput(polar, true);
+    expect(next?.step).toBe('point');
+    expect(next?.mode).toBe('polar');
+    // 欄は既定値へ戻る。前の点の値をそのまま足し続けないため。
+    expect(next?.fields.map((field) => field.source)).toEqual(['10', '0', '0']);
+  });
+
+  it('線分の終点は続けても相対のまま(直前の端からの続きが自然、FR-307)', () => {
+    const next = nextNumericInput(createNumericInput('line', 'lineEnd'), true);
+    expect(next?.mode).toBe('relative');
+    expect(next?.focusedIndex).toBe(0);
   });
 });

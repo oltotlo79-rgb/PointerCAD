@@ -254,7 +254,7 @@ export function FaceToolIcon(props: IconProps): React.JSX.Element {
   );
 }
 
-/** かく面。斜めに見た平行四辺形に、方眼の線を1本ずつ入れて表す。 */
+/** 作図面。斜めに見た平行四辺形に、方眼の線を1本ずつ入れて表す。 */
 export function PlaneIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>

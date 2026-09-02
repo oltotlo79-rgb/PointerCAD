@@ -524,6 +524,25 @@ button.pcad-tree__row:focus-visible {
   margin: 0;
 }
 
+/*
+ * 吸い付いている場所の印(FR-107)。位置は画素値で style から与える
+ * (AppShell.tsx)。操作の邪魔をしないよう当たり判定を持たせない。
+ * 中を塗らない四角にして、下にある点や線の端が印に隠れないようにする。
+ */
+.pcad-snap-marker {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+  background: transparent;
+  border: 2px solid var(--pcad-accent);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 45%);
+  transform: translate(-50%, -50%);
+}
+
 /* ===== その場数値入力(NFR-UX-2) ===== */
 
 /*
@@ -746,7 +765,7 @@ button.pcad-tree__row:focus-visible {
   flex: 1 1 auto;
 }
 
-/* いまのかく面と吸着の状態。単位の札の左へ小さく並べる(FR-905)。 */
+/* いまの作図面と吸着の状態。単位の札の左へ小さく並べる(FR-905)。 */
 .pcad-statusbar__state {
   display: flex;
   flex: none;

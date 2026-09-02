@@ -45,6 +45,12 @@ export interface SnapCandidate {
   readonly position: Vec3;
   /** どの要素から来た候補か。グリッドは null。 */
   readonly featureId: string | null;
+  /**
+   * 候補の元になった要素そのものの id。点列の n 番目の点だけは `featureId#n` になり、
+   * `PointReference { kind: 'point', pointId }` でその 1 点を名指しできる(FR-311 の土台)。
+   * 線分・円弧から来た候補は featureId と同じ。グリッドは null。
+   */
+  readonly elementId: string | null;
 }
 
 /** ワールド座標を画面座標へ写す。ビューポートが渡す。画面の外なら null。 */
@@ -99,16 +105,32 @@ export function collectSnapCandidates(
   const candidates: SnapCandidate[] = [];
 
   for (const point of sketch.points) {
-    candidates.push({ kind: 'endpoint', position: point.position, featureId: point.featureId });
+    candidates.push({
+      kind: 'endpoint',
+      position: point.position,
+      featureId: point.featureId,
+      elementId: point.id,
+    });
   }
 
   for (const segment of sketch.segments) {
-    candidates.push({ kind: 'endpoint', position: segment.from, featureId: segment.featureId });
-    candidates.push({ kind: 'endpoint', position: segment.to, featureId: segment.featureId });
+    candidates.push({
+      kind: 'endpoint',
+      position: segment.from,
+      featureId: segment.featureId,
+      elementId: segment.featureId,
+    });
+    candidates.push({
+      kind: 'endpoint',
+      position: segment.to,
+      featureId: segment.featureId,
+      elementId: segment.featureId,
+    });
     candidates.push({
       kind: 'midpoint',
       position: lerpVec3(segment.from, segment.to, 0.5),
       featureId: segment.featureId,
+      elementId: segment.featureId,
     });
   }
 
@@ -119,18 +141,26 @@ export function collectSnapCandidates(
       kind: 'endpoint',
       position: arcPointAt(arc, arc.startAngle),
       featureId: arc.featureId,
+      elementId: arc.featureId,
     });
     candidates.push({
       kind: 'endpoint',
       position: arcPointAt(arc, arc.endAngle),
       featureId: arc.featureId,
+      elementId: arc.featureId,
     });
     candidates.push({
       kind: 'midpoint',
       position: arcPointAt(arc, (arc.startAngle + arc.endAngle) / 2),
       featureId: arc.featureId,
+      elementId: arc.featureId,
     });
-    candidates.push({ kind: 'center', position: arc.center, featureId: arc.featureId });
+    candidates.push({
+      kind: 'center',
+      position: arc.center,
+      featureId: arc.featureId,
+      elementId: arc.featureId,
+    });
   }
 
   // 交点は線分どうしだけ(§0.a-0.10。円弧との交点は P2)。
@@ -142,6 +172,7 @@ export function collectSnapCandidates(
           kind: 'intersection',
           position: crossing,
           featureId: sketch.segments[i].featureId,
+          elementId: sketch.segments[i].featureId,
         });
       }
     }
@@ -152,6 +183,7 @@ export function collectSnapCandidates(
       kind: 'grid',
       position: nearestGridPoint(plane, pointOnPlane, gridSpacing),
       featureId: null,
+      elementId: null,
     });
   }
 

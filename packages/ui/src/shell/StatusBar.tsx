@@ -19,7 +19,7 @@ const GUIDE_KEYS = {
   face: 'statusBar.guide.face',
 } as const satisfies Record<SketchToolId, MessageKey>;
 
-/** かく面の表記。ツールバーの区画名と同じ言葉にする。 */
+/** 作図面の表記。ツールバーの区画名と同じ言葉にする。 */
 const PLANE_KEYS = {
   xy: 'toolbar.plane.xy',
   xz: 'toolbar.plane.xz',
@@ -30,7 +30,7 @@ const PLANE_KEYS = {
  * 下端のステータスバー(要件§7.1、FR-905)。
  *
  * 左は今の状況を1文で伝える(道具ごとの操作ガイド / 計算中 / 失敗)。
- * 右は「かく面」「吸着」「単位」を小さな札で常に見せる。
+ * 右は「作図面」「吸着」「単位」を小さな札で常に見せる。
  * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
  */
 export function StatusBar(): React.JSX.Element {

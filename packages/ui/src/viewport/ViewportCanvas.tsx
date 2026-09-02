@@ -4,6 +4,7 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
+import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import { createViewportScene } from './createViewportScene.js';
 
@@ -11,7 +12,7 @@ import { createViewportScene } from './createViewportScene.js';
  * 3D ビューポート(FR-101、FR-102、FR-104、FR-105、FR-106、FR-108、FR-310)。
  *
  * 視点の正本は `attachCameraControls` が持ち、画面状態(投影・表示スタイル・方眼・メッシュ・
- * スケッチ・ホバー・選択・かく面)は Zustand ストアから読む(rules/04-設計の規律.md)。
+ * スケッチ・ホバー・選択・作図面)は Zustand ストアから読む(rules/04-設計の規律.md)。
  * 描画は入力・状態変化・大きさの変化があったときだけ次の描画機会に1回行い、
  * 常時のループは回さない(NFR-PF-1)。
  *
@@ -73,6 +74,8 @@ export function ViewportCanvas(): React.JSX.Element {
 
     const controls = attachCameraControls(canvas, requestDraw);
     controlsRef.current = controls;
+    // 視点操作を先に結び、その後ろでスケッチの操作を結ぶ(中ボタン・Alt の取り合いを避ける)。
+    const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit().distance);
     setControlsReady(true);
 
     const observer = new ResizeObserver(() => {
@@ -107,13 +110,18 @@ export function ViewportCanvas(): React.JSX.Element {
       ) {
         scene.setSketchHighlight(next.hoveredElementId, next.selection);
       }
-      // かく面が変わったら矩形の向きを変える(§0.a-0.3)。
+      // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。
       if (next.workPlaneId !== previous.workPlaneId) {
         scene.setWorkPlane(next.workPlaneId);
       }
       // ホーム視点への復帰要求(FR-108)。数が増えたときだけ戻す。
       if (next.homeViewRequestCount !== previous.homeViewRequestCount) {
         controls.goHome();
+      }
+      // 「視点に合わせる」の要求(§0.a-0.3)。視点の正本はここにしか無いので、
+      // 今の視点をストアへ渡し返して作図面を決めてもらう。
+      if (next.matchWorkPlaneRequestCount !== previous.matchWorkPlaneRequestCount) {
+        useAppStore.getState().matchWorkPlaneToView(controls.getOrbit());
       }
       requestDraw();
     });
@@ -124,6 +132,7 @@ export function ViewportCanvas(): React.JSX.Element {
       }
       unsubscribe();
       observer.disconnect();
+      interaction.detach();
       controls.detach();
       scene.dispose();
       controlsRef.current = null;

@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 
 import { t } from '../i18n/t.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
+import { commitSketchInput } from '../sketch/sketchCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
@@ -25,20 +26,23 @@ const ViewportCanvas = lazy(async () => {
 export function AppShell(): React.JSX.Element {
   const isComputing = useAppStore((state) => state.isComputing);
   const featureCount = useAppStore((state) => state.sketch.features.length);
+  const viewportSize = useAppStore((state) => state.viewportSize);
+  const snapIndicator = useAppStore((state) => state.snapIndicator);
   const viewportRef = useRef<HTMLDivElement>(null);
-  /** ビューポートの大きさ(画素)。その場入力を端で折り返すためだけに使う表示用の控え。 */
-  const [viewportSize, setViewportSize] = useState<readonly [number, number]>([0, 0]);
 
   useEffect(() => {
     const element = viewportRef.current;
     if (element === null) {
       return;
     }
-    const observer = new ResizeObserver(() => {
-      setViewportSize([element.clientWidth, element.clientHeight]);
-    });
+    // ビューポートの実寸はストアへ入れる。ツールバーもポップアップもここから読み、
+    // DOM を直接探しに行かない(rules/04-設計の規律.md「状態はストア1本」)。
+    const report = (): void => {
+      useAppStore.getState().setViewportSize([element.clientWidth, element.clientHeight]);
+    };
+    const observer = new ResizeObserver(report);
     observer.observe(element);
-    setViewportSize([element.clientWidth, element.clientHeight]);
+    report();
     return () => {
       observer.disconnect();
     };
@@ -79,17 +83,37 @@ export function AppShell(): React.JSX.Element {
           ) : null}
           {/*
             その場数値入力(NFR-UX-2)。開いているときだけ自分で姿を現す。
-            決めた値から何を作るかはスケッチの道具側の役目なので、ここでは受け取るだけにして
-            履歴へ積む処理は計画書 タスク21 で差し替える。閉じるのと連続描画の続きは
-            ポップアップ自身が行う。
+            決まった値から何を履歴へ積むかは純関数 commitSketchInput が決め、
+            次に何を聞くか・閉じるかはポップアップ自身が決める(FR-307)。
           */}
           <NumericInputPopover
             viewportWidth={viewportSize[0]}
             viewportHeight={viewportSize[1]}
-            onCommit={() => {
-              // タスク21 でここが履歴への追加になる。
+            onCommit={(commit) => {
+              const store = useAppStore.getState();
+              const outcome = commitSketchInput(commit, {
+                document: store.sketch,
+                planeId: store.workPlaneId,
+                chaining: store.chaining,
+                pendingStart: store.pendingStart,
+              });
+              if (outcome.document !== store.sketch) {
+                store.setSketch(outcome.document);
+              }
+              store.setPendingStart(outcome.pendingStart);
             }}
           />
+          {snapIndicator === null ? null : (
+            /* 吸い付いている場所の印(FR-107)。 */
+            <span
+              className="pcad-snap-marker"
+              style={{
+                left: `${String(snapIndicator.screen[0])}px`,
+                top: `${String(snapIndicator.screen[1])}px`,
+              }}
+              aria-hidden="true"
+            />
+          )}
         </div>
         <PropertyPanel />
       </div>

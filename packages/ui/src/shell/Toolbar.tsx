@@ -73,7 +73,7 @@ const TOOLS = [
   readonly Icon: (props: IconProps) => React.JSX.Element;
 }[];
 
-/** かく面(要件§4.3、§0.a-0.3)。既定は XY。 */
+/** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
 const PLANES = [
   { id: 'xy', labelKey: 'toolbar.plane.xy', tooltipKey: 'toolbar.plane.xyTooltip' },
   { id: 'xz', labelKey: 'toolbar.plane.xz', tooltipKey: 'toolbar.plane.xzTooltip' },
@@ -129,14 +129,15 @@ const FALLBACK_ANCHOR_PIXELS = 160;
  * ポップアップを出す基準の画面座標(§2.9「表示位置」)。
  *
  * 道具を選んだ直後はまだどこもクリックしていないので、ビューポートのほぼ中央を基準にする。
- * 大きさは区画の実寸から読む。はみ出しの折り返しはポップアップ側(`clampAnchor`)が行う。
+ * 大きさは `AppShell` が実寸を入れたストアから読む(DOM を直接探しに行かない、
+ * rules/04-設計の規律.md)。はみ出しの折り返しはポップアップ側(`clampAnchor`)が行う。
  */
 function viewportCenterAnchor(): readonly [number, number] {
-  const viewport = document.querySelector('.pcad-viewport');
-  if (viewport === null) {
+  const [width, height] = useAppStore.getState().viewportSize;
+  if (width <= 0 || height <= 0) {
     return [FALLBACK_ANCHOR_PIXELS, FALLBACK_ANCHOR_PIXELS];
   }
-  return [Math.round(viewport.clientWidth / 2), Math.round(viewport.clientHeight / 2)];
+  return [Math.round(width / 2), Math.round(height / 2)];
 }
 
 /**
@@ -159,7 +160,7 @@ function activateTool(id: SketchToolId, pressed: boolean): void {
 /**
  * 画面上端のツールバー(要件§7.1)。
  *
- * 左から「製品名 → モードのタブ → スケッチ → かく面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」
+ * 左から「製品名 → モードのタブ → スケッチ → 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」
  * の機能グループを並べる。どのグループも区画名を頭に置き、いま選ばれているものを
  * アクセント色の面で示す(NFR-UX-7)。状態の正本は Zustand ストア1本(rules/04-設計の規律.md)。
  */
@@ -249,6 +250,20 @@ export function Toolbar(): React.JSX.Element {
               {t(plane.labelKey)}
             </button>
           ))}
+          {/*
+            いま見ている向きに最も近い作図面へ移る(§0.a-0.3)。視点の正本はビューポートの
+            中にあるので、ここでは要求を数えるだけにしてビューポートに応えてもらう。
+          */}
+          <button
+            type="button"
+            className="pcad-button pcad-button--compact"
+            title={t('toolbar.plane.matchViewTooltip')}
+            onClick={() => {
+              useAppStore.getState().requestMatchWorkPlaneToView();
+            }}
+          >
+            {t('toolbar.plane.matchView')}
+          </button>
         </div>
       </div>
 

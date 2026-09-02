@@ -4,6 +4,7 @@
     { "path": "./tsconfig.tools.json" },
     { "path": "./packages/expression" },
     { "path": "./packages/help-content" },
+    { "path": "./packages/kernel" },
     { "path": "./packages/drawing" },
     { "path": "./packages/io" }
   ]

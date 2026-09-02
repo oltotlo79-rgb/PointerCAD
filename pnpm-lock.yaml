@@ -15,6 +15,9 @@ catalogs:
     '@types/node':
       specifier: 22.20.1
       version: 22.20.1
+    comlink:
+      specifier: 4.4.2
+      version: 4.4.2
     eslint:
       specifier: 10.9.1
       version: 10.9.1
@@ -24,6 +27,9 @@ catalogs:
     globals:
       specifier: 17.11.0
       version: 17.11.0
+    opencascade.js:
+      specifier: 2.0.0-beta.b5ff984
+      version: 2.0.0-beta.b5ff984
     typescript:
       specifier: 5.9.3
       version: 5.9.3
@@ -92,6 +98,22 @@ importers:
 
   packages/io:
     devDependencies:
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1))
+
+  packages/kernel:
+    dependencies:
+      comlink:
+        specifier: 'catalog:'
+        version: 4.4.2
+      opencascade.js:
+        specifier: 'catalog:'
+        version: 2.0.0-beta.b5ff984(ws@8.21.3)
+    devDependencies:
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.2(@types/node@22.20.1)
       vitest:
         specifier: 'catalog:'
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1))
@@ -498,6 +520,9 @@ packages:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
     engines: {node: '>=18'}
 
+  comlink@4.4.2:
+    resolution: {integrity: sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g==}
+
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
 
@@ -810,6 +835,11 @@ packages:
     resolution: {integrity: sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==}
     engines: {node: '>=12.20.0'}
 
+  opencascade.js@2.0.0-beta.b5ff984:
+    resolution: {integrity: sha512-4ZIrYrfrCV7SXvQFSmbHlfueSYngQNWGVrRVloVaAEZHDSY+R1k2htdY4AU5axbIGkbWVmrj+M8nmyeMLAelwA==}
+    peerDependencies:
+      ws: ^8.5.0
+
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
@@ -1043,6 +1073,18 @@ packages:
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
+
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
@@ -1470,6 +1512,8 @@ snapshots:
 
   chai@6.2.2: {}
 
+  comlink@4.4.2: {}
+
   convert-source-map@2.0.0: {}
 
   cross-spawn@7.0.6:
@@ -1731,6 +1775,10 @@ snapshots:
 
   obug@2.1.4: {}
 
+  opencascade.js@2.0.0-beta.b5ff984(ws@8.21.3):
+    dependencies:
+      ws: 8.21.3
+
   optionator@0.9.4:
     dependencies:
       deep-is: 0.1.4
@@ -1907,6 +1955,8 @@ snapshots:
       stackback: 0.0.2
 
   word-wrap@1.2.5: {}
+
+  ws@8.21.3: {}
 
   yallist@3.1.1: {}
 

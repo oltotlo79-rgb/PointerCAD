@@ -313,9 +313,21 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
     expect(machiningGuideText('chamfer', 1)).toBe('辺を 1 本選んでいます。');
   });
 
-  it('立体を選ぶ道具(パターン等)は選択の数で案内を変えない', () => {
-    expect(machiningGuideText('linearPattern', 3)).toBeNull();
+  it('「選択」は選択の数で案内を変えない(ブーリアンの案内は guideKeyFor が担う)', () => {
     expect(machiningGuideText('select', 3)).toBeNull();
+  });
+
+  it('パターンは部分形状の数(第2引数)では案内を変えない。並べる立体の数(第3引数)だけを見る', () => {
+    expect(machiningGuideText('linearPattern', 3)).toBeNull();
+    expect(machiningGuideText('linearPattern', 3, 0)).toBeNull();
+    expect(machiningGuideText('circularPattern', 3, 0)).toBeNull();
+  });
+
+  it('直線/円形パターンは並べる穴・ねじ穴(立体)を選んだら、向き・軸と個数などを促す(タスク29、§0.a-0.21)', () => {
+    expect(machiningGuideText('linearPattern', 0, 1)).toBe(t('statusBar.guide.linearPatternReady'));
+    expect(machiningGuideText('circularPattern', 0, 1)).toBe(t('statusBar.guide.circularPatternReady'));
+    expect(t('statusBar.guide.linearPatternReady')).toBe('向きと間隔、個数を入れて決定してください。');
+    expect(t('statusBar.guide.circularPatternReady')).toBe('軸と角度、個数を入れて決定してください。');
   });
 
   it('describeStatus は選んでいる面の数に応じて案内を進める', () => {
@@ -333,6 +345,19 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
       selectedSubShapeCount: 1,
     });
     expect(withFace.text).toBe(t('statusBar.guide.centerPoint'));
+  });
+
+  it('describeStatus は並べる穴・ねじ穴(立体)を選んでいるかに応じてパターンの案内を進める(タスク29)', () => {
+    const noSource = describeStatus({ ...quiet(), activeTool: 'linearPattern', selectedBodyCount: 0 });
+    expect(noSource.text).toBe(t('statusBar.guide.linearPattern'));
+    const withSource = describeStatus({ ...quiet(), activeTool: 'linearPattern', selectedBodyCount: 1 });
+    expect(withSource.text).toBe(t('statusBar.guide.linearPatternReady'));
+    const circularWithSource = describeStatus({
+      ...quiet(),
+      activeTool: 'circularPattern',
+      selectedBodyCount: 1,
+    });
+    expect(circularWithSource.text).toBe(t('statusBar.guide.circularPatternReady'));
   });
 
   it('describeStatus(selectionKind を渡す) は札の文言が種類に応じて変わる', () => {

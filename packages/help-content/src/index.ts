@@ -43,6 +43,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/fillet-chamfer.md',
   },
   { id: 'thread', title: 'ねじ穴をあける', path: 'docs/ja/thread.md' },
+  { id: 'pattern', title: '同じ加工を並べる', path: 'docs/ja/pattern.md' },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

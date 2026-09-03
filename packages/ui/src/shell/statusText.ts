@@ -204,29 +204,39 @@ function selectionKindText(kind: SelectionKind): string {
 }
 
 /**
- * 加工の道具(穴・ねじ穴・R 面取り・C 面取り)で、選択が進むにつれて案内を更新する
- * (§0.a-0.6「選択の数を案内に出す」)。部分形状が 1 つも選ばれていなければ null を返し、
- * 呼び出し側は道具の基本案内(`guideKeyFor`)へ後退する。
+ * 加工の道具(穴・ねじ穴・R 面取り・C 面取り・直線/円形パターン)で、選択が進むにつれて案内を
+ * 更新する(§0.a-0.6「選択の数を案内に出す」、P3 タスク29 でパターンの段を追加)。
+ * その道具にとって何も選ばれていなければ null を返し、呼び出し側は道具の基本案内
+ * (`guideKeyFor`)へ後退する。
  *
  * - 穴・ねじ穴: 面を 1 つ以上選んだら「中心にする点を選んでください。」に進む(面を選ぶまでは
  *   基本案内が「面と点の両方を」とまとめて伝えている)。
  * - R/C 面取り: 辺を選ぶたびに「辺を N 本選んでいます。」で選んだ数を伝える(P2 の
  *   `statusBar.guide.booleanReady` と同じ「選択が進んだら具体的に伝える」考え方)。
+ * - 直線/円形パターン: 並べる穴・ねじ穴は部分形状ではなく立体そのものを選ぶ道具
+ *   (`selectionKind` が `'body'` のまま、machiningCommands.ts の `selectedPatternSource` と
+ *   同じ判定材料)なので、`selectedSubShapeCount` ではなく `selectedBodyCount` で進み具合を見る。
+ *   1 つも選んでいなければ基本案内「並べる穴を選んでください。」のまま、選んでいれば
+ *   直線は「向きと間隔、個数を」、円形は「軸と角度、個数を」入れるよう促す。
  */
 export function machiningGuideText(
   activeTool: NumericInputToolId,
   selectedSubShapeCount: number,
+  selectedBodyCount = 0,
 ): string | null {
-  if (selectedSubShapeCount <= 0) {
-    return null;
-  }
   switch (activeTool) {
     case 'hole':
     case 'threadHole':
-      return t('statusBar.guide.centerPoint');
+      return selectedSubShapeCount <= 0 ? null : t('statusBar.guide.centerPoint');
     case 'fillet':
     case 'chamfer':
-      return fill(t('statusBar.guide.edgesSelected'), { count: String(selectedSubShapeCount) });
+      return selectedSubShapeCount <= 0
+        ? null
+        : fill(t('statusBar.guide.edgesSelected'), { count: String(selectedSubShapeCount) });
+    case 'linearPattern':
+      return selectedBodyCount <= 0 ? null : t('statusBar.guide.linearPatternReady');
+    case 'circularPattern':
+      return selectedBodyCount <= 0 ? null : t('statusBar.guide.circularPatternReady');
     default:
       return null;
   }
@@ -374,9 +384,13 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
       progress: null,
     };
   }
-  // 加工の道具は、部分形状を選ぶにつれて具体的な案内へ進める(§0.a-0.6)。
-  // 何も選んでいなければ null が返り、道具の基本案内(guideKeyFor)へ後退する。
-  const machiningText = machiningGuideText(input.activeTool, input.selectedSubShapeCount);
+  // 加工の道具は、部分形状(またはパターンなら立体)を選ぶにつれて具体的な案内へ進める
+  // (§0.a-0.6)。何も選んでいなければ null が返り、道具の基本案内(guideKeyFor)へ後退する。
+  const machiningText = machiningGuideText(
+    input.activeTool,
+    input.selectedSubShapeCount,
+    input.selectedBodyCount,
+  );
   return {
     kind: 'guide',
     text: machiningText ?? t(guideKeyFor(input.activeTool, input.selectedBodyCount)),

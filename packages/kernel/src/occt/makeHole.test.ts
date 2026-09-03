@@ -1,6 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { HoleStepSpec, SolidFaceInfo, SubShapeQuery, Vec3Tuple } from '../types.js';
+import type {
+  HoleStepSpec,
+  RigidTransformSpec,
+  SolidFaceInfo,
+  SubShapeQuery,
+  Vec3Tuple,
+} from '../types.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import type { OcctShapeHandle } from './makeBox.js';
@@ -455,27 +461,128 @@ describe('穴あけ(FR-405、FR-504)', () => {
     }
   });
 
-  it('パターン(変換つき)はタスク9 まで受け付けない', () => {
-    const { handle, faces, top } = plateWithTopFace();
+  /**
+   * パターンの通し(§0.a-0.20、タスク9)。
+   *
+   * パターンは**もとの穴のボディを消費して、変換した工具を n−1 組ぶん追加で差し引く**ので、
+   * ここでも「①穴を 1 つあける → ②その結果を対象に、変換つきで同じ穴をあける」という
+   * 本番と同じ 2 段で確かめる。②の面の指紋は①の結果から取り直す(UI が選び直すのと同じ)。
+   */
+  function drillThenPattern(
+    box: { dx: number; dy: number; dz: number },
+    center: Vec3Tuple,
+    diameter: number,
+    transforms: readonly RigidTransformSpec[],
+  ): number {
+    const handle = makeBox(oc, box);
     try {
-      expect(() =>
-        makeHole(
+      const first = facesOf(handle.shape);
+      const firstResult = makeHole(
+        oc,
+        holeSpec({ face: faceQuery(planeFacing(first, [0, 0, 1])), centers: [center], diameter }),
+        handle.shape,
+        first,
+      );
+      try {
+        const second = facesOf(firstResult.shape);
+        const patterned = makeHole(
           oc,
           holeSpec({
-            face: faceQuery(top),
-            transforms: [
-              {
-                translation: [20, 0, 0],
-                rotationOrigin: [0, 0, 0],
-                rotationAxis: [0, 0, 1],
-                rotationAngle: 0,
-              },
-            ],
+            face: faceQuery(planeFacing(second, [0, 0, 1])),
+            centers: [center],
+            diameter,
+            transforms,
           }),
-          handle.shape,
-          faces,
-        ),
-      ).toThrow(/パターンはまだ使えません/);
+          firstResult.shape,
+          second,
+        );
+        try {
+          expect(hasSolid(oc, patterned.shape)).toBe(true);
+          expect(isValidShape(oc, patterned.shape)).toBe(true);
+          return measureVolume(oc, patterned.shape);
+        } finally {
+          patterned.delete();
+        }
+      } finally {
+        firstResult.delete();
+      }
+    } finally {
+      handle.delete();
+    }
+  }
+
+  it('直線パターン: 60×20×10 の板に φ6 の貫通穴を 20mm 間隔で 3 つ', () => {
+    const volume = drillThenPattern({ dx: 60, dy: 20, dz: 10 }, [10, 10, 10], 6, [
+      {
+        translation: [20, 0, 0],
+        rotationOrigin: [0, 0, 0],
+        rotationAxis: [0, 0, 1],
+        rotationAngle: 0,
+      },
+      {
+        translation: [40, 0, 0],
+        rotationOrigin: [0, 0, 0],
+        rotationAxis: [0, 0, 1],
+        rotationAngle: 0,
+      },
+    ]);
+    // 12000 − 3·π·3²·10 = 11151.769983531
+    expectVolume(volume, 12000 - 3 * THROUGH_HOLE_VOLUME);
+  });
+
+  it('円形パターン: 100×100×10 の板に φ5 の貫通穴を Z 軸まわり 90 度刻みで 4 つ', () => {
+    const quarter = Math.PI / 2;
+    const volume = drillThenPattern({ dx: 100, dy: 100, dz: 10 }, [70, 50, 10], 5, [
+      {
+        translation: [0, 0, 0],
+        rotationOrigin: [50, 50, 0],
+        rotationAxis: [0, 0, 1],
+        rotationAngle: quarter,
+      },
+      {
+        translation: [0, 0, 0],
+        rotationOrigin: [50, 50, 0],
+        rotationAxis: [0, 0, 1],
+        rotationAngle: 2 * quarter,
+      },
+      {
+        translation: [0, 0, 0],
+        rotationOrigin: [50, 50, 0],
+        rotationAxis: [0, 0, 1],
+        rotationAngle: 3 * quarter,
+      },
+    ]);
+    // 100000 − 4·π·2.5²·10 = 99214.601836603
+    expectVolume(volume, 100000 - 4 * Math.PI * 2.5 * 2.5 * 10);
+  });
+
+  it('makeHoleTools は変換の数だけ円柱を作る(空なら恒等 1 つ)', () => {
+    const { handle, faces, top } = plateWithTopFace();
+    try {
+      const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
+      const single = makeHoleTools(oc, handle.shape, frame, 6, 4, []);
+      const doubled = makeHoleTools(oc, handle.shape, frame, 6, 4, [
+        {
+          translation: [0, 0, 0],
+          rotationOrigin: [0, 0, 0],
+          rotationAxis: [0, 0, 1],
+          rotationAngle: 0,
+        },
+        {
+          translation: [10, 0, 0],
+          rotationOrigin: [0, 0, 0],
+          rotationAxis: [0, 0, 1],
+          rotationAngle: 0,
+        },
+      ]);
+      try {
+        const one = measureVolume(oc, single.shape);
+        // 離れた 2 本ぶんなので、コンパウンドの体積はちょうど 2 倍になる。
+        expectVolume(measureVolume(oc, doubled.shape), one * 2);
+      } finally {
+        doubled.delete();
+        single.delete();
+      }
     } finally {
       handle.delete();
     }

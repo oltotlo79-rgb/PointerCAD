@@ -36,6 +36,7 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { matchFace } from './matchSubShape.js';
 import { measureVolume } from './solidMesh.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
+import { isIdentityTransform, transformShape, transformsOrIdentity } from './transformShape.js';
 
 /** 面が選び直せなかったとき(FR-504、§2.2.5)。 */
 const MISSING_FACE_MESSAGE =
@@ -77,15 +78,6 @@ const NOTHING_LEFT_MESSAGE = '穴をあけたら立体が残りませんでし�
  * 削れた量が 0 にならないので、この断りには当たらない。
  */
 const NOTHING_REMOVED_MESSAGE = '穴が材料に当たりませんでした。中心の位置や向きを見直してください。';
-
-/**
- * パターン(§0.a-0.20)の暫定。
- *
- * **タスク6 の時点では `transforms` を空のときだけ実装する**(計画書 タスク6 手順3)。
- * 工具を複製する `transformShape.ts` はタスク9 で作るので、そこでこの分岐を外し、
- * 変換ごとに複製した円柱をコンパウンドへ足す形に置き換える。
- */
-const PATTERN_NOT_READY_MESSAGE = 'パターンはまだ使えません。';
 
 /**
  * これ未満(mm³)しか削れていなければ「何も削れなかった」とみなす。
@@ -341,7 +333,14 @@ export function resolveHoleFrame(
  * 止まり穴は平底で、深さは面から測る(§0.a-0.11。ドリルの 118 度の先端は
  * 図面の簡略図示と合わせて P8 で判断する)。
  *
- * 返した handle の delete() で、円柱・軸・コンパウンドをまとめて解放する。
+ * **変換(パターン、§0.a-0.20)の決め:** 円柱は「中心の数 × 変換の数」だけ作る。
+ * `transforms` が空なら恒等 1 つとして扱う(計画書 タスク9 手順3)ので、
+ * パターンでない穴はもとの位置に 1 本ずつ立つ。パターンのときに model が渡すのは
+ * **もとの位置ぶんを除いた n−1 個**で、もとの穴はすでに対象のボディに開いている
+ * (§2.7 の畳み方の手順 4)。恒等の変換は複製を作らずにもとの円柱をそのまま使う
+ * (要らない複製を作らないため。結果は同じ)。
+ *
+ * 返した handle の delete() で、円柱・軸・複製・コンパウンドをまとめて解放する。
  * 引数の `target` には触れない(呼び出し側の持ち物)。
  */
 export function makeHoleTools(
@@ -361,10 +360,6 @@ export function makeHoleTools(
   if (frame.origins.length === 0) {
     throw new Error(NO_CENTER_MESSAGE);
   }
-  if (transforms.length > 0) {
-    // 暫定(PATTERN_NOT_READY_MESSAGE の説明を参照)。タスク9 で外す。
-    throw new Error(PATTERN_NOT_READY_MESSAGE);
-  }
 
   const diagonal = boundingDiagonal(oc, target);
   if (!Number.isFinite(diagonal) || diagonal <= 0) {
@@ -375,6 +370,7 @@ export function makeHoleTools(
   const margin = diagonal * MARGIN_RATIO + MARGIN_MIN_MM;
   const length = depth === null ? diagonal + 2 * margin : depth + margin;
   const { direction } = frame;
+  const placements = transformsOrIdentity(transforms);
   const { keep, release } = createAllocations();
 
   try {
@@ -396,7 +392,18 @@ export function makeHoleTools(
       const maker = keep(new oc.BRepPrimAPI_MakeCylinder_3(axes, diameter / 2, length));
       // Shape() は maker の中の実体を指すので、控えへ maker の後に積む(解放は逆順)。
       const cylinder = keep(maker.Shape());
-      builder.Add(compound, cylinder);
+
+      for (const placement of placements) {
+        if (isIdentityTransform(placement)) {
+          builder.Add(compound, cylinder);
+          continue;
+        }
+        const moved = transformShape(oc, cylinder, placement);
+        // handle は「複製した形 → maker → 変換」をまとめて解放する。控えへ積んで
+        // 円柱より後に置くと、解放が逆順(複製 → 円柱)になり順序が保たれる。
+        keep(moved);
+        builder.Add(compound, moved.shape);
+      }
     }
 
     return { shape: compound, delete: release };

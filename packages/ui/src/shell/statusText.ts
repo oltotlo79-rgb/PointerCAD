@@ -13,6 +13,7 @@ import type { PartProgress, PartRecomputeError, SketchError } from '@pointercad/
 import { t, type MessageKey } from '../i18n/t.js';
 import type { NumericInputToolId } from '../sketch/numericInput.js';
 import type { SnapKind } from '../sketch/snapMath.js';
+import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
 import type { FileMessage } from '../store/useAppStore.js';
 
 /**
@@ -47,6 +48,18 @@ const GUIDE_KEYS = {
   circularPattern: 'statusBar.guide.circularPattern',
   spring: 'statusBar.guide.spring',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
+
+/**
+ * 選択の種類の札(§0.a-0.6)。頂点/辺/面/立体のどれを選ぶ状態かを常にステータスバーへ出す。
+ * `1`〜`4` キーで切り替えられること(`selection.kindHint`)は `StatusBar.tsx` がツールチップで
+ * 添える。
+ */
+const SELECTION_KIND_LABEL_KEYS = {
+  vertex: 'selection.kind.vertex',
+  edge: 'selection.kind.edge',
+  face: 'selection.kind.face',
+  body: 'selection.kind.body',
+} as const satisfies Record<SelectionKind, MessageKey>;
 
 /** いま何に吸い付いているかの案内(FR-107、NFR-UX-7)。 */
 const SNAP_GUIDE_KEYS = {
@@ -112,6 +125,12 @@ export interface StatusLine {
   readonly hint: string | null;
   /** 細い帯の値。`kind` が `'progress'` のときだけ入る。 */
   readonly progress: StatusProgressView | null;
+  /**
+   * 選択の種類の札の文言(§0.a-0.6)。優先順位のどの1文を選んでいても常に出すので、
+   * 上の `kind` / `text` とは独立に持つ(`[ファイル名] [状況の1文] [spacer] [選ぶもの]
+   * [作図面] [吸着] [単位]` の並び、`docs/報告記録.md` 2026-09-03 18:30 の残件(f))。
+   */
+  readonly selectionKindLabel: string;
 }
 
 /** 帯に出す 1 文を選ぶのに要るもの。すべてストアから読める値。 */
@@ -149,6 +168,14 @@ export interface StatusInput {
   readonly activeTool: NumericInputToolId;
   /** いま選ばれている立体の数(FR-404 の対象指定)。 */
   readonly selectedBodyCount: number;
+  /**
+   * 選んでいる部分形状の数(§0.a-0.6)。道具に応じた種類(穴・ねじ穴なら面、R/C 面取りなら
+   * 辺)だけを数えた値を渡す。立体を選ぶ道具のときは常に 0 でよい(`machiningGuideText` が
+   * 使わない)。数える関数は `countSelectedSubShapes`。
+   */
+  readonly selectedSubShapeCount: number;
+  /** 選択の種類の札(頂点/辺/面/立体、§0.a-0.6)。いまストアが持っている値をそのまま渡す。 */
+  readonly selectionKind: SelectionKind;
 }
 
 /** 選択のうち、いま画面にある立体を指しているものの数(§0.a-0.5、FR-404)。 */
@@ -158,6 +185,51 @@ export function countSelectedBodies(
 ): number {
   const live = new Set(liveBodyIds);
   return selection.filter((id) => live.has(id)).length;
+}
+
+/**
+ * 選択のうち、指定した種類の部分形状(面・辺・頂点)の数(§0.a-0.6)。
+ * `countSelectedBodies`(立体版)と同じ作り。`StatusBar.tsx` が道具に応じた種類を渡す。
+ */
+export function countSelectedSubShapes(
+  selection: readonly string[],
+  kind: SubShapeKind,
+): number {
+  return selection.filter((id) => parseSubShapeId(id)?.kind === kind).length;
+}
+
+/** 選択の種類の札の文言(§0.a-0.6)。「選ぶもの 面」のように出す。 */
+function selectionKindText(kind: SelectionKind): string {
+  return `${t('selection.kindLabel')}${PREFIX_SEPARATOR}${t(SELECTION_KIND_LABEL_KEYS[kind])}`;
+}
+
+/**
+ * 加工の道具(穴・ねじ穴・R 面取り・C 面取り)で、選択が進むにつれて案内を更新する
+ * (§0.a-0.6「選択の数を案内に出す」)。部分形状が 1 つも選ばれていなければ null を返し、
+ * 呼び出し側は道具の基本案内(`guideKeyFor`)へ後退する。
+ *
+ * - 穴・ねじ穴: 面を 1 つ以上選んだら「中心にする点を選んでください。」に進む(面を選ぶまでは
+ *   基本案内が「面と点の両方を」とまとめて伝えている)。
+ * - R/C 面取り: 辺を選ぶたびに「辺を N 本選んでいます。」で選んだ数を伝える(P2 の
+ *   `statusBar.guide.booleanReady` と同じ「選択が進んだら具体的に伝える」考え方)。
+ */
+export function machiningGuideText(
+  activeTool: NumericInputToolId,
+  selectedSubShapeCount: number,
+): string | null {
+  if (selectedSubShapeCount <= 0) {
+    return null;
+  }
+  switch (activeTool) {
+    case 'hole':
+    case 'threadHole':
+      return t('statusBar.guide.centerPoint');
+    case 'fillet':
+    case 'chamfer':
+      return fill(t('statusBar.guide.edgesSelected'), { count: String(selectedSubShapeCount) });
+    default:
+      return null;
+  }
 }
 
 /**
@@ -228,7 +300,11 @@ function withPrefix(prefixKey: MessageKey | null, text: string): string {
   return prefixKey === null ? text : `${t(prefixKey)}${PREFIX_SEPARATOR}${text}`;
 }
 
-function failureLine(prefixKey: MessageKey | null, text: string): StatusLine {
+/** `describeStatus` の本体が組み立てる値。選択の種類の札(`selectionKindLabel`)は
+ * 優先順位のどれを選んでも常に添えるものなので、ここには含めず呼び出し側で足す。 */
+type StatusLineWithoutSelectionKind = Omit<StatusLine, 'selectionKindLabel'>;
+
+function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWithoutSelectionKind {
   return { kind: 'failure', text: withPrefix(prefixKey, text), hint: null, progress: null };
 }
 
@@ -241,9 +317,17 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLine {
  * 4. 中止の知らせ … 失敗ではないので赤くしない(NFR-PF-4)。
  * 5. 進み具合 … 長い計算のあいだだけ(NFR-PF-4)。
  * 6. 保存できたなどの知らせ(FR-806)。
- * 7. 案内 … 計算中の札、吸着の案内、道具ごとの次の一手。
+ * 7. 案内 … 計算中の札、吸着の案内、加工の選択が進んだ具合、道具ごとの次の一手。
+ *
+ * 選択の種類の札(`selectionKindLabel`)は、この優先順位のどれを選んでいても常に出す
+ * (`[選ぶもの]` の札は状況の1文と独立、§0.a-0.6)ので、内側の `resolveLine` には含めず
+ * ここで一度だけ足す。
  */
 export function describeStatus(input: StatusInput): StatusLine {
+  return { ...resolveLine(input), selectionKindLabel: selectionKindText(input.selectionKind) };
+}
+
+function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   if (input.fileMessage !== null && input.fileMessage.failed) {
     return failureLine(null, t(input.fileMessage.key));
   }
@@ -290,9 +374,12 @@ export function describeStatus(input: StatusInput): StatusLine {
       progress: null,
     };
   }
+  // 加工の道具は、部分形状を選ぶにつれて具体的な案内へ進める(§0.a-0.6)。
+  // 何も選んでいなければ null が返り、道具の基本案内(guideKeyFor)へ後退する。
+  const machiningText = machiningGuideText(input.activeTool, input.selectedSubShapeCount);
   return {
     kind: 'guide',
-    text: t(guideKeyFor(input.activeTool, input.selectedBodyCount)),
+    text: machiningText ?? t(guideKeyFor(input.activeTool, input.selectedBodyCount)),
     hint: null,
     progress: null,
   };

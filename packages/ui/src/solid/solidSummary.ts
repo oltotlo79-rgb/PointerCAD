@@ -1,6 +1,6 @@
 /**
  * 立体1つを「モデルブラウザとプロパティが表に出せる形」へ直す
- * (計画書 docs/plans/P2-ソリッド基礎.md タスク22、docs/plans/P3-加工フィーチャー.md タスク27)。
+ * (計画書 docs/plans/P2-ソリッド基礎.md タスク22、docs/plans/P3-加工フィーチャー.md タスク27・28)。
  *
  * 対応要件: FR-501(ツリーの種類と名前)、FR-502(参照は id で持つ)、FR-503(抑制・改名・削除)、
  * FR-504(失敗の明示)、FR-202(入れた式をそのまま再表示する)、FR-311(直すと下流が追従する)。
@@ -10,8 +10,9 @@
  * (NFR-MA-5)。書き戻しは元のフィーチャーを変えずに新しいフィーチャーを作る(FR-505 の土台)。
  *
  * P3 タスク27 で加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の欄・つまみ・
- * 選択肢・参照を足した。ばね(spring)の節は§0.a-0.30の読み取り専用の欄(derived)を要するため
- * タスク29b がここへ追記する(この時点ではまだ空)。
+ * 選択肢・参照を足した。タスク28 でねじ穴の深さ(貫通/止まり)・傾き角・傾ける向きの欄と
+ * 選択肢を仕上げた(§0.a-0.10、0.13、0.14)。ばね(spring)の節は§0.a-0.30の読み取り専用の欄
+ * (derived)を要するためタスク29b がここへ追記する(この時点ではまだ空)。
  */
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
@@ -471,6 +472,26 @@ function holeFields(feature: HoleFeature): SolidFieldSummary[] {
   return fields;
 }
 
+/**
+ * ねじ穴の欄。ピッチ・下穴径・ねじ部の長さ・(止まりのときだけ深さ)・傾き・傾ける向き
+ * (§0.a-0.10、0.13、0.14。穴の `holeFields` と同じ並びに、規格から入る3つを前へ足す)。
+ */
+function threadHoleFields(feature: ThreadHoleFeature): SolidFieldSummary[] {
+  const fields = [
+    fieldSummary('pitch', feature.pitch),
+    fieldSummary('drillDiameter', feature.drillDiameter),
+    fieldSummary('threadLength', feature.threadLength),
+  ];
+  if (feature.depth.kind === 'blind') {
+    fields.push(fieldSummary('depth', feature.depth.depth));
+  }
+  fields.push(
+    fieldSummary('tiltAngle', feature.tiltAngle),
+    fieldSummary('tiltAzimuth', feature.tiltAzimuth),
+  );
+  return fields;
+}
+
 /** 深さの種類(貫通/止まり)を選ぶ欄。穴・ねじ穴で共用する。 */
 function depthKindChoice(kind: HoleDepth['kind']): SolidChoiceSummary {
   return {
@@ -657,17 +678,14 @@ export function summarizeSolid(
         subShapeCounts: holeSubShapeCounts(feature),
       };
     case 'threadHole':
-      // ピッチ・下穴径・ねじ部の長さと、呼び・種類・見せ方だけをここで出す(§0.a-0.13、0.14)。
-      // 深さ・傾きを含めた節の仕上げはタスク28(ねじの選択肢とプロパティ)が行う。
+      // 深さの種類(貫通/止まり)は穴と同じ選択肢を先頭に置き、続けて呼び・種類・見せ方を出す
+      // (§0.a-0.13、0.14。タスク28で深さ・傾きの欄と選択肢を仕上げた)。
       return {
         ...base,
-        fields: [
-          fieldSummary('pitch', feature.pitch),
-          fieldSummary('drillDiameter', feature.drillDiameter),
-          fieldSummary('threadLength', feature.threadLength),
-        ],
+        fields: threadHoleFields(feature),
         toggles: [],
         choices: [
+          depthKindChoice(feature.depth.kind),
           threadDesignationChoice(feature.designation),
           threadSeriesChoice(feature.series),
           threadRepresentationChoice(feature.representation),
@@ -788,6 +806,14 @@ function setThreadHoleField(
       return { ...feature, drillDiameter: value };
     case 'threadLength':
       return { ...feature, threadLength: value };
+    case 'depth':
+      return feature.depth.kind === 'blind'
+        ? { ...feature, depth: { kind: 'blind', depth: value } }
+        : feature;
+    case 'tiltAngle':
+      return { ...feature, tiltAngle: value };
+    case 'tiltAzimuth':
+      return { ...feature, tiltAzimuth: value };
     default:
       return feature;
   }

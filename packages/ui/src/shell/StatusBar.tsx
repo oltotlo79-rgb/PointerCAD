@@ -7,6 +7,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { AlertIcon, MouseIcon, PlaneIcon, SaveIcon, SnapIcon } from './icons.js';
 import {
   countSelectedBodies,
+  countSelectedSubShapes,
   describeStatus,
   PROGRESS_DELAY_MS,
   type StatusLineKind,
@@ -78,6 +79,11 @@ export function StatusBar(): React.JSX.Element {
   const selectedBodyCount = useAppStore((state) =>
     countSelectedBodies(state.selection, liveBodyIds(state.document)),
   );
+  // 選択の種類の札(§0.a-0.6)。立体を選ぶ道具のときは部分形状を数えない(0 のまま)。
+  const selectionKind = useAppStore((state) => state.selectionKind);
+  const selectedSubShapeCount = useAppStore((state) =>
+    state.selectionKind === 'body' ? 0 : countSelectedSubShapes(state.selection, state.selectionKind),
+  );
 
   /*
    * 進み具合を出してよいかどうかだけを持つ表示専用の状態(rules/04: useState は
@@ -117,6 +123,8 @@ export function StatusBar(): React.JSX.Element {
     snapKind: snapIndicator === null ? null : snapIndicator.kind,
     activeTool,
     selectedBodyCount,
+    selectedSubShapeCount,
+    selectionKind,
   });
   const className =
     line.kind === 'failure' ? 'pcad-statusbar pcad-statusbar--error' : 'pcad-statusbar';
@@ -169,6 +177,10 @@ export function StatusBar(): React.JSX.Element {
         </span>
       )}
       <span className="pcad-statusbar__spacer" />
+      {/* 選択の種類の札(§0.a-0.6)。`1`〜`4` キーで切り替えられることをツールチップで添える。 */}
+      <span className="pcad-statusbar__state" title={t('selection.kindHint')}>
+        {line.selectionKindLabel}
+      </span>
       <span className="pcad-statusbar__state">
         <PlaneIcon size={12} />
         {`${t('statusBar.plane')} ${t(PLANE_KEYS[workPlaneId])}`}

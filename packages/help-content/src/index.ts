@@ -42,6 +42,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '角を丸める・面を取る',
     path: 'docs/ja/fillet-chamfer.md',
   },
+  { id: 'thread', title: 'ねじ穴をあける', path: 'docs/ja/thread.md' },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

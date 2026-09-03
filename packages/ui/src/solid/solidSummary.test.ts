@@ -624,21 +624,48 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
     expect(summary.choices[0].value).toBe('through');
   });
 
-  it('ねじ穴は呼び・種類・見せ方の選択肢と、ピッチ・下穴径・ねじ部の長さの欄を返す(§0.a-0.13、0.14)', () => {
+  it('ねじ穴(貫通)は呼び・種類・見せ方・深さの種類の選択肢と、ピッチ・下穴径・ねじ部の長さ・傾き・傾ける向きの欄を返す(§0.a-0.13、0.14、タスク28)', () => {
     const summary = summarizeSolid(documentWith(EXTRUDE, THREAD_HOLE), THREAD_HOLE);
-    expect(summary.fields.map((field) => field.key)).toEqual(['pitch', 'drillDiameter', 'threadLength']);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'pitch',
+      'drillDiameter',
+      'threadLength',
+      'tiltAngle',
+      'tiltAzimuth',
+    ]);
     expect(summary.choices.map((choice) => choice.key)).toEqual([
+      'depthKind',
       'threadDesignation',
       'threadSeries',
       'threadRepresentation',
     ]);
-    expect(summary.choices[0].value).toBe('M6');
-    expect(summary.choices[1].value).toBe('coarse');
-    expect(summary.choices[2].value).toBe('simplified');
+    expect(summary.choices[0].value).toBe('through');
+    expect(summary.choices[1].value).toBe('M6');
+    expect(summary.choices[2].value).toBe('coarse');
+    expect(summary.choices[3].value).toBe('simplified');
     expect(summary.subShapeCounts).toEqual([
       { labelKey: 'propertyPanel.selectedFaces', count: 1 },
       { labelKey: 'propertyPanel.centerPoints', count: 1 },
     ]);
+  });
+
+  it('ねじ穴(止まり)は深さの欄も返し、深さの種類の選択肢の値が blind になる(タスク28)', () => {
+    const threadHoleBlind: ThreadHoleFeature = {
+      ...THREAD_HOLE,
+      id: 'threadHole-2',
+      name: 'ねじ穴2',
+      depth: { kind: 'blind', depth: expressionValueFromNumber(12) },
+    };
+    const summary = summarizeSolid(documentWith(EXTRUDE, threadHoleBlind), threadHoleBlind);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'pitch',
+      'drillDiameter',
+      'threadLength',
+      'depth',
+      'tiltAngle',
+      'tiltAzimuth',
+    ]);
+    expect(summary.choices[0].value).toBe('blind');
   });
 
   it('R面取りは半径の欄と、選んだ辺の数を返す', () => {
@@ -746,6 +773,26 @@ describe('setSolidField(加工6種、FR-311)', () => {
     const next = setSolidField(THREAD_HOLE, 'threadLength', expressionValueFromNumber(15));
     expect(next.kind === 'threadHole' ? next.threadLength.value : null).toBe(15);
     expect(THREAD_HOLE.threadLength.value).toBe(10);
+  });
+
+  it('ねじ穴の傾き・傾ける向きを書き戻す(タスク28)', () => {
+    const tilted = setSolidField(THREAD_HOLE, 'tiltAngle', expressionValueFromNumber(10));
+    expect(tilted.kind === 'threadHole' ? tilted.tiltAngle.value : null).toBe(10);
+    const azimuth = setSolidField(THREAD_HOLE, 'tiltAzimuth', expressionValueFromNumber(45));
+    expect(azimuth.kind === 'threadHole' ? azimuth.tiltAzimuth.value : null).toBe(45);
+  });
+
+  it('止まりのねじ穴の深さを書き戻す。貫通のねじ穴は深さを持たないので変わらない(タスク28)', () => {
+    const threadHoleBlind: ThreadHoleFeature = {
+      ...THREAD_HOLE,
+      id: 'threadHole-2',
+      depth: { kind: 'blind', depth: expressionValueFromNumber(12) },
+    };
+    const next = setSolidField(threadHoleBlind, 'depth', expressionValueFromNumber(20));
+    expect(
+      next.kind === 'threadHole' && next.depth.kind === 'blind' ? next.depth.depth.value : null,
+    ).toBe(20);
+    expect(setSolidField(THREAD_HOLE, 'depth', expressionValueFromNumber(20))).toBe(THREAD_HOLE);
   });
 
   it('R面取りの半径を書き戻す', () => {
@@ -886,6 +933,13 @@ describe('setSolidChoice / setSolidDepthKind(FR-406、§0.a-0.18)', () => {
     const next = setSolidDepthKind(HOLE_THROUGH, 'blind');
     expect(
       next.kind === 'hole' && next.depth.kind === 'blind' ? next.depth.depth.value : null,
+    ).toBe(10);
+  });
+
+  it("setSolidChoice('depthKind', 'blind') はねじ穴でも効く(穴と同じ setSolidDepthKind を使う、タスク28)", () => {
+    const next = setSolidChoice(THREAD_HOLE, 'depthKind', 'blind');
+    expect(
+      next.kind === 'threadHole' && next.depth.kind === 'blind' ? next.depth.depth.value : null,
     ).toBe(10);
   });
 

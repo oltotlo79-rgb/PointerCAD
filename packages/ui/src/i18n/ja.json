@@ -224,6 +224,8 @@
   "statusBar.guide.linearPattern": "並べる穴を選んでください。",
   "statusBar.guide.circularPattern": "並べる穴を選んでください。",
   "statusBar.guide.spring": "ばねの始点にする点を選んでください。",
+  "statusBar.guide.centerPoint": "中心にする点を選んでください。",
+  "statusBar.guide.edgesSelected": "辺を {count} 本選んでいます。",
   "statusBar.plane": "作図面:",
   "statusBar.snapOn": "吸着: 入",
   "statusBar.snapOff": "吸着: 切",

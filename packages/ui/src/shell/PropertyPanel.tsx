@@ -1,10 +1,11 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 
 import { evaluateExpression } from '@pointercad/expression';
 import { replaceSolid, type SketchFeature, type SolidFeature } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
+import { ChevronRightIcon } from './icons.js';
 import {
   faceBoundaryEntries,
   featureForSelection,
@@ -266,9 +267,18 @@ function referencesSectionTitleKey(feature: SolidFeature): MessageKey {
 }
 
 /**
+ * 選択肢が多い一覧(ねじの呼び28個)は横並びのボタンでなく畳んだ一覧にするしきい値
+ * (`NumericInputPopover.tsx` の `ChoiceGroup` と同じ値・同じ理由。呼び径だけが該当し、
+ * 深さの種類・系列・見せ方・決め方・向き・巻き方向・求める値はどれも4個以下で横並びのまま)。
+ */
+const LONG_CHOICE_OPTION_THRESHOLD = 6;
+
+/**
  * いくつかから1つを選ぶ欄(深さの種類・ねじの呼び・面取りの決め方・パターンの向き等)。
- * 選択肢が多い(ねじの呼び28個)ときも同じ並びのボタンで出す。畳んだ一覧への仕上げは
- * タスク28(ねじ)・29(パターン)が行う(§2.11「呼びの畳んだ一覧」)。
+ * 選択肢が多い(ねじの呼び28個)ときは、`NumericInputPopover.tsx` の `ChoiceGroup` と同じ
+ * pcad-menu の作り(ボタン1つ+その下に開く一覧)で畳む(タスク28、§2.11「呼びの畳んだ一覧」)。
+ *
+ * 開閉は見た目だけの一時状態なのでここでだけ持つ(rules/04-設計の規律.md)。
  */
 function ChoiceButtons({
   choice,
@@ -277,23 +287,91 @@ function ChoiceButtons({
   readonly choice: SolidChoiceSummary;
   readonly onChoose: (value: string) => void;
 }): React.JSX.Element {
+  const isLong = choice.options.length > LONG_CHOICE_OPTION_THRESHOLD;
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const groupLabel = t(choice.labelKey);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    // 外を押したら閉じる。モーダルの覆いを作らないので、押した先の操作はそのまま通る
+    // (NumericInputPopover.tsx の ChoiceGroup と同じ作り)。
+    const onPointerDown = (event: PointerEvent): void => {
+      const container = containerRef.current;
+      if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    globalThis.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      globalThis.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open]);
+
+  if (!isLong) {
+    return (
+      <div className="pcad-choice">
+        <span className="pcad-choice__label">{groupLabel}</span>
+        <div className="pcad-segmented pcad-choice__options" role="group" aria-label={groupLabel}>
+          {choice.options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className="pcad-button"
+              aria-pressed={choice.value === option.value}
+              onClick={() => {
+                onChoose(option.value);
+              }}
+            >
+              {numericChoiceOptionLabel(option)}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const selected = choice.options.find((option) => option.value === choice.value) ?? null;
+
   return (
     <div className="pcad-choice">
-      <span className="pcad-choice__label">{t(choice.labelKey)}</span>
-      <div className="pcad-segmented pcad-choice__options" role="group" aria-label={t(choice.labelKey)}>
-        {choice.options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            className="pcad-button"
-            aria-pressed={choice.value === option.value}
-            onClick={() => {
-              onChoose(option.value);
-            }}
-          >
-            {numericChoiceOptionLabel(option)}
-          </button>
-        ))}
+      <span className="pcad-choice__label">{groupLabel}</span>
+      <div className="pcad-menu" ref={containerRef}>
+        <button
+          type="button"
+          className="pcad-button pcad-menu__trigger"
+          aria-haspopup="true"
+          aria-expanded={open}
+          onClick={() => {
+            setOpen(!open);
+          }}
+        >
+          <span className="pcad-menu__count">
+            {selected === null ? '' : numericChoiceOptionLabel(selected)}
+          </span>
+          <ChevronRightIcon className="pcad-menu__chevron" />
+        </button>
+        {open ? (
+          <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
+            {choice.options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitem"
+                className="pcad-button pcad-menu__item"
+                aria-pressed={option.value === choice.value}
+                onClick={() => {
+                  onChoose(option.value);
+                  setOpen(false);
+                }}
+              >
+                {numericChoiceOptionLabel(option)}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

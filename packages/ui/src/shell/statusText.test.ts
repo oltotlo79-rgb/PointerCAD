@@ -12,8 +12,10 @@ import { describe, expect, it } from 'vitest';
 import { t } from '../i18n/t.js';
 import {
   countSelectedBodies,
+  countSelectedSubShapes,
   describeStatus,
   guideKeyFor,
+  machiningGuideText,
   progressText,
   progressView,
   PROGRESS_DELAY_MS,
@@ -38,6 +40,9 @@ function quiet(): StatusInput {
     snapKind: null,
     activeTool: 'select',
     selectedBodyCount: 0,
+    // §0.a-0.6(タスク28)。既定は「立体を選ぶ」状態で、部分形状は数えない。
+    selectedSubShapeCount: 0,
+    selectionKind: 'body',
   };
 }
 
@@ -268,5 +273,92 @@ describe('立体が選ばれているときの案内(FR-404、statusBar.guide.bo
   it('案内の選び方は describeStatus からも効く', () => {
     const line = describeStatus({ ...quiet(), selectedBodyCount: 1 });
     expect(line.text).toBe(t('statusBar.guide.boolean'));
+  });
+});
+
+describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () => {
+  it('部分形状の種類ごとに数える(面2・辺3の選択)', () => {
+    const selection = [
+      'extrude-1#face:0',
+      'extrude-1#face:1',
+      'extrude-1#edge:0',
+      'extrude-1#edge:1',
+      'extrude-1#edge:2',
+    ];
+    expect(countSelectedSubShapes(selection, 'edge')).toBe(3);
+    expect(countSelectedSubShapes(selection, 'face')).toBe(2);
+    expect(countSelectedSubShapes(selection, 'vertex')).toBe(0);
+    // 部分形状でない id(立体そのもの、スケッチの点列の1点)は数えない。
+    expect(countSelectedSubShapes(['extrude-1', 'point-1#3'], 'face')).toBe(0);
+  });
+
+  it('6 つの加工の道具はそれぞれの基本案内を返す(guideKeyFor)', () => {
+    expect(guideKeyFor('hole', 0)).toBe('statusBar.guide.hole');
+    expect(guideKeyFor('threadHole', 0)).toBe('statusBar.guide.threadHole');
+    expect(guideKeyFor('fillet', 0)).toBe('statusBar.guide.fillet');
+    expect(guideKeyFor('chamfer', 0)).toBe('statusBar.guide.chamfer');
+    expect(guideKeyFor('linearPattern', 0)).toBe('statusBar.guide.linearPattern');
+    expect(guideKeyFor('circularPattern', 0)).toBe('statusBar.guide.circularPattern');
+  });
+
+  it('穴・ねじ穴は面を選ぶまでは基本案内、面を選んだら「中心にする点を選んでください」', () => {
+    expect(machiningGuideText('hole', 0)).toBeNull();
+    expect(machiningGuideText('hole', 1)).toBe(t('statusBar.guide.centerPoint'));
+    expect(machiningGuideText('threadHole', 1)).toBe(t('statusBar.guide.centerPoint'));
+  });
+
+  it('R/C 面取りは辺を選ぶたびに選んだ本数を伝える', () => {
+    expect(machiningGuideText('fillet', 0)).toBeNull();
+    expect(machiningGuideText('fillet', 4)).toBe('辺を 4 本選んでいます。');
+    expect(machiningGuideText('chamfer', 1)).toBe('辺を 1 本選んでいます。');
+  });
+
+  it('立体を選ぶ道具(パターン等)は選択の数で案内を変えない', () => {
+    expect(machiningGuideText('linearPattern', 3)).toBeNull();
+    expect(machiningGuideText('select', 3)).toBeNull();
+  });
+
+  it('describeStatus は選んでいる面の数に応じて案内を進める', () => {
+    const noFace = describeStatus({
+      ...quiet(),
+      activeTool: 'hole',
+      selectionKind: 'face',
+      selectedSubShapeCount: 0,
+    });
+    expect(noFace.text).toBe(t('statusBar.guide.hole'));
+    const withFace = describeStatus({
+      ...quiet(),
+      activeTool: 'hole',
+      selectionKind: 'face',
+      selectedSubShapeCount: 1,
+    });
+    expect(withFace.text).toBe(t('statusBar.guide.centerPoint'));
+  });
+
+  it('describeStatus(selectionKind を渡す) は札の文言が種類に応じて変わる', () => {
+    const vertex = describeStatus({ ...quiet(), selectionKind: 'vertex' });
+    const edge = describeStatus({ ...quiet(), selectionKind: 'edge' });
+    const face = describeStatus({ ...quiet(), selectionKind: 'face' });
+    const body = describeStatus({ ...quiet(), selectionKind: 'body' });
+    expect(vertex.selectionKindLabel).toBe(`${t('selection.kindLabel')} ${t('selection.kind.vertex')}`);
+    expect(edge.selectionKindLabel).toBe(`${t('selection.kindLabel')} ${t('selection.kind.edge')}`);
+    expect(face.selectionKindLabel).toBe(`${t('selection.kindLabel')} ${t('selection.kind.face')}`);
+    expect(body.selectionKindLabel).toBe(`${t('selection.kindLabel')} ${t('selection.kind.body')}`);
+    // 4 種とも文言が異なる(札が種類に応じて変わることの確認)。
+    expect(new Set([vertex, edge, face, body].map((line) => line.selectionKindLabel)).size).toBe(4);
+  });
+
+  it('失敗があれば、案内より札より失敗が勝つ(優先順位は変わらない)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      activeTool: 'fillet',
+      selectionKind: 'edge',
+      selectedSubShapeCount: 2,
+      errorMessage: '丸められませんでした',
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.error')} 丸められませんでした`);
+    // 失敗のときも札(selectionKindLabel)は出ている(状況の1文とは独立)。
+    expect(line.selectionKindLabel).toBe(`${t('selection.kindLabel')} ${t('selection.kind.edge')}`);
   });
 });

@@ -7,12 +7,21 @@ import {
   keyMaterialText,
   keyNumber,
   type BooleanKeyMaterial,
+  type ChamferKeyMaterial,
   type ExtrudeKeyMaterial,
+  type FilletKeyMaterial,
+  type HoleKeyMaterial,
   type KeyCurve,
+  type KeySubShape,
+  type KeyTransform,
   type RevolveKeyMaterial,
   type SewKeyMaterial,
   type SolidStepKeyMaterial,
+  type SpringKeyMaterial,
+  type ThreadKeyMaterial,
 } from './cacheKey.js';
+// 指紋の文字列化は subShapeRef.ts の1本だけを使う(丸めの規則を2か所に書かない、タスク14)。
+import { fingerprintKeyText } from './subShapeRef.js';
 
 const SQUARE_PROFILE: readonly KeyCurve[] = [
   { kind: 'segment', from: [0, 0, 0], to: [10, 0, 0] },
@@ -20,6 +29,9 @@ const SQUARE_PROFILE: readonly KeyCurve[] = [
   { kind: 'segment', from: [10, 10, 0], to: [0, 10, 0] },
   { kind: 'segment', from: [0, 10, 0], to: [0, 0, 0] },
 ];
+
+/** 文字列の固定用に使う最小の断面(1本だけ)。 */
+const ONE_SEGMENT: readonly KeyCurve[] = [{ kind: 'segment', from: [0, 0, 0], to: [1, 0, 0] }];
 
 function extrude(distance: number, profile: readonly KeyCurve[] = SQUARE_PROFILE): ExtrudeKeyMaterial {
   return { kind: 'extrude', profile, direction: [0, 0, 1], distance };
@@ -42,6 +54,138 @@ function sew(profiles: readonly (readonly KeyCurve[])[], tolerance = 0.01): SewK
 function boolean(targetKey: string, toolKey: string): BooleanKeyMaterial {
   return { kind: 'boolean', operation: 'union', targetKey, toolKey };
 }
+
+/** 上流のボディの鍵に見立てた固定文字列(鍵の連鎖の検査で差し替える)。 */
+const TARGET_KEY = 'aaaa1111bbbb2222';
+
+/**
+ * 面の指紋の文字列(計画書 §2.2.3 の検算表と同じ箱: 40×30 を Z へ10押し出した上面)。
+ * `fingerprintKeyText` をそのまま使うので、丸めの規則(9桁、-0 は 0)も1本で揃う。
+ */
+function faceFingerprint(index = 0, area = 1200): KeySubShape {
+  return fingerprintKeyText({
+    bodyFeatureId: 'extrude-1',
+    index,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area,
+      position: [20, 15, 10],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  });
+}
+
+/** 辺の指紋の文字列。通し番号だけを変えて別の辺を作る。 */
+function edgeFingerprint(index: number): KeySubShape {
+  return fingerprintKeyText({
+    bodyFeatureId: 'extrude-1',
+    index,
+    fingerprint: {
+      kind: 'edge',
+      curveKind: 'line',
+      length: 40,
+      position: [0, 15, 10],
+      axis: [1, 0, 0],
+      radius: null,
+    },
+  });
+}
+
+/** 恒等の剛体変換(何も動かさない)。空の transforms との違いを見るために使う。 */
+const IDENTITY_TRANSFORM: KeyTransform = {
+  translation: [0, 0, 0],
+  rotationOrigin: [0, 0, 0],
+  rotationAxis: [0, 0, 1],
+  rotationAngle: 0,
+};
+
+function hole(overrides: Partial<Omit<HoleKeyMaterial, 'kind'>> = {}): HoleKeyMaterial {
+  return {
+    kind: 'hole',
+    targetKey: TARGET_KEY,
+    face: faceFingerprint(),
+    centers: [[10, 10, 0]],
+    diameter: 6,
+    depth: null,
+    tiltAngle: 0,
+    tiltAzimuth: 0,
+    transforms: [],
+    ...overrides,
+  };
+}
+
+/** M6 並目・簡略表示のねじ穴(下穴径は D1 = 6 − 1.082532×1)。 */
+function thread(overrides: Partial<Omit<ThreadKeyMaterial, 'kind'>> = {}): ThreadKeyMaterial {
+  return {
+    kind: 'thread',
+    targetKey: TARGET_KEY,
+    face: faceFingerprint(),
+    centers: [[10, 10, 0]],
+    drillDiameter: 4.917468,
+    majorDiameter: 6,
+    pitch: 1,
+    threadLength: 10,
+    depth: null,
+    modeled: false,
+    tiltAngle: 0,
+    tiltAzimuth: 0,
+    transforms: [],
+    ...overrides,
+  };
+}
+
+function fillet(overrides: Partial<Omit<FilletKeyMaterial, 'kind'>> = {}): FilletKeyMaterial {
+  return {
+    kind: 'fillet',
+    targetKey: TARGET_KEY,
+    targets: [edgeFingerprint(0), edgeFingerprint(1)],
+    radius: 5,
+    ...overrides,
+  };
+}
+
+function chamfer(overrides: Partial<Omit<ChamferKeyMaterial, 'kind'>> = {}): ChamferKeyMaterial {
+  return {
+    kind: 'chamfer',
+    targetKey: TARGET_KEY,
+    targets: [edgeFingerprint(0), edgeFingerprint(1)],
+    mode: 'equal',
+    distance1: 2,
+    distance2: 0,
+    swapReferenceFace: false,
+    ...overrides,
+  };
+}
+
+/** 既定のばね(§0.a-0.30: ピッチ5・巻数4・コイル径20・線径2・右巻き)。 */
+function spring(overrides: Partial<Omit<SpringKeyMaterial, 'kind'>> = {}): SpringKeyMaterial {
+  return {
+    kind: 'spring',
+    origin: [10, 10, 0],
+    direction: [0, 0, 1],
+    coilDiameter: 20,
+    wireDiameter: 2,
+    pitch: 5,
+    turns: 4,
+    handedness: 'right',
+    ...overrides,
+  };
+}
+
+/** 9種類ぶんの材料を1つずつ。順序は SolidStepKeyMaterial の union の並びに合わせる。 */
+const ALL_KINDS: readonly SolidStepKeyMaterial[] = [
+  extrude(10),
+  revolve(90),
+  sew([SQUARE_PROFILE]),
+  boolean('key-a', 'key-b'),
+  hole(),
+  thread(),
+  fillet(),
+  chamfer(),
+  spring(),
+];
 
 describe('KEY_DECIMALS', () => {
   it('は9桁', () => {
@@ -291,5 +435,352 @@ describe('keyMaterialText', () => {
   it('決定的(同じ材料には同じ文字列)', () => {
     const material: SolidStepKeyMaterial = extrude(10);
     expect(keyMaterialText(material)).toBe(keyMaterialText(extrude(10)));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 以下は P3 タスク14 で足した加工フィーチャー(穴・ねじ穴・R 面取り・C 面取り)と
+// ばねの材料の検査。**具体的なハッシュ値は期待値に書かない**(docs/報告記録.md
+// 2026-09-03 07:58 の②)。確かめるのは「決定性」と「衝突しないこと」の2つの性質だけ。
+// ---------------------------------------------------------------------------
+
+describe('keyMaterialText: P2 の4種類の文字列が変わっていない(既存の鍵を壊さない)', () => {
+  // 鍵の文字列が1文字でも変わると P2 で作った形状キャッシュが全滅するので、
+  // 読める形(ハッシュ前の材料の文字列)で固定する。ハッシュの具体値は書かない。
+  it('押し出しの材料の文字列', () => {
+    expect(keyMaterialText(extrude(2, ONE_SEGMENT))).toBe(
+      'extrude{profile=1:[segment(0.000000000,0.000000000,0.000000000|1.000000000,0.000000000,0.000000000)]' +
+        ';direction=0.000000000,0.000000000,1.000000000;distance=2.000000000}',
+    );
+  });
+
+  it('回転の材料の文字列', () => {
+    const material: RevolveKeyMaterial = {
+      kind: 'revolve',
+      profile: ONE_SEGMENT,
+      axisOrigin: [0, 0, 0],
+      axisDirection: [0, 0, 1],
+      angle: 90,
+    };
+    expect(keyMaterialText(material)).toBe(
+      'revolve{profile=1:[segment(0.000000000,0.000000000,0.000000000|1.000000000,0.000000000,0.000000000)]' +
+        ';axisOrigin=0.000000000,0.000000000,0.000000000' +
+        ';axisDirection=0.000000000,0.000000000,1.000000000;angle=90.000000000}',
+    );
+  });
+
+  it('縫合の材料の文字列', () => {
+    expect(keyMaterialText(sew([ONE_SEGMENT]))).toBe(
+      'sew{profiles=1:[1:[segment(0.000000000,0.000000000,0.000000000|1.000000000,0.000000000,0.000000000)]]' +
+        ';tolerance=0.010000000}',
+    );
+  });
+
+  it('ブーリアンの材料の文字列', () => {
+    expect(keyMaterialText(boolean('a', 'b'))).toBe('boolean{operation=union;targetKey=a;toolKey=b}');
+  });
+});
+
+describe('keyMaterialText: P3 の5節', () => {
+  it('段の種類を先頭のキーワードとして含む', () => {
+    expect(keyMaterialText(hole())).toMatch(/^hole\{/);
+    expect(keyMaterialText(thread())).toMatch(/^thread\{/);
+    expect(keyMaterialText(fillet())).toMatch(/^fillet\{/);
+    expect(keyMaterialText(chamfer())).toMatch(/^chamfer\{/);
+    expect(keyMaterialText(spring())).toMatch(/^spring\{/);
+  });
+
+  it('面・辺の指紋は subShapeRef.ts の fingerprintKeyText の出力をそのまま含む(丸めを2か所に書かない)', () => {
+    expect(keyMaterialText(hole())).toContain(faceFingerprint());
+    expect(keyMaterialText(fillet())).toContain(edgeFingerprint(1));
+  });
+
+  it('ばねの材料の文字列に length と derived が出てこない(§0.a-0.30)', () => {
+    const text = keyMaterialText(spring());
+    expect(text).not.toContain('length');
+    expect(text).not.toContain('derived');
+  });
+});
+
+describe('cacheKeyFor: P3 の材料の決定性(同じ材料は同じ鍵)', () => {
+  it('同じ穴の材料を2回渡しても同じ鍵になる', () => {
+    expect(cacheKeyFor(hole())).toBe(cacheKeyFor(hole()));
+  });
+
+  it('同じねじ穴の材料を2回渡しても同じ鍵になる', () => {
+    expect(cacheKeyFor(thread())).toBe(cacheKeyFor(thread()));
+  });
+
+  it('同じ R 面取りの材料を2回渡しても同じ鍵になる', () => {
+    expect(cacheKeyFor(fillet())).toBe(cacheKeyFor(fillet()));
+  });
+
+  it('同じ C 面取りの材料を2回渡しても同じ鍵になる', () => {
+    expect(cacheKeyFor(chamfer())).toBe(cacheKeyFor(chamfer()));
+  });
+
+  it('同じばねの材料を2回渡しても同じ鍵になる', () => {
+    expect(cacheKeyFor(spring())).toBe(cacheKeyFor(spring()));
+  });
+
+  it('欄を書く順序が違っても同じ鍵になる(鍵は欄の並びに依らない)', () => {
+    const written: SpringKeyMaterial = {
+      handedness: 'right',
+      turns: 4,
+      pitch: 5,
+      wireDiameter: 2,
+      coilDiameter: 20,
+      direction: [0, 0, 1],
+      origin: [10, 10, 0],
+      kind: 'spring',
+    };
+    expect(cacheKeyFor(written)).toBe(cacheKeyFor(spring()));
+  });
+});
+
+describe('cacheKeyFor: 加工フィーチャーの鍵の連鎖(上流の鍵を材料に混ぜる)', () => {
+  it('穴の targetKey だけが違えば違う鍵になる', () => {
+    expect(cacheKeyFor(hole())).not.toBe(cacheKeyFor(hole({ targetKey: '9999999999999999' })));
+  });
+
+  it('ねじ穴の targetKey だけが違えば違う鍵になる', () => {
+    expect(cacheKeyFor(thread())).not.toBe(cacheKeyFor(thread({ targetKey: '9999999999999999' })));
+  });
+
+  it('R 面取りの targetKey だけが違えば違う鍵になる', () => {
+    expect(cacheKeyFor(fillet())).not.toBe(cacheKeyFor(fillet({ targetKey: '9999999999999999' })));
+  });
+
+  it('C 面取りの targetKey だけが違えば違う鍵になる', () => {
+    expect(cacheKeyFor(chamfer())).not.toBe(cacheKeyFor(chamfer({ targetKey: '9999999999999999' })));
+  });
+
+  it('上流の押し出しが変わると、それを対象にした穴の鍵も変わる', () => {
+    const before = cacheKeyFor(extrude(10));
+    const after = cacheKeyFor(extrude(20));
+    expect(before).not.toBe(after);
+    expect(cacheKeyFor(hole({ targetKey: before }))).not.toBe(cacheKeyFor(hole({ targetKey: after })));
+  });
+
+  it('上流が同じなら、穴 → 面取りと2段つないでも鍵は毎回同じになる(決定性)', () => {
+    const holeKey = cacheKeyFor(hole({ targetKey: cacheKeyFor(extrude(10)) }));
+    const again = cacheKeyFor(hole({ targetKey: cacheKeyFor(extrude(10)) }));
+    expect(holeKey).toBe(again);
+    expect(cacheKeyFor(fillet({ targetKey: holeKey }))).toBe(cacheKeyFor(fillet({ targetKey: again })));
+  });
+});
+
+describe('cacheKeyFor: P3 の材料の丸め(KEY_DECIMALS = 9)', () => {
+  it('穴の径 6 → 6.000000001 は違う鍵になる', () => {
+    expect(cacheKeyFor(hole())).not.toBe(cacheKeyFor(hole({ diameter: 6.000000001 })));
+  });
+
+  it('穴の径 6 → 6.0000000001 は9桁より下なので同じ鍵になる', () => {
+    expect(cacheKeyFor(hole())).toBe(cacheKeyFor(hole({ diameter: 6.0000000001 })));
+  });
+
+  it('ばねのピッチ 5 → 5.000000001 は違う鍵、5.0000000001 は同じ鍵になる', () => {
+    expect(cacheKeyFor(spring())).not.toBe(cacheKeyFor(spring({ pitch: 5.000000001 })));
+    expect(cacheKeyFor(spring())).toBe(cacheKeyFor(spring({ pitch: 5.0000000001 })));
+  });
+
+  it('面の指紋の面積が 1e-9 違えば違う鍵、1e-10 違えば同じ鍵になる(指紋も同じ丸め)', () => {
+    expect(cacheKeyFor(hole())).not.toBe(cacheKeyFor(hole({ face: faceFingerprint(0, 1200.000000001) })));
+    expect(cacheKeyFor(hole())).toBe(cacheKeyFor(hole({ face: faceFingerprint(0, 1200.0000000001) })));
+  });
+
+  it('-0 と 0 は同じ鍵になる(ばねの向き・穴の傾き)', () => {
+    expect(cacheKeyFor(spring({ direction: [-0, 0, 1] }))).toBe(cacheKeyFor(spring({ direction: [0, 0, 1] })));
+    expect(cacheKeyFor(hole({ tiltAngle: -0 }))).toBe(cacheKeyFor(hole({ tiltAngle: 0 })));
+  });
+});
+
+describe('cacheKeyFor: 穴の欄', () => {
+  it('depth が null(貫通)と 0(深さ0の止まり穴)は違う鍵になる', () => {
+    expect(cacheKeyFor(hole({ depth: null }))).not.toBe(cacheKeyFor(hole({ depth: 0 })));
+  });
+
+  it('depth が 0 と 4 は違う鍵になる', () => {
+    expect(cacheKeyFor(hole({ depth: 0 }))).not.toBe(cacheKeyFor(hole({ depth: 4 })));
+  });
+
+  it('centers の並びを入れ替えると違う鍵になる(並びも形の作り方の一部)', () => {
+    const a = hole({ centers: [[10, 10, 0], [30, 20, 0]] });
+    const b = hole({ centers: [[30, 20, 0], [10, 10, 0]] });
+    expect(cacheKeyFor(a)).not.toBe(cacheKeyFor(b));
+  });
+
+  it('centers の個数が違えば違う鍵になる(配列の長さを混ぜている)', () => {
+    const one = hole({ centers: [[10, 10, 0]] });
+    const two = hole({ centers: [[10, 10, 0], [10, 10, 0]] });
+    expect(cacheKeyFor(one)).not.toBe(cacheKeyFor(two));
+  });
+
+  it('transforms が空と恒等1つは違う鍵になる(model はどちらかに揃える)', () => {
+    expect(cacheKeyFor(hole({ transforms: [] }))).not.toBe(
+      cacheKeyFor(hole({ transforms: [IDENTITY_TRANSFORM] })),
+    );
+  });
+
+  it('transforms の平行移動だけが違えば違う鍵になる', () => {
+    const a = hole({ transforms: [{ ...IDENTITY_TRANSFORM, translation: [20, 0, 0] }] });
+    const b = hole({ transforms: [{ ...IDENTITY_TRANSFORM, translation: [40, 0, 0] }] });
+    expect(cacheKeyFor(a)).not.toBe(cacheKeyFor(b));
+  });
+
+  it('transforms の回転角だけが違えば違う鍵になる', () => {
+    const a = hole({ transforms: [{ ...IDENTITY_TRANSFORM, rotationAngle: Math.PI / 2 }] });
+    const b = hole({ transforms: [{ ...IDENTITY_TRANSFORM, rotationAngle: Math.PI }] });
+    expect(cacheKeyFor(a)).not.toBe(cacheKeyFor(b));
+  });
+
+  it('transforms の個数が違えば違う鍵になる(パターンの個数が効く)', () => {
+    const two = hole({ transforms: [IDENTITY_TRANSFORM, IDENTITY_TRANSFORM] });
+    expect(cacheKeyFor(hole({ transforms: [IDENTITY_TRANSFORM] }))).not.toBe(cacheKeyFor(two));
+  });
+
+  it('面の指紋の通し番号だけが違えば違う鍵になる', () => {
+    expect(cacheKeyFor(hole())).not.toBe(cacheKeyFor(hole({ face: faceFingerprint(1) })));
+  });
+
+  it('傾き角・方位角がそれぞれ違えば違う鍵になる', () => {
+    expect(cacheKeyFor(hole())).not.toBe(cacheKeyFor(hole({ tiltAngle: Math.PI / 6 })));
+    expect(cacheKeyFor(hole())).not.toBe(cacheKeyFor(hole({ tiltAzimuth: Math.PI / 6 })));
+  });
+});
+
+describe('cacheKeyFor: ねじ穴の欄', () => {
+  it('modeled(実らせんか簡略表示か)の真偽が違えば違う鍵になる', () => {
+    expect(cacheKeyFor(thread({ modeled: false }))).not.toBe(cacheKeyFor(thread({ modeled: true })));
+  });
+
+  it('drillDiameter / majorDiameter / pitch / threadLength を1つずつ変えると、それぞれ違う鍵になる', () => {
+    const base = cacheKeyFor(thread());
+    expect(cacheKeyFor(thread({ drillDiameter: 6.646835 }))).not.toBe(base);
+    expect(cacheKeyFor(thread({ majorDiameter: 8 }))).not.toBe(base);
+    expect(cacheKeyFor(thread({ pitch: 1.25 }))).not.toBe(base);
+    expect(cacheKeyFor(thread({ threadLength: 12 }))).not.toBe(base);
+  });
+
+  it('同じ寸法でも穴とねじ穴は違う鍵になる(種類が先頭に混ざる)', () => {
+    const asHole = hole({ diameter: 4.917468, depth: null });
+    expect(cacheKeyFor(asHole)).not.toBe(cacheKeyFor(thread()));
+  });
+});
+
+describe('cacheKeyFor: 面取りの欄', () => {
+  it('targets の並びだけが違えば違う鍵になる(model は通し番号の昇順に並べてから渡す)', () => {
+    const ascending = fillet({ targets: [edgeFingerprint(0), edgeFingerprint(1)] });
+    const descending = fillet({ targets: [edgeFingerprint(1), edgeFingerprint(0)] });
+    expect(cacheKeyFor(ascending)).not.toBe(cacheKeyFor(descending));
+  });
+
+  it('targets が空と1本は違う鍵になる(配列の長さを混ぜている)', () => {
+    expect(cacheKeyFor(fillet({ targets: [] }))).not.toBe(
+      cacheKeyFor(fillet({ targets: [edgeFingerprint(0)] })),
+    );
+  });
+
+  it('R 面取りの半径だけが違えば違う鍵になる', () => {
+    expect(cacheKeyFor(fillet())).not.toBe(cacheKeyFor(fillet({ radius: 3 })));
+  });
+
+  it('C 面取りの mode だけが違えば違う鍵になる', () => {
+    const base = cacheKeyFor(chamfer({ mode: 'equal' }));
+    expect(cacheKeyFor(chamfer({ mode: 'twoDistances' }))).not.toBe(base);
+    expect(cacheKeyFor(chamfer({ mode: 'distanceAngle' }))).not.toBe(base);
+  });
+
+  it('C 面取りの distance1 / distance2 を1つずつ変えると、それぞれ違う鍵になる', () => {
+    const base = cacheKeyFor(chamfer());
+    expect(cacheKeyFor(chamfer({ distance1: 3 }))).not.toBe(base);
+    expect(cacheKeyFor(chamfer({ distance2: Math.PI / 6 }))).not.toBe(base);
+  });
+
+  it('C 面取りの swapReferenceFace の真偽が違えば違う鍵になる', () => {
+    expect(cacheKeyFor(chamfer({ swapReferenceFace: false }))).not.toBe(
+      cacheKeyFor(chamfer({ swapReferenceFace: true })),
+    );
+  });
+
+  it('同じ辺・同じ寸法でも R 面取りと C 面取りは違う鍵になる', () => {
+    expect(cacheKeyFor(fillet({ radius: 2 }))).not.toBe(cacheKeyFor(chamfer({ distance1: 2 })));
+  });
+});
+
+describe('cacheKeyFor: ばねの欄', () => {
+  it('handedness を右 → 左に変えると違う鍵になる', () => {
+    expect(cacheKeyFor(spring({ handedness: 'right' }))).not.toBe(
+      cacheKeyFor(spring({ handedness: 'left' })),
+    );
+  });
+
+  it('coilDiameter / wireDiameter / pitch / turns を1つずつ変えると、それぞれ違う鍵になる', () => {
+    const base = cacheKeyFor(spring());
+    expect(cacheKeyFor(spring({ coilDiameter: 24 }))).not.toBe(base);
+    expect(cacheKeyFor(spring({ wireDiameter: 3 }))).not.toBe(base);
+    expect(cacheKeyFor(spring({ pitch: 6 }))).not.toBe(base);
+    expect(cacheKeyFor(spring({ turns: 5 }))).not.toBe(base);
+  });
+
+  it('origin / direction がそれぞれ違えば違う鍵になる', () => {
+    const base = cacheKeyFor(spring());
+    expect(cacheKeyFor(spring({ origin: [0, 0, 0] }))).not.toBe(base);
+    expect(cacheKeyFor(spring({ direction: [0, 1, 0] }))).not.toBe(base);
+  });
+
+  it('全長は材料に無いので、「ピッチ5・巻数4」と「全長20から導いたピッチ5・巻数4」は同じ鍵になる', () => {
+    // derived: 'length' で ピッチ5・巻数4 を書いた場合(全長は 5×4 = 20)と、
+    // derived: 'pitch' で 全長20・巻数4 を書いた場合(ピッチは 20/4 = 5)。
+    // どちらも解決後は同じ「ピッチ5・巻数4」なので、鍵も同じでなければならない。
+    const fromPitchAndTurns = spring({ pitch: 5, turns: 4 });
+    const fromLengthAndTurns = spring({ pitch: 20 / 4, turns: 4 });
+    expect(cacheKeyFor(fromPitchAndTurns)).toBe(cacheKeyFor(fromLengthAndTurns));
+  });
+
+  it('ばねは targetKey を持たないので、上流の鍵の違いでは変わりようがない(型に欄が無い)', () => {
+    // 型に targetKey が無いことを、同じ数値の材料を2つ独立に組み立てて確かめる。
+    expect(cacheKeyFor(spring())).toBe(cacheKeyFor(spring()));
+  });
+});
+
+/** 9種類の材料を index で少しずつ変えて作る(衝突検査用)。 */
+function variantValue(index: number): number {
+  return 1 + index * 0.001;
+}
+
+const VARIANT_BUILDERS: readonly ((index: number) => SolidStepKeyMaterial)[] = [
+  (index) => extrude(variantValue(index)),
+  (index) => revolve(variantValue(index)),
+  (index) => sew([SQUARE_PROFILE], variantValue(index)),
+  (index) => boolean(`upstream-${index}`, 'tool-key'),
+  (index) => hole({ diameter: variantValue(index) }),
+  (index) => thread({ pitch: variantValue(index) }),
+  (index) => fillet({ radius: variantValue(index) }),
+  (index) => chamfer({ distance1: variantValue(index) }),
+  (index) => spring({ pitch: variantValue(index) }),
+];
+
+describe('cacheKeyFor: 9種類が互いに衝突しない', () => {
+  it('9種類すべての鍵が長さ16の16進文字列になる', () => {
+    expect(ALL_KINDS).toHaveLength(9);
+    for (const material of ALL_KINDS) {
+      const key = cacheKeyFor(material);
+      expect(key).toHaveLength(16);
+      expect(key).toMatch(/^[0-9a-f]{16}$/);
+    }
+  });
+
+  it('9種類の鍵が互いに違う(種類が違えば必ず別の鍵)', () => {
+    const keys = new Set(ALL_KINDS.map(cacheKeyFor));
+    expect(keys.size).toBe(ALL_KINDS.length);
+  });
+
+  it('9種類の材料を1つずつ少しずつ変えた1000通りで、鍵の重複が0件', () => {
+    const keys = new Set<string>();
+    for (let index = 0; index < 1000; index += 1) {
+      keys.add(cacheKeyFor(VARIANT_BUILDERS[index % VARIANT_BUILDERS.length](index)));
+    }
+    expect(keys.size).toBe(1000);
   });
 });

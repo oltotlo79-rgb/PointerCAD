@@ -485,8 +485,9 @@ interface SolidGroupProps {
 
 /**
  * ソリッドの区画(FR-401〜404)。6 つとも図柄だけのボタンで、名前は読み上げ名と
- * ツールチップが担う(FR-904、NFR-UX-7)。いま押せないものは aria-disabled にして
- * 押しても何も起きないようにし、ツールチップで「名前: 理由」を読めるようにする(NFR-UX-5)。
+ * ツールチップが担う(FR-904、NFR-UX-7)。いま押せないものは aria-disabled にし、
+ * ツールチップで「名前: 理由」を読めるようにする。押しても立体は作らないが、
+ * 押した瞬間にステータスバーへも同じ理由を出す(§0.a-0.6、NFR-UX-5)。
  */
 function SolidGroup({ document, selection }: SolidGroupProps): React.JSX.Element {
   return (
@@ -512,7 +513,11 @@ function SolidGroup({ document, selection }: SolidGroupProps): React.JSX.Element
               onClick={() => {
                 if (readiness.ready) {
                   runSolidAction(action.id);
+                  return;
                 }
+                // 押せない道具を押しても、ツールチップだけでなく帯にも理由を出す
+                // (§0.a-0.6、NFR-UX-5。2026-09-03 19:35 の統括の決定)。
+                useAppStore.getState().setSolidError(readiness.reasonKey);
               }}
             >
               <action.Icon />

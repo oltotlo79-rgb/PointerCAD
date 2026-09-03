@@ -88,6 +88,8 @@ export function ViewportCanvas(): React.JSX.Element {
     const initial = useAppStore.getState();
     scene.setSketch(initial.resolvedSketch, initial.sketchMesh);
     scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
+    scene.setBodies(initial.bodies);
+    scene.setBodyHighlight(initial.hoveredElementId, initial.selection);
     scene.setWorkPlane(initial.workPlaneId);
     requestDraw();
 
@@ -99,12 +101,18 @@ export function ViewportCanvas(): React.JSX.Element {
       ) {
         scene.setSketch(next.resolvedSketch, next.sketchMesh);
       }
-      // ホバー・選択の強調(FR-106)。
+      // 立体(FR-105)。カーネルが返した三角形と稜線をボディごとに描く。
+      if (next.bodies !== previous.bodies) {
+        scene.setBodies(next.bodies);
+      }
+      // ホバー・選択の強調(FR-106)。スケッチの要素とボディは同じ選択を共有していて、
+      // 立体の id が入っていればボディの縁が、要素の id が入っていればスケッチが強調される。
       if (
         next.hoveredElementId !== previous.hoveredElementId ||
         next.selection !== previous.selection
       ) {
         scene.setSketchHighlight(next.hoveredElementId, next.selection);
+        scene.setBodyHighlight(next.hoveredElementId, next.selection);
       }
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。
       if (next.workPlaneId !== previous.workPlaneId) {

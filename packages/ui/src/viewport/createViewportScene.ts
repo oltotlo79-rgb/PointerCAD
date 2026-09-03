@@ -3,12 +3,14 @@ import {
   WORK_PLANES,
   type ResolvedSketch,
   type SketchMesh,
+  type SolidBody,
   type Vec3,
   type WorkPlane,
   type WorkPlaneId,
 } from '@pointercad/model';
 import * as THREE from 'three';
 
+import { captureThumbnailPng, THUMBNAIL_SIZE } from '../file/thumbnail.js';
 import type { DisplayStyle, ProjectionMode } from '../store/useAppStore.js';
 import {
   buildSketchGeometry,
@@ -16,6 +18,7 @@ import {
   NO_HIGHLIGHT,
   type SketchHighlight,
 } from './buildSketchGeometry.js';
+import { buildSolidGeometry, EMPTY_SOLID_GEOMETRY } from './buildSolidGeometry.js';
 import {
   cameraPosition,
   clamp,
@@ -25,7 +28,20 @@ import {
   type OrbitState,
 } from './cameraMath.js';
 import { createSketchLayer } from './createSketchLayer.js';
+import { createSolidLayer } from './createSolidLayer.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
+
+/**
+ * 1 枚描くときの見せ方。視点はここでも持たず、呼び出しごとに渡されたものを控えるだけ
+ * (視点の正本は `attachCameraControls`)。サムネイル(§0.a-0.18)は最後の 1 枚と
+ * 同じ見せ方で描き直すため、この控えを使う。
+ */
+interface RenderSettings {
+  readonly orbit: OrbitState;
+  readonly projection: ProjectionMode;
+  readonly displayStyle: DisplayStyle;
+  readonly showGrid: boolean;
+}
 
 /** ビューポートの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
 export interface ViewportScene {
@@ -34,6 +50,25 @@ export interface ViewportScene {
   setSketch(sketch: ResolvedSketch, mesh: SketchMesh | null): void;
   /** ホバー・選択の強調を差し替える(FR-106)。 */
   setSketchHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
+  /** ソリッドの表示を差し替える(FR-105)。ボディの id はフィーチャーの id(§0.a-0.5)。 */
+  setBodies(bodies: readonly SolidBody[]): void;
+  /**
+   * ボディのホバー・選択の強調を差し替える(FR-106)。
+   * ストアの `hoveredElementId` / `selection` をそのまま渡してよい
+   * (スケッチの要素 id が混ざっていても、ボディの id と取り違えることはない)。
+   */
+  setBodyHighlight(hoveredBodyId: string | null, selectedBodyIds: readonly string[]): void;
+  /**
+   * 画面座標(canvas の左上を原点とした画素)にあるボディの featureId。無ければ null
+   * (FR-106)。透視投影でも平行投影でも、最後に描いたカメラで判定する。
+   */
+  pickBody(screenX: number, screenY: number): string | null;
+  /**
+   * いまの絵をもう 1 回描いて、一辺 `size` の PNG のバイト列にする(§0.a-0.18)。
+   * `preserveDrawingBuffer` を常時有効にすると描画が重くなる(NFR-PF-1)ので、
+   * **描いた直後の同じ同期処理の中**で読む。まだ一度も描いていなければ null。
+   */
+  captureThumbnail(size?: number): Uint8Array | null;
   /** いま描いている作図面(§0.a-0.3)。薄い矩形で向きを示す。 */
   setWorkPlane(id: WorkPlaneId): void;
   /** ワールド座標を canvas 上の画素座標へ。まだ一度も描いていない・画面の外なら null。 */
@@ -243,6 +278,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   axisLines.renderOrder = 1;
   gridGroup.add(axisLines);
 
+  const solidLayer = createSolidLayer();
+  scene.add(solidLayer.group);
+
   const sketchLayer = createSketchLayer();
   sketchLayer.setWorkPlane(WORK_PLANES[DEFAULT_WORK_PLANE_ID]);
   scene.add(sketchLayer.group);
@@ -270,8 +308,16 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let sketchHighlight: SketchHighlight = NO_HIGHLIGHT;
   let sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
 
+  /** ボディの現在値。組み立て直すのは変化したときだけ(NFR-PF-1)。 */
+  let bodies: readonly SolidBody[] = [];
+  let hoveredBodyId: string | null = null;
+  let selectedBodyIds: readonly string[] = [];
+  let solidBundle = EMPTY_SOLID_GEOMETRY;
+
   /** 最後に描いたときのカメラ。画面座標との行き来はこれが決まってからでないとできない。 */
   let lastCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
+  /** 最後に描いたときの見せ方。サムネイルを撮るときに同じ絵を描き直すのに使う。 */
+  let lastRender: RenderSettings | null = null;
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
   const scratch = new THREE.Vector3();
@@ -279,6 +325,46 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   const pickPlane = new THREE.Plane();
   const planeNormal = new THREE.Vector3();
   const planeOrigin = new THREE.Vector3();
+
+  /** 1 枚描く。表示スタイルの反映からカメラの置き直しまで、絵を作る手順はここだけ。 */
+  function drawScene(settings: RenderSettings): void {
+    const { orbit, projection, displayStyle, showGrid } = settings;
+    const spacing = gridSpacing(orbit.distance);
+    if (spacing !== currentSpacing) {
+      rebuildGrid(spacing);
+    }
+    gridGroup.visible = showGrid;
+
+    // 立体とスケッチは組み立て直したときだけ並びを差し替える(同じ結果なら表示の入切だけ)。
+    solidLayer.update(solidBundle, displayStyle);
+    sketchLayer.update(sketchBundle, displayStyle);
+
+    updateKeyLight(orbit);
+
+    const [x, y, z] = cameraPosition(orbit);
+    const aspect = width / height;
+    const camera = projection === 'perspective' ? perspectiveCamera : orthographicCamera;
+
+    if (projection === 'perspective') {
+      perspectiveCamera.aspect = aspect;
+    } else {
+      // 透視投影と見た目の大きさを揃える(FR-102)。
+      const frustumHeight = orthographicFrustumHeight(orbit.distance);
+      orthographicCamera.top = frustumHeight / 2;
+      orthographicCamera.bottom = -frustumHeight / 2;
+      orthographicCamera.left = (-frustumHeight * aspect) / 2;
+      orthographicCamera.right = (frustumHeight * aspect) / 2;
+    }
+    camera.position.set(x, y, z);
+    camera.up.copy(UP_AXIS);
+    camera.lookAt(orbit.target[0], orbit.target[1], orbit.target[2]);
+    camera.updateProjectionMatrix();
+
+    // 画面座標との行き来(worldToScreen / screenToPlanePoint / pickBody)はこのカメラで行う。
+    lastCamera = camera;
+    lastRender = settings;
+    renderer.render(scene, camera);
+  }
 
   return {
     setSketch(nextSketch, nextMesh): void {
@@ -290,6 +376,40 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     setSketchHighlight(hoveredElementId, selection): void {
       sketchHighlight = { hoveredElementId, selection };
       sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
+    },
+
+    setBodies(nextBodies): void {
+      bodies = nextBodies;
+      solidBundle = buildSolidGeometry(bodies, hoveredBodyId, selectedBodyIds);
+    },
+
+    setBodyHighlight(nextHovered, nextSelected): void {
+      hoveredBodyId = nextHovered;
+      selectedBodyIds = nextSelected;
+      solidBundle = buildSolidGeometry(bodies, hoveredBodyId, selectedBodyIds);
+    },
+
+    pickBody(screenX, screenY): string | null {
+      if (lastCamera === null) {
+        return null;
+      }
+      pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
+      // 平行投影でも setFromCamera が視線の起点と向きを組み立て直す(three.js が
+      // カメラの種類を見て分ける)ので、投影の切替でそのまま動く。
+      raycaster.setFromCamera(pointerNdc, lastCamera);
+      return solidLayer.pickBody(raycaster);
+    },
+
+    captureThumbnail(size = THUMBNAIL_SIZE): Uint8Array | null {
+      if (lastRender === null) {
+        // まだ一度も描いていない(3D 表示部の読み込み中)。
+        // サムネイルなしで保存する(§0.a-0.18)。
+        return null;
+      }
+      // 画面へ出した時点で描画バッファは捨てられるので、最後と同じ見せ方で描き直し、
+      // **同じ同期処理の中で**読む。間に非同期の待ちを挟んではいけない。
+      drawScene(lastRender);
+      return captureThumbnailPng(canvas, size);
     },
 
     setWorkPlane(id): void {
@@ -329,42 +449,11 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     },
 
     render(orbit, projection, displayStyle, showGrid): void {
-      const spacing = gridSpacing(orbit.distance);
-      if (spacing !== currentSpacing) {
-        rebuildGrid(spacing);
-      }
-      gridGroup.visible = showGrid;
-
-      // スケッチは組み立て直したときだけ並びを差し替える(同じ結果なら表示の入切だけ)。
-      sketchLayer.update(sketchBundle, displayStyle);
-
-      updateKeyLight(orbit);
-
-      const [x, y, z] = cameraPosition(orbit);
-      const aspect = width / height;
-      const camera = projection === 'perspective' ? perspectiveCamera : orthographicCamera;
-
-      if (projection === 'perspective') {
-        perspectiveCamera.aspect = aspect;
-      } else {
-        // 透視投影と見た目の大きさを揃える(FR-102)。
-        const frustumHeight = orthographicFrustumHeight(orbit.distance);
-        orthographicCamera.top = frustumHeight / 2;
-        orthographicCamera.bottom = -frustumHeight / 2;
-        orthographicCamera.left = (-frustumHeight * aspect) / 2;
-        orthographicCamera.right = (frustumHeight * aspect) / 2;
-      }
-      camera.position.set(x, y, z);
-      camera.up.copy(UP_AXIS);
-      camera.lookAt(orbit.target[0], orbit.target[1], orbit.target[2]);
-      camera.updateProjectionMatrix();
-
-      // 画面座標との行き来(worldToScreen / screenToPlanePoint)はこのカメラで行う。
-      lastCamera = camera;
-      renderer.render(scene, camera);
+      drawScene({ orbit, projection, displayStyle, showGrid });
     },
 
     dispose(): void {
+      solidLayer.dispose();
       sketchLayer.dispose();
       grid.geometry.dispose();
       axisLines.geometry.dispose();

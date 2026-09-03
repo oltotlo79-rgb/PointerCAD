@@ -37,9 +37,17 @@ import {
   resolveMachiningTarget,
   resolvePart,
   resolveRevolveAxis,
+  resolveSpringLength,
+  resolveSpringOrigin,
+  resolveTiltedDirection,
   translateCurve,
 } from './resolvePart.js';
-import type { ResolvedPart, ResolvedPartSketch, ResolvedSolidStep } from './resolvePart.js';
+import type {
+  RevolveAxisFrame,
+  ResolvedPart,
+  ResolvedPartSketch,
+  ResolvedSolidStep,
+} from './resolvePart.js';
 import { fingerprintKeyText } from './subShapeRef.js';
 import type {
   BooleanFeature,
@@ -55,6 +63,9 @@ import type {
   SketchLineRef,
   SketchPointRef,
   SolidFeature,
+  SpringDerived,
+  SpringFeature,
+  SpringHandedness,
   SubShapeRef,
   ThreadHoleFeature,
   ThreadRepresentation,
@@ -391,6 +402,49 @@ function threadHoleFeature(
   };
 }
 
+interface SpringOptions {
+  readonly axis?: RevolveAxis;
+  readonly tiltAngle?: string | ExpressionValue;
+  readonly tiltAzimuth?: string | ExpressionValue;
+  readonly length?: string | ExpressionValue;
+  readonly pitch?: string | ExpressionValue;
+  readonly turns?: string | ExpressionValue;
+  readonly derived?: SpringDerived;
+  readonly coilDiameter?: string | ExpressionValue;
+  readonly wireDiameter?: string | ExpressionValue;
+  readonly handedness?: SpringHandedness;
+  readonly suppressed?: boolean;
+  readonly name?: string;
+}
+
+/**
+ * ばね。既定はピッチ 5・巻数 4(§0.a-0.30 の既定値、derived='length' で全長 20 になる)、
+ * コイル径 20・線径 2・右巻き・軸はワールド Z・傾き 0。
+ */
+function springFeature(
+  id: string,
+  origin: SketchPointRef,
+  options: SpringOptions = {},
+): SpringFeature {
+  return {
+    id,
+    name: options.name ?? id,
+    suppressed: options.suppressed ?? false,
+    kind: 'spring',
+    origin,
+    axis: options.axis ?? { kind: 'world', axis: 'z' },
+    tiltAngle: toExpr(options.tiltAngle ?? '0'),
+    tiltAzimuth: toExpr(options.tiltAzimuth ?? '0'),
+    length: toExpr(options.length ?? '20'),
+    pitch: toExpr(options.pitch ?? '5'),
+    turns: toExpr(options.turns ?? '4'),
+    derived: options.derived ?? 'length',
+    coilDiameter: toExpr(options.coilDiameter ?? '20'),
+    wireDiameter: toExpr(options.wireDiameter ?? '2'),
+    handedness: options.handedness ?? 'right',
+  };
+}
+
 function withSolids(document: PartDocument, ...solids: readonly SolidFeature[]): PartDocument {
   return solids.reduce((current, solid) => appendSolid(current, solid), document);
 }
@@ -434,6 +488,13 @@ function holePlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], {
 function threadPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'thread' }> {
   if (step.plan.kind !== 'thread') {
     throw new Error(`テストの前提が壊れている: ねじ穴でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function springPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'spring' }> {
+  if (step.plan.kind !== 'spring') {
+    throw new Error(`テストの前提が壊れている: ばねでない段 ${step.plan.kind}`);
   }
   return step.plan;
 }
@@ -1862,5 +1923,405 @@ describe('resolvePart ねじ穴', () => {
       ),
     );
     expect(thread.steps[1].key).not.toBe(hole.steps[1].key);
+  });
+});
+
+describe('resolveSpringLength', () => {
+  it("derived: 'length' はピッチ×巻数を計算する(保存値は無視)", () => {
+    const outcome = resolveSpringLength({ length: 0, pitch: 5, turns: 4 }, 'length');
+    expect(outcome).toEqual({ ok: true, length: 20, pitch: 5, turns: 4 });
+  });
+
+  it("derived: 'pitch' は全長÷巻数を計算する", () => {
+    const outcome = resolveSpringLength({ length: 20, pitch: 0, turns: 4 }, 'pitch');
+    expect(outcome).toEqual({ ok: true, length: 20, pitch: 5, turns: 4 });
+  });
+
+  it("derived: 'turns' は全長÷ピッチを計算する", () => {
+    const outcome = resolveSpringLength({ length: 20, pitch: 5, turns: 0 }, 'turns');
+    expect(outcome).toEqual({ ok: true, length: 20, pitch: 5, turns: 4 });
+  });
+
+  it("derived の欄の保存値は使わない(全長 20 でもピッチ 5・巻数 99 なら 495 になる)", () => {
+    const outcome = resolveSpringLength({ length: 20, pitch: 5, turns: 99 }, 'length');
+    expect(outcome).toEqual({ ok: true, length: 495, pitch: 5, turns: 99 });
+  });
+
+  it("derived: 'pitch' で巻数が 0 なら断り、文言に「巻数」を含む(0 で割れない)", () => {
+    const outcome = resolveSpringLength({ length: 20, pitch: 0, turns: 0 }, 'pitch');
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗するはずの呼び出しが成功した');
+    }
+    expect(outcome.message).toContain('巻数');
+  });
+
+  it("derived: 'turns' でピッチが 0 なら断り、文言に「ピッチ」を含む", () => {
+    const outcome = resolveSpringLength({ length: 20, pitch: 0, turns: 0 }, 'turns');
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗するはずの呼び出しが成功した');
+    }
+    expect(outcome.message).toContain('ピッチ');
+  });
+
+  it("derived: 'length' でピッチが負なら断る", () => {
+    const outcome = resolveSpringLength({ length: 0, pitch: -5, turns: 4 }, 'length');
+    expect(outcome.ok).toBe(false);
+  });
+
+  it("derived: 'length' で巻数が非数(NaN)なら断る", () => {
+    const outcome = resolveSpringLength(
+      { length: 0, pitch: 5, turns: Number.NaN },
+      'length',
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it("derived: 'pitch' で全長が 0 以下なら断り、文言に「全長」を含む", () => {
+    const outcome = resolveSpringLength({ length: 0, pitch: 0, turns: 4 }, 'pitch');
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗するはずの呼び出しが成功した');
+    }
+    expect(outcome.message).toContain('全長');
+  });
+});
+
+describe('resolveSpringOrigin', () => {
+  it('点フィーチャーの座標を返す', () => {
+    const fixture = createFixture();
+    const origin = resolveSpringOrigin(fixture.pointA, sketchesOf(fixture.document));
+    expect(origin).toEqual([10, 10, 0]);
+  });
+
+  it('点フィーチャーが見つからなければ null', () => {
+    const fixture = createFixture();
+    const origin = resolveSpringOrigin(
+      { sketchId: fixture.pointA.sketchId, pointFeatureId: 'point-404' },
+      sketchesOf(fixture.document),
+    );
+    expect(origin).toBeNull();
+  });
+
+  it('スケッチが見つからなければ null', () => {
+    const fixture = createFixture();
+    const origin = resolveSpringOrigin(
+      { sketchId: 'sketch-404', pointFeatureId: fixture.pointA.pointFeatureId },
+      sketchesOf(fixture.document),
+    );
+    expect(origin).toBeNull();
+  });
+});
+
+describe('resolveTiltedDirection', () => {
+  it('傾き 0 なら軸の向きをそのまま返す(方位角によらない)', () => {
+    const frame: RevolveAxisFrame = { origin: [0, 0, 0], direction: [0, 0, 1] };
+    expect(resolveTiltedDirection(frame, 0, 0)).toEqual([0, 0, 1]);
+    expect(resolveTiltedDirection(frame, 0, Math.PI)).toEqual([0, 0, 1]);
+  });
+
+  it('傾き 30 度・方位角 0 の Z 成分は cos(30 度)', () => {
+    const frame: RevolveAxisFrame = { origin: [0, 0, 0], direction: [0, 0, 1] };
+    const direction = resolveTiltedDirection(frame, Math.PI / 6, 0);
+    expect(direction[2]).toBeCloseTo(Math.cos(Math.PI / 6), 9);
+  });
+
+  it('結果は常に単位ベクトル(傾き・方位角によらない)', () => {
+    const frame: RevolveAxisFrame = { origin: [0, 0, 0], direction: [1, 0, 0] };
+    for (const tilt of [0, Math.PI / 6, Math.PI / 4, Math.PI / 3]) {
+      for (const azimuth of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
+        const direction = resolveTiltedDirection(frame, tilt, azimuth);
+        const length = Math.hypot(direction[0], direction[1], direction[2]);
+        expect(length).toBeCloseTo(1, 9);
+      }
+    }
+  });
+
+  it('方位角を変えると(傾きが 0 でなければ)向きが変わる', () => {
+    const frame: RevolveAxisFrame = { origin: [0, 0, 0], direction: [0, 0, 1] };
+    const a = resolveTiltedDirection(frame, Math.PI / 6, 0);
+    const b = resolveTiltedDirection(frame, Math.PI / 6, Math.PI / 2);
+    expect(a).not.toEqual(b);
+  });
+});
+
+describe('resolvePart ばね', () => {
+  it('既定値で1段作り、ピッチ・巻数・コイル径・線径・巻き方向をそのまま渡す', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, springFeature('spring-1', fixture.pointA));
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(1);
+    const plan = springPlan(result.steps[0]);
+    expect(plan.turns).toBe(4);
+    expect(plan.pitch).toBe(5);
+    expect(plan.coilDiameter).toBe(20);
+    expect(plan.wireDiameter).toBe(2);
+    expect(plan.handedness).toBe('right');
+    expect(result.liveBodyIds).toEqual(['spring-1']);
+  });
+
+  it('始点はスケッチの点の座標', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, springFeature('spring-1', fixture.pointA));
+    const plan = springPlan(resolvePart(document).steps[0]);
+    expect(plan.origin[0]).toBeCloseTo(10, 9);
+    expect(plan.origin[1]).toBeCloseTo(10, 9);
+    expect(plan.origin[2]).toBeCloseTo(0, 9);
+  });
+
+  it('軸がワールド Z・傾き 0 なら向きは [0, 0, 1]', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, springFeature('spring-1', fixture.pointA));
+    const plan = springPlan(resolvePart(document).steps[0]);
+    expect(plan.direction[0]).toBeCloseTo(0, 12);
+    expect(plan.direction[1]).toBeCloseTo(0, 12);
+    expect(plan.direction[2]).toBeCloseTo(1, 12);
+  });
+
+  it('軸がワールド Z・傾き 30 度・方位角 0 なら向きの Z 成分は cos(30 度)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, { tiltAngle: '30', tiltAzimuth: '0' }),
+    );
+    const plan = springPlan(resolvePart(document).steps[0]);
+    expect(plan.direction[2]).toBeCloseTo(Math.cos(Math.PI / 6), 9);
+  });
+
+  it('軸に線分を指せる(回転軸と同じ RevolveAxis を流用)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, { axis: { kind: 'line', line: fixture.axisLine } }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const expectedDirection = resolveRevolveAxis(
+      { kind: 'line', line: fixture.axisLine },
+      result.sketches,
+    );
+    if (expectedDirection === null) {
+      throw new Error('テストの前提が壊れている: 軸の線分が解決できない');
+    }
+    const plan = springPlan(result.steps[0]);
+    expect(plan.direction[0]).toBeCloseTo(expectedDirection.direction[0], 9);
+    expect(plan.direction[1]).toBeCloseTo(expectedDirection.direction[1], 9);
+    expect(plan.direction[2]).toBeCloseTo(expectedDirection.direction[2], 9);
+  });
+
+  it('傾きが 90 度なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, { tiltAngle: '90' }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.steps).toEqual([]);
+  });
+
+  it('始点の点フィーチャーが見つからなければ missingProfile(例外にならない)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', { sketchId: fixture.pointA.sketchId, pointFeatureId: 'point-404' }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingProfile']);
+    expect(result.errors[0].message).toContain('始点');
+    expect(result.steps).toEqual([]);
+  });
+
+  it('軸の線分が見つからなければ missingProfile', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, {
+        axis: { kind: 'line', line: { sketchId: fixture.axisLine.sketchId, lineFeatureId: 'line-404' } },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingProfile']);
+    expect(result.errors[0].message).toContain('軸');
+  });
+
+  it('コイル径が 0 以下なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, { coilDiameter: '0' }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('線径が 0 以下なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, { wireDiameter: '0' }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('線径がコイル径以上なら invalidValue(線径はコイル径より小さく)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, { coilDiameter: '20', wireDiameter: '20' }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('線径はコイル径より小さく');
+  });
+
+  it('ピッチが線径以下なら invalidValue(隣どうしの線がぶつかります)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, { pitch: '2', wireDiameter: '2' }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('隣どうしの線がぶつかります');
+  });
+
+  it('巻数が 201 なら invalidValue(上限 200)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, {
+        derived: 'length',
+        pitch: '1',
+        turns: '201',
+      }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it("derived: 'pitch' は全長・巻数からピッチを計算する", () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, {
+        derived: 'pitch',
+        length: '20',
+        turns: '4',
+      }),
+    );
+    const plan = springPlan(resolvePart(document).steps[0]);
+    expect(plan.pitch).toBe(5);
+    expect(plan.turns).toBe(4);
+  });
+
+  it("derived: 'turns' は全長・ピッチから巻数を計算する", () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, {
+        derived: 'turns',
+        length: '20',
+        pitch: '5',
+      }),
+    );
+    const plan = springPlan(resolvePart(document).steps[0]);
+    expect(plan.turns).toBe(4);
+    expect(plan.pitch).toBe(5);
+  });
+
+  it('押し出し → ばねは対象を消費しない(両方が画面に残る)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      springFeature('spring-1', fixture.pointA),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps.map((step) => step.visible)).toEqual([true, true]);
+    expect(result.liveBodyIds).toEqual(['extrude-1', 'spring-1']);
+  });
+
+  it('抑制したばねは何も作らず、失敗としても数えない', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      springFeature('spring-1', fixture.pointA, { suppressed: true }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toEqual([]);
+    expect(result.liveBodyIds).toEqual([]);
+  });
+
+  it('鍵は始点・向き・コイル径・線径・ピッチ・巻数・巻き方向から作られる(全長と derived は混ぜない)', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, springFeature('spring-1', fixture.pointA));
+    const result = resolvePart(document);
+    expect(result.steps[0].key).toBe(
+      cacheKeyFor({
+        kind: 'spring',
+        origin: [10, 10, 0],
+        direction: [0, 0, 1],
+        coilDiameter: 20,
+        wireDiameter: 2,
+        pitch: 5,
+        turns: 4,
+        handedness: 'right',
+      }),
+    );
+  });
+
+  it('同じ文書を 2 回解決すると鍵が一致し、名前だけ変えても変わらない(決定性)', () => {
+    const fixture = createFixture();
+    const build = (name: string): ResolvedPart =>
+      resolvePart(withSolids(fixture.document, springFeature('spring-1', fixture.pointA, { name })));
+    const first = build('ばね1');
+    expect(build('ばね1').steps[0].key).toBe(first.steps[0].key);
+    expect(build('中つなぎ').steps[0].key).toBe(first.steps[0].key);
+  });
+
+  it('derived だけ変えて同じ数値結果になる文書は鍵が一致する', () => {
+    const fixture = createFixture();
+    const byLength = resolvePart(
+      withSolids(
+        fixture.document,
+        springFeature('spring-1', fixture.pointA, { derived: 'length', pitch: '5', turns: '4' }),
+      ),
+    );
+    const byPitch = resolvePart(
+      withSolids(
+        fixture.document,
+        springFeature('spring-1', fixture.pointA, { derived: 'pitch', length: '20', turns: '4' }),
+      ),
+    );
+    expect(byPitch.steps[0].key).toBe(byLength.steps[0].key);
+  });
+
+  it('コイル径やピッチ・巻き方向を変えると鍵が変わる', () => {
+    const fixture = createFixture();
+    const base = resolvePart(
+      withSolids(fixture.document, springFeature('spring-1', fixture.pointA)),
+    ).steps[0].key;
+    const coilChanged = resolvePart(
+      withSolids(
+        fixture.document,
+        springFeature('spring-1', fixture.pointA, { coilDiameter: '24' }),
+      ),
+    ).steps[0].key;
+    const pitchChanged = resolvePart(
+      withSolids(fixture.document, springFeature('spring-1', fixture.pointA, { pitch: '6' })),
+    ).steps[0].key;
+    const handednessChanged = resolvePart(
+      withSolids(
+        fixture.document,
+        springFeature('spring-1', fixture.pointA, { handedness: 'left' }),
+      ),
+    ).steps[0].key;
+    expect(coilChanged).not.toBe(base);
+    expect(pitchChanged).not.toBe(base);
+    expect(handednessChanged).not.toBe(base);
   });
 });

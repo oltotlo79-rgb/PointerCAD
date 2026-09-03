@@ -24,6 +24,11 @@
  *   - 面の指紋からの選び直し(見つからなければカーネルが断り、タスク17 が missingSubShape に詰める)
  *   - 中心点の面への投影と、掘る向き(面の法線と傾き角・方位角から作る)
  *   - 貫通穴の長さ(対象の境界箱の対角長から決める、§0.a-0.12)
+ *
+ * P3(タスク15b)でばね(FR-414、§2.7b)を足した。ばねは面でなく軸(RevolveAxis)を持つので、
+ * 穴と違い掘る向きの計算(`resolveTiltedDirection`)まで model 側で完結する
+ * (カーネルへは傾きを適用した後の向きベクトルをそのまま渡す)。全長・ピッチ・巻数のうち
+ * `derived` が指す欄は保存値を無視して他の2つから計算し直す(`resolveSpringLength`、§0.a-0.30)。
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
@@ -33,6 +38,7 @@ import { arcPointAt, fitPlaneNormal, resolveSketch } from '../sketch/resolveSket
 import type { ResolvedCurve, ResolvedFace, ResolvedSketch } from '../sketch/types.js';
 import {
   addVec3,
+  crossVec3,
   lengthVec3,
   normalizeVec3,
   ORIGIN,
@@ -48,7 +54,7 @@ import {
   type KeyVec3,
   type SolidStepKeyMaterial,
 } from './cacheKey.js';
-import { consumedTargetsOf } from './createPartDocument.js';
+import { consumedTargetsOf, MAX_SPRING_TURNS } from './createPartDocument.js';
 import { fingerprintKeyText, subShapeKindOf } from './subShapeRef.js';
 import type {
   BooleanFeature,
@@ -63,6 +69,8 @@ import type {
   SketchFaceRef,
   SketchPointRef,
   SolidFeature,
+  SpringDerived,
+  SpringFeature,
   SubShapeRef,
   ThreadHoleFeature,
 } from './types.js';
@@ -180,6 +188,22 @@ export type SolidStepPlan =
        * ので null を取らない(印は実形状のときも出す、§2.4.2)。
        */
       readonly mark: { readonly majorDiameter: number; readonly length: number };
+    }
+  | {
+      readonly kind: 'spring';
+      /** らせんの軸の始点(mm)。 */
+      readonly origin: Vec3;
+      /** 軸の向き(単位ベクトル)。傾きを適用した後(§0.a-0.29)。 */
+      readonly direction: Vec3;
+      /** コイルの中心径(mm)。 */
+      readonly coilDiameter: number;
+      /** 線径(mm)。 */
+      readonly wireDiameter: number;
+      /** 1巻きあたりの軸方向の進み(mm)。derived を解決した後の値。 */
+      readonly pitch: number;
+      /** 巻数。derived を解決した後の値。0 より大きく MAX_SPRING_TURNS 以下。 */
+      readonly turns: number;
+      readonly handedness: 'right' | 'left';
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -368,8 +392,8 @@ function fail(featureId: string, code: PartErrorCode, message: string): PlanOutc
 /**
  * まだ解決を実装していない種類の断り(P3 タスク13 の暫定、planSolid の最後の節)。
  * 加工フィーチャーとばねの型はタスク13 で先に足したが、解決はタスク15・15b・16 で入る。
- * タスク15 で穴・ねじ穴を本実装へ置き換えたので、残るのは
- * ばね(タスク15b)と面取り・パターン(タスク16)である。
+ * タスク15 で穴・ねじ穴を、タスク15b でばねを本実装へ置き換えたので、残るのは
+ * 面取り・パターン(タスク16)である。
  */
 const UNSUPPORTED_SOLID_KIND_MESSAGE = 'この種類の立体はまだ計算できません。';
 
@@ -847,6 +871,212 @@ function planThreadHole(
   };
 }
 
+/**
+ * 全長・ピッチ・巻数のうち derived が指すものを、他の2つから計算する(FR-414、§0.a-0.30)。
+ *
+ * 関係式は `length = pitch × turns`。**derived が指す欄の保存値は読まない**(引数に含めても
+ * 使わない)。0 で割ることになる欄が invalidValue の理由なので、割る前に断る。
+ * OCCT も文書も触らない純関数で、3通りの derived をそれぞれ単体で検査できる
+ * (計画書 タスク15b の検証表)。
+ */
+export function resolveSpringLength(
+  values: { readonly length: number; readonly pitch: number; readonly turns: number },
+  derived: SpringDerived,
+):
+  | { readonly ok: true; readonly length: number; readonly pitch: number; readonly turns: number }
+  | { readonly ok: false; readonly message: string } {
+  switch (derived) {
+    case 'length': {
+      const { pitch, turns } = values;
+      if (!isPositiveFinite(pitch)) {
+        return { ok: false, message: 'ピッチは 0 より大きい数にしてください。' };
+      }
+      if (!isPositiveFinite(turns)) {
+        return { ok: false, message: '巻数は 0 より大きく 200 以下にしてください。' };
+      }
+      return { ok: true, length: pitch * turns, pitch, turns };
+    }
+    case 'pitch': {
+      const { length, turns } = values;
+      if (!isPositiveFinite(length)) {
+        return { ok: false, message: 'ばねの全長は 0 より大きい数にしてください。' };
+      }
+      if (!isPositiveFinite(turns)) {
+        return { ok: false, message: '巻数は 0 より大きく 200 以下にしてください。' };
+      }
+      return { ok: true, length, pitch: length / turns, turns };
+    }
+    case 'turns': {
+      const { length, pitch } = values;
+      if (!isPositiveFinite(length)) {
+        return { ok: false, message: 'ばねの全長は 0 より大きい数にしてください。' };
+      }
+      if (!isPositiveFinite(pitch)) {
+        return { ok: false, message: 'ピッチは 0 より大きい数にしてください。' };
+      }
+      return { ok: true, length, pitch, turns: length / pitch };
+    }
+  }
+}
+
+/**
+ * スケッチの点フィーチャーから1点を引く(ばねの始点、§0.a-0.29)。
+ *
+ * ばねの始点は点フィーチャー(点列は使わない、型定義 `SketchPointRef` の注釈と同じ形を流用)。
+ * `resolveSketch` の `points` は点フィーチャーと点列フィーチャーの全点を平らに並べた配列
+ * (`resolveHoleCenters` の注釈を参照)なので、点列を指していても先頭の1点を返す。
+ * 見つからなければ null(呼び出し側が missingProfile として断る)。
+ */
+export function resolveSpringOrigin(
+  reference: SketchPointRef,
+  sketches: readonly ResolvedPartSketch[],
+): Vec3 | null {
+  const sketch = sketches.find((entry) => entry.sketchId === reference.sketchId);
+  if (sketch === undefined) {
+    return null;
+  }
+  const point = sketch.resolved.points.find(
+    (candidate) => candidate.featureId === reference.pointFeatureId,
+  );
+  return point === undefined ? null : point.position;
+}
+
+/** 0 のとき -0 になっている成分を +0 へ揃える(negateVec3 と同じ理由。§0.a-0.30 関連の過去の失敗)。 */
+function cleanZeroVec3(vector: Vec3): Vec3 {
+  return [
+    vector[0] === 0 ? 0 : vector[0],
+    vector[1] === 0 ? 0 : vector[1],
+    vector[2] === 0 ? 0 : vector[2],
+  ];
+}
+
+/**
+ * 向きに垂直な、方位角 0 の基準になる第1軸・第2軸を作る(§0.a-0.10 と同じ考え方)。
+ *
+ * 穴は面から `gp_Pln.XAxis()` を基準に取れるが、ばねの軸は面を持たないので model 自身が
+ * 基準を決める必要がある。ワールド Z を補助ベクトルに使い、向きが Z に近い(内積の絶対値が
+ * 0.9 を超える)ときだけワールド X に切り替える(cross 積が縮退しないようにするため)。
+ * どちらを使うかは向きだけで決まるので、同じ軸なら常に同じ基準になる(決定性)。
+ * (xAxis, yAxis, direction) がこの順で右手系になるように yAxis = direction × xAxis とする。
+ */
+function referenceAxes(direction: Vec3): { readonly xAxis: Vec3; readonly yAxis: Vec3 } {
+  const helper: Vec3 = Math.abs(direction[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1];
+  const xAxis = normalizeVec3(crossVec3(helper, direction));
+  const yAxis = crossVec3(direction, xAxis);
+  return { xAxis, yAxis };
+}
+
+/**
+ * 軸を解決し、傾き角・方位角を適用した向きを返す(FR-414、§0.a-0.10、§0.a-0.29)。
+ *
+ * 穴(タスク15 の `drillDirection`、`packages/kernel/src/occt/makeHole.ts`)と同じ三角関数の形
+ * `sin(傾き) × (cos(方位)x + sin(方位)y) と cos(傾き) × 軸` を使うが、符号が違う:
+ * 穴は「傾き 0 で面の法線の逆(材料の中)」なので `− cos(傾き)・法線` だが、
+ * ばねは「傾き 0 で軸そのまま」(§0.a-0.10、types.ts の SpringFeature の注釈)なので
+ * `+ cos(傾き)・軸` になる。またばねには面が無いので、基準の第1軸・第2軸は
+ * `referenceAxes` が model 自身で作る(穴は面の `gp_Pln.XAxis()` をカーネルが使う)。
+ *
+ * `resolveTilt`(角度の範囲検査と度→ラジアンの変換)は穴と共用しているが、
+ * 向きベクトルそのものを組み立てる計算は resolvePart.ts に無かった(穴側は kernel の
+ * `makeHole.ts` が面の平面から計算しており、model には移せない)ので、この関数は新規に書いた。
+ */
+export function resolveTiltedDirection(
+  frame: RevolveAxisFrame,
+  tiltAngleRadians: number,
+  tiltAzimuthRadians: number,
+): Vec3 {
+  const { xAxis, yAxis } = referenceAxes(frame.direction);
+  const lean = Math.sin(tiltAngleRadians);
+  const along = Math.cos(tiltAngleRadians);
+  const ax = Math.cos(tiltAzimuthRadians);
+  const ay = Math.sin(tiltAzimuthRadians);
+  const { direction } = frame;
+  return cleanZeroVec3(
+    normalizeVec3([
+      lean * (ax * xAxis[0] + ay * yAxis[0]) + along * direction[0],
+      lean * (ax * xAxis[1] + ay * yAxis[1]) + along * direction[1],
+      lean * (ax * xAxis[2] + ay * yAxis[2]) + along * direction[2],
+    ]),
+  );
+}
+
+/**
+ * ばね(FR-414、§2.7b)。対象を取らず、新しいボディを1つ作る(§0.a-0.36)。
+ *
+ * 解決の順は計画書 タスク15b のとおり: 始点 → 軸 → 傾き → コイル径・線径 →
+ * 全長・ピッチ・巻数(derived の計算)→ ピッチと線径の関係。
+ * どの段階で断っても、それより後ろの計算(重い掃引はカーネル側だが)は行わない。
+ */
+function planSpring(feature: SpringFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
+  const origin = resolveSpringOrigin(feature.origin, sketches);
+  if (origin === null) {
+    return fail(
+      feature.id,
+      'missingProfile',
+      'ばねの始点にする点が見つかりません。スケッチで点を作ってからやり直してください。',
+    );
+  }
+  const axisFrame = resolveRevolveAxis(feature.axis, sketches);
+  if (axisFrame === null) {
+    return fail(
+      feature.id,
+      'missingProfile',
+      'ばねの軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。',
+    );
+  }
+  const tilt = resolveTilt(feature.id, feature.tiltAngle, feature.tiltAzimuth);
+  if (!tilt.ok) {
+    return tilt;
+  }
+  const direction = resolveTiltedDirection(axisFrame, tilt.tilt.tiltAngle, tilt.tilt.tiltAzimuth);
+
+  const coilDiameter = feature.coilDiameter.value;
+  if (!isPositiveFinite(coilDiameter)) {
+    return fail(feature.id, 'invalidValue', 'コイル径は 0 より大きい数にしてください。');
+  }
+  const wireDiameter = feature.wireDiameter.value;
+  if (!isPositiveFinite(wireDiameter)) {
+    return fail(feature.id, 'invalidValue', '線径は 0 より大きい数にしてください。');
+  }
+  if (wireDiameter >= coilDiameter) {
+    return fail(feature.id, 'invalidValue', '線径はコイル径より小さくしてください。');
+  }
+
+  const resolvedLength = resolveSpringLength(
+    { length: feature.length.value, pitch: feature.pitch.value, turns: feature.turns.value },
+    feature.derived,
+  );
+  if (!resolvedLength.ok) {
+    return fail(feature.id, 'invalidValue', resolvedLength.message);
+  }
+  if (resolvedLength.turns > MAX_SPRING_TURNS) {
+    return fail(feature.id, 'invalidValue', '巻数は 0 より大きく 200 以下にしてください。');
+  }
+  // ここは model が先に断る(NFR-UX-5)。カーネル(タスク9b の makeSpring)でも同じ検査をするが、
+  // 重い掃引を走らせる前にツリーへ理由を出す(計画書 タスク15b の解決の規則6)。
+  if (resolvedLength.pitch <= wireDiameter) {
+    return fail(
+      feature.id,
+      'invalidValue',
+      'ピッチは線径より大きくしてください。隣どうしの線がぶつかります。',
+    );
+  }
+
+  return {
+    ok: true,
+    plan: {
+      kind: 'spring',
+      origin,
+      direction,
+      coilDiameter,
+      wireDiameter,
+      pitch: resolvedLength.pitch,
+      turns: resolvedLength.turns,
+      handedness: feature.handedness,
+    },
+  };
+}
+
 function planSolid(
   feature: SolidFeature,
   sketches: readonly ResolvedPartSketch[],
@@ -866,15 +1096,16 @@ function planSolid(
       return planHole(feature, sketches, bodyKeys, consumed);
     case 'threadHole':
       return planThreadHole(feature, sketches, bodyKeys, consumed);
+    case 'spring':
+      return planSpring(feature, sketches);
     case 'fillet':
     case 'chamfer':
     case 'pattern':
-    case 'spring':
       // P3 タスク13 で文書の型だけを先に足したための暫定。
-      // 実際の解決(ばね=タスク15b、面取り・パターン=タスク16)が入るまでの間、
+      // 実際の解決(面取り・パターン、タスク16)が入るまでの間、
       // この switch を網羅させて型検査を通すために置く。
       // 例外を投げず errors へ入れる形にしておくので、途中の状態でもアプリは落ちない
-      // (FR-504、NFR-RE-1)。**タスク15b・16 はこの節を必ず置き換える。**
+      // (FR-504、NFR-RE-1)。**タスク16 はこの節を必ず置き換える。**
       return fail(feature.id, 'invalidValue', UNSUPPORTED_SOLID_KIND_MESSAGE);
   }
 }
@@ -974,6 +1205,18 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         tiltAngle: plan.tiltAngle,
         tiltAzimuth: plan.tiltAzimuth,
         transforms: plan.transforms.map(toKeyTransform),
+      };
+    case 'spring':
+      // 全長(length)と derived は混ぜない(cacheKey.ts の SpringKeyMaterial の注釈、§0.a-0.30)。
+      return {
+        kind: 'spring',
+        origin: toKeyVec3(plan.origin),
+        direction: toKeyVec3(plan.direction),
+        coilDiameter: plan.coilDiameter,
+        wireDiameter: plan.wireDiameter,
+        pitch: plan.pitch,
+        turns: plan.turns,
+        handedness: plan.handedness,
       };
   }
 }

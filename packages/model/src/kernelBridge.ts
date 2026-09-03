@@ -198,9 +198,10 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
       };
     case 'hole':
     case 'thread':
-      // P3 タスク15 が resolvePart へ穴・ねじ穴の段を足したが、kernel 側の SolidStepSpec には
-      // まだ穴・ねじ穴の段が無い(kernel タスク10 で入る)ため、詰め替えをここに書けない。
-      // この節は型を網羅させるためだけの暫定で、**タスク17 が本実装へ置き換える。**
+    case 'spring':
+      // P3 タスク15・15b が resolvePart へ穴・ねじ穴・ばねの段を足したが、kernel 側の
+      // SolidStepSpec にはまだこれらの段が無い(kernel タスク10 で入る)ため、詰め替えを
+      // ここに書けない。この節は型を網羅させるためだけの暫定で、**タスク17 が本実装へ置き換える。**
       // 投げた理由は recomputePart.ts が受け止めて kernelFailed へ詰め替えるので、
       // アプリは落ちない(FR-504、NFR-RE-1)。
       throw new Error(UNSUPPORTED_STEP_MESSAGE);

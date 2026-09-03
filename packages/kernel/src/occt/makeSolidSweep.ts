@@ -1,14 +1,12 @@
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { ExtrudeStepSpec, RevolveStepSpec, TessellationOptions, Vec3Tuple } from '../types.js';
+// 確保したものをまとめて解放する入れ物は allocations.ts が正本(計画書 タスク2)。
+// P3 の加工(穴・ねじ・面取り)も同じ入れ物を使うので、ここでは持たない。
+import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
-
-/** OCCT が確保した領域を持ち、まとめて解放できるもの。 */
-interface OcctDeletable {
-  delete(): void;
-}
 
 /**
  * BRepPrimAPI_MakePrism_1 / BRepPrimAPI_MakeRevol_1 の Copy に渡す値。
@@ -58,32 +56,6 @@ function normalizeDirection(vector: Vec3Tuple): Vec3Tuple | null {
 /** 3 つとも実数か(NaN と無限大を弾く)。 */
 function isFinitePoint(point: Vec3Tuple): boolean {
   return Number.isFinite(point[0]) && Number.isFinite(point[1]) && Number.isFinite(point[2]);
-}
-
-/**
- * 確保したものを控えておき、作った順の逆にまとめて解放する入れ物。
- *
- * maker.Shape() が返す形は maker の中の実体を指すので、形だけを先に解放できない。
- * 控えへ「面 → ベクトル(軸)→ maker → 形」の順に積み、解放は必ずその逆順で行う
- * (計画書 §1.2 の落とし穴、P0 の makeBox.ts と同じ約束)。
- */
-function createAllocations(): {
-  keep: <T extends OcctDeletable>(item: T) => T;
-  release: () => void;
-} {
-  const items: OcctDeletable[] = [];
-  return {
-    keep<T extends OcctDeletable>(item: T): T {
-      items.push(item);
-      return item;
-    },
-    release(): void {
-      for (let index = items.length - 1; index >= 0; index -= 1) {
-        items[index].delete();
-      }
-      items.length = 0;
-    },
-  };
 }
 
 /**

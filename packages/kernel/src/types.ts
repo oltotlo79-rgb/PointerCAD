@@ -220,3 +220,222 @@ export interface SolidProgress {
   /** 画面に出す段の名前(SolidStepRequest.label と同じ)。 */
   readonly label: string;
 }
+
+// ここから下は加工フィーチャー(FR-405〜408、FR-411、FR-412)のための型。
+// 上と同じく、Comlink 越しに渡せる素の値(数値・文字列・真偽・配列)だけで書く。
+//
+// **まだ SolidStepSpec と SolidBodyMesh へはつないでいない。** つなぐのは
+// 計画書 P3 のタスク10 で、次の 2 か所を同じ段で直す必要があるため。
+//   1. SolidStepSpec へ HoleStepSpec / ThreadStepSpec / FilletStepSpec / ChamferStepSpec を足すと、
+//      recomputeSolids.ts の createStepSolid の switch が 4 節足りなくなって型検査が落ちる
+//      (その 4 節が呼ぶ作り手はタスク6〜9 で作る)。
+//   2. SolidBodyMesh へ faces / edges / vertices / threadMarks を足すと、
+//      solidMesh.ts の buildSolidBodyMesh が 4 欄を返していないので型検査が落ちる
+//      (中身を作る collectSubShapes はタスク4 で作る)。
+// タスク10 で欄を足すときは、faceCount が faces.length と、edgeCount が edges.length と
+// 一致することを注釈に書き、検査で固定する(計画書 §2.8)。
+
+/** 部分形状(B-rep の面・辺・頂点)の種類。選択と参照の単位になる。 */
+export type SubShapeKind = 'face' | 'edge' | 'vertex';
+
+/** 面の下地になっている曲面の種類。指紋の必須の一致条件(計画書 §2.2.2)。 */
+export type FaceSurfaceKind = 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus' | 'other';
+
+/** 辺の下地になっている曲線の種類。指紋の必須の一致条件。 */
+export type EdgeCurveKind = 'line' | 'circle' | 'ellipse' | 'other';
+
+/**
+ * 面 1 枚の素性。指紋の材料と、当たり判定・強調の範囲表を兼ねる。
+ *
+ * 「形が同じなら必ず同じ値になるもの」だけを持つ(計画書 §2.2.2)。
+ * 隣り合う面の一覧や三角形の数は、形が少し変わるだけで壊れるので持たない。
+ */
+export interface SolidFaceInfo {
+  /** TopExp.MapShapes_2 の順で数えた 0 始まりの通し番号。 */
+  readonly index: number;
+  readonly surfaceKind: FaceSurfaceKind;
+  /** 面積(mm²)。 */
+  readonly area: number;
+  /** 重心(mm)。 */
+  readonly centroid: Vec3Tuple;
+  /** 平面は法線、円柱・円錐は軸。求まらなければ null。 */
+  readonly axis: Vec3Tuple | null;
+  /** 円柱・円錐・球の半径(mm)。平面では null。 */
+  readonly radius: number | null;
+  /** この面の三角形が indices の何番目から何枚あるか。 */
+  readonly triangleOffset: number;
+  readonly triangleCount: number;
+}
+
+/** 辺 1 本の素性。並びは面と同じく TopExp.MapShapes_2 の順。 */
+export interface SolidEdgeInfo {
+  readonly index: number;
+  readonly curveKind: EdgeCurveKind;
+  /** 長さ(mm)。 */
+  readonly length: number;
+  /** 中点(mm)。 */
+  readonly midpoint: Vec3Tuple;
+  readonly start: Vec3Tuple;
+  readonly end: Vec3Tuple;
+  /** 直線は向き、円は軸。求まらなければ null。 */
+  readonly axis: Vec3Tuple | null;
+  /** 円の半径(mm)。それ以外は null。 */
+  readonly radius: number | null;
+  /** この辺の線分が edgePositions の何番目から何本あるか。 */
+  readonly segmentOffset: number;
+  readonly segmentCount: number;
+}
+
+/** 頂点 1 つの素性。位置しか持たない(種類も大きさも無い)。 */
+export interface SolidVertexInfo {
+  readonly index: number;
+  readonly position: Vec3Tuple;
+}
+
+/**
+ * ねじの簡略表示の印(§0.a-0.15)。B-rep には現れない、描画だけのための情報。
+ * 下穴は実際に掘るが、ねじ山は形を作らずに細い円と軸線で表すので、再計算の費用がかからない。
+ */
+export interface ThreadMarkInfo {
+  readonly origin: Vec3Tuple;
+  readonly direction: Vec3Tuple;
+  readonly majorDiameter: number;
+  readonly length: number;
+}
+
+/**
+ * 文書が保存する「部分形状の指紋」。段の依頼に乗り、カーネルが選び直しに使う(計画書 §2.2)。
+ *
+ * B-rep の面・辺には名前が無く通し番号しか手がかりが無いため、上流のフィーチャーを
+ * 編集すると番号がずれて別の面を指しうる(トポロジカルネーミング問題)。そこで番号だけでなく
+ * 種類・大きさ・軸・位置も一緒に保存し、再計算のたびに最も点の高いものを選び直す。
+ * 採点は matchSubShape.ts が行う(OCCT を使わない純関数)。
+ */
+export type SubShapeQuery =
+  | {
+      readonly kind: 'face';
+      readonly index: number;
+      readonly surfaceKind: FaceSurfaceKind;
+      readonly area: number;
+      readonly position: Vec3Tuple;
+      readonly axis: Vec3Tuple | null;
+      readonly radius: number | null;
+    }
+  | {
+      readonly kind: 'edge';
+      readonly index: number;
+      readonly curveKind: EdgeCurveKind;
+      readonly length: number;
+      readonly position: Vec3Tuple;
+      readonly axis: Vec3Tuple | null;
+      readonly radius: number | null;
+    }
+  | { readonly kind: 'vertex'; readonly index: number; readonly position: Vec3Tuple };
+
+/**
+ * 工具全体にかける剛体変換(パターン、§0.a-0.20)。空なら恒等 1 つとして扱う。
+ *
+ * パターンは新しい段の種類を作らず、穴・ねじ穴の工具をこの変換で複製して
+ * まとめて差し引く。回転角は必ずラジアン(度で渡す取り違えを避けるため、
+ * 度からの換算は model 側の責務。makeSolidSweep.ts の回転と同じ約束)。
+ */
+export interface RigidTransformSpec {
+  readonly translation: Vec3Tuple;
+  readonly rotationOrigin: Vec3Tuple;
+  readonly rotationAxis: Vec3Tuple;
+  /** 回転角(ラジアン)。0 なら平行移動だけ。 */
+  readonly rotationAngle: number;
+}
+
+/**
+ * 穴をあける 1 手順(FR-405)。
+ * 向きと投影はカーネルが面から決める(model は面の指紋しか持たないため)。
+ */
+export interface HoleStepSpec {
+  readonly kind: 'hole';
+  /** 穴をあける立体を指すキャッシュの鍵。この段が消費する(§0.a-0.5)。 */
+  readonly targetKey: string;
+  /** 穴をあける面。カーネルが指紋で選び直し、平面と法線を取り出す。 */
+  readonly face: SubShapeQuery;
+  /** 中心にする点(mm)。カーネルが面の平面へ投影する。 */
+  readonly centers: readonly Vec3Tuple[];
+  readonly diameter: number;
+  /** 貫通なら null、止まり穴なら深さ(mm)。 */
+  readonly depth: number | null;
+  /** 面の法線からの傾き(ラジアン)。 */
+  readonly tiltAngle: number;
+  /** 傾ける向き(面内の方位角、ラジアン)。基準は gp_Pln.XAxis()(§0.a-0.10)。 */
+  readonly tiltAzimuth: number;
+  readonly transforms: readonly RigidTransformSpec[];
+}
+
+/** ねじの実らせん(FR-406)。簡略表示のときは ThreadStepSpec.thread を null にする。 */
+export interface ThreadCutSpec {
+  /** おねじの外径 d(mm)。めねじの谷径にあたる。 */
+  readonly majorDiameter: number;
+  readonly pitch: number;
+  /** ねじ部の長さ(mm)。 */
+  readonly length: number;
+}
+
+/** 3D の簡略表示に使うねじの印(B-rep には触らない)。位置と向きはカーネルが面から決める。 */
+export interface ThreadMarkSpec {
+  readonly majorDiameter: number;
+  readonly length: number;
+}
+
+/** ねじ穴をあける 1 手順(FR-406)。下穴は穴と同じ手順で掘り、ねじ山だけが追加になる。 */
+export interface ThreadStepSpec {
+  readonly kind: 'thread';
+  readonly targetKey: string;
+  readonly face: SubShapeQuery;
+  readonly centers: readonly Vec3Tuple[];
+  /** 下穴の径(mm、= めねじ内径 D1)。 */
+  readonly drillDiameter: number;
+  readonly depth: number | null;
+  readonly tiltAngle: number;
+  readonly tiltAzimuth: number;
+  readonly transforms: readonly RigidTransformSpec[];
+  /** 実らせんを切るときだけ入る。簡略表示のときは null。 */
+  readonly thread: ThreadCutSpec | null;
+  /** 画面へ返すねじの印(簡略表示、§0.a-0.15)。実形状のときも返してよい。 */
+  readonly mark: ThreadMarkSpec | null;
+}
+
+/**
+ * 角を丸める 1 手順(FR-407)。
+ * targets には辺と頂点の指紋が混ざる。頂点はカーネルが「その頂点に集まる辺」へ
+ * 展開する(§0.a-0.17。頂点を球状に丸める API は OCCT に無い)。
+ */
+export interface FilletStepSpec {
+  readonly kind: 'fillet';
+  /** 丸める立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /** 丸める辺・頂点の指紋。並びは文書の並びのまま保つ。 */
+  readonly targets: readonly SubShapeQuery[];
+  /** 丸める半径(mm)。0 より大きい数。 */
+  readonly radius: number;
+}
+
+/**
+ * C 面取りの大きさの指定(FR-408 の①②③)。
+ * 角度はラジアンで渡す(度で渡す取り違えを避けるため、換算は model 側の責務)。
+ */
+export type ChamferSizeSpec =
+  | { readonly kind: 'equal'; readonly distance: number }
+  | { readonly kind: 'twoDistances'; readonly distance1: number; readonly distance2: number }
+  | { readonly kind: 'distanceAngle'; readonly distance: number; readonly angle: number };
+
+/** 面を取る 1 手順(FR-408)。辺の決め方は R 面取りと同じ関数を使い回す。 */
+export interface ChamferStepSpec {
+  readonly kind: 'chamfer';
+  readonly targetKey: string;
+  readonly targets: readonly SubShapeQuery[];
+  readonly size: ChamferSizeSpec;
+  /**
+   * 2 距離・距離角度のときの基準面を、辺に接する 2 面のうち後の方にするか(§0.a-0.18)。
+   * 基準面をもう 1 回選ばせると操作が 2 段になるため、既定は並びで先に出る面にし、
+   * 思っていたのと逆ならこのつまみ 1 つで入れ替える。
+   */
+  readonly swapReferenceFace: boolean;
+}

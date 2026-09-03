@@ -6,6 +6,7 @@ import {
   toFaceRequest,
   type KernelBridge,
   type SketchTessellationOutcome,
+  type SolidRecomputeOutcome,
 } from '../kernelBridge.js';
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.js';
 import { recomputeSketch, reevaluateDocument } from './recomputeSketch.js';
@@ -19,6 +20,14 @@ import type {
 
 const EMPTY_OUTCOME: SketchTessellationOutcome = { mesh: { faces: [] }, failures: [] };
 
+/** ソリッドの再計算は使わないが、橋の口はすべて埋める(型検査を通すため)。 */
+const EMPTY_SOLID_OUTCOME: SolidRecomputeOutcome = {
+  bodies: [],
+  failures: [],
+  cacheHits: 0,
+  cancelled: false,
+};
+
 /**
  * 偽のカーネル。OCCT は読み込まない(実物はタスク13・14 の Node テストで確かめる)。
  * async を使わないのは、await の無い async 関数を書かないため(計画書 §4)。
@@ -26,6 +35,7 @@ const EMPTY_OUTCOME: SketchTessellationOutcome = { mesh: { faces: [] }, failures
 function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
   return {
     tessellateSketchFaces: () => Promise.resolve(EMPTY_OUTCOME),
+    recomputeSolids: () => Promise.resolve(EMPTY_SOLID_OUTCOME),
     dispose: () => undefined,
     ...overrides,
   };

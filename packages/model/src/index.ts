@@ -1,8 +1,16 @@
 export {
   createKernelBridge,
   type KernelBridge,
+  type PartCancelToken,
+  type PartProgress,
+  type PartProgressCallback,
   type SketchFaceFailure,
   type SketchTessellationOutcome,
+  type SolidBody,
+  type SolidBodyFailure,
+  type SolidBodyMeshData,
+  type SolidRecomputeOptions,
+  type SolidRecomputeOutcome,
 } from './kernelBridge.js';
 export type { Vec3 } from './sketch/vec3.js';
 export {
@@ -46,6 +54,20 @@ export {
   findSketch, findSolid, liveBodyIds, nextSolidId, nextSolidName, PART_SCHEMA_VERSION,
   removeSolid, replaceSketch, replaceSolid, setActiveSketch, SOLID_LABELS,
 } from './part/createPartDocument.js';
+export type {
+  BooleanKeyMaterial, ExtrudeKeyMaterial, KeyArc, KeyCurve, KeySegment, KeyVec3,
+  RevolveKeyMaterial, SewKeyMaterial, SolidStepKeyMaterial,
+} from './part/cacheKey.js';
+export { cacheKeyFor, hash64, KEY_DECIMALS } from './part/cacheKey.js';
+export type {
+  PartError, PartErrorCode, ResolvedPart, ResolvedPartSketch, ResolvedSolidStep,
+  RevolveAxisFrame, SolidStepPlan,
+} from './part/resolvePart.js';
+export { resolvePart, resolveRevolveAxis, translateCurve } from './part/resolvePart.js';
+export type {
+  PartRecomputeError, PartRecomputeOptions, PartRecomputeResult, PartSketchResult,
+} from './part/recomputePart.js';
+export { recomputePart } from './part/recomputePart.js';
 export type { PushUndoOptions, UndoStack } from './history/undoStack.js';
 export {
   canRedo, canUndo, createUndoStack, pushUndo, redo, undo, UNDO_COALESCE_MS, UNDO_LIMIT,

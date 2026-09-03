@@ -12,10 +12,13 @@ import type { SolidBody } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import { dataUrlToBytes, THUMBNAIL_SIZE, thumbnailFitRect } from '../file/thumbnail.js';
+import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
+
 import {
   buildSolidGeometry,
   EMPTY_SOLID_GEOMETRY,
   solidEmphasisOf,
+  type SolidBodyWithSubShapes,
   type SolidGeometryBundle,
 } from './buildSolidGeometry.js';
 
@@ -209,6 +212,31 @@ describe('buildSolidGeometry(FR-105、FR-106)', () => {
     const second = buildSolidGeometry(bodies, 'extrude-1', ['revolve-1']);
     expect(shapeOf(second)).toEqual(shapeOf(first));
     expect(second.entries[0].positions).toBe(first.entries[0].positions);
+  });
+
+  it('faces/edges/vertices を持たないボディ(タスク17 前)は、エントリの範囲表が空配列になる(計画書タスク22)', () => {
+    const bundle = buildSolidGeometry([makeBody('extrude-1', 4, 12)], null, []);
+    expect(bundle.entries[0].faces).toEqual([]);
+    expect(bundle.entries[0].edges).toEqual([]);
+    expect(bundle.entries[0].vertices).toEqual([]);
+  });
+
+  it('faces/edges/vertices を持つボディは、エントリがその参照をそのまま持つ(タスク22、写さない)', () => {
+    const face: SolidFaceEntry = {
+      index: 0,
+      surfaceKind: 'plane',
+      area: 10,
+      centroid: [0, 0, 0],
+      axis: [0, 0, 1],
+      radius: null,
+      triangleOffset: 0,
+      triangleCount: 4,
+    };
+    const body: SolidBodyWithSubShapes = { ...makeBody('extrude-1', 4, 12), faces: [face], edges: [], vertices: [] };
+    const bundle = buildSolidGeometry([body], null, []);
+    expect(bundle.entries[0].faces).toBe(body.faces);
+    expect(bundle.entries[0].edges).toBe(body.edges);
+    expect(bundle.entries[0].vertices).toBe(body.vertices);
   });
 });
 

@@ -17,6 +17,7 @@ import * as THREE from 'three';
 
 import type { DisplayStyle } from '../store/useAppStore.js';
 import type { SolidDrawEntry, SolidEmphasis, SolidGeometryBundle } from './buildSolidGeometry.js';
+import type { SubShapeEmphasis, SubShapeHighlight, SubShapeHighlightBundle } from './buildSubShapeGeometry.js';
 
 /**
  * 立体の色味。艶を抑えた樹脂のような明るい灰にして、面の向きの差を読み取りやすくする。
@@ -31,11 +32,20 @@ const EDGE_COLOR_OVER_SOLID = 0x0f1115;
 const EDGE_COLOR_WIREFRAME = 0xd6dae2;
 
 /**
- * 選択の色 = --pcad-accent。ホバーはその一段薄い --pcad-accent-hover(NFR-UX-7)。
- * スケッチの強調(createSketchLayer.ts)と同じ配色にして、選び方を覚え直させない。
+ * ホバーと選択の色(§0.a-0.23-⑩)。以前は --pcad-accent(0x4f8cff)と --pcad-accent-hover
+ * (0x6b9eff)の色差だけで示していたが、実機の目視で見分けにくいと分かった
+ * (`docs/報告記録.md` 2026-09-03 20:40 の②)。ホバーを明るい水色 `0x8ec5ff` にして
+ * 明度差を広げる(選択は --pcad-accent の `0x4f8cff` のまま据え置く)。
+ *
+ * 選択の色を濃い青 `0x2f6fe0` へ変える案は、背景 --pcad-surface(#1e2128)に対する
+ * コントラストが約 3.43:1 となり、既存の `0x4f8cff`(約 5.02:1)を下回って基準の 4.5:1 も
+ * 割るため統括の判断で不採用にした(2026-09-03)。ホバー `0x8ec5ff` は約 8.88:1 で基準を
+ * 満たす。ホバーと選択は同系色+明度差、加えて選択した辺の端点表示(§0.a-0.23-⑩)で見分ける。
+ * **`createSketchLayer.ts` の同名の定数も同じ値に揃える**
+ * (スケッチと立体で強調の色が違うと、同じ「選んでいる」が 2 通りに見えるため)。
  */
 const SELECTED_COLOR = 0x4f8cff;
-const HOVERED_COLOR = 0x6b9eff;
+const HOVERED_COLOR = 0x8ec5ff;
 
 /**
  * 描く順。スケッチの作図面 -1 → 面 0 → **立体 1** → 面の縁 2 → 線 3 → 点 4 の間に入れる。
@@ -47,6 +57,19 @@ const HOVERED_COLOR = 0x6b9eff;
  * 読み取れるようにスケッチと同じ数直線の上へ置いておく。
  */
 const SOLID_RENDER_ORDER = 1;
+
+/** 部分形状の強調(重ね描き)の面の不透明度(§0.a-0.7)。 */
+const SUB_SHAPE_FACE_OPACITY = 0.35;
+/** 部分形状の面の強調は、立体の面(SOLID_RENDER_ORDER)のすぐ後ろに描く。 */
+const SUB_SHAPE_FACE_RENDER_ORDER = SOLID_RENDER_ORDER + 0.5;
+/**
+ * 部分形状の辺・頂点の強調は、スケッチの面の縁(`createSketchLayer.ts` の
+ * `FACE_OUTLINE_RENDER_ORDER`)と同じ層に置く。裏側の辺・頂点も選べる(§0.a-0.27)ので、
+ * `depthTest: false` にして立体の奥にあっても隠れないようにする。
+ */
+const SUB_SHAPE_LINE_RENDER_ORDER = 2;
+/** 部分形状の頂点の点の大きさ(px)。画面上の大きさを一定にする。 */
+const SUB_SHAPE_POINT_SIZE = 8;
 
 type SolidMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 type SolidEdges = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
@@ -69,8 +92,18 @@ export interface SolidLayer {
    * 同じ組み立て結果(同一オブジェクト)を渡し直したときは並びを触らない。
    */
   update(bundle: SolidGeometryBundle, displayStyle: DisplayStyle): void;
+  /**
+   * 部分形状(面・辺・頂点)のホバー・選択の強調を差し替える(§0.a-0.7)。
+   * `update` と同じく、同じ組み立て結果を渡し直したときは並びを触らない。
+   */
+  updateSubShapes(bundle: SubShapeHighlightBundle): void;
   /** 光線に当たったボディの featureId。当たらなければ null(FR-106)。 */
   pickBody(raycaster: THREE.Raycaster): string | null;
+  /**
+   * 光線に当たった面。当たったボディの featureId と、その三角形の通し番号を返す
+   * (面の通し番号への変換は `createViewportScene.ts` の `pickFaceAt` が行う、FR-106)。
+   */
+  pickFace(raycaster: THREE.Raycaster): { readonly featureId: string; readonly triangleIndex: number } | null;
   dispose(): void;
 }
 
@@ -113,12 +146,108 @@ function setIndices(geometry: THREE.BufferGeometry, values: Uint32Array): void {
   geometry.setIndex(new THREE.BufferAttribute(values, 1));
 }
 
+const SUB_SHAPE_EMPHASES: readonly SubShapeEmphasis[] = ['hovered', 'selected'];
+
+type SubShapeFaceMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+type SubShapeLines = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+type SubShapePoints = THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+
+/** 部分形状 1 強調度(ホバー or 選択)ぶんの重ね描き 3 本(§0.a-0.7)。 */
+interface SubShapeOverlay {
+  readonly faces: SubShapeFaceMesh;
+  readonly edges: SubShapeLines;
+  readonly vertices: SubShapePoints;
+}
+
+/**
+ * 部分形状の重ね描き 3 本を 1 色ぶん作る。面は半透明のメッシュ、辺・頂点は
+ * `depthTest: false`(裏側も見える、§0.a-0.27)。renderOrder は面が立体の面の直後、
+ * 辺・頂点はスケッチの面の縁と同じ層(`createSketchLayer.ts` の `FACE_OUTLINE_RENDER_ORDER`)。
+ */
+function createSubShapeOverlay(color: number): SubShapeOverlay {
+  const faces: SubShapeFaceMesh = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: SUB_SHAPE_FACE_OPACITY,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      // 元の面とほぼ同じ位置に重なるので、z 争いを避けて必ず手前に出す
+      // (立体側の polygonOffsetFactor/Units は +1 で奥へ押すので、符号を反対にする)。
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  );
+  faces.renderOrder = SUB_SHAPE_FACE_RENDER_ORDER;
+  faces.visible = false;
+
+  const edges: SubShapeLines = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  edges.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
+  edges.visible = false;
+
+  const vertices: SubShapePoints = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({
+      color,
+      size: SUB_SHAPE_POINT_SIZE,
+      sizeAttenuation: false,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  vertices.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
+  vertices.visible = false;
+
+  return { faces, edges, vertices };
+}
+
+/** 部分形状の重ね描き 1 組へ、組み立て済みの並びを流し込む。 */
+function applySubShapeOverlay(overlay: SubShapeOverlay, highlight: SubShapeHighlight): void {
+  setVectorAttribute(overlay.faces.geometry, 'position', highlight.facePositions);
+  setVectorAttribute(overlay.faces.geometry, 'normal', highlight.faceNormals);
+  setIndices(overlay.faces.geometry, highlight.faceIndices);
+  overlay.faces.geometry.computeBoundingSphere();
+  overlay.faces.visible = highlight.facePositions.length > 0;
+
+  setVectorAttribute(overlay.edges.geometry, 'position', highlight.edgePositions);
+  overlay.edges.geometry.computeBoundingSphere();
+  overlay.edges.visible = highlight.edgePositions.length > 0;
+
+  setVectorAttribute(overlay.vertices.geometry, 'position', highlight.vertexPositions);
+  overlay.vertices.geometry.computeBoundingSphere();
+  overlay.vertices.visible = highlight.vertexPositions.length > 0;
+}
+
+function disposeSubShapeOverlay(overlay: SubShapeOverlay): void {
+  overlay.faces.geometry.dispose();
+  overlay.faces.material.dispose();
+  overlay.edges.geometry.dispose();
+  overlay.edges.material.dispose();
+  overlay.vertices.geometry.dispose();
+  overlay.vertices.material.dispose();
+}
+
 export function createSolidLayer(): SolidLayer {
   const group = new THREE.Group();
 
   /**
    * 面の材質は全ボディで 1 つを共有する(P2 のボディは同じ色、§0.a-0.21)。
    * 面と稜線を同時に出すとき、稜線が面に埋もれてちらつくのを防ぐ(FR-105)。
+   *
+   * **外観(FR-1106〜1110、P5)への準備(§7)。** 面ごとに色・柄を分けるときは、ここを
+   * `material` の配列にし、`BufferGeometry.addGroup(start, count, materialIndex)` を
+   * `SolidFaceEntry.triangleOffset` / `triangleCount` から作る形に差し替える(実装はしない)。
    */
   const faceMaterial = new THREE.MeshStandardMaterial({
     color: SOLID_COLOR,
@@ -141,6 +270,27 @@ export function createSolidLayer(): SolidLayer {
     hovered: new THREE.LineBasicMaterial({ color: HOVERED_COLOR }),
     selected: new THREE.LineBasicMaterial({ color: SELECTED_COLOR }),
   };
+
+  const subShapeColors: Readonly<Record<SubShapeEmphasis, number>> = {
+    hovered: HOVERED_COLOR,
+    selected: SELECTED_COLOR,
+  };
+
+  /**
+   * 部分形状(面・辺・頂点)の重ね描き(§0.a-0.7)。ホバー用・選択用の 2 組だけを作り、
+   * ボディごとには増やさない(全ボディの強調中の要素を 1 本のバッファへまとめる)。
+   */
+  const subShapeOverlays: Readonly<Record<SubShapeEmphasis, SubShapeOverlay>> = {
+    hovered: createSubShapeOverlay(subShapeColors.hovered),
+    selected: createSubShapeOverlay(subShapeColors.selected),
+  };
+  for (const emphasis of SUB_SHAPE_EMPHASES) {
+    const overlay = subShapeOverlays[emphasis];
+    group.add(overlay.faces);
+    group.add(overlay.edges);
+    group.add(overlay.vertices);
+  }
+  let lastSubShapeBundle: SubShapeHighlightBundle | null = null;
 
   const draws: BodyDraw[] = [];
   /** 当たり判定にかける面。`draws` と同じ順に並ぶ。 */
@@ -258,6 +408,28 @@ export function createSolidLayer(): SolidLayer {
       applyStyle(bundle.entries, displayStyle);
     },
 
+    updateSubShapes(bundle): void {
+      if (bundle === lastSubShapeBundle) {
+        return;
+      }
+      lastSubShapeBundle = bundle;
+      applySubShapeOverlay(subShapeOverlays.hovered, bundle.hovered);
+      applySubShapeOverlay(subShapeOverlays.selected, bundle.selected);
+    },
+
+    pickFace(raycaster): { readonly featureId: string; readonly triangleIndex: number } | null {
+      // pickBody と同じ的(ボディの面メッシュ)を使う。faceIndex は three.js が
+      // 「当たった三角形の通し番号」として Intersection に添えてくれる。
+      const hits = raycaster.intersectObjects(pickTargets, false);
+      for (const hit of hits) {
+        const featureId = idByObject.get(hit.object);
+        if (featureId !== undefined && typeof hit.faceIndex === 'number') {
+          return { featureId, triangleIndex: hit.faceIndex };
+        }
+      }
+      return null;
+    },
+
     pickBody(raycaster): string | null {
       // 近い順に並ぶので先頭が手前のボディ。表示スタイルで面を隠していても当たる
       // (three.js の Raycaster は visible を見ない)ため、ワイヤーフレーム表示でも選べる。
@@ -282,7 +454,11 @@ export function createSolidLayer(): SolidLayer {
       edgeMaterials.none.dispose();
       edgeMaterials.hovered.dispose();
       edgeMaterials.selected.dispose();
+      for (const emphasis of SUB_SHAPE_EMPHASES) {
+        disposeSubShapeOverlay(subShapeOverlays[emphasis]);
+      }
       lastBundle = null;
+      lastSubShapeBundle = null;
     },
   };
 }

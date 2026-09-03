@@ -36,9 +36,21 @@ const POINT_COLOR = 0xe8eaf0;
 const CURVE_COLOR = 0x9aa3b2;
 const FACE_OUTLINE_COLOR = 0x6b7380;
 
-/** 選択の色 = --pcad-accent。ホバーはその一段薄い --pcad-accent-hover(NFR-UX-7)。 */
+/**
+ * ホバーと選択の色(§0.a-0.23-⑩)。以前は --pcad-accent(0x4f8cff)と --pcad-accent-hover
+ * (0x6b9eff)の色差だけで示していたが、実機の目視で見分けにくいと分かった
+ * (`docs/報告記録.md` 2026-09-03 20:40 の②)。ホバーを明るい水色 `0x8ec5ff` にして
+ * 明度差を広げる(選択は --pcad-accent の `0x4f8cff` のまま据え置く)。
+ *
+ * 選択の色を濃い青 `0x2f6fe0` へ変える案は、背景 --pcad-surface(#1e2128)に対する
+ * コントラストが約 3.43:1 となり、既存の `0x4f8cff`(約 5.02:1)を下回って基準の 4.5:1 も
+ * 割るため統括の判断で不採用にした(2026-09-03)。ホバー `0x8ec5ff` は約 8.88:1 で基準を
+ * 満たす。ホバーと選択は同系色+明度差、加えて選択した辺の端点表示(§0.a-0.23-⑩)で見分ける。
+ * **`createSolidLayer.ts` の同名の定数と同じ値に揃える**
+ * (スケッチと立体で強調の色が違うと、同じ「選んでいる」が 2 通りに見えるため)。
+ */
 const SELECTED_COLOR = 0x4f8cff;
-const HOVERED_COLOR = 0x6b9eff;
+const HOVERED_COLOR = 0x8ec5ff;
 
 /** 面の艶。立体(createViewportScene.ts)より少しだけ艶を抑える。 */
 const FACE_ROUGHNESS = 0.6;

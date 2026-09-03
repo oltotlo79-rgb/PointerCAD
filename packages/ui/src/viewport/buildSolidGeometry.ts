@@ -16,8 +16,25 @@
 
 import type { SolidBody } from '@pointercad/model';
 
+import type { SolidEdgeEntry, SolidFaceEntry, SolidVertexEntry } from '../solid/subShapeSelection.js';
+
 /** 強調の度合い。選択が最も強く、ホバーはその手前(FR-106)。 */
 export type SolidEmphasis = 'none' | 'hovered' | 'selected';
+
+/**
+ * 部分形状の一覧を持つボディ(計画書タスク22)。
+ *
+ * `faces` / `edges` / `vertices` は本来カーネル(タスク10)が返し、`SolidBody` 本体に
+ * 添うのはタスク17。このタスクの着手時点ではまだ届いていないので**任意の欄**にしておき、
+ * 無いボディは部分形状の一覧が空として扱う(強調を描かない)。タスク17 で `SolidBody` に
+ * これらの欄が必須で加わったら、この型は消して `SolidBody` をそのまま使ってよい
+ * (`SolidBody` は構造的にこの型を満たすので、呼び出し側の詰め替えは要らない)。
+ */
+export interface SolidBodyWithSubShapes extends SolidBody {
+  readonly faces?: readonly SolidFaceEntry[];
+  readonly edges?: readonly SolidEdgeEntry[];
+  readonly vertices?: readonly SolidVertexEntry[];
+}
 
 /** ボディ 1 つぶんの描画データ。並びはカーネルが返したものをそのまま指す(写さない)。 */
 export interface SolidDrawEntry {
@@ -40,6 +57,12 @@ export interface SolidDrawEntry {
   /** 全ボディを通した稜線の通し番号のうち、このボディが始まる位置。 */
   readonly edgeOffset: number;
   readonly edgeCount: number;
+  /** 面ごとの三角形の範囲(`pickSubShape.ts` の `faceIndexOfTriangle` が使う)。無ければ空。 */
+  readonly faces: readonly SolidFaceEntry[];
+  /** 辺ごとの線分の範囲。無ければ空。 */
+  readonly edges: readonly SolidEdgeEntry[];
+  /** 頂点の一覧。無ければ空。 */
+  readonly vertices: readonly SolidVertexEntry[];
 }
 
 export interface SolidGeometryBundle {
@@ -87,7 +110,7 @@ export function solidEmphasisOf(
  * ものは描かない。三角形も稜線も無いものは、描いても何も見えないうえに空の入れ物を
  * 1 つ増やすだけなので同じく外す(FR-504 の理由表示は失敗の一覧が受け持つ)。
  */
-function isDrawableBody(body: SolidBody): boolean {
+function isDrawableBody(body: SolidBodyWithSubShapes): boolean {
   if (!body.isValid) {
     return false;
   }
@@ -101,7 +124,7 @@ function isDrawableBody(body: SolidBody): boolean {
  * 同じボディを渡し直したときの費用はボディの個数に比例するだけで済む。
  */
 export function buildSolidGeometry(
-  bodies: readonly SolidBody[],
+  bodies: readonly SolidBodyWithSubShapes[],
   hoveredBodyId: string | null,
   selectedBodyIds: readonly string[],
 ): SolidGeometryBundle {
@@ -131,6 +154,9 @@ export function buildSolidGeometry(
       triangleCount: mesh.triangleCount,
       edgeOffset,
       edgeCount,
+      faces: body.faces ?? [],
+      edges: body.edges ?? [],
+      vertices: body.vertices ?? [],
     };
     entries.push(entry);
     index.set(entry.featureId, entry);

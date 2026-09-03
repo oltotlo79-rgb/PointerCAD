@@ -11,6 +11,7 @@ import {
 import * as THREE from 'three';
 
 import { captureThumbnailPng, THUMBNAIL_SIZE } from '../file/thumbnail.js';
+import { faceIndexOfTriangle } from '../solid/pickSubShape.js';
 import type { DisplayStyle, ProjectionMode } from '../store/useAppStore.js';
 import {
   buildSketchGeometry,
@@ -19,6 +20,7 @@ import {
   type SketchHighlight,
 } from './buildSketchGeometry.js';
 import { buildSolidGeometry, EMPTY_SOLID_GEOMETRY } from './buildSolidGeometry.js';
+import { buildSubShapeGeometry, EMPTY_SUB_SHAPE_HIGHLIGHT } from './buildSubShapeGeometry.js';
 import {
   cameraPosition,
   clamp,
@@ -59,10 +61,25 @@ export interface ViewportScene {
    */
   setBodyHighlight(hoveredBodyId: string | null, selectedBodyIds: readonly string[]): void;
   /**
+   * 部分形状(面・辺・頂点)のホバー・選択の強調を差し替える(FR-106)。
+   * `hoveredElementId` / `selection` はストアのものをそのまま渡してよい
+   * (スケッチの要素 id・ボディの id が混ざっていても部分形状の id だけを拾う)。
+   */
+  setSubShapeHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
+  /**
    * 画面座標(canvas の左上を原点とした画素)にあるボディの featureId。無ければ null
    * (FR-106)。透視投影でも平行投影でも、最後に描いたカメラで判定する。
    */
   pickBody(screenX: number, screenY: number): string | null;
+  /**
+   * 画面座標のところにある面。当たった三角形の番号を、そのボディの面ごとの範囲表で
+   * 面の通し番号へ直して返す(`pickSubShape.ts` の `faceIndexOfTriangle`)。当たらなければ
+   * null(FR-106)。
+   */
+  pickFaceAt(
+    screenX: number,
+    screenY: number,
+  ): { readonly featureId: string; readonly faceIndex: number } | null;
   /**
    * いまの絵をもう 1 回描いて、一辺 `size` の PNG のバイト列にする(§0.a-0.18)。
    * `preserveDrawingBuffer` を常時有効にすると描画が重くなる(NFR-PF-1)ので、
@@ -314,6 +331,11 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let selectedBodyIds: readonly string[] = [];
   let solidBundle = EMPTY_SOLID_GEOMETRY;
 
+  /** 部分形状(面・辺・頂点)の強調の現在値(§0.a-0.7)。 */
+  let subShapeHoveredElementId: string | null = null;
+  let subShapeSelection: readonly string[] = [];
+  let subShapeBundle = EMPTY_SUB_SHAPE_HIGHLIGHT;
+
   /** 最後に描いたときのカメラ。画面座標との行き来はこれが決まってからでないとできない。 */
   let lastCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
   /** 最後に描いたときの見せ方。サムネイルを撮るときに同じ絵を描き直すのに使う。 */
@@ -337,6 +359,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     // 立体とスケッチは組み立て直したときだけ並びを差し替える(同じ結果なら表示の入切だけ)。
     solidLayer.update(solidBundle, displayStyle);
+    solidLayer.updateSubShapes(subShapeBundle);
     sketchLayer.update(sketchBundle, displayStyle);
 
     updateKeyLight(orbit);
@@ -381,12 +404,20 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     setBodies(nextBodies): void {
       bodies = nextBodies;
       solidBundle = buildSolidGeometry(bodies, hoveredBodyId, selectedBodyIds);
+      // ボディの形が変わると強調する三角形・線分の座標も変わるので組み立て直す。
+      subShapeBundle = buildSubShapeGeometry(bodies, subShapeHoveredElementId, subShapeSelection);
     },
 
     setBodyHighlight(nextHovered, nextSelected): void {
       hoveredBodyId = nextHovered;
       selectedBodyIds = nextSelected;
       solidBundle = buildSolidGeometry(bodies, hoveredBodyId, selectedBodyIds);
+    },
+
+    setSubShapeHighlight(hoveredElementId, selection): void {
+      subShapeHoveredElementId = hoveredElementId;
+      subShapeSelection = selection;
+      subShapeBundle = buildSubShapeGeometry(bodies, subShapeHoveredElementId, subShapeSelection);
     },
 
     pickBody(screenX, screenY): string | null {
@@ -398,6 +429,25 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       // カメラの種類を見て分ける)ので、投影の切替でそのまま動く。
       raycaster.setFromCamera(pointerNdc, lastCamera);
       return solidLayer.pickBody(raycaster);
+    },
+
+    pickFaceAt(screenX, screenY): { readonly featureId: string; readonly faceIndex: number } | null {
+      if (lastCamera === null) {
+        return null;
+      }
+      pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
+      raycaster.setFromCamera(pointerNdc, lastCamera);
+      const hit = solidLayer.pickFace(raycaster);
+      if (hit === null) {
+        return null;
+      }
+      // 当たった三角形の通し番号を、そのボディの面ごとの範囲表で面の通し番号へ直す。
+      const entry = solidBundle.index.get(hit.featureId);
+      if (entry === undefined) {
+        return null;
+      }
+      const faceIndex = faceIndexOfTriangle(entry.faces, hit.triangleIndex);
+      return faceIndex === null ? null : { featureId: hit.featureId, faceIndex };
     },
 
     captureThumbnail(size = THUMBNAIL_SIZE): Uint8Array | null {

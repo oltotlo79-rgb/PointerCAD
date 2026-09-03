@@ -91,6 +91,16 @@ declare global {
      * `watchProgress` が仕込み、`takeProgressSightings` が取り出して空にする。
      */
     pcadProgressSightings?: ProgressSighting[];
+    /**
+     * 検査だけが使う描画間隔の記録(アプリは読み書きしない)。P3 タスク30 手順4 の
+     * 「マウスを動かしたときの費用」の実測に使う。`undefined` に戻すと採り終わりの合図。
+     */
+    pcadFrameSamples?: number[];
+    /**
+     * 検査だけが使う、頁が作った Worker の控え(アプリは読み書きしない)。
+     * 幾何カーネルの Worker をわざと止めて、作り直しが効くかを確かめるのに使う(§0.a-0.19)。
+     */
+    pcadWorkers?: Worker[];
   }
 }
 
@@ -926,4 +936,808 @@ test('式の欄に焦点があっても Ctrl+S で保存される(§0.a-0.23 ⑪
   await expect(distanceInput).toBeFocused();
 
   expect(errors).toEqual([]);
+});
+
+/* ========================================================================== *
+ * ここから P3「加工フィーチャー」の検査(計画書 docs/plans/P3-加工フィーチャー.md
+ * タスク30)。要件§9 P3 の完了条件「実用部品(穴・ねじ・面取り付き)とコイルばねが
+ * 作れる」を、実際のブラウザで通しで確かめる。**ヘッドレスで実行する。**
+ *
+ * 上の 6 件と同じ補助関数をそのまま使い、足りないものだけをここへ足す
+ * (共有ファイルを作らない。P1・P2 の作りに合わせる)。`data-testid` は足さず、
+ * role / aria / class で引く(docs/報告記録.md 2026-09-02 23:50)。
+ * ========================================================================== */
+
+/** ワールド座標(mm)。 */
+type WorldPoint = readonly [number, number, number];
+
+/**
+ * ホーム視点の見え方。数値は `packages/ui/src/viewport/cameraMath.ts` の `HOME_ORBIT` と
+ * `VERTICAL_FIELD_OF_VIEW` そのままで、写し方は `createViewportScene.ts` の
+ * `worldToScreen`(three.js の PerspectiveCamera + lookAt)と同じ。
+ *
+ * **この検査では視点を一度も動かさない**ので、ワールド座標から画面座標への写しをここで
+ * 組み立て直せる。面は光線(`pickFaceAt`)、辺・頂点は画面上 6px(`pickSolidSubShape`)で
+ * 拾われるため、押す場所をワールド座標で決められると、立体のどこを選んだのかが
+ * 検査の側でも確かめられる。
+ */
+const HOME_AZIMUTH = Math.PI / 4;
+const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
+const HOME_DISTANCE = 200;
+const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
+
+function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function dotPoints(a: WorldPoint, b: WorldPoint): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function normalizePoint(a: WorldPoint): WorldPoint {
+  const length = Math.hypot(a[0], a[1], a[2]);
+  return [a[0] / length, a[1] / length, a[2] / length];
+}
+
+/** カメラの位置(`cameraPosition(HOME_ORBIT)`)。注視点は原点。 */
+const CAMERA_EYE: WorldPoint = [
+  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
+  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
+  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
+];
+/** カメラの向き。three.js の `Matrix4.lookAt` と同じ組み立て(上方向は +Z)。 */
+const CAMERA_Z = normalizePoint(CAMERA_EYE);
+const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
+const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
+
+/** ワールド座標を canvas の左上を原点とした画素へ写す。 */
+function worldToCanvas(
+  world: WorldPoint,
+  widthPixels: number,
+  heightPixels: number,
+): readonly [number, number] {
+  const view = subtractPoints(world, CAMERA_EYE);
+  // カメラは自分の -Z を見るので、前にあるものの深さは正になる。
+  const depth = -dotPoints(view, CAMERA_Z);
+  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
+  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
+  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
+  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
+}
+
+/** ビューポートの上で、ワールド座標の点が見えている場所を押す(FR-106)。 */
+async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
+  const canvas = page.locator('canvas.pcad-viewport__canvas');
+  const box = await canvas.boundingBox();
+  if (box === null) {
+    throw new Error('ビューポートの canvas の位置と大きさが取れませんでした。');
+  }
+  const [x, y] = worldToCanvas(world, box.width, box.height);
+  await page.mouse.click(box.x + x, box.y + y);
+}
+
+/**
+ * 立体の上の面を押す位置(§2.3.2 の順序表)。
+ *
+ * 当たり判定は**スケッチの要素が先**で、面は「投影した輪郭の内側なら当たり」なので、
+ * 押し出したもとの面(z=0 の四角)の投影の内側を押すと、立体の面ではなくその面が選ばれる。
+ * 板の中央はその内側に入ってしまうため、**画面上でもとの面の輪郭より外に出る奥の角の近く**
+ * (板の隅から 3mm)を押す。1440×900 の窓では、この点はスケッチの線・点から 20px 以上
+ * 離れる(当たり判定の 6px の 3 倍以上。担当が投影を計算して確かめた)。
+ */
+function topFacePick(thicknessMm: number): WorldPoint {
+  return [3, 3, thicknessMm];
+}
+
+/** ツールバーの「加工」区画の道具(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)。 */
+function machiningTool(page: Page, label: string): Locator {
+  return page
+    .getByRole('group', { name: '加工' })
+    .getByRole('button', { name: label, exact: true });
+}
+
+/** ステータスバーの「選ぶもの」の札(§0.a-0.6)。右端の札のうち先頭。 */
+function selectionKindLabel(page: Page): Locator {
+  return page.locator('.pcad-statusbar__state').first();
+}
+
+/**
+ * プロパティの式の欄を見出しで引く(読み取り専用の欄も同じ形で拾える)。
+ * 見出しは完全一致で照合する(「距離」と「距離2」を取り違えないため)。
+ */
+function propertyFieldBox(page: Page, label: string): Locator {
+  return propertyPanel(page)
+    .locator('.pcad-field')
+    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) });
+}
+
+function propertyField(page: Page, label: string): Locator {
+  return propertyFieldBox(page, label).locator('input.pcad-field__input');
+}
+
+/** 欄の下の 1 行(評価値または理由)。式のまま持つ欄の「計算した値」を読むのに使う。 */
+function propertyFieldMessage(page: Page, label: string): Locator {
+  return propertyFieldBox(page, label).locator('.pcad-field__message');
+}
+
+/** プロパティの横並びの選択肢(深さ・ねじの種類・見せ方・巻き方向・求める値など)。 */
+function propertyChoice(page: Page, label: string): Locator {
+  return propertyPanel(page).getByRole('group', { name: label, exact: true });
+}
+
+/** プロパティの畳んだ一覧(ねじの呼び 28 個。タスク28)。 */
+function propertyMenu(page: Page, label: string): Locator {
+  return propertyPanel(page)
+    .locator('.pcad-choice')
+    .filter({ has: page.locator('.pcad-choice__label', { hasText: new RegExp(`^${label}$`) }) });
+}
+
+/** プロパティに出ている体積を数で読む。まだ出ていなければ NaN。 */
+async function volumeNumber(page: Page): Promise<number> {
+  const cell = propertyValue(page, '体積');
+  if ((await cell.count()) === 0) {
+    return Number.NaN;
+  }
+  // 「11717.2566612 mm³」の形。単位の前で切れるので parseFloat でそのまま読める。
+  return Number.parseFloat(await cell.innerText());
+}
+
+/**
+ * 体積が期待値どおりであることを、許容差(mm³)つきで確かめる。
+ *
+ * 表示は有効数字 12 桁なので、π を含む期待値は文字列では比べられない。期待値は
+ * それぞれの検査で式のまま組み立て(担当が独立に計算した値)、許容差は既定 0.01mm³ =
+ * 体積 12000mm³ に対して 10⁻⁶ 未満とする(表示の丸めより十分大きく、形の違いより十分小さい)。
+ */
+async function expectVolume(page: Page, expected: number, toleranceMm3 = 0.01): Promise<void> {
+  await expect
+    .poll(async () => Math.abs((await volumeNumber(page)) - expected), {
+      timeout: KERNEL_TIMEOUT_MS,
+      message: `体積が ${String(expected)} mm³ ± ${String(toleranceMm3)} になること`,
+    })
+    .toBeLessThanOrEqual(toleranceMm3);
+}
+
+/** 板 40×30×10(mm³)。P3 の検査はすべてこの板から始める。 */
+const BOARD_VOLUME = 40 * 30 * 10;
+/** φ6 の貫通穴 1 つが板から取り除く量(π·3²·10)。 */
+const HOLE_6_THROUGH = Math.PI * 3 * 3 * 10;
+/** φ8 の貫通穴 1 つが板から取り除く量(π·4²·10)。 */
+const HOLE_8_THROUGH = Math.PI * 4 * 4 * 10;
+
+test.describe('P3 加工フィーチャー', () => {
+  /*
+   * 窓の大きさを固定する。ビューポートの当たり判定は画面の画素で決まる(面は光線、
+   * 辺・頂点は 6px)ので、押す場所を計算するこの検査では窓の大きさが結果を左右する。
+   * 1440×900 は §0.a-0.25 が「1 段に収まること」の条件にしている幅で、このとき canvas は
+   * 横 918px(窓の幅 − 左 240 − 右 280 − 枠 2)になり、押す場所は最も近いスケッチ要素から
+   * 20px 以上離れる(当たり判定の 6px の 3 倍以上)。
+   * 既存の 6 件は Playwright の既定(1280×720)のまま変えない。
+   */
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('板に穴をあけて並べ、保存・開き直して式のまま直せる(要件§9 P3 の完了条件)', async ({
+    page,
+  }, testInfo) => {
+    const errors = collectErrors(page);
+    const confirms = acceptConfirms(page);
+    await disableFilePickers(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    // 1) 40 × 30 の板を 10 押し出す。
+    await drawRectangle(page, ['0', '0'], ['40', '30']);
+    await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+    await extrudeFace(page, '面1', null);
+    await solidRow(page, '押し出し1').click();
+    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+
+    // 2) 穴の中心にする点を 1 つ打つ(§0.a-0.9。穴の位置は式で持てる点で決める)。
+    await sketchTool(page, '点').click();
+    await expect(popoverTitle(page)).toHaveText('点を作る');
+    await fillFields(page, ['5', '15', '0']);
+    await commitPopover(page);
+    await cancelPopover(page);
+    await expect(treeRow(page, '点1')).toBeVisible();
+
+    // 3) 選択の道具に戻し、`3` で選ぶものを「面」にする(§0.a-0.6)。
+    await sketchTool(page, '選択').click();
+    await page.keyboard.press('3');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+
+    // 4) 立体の上の面を押し、Shift でツリーの 点1 を足す。両方そろって初めて「穴」が押せる。
+    await expect(machiningTool(page, '穴')).toBeDisabled();
+    await clickWorldPoint(page, topFacePick(10));
+    await treeRow(page, '点1').click({ modifiers: ['Shift'] });
+    await expect(machiningTool(page, '穴')).toBeEnabled();
+
+    // 5) 「穴」を押す。直径の既定は 6(NFR-UX-4)。貫通にして決める。
+    await machiningTool(page, '穴').click();
+    await expect(popoverTitle(page)).toHaveText('穴をあける');
+    await expect(popoverInputs(page).first()).toHaveValue('6');
+    await popover(page).getByRole('switch', { name: '貫通', exact: true }).click();
+    await commitPopover(page);
+    await expect(popover(page)).toHaveCount(0);
+
+    /*
+     * 6) 穴1 ができ、体積が π·3²·10 だけ減る。ツリーともとの立体の扱いも確かめる。
+     *
+     * 作った直後は何も選ばれていない(道具が「選択」へ戻るとき、選ぶものの種類が
+     * 面 → 立体へ変わるので選択が空になる)。中身を見るにはツリーの行を押す。
+     */
+    await expect(solidRow(page, '穴1')).toBeVisible();
+    await solidRow(page, '穴1').click();
+    await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+    await expect(propertyValue(page, '選んだ面')).toHaveText('1');
+    await expect(propertyValue(page, '中心の点')).toHaveText('1');
+    await expect(propertyValue(page, '加工するもとの立体')).toHaveText('押し出し1');
+    await expect(solidRowBox(page, '押し出し1')).toContainText('統合済み');
+
+    // 7) その穴を選んだまま「直線パターン」で 3 つ並べる(FR-411、§0.a-0.20)。
+    //    既定は「X・間隔 20・個数 3」。間隔 20 では 3 つ目が板からはみ出すので 15 にする。
+    await expect(machiningTool(page, '直線パターン')).toBeEnabled();
+    await machiningTool(page, '直線パターン').click();
+    await expect(popoverTitle(page)).toHaveText('まっすぐ並べる');
+    await expect(popoverInputs(page).nth(0)).toHaveValue('20');
+    await expect(popoverInputs(page).nth(1)).toHaveValue('3');
+    await fillFields(page, ['15', null]);
+    await commitPopover(page);
+
+    await expect(solidRow(page, '直線パターン1')).toBeVisible();
+    await solidRow(page, '直線パターン1').click();
+    await expectVolume(page, BOARD_VOLUME - 3 * HOLE_6_THROUGH);
+    await expect(propertyValue(page, '並べる穴')).toHaveText('穴1');
+
+    // 8) 元に戻す・やり直す(FR-505)。加工も同じように 1 段ずつ戻る。
+    await page.keyboard.press('Control+z');
+    await expect(solidRow(page, '直線パターン1')).toHaveCount(0);
+    await page.keyboard.press('Control+z');
+    await expect(solidRow(page, '穴1')).toHaveCount(0);
+    await page.keyboard.press('Control+y');
+    await page.keyboard.press('Control+y');
+    await expect(solidRow(page, '直線パターン1')).toBeVisible();
+
+    // 9) 保存する(FR-806、`.pcad` のスキーマ版 3)。
+    const downloadPromise = page.waitForEvent('download');
+    await fileAction(page, '保存').click();
+    const download = await downloadPromise;
+    const savedPath = testInfo.outputPath('machining.pcad');
+    await download.saveAs(savedPath);
+    const savedSize = statSync(savedPath).size;
+    expect(savedSize).toBeGreaterThan(0);
+    await expect(statusText(page)).toHaveText('保存しました');
+    // 大きさは報告に載せる(§5.4 の実測。中身の大半はサムネイルの画像)。
+    console.log(`[実測] 加工つきの .pcad の大きさ: ${String(savedSize)} バイト`);
+
+    // 10) 新規 → 開き直し。加工も含めて戻る(FR-801)。
+    await fileAction(page, '新規').click();
+    await expect(featureTree(page)).toContainText('まだ何もありません。');
+
+    const chooserPromise = page.waitForEvent('filechooser');
+    await fileAction(page, '開く').click();
+    const chooser = await chooserPromise;
+    await chooser.setFiles(savedPath);
+
+    await expect(solidRow(page, '押し出し1')).toBeVisible();
+    await expect(solidRow(page, '穴1')).toBeVisible();
+    await expect(solidRow(page, '直線パターン1')).toBeVisible();
+
+    // 11) 直径を式のまま直すと、下流のパターンも一緒に作り直される(FR-311、FR-502)。
+    await solidRow(page, '直線パターン1').click();
+    await expectVolume(page, BOARD_VOLUME - 3 * HOLE_6_THROUGH);
+    await solidRow(page, '穴1').click();
+    await expect(propertyField(page, '直径')).toHaveValue('6');
+    // 穴1 はパターンに消費されているので、単独の体積は出ない(§0.a-0.20)。
+    await expect(propertyValue(page, '体積')).toHaveText('統合済み');
+    await propertyField(page, '直径').fill('8');
+    await solidRow(page, '直線パターン1').click();
+    await expectVolume(page, BOARD_VOLUME - 3 * HOLE_8_THROUGH);
+
+    /*
+     * ここまで確認の窓は一度も出ていない(NFR-UX-3)。「新規」は保存した直後、「開く」は
+     * その新規の直後で、どちらも失う変更が無いため。用意だけしておくのは、万一出たときに
+     * 頁が答えを待って止まらないようにするため(acceptConfirms の doc comment)。
+     */
+    expect(confirms).toEqual([]);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('JIS の呼びからねじ穴があけられる(FR-406)', async ({ page }) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    // 1) 40 × 30 の板を 15 押し出す(止まり穴が板を突き抜けない厚みにする)。
+    await drawRectangle(page, ['0', '0'], ['40', '30']);
+    await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+    await extrudeFace(page, '面1', '15');
+    await solidRow(page, '押し出し1').click();
+    await expect(propertyValue(page, '体積')).toHaveText(`18000 ${VOLUME_UNIT}`, {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+
+    // 2) 中心の点を板の真ん中に打つ。
+    await sketchTool(page, '点').click();
+    await fillFields(page, ['20', '15', '0']);
+    await commitPopover(page);
+    await cancelPopover(page);
+
+    // 3) 面 → 点の順に選び、「ねじ穴」を押す。呼びの既定は M6、系列の既定は並目。
+    await sketchTool(page, '選択').click();
+    await page.keyboard.press('3');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+    await clickWorldPoint(page, topFacePick(15));
+    await treeRow(page, '点1').click({ modifiers: ['Shift'] });
+    await machiningTool(page, 'ねじ穴').click();
+
+    await expect(popoverTitle(page)).toHaveText('ねじ穴をあける');
+    await expect(popover(page).locator('.pcad-menu__count')).toHaveText('M6');
+    await expect(
+      popover(page).getByRole('group', { name: 'ねじの種類' }).getByRole('button', { name: '並目' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    // 深さ 10・ねじ部の長さ 10 の既定のまま決める(NFR-UX-4)。
+    await expect(popoverInputs(page).nth(0)).toHaveValue('10');
+    await expect(popoverInputs(page).nth(1)).toHaveValue('10');
+    await commitPopover(page);
+
+    // 4) M6 並目のピッチ 1・下穴径 D1 = 6 − (5√3/8)·1 が規格から入る(§0.a-0.13、0.14)。
+    const drillM6 = 6 - (5 * Math.sqrt(3) * 1) / 8;
+    await expect(solidRow(page, 'ねじ穴1')).toBeVisible();
+    await solidRow(page, 'ねじ穴1').click();
+    await expect(propertyField(page, 'ピッチ')).toHaveValue('1');
+    expect(Number(await propertyField(page, '下穴径').inputValue())).toBeCloseTo(drillM6, 6);
+    // 掘られたのは下穴径の円柱、深さ 10(止まり穴、平底。§0.a-0.11)。
+    await expectVolume(page, 18000 - Math.PI * (drillM6 / 2) ** 2 * 10);
+
+    // 5) 見せ方の既定は「簡略」(§0.a-0.15。実らせんは重いので既定にしない)。
+    await expect(
+      propertyChoice(page, '見せ方').getByRole('button', { name: '簡略', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    // 6) 呼びを M10 へ変えると、ピッチも下穴径も規格の値に入れ替わり、形も作り直される。
+    await propertyMenu(page, '呼び').locator('.pcad-menu__trigger').click();
+    await propertyMenu(page, '呼び').getByRole('menuitem', { name: 'M10', exact: true }).click();
+
+    const drillM10 = 10 - (5 * Math.sqrt(3) * 1.5) / 8;
+    await expect(propertyField(page, 'ピッチ')).toHaveValue('1.5');
+    expect(Number(await propertyField(page, '下穴径').inputValue())).toBeCloseTo(drillM10, 6);
+    await expectVolume(page, 18000 - Math.PI * (drillM10 / 2) ** 2 * 10);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('辺を選んで面を取り、角を丸められる(FR-407、FR-408)', async ({ page }) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    await drawRectangle(page, ['0', '0'], ['40', '30']);
+    await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+    await extrudeFace(page, '面1', null);
+    await solidRow(page, '押し出し1').click();
+    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+
+    // 1) `2` で選ぶものを「辺」にし、上面の奥の長辺(長さ 40)の中点を押す。
+    await sketchTool(page, '選択').click();
+    await page.keyboard.press('2');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+    await expect(machiningTool(page, 'C面取り')).toBeDisabled();
+    await clickWorldPoint(page, [20, 0, 10]);
+    await expect(machiningTool(page, 'C面取り')).toBeEnabled();
+
+    // 2) C 面取り(等距離)距離 2。45 度なので、取れる量は 1/2·2·2·40。
+    await machiningTool(page, 'C面取り').click();
+    await expect(popoverTitle(page)).toHaveText('面を取る');
+    await expect(
+      popover(page).getByRole('group', { name: '決め方' }).getByRole('button', { name: '距離', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await fillFields(page, ['2']);
+    await commitPopover(page);
+
+    await expect(solidRow(page, 'C面取り1')).toBeVisible();
+    await solidRow(page, 'C面取り1').click();
+    await expectVolume(page, BOARD_VOLUME - (2 * 2 * 40) / 2);
+    await expect(propertyValue(page, '選んだ辺')).toHaveText('1');
+
+    // 3) 元に戻して板へ戻す。次の R 面取りを、面取りの影響を受けていない辺にかけるため。
+    await page.keyboard.press('Control+z');
+    await expect(solidRow(page, 'C面取り1')).toHaveCount(0);
+    await solidRow(page, '押し出し1').click();
+    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`);
+
+    // 4) 奥の縦の辺(長さ 10)を押して R 面取り。半径の既定は 2。
+    //    取れる量は (R² − πR²/4)·10 = 10·(4 − π)。
+    await page.keyboard.press('2');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+    await clickWorldPoint(page, [0, 0, 5]);
+    await expect(machiningTool(page, 'R面取り')).toBeEnabled();
+    await machiningTool(page, 'R面取り').click();
+    await expect(popoverTitle(page)).toHaveText('角を丸める');
+    await expect(popoverInputs(page).first()).toHaveValue('2');
+    await commitPopover(page);
+
+    await expect(solidRow(page, 'R面取り1')).toBeVisible();
+    await solidRow(page, 'R面取り1').click();
+    await expectVolume(page, BOARD_VOLUME - 10 * (4 - Math.PI));
+    await expect(propertyValue(page, '選んだ辺')).toHaveText('1');
+
+    /*
+     * 5) 面取りをかけた立体の上でマウスを動かしたときの費用(計画書タスク30 手順4)。
+     *    100 回動かすあいだの描画の間隔を測る。上限で落とさず実測を報告するだけにする
+     *    (60fps の判定は目視と NFR-PF-1 の性能検査が受け持つ)。
+     */
+    const canvasBox = await page.locator('canvas.pcad-viewport__canvas').boundingBox();
+    if (canvasBox === null) {
+      throw new Error('ビューポートの canvas の位置と大きさが取れませんでした。');
+    }
+    await page.evaluate(() => {
+      const samples: number[] = [];
+      let previous = performance.now();
+      const step = (): void => {
+        const now = performance.now();
+        samples.push(now - previous);
+        previous = now;
+        if (window.pcadFrameSamples !== undefined) {
+          requestAnimationFrame(step);
+        }
+      };
+      window.pcadFrameSamples = samples;
+      requestAnimationFrame(step);
+    });
+    const start = worldToCanvas([0, 0, 10], canvasBox.width, canvasBox.height);
+    const end = worldToCanvas([40, 30, 10], canvasBox.width, canvasBox.height);
+    for (let index = 0; index < 100; index += 1) {
+      const ratio = index / 99;
+      await page.mouse.move(
+        canvasBox.x + start[0] + (end[0] - start[0]) * ratio,
+        canvasBox.y + start[1] + (end[1] - start[1]) * ratio,
+      );
+    }
+    const frames = await page.evaluate(() => {
+      const samples = window.pcadFrameSamples ?? [];
+      window.pcadFrameSamples = undefined;
+      const sorted = [...samples].sort((a, b) => a - b);
+      return {
+        count: sorted.length,
+        median: sorted.length === 0 ? 0 : sorted[Math.floor(sorted.length / 2)],
+        max: sorted.length === 0 ? 0 : sorted[sorted.length - 1],
+      };
+    });
+    expect(frames.count).toBeGreaterThan(0);
+    // 実測は報告に載せる(統括が §5 の目視と突き合わせる)。
+    console.log(
+      `[実測] pointermove 100 回のあいだの描画間隔: 中央値 ${frames.median.toFixed(2)}ms / 最大 ${frames.max.toFixed(2)}ms(${String(frames.count)} フレーム)`,
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  test('上流の形を変えても加工が付いてくる(§2.2、FR-502)', async ({ page }) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    // 1) 40 × 30 × 10 の板の上面に φ6 の貫通穴を 1 つあける。
+    await drawRectangle(page, ['0', '0'], ['40', '30']);
+    await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+    await extrudeFace(page, '面1', null);
+    await solidRow(page, '押し出し1').click();
+    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+
+    await sketchTool(page, '点').click();
+    await fillFields(page, ['20', '15', '0']);
+    await commitPopover(page);
+    await cancelPopover(page);
+
+    await sketchTool(page, '選択').click();
+    await page.keyboard.press('3');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+    await clickWorldPoint(page, topFacePick(10));
+    await treeRow(page, '点1').click({ modifiers: ['Shift'] });
+    await machiningTool(page, '穴').click();
+    await popover(page).getByRole('switch', { name: '貫通', exact: true }).click();
+    await commitPopover(page);
+    await expect(solidRow(page, '穴1')).toBeVisible();
+    await solidRow(page, '穴1').click();
+    await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+
+    // 2) 押し出しの距離を 10 → 20 に変えても、穴は上の面に残る(指紋で選び直す、§2.2)。
+    await solidRow(page, '押し出し1').click();
+    await propertyField(page, '距離').fill('20');
+    await solidRow(page, '穴1').click();
+    await expectVolume(page, 40 * 30 * 20 - Math.PI * 9 * 20);
+
+    // 3) 断面そのものを 40 × 30 → 40 × 60 に広げても、穴は残る。
+    //    奥行きは線分2 の ΔY と線分4 の ΔY の 2 つで決まるので、両方を書き換える
+    //    (途中は輪が閉じず面が作れないが、アプリは落ちない。FR-504)。
+    await treeRow(page, '線分2').click();
+    await expect(propertyInputs(page).nth(4)).toHaveValue('30');
+    await propertyInputs(page).nth(4).fill('60');
+    await treeRow(page, '線分4').click();
+    await expect(propertyInputs(page).nth(4)).toHaveValue('-30');
+    await propertyInputs(page).nth(4).fill('-60');
+
+    await solidRow(page, '穴1').click();
+    await expectVolume(page, 40 * 60 * 20 - Math.PI * 9 * 20);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('加工の間違った操作は理由が出て、何も作られない(NFR-UX-5、FR-504)', async ({ page }) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    await drawRectangle(page, ['0', '0'], ['40', '30']);
+    await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+    await extrudeFace(page, '面1', null);
+    await solidRow(page, '押し出し1').click();
+    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+
+    // 1) 面を選ばずに「穴」。押せない状態で、ツールチップと帯の両方に理由が読める。
+    const holeButton = machiningTool(page, '穴');
+    await expect(holeButton).toBeDisabled();
+    await expect(holeButton).toHaveAttribute('title', '穴: 穴をあける面が選ばれていません。');
+    await holeButton.click({ force: true });
+    await expect(statusText(page)).toHaveText(
+      `${SOLID_ERROR_PREFIX} 穴をあける面が選ばれていません。`,
+    );
+    await expect(solidRows(page)).toHaveCount(1);
+
+    // 2) 面だけ選んで「穴」。今度は中心の点が無いという理由に変わる。
+    await sketchTool(page, '選択').click();
+    await page.keyboard.press('3');
+    await clickWorldPoint(page, topFacePick(10));
+    await expect(holeButton).toHaveAttribute('title', '穴: 穴の中心にする点が選ばれていません。');
+    await holeButton.click({ force: true });
+    await expect(statusText(page)).toHaveText(
+      `${SOLID_ERROR_PREFIX} 穴の中心にする点が選ばれていません。`,
+    );
+    await expect(solidRows(page)).toHaveCount(1);
+
+    // 3) 穴でない立体を選んで「直線パターン」(§0.a-0.20 の「対象は穴とねじ穴だけ」)。
+    await page.keyboard.press('4');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+    await solidRow(page, '押し出し1').click();
+    const patternButton = machiningTool(page, '直線パターン');
+    await expect(patternButton).toBeDisabled();
+    await patternButton.click({ force: true });
+    await expect(statusText(page)).toHaveText(
+      `${SOLID_ERROR_PREFIX} 並べられるのは穴とねじ穴だけです。`,
+    );
+    await expect(solidRows(page)).toHaveCount(1);
+
+    // 4) 選ぶ種類は `1`〜`4` で切り替わる(§0.a-0.6)。
+    await page.keyboard.press('1');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 頂点');
+    await page.keyboard.press('2');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+    await page.keyboard.press('3');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+    await page.keyboard.press('4');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+
+    // 5) 式の欄に文字を打っているあいだは横取りしない(数字はそのまま欄へ入る)。
+    await solidRow(page, '押し出し1').click();
+    const distanceInput = propertyField(page, '距離');
+    await distanceInput.click();
+    await distanceInput.press('2');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+    await expect(distanceInput).toHaveValue('102');
+    await distanceInput.fill('10');
+    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`);
+
+    /*
+     * 6) 大きすぎる半径の R 面取りは、赤い印と理由が出るだけでアプリは落ちない(NFR-RE-1)。
+     *    直前まで式の欄に焦点があるので、まず道具を選び直してビューポートへ焦点を戻す
+     *    (5) で確かめたとおり、欄に焦点があるあいだは `2` が横取りされないため)。
+     */
+    await sketchTool(page, '選択').click();
+    await page.keyboard.press('2');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+    await clickWorldPoint(page, [0, 0, 5]);
+    await machiningTool(page, 'R面取り').click();
+    await commitPopover(page);
+    await expect(solidRow(page, 'R面取り1')).toBeVisible();
+    await solidRow(page, 'R面取り1').click();
+    await expectVolume(page, BOARD_VOLUME - 10 * (4 - Math.PI));
+
+    await propertyField(page, '半径').fill('50');
+    await expect(solidRowBox(page, 'R面取り1').locator('.pcad-tree__alert')).toHaveAttribute(
+      'title',
+      /丸められない辺が 1 本ありました。半径を小さくしてください。/,
+      { timeout: KERNEL_TIMEOUT_MS },
+    );
+    await expect(propertyPanel(page).locator('.pcad-panel__error')).toHaveText(
+      '丸められない辺が 1 本ありました。半径を小さくしてください。',
+    );
+
+    // 7) 値を戻すと形も戻る。ここまでの失敗で画面が固まっていないことの証拠になる。
+    await propertyField(page, '半径').fill('2');
+    await expect(solidRowBox(page, 'R面取り1').locator('.pcad-tree__alert')).toHaveCount(0, {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+    await expectVolume(page, BOARD_VOLUME - 10 * (4 - Math.PI));
+
+    expect(errors).toEqual([]);
+  });
+
+  test('点からコイルばねが作れる(FR-414)', async ({ page }) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    // 1) 始点になる点を 1 つ打ち、それを選んで「ばね」を押す(§0.a-0.29)。
+    await sketchTool(page, '点').click();
+    await fillFields(page, ['0', '0', '0']);
+    await commitPopover(page);
+    await cancelPopover(page);
+    await treeRow(page, '点1').click();
+
+    // 2) 1 段目「ばねの形」。コイル径 20・線径 2 が既定(§0.a-0.30)。
+    await solidTool(page, 'ばね').click();
+    await expect(popoverTitle(page)).toHaveText('ばねの形を決める');
+    await expect(popoverInputs(page).nth(0)).toHaveValue('20');
+    await expect(popoverInputs(page).nth(1)).toHaveValue('2');
+    await commitPopover(page);
+
+    // 3) 2 段目「ばねの長さ」。ピッチ 5・巻数 4 が既定で、全長は計算値なので欄に出ない。
+    await expect(popoverTitle(page)).toHaveText('ばねの長さを決める');
+    await expect(popoverInputs(page)).toHaveCount(2);
+    await expect(popoverInputs(page).nth(0)).toHaveValue('5');
+    await expect(popoverInputs(page).nth(1)).toHaveValue('4');
+    await commitPopover(page);
+
+    /*
+     * 4) ばね1 ができる。体積は線材の断面積 × らせんの長さ(§2.7b.5)。
+     *    らせんは曲がっているので厳密には掃引体の体積と一致しない。許容は相対 0.5%。
+     */
+    const springVolume = (turns: number, pitch: number): number =>
+      Math.PI * 1 ** 2 * turns * Math.hypot(Math.PI * 20, pitch);
+    await expect(solidRow(page, 'ばね1')).toBeVisible();
+    await expectVolume(page, springVolume(4, 5), springVolume(4, 5) * 0.005);
+    // ばねは対象を消費しない「作る」フィーチャー(§0.a-0.36)。
+    await expect(solidRowBox(page, 'ばね1')).not.toContainText('統合済み');
+
+    // 5) 求める値は「全長」で、全長は読み取り専用の計算値(= ピッチ × 巻数)。
+    await expect(
+      propertyChoice(page, '求める値').getByRole('button', { name: '全長', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(propertyField(page, '全長')).toHaveAttribute('readonly', '');
+    await expect(propertyFieldMessage(page, '全長')).toHaveText('= 20');
+
+    // 6) 巻数を 8 にすると全長も体積も倍になる(FR-311、FR-502)。
+    await propertyField(page, '巻数').fill('8');
+    await expect(propertyFieldMessage(page, '全長')).toHaveText('= 40');
+    await expectVolume(page, springVolume(8, 5), springVolume(8, 5) * 0.005);
+
+    // 7) 求める値を「ピッチ」に切り替え、全長に 20 を入れるとピッチが 20/8 になる。
+    await propertyChoice(page, '求める値').getByRole('button', { name: 'ピッチ', exact: true }).click();
+    await propertyField(page, '全長').fill('20');
+    await expect(propertyFieldMessage(page, 'ピッチ')).toHaveText('= 2.5');
+    await expectVolume(page, springVolume(8, 2.5), springVolume(8, 2.5) * 0.005);
+
+    // 8) 巻き方向を変えても体積は変わらない(鏡像になるだけ、§0.a-0.33)。
+    await propertyChoice(page, '巻き方向').getByRole('button', { name: '左巻き', exact: true }).click();
+    await expectVolume(page, springVolume(8, 2.5), springVolume(8, 2.5) * 0.005);
+
+    // 9) ピッチより太い線径は理由が出て、アプリは落ちない(NFR-RE-1、NFR-UX-5)。
+    await propertyField(page, '線径').fill('10');
+    await expect(solidRowBox(page, 'ばね1').locator('.pcad-tree__alert')).toHaveAttribute(
+      'title',
+      /ピッチは線径より大きくしてください/,
+      { timeout: KERNEL_TIMEOUT_MS },
+    );
+    await expect(propertyPanel(page).locator('.pcad-panel__error')).toContainText(
+      'ピッチは線径より大きくしてください。隣どうしの線がぶつかります。',
+    );
+
+    // 10) 戻せば形も戻る。
+    await propertyField(page, '線径').fill('2');
+    await expect(solidRowBox(page, 'ばね1').locator('.pcad-tree__alert')).toHaveCount(0, {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+    await expectVolume(page, springVolume(8, 2.5), springVolume(8, 2.5) * 0.005);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('形の計算部が止まっても作り直して計算を続けられる(NFR-RE-1、§0.a-0.19)', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+
+    /*
+     * 頁が作る Worker を控えておく。実物の Worker をそのまま作り、作られたものを
+     * 覚えるだけの入れ子にする(アプリのコードは変えない)。
+     *
+     * OCCT の C++ 側が `abort()` すると WASM ごと止まり、Worker は応答しなくなって
+     * `error` が上がる。**大きすぎるフィレットなど、実際に abort を起こせる形は
+     * 見つかっていない**(docs/報告記録.md 2026-09-04 00:30 の③)ので、ここでは
+     * その状態を「止める(terminate)+ 壊れた合図(error)」で作り、
+     * `KernelBridge` の作り直し(§2.9)が効くことを確かめる。
+     */
+    await page.addInitScript(() => {
+      const NativeWorker = globalThis.Worker;
+      const created: Worker[] = [];
+      window.pcadWorkers = created;
+      class RecordingWorker extends NativeWorker {
+        constructor(scriptUrl: string | URL, options?: WorkerOptions) {
+          super(scriptUrl, options);
+          created.push(this);
+        }
+      }
+      Object.defineProperty(globalThis, 'Worker', {
+        configurable: true,
+        writable: true,
+        value: RecordingWorker,
+      });
+    });
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    await drawRectangle(page, ['0', '0'], ['40', '30']);
+    await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+    await extrudeFace(page, '面1', null);
+    await solidRow(page, '押し出し1').click();
+    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+
+    // 1) 幾何カーネルの Worker を止め、壊れた合図を上げる。
+    const stopped = await page.evaluate(() => {
+      const workers = window.pcadWorkers ?? [];
+      const worker = workers[workers.length - 1];
+      if (worker === undefined) {
+        return 0;
+      }
+      worker.terminate();
+      worker.dispatchEvent(new ErrorEvent('error', { message: '検査が止めました' }));
+      return workers.length;
+    });
+    expect(stopped).toBe(1);
+
+    /*
+     * 2) 次の再計算で作り直され、計算が続く。作り直さなければ、止めた Worker は
+     *    二度と応答しないので体積は永遠に変わらない(この検査が時間切れで落ちる)。
+     *    作り直すとキャッシュが空になり全段の作り直しになるので、待ちは長めに取る。
+     */
+    await propertyField(page, '距離').fill('20');
+    await expectVolume(page, 40 * 30 * 20);
+
+    // 3) Worker は 2 本目が作られている(1 本目は止めたまま捨てられた)。
+    expect(await page.evaluate(() => (window.pcadWorkers ?? []).length)).toBe(2);
+
+    expect(errors).toEqual([]);
+  });
 });

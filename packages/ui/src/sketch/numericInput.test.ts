@@ -850,15 +850,33 @@ describe('P3 加工の段(計画書 docs/plans/P3-加工フィーチャー.md �
 
   it('C面取り: 決め方で欄が変わり、距離の値は引き継ぐ(検証表)', () => {
     let state = createNumericInput('chamfer', 'chamferSize');
-    expect(state.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferDistance2']);
-    expect(state.fields.map((field) => field.source)).toEqual(['1', '1']);
+    // 等距離(既定)は距離1つだけの欄。「等距離」なのに距離2 を聞くのは分かりにくいため
+    // (NFR-UX-2)、統括の判断で距離2 の欄は出さない(numericInput.ts の
+    // chamferFieldDefinitions 注釈)。
+    expect(state.fields.map((field) => field.key)).toEqual(['chamferDistance']);
+    expect(state.fields.map((field) => field.source)).toEqual(['1']);
     expect(state.choices.length).toBe(1);
     expect(state.choices[0].key).toBe('chamferMode');
     expect(state.choices[0].value).toBe('equal');
     expect(STEP_TITLE_KEYS.chamferSize).toBe('numericInput.title.chamfer');
 
     state = edited(state, '3', 0);
-    const switched = chooseNumericInput(state, 'chamferMode', 'distanceAngle');
+    // 等距離のまま確定すると、距離2・角度はどちらも values に入らない。
+    const equalCommitted = expectSolidCommitted(commitNumericInput(state)).commit;
+    expect(equalCommitted.chamferMode).toBe('equal');
+    expect(equalCommitted.values.chamferDistance?.value).toBe(3);
+    expect(equalCommitted.values.chamferDistance2).toBeUndefined();
+    expect(equalCommitted.values.chamferAngle).toBeUndefined();
+
+    // 2距離に切り替えると欄が2つになり、距離の値は引き継ぐ。
+    const twoDistances = chooseNumericInput(state, 'chamferMode', 'twoDistances');
+    expect(twoDistances.fields.map((field) => field.key)).toEqual([
+      'chamferDistance',
+      'chamferDistance2',
+    ]);
+    expect(twoDistances.fields.map((field) => field.source)).toEqual(['3', '1']);
+
+    const switched = chooseNumericInput(twoDistances, 'chamferMode', 'distanceAngle');
     expect(switched.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferAngle']);
     // 1つ目(距離)の値は引き継ぎ、2つ目は角度の既定(45)になる。
     expect(switched.fields.map((field) => field.source)).toEqual(['3', '45']);
@@ -1039,16 +1057,25 @@ describe('P3 の細部(キーボード操作・境界値・不変性)', () => {
 
   it('C面取りの決め方は ← → でも切り替えられ、欄も一緒に変わる(moveChoice 経由)', () => {
     const state = createNumericInput('chamfer', 'chamferSize');
-    // 欄が2つなので、選択肢の焦点は輪の3番目(添字2)。
-    const onChoice = reduceNumericInput(state, { type: 'focus', index: 2 });
+    // 等距離(既定)は欄が1つなので、選択肢の焦点は輪の2番目(添字1)。
+    const onChoice = reduceNumericInput(state, { type: 'focus', index: 1 });
     expect(focusedTarget(onChoice)).toEqual({ kind: 'choice', index: 0 });
     const moved = expectOpen(applyNumericInputKey(onChoice, 'ArrowRight')).state;
     expect(moved.choices[0].value).toBe('twoDistances');
-    // twoDistances は equal と見た目が同じ2欄のまま(numericInput.ts の chamferFieldDefinitions 注釈)。
     expect(moved.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferDistance2']);
+    // 欄が1つから2つに増えても、焦点は選択肢を指したまま(輪の3番目、添字2、§2.11)。
+    expect(focusedTarget(moved)).toEqual({ kind: 'choice', index: 0 });
+
     const movedAgain = expectOpen(applyNumericInputKey(moved, 'ArrowRight')).state;
     expect(movedAgain.choices[0].value).toBe('distanceAngle');
     expect(movedAgain.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferAngle']);
+    expect(focusedTarget(movedAgain)).toEqual({ kind: 'choice', index: 0 });
+
+    // 末尾から先頭(等距離)へ回り込むと欄は1つに戻り、焦点も選択肢を指し続ける。
+    const wrapped = expectOpen(applyNumericInputKey(movedAgain, 'ArrowRight')).state;
+    expect(wrapped.choices[0].value).toBe('equal');
+    expect(wrapped.fields.map((field) => field.key)).toEqual(['chamferDistance']);
+    expect(focusedTarget(wrapped)).toEqual({ kind: 'choice', index: 0 });
   });
 
   it('ばねの求める値は ← → でも切り替えられる(moveChoice 経由)', () => {

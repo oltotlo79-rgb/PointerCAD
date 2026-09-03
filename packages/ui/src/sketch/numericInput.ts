@@ -386,18 +386,23 @@ const CHAMFER_ANGLE_FIELD: NumericFieldDefinition = {
 
 /**
  * C面取りの欄は「決め方」で変わる(計画書タスク24「C面取りは『決め方』で出る欄が変わる」)。
- * 距離(等距離)と2つの距離は同じ2欄(距離・距離2)、距離と角度だけ2つ目が角度になる。
+ * 2距離は距離・距離2、距離+角度は距離・角度、等距離は距離だけの1欄にする。
  *
- * 既定(距離=equal)でも欄が2つ(距離・距離2)なのは計画書タスク24 の検証表のとおりで、
- * ChamferSize の 'equal' が本来 distance 1つしか持たないことと食い違う。equal と
- * twoDistances は見た目が同じ2欄のままにし、equal のときの距離2はタスク25
- * (machiningCommands.ts)が ChamferSize を組み立てるときに読み捨てる想定とした
- * (判断に迷った点として報告する)。
+ * タスク24 の実装では等距離でも距離2 の欄を出していた(見た目を2距離と共通にし、
+ * machiningCommands.ts の commitChamfer 側で読み捨てる想定)。しかし利用者が
+ * 「等距離」を選んだのに2つ目の距離を聞かれるのは分かりにくいため(NFR-UX-2)、
+ * 統括の判断で等距離のときは距離2 の欄を出さないよう改めた。ChamferSize の
+ * 'equal' が本来 distance 1つしか持たないことにも合う(model のChamferSize定義どおり)。
  */
 function chamferFieldDefinitions(mode: string | undefined): readonly NumericFieldDefinition[] {
-  return mode === 'distanceAngle'
-    ? [CHAMFER_DISTANCE_FIELD, CHAMFER_ANGLE_FIELD]
-    : [CHAMFER_DISTANCE_FIELD, CHAMFER_DISTANCE2_FIELD];
+  if (mode === 'distanceAngle') {
+    return [CHAMFER_DISTANCE_FIELD, CHAMFER_ANGLE_FIELD];
+  }
+  if (mode === 'twoDistances') {
+    return [CHAMFER_DISTANCE_FIELD, CHAMFER_DISTANCE2_FIELD];
+  }
+  // 既定(mode 未指定)は 'equal' と同じ扱い。
+  return [CHAMFER_DISTANCE_FIELD];
 }
 
 const LINEAR_PATTERN_FIELDS: readonly NumericFieldDefinition[] = [
@@ -919,9 +924,36 @@ function mergeFieldValues(
 }
 
 /**
+ * 欄の数が変わったあと、輪の中で焦点が指す先を保つ(NFR-UX-2)。
+ * ばねの長さ(springLength)は欄が常に2つのままなので実際には呼ばれないが、
+ * C面取り(chamferSize)は「等距離」で欄が1つに減るため、輪の長さそのものが変わる
+ * (§2.11・統括の判断「等距離のときは距離2 の欄を出さない」)。
+ * 選択肢・つまみに焦点があったときはその同じ選択肢・つまみを指し直し、欄に
+ * 焦点があったときは新しい欄の範囲へ収める(消えた欄を指し続けないようにする)。
+ */
+function reindexFocusAfterFieldCountChange(
+  state: NumericInputState,
+  newFieldsCount: number,
+): number {
+  const target = focusedTarget(state);
+  if (target === null) {
+    return 0;
+  }
+  switch (target.kind) {
+    case 'field':
+      return Math.min(target.index, Math.max(newFieldsCount - 1, 0));
+    case 'choice':
+      return newFieldsCount + target.index;
+    case 'toggle':
+      return newFieldsCount + state.choices.length + target.index;
+  }
+}
+
+/**
  * 選択肢の値を更新したあと、欄の並びがその選択肢に依存する段(C面取り・ばねの長さ)だけ
- * 欄を組み替える。どちらの段も欄は常に2つのままなので、焦点の位置(focusedIndex)は
- * 動かさなくてよい(輪の並びが変わらないため)。
+ * 欄を組み替える。ばねの長さは欄が常に2つのままなので焦点の位置(focusedIndex)は
+ * 動かさなくてよいが、C面取りは「等距離」で欄が1つに減るため、欄の数が変わったときだけ
+ * reindexFocusAfterFieldCountChange で輪の中の焦点を指し直す。
  */
 function applyChoiceToFields(
   state: NumericInputState,
@@ -932,7 +964,11 @@ function applyChoiceToFields(
   }
   const definitions = solidFieldDefinitionsFor(state.step, choices);
   const fields = mergeFieldValues(state.fields, definitions);
-  return { ...state, choices, fields };
+  const focusedIndex =
+    fields.length === state.fields.length
+      ? state.focusedIndex
+      : reindexFocusAfterFieldCountChange(state, fields.length);
+  return { ...state, choices, fields, focusedIndex };
 }
 
 /** 欄の操作を 1 つ受けて次の状態を返す。副作用を持たないのでそのまま検査できる。 */

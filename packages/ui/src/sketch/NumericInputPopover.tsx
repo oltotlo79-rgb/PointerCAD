@@ -419,10 +419,11 @@ export function NumericInputPopover({
             choiceRefs.current[choiceIndex] = element;
           }}
           onSelect={(value) => {
-            updateAndFocus(
-              chooseNumericInput(state, choice.key, value),
-              state.fields.length + choiceIndex,
-            );
+            // 選んだ後の欄の数で焦点位置を数える。C面取りは「等距離」で欄が1つに
+            // 減る(numericInput.ts の chamferFieldDefinitions)ため、選ぶ前の
+            // state.fields.length を使うと輪の位置がずれる。
+            const next = chooseNumericInput(state, choice.key, value);
+            updateAndFocus(next, next.fields.length + choiceIndex);
           }}
         />
       ))}

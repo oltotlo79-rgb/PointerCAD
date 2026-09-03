@@ -77,14 +77,19 @@ const BODY: SolidBodyWithSubShapes = {
   faces: [face(0, 0, 2), face(1, 2, 2)],
   edges: [edge(0, 0, 1, [0, 0, 0], [10, 0, 0]), edge(1, 1, 1, [10, 0, 0], [10, 10, 0])],
   vertices: [vertex(0, [0, 0, 0]), vertex(1, [10, 0, 0]), vertex(2, [10, 10, 0])],
+  threadMarks: [],
 };
 
-/** 部分形状の一覧を持たない(タスク17 前の)ボディ。強調は何も描かない。 */
+/** 部分形状の一覧が空のボディ。強調は何も描かない。 */
 const BODY_WITHOUT_SUB_SHAPES: SolidBodyWithSubShapes = {
   featureId: 'revolve-1',
   mesh: BODY.mesh,
   volume: 500,
   isValid: true,
+  faces: [],
+  edges: [],
+  vertices: [],
+  threadMarks: [],
 };
 
 /** 4 辺が輪になって隣どうしで頂点を共有する正方形(§0.a-0.23-⑩ の重複除去の検査用)。 */
@@ -107,6 +112,7 @@ const SQUARE: SolidBodyWithSubShapes = {
     edge(3, 0, 0, [0, 10, 0], [0, 0, 0]),
   ],
   vertices: [],
+  threadMarks: [],
 };
 
 describe('buildSubShapeGeometry(FR-105、FR-106、§0.a-0.7)', () => {

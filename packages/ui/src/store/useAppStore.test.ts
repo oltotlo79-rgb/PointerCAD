@@ -130,6 +130,11 @@ function bodyFor(featureId: string): SolidBody {
     },
     volume: 6000,
     isValid: true,
+    // P3 タスク17 で SolidBody に必須で足された欄。この検査では中身を使わない。
+    faces: [],
+    edges: [],
+    vertices: [],
+    threadMarks: [],
   };
 }
 

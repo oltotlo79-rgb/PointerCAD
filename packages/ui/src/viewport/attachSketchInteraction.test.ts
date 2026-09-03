@@ -111,9 +111,10 @@ describe('toSubShapeBodies', () => {
     ],
     edges: [],
     vertices: [],
+    threadMarks: [],
   };
 
-  /** タスク17 が届く前の model.SolidBody(faces / edges / vertices が無い)を模す。 */
+  /** 面・辺の一覧が無い(押し出し等、部分形状が空の)ボディ。空の一覧として詰め替わる。 */
   const withoutSubShapes: SolidBodyWithSubShapes = {
     featureId: 'extrude-1',
     mesh: {
@@ -125,6 +126,10 @@ describe('toSubShapeBodies', () => {
     },
     volume: 1,
     isValid: true,
+    faces: [],
+    edges: [],
+    vertices: [],
+    threadMarks: [],
   };
 
   it('faces / edges / vertices をそのまま持ち越す', () => {
@@ -136,7 +141,7 @@ describe('toSubShapeBodies', () => {
     expect(result.vertices).toEqual([]);
   });
 
-  it('faces / edges / vertices が無いボディは空の一覧として詰め替える(タスク17 が届く前の橋渡し)', () => {
+  it('部分形状の一覧が空のボディは空の一覧として詰め替える', () => {
     const [result] = toSubShapeBodies([withoutSubShapes]);
     expect(result.featureId).toBe('extrude-1');
     expect(result.faces).toEqual([]);

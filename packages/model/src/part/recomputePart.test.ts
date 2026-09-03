@@ -2,6 +2,8 @@ import { evaluateExpression, type ExpressionValue } from '@pointercad/expression
 import { describe, expect, it, vi, type Mock } from 'vitest';
 
 import {
+  createKernelHealth,
+  KERNEL_BROKEN_MESSAGE,
   toSolidOutcome,
   toSolidStepRequest,
   type KernelBridge,
@@ -27,7 +29,7 @@ import type {
 } from '../sketch/types.js';
 import { appendSolid, createEmptyPartDocument, replaceSketch } from './createPartDocument.js';
 import { recomputePart } from './recomputePart.js';
-import { resolvePart, type ResolvedSolidStep } from './resolvePart.js';
+import { resolvePart, type ResolvedSolidStep, type SubShapeQueryPlan } from './resolvePart.js';
 import type {
   BooleanFeature,
   BooleanOperation,
@@ -106,6 +108,12 @@ function solidBody(featureId: string, volume = 12000): SolidBody {
     },
     volume,
     isValid: true,
+    // P3 タスク17 で SolidBody に必須で足された欄。ここでは中身を使わない検査ばかりなので
+    // 空配列で埋める(kernelBody と同じ考え方)。
+    faces: [],
+    edges: [],
+    vertices: [],
+    threadMarks: [],
   };
 }
 
@@ -114,9 +122,10 @@ function solidBody(featureId: string, volume = 12000): SolidBody {
  * 型の名前を model のテストへ持ち込まないよう、構造だけで書く。
  *
  * faces / edges / vertices / threadMarks は P3 タスク10 で SolidBodyMesh へ足された欄
- * (計画書 §2.8)。ここでは中身を使わない検査ばかりなので空配列で埋めておき、
- * kernelBridge.ts が実物の一覧を詰め替えるようになるタスク17 で、
- * 必要になった検査だけ中身のある値へ差し替える。
+ * (計画書 §2.8)。ここでは中身を使わない検査ばかりなので空配列で埋めておく。
+ * 中身のある一覧が SolidBody へそのまま写ることは、この関数を使わない
+ * 「faces / edges / vertices / threadMarks を model の言葉へそのまま写す」検査(タスク17)で
+ * 個別に固定する。
  */
 function kernelBody(id: string, volume: number, triangleCount = 12) {
   return {
@@ -681,6 +690,273 @@ describe('段の詰め替え', () => {
       distance: 4,
     });
   });
+
+  // -------------------------------------------------------------------------
+  // 加工フィーチャーの詰め替え(P3 計画書 §2.4.2、§2.8、タスク17)。
+  // -------------------------------------------------------------------------
+
+  /** 面の指紋(SubShapeQueryPlan)を1つ組み立てる。bodyFeatureId は kernel へ渡らない。 */
+  function faceRef(index: number): SubShapeQueryPlan {
+    return {
+      bodyFeatureId: 'extrude-1',
+      index,
+      fingerprint: {
+        kind: 'face',
+        surfaceKind: 'plane',
+        area: 1200,
+        position: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: null,
+      },
+    };
+  }
+
+  /** 辺の指紋を1つ組み立てる。番号だけを変えて並びの検査に使う。 */
+  function edgeRef(index: number): SubShapeQueryPlan {
+    return {
+      bodyFeatureId: 'extrude-1',
+      index,
+      fingerprint: {
+        kind: 'edge',
+        curveKind: 'line',
+        length: 10,
+        position: [0, 0, index],
+        axis: [0, 0, 1],
+        radius: null,
+      },
+    };
+  }
+
+  it('穴の欄を詰め替える。指紋は bodyFeatureId を落として kernel の形へ写る(FR-405)', () => {
+    const request = toSolidStepRequest({
+      featureId: 'hole-1',
+      name: '穴1',
+      key: 'key-hole-1',
+      visible: true,
+      plan: {
+        kind: 'hole',
+        targetKey: 'key-extrude-1',
+        face: faceRef(3),
+        centers: [
+          [10, 10, 10],
+          [30, 10, 10],
+        ],
+        diameter: 6,
+        depth: 8,
+        tiltAngle: 0.1,
+        tiltAzimuth: 0.2,
+        transforms: [],
+      },
+    });
+
+    expect(request.step).toEqual({
+      kind: 'hole',
+      targetKey: 'key-extrude-1',
+      face: {
+        kind: 'face',
+        index: 3,
+        surfaceKind: 'plane',
+        area: 1200,
+        position: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: null,
+      },
+      centers: [
+        [10, 10, 10],
+        [30, 10, 10],
+      ],
+      diameter: 6,
+      depth: 8,
+      tiltAngle: 0.1,
+      tiltAzimuth: 0.2,
+      transforms: [],
+    });
+  });
+
+  it('貫通穴は depth が null のまま渡る(§0.a-0.12)', () => {
+    const request = toSolidStepRequest({
+      featureId: 'hole-2',
+      name: '穴2',
+      key: 'key-hole-2',
+      visible: true,
+      plan: {
+        kind: 'hole',
+        targetKey: 'key-extrude-1',
+        face: faceRef(0),
+        centers: [[0, 0, 0]],
+        diameter: 6,
+        depth: null,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+      },
+    });
+
+    expect(request.step.kind).toBe('hole');
+    if (request.step.kind === 'hole') {
+      expect(request.step.depth).toBeNull();
+    }
+  });
+
+  it('ねじ穴は thread と mark をそのまま渡し、鍵専用の pitch は kernel へ渡らない(FR-406)', () => {
+    const request = toSolidStepRequest({
+      featureId: 'thread-1',
+      name: 'ねじ穴1',
+      key: 'key-thread-1',
+      visible: true,
+      plan: {
+        kind: 'thread',
+        targetKey: 'key-extrude-1',
+        face: faceRef(3),
+        centers: [[10, 10, 10]],
+        drillDiameter: 4.917468,
+        pitch: 1,
+        depth: null,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+        thread: { majorDiameter: 6, pitch: 1, length: 10 },
+        mark: { majorDiameter: 6, length: 10 },
+      },
+    });
+
+    expect(request.step).toEqual({
+      kind: 'thread',
+      targetKey: 'key-extrude-1',
+      face: {
+        kind: 'face',
+        index: 3,
+        surfaceKind: 'plane',
+        area: 1200,
+        position: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: null,
+      },
+      centers: [[10, 10, 10]],
+      drillDiameter: 4.917468,
+      depth: null,
+      tiltAngle: 0,
+      tiltAzimuth: 0,
+      transforms: [],
+      thread: { majorDiameter: 6, pitch: 1, length: 10 },
+      mark: { majorDiameter: 6, length: 10 },
+    });
+    // model 側だけが持つ pitch(鍵の材料用、resolvePart.ts の注釈)は kernel の欄に無い。
+    expect('pitch' in request.step).toBe(false);
+  });
+
+  it('簡略表示のねじ穴は thread が null のまま渡る(§0.a-0.15)', () => {
+    const request = toSolidStepRequest({
+      featureId: 'thread-2',
+      name: 'ねじ穴2',
+      key: 'key-thread-2',
+      visible: true,
+      plan: {
+        kind: 'thread',
+        targetKey: 'key-extrude-1',
+        face: faceRef(0),
+        centers: [[0, 0, 0]],
+        drillDiameter: 4.917468,
+        pitch: 1,
+        depth: 10,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+        thread: null,
+        mark: { majorDiameter: 6, length: 10 },
+      },
+    });
+
+    expect(request.step.kind).toBe('thread');
+    if (request.step.kind === 'thread') {
+      expect(request.step.thread).toBeNull();
+      expect(request.step.mark).toEqual({ majorDiameter: 6, length: 10 });
+    }
+  });
+
+  it('R面取りは targets の並びを保ったまま詰め替える(FR-407)', () => {
+    const request = toSolidStepRequest({
+      featureId: 'fillet-1',
+      name: 'R面取り1',
+      key: 'key-fillet-1',
+      visible: true,
+      plan: {
+        kind: 'fillet',
+        targetKey: 'key-extrude-1',
+        targets: [edgeRef(5), edgeRef(2), edgeRef(9)],
+        radius: 2,
+      },
+    });
+
+    expect(request.step.kind).toBe('fillet');
+    if (request.step.kind === 'fillet') {
+      expect(request.step.targets.map((target) => target.index)).toEqual([5, 2, 9]);
+      expect(request.step.targets[0]).toEqual({
+        kind: 'edge',
+        index: 5,
+        curveKind: 'line',
+        length: 10,
+        position: [0, 0, 5],
+        axis: [0, 0, 1],
+        radius: null,
+      });
+      expect(request.step.radius).toBe(2);
+    }
+  });
+
+  it('C面取りは size と swapReferenceFace をそのまま渡す(FR-408)', () => {
+    const request = toSolidStepRequest({
+      featureId: 'chamfer-1',
+      name: 'C面取り1',
+      key: 'key-chamfer-1',
+      visible: true,
+      plan: {
+        kind: 'chamfer',
+        targetKey: 'key-extrude-1',
+        targets: [edgeRef(1), edgeRef(4)],
+        size: { kind: 'twoDistances', distance1: 1, distance2: 2 },
+        swapReferenceFace: true,
+      },
+    });
+
+    expect(request.step.kind).toBe('chamfer');
+    if (request.step.kind === 'chamfer') {
+      expect(request.step.targets.map((target) => target.index)).toEqual([1, 4]);
+      expect(request.step.size).toEqual({ kind: 'twoDistances', distance1: 1, distance2: 2 });
+      expect(request.step.swapReferenceFace).toBe(true);
+    }
+  });
+
+  it('ばねは対象を持たないので targetKey が無い(§0.36)', () => {
+    const request = toSolidStepRequest({
+      featureId: 'spring-1',
+      name: 'ばね1',
+      key: 'key-spring-1',
+      visible: true,
+      plan: {
+        kind: 'spring',
+        origin: [0, 0, 0],
+        direction: [0, 0, 1],
+        coilDiameter: 20,
+        wireDiameter: 2,
+        pitch: 5,
+        turns: 4,
+        handedness: 'right',
+      },
+    });
+
+    expect(request.step).toEqual({
+      kind: 'spring',
+      origin: [0, 0, 0],
+      direction: [0, 0, 1],
+      coilDiameter: 20,
+      wireDiameter: 2,
+      pitch: 5,
+      turns: 4,
+      handedness: 'right',
+    });
+    expect('targetKey' in request.step).toBe(false);
+  });
 });
 
 describe('結果の詰め替え', () => {
@@ -720,6 +996,103 @@ describe('結果の詰め替え', () => {
     });
 
     expect(outcome.bodies[0].isValid).toBe(false);
+  });
+
+  it('faces / edges / vertices / threadMarks を model の言葉へそのまま写す(§2.8、タスク17)', () => {
+    const outcome = toSolidOutcome([visibleStep], {
+      bodies: [
+        {
+          id: 'extrude-1',
+          positions: new Float32Array([0, 0, 0, 40, 0, 0, 40, 30, 0]),
+          normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+          indices: new Uint32Array([0, 1, 2]),
+          edgePositions: new Float32Array([0, 0, 0, 40, 0, 0]),
+          triangleCount: 1,
+          // SolidBody.faces / edges の長さは kernel の faceCount / edgeCount と必ず一致する
+          // (計画書 §2.8)。ここでは長さ1の一覧を渡して一致を確かめる。
+          faceCount: 1,
+          edgeCount: 1,
+          volume: 12000,
+          faces: [
+            {
+              index: 0,
+              surfaceKind: 'plane',
+              area: 1200,
+              centroid: [20, 15, 10],
+              axis: [0, 0, 1],
+              radius: null,
+              triangleOffset: 0,
+              triangleCount: 1,
+            },
+          ],
+          edges: [
+            {
+              index: 0,
+              curveKind: 'line',
+              length: 40,
+              midpoint: [20, 0, 0],
+              start: [0, 0, 0],
+              end: [40, 0, 0],
+              axis: [1, 0, 0],
+              radius: null,
+              segmentOffset: 0,
+              segmentCount: 1,
+            },
+          ],
+          vertices: [{ index: 0, position: [0, 0, 0] }],
+          threadMarks: [{ origin: [0, 0, 0], direction: [0, 0, 1], majorDiameter: 6, length: 10 }],
+        },
+      ],
+      failures: [],
+      cacheHits: 0,
+      cancelled: false,
+    });
+
+    const body = outcome.bodies[0];
+    expect(body.faces).toEqual([
+      {
+        index: 0,
+        surfaceKind: 'plane',
+        area: 1200,
+        centroid: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: null,
+        triangleOffset: 0,
+        triangleCount: 1,
+      },
+    ]);
+    expect(body.edges).toEqual([
+      {
+        index: 0,
+        curveKind: 'line',
+        length: 40,
+        midpoint: [20, 0, 0],
+        start: [0, 0, 0],
+        end: [40, 0, 0],
+        axis: [1, 0, 0],
+        radius: null,
+        segmentOffset: 0,
+        segmentCount: 1,
+      },
+    ]);
+    expect(body.vertices).toEqual([{ index: 0, position: [0, 0, 0] }]);
+    expect(body.threadMarks).toEqual([
+      { origin: [0, 0, 0], direction: [0, 0, 1], majorDiameter: 6, length: 10 },
+    ]);
+    // SolidBody の一覧の長さが kernel の faceCount / edgeCount と一致する(計画書 §2.8)。
+    expect(body.faces).toHaveLength(1);
+    expect(body.edges).toHaveLength(1);
+  });
+
+  it('ねじの印が無ければ threadMarks は空配列のまま(§0.a-0.15)', () => {
+    const outcome = toSolidOutcome([visibleStep], {
+      bodies: [kernelBody('extrude-1', 12000)],
+      failures: [],
+      cacheHits: 0,
+      cancelled: false,
+    });
+
+    expect(outcome.bodies[0].threadMarks).toEqual([]);
   });
 
   it('カーネルの失敗を featureId つきで持ち回る(FR-504)', () => {
@@ -769,5 +1142,168 @@ describe('結果の詰め替え', () => {
 
     expect(outcome.failures).toEqual([]);
     expect(outcome.cancelled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Worker の健康状態(kernelBridge.ts の createKernelHealth、§2.9、§0.a-0.19)。
+// Worker そのものは Node で起動できないので、判断のロジックだけを検査する
+// (docs/報告記録.md 2026-09-02 14:50 の④「Worker の実動作は Node では確かめられない」)。
+// ---------------------------------------------------------------------------
+
+describe('createKernelHealth(Worker が壊れたかどうかの状態機械)', () => {
+  it('初期状態は壊れていない', () => {
+    expect(createKernelHealth().broken).toBe(false);
+  });
+
+  it('markBroken を呼ぶと broken が true になる', () => {
+    const health = createKernelHealth();
+    health.markBroken();
+    expect(health.broken).toBe(true);
+  });
+
+  it('reset を呼ぶと broken が false に戻る(Worker を作り直したことにする)', () => {
+    const health = createKernelHealth();
+    health.markBroken();
+    health.reset();
+    expect(health.broken).toBe(false);
+  });
+
+  it('reset の後にもう一度 markBroken すれば再び壊れた状態になる', () => {
+    const health = createKernelHealth();
+    health.markBroken();
+    health.reset();
+    health.markBroken();
+    expect(health.broken).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// missingSubShape への詰め替え(recomputePart.ts の solidKernelFailed、§0.a-0.5、§2.2.5)。
+// ---------------------------------------------------------------------------
+
+describe('missingSubShape への詰め替え(加工するもとの面・辺が見つからない失敗)', () => {
+  it('穴が「もとの面が見つかりません」で失敗したら missingSubShape に詰め替える', async () => {
+    const { document } = oneExtrude();
+    const result = await recomputePart(
+      document,
+      fakeBridge({
+        recomputeSolids: () =>
+          Promise.resolve({
+            bodies: [],
+            failures: [
+              {
+                featureId: 'extrude-1',
+                message:
+                  '穴をあけるもとの面が見つかりません。形が大きく変わったため、選び直してください。',
+              },
+            ],
+            cacheHits: 0,
+            cancelled: false,
+          }),
+      }),
+    );
+
+    expect(result.errors).toEqual([
+      {
+        featureId: 'extrude-1',
+        code: 'missingSubShape',
+        message: '穴をあけるもとの面が見つかりません。形が大きく変わったため、選び直してください。',
+      },
+    ]);
+  });
+
+  it('R面取りが「もとの辺が見つかりません」で失敗したら missingSubShape に詰め替える', async () => {
+    const { document } = oneExtrude();
+    const result = await recomputePart(
+      document,
+      fakeBridge({
+        recomputeSolids: () =>
+          Promise.resolve({
+            bodies: [],
+            failures: [
+              {
+                featureId: 'extrude-1',
+                message:
+                  '丸めるもとの辺が見つかりません。形が大きく変わったため、選び直してください。',
+              },
+            ],
+            cacheHits: 0,
+            cancelled: false,
+          }),
+      }),
+    );
+
+    expect(result.errors[0].code).toBe('missingSubShape');
+  });
+
+  it('C面取りが「もとの辺が見つかりません」で失敗したら missingSubShape に詰め替える', async () => {
+    const { document } = oneExtrude();
+    const result = await recomputePart(
+      document,
+      fakeBridge({
+        recomputeSolids: () =>
+          Promise.resolve({
+            bodies: [],
+            failures: [
+              {
+                featureId: 'extrude-1',
+                message:
+                  '面を取るもとの辺が見つかりません。形が大きく変わったため、選び直してください。',
+              },
+            ],
+            cacheHits: 0,
+            cancelled: false,
+          }),
+      }),
+    );
+
+    expect(result.errors[0].code).toBe('missingSubShape');
+  });
+
+  it('「見つかりません」を含んでいても missingSubShape の言い回しでなければ kernelFailed のまま(誤判定防止)', async () => {
+    const { document } = oneExtrude();
+    const result = await recomputePart(
+      document,
+      fakeBridge({
+        recomputeSolids: () =>
+          Promise.resolve({
+            bodies: [],
+            failures: [
+              { featureId: 'extrude-1', message: 'もとになる立体が見つかりませんでした。' },
+            ],
+            cacheHits: 0,
+            cancelled: false,
+          }),
+      }),
+    );
+
+    expect(result.errors).toEqual([
+      {
+        featureId: 'extrude-1',
+        code: 'kernelFailed',
+        message: 'もとになる立体が見つかりませんでした。',
+      },
+    ]);
+  });
+
+  it('Worker が壊れたときの理由(KERNEL_BROKEN_MESSAGE)は kernelFailed のまま(§2.9)', async () => {
+    const { document } = oneExtrude();
+    const result = await recomputePart(
+      document,
+      fakeBridge({
+        recomputeSolids: () =>
+          Promise.resolve({
+            bodies: [],
+            failures: [{ featureId: 'extrude-1', message: KERNEL_BROKEN_MESSAGE }],
+            cacheHits: 0,
+            cancelled: false,
+          }),
+      }),
+    );
+
+    expect(result.errors).toEqual([
+      { featureId: 'extrude-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE },
+    ]);
   });
 });

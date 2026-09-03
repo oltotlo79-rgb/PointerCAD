@@ -47,6 +47,11 @@ function makeBody(
     },
     volume: 1000,
     isValid,
+    // P3 タスク17 で SolidBody に必須で足された欄。この検査では中身を使わない。
+    faces: [],
+    edges: [],
+    vertices: [],
+    threadMarks: [],
   };
 }
 

@@ -97,11 +97,13 @@ export interface ViewportScene {
 }
 
 /**
- * ねじの印(threadMarks)を持つボディ。model の `SolidBody` にタスク17(橋渡しの拡張)で
- * 欄が届くまでの橋渡し(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes` と同じ考え方、§7)。
+ * ねじの印(threadMarks)を持つボディ。`SolidBody` はタスク17(橋渡しの拡張)で
+ * この欄を必須で持つようになったので、ここでは呼び出し側の型を示すために
+ * 同じ欄をそのまま再宣言している(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes` と
+ * 同じ考え方、§7)。
  */
 interface SolidBodyWithThreadMarks extends SolidBody {
-  readonly threadMarks?: readonly ThreadMarkInfo[];
+  readonly threadMarks: readonly ThreadMarkInfo[];
 }
 
 /** ボディの一覧からねじの印だけを 1 本にまとめる(§0.a-0.15)。 */

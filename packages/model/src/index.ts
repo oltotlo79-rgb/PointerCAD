@@ -1,6 +1,9 @@
 export {
   createKernelBridge,
+  createKernelHealth,
+  KERNEL_BROKEN_MESSAGE,
   type KernelBridge,
+  type KernelHealth,
   type PartCancelToken,
   type PartProgress,
   type PartProgressCallback,
@@ -9,8 +12,12 @@ export {
   type SolidBody,
   type SolidBodyFailure,
   type SolidBodyMeshData,
+  type SolidEdgeEntry,
+  type SolidFaceEntry,
   type SolidRecomputeOptions,
   type SolidRecomputeOutcome,
+  type SolidVertexEntry,
+  type ThreadMarkEntry,
 } from './kernelBridge.js';
 export type { Vec3 } from './sketch/vec3.js';
 export {
@@ -72,15 +79,21 @@ export {
   setActiveSketch, SOLID_LABELS,
 } from './part/createPartDocument.js';
 export type {
-  BooleanKeyMaterial, ExtrudeKeyMaterial, KeyArc, KeyCurve, KeySegment, KeyVec3,
-  RevolveKeyMaterial, SewKeyMaterial, SolidStepKeyMaterial,
+  BooleanKeyMaterial, ChamferKeyMaterial, ExtrudeKeyMaterial, FilletKeyMaterial, HoleKeyMaterial,
+  KeyArc, KeyCurve, KeySegment, KeySubShape, KeyTransform, KeyVec3, RevolveKeyMaterial,
+  SewKeyMaterial, SolidStepKeyMaterial, SpringKeyMaterial, ThreadKeyMaterial,
 } from './part/cacheKey.js';
 export { cacheKeyFor, hash64, KEY_DECIMALS } from './part/cacheKey.js';
 export type {
-  PartError, PartErrorCode, ResolvedPart, ResolvedPartSketch, ResolvedSolidStep,
-  RevolveAxisFrame, SolidStepPlan,
+  HoleCentersOutcome, MachiningTargetOutcome, PartError, PartErrorCode, ResolvedPart,
+  ResolvedPartSketch, ResolvedSolidStep, RevolveAxisFrame, RigidTransform, SolidStepPlan,
+  SubShapeQueryPlan,
 } from './part/resolvePart.js';
-export { resolvePart, resolveRevolveAxis, translateCurve } from './part/resolvePart.js';
+export {
+  resolveHoleCenters, resolveMachiningTarget, resolvePart, resolvePatternTransforms,
+  resolveRevolveAxis, resolveSpringLength, resolveSpringOrigin, resolveTiltedDirection,
+  translateCurve,
+} from './part/resolvePart.js';
 export type {
   PartRecomputeError, PartRecomputeOptions, PartRecomputeResult, PartSketchResult,
 } from './part/recomputePart.js';

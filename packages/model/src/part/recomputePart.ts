@@ -20,7 +20,7 @@ import type {
   SolidBody,
 } from '../kernelBridge.js';
 import type { ResolvedSketch, SketchError, SketchMesh } from '../sketch/types.js';
-import { resolvePart, type PartError } from './resolvePart.js';
+import { resolvePart, type PartError, type PartErrorCode } from './resolvePart.js';
 import type { PartDocument } from './types.js';
 
 /**
@@ -72,11 +72,25 @@ function sketchKernelFailed(featureId: string, message: string): SketchError {
 }
 
 /**
+ * カーネルの「加工するもとの面(辺)が見つかりません」の失敗を見分ける目印(P3 §2.4.2.5、
+ * §0.a-0.5)。kernel の `SolidStepFailure` は `message` しか持たないので、
+ * `makeHole.ts` / `makeFillet.ts` / `makeChamfer.ts` が共通で使うこの語尾を手がかりに
+ * `missingSubShape` へ詰め替える(コミット済みの実装を Grep して、この語尾を使う失敗が
+ * 他に無いことを確認済み。計画書の例文とは前置き部分が食い違うが、実装を正とする)。
+ */
+const MISSING_SUB_SHAPE_SUFFIX = '形が大きく変わったため、選び直してください。';
+
+/**
  * 立体を作れなかったとき。段ごとの理由はカーネルが利用者向けの日本語で返すので、
  * そのまま見せる(docs/報告記録.md 2026-09-02 22:10 の②「橋渡しは失敗理由を捨てない」)。
+ * `missingSubShape` かどうかは文言で見分ける(P3 タスク17。§2.2.4「選び直しはカーネルの
+ * 中で行う」ため、kernel の SolidStepFailure は理由の区別を code では持たない)。
  */
 function solidKernelFailed(featureId: string, message: string): PartError {
-  return { featureId, code: 'kernelFailed', message };
+  const code: PartErrorCode = message.includes(MISSING_SUB_SHAPE_SUFFIX)
+    ? 'missingSubShape'
+    : 'kernelFailed';
+  return { featureId, code, message };
 }
 
 /**

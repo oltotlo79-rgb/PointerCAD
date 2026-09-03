@@ -24,16 +24,15 @@ export type SolidEmphasis = 'none' | 'hovered' | 'selected';
 /**
  * 部分形状の一覧を持つボディ(計画書タスク22)。
  *
- * `faces` / `edges` / `vertices` は本来カーネル(タスク10)が返し、`SolidBody` 本体に
- * 添うのはタスク17。このタスクの着手時点ではまだ届いていないので**任意の欄**にしておき、
- * 無いボディは部分形状の一覧が空として扱う(強調を描かない)。タスク17 で `SolidBody` に
- * これらの欄が必須で加わったら、この型は消して `SolidBody` をそのまま使ってよい
+ * `faces` / `edges` / `vertices` はタスク17 で `SolidBody` 本体に必須の欄として届くように
+ * なった(model/src/kernelBridge.ts)。この型は「部分形状の一覧を持つボディ」であることを
+ * 呼び出し側の型で示すために残しているだけで、`SolidBody` と同じ欄をそのまま再宣言している
  * (`SolidBody` は構造的にこの型を満たすので、呼び出し側の詰め替えは要らない)。
  */
 export interface SolidBodyWithSubShapes extends SolidBody {
-  readonly faces?: readonly SolidFaceEntry[];
-  readonly edges?: readonly SolidEdgeEntry[];
-  readonly vertices?: readonly SolidVertexEntry[];
+  readonly faces: readonly SolidFaceEntry[];
+  readonly edges: readonly SolidEdgeEntry[];
+  readonly vertices: readonly SolidVertexEntry[];
 }
 
 /** ボディ 1 つぶんの描画データ。並びはカーネルが返したものをそのまま指す(写さない)。 */

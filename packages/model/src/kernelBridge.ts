@@ -1,5 +1,6 @@
 /**
- * model から幾何カーネルへの唯一の接点(計画書 docs/plans/P1-式とスケッチ.md タスク12)。
+ * model から幾何カーネルへの唯一の接点(計画書 docs/plans/P1-式とスケッチ.md タスク12、
+ * docs/plans/P3-加工フィーチャー.md タスク17)。
  *
  * @pointercad/kernel の型はこのファイルの中だけで使い、外へは model の型で返す
  * (P0 §0.11、rules/04-設計の規律.md の依存方向)。ここ以外から kernel を呼ばない。
@@ -18,11 +19,14 @@ import {
   type SolidRecomputeResult,
   type SolidStepRequest,
   type SolidStepSpec,
+  type SubShapeQuery,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
 
-import type { ResolvedSolidStep, SolidStepPlan } from './part/resolvePart.js';
+import type { ResolvedSolidStep, SolidStepPlan, SubShapeQueryPlan } from './part/resolvePart.js';
+import type { EdgeCurveKind, FaceSurfaceKind } from './part/types.js';
 import type { ResolvedCurve, ResolvedFace, SketchFaceMesh, SketchMesh } from './sketch/types.js';
+import type { Vec3 } from './sketch/vec3.js';
 
 /** 面 1 枚を作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
 export interface SketchFaceFailure {
@@ -53,6 +57,64 @@ export interface SolidBodyMeshData {
   readonly triangleCount: number;
 }
 
+/**
+ * 面 1 枚の素性(計画書 P3 §2.2、§2.8)。部分形状の当たり判定・強調・指紋の材料になる。
+ * kernel の `SolidFaceInfo` と同じ形だが、model は kernel の型を再輸出しないので
+ * この場に自分の型として持つ(P0 §0.11)。
+ */
+export interface SolidFaceEntry {
+  /** `TopExp.MapShapes_2` の順で数えた 0 始まりの通し番号。 */
+  readonly index: number;
+  readonly surfaceKind: FaceSurfaceKind;
+  /** 面積(mm²)。 */
+  readonly area: number;
+  /** 重心(mm)。 */
+  readonly centroid: Vec3;
+  /** 平面は法線、円柱・円錐は軸。求まらなければ null。 */
+  readonly axis: Vec3 | null;
+  /** 円柱・円錐・球の半径(mm)。平面では null。 */
+  readonly radius: number | null;
+  /** この面の三角形が mesh.indices の何番目から何枚あるか。 */
+  readonly triangleOffset: number;
+  readonly triangleCount: number;
+}
+
+/** 辺 1 本の素性。並びは面と同じく通し番号の順(計画書 P3 §2.2、§2.8)。 */
+export interface SolidEdgeEntry {
+  readonly index: number;
+  readonly curveKind: EdgeCurveKind;
+  /** 長さ(mm)。 */
+  readonly length: number;
+  /** 中点(mm)。 */
+  readonly midpoint: Vec3;
+  readonly start: Vec3;
+  readonly end: Vec3;
+  /** 直線は向き、円は軸。求まらなければ null。 */
+  readonly axis: Vec3 | null;
+  /** 円の半径(mm)。それ以外は null。 */
+  readonly radius: number | null;
+  /** この辺の線分が mesh.edgePositions の何番目から何本あるか。 */
+  readonly segmentOffset: number;
+  readonly segmentCount: number;
+}
+
+/** 頂点 1 つの素性。位置しか持たない(計画書 P3 §2.2、§2.8)。 */
+export interface SolidVertexEntry {
+  readonly index: number;
+  readonly position: Vec3;
+}
+
+/**
+ * ねじの簡略表示の印(§0.a-0.15)。B-rep には現れない、描画だけのための情報。
+ * 下穴は実際に掘るが、ねじ山は形を作らずに細い円と軸線で表すので、再計算の費用がかからない。
+ */
+export interface ThreadMarkEntry {
+  readonly origin: Vec3;
+  readonly direction: Vec3;
+  readonly majorDiameter: number;
+  readonly length: number;
+}
+
 /** 画面に出るボディ 1 つ。id はそれを作ったフィーチャーの id と同じ(§0.a-0.5)。 */
 export interface SolidBody {
   readonly featureId: string;
@@ -67,6 +129,17 @@ export interface SolidBody {
    * 表示側が「形は返ったが中身が無い」を毎回自分で確かめずに済ませるため(FR-504、NFR-RE-1)。
    */
   readonly isValid: boolean;
+  /**
+   * 部分形状(面・辺・頂点)の一覧(計画書 P3 §2.2、§2.8、タスク10・17)。並びは通し番号の順で、
+   * `faces.length` / `edges.length` は必ずカーネルの `faceCount` / `edgeCount` と一致する
+   * (kernel 側の buildSolidBodyMesh・subShapes.ts が保証し、本ファイルの検査で固定する)。
+   * 加工フィーチャー(穴・面取り等)が保存する `SubShapeRef` の指紋は、この一覧から作る。
+   */
+  readonly faces: readonly SolidFaceEntry[];
+  readonly edges: readonly SolidEdgeEntry[];
+  readonly vertices: readonly SolidVertexEntry[];
+  /** ねじの簡略表示の印(§0.a-0.15)。無ければ空配列。 */
+  readonly threadMarks: readonly ThreadMarkEntry[];
 }
 
 /** 立体を 1 つ作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
@@ -125,6 +198,11 @@ export interface KernelBridge {
   /**
    * 解決済みの段を履歴順にカーネルへ渡し、表示用のボディを受け取る(FR-401〜404、要件§6.3)。
    * 文書が変わったときだけ呼ぶ。ホバー・選択・視点操作では呼ばない(§2.4)。
+   *
+   * Worker が壊れて応答しなくなったときは例外を投げず、進行中の依頼を
+   * `KERNEL_BROKEN_MESSAGE` の失敗として解決する(§2.9、NFR-RE-1「止めずに警告する」)。
+   * 次にこの関数を呼んだときは Worker を作り直してから依頼を出す。作り直すと
+   * 形状キャッシュが空になるので、次の再計算は全段作り直しになる(遅くなるが落ちない)。
    */
   recomputeSolids(
     steps: readonly ResolvedSolidStep[],
@@ -155,16 +233,51 @@ export function toFaceRequest(face: ResolvedFace): PlanarFaceRequest {
 }
 
 /**
- * まだ橋渡しを書いていない段の種類の理由(P3 タスク15 の暫定)。
- * resolvePart.ts の同じ文言と揃えてある(利用者には同じ意味に見えるため)。
+ * 部分形状の指紋を kernel の言葉(`SubShapeQuery`)へ詰め替える(§2.4.2、§2.8、タスク17 手順3)。
+ *
+ * model の `SubShapeQueryPlan`(= `SubShapeRef`)は「そのボディを作ったフィーチャーの id」
+ * (`bodyFeatureId`)を持つが、カーネルは段の対象(targetKey で指したボディ)の中だけを
+ * 探すのでその id は要らない。`fingerprint` に包まれた欄をカーネルの平らな形へ展開する。
+ * `as` は使わず、種類ごとに手で組む(fingerprint.kind で分岐し、各節を return で閉じる)。
  */
-const UNSUPPORTED_STEP_MESSAGE = 'この種類の立体はまだ計算できません。';
+function toSubShapeQuery(reference: SubShapeQueryPlan): SubShapeQuery {
+  const { index, fingerprint } = reference;
+  switch (fingerprint.kind) {
+    case 'face':
+      return {
+        kind: 'face',
+        index,
+        surfaceKind: fingerprint.surfaceKind,
+        area: fingerprint.area,
+        position: fingerprint.position,
+        axis: fingerprint.axis,
+        radius: fingerprint.radius,
+      };
+    case 'edge':
+      return {
+        kind: 'edge',
+        index,
+        curveKind: fingerprint.curveKind,
+        length: fingerprint.length,
+        position: fingerprint.position,
+        axis: fingerprint.axis,
+        radius: fingerprint.radius,
+      };
+    case 'vertex':
+      return { kind: 'vertex', index, position: fingerprint.position };
+  }
+}
 
 /**
  * 解決済みの 1 段の作り方をカーネルの言葉へ直す。
  * 向き・反転・両側の平行移動・角度の度→ラジアンは resolvePart が済ませてあるので、
- * ここでやるのは欄の名前を合わせることと、曲線を CurveSpec へ直すことだけ。
+ * ここでやるのは欄の名前を合わせることと、曲線・指紋を kernel の形へ直すことだけ。
  * 各節は return で閉じる(no-fallthrough)。
+ *
+ * 穴・ねじ穴・R面取り・C面取り・ばねの欄(`centers` / `transforms` / `thread` / `mark` / `size` 等)は
+ * model 側の型(resolvePart.ts の `SolidStepPlan`)と kernel 側の型(kernel/src/types.ts の
+ * `HoleStepSpec` 等)で欄の名前と形をそろえてあるので、指紋(`face` / `targets`)だけ
+ * `toSubShapeQuery` で詰め替え、残りはそのまま渡す(タスク17 手順3)。
  */
 function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
   switch (plan.kind) {
@@ -197,16 +310,58 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         toolKey: plan.toolKey,
       };
     case 'hole':
+      return {
+        kind: 'hole',
+        targetKey: plan.targetKey,
+        face: toSubShapeQuery(plan.face),
+        centers: plan.centers,
+        diameter: plan.diameter,
+        depth: plan.depth,
+        tiltAngle: plan.tiltAngle,
+        tiltAzimuth: plan.tiltAzimuth,
+        transforms: plan.transforms,
+      };
     case 'thread':
-    case 'spring':
+      return {
+        kind: 'thread',
+        targetKey: plan.targetKey,
+        face: toSubShapeQuery(plan.face),
+        centers: plan.centers,
+        drillDiameter: plan.drillDiameter,
+        depth: plan.depth,
+        tiltAngle: plan.tiltAngle,
+        tiltAzimuth: plan.tiltAzimuth,
+        transforms: plan.transforms,
+        thread: plan.thread,
+        mark: plan.mark,
+      };
     case 'fillet':
+      return {
+        kind: 'fillet',
+        targetKey: plan.targetKey,
+        targets: plan.targets.map((target) => toSubShapeQuery(target)),
+        radius: plan.radius,
+      };
     case 'chamfer':
-      // P3 タスク15・15b・16 が resolvePart へ穴・ねじ穴・ばね・R面取り・C面取りの段を足したが、
-      // kernel 側の SolidStepSpec にはまだこれらの段が無い(kernel タスク10 で入る)ため、詰め替えを
-      // ここに書けない。この節は型を網羅させるためだけの暫定で、**タスク17 が本実装へ置き換える。**
-      // 投げた理由は recomputePart.ts が受け止めて kernelFailed へ詰め替えるので、
-      // アプリは落ちない(FR-504、NFR-RE-1)。
-      throw new Error(UNSUPPORTED_STEP_MESSAGE);
+      return {
+        kind: 'chamfer',
+        targetKey: plan.targetKey,
+        targets: plan.targets.map((target) => toSubShapeQuery(target)),
+        size: plan.size,
+        swapReferenceFace: plan.swapReferenceFace,
+      };
+    case 'spring':
+      // ばねは対象ボディを持たない(§0.36)ので targetKey が無い。
+      return {
+        kind: 'spring',
+        origin: plan.origin,
+        direction: plan.direction,
+        coilDiameter: plan.coilDiameter,
+        wireDiameter: plan.wireDiameter,
+        pitch: plan.pitch,
+        turns: plan.turns,
+        handedness: plan.handedness,
+      };
   }
 }
 
@@ -227,7 +382,12 @@ export function toSolidStepRequest(step: ResolvedSolidStep): SolidStepRequest {
 /** 立体が消えたとき(画面に出すはずの段の結果も理由も返らなかったとき)に付ける理由。 */
 const MISSING_BODY_MESSAGE = 'カーネルから立体が返りませんでした。';
 
-/** カーネルの結果を model のボディへ詰め替える。妥当性の判定は SolidBody.isValid の注釈のとおり。 */
+/**
+ * カーネルの結果を model のボディへ詰め替える。妥当性の判定は SolidBody.isValid の注釈のとおり。
+ * `faces` / `edges` / `vertices` / `threadMarks` は kernel の一覧と欄の名前・形が同じなので
+ * (計画書 §2.8)、詰め替えは配列をそのまま渡すだけで済む(model 独自の型として持つのは
+ * `SolidFaceEntry` 等の型そのものを kernel から再輸出しないためで、値の変形は要らない)。
+ */
 function toSolidBody(mesh: SolidBodyMesh): SolidBody {
   return {
     featureId: mesh.id,
@@ -240,6 +400,10 @@ function toSolidBody(mesh: SolidBodyMesh): SolidBody {
     },
     volume: mesh.volume,
     isValid: mesh.triangleCount > 0 && Number.isFinite(mesh.volume) && mesh.volume > 0,
+    faces: mesh.faces,
+    edges: mesh.edges,
+    vertices: mesh.vertices,
+    threadMarks: mesh.threadMarks,
   };
 }
 
@@ -345,19 +509,123 @@ function toOutcome(
   return { mesh: { faces: built }, failures: collected };
 }
 
-/** Web Worker 内の幾何カーネルへつなぐ。ブラウザ・Electron のレンダラでのみ使える。 */
-export function createKernelBridge(): KernelBridge {
+/**
+ * Worker が壊れたときに利用者へ見せる理由(NFR-RE-1、§2.9、§0.a-0.19)。
+ * OCCT の C++ 側が `abort()` すると WASM ごと止まり、以後どの依頼にも応答しなくなる。
+ * この場合いまの再計算はやり直せないので、値を戻すよう案内する。
+ */
+export const KERNEL_BROKEN_MESSAGE =
+  'カーネルが止まりました。値を元に戻してから、もう一度お試しください。';
+
+/**
+ * Worker が壊れたかどうかを持つ小さな状態機械(§2.9)。
+ * Worker そのものには触れないので、実物の Worker を起動できない Node のテストからも
+ * 判断のロジックだけを確かめられる(docs/報告記録.md 2026-09-02 14:50 の④
+ * 「Worker の実動作は Node では確かめられない」)。
+ */
+export interface KernelHealth {
+  readonly broken: boolean;
+  markBroken(): void;
+  /** 作り直したことにする。 */
+  reset(): void;
+}
+
+export function createKernelHealth(): KernelHealth {
+  let broken = false;
+  return {
+    get broken(): boolean {
+      return broken;
+    },
+    markBroken(): void {
+      broken = true;
+    },
+    reset(): void {
+      broken = false;
+    },
+  };
+}
+
+/** `recomputeSolids` が Worker の破損に割り込まれたかどうかの内部結果。 */
+type SolidRecomputeRace =
+  | { readonly broken: false; readonly result: SolidRecomputeResult }
+  | { readonly broken: true };
+
+/**
+ * Worker への接続 1 本ぶん(worker 本体・Comlink の代理・壊れた合図)。
+ * `createKernelBridge` は壊れたら丸ごと作り直すので、この形にまとめて 1 回で差し替える。
+ */
+interface KernelConnection {
+  readonly worker: Worker;
+  readonly remote: Comlink.Remote<KernelApi>;
+  /**
+   * Worker が壊れた瞬間に解決する合図(§2.9)。応答を待つだけの Promise は Worker が
+   * 壊れても永遠に解決しないため、応答待ちの処理をこの合図と Promise.race させることで、
+   * 待っている呼び出しだけは必ず終わらせる(進行中の依頼を拒否せず解決する、§0.a-0.19)。
+   */
+  readonly brokenSignal: Promise<void>;
+  readonly handleBroken: () => void;
+}
+
+/** Worker を 1 本起動し、'error' / 'messageerror' を壊れた合図につなぐ(§2.9)。 */
+function createKernelConnection(onBroken: () => void): KernelConnection {
   const worker = createKernelWorker();
   const remote = Comlink.wrap<KernelApi>(worker);
+  // Promise の executor は同期で走るので、resolver は必ず notify へ入ってから使われる。
+  // ここでは TypeScript の未代入検査を避けるため、あらかじめ no-op で初期化しておく。
+  let notify: () => void = () => undefined;
+  const brokenSignal = new Promise<void>((resolve) => {
+    notify = resolve;
+  });
+  const handleBroken = (): void => {
+    onBroken();
+    notify();
+  };
+  worker.addEventListener('error', handleBroken);
+  worker.addEventListener('messageerror', handleBroken);
+  return { worker, remote, brokenSignal, handleBroken };
+}
+
+/** 接続を締める。壊れた Worker への解放要求が失敗しても、後始末は続ける(NFR-RE-1)。 */
+function closeKernelConnection(connection: KernelConnection): void {
+  connection.worker.removeEventListener('error', connection.handleBroken);
+  connection.worker.removeEventListener('messageerror', connection.handleBroken);
+  try {
+    connection.remote[Comlink.releaseProxy]();
+  } catch {
+    // Worker がすでに応答しない状態では解放の要求自体が失敗しうるが、
+    // 呼び出し側は必ず worker.terminate() へ進むので実害は無い。
+  }
+  connection.worker.terminate();
+}
+
+/** Web Worker 内の幾何カーネルへつなぐ。ブラウザ・Electron のレンダラでのみ使える。 */
+export function createKernelBridge(): KernelBridge {
+  const health = createKernelHealth();
+  let connection = createKernelConnection(() => health.markBroken());
+
+  /**
+   * 壊れた Worker を締めて作り直す(§2.9、§0.a-0.19)。形状キャッシュは Worker の中にあるので
+   * 作り直すと空になり、次の再計算は全段作り直しになる(遅くなるが落ちない、この限界は
+   * `KernelBridge.recomputeSolids` の doc comment にも書いた)。
+   */
+  function restart(): void {
+    closeKernelConnection(connection);
+    health.reset();
+    connection = createKernelConnection(() => health.markBroken());
+  }
 
   return {
     async tessellateSketchFaces(faces): Promise<SketchTessellationOutcome> {
       if (faces.length === 0) {
         return { mesh: { faces: [] }, failures: [] };
       }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
+      if (health.broken) {
+        restart();
+      }
       // 線・円弧の折れ線は UI が自前で作るので、カーネルへは面だけを頼む
       // (マウス操作のたびに Worker を往復させないため、NFR-PF-1、計画書 §2.7)。
-      const result = await remote.tessellateSketch({
+      const result = await connection.remote.tessellateSketch({
         curves: [],
         faces: faces.map((face) => toFaceRequest(face)),
       });
@@ -368,23 +636,46 @@ export function createKernelBridge(): KernelBridge {
       if (steps.length === 0) {
         return { bodies: [], failures: [], cacheHits: 0, cancelled: false };
       }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      if (health.broken) {
+        restart();
+      }
+      const active = connection;
       const request: SolidRecomputeRequest = {
         steps: steps.map((step) => toSolidStepRequest(step)),
         generation: options.generation ?? 0,
       };
       // 第 2 引数はテッセレーションの粗さ。既定のままでよいので undefined を渡す。
-      const result = await remote.recomputeSolids(
-        request,
-        undefined,
-        toProgressProxy(options.onProgress),
-        toCancelProxy(options.shouldCancel),
-      );
-      return toSolidOutcome(steps, result);
+      const race = await Promise.race<SolidRecomputeRace>([
+        active.remote
+          .recomputeSolids(
+            request,
+            undefined,
+            toProgressProxy(options.onProgress),
+            toCancelProxy(options.shouldCancel),
+          )
+          .then((result) => ({ broken: false, result })),
+        active.brokenSignal.then(() => ({ broken: true })),
+      ]);
+      if (race.broken) {
+        // Worker がこの依頼の途中で壊れた。拒否せずに理由つきの失敗として解決する
+        // (recomputePart.ts が kernelFailed として拾う。§0.a-0.19「拒否しない」)。
+        // 消費されて画面に出ないはずの段(visible: false)は、成功しても失敗しても
+        // 利用者には見えないので失敗に数えない(toSolidOutcome の扱いと揃える)。
+        return {
+          bodies: [],
+          failures: steps
+            .filter((step) => step.visible)
+            .map((step) => ({ featureId: step.featureId, message: KERNEL_BROKEN_MESSAGE })),
+          cacheHits: 0,
+          cancelled: false,
+        };
+      }
+      return toSolidOutcome(steps, race.result);
     },
 
     dispose(): void {
-      remote[Comlink.releaseProxy]();
-      worker.terminate();
+      closeKernelConnection(connection);
     },
   };
 }

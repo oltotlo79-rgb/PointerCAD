@@ -118,8 +118,8 @@ export function picksSubShapes(kind: SelectionKind, tool: NumericInputToolId): b
 
 /**
  * `state.bodies` を `pickSolidSubShape` が要る形へ詰め替える。面・辺・頂点の一覧は
- * model の `SolidBody` にタスク17(橋渡しの拡張)で欄が届くまで無いことがあるので、
- * 無ければ空として扱う(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes` と同じ橋渡し、§7)。
+ * model の `SolidBody` にタスク17(橋渡しの拡張)で必須の欄として届くようになったが、
+ * `?? []` は保険としてそのまま残す(押し出し等、一覧そのものが空のボディを空として扱う)。
  */
 export function toSubShapeBodies(bodies: readonly SolidBodyWithSubShapes[]): readonly SubShapeBody[] {
   return bodies.map((body) => ({

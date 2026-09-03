@@ -33,7 +33,9 @@ import {
   reduceNumericInput,
   type NumericInputState,
   type NumericInputStep,
+  type NumericInputToolId,
   type SketchToolId,
+  type SolidToolId,
 } from '../sketch/numericInput.js';
 import { pickSketchElement } from '../sketch/pickMath.js';
 import { commitFace } from '../sketch/sketchCommands.js';
@@ -63,6 +65,22 @@ const FIRST_STEP: Readonly<Record<DrawingToolId, NumericInputStep>> = {
 
 /** 基準点を引くだけの問い合わせに使う名前。失敗の理由は捨てるので画面には出ない。 */
 const BASE_PROBE_ID = 'numericInput';
+
+/** 数値を聞くソリッドの道具かどうか(P2 タスク19、§2.11)。 */
+function isSolidTool(tool: NumericInputToolId): tool is SolidToolId {
+  return tool === 'extrude' || tool === 'revolve' || tool === 'sew';
+}
+
+/**
+ * 立体そのものをクリックで選べる道具かどうか(FR-106、§0.a-0.6)。
+ *
+ * 選択のときと、立体の道具(押し出し・回転・縫合、ブーリアンの相手選び)のときに効かせる。
+ * 面の道具は面の境界を順にクリックする道具なので、立体を拾うと選ぶ順が壊れる。
+ * かき込む道具(点・線分・円弧・点列)は押した場所が座標そのものなので拾わない。
+ */
+function picksBodies(tool: NumericInputToolId): boolean {
+  return tool === 'select' || isSolidTool(tool);
+}
 
 export interface SketchInteraction {
   detach(): void;
@@ -179,6 +197,19 @@ export function attachSketchInteraction(
     return scene.screenToPlanePoint(pointer[0], pointer[1], plane);
   }
 
+  /**
+   * 押した場所にある立体の id(FR-106)。立体が 1 つも無いときは光線を飛ばさない。
+   * スケッチの要素のほうが細くて狙いにくいので、**必ず要素を先に**当ててから呼ぶ
+   * (小さいものを先に取る、P1 §2.8)。
+   */
+  function pickBodyAt(pointer: readonly [number, number]): string | null {
+    const state = useAppStore.getState();
+    if (state.bodies.length === 0 || !picksBodies(state.activeTool)) {
+      return null;
+    }
+    return scene.pickBody(pointer[0], pointer[1]);
+  }
+
   function onPointerMove(event: PointerEvent): void {
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
@@ -186,8 +217,10 @@ export function attachSketchInteraction(
 
     // 当たり判定(6 画素)から外れていても、吸着(12 画素)が拾った要素は強調して
     // 「どこへ吸い付くのか」を見せる(FR-106、FR-107)。
+    // スケッチにも吸着にも当たらなかったときだけ、奥にある立体を拾う。
     const picked = pickSketchElement(state.resolvedSketch, project, pointer);
-    const nextHovered = picked !== null ? picked.elementId : (snap?.elementId ?? null);
+    const nextHovered =
+      picked !== null ? picked.elementId : (snap?.elementId ?? pickBodyAt(pointer));
     if (nextHovered !== state.hoveredElementId) {
       state.setHovered(nextHovered);
     }
@@ -216,20 +249,28 @@ export function attachSketchInteraction(
     }
   }
 
-  /** 選択の道具と面の道具。押した順が面の境界の順になる(FR-106、FR-309)。 */
+  /**
+   * 選択の道具・面の道具・立体の道具。押した順が面の境界の順になり、
+   * 立体を 2 つ選ぶ順が和・差・積の「もと」と「組み合わせる方」になる(FR-106、FR-309、§0.a-0.6)。
+   * 何も無いところを押したら選択を解く(足すときは解かない)。
+   */
   function pickInto(pointer: readonly [number, number], accumulate: boolean): void {
     const state = useAppStore.getState();
     const picked = pickSketchElement(state.resolvedSketch, project, pointer);
-    if (picked === null) {
+    const elementId = picked !== null ? picked.elementId : pickBodyAt(pointer);
+    if (elementId === null) {
       if (!accumulate) {
         state.setSelection([]);
+        state.setPickAnchor(null);
       }
       return;
     }
+    // 選んだ場所を覚えておき、立体の道具のその場入力をその近くへ出す(NFR-UX-2)。
+    state.setPickAnchor(pointer);
     if (accumulate) {
-      state.toggleSelection(picked.elementId);
+      state.toggleSelection(elementId);
     } else {
-      state.setSelection([picked.elementId]);
+      state.setSelection([elementId]);
     }
   }
 
@@ -318,17 +359,26 @@ export function attachSketchInteraction(
     }
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
+    const tool = state.activeTool;
 
-    if (state.activeTool === 'select' || state.activeTool === 'face') {
+    if (isSolidTool(tool)) {
+      // 立体の道具では、入力欄を開いたまま断面や立体を選び直せる。焦点は欄に残して
+      // そのまま Enter で決められるようにする(NFR-UX-2)。Shift で相手を足す(§0.a-0.6)。
+      event.preventDefault();
+      pickInto(pointer, event.shiftKey);
+      return;
+    }
+
+    if (tool === 'select' || tool === 'face') {
       // 面の道具では 1 つずつ足していく。選択の道具は Shift を押したときだけ足す。
-      pickInto(pointer, state.activeTool === 'face' || event.shiftKey);
+      pickInto(pointer, tool === 'face' || event.shiftKey);
       return;
     }
 
     // 既定の動作(canvas へ焦点を移す)を止めて、開いている欄から焦点を奪わない。
     // 押した場所の座標が欄へ入った直後に、そのまま Enter で決められるようにする(NFR-UX-2)。
     event.preventDefault();
-    openInputAt(state.activeTool, pointer);
+    openInputAt(tool, pointer);
   }
 
   /** 面を張る(FR-309)。断られたら理由を帯に出し、履歴は変えない(FR-504、NFR-UX-5)。 */

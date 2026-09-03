@@ -1,7 +1,7 @@
 import type { WorkPlaneId } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
-import type { SketchToolId } from '../sketch/numericInput.js';
+import type { NumericInputToolId } from '../sketch/numericInput.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { AlertIcon, MouseIcon, PlaneIcon, SnapIcon } from './icons.js';
@@ -18,7 +18,10 @@ const GUIDE_KEYS = {
   arc: 'statusBar.guide.arc',
   pointArray: 'statusBar.guide.pointArray',
   face: 'statusBar.guide.face',
-} as const satisfies Record<SketchToolId, MessageKey>;
+  extrude: 'statusBar.guide.extrude',
+  revolve: 'statusBar.guide.revolve',
+  sew: 'statusBar.guide.sew',
+} as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /** いま何に吸い付いているかの案内(FR-107、NFR-UX-7)。 */
 const SNAP_GUIDE_KEYS = {
@@ -54,25 +57,29 @@ export function StatusBar(): React.JSX.Element {
   const errorMessage = useAppStore((state) => state.errorMessage);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
   const faceErrorKey = useAppStore((state) => state.faceErrorKey);
+  const solidErrorKey = useAppStore((state) => state.solidErrorKey);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   const snapEnabled = useAppStore((state) => state.snapEnabled);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
 
   /*
-   * 面を張れなかったことは、いま押した Enter への返事なので最初に出す。頭の言葉は
-   * 「面を作れませんでした:」で、計算の失敗の「計算に失敗しました:」とは重ねない。
+   * 面を張れなかった・立体を作れなかったことは、いま押した Enter やボタンへの返事なので
+   * 最初に出す。頭の言葉は「面を作れませんでした:」「立体を作れませんでした:」で、
+   * 計算の失敗の「計算に失敗しました:」とは重ねない。
    * 続いて計算そのものの失敗、最後にスケッチの解決の失敗(FR-504)。
    */
   const sketchFailure = sketchErrors.length === 0 ? null : sketchErrors[0].message;
   const failure: StatusFailure | null =
     faceErrorKey !== null
       ? { prefix: t('statusBar.faceError'), text: t(faceErrorKey) }
-      : errorMessage !== null
-        ? { prefix: t('statusBar.error'), text: errorMessage }
-        : sketchFailure !== null
-          ? { prefix: t('statusBar.error'), text: sketchFailure }
-          : null;
+      : solidErrorKey !== null
+        ? { prefix: t('statusBar.solidError'), text: t(solidErrorKey) }
+        : errorMessage !== null
+          ? { prefix: t('statusBar.error'), text: errorMessage }
+          : sketchFailure !== null
+            ? { prefix: t('statusBar.error'), text: sketchFailure }
+            : null;
   const className = failure === null ? 'pcad-statusbar' : 'pcad-statusbar pcad-statusbar--error';
 
   return (

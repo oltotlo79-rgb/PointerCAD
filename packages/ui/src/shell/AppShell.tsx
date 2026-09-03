@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import { commitSketchInput } from '../sketch/sketchCommands.js';
+import { commitSolidInput } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
@@ -18,6 +19,17 @@ const ViewportCanvas = lazy(async () => {
   const viewportModule = await import('../viewport/ViewportCanvas.js');
   return { default: viewportModule.ViewportCanvas };
 });
+
+/**
+ * 文字を打っている最中かどうか。式の欄や名前の欄で Ctrl+Z を押したときは、
+ * 打った文字の取り消し(ブラウザの働き)を邪魔しない(NFR-UX-3)。
+ */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+}
 
 /**
  * 画面の5区画(ツールバー / ツリー / ビューポート+ビューキューブ / プロパティ / ステータスバー)。
@@ -45,6 +57,34 @@ export function AppShell(): React.JSX.Element {
     report();
     return () => {
       observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    /*
+     * 元に戻す・やり直す(FR-505、§0.a-0.13)。窓のどこにいても効くように window で受ける。
+     * ファイルの Ctrl+N / O / S はタスク23 で足す。
+     */
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!event.ctrlKey || event.altKey || isTextEntry(event.target)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      const store = useAppStore.getState();
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        store.undo();
+        return;
+      }
+      // やり直すは Ctrl+Y と Ctrl+Shift+Z のどちらでも効かせる(どちらの流儀にも合わせる)。
+      if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault();
+        store.redo();
+      }
+    };
+    globalThis.addEventListener('keydown', onKeyDown);
+    return () => {
+      globalThis.removeEventListener('keydown', onKeyDown);
     };
   }, []);
 
@@ -101,6 +141,22 @@ export function AppShell(): React.JSX.Element {
                 store.setSketch(outcome.document);
               }
               store.setPendingStart(outcome.pendingStart);
+            }}
+            onSolidCommit={(commit) => {
+              /*
+                立体を1つ作って部品文書へ積む(FR-401〜403)。何を作るかは純関数
+                commitSolidInput が決め、断られたら理由を帯へ出して履歴は変えない
+                (FR-504、NFR-UX-5)。作れたらその立体を選び、道具は選択へ戻す。
+              */
+              const store = useAppStore.getState();
+              const outcome = commitSolidInput(store.document, store.selection, commit);
+              if (!outcome.ok) {
+                store.setSolidError(outcome.reasonKey);
+                return;
+              }
+              store.applyDocument(outcome.document);
+              store.setSelection([outcome.featureId]);
+              store.setActiveTool('select');
             }}
           />
           {snapIndicator === null ? null : (

@@ -263,12 +263,8 @@ const WORLD_AXIS_OPTIONS: readonly NumericAxisOption[] = [
 /** 回転軸の既定(§0.a-0.9)。XY 面にかいた断面を Z 軸まわりに回すのが最も多い。 */
 export const DEFAULT_REVOLVE_AXIS: RevolveAxisChoice = 'z';
 
-/**
- * 選んだ線分を軸にする選択肢の見出し。
- * 専用のキー(numericInput.axis.line「選んだ線分」)がまだ ja.json に無いので、
- * 同じ語のキーを借りている。専用キーの追加は統括へ報告済み。
- */
-const AXIS_LINE_LABEL_KEY: MessageKey = 'toolbar.tool.line';
+/** 選んだ線分を軸にする選択肢の見出し(P2 タスク21 で専用のキーを追加した)。 */
+const AXIS_LINE_LABEL_KEY: MessageKey = 'numericInput.axis.line';
 
 /** 座標モードのタブの並び(§2.9)。Alt+1 / Alt+2 / Alt+3 の順でもある。 */
 export const COORDINATE_MODES: readonly CoordinateMode[] = ['absolute', 'relative', 'polar'];

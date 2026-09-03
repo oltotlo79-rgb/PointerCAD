@@ -238,6 +238,44 @@ describe('画面の状態(rules/04: ストア1本)', () => {
     expect(useAppStore.getState().snapIndicator).toBeNull();
   });
 
+  it('立体の道具も選べる(P2 タスク21。押し出し・回転・縫合)', () => {
+    useAppStore.getState().setActiveTool('extrude');
+    expect(useAppStore.getState().activeTool).toBe('extrude');
+    useAppStore.getState().setActiveTool('revolve');
+    expect(useAppStore.getState().activeTool).toBe('revolve');
+    useAppStore.getState().setActiveTool('sew');
+    expect(useAppStore.getState().activeTool).toBe('sew');
+    useAppStore.getState().setActiveTool('select');
+    expect(useAppStore.getState().activeTool).toBe('select');
+  });
+
+  it('立体を作れなかった理由を出し入れでき、選び直すと消える(NFR-UX-5)', () => {
+    expect(useAppStore.getState().solidErrorKey).toBeNull();
+    useAppStore.getState().setSolidError('solidError.needTwoBodies');
+    expect(useAppStore.getState().solidErrorKey).toBe('solidError.needTwoBodies');
+
+    // 選び直しは「やり直す気になった」合図なので、断った理由は消す。
+    useAppStore.getState().setSelection(['extrude-1']);
+    expect(useAppStore.getState().solidErrorKey).toBeNull();
+
+    useAppStore.getState().setSolidError('solidError.noFace');
+    useAppStore.getState().toggleSelection('extrude-2');
+    expect(useAppStore.getState().solidErrorKey).toBeNull();
+
+    // 道具を変えたときも持ち越さない。
+    useAppStore.getState().setSolidError('solidError.noFace');
+    useAppStore.getState().setActiveTool('select');
+    expect(useAppStore.getState().solidErrorKey).toBeNull();
+  });
+
+  it('ビューポートで選んだ場所を覚える(立体のその場入力を出す位置)', () => {
+    expect(useAppStore.getState().pickAnchor).toBeNull();
+    useAppStore.getState().setPickAnchor([120, 80]);
+    expect(useAppStore.getState().pickAnchor).toEqual([120, 80]);
+    useAppStore.getState().setPickAnchor(null);
+    expect(useAppStore.getState().pickAnchor).toBeNull();
+  });
+
   it('取りかけの始点を出し入れできる(線分の始点・円弧の中心・点列の基準)', () => {
     const start = absoluteCoordinate(1, 2, 3);
     useAppStore.getState().setPendingStart(start);

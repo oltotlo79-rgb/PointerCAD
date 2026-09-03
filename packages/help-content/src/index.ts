@@ -19,6 +19,12 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
   { id: 'snap', title: '点にぴったり合わせる(吸着)', path: 'docs/ja/snap.md' },
   { id: 'face-and-color', title: '面を張る・色を変える', path: 'docs/ja/face-and-color.md' },
   { id: 'edit-sketch', title: 'かいたものを直す', path: 'docs/ja/edit-sketch.md' },
+  { id: 'solid-basics', title: '厚みをつける・回す', path: 'docs/ja/solid-basics.md' },
+  {
+    id: 'solid-combine',
+    title: '立体をつなぐ・組み合わせる',
+    path: 'docs/ja/solid-combine.md',
+  },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

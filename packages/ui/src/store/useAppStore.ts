@@ -38,7 +38,7 @@ import { create } from 'zustand';
 
 import type { MessageKey } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
-import type { NumericInputState, SketchToolId } from '../sketch/numericInput.js';
+import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import type { OrbitState } from '../viewport/cameraMath.js';
 
@@ -98,8 +98,12 @@ export interface AppState {
   /** ビューポート区画の大きさ(画素)。その場入力を端で折り返すのに使う。 */
   readonly viewportSize: readonly [number, number];
 
-  /** 選んでいる道具(FR-301〜309)。 */
-  readonly activeTool: SketchToolId;
+  /**
+   * 選んでいる道具(FR-301〜309、FR-401〜403)。スケッチの道具に加えて、数値を聞く
+   * ソリッドの道具(押し出し・回転・縫合)も入る。和・差・積は押した瞬間に作って
+   * 終わるので、道具として選ばれた状態にはならない(§0.a-0.6)。
+   */
+  readonly activeTool: NumericInputToolId;
   /** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
   readonly workPlaneId: WorkPlaneId;
 
@@ -165,6 +169,18 @@ export interface AppState {
    * ステータスバーが「面を作れませんでした:」の言い回しで出す。
    */
   readonly faceErrorKey: MessageKey | null;
+  /**
+   * 立体を作れなかった理由の文言キー(FR-401〜404、NFR-UX-5)。`faceErrorKey` と同じ扱いで、
+   * 履歴には何も積まれていないので `partErrors` には出てこない。ステータスバーが
+   * 「立体を作れませんでした:」の言い回しで出す。
+   */
+  readonly solidErrorKey: MessageKey | null;
+  /**
+   * 最後にビューポートで何かを選んだ場所(canvas の左上を原点とした画素)。
+   * ソリッドの道具のその場入力を、選んだものの近くへ出すのに使う(NFR-UX-2)。
+   * まだ何も選んでいなければ null で、そのときはビューポートの中央に出す。
+   */
+  readonly pickAnchor: readonly [number, number] | null;
 
   // 動作を変える口はメソッド宣言ではなくプロパティ関数型で書く。メソッド宣言だと
   // useAppStore((state) => state.setX) のように取り出したとき @typescript-eslint/unbound-method
@@ -179,7 +195,7 @@ export interface AppState {
   readonly requestViewportFocus: () => void;
   readonly setViewportSize: (size: readonly [number, number]) => void;
 
-  readonly setActiveTool: (tool: SketchToolId) => void;
+  readonly setActiveTool: (tool: NumericInputToolId) => void;
   readonly setWorkPlane: (id: WorkPlaneId) => void;
   /** 今の視点に最も近い作図面へ移してほしい、とビューポートへ頼む(§0.a-0.3)。 */
   readonly requestMatchWorkPlaneToView: () => void;
@@ -232,6 +248,10 @@ export interface AppState {
   readonly setSnapIndicator: (indicator: SnapIndicator | null) => void;
   /** 面を張れなかった理由を出す・消す。 */
   readonly setFaceError: (key: MessageKey | null) => void;
+  /** 立体を作れなかった理由を出す・消す(FR-401〜404)。 */
+  readonly setSolidError: (key: MessageKey | null) => void;
+  /** ビューポートで選んだ場所を覚える・忘れる。 */
+  readonly setPickAnchor: (anchor: readonly [number, number] | null) => void;
 }
 
 /** カメラから注視点へ向かう単位ベクトル。Z 軸が上の球面座標から作る。 */
@@ -385,6 +405,8 @@ export function createInitialDocumentState(): Pick<
   | 'pendingStart'
   | 'snapIndicator'
   | 'faceErrorKey'
+  | 'solidErrorKey'
+  | 'pickAnchor'
 > {
   // 起動時は空のスケッチ 1 本だけを持つ部品から始める(§0.a-0.2、NFR-UX-6 の空状態ガイド)。
   const document = createEmptyPartDocument();
@@ -419,6 +441,8 @@ export function createInitialDocumentState(): Pick<
     pendingStart: null,
     snapIndicator: null,
     faceErrorKey: null,
+    solidErrorKey: null,
+    pickAnchor: null,
   };
 }
 
@@ -464,6 +488,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       pendingStart: null,
       snapIndicator: null,
       faceErrorKey: null,
+      solidErrorKey: null,
     });
   },
   setWorkPlane: (workPlaneId) => {
@@ -587,8 +612,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     );
   },
   setSelection: (selection) => {
-    // 選び直したら、直前に断られた面の理由は用済みなので消す(NFR-UX-5)。
-    set({ selection, faceErrorKey: null });
+    // 選び直したら、直前に断られた面・立体の理由は用済みなので消す(NFR-UX-5)。
+    set({ selection, faceErrorKey: null, solidErrorKey: null });
   },
   toggleSelection: (id) => {
     set((state) => ({
@@ -596,6 +621,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ? state.selection.filter((selected) => selected !== id)
         : [...state.selection, id],
       faceErrorKey: null,
+      solidErrorKey: null,
     }));
   },
   setHovered: (hoveredElementId) => {
@@ -631,6 +657,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setFaceError: (faceErrorKey) => {
     set({ faceErrorKey });
+  },
+  setSolidError: (solidErrorKey) => {
+    set({ solidErrorKey });
+  },
+  setPickAnchor: (pickAnchor) => {
+    set({ pickAnchor });
   },
 }));
 

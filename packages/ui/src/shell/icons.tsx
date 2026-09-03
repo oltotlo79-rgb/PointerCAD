@@ -369,3 +369,135 @@ export function ChainIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+/*
+ * ファイルと履歴の 5 つ。文字を添えないボタンで使うので、世の中の道具と同じ図柄
+ * (白紙・書類ばさみ・保存の板・左右に曲がる矢印)にして、見ただけで分かるようにする。
+ * 名前は読み上げ名(aria-label)とツールチップが担う(Toolbar.tsx、FR-904)。
+ */
+
+/** 新規。角を折った白紙。 */
+export function NewFileIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4 2h5l3 3v9H4z" />
+      <path d="M9 2v3h3" />
+    </SvgIcon>
+  );
+}
+
+/** 開く。口の開いた書類ばさみ。 */
+export function OpenFileIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 12.6V3.6h4.2l1.6 2H13v2" />
+      <path d="M2 12.6 4.3 7.6h10.2l-2.3 5z" />
+    </SvgIcon>
+  );
+}
+
+/** 保存。書き込む板(いわゆるフロッピー)。 */
+export function SaveIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.8 2.6h7.6l2.8 2.8v8H2.8z" />
+      <path d="M5.4 2.6h4.4v3.2H5.4z" />
+      <path d="M5 13.4V9.6h6v3.8" />
+    </SvgIcon>
+  );
+}
+
+/** 元に戻す。左へ曲がって戻る矢印。 */
+export function UndoIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M5.4 3.9 2.6 6.6l2.8 2.7" />
+      <path d="M2.6 6.6h6a3.6 3.6 0 0 1 0 7.2H6.2" />
+    </SvgIcon>
+  );
+}
+
+/** やり直す。右へ曲がって進む矢印(元に戻すの鏡)。 */
+export function RedoIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M10.6 3.9l2.8 2.7-2.8 2.7" />
+      <path d="M13.4 6.6h-6a3.6 3.6 0 0 0 0 7.2h2.4" />
+    </SvgIcon>
+  );
+}
+
+/*
+ * ソリッドの 6 つ。前の 3 つ(押し出し・回転・縫合)は「面をどう動かして立体にするか」を
+ * 矢印で描き分け、後の 3 つ(和・差・積)は重なった 2 つの四角のどこが残るかを
+ * 塗りつぶしで描き分ける。塗りは残るところ、細い破線は消えるところ。
+ */
+
+/** 押し出し。下の面から上へ伸びる矢印。 */
+export function ExtrudeIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.2 13.2 6 9.6h7.8l-3.8 3.6z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M8 8.2V2.4" />
+      <path d="M5.8 4.6 8 2.4l2.2 2.2" />
+    </SvgIcon>
+  );
+}
+
+/** 回転。軸(破線)のまわりを回る矢印と、回される断面。 */
+export function RevolveIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M13.2 1.8v12.4" strokeDasharray="1.8 1.8" />
+      <path d="M2.6 6.4h4.2v7.4H2.6z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M3 4.6C5.6 1.9 10.4 1.9 13 4.4" />
+      <path d="M10.6 4.9 13.2 4.5l-.4-2.6" />
+    </SvgIcon>
+  );
+}
+
+/** 縫合。2 枚の面と、それをまたいで留めるかがり目。 */
+export function SewIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.4 4.4h4v7.2h-4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M9.6 4.4h4v7.2h-4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M5.2 6.2h5.6" />
+      <path d="M5.2 9.8h5.6" />
+    </SvgIcon>
+  );
+}
+
+/** 和。重なった 2 つの四角を 1 つにした形を塗る。 */
+export function UnionIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path
+        d="M2 3h7.5v2.5H14V13H6.5v-2.5H2z"
+        fill="currentColor"
+        fillOpacity={0.35}
+      />
+    </SvgIcon>
+  );
+}
+
+/** 差。もとの四角から、重なったところを取り除いた形を塗る。取り除く方は破線。 */
+export function SubtractIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M6.5 5.5H14V13H6.5z" strokeDasharray="1.8 1.8" />
+      <path d="M2 3h7.5v2.5H6.5v5H2z" fill="currentColor" fillOpacity={0.35} />
+    </SvgIcon>
+  );
+}
+
+/** 積。重なったところだけを塗る。 */
+export function IntersectIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 3h7.5v7.5H2z" />
+      <path d="M6.5 5.5H14V13H6.5z" />
+      <path d="M6.5 5.5h3v5h-3z" fill="currentColor" fillOpacity={0.35} stroke="none" />
+    </SvgIcon>
+  );
+}

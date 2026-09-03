@@ -1,27 +1,46 @@
-import type { WorkPlaneId } from '@pointercad/model';
+import { useEffect, useRef, useState } from 'react';
+
+import type { BooleanOperation, PartDocument, WorkPlaneId } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import {
   createNumericInput,
+  SOLID_TOOL_STEPS,
   type NumericInputStep,
   type SketchToolId,
+  type SolidToolId,
 } from '../sketch/numericInput.js';
 import type { SnapKind } from '../sketch/snapMath.js';
+import {
+  commitBooleanFromSelection,
+  selectedLineRef,
+  solidToolReadiness,
+  type SolidActionId,
+} from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   ArcToolIcon,
   ChainIcon,
+  ChevronRightIcon,
   CubeIcon,
   CursorIcon,
+  ExtrudeIcon,
   FaceToolIcon,
   GridIcon,
   HomeIcon,
+  IntersectIcon,
   LineToolIcon,
   MatchViewIcon,
+  NewFileIcon,
+  OpenFileIcon,
   OrthographicIcon,
   PerspectiveIcon,
   PlotPointIcon,
   PointArrayToolIcon,
+  RedoIcon,
+  RevolveIcon,
+  SaveIcon,
+  SewIcon,
   ShadedIcon,
   ShadedWithEdgesIcon,
   SnapCenterIcon,
@@ -30,9 +49,30 @@ import {
   SnapIcon,
   SnapIntersectionIcon,
   SnapMidpointIcon,
+  SubtractIcon,
+  UndoIcon,
+  UnionIcon,
   WireframeIcon,
   type IconProps,
 } from './icons.js';
+
+/** 図柄のボタン 1 つぶんの定義。区画ごとの表はすべてこの形に揃える。 */
+interface ButtonEntry {
+  readonly labelKey: MessageKey;
+  readonly tooltipKey: MessageKey;
+  readonly Icon: (props: IconProps) => React.JSX.Element;
+}
+
+/**
+ * ファイルの操作(FR-806)。図柄だけのボタンで、名前は読み上げ名とツールチップが担う。
+ * 中身(新規・開く・保存)はタスク23 で入れるので、今は押しても何も起きない。
+ * 使えないわけではないので aria-disabled にはしない(計画書 タスク21 手順7)。
+ */
+const FILE_ACTIONS = [
+  { labelKey: 'toolbar.file.new', tooltipKey: 'toolbar.file.newTooltip', Icon: NewFileIcon },
+  { labelKey: 'toolbar.file.open', tooltipKey: 'toolbar.file.openTooltip', Icon: OpenFileIcon },
+  { labelKey: 'toolbar.file.save', tooltipKey: 'toolbar.file.saveTooltip', Icon: SaveIcon },
+] as const satisfies readonly ButtonEntry[];
 
 /** スケッチの道具(FR-301〜309)。並びがそのまま画面の左からの順になる。 */
 const TOOLS = [
@@ -72,12 +112,50 @@ const TOOLS = [
     tooltipKey: 'toolbar.tool.faceTooltip',
     Icon: FaceToolIcon,
   },
-] as const satisfies readonly {
-  readonly id: SketchToolId;
-  readonly labelKey: MessageKey;
-  readonly tooltipKey: MessageKey;
-  readonly Icon: (props: IconProps) => React.JSX.Element;
-}[];
+] as const satisfies readonly (ButtonEntry & { readonly id: SketchToolId })[];
+
+/**
+ * ソリッドの道具(FR-401〜404)。左の3つは面を選んでから数値を聞き、
+ * 右の3つは立体を2つ選んで押すだけで決まる(§0.a-0.6)。
+ */
+const SOLID_ACTIONS = [
+  {
+    id: 'extrude',
+    labelKey: 'toolbar.solid.extrude',
+    tooltipKey: 'toolbar.solid.extrudeTooltip',
+    Icon: ExtrudeIcon,
+  },
+  {
+    id: 'revolve',
+    labelKey: 'toolbar.solid.revolve',
+    tooltipKey: 'toolbar.solid.revolveTooltip',
+    Icon: RevolveIcon,
+  },
+  {
+    id: 'sew',
+    labelKey: 'toolbar.solid.sew',
+    tooltipKey: 'toolbar.solid.sewTooltip',
+    Icon: SewIcon,
+  },
+  {
+    id: 'union',
+    labelKey: 'toolbar.solid.union',
+    tooltipKey: 'toolbar.solid.unionTooltip',
+    Icon: UnionIcon,
+  },
+  {
+    id: 'subtract',
+    labelKey: 'toolbar.solid.subtract',
+    tooltipKey: 'toolbar.solid.subtractTooltip',
+    Icon: SubtractIcon,
+  },
+  {
+    id: 'intersect',
+    labelKey: 'toolbar.solid.intersect',
+    tooltipKey: 'toolbar.solid.intersectTooltip',
+    Icon: IntersectIcon,
+  },
+] as const satisfies readonly (ButtonEntry & { readonly id: SolidActionId })[];
 
 /** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
 const PLANES = [
@@ -91,10 +169,9 @@ const PLANES = [
 }[];
 
 /**
- * 吸着の種別(FR-107、§0.a-0.10)。畳まずに並べて、いま何が効くかを一目で分かるようにする。
- *
- * 5 つとも図柄だけのボタンにして幅を詰める。名前は読み上げ名(aria-label)と
- * ツールチップの先頭が担うので、見た目からも読み上げからも失われない(FR-904、NFR-UX-7)。
+ * 吸着の種別(FR-107、§0.a-0.10)。P2 では 1 つのボタンと畳んだ一覧へまとめ、
+ * ツールバーを 1440 画素で 1 段に保つ(§0.a-0.15)。畳んでいる間も
+ * 「いくつ効いているか」をボタンの上に出し、名前はツールチップで読める。
  */
 const SNAP_KINDS_UI = [
   {
@@ -127,12 +204,7 @@ const SNAP_KINDS_UI = [
     tooltipKey: 'toolbar.snap.gridTooltip',
     Icon: SnapGridIcon,
   },
-] as const satisfies readonly {
-  readonly kind: SnapKind;
-  readonly labelKey: MessageKey;
-  readonly tooltipKey: MessageKey;
-  readonly Icon: (props: IconProps) => React.JSX.Element;
-}[];
+] as const satisfies readonly (ButtonEntry & { readonly kind: SnapKind })[];
 
 /**
  * 道具を選んだ直後に開く入力の段階(§2.9「出るきっかけ①ツールを選ぶ→すぐ出る」)。
@@ -150,6 +222,11 @@ const INITIAL_STEPS = {
 /** ビューポートの大きさがまだ分からないときに使う基準位置(画素)。 */
 const FALLBACK_ANCHOR_PIXELS = 160;
 
+/** 名前と理由をつなぐ区切り。文字そのものは言葉に依らないのでここに置く。 */
+const LABEL_SEPARATOR = ': ';
+/** 畳んだ一覧の名前をつなぐ区切り。 */
+const NAME_SEPARATOR = ' / ';
+
 /**
  * ポップアップを出す基準の画面座標(§2.9「表示位置」)。
  *
@@ -163,6 +240,17 @@ function viewportCenterAnchor(): readonly [number, number] {
     return [FALLBACK_ANCHOR_PIXELS, FALLBACK_ANCHOR_PIXELS];
   }
   return [Math.round(width / 2), Math.round(height / 2)];
+}
+
+/**
+ * ソリッドのその場入力を出す場所。
+ *
+ * 立体の道具は「先に面を選んでから押す」ので、最後にビューポートで選んだところの
+ * すぐそばへ出すと、何に対する入力なのかが目で追える(NFR-UX-1、NFR-UX-2)。
+ * ツリーから選んだときなど、ビューポートを押していなければ中央へ出す。
+ */
+function solidAnchor(): readonly [number, number] {
+  return useAppStore.getState().pickAnchor ?? viewportCenterAnchor();
 }
 
 /**
@@ -187,16 +275,209 @@ function activateTool(id: SketchToolId, pressed: boolean): void {
 }
 
 /**
+ * 押し出し・回転・縫合(FR-401〜403)。道具を選び、その場で数値を聞く(NFR-UX-2)。
+ * 回転は線分が選ばれていれば「選んだ線分」も軸の候補に加える(§0.a-0.9)。
+ */
+function openSolidInput(tool: SolidToolId): void {
+  const store = useAppStore.getState();
+  store.setActiveTool(tool);
+  const axisLine = tool === 'revolve' ? selectedLineRef(store.document, store.selection) : undefined;
+  store.openNumericInput(
+    createNumericInput(
+      tool,
+      SOLID_TOOL_STEPS[tool],
+      undefined,
+      axisLine === undefined ? {} : { axisLine },
+    ),
+    solidAnchor(),
+  );
+}
+
+/**
+ * 和・差・積(FR-404)。数値を聞かないので、押した瞬間に作って選択へ戻す(§0.a-0.6)。
+ * 作った立体をそのまま選んでおくと、続けてもう 1 つ組み合わせられる(NFR-UX-1)。
+ */
+function commitBooleanAction(operation: BooleanOperation): void {
+  const store = useAppStore.getState();
+  const outcome = commitBooleanFromSelection(store.document, store.selection, operation);
+  if (!outcome.ok) {
+    store.setSolidError(outcome.reasonKey);
+    return;
+  }
+  store.applyDocument(outcome.document);
+  store.setSelection([outcome.featureId]);
+  store.setActiveTool('select');
+}
+
+/** ソリッドのボタンを押したときの処理。前の3つは入力を開き、後の3つはその場で作る。 */
+function runSolidAction(id: SolidActionId): void {
+  if (id === 'union' || id === 'subtract' || id === 'intersect') {
+    commitBooleanAction(id);
+    return;
+  }
+  openSolidInput(id);
+}
+
+/** 押せないときのツールチップ。「名前: 理由」で、なぜ押せないのかを読めるようにする。 */
+function unavailableTooltip(labelKey: MessageKey, reasonKey: MessageKey | null): string {
+  return reasonKey === null ? t(labelKey) : `${t(labelKey)}${LABEL_SEPARATOR}${t(reasonKey)}`;
+}
+
+interface SnapKindsMenuProps {
+  readonly snapEnabled: boolean;
+  readonly snapKinds: readonly SnapKind[];
+}
+
+/**
+ * 吸着の種別の畳んだ一覧(§0.a-0.15)。
+ *
+ * モーダルにしないので、開いている間も背後の視点操作と作図はそのまま効く。
+ * 開いているかどうかは見た目だけの一時状態なので、ここでだけ持つ
+ * (rules/04-設計の規律.md「useState は表示専用の一時状態だけ」)。
+ * 吸着の入り切りと種別そのものはストアが正本。
+ */
+function SnapKindsMenu({ snapEnabled, snapKinds }: SnapKindsMenuProps): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    // 外を押したら閉じる。モーダルの覆いを作らないので、押した先の操作はそのまま通る。
+    const onPointerDown = (event: PointerEvent): void => {
+      const container = containerRef.current;
+      if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    globalThis.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      globalThis.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open]);
+
+  const activeNames = SNAP_KINDS_UI.filter((entry) => snapKinds.includes(entry.kind)).map((entry) =>
+    t(entry.labelKey),
+  );
+  // 畳んでいても何が効いているかを読めるようにし、続けて開き方を伝える(NFR-UX-7)。
+  const summary = `${t('toolbar.snap.kindsLabel')}${LABEL_SEPARATOR}${
+    activeNames.length === 0 ? t('toolbar.snap.kindsNone') : activeNames.join(NAME_SEPARATOR)
+  }\n${t('toolbar.snap.kindsHint')}`;
+
+  return (
+    <div
+      className="pcad-menu"
+      ref={containerRef}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="pcad-button pcad-menu__trigger"
+        title={summary}
+        aria-label={t('toolbar.snap.kindsLabel')}
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-disabled={!snapEnabled}
+        onClick={() => {
+          // 吸着が切のときは種別を選ぶ意味がないので開かない(NFR-UX-5)。
+          if (snapEnabled) {
+            setOpen(!open);
+          }
+        }}
+      >
+        <span className="pcad-menu__count">
+          {`${String(activeNames.length)}/${String(SNAP_KINDS_UI.length)}`}
+        </span>
+        <ChevronRightIcon className="pcad-menu__chevron" />
+      </button>
+      {open ? (
+        <div className="pcad-menu__panel" role="group" aria-label={t('toolbar.snap.kindsLabel')}>
+          {SNAP_KINDS_UI.map((entry) => (
+            <button
+              key={entry.kind}
+              type="button"
+              className="pcad-button pcad-menu__item"
+              title={t(entry.tooltipKey)}
+              aria-pressed={snapKinds.includes(entry.kind)}
+              onClick={() => {
+                useAppStore.getState().toggleSnapKind(entry.kind);
+              }}
+            >
+              <entry.Icon />
+              {t(entry.labelKey)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+interface SolidGroupProps {
+  readonly document: PartDocument;
+  readonly selection: readonly string[];
+}
+
+/**
+ * ソリッドの区画(FR-401〜404)。6 つとも図柄だけのボタンで、名前は読み上げ名と
+ * ツールチップが担う(FR-904、NFR-UX-7)。いま押せないものは aria-disabled にして
+ * 押しても何も起きないようにし、ツールチップで「名前: 理由」を読めるようにする(NFR-UX-5)。
+ */
+function SolidGroup({ document, selection }: SolidGroupProps): React.JSX.Element {
+  return (
+    <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.solid.title')}>
+      <span className="pcad-toolbar__group-label" title={t('toolbar.solid.tooltip')}>
+        {t('toolbar.solid.title')}
+      </span>
+      <div className="pcad-segmented">
+        {SOLID_ACTIONS.map((action) => {
+          const readiness = solidToolReadiness(document, selection, action.id);
+          return (
+            <button
+              key={action.id}
+              type="button"
+              className="pcad-button pcad-button--icon"
+              title={
+                readiness.ready
+                  ? t(action.tooltipKey)
+                  : unavailableTooltip(action.labelKey, readiness.reasonKey)
+              }
+              aria-label={t(action.labelKey)}
+              aria-disabled={!readiness.ready}
+              onClick={() => {
+                if (readiness.ready) {
+                  runSolidAction(action.id);
+                }
+              }}
+            >
+              <action.Icon />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
  * 画面上端のツールバー(要件§7.1)。
  *
- * 左から「製品名 → モードのタブ → スケッチ → 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」
- * の機能グループを並べる。どのグループも区画名を頭に置き、いま選ばれているものを
- * アクセント色の面で示す(NFR-UX-7)。状態の正本は Zustand ストア1本(rules/04-設計の規律.md)。
+ * 左から「製品名 → ファイル → 元に戻す・やり直す → モードのタブ → スケッチ → ソリッド →
+ * 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」の機能グループを並べる。
+ * 機能グループは区画名を頭に置き、いま選ばれているものをアクセント色の面で示す(NFR-UX-7)。
+ * 状態の正本は Zustand ストア1本(rules/04-設計の規律.md)。
  *
- * 横幅の方針: 1440 画素の窓で 1 段に収まることを条件にする。かき込む道具(スケッチ)と
- * 続けてかくは文字を残し、見え方の切り替えや吸着の種別など図柄で分かるものは図柄だけの
- * ボタン(`pcad-button--icon`)にして詰める。図柄だけのボタンには必ず読み上げ名
- * (aria-label)と、名前で始まるツールチップを付ける(FR-904、NFR-UX-7)。
+ * 横幅の方針: 1440 画素の窓で 1 段に収まることを条件にする(§0.a-0.15)。
+ * 図柄で分かるものは図柄だけのボタン(`pcad-button--icon`)にして詰め、
+ * 文字を添えたい道具(スケッチ・続けてかく)には `pcad-button--collapsible` を付けて、
+ * 窓が 1600 画素より狭いときだけ文字を畳む(appShell.css)。図柄だけになるボタンには
+ * 必ず読み上げ名(aria-label)と、名前で始まるツールチップを付ける(FR-904、NFR-UX-7)。
  */
 export function Toolbar(): React.JSX.Element {
   const projection = useAppStore((state) => state.projection);
@@ -207,12 +488,71 @@ export function Toolbar(): React.JSX.Element {
   const snapEnabled = useAppStore((state) => state.snapEnabled);
   const snapKinds = useAppStore((state) => state.snapKinds);
   const chaining = useAppStore((state) => state.chaining);
+  const partDocument = useAppStore((state) => state.document);
+  const selection = useAppStore((state) => state.selection);
+  const canUndo = useAppStore((state) => state.canUndo);
+  const canRedo = useAppStore((state) => state.canRedo);
 
   return (
     <header className="pcad-toolbar">
       <div className="pcad-toolbar__brand">
         <CubeIcon size={18} className="pcad-toolbar__mark" />
         <span className="pcad-toolbar__wordmark">{t('app.title')}</span>
+      </div>
+
+      {/*
+        ファイルと履歴。どちらも世の中の道具と同じ図柄なので区画名を置かず、
+        製品名のとなりに 5 つ並べる(§0.a-0.15)。
+      */}
+      <div className="pcad-toolbar__actions">
+        <div className="pcad-segmented" role="group" aria-label={t('toolbar.file.title')}>
+          {FILE_ACTIONS.map((action) => (
+            /* 押しても何も起きないのは今だけで、中身はタスク23 が入れる。 */
+            <button
+              key={action.labelKey}
+              type="button"
+              className="pcad-button pcad-button--icon"
+              title={t(action.tooltipKey)}
+              aria-label={t(action.labelKey)}
+            >
+              <action.Icon />
+            </button>
+          ))}
+        </div>
+        <div className="pcad-segmented" role="group" aria-label={t('toolbar.history.groupLabel')}>
+          <button
+            type="button"
+            className="pcad-button pcad-button--icon"
+            title={
+              canUndo ? t('toolbar.history.undoTooltip') : t('toolbar.history.undoUnavailable')
+            }
+            aria-label={t('toolbar.history.undo')}
+            aria-disabled={!canUndo}
+            onClick={() => {
+              if (canUndo) {
+                useAppStore.getState().undo();
+              }
+            }}
+          >
+            <UndoIcon />
+          </button>
+          <button
+            type="button"
+            className="pcad-button pcad-button--icon"
+            title={
+              canRedo ? t('toolbar.history.redoTooltip') : t('toolbar.history.redoUnavailable')
+            }
+            aria-label={t('toolbar.history.redo')}
+            aria-disabled={!canRedo}
+            onClick={() => {
+              if (canRedo) {
+                useAppStore.getState().redo();
+              }
+            }}
+          >
+            <RedoIcon />
+          </button>
+        </div>
       </div>
 
       {/* モードのタブ。今はモデリングだけが使える。 */}
@@ -251,19 +591,22 @@ export function Toolbar(): React.JSX.Element {
             <button
               key={tool.id}
               type="button"
-              className="pcad-button"
+              className="pcad-button pcad-button--collapsible"
               title={t(tool.tooltipKey)}
+              aria-label={t(tool.labelKey)}
               aria-pressed={activeTool === tool.id}
               onClick={() => {
                 activateTool(tool.id, activeTool === tool.id);
               }}
             >
               <tool.Icon />
-              {t(tool.labelKey)}
+              <span className="pcad-button__label">{t(tool.labelKey)}</span>
             </button>
           ))}
         </div>
       </div>
+
+      <SolidGroup document={partDocument} selection={selection} />
 
       <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.plane.groupLabel')}>
         <span className="pcad-toolbar__group-label" title={t('toolbar.plane.tooltip')}>
@@ -401,7 +744,7 @@ export function Toolbar(): React.JSX.Element {
           {t('toolbar.support.groupLabel')}
         </span>
         <div className="pcad-segmented">
-          {/* 方眼の図柄そのままなので文字は添えない。「続けてかく」は図柄で表しにくいので残す。 */}
+          {/* 方眼の図柄そのままなので文字は添えない。「続けてかく」は狭い窓でだけ畳む。 */}
           <button
             type="button"
             className="pcad-button pcad-button--icon"
@@ -416,15 +759,16 @@ export function Toolbar(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="pcad-button"
+            className="pcad-button pcad-button--collapsible"
             title={t('toolbar.chain.tooltip')}
+            aria-label={t('toolbar.chain.label')}
             aria-pressed={chaining}
             onClick={() => {
               useAppStore.getState().setChaining(!chaining);
             }}
           >
             <ChainIcon />
-            {t('toolbar.chain.label')}
+            <span className="pcad-button__label">{t('toolbar.chain.label')}</span>
           </button>
         </div>
       </div>
@@ -436,35 +780,17 @@ export function Toolbar(): React.JSX.Element {
         <div className="pcad-segmented">
           <button
             type="button"
-            className="pcad-button"
+            className="pcad-button pcad-button--icon"
             title={t('toolbar.snap.tooltip')}
+            aria-label={t('toolbar.snap.label')}
             aria-pressed={snapEnabled}
             onClick={() => {
               useAppStore.getState().setSnapEnabled(!snapEnabled);
             }}
           >
             <SnapIcon />
-            {t('toolbar.snap.label')}
           </button>
-          {SNAP_KINDS_UI.map((entry) => (
-            <button
-              key={entry.kind}
-              type="button"
-              className="pcad-button pcad-button--icon"
-              title={t(entry.tooltipKey)}
-              aria-label={t(entry.labelKey)}
-              aria-pressed={snapKinds.includes(entry.kind)}
-              aria-disabled={!snapEnabled}
-              onClick={() => {
-                // 吸着が切のときは押しても何も起きない(NFR-UX-5「実行前に分かる」)。
-                if (snapEnabled) {
-                  useAppStore.getState().toggleSnapKind(entry.kind);
-                }
-              }}
-            >
-              <entry.Icon />
-            </button>
-          ))}
+          <SnapKindsMenu snapEnabled={snapEnabled} snapKinds={snapKinds} />
         </div>
       </div>
 

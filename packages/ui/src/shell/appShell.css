@@ -138,6 +138,17 @@
   color: var(--pcad-text);
 }
 
+/*
+ * ファイルと履歴(新規・開く・保存・元に戻す・やり直す)。区画名を持たない図柄だけの
+ * 5 つで、製品名のとなりに置く(§0.a-0.15)。ツールバーが下ぞろえなので、
+ * 区画名のある他のグループとボタンの高さがそろう。
+ */
+.pcad-toolbar__actions {
+  display: flex;
+  gap: var(--pcad-space-1);
+  align-items: center;
+}
+
 /* モードのタブ(モデリング / アセンブリ / 図面) */
 .pcad-toolbar__modes {
   display: flex;
@@ -175,6 +186,29 @@
 /* ===== 窓が狭いときのツールバー ===== */
 
 /*
+ * 1760 画素より狭い窓では、文字を添えたボタン(スケッチの道具・続けてかく)の文字を畳んで
+ * 図柄だけにする。P2 でファイル・履歴・ソリッドの 3 区画が増えたぶんを、ここで吸収して
+ * 1440 画素の窓で 1 段を保つ(§0.a-0.15)。名前は読み上げ名(aria-label)とツールチップが
+ * 持ち続けるので、見た目からも読み上げからも失われない(FR-904、NFR-UX-7)。
+ * 畳んだときの見た目は .pcad-button--icon と同じ 26 画素の正方形にそろえる。
+ *
+ * 境目を 1760 にしたのは、文字を出したときに 1 段へ必要な幅が実測 1599 画素で
+ * (2026-09-03 実測、docs/報告記録.md)、書体の差で数画素ふくらんでも折り返さない
+ * 余裕を持たせるため。文字を畳めば 1340 画素で 1 段に収まる。
+ */
+@media (max-width: 1759px) {
+  .pcad-button--collapsible .pcad-button__label {
+    display: none;
+  }
+
+  .pcad-button--collapsible {
+    justify-content: center;
+    width: 26px;
+    padding: 0;
+  }
+}
+
+/*
  * 1280 画素より狭い窓では製品名の文字を省き、印(立方体)だけを残す。
  * ここまで狭いと道具の並びを保つほうが、名前を出し続けるより役に立つため。
  */
@@ -189,12 +223,16 @@
 }
 
 /*
- * 1400 画素以下では 1 段に収まらないので、崩れた折り返しに任せず 2 段に分ける。
- * 隙間を行いっぱいに広げて区切りにし、「かき込む道具(製品名・モード・スケッチ・作図面)」を
- * 上の段、「見え方の設定(投影・表示・補助・吸着・視点)」を下の段へ置く。
- * 区切りそのものを段のあいだの余白にするので、行の余白は 0 にする。
+ * 1380 画素より狭い窓では 1 段に収まらないので、崩れた折り返しに任せず 2 段に分ける。
+ * 隙間を行いっぱいに広げて区切りにし、「作るための道具(製品名・ファイル・履歴・モード・
+ * スケッチ・ソリッド・作図面)」を上の段、「見え方の設定(投影・表示・補助・吸着・視点)」を
+ * 下の段へ置く。区切りそのものを段のあいだの余白にするので、行の余白は 0 にする。
+ *
+ * 境目は、文字を畳んだ状態で 1 段に必要な幅の実測 1340 画素(2026-09-03)に
+ * 40 画素の余裕を足した値。P1 では 1400 だったが、P2 で吸着を畳んだぶん狭い窓でも
+ * 1 段を保てるようになったので下げた。
  */
-@media (max-width: 1400px) {
+@media (max-width: 1379px) {
   .pcad-toolbar {
     row-gap: 0;
   }
@@ -336,6 +374,63 @@
   background: var(--pcad-bg);
   border: 1px solid var(--pcad-border);
   border-radius: var(--pcad-radius);
+}
+
+/* ===== 畳んだ一覧(吸着の種別) ===== */
+
+/*
+ * ボタン 1 つと、その下に開く一覧(§0.a-0.15)。モーダルにしない(NFR-UX-2)ので、
+ * 開いている間も背後の視点操作と作図はそのまま効く。開閉は Toolbar.tsx が持つ表示だけの
+ * 一時状態で、吸着の入り切りと種別の正本はストア(rules/04-設計の規律.md)。
+ */
+.pcad-menu {
+  position: relative;
+  display: flex;
+}
+
+/* 畳んでいる間も「いくつ効いているか」が読めるように、数と開閉の印を並べる。 */
+.pcad-menu__trigger {
+  gap: 3px;
+  padding: 0 6px;
+}
+
+.pcad-menu__count {
+  font-size: var(--pcad-font-size-small);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* 閉じているときは下向き、開いているときは上向き。 */
+.pcad-menu__chevron {
+  transform: rotate(90deg);
+  transition: transform var(--pcad-transition);
+}
+
+.pcad-menu__trigger[aria-expanded="true"] .pcad-menu__chevron {
+  transform: rotate(-90deg);
+}
+
+.pcad-menu__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+
+  /* ツールバーの右寄りに置く区画なので、右端をそろえて画面の外へ出さない。 */
+  right: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--pcad-space-1);
+  background: var(--pcad-surface-raised);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius);
+  box-shadow: var(--pcad-shadow-raised);
+}
+
+/* 一覧の中は名前つき。4 状態(通常・ホバー・押下・焦点)は .pcad-button から受け継ぐ。 */
+.pcad-menu__item {
+  justify-content: flex-start;
+  min-width: 116px;
 }
 
 /* ===== 左右のパネル ===== */

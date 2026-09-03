@@ -26,11 +26,13 @@ import {
   type RevolveFeature,
   type SewFeature,
   type SketchFaceRef,
+  type SketchLineRef,
   type BooleanFeature,
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
+import type { SolidInputCommit, SolidToolId } from '../sketch/numericInput.js';
 
 /** 縫合に要る面の最小枚数(§0.a-0.7)。 */
 const MIN_SEW_FACES = 2;
@@ -52,6 +54,22 @@ export const DEFAULT_SEW_TOLERANCE: ExpressionValue = expressionValueFromNumber(
 export type SolidCommandOutcome =
   | { readonly ok: true; readonly document: PartDocument; readonly featureId: string }
   | { readonly ok: false; readonly reasonKey: MessageKey };
+
+/**
+ * ツールバーの「ソリッド」区画に並ぶ 6 つの操作(§0.a-0.15)。
+ *
+ * 前の 3 つは数値を聞いてから作るので `SolidToolId`(numericInput.ts が正本)と同じ id を使い、
+ * 後の 3 つは選んで押すだけなので `BooleanOperation` の id をそのまま使う。同じものを
+ * 2 か所で数え直さないよう、どちらも既存の型から組み立てる。
+ */
+export type SolidActionId = SolidToolId | BooleanOperation;
+
+/** その操作がいま押せるか。押せないときは理由を添える(NFR-UX-5)。 */
+export interface SolidToolReadiness {
+  readonly ready: boolean;
+  /** 押せない理由の文言キー。押せるときは null。 */
+  readonly reasonKey: MessageKey | null;
+}
 
 /** 選択から面フィーチャーの参照を 1 つ拾った結果。 */
 export type FaceRefOutcome =
@@ -119,6 +137,28 @@ export function selectedFaceRefs(
     return { ok: false, reasonKey: 'solidError.needTwoFaces' };
   }
   return { ok: true, refs };
+}
+
+/**
+ * 選択中の要素から回転軸に使える線分の参照を 1 本拾う(§0.a-0.9)。
+ *
+ * 線分が選ばれていないときは undefined を返し、回転軸の選択肢は X / Y / Z だけになる。
+ * 「線分が無い」は失敗ではない(軸の既定は world の Z)ので理由は持たない。
+ */
+export function selectedLineRef(
+  document: PartDocument,
+  selection: readonly string[],
+): SketchLineRef | undefined {
+  for (const elementId of selection) {
+    const featureId = featureIdOf(elementId);
+    for (const sketch of document.sketches) {
+      const feature = findFeature(sketch, featureId);
+      if (feature !== undefined && feature.kind === 'line') {
+        return { sketchId: sketch.id, lineFeatureId: featureId };
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -258,4 +298,112 @@ export function commitBoolean(
     toolFeatureId: params.toolFeatureId,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
+}
+
+/** 押せる。 */
+const READY: SolidToolReadiness = { ready: true, reasonKey: null };
+
+/**
+ * その操作がいま押せるか(NFR-UX-5)。ツールバーのボタンの有効・無効と、
+ * 押せないときのツールチップの理由に使う。判定は実際に作るときと同じ関数で行うので、
+ * 「押せるのに断られる」「押せないのに作れる」が起きない。
+ */
+export function solidToolReadiness(
+  document: PartDocument,
+  selection: readonly string[],
+  tool: SolidActionId,
+): SolidToolReadiness {
+  switch (tool) {
+    case 'extrude':
+    case 'revolve': {
+      const face = selectedFaceRef(document, selection);
+      return face.ok ? READY : { ready: false, reasonKey: face.reasonKey };
+    }
+    case 'sew': {
+      const faces = selectedFaceRefs(document, selection);
+      return faces.ok ? READY : { ready: false, reasonKey: faces.reasonKey };
+    }
+    case 'union':
+    case 'subtract':
+    case 'intersect': {
+      const pair = selectedBodyPair(selection, liveBodyIds(document));
+      if (!pair.ok) {
+        return { ready: false, reasonKey: pair.reasonKey };
+      }
+      // 同じ立体を 2 度選ぶことは選択の仕組み上できないが、断る理由は作る側と揃えておく。
+      return pair.targetFeatureId === pair.toolFeatureId
+        ? { ready: false, reasonKey: 'solidError.sameBody' }
+        : READY;
+    }
+  }
+}
+
+/**
+ * 選択とその場入力の確定結果から、押し出し・回転・縫合を 1 つ作る(タスク19 の SolidInputCommit)。
+ *
+ * 面はポップアップを開いた時点ではなく**決めた時点の選択**から拾い直す。開いたまま
+ * 面を選び直せるので、最後に選ばれていたものを使うのが利用者の期待に合う(NFR-UX-1)。
+ * 欄が空のまま決めたときは既定値で作る(NFR-UX-4)。
+ */
+export function commitSolidInput(
+  document: PartDocument,
+  selection: readonly string[],
+  commit: SolidInputCommit,
+): SolidCommandOutcome {
+  switch (commit.tool) {
+    case 'extrude': {
+      const face = selectedFaceRef(document, selection);
+      if (!face.ok) {
+        return { ok: false, reasonKey: face.reasonKey };
+      }
+      return commitExtrude(document, {
+        profile: face.ref,
+        distance: commit.values.distance ?? DEFAULT_EXTRUDE_DISTANCE,
+        reversed: commit.flags.reversed ?? false,
+        symmetric: commit.flags.symmetric ?? false,
+      });
+    }
+    case 'revolve': {
+      const face = selectedFaceRef(document, selection);
+      if (!face.ok) {
+        return { ok: false, reasonKey: face.reasonKey };
+      }
+      return commitRevolve(document, {
+        profile: face.ref,
+        axis: commit.axis ?? DEFAULT_REVOLVE_AXIS,
+        angle: commit.values.angle ?? DEFAULT_REVOLVE_ANGLE,
+        reversed: commit.flags.reversed ?? false,
+      });
+    }
+    case 'sew': {
+      const faces = selectedFaceRefs(document, selection);
+      if (!faces.ok) {
+        return { ok: false, reasonKey: faces.reasonKey };
+      }
+      return commitSew(document, {
+        faces: faces.refs,
+        tolerance: commit.values.tolerance ?? DEFAULT_SEW_TOLERANCE,
+      });
+    }
+  }
+}
+
+/**
+ * 選択からブーリアンを 1 つ作る(§0.a-0.6)。和・差・積のボタンはこれ 1 つで済む。
+ * 先に選んだ立体が対象、後(Shift で足した方)が相手になる。
+ */
+export function commitBooleanFromSelection(
+  document: PartDocument,
+  selection: readonly string[],
+  operation: BooleanOperation,
+): SolidCommandOutcome {
+  const pair = selectedBodyPair(selection, liveBodyIds(document));
+  if (!pair.ok) {
+    return { ok: false, reasonKey: pair.reasonKey };
+  }
+  return commitBoolean(document, {
+    operation,
+    targetFeatureId: pair.targetFeatureId,
+    toolFeatureId: pair.toolFeatureId,
+  });
 }

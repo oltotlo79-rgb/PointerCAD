@@ -288,11 +288,11 @@ export function NumericInputPopover({
 
       {choice === null ? null : (
         <div className="pcad-popover__choice">
-          <span className="pcad-popover__choice-label">{t('propertyPanel.axis')}</span>
+          <span className="pcad-popover__choice-label">{t('numericInput.axisGroupLabel')}</span>
           <div
             className="pcad-segmented pcad-popover__choice-options"
             role="group"
-            aria-label={t('propertyPanel.axis')}
+            aria-label={t('numericInput.axisGroupLabel')}
           >
             {choice.options.map((option) => (
               <button

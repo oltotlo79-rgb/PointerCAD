@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu } from 'electron';
 import { join } from 'node:path';
 
 import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './appProtocol.js';
+import { registerPcadIpc } from './pcadDialogs.js';
 
 /**
  * このファイルの出力先 dist/main。
@@ -51,6 +52,8 @@ void app.whenReady().then(() => {
   // 既定のメニューバー(File / Edit / View / Window)は使わないので消す。
   Menu.setApplicationMenu(null);
   handleAppScheme(rendererRoot);
+  // 「開く」「保存」の受け口。窓を作る前に用意しておく(FR-806、計画書 タスク26)。
+  registerPcadIpc();
   createMainWindow();
 
   app.on('activate', () => {

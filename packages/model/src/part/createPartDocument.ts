@@ -1,5 +1,6 @@
 /**
- * 部品(パート)文書の生成と履歴操作(計画書 docs/plans/P2-ソリッド基礎.md タスク9b)。
+ * 部品(パート)文書の生成と履歴操作(計画書 docs/plans/P2-ソリッド基礎.md タスク9b、
+ * docs/plans/P3-加工フィーチャー.md タスク13)。
  *
  * 履歴を書き換えず、変更のたびに新しい配列を作る。Undo / Redo(FR-505)はこの不変性の上に乗る。
  * 参照は id で持ち、座標や形を複製しない(FR-311、FR-502)。
@@ -15,17 +16,78 @@ import {
 import type { SketchDocument } from '../sketch/types.js';
 import type { BooleanOperation, PartDocument, SolidFeature } from './types.js';
 
-/** 部品文書の保存形式の版(§0.a-0.3)。P2 で 2 になる。 */
+/**
+ * 部品文書の保存形式の版(§0.a-0.3)。P2 で 2 になる。
+ *
+ * P3 は版を 3 へ上げると決まっている(P3 計画書 §0.a-0.22)が、封筒側の
+ * `PCAD_SCHEMA_VERSION` と移行(`SCHEMA_MIGRATIONS[2]`)を同時に用意しないと
+ * 「版だけ上がって版2のファイルが開けない」状態になるため、**版の変更は io を扱う
+ * タスク19 でまとめて行う**(統括の指示、2026-09-03)。ここではまだ 2 のままにする。
+ */
 export const PART_SCHEMA_VERSION = 2;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;
 
+/** 穴の直径の既定(mm、P3 §タスク13)。 */
+export const DEFAULT_HOLE_DIAMETER_MM = 6;
+
+/** 止まり穴の深さの既定(mm)。 */
+export const DEFAULT_HOLE_DEPTH_MM = 10;
+
+/** R 面取りの半径の既定(mm)。 */
+export const DEFAULT_FILLET_RADIUS_MM = 2;
+
+/** C 面取りの距離の既定(mm)。 */
+export const DEFAULT_CHAMFER_DISTANCE_MM = 1;
+
+/** C 面取りの角度の既定(度)。 */
+export const DEFAULT_CHAMFER_ANGLE_DEGREES = 45;
+
+/** 直線パターンの間隔の既定(mm、§0.a-0.21)。 */
+export const DEFAULT_PATTERN_SPACING_MM = 20;
+
+/** 直線パターンの個数の既定(§0.a-0.21)。 */
+export const DEFAULT_PATTERN_COUNT = 3;
+
+/** 円形パターンの個数の既定(§0.a-0.21)。 */
+export const DEFAULT_CIRCULAR_PATTERN_COUNT = 4;
+
+/** パターンの個数の上限(P3 §2.7)。これを超える指定は解決のときに断る。 */
+export const MAX_PATTERN_COUNT = 100;
+
+/** ばねのコイル中心径の既定(mm、FR-414、§0.a-0.30)。 */
+export const DEFAULT_SPRING_COIL_DIAMETER_MM = 20;
+
+/** ばねの線径の既定(mm)。 */
+export const DEFAULT_SPRING_WIRE_DIAMETER_MM = 2;
+
+/** ばねのピッチの既定(mm)。 */
+export const DEFAULT_SPRING_PITCH_MM = 5;
+
+/** ばねの巻数の既定。既定の全長は ピッチ × 巻数 = 20mm になる(§0.a-0.30)。 */
+export const DEFAULT_SPRING_TURNS = 4;
+
+/** ばねの巻数の上限(§0.a-0.35)。これを超える指定は解決のときに断る。 */
+export const MAX_SPRING_TURNS = 200;
+
 /**
  * 連番を分ける単位。ブーリアンは演算ごとに別の連番にするので、
  * フィーチャーの種類そのもの(`boolean`)ではなく演算名を鍵にする(§2.3)。
+ * パターンも同じ理由で配置ごと(直線 / 円形)に分ける。
  */
-export type SolidLabelKey = 'extrude' | 'revolve' | 'sew' | BooleanOperation;
+export type SolidLabelKey =
+  | 'extrude'
+  | 'revolve'
+  | 'sew'
+  | BooleanOperation
+  | 'hole'
+  | 'threadHole'
+  | 'fillet'
+  | 'chamfer'
+  | 'linearPattern'
+  | 'circularPattern'
+  | 'spring';
 
 /**
  * ソリッドの種類ごとの既定名。ドキュメントの既定データとしてここに置く
@@ -38,6 +100,13 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   union: '和',
   subtract: '差',
   intersect: '積',
+  hole: '穴',
+  threadHole: 'ねじ穴',
+  fillet: 'R面取り',
+  chamfer: 'C面取り',
+  linearPattern: '直線パターン',
+  circularPattern: '円形パターン',
+  spring: 'ばね',
 };
 
 /** 起動時の部品。空のスケッチを1本だけ持ち、ソリッドは無い(NFR-UX-6)。 */
@@ -151,10 +220,72 @@ export function nextSolidId(document: PartDocument, key: SolidLabelKey): string 
 }
 
 /**
- * ブーリアンが消費したボディの id(§0.a-0.5)。
+ * そのフィーチャーが対象として消費するボディの id(§0.a-0.5、P3 §2.6 / §2.7 / §2.7b)。
+ *
+ * - ブーリアンは対象と相手の2つ。
+ * - 加工(穴・ねじ穴・R 面取り・C 面取り)は対象のボディ1つを消費して新しいボディを1つ作る。
+ * - パターンは繰り返しのもとにした加工フィーチャーのボディ1つを消費する(§0.a-0.20)。
+ * - 押し出し・回転・縫合・**ばね**は何も消費しない(ばねは §0.a-0.36 で「作る」フィーチャー)。
+ *
+ * 順序は文書に書かれた順のまま返す(重複の除去はしない。同じ id を2度指すブーリアンは
+ * 解決のときに `consumedTwice` で断る)。
+ */
+export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
+  switch (feature.kind) {
+    case 'extrude':
+    case 'revolve':
+    case 'sew':
+    case 'spring':
+      return [];
+    case 'boolean':
+      return [feature.targetFeatureId, feature.toolFeatureId];
+    case 'hole':
+    case 'threadHole':
+    case 'fillet':
+    case 'chamfer':
+      return [feature.targetFeatureId];
+    case 'pattern':
+      return [feature.sourceFeatureId];
+  }
+}
+
+/**
+ * そのフィーチャーが加工(対象のボディを1つだけ取る種類)か。
+ * 穴・ねじ穴・R 面取り・C 面取り・パターンが該当する。
+ * ブーリアンは対象を2つ取るので加工には数えない。ばねは対象を取らないので `false`(§0.a-0.36)。
+ */
+export function isMachiningFeature(feature: SolidFeature): boolean {
+  switch (feature.kind) {
+    case 'hole':
+    case 'threadHole':
+    case 'fillet':
+    case 'chamfer':
+    case 'pattern':
+      return true;
+    case 'extrude':
+    case 'revolve':
+    case 'sew':
+    case 'boolean':
+    case 'spring':
+      return false;
+  }
+}
+
+/**
+ * パターン(FR-411、FR-412)の対象にできるか。穴・ねじ穴だけ(§0.a-0.20)。
+ *
+ * フィレット・面取りを外すのは「工具の形」が無く、変換した位置の辺を指紋で選び直す必要が
+ * あって危ういため。ばねも対象にしない(§0.a-0.36)。
+ */
+export function isPatternSource(feature: SolidFeature): boolean {
+  return feature.kind === 'hole' || feature.kind === 'threadHole';
+}
+
+/**
+ * ほかのフィーチャーに消費されたボディの id(§0.a-0.5)。
  *
  * 消費できるのは「履歴で自分より前にあり、抑制されていない」フィーチャーのボディだけ。
- * 抑制されたブーリアンは再計算で飛ばされるので何も消費しない。
+ * 抑制されたフィーチャーは再計算で飛ばされるので何も消費せず、ボディも作らない。
  * 参照先が消えている場合(FR-504 で失敗させる場合)は消費に数えない。
  * ここは文書だけを見る判定で、実際に形が作れたかどうかは resolvePart が決める。
  */
@@ -162,16 +293,16 @@ export function consumedBodyIds(document: PartDocument): ReadonlySet<string> {
   const consumed = new Set<string>();
   const available = new Set<string>();
   for (const feature of document.solids) {
-    if (feature.kind === 'boolean' && !feature.suppressed) {
-      for (const id of [feature.targetFeatureId, feature.toolFeatureId]) {
-        if (available.has(id)) {
-          consumed.add(id);
-        }
+    if (feature.suppressed) {
+      continue;
+    }
+    for (const id of consumedTargetsOf(feature)) {
+      if (available.has(id)) {
+        consumed.add(id);
       }
     }
-    if (!feature.suppressed) {
-      available.add(feature.id);
-    }
+    // 自分の id は消費の判定を終えてから足す。自分自身や後ろのボディは参照できない。
+    available.add(feature.id);
   }
   return consumed;
 }

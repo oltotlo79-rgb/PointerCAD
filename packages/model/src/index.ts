@@ -44,15 +44,32 @@ export {
 } from './sketch/resolveSketch.js';
 export type { SketchRecomputeResult } from './sketch/recomputeSketch.js';
 export { recomputeSketch, reevaluateDocument } from './sketch/recomputeSketch.js';
+export type { MetricThreadSize, ThreadSeries } from './thread/metricThread.js';
+export {
+  DEFAULT_THREAD_DESIGNATION, findMetricThread, METRIC_THREAD_DESIGNATIONS, METRIC_THREADS,
+  metricThreadPitch, threadMinorDiameter, threadPitchDiameter, threadTriangleHeight,
+} from './thread/metricThread.js';
 export type {
-  BooleanFeature, BooleanOperation, ExtrudeFeature, PartDocument, RevolveAxis, RevolveFeature,
-  SewFeature, SketchFaceRef, SketchLineRef, SolidFeature, SolidFeatureKind,
+  BooleanFeature, BooleanOperation, ChamferFeature, ChamferSize, EdgeCurveKind, ExtrudeFeature,
+  FaceSurfaceKind, FilletFeature, HoleDepth, HoleFeature, PartDocument, PatternDirection,
+  PatternFeature, PatternPlacement, RevolveAxis, RevolveFeature, SewFeature, SketchFaceRef,
+  SketchLineRef, SketchPointRef, SolidFeature, SolidFeatureKind, SpringDerived, SpringFeature,
+  SpringHandedness, SubShapeFingerprint, SubShapeKind, SubShapeRef, ThreadHoleFeature,
+  ThreadRepresentation,
 } from './part/types.js';
+export {
+  dedupeSubShapeRefs, fingerprintKeyText, isSameSubShape, subShapeKindOf,
+} from './part/subShapeRef.js';
 export type { SolidLabelKey } from './part/createPartDocument.js';
 export {
-  addSketch, appendSolid, consumedBodyIds, createEmptyPartDocument, DEFAULT_SEW_TOLERANCE_MM,
-  findSketch, findSolid, liveBodyIds, nextSolidId, nextSolidName, PART_SCHEMA_VERSION,
-  removeSolid, replaceSketch, replaceSolid, setActiveSketch, SOLID_LABELS,
+  addSketch, appendSolid, consumedBodyIds, consumedTargetsOf, createEmptyPartDocument,
+  DEFAULT_CHAMFER_ANGLE_DEGREES, DEFAULT_CHAMFER_DISTANCE_MM, DEFAULT_CIRCULAR_PATTERN_COUNT,
+  DEFAULT_FILLET_RADIUS_MM, DEFAULT_HOLE_DEPTH_MM, DEFAULT_HOLE_DIAMETER_MM, DEFAULT_PATTERN_COUNT,
+  DEFAULT_PATTERN_SPACING_MM, DEFAULT_SEW_TOLERANCE_MM, DEFAULT_SPRING_COIL_DIAMETER_MM,
+  DEFAULT_SPRING_PITCH_MM, DEFAULT_SPRING_TURNS, DEFAULT_SPRING_WIRE_DIAMETER_MM, findSketch,
+  findSolid, isMachiningFeature, isPatternSource, liveBodyIds, MAX_PATTERN_COUNT, MAX_SPRING_TURNS,
+  nextSolidId, nextSolidName, PART_SCHEMA_VERSION, removeSolid, replaceSketch, replaceSolid,
+  setActiveSketch, SOLID_LABELS,
 } from './part/createPartDocument.js';
 export type {
   BooleanKeyMaterial, ExtrudeKeyMaterial, KeyArc, KeyCurve, KeySegment, KeyVec3,

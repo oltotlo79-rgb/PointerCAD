@@ -1,16 +1,24 @@
 /**
- * 部品(パート)文書の保存形式(計画書 docs/plans/P2-ソリッド基礎.md §2.1、要件§8)。
+ * 部品(パート)文書の保存形式(計画書 docs/plans/P2-ソリッド基礎.md §2.1、
+ * docs/plans/P3-加工フィーチャー.md §2.4 / §2.6 / §2.7 / §2.7b、要件§8)。
  *
  * P1 の SketchDocument をそのまま中へ入れ、ソリッドフィーチャーの履歴を並べる。
  * 保存するのは履歴と式だけで、解決済みの座標・B-rep・メッシュ・キャッシュの鍵は
  * 保存しない(rules/04-設計の規律.md「導出できるものは保存しない」)。
  * 全パラメータは式文字列+評価値のペア(ExpressionValue)で持つ(FR-202)。
  * 参照はすべて id で持ち、座標や形を複製しない(FR-311、FR-502)。
+ *
+ * P3 で足したのは、加工フィーチャー6種(穴・ねじ穴・R 面取り・C 面取り・直線/円形パターン)、
+ * ばね、そして部分形状(面・辺・頂点)への参照 `SubShapeRef` である。
+ * いずれも「保存される形」なのでこのファイルに置く(解決の途中で作る型は resolvePart.ts、
+ * 鍵の材料の型は cacheKey.ts が自分で持つ)。
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
 
 import type { SketchDocument } from '../sketch/types.js';
+import type { Vec3 } from '../sketch/vec3.js';
+import type { ThreadSeries } from '../thread/metricThread.js';
 
 /** スケッチの面フィーチャー1枚への参照。断面に使う(§0.a-0.7、§0.a-0.8)。 */
 export interface SketchFaceRef {
@@ -24,7 +32,90 @@ export interface SketchLineRef {
   readonly lineFeatureId: string;
 }
 
-export type SolidFeatureKind = 'extrude' | 'revolve' | 'sew' | 'boolean';
+/**
+ * スケッチの点フィーチャー・点列フィーチャーへの参照
+ * (P3 計画書 §2.4.1、§0.a-0.9。穴の中心とばねの始点に使う)。
+ *
+ * 点列(FR-308)を指したときはその点列の全点へ展開される。1点だけを指す書き方は持たない
+ * (要素 id `point-1#3` ではなくフィーチャー id を持つため)。座標そのものは複製せず、
+ * 位置は式のまま再編集できる(FR-202、FR-502)。
+ */
+export interface SketchPointRef {
+  readonly sketchId: string;
+  /** 点フィーチャー(kind: 'point')または点列フィーチャー(kind: 'pointArray')の id。 */
+  readonly pointFeatureId: string;
+}
+
+/** 部分形状の種類(P3 計画書 §2.2.2)。 */
+export type SubShapeKind = 'face' | 'edge' | 'vertex';
+
+/** 面の曲面の種類。 */
+export type FaceSurfaceKind = 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus' | 'other';
+
+/** 辺の曲線の種類。 */
+export type EdgeCurveKind = 'line' | 'circle' | 'ellipse' | 'other';
+
+/**
+ * 部分形状の指紋(P3 計画書 §2.2.2)。保存される。
+ * 「形が同じなら必ず同じ値になるもの」だけを持つ。三角形の数・色・隣接する面の一覧は
+ * 形が変わると壊れやすく費用も高いため入れない(§2.2.2「入れないもの」)。
+ */
+export type SubShapeFingerprint =
+  | {
+      readonly kind: 'face';
+      readonly surfaceKind: FaceSurfaceKind;
+      /** 面積(mm²)。 */
+      readonly area: number;
+      /** 重心(mm)。 */
+      readonly position: Vec3;
+      /** 平面は法線、円柱・円錐は軸。軸が無い形(自由曲面)は null。 */
+      readonly axis: Vec3 | null;
+      /** 円柱・円錐・球のみ。それ以外は null。 */
+      readonly radius: number | null;
+    }
+  | {
+      readonly kind: 'edge';
+      readonly curveKind: EdgeCurveKind;
+      /** 長さ(mm)。 */
+      readonly length: number;
+      /** 中点(mm)。 */
+      readonly position: Vec3;
+      /** 円は軸、直線は向き。それ以外(楕円・その他)は null。 */
+      readonly axis: Vec3 | null;
+      /** 円のみ。それ以外は null。 */
+      readonly radius: number | null;
+    }
+  | { readonly kind: 'vertex'; readonly position: Vec3 };
+
+/**
+ * ボディの部分形状(面・辺・頂点)への参照(P3 計画書 §2.2.2)。保存される。
+ *
+ * B-rep の面・辺には名前が無く並び順しか手がかりが無いので(トポロジカルネーミング問題)、
+ * 選んだ瞬間の指紋をそのまま保存し、再計算のたびにカーネルが `bodyFeatureId` の指すボディの
+ * 中から指紋に最も近い部分形状を選び直す。見つからなければ理由を出して断る(FR-504)。
+ * 指紋を使う道具(種類の判定・同一判定・重複除去・鍵の材料への文字列化)は
+ * `part/subShapeRef.ts` にある。
+ */
+export interface SubShapeRef {
+  /** そのボディを作ったフィーチャーの id。 */
+  readonly bodyFeatureId: string;
+  /** 選んだときの通し番号(`TopExp.MapShapes_2` の順で数えた 0 始まりの番号)。 */
+  readonly index: number;
+  readonly fingerprint: SubShapeFingerprint;
+}
+
+export type SolidFeatureKind =
+  | 'extrude'
+  | 'revolve'
+  | 'sew'
+  | 'boolean'
+  | 'hole'
+  | 'threadHole'
+  | 'fillet'
+  | 'chamfer'
+  | 'pattern'
+  /** ばね(FR-414、P3 計画書 §2.7b)。対象を取らず、新しいボディを作る。 */
+  | 'spring';
 
 interface SolidFeatureBase {
   /**
@@ -89,7 +180,197 @@ export interface BooleanFeature extends SolidFeatureBase {
   readonly toolFeatureId: string;
 }
 
-export type SolidFeature = ExtrudeFeature | RevolveFeature | SewFeature | BooleanFeature;
+/** 穴の深さの指定(FR-405)。貫通の長さはカーネルが境界箱から決める(§0.a-0.12)。 */
+export type HoleDepth =
+  | { readonly kind: 'through' }
+  | { readonly kind: 'blind'; readonly depth: ExpressionValue };
+
+/**
+ * 穴(FR-405)。対象のボディを消費して1つの新しいボディを作る(§0.a-0.5)。
+ * 中心はスケッチの点・点列を参照し(§0.a-0.9)、カーネルが面の平面へ投影する。
+ */
+export interface HoleFeature extends SolidFeatureBase {
+  readonly kind: 'hole';
+  /** 穴をあける立体を作ったフィーチャーの id。消費する(§0.a-0.5)。 */
+  readonly targetFeatureId: string;
+  /** 穴をあける面。向きの既定と深さの起点になる(§2.2)。 */
+  readonly face: SubShapeRef;
+  /** 中心にする点。1つ以上。点列は全ての点へ展開される。 */
+  readonly centers: readonly SketchPointRef[];
+  readonly diameter: ExpressionValue;
+  readonly depth: HoleDepth;
+  /** 面の法線からの傾き(度)。0 なら面に垂直(FR-405)。 */
+  readonly tiltAngle: ExpressionValue;
+  /**
+   * 傾ける向き(面内の方位角、度)。基準は面の第1軸(カーネルが `gp_Pln.XAxis()` から取る、
+   * §0.a-0.10)。同じ面なら常に同じ向きになる(決定性)。
+   */
+  readonly tiltAzimuth: ExpressionValue;
+}
+
+/** ねじの3D表示(FR-406)。既定は簡略表示で、実らせんはフィーチャーごとのつまみ(§0.a-0.16)。 */
+export type ThreadRepresentation = 'simplified' | 'modeled';
+
+/**
+ * ねじ穴(FR-406)。穴と同じく対象のボディを消費して1つの新しいボディを作る。
+ * ピッチ・下穴径は規格表(thread/metricThread.ts)から入るが、式で書き換えられる(FR-202)。
+ */
+export interface ThreadHoleFeature extends SolidFeatureBase {
+  readonly kind: 'threadHole';
+  readonly targetFeatureId: string;
+  readonly face: SubShapeRef;
+  readonly centers: readonly SketchPointRef[];
+  /** JIS の呼び(例 'M6')。規格表の鍵(FR-406)。 */
+  readonly designation: string;
+  readonly series: ThreadSeries;
+  /** ピッチ(mm)。規格表から入るが、式で書き換えられる(FR-202)。 */
+  readonly pitch: ExpressionValue;
+  /** 下穴径(mm)。既定はめねじ内径 D1(§0.a-0.14)。式で書き換えられる。 */
+  readonly drillDiameter: ExpressionValue;
+  readonly depth: HoleDepth;
+  /** ねじ部の長さ(mm)。止まり穴では深さ以下にする。 */
+  readonly threadLength: ExpressionValue;
+  /** 簡略表示(既定)か実らせん形状か(FR-406、§0.a-0.15、§0.a-0.16)。 */
+  readonly representation: ThreadRepresentation;
+  readonly tiltAngle: ExpressionValue;
+  readonly tiltAzimuth: ExpressionValue;
+}
+
+/**
+ * R 面取り(FR-407)。対象のボディを消費して1つの新しいボディを作る。
+ * 頂点を指したときは「その頂点に集まる辺をすべて同じ半径で丸める」(§0.a-0.17)。
+ * 展開はカーネルが行う(頂点と辺の接続はカーネルしか知らない)。
+ */
+export interface FilletFeature extends SolidFeatureBase {
+  readonly kind: 'fillet';
+  readonly targetFeatureId: string;
+  /** 丸める辺・頂点。 */
+  readonly targets: readonly SubShapeRef[];
+  readonly radius: ExpressionValue;
+}
+
+/** C 面取りの大きさの指定(FR-408 の①②③)。 */
+export type ChamferSize =
+  | { readonly kind: 'equal'; readonly distance: ExpressionValue }
+  | {
+      readonly kind: 'twoDistances';
+      readonly distance1: ExpressionValue;
+      readonly distance2: ExpressionValue;
+    }
+  | {
+      readonly kind: 'distanceAngle';
+      readonly distance: ExpressionValue;
+      /** 基準面からの角度(度)。0 より大きく 90 より小さい。 */
+      readonly angle: ExpressionValue;
+    };
+
+/** C 面取り(FR-408)。対象のボディを消費して1つの新しいボディを作る。 */
+export interface ChamferFeature extends SolidFeatureBase {
+  readonly kind: 'chamfer';
+  readonly targetFeatureId: string;
+  readonly targets: readonly SubShapeRef[];
+  readonly size: ChamferSize;
+  /**
+   * 2距離・距離角度のときの基準面を、辺に接する2面のうち後の方にする(§0.a-0.18)。
+   * 既定(false)は並びで先に出る面。思っていたのと逆ならこのつまみ1つで直せる。
+   */
+  readonly swapReferenceFace: boolean;
+}
+
+/** パターンの向き・軸(FR-411、FR-412)。回転軸(RevolveAxis)と同じ形を流用する(§0.a-0.21)。 */
+export type PatternDirection =
+  | { readonly kind: 'world'; readonly axis: 'x' | 'y' | 'z' }
+  | { readonly kind: 'line'; readonly line: SketchLineRef };
+
+/** パターンの並べ方(FR-411 直線、FR-412 円形)。 */
+export type PatternPlacement =
+  | {
+      readonly kind: 'linear';
+      readonly direction: PatternDirection;
+      /** 隣り合う複製の間隔(mm)。 */
+      readonly spacing: ExpressionValue;
+      /** もとを含めた総数。2 以上 MAX_PATTERN_COUNT 以下。 */
+      readonly count: ExpressionValue;
+      /**
+       * 両側へ並べるか。真なら中央がもとの位置になる。
+       * 偶数個のときはもとの穴の位置に工具が来ないので解決のときに断る(§2.7)。
+       */
+      readonly symmetric: boolean;
+    }
+  | {
+      readonly kind: 'circular';
+      readonly axis: PatternDirection;
+      /** 並べる範囲(度)。全周なら 360。 */
+      readonly angle: ExpressionValue;
+      readonly count: ExpressionValue;
+      /** 全周へ等間隔で並べるか。真なら angle は使わず 360/count で刻む(NFR-UX-4)。 */
+      readonly fullCircle: boolean;
+    };
+
+/**
+ * パターン(FR-411、FR-412)。もとの加工フィーチャー(穴・ねじ穴に限る、§0.a-0.20)の
+ * ボディを消費し、同じ工具を並べて差し引いた新しいボディを1つ作る。
+ * フィレット・面取りを対象にしないのは「工具の形」が無く、変換した位置の辺を
+ * 指紋で選び直す必要があって危ういため。
+ */
+export interface PatternFeature extends SolidFeatureBase {
+  readonly kind: 'pattern';
+  /** 繰り返す加工フィーチャーの id(穴・ねじ穴に限る)。消費する。 */
+  readonly sourceFeatureId: string;
+  readonly placement: PatternPlacement;
+}
+
+/** ばねの巻き方向(FR-414、§0.a-0.33)。利用者の語彙(右巻き/左巻き)に合わせる。 */
+export type SpringHandedness = 'right' | 'left';
+
+/** 全長・ピッチ・巻数のうち、他の2つから計算して求めるもの(§0.a-0.30)。 */
+export type SpringDerived = 'length' | 'pitch' | 'turns';
+
+/**
+ * ばね(コイルばね、FR-414、§2.7b)。
+ *
+ * 対象ボディを持たず、消費もしない。押し出し・回転・縫合と同じ「新しいボディを1つ作る」
+ * フィーチャーである(§0.a-0.36)。したがってパターンの対象にもしない。
+ * 全長・ピッチ・巻数の関係式は `全長 = ピッチ × 巻数`(らせん経路の軸方向の長さ。
+ * 線径のぶんは含まない)で、`derived` が指す欄は保存値を使わず他の2つから計算し直す。
+ * 座巻き(端の1巻きを平らにする処理)は P3 では作らない(§0.a-0.32)。
+ */
+export interface SpringFeature extends SolidFeatureBase {
+  readonly kind: 'spring';
+  /** らせんの軸の始点。スケッチの点フィーチャーへの参照(§0.a-0.29)。 */
+  readonly origin: SketchPointRef;
+  /** らせんの軸の向き。回転軸(RevolveAxis)を流用する(§0.a-0.29)。 */
+  readonly axis: RevolveAxis;
+  /** 軸からの傾き(度)。0 なら軸そのまま(穴と同じ作り、§0.a-0.10)。 */
+  readonly tiltAngle: ExpressionValue;
+  /** 傾ける向き(軸に直交する面内の方位角、度)。 */
+  readonly tiltAzimuth: ExpressionValue;
+  /** らせん経路の軸方向の長さ(mm)。線径のぶんは含まない(§0.a-0.30)。 */
+  readonly length: ExpressionValue;
+  /** 1巻きあたりの軸方向の進み(mm)。 */
+  readonly pitch: ExpressionValue;
+  /** 巻数。整数でなくてよい(3.5 巻きも作れる)。 */
+  readonly turns: ExpressionValue;
+  /** 上の3つのうち、保存値を使わず他の2つから計算し直すもの(§0.a-0.30)。 */
+  readonly derived: SpringDerived;
+  /** コイルの中心径(mm)。線材の中心が通る円の直径。 */
+  readonly coilDiameter: ExpressionValue;
+  /** 線径(mm)。断面の円の直径。断面は円だけ(§0.a-0.31)。 */
+  readonly wireDiameter: ExpressionValue;
+  readonly handedness: SpringHandedness;
+}
+
+export type SolidFeature =
+  | ExtrudeFeature
+  | RevolveFeature
+  | SewFeature
+  | BooleanFeature
+  | HoleFeature
+  | ThreadHoleFeature
+  | FilletFeature
+  | ChamferFeature
+  | PatternFeature
+  | SpringFeature;
 
 /**
  * 部品(パート)文書。Undo のスナップショットの単位で、.pcad に保存される唯一のもの

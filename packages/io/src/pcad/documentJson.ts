@@ -76,7 +76,25 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'pointArray',
   'face',
 ];
-const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = ['extrude', 'revolve', 'sew', 'boolean'];
+/**
+ * いま `.pcad` から読める立体の種類。
+ *
+ * P3 のタスク13 で `SolidFeatureKind` に加工フィーチャー(穴・ねじ穴・R 面取り・C 面取り・
+ * パターン)とばねが増えたが、読み書きの実装はタスク19 でまとめて入れる。それまでは
+ * 版2 までの4種類だけを受け付け、知らない種類の `kind` は `readLiteral` が
+ * 「その欄の型が違う」として断る(新しい欄の解釈を推測しないため)。
+ * `Extract` で `SolidFeatureKind` から取り出すので、model 側で名前が変われば型検査で落ちる。
+ */
+type StoredSolidFeatureKind = Extract<
+  SolidFeatureKind,
+  'extrude' | 'revolve' | 'sew' | 'boolean'
+>;
+const SOLID_FEATURE_KINDS: readonly StoredSolidFeatureKind[] = [
+  'extrude',
+  'revolve',
+  'sew',
+  'boolean',
+];
 const REVOLVE_AXIS_KINDS: readonly RevolveAxis['kind'][] = ['world', 'line'];
 type WorldRevolveAxis = Extract<RevolveAxis, { readonly kind: 'world' }>;
 const WORLD_AXES: readonly WorldRevolveAxis['axis'][] = ['x', 'y', 'z'];
@@ -264,6 +282,19 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         targetFeatureId: feature.targetFeatureId,
         toolFeatureId: feature.toolFeatureId,
       };
+    case 'hole':
+    case 'threadHole':
+    case 'fillet':
+    case 'chamfer':
+    case 'pattern':
+    case 'spring':
+      // P3 タスク13 で文書の型だけが先に増えたための暫定。欄を決まった順で組み立て直すのは
+      // タスク19 の担当なので、それまでは受け取ったものをそのまま返して欄を落とさない。
+      // 読み込み側(SOLID_FEATURE_KINDS)はこの6種類をまだ受け付けないため、
+      // この状態では「書けても読めない」。**タスク19 がこの節を必ず置き換える。**
+      // 画面からこれらのフィーチャーを作れるようになるのはタスク25 以降なので、
+      // それまで実際の文書にこの種類が入ることはない。
+      return feature;
   }
 }
 

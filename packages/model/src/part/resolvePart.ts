@@ -248,6 +248,12 @@ function fail(featureId: string, code: PartErrorCode, message: string): PlanOutc
   return { ok: false, error: { featureId, code, message } };
 }
 
+/**
+ * まだ解決を実装していない種類の断り(P3 タスク13 の暫定、planSolid の最後の節)。
+ * 加工フィーチャーとばねの型はタスク13 で先に足したが、解決はタスク15・15b・16 で入る。
+ */
+const UNSUPPORTED_SOLID_KIND_MESSAGE = 'この種類の立体はまだ計算できません。';
+
 /** 押し出し(FR-401、§0.a-0.8)。向き・反転・両側の平行移動をここで決める。 */
 function planExtrude(feature: ExtrudeFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
   const face = findResolvedFace(sketches, feature.profile);
@@ -392,6 +398,18 @@ function planSolid(
       return planSew(feature, sketches);
     case 'boolean':
       return planBoolean(feature, bodyKeys, consumed);
+    case 'hole':
+    case 'threadHole':
+    case 'fillet':
+    case 'chamfer':
+    case 'pattern':
+    case 'spring':
+      // P3 タスク13 で文書の型だけを先に足したための暫定。
+      // 実際の解決(穴・ねじ穴=タスク15、ばね=タスク15b、面取り・パターン=タスク16)が
+      // 入るまでの間、この switch を網羅させて型検査を通すために置く。
+      // 例外を投げず errors へ入れる形にしておくので、途中の状態でもアプリは落ちない
+      // (FR-504、NFR-RE-1)。**タスク15・15b・16 はこの節を必ず置き換える。**
+      return fail(feature.id, 'invalidValue', UNSUPPORTED_SOLID_KIND_MESSAGE);
   }
 }
 

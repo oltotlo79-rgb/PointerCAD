@@ -12,15 +12,33 @@ import {
 } from '../sketch/createSketchDocument.js';
 import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
 import type { SketchDocument, SketchFaceFeature, SketchLineFeature } from '../sketch/types.js';
+import { DEFAULT_THREAD_DESIGNATION, threadMinorDiameter } from '../thread/metricThread.js';
 import {
   addSketch,
   appendSolid,
   consumedBodyIds,
+  consumedTargetsOf,
   createEmptyPartDocument,
+  DEFAULT_CHAMFER_ANGLE_DEGREES,
+  DEFAULT_CHAMFER_DISTANCE_MM,
+  DEFAULT_CIRCULAR_PATTERN_COUNT,
+  DEFAULT_FILLET_RADIUS_MM,
+  DEFAULT_HOLE_DEPTH_MM,
+  DEFAULT_HOLE_DIAMETER_MM,
+  DEFAULT_PATTERN_COUNT,
+  DEFAULT_PATTERN_SPACING_MM,
   DEFAULT_SEW_TOLERANCE_MM,
+  DEFAULT_SPRING_COIL_DIAMETER_MM,
+  DEFAULT_SPRING_PITCH_MM,
+  DEFAULT_SPRING_TURNS,
+  DEFAULT_SPRING_WIRE_DIAMETER_MM,
   findSketch,
   findSolid,
+  isMachiningFeature,
+  isPatternSource,
   liveBodyIds,
+  MAX_PATTERN_COUNT,
+  MAX_SPRING_TURNS,
   nextSolidId,
   nextSolidName,
   PART_SCHEMA_VERSION,
@@ -33,13 +51,21 @@ import {
 import type {
   BooleanFeature,
   BooleanOperation,
+  ChamferFeature,
   ExtrudeFeature,
+  FilletFeature,
+  HoleFeature,
   PartDocument,
+  PatternFeature,
   RevolveFeature,
   SewFeature,
   SketchFaceRef,
   SketchLineRef,
+  SketchPointRef,
   SolidFeature,
+  SpringFeature,
+  SubShapeRef,
+  ThreadHoleFeature,
 } from './types.js';
 
 /** テストの中で式を書くための補助。評価できない式はテストの誤りとして落とす。 */
@@ -183,6 +209,172 @@ function documentWithSubtract(): {
   const afterTool = appendSolid(afterTarget, tool);
   const subtract = buildBoolean(afterTool, 'subtract', target.id, tool.id);
   return { document: appendSolid(afterTool, subtract), target, tool, subtract };
+}
+
+/** 面の指紋(P3 §2.2.3 の検算表と同じ箱: 40×30 を Z へ10押し出した上面)。 */
+function faceRefOf(bodyFeatureId: string, index = 0): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 1200,
+      position: [20, 15, 10],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+}
+
+/** 辺の指紋(上の箱の手前下の辺)。 */
+function edgeRefOf(bodyFeatureId: string, index = 0): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index,
+    fingerprint: {
+      kind: 'edge',
+      curveKind: 'line',
+      length: 40,
+      position: [20, 0, 0],
+      axis: [1, 0, 0],
+      radius: null,
+    },
+  };
+}
+
+/** documentWithFace が作る最初の点(point-1)への参照。穴の中心とばねの始点に使う。 */
+function firstPointRef(document: PartDocument): SketchPointRef {
+  return { sketchId: document.activeSketchId, pointFeatureId: 'point-1' };
+}
+
+function buildHole(document: PartDocument, targetFeatureId: string): HoleFeature {
+  return {
+    id: nextSolidId(document, 'hole'),
+    name: nextSolidName(document, 'hole'),
+    suppressed: false,
+    kind: 'hole',
+    targetFeatureId,
+    face: faceRefOf(targetFeatureId),
+    centers: [firstPointRef(document)],
+    diameter: expr(String(DEFAULT_HOLE_DIAMETER_MM)),
+    depth: { kind: 'through' },
+    tiltAngle: expr('0'),
+    tiltAzimuth: expr('0'),
+  };
+}
+
+function buildThreadHole(document: PartDocument, targetFeatureId: string): ThreadHoleFeature {
+  return {
+    id: nextSolidId(document, 'threadHole'),
+    name: nextSolidName(document, 'threadHole'),
+    suppressed: false,
+    kind: 'threadHole',
+    targetFeatureId,
+    face: faceRefOf(targetFeatureId),
+    centers: [firstPointRef(document)],
+    designation: DEFAULT_THREAD_DESIGNATION,
+    series: 'coarse',
+    pitch: expr('1'),
+    drillDiameter: expr(String(threadMinorDiameter(6, 1))),
+    depth: { kind: 'blind', depth: expr(String(DEFAULT_HOLE_DEPTH_MM)) },
+    threadLength: expr('8'),
+    representation: 'simplified',
+    tiltAngle: expr('0'),
+    tiltAzimuth: expr('0'),
+  };
+}
+
+function buildFillet(document: PartDocument, targetFeatureId: string): FilletFeature {
+  return {
+    id: nextSolidId(document, 'fillet'),
+    name: nextSolidName(document, 'fillet'),
+    suppressed: false,
+    kind: 'fillet',
+    targetFeatureId,
+    targets: [edgeRefOf(targetFeatureId, 2)],
+    radius: expr(String(DEFAULT_FILLET_RADIUS_MM)),
+  };
+}
+
+function buildChamfer(document: PartDocument, targetFeatureId: string): ChamferFeature {
+  return {
+    id: nextSolidId(document, 'chamfer'),
+    name: nextSolidName(document, 'chamfer'),
+    suppressed: false,
+    kind: 'chamfer',
+    targetFeatureId,
+    targets: [edgeRefOf(targetFeatureId, 2)],
+    size: { kind: 'equal', distance: expr(String(DEFAULT_CHAMFER_DISTANCE_MM)) },
+    swapReferenceFace: false,
+  };
+}
+
+function buildLinearPattern(document: PartDocument, sourceFeatureId: string): PatternFeature {
+  return {
+    id: nextSolidId(document, 'linearPattern'),
+    name: nextSolidName(document, 'linearPattern'),
+    suppressed: false,
+    kind: 'pattern',
+    sourceFeatureId,
+    placement: {
+      kind: 'linear',
+      direction: { kind: 'world', axis: 'x' },
+      spacing: expr(String(DEFAULT_PATTERN_SPACING_MM)),
+      count: expr(String(DEFAULT_PATTERN_COUNT)),
+      symmetric: false,
+    },
+  };
+}
+
+function buildCircularPattern(document: PartDocument, sourceFeatureId: string): PatternFeature {
+  return {
+    id: nextSolidId(document, 'circularPattern'),
+    name: nextSolidName(document, 'circularPattern'),
+    suppressed: false,
+    kind: 'pattern',
+    sourceFeatureId,
+    placement: {
+      kind: 'circular',
+      axis: { kind: 'world', axis: 'z' },
+      angle: expr('360'),
+      count: expr(String(DEFAULT_CIRCULAR_PATTERN_COUNT)),
+      fullCircle: true,
+    },
+  };
+}
+
+function buildSpring(document: PartDocument): SpringFeature {
+  return {
+    id: nextSolidId(document, 'spring'),
+    name: nextSolidName(document, 'spring'),
+    suppressed: false,
+    kind: 'spring',
+    origin: firstPointRef(document),
+    axis: { kind: 'world', axis: 'z' },
+    tiltAngle: expr('0'),
+    tiltAzimuth: expr('0'),
+    length: expr(String(DEFAULT_SPRING_PITCH_MM * DEFAULT_SPRING_TURNS)),
+    pitch: expr(String(DEFAULT_SPRING_PITCH_MM)),
+    turns: expr(String(DEFAULT_SPRING_TURNS)),
+    derived: 'length',
+    coilDiameter: expr(String(DEFAULT_SPRING_COIL_DIAMETER_MM)),
+    wireDiameter: expr(String(DEFAULT_SPRING_WIRE_DIAMETER_MM)),
+    handedness: 'right',
+  };
+}
+
+/** 「40×30 を押し出した立体に貫通穴を1つあけた」文書(加工の消費の判定の土台)。 */
+function documentWithHole(): {
+  document: PartDocument;
+  extrude: ExtrudeFeature;
+  hole: HoleFeature;
+} {
+  const { document: withFace, faceRef } = documentWithFace();
+  const extrude = buildExtrude(withFace, faceRef);
+  const afterExtrude = appendSolid(withFace, extrude);
+  const hole = buildHole(afterExtrude, extrude.id);
+  return { document: appendSolid(afterExtrude, hole), extrude, hole };
 }
 
 describe('部品文書の生成(要件§8、FR-501)', () => {
@@ -345,6 +537,13 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       union: '和',
       subtract: '差',
       intersect: '積',
+      hole: '穴',
+      threadHole: 'ねじ穴',
+      fillet: 'R面取り',
+      chamfer: 'C面取り',
+      linearPattern: '直線パターン',
+      circularPattern: '円形パターン',
+      spring: 'ばね',
     });
     expect(findSolid(document, 'subtract-1')?.name).toBe('差1');
     expect(nextSolidName(document, 'subtract')).toBe('差2');
@@ -450,5 +649,336 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
     const document = appendSolid(appendSolid(afterFirst, union), later);
     expect([...consumedBodyIds(document)]).toEqual([first.id]);
     expect(liveBodyIds(document)).toEqual([union.id, later.id]);
+  });
+});
+
+describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
+  it('種類ごとの既定名は13個(既存6 + 加工6 + ばね1)', () => {
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(13);
+    expect(SOLID_LABELS.hole).toBe('穴');
+    expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
+    expect(SOLID_LABELS.spring).toBe('ばね');
+  });
+
+  it('穴は同じ種類の最大連番+1で数え、1つ消しても番号は戻らない', () => {
+    const { document: withHole, extrude } = documentWithHole();
+    const second = buildHole(withHole, extrude.id);
+    const afterSecond = appendSolid(withHole, second);
+    expect(afterSecond.solids.map((solid) => solid.name)).toEqual(['押し出し1', '穴1', '穴2']);
+    expect(nextSolidName(afterSecond, 'hole')).toBe('穴3');
+    const removed = removeSolid(afterSecond, 'hole-1');
+    expect(nextSolidName(removed, 'hole')).toBe('穴3');
+    expect(nextSolidId(removed, 'hole')).toBe('hole-3');
+  });
+
+  it('ねじ穴の id は threadHole-1 から始まる', () => {
+    const { document, extrude } = documentWithHole();
+    expect(nextSolidId(document, 'threadHole')).toBe('threadHole-1');
+    const thread = buildThreadHole(document, extrude.id);
+    expect(thread.id).toBe('threadHole-1');
+    expect(thread.name).toBe('ねじ穴1');
+    expect(nextSolidId(appendSolid(document, thread), 'threadHole')).toBe('threadHole-2');
+  });
+
+  it('ばねが2つあれば次は ばね3(§0.a-0.36)', () => {
+    const { document: withFace } = documentWithFace();
+    const first = buildSpring(withFace);
+    const afterFirst = appendSolid(withFace, first);
+    const second = buildSpring(afterFirst);
+    const document = appendSolid(afterFirst, second);
+    expect([first.name, second.name]).toEqual(['ばね1', 'ばね2']);
+    expect(nextSolidName(document, 'spring')).toBe('ばね3');
+    expect(nextSolidId(document, 'spring')).toBe('spring-3');
+  });
+
+  it('パターンは配置ごと(直線 / 円形)に別の連番で数える(§2.3 と同じ考え方)', () => {
+    const { document: withHole, hole } = documentWithHole();
+    const linear = buildLinearPattern(withHole, hole.id);
+    const afterLinear = appendSolid(withHole, linear);
+    const circular = buildCircularPattern(afterLinear, hole.id);
+    expect(linear.id).toBe('linearPattern-1');
+    expect(linear.name).toBe('直線パターン1');
+    expect(circular.id).toBe('circularPattern-1');
+    expect(circular.name).toBe('円形パターン1');
+    expect(nextSolidName(appendSolid(afterLinear, circular), 'linearPattern')).toBe(
+      '直線パターン2',
+    );
+  });
+
+  it('R 面取り・C 面取りの名前と id', () => {
+    const { document, extrude } = documentWithHole();
+    const fillet = buildFillet(document, extrude.id);
+    const chamfer = buildChamfer(appendSolid(document, fillet), extrude.id);
+    expect([fillet.id, fillet.name]).toEqual(['fillet-1', 'R面取り1']);
+    expect([chamfer.id, chamfer.name]).toEqual(['chamfer-1', 'C面取り1']);
+  });
+
+  it('同じ id の加工フィーチャーは足さず、元の文書がそのまま返る', () => {
+    const { document, hole } = documentWithHole();
+    expect(appendSolid(document, hole)).toBe(document);
+    expect(document.solids).toHaveLength(2);
+  });
+});
+
+describe('加工フィーチャーとばねの型(P3 §2.4 / §2.6 / §2.7 / §2.7b、FR-202)', () => {
+  it('穴は面の指紋・中心の点・径・深さを持ち、数値はすべて式と評価値の組', () => {
+    const { hole } = documentWithHole();
+    expect(hole.face.bodyFeatureId).toBe('extrude-1');
+    expect(hole.face.fingerprint.kind).toBe('face');
+    expect(hole.centers).toHaveLength(1);
+    expect(hole.centers[0].pointFeatureId).toBe('point-1');
+    expect(hole.diameter.source).toBe('6');
+    expect(hole.diameter.value).toBe(DEFAULT_HOLE_DIAMETER_MM);
+    expect(hole.depth).toEqual({ kind: 'through' });
+    expect(hole.tiltAngle.value).toBe(0);
+    expect(hole.tiltAzimuth.value).toBe(0);
+  });
+
+  it('止まり穴は深さを式で持つ(貫通の長さは保存しない、§0.a-0.12)', () => {
+    const { document, extrude } = documentWithHole();
+    const blind: HoleFeature = {
+      ...buildHole(document, extrude.id),
+      depth: { kind: 'blind', depth: expr('4+1') },
+    };
+    expect(blind.depth.kind).toBe('blind');
+    if (blind.depth.kind === 'blind') {
+      expect(blind.depth.depth.source).toBe('4+1');
+      expect(blind.depth.depth.value).toBe(5);
+    }
+  });
+
+  it('ねじ穴は呼び・系列・ピッチ・下穴径を持ち、下穴径の既定はめねじ内径 D1(§0.a-0.14)', () => {
+    const { document, extrude } = documentWithHole();
+    const thread = buildThreadHole(document, extrude.id);
+    expect(thread.designation).toBe('M6');
+    expect(thread.series).toBe('coarse');
+    expect(thread.pitch.value).toBe(1);
+    expect(thread.drillDiameter.value).toBeCloseTo(4.917468, 6);
+    expect(thread.representation).toBe('simplified');
+    const modeled: ThreadHoleFeature = { ...thread, representation: 'modeled' };
+    expect(modeled.representation).toBe('modeled');
+  });
+
+  it('C 面取りの大きさは等距離・2距離・距離+角度の3通り(FR-408)', () => {
+    const { document, extrude } = documentWithHole();
+    const equal = buildChamfer(document, extrude.id);
+    expect(equal.size).toEqual({
+      kind: 'equal',
+      distance: expr(String(DEFAULT_CHAMFER_DISTANCE_MM)),
+    });
+    const twoDistances: ChamferFeature = {
+      ...equal,
+      size: { kind: 'twoDistances', distance1: expr('1'), distance2: expr('2') },
+    };
+    const distanceAngle: ChamferFeature = {
+      ...equal,
+      size: {
+        kind: 'distanceAngle',
+        distance: expr('1'),
+        angle: expr(String(DEFAULT_CHAMFER_ANGLE_DEGREES)),
+      },
+    };
+    expect(twoDistances.size.kind).toBe('twoDistances');
+    expect(distanceAngle.size.kind).toBe('distanceAngle');
+    if (distanceAngle.size.kind === 'distanceAngle') {
+      expect(distanceAngle.size.angle.value).toBe(45);
+    }
+    expect(equal.swapReferenceFace).toBe(false);
+  });
+
+  it('R 面取りは辺・頂点をまとめて指せる(§0.a-0.17)', () => {
+    const { document, extrude } = documentWithHole();
+    const fillet = buildFillet(document, extrude.id);
+    const withVertex: FilletFeature = {
+      ...fillet,
+      targets: [
+        ...fillet.targets,
+        { bodyFeatureId: extrude.id, index: 5, fingerprint: { kind: 'vertex', position: [0, 0, 0] } },
+      ],
+    };
+    expect(withVertex.targets.map((target) => target.fingerprint.kind)).toEqual(['edge', 'vertex']);
+    expect(fillet.radius.value).toBe(DEFAULT_FILLET_RADIUS_MM);
+  });
+
+  it('パターンの向き・軸は回転軸と同じ形を流用する(§0.a-0.21)', () => {
+    const { document: withHole, hole } = documentWithHole();
+    const { document, lineRef } = addAxisLine(withHole);
+    const linear = buildLinearPattern(document, hole.id);
+    expect(linear.placement.kind).toBe('linear');
+    if (linear.placement.kind === 'linear') {
+      expect(linear.placement.direction).toEqual({ kind: 'world', axis: 'x' });
+      expect(linear.placement.spacing.value).toBe(DEFAULT_PATTERN_SPACING_MM);
+      expect(linear.placement.count.value).toBe(DEFAULT_PATTERN_COUNT);
+      expect(linear.placement.symmetric).toBe(false);
+    }
+    const onLine: PatternFeature = {
+      ...linear,
+      placement: {
+        kind: 'linear',
+        direction: { kind: 'line', line: lineRef },
+        spacing: expr('20'),
+        count: expr('3'),
+        symmetric: true,
+      },
+    };
+    expect(onLine.placement.kind === 'linear' && onLine.placement.direction.kind).toBe('line');
+    const circular = buildCircularPattern(document, hole.id);
+    expect(circular.placement.kind).toBe('circular');
+    if (circular.placement.kind === 'circular') {
+      expect(circular.placement.fullCircle).toBe(true);
+      expect(circular.placement.count.value).toBe(DEFAULT_CIRCULAR_PATTERN_COUNT);
+    }
+  });
+
+  it('ばねは始点の点参照・軸・傾き・3つの寸法・巻き方向を持つ(FR-414)', () => {
+    const { document } = documentWithFace();
+    const spring = buildSpring(document);
+    expect(spring.origin.pointFeatureId).toBe('point-1');
+    expect(spring.axis).toEqual({ kind: 'world', axis: 'z' });
+    expect(spring.tiltAngle.value).toBe(0);
+    expect(spring.tiltAzimuth.value).toBe(0);
+    expect(spring.pitch.value).toBe(DEFAULT_SPRING_PITCH_MM);
+    expect(spring.turns.value).toBe(DEFAULT_SPRING_TURNS);
+    // 全長 = ピッチ × 巻数(線径のぶんは含まない、§0.a-0.30)。
+    expect(spring.length.value).toBe(DEFAULT_SPRING_PITCH_MM * DEFAULT_SPRING_TURNS);
+    expect(spring.coilDiameter.value).toBe(DEFAULT_SPRING_COIL_DIAMETER_MM);
+    expect(spring.wireDiameter.value).toBe(DEFAULT_SPRING_WIRE_DIAMETER_MM);
+    expect(spring.derived).toBe('length');
+    expect(spring.handedness).toBe('right');
+    const left: SpringFeature = { ...spring, derived: 'turns', handedness: 'left' };
+    expect([left.derived, left.handedness]).toEqual(['turns', 'left']);
+  });
+
+  it('既定値と上限は計画書の数値のまま(§0.a-0.21、§0.a-0.30、§0.a-0.35)', () => {
+    expect(DEFAULT_HOLE_DIAMETER_MM).toBe(6);
+    expect(DEFAULT_HOLE_DEPTH_MM).toBe(10);
+    expect(DEFAULT_FILLET_RADIUS_MM).toBe(2);
+    expect(DEFAULT_CHAMFER_DISTANCE_MM).toBe(1);
+    expect(DEFAULT_CHAMFER_ANGLE_DEGREES).toBe(45);
+    expect(DEFAULT_PATTERN_SPACING_MM).toBe(20);
+    expect(DEFAULT_PATTERN_COUNT).toBe(3);
+    expect(DEFAULT_CIRCULAR_PATTERN_COUNT).toBe(4);
+    expect(MAX_PATTERN_COUNT).toBe(100);
+    expect(DEFAULT_SPRING_COIL_DIAMETER_MM).toBe(20);
+    expect(DEFAULT_SPRING_WIRE_DIAMETER_MM).toBe(2);
+    expect(DEFAULT_SPRING_PITCH_MM).toBe(5);
+    expect(DEFAULT_SPRING_TURNS).toBe(4);
+    expect(MAX_SPRING_TURNS).toBe(200);
+  });
+});
+
+describe('加工・パターン・ばねの消費の判定(§0.a-0.5、§0.a-0.20、§0.a-0.36)', () => {
+  it('consumedTargetsOf は種類ごとに消費するボディを返す', () => {
+    const { document: withHole, extrude, hole } = documentWithHole();
+    const { document: withFace, faceRef } = documentWithFace();
+    const revolve = buildRevolve(withFace, faceRef);
+    const sew = buildSew(withFace, [faceRef, faceRef]);
+    const boolean = buildBoolean(withHole, 'subtract', extrude.id, hole.id);
+    expect(consumedTargetsOf(extrude)).toEqual([]);
+    expect(consumedTargetsOf(revolve)).toEqual([]);
+    expect(consumedTargetsOf(sew)).toEqual([]);
+    expect(consumedTargetsOf(boolean)).toEqual([extrude.id, hole.id]);
+    expect(consumedTargetsOf(hole)).toEqual([extrude.id]);
+    expect(consumedTargetsOf(buildThreadHole(withHole, extrude.id))).toEqual([extrude.id]);
+    expect(consumedTargetsOf(buildFillet(withHole, extrude.id))).toEqual([extrude.id]);
+    expect(consumedTargetsOf(buildChamfer(withHole, extrude.id))).toEqual([extrude.id]);
+    expect(consumedTargetsOf(buildLinearPattern(withHole, hole.id))).toEqual([hole.id]);
+    expect(consumedTargetsOf(buildCircularPattern(withHole, hole.id))).toEqual([hole.id]);
+  });
+
+  it('ばねは何も消費しない(「作る」フィーチャー、§0.a-0.36)', () => {
+    const { document: withFace } = documentWithFace();
+    expect(consumedTargetsOf(buildSpring(withFace))).toEqual([]);
+    expect(isMachiningFeature(buildSpring(withFace))).toBe(false);
+    expect(isPatternSource(buildSpring(withFace))).toBe(false);
+  });
+
+  it('isMachiningFeature は対象を1つ取る種類だけ真(ブーリアンは2つ取るので偽)', () => {
+    const { document: withHole, extrude, hole } = documentWithHole();
+    const { document: withFace, faceRef } = documentWithFace();
+    expect(isMachiningFeature(extrude)).toBe(false);
+    expect(isMachiningFeature(buildRevolve(withFace, faceRef))).toBe(false);
+    expect(isMachiningFeature(buildSew(withFace, [faceRef, faceRef]))).toBe(false);
+    expect(isMachiningFeature(buildBoolean(withHole, 'union', extrude.id, hole.id))).toBe(false);
+    expect(isMachiningFeature(hole)).toBe(true);
+    expect(isMachiningFeature(buildThreadHole(withHole, extrude.id))).toBe(true);
+    expect(isMachiningFeature(buildFillet(withHole, extrude.id))).toBe(true);
+    expect(isMachiningFeature(buildChamfer(withHole, extrude.id))).toBe(true);
+    expect(isMachiningFeature(buildLinearPattern(withHole, hole.id))).toBe(true);
+  });
+
+  it('パターンの対象にできるのは穴とねじ穴だけ(§0.a-0.20)', () => {
+    const { document: withHole, extrude, hole } = documentWithHole();
+    expect(isPatternSource(hole)).toBe(true);
+    expect(isPatternSource(buildThreadHole(withHole, extrude.id))).toBe(true);
+    expect(isPatternSource(extrude)).toBe(false);
+    expect(isPatternSource(buildFillet(withHole, extrude.id))).toBe(false);
+    expect(isPatternSource(buildChamfer(withHole, extrude.id))).toBe(false);
+    expect(isPatternSource(buildLinearPattern(withHole, hole.id))).toBe(false);
+  });
+
+  it('穴は対象の押し出しを消費し、穴だけが残る', () => {
+    const { document, extrude, hole } = documentWithHole();
+    expect([...consumedBodyIds(document)]).toEqual([extrude.id]);
+    expect(liveBodyIds(document)).toEqual([hole.id]);
+  });
+
+  it('穴を並べたパターンは穴を消費し、パターンだけが残る', () => {
+    const { document: withHole, hole } = documentWithHole();
+    const pattern = buildLinearPattern(withHole, hole.id);
+    const document = appendSolid(withHole, pattern);
+    expect([...consumedBodyIds(document)].sort()).toEqual(['extrude-1', hole.id].sort());
+    expect(liveBodyIds(document)).toEqual(['linearPattern-1']);
+  });
+
+  it('R 面取り・C 面取りも対象のボディを消費して自分のボディを作る', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const afterExtrude = appendSolid(withFace, extrude);
+    const fillet = buildFillet(afterExtrude, extrude.id);
+    const afterFillet = appendSolid(afterExtrude, fillet);
+    const chamfer = buildChamfer(afterFillet, fillet.id);
+    const document = appendSolid(afterFillet, chamfer);
+    expect([...consumedBodyIds(document)].sort()).toEqual([extrude.id, fillet.id].sort());
+    expect(liveBodyIds(document)).toEqual([chamfer.id]);
+  });
+
+  it('抑制した穴は何も消費せず、もとの押し出しが画面に戻る(FR-503)', () => {
+    const { document, extrude, hole } = documentWithHole();
+    const suppressed = replaceSolid(document, hole.id, { ...hole, suppressed: true });
+    expect(consumedBodyIds(suppressed).size).toBe(0);
+    expect(liveBodyIds(suppressed)).toEqual([extrude.id]);
+    // 元の文書は変わらない(不変)。
+    expect(liveBodyIds(document)).toEqual([hole.id]);
+  });
+
+  it('ばねは押し出しと並んで両方が画面に出る(§0.a-0.36)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const afterExtrude = appendSolid(withFace, extrude);
+    const spring = buildSpring(afterExtrude);
+    const document = appendSolid(afterExtrude, spring);
+    expect(consumedBodyIds(document).size).toBe(0);
+    expect(liveBodyIds(document)).toEqual([extrude.id, spring.id]);
+  });
+
+  it('参照先を取り除いても加工フィーチャーは履歴に残る(解決のときに失敗させる、FR-504)', () => {
+    const { document, extrude, hole } = documentWithHole();
+    const after = removeSolid(document, extrude.id);
+    expect(findSolid(after, hole.id)).toEqual(hole);
+    expect(consumedBodyIds(after).size).toBe(0);
+    expect(liveBodyIds(after)).toEqual([hole.id]);
+  });
+
+  it('履歴で自分より後ろのボディは加工でも消費できない(前方参照は無効)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const first = buildExtrude(withFace, faceRef);
+    const afterFirst = appendSolid(withFace, first);
+    const later = buildExtrude(afterFirst, faceRef, '4');
+    // まだ足していない later を対象にする穴を、later より前に置く。
+    const hole = buildHole(afterFirst, later.id);
+    const document = appendSolid(appendSolid(afterFirst, hole), later);
+    expect(consumedBodyIds(document).size).toBe(0);
+    expect(liveBodyIds(document)).toEqual([first.id, hole.id, later.id]);
   });
 });

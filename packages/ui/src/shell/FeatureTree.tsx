@@ -39,7 +39,15 @@ import {
   type IconProps,
 } from './icons.js';
 
-/** 行の頭に出す種類の絵。道具のアイコンと同じ図柄にして、作ったものと道具を結び付ける。 */
+/**
+ * 行の頭に出す種類の絵。道具のアイコンと同じ図柄にして、作ったものと道具を結び付ける。
+ *
+ * P3 のタスク13 で種類が13個に増えた。加工6種とばねの図柄はツールバーの道具と同じものを
+ * 使うので、道具を作るタスク26 で図柄を足し、この7行を差し替える。それまでは立体の印
+ * (CubeIcon)を仮に置く(行が絵無しで崩れないようにするため)。
+ * 画面からこれらのフィーチャーを作れるようになるのはタスク25 以降なので、
+ * それまでこの仮の絵が実際にツリーへ出ることはない。
+ */
 const KIND_ICONS: Readonly<
   Record<SketchFeatureKind | SolidLabelKey, (props: IconProps) => React.JSX.Element>
 > = {
@@ -54,6 +62,13 @@ const KIND_ICONS: Readonly<
   union: UnionIcon,
   subtract: SubtractIcon,
   intersect: IntersectIcon,
+  hole: CubeIcon,
+  threadHole: CubeIcon,
+  fillet: CubeIcon,
+  chamfer: CubeIcon,
+  linearPattern: CubeIcon,
+  circularPattern: CubeIcon,
+  spring: CubeIcon,
 };
 
 /** 節の頭に出す絵。スケッチは作図面、ソリッドは立体の印。 */
@@ -70,6 +85,8 @@ const SECTION_ICONS: Readonly<Record<TreeSectionKey, (props: IconProps) => React
  */
 interface RowMenuState {
   readonly featureId: string;
+  /** どちらの節の行から開いたか。ソリッドだけ抑制・改名を持つ(P3 §0.a-0.23 ②)。 */
+  readonly sectionKey: TreeSectionKey;
   readonly x: number;
   readonly y: number;
 }
@@ -107,7 +124,8 @@ function menuRight(right: number): number {
  * 行をクリックで選び、Shift+クリックで足す(FR-106)。指を乗せるとビューポート側も光る。
  * 計算できていない行には赤い印を出し、理由をホバーで見せる(FR-504)。
  *
- * 立体の行は「⋮」ボタンか右クリックで小さな一覧を開き、抑制・改名・削除ができる(FR-503)。
+ * どの行も「⋮」ボタンか右クリックで小さな一覧を開く(P3 §0.a-0.23 ②)。立体の行は
+ * 抑制・改名・削除ができ(FR-503)、スケッチの行は削除だけを持つ。
  * 一覧も改名の欄も**モーダルにしない**(NFR-UX-2)ので、開いている間も視点操作は効く。
  * 削除の前に確認を出さないのは、元に戻す(Ctrl+Z)で戻せるため(NFR-UX-3)。参照していた
  * 立体を消しても止めず、後の段が赤い印になるだけにする(FR-504、NFR-RE-1)。
@@ -129,7 +147,9 @@ export function FeatureTree(): React.JSX.Element {
 
   const sections = buildTreeSections(part, part.activeSketchId, sketchErrors, partErrors);
   const rowCount = sections.reduce((total, section) => total + section.rows.length, 0);
-  const menuFeature = menu === null ? undefined : findSolid(part, menu.featureId);
+  // 抑制・改名はソリッドの行だけが持つ(スケッチの行の一覧は削除だけ、P3 §0.a-0.23 ②)。
+  const menuFeature =
+    menu === null || menu.sectionKey !== 'solid' ? undefined : findSolid(part, menu.featureId);
 
   // 一覧の外を押したとき・Esc を押したときに閉じる。開いている間だけ見張る。
   useEffect(() => {
@@ -168,13 +188,13 @@ export function FeatureTree(): React.JSX.Element {
   const hoveredId = hoveredElementId === null ? null : featureIdOf(hoveredElementId);
   const chevronClassName = 'pcad-tree__chevron' + (isExpanded ? ' pcad-tree__chevron--open' : '');
 
-  const removeRow = (row: TreeRow, sectionKey: TreeSectionKey): void => {
+  const removeRow = (featureId: string, sectionKey: TreeSectionKey): void => {
     const store = useAppStore.getState();
     if (sectionKey === 'sketch') {
-      store.removeSketchFeature(row.id);
+      store.removeSketchFeature(featureId);
       return;
     }
-    store.applyDocument(removeSolid(store.document, row.id));
+    store.applyDocument(removeSolid(store.document, featureId));
   };
 
   const commitRename = (featureId: string, name: string): void => {
@@ -223,13 +243,11 @@ export function FeatureTree(): React.JSX.Element {
             }
           }}
           onContextMenu={(event) => {
-            if (sectionKey !== 'solid') {
-              return;
-            }
             event.preventDefault();
             useAppStore.getState().setSelection([row.id]);
             setMenu({
               featureId: row.id,
+              sectionKey,
               x: menuRight(event.clientX),
               y: menuTop(event.clientY, event.clientY),
             });
@@ -283,7 +301,7 @@ export function FeatureTree(): React.JSX.Element {
                 }
                 // 参照していたものが壊れても消させる。理由は帯と赤い印で伝える(FR-504)。
                 event.preventDefault();
-                removeRow(row, sectionKey);
+                removeRow(row.id, sectionKey);
               }}
             >
               <KindIcon size={14} className="pcad-tree__icon" />
@@ -306,38 +324,29 @@ export function FeatureTree(): React.JSX.Element {
               <AlertIcon size={12} />
             </span>
           )}
-          {sectionKey === 'solid' ? (
-            <button
-              type="button"
-              className="pcad-tree__more"
-              title={t('featureTree.menuTooltip')}
-              aria-label={t('featureTree.menuTooltip')}
-              aria-haspopup="menu"
-              aria-expanded={menu !== null && menu.featureId === row.id}
-              onClick={(event) => {
-                const rect = event.currentTarget.getBoundingClientRect();
-                setMenu({
-                  featureId: row.id,
-                  x: menuRight(rect.right),
-                  y: menuTop(rect.bottom, rect.top),
-                });
-              }}
-            >
-              {t('featureTree.menuMark')}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="pcad-tree__delete"
-              title={t('featureTree.deleteTooltip')}
-              aria-label={t('featureTree.deleteTooltip')}
-              onClick={() => {
-                removeRow(row, sectionKey);
-              }}
-            >
-              {t('featureTree.deleteMark')}
-            </button>
-          )}
+          {/*
+            スケッチ・ソリッドどちらの行も同じ「⋮」の非モーダル一覧を開く(P3 §0.a-0.23 ②)。
+            一覧の中身(抑制・改名の有無)は sectionKey で決める。
+          */}
+          <button
+            type="button"
+            className="pcad-tree__more"
+            title={t('featureTree.menuTooltip')}
+            aria-label={t('featureTree.menuTooltip')}
+            aria-haspopup="menu"
+            aria-expanded={menu !== null && menu.featureId === row.id}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              setMenu({
+                featureId: row.id,
+                sectionKey,
+                x: menuRight(rect.right),
+                y: menuTop(rect.bottom, rect.top),
+              });
+            }}
+          >
+            {t('featureTree.menuMark')}
+          </button>
         </div>
       </li>
     );
@@ -421,42 +430,49 @@ export function FeatureTree(): React.JSX.Element {
         )}
       </div>
 
-      {menu === null || menuFeature === undefined ? null : (
+      {/*
+        スケッチの行は削除だけの一覧(ソリッドと違い抑制も改名も持たない、P3 §0.a-0.23 ②)。
+        ソリッドの行が壊れて(消えて)いる間は開かない(旧来の振る舞いのまま)。
+      */}
+      {menu === null || (menu.sectionKey === 'solid' && menuFeature === undefined) ? null : (
         <div
           ref={menuRef}
           className="pcad-menu__panel pcad-tree__menu"
           role="menu"
           style={{ left: menu.x, top: menu.y }}
         >
-          <button
-            type="button"
-            role="menuitem"
-            className="pcad-button pcad-menu__item"
-            onClick={() => {
-              toggleSuppressed(menu.featureId);
-              setMenu(null);
-            }}
-          >
-            {t(menuFeature.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="pcad-button pcad-menu__item"
-            onClick={() => {
-              setRenamingId(menu.featureId);
-              setMenu(null);
-            }}
-          >
-            {t('featureTree.rename')}
-          </button>
+          {menu.sectionKey === 'solid' && menuFeature !== undefined ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="pcad-button pcad-menu__item"
+                onClick={() => {
+                  toggleSuppressed(menu.featureId);
+                  setMenu(null);
+                }}
+              >
+                {t(menuFeature.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="pcad-button pcad-menu__item"
+                onClick={() => {
+                  setRenamingId(menu.featureId);
+                  setMenu(null);
+                }}
+              >
+                {t('featureTree.rename')}
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item pcad-menu__item--danger"
             onClick={() => {
-              const store = useAppStore.getState();
-              store.applyDocument(removeSolid(store.document, menu.featureId));
+              removeRow(menu.featureId, menu.sectionKey);
               setMenu(null);
             }}
           >

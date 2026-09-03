@@ -92,7 +92,15 @@ export interface SolidSummary {
   readonly axis: SolidAxisSummary | null;
 }
 
-/** 立体の種類の名前。ツールバーの道具の名前と同じ言葉にする(FR-501)。 */
+/**
+ * 立体の種類の名前。ツールバーの道具の名前と同じ言葉にする(FR-501)。
+ *
+ * P3 のタスク13 で種類が13個に増えたが、加工6種とばねの道具の名前(ツールバーの文言)は
+ * タスク18 でまとめて `ja.json` へ入る。それまでの7つは共通の「未対応」の文言を指す。
+ * **タスク18・26・27 がこの7行をそれぞれの道具の名前へ置き換える。**
+ * 画面からこれらのフィーチャーを作れるようになるのはタスク25 以降なので、
+ * それまでこの文言が実際にツリーへ出ることはない。
+ */
 export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> = {
   extrude: 'toolbar.solid.extrude',
   revolve: 'toolbar.solid.revolve',
@@ -100,6 +108,13 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   union: 'toolbar.solid.union',
   subtract: 'toolbar.solid.subtract',
   intersect: 'toolbar.solid.intersect',
+  hole: 'featureTree.unsupportedKind',
+  threadHole: 'featureTree.unsupportedKind',
+  fillet: 'featureTree.unsupportedKind',
+  chamfer: 'featureTree.unsupportedKind',
+  linearPattern: 'featureTree.unsupportedKind',
+  circularPattern: 'featureTree.unsupportedKind',
+  spring: 'featureTree.unsupportedKind',
 };
 
 /** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
@@ -152,12 +167,19 @@ function toggleSummary(key: NumericToggleKey, value: boolean): SolidToggleSummar
 }
 
 /**
- * 連番の単位で見た種類。ブーリアンは演算名(union / subtract / intersect)を返す。
- * 名前(和1・差1)を作る model の `SolidLabelKey` と同じ粒度にして、
+ * 連番の単位で見た種類。ブーリアンは演算名(union / subtract / intersect)を返し、
+ * パターンは配置名(linearPattern / circularPattern)を返す。
+ * 名前(和1・差1・直線パターン1)を作る model の `SolidLabelKey` と同じ粒度にして、
  * ツリーの絵と種類の名前が実際の名前と食い違わないようにする。
  */
 export function solidKindOf(feature: SolidFeature): SolidLabelKey {
-  return feature.kind === 'boolean' ? feature.operation : feature.kind;
+  if (feature.kind === 'boolean') {
+    return feature.operation;
+  }
+  if (feature.kind === 'pattern') {
+    return feature.placement.kind === 'linear' ? 'linearPattern' : 'circularPattern';
+  }
+  return feature.kind;
 }
 
 /** 面の参照を「スケッチ名 / 面の名前」へ直す。見つからなければ id をそのまま出す(FR-504)。 */
@@ -277,6 +299,16 @@ export function summarizeSolid(
           bodyReference(document, 'propertyPanel.tool', feature.toolFeatureId),
         ],
       };
+    case 'hole':
+    case 'threadHole':
+    case 'fillet':
+    case 'chamfer':
+    case 'pattern':
+    case 'spring':
+      // P3 タスク13 で文書の型だけが先に増えたための暫定。式の欄・つまみ・参照の出し方は
+      // タスク27〜29b の担当なので、それまでは行の名前と印だけを出す(欄は空)。
+      // **タスク27・28・29・29b がこの節をそれぞれの種類の欄へ置き換える。**
+      return { ...base, fields: [], toggles: [], references: [] };
   }
 }
 

@@ -1,5 +1,13 @@
 import { lazy, Suspense, useEffect, useRef } from 'react';
 
+import {
+  createDefaultPartFileDeps,
+  hasUnsavedChanges,
+  newPart,
+  openPart,
+  savePart,
+  windowTitle,
+} from '../file/partFile.js';
 import { t } from '../i18n/t.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import { commitSketchInput } from '../sketch/sketchCommands.js';
@@ -40,6 +48,10 @@ export function AppShell(): React.JSX.Element {
   const featureCount = useAppStore((state) => state.sketch.features.length);
   const viewportSize = useAppStore((state) => state.viewportSize);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
+  const fileName = useAppStore((state) => state.fileName);
+  // 真偽で取り出すので、文書が変わっても「保存していない」かどうかが変わったときだけ
+  // 描き直す(打つたびに画面全体を作り直さない、NFR-PF-1)。
+  const unsaved = useAppStore((state) => hasUnsavedChanges(state.document, state.savedDocument));
   const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -62,8 +74,11 @@ export function AppShell(): React.JSX.Element {
 
   useEffect(() => {
     /*
-     * 元に戻す・やり直す(FR-505、§0.a-0.13)。窓のどこにいても効くように window で受ける。
-     * ファイルの Ctrl+N / O / S はタスク23 で足す。
+     * 元に戻す・やり直す(FR-505、§0.a-0.13)とファイルの操作(FR-806、§2.11)。
+     * 窓のどこにいても効くように window で受ける。文字を打っている最中は横取りしない。
+     *
+     * Ctrl+N はブラウザ自身が新しい窓を開く操作に割り当てていて、頁の側からは
+     * 止められないことがある。そのときはツールバーの「新規」を使う(デスクトップ版では効く)。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!event.ctrlKey || event.altKey || isTextEntry(event.target)) {
@@ -80,6 +95,22 @@ export function AppShell(): React.JSX.Element {
       if (key === 'y' || (key === 'z' && event.shiftKey)) {
         event.preventDefault();
         store.redo();
+        return;
+      }
+      // 保存は Ctrl+S、名前を付けて保存は Ctrl+Shift+S。
+      if (key === 's') {
+        event.preventDefault();
+        void savePart(createDefaultPartFileDeps(), event.shiftKey);
+        return;
+      }
+      if (key === 'o' && !event.shiftKey) {
+        event.preventDefault();
+        void openPart(createDefaultPartFileDeps());
+        return;
+      }
+      if (key === 'n' && !event.shiftKey) {
+        event.preventDefault();
+        void newPart(createDefaultPartFileDeps());
       }
     };
     globalThis.addEventListener('keydown', onKeyDown);
@@ -87,6 +118,11 @@ export function AppShell(): React.JSX.Element {
       globalThis.removeEventListener('keydown', onKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    // 窓の見出しに、開いているファイル名と保存していない印を出す(FR-806、NFR-UX-7)。
+    globalThis.document.title = windowTitle(fileName, unsaved);
+  }, [fileName, unsaved]);
 
   return (
     <div className="pcad-shell">

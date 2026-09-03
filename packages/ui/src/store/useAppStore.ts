@@ -36,6 +36,7 @@ import {
 } from '@pointercad/model';
 import { create } from 'zustand';
 
+import { createBrowserFileGateway, type FileGateway } from '../file/fileGateway.js';
 import type { MessageKey } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
@@ -55,6 +56,19 @@ export interface SnapIndicator {
   readonly kind: SnapKind;
   /** 吸い付いた先の要素。方眼の交点は要素を持たないので null。 */
   readonly elementId: string | null;
+}
+
+/**
+ * ファイル操作の結果を帯へ 1 行で出すための知らせ(FR-806、NFR-UX-5)。
+ *
+ * 成功(`failed: false`)は「保存しました」のような短い一言、失敗(`failed: true`)は
+ * 理由そのもの(`file.error.*` など)を入れる。理由の文はそれだけで何が起きたかが
+ * 分かる書き方にしてあるので、見出しを足して二重に言わない。
+ * 文書が変わったら用済みなので消す(`applyDocument` / `undo` / `redo` / `resetDocument`)。
+ */
+export interface FileMessage {
+  readonly key: MessageKey;
+  readonly failed: boolean;
 }
 
 /** 文書を差し替えるときの添え物(§0.a-0.4、§0.a-0.13)。 */
@@ -182,6 +196,26 @@ export interface AppState {
    */
   readonly pickAnchor: readonly [number, number] | null;
 
+  /**
+   * ファイルの読み書きの口(§2.10)。既定はブラウザ用で、デスクトップ版が
+   * `setFileGateway` で差し替える(UI から `apps/` を import できないため)。
+   */
+  readonly fileGateway: FileGateway;
+  /** 開いている(または保存した)ファイルの名前。まだ保存していなければ null。 */
+  readonly fileName: string | null;
+  /**
+   * 最後に保存した文書。これと `document` の中身が違えば「保存していない変更がある」
+   * (判定は `hasUnsavedChanges`)。一度も保存していなければ null。
+   */
+  readonly savedDocument: PartDocument | null;
+  /**
+   * いまの絵をサムネイルの PNG にする手立て(§0.a-0.18)。ビューポートが自分を
+   * 差し出し、片付けで null へ戻す。用意できていなければサムネイルなしで保存する。
+   */
+  readonly captureThumbnail: (() => Uint8Array | null) | null;
+  /** ファイル操作の結果の知らせ。出すものが無ければ null。 */
+  readonly fileMessage: FileMessage | null;
+
   // 動作を変える口はメソッド宣言ではなくプロパティ関数型で書く。メソッド宣言だと
   // useAppStore((state) => state.setX) のように取り出したとき @typescript-eslint/unbound-method
   // に触れるため(計画書 P1 §0.a-0.12、docs/報告記録.md 2026-09-02 15:28 の残件②)。
@@ -252,6 +286,21 @@ export interface AppState {
   readonly setSolidError: (key: MessageKey | null) => void;
   /** ビューポートで選んだ場所を覚える・忘れる。 */
   readonly setPickAnchor: (anchor: readonly [number, number] | null) => void;
+
+  /** ファイルの読み書きの口を差し替える(デスクトップ版の入口が呼ぶ)。 */
+  readonly setFileGateway: (gateway: FileGateway) => void;
+  /** 開いているファイルの名前と、最後に保存した文書を差し替える。 */
+  readonly setFileState: (fileName: string | null, savedDocument: PartDocument | null) => void;
+  /** サムネイルの作り手を差し出す・取り下げる(ビューポートが呼ぶ)。 */
+  readonly setCaptureThumbnail: (capture: (() => Uint8Array | null) | null) => void;
+  /** ファイル操作の結果を帯へ出す・消す。 */
+  readonly setFileMessage: (message: FileMessage | null) => void;
+  /**
+   * 部品文書を新しくやり直す(FR-806 の「新規」)。`applyDocument` と違い
+   * **履歴のスタックを作り直す**ので、新規の前へは戻れない。取りかけの操作・選択・
+   * 断りの理由も持ち越さない(NFR-UX-3)。
+   */
+  readonly resetDocument: (next: PartDocument) => void;
 }
 
 /** カメラから注視点へ向かう単位ベクトル。Z 軸が上の球面座標から作る。 */
@@ -407,6 +456,11 @@ export function createInitialDocumentState(): Pick<
   | 'faceErrorKey'
   | 'solidErrorKey'
   | 'pickAnchor'
+  | 'fileGateway'
+  | 'fileName'
+  | 'savedDocument'
+  | 'captureThumbnail'
+  | 'fileMessage'
 > {
   // 起動時は空のスケッチ 1 本だけを持つ部品から始める(§0.a-0.2、NFR-UX-6 の空状態ガイド)。
   const document = createEmptyPartDocument();
@@ -443,6 +497,12 @@ export function createInitialDocumentState(): Pick<
     faceErrorKey: null,
     solidErrorKey: null,
     pickAnchor: null,
+    // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める(§2.10)。
+    fileGateway: createBrowserFileGateway(),
+    fileName: null,
+    savedDocument: null,
+    captureThumbnail: null,
+    fileMessage: null,
   };
 }
 
@@ -518,6 +578,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // 打つたびに札が点滅する。再計算は attachPartRecompute が拾い、終わり次第
         // そのまま形が動く(NFR-PF-1)。
         isComputing: coalesceKey === undefined ? true : state.isComputing,
+        // 形が変わったら「保存しました」等の知らせは用済み(FR-806)。
+        fileMessage: null,
       };
     });
   },
@@ -578,7 +640,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (stack === state.undoStack) {
         return {};
       }
-      return { ...documentPatch(state, stack.present, stack), isComputing: true };
+      return {
+        ...documentPatch(state, stack.present, stack),
+        isComputing: true,
+        fileMessage: null,
+      };
     });
   },
   redo: () => {
@@ -587,7 +653,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (stack === state.undoStack) {
         return {};
       }
-      return { ...documentPatch(state, stack.present, stack), isComputing: true };
+      return {
+        ...documentPatch(state, stack.present, stack),
+        isComputing: true,
+        fileMessage: null,
+      };
     });
   },
   setRecomputeProgress: (recomputeProgress) => {
@@ -663,6 +733,37 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setPickAnchor: (pickAnchor) => {
     set({ pickAnchor });
+  },
+
+  setFileGateway: (fileGateway) => {
+    set({ fileGateway });
+  },
+  setFileState: (fileName, savedDocument) => {
+    set({ fileName, savedDocument });
+  },
+  setCaptureThumbnail: (capture) => {
+    set({ captureThumbnail: capture });
+  },
+  setFileMessage: (fileMessage) => {
+    set({ fileMessage });
+  },
+  resetDocument: (next) => {
+    set((state) => ({
+      ...documentPatch(state, next, createUndoStack(next)),
+      isComputing: true,
+      // 新しい部品に、前の部品の取りかけ・選択・断りの理由を持ち越さない(NFR-UX-3)。
+      activeTool: 'select',
+      selection: [],
+      hoveredElementId: null,
+      numericInput: null,
+      numericInputAnchor: null,
+      pendingStart: null,
+      snapIndicator: null,
+      faceErrorKey: null,
+      solidErrorKey: null,
+      errorMessage: null,
+      fileMessage: null,
+    }));
   },
 }));
 

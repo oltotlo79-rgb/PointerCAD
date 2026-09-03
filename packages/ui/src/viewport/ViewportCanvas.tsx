@@ -72,6 +72,10 @@ export function ViewportCanvas(): React.JSX.Element {
       }
     }
 
+    // 保存のときに呼ばれるサムネイルの作り手を差し出す(§0.a-0.18、FR-801)。
+    // 3D 表示部は後から読み込まれるので、それまでは口が空でサムネイルなしになる。
+    useAppStore.getState().setCaptureThumbnail(() => scene.captureThumbnail());
+
     const controls = attachCameraControls(canvas, requestDraw);
     controlsRef.current = controls;
     // 視点操作を先に結び、その後ろでスケッチの操作を結ぶ(中ボタン・Alt の取り合いを避ける)。
@@ -136,6 +140,8 @@ export function ViewportCanvas(): React.JSX.Element {
       }
       unsubscribe();
       observer.disconnect();
+      // 片付けた場面をもう使えないので、サムネイルの作り手も取り下げる。
+      useAppStore.getState().setCaptureThumbnail(null);
       interaction.detach();
       controls.detach();
       scene.dispose();

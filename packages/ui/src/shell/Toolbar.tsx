@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { BooleanOperation, PartDocument, WorkPlaneId } from '@pointercad/model';
 
+import { hasFileSystemAccess } from '../file/fileGateway.js';
+import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import {
   createNumericInput,
@@ -65,14 +67,71 @@ interface ButtonEntry {
 
 /**
  * ファイルの操作(FR-806)。図柄だけのボタンで、名前は読み上げ名とツールチップが担う。
- * 中身(新規・開く・保存)はタスク23 で入れるので、今は押しても何も起きない。
- * 使えないわけではないので aria-disabled にはしない(計画書 タスク21 手順7)。
+ *
+ * ボタンは 3 つのまま増やさない(§0.a-0.15)。「名前を付けて保存」は保存ボタンを
+ * Shift を押しながら押すか、Ctrl+Shift+S で行う。その旨はツールチップに書く(NFR-UX-7)。
  */
 const FILE_ACTIONS = [
-  { labelKey: 'toolbar.file.new', tooltipKey: 'toolbar.file.newTooltip', Icon: NewFileIcon },
-  { labelKey: 'toolbar.file.open', tooltipKey: 'toolbar.file.openTooltip', Icon: OpenFileIcon },
-  { labelKey: 'toolbar.file.save', tooltipKey: 'toolbar.file.saveTooltip', Icon: SaveIcon },
-] as const satisfies readonly ButtonEntry[];
+  {
+    id: 'new',
+    labelKey: 'toolbar.file.new',
+    tooltipKey: 'toolbar.file.newTooltip',
+    Icon: NewFileIcon,
+  },
+  {
+    id: 'open',
+    labelKey: 'toolbar.file.open',
+    tooltipKey: 'toolbar.file.openTooltip',
+    Icon: OpenFileIcon,
+  },
+  {
+    id: 'save',
+    labelKey: 'toolbar.file.save',
+    tooltipKey: 'toolbar.file.saveTooltip',
+    Icon: SaveIcon,
+  },
+] as const satisfies readonly (ButtonEntry & { readonly id: FileActionId })[];
+
+/** ファイルのボタン 3 つ。 */
+type FileActionId = 'new' | 'open' | 'save';
+
+/** 行を分ける改行。ツールチップに 2 行以上を出すときに使う。 */
+const TOOLTIP_LINE_BREAK = '\n';
+
+/**
+ * ファイルのボタンのツールチップ。保存のときは「名前を付けて保存」の出し方も添える。
+ * 場所を選べない環境(File System Access API の無いブラウザ)では、ダウンロードで
+ * 保存されることも添える(NFR-UX-5「できないことは理由とともに」)。
+ */
+function fileTooltip(id: FileActionId, tooltipKey: MessageKey): string {
+  if (id !== 'save') {
+    return t(tooltipKey);
+  }
+  const lines = [t(tooltipKey), t('toolbar.file.saveAsHint')];
+  if (!hasFileSystemAccess()) {
+    lines.push(t('file.fsaUnavailable'));
+  }
+  return lines.join(TOOLTIP_LINE_BREAK);
+}
+
+/**
+ * ファイルのボタンを押したときの処理(FR-806)。
+ * 保存は Shift を押しながらだと「名前を付けて保存」になる(ボタンを増やさないため)。
+ */
+function runFileAction(id: FileActionId, saveAs: boolean): void {
+  const deps = createDefaultPartFileDeps();
+  switch (id) {
+    case 'new':
+      void newPart(deps);
+      return;
+    case 'open':
+      void openPart(deps);
+      return;
+    case 'save':
+      void savePart(deps, saveAs);
+      return;
+  }
+}
 
 /** スケッチの道具(FR-301〜309)。並びがそのまま画面の左からの順になる。 */
 const TOOLS = [
@@ -507,13 +566,15 @@ export function Toolbar(): React.JSX.Element {
       <div className="pcad-toolbar__actions">
         <div className="pcad-segmented" role="group" aria-label={t('toolbar.file.title')}>
           {FILE_ACTIONS.map((action) => (
-            /* 押しても何も起きないのは今だけで、中身はタスク23 が入れる。 */
             <button
-              key={action.labelKey}
+              key={action.id}
               type="button"
               className="pcad-button pcad-button--icon"
-              title={t(action.tooltipKey)}
+              title={fileTooltip(action.id, action.tooltipKey)}
               aria-label={t(action.labelKey)}
+              onClick={(event) => {
+                runFileAction(action.id, event.shiftKey);
+              }}
             >
               <action.Icon />
             </button>

@@ -1440,6 +1440,17 @@ button.pcad-tree__row:focus-visible {
   border-top: 1px solid var(--pcad-border);
 }
 
+/* 開いているファイルの名前。長い名前は真ん中で詰めず、末尾を省く(FR-806)。 */
+.pcad-statusbar__file {
+  flex: 0 1 auto;
+  max-width: 220px;
+  overflow: hidden;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pcad-statusbar__message {
   display: flex;
   gap: var(--pcad-space-2);

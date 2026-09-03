@@ -30,6 +30,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '作ったものの一覧と、やり直し',
     path: 'docs/ja/feature-tree.md',
   },
+  { id: 'save-and-open', title: '保存する・開く', path: 'docs/ja/save-and-open.md' },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

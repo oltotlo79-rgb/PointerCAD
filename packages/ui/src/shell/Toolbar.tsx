@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { BooleanOperation, PartDocument, WorkPlaneId } from '@pointercad/model';
+import type { BooleanOperation, PartDocument, SolidBody, WorkPlaneId } from '@pointercad/model';
 
 import { hasFileSystemAccess } from '../file/fileGateway.js';
 import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
@@ -13,24 +13,36 @@ import {
   type SolidToolId,
 } from '../sketch/numericInput.js';
 import type { SnapKind } from '../sketch/snapMath.js';
+import type { MachiningToolId } from '../solid/machiningCommands.js';
 import {
   commitBooleanFromSelection,
   selectedLineRef,
   solidToolReadiness,
   type SolidActionId,
 } from '../solid/solidCommands.js';
+import type {
+  SolidEdgeEntry,
+  SolidFaceEntry,
+  SolidVertexEntry,
+  SubShapeBody,
+} from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   ArcToolIcon,
   ChainIcon,
+  ChamferIcon,
   ChevronRightIcon,
+  CircularPatternIcon,
   CubeIcon,
   CursorIcon,
   ExtrudeIcon,
   FaceToolIcon,
+  FilletIcon,
   GridIcon,
+  HoleIcon,
   HomeIcon,
   IntersectIcon,
+  LinearPatternIcon,
   LineToolIcon,
   MatchViewIcon,
   NewFileIcon,
@@ -51,7 +63,9 @@ import {
   SnapIcon,
   SnapIntersectionIcon,
   SnapMidpointIcon,
+  SpringIcon,
   SubtractIcon,
+  ThreadHoleIcon,
   UndoIcon,
   UnionIcon,
   WireframeIcon,
@@ -214,7 +228,58 @@ const SOLID_ACTIONS = [
     tooltipKey: 'toolbar.solid.intersectTooltip',
     Icon: IntersectIcon,
   },
+  /**
+   * ばね(FR-414)。対象を消費しない「作る」フィーチャーで加工ではない(§0.a-0.36)ため、
+   * 加工6種とは別に「ソリッド」区画の7個目として置く(§0.34)。数値を聞くので、他の
+   * 押し出し・回転・縫合と同じく openSolidInput 経由でその場入力を開く(runSolidAction)。
+   */
+  {
+    id: 'spring',
+    labelKey: 'toolbar.solid.spring',
+    tooltipKey: 'toolbar.solid.springTooltip',
+    Icon: SpringIcon,
+  },
 ] as const satisfies readonly (ButtonEntry & { readonly id: SolidActionId })[];
+
+/** 加工の道具 6 つ(§2.11 の「加工」区画)。「ソリッド」の右へ置く(§0.a-0.25 ③)。 */
+const MACHINING_ACTIONS = [
+  {
+    id: 'hole',
+    labelKey: 'toolbar.machining.hole',
+    tooltipKey: 'toolbar.machining.holeTooltip',
+    Icon: HoleIcon,
+  },
+  {
+    id: 'threadHole',
+    labelKey: 'toolbar.machining.threadHole',
+    tooltipKey: 'toolbar.machining.threadHoleTooltip',
+    Icon: ThreadHoleIcon,
+  },
+  {
+    id: 'fillet',
+    labelKey: 'toolbar.machining.fillet',
+    tooltipKey: 'toolbar.machining.filletTooltip',
+    Icon: FilletIcon,
+  },
+  {
+    id: 'chamfer',
+    labelKey: 'toolbar.machining.chamfer',
+    tooltipKey: 'toolbar.machining.chamferTooltip',
+    Icon: ChamferIcon,
+  },
+  {
+    id: 'linearPattern',
+    labelKey: 'toolbar.machining.linearPattern',
+    tooltipKey: 'toolbar.machining.linearPatternTooltip',
+    Icon: LinearPatternIcon,
+  },
+  {
+    id: 'circularPattern',
+    labelKey: 'toolbar.machining.circularPattern',
+    tooltipKey: 'toolbar.machining.circularPatternTooltip',
+    Icon: CircularPatternIcon,
+  },
+] as const satisfies readonly (ButtonEntry & { readonly id: MachiningToolId })[];
 
 /** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
 const PLANES = [
@@ -478,18 +543,199 @@ function SnapKindsMenu({ snapEnabled, snapKinds }: SnapKindsMenuProps): React.JS
   );
 }
 
-interface SolidGroupProps {
+interface PlaneMenuProps {
+  readonly workPlaneId: WorkPlaneId;
+}
+
+/**
+ * 作図面(XY / XZ / YZ)の畳んだ一覧(§0.a-0.25 ②、§0.34)。
+ *
+ * ①(無効なモードタブを隠す)と「加工」区画・ばねを足しただけでは、1440 画素へ
+ * 必要な幅が実測 1437.3px となり(2026-09-04 実測)、余裕が 3px 弱しか無い
+ * (書体やスクロールバーの差で環境によっては 1440px を超えかねない)。そこで
+ * `SnapKindsMenu` と同じ畳んだ一覧の作りで 3 つを 1 つのトリガー+一覧へまとめ、
+ * 安全な余白を作る(§0.34「②を行ってよい」)。トリガーには**いまの作図面の名前を
+ * 札に出す**(畳んでも状態が分かる、§0.34)。モーダルにしない(NFR-UX-2)ので、
+ * 開いている間も背後の操作はそのまま効く。
+ */
+function PlaneMenu({ workPlaneId }: PlaneMenuProps): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent): void => {
+      const container = containerRef.current;
+      if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    globalThis.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      globalThis.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open]);
+
+  const current = PLANES.find((plane) => plane.id === workPlaneId) ?? PLANES[0];
+
+  return (
+    <div
+      className="pcad-menu"
+      ref={containerRef}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="pcad-button pcad-menu__trigger"
+        title={t(current.tooltipKey)}
+        aria-label={`${t('toolbar.plane.groupLabel')}${LABEL_SEPARATOR}${t(current.labelKey)}`}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        <span className="pcad-menu__count">{t(current.labelKey)}</span>
+        <ChevronRightIcon className="pcad-menu__chevron" />
+      </button>
+      {open ? (
+        <div className="pcad-menu__panel" role="group" aria-label={t('toolbar.plane.groupLabel')}>
+          {PLANES.map((plane) => (
+            <button
+              key={plane.id}
+              type="button"
+              className="pcad-button pcad-menu__item"
+              title={t(plane.tooltipKey)}
+              aria-pressed={workPlaneId === plane.id}
+              onClick={() => {
+                useAppStore.getState().setWorkPlane(plane.id);
+                setOpen(false);
+              }}
+            >
+              {t(plane.labelKey)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * `state.bodies`(model の `SolidBody`)に面・辺・頂点の一覧を(あれば)添えた形。
+ *
+ * その一覧が `SolidBody` へ届くのはタスク17(model の橋渡しの拡張)の後で、このタスクの
+ * 着手時点ではまだ届いていない。`viewport/buildSolidGeometry.ts` の `SolidBodyWithSubShapes`
+ * と同じ考え方(そちらは描画専用で `viewport/**` の担当外なので import せず、ここでは
+ * 加工の押せる条件の判定に要る形だけを組み立てる。3 つとも省略可なので、`SolidBody` の値を
+ * そのまま渡せる)。タスク17 が欄を必須で足したら、この型と変換関数は不要になり、
+ * `state.bodies` をそのまま渡せる。
+ */
+export type SolidBodyWithSubShapes = SolidBody & {
+  readonly faces?: readonly SolidFaceEntry[];
+  readonly edges?: readonly SolidEdgeEntry[];
+  readonly vertices?: readonly SolidVertexEntry[];
+};
+
+/**
+ * ボディ一覧を `solidToolReadiness` / `commitSolidInput`(タスク25b の4引数目、`bodies`)が
+ * 要る `SubShapeBody[]` へ詰め替える。面・辺・頂点の一覧がまだ届いていないボディは空の一覧
+ * として扱う(その結果、加工のボタンは「対象が選ばれていません」の理由で押せないまま出る。
+ * タスク17 の後に自動で解消する)。
+ *
+ * `AppShell.tsx` の `onSolidCommit` も同じ詰め替えを要るので、ここで輸出して使い回す
+ * (`solidCommands.ts` 自身が「同じ判断を2か所に書かない」を掲げているのに合わせる)。
+ */
+export function subShapeBodiesOf(
+  bodies: readonly SolidBodyWithSubShapes[],
+): readonly SubShapeBody[] {
+  return bodies.map((body) => ({
+    featureId: body.featureId,
+    mesh: { edgePositions: body.mesh.edgePositions },
+    faces: body.faces ?? [],
+    edges: body.edges ?? [],
+    vertices: body.vertices ?? [],
+  }));
+}
+
+interface MachiningGroupProps {
   readonly document: PartDocument;
+  readonly bodies: readonly SubShapeBody[];
   readonly selection: readonly string[];
 }
 
 /**
- * ソリッドの区画(FR-401〜404)。6 つとも図柄だけのボタンで、名前は読み上げ名と
+ * 加工の区画(§2.11、FR-405〜408、FR-411、FR-412)。「ソリッド」の右へ置く(§0.a-0.25 ③)。
+ * 図柄だけのボタンで、押せる条件と理由は `solidToolReadiness`(solidCommands.ts、
+ * タスク25b)で決める。加工6種の判定そのものは `machiningToolReadiness`
+ * (machiningCommands.ts、タスク25)にあるが、`solidToolReadiness` がすでにそこへ
+ * 委譲しているので、ここで2重に呼ばない(同じ判断を2か所に書かない)。数値を聞くのは
+ * 押し出し・回転・縫合と同じ道具の形なので、ボタンを押したときの処理も `openSolidInput`
+ * をそのまま使う(`MachiningToolId` は `SolidToolId` の部分集合)。押せない道具を押したときに
+ * 帯へも理由を出す作りは `SolidGroup` と揃える(§0.a-0.6、NFR-UX-5)。
+ */
+function MachiningGroup({ document, bodies, selection }: MachiningGroupProps): React.JSX.Element {
+  return (
+    <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.machining.title')}>
+      <span className="pcad-toolbar__group-label" title={t('toolbar.machining.tooltip')}>
+        {t('toolbar.machining.title')}
+      </span>
+      <div className="pcad-segmented">
+        {MACHINING_ACTIONS.map((action) => {
+          const readiness = solidToolReadiness(document, selection, action.id, bodies);
+          return (
+            <button
+              key={action.id}
+              type="button"
+              className="pcad-button pcad-button--icon"
+              title={
+                readiness.ready
+                  ? t(action.tooltipKey)
+                  : unavailableTooltip(action.labelKey, readiness.reasonKey)
+              }
+              aria-label={t(action.labelKey)}
+              aria-disabled={!readiness.ready}
+              onClick={() => {
+                if (readiness.ready) {
+                  openSolidInput(action.id);
+                  return;
+                }
+                // 押せない道具を押しても、ツールチップだけでなく帯にも理由を出す
+                // (§0.a-0.6、NFR-UX-5。SolidGroup と同じ作り)。
+                useAppStore.getState().setSolidError(readiness.reasonKey);
+              }}
+            >
+              <action.Icon />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+interface SolidGroupProps {
+  readonly document: PartDocument;
+  readonly bodies: readonly SubShapeBody[];
+  readonly selection: readonly string[];
+}
+
+/**
+ * ソリッドの区画(FR-401〜404、FR-414)。7 つとも図柄だけのボタンで、名前は読み上げ名と
  * ツールチップが担う(FR-904、NFR-UX-7)。いま押せないものは aria-disabled にし、
  * ツールチップで「名前: 理由」を読めるようにする。押しても立体は作らないが、
- * 押した瞬間にステータスバーへも同じ理由を出す(§0.a-0.6、NFR-UX-5)。
+ * 押した瞬間にステータスバーへも同じ理由を出す(§0.a-0.6、NFR-UX-5)。7 個目のばねは
+ * 対象を消費しない「作る」フィーチャーで加工ではないが(§0.a-0.36)、この区画へ足す
+ * (§0.34)。
  */
-function SolidGroup({ document, selection }: SolidGroupProps): React.JSX.Element {
+function SolidGroup({ document, bodies, selection }: SolidGroupProps): React.JSX.Element {
   return (
     <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.solid.title')}>
       <span className="pcad-toolbar__group-label" title={t('toolbar.solid.tooltip')}>
@@ -497,7 +743,7 @@ function SolidGroup({ document, selection }: SolidGroupProps): React.JSX.Element
       </span>
       <div className="pcad-segmented">
         {SOLID_ACTIONS.map((action) => {
-          const readiness = solidToolReadiness(document, selection, action.id);
+          const readiness = solidToolReadiness(document, selection, action.id, bodies);
           return (
             <button
               key={action.id}
@@ -533,7 +779,8 @@ function SolidGroup({ document, selection }: SolidGroupProps): React.JSX.Element
  * 画面上端のツールバー(要件§7.1)。
  *
  * 左から「製品名 → ファイル → 元に戻す・やり直す → モードのタブ → スケッチ → ソリッド →
- * 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」の機能グループを並べる。
+ * 加工 → 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」の機能グループを並べる
+ * (§0.a-0.25 ③「加工」をソリッドの右へ)。
  * 機能グループは区画名を頭に置き、いま選ばれているものをアクセント色の面で示す(NFR-UX-7)。
  * 状態の正本は Zustand ストア1本(rules/04-設計の規律.md)。
  *
@@ -553,6 +800,10 @@ export function Toolbar(): React.JSX.Element {
   const snapKinds = useAppStore((state) => state.snapKinds);
   const chaining = useAppStore((state) => state.chaining);
   const partDocument = useAppStore((state) => state.document);
+  const bodies = useAppStore((state) => state.bodies);
+  // ソリッド・加工の押せる条件の判定(solidToolReadiness)が要る形へ詰め替える
+  // (タスク17 の後は state.bodies をそのまま渡せるようになる、subShapeBodiesOf の注釈)。
+  const subShapeBodies = subShapeBodiesOf(bodies);
   const selection = useAppStore((state) => state.selection);
   const canUndo = useAppStore((state) => state.canUndo);
   const canRedo = useAppStore((state) => state.canRedo);
@@ -621,26 +872,14 @@ export function Toolbar(): React.JSX.Element {
         </div>
       </div>
 
-      {/* モードのタブ。今はモデリングだけが使える。 */}
+      {/*
+        モードのタブ。今はモデリングだけが使える。「アセンブリ」「図面」は、それを実装する
+        P7 / P8 まで出さない(畳んで薄く見せるのではなく、丸ごと隠す。§0.a-0.25 ①、
+        §0.34 の幅の圧縮)。実装したらここへ戻す。
+      */}
       <nav className="pcad-toolbar__modes" aria-label={t('toolbar.mode.groupLabel')}>
         <button type="button" className="pcad-tab" aria-pressed={true}>
           {t('toolbar.mode.modeling')}
-        </button>
-        <button
-          type="button"
-          className="pcad-tab"
-          aria-disabled={true}
-          title={t('toolbar.mode.comingSoon')}
-        >
-          {t('toolbar.mode.assembly')}
-        </button>
-        <button
-          type="button"
-          className="pcad-tab"
-          aria-disabled={true}
-          title={t('toolbar.mode.comingSoon')}
-        >
-          {t('toolbar.mode.drawing')}
         </button>
       </nav>
 
@@ -672,27 +911,15 @@ export function Toolbar(): React.JSX.Element {
         </div>
       </div>
 
-      <SolidGroup document={partDocument} selection={selection} />
+      <SolidGroup document={partDocument} bodies={subShapeBodies} selection={selection} />
+      <MachiningGroup document={partDocument} bodies={subShapeBodies} selection={selection} />
 
       <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.plane.groupLabel')}>
         <span className="pcad-toolbar__group-label" title={t('toolbar.plane.tooltip')}>
           {t('toolbar.plane.groupLabel')}
         </span>
         <div className="pcad-segmented">
-          {PLANES.map((plane) => (
-            <button
-              key={plane.id}
-              type="button"
-              className="pcad-button"
-              title={t(plane.tooltipKey)}
-              aria-pressed={workPlaneId === plane.id}
-              onClick={() => {
-                useAppStore.getState().setWorkPlane(plane.id);
-              }}
-            >
-              {t(plane.labelKey)}
-            </button>
-          ))}
+          <PlaneMenu workPlaneId={workPlaneId} />
           {/*
             いま見ている向きに最も近い作図面へ移る(§0.a-0.3)。視点の正本はビューポートの
             中にあるので、ここでは要求を数えるだけにしてビューポートに応えてもらう。

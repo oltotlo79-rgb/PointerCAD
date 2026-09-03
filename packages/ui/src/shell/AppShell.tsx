@@ -13,12 +13,13 @@ import { t } from '../i18n/t.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import { commitSketchInput } from '../sketch/sketchCommands.js';
 import { commitSolidInput } from '../solid/solidCommands.js';
+import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
 import { PropertyPanel } from './PropertyPanel.js';
 import { StatusBar } from './StatusBar.js';
-import { Toolbar } from './Toolbar.js';
+import { subShapeBodiesOf, Toolbar } from './Toolbar.js';
 
 /**
  * 3D 表示は three.js を伴って重いので、画面の枠より後から読み込む(NFR-PF-5)。
@@ -40,6 +41,18 @@ function isTextEntry(target: EventTarget | null): boolean {
   }
   return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 }
+
+/**
+ * 選択の種類の手動切替(§0.a-0.6、タスク26)。`1` = 頂点、`2` = 辺、`3` = 面、`4` = 立体。
+ * 数字キーそのものを使うので、修飾キー付き(Ctrl+1 等、将来ブラウザやOSの割当と衝突し得る)
+ * とは区別する。
+ */
+const SELECTION_KIND_SHORTCUTS: Readonly<Record<string, SelectionKind>> = {
+  '1': 'vertex',
+  '2': 'edge',
+  '3': 'face',
+  '4': 'body',
+};
 
 /**
  * 画面の5区画(ツールバー / ツリー / ビューポート+ビューキューブ / プロパティ / ステータスバー)。
@@ -94,6 +107,25 @@ export function AppShell(): React.JSX.Element {
      * 止められないことがある。そのときはツールバーの「新規」を使う(デスクトップ版では効く)。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
+      /*
+       * 選択の種類の手動切替(§0.a-0.6、§2.11「選択の種類の切替」)。修飾キーなしの
+       * 1/2/3/4 だけを見るので、Ctrl 系の分岐(この下)より前に置く。文字入力中
+       * (式の欄・名前の欄)は横取りしない(NFR-UX-3、isTextEntry と同じ判断)。
+       */
+      if (
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !isTextEntry(event.target)
+      ) {
+        const kind = SELECTION_KIND_SHORTCUTS[event.key];
+        if (kind !== undefined) {
+          event.preventDefault();
+          useAppStore.getState().setSelectionKind(kind);
+          return;
+        }
+      }
       if (!event.ctrlKey || event.altKey) {
         return;
       }
@@ -257,7 +289,15 @@ export function AppShell(): React.JSX.Element {
                 (FR-504、NFR-UX-5)。作れたらその立体を選び、道具は選択へ戻す。
               */
               const store = useAppStore.getState();
-              const outcome = commitSolidInput(store.document, store.selection, commit);
+              // 加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の確定には
+              // 部分形状の一覧(bodies)が要る(solidCommands.ts タスク25b の4引数目)。
+              // Toolbar.tsx と同じ詰め替えを使い回す(同じ判断を2か所に書かない)。
+              const outcome = commitSolidInput(
+                store.document,
+                store.selection,
+                commit,
+                subShapeBodiesOf(store.bodies),
+              );
               if (!outcome.ok) {
                 store.setSolidError(outcome.reasonKey);
                 return;

@@ -501,3 +501,97 @@ export function IntersectIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+/*
+ * 加工の 6 つ(P3、§2.11)とばね。穴・ねじ穴は「板に丸い穴」、R/C 面取りは「角を、実線(加工後)と
+ * 破線(加工前の角)で描き分け」、パターンは「もとの 1 つ(実線)と複製(破線)」で表す。
+ * ばねは横倒しにしたコイルをそのまま描く。文字を出さないボタンで使うので、名前は
+ * 読み上げ名(aria-label)とツールチップが担う(Toolbar.tsx、FR-904)。
+ */
+
+/** 穴。板に丸い穴が 1 つあいた形。 */
+export function HoleIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="2" y="3.5" width="12" height="8" rx="1.2" />
+      <circle cx="8" cy="7.5" r="2.4" />
+    </SvgIcon>
+  );
+}
+
+/** ねじ穴。穴の中に、ねじ山を表す破線の円をもう 1 つ重ねる。 */
+export function ThreadHoleIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="2" y="3.5" width="12" height="8" rx="1.2" />
+      <circle cx="8" cy="7.5" r="2.6" />
+      <circle cx="8" cy="7.5" r="1.2" strokeDasharray="1 1" />
+    </SvgIcon>
+  );
+}
+
+/** R 面取り。角を丸めた実線に、もとの角(破線)を重ねて「丸めた」ことを表す。 */
+export function FilletIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3 13.5V7.5a4.5 4.5 0 0 1 4.5-4.5h6" />
+      <path d="M3 3v4.5h4.5" strokeDasharray="1.4 1.4" />
+    </SvgIcon>
+  );
+}
+
+/** C 面取り。角を斜めに切った実線に、もとの角(破線)を重ねる(R 面取りの弧を直線にした対)。 */
+export function ChamferIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3 13.5V7.5l4.5-4.5h6" />
+      <path d="M3 3v4.5h4.5" strokeDasharray="1.4 1.4" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 直線パターン。もとの穴(実線の丸)から矢印の向きへ、複製(破線の丸)が並ぶ。
+ * 点列の道具(点が並ぶだけ)と区別できるよう、向きの矢印を添える。
+ */
+export function LinearPatternIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M1.6 4.4h9.6" />
+      <path d="M9.4 2.6 11.8 4.4 9.4 6.2" />
+      <circle cx="3.2" cy="11.4" r="1.4" />
+      <circle cx="8" cy="11.4" r="1.4" strokeDasharray="1.3 1.3" />
+      <circle cx="12.8" cy="11.4" r="1.4" strokeDasharray="1.3 1.3" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 円形パターン。破線の軌道の上に、もとの穴(実線の丸)と複製(破線の丸)を並べる。
+ * 円形パターンは軌道の上に点が並ぶ絵にして、円形パターンの図柄と重ならないようにする。
+ */
+export function CircularPatternIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8.4" r="5" strokeDasharray="1.6 1.6" />
+      <circle cx="8" cy="3.4" r="1.3" />
+      <circle cx="12.3" cy="10.9" r="1.3" strokeDasharray="1.3 1.3" />
+      <circle cx="3.7" cy="10.9" r="1.3" strokeDasharray="1.3 1.3" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * ばね(FR-414)。横倒しにしたコイルを、重なった丸 4 つで表す。
+ * 円形パターン(軌道+点)とは絵柄が重ならないようにしてある。
+ */
+export function SpringIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="3.4" cy="8" r="2.4" />
+      <circle cx="7" cy="8" r="2.4" />
+      <circle cx="10.6" cy="8" r="2.4" />
+      <circle cx="13.6" cy="8" r="2.2" />
+    </SvgIcon>
+  );
+}

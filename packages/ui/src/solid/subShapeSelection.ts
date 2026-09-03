@@ -321,22 +321,6 @@ export function commonBodyIdOf(selection: readonly string[]): string | null {
 }
 
 /**
- * タスク24 が `numericInput.ts` の `SolidToolId` へ足す P3 の道具の id(§2.11 の表)。
- *
- * 綴りは計画書のものと同じにしてある。この型は「まだ `NumericInputToolId` に入っていない綴り」を
- * 先に受け取るための一時的なもので、**タスク24 の後は `NumericInputToolId` に含まれるので
- * この型を消し、`selectionKindForTool` の引数を `NumericInputToolId` だけにしてよい**。
- */
-export type P3SolidToolId =
-  | 'hole'
-  | 'threadHole'
-  | 'fillet'
-  | 'chamfer'
-  | 'linearPattern'
-  | 'circularPattern'
-  | 'spring';
-
-/**
  * 道具ごとに、何を選ぶか(§0.a-0.6、§2.3.2 の表)。
  *
  * | 道具 | 選ぶもの |
@@ -348,8 +332,13 @@ export type P3SolidToolId =
  *
  * 道具を選んだときにストアがこれで `selectionKind` を切り替える(タスク21)。
  * **この対応表はここ 1 か所だけに置く**(`docs/報告記録.md` 2026-09-03 13:05 の⑤)。
+ *
+ * タスク24 で加工6種+ばねが `numericInput.ts` の `SolidToolId`(`NumericInputToolId` の一部)へ
+ * 入ったので、引数は `NumericInputToolId` 1 本にした(以前あった一時型 `P3SolidToolId` は
+ * ここと `useAppStore.ts` から消した。タスク26 での整理、`docs/plans/P3-加工フィーチャー.md`
+ * §1 の指示のとおり)。
  */
-export function selectionKindForTool(tool: NumericInputToolId | P3SolidToolId): SelectionKind {
+export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
   switch (tool) {
     case 'hole':
     case 'threadHole':

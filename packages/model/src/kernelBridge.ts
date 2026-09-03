@@ -155,6 +155,12 @@ export function toFaceRequest(face: ResolvedFace): PlanarFaceRequest {
 }
 
 /**
+ * まだ橋渡しを書いていない段の種類の理由(P3 タスク15 の暫定)。
+ * resolvePart.ts の同じ文言と揃えてある(利用者には同じ意味に見えるため)。
+ */
+const UNSUPPORTED_STEP_MESSAGE = 'この種類の立体はまだ計算できません。';
+
+/**
  * 解決済みの 1 段の作り方をカーネルの言葉へ直す。
  * 向き・反転・両側の平行移動・角度の度→ラジアンは resolvePart が済ませてあるので、
  * ここでやるのは欄の名前を合わせることと、曲線を CurveSpec へ直すことだけ。
@@ -190,6 +196,14 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         targetKey: plan.targetKey,
         toolKey: plan.toolKey,
       };
+    case 'hole':
+    case 'thread':
+      // P3 タスク15 が resolvePart へ穴・ねじ穴の段を足したが、kernel 側の SolidStepSpec には
+      // まだ穴・ねじ穴の段が無い(kernel タスク10 で入る)ため、詰め替えをここに書けない。
+      // この節は型を網羅させるためだけの暫定で、**タスク17 が本実装へ置き換える。**
+      // 投げた理由は recomputePart.ts が受け止めて kernelFailed へ詰め替えるので、
+      // アプリは落ちない(FR-504、NFR-RE-1)。
+      throw new Error(UNSUPPORTED_STEP_MESSAGE);
   }
 }
 

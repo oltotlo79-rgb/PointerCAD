@@ -17,7 +17,16 @@
  * 型を part/types.ts ではなくこのファイルへ置くのは、part/types.ts が「保存する形」だけを
  * 集めた場所であり、解決結果(導出物)を混ぜると保存対象の見分けがつかなくなるため。
  * 鍵の材料の型を cacheKey.ts が自分で持つのと同じ方針(docs/報告記録.md 2026-09-03 07:35 の④)。
+ *
+ * P3(docs/plans/P3-加工フィーチャー.md タスク15)で穴(FR-405)とねじ穴(FR-406)を足した。
+ * ここで済ませるのは model 側で計算できることだけで、次の3つは**カーネルの責務**である
+ * (model は面の指紋しか持たず、面の平面も境界箱も知らないため。§2.4.2):
+ *   - 面の指紋からの選び直し(見つからなければカーネルが断り、タスク17 が missingSubShape に詰める)
+ *   - 中心点の面への投影と、掘る向き(面の法線と傾き角・方位角から作る)
+ *   - 貫通穴の長さ(対象の境界箱の対角長から決める、§0.a-0.12)
  */
+
+import type { ExpressionValue } from '@pointercad/expression';
 
 import { degreesToRadians } from '../sketch/planeMath.js';
 import { arcPointAt, fitPlaneNormal, resolveSketch } from '../sketch/resolveSketch.js';
@@ -31,18 +40,61 @@ import {
   subVec3,
   type Vec3,
 } from '../sketch/vec3.js';
-import { cacheKeyFor, type KeyCurve, type KeyVec3, type SolidStepKeyMaterial } from './cacheKey.js';
+import { findMetricThread } from '../thread/metricThread.js';
+import {
+  cacheKeyFor,
+  type KeyCurve,
+  type KeyTransform,
+  type KeyVec3,
+  type SolidStepKeyMaterial,
+} from './cacheKey.js';
+import { consumedTargetsOf } from './createPartDocument.js';
+import { fingerprintKeyText, subShapeKindOf } from './subShapeRef.js';
 import type {
   BooleanFeature,
   BooleanOperation,
   ExtrudeFeature,
+  HoleDepth,
+  HoleFeature,
   PartDocument,
   RevolveAxis,
   RevolveFeature,
   SewFeature,
   SketchFaceRef,
+  SketchPointRef,
   SolidFeature,
+  SubShapeRef,
+  ThreadHoleFeature,
 } from './types.js';
+
+/**
+ * 工具全体にかける剛体変換(パターン、FR-411 / FR-412、§0.a-0.20)。
+ * kernel の `RigidTransformSpec` と同じ形だが別の型にして、kernelBridge が詰め替える
+ * (NFR-MA-1)。回転角はラジアン(度からの換算は model の責務)。
+ *
+ * P3 タスク15 の穴・ねじ穴では**必ず空配列**を渡す。並べるのはパターン(タスク16)だけで、
+ * 「空」と「恒等変換を1つ」は鍵の文字列が違う(cacheKey.ts の `HoleKeyMaterial` の注釈)ため、
+ * パターンでない穴は必ず空に揃える。
+ */
+export interface RigidTransform {
+  readonly translation: Vec3;
+  readonly rotationOrigin: Vec3;
+  readonly rotationAxis: Vec3;
+  /** 回転角(ラジアン)。0 なら平行移動だけ。 */
+  readonly rotationAngle: number;
+}
+
+/**
+ * 段が指す部分形状(面・辺・頂点)の指紋。
+ *
+ * 計画書 §タスク15 は `SubShapeFingerprint & { index: number }`(kernel の `SubShapeQuery` と
+ * 同じ平らな形)としていたが、**保存形の `SubShapeRef` をそのまま持ち回る**形にした。理由は2つ:
+ *   - 鍵の材料に混ぜる文字列は `subShapeRef.ts` の `fingerprintKeyText(ref)` が作り、
+ *     これが `bodyFeatureId` を必要とする。平らに崩すと鍵を作れない。
+ *   - 崩して詰め直すには指紋の種類ごとの分岐を2か所(ここと kernelBridge)に書くことになる。
+ * 平らな `SubShapeQuery` へ崩すのは kernelBridge(タスク17)の1か所だけにする。
+ */
+export type SubShapeQueryPlan = SubShapeRef;
 
 /**
  * model 側の「1段の作り方」。kernel の SolidStepSpec とは別の型にして、
@@ -82,6 +134,52 @@ export type SolidStepPlan =
       readonly targetKey: string;
       /** 相手(消える側)のボディの鍵。 */
       readonly toolKey: string;
+    }
+  | {
+      readonly kind: 'hole';
+      /** 穴をあける対象のボディの鍵。この段が消費する(§0.a-0.5)。 */
+      readonly targetKey: string;
+      /** 穴をあける面。カーネルが指紋で選び直し、平面と法線を取り出す(§2.2)。 */
+      readonly face: SubShapeQueryPlan;
+      /** 面へ投影する前の中心点(mm)。投影はカーネルが行う。利用者が選んだ順のまま並べる。 */
+      readonly centers: readonly Vec3[];
+      readonly diameter: number;
+      /** 貫通なら null(長さはカーネルが境界箱から決める、§0.a-0.12)。止まり穴なら深さ(mm)。 */
+      readonly depth: number | null;
+      /** 面の法線からの傾き(ラジアン)。0 以上 π/2 未満。 */
+      readonly tiltAngle: number;
+      /** 傾ける向き(面内の方位角、ラジアン)。基準は面の第1軸(§0.a-0.10)。 */
+      readonly tiltAzimuth: number;
+      readonly transforms: readonly RigidTransform[];
+    }
+  | {
+      readonly kind: 'thread';
+      readonly targetKey: string;
+      readonly face: SubShapeQueryPlan;
+      readonly centers: readonly Vec3[];
+      /** 下穴の径(mm)。既定はめねじ内径 D1(§0.a-0.14)。 */
+      readonly drillDiameter: number;
+      /**
+       * ピッチ(mm)。簡略表示では `thread` が null になり形には効かないが、
+       * 鍵の材料(`ThreadKeyMaterial.pitch`)は常にこの値を混ぜるので段の欄として持つ。
+       */
+      readonly pitch: number;
+      readonly depth: number | null;
+      readonly tiltAngle: number;
+      readonly tiltAzimuth: number;
+      readonly transforms: readonly RigidTransform[];
+      /** 実らせんを切るときだけ入る。簡略表示のときは null(§0.a-0.15、§0.a-0.16)。 */
+      readonly thread: {
+        readonly majorDiameter: number;
+        readonly pitch: number;
+        readonly length: number;
+      } | null;
+      /**
+       * 3D の簡略表示に使うねじの印(B-rep には触らない)。
+       * kernel 側は `ThreadMarkSpec | null` だが、**model は簡略表示でも実らせんでも必ず作る**
+       * ので null を取らない(印は実形状のときも出す、§2.4.2)。
+       */
+      readonly mark: { readonly majorDiameter: number; readonly length: number };
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -111,6 +209,14 @@ export type PartErrorCode =
   | 'notPlanar'
   /** そのボディはすでに別のブーリアンが消費している。 */
   | 'consumedTwice'
+  /**
+   * 加工するもとの面・辺・頂点が見つからない(§0.a-0.5、FR-504)。
+   * 指紋の照合はカーネルの中で行う(§2.2.4)ので、**この code を出すのは
+   * 「面・辺を1つも指していない」場合(タスク16 の面取り)と、カーネルの失敗を詰め替える
+   * kernelBridge / recomputePart(タスク17)**である。文言は
+   * 「加工するもとの面(辺)が見つかりません。形が大きく変わったため、選び直してください。」
+   */
+  | 'missingSubShape'
   /** カーネルが形を作れなかった(このファイルでは使わない。タスク12 が使う)。 */
   | 'kernelFailed';
 
@@ -164,6 +270,13 @@ const ARC_PLANE_SAMPLES = 5;
 
 /** 角度の上限(度)。全周を超える回転は受け付けない(§0.a-0.9)。 */
 const MAX_REVOLVE_DEGREES = 360;
+
+/**
+ * 傾き角の上限(度、含まない)。90 度では掘る向きが面と平行になり材料へ入らない。
+ * カーネル(タスク6 の `makeHole`)も許容を [0, π/2) にしてあるので、同じ境界で先に断る
+ * (§2.9 の第1段「入力の妥当性は model と kernel の両方で見る」)。
+ */
+const MAX_TILT_DEGREES = 90;
 
 /**
  * 向きを逆にする。0 を掛けると -0 になる double の癖を吸収して +0 に揃える。
@@ -244,15 +357,26 @@ type PlanOutcome =
   | { readonly ok: true; readonly plan: SolidStepPlan }
   | { readonly ok: false; readonly error: PartError };
 
+function partError(featureId: string, code: PartErrorCode, message: string): PartError {
+  return { featureId, code, message };
+}
+
 function fail(featureId: string, code: PartErrorCode, message: string): PlanOutcome {
-  return { ok: false, error: { featureId, code, message } };
+  return { ok: false, error: partError(featureId, code, message) };
 }
 
 /**
  * まだ解決を実装していない種類の断り(P3 タスク13 の暫定、planSolid の最後の節)。
  * 加工フィーチャーとばねの型はタスク13 で先に足したが、解決はタスク15・15b・16 で入る。
+ * タスク15 で穴・ねじ穴を本実装へ置き換えたので、残るのは
+ * ばね(タスク15b)と面取り・パターン(タスク16)である。
  */
 const UNSUPPORTED_SOLID_KIND_MESSAGE = 'この種類の立体はまだ計算できません。';
+
+/** 0 より大きい有限の数か。式が評価できなかった欄は value が NaN で来る(FR-504)。 */
+function isPositiveFinite(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
+}
 
 /** 押し出し(FR-401、§0.a-0.8)。向き・反転・両側の平行移動をここで決める。 */
 function planExtrude(feature: ExtrudeFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
@@ -383,6 +507,346 @@ function planBoolean(
   };
 }
 
+/** 加工の対象になるボディを引いた結果(FR-405〜FR-408、FR-411、FR-412)。 */
+export type MachiningTargetOutcome =
+  | { readonly ok: true; readonly targetKey: string }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 加工(穴・ねじ穴・R 面取り・C 面取り・パターン)の対象になるボディの鍵を引く(§0.a-0.5)。
+ *
+ * 参照できるのはブーリアンと同じく「履歴で自分より前にあり、抑制されておらず、作成に成功し、
+ * まだ消費されていない」ボディだけ。消費そのものの記録は呼び出し側(resolvePart)が
+ * `consumedTargetsOf` を使って行う(規則を2か所に書かない)。
+ * 自分自身を指す場合は、まだ `bodyKeys` へ自分の鍵を入れていない時点で呼ばれるので
+ * `missingBody` になる(前方参照と同じ扱い)。
+ */
+export function resolveMachiningTarget(
+  featureId: string,
+  targetFeatureId: string,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): MachiningTargetOutcome {
+  const targetKey = bodyKeys.get(targetFeatureId);
+  if (targetKey === undefined) {
+    return {
+      ok: false,
+      error: partError(featureId, 'missingBody', '加工するもとの立体が見つかりません。'),
+    };
+  }
+  if (consumed.has(targetFeatureId)) {
+    return {
+      ok: false,
+      error: partError(featureId, 'consumedTwice', 'その立体はすでに別のところで使われています。'),
+    };
+  }
+  return { ok: true, targetKey };
+}
+
+/** 穴の中心点を展開した結果(FR-405、FR-308)。 */
+export type HoleCentersOutcome =
+  | { readonly ok: true; readonly centers: readonly Vec3[] }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * スケッチの点・点列フィーチャーから穴の中心点を展開する(FR-405 の「複数点同時」、FR-308)。
+ *
+ * `resolveSketch` の `points` は点フィーチャーと点列フィーチャーの全点を平らに並べた配列で、
+ * 各要素が作り手の `featureId` を持つ(P1 の実装。着手時に実測して確認した)。
+ * 参照は要素 id(`point-1#3`)ではなく**フィーチャー id** を持つので、**点列を指すと必ず全点**が
+ * 中心になる(点列の1点だけを指す書き方は持たない、types.ts の `SketchPointRef` の注釈)。
+ * 並びは利用者が選んだ参照の順、点列の中では作られた順のままにする(並びは鍵に効く。
+ * cacheKey.ts の `HoleKeyMaterial.centers` の注釈)。
+ *
+ * 参照の一部が見つからなくても、1点でも取れれば残りで続ける(消えた点のぶんだけ穴が減る)。
+ * 1点も取れないときだけ断る(計画書 タスク15 の解決の規則3)。
+ *
+ * 計画書の署名には `featureId` が無いが、失敗を `PartError`(featureId を必ず持つ)で返すため
+ * `resolveMachiningTarget` と同じく第1引数で受け取る形にした。
+ */
+export function resolveHoleCenters(
+  featureId: string,
+  references: readonly SketchPointRef[],
+  sketches: readonly ResolvedPartSketch[],
+): HoleCentersOutcome {
+  const centers: Vec3[] = [];
+  for (const reference of references) {
+    const sketch = sketches.find((entry) => entry.sketchId === reference.sketchId);
+    if (sketch === undefined) {
+      continue;
+    }
+    for (const point of sketch.resolved.points) {
+      if (point.featureId === reference.pointFeatureId) {
+        centers.push(point.position);
+      }
+    }
+  }
+  if (centers.length === 0) {
+    return {
+      ok: false,
+      error: partError(
+        featureId,
+        'missingProfile',
+        '穴の中心にする点が見つかりません。スケッチで点を作ってからやり直してください。',
+      ),
+    };
+  }
+  return { ok: true, centers };
+}
+
+type DepthOutcome =
+  | { readonly ok: true; readonly depth: number | null }
+  | { readonly ok: false; readonly error: PartError };
+
+/** 深さ(FR-405)。貫通は null(長さはカーネルが境界箱から決める、§0.a-0.12)。 */
+function resolveHoleDepth(featureId: string, depth: HoleDepth): DepthOutcome {
+  if (depth.kind === 'through') {
+    return { ok: true, depth: null };
+  }
+  if (!isPositiveFinite(depth.depth.value)) {
+    return {
+      ok: false,
+      error: partError(featureId, 'invalidValue', '穴の深さは 0 より大きい数にしてください。'),
+    };
+  }
+  return { ok: true, depth: depth.depth.value };
+}
+
+/** 傾き角・方位角(ラジアン)。 */
+interface TiltPlan {
+  readonly tiltAngle: number;
+  readonly tiltAzimuth: number;
+}
+
+type TiltOutcome =
+  | { readonly ok: true; readonly tilt: TiltPlan }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 傾き角と方位角を度からラジアンへ直す(§0.a-0.10)。
+ *
+ * 傾き角は 0 以上 90 度未満(90 度では掘る向きが面と平行になり材料へ入らない)。
+ * 方位角は面内の向きなので範囲を決めない(360 度を超えても、負でも、同じ向きを指すだけ)。
+ */
+function resolveTilt(
+  featureId: string,
+  tiltAngle: ExpressionValue,
+  tiltAzimuth: ExpressionValue,
+): TiltOutcome {
+  const angleDegrees = tiltAngle.value;
+  if (!Number.isFinite(angleDegrees) || angleDegrees < 0 || angleDegrees >= MAX_TILT_DEGREES) {
+    return {
+      ok: false,
+      error: partError(featureId, 'invalidValue', '傾きの角度は 0 以上 90 度未満にしてください。'),
+    };
+  }
+  const azimuthDegrees = tiltAzimuth.value;
+  if (!Number.isFinite(azimuthDegrees)) {
+    return {
+      ok: false,
+      error: partError(featureId, 'invalidValue', '傾ける向きの角度が数になっていません。'),
+    };
+  }
+  return {
+    ok: true,
+    tilt: {
+      tiltAngle: degreesToRadians(angleDegrees),
+      tiltAzimuth: degreesToRadians(azimuthDegrees),
+    },
+  };
+}
+
+/** 穴とねじ穴に共通する欄。どちらも対象・面・中心・深さ・傾きを同じ意味で持つ。 */
+type HoleLikeFeature = HoleFeature | ThreadHoleFeature;
+
+/** 穴とねじ穴に共通する解決結果。 */
+interface HoleBase {
+  readonly targetKey: string;
+  readonly face: SubShapeQueryPlan;
+  readonly centers: readonly Vec3[];
+  readonly depth: number | null;
+  readonly tiltAngle: number;
+  readonly tiltAzimuth: number;
+}
+
+type HoleBaseOutcome =
+  | { readonly ok: true; readonly base: HoleBase }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 穴とねじ穴に共通する解決(対象・面・中心・深さ・傾き)。
+ * 断る順は計画書 タスク15 の「解決の規則」のとおり(対象 → 面 → 中心 → 深さ → 傾き)。
+ */
+function resolveHoleBase(
+  feature: HoleLikeFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): HoleBaseOutcome {
+  const target = resolveMachiningTarget(
+    feature.id,
+    feature.targetFeatureId,
+    bodyKeys,
+    consumed,
+  );
+  if (!target.ok) {
+    return target;
+  }
+  // 面は「加工するもとの立体」のものでなければならない。別のボディの面を指していると
+  // カーネルは対象の形の中から選び直すので、まったく違う面が当たってしまう。
+  if (feature.face.bodyFeatureId !== feature.targetFeatureId) {
+    return {
+      ok: false,
+      error: partError(
+        feature.id,
+        'invalidValue',
+        '穴をあける面は、加工するもとの立体の面にしてください。',
+      ),
+    };
+  }
+  // 参照の型(SubShapeRef)は辺・頂点も表せるので、面であることをここで確かめる
+  // (P3 の穴は平らな面にだけあけられる。面かどうかの判定は指紋の種類で足りる)。
+  if (subShapeKindOf(feature.face) !== 'face') {
+    return {
+      ok: false,
+      error: partError(
+        feature.id,
+        'invalidValue',
+        '穴をあけられるのは面だけです。面を選び直してください。',
+      ),
+    };
+  }
+  const centers = resolveHoleCenters(feature.id, feature.centers, sketches);
+  if (!centers.ok) {
+    return centers;
+  }
+  const depth = resolveHoleDepth(feature.id, feature.depth);
+  if (!depth.ok) {
+    return depth;
+  }
+  const tilt = resolveTilt(feature.id, feature.tiltAngle, feature.tiltAzimuth);
+  if (!tilt.ok) {
+    return tilt;
+  }
+  return {
+    ok: true,
+    base: {
+      targetKey: target.targetKey,
+      face: feature.face,
+      centers: centers.centers,
+      depth: depth.depth,
+      tiltAngle: tilt.tilt.tiltAngle,
+      tiltAzimuth: tilt.tilt.tiltAzimuth,
+    },
+  };
+}
+
+/**
+ * 穴(FR-405、§2.4)。対象のボディを消費して1つの新しいボディを作る。
+ *
+ * 中心点の面への投影・掘る向き・貫通穴の長さはカーネルが決める(model は面の指紋しか
+ * 持たないため、§2.4.2)。ここで作るのは「どの面に、どの点を中心に、どの太さで、
+ * どこまで掘るか」までである。`transforms` は必ず空配列(並べるのはパターン、タスク16)。
+ */
+function planHole(
+  feature: HoleFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): PlanOutcome {
+  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed);
+  if (!outcome.ok) {
+    return outcome;
+  }
+  const base = outcome.base;
+  const diameter = feature.diameter.value;
+  if (!isPositiveFinite(diameter)) {
+    return fail(feature.id, 'invalidValue', '穴の直径は 0 より大きい数にしてください。');
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'hole',
+      targetKey: base.targetKey,
+      face: base.face,
+      centers: base.centers,
+      diameter,
+      depth: base.depth,
+      tiltAngle: base.tiltAngle,
+      tiltAzimuth: base.tiltAzimuth,
+      transforms: [],
+    },
+  };
+}
+
+/**
+ * ねじ穴(FR-406、§2.4)。下穴は穴と同じ手順で掘り、ねじ山だけが追加になる。
+ *
+ * 呼び(`designation`)から規格表(thread/metricThread.ts)を引いておねじの外径 `d` を得る。
+ * ピッチ・下穴径は規格表から入るが式で書き換えられる(FR-202)ので、**文書の値を正**とし、
+ * 表からは外径だけを取る。`series`(並目/細目)は既定のピッチを決めるための欄で、
+ * ピッチが文書に入っている以上ここでは使わない(UI が既定値を入れるときに使う)。
+ */
+function planThreadHole(
+  feature: ThreadHoleFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): PlanOutcome {
+  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed);
+  if (!outcome.ok) {
+    return outcome;
+  }
+  const base = outcome.base;
+  const size = findMetricThread(feature.designation);
+  if (size === undefined) {
+    return fail(
+      feature.id,
+      'invalidValue',
+      'そのねじの呼びは使えません。一覧から選び直してください。',
+    );
+  }
+  const pitch = feature.pitch.value;
+  if (!isPositiveFinite(pitch)) {
+    return fail(feature.id, 'invalidValue', 'ねじのピッチは 0 より大きい数にしてください。');
+  }
+  const drillDiameter = feature.drillDiameter.value;
+  if (!isPositiveFinite(drillDiameter)) {
+    return fail(feature.id, 'invalidValue', '下穴の径は 0 より大きい数にしてください。');
+  }
+  if (drillDiameter >= size.diameter) {
+    return fail(feature.id, 'invalidValue', '下穴の径はねじの外径より小さくしてください。');
+  }
+  const threadLength = feature.threadLength.value;
+  if (!isPositiveFinite(threadLength)) {
+    return fail(feature.id, 'invalidValue', 'ねじ部の長さは 0 より大きい数にしてください。');
+  }
+  // 止まり穴のときだけ深さと比べる。貫通穴は深さが無いので比べる相手がない。
+  if (base.depth !== null && threadLength > base.depth) {
+    return fail(feature.id, 'invalidValue', 'ねじ部の長さは、穴の深さ以下にしてください。');
+  }
+  const modeled = feature.representation === 'modeled';
+  return {
+    ok: true,
+    plan: {
+      kind: 'thread',
+      targetKey: base.targetKey,
+      face: base.face,
+      centers: base.centers,
+      drillDiameter,
+      pitch,
+      depth: base.depth,
+      tiltAngle: base.tiltAngle,
+      tiltAzimuth: base.tiltAzimuth,
+      transforms: [],
+      // 実らせんを切るのは representation が 'modeled' のときだけ(既定は簡略表示)。
+      thread: modeled ? { majorDiameter: size.diameter, pitch, length: threadLength } : null,
+      // 印は簡略表示でも実らせんでも作る(§2.4.2「実形状のときも返してよい」)。
+      mark: { majorDiameter: size.diameter, length: threadLength },
+    },
+  };
+}
+
 function planSolid(
   feature: SolidFeature,
   sketches: readonly ResolvedPartSketch[],
@@ -399,22 +863,34 @@ function planSolid(
     case 'boolean':
       return planBoolean(feature, bodyKeys, consumed);
     case 'hole':
+      return planHole(feature, sketches, bodyKeys, consumed);
     case 'threadHole':
+      return planThreadHole(feature, sketches, bodyKeys, consumed);
     case 'fillet':
     case 'chamfer':
     case 'pattern':
     case 'spring':
       // P3 タスク13 で文書の型だけを先に足したための暫定。
-      // 実際の解決(穴・ねじ穴=タスク15、ばね=タスク15b、面取り・パターン=タスク16)が
-      // 入るまでの間、この switch を網羅させて型検査を通すために置く。
+      // 実際の解決(ばね=タスク15b、面取り・パターン=タスク16)が入るまでの間、
+      // この switch を網羅させて型検査を通すために置く。
       // 例外を投げず errors へ入れる形にしておくので、途中の状態でもアプリは落ちない
-      // (FR-504、NFR-RE-1)。**タスク15・15b・16 はこの節を必ず置き換える。**
+      // (FR-504、NFR-RE-1)。**タスク15b・16 はこの節を必ず置き換える。**
       return fail(feature.id, 'invalidValue', UNSUPPORTED_SOLID_KIND_MESSAGE);
   }
 }
 
 function toKeyVec3(vector: Vec3): KeyVec3 {
   return [vector[0], vector[1], vector[2]];
+}
+
+/** 剛体変換を鍵の材料へ詰め替える(パターン、タスク16)。欄名は cacheKey.ts の KeyTransform と同じ。 */
+function toKeyTransform(transform: RigidTransform): KeyTransform {
+  return {
+    translation: toKeyVec3(transform.translation),
+    rotationOrigin: toKeyVec3(transform.rotationOrigin),
+    rotationAxis: toKeyVec3(transform.rotationAxis),
+    rotationAngle: transform.rotationAngle,
+  };
 }
 
 /**
@@ -469,6 +945,36 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         targetKey: plan.targetKey,
         toolKey: plan.toolKey,
       };
+    case 'hole':
+      return {
+        kind: 'hole',
+        targetKey: plan.targetKey,
+        face: fingerprintKeyText(plan.face),
+        centers: plan.centers.map(toKeyVec3),
+        diameter: plan.diameter,
+        depth: plan.depth,
+        tiltAngle: plan.tiltAngle,
+        tiltAzimuth: plan.tiltAzimuth,
+        transforms: plan.transforms.map(toKeyTransform),
+      };
+    case 'thread':
+      return {
+        kind: 'thread',
+        targetKey: plan.targetKey,
+        face: fingerprintKeyText(plan.face),
+        centers: plan.centers.map(toKeyVec3),
+        drillDiameter: plan.drillDiameter,
+        // 外径とねじ部の長さは印(必ず作る)から取る。実らせんの有無で欠けることがない。
+        majorDiameter: plan.mark.majorDiameter,
+        pitch: plan.pitch,
+        threadLength: plan.mark.length,
+        depth: plan.depth,
+        // 実らせんか簡略表示かで形そのものが変わるので鍵に混ぜる(§0.a-0.15、§0.a-0.16)。
+        modeled: plan.thread !== null,
+        tiltAngle: plan.tiltAngle,
+        tiltAzimuth: plan.tiltAzimuth,
+        transforms: plan.transforms.map(toKeyTransform),
+      };
   }
 }
 
@@ -491,7 +997,7 @@ export function resolvePart(document: PartDocument): ResolvedPart {
   const errors: PartError[] = [];
   /** 作成に成功したボディの鍵。ここに無い id は下流から参照できない。 */
   const bodyKeys = new Map<string, string>();
-  /** すでにブーリアンが消費したボディ。同じものを2度は使えない(§2.2)。 */
+  /** すでに他のフィーチャーが消費したボディ。同じものを2度は使えない(§2.2)。 */
   const consumed = new Set<string>();
 
   for (const feature of document.solids) {
@@ -507,9 +1013,11 @@ export function resolvePart(document: PartDocument): ResolvedPart {
     const key = cacheKeyFor(keyMaterialFor(outcome.plan));
     drafts.push({ featureId: feature.id, name: feature.name, key, plan: outcome.plan });
     bodyKeys.set(feature.id, key);
-    if (feature.kind === 'boolean') {
-      consumed.add(feature.targetFeatureId);
-      consumed.add(feature.toolFeatureId);
+    // 消費するボディを記録する(ブーリアンは対象と相手、加工は対象1つ、§0.a-0.5)。
+    // 種類ごとの規則は createPartDocument.ts の consumedTargetsOf が正本で、ここには書かない。
+    // 段が作れなかったフィーチャーはここへ来ないので、失敗した加工は何も消費しない。
+    for (const consumedId of consumedTargetsOf(feature)) {
+      consumed.add(consumedId);
     }
   }
 

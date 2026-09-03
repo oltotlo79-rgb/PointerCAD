@@ -1,4 +1,8 @@
-import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import {
+  evaluateExpression,
+  expressionValueFromNumber,
+  type ExpressionValue,
+} from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -17,23 +21,43 @@ import type {
   SketchDocument,
   SketchFaceFeature,
   SketchLineFeature,
+  SketchPointArrayFeature,
 } from '../sketch/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
+import {
+  findMetricThread,
+  metricThreadPitch,
+  threadMinorDiameter,
+  type ThreadSeries,
+} from '../thread/metricThread.js';
 import { cacheKeyFor, type KeyCurve } from './cacheKey.js';
 import { appendSolid, createEmptyPartDocument, replaceSketch } from './createPartDocument.js';
-import { resolvePart, resolveRevolveAxis, translateCurve } from './resolvePart.js';
-import type { ResolvedPart, ResolvedSolidStep } from './resolvePart.js';
+import {
+  resolveHoleCenters,
+  resolveMachiningTarget,
+  resolvePart,
+  resolveRevolveAxis,
+  translateCurve,
+} from './resolvePart.js';
+import type { ResolvedPart, ResolvedPartSketch, ResolvedSolidStep } from './resolvePart.js';
+import { fingerprintKeyText } from './subShapeRef.js';
 import type {
   BooleanFeature,
   BooleanOperation,
   ExtrudeFeature,
+  HoleDepth,
+  HoleFeature,
   PartDocument,
   RevolveAxis,
   RevolveFeature,
   SewFeature,
   SketchFaceRef,
   SketchLineRef,
+  SketchPointRef,
   SolidFeature,
+  SubShapeRef,
+  ThreadHoleFeature,
+  ThreadRepresentation,
 } from './types.js';
 
 /** テストの中で式を書くための補助。評価できない式はテストの誤りとして落とす。 */
@@ -96,6 +120,12 @@ interface Fixture {
   readonly brokenFace: SketchFaceRef;
   /** (1,2,3) から (4,6,3) への線分。回転軸に使う。 */
   readonly axisLine: SketchLineRef;
+  /** (10,10,0) の点。穴の中心に使う。 */
+  readonly pointA: SketchPointRef;
+  /** (30,20,0) の点。穴の中心に使う。 */
+  readonly pointB: SketchPointRef;
+  /** (50,0,0) から X 方向へ間隔 5 で 3 点並ぶ点列(FR-308)。 */
+  readonly pointArray: SketchPointRef;
 }
 
 /**
@@ -104,6 +134,8 @@ interface Fixture {
  * - 面B: 同じ形を z = 10 へ
  * - 壊れた面: 実在しない点 id を境界に持つ
  * - 軸の線分: (1,2,3) → (4,6,3)
+ * - 穴の中心にする点2つ: (10,10,0) と (30,20,0)
+ * - 点列: (50,0,0) から X 方向へ間隔 5 で 3 点(→ (50,0,0) (55,0,0) (60,0,0))
  */
 function createFixture(): Fixture {
   const base = createEmptyPartDocument();
@@ -131,13 +163,31 @@ function createFixture(): Fixture {
     from: absoluteCoordinate(1, 2, 3),
     to: absoluteCoordinate(4, 6, 3),
   };
-  const sketch = appendFeature(brokenFace.sketch, line);
+  const withLine = appendFeature(brokenFace.sketch, line);
+  const centers = addPoints(withLine, [
+    [10, 10, 0],
+    [30, 20, 0],
+  ]);
+  const array: SketchPointArrayFeature = {
+    id: nextFeatureId(centers.sketch, 'pointArray'),
+    name: nextFeatureName(centers.sketch, 'pointArray'),
+    planeId: DEFAULT_WORK_PLANE_ID,
+    kind: 'pointArray',
+    base: absoluteCoordinate(50, 0, 0),
+    azimuth: expressionValueFromNumber(0),
+    spacing: expressionValueFromNumber(5),
+    count: expressionValueFromNumber(3),
+  };
+  const sketch = appendFeature(centers.sketch, array);
   return {
     document: replaceSketch(base, sketch),
     faceA: { sketchId: sketch.id, faceFeatureId: faceA.faceId },
     faceB: { sketchId: sketch.id, faceFeatureId: faceB.faceId },
     brokenFace: { sketchId: sketch.id, faceFeatureId: brokenFace.faceId },
     axisLine: { sketchId: sketch.id, lineFeatureId: line.id },
+    pointA: { sketchId: sketch.id, pointFeatureId: centers.pointIds[0] },
+    pointB: { sketchId: sketch.id, pointFeatureId: centers.pointIds[1] },
+    pointArray: { sketchId: sketch.id, pointFeatureId: array.id },
   };
 }
 
@@ -223,6 +273,124 @@ function booleanFeature(
   };
 }
 
+/**
+ * M6 並目の下穴径 D1。式の欄へ入れると `expressionValueFromNumber` が有効数字12桁へ
+ * 丸めるので、文書に入る値は 4.917468245269452 ではなく 4.91746824527 になる。
+ * 鍵は 9 桁で丸める(`KEY_DECIMALS`)ので、どちらでも同じ鍵になる。
+ */
+const M6_DRILL_DIAMETER = expressionValueFromNumber(threadMinorDiameter(6, 1)).value;
+
+/**
+ * 40×30 の面を Z へ 10 押し出した箱の「上の面」の指紋(計画書 §2.2.3 の検算表と同じ値)。
+ * 面積 1200、重心 (20,15,10)、法線 [0,0,1]、通し番号 0。
+ */
+function topFaceRef(bodyFeatureId: string): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index: 0,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 1200,
+      position: [20, 15, 10],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+}
+
+/** 箱の縦の辺1本の指紋。「面でないものを指した」検査に使う。 */
+function edgeRef(bodyFeatureId: string): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index: 3,
+    fingerprint: {
+      kind: 'edge',
+      curveKind: 'line',
+      length: 10,
+      position: [0, 0, 5],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+}
+
+interface HoleOptions {
+  readonly face?: SubShapeRef;
+  readonly diameter?: string | ExpressionValue;
+  readonly depth?: HoleDepth;
+  readonly tiltAngle?: string | ExpressionValue;
+  readonly tiltAzimuth?: string | ExpressionValue;
+  readonly suppressed?: boolean;
+  readonly name?: string;
+}
+
+function holeFeature(
+  id: string,
+  targetFeatureId: string,
+  centers: readonly SketchPointRef[],
+  options: HoleOptions = {},
+): HoleFeature {
+  return {
+    id,
+    name: options.name ?? id,
+    suppressed: options.suppressed ?? false,
+    kind: 'hole',
+    targetFeatureId,
+    face: options.face ?? topFaceRef(targetFeatureId),
+    centers,
+    diameter: toExpr(options.diameter ?? '6'),
+    depth: options.depth ?? { kind: 'through' },
+    tiltAngle: toExpr(options.tiltAngle ?? '0'),
+    tiltAzimuth: toExpr(options.tiltAzimuth ?? '0'),
+  };
+}
+
+interface ThreadHoleOptions extends HoleOptions {
+  readonly designation?: string;
+  readonly series?: ThreadSeries;
+  readonly pitch?: string | ExpressionValue;
+  readonly drillDiameter?: string | ExpressionValue;
+  readonly threadLength?: string | ExpressionValue;
+  readonly representation?: ThreadRepresentation;
+}
+
+/**
+ * ねじ穴。既定は M6 並目・簡略表示・貫通で、ピッチと下穴径は規格表どおりの値を入れる
+ * (UI がその場入力で入れる既定値と同じ作り方。FR-406、§0.a-0.14)。
+ */
+function threadHoleFeature(
+  id: string,
+  targetFeatureId: string,
+  centers: readonly SketchPointRef[],
+  options: ThreadHoleOptions = {},
+): ThreadHoleFeature {
+  const designation = options.designation ?? 'M6';
+  const series = options.series ?? 'coarse';
+  const size = findMetricThread(designation);
+  const defaultPitch = size === undefined ? 1 : metricThreadPitch(size, series);
+  const defaultDrill =
+    size === undefined ? 1 : threadMinorDiameter(size.diameter, defaultPitch);
+  return {
+    id,
+    name: options.name ?? id,
+    suppressed: options.suppressed ?? false,
+    kind: 'threadHole',
+    targetFeatureId,
+    face: options.face ?? topFaceRef(targetFeatureId),
+    centers,
+    designation,
+    series,
+    pitch: toExpr(options.pitch ?? expressionValueFromNumber(defaultPitch)),
+    drillDiameter: toExpr(options.drillDiameter ?? expressionValueFromNumber(defaultDrill)),
+    depth: options.depth ?? { kind: 'through' },
+    threadLength: toExpr(options.threadLength ?? '10'),
+    representation: options.representation ?? 'simplified',
+    tiltAngle: toExpr(options.tiltAngle ?? '0'),
+    tiltAzimuth: toExpr(options.tiltAzimuth ?? '0'),
+  };
+}
+
 function withSolids(document: PartDocument, ...solids: readonly SolidFeature[]): PartDocument {
   return solids.reduce((current, solid) => appendSolid(current, solid), document);
 }
@@ -254,6 +422,25 @@ function booleanPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan']
     throw new Error(`テストの前提が壊れている: ブーリアンでない段 ${step.plan.kind}`);
   }
   return step.plan;
+}
+
+function holePlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'hole' }> {
+  if (step.plan.kind !== 'hole') {
+    throw new Error(`テストの前提が壊れている: 穴でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function threadPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'thread' }> {
+  if (step.plan.kind !== 'thread') {
+    throw new Error(`テストの前提が壊れている: ねじ穴でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+/** 検査の中で中心点の一覧を作る補助(resolveHoleCenters の単体検査に使う)。 */
+function sketchesOf(document: PartDocument): readonly ResolvedPartSketch[] {
+  return resolvePart(document).sketches;
 }
 
 /** 線分の並びを [始点, 終点] の一覧にする。円弧が混じっていたらテストの前提が壊れている。 */
@@ -1006,5 +1193,674 @@ describe('resolvePart 鍵の性質', () => {
     );
     expect(withSuppressed.steps).toHaveLength(1);
     expect(withSuppressed.steps[0].key).toBe(alone.steps[0].key);
+  });
+});
+
+describe('resolveMachiningTarget', () => {
+  it('作成に成功した未消費のボディなら鍵を返す', () => {
+    const outcome = resolveMachiningTarget(
+      'hole-1',
+      'extrude-1',
+      new Map([['extrude-1', 'key-1']]),
+      new Set(),
+    );
+    expect(outcome).toEqual({ ok: true, targetKey: 'key-1' });
+  });
+
+  it('ボディが無ければ missingBody', () => {
+    const outcome = resolveMachiningTarget('hole-1', 'extrude-9', new Map(), new Set());
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗するはずの呼び出しが成功した');
+    }
+    expect(outcome.error.code).toBe('missingBody');
+    expect(outcome.error.featureId).toBe('hole-1');
+    expect(outcome.error.message.length).toBeGreaterThan(0);
+  });
+
+  it('すでに消費されていれば consumedTwice', () => {
+    const outcome = resolveMachiningTarget(
+      'hole-1',
+      'extrude-1',
+      new Map([['extrude-1', 'key-1']]),
+      new Set(['extrude-1']),
+    );
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗するはずの呼び出しが成功した');
+    }
+    expect(outcome.error.code).toBe('consumedTwice');
+  });
+});
+
+describe('resolveHoleCenters', () => {
+  it('点フィーチャーは1点になる', () => {
+    const fixture = createFixture();
+    const outcome = resolveHoleCenters('hole-1', [fixture.pointA], sketchesOf(fixture.document));
+    expect(outcome).toEqual({ ok: true, centers: [[10, 10, 0]] });
+  });
+
+  it('点列フィーチャーは全点に展開される(FR-308)', () => {
+    const fixture = createFixture();
+    const outcome = resolveHoleCenters(
+      'hole-1',
+      [fixture.pointArray],
+      sketchesOf(fixture.document),
+    );
+    // (50,0,0) から X 方向へ間隔 5 で 3 点。
+    expect(outcome).toEqual({
+      ok: true,
+      centers: [
+        [50, 0, 0],
+        [55, 0, 0],
+        [60, 0, 0],
+      ],
+    });
+  });
+
+  it('参照した順に並ぶ(並べ替えない)', () => {
+    const fixture = createFixture();
+    const outcome = resolveHoleCenters(
+      'hole-1',
+      [fixture.pointB, fixture.pointA],
+      sketchesOf(fixture.document),
+    );
+    expect(outcome).toEqual({
+      ok: true,
+      centers: [
+        [30, 20, 0],
+        [10, 10, 0],
+      ],
+    });
+  });
+
+  it('参照が空なら missingProfile', () => {
+    const fixture = createFixture();
+    const outcome = resolveHoleCenters('hole-1', [], sketchesOf(fixture.document));
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗するはずの呼び出しが成功した');
+    }
+    expect(outcome.error.code).toBe('missingProfile');
+    expect(outcome.error.message).toContain('穴の中心にする点');
+  });
+
+  it('点フィーチャーが消えていれば missingProfile', () => {
+    const fixture = createFixture();
+    const outcome = resolveHoleCenters(
+      'hole-1',
+      [{ sketchId: fixture.pointA.sketchId, pointFeatureId: 'point-404' }],
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('スケッチが消えていれば missingProfile', () => {
+    const fixture = createFixture();
+    const outcome = resolveHoleCenters(
+      'hole-1',
+      [{ sketchId: 'sketch-404', pointFeatureId: fixture.pointA.pointFeatureId }],
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('一部の参照が見つからなくても、取れた点で続ける', () => {
+    const fixture = createFixture();
+    const outcome = resolveHoleCenters(
+      'hole-1',
+      [{ sketchId: fixture.pointA.sketchId, pointFeatureId: 'point-404' }, fixture.pointA],
+      sketchesOf(fixture.document),
+    );
+    expect(outcome).toEqual({ ok: true, centers: [[10, 10, 0]] });
+  });
+});
+
+describe('resolvePart 穴', () => {
+  it('対象を消費し、面・中心・径・貫通をそのまま渡す', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps.map((step) => step.visible)).toEqual([false, true]);
+    const plan = holePlan(result.steps[1]);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+    expect(plan.face).toEqual(topFaceRef('extrude-1'));
+    expect(plan.centers).toEqual([[10, 10, 0]]);
+    expect(plan.diameter).toBe(6);
+    expect(plan.depth).toBeNull();
+    expect(plan.tiltAngle).toBe(0);
+    expect(plan.tiltAzimuth).toBe(0);
+    // パターンでない穴の変換は必ず空(cacheKey.ts の HoleKeyMaterial の注釈)。
+    expect(plan.transforms).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['hole-1']);
+  });
+
+  it('点列を指すと全点が中心になる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointArray]),
+    );
+    expect(holePlan(resolvePart(document).steps[1]).centers).toHaveLength(3);
+  });
+
+  it('点を2つ指すと選んだ順に並ぶ', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointB, fixture.pointA]),
+    );
+    expect(holePlan(resolvePart(document).steps[1]).centers).toEqual([
+      [30, 20, 0],
+      [10, 10, 0],
+    ]);
+  });
+
+  it('止まり穴は深さをそのまま渡す', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], {
+        depth: { kind: 'blind', depth: expr('4') },
+      }),
+    );
+    expect(holePlan(resolvePart(document).steps[1]).depth).toBe(4);
+  });
+
+  it('傾き 30 度・方位角 45 度はラジアンへ直る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], {
+        tiltAngle: '30',
+        tiltAzimuth: '45',
+      }),
+    );
+    const plan = holePlan(resolvePart(document).steps[1]);
+    // 30 度 = 30 × π / 180 = π / 6、45 度 = π / 4。
+    expect(plan.tiltAngle).toBeCloseTo(Math.PI / 6, 12);
+    expect(plan.tiltAzimuth).toBeCloseTo(Math.PI / 4, 12);
+  });
+
+  it('方位角は 360 度を超えてもよい(面内の向きなので範囲を決めない)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], { tiltAzimuth: '450' }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(holePlan(result.steps[1]).tiltAzimuth).toBeCloseTo((450 * Math.PI) / 180, 12);
+  });
+
+  it('傾きが 90 度なら invalidValue(面と平行になり材料へ入らない)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], { tiltAngle: '90' }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('90 度未満');
+    // 穴が作れなかったので対象は消費されず、押し出しが画面に残る。
+    expect(result.steps.map((step) => step.featureId)).toEqual(['extrude-1']);
+    expect(result.liveBodyIds).toEqual(['extrude-1']);
+  });
+
+  it('傾きが負なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], { tiltAngle: '0-1' }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('方位角が数になっていなければ invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], {
+        tiltAzimuth: notANumber('a'),
+      }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('直径が 0 なら段を作らず invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], { diameter: '0' }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.steps.map((step) => step.featureId)).toEqual(['extrude-1']);
+  });
+
+  it('止まり穴の深さが 0 なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], {
+        depth: { kind: 'blind', depth: expr('0') },
+      }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('面が別のボディのものなら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      extrudeFeature('extrude-2', fixture.faceB, { distance: '4' }),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], { face: topFaceRef('extrude-2') }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('もとの立体の面');
+  });
+
+  it('面でなく辺を指していたら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], { face: edgeRef('extrude-1') }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('面だけ');
+  });
+
+  it('対象が抑制されていれば missingBody', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA, { suppressed: true }),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingBody']);
+    expect(result.steps).toEqual([]);
+  });
+
+  it('対象がすでにブーリアンに消費されていれば consumedTwice', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      extrudeFeature('extrude-2', fixture.faceB, { distance: '4' }),
+      booleanFeature('union-1', 'union', 'extrude-1', 'extrude-2'),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['consumedTwice']);
+    expect(result.liveBodyIds).toEqual(['union-1']);
+  });
+
+  it('中心の点フィーチャーが消えていれば missingProfile(例外にならない)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [
+        { sketchId: fixture.pointA.sketchId, pointFeatureId: 'point-404' },
+      ]),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingProfile']);
+    expect(result.liveBodyIds).toEqual(['extrude-1']);
+  });
+
+  it('抑制した穴は何も消費しない(対象が画面に残る)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], { suppressed: true }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['extrude-1']);
+  });
+
+  it('穴の結果にさらに穴をあけられる(鍵が連鎖する)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      holeFeature('hole-2', 'hole-1', [fixture.pointB], { face: topFaceRef('hole-1') }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(holePlan(result.steps[2]).targetKey).toBe(result.steps[1].key);
+    expect(result.liveBodyIds).toEqual(['hole-2']);
+  });
+
+  it('鍵は対象の鍵・面の指紋・中心・径・深さ・傾きから作られる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+    );
+    const result = resolvePart(document);
+    expect(result.steps[1].key).toBe(
+      cacheKeyFor({
+        kind: 'hole',
+        targetKey: result.steps[0].key,
+        face: fingerprintKeyText(topFaceRef('extrude-1')),
+        centers: [[10, 10, 0]],
+        diameter: 6,
+        depth: null,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+      }),
+    );
+  });
+
+  it('径だけを変えると穴の鍵だけが変わる', () => {
+    const fixture = createFixture();
+    const build = (diameter: string): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA),
+          holeFeature('hole-1', 'extrude-1', [fixture.pointA], { diameter }),
+        ),
+      );
+    const before = build('6');
+    const after = build('8');
+    expect(after.steps[0].key).toBe(before.steps[0].key);
+    expect(after.steps[1].key).not.toBe(before.steps[1].key);
+  });
+
+  it('中心の並びを変えると鍵が変わる(並びは形の作り方の一部)', () => {
+    const fixture = createFixture();
+    const build = (centers: readonly SketchPointRef[]): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA),
+          holeFeature('hole-1', 'extrude-1', centers),
+        ),
+      );
+    expect(build([fixture.pointA, fixture.pointB]).steps[1].key).not.toBe(
+      build([fixture.pointB, fixture.pointA]).steps[1].key,
+    );
+  });
+
+  it('貫通と深さ 0 は別の鍵になるはずだが、深さ 0 は断るので比べるのは貫通と深さ 4', () => {
+    const fixture = createFixture();
+    const build = (depth: HoleDepth): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA),
+          holeFeature('hole-1', 'extrude-1', [fixture.pointA], { depth }),
+        ),
+      );
+    expect(build({ kind: 'blind', depth: expr('4') }).steps[1].key).not.toBe(
+      build({ kind: 'through' }).steps[1].key,
+    );
+  });
+
+  it('同じ文書を 2 回解決すると鍵が一致し、名前だけ変えても変わらない', () => {
+    const fixture = createFixture();
+    const build = (name: string): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA),
+          holeFeature('hole-1', 'extrude-1', [fixture.pointA], { name }),
+        ),
+      );
+    const first = build('穴1');
+    expect(build('穴1').steps.map((step) => step.key)).toEqual(
+      first.steps.map((step) => step.key),
+    );
+    expect(build('取付穴').steps.map((step) => step.key)).toEqual(
+      first.steps.map((step) => step.key),
+    );
+  });
+});
+
+describe('resolvePart ねじ穴', () => {
+  it('M6 並目・簡略表示は下穴 D1 を掘り、実らせんは作らずに印だけを返す', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA]),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps.map((step) => step.visible)).toEqual([false, true]);
+    const plan = threadPlan(result.steps[1]);
+    // D1 = d − 2·(5/8)·(P√3/2) = 6 − 5√3/8 = 4.917468245269452(§2.5.1 の表と一致)。
+    // 文書へ入るときに expressionValueFromNumber が有効数字12桁へ丸めるので
+    // 4.91746824527 になる(差は 5.5e-13 で、計画書の許容 ±1e-9 の中)。
+    expect(plan.drillDiameter).toBeCloseTo(4.917468245, 9);
+    expect(plan.drillDiameter).toBe(M6_DRILL_DIAMETER);
+    expect(plan.pitch).toBe(1);
+    expect(plan.thread).toBeNull();
+    expect(plan.mark).toEqual({ majorDiameter: 6, length: 10 });
+    expect(plan.depth).toBeNull();
+    expect(plan.centers).toEqual([[10, 10, 0]]);
+    expect(plan.transforms).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['thread-1']);
+  });
+
+  it('実らせんを選ぶと外径・ピッチ・ねじ部の長さが段に入る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], {
+        representation: 'modeled',
+      }),
+    );
+    const plan = threadPlan(resolvePart(document).steps[1]);
+    expect(plan.thread).toEqual({ majorDiameter: 6, pitch: 1, length: 10 });
+    // 印は実らせんでも作る(§2.4.2)。
+    expect(plan.mark).toEqual({ majorDiameter: 6, length: 10 });
+  });
+
+  it('簡略表示と実らせんで鍵が変わる(形そのものが変わるため)', () => {
+    const fixture = createFixture();
+    const build = (representation: ThreadRepresentation): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA),
+          threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], { representation }),
+        ),
+      );
+    expect(build('modeled').steps[1].key).not.toBe(build('simplified').steps[1].key);
+  });
+
+  it('M8 細目の既定のピッチは 1(§2.5.1)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], {
+        designation: 'M8',
+        series: 'fine',
+      }),
+    );
+    const plan = threadPlan(resolvePart(document).steps[1]);
+    expect(plan.pitch).toBe(1);
+    // D1 = 8 − 1.082532×1 = 6.917468245(細目なので並目の 6.646835 とは違う)。
+    expect(plan.drillDiameter).toBeCloseTo(threadMinorDiameter(8, 1), 9);
+    expect(plan.mark.majorDiameter).toBe(8);
+  });
+
+  it('規格表に無い呼びなら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], { designation: 'M5.5' }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('ねじの呼び');
+  });
+
+  it('下穴の径が外径以上なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], { drillDiameter: '6' }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('ねじの外径より小さく');
+  });
+
+  it('ピッチが 0 以下なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], { pitch: '0' }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('ねじ部の長さが数になっていなければ invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], {
+        threadLength: notANumber('a'),
+      }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('止まり穴でねじ部の長さが深さを超えたら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], {
+        depth: { kind: 'blind', depth: expr('10') },
+        threadLength: '20',
+      }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('穴の深さ以下');
+  });
+
+  it('貫通ならねじ部の長さは深さと比べない', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], { threadLength: '20' }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(threadPlan(result.steps[1]).mark.length).toBe(20);
+  });
+
+  it('止まり穴でねじ部の長さが深さと同じなら通る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA], {
+        depth: { kind: 'blind', depth: expr('10') },
+        threadLength: '10',
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(threadPlan(result.steps[1]).depth).toBe(10);
+  });
+
+  it('対象・面・中心の断り方は穴と同じ', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', []),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingProfile']);
+    expect(result.liveBodyIds).toEqual(['extrude-1']);
+  });
+
+  it('鍵は下穴・外径・ピッチ・ねじ部の長さ・表示方法から作られる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA]),
+    );
+    const result = resolvePart(document);
+    expect(result.steps[1].key).toBe(
+      cacheKeyFor({
+        kind: 'thread',
+        targetKey: result.steps[0].key,
+        face: fingerprintKeyText(topFaceRef('extrude-1')),
+        centers: [[10, 10, 0]],
+        drillDiameter: M6_DRILL_DIAMETER,
+        majorDiameter: 6,
+        pitch: 1,
+        threadLength: 10,
+        depth: null,
+        modeled: false,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+      }),
+    );
+  });
+
+  it('穴とねじ穴は同じ値でも別の鍵になる', () => {
+    const fixture = createFixture();
+    const hole = resolvePart(
+      withSolids(
+        fixture.document,
+        extrudeFeature('extrude-1', fixture.faceA),
+        holeFeature('hole-1', 'extrude-1', [fixture.pointA], {
+          diameter: expressionValueFromNumber(M6_DRILL_DIAMETER),
+        }),
+      ),
+    );
+    const thread = resolvePart(
+      withSolids(
+        fixture.document,
+        extrudeFeature('extrude-1', fixture.faceA),
+        threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA]),
+      ),
+    );
+    expect(thread.steps[1].key).not.toBe(hole.steps[1].key);
   });
 });

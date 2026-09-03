@@ -24,6 +24,81 @@ import type {
 import type { ShapeCache } from './shapeCache.js';
 
 /**
+ * 掃引体(ばね・実らせん)専用の粗いテッセレーション許容値(P3 仕上げ、2026-09-04)。
+ *
+ * **背景.** 既定(線形 0.1mm・角度 0.5rad)は φ6 の穴のような小さい円柱面を
+ * 「1 周 24 分割以上」に保つぎりぎりの値で(2026-09-04 実測: 半径 3mm の円柱面で
+ * 26 分割)、これ以上緩めると穴が角張って見える。**一方で掃引体(ばね・実らせんの溝)は
+ * 円柱ではなく B スプライン曲面で近似されるため、同じ許容値でも桁違いに多くの
+ * 三角形を要る**(2026-09-04 実測: ばね D20/d2/p5/n4 で三角形 10114 枚・
+ * tessellate 380〜900ms。穴 20 個の板全体でも三角形 2172 枚しか無いのと対照的)。
+ *
+ * **選定根拠(一時的な検査ファイルで実測、検査は削除済み)。**
+ * 線形 0.15mm・角度 0.7rad を境に、ばねの三角形数がなだらかに下がる領域(線形
+ * 0.13〜0.16mm・角度 0.65〜0.75rad)を見つけた。この領域の外側(0.12 以下・0.18 以上)
+ * では逆に増えることがある(BRepMesh が B スプライン曲面を分割する内部の閾値に
+ * よる非単調な挙動。2026-09-04 実測)ため、領域の中央である 0.15 / 0.7 を採る。
+ *
+ * | 形状 | 既定(0.1/0.5) | 0.15/0.7 | 三角形の増減 |
+ * |---|---|---|---|
+ * | ばね D20/d2/p5/n4 | 10114 枚・380〜900ms | 2066 枚・108〜137ms | -80% |
+ * | ばね D10/d1/p2/n4(細い) | 5736 枚 | 3568 枚 | -38% |
+ * | ばね D30/d4/p8/n4(太い) | 8198 枚 | 4792 枚 | -42% |
+ * | ばね D20/d2/p5/n20(巻数20) | 24262 枚 | 11130 枚 | -54% |
+ * | 実らせん M6×1・10巻きの溝 | 1998 枚・93ms | 1506 枚・72ms | -25% |
+ *
+ * **見た目の確認(0.15/0.7 で線材の断面が何分割になるか、頂点の角度から実測)。**
+ * 線径 1mm(半径 0.5mm、最小クラス)でも 18 分割、線径 2mm(半径 1mm)で 18 分割。
+ * どちらも要件の下限「8 分割以上」に十分な余裕がある。すべての試したばねの寸法
+ * (細い・太い・巻数多い)で既定より必ず速くなり(最悪でも -25%)、悪化した例は無い。
+ *
+ * **穴には適用しない.** 穴・面取り・押し出し等は既定のまま(このファイルの
+ * `isRelaxableSweepStep` が対象を絞る)。穴 20 個の所要(実測 485〜510ms)は
+ * ほぼ全て `makeHole` 自身(ブーリアン)が占め、テッセレーションは 1〜2 割
+ * (実測 111〜210ms のうち tessellate は 111〜156ms)に過ぎないうえ、
+ * 上で書いたとおり緩める余地が無い(24 分割の下限にすでに近い)。
+ */
+const SWEEP_LINEAR_DEFLECTION = 0.15;
+const SWEEP_ANGULAR_DEFLECTION = 0.7;
+
+/** 上の注釈の許容値をまとめた 1 個。 */
+const SWEEP_TESSELLATION_OPTIONS: TessellationOptions = {
+  linearDeflection: SWEEP_LINEAR_DEFLECTION,
+  angularDeflection: SWEEP_ANGULAR_DEFLECTION,
+};
+
+/**
+ * 粗いテッセレーションを当ててよい段か。
+ *
+ * ばね(FR-414)は必ず対象。ねじ穴(FR-406)は**実らせんを切ったとき**だけ対象にする
+ * (`thread !== null`)。簡略表示(`thread === null`)は下穴の円柱面だけなので、
+ * 穴と同じ理由で既定のまま(緩めると円柱面が角張る)。
+ */
+function isRelaxableSweepStep(step: SolidStepSpec): boolean {
+  if (step.kind === 'spring') {
+    return true;
+  }
+  return step.kind === 'thread' && step.thread !== null;
+}
+
+/**
+ * 段の種類に応じてテッセレーション許容値を選ぶ(§0.35「形に応じて緩める」)。
+ *
+ * **呼び出し側が明示的に許容値を指定しているときは、その指定を必ず尊重する.**
+ * 掃引体だからと言って上書きすると、呼び出し側の意図(検査で細かい値を敢えて
+ * 指定した場合など)を壊すため、`options` が空(既定のまま)のときだけ選び直す。
+ */
+function resolveTessellationOptions(
+  options: TessellationOptions,
+  step: SolidStepSpec,
+): TessellationOptions {
+  if (options.linearDeflection !== undefined || options.angularDeflection !== undefined) {
+    return options;
+  }
+  return isRelaxableSweepStep(step) ? SWEEP_TESSELLATION_OPTIONS : options;
+}
+
+/**
  * キャッシュに預ける 1 件。形と、その形から作った表示用データを組にして持つ。
  *
  * メッシュも一緒に覚えるのは、鍵が当たったときに三角形分割と体積計算まで
@@ -290,7 +365,8 @@ export async function recomputeSolids(
 
     try {
       const stepResult = createStepSolid(oc, step.step, options, cache, failedLabels);
-      const entry = buildCachedSolid(oc, step.id, stepResult.handle, options, stepResult.threadMarks);
+      const meshOptions = resolveTessellationOptions(options, step.step);
+      const entry = buildCachedSolid(oc, step.id, stepResult.handle, meshOptions, stepResult.threadMarks);
       cache.set(step.key, entry);
       if (step.visible) {
         bodies.push(entry.mesh);

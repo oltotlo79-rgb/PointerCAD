@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { extractEdges } from '../occt/extractEdges.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
+import { makeSpring } from '../occt/makeSpring.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
 import type {
@@ -729,5 +730,62 @@ describe('履歴の再計算(recomputeSolids)', () => {
 
     expect(second.failures).toEqual([]);
     expect(second.cacheHits).toBe(2);
+  });
+
+  /**
+   * P3 仕上げ(2026-09-04)の回帰検査: ばねは掃引体向けに粗くした許容値
+   * (線形 0.15mm・角度 0.7rad)でテッセレーションする。既定(線形 0.1mm・角度 0.5rad)の
+   * 半分未満の三角形数になることを確かめる(実測は 10114 枚 → 2066 枚、recomputeSolids.ts の
+   * `SWEEP_TESSELLATION_OPTIONS` の注釈に検証表がある)。この検査が壊れたら、
+   * 掃引体向けの粗い許容値が既定へ巻き戻っていないか確認すること。
+   */
+  it('ばねは既定より粗いテッセレーションを使い、三角形が既定の半分未満になる(P3 仕上げ)', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids({ oc, cache }, request([springStep('ばね1', 'key-spring')]));
+    expect(result.failures).toEqual([]);
+
+    const reference = makeSpring(oc, {
+      kind: 'spring',
+      origin: [0, 0, 0],
+      direction: [0, 0, 1],
+      coilDiameter: 20,
+      wireDiameter: 2,
+      pitch: 5,
+      turns: 4,
+      handedness: 'right',
+    });
+    try {
+      const defaultMesh = tessellate(oc, reference.shape);
+      expect(result.bodies[0].triangleCount).toBeLessThan(defaultMesh.triangleCount / 2);
+    } finally {
+      reference.delete();
+    }
+  });
+
+  /**
+   * 対照検査: 掃引体ではない段(押し出し)は、既定のテッセレーション(線形 0.1mm・角度
+   * 0.5rad)のままであることを確かめる。`resolveTessellationOptions` が対象を
+   * ばね・実らせんの溝だけに絞れているかの歯止め(広げすぎて穴等が粗くなる事故を防ぐ)。
+   */
+  it('押し出しは既定のテッセレーションのまま(掃引体向けの粗さを適用しない)', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([extrudeStep('押し出し1', 'key-a', 40, 30, 10)]),
+    );
+    expect(result.failures).toEqual([]);
+
+    const reference = makeExtrudeSolid(oc, {
+      kind: 'extrude',
+      profile: rectangle(40, 30),
+      direction: [0, 0, 1],
+      distance: 10,
+    });
+    try {
+      const defaultMesh = tessellate(oc, reference.shape);
+      expect(result.bodies[0].triangleCount).toBe(defaultMesh.triangleCount);
+    } finally {
+      reference.delete();
+    }
   });
 });

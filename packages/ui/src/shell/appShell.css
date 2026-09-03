@@ -635,31 +635,6 @@ button.pcad-tree__row:focus-visible {
   cursor: help;
 }
 
-.pcad-tree__delete {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  font: inherit;
-  line-height: 1;
-  color: var(--pcad-text-faint);
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: var(--pcad-radius-small);
-  transition: color var(--pcad-transition);
-}
-
-.pcad-tree__delete:hover {
-  color: var(--pcad-danger);
-  background: var(--pcad-surface-raised);
-}
-
-.pcad-tree__delete:focus-visible {
-  outline: 2px solid var(--pcad-accent);
-  outline-offset: -2px;
-}
-
 /*
  * 立体の行の「⋮」(FR-503)。抑制・改名・削除の入口。指を乗せるか焦点が来るまで薄くして、
  * 行の名前を読む邪魔をしない。押せる面は削除の印と同じ 18px を保つ。

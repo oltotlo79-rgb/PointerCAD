@@ -545,13 +545,8 @@ export interface NumericInputEvaluation {
   readonly firstErrorIndex: number;
 }
 
-/**
- * 範囲外を表すのに借りる識別子。
- * ExpressionErrorCode(packages/expression)に範囲用の識別子が無く、
- * このタスクでは packages/expression を変更しないため、「数として使えない」を表す
- * notFinite を借りている。専用の識別子(outOfRange)の追加は統括へ報告している。
- */
-const RANGE_ERROR_CODE = 'notFinite';
+/** 範囲外を表す識別子(packages/expression の ExpressionErrorCode、P3 §0.a-0.23 ①)。 */
+const RANGE_ERROR_CODE = 'outOfRange';
 
 /**
  * 範囲外の理由文を組み立てる。

@@ -20,7 +20,13 @@ export type ExpressionErrorCode =
   | 'negativeRoot'
   | 'rootDegreeZero'
   | 'exponentTooLarge'
-  | 'notFinite';
+  | 'notFinite'
+  /**
+   * 値は数として正しいが、その欄が受け付ける範囲の外(NFR-UX-5)。
+   * 限界値を差し込んだ文になるため、message はこのパッケージの外(呼び出し側)が組み立て、
+   * detail としてそのまま渡す(wrongArgumentCount と同じ形、P3 §0.a-0.23 ①)。
+   */
+  | 'outOfRange';
 
 export interface ExpressionError {
   readonly code: ExpressionErrorCode;
@@ -90,6 +96,9 @@ export function expressionError(
       };
     case 'notFinite':
       return { code, message: '計算結果が数として表せません。', position };
+    case 'outOfRange':
+      // 文言は呼び出し側(packages/ui)が組み立てて detail へ渡す(wrongArgumentCount と同じ形)。
+      return { code, message: detail, position };
   }
 }
 

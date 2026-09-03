@@ -33,6 +33,8 @@ function quiet(): StatusInput {
     cancelled: false,
     progress: null,
     isComputing: false,
+    // 既定は「もう読み込み終えた」。初回だけの文言(⑨)は個別の検査で false にする。
+    kernelLoaded: true,
     snapKind: null,
     activeTool: 'select',
     selectedBodyCount: 0,
@@ -147,6 +149,17 @@ describe('帯に出す 1 文の優先順位(FR-905)', () => {
   it('進み具合がまだ来ていない計算中は「形を計算しています…」を出す', () => {
     const line = describeStatus({ ...quiet(), isComputing: true, snapKind: 'grid' });
     expect(line.kind).toBe('computing');
+    expect(line.text).toBe(t('statusBar.loading'));
+  });
+
+  it('幾何カーネルを未読み込みの計算中は「形の計算部を読み込んでいます…」を出す(§0.a-0.23 ⑨)', () => {
+    const line = describeStatus({ ...quiet(), isComputing: true, kernelLoaded: false });
+    expect(line.kind).toBe('computing');
+    expect(line.text).toBe(t('statusBar.loadingKernel'));
+  });
+
+  it('幾何カーネルを読み込み終えていれば、2 回目以降の計算中は従来の文言に戻る', () => {
+    const line = describeStatus({ ...quiet(), isComputing: true, kernelLoaded: true });
     expect(line.text).toBe(t('statusBar.loading'));
   });
 

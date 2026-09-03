@@ -24,6 +24,9 @@ import {
   type PartRecomputeOptions,
   type PartRecomputeResult,
   type SketchDocument,
+  type SketchFaceFeature,
+  type SketchLineFeature,
+  type SketchPointFeature,
   type SketchRecomputeResult,
   type SolidBody,
 } from '@pointercad/model';
@@ -129,6 +132,41 @@ function bodyFor(featureId: string): SolidBody {
   };
 }
 
+/**
+ * 点・線・面(境界に使える/使えない)と立体が 1 つずつ入った部品文書(§0.a-0.23 ⑨)。
+ * `setActiveTool('face')` の選択掃除を検査するのに使う。
+ */
+function partWithMixedFeatures(): PartDocument {
+  const point: SketchPointFeature = {
+    id: 'point-1',
+    name: '点1',
+    planeId: 'xy',
+    kind: 'point',
+    at: absoluteCoordinate(1, 2, 3),
+  };
+  const line: SketchLineFeature = {
+    id: 'line-1',
+    name: '線分1',
+    planeId: 'xy',
+    kind: 'line',
+    from: absoluteCoordinate(0, 0, 0),
+    to: absoluteCoordinate(10, 0, 0),
+  };
+  const face: SketchFaceFeature = {
+    id: 'face-1',
+    name: '面1',
+    planeId: 'xy',
+    kind: 'face',
+    boundary: [{ featureId: 'point-1' }],
+    color: '#7aa2f7',
+  };
+  let sketch = createEmptySketchDocument();
+  for (const feature of [point, line, face]) {
+    sketch = appendFeature(sketch, feature);
+  }
+  return appendSolid(replaceSketch(createEmptyPartDocument(), sketch), extrudeFeature('extrude-1'));
+}
+
 function orbitFrom(azimuthDegrees: number, elevationDegrees: number): OrbitState {
   return {
     azimuth: (azimuthDegrees * Math.PI) / 180,
@@ -144,6 +182,9 @@ beforeEach(() => {
     matchWorkPlaneRequestCount: 0,
     focusViewportRequestCount: 0,
     viewportSize: [0, 0],
+    // createInitialDocumentState の外にある(文書を作り直しても戻らない)ので、
+    // ここで明示的に初期化しないと前の検査の値が漏れる(§0.a-0.23 ⑨)。
+    kernelLoaded: false,
   });
 });
 
@@ -248,6 +289,28 @@ describe('画面の状態(rules/04: ストア1本)', () => {
     expect(useAppStore.getState().activeTool).toBe('sew');
     useAppStore.getState().setActiveTool('select');
     expect(useAppStore.getState().activeTool).toBe('select');
+  });
+
+  it('幾何カーネルを読み込み終えたかどうかを持つ(§0.a-0.23 ⑨)', () => {
+    expect(useAppStore.getState().kernelLoaded).toBe(false);
+    useAppStore.getState().markKernelLoaded();
+    expect(useAppStore.getState().kernelLoaded).toBe(true);
+  });
+
+  it('面の道具を選ぶと、境界に使えない要素(面フィーチャー・立体)を選択から外す(§0.a-0.23 ⑨)', () => {
+    useAppStore.getState().applyDocument(partWithMixedFeatures(), { undoable: false });
+    useAppStore.getState().setSelection(['point-1', 'line-1', 'face-1', 'extrude-1']);
+
+    useAppStore.getState().setActiveTool('face');
+    expect(useAppStore.getState().selection).toEqual(['point-1', 'line-1']);
+  });
+
+  it('面以外の道具に切り替えても選択は掃除しない(既存の振る舞いのまま)', () => {
+    useAppStore.getState().applyDocument(partWithMixedFeatures(), { undoable: false });
+    useAppStore.getState().setSelection(['face-1', 'extrude-1']);
+
+    useAppStore.getState().setActiveTool('line');
+    expect(useAppStore.getState().selection).toEqual(['face-1', 'extrude-1']);
   });
 
   it('立体を作れなかった理由を出し入れでき、選び直すと消える(NFR-UX-5)', () => {
@@ -616,6 +679,17 @@ describe('文書の変化に応じた再計算の予約(要件§6.3)', () => {
     detach();
   });
 
+  it('計算を1回終えると、幾何カーネルを読み込み終えたと記録する(§0.a-0.23 ⑨)', async () => {
+    expect(useAppStore.getState().kernelLoaded).toBe(false);
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle(resultFor(fake.calls[0].document));
+    await tick();
+
+    expect(useAppStore.getState().kernelLoaded).toBe(true);
+    detach();
+  });
+
   it('文書が変わるたびに計算し、結果をストアへ入れる', async () => {
     const fake = createFakeRecompute();
     const detach = attachPartRecompute(fake.recompute);
@@ -936,6 +1010,29 @@ describe('ファイルまわりの状態(FR-806、計画書 タスク23)', () =>
 
     useAppStore.getState().applyDocument(partWithPoint());
     expect(useAppStore.getState().fileMessage).toBeNull();
+  });
+
+  it('保存・開くなどが成功すると、古い断り(面・立体)は消える(§0.a-0.23 ⑦)', () => {
+    useAppStore.getState().setFaceError('face.error.emptySelection');
+    useAppStore.getState().setSolidError('solidError.noFace');
+
+    useAppStore.getState().setFileMessage({ key: 'file.saved', failed: false });
+
+    const state = useAppStore.getState();
+    expect(state.faceErrorKey).toBeNull();
+    expect(state.solidErrorKey).toBeNull();
+  });
+
+  it('保存などが失敗したときは古い断りを残す(まだ解消していない、§0.a-0.23 ⑦)', () => {
+    useAppStore.getState().setSolidError('solidError.noFace');
+    useAppStore.getState().setFileMessage({ key: 'file.saveFailed', failed: true });
+    expect(useAppStore.getState().solidErrorKey).toBe('solidError.noFace');
+  });
+
+  it('文書が変わったときも古い断りは消える(§0.a-0.23 ⑦)', () => {
+    useAppStore.getState().setFaceError('face.error.emptySelection');
+    useAppStore.getState().applyDocument(partWithPoint());
+    expect(useAppStore.getState().faceErrorKey).toBeNull();
   });
 
   it('元に戻す・やり直すでも知らせは消える', () => {

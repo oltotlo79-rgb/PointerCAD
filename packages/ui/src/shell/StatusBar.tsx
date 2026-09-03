@@ -56,6 +56,8 @@ function widthPercent(ratio: number): string {
  */
 export function StatusBar(): React.JSX.Element {
   const isComputing = useAppStore((state) => state.isComputing);
+  // 幾何カーネルの初回読み込み中かどうかで帯の文言を分ける(§0.a-0.23 ⑨)。
+  const kernelLoaded = useAppStore((state) => state.kernelLoaded);
   const errorMessage = useAppStore((state) => state.errorMessage);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
   const partErrors = useAppStore((state) => state.partErrors);
@@ -111,6 +113,7 @@ export function StatusBar(): React.JSX.Element {
     cancelled: recomputeCancelled,
     progress: progressVisible ? recomputeProgress : null,
     isComputing,
+    kernelLoaded,
     snapKind: snapIndicator === null ? null : snapIndicator.kind,
     activeTool,
     selectedBodyCount,

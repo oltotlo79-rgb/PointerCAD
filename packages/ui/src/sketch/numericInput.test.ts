@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { expressionValueFromNumber } from '@pointercad/expression';
+
 import { MESSAGE_KEYS, t, type MessageKey } from '../i18n/t.js';
 import {
   applyNumericInputKey,
@@ -21,6 +23,7 @@ import {
   NUMERIC_INPUT_KEYS,
   NUMERIC_INPUT_STEPS,
   numericFocusTargets,
+  rangeErrorFor,
   reduceNumericInput,
   SOLID_TOOL_STEPS,
   STEP_TITLE_KEYS,
@@ -625,6 +628,7 @@ describe('ソリッドの不正値は確定させない(NFR-UX-5、FR-204)', () 
       expect(blocked.evaluation.canCommit, source).toBe(false);
       expect(blocked.evaluation.firstErrorIndex).toBe(0);
       expect(blocked.evaluation.results[0].value).toBeNull();
+      expect(blocked.evaluation.results[0].error?.code, source).toBe('outOfRange');
       expect(blocked.evaluation.results[0].error?.message).toBe(
         '距離は 0 より大きい値を入れてください。',
       );
@@ -637,6 +641,7 @@ describe('ソリッドの不正値は確定させない(NFR-UX-5、FR-204)', () 
       const state = edited(createNumericInput('revolve', 'revolveAngle'), source);
       const blocked = expectBlocked(applyNumericInputKey(state, 'Enter'));
       expect(blocked.evaluation.canCommit, source).toBe(false);
+      expect(blocked.evaluation.results[0].error?.code, source).toBe('outOfRange');
       expect(blocked.evaluation.results[0].error?.message).toBe(
         '角度は 0 より大きく 360 以下の値を入れてください。',
       );
@@ -651,6 +656,7 @@ describe('ソリッドの不正値は確定させない(NFR-UX-5、FR-204)', () 
   it('縫合の許容量は 0 以下を受け付けない', () => {
     const state = edited(createNumericInput('sew', 'sewTolerance'), '0');
     const blocked = expectBlocked(applyNumericInputKey(state, 'Enter'));
+    expect(blocked.evaluation.results[0].error?.code).toBe('outOfRange');
     expect(blocked.evaluation.results[0].error?.message).toBe(
       'つなぎ目の許容量は 0 より大きい値を入れてください。',
     );
@@ -662,6 +668,28 @@ describe('ソリッドの不正値は確定させない(NFR-UX-5、FR-204)', () 
     const blocked = expectBlocked(applyNumericInputKey(state, 'Enter'));
     expect(blocked.evaluation.results[0].error?.code).toBe('divisionByZero');
     expect(blocked.evaluation.results[0].error?.message).toBe('0 で割ることはできません。');
+  });
+
+  it('数として表せない値(NaN/Infinity)は notFinite のまま、範囲外(outOfRange)と混ぜない', () => {
+    // 0^-1 は Infinity になり、rangeErrorFor に届く前に evaluateExpression が断る
+    // (packages/expression/src/evaluate.test.ts の notFinite@1 と同じ式)。
+    const state = edited(createNumericInput('extrude', 'extrudeDistance'), '0^-1');
+    const blocked = expectBlocked(applyNumericInputKey(state, 'Enter'));
+    expect(blocked.evaluation.results[0].error?.code).toBe('notFinite');
+  });
+
+  it('rangeErrorFor は範囲内で null、範囲外で outOfRange を返す(文言は変えない)', () => {
+    const field = createNumericInput('extrude', 'extrudeDistance').fields[0];
+    const below = rangeErrorFor(field, expressionValueFromNumber(-5));
+    expect(below?.code).toBe('outOfRange');
+    expect(below?.message).toBe('距離は 0 より大きい値を入れてください。');
+    expect(rangeErrorFor(field, expressionValueFromNumber(10))).toBeNull();
+
+    const angleField = createNumericInput('revolve', 'revolveAngle').fields[0];
+    const above = rangeErrorFor(angleField, expressionValueFromNumber(361));
+    expect(above?.code).toBe('outOfRange');
+    expect(above?.message).toBe('角度は 0 より大きく 360 以下の値を入れてください。');
+    expect(rangeErrorFor(angleField, expressionValueFromNumber(360))).toBeNull();
   });
 
   it('P1 の欄には範囲の縛りを足していない(既存の振る舞いを変えない)', () => {

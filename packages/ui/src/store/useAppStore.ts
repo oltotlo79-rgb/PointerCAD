@@ -6,6 +6,7 @@ import {
   createUndoStack,
   DEFAULT_WORK_PLANE_ID,
   dotVec3,
+  findFeature,
   findSketch,
   pushUndo,
   redo as redoStep,
@@ -28,6 +29,7 @@ import {
   type SketchDocument,
   type SketchError,
   type SketchFeature,
+  type SketchFeatureKind,
   type SketchMesh,
   type SketchRecomputeResult,
   type SolidBody,
@@ -106,6 +108,13 @@ export interface AppState {
   readonly featureNames: readonly string[];
   /** 再計算(解決とカーネル)の最中か。計算中の札を出すのに使う。 */
   readonly isComputing: boolean;
+  /**
+   * 幾何カーネル(約 50MB)をまだ一度も読み込んでいないか(P3 §0.a-0.23 ⑨)。
+   * 初回の再計算だけ帯と札に「形の計算部を読み込んでいます…」と出し、
+   * 2 回目以降は「形を計算しています…」に戻す(実測で初回は 3〜7 秒かかる)。
+   * 部品を作り直しても幾何カーネル自体は積み直さないので、`resetDocument` では戻さない。
+   */
+  readonly kernelLoaded: boolean;
   /** 再計算そのものが投げた失敗。ステータスバーがそのまま見せる(FR-504)。 */
   readonly errorMessage: string | null;
   readonly projection: ProjectionMode;
@@ -253,6 +262,12 @@ export interface AppState {
   // に触れるため(計画書 P1 §0.a-0.12、docs/報告記録.md 2026-09-02 15:28 の残件②)。
   /** 再計算が投げた失敗を出す・消す。計算中の印はここで下ろす。 */
   readonly setError: (message: string | null) => void;
+  /**
+   * 幾何カーネルを読み込み終えたと記録する(P3 §0.a-0.23 ⑨)。
+   * `applyRecompute` は購読通知の中で `set` を入れ子にしないため、この口を呼ばずに
+   * 自分の `set` へ `kernelLoaded: true` を直接含める。ここは単体で呼びたいとき用に残す。
+   */
+  readonly markKernelLoaded: () => void;
   readonly setProjection: (projection: ProjectionMode) => void;
   readonly setDisplayStyle: (displayStyle: DisplayStyle) => void;
   readonly setShowGrid: (showGrid: boolean) => void;
@@ -382,6 +397,36 @@ export function workPlaneForOrbit(orbit: OrbitState): WorkPlaneId {
 /** いま編集しているスケッチ(§0.a-0.4)。指し先が消えていたら先頭を使う。 */
 function activeSketchOf(document: PartDocument): SketchDocument {
   return findSketch(document, document.activeSketchId) ?? document.sketches[0];
+}
+
+/**
+ * 面の境界に使える要素の種類(§0.a-0.23 ⑨)。
+ * `packages/ui/src/sketch/sketchCommands.ts` の `commitFace`(実体は `boundaryElementKind`)が
+ * 受け付ける種類(点・線・円弧・点列)にそろえる。面フィーチャー自身は境界に使えない。
+ */
+const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
+  'point',
+  'line',
+  'arc',
+  'pointArray',
+]);
+
+/**
+ * 面の道具を選んだときに、境界に使えない要素(面フィーチャー・立体・部分形状)を
+ * 選択から外す(§0.a-0.23 ⑨)。計算中(幾何カーネルの初回読み込み中)に速い操作で
+ * 面を張ろうとすると、選択に残った面や立体が境界へ混じって断られる不具合の対策。
+ * 判定は `featureIdOf` で元の要素 id に戻し、いまのスケッチにその id の点・線・円弧・
+ * 点列フィーチャーがあるかどうかで行う(立体の id はスケッチに無いのでここで外れる)。
+ */
+export function filterSelectionForFaceTool(
+  sketch: SketchDocument,
+  selection: readonly string[],
+): readonly string[] {
+  const kept = selection.filter((elementId) => {
+    const feature = findFeature(sketch, featureIdOf(elementId));
+    return feature !== undefined && FACE_BOUNDARY_KINDS.has(feature.kind);
+  });
+  return kept.length === selection.length ? selection : kept;
 }
 
 /** 文書を差し替えたときに一緒に作り直す控え(§0.a-0.4)。 */
@@ -556,10 +601,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
   matchWorkPlaneRequestCount: 0,
   focusViewportRequestCount: 0,
   viewportSize: [0, 0],
+  // 幾何カーネルは部品を作り直しても積み直さないので、文書まわりの初期値には含めない
+  // (createInitialDocumentState は resetDocument の後には呼ばれない、§0.a-0.23 ⑨)。
+  kernelLoaded: false,
   ...createInitialDocumentState(),
 
   setError: (errorMessage) => {
     set({ errorMessage, isComputing: false, recomputeProgress: null });
+  },
+  markKernelLoaded: () => {
+    set({ kernelLoaded: true });
   },
   setProjection: (projection) => {
     set({ projection });
@@ -583,7 +634,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setActiveTool: (activeTool) => {
     // 道具を変えたら入力中のポップアップを閉じ、取りかけの始点と吸着の印も落とす
     // (取りかけの操作を持ち越さない、NFR-UX-3)。
-    set({
+    set((state) => ({
       activeTool,
       numericInput: null,
       numericInputAnchor: null,
@@ -591,7 +642,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       snapIndicator: null,
       faceErrorKey: null,
       solidErrorKey: null,
-    });
+      // 面の道具では、境界に使えない要素(面・立体)を選択から外す(§0.a-0.23 ⑨)。
+      selection:
+        activeTool === 'face'
+          ? filterSelectionForFaceTool(state.sketch, state.selection)
+          : state.selection,
+    }));
   },
   setWorkPlane: (workPlaneId) => {
     set({ workPlaneId });
@@ -624,6 +680,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         fileMessage: null,
         // 中止の知らせも、次の計算が始まる時点で用済み(NFR-PF-4)。
         recomputeCancelled: false,
+        // 古い「面/立体を作れませんでした」の断りも文書が変われば用済み(§0.a-0.23 ⑦)。
+        faceErrorKey: null,
+        solidErrorKey: null,
       };
     });
   },
@@ -677,6 +736,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         recomputeProgress: null,
         // 中止で終わったことは帯で短く知らせる。最後まで走ったならその知らせは消す。
         recomputeCancelled: result.cancelled,
+        // 幾何カーネルを積んで少なくとも 1 回計算が終わった(§0.a-0.23 ⑨)。
+        // 購読通知(subscribe)の中で set を入れ子にしないよう、ここへ直接含める。
+        kernelLoaded: true,
       };
     });
   },
@@ -793,7 +855,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set({ captureThumbnail: capture });
   },
   setFileMessage: (fileMessage) => {
-    set({ fileMessage });
+    set((state) => ({
+      fileMessage,
+      // 保存・開くなどが成功したら、古い断りはもう関係ない知らせなので消す
+      // (§0.a-0.23 ⑦)。失敗のときは残す(利用者はまだその理由を解消していない)。
+      faceErrorKey:
+        fileMessage !== null && !fileMessage.failed ? null : state.faceErrorKey,
+      solidErrorKey:
+        fileMessage !== null && !fileMessage.failed ? null : state.solidErrorKey,
+    }));
   },
   setAutoSaver: (autoSaver) => {
     set({ autoSaver });

@@ -129,6 +129,11 @@ export interface StatusInput {
   readonly progress: PartProgress | null;
   /** 再計算の最中か。 */
   readonly isComputing: boolean;
+  /**
+   * 幾何カーネルを読み込み終えたか(§0.a-0.23 ⑨)。初回の計算中だけ文言を分けるので、
+   * `isComputing` と組み合わせて使う。
+   */
+  readonly kernelLoaded: boolean;
   /** いま吸い付いている先。無ければ null(FR-107)。 */
   readonly snapKind: SnapKind | null;
   /** 選んでいる道具(FR-301〜309、FR-401〜403)。 */
@@ -263,7 +268,10 @@ export function describeStatus(input: StatusInput): StatusLine {
     return { kind: 'saved', text: t(input.fileMessage.key), hint: null, progress: null };
   }
   if (input.isComputing) {
-    return { kind: 'computing', text: t('statusBar.loading'), hint: null, progress: null };
+    // 初回の計算だけ、幾何カーネル(約 50MB)の読み込みを含む旨に文言を分ける
+    // (§0.a-0.23 ⑨。実測で初回は 3〜7 秒かかり、固まったように見えるため)。
+    const key = input.kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel';
+    return { kind: 'computing', text: t(key), hint: null, progress: null };
   }
   if (input.snapKind !== null) {
     return {

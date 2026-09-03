@@ -42,4 +42,11 @@ describe('式のエラー(FR-204)', () => {
     expect(failure.message).toBe('0 で割ることはできません。');
     expect(failure.detail.position).toBe(3);
   });
+
+  it('outOfRange は呼び出し側が組み立てた文言をそのまま持つ(P3 §0.a-0.23 ①)', () => {
+    const error = expressionError('outOfRange', '距離は 0 より大きい値を入れてください。');
+    expect(error.code).toBe('outOfRange');
+    expect(error.message).toBe('距離は 0 より大きい値を入れてください。');
+    expect(error.position).toBe(-1);
+  });
 });

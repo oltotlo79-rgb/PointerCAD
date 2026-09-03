@@ -30,8 +30,9 @@ const ViewportCanvas = lazy(async () => {
 });
 
 /**
- * 文字を打っている最中かどうか。式の欄や名前の欄で Ctrl+Z を押したときは、
- * 打った文字の取り消し(ブラウザの働き)を邪魔しない(NFR-UX-3)。
+ * 文字を打っている最中かどうか。式の欄や名前の欄で Ctrl+Z / Ctrl+Y を押したときは、
+ * 打った文字の取り消し(ブラウザの働き)を邪魔しない(NFR-UX-3)。ファイル系の
+ * ショートカット(Ctrl+S 等)はここを見ない(§0.a-0.23 ⑪)。
  */
 function isTextEntry(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -46,6 +47,9 @@ function isTextEntry(target: EventTarget | null): boolean {
  */
 export function AppShell(): React.JSX.Element {
   const isComputing = useAppStore((state) => state.isComputing);
+  // 幾何カーネルをまだ読み込み終えていないか(§0.a-0.23 ⑨)。初回の計算中だけ帯と札の
+  // 文言を分け、固まったように見えないようにする。
+  const kernelLoaded = useAppStore((state) => state.kernelLoaded);
   const featureCount = useAppStore((state) => state.sketch.features.length);
   const viewportSize = useAppStore((state) => state.viewportSize);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
@@ -80,24 +84,38 @@ export function AppShell(): React.JSX.Element {
   useEffect(() => {
     /*
      * 元に戻す・やり直す(FR-505、§0.a-0.13)とファイルの操作(FR-806、§2.11)。
-     * 窓のどこにいても効くように window で受ける。文字を打っている最中は横取りしない。
+     * 窓のどこにいても効くように window で受ける。
+     *
+     * 元に戻す・やり直すだけは、文字を打っている最中は横取りしない(§0.a-0.23 ⑪)。
+     * ファイル系の 4 つ(保存・名前を付けて保存・開く・新規)は入力欄に焦点があっても
+     * 効かせる(式の欄を編集中でも保存できるのが利用者の期待、NFR-UX-7)。
      *
      * Ctrl+N はブラウザ自身が新しい窓を開く操作に割り当てていて、頁の側からは
      * 止められないことがある。そのときはツールバーの「新規」を使う(デスクトップ版では効く)。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!event.ctrlKey || event.altKey || isTextEntry(event.target)) {
+      if (!event.ctrlKey || event.altKey) {
         return;
       }
       const key = event.key.toLowerCase();
       const store = useAppStore.getState();
+      // 元に戻す・やり直すだけは、文字を打っている最中は横取りしない(式の欄の中の
+      // 取り消しというブラウザの働きを邪魔しないため、§0.a-0.23 ⑪)。ファイル系の
+      // 4 つ(保存・名前を付けて保存・開く・新規)は焦点に関係なく効かせる
+      // (式の途中でも保存できるのが利用者の期待)。
       if (key === 'z' && !event.shiftKey) {
+        if (isTextEntry(event.target)) {
+          return;
+        }
         event.preventDefault();
         store.undo();
         return;
       }
       // やり直すは Ctrl+Y と Ctrl+Shift+Z のどちらでも効かせる(どちらの流儀にも合わせる)。
       if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        if (isTextEntry(event.target)) {
+          return;
+        }
         event.preventDefault();
         store.redo();
         return;
@@ -157,7 +175,13 @@ export function AppShell(): React.JSX.Element {
             <div className="pcad-viewport__overlay">
               <div className="pcad-card pcad-restore">
                 <p className="pcad-restore__title">{t('restore.title')}</p>
-                <p className="pcad-restore__body">{t('restore.body')}</p>
+                {/*
+                  カードが出ている間に何か描き始めた(= 未保存の変更がある)ら、
+                  復元すると消えてしまう旨へ文言を切り替える(§0.a-0.23 ⑤、19:10 の残件(c))。
+                */}
+                <p className="pcad-restore__body">
+                  {t(unsaved ? 'restore.bodyDirty' : 'restore.body')}
+                </p>
                 <dl className="pcad-restore__details">
                   <dt>{t('restore.savedAt')}</dt>
                   <dd>{formatSavedAt(restorePrompt.savedAt)}</dd>
@@ -187,11 +211,15 @@ export function AppShell(): React.JSX.Element {
               </div>
             </div>
           ) : isComputing ? (
-            /* 計算中は中央に札を出す。空状態の案内とは同時に出さない。 */
+            /*
+              計算中は中央に札を出す。空状態の案内とは同時に出さない。初回だけ
+              幾何カーネル(約 50MB)の読み込みを含むので文言を分ける(§0.a-0.23 ⑨)。
+              帯(StatusBar)側の同じ分岐は statusText.ts の describeStatus が持つ。
+            */
             <div className="pcad-viewport__overlay">
               <div className="pcad-card">
                 <span className="pcad-spinner" aria-hidden="true" />
-                <span>{t('statusBar.loading')}</span>
+                <span>{t(kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel')}</span>
               </div>
             </div>
           ) : featureCount === 0 ? (

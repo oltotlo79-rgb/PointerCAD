@@ -402,6 +402,13 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
             )}
           </h3>
           <dl className="pcad-properties">
+            {feature.kind !== 'boolean' ? null : (
+              // 組み合わせ方(和・差・積)。種類は summarizeSolid がすでに持っている(P3 §0.a-0.23 ②)。
+              <>
+                <dt className="pcad-properties__key">{t('propertyPanel.operation')}</dt>
+                <dd className="pcad-properties__value">{t(summary.kindLabelKey)}</dd>
+              </>
+            )}
             {summary.references.map((reference, index) => (
               <Fragment key={`${reference.labelKey}-${String(index)}`}>
                 <dt className="pcad-properties__key">{t(reference.labelKey)}</dt>

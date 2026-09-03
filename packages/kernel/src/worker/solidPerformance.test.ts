@@ -132,6 +132,30 @@ async function measure(
   return { result, elapsedMs: performance.now() - startedAt };
 }
 
+/**
+ * 性能上限の判定を「厳密」と「参考」で切り替える単一の窓口。
+ *
+ * 作業担当が並列にテストや E2E を走らせている間に統括がコミットすると、
+ * CPU 競合でこのファイルの上限判定が落ちる(rules/06-過去の失敗と対策.md 10.3)。
+ * 上限は緩めない代わりに、環境変数 `POINTERCAD_PERF_STRICT` が `'1'` のときだけ
+ * 厳密に判定してテストを落とす(push前検査・CI。rules/03-品質ゲート.md §7.1)。
+ * それ以外(コミット前検査の既定)は実測値の記録にとどめ、上限超過でも失敗にしない。
+ * 呼び出し側は実測値と上限を既存の console.log で出力済みの前提で、
+ * この関数は判定の切替と、参考モードで超過したときの警告表示だけを担う。
+ * 上限の数値と検査内容は変えない。
+ */
+function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
+  if (process.env.POINTERCAD_PERF_STRICT === '1') {
+    expect(actualMs).toBeLessThan(limitMs);
+    return;
+  }
+  if (actualMs >= limitMs) {
+    console.log(
+      `[参考] 上限超過: ${label}(実測 ${actualMs.toFixed(1)} ms ≥ 上限 ${limitMs} ms。コミット前検査のため失敗にしません)`,
+    );
+  }
+}
+
 describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
   let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -191,7 +215,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       expect(result.cacheHits).toBe(0);
       expect(result.bodies).toHaveLength(1);
       expect(result.bodies[0].volume).toBeCloseTo(SINGLE_VOLUME, 6);
-      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, '単一フィーチャー');
     } finally {
       cache.clear();
     }
@@ -244,7 +268,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       expect(first.result.bodies).toHaveLength(FEATURE_COUNT);
       expect(first.result.bodies[0].volume).toBeCloseTo(SMALL_VOLUME, 6);
       expect(first.result.bodies[FEATURE_COUNT - 1].volume).toBeCloseTo(SMALL_VOLUME, 6);
-      expect(first.elapsedMs).toBeLessThan(FULL_RECOMPUTE_LIMIT_MS);
+      expectWithinBudget(first.elapsedMs, FULL_RECOMPUTE_LIMIT_MS, `${FEATURE_COUNT} 段 初回`);
     });
 
     it(`同じ依頼の 2 回目は ${FEATURE_COUNT} 件すべて命中して ${CACHED_RECOMPUTE_LIMIT_MS} ms 以内`, () => {
@@ -260,7 +284,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       expect(cache.stats().evictions).toBe(0);
       expect(cache.stats().released).toBe(0);
       expect(sizeBeforeThird).toBe(FEATURE_COUNT);
-      expect(second.elapsedMs).toBeLessThan(CACHED_RECOMPUTE_LIMIT_MS);
+      expectWithinBudget(second.elapsedMs, CACHED_RECOMPUTE_LIMIT_MS, `${FEATURE_COUNT} 段 2 回目(全件命中)`);
     });
 
     it(`1 段だけ変えた 3 回目は ${FEATURE_COUNT - 1} 件命中し、作り直しは 1 段だけで ${ONE_STEP_CHANGE_LIMIT_MS} ms 以内`, () => {
@@ -273,7 +297,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       // 作り直した段の数 = キャッシュの件数の増分。1 段だけ増えている。
       expect(cache.size).toBe(sizeBeforeThird + 1);
       expect(cache.stats().evictions).toBe(0);
-      expect(third.elapsedMs).toBeLessThan(ONE_STEP_CHANGE_LIMIT_MS);
+      expectWithinBudget(third.elapsedMs, ONE_STEP_CHANGE_LIMIT_MS, `${FEATURE_COUNT} 段 3 回目(1 段だけ変更)`);
     });
   });
 
@@ -378,7 +402,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
-      expect(elapsedMs).toBeLessThan(FULL_RECOMPUTE_LIMIT_MS);
+      expectWithinBudget(elapsedMs, FULL_RECOMPUTE_LIMIT_MS, '重いブーリアン連鎖');
     } finally {
       cache.clear();
     }
@@ -416,7 +440,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
-      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, '穴 1 つ');
     } finally {
       cache.clear();
     }
@@ -445,7 +469,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
-      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, 'R 面取り');
     } finally {
       cache.clear();
     }
@@ -480,7 +504,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
-      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, 'C 面取り');
     } finally {
       cache.clear();
     }
@@ -526,7 +550,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
-      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, '穴 20 個');
 
       // §0.a-0.28: 部分形状の一覧のデータ量を実測して報告する。
       const body = result.bodies[0];

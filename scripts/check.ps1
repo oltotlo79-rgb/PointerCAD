@@ -63,6 +63,18 @@ function Invoke-Check {
 
 Push-Location $root
 try {
+    # 性能検査(NFR-PF-2/PF-3、packages/kernel/src/worker/solidPerformance.test.ts)の
+    # 上限判定を厳密にするか参考にとどめるかの切替。並列作業中の CPU 競合で境界値の検査が
+    # 落ちる問題への対策(rules/06-過去の失敗と対策.md 10.3)。上限の数値は変えない。
+    # -Level Push(pre-push・CI・既定)は厳密、-Level Commit(pre-commit)は明示的に空にして参考とする。
+    if ($Level -eq "Push") {
+        $env:POINTERCAD_PERF_STRICT = '1'
+        Write-Host "性能検査: 厳密(-Level Push)" -ForegroundColor Cyan
+    } else {
+        $env:POINTERCAD_PERF_STRICT = ''
+        Write-Host "性能検査: 参考(-Level Commit)" -ForegroundColor Cyan
+    }
+
     $packageJsonPath = Join-Path $root "package.json"
     if (-not (Test-Path -LiteralPath $packageJsonPath -PathType Leaf)) {
         Write-Host "[SKIP] package.json が無いため検査対象がありません(P0未着手)。合格扱いとします。" -ForegroundColor Yellow

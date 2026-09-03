@@ -44,6 +44,11 @@ import type { MessageKey } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
+import {
+  selectionKindForTool,
+  type P3SolidToolId,
+  type SelectionKind,
+} from '../solid/subShapeSelection.js';
 import type { OrbitState } from '../viewport/cameraMath.js';
 
 /** 透視投影 / 平行投影(FR-102)。 */
@@ -137,11 +142,22 @@ export interface AppState {
   readonly viewportSize: readonly [number, number];
 
   /**
-   * 選んでいる道具(FR-301〜309、FR-401〜403)。スケッチの道具に加えて、数値を聞く
-   * ソリッドの道具(押し出し・回転・縫合)も入る。和・差・積は押した瞬間に作って
+   * 選んでいる道具(FR-301〜309、FR-401〜403、FR-405〜408、FR-411、FR-412)。スケッチの道具に
+   * 加えて、数値を聞くソリッドの道具(押し出し・回転・縫合)と、P3 の加工の道具(穴・ねじ穴・
+   * R 面取り・C 面取り・直線/円形パターン)も入る。和・差・積は押した瞬間に作って
    * 終わるので、道具として選ばれた状態にはならない(§0.a-0.6)。
+   *
+   * 型が `NumericInputToolId | P3SolidToolId` の合併なのは、加工の道具がまだ
+   * `NumericInputToolId`(`numericInput.ts` の `SolidToolId`)へ入っていないため
+   * (タスク24 が足す。`subShapeSelection.ts` の `P3SolidToolId` の注釈のとおり)。
+   * タスク24 が足したあとは `P3SolidToolId` を消し、ここも `NumericInputToolId` だけに戻せる。
    */
-  readonly activeTool: NumericInputToolId;
+  readonly activeTool: NumericInputToolId | P3SolidToolId;
+  /**
+   * いま選ぶ部分形状の種類(FR-106、§0.a-0.6)。道具を選ぶと `setActiveTool` が自動で
+   * 切り替える。手動の切替は `setSelectionKind`(`1`〜`4` キーの受け口はタスク26)。
+   */
+  readonly selectionKind: SelectionKind;
   /** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
   readonly workPlaneId: WorkPlaneId;
 
@@ -276,7 +292,12 @@ export interface AppState {
   readonly requestViewportFocus: () => void;
   readonly setViewportSize: (size: readonly [number, number]) => void;
 
-  readonly setActiveTool: (tool: NumericInputToolId) => void;
+  readonly setActiveTool: (tool: NumericInputToolId | P3SolidToolId) => void;
+  /**
+   * 選ぶ部分形状の種類を手動で切り替える(§0.a-0.6)。種類が変わったら、いまの選択のうち
+   * 種類の合わないものを外す(違う種類の選択が加工の対象に紛れ込むのを防ぐ、NFR-UX-1)。
+   */
+  readonly setSelectionKind: (kind: SelectionKind) => void;
   readonly setWorkPlane: (id: WorkPlaneId) => void;
   /** 今の視点に最も近い作図面へ移してほしい、とビューポートへ頼む(§0.a-0.3)。 */
   readonly requestMatchWorkPlaneToView: () => void;
@@ -448,6 +469,14 @@ type DocumentPatch = Pick<
  *
  * 文書から消えたフィーチャーは選択とホバーからも外す(消えたものを指したままだと、
  * プロパティ欄が空を出し、次に同じ id が採番されたとき別物を選んで見える)。
+ *
+ * **部分形状の id(`extrude-1#face:0` 等)もここで一緒に掃除される**(§0.a-0.8)。
+ * `liveIds.has(featureIdOf(id))` は `#` の前(ボディの id)しか見ないため、`as`
+ * を使わずに済み、タスク20 が決めた id の書式(`subShapeSelection.ts`)を 1 行も
+ * 変えずにそのまま効く。**ただし「ボディ自体は残っているが、面・辺・頂点の番号が
+ * 再計算で範囲外になった」場合はここでは掃除されない**(ボディの id はまだ `liveIds`
+ * にあるため)。この限界は表示側(タスク22 の `buildSubShapeGeometry`)が範囲外の
+ * 参照を黙って描かないことで見た目の破綻を防ぐ想定(§2.11)。
  */
 function documentPatch(
   state: AppState,
@@ -507,6 +536,7 @@ function activeSketchErrors(
 export function createInitialDocumentState(): Pick<
   AppState,
   | 'activeTool'
+  | 'selectionKind'
   | 'workPlaneId'
   | 'document'
   | 'undoStack'
@@ -551,6 +581,8 @@ export function createInitialDocumentState(): Pick<
   const sketch = activeSketchOf(document);
   return {
     activeTool: 'select',
+    // 'select' は立体を選ぶ道具(選択の種類の対応は selectionKindForTool の既定分岐、§0.a-0.6)。
+    selectionKind: 'body',
     workPlaneId: DEFAULT_WORK_PLANE_ID,
     document,
     undoStack: createUndoStack(document),
@@ -633,21 +665,36 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   setActiveTool: (activeTool) => {
     // 道具を変えたら入力中のポップアップを閉じ、取りかけの始点と吸着の印も落とす
-    // (取りかけの操作を持ち越さない、NFR-UX-3)。
-    set((state) => ({
-      activeTool,
-      numericInput: null,
-      numericInputAnchor: null,
-      pendingStart: null,
-      snapIndicator: null,
-      faceErrorKey: null,
-      solidErrorKey: null,
-      // 面の道具では、境界に使えない要素(面・立体)を選択から外す(§0.a-0.23 ⑨)。
-      selection:
-        activeTool === 'face'
-          ? filterSelectionForFaceTool(state.sketch, state.selection)
-          : state.selection,
-    }));
+    // (取りかけの操作を持ち越さない、NFR-UX-3)。選ぶ部分形状の種類(§0.a-0.6)も
+    // 道具に応じて自動で切り替える(selectionKindForTool は subShapeSelection.ts の
+    // 1 か所だけに置き、ここで対応表を作り直さない)。
+    set((state) => {
+      const selectionKind = selectionKindForTool(activeTool);
+      const kindChanged = selectionKind !== state.selectionKind;
+      return {
+        activeTool,
+        selectionKind,
+        numericInput: null,
+        numericInputAnchor: null,
+        pendingStart: null,
+        snapIndicator: null,
+        faceErrorKey: null,
+        solidErrorKey: null,
+        // 種類が変わったら、違う種類の選択が加工の対象に紛れ込まないよう選択を空にする
+        // (§0.a-0.6)。種類が変わらないときだけ、面の道具の掃除(§0.a-0.23 ⑨)を従来どおり行う。
+        selection: kindChanged
+          ? []
+          : activeTool === 'face'
+            ? filterSelectionForFaceTool(state.sketch, state.selection)
+            : state.selection,
+      };
+    });
+  },
+  setSelectionKind: (selectionKind) => {
+    // 変わらないときは選択を残す(手動切替でも自動切替と同じ規約、§0.a-0.6)。
+    set((state) =>
+      state.selectionKind === selectionKind ? {} : { selectionKind, selection: [] },
+    );
   },
   setWorkPlane: (workPlaneId) => {
     set({ workPlaneId });
@@ -877,6 +924,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       isComputing: true,
       // 新しい部品に、前の部品の取りかけ・選択・断りの理由を持ち越さない(NFR-UX-3)。
       activeTool: 'select',
+      selectionKind: 'body',
       selection: [],
       hoveredElementId: null,
       numericInput: null,

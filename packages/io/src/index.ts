@@ -32,6 +32,18 @@ export {
   type ReadPcadFileResult,
   type WritePcadFileOptions,
 } from './pcad/pcadFile.js';
+// 自動保存の保管庫と制御(FR-805、NFR-RE-2)。
+export {
+  AUTO_SAVE_INTERVAL_MS,
+  createAutoSaver,
+  createIndexedDbAutoSaveStorage,
+  createMemoryAutoSaveStorage,
+  type AutoSaveRecord,
+  type AutoSaver,
+  type AutoSaverOptions,
+  type AutoSaveStorage,
+  type AutoSaveTimerHandle,
+} from './autoSave.js';
 
 export type ExportFormat = 'step' | 'stl' | '3mf' | 'obj' | 'glb';
 export type ImportFormat = 'step' | 'stl' | 'obj';

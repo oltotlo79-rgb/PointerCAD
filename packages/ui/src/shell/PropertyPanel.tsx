@@ -1,13 +1,12 @@
 import { Fragment, useState } from 'react';
 
 import { evaluateExpression } from '@pointercad/expression';
-import type { SketchFeature } from '@pointercad/model';
+import { replaceSolid, type SketchFeature, type SolidFeature } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import {
   faceBoundaryEntries,
-  FEATURE_KIND_LABEL_KEYS,
   featureForSelection,
   featureIdOf,
   resolvedFields,
@@ -21,6 +20,20 @@ import {
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
 } from '../sketch/numericInput.js';
+import {
+  formatVolume,
+  missingValueKey,
+  partErrorMessage,
+  selectionKindLabelKeys,
+  setSolidAxis,
+  setSolidField,
+  setSolidToggle,
+  solidForSelection,
+  summarizeSolid,
+  WORLD_AXIS_CHOICES,
+  type SolidFieldKey,
+  type SolidFieldSummary,
+} from '../solid/solidSummary.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 /**
@@ -212,6 +225,220 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   );
 }
 
+/** 参照しているものの名前。押すとそれを選ぶ(面の境界の一覧と同じ操作、FR-311)。 */
+function ReferenceButton({
+  elementId,
+  name,
+}: {
+  readonly elementId: string;
+  readonly name: string;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className="pcad-reference"
+      title={t('propertyPanel.boundaryTooltip')}
+      onClick={() => {
+        useAppStore.getState().setSelection([elementId]);
+      }}
+    >
+      {name}
+    </button>
+  );
+}
+
+/** 打っている途中の立体の欄。式として読めるようになるまで履歴へは書き戻さない。 */
+interface SolidFieldDraft {
+  readonly key: SolidFieldKey;
+  readonly source: string;
+}
+
+/**
+ * 選ばれている立体 1 つの中身(FR-202、FR-311、FR-501)。
+ *
+ * 距離・角度・許容量は**入力した式そのもの**を出し、式として読めたときだけ履歴を差し替える。
+ * 打っている途中は表示専用の下書きに置く(スケッチの欄と同じ作り、docs/報告記録.md 2026-09-02 23:35)。
+ * 続けざまの書き換えは `coalesceKey` で Undo の 1 段にまとめる(§0.a-0.13)。
+ *
+ * 形が作れていない立体でも欄は編集できる。直せばそのまま作り直せるようにするため(FR-504)。
+ * 体積と三角形の数は形ができたときだけ出し、出せないときは「—」ではなく理由を言葉で出す。
+ */
+function SolidProperties({ feature }: { readonly feature: SolidFeature }): React.JSX.Element {
+  const part = useAppStore((state) => state.document);
+  const bodies = useAppStore((state) => state.bodies);
+  const partErrors = useAppStore((state) => state.partErrors);
+  const [draft, setDraft] = useState<SolidFieldDraft | null>(null);
+
+  const summary = summarizeSolid(part, feature, partErrors);
+  const errorMessage = partErrorMessage(partErrors, feature.id);
+  const body = bodies.find((candidate) => candidate.featureId === feature.id);
+  const missing = t(missingValueKey(summary));
+
+  /** 履歴を差し替える。中身が変わらないときは何もしない(無駄な再計算を起こさない)。 */
+  const apply = (next: SolidFeature, coalesceKey?: string): void => {
+    if (next === feature) {
+      return;
+    }
+    const store = useAppStore.getState();
+    store.applyDocument(replaceSolid(store.document, feature.id, next), { coalesceKey });
+  };
+
+  const renderField = (item: SolidFieldSummary): React.JSX.Element => {
+    const source = draft !== null && draft.key === item.key ? draft.source : item.value.source;
+    const evaluated = evaluateExpression(source);
+    return (
+      <ExpressionField
+        key={item.key}
+        field={{
+          key: item.key,
+          labelKey: item.labelKey,
+          tooltipKey: item.tooltipKey,
+          unit: item.unit,
+          defaultSource: item.value.source,
+          source,
+        }}
+        result={
+          evaluated.ok
+            ? { key: item.key, value: evaluated.value, error: null }
+            : { key: item.key, value: null, error: evaluated.error }
+        }
+        /* 焦点の正本は利用者のクリックとタブ移動。こちらからは動かさない。 */
+        focused={false}
+        onFocus={() => undefined}
+        onChange={(next) => {
+          setDraft({ key: item.key, source: next });
+          const parsed = evaluateExpression(next);
+          if (!parsed.ok) {
+            return;
+          }
+          apply(setSolidField(feature, item.key, parsed.value), `field:${feature.id}:${item.key}`);
+        }}
+      />
+    );
+  };
+
+  const axis = summary.axis;
+
+  return (
+    <>
+      {errorMessage === null ? null : <p className="pcad-panel__error">{errorMessage}</p>}
+      {!summary.suppressed ? null : (
+        <p className="pcad-panel__note">{t('propertyPanel.suppressedNote')}</p>
+      )}
+
+      <div className="pcad-section">
+        <h3 className="pcad-section__title">{t('propertyPanel.sectionSolid')}</h3>
+        <dl className="pcad-properties">
+          <dt className="pcad-properties__key">{t('propertyPanel.selectedKinds')}</dt>
+          <dd className="pcad-properties__value">{t(summary.kindLabelKey)}</dd>
+        </dl>
+      </div>
+
+      {summary.fields.length === 0 && summary.toggles.length === 0 && axis === null ? null : (
+        <div className="pcad-section">
+          <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
+          {summary.fields.length === 0 ? null : (
+            <div className="pcad-coordinate__fields">{summary.fields.map(renderField)}</div>
+          )}
+          {axis === null ? null : (
+            <div className="pcad-choice">
+              <span className="pcad-choice__label">{t('propertyPanel.axis')}</span>
+              {axis.kind === 'line' ? (
+                <span className="pcad-choice__value">{axis.name}</span>
+              ) : (
+                <div
+                  className="pcad-segmented pcad-choice__options"
+                  role="group"
+                  aria-label={t('propertyPanel.axis')}
+                >
+                  {WORLD_AXIS_CHOICES.map((choice) => (
+                    <button
+                      key={choice.axis}
+                      type="button"
+                      className="pcad-button"
+                      aria-pressed={axis.axis === choice.axis}
+                      onClick={() => {
+                        apply(setSolidAxis(feature, choice.axis));
+                      }}
+                    >
+                      {t(choice.labelKey)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {summary.toggles.length === 0 ? null : (
+            <div className="pcad-toggles">
+              {summary.toggles.map((toggle) => (
+                <button
+                  key={toggle.key}
+                  type="button"
+                  role="switch"
+                  className="pcad-switch"
+                  aria-checked={toggle.value}
+                  onClick={() => {
+                    apply(setSolidToggle(feature, toggle.key, !toggle.value));
+                  }}
+                >
+                  <span className="pcad-switch__track" aria-hidden="true">
+                    <span className="pcad-switch__thumb" />
+                  </span>
+                  <span>{t(toggle.labelKey)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {summary.references.length === 0 ? null : (
+        <div className="pcad-section">
+          <h3 className="pcad-section__title">
+            {t(
+              feature.kind === 'boolean'
+                ? 'propertyPanel.sectionCombine'
+                : 'propertyPanel.sectionProfile',
+            )}
+          </h3>
+          <dl className="pcad-properties">
+            {summary.references.map((reference, index) => (
+              <Fragment key={`${reference.labelKey}-${String(index)}`}>
+                <dt className="pcad-properties__key">{t(reference.labelKey)}</dt>
+                <dd className="pcad-properties__value">
+                  {reference.elementId === null ? (
+                    <span className="pcad-properties__missing" title={reference.name}>
+                      {t('propertyPanel.referenceMissing')}
+                    </span>
+                  ) : (
+                    <ReferenceButton elementId={reference.elementId} name={reference.name} />
+                  )}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      <div className="pcad-section">
+        <h3 className="pcad-section__title">{t('propertyPanel.sectionResult')}</h3>
+        <dl className="pcad-properties">
+          <dt className="pcad-properties__key">{t('propertyPanel.volume')}</dt>
+          <dd className="pcad-properties__value">
+            {body === undefined
+              ? missing
+              : `${formatVolume(body.volume)} ${t('propertyPanel.unitCubicMillimeter')}`}
+          </dd>
+          <dt className="pcad-properties__key">{t('propertyPanel.triangleCount')}</dt>
+          <dd className="pcad-properties__value">
+            {body === undefined ? missing : String(body.mesh.triangleCount)}
+          </dd>
+        </dl>
+      </div>
+    </>
+  );
+}
+
 /**
  * 右のプロパティパネル(要件§7.1、FR-202、FR-310、FR-311)。
  *
@@ -220,19 +447,16 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
  * 節ごとに「鍵(補助色)と値(等幅の数字)」の2列で並べる形は P0 から変えない。
  */
 export function PropertyPanel(): React.JSX.Element {
+  const part = useAppStore((state) => state.document);
   const sketch = useAppStore((state) => state.sketch);
   const selection = useAppStore((state) => state.selection);
 
   const featureIds = [...new Set(selection.map((id) => featureIdOf(id)))];
-  const feature = featureIds.length === 1 ? featureForSelection(sketch, selection) : null;
-  const kinds = [
-    ...new Set(
-      featureIds.map((id) => {
-        const found = sketch.features.find((candidate) => candidate.id === id);
-        return found === undefined ? null : t(FEATURE_KIND_LABEL_KEYS[found.kind]);
-      }),
-    ),
-  ].filter((label): label is string => label !== null);
+  const single = featureIds.length === 1;
+  const feature = single ? featureForSelection(sketch, selection) : null;
+  // スケッチの要素で見つからなければ立体を探す。id は文書の中で重ならない(§0.a-0.5)。
+  const solid = single && feature === null ? solidForSelection(part, selection) : null;
+  const kinds = selectionKindLabelKeys(part, selection).map((key) => t(key));
 
   return (
     <section className="pcad-panel pcad-panel--right">
@@ -240,6 +464,8 @@ export function PropertyPanel(): React.JSX.Element {
       <div className="pcad-panel__body">
         {feature !== null ? (
           <FeatureProperties key={feature.id} feature={feature} />
+        ) : solid !== null ? (
+          <SolidProperties key={solid.id} feature={solid} />
         ) : featureIds.length > 1 ? (
           <div className="pcad-section">
             <h3 className="pcad-section__title">{t('propertyPanel.sectionSelection')}</h3>

@@ -25,6 +25,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '立体をつなぐ・組み合わせる',
     path: 'docs/ja/solid-combine.md',
   },
+  {
+    id: 'feature-tree',
+    title: '作ったものの一覧と、やり直し',
+    path: 'docs/ja/feature-tree.md',
+  },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

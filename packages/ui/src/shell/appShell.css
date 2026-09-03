@@ -501,6 +501,14 @@
   user-select: none;
 }
 
+/* 部品の下に並ぶ 2 つの節(スケッチ / ソリッド、FR-501)。 */
+.pcad-tree__sections {
+  position: relative;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
 .pcad-tree__children {
   position: relative;
   padding: 0;
@@ -508,15 +516,23 @@
   list-style: none;
 }
 
-/* 階層の深さを示す縦の細線。 */
+/* 階層の深さを示す縦の細線。節の線は部品の折りたたみ印、行の線は節の折りたたみ印の真下。 */
+.pcad-tree__sections::before,
 .pcad-tree__children::before {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 15px;
   width: 1px;
   content: "";
   background: var(--pcad-border);
+}
+
+.pcad-tree__sections::before {
+  left: 15px;
+}
+
+.pcad-tree__children::before {
+  left: 27px;
 }
 
 .pcad-tree__row {
@@ -555,6 +571,28 @@ button.pcad-tree__row:focus-visible {
   padding: 0 var(--pcad-space-1) 0 0;
 }
 
+/* 節の見出し(スケッチ / ソリッド)。部品より 1 段深く置く。 */
+.pcad-tree__row--section {
+  padding-left: 20px;
+}
+
+/* 節に入っている数。畳んでいても中身の有無が読める(NFR-UX-6)。 */
+.pcad-tree__count {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--pcad-font-size-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-text-faint);
+}
+
+/* 節が空のときの案内。行ではないので数には数えない。 */
+.pcad-tree__hint {
+  padding: 2px var(--pcad-space-3) var(--pcad-space-1) 44px;
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-faint);
+}
+
 .pcad-tree__select {
   display: flex;
   flex: 1 1 auto;
@@ -562,7 +600,7 @@ button.pcad-tree__row:focus-visible {
   align-items: center;
   min-width: 0;
   height: 100%;
-  padding: 0 0 0 26px;
+  padding: 0 0 0 44px;
   font: inherit;
   color: inherit;
   text-align: left;
@@ -620,6 +658,100 @@ button.pcad-tree__row:focus-visible {
 .pcad-tree__delete:focus-visible {
   outline: 2px solid var(--pcad-accent);
   outline-offset: -2px;
+}
+
+/*
+ * 立体の行の「⋮」(FR-503)。抑制・改名・削除の入口。指を乗せるか焦点が来るまで薄くして、
+ * 行の名前を読む邪魔をしない。押せる面は削除の印と同じ 18px を保つ。
+ */
+.pcad-tree__more {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--pcad-text-faint);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pcad-radius-small);
+  opacity: 0;
+  transition:
+    color var(--pcad-transition),
+    opacity var(--pcad-transition);
+}
+
+.pcad-tree__row:hover .pcad-tree__more,
+.pcad-tree__row--selected .pcad-tree__more,
+.pcad-tree__more:focus-visible,
+.pcad-tree__more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.pcad-tree__more:hover,
+.pcad-tree__more[aria-expanded="true"] {
+  color: var(--pcad-text);
+  background: var(--pcad-surface-raised);
+}
+
+.pcad-tree__more:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+/* その場で名前を直す欄(FR-503)。行の見た目を保ったまま文字だけ入れ替える。 */
+.pcad-tree__rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 20px;
+  margin-left: 44px;
+  font: inherit;
+  color: var(--pcad-text);
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-accent-border);
+  border-radius: var(--pcad-radius-small);
+}
+
+.pcad-tree__rename:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -1px;
+}
+
+/* 抑制中・統合済みの札。名前の右に小さく添える。 */
+.pcad-tree__badge {
+  flex: none;
+  padding: 0 5px;
+  font-size: var(--pcad-font-size-small);
+  line-height: 16px;
+  color: var(--pcad-text-faint);
+  white-space: nowrap;
+  cursor: default;
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border);
+  border-radius: 8px;
+}
+
+/* 抑制中の行はうすい字にして、形が計算されていないことをひと目で分かるようにする。 */
+.pcad-tree__row--suppressed .pcad-tree__label,
+.pcad-tree__row--suppressed .pcad-tree__icon {
+  color: var(--pcad-text-faint);
+}
+
+/*
+ * 行から開く一覧(FR-503)。モデルブラウザは縦に流れる区画なので、中に置くと縁で
+ * 切り取られる。画面に対して固定して出し、右端をボタン(またはカーソル)にそろえる。
+ */
+.pcad-tree__menu {
+  position: fixed;
+  right: auto;
+  z-index: 6;
+  transform: translateX(-100%);
+}
+
+/* 消す項目だけは、押した先が戻せない操作に見えるよう文字色を変える。 */
+.pcad-menu__item--danger:hover {
+  color: var(--pcad-danger-text);
 }
 
 .pcad-tree__chevron {
@@ -686,6 +818,80 @@ button.pcad-tree__row:focus-visible {
   font-size: var(--pcad-font-size-small);
   color: var(--pcad-danger-text);
   background: var(--pcad-danger-surface);
+}
+
+/* 失敗ではないが今は形が無い、という知らせ(抑制中)。赤にしない(FR-503)。 */
+.pcad-panel__note {
+  padding: var(--pcad-space-2) var(--pcad-space-3);
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+  background: var(--pcad-surface-raised);
+}
+
+/* 参照しているものの名前。押すとそれを選ぶ(境界の一覧と同じ操作)。 */
+.pcad-reference {
+  /* 右の区画(280px)から見出しの分を残した幅。長い名前は末尾を省く。 */
+  max-width: 150px;
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  color: var(--pcad-accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pcad-radius-small);
+}
+
+.pcad-reference:hover {
+  color: var(--pcad-accent-hover);
+  text-decoration: underline;
+}
+
+.pcad-reference:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: 2px;
+}
+
+/* 参照先が消えているとき(FR-504)。何を指していたかはツールチップに残す。 */
+.pcad-properties__missing {
+  color: var(--pcad-danger-text);
+  cursor: help;
+}
+
+/* いくつかから 1 つを選ぶ欄(回転軸)。見出しの下に等幅の選択肢を並べる。 */
+.pcad-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-1);
+  padding: var(--pcad-space-1) var(--pcad-space-3) 0;
+}
+
+.pcad-choice__label {
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+}
+
+.pcad-choice__options .pcad-button {
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+/* 選び直せない軸(スケッチの線分)は、名前を読み取り専用で出す。 */
+.pcad-choice__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 入切のつまみ(向きを反転・両側へ)。見た目はその場入力のものと同じ(.pcad-switch)。 */
+.pcad-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--pcad-space-2) var(--pcad-space-3) 0;
 }
 
 /* 1 点ぶんの欄のまとまり(位置・始点・終点・中心・基準点)。 */

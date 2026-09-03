@@ -566,6 +566,26 @@ describe('solidToolReadiness(NFR-UX-5、6 種すべて)', () => {
       reasonKey: 'solidError.needTwoBodies',
     });
   });
+
+  // P3 タスク24 が SolidToolId へ足した加工6種+ばね。本実装はタスク25・25b・28 が担当する。
+  // ここでは型を網羅するだけの最小の枝(notYetAvailable)が動くことだけを確かめる。
+  it('加工6種+ばねはまだ使えないので notYetAvailable', () => {
+    const document = documentWithFaces(['face-1']);
+    for (const tool of [
+      'hole',
+      'threadHole',
+      'fillet',
+      'chamfer',
+      'linearPattern',
+      'circularPattern',
+      'spring',
+    ] as const) {
+      expect(solidToolReadiness(document, [], tool), tool).toEqual({
+        ready: false,
+        reasonKey: 'solidError.notYetAvailable',
+      });
+    }
+  });
 });
 
 describe('commitSolidInput(その場入力の確定から作る)', () => {
@@ -740,6 +760,7 @@ describe('断る理由の文言は ja.json から引く(NFR-MA-5)', () => {
       'solidError.needTwoBodies',
       'solidError.needTwoFaces',
       'solidError.sameBody',
+      'solidError.notYetAvailable',
     ] as const) {
       expect(MESSAGE_KEYS).toContain(key);
       expect(t(key).length, key).toBeGreaterThan(0);

@@ -335,6 +335,17 @@ export function solidToolReadiness(
         ? { ready: false, reasonKey: 'solidError.sameBody' }
         : READY;
     }
+    // P3 タスク24 が SolidToolId へ足した加工6種+ばね。本実装はタスク25・25b・28
+    // (machiningCommands.ts / springCommands.ts 相当)が担当するので、ここでは型を
+    // 網羅するだけの最小の枝として「まだ使えない」を返す。
+    case 'hole':
+    case 'threadHole':
+    case 'fillet':
+    case 'chamfer':
+    case 'linearPattern':
+    case 'circularPattern':
+    case 'spring':
+      return { ready: false, reasonKey: 'solidError.notYetAvailable' };
   }
 }
 
@@ -385,6 +396,17 @@ export function commitSolidInput(
         tolerance: commit.values.tolerance ?? DEFAULT_SEW_TOLERANCE,
       });
     }
+    // P3 タスク24 が SolidToolId(SolidInputCommit.tool)へ足した加工6種+ばね。
+    // 本実装はタスク25・25b・28 が担当するので、ここでは型を網羅するだけの最小の枝として
+    // 「まだ使えない」を返す。
+    case 'hole':
+    case 'threadHole':
+    case 'fillet':
+    case 'chamfer':
+    case 'linearPattern':
+    case 'circularPattern':
+    case 'spring':
+      return { ok: false, reasonKey: 'solidError.notYetAvailable' };
   }
 }
 

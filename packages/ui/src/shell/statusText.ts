@@ -37,6 +37,15 @@ const GUIDE_KEYS = {
   extrude: 'statusBar.guide.extrude',
   revolve: 'statusBar.guide.revolve',
   sew: 'statusBar.guide.sew',
+  // P3 タスク24 が SolidToolId へ足した加工6種+ばね。案内文はタスク18 で ja.json に
+  // 追加済み(statusBar.guide.*)なので、そのまま割り当てる(本実装、暫定ではない)。
+  hole: 'statusBar.guide.hole',
+  threadHole: 'statusBar.guide.threadHole',
+  fillet: 'statusBar.guide.fillet',
+  chamfer: 'statusBar.guide.chamfer',
+  linearPattern: 'statusBar.guide.linearPattern',
+  circularPattern: 'statusBar.guide.circularPattern',
+  spring: 'statusBar.guide.spring',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /** いま何に吸い付いているかの案内(FR-107、NFR-UX-7)。 */

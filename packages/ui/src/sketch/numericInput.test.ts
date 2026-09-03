@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { expressionValueFromNumber } from '@pointercad/expression';
+import { MAX_PATTERN_COUNT, MAX_SPRING_TURNS, METRIC_THREAD_DESIGNATIONS } from '@pointercad/model';
 
 import { MESSAGE_KEYS, t, type MessageKey } from '../i18n/t.js';
 import {
   applyNumericInputKey,
   buildCoordinateInput,
+  choiceValueOf,
   chooseNumericInput,
   commitNumericInput,
   commitValues,
@@ -22,12 +24,14 @@ import {
   nextNumericInput,
   NUMERIC_INPUT_KEYS,
   NUMERIC_INPUT_STEPS,
+  numericChoiceOptionLabel,
   numericFocusTargets,
   rangeErrorFor,
   reduceNumericInput,
   SOLID_TOOL_STEPS,
   STEP_TITLE_KEYS,
   toggleNumericInput,
+  TOGGLE_LABEL_KEYS,
   UNIT_KEYS,
   valueByFieldKey,
   type NumericInputState,
@@ -299,8 +303,15 @@ describe('その場数値入力の状態(NFR-UX-1〜5)', () => {
         for (const toggle of state.toggles) {
           keys.push(toggle.labelKey);
         }
-        for (const option of state.choice?.options ?? []) {
-          keys.push(option.labelKey);
+        for (const choice of state.choices) {
+          keys.push(choice.labelKey);
+          for (const option of choice.options) {
+            // 呼び径(28個)は labelKey を持たず label をそのまま出すので、ここでは飛ばす
+            // (§2.11、numericChoiceOptionLabel の注釈)。
+            if (option.labelKey !== undefined) {
+              keys.push(option.labelKey);
+            }
+          }
         }
       }
     }
@@ -370,6 +381,13 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
       extrude: 'extrudeDistance',
       revolve: 'revolveAngle',
       sew: 'sewTolerance',
+      hole: 'holeSize',
+      threadHole: 'threadSize',
+      fillet: 'filletRadius',
+      chamfer: 'chamferSize',
+      linearPattern: 'linearPattern',
+      circularPattern: 'circularPattern',
+      spring: 'springShape',
     });
     for (const step of Object.values(SOLID_TOOL_STEPS)) {
       expect(isSolidStep(step), step).toBe(true);
@@ -386,7 +404,7 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
     expect(state.fields[0].unit).toBe('mm');
     expect(state.toggles.map((toggle) => toggle.key)).toEqual(['reversed', 'symmetric']);
     expect(state.toggles.map((toggle) => toggle.value)).toEqual([false, false]);
-    expect(state.choice).toBeNull();
+    expect(state.choices).toEqual([]);
     expect(STEP_TITLE_KEYS.extrudeDistance).toBe('numericInput.title.extrude');
   });
 
@@ -396,14 +414,12 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
     expect(state.fields.map((field) => field.source)).toEqual(['360']);
     expect(state.fields[0].unit).toBe('degree');
     expect(state.toggles.map((toggle) => toggle.key)).toEqual(['reversed']);
-    expect(state.choice?.key).toBe('axis');
-    expect(state.choice?.value).toBe('z');
-    expect(state.choice?.options.map((option) => option.value)).toEqual(['x', 'y', 'z']);
-    expect(state.choice?.options.map((option) => option.axis)).toEqual([
-      { kind: 'world', axis: 'x' },
-      { kind: 'world', axis: 'y' },
-      { kind: 'world', axis: 'z' },
-    ]);
+    expect(state.choices.length).toBe(1);
+    expect(state.choices[0].key).toBe('axis');
+    expect(state.choices[0].value).toBe('z');
+    expect(state.choices[0].options.map((option) => option.value)).toEqual(['x', 'y', 'z']);
+    // P3 で選択肢は value(文字列)だけを持つようになり、RevolveAxis は確定時に組み立て直す
+    // (§2.11「確定側で value から引き直す」)。実際の組み立ては下の「ソリッドの確定結果」で検証する。
     expect(STEP_TITLE_KEYS.revolveAngle).toBe('numericInput.title.revolve');
   });
 
@@ -412,18 +428,18 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
     expect(state.fields.map((field) => field.key)).toEqual(['tolerance']);
     expect(state.fields.map((field) => field.source)).toEqual(['0.01']);
     expect(state.toggles).toEqual([]);
-    expect(state.choice).toBeNull();
+    expect(state.choices).toEqual([]);
     expect(STEP_TITLE_KEYS.sewTolerance).toBe('numericInput.title.sew');
   });
 
   it('線分が選ばれているときだけ、軸の選択肢に線分が増える(§0.a-0.9)', () => {
     const line = { sketchId: 'sketch-1', lineFeatureId: 'line-1' };
     const state = createNumericInput('revolve', 'revolveAngle', 'absolute', { axisLine: line });
-    expect(state.choice?.options.map((option) => option.value)).toEqual(['x', 'y', 'z', 'line']);
-    expect(state.choice?.options[3].axis).toEqual({ kind: 'line', line });
+    expect(state.choices[0].options.map((option) => option.value)).toEqual(['x', 'y', 'z', 'line']);
+    // axis の組み立ては確定時に行う(下の「選んだ線分を軸にできる」で検証)。
     // 線分を渡さない押し出し・縫合には選択肢が生えない。
-    expect(createNumericInput('extrude', 'extrudeDistance', 'absolute', { axisLine: line }).choice)
-      .toBeNull();
+    expect(createNumericInput('extrude', 'extrudeDistance', 'absolute', { axisLine: line }).choices)
+      .toEqual([]);
   });
 
   it('ソリッドの段は座標モードを持たず、モード切替でも欄が変わらない', () => {
@@ -436,7 +452,7 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
     for (const step of ['point', 'lineEnd', 'arcShape', 'pointArrayShape'] as const) {
       const state = createNumericInput('point', step);
       expect(state.toggles, step).toEqual([]);
-      expect(state.choice, step).toBeNull();
+      expect(state.choices, step).toEqual([]);
     }
   });
 });
@@ -458,14 +474,17 @@ describe('つまみと選択肢の操作(NFR-UX-2)', () => {
 
   it('選択肢を選んでも欄の値は変わらない。知らない値は無視する', () => {
     const state = edited(createNumericInput('revolve', 'revolveAngle'), '90');
-    const chosen = chooseNumericInput(state, 'x');
-    expect(chosen.choice?.value).toBe('x');
+    const chosen = chooseNumericInput(state, 'axis', 'x');
+    expect(chosen.choices[0].value).toBe('x');
     expect(chosen.fields.map((field) => field.source)).toEqual(['90']);
-    expect(state.choice?.value).toBe('z');
+    expect(state.choices[0].value).toBe('z');
     // 選択肢に無い値(線分が選ばれていない)は無視する。
-    expect(chooseNumericInput(state, 'line')).toBe(state);
+    expect(chooseNumericInput(state, 'axis', 'line')).toBe(state);
+    // 持っていないつまみの key を指しても無視する。
+    expect(chooseNumericInput(state, 'chamferMode', 'equal')).toBe(state);
     // 選択肢を持たない段では何も起きない。
-    expect(chooseNumericInput(createNumericInput('sew', 'sewTolerance'), 'x').choice).toBeNull();
+    expect(chooseNumericInput(createNumericInput('sew', 'sewTolerance'), 'axis', 'x').choices)
+      .toEqual([]);
   });
 
   it('Tab の巡回に欄・選択肢・つまみが並ぶ(NFR-UX-2)', () => {
@@ -478,11 +497,21 @@ describe('つまみと選択肢の操作(NFR-UX-2)', () => {
     const revolve = createNumericInput('revolve', 'revolveAngle');
     expect(numericFocusTargets(revolve)).toEqual([
       { kind: 'field', index: 0 },
-      { kind: 'choice' },
+      { kind: 'choice', index: 0 },
       { kind: 'toggle', index: 0 },
     ]);
     expect(numericFocusTargets(createNumericInput('sew', 'sewTolerance'))).toEqual([
       { kind: 'field', index: 0 },
+    ]);
+    // 選択肢が2つある段(ねじ穴)では、選択肢が順に並ぶ(計画書タスク24 検証表)。
+    const threadHole = createNumericInput('threadHole', 'threadSize');
+    expect(numericFocusTargets(threadHole)).toEqual([
+      { kind: 'field', index: 0 },
+      { kind: 'field', index: 1 },
+      { kind: 'choice', index: 0 },
+      { kind: 'choice', index: 1 },
+      { kind: 'toggle', index: 0 },
+      { kind: 'toggle', index: 1 },
     ]);
     // 3 回 Tab を押すと先頭へ戻る。焦点はポップアップの外へ出ない。
     let state = extrude;
@@ -518,10 +547,10 @@ describe('つまみと選択肢の操作(NFR-UX-2)', () => {
   it('← → は焦点の選択肢を動かし、端では回り込む', () => {
     const state = createNumericInput('revolve', 'revolveAngle');
     const onChoice = reduceNumericInput(state, { type: 'focus', index: 1 });
-    expect(focusedTarget(onChoice)).toEqual({ kind: 'choice' });
+    expect(focusedTarget(onChoice)).toEqual({ kind: 'choice', index: 0 });
     // 既定は z(3 つ目)。→ で先頭の x へ回り込む。
-    expect(expectOpen(applyNumericInputKey(onChoice, 'ArrowRight')).state.choice?.value).toBe('x');
-    expect(expectOpen(applyNumericInputKey(onChoice, 'ArrowLeft')).state.choice?.value).toBe('y');
+    expect(expectOpen(applyNumericInputKey(onChoice, 'ArrowRight')).state.choices[0].value).toBe('x');
+    expect(expectOpen(applyNumericInputKey(onChoice, 'ArrowLeft')).state.choices[0].value).toBe('y');
     // 焦点が欄のときは欄の中のカーソル移動を邪魔しない。
     expect(expectOpen(applyNumericInputKey(state, 'ArrowLeft')).state).toBe(state);
   });
@@ -562,7 +591,7 @@ describe('ソリッドの確定結果(FR-201、FR-202、§0.a-0.8 / 0.9 / 0.7)',
     expect(base.flags).toEqual({ reversed: false });
     expect(base.axis).toEqual({ kind: 'world', axis: 'z' });
 
-    const turned = toggleNumericInput(chooseNumericInput(state, 'x'), 'reversed');
+    const turned = toggleNumericInput(chooseNumericInput(state, 'axis', 'x'), 'reversed');
     const commit = expectSolidCommitted(commitNumericInput(turned)).commit;
     expect(commit.flags).toEqual({ reversed: true });
     expect(commit.axis).toEqual({ kind: 'world', axis: 'x' });
@@ -572,6 +601,7 @@ describe('ソリッドの確定結果(FR-201、FR-202、§0.a-0.8 / 0.9 / 0.7)',
     const line = { sketchId: 'sketch-1', lineFeatureId: 'line-1' };
     const state = chooseNumericInput(
       createNumericInput('revolve', 'revolveAngle', 'absolute', { axisLine: line }),
+      'axis',
       'line',
     );
     expect(expectSolidCommitted(commitNumericInput(state)).commit.axis).toEqual({
@@ -606,8 +636,13 @@ describe('ソリッドの確定結果(FR-201、FR-202、§0.a-0.8 / 0.9 / 0.7)',
     }
   });
 
-  it('ソリッドは 1 段で終わるので、「続けてかく」が入でも閉じる', () => {
+  it('ソリッドは 1 段で終わるので、「続けてかく」が入でも閉じる(例外: ばねの1段目は2段目へ進む)', () => {
     for (const step of Object.values(SOLID_TOOL_STEPS)) {
+      // ばねの1段目(springShape)だけは2段構えの前半なので、続けてかくに関わらず
+      // springLength へ進む(§2.11)。これは下の「ばねの2段」でまとめて検証する。
+      if (step === 'springShape') {
+        continue;
+      }
       for (const chaining of [false, true]) {
         expect(nextNumericInput(createNumericInput('extrude', step), chaining), step).toBeNull();
       }
@@ -698,5 +733,432 @@ describe('ソリッドの不正値は確定させない(NFR-UX-5、FR-204)', () 
     expect(
       evaluateNumericInput(edited(createNumericInput('arc', 'arcShape'), '0')).canCommit,
     ).toBe(true);
+  });
+});
+
+describe('P3 加工の段(計画書 docs/plans/P3-加工フィーチャー.md タスク24 §2.11、検証表)', () => {
+  it('穴: 欄2つ(直径6・深さ10)、貫通のつまみ(既定 false)、選択肢なし', () => {
+    const state = createNumericInput('hole', 'holeSize');
+    expect(state.fields.map((field) => field.key)).toEqual(['diameter', 'depth']);
+    expect(state.fields.map((field) => field.source)).toEqual(['6', '10']);
+    expect(state.toggles.map((toggle) => toggle.key)).toEqual(['through']);
+    expect(state.toggles[0].value).toBe(false);
+    expect(state.choices).toEqual([]);
+    expect(STEP_TITLE_KEYS.holeSize).toBe('numericInput.title.hole');
+  });
+
+  it('ねじ穴: 欄2つ(深さ10・ねじ部の長さ10)、つまみ2つ、選択肢2つ(呼びM6・系列coarse)', () => {
+    const state = createNumericInput('threadHole', 'threadSize');
+    expect(state.fields.map((field) => field.key)).toEqual(['depth', 'threadLength']);
+    expect(state.fields.map((field) => field.source)).toEqual(['10', '10']);
+    expect(state.toggles.map((toggle) => toggle.key)).toEqual(['through', 'modeledThread']);
+    expect(state.toggles.map((toggle) => toggle.value)).toEqual([false, false]);
+    expect(state.choices.map((choice) => choice.key)).toEqual(['threadDesignation', 'threadSeries']);
+    expect(state.choices[0].value).toBe('M6');
+    expect(state.choices[1].value).toBe('coarse');
+    expect(STEP_TITLE_KEYS.threadSize).toBe('numericInput.title.threadHole');
+  });
+
+  it('R面取り: 欄1つ(半径2)、つまみ・選択肢なし', () => {
+    const state = createNumericInput('fillet', 'filletRadius');
+    expect(state.fields.map((field) => field.key)).toEqual(['radius']);
+    expect(state.fields.map((field) => field.source)).toEqual(['2']);
+    expect(state.toggles).toEqual([]);
+    expect(state.choices).toEqual([]);
+    expect(STEP_TITLE_KEYS.filletRadius).toBe('numericInput.title.fillet');
+  });
+
+  it('直線パターン: 欄2つ(間隔20・個数3)、両側への既定false、選択肢1つ(向き、既定 x)', () => {
+    const state = createNumericInput('linearPattern', 'linearPattern');
+    expect(state.fields.map((field) => field.key)).toEqual(['spacing', 'count']);
+    expect(state.fields.map((field) => field.source)).toEqual(['20', '3']);
+    expect(state.toggles.map((toggle) => toggle.key)).toEqual(['patternSymmetric']);
+    expect(state.toggles[0].value).toBe(false);
+    expect(state.choices[0].key).toBe('patternDirection');
+    expect(state.choices[0].value).toBe('x');
+    expect(STEP_TITLE_KEYS.linearPattern).toBe('numericInput.title.linearPattern');
+  });
+
+  it('円形パターン: 欄2つ(角度360・個数4)、全周の既定true、選択肢1つ(軸、既定 z)', () => {
+    const state = createNumericInput('circularPattern', 'circularPattern');
+    expect(state.fields.map((field) => field.key)).toEqual(['angle', 'count']);
+    expect(state.fields.map((field) => field.source)).toEqual(['360', '4']);
+    expect(state.toggles.map((toggle) => toggle.key)).toEqual(['fullCircle']);
+    expect(state.toggles[0].value).toBe(true);
+    expect(state.choices[0].key).toBe('axis');
+    expect(state.choices[0].value).toBe('z');
+    expect(STEP_TITLE_KEYS.circularPattern).toBe('numericInput.title.circularPattern');
+  });
+
+  it('choiceValueOf で選択肢の現在値を読める。元の state は変わらない', () => {
+    const state = createNumericInput('threadHole', 'threadSize');
+    const chosen = chooseNumericInput(state, 'threadDesignation', 'M8');
+    expect(choiceValueOf(chosen, 'threadDesignation')).toBe('M8');
+    expect(choiceValueOf(state, 'threadDesignation')).toBe('M6');
+    // 持たない段・持たないつまみは null。
+    expect(choiceValueOf(state, 'springDerived')).toBeNull();
+  });
+
+  it('呼び径の選択肢は label をそのまま持ち、labelKey は持たない(28個、§2.11)', () => {
+    const state = createNumericInput('threadHole', 'threadSize');
+    const designation = state.choices.find((choice) => choice.key === 'threadDesignation');
+    expect(designation?.options.length).toBe(METRIC_THREAD_DESIGNATIONS.length);
+    expect(designation?.options[0]).toEqual({ value: 'M2', label: 'M2' });
+    expect(designation?.options.every((option) => option.labelKey === undefined)).toBe(true);
+  });
+
+  it('パターンの個数は 2 未満・MAX_PATTERN_COUNT 超を受け付けない。境界は通る', () => {
+    const low = edited(createNumericInput('linearPattern', 'linearPattern'), '1', 1);
+    const blocked = expectBlocked(applyNumericInputKey(low, 'Enter'));
+    expect(blocked.evaluation.results[1].error?.code).toBe('outOfRange');
+
+    const high = edited(
+      createNumericInput('circularPattern', 'circularPattern'),
+      String(MAX_PATTERN_COUNT + 1),
+      1,
+    );
+    expect(evaluateNumericInput(high).canCommit).toBe(false);
+
+    const atMin = edited(createNumericInput('linearPattern', 'linearPattern'), '2', 1);
+    expect(evaluateNumericInput(atMin).canCommit).toBe(true);
+    const atMax = edited(
+      createNumericInput('circularPattern', 'circularPattern'),
+      String(MAX_PATTERN_COUNT),
+      1,
+    );
+    expect(evaluateNumericInput(atMax).canCommit).toBe(true);
+  });
+
+  it('個数が整数かどうかはこの層(numericInput.ts)では確かめない(判断: 検証表の注記への回答)', () => {
+    // 2.5 は範囲(2以上 MAX_PATTERN_COUNT 以下)には収まるため、ここでは確定できる形の
+    // まま通す。整数チェックは加工コマンド側(タスク25 machiningCommands.ts)へ委ねる
+    // 決定を、evaluateNumericInput の中のコメントと合わせてここでも固定する。
+    const state = edited(createNumericInput('linearPattern', 'linearPattern'), '2.5', 1);
+    expect(evaluateNumericInput(state).canCommit).toBe(true);
+  });
+
+  it('直径に式が使え(3*2)、空欄は既定値 6 で確定する(FR-202、NFR-UX-4)', () => {
+    const state = edited(createNumericInput('hole', 'holeSize'), '3*2', 0);
+    const evaluation = evaluateNumericInput(state);
+    expect(evaluation.results[0].value?.source).toBe('3*2');
+    expect(evaluation.results[0].value?.value).toBe(6);
+
+    const cleared = edited(createNumericInput('hole', 'holeSize'), '', 0);
+    const { commit } = expectSolidCommitted(applyNumericInputKey(cleared, 'Enter'));
+    expect(commit.values.diameter?.value).toBe(6);
+  });
+
+  it('C面取り: 決め方で欄が変わり、距離の値は引き継ぐ(検証表)', () => {
+    let state = createNumericInput('chamfer', 'chamferSize');
+    expect(state.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferDistance2']);
+    expect(state.fields.map((field) => field.source)).toEqual(['1', '1']);
+    expect(state.choices.length).toBe(1);
+    expect(state.choices[0].key).toBe('chamferMode');
+    expect(state.choices[0].value).toBe('equal');
+    expect(STEP_TITLE_KEYS.chamferSize).toBe('numericInput.title.chamfer');
+
+    state = edited(state, '3', 0);
+    const switched = chooseNumericInput(state, 'chamferMode', 'distanceAngle');
+    expect(switched.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferAngle']);
+    // 1つ目(距離)の値は引き継ぎ、2つ目は角度の既定(45)になる。
+    expect(switched.fields.map((field) => field.source)).toEqual(['3', '45']);
+
+    const committed = expectSolidCommitted(commitNumericInput(switched)).commit;
+    expect(committed.chamferMode).toBe('distanceAngle');
+    expect(committed.values.chamferDistance?.value).toBe(3);
+    expect(committed.values.chamferAngle?.value).toBe(45);
+    expect(committed.values.chamferDistance2).toBeUndefined();
+
+    // 角度は 0 より大きく 90 より小さい。
+    const outOfRange = edited(switched, '90', 1);
+    expect(evaluateNumericInput(outOfRange).canCommit).toBe(false);
+  });
+
+  it('穴・ねじ穴・パターンの確定は SolidInputCommit の該当欄・つまみ・軸だけへ入る', () => {
+    const hole = expectSolidCommitted(
+      commitNumericInput(toggleNumericInput(createNumericInput('hole', 'holeSize'), 'through')),
+    ).commit;
+    expect(hole.tool).toBe('hole');
+    expect(hole.values.diameter?.value).toBe(6);
+    expect(hole.values.depth?.value).toBe(10);
+    expect(hole.flags.through).toBe(true);
+    expect(hole.axis).toBeUndefined();
+
+    const threadHole = expectSolidCommitted(
+      commitNumericInput(createNumericInput('threadHole', 'threadSize')),
+    ).commit;
+    expect(threadHole.threadDesignation).toBe('M6');
+    expect(threadHole.threadSeries).toBe('coarse');
+    expect(threadHole.flags).toEqual({ through: false, modeledThread: false });
+
+    const linear = expectSolidCommitted(
+      commitNumericInput(createNumericInput('linearPattern', 'linearPattern')),
+    ).commit;
+    expect(linear.axis).toEqual({ kind: 'world', axis: 'x' });
+    expect(linear.values.spacing?.value).toBe(20);
+    expect(linear.values.count?.value).toBe(3);
+    expect(linear.flags).toEqual({ patternSymmetric: false });
+
+    const circular = expectSolidCommitted(
+      commitNumericInput(createNumericInput('circularPattern', 'circularPattern')),
+    ).commit;
+    expect(circular.axis).toEqual({ kind: 'world', axis: 'z' });
+    expect(circular.flags).toEqual({ fullCircle: true });
+  });
+
+  it('直線パターン・円形パターンも選んだ線分を向き・軸にできる(§0.a-0.9 の作りを流用)', () => {
+    const line = { sketchId: 'sketch-1', lineFeatureId: 'line-1' };
+    const linear = chooseNumericInput(
+      createNumericInput('linearPattern', 'linearPattern', 'absolute', { axisLine: line }),
+      'patternDirection',
+      'line',
+    );
+    expect(expectSolidCommitted(commitNumericInput(linear)).commit.axis).toEqual({
+      kind: 'line',
+      line,
+    });
+
+    const circular = chooseNumericInput(
+      createNumericInput('circularPattern', 'circularPattern', 'absolute', { axisLine: line }),
+      'axis',
+      'line',
+    );
+    expect(expectSolidCommitted(commitNumericInput(circular)).commit.axis).toEqual({
+      kind: 'line',
+      line,
+    });
+  });
+});
+
+describe('P3 ばねの2段(計画書タスク24 §2.11、FR-414)', () => {
+  it('ばね1段目: 欄2つ(コイル径20・線径2)、選択肢2つ(軸z・巻き方向right)、つまみなし', () => {
+    const state = createNumericInput('spring', 'springShape');
+    expect(state.fields.map((field) => field.key)).toEqual(['coilDiameter', 'wireDiameter']);
+    expect(state.fields.map((field) => field.source)).toEqual(['20', '2']);
+    expect(state.toggles).toEqual([]);
+    expect(state.choices.map((choice) => choice.key)).toEqual(['axis', 'springHandedness']);
+    expect(state.choices[0].value).toBe('z');
+    expect(state.choices[1].value).toBe('right');
+    expect(STEP_TITLE_KEYS.springShape).toBe('numericInput.title.springShape');
+  });
+
+  it('ばね2段目: 欄2つ(ピッチ5・巻数4)、選択肢1つ(求める値、既定 length)', () => {
+    const state = createNumericInput('spring', 'springLength');
+    expect(state.fields.map((field) => field.key)).toEqual(['springPitch', 'springTurns']);
+    expect(state.fields.map((field) => field.source)).toEqual(['5', '4']);
+    expect(state.choices.map((choice) => choice.key)).toEqual(['springDerived']);
+    expect(state.choices[0].value).toBe('length');
+    expect(STEP_TITLE_KEYS.springLength).toBe('numericInput.title.springLength');
+  });
+
+  it('求める値を pitch/turns に変えると欄が入れ替わり、残る欄の値は引き継ぐ', () => {
+    const state = edited(createNumericInput('spring', 'springLength'), '7', 1);
+
+    const toPitch = chooseNumericInput(state, 'springDerived', 'pitch');
+    // ピッチの欄が消え、全長の欄(既定20)が出る。巻数の値は引き継ぐ。
+    expect(toPitch.fields.map((field) => field.key)).toEqual(['springTurns', 'springLength']);
+    expect(toPitch.fields.map((field) => field.source)).toEqual(['7', '20']);
+
+    const toTurns = chooseNumericInput(state, 'springDerived', 'turns');
+    // 巻数の欄が消え、全長の欄が出る。
+    expect(toTurns.fields.map((field) => field.key)).toEqual(['springPitch', 'springLength']);
+    expect(toTurns.fields.map((field) => field.source)).toEqual(['5', '20']);
+  });
+
+  it('ばねの1段目を確定すると2段目へ進み、コイル径・線径・軸・巻き方向が持ち越される', () => {
+    const line = { sketchId: 'sketch-1', lineFeatureId: 'line-1' };
+    let shape = createNumericInput('spring', 'springShape', 'absolute', { axisLine: line });
+    shape = edited(shape, '25', 0);
+    shape = chooseNumericInput(shape, 'axis', 'line');
+    shape = chooseNumericInput(shape, 'springHandedness', 'left');
+
+    // nextNumericInput が springLength を返す(検証表)。
+    const viaNext = nextNumericInput(shape, false);
+    expect(viaNext?.step).toBe('springLength');
+    expect(viaNext?.toolId).toBe('spring');
+
+    // Enter を押しても同じ遷移になる。ばねの1段目だけは閉じない(kind: 'open')。
+    const transition = applyNumericInputKey(shape, 'Enter');
+    if (transition.kind !== 'open') {
+      throw new Error(`expected open transition, got ${transition.kind}`);
+    }
+    expect(transition.state.step).toBe('springLength');
+
+    const finished = expectSolidCommitted(commitNumericInput(transition.state));
+    const { commit } = finished;
+    expect(commit.kind).toBe('solid');
+    expect(commit.tool).toBe('spring');
+    expect(commit.step).toBe('springLength');
+    expect(commit.values.coilDiameter?.value).toBe(25);
+    expect(commit.values.wireDiameter?.value).toBe(2);
+    expect(commit.values.springPitch?.value).toBe(5);
+    expect(commit.values.springTurns?.value).toBe(4);
+    // 求める値が既定(全長)のときは全長を計算しない(タスク25b が計算する、§0.30)。
+    expect(commit.values.springLength).toBeUndefined();
+    expect(commit.axis).toEqual({ kind: 'line', line });
+    expect(commit.springHandedness).toBe('left');
+    expect(commit.springDerived).toBe('length');
+  });
+
+  it('ばねの巻数は200を超えると確定できない。コイル径は0を受け付けない', () => {
+    const overTurns = edited(createNumericInput('spring', 'springLength'), String(MAX_SPRING_TURNS + 1), 1);
+    const blockedTurns = expectBlocked(applyNumericInputKey(overTurns, 'Enter'));
+    expect(blockedTurns.evaluation.results[1].error?.code).toBe('outOfRange');
+    const atMax = edited(createNumericInput('spring', 'springLength'), String(MAX_SPRING_TURNS), 1);
+    expect(evaluateNumericInput(atMax).canCommit).toBe(true);
+
+    const zeroCoil = edited(createNumericInput('spring', 'springShape'), '0', 0);
+    const blockedCoil = expectBlocked(applyNumericInputKey(zeroCoil, 'Enter'));
+    expect(blockedCoil.evaluation.results[0].error?.code).toBe('outOfRange');
+  });
+
+  it('ばねは道具ごとの先頭段(springShape)から開く。取消は1段目でも作りかけを返さない', () => {
+    expect(SOLID_TOOL_STEPS.spring).toBe('springShape');
+    const state = edited(createNumericInput('spring', 'springShape'), '99', 0);
+    expect(applyNumericInputKey(state, 'Escape')).toEqual({ kind: 'cancelled' });
+  });
+});
+
+describe('P3 の細部(キーボード操作・境界値・不変性)', () => {
+  it('穴の貫通つまみは2回押すと元に戻る(P3 でも P2 と同じ振る舞い)', () => {
+    const state = createNumericInput('hole', 'holeSize');
+    const once = toggleNumericInput(state, 'through');
+    expect(once.toggles[0].value).toBe(true);
+    const twice = toggleNumericInput(once, 'through');
+    expect(twice.toggles[0].value).toBe(false);
+  });
+
+  it('円形パターンの全周つまみは既定 true、2回切り替えると元に戻る', () => {
+    const state = createNumericInput('circularPattern', 'circularPattern');
+    expect(state.toggles[0].value).toBe(true);
+    const once = toggleNumericInput(state, 'fullCircle');
+    expect(once.toggles[0].value).toBe(false);
+    const twice = toggleNumericInput(once, 'fullCircle');
+    expect(twice.toggles[0].value).toBe(true);
+  });
+
+  it('C面取りの決め方は ← → でも切り替えられ、欄も一緒に変わる(moveChoice 経由)', () => {
+    const state = createNumericInput('chamfer', 'chamferSize');
+    // 欄が2つなので、選択肢の焦点は輪の3番目(添字2)。
+    const onChoice = reduceNumericInput(state, { type: 'focus', index: 2 });
+    expect(focusedTarget(onChoice)).toEqual({ kind: 'choice', index: 0 });
+    const moved = expectOpen(applyNumericInputKey(onChoice, 'ArrowRight')).state;
+    expect(moved.choices[0].value).toBe('twoDistances');
+    // twoDistances は equal と見た目が同じ2欄のまま(numericInput.ts の chamferFieldDefinitions 注釈)。
+    expect(moved.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferDistance2']);
+    const movedAgain = expectOpen(applyNumericInputKey(moved, 'ArrowRight')).state;
+    expect(movedAgain.choices[0].value).toBe('distanceAngle');
+    expect(movedAgain.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferAngle']);
+  });
+
+  it('ばねの求める値は ← → でも切り替えられる(moveChoice 経由)', () => {
+    const state = createNumericInput('spring', 'springLength');
+    const onChoice = reduceNumericInput(state, { type: 'focus', index: 2 });
+    expect(focusedTarget(onChoice)).toEqual({ kind: 'choice', index: 0 });
+    const moved = expectOpen(applyNumericInputKey(onChoice, 'ArrowRight')).state;
+    expect(moved.choices[0].value).toBe('pitch');
+    expect(moved.fields.map((field) => field.key)).toEqual(['springTurns', 'springLength']);
+  });
+
+  it('円形パターンの軸、直線パターンの向きも ← → で動かせる(端では回り込む)', () => {
+    const circular = reduceNumericInput(createNumericInput('circularPattern', 'circularPattern'), {
+      type: 'focus',
+      index: 2,
+    });
+    // 既定は z(3つ目)。→ で先頭の x へ回り込む。
+    expect(expectOpen(applyNumericInputKey(circular, 'ArrowRight')).state.choices[0].value).toBe('x');
+
+    const linear = reduceNumericInput(createNumericInput('linearPattern', 'linearPattern'), {
+      type: 'focus',
+      index: 2,
+    });
+    // 既定は x(先頭)。← で末尾の z へ回り込む。
+    expect(expectOpen(applyNumericInputKey(linear, 'ArrowLeft')).state.choices[0].value).toBe('z');
+  });
+
+  it('ばね1段目の欄は式が使え、2段目の確定値にそのまま持ち越される(FR-202)', () => {
+    const shape = edited(createNumericInput('spring', 'springShape'), '10*2', 0);
+    const length = nextNumericInput(shape, false);
+    if (length === null) {
+      throw new Error('expected springLength state');
+    }
+    const finished = expectSolidCommitted(commitNumericInput(length));
+    expect(finished.commit.values.coilDiameter?.source).toBe('10*2');
+    expect(finished.commit.values.coilDiameter?.value).toBe(20);
+  });
+
+  it('確定処理・段の遷移は元の state を書き換えない(不変性)', () => {
+    const shape = edited(createNumericInput('spring', 'springShape'), '30', 0);
+    const snapshotBefore = JSON.stringify(shape);
+    commitNumericInput(shape);
+    nextNumericInput(shape, false);
+    expect(JSON.stringify(shape)).toBe(snapshotBefore);
+  });
+
+  it('C面取りの角度は 90 ちょうどを受け付けない(0 < 角度 < 90)', () => {
+    const switched = chooseNumericInput(
+      createNumericInput('chamfer', 'chamferSize'),
+      'chamferMode',
+      'distanceAngle',
+    );
+    const at90 = edited(switched, '90', 1);
+    expect(evaluateNumericInput(at90).canCommit).toBe(false);
+    const justBelow = edited(switched, '89.999', 1);
+    expect(evaluateNumericInput(justBelow).canCommit).toBe(true);
+  });
+
+  it('R面取りの半径は 0 を受け付けない', () => {
+    const state = edited(createNumericInput('fillet', 'filletRadius'), '0', 0);
+    const blocked = expectBlocked(applyNumericInputKey(state, 'Enter'));
+    expect(blocked.evaluation.results[0].error?.code).toBe('outOfRange');
+  });
+
+  it('ねじ穴: 系列を fine に変えても呼びは変わらない(2つの選択肢は独立)', () => {
+    const state = createNumericInput('threadHole', 'threadSize');
+    const changed = chooseNumericInput(state, 'threadSeries', 'fine');
+    expect(choiceValueOf(changed, 'threadSeries')).toBe('fine');
+    expect(choiceValueOf(changed, 'threadDesignation')).toBe('M6');
+  });
+
+  it('呼び径は ← → で送れる。既定 M6 の1つ前は表の並びで1つ小さい M5', () => {
+    const state = reduceNumericInput(createNumericInput('threadHole', 'threadSize'), {
+      type: 'focus',
+      index: 2,
+    });
+    expect(focusedTarget(state)).toEqual({ kind: 'choice', index: 0 });
+    const defaultIndex = METRIC_THREAD_DESIGNATIONS.indexOf('M6');
+    const movedLeft = expectOpen(applyNumericInputKey(state, 'ArrowLeft')).state;
+    expect(movedLeft.choices[0].value).toBe(METRIC_THREAD_DESIGNATIONS[defaultIndex - 1]);
+    const movedRight = expectOpen(applyNumericInputKey(state, 'ArrowRight')).state;
+    expect(movedRight.choices[0].value).toBe(METRIC_THREAD_DESIGNATIONS[defaultIndex + 1]);
+    // 先頭(M2)から ← へ動かすと末尾(M64)へ回り込む。
+    const atFirst = chooseNumericInput(state, 'threadDesignation', 'M2');
+    const focusedAtFirst = reduceNumericInput(atFirst, { type: 'focus', index: 2 });
+    const wrapped = expectOpen(applyNumericInputKey(focusedAtFirst, 'ArrowLeft')).state;
+    expect(wrapped.choices[0].value).toBe(
+      METRIC_THREAD_DESIGNATIONS[METRIC_THREAD_DESIGNATIONS.length - 1],
+    );
+  });
+
+  it('TOGGLE_LABEL_KEYS はすべて ja.json に実在する', () => {
+    for (const key of Object.values(TOGGLE_LABEL_KEYS)) {
+      expect(MESSAGE_KEYS).toContain(key);
+      expect(t(key).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('円形パターンの角度は 360 を超えると確定できない(直線パターンと共有する範囲)', () => {
+    const state = edited(createNumericInput('circularPattern', 'circularPattern'), '361', 0);
+    const blocked = expectBlocked(applyNumericInputKey(state, 'Enter'));
+    expect(blocked.evaluation.results[0].error?.code).toBe('outOfRange');
+    const atMax = edited(createNumericInput('circularPattern', 'circularPattern'), '360', 0);
+    expect(evaluateNumericInput(atMax).canCommit).toBe(true);
+  });
+
+  it('numericChoiceOptionLabel: label があればそのまま、無ければ labelKey から引く', () => {
+    expect(numericChoiceOptionLabel({ value: 'M6', label: 'M6' })).toBe('M6');
+    expect(
+      numericChoiceOptionLabel({ value: 'coarse', labelKey: 'numericInput.threadSeries.coarse' }),
+    ).toBe(t('numericInput.threadSeries.coarse'));
   });
 });

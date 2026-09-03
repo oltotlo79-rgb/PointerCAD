@@ -384,6 +384,7 @@
   "solidError.needTwoBodies": "立体を 2 つ選んでください。",
   "solidError.needTwoFaces": "つなぐ面を 2 枚以上選んでください。",
   "solidError.sameBody": "同じ立体どうしは組み合わせられません。",
+  "solidError.notYetAvailable": "この道具はまだ使えません。",
   "machiningError.noTargetBody": "加工する立体が選ばれていません。",
   "machiningError.noFace": "穴をあける面が選ばれていません。",
   "machiningError.noCenterPoint": "穴の中心にする点が選ばれていません。",

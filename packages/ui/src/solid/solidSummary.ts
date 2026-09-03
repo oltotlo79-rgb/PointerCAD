@@ -15,7 +15,7 @@
  * (derived)を要するためタスク29b がここへ追記する(この時点ではまだ空)。
  */
 
-import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
+import { evaluateExpression, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   consumedBodyIds,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
@@ -41,8 +41,12 @@ import {
   type SketchFaceRef,
   type SketchFeatureKind,
   type SketchLineRef,
+  type SketchPointRef,
   type SolidFeature,
   type SolidLabelKey,
+  type SpringDerived,
+  type SpringFeature,
+  type SpringHandedness,
   type ThreadHoleFeature,
   type ThreadRepresentation,
   type ThreadSeries,
@@ -96,6 +100,11 @@ export interface SolidFieldSummary {
   readonly tooltipKey: MessageKey;
   readonly unit: FieldUnit;
   readonly value: ExpressionValue;
+  /**
+   * 読み取り専用(既定 false)。ばねの `derived` が指す欄だけ true になる(§0.a-0.30)。
+   * true のときプロパティは `ExpressionField` を無効化して値だけを見せる(タスク29b)。
+   */
+  readonly readOnly: boolean;
 }
 
 /**
@@ -341,7 +350,12 @@ const FIELD_DEFINITIONS: Readonly<
   },
 };
 
-function fieldSummary(key: SolidFieldKey, value: ExpressionValue): SolidFieldSummary {
+/** readOnly は既定 false。既存の呼び出し(加工6種・パターン)は1つも変えない(タスク29b)。 */
+function fieldSummary(
+  key: SolidFieldKey,
+  value: ExpressionValue,
+  readOnly = false,
+): SolidFieldSummary {
   const definition = FIELD_DEFINITIONS[key];
   return {
     key,
@@ -349,6 +363,7 @@ function fieldSummary(key: SolidFieldKey, value: ExpressionValue): SolidFieldSum
     tooltipKey: definition.tooltipKey,
     unit: definition.unit,
     value,
+    readOnly,
   };
 }
 
@@ -583,27 +598,81 @@ function patternDirectionOptions(): SolidChoiceSummary['options'] {
 }
 
 /**
- * 直線パターンの「向き」・円形パターンの「軸」。どちらも model の `PatternDirection` が
- * 同じ形なので、`SolidChoiceSummary.key` は `patternDirection` 1つを共用する
- * (計画書タスク27 の型宣言のとおり)。見出しだけは呼び出し側で使い分ける
- * (直線は「向き」、円形は「回転軸」)。線分を軸にしているときは、その線分の名前を
- * 選択肢に足して読み取れるようにする(選び直しの操作はタスク29が仕上げる)。
+ * 直線パターンの「向き」・円形パターンの「軸」・ばねの「軸」。model の `PatternDirection` と
+ * `RevolveAxis`(ばねの軸、§0.a-0.29)は同じ形(`{kind:'world',axis}` / `{kind:'line',line}`)
+ * なので、この1つの関数で組み立てる。返す `key` は既定 `patternDirection`(計画書タスク27の
+ * 型宣言のとおり)だが、ばねだけは `SolidChoiceSummary.key` に予約されている `springAxis` を
+ * 呼び出し側(タスク29b)が渡す。見出しも呼び出し側で使い分ける(直線は「向き」、円形は
+ * 「回転軸」、ばねは「軸」)。線分を軸にしているときは、その線分の名前を選択肢に足して
+ * 読み取れるようにする(選び直しの操作はタスク29が仕上げる)。
  */
 function directionChoice(
   document: PartDocument,
   direction: PatternDirection,
   labelKey: MessageKey,
+  key: SolidChoiceSummary['key'] = 'patternDirection',
 ): SolidChoiceSummary {
   if (direction.kind === 'world') {
-    return { key: 'patternDirection', labelKey, value: direction.axis, options: patternDirectionOptions() };
+    return { key, labelKey, value: direction.axis, options: patternDirectionOptions() };
   }
   return {
-    key: 'patternDirection',
+    key,
     labelKey,
     value: 'line',
     options: [
       ...patternDirectionOptions(),
       { value: 'line', label: lineReferenceName(document, direction.line) },
+    ],
+  };
+}
+
+/** ばねの始点(スケッチの点)の参照名。見つからなければ id をそのまま出す(FR-504)。 */
+function springOriginReference(document: PartDocument, origin: SketchPointRef): SolidReferenceSummary {
+  const sketch = findSketch(document, origin.sketchId);
+  const point = sketch === undefined ? undefined : findFeature(sketch, origin.pointFeatureId);
+  if (sketch === undefined || point === undefined || point.kind !== 'point') {
+    return { labelKey: 'propertyPanel.springOrigin', name: origin.pointFeatureId, elementId: null };
+  }
+  return { labelKey: 'propertyPanel.springOrigin', name: point.name, elementId: point.id };
+}
+
+/**
+ * ばねの欄(コイル径・線径・ピッチ・巻数・全長)。`derived` が指す欄だけ読み取り専用にする
+ * (§0.a-0.30)。並びは §2.11 の表のとおり(コイル径・線径 → ピッチ・巻数 → 全長)。
+ */
+function springFields(feature: SpringFeature): SolidFieldSummary[] {
+  return [
+    fieldSummary('coilDiameter', feature.coilDiameter),
+    fieldSummary('wireDiameter', feature.wireDiameter),
+    fieldSummary('springPitch', feature.pitch, feature.derived === 'pitch'),
+    fieldSummary('springTurns', feature.turns, feature.derived === 'turns'),
+    fieldSummary('springLength', feature.length, feature.derived === 'length'),
+  ];
+}
+
+/** ばねの巻き方向(右巻き/左巻き、§0.a-0.33)。 */
+function springHandednessChoice(handedness: SpringHandedness): SolidChoiceSummary {
+  return {
+    key: 'springHandedness',
+    labelKey: 'propertyPanel.springHandedness',
+    value: handedness,
+    options: [
+      { value: 'right', labelKey: 'numericInput.springHandedness.right' },
+      { value: 'left', labelKey: 'numericInput.springHandedness.left' },
+    ],
+  };
+}
+
+/** ばねの求める値(全長/ピッチ/巻数のうち、他の2つから計算するもの、§0.a-0.30)。 */
+function springDerivedChoice(derived: SpringDerived): SolidChoiceSummary {
+  return {
+    key: 'springDerived',
+    labelKey: 'propertyPanel.springDerived',
+    value: derived,
+    options: [
+      { value: 'length', labelKey: 'numericInput.springDerived.length' },
+      { value: 'pitch', labelKey: 'numericInput.springDerived.pitch' },
+      { value: 'turns', labelKey: 'numericInput.springDerived.turns' },
     ],
   };
 }
@@ -739,9 +808,21 @@ export function summarizeSolid(
       };
     }
     case 'spring':
-      // ばね(FR-414)の節は読み取り専用の欄(derived、§0.a-0.30)を要するため、
-      // `SolidFieldSummary` へ readOnly を足すタスク29b がここへ追記する。
-      return { ...base, fields: [], toggles: [], choices: [], references: [], subShapeCounts: [] };
+      // ばね(FR-414)。始点(スケッチの点)は参照として出し、軸(§0.a-0.29)・巻き方向
+      // (§0.a-0.33)・求める値(§0.a-0.30)は choices へ、対象を消費しないので subShapeCounts
+      // は空(§0.a-0.36)。
+      return {
+        ...base,
+        fields: springFields(feature),
+        toggles: [],
+        choices: [
+          directionChoice(document, feature.axis, 'propertyPanel.springAxis', 'springAxis'),
+          springHandednessChoice(feature.handedness),
+          springDerivedChoice(feature.derived),
+        ],
+        references: [springOriginReference(document, feature.origin)],
+        subShapeCounts: [],
+      };
   }
 }
 
@@ -771,8 +852,92 @@ export function setSolidField(
       return setChamferField(feature, key, value);
     case 'pattern':
       return setPatternField(feature, key, value);
-    case 'boolean':
     case 'spring':
+      return setSpringField(feature, key, value);
+    case 'boolean':
+      return feature;
+  }
+}
+
+/**
+ * derived が指す `SolidFieldKey`(§0.a-0.30)。`setSpringField` が読み取り専用の欄への
+ * 書き戻しを防ぐのに使う。
+ */
+const SPRING_DERIVED_FIELD_KEY: Readonly<Record<SpringDerived, SolidFieldKey>> = {
+  length: 'springLength',
+  pitch: 'springPitch',
+  turns: 'springTurns',
+};
+
+/**
+ * 式 `source` を評価する(`solidCommands.ts` の `evaluatedExpressionValue` と同じ考え方。
+ * 互いに独立した純関数のパッケージなので同じ小さな式をそれぞれに書く)。失敗しても止めず、
+ * source は残して値 0 で作る(FR-504「止めずに警告する」)。
+ */
+function evaluatedExpressionValue(source: string): ExpressionValue {
+  const result = evaluateExpression(source);
+  return result.ok ? result.value : { source, value: 0, display: '0' };
+}
+
+/**
+ * ばねの全長・ピッチ・巻数のうち、`derived` が指す1つを他の2つから自動生成した式で
+ * 計算し直す(§0.a-0.30)。`solidCommands.ts` の `commitSpring` が使う式(タスク25b で
+ * 固定済み)と同じものを、欄を書き換えた直後・求める値を切り替えた直後の書き戻しにも使う。
+ */
+function resolveSpringDerivedFields(
+  derived: SpringDerived,
+  length: ExpressionValue,
+  pitch: ExpressionValue,
+  turns: ExpressionValue,
+): { readonly length: ExpressionValue; readonly pitch: ExpressionValue; readonly turns: ExpressionValue } {
+  switch (derived) {
+    case 'length':
+      return { length: evaluatedExpressionValue(`${pitch.source}*${turns.source}`), pitch, turns };
+    case 'pitch':
+      return { length, pitch: evaluatedExpressionValue(`${length.source}/${turns.source}`), turns };
+    case 'turns':
+      return { length, pitch, turns: evaluatedExpressionValue(`${length.source}/${pitch.source}`) };
+  }
+}
+
+/** derived が指す欄を計算し直した新しいばねフィーチャーを作る。 */
+function recomputeSpringDerived(feature: SpringFeature): SpringFeature {
+  const { length, pitch, turns } = resolveSpringDerivedFields(
+    feature.derived,
+    feature.length,
+    feature.pitch,
+    feature.turns,
+  );
+  return { ...feature, length, pitch, turns };
+}
+
+/**
+ * ばねの欄を書き戻す(§0.a-0.30)。`derived` が指す欄は読み取り専用なので書き戻さない
+ * (`ExpressionField` を無効化しているので onChange は来ないが、念のためここでも防ぐ)。
+ * 全長・ピッチ・巻数のどれかを書き換えたときは、derived が指す欄を計算し直して画面の数字を
+ * 合わせる(NFR-UX-4。E2E「巻数を書き換えると全長が変わる」の土台)。コイル径・線径は
+ * `全長 = ピッチ × 巻数` の関係に関わらないので、書き換えても他の欄は変わらない。
+ */
+function setSpringField(
+  feature: SpringFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  if (key === SPRING_DERIVED_FIELD_KEY[feature.derived]) {
+    return feature;
+  }
+  switch (key) {
+    case 'coilDiameter':
+      return { ...feature, coilDiameter: value };
+    case 'wireDiameter':
+      return { ...feature, wireDiameter: value };
+    case 'springPitch':
+      return recomputeSpringDerived({ ...feature, pitch: value });
+    case 'springTurns':
+      return recomputeSpringDerived({ ...feature, turns: value });
+    case 'springLength':
+      return recomputeSpringDerived({ ...feature, length: value });
+    default:
       return feature;
   }
 }
@@ -981,10 +1146,30 @@ function setPatternDirection(feature: SolidFeature, axis: 'x' | 'y' | 'z'): Soli
     : { ...feature, placement: { ...feature.placement, axis: direction } };
 }
 
+/** ばねの軸をワールドの X / Y / Z へ変える(パターンの向き・回転軸と同じ扱い、§0.a-0.29)。 */
+function setSpringAxis(feature: SolidFeature, axis: 'x' | 'y' | 'z'): SolidFeature {
+  return feature.kind === 'spring' ? { ...feature, axis: { kind: 'world', axis } } : feature;
+}
+
+/** ばねの巻き方向を変える(§0.a-0.33)。見た目が左右反転するだけで体積は変わらない。 */
+function setSpringHandedness(feature: SolidFeature, handedness: SpringHandedness): SolidFeature {
+  return feature.kind === 'spring' ? { ...feature, handedness } : feature;
+}
+
+/**
+ * 「求める値」を切り替える(§0.a-0.30)。切り替えた直後に、新しく derived になった欄を
+ * 他の2つから計算し直して書き戻す(NFR-UX-4「切り替えた瞬間に画面の数字が合う」)。
+ */
+function setSpringDerived(feature: SolidFeature, derived: SpringDerived): SolidFeature {
+  if (feature.kind !== 'spring') {
+    return feature;
+  }
+  return recomputeSpringDerived({ ...feature, derived });
+}
+
 /**
  * 選択肢の欄を書き戻した新しいフィーチャーを作る(元は変えない、FR-311)。
  * 妥当な値でない・その種類が持たない選択肢なら同じものを返す。
- * ばね(springAxis / springHandedness / springDerived)はタスク29b が実装する。
  */
 export function setSolidChoice(
   feature: SolidFeature,
@@ -1014,10 +1199,13 @@ export function setSolidChoice(
       // 直線⇔円形の切替は作らない(種類は作成時に決まる、§0.a-0.21)。
       return feature;
     case 'springAxis':
+      return value === 'x' || value === 'y' || value === 'z' ? setSpringAxis(feature, value) : feature;
     case 'springHandedness':
+      return value === 'right' || value === 'left' ? setSpringHandedness(feature, value) : feature;
     case 'springDerived':
-      // ばねの節はタスク29b が実装する(§0.a-0.30)。
-      return feature;
+      return value === 'length' || value === 'pitch' || value === 'turns'
+        ? setSpringDerived(feature, value)
+        : feature;
   }
 }
 

@@ -301,6 +301,18 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
     expect(guideKeyFor('circularPattern', 0)).toBe('statusBar.guide.circularPattern');
   });
 
+  it(
+    'ばねの基本案内は「始点にする点を選んでください」(§0.a-0.29、計画書タスク29b)。' +
+      '選択が「立体」の道具(selectionKindForTool は body)なので、machiningGuideText は' +
+      '進んだ案内を出さず基本案内のまま(タスク18・24 で GUIDE_KEYS.spring は割り当て済み)',
+    () => {
+      expect(guideKeyFor('spring', 0)).toBe('statusBar.guide.spring');
+      expect(t('statusBar.guide.spring')).toBe('ばねの始点にする点を選んでください。');
+      expect(machiningGuideText('spring', 0)).toBeNull();
+      expect(machiningGuideText('spring', 0, 1)).toBeNull();
+    },
+  );
+
   it('穴・ねじ穴は面を選ぶまでは基本案内、面を選んだら「中心にする点を選んでください」', () => {
     expect(machiningGuideText('hole', 0)).toBeNull();
     expect(machiningGuideText('hole', 1)).toBe(t('statusBar.guide.centerPoint'));

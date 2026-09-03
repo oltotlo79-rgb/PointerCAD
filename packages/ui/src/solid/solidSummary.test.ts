@@ -23,7 +23,9 @@ import {
   type SewFeature,
   type SketchFaceFeature,
   type SketchLineFeature,
+  type SketchPointFeature,
   type SolidFeature,
+  type SpringFeature,
   type SubShapeRef,
   type ThreadHoleFeature,
 } from '@pointercad/model';
@@ -289,6 +291,50 @@ function documentWith(...solids: readonly SolidFeature[]): PartDocument {
     replaceSketch(empty, sketch),
   );
 }
+
+/** ばねの始点にする点(P3 タスク29b、§0.a-0.29)。原点 (0,0,0)。 */
+const SPRING_ORIGIN_POINT: SketchPointFeature = {
+  id: 'point-1',
+  name: '点1',
+  planeId: 'xy',
+  kind: 'point',
+  at: {
+    mode: 'absolute',
+    x: expressionValueFromNumber(0),
+    y: expressionValueFromNumber(0),
+    z: expressionValueFromNumber(0),
+  },
+};
+
+/**
+ * `documentWith` に、ばねの始点にする点(point-1)も加えたもの。既存の多くの検査が
+ * `documentWith` のスケッチ行数(面2枚+線分1本)をそのまま数えているため、
+ * 点を足すのはばね専用のこの関数に限る(既存の検査を1つも変えない)。
+ */
+function documentWithSpringPoint(...solids: readonly SolidFeature[]): PartDocument {
+  const base = documentWith(...solids);
+  const sketch = appendFeature(base.sketches[0], SPRING_ORIGIN_POINT);
+  return replaceSketch(base, sketch);
+}
+
+/** ばね(FR-414、§0.a-0.29〜0.36)。既定値(§0.a-0.30)。derived は 'length'。 */
+const SPRING: SpringFeature = {
+  id: 'spring-1',
+  name: 'ばね1',
+  suppressed: false,
+  kind: 'spring',
+  origin: { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+  axis: { kind: 'world', axis: 'z' },
+  tiltAngle: expressionValueFromNumber(0),
+  tiltAzimuth: expressionValueFromNumber(0),
+  length: expressionValueFromNumber(20),
+  pitch: expressionValueFromNumber(5),
+  turns: expressionValueFromNumber(4),
+  derived: 'length',
+  coilDiameter: expressionValueFromNumber(20),
+  wireDiameter: expressionValueFromNumber(2),
+  handedness: 'right',
+};
 
 describe('summarizeSolid(FR-501、FR-502)', () => {
   it('押し出しは距離 1 欄・つまみ 2 つ・もとの面の名前を返す', () => {
@@ -587,6 +633,14 @@ describe('buildTreeSections(FR-501、FR-503、FR-504)', () => {
     const extrudeRow = sections[1].rows.find((row) => row.id === 'extrude-1');
     expect(extrudeRow?.hasError).toBe(false);
   });
+
+  it('ばねの行はソリッド節に並び、「統合済み」にならない(§0.a-0.36、タスク29b)', () => {
+    const sections = buildTreeSections(documentWithSpringPoint(SPRING), 'sketch-1', [], []);
+    const springRow = sections[1].rows.find((row) => row.id === 'spring-1');
+    expect(springRow?.kind).toBe('spring');
+    expect(springRow?.kindLabelKey).toBe('toolbar.solid.spring');
+    expect(springRow?.consumed).toBe(false);
+  });
 });
 
 describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチャー.md タスク27)', () => {
@@ -748,6 +802,112 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
     expect(SOLID_KIND_LABEL_KEYS.linearPattern).toBe('toolbar.machining.linearPattern');
     expect(SOLID_KIND_LABEL_KEYS.circularPattern).toBe('toolbar.machining.circularPattern');
     expect(SOLID_KIND_LABEL_KEYS.spring).toBe('toolbar.solid.spring');
+  });
+});
+
+describe('summarizeSolid(ばね、計画書 docs/plans/P3-加工フィーチャー.md タスク29b、§0.a-0.29〜0.36)', () => {
+  it('derived が全長のとき、全長だけ読み取り専用になる(§0.a-0.30)', () => {
+    const summary = summarizeSolid(documentWithSpringPoint(SPRING), SPRING);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'coilDiameter',
+      'wireDiameter',
+      'springPitch',
+      'springTurns',
+      'springLength',
+    ]);
+    expect(summary.fields.map((field) => field.readOnly)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
+    expect(summary.fields[4].value.display).toBe('20');
+  });
+
+  it('derived がピッチのとき、ピッチだけ読み取り専用になる', () => {
+    const feature: SpringFeature = { ...SPRING, derived: 'pitch' };
+    const summary = summarizeSolid(documentWithSpringPoint(feature), feature);
+    expect(summary.fields.map((field) => field.readOnly)).toEqual([false, false, true, false, false]);
+  });
+
+  it('derived が巻数のとき、巻数だけ読み取り専用になる', () => {
+    const feature: SpringFeature = { ...SPRING, derived: 'turns' };
+    const summary = summarizeSolid(documentWithSpringPoint(feature), feature);
+    expect(summary.fields.map((field) => field.readOnly)).toEqual([false, false, false, true, false]);
+  });
+
+  it('choices は軸・巻き方向・求める値の3つを返す', () => {
+    const summary = summarizeSolid(documentWithSpringPoint(SPRING), SPRING);
+    expect(summary.choices.map((choice) => choice.key)).toEqual([
+      'springAxis',
+      'springHandedness',
+      'springDerived',
+    ]);
+    expect(summary.choices[0]).toEqual({
+      key: 'springAxis',
+      labelKey: 'propertyPanel.springAxis',
+      value: 'z',
+      options: [
+        { value: 'x', labelKey: 'numericInput.axis.x' },
+        { value: 'y', labelKey: 'numericInput.axis.y' },
+        { value: 'z', labelKey: 'numericInput.axis.z' },
+      ],
+    });
+    expect(summary.choices[1]).toEqual({
+      key: 'springHandedness',
+      labelKey: 'propertyPanel.springHandedness',
+      value: 'right',
+      options: [
+        { value: 'right', labelKey: 'numericInput.springHandedness.right' },
+        { value: 'left', labelKey: 'numericInput.springHandedness.left' },
+      ],
+    });
+    expect(summary.choices[2]).toEqual({
+      key: 'springDerived',
+      labelKey: 'propertyPanel.springDerived',
+      value: 'length',
+      options: [
+        { value: 'length', labelKey: 'numericInput.springDerived.length' },
+        { value: 'pitch', labelKey: 'numericInput.springDerived.pitch' },
+        { value: 'turns', labelKey: 'numericInput.springDerived.turns' },
+      ],
+    });
+  });
+
+  it('線分を軸にしたばねは、線分の名前を選択肢に足す(直線パターンの向きと同じ作り)', () => {
+    const feature: SpringFeature = {
+      ...SPRING,
+      axis: { kind: 'line', line: { sketchId: 'sketch-1', lineFeatureId: 'line-9' } },
+    };
+    const summary = summarizeSolid(documentWithSpringPoint(feature), feature);
+    expect(summary.choices[0].value).toBe('line');
+    expect(summary.choices[0].options).toContainEqual({ value: 'line', label: '線分9' });
+  });
+
+  it('参照は始点の点1つを返す(FR-502)', () => {
+    const summary = summarizeSolid(documentWithSpringPoint(SPRING), SPRING);
+    expect(summary.references).toEqual([
+      { labelKey: 'propertyPanel.springOrigin', name: '点1', elementId: 'point-1' },
+    ]);
+  });
+
+  it('始点の点が消えていても止めず、id を出す(FR-504)', () => {
+    const summary = summarizeSolid(documentWith(SPRING), SPRING);
+    expect(summary.references).toEqual([
+      { labelKey: 'propertyPanel.springOrigin', name: 'point-1', elementId: null },
+    ]);
+  });
+
+  it('対象を消費しないので subShapeCounts は空、つまみも持たない(§0.a-0.36)', () => {
+    const summary = summarizeSolid(documentWithSpringPoint(SPRING), SPRING);
+    expect(summary.subShapeCounts).toEqual([]);
+    expect(summary.toggles).toEqual([]);
+  });
+
+  it('回転軸(axis)は使わない。軸は choices の springAxis で持つ', () => {
+    const summary = summarizeSolid(documentWithSpringPoint(SPRING), SPRING);
+    expect(summary.axis).toBeNull();
   });
 });
 
@@ -963,5 +1123,87 @@ describe('setSolidChoice / setSolidDepthKind(FR-406、§0.a-0.18)', () => {
     expect(setSolidDepthKind(EXTRUDE, 'blind')).toBe(EXTRUDE);
     expect(setSolidChoice(FILLET, 'chamferMode', 'equal')).toBe(FILLET);
     expect(setSolidChoice(HOLE_BLIND, 'depthKind', 'diagonal')).toBe(HOLE_BLIND);
+  });
+});
+
+describe('ばねの書き戻し(FR-311、FR-202、§0.a-0.30、§0.a-0.33、計画書タスク29b)', () => {
+  it('setSolidField はコイル径・線径を独立して書き換える。全長・ピッチ・巻数は変わらない', () => {
+    const next = setSolidField(SPRING, 'coilDiameter', { source: '25', value: 25, display: '25' });
+    expect(next).not.toBe(SPRING);
+    expect(next.kind === 'spring' ? next.coilDiameter.source : null).toBe('25');
+    expect(next.kind === 'spring' ? next.pitch : null).toBe(SPRING.pitch);
+    expect(next.kind === 'spring' ? next.turns : null).toBe(SPRING.turns);
+    expect(next.kind === 'spring' ? next.length : null).toBe(SPRING.length);
+    expect(SPRING.coilDiameter.value).toBe(20);
+
+    const wire = setSolidField(SPRING, 'wireDiameter', { source: '3', value: 3, display: '3' });
+    expect(wire.kind === 'spring' ? wire.wireDiameter.value : null).toBe(3);
+    expect(SPRING.wireDiameter.value).toBe(2);
+  });
+
+  it(
+    'derived が全長のとき、巻数を書き換えると全長がその場で計算し直される' +
+      '(NFR-UX-4。計画書タスク30 のE2E「巻数を8に書き換えると全長が40になる」の土台)',
+    () => {
+      const next = setSolidField(SPRING, 'springTurns', { source: '8', value: 8, display: '8' });
+      expect(next.kind === 'spring' ? next.turns.value : null).toBe(8);
+      expect(next.kind === 'spring' ? next.length.value : null).toBe(40);
+      expect(next.kind === 'spring' ? next.length.source : null).toBe('5*8');
+    },
+  );
+
+  it('derived が全長のとき、ピッチを書き換えても同じように全長が計算し直される', () => {
+    const next = setSolidField(SPRING, 'springPitch', { source: '10', value: 10, display: '10' });
+    expect(next.kind === 'spring' ? next.pitch.value : null).toBe(10);
+    expect(next.kind === 'spring' ? next.length.value : null).toBe(40);
+    expect(next.kind === 'spring' ? next.length.source : null).toBe('10*4');
+  });
+
+  it('derived の欄(読み取り専用)への setSolidField は何も変えない', () => {
+    expect(
+      setSolidField(SPRING, 'springLength', { source: '99', value: 99, display: '99' }),
+    ).toBe(SPRING);
+    const pitchDerived: SpringFeature = { ...SPRING, derived: 'pitch' };
+    expect(
+      setSolidField(pitchDerived, 'springPitch', { source: '99', value: 99, display: '99' }),
+    ).toBe(pitchDerived);
+    const turnsDerived: SpringFeature = { ...SPRING, derived: 'turns' };
+    expect(
+      setSolidField(turnsDerived, 'springTurns', { source: '99', value: 99, display: '99' }),
+    ).toBe(turnsDerived);
+  });
+
+  it("setSolidChoice('springDerived', 'pitch') はピッチを全長・巻数から計算し直す(全長20・巻数4)", () => {
+    const next = setSolidChoice(SPRING, 'springDerived', 'pitch');
+    expect(next.kind === 'spring' ? next.derived : null).toBe('pitch');
+    expect(next.kind === 'spring' ? next.pitch.value : null).toBe(5);
+    expect(next.kind === 'spring' ? next.pitch.source : null).toBe('20/4');
+  });
+
+  it("setSolidChoice('springDerived', 'turns') は巻数を全長・ピッチから計算し直す(全長20・ピッチ5)", () => {
+    const next = setSolidChoice(SPRING, 'springDerived', 'turns');
+    expect(next.kind === 'spring' ? next.derived : null).toBe('turns');
+    expect(next.kind === 'spring' ? next.turns.value : null).toBe(4);
+    expect(next.kind === 'spring' ? next.turns.source : null).toBe('20/5');
+  });
+
+  it("setSolidChoice('springHandedness', 'left') は巻き方向だけを変える。元のフィーチャーは変わらない(§0.a-0.33)", () => {
+    const next = setSolidChoice(SPRING, 'springHandedness', 'left');
+    expect(next.kind === 'spring' ? next.handedness : null).toBe('left');
+    expect(next).not.toBe(SPRING);
+    expect(SPRING.handedness).toBe('right');
+  });
+
+  it("setSolidChoice('springAxis', 'x') はワールドの X/Y/Z へ変える(§0.a-0.29)", () => {
+    const next = setSolidChoice(SPRING, 'springAxis', 'x');
+    expect(next.kind === 'spring' ? next.axis : null).toEqual({ kind: 'world', axis: 'x' });
+  });
+
+  it('ばね以外、または妥当でない値は同じものを返す', () => {
+    expect(setSolidChoice(EXTRUDE, 'springHandedness', 'left')).toBe(EXTRUDE);
+    expect(setSolidChoice(SPRING, 'springHandedness', 'sideways')).toBe(SPRING);
+    expect(setSolidChoice(SPRING, 'springAxis', 'w')).toBe(SPRING);
+    expect(setSolidChoice(SPRING, 'springDerived', 'width')).toBe(SPRING);
+    expect(setSolidField(EXTRUDE, 'coilDiameter', expressionValueFromNumber(1))).toBe(EXTRUDE);
   });
 });

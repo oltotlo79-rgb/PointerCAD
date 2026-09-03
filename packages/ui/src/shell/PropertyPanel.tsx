@@ -21,6 +21,7 @@ import {
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
   numericChoiceOptionLabel,
+  UNIT_KEYS,
 } from '../sketch/numericInput.js';
 import {
   formatVolume,
@@ -447,6 +448,30 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
     );
   };
 
+  /**
+   * derived が指す欄(§0.a-0.30)。式は入れられないので `ExpressionField` を使わず、
+   * 同じ `pcad-field` の見た目で値だけを見せる(タスク29b「ExpressionField を無効化」)。
+   * `readOnly` の HTML 属性と `tabIndex=-1` で、打っても効かず Tab でも止まらないようにする。
+   */
+  const renderReadOnlyField = (item: SolidFieldSummary): React.JSX.Element => (
+    <div className="pcad-field pcad-field--readonly" key={item.key}>
+      <span className="pcad-field__label" title={t(item.tooltipKey)}>
+        {t(item.labelKey)}
+      </span>
+      <input
+        className="pcad-field__input"
+        type="text"
+        readOnly
+        tabIndex={-1}
+        aria-readonly="true"
+        value={item.value.source}
+        title={t(item.tooltipKey)}
+      />
+      <span className="pcad-field__unit">{t(UNIT_KEYS[item.unit])}</span>
+      <p className="pcad-field__message">{`= ${item.value.display}`}</p>
+    </div>
+  );
+
   const axis = summary.axis;
 
   return (
@@ -471,7 +496,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         <div className="pcad-section">
           <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
           {summary.fields.length === 0 ? null : (
-            <div className="pcad-coordinate__fields">{summary.fields.map(renderField)}</div>
+            <div className="pcad-coordinate__fields">
+              {summary.fields.map((item) => (item.readOnly ? renderReadOnlyField(item) : renderField(item)))}
+            </div>
           )}
           {axis === null ? null : (
             <div className="pcad-choice">

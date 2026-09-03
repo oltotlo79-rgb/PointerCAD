@@ -1262,6 +1262,16 @@ button.pcad-tree__row:focus-visible {
 }
 
 /*
+ * 読み取り専用の欄(ばねの derived、§0.a-0.30、P3 タスク29b)。値は見えるが打てないことを
+ * 淡い文字色と既定のカーソルで示す(NFR-UX-4「切り替えた瞬間に画面の数字が合う」の欄)。
+ */
+.pcad-field--readonly .pcad-field__input {
+  color: var(--pcad-text-muted);
+  cursor: default;
+  background: transparent;
+}
+
+/*
  * ソリッドの段(押し出し・回転・縫合)は欄が 1 つだけで、見出しが「つなぎ目の許容量」まで
  * 長くなる。欄が 1 つなら縦に揃える相手がいないので、見出しの列を中身の幅に合わせる。
  */

@@ -154,6 +154,8 @@ describe('平面の面(FR-309)', () => {
         const mesh = tessellate(oc, handle.face);
         expect(mesh.faceCount).toBe(1);
         expect(mesh.triangleCount).toBe(2);
+        // 面 1 枚の形なので、範囲表は三角形の全体を覆う 1 つだけになる。
+        expect(mesh.faceRanges).toEqual([{ triangleOffset: 0, triangleCount: 2 }]);
         expect(mesh.positions.length / 3).toBe(4);
         expect(mesh.normals.length).toBe(mesh.positions.length);
         expect(mesh.indices.length).toBe(6);
@@ -200,6 +202,7 @@ describe('平面の面(FR-309)', () => {
         expect(mesh.faceCount).toBe(1);
         // 弦の最大ずれ 0.01mm・半径 10mm での実測(2026-09-02): 49 三角形・51 頂点。
         expect(mesh.triangleCount).toBe(49);
+        expect(mesh.faceRanges).toEqual([{ triangleOffset: 0, triangleCount: 49 }]);
         expect(mesh.positions.length / 3).toBe(51);
         // 内接多角形なので必ず真の面積より小さい。実測 156.976299。
         const area = meshArea(mesh.positions, mesh.indices);
@@ -244,6 +247,7 @@ describe('平面の面(FR-309)', () => {
       expect(mesh.faceCount).toBe(1);
       // 弦の最大ずれ 0.01mm・半径 10mm での実測(2026-09-02): 98 三角形・100 頂点。
       expect(mesh.triangleCount).toBe(98);
+      expect(mesh.faceRanges).toEqual([{ triangleOffset: 0, triangleCount: 98 }]);
       expect(mesh.positions.length / 3).toBe(100);
       // 内接多角形なので必ず π・10² = 314.1592653589793 より小さい。実測 313.952598。
       const area = meshArea(mesh.positions, mesh.indices);

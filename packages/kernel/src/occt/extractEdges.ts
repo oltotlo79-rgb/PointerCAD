@@ -5,15 +5,38 @@ import {
   DEFAULT_LINEAR_DEFLECTION,
   type TessellationOptions,
 } from '../types.js';
+import { createAllocations } from './allocations.js';
+
+/**
+ * 辺 1 本ぶんの線分の位置。positions の線分単位(6 個で 1 本)で数える。
+ *
+ * 辺 i の線分は positions[segmentOffset * 6] から segmentCount * 6 個ぶん並ぶ。
+ * 辺の当たり判定と強調表示がこの範囲を使う。
+ */
+export interface EdgeSegmentRange {
+  readonly segmentOffset: number;
+  readonly segmentCount: number;
+}
 
 export interface EdgeLines {
   /** 線分1本あたり 6 個(始点 xyz + 終点 xyz)。 */
   readonly positions: Float32Array;
+  /** 辺の本数。折れ線が作れなかった辺も 1 本として数える(edgeRanges.length と必ず一致)。 */
   readonly edgeCount: number;
+  /**
+   * TopExp.MapShapes_2 の順に並ぶ、辺ごとの線分の範囲。
+   * 折れ線が作れなかった辺も segmentCount: 0 で必ず 1 つ積む
+   * (積まないと通し番号がずれ、subShapes.ts の辺の番号と対応しなくなる)。
+   */
+  readonly edgeRanges: readonly EdgeSegmentRange[];
 }
 
 /**
  * 稜線を折れ線へ分解する(FR-105 のワイヤーフレーム/シェーディング+エッジ表示に使う)。
+ *
+ * あわせて「辺ごとに線分がどこから何本あるか」の範囲表(edgeRanges)を返す。
+ * 並びは下の MapShapes_2 の順で、tessellate の faceRanges と同じく
+ * subShapes.ts が数える辺の通し番号と 1 対 1 に対応する。
  *
  * TopExp_Explorer ではなく TopExp.MapShapes_2 を使う理由は2つある。
  * 1. TopExp_Explorer は面ごとに稜線をたどるため、隣り合う2面が共有する稜線を
@@ -32,46 +55,69 @@ export function extractEdges(
   const angularDeflection = options.angularDeflection ?? DEFAULT_ANGULAR_DEFLECTION;
 
   const segments: number[] = [];
-  let edgeCount = 0;
+  const edgeRanges: EdgeSegmentRange[] = [];
 
-  // 第3・第4引数は「向きと位置を親からたどって積み上げる」指定で、
-  // TopExp_Explorer と同じ結果になる既定値。
-  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
-  oc.TopExp.MapShapes_2(shape, subShapes, true, true);
-  const edgeType = oc.TopAbs_ShapeEnum.TopAbs_EDGE;
-  const subShapeCount = subShapes.Size();
+  const shared = createAllocations();
 
-  for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
-    const subShape = subShapes.FindKey(subShapeIndex);
-    if (subShape.ShapeType() !== edgeType) {
-      continue;
+  try {
+    // 第3・第4引数は「向きと位置を親からたどって積み上げる」指定で、
+    // TopExp_Explorer と同じ結果になる既定値。
+    const subShapes = shared.keep(new oc.TopTools_IndexedMapOfShape_1());
+    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+    const edgeType = oc.TopAbs_ShapeEnum.TopAbs_EDGE;
+    const subShapeCount = subShapes.Size();
+
+    for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
+      const subShape = subShapes.FindKey(subShapeIndex);
+      if (subShape.ShapeType() !== edgeType) {
+        continue;
+      }
+
+      // この辺の線分は、いま積み終わっている線分の次から始まる。
+      const segmentOffset = segments.length / 6;
+      const perEdge = createAllocations();
+
+      try {
+        const edge = perEdge.keep(oc.TopoDS.Edge_1(subShape));
+        const adaptor = perEdge.keep(new oc.BRepAdaptor_Curve_2(edge));
+        const discretizer = perEdge.keep(
+          new oc.GCPnts_TangentialDeflection_2(
+            adaptor,
+            angularDeflection,
+            linearDeflection,
+            2,
+            1.0e-9,
+            1.0e-7,
+          ),
+        );
+
+        // 個数の型 Graphic3d_ZLayerId は型定義のどこにも無いので整数へ直してから使う
+        // (tessellate.ts の NbNodes() と同じ理由)。点が 1 つ以下の辺は線分が 0 本になり、
+        // 範囲表には 0 本として積まれる。
+        const pointCount = Number(discretizer.NbPoints());
+        for (let i = 1; i < pointCount; i += 1) {
+          const from = discretizer.Value(i);
+          const to = discretizer.Value(i + 1);
+          segments.push(from.X(), from.Y(), from.Z(), to.X(), to.Y(), to.Z());
+          from.delete();
+          to.delete();
+        }
+      } finally {
+        perEdge.release();
+      }
+
+      edgeRanges.push({
+        segmentOffset,
+        segmentCount: segments.length / 6 - segmentOffset,
+      });
     }
-
-    const edge = oc.TopoDS.Edge_1(subShape);
-    const adaptor = new oc.BRepAdaptor_Curve_2(edge);
-    const discretizer = new oc.GCPnts_TangentialDeflection_2(
-      adaptor,
-      angularDeflection,
-      linearDeflection,
-      2,
-      1.0e-9,
-      1.0e-7,
-    );
-
-    for (let i = 1; i < discretizer.NbPoints(); i += 1) {
-      const from = discretizer.Value(i);
-      const to = discretizer.Value(i + 1);
-      segments.push(from.X(), from.Y(), from.Z(), to.X(), to.Y(), to.Z());
-      from.delete();
-      to.delete();
-    }
-
-    discretizer.delete();
-    adaptor.delete();
-    edge.delete();
-    edgeCount += 1;
+  } finally {
+    shared.release();
   }
-  subShapes.delete();
 
-  return { positions: new Float32Array(segments), edgeCount };
+  return {
+    positions: new Float32Array(segments),
+    edgeCount: edgeRanges.length,
+    edgeRanges,
+  };
 }

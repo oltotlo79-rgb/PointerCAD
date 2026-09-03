@@ -36,6 +36,7 @@ import {
   resolveHoleCenters,
   resolveMachiningTarget,
   resolvePart,
+  resolvePatternTransforms,
   resolveRevolveAxis,
   resolveSpringLength,
   resolveSpringOrigin,
@@ -52,10 +53,16 @@ import { fingerprintKeyText } from './subShapeRef.js';
 import type {
   BooleanFeature,
   BooleanOperation,
+  ChamferFeature,
+  ChamferSize,
   ExtrudeFeature,
+  FilletFeature,
   HoleDepth,
   HoleFeature,
   PartDocument,
+  PatternDirection,
+  PatternFeature,
+  PatternPlacement,
   RevolveAxis,
   RevolveFeature,
   SewFeature,
@@ -326,6 +333,11 @@ function edgeRef(bodyFeatureId: string): SubShapeRef {
   };
 }
 
+/** 通し番号だけを変えた辺の指紋(R面取り・C面取りの `targets` を複数本にする検査に使う)。 */
+function edgeRefAt(bodyFeatureId: string, index: number): SubShapeRef {
+  return { ...edgeRef(bodyFeatureId), index };
+}
+
 interface HoleOptions {
   readonly face?: SubShapeRef;
   readonly diameter?: string | ExpressionValue;
@@ -445,6 +457,113 @@ function springFeature(
   };
 }
 
+interface FilletOptions {
+  readonly radius?: string | ExpressionValue;
+  readonly suppressed?: boolean;
+  readonly name?: string;
+}
+
+/** R面取り。既定は半径5(タスク16 の検証表の値)。 */
+function filletFeature(
+  id: string,
+  targetFeatureId: string,
+  targets: readonly SubShapeRef[],
+  options: FilletOptions = {},
+): FilletFeature {
+  return {
+    id,
+    name: options.name ?? id,
+    suppressed: options.suppressed ?? false,
+    kind: 'fillet',
+    targetFeatureId,
+    targets,
+    radius: toExpr(options.radius ?? '5'),
+  };
+}
+
+interface ChamferOptions {
+  readonly size?: ChamferSize;
+  readonly swapReferenceFace?: boolean;
+  readonly suppressed?: boolean;
+  readonly name?: string;
+}
+
+/** C面取り。既定は等距離2mm・基準面の入れ替えなし。 */
+function chamferFeature(
+  id: string,
+  targetFeatureId: string,
+  targets: readonly SubShapeRef[],
+  options: ChamferOptions = {},
+): ChamferFeature {
+  return {
+    id,
+    name: options.name ?? id,
+    suppressed: options.suppressed ?? false,
+    kind: 'chamfer',
+    targetFeatureId,
+    targets,
+    size: options.size ?? { kind: 'equal', distance: expr('2') },
+    swapReferenceFace: options.swapReferenceFace ?? false,
+  };
+}
+
+interface LinearPlacementOptions {
+  readonly direction?: PatternDirection;
+  readonly spacing?: string | ExpressionValue;
+  readonly count?: string | ExpressionValue;
+  readonly symmetric?: boolean;
+}
+
+/** 直線パターンの配置。既定はワールド X・間隔20・個数3・両側なし(§0.a-0.21 の既定)。 */
+function linearPlacement(options: LinearPlacementOptions = {}): PatternPlacement {
+  return {
+    kind: 'linear',
+    direction: options.direction ?? { kind: 'world', axis: 'x' },
+    spacing: toExpr(options.spacing ?? '20'),
+    count: toExpr(options.count ?? '3'),
+    symmetric: options.symmetric ?? false,
+  };
+}
+
+interface CircularPlacementOptions {
+  readonly axis?: PatternDirection;
+  readonly angle?: string | ExpressionValue;
+  readonly count?: string | ExpressionValue;
+  readonly fullCircle?: boolean;
+}
+
+/** 円形パターンの配置。既定はワールド Z・全周・個数4(§0.a-0.21 の既定)。 */
+function circularPlacement(options: CircularPlacementOptions = {}): PatternPlacement {
+  return {
+    kind: 'circular',
+    axis: options.axis ?? { kind: 'world', axis: 'z' },
+    angle: toExpr(options.angle ?? '360'),
+    count: toExpr(options.count ?? '4'),
+    fullCircle: options.fullCircle ?? true,
+  };
+}
+
+interface PatternOptions {
+  readonly suppressed?: boolean;
+  readonly name?: string;
+}
+
+function patternFeature(
+  id: string,
+  sourceFeatureId: string,
+  placement: PatternPlacement,
+  options: PatternOptions = {},
+): PatternFeature {
+  return {
+    id,
+    name: options.name ?? id,
+    suppressed: options.suppressed ?? false,
+    kind: 'pattern',
+    sourceFeatureId,
+    placement,
+  };
+}
+
 function withSolids(document: PartDocument, ...solids: readonly SolidFeature[]): PartDocument {
   return solids.reduce((current, solid) => appendSolid(current, solid), document);
 }
@@ -495,6 +614,20 @@ function threadPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'],
 function springPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'spring' }> {
   if (step.plan.kind !== 'spring') {
     throw new Error(`テストの前提が壊れている: ばねでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function filletPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'fillet' }> {
+  if (step.plan.kind !== 'fillet') {
+    throw new Error(`テストの前提が壊れている: R面取りでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function chamferPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'chamfer' }> {
+  if (step.plan.kind !== 'chamfer') {
+    throw new Error(`テストの前提が壊れている: C面取りでない段 ${step.plan.kind}`);
   }
   return step.plan;
 }
@@ -2323,5 +2456,707 @@ describe('resolvePart ばね', () => {
     expect(coilChanged).not.toBe(base);
     expect(pitchChanged).not.toBe(base);
     expect(handednessChanged).not.toBe(base);
+  });
+});
+
+/** R面取り・C面取りの検査で使う、縦4本ぶんの辺の指紋(通し番号0〜3)。 */
+function fourEdges(bodyFeatureId: string): readonly SubShapeRef[] {
+  return [
+    edgeRefAt(bodyFeatureId, 0),
+    edgeRefAt(bodyFeatureId, 1),
+    edgeRefAt(bodyFeatureId, 2),
+    edgeRefAt(bodyFeatureId, 3),
+  ];
+}
+
+describe('resolvePart R面取り', () => {
+  it('対象を消費し、辺4本・半径5をそのまま渡す', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      filletFeature('fillet-1', 'extrude-1', fourEdges('extrude-1')),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps.map((step) => step.visible)).toEqual([false, true]);
+    const plan = filletPlan(result.steps[1]);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+    expect(plan.radius).toBe(5);
+    expect(plan.targets).toHaveLength(4);
+    expect(result.liveBodyIds).toEqual(['fillet-1']);
+  });
+
+  it('targets の並びを逆にしても鍵が同じ(通し番号の昇順に並べ替える)', () => {
+    const fixture = createFixture();
+    const build = (targets: readonly SubShapeRef[]): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA),
+          filletFeature('fillet-1', 'extrude-1', targets),
+        ),
+      );
+    const forward = build(fourEdges('extrude-1'));
+    const reversed = build([...fourEdges('extrude-1')].reverse());
+    expect(reversed.steps[1].key).toBe(forward.steps[1].key);
+  });
+
+  it('同じ辺を2回指しても1回だけ扱う(重複除去)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      filletFeature('fillet-1', 'extrude-1', [
+        edgeRefAt('extrude-1', 0),
+        edgeRefAt('extrude-1', 0),
+        edgeRefAt('extrude-1', 1),
+      ]),
+    );
+    const plan = filletPlan(resolvePart(document).steps[1]);
+    expect(plan.targets).toHaveLength(2);
+  });
+
+  it('半径が 0 なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      filletFeature('fillet-1', 'extrude-1', fourEdges('extrude-1'), { radius: '0' }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('半径が数になっていなければ invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      filletFeature('fillet-1', 'extrude-1', fourEdges('extrude-1'), { radius: notANumber('a') }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('辺が 0 本なら missingSubShape', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      filletFeature('fillet-1', 'extrude-1', []),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingSubShape']);
+    expect(result.errors[0].message).toContain('見つかりません');
+  });
+
+  it('対象のボディが無ければ missingBody', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      filletFeature('fillet-1', 'extrude-404', fourEdges('extrude-404')),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['missingBody']);
+  });
+
+  it('対象がすでに別のブーリアンに消費されていれば consumedTwice', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      extrudeFeature('extrude-2', fixture.faceB, { distance: '4' }),
+      booleanFeature('union-1', 'union', 'extrude-1', 'extrude-2'),
+      filletFeature('fillet-1', 'extrude-1', fourEdges('extrude-1')),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['consumedTwice']);
+  });
+
+  it('抑制した R面取りは何も作らず、失敗としても数えない', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      filletFeature('fillet-1', 'extrude-1', fourEdges('extrude-1'), { suppressed: true }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(1);
+    expect(result.liveBodyIds).toEqual(['extrude-1']);
+  });
+
+  it('鍵は targetKey・targets・半径から作られる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      filletFeature('fillet-1', 'extrude-1', fourEdges('extrude-1')),
+    );
+    const result = resolvePart(document);
+    expect(result.steps[1].key).toBe(
+      cacheKeyFor({
+        kind: 'fillet',
+        targetKey: result.steps[0].key,
+        targets: fourEdges('extrude-1').map(fingerprintKeyText),
+        radius: 5,
+      }),
+    );
+  });
+});
+
+describe('resolvePart C面取り', () => {
+  it('等距離 2 をそのまま渡す', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', [edgeRefAt('extrude-1', 0)], {
+        size: { kind: 'equal', distance: expr('2') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = chamferPlan(result.steps[1]);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+    expect(plan.targets).toHaveLength(1);
+    if (plan.size.kind !== 'equal') {
+      throw new Error('テストの前提が壊れている: 等距離でない');
+    }
+    expect(plan.size.distance).toBe(2);
+    expect(plan.swapReferenceFace).toBe(false);
+    expect(result.liveBodyIds).toEqual(['chamfer-1']);
+  });
+
+  it('2距離 3/1・基準面の入れ替えをそのまま渡す', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', [edgeRefAt('extrude-1', 0)], {
+        size: { kind: 'twoDistances', distance1: expr('3'), distance2: expr('1') },
+        swapReferenceFace: true,
+      }),
+    );
+    const plan = chamferPlan(resolvePart(document).steps[1]);
+    if (plan.size.kind !== 'twoDistances') {
+      throw new Error('テストの前提が壊れている: 2距離でない');
+    }
+    expect(plan.size.distance1).toBe(3);
+    expect(plan.size.distance2).toBe(1);
+    expect(plan.swapReferenceFace).toBe(true);
+  });
+
+  it('距離+角度 30 度は角度がラジアンへ直る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', [edgeRefAt('extrude-1', 0)], {
+        size: { kind: 'distanceAngle', distance: expr('2'), angle: expr('30') },
+      }),
+    );
+    const plan = chamferPlan(resolvePart(document).steps[1]);
+    if (plan.size.kind !== 'distanceAngle') {
+      throw new Error('テストの前提が壊れている: 距離+角度でない');
+    }
+    expect(plan.size.distance).toBe(2);
+    expect(plan.size.angle).toBeCloseTo(Math.PI / 6, 12);
+  });
+
+  it('角度 90 度は invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', [edgeRefAt('extrude-1', 0)], {
+        size: { kind: 'distanceAngle', distance: expr('2'), angle: expr('90') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('90 度より小さく');
+  });
+
+  it('角度 0 度は invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', [edgeRefAt('extrude-1', 0)], {
+        size: { kind: 'distanceAngle', distance: expr('2'), angle: expr('0') },
+      }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('等距離の距離が 0 以下なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', [edgeRefAt('extrude-1', 0)], {
+        size: { kind: 'equal', distance: expr('0') },
+      }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('2距離の一方が 0 以下なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', [edgeRefAt('extrude-1', 0)], {
+        size: { kind: 'twoDistances', distance1: expr('3'), distance2: expr('0') },
+      }),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('targets の並びを逆にしても鍵が同じ', () => {
+    const fixture = createFixture();
+    const build = (targets: readonly SubShapeRef[]): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA),
+          chamferFeature('chamfer-1', 'extrude-1', targets),
+        ),
+      );
+    const forward = build(fourEdges('extrude-1'));
+    const reversed = build([...fourEdges('extrude-1')].reverse());
+    expect(reversed.steps[1].key).toBe(forward.steps[1].key);
+  });
+
+  it('辺が 0 本なら missingSubShape', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', []),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['missingSubShape']);
+  });
+
+  it('鍵は targetKey・targets・大きさ・swapReferenceFace から作られる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      chamferFeature('chamfer-1', 'extrude-1', [edgeRefAt('extrude-1', 0)], {
+        size: { kind: 'equal', distance: expr('2') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.steps[1].key).toBe(
+      cacheKeyFor({
+        kind: 'chamfer',
+        targetKey: result.steps[0].key,
+        targets: [fingerprintKeyText(edgeRefAt('extrude-1', 0))],
+        mode: 'equal',
+        distance1: 2,
+        distance2: 0,
+        swapReferenceFace: false,
+      }),
+    );
+  });
+});
+
+describe('resolvePatternTransforms', () => {
+  it('直線・両側なし: 個数3・間隔20 → 変換2つ([20,0,0], [40,0,0])', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(linearPlacement(), sketchesOf(fixture.document));
+    if (!outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗した');
+    }
+    expect(outcome.transforms).toHaveLength(2);
+    expect(outcome.transforms[0].translation).toEqual([20, 0, 0]);
+    expect(outcome.transforms[1].translation).toEqual([40, 0, 0]);
+    expect(outcome.transforms.every((transform) => transform.rotationAngle === 0)).toBe(true);
+  });
+
+  it('直線・両側あり: 個数3 → 変換2つ([-20,0,0], [20,0,0])', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      linearPlacement({ symmetric: true }),
+      sketchesOf(fixture.document),
+    );
+    if (!outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗した');
+    }
+    expect(outcome.transforms.map((transform) => transform.translation)).toEqual([
+      [-20, 0, 0],
+      [20, 0, 0],
+    ]);
+  });
+
+  it('直線・両側あり・個数4は invalidValue(奇数のみ)', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      linearPlacement({ symmetric: true, count: '4' }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている');
+    }
+    expect(outcome.code).toBe('invalidValue');
+    expect(outcome.message).toContain('奇数');
+  });
+
+  it('円形・全周: 個数4 → 回転角 π/2, π, 3π/2', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(circularPlacement(), sketchesOf(fixture.document));
+    if (!outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗した');
+    }
+    expect(outcome.transforms).toHaveLength(3);
+    expect(outcome.transforms[0].rotationAngle).toBeCloseTo(Math.PI / 2, 12);
+    expect(outcome.transforms[1].rotationAngle).toBeCloseTo(Math.PI, 12);
+    expect(outcome.transforms[2].rotationAngle).toBeCloseTo((3 * Math.PI) / 2, 12);
+  });
+
+  it('円形・全周でない: 角度180・個数3 → 回転角 π/2, π', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      circularPlacement({ fullCircle: false, angle: '180', count: '3' }),
+      sketchesOf(fixture.document),
+    );
+    if (!outcome.ok) {
+      throw new Error('テストの前提が壊れている: 失敗した');
+    }
+    expect(outcome.transforms).toHaveLength(2);
+    expect(outcome.transforms[0].rotationAngle).toBeCloseTo(Math.PI / 2, 12);
+    expect(outcome.transforms[1].rotationAngle).toBeCloseTo(Math.PI, 12);
+  });
+
+  it('個数 1 は invalidValue', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      linearPlacement({ count: '1' }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('個数 101 は invalidValue(上限 100)', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      linearPlacement({ count: '101' }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('個数が整数でなければ invalidValue', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      linearPlacement({ count: '2.5' }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('間隔が 0 以下なら invalidValue', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      linearPlacement({ spacing: '0' }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('角度が 0 以下(全周でない)なら invalidValue', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      circularPlacement({ fullCircle: false, angle: '0' }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('角度が 360 を超えると invalidValue', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      circularPlacement({ fullCircle: false, angle: '361' }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('直線の向きにする線分が見つからなければ missingProfile', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      linearPlacement({
+        direction: {
+          kind: 'line',
+          line: { sketchId: fixture.axisLine.sketchId, lineFeatureId: 'line-404' },
+        },
+      }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている');
+    }
+    expect(outcome.code).toBe('missingProfile');
+  });
+
+  it('円形の軸にする線分が見つからなければ missingProfile', () => {
+    const fixture = createFixture();
+    const outcome = resolvePatternTransforms(
+      circularPlacement({
+        axis: {
+          kind: 'line',
+          line: { sketchId: fixture.axisLine.sketchId, lineFeatureId: 'line-404' },
+        },
+      }),
+      sketchesOf(fixture.document),
+    );
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error('テストの前提が壊れている');
+    }
+    expect(outcome.code).toBe('missingProfile');
+  });
+});
+
+describe('resolvePart パターン', () => {
+  it('直線パターン(X軸・間隔20・個数3・両側なし)は穴の transforms を差し替える', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement()),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(3);
+    const plan = holePlan(result.steps[2]);
+    expect(plan.targetKey).toBe(result.steps[1].key);
+    expect(plan.transforms.map((transform) => transform.translation)).toEqual([
+      [20, 0, 0],
+      [40, 0, 0],
+    ]);
+    expect(result.liveBodyIds).toEqual(['pattern-1']);
+  });
+
+  it('両側あり・個数3の穴は変換2つ([-20,0,0], [20,0,0])', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement({ symmetric: true })),
+    );
+    const plan = holePlan(resolvePart(document).steps[2]);
+    expect(plan.transforms.map((transform) => transform.translation)).toEqual([
+      [-20, 0, 0],
+      [20, 0, 0],
+    ]);
+  });
+
+  it('両側あり・個数4は invalidValue(奇数のみ)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement({ symmetric: true, count: '4' })),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('奇数');
+  });
+
+  it('円形パターン(Z軸・全周・個数4)の穴は回転角 π/2, π, 3π/2', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', circularPlacement()),
+    );
+    const plan = holePlan(resolvePart(document).steps[2]);
+    expect(plan.transforms).toHaveLength(3);
+    expect(plan.transforms[0].rotationAngle).toBeCloseTo(Math.PI / 2, 12);
+    expect(plan.transforms[1].rotationAngle).toBeCloseTo(Math.PI, 12);
+    expect(plan.transforms[2].rotationAngle).toBeCloseTo((3 * Math.PI) / 2, 12);
+  });
+
+  it('円形パターン(Z軸・角度180・個数3・全周なし)の穴は回転角 π/2, π', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature(
+        'pattern-1',
+        'hole-1',
+        circularPlacement({ fullCircle: false, angle: '180', count: '3' }),
+      ),
+    );
+    const plan = holePlan(resolvePart(document).steps[2]);
+    expect(plan.transforms).toHaveLength(2);
+    expect(plan.transforms[0].rotationAngle).toBeCloseTo(Math.PI / 2, 12);
+    expect(plan.transforms[1].rotationAngle).toBeCloseTo(Math.PI, 12);
+  });
+
+  it('個数 1 は invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement({ count: '1' })),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('個数 101 は invalidValue(上限 100)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement({ count: '101' })),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('対象が押し出しなら invalidValue(穴とねじ穴だけ)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      patternFeature('pattern-1', 'extrude-1', linearPlacement()),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('穴とねじ穴だけ');
+  });
+
+  it('対象が自分自身なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      patternFeature('pattern-1', 'pattern-1', linearPlacement()),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+  });
+
+  it('対象の穴が失敗していれば、パターンも失敗する(例外にならない)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA], { tiltAngle: '90' }),
+      patternFeature('pattern-1', 'hole-1', linearPlacement()),
+    );
+    const result = resolvePart(document);
+    expect(result.errors.map((error) => error.featureId).sort()).toEqual(['hole-1', 'pattern-1']);
+    // 穴が作れなかったので押し出しだけが画面に残る(パターンもボディを作らない)。
+    expect(result.steps.map((step) => step.featureId)).toEqual(['extrude-1']);
+    expect(result.liveBodyIds).toEqual(['extrude-1']);
+  });
+
+  it('もとがねじ穴なら plan.kind は thread になる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'thread-1', linearPlacement()),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = threadPlan(result.steps[2]);
+    expect(plan.targetKey).toBe(result.steps[1].key);
+    expect(plan.transforms).toHaveLength(2);
+  });
+
+  it('向きにする線分が見つからなければ missingProfile', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature(
+        'pattern-1',
+        'hole-1',
+        linearPlacement({
+          direction: {
+            kind: 'line',
+            line: { sketchId: fixture.axisLine.sketchId, lineFeatureId: 'line-404' },
+          },
+        }),
+      ),
+    );
+    expect(codesOf(resolvePart(document))).toEqual(['missingProfile']);
+  });
+
+  it('対象がすでに別のパターンに使われていれば consumedTwice', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement()),
+      patternFeature('pattern-2', 'hole-1', linearPlacement()),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['consumedTwice']);
+  });
+
+  it('押し出し → 穴 → パターンの liveBodyIds はパターンの id だけ', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement()),
+    );
+    expect(resolvePart(document).liveBodyIds).toEqual(['pattern-1']);
+  });
+
+  it('同じ文書を2回解決すると鍵が一致する(決定性)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement()),
+    );
+    const first = resolvePart(document);
+    const second = resolvePart(document);
+    expect(second.steps[2].key).toBe(first.steps[2].key);
+  });
+
+  it('間隔だけを変えると鍵が変わる', () => {
+    const fixture = createFixture();
+    const build = (spacing: string): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA),
+          holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+          patternFeature('pattern-1', 'hole-1', linearPlacement({ spacing })),
+        ),
+      );
+    expect(build('30').steps[2].key).not.toBe(build('20').steps[2].key);
+  });
+
+  it('抑制したパターンは何も作らず、失敗としても数えない', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA]),
+      patternFeature('pattern-1', 'hole-1', linearPlacement(), { suppressed: true }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(2);
+    expect(result.liveBodyIds).toEqual(['hole-1']);
   });
 });

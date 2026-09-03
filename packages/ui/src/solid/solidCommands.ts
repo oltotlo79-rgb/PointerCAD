@@ -1,19 +1,29 @@
 /**
- * 選択からソリッドフィーチャーを作る純関数(計画書 docs/plans/P2-ソリッド基礎.md タスク18)。
+ * 選択からソリッドフィーチャーを作る純関数(計画書 docs/plans/P2-ソリッド基礎.md タスク18、
+ * docs/plans/P3-加工フィーチャー.md タスク25b)。
  *
- * 対応要件: FR-401(押し出し)、FR-402(回転)、FR-403(縫合)、FR-404(ブーリアン)、
+ * 対応要件: FR-401(押し出し)、FR-402(回転)、FR-403(縫合)、FR-404(ブーリアン)、FR-414(ばね)、
  * NFR-UX-1(対象を選んでから操作)、NFR-UX-5(できない操作は理由を示す)。
  *
  * `packages/ui/src/sketch/sketchCommands.ts` と同じ流儀に揃える。ストアにも DOM にも
  * 触れない純関数だけを置き、操作の判断を Node の単体検査で固定できるようにする
  * (`docs/報告記録.md` 2026-09-02 23:09 の教訓)。文書は不変で、確定できないときは
  * 元の文書をそのまま返す。
+ *
+ * **ばね(`commitSpring`)はここに置く。** ばねは対象を消費しない「作る」フィーチャーで、
+ * 押し出し・回転・縫合の仲間であり加工ではない(§0.a-0.36)。加工6種(穴・ねじ穴・R面取り・
+ * C面取り・直線/円形パターン)の実装は `machiningCommands.ts`(タスク25)にあり、
+ * `solidToolReadiness` / `commitSolidInput` はそちらへ委譲する。
  */
 
-import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
+import { evaluateExpression, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   appendSolid,
   DEFAULT_SEW_TOLERANCE_MM,
+  DEFAULT_SPRING_COIL_DIAMETER_MM,
+  DEFAULT_SPRING_PITCH_MM,
+  DEFAULT_SPRING_TURNS as DEFAULT_SPRING_TURNS_COUNT,
+  DEFAULT_SPRING_WIRE_DIAMETER_MM,
   findFeature,
   findSketch,
   liveBodyIds,
@@ -27,12 +37,25 @@ import {
   type SewFeature,
   type SketchFaceRef,
   type SketchLineRef,
+  type SketchPointRef,
+  type SpringDerived,
+  type SpringFeature,
+  type SpringHandedness,
   type BooleanFeature,
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { SolidInputCommit, SolidToolId } from '../sketch/numericInput.js';
+
+import {
+  commitMachiningInput,
+  DEFAULT_TILT_ANGLE,
+  DEFAULT_TILT_AZIMUTH,
+  machiningToolReadiness,
+  type MachiningContext,
+} from './machiningCommands.js';
+import type { SubShapeBody } from './subShapeSelection.js';
 
 /** 縫合に要る面の最小枚数(§0.a-0.7)。 */
 const MIN_SEW_FACES = 2;
@@ -48,6 +71,39 @@ export const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 /** 縫合の許容量の既定値。model の DEFAULT_SEW_TOLERANCE_MM を式へ直したもの(§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SEW_TOLERANCE_MM,
+);
+
+/** ばねのコイル径の既定値。model の DEFAULT_SPRING_COIL_DIAMETER_MM を式へ直したもの(§0.a-0.30)。 */
+export const DEFAULT_SPRING_COIL_DIAMETER: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_SPRING_COIL_DIAMETER_MM,
+);
+/** ばねの線径の既定値。 */
+export const DEFAULT_SPRING_WIRE_DIAMETER: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_SPRING_WIRE_DIAMETER_MM,
+);
+/** ばねのピッチの既定値。 */
+export const DEFAULT_SPRING_PITCH: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_SPRING_PITCH_MM,
+);
+/** ばねの巻数の既定値(既定の全長はピッチ×巻数 = 20mm、§0.a-0.30)。 */
+export const DEFAULT_SPRING_TURNS: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_SPRING_TURNS_COUNT,
+);
+/** ばねの軸の既定値。world の Z 軸(§0.a-0.29)。 */
+export const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
+/** ばねの巻き方向の既定値(§0.a-0.33)。 */
+export const DEFAULT_SPRING_HANDEDNESS: SpringHandedness = 'right';
+/** 全長・ピッチ・巻数のうち計算で求める欄の既定値(§0.a-0.30)。 */
+export const DEFAULT_SPRING_DERIVED: SpringDerived = 'length';
+/**
+ * ばねの全長の欄が無いとき(既定の `derived: 'length'` のとき、springLength は
+ * その場入力に出てこない)に `commitSpring` へ渡す穴埋め値。`commitSpring` は
+ * `derived` が指す欄を必ず自動生成した式で上書きするので、この値がそのまま
+ * 使われることはない(§0.a-0.30)。計画書はこの定数を挙げていないので、export はせず
+ * ここだけで使う(判断に迷った点として報告する)。
+ */
+const SPRING_LENGTH_PLACEHOLDER: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_SPRING_PITCH_MM * DEFAULT_SPRING_TURNS_COUNT,
 );
 
 /** ソリッドのフィーチャーを 1 つ作った結果。断ったときは文書を変えない。 */
@@ -189,6 +245,144 @@ function faceRefExists(document: PartDocument, ref: SketchFaceRef): boolean {
   return feature !== undefined && feature.kind === 'face';
 }
 
+/**
+ * `SketchPointRef` が指す点フィーチャーが実在するか。**点列(`kind: 'pointArray'`)は
+ * 受け付けない**(始点は 1 点でなければならない、§0.a-0.29)。
+ */
+function pointRefExists(document: PartDocument, ref: SketchPointRef): boolean {
+  const sketch = findSketch(document, ref.sketchId);
+  if (sketch === undefined) {
+    return false;
+  }
+  const feature = findFeature(sketch, ref.pointFeatureId);
+  return feature !== undefined && feature.kind === 'point';
+}
+
+/** 選択からばねの始点にする点フィーチャーを 1 つ拾った結果(タスク25b、§0.a-0.29)。 */
+export type SpringOriginOutcome =
+  | { readonly ok: true; readonly ref: SketchPointRef }
+  | { readonly ok: false; readonly reasonKey: MessageKey };
+
+/**
+ * 選択の中からばねの始点にする点フィーチャーを 1 つ拾う(§0.a-0.29)。選んだ順に見て、
+ * 最初に見つかった**点フィーチャー(`kind: 'point'`)だけ**を使う。
+ *
+ * **点列は「その点列の1点目」として受け付けない。** 始点は 1 点でなければならないため、
+ * 点列フィーチャー(`kind: 'pointArray'`)は読み飛ばす(この決めは計画書 §2.11 の表・
+ * タスク25b の検証表どおり)。線分などほかの要素が混ざっていても無視して次を探す。
+ * 1 つも見つからなければ `springError.noOriginPoint`。
+ */
+export function selectedSpringOrigin(
+  document: PartDocument,
+  selection: readonly string[],
+): SpringOriginOutcome {
+  for (const elementId of selection) {
+    const featureId = featureIdOf(elementId);
+    for (const sketch of document.sketches) {
+      const feature = findFeature(sketch, featureId);
+      if (feature !== undefined && feature.kind === 'point') {
+        return { ok: true, ref: { sketchId: sketch.id, pointFeatureId: featureId } };
+      }
+    }
+  }
+  return { ok: false, reasonKey: 'springError.noOriginPoint' };
+}
+
+/**
+ * 式 `source` を評価して `ExpressionValue` にする。全長・ピッチ・巻数の関係式
+ * (`全長 = ピッチ × 巻数`、§0.a-0.30)を自動生成した式を評価するのに使う。
+ *
+ * `pitch.source` と `turns.source` はどちらもすでに妥当な式(欄の検査を通っている)なので
+ * `*` / `/` でつないだ式もほぼ必ず評価できるが、万一失敗しても例外を投げず(FR-504
+ * 「止めずに警告する」)、少なくとも source は残して値 0 で作る。
+ */
+function evaluatedExpressionValue(source: string): ExpressionValue {
+  const result = evaluateExpression(source);
+  if (result.ok) {
+    return result.value;
+  }
+  return { source, value: 0, display: '0' };
+}
+
+/**
+ * ばねの全長・ピッチ・巻数のうち、`derived` が指す 1 つを他の 2 つから自動生成した式で
+ * 計算し直す(§0.a-0.30)。呼び出し側が `derived` の欄に何を渡していても、ここで必ず
+ * 上書きする(呼び出し側は「入力された 2 つ」だけを正しく渡せばよい)。
+ *
+ * 自動生成した式の `source` は次のとおり(タスク25b の検証表で固定)。
+ * - `derived: 'length'` → `` `${pitch.source}*${turns.source}` ``
+ * - `derived: 'pitch'` → `` `${length.source}/${turns.source}` ``
+ * - `derived: 'turns'` → `` `${length.source}/${pitch.source}` ``
+ */
+function resolveSpringLengthFields(
+  derived: SpringDerived,
+  length: ExpressionValue,
+  pitch: ExpressionValue,
+  turns: ExpressionValue,
+): { readonly length: ExpressionValue; readonly pitch: ExpressionValue; readonly turns: ExpressionValue } {
+  switch (derived) {
+    case 'length':
+      return { length: evaluatedExpressionValue(`${pitch.source}*${turns.source}`), pitch, turns };
+    case 'pitch':
+      return { length, pitch: evaluatedExpressionValue(`${length.source}/${turns.source}`), turns };
+    case 'turns':
+      return { length, pitch, turns: evaluatedExpressionValue(`${length.source}/${pitch.source}`) };
+  }
+}
+
+/**
+ * ばねを 1 つ作る(FR-414、§0.a-0.29〜0.36)。対象ボディを持たず、消費もしない
+ * 「作る」フィーチャー(§0.a-0.36)。始点の参照先が無ければ `noOriginPoint` で断る。
+ *
+ * `params.length` / `pitch` / `turns` は 3 つとも渡すが、`derived` が指す 1 つは
+ * `resolveSpringLengthFields` が他の 2 つから自動生成した式で必ず上書きする。
+ */
+export function commitSpring(
+  document: PartDocument,
+  params: {
+    readonly origin: SketchPointRef;
+    readonly axis: RevolveAxis;
+    readonly tiltAngle: ExpressionValue;
+    readonly tiltAzimuth: ExpressionValue;
+    readonly length: ExpressionValue;
+    readonly pitch: ExpressionValue;
+    readonly turns: ExpressionValue;
+    readonly derived: SpringDerived;
+    readonly coilDiameter: ExpressionValue;
+    readonly wireDiameter: ExpressionValue;
+    readonly handedness: SpringHandedness;
+  },
+): SolidCommandOutcome {
+  if (!pointRefExists(document, params.origin)) {
+    return { ok: false, reasonKey: 'springError.noOriginPoint' };
+  }
+  const { length, pitch, turns } = resolveSpringLengthFields(
+    params.derived,
+    params.length,
+    params.pitch,
+    params.turns,
+  );
+  const id = nextSolidId(document, 'spring');
+  const feature: SpringFeature = {
+    id,
+    name: nextSolidName(document, 'spring'),
+    suppressed: false,
+    kind: 'spring',
+    origin: params.origin,
+    axis: params.axis,
+    tiltAngle: params.tiltAngle,
+    tiltAzimuth: params.tiltAzimuth,
+    length,
+    pitch,
+    turns,
+    derived: params.derived,
+    coilDiameter: params.coilDiameter,
+    wireDiameter: params.wireDiameter,
+    handedness: params.handedness,
+  };
+  return { ok: true, document: appendSolid(document, feature), featureId: id };
+}
+
 /** 押し出しを 1 つ作る(FR-401)。面の参照先が無ければ noFace で断る。 */
 export function commitExtrude(
   document: PartDocument,
@@ -307,11 +501,19 @@ const READY: SolidToolReadiness = { ready: true, reasonKey: null };
  * その操作がいま押せるか(NFR-UX-5)。ツールバーのボタンの有効・無効と、
  * 押せないときのツールチップの理由に使う。判定は実際に作るときと同じ関数で行うので、
  * 「押せるのに断られる」「押せないのに作れる」が起きない。
+ *
+ * `bodies` は加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)を
+ * `machiningToolReadiness`(タスク25、`machiningCommands.ts`)へ委譲するときに要る
+ * カーネルの立体一覧(タスク20 の `SubShapeBody`)。**タスク26 がツールバー側から実際の
+ * 一覧を渡すまでの間、既存の呼び出し(`Toolbar.tsx`)が3引数のままでも型検査が壊れないよう
+ * 任意引数にし、既定を空配列にした**(計画書は4引数目を明記していないので、判断に迷った
+ * 点として報告する)。押し出し・回転・縫合・和・差・積・ばねは `bodies` を使わない。
  */
 export function solidToolReadiness(
   document: PartDocument,
   selection: readonly string[],
   tool: SolidActionId,
+  bodies: readonly SubShapeBody[] = [],
 ): SolidToolReadiness {
   switch (tool) {
     case 'extrude':
@@ -335,31 +537,42 @@ export function solidToolReadiness(
         ? { ready: false, reasonKey: 'solidError.sameBody' }
         : READY;
     }
-    // P3 タスク24 が SolidToolId へ足した加工6種+ばね。本実装はタスク25・25b・28
-    // (machiningCommands.ts / springCommands.ts 相当)が担当するので、ここでは型を
-    // 網羅するだけの最小の枝として「まだ使えない」を返す。
+    // 加工6種(タスク25)は machiningToolReadiness へ委譲する。同じ判断を2か所に書かない。
     case 'hole':
     case 'threadHole':
     case 'fillet':
     case 'chamfer':
     case 'linearPattern':
-    case 'circularPattern':
-    case 'spring':
-      return { ready: false, reasonKey: 'solidError.notYetAvailable' };
+    case 'circularPattern': {
+      const context: MachiningContext = { document, selection, bodies };
+      return machiningToolReadiness(context, tool);
+    }
+    // ばね(タスク25b、§0.a-0.29)。押せる条件は「スケッチの点フィーチャーが1つ選ばれて
+    // いること」だけ(軸は既定の Z があるので選ばなくてよい、NFR-UX-4)。
+    case 'spring': {
+      const origin = selectedSpringOrigin(document, selection);
+      return origin.ok ? READY : { ready: false, reasonKey: origin.reasonKey };
+    }
   }
 }
 
 /**
- * 選択とその場入力の確定結果から、押し出し・回転・縫合を 1 つ作る(タスク19 の SolidInputCommit)。
+ * 選択とその場入力の確定結果から、ソリッドフィーチャーを 1 つ作る(タスク24 の SolidInputCommit)。
  *
  * 面はポップアップを開いた時点ではなく**決めた時点の選択**から拾い直す。開いたまま
  * 面を選び直せるので、最後に選ばれていたものを使うのが利用者の期待に合う(NFR-UX-1)。
  * 欄が空のまま決めたときは既定値で作る(NFR-UX-4)。
+ *
+ * 加工6種は `commitMachiningInput`(タスク25、`machiningCommands.ts`)へ委譲する。
+ * `bodies` の扱いは `solidToolReadiness` の注釈のとおり(タスク26 まで既定は空配列)。
+ * ばねは対象を消費しない「作る」フィーチャーなので、ここで直に `commitSpring` を呼ぶ
+ * (§0.a-0.36)。
  */
 export function commitSolidInput(
   document: PartDocument,
   selection: readonly string[],
   commit: SolidInputCommit,
+  bodies: readonly SubShapeBody[] = [],
 ): SolidCommandOutcome {
   switch (commit.tool) {
     case 'extrude': {
@@ -396,17 +609,38 @@ export function commitSolidInput(
         tolerance: commit.values.tolerance ?? DEFAULT_SEW_TOLERANCE,
       });
     }
-    // P3 タスク24 が SolidToolId(SolidInputCommit.tool)へ足した加工6種+ばね。
-    // 本実装はタスク25・25b・28 が担当するので、ここでは型を網羅するだけの最小の枝として
-    // 「まだ使えない」を返す。
+    // 加工6種(タスク25)は commitMachiningInput へ委譲する。同じ判断を2か所に書かない。
     case 'hole':
     case 'threadHole':
     case 'fillet':
     case 'chamfer':
     case 'linearPattern':
-    case 'circularPattern':
-    case 'spring':
-      return { ok: false, reasonKey: 'solidError.notYetAvailable' };
+    case 'circularPattern': {
+      const context: MachiningContext = { document, selection, bodies };
+      return commitMachiningInput(context, commit);
+    }
+    // ばね(タスク25b、FR-414)。始点はスケッチの点フィーチャーの参照のみ(§0.a-0.29)。
+    case 'spring': {
+      const origin = selectedSpringOrigin(document, selection);
+      if (!origin.ok) {
+        return { ok: false, reasonKey: origin.reasonKey };
+      }
+      return commitSpring(document, {
+        origin: origin.ref,
+        axis: commit.axis ?? DEFAULT_SPRING_AXIS,
+        // 傾き角・方位角はその場入力に出てこない(穴と同じ作り、§0.a-0.10)。
+        // プロパティからの再編集はタスク29b の担当。
+        tiltAngle: DEFAULT_TILT_ANGLE,
+        tiltAzimuth: DEFAULT_TILT_AZIMUTH,
+        length: commit.values.springLength ?? SPRING_LENGTH_PLACEHOLDER,
+        pitch: commit.values.springPitch ?? DEFAULT_SPRING_PITCH,
+        turns: commit.values.springTurns ?? DEFAULT_SPRING_TURNS,
+        derived: commit.springDerived ?? DEFAULT_SPRING_DERIVED,
+        coilDiameter: commit.values.coilDiameter ?? DEFAULT_SPRING_COIL_DIAMETER,
+        wireDiameter: commit.values.wireDiameter ?? DEFAULT_SPRING_WIRE_DIAMETER,
+        handedness: commit.springHandedness ?? DEFAULT_SPRING_HANDEDNESS,
+      });
+    }
   }
 }
 

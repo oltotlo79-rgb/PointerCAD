@@ -199,8 +199,10 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
     case 'hole':
     case 'thread':
     case 'spring':
-      // P3 タスク15・15b が resolvePart へ穴・ねじ穴・ばねの段を足したが、kernel 側の
-      // SolidStepSpec にはまだこれらの段が無い(kernel タスク10 で入る)ため、詰め替えを
+    case 'fillet':
+    case 'chamfer':
+      // P3 タスク15・15b・16 が resolvePart へ穴・ねじ穴・ばね・R面取り・C面取りの段を足したが、
+      // kernel 側の SolidStepSpec にはまだこれらの段が無い(kernel タスク10 で入る)ため、詰め替えを
       // ここに書けない。この節は型を網羅させるためだけの暫定で、**タスク17 が本実装へ置き換える。**
       // 投げた理由は recomputePart.ts が受け止めて kernelFailed へ詰め替えるので、
       // アプリは落ちない(FR-504、NFR-RE-1)。

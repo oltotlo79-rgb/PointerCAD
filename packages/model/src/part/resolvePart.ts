@@ -54,15 +54,20 @@ import {
   type KeyVec3,
   type SolidStepKeyMaterial,
 } from './cacheKey.js';
-import { consumedTargetsOf, MAX_SPRING_TURNS } from './createPartDocument.js';
-import { fingerprintKeyText, subShapeKindOf } from './subShapeRef.js';
+import { consumedTargetsOf, isPatternSource, MAX_PATTERN_COUNT, MAX_SPRING_TURNS } from './createPartDocument.js';
+import { dedupeSubShapeRefs, fingerprintKeyText, subShapeKindOf } from './subShapeRef.js';
 import type {
   BooleanFeature,
   BooleanOperation,
+  ChamferFeature,
+  ChamferSize,
   ExtrudeFeature,
+  FilletFeature,
   HoleDepth,
   HoleFeature,
   PartDocument,
+  PatternFeature,
+  PatternPlacement,
   RevolveAxis,
   RevolveFeature,
   SewFeature,
@@ -204,6 +209,28 @@ export type SolidStepPlan =
       /** 巻数。derived を解決した後の値。0 より大きく MAX_SPRING_TURNS 以下。 */
       readonly turns: number;
       readonly handedness: 'right' | 'left';
+    }
+  | {
+      readonly kind: 'fillet';
+      /** 丸める対象のボディの鍵。この段が消費する(§0.a-0.5)。 */
+      readonly targetKey: string;
+      /** 丸める辺・頂点の指紋。通し番号の昇順に並べる(鍵を安定させるため、タスク16)。 */
+      readonly targets: readonly SubShapeQueryPlan[];
+      /** 丸める半径(mm)。0 より大きい。 */
+      readonly radius: number;
+    }
+  | {
+      readonly kind: 'chamfer';
+      /** 面を取る対象のボディの鍵。この段が消費する(§0.a-0.5)。 */
+      readonly targetKey: string;
+      /** 面を取る辺の指紋。通し番号の昇順に並べる(fillet と同じ理由)。 */
+      readonly targets: readonly SubShapeQueryPlan[];
+      readonly size:
+        | { readonly kind: 'equal'; readonly distance: number }
+        | { readonly kind: 'twoDistances'; readonly distance1: number; readonly distance2: number }
+        | { readonly kind: 'distanceAngle'; readonly distance: number; readonly angle: number };
+      /** 2距離・距離角度のときの基準面を、辺に接する2面のうち後の方にするか(§0.a-0.18)。 */
+      readonly swapReferenceFace: boolean;
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -303,6 +330,12 @@ const MAX_REVOLVE_DEGREES = 360;
 const MAX_TILT_DEGREES = 90;
 
 /**
+ * C 面取りの距離+角度の上限(度、含まない)。0 度・90 度では基準面と平行になり
+ * 面取りにならない(§2.6.2 の断り方の一覧と同じ境界)。
+ */
+const MAX_CHAMFER_ANGLE_DEGREES = 90;
+
+/**
  * 向きを逆にする。0 を掛けると -0 になる double の癖を吸収して +0 に揃える。
  * -0 は Object.is で +0 と区別されるため、揃えておかないと下流の比較
  * (表示の差分判定やテストの toEqual)が値の中身と関係なく食い違う。
@@ -388,14 +421,6 @@ function partError(featureId: string, code: PartErrorCode, message: string): Par
 function fail(featureId: string, code: PartErrorCode, message: string): PlanOutcome {
   return { ok: false, error: partError(featureId, code, message) };
 }
-
-/**
- * まだ解決を実装していない種類の断り(P3 タスク13 の暫定、planSolid の最後の節)。
- * 加工フィーチャーとばねの型はタスク13 で先に足したが、解決はタスク15・15b・16 で入る。
- * タスク15 で穴・ねじ穴を、タスク15b でばねを本実装へ置き換えたので、残るのは
- * 面取り・パターン(タスク16)である。
- */
-const UNSUPPORTED_SOLID_KIND_MESSAGE = 'この種類の立体はまだ計算できません。';
 
 /** 0 より大きい有限の数か。式が評価できなかった欄は value が NaN で来る(FR-504)。 */
 function isPositiveFinite(value: number): boolean {
@@ -872,6 +897,158 @@ function planThreadHole(
 }
 
 /**
+ * 丸める・面を取る辺(頂点は§0.a-0.17 追記によりコマンド確定時にすでに辺へ展開されている)の
+ * 指紋を、重複を除いてから通し番号の昇順に並べ替える(タスク16、cacheKey.ts の
+ * `FilletKeyMaterial` / `ChamferKeyMaterial` の注釈「並びが違えば違う鍵になる」)。
+ * 同じ辺を2回選んでいても1回だけ渡す(§2.6.2 手順3)。
+ */
+function sortedUniqueTargets(targets: readonly SubShapeRef[]): readonly SubShapeQueryPlan[] {
+  return [...dedupeSubShapeRefs(targets)].sort((a, b) => a.index - b.index);
+}
+
+/** 面取り・パターンで「面・辺を1つも指していない」ときの断り(PartErrorCode.missingSubShape の注釈)。 */
+const MISSING_SUB_SHAPE_MESSAGE =
+  '加工するもとの面(辺)が見つかりません。形が大きく変わったため、選び直してください。';
+
+/**
+ * R 面取り(FR-407、§2.6)。対象のボディを消費して1つの新しいボディを作る。
+ * 辺・頂点の選び直しは指紋でカーネルが行う(model は指紋を渡すだけ、§2.2)。
+ */
+function planFillet(
+  feature: FilletFeature,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const targets = sortedUniqueTargets(feature.targets);
+  if (targets.length === 0) {
+    return fail(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
+  }
+  const radius = feature.radius.value;
+  if (!isPositiveFinite(radius)) {
+    return fail(feature.id, 'invalidValue', '丸める半径は 0 より大きい数にしてください。');
+  }
+  return {
+    ok: true,
+    plan: { kind: 'fillet', targetKey: target.targetKey, targets, radius },
+  };
+}
+
+/** C 面取りの大きさ(解決済み)。SolidStepPlan の chamfer 節と同じ形をここから借りる。 */
+type ChamferSizePlan = Extract<SolidStepPlan, { kind: 'chamfer' }>['size'];
+
+type ChamferSizeOutcome =
+  | { readonly ok: true; readonly size: ChamferSizePlan }
+  | { readonly ok: false; readonly error: PartError };
+
+type PositiveDistanceOutcome =
+  | { readonly ok: true; readonly distance: number }
+  | { readonly ok: false; readonly error: PartError };
+
+/** 面取りの距離が 0 より大きい有限の数か検査し、だめなら理由つきで断る。 */
+function resolvePositiveDistance(featureId: string, distance: number): PositiveDistanceOutcome {
+  if (!isPositiveFinite(distance)) {
+    return {
+      ok: false,
+      error: partError(featureId, 'invalidValue', '面取りの距離は 0 より大きい数にしてください。'),
+    };
+  }
+  return { ok: true, distance };
+}
+
+/**
+ * C 面取りの大きさ(FR-408 の①②③)を解決する。角度は度→ラジアンへ直し、
+ * 0 度より大きく 90 度より小さいことを検査する(§2.6.2 の断り方の一覧)。
+ */
+function resolveChamferSize(featureId: string, size: ChamferSize): ChamferSizeOutcome {
+  switch (size.kind) {
+    case 'equal': {
+      const distance = resolvePositiveDistance(featureId, size.distance.value);
+      if (!distance.ok) {
+        return distance;
+      }
+      return { ok: true, size: { kind: 'equal', distance: distance.distance } };
+    }
+    case 'twoDistances': {
+      const distance1 = resolvePositiveDistance(featureId, size.distance1.value);
+      if (!distance1.ok) {
+        return distance1;
+      }
+      const distance2 = resolvePositiveDistance(featureId, size.distance2.value);
+      if (!distance2.ok) {
+        return distance2;
+      }
+      return {
+        ok: true,
+        size: { kind: 'twoDistances', distance1: distance1.distance, distance2: distance2.distance },
+      };
+    }
+    case 'distanceAngle': {
+      const distance = resolvePositiveDistance(featureId, size.distance.value);
+      if (!distance.ok) {
+        return distance;
+      }
+      const angleDegrees = size.angle.value;
+      if (
+        !Number.isFinite(angleDegrees) ||
+        angleDegrees <= 0 ||
+        angleDegrees >= MAX_CHAMFER_ANGLE_DEGREES
+      ) {
+        return {
+          ok: false,
+          error: partError(
+            featureId,
+            'invalidValue',
+            '面取りの角度は 0 度より大きく 90 度より小さくしてください。',
+          ),
+        };
+      }
+      return {
+        ok: true,
+        size: { kind: 'distanceAngle', distance: distance.distance, angle: degreesToRadians(angleDegrees) },
+      };
+    }
+  }
+}
+
+/**
+ * C 面取り(FR-408、§2.6)。対象のボディを消費して1つの新しいボディを作る。
+ * 基準面(2距離・距離+角度のとき)は `swapReferenceFace` の値をそのまま渡し、
+ * どちらの面が先に出るかの判定はカーネルが `TopExp` の並びで行う(§0.a-0.18)。
+ */
+function planChamfer(
+  feature: ChamferFeature,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const targets = sortedUniqueTargets(feature.targets);
+  if (targets.length === 0) {
+    return fail(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
+  }
+  const sizeOutcome = resolveChamferSize(feature.id, feature.size);
+  if (!sizeOutcome.ok) {
+    return sizeOutcome;
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'chamfer',
+      targetKey: target.targetKey,
+      targets,
+      size: sizeOutcome.size,
+      swapReferenceFace: feature.swapReferenceFace,
+    },
+  };
+}
+
+/**
  * 全長・ピッチ・巻数のうち derived が指すものを、他の2つから計算する(FR-414、§0.a-0.30)。
  *
  * 関係式は `length = pitch × turns`。**derived が指す欄の保存値は読まない**(引数に含めても
@@ -1077,8 +1254,198 @@ function planSpring(feature: SpringFeature, sketches: readonly ResolvedPartSketc
   };
 }
 
+/** パターンの並べ方の個数(FR-411、FR-412、§2.7)。2 以上 MAX_PATTERN_COUNT 以下の整数。 */
+type PatternCountOutcome =
+  | { readonly ok: true; readonly count: number }
+  | { readonly ok: false; readonly message: string };
+
+function resolvePatternCount(count: ExpressionValue): PatternCountOutcome {
+  const value = count.value;
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 2 || value > MAX_PATTERN_COUNT) {
+    return { ok: false, message: '並べる個数は 2 以上 100 以下の整数にしてください。' };
+  }
+  return { ok: true, count: value };
+}
+
+/** 直線パターンの変換1つ(向き × 間隔 × k)。回転は掛けない(rotationAngle 0、§2.7)。 */
+function linearPatternTransform(direction: Vec3, spacing: number, k: number): RigidTransform {
+  return {
+    // 0 を掛けると -0 になる成分があるので cleanZeroVec3 で揃える(negateVec3 と同じ理由)。
+    translation: cleanZeroVec3(scaleVec3(direction, spacing * k)),
+    rotationOrigin: ORIGIN,
+    rotationAxis: direction,
+    rotationAngle: 0,
+  };
+}
+
+/**
+ * パターンの変換の一覧を作る(FR-411、FR-412、§2.7)。もとの位置ぶんは作らない(n−1 個)。
+ * 直線の向きも円形の軸も `resolveRevolveAxis` で解決する(`PatternDirection` は `RevolveAxis` と
+ * 同じ形なので、専用の解決関数を新しく作らない、§0.a-0.21)。
+ */
+export function resolvePatternTransforms(
+  placement: PatternPlacement,
+  sketches: readonly ResolvedPartSketch[],
+):
+  | { readonly ok: true; readonly transforms: readonly RigidTransform[] }
+  | { readonly ok: false; readonly code: PartErrorCode; readonly message: string } {
+  const countOutcome = resolvePatternCount(placement.count);
+  if (!countOutcome.ok) {
+    return { ok: false, code: 'invalidValue', message: countOutcome.message };
+  }
+  const n = countOutcome.count;
+
+  if (placement.kind === 'linear') {
+    const spacing = placement.spacing.value;
+    if (!isPositiveFinite(spacing)) {
+      return {
+        ok: false,
+        code: 'invalidValue',
+        message: '並べる間隔は 0 より大きい数にしてください。',
+      };
+    }
+    // 両側へ並べるときに n が偶数だと、もとの穴の位置に工具が来ない(§2.7 の「注意」)。
+    if (placement.symmetric && n % 2 === 0) {
+      return {
+        ok: false,
+        code: 'invalidValue',
+        message: '両側へ並べるときは、個数を奇数にしてください。',
+      };
+    }
+    const frame = resolveRevolveAxis(placement.direction, sketches);
+    if (frame === null) {
+      return {
+        ok: false,
+        code: 'missingProfile',
+        message: '並べる向きにする線分が見つかりません。スケッチで線分をかいてから選び直してください。',
+      };
+    }
+    const transforms: RigidTransform[] = [];
+    if (placement.symmetric) {
+      // n は奇数なので (n-1)/2 は整数。0(もとの位置)を除いて両側へ振る(§2.7 の刻み表)。
+      const half = (n - 1) / 2;
+      for (let k = -half; k <= half; k += 1) {
+        if (k === 0) {
+          continue;
+        }
+        transforms.push(linearPatternTransform(frame.direction, spacing, k));
+      }
+    } else {
+      for (let k = 1; k <= n - 1; k += 1) {
+        transforms.push(linearPatternTransform(frame.direction, spacing, k));
+      }
+    }
+    return { ok: true, transforms };
+  }
+
+  // 円形パターン。全周なら 360/n 度刻み、そうでなければ角度を n−1 等分する(§2.7)。
+  let stepAngle: number;
+  if (placement.fullCircle) {
+    stepAngle = (2 * Math.PI) / n;
+  } else {
+    const angleDegrees = placement.angle.value;
+    if (!Number.isFinite(angleDegrees) || angleDegrees <= 0 || angleDegrees > MAX_REVOLVE_DEGREES) {
+      return {
+        ok: false,
+        code: 'invalidValue',
+        message: '並べる角度は 0 より大きく 360 以下にしてください。',
+      };
+    }
+    stepAngle = degreesToRadians(angleDegrees) / (n - 1);
+  }
+  const frame = resolveRevolveAxis(placement.axis, sketches);
+  if (frame === null) {
+    return {
+      ok: false,
+      code: 'missingProfile',
+      message: '並べる向きにする線分が見つかりません。スケッチで線分をかいてから選び直してください。',
+    };
+  }
+  const transforms: RigidTransform[] = [];
+  for (let k = 1; k <= n - 1; k += 1) {
+    transforms.push({
+      translation: ORIGIN,
+      rotationOrigin: frame.origin,
+      rotationAxis: frame.direction,
+      rotationAngle: stepAngle * k,
+    });
+  }
+  return { ok: true, transforms };
+}
+
+/**
+ * パターン(FR-411、FR-412、§2.7、§0.a-0.20)。繰り返すもとの加工フィーチャー(穴・ねじ穴に限る)
+ * のボディを消費し、もとの工具の指定に `transforms` を足しただけの計画を作る。
+ * パターン専用の SolidStepPlan の種類は持たない(§2.7「畳み方」手順5・6)。
+ */
+function planPattern(
+  feature: PatternFeature,
+  solids: readonly SolidFeature[],
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): PlanOutcome {
+  const notPatternSourceMessage = '繰り返せるのは穴とねじ穴だけです。穴かねじ穴を選び直してください。';
+  // 過去の失敗(ブーリアンの対象=相手)と同じ扱いで、自己参照を先に弾く
+  // (docs/報告記録.md 2026-09-03 08:23 の②)。パターン自身は kind が 'pattern' で
+  // isPatternSource が false になるので、この早期リターンが無くても下の判定で同じ結果になるが、
+  // 「自己参照」であることを意図として明示するため独立させる。
+  if (feature.sourceFeatureId === feature.id) {
+    return fail(feature.id, 'invalidValue', notPatternSourceMessage);
+  }
+  const source = solids.find((candidate) => candidate.id === feature.sourceFeatureId);
+  if (source === undefined || !isPatternSource(source)) {
+    return fail(feature.id, 'invalidValue', notPatternSourceMessage);
+  }
+  const sourceTarget = resolveMachiningTarget(feature.id, feature.sourceFeatureId, bodyKeys, consumed);
+  if (!sourceTarget.ok) {
+    return sourceTarget;
+  }
+  const transformsOutcome = resolvePatternTransforms(feature.placement, sketches);
+  if (!transformsOutcome.ok) {
+    return fail(feature.id, transformsOutcome.code, transformsOutcome.message);
+  }
+  // もとの穴・ねじ穴の解決をもう一度呼んで再利用する(§2.7 手順5)。ただし consumed には
+  // 「空集合」を渡す: もとのフィーチャー自身がその対象(例: 穴なら掘り込む先のボディ)を
+  // main loop の消費記録ですでに consumed へ加えている(このパターンの直前で処理済みのため)。
+  // 同じ consumed をそのまま渡すと、もとのフィーチャーがもう一度自分の対象を消費しようとした
+  // ように誤認して consumedTwice で失敗してしまう。ここではもとの解決が使った値(面・中心・径
+  // など)を再利用したいだけで、対象の消費可否は「もとのフィーチャーの鍵が bodyKeys にある」
+  // ことで既に保証されている(無ければ sourceTarget の解決で先に missingBody として断っている)。
+  const reuseConsumed = new Set<string>();
+  let baseOutcome: PlanOutcome;
+  if (source.kind === 'hole') {
+    baseOutcome = planHole(source, sketches, bodyKeys, reuseConsumed);
+  } else if (source.kind === 'threadHole') {
+    baseOutcome = planThreadHole(source, sketches, bodyKeys, reuseConsumed);
+  } else {
+    // isPatternSource が hole/threadHole だけを通すので、ここへは来ない(型の保険)。
+    return fail(feature.id, 'invalidValue', notPatternSourceMessage);
+  }
+  if (!baseOutcome.ok) {
+    // もとの解決の失敗理由をそのままパターンの失敗として出す(featureId だけ差し替える)。
+    return { ok: false, error: { ...baseOutcome.error, featureId: feature.id } };
+  }
+  const basePlan = baseOutcome.plan;
+  if (basePlan.kind === 'hole') {
+    return {
+      ok: true,
+      plan: { ...basePlan, targetKey: sourceTarget.targetKey, transforms: transformsOutcome.transforms },
+    };
+  }
+  if (basePlan.kind === 'thread') {
+    return {
+      ok: true,
+      plan: { ...basePlan, targetKey: sourceTarget.targetKey, transforms: transformsOutcome.transforms },
+    };
+  }
+  // planHole / planThreadHole は必ず 'hole' / 'thread' の計画を返すので、ここへは来ない(型の保険)。
+  return fail(feature.id, 'invalidValue', notPatternSourceMessage);
+}
+
 function planSolid(
   feature: SolidFeature,
+  solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
@@ -1099,14 +1466,11 @@ function planSolid(
     case 'spring':
       return planSpring(feature, sketches);
     case 'fillet':
+      return planFillet(feature, bodyKeys, consumed);
     case 'chamfer':
+      return planChamfer(feature, bodyKeys, consumed);
     case 'pattern':
-      // P3 タスク13 で文書の型だけを先に足したための暫定。
-      // 実際の解決(面取り・パターン、タスク16)が入るまでの間、
-      // この switch を網羅させて型検査を通すために置く。
-      // 例外を投げず errors へ入れる形にしておくので、途中の状態でもアプリは落ちない
-      // (FR-504、NFR-RE-1)。**タスク16 はこの節を必ず置き換える。**
-      return fail(feature.id, 'invalidValue', UNSUPPORTED_SOLID_KIND_MESSAGE);
+      return planPattern(feature, solids, sketches, bodyKeys, consumed);
   }
 }
 
@@ -1218,6 +1582,34 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         turns: plan.turns,
         handedness: plan.handedness,
       };
+    case 'fillet':
+      return {
+        kind: 'fillet',
+        targetKey: plan.targetKey,
+        // 並びはすでに planFillet が通し番号の昇順に揃えてある(FilletKeyMaterial の注釈)。
+        targets: plan.targets.map(fingerprintKeyText),
+        radius: plan.radius,
+      };
+    case 'chamfer': {
+      const size = plan.size;
+      // ChamferKeyMaterial は3通りの大きさを「距離2つ」に均して持つ(cacheKey.ts の注釈)。
+      // 等距離は distance2 を使わないので 0 に揃え、距離+角度は角度(ラジアン)を distance2 に置く。
+      const [distance1, distance2] =
+        size.kind === 'equal'
+          ? [size.distance, 0]
+          : size.kind === 'twoDistances'
+            ? [size.distance1, size.distance2]
+            : [size.distance, size.angle];
+      return {
+        kind: 'chamfer',
+        targetKey: plan.targetKey,
+        targets: plan.targets.map(fingerprintKeyText),
+        mode: size.kind,
+        distance1,
+        distance2,
+        swapReferenceFace: plan.swapReferenceFace,
+      };
+    }
   }
 }
 
@@ -1248,7 +1640,7 @@ export function resolvePart(document: PartDocument): ResolvedPart {
     if (feature.suppressed) {
       continue;
     }
-    const outcome = planSolid(feature, sketches, bodyKeys, consumed);
+    const outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed);
     if (!outcome.ok) {
       errors.push(outcome.error);
       continue;

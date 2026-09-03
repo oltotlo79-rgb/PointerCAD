@@ -3,7 +3,7 @@ import { Fragment, useState } from 'react';
 import { evaluateExpression } from '@pointercad/expression';
 import { replaceSolid, type SketchFeature, type SolidFeature } from '@pointercad/model';
 
-import { t } from '../i18n/t.js';
+import { t, type MessageKey } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import {
   faceBoundaryEntries,
@@ -19,6 +19,7 @@ import {
   COORDINATE_MODES,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
+  numericChoiceOptionLabel,
 } from '../sketch/numericInput.js';
 import {
   formatVolume,
@@ -26,11 +27,13 @@ import {
   partErrorMessage,
   selectionKindLabelKeys,
   setSolidAxis,
+  setSolidChoice,
   setSolidField,
   setSolidToggle,
   solidForSelection,
   summarizeSolid,
   WORLD_AXIS_CHOICES,
+  type SolidChoiceSummary,
   type SolidFieldKey,
   type SolidFieldSummary,
 } from '../solid/solidSummary.js';
@@ -247,6 +250,55 @@ function ReferenceButton({
   );
 }
 
+/**
+ * 参照の節の見出し(P3 タスク27)。もとは押し出し・回転・縫合(断面)とブーリアン
+ * (組み合わせるもの)の2択だったが、加工6種の「加工するもとの立体・並べる穴」は
+ * どちらにも当たらないので専用の見出し(`sectionTarget`)を足した。
+ */
+function referencesSectionTitleKey(feature: SolidFeature): MessageKey {
+  if (feature.kind === 'boolean') {
+    return 'propertyPanel.sectionCombine';
+  }
+  if (feature.kind === 'extrude' || feature.kind === 'revolve' || feature.kind === 'sew') {
+    return 'propertyPanel.sectionProfile';
+  }
+  return 'propertyPanel.sectionTarget';
+}
+
+/**
+ * いくつかから1つを選ぶ欄(深さの種類・ねじの呼び・面取りの決め方・パターンの向き等)。
+ * 選択肢が多い(ねじの呼び28個)ときも同じ並びのボタンで出す。畳んだ一覧への仕上げは
+ * タスク28(ねじ)・29(パターン)が行う(§2.11「呼びの畳んだ一覧」)。
+ */
+function ChoiceButtons({
+  choice,
+  onChoose,
+}: {
+  readonly choice: SolidChoiceSummary;
+  readonly onChoose: (value: string) => void;
+}): React.JSX.Element {
+  return (
+    <div className="pcad-choice">
+      <span className="pcad-choice__label">{t(choice.labelKey)}</span>
+      <div className="pcad-segmented pcad-choice__options" role="group" aria-label={t(choice.labelKey)}>
+        {choice.options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className="pcad-button"
+            aria-pressed={choice.value === option.value}
+            onClick={() => {
+              onChoose(option.value);
+            }}
+          >
+            {numericChoiceOptionLabel(option)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** 打っている途中の立体の欄。式として読めるようになるまで履歴へは書き戻さない。 */
 interface SolidFieldDraft {
   readonly key: SolidFieldKey;
@@ -334,7 +386,10 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         </dl>
       </div>
 
-      {summary.fields.length === 0 && summary.toggles.length === 0 && axis === null ? null : (
+      {summary.fields.length === 0 &&
+      summary.toggles.length === 0 &&
+      summary.choices.length === 0 &&
+      axis === null ? null : (
         <div className="pcad-section">
           <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
           {summary.fields.length === 0 ? null : (
@@ -368,6 +423,15 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
               )}
             </div>
           )}
+          {summary.choices.map((choice) => (
+            <ChoiceButtons
+              key={choice.key}
+              choice={choice}
+              onChoose={(value) => {
+                apply(setSolidChoice(feature, choice.key, value));
+              }}
+            />
+          ))}
           {summary.toggles.length === 0 ? null : (
             <div className="pcad-toggles">
               {summary.toggles.map((toggle) => (
@@ -392,15 +456,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         </div>
       )}
 
-      {summary.references.length === 0 ? null : (
+      {summary.references.length === 0 && summary.subShapeCounts.length === 0 ? null : (
         <div className="pcad-section">
-          <h3 className="pcad-section__title">
-            {t(
-              feature.kind === 'boolean'
-                ? 'propertyPanel.sectionCombine'
-                : 'propertyPanel.sectionProfile',
-            )}
-          </h3>
+          <h3 className="pcad-section__title">{t(referencesSectionTitleKey(feature))}</h3>
           <dl className="pcad-properties">
             {feature.kind !== 'boolean' ? null : (
               // 組み合わせ方(和・差・積)。種類は summarizeSolid がすでに持っている(P3 §0.a-0.23 ②)。
@@ -421,6 +479,13 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
                     <ReferenceButton elementId={reference.elementId} name={reference.name} />
                   )}
                 </dd>
+              </Fragment>
+            ))}
+            {/* 選んだ部分形状は数だけを出す(「選んだ辺 4」)。個々の番号は利用者に意味が無い(§0.a-0.17)。 */}
+            {summary.subShapeCounts.map((entry, index) => (
+              <Fragment key={`${entry.labelKey}-${String(index)}`}>
+                <dt className="pcad-properties__key">{t(entry.labelKey)}</dt>
+                <dd className="pcad-properties__value">{entry.count}</dd>
               </Fragment>
             ))}
           </dl>

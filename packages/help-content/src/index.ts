@@ -31,6 +31,17 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/feature-tree.md',
   },
   { id: 'save-and-open', title: '保存する・開く', path: 'docs/ja/save-and-open.md' },
+  {
+    id: 'select-subshape',
+    title: '面・辺・頂点を選ぶ',
+    path: 'docs/ja/select-subshape.md',
+  },
+  { id: 'hole', title: '穴をあける', path: 'docs/ja/hole.md' },
+  {
+    id: 'fillet-chamfer',
+    title: '角を丸める・面を取る',
+    path: 'docs/ja/fillet-chamfer.md',
+  },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

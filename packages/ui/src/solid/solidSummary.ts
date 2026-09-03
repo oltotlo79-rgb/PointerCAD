@@ -1,6 +1,6 @@
 /**
  * 立体1つを「モデルブラウザとプロパティが表に出せる形」へ直す
- * (計画書 docs/plans/P2-ソリッド基礎.md タスク22)。
+ * (計画書 docs/plans/P2-ソリッド基礎.md タスク22、docs/plans/P3-加工フィーチャー.md タスク27)。
  *
  * 対応要件: FR-501(ツリーの種類と名前)、FR-502(参照は id で持つ)、FR-503(抑制・改名・削除)、
  * FR-504(失敗の明示)、FR-202(入れた式をそのまま再表示する)、FR-311(直すと下流が追従する)。
@@ -8,29 +8,79 @@
  * `packages/ui/src/sketch/featureSummary.ts` と同じ作りにする。DOM にも React にもストアにも
  * 触れない純関数だけを置き、表示する文言は持たず必ず ja.json のキー(MessageKey)で返す
  * (NFR-MA-5)。書き戻しは元のフィーチャーを変えずに新しいフィーチャーを作る(FR-505 の土台)。
+ *
+ * P3 タスク27 で加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の欄・つまみ・
+ * 選択肢・参照を足した。ばね(spring)の節は§0.a-0.30の読み取り専用の欄(derived)を要するため
+ * タスク29b がここへ追記する(この時点ではまだ空)。
  */
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   consumedBodyIds,
+  DEFAULT_CHAMFER_ANGLE_DEGREES,
+  DEFAULT_CHAMFER_DISTANCE_MM,
+  DEFAULT_HOLE_DEPTH_MM,
   findFeature,
+  findMetricThread,
   findSketch,
   findSolid,
+  METRIC_THREAD_DESIGNATIONS,
+  metricThreadPitch,
+  threadMinorDiameter,
+  type ChamferFeature,
+  type ChamferSize,
+  type HoleDepth,
+  type HoleFeature,
+  type MetricThreadSize,
   type PartDocument,
   type PartRecomputeError,
+  type PatternDirection,
+  type PatternFeature,
   type SketchError,
   type SketchFaceRef,
   type SketchFeatureKind,
+  type SketchLineRef,
   type SolidFeature,
   type SolidLabelKey,
+  type ThreadHoleFeature,
+  type ThreadRepresentation,
+  type ThreadSeries,
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 import { FEATURE_KIND_LABEL_KEYS } from '../sketch/featureSummary.js';
 import { TOGGLE_LABEL_KEYS, type FieldUnit, type NumericToggleKey } from '../sketch/numericInput.js';
 
-/** プロパティ欄で式のまま直せる欄の種類。種類ごとに1つだけ持つ。 */
-export type SolidFieldKey = 'distance' | 'angle' | 'tolerance';
+/**
+ * プロパティ欄で式のまま直せる欄の種類。種類ごとに1つだけ持つ。
+ * P3 タスク27 で加工6種の欄(直径・深さ・半径・面取りの距離2種・傾き2種・ピッチ・下穴径・
+ * ねじ部の長さ・パターンの間隔・個数・角度)を足した。ばねの5つ(コイル径〜全長)は
+ * タスク29b が使う欄で、型はここでまとめて広げる(計画書タスク27 の型宣言のとおり)。
+ */
+export type SolidFieldKey =
+  | 'distance'
+  | 'angle'
+  | 'tolerance'
+  | 'diameter'
+  | 'depth'
+  | 'radius'
+  | 'chamferDistance'
+  | 'chamferDistance2'
+  | 'chamferAngle'
+  | 'pitch'
+  | 'drillDiameter'
+  | 'threadLength'
+  | 'tiltAngle'
+  | 'tiltAzimuth'
+  | 'spacing'
+  | 'count'
+  | 'patternAngle'
+  /** ばね(FR-414)。タスク29b が使う。 */
+  | 'coilDiameter'
+  | 'wireDiameter'
+  | 'springPitch'
+  | 'springTurns'
+  | 'springLength';
 
 /**
  * プロパティ欄の1行。式は source をそのまま出す(FR-202)。
@@ -47,11 +97,51 @@ export interface SolidFieldSummary {
   readonly value: ExpressionValue;
 }
 
-/** 入切のつまみ(向きを反転・両側へ)。式ではないので値は真偽。 */
+/**
+ * 立体側だけが持つつまみ(C面取りの「基準の面を入れ替える」、§0.a-0.18)。
+ * その場入力の `NumericToggleKey`(numericInput.ts)には無い。numericInput.ts は
+ * P1・P2 の振る舞いを1つも変えない約束(計画書 §4)なので、ここだけで型を広げる。
+ */
+export type SolidToggleKey = NumericToggleKey | 'swapReferenceFace';
+
+/** 入切のつまみ(向きを反転・両側へ等)。式ではないので値は真偽。 */
 export interface SolidToggleSummary {
-  readonly key: NumericToggleKey;
+  readonly key: SolidToggleKey;
   readonly labelKey: MessageKey;
   readonly value: boolean;
+}
+
+/**
+ * 深さの種類・ねじの見せ方・面取りの決め方など、いくつかから1つを選ぶ欄(P3 §2.11)。
+ * 直線パターンの「向き」と円形パターンの「軸」は、どちらも model の `PatternDirection` を
+ * 使うため `patternDirection` 1つのキーを共用する(計画書タスク27 の型宣言のとおり)。
+ */
+export interface SolidChoiceSummary {
+  readonly key:
+    | 'depthKind'
+    | 'threadDesignation'
+    | 'threadSeries'
+    | 'threadRepresentation'
+    | 'chamferMode'
+    | 'patternDirection'
+    | 'patternKind'
+    /** ばね(FR-414)。タスク29b が使う。 */
+    | 'springAxis'
+    | 'springHandedness'
+    | 'springDerived';
+  readonly labelKey: MessageKey;
+  readonly value: string;
+  readonly options: readonly {
+    readonly value: string;
+    readonly labelKey?: MessageKey;
+    readonly label?: string;
+  }[];
+}
+
+/** 選んだ部分形状の数(「選んだ辺 4」のように出す)。個々の番号は利用者に意味が無いので数だけ出す。 */
+export interface SolidSubShapeCountSummary {
+  readonly labelKey: MessageKey;
+  readonly count: number;
 }
 
 /**
@@ -87,19 +177,21 @@ export interface SolidSummary {
   readonly consumed: boolean;
   readonly fields: readonly SolidFieldSummary[];
   readonly toggles: readonly SolidToggleSummary[];
+  readonly choices: readonly SolidChoiceSummary[];
   readonly references: readonly SolidReferenceSummary[];
-  /** 回転軸。回転以外は null。 */
+  /** 選んだ部分形状の数(穴の面・中心点、面取りの辺)。持たない種類は空配列。 */
+  readonly subShapeCounts: readonly SolidSubShapeCountSummary[];
+  /** 回転軸。回転以外は null(パターンの向き・軸は choices の `patternDirection` で出す)。 */
   readonly axis: SolidAxisSummary | null;
 }
 
 /**
  * 立体の種類の名前。ツールバーの道具の名前と同じ言葉にする(FR-501)。
  *
- * P3 のタスク13 で種類が13個に増えたが、加工6種とばねの道具の名前(ツールバーの文言)は
- * タスク18 でまとめて `ja.json` へ入る。それまでの7つは共通の「未対応」の文言を指す。
- * **タスク18・26・27 がこの7行をそれぞれの道具の名前へ置き換える。**
- * 画面からこれらのフィーチャーを作れるようになるのはタスク25 以降なので、
- * それまでこの文言が実際にツリーへ出ることはない。
+ * P3 タスク13 で種類が13個に増え、タスク22 は暫定で7つを共通の「未対応」の文言(
+ * `featureTree.unsupportedKind`)にしていた。タスク18(ja.json)・26(ツールバー)で
+ * 加工6種+ばねの正式な文言が揃ったので、タスク27 で正式なキーへ置き換え、
+ * 暫定キーは ja.json から削除した(統括の指示どおり)。
  */
 export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> = {
   extrude: 'toolbar.solid.extrude',
@@ -108,13 +200,13 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   union: 'toolbar.solid.union',
   subtract: 'toolbar.solid.subtract',
   intersect: 'toolbar.solid.intersect',
-  hole: 'featureTree.unsupportedKind',
-  threadHole: 'featureTree.unsupportedKind',
-  fillet: 'featureTree.unsupportedKind',
-  chamfer: 'featureTree.unsupportedKind',
-  linearPattern: 'featureTree.unsupportedKind',
-  circularPattern: 'featureTree.unsupportedKind',
-  spring: 'featureTree.unsupportedKind',
+  hole: 'toolbar.machining.hole',
+  threadHole: 'toolbar.machining.threadHole',
+  fillet: 'toolbar.machining.fillet',
+  chamfer: 'toolbar.machining.chamfer',
+  linearPattern: 'toolbar.machining.linearPattern',
+  circularPattern: 'toolbar.machining.circularPattern',
+  spring: 'toolbar.solid.spring',
 };
 
 /** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
@@ -127,7 +219,13 @@ export const WORLD_AXIS_CHOICES: readonly {
   { axis: 'z', labelKey: 'numericInput.axis.z' },
 ];
 
-/** 欄の見出し・説明・単位。その場数値入力(numericInput.ts)と同じ言葉を使う。 */
+/**
+ * 欄の見出し・説明・単位。その場数値入力(numericInput.ts)と同じ言葉を使う。
+ *
+ * ピッチ・下穴径・傾き・傾ける向きはその場入力を持たない(§0.a-0.10「その場入力には出さず
+ * プロパティでだけ編集」、下穴径はねじの呼びから自動で決まる)ので専用の tooltip キーが
+ * 無い。ラベルと同じキーを tooltip にも使う(ja.json を増やさない、計画書 §4)。
+ */
 const FIELD_DEFINITIONS: Readonly<
   Record<
     SolidFieldKey,
@@ -149,6 +247,97 @@ const FIELD_DEFINITIONS: Readonly<
     tooltipKey: 'numericInput.tooltip.tolerance',
     unit: 'mm',
   },
+  diameter: {
+    labelKey: 'numericInput.field.diameter',
+    tooltipKey: 'numericInput.tooltip.diameter',
+    unit: 'mm',
+  },
+  depth: {
+    labelKey: 'numericInput.field.depth',
+    tooltipKey: 'numericInput.tooltip.depth',
+    unit: 'mm',
+  },
+  radius: {
+    labelKey: 'numericInput.field.radius',
+    tooltipKey: 'numericInput.tooltip.filletRadius',
+    unit: 'mm',
+  },
+  chamferDistance: {
+    labelKey: 'numericInput.field.chamferDistance',
+    tooltipKey: 'numericInput.tooltip.chamferDistance',
+    unit: 'mm',
+  },
+  chamferDistance2: {
+    labelKey: 'numericInput.field.chamferDistance2',
+    tooltipKey: 'numericInput.tooltip.chamferDistance2',
+    unit: 'mm',
+  },
+  chamferAngle: {
+    labelKey: 'numericInput.field.chamferAngle',
+    tooltipKey: 'numericInput.tooltip.chamferAngle',
+    unit: 'degree',
+  },
+  pitch: { labelKey: 'propertyPanel.pitch', tooltipKey: 'propertyPanel.pitch', unit: 'mm' },
+  drillDiameter: {
+    labelKey: 'propertyPanel.drillDiameter',
+    tooltipKey: 'propertyPanel.drillDiameter',
+    unit: 'mm',
+  },
+  threadLength: {
+    labelKey: 'numericInput.field.threadLength',
+    tooltipKey: 'numericInput.tooltip.threadLength',
+    unit: 'mm',
+  },
+  tiltAngle: {
+    labelKey: 'propertyPanel.tiltAngle',
+    tooltipKey: 'propertyPanel.tiltAngle',
+    unit: 'degree',
+  },
+  tiltAzimuth: {
+    labelKey: 'propertyPanel.tiltAzimuth',
+    tooltipKey: 'propertyPanel.tiltAzimuth',
+    unit: 'degree',
+  },
+  spacing: {
+    labelKey: 'numericInput.field.spacing',
+    tooltipKey: 'numericInput.tooltip.patternSpacing',
+    unit: 'mm',
+  },
+  count: {
+    labelKey: 'numericInput.field.count',
+    tooltipKey: 'numericInput.tooltip.patternCount',
+    unit: 'count',
+  },
+  patternAngle: {
+    labelKey: 'numericInput.field.patternAngle',
+    tooltipKey: 'numericInput.tooltip.patternAngle',
+    unit: 'degree',
+  },
+  coilDiameter: {
+    labelKey: 'numericInput.field.coilDiameter',
+    tooltipKey: 'numericInput.tooltip.coilDiameter',
+    unit: 'mm',
+  },
+  wireDiameter: {
+    labelKey: 'numericInput.field.wireDiameter',
+    tooltipKey: 'numericInput.tooltip.wireDiameter',
+    unit: 'mm',
+  },
+  springPitch: {
+    labelKey: 'numericInput.field.springPitch',
+    tooltipKey: 'numericInput.tooltip.springPitch',
+    unit: 'mm',
+  },
+  springTurns: {
+    labelKey: 'numericInput.field.springTurns',
+    tooltipKey: 'numericInput.tooltip.springTurns',
+    unit: 'count',
+  },
+  springLength: {
+    labelKey: 'numericInput.field.springLength',
+    tooltipKey: 'numericInput.tooltip.springLength',
+    unit: 'mm',
+  },
 };
 
 function fieldSummary(key: SolidFieldKey, value: ExpressionValue): SolidFieldSummary {
@@ -164,6 +353,11 @@ function fieldSummary(key: SolidFieldKey, value: ExpressionValue): SolidFieldSum
 
 function toggleSummary(key: NumericToggleKey, value: boolean): SolidToggleSummary {
   return { key, labelKey: TOGGLE_LABEL_KEYS[key], value };
+}
+
+/** C面取りの「基準の面を入れ替える」(§0.a-0.18)。等距離では効かないので呼び出し側で外す。 */
+function swapReferenceFaceToggle(value: boolean): SolidToggleSummary {
+  return { key: 'swapReferenceFace', labelKey: 'propertyPanel.swapReferenceFace', value };
 }
 
 /**
@@ -208,6 +402,13 @@ function bodyReference(
     : { labelKey, name: found.name, elementId: found.id };
 }
 
+/** スケッチの線分の名前。見つからなければ id をそのまま返す(FR-504)。 */
+function lineReferenceName(document: PartDocument, ref: SketchLineRef): string {
+  const sketch = findSketch(document, ref.sketchId);
+  const found = sketch === undefined ? undefined : findFeature(sketch, ref.lineFeatureId);
+  return found === undefined || found.kind !== 'line' ? ref.lineFeatureId : found.name;
+}
+
 /** 回転軸の見え方。線分の軸は名前を引いて読み取り専用で出す(§0.a-0.9)。 */
 function axisSummary(document: PartDocument, feature: SolidFeature): SolidAxisSummary | null {
   if (feature.kind !== 'revolve') {
@@ -247,6 +448,145 @@ function consumedIds(
   return consumedBodyIds({ ...document, solids: survivors });
 }
 
+/** 穴・ねじ穴の「選んだ面 1」「中心の点 N」(subShapeCounts、§0.a-0.9)。 */
+function holeSubShapeCounts(
+  feature: HoleFeature | ThreadHoleFeature,
+): readonly SolidSubShapeCountSummary[] {
+  return [
+    { labelKey: 'propertyPanel.selectedFaces', count: 1 },
+    { labelKey: 'propertyPanel.centerPoints', count: feature.centers.length },
+  ];
+}
+
+/** 穴の欄。直径・(止まりのときだけ深さ)・傾き・傾ける向き(§0.a-0.10、0.11)。 */
+function holeFields(feature: HoleFeature): SolidFieldSummary[] {
+  const fields = [fieldSummary('diameter', feature.diameter)];
+  if (feature.depth.kind === 'blind') {
+    fields.push(fieldSummary('depth', feature.depth.depth));
+  }
+  fields.push(
+    fieldSummary('tiltAngle', feature.tiltAngle),
+    fieldSummary('tiltAzimuth', feature.tiltAzimuth),
+  );
+  return fields;
+}
+
+/** 深さの種類(貫通/止まり)を選ぶ欄。穴・ねじ穴で共用する。 */
+function depthKindChoice(kind: HoleDepth['kind']): SolidChoiceSummary {
+  return {
+    key: 'depthKind',
+    labelKey: 'propertyPanel.depth',
+    value: kind,
+    options: [
+      { value: 'through', labelKey: 'propertyPanel.through' },
+      { value: 'blind', labelKey: 'propertyPanel.blind' },
+    ],
+  };
+}
+
+/** ねじの呼び(M2〜M64)。一覧が長いので `label` に文字をそのまま入れる(numericInput.ts と同じ流儀)。 */
+function threadDesignationChoice(designation: string): SolidChoiceSummary {
+  return {
+    key: 'threadDesignation',
+    labelKey: 'propertyPanel.threadDesignation',
+    value: designation,
+    options: METRIC_THREAD_DESIGNATIONS.map((value) => ({ value, label: value })),
+  };
+}
+
+/** ねじの種類(並目/細目)。 */
+function threadSeriesChoice(series: ThreadSeries): SolidChoiceSummary {
+  return {
+    key: 'threadSeries',
+    labelKey: 'propertyPanel.threadSeries',
+    value: series,
+    options: [
+      { value: 'coarse', labelKey: 'numericInput.threadSeries.coarse' },
+      { value: 'fine', labelKey: 'numericInput.threadSeries.fine' },
+    ],
+  };
+}
+
+/** ねじの見せ方(簡略/実際のねじ山、§0.a-0.15、0.16)。 */
+function threadRepresentationChoice(representation: ThreadRepresentation): SolidChoiceSummary {
+  return {
+    key: 'threadRepresentation',
+    labelKey: 'propertyPanel.threadRepresentation',
+    value: representation,
+    options: [
+      { value: 'simplified', labelKey: 'propertyPanel.simplified' },
+      { value: 'modeled', labelKey: 'propertyPanel.modeled' },
+    ],
+  };
+}
+
+/** C面取りの決め方(等距離/2距離/距離と角度、FR-408)。 */
+function chamferModeChoice(kind: ChamferSize['kind']): SolidChoiceSummary {
+  return {
+    key: 'chamferMode',
+    labelKey: 'propertyPanel.chamferMode',
+    value: kind,
+    options: [
+      { value: 'equal', labelKey: 'numericInput.chamferMode.equal' },
+      { value: 'twoDistances', labelKey: 'numericInput.chamferMode.twoDistances' },
+      { value: 'distanceAngle', labelKey: 'numericInput.chamferMode.distanceAngle' },
+    ],
+  };
+}
+
+/** C面取りの欄。決め方で出る欄が変わる(§0.a-0.18、計画書タスク27の検証表)。 */
+function chamferFieldSummaries(size: ChamferSize): SolidFieldSummary[] {
+  switch (size.kind) {
+    case 'equal':
+      return [fieldSummary('chamferDistance', size.distance)];
+    case 'twoDistances':
+      return [
+        fieldSummary('chamferDistance', size.distance1),
+        fieldSummary('chamferDistance2', size.distance2),
+      ];
+    case 'distanceAngle':
+      return [
+        fieldSummary('chamferDistance', size.distance),
+        fieldSummary('chamferAngle', size.angle),
+      ];
+  }
+}
+
+/** ワールドの X / Y / Z(直線パターンの向き・円形パターンの軸で共用)。 */
+function patternDirectionOptions(): SolidChoiceSummary['options'] {
+  return [
+    { value: 'x', labelKey: 'numericInput.axis.x' },
+    { value: 'y', labelKey: 'numericInput.axis.y' },
+    { value: 'z', labelKey: 'numericInput.axis.z' },
+  ];
+}
+
+/**
+ * 直線パターンの「向き」・円形パターンの「軸」。どちらも model の `PatternDirection` が
+ * 同じ形なので、`SolidChoiceSummary.key` は `patternDirection` 1つを共用する
+ * (計画書タスク27 の型宣言のとおり)。見出しだけは呼び出し側で使い分ける
+ * (直線は「向き」、円形は「回転軸」)。線分を軸にしているときは、その線分の名前を
+ * 選択肢に足して読み取れるようにする(選び直しの操作はタスク29が仕上げる)。
+ */
+function directionChoice(
+  document: PartDocument,
+  direction: PatternDirection,
+  labelKey: MessageKey,
+): SolidChoiceSummary {
+  if (direction.kind === 'world') {
+    return { key: 'patternDirection', labelKey, value: direction.axis, options: patternDirectionOptions() };
+  }
+  return {
+    key: 'patternDirection',
+    labelKey,
+    value: 'line',
+    options: [
+      ...patternDirectionOptions(),
+      { value: 'line', label: lineReferenceName(document, direction.line) },
+    ],
+  };
+}
+
 /** 立体1つの見え方をまとめる。ツリーの行とプロパティ欄の両方がこれを読む。 */
 export function summarizeSolid(
   document: PartDocument,
@@ -273,42 +613,117 @@ export function summarizeSolid(
           toggleSummary('reversed', feature.reversed),
           toggleSummary('symmetric', feature.symmetric),
         ],
+        choices: [],
         references: [profileReference(document, feature.profile)],
+        subShapeCounts: [],
       };
     case 'revolve':
       return {
         ...base,
         fields: [fieldSummary('angle', feature.angle)],
         toggles: [toggleSummary('reversed', feature.reversed)],
+        choices: [],
         references: [profileReference(document, feature.profile)],
+        subShapeCounts: [],
       };
     case 'sew':
       return {
         ...base,
         fields: [fieldSummary('tolerance', feature.tolerance)],
         toggles: [],
+        choices: [],
         references: feature.faces.map((face) => profileReference(document, face)),
+        subShapeCounts: [],
       };
     case 'boolean':
       return {
         ...base,
         fields: [],
         toggles: [],
+        choices: [],
         references: [
           bodyReference(document, 'propertyPanel.target', feature.targetFeatureId),
           bodyReference(document, 'propertyPanel.tool', feature.toolFeatureId),
         ],
+        subShapeCounts: [],
       };
     case 'hole':
+      return {
+        ...base,
+        fields: holeFields(feature),
+        toggles: [],
+        choices: [depthKindChoice(feature.depth.kind)],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: holeSubShapeCounts(feature),
+      };
     case 'threadHole':
+      // ピッチ・下穴径・ねじ部の長さと、呼び・種類・見せ方だけをここで出す(§0.a-0.13、0.14)。
+      // 深さ・傾きを含めた節の仕上げはタスク28(ねじの選択肢とプロパティ)が行う。
+      return {
+        ...base,
+        fields: [
+          fieldSummary('pitch', feature.pitch),
+          fieldSummary('drillDiameter', feature.drillDiameter),
+          fieldSummary('threadLength', feature.threadLength),
+        ],
+        toggles: [],
+        choices: [
+          threadDesignationChoice(feature.designation),
+          threadSeriesChoice(feature.series),
+          threadRepresentationChoice(feature.representation),
+        ],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: holeSubShapeCounts(feature),
+      };
     case 'fillet':
+      return {
+        ...base,
+        fields: [fieldSummary('radius', feature.radius)],
+        toggles: [],
+        choices: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [{ labelKey: 'propertyPanel.selectedEdges', count: feature.targets.length }],
+      };
     case 'chamfer':
-    case 'pattern':
+      return {
+        ...base,
+        fields: chamferFieldSummaries(feature.size),
+        // 基準面の入れ替えは2距離・距離+角度のときだけ効く(等距離では効かない、§0.a-0.18)。
+        toggles:
+          feature.size.kind === 'equal' ? [] : [swapReferenceFaceToggle(feature.swapReferenceFace)],
+        choices: [chamferModeChoice(feature.size.kind)],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [{ labelKey: 'propertyPanel.selectedEdges', count: feature.targets.length }],
+      };
+    case 'pattern': {
+      const { placement } = feature;
+      if (placement.kind === 'linear') {
+        return {
+          ...base,
+          fields: [fieldSummary('spacing', placement.spacing), fieldSummary('count', placement.count)],
+          toggles: [toggleSummary('patternSymmetric', placement.symmetric)],
+          choices: [directionChoice(document, placement.direction, 'numericInput.choice.patternDirection')],
+          references: [bodyReference(document, 'propertyPanel.patternSource', feature.sourceFeatureId)],
+          subShapeCounts: [],
+        };
+      }
+      // 全周(fullCircle)のときは角度が 360/個数 で自動なので欄を出さない(NFR-UX-4)。
+      const fields = placement.fullCircle
+        ? [fieldSummary('count', placement.count)]
+        : [fieldSummary('patternAngle', placement.angle), fieldSummary('count', placement.count)];
+      return {
+        ...base,
+        fields,
+        toggles: [toggleSummary('fullCircle', placement.fullCircle)],
+        choices: [directionChoice(document, placement.axis, 'numericInput.axisGroupLabel')],
+        references: [bodyReference(document, 'propertyPanel.patternSource', feature.sourceFeatureId)],
+        subShapeCounts: [],
+      };
+    }
     case 'spring':
-      // P3 タスク13 で文書の型だけが先に増えたための暫定。式の欄・つまみ・参照の出し方は
-      // タスク27〜29b の担当なので、それまでは行の名前と印だけを出す(欄は空)。
-      // **タスク27・28・29・29b がこの節をそれぞれの種類の欄へ置き換える。**
-      return { ...base, fields: [], toggles: [], references: [] };
+      // ばね(FR-414)の節は読み取り専用の欄(derived、§0.a-0.30)を要するため、
+      // `SolidFieldSummary` へ readOnly を足すタスク29b がここへ追記する。
+      return { ...base, fields: [], toggles: [], choices: [], references: [], subShapeCounts: [] };
   }
 }
 
@@ -321,29 +736,291 @@ export function setSolidField(
   key: SolidFieldKey,
   value: ExpressionValue,
 ): SolidFeature {
-  if (feature.kind === 'extrude' && key === 'distance') {
-    return { ...feature, distance: value };
+  switch (feature.kind) {
+    case 'extrude':
+      return key === 'distance' ? { ...feature, distance: value } : feature;
+    case 'revolve':
+      return key === 'angle' ? { ...feature, angle: value } : feature;
+    case 'sew':
+      return key === 'tolerance' ? { ...feature, tolerance: value } : feature;
+    case 'hole':
+      return setHoleField(feature, key, value);
+    case 'threadHole':
+      return setThreadHoleField(feature, key, value);
+    case 'fillet':
+      return key === 'radius' ? { ...feature, radius: value } : feature;
+    case 'chamfer':
+      return setChamferField(feature, key, value);
+    case 'pattern':
+      return setPatternField(feature, key, value);
+    case 'boolean':
+    case 'spring':
+      return feature;
   }
-  if (feature.kind === 'revolve' && key === 'angle') {
-    return { ...feature, angle: value };
+}
+
+function setHoleField(feature: HoleFeature, key: SolidFieldKey, value: ExpressionValue): SolidFeature {
+  switch (key) {
+    case 'diameter':
+      return { ...feature, diameter: value };
+    case 'depth':
+      return feature.depth.kind === 'blind'
+        ? { ...feature, depth: { kind: 'blind', depth: value } }
+        : feature;
+    case 'tiltAngle':
+      return { ...feature, tiltAngle: value };
+    case 'tiltAzimuth':
+      return { ...feature, tiltAzimuth: value };
+    default:
+      return feature;
   }
-  if (feature.kind === 'sew' && key === 'tolerance') {
-    return { ...feature, tolerance: value };
+}
+
+function setThreadHoleField(
+  feature: ThreadHoleFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  switch (key) {
+    case 'pitch':
+      return { ...feature, pitch: value };
+    case 'drillDiameter':
+      return { ...feature, drillDiameter: value };
+    case 'threadLength':
+      return { ...feature, threadLength: value };
+    default:
+      return feature;
+  }
+}
+
+function setChamferField(
+  feature: ChamferFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  switch (feature.size.kind) {
+    case 'equal':
+      return key === 'chamferDistance' ? { ...feature, size: { kind: 'equal', distance: value } } : feature;
+    case 'twoDistances':
+      if (key === 'chamferDistance') {
+        return { ...feature, size: { ...feature.size, distance1: value } };
+      }
+      if (key === 'chamferDistance2') {
+        return { ...feature, size: { ...feature.size, distance2: value } };
+      }
+      return feature;
+    case 'distanceAngle':
+      if (key === 'chamferDistance') {
+        return { ...feature, size: { ...feature.size, distance: value } };
+      }
+      if (key === 'chamferAngle') {
+        return { ...feature, size: { ...feature.size, angle: value } };
+      }
+      return feature;
+  }
+}
+
+function setPatternField(
+  feature: PatternFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  const { placement } = feature;
+  if (placement.kind === 'linear') {
+    if (key === 'spacing') {
+      return { ...feature, placement: { ...placement, spacing: value } };
+    }
+    if (key === 'count') {
+      return { ...feature, placement: { ...placement, count: value } };
+    }
+    return feature;
+  }
+  if (key === 'patternAngle') {
+    return { ...feature, placement: { ...placement, angle: value } };
+  }
+  if (key === 'count') {
+    return { ...feature, placement: { ...placement, count: value } };
   }
   return feature;
+}
+
+/**
+ * 深さの種類を切り替える(貫通 ↔ 止まり)。止まりへ切り替えたときの既定は
+ * `DEFAULT_HOLE_DEPTH_MM`(前に止まりで打っていた値は引き継がない。常に既定へ戻す)。
+ * 穴・ねじ穴以外は同じものを返す。
+ */
+export function setSolidDepthKind(feature: SolidFeature, kind: 'through' | 'blind'): SolidFeature {
+  if (feature.kind !== 'hole' && feature.kind !== 'threadHole') {
+    return feature;
+  }
+  if (feature.depth.kind === kind) {
+    return feature;
+  }
+  const depth: HoleDepth =
+    kind === 'through'
+      ? { kind: 'through' }
+      : { kind: 'blind', depth: expressionValueFromNumber(DEFAULT_HOLE_DEPTH_MM) };
+  return { ...feature, depth };
+}
+
+/** 呼びからねじの寸法を引き、いまの系列でピッチ・下穴径を組み立て直す(FR-406)。 */
+function applyThreadSize(
+  feature: ThreadHoleFeature,
+  size: MetricThreadSize,
+  series: ThreadSeries,
+): ThreadHoleFeature {
+  const pitch = metricThreadPitch(size, series);
+  return {
+    ...feature,
+    designation: size.designation,
+    series,
+    pitch: expressionValueFromNumber(pitch),
+    drillDiameter: expressionValueFromNumber(threadMinorDiameter(size.diameter, pitch)),
+  };
+}
+
+/**
+ * ねじの呼びを変える。ピッチ・下穴径も規格表から一緒に変わる(FR-406)。
+ * 利用者が個別に上書きしていても、呼びを変え直すとその上書きは失われる(この決めは
+ * ヘルプ `thread.md`(タスク28)へ書く)。呼びが見つからない・ねじ穴以外なら同じものを返す。
+ */
+function setThreadDesignation(feature: SolidFeature, designation: string): SolidFeature {
+  if (feature.kind !== 'threadHole') {
+    return feature;
+  }
+  const size = findMetricThread(designation);
+  return size === undefined ? feature : applyThreadSize(feature, size, feature.series);
+}
+
+/** ねじの種類(並目/細目)を変える。ピッチ・下穴径も一緒に変わる(FR-406)。 */
+function setThreadSeries(feature: SolidFeature, series: ThreadSeries): SolidFeature {
+  if (feature.kind !== 'threadHole') {
+    return feature;
+  }
+  const size = findMetricThread(feature.designation);
+  return size === undefined ? feature : applyThreadSize(feature, size, series);
+}
+
+/** ねじの見せ方(簡略/実際のねじ山)を変える。 */
+function setThreadRepresentation(
+  feature: SolidFeature,
+  representation: ThreadRepresentation,
+): SolidFeature {
+  if (feature.kind !== 'threadHole' || feature.representation === representation) {
+    return feature;
+  }
+  return { ...feature, representation };
+}
+
+/** もとの決め方から距離(1つ目)を引き継ぎ、2つ目は既定値で作り直す(§0.a-0.18)。 */
+function convertChamferSize(size: ChamferSize, kind: ChamferSize['kind']): ChamferSize {
+  const distance = size.kind === 'twoDistances' ? size.distance1 : size.distance;
+  switch (kind) {
+    case 'equal':
+      return { kind: 'equal', distance };
+    case 'twoDistances':
+      return {
+        kind: 'twoDistances',
+        distance1: distance,
+        distance2: expressionValueFromNumber(DEFAULT_CHAMFER_DISTANCE_MM),
+      };
+    case 'distanceAngle':
+      return {
+        kind: 'distanceAngle',
+        distance,
+        angle: expressionValueFromNumber(DEFAULT_CHAMFER_ANGLE_DEGREES),
+      };
+  }
+}
+
+/** C面取りの決め方を変える。C面取り以外・同じ決め方なら同じものを返す。 */
+function setChamferMode(feature: SolidFeature, kind: ChamferSize['kind']): SolidFeature {
+  if (feature.kind !== 'chamfer' || feature.size.kind === kind) {
+    return feature;
+  }
+  return { ...feature, size: convertChamferSize(feature.size, kind) };
+}
+
+/**
+ * パターンの向き・軸をワールドの X / Y / Z へ変える(回転の `setSolidAxis` と同じ扱い)。
+ * 選んだ線分への切り替えはタスク29(プロパティの仕上げ)が行う。パターン以外は同じものを返す。
+ */
+function setPatternDirection(feature: SolidFeature, axis: 'x' | 'y' | 'z'): SolidFeature {
+  if (feature.kind !== 'pattern') {
+    return feature;
+  }
+  const direction: PatternDirection = { kind: 'world', axis };
+  return feature.placement.kind === 'linear'
+    ? { ...feature, placement: { ...feature.placement, direction } }
+    : { ...feature, placement: { ...feature.placement, axis: direction } };
+}
+
+/**
+ * 選択肢の欄を書き戻した新しいフィーチャーを作る(元は変えない、FR-311)。
+ * 妥当な値でない・その種類が持たない選択肢なら同じものを返す。
+ * ばね(springAxis / springHandedness / springDerived)はタスク29b が実装する。
+ */
+export function setSolidChoice(
+  feature: SolidFeature,
+  key: SolidChoiceSummary['key'],
+  value: string,
+): SolidFeature {
+  switch (key) {
+    case 'depthKind':
+      return value === 'through' || value === 'blind' ? setSolidDepthKind(feature, value) : feature;
+    case 'threadDesignation':
+      return setThreadDesignation(feature, value);
+    case 'threadSeries':
+      return value === 'coarse' || value === 'fine' ? setThreadSeries(feature, value) : feature;
+    case 'threadRepresentation':
+      return value === 'simplified' || value === 'modeled'
+        ? setThreadRepresentation(feature, value)
+        : feature;
+    case 'chamferMode':
+      return value === 'equal' || value === 'twoDistances' || value === 'distanceAngle'
+        ? setChamferMode(feature, value)
+        : feature;
+    case 'patternDirection':
+      return value === 'x' || value === 'y' || value === 'z'
+        ? setPatternDirection(feature, value)
+        : feature;
+    case 'patternKind':
+      // 直線⇔円形の切替は作らない(種類は作成時に決まる、§0.a-0.21)。
+      return feature;
+    case 'springAxis':
+    case 'springHandedness':
+    case 'springDerived':
+      // ばねの節はタスク29b が実装する(§0.a-0.30)。
+      return feature;
+  }
 }
 
 /** つまみを切り替えた新しいフィーチャーを作る。持たないつまみなら同じものを返す。 */
 export function setSolidToggle(
   feature: SolidFeature,
-  key: NumericToggleKey,
+  key: SolidToggleKey,
   value: boolean,
 ): SolidFeature {
   if (feature.kind === 'extrude') {
-    return key === 'reversed' ? { ...feature, reversed: value } : { ...feature, symmetric: value };
+    if (key === 'reversed') {
+      return { ...feature, reversed: value };
+    }
+    return key === 'symmetric' ? { ...feature, symmetric: value } : feature;
   }
-  if (feature.kind === 'revolve' && key === 'reversed') {
-    return { ...feature, reversed: value };
+  if (feature.kind === 'revolve') {
+    return key === 'reversed' ? { ...feature, reversed: value } : feature;
+  }
+  if (feature.kind === 'chamfer') {
+    return key === 'swapReferenceFace' ? { ...feature, swapReferenceFace: value } : feature;
+  }
+  if (feature.kind === 'pattern') {
+    if (key === 'patternSymmetric' && feature.placement.kind === 'linear') {
+      return { ...feature, placement: { ...feature.placement, symmetric: value } };
+    }
+    if (key === 'fullCircle' && feature.placement.kind === 'circular') {
+      return { ...feature, placement: { ...feature.placement, fullCircle: value } };
+    }
+    return feature;
   }
   return feature;
 }

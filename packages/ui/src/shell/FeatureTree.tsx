@@ -21,32 +21,37 @@ import { useAppStore } from '../store/useAppStore.js';
 import {
   AlertIcon,
   ArcToolIcon,
+  ChamferIcon,
   ChevronRightIcon,
+  CircularPatternIcon,
   CubeIcon,
   EmptyBoxIcon,
   ExtrudeIcon,
   FaceToolIcon,
+  FilletIcon,
+  HoleIcon,
   IntersectIcon,
   LayersIcon,
+  LinearPatternIcon,
   LineToolIcon,
   PlaneIcon,
   PlotPointIcon,
   PointArrayToolIcon,
   RevolveIcon,
   SewIcon,
+  SpringIcon,
   SubtractIcon,
+  ThreadHoleIcon,
   UnionIcon,
   type IconProps,
 } from './icons.js';
 
 /**
- * 行の頭に出す種類の絵。道具のアイコンと同じ図柄にして、作ったものと道具を結び付ける。
+ * 行の頭に出す種類の絵。道具のアイコンと同じ図柄にして、作ったものと道具を結び付ける
+ * (計画書 docs/plans/P3-加工フィーチャー.md タスク27)。
  *
- * P3 のタスク13 で種類が13個に増えた。加工6種とばねの図柄はツールバーの道具と同じものを
- * 使うので、道具を作るタスク26 で図柄を足し、この7行を差し替える。それまでは立体の印
- * (CubeIcon)を仮に置く(行が絵無しで崩れないようにするため)。
- * 画面からこれらのフィーチャーを作れるようになるのはタスク25 以降なので、
- * それまでこの仮の絵が実際にツリーへ出ることはない。
+ * P3 のタスク13 で種類が13個に増え、タスク26 が加工6種+ばねの図柄(`icons.tsx`)を足した。
+ * タスク27 でその7つをここへ差し替え、CubeIcon の仮置き(タスク13〜22 の暫定)を終わらせた。
  */
 const KIND_ICONS: Readonly<
   Record<SketchFeatureKind | SolidLabelKey, (props: IconProps) => React.JSX.Element>
@@ -62,13 +67,13 @@ const KIND_ICONS: Readonly<
   union: UnionIcon,
   subtract: SubtractIcon,
   intersect: IntersectIcon,
-  hole: CubeIcon,
-  threadHole: CubeIcon,
-  fillet: CubeIcon,
-  chamfer: CubeIcon,
-  linearPattern: CubeIcon,
-  circularPattern: CubeIcon,
-  spring: CubeIcon,
+  hole: HoleIcon,
+  threadHole: ThreadHoleIcon,
+  fillet: FilletIcon,
+  chamfer: ChamferIcon,
+  linearPattern: LinearPatternIcon,
+  circularPattern: CircularPatternIcon,
+  spring: SpringIcon,
 };
 
 /** 節の頭に出す絵。スケッチは作図面、ソリッドは立体の印。 */

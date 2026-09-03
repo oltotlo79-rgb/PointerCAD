@@ -12,14 +12,20 @@ import {
   createEmptyPartDocument,
   replaceSketch,
   type BooleanFeature,
+  type ChamferFeature,
   type ExtrudeFeature,
+  type FilletFeature,
+  type HoleFeature,
   type PartDocument,
   type PartRecomputeError,
+  type PatternFeature,
   type RevolveFeature,
   type SewFeature,
   type SketchFaceFeature,
   type SketchLineFeature,
   type SolidFeature,
+  type SubShapeRef,
+  type ThreadHoleFeature,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
@@ -31,6 +37,8 @@ import {
   renameSolid,
   selectionKindLabelKeys,
   setSolidAxis,
+  setSolidChoice,
+  setSolidDepthKind,
   setSolidField,
   setSolidSuppressed,
   setSolidToggle,
@@ -113,6 +121,160 @@ const SUBTRACT: BooleanFeature = {
   operation: 'subtract',
   targetFeatureId: 'extrude-1',
   toolFeatureId: 'revolve-1',
+};
+
+/** 「押し出し1」(extrude-1)の面・辺への参照(P3 タスク27、指紋の中身は判定に使わない値)。 */
+function faceRef(index: number): SubShapeRef {
+  return {
+    bodyFeatureId: 'extrude-1',
+    index,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 100,
+      position: [0, 0, 0],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+}
+
+function edgeRef(index: number): SubShapeRef {
+  return {
+    bodyFeatureId: 'extrude-1',
+    index,
+    fingerprint: {
+      kind: 'edge',
+      curveKind: 'line',
+      length: 10,
+      position: [0, 0, 0],
+      axis: [1, 0, 0],
+      radius: null,
+    },
+  };
+}
+
+const HOLE_BLIND: HoleFeature = {
+  id: 'hole-1',
+  name: '穴1',
+  suppressed: false,
+  kind: 'hole',
+  targetFeatureId: 'extrude-1',
+  face: faceRef(0),
+  centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+  diameter: expressionValueFromNumber(6),
+  depth: { kind: 'blind', depth: expressionValueFromNumber(10) },
+  tiltAngle: expressionValueFromNumber(0),
+  tiltAzimuth: expressionValueFromNumber(0),
+};
+
+const HOLE_THROUGH: HoleFeature = {
+  ...HOLE_BLIND,
+  id: 'hole-2',
+  name: '穴2',
+  depth: { kind: 'through' },
+};
+
+const THREAD_HOLE: ThreadHoleFeature = {
+  id: 'threadHole-1',
+  name: 'ねじ穴1',
+  suppressed: false,
+  kind: 'threadHole',
+  targetFeatureId: 'extrude-1',
+  face: faceRef(0),
+  centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+  designation: 'M6',
+  series: 'coarse',
+  pitch: expressionValueFromNumber(1),
+  drillDiameter: expressionValueFromNumber(4.917468),
+  depth: { kind: 'through' },
+  threadLength: expressionValueFromNumber(10),
+  representation: 'simplified',
+  tiltAngle: expressionValueFromNumber(0),
+  tiltAzimuth: expressionValueFromNumber(0),
+};
+
+const FILLET: FilletFeature = {
+  id: 'fillet-1',
+  name: 'R面取り1',
+  suppressed: false,
+  kind: 'fillet',
+  targetFeatureId: 'extrude-1',
+  targets: [edgeRef(0), edgeRef(1), edgeRef(2), edgeRef(3)],
+  radius: expressionValueFromNumber(2),
+};
+
+const CHAMFER_EQUAL: ChamferFeature = {
+  id: 'chamfer-1',
+  name: 'C面取り1',
+  suppressed: false,
+  kind: 'chamfer',
+  targetFeatureId: 'extrude-1',
+  targets: [edgeRef(0)],
+  size: { kind: 'equal', distance: expressionValueFromNumber(1) },
+  swapReferenceFace: false,
+};
+
+const CHAMFER_TWO: ChamferFeature = {
+  ...CHAMFER_EQUAL,
+  id: 'chamfer-2',
+  name: 'C面取り2',
+  size: {
+    kind: 'twoDistances',
+    distance1: expressionValueFromNumber(1),
+    distance2: expressionValueFromNumber(2),
+  },
+  swapReferenceFace: true,
+};
+
+const CHAMFER_ANGLE: ChamferFeature = {
+  ...CHAMFER_EQUAL,
+  id: 'chamfer-3',
+  name: 'C面取り3',
+  size: { kind: 'distanceAngle', distance: expressionValueFromNumber(1), angle: expressionValueFromNumber(45) },
+};
+
+const LINEAR_PATTERN: PatternFeature = {
+  id: 'linearPattern-1',
+  name: '直線パターン1',
+  suppressed: false,
+  kind: 'pattern',
+  sourceFeatureId: 'hole-1',
+  placement: {
+    kind: 'linear',
+    direction: { kind: 'world', axis: 'x' },
+    spacing: expressionValueFromNumber(20),
+    count: expressionValueFromNumber(3),
+    symmetric: false,
+  },
+};
+
+const CIRCULAR_PATTERN: PatternFeature = {
+  id: 'circularPattern-1',
+  name: '円形パターン1',
+  suppressed: false,
+  kind: 'pattern',
+  sourceFeatureId: 'hole-1',
+  placement: {
+    kind: 'circular',
+    axis: { kind: 'world', axis: 'z' },
+    angle: expressionValueFromNumber(360),
+    count: expressionValueFromNumber(4),
+    fullCircle: true,
+  },
+};
+
+const CIRCULAR_PATTERN_PARTIAL: PatternFeature = {
+  ...CIRCULAR_PATTERN,
+  id: 'circularPattern-2',
+  name: '円形パターン2',
+  placement: {
+    kind: 'circular',
+    axis: { kind: 'world', axis: 'z' },
+    angle: expressionValueFromNumber(180),
+    count: expressionValueFromNumber(3),
+    fullCircle: false,
+  },
 };
 
 /** 面 2 枚と軸に使う線分 1 本を持つ部品に、渡された立体を並べたもの。 */
@@ -392,5 +554,360 @@ describe('buildTreeSections(FR-501、FR-503、FR-504)', () => {
   it('編集中のスケッチが見つからないときは先頭のスケッチを並べる', () => {
     const sections = buildTreeSections(documentWith(EXTRUDE), 'sketch-9', [], []);
     expect(sections[0].rows.map((row) => row.name)).toEqual(['面1', '面2', '線分9']);
+  });
+
+  it('穴の行はソリッド節に並び、種類名は道具名を指す(featureTree.unsupportedKind の暫定を解消、§0.a-0.23)', () => {
+    const sections = buildTreeSections(documentWith(EXTRUDE, HOLE_BLIND), 'sketch-1', [], []);
+    const holeRow = sections[1].rows.find((row) => row.id === 'hole-1');
+    expect(holeRow?.kind).toBe('hole');
+    expect(holeRow?.kindLabelKey).toBe('toolbar.machining.hole');
+  });
+
+  it('パターンに消費された穴は「統合済み」になる(§0.a-0.20)', () => {
+    const sections = buildTreeSections(
+      documentWith(EXTRUDE, HOLE_BLIND, LINEAR_PATTERN),
+      'sketch-1',
+      [],
+      [],
+    );
+    const holeRow = sections[1].rows.find((row) => row.id === 'hole-1');
+    expect(holeRow?.consumed).toBe(true);
+  });
+
+  it('missingSubShape で失敗した加工フィーチャーは、その行だけ hasError になる(§0.a-0.5)', () => {
+    const sections = buildTreeSections(
+      documentWith(EXTRUDE, FILLET),
+      'sketch-1',
+      [],
+      [{ featureId: 'fillet-1', code: 'missingSubShape', message: '丸める辺が選ばれていません。' }],
+    );
+    const filletRow = sections[1].rows.find((row) => row.id === 'fillet-1');
+    expect(filletRow?.hasError).toBe(true);
+    expect(filletRow?.errorMessage).toBe('丸める辺が選ばれていません。');
+    const extrudeRow = sections[1].rows.find((row) => row.id === 'extrude-1');
+    expect(extrudeRow?.hasError).toBe(false);
+  });
+});
+
+describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチャー.md タスク27)', () => {
+  it('穴(止まり)は直径・深さ・傾き・傾ける向きの欄、深さの種類の選択肢、選んだ面・中心の点の数を返す', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, HOLE_BLIND), HOLE_BLIND);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'diameter',
+      'depth',
+      'tiltAngle',
+      'tiltAzimuth',
+    ]);
+    expect(summary.choices).toEqual([
+      {
+        key: 'depthKind',
+        labelKey: 'propertyPanel.depth',
+        value: 'blind',
+        options: [
+          { value: 'through', labelKey: 'propertyPanel.through' },
+          { value: 'blind', labelKey: 'propertyPanel.blind' },
+        ],
+      },
+    ]);
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.selectedFaces', count: 1 },
+      { labelKey: 'propertyPanel.centerPoints', count: 1 },
+    ]);
+    expect(summary.references).toEqual([
+      { labelKey: 'propertyPanel.targetBody', name: '押し出し1', elementId: 'extrude-1' },
+    ]);
+  });
+
+  it('貫通の穴は深さの欄が出ない', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, HOLE_THROUGH), HOLE_THROUGH);
+    expect(summary.fields.map((field) => field.key)).toEqual(['diameter', 'tiltAngle', 'tiltAzimuth']);
+    expect(summary.choices[0].value).toBe('through');
+  });
+
+  it('ねじ穴は呼び・種類・見せ方の選択肢と、ピッチ・下穴径・ねじ部の長さの欄を返す(§0.a-0.13、0.14)', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, THREAD_HOLE), THREAD_HOLE);
+    expect(summary.fields.map((field) => field.key)).toEqual(['pitch', 'drillDiameter', 'threadLength']);
+    expect(summary.choices.map((choice) => choice.key)).toEqual([
+      'threadDesignation',
+      'threadSeries',
+      'threadRepresentation',
+    ]);
+    expect(summary.choices[0].value).toBe('M6');
+    expect(summary.choices[1].value).toBe('coarse');
+    expect(summary.choices[2].value).toBe('simplified');
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.selectedFaces', count: 1 },
+      { labelKey: 'propertyPanel.centerPoints', count: 1 },
+    ]);
+  });
+
+  it('R面取りは半径の欄と、選んだ辺の数を返す', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, FILLET), FILLET);
+    expect(summary.fields.map((field) => field.key)).toEqual(['radius']);
+    expect(summary.toggles).toEqual([]);
+    expect(summary.subShapeCounts).toEqual([{ labelKey: 'propertyPanel.selectedEdges', count: 4 }]);
+  });
+
+  it('C面取り(2つの距離)は距離・距離2の欄と、基準面を入れ替えるつまみを返す(§0.a-0.18)', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, CHAMFER_TWO), CHAMFER_TWO);
+    expect(summary.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferDistance2']);
+    expect(summary.choices[0].value).toBe('twoDistances');
+    expect(summary.toggles).toEqual([
+      { key: 'swapReferenceFace', labelKey: 'propertyPanel.swapReferenceFace', value: true },
+    ]);
+  });
+
+  it('C面取り(距離と角度)は距離・角度の欄と、基準面を入れ替えるつまみを返す', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, CHAMFER_ANGLE), CHAMFER_ANGLE);
+    expect(summary.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferAngle']);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['swapReferenceFace']);
+  });
+
+  it('C面取り(等距離)は距離だけの欄で、基準面を入れ替えるつまみを持たない(等距離では効かない、§0.a-0.18)', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, CHAMFER_EQUAL), CHAMFER_EQUAL);
+    expect(summary.fields.map((field) => field.key)).toEqual(['chamferDistance']);
+    expect(summary.toggles).toEqual([]);
+  });
+
+  it('直線パターンは間隔・個数の欄、向きの選択肢、両側への欄を返す', () => {
+    const document = documentWith(EXTRUDE, HOLE_BLIND, LINEAR_PATTERN);
+    const summary = summarizeSolid(document, LINEAR_PATTERN);
+    expect(summary.fields.map((field) => field.key)).toEqual(['spacing', 'count']);
+    expect(summary.choices).toEqual([
+      {
+        key: 'patternDirection',
+        labelKey: 'numericInput.choice.patternDirection',
+        value: 'x',
+        options: [
+          { value: 'x', labelKey: 'numericInput.axis.x' },
+          { value: 'y', labelKey: 'numericInput.axis.y' },
+          { value: 'z', labelKey: 'numericInput.axis.z' },
+        ],
+      },
+    ]);
+    expect(summary.toggles).toEqual([
+      { key: 'patternSymmetric', labelKey: 'numericInput.toggle.patternSymmetric', value: false },
+    ]);
+    expect(summary.references).toEqual([
+      { labelKey: 'propertyPanel.patternSource', name: '穴1', elementId: 'hole-1' },
+    ]);
+    expect(summary.subShapeCounts).toEqual([]);
+  });
+
+  it('円形パターン(全周)は角度の欄が出ない(NFR-UX-4)', () => {
+    const document = documentWith(EXTRUDE, HOLE_BLIND, CIRCULAR_PATTERN);
+    const summary = summarizeSolid(document, CIRCULAR_PATTERN);
+    expect(summary.fields.map((field) => field.key)).toEqual(['count']);
+    expect(summary.choices[0].labelKey).toBe('numericInput.axisGroupLabel');
+    expect(summary.toggles).toEqual([
+      { key: 'fullCircle', labelKey: 'numericInput.toggle.fullCircle', value: true },
+    ]);
+  });
+
+  it('円形パターン(全周でない)は角度・個数の欄を返す', () => {
+    const document = documentWith(EXTRUDE, HOLE_BLIND, CIRCULAR_PATTERN_PARTIAL);
+    const summary = summarizeSolid(document, CIRCULAR_PATTERN_PARTIAL);
+    expect(summary.fields.map((field) => field.key)).toEqual(['patternAngle', 'count']);
+    expect(summary.toggles).toEqual([
+      { key: 'fullCircle', labelKey: 'numericInput.toggle.fullCircle', value: false },
+    ]);
+  });
+
+  it('SOLID_KIND_LABEL_KEYS は加工6種+ばねも正式なキーを持つ(旧タスク22の暫定 featureTree.unsupportedKind を解消)', () => {
+    expect(SOLID_KIND_LABEL_KEYS.hole).toBe('toolbar.machining.hole');
+    expect(SOLID_KIND_LABEL_KEYS.threadHole).toBe('toolbar.machining.threadHole');
+    expect(SOLID_KIND_LABEL_KEYS.fillet).toBe('toolbar.machining.fillet');
+    expect(SOLID_KIND_LABEL_KEYS.chamfer).toBe('toolbar.machining.chamfer');
+    expect(SOLID_KIND_LABEL_KEYS.linearPattern).toBe('toolbar.machining.linearPattern');
+    expect(SOLID_KIND_LABEL_KEYS.circularPattern).toBe('toolbar.machining.circularPattern');
+    expect(SOLID_KIND_LABEL_KEYS.spring).toBe('toolbar.solid.spring');
+  });
+});
+
+describe('setSolidField(加工6種、FR-311)', () => {
+  it('穴の直径・傾き・傾ける向きを書き戻し、元は変えない', () => {
+    const next = setSolidField(HOLE_BLIND, 'diameter', expressionValueFromNumber(8));
+    expect(next).not.toBe(HOLE_BLIND);
+    expect(next.kind === 'hole' ? next.diameter.value : null).toBe(8);
+    expect(HOLE_BLIND.diameter.value).toBe(6);
+    const tilted = setSolidField(HOLE_BLIND, 'tiltAngle', expressionValueFromNumber(15));
+    expect(tilted.kind === 'hole' ? tilted.tiltAngle.value : null).toBe(15);
+  });
+
+  it('止まり穴の深さを書き戻す。貫通の穴は深さを持たないので変わらない', () => {
+    const next = setSolidField(HOLE_BLIND, 'depth', expressionValueFromNumber(20));
+    expect(next.kind === 'hole' && next.depth.kind === 'blind' ? next.depth.depth.value : null).toBe(
+      20,
+    );
+    expect(setSolidField(HOLE_THROUGH, 'depth', expressionValueFromNumber(20))).toBe(HOLE_THROUGH);
+  });
+
+  it('ねじ穴のピッチ・下穴径・ねじ部の長さを書き戻す', () => {
+    const next = setSolidField(THREAD_HOLE, 'threadLength', expressionValueFromNumber(15));
+    expect(next.kind === 'threadHole' ? next.threadLength.value : null).toBe(15);
+    expect(THREAD_HOLE.threadLength.value).toBe(10);
+  });
+
+  it('R面取りの半径を書き戻す', () => {
+    const next = setSolidField(FILLET, 'radius', expressionValueFromNumber(3));
+    expect(next.kind === 'fillet' ? next.radius.value : null).toBe(3);
+  });
+
+  it('C面取りは決め方ごとに対応する欄だけを書き戻す', () => {
+    const distance2 = setSolidField(CHAMFER_TWO, 'chamferDistance2', expressionValueFromNumber(5));
+    expect(
+      distance2.kind === 'chamfer' && distance2.size.kind === 'twoDistances'
+        ? distance2.size.distance2.value
+        : null,
+    ).toBe(5);
+    // 等距離のときは distance2 を持たないので、その欄への書き戻しは何も変えない。
+    expect(setSolidField(CHAMFER_EQUAL, 'chamferDistance2', expressionValueFromNumber(5))).toBe(
+      CHAMFER_EQUAL,
+    );
+    const angled = setSolidField(CHAMFER_ANGLE, 'chamferAngle', expressionValueFromNumber(30));
+    expect(
+      angled.kind === 'chamfer' && angled.size.kind === 'distanceAngle'
+        ? angled.size.angle.value
+        : null,
+    ).toBe(30);
+  });
+
+  it('直線パターンの間隔・個数、円形パターンの角度・個数を書き戻す', () => {
+    const spaced = setSolidField(LINEAR_PATTERN, 'spacing', expressionValueFromNumber(30));
+    expect(
+      spaced.kind === 'pattern' && spaced.placement.kind === 'linear'
+        ? spaced.placement.spacing.value
+        : null,
+    ).toBe(30);
+    const angled = setSolidField(CIRCULAR_PATTERN_PARTIAL, 'patternAngle', expressionValueFromNumber(90));
+    expect(
+      angled.kind === 'pattern' && angled.placement.kind === 'circular'
+        ? angled.placement.angle.value
+        : null,
+    ).toBe(90);
+  });
+
+  it('持たない欄なら同じものを返す', () => {
+    expect(setSolidField(HOLE_BLIND, 'radius', expressionValueFromNumber(1))).toBe(HOLE_BLIND);
+    expect(setSolidField(FILLET, 'diameter', expressionValueFromNumber(1))).toBe(FILLET);
+    expect(setSolidField(LINEAR_PATTERN, 'patternAngle', expressionValueFromNumber(1))).toBe(
+      LINEAR_PATTERN,
+    );
+  });
+});
+
+describe('setSolidToggle(加工6種)', () => {
+  it('C面取りの基準面を入れ替えるつまみを切り替える(§0.a-0.18)', () => {
+    const next = setSolidToggle(CHAMFER_EQUAL, 'swapReferenceFace', true);
+    expect(next.kind === 'chamfer' ? next.swapReferenceFace : null).toBe(true);
+    expect(CHAMFER_EQUAL.swapReferenceFace).toBe(false);
+  });
+
+  it('直線パターンの両側へ、円形パターンの全周を切り替える', () => {
+    const symmetric = setSolidToggle(LINEAR_PATTERN, 'patternSymmetric', true);
+    expect(
+      symmetric.kind === 'pattern' && symmetric.placement.kind === 'linear'
+        ? symmetric.placement.symmetric
+        : null,
+    ).toBe(true);
+    const fullCircle = setSolidToggle(CIRCULAR_PATTERN_PARTIAL, 'fullCircle', true);
+    expect(
+      fullCircle.kind === 'pattern' && fullCircle.placement.kind === 'circular'
+        ? fullCircle.placement.fullCircle
+        : null,
+    ).toBe(true);
+  });
+
+  it('種類に合わないつまみは同じものを返す', () => {
+    expect(setSolidToggle(FILLET, 'swapReferenceFace', true)).toBe(FILLET);
+    expect(setSolidToggle(LINEAR_PATTERN, 'fullCircle', true)).toBe(LINEAR_PATTERN);
+    expect(setSolidToggle(CIRCULAR_PATTERN, 'patternSymmetric', true)).toBe(CIRCULAR_PATTERN);
+  });
+});
+
+describe('setSolidChoice / setSolidDepthKind(FR-406、§0.a-0.18)', () => {
+  it("setSolidChoice('threadDesignation', 'M10') は呼び・ピッチ・下穴径を一緒に変える(FR-406)", () => {
+    const next = setSolidChoice(THREAD_HOLE, 'threadDesignation', 'M10');
+    expect(next.kind === 'threadHole' ? next.designation : null).toBe('M10');
+    expect(next.kind === 'threadHole' ? next.pitch.value : null).toBe(1.5);
+    expect(next.kind === 'threadHole' ? next.drillDiameter.value : null).toBeCloseTo(
+      8.376202368,
+      9,
+    );
+    expect(THREAD_HOLE.designation).toBe('M6');
+  });
+
+  it("setSolidChoice('threadSeries', 'fine') はいまの呼びのままピッチ・下穴径を細目で組み直す", () => {
+    const next = setSolidChoice(THREAD_HOLE, 'threadSeries', 'fine');
+    expect(next.kind === 'threadHole' ? next.series : null).toBe('fine');
+    expect(next.kind === 'threadHole' ? next.designation : null).toBe('M6');
+    expect(next.kind === 'threadHole' ? next.pitch.value : null).toBe(0.75);
+  });
+
+  it("setSolidChoice('threadRepresentation', 'modeled') は見せ方だけを変える", () => {
+    const next = setSolidChoice(THREAD_HOLE, 'threadRepresentation', 'modeled');
+    expect(next.kind === 'threadHole' ? next.representation : null).toBe('modeled');
+    expect(THREAD_HOLE.representation).toBe('simplified');
+  });
+
+  it('見つからない呼びは受け付けず、元のまま返す', () => {
+    expect(setSolidChoice(THREAD_HOLE, 'threadDesignation', 'M999')).toBe(THREAD_HOLE);
+  });
+
+  it("setSolidChoice('chamferMode', ...) は距離を引き継いで決め方を切り替える(§0.a-0.18)", () => {
+    const toTwoDistances = setSolidChoice(CHAMFER_EQUAL, 'chamferMode', 'twoDistances');
+    expect(
+      toTwoDistances.kind === 'chamfer' && toTwoDistances.size.kind === 'twoDistances'
+        ? toTwoDistances.size.distance1.value
+        : null,
+    ).toBe(1);
+    const toEqual = setSolidChoice(CHAMFER_TWO, 'chamferMode', 'equal');
+    expect(
+      toEqual.kind === 'chamfer' && toEqual.size.kind === 'equal' ? toEqual.size.distance.value : null,
+    ).toBe(1);
+  });
+
+  it("setSolidChoice('patternDirection', 'y') は直線の向き・円形の軸をどちらも変える", () => {
+    const linear = setSolidChoice(LINEAR_PATTERN, 'patternDirection', 'y');
+    expect(
+      linear.kind === 'pattern' && linear.placement.kind === 'linear'
+        ? linear.placement.direction
+        : null,
+    ).toEqual({ kind: 'world', axis: 'y' });
+    const circular = setSolidChoice(CIRCULAR_PATTERN, 'patternDirection', 'y');
+    expect(
+      circular.kind === 'pattern' && circular.placement.kind === 'circular'
+        ? circular.placement.axis
+        : null,
+    ).toEqual({ kind: 'world', axis: 'y' });
+  });
+
+  it("setSolidDepthKind('blind') は貫通の穴を既定の深さ(DEFAULT_HOLE_DEPTH_MM)の止まり穴にする", () => {
+    const next = setSolidDepthKind(HOLE_THROUGH, 'blind');
+    expect(
+      next.kind === 'hole' && next.depth.kind === 'blind' ? next.depth.depth.value : null,
+    ).toBe(10);
+  });
+
+  it("setSolidDepthKind('through') → 'blind' は既定値に戻る(前の止まりの値を覚えない)", () => {
+    const custom: HoleFeature = {
+      ...HOLE_BLIND,
+      depth: { kind: 'blind', depth: expressionValueFromNumber(99) },
+    };
+    const through = setSolidDepthKind(custom, 'through');
+    expect(through.kind === 'hole' ? through.depth.kind : null).toBe('through');
+    const backToBlind = setSolidDepthKind(through, 'blind');
+    expect(
+      backToBlind.kind === 'hole' && backToBlind.depth.kind === 'blind'
+        ? backToBlind.depth.depth.value
+        : null,
+    ).toBe(10);
+  });
+
+  it('穴・ねじ穴・面取り・パターン以外、または妥当でない値は同じものを返す', () => {
+    expect(setSolidChoice(EXTRUDE, 'depthKind', 'blind')).toBe(EXTRUDE);
+    expect(setSolidDepthKind(EXTRUDE, 'blind')).toBe(EXTRUDE);
+    expect(setSolidChoice(FILLET, 'chamferMode', 'equal')).toBe(FILLET);
+    expect(setSolidChoice(HOLE_BLIND, 'depthKind', 'diagonal')).toBe(HOLE_BLIND);
   });
 });

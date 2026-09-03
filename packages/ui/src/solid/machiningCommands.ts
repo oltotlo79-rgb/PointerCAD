@@ -34,6 +34,7 @@ import {
   isPatternSource,
   isSamePoint,
   liveBodyIds,
+  MAX_PATTERN_COUNT,
   metricThreadPitch,
   nextSolidId,
   nextSolidName,
@@ -465,14 +466,32 @@ export function commitChamfer(
 }
 
 /**
+ * パターンの個数と「両側へ」の組み合わせを、確定前に断れるかだけ検査する
+ * (NFR-UX-5「実行してから失敗させない」、計画書タスク29、§2.7 の過去の失敗
+ * 「両側へ+偶数個は成立しない」)。範囲・文言は `resolvePart.ts` の `resolvePatternCount` /
+ * `resolvePatternTransforms` と揃える(model 側の判断を書き写すだけで、新しい規則は作らない。
+ * `resolvePart` は解決のたびに同じ検査をもう一度行うので、ここでの事前検査を通っても
+ * 二重の安全網になるだけで壊れない)。
+ */
+function invalidPatternPlacementReasonKey(placement: PatternPlacement): MessageKey | null {
+  const count = placement.count.value;
+  if (!Number.isFinite(count) || !Number.isInteger(count) || count < 2 || count > MAX_PATTERN_COUNT) {
+    return 'machiningError.invalidPatternCount';
+  }
+  if (placement.kind === 'linear' && placement.symmetric && count % 2 === 0) {
+    return 'machiningError.patternSymmetricNeedsOdd';
+  }
+  return null;
+}
+
+/**
  * パターンを 1 つ作る(FR-411、FR-412、§0.a-0.20)。繰り返す穴・ねじ穴が選ばれていなければ
  * `noPatternSource`、選ばれていても穴・ねじ穴でなければ `sourceNotHole`。
  *
- * 個数(`placement.count`)が整数か・2〜100 の範囲内かはここでは検査しない。
- * `resolvePart`(§2.7)が解決のたびに検査して `invalidValue` で断るので、ここで同じ判断を
- * 重複させない(FR-504「止めずに警告する」: 不正な値でもいったん履歴には積み、
- * 再計算のときに理由を出す)。タスク24 の検証表が挙げた「整数でない個数の検査をどちらで
- * 行うか」という論点への回答として、この決めを注釈に残す。
+ * 個数(`placement.count`)が 2〜`MAX_PATTERN_COUNT` の整数か、「両側へ」+偶数個でないかを
+ * ここで先に検査して断る(計画書タスク29、NFR-UX-5)。`resolvePart`(§2.7)も解決のたびに
+ * 同じ検査を行うが、それは保存済みの文書(手入力やファイル読み込み)に対する事後の安全網で、
+ * ここでの事前検査とは目的が異なるため両方に置く(重複ではない)。
  */
 export function commitPattern(
   context: MachiningContext,
@@ -481,6 +500,10 @@ export function commitPattern(
   const source = selectedPatternSource(context.document, context.selection);
   if (!source.ok) {
     return { ok: false, reasonKey: source.reasonKey };
+  }
+  const invalidPlacementReasonKey = invalidPatternPlacementReasonKey(params.placement);
+  if (invalidPlacementReasonKey !== null) {
+    return { ok: false, reasonKey: invalidPlacementReasonKey };
   }
   const labelKey = params.placement.kind === 'linear' ? 'linearPattern' : 'circularPattern';
   const id = nextSolidId(context.document, labelKey);

@@ -397,6 +397,8 @@
   "machiningError.notPlanarFace": "穴をあけられるのは平らな面だけです。",
   "machiningError.faceNotOnTarget": "加工する立体の面を選んでください。",
   "machiningError.sourceNotHole": "並べられるのは穴とねじ穴だけです。",
+  "machiningError.invalidPatternCount": "並べる個数は 2 以上 100 以下の整数にしてください。",
+  "machiningError.patternSymmetricNeedsOdd": "両側へ並べるときは、個数を奇数にしてください。",
   "springError.noOriginPoint": "ばねの始点にする点が選ばれていません。",
   "springError.wireTooThick": "線径はコイル径より小さくしてください。",
   "springError.pitchTooSmall": "ピッチは線径より大きくしてください。隣どうしの線がぶつかります。",

@@ -648,6 +648,73 @@ describe('commitPattern(FR-411、FR-412、§0.a-0.20)', () => {
     const outcome = commitPattern(context, { placement: LINEAR_PLACEMENT });
     expect(outcome).toEqual({ ok: false, reasonKey: 'machiningError.noPatternSource' });
   });
+
+  /**
+   * 個数の検査(計画書タスク29、NFR-UX-5「実行してから失敗させない」)。境界は
+   * `resolvePart.ts` の `resolvePatternCount`(2 以上 MAX_PATTERN_COUNT(100)以下の整数)と揃える。
+   */
+  describe('個数の検査(タスク29、NFR-UX-5)', () => {
+    function contextWithHole(): MachiningContext {
+      const base = documentWithBodies(['extrude-1']);
+      const document = appendSolid(base, holeFeature('hole-1'));
+      return { document, bodies: [], selection: ['hole-1'] };
+    }
+
+    it.each([
+      ['1(2 未満)', 1],
+      ['101(100 超)', 101],
+      ['2.5(整数でない)', 2.5],
+    ])('個数が%s なら invalidPatternCount', (_label, count) => {
+      const outcome = commitPattern(contextWithHole(), {
+        placement: { ...LINEAR_PLACEMENT, count: expressionValueFromNumber(count) },
+      });
+      expect(outcome).toEqual({ ok: false, reasonKey: 'machiningError.invalidPatternCount' });
+    });
+
+    it('個数が非数(NaN)なら invalidPatternCount', () => {
+      const outcome = commitPattern(contextWithHole(), {
+        placement: { ...LINEAR_PLACEMENT, count: { source: 'a', value: Number.NaN, display: 'NaN' } },
+      });
+      expect(outcome).toEqual({ ok: false, reasonKey: 'machiningError.invalidPatternCount' });
+    });
+
+    it.each([
+      ['2', 2],
+      ['100', 100],
+    ])('個数が%s なら ok', (_label, count) => {
+      const outcome = commitPattern(contextWithHole(), {
+        placement: { ...LINEAR_PLACEMENT, count: expressionValueFromNumber(count) },
+      });
+      expect(outcome.ok).toBe(true);
+    });
+
+    it('両側へ + 偶数個(4)は patternSymmetricNeedsOdd', () => {
+      const outcome = commitPattern(contextWithHole(), {
+        placement: { ...LINEAR_PLACEMENT, count: expressionValueFromNumber(4), symmetric: true },
+      });
+      expect(outcome).toEqual({ ok: false, reasonKey: 'machiningError.patternSymmetricNeedsOdd' });
+    });
+
+    it('両側へ + 奇数個(3)は ok', () => {
+      const outcome = commitPattern(contextWithHole(), {
+        placement: { ...LINEAR_PLACEMENT, count: expressionValueFromNumber(3), symmetric: true },
+      });
+      expect(outcome.ok).toBe(true);
+    });
+
+    it('円形パターンは「両側へ」を持たないので偶数個でも ok', () => {
+      const outcome = commitPattern(contextWithHole(), {
+        placement: {
+          kind: 'circular',
+          axis: { kind: 'world', axis: 'z' },
+          angle: expressionValueFromNumber(360),
+          count: expressionValueFromNumber(4),
+          fullCircle: true,
+        },
+      });
+      expect(outcome.ok).toBe(true);
+    });
+  });
 });
 
 describe('commitMachiningInput(タスク24 の SolidInputCommit から作る)', () => {

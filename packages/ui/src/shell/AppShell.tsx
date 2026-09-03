@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef } from 'react';
 
+import { discardAutoSave, formatSavedAt, restoreAutoSave } from '../file/attachAutoSave.js';
 import {
   createDefaultPartFileDeps,
   hasUnsavedChanges,
@@ -52,6 +53,10 @@ export function AppShell(): React.JSX.Element {
   // 真偽で取り出すので、文書が変わっても「保存していない」かどうかが変わったときだけ
   // 描き直す(打つたびに画面全体を作り直さない、NFR-PF-1)。
   const unsaved = useAppStore((state) => hasUnsavedChanges(state.document, state.savedDocument));
+  // 復元の案内(FR-805、§0.a-0.12)。控えを書く人がいないうちは押しても何もできないので、
+  // 2 つが揃っているときだけカードを出す。
+  const restorePrompt = useAppStore((state) => state.restorePrompt);
+  const autoSaver = useAppStore((state) => state.autoSaver);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -142,7 +147,46 @@ export function AppShell(): React.JSX.Element {
           >
             <ViewportCanvas />
           </Suspense>
-          {isComputing ? (
+          {restorePrompt !== null && autoSaver !== null ? (
+            /*
+              前回の作業の控えがあるときの案内(FR-805、§0.a-0.12)。中央に置くが
+              モーダルにしない。背後の操作は止めず、Esc でも閉じない(誤って控えを
+              失わないため、閉じるのは「復元する」「破棄する」を押したときだけ)。
+              計算中の札・空状態の案内とは同時に出さない。
+            */
+            <div className="pcad-viewport__overlay">
+              <div className="pcad-card pcad-restore">
+                <p className="pcad-restore__title">{t('restore.title')}</p>
+                <p className="pcad-restore__body">{t('restore.body')}</p>
+                <dl className="pcad-restore__details">
+                  <dt>{t('restore.savedAt')}</dt>
+                  <dd>{formatSavedAt(restorePrompt.savedAt)}</dd>
+                  <dt>{t('restore.documentName')}</dt>
+                  <dd>{restorePrompt.documentName}</dd>
+                </dl>
+                <div className="pcad-restore__actions">
+                  <button
+                    type="button"
+                    className="pcad-button pcad-button--action pcad-button--primary"
+                    onClick={() => {
+                      void restoreAutoSave(autoSaver);
+                    }}
+                  >
+                    {t('restore.restore')}
+                  </button>
+                  <button
+                    type="button"
+                    className="pcad-button pcad-button--action"
+                    onClick={() => {
+                      void discardAutoSave(autoSaver);
+                    }}
+                  >
+                    {t('restore.discard')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : isComputing ? (
             /* 計算中は中央に札を出す。空状態の案内とは同時に出さない。 */
             <div className="pcad-viewport__overlay">
               <div className="pcad-card">

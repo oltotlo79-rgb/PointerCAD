@@ -1,6 +1,7 @@
 import { createKernelBridge, recomputePart } from '@pointercad/model';
 import { useEffect } from 'react';
 
+import { startAutoSave } from '../file/attachAutoSave.js';
 import { AppShell } from '../shell/AppShell.js';
 import { attachPartRecompute } from '../store/useAppStore.js';
 
@@ -24,6 +25,15 @@ export function PointerCadApp(): React.JSX.Element {
       detach();
       bridge.dispose();
     };
+  }, []);
+
+  useEffect(() => {
+    /*
+     * 自動保存とクラッシュ復元(FR-805、NFR-RE-2)。控えがあれば案内を出し、
+     * 文書が変わったら 5 分ごとに控えを書く。中身は `attachAutoSave.ts` にあり、
+     * ここは始めて片付けるだけにする(docs/報告記録.md 2026-09-02 22:10 の④)。
+     */
+    return startAutoSave();
   }, []);
 
   return <AppShell />;

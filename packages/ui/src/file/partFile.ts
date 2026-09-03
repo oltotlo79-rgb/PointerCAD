@@ -80,6 +80,30 @@ const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
 };
 
 // ---------------------------------------------------------------------------
+// .pcad のバイト列から部品を起こす
+// ---------------------------------------------------------------------------
+
+/** `.pcad` を読んだ結果。読めなければ利用者へ見せる文言のキーだけを返す。 */
+export type ReadPartDocumentOutcome =
+  | { readonly ok: true; readonly document: PartDocument }
+  | { readonly ok: false; readonly messageKey: MessageKey };
+
+/**
+ * `.pcad` のバイト列から部品を起こす(FR-801)。
+ *
+ * 「開く」(`openPart`)と自動保存の復元(`attachAutoSave.ts`)の両方が同じ経路を通る。
+ * 読めなかった理由の言い換えを 2 か所に持つと、片方だけ直したときに同じファイルへ
+ * 違う断り方をすることになるので、ここ 1 つにまとめる。
+ */
+export function readPartDocument(bytes: Uint8Array): ReadPartDocumentOutcome {
+  const result = readPcadFile(bytes);
+  if (!result.ok) {
+    return { ok: false, messageKey: OPEN_ERROR_KEYS[result.error.code] };
+  }
+  return { ok: true, document: result.document };
+}
+
+// ---------------------------------------------------------------------------
 // 表示用の名前
 // ---------------------------------------------------------------------------
 
@@ -234,12 +258,9 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   if (picked === null) {
     return;
   }
-  const result = readPcadFile(picked.bytes);
+  const result = readPartDocument(picked.bytes);
   if (!result.ok) {
-    useAppStore.getState().setFileMessage({
-      key: OPEN_ERROR_KEYS[result.error.code],
-      failed: true,
-    });
+    useAppStore.getState().setFileMessage({ key: result.messageKey, failed: true });
     return;
   }
   // ここまで来たら中身は確かめ済み。文書を差し替え、Undo で開く前へ戻れるようにする。
@@ -282,4 +303,19 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   const after = useAppStore.getState();
   after.setFileState(withPcadExtension(savedName), document);
   after.setFileMessage({ key: 'file.saved', failed: false });
+
+  /*
+   * 手で保存できたら自動保存の控えは用済みなので消す(§0.a-0.12)。
+   * 残しておくと、次の起動で「前回の作業が残っています」と、いま保存したばかりの
+   * ファイルより古いものを勧めてしまう。
+   * 控えを消せなくても保存そのものは成功しているので、失敗は伝えない(NFR-RE-1)。
+   */
+  const saver = after.autoSaver;
+  if (saver !== null) {
+    try {
+      await saver.discard();
+    } catch {
+      // 控えの消去に失敗しても、保存できたという知らせは変えない。
+    }
+  }
 }

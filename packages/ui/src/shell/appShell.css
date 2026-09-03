@@ -1078,6 +1078,68 @@ button.pcad-tree__row:focus-visible {
   box-shadow: var(--pcad-shadow-raised);
 }
 
+/*
+ * 前回の作業の控えがあるときの案内(FR-805、§0.a-0.12)。計算中の札と同じ場所へ
+ * 縦に組んだカードで出す。モーダルにしないので、下の帯(overlay)は当たり判定を
+ * 持たないままにし、このカードだけが押せる。
+ */
+.pcad-restore {
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  align-items: stretch;
+  max-width: 320px;
+  padding: var(--pcad-space-3);
+  pointer-events: auto;
+}
+
+.pcad-restore__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.pcad-restore__body {
+  margin: 0;
+  color: var(--pcad-text-muted);
+}
+
+/* 「保存した時刻」「部品の名前」の 2 行。見出しはうすく、値は読みやすい色で。 */
+.pcad-restore__details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px var(--pcad-space-2);
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+}
+
+.pcad-restore__details dt {
+  color: var(--pcad-text-muted);
+}
+
+.pcad-restore__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-text);
+}
+
+.pcad-restore__actions {
+  display: flex;
+  gap: var(--pcad-space-2);
+  justify-content: flex-end;
+  margin-top: var(--pcad-space-1);
+}
+
+/* 勧めるほうのボタン(復元する)。押してほしい側をアクセントの面で示す。 */
+.pcad-button--primary {
+  color: var(--pcad-text);
+  background: var(--pcad-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
+}
+
+.pcad-button--primary:hover {
+  background: var(--pcad-accent-soft-hover);
+}
+
 /* 空状態ガイド(NFR-UX-6)。計算が終わって、まだ形が無いときだけ出す。 */
 .pcad-viewport__empty-state {
   position: absolute;

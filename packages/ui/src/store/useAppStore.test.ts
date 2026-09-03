@@ -28,6 +28,7 @@ import {
   type SolidBody,
 } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
+import type { AutoSaver } from '@pointercad/io';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { setFeatureField } from '../sketch/featureSummary.js';
@@ -893,5 +894,42 @@ describe('ファイルまわりの状態(FR-806、計画書 タスク23)', () =>
     expect(state.activeTool).toBe('select');
     expect(state.pendingStart).toBeNull();
     expect(state.errorMessage).toBeNull();
+  });
+});
+
+describe('自動保存まわりの状態(FR-805、計画書 タスク24)', () => {
+  /** 何も書かない偽の控え係。ここで確かめるのは「差し出せて取り下げられる」ことだけ。 */
+  function createFakeAutoSaver(): AutoSaver {
+    return {
+      markDirty: () => undefined,
+      saveNow: () => Promise.resolve(),
+      stop: () => undefined,
+      readLatest: () => Promise.resolve(null),
+      discard: () => Promise.resolve(),
+    };
+  }
+
+  it('起動直後は控え係も復元の案内も無い', () => {
+    const state = useAppStore.getState();
+    expect(state.autoSaver).toBeNull();
+    expect(state.restorePrompt).toBeNull();
+  });
+
+  it('控え係を差し出し、取り下げられる', () => {
+    const saver = createFakeAutoSaver();
+    useAppStore.getState().setAutoSaver(saver);
+    expect(useAppStore.getState().autoSaver).toBe(saver);
+
+    useAppStore.getState().setAutoSaver(null);
+    expect(useAppStore.getState().autoSaver).toBeNull();
+  });
+
+  it('復元の案内を出し、閉じられる', () => {
+    const prompt = { savedAt: '2026-09-03T09:30:00.000Z', documentName: '部品1' };
+    useAppStore.getState().setRestorePrompt(prompt);
+    expect(useAppStore.getState().restorePrompt).toEqual(prompt);
+
+    useAppStore.getState().setRestorePrompt(null);
+    expect(useAppStore.getState().restorePrompt).toBeNull();
   });
 });

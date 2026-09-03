@@ -1,3 +1,4 @@
+import type { AutoSaver } from '@pointercad/io';
 import {
   canRedo as stackCanRedo,
   canUndo as stackCanUndo,
@@ -69,6 +70,20 @@ export interface SnapIndicator {
 export interface FileMessage {
   readonly key: MessageKey;
   readonly failed: boolean;
+}
+
+/**
+ * 起動時に出す「前回の作業が残っています」の案内(FR-805、§0.a-0.12)。
+ *
+ * 中身そのもの(控えの `.pcad`)はここへ持たない。案内に出すのは時刻と名前だけで、
+ * 実際の読み直しは「復元する」を押したときに保管庫から改めて行う(`attachAutoSave.ts`)。
+ * 出していないものを記憶に抱え込まないため。
+ */
+export interface RestorePrompt {
+  /** 控えを書いた時刻(ISO 8601)。表示は現地時刻に直す。 */
+  readonly savedAt: string;
+  /** 控えの部品の名前。 */
+  readonly documentName: string;
 }
 
 /** 文書を差し替えるときの添え物(§0.a-0.4、§0.a-0.13)。 */
@@ -215,6 +230,17 @@ export interface AppState {
   readonly captureThumbnail: (() => Uint8Array | null) | null;
   /** ファイル操作の結果の知らせ。出すものが無ければ null。 */
   readonly fileMessage: FileMessage | null;
+  /**
+   * 自動保存の控えを書く人(FR-805)。起動時に `startAutoSave` が差し出し、
+   * 片付けで取り下げる。まだ用意できていなければ null。
+   *
+   * ストアへ置くのは、手で保存できたときに控えを消す(`savePart`)のと、復元の案内カードの
+   * ボタン(`AppShell.tsx`)が同じ 1 人を使う必要があるため。口を配り歩くと、どこかで
+   * 別の控えを掴んで「消したはずのものが残る」ことになる。
+   */
+  readonly autoSaver: AutoSaver | null;
+  /** 起動時の復元の案内(§0.a-0.12)。出すものが無ければ null。 */
+  readonly restorePrompt: RestorePrompt | null;
 
   // 動作を変える口はメソッド宣言ではなくプロパティ関数型で書く。メソッド宣言だと
   // useAppStore((state) => state.setX) のように取り出したとき @typescript-eslint/unbound-method
@@ -295,6 +321,10 @@ export interface AppState {
   readonly setCaptureThumbnail: (capture: (() => Uint8Array | null) | null) => void;
   /** ファイル操作の結果を帯へ出す・消す。 */
   readonly setFileMessage: (message: FileMessage | null) => void;
+  /** 自動保存の控えを書く人を差し出す・取り下げる(`startAutoSave` が呼ぶ)。 */
+  readonly setAutoSaver: (saver: AutoSaver | null) => void;
+  /** 復元の案内を出す・閉じる。 */
+  readonly setRestorePrompt: (prompt: RestorePrompt | null) => void;
   /**
    * 部品文書を新しくやり直す(FR-806 の「新規」)。`applyDocument` と違い
    * **履歴のスタックを作り直す**ので、新規の前へは戻れない。取りかけの操作・選択・
@@ -461,6 +491,8 @@ export function createInitialDocumentState(): Pick<
   | 'savedDocument'
   | 'captureThumbnail'
   | 'fileMessage'
+  | 'autoSaver'
+  | 'restorePrompt'
 > {
   // 起動時は空のスケッチ 1 本だけを持つ部品から始める(§0.a-0.2、NFR-UX-6 の空状態ガイド)。
   const document = createEmptyPartDocument();
@@ -503,6 +535,8 @@ export function createInitialDocumentState(): Pick<
     savedDocument: null,
     captureThumbnail: null,
     fileMessage: null,
+    autoSaver: null,
+    restorePrompt: null,
   };
 }
 
@@ -746,6 +780,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setFileMessage: (fileMessage) => {
     set({ fileMessage });
+  },
+  setAutoSaver: (autoSaver) => {
+    set({ autoSaver });
+  },
+  setRestorePrompt: (restorePrompt) => {
+    set({ restorePrompt });
   },
   resetDocument: (next) => {
     set((state) => ({

@@ -9,7 +9,12 @@
  *  - 失うものがある操作の前に確認する(NFR-UX-3)。
  */
 
-import { PCAD_SCHEMA_VERSION, readPcadFile, writePcadFile } from '@pointercad/io';
+import {
+  PCAD_SCHEMA_VERSION,
+  readPcadFile,
+  writePcadFile,
+  type AutoSaver,
+} from '@pointercad/io';
 import {
   absoluteCoordinate,
   appendFeature,
@@ -122,6 +127,24 @@ function createFakeDeps(answer: boolean, thumbnail: Uint8Array | null = null): F
         return Promise.resolve(answer);
       },
     },
+  };
+}
+
+/** 控えを消した回数だけを数える偽の自動保存(タスク24)。 */
+function createFakeAutoSaver(): { readonly saver: AutoSaver; readonly discards: () => number } {
+  let discards = 0;
+  return {
+    saver: {
+      markDirty: () => undefined,
+      saveNow: () => Promise.resolve(),
+      stop: () => undefined,
+      readLatest: () => Promise.resolve(null),
+      discard: () => {
+        discards += 1;
+        return Promise.resolve();
+      },
+    },
+    discards: () => discards,
   };
 }
 
@@ -363,6 +386,30 @@ describe('保存する(FR-806、FR-801)', () => {
     expect(state.fileName).toBeNull();
     expect(state.savedDocument).toBeNull();
     expect(state.fileMessage).toBeNull();
+  });
+
+  it('保存に成功したら自動保存の控えを消す(計画書 タスク24)', async () => {
+    const fake = createFakeGateway();
+    useFake(fake);
+    const autoSave = createFakeAutoSaver();
+    useAppStore.setState({ autoSaver: autoSave.saver });
+    useAppStore.getState().applyDocument(partWithPoint());
+
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(autoSave.discards()).toBe(1);
+  });
+
+  it('保存を取り消したときは控えを消さない', async () => {
+    const fake = createFakeGateway({ saveCancels: true });
+    useFake(fake);
+    const autoSave = createFakeAutoSaver();
+    useAppStore.setState({ autoSaver: autoSave.saver });
+    useAppStore.getState().applyDocument(partWithPoint());
+
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(autoSave.discards()).toBe(0);
   });
 
   it('保存が失敗したら理由を帯へ出し、保存済みの記録は作らない', async () => {

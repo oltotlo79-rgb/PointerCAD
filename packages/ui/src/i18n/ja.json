@@ -281,5 +281,6 @@
   "restore.restore": "復元する",
   "restore.discard": "破棄する",
   "restore.savedAt": "保存した時刻",
+  "restore.documentName": "部品の名前",
   "bootstrap.rootMissing": "画面の土台が見つかりません。"
 }

@@ -174,6 +174,12 @@ export interface AppState {
    * 走っていないときに押されても次の計算へ引きずらないため(§0.a-0.22)。
    */
   readonly cancelRequestCount: number;
+  /**
+   * 直前の計算が中止で終わったか(NFR-PF-4)。中止は失敗ではないので `errorMessage` へは
+   * 入れず、帯も赤くしない。次に文書が変わるか、次の計算が終われば消える
+   * (時間で自動的に消さないのは、いつ消えるかを検査で決められるようにするため)。
+   */
+  readonly recomputeCancelled: boolean;
 
   /** 選択中の要素 id(FR-106)。面を張るときは選んだ順に意味がある(FR-309)。 */
   readonly selection: readonly string[];
@@ -470,6 +476,7 @@ export function createInitialDocumentState(): Pick<
   | 'cacheHits'
   | 'recomputeProgress'
   | 'cancelRequestCount'
+  | 'recomputeCancelled'
   | 'documentName'
   | 'featureNames'
   | 'isComputing'
@@ -513,6 +520,7 @@ export function createInitialDocumentState(): Pick<
     cacheHits: 0,
     recomputeProgress: null,
     cancelRequestCount: 0,
+    recomputeCancelled: false,
     documentName: sketch.name,
     featureNames: [],
     isComputing: false,
@@ -614,6 +622,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         isComputing: coalesceKey === undefined ? true : state.isComputing,
         // 形が変わったら「保存しました」等の知らせは用済み(FR-806)。
         fileMessage: null,
+        // 中止の知らせも、次の計算が始まる時点で用済み(NFR-PF-4)。
+        recomputeCancelled: false,
       };
     });
   },
@@ -665,6 +675,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         featureNames: sketch.features.map((feature) => feature.name),
         isComputing: false,
         recomputeProgress: null,
+        // 中止で終わったことは帯で短く知らせる。最後まで走ったならその知らせは消す。
+        recomputeCancelled: result.cancelled,
       };
     });
   },
@@ -678,6 +690,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...documentPatch(state, stack.present, stack),
         isComputing: true,
         fileMessage: null,
+        recomputeCancelled: false,
       };
     });
   },
@@ -691,6 +704,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...documentPatch(state, stack.present, stack),
         isComputing: true,
         fileMessage: null,
+        recomputeCancelled: false,
       };
     });
   },
@@ -803,6 +817,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       solidErrorKey: null,
       errorMessage: null,
       fileMessage: null,
+      recomputeCancelled: false,
     }));
   },
 }));

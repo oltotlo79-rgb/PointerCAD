@@ -814,6 +814,82 @@ describe('進捗と中止(NFR-PF-4、§0.a-0.22)', () => {
     useAppStore.getState().cancelRecompute();
     expect(useAppStore.getState().isComputing).toBe(false);
   });
+
+  it('起動直後は中止の知らせを持たない(タスク25)', () => {
+    expect(useAppStore.getState().recomputeCancelled).toBe(false);
+  });
+
+  it('中止で終わると知らせが立ち、進捗は下りる(NFR-PF-4、タスク25)', () => {
+    const document = appendSolid(partWithPoint(), extrudeFeature('extrude-1'));
+    useAppStore.getState().applyDocument(document);
+    useAppStore.getState().setRecomputeProgress({
+      featureId: 'extrude-1',
+      index: 0,
+      total: 3,
+      label: '押し出し1',
+    });
+
+    useAppStore
+      .getState()
+      .applyRecompute(document, { ...resultFor(document), cancelled: true });
+
+    const state = useAppStore.getState();
+    expect(state.recomputeCancelled).toBe(true);
+    expect(state.recomputeProgress).toBeNull();
+    // 中止は失敗ではないので、赤い帯になる errorMessage は立てない。
+    expect(state.errorMessage).toBeNull();
+  });
+
+  it('最後まで走った計算が終わると中止の知らせは下りる', () => {
+    const document = appendSolid(partWithPoint(), extrudeFeature('extrude-1'));
+    useAppStore.getState().applyRecompute(document, {
+      ...resultFor(document),
+      cancelled: true,
+    });
+    expect(useAppStore.getState().recomputeCancelled).toBe(true);
+
+    useAppStore.getState().applyRecompute(document, resultFor(document));
+    expect(useAppStore.getState().recomputeCancelled).toBe(false);
+  });
+
+  it('文書が変わると中止の知らせは消える(時間では消さない)', () => {
+    const document = appendSolid(partWithPoint(), extrudeFeature('extrude-1'));
+    useAppStore.getState().applyRecompute(document, {
+      ...resultFor(document),
+      cancelled: true,
+    });
+    expect(useAppStore.getState().recomputeCancelled).toBe(true);
+
+    useAppStore.getState().setSketch(documentWithPoint());
+    expect(useAppStore.getState().recomputeCancelled).toBe(false);
+  });
+
+  it('元に戻す・やり直す・新しくやり直すでも中止の知らせは消える', () => {
+    useAppStore.getState().applyDocument(partWithPoint());
+    const document = useAppStore.getState().document;
+    useAppStore.getState().applyRecompute(document, {
+      ...resultFor(document),
+      cancelled: true,
+    });
+    expect(useAppStore.getState().recomputeCancelled).toBe(true);
+
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().recomputeCancelled).toBe(false);
+
+    useAppStore.getState().applyRecompute(useAppStore.getState().document, {
+      ...resultFor(useAppStore.getState().document),
+      cancelled: true,
+    });
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().recomputeCancelled).toBe(false);
+
+    useAppStore.getState().applyRecompute(useAppStore.getState().document, {
+      ...resultFor(useAppStore.getState().document),
+      cancelled: true,
+    });
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    expect(useAppStore.getState().recomputeCancelled).toBe(false);
+  });
 });
 
 describe('ファイルまわりの状態(FR-806、計画書 タスク23)', () => {

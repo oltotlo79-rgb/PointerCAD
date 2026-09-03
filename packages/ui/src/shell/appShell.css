@@ -1456,6 +1456,7 @@ button.pcad-tree__row:focus-visible {
   .pcad-switch__thumb,
   .pcad-tree__row,
   .pcad-tree__chevron,
+  .pcad-statusbar__progress-fill,
   .pcad-viewcube {
     transition: none;
   }
@@ -1528,6 +1529,58 @@ button.pcad-tree__row:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * 計算の進み具合と中止(NFR-PF-4)。長い計算のあいだだけ状況の1文の右へ現れる。
+ * 高さ 28px の帯に収めるため、線は 3px、ボタンは 20px にする。
+ */
+.pcad-statusbar__progress {
+  display: flex;
+  flex: 0 1 auto;
+  gap: var(--pcad-space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.pcad-statusbar__progress-track {
+  flex: none;
+  width: 120px;
+  height: 3px;
+  overflow: hidden;
+  background: var(--pcad-border-strong);
+  border-radius: 999px;
+}
+
+.pcad-statusbar__progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--pcad-accent);
+  border-radius: inherit;
+  transition: width var(--pcad-transition);
+}
+
+/* 「すぐには止まらないことがあります。」の但し書き。狭い窓では畳んでツールチップに任せる。 */
+.pcad-statusbar__hint {
+  overflow: hidden;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1279px) {
+  .pcad-statusbar__hint {
+    display: none;
+  }
+}
+
+/* 中止のボタン。4 状態(通常・ホバー・押下・焦点)は .pcad-button から受け継ぐ。 */
+.pcad-statusbar__cancel {
+  flex: none;
+  height: 20px;
+  font-size: var(--pcad-font-size-small);
+  box-shadow: inset 0 0 0 1px var(--pcad-border-strong);
 }
 
 .pcad-statusbar__spacer {

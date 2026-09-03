@@ -1,37 +1,16 @@
-import type { WorkPlaneId } from '@pointercad/model';
+import { liveBodyIds, type WorkPlaneId } from '@pointercad/model';
+import { useEffect, useState } from 'react';
 
 import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
-import type { NumericInputToolId } from '../sketch/numericInput.js';
-import type { SnapKind } from '../sketch/snapMath.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { AlertIcon, MouseIcon, PlaneIcon, SaveIcon, SnapIcon } from './icons.js';
-
-/**
- * 道具ごとの次の一手(FR-905、NFR-UX-7)。
- * 選択のときは道具そのものの説明より、視点の動かし方を知らせるほうが役に立つので
- * これまでの案内(`statusBar.ready`)をそのまま出す。
- */
-const GUIDE_KEYS = {
-  select: 'statusBar.ready',
-  point: 'statusBar.guide.point',
-  line: 'statusBar.guide.line',
-  arc: 'statusBar.guide.arc',
-  pointArray: 'statusBar.guide.pointArray',
-  face: 'statusBar.guide.face',
-  extrude: 'statusBar.guide.extrude',
-  revolve: 'statusBar.guide.revolve',
-  sew: 'statusBar.guide.sew',
-} as const satisfies Record<NumericInputToolId, MessageKey>;
-
-/** いま何に吸い付いているかの案内(FR-107、NFR-UX-7)。 */
-const SNAP_GUIDE_KEYS = {
-  endpoint: 'statusBar.snap.endpoint',
-  intersection: 'statusBar.snap.intersection',
-  midpoint: 'statusBar.snap.midpoint',
-  center: 'statusBar.snap.center',
-  grid: 'statusBar.snap.grid',
-} as const satisfies Record<SnapKind, MessageKey>;
+import {
+  countSelectedBodies,
+  describeStatus,
+  PROGRESS_DELAY_MS,
+  type StatusLineKind,
+} from './statusText.js';
 
 /** 作図面の表記。ツールバーの区画名と同じ言葉にする。 */
 const PLANE_KEYS = {
@@ -40,32 +19,46 @@ const PLANE_KEYS = {
   yz: 'toolbar.plane.yz',
 } as const satisfies Record<WorkPlaneId, MessageKey>;
 
-/** 帯に出す1文。何の失敗かで頭の言葉を変える。頭の言葉が要らないものは null。 */
-interface StatusFailure {
-  readonly prefix: string | null;
-  readonly text: string;
+/** 帯の 1 文に添える印。何を伝えているかで替える。 */
+function statusIcon(kind: StatusLineKind): React.JSX.Element {
+  switch (kind) {
+    case 'failure':
+    case 'cancelled':
+      return <AlertIcon size={14} />;
+    case 'saved':
+      return <SaveIcon size={14} />;
+    case 'progress':
+    case 'computing':
+      return <span className="pcad-spinner" aria-hidden="true" />;
+    case 'snap':
+      return <SnapIcon size={14} />;
+    case 'guide':
+      return <MouseIcon size={14} />;
+  }
 }
 
-/** 頭の言葉と本文をつなぐ空白。文字そのものは言葉に依らないのでここに置く。 */
-const PREFIX_SEPARATOR = ' ';
-
-function failureText(failure: StatusFailure): string {
-  return failure.prefix === null
-    ? failure.text
-    : `${failure.prefix}${PREFIX_SEPARATOR}${failure.text}`;
+/** 割合(0〜1)を帯の幅の百分率にする。 */
+function widthPercent(ratio: number): string {
+  return `${String(Math.round(ratio * 100))}%`;
 }
 
 /**
  * 下端のステータスバー(要件§7.1、FR-905)。
  *
- * 左は今の状況を1文で伝える(失敗 / 計算中 / 吸着中の案内 / 道具ごとの操作ガイド)。
+ * 左は今の状況を 1 文で伝える(失敗 / 中止 / 計算の進み具合 / 吸着中の案内 / 道具ごとの
+ * 操作ガイド)。どれを出すかの順番と文の組み立ては `statusText.ts` の純関数が決める。
  * 右は「作図面」「吸着」「単位」を小さな札で常に見せる。
  * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
+ *
+ * 長い計算のあいだは細い進捗の帯と「中止」を出す(NFR-PF-4)。**進み具合が届いてすぐには
+ * 出さない**(`PROGRESS_DELAY_MS`)。短い計算で出すと、操作のたびに札が点滅するため
+ * (docs/報告記録.md 2026-09-02 23:35 の②)。
  */
 export function StatusBar(): React.JSX.Element {
   const isComputing = useAppStore((state) => state.isComputing);
   const errorMessage = useAppStore((state) => state.errorMessage);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
+  const partErrors = useAppStore((state) => state.partErrors);
   const faceErrorKey = useAppStore((state) => state.faceErrorKey);
   const solidErrorKey = useAppStore((state) => state.solidErrorKey);
   const activeTool = useAppStore((state) => state.activeTool);
@@ -74,34 +67,56 @@ export function StatusBar(): React.JSX.Element {
   const snapIndicator = useAppStore((state) => state.snapIndicator);
   const fileName = useAppStore((state) => state.fileName);
   const fileMessage = useAppStore((state) => state.fileMessage);
+  const recomputeProgress = useAppStore((state) => state.recomputeProgress);
+  const recomputeCancelled = useAppStore((state) => state.recomputeCancelled);
+  const cancelRecompute = useAppStore((state) => state.cancelRecompute);
   // 真偽で取り出して、印が付くか外れるかが変わったときだけ描き直す(NFR-PF-1)。
   const unsaved = useAppStore((state) => hasUnsavedChanges(state.document, state.savedDocument));
+  // 数で取り出す。ブーリアンの案内を出すかどうかにしか使わない(FR-404)。
+  const selectedBodyCount = useAppStore((state) =>
+    countSelectedBodies(state.selection, liveBodyIds(state.document)),
+  );
+
+  /*
+   * 進み具合を出してよいかどうかだけを持つ表示専用の状態(rules/04: useState は
+   * 表示専用の一時状態だけ)。見張るのは「進み具合が届いているか」の真偽で、
+   * 段が進むたびに動く中身ではない。中身で見張ると段ごとに待ち時間が振り出しへ戻り、
+   * 長い計算でもいつまでも出なくなる。
+   */
+  const hasProgress = recomputeProgress !== null;
+  const [progressVisible, setProgressVisible] = useState(false);
+  useEffect(() => {
+    if (!hasProgress) {
+      setProgressVisible(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      setProgressVisible(true);
+    }, PROGRESS_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [hasProgress]);
 
   // 開いているファイルの名前。保存していない変更があれば末尾に印が付く(FR-806)。
   const fileLabel = documentLabel(fileName, unsaved);
 
-  /*
-   * 面を張れなかった・立体を作れなかったことは、いま押した Enter やボタンへの返事なので
-   * 最初に出す。頭の言葉は「面を作れませんでした:」「立体を作れませんでした:」で、
-   * 計算の失敗の「計算に失敗しました:」とは重ねない。
-   * 続いて計算そのものの失敗、最後にスケッチの解決の失敗(FR-504)。
-   */
-  const sketchFailure = sketchErrors.length === 0 ? null : sketchErrors[0].message;
-  const failure: StatusFailure | null =
-    // ファイルの失敗は、いま押したボタンへの返事なので最初に出す。理由の文だけで
-    // 何が起きたかが分かる書き方にしてあるので、頭の言葉は添えない。
-    fileMessage !== null && fileMessage.failed
-      ? { prefix: null, text: t(fileMessage.key) }
-      : faceErrorKey !== null
-        ? { prefix: t('statusBar.faceError'), text: t(faceErrorKey) }
-        : solidErrorKey !== null
-          ? { prefix: t('statusBar.solidError'), text: t(solidErrorKey) }
-          : errorMessage !== null
-            ? { prefix: t('statusBar.error'), text: errorMessage }
-            : sketchFailure !== null
-              ? { prefix: t('statusBar.error'), text: sketchFailure }
-              : null;
-  const className = failure === null ? 'pcad-statusbar' : 'pcad-statusbar pcad-statusbar--error';
+  const line = describeStatus({
+    fileMessage,
+    faceErrorKey,
+    solidErrorKey,
+    errorMessage,
+    partErrors,
+    sketchErrors,
+    cancelled: recomputeCancelled,
+    progress: progressVisible ? recomputeProgress : null,
+    isComputing,
+    snapKind: snapIndicator === null ? null : snapIndicator.kind,
+    activeTool,
+    selectedBodyCount,
+  });
+  const className =
+    line.kind === 'failure' ? 'pcad-statusbar pcad-statusbar--error' : 'pcad-statusbar';
 
   return (
     <footer className={className}>
@@ -113,36 +128,43 @@ export function StatusBar(): React.JSX.Element {
         {fileLabel}
       </span>
       <span className="pcad-statusbar__message" aria-live="polite">
-        {failure !== null ? (
-          <>
-            <AlertIcon size={14} />
-            <span className="pcad-statusbar__text">{failureText(failure)}</span>
-          </>
-        ) : fileMessage !== null ? (
-          /* 保存できたことなど、うまくいったときの短い知らせ(FR-806)。 */
-          <>
-            <SaveIcon size={14} />
-            <span className="pcad-statusbar__text">{t(fileMessage.key)}</span>
-          </>
-        ) : isComputing ? (
-          <>
-            <span className="pcad-spinner" aria-hidden="true" />
-            <span className="pcad-statusbar__text">{t('statusBar.loading')}</span>
-          </>
-        ) : snapIndicator !== null ? (
-          <>
-            <SnapIcon size={14} />
-            <span className="pcad-statusbar__text">
-              {t(SNAP_GUIDE_KEYS[snapIndicator.kind])}
-            </span>
-          </>
-        ) : (
-          <>
-            <MouseIcon size={14} />
-            <span className="pcad-statusbar__text">{t(GUIDE_KEYS[activeTool])}</span>
-          </>
-        )}
+        {statusIcon(line.kind)}
+        <span className="pcad-statusbar__text">{line.text}</span>
       </span>
+      {line.progress === null ? null : (
+        /*
+         * 計算の進み具合と中止(NFR-PF-4)。中止は段と段の間でしか効かないので、
+         * 待たされることがある旨を薄い字とツールチップで先に伝える(§2.6 の限界)。
+         */
+        <span className="pcad-statusbar__progress">
+          <span
+            className="pcad-statusbar__progress-track"
+            role="progressbar"
+            aria-label={t('statusBar.progress')}
+            aria-valuemin={0}
+            aria-valuemax={line.progress.total}
+            aria-valuenow={line.progress.done}
+          >
+            <span
+              className="pcad-statusbar__progress-fill"
+              style={{ width: widthPercent(line.progress.ratio) }}
+            />
+          </span>
+          {line.hint === null ? null : (
+            <span className="pcad-statusbar__hint">{line.hint}</span>
+          )}
+          <button
+            type="button"
+            className="pcad-button pcad-button--action pcad-statusbar__cancel"
+            title={line.hint ?? t('statusBar.cancel')}
+            onClick={() => {
+              cancelRecompute();
+            }}
+          >
+            {t('statusBar.cancel')}
+          </button>
+        </span>
+      )}
       <span className="pcad-statusbar__spacer" />
       <span className="pcad-statusbar__state">
         <PlaneIcon size={12} />

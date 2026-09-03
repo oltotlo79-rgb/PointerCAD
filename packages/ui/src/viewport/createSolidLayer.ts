@@ -13,6 +13,7 @@
  * 16 進の定数として持つ。CSS 変数は three.js から読めないため。
  */
 
+import { addVec3, crossVec3, normalizeVec3, scaleVec3, type Vec3 } from '@pointercad/model';
 import * as THREE from 'three';
 
 import type { DisplayStyle } from '../store/useAppStore.js';
@@ -71,6 +72,96 @@ const SUB_SHAPE_LINE_RENDER_ORDER = 2;
 /** 部分形状の頂点の点の大きさ(px)。画面上の大きさを一定にする。 */
 const SUB_SHAPE_POINT_SIZE = 8;
 
+/**
+ * ねじの簡略表示の印(§0.a-0.15、計画書タスク23)。B-rep には現れない、描画だけのための情報。
+ *
+ * **置き場について:** 本来は kernel の `ThreadMarkInfo`(`SolidBodyMesh.threadMarks`)が
+ * model の `SolidBody` に添って届くが、それはタスク17(橋渡しの拡張)で、このタスクの
+ * 着手時点ではまだ届いていない。`ui` は `kernel` へ直接依存できない
+ * (`apps → ui → model → kernel/expression` の一方向、rules/04-設計の規律.md)ので、
+ * 欄の形だけをここに書く。タスク17 が model からこの形の値を返すようになったら、
+ * この定義は import に差し替えてよい(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes`
+ * と同じ橋渡しの考え方)。
+ */
+export interface ThreadMarkInfo {
+  /** ねじ部の始まり(mm)。 */
+  readonly origin: Vec3;
+  /** 軸の向き。長さ 0(退化)の印は描かない。 */
+  readonly direction: Vec3;
+  /** 外径 d(mm)。円の半径は d/2。 */
+  readonly majorDiameter: number;
+  /** ねじ部の長さ(mm)。 */
+  readonly length: number;
+}
+
+/** ねじの印の線の色(細実線。JIS の簡略図示に倣う)。 */
+const THREAD_MARK_COLOR = 0x8a93a6;
+/** ねじの印を描く円の分割数。 */
+const THREAD_MARK_SEGMENTS = 48;
+
+/** 円の基底(u・v)を作るための参照軸。direction とほぼ平行にならないものを選ぶ。 */
+function referenceAxis(direction: Vec3): Vec3 {
+  return Math.abs(direction[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+}
+
+/** ベクトルが実質ゼロ(退化)かどうか。normalizeVec3 は長さ 0 を原点のまま返す約束。 */
+function isZeroVec3(v: Vec3): boolean {
+  return v[0] === 0 && v[1] === 0 && v[2] === 0;
+}
+
+/** 円 1 つぶんの線分(THREAD_MARK_SEGMENTS 分割の折れ線)を position の配列へ積む。 */
+function pushThreadMarkCircle(
+  positions: number[],
+  center: Vec3,
+  u: Vec3,
+  v: Vec3,
+  radius: number,
+): void {
+  const points: Vec3[] = [];
+  for (let step = 0; step < THREAD_MARK_SEGMENTS; step += 1) {
+    const angle = (step / THREAD_MARK_SEGMENTS) * Math.PI * 2;
+    const point = addVec3(
+      center,
+      addVec3(scaleVec3(u, Math.cos(angle) * radius), scaleVec3(v, Math.sin(angle) * radius)),
+    );
+    points.push(point);
+  }
+  for (let step = 0; step < THREAD_MARK_SEGMENTS; step += 1) {
+    const from = points[step];
+    const to = points[(step + 1) % THREAD_MARK_SEGMENTS];
+    positions.push(from[0], from[1], from[2], to[0], to[1], to[2]);
+  }
+}
+
+/**
+ * ねじの簡略表示の印(§0.a-0.15)を線分列へ組み立てる。three.js に触れない純関数
+ * (Node で検査できる)。各印について、外径 d の円をねじ部の始め(origin)と終わり
+ * (origin + direction×length)に 1 つずつ、軸線を 1 本描く。
+ *
+ * 方向が退化している(長さ 0、または円の基底が作れない)印は黙って飛ばす
+ * (`buildSubShapeGeometry.ts` の「範囲が外れていても黙って飛ばす」と同じ考え方)。
+ */
+export function buildThreadMarkPositions(marks: readonly ThreadMarkInfo[]): Float32Array {
+  const positions: number[] = [];
+  for (const mark of marks) {
+    const direction = normalizeVec3(mark.direction);
+    if (isZeroVec3(direction)) {
+      continue;
+    }
+    const u = normalizeVec3(crossVec3(referenceAxis(direction), direction));
+    if (isZeroVec3(u)) {
+      continue;
+    }
+    const v = crossVec3(direction, u);
+    const radius = mark.majorDiameter / 2;
+    const end = addVec3(mark.origin, scaleVec3(direction, mark.length));
+    pushThreadMarkCircle(positions, mark.origin, u, v, radius);
+    pushThreadMarkCircle(positions, end, u, v, radius);
+    positions.push(mark.origin[0], mark.origin[1], mark.origin[2], end[0], end[1], end[2]);
+  }
+  return Float32Array.from(positions);
+}
+
 type SolidMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 type SolidEdges = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
@@ -97,6 +188,12 @@ export interface SolidLayer {
    * `update` と同じく、同じ組み立て結果を渡し直したときは並びを触らない。
    */
   updateSubShapes(bundle: SubShapeHighlightBundle): void;
+  /**
+   * ねじの簡略表示の印を差し替える(§0.a-0.15)。全ボディぶんをまとめた 1 本の配列で渡す
+   * (`createViewportScene.ts` がボディの一覧から集める)。同じ配列(同一参照)を渡し直したときは
+   * 並びを触らない。
+   */
+  updateThreadMarks(marks: readonly ThreadMarkInfo[]): void;
   /** 光線に当たったボディの featureId。当たらなければ null(FR-106)。 */
   pickBody(raycaster: THREE.Raycaster): string | null;
   /**
@@ -292,6 +389,28 @@ export function createSolidLayer(): SolidLayer {
   }
   let lastSubShapeBundle: SubShapeHighlightBundle | null = null;
 
+  /**
+   * ねじの簡略表示の印(§0.a-0.15)。全ボディぶんを 1 本の `LineSegments` にまとめる
+   * (部分形状の重ね描きと同じ考え方)。**renderOrder は面の縁と同じ 2**
+   * (`SUB_SHAPE_LINE_RENDER_ORDER`)。裏側(手前の面に隠れた側)の印も見えるよう
+   * `depthTest: false` にする(部分形状のオーバーレイと同じ扱い。JIS の簡略図示は
+   * 隠れ線かどうかを描き分けないため)。薄い線に見せるため不透明度を下げる。
+   */
+  const threadMarkLines = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      color: THREAD_MARK_COLOR,
+      transparent: true,
+      opacity: 0.75,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  threadMarkLines.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
+  threadMarkLines.visible = false;
+  group.add(threadMarkLines);
+  let lastThreadMarks: readonly ThreadMarkInfo[] | null = null;
+
   const draws: BodyDraw[] = [];
   /** 当たり判定にかける面。`draws` と同じ順に並ぶ。 */
   const pickTargets: THREE.Object3D[] = [];
@@ -417,6 +536,17 @@ export function createSolidLayer(): SolidLayer {
       applySubShapeOverlay(subShapeOverlays.selected, bundle.selected);
     },
 
+    updateThreadMarks(marks): void {
+      if (marks === lastThreadMarks) {
+        return;
+      }
+      lastThreadMarks = marks;
+      const positions = buildThreadMarkPositions(marks);
+      setVectorAttribute(threadMarkLines.geometry, 'position', positions);
+      threadMarkLines.geometry.computeBoundingSphere();
+      threadMarkLines.visible = positions.length > 0;
+    },
+
     pickFace(raycaster): { readonly featureId: string; readonly triangleIndex: number } | null {
       // pickBody と同じ的(ボディの面メッシュ)を使う。faceIndex は three.js が
       // 「当たった三角形の通し番号」として Intersection に添えてくれる。
@@ -457,8 +587,11 @@ export function createSolidLayer(): SolidLayer {
       for (const emphasis of SUB_SHAPE_EMPHASES) {
         disposeSubShapeOverlay(subShapeOverlays[emphasis]);
       }
+      threadMarkLines.geometry.dispose();
+      threadMarkLines.material.dispose();
       lastBundle = null;
       lastSubShapeBundle = null;
+      lastThreadMarks = null;
     },
   };
 }

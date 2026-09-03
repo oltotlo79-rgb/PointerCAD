@@ -30,7 +30,7 @@ import {
   type OrbitState,
 } from './cameraMath.js';
 import { createSketchLayer } from './createSketchLayer.js';
-import { createSolidLayer } from './createSolidLayer.js';
+import { createSolidLayer, type ThreadMarkInfo } from './createSolidLayer.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
 
 /**
@@ -94,6 +94,21 @@ export interface ViewportScene {
   screenToPlanePoint(x: number, y: number, plane: WorkPlane): Vec3 | null;
   resize(widthPixels: number, heightPixels: number): void;
   dispose(): void;
+}
+
+/**
+ * ねじの印(threadMarks)を持つボディ。model の `SolidBody` にタスク17(橋渡しの拡張)で
+ * 欄が届くまでの橋渡し(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes` と同じ考え方、§7)。
+ */
+interface SolidBodyWithThreadMarks extends SolidBody {
+  readonly threadMarks?: readonly ThreadMarkInfo[];
+}
+
+/** ボディの一覧からねじの印だけを 1 本にまとめる(§0.a-0.15)。 */
+function collectThreadMarks(
+  bodies: readonly SolidBodyWithThreadMarks[],
+): readonly ThreadMarkInfo[] {
+  return bodies.flatMap((body) => body.threadMarks ?? []);
 }
 
 /** 本アプリは Z 軸が上(計画書 §0.a-0.9)。three.js の既定(Y 上)から変える。 */
@@ -336,6 +351,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let subShapeSelection: readonly string[] = [];
   let subShapeBundle = EMPTY_SUB_SHAPE_HIGHLIGHT;
 
+  /** ねじの簡略表示の印(§0.a-0.15)。ボディの一覧から導くだけで、別の入力は持たない。 */
+  let threadMarks: readonly ThreadMarkInfo[] = [];
+
   /** 最後に描いたときのカメラ。画面座標との行き来はこれが決まってからでないとできない。 */
   let lastCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
   /** 最後に描いたときの見せ方。サムネイルを撮るときに同じ絵を描き直すのに使う。 */
@@ -360,6 +378,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     // 立体とスケッチは組み立て直したときだけ並びを差し替える(同じ結果なら表示の入切だけ)。
     solidLayer.update(solidBundle, displayStyle);
     solidLayer.updateSubShapes(subShapeBundle);
+    solidLayer.updateThreadMarks(threadMarks);
     sketchLayer.update(sketchBundle, displayStyle);
 
     updateKeyLight(orbit);
@@ -406,6 +425,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       solidBundle = buildSolidGeometry(bodies, hoveredBodyId, selectedBodyIds);
       // ボディの形が変わると強調する三角形・線分の座標も変わるので組み立て直す。
       subShapeBundle = buildSubShapeGeometry(bodies, subShapeHoveredElementId, subShapeSelection);
+      // ねじの印もボディの一覧から導く値なので、ここで一緒に組み立て直す(§0.a-0.15)。
+      threadMarks = collectThreadMarks(bodies);
     },
 
     setBodyHighlight(nextHovered, nextSelected): void {

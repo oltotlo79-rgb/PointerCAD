@@ -94,6 +94,7 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
     scene.setBodies(initial.bodies);
     scene.setBodyHighlight(initial.hoveredElementId, initial.selection);
+    scene.setSubShapeHighlight(initial.hoveredElementId, initial.selection);
     scene.setWorkPlane(initial.workPlaneId);
     requestDraw();
 
@@ -109,14 +110,18 @@ export function ViewportCanvas(): React.JSX.Element {
       if (next.bodies !== previous.bodies) {
         scene.setBodies(next.bodies);
       }
-      // ホバー・選択の強調(FR-106)。スケッチの要素とボディは同じ選択を共有していて、
-      // 立体の id が入っていればボディの縁が、要素の id が入っていればスケッチが強調される。
+      // ホバー・選択の強調(FR-106)。スケッチの要素・ボディ・部分形状(面・辺・頂点)は
+      // 同じ選択を共有していて、id の形でどれを強調するかが決まる(§0.a-0.8)。
+      // 選択の種類(selectionKind)が変わると選択は空になる(useAppStore.setSelectionKind)が、
+      // ホバーは残ることがあるので、種類の変化そのものも見て古い形の強調を残さない。
       if (
         next.hoveredElementId !== previous.hoveredElementId ||
-        next.selection !== previous.selection
+        next.selection !== previous.selection ||
+        next.selectionKind !== previous.selectionKind
       ) {
         scene.setSketchHighlight(next.hoveredElementId, next.selection);
         scene.setBodyHighlight(next.hoveredElementId, next.selection);
+        scene.setSubShapeHighlight(next.hoveredElementId, next.selection);
       }
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。
       if (next.workPlaneId !== previous.workPlaneId) {

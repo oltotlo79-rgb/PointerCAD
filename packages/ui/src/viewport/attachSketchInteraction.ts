@@ -31,6 +31,7 @@ import {
   DEFAULT_COORDINATE_BASE,
   isCoordinateStep,
   reduceNumericInput,
+  SOLID_TOOL_STEPS,
   type NumericInputState,
   type NumericInputStep,
   type NumericInputToolId,
@@ -46,7 +47,14 @@ import {
   type ProjectToScreen,
   type SnapCandidate,
 } from '../sketch/snapMath.js';
+import { pickSolidSubShape } from '../solid/pickSubShape.js';
+import {
+  subShapeElementId,
+  type SelectionKind,
+  type SubShapeBody,
+} from '../solid/subShapeSelection.js';
 import { useAppStore, type SnapIndicator } from '../store/useAppStore.js';
+import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { gridSpacing } from './gridMath.js';
 
@@ -66,20 +74,61 @@ const FIRST_STEP: Readonly<Record<DrawingToolId, NumericInputStep>> = {
 /** 基準点を引くだけの問い合わせに使う名前。失敗の理由は捨てるので画面には出ない。 */
 const BASE_PROBE_ID = 'numericInput';
 
-/** 数値を聞くソリッドの道具かどうか(P2 タスク19、§2.11)。 */
-function isSolidTool(tool: NumericInputToolId): tool is SolidToolId {
-  return tool === 'extrude' || tool === 'revolve' || tool === 'sew';
+/**
+ * 数値を聞くソリッドの道具かどうか(P2 タスク19、P3 タスク24 で加工6種+ばねを追加、§2.11)。
+ *
+ * `SolidToolId` の全メンバーは `numericInput.ts` の `SOLID_TOOL_STEPS`(道具ごとの最初の段)の
+ * キーと同じ集合になるようにその型で作ってあるので、そこから判定する。以前はここへ
+ * `'extrude' | 'revolve' | 'sew'` の3つだけを書き出していたため、P3 で `SolidToolId` へ
+ * 穴・ねじ穴・R面取り・C面取り・パターン・ばねが増えたときに追随できておらず、
+ * これらの道具で pointerdown が誤って `openInputAt`(座標入力)へ流れる不具合があった。
+ * 一覧をハードコードせず `SOLID_TOOL_STEPS` から引くことで、今後の道具追加にも追随する。
+ */
+export function isSolidTool(tool: NumericInputToolId): tool is SolidToolId {
+  return tool in SOLID_TOOL_STEPS;
 }
 
 /**
  * 立体そのものをクリックで選べる道具かどうか(FR-106、§0.a-0.6)。
  *
- * 選択のときと、立体の道具(押し出し・回転・縫合、ブーリアンの相手選び)のときに効かせる。
- * 面の道具は面の境界を順にクリックする道具なので、立体を拾うと選ぶ順が壊れる。
- * かき込む道具(点・線分・円弧・点列)は押した場所が座標そのものなので拾わない。
+ * 選択のときと、立体の道具(押し出し・回転・縫合、ブーリアンの相手選び、パターン・ばねの
+ * 対象選び)のときに効かせる。面の道具は面の境界を順にクリックする道具なので、立体を拾うと
+ * 選ぶ順が壊れる。かき込む道具(点・線分・円弧・点列)は押した場所が座標そのものなので拾わない。
  */
 function picksBodies(tool: NumericInputToolId): boolean {
   return tool === 'select' || isSolidTool(tool);
+}
+
+/** 位置を数値で決める、かき込む道具かどうか(FIRST_STEP のキーと同じ集合)。 */
+export function isDrawingTool(tool: NumericInputToolId): tool is DrawingToolId {
+  return tool in FIRST_STEP;
+}
+
+/**
+ * 部分形状(面・辺・頂点)をクリック・ホバーで拾う種類かどうか(§0.a-0.6、§2.3.2)。
+ * `picksBodies` の部分形状版。**選択の種類が `body` なら立体の道具・立体の経路(いまのまま)を使う**
+ * ので、ここは `body` 以外のときだけ true になる。かき込む道具(点・線・円弧・点列)を
+ * 使っているときは、選択の種類を手動で部分形状へ切り替えていても拾わない
+ * (いまと同じ判断。押した場所が座標そのものになる道具なので、当たり判定を挟むと
+ * 座標の入り口が曖昧になる)。
+ */
+export function picksSubShapes(kind: SelectionKind, tool: NumericInputToolId): boolean {
+  return kind !== 'body' && !isDrawingTool(tool);
+}
+
+/**
+ * `state.bodies` を `pickSolidSubShape` が要る形へ詰め替える。面・辺・頂点の一覧は
+ * model の `SolidBody` にタスク17(橋渡しの拡張)で欄が届くまで無いことがあるので、
+ * 無ければ空として扱う(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes` と同じ橋渡し、§7)。
+ */
+export function toSubShapeBodies(bodies: readonly SolidBodyWithSubShapes[]): readonly SubShapeBody[] {
+  return bodies.map((body) => ({
+    featureId: body.featureId,
+    mesh: { edgePositions: body.mesh.edgePositions },
+    faces: body.faces ?? [],
+    edges: body.edges ?? [],
+    vertices: body.vertices ?? [],
+  }));
 }
 
 export interface SketchInteraction {
@@ -210,9 +259,46 @@ export function attachSketchInteraction(
     return scene.pickBody(pointer[0], pointer[1]);
   }
 
+  /**
+   * 押した場所にある立体の部分形状(面・辺・頂点)の要素 id(§2.3.2)。選択の種類が `body` の
+   * ときや、部分形状を拾わない道具(かき込む道具、§2.3.2)のときは呼ばない前提で null を返す。
+   *
+   * 面は光線(`pickFaceAt`)、辺・頂点は画面座標(`pickSolidSubShape`。頂点が辺に勝つ、
+   * §0.a-0.27 の裏側も含む)。**吸着(スケッチの点への吸い付き)はここでは使わない**
+   * (§2.3.2 の順序表。吸着は作図の補助で、既にある立体の部分形状を拾う場面とは関係が薄い)。
+   */
+  function pickSubShapeAt(pointer: readonly [number, number]): string | null {
+    const state = useAppStore.getState();
+    const { selectionKind, bodies, activeTool } = state;
+    if (selectionKind === 'body' || bodies.length === 0 || !picksSubShapes(selectionKind, activeTool)) {
+      return null;
+    }
+    if (selectionKind === 'face') {
+      const hit = scene.pickFaceAt(pointer[0], pointer[1]);
+      return hit === null ? null : subShapeElementId(hit.featureId, 'face', hit.faceIndex);
+    }
+    // ここまで来たら edge か vertex(pickSolidSubShape が要る SubShapeKind、頂点 > 辺の順)。
+    const picked = pickSolidSubShape(toSubShapeBodies(bodies), project, pointer, selectionKind);
+    return picked === null ? null : picked.elementId;
+  }
+
   function onPointerMove(event: PointerEvent): void {
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
+
+    if (state.selectionKind !== 'body') {
+      // 部分形状(面・辺・頂点)を拾う種類のときは吸着を使わない(§2.3.2 の順序表)。
+      const picked = pickSketchElement(state.resolvedSketch, project, pointer);
+      const nextHovered = picked !== null ? picked.elementId : pickSubShapeAt(pointer);
+      if (nextHovered !== state.hoveredElementId) {
+        state.setHovered(nextHovered);
+      }
+      if (state.snapIndicator !== null) {
+        state.setSnapIndicator(null);
+      }
+      return;
+    }
+
     const snap = findSnap(pointer);
 
     // 当たり判定(6 画素)から外れていても、吸着(12 画素)が拾った要素は強調して
@@ -250,14 +336,19 @@ export function attachSketchInteraction(
   }
 
   /**
-   * 選択の道具・面の道具・立体の道具。押した順が面の境界の順になり、
-   * 立体を 2 つ選ぶ順が和・差・積の「もと」と「組み合わせる方」になる(FR-106、FR-309、§0.a-0.6)。
-   * 何も無いところを押したら選択を解く(足すときは解かない)。
+   * 選択の道具・面の道具・立体の道具・部分形状(面・辺・頂点)を選ぶ加工の道具。押した順が
+   * 面の境界の順になり、立体を 2 つ選ぶ順が和・差・積の「もと」と「組み合わせる方」になる
+   * (FR-106、FR-309、§0.a-0.6)。何も無いところを押したら選択を解く(足すときは解かない)。
    */
   function pickInto(pointer: readonly [number, number], accumulate: boolean): void {
     const state = useAppStore.getState();
     const picked = pickSketchElement(state.resolvedSketch, project, pointer);
-    const elementId = picked !== null ? picked.elementId : pickBodyAt(pointer);
+    const elementId =
+      picked !== null
+        ? picked.elementId
+        : state.selectionKind === 'body'
+          ? pickBodyAt(pointer)
+          : pickSubShapeAt(pointer);
     if (elementId === null) {
       if (!accumulate) {
         state.setSelection([]);
@@ -361,17 +452,22 @@ export function attachSketchInteraction(
     const pointer = pointerPosition(event);
     const tool = state.activeTool;
 
-    if (isSolidTool(tool)) {
-      // 立体の道具では、入力欄を開いたまま断面や立体を選び直せる。焦点は欄に残して
-      // そのまま Enter で決められるようにする(NFR-UX-2)。Shift で相手を足す(§0.a-0.6)。
-      event.preventDefault();
-      pickInto(pointer, event.shiftKey);
+    if (tool === 'select' || tool === 'face') {
+      // 面の道具では 1 つずつ足していく。選択の道具は Shift を押したときだけ足す。
+      // 選択の種類(selectionKind)がどうであっても、この2つの道具の振る舞いは変えない
+      // (P1・P2 のまま。手動で部分形状の種類へ切り替えていても面の境界の順が壊れないように、
+      // この判定を選択の種類より先に置く)。
+      pickInto(pointer, tool === 'face' || event.shiftKey);
       return;
     }
 
-    if (tool === 'select' || tool === 'face') {
-      // 面の道具では 1 つずつ足していく。選択の道具は Shift を押したときだけ足す。
-      pickInto(pointer, tool === 'face' || event.shiftKey);
+    if (isSolidTool(tool) || picksSubShapes(state.selectionKind, tool)) {
+      // 立体の道具(押し出し・回転・縫合、パターン・ばねの対象選び)と、部分形状(面・辺・頂点)を
+      // 選ぶ加工の道具(穴・ねじ穴・R 面取り・C 面取り)では、入力欄を開いたまま対象を選び直せる。
+      // 焦点は欄に残してそのまま Enter で決められるようにする(NFR-UX-2)。Shift で相手を足す
+      // (§0.a-0.6)。
+      event.preventDefault();
+      pickInto(pointer, event.shiftKey);
       return;
     }
 

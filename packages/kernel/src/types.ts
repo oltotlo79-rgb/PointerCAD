@@ -152,7 +152,17 @@ export interface BooleanStepSpec {
  */
 export type BooleanOperation = BooleanStepSpec['operation'];
 
-export type SolidStepSpec = ExtrudeStepSpec | RevolveStepSpec | SewStepSpec | BooleanStepSpec;
+export type SolidStepSpec =
+  | ExtrudeStepSpec
+  | RevolveStepSpec
+  | SewStepSpec
+  | BooleanStepSpec
+  | HoleStepSpec
+  | ThreadStepSpec
+  | FilletStepSpec
+  | ChamferStepSpec
+  /** ばね(FR-414、§2.7b)。対象を取らず、新しい形を作る(§0.36)。 */
+  | SpringStepSpec;
 
 /** 履歴 1 段ぶんの依頼。 */
 export interface SolidStepRequest {
@@ -186,10 +196,18 @@ export interface SolidBodyMesh {
   /** 稜線の線分列。線分 1 本あたり 6 個(始点 xyz + 終点 xyz)。 */
   readonly edgePositions: Float32Array;
   readonly triangleCount: number;
+  /** faces.length と必ず一致する(計画書 §2.8。タスク10 の検査で固定)。 */
   readonly faceCount: number;
+  /** edges.length と必ず一致する(同上)。 */
   readonly edgeCount: number;
   /** 体積(mm³)。プロパティ欄の表示と検査に使う。 */
   readonly volume: number;
+  /** 面の一覧(§2.2、§2.3)。並びは通し番号の順。 */
+  readonly faces: readonly SolidFaceInfo[];
+  readonly edges: readonly SolidEdgeInfo[];
+  readonly vertices: readonly SolidVertexInfo[];
+  /** ねじの簡略表示の印(§0.a-0.15)。無ければ空配列。 */
+  readonly threadMarks: readonly ThreadMarkInfo[];
 }
 
 /** 立体を作れなかった段と、その理由。 */
@@ -221,19 +239,14 @@ export interface SolidProgress {
   readonly label: string;
 }
 
-// ここから下は加工フィーチャー(FR-405〜408、FR-411、FR-412)のための型。
+// ここから下は加工フィーチャー(FR-405〜408、FR-411、FR-412、FR-414)のための型。
 // 上と同じく、Comlink 越しに渡せる素の値(数値・文字列・真偽・配列)だけで書く。
 //
-// **まだ SolidStepSpec と SolidBodyMesh へはつないでいない。** つなぐのは
-// 計画書 P3 のタスク10 で、次の 2 か所を同じ段で直す必要があるため。
-//   1. SolidStepSpec へ HoleStepSpec / ThreadStepSpec / FilletStepSpec / ChamferStepSpec を足すと、
-//      recomputeSolids.ts の createStepSolid の switch が 4 節足りなくなって型検査が落ちる
-//      (その 4 節が呼ぶ作り手はタスク6〜9 で作る)。
-//   2. SolidBodyMesh へ faces / edges / vertices / threadMarks を足すと、
-//      solidMesh.ts の buildSolidBodyMesh が 4 欄を返していないので型検査が落ちる
-//      (中身を作る collectSubShapes はタスク4 で作る)。
-// タスク10 で欄を足すときは、faceCount が faces.length と、edgeCount が edges.length と
-// 一致することを注釈に書き、検査で固定する(計画書 §2.8)。
+// SolidStepSpec の union と SolidBodyMesh の faces / edges / vertices / threadMarks は
+// タスク10(kernel の段の追加・メッシュへの一覧の添付)でつないだ(計画書 §2.8)。
+// faceCount は faces.length と、edgeCount は edges.length と必ず一致する
+// (solidMesh.ts の buildSolidBodyMesh と subShapes.ts の collectSubShapes が保証し、
+// recomputeSolids.test.ts が検査で固定する)。
 
 /** 部分形状(B-rep の面・辺・頂点)の種類。選択と参照の単位になる。 */
 export type SubShapeKind = 'face' | 'edge' | 'vertex';
@@ -438,4 +451,25 @@ export interface ChamferStepSpec {
    * 思っていたのと逆ならこのつまみ 1 つで入れ替える。
    */
   readonly swapReferenceFace: boolean;
+}
+
+/**
+ * らせんを掃引してばねを作る 1 手順(FR-414、計画書 §2.7b.2)。
+ * 対象を取らない(押し出し・回転・縫合と同じ「新しいボディを作る」段、§0.36)。
+ */
+export interface SpringStepSpec {
+  readonly kind: 'spring';
+  /** らせんの軸の始点(mm)。線材の中心はここから coilDiameter/2 離れた位置で始まる。 */
+  readonly origin: Vec3Tuple;
+  /** 軸の向き(単位ベクトルでなくてよい)。傾きを適用した後。 */
+  readonly direction: Vec3Tuple;
+  /** コイルの中心径(mm)。 */
+  readonly coilDiameter: number;
+  /** 線径(mm)。 */
+  readonly wireDiameter: number;
+  /** 1 巻きあたりの軸方向の進み(mm)。 */
+  readonly pitch: number;
+  /** 巻数。0 より大きい。整数でなくてよい。上限は 200(§0.a-0.35)。 */
+  readonly turns: number;
+  readonly handedness: 'right' | 'left';
 }

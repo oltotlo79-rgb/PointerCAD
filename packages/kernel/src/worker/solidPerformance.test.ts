@@ -1,7 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { extractEdges } from '../occt/extractEdges.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
-import type { CurveSpec, SolidRecomputeResult, SolidStepRequest } from '../types.js';
+import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
+import { collectSubShapes } from '../occt/subShapes.js';
+import { tessellate } from '../occt/tessellate.js';
+import type {
+  ChamferStepSpec,
+  CurveSpec,
+  FilletStepSpec,
+  HoleStepSpec,
+  SolidEdgeInfo,
+  SolidFaceInfo,
+  SolidRecomputeResult,
+  SolidStepRequest,
+  SpringStepSpec,
+  SubShapeQuery,
+} from '../types.js';
 import { recomputeSolids, type CachedSolid } from './recomputeSolids.js';
 import { SHAPE_CACHE_CAPACITY, createShapeCache, type ShapeCache } from './shapeCache.js';
 
@@ -70,18 +85,19 @@ function rectangleAt(offsetX: number, width: number, depth: number): readonly Cu
   ];
 }
 
-/** 押し出しの段を 1 つ作る。向きは +Z。 */
+/** 押し出しの段を 1 つ作る。向きは +Z。加工の段に消費される対象は visible: false で渡す。 */
 function extrudeStep(
   id: string,
   key: string,
   profile: readonly CurveSpec[],
   distance: number,
+  visible = true,
 ): SolidStepRequest {
   return {
     key,
     id,
     label: id,
-    visible: true,
+    visible,
     step: { kind: 'extrude', profile, direction: [0, 0, 1], distance },
   };
 }
@@ -128,6 +144,27 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       { oc, cache: warmUp },
       {
         steps: [extrudeStep('warm-up', 'key-warm-up', rectangleAt(0, 5, 5), 5)],
+        generation: 0,
+      },
+    );
+    // ばね(BRepOffsetAPI_MakePipeShell・Geom_CylindricalSurface・Geom2d_Line 等)は
+    // 押し出しと別の OCCT クラスを初めて呼ぶので、同じ理由で捨て計算を分けて流す
+    // (このファイル冒頭の注釈のとおり、WASM の初回呼び出しの遅延を計測から外す。
+    // 2026-09-04 実測: 捨て計算を入れないと初回だけ 800ms を超えた)。
+    const springWarmUp: SpringStepSpec = {
+      kind: 'spring',
+      origin: [0, 0, 0],
+      direction: [0, 0, 1],
+      coilDiameter: 6,
+      wireDiameter: 1,
+      pitch: 2,
+      turns: 1,
+      handedness: 'right',
+    };
+    await recomputeSolids(
+      { oc, cache: warmUp },
+      {
+        steps: [{ key: 'key-warm-up-spring', id: 'warm-up-spring', label: 'warm-up-spring', visible: false, step: springWarmUp }],
         generation: 0,
       },
     );
@@ -238,5 +275,308 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       expect(cache.stats().evictions).toBe(0);
       expect(third.elapsedMs).toBeLessThan(ONE_STEP_CHANGE_LIMIT_MS);
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 計画書 P3 タスク10 の性能検査の追補(手順5)。
+  // (a) の 4 件は上で変えずに残してある。ここからは (b)〜(g) の 7 件。
+  // ---------------------------------------------------------------------------
+
+  /** tessellate / extractEdges と同じ形から一覧を作る(実際の使われ方と同じ順序)。 */
+  function subShapesOf(shape: Parameters<typeof collectSubShapes>[1], oc: Awaited<ReturnType<typeof loadOcctForNode>>) {
+    const mesh = tessellate(oc, shape);
+    const lines = extractEdges(oc, shape);
+    return collectSubShapes(oc, shape, mesh.faceRanges, lines.edgeRanges);
+  }
+
+  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
+    return {
+      kind: 'face',
+      index: info.index,
+      surfaceKind: info.surfaceKind,
+      area: info.area,
+      position: info.centroid,
+      axis: info.axis,
+      radius: info.radius,
+    };
+  }
+
+  function edgeQuery(info: SolidEdgeInfo): Extract<SubShapeQuery, { kind: 'edge' }> {
+    return {
+      kind: 'edge',
+      index: info.index,
+      curveKind: info.curveKind,
+      length: info.length,
+      position: info.midpoint,
+      axis: info.axis,
+      radius: info.radius,
+    };
+  }
+
+  function planeFacing(faces: readonly SolidFaceInfo[], axis: readonly [number, number, number]): SolidFaceInfo {
+    const found = faces.find(
+      (face) =>
+        face.surfaceKind === 'plane' &&
+        face.axis !== null &&
+        Math.abs(face.axis[0] - axis[0]) < 1e-9 &&
+        Math.abs(face.axis[1] - axis[1]) < 1e-9 &&
+        Math.abs(face.axis[2] - axis[2]) < 1e-9,
+    );
+    if (found === undefined) {
+      throw new Error(`向き [${axis.join(',')}] の平面が見つかりませんでした`);
+    }
+    return found;
+  }
+
+  /** 縦の(z 軸に平行な)辺をすべて選ぶ。20×20×20 の箱なら 4 本。 */
+  function verticalEdges(edges: readonly SolidEdgeInfo[], length: number): readonly SolidEdgeInfo[] {
+    return edges.filter(
+      (edge) =>
+        edge.curveKind === 'line' &&
+        Math.abs(edge.length - length) < 1e-6 &&
+        edge.axis !== null &&
+        Math.abs(Math.abs(edge.axis[2]) - 1) < 1e-9,
+    );
+  }
+
+  it(`重いブーリアン連鎖: 20mm 立方体 100 個を差で 99 段つなげても ${FULL_RECOMPUTE_LIMIT_MS} ms 未満(P2 残件の再測)`, async () => {
+    const BOX_COUNT = 100;
+    const BOX_SIZE = 20;
+    const OFFSET = 5;
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const boxSteps: SolidStepRequest[] = Array.from({ length: BOX_COUNT }, (_unused, index) =>
+        extrudeStep(
+          `box-${index + 1}`,
+          `key-box-${index + 1}`,
+          rectangleAt(index * OFFSET, BOX_SIZE, BOX_SIZE),
+          BOX_SIZE,
+          false,
+        ),
+      );
+      const chainSteps: SolidStepRequest[] = [];
+      let previousKey = 'key-box-1';
+      for (let index = 2; index <= BOX_COUNT; index += 1) {
+        const key = `key-chain-${index}`;
+        const visible = index === BOX_COUNT;
+        chainSteps.push({
+          key,
+          id: `chain-${index}`,
+          label: `chain-${index}`,
+          visible,
+          step: { kind: 'boolean', operation: 'subtract', targetKey: previousKey, toolKey: `key-box-${index}` },
+        });
+        previousKey = key;
+      }
+
+      const startedAt = performance.now();
+      const result = await recomputeSolids({ oc, cache }, { steps: [...boxSteps, ...chainSteps], generation: 1 });
+      const elapsedMs = performance.now() - startedAt;
+      console.log(
+        `重いブーリアン連鎖(箱${BOX_COUNT}個・差${BOX_COUNT - 1}段): ${elapsedMs.toFixed(1)} ms / 上限 ${FULL_RECOMPUTE_LIMIT_MS} ms`,
+      );
+
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      expect(elapsedMs).toBeLessThan(FULL_RECOMPUTE_LIMIT_MS);
+    } finally {
+      cache.clear();
+    }
+  });
+
+  it(`加工 1 段: 40×30×10 の板に φ6 の貫通穴 1 つが ${SINGLE_FEATURE_LIMIT_MS} ms 未満`, async () => {
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const plateHandle = makeExtrudeSolid(
+        oc,
+        { kind: 'extrude', profile: rectangleAt(0, 40, 30), direction: [0, 0, 1], distance: 10 },
+        {},
+      );
+      const topFace = faceQuery(planeFacing(subShapesOf(plateHandle.shape, oc).faces, [0, 0, 1]));
+      plateHandle.delete();
+
+      const hole: HoleStepSpec = {
+        kind: 'hole',
+        targetKey: 'key-plate',
+        face: topFace,
+        centers: [[20, 15, 10]],
+        diameter: 6,
+        depth: null,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+      };
+      const steps: SolidStepRequest[] = [
+        extrudeStep('plate', 'key-plate', rectangleAt(0, 40, 30), 10, false),
+        { key: 'key-hole', id: 'hole-1', label: 'hole-1', visible: true, step: hole },
+      ];
+
+      const { result, elapsedMs } = await measure(oc, cache, steps);
+      console.log(`穴 1 つ(φ6・板40×30×10): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+    } finally {
+      cache.clear();
+    }
+  });
+
+  it(`加工 1 段: 20×20×20 の箱の縦 4 稜線を R5 が ${SINGLE_FEATURE_LIMIT_MS} ms 未満`, async () => {
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const boxHandle = makeExtrudeSolid(
+        oc,
+        { kind: 'extrude', profile: rectangleAt(0, 20, 20), direction: [0, 0, 1], distance: 20 },
+        {},
+      );
+      const targets = verticalEdges(subShapesOf(boxHandle.shape, oc).edges, 20).map(edgeQuery);
+      boxHandle.delete();
+      expect(targets).toHaveLength(4);
+
+      const fillet: FilletStepSpec = { kind: 'fillet', targetKey: 'key-box', targets, radius: 5 };
+      const steps: SolidStepRequest[] = [
+        extrudeStep('box', 'key-box', rectangleAt(0, 20, 20), 20, false),
+        { key: 'key-fillet', id: 'fillet-1', label: 'fillet-1', visible: true, step: fillet },
+      ];
+
+      const { result, elapsedMs } = await measure(oc, cache, steps);
+      console.log(`R 面取り(縦4稜線・R5・箱20³): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+    } finally {
+      cache.clear();
+    }
+  });
+
+  it(`加工 1 段: 同じ箱の縦 4 稜線を C2 が ${SINGLE_FEATURE_LIMIT_MS} ms 未満`, async () => {
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const boxHandle = makeExtrudeSolid(
+        oc,
+        { kind: 'extrude', profile: rectangleAt(0, 20, 20), direction: [0, 0, 1], distance: 20 },
+        {},
+      );
+      const targets = verticalEdges(subShapesOf(boxHandle.shape, oc).edges, 20).map(edgeQuery);
+      boxHandle.delete();
+      expect(targets).toHaveLength(4);
+
+      const chamfer: ChamferStepSpec = {
+        kind: 'chamfer',
+        targetKey: 'key-box',
+        targets,
+        size: { kind: 'equal', distance: 2 },
+        swapReferenceFace: false,
+      };
+      const steps: SolidStepRequest[] = [
+        extrudeStep('box', 'key-box', rectangleAt(0, 20, 20), 20, false),
+        { key: 'key-chamfer', id: 'chamfer-1', label: 'chamfer-1', visible: true, step: chamfer },
+      ];
+
+      const { result, elapsedMs } = await measure(oc, cache, steps);
+      console.log(`C 面取り(縦4稜線・C2・箱20³): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+    } finally {
+      cache.clear();
+    }
+  });
+
+  it(`穴 20 個を 1 段で: 200×200×10 の板に φ6 の貫通穴 20 個が ${SINGLE_FEATURE_LIMIT_MS} ms 未満`, async () => {
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const plateHandle = makeExtrudeSolid(
+        oc,
+        { kind: 'extrude', profile: rectangleAt(0, 200, 200), direction: [0, 0, 1], distance: 10 },
+        {},
+      );
+      const topFace = faceQuery(planeFacing(subShapesOf(plateHandle.shape, oc).faces, [0, 0, 1]));
+      plateHandle.delete();
+
+      const centers: [number, number, number][] = [];
+      for (let column = 0; column < 5; column += 1) {
+        for (let row = 0; row < 4; row += 1) {
+          centers.push([20 + column * 40, 25 + row * 50, 10]);
+        }
+      }
+      expect(centers).toHaveLength(20);
+
+      const hole: HoleStepSpec = {
+        kind: 'hole',
+        targetKey: 'key-plate',
+        face: topFace,
+        centers,
+        diameter: 6,
+        depth: null,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+      };
+      const steps: SolidStepRequest[] = [
+        extrudeStep('plate', 'key-plate', rectangleAt(0, 200, 200), 10, false),
+        { key: 'key-hole', id: 'hole-1', label: 'hole-1', visible: true, step: hole },
+      ];
+
+      const { result, elapsedMs } = await measure(oc, cache, steps);
+      console.log(`穴 20 個(φ6・板200×200×10): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      expect(elapsedMs).toBeLessThan(SINGLE_FEATURE_LIMIT_MS);
+
+      // §0.a-0.28: 部分形状の一覧のデータ量を実測して報告する。
+      const body = result.bodies[0];
+      const approxBytes = JSON.stringify({
+        faces: body.faces,
+        edges: body.edges,
+        vertices: body.vertices,
+      }).length;
+      console.log(
+        `一覧の量(穴20個の板): faces=${body.faces.length} edges=${body.edges.length} vertices=${body.vertices.length} 概算サイズ=${approxBytes} バイト`,
+      );
+    } finally {
+      cache.clear();
+    }
+  });
+
+  it('ばね 1 段: コイル径20・線径2・ピッチ5・巻数4 の所要を実測する(FR-414)', async () => {
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const spring: SpringStepSpec = {
+        kind: 'spring',
+        origin: [0, 0, 0],
+        direction: [0, 0, 1],
+        coilDiameter: 20,
+        wireDiameter: 2,
+        pitch: 5,
+        turns: 4,
+        handedness: 'right',
+      };
+      const steps: SolidStepRequest[] = [
+        { key: 'key-spring', id: 'spring-1', label: 'spring-1', visible: true, step: spring },
+      ];
+
+      const { result, elapsedMs } = await measure(oc, cache, steps);
+
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      // **所要は NFR-PF-2(500ms)を超える(2026-09-04 実測 700ms 前後)。**
+      // makeSpring.ts 単体の形の生成は 135〜150ms(makeSpring.test.ts で実測)で収まるが、
+      // ここで測るのは recomputeSolids の全体(形の生成 + tessellate + extractEdges +
+      // collectSubShapes)で、らせん状の曲面は既定の粗さ(線形ずれ 0.1mm)では
+      // 平らな面よりずっと多くの三角形を要るため、テッセレーションの費用が上乗せされる。
+      // 上限を緩めないため、ここでは上限の検査を置かず、実測値を記録に残す
+      // (§0.35 の「500ms を超えたら実測を報告して統括の判断を待つ」に従い報告済み。
+      // 打ち切りや上限の引き下げは統括が決める)。
+      console.log(
+        `ばね 1 段(D20/d2/p5/n4、recomputeSolids 全体): ${elapsedMs.toFixed(1)} ms(参考上限 ${SINGLE_FEATURE_LIMIT_MS} ms、makeSpring 単体は 135〜150ms)`,
+      );
+    } finally {
+      cache.clear();
+    }
   });
 });

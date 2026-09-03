@@ -112,6 +112,11 @@ function solidBody(featureId: string, volume = 12000): SolidBody {
 /**
  * kernel が返すボディ 1 つ(@pointercad/kernel の SolidBodyMesh と同じ形)。
  * 型の名前を model のテストへ持ち込まないよう、構造だけで書く。
+ *
+ * faces / edges / vertices / threadMarks は P3 タスク10 で SolidBodyMesh へ足された欄
+ * (計画書 §2.8)。ここでは中身を使わない検査ばかりなので空配列で埋めておき、
+ * kernelBridge.ts が実物の一覧を詰め替えるようになるタスク17 で、
+ * 必要になった検査だけ中身のある値へ差し替える。
  */
 function kernelBody(id: string, volume: number, triangleCount = 12) {
   return {
@@ -124,6 +129,10 @@ function kernelBody(id: string, volume: number, triangleCount = 12) {
     faceCount: 6,
     edgeCount: 12,
     volume,
+    faces: [],
+    edges: [],
+    vertices: [],
+    threadMarks: [],
   };
 }
 

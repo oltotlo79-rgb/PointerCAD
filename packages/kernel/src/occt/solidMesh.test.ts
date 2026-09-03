@@ -108,4 +108,38 @@ describe('ソリッドの体積・妥当性・表示用データのまとめ取�
       handle.delete();
     }
   });
+
+  // 計画書 §2.8(タスク10)。面・辺・頂点の一覧を collectSubShapes から添える。
+  it('箱の面・辺・頂点の一覧を添え、faceCount / edgeCount が一覧の長さと一致する', () => {
+    const handle = makeBox(oc, BOX);
+    try {
+      const body = buildSolidBodyMesh(oc, 'extrude-1', handle.shape);
+      // faceCount / edgeCount は faces.length / edges.length と必ず一致する(§2.8)。
+      expect(body.faces).toHaveLength(body.faceCount);
+      expect(body.edges).toHaveLength(body.edgeCount);
+      expect(body.faces).toHaveLength(6);
+      expect(body.edges).toHaveLength(12);
+      // 直方体の頂点は 8 個。
+      expect(body.vertices).toHaveLength(8);
+      // 通し番号は 0 始まりの連番(subShapes.ts の約束)。
+      expect(body.faces.map((face) => face.index)).toEqual([0, 1, 2, 3, 4, 5]);
+      // ねじ穴以外の段は印を渡さない。既定は空配列(threadMarks が第 5 引数の省略時)。
+      expect(body.threadMarks).toEqual([]);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('渡した threadMarks をそのまま返す(ねじ穴の段、§0.a-0.15)', () => {
+    const handle = makeBox(oc, BOX);
+    try {
+      const marks = [
+        { origin: [0, 0, 0] as const, direction: [0, 0, 1] as const, majorDiameter: 6, length: 10 },
+      ];
+      const body = buildSolidBodyMesh(oc, 'thread-1', handle.shape, {}, marks);
+      expect(body.threadMarks).toEqual(marks);
+    } finally {
+      handle.delete();
+    }
+  });
 });

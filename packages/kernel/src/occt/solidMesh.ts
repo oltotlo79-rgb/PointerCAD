@@ -1,7 +1,8 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { SolidBodyMesh, TessellationOptions } from '../types.js';
+import type { SolidBodyMesh, TessellationOptions, ThreadMarkInfo } from '../types.js';
 import { extractEdges } from './extractEdges.js';
+import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 
 /**
@@ -79,19 +80,27 @@ export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean 
 }
 
 /**
- * 表示用データを 1 回でまとめて作る(FR-105、FR-310)。
- * 面の三角形は tessellate、稜線は extractEdges が作り、ここでは体積を足して束ねるだけ。
- * 返す値は TypedArray と数値・文字列だけなので、そのまま Comlink 越しに渡せる。
- * 形の解放は呼び出し側の責任(この関数は shape を消費しない)。
+ * 表示用データを 1 回でまとめて作る(FR-105、FR-310、計画書 §2.8、タスク10)。
+ * 面の三角形は tessellate、稜線は extractEdges が作り、両方の範囲表を
+ * `collectSubShapes`(subShapes.ts)へ渡して面・辺・頂点の一覧(指紋の材料、§2.2)を添える。
+ * 3 つの関数はすべて同じ `TopExp.MapShapes_2(shape, ..., true, true)` の並びで
+ * 部分形状を数えるので、通し番号は必ず 1 対 1 に対応する(tessellate.ts / extractEdges.ts /
+ * subShapes.ts の注釈のとおり)。返す値は TypedArray と数値・文字列・配列だけなので、
+ * そのまま Comlink 越しに渡せる。形の解放は呼び出し側の責任(この関数は shape を消費しない)。
+ *
+ * `threadMarks` はねじ穴(タスク9)だけが渡す、B-rep に現れない描画用の印(§0.a-0.15)。
+ * 渡されなければ空配列にする(押し出し・回転・穴・面取り・ばね等はねじの印を持たない)。
  */
 export function buildSolidBodyMesh(
   oc: OpenCascadeInstance,
   id: string,
   shape: TopoDS_Shape,
   options: TessellationOptions = {},
+  threadMarks: readonly ThreadMarkInfo[] = [],
 ): SolidBodyMesh {
   const surface = tessellate(oc, shape, options);
   const edges = extractEdges(oc, shape, options);
+  const subShapes = collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges);
 
   return {
     id,
@@ -103,5 +112,9 @@ export function buildSolidBodyMesh(
     faceCount: surface.faceCount,
     edgeCount: edges.edgeCount,
     volume: measureVolume(oc, shape),
+    faces: subShapes.faces,
+    edges: subShapes.edges,
+    vertices: subShapes.vertices,
+    threadMarks,
   };
 }

@@ -1,6 +1,7 @@
 ﻿# PointerCAD 一括検査スクリプト(Windows PowerShell 5.1 / pwsh 対応)
 # rules/03-品質ゲート.md §7.1 の検査を順に実行し、いずれかが失敗したら非0で終了する。
-#   (0) 作業ツリーの状態記録(検査前後で比較し、テストによる追跡ファイル書換を検出)
+#   (0) 作業ツリーの状態記録(検査前後で比較し、テストによる書換を検出。
+#       -Level Commit は stage 済みファイルのみ、-Level Push は作業ツリー全体。理由: scripts/lib/gitTreeGuard.ps1)
 #   (1) pnpm run typecheck      -Level Commit / Push の両方
 #   (2) pnpm run lint           -Level Commit / Push の両方
 #   (3) pnpm run test           -Level Commit / Push の両方
@@ -36,6 +37,9 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
     $RepositoryRoot = Split-Path -Parent $scriptDirectory
 }
 $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd([char[]]"\\/")
+
+# (0) の前後比較で使う関数群(scripts/check.selftest.ps1 と共有する単一正本)
+. (Join-Path $scriptDirectory "lib\gitTreeGuard.ps1")
 
 function Invoke-Check {
     param([string]$Name, [string]$Command, [string[]]$CommandArgs)
@@ -80,10 +84,18 @@ try {
     }
     $hasE2E = $definedScripts -contains "test:e2e"
 
-    # (0) テストが追跡対象のファイルを書き換えていないかを、実行の前後で比べる
-    $global:LASTEXITCODE = 0
-    $beforeTracked = (& git -C $root status --porcelain --untracked-files=no) -join "`n"
-    $beforeTrackedStatus = $LASTEXITCODE
+    # (0) 検査がコミット対象のファイルを書き換えていないかを、実行の前後で比べる。
+    #     -Level Commit は stage 済みファイルだけ(並列作業中の他担当の未 stage な変化に影響されない)、
+    #     -Level Push は作業ツリー全体(従来どおり)。
+    $beforeSnapshot = Get-TrackedTreeSnapshot -Root $root -Level $Level
+    if (-not $beforeSnapshot.Ok) {
+        Write-Host "[NG] 追跡対象変更ガードの git 呼び出しが失敗しました" -ForegroundColor Red
+        exit 1
+    }
+    $skipTreeCompare = ($beforeSnapshot.Mode -eq "Staged") -and ($beforeSnapshot.Paths.Count -eq 0)
+    if ($skipTreeCompare) {
+        Write-Host "[警告] stage 済みのファイルが無いため、検査前後の比較を省略します" -ForegroundColor Yellow
+    }
 
     if ($Install) {
         Invoke-Check "(0) pnpm install --frozen-lockfile" pnpm @("install", "--frozen-lockfile")
@@ -104,21 +116,27 @@ try {
         Invoke-Check "(5/$totalChecks) pnpm run test:e2e" pnpm @("run", "test:e2e")
     }
 
-    $global:LASTEXITCODE = 0
-    $afterTracked = (& git -C $root status --porcelain --untracked-files=no) -join "`n"
-    $afterTrackedStatus = $LASTEXITCODE
-    if ($beforeTrackedStatus -ne 0 -or $afterTrackedStatus -ne 0) {
-        Write-Host "[NG] 追跡対象変更ガードの git status が失敗しました" -ForegroundColor Red
+    $afterSnapshot = Get-TrackedTreeSnapshot -Root $root -Level $Level
+    if (-not $afterSnapshot.Ok) {
+        Write-Host "[NG] 追跡対象変更ガードの git 呼び出しが失敗しました" -ForegroundColor Red
         exit 1
     }
-    if ($afterTracked -ne $beforeTracked) {
-        Write-Host ""
-        Write-Host "[NG] 検査が追跡対象のファイルを書き換えました" -ForegroundColor Red
-        Write-Host "実行前:" -ForegroundColor Yellow
-        Write-Host $beforeTracked
-        Write-Host "実行後:" -ForegroundColor Yellow
-        Write-Host $afterTracked
-        exit 1
+    if (-not $skipTreeCompare) {
+        $comparison = Compare-TrackedTreeSnapshot -Before $beforeSnapshot -After $afterSnapshot
+        if (-not $comparison.Unchanged) {
+            Write-Host ""
+            if ($beforeSnapshot.Mode -eq "Staged") {
+                Write-Host "[NG] 検査中にコミット対象のファイルが変わりました: $($comparison.ChangedPaths -join ', ')" -ForegroundColor Red
+            }
+            else {
+                Write-Host "[NG] 検査が追跡対象のファイルを書き換えました" -ForegroundColor Red
+                Write-Host "実行前:" -ForegroundColor Yellow
+                Write-Host $beforeSnapshot.Status
+                Write-Host "実行後:" -ForegroundColor Yellow
+                Write-Host $afterSnapshot.Status
+            }
+            exit 1
+        }
     }
 
     Write-Host ""

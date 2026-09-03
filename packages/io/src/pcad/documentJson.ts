@@ -19,8 +19,14 @@
 import {
   WORK_PLANE_IDS,
   type BooleanOperation,
+  type ChamferSize,
   type CoordinateInput,
+  type EdgeCurveKind,
+  type FaceSurfaceKind,
+  type HoleDepth,
   type PartDocument,
+  type PatternDirection,
+  type PatternPlacement,
   type PointReference,
   type RevolveAxis,
   type SketchDocument,
@@ -28,8 +34,17 @@ import {
   type SketchFaceRef,
   type SketchFeature,
   type SketchLineRef,
+  type SketchPointRef,
   type SolidFeature,
   type SolidFeatureKind,
+  type SpringDerived,
+  type SpringHandedness,
+  type SubShapeFingerprint,
+  type SubShapeKind,
+  type SubShapeRef,
+  type ThreadRepresentation,
+  type ThreadSeries,
+  type Vec3,
   type WorkPlaneId,
 } from '@pointercad/model';
 
@@ -44,9 +59,12 @@ import {
   readExpression,
   readLiteral,
   readNumber,
+  readOptionalNumber,
+  readOptionalVec3,
   readRecord,
   readString,
   readValue,
+  readVec3,
   type Checked,
   type ExpressionValueJson,
   type FieldProblem,
@@ -77,28 +95,51 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'face',
 ];
 /**
- * いま `.pcad` から読める立体の種類。
- *
- * P3 のタスク13 で `SolidFeatureKind` に加工フィーチャー(穴・ねじ穴・R 面取り・C 面取り・
- * パターン)とばねが増えたが、読み書きの実装はタスク19 でまとめて入れる。それまでは
- * 版2 までの4種類だけを受け付け、知らない種類の `kind` は `readLiteral` が
+ * `.pcad` から読める立体の種類。P2 の4種類(押し出し・回転・縫合・ブーリアン)に、
+ * P3 の加工フィーチャー5種(穴・ねじ穴・R 面取り・C 面取り・パターン)とばねを足した10種類
+ * (P3 計画書 §2.10、タスク19)。知らない種類の `kind` は `readLiteral` が
  * 「その欄の型が違う」として断る(新しい欄の解釈を推測しないため)。
- * `Extract` で `SolidFeatureKind` から取り出すので、model 側で名前が変われば型検査で落ちる。
  */
-type StoredSolidFeatureKind = Extract<
-  SolidFeatureKind,
-  'extrude' | 'revolve' | 'sew' | 'boolean'
->;
-const SOLID_FEATURE_KINDS: readonly StoredSolidFeatureKind[] = [
+const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = [
   'extrude',
   'revolve',
   'sew',
   'boolean',
+  'hole',
+  'threadHole',
+  'fillet',
+  'chamfer',
+  'pattern',
+  'spring',
 ];
 const REVOLVE_AXIS_KINDS: readonly RevolveAxis['kind'][] = ['world', 'line'];
 type WorldRevolveAxis = Extract<RevolveAxis, { readonly kind: 'world' }>;
 const WORLD_AXES: readonly WorldRevolveAxis['axis'][] = ['x', 'y', 'z'];
 const BOOLEAN_OPERATIONS: readonly BooleanOperation[] = ['union', 'subtract', 'intersect'];
+
+// P3(§2.10、タスク19)が足す判別の一覧。
+const SUB_SHAPE_KINDS: readonly SubShapeKind[] = ['face', 'edge', 'vertex'];
+const FACE_SURFACE_KINDS: readonly FaceSurfaceKind[] = [
+  'plane',
+  'cylinder',
+  'cone',
+  'sphere',
+  'torus',
+  'other',
+];
+const EDGE_CURVE_KINDS: readonly EdgeCurveKind[] = ['line', 'circle', 'ellipse', 'other'];
+const HOLE_DEPTH_KINDS: readonly HoleDepth['kind'][] = ['through', 'blind'];
+const THREAD_SERIES: readonly ThreadSeries[] = ['coarse', 'fine'];
+const THREAD_REPRESENTATIONS: readonly ThreadRepresentation[] = ['simplified', 'modeled'];
+const CHAMFER_SIZE_KINDS: readonly ChamferSize['kind'][] = [
+  'equal',
+  'twoDistances',
+  'distanceAngle',
+];
+const PATTERN_DIRECTION_KINDS: readonly PatternDirection['kind'][] = ['world', 'line'];
+const PATTERN_PLACEMENT_KINDS: readonly PatternPlacement['kind'][] = ['linear', 'circular'];
+const SPRING_DERIVED_VALUES: readonly SpringDerived[] = ['length', 'pitch', 'turns'];
+const SPRING_HANDEDNESS_VALUES: readonly SpringHandedness[] = ['right', 'left'];
 
 // ---------------------------------------------------------------------------
 // 書き出し
@@ -239,6 +280,114 @@ function serializeRevolveAxis(axis: RevolveAxis): RevolveAxis {
   }
 }
 
+// ---------------------------------------------------------------------------
+// P3(§2.2、§2.6、§2.7、§2.7b、タスク19)が足す部分形状の参照と加工の欄
+// ---------------------------------------------------------------------------
+
+function serializeVec3(vector: Vec3): Vec3 {
+  return [vector[0], vector[1], vector[2]];
+}
+
+/** 無い(null)ことがあるベクトルを書き出す。`undefined` にはせず、常に欄を持つ。 */
+function serializeOptionalVec3(vector: Vec3 | null): Vec3 | null {
+  return vector === null ? null : serializeVec3(vector);
+}
+
+function serializePointRef(reference: SketchPointRef): SketchPointRef {
+  return { sketchId: reference.sketchId, pointFeatureId: reference.pointFeatureId };
+}
+
+function serializeSubShapeFingerprint(fingerprint: SubShapeFingerprint): SubShapeFingerprint {
+  switch (fingerprint.kind) {
+    case 'face':
+      return {
+        kind: 'face',
+        surfaceKind: fingerprint.surfaceKind,
+        area: fingerprint.area,
+        position: serializeVec3(fingerprint.position),
+        axis: serializeOptionalVec3(fingerprint.axis),
+        radius: fingerprint.radius,
+      };
+    case 'edge':
+      return {
+        kind: 'edge',
+        curveKind: fingerprint.curveKind,
+        length: fingerprint.length,
+        position: serializeVec3(fingerprint.position),
+        axis: serializeOptionalVec3(fingerprint.axis),
+        radius: fingerprint.radius,
+      };
+    case 'vertex':
+      return { kind: 'vertex', position: serializeVec3(fingerprint.position) };
+  }
+}
+
+function serializeSubShapeRef(reference: SubShapeRef): SubShapeRef {
+  return {
+    bodyFeatureId: reference.bodyFeatureId,
+    index: reference.index,
+    fingerprint: serializeSubShapeFingerprint(reference.fingerprint),
+  };
+}
+
+function serializeHoleDepth(depth: HoleDepth): HoleDepth {
+  switch (depth.kind) {
+    case 'through':
+      return { kind: 'through' };
+    case 'blind':
+      return { kind: 'blind', depth: serializeExpression(depth.depth) };
+  }
+}
+
+function serializeChamferSize(size: ChamferSize): ChamferSize {
+  switch (size.kind) {
+    case 'equal':
+      return { kind: 'equal', distance: serializeExpression(size.distance) };
+    case 'twoDistances':
+      return {
+        kind: 'twoDistances',
+        distance1: serializeExpression(size.distance1),
+        distance2: serializeExpression(size.distance2),
+      };
+    case 'distanceAngle':
+      return {
+        kind: 'distanceAngle',
+        distance: serializeExpression(size.distance),
+        angle: serializeExpression(size.angle),
+      };
+  }
+}
+
+function serializePatternDirection(direction: PatternDirection): PatternDirection {
+  switch (direction.kind) {
+    case 'world':
+      return { kind: 'world', axis: direction.axis };
+    case 'line':
+      return { kind: 'line', line: serializeLineRef(direction.line) };
+  }
+}
+
+function serializePatternPlacement(placement: PatternPlacement): PatternPlacement {
+  switch (placement.kind) {
+    case 'linear':
+      return {
+        kind: 'linear',
+        direction: serializePatternDirection(placement.direction),
+        spacing: serializeExpression(placement.spacing),
+        count: serializeExpression(placement.count),
+        symmetric: placement.symmetric,
+      };
+    case 'circular':
+      return {
+        kind: 'circular',
+        axis: serializePatternDirection(placement.axis),
+        angle: serializeExpression(placement.angle),
+        count: serializeExpression(placement.count),
+        fullCircle: placement.fullCircle,
+      };
+  }
+}
+
 function serializeSolidFeature(feature: SolidFeature): SolidFeature {
   switch (feature.kind) {
     case 'extrude':
@@ -283,18 +432,86 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         toolFeatureId: feature.toolFeatureId,
       };
     case 'hole':
+      return {
+        id: feature.id,
+        kind: 'hole',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        face: serializeSubShapeRef(feature.face),
+        centers: feature.centers.map(serializePointRef),
+        diameter: serializeExpression(feature.diameter),
+        depth: serializeHoleDepth(feature.depth),
+        tiltAngle: serializeExpression(feature.tiltAngle),
+        tiltAzimuth: serializeExpression(feature.tiltAzimuth),
+      };
     case 'threadHole':
+      return {
+        id: feature.id,
+        kind: 'threadHole',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        face: serializeSubShapeRef(feature.face),
+        centers: feature.centers.map(serializePointRef),
+        designation: feature.designation,
+        series: feature.series,
+        pitch: serializeExpression(feature.pitch),
+        drillDiameter: serializeExpression(feature.drillDiameter),
+        depth: serializeHoleDepth(feature.depth),
+        threadLength: serializeExpression(feature.threadLength),
+        representation: feature.representation,
+        tiltAngle: serializeExpression(feature.tiltAngle),
+        tiltAzimuth: serializeExpression(feature.tiltAzimuth),
+      };
     case 'fillet':
+      return {
+        id: feature.id,
+        kind: 'fillet',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        targets: feature.targets.map(serializeSubShapeRef),
+        radius: serializeExpression(feature.radius),
+      };
     case 'chamfer':
+      return {
+        id: feature.id,
+        kind: 'chamfer',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        targets: feature.targets.map(serializeSubShapeRef),
+        size: serializeChamferSize(feature.size),
+        swapReferenceFace: feature.swapReferenceFace,
+      };
     case 'pattern':
+      return {
+        id: feature.id,
+        kind: 'pattern',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        sourceFeatureId: feature.sourceFeatureId,
+        placement: serializePatternPlacement(feature.placement),
+      };
     case 'spring':
-      // P3 タスク13 で文書の型だけが先に増えたための暫定。欄を決まった順で組み立て直すのは
-      // タスク19 の担当なので、それまでは受け取ったものをそのまま返して欄を落とさない。
-      // 読み込み側(SOLID_FEATURE_KINDS)はこの6種類をまだ受け付けないため、
-      // この状態では「書けても読めない」。**タスク19 がこの節を必ず置き換える。**
-      // 画面からこれらのフィーチャーを作れるようになるのはタスク25 以降なので、
-      // それまで実際の文書にこの種類が入ることはない。
-      return feature;
+      return {
+        id: feature.id,
+        kind: 'spring',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        origin: serializePointRef(feature.origin),
+        axis: serializeRevolveAxis(feature.axis),
+        tiltAngle: serializeExpression(feature.tiltAngle),
+        tiltAzimuth: serializeExpression(feature.tiltAzimuth),
+        length: serializeExpression(feature.length),
+        pitch: serializeExpression(feature.pitch),
+        turns: serializeExpression(feature.turns),
+        derived: feature.derived,
+        coilDiameter: serializeExpression(feature.coilDiameter),
+        wireDiameter: serializeExpression(feature.wireDiameter),
+        handedness: feature.handedness,
+      };
   }
 }
 
@@ -785,6 +1002,410 @@ function readRevolveAxis(
   }
 }
 
+// ---------------------------------------------------------------------------
+// P3(§2.2、§2.6、§2.7、§2.7b、タスク19)が足す部分形状の参照と加工の欄の読み込み
+// ---------------------------------------------------------------------------
+
+/**
+ * スケッチの点・点列フィーチャーへの参照を読む(穴の中心・ばねの始点、§0.a-0.9、§0.a-0.29)。
+ * `readSubShapeRef` と同じく、値を直に読む版(readPointRef)と欄から読む版(readPointRefField)
+ * の組にする(`readFaceRef` / `readFaceRefItem` と同じ流儀)。
+ */
+function readPointRef(value: unknown, path: string): Checked<SketchPointRef> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const sketchId = readString(record.value, 'sketchId', path);
+  if (!sketchId.ok) {
+    return sketchId;
+  }
+  const pointFeatureId = readString(record.value, 'pointFeatureId', path);
+  if (!pointFeatureId.ok) {
+    return pointFeatureId;
+  }
+  return { ok: true, value: { sketchId: sketchId.value, pointFeatureId: pointFeatureId.value } };
+}
+
+function readPointRefField(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<SketchPointRef> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readPointRef(found.value, joinPath(parentPath, key));
+}
+
+/**
+ * 部分形状の指紋を種類ごとに読む(§2.2.2)。`face` / `edge` / `vertex` で欄が違うので、
+ * `kind` を先に判別してから分ける。
+ */
+function readSubShapeFingerprint(value: unknown, path: string): Checked<SubShapeFingerprint> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const kind = readLiteral(record.value, 'kind', path, SUB_SHAPE_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'face': {
+      const surfaceKind = readLiteral(record.value, 'surfaceKind', path, FACE_SURFACE_KINDS);
+      if (!surfaceKind.ok) {
+        return surfaceKind;
+      }
+      const area = readNumber(record.value, 'area', path);
+      if (!area.ok) {
+        return area;
+      }
+      const position = readVec3(record.value, 'position', path);
+      if (!position.ok) {
+        return position;
+      }
+      const axis = readOptionalVec3(record.value, 'axis', path);
+      if (!axis.ok) {
+        return axis;
+      }
+      const radius = readOptionalNumber(record.value, 'radius', path);
+      if (!radius.ok) {
+        return radius;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'face',
+          surfaceKind: surfaceKind.value,
+          area: area.value,
+          position: position.value,
+          axis: axis.value,
+          radius: radius.value,
+        },
+      };
+    }
+    case 'edge': {
+      const curveKind = readLiteral(record.value, 'curveKind', path, EDGE_CURVE_KINDS);
+      if (!curveKind.ok) {
+        return curveKind;
+      }
+      const length = readNumber(record.value, 'length', path);
+      if (!length.ok) {
+        return length;
+      }
+      const position = readVec3(record.value, 'position', path);
+      if (!position.ok) {
+        return position;
+      }
+      const axis = readOptionalVec3(record.value, 'axis', path);
+      if (!axis.ok) {
+        return axis;
+      }
+      const radius = readOptionalNumber(record.value, 'radius', path);
+      if (!radius.ok) {
+        return radius;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'edge',
+          curveKind: curveKind.value,
+          length: length.value,
+          position: position.value,
+          axis: axis.value,
+          radius: radius.value,
+        },
+      };
+    }
+    case 'vertex': {
+      const position = readVec3(record.value, 'position', path);
+      if (!position.ok) {
+        return position;
+      }
+      return { ok: true, value: { kind: 'vertex', position: position.value } };
+    }
+  }
+}
+
+/** 部分形状への参照を読む(面・辺・頂点、5種類のフィーチャーが共有する)。 */
+function readSubShapeRef(value: unknown, path: string): Checked<SubShapeRef> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const bodyFeatureId = readString(record.value, 'bodyFeatureId', path);
+  if (!bodyFeatureId.ok) {
+    return bodyFeatureId;
+  }
+  const index = readNumber(record.value, 'index', path);
+  if (!index.ok) {
+    return index;
+  }
+  const fingerprintField = readValue(record.value, 'fingerprint', path);
+  if (!fingerprintField.ok) {
+    return fingerprintField;
+  }
+  const fingerprint = readSubShapeFingerprint(
+    fingerprintField.value,
+    joinPath(path, 'fingerprint'),
+  );
+  if (!fingerprint.ok) {
+    return fingerprint;
+  }
+  return {
+    ok: true,
+    value: {
+      bodyFeatureId: bodyFeatureId.value,
+      index: index.value,
+      fingerprint: fingerprint.value,
+    },
+  };
+}
+
+function readSubShapeRefField(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<SubShapeRef> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readSubShapeRef(found.value, joinPath(parentPath, key));
+}
+
+/** 穴の深さ(貫通/止まり、§0.a-0.12)を読む。 */
+function readHoleDepth(value: unknown, path: string): Checked<HoleDepth> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const kind = readLiteral(record.value, 'kind', path, HOLE_DEPTH_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'through':
+      return { ok: true, value: { kind: 'through' } };
+    case 'blind': {
+      const depth = readExpression(record.value, 'depth', path);
+      if (!depth.ok) {
+        return depth;
+      }
+      return { ok: true, value: { kind: 'blind', depth: depth.value } };
+    }
+  }
+}
+
+function readHoleDepthField(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<HoleDepth> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readHoleDepth(found.value, joinPath(parentPath, key));
+}
+
+/** C 面取りの大きさ(等距離・2距離・距離と角度、§0.a-0.18)を読む。 */
+function readChamferSize(value: unknown, path: string): Checked<ChamferSize> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const kind = readLiteral(record.value, 'kind', path, CHAMFER_SIZE_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'equal': {
+      const distance = readExpression(record.value, 'distance', path);
+      if (!distance.ok) {
+        return distance;
+      }
+      return { ok: true, value: { kind: 'equal', distance: distance.value } };
+    }
+    case 'twoDistances': {
+      const distance1 = readExpression(record.value, 'distance1', path);
+      if (!distance1.ok) {
+        return distance1;
+      }
+      const distance2 = readExpression(record.value, 'distance2', path);
+      if (!distance2.ok) {
+        return distance2;
+      }
+      return {
+        ok: true,
+        value: { kind: 'twoDistances', distance1: distance1.value, distance2: distance2.value },
+      };
+    }
+    case 'distanceAngle': {
+      const distance = readExpression(record.value, 'distance', path);
+      if (!distance.ok) {
+        return distance;
+      }
+      const angle = readExpression(record.value, 'angle', path);
+      if (!angle.ok) {
+        return angle;
+      }
+      return {
+        ok: true,
+        value: { kind: 'distanceAngle', distance: distance.value, angle: angle.value },
+      };
+    }
+  }
+}
+
+function readChamferSizeField(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<ChamferSize> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readChamferSize(found.value, joinPath(parentPath, key));
+}
+
+/**
+ * パターンの向き・軸(§0.a-0.21)を読む。`RevolveAxis` と欄の形は同じだが、
+ * 意味が違う別の型なので `readRevolveAxis` を使い回さず、同じ組み立てを別に持つ
+ * (model 側が2つの型を分けているのと揃える)。
+ */
+function readPatternDirection(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<PatternDirection> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, PATTERN_DIRECTION_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'world': {
+      const axis = readLiteral(record.value, 'axis', path, WORLD_AXES);
+      if (!axis.ok) {
+        return axis;
+      }
+      return { ok: true, value: { kind: 'world', axis: axis.value } };
+    }
+    case 'line': {
+      const line = readRecord(record.value, 'line', path);
+      if (!line.ok) {
+        return line;
+      }
+      const linePath = joinPath(path, 'line');
+      const sketchId = readString(line.value, 'sketchId', linePath);
+      if (!sketchId.ok) {
+        return sketchId;
+      }
+      const lineFeatureId = readString(line.value, 'lineFeatureId', linePath);
+      if (!lineFeatureId.ok) {
+        return lineFeatureId;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'line',
+          line: { sketchId: sketchId.value, lineFeatureId: lineFeatureId.value },
+        },
+      };
+    }
+  }
+}
+
+/** パターンの並べ方(直線・円形、§2.7)を読む。 */
+function readPatternPlacement(value: unknown, path: string): Checked<PatternPlacement> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const kind = readLiteral(record.value, 'kind', path, PATTERN_PLACEMENT_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'linear': {
+      const direction = readPatternDirection(record.value, 'direction', path);
+      if (!direction.ok) {
+        return direction;
+      }
+      const spacing = readExpression(record.value, 'spacing', path);
+      if (!spacing.ok) {
+        return spacing;
+      }
+      const count = readExpression(record.value, 'count', path);
+      if (!count.ok) {
+        return count;
+      }
+      const symmetric = readBoolean(record.value, 'symmetric', path);
+      if (!symmetric.ok) {
+        return symmetric;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'linear',
+          direction: direction.value,
+          spacing: spacing.value,
+          count: count.value,
+          symmetric: symmetric.value,
+        },
+      };
+    }
+    case 'circular': {
+      const axis = readPatternDirection(record.value, 'axis', path);
+      if (!axis.ok) {
+        return axis;
+      }
+      const angle = readExpression(record.value, 'angle', path);
+      if (!angle.ok) {
+        return angle;
+      }
+      const count = readExpression(record.value, 'count', path);
+      if (!count.ok) {
+        return count;
+      }
+      const fullCircle = readBoolean(record.value, 'fullCircle', path);
+      if (!fullCircle.ok) {
+        return fullCircle;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'circular',
+          axis: axis.value,
+          angle: angle.value,
+          count: count.value,
+          fullCircle: fullCircle.value,
+        },
+      };
+    }
+  }
+}
+
+function readPatternPlacementField(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<PatternPlacement> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readPatternPlacement(found.value, joinPath(parentPath, key));
+}
+
 /** ソリッドフィーチャーに共通の欄。 */
 interface SolidFeatureBase {
   readonly id: string;
@@ -833,6 +1454,18 @@ function readSolidFeature(value: unknown, path: string): Checked<SolidFeature> {
       return readSewFeature(record.value, path, base.value);
     case 'boolean':
       return readBooleanFeature(record.value, path, base.value);
+    case 'hole':
+      return readHoleFeature(record.value, path, base.value);
+    case 'threadHole':
+      return readThreadHoleFeature(record.value, path, base.value);
+    case 'fillet':
+      return readFilletFeature(record.value, path, base.value);
+    case 'chamfer':
+      return readChamferFeature(record.value, path, base.value);
+    case 'pattern':
+      return readPatternFeature(record.value, path, base.value);
+    case 'spring':
+      return readSpringFeature(record.value, path, base.value);
   }
 }
 
@@ -948,6 +1581,289 @@ function readBooleanFeature(
       operation: operation.value,
       targetFeatureId: targetFeatureId.value,
       toolFeatureId: toolFeatureId.value,
+    },
+  };
+}
+
+/** 穴(FR-405、§0.a-0.9〜0.a-0.12)を読む。中心は1つ以上(点列は展開済みの一覧として保存)。 */
+function readHoleFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const face = readSubShapeRefField(record, 'face', path);
+  if (!face.ok) {
+    return face;
+  }
+  const centers = readList(record, 'centers', path, readPointRef);
+  if (!centers.ok) {
+    return centers;
+  }
+  const diameter = readExpression(record, 'diameter', path);
+  if (!diameter.ok) {
+    return diameter;
+  }
+  const depth = readHoleDepthField(record, 'depth', path);
+  if (!depth.ok) {
+    return depth;
+  }
+  const tiltAngle = readExpression(record, 'tiltAngle', path);
+  if (!tiltAngle.ok) {
+    return tiltAngle;
+  }
+  const tiltAzimuth = readExpression(record, 'tiltAzimuth', path);
+  if (!tiltAzimuth.ok) {
+    return tiltAzimuth;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'hole',
+      targetFeatureId: targetFeatureId.value,
+      face: face.value,
+      centers: centers.value,
+      diameter: diameter.value,
+      depth: depth.value,
+      tiltAngle: tiltAngle.value,
+      tiltAzimuth: tiltAzimuth.value,
+    },
+  };
+}
+
+/** ねじ穴(FR-406、§0.a-0.13〜0.a-0.16)を読む。呼び・系列は一覧と突き合わせて絞る。 */
+function readThreadHoleFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const face = readSubShapeRefField(record, 'face', path);
+  if (!face.ok) {
+    return face;
+  }
+  const centers = readList(record, 'centers', path, readPointRef);
+  if (!centers.ok) {
+    return centers;
+  }
+  const designation = readString(record, 'designation', path);
+  if (!designation.ok) {
+    return designation;
+  }
+  const series = readLiteral(record, 'series', path, THREAD_SERIES);
+  if (!series.ok) {
+    return series;
+  }
+  const pitch = readExpression(record, 'pitch', path);
+  if (!pitch.ok) {
+    return pitch;
+  }
+  const drillDiameter = readExpression(record, 'drillDiameter', path);
+  if (!drillDiameter.ok) {
+    return drillDiameter;
+  }
+  const depth = readHoleDepthField(record, 'depth', path);
+  if (!depth.ok) {
+    return depth;
+  }
+  const threadLength = readExpression(record, 'threadLength', path);
+  if (!threadLength.ok) {
+    return threadLength;
+  }
+  const representation = readLiteral(record, 'representation', path, THREAD_REPRESENTATIONS);
+  if (!representation.ok) {
+    return representation;
+  }
+  const tiltAngle = readExpression(record, 'tiltAngle', path);
+  if (!tiltAngle.ok) {
+    return tiltAngle;
+  }
+  const tiltAzimuth = readExpression(record, 'tiltAzimuth', path);
+  if (!tiltAzimuth.ok) {
+    return tiltAzimuth;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'threadHole',
+      targetFeatureId: targetFeatureId.value,
+      face: face.value,
+      centers: centers.value,
+      designation: designation.value,
+      series: series.value,
+      pitch: pitch.value,
+      drillDiameter: drillDiameter.value,
+      depth: depth.value,
+      threadLength: threadLength.value,
+      representation: representation.value,
+      tiltAngle: tiltAngle.value,
+      tiltAzimuth: tiltAzimuth.value,
+    },
+  };
+}
+
+/** R 面取り(FR-407、§0.a-0.17)を読む。丸める辺・頂点の一覧(頂点は展開せずそのまま保存)。 */
+function readFilletFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const targets = readList(record, 'targets', path, readSubShapeRef);
+  if (!targets.ok) {
+    return targets;
+  }
+  const radius = readExpression(record, 'radius', path);
+  if (!radius.ok) {
+    return radius;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'fillet',
+      targetFeatureId: targetFeatureId.value,
+      targets: targets.value,
+      radius: radius.value,
+    },
+  };
+}
+
+/** C 面取り(FR-408、§0.a-0.18)を読む。 */
+function readChamferFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const targets = readList(record, 'targets', path, readSubShapeRef);
+  if (!targets.ok) {
+    return targets;
+  }
+  const size = readChamferSizeField(record, 'size', path);
+  if (!size.ok) {
+    return size;
+  }
+  const swapReferenceFace = readBoolean(record, 'swapReferenceFace', path);
+  if (!swapReferenceFace.ok) {
+    return swapReferenceFace;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'chamfer',
+      targetFeatureId: targetFeatureId.value,
+      targets: targets.value,
+      size: size.value,
+      swapReferenceFace: swapReferenceFace.value,
+    },
+  };
+}
+
+/** パターン(FR-411、FR-412、§0.a-0.20、§0.a-0.21)を読む。もとにする加工フィーチャーの id を持つ。 */
+function readPatternFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const sourceFeatureId = readString(record, 'sourceFeatureId', path);
+  if (!sourceFeatureId.ok) {
+    return sourceFeatureId;
+  }
+  const placement = readPatternPlacementField(record, 'placement', path);
+  if (!placement.ok) {
+    return placement;
+  }
+  return {
+    ok: true,
+    value: { ...base, kind: 'pattern', sourceFeatureId: sourceFeatureId.value, placement: placement.value },
+  };
+}
+
+/**
+ * ばね(FR-414、§2.7b)を読む。`derived` / `handedness` は選択肢の一覧と突き合わせて絞る
+ * (知らない値は断る)。
+ */
+function readSpringFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const origin = readPointRefField(record, 'origin', path);
+  if (!origin.ok) {
+    return origin;
+  }
+  const axis = readRevolveAxis(record, 'axis', path);
+  if (!axis.ok) {
+    return axis;
+  }
+  const tiltAngle = readExpression(record, 'tiltAngle', path);
+  if (!tiltAngle.ok) {
+    return tiltAngle;
+  }
+  const tiltAzimuth = readExpression(record, 'tiltAzimuth', path);
+  if (!tiltAzimuth.ok) {
+    return tiltAzimuth;
+  }
+  const length = readExpression(record, 'length', path);
+  if (!length.ok) {
+    return length;
+  }
+  const pitch = readExpression(record, 'pitch', path);
+  if (!pitch.ok) {
+    return pitch;
+  }
+  const turns = readExpression(record, 'turns', path);
+  if (!turns.ok) {
+    return turns;
+  }
+  const derived = readLiteral(record, 'derived', path, SPRING_DERIVED_VALUES);
+  if (!derived.ok) {
+    return derived;
+  }
+  const coilDiameter = readExpression(record, 'coilDiameter', path);
+  if (!coilDiameter.ok) {
+    return coilDiameter;
+  }
+  const wireDiameter = readExpression(record, 'wireDiameter', path);
+  if (!wireDiameter.ok) {
+    return wireDiameter;
+  }
+  const handedness = readLiteral(record, 'handedness', path, SPRING_HANDEDNESS_VALUES);
+  if (!handedness.ok) {
+    return handedness;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'spring',
+      origin: origin.value,
+      axis: axis.value,
+      tiltAngle: tiltAngle.value,
+      tiltAzimuth: tiltAzimuth.value,
+      length: length.value,
+      pitch: pitch.value,
+      turns: turns.value,
+      derived: derived.value,
+      coilDiameter: coilDiameter.value,
+      wireDiameter: wireDiameter.value,
+      handedness: handedness.value,
     },
   };
 }

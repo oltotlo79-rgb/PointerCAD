@@ -17,14 +17,14 @@ import type { SketchDocument } from '../sketch/types.js';
 import type { BooleanOperation, PartDocument, SolidFeature } from './types.js';
 
 /**
- * 部品文書の保存形式の版(§0.a-0.3)。P2 で 2 になる。
+ * 部品文書の保存形式の版(§0.a-0.3)。P3 で 3 になる(P3 計画書 §0.a-0.22、タスク19)。
  *
- * P3 は版を 3 へ上げると決まっている(P3 計画書 §0.a-0.22)が、封筒側の
- * `PCAD_SCHEMA_VERSION` と移行(`SCHEMA_MIGRATIONS[2]`)を同時に用意しないと
- * 「版だけ上がって版2のファイルが開けない」状態になるため、**版の変更は io を扱う
- * タスク19 でまとめて行う**(統括の指示、2026-09-03)。ここではまだ 2 のままにする。
+ * P3 が足したのは加工フィーチャー(穴・ねじ穴・R 面取り・C 面取り・パターン)とばねの
+ * 新しい種類だけで、版 2 に出てくる欄は 1 つも変えていない。そのため io 側の移行
+ * (`packages/io/src/pcad/schema.ts` の `SCHEMA_MIGRATIONS[2]`)は版の数字を
+ * 書き換えるだけで済み、版 2 のファイルはそのまま開ける。
  */
-export const PART_SCHEMA_VERSION = 2;
+export const PART_SCHEMA_VERSION = 3;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;

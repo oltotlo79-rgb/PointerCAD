@@ -106,7 +106,10 @@ function richSketch(): SketchDocument {
   };
 }
 
-/** 4 種類のソリッドフィーチャーと 2 種類の回転軸。 */
+/**
+ * 10 種類のソリッドフィーチャー(P2 の4種 + P3 の加工5種・ばね)と、2 種類の回転軸。
+ * 部分形状の指紋は面・辺・頂点の3種類、辺の指紋は軸ありと軸なし(§2.2.2)の両方を含める。
+ */
 function richSolids(): readonly SolidFeature[] {
   return [
     {
@@ -158,6 +161,156 @@ function richSolids(): readonly SolidFeature[] {
       operation: 'union',
       targetFeatureId: 'extrude-1',
       toolFeatureId: 'sew-1',
+    },
+    {
+      id: 'hole-1',
+      kind: 'hole',
+      name: '穴1',
+      suppressed: false,
+      targetFeatureId: 'union-1',
+      face: {
+        bodyFeatureId: 'union-1',
+        index: 3,
+        fingerprint: {
+          kind: 'face',
+          surfaceKind: 'plane',
+          area: 1200,
+          position: [0, 0, 10],
+          axis: [0, 0, 1],
+          radius: null,
+        },
+      },
+      centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+      diameter: ev('6', 6),
+      depth: { kind: 'blind', depth: ev('10', 10) },
+      tiltAngle: ev('0', 0),
+      tiltAzimuth: ev('0', 0),
+    },
+    {
+      id: 'threadHole-1',
+      kind: 'threadHole',
+      name: 'ねじ穴1',
+      suppressed: false,
+      targetFeatureId: 'hole-1',
+      face: {
+        bodyFeatureId: 'hole-1',
+        index: 5,
+        fingerprint: {
+          kind: 'face',
+          surfaceKind: 'cylinder',
+          area: 314.159265,
+          position: [5, 5, 5],
+          axis: [0, 0, 1],
+          radius: 8,
+        },
+      },
+      centers: [
+        { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+        { sketchId: 'sketch-1', pointFeatureId: 'pointArray-1' },
+      ],
+      designation: 'M6',
+      series: 'coarse',
+      pitch: ev('1', 1),
+      drillDiameter: ev('5.16', 5.16),
+      depth: { kind: 'through' },
+      threadLength: ev('10', 10),
+      representation: 'simplified',
+      tiltAngle: ev('5', 5),
+      tiltAzimuth: ev('45', 45),
+    },
+    {
+      id: 'fillet-1',
+      kind: 'fillet',
+      name: 'R面取り1',
+      suppressed: false,
+      targetFeatureId: 'threadHole-1',
+      targets: [
+        {
+          bodyFeatureId: 'threadHole-1',
+          index: 2,
+          fingerprint: {
+            kind: 'edge',
+            curveKind: 'line',
+            length: 20,
+            position: [1, 2, 3],
+            axis: [1, 0, 0],
+            radius: null,
+          },
+        },
+        {
+          bodyFeatureId: 'threadHole-1',
+          index: 6,
+          // 自由曲面・その他の辺は軸が求まらないので null(§2.2.2、往復で undefined にならないことを検査)。
+          fingerprint: {
+            kind: 'edge',
+            curveKind: 'other',
+            length: 12.5,
+            position: [0, 0, 0],
+            axis: null,
+            radius: null,
+          },
+        },
+        {
+          bodyFeatureId: 'threadHole-1',
+          index: 7,
+          fingerprint: { kind: 'vertex', position: [4, 5, 6] },
+        },
+      ],
+      radius: ev('2', 2),
+    },
+    {
+      id: 'chamfer-1',
+      kind: 'chamfer',
+      name: 'C面取り1',
+      suppressed: false,
+      targetFeatureId: 'fillet-1',
+      targets: [
+        {
+          bodyFeatureId: 'fillet-1',
+          index: 0,
+          fingerprint: {
+            kind: 'edge',
+            curveKind: 'circle',
+            length: 31.415926536,
+            position: [2, 2, 2],
+            axis: [0, 1, 0],
+            radius: 5,
+          },
+        },
+      ],
+      size: { kind: 'equal', distance: ev('1', 1) },
+      swapReferenceFace: false,
+    },
+    {
+      id: 'linearPattern-1',
+      kind: 'pattern',
+      name: '直線パターン1',
+      suppressed: false,
+      sourceFeatureId: 'hole-1',
+      placement: {
+        kind: 'linear',
+        direction: { kind: 'world', axis: 'x' },
+        spacing: ev('20', 20),
+        count: ev('3', 3),
+        symmetric: false,
+      },
+    },
+    {
+      id: 'spring-1',
+      kind: 'spring',
+      name: 'ばね1',
+      suppressed: false,
+      origin: { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+      axis: { kind: 'line', line: { sketchId: 'sketch-1', lineFeatureId: 'line-1' } },
+      tiltAngle: ev('3', 3),
+      tiltAzimuth: ev('30', 30),
+      length: ev('20', 20),
+      pitch: ev('5', 5),
+      turns: ev('4', 4),
+      derived: 'length',
+      coilDiameter: ev('20', 20),
+      wireDiameter: ev('2', 2),
+      handedness: 'right',
     },
   ];
 }
@@ -217,14 +370,14 @@ function roundTrip(document: PartDocument): PartDocument {
   return expectOk(parseDocument(serializeDocument(document, { savedAt: SAVED_AT })));
 }
 
-describe('.pcad の版(§0.a-0.3、統括の決定④)', () => {
-  it('封筒の版は 2 で、部品文書の版と同じ値である', () => {
-    expect(PCAD_SCHEMA_VERSION).toBe(2);
+describe('.pcad の版(§0.a-0.3、§0.a-0.22)', () => {
+  it('封筒の版は 3 で、部品文書の版と同じ値である', () => {
+    expect(PCAD_SCHEMA_VERSION).toBe(3);
     expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
   });
 
-  it('版を上げる変換表は P2 では空である(版 2 が最新のため)', () => {
-    expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual([]);
+  it('版を上げる変換表は版 2 → 3 の1つだけを持つ(P3 が版 3 を追加したため)', () => {
+    expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(['2']);
   });
 });
 
@@ -286,14 +439,14 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     };
     expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(
       `{
-  "schema": 2,
+  "schema": 3,
   "kind": "part",
   "app": "PointerCAD",
   "savedAt": "2026-09-03T01:23:45.678Z",
   "document": {
     "id": "part-1",
     "name": "部品1",
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "sketches": [
       {
         "id": "sketch-1",
@@ -372,6 +525,56 @@ describe('往復(serializeDocument → parseDocument)', () => {
     expect(roundTrip(document)).toEqual(document);
   });
 
+  it('10 種類のソリッドフィーチャー(P2 の4種 + 加工5種 + ばね)を含む文書が往復で一致する', () => {
+    const document = richDocument();
+    // revolve は2種類の回転軸(world / line)を確かめるため2件あるので、件数は11。
+    expect(document.solids).toHaveLength(11);
+    expect(new Set(document.solids.map((feature) => feature.kind)).size).toBe(10);
+    const roundTripped = roundTrip(document);
+    expect(roundTripped).toEqual(document);
+    // 面・辺・頂点の3種類の指紋、軸ありと軸なし(null)の辺、貫通/止まりの両方を含むことを確かめる。
+    const kinds = roundTripped.solids.map((feature) => feature.kind);
+    expect(kinds).toEqual([
+      'extrude',
+      'revolve',
+      'revolve',
+      'sew',
+      'boolean',
+      'hole',
+      'threadHole',
+      'fillet',
+      'chamfer',
+      'pattern',
+      'spring',
+    ]);
+  });
+
+  it('辺の指紋の axis が null のときは往復しても null のまま(undefined にならない)', () => {
+    const roundTripped = roundTrip(richDocument());
+    const fillet = roundTripped.solids.find((feature) => feature.id === 'fillet-1');
+    if (fillet === undefined || fillet.kind !== 'fillet') {
+      throw new Error('fillet-1 が見つからないはず');
+    }
+    const freeEdge = fillet.targets[1];
+    if (freeEdge.fingerprint.kind !== 'edge') {
+      throw new Error('辺の指紋のはず');
+    }
+    expect(freeEdge.fingerprint.axis).toBeNull();
+    expect('axis' in freeEdge.fingerprint).toBe(true);
+  });
+
+  it('部分形状の指紋は面・辺・頂点の3種類とも往復で一致する', () => {
+    const roundTripped = roundTrip(richDocument());
+    const hole = roundTripped.solids.find((feature) => feature.id === 'hole-1');
+    const fillet = roundTripped.solids.find((feature) => feature.id === 'fillet-1');
+    if (hole === undefined || hole.kind !== 'hole' || fillet === undefined || fillet.kind !== 'fillet') {
+      throw new Error('hole-1 / fillet-1 が見つからないはず');
+    }
+    expect(hole.face.fingerprint.kind).toBe('face');
+    expect(fillet.targets[0].fingerprint.kind).toBe('edge');
+    expect(fillet.targets[2].fingerprint).toEqual({ kind: 'vertex', position: [4, 5, 6] });
+  });
+
   it('式は評価値ではなく式文字列のまま往復する(FR-202)', () => {
     const document = roundTrip(richDocument());
     const feature = document.solids[0];
@@ -402,6 +605,721 @@ describe('往復(serializeDocument → parseDocument)', () => {
     const text = serializeDocument(richDocument(), { savedAt: SAVED_AT });
     const again = serializeDocument(expectOk(parseDocument(text)), { savedAt: SAVED_AT });
     expect(again).toBe(text);
+  });
+});
+
+/** 1つのソリッドフィーチャーだけを持つ最小の文書(欄の組み合わせを1つずつ確かめる検査に使う)。 */
+function documentWithSolid(feature: SolidFeature): PartDocument {
+  return { ...createEmptyPartDocument(), solids: [feature] };
+}
+
+describe('穴の深さ(HoleDepth)の往復(§0.a-0.11、§0.a-0.12)', () => {
+  it('貫通(through)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'hole-1',
+      kind: 'hole',
+      name: '穴1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      face: {
+        bodyFeatureId: 'extrude-1',
+        index: 0,
+        fingerprint: {
+          kind: 'face',
+          surfaceKind: 'plane',
+          area: 100,
+          position: [0, 0, 0],
+          axis: [0, 0, 1],
+          radius: null,
+        },
+      },
+      centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+      diameter: ev('6', 6),
+      depth: { kind: 'through' },
+      tiltAngle: ev('0', 0),
+      tiltAzimuth: ev('0', 0),
+    });
+    const parsed = roundTrip(document);
+    const hole = parsed.solids[0];
+    if (hole.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(hole.depth).toEqual({ kind: 'through' });
+  });
+
+  it('止まり(blind、式つき)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'hole-1',
+      kind: 'hole',
+      name: '穴1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      face: {
+        bodyFeatureId: 'extrude-1',
+        index: 0,
+        fingerprint: {
+          kind: 'face',
+          surfaceKind: 'plane',
+          area: 100,
+          position: [0, 0, 0],
+          axis: [0, 0, 1],
+          radius: null,
+        },
+      },
+      centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+      diameter: ev('6', 6),
+      depth: { kind: 'blind', depth: ev('4*2.5', 10) },
+      tiltAngle: ev('0', 0),
+      tiltAzimuth: ev('0', 0),
+    });
+    const parsed = roundTrip(document);
+    const hole = parsed.solids[0];
+    if (hole.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(hole.depth).toEqual({ kind: 'blind', depth: ev('4*2.5', 10) });
+  });
+});
+
+describe('C 面取りの大きさ(ChamferSize)の3種類の往復(§0.a-0.18)', () => {
+  it('等距離(equal)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'chamfer-1',
+      kind: 'chamfer',
+      name: 'C面取り1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      targets: [
+        {
+          bodyFeatureId: 'extrude-1',
+          index: 0,
+          fingerprint: { kind: 'edge', curveKind: 'line', length: 10, position: [0, 0, 0], axis: [1, 0, 0], radius: null },
+        },
+      ],
+      size: { kind: 'equal', distance: ev('1', 1) },
+      swapReferenceFace: false,
+    });
+    const parsed = roundTrip(document);
+    const chamfer = parsed.solids[0];
+    if (chamfer.kind !== 'chamfer') {
+      throw new Error('面取りのはず');
+    }
+    expect(chamfer.size).toEqual({ kind: 'equal', distance: ev('1', 1) });
+  });
+
+  it('2距離(twoDistances)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'chamfer-1',
+      kind: 'chamfer',
+      name: 'C面取り1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      targets: [
+        {
+          bodyFeatureId: 'extrude-1',
+          index: 0,
+          fingerprint: { kind: 'edge', curveKind: 'line', length: 10, position: [0, 0, 0], axis: [1, 0, 0], radius: null },
+        },
+      ],
+      size: { kind: 'twoDistances', distance1: ev('1', 1), distance2: ev('2', 2) },
+      swapReferenceFace: true,
+    });
+    const parsed = roundTrip(document);
+    const chamfer = parsed.solids[0];
+    if (chamfer.kind !== 'chamfer') {
+      throw new Error('面取りのはず');
+    }
+    expect(chamfer.size).toEqual({ kind: 'twoDistances', distance1: ev('1', 1), distance2: ev('2', 2) });
+    expect(chamfer.swapReferenceFace).toBe(true);
+  });
+
+  it('距離と角度(distanceAngle)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'chamfer-1',
+      kind: 'chamfer',
+      name: 'C面取り1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      targets: [
+        {
+          bodyFeatureId: 'extrude-1',
+          index: 0,
+          fingerprint: { kind: 'edge', curveKind: 'line', length: 10, position: [0, 0, 0], axis: [1, 0, 0], radius: null },
+        },
+      ],
+      size: { kind: 'distanceAngle', distance: ev('1', 1), angle: ev('45', 45) },
+      swapReferenceFace: false,
+    });
+    const parsed = roundTrip(document);
+    const chamfer = parsed.solids[0];
+    if (chamfer.kind !== 'chamfer') {
+      throw new Error('面取りのはず');
+    }
+    expect(chamfer.size).toEqual({ kind: 'distanceAngle', distance: ev('1', 1), angle: ev('45', 45) });
+  });
+});
+
+describe('パターンの並べ方(PatternPlacement)の2種類の往復(§0.a-0.20、§0.a-0.21)', () => {
+  it('直線(linear、両側へ)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'pattern-1',
+      kind: 'pattern',
+      name: '直線パターン1',
+      suppressed: false,
+      sourceFeatureId: 'hole-1',
+      placement: {
+        kind: 'linear',
+        direction: { kind: 'line', line: { sketchId: 'sketch-1', lineFeatureId: 'line-1' } },
+        spacing: ev('15', 15),
+        count: ev('5', 5),
+        symmetric: true,
+      },
+    });
+    const parsed = roundTrip(document);
+    const pattern = parsed.solids[0];
+    if (pattern.kind !== 'pattern') {
+      throw new Error('パターンのはず');
+    }
+    expect(pattern.placement).toEqual({
+      kind: 'linear',
+      direction: { kind: 'line', line: { sketchId: 'sketch-1', lineFeatureId: 'line-1' } },
+      spacing: ev('15', 15),
+      count: ev('5', 5),
+      symmetric: true,
+    });
+  });
+
+  it('円形(circular、全周)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'pattern-1',
+      kind: 'pattern',
+      name: '円形パターン1',
+      suppressed: false,
+      sourceFeatureId: 'hole-1',
+      placement: {
+        kind: 'circular',
+        axis: { kind: 'world', axis: 'z' },
+        angle: ev('360', 360),
+        count: ev('4', 4),
+        fullCircle: true,
+      },
+    });
+    const parsed = roundTrip(document);
+    const pattern = parsed.solids[0];
+    if (pattern.kind !== 'pattern') {
+      throw new Error('パターンのはず');
+    }
+    expect(pattern.placement).toEqual({
+      kind: 'circular',
+      axis: { kind: 'world', axis: 'z' },
+      angle: ev('360', 360),
+      count: ev('4', 4),
+      fullCircle: true,
+    });
+  });
+});
+
+describe('ばね(SpringFeature)の derived / handedness の往復(FR-414、§0.a-0.30、§0.a-0.33)', () => {
+  const DERIVED_VALUES = ['length', 'pitch', 'turns'] as const;
+  const HANDEDNESS_VALUES = ['right', 'left'] as const;
+
+  for (const derived of DERIVED_VALUES) {
+    for (const handedness of HANDEDNESS_VALUES) {
+      it(`derived: '${derived}' / handedness: '${handedness}' が往復で一致する`, () => {
+        const document = documentWithSolid({
+          id: 'spring-1',
+          kind: 'spring',
+          name: 'ばね1',
+          suppressed: false,
+          origin: { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+          axis: { kind: 'world', axis: 'z' },
+          tiltAngle: ev('0', 0),
+          tiltAzimuth: ev('0', 0),
+          length: ev('20', 20),
+          pitch: ev('5', 5),
+          turns: ev('4', 4),
+          derived,
+          coilDiameter: ev('20', 20),
+          wireDiameter: ev('2', 2),
+          handedness,
+        });
+        const parsed = roundTrip(document);
+        const spring = parsed.solids[0];
+        if (spring.kind !== 'spring') {
+          throw new Error('ばねのはず');
+        }
+        expect(spring.derived).toBe(derived);
+        expect(spring.handedness).toBe(handedness);
+      });
+    }
+  }
+
+  it('derived に知らない値(\'foo\')があれば断る(選択肢の一覧で絞っているため)', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'spring-1',
+          kind: 'spring',
+          name: 'ばね1',
+          suppressed: false,
+          origin: { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+          axis: { kind: 'world', axis: 'z' },
+          tiltAngle: ev('0', 0),
+          tiltAzimuth: ev('0', 0),
+          length: ev('20', 20),
+          pitch: ev('5', 5),
+          turns: ev('4', 4),
+          derived: 'foo',
+          coilDiameter: ev('20', 20),
+          wireDiameter: ev('2', 2),
+          handedness: 'right',
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].derived');
+  });
+
+  it('handedness に知らない値(\'both\')があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'spring-1',
+          kind: 'spring',
+          name: 'ばね1',
+          suppressed: false,
+          origin: { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+          axis: { kind: 'world', axis: 'z' },
+          tiltAngle: ev('0', 0),
+          tiltAzimuth: ev('0', 0),
+          length: ev('20', 20),
+          pitch: ev('5', 5),
+          turns: ev('4', 4),
+          derived: 'length',
+          coilDiameter: ev('20', 20),
+          wireDiameter: ev('2', 2),
+          handedness: 'both',
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].handedness');
+  });
+});
+
+describe('加工フィーチャーの読み方の規則(タスク19)', () => {
+  it('知らない欄「foo」を足した加工フィーチャーは読めて、往復すると foo が消える', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'hole-1',
+          kind: 'hole',
+          name: '穴1',
+          suppressed: false,
+          foo: 1,
+          targetFeatureId: 'extrude-1',
+          face: {
+            bodyFeatureId: 'extrude-1',
+            index: 0,
+            fingerprint: {
+              kind: 'face',
+              surfaceKind: 'plane',
+              area: 100,
+              position: [0, 0, 0],
+              axis: [0, 0, 1],
+              radius: null,
+            },
+            foo: 1,
+          },
+          centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+          diameter: ev('6', 6),
+          depth: { kind: 'through' },
+          tiltAngle: ev('0', 0),
+          tiltAzimuth: ev('0', 0),
+        },
+      ],
+    });
+    const parsed = expectOk(parseDocument(rawFile({ document })));
+    const text = serializeDocument(parsed, { savedAt: SAVED_AT });
+    expect(text).not.toContain('foo');
+    const hole = parsed.solids[0];
+    if (hole.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(Object.keys(hole).sort()).toEqual(
+      ['centers', 'depth', 'diameter', 'face', 'id', 'kind', 'name', 'suppressed', 'targetFeatureId', 'tiltAngle', 'tiltAzimuth'].sort(),
+    );
+  });
+
+  it('穴の直径(diameter)の評価値が数値でなければ NaN として読み、ファイルは開ける(FR-504)', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'hole-1',
+          kind: 'hole',
+          name: '穴1',
+          suppressed: false,
+          targetFeatureId: 'extrude-1',
+          face: {
+            bodyFeatureId: 'extrude-1',
+            index: 0,
+            fingerprint: {
+              kind: 'face',
+              surfaceKind: 'plane',
+              area: 100,
+              position: [0, 0, 0],
+              axis: [0, 0, 1],
+              radius: null,
+            },
+          },
+          centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+          diameter: { source: '6', value: '六', display: '6' },
+          depth: { kind: 'through' },
+          tiltAngle: ev('0', 0),
+          tiltAzimuth: ev('0', 0),
+        },
+      ],
+    });
+    const parsed = expectOk(parseDocument(rawFile({ document })));
+    const hole = parsed.solids[0];
+    if (hole.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(hole.diameter.source).toBe('6');
+    expect(Number.isNaN(hole.diameter.value)).toBe(true);
+  });
+
+  it('知らない種類のフィーチャー(未実装のシェル等)は断る(§0.a-0.1)', () => {
+    const document = rawDocument({
+      solids: [{ id: 'shell-1', kind: 'shell', name: 'シェル1', suppressed: false }],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].kind');
+  });
+});
+
+describe('版2から版3への移行(§0.a-0.22、SCHEMA_MIGRATIONS[2])', () => {
+  it('版2のファイル(P2 が書いたもの)がそのまま開けて内容が一致する', () => {
+    const v2Solids = richSolids().filter(
+      (feature) =>
+        feature.kind === 'extrude' ||
+        feature.kind === 'revolve' ||
+        feature.kind === 'sew' ||
+        feature.kind === 'boolean',
+    );
+    const v2Document: PartDocument = {
+      id: 'part-1',
+      name: '部品1',
+      schemaVersion: 2,
+      sketches: [richSketch()],
+      activeSketchId: 'sketch-1',
+      solids: v2Solids,
+    };
+    const v2File = JSON.stringify({
+      schema: 2,
+      kind: PCAD_DOCUMENT_KIND,
+      app: PCAD_APP_NAME,
+      savedAt: SAVED_AT,
+      document: v2Document,
+    });
+    const result = parseDocument(v2File);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(`読み込みに失敗しました: ${result.error.code}`);
+    }
+    expect(result.document).toEqual({ ...v2Document, schemaVersion: PCAD_SCHEMA_VERSION });
+  });
+
+  it('封筒3・中身2は versionMismatch で断る(移行は封筒の版でだけ判定するため)', () => {
+    const error = expectError(
+      parseDocument(rawFile({ schema: 3, document: rawDocument({ schemaVersion: 2 }) })),
+    );
+    expect(error.code).toBe('versionMismatch');
+  });
+});
+
+/** 型を通さない生の面の指紋(平面)。壊す前提の検査で使い回す。 */
+function rawFaceFingerprint(): Record<string, unknown> {
+  return {
+    kind: 'face',
+    surfaceKind: 'plane',
+    area: 100,
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    radius: null,
+  };
+}
+
+/** 型を通さない生の SubShapeRef(面)。 */
+function rawFaceRef(): Record<string, unknown> {
+  return { bodyFeatureId: 'extrude-1', index: 0, fingerprint: rawFaceFingerprint() };
+}
+
+/** 型を通さない生の穴フィーチャー。壊す前提の検査で使い回す。 */
+function rawHole(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'hole-1',
+    kind: 'hole',
+    name: '穴1',
+    suppressed: false,
+    targetFeatureId: 'extrude-1',
+    face: rawFaceRef(),
+    centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+    diameter: ev('6', 6),
+    depth: { kind: 'through' },
+    tiltAngle: ev('0', 0),
+    tiltAzimuth: ev('0', 0),
+    ...overrides,
+  };
+}
+
+describe('読み込みの断り方(P3、部分形状の参照と加工フィーチャー、タスク19)', () => {
+  it('ねじ穴の系列(series)に知らない値があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'threadHole-1',
+          kind: 'threadHole',
+          name: 'ねじ穴1',
+          suppressed: false,
+          targetFeatureId: 'extrude-1',
+          face: rawFaceRef(),
+          centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+          designation: 'M6',
+          series: 'medium',
+          pitch: ev('1', 1),
+          drillDiameter: ev('5.16', 5.16),
+          depth: { kind: 'through' },
+          threadLength: ev('10', 10),
+          representation: 'simplified',
+          tiltAngle: ev('0', 0),
+          tiltAzimuth: ev('0', 0),
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].series');
+  });
+
+  it('ねじ穴の表現(representation)に知らない値があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'threadHole-1',
+          kind: 'threadHole',
+          name: 'ねじ穴1',
+          suppressed: false,
+          targetFeatureId: 'extrude-1',
+          face: rawFaceRef(),
+          centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+          designation: 'M6',
+          series: 'coarse',
+          pitch: ev('1', 1),
+          drillDiameter: ev('5.16', 5.16),
+          depth: { kind: 'through' },
+          threadLength: ev('10', 10),
+          representation: 'realistic',
+          tiltAngle: ev('0', 0),
+          tiltAzimuth: ev('0', 0),
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].representation');
+  });
+
+  it('穴の深さ(depth.kind)に知らない値があれば断る', () => {
+    const document = rawDocument({
+      solids: [rawHole({ depth: { kind: 'partial', depth: ev('5', 5) } })],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].depth.kind');
+  });
+
+  it('部分形状の指紋(fingerprint.kind)に知らない値があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        rawHole({ face: { bodyFeatureId: 'extrude-1', index: 0, fingerprint: { kind: 'curve' } } }),
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].face.fingerprint.kind');
+  });
+
+  it('C 面取りの大きさ(size.kind)に知らない値があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'chamfer-1',
+          kind: 'chamfer',
+          name: 'C面取り1',
+          suppressed: false,
+          targetFeatureId: 'extrude-1',
+          targets: [rawFaceRef()],
+          size: { kind: 'threeDistances', distance: ev('1', 1) },
+          swapReferenceFace: false,
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].size.kind');
+  });
+
+  it('パターンの向き(direction.kind)に知らない値があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'pattern-1',
+          kind: 'pattern',
+          name: '直線パターン1',
+          suppressed: false,
+          sourceFeatureId: 'hole-1',
+          placement: {
+            kind: 'linear',
+            direction: { kind: 'curve' },
+            spacing: ev('20', 20),
+            count: ev('3', 3),
+            symmetric: false,
+          },
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].placement.direction.kind');
+  });
+
+  it('パターンの並べ方(placement.kind)に知らない値があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'pattern-1',
+          kind: 'pattern',
+          name: 'パターン1',
+          suppressed: false,
+          sourceFeatureId: 'hole-1',
+          placement: { kind: 'spiral' },
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].placement.kind');
+  });
+
+  it('部分形状の参照(SubShapeRef)に fingerprint 欄が無ければ、どこが無いかを添えて断る', () => {
+    const document = rawDocument({
+      solids: [rawHole({ face: { bodyFeatureId: 'extrude-1', index: 0 } })],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.solids[0].face.fingerprint');
+  });
+
+  it('中心の点参照(SketchPointRef)に pointFeatureId 欄が無ければ断る', () => {
+    const document = rawDocument({
+      solids: [rawHole({ centers: [{ sketchId: 'sketch-1' }] })],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.solids[0].centers[0].pointFeatureId');
+  });
+
+  it('R 面取りに radius 欄が無ければ断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'fillet-1',
+          kind: 'fillet',
+          name: 'R面取り1',
+          suppressed: false,
+          targetFeatureId: 'extrude-1',
+          targets: [rawFaceRef()],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.solids[0].radius');
+  });
+
+  it('ばねに handedness 欄が無ければ断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'spring-1',
+          kind: 'spring',
+          name: 'ばね1',
+          suppressed: false,
+          origin: { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+          axis: { kind: 'world', axis: 'z' },
+          tiltAngle: ev('0', 0),
+          tiltAzimuth: ev('0', 0),
+          length: ev('20', 20),
+          pitch: ev('5', 5),
+          turns: ev('4', 4),
+          derived: 'length',
+          coilDiameter: ev('20', 20),
+          wireDiameter: ev('2', 2),
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.solids[0].handedness');
+  });
+
+  it('パターンに placement 欄が無ければ断る', () => {
+    const document = rawDocument({
+      solids: [
+        { id: 'pattern-1', kind: 'pattern', name: 'パターン1', suppressed: false, sourceFeatureId: 'hole-1' },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.solids[0].placement');
+  });
+
+  it('指紋の奥にある欄(area)の型違いも、その場所を添えて断る', () => {
+    const document = rawDocument({
+      solids: [
+        rawHole({
+          face: {
+            bodyFeatureId: 'extrude-1',
+            index: 0,
+            fingerprint: { ...rawFaceFingerprint(), area: '100' },
+          },
+        }),
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].face.fingerprint.area');
+  });
+
+  it('指紋の axis が3要素でない配列なら断る', () => {
+    const document = rawDocument({
+      solids: [
+        rawHole({
+          face: {
+            bodyFeatureId: 'extrude-1',
+            index: 0,
+            fingerprint: { ...rawFaceFingerprint(), axis: [0, 0] },
+          },
+        }),
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].face.fingerprint.axis');
   });
 });
 
@@ -463,14 +1381,14 @@ describe('読み込みの断り方(FR-504、NFR-UX-5)', () => {
     expect(error.code).toBe('notPcad');
   });
 
-  it('版 3 は「新しい版で保存されています」と断る', () => {
-    const error = expectError(parseDocument(rawFile({ schema: 3 })));
+  it('版 4 は「新しい版で保存されています」と断る', () => {
+    const error = expectError(parseDocument(rawFile({ schema: 4 })));
     expect(error.code).toBe('unsupportedNewVersion');
     expect(error.message).toContain('新しい版の PointerCAD で保存されています');
-    expect(error.message).toContain('3');
+    expect(error.message).toContain('4');
   });
 
-  it('版 1 は「対応していない古い版です」と断る', () => {
+  it('版 1 は「対応していない古い版です」と断る(版2への移行表が無いため)', () => {
     const error = expectError(parseDocument(rawFile({ schema: 1 })));
     expect(error.code).toBe('unsupportedOldVersion');
     expect(error.message).toContain('対応していない古い版です');

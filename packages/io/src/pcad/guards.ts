@@ -7,7 +7,7 @@
  * (FR-504、NFR-UX-5)。
  */
 
-import type { ExtrudeFeature } from '@pointercad/model';
+import type { ExtrudeFeature, Vec3 } from '@pointercad/model';
 
 /**
  * 式文字列と評価値の組(FR-202)。@pointercad/expression の `ExpressionValue` と同じ型を、
@@ -201,4 +201,72 @@ export function readExpression(
   }
   const value = typeof found.value === 'number' ? found.value : Number.NaN;
   return { ok: true, value: { source: text.value, value, display: display.value } };
+}
+
+/**
+ * 3次元ベクトル(mm)を読む(P3、部分形状の指紋の位置・軸)。長さ3の配列で、
+ * 3つとも数値でなければ断る。`readVec3` は欄から、`readVec3Item` は値そのものから読む
+ * (`readFaceRef` / `readFaceRefItem` と同じ、欄用と値用の組)。
+ */
+export function readVec3Item(value: unknown, path: string): Checked<Vec3> {
+  if (!isUnknownArray(value) || value.length !== 3) {
+    return fieldProblem(path, 'type');
+  }
+  const x = value[0];
+  const y = value[1];
+  const z = value[2];
+  if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') {
+    return fieldProblem(path, 'type');
+  }
+  return { ok: true, value: [x, y, z] };
+}
+
+export function readVec3(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<Vec3> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readVec3Item(found.value, joinPath(parentPath, key));
+}
+
+/**
+ * 無い(null)ことがある3次元ベクトルを読む(面・辺の指紋の `axis`。自由曲面や楕円には軸が無い)。
+ * JSON の `null` はそのまま `null` として読み、`undefined` にはしない。
+ */
+export function readOptionalVec3(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<Vec3 | null> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  if (found.value === null) {
+    return { ok: true, value: null };
+  }
+  return readVec3Item(found.value, joinPath(parentPath, key));
+}
+
+/** 無い(null)ことがある数値を読む(面・辺の指紋の `radius`。円柱・円でなければ無い)。 */
+export function readOptionalNumber(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<number | null> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  if (found.value === null) {
+    return { ok: true, value: null };
+  }
+  if (typeof found.value !== 'number') {
+    return fieldProblem(joinPath(parentPath, key), 'type');
+  }
+  return { ok: true, value: found.value };
 }

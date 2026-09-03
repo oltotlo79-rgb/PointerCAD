@@ -9,13 +9,20 @@
 
 import type { PartDocument } from '@pointercad/model';
 
+import { isRecord } from './guards.js';
+
 /**
- * .pcad の書式の版(§0.a-0.3)。P2 で 2 になる。
+ * .pcad の書式の版(§0.a-0.3)。P3 で 3 になる(P3 計画書 §0.a-0.22、§2.10)。
  * 版 1 で保存されたファイルはこの世に 1 つも無い(P0 には保存機能が無かった)ので、
  * 版 1 は「対応していない古い版」として断る。
  * この値は部品文書の `PART_SCHEMA_VERSION` と必ず同じにする(documentJson.test.ts が検査する)。
+ *
+ * **次の版(4)の予定:** 外観(FR-1106〜1110)の割り当ては P3 では見送り、P5 で版 4 として足す
+ * (P3 計画書 §7)。P3 が足すのはフィーチャーの種類だけで既存の欄を1つも変えていないのと同じく、
+ * 版 4 も欄の追加だけになる見込みなので、`SCHEMA_MIGRATIONS[3]` は版の数字を書き換えるだけで
+ * 済むはずである(下の `SCHEMA_MIGRATIONS[2]` と同じ形)。
  */
-export const PCAD_SCHEMA_VERSION = 2;
+export const PCAD_SCHEMA_VERSION = 3;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -53,7 +60,23 @@ export type SchemaMigration = (raw: unknown) => unknown;
 /**
  * 版を上げたときの変換表。鍵は「変換元の版」で、`SCHEMA_MIGRATIONS[2]` は版 2 を版 3 へ直す。
  * 読み手は古い版のファイルをこの表で今の版まで順に持ち上げてから読む(要件§8 の前方互換)。
- * P2 では版 2 が最新なので空。版 3 を作るときに `SCHEMA_MIGRATIONS[2]` を足せば、
- * 版 2 のファイルは読み手を書き換えずに開けるようになる。
+ *
+ * **版2 → 版3(P3、§0.a-0.22):** P3 が足すのは新しいフィーチャーの種類だけで、版 2 に
+ * 出てくる欄は 1 つも変えていないので、封筒の `schema` と、その中の `document.schemaVersion`
+ * を 3 へ書き換えるだけでよい(読み手が両方を検査して `versionMismatch` で断るため、
+ * 片方だけの書き換えでは足りない)。中身が `isRecord` で絞れないほど壊れているときは
+ * そのまま返し、呼び出し側(`documentJson.ts` の `migrateToCurrentSchema`)の
+ * `isRecord` の検査に断らせる(変換そのものは例外を投げない)。
  */
-export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {};
+export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
+  2: (raw) => {
+    if (!isRecord(raw)) {
+      return raw;
+    }
+    const document = raw['document'];
+    if (!isRecord(document)) {
+      return raw;
+    }
+    return { ...raw, schema: 3, document: { ...document, schemaVersion: 3 } };
+  },
+};

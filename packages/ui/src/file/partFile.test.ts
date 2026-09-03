@@ -11,6 +11,7 @@
 
 import {
   PCAD_SCHEMA_VERSION,
+  SCHEMA_MIGRATIONS,
   readPcadFile,
   writePcadFile,
   type AutoSaver,
@@ -207,6 +208,15 @@ function replaceAscii(bytes: Uint8Array, from: string, to: string): Uint8Array {
 function pcadWithSchema(schema: number): Uint8Array {
   return writePcadFile({ ...createEmptyPartDocument(), schemaVersion: schema });
 }
+
+/**
+ * 移行が用意されていない、最も新しい「古すぎる版」(`SCHEMA_MIGRATIONS` の最小の鍵 − 1)。
+ * `PCAD_SCHEMA_VERSION - 1` だと、版が上がるたびに新しい移行が足される版と重なってしまう
+ * (P3 で版 2 → 3 の移行が増え、版 2 は「開ける版」になった)ので、移行表そのものから
+ * 「開けない最も新しい版」を導く。
+ */
+const OLDEST_UNMIGRATABLE_SCHEMA_VERSION =
+  Math.min(...Object.keys(SCHEMA_MIGRATIONS).map(Number)) - 1;
 
 /** `document.json` が入っていない ZIP。 */
 function zipWithoutDocument(): Uint8Array {
@@ -478,7 +488,7 @@ describe('開く(FR-806、NFR-RE-1)', () => {
   });
 
   it('古い版のファイルは「古い形式」と断る', async () => {
-    const fake = createFakeGateway({ openBytes: pcadWithSchema(PCAD_SCHEMA_VERSION - 1) });
+    const fake = createFakeGateway({ openBytes: pcadWithSchema(OLDEST_UNMIGRATABLE_SCHEMA_VERSION) });
     useFake(fake);
 
     await openPart(createFakeDeps(true).deps);

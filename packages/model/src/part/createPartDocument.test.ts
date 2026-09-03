@@ -387,8 +387,8 @@ describe('部品文書の生成(要件§8、FR-501)', () => {
     expect(document.solids).toEqual([]);
   });
 
-  it('保存形式の版は 2(§0.a-0.3)', () => {
-    expect(PART_SCHEMA_VERSION).toBe(2);
+  it('保存形式の版は 3(§0.a-0.3、§0.a-0.22)', () => {
+    expect(PART_SCHEMA_VERSION).toBe(3);
     expect(createEmptyPartDocument().schemaVersion).toBe(PART_SCHEMA_VERSION);
   });
 

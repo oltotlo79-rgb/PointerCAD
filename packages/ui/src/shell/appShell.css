@@ -919,6 +919,119 @@ button.pcad-tree__row:focus-visible {
   border-color: var(--pcad-danger);
 }
 
+/*
+ * ソリッドの段(押し出し・回転・縫合)は欄が 1 つだけで、見出しが「つなぎ目の許容量」まで
+ * 長くなる。欄が 1 つなら縦に揃える相手がいないので、見出しの列を中身の幅に合わせる。
+ */
+.pcad-popover__fields--wide .pcad-field {
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+}
+
+/* ===== 選択肢とつまみ(P2 のソリッド、§0.a-0.8 / 0.9) ===== */
+
+/* 回転の軸。見出しの下に等幅の選択肢を並べる。 */
+.pcad-popover__choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-1);
+}
+
+.pcad-popover__choice-label {
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+}
+
+.pcad-popover__choice-options .pcad-button {
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+.pcad-popover__toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/*
+ * 入切のつまみ(向きを反転・両側へ)。左に小さなスイッチ、右に名前。
+ * 通常・ホバー・押下・焦点の 4 状態を持ち、文字は --pcad-text-muted 以上の明るさを保って
+ * コントラスト 4.5:1 を下回らせない。
+ */
+.pcad-switch {
+  display: inline-flex;
+  gap: var(--pcad-space-2);
+  align-items: center;
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 var(--pcad-space-1);
+  font: inherit;
+  color: var(--pcad-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pcad-radius-small);
+  transition:
+    background-color var(--pcad-transition),
+    color var(--pcad-transition);
+}
+
+.pcad-switch:hover {
+  color: var(--pcad-text);
+  background: var(--pcad-surface-raised);
+}
+
+.pcad-switch:active {
+  color: var(--pcad-text);
+  background: var(--pcad-border-strong);
+}
+
+.pcad-switch:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+.pcad-switch__track {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 14px;
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: 7px;
+  transition:
+    background-color var(--pcad-transition),
+    border-color var(--pcad-transition);
+}
+
+.pcad-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  background: var(--pcad-text-muted);
+  border-radius: 50%;
+  transition:
+    background-color var(--pcad-transition),
+    transform var(--pcad-transition);
+}
+
+/* 入(true)はアクセントの淡い面+右へ寄ったつまみ。入切が色と位置の両方で分かる。 */
+.pcad-switch[aria-checked="true"] {
+  color: var(--pcad-text);
+}
+
+.pcad-switch[aria-checked="true"] .pcad-switch__track {
+  background: var(--pcad-accent-soft);
+  border-color: var(--pcad-accent-border);
+}
+
+.pcad-switch[aria-checked="true"] .pcad-switch__thumb {
+  background: var(--pcad-accent);
+  transform: translateX(12px);
+}
+
 .pcad-popover__hint {
   margin: 0;
   font-size: var(--pcad-font-size-small);
@@ -975,6 +1088,9 @@ button.pcad-tree__row:focus-visible {
 
   .pcad-tab,
   .pcad-button,
+  .pcad-switch,
+  .pcad-switch__track,
+  .pcad-switch__thumb,
   .pcad-tree__row,
   .pcad-tree__chevron,
   .pcad-viewcube {

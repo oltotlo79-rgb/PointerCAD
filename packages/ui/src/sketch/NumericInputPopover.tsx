@@ -1,21 +1,30 @@
+import { useEffect, useRef } from 'react';
+
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ExpressionField } from './ExpressionField.js';
 import {
   applyNumericInputKey,
+  chooseNumericInput,
   COORDINATE_MODES,
   evaluateNumericInput,
+  focusedTarget,
   isCoordinateStep,
+  isSolidStep,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
   nextNumericInput,
   NUMERIC_INPUT_KEYS,
+  numericFocusTargets,
   reduceNumericInput,
   STEP_TITLE_KEYS,
+  toggleNumericInput,
+  type NumericFocusTarget,
   type NumericInputCommit,
   type NumericInputKey,
   type NumericInputState,
   type NumericInputTransition,
+  type SolidInputCommit,
 } from './numericInput.js';
 
 /** ポップアップを基準点から右下へずらす量(画素)。指やカーソルで隠れないようにする。 */
@@ -29,6 +38,9 @@ const POPOVER_WIDTH_PIXELS = 260;
  * 3 欄+誤り文 1 行のときより少し大きい値を採って下端からはみ出しにくくする。
  */
 const POPOVER_HEIGHT_PIXELS = 280;
+
+/** 焦点の置き場所を、依存配列へ入れられる素の値で表す。 */
+type FocusKind = NumericFocusTarget['kind'] | 'none';
 
 /** 画面からはみ出さない位置を求める。ビューポートが小さいときは左上の余白を優先する。 */
 export function clampAnchor(
@@ -53,10 +65,14 @@ export function clampAnchor(
 /**
  * ポップアップの中で意味を持つキーだけを取り出す(§2.9)。
  * それ以外は欄へそのまま通す(文字の入力・カーソル移動を邪魔しない)。
+ *
+ * Space と ← → は、焦点がつまみ・選択肢にあるときだけ拾う。欄に焦点があるときに
+ * 拾うと、空白が打てなくなり、カーソルも動かせなくなるため。
  */
 function numericInputKeyFor(
   event: React.KeyboardEvent,
   coordinateStep: boolean,
+  focusKind: FocusKind,
 ): NumericInputKey | null {
   // 日本語入力の変換中に押した Enter は確定の合図なので、こちらでは扱わない。
   if (event.nativeEvent.isComposing) {
@@ -70,6 +86,17 @@ function numericInputKeyFor(
   }
   if (event.key === 'Escape') {
     return 'Escape';
+  }
+  if (event.key === ' ' && focusKind === 'toggle') {
+    return 'Space';
+  }
+  if (focusKind === 'choice') {
+    if (event.key === 'ArrowLeft') {
+      return 'ArrowLeft';
+    }
+    if (event.key === 'ArrowRight') {
+      return 'ArrowRight';
+    }
   }
   if (event.altKey && coordinateStep) {
     if (event.key === '1') {
@@ -91,6 +118,11 @@ export interface NumericInputPopoverProps {
    * (計画書 タスク21 が渡す処理が決める)。
    */
   readonly onCommit: (commit: NumericInputCommit, state: NumericInputState) => void;
+  /**
+   * ソリッド(押し出し・回転・縫合)を決めたときに呼ばれる。
+   * 渡さなければソリッドの決定は捨てられる(ポップアップは閉じる)。
+   */
+  readonly onSolidCommit?: (commit: SolidInputCommit, state: NumericInputState) => void;
   /** ビューポートの大きさ(画素)。端での折り返しに使う。 */
   readonly viewportWidth: number;
   readonly viewportHeight: number;
@@ -105,11 +137,32 @@ export interface NumericInputPopoverProps {
  */
 export function NumericInputPopover({
   onCommit,
+  onSolidCommit,
   viewportWidth,
   viewportHeight,
 }: NumericInputPopoverProps): React.JSX.Element | null {
   const state = useAppStore((store) => store.numericInput);
   const anchor = useAppStore((store) => store.numericInputAnchor);
+
+  // つまみと選択肢は入力欄ではないので、焦点は状態機械の指示でこちらから移す。
+  const toggleRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const choiceRef = useRef<HTMLButtonElement | null>(null);
+  const target = state === null ? null : focusedTarget(state);
+  const focusKind: FocusKind = target === null ? 'none' : target.kind;
+  const focusToggleIndex = target !== null && target.kind === 'toggle' ? target.index : -1;
+
+  useEffect(() => {
+    const element =
+      focusKind === 'toggle'
+        ? (toggleRefs.current[focusToggleIndex] ?? null)
+        : focusKind === 'choice'
+          ? choiceRef.current
+          : null;
+    if (element === null || element.ownerDocument.activeElement === element) {
+      return;
+    }
+    element.focus();
+  }, [focusKind, focusToggleIndex]);
 
   if (state === null || anchor === null) {
     return null;
@@ -118,9 +171,19 @@ export function NumericInputPopover({
   const evaluation = evaluateNumericInput(state);
   const position = clampAnchor(anchor, viewportWidth, viewportHeight);
   const coordinateStep = isCoordinateStep(state.step);
+  const solidStep = isSolidStep(state.step);
+  const targets = numericFocusTargets(state);
+  const choiceIndex = targets.findIndex((entry) => entry.kind === 'choice');
+  const firstToggleIndex = targets.findIndex((entry) => entry.kind === 'toggle');
+  const { choice } = state;
 
   const update = (next: NumericInputState): void => {
     useAppStore.getState().updateNumericInput(next);
+  };
+
+  /** 押した先へ焦点の印も移す。Tab の続きが押した場所から始まるようにする。 */
+  const updateAndFocus = (next: NumericInputState, index: number): void => {
+    update(reduceNumericInput(next, { type: 'focus', index }));
   };
 
   const applyTransition = (transition: NumericInputTransition): void => {
@@ -133,6 +196,11 @@ export function NumericInputPopover({
         update(transition.state);
         return;
       case 'cancelled':
+        useAppStore.getState().closeNumericInput();
+        return;
+      case 'solidCommitted':
+        // ソリッドは 1 段で終わるので、決めたら必ず閉じる(nextNumericInput も null を返す)。
+        onSolidCommit?.(transition.commit, transition.state);
         useAppStore.getState().closeNumericInput();
         return;
       case 'committed': {
@@ -164,11 +232,12 @@ export function NumericInputPopover({
       role="dialog"
       aria-label={t(STEP_TITLE_KEYS[state.step])}
       onKeyDown={(event) => {
-        const key = numericInputKeyFor(event, coordinateStep);
+        const key = numericInputKeyFor(event, coordinateStep, focusKind);
         if (key === null) {
           return;
         }
         // 扱うキーだけを止める。ビューポートの視点操作へは流さない。
+        // つまみの上での Space / Enter は、ここで止めることで押下が二重に起きない。
         event.preventDefault();
         event.stopPropagation();
         handleKey(key);
@@ -200,7 +269,7 @@ export function NumericInputPopover({
         </div>
       ) : null}
 
-      <div className="pcad-popover__fields">
+      <div className={solidStep ? 'pcad-popover__fields pcad-popover__fields--wide' : 'pcad-popover__fields'}>
         {state.fields.map((field, index) => (
           <ExpressionField
             key={field.key}
@@ -216,6 +285,57 @@ export function NumericInputPopover({
           />
         ))}
       </div>
+
+      {choice === null ? null : (
+        <div className="pcad-popover__choice">
+          <span className="pcad-popover__choice-label">{t('propertyPanel.axis')}</span>
+          <div
+            className="pcad-segmented pcad-popover__choice-options"
+            role="group"
+            aria-label={t('propertyPanel.axis')}
+          >
+            {choice.options.map((option) => (
+              <button
+                key={option.value}
+                ref={option.value === choice.value ? choiceRef : null}
+                type="button"
+                className="pcad-button"
+                aria-pressed={option.value === choice.value}
+                onClick={() => {
+                  updateAndFocus(chooseNumericInput(state, option.value), choiceIndex);
+                }}
+              >
+                {t(option.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {state.toggles.length === 0 ? null : (
+        <div className="pcad-popover__toggles">
+          {state.toggles.map((toggle, index) => (
+            <button
+              key={toggle.key}
+              ref={(element) => {
+                toggleRefs.current[index] = element;
+              }}
+              type="button"
+              role="switch"
+              className="pcad-switch"
+              aria-checked={toggle.value}
+              onClick={() => {
+                updateAndFocus(toggleNumericInput(state, toggle.key), firstToggleIndex + index);
+              }}
+            >
+              <span className="pcad-switch__track" aria-hidden="true">
+                <span className="pcad-switch__thumb" />
+              </span>
+              <span>{t(toggle.labelKey)}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <p className="pcad-popover__hint">{t('numericInput.keyHint')}</p>
 

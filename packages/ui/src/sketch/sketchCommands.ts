@@ -29,7 +29,7 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
-import type { NumericInputCommit, NumericInputState } from './numericInput.js';
+import type { NumericInputCommit, NumericInputState, SketchCommitFlags } from './numericInput.js';
 import {
   commitShapeInput,
   EMPTY_SHAPE_DRAFT,
@@ -267,8 +267,8 @@ export function commitSketchInput(
   }
   const outcome =
     commit.kind === 'coordinate'
-      ? commitCoordinate(commit.step, commit.coordinate, context)
-      : commitShape(commit.step, commit.values, context);
+      ? commitCoordinate(commit.step, commit.coordinate, commit.flags, context)
+      : commitShape(commit.step, commit.values, commit.flags, context);
   return { ...outcome, shapeDraft, rejection: null };
 }
 
@@ -276,6 +276,7 @@ export function commitSketchInput(
 function commitCoordinate(
   step: NumericInputCommit['step'],
   coordinate: CoordinateInput,
+  flags: SketchCommitFlags,
   context: CommitContext,
 ): BasicCommitOutcome {
   const { document, planeId, chaining, pendingStart } = context;
@@ -312,8 +313,10 @@ function commitCoordinate(
         // 終点の基準は自分の始点。resolveSketch が線分の終点をそう解決する
         // (名指しの基準があるときはそちらを残す。`rebaseLineEnd` の注釈)。
         to: rebaseLineEnd(coordinate),
-        // 構築線(FR-320)を作る道具はタスク11・12 の範囲。ここでは既定の false を積む。
-        construction: false,
+        // 構築線にするつまみ(FR-320)。段の定義は numericInput.ts の SKETCH_STEP_TOGGLE_KEYS
+        // (lineEnd)。以前はここで既定の false を直書きしていて、つまみを入れても反映されなかった
+        // (2026-09-04 E2E タスク34 で発見)。
+        construction: flags.construction ?? false,
       });
       return { document: next, pendingStart: chaining ? continueFrom(id) : null };
     }
@@ -355,6 +358,7 @@ function commitCoordinate(
 function commitShape(
   step: NumericInputCommit['step'],
   values: readonly ExpressionValue[],
+  flags: SketchCommitFlags,
   context: CommitContext,
 ): BasicCommitOutcome {
   const { document, planeId, plane, pendingStart } = context;
@@ -374,8 +378,10 @@ function commitShape(
         radius: values[0],
         startAngle: values[1],
         endAngle: values[2],
-        // 構築線(FR-320)を作る道具はタスク11・12 の範囲。ここでは既定の false を積む。
-        construction: false,
+        // 構築線にするつまみ(FR-320)。段の定義は numericInput.ts の SKETCH_STEP_TOGGLE_KEYS
+        // (arcShape)。以前はここで既定の false を直書きしていて、つまみを入れても反映されなかった
+        // (2026-09-04 E2E タスク34 で発見)。
+        construction: flags.construction ?? false,
         // 3D スケッチ(FR-330)では作図面から向きを借りられないので、押していた面から作る
         // (タスク10 の `freeOrientation`。作図面があるときは model が無視するので付けない)。
         ...(isFreeWorkPlaneId(planeId) ? { freeOrientation: freeArcOrientationOf(plane) } : {}),
@@ -442,7 +448,7 @@ function commitShape(
 }
 
 /** 面の境界に選ばれた要素の種類。 */
-export type BoundaryElementKind = 'point' | 'curve' | 'unknown';
+export type BoundaryElementKind = 'point' | 'curve' | 'pending' | 'unknown';
 
 /**
  * 選んだ要素が点なのか曲線なのかを見分ける(§0.a-0.13)。
@@ -452,6 +458,11 @@ export type BoundaryElementKind = 'point' | 'curve' | 'unknown';
  * 矩形・正多角形・長穴は 1 フィーチャーが複数の線分・円弧を生むが、どの曲線も
  * `featureId` はそのフィーチャーの id なので、`segments` / `arcs` の走査でそのまま当たる
  * (`resolveFace` が index 省略で全周を展開する、§0.a-0.8)。
+ *
+ * オフセット・投影・交差はカーネルとの往復が終わるまで `resolved.pendingOffsets` /
+ * `resolved.pendingProjections` に載るだけで、`segments` / `arcs` 等にはまだ現れない
+ * (§2.7、model の `ResolvedSketch`)。この間に境界へ選ぶと `unknown`(未対応)と誤って
+ * 断っていた(2026-09-04 E2E タスク34 で発見)ので、`pending` として区別する。
  */
 export function boundaryElementKind(
   resolved: ResolvedSketch,
@@ -467,6 +478,12 @@ export function boundaryElementKind(
     resolved.splines.some((spline) => spline.featureId === elementId)
   ) {
     return 'curve';
+  }
+  if (
+    resolved.pendingOffsets.some((pending) => pending.featureId === elementId) ||
+    resolved.pendingProjections.some((pending) => pending.featureId === elementId)
+  ) {
+    return 'pending';
   }
   return 'unknown';
 }
@@ -498,6 +515,11 @@ export function commitFace(
   }
 
   const kinds = selection.map((elementId) => boundaryElementKind(resolved, elementId));
+  if (kinds.includes('pending')) {
+    // カーネルとの往復(オフセット・投影・交差)がまだ終わっていない。「未対応」ではなく
+    // 「少し待てば選べる」ことを伝える(2026-09-04 E2E タスク34 で発見)。
+    return { ok: false, reasonKey: 'face.error.pendingElement' };
+  }
   if (kinds.includes('unknown')) {
     return { ok: false, reasonKey: 'face.error.unsupportedElement' };
   }

@@ -555,14 +555,43 @@ export function FeatureTree(): React.JSX.Element {
           <p className="pcad-tree__hint pcad-tree__hint--nested">{t('featureTree.sketchEmpty')}</p>
         ) : (
           <ul className="pcad-tree__children pcad-tree__children--nested">
-            {group.rows.map((row) => renderRow(row, 'sketch'))}
+            {group.rows.map((row) => renderRow(row, 'sketch', group.sketchId))}
           </ul>
         )}
       </li>
     );
   };
 
-  const renderRow = (row: TreeRow, sectionKey: TreeSectionKey): React.JSX.Element => {
+  /**
+   * 木でスケッチの要素を選ぶと、その要素を持つスケッチを作図中に切り替える(P4 仕上げ (h))。
+   *
+   * `PropertyPanel` は編集中のスケッチ(`state.sketch`)からしか要素を探さないため、
+   * 編集中でないスケッチの要素を選んでもプロパティが空になっていた。編集中のスケッチだけを
+   * 読み取り専用で出す代わりに、選んだ時点でそのスケッチへ切り替える方を採る(利用者には
+   * 「選んだものが編集できる状態になる」ほうが分かりやすい)。作図面の追従は
+   * `useAppStore.ts` の `setActiveSketch` が既に行う。
+   *
+   * `sketchId` は呼び出し側(`renderSketchGroup`)が `group.sketchId` として渡す。要素 id は
+   * スケッチをまたいで重なる(`buildSketchGroups` の注釈)ため、id だけから逆引きすると
+   * 編集中のスケッチが偶然持つ同じ id と取り違える(`sketchRefs.ts` の `findSketchFeatureAt` が
+   * 編集中のスケッチを先に見るのと同じ理由)。木はどの行がどの親(スケッチ)の下にあるかを
+   * 描画時にすでに知っているので、その所属をそのまま渡してもらう。
+   */
+  const activateRowSketch = (sketchId: string | undefined): void => {
+    if (sketchId === undefined) {
+      return;
+    }
+    const store = useAppStore.getState();
+    if (store.document.activeSketchId !== sketchId) {
+      store.setActiveSketch(sketchId);
+    }
+  };
+
+  const renderRow = (
+    row: TreeRow,
+    sectionKey: TreeSectionKey,
+    sketchId?: string,
+  ): React.JSX.Element => {
     const KindIcon = KIND_ICONS[row.kind];
     const selected = selectedIds.has(row.id);
     const rowClassName =
@@ -587,6 +616,7 @@ export function FeatureTree(): React.JSX.Element {
           }}
           onContextMenu={(event) => {
             event.preventDefault();
+            activateRowSketch(sketchId);
             useAppStore.getState().setSelection([row.id]);
             setMenu({
               featureId: row.id,
@@ -636,6 +666,7 @@ export function FeatureTree(): React.JSX.Element {
                   store.toggleSelection(row.id);
                   return;
                 }
+                activateRowSketch(sketchId);
                 store.setSelection([row.id]);
               }}
               onKeyDown={(event) => {

@@ -1,4 +1,6 @@
+import { expressionValueFromNumber } from '@pointercad/expression';
 import {
+  appendFeature,
   createEmptySketchDocument,
   DEFAULT_FACE_COLOR,
   FREE_WORK_PLANE_ID,
@@ -14,11 +16,13 @@ import {
   commitNumericInput,
   createNumericInput,
   reduceNumericInput,
+  toggleNumericInput,
   type CoordinateMode,
   type NumericInputCommit,
   type NumericInputState,
   type NumericInputStep,
   type NumericInputToolId,
+  type NumericToggleKey,
   type SketchToolId,
 } from './numericInput.js';
 import {
@@ -39,6 +43,26 @@ function commitOf(state: NumericInputState, sources: readonly string[]): Numeric
   sources.forEach((source, index) => {
     filled = reduceNumericInput(filled, { type: 'edit', index, source });
   });
+  const transition = commitNumericInput(filled);
+  if (transition.kind !== 'committed') {
+    throw new Error(`確定できませんでした: ${transition.kind}`);
+  }
+  return transition.commit;
+}
+
+/** 欄へ数字を打ってから、つまみ(構築線にする等)を入れて決定する。 */
+function commitOfWithToggles(
+  state: NumericInputState,
+  sources: readonly string[],
+  toggles: readonly NumericToggleKey[],
+): NumericInputCommit {
+  let filled = state;
+  sources.forEach((source, index) => {
+    filled = reduceNumericInput(filled, { type: 'edit', index, source });
+  });
+  for (const key of toggles) {
+    filled = toggleNumericInput(filled, key);
+  }
   const transition = commitNumericInput(filled);
   if (transition.kind !== 'committed') {
     throw new Error(`確定できませんでした: ${transition.kind}`);
@@ -215,6 +239,49 @@ describe('数値入力の結果から履歴を作る(FR-301〜309)', () => {
     expect(outcome.document.features).toEqual([]);
     expect(outcome.pendingStart).toBeNull();
   });
+
+  it('線分の「構築線にする」つまみを入れて確定すると construction が true になる(FR-320、E2E タスク34)', () => {
+    const start = commitSketchInput(
+      commitOf(createNumericInput('line', 'lineStart', 'absolute'), ['0', '0', '0']),
+      contextOf(),
+    );
+    const outcome = commitSketchInput(
+      commitOfWithToggles(createNumericInput('line', 'lineEnd'), ['10', '0', '0'], [
+        'construction',
+      ]),
+      contextOf({ document: start.document, pendingStart: start.pendingStart }),
+    );
+    const feature = outcome.document.features[0];
+    expect(feature?.kind === 'line' && feature.construction).toBe(true);
+  });
+
+  it('つまみを入れなければ、これまでどおり construction は false のまま', () => {
+    const start = commitSketchInput(
+      commitOf(createNumericInput('line', 'lineStart', 'absolute'), ['0', '0', '0']),
+      contextOf(),
+    );
+    const outcome = commitSketchInput(
+      commitOf(createNumericInput('line', 'lineEnd'), ['10', '0', '0']),
+      contextOf({ document: start.document, pendingStart: start.pendingStart }),
+    );
+    const feature = outcome.document.features[0];
+    expect(feature?.kind === 'line' && feature.construction).toBe(false);
+  });
+
+  it('円弧の「構築線にする」つまみを入れて確定すると construction が true になる(FR-320、E2E タスク34)', () => {
+    const start = commitSketchInput(
+      commitOf(createNumericInput('arc', 'arcCenter', 'absolute'), ['0', '0', '0']),
+      contextOf(),
+    );
+    const outcome = commitSketchInput(
+      commitOfWithToggles(createNumericInput('arc', 'arcShape'), ['10', '0', '90'], [
+        'construction',
+      ]),
+      contextOf({ document: start.document, pendingStart: start.pendingStart }),
+    );
+    const feature = outcome.document.features[0];
+    expect(feature?.kind === 'arc' && feature.construction).toBe(true);
+  });
 });
 
 describe('選んだ要素から面を張る(FR-309、FR-310)', () => {
@@ -321,10 +388,68 @@ describe('選んだ要素から面を張る(FR-309、FR-310)', () => {
       'face.error.mixedBoundary',
       'face.error.tooFewPoints',
       'face.error.unsupportedElement',
+      'face.error.pendingElement',
     ] as const) {
       expect(MESSAGE_KEYS).toContain(key);
       expect(t(key).length, key).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('カーネル往復前の要素(オフセット・投影・交差)を面の境界に選んだとき(§2.7、E2E タスク34)', () => {
+  it('オフセットがまだ pendingOffsets のままなら pending と判定し、理由を返して断る', () => {
+    const withLine = lineThrough(contextOf(), ['0', '0', '0'], ['10', '0', '0']);
+    const [lineId] = featureIds(withLine.document);
+    const withOffset = appendFeature(withLine.document, {
+      id: 'offset-1',
+      name: 'オフセット1',
+      planeId: 'xy',
+      kind: 'offset',
+      source: [{ featureId: lineId }],
+      distance: expressionValueFromNumber(5),
+      side: 'outside',
+      corner: 'round',
+      construction: false,
+    });
+    const resolved = resolveSketch(withOffset);
+    // カーネルの覚え書きが無いので、まだ形の決まっていない依頼として積まれている。
+    expect(resolved.pendingOffsets).toHaveLength(1);
+    expect(boundaryElementKind(resolved, 'offset-1')).toBe('pending');
+
+    const outcome = commitFace(withOffset, resolved, 'xy', [lineId, 'offset-1']);
+    expect(outcome).toEqual({ ok: false, reasonKey: 'face.error.pendingElement' });
+    // 断ったときは履歴を変えない。
+    expect(withOffset.features).toHaveLength(2);
+  });
+
+  it('投影がまだ pendingProjections のままなら pending と判定し、理由を返して断る', () => {
+    const document = createEmptySketchDocument();
+    const withProjection = appendFeature(document, {
+      id: 'projected-1',
+      name: '投影1',
+      planeId: 'xy',
+      kind: 'projectedCurve',
+      source: {
+        bodyFeatureId: 'extrude-1',
+        index: 0,
+        fingerprint: {
+          kind: 'face',
+          surfaceKind: 'plane',
+          area: 100,
+          position: [0, 0, 0],
+          axis: [0, 0, 1],
+          radius: null,
+        },
+      },
+      construction: false,
+    });
+    const resolved = resolveSketch(withProjection);
+    // 立体の B-rep はカーネルの中にしか無いので、model 単体では常に pending になる。
+    expect(resolved.pendingProjections).toHaveLength(1);
+    expect(boundaryElementKind(resolved, 'projected-1')).toBe('pending');
+
+    const outcome = commitFace(withProjection, resolved, 'xy', ['projected-1']);
+    expect(outcome).toEqual({ ok: false, reasonKey: 'face.error.pendingElement' });
   });
 });
 

@@ -1389,6 +1389,18 @@ describe('buildSketchGroups(P4 仕上げ (g)、FR-501、FR-503)', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].rows).toEqual(buildTreeSections(document, 'sketch-1', [], [])[0].rows);
   });
+
+  it('編集中でないスケッチの行にも、そのスケッチ自身の id が付く(選択 → 属するスケッチ、P4 仕上げ (h))', () => {
+    // 編集中(activeSketchId)はスケッチ1。木はスケッチ2の行を「スケッチ2」の親の下に置くので、
+    // id が両方のスケッチに重なっていても(この文書では `face-1`)、押した行がどちらの
+    // `group.sketchId` の配下かで取り違えずに済む(FeatureTree.tsx の activateRowSketch が
+    // この group.sketchId をそのまま使う。2026-09-04 E2E タスク34 で発見)。
+    const groups = buildSketchGroups(withSecondSketch(documentWith(EXTRUDE), 'sketch-1'));
+    expect(groups[0].sketchId).toBe('sketch-1');
+    expect(groups[0].rows.map((row) => row.id)).toContain('face-1');
+    expect(groups[1].sketchId).toBe('sketch-2');
+    expect(groups[1].rows.map((row) => row.id)).toContain('face-1');
+  });
 });
 
 describe('renameSketch(FR-503)', () => {

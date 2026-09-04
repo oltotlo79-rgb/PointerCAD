@@ -36,23 +36,38 @@ function isSegment(curve: CurveSpec): curve is SegmentSpec {
   return curve.kind === 'segment';
 }
 
+/**
+ * オフセットの結果は線分と円弧しか返さない(makeOffsetWire.ts)。
+ * CurveSpec は P4 タスク5 で楕円・スプラインも含む 4 種へ広がったので、
+ * この検査の道具は「線分か円弧のどちらかであること」も一緒に確かめる。
+ */
+function segmentOrArc(curve: CurveSpec): SegmentSpec | ArcSpec {
+  if (!isSegment(curve) && !isArc(curve)) {
+    throw new Error(`線分でも円弧でもありません: ${curve.kind}`);
+  }
+  return curve;
+}
+
 function curveStart(curve: CurveSpec): Vec3Tuple {
-  return curve.kind === 'segment' ? curve.from : arcPointAt(curve, curve.startAngle);
+  const known = segmentOrArc(curve);
+  return known.kind === 'segment' ? known.from : arcPointAt(known, known.startAngle);
 }
 
 function curveEnd(curve: CurveSpec): Vec3Tuple {
-  return curve.kind === 'segment' ? curve.to : arcPointAt(curve, curve.endAngle);
+  const known = segmentOrArc(curve);
+  return known.kind === 'segment' ? known.to : arcPointAt(known, known.endAngle);
 }
 
 function curveLength(curve: CurveSpec): number {
-  if (curve.kind === 'segment') {
+  const known = segmentOrArc(curve);
+  if (known.kind === 'segment') {
     return Math.hypot(
-      curve.to[0] - curve.from[0],
-      curve.to[1] - curve.from[1],
-      curve.to[2] - curve.from[2],
+      known.to[0] - known.from[0],
+      known.to[1] - known.from[1],
+      known.to[2] - known.from[2],
     );
   }
-  return curve.radius * Math.abs(curve.endAngle - curve.startAngle);
+  return known.radius * Math.abs(known.endAngle - known.startAngle);
 }
 
 function totalLength(curves: readonly CurveSpec[]): number {

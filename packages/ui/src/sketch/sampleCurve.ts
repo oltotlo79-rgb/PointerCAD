@@ -8,19 +8,52 @@
  * DOM にも three.js にも触れない純関数だけを置く。
  */
 
-import { arcPointAt, type ResolvedArc, type ResolvedCurve, type Vec3 } from '@pointercad/model';
+import {
+  arcPointAt,
+  ellipsePointAt,
+  sampleSpline,
+  type ResolvedArc,
+  type ResolvedCurve,
+  type ResolvedEllipse,
+  type Vec3,
+} from '@pointercad/model';
 
 /** 全周の円弧を何本の線分に割るか。表示と当たり判定の両方でこの粗さを使う。 */
 export const ARC_SEGMENTS_PER_TURN = 64;
 
 /**
- * 曲線を折れ線へ分解する。線分は両端の 2 点、円弧は角度を等分した点列になる。
+ * 曲線を折れ線へ分解する。線分は両端の 2 点、円弧・楕円は角度を等分した点列、
+ * スプラインは model が曲線を解いて拾った点列になる(FR-317、FR-318)。
  */
 export function sampleCurve(curve: ResolvedCurve): Vec3[] {
-  if (curve.kind === 'segment') {
-    return [curve.from, curve.to];
+  switch (curve.kind) {
+    case 'segment':
+      return [curve.from, curve.to];
+    case 'arc':
+      return sampleArc(curve);
+    case 'ellipse':
+      return sampleEllipse(curve);
+    case 'spline':
+      return sampleSpline(curve);
   }
-  return sampleArc(curve);
+}
+
+/**
+ * 楕円を折れ線へ分解する(FR-318)。角度はパラメータ角なので、等分すると
+ * 長軸の近くが粗く短軸の近くが細かくなるが、下描きの精度としては十分。
+ * 分割数は円弧と同じ数え方(全周で `ARC_SEGMENTS_PER_TURN` 区間)。
+ */
+export function sampleEllipse(ellipse: ResolvedEllipse): Vec3[] {
+  const sweep = Math.abs(ellipse.endAngle - ellipse.startAngle);
+  const divisions = Math.max(1, Math.ceil((sweep / (2 * Math.PI)) * ARC_SEGMENTS_PER_TURN));
+  const points: Vec3[] = [];
+  for (let index = 0; index <= divisions; index += 1) {
+    const ratio = index / divisions;
+    points.push(
+      ellipsePointAt(ellipse, ellipse.startAngle + (ellipse.endAngle - ellipse.startAngle) * ratio),
+    );
+  }
+  return points;
 }
 
 /**

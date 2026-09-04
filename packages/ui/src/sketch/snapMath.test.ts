@@ -20,6 +20,8 @@ const SKETCH: ResolvedSketch = {
   points: [],
   segments: [HORIZONTAL, VERTICAL],
   arcs: [],
+  ellipses: [],
+  splines: [],
   faces: [],
   errors: [],
 };
@@ -33,6 +35,8 @@ const ARC_SKETCH: ResolvedSketch = {
   points: [],
   segments: [],
   arcs: [QUARTER_ARC],
+  ellipses: [],
+  splines: [],
   faces: [],
   errors: [],
 };
@@ -45,6 +49,8 @@ const POINT_SKETCH: ResolvedSketch = {
   points: [LONE_POINT, ARRAY_POINT],
   segments: [],
   arcs: [],
+  ellipses: [],
+  splines: [],
   faces: [],
   errors: [],
 };

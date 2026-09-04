@@ -312,6 +312,56 @@ describe('曲線の指定からの振り分けと折れ線の細かさ', () => {
     }
   });
 
+  it('makeCurveEdge は楕円を makeEllipseEdge へ振り分ける(FR-318、タスク5)', () => {
+    // 角度を渡さないので全周の楕円になる。長軸 20・短軸 10。
+    const handle = makeCurveEdge(oc, {
+      kind: 'ellipse',
+      center: [0, 0, 0],
+      normal: [0, 0, 1],
+      majorAxis: [1, 0, 0],
+      majorRadius: 20,
+      minorRadius: 10,
+    });
+    try {
+      const points = toPoints(discretizeEdge(oc, handle.edge, { linearDeflection: 0.001 }));
+      expect(points.length).toBeGreaterThan(8);
+      for (const point of points) {
+        // (x/20)² + (y/10)² = 1 の上に乗っている(Float32 の丸めぶんだけ許す)。
+        expect((point[0] / 20) ** 2 + (point[1] / 10) ** 2).toBeCloseTo(1, 5);
+        expect(point[2]).toBeCloseTo(0, 6);
+      }
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('makeCurveEdge はスプラインを makeSplineEdge へ振り分ける(FR-317、タスク5)', () => {
+    const points: [number, number, number][] = [
+      [0, 0, 0],
+      [10, 5, 0],
+      [20, 0, 0],
+      [30, 5, 0],
+    ];
+    const handle = makeCurveEdge(oc, {
+      kind: 'spline',
+      mode: 'interpolate',
+      points,
+      closed: false,
+    });
+    try {
+      const polyline = toPoints(discretizeEdge(oc, handle.edge, { linearDeflection: 0.001 }));
+      expect(polyline.length).toBeGreaterThan(4);
+      // 通過点方式なので、両端は与えた最初と最後の点にぴったり来る。
+      expect(polyline[0][0]).toBeCloseTo(0, 6);
+      expect(polyline[0][1]).toBeCloseTo(0, 6);
+      const last = polyline[polyline.length - 1];
+      expect(last[0]).toBeCloseTo(30, 6);
+      expect(last[1]).toBeCloseTo(5, 6);
+    } finally {
+      handle.delete();
+    }
+  });
+
   it('弦の最大ずれを小さくすると折れ線の点が増える', () => {
     const handle = makeArcEdge(oc, {
       kind: 'arc',

@@ -18,17 +18,30 @@ import {
   type WorkPlane,
 } from './planeMath.js';
 import { resolveCoordinate, vertexKey, type ResolveContext } from './resolveCoordinate.js';
+import {
+  hasDuplicateSplinePoint,
+  MAX_SPLINE_POINTS,
+  MIN_CLOSED_SPLINE_POINTS,
+  MIN_SPLINE_POINTS,
+  SPLINE_DUPLICATE_POINT_MESSAGE,
+  SPLINE_TOO_FEW_CLOSED_MESSAGE,
+  SPLINE_TOO_FEW_OPEN_MESSAGE,
+  SPLINE_TOO_MANY_MESSAGE,
+} from './splineMath.js';
 import type {
   ResolvedArc,
   ResolvedCurve,
+  ResolvedEllipse,
   ResolvedFace,
   ResolvedPoint,
   ResolvedSegment,
   ResolvedSketch,
+  ResolvedSpline,
   SketchDocument,
   SketchError,
   SketchErrorCode,
   SketchFaceFeature,
+  SketchSplineFeature,
 } from './types.js';
 import {
   addVec3,
@@ -56,14 +69,39 @@ const FULL_TURN_EPSILON = 1e-9;
 /** 平面の当てはめに使う円弧の標本点の数(両端を含む)。 */
 const ARC_PLANE_SAMPLES = 5;
 
-/** 曲線の始点。 */
+/**
+ * 曲線の始点。
+ *
+ * スプラインは、通過点方式なら `points[0]` をぴったり通り、制御点方式でも
+ * 開いた曲線は両端の節点を次数+1 重ねてあるので `points[0]` から始まる。
+ * 閉じたスプラインだけは輪なので「始まり = 終わり」で、`points[0]` は
+ * 制御点方式では曲線の上に無い(輪の中では端のつながりを見ないので影響しない)。
+ */
 export function curveStart(curve: ResolvedCurve): Vec3 {
-  return curve.kind === 'segment' ? curve.from : arcPointAt(curve, curve.startAngle);
+  switch (curve.kind) {
+    case 'segment':
+      return curve.from;
+    case 'arc':
+      return arcPointAt(curve, curve.startAngle);
+    case 'ellipse':
+      return ellipsePointAt(curve, curve.startAngle);
+    case 'spline':
+      return curve.points[0];
+  }
 }
 
-/** 曲線の終点。 */
+/** 曲線の終点(閉じたスプラインは始点へ戻る)。 */
 export function curveEnd(curve: ResolvedCurve): Vec3 {
-  return curve.kind === 'segment' ? curve.to : arcPointAt(curve, curve.endAngle);
+  switch (curve.kind) {
+    case 'segment':
+      return curve.to;
+    case 'arc':
+      return arcPointAt(curve, curve.endAngle);
+    case 'ellipse':
+      return ellipsePointAt(curve, curve.endAngle);
+    case 'spline':
+      return curve.closed ? curve.points[0] : curve.points[curve.points.length - 1];
+  }
 }
 
 /** 円弧の上の点。角度は xAxis から normal まわりに正(ラジアン)。 */
@@ -78,9 +116,56 @@ export function arcPointAt(arc: ResolvedArc, angle: number): Vec3 {
   );
 }
 
+/**
+ * 楕円の上の点(FR-318)。**角度は径数方程式のパラメータ角**(ラジアン)で、
+ * 中心から見た幾何の方位角ではない(`ResolvedEllipse` の注釈)。
+ *   P(u) = center + majorRadius·cos(u)·majorAxis + minorRadius·sin(u)·(normal × majorAxis)
+ * 円弧の `arcPointAt` と同じ式で、半径だけを長軸・短軸に分けた形になっている。
+ */
+export function ellipsePointAt(ellipse: ResolvedEllipse, parameter: number): Vec3 {
+  const minorAxis = crossVec3(ellipse.normal, ellipse.majorAxis);
+  return addVec3(
+    ellipse.center,
+    addVec3(
+      scaleVec3(ellipse.majorAxis, ellipse.majorRadius * Math.cos(parameter)),
+      scaleVec3(minorAxis, ellipse.minorRadius * Math.sin(parameter)),
+    ),
+  );
+}
+
+/**
+ * 中心から見た幾何の方位角(ラジアン、長軸から短軸へ向かう向きが正)を、
+ * 楕円の径数方程式のパラメータ角へ直す(統括の指示 2026-09-04、計画書 §1.4-8)。
+ *
+ * 方位角 θ の向きの半直線と楕円の交点は
+ *   a·cos u = r·cos θ、b·sin u = r·sin θ(r は中心からの距離)
+ * を満たすので、tan u = (a/b)·tan θ、すなわち **u = atan2(sin θ / b, cos θ / a)**。
+ * 例: a=20・b=10・θ=45° なら u = arctan 2 = 63.4349488…°、
+ * その点は (20·cos u, 10·sin u) = (8.944…, 8.944…) で、方位角どおり x = y になる。
+ *
+ * `atan2` は (−π, π] しか返さないので、θ と同じ周回へ載せ直す。u と θ は必ず同じ象限に
+ * あるので両者の差は π/2 未満で、周回のとり方はただ 1 つに決まる。こうすると
+ * 「0° から 360°」の指定がパラメータ角でもちょうど 1 周ぶんになり、全周の楕円になる。
+ * a = b(円)のときは u = θ で、円弧の角度の意味とそのまま一致する。
+ */
+export function azimuthToEllipseParameter(
+  azimuth: number,
+  majorRadius: number,
+  minorRadius: number,
+): number {
+  const base = Math.atan2(Math.sin(azimuth) / minorRadius, Math.cos(azimuth) / majorRadius);
+  const turns = Math.round((azimuth - base) / FULL_TURN);
+  return base + turns * FULL_TURN;
+}
+
 /** 開始角と終了角の差が ±360 度以上なら全周の円(FR-305、§0.a-0.4)。 */
 export function isFullCircle(arc: ResolvedArc): boolean {
   return Math.abs(arc.endAngle - arc.startAngle) >= FULL_TURN - FULL_TURN_EPSILON;
+}
+
+/** 全周の楕円か(円弧の `isFullCircle` と同じ約束、FR-318)。 */
+export function isFullEllipse(ellipse: ResolvedEllipse): boolean {
+  return Math.abs(ellipse.endAngle - ellipse.startAngle) >= FULL_TURN - FULL_TURN_EPSILON;
 }
 
 /**
@@ -127,15 +212,34 @@ export function isPlanar(points: readonly Vec3[]): boolean {
  * 端点だけを見ると、端点だけが一致する別々の作図面の円弧を同じ平面と誤判定するため。
  */
 function curveSamplePoints(curve: ResolvedCurve): Vec3[] {
-  if (curve.kind === 'segment') {
-    return [curve.from, curve.to];
+  switch (curve.kind) {
+    case 'segment':
+      return [curve.from, curve.to];
+    case 'arc': {
+      const span = curve.endAngle - curve.startAngle;
+      const samples: Vec3[] = [curve.center];
+      for (let index = 0; index < ARC_PLANE_SAMPLES; index += 1) {
+        samples.push(
+          arcPointAt(curve, curve.startAngle + (span * index) / (ARC_PLANE_SAMPLES - 1)),
+        );
+      }
+      return samples;
+    }
+    case 'ellipse': {
+      const span = curve.endAngle - curve.startAngle;
+      const samples: Vec3[] = [curve.center];
+      for (let index = 0; index < ARC_PLANE_SAMPLES; index += 1) {
+        samples.push(
+          ellipsePointAt(curve, curve.startAngle + (span * index) / (ARC_PLANE_SAMPLES - 1)),
+        );
+      }
+      return samples;
+    }
+    case 'spline':
+      // 極は通過点(または制御点)の一次結合で、基底の和が必ず 1 になる(アフィン結合)。
+      // だから点が同じ平面に乗っていれば曲線も必ずその平面に乗る。点だけ見れば足りる。
+      return [...curve.points];
   }
-  const span = curve.endAngle - curve.startAngle;
-  const samples: Vec3[] = [curve.center];
-  for (let index = 0; index < ARC_PLANE_SAMPLES; index += 1) {
-    samples.push(arcPointAt(curve, curve.startAngle + (span * index) / (ARC_PLANE_SAMPLES - 1)));
-  }
-  return samples;
 }
 
 function error(featureId: string, code: SketchErrorCode, message: string): SketchError {
@@ -145,8 +249,14 @@ function error(featureId: string, code: SketchErrorCode, message: string): Sketc
 /** 直角(ラジアン)。長穴の半円弧の開始角・終了角(中心の xAxis から ±90°)に使う。 */
 const QUARTER_TURN = Math.PI / 2;
 
+/**
+ * 矩形・正多角形・長穴が生む曲線。この 3 つは線分と円弧しか作らないので、
+ * `ResolvedCurve` の 4 種すべてではなくこの 2 種に絞っておく(意味の無い分岐を作らないため)。
+ */
+type PolylineCurve = ResolvedSegment | ResolvedArc;
+
 type CurvesOutcome =
-  | { readonly ok: true; readonly curves: readonly ResolvedCurve[] }
+  | { readonly ok: true; readonly curves: readonly PolylineCurve[] }
   | { readonly ok: false; readonly error: SketchError };
 
 /**
@@ -155,7 +265,7 @@ type CurvesOutcome =
  * 既存の `sketch.segments` / `sketch.arcs` の走査をそのまま使える(§2.3)。
  */
 function pushCurves(
-  curves: readonly ResolvedCurve[],
+  curves: readonly PolylineCurve[],
   segments: ResolvedSegment[],
   arcs: ResolvedArc[],
 ): void {
@@ -317,6 +427,8 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
   const points: ResolvedPoint[] = [];
   const segments: ResolvedSegment[] = [];
   const arcs: ResolvedArc[] = [];
+  const ellipses: ResolvedEllipse[] = [];
+  const splines: ResolvedSpline[] = [];
   const faces: ResolvedFace[] = [];
   const errors: SketchError[] = [];
   const vertices = new Map<string, Vec3>();
@@ -584,6 +696,85 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       continue;
     }
 
+    if (feature.kind === 'ellipse') {
+      const center = resolveCoordinate(feature.center, context, feature.id);
+      if (!center.ok) {
+        errors.push(center.error);
+        continue;
+      }
+      const majorRadius = feature.majorRadius.value;
+      const minorRadius = feature.minorRadius.value;
+      if (
+        !Number.isFinite(majorRadius) ||
+        !Number.isFinite(minorRadius) ||
+        majorRadius < 0 ||
+        minorRadius < 0
+      ) {
+        errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
+        continue;
+      }
+      // 半径 0(と許容誤差に埋もれる大きさ)は楕円として成り立たない(円弧と同じ扱い)。
+      if (majorRadius <= SKETCH_TOLERANCE_MM || minorRadius <= SKETCH_TOLERANCE_MM) {
+        errors.push(error(feature.id, 'degenerate', '半径が小さすぎて楕円になりません。'));
+        continue;
+      }
+      // 長軸と短軸が入れ替わっているとカーネルが断る(makeEllipseEdge.ts)ので、ここで先に伝える。
+      if (majorRadius < minorRadius) {
+        errors.push(
+          error(feature.id, 'invalidValue', '長軸の半径は短軸の半径より大きくしてください。'),
+        );
+        continue;
+      }
+      if (
+        !Number.isFinite(feature.rotation.value) ||
+        !Number.isFinite(feature.startAngle.value) ||
+        !Number.isFinite(feature.endAngle.value)
+      ) {
+        errors.push(error(feature.id, 'invalidValue', '角度の値が数になっていません。'));
+        continue;
+      }
+      const startAzimuth = degreesToRadians(feature.startAngle.value);
+      const endAzimuth = degreesToRadians(feature.endAngle.value);
+      if (Math.abs(endAzimuth - startAzimuth) <= FULL_TURN_EPSILON) {
+        errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
+        continue;
+      }
+      const ellipse: ResolvedEllipse = {
+        kind: 'ellipse',
+        featureId: feature.id,
+        center: center.value,
+        normal: plane.normal,
+        // 長軸の向きは作図面の第1軸から rotation だけ回した向き(円弧・点列と同じ規約)。
+        majorAxis: directionInPlane(plane, feature.rotation.value),
+        majorRadius,
+        minorRadius,
+        // 利用者が入れる方位角をパラメータ角へ直してから持つ(§1.4-8 の答え)。
+        startAngle: azimuthToEllipseParameter(startAzimuth, majorRadius, minorRadius),
+        endAngle: azimuthToEllipseParameter(endAzimuth, majorRadius, minorRadius),
+      };
+      ellipses.push(ellipse);
+      curveByFeature.set(feature.id, ellipse);
+      vertices.set(vertexKey(feature.id, 'center'), center.value);
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(ellipse));
+      vertices.set(vertexKey(feature.id, 'end'), curveEnd(ellipse));
+      previous = curveEnd(ellipse);
+      continue;
+    }
+
+    if (feature.kind === 'spline') {
+      const spline = resolveSplineFeature(feature, context, previous);
+      if (!spline.ok) {
+        errors.push(spline.error);
+        continue;
+      }
+      splines.push(spline.value);
+      curveByFeature.set(feature.id, spline.value);
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(spline.value));
+      vertices.set(vertexKey(feature.id, 'end'), curveEnd(spline.value));
+      previous = curveEnd(spline.value);
+      continue;
+    }
+
     const face = resolveFace(feature, pointsByFeature, curveByFeature, curvesByFeature);
     if (!face.ok) {
       errors.push(face.error);
@@ -592,7 +783,62 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
     faces.push(face.value);
   }
 
-  return { points, segments, arcs, faces, errors };
+  return { points, segments, arcs, ellipses, splines, faces, errors };
+}
+
+type SplineOutcome =
+  | { readonly ok: true; readonly value: ResolvedSpline }
+  | { readonly ok: false; readonly error: SketchError };
+
+/**
+ * スプライン(FR-317)を解決する(タスク5)。点の数と重なりを先に確かめてから座標を解く。
+ * 断りの文言はカーネル(`makeSplineEdge.ts`)と揃えてあるので、下描きと本物の曲線が
+ * 同じ入力に対して同じ理由で断る(`splineMath.ts` の注釈)。
+ *
+ * 2 番目以降の点は 1 つ前の点を「直前の点」として解決できるようにする
+ * (線分の終点・矩形の 2 点目と同じ考え方、FR-307)。
+ */
+function resolveSplineFeature(
+  feature: SketchSplineFeature,
+  context: ResolveContext,
+  previous: Vec3 | null,
+): SplineOutcome {
+  const count = feature.points.length;
+  const minimum = feature.closed ? MIN_CLOSED_SPLINE_POINTS : MIN_SPLINE_POINTS;
+  if (count < minimum) {
+    const message = feature.closed ? SPLINE_TOO_FEW_CLOSED_MESSAGE : SPLINE_TOO_FEW_OPEN_MESSAGE;
+    return { ok: false, error: error(feature.id, 'tooFewPoints', message) };
+  }
+  if (count > MAX_SPLINE_POINTS) {
+    return { ok: false, error: error(feature.id, 'invalidValue', SPLINE_TOO_MANY_MESSAGE) };
+  }
+
+  const positions: Vec3[] = [];
+  for (const input of feature.points) {
+    const base = positions.length === 0 ? previous : positions[positions.length - 1];
+    const resolved = resolveCoordinate(input, { ...context, previous: base }, feature.id);
+    if (!resolved.ok) {
+      return { ok: false, error: resolved.error };
+    }
+    positions.push(resolved.value);
+  }
+
+  // 通過点方式は弦の長さでパラメータを決めるので、重なった点があると曲線が定まらない。
+  // 制御点方式は重なっていても構わない(カーネルと同じ扱い)。
+  if (feature.mode === 'interpolate' && hasDuplicateSplinePoint(positions, feature.closed)) {
+    return { ok: false, error: error(feature.id, 'degenerate', SPLINE_DUPLICATE_POINT_MESSAGE) };
+  }
+
+  return {
+    ok: true,
+    value: {
+      kind: 'spline',
+      featureId: feature.id,
+      mode: feature.mode,
+      points: positions,
+      closed: feature.closed,
+    },
+  };
 }
 
 type FaceOutcome =
@@ -722,7 +968,21 @@ function resolveCurveLoop(
 ): FaceOutcome {
   const first = curves[0];
   if (curves.length === 1) {
+    // 1 本で輪になるのは、全周の円・全周の楕円・閉じたスプラインの 3 つ。
     if (first.kind === 'arc' && isFullCircle(first)) {
+      return { ok: true, value: { featureId: feature.id, color: feature.color, curves } };
+    }
+    if (first.kind === 'ellipse' && isFullEllipse(first)) {
+      return { ok: true, value: { featureId: feature.id, color: feature.color, curves } };
+    }
+    if (first.kind === 'spline' && first.closed) {
+      // 円・楕円と違い、閉じたスプラインは平面に乗るとは限らない(FR-309 は平面の面だけ)。
+      if (!isPlanar(curveSamplePoints(first))) {
+        return {
+          ok: false,
+          error: error(feature.id, 'notPlanar', '選んだ線が同じ平面に乗っていません。'),
+        };
+      }
       return { ok: true, value: { featureId: feature.id, color: feature.color, curves } };
     }
     return { ok: false, error: error(feature.id, 'notClosed', '1 本では閉じた形になりません。') };

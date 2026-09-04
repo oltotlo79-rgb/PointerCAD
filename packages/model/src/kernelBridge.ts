@@ -25,6 +25,7 @@ import * as Comlink from 'comlink';
 
 import type { ResolvedSolidStep, SolidStepPlan, SubShapeQueryPlan } from './part/resolvePart.js';
 import type { EdgeCurveKind, FaceSurfaceKind } from './part/types.js';
+import { isFullEllipse } from './sketch/resolveSketch.js';
 import type { ResolvedCurve, ResolvedFace, SketchFaceMesh, SketchMesh } from './sketch/types.js';
 import type { Vec3 } from './sketch/vec3.js';
 
@@ -211,20 +212,56 @@ export interface KernelBridge {
   dispose(): void;
 }
 
-/** 解決済みの曲線をカーネルの言葉へ直す。長さは mm、角度はラジアン(FR-203)。 */
+/**
+ * 解決済みの曲線をカーネルの言葉へ直す。長さは mm、角度はラジアン(FR-203)。
+ *
+ * 楕円の角度は解決の段でパラメータ角へ直してあるので、そのまま渡す(§1.4-8)。
+ * **全周の楕円は開始角・終了角を渡さない**: カーネルは両方そろっているときだけ
+ * 弧として作り、無ければ全周の楕円にする(`makeEllipseEdge.ts` の決め)。
+ */
 export function toCurveSpec(curve: ResolvedCurve): CurveSpec {
-  if (curve.kind === 'segment') {
-    return { kind: 'segment', from: curve.from, to: curve.to };
+  switch (curve.kind) {
+    case 'segment':
+      return { kind: 'segment', from: curve.from, to: curve.to };
+    case 'arc':
+      return {
+        kind: 'arc',
+        center: curve.center,
+        normal: curve.normal,
+        xAxis: curve.xAxis,
+        radius: curve.radius,
+        startAngle: curve.startAngle,
+        endAngle: curve.endAngle,
+      };
+    case 'ellipse':
+      if (isFullEllipse(curve)) {
+        return {
+          kind: 'ellipse',
+          center: curve.center,
+          normal: curve.normal,
+          majorAxis: curve.majorAxis,
+          majorRadius: curve.majorRadius,
+          minorRadius: curve.minorRadius,
+        };
+      }
+      return {
+        kind: 'ellipse',
+        center: curve.center,
+        normal: curve.normal,
+        majorAxis: curve.majorAxis,
+        majorRadius: curve.majorRadius,
+        minorRadius: curve.minorRadius,
+        startAngle: curve.startAngle,
+        endAngle: curve.endAngle,
+      };
+    case 'spline':
+      return {
+        kind: 'spline',
+        mode: curve.mode,
+        points: curve.points,
+        closed: curve.closed,
+      };
   }
-  return {
-    kind: 'arc',
-    center: curve.center,
-    normal: curve.normal,
-    xAxis: curve.xAxis,
-    radius: curve.radius,
-    startAngle: curve.startAngle,
-    endAngle: curve.endAngle,
-  };
 }
 
 /** 面 1 枚の依頼を作る。結果との対応づけには面フィーチャーの id を使う。 */

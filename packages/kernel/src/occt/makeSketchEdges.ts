@@ -8,6 +8,8 @@ import {
   type TessellationOptions,
   type Vec3Tuple,
 } from '../types.js';
+import { makeEllipseEdge } from './makeEllipseEdge.js';
+import { makeSplineEdge } from './makeSplineEdge.js';
 
 /** OCCT の稜線と、そのために確保した領域の解放手続き。 */
 export interface OcctEdgeHandle {
@@ -93,11 +95,21 @@ export function makeArcEdge(oc: OpenCascadeInstance, arc: ArcSpec): OcctEdgeHand
   };
 }
 
-/** 曲線の指定から稜線を作る。 */
+/**
+ * 曲線の指定から稜線を作る。楕円(FR-318)とスプライン(FR-317)は、
+ * それぞれ専用の作り手へ振り分ける(P4 タスク5 で `CurveSpec` を 4 種へ広げた)。
+ */
 export function makeCurveEdge(oc: OpenCascadeInstance, curve: CurveSpec): OcctEdgeHandle {
-  return curve.kind === 'segment'
-    ? makeSegmentEdge(oc, curve.from, curve.to)
-    : makeArcEdge(oc, curve);
+  switch (curve.kind) {
+    case 'segment':
+      return makeSegmentEdge(oc, curve.from, curve.to);
+    case 'arc':
+      return makeArcEdge(oc, curve);
+    case 'ellipse':
+      return makeEllipseEdge(oc, curve);
+    case 'spline':
+      return makeSplineEdge(oc, curve);
+  }
 }
 
 /**

@@ -96,12 +96,16 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'rectangle',
   'polygon',
   'slot',
+  'ellipse',
+  'spline',
 ];
 /** 正多角形(FR-315)の半径の意味。`model` の `SketchPolygonFeature.radiusMode` と同じ2値。 */
 const POLYGON_RADIUS_MODES: readonly ('circumscribed' | 'inscribed')[] = [
   'circumscribed',
   'inscribed',
 ];
+/** スプライン(FR-317)の点の意味。`model` の `SketchSplineFeature.mode` と同じ2値。 */
+const SPLINE_MODES: readonly ('interpolate' | 'control')[] = ['interpolate', 'control'];
 /**
  * `.pcad` から読める立体の種類。P2 の4種類(押し出し・回転・縫合・ブーリアン)に、
  * P3 の加工フィーチャー5種(穴・ねじ穴・R 面取り・C 面取り・パターン)とばねを足した10種類
@@ -291,6 +295,31 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         center1: serializeCoordinate(feature.center1),
         center2: serializeCoordinate(feature.center2),
         width: serializeExpression(feature.width),
+        construction: feature.construction,
+      };
+    case 'ellipse':
+      return {
+        id: feature.id,
+        kind: 'ellipse',
+        name: feature.name,
+        planeId: feature.planeId,
+        center: serializeCoordinate(feature.center),
+        majorRadius: serializeExpression(feature.majorRadius),
+        minorRadius: serializeExpression(feature.minorRadius),
+        rotation: serializeExpression(feature.rotation),
+        startAngle: serializeExpression(feature.startAngle),
+        endAngle: serializeExpression(feature.endAngle),
+        construction: feature.construction,
+      };
+    case 'spline':
+      return {
+        id: feature.id,
+        kind: 'spline',
+        name: feature.name,
+        planeId: feature.planeId,
+        mode: feature.mode,
+        points: feature.points.map(serializeCoordinate),
+        closed: feature.closed,
         construction: feature.construction,
       };
   }
@@ -659,6 +688,24 @@ function readPointReference(
   }
 }
 
+function readCoordinateRecord(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<CoordinateInput> {
+  const mode = readLiteral(record, 'mode', path, COORDINATE_MODES);
+  if (!mode.ok) {
+    return mode;
+  }
+  switch (mode.value) {
+    case 'absolute':
+      return readAbsoluteCoordinate(record, path);
+    case 'relative':
+      return readRelativeCoordinate(record, path);
+    case 'polar':
+      return readPolarCoordinate(record, path);
+  }
+}
+
 function readCoordinate(
   source: Record<string, unknown>,
   key: string,
@@ -668,19 +715,16 @@ function readCoordinate(
   if (!record.ok) {
     return record;
   }
-  const path = joinPath(parentPath, key);
-  const mode = readLiteral(record.value, 'mode', path, COORDINATE_MODES);
-  if (!mode.ok) {
-    return mode;
+  return readCoordinateRecord(record.value, joinPath(parentPath, key));
+}
+
+/** 配列の中の 1 点(スプラインの点の並び、FR-317)。`readList` へ渡す形。 */
+function readCoordinateItem(value: unknown, path: string): Checked<CoordinateInput> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
   }
-  switch (mode.value) {
-    case 'absolute':
-      return readAbsoluteCoordinate(record.value, path);
-    case 'relative':
-      return readRelativeCoordinate(record.value, path);
-    case 'polar':
-      return readPolarCoordinate(record.value, path);
-  }
+  return readCoordinateRecord(record.value, path);
 }
 
 function readAbsoluteCoordinate(
@@ -836,6 +880,10 @@ function readSketchFeature(value: unknown, path: string): Checked<SketchFeature>
       return readPolygonFeature(record.value, path, base.value);
     case 'slot':
       return readSlotFeature(record.value, path, base.value);
+    case 'ellipse':
+      return readEllipseFeature(record.value, path, base.value);
+    case 'spline':
+      return readSplineFeature(record.value, path, base.value);
   }
 }
 
@@ -1051,6 +1099,89 @@ function readSlotFeature(
       center1: center1.value,
       center2: center2.value,
       width: width.value,
+      construction: construction.value,
+    },
+  };
+}
+
+function readEllipseFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const center = readCoordinate(record, 'center', path);
+  if (!center.ok) {
+    return center;
+  }
+  const majorRadius = readExpression(record, 'majorRadius', path);
+  if (!majorRadius.ok) {
+    return majorRadius;
+  }
+  const minorRadius = readExpression(record, 'minorRadius', path);
+  if (!minorRadius.ok) {
+    return minorRadius;
+  }
+  const rotation = readExpression(record, 'rotation', path);
+  if (!rotation.ok) {
+    return rotation;
+  }
+  const startAngle = readExpression(record, 'startAngle', path);
+  if (!startAngle.ok) {
+    return startAngle;
+  }
+  const endAngle = readExpression(record, 'endAngle', path);
+  if (!endAngle.ok) {
+    return endAngle;
+  }
+  const construction = readBoolean(record, 'construction', path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'ellipse',
+      center: center.value,
+      majorRadius: majorRadius.value,
+      minorRadius: minorRadius.value,
+      rotation: rotation.value,
+      startAngle: startAngle.value,
+      endAngle: endAngle.value,
+      construction: construction.value,
+    },
+  };
+}
+
+function readSplineFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const mode = readLiteral(record, 'mode', path, SPLINE_MODES);
+  if (!mode.ok) {
+    return mode;
+  }
+  const points = readList(record, 'points', path, readCoordinateItem);
+  if (!points.ok) {
+    return points;
+  }
+  const closed = readBoolean(record, 'closed', path);
+  if (!closed.ok) {
+    return closed;
+  }
+  const construction = readBoolean(record, 'construction', path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'spline',
+      mode: mode.value,
+      points: points.value,
+      closed: closed.value,
       construction: construction.value,
     },
   };

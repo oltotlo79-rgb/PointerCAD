@@ -1,5 +1,12 @@
 export type { BoxParameters, MeshData, TessellationOptions } from './types.js';
-export type { ArcSpec, CurveSpec, SegmentSpec, Vec3Tuple } from './types.js';
+export type {
+  ArcSpec,
+  CurveSpec,
+  EllipseCurveSpec,
+  SegmentSpec,
+  SplineCurveSpec,
+  Vec3Tuple,
+} from './types.js';
 export type {
   FaceMeshData,
   PlanarFaceRequest,
@@ -54,6 +61,15 @@ export {
   makeSegmentEdge,
   type OcctEdgeHandle,
 } from './occt/makeSketchEdges.js';
+// 楕円・スプラインの稜線(FR-318、FR-317、タスク7・8)。makeCurveEdge が振り分ける(タスク5)。
+export { makeEllipseEdge, type EllipseSpec } from './occt/makeEllipseEdge.js';
+export {
+  bsplineDataForSpline,
+  makeSplineEdge,
+  splineDegree,
+  type BSplineData,
+  type SplineSpec,
+} from './occt/makeSplineEdge.js';
 export { tessellate, type FaceTriangleRange, type SurfaceMesh } from './occt/tessellate.js';
 export { extractEdges, type EdgeLines, type EdgeSegmentRange } from './occt/extractEdges.js';
 export {

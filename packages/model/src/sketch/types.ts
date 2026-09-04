@@ -59,7 +59,9 @@ export type SketchFeatureKind =
   | 'face'
   | 'rectangle'
   | 'polygon'
-  | 'slot';
+  | 'slot'
+  | 'ellipse'
+  | 'spline';
 
 interface SketchFeatureBase {
   readonly id: string;
@@ -136,6 +138,46 @@ export interface SketchSlotFeature extends SketchFeatureBase {
   readonly construction: boolean;
 }
 
+/**
+ * 中心・長軸半径・短軸半径・傾き・開始角・終了角で指定する楕円と楕円弧(FR-318)。
+ * 矩形などと違い 1 フィーチャー = 1 曲線で、`ResolvedEllipse` 1 つに解決する。
+ *
+ * `rotation` は作図面の第1軸から長軸までの角度(度)。
+ * `startAngle` / `endAngle` は**長軸から測った幾何の方位角**(度)で、画面で見える角度と
+ * 一致する。差が ±360 度なら全周の楕円になる(円弧と同じ約束、FR-305)。
+ * カーネルが要る「径数方程式のパラメータ角」への変換は解決のとき
+ * (`resolveSketch.ts` の `azimuthToEllipseParameter`)に済ませる。
+ */
+export interface SketchEllipseFeature extends SketchFeatureBase {
+  readonly kind: 'ellipse';
+  readonly center: CoordinateInput;
+  readonly majorRadius: ExpressionValue;
+  readonly minorRadius: ExpressionValue;
+  /** 長軸の傾き(度)。作図面の第1軸からの角度。 */
+  readonly rotation: ExpressionValue;
+  readonly startAngle: ExpressionValue;
+  readonly endAngle: ExpressionValue;
+  /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
+  readonly construction: boolean;
+}
+
+/**
+ * 点の並びから作る自由曲線(FR-317)。1 フィーチャー = 1 曲線。
+ *
+ * `mode` が `interpolate` なら与えた点を必ず通り、`control` なら与えた点が曲線を引っぱる。
+ * `closed` なら最後の点から最初の点へ戻ってつながる(**閉じるための重複点は入れない**)。
+ * 点の数は開いた曲線で 2 個以上、閉じた曲線で 3 個以上、いずれも
+ * `splineMath.ts` の `MAX_SPLINE_POINTS` 個以下(統括の決定 §0.a-0.17)。
+ */
+export interface SketchSplineFeature extends SketchFeatureBase {
+  readonly kind: 'spline';
+  readonly mode: 'interpolate' | 'control';
+  /** 通過点または制御点。並び順が曲線の向きになる。3D スケッチでも使えるよう座標指定のまま持つ。 */
+  readonly points: readonly CoordinateInput[];
+  readonly closed: boolean;
+  readonly construction: boolean;
+}
+
 /** 面の境界に使う要素の参照。点列の中の 1 点、または複数曲線フィーチャーの n 番目の曲線を
  * 指すときだけ index を付ける(§0.a-0.8)。省略時は「そのフィーチャーの全周・全体」を表す。 */
 export interface SketchElementRef {
@@ -159,7 +201,9 @@ export type SketchFeature =
   | SketchFaceFeature
   | SketchRectangleFeature
   | SketchPolygonFeature
-  | SketchSlotFeature;
+  | SketchSlotFeature
+  | SketchEllipseFeature
+  | SketchSplineFeature;
 
 /** スケッチ文書。変更のたびに新しい配列を作る(P2 の Undo の土台、FR-505)。 */
 export interface SketchDocument {
@@ -195,7 +239,45 @@ export interface ResolvedArc {
   readonly endAngle: number;
 }
 
-export type ResolvedCurve = ResolvedSegment | ResolvedArc;
+/**
+ * 解決済みの楕円・楕円弧(FR-318)。`ResolvedArc` を「半径 2 つ」へ広げず新しい種類にしたのは、
+ * 円弧の利用箇所がどれも「半径は 1 つ」を前提にしているため(§2.3 の判断)。
+ *
+ * **`startAngle` / `endAngle` は径数方程式のパラメータ角(ラジアン)**で、中心から見た
+ * 幾何の方位角ではない(両者が一致するのは 0°・90°・180°・270° の 4 点だけ)。曲線上の点は
+ *   P(u) = center + majorRadius·cos(u)·majorAxis + minorRadius·sin(u)·(normal × majorAxis)
+ * で、この式はカーネルの `gp_Elips`(`makeEllipseEdge.ts` の注釈)とそのまま同じ。
+ * 利用者が入力する方位角からの変換は `resolveSketch.ts` の `azimuthToEllipseParameter` が済ませる。
+ */
+export interface ResolvedEllipse {
+  readonly kind: 'ellipse';
+  readonly featureId: string;
+  readonly center: Vec3;
+  readonly normal: Vec3;
+  /** 長軸方向の単位ベクトル。パラメータ角 0 の向き。 */
+  readonly majorAxis: Vec3;
+  readonly majorRadius: number;
+  readonly minorRadius: number;
+  /** ラジアン(パラメータ角)。majorAxis から normal まわりに正。 */
+  readonly startAngle: number;
+  readonly endAngle: number;
+}
+
+/**
+ * 解決済みのスプライン(FR-317)。**曲線の形(極・節点)はここに持たず、与えられた点だけを持つ。**
+ * 極を解くのは点の数の 3 乗に比例する計算なので、表示用の折れ線が要るときにだけ
+ * `splineMath.ts` の `splineCurveData` / `sampleSpline` が解き直す。
+ */
+export interface ResolvedSpline {
+  readonly kind: 'spline';
+  readonly featureId: string;
+  readonly mode: 'interpolate' | 'control';
+  /** 通過点(interpolate)または制御点(control)。並び順が曲線の向き。 */
+  readonly points: readonly Vec3[];
+  readonly closed: boolean;
+}
+
+export type ResolvedCurve = ResolvedSegment | ResolvedArc | ResolvedEllipse | ResolvedSpline;
 
 export interface ResolvedFace {
   readonly featureId: string;
@@ -227,6 +309,10 @@ export interface ResolvedSketch {
   readonly points: readonly ResolvedPoint[];
   readonly segments: readonly ResolvedSegment[];
   readonly arcs: readonly ResolvedArc[];
+  /** 楕円・楕円弧(FR-318)。線分・円弧と並ぶ独立の配列(タスク5)。 */
+  readonly ellipses: readonly ResolvedEllipse[];
+  /** スプライン(FR-317)。 */
+  readonly splines: readonly ResolvedSpline[];
   readonly faces: readonly ResolvedFace[];
   readonly errors: readonly SketchError[];
 }

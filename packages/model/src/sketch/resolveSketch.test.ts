@@ -5,19 +5,27 @@ import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.j
 import { WORK_PLANES } from './planeMath.js';
 import {
   arcPointAt,
+  azimuthToEllipseParameter,
   curveEnd,
   curveStart,
+  ellipsePointAt,
   fitPlaneNormal,
   isFullCircle,
+  isFullEllipse,
   isPlanar,
   MAX_POINT_ARRAY_COUNT,
   resolveSketch,
 } from './resolveSketch.js';
+import { MAX_SPLINE_POINTS } from './splineMath.js';
 import type {
+  CoordinateInput,
   ResolvedCurve,
+  ResolvedEllipse,
   ResolvedSegment,
   SketchDocument,
+  SketchEllipseFeature,
   SketchFeature,
+  SketchSplineFeature,
 } from './types.js';
 import { addVec3, crossVec3, distanceVec3, lengthVec3, type Vec3 } from './vec3.js';
 
@@ -1172,5 +1180,467 @@ describe('矩形・正多角形・長穴の解決(タスク4、FR-314〜316)', (
     // 壊れたフィーチャーの後にある正常な点は解決される。
     expect(resolved.points).toHaveLength(1);
     expectCloseTo(resolved.points[0].position, [1, 2, 3]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 楕円・スプライン(タスク5、FR-317・FR-318)
+// ---------------------------------------------------------------------------
+
+/** 度をラジアンへ(期待値を度で書くため)。 */
+function toRadians(degrees: number): number {
+  return (degrees * Math.PI) / 180;
+}
+
+/** 中心原点・長軸半径 20・短軸半径 10・傾き 0 の全周の楕円(XY 面)。 */
+function ellipseFeature(): SketchEllipseFeature {
+  return {
+    id: 'e1',
+    name: '楕円1',
+    planeId: 'xy',
+    kind: 'ellipse',
+    center: absoluteCoordinate(0, 0, 0),
+    majorRadius: num(20),
+    minorRadius: num(10),
+    rotation: num(0),
+    startAngle: num(0),
+    endAngle: num(360),
+    construction: false,
+  };
+}
+
+/** 楕円の周を細かく拾って、囲む面積を測る(タスク4 の polygonArea を使い回す)。 */
+function sampledEllipseArea(ellipse: ResolvedEllipse, divisions: number): number {
+  const span = ellipse.endAngle - ellipse.startAngle;
+  const samples: Vec3[] = [];
+  for (let index = 0; index < divisions; index += 1) {
+    samples.push(ellipsePointAt(ellipse, ellipse.startAngle + (span * index) / divisions));
+  }
+  return polygonArea(samples);
+}
+
+describe('方位角からパラメータ角への変換(FR-318、計画書 §1.4-8)', () => {
+  it('長軸20・短軸10 の方位角 45° は arctan 2 = 63.43494882292201°になる', () => {
+    const parameter = azimuthToEllipseParameter(toRadians(45), 20, 10);
+    // u = atan2(sin45°/10, cos45°/20) = atan(2)。
+    expect(parameter).toBeCloseTo(Math.atan(2), 15);
+    expect((parameter * 180) / Math.PI).toBeCloseTo(63.43494882292201, 12);
+    // その点は (20·cos u, 10·sin u) = (8.94427190999916, 8.94427190999916)。
+    // 方位角どおり x と y が等しくなる(45°の向きに乗る)ことが変換の意味。
+    expect(20 * Math.cos(parameter)).toBeCloseTo(8.94427190999916, 12);
+    expect(10 * Math.sin(parameter)).toBeCloseTo(8.94427190999916, 12);
+  });
+
+  it('0°・90°・180°・270° はそのまま(この 4 点だけは方位角と一致する)', () => {
+    for (const degrees of [0, 90, 180, 270, -90]) {
+      expect(azimuthToEllipseParameter(toRadians(degrees), 20, 10)).toBeCloseTo(
+        toRadians(degrees),
+        12,
+      );
+    }
+  });
+
+  it('360° は 1 周ぶんのまま(全周の指定が全周の楕円になる)', () => {
+    expect(azimuthToEllipseParameter(toRadians(360), 20, 10)).toBeCloseTo(2 * Math.PI, 12);
+  });
+
+  it('長軸と短軸が同じ(円)なら方位角そのままになる', () => {
+    for (const degrees of [10, 45, 100, 200, 350]) {
+      expect(azimuthToEllipseParameter(toRadians(degrees), 10, 10)).toBeCloseTo(
+        toRadians(degrees),
+        12,
+      );
+    }
+  });
+});
+
+describe('楕円の解決(タスク5、FR-318)', () => {
+  it('全周の楕円は 1 本の楕円になり、面を張ると面積が π·a·b になる', () => {
+    const resolved = resolveSketch(documentOf(ellipseFeature()));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.ellipses).toHaveLength(1);
+    // 円弧の配列には入らない(独立の種類、§2.3)。
+    expect(resolved.arcs).toEqual([]);
+
+    const ellipse = resolved.ellipses[0];
+    expect(ellipse.featureId).toBe('e1');
+    expectCloseTo(ellipse.center, [0, 0, 0]);
+    expectCloseTo(ellipse.normal, [0, 0, 1]);
+    expectCloseTo(ellipse.majorAxis, [1, 0, 0]);
+    expect(ellipse.majorRadius).toBe(20);
+    expect(ellipse.minorRadius).toBe(10);
+    expect(isFullEllipse(ellipse)).toBe(true);
+
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'e1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const withFace = resolveSketch(documentOf(ellipseFeature(), face));
+    expect(withFace.errors).toEqual([]);
+    expect(withFace.faces).toHaveLength(1);
+    expect(withFace.faces[0].curves).toHaveLength(1);
+    // 周を 20000 分割して囲む面積を測ると π·20·10 = 628.318530718 に近づく
+    // (残る差 1.03e-5 は弧を弦で置き換えたぶん)。
+    expect(sampledEllipseArea(ellipse, 20000)).toBeCloseTo(628.318530718, 4);
+  });
+
+  it('楕円弧(0°→90°)の端点は (20,0,0) と (0,10,0)(傾き 0)', () => {
+    const quarter: SketchFeature = { ...ellipseFeature(), endAngle: num(90) };
+    const resolved = resolveSketch(documentOf(quarter));
+    expect(resolved.errors).toEqual([]);
+    const ellipse = resolved.ellipses[0];
+    expect(isFullEllipse(ellipse)).toBe(false);
+    expect(ellipse.startAngle).toBeCloseTo(0, 12);
+    expect(ellipse.endAngle).toBeCloseTo(Math.PI / 2, 12);
+    expectCloseTo(curveStart(ellipse), [20, 0, 0]);
+    expectCloseTo(curveEnd(ellipse), [0, 10, 0]);
+  });
+
+  it('方位角 45° の点は (8.94427190999916, 8.94427190999916)(パラメータ角へ直してから置く)', () => {
+    const wedge: SketchFeature = { ...ellipseFeature(), startAngle: num(45), endAngle: num(90) };
+    const resolved = resolveSketch(documentOf(wedge));
+    expect(resolved.errors).toEqual([]);
+    const ellipse = resolved.ellipses[0];
+    // 保存されるのはパラメータ角(arctan 2 = 1.1071487177940904 rad)。
+    expect(ellipse.startAngle).toBeCloseTo(Math.atan(2), 12);
+    expectCloseTo(curveStart(ellipse), [8.94427190999916, 8.94427190999916, 0]);
+  });
+
+  it('傾きを付けると長軸が作図面の第1軸から回る', () => {
+    const tilted: SketchFeature = { ...ellipseFeature(), rotation: num(30), endAngle: num(90) };
+    const resolved = resolveSketch(documentOf(tilted));
+    expect(resolved.errors).toEqual([]);
+    const ellipse = resolved.ellipses[0];
+    expectCloseTo(ellipse.majorAxis, [Math.cos(toRadians(30)), Math.sin(toRadians(30)), 0]);
+    // パラメータ角 0 の点は中心 + 長軸方向 × 20 = (17.320508075688775, 10, 0)。
+    expectCloseTo(curveStart(ellipse), [17.320508075688775, 10, 0]);
+    // パラメータ角 90° の点は短軸方向(長軸を法線まわりに +90°)× 10 = (-5, 8.660254037844387, 0)。
+    expectCloseTo(curveEnd(ellipse), [-5, 8.660254037844387, 0]);
+  });
+
+  it('作図面に従う(XZ 面、§2.8)', () => {
+    const onXz: SketchFeature = { ...ellipseFeature(), planeId: 'xz', endAngle: num(90) };
+    const resolved = resolveSketch(documentOf(onXz));
+    expect(resolved.errors).toEqual([]);
+    const ellipse = resolved.ellipses[0];
+    // XZ 面は axisU=(1,0,0)・axisV=(0,0,1)・normal=(0,-1,0)。短軸は normal × 長軸 = (0,0,1)。
+    expectCloseTo(ellipse.normal, [0, -1, 0]);
+    expectCloseTo(ellipse.majorAxis, [1, 0, 0]);
+    expectCloseTo(curveStart(ellipse), [20, 0, 0]);
+    expectCloseTo(curveEnd(ellipse), [0, 0, 10]);
+  });
+
+  it('半径が 0・負・長軸より短軸が大きいときは断る(FR-504)', () => {
+    const zeroRadius: SketchFeature = { ...ellipseFeature(), minorRadius: num(0) };
+    const zeroResolved = resolveSketch(documentOf(zeroRadius));
+    expect(zeroResolved.errors).toHaveLength(1);
+    expect(zeroResolved.errors[0].code).toBe('degenerate');
+    expect(zeroResolved.ellipses).toEqual([]);
+
+    const negative: SketchFeature = { ...ellipseFeature(), majorRadius: num(-20) };
+    expect(resolveSketch(documentOf(negative)).errors[0].code).toBe('invalidValue');
+
+    const swapped: SketchFeature = {
+      ...ellipseFeature(), majorRadius: num(5), minorRadius: num(10),
+    };
+    const swappedResolved = resolveSketch(documentOf(swapped));
+    expect(swappedResolved.errors[0].code).toBe('invalidValue');
+    expect(swappedResolved.errors[0].message).toContain('長軸');
+
+    const broken: SketchFeature = {
+      ...ellipseFeature(), majorRadius: brokenNumber('1/0', Number.POSITIVE_INFINITY),
+    };
+    expect(resolveSketch(documentOf(broken)).errors[0].code).toBe('invalidValue');
+  });
+
+  it('開始角と終了角が同じなら degenerate、角度が数でなければ invalidValue', () => {
+    const same: SketchFeature = { ...ellipseFeature(), endAngle: num(0) };
+    const sameResolved = resolveSketch(documentOf(same));
+    expect(sameResolved.errors).toHaveLength(1);
+    expect(sameResolved.errors[0].code).toBe('degenerate');
+
+    const brokenAngle: SketchFeature = { ...ellipseFeature(), rotation: brokenNumber('0/0', NaN) };
+    expect(resolveSketch(documentOf(brokenAngle)).errors[0].code).toBe('invalidValue');
+  });
+
+  it('楕円弧 1 本では面が張れない(全周でないと閉じない)', () => {
+    const quarter: SketchFeature = { ...ellipseFeature(), endAngle: num(90) };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'e1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(quarter, face));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('notClosed');
+  });
+
+  it('中心・端点を vertex 参照で基準にでき、終点が「直前の点」になる(FR-302、FR-307)', () => {
+    const quarter: SketchFeature = { ...ellipseFeature(), endAngle: num(90) };
+    const afterEllipse: SketchFeature = {
+      id: 'p3', name: '点3', planeId: 'xy', kind: 'point',
+      at: { mode: 'relative', base: { kind: 'previous' }, dx: num(0), dy: num(0), dz: num(2) },
+    };
+    const fromCenter: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'xy', kind: 'point',
+      at: {
+        mode: 'relative', base: { kind: 'vertex', featureId: 'e1', vertex: 'center' },
+        dx: num(0), dy: num(0), dz: num(1),
+      },
+    };
+    const fromStart: SketchFeature = {
+      id: 'p2', name: '点2', planeId: 'xy', kind: 'point',
+      at: {
+        mode: 'relative', base: { kind: 'vertex', featureId: 'e1', vertex: 'start' },
+        dx: num(0), dy: num(0), dz: num(1),
+      },
+    };
+    const resolved = resolveSketch(documentOf(quarter, afterEllipse, fromCenter, fromStart));
+    expect(resolved.errors).toEqual([]);
+    // 「直前の点」は楕円の終点 (0,10,0)。
+    expectCloseTo(resolved.points[0].position, [0, 10, 2]);
+    expectCloseTo(resolved.points[1].position, [0, 0, 1]);
+    expectCloseTo(resolved.points[2].position, [20, 0, 1]);
+  });
+
+  it('楕円が解決できなくても後続のフィーチャーは止まらない(FR-504、NFR-RE-1)', () => {
+    const broken: SketchFeature = { ...ellipseFeature(), minorRadius: num(0) };
+    const okPoint: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'xy', kind: 'point', at: absoluteCoordinate(1, 2, 3),
+    };
+    const resolved = resolveSketch(documentOf(broken, okPoint));
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].featureId).toBe('e1');
+    expect(resolved.points).toHaveLength(1);
+    expectCloseTo(resolved.points[0].position, [1, 2, 3]);
+  });
+});
+
+/** 通過点方式・開いたスプライン(4 点)。 */
+function splineFeature(): SketchSplineFeature {
+  return {
+    id: 'sp1',
+    name: 'スプライン1',
+    planeId: 'xy',
+    kind: 'spline',
+    mode: 'interpolate',
+    points: [
+      absoluteCoordinate(0, 0, 0),
+      absoluteCoordinate(10, 5, 0),
+      absoluteCoordinate(20, 0, 0),
+      absoluteCoordinate(30, 5, 0),
+    ],
+    closed: false,
+    construction: false,
+  };
+}
+
+describe('スプラインの解決(タスク5、FR-317)', () => {
+  it('通過点方式は点をそのまま持ち、始点・終点が最初と最後の点になる', () => {
+    const resolved = resolveSketch(documentOf(splineFeature()));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.splines).toHaveLength(1);
+    const spline = resolved.splines[0];
+    expect(spline.featureId).toBe('sp1');
+    expect(spline.mode).toBe('interpolate');
+    expect(spline.closed).toBe(false);
+    expect(spline.points).toHaveLength(4);
+    expectCloseTo(spline.points[1], [10, 5, 0]);
+    expectCloseTo(curveStart(spline), [0, 0, 0]);
+    expectCloseTo(curveEnd(spline), [30, 5, 0]);
+  });
+
+  it('開いた曲線は 2 点から作れ、1 点では断る(統括の決定 §0.a-0.17)', () => {
+    const twoPoints: SketchFeature = {
+      ...splineFeature(),
+      points: [absoluteCoordinate(0, 0, 0), absoluteCoordinate(10, 0, 0)],
+    };
+    const twoResolved = resolveSketch(documentOf(twoPoints));
+    expect(twoResolved.errors).toEqual([]);
+    expect(twoResolved.splines).toHaveLength(1);
+
+    const onePoint: SketchFeature = { ...splineFeature(), points: [absoluteCoordinate(0, 0, 0)] };
+    const oneResolved = resolveSketch(documentOf(onePoint));
+    expect(oneResolved.errors).toHaveLength(1);
+    expect(oneResolved.errors[0].code).toBe('tooFewPoints');
+    expect(oneResolved.errors[0].message).toBe('スプラインには点が 2 個以上必要です。');
+    expect(oneResolved.splines).toEqual([]);
+  });
+
+  it('閉じた曲線は 3 点から作れ、2 点では専用の文言で断る', () => {
+    const twoPointsClosed: SketchFeature = {
+      ...splineFeature(),
+      closed: true,
+      points: [absoluteCoordinate(0, 0, 0), absoluteCoordinate(10, 0, 0)],
+    };
+    const resolved = resolveSketch(documentOf(twoPointsClosed));
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('tooFewPoints');
+    expect(resolved.errors[0].message).toBe('閉じたスプラインには点が 3 個以上必要です。');
+
+    const threePointsClosed: SketchFeature = {
+      ...twoPointsClosed,
+      points: [
+        absoluteCoordinate(0, 0, 0),
+        absoluteCoordinate(10, 0, 0),
+        absoluteCoordinate(5, 8, 0),
+      ],
+    };
+    const okResolved = resolveSketch(documentOf(threePointsClosed));
+    expect(okResolved.errors).toEqual([]);
+    // 閉じた曲線は輪なので、始まりと終わりが同じ位置になる。
+    const spline = okResolved.splines[0];
+    expectCloseTo(curveStart(spline), curveEnd(spline));
+  });
+
+  it('点は 100 個まで(101 個は invalidValue で断る、§0.a-0.17)', () => {
+    const many: CoordinateInput[] = [];
+    for (let index = 0; index <= MAX_SPLINE_POINTS; index += 1) {
+      many.push(absoluteCoordinate(index, 0, 0));
+    }
+    expect(many).toHaveLength(101);
+    const tooMany: SketchFeature = { ...splineFeature(), points: many };
+    const resolved = resolveSketch(documentOf(tooMany));
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('invalidValue');
+    expect(resolved.errors[0].message).toBe('スプラインの点は 100 個以下にしてください。');
+
+    const justEnough: SketchFeature = { ...splineFeature(), points: many.slice(0, 100) };
+    expect(resolveSketch(documentOf(justEnough)).errors).toEqual([]);
+  });
+
+  it('重なった通過点はカーネルと同じ文言で断る。制御点方式なら通る', () => {
+    const doubled: SketchFeature = {
+      ...splineFeature(),
+      points: [
+        absoluteCoordinate(0, 0, 0),
+        absoluteCoordinate(0, 0, 0),
+        absoluteCoordinate(10, 10, 0),
+      ],
+    };
+    const resolved = resolveSketch(documentOf(doubled));
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('degenerate');
+    expect(resolved.errors[0].message).toBe(
+      '同じ位置の点が続いているため、通過点のスプラインを作れません。点をずらしてください。',
+    );
+
+    const asControl: SketchFeature = { ...doubled, mode: 'control' };
+    expect(resolveSketch(documentOf(asControl)).errors).toEqual([]);
+  });
+
+  it('閉じたスプライン 1 本で面が張れ、開いた 1 本では閉じない(FR-309)', () => {
+    const closed: SketchFeature = {
+      ...splineFeature(),
+      closed: true,
+      points: [
+        absoluteCoordinate(10, 0, 0),
+        absoluteCoordinate(0, 10, 0),
+        absoluteCoordinate(-10, 0, 0),
+        absoluteCoordinate(0, -10, 0),
+      ],
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'sp1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const closedResolved = resolveSketch(documentOf(closed, face));
+    expect(closedResolved.errors).toEqual([]);
+    expect(closedResolved.faces).toHaveLength(1);
+    expect(closedResolved.faces[0].curves).toHaveLength(1);
+
+    const openResolved = resolveSketch(documentOf(splineFeature(), face));
+    expect(openResolved.faces).toEqual([]);
+    expect(openResolved.errors[0].code).toBe('notClosed');
+  });
+
+  it('閉じたスプラインが同じ平面に乗らなければ notPlanar で断る(円・楕円との違い)', () => {
+    const skew: SketchFeature = {
+      ...splineFeature(),
+      closed: true,
+      points: [
+        absoluteCoordinate(10, 0, 0),
+        absoluteCoordinate(0, 10, 0),
+        absoluteCoordinate(-10, 0, 5),
+        absoluteCoordinate(0, -10, -5),
+      ],
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'sp1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(skew, face));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('notPlanar');
+  });
+
+  it('2 番目以降の点は 1 つ前の点を基準にできる(FR-307 と同じ考え方)', () => {
+    const chained: SketchFeature = {
+      ...splineFeature(),
+      points: [
+        absoluteCoordinate(0, 0, 0),
+        { mode: 'relative', base: { kind: 'previous' }, dx: num(10), dy: num(5), dz: num(0) },
+        { mode: 'relative', base: { kind: 'previous' }, dx: num(10), dy: num(-5), dz: num(0) },
+      ],
+    };
+    const resolved = resolveSketch(documentOf(chained));
+    expect(resolved.errors).toEqual([]);
+    const spline = resolved.splines[0];
+    expectCloseTo(spline.points[1], [10, 5, 0]);
+    expectCloseTo(spline.points[2], [20, 0, 0]);
+  });
+
+  it('点の基準が見つからなければ断り、後続のフィーチャーは止まらない(FR-504)', () => {
+    const missing: SketchFeature = {
+      ...splineFeature(),
+      points: [
+        absoluteCoordinate(0, 0, 0),
+        {
+          mode: 'relative', base: { kind: 'point', pointId: 'nope' },
+          dx: num(1), dy: num(0), dz: num(0),
+        },
+        absoluteCoordinate(20, 0, 0),
+      ],
+    };
+    const okPoint: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'xy', kind: 'point', at: absoluteCoordinate(1, 2, 3),
+    };
+    const resolved = resolveSketch(documentOf(missing, okPoint));
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.splines).toEqual([]);
+    expect(resolved.points).toHaveLength(1);
+    expectCloseTo(resolved.points[0].position, [1, 2, 3]);
+  });
+
+  it('端点は vertex 参照で基準にでき、終点が「直前の点」になる(FR-302、FR-307)', () => {
+    const afterSpline: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'xy', kind: 'point',
+      at: { mode: 'relative', base: { kind: 'previous' }, dx: num(0), dy: num(0), dz: num(1) },
+    };
+    const fromStart: SketchFeature = {
+      id: 'p2', name: '点2', planeId: 'xy', kind: 'point',
+      at: {
+        mode: 'relative', base: { kind: 'vertex', featureId: 'sp1', vertex: 'start' },
+        dx: num(0), dy: num(0), dz: num(2),
+      },
+    };
+    const resolved = resolveSketch(documentOf(splineFeature(), afterSpline, fromStart));
+    expect(resolved.errors).toEqual([]);
+    expectCloseTo(resolved.points[0].position, [30, 5, 1]);
+    expectCloseTo(resolved.points[1].position, [0, 0, 2]);
+  });
+
+  it('楕円・スプラインは線分と円弧の配列を汚さない(独立の配列、§2.3)', () => {
+    const resolved = resolveSketch(
+      documentOf(ellipseFeature(), splineFeature(), POINT_A, QUARTER_ARC),
+    );
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.segments).toEqual([]);
+    expect(resolved.arcs).toHaveLength(1);
+    expect(resolved.ellipses).toHaveLength(1);
+    expect(resolved.splines).toHaveLength(1);
+    expect(resolved.points).toHaveLength(1);
   });
 });

@@ -53,8 +53,35 @@ export interface KeyArc {
   readonly endAngle: number;
 }
 
+/**
+ * 楕円・楕円弧(FR-318、P4 タスク5)。model の `ResolvedEllipse` と同じ欄名。
+ * 角度は**径数方程式のパラメータ角**(ラジアン)で、方位角からの変換は解決の側で済んでいる。
+ */
+export interface KeyEllipse {
+  readonly kind: 'ellipse';
+  readonly center: KeyVec3;
+  readonly normal: KeyVec3;
+  readonly majorAxis: KeyVec3;
+  readonly majorRadius: number;
+  readonly minorRadius: number;
+  readonly startAngle: number;
+  readonly endAngle: number;
+}
+
+/**
+ * スプライン(FR-317、P4 タスク5)。model の `ResolvedSpline` と同じ欄名。
+ * 極ではなく通過点・制御点をそのまま材料にするのは、極は点から一意に決まるので
+ * 点が同じなら形も同じになり、鍵として点で足りるため(解き直しの費用も掛からない)。
+ */
+export interface KeySpline {
+  readonly kind: 'spline';
+  readonly mode: 'interpolate' | 'control';
+  readonly points: readonly KeyVec3[];
+  readonly closed: boolean;
+}
+
 /** 断面・面を作る曲線(kernel の `CurveSpec` と同じ形)。 */
-export type KeyCurve = KeySegment | KeyArc;
+export type KeyCurve = KeySegment | KeyArc | KeyEllipse | KeySpline;
 
 /** 押し出し(FR-401)の鍵の材料。断面+向き+長さ(平行移動と反転は model 側で計算済み、§0.a-0.8)。 */
 export interface ExtrudeKeyMaterial {
@@ -298,6 +325,18 @@ function keyCurve(curve: KeyCurve): string {
       return (
         `arc(${keyVec3(curve.center)}|${keyVec3(curve.normal)}|${keyVec3(curve.xAxis)}` +
         `|${keyNumber(curve.radius)}|${keyNumber(curve.startAngle)}|${keyNumber(curve.endAngle)})`
+      );
+    case 'ellipse':
+      return (
+        `ellipse(${keyVec3(curve.center)}|${keyVec3(curve.normal)}|${keyVec3(curve.majorAxis)}` +
+        `|${keyNumber(curve.majorRadius)}|${keyNumber(curve.minorRadius)}` +
+        `|${keyNumber(curve.startAngle)}|${keyNumber(curve.endAngle)})`
+      );
+    case 'spline':
+      // 点の並びは順序が意味を持つので、長さも混ぜる(曲線の並びと同じ衝突対策)。
+      return (
+        `spline(${curve.mode}|${keyBoolean(curve.closed)}` +
+        `|${String(curve.points.length)}:[${curve.points.map(keyVec3).join(',')}])`
       );
   }
 }

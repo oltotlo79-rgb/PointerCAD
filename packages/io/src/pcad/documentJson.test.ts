@@ -3,6 +3,7 @@ import {
   PART_SCHEMA_VERSION,
   type PartDocument,
   type SketchDocument,
+  type SketchFeature,
   type SolidFeature,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
@@ -612,6 +613,92 @@ describe('往復(serializeDocument → parseDocument)', () => {
 function documentWithSolid(feature: SolidFeature): PartDocument {
   return { ...createEmptyPartDocument(), solids: [feature] };
 }
+
+/** 1つのスケッチフィーチャーだけを持つ最小の文書。 */
+function documentWithSketchFeature(feature: SketchFeature): PartDocument {
+  const empty = createEmptyPartDocument();
+  return {
+    ...empty,
+    sketches: empty.sketches.map((sketch) => ({ ...sketch, features: [feature] })),
+  };
+}
+
+describe('楕円・スプラインの往復(P4 タスク5、FR-317・FR-318)', () => {
+  const ellipse: SketchFeature = {
+    id: 'ellipse-1',
+    kind: 'ellipse',
+    name: '楕円1',
+    planeId: 'xz',
+    center: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+    majorRadius: ev('10*2', 20),
+    minorRadius: ev('10', 10),
+    rotation: ev('30', 30),
+    startAngle: ev('0', 0),
+    endAngle: ev('360', 360),
+    construction: false,
+  };
+
+  it('楕円の欄がすべて往復で一致する', () => {
+    const document = documentWithSketchFeature(ellipse);
+    expect(roundTrip(document).sketches[0].features[0]).toEqual(ellipse);
+  });
+
+  it('スプラインは点の並び・通過点/制御点・閉じるかが往復で一致する', () => {
+    const spline: SketchFeature = {
+      id: 'spline-1',
+      kind: 'spline',
+      name: 'スプライン1',
+      planeId: 'xy',
+      mode: 'control',
+      points: [
+        { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+        {
+          mode: 'relative',
+          base: { kind: 'previous' },
+          dx: ev('10', 10),
+          dy: ev('5', 5),
+          dz: ev('0', 0),
+        },
+        {
+          mode: 'polar',
+          base: { kind: 'origin' },
+          distance: ev('20', 20),
+          azimuth: ev('45', 45),
+          elevation: ev('0', 0),
+        },
+      ],
+      closed: true,
+      construction: true,
+    };
+    const restored = roundTrip(documentWithSketchFeature(spline)).sketches[0].features[0];
+    expect(restored).toEqual(spline);
+  });
+
+  it('スプラインの点の並びの型が違えば、その場所を添えて断る(FR-504、NFR-UX-5)', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'spline-1',
+              kind: 'spline',
+              name: 'スプライン1',
+              planeId: 'xy',
+              mode: 'interpolate',
+              points: [{ mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: 'ゼロ' }],
+              closed: false,
+              construction: false,
+            },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.message).toContain('points');
+  });
+});
 
 describe('穴の深さ(HoleDepth)の往復(§0.a-0.11、§0.a-0.12)', () => {
   it('貫通(through)が往復で一致する', () => {

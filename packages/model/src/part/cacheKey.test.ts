@@ -12,6 +12,8 @@ import {
   type FilletKeyMaterial,
   type HoleKeyMaterial,
   type KeyCurve,
+  type KeyEllipse,
+  type KeySpline,
   type KeySubShape,
   type KeyTransform,
   type RevolveKeyMaterial,
@@ -478,6 +480,64 @@ describe('keyMaterialText: P2 の4種類の文字列が変わっていない(既
 
   it('ブーリアンの材料の文字列', () => {
     expect(keyMaterialText(boolean('a', 'b'))).toBe('boolean{operation=union;targetKey=a;toolKey=b}');
+  });
+});
+
+describe('keyMaterialText: 楕円・スプラインの曲線(P4 タスク5、FR-317・FR-318)', () => {
+  const ELLIPSE: KeyEllipse = {
+    kind: 'ellipse',
+    center: [0, 0, 0],
+    normal: [0, 0, 1],
+    majorAxis: [1, 0, 0],
+    majorRadius: 20,
+    minorRadius: 10,
+    startAngle: 0,
+    endAngle: 2,
+  };
+  const SPLINE: KeySpline = {
+    kind: 'spline',
+    mode: 'interpolate',
+    points: [
+      [0, 0, 0],
+      [10, 5, 0],
+      [20, 0, 0],
+    ],
+    closed: false,
+  };
+
+  it('楕円の材料の文字列(長軸・短軸・パラメータ角がすべて混ざる)', () => {
+    expect(keyMaterialText(extrude(2, [ELLIPSE]))).toBe(
+      'extrude{profile=1:[ellipse(0.000000000,0.000000000,0.000000000' +
+        '|0.000000000,0.000000000,1.000000000|1.000000000,0.000000000,0.000000000' +
+        '|20.000000000|10.000000000|0.000000000|2.000000000)]' +
+        ';direction=0.000000000,0.000000000,1.000000000;distance=2.000000000}',
+    );
+  });
+
+  it('スプラインの材料の文字列(点の並び・通過点/制御点・閉じるかが混ざる)', () => {
+    expect(keyMaterialText(extrude(2, [SPLINE]))).toBe(
+      'extrude{profile=1:[spline(interpolate|false|3:[0.000000000,0.000000000,0.000000000,' +
+        '10.000000000,5.000000000,0.000000000,20.000000000,0.000000000,0.000000000])]' +
+        ';direction=0.000000000,0.000000000,1.000000000;distance=2.000000000}',
+    );
+  });
+
+  it('長軸と短軸を入れ替えると違う鍵になる(同じ 2 つの数でも形が違う)', () => {
+    const swapped: KeyEllipse = { ...ELLIPSE, majorRadius: 10, minorRadius: 20 };
+    expect(cacheKeyFor(extrude(2, [ELLIPSE]))).not.toBe(cacheKeyFor(extrude(2, [swapped])));
+  });
+
+  it('通過点と制御点、開いた曲線と閉じた曲線は別の鍵になる', () => {
+    const asControl: KeySpline = { ...SPLINE, mode: 'control' };
+    const asClosed: KeySpline = { ...SPLINE, closed: true };
+    const base = cacheKeyFor(extrude(2, [SPLINE]));
+    expect(cacheKeyFor(extrude(2, [asControl]))).not.toBe(base);
+    expect(cacheKeyFor(extrude(2, [asClosed]))).not.toBe(base);
+  });
+
+  it('点の並び順が違えば違う鍵になる(曲線の向きが変わるため)', () => {
+    const reversed: KeySpline = { ...SPLINE, points: [...SPLINE.points].reverse() };
+    expect(cacheKeyFor(extrude(2, [SPLINE]))).not.toBe(cacheKeyFor(extrude(2, [reversed])));
   });
 });
 

@@ -12,7 +12,9 @@ import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.j
 import { recomputeSketch, reevaluateDocument } from './recomputeSketch.js';
 import type {
   ResolvedArc,
+  ResolvedEllipse,
   ResolvedFace,
+  ResolvedSpline,
   SketchDocument,
   SketchFaceMesh,
   SketchFeature,
@@ -356,5 +358,145 @@ describe('カーネルへの詰め替え', () => {
     expect(request.id).toBe('f1');
     expect(request.curves).toHaveLength(2);
     expect(request.curves[0]).toEqual({ kind: 'segment', from: [0, 0, 0], to: [10, 0, 0] });
+  });
+
+  it('全周の楕円は開始角・終了角を渡さない(カーネルが全周として作る、FR-318)', () => {
+    const full: ResolvedEllipse = {
+      kind: 'ellipse',
+      featureId: 'e1',
+      center: [1, 2, 3],
+      normal: [0, 0, 1],
+      majorAxis: [1, 0, 0],
+      majorRadius: 20,
+      minorRadius: 10,
+      startAngle: 0,
+      endAngle: 2 * Math.PI,
+    };
+
+    expect(toCurveSpec(full)).toEqual({
+      kind: 'ellipse',
+      center: [1, 2, 3],
+      normal: [0, 0, 1],
+      majorAxis: [1, 0, 0],
+      majorRadius: 20,
+      minorRadius: 10,
+    });
+  });
+
+  it('楕円弧はパラメータ角をそのまま渡す(方位角への読み替えは解決の段で済んでいる)', () => {
+    const quarter: ResolvedEllipse = {
+      kind: 'ellipse',
+      featureId: 'e1',
+      center: [0, 0, 0],
+      normal: [0, 0, 1],
+      majorAxis: [1, 0, 0],
+      majorRadius: 20,
+      minorRadius: 10,
+      startAngle: 0,
+      endAngle: Math.PI / 2,
+    };
+
+    expect(toCurveSpec(quarter)).toEqual({
+      kind: 'ellipse',
+      center: [0, 0, 0],
+      normal: [0, 0, 1],
+      majorAxis: [1, 0, 0],
+      majorRadius: 20,
+      minorRadius: 10,
+      startAngle: 0,
+      endAngle: Math.PI / 2,
+    });
+  });
+
+  it('スプラインは点の並び・通過点/制御点・閉じるかをそのまま渡す(FR-317)', () => {
+    const spline: ResolvedSpline = {
+      kind: 'spline',
+      featureId: 'sp1',
+      mode: 'interpolate',
+      points: [
+        [0, 0, 0],
+        [10, 5, 0],
+        [20, 0, 0],
+      ],
+      closed: true,
+    };
+
+    expect(toCurveSpec(spline)).toEqual({
+      kind: 'spline',
+      mode: 'interpolate',
+      points: [
+        [0, 0, 0],
+        [10, 5, 0],
+        [20, 0, 0],
+      ],
+      closed: true,
+    });
+  });
+});
+
+describe('楕円・スプラインの式の評価し直し(FR-206、タスク5)', () => {
+  it('楕円の 5 つの式と、スプラインの点の座標が変数の変更に追従する', () => {
+    const document = documentOf(
+      {
+        id: 'e1',
+        name: '楕円1',
+        planeId: 'xy',
+        kind: 'ellipse',
+        center: {
+          mode: 'relative',
+          base: { kind: 'origin' },
+          dx: expressionOf('w', 0),
+          dy: expressionOf('0', 0),
+          dz: expressionOf('0', 0),
+        },
+        majorRadius: expressionOf('w*4', 0),
+        minorRadius: expressionOf('w*2', 0),
+        rotation: expressionOf('w', 0),
+        startAngle: expressionOf('0', 0),
+        endAngle: expressionOf('w*72', 0),
+        construction: false,
+      },
+      {
+        id: 'sp1',
+        name: 'スプライン1',
+        planeId: 'xy',
+        kind: 'spline',
+        mode: 'interpolate',
+        points: [
+          absoluteCoordinate(0, 0, 0),
+          {
+            mode: 'relative',
+            base: { kind: 'previous' },
+            dx: expressionOf('w*2', 0),
+            dy: expressionOf('w', 0),
+            dz: expressionOf('0', 0),
+          },
+        ],
+        closed: false,
+        construction: false,
+      },
+    );
+    const updated = reevaluateDocument(document, new Map([['w', 5]]));
+
+    const ellipse = updated.features[0];
+    if (ellipse.kind === 'ellipse' && ellipse.center.mode === 'relative') {
+      expect(ellipse.center.dx.value).toBe(5);
+      expect(ellipse.majorRadius.value).toBe(20);
+      expect(ellipse.minorRadius.value).toBe(10);
+      expect(ellipse.rotation.value).toBe(5);
+      expect(ellipse.endAngle.value).toBe(360);
+      // 式の文字列は変えない(FR-202)。
+      expect(ellipse.majorRadius.source).toBe('w*4');
+    }
+    const spline = updated.features[1];
+    if (spline.kind === 'spline') {
+      const second = spline.points[1];
+      expect(second.mode).toBe('relative');
+      if (second.mode === 'relative') {
+        expect(second.dx.value).toBe(10);
+        expect(second.dy.value).toBe(5);
+        expect(second.dx.source).toBe('w*2');
+      }
+    }
   });
 });

@@ -149,6 +149,22 @@ function reevaluateFeature(
         center2: reevaluateCoordinate(feature.center2, variables),
         width: reevaluate(feature.width, variables),
       };
+    case 'ellipse':
+      return {
+        ...feature,
+        center: reevaluateCoordinate(feature.center, variables),
+        majorRadius: reevaluate(feature.majorRadius, variables),
+        minorRadius: reevaluate(feature.minorRadius, variables),
+        rotation: reevaluate(feature.rotation, variables),
+        startAngle: reevaluate(feature.startAngle, variables),
+        endAngle: reevaluate(feature.endAngle, variables),
+      };
+    case 'spline':
+      // スプラインが持つ式は点の座標だけ(通過点・制御点とも同じ扱い)。
+      return {
+        ...feature,
+        points: feature.points.map((input) => reevaluateCoordinate(input, variables)),
+      };
   }
 }
 

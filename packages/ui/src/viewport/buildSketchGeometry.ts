@@ -82,6 +82,8 @@ export const EMPTY_RESOLVED_SKETCH: ResolvedSketch = {
   points: [],
   segments: [],
   arcs: [],
+  ellipses: [],
+  splines: [],
   faces: [],
   errors: [],
 };

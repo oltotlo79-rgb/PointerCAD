@@ -70,6 +70,8 @@ const SKETCH: ResolvedSketch = {
   ],
   segments: [SEGMENT],
   arcs: [QUARTER_ARC],
+  ellipses: [],
+  splines: [],
   faces: [POINT_FACE],
   errors: [],
 };

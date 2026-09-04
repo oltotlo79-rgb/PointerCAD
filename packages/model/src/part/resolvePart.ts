@@ -34,7 +34,12 @@
 import type { ExpressionValue } from '@pointercad/expression';
 
 import { degreesToRadians } from '../sketch/planeMath.js';
-import { arcPointAt, fitPlaneNormal, resolveSketch } from '../sketch/resolveSketch.js';
+import {
+  arcPointAt,
+  ellipsePointAt,
+  fitPlaneNormal,
+  resolveSketch,
+} from '../sketch/resolveSketch.js';
 import type { ResolvedCurve, ResolvedFace, ResolvedSketch } from '../sketch/types.js';
 import {
   addVec3,
@@ -355,24 +360,50 @@ function negateVec3(vector: Vec3): Vec3 {
  * (resolveSketch.ts の curveSamplePoints と同じ理由。あちらは非公開なのでここに置く)。
  */
 function curveSamplePoints(curve: ResolvedCurve): readonly Vec3[] {
-  if (curve.kind === 'segment') {
-    return [curve.from, curve.to];
+  switch (curve.kind) {
+    case 'segment':
+      return [curve.from, curve.to];
+    case 'arc': {
+      const span = curve.endAngle - curve.startAngle;
+      const samples: Vec3[] = [curve.center];
+      for (let index = 0; index < ARC_PLANE_SAMPLES; index += 1) {
+        samples.push(
+          arcPointAt(curve, curve.startAngle + (span * index) / (ARC_PLANE_SAMPLES - 1)),
+        );
+      }
+      return samples;
+    }
+    case 'ellipse': {
+      const span = curve.endAngle - curve.startAngle;
+      const samples: Vec3[] = [curve.center];
+      for (let index = 0; index < ARC_PLANE_SAMPLES; index += 1) {
+        samples.push(
+          ellipsePointAt(curve, curve.startAngle + (span * index) / (ARC_PLANE_SAMPLES - 1)),
+        );
+      }
+      return samples;
+    }
+    case 'spline':
+      // 極は点のアフィン結合なので、点が乗る平面に曲線も必ず乗る(resolveSketch と同じ理由)。
+      return curve.points;
   }
-  const span = curve.endAngle - curve.startAngle;
-  const samples: Vec3[] = [curve.center];
-  for (let index = 0; index < ARC_PLANE_SAMPLES; index += 1) {
-    samples.push(arcPointAt(curve, curve.startAngle + (span * index) / (ARC_PLANE_SAMPLES - 1)));
-  }
-  return samples;
 }
 
 /** 曲線をベクトルぶん平行移動する(押し出しの「両側へ」に使う、§0.a-0.8)。 */
 export function translateCurve(curve: ResolvedCurve, offset: Vec3): ResolvedCurve {
-  if (curve.kind === 'segment') {
-    return { ...curve, from: addVec3(curve.from, offset), to: addVec3(curve.to, offset) };
+  switch (curve.kind) {
+    case 'segment':
+      return { ...curve, from: addVec3(curve.from, offset), to: addVec3(curve.to, offset) };
+    case 'arc':
+      // 円弧は中心だけを動かす。法線・第1軸・半径・角度は平行移動で変わらない。
+      return { ...curve, center: addVec3(curve.center, offset) };
+    case 'ellipse':
+      // 楕円も同じく中心だけ。長軸の向き・2 つの半径・角度は平行移動で変わらない。
+      return { ...curve, center: addVec3(curve.center, offset) };
+    case 'spline':
+      // スプラインは形が点の並びで決まるので、点を全部動かす。
+      return { ...curve, points: curve.points.map((point) => addVec3(point, offset)) };
   }
-  // 円弧は中心だけを動かす。法線・第1軸・半径・角度は平行移動で変わらない。
-  return { ...curve, center: addVec3(curve.center, offset) };
 }
 
 /** 回転軸を解決する。world 軸は原点+単位ベクトル、スケッチの線分は始点+向き(§0.a-0.9)。 */
@@ -1494,18 +1525,38 @@ function toKeyTransform(transform: RigidTransform): KeyTransform {
  * 材料の型が「鍵に混ぜる欄」の定義そのものであり、偶然の構造の一致に頼らないため。
  */
 function toKeyCurve(curve: ResolvedCurve): KeyCurve {
-  if (curve.kind === 'segment') {
-    return { kind: 'segment', from: toKeyVec3(curve.from), to: toKeyVec3(curve.to) };
+  switch (curve.kind) {
+    case 'segment':
+      return { kind: 'segment', from: toKeyVec3(curve.from), to: toKeyVec3(curve.to) };
+    case 'arc':
+      return {
+        kind: 'arc',
+        center: toKeyVec3(curve.center),
+        normal: toKeyVec3(curve.normal),
+        xAxis: toKeyVec3(curve.xAxis),
+        radius: curve.radius,
+        startAngle: curve.startAngle,
+        endAngle: curve.endAngle,
+      };
+    case 'ellipse':
+      return {
+        kind: 'ellipse',
+        center: toKeyVec3(curve.center),
+        normal: toKeyVec3(curve.normal),
+        majorAxis: toKeyVec3(curve.majorAxis),
+        majorRadius: curve.majorRadius,
+        minorRadius: curve.minorRadius,
+        startAngle: curve.startAngle,
+        endAngle: curve.endAngle,
+      };
+    case 'spline':
+      return {
+        kind: 'spline',
+        mode: curve.mode,
+        points: curve.points.map((point) => toKeyVec3(point)),
+        closed: curve.closed,
+      };
   }
-  return {
-    kind: 'arc',
-    center: toKeyVec3(curve.center),
-    normal: toKeyVec3(curve.normal),
-    xAxis: toKeyVec3(curve.xAxis),
-    radius: curve.radius,
-    startAngle: curve.startAngle,
-    endAngle: curve.endAngle,
-  };
 }
 
 /** 1段ぶんの鍵の材料(§0.a-0.20)。名前・抑制・色は混ぜない(形が変わらないため)。 */

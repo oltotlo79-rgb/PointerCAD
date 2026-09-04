@@ -31,11 +31,12 @@ export {
   WORK_PLANE_IDS, WORK_PLANES, worldToPlane,
 } from './sketch/planeMath.js';
 export type {
-  CoordinateInput, PointReference, ResolvedArc, ResolvedCurve, ResolvedFace,
-  ResolvedPoint, ResolvedSegment, ResolvedSketch, SketchArcFeature, SketchDocument,
-  SketchElementRef, SketchError, SketchErrorCode, SketchFaceFeature, SketchFaceMesh,
-  SketchFeature, SketchFeatureKind, SketchLineFeature, SketchMesh, SketchPointArrayFeature,
-  SketchPointFeature, SketchPolygonFeature, SketchRectangleFeature, SketchSlotFeature,
+  CoordinateInput, PointReference, ResolvedArc, ResolvedCurve, ResolvedEllipse, ResolvedFace,
+  ResolvedPoint, ResolvedSegment, ResolvedSketch, ResolvedSpline, SketchArcFeature, SketchDocument,
+  SketchElementRef, SketchEllipseFeature, SketchError, SketchErrorCode, SketchFaceFeature,
+  SketchFaceMesh, SketchFeature, SketchFeatureKind, SketchLineFeature, SketchMesh,
+  SketchPointArrayFeature, SketchPointFeature, SketchPolygonFeature, SketchRectangleFeature,
+  SketchSlotFeature, SketchSplineFeature,
 } from './sketch/types.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
@@ -46,9 +47,14 @@ export {
   resolveCoordinate, resolvePointReference, vertexKey,
 } from './sketch/resolveCoordinate.js';
 export {
-  arcPointAt, curveEnd, curveStart, fitPlaneNormal, isFullCircle, isPlanar,
-  MAX_POINT_ARRAY_COUNT, resolveSketch,
+  arcPointAt, azimuthToEllipseParameter, curveEnd, curveStart, ellipsePointAt, fitPlaneNormal,
+  isFullCircle, isFullEllipse, isPlanar, MAX_POINT_ARRAY_COUNT, resolveSketch,
 } from './sketch/resolveSketch.js';
+export type { SplineCurveData } from './sketch/splineMath.js';
+export {
+  hasDuplicateSplinePoint, MAX_SPLINE_POINTS, MIN_CLOSED_SPLINE_POINTS, MIN_SPLINE_POINTS,
+  sampleSpline, sampleSplineCurve, splineCurveData, splineDegree, SPLINE_SEGMENTS_PER_SPAN,
+} from './sketch/splineMath.js';
 export type { SketchRecomputeResult } from './sketch/recomputeSketch.js';
 export { recomputeSketch, reevaluateDocument } from './sketch/recomputeSketch.js';
 export type { MetricThreadSize, ThreadSeries } from './thread/metricThread.js';
@@ -83,8 +89,8 @@ export {
 } from './part/createPartDocument.js';
 export type {
   BooleanKeyMaterial, ChamferKeyMaterial, ExtrudeKeyMaterial, FilletKeyMaterial, HoleKeyMaterial,
-  KeyArc, KeyCurve, KeySegment, KeySubShape, KeyTransform, KeyVec3, RevolveKeyMaterial,
-  SewKeyMaterial, SolidStepKeyMaterial, SpringKeyMaterial, ThreadKeyMaterial,
+  KeyArc, KeyCurve, KeyEllipse, KeySegment, KeySpline, KeySubShape, KeyTransform, KeyVec3,
+  RevolveKeyMaterial, SewKeyMaterial, SolidStepKeyMaterial, SpringKeyMaterial, ThreadKeyMaterial,
 } from './part/cacheKey.js';
 export { cacheKeyFor, hash64, KEY_DECIMALS } from './part/cacheKey.js';
 export type {

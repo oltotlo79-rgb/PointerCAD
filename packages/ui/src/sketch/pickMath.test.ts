@@ -20,6 +20,8 @@ const SKETCH: ResolvedSketch = {
       radius: 10, startAngle: 0, endAngle: Math.PI / 2,
     },
   ],
+  ellipses: [],
+  splines: [],
   faces: [
     {
       featureId: 'f1',

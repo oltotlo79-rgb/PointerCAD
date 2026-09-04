@@ -56,7 +56,40 @@ export interface ArcSpec {
   readonly endAngle: number;
 }
 
-export type CurveSpec = SegmentSpec | ArcSpec;
+/**
+ * 楕円・楕円弧(FR-318)。欄の意味は `occt/makeEllipseEdge.ts` の `EllipseSpec` と同じで、
+ * 判別のための `kind` だけを足した形(そのまま `makeEllipseEdge` へ渡せる)。
+ *
+ * **`startAngle` / `endAngle` は `gp_Elips` の径数方程式のパラメータ角**(ラジアン)で、
+ * 中心から見た幾何の方位角ではない(`makeEllipseEdge.ts` の注釈)。方位角からの変換は
+ * model 側(`resolveSketch.ts` の `azimuthToEllipseParameter`)の担当。
+ * 全周の楕円は両方を省く(片方だけの指定は認めない)。
+ */
+export interface EllipseCurveSpec {
+  readonly kind: 'ellipse';
+  readonly center: Vec3Tuple;
+  readonly normal: Vec3Tuple;
+  /** 長軸方向(単位ベクトル、normal に直交)。パラメータ角 0 はこの向き。 */
+  readonly majorAxis: Vec3Tuple;
+  readonly majorRadius: number;
+  readonly minorRadius: number;
+  readonly startAngle?: number;
+  readonly endAngle?: number;
+}
+
+/**
+ * スプライン(FR-317)。欄の意味は `occt/makeSplineEdge.ts` の `SplineSpec` と同じで、
+ * 判別のための `kind` だけを足した形(そのまま `makeSplineEdge` へ渡せる)。
+ * `closed` が true なら閉じた曲線で、**閉じるための重複点は入れない**。
+ */
+export interface SplineCurveSpec {
+  readonly kind: 'spline';
+  readonly mode: 'interpolate' | 'control';
+  readonly points: readonly Vec3Tuple[];
+  readonly closed: boolean;
+}
+
+export type CurveSpec = SegmentSpec | ArcSpec | EllipseCurveSpec | SplineCurveSpec;
 
 /** 閉ループ 1 本から平面の面を 1 枚作る依頼(FR-309)。 */
 export interface PlanarFaceRequest {

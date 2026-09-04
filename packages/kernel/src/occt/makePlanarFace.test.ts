@@ -320,3 +320,56 @@ describe('面を張れない輪郭は理由つきで断る(FR-504、NFR-RE-1)', 
     ).toThrow('輪郭が自分自身と交わっているため、面を張れませんでした。');
   });
 });
+
+describe('楕円・スプラインを境界にした面(P4 タスク5 の CurveSpec 拡張、FR-317・FR-318)', () => {
+  it('全周の楕円 1 本で面が張れ、面積が π·a·b になる', () => {
+    const handle = makePlanarFace(
+      oc,
+      [
+        {
+          kind: 'ellipse',
+          center: [0, 0, 0],
+          normal: [0, 0, 1],
+          majorAxis: [1, 0, 0],
+          majorRadius: 20,
+          minorRadius: 10,
+        },
+      ],
+      { linearDeflection: 0.001 },
+    );
+    try {
+      const mesh = tessellate(oc, handle.face, { linearDeflection: 0.001 });
+      // π·20·10 = 628.3185307179587。三角形分割は内側へ寄るので少しだけ小さく出る。
+      expect(meshArea(mesh.positions, mesh.indices)).toBeCloseTo(628.318530718, 1);
+      expectBoundaryOnPlane(handle.boundaryPositions, [0, 0, 1]);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('閉じた通過点スプライン 1 本で面が張れる(4 点の輪)', () => {
+    const handle = makePlanarFace(oc, [
+      {
+        kind: 'spline',
+        mode: 'interpolate',
+        closed: true,
+        points: [
+          [10, 0, 0],
+          [0, 10, 0],
+          [-10, 0, 0],
+          [0, -10, 0],
+        ],
+      },
+    ]);
+    try {
+      const mesh = tessellate(oc, handle.face, { linearDeflection: 0.001 });
+      // 半径 10 の円に近い形なので、面積は π·10² = 314.159 のあたりに収まる。
+      const area = meshArea(mesh.positions, mesh.indices);
+      expect(area).toBeGreaterThan(280);
+      expect(area).toBeLessThan(340);
+      expectBoundaryOnPlane(handle.boundaryPositions, [0, 0, 1]);
+    } finally {
+      handle.delete();
+    }
+  });
+});

@@ -223,6 +223,13 @@ export interface StatusInput {
    * 足りないときの案内を差し込んだ文になるので文言キーではなく組み立て済みの文で受け取る。
    */
   readonly referenceErrorMessage?: string | null;
+  /**
+   * 原点を移したときの一言(FR-331、P4 タスク35b)。`editNoticeKey` と同じ「うまくいった
+   * ときの知らせ」だが、もとの原点の座標の式を差し込んだ文になるので組み立て済みの文で
+   * 受け取る。省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)を
+   * そのまま通すため。
+   */
+  readonly originNoticeMessage?: string | null;
   /** 再計算そのものが投げた理由。 */
   readonly errorMessage: string | null;
   /** 部品まるごとの再計算で集めた失敗(FR-504)。 */
@@ -466,6 +473,7 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * 4. 中止の知らせ … 失敗ではないので赤くしない(NFR-PF-4)。
  * 5. 進み具合 … 長い計算のあいだだけ(NFR-PF-4)。
  * 5.5. 整形系の道具がうまくいったときの案内(FR-323。赤くしない)。
+ * 5.6. 原点を移したときの一言(FR-331。赤くしない)。
  * 6. 保存できたなどの知らせ(FR-806)。
  * 7. 案内 … 計算中の札、吸着の案内、加工の選択が進んだ具合、道具ごとの次の一手。
  *
@@ -519,6 +527,10 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   if (input.editNoticeKey !== undefined && input.editNoticeKey !== null) {
     // 断りではないので赤くしない(FR-323 の「面の境界を入れ直してください」の案内)。
     return { kind: 'saved', text: t(input.editNoticeKey), hint: null, progress: null };
+  }
+  if (input.originNoticeMessage !== undefined && input.originNoticeMessage !== null) {
+    // 原点を移したときの一言(FR-331)。これも断りではないので赤くしない。
+    return { kind: 'saved', text: input.originNoticeMessage, hint: null, progress: null };
   }
   if (input.fileMessage !== null) {
     return { kind: 'saved', text: t(input.fileMessage.key), hint: null, progress: null };

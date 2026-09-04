@@ -38,6 +38,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/reference-geometry.md',
   },
   {
+    id: 'origin',
+    title: '原点を置き直す',
+    path: 'docs/ja/origin.md',
+  },
+  {
     id: 'edit-curves',
     title: 'オフセット・トリム・延長',
     path: 'docs/ja/edit-curves.md',
@@ -51,6 +56,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: 'copy-array',
     title: 'ミラー・複写・並べる',
     path: 'docs/ja/copy-array.md',
+  },
+  {
+    id: 'project-intersect',
+    title: '立体から線を取り込む(投影・断面)',
+    path: 'docs/ja/project-intersect.md',
   },
   { id: 'snap', title: '点にぴったり合わせる(吸着)', path: 'docs/ja/snap.md' },
   { id: 'face-and-color', title: '面を張る・色を変える', path: 'docs/ja/face-and-color.md' },

@@ -359,6 +359,14 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
       return 'edge';
     case 'referencePoint':
       return 'vertex';
+    /*
+      投影(FR-325、P4 タスク27)。写せるのは面の外周と辺の 2 通りで、板の上面・穴の丸い面の
+      ように「面の外周をまるごと」写す使い方のほうが多いので既定は面にする。辺 1 本だけを
+      写したいときは `2` キーか帯の札で「辺」へ切り替える(基準ジオメトリと同じ考え方)。
+      断面(交差)は立体そのものを選ぶ道具なので `body` のまま(既定の分岐へ落ちる)。
+    */
+    case 'projectedCurve':
+      return 'face';
     default:
       return 'body';
   }

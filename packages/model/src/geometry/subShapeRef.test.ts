@@ -6,8 +6,7 @@ import {
   isSameSubShape,
   subShapeKindOf,
 } from './subShapeRef.js';
-// 型はタスク13 で part/types.ts(保存形の置き場)へ移した。道具だけが subShapeRef.ts に残る。
-import type { SubShapeFingerprint, SubShapeRef } from './types.js';
+import type { SubShapeFingerprint, SubShapeRef } from './subShapeRef.js';
 
 /** 面の指紋の既定値(計画書 §2.2.3 の検算表と同じ箱: 40×30 を Z へ10押し出した上面)。 */
 function faceRef(

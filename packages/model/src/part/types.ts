@@ -16,8 +16,14 @@
 
 import type { ExpressionValue } from '@pointercad/expression';
 
+import type {
+  EdgeCurveKind,
+  FaceSurfaceKind,
+  SubShapeFingerprint,
+  SubShapeKind,
+  SubShapeRef,
+} from '../geometry/subShapeRef.js';
 import type { SketchDocument } from '../sketch/types.js';
-import type { Vec3 } from '../sketch/vec3.js';
 import type { ThreadSeries } from '../thread/metricThread.js';
 
 /** スケッチの面フィーチャー1枚への参照。断面に使う(§0.a-0.7、§0.a-0.8)。 */
@@ -46,63 +52,18 @@ export interface SketchPointRef {
   readonly pointFeatureId: string;
 }
 
-/** 部分形状の種類(P3 計画書 §2.2.2)。 */
-export type SubShapeKind = 'face' | 'edge' | 'vertex';
-
-/** 面の曲面の種類。 */
-export type FaceSurfaceKind = 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus' | 'other';
-
-/** 辺の曲線の種類。 */
-export type EdgeCurveKind = 'line' | 'circle' | 'ellipse' | 'other';
-
 /**
- * 部分形状の指紋(P3 計画書 §2.2.2)。保存される。
- * 「形が同じなら必ず同じ値になるもの」だけを持つ。三角形の数・色・隣接する面の一覧は
- * 形が変わると壊れやすく費用も高いため入れない(§2.2.2「入れないもの」)。
- */
-export type SubShapeFingerprint =
-  | {
-      readonly kind: 'face';
-      readonly surfaceKind: FaceSurfaceKind;
-      /** 面積(mm²)。 */
-      readonly area: number;
-      /** 重心(mm)。 */
-      readonly position: Vec3;
-      /** 平面は法線、円柱・円錐は軸。軸が無い形(自由曲面)は null。 */
-      readonly axis: Vec3 | null;
-      /** 円柱・円錐・球のみ。それ以外は null。 */
-      readonly radius: number | null;
-    }
-  | {
-      readonly kind: 'edge';
-      readonly curveKind: EdgeCurveKind;
-      /** 長さ(mm)。 */
-      readonly length: number;
-      /** 中点(mm)。 */
-      readonly position: Vec3;
-      /** 円は軸、直線は向き。それ以外(楕円・その他)は null。 */
-      readonly axis: Vec3 | null;
-      /** 円のみ。それ以外は null。 */
-      readonly radius: number | null;
-    }
-  | { readonly kind: 'vertex'; readonly position: Vec3 };
-
-/**
- * ボディの部分形状(面・辺・頂点)への参照(P3 計画書 §2.2.2)。保存される。
+ * 部分形状(面・辺・頂点)への参照一式(`SubShapeKind` / `FaceSurfaceKind` / `EdgeCurveKind` /
+ * `SubShapeFingerprint` / `SubShapeRef`)。
  *
- * B-rep の面・辺には名前が無く並び順しか手がかりが無いので(トポロジカルネーミング問題)、
- * 選んだ瞬間の指紋をそのまま保存し、再計算のたびにカーネルが `bodyFeatureId` の指すボディの
- * 中から指紋に最も近い部分形状を選び直す。見つからなければ理由を出して断る(FR-504)。
- * 指紋を使う道具(種類の判定・同一判定・重複除去・鍵の材料への文字列化)は
- * `part/subShapeRef.ts` にある。
+ * P4(docs/plans/P4-スケッチ拡張.md §0.a-0.7、§2.6、タスク3)で、3D スケッチ(FR-330)の点が
+ * 立体の頂点を参照できるようにするため、`part` にも `sketch` にも依存しない中立の置き場
+ * `geometry/subShapeRef.ts` へ実体を移した(このファイルは `sketch/types.ts` を import して
+ * おり、そこへ型を置くと `part → sketch → part` の循環になるため)。ここでは既存コード
+ * (`resolvePart.ts`・`kernelBridge.ts` 等)の import 文 `from './types.js'` を変えずに済ませる
+ * ため、実体を re-export するだけにする。
  */
-export interface SubShapeRef {
-  /** そのボディを作ったフィーチャーの id。 */
-  readonly bodyFeatureId: string;
-  /** 選んだときの通し番号(`TopExp.MapShapes_2` の順で数えた 0 始まりの番号)。 */
-  readonly index: number;
-  readonly fingerprint: SubShapeFingerprint;
-}
+export type { EdgeCurveKind, FaceSurfaceKind, SubShapeFingerprint, SubShapeKind, SubShapeRef };
 
 export type SolidFeatureKind =
   | 'extrude'

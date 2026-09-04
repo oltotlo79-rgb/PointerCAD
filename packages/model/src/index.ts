@@ -57,16 +57,19 @@ export {
   metricThreadPitch, threadMinorDiameter, threadPitchDiameter, threadTriangleHeight,
 } from './thread/metricThread.js';
 export type {
-  BooleanFeature, BooleanOperation, ChamferFeature, ChamferSize, EdgeCurveKind, ExtrudeFeature,
-  FaceSurfaceKind, FilletFeature, HoleDepth, HoleFeature, PartDocument, PatternDirection,
+  BooleanFeature, BooleanOperation, ChamferFeature, ChamferSize, ExtrudeFeature,
+  FilletFeature, HoleDepth, HoleFeature, PartDocument, PatternDirection,
   PatternFeature, PatternPlacement, RevolveAxis, RevolveFeature, SewFeature, SketchFaceRef,
   SketchLineRef, SketchPointRef, SolidFeature, SolidFeatureKind, SpringDerived, SpringFeature,
-  SpringHandedness, SubShapeFingerprint, SubShapeKind, SubShapeRef, ThreadHoleFeature,
+  SpringHandedness, ThreadHoleFeature,
   ThreadRepresentation,
 } from './part/types.js';
+export type {
+  EdgeCurveKind, FaceSurfaceKind, SubShapeFingerprint, SubShapeKind, SubShapeRef,
+} from './geometry/subShapeRef.js';
 export {
   dedupeSubShapeRefs, fingerprintKeyText, isSameSubShape, subShapeKindOf,
-} from './part/subShapeRef.js';
+} from './geometry/subShapeRef.js';
 export type { SolidLabelKey } from './part/createPartDocument.js';
 export {
   addSketch, appendSolid, consumedBodyIds, consumedTargetsOf, createEmptyPartDocument,

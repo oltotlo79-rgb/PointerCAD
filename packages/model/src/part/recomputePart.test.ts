@@ -212,6 +212,7 @@ function createFixture(): Fixture {
     kind: 'line',
     from: absoluteCoordinate(1, 2, 3),
     to: absoluteCoordinate(4, 6, 3),
+    construction: false,
   };
   const sketch = appendFeature(faceB.sketch, line);
   return {

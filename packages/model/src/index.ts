@@ -31,12 +31,12 @@ export {
   WORK_PLANE_IDS, WORK_PLANES, worldToPlane,
 } from './sketch/planeMath.js';
 export type {
-  CoordinateInput, PointReference, ResolvedArc, ResolvedCurve, ResolvedEllipse, ResolvedFace,
-  ResolvedPoint, ResolvedSegment, ResolvedSketch, ResolvedSpline, SketchArcFeature, SketchDocument,
-  SketchElementRef, SketchEllipseFeature, SketchError, SketchErrorCode, SketchFaceFeature,
-  SketchFaceMesh, SketchFeature, SketchFeatureKind, SketchLineFeature, SketchMesh,
-  SketchPointArrayFeature, SketchPointFeature, SketchPolygonFeature, SketchRectangleFeature,
-  SketchSlotFeature, SketchSplineFeature,
+  CoordinateInput, PointArrayLayout, PointReference, ResolvedArc, ResolvedCurve, ResolvedEllipse,
+  ResolvedFace, ResolvedPoint, ResolvedSegment, ResolvedSketch, ResolvedSpline, SketchArcFeature,
+  SketchDocument, SketchElementRef, SketchEllipseFeature, SketchError, SketchErrorCode,
+  SketchFaceFeature, SketchFaceMesh, SketchFeature, SketchFeatureKind, SketchLineFeature,
+  SketchMesh, SketchPointArrayFeature, SketchPointFeature, SketchPolygonFeature,
+  SketchRectangleFeature, SketchSlotFeature, SketchSplineFeature,
 } from './sketch/types.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,

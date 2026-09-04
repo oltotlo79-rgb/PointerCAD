@@ -179,10 +179,13 @@ function withPointArray(
     name: `点列-${id}`,
     planeId: DEFAULT_WORK_PLANE_ID,
     kind: 'pointArray',
-    base: absoluteCoordinate(0, 0, 0),
-    azimuth: ZERO,
-    spacing: expressionValueFromNumber(5),
-    count: expressionValueFromNumber(3),
+    layout: {
+      kind: 'linear',
+      base: absoluteCoordinate(0, 0, 0),
+      azimuth: ZERO,
+      spacing: expressionValueFromNumber(5),
+      count: expressionValueFromNumber(3),
+    },
   };
   return {
     document: replaceSketch(document, appendFeature(sketch, feature)),

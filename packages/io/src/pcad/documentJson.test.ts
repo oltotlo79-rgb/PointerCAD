@@ -1,6 +1,7 @@
 import {
   createEmptyPartDocument,
   PART_SCHEMA_VERSION,
+  resolveSketch,
   type PartDocument,
   type SketchDocument,
   type SketchFeature,
@@ -62,6 +63,7 @@ function richSketch(): SketchDocument {
           azimuth: ev('90', 90),
           elevation: ev('0', 0),
         },
+        construction: false,
       },
       {
         id: 'arc-1',
@@ -78,22 +80,26 @@ function richSketch(): SketchDocument {
         radius: ev('5*2', 10),
         startAngle: ev('0', 0),
         endAngle: ev('360', 360),
+        construction: false,
       },
       {
         id: 'pointArray-1',
         kind: 'pointArray',
         name: '点列1',
         planeId: 'yz',
-        base: {
-          mode: 'relative',
-          base: { kind: 'origin' },
-          dx: ev('0', 0),
-          dy: ev('0', 0),
-          dz: ev('0', 0),
+        layout: {
+          kind: 'linear',
+          base: {
+            mode: 'relative',
+            base: { kind: 'origin' },
+            dx: ev('0', 0),
+            dy: ev('0', 0),
+            dz: ev('0', 0),
+          },
+          azimuth: ev('45', 45),
+          spacing: ev('10', 10),
+          count: ev('4', 4),
         },
-        azimuth: ev('45', 45),
-        spacing: ev('10', 10),
-        count: ev('4', 4),
       },
       {
         id: 'face-1',
@@ -699,6 +705,193 @@ describe('楕円・スプラインの往復(P4 タスク5、FR-317・FR-318)', (
     expect(error.message).toContain('points');
   });
 });
+
+describe('点列の拡張・構築線の往復(P4 タスク6、FR-320・FR-327)', () => {
+  it('円周上の点列(layout.kind === "circular")が往復で一致する', () => {
+    const array: SketchFeature = {
+      id: 'pointArray-2',
+      kind: 'pointArray',
+      name: '点列2',
+      planeId: 'xy',
+      layout: {
+        kind: 'circular',
+        center: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+        radius: ev('10', 10),
+        count: ev('4', 4),
+      },
+    };
+    expect(roundTrip(documentWithSketchFeature(array)).sketches[0].features[0]).toEqual(array);
+  });
+
+  it('格子状の点列(layout.kind === "grid")が往復で一致する', () => {
+    const array: SketchFeature = {
+      id: 'pointArray-3',
+      kind: 'pointArray',
+      name: '点列3',
+      planeId: 'xy',
+      layout: {
+        kind: 'grid',
+        base: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+        rowAzimuth: ev('0', 0),
+        rowSpacing: ev('10', 10),
+        rowCount: ev('3', 3),
+        colAzimuth: ev('90', 90),
+        colSpacing: ev('5', 5),
+        colCount: ev('2', 2),
+      },
+    };
+    expect(roundTrip(documentWithSketchFeature(array)).sketches[0].features[0]).toEqual(array);
+  });
+
+  it('construction な線分・円弧が往復で一致する(FR-320)', () => {
+    const line: SketchFeature = {
+      id: 'line-9',
+      kind: 'line',
+      name: '線分9',
+      planeId: 'xy',
+      from: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      to: { mode: 'absolute', x: ev('10', 10), y: ev('0', 0), z: ev('0', 0) },
+      construction: true,
+    };
+    const arc: SketchFeature = {
+      id: 'arc-9',
+      kind: 'arc',
+      name: '円弧9',
+      planeId: 'xy',
+      center: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      radius: ev('5', 5),
+      startAngle: ev('0', 0),
+      endAngle: ev('90', 90),
+      construction: true,
+    };
+    expect(roundTrip(documentWithSketchFeature(line)).sketches[0].features[0]).toEqual(line);
+    expect(roundTrip(documentWithSketchFeature(arc)).sketches[0].features[0]).toEqual(arc);
+  });
+
+  it('点列の layout.kind が壊れていれば、その場所を添えて断る(FR-504、NFR-UX-5)', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'pointArray-1',
+              kind: 'pointArray',
+              name: '点列1',
+              planeId: 'xy',
+              layout: { kind: 'これはない' },
+            },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.message).toContain('layout');
+  });
+});
+
+describe(
+  '版3以前の前方互換(construction 無し・pointArray がフラット形式、' +
+    '統括の差し戻し 2026-09-04、要件§8・P3完了条件9)',
+  () => {
+    /** 版3の書き手が construction をまだ書いていなかった頃の線分。 */
+    const legacyLine = {
+      id: 'line-1',
+      kind: 'line',
+      name: '線分1',
+      planeId: 'xy',
+      from: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      to: { mode: 'absolute', x: ev('10', 10), y: ev('0', 0), z: ev('0', 0) },
+      // construction は無い(版3以前)。
+    };
+    /** layout を挟まない、版3以前のフラットな点列。 */
+    const legacyPointArray = {
+      id: 'pointArray-1',
+      kind: 'pointArray',
+      name: '点列1',
+      planeId: 'xy',
+      base: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      azimuth: ev('0', 0),
+      spacing: ev('10', 10),
+      count: ev('3', 3),
+    };
+
+    function legacyRawDocument(): Record<string, unknown> {
+      return rawDocument({
+        sketches: [
+          { id: 'sketch-1', name: 'スケッチ1', features: [legacyLine, legacyPointArray] },
+        ],
+      });
+    }
+
+    it('construction の無い線分は false として読める', () => {
+      const document = expectOk(parseDocument(rawFile({ document: legacyRawDocument() })));
+      const line = document.sketches[0].features[0];
+      if (line.kind !== 'line') {
+        throw new Error('線分のはず');
+      }
+      expect(line.construction).toBe(false);
+    });
+
+    it('layout の無い点列は直線状(linear)へ包み直して読める', () => {
+      const document = expectOk(parseDocument(rawFile({ document: legacyRawDocument() })));
+      const array = document.sketches[0].features[1];
+      if (array.kind !== 'pointArray') {
+        throw new Error('点列のはず');
+      }
+      expect(array.layout).toEqual({
+        kind: 'linear',
+        base: legacyPointArray.base,
+        azimuth: legacyPointArray.azimuth,
+        spacing: legacyPointArray.spacing,
+        count: legacyPointArray.count,
+      });
+    });
+
+    it('版3以前の読み込み結果は、新形式で書いた同じ内容と同じ解決結果になる', () => {
+      const legacyResult = expectOk(parseDocument(rawFile({ document: legacyRawDocument() })));
+      const modernDocument = rawDocument({
+        sketches: [
+          {
+            id: 'sketch-1',
+            name: 'スケッチ1',
+            features: [
+              { ...legacyLine, construction: false },
+              {
+                id: 'pointArray-1',
+                kind: 'pointArray',
+                name: '点列1',
+                planeId: 'xy',
+                layout: {
+                  kind: 'linear',
+                  base: legacyPointArray.base,
+                  azimuth: legacyPointArray.azimuth,
+                  spacing: legacyPointArray.spacing,
+                  count: legacyPointArray.count,
+                },
+              },
+            ],
+          },
+        ],
+      });
+      const modernResult = expectOk(parseDocument(rawFile({ document: modernDocument })));
+      expect(resolveSketch(legacyResult.sketches[0])).toEqual(
+        resolveSketch(modernResult.sketches[0]),
+      );
+    });
+
+    it('読み込んだ文書を書き出すと新形式(construction・layout あり)へ正規化される', () => {
+      const document = expectOk(parseDocument(rawFile({ document: legacyRawDocument() })));
+      const text = serializeDocument(document, { savedAt: SAVED_AT });
+      expect(text).toContain('"construction": false');
+      expect(text).toContain('"layout"');
+      // 正規化後は自分自身との往復でも文字列が変わらない(決定的、§0.a-0.2 と同じ確認)。
+      const again = serializeDocument(expectOk(parseDocument(text)), { savedAt: SAVED_AT });
+      expect(again).toBe(text);
+    });
+  },
+);
 
 describe('穴の深さ(HoleDepth)の往復(§0.a-0.11、§0.a-0.12)', () => {
   it('貫通(through)が往復で一致する', () => {

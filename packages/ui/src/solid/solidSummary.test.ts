@@ -79,6 +79,7 @@ const AXIS_LINE: SketchLineFeature = {
     y: expressionValueFromNumber(10),
     z: expressionValueFromNumber(0),
   },
+  construction: false,
 };
 
 const EXTRUDE: ExtrudeFeature = {

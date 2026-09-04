@@ -68,6 +68,7 @@ function addLine(sketch: SketchDocument, id: string, name: string = id): SketchD
     kind: 'line',
     from: { mode: 'absolute', x: expressionValueFromNumber(0), y: expressionValueFromNumber(0), z: expressionValueFromNumber(0) },
     to: { mode: 'absolute', x: expressionValueFromNumber(10), y: expressionValueFromNumber(0), z: expressionValueFromNumber(0) },
+    construction: false,
   });
 }
 
@@ -92,10 +93,13 @@ function addPointArray(sketch: SketchDocument, id: string, name: string = id): S
     name,
     planeId: 'xy',
     kind: 'pointArray',
-    base: absoluteCoordinate(0, 0, 0),
-    azimuth: expressionValueFromNumber(0),
-    spacing: expressionValueFromNumber(10),
-    count: expressionValueFromNumber(3),
+    layout: {
+      kind: 'linear',
+      base: absoluteCoordinate(0, 0, 0),
+      azimuth: expressionValueFromNumber(0),
+      spacing: expressionValueFromNumber(10),
+      count: expressionValueFromNumber(3),
+    },
   });
 }
 

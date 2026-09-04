@@ -62,6 +62,7 @@ const LINE: SketchLineFeature = {
     dy: expressionValueFromNumber(40),
     dz: expressionValueFromNumber(0),
   },
+  construction: false,
 };
 
 const ARC: SketchArcFeature = {
@@ -73,6 +74,7 @@ const ARC: SketchArcFeature = {
   radius: { source: '10*√2', value: 14.142135623730951, display: '14.1421356237' },
   startAngle: expressionValueFromNumber(0),
   endAngle: expressionValueFromNumber(90),
+  construction: false,
 };
 
 const POINT_ARRAY: SketchPointArrayFeature = {
@@ -80,10 +82,13 @@ const POINT_ARRAY: SketchPointArrayFeature = {
   name: '点列4',
   planeId: 'xy',
   kind: 'pointArray',
-  base: absolute(0, 0, 0),
-  azimuth: expressionValueFromNumber(0),
-  spacing: expressionValueFromNumber(10),
-  count: expressionValueFromNumber(3),
+  layout: {
+    kind: 'linear',
+    base: absolute(0, 0, 0),
+    azimuth: expressionValueFromNumber(0),
+    spacing: expressionValueFromNumber(10),
+    count: expressionValueFromNumber(3),
+  },
 };
 
 const FACE: SketchFaceFeature = {

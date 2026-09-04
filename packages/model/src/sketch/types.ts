@@ -80,6 +80,8 @@ export interface SketchLineFeature extends SketchFeatureBase {
   readonly kind: 'line';
   readonly from: CoordinateInput;
   readonly to: CoordinateInput;
+  /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
+  readonly construction: boolean;
 }
 
 export interface SketchArcFeature extends SketchFeatureBase {
@@ -89,14 +91,50 @@ export interface SketchArcFeature extends SketchFeatureBase {
   readonly startAngle: ExpressionValue;
   /** 開始角との差が ±360 なら全周の円になる(FR-305、§0.a-0.4)。 */
   readonly endAngle: ExpressionValue;
+  /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
+  readonly construction: boolean;
 }
 
+/**
+ * 点列の並べ方(FR-327、タスク6)。直線状(既存)に加え、円周上・格子状を持てる。
+ * P3 の `PatternPlacement`(直線/円形の discriminated union)と同じ形を流用する
+ * (§0.a-0.9)。
+ */
+export type PointArrayLayout =
+  | {
+      readonly kind: 'linear';
+      readonly base: CoordinateInput;
+      readonly azimuth: ExpressionValue;
+      readonly spacing: ExpressionValue;
+      readonly count: ExpressionValue;
+    }
+  | {
+      /** 中心・半径・個数で等角度に並べる。開始角は常に作図面の第1軸(角度 0)。 */
+      readonly kind: 'circular';
+      readonly center: CoordinateInput;
+      readonly radius: ExpressionValue;
+      readonly count: ExpressionValue;
+    }
+  | {
+      /** 基準点から行方向・列方向へ格子状に並べる。 */
+      readonly kind: 'grid';
+      readonly base: CoordinateInput;
+      readonly rowAzimuth: ExpressionValue;
+      readonly rowSpacing: ExpressionValue;
+      readonly rowCount: ExpressionValue;
+      readonly colAzimuth: ExpressionValue;
+      readonly colSpacing: ExpressionValue;
+      readonly colCount: ExpressionValue;
+    };
+
+/**
+ * 点列(FR-308、FR-327)。並べ方は `layout` の種類で分岐する(既存の直線状は
+ * `layout.kind === 'linear'` へ包み直した、P3までのデータとは保存形が変わる破壊的変更
+ * (§0.a-0.24。`.pcad` の版アップとタスク31 の変換で吸収する)。
+ */
 export interface SketchPointArrayFeature extends SketchFeatureBase {
   readonly kind: 'pointArray';
-  readonly base: CoordinateInput;
-  readonly azimuth: ExpressionValue;
-  readonly spacing: ExpressionValue;
-  readonly count: ExpressionValue;
+  readonly layout: PointArrayLayout;
 }
 
 /**
@@ -296,6 +334,8 @@ export type SketchErrorCode =
   | 'collinear'
   | 'tooFewPoints'
   | 'mixedBoundary'
+  /** 構築線(FR-320)を面の境界に選んだ(タスク6)。 */
+  | 'constructionElement'
   | 'kernelFailed';
 
 /** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */

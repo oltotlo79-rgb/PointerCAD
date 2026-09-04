@@ -138,6 +138,8 @@ function commitCoordinate(
         from: pendingStart,
         // 終点の基準は自分の始点。resolveSketch が線分の終点をそう解決する。
         to: rebase(coordinate, { kind: 'previous' }),
+        // 構築線(FR-320)を作る道具はタスク11・12 の範囲。ここでは既定の false を積む。
+        construction: false,
       });
       return { document: next, pendingStart: chaining ? continueFrom(id) : null };
     }
@@ -172,6 +174,8 @@ function commitShape(
         radius: values[0],
         startAngle: values[1],
         endAngle: values[2],
+        // 構築線(FR-320)を作る道具はタスク11・12 の範囲。ここでは既定の false を積む。
+        construction: false,
       });
       return { document: next, pendingStart: null };
     }
@@ -181,15 +185,19 @@ function commitShape(
         return { document, pendingStart: null };
       }
       // 欄の並びは「角度・間隔・個数」(numericInput.ts の SHAPE_FIELDS)。
+      // 円周上・格子状(FR-327)を作る道具はタスク11 の範囲。ここでは既定どおり直線状を積む。
       const next = appendFeature(document, {
         id: nextFeatureId(document, 'pointArray'),
         name: nextFeatureName(document, 'pointArray'),
         planeId,
         kind: 'pointArray',
-        base: pendingStart,
-        azimuth: values[0],
-        spacing: values[1],
-        count: values[2],
+        layout: {
+          kind: 'linear',
+          base: pendingStart,
+          azimuth: values[0],
+          spacing: values[1],
+          count: values[2],
+        },
       });
       return { document: next, pendingStart: null };
     }

@@ -45,6 +45,7 @@ function exampleDocument(): PartDocument {
               dy: { source: '0', value: 0, display: '0' },
               dz: { source: '0', value: 0, display: '0' },
             },
+            construction: false,
           },
           {
             id: 'face-1',
@@ -259,6 +260,80 @@ describe('他のアプリが作った ZIP の読み込み', () => {
     expect(expectOk(readPcadFile(zip)).savedAt).toBe(SAVED_AT);
   });
 });
+
+describe(
+  '版3以前の .pcad の読み込み(construction 無し・pointArray がフラット形式、' +
+    '統括の差し戻し 2026-09-04、要件§8・P3完了条件9)',
+  () => {
+    it('construction の無い線分・layout の無い点列を含む .pcad も読める', () => {
+      const legacyDocument = {
+        id: 'part-1',
+        name: '部品1',
+        schemaVersion: PART_SCHEMA_VERSION,
+        sketches: [
+          {
+            id: 'sketch-1',
+            name: 'スケッチ1',
+            features: [
+              {
+                id: 'line-1',
+                kind: 'line',
+                name: '線分1',
+                planeId: 'xy',
+                from: {
+                  mode: 'absolute',
+                  x: { source: '0', value: 0, display: '0' },
+                  y: { source: '0', value: 0, display: '0' },
+                  z: { source: '0', value: 0, display: '0' },
+                },
+                to: {
+                  mode: 'absolute',
+                  x: { source: '10', value: 10, display: '10' },
+                  y: { source: '0', value: 0, display: '0' },
+                  z: { source: '0', value: 0, display: '0' },
+                },
+                // construction は無い(版3以前)。
+              },
+              {
+                id: 'pointArray-1',
+                kind: 'pointArray',
+                name: '点列1',
+                planeId: 'xy',
+                // layout を挟まない、版3以前のフラットな形式。
+                base: {
+                  mode: 'absolute',
+                  x: { source: '0', value: 0, display: '0' },
+                  y: { source: '0', value: 0, display: '0' },
+                  z: { source: '0', value: 0, display: '0' },
+                },
+                azimuth: { source: '0', value: 0, display: '0' },
+                spacing: { source: '10', value: 10, display: '10' },
+                count: { source: '3', value: 3, display: '3' },
+              },
+            ],
+          },
+        ],
+        activeSketchId: 'sketch-1',
+        solids: [],
+      };
+      const zip = makeZip(
+        { [PCAD_DOCUMENT_ENTRY]: strToU8(envelopeText({ document: legacyDocument })) },
+        1,
+      );
+      const result = expectOk(readPcadFile(zip));
+      const line = result.document.sketches[0].features[0];
+      if (line.kind !== 'line') {
+        throw new Error('線分のはず');
+      }
+      expect(line.construction).toBe(false);
+      const array = result.document.sketches[0].features[1];
+      if (array.kind !== 'pointArray') {
+        throw new Error('点列のはず');
+      }
+      expect(array.layout.kind).toBe('linear');
+    });
+  },
+);
 
 describe('.pcad の断り方(FR-504、NFR-UX-5)', () => {
   it('空のバイト列は例外にせず理由を返す', () => {

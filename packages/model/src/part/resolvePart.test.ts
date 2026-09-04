@@ -180,6 +180,7 @@ function createFixture(): Fixture {
     kind: 'line',
     from: absoluteCoordinate(1, 2, 3),
     to: absoluteCoordinate(4, 6, 3),
+    construction: false,
   };
   const withLine = appendFeature(brokenFace.sketch, line);
   const centers = addPoints(withLine, [
@@ -191,10 +192,13 @@ function createFixture(): Fixture {
     name: nextFeatureName(centers.sketch, 'pointArray'),
     planeId: DEFAULT_WORK_PLANE_ID,
     kind: 'pointArray',
-    base: absoluteCoordinate(50, 0, 0),
-    azimuth: expressionValueFromNumber(0),
-    spacing: expressionValueFromNumber(5),
-    count: expressionValueFromNumber(3),
+    layout: {
+      kind: 'linear',
+      base: absoluteCoordinate(50, 0, 0),
+      azimuth: expressionValueFromNumber(0),
+      spacing: expressionValueFromNumber(5),
+      count: expressionValueFromNumber(3),
+    },
   };
   const sketch = appendFeature(centers.sketch, array);
   return {

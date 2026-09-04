@@ -22,6 +22,7 @@ import {
   type SketchFeature,
   type SketchFeatureKind,
   type SketchMesh,
+  type SketchPointArrayFeature,
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
@@ -152,6 +153,30 @@ export function featureErrorMessage(
   return found === undefined ? null : found.message;
 }
 
+/**
+ * 点列(FR-308、FR-327)のプロパティ欄。既存の直線状(`layout.kind === 'linear'`)は
+ * 従来どおりの欄をそのまま出す。円周上・格子状の欄の配線はタスク33(ui: ツリー・プロパティの
+ * 対応)の範囲(型の網羅性のためだけに空で満たす、矩形等の新図形と同じ扱い)。
+ */
+function summarizePointArray(
+  base: Omit<FeatureSummary, 'coordinates' | 'scalars'>,
+  feature: SketchPointArrayFeature,
+): FeatureSummary {
+  const layout = feature.layout;
+  if (layout.kind !== 'linear') {
+    return { ...base, coordinates: [], scalars: [] };
+  }
+  return {
+    ...base,
+    coordinates: [coordinateSummary('base', layout.base)],
+    scalars: [
+      field('azimuth', FIELD_LABEL_KEYS.azimuth, 'degree', layout.azimuth),
+      field('spacing', FIELD_LABEL_KEYS.spacing, 'mm', layout.spacing),
+      field('count', FIELD_LABEL_KEYS.count, 'count', layout.count),
+    ],
+  };
+}
+
 /** 要素 1 つの見え方をまとめる。ツリーの行とプロパティ欄の両方がこれを読む。 */
 export function summarizeFeature(
   feature: SketchFeature,
@@ -188,15 +213,7 @@ export function summarizeFeature(
         ],
       };
     case 'pointArray':
-      return {
-        ...base,
-        coordinates: [coordinateSummary('base', feature.base)],
-        scalars: [
-          field('azimuth', FIELD_LABEL_KEYS.azimuth, 'degree', feature.azimuth),
-          field('spacing', FIELD_LABEL_KEYS.spacing, 'mm', feature.spacing),
-          field('count', FIELD_LABEL_KEYS.count, 'count', feature.count),
-        ],
-      };
+      return summarizePointArray(base, feature);
     case 'face':
       // 面が持つのは境界と色だけ。数の欄は無い(FR-309、FR-310)。
       return { ...base, coordinates: [], scalars: [] };
@@ -238,9 +255,12 @@ function withCoordinate(
     const next = map(feature.center);
     return next === feature.center ? feature : { ...feature, center: next };
   }
-  if (feature.kind === 'pointArray' && slot === 'base') {
-    const next = map(feature.base);
-    return next === feature.base ? feature : { ...feature, base: next };
+  // 直線状・格子状の点列は基準点を「base」に持つ(円周上は「center」、§2.3)。
+  // タスク33 で全種の書き戻しを配線するまでは、既存どおり直線状だけを対象にする。
+  if (feature.kind === 'pointArray' && slot === 'base' && feature.layout.kind === 'linear') {
+    const layout = feature.layout;
+    const next = map(layout.base);
+    return next === layout.base ? feature : { ...feature, layout: { ...layout, base: next } };
   }
   // 知らない道筋なら何も変えない(黙って壊さない)。
   return feature;
@@ -314,15 +334,16 @@ export function setFeatureField(
       return { ...feature, endAngle: value };
     }
   }
-  if (feature.kind === 'pointArray') {
+  if (feature.kind === 'pointArray' && feature.layout.kind === 'linear') {
+    const layout = feature.layout;
     if (path === 'azimuth') {
-      return { ...feature, azimuth: value };
+      return { ...feature, layout: { ...layout, azimuth: value } };
     }
     if (path === 'spacing') {
-      return { ...feature, spacing: value };
+      return { ...feature, layout: { ...layout, spacing: value } };
     }
     if (path === 'count') {
-      return { ...feature, count: value };
+      return { ...feature, layout: { ...layout, count: value } };
     }
   }
   return feature;

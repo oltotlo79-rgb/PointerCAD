@@ -29,6 +29,7 @@ import {
   SPLINE_TOO_MANY_MESSAGE,
 } from './splineMath.js';
 import type {
+  PointArrayLayout,
   ResolvedArc,
   ResolvedCurve,
   ResolvedEllipse,
@@ -418,6 +419,192 @@ function resolveSlotCurves(
   return { ok: true, curves: [segmentTop, arcAtCenter2, segmentBottom, arcAtCenter1] };
 }
 
+type PointArrayOutcome =
+  | { readonly ok: true; readonly points: readonly ResolvedPoint[] }
+  | { readonly ok: false; readonly error: SketchError };
+
+/** 点列の個数(1 本の並び)の妥当性(FR-308)。共通の下限・上限で見る。 */
+function checkPointArrayCount(featureId: string, count: number): SketchError | null {
+  if (
+    !Number.isInteger(count) ||
+    count < MIN_POINT_ARRAY_COUNT ||
+    count > MAX_POINT_ARRAY_COUNT
+  ) {
+    return error(
+      featureId,
+      'invalidValue',
+      `個数は ${String(MIN_POINT_ARRAY_COUNT)} 以上 ${String(MAX_POINT_ARRAY_COUNT)} 以下の整数にしてください。`,
+    );
+  }
+  return null;
+}
+
+/** 直線状の点列(既存の挙動、FR-308)。方位角の向きへ等間隔に並べる。 */
+function resolveLinearPointArray(
+  featureId: string,
+  layout: Extract<PointArrayLayout, { readonly kind: 'linear' }>,
+  plane: WorkPlane,
+  context: ResolveContext,
+): PointArrayOutcome {
+  const base = resolveCoordinate(layout.base, context, featureId);
+  if (!base.ok) {
+    return { ok: false, error: base.error };
+  }
+  const count = layout.count.value;
+  const countError = checkPointArrayCount(featureId, count);
+  if (countError !== null) {
+    return { ok: false, error: countError };
+  }
+  const spacing = layout.spacing.value;
+  if (!Number.isFinite(spacing) || spacing === 0) {
+    return { ok: false, error: error(featureId, 'invalidValue', '間隔に 0 は指定できません。') };
+  }
+  const azimuth = layout.azimuth.value;
+  if (!Number.isFinite(azimuth)) {
+    return { ok: false, error: error(featureId, 'invalidValue', '方向の角度が数になっていません。') };
+  }
+  const direction = directionInPlane(plane, azimuth);
+  const points: ResolvedPoint[] = [];
+  for (let index = 0; index < count; index += 1) {
+    points.push({
+      id: `${featureId}#${String(index)}`,
+      featureId,
+      position: addVec3(base.value, scaleVec3(direction, spacing * index)),
+    });
+  }
+  return { ok: true, points };
+}
+
+/**
+ * 円周上の点列(FR-327)。中心・半径・個数で等角度に並べる。開始角は常に作図面の
+ * 第1軸(角度 0、正多角形 `resolvePolygonCurves` と同じ規約)で、利用者に開始角の
+ * 指定は持たせない(計画書 §0.a-0.9 のタスク6 実装内容の型のとおり)。
+ */
+function resolveCircularPointArray(
+  featureId: string,
+  layout: Extract<PointArrayLayout, { readonly kind: 'circular' }>,
+  plane: WorkPlane,
+  context: ResolveContext,
+): PointArrayOutcome {
+  const center = resolveCoordinate(layout.center, context, featureId);
+  if (!center.ok) {
+    return { ok: false, error: center.error };
+  }
+  const count = layout.count.value;
+  const countError = checkPointArrayCount(featureId, count);
+  if (countError !== null) {
+    return { ok: false, error: countError };
+  }
+  const radius = layout.radius.value;
+  if (!Number.isFinite(radius) || radius < 0) {
+    return { ok: false, error: error(featureId, 'invalidValue', '半径は 0 より大きい必要があります。') };
+  }
+  if (radius <= SKETCH_TOLERANCE_MM) {
+    return { ok: false, error: error(featureId, 'degenerate', '半径が小さすぎて点列になりません。') };
+  }
+  const points: ResolvedPoint[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const angle = (FULL_TURN * index) / count;
+    const position = addVec3(
+      center.value,
+      addVec3(
+        scaleVec3(plane.axisU, radius * Math.cos(angle)),
+        scaleVec3(plane.axisV, radius * Math.sin(angle)),
+      ),
+    );
+    points.push({ id: `${featureId}#${String(index)}`, featureId, position });
+  }
+  return { ok: true, points };
+}
+
+/** 行・列いずれかの個数の妥当性(グリッド、FR-327)。1 以上の整数であることだけを見る。 */
+function checkGridAxisCount(featureId: string, label: string, count: number): SketchError | null {
+  if (!Number.isInteger(count) || count < MIN_POINT_ARRAY_COUNT) {
+    return error(featureId, 'invalidValue', `${label}の個数は 1 以上の整数にしてください。`);
+  }
+  return null;
+}
+
+/**
+ * 格子状の点列(FR-327)。基準点から行方向・列方向へ「行 × 列」で並べる
+ * (行が外側、列が内側。0 番目は基準点そのもの)。
+ */
+function resolveGridPointArray(
+  featureId: string,
+  layout: Extract<PointArrayLayout, { readonly kind: 'grid' }>,
+  plane: WorkPlane,
+  context: ResolveContext,
+): PointArrayOutcome {
+  const base = resolveCoordinate(layout.base, context, featureId);
+  if (!base.ok) {
+    return { ok: false, error: base.error };
+  }
+  const rowCount = layout.rowCount.value;
+  const rowCountError = checkGridAxisCount(featureId, '行', rowCount);
+  if (rowCountError !== null) {
+    return { ok: false, error: rowCountError };
+  }
+  const colCount = layout.colCount.value;
+  const colCountError = checkGridAxisCount(featureId, '列', colCount);
+  if (colCountError !== null) {
+    return { ok: false, error: colCountError };
+  }
+  if (rowCount * colCount > MAX_POINT_ARRAY_COUNT) {
+    return {
+      ok: false,
+      error: error(
+        featureId,
+        'invalidValue',
+        `点の合計数は ${String(MAX_POINT_ARRAY_COUNT)} 個以下にしてください。`,
+      ),
+    };
+  }
+  const rowSpacing = layout.rowSpacing.value;
+  if (!Number.isFinite(rowSpacing) || rowSpacing === 0) {
+    return { ok: false, error: error(featureId, 'invalidValue', '行の間隔に 0 は指定できません。') };
+  }
+  const colSpacing = layout.colSpacing.value;
+  if (!Number.isFinite(colSpacing) || colSpacing === 0) {
+    return { ok: false, error: error(featureId, 'invalidValue', '列の間隔に 0 は指定できません。') };
+  }
+  const rowAzimuth = layout.rowAzimuth.value;
+  const colAzimuth = layout.colAzimuth.value;
+  if (!Number.isFinite(rowAzimuth) || !Number.isFinite(colAzimuth)) {
+    return { ok: false, error: error(featureId, 'invalidValue', '方向の角度が数になっていません。') };
+  }
+  const rowDirection = directionInPlane(plane, rowAzimuth);
+  const colDirection = directionInPlane(plane, colAzimuth);
+  const points: ResolvedPoint[] = [];
+  for (let row = 0; row < rowCount; row += 1) {
+    for (let col = 0; col < colCount; col += 1) {
+      const index = row * colCount + col;
+      const position = addVec3(
+        base.value,
+        addVec3(scaleVec3(rowDirection, rowSpacing * row), scaleVec3(colDirection, colSpacing * col)),
+      );
+      points.push({ id: `${featureId}#${String(index)}`, featureId, position });
+    }
+  }
+  return { ok: true, points };
+}
+
+/** 点列を並べ方(`layout.kind`)で分岐して解決する(FR-308、FR-327、タスク6)。 */
+function resolvePointArrayFeature(
+  featureId: string,
+  layout: PointArrayLayout,
+  plane: WorkPlane,
+  context: ResolveContext,
+): PointArrayOutcome {
+  switch (layout.kind) {
+    case 'linear':
+      return resolveLinearPointArray(featureId, layout, plane, context);
+    case 'circular':
+      return resolveCircularPointArray(featureId, layout, plane, context);
+    case 'grid':
+      return resolveGridPointArray(featureId, layout, plane, context);
+  }
+}
+
 /**
  * スケッチの履歴を先頭から順に解決する(要件§6.3)。
  * 途中のフィーチャーが解決できなくても止めず、そのフィーチャーだけを errors に入れて先へ進む
@@ -440,6 +627,13 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
    * (既存の呼び出し側を壊さないため)。
    */
   const curvesByFeature = new Map<string, readonly ResolvedCurve[]>();
+  /**
+   * 構築線(FR-320、タスク6)の featureId。線・円弧・矩形・正多角形・長穴・楕円・スプラインが
+   * `construction: true` を持つときにここへ足す。`resolveFace` が面の境界に選ばれていないか
+   * ここを見て断る(解決済みの曲線(`ResolvedCurve`)自体には construction を持たせない
+   * ため、featureId で引く)。
+   */
+  const constructionFeatureIds = new Set<string>();
   /** 「直前の点」(FR-302)。点を作ったフィーチャーと線・円弧の終点で更新する。 */
   let previous: Vec3 | null = null;
 
@@ -486,6 +680,9 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       };
       segments.push(segment);
       curveByFeature.set(feature.id, segment);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
       vertices.set(vertexKey(feature.id, 'start'), from.value);
       vertices.set(vertexKey(feature.id, 'end'), to.value);
       previous = to.value;
@@ -530,6 +727,9 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       };
       arcs.push(arc);
       curveByFeature.set(feature.id, arc);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
       vertices.set(vertexKey(feature.id, 'center'), center.value);
       vertices.set(vertexKey(feature.id, 'start'), curveStart(arc));
       vertices.set(vertexKey(feature.id, 'end'), curveEnd(arc));
@@ -538,46 +738,12 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
     }
 
     if (feature.kind === 'pointArray') {
-      const base = resolveCoordinate(feature.base, context, feature.id);
-      if (!base.ok) {
-        errors.push(base.error);
+      const outcome = resolvePointArrayFeature(feature.id, feature.layout, plane, context);
+      if (!outcome.ok) {
+        errors.push(outcome.error);
         continue;
       }
-      const count = feature.count.value;
-      if (
-        !Number.isInteger(count) ||
-        count < MIN_POINT_ARRAY_COUNT ||
-        count > MAX_POINT_ARRAY_COUNT
-      ) {
-        errors.push(
-          error(
-            feature.id,
-            'invalidValue',
-            `個数は ${String(MIN_POINT_ARRAY_COUNT)} 以上 ${String(MAX_POINT_ARRAY_COUNT)} 以下の整数にしてください。`,
-          ),
-        );
-        continue;
-      }
-      const spacing = feature.spacing.value;
-      if (!Number.isFinite(spacing) || spacing === 0) {
-        errors.push(error(feature.id, 'invalidValue', '間隔に 0 は指定できません。'));
-        continue;
-      }
-      const azimuth = feature.azimuth.value;
-      if (!Number.isFinite(azimuth)) {
-        errors.push(error(feature.id, 'invalidValue', '方向の角度が数になっていません。'));
-        continue;
-      }
-      // 方位角は作図面内の向き(第1軸から第2軸へ向かう向きが正、§2.8)。
-      const direction = directionInPlane(plane, azimuth);
-      const created: ResolvedPoint[] = [];
-      for (let index = 0; index < count; index += 1) {
-        created.push({
-          id: `${feature.id}#${String(index)}`,
-          featureId: feature.id,
-          position: addVec3(base.value, scaleVec3(direction, spacing * index)),
-        });
-      }
+      const created = outcome.points;
       points.push(...created);
       pointsByFeature.set(feature.id, created);
       const last = created[created.length - 1];
@@ -610,6 +776,9 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       }
       pushCurves(rectangle.curves, segments, arcs);
       curvesByFeature.set(feature.id, rectangle.curves);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
       const first = rectangle.curves[0];
       const last = rectangle.curves[rectangle.curves.length - 1];
       vertices.set(vertexKey(feature.id, 'start'), curveStart(first));
@@ -652,6 +821,9 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       }
       pushCurves(polygon.curves, segments, arcs);
       curvesByFeature.set(feature.id, polygon.curves);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
       const first = polygon.curves[0];
       const last = polygon.curves[polygon.curves.length - 1];
       vertices.set(vertexKey(feature.id, 'center'), center.value);
@@ -688,6 +860,9 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       }
       pushCurves(slot.curves, segments, arcs);
       curvesByFeature.set(feature.id, slot.curves);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
       const first = slot.curves[0];
       const last = slot.curves[slot.curves.length - 1];
       vertices.set(vertexKey(feature.id, 'start'), curveStart(first));
@@ -754,6 +929,9 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       };
       ellipses.push(ellipse);
       curveByFeature.set(feature.id, ellipse);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
       vertices.set(vertexKey(feature.id, 'center'), center.value);
       vertices.set(vertexKey(feature.id, 'start'), curveStart(ellipse));
       vertices.set(vertexKey(feature.id, 'end'), curveEnd(ellipse));
@@ -769,13 +947,22 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       }
       splines.push(spline.value);
       curveByFeature.set(feature.id, spline.value);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
       vertices.set(vertexKey(feature.id, 'start'), curveStart(spline.value));
       vertices.set(vertexKey(feature.id, 'end'), curveEnd(spline.value));
       previous = curveEnd(spline.value);
       continue;
     }
 
-    const face = resolveFace(feature, pointsByFeature, curveByFeature, curvesByFeature);
+    const face = resolveFace(
+      feature,
+      pointsByFeature,
+      curveByFeature,
+      curvesByFeature,
+      constructionFeatureIds,
+    );
     if (!face.ok) {
       errors.push(face.error);
       continue;
@@ -851,12 +1038,17 @@ type FaceOutcome =
  *
  * 矩形・正多角形・長穴(`curvesByFeature`)は、`index` を指定すれば n 番目の曲線だけ、
  * 省略すればそのフィーチャーの全曲線を順に展開して使う(§0.a-0.8、タスク4)。
+ *
+ * 構築線(FR-320、タスク6)は選べない: `constructionFeatureIds` に featureId があれば
+ * `constructionElement` で断る(点・点列・面は construction を持たないため、この検査に
+ * 現れるのは常に曲線の参照)。
  */
 function resolveFace(
   feature: SketchFaceFeature,
   pointsByFeature: ReadonlyMap<string, readonly ResolvedPoint[]>,
   curveByFeature: ReadonlyMap<string, ResolvedCurve>,
   curvesByFeature: ReadonlyMap<string, readonly ResolvedCurve[]>,
+  constructionFeatureIds: ReadonlySet<string>,
 ): FaceOutcome {
   if (feature.boundary.length === 0) {
     return { ok: false, error: error(feature.id, 'tooFewPoints', '面の境界が選ばれていません。') };
@@ -866,6 +1058,12 @@ function resolveFace(
   const pickedCurves: ResolvedCurve[] = [];
 
   for (const reference of feature.boundary) {
+    if (constructionFeatureIds.has(reference.featureId)) {
+      return {
+        ok: false,
+        error: error(feature.id, 'constructionElement', '構築線は面の境界に使えません。'),
+      };
+    }
     const curve = curveByFeature.get(reference.featureId);
     if (curve !== undefined) {
       pickedCurves.push(curve);

@@ -52,6 +52,7 @@ function buildLine(
     kind: 'line',
     from,
     to,
+    construction: false,
   };
 }
 
@@ -65,6 +66,7 @@ function buildArc(document: SketchDocument, center: CoordinateInput): SketchArcF
     radius: expr('20/2'),
     startAngle: expr('0'),
     endAngle: expr('360'),
+    construction: false,
   };
 }
 
@@ -77,10 +79,13 @@ function buildPointArray(
     name: nextFeatureName(document, 'pointArray'),
     planeId: DEFAULT_WORK_PLANE_ID,
     kind: 'pointArray',
-    base,
-    azimuth: expr('90'),
-    spacing: expr('100/4'),
-    count: expr('2+3'),
+    layout: {
+      kind: 'linear',
+      base,
+      azimuth: expr('90'),
+      spacing: expr('100/4'),
+      count: expr('2+3'),
+    },
   };
 }
 
@@ -347,9 +352,12 @@ describe('スケッチ要素の型(FR-202、FR-301〜310)', () => {
     expect(arc.endAngle.value - arc.startAngle.value).toBe(360);
 
     const array = buildPointArray(document, absoluteCoordinate(0, 0, 0));
-    expect(array.spacing.source).toBe('100/4');
-    expect(array.spacing.value).toBe(25);
-    expect(array.count.value).toBe(5);
-    expect(Number.isInteger(array.count.value)).toBe(true);
+    if (array.layout.kind !== 'linear') {
+      throw new Error('直線状の点列のはず');
+    }
+    expect(array.layout.spacing.source).toBe('100/4');
+    expect(array.layout.spacing.value).toBe(25);
+    expect(array.layout.count.value).toBe(5);
+    expect(Number.isInteger(array.layout.count.value)).toBe(true);
   });
 });

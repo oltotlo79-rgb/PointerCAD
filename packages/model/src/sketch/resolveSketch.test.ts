@@ -93,6 +93,7 @@ const QUARTER_ARC: SketchFeature = {
   name: '円弧1',
   planeId: 'xy',
   kind: 'arc',
+      construction: false,
   center: absoluteCoordinate(0, 0, 0),
   radius: num(10),
   startAngle: num(0),
@@ -126,6 +127,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '線分1',
       planeId: 'xy',
       kind: 'line',
+      construction: false,
       from: { mode: 'relative', base: { kind: 'previous' }, dx: num(0), dy: num(0), dz: num(0) },
       to: { mode: 'relative', base: { kind: 'previous' }, dx: num(0), dy: num(5), dz: num(0) },
     };
@@ -143,6 +145,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '線分1',
       planeId: 'xy',
       kind: 'line',
+      construction: false,
       from: absoluteCoordinate(0, 0, 0),
       to: absoluteCoordinate(10, 0, 0),
     };
@@ -151,6 +154,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '線分2',
       planeId: 'xy',
       kind: 'line',
+      construction: false,
       // 前の線分の終点から始める。
       from: {
         mode: 'relative',
@@ -214,6 +218,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '円弧1',
       planeId: 'xy',
       kind: 'arc',
+      construction: false,
       center: absoluteCoordinate(0, 0, 0),
       radius: num(5),
       startAngle: num(0),
@@ -257,6 +262,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '線分1',
       planeId: 'xy',
       kind: 'line',
+      construction: false,
       from: absoluteCoordinate(1, 2, 3),
       to: absoluteCoordinate(1, 2, 3),
     };
@@ -271,10 +277,13 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '点列1',
       planeId: 'xy',
       kind: 'pointArray',
-      base: absoluteCoordinate(0, 0, 0),
-      azimuth: num(0),
-      spacing: num(10),
-      count: num(5),
+      layout: {
+        kind: 'linear',
+        base: absoluteCoordinate(0, 0, 0),
+        azimuth: num(0),
+        spacing: num(10),
+        count: num(5),
+      },
     };
     const resolved = resolveSketch(documentOf(array));
     expect(resolved.points).toHaveLength(5);
@@ -293,14 +302,38 @@ describe('スケッチ全体の解決(タスク11)', () => {
 
     // 方位角 30°・間隔 10・4 個: n 番目は 10n·(cos30°, sin30°) = 10n·(√3/2, 1/2)。
     // 3 番目は (30·√3/2, 30/2) = (15√3, 15) = (25.980762113533157, 15)。
-    const slanted: SketchFeature = { ...array, azimuth: num(30), count: num(4) };
+    const slanted: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'linear',
+        base: absoluteCoordinate(0, 0, 0),
+        azimuth: num(30),
+        spacing: num(10),
+        count: num(4),
+      },
+    };
     const points = resolveSketch(documentOf(slanted)).points;
     expect(points).toHaveLength(4);
     expectCloseTo(points[1].position, [8.660254037844387, 5, 0]); // 10·(√3/2, 1/2)
     expectCloseTo(points[3].position, [25.980762113533157, 15, 0]);
 
     // 間隔が負なら逆向きへ並ぶ。
-    const backwards: SketchFeature = { ...array, spacing: num(-10), count: num(3) };
+    const backwards: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'linear',
+        base: absoluteCoordinate(0, 0, 0),
+        azimuth: num(0),
+        spacing: num(-10),
+        count: num(3),
+      },
+    };
     expectCloseTo(resolveSketch(documentOf(backwards)).points[2].position, [-20, 0, 0]);
   });
 
@@ -311,10 +344,13 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '点列1',
       planeId: 'yz',
       kind: 'pointArray',
-      base: absoluteCoordinate(0, 0, 0),
-      azimuth: num(90),
-      spacing: num(5),
-      count: num(3),
+      layout: {
+        kind: 'linear',
+        base: absoluteCoordinate(0, 0, 0),
+        azimuth: num(90),
+        spacing: num(5),
+        count: num(3),
+      },
     };
     // 点列の直後の「直前の点」は末尾の点 (0,0,10)。
     const after: SketchFeature = {
@@ -330,6 +366,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '線分1',
       planeId: 'yz',
       kind: 'line',
+      construction: false,
       from: {
         mode: 'relative',
         base: { kind: 'vertex', featureId: 'pa1', vertex: 'start' },
@@ -354,33 +391,36 @@ describe('スケッチ全体の解決(タスク11)', () => {
   });
 
   it('点列の個数は 1 以上の整数(FR-308)', () => {
-    const array: SketchFeature = {
-      id: 'pa1',
-      name: '点列1',
-      planeId: 'xy',
-      kind: 'pointArray',
-      base: absoluteCoordinate(0, 0, 0),
-      azimuth: num(0),
-      spacing: num(10),
-      count: num(1),
-    };
+    function arrayWith(count: number): SketchFeature {
+      return {
+        id: 'pa1',
+        name: '点列1',
+        planeId: 'xy',
+        kind: 'pointArray',
+        layout: {
+          kind: 'linear',
+          base: absoluteCoordinate(0, 0, 0),
+          azimuth: num(0),
+          spacing: num(10),
+          count: num(count),
+        },
+      };
+    }
     // 1 個でも点列として成立する(基準点だけが残る)。
-    const single = resolveSketch(documentOf(array));
+    const single = resolveSketch(documentOf(arrayWith(1)));
     expect(single.points).toHaveLength(1);
     expect(single.points[0].id).toBe('pa1#0');
     expect(single.errors).toEqual([]);
 
     for (const count of [0, -1, 2.5, MAX_POINT_ARRAY_COUNT + 1]) {
-      const invalid = resolveSketch(documentOf({ ...array, count: num(count) }));
+      const invalid = resolveSketch(documentOf(arrayWith(count)));
       expect(invalid.points).toHaveLength(0);
       expect(invalid.errors).toHaveLength(1);
       expect(invalid.errors[0].code).toBe('invalidValue');
       expect(invalid.errors[0].featureId).toBe('pa1');
     }
     // 上限ちょうどは通る。
-    const atLimit = resolveSketch(
-      documentOf({ ...array, count: num(MAX_POINT_ARRAY_COUNT), spacing: num(1) }),
-    );
+    const atLimit = resolveSketch(documentOf(arrayWith(MAX_POINT_ARRAY_COUNT)));
     expect(atLimit.points).toHaveLength(MAX_POINT_ARRAY_COUNT);
   });
 
@@ -390,20 +430,34 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '点列1',
       planeId: 'xy',
       kind: 'pointArray',
-      base: absoluteCoordinate(0, 0, 0),
-      azimuth: num(0),
-      spacing: num(10),
-      count: num(3),
+      layout: {
+        kind: 'linear',
+        base: absoluteCoordinate(0, 0, 0),
+        azimuth: num(0),
+        spacing: num(0),
+        count: num(3),
+      },
     };
-    const zeroSpacing = resolveSketch(documentOf({ ...array, spacing: num(0) }));
+    const zeroSpacing = resolveSketch(documentOf(array));
     expect(zeroSpacing.errors[0].code).toBe('invalidValue');
     expect(zeroSpacing.points).toHaveLength(0);
 
-    const brokenAzimuth = resolveSketch(
-      documentOf({ ...array, azimuth: brokenNumber('0/0', Number.NaN) }),
-    );
-    expect(brokenAzimuth.errors[0].code).toBe('invalidValue');
-    expect(brokenAzimuth.points).toHaveLength(0);
+    const brokenAzimuth: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'linear',
+        base: absoluteCoordinate(0, 0, 0),
+        azimuth: brokenNumber('0/0', Number.NaN),
+        spacing: num(10),
+        count: num(3),
+      },
+    };
+    const brokenResult = resolveSketch(documentOf(brokenAzimuth));
+    expect(brokenResult.errors[0].code).toBe('invalidValue');
+    expect(brokenResult.points).toHaveLength(0);
   });
 
   it('点を順に選んで面を張れる(FR-309)', () => {
@@ -445,10 +499,13 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '点列1',
       planeId: 'xy',
       kind: 'pointArray',
-      base: absoluteCoordinate(0, 0, 0),
-      azimuth: num(0),
-      spacing: num(10),
-      count: num(3), // (0,0,0) (10,0,0) (20,0,0)
+      layout: {
+        kind: 'linear',
+        base: absoluteCoordinate(0, 0, 0),
+        azimuth: num(0),
+        spacing: num(10),
+        count: num(3), // (0,0,0) (10,0,0) (20,0,0)
+      },
     };
     const apex: SketchFeature = {
       id: 'p9',
@@ -487,18 +544,22 @@ describe('スケッチ全体の解決(タスク11)', () => {
     // 正方形。3 本目だけ向きが逆でもつながりを見て閉じる。
     const l1: SketchFeature = {
       id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 0, 0),
     };
     const l2: SketchFeature = {
       id: 'l2', name: '線分2', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(10, 0, 0), to: absoluteCoordinate(10, 10, 0),
     };
     const l3: SketchFeature = {
       id: 'l3', name: '線分3', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(0, 10, 0), to: absoluteCoordinate(10, 10, 0),
     };
     const l4: SketchFeature = {
       id: 'l4', name: '線分4', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(0, 10, 0), to: absoluteCoordinate(0, 0, 0),
     };
     const face: SketchFeature = {
@@ -521,11 +582,13 @@ describe('スケッチ全体の解決(タスク11)', () => {
     // 中心 (0,0,0)・半径 10 の上半分と下半分。端点は (10,0,0) と (-10,0,0)。
     const upper: SketchFeature = {
       id: 'a1', name: '円弧1', planeId: 'xy', kind: 'arc',
+      construction: false,
       center: absoluteCoordinate(0, 0, 0), radius: num(10),
       startAngle: num(0), endAngle: num(180),
     };
     const lower: SketchFeature = {
       id: 'a2', name: '円弧2', planeId: 'xy', kind: 'arc',
+      construction: false,
       center: absoluteCoordinate(0, 0, 0), radius: num(10),
       startAngle: num(180), endAngle: num(360),
     };
@@ -543,6 +606,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
   it('全周の円弧 1 本は面になり、開いた円弧 1 本は断る(FR-305、FR-309)', () => {
     const circle: SketchFeature = {
       id: 'a1', name: '円弧1', planeId: 'xy', kind: 'arc',
+      construction: false,
       center: absoluteCoordinate(0, 0, 0), radius: num(5),
       startAngle: num(0), endAngle: num(360),
     };
@@ -564,10 +628,12 @@ describe('スケッチ全体の解決(タスク11)', () => {
   it('つながっていない線では面を張らない(FR-504。止めずに理由を返す)', () => {
     const lineA: SketchFeature = {
       id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 0, 0),
     };
     const lineB: SketchFeature = {
       id: 'l2', name: '線分2', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(50, 50, 0), to: absoluteCoordinate(60, 50, 0),
     };
     const face: SketchFeature = {
@@ -583,6 +649,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
     // 端はつながっていても最後が最初へ戻らない(コの字)なら閉じない。
     const lineC: SketchFeature = {
       id: 'l2', name: '線分2', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(10, 0, 0), to: absoluteCoordinate(10, 10, 0),
     };
     const open = resolveSketch(documentOf(lineA, lineC, face));
@@ -593,6 +660,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
   it('点と線を混ぜた境界は断る(§0.a-0.13)', () => {
     const line: SketchFeature = {
       id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 0, 0),
     };
     const mixed: SketchFeature = {
@@ -684,18 +752,22 @@ describe('スケッチ全体の解決(タスク11)', () => {
     // 行列式 (10,0,0)·((10,10,0)×(0,10,10)) = (10,0,0)·(100,-100,100) = 1000 ≠ 0。
     const l1: SketchFeature = {
       id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 0, 0),
     };
     const l2: SketchFeature = {
       id: 'l2', name: '線分2', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(10, 0, 0), to: absoluteCoordinate(10, 10, 0),
     };
     const l3: SketchFeature = {
       id: 'l3', name: '線分3', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(10, 10, 0), to: absoluteCoordinate(0, 10, 10),
     };
     const l4: SketchFeature = {
       id: 'l4', name: '線分4', planeId: 'xy', kind: 'line',
+      construction: false,
       from: absoluteCoordinate(0, 10, 10), to: absoluteCoordinate(0, 0, 0),
     };
     const curveFace: SketchFeature = {
@@ -711,11 +783,13 @@ describe('スケッチ全体の解決(タスク11)', () => {
     // XY 面の半円 (10,0,0)→(-10,0,0) と XZ 面の半円 (10,0,0)→(-10,0,0)。
     const upperXy: SketchFeature = {
       id: 'a1', name: '円弧1', planeId: 'xy', kind: 'arc',
+      construction: false,
       center: absoluteCoordinate(0, 0, 0), radius: num(10),
       startAngle: num(0), endAngle: num(180),
     };
     const upperXz: SketchFeature = {
       id: 'a2', name: '円弧2', planeId: 'xz', kind: 'arc',
+      construction: false,
       center: absoluteCoordinate(0, 0, 0), radius: num(10),
       startAngle: num(0), endAngle: num(180),
     };
@@ -732,6 +806,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '線分1',
       planeId: 'xy',
       kind: 'line',
+      construction: false,
       from: { mode: 'relative', base: { kind: 'previous' }, dx: num(0), dy: num(0), dz: num(0) },
       to: absoluteCoordinate(1, 0, 0),
     };
@@ -751,6 +826,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
       name: '線分1',
       planeId: 'xy',
       kind: 'line',
+      construction: false,
       from: { mode: 'relative', base: { kind: 'previous' }, dx: num(0), dy: num(0), dz: num(0) },
       to: absoluteCoordinate(1, 0, 0),
     };
@@ -798,6 +874,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
     const segment = resolveSketch(
       documentOf({
         id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+      construction: false,
         from: absoluteCoordinate(1, 2, 3), to: absoluteCoordinate(4, 5, 6),
       }),
     ).segments[0];
@@ -1642,5 +1719,381 @@ describe('スプラインの解決(タスク5、FR-317)', () => {
     expect(resolved.ellipses).toHaveLength(1);
     expect(resolved.splines).toHaveLength(1);
     expect(resolved.points).toHaveLength(1);
+  });
+});
+
+describe('円周上の点列(タスク6、FR-327)', () => {
+  it('中心・半径・個数から等角度に並ぶ。開始角は常に第1軸(角度0)', () => {
+    const array: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: { kind: 'circular', center: absoluteCoordinate(0, 0, 0), radius: num(10), count: num(4) },
+    };
+    const resolved = resolveSketch(documentOf(array));
+    expect(resolved.points).toHaveLength(4);
+    expect(resolved.points.map((point) => point.id)).toEqual(['pa1#0', 'pa1#1', 'pa1#2', 'pa1#3']);
+    // 90° 刻み。
+    expectCloseTo(resolved.points[0].position, [10, 0, 0]);
+    expectCloseTo(resolved.points[1].position, [0, 10, 0]);
+    expectCloseTo(resolved.points[2].position, [-10, 0, 0]);
+    expectCloseTo(resolved.points[3].position, [0, -10, 0]);
+  });
+
+  it('個数が3以上でも同じ式(半径5・個数3、120°刻み)', () => {
+    const array: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: { kind: 'circular', center: absoluteCoordinate(0, 0, 0), radius: num(5), count: num(3) },
+    };
+    const resolved = resolveSketch(documentOf(array));
+    expect(resolved.points).toHaveLength(3);
+    expectCloseTo(resolved.points[0].position, [5, 0, 0]);
+    expectCloseTo(resolved.points[1].position, [-2.5, 4.330127018922194, 0]);
+    expectCloseTo(resolved.points[2].position, [-2.5, -4.330127018922194, 0]);
+  });
+
+  it('中心がずれていても円周上に並ぶ(FR-327)', () => {
+    const array: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'circular',
+        center: absoluteCoordinate(100, 200, 0),
+        radius: num(10),
+        count: num(4),
+      },
+    };
+    const resolved = resolveSketch(documentOf(array));
+    expectCloseTo(resolved.points[0].position, [110, 200, 0]);
+    expectCloseTo(resolved.points[2].position, [90, 200, 0]);
+  });
+
+  it('半径が負なら invalidValue、0(または許容誤差以下)なら degenerate', () => {
+    const negative: SketchFeature = {
+      id: 'pa1', name: '点列1', planeId: 'xy', kind: 'pointArray',
+      layout: { kind: 'circular', center: absoluteCoordinate(0, 0, 0), radius: num(-1), count: num(4) },
+    };
+    expect(resolveSketch(documentOf(negative)).errors[0].code).toBe('invalidValue');
+
+    const zero: SketchFeature = {
+      ...negative,
+      layout: { kind: 'circular', center: absoluteCoordinate(0, 0, 0), radius: num(0), count: num(4) },
+    };
+    expect(resolveSketch(documentOf(zero)).errors[0].code).toBe('degenerate');
+
+    const tiny: SketchFeature = {
+      ...negative,
+      layout: { kind: 'circular', center: absoluteCoordinate(0, 0, 0), radius: num(1e-9), count: num(4) },
+    };
+    expect(resolveSketch(documentOf(tiny)).errors[0].code).toBe('degenerate');
+  });
+
+  it('個数が不正(0、非整数、上限超え)なら invalidValue', () => {
+    for (const count of [0, -1, 2.5, MAX_POINT_ARRAY_COUNT + 1]) {
+      const array: SketchFeature = {
+        id: 'pa1', name: '点列1', planeId: 'xy', kind: 'pointArray',
+        layout: { kind: 'circular', center: absoluteCoordinate(0, 0, 0), radius: num(10), count: num(count) },
+      };
+      const resolved = resolveSketch(documentOf(array));
+      expect(resolved.points).toHaveLength(0);
+      expect(resolved.errors[0].code).toBe('invalidValue');
+      expect(resolved.errors[0].featureId).toBe('pa1');
+    }
+  });
+
+  it('個数が1でも点列として成立する(境界値)', () => {
+    const array: SketchFeature = {
+      id: 'pa1', name: '点列1', planeId: 'xy', kind: 'pointArray',
+      layout: { kind: 'circular', center: absoluteCoordinate(0, 0, 0), radius: num(10), count: num(1) },
+    };
+    const resolved = resolveSketch(documentOf(array));
+    expect(resolved.points).toHaveLength(1);
+    expectCloseTo(resolved.points[0].position, [10, 0, 0]);
+    expect(resolved.errors).toEqual([]);
+  });
+});
+
+describe('格子状の点列(タスク6、FR-327)', () => {
+  it('基準点から行×列で並ぶ(行方向X・間隔10・3行、列方向Y・間隔5・2列)', () => {
+    const array: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'grid',
+        base: absoluteCoordinate(0, 0, 0),
+        rowAzimuth: num(0),
+        rowSpacing: num(10),
+        rowCount: num(3),
+        colAzimuth: num(90),
+        colSpacing: num(5),
+        colCount: num(2),
+      },
+    };
+    const resolved = resolveSketch(documentOf(array));
+    expect(resolved.points).toHaveLength(6);
+    expect(resolved.points.map((point) => point.id)).toEqual([
+      'pa1#0', 'pa1#1', 'pa1#2', 'pa1#3', 'pa1#4', 'pa1#5',
+    ]);
+    expectCloseTo(resolved.points[0].position, [0, 0, 0]);
+    expectCloseTo(resolved.points[5].position, [20, 5, 0]);
+  });
+
+  it('行が外側・列が内側の順で並ぶ(行方向Y・列方向X の一般ケース)', () => {
+    const array: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'grid',
+        base: absoluteCoordinate(0, 0, 0),
+        rowAzimuth: num(90),
+        rowSpacing: num(10),
+        rowCount: num(2),
+        colAzimuth: num(0),
+        colSpacing: num(5),
+        colCount: num(3),
+      },
+    };
+    const resolved = resolveSketch(documentOf(array));
+    expect(resolved.points).toHaveLength(6);
+    expectCloseTo(resolved.points[0].position, [0, 0, 0]);
+    expectCloseTo(resolved.points[2].position, [10, 0, 0]);
+    expectCloseTo(resolved.points[3].position, [0, 10, 0]);
+    expectCloseTo(resolved.points[5].position, [10, 10, 0]);
+  });
+
+  it('基準点がずれていても格子は追従する', () => {
+    const array: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'grid',
+        base: absoluteCoordinate(1, 2, 0),
+        rowAzimuth: num(0),
+        rowSpacing: num(10),
+        rowCount: num(2),
+        colAzimuth: num(90),
+        colSpacing: num(5),
+        colCount: num(1),
+      },
+    };
+    const resolved = resolveSketch(documentOf(array));
+    expect(resolved.points).toHaveLength(2);
+    expectCloseTo(resolved.points[0].position, [1, 2, 0]);
+    expectCloseTo(resolved.points[1].position, [11, 2, 0]);
+  });
+
+  function gridArrayWith(overrides: {
+    readonly rowCount?: number;
+    readonly colCount?: number;
+    readonly rowSpacing?: number;
+    readonly colSpacing?: number;
+  }): SketchFeature {
+    return {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'grid',
+        base: absoluteCoordinate(0, 0, 0),
+        rowAzimuth: num(0),
+        rowSpacing: num(overrides.rowSpacing ?? 10),
+        rowCount: num(overrides.rowCount ?? 3),
+        colAzimuth: num(90),
+        colSpacing: num(overrides.colSpacing ?? 5),
+        colCount: num(overrides.colCount ?? 2),
+      },
+    };
+  }
+
+  it('行数・列数が不正(0、非整数)なら invalidValue', () => {
+    for (const rowCount of [0, -1, 2.5]) {
+      const resolved = resolveSketch(documentOf(gridArrayWith({ rowCount })));
+      expect(resolved.points).toHaveLength(0);
+      expect(resolved.errors[0].code).toBe('invalidValue');
+    }
+    for (const colCount of [0, -1, 2.5]) {
+      const resolved = resolveSketch(documentOf(gridArrayWith({ colCount })));
+      expect(resolved.points).toHaveLength(0);
+      expect(resolved.errors[0].code).toBe('invalidValue');
+    }
+  });
+
+  it('行・列の間隔に 0 は指定できない', () => {
+    expect(resolveSketch(documentOf(gridArrayWith({ rowSpacing: 0 }))).errors[0].code).toBe(
+      'invalidValue',
+    );
+    expect(resolveSketch(documentOf(gridArrayWith({ colSpacing: 0 }))).errors[0].code).toBe(
+      'invalidValue',
+    );
+  });
+
+  it('行×列の合計が上限を超えると invalidValue', () => {
+    const resolved = resolveSketch(
+      documentOf(gridArrayWith({ rowCount: MAX_POINT_ARRAY_COUNT, colCount: 2 })),
+    );
+    expect(resolved.points).toHaveLength(0);
+    expect(resolved.errors[0].code).toBe('invalidValue');
+
+    // ちょうど上限は通る。
+    const atLimit = resolveSketch(
+      documentOf(gridArrayWith({ rowCount: MAX_POINT_ARRAY_COUNT, colCount: 1 })),
+    );
+    expect(atLimit.points).toHaveLength(MAX_POINT_ARRAY_COUNT);
+  });
+
+  it('基準点が見つからなければ missingBase(直前の点が無い状態で先頭に置く)', () => {
+    const array: SketchFeature = {
+      id: 'pa1',
+      name: '点列1',
+      planeId: 'xy',
+      kind: 'pointArray',
+      layout: {
+        kind: 'grid',
+        base: { mode: 'relative', base: { kind: 'previous' }, dx: num(0), dy: num(0), dz: num(0) },
+        rowAzimuth: num(0),
+        rowSpacing: num(10),
+        rowCount: num(2),
+        colAzimuth: num(90),
+        colSpacing: num(5),
+        colCount: num(2),
+      },
+    };
+    const resolved = resolveSketch(documentOf(array));
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingBase');
+  });
+});
+
+describe('構築線(タスク6、FR-320)', () => {
+  it('construction な線分は面の境界に選べない(constructionElement)', () => {
+    const line: SketchFeature = {
+      id: 'l1', name: '線分1', planeId: 'xy', kind: 'line', construction: true,
+      from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 0, 0),
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'l1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(line, face));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors[0].code).toBe('constructionElement');
+    expect(resolved.errors[0].message).toBe('構築線は面の境界に使えません。');
+    // 線分そのものは変わらず残る(構築線でも描画・当たり判定の対象、§2.5)。
+    expect(resolved.segments).toHaveLength(1);
+  });
+
+  it('construction な円弧(全周)は本来なら1本で閉じるが、面の境界に選べない', () => {
+    const circle: SketchFeature = {
+      id: 'a1', name: '円弧1', planeId: 'xy', kind: 'arc', construction: true,
+      center: absoluteCoordinate(0, 0, 0), radius: num(10), startAngle: num(0), endAngle: num(360),
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'a1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(circle, face));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors[0].code).toBe('constructionElement');
+  });
+
+  it('construction な矩形は面の境界に選べない(index 省略・全周)', () => {
+    const rectangle: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+      construction: true,
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'r1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(rectangle, face));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors[0].code).toBe('constructionElement');
+    // 矩形の 4 辺は segments には残る。
+    expect(resolved.segments).toHaveLength(4);
+  });
+
+  it('construction な正多角形は面の境界に選べない', () => {
+    const hexagon: SketchFeature = {
+      id: 'g1', name: '正多角形1', planeId: 'xy', kind: 'polygon',
+      center: absoluteCoordinate(0, 0, 0), sides: num(6), radius: num(10),
+      radiusMode: 'circumscribed', construction: true,
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'g1' }], color: DEFAULT_FACE_COLOR,
+    };
+    expect(resolveSketch(documentOf(hexagon, face)).errors[0].code).toBe('constructionElement');
+  });
+
+  it('construction な長穴は面の境界に選べない', () => {
+    const slot: SketchFeature = {
+      id: 's1', name: '長穴1', planeId: 'xy', kind: 'slot',
+      center1: absoluteCoordinate(0, 0, 0), center2: absoluteCoordinate(20, 0, 0),
+      width: num(10), construction: true,
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 's1' }], color: DEFAULT_FACE_COLOR,
+    };
+    expect(resolveSketch(documentOf(slot, face)).errors[0].code).toBe('constructionElement');
+  });
+
+  it('construction な楕円(全周)は面の境界に選べない', () => {
+    const ellipse: SketchFeature = { ...ellipseFeature(), construction: true };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'e1' }], color: DEFAULT_FACE_COLOR,
+    };
+    expect(resolveSketch(documentOf(ellipse, face)).errors[0].code).toBe('constructionElement');
+  });
+
+  it('construction な閉じたスプラインは面の境界に選べない', () => {
+    const closedSpline: SketchFeature = {
+      ...splineFeature(),
+      closed: true,
+      points: [
+        absoluteCoordinate(10, 0, 0),
+        absoluteCoordinate(0, 10, 0),
+        absoluteCoordinate(-10, 0, 0),
+        absoluteCoordinate(0, -10, 0),
+      ],
+      construction: true,
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'sp1' }], color: DEFAULT_FACE_COLOR,
+    };
+    expect(resolveSketch(documentOf(closedSpline, face)).errors[0].code).toBe(
+      'constructionElement',
+    );
+  });
+
+  it('construction: false(既定)は従来どおり面の境界に使える(回帰確認)', () => {
+    const rectangle: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+      construction: false,
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'r1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(rectangle, face));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.faces).toHaveLength(1);
   });
 });

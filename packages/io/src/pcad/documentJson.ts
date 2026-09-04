@@ -27,6 +27,7 @@ import {
   type PartDocument,
   type PatternDirection,
   type PatternPlacement,
+  type PointArrayLayout,
   type PointReference,
   type RevolveAxis,
   type SketchDocument,
@@ -106,6 +107,12 @@ const POLYGON_RADIUS_MODES: readonly ('circumscribed' | 'inscribed')[] = [
 ];
 /** スプライン(FR-317)の点の意味。`model` の `SketchSplineFeature.mode` と同じ2値。 */
 const SPLINE_MODES: readonly ('interpolate' | 'control')[] = ['interpolate', 'control'];
+/** 点列の並べ方(FR-327、タスク6)。`model` の `PointArrayLayout['kind']` と同じ3値。 */
+const POINT_ARRAY_LAYOUT_KINDS: readonly PointArrayLayout['kind'][] = [
+  'linear',
+  'circular',
+  'grid',
+];
 /**
  * `.pcad` から読める立体の種類。P2 の4種類(押し出し・回転・縫合・ブーリアン)に、
  * P3 の加工フィーチャー5種(穴・ねじ穴・R 面取り・C 面取り・パターン)とばねを足した10種類
@@ -207,6 +214,38 @@ function serializeCoordinate(input: CoordinateInput): CoordinateInput {
   }
 }
 
+/** 点列の並べ方(FR-327、タスク6)。種類ごとに欄が違うので `kind` で分岐する。 */
+function serializePointArrayLayout(layout: PointArrayLayout): PointArrayLayout {
+  switch (layout.kind) {
+    case 'linear':
+      return {
+        kind: 'linear',
+        base: serializeCoordinate(layout.base),
+        azimuth: serializeExpression(layout.azimuth),
+        spacing: serializeExpression(layout.spacing),
+        count: serializeExpression(layout.count),
+      };
+    case 'circular':
+      return {
+        kind: 'circular',
+        center: serializeCoordinate(layout.center),
+        radius: serializeExpression(layout.radius),
+        count: serializeExpression(layout.count),
+      };
+    case 'grid':
+      return {
+        kind: 'grid',
+        base: serializeCoordinate(layout.base),
+        rowAzimuth: serializeExpression(layout.rowAzimuth),
+        rowSpacing: serializeExpression(layout.rowSpacing),
+        rowCount: serializeExpression(layout.rowCount),
+        colAzimuth: serializeExpression(layout.colAzimuth),
+        colSpacing: serializeExpression(layout.colSpacing),
+        colCount: serializeExpression(layout.colCount),
+      };
+  }
+}
+
 /** 点列の中の 1 点を指すときだけ index を書く(無い欄は書かない)。 */
 function serializeElementRef(reference: SketchElementRef): SketchElementRef {
   return reference.index === undefined
@@ -232,6 +271,7 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         planeId: feature.planeId,
         from: serializeCoordinate(feature.from),
         to: serializeCoordinate(feature.to),
+        construction: feature.construction,
       };
     case 'arc':
       return {
@@ -243,6 +283,7 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         radius: serializeExpression(feature.radius),
         startAngle: serializeExpression(feature.startAngle),
         endAngle: serializeExpression(feature.endAngle),
+        construction: feature.construction,
       };
     case 'pointArray':
       return {
@@ -250,10 +291,7 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         kind: 'pointArray',
         name: feature.name,
         planeId: feature.planeId,
-        base: serializeCoordinate(feature.base),
-        azimuth: serializeExpression(feature.azimuth),
-        spacing: serializeExpression(feature.spacing),
-        count: serializeExpression(feature.count),
+        layout: serializePointArrayLayout(feature.layout),
       };
     case 'face':
       return {
@@ -887,6 +925,19 @@ function readSketchFeature(value: unknown, path: string): Checked<SketchFeature>
   }
 }
 
+/**
+ * 構築線(FR-320)の欄。**版3以前(スキーマ版は上げない、統括の差し戻し 2026-09-04)は
+ * この欄を持たないファイルもあるため、無ければ false として読む**(要件§8の前方互換、
+ * P3完了条件9「版2のファイルも開ける」と同じ考え方)。書き手(`serializeSketchFeature`)は
+ * 常にこの欄を書くので、往復すると新形式(欄あり)へ正規化される。
+ */
+function readConstructionFlag(record: Record<string, unknown>, path: string): Checked<boolean> {
+  if (!('construction' in record)) {
+    return { ok: true, value: false };
+  }
+  return readBoolean(record, 'construction', path);
+}
+
 function readPointFeature(
   record: Record<string, unknown>,
   path: string,
@@ -912,7 +963,20 @@ function readLineFeature(
   if (!to.ok) {
     return to;
   }
-  return { ok: true, value: { ...base, kind: 'line', from: from.value, to: to.value } };
+  const construction = readConstructionFlag(record, path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'line',
+      from: from.value,
+      to: to.value,
+      construction: construction.value,
+    },
+  };
 }
 
 function readArcFeature(
@@ -936,6 +1000,10 @@ function readArcFeature(
   if (!endAngle.ok) {
     return endAngle;
   }
+  const construction = readConstructionFlag(record, path);
+  if (!construction.ok) {
+    return construction;
+  }
   return {
     ok: true,
     value: {
@@ -945,18 +1013,46 @@ function readArcFeature(
       radius: radius.value,
       startAngle: startAngle.value,
       endAngle: endAngle.value,
+      construction: construction.value,
     },
   };
 }
 
-function readPointArrayFeature(
+/**
+ * 点列の並べ方(FR-327、タスク6)。`kind` で直線状・円周上・格子状を見分けてから
+ * 種類ごとの欄を読む(スプラインの `mode` と同じ、先に判別子だけを確かめる書き方)。
+ */
+function readPointArrayLayout(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<PointArrayLayout> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, POINT_ARRAY_LAYOUT_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'linear':
+      return readLinearLayout(record.value, path);
+    case 'circular':
+      return readCircularLayout(record.value, path);
+    case 'grid':
+      return readGridLayout(record.value, path);
+  }
+}
+
+function readLinearLayout(
   record: Record<string, unknown>,
   path: string,
-  base: SketchFeatureBase,
-): Checked<SketchFeature> {
-  const arrayBase = readCoordinate(record, 'base', path);
-  if (!arrayBase.ok) {
-    return arrayBase;
+): Checked<PointArrayLayout> {
+  const base = readCoordinate(record, 'base', path);
+  if (!base.ok) {
+    return base;
   }
   const azimuth = readExpression(record, 'azimuth', path);
   if (!azimuth.ok) {
@@ -973,14 +1069,109 @@ function readPointArrayFeature(
   return {
     ok: true,
     value: {
-      ...base,
-      kind: 'pointArray',
-      base: arrayBase.value,
+      kind: 'linear',
+      base: base.value,
       azimuth: azimuth.value,
       spacing: spacing.value,
       count: count.value,
     },
   };
+}
+
+function readCircularLayout(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<PointArrayLayout> {
+  const center = readCoordinate(record, 'center', path);
+  if (!center.ok) {
+    return center;
+  }
+  const radius = readExpression(record, 'radius', path);
+  if (!radius.ok) {
+    return radius;
+  }
+  const count = readExpression(record, 'count', path);
+  if (!count.ok) {
+    return count;
+  }
+  return {
+    ok: true,
+    value: { kind: 'circular', center: center.value, radius: radius.value, count: count.value },
+  };
+}
+
+function readGridLayout(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<PointArrayLayout> {
+  const base = readCoordinate(record, 'base', path);
+  if (!base.ok) {
+    return base;
+  }
+  const rowAzimuth = readExpression(record, 'rowAzimuth', path);
+  if (!rowAzimuth.ok) {
+    return rowAzimuth;
+  }
+  const rowSpacing = readExpression(record, 'rowSpacing', path);
+  if (!rowSpacing.ok) {
+    return rowSpacing;
+  }
+  const rowCount = readExpression(record, 'rowCount', path);
+  if (!rowCount.ok) {
+    return rowCount;
+  }
+  const colAzimuth = readExpression(record, 'colAzimuth', path);
+  if (!colAzimuth.ok) {
+    return colAzimuth;
+  }
+  const colSpacing = readExpression(record, 'colSpacing', path);
+  if (!colSpacing.ok) {
+    return colSpacing;
+  }
+  const colCount = readExpression(record, 'colCount', path);
+  if (!colCount.ok) {
+    return colCount;
+  }
+  return {
+    ok: true,
+    value: {
+      kind: 'grid',
+      base: base.value,
+      rowAzimuth: rowAzimuth.value,
+      rowSpacing: rowSpacing.value,
+      rowCount: rowCount.value,
+      colAzimuth: colAzimuth.value,
+      colSpacing: colSpacing.value,
+      colCount: colCount.value,
+    },
+  };
+}
+
+/**
+ * 点列(FR-308、FR-327)。**版3以前(スキーマ版は上げない)は `layout` を挟まず、
+ * `base`/`azimuth`/`spacing`/`count` を直下に持つ**(統括の差し戻し 2026-09-04、要件§8の
+ * 前方互換、P3完了条件9)。`layout` が無ければ旧形式とみなし、直線状(`kind: 'linear'`)へ
+ * 包み直して読む。`readLinearLayout` は「base/azimuth/spacing/count を直下に持つ record」を
+ * 読む関数なので、`layout` サブレコードにも版3以前のフラットな record にもそのまま使える。
+ * 書き手は常に `layout` を書くので、往復すると新形式へ正規化される。
+ */
+function readPointArrayFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  if (!('layout' in record)) {
+    const legacy = readLinearLayout(record, path);
+    if (!legacy.ok) {
+      return legacy;
+    }
+    return { ok: true, value: { ...base, kind: 'pointArray', layout: legacy.value } };
+  }
+  const layout = readPointArrayLayout(record, 'layout', path);
+  if (!layout.ok) {
+    return layout;
+  }
+  return { ok: true, value: { ...base, kind: 'pointArray', layout: layout.value } };
 }
 
 function readFaceFeature(
@@ -1015,7 +1206,7 @@ function readRectangleFeature(
   if (!corner2.ok) {
     return corner2;
   }
-  const construction = readBoolean(record, 'construction', path);
+  const construction = readConstructionFlag(record, path);
   if (!construction.ok) {
     return construction;
   }
@@ -1052,7 +1243,7 @@ function readPolygonFeature(
   if (!radiusMode.ok) {
     return radiusMode;
   }
-  const construction = readBoolean(record, 'construction', path);
+  const construction = readConstructionFlag(record, path);
   if (!construction.ok) {
     return construction;
   }
@@ -1087,7 +1278,7 @@ function readSlotFeature(
   if (!width.ok) {
     return width;
   }
-  const construction = readBoolean(record, 'construction', path);
+  const construction = readConstructionFlag(record, path);
   if (!construction.ok) {
     return construction;
   }
@@ -1133,7 +1324,7 @@ function readEllipseFeature(
   if (!endAngle.ok) {
     return endAngle;
   }
-  const construction = readBoolean(record, 'construction', path);
+  const construction = readConstructionFlag(record, path);
   if (!construction.ok) {
     return construction;
   }
@@ -1170,7 +1361,7 @@ function readSplineFeature(
   if (!closed.ok) {
     return closed;
   }
-  const construction = readBoolean(record, 'construction', path);
+  const construction = readConstructionFlag(record, path);
   if (!construction.ok) {
     return construction;
   }

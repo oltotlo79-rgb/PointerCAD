@@ -248,6 +248,7 @@ describe('スケッチの再計算(要件§6.3)', () => {
         name: '線分1',
         planeId: 'xy',
         kind: 'line',
+        construction: false,
         from: absoluteCoordinate(0, 0, 0),
         to: {
           mode: 'relative',
@@ -262,6 +263,7 @@ describe('スケッチの再計算(要件§6.3)', () => {
         name: '円弧1',
         planeId: 'xy',
         kind: 'arc',
+        construction: false,
         center: {
           mode: 'polar',
           base: { kind: 'origin' },
@@ -278,10 +280,13 @@ describe('スケッチの再計算(要件§6.3)', () => {
         name: '点列1',
         planeId: 'xy',
         kind: 'pointArray',
-        base: absoluteCoordinate(0, 0, 0),
-        azimuth: expressionOf('0', 0),
-        spacing: expressionOf('w', 0),
-        count: expressionOf('w-3', 0),
+        layout: {
+          kind: 'linear',
+          base: absoluteCoordinate(0, 0, 0),
+          azimuth: expressionOf('0', 0),
+          spacing: expressionOf('w', 0),
+          count: expressionOf('w-3', 0),
+        },
       },
       FACE,
     );
@@ -299,9 +304,9 @@ describe('スケッチの再計算(要件§6.3)', () => {
       expect(arc.endAngle.value).toBe(50);
     }
     const array = updated.features[3];
-    if (array.kind === 'pointArray') {
-      expect(array.spacing.value).toBe(5);
-      expect(array.count.value).toBe(2);
+    if (array.kind === 'pointArray' && array.layout.kind === 'linear') {
+      expect(array.layout.spacing.value).toBe(5);
+      expect(array.layout.count.value).toBe(2);
     }
     // 面は式を持たないのでそのまま残る。
     expect(updated.features[4]).toBe(FACE);

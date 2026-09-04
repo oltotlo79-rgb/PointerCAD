@@ -129,6 +129,7 @@ function addAxisLine(document: PartDocument): { document: PartDocument; lineRef:
     kind: 'line',
     from: absoluteCoordinate(0, 0, 0),
     to: absoluteCoordinate(0, 30, 0),
+    construction: false,
   };
   const next = appendFeature(sketch, line);
   return {

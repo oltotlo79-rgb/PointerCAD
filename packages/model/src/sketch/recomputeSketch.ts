@@ -13,6 +13,7 @@ import type { KernelBridge } from '../kernelBridge.js';
 import { resolveSketch } from './resolveSketch.js';
 import type {
   CoordinateInput,
+  PointArrayLayout,
   ResolvedSketch,
   SketchDocument,
   SketchError,
@@ -97,6 +98,44 @@ function reevaluateCoordinate(
   };
 }
 
+/**
+ * 点列の並べ方(FR-327、タスク6)を種類ごとに評価し直す。`layout.kind` は式を持たないので
+ * そのまま引き継ぎ、各欄の式だけを再評価する。
+ */
+function reevaluatePointArrayLayout(
+  layout: PointArrayLayout,
+  variables: ReadonlyMap<string, number>,
+): PointArrayLayout {
+  switch (layout.kind) {
+    case 'linear':
+      return {
+        kind: 'linear',
+        base: reevaluateCoordinate(layout.base, variables),
+        azimuth: reevaluate(layout.azimuth, variables),
+        spacing: reevaluate(layout.spacing, variables),
+        count: reevaluate(layout.count, variables),
+      };
+    case 'circular':
+      return {
+        kind: 'circular',
+        center: reevaluateCoordinate(layout.center, variables),
+        radius: reevaluate(layout.radius, variables),
+        count: reevaluate(layout.count, variables),
+      };
+    case 'grid':
+      return {
+        kind: 'grid',
+        base: reevaluateCoordinate(layout.base, variables),
+        rowAzimuth: reevaluate(layout.rowAzimuth, variables),
+        rowSpacing: reevaluate(layout.rowSpacing, variables),
+        rowCount: reevaluate(layout.rowCount, variables),
+        colAzimuth: reevaluate(layout.colAzimuth, variables),
+        colSpacing: reevaluate(layout.colSpacing, variables),
+        colCount: reevaluate(layout.colCount, variables),
+      };
+  }
+}
+
 function reevaluateFeature(
   feature: SketchFeature,
   variables: ReadonlyMap<string, number>,
@@ -119,13 +158,7 @@ function reevaluateFeature(
         endAngle: reevaluate(feature.endAngle, variables),
       };
     case 'pointArray':
-      return {
-        ...feature,
-        base: reevaluateCoordinate(feature.base, variables),
-        azimuth: reevaluate(feature.azimuth, variables),
-        spacing: reevaluate(feature.spacing, variables),
-        count: reevaluate(feature.count, variables),
-      };
+      return { ...feature, layout: reevaluatePointArrayLayout(feature.layout, variables) };
     case 'face':
       // 面は式を持たない(境界の参照と色だけ)。
       return feature;

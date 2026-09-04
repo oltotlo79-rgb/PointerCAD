@@ -239,6 +239,17 @@ export {
   resolveRevolveAxis, resolveSpringLength, resolveSpringOrigin, resolveTiltedDirection,
   translateCurve,
 } from './part/resolvePart.js';
+/**
+ * タイムライン(FR-507)と途中までの文書(FR-506、ロールバック。P4b タスク9)。
+ * 帯の並び・依存グラフ・並べ替えの可否・つまみの位置での差し込み。
+ */
+export type {
+  MoveCheck, ReorderOutcome, ReorderRefusal, TimelineEntry, TimelineSection,
+} from './part/timelineOrder.js';
+export {
+  buildTimeline, canMoveHistoryItem, dependenciesOf, documentUpTo, historyDependencies,
+  insertPositionAt, moveHistoryItem, reorderTimeline, timelineIndexOf,
+} from './part/timelineOrder.js';
 export type {
   PartRecomputeError, PartRecomputeOptions, PartRecomputeResult, PartSketchResult,
 } from './part/recomputePart.js';

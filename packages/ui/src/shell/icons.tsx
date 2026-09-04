@@ -256,6 +256,36 @@ export function FaceToolIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/**
+ * 矩形(FR-314)。長方形の輪郭で表す(P4 タスク4、統括の指示 2026-09-04)。
+ * `FeatureTree.tsx` の KIND_ICONS がツリーの行の頭に、道具アイコンとしてタスク12 が使う。
+ */
+export function RectangleToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="2" y="4" width="12" height="8" />
+    </SvgIcon>
+  );
+}
+
+/** 正多角形(FR-315)。正六角形の輪郭で表す(P4 タスク4、統括の指示 2026-09-04)。 */
+export function PolygonToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 2 13.2 5 13.2 11 8 14 2.8 11 2.8 5z" />
+    </SvgIcon>
+  );
+}
+
+/** 長穴(FR-316)。両端が半円で丸まった横長の輪郭で表す(P4 タスク4、統括の指示 2026-09-04)。 */
+export function SlotToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="2" y="5.5" width="12" height="5" rx="2.5" />
+    </SvgIcon>
+  );
+}
+
 /** 作図面。斜めに見た平行四辺形に、方眼の線を1本ずつ入れて表す。 */
 export function PlaneIcon(props: IconProps): React.JSX.Element {
   return (

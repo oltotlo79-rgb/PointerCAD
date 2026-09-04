@@ -51,7 +51,15 @@ export type CoordinateInput =
       readonly elevation: ExpressionValue;
     };
 
-export type SketchFeatureKind = 'point' | 'line' | 'arc' | 'pointArray' | 'face';
+export type SketchFeatureKind =
+  | 'point'
+  | 'line'
+  | 'arc'
+  | 'pointArray'
+  | 'face'
+  | 'rectangle'
+  | 'polygon'
+  | 'slot';
 
 interface SketchFeatureBase {
   readonly id: string;
@@ -89,7 +97,47 @@ export interface SketchPointArrayFeature extends SketchFeatureBase {
   readonly count: ExpressionValue;
 }
 
-/** 面の境界に使う要素の参照。点列の中の 1 点を指すときだけ index を付ける。 */
+/**
+ * 対角の 2 点で指定する矩形(FR-314)。1 フィーチャーが 4 本の線分を生む
+ * (`resolveSketch.ts` の `curvesByFeature`、§0.a-0.8)。中心+幅+高さの指定は
+ * UI 側が corner1/corner2 の対角座標へ変換してから保存する(保存形はこの 2 点に統一する)。
+ */
+export interface SketchRectangleFeature extends SketchFeatureBase {
+  readonly kind: 'rectangle';
+  readonly corner1: CoordinateInput;
+  readonly corner2: CoordinateInput;
+  /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
+  readonly construction: boolean;
+}
+
+/**
+ * 中心+辺数+半径で指定する正多角形(FR-315)。1 フィーチャーが辺数ぶんの線分を生む。
+ * 半径は円周(頂点)半径(外接)か辺の中点までの距離(内接、アポテム)かを `radiusMode` で選ぶ。
+ */
+export interface SketchPolygonFeature extends SketchFeatureBase {
+  readonly kind: 'polygon';
+  readonly center: CoordinateInput;
+  /** 3 以上の整数。 */
+  readonly sides: ExpressionValue;
+  readonly radius: ExpressionValue;
+  /** 半径の意味(FR-315)。 */
+  readonly radiusMode: 'circumscribed' | 'inscribed';
+  readonly construction: boolean;
+}
+
+/**
+ * 2 つの中心点+幅で指定する長穴(FR-316)。1 フィーチャーが直線区間 2 本+半円弧 2 本を生む。
+ */
+export interface SketchSlotFeature extends SketchFeatureBase {
+  readonly kind: 'slot';
+  readonly center1: CoordinateInput;
+  readonly center2: CoordinateInput;
+  readonly width: ExpressionValue;
+  readonly construction: boolean;
+}
+
+/** 面の境界に使う要素の参照。点列の中の 1 点、または複数曲線フィーチャーの n 番目の曲線を
+ * 指すときだけ index を付ける(§0.a-0.8)。省略時は「そのフィーチャーの全周・全体」を表す。 */
 export interface SketchElementRef {
   readonly featureId: string;
   readonly index?: number;
@@ -108,7 +156,10 @@ export type SketchFeature =
   | SketchLineFeature
   | SketchArcFeature
   | SketchPointArrayFeature
-  | SketchFaceFeature;
+  | SketchFaceFeature
+  | SketchRectangleFeature
+  | SketchPolygonFeature
+  | SketchSlotFeature;
 
 /** スケッチ文書。変更のたびに新しい配列を作る(P2 の Undo の土台、FR-505)。 */
 export interface SketchDocument {

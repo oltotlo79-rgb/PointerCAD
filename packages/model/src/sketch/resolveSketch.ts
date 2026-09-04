@@ -9,7 +9,14 @@
  * 「そこまでに解決できたもの」(ResolveContext)を育てながら順に渡す。
  */
 
-import { degreesToRadians, directionInPlane, WORK_PLANES } from './planeMath.js';
+import {
+  degreesToRadians,
+  directionInPlane,
+  planeToWorld,
+  WORK_PLANES,
+  worldToPlane,
+  type WorkPlane,
+} from './planeMath.js';
 import { resolveCoordinate, vertexKey, type ResolveContext } from './resolveCoordinate.js';
 import type {
   ResolvedArc,
@@ -135,6 +142,172 @@ function error(featureId: string, code: SketchErrorCode, message: string): Sketc
   return { featureId, code, message };
 }
 
+/** 直角(ラジアン)。長穴の半円弧の開始角・終了角(中心の xAxis から ±90°)に使う。 */
+const QUARTER_TURN = Math.PI / 2;
+
+type CurvesOutcome =
+  | { readonly ok: true; readonly curves: readonly ResolvedCurve[] }
+  | { readonly ok: false; readonly error: SketchError };
+
+/**
+ * 複数曲線フィーチャー(矩形・正多角形・長穴)の曲線を、種類ごとに `segments` / `arcs` へ積む。
+ * 線分・円弧の単体フィーチャーと同じ配列に並ぶことで、UI 側(pickMath.ts 等、タスク11・12)が
+ * 既存の `sketch.segments` / `sketch.arcs` の走査をそのまま使える(§2.3)。
+ */
+function pushCurves(
+  curves: readonly ResolvedCurve[],
+  segments: ResolvedSegment[],
+  arcs: ResolvedArc[],
+): void {
+  for (const curve of curves) {
+    if (curve.kind === 'segment') {
+      segments.push(curve);
+    } else {
+      arcs.push(curve);
+    }
+  }
+}
+
+/**
+ * 矩形(FR-314)の 4 辺を対角 2 点から作る(§0.a-0.8、タスク4)。対角の 2 点を作図面へ
+ * 落とし(`worldToPlane`)、作図面内の軸に平行な 4 頂点を組み立ててから世界座標へ戻す。
+ * こうすることで、対角の 2 点が作図面から多少ずれて入力されても矩形は平面上に収まる。
+ */
+function resolveRectangleCurves(
+  featureId: string,
+  plane: WorkPlane,
+  corner1: Vec3,
+  corner2: Vec3,
+): CurvesOutcome {
+  const [u1, v1] = worldToPlane(plane, corner1);
+  const [u2, v2] = worldToPlane(plane, corner2);
+  if (Math.abs(u2 - u1) <= SKETCH_TOLERANCE_MM || Math.abs(v2 - v1) <= SKETCH_TOLERANCE_MM) {
+    return { ok: false, error: error(featureId, 'degenerate', '矩形の幅・高さが 0 です。') };
+  }
+  // 対角 2 点から、作図面の軸に平行な 4 頂点を反時計回りに並べる。
+  const corners: readonly Vec3[] = [
+    planeToWorld(plane, u1, v1),
+    planeToWorld(plane, u2, v1),
+    planeToWorld(plane, u2, v2),
+    planeToWorld(plane, u1, v2),
+  ];
+  const curves: ResolvedSegment[] = corners.map(
+    (from, index): ResolvedSegment => ({
+      kind: 'segment',
+      featureId,
+      from,
+      to: corners[(index + 1) % corners.length],
+    }),
+  );
+  return { ok: true, curves };
+}
+
+/**
+ * 正多角形(FR-315)の n 辺を中心・半径・辺数から作る(タスク4)。半径は円周(外接、頂点円)
+ * かアポテム(内接、辺の中点までの距離)かで扱いが違うため、内接のときだけ
+ * 外接半径 = 内接半径 ÷ cos(π/n) で頂点円の半径へ変換してから頂点を並べる。
+ * 角度 0 は作図面の第1軸(円弧・点列と同じ規約、§2.8)。
+ */
+function resolvePolygonCurves(
+  featureId: string,
+  plane: WorkPlane,
+  center: Vec3,
+  sides: number,
+  radiusMode: 'circumscribed' | 'inscribed',
+  radius: number,
+): CurvesOutcome {
+  const circumRadius =
+    radiusMode === 'circumscribed' ? radius : radius / Math.cos(Math.PI / sides);
+  const vertices: Vec3[] = [];
+  for (let index = 0; index < sides; index += 1) {
+    const angle = (2 * Math.PI * index) / sides;
+    vertices.push(
+      addVec3(
+        center,
+        addVec3(
+          scaleVec3(plane.axisU, circumRadius * Math.cos(angle)),
+          scaleVec3(plane.axisV, circumRadius * Math.sin(angle)),
+        ),
+      ),
+    );
+  }
+  const curves: ResolvedSegment[] = vertices.map(
+    (from, index): ResolvedSegment => ({
+      kind: 'segment',
+      featureId,
+      from,
+      to: vertices[(index + 1) % vertices.length],
+    }),
+  );
+  return { ok: true, curves };
+}
+
+/**
+ * 長穴(FR-316)を 2 中心点+幅から作る(タスク4)。直線区間 2 本(中心を結ぶ向きに平行)+
+ * 半円弧 2 本(それぞれの中心・半径=幅/2)。矩形と同じく両中心を作図面へ落として組み立てる。
+ *
+ * 半円弧の向きの決め方: 中心 2 を通る円弧の xAxis を「中心1→中心2」の単位ベクトルに取ると、
+ * 角度 0 の点がちょうど中心2から見て外向き(中心1と反対側)の膨らみになり、
+ * ±90°(`QUARTER_TURN`)の点が長穴の両側の直線区間の端点に一致する
+ * (導出は `resolveSketch.test.ts` の長穴の項を参照)。中心1側の円弧は xAxis を逆向きにして
+ * 同じ考え方を使う。
+ */
+function resolveSlotCurves(
+  featureId: string,
+  plane: WorkPlane,
+  center1: Vec3,
+  center2: Vec3,
+  width: number,
+): CurvesOutcome {
+  const [u1, v1] = worldToPlane(plane, center1);
+  const [u2, v2] = worldToPlane(plane, center2);
+  const du = u2 - u1;
+  const dv = v2 - v1;
+  const length = Math.hypot(du, dv);
+  if (length <= SKETCH_TOLERANCE_MM) {
+    return { ok: false, error: error(featureId, 'degenerate', '長穴の 2 つの中心が同じ位置です。') };
+  }
+  const half = width / 2;
+  if (half <= SKETCH_TOLERANCE_MM) {
+    return { ok: false, error: error(featureId, 'degenerate', '長穴の幅が小さすぎます。') };
+  }
+  const dirU = du / length;
+  const dirV = dv / length;
+  // 作図面内で90°回した向き(中心1→中心2の向きの左側)。
+  const perpU = -dirV;
+  const perpV = dirU;
+  const center1Flat = planeToWorld(plane, u1, v1);
+  const center2Flat = planeToWorld(plane, u2, v2);
+  const pointA = planeToWorld(plane, u1 + half * perpU, v1 + half * perpV);
+  const pointB = planeToWorld(plane, u2 + half * perpU, v2 + half * perpV);
+  const pointC = planeToWorld(plane, u2 - half * perpU, v2 - half * perpV);
+  const pointD = planeToWorld(plane, u1 - half * perpU, v1 - half * perpV);
+  const dirVecWorld = addVec3(scaleVec3(plane.axisU, dirU), scaleVec3(plane.axisV, dirV));
+  const arcAtCenter2: ResolvedArc = {
+    kind: 'arc',
+    featureId,
+    center: center2Flat,
+    normal: plane.normal,
+    xAxis: dirVecWorld,
+    radius: half,
+    startAngle: -QUARTER_TURN,
+    endAngle: QUARTER_TURN,
+  };
+  const arcAtCenter1: ResolvedArc = {
+    kind: 'arc',
+    featureId,
+    center: center1Flat,
+    normal: plane.normal,
+    xAxis: scaleVec3(dirVecWorld, -1),
+    radius: half,
+    startAngle: -QUARTER_TURN,
+    endAngle: QUARTER_TURN,
+  };
+  const segmentTop: ResolvedSegment = { kind: 'segment', featureId, from: pointA, to: pointB };
+  const segmentBottom: ResolvedSegment = { kind: 'segment', featureId, from: pointC, to: pointD };
+  return { ok: true, curves: [segmentTop, arcAtCenter2, segmentBottom, arcAtCenter1] };
+}
+
 /**
  * スケッチの履歴を先頭から順に解決する(要件§6.3)。
  * 途中のフィーチャーが解決できなくても止めず、そのフィーチャーだけを errors に入れて先へ進む
@@ -149,6 +322,12 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
   const vertices = new Map<string, Vec3>();
   const curveByFeature = new Map<string, ResolvedCurve>();
   const pointsByFeature = new Map<string, readonly ResolvedPoint[]>();
+  /**
+   * 矩形・正多角形・長穴のように「1 フィーチャーが複数の曲線を生む」結果(§0.a-0.8、タスク4)。
+   * 既存の線分・円弧(1 フィーチャー = 1 曲線)は単数の curveByFeature のまま残す
+   * (既存の呼び出し側を壊さないため)。
+   */
+  const curvesByFeature = new Map<string, readonly ResolvedCurve[]>();
   /** 「直前の点」(FR-302)。点を作ったフィーチャーと線・円弧の終点で更新する。 */
   let previous: Vec3 | null = null;
 
@@ -296,7 +475,116 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       continue;
     }
 
-    const face = resolveFace(feature, pointsByFeature, curveByFeature);
+    if (feature.kind === 'rectangle') {
+      const corner1 = resolveCoordinate(feature.corner1, context, feature.id);
+      if (!corner1.ok) {
+        errors.push(corner1.error);
+        continue;
+      }
+      // 2 点目は 1 点目を「直前の点」として解決できるようにする(FR-307 と同じ考え方)。
+      const corner2 = resolveCoordinate(
+        feature.corner2,
+        { ...context, previous: corner1.value },
+        feature.id,
+      );
+      if (!corner2.ok) {
+        errors.push(corner2.error);
+        continue;
+      }
+      const rectangle = resolveRectangleCurves(feature.id, plane, corner1.value, corner2.value);
+      if (!rectangle.ok) {
+        errors.push(rectangle.error);
+        continue;
+      }
+      pushCurves(rectangle.curves, segments, arcs);
+      curvesByFeature.set(feature.id, rectangle.curves);
+      const first = rectangle.curves[0];
+      const last = rectangle.curves[rectangle.curves.length - 1];
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(first));
+      vertices.set(vertexKey(feature.id, 'end'), curveEnd(last));
+      previous = curveEnd(last);
+      continue;
+    }
+
+    if (feature.kind === 'polygon') {
+      const center = resolveCoordinate(feature.center, context, feature.id);
+      if (!center.ok) {
+        errors.push(center.error);
+        continue;
+      }
+      const sides = feature.sides.value;
+      if (!Number.isFinite(sides) || !Number.isInteger(sides) || sides < 3) {
+        errors.push(error(feature.id, 'invalidValue', '辺の数は 3 以上にしてください。'));
+        continue;
+      }
+      const radius = feature.radius.value;
+      if (!Number.isFinite(radius) || radius < 0) {
+        errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
+        continue;
+      }
+      if (radius <= SKETCH_TOLERANCE_MM) {
+        errors.push(error(feature.id, 'degenerate', '半径が小さすぎて正多角形になりません。'));
+        continue;
+      }
+      const polygon = resolvePolygonCurves(
+        feature.id,
+        plane,
+        center.value,
+        sides,
+        feature.radiusMode,
+        radius,
+      );
+      if (!polygon.ok) {
+        errors.push(polygon.error);
+        continue;
+      }
+      pushCurves(polygon.curves, segments, arcs);
+      curvesByFeature.set(feature.id, polygon.curves);
+      const first = polygon.curves[0];
+      const last = polygon.curves[polygon.curves.length - 1];
+      vertices.set(vertexKey(feature.id, 'center'), center.value);
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(first));
+      vertices.set(vertexKey(feature.id, 'end'), curveEnd(last));
+      previous = curveEnd(last);
+      continue;
+    }
+
+    if (feature.kind === 'slot') {
+      const center1 = resolveCoordinate(feature.center1, context, feature.id);
+      if (!center1.ok) {
+        errors.push(center1.error);
+        continue;
+      }
+      const center2 = resolveCoordinate(
+        feature.center2,
+        { ...context, previous: center1.value },
+        feature.id,
+      );
+      if (!center2.ok) {
+        errors.push(center2.error);
+        continue;
+      }
+      const width = feature.width.value;
+      if (!Number.isFinite(width) || width < 0) {
+        errors.push(error(feature.id, 'invalidValue', '幅は 0 より大きい必要があります。'));
+        continue;
+      }
+      const slot = resolveSlotCurves(feature.id, plane, center1.value, center2.value, width);
+      if (!slot.ok) {
+        errors.push(slot.error);
+        continue;
+      }
+      pushCurves(slot.curves, segments, arcs);
+      curvesByFeature.set(feature.id, slot.curves);
+      const first = slot.curves[0];
+      const last = slot.curves[slot.curves.length - 1];
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(first));
+      vertices.set(vertexKey(feature.id, 'end'), curveEnd(last));
+      previous = curveEnd(last);
+      continue;
+    }
+
+    const face = resolveFace(feature, pointsByFeature, curveByFeature, curvesByFeature);
     if (!face.ok) {
       errors.push(face.error);
       continue;
@@ -314,11 +602,15 @@ type FaceOutcome =
 /**
  * 面の境界を組み立てる(FR-309)。点だけ、または線・円弧だけを並べる(§0.a-0.13)。
  * 曲線の向きは変えない。ワイヤの向きはカーネル側の MakeWire が揃える。
+ *
+ * 矩形・正多角形・長穴(`curvesByFeature`)は、`index` を指定すれば n 番目の曲線だけ、
+ * 省略すればそのフィーチャーの全曲線を順に展開して使う(§0.a-0.8、タスク4)。
  */
 function resolveFace(
   feature: SketchFaceFeature,
   pointsByFeature: ReadonlyMap<string, readonly ResolvedPoint[]>,
   curveByFeature: ReadonlyMap<string, ResolvedCurve>,
+  curvesByFeature: ReadonlyMap<string, readonly ResolvedCurve[]>,
 ): FaceOutcome {
   if (feature.boundary.length === 0) {
     return { ok: false, error: error(feature.id, 'tooFewPoints', '面の境界が選ばれていません。') };
@@ -331,6 +623,26 @@ function resolveFace(
     const curve = curveByFeature.get(reference.featureId);
     if (curve !== undefined) {
       pickedCurves.push(curve);
+      continue;
+    }
+    const curveGroup = curvesByFeature.get(reference.featureId);
+    if (curveGroup !== undefined) {
+      if (reference.index === undefined) {
+        pickedCurves.push(...curveGroup);
+        continue;
+      }
+      const selected = curveGroup[reference.index];
+      if (selected === undefined) {
+        return {
+          ok: false,
+          error: error(
+            feature.id,
+            'missingBase',
+            `境界の曲線が見つかりません: ${reference.featureId}#${String(reference.index)}`,
+          ),
+        };
+      }
+      pickedCurves.push(selected);
       continue;
     }
     const group = pointsByFeature.get(reference.featureId);

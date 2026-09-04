@@ -93,6 +93,14 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'arc',
   'pointArray',
   'face',
+  'rectangle',
+  'polygon',
+  'slot',
+];
+/** 正多角形(FR-315)の半径の意味。`model` の `SketchPolygonFeature.radiusMode` と同じ2値。 */
+const POLYGON_RADIUS_MODES: readonly ('circumscribed' | 'inscribed')[] = [
+  'circumscribed',
+  'inscribed',
 ];
 /**
  * `.pcad` から読める立体の種類。P2 の4種類(押し出し・回転・縫合・ブーリアン)に、
@@ -251,6 +259,39 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         planeId: feature.planeId,
         boundary: feature.boundary.map(serializeElementRef),
         color: feature.color,
+      };
+    case 'rectangle':
+      return {
+        id: feature.id,
+        kind: 'rectangle',
+        name: feature.name,
+        planeId: feature.planeId,
+        corner1: serializeCoordinate(feature.corner1),
+        corner2: serializeCoordinate(feature.corner2),
+        construction: feature.construction,
+      };
+    case 'polygon':
+      return {
+        id: feature.id,
+        kind: 'polygon',
+        name: feature.name,
+        planeId: feature.planeId,
+        center: serializeCoordinate(feature.center),
+        sides: serializeExpression(feature.sides),
+        radius: serializeExpression(feature.radius),
+        radiusMode: feature.radiusMode,
+        construction: feature.construction,
+      };
+    case 'slot':
+      return {
+        id: feature.id,
+        kind: 'slot',
+        name: feature.name,
+        planeId: feature.planeId,
+        center1: serializeCoordinate(feature.center1),
+        center2: serializeCoordinate(feature.center2),
+        width: serializeExpression(feature.width),
+        construction: feature.construction,
       };
   }
 }
@@ -789,6 +830,12 @@ function readSketchFeature(value: unknown, path: string): Checked<SketchFeature>
       return readPointArrayFeature(record.value, path, base.value);
     case 'face':
       return readFaceFeature(record.value, path, base.value);
+    case 'rectangle':
+      return readRectangleFeature(record.value, path, base.value);
+    case 'polygon':
+      return readPolygonFeature(record.value, path, base.value);
+    case 'slot':
+      return readSlotFeature(record.value, path, base.value);
   }
 }
 
@@ -904,6 +951,108 @@ function readFaceFeature(
   return {
     ok: true,
     value: { ...base, kind: 'face', boundary: boundary.value, color: color.value },
+  };
+}
+
+function readRectangleFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const corner1 = readCoordinate(record, 'corner1', path);
+  if (!corner1.ok) {
+    return corner1;
+  }
+  const corner2 = readCoordinate(record, 'corner2', path);
+  if (!corner2.ok) {
+    return corner2;
+  }
+  const construction = readBoolean(record, 'construction', path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'rectangle',
+      corner1: corner1.value,
+      corner2: corner2.value,
+      construction: construction.value,
+    },
+  };
+}
+
+function readPolygonFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const center = readCoordinate(record, 'center', path);
+  if (!center.ok) {
+    return center;
+  }
+  const sides = readExpression(record, 'sides', path);
+  if (!sides.ok) {
+    return sides;
+  }
+  const radius = readExpression(record, 'radius', path);
+  if (!radius.ok) {
+    return radius;
+  }
+  const radiusMode = readLiteral(record, 'radiusMode', path, POLYGON_RADIUS_MODES);
+  if (!radiusMode.ok) {
+    return radiusMode;
+  }
+  const construction = readBoolean(record, 'construction', path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'polygon',
+      center: center.value,
+      sides: sides.value,
+      radius: radius.value,
+      radiusMode: radiusMode.value,
+      construction: construction.value,
+    },
+  };
+}
+
+function readSlotFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const center1 = readCoordinate(record, 'center1', path);
+  if (!center1.ok) {
+    return center1;
+  }
+  const center2 = readCoordinate(record, 'center2', path);
+  if (!center2.ok) {
+    return center2;
+  }
+  const width = readExpression(record, 'width', path);
+  if (!width.ok) {
+    return width;
+  }
+  const construction = readBoolean(record, 'construction', path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'slot',
+      center1: center1.value,
+      center2: center2.value,
+      width: width.value,
+      construction: construction.value,
+    },
   };
 }
 

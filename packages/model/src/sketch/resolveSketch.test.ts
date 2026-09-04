@@ -19,7 +19,7 @@ import type {
   SketchDocument,
   SketchFeature,
 } from './types.js';
-import type { Vec3 } from './vec3.js';
+import { addVec3, crossVec3, distanceVec3, lengthVec3, type Vec3 } from './vec3.js';
 
 function documentOf(...features: SketchFeature[]): SketchDocument {
   return { id: 'sketch-1', name: 'スケッチ1', features };
@@ -31,6 +31,18 @@ function segmentOf(curve: ResolvedCurve): ResolvedSegment {
     throw new Error(`線分ではありません: ${curve.kind}`);
   }
   return curve;
+}
+
+/**
+ * 平面多角形の面積(タスク4の検証専用、本体コードは面積を計算しない)。
+ * ベクトルの外積の和(Σ Pᵢ×Pᵢ₊₁)は原点の取り方によらず、大きさが面積の2倍になる恒等式を使う。
+ */
+function polygonArea(points: readonly Vec3[]): number {
+  let sum: Vec3 = [0, 0, 0];
+  for (let index = 0; index < points.length; index += 1) {
+    sum = addVec3(sum, crossVec3(points[index], points[(index + 1) % points.length]));
+  }
+  return lengthVec3(sum) / 2;
 }
 
 /** 式が 0/0 や 1/0 を返した場合の値。評価器を通さず手で組み立てる。 */
@@ -783,5 +795,382 @@ describe('スケッチ全体の解決(タスク11)', () => {
     ).segments[0];
     expect(curveStart(segment)).toEqual([1, 2, 3]);
     expect(curveEnd(segment)).toEqual([4, 5, 6]);
+  });
+});
+
+describe('矩形・正多角形・長穴の解決(タスク4、FR-314〜316)', () => {
+  it('矩形は対角2点から4本の線分を作る(FR-314)', () => {
+    const rectangle: SketchFeature = {
+      id: 'r1',
+      name: '矩形1',
+      planeId: 'xy',
+      kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0),
+      corner2: absoluteCoordinate(40, 30, 0),
+      construction: false,
+    };
+    const resolved = resolveSketch(documentOf(rectangle));
+    expect(resolved.errors).toEqual([]);
+    // 4 本とも segments(全体の配列)へ独立の要素として並ぶ(§0.a-0.8)。
+    expect(resolved.segments).toHaveLength(4);
+    expect(resolved.segments.every((segment) => segment.featureId === 'r1')).toBe(true);
+    // 対角 (0,0,0)-(40,30,0) から、作図面の軸に平行な4頂点を反時計回りに並べる。
+    expectCloseTo(resolved.segments[0].from, [0, 0, 0]);
+    expectCloseTo(resolved.segments[0].to, [40, 0, 0]);
+    expectCloseTo(resolved.segments[1].from, [40, 0, 0]);
+    expectCloseTo(resolved.segments[1].to, [40, 30, 0]);
+    expectCloseTo(resolved.segments[2].from, [40, 30, 0]);
+    expectCloseTo(resolved.segments[2].to, [0, 30, 0]);
+    expectCloseTo(resolved.segments[3].from, [0, 30, 0]);
+    expectCloseTo(resolved.segments[3].to, [0, 0, 0]);
+
+    // 全周(index 省略)を境界にすると閉じた矩形の面が張れ、面積は 40×30=1200。
+    const face: SketchFeature = {
+      id: 'f1',
+      name: '面1',
+      planeId: 'xy',
+      kind: 'face',
+      boundary: [{ featureId: 'r1' }],
+      color: DEFAULT_FACE_COLOR,
+    };
+    const withFace = resolveSketch(documentOf(rectangle, face));
+    expect(withFace.errors).toEqual([]);
+    expect(withFace.faces).toHaveLength(1);
+    expect(withFace.faces[0].curves).toHaveLength(4);
+    const corners = withFace.faces[0].curves.map((curve) => curveStart(curve));
+    expect(polygonArea(corners)).toBeCloseTo(1200, 6);
+  });
+
+  it('矩形の幅または高さが0なら degenerate で断る(FR-504)', () => {
+    const zeroWidth: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(5, 5, 0), corner2: absoluteCoordinate(5, 20, 0),
+      construction: false,
+    };
+    const resolvedZeroWidth = resolveSketch(documentOf(zeroWidth));
+    expect(resolvedZeroWidth.errors).toHaveLength(1);
+    expect(resolvedZeroWidth.errors[0].code).toBe('degenerate');
+    expect(resolvedZeroWidth.segments).toEqual([]);
+
+    const zeroHeight: SketchFeature = {
+      ...zeroWidth,
+      corner1: absoluteCoordinate(5, 5, 0), corner2: absoluteCoordinate(20, 5, 0),
+    };
+    expect(resolveSketch(documentOf(zeroHeight)).errors[0].code).toBe('degenerate');
+
+    const samePoint: SketchFeature = {
+      ...zeroWidth,
+      corner1: absoluteCoordinate(5, 5, 0), corner2: absoluteCoordinate(5, 5, 0),
+    };
+    expect(resolveSketch(documentOf(samePoint)).errors[0].code).toBe('degenerate');
+  });
+
+  it('矩形の1辺だけを境界に選ぶと閉じない(index 指定、§0.a-0.8)', () => {
+    const rectangle: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+      construction: false,
+    };
+    const oneSide: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'r1', index: 1 }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(rectangle, oneSide));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('notClosed');
+
+    // 範囲外の index は missingBase。
+    const outOfRange: SketchFeature = { ...oneSide, boundary: [{ featureId: 'r1', index: 9 }] };
+    const outOfRangeResolved = resolveSketch(documentOf(rectangle, outOfRange));
+    expect(outOfRangeResolved.errors[0].code).toBe('missingBase');
+  });
+
+  it('矩形の後で直前の点を基準に続けてかける(FR-307 と同じ考え方)', () => {
+    const rectangle: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+      construction: false,
+    };
+    const next: SketchFeature = {
+      id: 'p9', name: '点9', planeId: 'xy', kind: 'point',
+      at: { mode: 'relative', base: { kind: 'previous' }, dx: num(1), dy: num(0), dz: num(0) },
+    };
+    const resolved = resolveSketch(documentOf(rectangle, next));
+    expect(resolved.errors).toEqual([]);
+    // 4本目(index 3、corner (0,30,0)→(0,0,0))の終点 (0,0,0) が「直前の点」になる。
+    expectCloseTo(resolved.points[0].position, [1, 0, 0]);
+  });
+
+  it('正多角形(外接半径)は n 本の線分を作る(FR-315)', () => {
+    const hexagon: SketchFeature = {
+      id: 'g1', name: '正多角形1', planeId: 'xy', kind: 'polygon',
+      center: absoluteCoordinate(0, 0, 0), sides: num(6), radius: num(10),
+      radiusMode: 'circumscribed', construction: false,
+    };
+    const resolved = resolveSketch(documentOf(hexagon));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.segments).toHaveLength(6);
+    // 頂点は中心角60°ずつ、角度0は作図面の第1軸(円弧・点列と同じ規約、§2.8)。
+    expectCloseTo(resolved.segments[0].from, [10, 0, 0]);
+    expectCloseTo(resolved.segments[1].from, [5, 8.660254037844387, 0]);
+    expectCloseTo(resolved.segments[2].from, [-5, 8.660254037844387, 0]);
+    expectCloseTo(resolved.segments[3].from, [-10, 0, 0]);
+    expectCloseTo(resolved.segments[4].from, [-5, -8.660254037844387, 0]);
+    expectCloseTo(resolved.segments[5].from, [5, -8.660254037844387, 0]);
+    // 1辺の長さは 2·R·sin(π/6) = 10(浮動小数の丸めで厳密な10からわずかにずれる)。
+    const side = distanceVec3(resolved.segments[0].from, resolved.segments[0].to);
+    expect(side).toBeCloseTo(10, 9);
+
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'g1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const withFace = resolveSketch(documentOf(hexagon, face));
+    expect(withFace.errors).toEqual([]);
+    const vertices = withFace.faces[0].curves.map((curve) => curveStart(curve));
+    // (n/2)·R²·sin(2π/n) = 3·100·sin(60°) = 259.807621135…
+    expect(polygonArea(vertices)).toBeCloseTo(259.807621135, 6);
+  });
+
+  it('正多角形(内接半径・アポテム)は外接半径へ変換してから頂点を並べる(FR-315)', () => {
+    const hexagon: SketchFeature = {
+      id: 'g1', name: '正多角形1', planeId: 'xy', kind: 'polygon',
+      center: absoluteCoordinate(0, 0, 0), sides: num(6), radius: num(10),
+      radiusMode: 'inscribed', construction: false,
+    };
+    const resolved = resolveSketch(documentOf(hexagon));
+    expect(resolved.errors).toEqual([]);
+    // 外接半径 = アポテム ÷ cos(π/6) = 10/cos(30°) = 11.547005383792515…
+    const side = distanceVec3(resolved.segments[0].from, resolved.segments[0].to);
+    expect(side).toBeCloseTo(11.547005383792515, 9);
+
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'g1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const withFace = resolveSketch(documentOf(hexagon, face));
+    const vertices = withFace.faces[0].curves.map((curve) => curveStart(curve));
+    // n·アポテム²·tan(π/n) = 6·100·tan(30°) = 346.410161514…
+    expect(polygonArea(vertices)).toBeCloseTo(346.410161514, 6);
+  });
+
+  it('正多角形は辺数が3未満なら invalidValue で断る(FR-504)', () => {
+    const tooFew: SketchFeature = {
+      id: 'g1', name: '正多角形1', planeId: 'xy', kind: 'polygon',
+      center: absoluteCoordinate(0, 0, 0), sides: num(2), radius: num(10),
+      radiusMode: 'circumscribed', construction: false,
+    };
+    const resolved = resolveSketch(documentOf(tooFew));
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('invalidValue');
+    expect(resolved.errors[0].message).toContain('3');
+    expect(resolved.segments).toEqual([]);
+
+    // 半径が 0 以下、または負なら断る(半径そのものの不備、円弧と同じ扱い)。
+    const zeroRadius: SketchFeature = { ...tooFew, sides: num(6), radius: num(0) };
+    expect(resolveSketch(documentOf(zeroRadius)).errors[0].code).toBe('degenerate');
+    const negativeRadius: SketchFeature = { ...tooFew, sides: num(6), radius: num(-5) };
+    expect(resolveSketch(documentOf(negativeRadius)).errors[0].code).toBe('invalidValue');
+  });
+
+  it('長穴は2直線区間+2半円弧を作る(FR-316)', () => {
+    const slot: SketchFeature = {
+      id: 's1', name: '長穴1', planeId: 'xy', kind: 'slot',
+      center1: absoluteCoordinate(0, 0, 0), center2: absoluteCoordinate(20, 0, 0),
+      width: num(10), construction: false,
+    };
+    const resolved = resolveSketch(documentOf(slot));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.segments).toHaveLength(2);
+    expect(resolved.arcs).toHaveLength(2);
+
+    // 直線区間: 中心を結ぶ線(X軸)の両側、幅10(半径5)だけ離れたところ。
+    expectCloseTo(resolved.segments[0].from, [0, 5, 0]);
+    expectCloseTo(resolved.segments[0].to, [20, 5, 0]);
+    expectCloseTo(resolved.segments[1].from, [20, -5, 0]);
+    expectCloseTo(resolved.segments[1].to, [0, -5, 0]);
+
+    // 半円弧: 中心はそれぞれの中心点、半径は幅の半分、中心角は180°(半円)。
+    const arc1 = resolved.arcs[0];
+    const arc2 = resolved.arcs[1];
+    expectCloseTo(arc1.center, [20, 0, 0]);
+    expectCloseTo(arc2.center, [0, 0, 0]);
+    expect(arc1.radius).toBe(5);
+    expect(arc2.radius).toBe(5);
+    expect(Math.abs(arc1.endAngle - arc1.startAngle)).toBeCloseTo(Math.PI, 12);
+    expect(Math.abs(arc2.endAngle - arc2.startAngle)).toBeCloseTo(Math.PI, 12);
+    // 半円の両端は直線区間の端と一致する(閉ループになる、FR-309 の土台)。
+    expectCloseTo(curveStart(arc1), [20, -5, 0]);
+    expectCloseTo(curveEnd(arc1), [20, 5, 0]);
+    expectCloseTo(curveStart(arc2), [0, 5, 0]);
+    expectCloseTo(curveEnd(arc2), [0, -5, 0]);
+
+    // 全周を境界にすると閉じた長穴の面が張れる(直線2本+半円弧2本、FR-309)。
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 's1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const withFace = resolveSketch(documentOf(slot, face));
+    expect(withFace.errors).toEqual([]);
+    expect(withFace.faces).toHaveLength(1);
+    expect(withFace.faces[0].curves).toHaveLength(4);
+    // 面積 = 直線部分(A,B,C,D の四角形。長さ20×幅10=200)+半円2つ(合わせて半径5の円1つぶん)。
+    // = 200 + π·5² = 278.539816340…
+    const straightArea = polygonArea([
+      resolved.segments[0].from,
+      resolved.segments[0].to,
+      resolved.segments[1].from,
+      resolved.segments[1].to,
+    ]);
+    const capsArea = Math.PI * arc1.radius * arc1.radius;
+    expect(straightArea + capsArea).toBeCloseTo(278.539816340, 6);
+  });
+
+  it('長穴の2つの中心が同じ、または幅が0以下なら degenerate/invalidValue で断る(FR-504)', () => {
+    const samePoint: SketchFeature = {
+      id: 's1', name: '長穴1', planeId: 'xy', kind: 'slot',
+      center1: absoluteCoordinate(5, 5, 0), center2: absoluteCoordinate(5, 5, 0),
+      width: num(10), construction: false,
+    };
+    expect(resolveSketch(documentOf(samePoint)).errors[0].code).toBe('degenerate');
+
+    const zeroWidth: SketchFeature = {
+      ...samePoint, center2: absoluteCoordinate(20, 5, 0), width: num(0),
+    };
+    expect(resolveSketch(documentOf(zeroWidth)).errors[0].code).toBe('degenerate');
+
+    const negativeWidth: SketchFeature = { ...zeroWidth, width: num(-10) };
+    expect(resolveSketch(documentOf(negativeWidth)).errors[0].code).toBe('invalidValue');
+  });
+
+  it('長穴の半円弧1本だけを境界に選ぶと閉じない(index 指定)', () => {
+    const slot: SketchFeature = {
+      id: 's1', name: '長穴1', planeId: 'xy', kind: 'slot',
+      center1: absoluteCoordinate(0, 0, 0), center2: absoluteCoordinate(20, 0, 0),
+      width: num(10), construction: false,
+    };
+    const oneArc: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 's1', index: 1 }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(slot, oneArc));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors[0].code).toBe('notClosed');
+  });
+
+  it('正多角形は作図面に従う(XZ 面、§2.8)', () => {
+    const square: SketchFeature = {
+      id: 'g1', name: '正多角形1', planeId: 'xz', kind: 'polygon',
+      center: absoluteCoordinate(0, 0, 0), sides: num(4), radius: num(10),
+      radiusMode: 'circumscribed', construction: false,
+    };
+    const resolved = resolveSketch(documentOf(square));
+    expect(resolved.errors).toEqual([]);
+    // XZ 面は axisU=(1,0,0)・axisV=(0,0,1)。角度 0°→90°→180°→270° の4頂点。
+    expectCloseTo(resolved.segments[0].from, [10, 0, 0]);
+    expectCloseTo(resolved.segments[1].from, [0, 0, 10]);
+    expectCloseTo(resolved.segments[2].from, [-10, 0, 0]);
+    expectCloseTo(resolved.segments[3].from, [0, 0, -10]);
+    // 対角線の長さ(隣り合わない頂点間)ではなく、隣り合う辺の長さ = √(10²+10²)。
+    const side = distanceVec3(resolved.segments[0].from, resolved.segments[0].to);
+    expect(side).toBeCloseTo(Math.sqrt(200), 9);
+  });
+
+  it('長穴は作図面に従う(XZ 面、§2.8)', () => {
+    const slot: SketchFeature = {
+      id: 's1', name: '長穴1', planeId: 'xz', kind: 'slot',
+      center1: absoluteCoordinate(0, 0, 0), center2: absoluteCoordinate(20, 0, 0),
+      width: num(10), construction: false,
+    };
+    const resolved = resolveSketch(documentOf(slot));
+    expect(resolved.errors).toEqual([]);
+    // XZ 面は axisU=(1,0,0)・axisV=(0,0,1)。幅方向の膨らみは Z 側へ出る。
+    expectCloseTo(resolved.segments[0].from, [0, 0, 5]);
+    expectCloseTo(resolved.segments[0].to, [20, 0, 5]);
+    expectCloseTo(resolved.segments[1].from, [20, 0, -5]);
+    expectCloseTo(resolved.segments[1].to, [0, 0, -5]);
+    expectCloseTo(resolved.arcs[0].center, [20, 0, 0]);
+    expectCloseTo(resolved.arcs[1].center, [0, 0, 0]);
+  });
+
+  it('矩形・正多角形・長穴の端点は vertex 参照で基準にできる(FR-302)', () => {
+    const rectangle: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+      construction: false,
+    };
+    const polygon: SketchFeature = {
+      id: 'g1', name: '正多角形1', planeId: 'xy', kind: 'polygon',
+      center: absoluteCoordinate(100, 0, 0), sides: num(6), radius: num(10),
+      radiusMode: 'circumscribed', construction: false,
+    };
+    const slot: SketchFeature = {
+      id: 's1', name: '長穴1', planeId: 'xy', kind: 'slot',
+      center1: absoluteCoordinate(200, 0, 0), center2: absoluteCoordinate(220, 0, 0),
+      width: num(10), construction: false,
+    };
+    // それぞれの 'start' 頂点を基準に、+Z へ 1 だけ離れた点を作る。
+    const fromRectangle: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'xy', kind: 'point',
+      at: {
+        mode: 'relative', base: { kind: 'vertex', featureId: 'r1', vertex: 'start' },
+        dx: num(0), dy: num(0), dz: num(1),
+      },
+    };
+    const fromPolygonCenter: SketchFeature = {
+      id: 'p2', name: '点2', planeId: 'xy', kind: 'point',
+      at: {
+        mode: 'relative', base: { kind: 'vertex', featureId: 'g1', vertex: 'center' },
+        dx: num(0), dy: num(0), dz: num(1),
+      },
+    };
+    const fromSlot: SketchFeature = {
+      id: 'p3', name: '点3', planeId: 'xy', kind: 'point',
+      at: {
+        mode: 'relative', base: { kind: 'vertex', featureId: 's1', vertex: 'start' },
+        dx: num(0), dy: num(0), dz: num(1),
+      },
+    };
+    const resolved = resolveSketch(
+      documentOf(rectangle, polygon, slot, fromRectangle, fromPolygonCenter, fromSlot),
+    );
+    expect(resolved.errors).toEqual([]);
+    // 矩形の 'start' は対角の1点目 (0,0,0)。
+    expectCloseTo(resolved.points[0].position, [0, 0, 1]);
+    // 正多角形の 'center' は中心そのもの (100,0,0)。
+    expectCloseTo(resolved.points[1].position, [100, 0, 1]);
+    // 長穴の 'start' は直線区間の1本目の始点 (200,5,0)(中心を結ぶ向きの左側に幅/2だけ離れた点)。
+    expectCloseTo(resolved.points[2].position, [200, 5, 1]);
+  });
+
+  it('矩形・正多角形・長穴が解決できなくても後続のフィーチャーは止まらない(FR-504、NFR-RE-1)', () => {
+    const brokenRectangle: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(0, 0, 0),
+      construction: false,
+    };
+    const brokenPolygon: SketchFeature = {
+      id: 'g1', name: '正多角形1', planeId: 'xy', kind: 'polygon',
+      center: absoluteCoordinate(0, 0, 0), sides: num(2), radius: num(10),
+      radiusMode: 'circumscribed', construction: false,
+    };
+    const brokenSlot: SketchFeature = {
+      id: 's1', name: '長穴1', planeId: 'xy', kind: 'slot',
+      center1: absoluteCoordinate(0, 0, 0), center2: absoluteCoordinate(0, 0, 0),
+      width: num(10), construction: false,
+    };
+    const okPoint: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'xy', kind: 'point', at: absoluteCoordinate(1, 2, 3),
+    };
+    const resolved = resolveSketch(
+      documentOf(brokenRectangle, brokenPolygon, brokenSlot, okPoint),
+    );
+    expect(resolved.errors).toHaveLength(3);
+    expect(resolved.errors.map((item) => item.featureId)).toEqual(['r1', 'g1', 's1']);
+    expect(resolved.errors.every((item) => item.code === 'degenerate' || item.code === 'invalidValue')).toBe(true);
+    // 壊れたフィーチャーの後にある正常な点は解決される。
+    expect(resolved.points).toHaveLength(1);
+    expectCloseTo(resolved.points[0].position, [1, 2, 3]);
   });
 });

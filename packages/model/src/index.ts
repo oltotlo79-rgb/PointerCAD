@@ -35,7 +35,7 @@ export type {
   ResolvedPoint, ResolvedSegment, ResolvedSketch, SketchArcFeature, SketchDocument,
   SketchElementRef, SketchError, SketchErrorCode, SketchFaceFeature, SketchFaceMesh,
   SketchFeature, SketchFeatureKind, SketchLineFeature, SketchMesh, SketchPointArrayFeature,
-  SketchPointFeature,
+  SketchPointFeature, SketchPolygonFeature, SketchRectangleFeature, SketchSlotFeature,
 } from './sketch/types.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,

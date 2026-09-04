@@ -67,6 +67,9 @@ export const FEATURE_KIND_LABEL_KEYS: Readonly<Record<SketchFeatureKind, Message
   arc: 'toolbar.tool.arc',
   pointArray: 'toolbar.tool.pointArray',
   face: 'toolbar.tool.face',
+  rectangle: 'toolbar.tool.rectangle',
+  polygon: 'toolbar.tool.polygon',
+  slot: 'toolbar.tool.slot',
 };
 
 /** 座標のまとまりの見出し。 */
@@ -194,6 +197,12 @@ export function summarizeFeature(
       };
     case 'face':
       // 面が持つのは境界と色だけ。数の欄は無い(FR-309、FR-310)。
+      return { ...base, coordinates: [], scalars: [] };
+    case 'rectangle':
+    case 'polygon':
+    case 'slot':
+      // P4 タスク4(model)は型と解決だけを足す。ツリー・プロパティ欄への表示・編集の配線は
+      // タスク33(ui: ツリー・プロパティの対応)の範囲(型の網羅性のためだけに空で満たす)。
       return { ...base, coordinates: [], scalars: [] };
   }
 }
@@ -468,5 +477,10 @@ export function resolvedFields(
         { labelKey: 'propertyPanel.triangleCount', text: String(face.triangleCount) },
       ];
     }
+    case 'rectangle':
+    case 'polygon':
+    case 'slot':
+      // タスク33(ui: ツリー・プロパティの対応)の範囲(型の網羅性のためだけに空で満たす)。
+      return [];
   }
 }

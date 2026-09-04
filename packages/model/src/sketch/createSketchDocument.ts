@@ -30,6 +30,9 @@ const KIND_LABELS: Readonly<Record<SketchFeatureKind, string>> = {
   arc: '円弧',
   pointArray: '点列',
   face: '面',
+  rectangle: '矩形',
+  polygon: '正多角形',
+  slot: '長穴',
 };
 
 /** 起動時の文書。空の履歴を持つ(§0.a-0.2)。作図面の既定は DEFAULT_WORK_PLANE_ID(XY)。 */

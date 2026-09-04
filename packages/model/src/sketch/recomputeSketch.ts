@@ -129,6 +129,26 @@ function reevaluateFeature(
     case 'face':
       // 面は式を持たない(境界の参照と色だけ)。
       return feature;
+    case 'rectangle':
+      return {
+        ...feature,
+        corner1: reevaluateCoordinate(feature.corner1, variables),
+        corner2: reevaluateCoordinate(feature.corner2, variables),
+      };
+    case 'polygon':
+      return {
+        ...feature,
+        center: reevaluateCoordinate(feature.center, variables),
+        sides: reevaluate(feature.sides, variables),
+        radius: reevaluate(feature.radius, variables),
+      };
+    case 'slot':
+      return {
+        ...feature,
+        center1: reevaluateCoordinate(feature.center1, variables),
+        center2: reevaluateCoordinate(feature.center2, variables),
+        width: reevaluate(feature.width, variables),
+      };
   }
 }
 

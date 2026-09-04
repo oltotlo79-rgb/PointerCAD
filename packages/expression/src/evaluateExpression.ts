@@ -79,3 +79,47 @@ export function expressionValueFromNumber(value: number): ExpressionValue {
   const text = rounded.toFixed();
   return { source: text, value: rounded.toNumber(), display: text };
 }
+
+/**
+ * 数値から ExpressionValue を作る(**丸めない**版、FR-331)。
+ *
+ * `expressionValueFromNumber` は source を短く読みやすくするため有効数字 12 桁へ丸めるので、
+ * 1/3 や √150 のような値は別の数になってしまう。立体の頂点を原点にするとき(式を持たない点を
+ * シフト量にするとき)はそれでは模型がずれるため、**倍精度を過不足なく表す最短の 10 進表記**
+ * を source にする。読み直すと必ず同じ倍精度に戻る(`String(value)` の往復可能性)。
+ *
+ * 指数表記(1e-7 など)はこの式の文法に無いので、普通の 10 進へ展開する。
+ */
+export function exactExpressionValueFromNumber(value: number): ExpressionValue {
+  if (!Number.isFinite(value)) {
+    // 数でない値は式として書けない。既定の作り方(NaN の表示)へ委ねる。
+    return expressionValueFromNumber(value);
+  }
+  const source = plainDecimalText(value);
+  return {
+    source,
+    // 丸めずそのままの倍精度を持つ。source を評価すると必ずこの値に戻る。
+    value,
+    display: new ExpressionDecimal(value).toSignificantDigits(DISPLAY_SIGNIFICANT_DIGITS).toString(),
+  };
+}
+
+/** 倍精度の最短表記を、指数表記を使わない 10 進の文字列にする。 */
+function plainDecimalText(value: number): string {
+  const text = String(value);
+  const match = /^(-?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text);
+  if (match === null) {
+    return text;
+  }
+  const sign = match[1];
+  const digits = match[2] + (match[3] ?? '');
+  // 小数点の位置。整数部の桁数に指数を足したもの。
+  const pointIndex = match[2].length + Number(match[4]);
+  if (pointIndex <= 0) {
+    return `${sign}0.${'0'.repeat(-pointIndex)}${digits}`;
+  }
+  if (pointIndex >= digits.length) {
+    return `${sign}${digits}${'0'.repeat(pointIndex - digits.length)}`;
+  }
+  return `${sign}${digits.slice(0, pointIndex)}.${digits.slice(pointIndex)}`;
+}

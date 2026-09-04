@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExpressionErrorCode } from './errors.js';
 import {
   evaluateExpression,
+  exactExpressionValueFromNumber,
   expressionValueFromNumber,
   type ExpressionValue,
 } from './evaluateExpression.js';
@@ -246,5 +247,29 @@ describe('式の公開 API(FR-202、FR-203、FR-204、FR-206)', () => {
       display: '0.333333333333',
     });
     expect(expressionValueFromNumber(20)).toEqual({ source: '20', value: 20, display: '20' });
+  });
+});
+
+describe('丸めずに数値から式を作る(FR-331 の原点の再設定)', () => {
+  it('倍精度をそのまま持ち、読み直しても同じ値に戻る', () => {
+    for (const value of [1 / 3, Math.sqrt(150), -0.1, 12.3456789, 0, 1234567890123456]) {
+      const made = exactExpressionValueFromNumber(value);
+      expect(made.value).toBe(value);
+      expect(valueOf(made.source).value).toBe(value);
+    }
+    // 12 桁へ丸める expressionValueFromNumber では別の数になってしまう値。
+    expect(exactExpressionValueFromNumber(1 / 3).source).toBe('0.3333333333333333');
+    expect(exactExpressionValueFromNumber(Math.sqrt(150)).source).toBe('12.24744871391589');
+  });
+
+  it('指数表記は普通の 10 進へ展開する(式の文法に指数表記が無いため)', () => {
+    expect(exactExpressionValueFromNumber(1e-7).source).toBe('0.0000001');
+    expect(exactExpressionValueFromNumber(-2.5e-8).source).toBe('-0.000000025');
+    expect(exactExpressionValueFromNumber(1.2345e21).source).toBe('1234500000000000000000');
+    expect(valueOf(exactExpressionValueFromNumber(1e-7).source).value).toBe(1e-7);
+  });
+
+  it('表示は 12 桁のままにする(欄の見た目は変えない)', () => {
+    expect(exactExpressionValueFromNumber(1 / 3).display).toBe('0.333333333333');
   });
 });

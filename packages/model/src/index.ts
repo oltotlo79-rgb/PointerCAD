@@ -98,9 +98,11 @@ export {
   sampleSpline, sampleSplineCurve, splineCurveData, splineDegree, splinePointAt,
   SPLINE_SEGMENTS_PER_SPAN,
 } from './sketch/splineMath.js';
-export type { AxisShift, OriginShift, ShiftAxes } from './sketch/shiftCoordinate.js';
+export type {
+  AxisShift, CoordinateShift, FeatureShiftPlan, OriginShift, ShiftAxes,
+} from './sketch/shiftCoordinate.js';
 export {
-  normalShiftAxis, originShiftFromPosition, planeShiftAxes, shiftAbsoluteCoordinate,
+  normalShiftAxis, originShiftFromPosition, planeShiftAxes, shiftCoordinateInput,
   shiftExpression, shiftSketchDocument, shiftSketchFeature, worldShiftAxes,
 } from './sketch/shiftCoordinate.js';
 export type { OriginTarget } from './part/shiftOrigin.js';

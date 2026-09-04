@@ -15,12 +15,14 @@ export type AngleUnit = 'degree' | 'radian';
 
 export const DEFAULT_ANGLE_UNIT: AngleUnit = 'degree';
 
+export { addExpression, subtractExpression } from './combineExpression.js';
 export type { ExpressionError, ExpressionErrorCode } from './errors.js';
 export { EXPRESSION_MAX_EXPONENT, EXPRESSION_MAX_LENGTH } from './errors.js';
 export { EXPRESSION_PRECISION } from './evaluate.js';
 export {
   DISPLAY_SIGNIFICANT_DIGITS,
   evaluateExpression,
+  exactExpressionValueFromNumber,
   expressionValueFromNumber,
   type EvaluateOptions,
   type ExpressionResult,

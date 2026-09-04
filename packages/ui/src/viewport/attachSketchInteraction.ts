@@ -117,6 +117,20 @@ export function picksSubShapes(kind: SelectionKind, tool: NumericInputToolId): b
 }
 
 /**
+ * 選択の種類が `body` でないとき、スケッチ要素の当たり判定を飛ばして部分形状だけを拾うべきか
+ * (§2.3.2、タスク30 不具合(c))。
+ *
+ * スケッチの面フィーチャーは「投影した輪郭の内側なら当たり」という当たり判定なので、
+ * 押し出し済みの面(の輪郭の内側)を押すと、奥にある立体の面より手前のスケッチ面が
+ * 先に当たってしまう。選ぶものの種類が面・辺・頂点(`body` 以外)のときは、そもそも
+ * スケッチ要素は選ぶ対象ではないので、当たり判定そのものを試みない。
+ * `body` のときは従来どおりスケッチ要素 → 吸着 → 立体の順を保つ。
+ */
+export function skipsSketchElements(kind: SelectionKind): boolean {
+  return kind !== 'body';
+}
+
+/**
  * `state.bodies` を `pickSolidSubShape` が要る形へ詰め替える。面・辺・頂点の一覧は
  * model の `SolidBody` にタスク17(橋渡しの拡張)で必須の欄として届くようになったが、
  * `?? []` は保険としてそのまま残す(押し出し等、一覧そのものが空のボディを空として扱う)。
@@ -286,10 +300,13 @@ export function attachSketchInteraction(
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
 
-    if (state.selectionKind !== 'body') {
-      // 部分形状(面・辺・頂点)を拾う種類のときは吸着を使わない(§2.3.2 の順序表)。
-      const picked = pickSketchElement(state.resolvedSketch, project, pointer);
-      const nextHovered = picked !== null ? picked.elementId : pickSubShapeAt(pointer);
+    if (skipsSketchElements(state.selectionKind)) {
+      /*
+        部分形状(面・辺・頂点)を拾う種類のときは、スケッチ要素の当たり判定を飛ばして
+        部分形状だけを拾う(スケッチの面が立体の面より先に当たるのを防ぐ、§2.3.2、
+        タスク30 不具合(c))。吸着も使わない。
+      */
+      const nextHovered = pickSubShapeAt(pointer);
       if (nextHovered !== state.hoveredElementId) {
         state.setHovered(nextHovered);
       }
@@ -342,13 +359,19 @@ export function attachSketchInteraction(
    */
   function pickInto(pointer: readonly [number, number], accumulate: boolean): void {
     const state = useAppStore.getState();
-    const picked = pickSketchElement(state.resolvedSketch, project, pointer);
-    const elementId =
-      picked !== null
-        ? picked.elementId
-        : state.selectionKind === 'body'
-          ? pickBodyAt(pointer)
-          : pickSubShapeAt(pointer);
+    let elementId: string | null;
+    if (skipsSketchElements(state.selectionKind)) {
+      /*
+        部分形状(面・辺・頂点)を拾う種類のときは、スケッチ要素の当たり判定を飛ばして
+        部分形状だけを拾う(スケッチの面が立体の面より先に当たるのを防ぐ、§2.3.2、
+        タスク30 不具合(c))。
+      */
+      elementId = pickSubShapeAt(pointer);
+    } else {
+      // 選択の種類が body のときは従来の順序(要素 → 吸着 → 立体、P1・P2 のまま)。
+      const picked = pickSketchElement(state.resolvedSketch, project, pointer);
+      elementId = picked !== null ? picked.elementId : pickBodyAt(pointer);
+    }
     if (elementId === null) {
       if (!accumulate) {
         state.setSelection([]);

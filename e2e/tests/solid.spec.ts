@@ -1025,16 +1025,15 @@ async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
 }
 
 /**
- * 立体の上の面を押す位置(§2.3.2 の順序表)。
+ * 40 × 30 の板の上面の中央を押す位置(§2.3.2 の順序表、タスク30 不具合(c) の修正)。
  *
- * 当たり判定は**スケッチの要素が先**で、面は「投影した輪郭の内側なら当たり」なので、
- * 押し出したもとの面(z=0 の四角)の投影の内側を押すと、立体の面ではなくその面が選ばれる。
- * 板の中央はその内側に入ってしまうため、**画面上でもとの面の輪郭より外に出る奥の角の近く**
- * (板の隅から 3mm)を押す。1440×900 の窓では、この点はスケッチの線・点から 20px 以上
- * 離れる(当たり判定の 6px の 3 倍以上。担当が投影を計算して確かめた)。
+ * 選ぶものの種類が `face` のときは、スケッチ要素の当たり判定そのものを飛ばして立体の面だけを
+ * 拾う(`attachSketchInteraction.skipsSketchElements`)ので、押し出したもとの面(z=0 の四角)の
+ * 投影の内側であっても、立体の上面が選ばれる。以前は当たり判定の順序の不具合を避けるため
+ * 輪郭の外の角の近くを押していたが、修正後は板の中央(20, 15)を押せる。
  */
-function topFacePick(thicknessMm: number): WorldPoint {
-  return [3, 3, thicknessMm];
+function topFaceCenter(thicknessMm: number): WorldPoint {
+  return [20, 15, thicknessMm];
 }
 
 /** ツールバーの「加工」区画の道具(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)。 */
@@ -1151,19 +1150,20 @@ test.describe('P3 加工フィーチャー', () => {
     await cancelPopover(page);
     await expect(treeRow(page, '点1')).toBeVisible();
 
-    // 3) 選択の道具に戻し、`3` で選ぶものを「面」にする(§0.a-0.6)。
-    await sketchTool(page, '選択').click();
-    await page.keyboard.press('3');
+    // 3) 「穴」を押す。条件が揃っていなくても選ぶものが「面」へ切り替わる(§0.a-0.6)。
+    const holeButton = machiningTool(page, '穴');
+    await expect(holeButton).toBeDisabled();
+    await holeButton.click({ force: true });
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
 
-    // 4) 立体の上の面を押し、Shift でツリーの 点1 を足す。両方そろって初めて「穴」が押せる。
-    await expect(machiningTool(page, '穴')).toBeDisabled();
-    await clickWorldPoint(page, topFacePick(10));
+    // 4) 立体の上面の中央を押し(押し出したもとのスケッチ面より立体の面が優先して当たる)、
+    //    Shift でツリーの 点1 を足す。両方そろって初めて「穴」が押せる。
+    await clickWorldPoint(page, topFaceCenter(10));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
-    await expect(machiningTool(page, '穴')).toBeEnabled();
+    await expect(holeButton).toBeEnabled();
 
-    // 5) 「穴」を押す。直径の既定は 6(NFR-UX-4)。貫通にして決める。
-    await machiningTool(page, '穴').click();
+    // 5) もう一度「穴」を押す。直径の既定は 6(NFR-UX-4)。貫通にして決める。
+    await holeButton.click();
     await expect(popoverTitle(page)).toHaveText('穴をあける');
     await expect(popoverInputs(page).first()).toHaveValue('6');
     await popover(page).getByRole('switch', { name: '貫通', exact: true }).click();
@@ -1173,11 +1173,12 @@ test.describe('P3 加工フィーチャー', () => {
     /*
      * 6) 穴1 ができ、体積が π·3²·10 だけ減る。ツリーともとの立体の扱いも確かめる。
      *
-     * 作った直後は何も選ばれていない(道具が「選択」へ戻るとき、選ぶものの種類が
-     * 面 → 立体へ変わるので選択が空になる)。中身を見るにはツリーの行を押す。
+     * 作った直後に、その穴がもう選ばれている(タスク30 不具合(a) の修正: AppShell の
+     * onSolidCommit が道具を選択へ戻してから作ったフィーチャーを選ぶので、選ぶものの種類が
+     * 面 → 立体へ変わっても選択は空にならない)。ツリーの行を押し直さなくても中身が見える。
      */
     await expect(solidRow(page, '穴1')).toBeVisible();
-    await solidRow(page, '穴1').click();
+    await expect(solidRowBox(page, '穴1')).toHaveClass(/pcad-tree__row--selected/);
     await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
     await expect(propertyValue(page, '選んだ面')).toHaveText('1');
     await expect(propertyValue(page, '中心の点')).toHaveText('1');
@@ -1276,13 +1277,16 @@ test.describe('P3 加工フィーチャー', () => {
     await commitPopover(page);
     await cancelPopover(page);
 
-    // 3) 面 → 点の順に選び、「ねじ穴」を押す。呼びの既定は M6、系列の既定は並目。
-    await sketchTool(page, '選択').click();
-    await page.keyboard.press('3');
+    // 3) 「ねじ穴」を押すと選ぶものが「面」へ切り替わる(§0.a-0.6)。面 → 点の順に選んで、
+    //    もう一度押す。呼びの既定は M6、系列の既定は並目。
+    const threadHoleButton = machiningTool(page, 'ねじ穴');
+    await expect(threadHoleButton).toBeDisabled();
+    await threadHoleButton.click({ force: true });
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
-    await clickWorldPoint(page, topFacePick(15));
+    await clickWorldPoint(page, topFaceCenter(15));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
-    await machiningTool(page, 'ねじ穴').click();
+    await expect(threadHoleButton).toBeEnabled();
+    await threadHoleButton.click();
 
     await expect(popoverTitle(page)).toHaveText('ねじ穴をあける');
     await expect(popover(page).locator('.pcad-menu__count')).toHaveText('M6');
@@ -1451,12 +1455,12 @@ test.describe('P3 加工フィーチャー', () => {
     await commitPopover(page);
     await cancelPopover(page);
 
-    await sketchTool(page, '選択').click();
-    await page.keyboard.press('3');
+    const holeButton = machiningTool(page, '穴');
+    await holeButton.click({ force: true });
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
-    await clickWorldPoint(page, topFacePick(10));
+    await clickWorldPoint(page, topFaceCenter(10));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
-    await machiningTool(page, '穴').click();
+    await holeButton.click();
     await popover(page).getByRole('switch', { name: '貫通', exact: true }).click();
     await commitPopover(page);
     await expect(solidRow(page, '穴1')).toBeVisible();
@@ -1500,20 +1504,21 @@ test.describe('P3 加工フィーチャー', () => {
       timeout: KERNEL_TIMEOUT_MS,
     });
 
-    // 1) 面を選ばずに「穴」。押せない状態で、ツールチップと帯の両方に理由が読める。
+    // 1) 面を選ばずに「穴」。押せない状態でも選ぶものが「面」へ切り替わり(§0.a-0.6、
+    //    タスク30 不具合(b) の修正)、ツールチップと帯の両方に理由が読める。
     const holeButton = machiningTool(page, '穴');
     await expect(holeButton).toBeDisabled();
     await expect(holeButton).toHaveAttribute('title', '穴: 穴をあける面が選ばれていません。');
     await holeButton.click({ force: true });
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
     await expect(statusText(page)).toHaveText(
       `${SOLID_ERROR_PREFIX} 穴をあける面が選ばれていません。`,
     );
     await expect(solidRows(page)).toHaveCount(1);
 
-    // 2) 面だけ選んで「穴」。今度は中心の点が無いという理由に変わる。
-    await sketchTool(page, '選択').click();
-    await page.keyboard.press('3');
-    await clickWorldPoint(page, topFacePick(10));
+    // 2) 立体の上面の中央を押す(押し出したもとのスケッチ面より立体の面が優先して当たる、
+    //    タスク30 不具合(c) の修正)。今度は中心の点が無いという理由に変わる。
+    await clickWorldPoint(page, topFaceCenter(10));
     await expect(holeButton).toHaveAttribute('title', '穴: 穴の中心にする点が選ばれていません。');
     await holeButton.click({ force: true });
     await expect(statusText(page)).toHaveText(

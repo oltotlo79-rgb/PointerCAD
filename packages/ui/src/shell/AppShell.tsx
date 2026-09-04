@@ -303,8 +303,15 @@ export function AppShell(): React.JSX.Element {
                 return;
               }
               store.applyDocument(outcome.document);
-              store.setSelection([outcome.featureId]);
+              /*
+                道具を先に選択へ戻し、そのあとで作ったフィーチャーを選ぶ(タスク30 不具合(a))。
+                逆順(選ぶ→道具を戻す)だと、穴・ねじ穴・R/C面取りのように選ぶ種類が
+                面/辺から立体へ変わる道具では、setActiveTool が種類の変化を見て選択を
+                空にしてしまい、作った直後の立体が選ばれない。setActiveTool を先に呼べば、
+                選択が空になるのはこの時点までで、その後の setSelection が確定して残る。
+              */
               store.setActiveTool('select');
+              store.setSelection([outcome.featureId]);
             }}
           />
           {snapIndicator === null ? null : (

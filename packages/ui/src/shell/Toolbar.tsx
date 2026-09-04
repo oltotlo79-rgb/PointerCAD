@@ -707,6 +707,13 @@ function MachiningGroup({ document, bodies, selection }: MachiningGroupProps): R
                   openSolidInput(action.id);
                   return;
                 }
+                /*
+                  条件が揃っていなくても、押した時点で選ぶものを道具が要る種類へ切り替える
+                  (§0.a-0.6、タスク30 不具合(b))。これで「穴を押す → 面を選ぶ → 点を Shift で
+                  足す → 穴を押す」の流れが成立する(その場入力は開かない。setActiveTool の
+                  絞り込みでポップアップは自然に閉じたままになる)。
+                */
+                useAppStore.getState().setActiveTool(action.id);
                 // 押せない道具を押しても、ツールチップだけでなく帯にも理由を出す
                 // (§0.a-0.6、NFR-UX-5。SolidGroup と同じ作り)。
                 useAppStore.getState().setSolidError(readiness.reasonKey);
@@ -760,6 +767,15 @@ function SolidGroup({ document, bodies, selection }: SolidGroupProps): React.JSX
                 if (readiness.ready) {
                   runSolidAction(action.id);
                   return;
+                }
+                /*
+                  押し出し・回転・縫合・ばね(その場入力を開く4つ)は、条件が揃っていなくても
+                  押した時点で選ぶものを道具の種類へ切り替える(§0.a-0.6、タスク30 不具合(b))。
+                  和・差・積は数値を聞かず選ぶものも常に立体のままなので対象外(runSolidAction の
+                  分岐と同じ切り分け)。
+                */
+                if (action.id !== 'union' && action.id !== 'subtract' && action.id !== 'intersect') {
+                  useAppStore.getState().setActiveTool(action.id);
                 }
                 // 押せない道具を押しても、ツールチップだけでなく帯にも理由を出す
                 // (§0.a-0.6、NFR-UX-5。2026-09-03 19:35 の統括の決定)。

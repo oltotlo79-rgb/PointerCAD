@@ -14,6 +14,7 @@ import {
   isDrawingTool,
   isSolidTool,
   picksSubShapes,
+  skipsSketchElements,
   toSubShapeBodies,
 } from './attachSketchInteraction.js';
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
@@ -82,6 +83,18 @@ describe('picksSubShapes', () => {
     expect(picksSubShapes('edge', 'line')).toBe(false);
     expect(picksSubShapes('vertex', 'arc')).toBe(false);
     expect(picksSubShapes('edge', 'pointArray')).toBe(false);
+  });
+});
+
+describe('skipsSketchElements(タスク30 不具合(c): 押し出したもとのスケッチ面が立体の面より先に当たる)', () => {
+  it('選択の種類が body のときはスケッチ要素の当たり判定を飛ばさない(従来どおり)', () => {
+    expect(skipsSketchElements('body')).toBe(false);
+  });
+
+  it('選択の種類が face / edge / vertex のときはスケッチ要素の当たり判定を飛ばす', () => {
+    expect(skipsSketchElements('face')).toBe(true);
+    expect(skipsSketchElements('edge')).toBe(true);
+    expect(skipsSketchElements('vertex')).toBe(true);
   });
 });
 

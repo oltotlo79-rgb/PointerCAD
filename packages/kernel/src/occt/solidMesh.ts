@@ -1,6 +1,11 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { SolidBodyMesh, TessellationOptions, ThreadMarkInfo } from '../types.js';
+import type {
+  SolidBodyKind,
+  SolidBodyMesh,
+  TessellationOptions,
+  ThreadMarkInfo,
+} from '../types.js';
 import { extractEdges } from './extractEdges.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
@@ -30,6 +35,28 @@ export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape): num
     // 第 4・第 5 引数は SkipShared と UseTriangulation。
     // 共有面を飛ばさず、三角形近似ではなく厳密な面で積分する(既定の精度)。
     oc.BRepGProp.VolumeProperties_1(shape, properties, VOLUME_ONLY_CLOSED, false, false);
+    return properties.Mass();
+  } finally {
+    properties.delete();
+  }
+}
+
+/**
+ * 形の表面積(mm²)。測定(FR-1102)と曲面の検証(FR-428)に使う。
+ *
+ * 体積(`measureVolume`)と同じ約束で測る。第 3・第 4 引数は SkipShared と
+ * UseTriangulation で、共有面を飛ばさず、三角形近似ではなく厳密な面で積分する
+ * (面 1 枚ごとの面積を測る `subShapes.ts` の `buildFaceInfo` とも同じ指定なので、
+ * 全体の表面積と面ごとの面積の合計が食い違わない)。
+ *
+ * 閉じていない形(面だけの殻)でも面の合計がそのまま返るので、
+ * `bodyKind` が `'shell'` のボディでも 0 にはならない(§0.a-0.45 の
+ * 「shell の段だけ体積 0 を通して面積 > 0 を確かめる」の材料)。
+ */
+export function measureArea(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
+  const properties = new oc.GProp_GProps_1();
+  try {
+    oc.BRepGProp.SurfaceProperties_1(shape, properties, false, false);
     return properties.Mass();
   } finally {
     properties.delete();
@@ -90,6 +117,12 @@ export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean 
  *
  * `threadMarks` はねじ穴(タスク9)だけが渡す、B-rep に現れない描画用の印(§0.a-0.15)。
  * 渡されなければ空配列にする(押し出し・回転・穴・面取り・ばね等はねじの印を持たない)。
+ *
+ * **表面積(`area`)と形の種類(`bodyKind`)も一緒に返す**(P5 タスク3、FR-1102・FR-428)。
+ * どちらも形が手元にあるこの場でしか安く測れないうえ、面ごとの面積を足し合わせる形にすると
+ * 面の一覧の作り方(共有面の数え方)に結果が引きずられるので、形そのものから直に測る。
+ * `bodyKind` は `hasSolid` の判定そのままで、P5 タスク3 の時点ではどの段も閉じた立体しか
+ * 作らないため必ず `'solid'` になる。`'shell'` が来るのは曲面の段(タスク41)から。
  */
 export function buildSolidBodyMesh(
   oc: OpenCascadeInstance,
@@ -101,6 +134,7 @@ export function buildSolidBodyMesh(
   const surface = tessellate(oc, shape, options);
   const edges = extractEdges(oc, shape, options);
   const subShapes = collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges);
+  const bodyKind: SolidBodyKind = hasSolid(oc, shape) ? 'solid' : 'shell';
 
   return {
     id,
@@ -112,6 +146,8 @@ export function buildSolidBodyMesh(
     faceCount: surface.faceCount,
     edgeCount: edges.edgeCount,
     volume: measureVolume(oc, shape),
+    area: measureArea(oc, shape),
+    bodyKind,
     faces: subShapes.faces,
     edges: subShapes.edges,
     vertices: subShapes.vertices,

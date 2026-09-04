@@ -7,6 +7,7 @@ import { makeSpring } from '../occt/makeSpring.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
 import type {
+  AppearanceQuery,
   CurveSpec,
   FilletStepSpec,
   HoleStepSpec,
@@ -73,6 +74,14 @@ function booleanStep(
 
 function request(steps: readonly SolidStepRequest[]): SolidRecomputeRequest {
   return { steps, generation: 1 };
+}
+
+/** 外観の面の照合(FR-1106、P5 タスク3)を頼む依頼。 */
+function requestWithAppearance(
+  steps: readonly SolidStepRequest[],
+  appearanceQueries: readonly AppearanceQuery[],
+): SolidRecomputeRequest {
+  return { steps, generation: 1, appearanceQueries };
 }
 
 /** 40 × 30 を 10 押し出した体積。40·30·10 = 12000 mm³(手計算)。 */
@@ -523,7 +532,14 @@ describe('履歴の再計算(recomputeSolids)', () => {
     const { cache, built } = newCache();
     const result = await recomputeSolids({ oc, cache }, request([]));
 
-    expect(result).toEqual({ bodies: [], failures: [], cacheHits: 0, cancelled: false });
+    // appearanceMatches は P5 タスク3 で足した欄。外観を頼んでいないので必ず空配列。
+    expect(result).toEqual({
+      bodies: [],
+      failures: [],
+      cacheHits: 0,
+      cancelled: false,
+      appearanceMatches: [],
+    });
     expect(built()).toBe(0);
   });
 
@@ -787,5 +803,194 @@ describe('履歴の再計算(recomputeSolids)', () => {
     } finally {
       reference.delete();
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 表面積・形の種類・外観の面の照合(P5 タスク3、FR-1102・FR-428・FR-1106)
+  // ---------------------------------------------------------------------------
+
+  /** 40 × 30 × 10 の板の表面積。2(40·30 + 40·10 + 30·10) = 3800 mm²(手計算)。 */
+  const PLATE_AREA = 3800;
+  /** φ6 の貫通穴を 1 つあけた板の上の面の面積。1200 − π·3² = 1200 − 9π mm²(手計算)。 */
+  const HOLED_TOP_FACE_AREA = 1200 - 9 * Math.PI;
+
+  /** 外観の依頼を 1 件作る。 */
+  function appearanceQuery(id: string, bodyKey: string, face: SubShapeQuery): AppearanceQuery {
+    return { id, bodyKey, query: face };
+  }
+
+  it('ボディに表面積 3800 mm² と形の種類 solid が乗る(既存の欄は変わらない)', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([extrudeStep('extrude-1', 'key-a', 40, 30, 10)]),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.bodies[0].area).toBeCloseTo(PLATE_AREA, 6);
+    expect(result.bodies[0].bodyKind).toBe('solid');
+    // P3 の不変条件(faceCount = faces.length、edgeCount = edges.length)を壊していない。
+    expect(result.bodies[0].faceCount).toBe(result.bodies[0].faces.length);
+    expect(result.bodies[0].edgeCount).toBe(result.bodies[0].edges.length);
+    expect(result.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
+  });
+
+  it('外観を頼まなければ照合の結果は空になる(費用ゼロ)', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([extrudeStep('extrude-1', 'key-a', 40, 30, 10)]),
+    );
+
+    expect(result.appearanceMatches).toEqual([]);
+  });
+
+  /*
+   * 押し出しの距離を 10 → 20 に変えても、上の面へ付けた外観が同じ面に残る(FR-1106)。
+   *
+   * 点の内訳(P3 §2.2.3 の検算表 1 行目、手計算): 物差しは 20 mm 高い板の境界箱の
+   * 対角長の半分 √(40² + 30² + 20²) / 2 = √2900 / 2 ≒ 26.9258。位置のずれは 10 mm なので
+   * 位置の点は 1 − 10 / 26.9258 ≒ 0.6286。軸 1・大きさ 1・番号 1 と合わせて
+   * 0.35 + 0.25 + 0.2 + 0.2 × 0.6286 ≒ 0.9257 で、しきい値 0.6 を大きく超える。
+   */
+  it('押し出しの距離を 10 → 20 に変えても、上の面の指紋が同じ面を選び直す(FR-1106)', async () => {
+    const { topFace } = plateFingerprints();
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      requestWithAppearance(
+        [extrudeStep('extrude-1', 'key-a', 40, 30, 20)],
+        [appearanceQuery('appearance-1', 'key-a', topFace)],
+      ),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.appearanceMatches).toHaveLength(1);
+    const match = result.appearanceMatches?.[0];
+    expect(match?.id).toBe('appearance-1');
+    expect(match?.bodyId).toBe('extrude-1');
+    expect(match?.faceIndex).not.toBeNull();
+
+    // 選ばれたのが「上の面」であること(裏の面ではないこと)を、面の素性で確かめる。
+    const chosen = result.bodies[0].faces[match?.faceIndex ?? -1];
+    expect(chosen.surfaceKind).toBe('plane');
+    expect(chosen.axis?.[2]).toBeCloseTo(1, 9);
+    expect(chosen.centroid[2]).toBeCloseTo(20, 6);
+  });
+
+  /*
+   * 穴をあけて面が 6 枚 → 7 枚に増えても、上の面へ付けた外観が残る(FR-1106)。
+   * 面積は穴のぶんだけ減る(1200 → 1200 − 9π ≒ 1171.7256)ので、大きさの点は
+   * 0.9764 まで下がるが、軸と位置が満点なので 0.6 を割らない。
+   */
+  it('穴をあけて面が増えても、上の面の指紋が穴の分だけ小さくなった同じ面を選び直す', async () => {
+    const { topFace } = plateFingerprints();
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      requestWithAppearance(
+        [
+          extrudeStep('extrude-1', 'key-a', 40, 30, 10, false),
+          holeStep('hole-1', 'key-b', 'key-a', topFace),
+        ],
+        [appearanceQuery('appearance-1', 'key-b', topFace)],
+      ),
+    );
+
+    expect(result.failures).toEqual([]);
+    const match = result.appearanceMatches?.[0];
+    expect(match?.bodyId).toBe('hole-1');
+    expect(match?.faceIndex).not.toBeNull();
+
+    const chosen = result.bodies[0].faces[match?.faceIndex ?? -1];
+    expect(chosen.axis?.[2]).toBeCloseTo(1, 9);
+    // 穴 1 つぶんだけ面積が減った上の面である(1200 − 9π、手計算)。
+    expect(chosen.area).toBeCloseTo(HOLED_TOP_FACE_AREA, 6);
+  });
+
+  /*
+   * 「見つからない」側の歯止め。大きさだけを 100 倍にした指紋は
+   * 0.35 + 0.25 × 0.01 + 0.2 + 0.2 = 0.7525 でしきい値を超えてしまう
+   * (docs/報告記録.md 2026-09-03 の P3 タスク5 の実測)ので、
+   * 番号・大きさ・位置をすべて外した指紋で固定する。
+   */
+  it('番号・大きさ・位置がすべて外れた指紋は見つからず faceIndex が null になる', async () => {
+    const { topFace } = plateFingerprints();
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      requestWithAppearance(
+        [extrudeStep('extrude-1', 'key-a', 40, 30, 10)],
+        [
+          appearanceQuery('appearance-1', 'key-a', {
+            ...topFace,
+            index: 99,
+            area: topFace.area * 100,
+            position: [1000, 1000, 1000],
+          }),
+        ],
+      ),
+    );
+
+    expect(result.appearanceMatches).toEqual([
+      { id: 'appearance-1', bodyId: 'extrude-1', faceIndex: null },
+    ]);
+  });
+
+  it('消費されて画面に出ないボディの面には照合しない(bodyId が空・faceIndex が null)', async () => {
+    const { topFace } = plateFingerprints();
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      requestWithAppearance(
+        [
+          extrudeStep('extrude-1', 'key-a', 40, 30, 10, false),
+          holeStep('hole-1', 'key-b', 'key-a', topFace),
+        ],
+        [appearanceQuery('appearance-1', 'key-a', topFace)],
+      ),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.appearanceMatches).toEqual([
+      { id: 'appearance-1', bodyId: '', faceIndex: null },
+    ]);
+  });
+
+  it('ボディが 1 つも無い依頼でも、依頼の件数だけ「見つからない」を返して落ちない', async () => {
+    const { topFace } = plateFingerprints();
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      requestWithAppearance(
+        [],
+        [
+          appearanceQuery('appearance-1', 'key-a', topFace),
+          appearanceQuery('appearance-2', 'key-b', topFace),
+        ],
+      ),
+    );
+
+    expect(result.bodies).toEqual([]);
+    expect(result.appearanceMatches).toEqual([
+      { id: 'appearance-1', bodyId: '', faceIndex: null },
+      { id: 'appearance-2', bodyId: '', faceIndex: null },
+    ]);
+  });
+
+  it('キャッシュに命中した段でも、表面積・形の種類と外観の照合がそろって返る', async () => {
+    const { topFace } = plateFingerprints();
+    const { cache, built } = newCache();
+    const steps = [extrudeStep('extrude-1', 'key-a', 40, 30, 10)];
+    const queries = [appearanceQuery('appearance-1', 'key-a', topFace)];
+
+    await recomputeSolids({ oc, cache }, requestWithAppearance(steps, queries));
+    const second = await recomputeSolids({ oc, cache }, requestWithAppearance(steps, queries));
+
+    expect(built()).toBe(1);
+    expect(second.cacheHits).toBe(1);
+    expect(second.bodies[0].area).toBeCloseTo(PLATE_AREA, 6);
+    expect(second.bodies[0].bodyKind).toBe('solid');
+    expect(second.appearanceMatches?.[0].faceIndex).not.toBeNull();
   });
 });

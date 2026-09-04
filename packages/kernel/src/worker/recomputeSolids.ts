@@ -8,16 +8,22 @@ import { makeHole } from '../occt/makeHole.js';
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { makeThreadHole } from '../occt/makeThread.js';
+import { matchFace } from '../occt/matchSubShape.js';
 import { sewSolid } from '../occt/sewSolid.js';
 import { buildSolidBodyMesh } from '../occt/solidMesh.js';
+import { boundingDiagonal } from '../occt/subShapes.js';
 import type {
+  AppearanceMatch,
+  AppearanceQuery,
   BooleanStepSpec,
   SolidBodyMesh,
+  SolidFaceInfo,
   SolidProgress,
   SolidRecomputeRequest,
   SolidRecomputeResult,
   SolidStepFailure,
   SolidStepSpec,
+  SubShapeQuery,
   TessellationOptions,
   ThreadMarkInfo,
 } from '../types.js';
@@ -308,6 +314,76 @@ function buildCachedSolid(
 }
 
 /**
+ * 外観を割り当てた面 1 つを、できたボディの面へ照合し直す(FR-1106、P5 §2.2.3)。
+ *
+ * 採点は P3 の部分形状の参照とまったく同じ `matchFace`(重み 0.35/0.25/0.2/0.2、
+ * しきい値 0.6)で、**外観のための別の規約は作らない**。届かなければ `null` を返し、
+ * 呼び出し側(UI)が「見つからない」と断って既定の外観に戻す。
+ *
+ * 面以外(辺・頂点)の指紋を渡されたときも `null` を返す。外観は面にしか付かないので、
+ * 辺や頂点に当てはまる面を探すこと自体に意味が無いためである。
+ *
+ * `scale` は位置の点を正規化する物差し(境界箱の対角長の半分)。測れなかった形
+ * (中身が無く対角長が 0 になる形)では、位置が判断材料にならないまま軸と大きさだけで
+ * 当たってしまうので、照合せずに「見つからない」とする。
+ */
+function matchAppearanceFace(
+  query: SubShapeQuery,
+  faces: readonly SolidFaceInfo[],
+  scale: number,
+): number | null {
+  if (query.kind !== 'face') {
+    return null;
+  }
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return null;
+  }
+  const found = matchFace(faces, query, scale);
+  return found === null ? null : found.index;
+}
+
+/**
+ * 外観の面の指紋を、できたボディの面へまとめて照合し直す(FR-1106、P5 §2.2.3)。
+ *
+ * **OCCT を一切使わない純関数。** 引数はすべて `recomputeSolids` が集めた素の値で、
+ * 50MB の WASM を読み込まずに Node で検査できる(`matchSubShape.ts` と同じ理由)。
+ *
+ * 返す並びと件数は依頼と必ず 1 対 1 に対応する(1 件も落とさない)。
+ * 画面に出るボディが鍵に見つからないとき — 消費された段(`visible: false`)、
+ * 作れなかった段、そもそも履歴から消えた段 — は `bodyId` を空文字、
+ * `faceIndex` を `null` にする。**割り当て自体は文書から消さない**ので、
+ * 利用者が形を元に戻せば次の再計算で復活する。
+ */
+export function matchAppearances(
+  queries: readonly AppearanceQuery[],
+  bodies: readonly SolidBodyMesh[],
+  bodyIdByKey: ReadonlyMap<string, string>,
+  scaleByBodyId: ReadonlyMap<string, number>,
+): readonly AppearanceMatch[] {
+  if (queries.length === 0) {
+    return [];
+  }
+
+  const facesByBodyId = new Map<string, readonly SolidFaceInfo[]>();
+  for (const body of bodies) {
+    facesByBodyId.set(body.id, body.faces);
+  }
+
+  return queries.map((query) => {
+    const bodyId = bodyIdByKey.get(query.bodyKey);
+    if (bodyId === undefined) {
+      return { id: query.id, bodyId: '', faceIndex: null };
+    }
+    const faces = facesByBodyId.get(bodyId);
+    const scale = scaleByBodyId.get(bodyId);
+    if (faces === undefined || scale === undefined) {
+      return { id: query.id, bodyId, faceIndex: null };
+    }
+    return { id: query.id, bodyId, faceIndex: matchAppearanceFace(query.query, faces, scale) };
+  });
+}
+
+/**
  * 履歴の段を先頭から順に計算し直す(要件§6.3、NFR-PF-3、NFR-PF-4、FR-504)。
  *
  * - **鍵で作り直しを省く.** 段の鍵(model が解決済みのパラメータと上流の鍵から作る)が
@@ -319,6 +395,9 @@ function buildCachedSolid(
  *   その段を入力にするブーリアンも、上流の名前を添えた理由で失敗させて続ける(FR-504)。
  * - **消費されたボディは返さない.** visible が false の段はキャッシュには残るが bodies に入らない
  *   (ブーリアンに食べられた対象と相手。§0.a-0.5)。
+ * - **外観の面を選び直す.** 全段を計算し終えたあと、`appearanceQueries` の指紋を
+ *   できたボディの面へ照合し直して `appearanceMatches` で返す(FR-1106、P5 §2.2.3)。
+ *   依頼が無ければこの段は何もせず、OCCT を 1 回も呼ばない。
  *
  * 進捗と中止は呼び出し側の関数で受け取る。Comlink 越しでは Comlink.proxy した関数が渡る。
  * 中止を尋ねるのは段と段の間だけで、最初の段は必ず計算する。
@@ -338,6 +417,33 @@ export async function recomputeSolids(
   const failedLabels = new Map<string, string>();
   let cacheHits = 0;
   let cancelled = false;
+
+  const appearanceQueries = request.appearanceQueries ?? [];
+  /** 外観の依頼が 1 件も無ければ、照合の材料も集めない(§0.a-0.54 の費用ゼロ)。 */
+  const collectsAppearance = appearanceQueries.length > 0;
+  /** 段の鍵 → 画面に出したボディの id。同じ鍵を複数の段が使うときは先に来た段を採る。 */
+  const bodyIdByKey = new Map<string, string>();
+  /** ボディの id → 指紋の位置を正規化する物差し(境界箱の対角長の半分。P3 §2.2.3)。 */
+  const scaleByBodyId = new Map<string, number>();
+
+  /**
+   * 画面に出したボディを照合の材料として覚える。
+   *
+   * 物差しを測る `boundingDiagonal` は OCCT を呼ぶので、外観の依頼があるときだけ測る。
+   * 覚えるのは画面に出るボディだけで、消費された段(`visible: false`)は入れない
+   * (見えない面に外観を割り当てても描きようがないため)。
+   */
+  function rememberBodyForAppearance(key: string, id: string, shape: TopoDS_Shape): void {
+    if (!collectsAppearance) {
+      return;
+    }
+    if (!bodyIdByKey.has(key)) {
+      bodyIdByKey.set(key, id);
+    }
+    if (!scaleByBodyId.has(id)) {
+      scaleByBodyId.set(id, boundingDiagonal(oc, shape) * 0.5);
+    }
+  }
 
   for (let index = 0; index < total; index += 1) {
     const step = request.steps[index];
@@ -359,6 +465,7 @@ export async function recomputeSolids(
       if (step.visible) {
         // 同じ形を別のフィーチャーが使うことがあるので、id はこの段のものに差し替える。
         bodies.push({ ...cached.mesh, id: step.id });
+        rememberBodyForAppearance(step.key, step.id, cached.shape);
       }
       continue;
     }
@@ -370,6 +477,7 @@ export async function recomputeSolids(
       cache.set(step.key, entry);
       if (step.visible) {
         bodies.push(entry.mesh);
+        rememberBodyForAppearance(step.key, step.id, entry.shape);
       }
     } catch (error) {
       failures.push({ id: step.id, message: toFailureMessage(error) });
@@ -377,5 +485,13 @@ export async function recomputeSolids(
     }
   }
 
-  return { bodies, failures, cacheHits, cancelled };
+  return {
+    bodies,
+    failures,
+    cacheHits,
+    cancelled,
+    // 途中で取り消したときも、そこまでに出来たボディに対して照合しておく。
+    // 依頼が空なら空配列が返るだけで、OCCT は 1 回も呼ばれない。
+    appearanceMatches: matchAppearances(appearanceQueries, bodies, bodyIdByKey, scaleByBodyId),
+  };
 }

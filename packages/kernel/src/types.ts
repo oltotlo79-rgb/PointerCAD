@@ -339,7 +339,26 @@ export interface SolidRecomputeRequest {
   readonly steps: readonly SolidStepRequest[];
   /** 取り消しの世代番号。cancelSolidRecompute に同じ番号を渡すと止まる(NFR-PF-4)。 */
   readonly generation: number;
+  /**
+   * 外観を割り当てた面の指紋(FR-1106、P5 §2.2.3)。段を作り終えたあと、
+   * カーネルが同じ面を選び直して `SolidRecomputeResult.appearanceMatches` で返す。
+   *
+   * **省略か空なら照合を一切行わない。** 照合の物差し(境界箱の対角長)を測るのにも
+   * OCCT を呼ぶので、外観を 1 つも割り当てていない文書では 1 回も呼ばないようにして、
+   * 費用をゼロにする(§0.a-0.54 の「外観の追加で所要を増やさない」)。
+   */
+  readonly appearanceQueries?: readonly AppearanceQuery[];
 }
+
+/**
+ * 形の種類(FR-428、P5 §0.a-0.45)。
+ *
+ * 閉じた立体を含む形は `'solid'`、面だけのボディ(押し出し面・回転面など)は `'shell'`。
+ * **P5 タスク3 の時点では、どの段も閉じた立体しか作らないので必ず `'solid'` になる。**
+ * `'shell'` が実際に来るのは曲面の段を足すタスク41 からで、
+ * 判定そのもの(`hasSolid`)は今から入れてあるので、そのときに分岐を足さなくてよい。
+ */
+export type SolidBodyKind = 'solid' | 'shell';
 
 /** ボディ 1 つ分の表示用データ。MeshData と同じ並び方をする。 */
 export interface SolidBodyMesh {
@@ -359,6 +378,18 @@ export interface SolidBodyMesh {
   readonly edgeCount: number;
   /** 体積(mm³)。プロパティ欄の表示と検査に使う。 */
   readonly volume: number;
+  /**
+   * 表面積(mm²)。測定(FR-1102)と曲面の検証(FR-428)に使う。
+   *
+   * **任意の欄にしてあるのは、この欄を組み立てている呼び出し側(model の
+   * `part/recomputePart.test.ts` の見本のカーネル)を直せるのが、model の詰め替えを
+   * 受け持つ P5 タスク4 だからである。** kernel の `buildSolidBodyMesh` は必ず値を入れる
+   * (欄を落とさないことは `occt/solidMesh.test.ts` が固定する)。タスク4 が model 側を
+   * 直したら、この 2 欄(`area` / `bodyKind`)は必須へ引き上げてよい。
+   */
+  readonly area?: number;
+  /** 形の種類(FR-428)。任意にしてある理由は `area` と同じ。 */
+  readonly bodyKind?: SolidBodyKind;
   /** 面の一覧(§2.2、§2.3)。並びは通し番号の順。 */
   readonly faces: readonly SolidFaceInfo[];
   readonly edges: readonly SolidEdgeInfo[];
@@ -382,6 +413,14 @@ export interface SolidRecomputeResult {
   readonly cacheHits: number;
   /** 途中で取り消されたか(NFR-PF-4)。 */
   readonly cancelled: boolean;
+  /**
+   * 外観の面の照合の結果(FR-1106)。依頼の `appearanceQueries` と同じ並び・同じ件数で返る。
+   * 依頼が省略・空なら空配列。
+   *
+   * 任意の欄にしてあるのは `SolidBodyMesh.area` と同じ理由(組み立て側の model を
+   * 直せるのが P5 タスク4)で、kernel の `recomputeSolids` は必ず値を入れる。
+   */
+  readonly appearanceMatches?: readonly AppearanceMatch[];
 }
 
 /** 計算中の進み具合。段を始める前に 1 回ずつ知らせる(NFR-PF-4)。 */
@@ -501,6 +540,40 @@ export type SubShapeQuery =
       readonly radius: number | null;
     }
   | { readonly kind: 'vertex'; readonly index: number; readonly position: Vec3Tuple };
+
+/**
+ * 外観を割り当てた面 1 つぶんの照合の依頼(FR-1106、P5 §2.2.3)。
+ *
+ * 外観は履歴ではなく「割り当て」なので、文書は面を指紋(`SubShapeQuery`)で覚えている。
+ * 形を作り直すと面の通し番号がずれるため、再計算のたびにここでカーネルが選び直す。
+ * **指紋の採点と規約は P3 の部分形状の参照(`occt/matchSubShape.ts`)をそのまま使い、
+ * 外観のための別の規約は作らない。**
+ */
+export interface AppearanceQuery {
+  /** 割り当て 1 つの id。結果と 1 対 1 に対応づけるためだけに使う(中身は見ない)。 */
+  readonly id: string;
+  /** 面を持つボディの段のキャッシュの鍵(`SolidStepRequest.key`)。 */
+  readonly bodyKey: string;
+  /** 覚えてある面の指紋。面以外(辺・頂点)が来たら照合せずに断る。 */
+  readonly query: SubShapeQuery;
+}
+
+/** 照合の結果 1 件(FR-1106)。 */
+export interface AppearanceMatch {
+  /** 依頼の `AppearanceQuery.id` をそのまま返す。 */
+  readonly id: string;
+  /**
+   * 面が属するボディの識別子(`SolidStepRequest.id`)。
+   * **画面に出るボディが依頼の鍵に見つからなかったときは空文字**で、
+   * そのときは `faceIndex` も必ず `null` になる(消費された・失敗した・そもそも無い段)。
+   */
+  readonly bodyId: string;
+  /**
+   * 選び直せた面の通し番号。しきい値(0.6)に届かなければ `null`。
+   * `null` は「見つからないので既定の外観に戻して警告する」の合図(FR-1106)。
+   */
+  readonly faceIndex: number | null;
+}
 
 /**
  * 工具全体にかける剛体変換(パターン、§0.a-0.20)。空なら恒等 1 つとして扱う。

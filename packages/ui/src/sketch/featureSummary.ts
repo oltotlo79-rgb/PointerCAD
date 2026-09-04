@@ -11,8 +11,10 @@
  */
 
 import {
-  evaluateExpression,
+  addExpression,
+  divideExpression,
   expressionValueFromNumber,
+  subtractExpression,
   type ExpressionValue,
 } from '@pointercad/expression';
 import {
@@ -613,23 +615,21 @@ function absoluteComponents(
   return input.mode === 'absolute' ? [input.x, input.y, input.z] : null;
 }
 
-/**
- * 式を組み立て直す(FR-202「式は文字列のまま」)。読めない式になったら値 0 で作り、
- * 止めずに source を残す(FR-504、`solidSummary.ts` の `evaluatedExpressionValue` と同じ考え)。
- */
-function combinedExpression(source: string): ExpressionValue {
-  const result = evaluateExpression(source);
-  return result.ok ? result.value : { source, value: 0, display: '0' };
-}
+/** 式の中の定数 2(半分にする・倍にするときの割り算・掛け算の相手)。作るたびに作り直さない。 */
+const TWO: ExpressionValue = expressionValueFromNumber(2);
 
-/** (a + b) / 2 の式。 */
+/**
+ * (a + b) / 2 の式(FR-202「式は文字列のまま」)。expression 層の合成関数(`combineExpression.ts`)
+ * を使い、有理数どうしは厳密に、それ以外は括弧つきで連結する(P4 仕上げ (f)、
+ * 統括の目視 2026-09-04「矩形の換算式 `((0)+(40))/2` が読みにくい」への対応)。
+ */
 function midpointExpression(a: ExpressionValue, b: ExpressionValue): ExpressionValue {
-  return combinedExpression(`((${a.source})+(${b.source}))/2`);
+  return divideExpression(addExpression(a, b), TWO);
 }
 
 /** b − a の式。 */
 function spanExpression(a: ExpressionValue, b: ExpressionValue): ExpressionValue {
-  return combinedExpression(`(${b.source})-(${a.source})`);
+  return subtractExpression(b, a);
 }
 
 /** 中心 ± 大きさ/2 の式。 */
@@ -638,7 +638,8 @@ function halfOffsetExpression(
   size: ExpressionValue,
   sign: '+' | '-',
 ): ExpressionValue {
-  return combinedExpression(`(${center.source})${sign}(${size.source})/2`);
+  const half = divideExpression(size, TWO);
+  return sign === '+' ? addExpression(center, half) : subtractExpression(center, half);
 }
 
 /** 矩形を「中心+幅+高さ」で見た値。対角 2 点が絶対座標のときだけ作れる。 */

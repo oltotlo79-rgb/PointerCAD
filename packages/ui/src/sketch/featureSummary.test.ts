@@ -5,7 +5,11 @@
  * `as` による強制変換を1つも使わずに書けることも、この検査で担保する。
  */
 
-import { expressionValueFromNumber } from '@pointercad/expression';
+import {
+  evaluateExpression,
+  expressionValueFromNumber,
+  type ExpressionValue,
+} from '@pointercad/expression';
 import {
   appendFeature,
   createEmptySketchDocument,
@@ -45,6 +49,15 @@ import {
   sketchTreeKindOf,
   summarizeFeature,
 } from './featureSummary.js';
+
+/** 式を評価して値の組にする(π などシンボルを含む式を欄へ入れるテスト用)。 */
+function exprValue(source: string): ExpressionValue {
+  const result = evaluateExpression(source);
+  if (!result.ok) {
+    throw new Error(`評価に失敗しました: ${source} / ${result.error.message}`);
+  }
+  return result.value;
+}
 
 function absolute(x: number, y: number, z: number): CoordinateInput {
   return {
@@ -505,6 +518,26 @@ describe('P4 の新しい図形の要約(FR-314〜318、FR-321、FR-324、FR-327
     };
     const summary = summarizeFeature(onXZ, [], { rectangleView: 'centerSize' });
     expect(summary.scalars.map((item) => item.value.value)).toEqual([40, 20]);
+  });
+
+  it('中心・幅・高さの式は、有理数どうしなら厳密な値まで簡約する(P4 仕上げ (f))', () => {
+    // 対角 (0,0)-(40,20) の中心・幅・高さは `((0)+(40))/2` のような入れ子を残さず、
+    // 厳密な値(20・10・0、40、20)まで簡約される(統括の目視 2026-09-04)。
+    const summary = summarizeFeature(RECTANGLE, [], { rectangleView: 'centerSize' });
+    expect(summary.coordinates[0].fields.map((item) => item.value.source)).toEqual(['20', '10', '0']);
+    expect(summary.scalars.map((item) => item.value.source)).toEqual(['40', '20']);
+  });
+
+  it('厳密に計算できない対角を含むときは、式のまま括弧つきで残る', () => {
+    const withPi: SketchRectangleFeature = {
+      ...RECTANGLE,
+      corner1: { mode: 'absolute', x: exprValue('10 + π'), y: expressionValueFromNumber(0), z: expressionValueFromNumber(0) },
+    };
+    const summary = summarizeFeature(withPi, [], { rectangleView: 'centerSize' });
+    // 幅は (40) − (10 + π)、中心の X は((10 + π) + 40) / 2 まで組み立て、厳密に計算できる
+    // 部分(このケースは 0 個)以外は括弧つきの式のまま残す(小数へ丸めない)。
+    expect(summary.scalars[0].value.source).toBe('40 - (10 + π)');
+    expect(summary.coordinates[0].fields[0].value.source).toBe('((10 + π) + 40) / 2');
   });
 
   it('正多角形は辺数・半径と、半径の測り方の切替を持つ', () => {

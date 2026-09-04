@@ -23,6 +23,7 @@ import type {
 } from '@pointercad/model';
 import * as THREE from 'three';
 
+import { labelWorldHeight } from './cameraMath.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
 /** 基準軸を画面に出す長さ(mm、原点から片側)。方眼の広がりに合わせて後から変える。 */
@@ -52,6 +53,12 @@ export interface ReferenceLayer {
   setThemeColors(colors: ThemeColors): void;
   /** 基準軸を出す長さ(原点から片側、mm)。方眼の広がりに合わせる。 */
   setAxisHalfLength(millimetres: number): void;
+  /**
+   * 名前の札(基準軸・座標系)が画面上でおよそ一定の大きさ(約 13px)に見えるよう、
+   * カメラ距離・画面(canvas)の高さ・UI 拡大率から札のワールド高さを計算し直す
+   * (P4 仕上げ (f))。視点操作(ズーム)のたびに毎描画で呼ぶ想定。
+   */
+  updateScreenScale(distance: number, viewportHeightPixels: number, uiScalePercent: number): void;
   dispose(): void;
 }
 
@@ -199,15 +206,27 @@ function buildCoordinateSystemPositions(
  * 名前の札(P4 タスク33、タスク9・13 の申し送り「基準軸が方眼と同じ長さで見分けにくい」)
  * ------------------------------------------------------------------------- */
 
-/** 札の文字の大きさ(画素)と、札の内側の余白(画素)。 */
+/** 札の文字の大きさ(画素、等倍の画面での基準)と、札の内側の余白(画素)。 */
 const LABEL_FONT_PIXELS = 22;
 const LABEL_PADDING_PIXELS = 8;
 
 /**
- * 札の高さ(mm)を、基準軸の長さに対する割合で決める。方眼の刻みが変わると軸の長さも
- * 変わるので、札もそれに合わせて大きさを変える(遠くの基準の札が読めなくならないため)。
+ * 札の高さを画面上でおよそ一定に保つ、目標の画素数(P4 仕上げ (f)、
+ * 統括の目視 2026-09-04「札が画面幅の 1/6 ほどに巨大化する」への対応)。
+ * 12〜14px 相当という指示のうち中央の値を採る。
  */
-const LABEL_HEIGHT_RATIO = 0.018;
+const LABEL_SCREEN_HEIGHT_PIXELS = 13;
+
+/**
+ * canvas に文字を描く解像度の倍率の上限。高 DPI 画面(devicePixelRatio が高い、
+ * または OS の拡大率が高い)でも文字がにじまないよう、画面の解像度に応じて
+ * canvas を実寸より大きく描く(`createViewportScene.ts` の `MAX_PIXEL_RATIO` と同じ考え方。
+ * 上限を設けるのはメモリと描画負荷を抑えるため)。
+ *
+ * 画面上の大きさ(ワールド単位の高さ)はカメラ距離から毎描画で計算し直す別の仕組みなので、
+ * ズームでは canvas を作り直さない(NFR-PF-1)。ここは「1 画素あたり何回描くか」だけを決める。
+ */
+const MAX_LABEL_RESOLUTION_SCALE = 2;
 
 /** 札を軸の端から少し内側へ寄せる割合(端に置くと方眼の外へはみ出して見えるため)。 */
 const LABEL_AXIS_POSITION_RATIO = 0.92;
@@ -225,25 +244,30 @@ interface NameTag {
  * 文字を描いた小さな絵を作り、札にする。DOM の要素を画面に重ねる方法もあるが、
  * 視点が動くたびに位置を計算し直す仕掛けが要る。札は 3D の中に置いてしまうほうが、
  * 描画のたびに three.js が位置を合わせてくれて配線が増えない。
+ *
+ * `resolutionScale` は canvas の画素数だけを底上げする(表示上の大きさ・縦横比は変えない)。
+ * 高 DPI の画面でも輪郭がにじまないようにするため(P4 仕上げ (f))。
  */
-function createNameTag(text: string, color: number): NameTag | null {
+function createNameTag(text: string, color: number, resolutionScale: number): NameTag | null {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (context === null) {
     // 絵を描けない環境(検査用の見えない画面など)では札を出さない。線と点は出る。
     return null;
   }
-  const font = `${String(LABEL_FONT_PIXELS)}px sans-serif`;
+  const fontPixels = LABEL_FONT_PIXELS * resolutionScale;
+  const paddingPixels = LABEL_PADDING_PIXELS * resolutionScale;
+  const font = `${String(fontPixels)}px sans-serif`;
   context.font = font;
-  const width = Math.ceil(context.measureText(text).width) + LABEL_PADDING_PIXELS * 2;
-  const height = LABEL_FONT_PIXELS + LABEL_PADDING_PIXELS * 2;
+  const width = Math.ceil(context.measureText(text).width) + paddingPixels * 2;
+  const height = fontPixels + paddingPixels * 2;
   canvas.width = width;
   canvas.height = height;
   // 大きさを変えたので設定はやり直す(canvas の決まり)。
   context.font = font;
   context.textBaseline = 'middle';
   context.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
-  context.fillText(text, LABEL_PADDING_PIXELS, height / 2);
+  context.fillText(text, paddingPixels, height / 2);
   const texture = new THREE.CanvasTexture(canvas);
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }),
@@ -277,8 +301,24 @@ export function createReferenceLayer(): ReferenceLayer {
 
   let halfLength = DEFAULT_AXIS_HALF_LENGTH_MM;
   let last: ResolvedReferences | null = null;
-  /** 札の高さをワールドの長さへ直す係数。方眼の広がりに合わせて変える。 */
-  let tagWorldHeight = DEFAULT_AXIS_HALF_LENGTH_MM * LABEL_HEIGHT_RATIO;
+  // 高 DPI 画面でも文字がにじまないよう、canvas の解像度をここで 1 回だけ決める
+  // (devicePixelRatio が変わることは実運用ではまれで、`MAX_PIXEL_RATIO` と同じ考え方)。
+  const resolutionScale = Math.min(
+    typeof globalThis.devicePixelRatio === 'number' ? globalThis.devicePixelRatio : 1,
+    MAX_LABEL_RESOLUTION_SCALE,
+  );
+  /**
+   * 札の高さ(mm)。カメラ距離・画面の高さ・UI 拡大率から毎描画で計算し直す
+   * (`updateScreenScale`、P4 仕上げ (f))。ここでの初期値は最初の描画までの仮の値。
+   */
+  let tagWorldHeight = DEFAULT_AXIS_HALF_LENGTH_MM * 0.02;
+
+  /** いま出ている札すべてに、いまの `tagWorldHeight` を反映する。 */
+  function applyTagScale(): void {
+    for (const tag of tags.values()) {
+      tag.sprite.scale.set(tagWorldHeight * tag.aspect, tagWorldHeight, 1);
+    }
+  }
 
   /** 札を 1 枚出す(すでに同じ文字の札があれば置き直すだけ)。 */
   function placeTag(featureId: string, text: string, position: Vec3, used: Set<string>): void {
@@ -291,7 +331,7 @@ export function createReferenceLayer(): ReferenceLayer {
         tag.sprite.material.dispose();
         tags.delete(featureId);
       }
-      const created = createNameTag(text, DEFAULT_THEME_COLORS.sketchCurve);
+      const created = createNameTag(text, DEFAULT_THEME_COLORS.sketchCurve, resolutionScale);
       if (created === null) {
         return;
       }
@@ -386,13 +426,26 @@ export function createReferenceLayer(): ReferenceLayer {
         return;
       }
       halfLength = millimetres;
-      // 札の大きさも軸の長さに合わせる。
-      tagWorldHeight = millimetres * LABEL_HEIGHT_RATIO;
       if (last !== null) {
-        // 長さだけが変わったので、軸の線と札だけを引き直す。
+        // 長さだけが変わったので、軸の線と札の位置だけを引き直す
+        // (札の大きさは軸の長さと切り離してある。`updateScreenScale` が別に決める)。
         setPositions(axisLines, buildAxisPositions(last.axes, halfLength));
         applyTags(last);
       }
+    },
+
+    updateScreenScale(distance, viewportHeightPixels, uiScalePercent): void {
+      const nextHeight = labelWorldHeight(
+        LABEL_SCREEN_HEIGHT_PIXELS,
+        distance,
+        viewportHeightPixels,
+        uiScalePercent,
+      );
+      if (nextHeight === tagWorldHeight) {
+        return;
+      }
+      tagWorldHeight = nextHeight;
+      applyTagScale();
     },
 
     dispose(): void {

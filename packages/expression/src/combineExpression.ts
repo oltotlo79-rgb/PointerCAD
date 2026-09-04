@@ -133,21 +133,47 @@ function greatestCommonDivisor(a: Decimal, b: Decimal): Decimal {
   return x;
 }
 
-type CombineOperator = '+' | '-';
+type CombineOperator = '+' | '-' | '*' | '/';
 
 /**
  * 有理数どうしを厳密に計算し、簡約した式の文字列を返す。桁が溢れるなど厳密に書けない
- * ときは null(簡約せず元の式を連結する)。
+ * ときは null(簡約せず元の式を連結する)。四則演算の 4 つを 1 つの関数にまとめる
+ * (足し算・引き算・掛け算・割り算は「分子・分母をどう組むか」だけが違うため)。
  */
 function combineRationals(
   a: RationalLiteral,
   b: RationalLiteral,
   operator: CombineOperator,
 ): string | null {
-  const left = a.numerator.times(b.denominator);
-  const right = b.numerator.times(a.denominator);
-  const numerator = operator === '-' ? left.minus(right) : left.plus(right);
-  const denominator = a.denominator.times(b.denominator);
+  let numerator: Decimal;
+  let denominator: Decimal;
+  switch (operator) {
+    case '+':
+      numerator = a.numerator.times(b.denominator).plus(b.numerator.times(a.denominator));
+      denominator = a.denominator.times(b.denominator);
+      break;
+    case '-':
+      numerator = a.numerator.times(b.denominator).minus(b.numerator.times(a.denominator));
+      denominator = a.denominator.times(b.denominator);
+      break;
+    case '*':
+      numerator = a.numerator.times(b.numerator);
+      denominator = a.denominator.times(b.denominator);
+      break;
+    case '/':
+      // 0 で割ることになる式は簡約しない(呼び出し側が事前にはじく)。
+      if (b.numerator.isZero()) {
+        return null;
+      }
+      numerator = a.numerator.times(b.denominator);
+      denominator = a.denominator.times(b.numerator);
+      break;
+  }
+  if (denominator.isNegative()) {
+    // 分母は必ず正に保つ(`RationalLiteral` の決まり。割り算で符号が分母へ回るため)。
+    numerator = numerator.negated();
+    denominator = denominator.negated();
+  }
   const divisor = greatestCommonDivisor(numerator, denominator);
   if (divisor.isZero()) {
     return null;
@@ -160,11 +186,12 @@ function combineRationals(
   if (reducedDenominator.equals(1)) {
     return reducedNumerator.toFixed();
   }
-  if (a.fraction || b.fraction) {
-    // 分数が混じっていたら分数のまま返す(1/3 のように 10 進で書けないものがあるため)。
+  // 割り算は割り切れないかぎり常に既約分数で返す(10/3 を 3.3333… のように丸めて書ける
+  // 10 進表記が無いため。タスク35 ②の決定)。
+  if (a.fraction || b.fraction || operator === '/') {
     return `${reducedNumerator.toFixed()}/${reducedDenominator.toFixed()}`;
   }
-  // 小数どうしの差・和は 10 進の桁を保った厳密な値にする(統括の決定 2026-09-04)。
+  // 足し算・引き算・掛け算の小数どうしは 10 進の桁を保った厳密な値にする(統括の決定 2026-09-04)。
   const quotient = reducedNumerator.dividedBy(reducedDenominator);
   return quotient.times(reducedDenominator).equals(reducedNumerator) ? quotient.toFixed() : null;
 }
@@ -263,4 +290,68 @@ export function addExpression(
     return b;
   }
   return buildValue(`${wrapSource(a.source)} + ${wrapSource(b.source)}`, a.value + b.value, options);
+}
+
+/** 有理数リテラルの値がちょうど 1 か(分子と分母が等しいか。約分前でも判定できる)。 */
+function isUnitLiteral(literal: RationalLiteral): boolean {
+  return literal.numerator.equals(literal.denominator);
+}
+
+/**
+ * 2 つの式の積 `a * b`(タスク35、矩形の中心・幅・高さの換算で使う「値を半分にする」計算に使う)。
+ *
+ * 差・和と同じ規則で組み立てる。単位元 `0` と `1` は式を増やさないためにその場で省く
+ * (`0 * a → 0`、`a * 1 → a`、`1 * a → a`)。
+ */
+export function multiplyExpression(
+  a: ExpressionValue,
+  b: ExpressionValue,
+  options: EvaluateOptions = {},
+): ExpressionValue {
+  const left = rationalOfSource(a.source);
+  const right = rationalOfSource(b.source);
+  if (left !== null && right !== null) {
+    const simplified = combineRationals(left, right, '*');
+    if (simplified !== null) {
+      return buildValue(simplified, a.value * b.value, options);
+    }
+  }
+  // 0 を掛けた結果は常に 0(順序を問わない)。
+  if ((right !== null && right.numerator.isZero()) || (left !== null && left.numerator.isZero())) {
+    return expressionValueFromNumber(0);
+  }
+  // 1 を掛けても式は変わらない。括弧を増やさないためにここで返す。
+  if (right !== null && isUnitLiteral(right)) {
+    return a;
+  }
+  if (left !== null && isUnitLiteral(left)) {
+    return b;
+  }
+  return buildValue(`${wrapSource(a.source)} * ${wrapSource(b.source)}`, a.value * b.value, options);
+}
+
+/**
+ * 2 つの式の商 `a / b`(タスク35、矩形の幅・高さから半分の大きさを作るときに使う)。
+ *
+ * 積と同じ規則で組み立てる。0 で割ることになる式は簡約せず括弧つきで連結する
+ * (0 割りの値は定まらないため、式を壊すより残すほうを選ぶ)。単位元 `1` で割っても式は変わらない
+ * (`a / 1 → a`)。
+ */
+export function divideExpression(
+  a: ExpressionValue,
+  b: ExpressionValue,
+  options: EvaluateOptions = {},
+): ExpressionValue {
+  const left = rationalOfSource(a.source);
+  const right = rationalOfSource(b.source);
+  if (left !== null && right !== null && !right.numerator.isZero()) {
+    const simplified = combineRationals(left, right, '/');
+    if (simplified !== null) {
+      return buildValue(simplified, a.value / b.value, options);
+    }
+  }
+  if (right !== null && isUnitLiteral(right)) {
+    return a;
+  }
+  return buildValue(`${wrapSource(a.source)} / ${wrapSource(b.source)}`, a.value / b.value, options);
 }

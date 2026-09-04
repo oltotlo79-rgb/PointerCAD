@@ -4,6 +4,7 @@ import {
   cameraPosition,
   clamp,
   HOME_ORBIT,
+  labelWorldHeight,
   MAX_DISTANCE,
   MAX_ELEVATION,
   MIN_DISTANCE,
@@ -96,6 +97,26 @@ describe('投影の切り替え(FR-102)', () => {
     // 導出: 2 × 100 × tan(25°) = 93.26153…(計画書の 93.2602… は算出誤り。2026-09-02 統括承認)
     expect(orthographicFrustumHeight(100)).toBeCloseTo(93.26153, 4);
     expect(orthographicFrustumHeight(200)).toBeCloseTo(2 * 93.26153, 4);
+  });
+});
+
+describe('名前の札の画面上の大きさ(P4 仕上げ (f)、統括の目視 2026-09-04)', () => {
+  it('距離が 2 倍になれば、同じ画面の大きさを保つワールド高さも 2 倍になる', () => {
+    const near = labelWorldHeight(13, 100, 800, 100);
+    const far = labelWorldHeight(13, 200, 800, 100);
+    expect(far).toBeCloseTo(near * 2, 12);
+    // worldUnitsPerPixel と同じ式(orthographicFrustumHeight / viewportHeightPixels)を使うため、
+    // 透視投影と平行投影で画面上の大きさがそろう。
+    expect(near).toBeCloseTo(13 * worldUnitsPerPixel(100, 800), 12);
+  });
+
+  it('画面(ビューポート)が高いほど、同じ画素数に見せるワールド高さは小さくなる', () => {
+    expect(labelWorldHeight(13, 100, 1600, 100)).toBeCloseTo(labelWorldHeight(13, 100, 800, 100) / 2, 12);
+  });
+
+  it('UI の拡大率が 150% なら、ワールド高さも 1.5 倍になる', () => {
+    const base = labelWorldHeight(13, 100, 800, 100);
+    expect(labelWorldHeight(13, 100, 800, 150)).toBeCloseTo(base * 1.5, 12);
   });
 });
 

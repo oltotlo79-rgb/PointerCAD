@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { addExpression, subtractExpression } from './combineExpression.js';
+import {
+  addExpression,
+  divideExpression,
+  multiplyExpression,
+  subtractExpression,
+} from './combineExpression.js';
 import { evaluateExpression, type ExpressionValue } from './evaluateExpression.js';
 
 /** 式を評価して値の組にする。評価できない式はテストの誤りとして落とす。 */
@@ -128,5 +133,70 @@ describe('式どうしの和(FR-331 の補助)', () => {
     const combined = addExpression(expr('10 + π/2'), expr('2'));
     expect(combined.source).toBe('(10 + π/2) + 2');
     expect(combined.value).toBeCloseTo(13.5707963267949, 12);
+  });
+});
+
+describe('式どうしの積(FR-331 の補助、タスク35 ②矩形の中心・幅・高さの換算)', () => {
+  it('有理数どうしは厳密に掛ける(整数どうしは整数)', () => {
+    expect(multiplyExpression(expr('6'), expr('7')).source).toBe('42');
+    expect(multiplyExpression(expr('-3'), expr('4')).source).toBe('-12');
+  });
+
+  it('割り切れないときは既約分数のまま返す(小数へ丸めない)', () => {
+    const result = multiplyExpression(expr('2/3'), expr('3/5'));
+    expect(result.source).toBe('2/5');
+    expect(result.value).toBeCloseTo(0.4, 12);
+  });
+
+  it('小数どうしも 10 進で厳密に掛ける', () => {
+    expect(multiplyExpression(expr('0.1'), expr('0.2')).source).toBe('0.02');
+  });
+
+  it('0 を掛けた結果は順序を問わず 0', () => {
+    expect(multiplyExpression(expr('0'), expr('10 + π/2')).source).toBe('0');
+    expect(multiplyExpression(expr('10 + π/2'), expr('0')).source).toBe('0');
+  });
+
+  it('1 を掛けても式は変わらない(順序を問わない)', () => {
+    const value = withVariable('a + 1', 5);
+    expect(multiplyExpression(value, expr('1'))).toBe(value);
+    expect(multiplyExpression(expr('1'), value)).toBe(value);
+  });
+
+  it('簡約できない式は括弧で囲って連結し、単項だけ括弧を省く', () => {
+    const combined = multiplyExpression(expr('10 + π/2'), expr('2'));
+    expect(combined.source).toBe('(10 + π/2) * 2');
+    const atomic = multiplyExpression(expr('π'), expr('2'));
+    expect(atomic.source).toBe('π * 2');
+  });
+});
+
+describe('式どうしの商(FR-331 の補助、タスク35 ②矩形の中心・幅・高さの換算)', () => {
+  it('有理数どうしは厳密に割る(割り切れれば整数)', () => {
+    expect(divideExpression(expr('40'), expr('2')).source).toBe('20');
+    expect(divideExpression(expr('-12'), expr('4')).source).toBe('-3');
+  });
+
+  it('割り切れないときは既約分数のまま返す(小数へ丸めない)', () => {
+    const result = divideExpression(expr('10'), expr('4'));
+    expect(result.source).toBe('5/2');
+    expect(result.value).toBeCloseTo(2.5, 12);
+  });
+
+  it('1 で割っても式は変わらない', () => {
+    const value = withVariable('a + 1', 5);
+    expect(divideExpression(value, expr('1'))).toBe(value);
+    expect(divideExpression(expr('7'), expr('1')).source).toBe('7');
+  });
+
+  it('0 で割ることになる式は簡約せず括弧つきで連結する', () => {
+    expect(divideExpression(expr('7'), expr('0')).source).toBe('7 / 0');
+  });
+
+  it('簡約できない式は括弧で囲って連結し、単項だけ括弧を省く', () => {
+    const combined = divideExpression(expr('10 + π/2'), expr('2'));
+    expect(combined.source).toBe('(10 + π/2) / 2');
+    const atomic = divideExpression(expr('π'), expr('2'));
+    expect(atomic.source).toBe('π / 2');
   });
 });

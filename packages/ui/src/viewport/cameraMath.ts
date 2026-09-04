@@ -123,3 +123,24 @@ export function pan(
 export function orthographicFrustumHeight(distance: number): number {
   return 2 * distance * Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
 }
+
+/**
+ * 名前の札(基準軸・座標系、`createReferenceLayer.ts`)を画面上でおよそ一定の大きさに保つための、
+ * その時点のワールド単位での高さ(mm、P4 仕上げ (f))。
+ *
+ * 札は world 単位の大きさの板(スプライト)なので、なにもしなければカメラに近づくほど
+ * 画面上で大きく見える(統括の目視 2026-09-04「札が画面幅の 1/6 ほどに巨大化する」)。
+ * `worldUnitsPerPixel` は `orthographicFrustumHeight` と同じ式を使っているため、
+ * 透視投影・平行投影のどちらでも同じ計算で画面上の大きさをそろえられる。
+ *
+ * `uiScalePercent`(`DisplaySettings.uiScale`、90〜150)ぶんも大きさへ反映し、
+ * UI 全体を拡大しているときは 3D の札も見やすいまま大きくする。
+ */
+export function labelWorldHeight(
+  screenPixels: number,
+  distance: number,
+  viewportHeightPixels: number,
+  uiScalePercent: number,
+): number {
+  return screenPixels * (uiScalePercent / 100) * worldUnitsPerPixel(distance, viewportHeightPixels);
+}

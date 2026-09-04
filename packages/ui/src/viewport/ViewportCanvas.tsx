@@ -73,8 +73,8 @@ export function ViewportCanvas(): React.JSX.Element {
         themeDirty = false;
         scene.setThemeColors(readThemeColors());
       }
-      const { projection, displayStyle, showGrid } = useAppStore.getState();
-      scene.render(controls.getOrbit(), projection, displayStyle, showGrid);
+      const { projection, displayStyle, showGrid, displaySettings } = useAppStore.getState();
+      scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
       // 本体を描いた後にだけ知らせる。視点はこの時点で確定している。
       for (const listener of listeners) {
         listener();

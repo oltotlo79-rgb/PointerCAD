@@ -46,11 +46,22 @@ interface RenderSettings {
   readonly projection: ProjectionMode;
   readonly displayStyle: DisplayStyle;
   readonly showGrid: boolean;
+  /**
+   * UI の拡大率(`DisplaySettings.uiScale`、90〜150)。名前の札(基準軸・座標系)の
+   * 画面上の大きさをそろえるのに使う(P4 仕上げ (f)、`createReferenceLayer.ts`)。
+   */
+  readonly uiScale: number;
 }
 
 /** ビューポートの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
 export interface ViewportScene {
-  render(orbit: OrbitState, projection: ProjectionMode, displayStyle: DisplayStyle, showGrid: boolean): void;
+  render(
+    orbit: OrbitState,
+    projection: ProjectionMode,
+    displayStyle: DisplayStyle,
+    showGrid: boolean,
+    uiScale: number,
+  ): void;
   /** スケッチの表示を差し替える(FR-105、FR-310)。 */
   setSketch(sketch: ResolvedSketch, mesh: SketchMesh | null): void;
   /**
@@ -429,7 +440,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
   /** 1 枚描く。表示スタイルの反映からカメラの置き直しまで、絵を作る手順はここだけ。 */
   function drawScene(settings: RenderSettings): void {
-    const { orbit, projection, displayStyle, showGrid } = settings;
+    const { orbit, projection, displayStyle, showGrid, uiScale } = settings;
     const spacing = gridSpacing(orbit.distance);
     if (spacing !== currentSpacing) {
       rebuildGrid(spacing);
@@ -441,6 +452,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     solidLayer.updateSubShapes(subShapeBundle);
     solidLayer.updateThreadMarks(threadMarks);
     sketchLayer.update(sketchBundle, displayStyle);
+    // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す(P4 仕上げ (f))。
+    // ズームでカメラ距離が変わるたびに効くよう、描画のたびに計算し直す。
+    referenceLayer.updateScreenScale(orbit.distance, height, uiScale);
 
     updateKeyLight(orbit);
 
@@ -622,8 +636,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       renderer.setSize(width, height, false);
     },
 
-    render(orbit, projection, displayStyle, showGrid): void {
-      drawScene({ orbit, projection, displayStyle, showGrid });
+    render(orbit, projection, displayStyle, showGrid, uiScale): void {
+      drawScene({ orbit, projection, displayStyle, showGrid, uiScale });
     },
 
     dispose(): void {

@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { extractEdges } from '../occt/extractEdges.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
+import { makePrimitive } from '../occt/makePrimitive.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { collectSubShapes } from '../occt/subShapes.js';
@@ -11,6 +12,8 @@ import type {
   CurveSpec,
   FilletStepSpec,
   HoleStepSpec,
+  PrimitiveShapeSpec,
+  PrimitiveStepSpec,
   SolidEdgeInfo,
   SolidFaceInfo,
   SolidProgress,
@@ -76,12 +79,21 @@ function request(steps: readonly SolidStepRequest[]): SolidRecomputeRequest {
   return { steps, generation: 1 };
 }
 
+/**
+ * 表面積(`SolidBodyMesh.area`)まで測らせる依頼(P5 タスク14、統括の決定 2026-09-05)。
+ * 既定では測らないので、面積を見る検査はこちらを使う。
+ */
+function requestWithAreas(steps: readonly SolidStepRequest[]): SolidRecomputeRequest {
+  return { steps, generation: 1, measureAreas: true };
+}
+
 /** 外観の面の照合(FR-1106、P5 タスク3)を頼む依頼。 */
 function requestWithAppearance(
   steps: readonly SolidStepRequest[],
   appearanceQueries: readonly AppearanceQuery[],
+  measureAreas = false,
 ): SolidRecomputeRequest {
-  return { steps, generation: 1, appearanceQueries };
+  return { steps, generation: 1, appearanceQueries, measureAreas };
 }
 
 /** 40 × 30 を 10 押し出した体積。40·30·10 = 12000 mm³(手計算)。 */
@@ -291,6 +303,27 @@ describe('履歴の再計算(recomputeSolids)', () => {
       ...overrides,
     };
     return { key, id, label: id, visible: true, step };
+  }
+
+  /**
+   * 基本形状の段を 1 つ作る(FR-429、P5 タスク14)。
+   * 既定は原点・Z 軸で、形だけを差し替えて使う(`makePrimitive.test.ts` と同じ書き方)。
+   */
+  function primitiveStep(
+    id: string,
+    key: string,
+    shape: PrimitiveShapeSpec,
+    overrides: Partial<Omit<PrimitiveStepSpec, 'shape' | 'kind'>> = {},
+    visible = true,
+  ): SolidStepRequest {
+    const step: PrimitiveStepSpec = {
+      kind: 'primitive',
+      origin: [0, 0, 0],
+      axis: [0, 0, 1],
+      shape,
+      ...overrides,
+    };
+    return { key, id, label: id, visible, step };
   }
 
   it('1 段の押し出しから体積 12000 mm³ のボディを 1 つ返す', async () => {
@@ -819,11 +852,11 @@ describe('履歴の再計算(recomputeSolids)', () => {
     return { id, bodyKey, query: face };
   }
 
-  it('ボディに表面積 3800 mm² と形の種類 solid が乗る(既存の欄は変わらない)', async () => {
+  it('表面積を求めた依頼では、ボディに 3800 mm² と形の種類 solid が乗る(既存の欄は変わらない)', async () => {
     const { cache } = newCache();
     const result = await recomputeSolids(
       { oc, cache },
-      request([extrudeStep('extrude-1', 'key-a', 40, 30, 10)]),
+      requestWithAreas([extrudeStep('extrude-1', 'key-a', 40, 30, 10)]),
     );
 
     expect(result.failures).toEqual([]);
@@ -984,13 +1017,358 @@ describe('履歴の再計算(recomputeSolids)', () => {
     const steps = [extrudeStep('extrude-1', 'key-a', 40, 30, 10)];
     const queries = [appearanceQuery('appearance-1', 'key-a', topFace)];
 
-    await recomputeSolids({ oc, cache }, requestWithAppearance(steps, queries));
-    const second = await recomputeSolids({ oc, cache }, requestWithAppearance(steps, queries));
+    await recomputeSolids({ oc, cache }, requestWithAppearance(steps, queries, true));
+    const second = await recomputeSolids({ oc, cache }, requestWithAppearance(steps, queries, true));
 
     expect(built()).toBe(1);
     expect(second.cacheHits).toBe(1);
     expect(second.bodies[0].area).toBeCloseTo(PLATE_AREA, 6);
     expect(second.bodies[0].bodyKind).toBe('solid');
     expect(second.appearanceMatches?.[0].faceIndex).not.toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // 表面積を測るかどうかの切り替え(P5 タスク14、統括の決定 2026-09-05)
+  // ---------------------------------------------------------------------------
+
+  /*
+   * 表面積は「求められたときだけ」測る。NFR-PF-2 の上限 500ms に対し、穴 20 個の板が
+   * すでに 485〜510ms を使っている(P3 の実測)ところへ、誰も見ない表面積のために
+   * 11.4ms(面 26 枚の板、2026-09-05 実測)を足さないための決めである。
+   * 形の種類(`bodyKind`)は `hasSolid` の判定そのままで安いので、常に入る。
+   */
+  it('表面積を求めない依頼では area が入らず、bodyKind だけが入る(既定)', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([extrudeStep('extrude-1', 'key-a', 40, 30, 10)]),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.bodies[0].area).toBeUndefined();
+    expect(result.bodies[0].bodyKind).toBe('solid');
+    // 体積は表面積とは別で、常に測る(P2 からの不変条件)。
+    expect(result.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
+  });
+
+  it('外観の照合だけを頼んでも表面積は測らない(照合は面ごとの面積しか使わない)', async () => {
+    const { topFace } = plateFingerprints();
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      requestWithAppearance(
+        [extrudeStep('extrude-1', 'key-a', 40, 30, 10)],
+        [appearanceQuery('appearance-1', 'key-a', topFace)],
+      ),
+    );
+
+    expect(result.appearanceMatches?.[0].faceIndex).not.toBeNull();
+    expect(result.bodies[0].area).toBeUndefined();
+  });
+
+  /*
+   * 先に「測らない」依頼でキャッシュへ入った段へ、あとから「測る」依頼が来る場合。
+   * 覚えてある形からその場で測って足すので、段は作り直さない(`built()` が増えない)。
+   */
+  it('測らずに覚えた段へ後から表面積を求めると、作り直さずに測って足す', async () => {
+    const { cache, built } = newCache();
+    const steps = [extrudeStep('extrude-1', 'key-a', 40, 30, 10)];
+
+    const first = await recomputeSolids({ oc, cache }, request(steps));
+    expect(first.bodies[0].area).toBeUndefined();
+
+    const second = await recomputeSolids({ oc, cache }, requestWithAreas(steps));
+
+    expect(built()).toBe(1);
+    expect(second.cacheHits).toBe(1);
+    expect(second.bodies[0].area).toBeCloseTo(PLATE_AREA, 6);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 基本形状の段(FR-429、P5 タスク14)
+  // ---------------------------------------------------------------------------
+
+  /** 球 r=10 の体積。4/3·π·10³ = 4000π/3 mm³(手計算)。 */
+  const SPHERE_VOLUME = (4 / 3) * Math.PI * 1000;
+  /** 箱 40×30×10 の体積。12000 mm³(手計算。押し出しの板と同じ大きさ)。 */
+  const PRIMITIVE_BOX_VOLUME = 12000;
+  /** トーラス R=20 r=5 の体積。2π²·20·5² = 1000π² mm³(手計算)。 */
+  const TORUS_VOLUME = 2 * Math.PI * Math.PI * 20 * 25;
+
+  it('球 1 段だけの依頼は、対象を取らずに体積 4188.790204786391 mm³ のボディを返す', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([primitiveStep('球1', 'key-sphere', { kind: 'sphere', radius: 10 })]),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0].id).toBe('球1');
+    expect(result.bodies[0].volume).toBeCloseTo(SPHERE_VOLUME, 6);
+    expect(result.bodies[0].bodyKind).toBe('solid');
+    // 球は面 1 枚の曲面(makePrimitive.test.ts の実測と同じ値)。
+    expect(result.bodies[0].faceCount).toBe(1);
+    expect(result.bodies[0].faces).toHaveLength(1);
+  });
+
+  it('箱 40×30×10 の段は体積 12000 mm³・形の種類 solid・面 6 枚になる', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([
+        primitiveStep('箱1', 'key-box', { kind: 'box', sizeX: 40, sizeY: 30, sizeZ: 10 }),
+      ]),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.bodies[0].volume).toBeCloseTo(PRIMITIVE_BOX_VOLUME, 6);
+    expect(result.bodies[0].bodyKind).toBe('solid');
+    expect(result.bodies[0].faceCount).toBe(6);
+    expect(result.bodies[0].faces).toHaveLength(6);
+    expect(result.bodies[0].edgeCount).toBe(result.bodies[0].edges.length);
+  });
+
+  it('押し出し + 球の 2 段は、球が何も消費しないので両方とも残る(§0.a-0.19)', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([
+        extrudeStep('押し出し1', 'key-a', 40, 30, 10),
+        primitiveStep('球1', 'key-sphere', { kind: 'sphere', radius: 10 }),
+      ]),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.bodies.map((body) => body.id)).toEqual(['押し出し1', '球1']);
+  });
+
+  /*
+   * 球と箱を作り、球から箱を引く。球(中心 原点、r=10)と箱(中心 原点、20³)は
+   * 箱が球を完全に包む(箱の内接球の半径が 10 = 球の半径)ので、差は 0 になり
+   * 「立体になりませんでした」で断られる…のではなく、接しているだけなので
+   * **実測して報告する**(計画書 タスク14 の検証表「球 → 箱 → 差 の 3 段」)。
+   * ここでは確実に一部だけ重なる配置(箱を +Z へずらす)にして、
+   * 差の体積が「球 − 交わり」になることを球冠の公式で検算する。
+   *
+   * 箱は中心 [0,0,15] の 20³ なので z = 5 〜 25 を占める。球 r=10 のうち
+   * z ≧ 5 の部分(球冠、高さ h = 5)が交わりで、その体積は
+   * πh²(3r − h)/3 = π·25·25/3 = 625π/3 ≒ 654.4984694978736 mm³(手計算)。
+   * 箱の x/y は ±10 で球を覆うので、球冠がそのまま交わりになる。
+   */
+  it('球 → 箱 → 差 の 3 段で、差の体積が 球 − 球冠 になる', async () => {
+    const { cache } = newCache();
+    const sphereCapVolume = (Math.PI * 25 * (3 * 10 - 5)) / 3;
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([
+        primitiveStep('球1', 'key-sphere', { kind: 'sphere', radius: 10 }, {}, false),
+        primitiveStep(
+          '箱1',
+          'key-box',
+          { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 },
+          { origin: [0, 0, 15] },
+          false,
+        ),
+        booleanStep('差1', 'key-cut', 'subtract', 'key-sphere', 'key-box'),
+      ]),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.bodies.map((body) => body.id)).toEqual(['差1']);
+    console.log(
+      `球 r=10 − 箱(中心 [0,0,15] の 20³): 体積 実測 ${result.bodies[0].volume.toFixed(9)} / ` +
+        `計算 ${(SPHERE_VOLUME - sphereCapVolume).toFixed(9)}`,
+    );
+    expect(result.bodies[0].volume).toBeCloseTo(SPHERE_VOLUME - sphereCapVolume, 6);
+  });
+
+  it('同じ基本形状の段をもう一度渡すと、段の数だけ命中して作り直さない', async () => {
+    const { cache, built } = newCache();
+    const steps = [
+      primitiveStep('球1', 'key-sphere', { kind: 'sphere', radius: 10 }),
+      primitiveStep('トーラス1', 'key-torus', {
+        kind: 'torus',
+        majorRadius: 20,
+        minorRadius: 5,
+      }),
+    ];
+
+    await recomputeSolids({ oc, cache }, request(steps));
+    const second = await recomputeSolids({ oc, cache }, request(steps));
+
+    expect(second.failures).toEqual([]);
+    expect(second.cacheHits).toBe(steps.length);
+    expect(built()).toBe(steps.length);
+    // 命中した段でも覚えていた体積がそのまま返る(トーラス R=20 r=5 = 2π²·20·5²)。
+    expect(second.bodies[1].volume).toBeCloseTo(TORUS_VOLUME, 6);
+  });
+
+  it('半径を変えた 2 回目は、その段だけ作り直す(鍵の連鎖)', async () => {
+    const { cache, built } = newCache();
+    const first = [
+      primitiveStep('球1', 'key-sphere-10', { kind: 'sphere', radius: 10 }),
+      primitiveStep('箱1', 'key-box', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }),
+    ];
+    const second = [
+      primitiveStep('球1', 'key-sphere-20', { kind: 'sphere', radius: 20 }),
+      primitiveStep('箱1', 'key-box', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }),
+    ];
+
+    await recomputeSolids({ oc, cache }, request(first));
+    const result = await recomputeSolids({ oc, cache }, request(second));
+
+    expect(result.failures).toEqual([]);
+    // 箱の段は鍵が変わっていないので命中し、球の段だけ作り直す。
+    expect(result.cacheHits).toBe(1);
+    expect(built()).toBe(3);
+    expect(result.bodies[0].volume).toBeCloseTo((4 / 3) * Math.PI * 8000, 6);
+  });
+
+  it('作れない基本形状は、日本語の理由を添えて失敗し、次の段は続く(FR-504)', async () => {
+    const { cache } = newCache();
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([
+        primitiveStep('球1', 'key-bad', { kind: 'sphere', radius: 0 }),
+        primitiveStep('箱1', 'key-box', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }),
+      ]),
+    );
+
+    expect(result.failures).toEqual([
+      { id: '球1', message: '半径は 0 より大きい数にしてください。' },
+    ]);
+    expect(result.bodies.map((body) => body.id)).toEqual(['箱1']);
+  });
+
+  /*
+   * 基本形状は掃引体ではないので、既定のテッセレーション(線形 0.1mm・角度 0.5rad)の
+   * ままであることを固定する(`isRelaxableSweepStep` を広げていないことの歯止め)。
+   * 2026-09-05 実測の三角形の数は 球 r=10 が 978 枚、トーラス R=20 r=5 が 2600 枚で、
+   * 緩める目安(2000 枚超かつ 100ms 超)に届かないため緩めていない
+   * (判断の全文は `recomputeSolids.ts` の `isRelaxableSweepStep` の注釈)。
+   */
+  it('球とトーラスは既定のテッセレーションのまま(掃引体向けの粗さを当てない)', async () => {
+    const { cache } = newCache();
+    const shapes: readonly { label: string; key: string; shape: PrimitiveShapeSpec }[] = [
+      { label: '球1', key: 'key-sphere', shape: { kind: 'sphere', radius: 10 } },
+      {
+        label: 'トーラス1',
+        key: 'key-torus',
+        shape: { kind: 'torus', majorRadius: 20, minorRadius: 5 },
+      },
+    ];
+    const result = await recomputeSolids(
+      { oc, cache },
+      request(shapes.map((entry) => primitiveStep(entry.label, entry.key, entry.shape))),
+    );
+    expect(result.failures).toEqual([]);
+
+    shapes.forEach((entry, index) => {
+      const reference = makePrimitive(oc, {
+        kind: 'primitive',
+        origin: [0, 0, 0],
+        axis: [0, 0, 1],
+        shape: entry.shape,
+      });
+      try {
+        const defaultMesh = tessellate(oc, reference.shape);
+        console.log(`${entry.label}: 三角形 ${result.bodies[index].triangleCount} 枚(既定のまま)`);
+        expect(result.bodies[index].triangleCount).toBe(defaultMesh.triangleCount);
+      } finally {
+        reference.delete();
+      }
+    });
+  });
+
+  /*
+   * 段ごとの粗さ(`SolidStepRequest.tessellation`、P5 §2.13)。
+   * 呼び出し側が段に許容値を添えたら、段の種類ごとの既定より優先される。
+   * これは P6 の STL / 3MF の品質指定(FR-803)の入り口でもある(計画書 §7.1-(d))。
+   */
+  it('段ごとの粗さを添えると、その段だけ三角形が減る', async () => {
+    const { cache } = newCache();
+    const shape: PrimitiveShapeSpec = { kind: 'torus', majorRadius: 20, minorRadius: 5 };
+    const base = primitiveStep('トーラス1', 'key-torus', shape);
+    const result = await recomputeSolids(
+      { oc, cache },
+      request([{ ...base, tessellation: { linearDeflection: 0.15, angularDeflection: 0.7 } }]),
+    );
+    expect(result.failures).toEqual([]);
+
+    const reference = makePrimitive(oc, {
+      kind: 'primitive',
+      origin: [0, 0, 0],
+      axis: [0, 0, 1],
+      shape,
+    });
+    try {
+      const defaultMesh = tessellate(oc, reference.shape);
+      console.log(
+        `トーラス R=20 r=5: 既定 ${defaultMesh.triangleCount} 枚 → 段ごとの指定 ${result.bodies[0].triangleCount} 枚`,
+      );
+      expect(result.bodies[0].triangleCount).toBeLessThan(defaultMesh.triangleCount);
+    } finally {
+      reference.delete();
+    }
+  });
+
+  /*
+   * 段ごとの粗さは、掃引体向けの既定(ばね)よりも優先される。
+   * 「段ごとの指定 > 全体の指定 > 段の種類ごとの既定」の順序を固定する。
+   */
+  it('ばねの段に細かい粗さを添えると、掃引体向けの既定より三角形が増える', async () => {
+    const { cache } = newCache();
+    const relaxed = await recomputeSolids(
+      { oc, cache },
+      request([springStep('ばね1', 'key-spring')]),
+    );
+    const { cache: cache2 } = newCache();
+    const fine = await recomputeSolids(
+      { oc, cache: cache2 },
+      request([
+        {
+          ...springStep('ばね1', 'key-spring'),
+          tessellation: { linearDeflection: 0.1, angularDeflection: 0.5 },
+        },
+      ]),
+    );
+
+    expect(relaxed.failures).toEqual([]);
+    expect(fine.failures).toEqual([]);
+    expect(fine.bodies[0].triangleCount).toBeGreaterThan(relaxed.bodies[0].triangleCount);
+  });
+
+  /*
+   * NFR-PF-2「単一フィーチャーの適用は 500ms 以内」。5 種それぞれ 1 段の所要を測る。
+   * 上限は緩めない(rules/02)。並列作業中の CPU 競合で落ちないよう、判定は
+   * `solidPerformance.test.ts` と同じく実測の記録を主とし、上限超過だけを固定する。
+   */
+  it('5 種それぞれ 1 段の所要が 500ms 未満(NFR-PF-2)', async () => {
+    const cases: readonly { label: string; shape: PrimitiveShapeSpec }[] = [
+      { label: '球 r=10', shape: { kind: 'sphere', radius: 10 } },
+      { label: '箱 40×30×10', shape: { kind: 'box', sizeX: 40, sizeY: 30, sizeZ: 10 } },
+      { label: '円柱 r=10 h=20', shape: { kind: 'cylinder', radius: 10, height: 20 } },
+      {
+        label: '円錐 R=10 r=0 h=20',
+        shape: { kind: 'cone', bottomRadius: 10, topRadius: 0, height: 20 },
+      },
+      { label: 'トーラス R=20 r=5', shape: { kind: 'torus', majorRadius: 20, minorRadius: 5 } },
+    ];
+
+    for (const [index, entry] of cases.entries()) {
+      const { cache } = newCache();
+      const started = performance.now();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([primitiveStep(`形${index}`, `key-shape-${index}`, entry.shape)]),
+      );
+      const elapsed = performance.now() - started;
+      expect(result.failures).toEqual([]);
+      console.log(
+        `${entry.label} の 1 段の所要: ${elapsed.toFixed(1)} ms / 三角形 ${result.bodies[0].triangleCount} 枚 / 上限 500 ms`,
+      );
+      expect(elapsed).toBeLessThan(500);
+    }
   });
 });

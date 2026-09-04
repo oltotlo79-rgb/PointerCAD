@@ -5,12 +5,13 @@ import type { OcctShapeHandle } from '../occt/makeBox.js';
 import { makeChamfer } from '../occt/makeChamfer.js';
 import { makeFillet } from '../occt/makeFillet.js';
 import { makeHole } from '../occt/makeHole.js';
+import { makePrimitive } from '../occt/makePrimitive.js';
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { makeThreadHole } from '../occt/makeThread.js';
 import { matchFace } from '../occt/matchSubShape.js';
 import { sewSolid } from '../occt/sewSolid.js';
-import { buildSolidBodyMesh } from '../occt/solidMesh.js';
+import { buildSolidBodyMesh, measureArea } from '../occt/solidMesh.js';
 import { boundingDiagonal } from '../occt/subShapes.js';
 import type {
   AppearanceMatch,
@@ -22,6 +23,7 @@ import type {
   SolidRecomputeRequest,
   SolidRecomputeResult,
   SolidStepFailure,
+  SolidStepRequest,
   SolidStepSpec,
   SubShapeQuery,
   TessellationOptions,
@@ -79,6 +81,29 @@ const SWEEP_TESSELLATION_OPTIONS: TessellationOptions = {
  * ばね(FR-414)は必ず対象。ねじ穴(FR-406)は**実らせんを切ったとき**だけ対象にする
  * (`thread !== null`)。簡略表示(`thread === null`)は下穴の円柱面だけなので、
  * 穴と同じ理由で既定のまま(緩めると円柱面が角張る)。
+ *
+ * **基本形状(FR-429)は対象にしない**(P5 タスク14 の判断、2026-09-05 実測)。
+ * 球とトーラスは面 1 枚の曲面なので三角形が増えることを心配したが、既定
+ * (線形 0.1mm・角度 0.5rad)での実測は下表のとおりで、掃引体のような桁違いの
+ * 増え方はしなかった(ばねは既定で 10114 枚・380〜900ms)。
+ *
+ * | 形(既定の寸法) | 既定 0.1/0.5 | 掃引体 0.15/0.7 | 角度だけ 0.8 |
+ * |---|---|---|---|
+ * | 球 r=10 | 978 枚・47.6ms | 638 枚・19.9ms | 978 枚・28.6ms |
+ * | トーラス R=20 r=5 | 2600 枚・56.4ms | 1558 枚・31.7ms | 2300 枚・47.4ms |
+ * | 円柱 r=10 h=20 | 124 枚・6.7ms | 100 枚・4.5ms | 124 枚・5.3ms |
+ * | 円錐 R=10 h=20 | 385 枚・14.4ms | 279 枚・7.3ms | 385 枚・11.1ms |
+ * | 箱 20³ | 12 枚・4.4ms | 12 枚・5.0ms | 12 枚・4.2ms |
+ *
+ * 緩める目安(球 r=10 で三角形 2000 枚超、または 100ms 超)に**どれも届かない**ので、
+ * 見た目を落としてまで緩める理由が無い。**計画書 §2.13 が案として書いた
+ * 「基本形状だけ `angularDeflection: 0.8`」は、この寸法では効かない**(球で 978 → 978 枚、
+ * トーラスで 2600 → 2300 枚)。これらの大きさでは角度ではなく線形の許容値のほうが
+ * 細かさを決めているためで、角度だけを緩めても三角形はほとんど減らない。
+ *
+ * 大きな球(r=100 で 10108 枚・272ms)は既定でも重いが、NFR-PF-2 の上限 500ms には
+ * 収まっている。必要になれば段ごとの指定(`SolidStepRequest.tessellation`)で
+ * 寸法に応じて緩められるので、ここに寸法の分岐を作らない。
  */
 function isRelaxableSweepStep(step: SolidStepSpec): boolean {
   if (step.kind === 'spring') {
@@ -87,21 +112,55 @@ function isRelaxableSweepStep(step: SolidStepSpec): boolean {
   return step.kind === 'thread' && step.thread !== null;
 }
 
+/** 許容値が 1 つでも指定されているか(空なら「既定のまま」を意味する)。 */
+function hasDeflection(options: TessellationOptions | undefined): options is TessellationOptions {
+  return (
+    options !== undefined &&
+    (options.linearDeflection !== undefined || options.angularDeflection !== undefined)
+  );
+}
+
 /**
  * 段の種類に応じてテッセレーション許容値を選ぶ(§0.35「形に応じて緩める」)。
  *
+ * 優先順位は **① 段ごとの指定(`SolidStepRequest.tessellation`、P5 §2.13)→
+ * ② 呼び出し側が渡した全体の指定 → ③ 段の種類ごとの既定**(掃引体だけ粗くする)。
+ *
  * **呼び出し側が明示的に許容値を指定しているときは、その指定を必ず尊重する.**
  * 掃引体だからと言って上書きすると、呼び出し側の意図(検査で細かい値を敢えて
- * 指定した場合など)を壊すため、`options` が空(既定のまま)のときだけ選び直す。
+ * 指定した場合など)を壊すため、①②のどちらも空のときだけ③で選び直す。
  */
 function resolveTessellationOptions(
   options: TessellationOptions,
-  step: SolidStepSpec,
+  request: SolidStepRequest,
 ): TessellationOptions {
-  if (options.linearDeflection !== undefined || options.angularDeflection !== undefined) {
+  if (hasDeflection(request.tessellation)) {
+    return request.tessellation;
+  }
+  if (hasDeflection(options)) {
     return options;
   }
-  return isRelaxableSweepStep(step) ? SWEEP_TESSELLATION_OPTIONS : options;
+  return isRelaxableSweepStep(request.step) ? SWEEP_TESSELLATION_OPTIONS : options;
+}
+
+/**
+ * キャッシュに命中した段のメッシュへ、必要なら表面積を後から足す(統括の決定 2026-09-05)。
+ *
+ * 表面積は依頼が `measureAreas` で求めたときだけ測る(`SolidRecomputeRequest` の注釈)。
+ * そのため、先の再計算が求めなかった依頼だと、覚えてあるメッシュに `area` が入っていない。
+ * ここでその場で測って足す。**形はキャッシュが持っているので段を作り直さない**ので、
+ * 費用は表面積の測定 1 回ぶん(面 26 枚の板で 11.4ms)だけで済む。
+ */
+function withMeasuredArea(
+  oc: OpenCascadeInstance,
+  mesh: SolidBodyMesh,
+  shape: TopoDS_Shape,
+  wanted: boolean,
+): SolidBodyMesh {
+  if (!wanted || mesh.area !== undefined) {
+    return mesh;
+  }
+  return { ...mesh, area: measureArea(oc, shape) };
 }
 
 /**
@@ -242,7 +301,8 @@ function noMarks(handle: OcctShapeHandle): StepSolidResult {
  * `faces` / `edges` / `vertices` が入っているので、一覧を作り直さない(NFR-PF-2、§2.8)。
  * `mesh` は `SubShapeTables`(`{ faces, edges, vertices }`)の上位互換の形なので、
  * R 面取り・C 面取りへはそのまま渡せる(構造的部分型)。
- * **ばね(FR-414)だけは `targetKey` を持たないので、この取り出しを行わない**(§0.36)。
+ * **ばね(FR-414)と基本形状(FR-429)は `targetKey` を持たないので、この取り出しを行わない**
+ * (§0.36、§0.a-0.19。押し出し・回転・縫合と同じ「新しいボディを作る」段)。
  */
 function createStepSolid(
   oc: OpenCascadeInstance,
@@ -279,6 +339,9 @@ function createStepSolid(
     }
     case 'spring':
       return noMarks(makeSpring(oc, spec));
+    case 'primitive':
+      // 基本形状(FR-429)。中心・向き・寸法だけで決まるので、上流の形を見ない。
+      return noMarks(makePrimitive(oc, spec));
   }
 }
 
@@ -290,6 +353,7 @@ function createStepSolid(
  * それぞれの作り手(makeExtrudeSolid・sewSolid・booleanOp・makeHole 等)が済ませている。
  *
  * `threadMarks` はねじ穴の段だけが非空(§0.a-0.15)。それ以外は `noMarks` が空配列にする。
+ * `measureAreas` は依頼が表面積を求めたかどうか(`SolidRecomputeRequest` の注釈)。
  */
 function buildCachedSolid(
   oc: OpenCascadeInstance,
@@ -297,9 +361,10 @@ function buildCachedSolid(
   handle: OcctShapeHandle,
   options: TessellationOptions,
   threadMarks: readonly ThreadMarkInfo[],
+  measureAreas: boolean,
 ): CachedSolid {
   try {
-    const mesh = buildSolidBodyMesh(oc, id, handle.shape, options, threadMarks);
+    const mesh = buildSolidBodyMesh(oc, id, handle.shape, options, threadMarks, measureAreas);
     return {
       shape: handle.shape,
       mesh,
@@ -419,6 +484,8 @@ export async function recomputeSolids(
   let cancelled = false;
 
   const appearanceQueries = request.appearanceQueries ?? [];
+  /** 表面積を測るか(統括の決定 2026-09-05)。省略なら測らない。 */
+  const measureAreas = request.measureAreas === true;
   /** 外観の依頼が 1 件も無ければ、照合の材料も集めない(§0.a-0.54 の費用ゼロ)。 */
   const collectsAppearance = appearanceQueries.length > 0;
   /** 段の鍵 → 画面に出したボディの id。同じ鍵を複数の段が使うときは先に来た段を採る。 */
@@ -464,7 +531,9 @@ export async function recomputeSolids(
       cacheHits += 1;
       if (step.visible) {
         // 同じ形を別のフィーチャーが使うことがあるので、id はこの段のものに差し替える。
-        bodies.push({ ...cached.mesh, id: step.id });
+        // 表面積を求められていて覚えていなければ、覚えてある形からその場で測って足す。
+        const mesh = withMeasuredArea(oc, cached.mesh, cached.shape, measureAreas);
+        bodies.push({ ...mesh, id: step.id });
         rememberBodyForAppearance(step.key, step.id, cached.shape);
       }
       continue;
@@ -472,8 +541,15 @@ export async function recomputeSolids(
 
     try {
       const stepResult = createStepSolid(oc, step.step, options, cache, failedLabels);
-      const meshOptions = resolveTessellationOptions(options, step.step);
-      const entry = buildCachedSolid(oc, step.id, stepResult.handle, meshOptions, stepResult.threadMarks);
+      const meshOptions = resolveTessellationOptions(options, step);
+      const entry = buildCachedSolid(
+        oc,
+        step.id,
+        stepResult.handle,
+        meshOptions,
+        stepResult.threadMarks,
+        measureAreas,
+      );
       cache.set(step.key, entry);
       if (step.visible) {
         bodies.push(entry.mesh);

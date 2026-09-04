@@ -50,6 +50,7 @@ export type {
   ExtrudeStepSpec,
   RevolveStepSpec,
   SewStepSpec,
+  SolidBodyKind,
   SolidBodyMesh,
   SolidProgress,
   SolidRecomputeRequest,
@@ -59,6 +60,19 @@ export type {
   SolidStepSpec,
 } from './types.js';
 export { DEFAULT_ANGULAR_DEFLECTION, DEFAULT_LINEAR_DEFLECTION } from './types.js';
+// 外観の面の照合(FR-1106、P5 §2.2.3、タスク3)。model 側(kernelBridge.ts、タスク4)が
+// 割り当ての指紋を AppearanceQuery へ詰め替えて渡し、AppearanceMatch を受け取る。
+export type { AppearanceMatch, AppearanceQuery } from './types.js';
+// 基本形状(FR-429、P5 §2.7、タスク13・14)。段の依頼の型と 5 種の作り手。
+// model 側(resolvePart.ts、タスク16)が PrimitiveStepSpec を組み立てて段に乗せる。
+export type { PrimitiveShapeSpec, PrimitiveStepSpec } from './types.js';
+export {
+  boxCornerOrigin,
+  makePrimitive,
+  primitiveAxes,
+  readAxesFrame,
+  type AxesFrame,
+} from './occt/makePrimitive.js';
 // 加工フィーチャー(FR-405〜408、FR-411、FR-412、FR-414)の型(計画書 §2.8)。
 // 段の依頼(*StepSpec)と、部分形状の一覧・指紋(SolidFaceInfo 等・SubShapeQuery)を輸出する。
 // model 側(kernelBridge.ts、タスク17)がこれらを取り込んで詰め替える。
@@ -119,6 +133,7 @@ export {
   buildSolidBodyMesh,
   hasSolid,
   isValidShape,
+  measureArea,
   measureVolume,
 } from './occt/solidMesh.js';
 export { makeExtrudeSolid, makeRevolveSolid } from './occt/makeSolidSweep.js';
@@ -196,6 +211,7 @@ export {
   type ShapeCacheStats,
 } from './worker/shapeCache.js';
 export {
+  matchAppearances,
   recomputeSolids,
   type CachedSolid,
   type SolidCancelToken,

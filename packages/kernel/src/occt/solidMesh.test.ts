@@ -224,6 +224,25 @@ describe('ソリッドの体積・妥当性・表示用データのまとめ取�
     }
   });
 
+  /*
+   * 表面積は求められたときだけ測る(P5 タスク14、統括の決定 2026-09-05)。
+   * `buildSolidBodyMesh` の既定は「測る」で、測らないのは `recomputeSolids` が
+   * 依頼の `measureAreas` を見て false を渡したときだけ(理由は types.ts の注釈)。
+   * 形の種類(`bodyKind`)は安いので、測らない指定でも必ず入る。
+   */
+  it('measureAreas を false にすると area は入らず、bodyKind と体積はそのまま入る', () => {
+    const handle = makeBox(oc, BOX);
+    try {
+      const body = buildSolidBodyMesh(oc, 'extrude-1', handle.shape, {}, [], false);
+      expect(body.area).toBeUndefined();
+      expect(body.bodyKind).toBe('solid');
+      expect(body.volume).toBeCloseTo(BOX_VOLUME, 6);
+      expect(body.faceCount).toBe(body.faces.length);
+    } finally {
+      handle.delete();
+    }
+  });
+
   it('閉じた立体の bodyKind は solid になる(曲面はタスク41)', () => {
     const handle = makeBox(oc, BOX);
     try {

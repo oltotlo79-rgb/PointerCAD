@@ -23,10 +23,10 @@
  * あるが、FR-429 は角度に触れておらず、部分円柱は円弧の回転(FR-402)で作れる。
  * 必要になれば P6 以降で足す。
  *
- * **`PrimitiveStepSpec` はこのファイルで仮に宣言してある**(計画書 タスク13 の「ファイル」欄)。
- * `packages/kernel/src/types.ts` へ移して `SolidStepSpec` の union へ足すのはタスク14。
- * 先に `types.ts` へ足すと `recomputeSolids.ts` の `switch` が非網羅になって落ちるため、
- * 型の移動と段の実装は同じタスクで行う(P3 タスク12 → 13 と同じ段取り)。
+ * **`PrimitiveStepSpec` / `PrimitiveShapeSpec` は `packages/kernel/src/types.ts` にある**
+ * (タスク13 ではこのファイルで仮に宣言し、タスク14 で移した)。段の依頼の型を
+ * `SolidStepSpec` の union へ足すのと、`recomputeSolids.ts` の `switch` に節を足すのは
+ * 同じタスクで行う必要がある(先に型だけ足すと非網羅で型検査が落ちるため。P3 タスク12 → 13)。
  */
 
 import type {
@@ -36,37 +36,11 @@ import type {
   gp_Ax2,
 } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { Vec3Tuple } from '../types.js';
+import type { PrimitiveShapeSpec, PrimitiveStepSpec, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
-
-/** 基本形状の寸法(mm)。種類ごとに欄が違う判別共用体(計画書 §2.7.2)。 */
-export type PrimitiveShapeSpec =
-  | { readonly kind: 'sphere'; readonly radius: number }
-  | { readonly kind: 'box'; readonly sizeX: number; readonly sizeY: number; readonly sizeZ: number }
-  | { readonly kind: 'cylinder'; readonly radius: number; readonly height: number }
-  | {
-      readonly kind: 'cone';
-      readonly bottomRadius: number;
-      readonly topRadius: number;
-      readonly height: number;
-    }
-  | { readonly kind: 'torus'; readonly majorRadius: number; readonly minorRadius: number };
-
-/**
- * 基本形状 1 つを作る段の依頼(計画書 §2.7.2)。
- * タスク14 で `packages/kernel/src/types.ts` へ移す(このファイルの冒頭の注釈を参照)。
- */
-export interface PrimitiveStepSpec {
-  readonly kind: 'primitive';
-  /** 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心(§0.a-0.17)。 */
-  readonly origin: Vec3Tuple;
-  /** 向き。長さは問わない(ここで長さ 1 へ揃える)。`gp_Ax2` の Z 方向になる。 */
-  readonly axis: Vec3Tuple;
-  readonly shape: PrimitiveShapeSpec;
-}
 
 /** これ未満の体積(mm³)は「立体にならなかった」とみなす(他の make*.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;

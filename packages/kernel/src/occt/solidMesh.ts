@@ -118,11 +118,16 @@ export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean 
  * `threadMarks` はねじ穴(タスク9)だけが渡す、B-rep に現れない描画用の印(§0.a-0.15)。
  * 渡されなければ空配列にする(押し出し・回転・穴・面取り・ばね等はねじの印を持たない)。
  *
- * **表面積(`area`)と形の種類(`bodyKind`)も一緒に返す**(P5 タスク3、FR-1102・FR-428)。
- * どちらも形が手元にあるこの場でしか安く測れないうえ、面ごとの面積を足し合わせる形にすると
- * 面の一覧の作り方(共有面の数え方)に結果が引きずられるので、形そのものから直に測る。
- * `bodyKind` は `hasSolid` の判定そのままで、P5 タスク3 の時点ではどの段も閉じた立体しか
- * 作らないため必ず `'solid'` になる。`'shell'` が来るのは曲面の段(タスク41)から。
+ * **形の種類(`bodyKind`)は必ず返す**(P5 タスク3、FR-428)。`hasSolid` の判定そのままで
+ * 安く、P5 タスク3 の時点ではどの段も閉じた立体しか作らないため必ず `'solid'` になる。
+ * `'shell'` が来るのは曲面の段(タスク41)から。
+ *
+ * **表面積(`area`)は `measureAreas` が true のときだけ返す**(P5 タスク14、統括の決定
+ * 2026-09-05)。形が手元にあるこの場でしか安く測れないが、それでもただではない
+ * (2026-09-05 実測: 面 26 枚の板で 11.4ms)ので、測定・質量特性(FR-1101・FR-1102)が
+ * 値を要る依頼のときだけ測る。理由の全文は `types.ts` の `SolidRecomputeRequest.measureAreas`
+ * の注釈にある。**測るときは、面ごとの面積を足し合わせるのではなく形そのものから直に測る**
+ * (足し合わせると、面の一覧の作り方(共有面の数え方)に結果が引きずられるため)。
  */
 export function buildSolidBodyMesh(
   oc: OpenCascadeInstance,
@@ -130,6 +135,7 @@ export function buildSolidBodyMesh(
   shape: TopoDS_Shape,
   options: TessellationOptions = {},
   threadMarks: readonly ThreadMarkInfo[] = [],
+  measureAreas = true,
 ): SolidBodyMesh {
   const surface = tessellate(oc, shape, options);
   const edges = extractEdges(oc, shape, options);
@@ -146,7 +152,9 @@ export function buildSolidBodyMesh(
     faceCount: surface.faceCount,
     edgeCount: edges.edgeCount,
     volume: measureVolume(oc, shape),
-    area: measureArea(oc, shape),
+    // 求められていないときは欄ごと落とす(undefined を入れるのと同じだが、
+    // 「測っていない」ことが JSON の見た目でも分かるようにする)。
+    ...(measureAreas ? { area: measureArea(oc, shape) } : {}),
     bodyKind,
     faces: subShapes.faces,
     edges: subShapes.edges,

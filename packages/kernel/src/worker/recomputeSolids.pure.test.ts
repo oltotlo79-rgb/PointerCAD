@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { SUB_SHAPE_MATCH_THRESHOLD } from '../occt/matchSubShape.js';
-import type { AppearanceQuery, SolidBodyMesh, SolidFaceInfo, SubShapeQuery } from '../types.js';
+import type {
+  AppearanceQuery,
+  SolidBodyMesh,
+  SolidFaceInfo,
+  SolidStepSpec,
+  SubShapeQuery,
+} from '../types.js';
 import { matchAppearances } from './recomputeSolids.js';
 
 /*
@@ -273,5 +279,32 @@ describe('外観の面の照合(matchAppearances、FR-1106)', () => {
       'appearance-2',
     ]);
     expect(matches.map((match) => match.faceIndex)).toEqual([TOP_FACE_INDEX, null, 0]);
+  });
+});
+
+/*
+ * 段の種類の数(P5 タスク14 の検証表「`SolidStepSpec` の union の数 = 10」)。
+ *
+ * 型そのものは実行時に無いので、`SolidStepSpec['kind']` を鍵とする表を作って数える。
+ * **表を `Record` にしてあるので、union に種類を足したのにここを直し忘れると型検査が落ちる**
+ * (数え漏れを機械で防ぐ)。P5 は基本形状(`primitive`)を足して 9 → 10 になった。
+ */
+describe('段の種類(SolidStepSpec の union)', () => {
+  const STEP_KINDS: Readonly<Record<SolidStepSpec['kind'], true>> = {
+    extrude: true,
+    revolve: true,
+    sew: true,
+    boolean: true,
+    hole: true,
+    thread: true,
+    fillet: true,
+    chamfer: true,
+    spring: true,
+    primitive: true,
+  };
+
+  it('段の種類は 10 種で、基本形状(primitive)を含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(10);
+    expect(Object.keys(STEP_KINDS)).toContain('primitive');
   });
 });

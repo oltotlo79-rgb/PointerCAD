@@ -2,16 +2,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { Vec3Tuple } from '../types.js';
+import type { PrimitiveShapeSpec, PrimitiveStepSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
-import {
-  boxCornerOrigin,
-  makePrimitive,
-  type AxesFrame,
-  type PrimitiveShapeSpec,
-  type PrimitiveStepSpec,
-} from './makePrimitive.js';
-import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
+import { boxCornerOrigin, makePrimitive, type AxesFrame } from './makePrimitive.js';
+import { hasSolid, isValidShape, measureArea, measureVolume } from './solidMesh.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -21,17 +15,6 @@ function primitiveSpec(
   overrides: Partial<Omit<PrimitiveStepSpec, 'shape'>> = {},
 ): PrimitiveStepSpec {
   return { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1], shape, ...overrides };
-}
-
-/** 形の表面積(mm²)。solidMesh.ts の体積の測り方と同じ引数(共有面を飛ばさず厳密な面で積分)。 */
-function measureArea(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
-  const properties = new oc.GProp_GProps_1();
-  try {
-    oc.BRepGProp.SurfaceProperties_1(shape, properties, false, false);
-    return properties.Mass();
-  } finally {
-    properties.delete();
-  }
 }
 
 /**

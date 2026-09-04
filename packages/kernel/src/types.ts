@@ -319,7 +319,9 @@ export type SolidStepSpec =
   | FilletStepSpec
   | ChamferStepSpec
   /** ばね(FR-414、§2.7b)。対象を取らず、新しい形を作る(§0.36)。 */
-  | SpringStepSpec;
+  | SpringStepSpec
+  /** 基本形状(FR-429、P5 §2.7)。ばねと同じく対象を取らない「作る」段(§0.a-0.19)。 */
+  | PrimitiveStepSpec;
 
 /** 履歴 1 段ぶんの依頼。 */
 export interface SolidStepRequest {
@@ -332,6 +334,16 @@ export interface SolidStepRequest {
   readonly step: SolidStepSpec;
   /** この段の結果を画面に出すか。消費されたボディは false。 */
   readonly visible: boolean;
+  /**
+   * この段だけの三角形分割の粗さ(P5 §2.13、§0.a-0.54)。省略なら段の種類ごとの既定。
+   *
+   * 優先順位は **段ごとの指定 > 呼び出し側が `recomputeSolids` の第 2 引数へ渡した指定 >
+   * 段の種類ごとの既定**(掃引体だけ粗くする `SWEEP_TESSELLATION_OPTIONS`)。
+   * 段ごとに変えられるようにしてあるのは、形の種類が同じでも寸法によって必要な細かさが
+   * 変わるためで、値を決めるのは model 側(`kernelBridge.ts` の `toSolidStepRequest`)。
+   * P6 の STL / 3MF の「品質(偏差)指定」(FR-803)もこの欄へ乗る(計画書 §7.1-(d))。
+   */
+  readonly tessellation?: TessellationOptions;
 }
 
 /** 履歴をまとめて計算し直す依頼。 */
@@ -348,6 +360,22 @@ export interface SolidRecomputeRequest {
    * 費用をゼロにする(§0.a-0.54 の「外観の追加で所要を増やさない」)。
    */
   readonly appearanceQueries?: readonly AppearanceQuery[];
+  /**
+   * ボディの表面積(`SolidBodyMesh.area`)を測るか(統括の決定 2026-09-05、P5 タスク14)。
+   *
+   * **省略か false なら測らず、`area` は入らない。** 表面積は形が手元にあるこの場でしか
+   * 安く測れないが、それでもただではない(2026-09-05 実測: 面 26 枚の板で 11.4ms)。
+   * NFR-PF-2 の上限 500ms に対して穴 20 個の板がすでに 485〜510ms を使っているので、
+   * 誰も見ない表面積のために余裕を削らない、という判断である。
+   *
+   * **true にするのは、測定・質量特性(FR-1101・FR-1102、タスク28・29)が値を要るときだけ。**
+   * 外観の面の照合(FR-1106)は面ごとの面積(`SolidFaceInfo.area`)しか使わないので、
+   * この欄とは関わりが無い(照合を頼んでも表面積は測らない)。
+   *
+   * キャッシュに命中した段でこの欄が true になったときは、覚えてある形から
+   * その場で測って足す(段を作り直さない)。
+   */
+  readonly measureAreas?: boolean;
 }
 
 /**
@@ -381,14 +409,20 @@ export interface SolidBodyMesh {
   /**
    * 表面積(mm²)。測定(FR-1102)と曲面の検証(FR-428)に使う。
    *
-   * **任意の欄にしてあるのは、この欄を組み立てている呼び出し側(model の
-   * `part/recomputePart.test.ts` の見本のカーネル)を直せるのが、model の詰め替えを
-   * 受け持つ P5 タスク4 だからである。** kernel の `buildSolidBodyMesh` は必ず値を入れる
-   * (欄を落とさないことは `occt/solidMesh.test.ts` が固定する)。タスク4 が model 側を
-   * 直したら、この 2 欄(`area` / `bodyKind`)は必須へ引き上げてよい。
+   * **依頼が `SolidRecomputeRequest.measureAreas` で求めたときだけ入る**(統括の決定
+   * 2026-09-05、P5 タスク14)。求めていない再計算では `undefined` のままで、
+   * 測る費用(面 26 枚の板で 11.4ms)を払わない。理由は `measureAreas` の注釈にある。
+   * **`area` はこの決定により任意の欄のままとし、タスク4 でも必須へ上げない。**
    */
   readonly area?: number;
-  /** 形の種類(FR-428)。任意にしてある理由は `area` と同じ。 */
+  /**
+   * 形の種類(FR-428)。`hasSolid` の判定そのままなので安く、**常に入る**。
+   *
+   * 任意の欄にしてあるのは、この欄を組み立てている呼び出し側(model の
+   * `part/recomputePart.test.ts` の見本のカーネル)を直せるのが、model の詰め替えを
+   * 受け持つ P5 タスク4 だからである。**タスク4 が model 側を直したら必須へ引き上げてよい**
+   * (`area` は上のとおり任意のまま)。
+   */
   readonly bodyKind?: SolidBodyKind;
   /** 面の一覧(§2.2、§2.3)。並びは通し番号の順。 */
   readonly faces: readonly SolidFaceInfo[];
@@ -702,4 +736,36 @@ export interface SpringStepSpec {
   /** 巻数。0 より大きい。整数でなくてよい。上限は 200(§0.a-0.35)。 */
   readonly turns: number;
   readonly handedness: 'right' | 'left';
+}
+
+/**
+ * 基本形状の寸法(mm)。種類ごとに欄が違う判別共用体(FR-429、計画書 P5 §2.7.2)。
+ *
+ * 円錐だけが半径を 2 つ持つ。上半径 0 で尖った円錐に、0 より大きい値で円錐台になるので、
+ * **円錐台を別の種類にしないで済む**(§0.a-0.16)。寸法の範囲の検査と断りの文言は
+ * `occt/makePrimitive.ts` が持つ(model 側にも同じ検査があり、実行前に赤くする。§2.7.1)。
+ */
+export type PrimitiveShapeSpec =
+  | { readonly kind: 'sphere'; readonly radius: number }
+  | { readonly kind: 'box'; readonly sizeX: number; readonly sizeY: number; readonly sizeZ: number }
+  | { readonly kind: 'cylinder'; readonly radius: number; readonly height: number }
+  | {
+      readonly kind: 'cone';
+      readonly bottomRadius: number;
+      readonly topRadius: number;
+      readonly height: number;
+    }
+  | { readonly kind: 'torus'; readonly majorRadius: number; readonly minorRadius: number };
+
+/**
+ * 基本形状を 1 つ作る 1 手順(FR-429、計画書 P5 §2.7.2)。
+ * **対象を取らない**(押し出し・回転・縫合・ばねと同じ「新しいボディを作る」段、§0.a-0.19)。
+ */
+export interface PrimitiveStepSpec {
+  readonly kind: 'primitive';
+  /** 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心(§0.a-0.17)。 */
+  readonly origin: Vec3Tuple;
+  /** 向き。長さは問わない(カーネルが長さ 1 へ揃える)。`gp_Ax2` の Z 方向になる。 */
+  readonly axis: Vec3Tuple;
+  readonly shape: PrimitiveShapeSpec;
 }

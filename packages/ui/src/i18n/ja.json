@@ -610,6 +610,7 @@
   "shape.error.threePointArcCollinear": "3 点が一直線に並んでいます。別の通過点を選んでください。",
   "face.error.emptySelection": "面を張るものが選ばれていません。囲んでいる線か、角になる点を順にクリックしてください。",
   "face.error.mixedBoundary": "点と線をまぜて面を張ることはできません。どちらかにそろえてください。",
+  "face.error.pendingElement": "まだ計算が終わっていません。少し待ってからもう一度選んでください。",
   "face.error.tooFewPoints": "面を張るには点が 3 個以上必要です。",
   "face.error.unsupportedElement": "面そのものは面の境界に使えません。線か点を選んでください。",
   "offset.error.emptySelection": "ずらす線・円弧が選ばれていません。先に線・円弧をクリックして選んでください。",
@@ -778,5 +779,14 @@
   "toolbar.plane.free": "3D",
   "toolbar.plane.freeTooltip": "3D スケッチ(作図面なし): 空間に直接かきます。立体の頂点をクリックすると、その頂点に付く点ができます",
   "freeSketch.error.needsWorkPlane": "3D スケッチではこの形をかけません。作図面を選んでから作ってください。",
-  "statusBar.guide.freeSketch": "3D スケッチです。立体の頂点をクリックすると、その頂点に付く点ができます。"
+  "statusBar.guide.freeSketch": "3D スケッチです。立体の頂点をクリックすると、その頂点に付く点ができます。",
+  "commandLine.error.noSuchTool": "そのような道具はありません",
+  "commandLine.error.tooManyValues": "値が多すぎます",
+  "commandLine.error.tooFewValues": "値が足りません",
+  "commandLine.error.missingPrevious": "直前の点がありません",
+  "commandLine.error.missingDistance": "距離を先に打ってください",
+  "commandLine.error.missingAngle": "角度を打ってください。",
+  "commandLine.error.missingAtPrefix": "極座標を書くときは、先頭に @ を付けてください。",
+  "commandLine.error.polarNot3d": "3D スケッチでは角度と距離での指定は使えません。座標かずれで指定してください。",
+  "commandLine.error.missingFieldValue": "値がありません。"
 }

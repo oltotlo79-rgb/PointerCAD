@@ -14,6 +14,8 @@ import type {
   SketchOffsetEntry,
   SketchOffsetRequestItem,
 } from '../kernelBridge.js';
+import type { ConstraintDiagnosis } from './constraints/diagnose.js';
+import { resolveConstrainedSketch } from './constraints/solveSketch.js';
 import { mapSketchExpressions } from './mapExpressions.js';
 import {
   closedOffsetDistance,
@@ -22,7 +24,7 @@ import {
   offsetSideOf,
   type OffsetCache,
 } from './offsetMath.js';
-import { curveEnd, curveStart, resolveSketch } from './resolveSketch.js';
+import { curveEnd, curveStart } from './resolveSketch.js';
 import type {
   PendingOffset,
   ResolvedCurve,
@@ -36,8 +38,13 @@ export interface SketchRecomputeResult {
   readonly resolved: ResolvedSketch;
   /** 面が 1 枚も無いとき(カーネルを呼ばないとき)と、呼び出しごと失敗したときは null。 */
   readonly mesh: SketchMesh | null;
-  /** 解決の失敗とカーネルの失敗を合わせたもの(FR-504)。 */
+  /** 解決の失敗・拘束の失敗・カーネルの失敗を合わせたもの(FR-504)。 */
   readonly errors: readonly SketchError[];
+  /**
+   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313、P4b タスク8)。拘束が無ければ null。
+   * 部品文書の経路は `PartSketchResult.diagnosis` が同じものを持つ。
+   */
+  readonly diagnosis: ConstraintDiagnosis | null;
 }
 
 /** 再計算に添える設定。 */
@@ -199,17 +206,23 @@ export async function recomputeSketch(
 ): Promise<SketchRecomputeResult> {
   const offsets = options.offsets ?? createOffsetCache();
   const offsetCurves = (key: string): readonly ResolvedCurve[] | null => offsets.get(key);
-  let resolved = resolveSketch(document, { offsetCurves });
+  // 拘束(FR-313、P4b タスク8)も解く。拘束が 1 つも無ければ
+  // `resolveConstrainedSketch` は `resolveSketch` を 1 回呼ぶだけなので費用は変わらない。
+  let constrained = resolveConstrainedSketch(document, { offsetCurves });
+  let resolved = constrained.resolved;
   const offsetErrors: SketchError[] = [];
 
   if (resolved.pendingOffsets.length > 0) {
     offsetErrors.push(...(await fillOffsets(bridge, resolved.pendingOffsets, offsets)));
     // 形が入ったので解決し直す。オフセットの曲線が面の境界にも使えるようになる。
-    resolved = resolveSketch(document, { offsetCurves });
+    constrained = resolveConstrainedSketch(document, { offsetCurves });
+    resolved = constrained.resolved;
   }
+  const diagnosis = constrained.diagnosis;
+  const beforeKernel = [...resolved.errors, ...constrained.errors, ...offsetErrors];
 
   if (resolved.faces.length === 0) {
-    return { resolved, mesh: null, errors: [...resolved.errors, ...offsetErrors] };
+    return { resolved, mesh: null, errors: beforeKernel, diagnosis };
   }
 
   try {
@@ -220,13 +233,14 @@ export async function recomputeSketch(
     return {
       resolved,
       mesh: outcome.mesh,
-      errors: [...resolved.errors, ...offsetErrors, ...failures],
+      errors: [...beforeKernel, ...failures],
+      diagnosis,
     };
   } catch (error) {
     // Worker との通信ごと失敗した場合。頼んだ面はすべて作れていない。
     const message = error instanceof Error ? error.message : String(error);
     const failures = resolved.faces.map((face) => kernelFailed(face.featureId, message));
-    return { resolved, mesh: null, errors: [...resolved.errors, ...offsetErrors, ...failures] };
+    return { resolved, mesh: null, errors: [...beforeKernel, ...failures], diagnosis };
   }
 }
 

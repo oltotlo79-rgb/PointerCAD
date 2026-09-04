@@ -21,6 +21,7 @@ import type {
   SolidBody,
   SolidRecomputeOutcome,
 } from '../kernelBridge.js';
+import type { ConstraintDiagnosis } from '../sketch/constraints/diagnose.js';
 import { createOffsetCache, type OffsetCache } from '../sketch/offsetMath.js';
 import { createProjectionCache, type ProjectionCache } from '../sketch/projectionMath.js';
 import { fillOffsets } from '../sketch/recomputeSketch.js';
@@ -53,6 +54,11 @@ export interface PartSketchResult {
   readonly resolved: ResolvedSketch;
   /** 面が1枚も無いとき(カーネルを呼ばないとき)と、呼び出しごと失敗したときは null。 */
   readonly mesh: SketchMesh | null;
+  /**
+   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313、P4b タスク8)。画面はここから
+   * 「あと N か所決まっていません」を帯へ出す(タスク13)。拘束が無ければ null。
+   */
+  readonly diagnosis: ConstraintDiagnosis | null;
 }
 
 export interface PartRecomputeResult {
@@ -391,9 +397,16 @@ export async function recomputePart(
   const sketches: PartSketchResult[] = [];
   for (const entry of resolved.sketches) {
     errors.push(...entry.resolved.errors);
+    // 拘束の失敗は解決の失敗の直後に置く(同じスケッチの話を離さない。FR-504)。
+    errors.push(...entry.constraintErrors);
     const outcome = await tessellateSketch(bridge, entry.resolved);
     errors.push(...outcome.errors);
-    sketches.push({ sketchId: entry.sketchId, resolved: entry.resolved, mesh: outcome.mesh });
+    sketches.push({
+      sketchId: entry.sketchId,
+      resolved: entry.resolved,
+      mesh: outcome.mesh,
+      diagnosis: entry.diagnosis,
+    });
   }
   errors.push(...offsetErrors);
   errors.push(...projectionErrors);

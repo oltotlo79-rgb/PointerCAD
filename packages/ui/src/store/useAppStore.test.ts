@@ -23,6 +23,7 @@ import {
   resolveSketch,
   WORK_PLANES,
   type ExtrudeFeature,
+  type HoleFeature,
   type PartDocument,
   type PartRecomputeOptions,
   type PartRecomputeResult,
@@ -77,6 +78,8 @@ function resultFor(document: PartDocument): PartRecomputeResult {
       sketchId: sketch.id,
       resolved: resolveSketch(sketch),
       mesh: null,
+      // 拘束の診断(model の P4b タスク8)。この検査の文書は拘束を持たない。
+      diagnosis: null,
     })),
     bodies: [],
     errors: [],
@@ -88,7 +91,7 @@ function resultFor(document: PartDocument): PartRecomputeResult {
 
 /** P1 の applySketch(スケッチ 1 本ぶんの結果)を作る。 */
 function sketchResultFor(sketch: SketchDocument): SketchRecomputeResult {
-  return { resolved: resolveSketch(sketch), mesh: null, errors: [] };
+  return { resolved: resolveSketch(sketch), mesh: null, errors: [], diagnosis: null };
 }
 
 /** 予約 → 実行 → 反映は Promise を跨ぐので、待ち行列を空にしてから確かめる。 */
@@ -119,6 +122,37 @@ function extrudeFeature(id: string): ExtrudeFeature {
     distance: expressionValueFromNumber(10),
     reversed: false,
     symmetric: false,
+  };
+}
+
+/**
+ * 穴 1 つ(P4b タスク20 の並べ替えの検査用)。対象の立体を指すので、対象より前へは
+ * 動かせない(`timelineOrder.ts` の依存)。中身は依存の材料としてしか使わない。
+ */
+function holeFeature(id: string, targetFeatureId: string): HoleFeature {
+  return {
+    id,
+    kind: 'hole',
+    name: `穴${id}`,
+    suppressed: false,
+    targetFeatureId,
+    face: {
+      bodyFeatureId: targetFeatureId,
+      index: 0,
+      fingerprint: {
+        kind: 'face',
+        surfaceKind: 'plane',
+        area: 1200,
+        position: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: null,
+      },
+    },
+    centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+    diameter: expressionValueFromNumber(6),
+    depth: { kind: 'through' },
+    tiltAngle: expressionValueFromNumber(0),
+    tiltAzimuth: expressionValueFromNumber(0),
   };
 }
 
@@ -1541,17 +1575,53 @@ describe('タイムラインのつまみ(FR-507、FR-506、P4b タスク19)', ()
     expect(useAppStore.getState().timelineIndex).toBeNull();
   });
 
-  it('途中まで戻したまま履歴が伸びたら、末尾へ戻して帯で知らせる(操作は止めない)', () => {
+  /*
+   * タスク19 では、戻したまま作ったものは末尾へ積まれるので、つまみを末尾へ戻して
+   * 「最後まで戻しました」と知らせていた。タスク20 で**つまみの位置へ差し込む**ように
+   * 変えたので、期待値もそれに合わせて書き替えてある(緩めたのではなく、決めた振る舞いが
+   * 変わった。計画書 タスク20「実装内容」)。
+   */
+  it('途中まで戻したまま履歴が伸びたら、つまみのところへ差し込んでつまみを 1 つ進める', () => {
     useAppStore.getState().applyDocument(partWithThreeSolids());
     useAppStore.getState().setTimelineIndex(0);
 
     const grown = appendSolid(useAppStore.getState().document, extrudeFeature('4'));
     useAppStore.getState().applyDocument(grown);
 
-    // 作ったものは消えず、つまみが末尾へ動いて画面に出る。
-    expect(useAppStore.getState().document.solids).toHaveLength(4);
+    // 押し出し4 は末尾ではなく、つまみ(押し出し1)の次へ入る。
+    expect(useAppStore.getState().document.solids.map((solid) => solid.id)).toEqual([
+      '1',
+      '4',
+      '2',
+      '3',
+    ]);
+    // つまみは差し込んだ段へ進むので、作ったものがそのまま画面に出る。
+    expect(useAppStore.getState().timelineIndex).toBe(1);
+    expect(useAppStore.getState().timelineNoticeKey).toBe('timeline.inserted');
+  });
+
+  it('差し込みは Undo 1 回で元へ戻り、つまみも末尾へ戻る', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    useAppStore.getState().setTimelineIndex(0);
+    useAppStore
+      .getState()
+      .applyDocument(appendSolid(useAppStore.getState().document, extrudeFeature('4')));
+
+    useAppStore.getState().undo();
+
+    expect(useAppStore.getState().document.solids.map((solid) => solid.id)).toEqual(['1', '2', '3']);
     expect(useAppStore.getState().timelineIndex).toBeNull();
-    expect(useAppStore.getState().timelineNoticeKey).toBe('timeline.returnedToEnd');
+  });
+
+  it('保存される文書には差し込んだ並びがそのまま入る(つまみで切った文書は保存しない)', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    useAppStore.getState().setTimelineIndex(0);
+    useAppStore
+      .getState()
+      .applyDocument(appendSolid(useAppStore.getState().document, extrudeFeature('4')));
+
+    expect(useAppStore.getState().document.solids).toHaveLength(4);
+    expect(useAppStore.getState().undoStack.present).toBe(useAppStore.getState().document);
   });
 
   it('つまみが末尾のまま履歴が伸びても、知らせは出ない(これまでどおり)', () => {
@@ -1571,6 +1641,35 @@ describe('タイムラインのつまみ(FR-507、FR-506、P4b タスク19)', ()
 
     expect(useAppStore.getState().timelineIndex).toBe(0);
     expect(useAppStore.getState().timelineNoticeKey).toBeNull();
+  });
+
+  it('順序の入れ替えは Undo 1 段で、断られたら文書を 1 バイトも変えない(FR-507、FR-504)', () => {
+    // 押し出し1 → 穴1(押し出し1 が対象)→ 押し出し2(独立)。
+    const base = appendSolid(
+      appendSolid(appendSolid(createEmptyPartDocument(), extrudeFeature('1')), holeFeature('h', '1')),
+      extrudeFeature('2'),
+    );
+    useAppStore.getState().applyDocument(base);
+    const undoBefore = useAppStore.getState().undoStack.past.length;
+
+    // 独立した押し出し2 を先頭へ。1 回積むので取り消し 1 回で戻る(NFR-UX-3)。
+    useAppStore.getState().moveTimelineItem('2', 0);
+    expect(useAppStore.getState().document.solids.map((solid) => solid.id)).toEqual(['2', '1', 'h']);
+    expect(useAppStore.getState().undoStack.past).toHaveLength(undoBefore + 1);
+    expect(useAppStore.getState().timelineRefusal).toBeNull();
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().document.solids.map((solid) => solid.id)).toEqual(['1', 'h', '2']);
+
+    // 押し出し1 を穴1 の後ろへは動かせない。断りは「壊れる側」の穴1 を指す。
+    const before = useAppStore.getState().document;
+    useAppStore.getState().moveTimelineItem('1', 1);
+    expect(useAppStore.getState().document).toBe(before);
+    expect(useAppStore.getState().timelineRefusal?.blockingFeatureId).toBe('h');
+    expect(useAppStore.getState().timelineRefusal?.message).toContain('穴h');
+
+    // 次に形が変われば断りは用済み(FR-504)。
+    useAppStore.getState().moveTimelineItem('2', 0);
+    expect(useAppStore.getState().timelineRefusal).toBeNull();
   });
 
   it('つまみを動かすと、切った文書で計算し直す(保存する文書は全体のまま)', async () => {

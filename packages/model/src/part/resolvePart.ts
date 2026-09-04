@@ -42,12 +42,12 @@ import {
   type WorkPlane,
   type WorkPlaneId,
 } from '../sketch/planeMath.js';
+import type { ConstraintDiagnosis } from '../sketch/constraints/diagnose.js';
 import {
-  arcPointAt,
-  ellipsePointAt,
-  fitPlaneNormal,
-  resolveSketch,
-} from '../sketch/resolveSketch.js';
+  resolveConstrainedSketch,
+  type ConstrainedSketch,
+} from '../sketch/constraints/solveSketch.js';
+import { arcPointAt, ellipsePointAt, fitPlaneNormal } from '../sketch/resolveSketch.js';
 import { projectionBodyFeatureId } from '../sketch/types.js';
 import type {
   PendingProjection,
@@ -55,6 +55,8 @@ import type {
   ResolvedCurve,
   ResolvedFace,
   ResolvedSketch,
+  SketchDocument,
+  SketchError,
 } from '../sketch/types.js';
 import {
   addVec3,
@@ -312,6 +314,17 @@ export interface PartError {
 export interface ResolvedPartSketch {
   readonly sketchId: string;
   readonly resolved: ResolvedSketch;
+  /**
+   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313、P4b タスク8)。
+   * **拘束が 1 つも無いスケッチと 3D スケッチでは null**(診断そのものを行わない)。
+   */
+  readonly diagnosis: ConstraintDiagnosis | null;
+  /**
+   * 拘束の失敗(FR-504)。`resolved.errors` とは別に持つ。分けているのは、
+   * 拘束の失敗が「フィーチャーが作れなかった」ではなく「拘束が効かなかった」で、
+   * 画面での出し方(どの拘束を指すか)が違うため。
+   */
+  readonly constraintErrors: readonly SketchError[];
 }
 
 /**
@@ -1760,14 +1773,24 @@ function resolveSketchesAndReferences(
   readonly axisFrames: ReadonlyMap<string, AxisFrame>;
 } {
   const { offsetCurves, projectedCurves, subShape } = options;
-  const resolvedSketches = new Map<string, ResolvedSketch>();
+  // 拘束まで解いた結果を覚える(FR-313、P4b タスク8)。**スケッチを解く場所は
+  // この関数の中の 2 か所だけ**で、どちらも `resolveConstrainedSketch` を通す
+  // (片方だけ差し替えると拘束が効かない経路が残る。P4 タスク21 の教訓)。
+  const resolvedSketches = new Map<string, ConstrainedSketch>();
   const resolvingSketches = new Set<string>();
+  const solveOne = (sketch: SketchDocument): ConstrainedSketch =>
+    resolveConstrainedSketch(sketch, {
+      workPlane: (planeId) => resolver.workPlane(planeId),
+      offsetCurves,
+      projectedCurves,
+      subShape,
+    });
 
   const resolver = createReferenceResolver(document, {
     sketch: (sketchId) => {
       const remembered = resolvedSketches.get(sketchId);
       if (remembered !== undefined) {
-        return remembered;
+        return remembered.resolved;
       }
       if (resolvingSketches.has(sketchId)) {
         return null;
@@ -1777,15 +1800,10 @@ function resolveSketchesAndReferences(
         return null;
       }
       resolvingSketches.add(sketchId);
-      const resolved = resolveSketch(found, {
-        workPlane: (planeId) => resolver.workPlane(planeId),
-        offsetCurves,
-        projectedCurves,
-        subShape,
-      });
+      const constrained = solveOne(found);
       resolvingSketches.delete(sketchId);
-      resolvedSketches.set(sketchId, resolved);
-      return resolved;
+      resolvedSketches.set(sketchId, constrained);
+      return constrained.resolved;
     },
     // 基準ジオメトリ(FR-328、FR-329)も同じ口で「いまの形」を見る(タスク25)。
     subShape,
@@ -1800,17 +1818,16 @@ function resolveSketchesAndReferences(
 
   const sketches: ResolvedPartSketch[] = document.sketches.map((sketch) => {
     const remembered = resolvedSketches.get(sketch.id);
-    if (remembered !== undefined) {
-      return { sketchId: sketch.id, resolved: remembered };
+    const constrained = remembered ?? solveOne(sketch);
+    if (remembered === undefined) {
+      resolvedSketches.set(sketch.id, constrained);
     }
-    const resolved = resolveSketch(sketch, {
-      workPlane: (planeId) => resolver.workPlane(planeId),
-      offsetCurves,
-      projectedCurves,
-      subShape,
-    });
-    resolvedSketches.set(sketch.id, resolved);
-    return { sketchId: sketch.id, resolved };
+    return {
+      sketchId: sketch.id,
+      resolved: constrained.resolved,
+      diagnosis: constrained.diagnosis,
+      constraintErrors: constrained.errors,
+    };
   });
 
   return { sketches, references, workPlane: resolver.workPlane, axisFrames };

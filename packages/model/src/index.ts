@@ -118,6 +118,11 @@ export type {
 export {
   CONFLICT_REPORT_LIMIT, CONSTRAINT_TOO_MANY_MESSAGE, diagnoseConstraints, remainingMessage,
 } from './sketch/constraints/diagnose.js';
+/** 3 段の解決への差し込み(FR-313、FR-504、P4b タスク8)。拘束を解いてから解決し直す。 */
+export type { ConstrainedSketch } from './sketch/constraints/solveSketch.js';
+export {
+  CONSTRAINT_FREE_SKETCH_MESSAGE, CONSTRAINT_UNSOLVED_MESSAGE, resolveConstrainedSketch,
+} from './sketch/constraints/solveSketch.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
   DEFAULT_FACE_COLOR, findFeature, nextFeatureId, nextFeatureName, removeFeature, replaceFeature,

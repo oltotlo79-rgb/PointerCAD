@@ -13,7 +13,11 @@ import {
   nextFeatureId,
   nextFeatureName,
 } from '../sketch/createSketchDocument.js';
-import { DEFAULT_WORK_PLANE_ID, FREE_WORK_PLANE_ID } from '../sketch/planeMath.js';
+import {
+  DEFAULT_WORK_PLANE_ID,
+  FREE_WORK_PLANE_ID,
+  type WorkPlaneId,
+} from '../sketch/planeMath.js';
 import type {
   ResolvedArc,
   ResolvedCurve,
@@ -3643,5 +3647,174 @@ describe('referencedSketchIds(FR-325 の順序の判定、タスク25)', () => {
         toolFeatureId: 'b',
       }),
     ).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 拘束を部品文書の経路で解く(FR-313、P4b タスク8)
+ *
+ * カーネルを呼ばない側の検査。体積まで見る検査は `constraintKernel.test.ts`。
+ * ここで固定するのは「`resolvePart` がスケッチを解く 2 か所の**どちらも**
+ * 拘束を通っていること」と、診断・断りが `ResolvedPartSketch` に載ることの 2 つ
+ * (P4 タスク21 の教訓: model 単体が緑でも部品文書の経路が素通しになりうる)。
+ * ------------------------------------------------------------------ */
+
+/** 拘束で 40×30 の長方形へ整う枠のスケッチ(わざとずれた座標から始める)。 */
+function constrainedFrame(
+  sketchId: string,
+  planeId: WorkPlaneId = DEFAULT_WORK_PLANE_ID,
+): SketchDocument {
+  const corners: readonly (readonly [number, number, number])[] = [
+    [0, 0, 0],
+    [38, 1, 0],
+    [39, 29, 0],
+    [1, 31, 0],
+  ];
+  const features: SketchFeature[] = corners.map((corner, index) => {
+    const next = corners[(index + 1) % corners.length];
+    const line: SketchLineFeature = {
+      id: `line-${index + 1}`,
+      name: `線分${index + 1}`,
+      planeId,
+      kind: 'line',
+      from: absoluteCoordinate(corner[0], corner[1], corner[2]),
+      to: absoluteCoordinate(next[0], next[1], next[2]),
+      construction: false,
+    };
+    return line;
+  });
+  const vertex = (
+    featureId: string,
+    which: 'start' | 'end',
+  ): { readonly kind: 'vertex'; readonly featureId: string; readonly vertex: 'start' | 'end' } => ({
+    kind: 'vertex',
+    featureId,
+    vertex: which,
+  });
+  const curve = (featureId: string): {
+    readonly kind: 'curve';
+    readonly element: { readonly featureId: string };
+  } => ({ kind: 'curve', element: { featureId } });
+  return {
+    id: sketchId,
+    name: sketchId,
+    features,
+    constraints: [
+      { id: 'fix-1', name: '固定1', kind: 'fix', target: vertex('line-1', 'start') },
+      { id: 'c-1', name: '一致1', kind: 'coincident', a: vertex('line-1', 'end'), b: vertex('line-2', 'start') },
+      { id: 'c-2', name: '一致2', kind: 'coincident', a: vertex('line-2', 'end'), b: vertex('line-3', 'start') },
+      { id: 'c-3', name: '一致3', kind: 'coincident', a: vertex('line-3', 'end'), b: vertex('line-4', 'start') },
+      { id: 'c-4', name: '一致4', kind: 'coincident', a: vertex('line-4', 'end'), b: vertex('line-1', 'start') },
+      { id: 'h-1', name: '水平1', kind: 'horizontal', target: curve('line-1') },
+      { id: 'h-2', name: '水平2', kind: 'horizontal', target: curve('line-3') },
+      { id: 'v-1', name: '垂直1', kind: 'vertical', target: curve('line-2') },
+      { id: 'v-2', name: '垂直2', kind: 'vertical', target: curve('line-4') },
+      {
+        id: 'd-1',
+        name: '幅1',
+        kind: 'distance',
+        a: vertex('line-1', 'start'),
+        b: vertex('line-1', 'end'),
+        length: expr('40'),
+      },
+      {
+        id: 'd-2',
+        name: '奥行1',
+        kind: 'distance',
+        a: vertex('line-2', 'start'),
+        b: vertex('line-2', 'end'),
+        length: expr('30'),
+      },
+    ],
+  };
+}
+
+describe('resolvePart の拘束(FR-313、タスク8)', () => {
+  it('部品文書の経路でも拘束が効き、枠が 40×30 の長方形へ整う', () => {
+    const document = replaceSketch(createEmptyPartDocument(), constrainedFrame('sketch-1'));
+    const resolved = resolvePart(document);
+    // 解いた座標は 1e-9 の許容量まで詰めた値なので、厳密一致ではなく近さで見る。
+    const expected: readonly (readonly Vec3[])[] = [
+      [
+        [0, 0, 0],
+        [40, 0, 0],
+      ],
+      [
+        [40, 0, 0],
+        [40, 30, 0],
+      ],
+      [
+        [40, 30, 0],
+        [0, 30, 0],
+      ],
+      [
+        [0, 30, 0],
+        [0, 0, 0],
+      ],
+    ];
+    const actual = segmentEnds(resolved.sketches[0].resolved.segments);
+    expect(actual).toHaveLength(expected.length);
+    expected.forEach((ends, index) => {
+      ends.forEach((point, side) => {
+        point.forEach((value, axis) => {
+          expect(actual[index][side][axis]).toBeCloseTo(value, 8);
+        });
+      });
+    });
+  });
+
+  it('診断が載り、自由度 0・断り無しになる', () => {
+    const document = replaceSketch(createEmptyPartDocument(), constrainedFrame('sketch-1'));
+    const entry = resolvePart(document).sketches[0];
+    expect(entry.diagnosis?.degreesOfFreedom).toBe(0);
+    expect(entry.diagnosis?.conflicting).toEqual([]);
+    expect(entry.constraintErrors).toEqual([]);
+  });
+
+  it('拘束を 1 つも持たないスケッチでは診断を作らない(据え置き)', () => {
+    const fixture = createFixture();
+    for (const entry of resolvePart(fixture.document).sketches) {
+      expect(entry.diagnosis).toBeNull();
+      expect(entry.constraintErrors).toEqual([]);
+    }
+  });
+
+  it('基準ジオメトリを先に解く経路(1 か所目)でも拘束が効く', () => {
+    // 基準ジオメトリの解決は、必要になったスケッチをその場で解く
+    // (`resolveSketchesAndReferences` の 1 か所目)。そこも拘束を通っていることを、
+    // スケッチの線分を軸にした作業平面の向きで確かめる。
+    // 拘束を解く前の line-1 は (0,0,0)→(38,1,0) で少し傾いており、解いた後は X 軸に沿う。
+    // XY 面をその軸まわりに 90 度倒すと、法線は X 軸に垂直な向き = (0,-1,0) になる。
+    let document = replaceSketch(createEmptyPartDocument(), constrainedFrame('sketch-1'));
+    document = appendReference(document, {
+      id: 'plane-1',
+      name: '作業平面1',
+      visible: true,
+      kind: 'referencePlane',
+      plane: {
+        kind: 'tilted',
+        base: DEFAULT_WORK_PLANE_ID,
+        axis: { kind: 'line', line: { sketchId: 'sketch-1', lineFeatureId: 'line-1' } },
+        angle: expr('90'),
+      },
+    });
+    const plane = resolvePart(document).references.planes.find(
+      (entry) => entry.featureId === 'plane-1',
+    );
+    expect(plane).toBeDefined();
+    for (const [index, expected] of [0, -1, 0].entries()) {
+      expect(plane?.plane.normal[index] ?? 0).toBeCloseTo(expected, 9);
+    }
+  });
+
+  it('3D スケッチに拘束を足すと断りが載り、形は拘束を無視したまま', () => {
+    const document = replaceSketch(
+      createEmptyPartDocument(),
+      constrainedFrame('sketch-1', FREE_WORK_PLANE_ID),
+    );
+    const entry = resolvePart(document).sketches[0];
+    expect(entry.constraintErrors).toHaveLength(1);
+    expect(entry.constraintErrors[0].code).toBe('constraintUnsolved');
+    expect(entry.resolved.segments[0].to).toEqual([38, 1, 0]);
   });
 });

@@ -29,6 +29,7 @@ import {
   isFullEllipse,
   traceCurveChain,
 } from './intersectionMath.js';
+import { radiusComponentKey } from './constraints/variables.js';
 import { resolveCopyFeature } from './copyMath.js';
 import {
   baseWorkPlane,
@@ -774,6 +775,69 @@ export interface SketchResolveOptions {
    * 引けなければ「まだ計算していない」として `pendingProjections` へ積む。
    */
   readonly projectedCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
+  /**
+   * 拘束を解いた後の点の位置(FR-313、P4b タスク8。3 段の解決の③)。
+   *
+   * 鍵は `ResolvedPoint.id` / `vertexKey` と同じ規約(点フィーチャーは `featureId`、
+   * 線分の端点は `featureId:start` / `:end`、円弧・楕円の中心は `featureId:center`、
+   * 点列・スプラインの n 番目は `featureId#n`)。**別の規約をここで作らない。**
+   *
+   * 差し込むのは解いた座標を持ちうる点(点・線分の端点・円弧と楕円の中心・円弧の端点・
+   * スプラインの各点)だけ。規則から導かれる点(点列・複製・オフセット・投影・矩形・
+   * 正多角形・長穴)はもとの規則から作り直されるので、ここへ入れても使われない
+   * (`constraints/variables.ts` が同じ理由でそれらを変数にしない)。
+   *
+   * 上書きは `resolveCoordinate` が世界座標を出した**直後**に差し込む。相対座標・
+   * 極座標の基準になっている点が上書きされれば、その下流も自動的に付いてくる。
+   */
+  readonly pointOverrides?: ReadonlyMap<string, Vec3>;
+  /**
+   * 拘束を解いた後の半径(同上)。鍵は `constraints/variables.ts` の
+   * `radiusComponentKey`(円弧・円は `featureId.r`、楕円は `featureId.rmajor` /
+   * `featureId.rminor`)。楕円は 1 フィーチャーに半径が 2 つあり、フィーチャーの id
+   * だけでは区別できないのでこの鍵を借りる。
+   */
+  readonly radiusOverrides?: ReadonlyMap<string, number>;
+}
+
+/** 円弧の面の中で、その点が中心から見て何ラジアンの向きにあるか(`arcPointAt` の逆)。 */
+function arcAngleOf(arc: ResolvedArc, world: Vec3): number {
+  const yAxis = crossVec3(arc.normal, arc.xAxis);
+  const spoke = subVec3(world, arc.center);
+  return Math.atan2(dotVec3(spoke, yAxis), dotVec3(spoke, arc.xAxis));
+}
+
+/**
+ * 拘束で動いた円弧の端点から、開始角・終了角を逆算する(FR-313、タスク8)。
+ *
+ * 円弧の端点は拘束の変数(`constraints/variables.ts`。角度を変数にすると端点座標と
+ * 二重定義になるため、角度ではなく端点そのものを動かす約束)。動いた端点をそのまま
+ * 描くには、ここで角へ直してやる必要がある。
+ *
+ * **上書きが 1 つも無ければ保存された角をそのまま使う。** `Math.atan2` の戻りは
+ * (−π, π] なので、370 度のように範囲の外に書かれた角を無条件に逆算し直すと、
+ * 上書きが無いのに円弧がずれてしまう。
+ *
+ * 掃く向き(正か負か)と 1 周を超えない性質は保存された角から引き継ぐ。動いた端点が
+ * 開始点と重なってしまう(掃く量が 0 になる)ときは、円弧を壊さないよう元の角を残す。
+ */
+function withOverriddenEndpoints(
+  arc: ResolvedArc,
+  start: Vec3 | undefined,
+  end: Vec3 | undefined,
+): ResolvedArc {
+  if (start === undefined && end === undefined) {
+    return arc;
+  }
+  const startAngle = start === undefined ? arc.startAngle : arcAngleOf(arc, start);
+  const rawEnd = end === undefined ? arc.endAngle : arcAngleOf(arc, end);
+  // 掃く量を [0, 2π) へ畳んでから、保存された向きが負なら 1 周ぶん引いて (−2π, 0] にする。
+  const folded = (((rawEnd - startAngle) % FULL_TURN) + FULL_TURN) % FULL_TURN;
+  const sweep = arc.endAngle >= arc.startAngle ? folded : folded - FULL_TURN;
+  if (Math.abs(sweep) <= FULL_TURN_EPSILON) {
+    return arc;
+  }
+  return { ...arc, startAngle, endAngle: startAngle + sweep };
 }
 
 /**
@@ -864,6 +928,13 @@ export function resolveSketch(
   const lookupOffset = options.offsetCurves ?? ((): null => null);
   // 渡されなければ、すべての投影・交差が「まだ計算していない」扱いになる(タスク25)。
   const lookupProjection = options.projectedCurves ?? ((): null => null);
+  // 拘束を解いた結果の差し込み(FR-313、タスク8)。渡されなければ何も上書きしないので、
+  // 拘束を持たない文書の解決は 1 行も余分な処理を通らない。
+  const pointOverrides = options.pointOverrides;
+  const radiusOverrides = options.radiusOverrides;
+  const overridePoint = (key: string, value: Vec3): Vec3 => pointOverrides?.get(key) ?? value;
+  const overrideRadius = (key: string, value: number): number =>
+    radiusOverrides?.get(key) ?? value;
   const pendingOffsets: PendingOffset[] = [];
   const pendingProjections: PendingProjection[] = [];
   const points: ResolvedPoint[] = [];
@@ -930,12 +1001,15 @@ export function resolveSketch(
         errors.push(at.error);
         continue;
       }
-      const resolved: ResolvedPoint = { id: feature.id, featureId: feature.id, position: at.value };
+      // 拘束を解いた位置があればそれを使う(タスク8)。以後の参照(相対座標の基準・
+      // 面の境界)はすべてこの位置を見るので、上書きは下流へそのまま伝わる。
+      const position = overridePoint(feature.id, at.value);
+      const resolved: ResolvedPoint = { id: feature.id, featureId: feature.id, position };
       points.push(resolved);
       pointsByFeature.set(feature.id, [resolved]);
-      vertices.set(vertexKey(feature.id, 'start'), at.value);
-      vertices.set(vertexKey(feature.id, 'end'), at.value);
-      previous = at.value;
+      vertices.set(vertexKey(feature.id, 'start'), position);
+      vertices.set(vertexKey(feature.id, 'end'), position);
+      previous = position;
       continue;
     }
 
@@ -945,30 +1019,33 @@ export function resolveSketch(
         errors.push(from.error);
         continue;
       }
+      const fromPoint = overridePoint(vertexKey(feature.id, 'start'), from.value);
       // 終点は始点を「直前の点」として解決できるようにする(FR-307 の連続描画)。
-      const to = resolveCoordinate(feature.to, { ...context, previous: from.value }, feature.id);
+      // 始点が上書きされていれば、相対指定の終点はその新しい始点から測る。
+      const to = resolveCoordinate(feature.to, { ...context, previous: fromPoint }, feature.id);
       if (!to.ok) {
         errors.push(to.error);
         continue;
       }
-      if (isSamePoint(from.value, to.value)) {
+      const toPoint = overridePoint(vertexKey(feature.id, 'end'), to.value);
+      if (isSamePoint(fromPoint, toPoint)) {
         errors.push(error(feature.id, 'degenerate', '線分の長さが 0 です。'));
         continue;
       }
       const segment: ResolvedSegment = {
         kind: 'segment',
         featureId: feature.id,
-        from: from.value,
-        to: to.value,
+        from: fromPoint,
+        to: toPoint,
       };
       segments.push(segment);
       curveByFeature.set(feature.id, segment);
       if (feature.construction) {
         constructionFeatureIds.add(feature.id);
       }
-      vertices.set(vertexKey(feature.id, 'start'), from.value);
-      vertices.set(vertexKey(feature.id, 'end'), to.value);
-      previous = to.value;
+      vertices.set(vertexKey(feature.id, 'start'), fromPoint);
+      vertices.set(vertexKey(feature.id, 'end'), toPoint);
+      previous = toPoint;
       continue;
     }
 
@@ -978,7 +1055,11 @@ export function resolveSketch(
         errors.push(center.error);
         continue;
       }
-      const radius = feature.radius.value;
+      const centerPoint = overridePoint(vertexKey(feature.id, 'center'), center.value);
+      const radius = overrideRadius(
+        radiusComponentKey(feature.id, 'radius'),
+        feature.radius.value,
+      );
       if (!Number.isFinite(radius) || radius < 0) {
         errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
         continue;
@@ -1009,22 +1090,26 @@ export function resolveSketch(
         errors.push(orientation.error);
         continue;
       }
-      const arc: ResolvedArc = {
-        kind: 'arc',
-        featureId: feature.id,
-        center: center.value,
-        normal: orientation.value.normal,
-        xAxis: orientation.value.xAxis,
-        radius,
-        startAngle,
-        endAngle,
-      };
+      const arc = withOverriddenEndpoints(
+        {
+          kind: 'arc',
+          featureId: feature.id,
+          center: centerPoint,
+          normal: orientation.value.normal,
+          xAxis: orientation.value.xAxis,
+          radius,
+          startAngle,
+          endAngle,
+        },
+        pointOverrides?.get(vertexKey(feature.id, 'start')),
+        pointOverrides?.get(vertexKey(feature.id, 'end')),
+      );
       arcs.push(arc);
       curveByFeature.set(feature.id, arc);
       if (feature.construction) {
         constructionFeatureIds.add(feature.id);
       }
-      vertices.set(vertexKey(feature.id, 'center'), center.value);
+      vertices.set(vertexKey(feature.id, 'center'), centerPoint);
       vertices.set(vertexKey(feature.id, 'start'), curveStart(arc));
       vertices.set(vertexKey(feature.id, 'end'), curveEnd(arc));
       previous = curveEnd(arc);
@@ -1191,8 +1276,15 @@ export function resolveSketch(
         errors.push(center.error);
         continue;
       }
-      const majorRadius = feature.majorRadius.value;
-      const minorRadius = feature.minorRadius.value;
+      const centerPoint = overridePoint(vertexKey(feature.id, 'center'), center.value);
+      const majorRadius = overrideRadius(
+        radiusComponentKey(feature.id, 'major'),
+        feature.majorRadius.value,
+      );
+      const minorRadius = overrideRadius(
+        radiusComponentKey(feature.id, 'minor'),
+        feature.minorRadius.value,
+      );
       if (
         !Number.isFinite(majorRadius) ||
         !Number.isFinite(minorRadius) ||
@@ -1231,7 +1323,7 @@ export function resolveSketch(
       const ellipse: ResolvedEllipse = {
         kind: 'ellipse',
         featureId: feature.id,
-        center: center.value,
+        center: centerPoint,
         normal: plane.normal,
         // 長軸の向きは作図面の第1軸から rotation だけ回した向き(円弧・点列と同じ規約)。
         majorAxis: directionInPlane(plane, feature.rotation.value),
@@ -1246,7 +1338,7 @@ export function resolveSketch(
       if (feature.construction) {
         constructionFeatureIds.add(feature.id);
       }
-      vertices.set(vertexKey(feature.id, 'center'), center.value);
+      vertices.set(vertexKey(feature.id, 'center'), centerPoint);
       vertices.set(vertexKey(feature.id, 'start'), curveStart(ellipse));
       vertices.set(vertexKey(feature.id, 'end'), curveEnd(ellipse));
       previous = curveEnd(ellipse);
@@ -1254,7 +1346,7 @@ export function resolveSketch(
     }
 
     if (feature.kind === 'spline') {
-      const spline = resolveSplineFeature(feature, context, previous);
+      const spline = resolveSplineFeature(feature, context, previous, overridePoint);
       if (!spline.ok) {
         errors.push(spline.error);
         continue;
@@ -1454,6 +1546,8 @@ function resolveSplineFeature(
   feature: SketchSplineFeature,
   context: ResolveContext,
   previous: Vec3 | null,
+  /** 拘束を解いた位置の差し込み(タスク8)。鍵はスプラインの n 番目の点(`featureId#n`)。 */
+  overridePoint: (key: string, value: Vec3) => Vec3,
 ): SplineOutcome {
   const count = feature.points.length;
   const minimum = feature.closed ? MIN_CLOSED_SPLINE_POINTS : MIN_SPLINE_POINTS;
@@ -1472,7 +1566,8 @@ function resolveSplineFeature(
     if (!resolved.ok) {
       return { ok: false, error: resolved.error };
     }
-    positions.push(resolved.value);
+    // 上書きした点が次の点の「直前の点」にもなるので、相対指定の下流も付いてくる。
+    positions.push(overridePoint(`${feature.id}#${positions.length}`, resolved.value));
   }
 
   // 通過点方式は弦の長さでパラメータを決めるので、重なった点があると曲線が定まらない。

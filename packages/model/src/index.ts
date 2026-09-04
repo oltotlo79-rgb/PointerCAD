@@ -26,8 +26,8 @@ export {
 } from './kernelBridge.js';
 export type { Vec3 } from './sketch/vec3.js';
 export {
-  addVec3, crossVec3, distanceVec3, dotVec3, isSamePoint, lengthVec3,
-  lerpVec3, normalizeVec3, ORIGIN, rotateAboutAxis, rotateDirection, scaleVec3,
+  addVec3, cleanZeroVec3, crossVec3, distanceVec3, dotVec3, isSamePoint, lengthVec3,
+  lerpVec3, mirrorVec3, normalizeVec3, ORIGIN, rotateAboutAxis, rotateDirection, scaleVec3,
   SKETCH_TOLERANCE_MM, subVec3,
 } from './sketch/vec3.js';
 export type { BaseWorkPlaneId, WorkPlane, WorkPlaneId } from './sketch/planeMath.js';
@@ -45,10 +45,12 @@ export {
   planeFromNormal, planeSpecKeyText, resolvePlaneSpec, subShapeFromFingerprint,
 } from './geometry/planeSpec.js';
 export type {
-  CoordinateInput, FreeArcOrientation, OffsetContourShape, OffsetCornerKind, OffsetSide,
+  CoordinateInput, CopyPlacement, FreeArcOrientation, MirrorBasis, OffsetContourShape,
+  OffsetCornerKind, OffsetSide,
   PendingOffset, PointArrayLayout, PointReference, ResolvedArc,
   ResolvedCurve, ResolvedEllipse,
   ResolvedFace, ResolvedPoint, ResolvedSegment, ResolvedSketch, ResolvedSpline, SketchArcFeature,
+  SketchCopyFeature,
   SketchDocument, SketchElementRef, SketchEllipseFeature, SketchError, SketchErrorCode,
   SketchFaceFeature, SketchFaceMesh, SketchFeature, SketchFeatureKind, SketchLineFeature,
   SketchMesh, SketchOffsetFeature, SketchPointArrayFeature, SketchPointFeature,
@@ -84,12 +86,25 @@ export type {
   SketchFilletRequest,
 } from './sketch/cornerCommands.js';
 export { chamferCorner, filletCorner } from './sketch/cornerCommands.js';
+export type { CopyOutcome, CopySourceLookup, SketchTransform } from './sketch/copyMath.js';
+export {
+  checkCopyCount, circularArrayTransforms, collectCopySource, linearArrayTransforms,
+  MAX_COPY_COUNT, MIN_COPY_COUNT, mirrorTransform, resolveCopyFeature, resolveCopyTransforms,
+  transformCurve, transformDirection, transformPoint, translateTransform,
+} from './sketch/copyMath.js';
 export type { SplineCurveData } from './sketch/splineMath.js';
 export {
   hasDuplicateSplinePoint, MAX_SPLINE_POINTS, MIN_CLOSED_SPLINE_POINTS, MIN_SPLINE_POINTS,
   sampleSpline, sampleSplineCurve, splineCurveData, splineDegree, splinePointAt,
   SPLINE_SEGMENTS_PER_SPAN,
 } from './sketch/splineMath.js';
+export type { AxisShift, OriginShift, ShiftAxes } from './sketch/shiftCoordinate.js';
+export {
+  normalShiftAxis, originShiftFromPosition, planeShiftAxes, shiftAbsoluteCoordinate,
+  shiftExpression, shiftSketchDocument, shiftSketchFeature, worldShiftAxes,
+} from './sketch/shiftCoordinate.js';
+export type { OriginTarget } from './part/shiftOrigin.js';
+export { originShiftFor, shiftOrigin } from './part/shiftOrigin.js';
 export type { SketchRecomputeOptions, SketchRecomputeResult } from './sketch/recomputeSketch.js';
 export { recomputeSketch, reevaluateDocument } from './sketch/recomputeSketch.js';
 export type { OffsetCache, OffsetKeyMaterial } from './sketch/offsetMath.js';

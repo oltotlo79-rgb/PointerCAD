@@ -48,6 +48,7 @@ import {
 } from './planeMath.js';
 import { resolveSketch, type SketchResolveOptions } from './resolveSketch.js';
 import type {
+  CopyPlacement,
   ResolvedArc,
   ResolvedCurve,
   ResolvedSegment,
@@ -242,6 +243,38 @@ function remapElementRefs(
   return mapped;
 }
 
+/**
+ * 1 本だけを指す参照(鏡にする軸、FR-324)を付け替える。全体を指していたときは
+ * 分解後の 1 本目にする(軸に選べるのは線分 1 本だけなので、全部へ広げても意味が無い)。
+ */
+function remapSingleRef(
+  reference: SketchElementRef,
+  featureId: string,
+  createdIds: readonly string[],
+): SketchElementRef {
+  if (reference.featureId !== featureId) {
+    return reference;
+  }
+  const created = createdIds[reference.index ?? 0];
+  // 範囲の外を指していた参照はそのまま残す(解決のときに missingBase で伝わる)。
+  return created === undefined ? reference : { featureId: created };
+}
+
+/** 複製(FR-324、タスク20)の「複製のしかた」に入っている参照を付け替える。 */
+function remapCopyPlacement(
+  placement: CopyPlacement,
+  featureId: string,
+  createdIds: readonly string[],
+): CopyPlacement {
+  if (placement.kind !== 'mirror' || placement.basis.kind !== 'axis') {
+    return placement;
+  }
+  return {
+    kind: 'mirror',
+    basis: { kind: 'axis', axis: remapSingleRef(placement.basis.axis, featureId, createdIds) },
+  };
+}
+
 function remapFeature(
   feature: SketchFeature,
   featureId: string,
@@ -252,6 +285,13 @@ function remapFeature(
   }
   if (feature.kind === 'offset') {
     return { ...feature, source: remapElementRefs(feature.source, featureId, createdIds) };
+  }
+  if (feature.kind === 'copy') {
+    return {
+      ...feature,
+      source: remapElementRefs(feature.source, featureId, createdIds),
+      placement: remapCopyPlacement(feature.placement, featureId, createdIds),
+    };
   }
   return feature;
 }

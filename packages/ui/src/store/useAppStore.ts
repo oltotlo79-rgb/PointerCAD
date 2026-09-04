@@ -54,6 +54,7 @@ import {
 } from '../sketch/referenceCommands.js';
 import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
+import type { EditPreview } from '../sketch/trimPreview.js';
 import { selectionKindForTool, type SelectionKind } from '../solid/subShapeSelection.js';
 import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
 
@@ -291,6 +292,15 @@ export interface AppState {
   /** いま吸い付いている場所。無ければ null(FR-107)。 */
   readonly snapIndicator: SnapIndicator | null;
   /**
+   * トリム・延長の道具でマウスを乗せているときの予告(FR-322、タスク22)。
+   * 消える区間・伸びる区間の折れ線で、ビューポートがもとの線の上へ重ねて描く。
+   *
+   * ホバーと同じ「表示だけの一時状態」だが、作るのは React の外
+   * (`attachSketchInteraction.ts`)なので、`snapIndicator` と同じくストアに置く
+   * (rules/04-設計の規律.md「フロントの状態は Zustand 1 本」)。
+   */
+  readonly editPreview: EditPreview | null;
+  /**
    * 面を張れなかった理由の文言キー(FR-309、NFR-UX-5)。履歴には何も積まれていないので
    * `sketchErrors` には出てこない。計算そのものの失敗(`errorMessage`)とは別に持ち、
    * ステータスバーが「面を作れませんでした:」の言い回しで出す。
@@ -433,6 +443,8 @@ export interface AppState {
   /** 基準ジオメトリを作れなかった理由を出す・消す(NFR-UX-5)。 */
   readonly setReferenceError: (message: string | null) => void;
   readonly setSnapIndicator: (indicator: SnapIndicator | null) => void;
+  /** トリム・延長の予告を出す・消す(FR-322、タスク22)。 */
+  readonly setEditPreview: (preview: EditPreview | null) => void;
   /** 面を張れなかった理由を出す・消す。 */
   readonly setFaceError: (key: MessageKey | null) => void;
   /** 立体を作れなかった理由を出す・消す(FR-401〜404)。 */
@@ -519,6 +531,9 @@ const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
   'ellipse',
   'spline',
   'offset',
+  // P4 タスク20 で複製(ミラー・複写・配列複写)を足した。複製の結果は元と同じ形の
+  // 曲線・点なので、面の囲みにもそのまま使える(FR-324)。
+  'copy',
 ]);
 
 /**
@@ -698,6 +713,7 @@ export function createInitialDocumentState(): Pick<
   | 'referenceDraft'
   | 'referenceErrorMessage'
   | 'snapIndicator'
+  | 'editPreview'
   | 'faceErrorKey'
   | 'solidErrorKey'
   | 'editErrorKey'
@@ -755,6 +771,7 @@ export function createInitialDocumentState(): Pick<
     referenceDraft: EMPTY_REFERENCE_DRAFT,
     referenceErrorMessage: null,
     snapIndicator: null,
+    editPreview: null,
     faceErrorKey: null,
     solidErrorKey: null,
     editErrorKey: null,
@@ -838,6 +855,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // 3D スケッチで押した場所の面も持ち越さない(タスク14)。
         freeSketchPlane: null,
         snapIndicator: null,
+        editPreview: null,
         faceErrorKey: null,
         solidErrorKey: null,
         editErrorKey: null,
@@ -906,6 +924,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         editErrorKey: null,
         shapeErrorMessage: null,
         referenceErrorMessage: null,
+        // トリム・延長の予告は「いまの形」の上の区間なので、形が変われば描き直し
+        // (次にマウスが動いたときに出し直す。タスク22)。
+        editPreview: null,
       };
     });
   },
@@ -1084,6 +1105,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setSnapIndicator: (snapIndicator) => {
     set({ snapIndicator });
   },
+  setEditPreview: (editPreview) => {
+    set({ editPreview });
+  },
   setFaceError: (faceErrorKey) => {
     set({ faceErrorKey });
   },
@@ -1143,6 +1167,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       referenceErrorMessage: null,
       freeSketchPlane: null,
       snapIndicator: null,
+      editPreview: null,
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,

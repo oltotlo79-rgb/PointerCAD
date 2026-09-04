@@ -20,10 +20,12 @@ import {
   type BooleanOperation,
   type ChamferSize,
   type CoordinateInput,
+  type CopyPlacement,
   type EdgeCurveKind,
   type FaceSurfaceKind,
   type FreeArcOrientation,
   type HoleDepth,
+  type MirrorBasis,
   type PartDocument,
   type PatternDirection,
   type PatternPlacement,
@@ -110,6 +112,7 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'ellipse',
   'spline',
   'offset',
+  'copy',
 ];
 /**
  * オフセット(FR-321、P4 タスク15)の側と角。`model` の `OffsetSide` /
@@ -117,6 +120,17 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
  */
 const OFFSET_SIDES: readonly OffsetSide[] = ['outside', 'inside'];
 const OFFSET_CORNERS: readonly OffsetCornerKind[] = ['round', 'sharp'];
+/**
+ * 複製のしかたと鏡の基準(FR-324、P4 タスク20)。`model` の `CopyPlacement['kind']` /
+ * `MirrorBasis['kind']` と同じ値ずつ。
+ */
+const COPY_PLACEMENT_KINDS: readonly CopyPlacement['kind'][] = [
+  'mirror',
+  'translate',
+  'linearArray',
+  'circularArray',
+];
+const MIRROR_BASIS_KINDS: readonly MirrorBasis['kind'][] = ['axis', 'plane'];
 /** 正多角形(FR-315)の半径の意味。`model` の `SketchPolygonFeature.radiusMode` と同じ2値。 */
 const POLYGON_RADIUS_MODES: readonly ('circumscribed' | 'inscribed')[] = [
   'circumscribed',
@@ -308,6 +322,41 @@ function serializePointArrayLayout(layout: PointArrayLayout): PointArrayLayout {
   }
 }
 
+/** 鏡の基準(FR-324、タスク20)。線を軸にするか平面かで欄が違うので `kind` で分岐する。 */
+function serializeMirrorBasis(basis: MirrorBasis): MirrorBasis {
+  switch (basis.kind) {
+    case 'axis':
+      return { kind: 'axis', axis: serializeElementRef(basis.axis) };
+    case 'plane':
+      return { kind: 'plane', planeId: basis.planeId };
+  }
+}
+
+/** 複製のしかた(FR-324、タスク20)。並べ方ごとに欄が違うので `kind` で分岐する。 */
+function serializeCopyPlacement(placement: CopyPlacement): CopyPlacement {
+  switch (placement.kind) {
+    case 'mirror':
+      return { kind: 'mirror', basis: serializeMirrorBasis(placement.basis) };
+    case 'translate':
+      return { kind: 'translate', delta: serializeCoordinate(placement.delta) };
+    case 'linearArray':
+      return {
+        kind: 'linearArray',
+        direction: serializeCoordinate(placement.direction),
+        spacing: serializeExpression(placement.spacing),
+        count: serializeExpression(placement.count),
+      };
+    case 'circularArray':
+      return {
+        kind: 'circularArray',
+        center: serializeCoordinate(placement.center),
+        angle: serializeExpression(placement.angle),
+        count: serializeExpression(placement.count),
+        fullCircle: placement.fullCircle,
+      };
+  }
+}
+
 /** 点列の中の 1 点を指すときだけ index を書く(無い欄は書かない)。 */
 function serializeElementRef(reference: SketchElementRef): SketchElementRef {
   return reference.index === undefined
@@ -440,6 +489,17 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         distance: serializeExpression(feature.distance),
         side: feature.side,
         corner: feature.corner,
+        construction: feature.construction,
+      };
+    case 'copy':
+      // 複製された曲線そのものは保存しない(元の id と複製のしかたから導ける、rules/04)。
+      return {
+        id: feature.id,
+        kind: 'copy',
+        name: feature.name,
+        planeId: feature.planeId,
+        source: feature.source.map(serializeElementRef),
+        placement: serializeCopyPlacement(feature.placement),
         construction: feature.construction,
       };
   }
@@ -1162,6 +1222,8 @@ function readSketchFeature(value: unknown, path: string): Checked<SketchFeature>
       return readSplineFeature(record.value, path, base.value);
     case 'offset':
       return readOffsetFeature(record.value, path, base.value);
+    case 'copy':
+      return readCopyFeature(record.value, path, base.value);
   }
 }
 
@@ -1692,6 +1754,171 @@ function readOffsetFeature(
       distance: distance.value,
       side: side.value,
       corner: corner.value,
+      construction: construction.value,
+    },
+  };
+}
+
+/** 鏡の基準(FR-324、タスク20)。`kind` で線を軸にするか平面かを見分けてから欄を読む。 */
+function readMirrorBasis(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<MirrorBasis> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, MIRROR_BASIS_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  if (kind.value === 'plane') {
+    const planeId = readString(record.value, 'planeId', path);
+    if (!planeId.ok) {
+      return planeId;
+    }
+    return { ok: true, value: { kind: 'plane', planeId: planeId.value } };
+  }
+  const axis = readRecord(record.value, 'axis', path);
+  if (!axis.ok) {
+    return axis;
+  }
+  const reference = readElementRef(axis.value, joinPath(path, 'axis'));
+  if (!reference.ok) {
+    return reference;
+  }
+  return { ok: true, value: { kind: 'axis', axis: reference.value } };
+}
+
+/**
+ * 複製のしかた(FR-324、タスク20)。`kind` で並べ方を見分けてから種類ごとの欄を読む
+ * (点列の `layout` と同じ書き方)。
+ */
+function readCopyPlacement(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<CopyPlacement> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, COPY_PLACEMENT_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'mirror': {
+      const basis = readMirrorBasis(record.value, 'basis', path);
+      if (!basis.ok) {
+        return basis;
+      }
+      return { ok: true, value: { kind: 'mirror', basis: basis.value } };
+    }
+    case 'translate': {
+      const delta = readCoordinate(record.value, 'delta', path);
+      if (!delta.ok) {
+        return delta;
+      }
+      return { ok: true, value: { kind: 'translate', delta: delta.value } };
+    }
+    case 'linearArray':
+      return readLinearArrayPlacement(record.value, path);
+    case 'circularArray':
+      return readCircularArrayPlacement(record.value, path);
+  }
+}
+
+function readLinearArrayPlacement(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<CopyPlacement> {
+  const direction = readCoordinate(record, 'direction', path);
+  if (!direction.ok) {
+    return direction;
+  }
+  const spacing = readExpression(record, 'spacing', path);
+  if (!spacing.ok) {
+    return spacing;
+  }
+  const count = readExpression(record, 'count', path);
+  if (!count.ok) {
+    return count;
+  }
+  return {
+    ok: true,
+    value: {
+      kind: 'linearArray',
+      direction: direction.value,
+      spacing: spacing.value,
+      count: count.value,
+    },
+  };
+}
+
+function readCircularArrayPlacement(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<CopyPlacement> {
+  const center = readCoordinate(record, 'center', path);
+  if (!center.ok) {
+    return center;
+  }
+  const angle = readExpression(record, 'angle', path);
+  if (!angle.ok) {
+    return angle;
+  }
+  const count = readExpression(record, 'count', path);
+  if (!count.ok) {
+    return count;
+  }
+  const fullCircle = readBoolean(record, 'fullCircle', path);
+  if (!fullCircle.ok) {
+    return fullCircle;
+  }
+  return {
+    ok: true,
+    value: {
+      kind: 'circularArray',
+      center: center.value,
+      angle: angle.value,
+      count: count.value,
+      fullCircle: fullCircle.value,
+    },
+  };
+}
+
+/**
+ * ミラー・複写・配列複写(FR-324、P4 タスク20)を読む。
+ * 複製された曲線は保存されていない(再計算で導く)ので、読むのは元の要素と複製のしかただけ。
+ */
+function readCopyFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const source = readList(record, 'source', path, readElementRef);
+  if (!source.ok) {
+    return source;
+  }
+  const placement = readCopyPlacement(record, 'placement', path);
+  if (!placement.ok) {
+    return placement;
+  }
+  const construction = readConstructionFlag(record, path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'copy',
+      source: source.value,
+      placement: placement.value,
       construction: construction.value,
     },
   };

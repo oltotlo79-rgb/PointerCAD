@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addVec3, crossVec3, distanceVec3, dotVec3, isSamePoint, lerpVec3,
-  lengthVec3, normalizeVec3, rotateAboutAxis, rotateDirection, scaleVec3,
-  SKETCH_TOLERANCE_MM, subVec3,
+  addVec3, cleanZeroVec3, crossVec3, distanceVec3, dotVec3, isSamePoint, lerpVec3,
+  lengthVec3, mirrorVec3, normalizeVec3, ORIGIN, rotateAboutAxis, rotateDirection,
+  scaleVec3, SKETCH_TOLERANCE_MM, subVec3,
 } from './vec3.js';
 
 describe('ベクトルの計算', () => {
@@ -75,5 +75,54 @@ describe('軸まわりの回転(ロドリゲスの回転公式、FR-328)', () =>
     expect(rotated[0]).toBeCloseTo(0, 12);
     expect(rotated[1]).toBeCloseTo(10, 12);
     expect(rotated[2]).toBeCloseTo(-10, 12);
+  });
+});
+
+describe('平面に対する鏡像(FR-324、タスク20)', () => {
+  it('YZ 平面(法線 X)で (10,0,0) は (-10,0,0) になる', () => {
+    // p − 2((p−o)·n̂)n̂ で o=(0,0,0)、n̂=(1,0,0)、(p−o)·n̂ = 10 なので x が 10 → −10。
+    expect(mirrorVec3([10, 0, 0], ORIGIN, [1, 0, 0])).toEqual([-10, 0, 0]);
+  });
+
+  it('平面の上の点は動かない', () => {
+    expect(mirrorVec3([0, 7, 3], ORIGIN, [1, 0, 0])).toEqual([0, 7, 3]);
+  });
+
+  it('平面が原点を通らないときは、平面までの距離のぶんだけ折り返す', () => {
+    // x = 5 の平面(o=(5,0,0)、n̂=(1,0,0))。x=0 の点は平面から −5 なので x=10 へ写る。
+    expect(mirrorVec3([0, 2, 0], [5, 0, 0], [1, 0, 0])).toEqual([10, 2, 0]);
+  });
+
+  it('法線は正規化してから使う(長さが違っても結果は同じ)', () => {
+    expect(mirrorVec3([10, 0, 0], ORIGIN, [4, 0, 0])).toEqual([-10, 0, 0]);
+  });
+
+  it('斜めの平面(法線 (1,1,0)/√2)で (1,0,0) は (0,-1,0) になる', () => {
+    // (p·n̂) = 1/√2 なので p − 2(1/√2)(1/√2, 1/√2, 0) = (1,0,0) − (1,1,0) = (0,−1,0)。
+    const mirrored = mirrorVec3([1, 0, 0], ORIGIN, [1, 1, 0]);
+    expect(mirrored[0]).toBeCloseTo(0, 12);
+    expect(mirrored[1]).toBeCloseTo(-1, 12);
+    expect(mirrored[2]).toBeCloseTo(0, 12);
+  });
+
+  it('長さ 0 の法線では平面が決まらないので元の点をそのまま返す', () => {
+    expect(mirrorVec3([1, 2, 3], ORIGIN, [0, 0, 0])).toEqual([1, 2, 3]);
+  });
+
+  it('2 回折り返すと元へ戻る', () => {
+    const once = mirrorVec3([3, -4, 5], [1, 1, 1], [2, -1, 3]);
+    const twice = mirrorVec3(once, [1, 1, 1], [2, -1, 3]);
+    expect(twice[0]).toBeCloseTo(3, 12);
+    expect(twice[1]).toBeCloseTo(-4, 12);
+    expect(twice[2]).toBeCloseTo(5, 12);
+  });
+});
+
+describe('−0 の後始末', () => {
+  it('−0 の成分だけを +0 へ揃える(他の値は変えない)', () => {
+    const cleaned = cleanZeroVec3([-0, 0, -2.5]);
+    expect(Object.is(cleaned[0], 0)).toBe(true);
+    expect(Object.is(cleaned[1], 0)).toBe(true);
+    expect(cleaned[2]).toBe(-2.5);
   });
 });

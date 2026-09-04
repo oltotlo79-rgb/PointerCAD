@@ -74,6 +74,7 @@ export const FEATURE_KIND_LABEL_KEYS: Readonly<Record<SketchFeatureKind, Message
   ellipse: 'toolbar.tool.ellipse',
   spline: 'toolbar.tool.spline',
   offset: 'toolbar.tool.offset',
+  copy: 'toolbar.tool.copy',
 };
 
 /** 座標のまとまりの見出し。 */
@@ -224,7 +225,8 @@ export function summarizeFeature(
     case 'ellipse':
     case 'spline':
     case 'offset':
-      // P4 タスク4・5・15(model)は型と解決だけを足す。ツリー・プロパティ欄への表示・編集の
+    case 'copy':
+      // P4 タスク4・5・15・20(model)は型と解決だけを足す。ツリー・プロパティ欄への表示・編集の
       // 配線はタスク33(ui: ツリー・プロパティの対応)の範囲(型の網羅性のためだけに空で満たす)。
       return { ...base, coordinates: [], scalars: [] };
   }
@@ -510,6 +512,7 @@ export function resolvedFields(
     case 'ellipse':
     case 'spline':
     case 'offset':
+    case 'copy':
       // タスク33(ui: ツリー・プロパティの対応)の範囲(型の網羅性のためだけに空で満たす)。
       return [];
   }

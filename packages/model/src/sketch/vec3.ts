@@ -95,6 +95,42 @@ export function rotateAboutAxis(
   return addVec3(axisOrigin, rotateDirection(relative, axisDirection, angleRadians));
 }
 
+/**
+ * 平面(点+法線)に対する鏡像(FR-324、P4 §0.a-0.21、タスク20)。
+ *
+ *   p' = p − 2 ((p − o) · n̂) n̂     (n̂ は単位法線、o は平面の上の 1 点)
+ *
+ * 法線は正規化してから使う。長さ 0 の法線では平面が決まらないので元の点をそのまま返す
+ * (呼び出し側が退化として先に断る。ここでは例外を投げない、FR-504)。
+ *
+ * **向きベクトルを折り返すときは平面の原点に `ORIGIN` を渡す。** 向きは位置を持たないので
+ * 原点を通る平面で折り返した結果が、そのまま向きの鏡像になる(`copyMath.ts` が使う)。
+ */
+export function mirrorVec3(point: Vec3, planeOrigin: Vec3, planeNormal: Vec3): Vec3 {
+  const length = lengthVec3(planeNormal);
+  if (length === 0) {
+    return point;
+  }
+  const unit = scaleVec3(planeNormal, 1 / length);
+  const height = dotVec3(subVec3(point, planeOrigin), unit);
+  return subVec3(point, scaleVec3(unit, 2 * height));
+}
+
+/**
+ * 0 のとき −0 になっている成分を +0 へ揃える。値の大きさは変わらないが、
+ * 比較や表示で「−0」が出ないようにするための後始末(`rotateDirection` の中と同じ理由)。
+ *
+ * `part/resolvePart.ts` にも同じ働きの私的な関数(`cleanZeroVec3`)がある。あちらを触る
+ * タスクでこちらへ寄せて 1 か所にする(P4 タスク20 の申し送り)。
+ */
+export function cleanZeroVec3(vector: Vec3): Vec3 {
+  return [
+    vector[0] === 0 ? 0 : vector[0],
+    vector[1] === 0 ? 0 : vector[1],
+    vector[2] === 0 ? 0 : vector[2],
+  ];
+}
+
 /** スケッチの許容誤差(mm)。OCCT 既定の 1e-7 より一桁ゆるく取る(§0.14)。 */
 export const SKETCH_TOLERANCE_MM = 1e-6;
 

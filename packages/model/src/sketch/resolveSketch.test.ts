@@ -20,10 +20,13 @@ import {
 import { MAX_SPLINE_POINTS } from './splineMath.js';
 import type {
   CoordinateInput,
+  CopyPlacement,
   ResolvedCurve,
   ResolvedEllipse,
   ResolvedSegment,
+  ResolvedSketch,
   SketchArcFeature,
+  SketchCopyFeature,
   SketchDocument,
   SketchElementRef,
   SketchEllipseFeature,
@@ -2743,5 +2746,422 @@ describe('オフセット(FR-321、タスク15)', () => {
     expect(resolved.pendingOffsets).toHaveLength(1);
     expect(resolved.pendingOffsets[0].featureId).toBe('of2');
     expect(resolved.pendingOffsets[0].curves).toHaveLength(4);
+  });
+});
+
+describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
+  /** (0,0,0)-(10,5,0) の線分。鏡像の期待値を手計算しやすい形にしてある。 */
+  const LINE: SketchFeature = {
+    id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+    from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 5, 0), construction: false,
+  };
+
+  /** Y 軸(x = 0 の線)。鏡にする軸として使う。 */
+  const Y_AXIS: SketchFeature = {
+    id: 'l9', name: '線分9', planeId: 'xy', kind: 'line',
+    from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(0, 10, 0), construction: false,
+  };
+
+  /** 40×30 の矩形(4 本の線分を生む)。 */
+  const RECTANGLE: SketchFeature = {
+    id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+    corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+    construction: false,
+  };
+
+  /** 中心 (5,0,0)・半径 5 の 0°→90° の円弧。 */
+  const ARC: SketchFeature = {
+    id: 'a1', name: '円弧1', planeId: 'xy', kind: 'arc',
+    center: absoluteCoordinate(5, 0, 0), radius: num(5),
+    startAngle: num(0), endAngle: num(90), construction: false,
+  };
+
+  /** 点 (10,0,0)。円形配列の期待値を手計算しやすい形にしてある。 */
+  const POINT: SketchFeature = {
+    id: 'p1', name: '点1', planeId: 'xy', kind: 'point', at: absoluteCoordinate(10, 0, 0),
+  };
+
+  function copyOf(
+    source: SketchElementRef[],
+    placement: CopyPlacement,
+    overrides: Partial<SketchCopyFeature> = {},
+  ): SketchFeature {
+    return {
+      id: 'cp1', name: '複製1', planeId: 'xy', kind: 'copy',
+      source, placement, construction: false,
+      ...overrides,
+    };
+  }
+
+  /** 「原点から見た向き」で渡す移動量・方向(types.ts の約束)。 */
+  function vector(x: number, y: number, z: number): CoordinateInput {
+    return absoluteCoordinate(x, y, z);
+  }
+
+  /** 複製された曲線を線分として取り出す。無ければテストを失敗させる。 */
+  function copiedSegment(resolved: ResolvedSketch, index = 0, id = 'cp1'): ResolvedSegment {
+    const curve = resolved.curvesByFeature.get(id)?.[index];
+    if (curve === undefined) {
+      throw new Error(`複製の曲線がありません: ${id}#${String(index)}`);
+    }
+    return segmentOf(curve);
+  }
+
+  const MIRROR_BY_Y_AXIS: CopyPlacement = {
+    kind: 'mirror',
+    basis: { kind: 'axis', axis: { featureId: 'l9' } },
+  };
+
+  it('線分を Y 軸の線でミラーすると (0,0,0)-(-10,5,0) が 1 本増える(元は残る)', () => {
+    const resolved = resolveSketch(
+      documentOf(Y_AXIS, LINE, copyOf([{ featureId: 'l1' }], MIRROR_BY_Y_AXIS)),
+    );
+    expect(resolved.errors).toEqual([]);
+    // 軸の線・元の線・複製の 3 本。
+    expect(resolved.segments).toHaveLength(3);
+    expect(resolved.curvesByFeature.get('cp1')).toHaveLength(1);
+    const segment = copiedSegment(resolved);
+    expect(segment.featureId).toBe('cp1');
+    expectCloseTo(segment.from, [0, 0, 0]);
+    expectCloseTo(segment.to, [-10, 5, 0]);
+  });
+
+  it('作図面(基準の 3 面)を鏡にもできる。XY のスケッチを XZ 面で折り返すと X 軸の鏡像', () => {
+    const placement: CopyPlacement = { kind: 'mirror', basis: { kind: 'plane', planeId: 'xz' } };
+    const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors).toEqual([]);
+    const segment = copiedSegment(resolved);
+    expectCloseTo(segment.from, [0, 0, 0]);
+    expectCloseTo(segment.to, [10, -5, 0]);
+  });
+
+  it('矩形をミラーすると 4 辺すべてが複製される', () => {
+    const resolved = resolveSketch(
+      documentOf(Y_AXIS, RECTANGLE, copyOf([{ featureId: 'r1' }], MIRROR_BY_Y_AXIS)),
+    );
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.curvesByFeature.get('cp1')).toHaveLength(4);
+    // 鏡像は形を変えないので面積は 40×30 のまま。
+    const corners = (resolved.curvesByFeature.get('cp1') ?? []).map((curve) => curveStart(curve));
+    expect(polygonArea(corners)).toBeCloseTo(1200, 9);
+    // x はすべて 0 以下へ折り返っている。
+    expect(corners.every((corner) => corner[0] <= 1e-9)).toBe(true);
+  });
+
+  it('円弧をミラーすると角度の符号が反転し、端点が折り返される(向きに注意)', () => {
+    // 中心 (5,0,0)・半径 5・0°→90° を X 軸(XZ 面)で折り返すと、端点は (10,0,0) と (5,-5,0)。
+    // 同じ法線・第1軸のまま 0° → −90° の円弧になる。
+    const placement: CopyPlacement = { kind: 'mirror', basis: { kind: 'plane', planeId: 'xz' } };
+    const resolved = resolveSketch(documentOf(ARC, copyOf([{ featureId: 'a1' }], placement)));
+    expect(resolved.errors).toEqual([]);
+    const curve = resolved.curvesByFeature.get('cp1')?.[0];
+    if (curve === undefined || curve.kind !== 'arc') {
+      throw new Error('円弧のはず');
+    }
+    expectCloseTo(curve.center, [5, 0, 0]);
+    expectCloseTo(curve.normal, [0, 0, 1]);
+    expect(curve.startAngle).toBeCloseTo(0, 12);
+    expect(curve.endAngle).toBeCloseTo(-Math.PI / 2, 12);
+    expectCloseTo(curveStart(curve), [10, 0, 0]);
+    expectCloseTo(curveEnd(curve), [5, -5, 0]);
+  });
+
+  it('移動の複写は指定したぶんだけずれた 1 本を作る', () => {
+    const placement: CopyPlacement = { kind: 'translate', delta: vector(0, 20, 0) };
+    const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors).toEqual([]);
+    const segment = copiedSegment(resolved);
+    expectCloseTo(segment.from, [0, 20, 0]);
+    expectCloseTo(segment.to, [10, 25, 0]);
+  });
+
+  it('移動量が 0 なら degenerate(同じ場所に重ねない)', () => {
+    const placement: CopyPlacement = { kind: 'translate', delta: vector(0, 0, 0) };
+    const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors[0].code).toBe('degenerate');
+    expect(resolved.curvesByFeature.has('cp1')).toBe(false);
+  });
+
+  it('直線配列(X 方向・間隔 20・個数 3)は複製 2 本で、画面には 3 本並ぶ', () => {
+    const placement: CopyPlacement = {
+      kind: 'linearArray', direction: vector(1, 0, 0), spacing: num(20), count: num(3),
+    };
+    const flat: SketchFeature = {
+      id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+      from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 0, 0), construction: false,
+    };
+    const resolved = resolveSketch(documentOf(flat, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.curvesByFeature.get('cp1')).toHaveLength(2);
+    expect(resolved.segments).toHaveLength(3);
+    expectCloseTo(copiedSegment(resolved, 0).from, [20, 0, 0]);
+    expectCloseTo(copiedSegment(resolved, 0).to, [30, 0, 0]);
+    expectCloseTo(copiedSegment(resolved, 1).from, [40, 0, 0]);
+    expectCloseTo(copiedSegment(resolved, 1).to, [50, 0, 0]);
+  });
+
+  it('直線配列の間隔が 0 以下なら invalidValue(向きは direction が決める)', () => {
+    const placement: CopyPlacement = {
+      kind: 'linearArray', direction: vector(1, 0, 0), spacing: num(0), count: num(3),
+    };
+    const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors[0].code).toBe('invalidValue');
+    expect(resolved.errors[0].message).toContain('0 より大きい');
+  });
+
+  it('直線配列の向きの長さが 0 なら degenerate', () => {
+    const placement: CopyPlacement = {
+      kind: 'linearArray', direction: vector(0, 0, 0), spacing: num(20), count: num(3),
+    };
+    const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors[0].code).toBe('degenerate');
+  });
+
+  it('円形配列(全周・個数 4)は 90 度刻みの複製 3 つ', () => {
+    const placement: CopyPlacement = {
+      kind: 'circularArray', center: vector(0, 0, 0), angle: num(0), count: num(4),
+      fullCircle: true,
+    };
+    const resolved = resolveSketch(documentOf(POINT, copyOf([{ featureId: 'p1' }], placement)));
+    expect(resolved.errors).toEqual([]);
+    const copied = resolved.points.filter((candidate) => candidate.featureId === 'cp1');
+    expect(copied).toHaveLength(3);
+    expect(copied.map((candidate) => candidate.id)).toEqual(['cp1#0', 'cp1#1', 'cp1#2']);
+    expectCloseTo(copied[0].position, [0, 10, 0]);
+    expectCloseTo(copied[1].position, [-10, 0, 0]);
+    expectCloseTo(copied[2].position, [0, -10, 0]);
+  });
+
+  it('円形配列(角度 90 度・個数 3)は角度を 個数−1 で等分する(P3 のパターンと同じ)', () => {
+    const placement: CopyPlacement = {
+      kind: 'circularArray', center: vector(0, 0, 0), angle: num(90), count: num(3),
+      fullCircle: false,
+    };
+    const resolved = resolveSketch(documentOf(POINT, copyOf([{ featureId: 'p1' }], placement)));
+    expect(resolved.errors).toEqual([]);
+    const copied = resolved.points.filter((candidate) => candidate.featureId === 'cp1');
+    expect(copied).toHaveLength(2);
+    // 90 / (3−1) = 45 度刻み。10·cos45 = 7.0710678118654755。
+    expectCloseTo(copied[0].position, [7.0710678118654755, 7.0710678118654755, 0]);
+    expectCloseTo(copied[1].position, [0, 10, 0]);
+  });
+
+  it('円形配列の角度が 0 以下・360 超なら invalidValue', () => {
+    for (const angle of [0, -90, 361]) {
+      const placement: CopyPlacement = {
+        kind: 'circularArray', center: vector(0, 0, 0), angle: num(angle), count: num(3),
+        fullCircle: false,
+      };
+      const resolved = resolveSketch(documentOf(POINT, copyOf([{ featureId: 'p1' }], placement)));
+      expect(resolved.errors[0].code).toBe('invalidValue');
+    }
+  });
+
+  it('個数は 2 以上 100 以下の整数(1 個・101 個・小数は断る)', () => {
+    for (const count of [1, 101, 2.5]) {
+      const placement: CopyPlacement = {
+        kind: 'linearArray', direction: vector(1, 0, 0), spacing: num(20), count: num(count),
+      };
+      const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+      expect(resolved.errors[0].code).toBe('invalidValue');
+      expect(resolved.errors[0].message).toContain('2 以上 100 以下');
+    }
+  });
+
+  it('100 個ちょうどは通る(複製は 99 本)', () => {
+    const placement: CopyPlacement = {
+      kind: 'linearArray', direction: vector(1, 0, 0), spacing: num(20), count: num(100),
+    };
+    const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.curvesByFeature.get('cp1')).toHaveLength(99);
+  });
+
+  it('存在しない要素を元に指定すると missingBase', () => {
+    const resolved = resolveSketch(
+      documentOf(Y_AXIS, copyOf([{ featureId: 'nope' }], MIRROR_BY_Y_AXIS)),
+    );
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].featureId).toBe('cp1');
+  });
+
+  it('元が 1 つも選ばれていないと tooFewPoints', () => {
+    const resolved = resolveSketch(documentOf(Y_AXIS, copyOf([], MIRROR_BY_Y_AXIS)));
+    expect(resolved.errors[0].code).toBe('tooFewPoints');
+  });
+
+  it('点と線を混ぜると mixedBoundary', () => {
+    const resolved = resolveSketch(
+      documentOf(
+        Y_AXIS,
+        LINE,
+        POINT,
+        copyOf([{ featureId: 'l1' }, { featureId: 'p1' }], MIRROR_BY_Y_AXIS),
+      ),
+    );
+    expect(resolved.errors[0].code).toBe('mixedBoundary');
+  });
+
+  it('鏡にする軸が見つからないと missingBase', () => {
+    const placement: CopyPlacement = {
+      kind: 'mirror', basis: { kind: 'axis', axis: { featureId: 'nope' } },
+    };
+    const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toContain('鏡にする軸');
+  });
+
+  it('鏡にする軸に円弧を選ぶと invalidValue(軸にできるのは線分だけ)', () => {
+    const placement: CopyPlacement = {
+      kind: 'mirror', basis: { kind: 'axis', axis: { featureId: 'a1' } },
+    };
+    const resolved = resolveSketch(documentOf(ARC, LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors[0].code).toBe('invalidValue');
+    expect(resolved.errors[0].message).toContain('線分だけ');
+  });
+
+  it('鏡にする平面が見つからないと missingBase', () => {
+    const placement: CopyPlacement = { kind: 'mirror', basis: { kind: 'plane', planeId: 'nope' } };
+    const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toContain('鏡にする平面');
+  });
+
+  it('3D スケッチでは線を軸にした鏡像は作れないが、平面を鏡にはできる', () => {
+    const freeLine: SketchFeature = {
+      id: 'l1', name: '線分1', planeId: FREE_WORK_PLANE_ID, kind: 'line',
+      from: absoluteCoordinate(0, 0, 5), to: absoluteCoordinate(10, 5, 5), construction: false,
+    };
+    const byAxis = resolveSketch(
+      documentOf(
+        freeLine,
+        copyOf([{ featureId: 'l1' }], MIRROR_BY_Y_AXIS, { planeId: FREE_WORK_PLANE_ID }),
+      ),
+    );
+    expect(byAxis.errors[0].code).toBe('missingBase');
+    expect(byAxis.errors[0].message).toContain('鏡にする平面を選んで');
+
+    const byPlane = resolveSketch(
+      documentOf(
+        freeLine,
+        copyOf(
+          [{ featureId: 'l1' }],
+          { kind: 'mirror', basis: { kind: 'plane', planeId: 'xy' } },
+          { planeId: FREE_WORK_PLANE_ID },
+        ),
+      ),
+    );
+    expect(byPlane.errors).toEqual([]);
+    const mirrored = copiedSegment(byPlane);
+    expectCloseTo(mirrored.from, [0, 0, -5]);
+    expectCloseTo(mirrored.to, [10, 5, -5]);
+  });
+
+  it('3D スケッチでは円形に並べられない(回す軸になる作図面が無い)', () => {
+    const freeLine: SketchFeature = {
+      id: 'l1', name: '線分1', planeId: FREE_WORK_PLANE_ID, kind: 'line',
+      from: absoluteCoordinate(0, 0, 5), to: absoluteCoordinate(10, 5, 5), construction: false,
+    };
+    const placement: CopyPlacement = {
+      kind: 'circularArray', center: vector(0, 0, 0), angle: num(90), count: num(3),
+      fullCircle: false,
+    };
+    const resolved = resolveSketch(
+      documentOf(
+        freeLine,
+        copyOf([{ featureId: 'l1' }], placement, { planeId: FREE_WORK_PLANE_ID }),
+      ),
+    );
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toContain('作図面を選んで');
+  });
+
+  it('複製した曲線は面の境界に使える(押し出しの材料になる)', () => {
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'cp1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(
+      documentOf(Y_AXIS, RECTANGLE, copyOf([{ featureId: 'r1' }], MIRROR_BY_Y_AXIS), face),
+    );
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.faces).toHaveLength(1);
+    expect(resolved.faces[0].curves).toHaveLength(4);
+    expect(polygonArea(resolved.faces[0].curves.map((curve) => curveStart(curve)))).toBeCloseTo(
+      1200,
+      9,
+    );
+  });
+
+  it('構築線にした複製は面の境界に選べない(FR-320)', () => {
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'cp1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(
+      documentOf(
+        Y_AXIS,
+        RECTANGLE,
+        copyOf([{ featureId: 'r1' }], MIRROR_BY_Y_AXIS, { construction: true }),
+        face,
+      ),
+    );
+    expect(resolved.errors[0].code).toBe('constructionElement');
+  });
+
+  it('複製を元にした複製ができる', () => {
+    const second = copyOf(
+      [{ featureId: 'cp1' }],
+      { kind: 'translate', delta: vector(0, 100, 0) },
+      { id: 'cp2', name: '複製2' },
+    );
+    const resolved = resolveSketch(
+      documentOf(Y_AXIS, LINE, copyOf([{ featureId: 'l1' }], MIRROR_BY_Y_AXIS), second),
+    );
+    expect(resolved.errors).toEqual([]);
+    const segment = copiedSegment(resolved, 0, 'cp2');
+    expectCloseTo(segment.from, [0, 100, 0]);
+    expectCloseTo(segment.to, [-10, 105, 0]);
+  });
+
+  it('元の要素を動かすと複製も動く(座標を焼き付けていない)', () => {
+    const moved: SketchFeature = {
+      id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+      from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(30, 5, 0), construction: false,
+    };
+    const resolved = resolveSketch(
+      documentOf(Y_AXIS, moved, copyOf([{ featureId: 'l1' }], MIRROR_BY_Y_AXIS)),
+    );
+    expectCloseTo(copiedSegment(resolved).to, [-30, 5, 0]);
+  });
+
+  it('複製の要素は featureId#n の順に並ぶ(変換が外側、元の要素が内側)', () => {
+    const placement: CopyPlacement = {
+      kind: 'linearArray', direction: vector(1, 0, 0), spacing: num(100), count: num(3),
+    };
+    const resolved = resolveSketch(documentOf(RECTANGLE, copyOf([{ featureId: 'r1' }], placement)));
+    expect(resolved.curvesByFeature.get('cp1')).toHaveLength(8);
+    // 0〜3 が 1 個目(+100)、4〜7 が 2 個目(+200)。
+    expectCloseTo(copiedSegment(resolved, 0).from, [100, 0, 0]);
+    expectCloseTo(copiedSegment(resolved, 4).from, [200, 0, 0]);
+  });
+
+  it('長穴をミラーしても閉じた輪として面を張れる(円弧の向きが裏返っても輪をたどれる)', () => {
+    const slot: SketchFeature = {
+      id: 's1', name: '長穴1', planeId: 'xy', kind: 'slot',
+      center1: absoluteCoordinate(10, 0, 0), center2: absoluteCoordinate(30, 0, 0),
+      width: num(10), construction: false,
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'cp1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(
+      documentOf(Y_AXIS, slot, copyOf([{ featureId: 's1' }], MIRROR_BY_Y_AXIS), face),
+    );
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.curvesByFeature.get('cp1')).toHaveLength(4);
+    expect(resolved.faces).toHaveLength(1);
+    expect(resolved.faces[0].curves).toHaveLength(4);
   });
 });

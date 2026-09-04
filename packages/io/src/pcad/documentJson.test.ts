@@ -2308,3 +2308,195 @@ describe('オフセットの往復(P4 タスク15、FR-321)', () => {
     expect(error.message).toContain('corner');
   });
 });
+
+describe('ミラー・複写・配列複写の往復(P4 タスク20、FR-324)', () => {
+  const mirrorByAxis: SketchFeature = {
+    id: 'copy-1',
+    kind: 'copy',
+    name: '複製1',
+    planeId: 'xy',
+    source: [{ featureId: 'rectangle-1' }, { featureId: 'line-1', index: 2 }],
+    placement: { kind: 'mirror', basis: { kind: 'axis', axis: { featureId: 'line-9' } } },
+    construction: true,
+  };
+
+  const mirrorByPlane: SketchFeature = {
+    ...mirrorByAxis,
+    placement: { kind: 'mirror', basis: { kind: 'plane', planeId: 'referencePlane-1' } },
+    construction: false,
+  };
+
+  const translate: SketchFeature = {
+    ...mirrorByAxis,
+    placement: {
+      kind: 'translate',
+      delta: { mode: 'absolute', x: ev('a*2', 20), y: ev('0', 0), z: ev('0', 0) },
+    },
+    construction: false,
+  };
+
+  const linearArray: SketchFeature = {
+    ...mirrorByAxis,
+    placement: {
+      kind: 'linearArray',
+      direction: { mode: 'absolute', x: ev('1', 1), y: ev('0', 0), z: ev('0', 0) },
+      spacing: ev('20', 20),
+      count: ev('3', 3),
+    },
+    construction: false,
+  };
+
+  const circularArray: SketchFeature = {
+    ...mirrorByAxis,
+    placement: {
+      kind: 'circularArray',
+      center: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      angle: ev('90', 90),
+      count: ev('4', 4),
+      fullCircle: true,
+    },
+    construction: false,
+  };
+
+  it('4 通りの複製のしかたがすべて往復で一致する', () => {
+    for (const feature of [mirrorByAxis, mirrorByPlane, translate, linearArray, circularArray]) {
+      expect(roundTrip(documentWithSketchFeature(feature)).sketches[0].features[0]).toEqual(
+        feature,
+      );
+    }
+  });
+
+  it('複製された曲線は保存しない(導出できるものは保存しない)', () => {
+    const text = serializeDocument(documentWithSketchFeature(linearArray), { savedAt: SAVED_AT });
+    expect(text).toContain('"kind": "copy"');
+    expect(text).toContain('"kind": "linearArray"');
+    expect(text).not.toContain('"curves"');
+  });
+
+  it('鏡の基準は軸と平面のどちらか一方だけを持つ(欄が混ざらない)', () => {
+    const text = serializeDocument(documentWithSketchFeature(mirrorByAxis), { savedAt: SAVED_AT });
+    expect(text).toContain('"kind": "axis"');
+    expect(text).not.toContain('"planeId": null');
+  });
+
+  it('版は 3 のまま上げない(新種を足しただけで既存の欄は変えていない)', () => {
+    const text = serializeDocument(documentWithSketchFeature(linearArray), { savedAt: SAVED_AT });
+    expect(text).toContain('"schema": 3');
+  });
+
+  it('知らない並べ方なら、その場所を添えて断る(FR-504、NFR-UX-5)', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'copy-1',
+              kind: 'copy',
+              name: '複製1',
+              planeId: 'xy',
+              source: [{ featureId: 'line-1' }],
+              placement: { kind: 'ならべる', spacing: ev('20', 20), count: ev('3', 3) },
+              construction: false,
+            },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.message).toContain('placement');
+  });
+
+  it('知らない鏡の基準なら、その場所を添えて断る', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'copy-1',
+              kind: 'copy',
+              name: '複製1',
+              planeId: 'xy',
+              source: [{ featureId: 'line-1' }],
+              placement: { kind: 'mirror', basis: { kind: 'かがみ' } },
+              construction: false,
+            },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.message).toContain('basis');
+  });
+
+  it('個数の欄が欠けていれば断る(欠けた欄を既定値で埋めない)', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'copy-1',
+              kind: 'copy',
+              name: '複製1',
+              planeId: 'xy',
+              source: [{ featureId: 'line-1' }],
+              placement: {
+                kind: 'linearArray',
+                direction: { mode: 'absolute', x: ev('1', 1), y: ev('0', 0), z: ev('0', 0) },
+                spacing: ev('20', 20),
+              },
+              construction: false,
+            },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.message).toContain('count');
+  });
+
+  it('読み込んだ複製は解決に使える(元の矩形をミラーして 4 本になる)', () => {
+    const sketch: SketchDocument = {
+      id: 'sketch-1',
+      name: 'スケッチ1',
+      features: [
+        {
+          id: 'line-9',
+          kind: 'line',
+          name: '線分9',
+          planeId: 'xy',
+          from: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+          to: { mode: 'absolute', x: ev('0', 0), y: ev('10', 10), z: ev('0', 0) },
+          construction: true,
+        },
+        {
+          id: 'rectangle-1',
+          kind: 'rectangle',
+          name: '矩形1',
+          planeId: 'xy',
+          corner1: { mode: 'absolute', x: ev('10', 10), y: ev('0', 0), z: ev('0', 0) },
+          corner2: { mode: 'absolute', x: ev('50', 50), y: ev('30', 30), z: ev('0', 0) },
+          construction: false,
+        },
+        {
+          id: 'copy-1',
+          kind: 'copy',
+          name: '複製1',
+          planeId: 'xy',
+          source: [{ featureId: 'rectangle-1' }],
+          placement: { kind: 'mirror', basis: { kind: 'axis', axis: { featureId: 'line-9' } } },
+          construction: false,
+        },
+      ],
+    };
+    const restored = roundTrip({ ...createEmptyPartDocument(), sketches: [sketch] });
+    const resolved = resolveSketch(restored.sketches[0]);
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.curvesByFeature.get('copy-1')).toHaveLength(4);
+  });
+});

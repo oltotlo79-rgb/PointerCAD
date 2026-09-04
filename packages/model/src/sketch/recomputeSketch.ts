@@ -24,6 +24,7 @@ import {
 import { curveEnd, curveStart, resolveSketch } from './resolveSketch.js';
 import type {
   CoordinateInput,
+  CopyPlacement,
   FreeArcOrientation,
   PendingOffset,
   PointArrayLayout,
@@ -326,6 +327,37 @@ function reevaluatePointArrayLayout(
   }
 }
 
+/**
+ * 複製のしかた(FR-324、タスク20)を並べ方ごとに評価し直す。鏡像は式を持たない
+ * (鏡にする軸・平面の参照だけ)ので、そのまま返す。
+ */
+function reevaluateCopyPlacement(
+  placement: CopyPlacement,
+  variables: ReadonlyMap<string, number>,
+): CopyPlacement {
+  switch (placement.kind) {
+    case 'mirror':
+      return placement;
+    case 'translate':
+      return { kind: 'translate', delta: reevaluateCoordinate(placement.delta, variables) };
+    case 'linearArray':
+      return {
+        kind: 'linearArray',
+        direction: reevaluateCoordinate(placement.direction, variables),
+        spacing: reevaluate(placement.spacing, variables),
+        count: reevaluate(placement.count, variables),
+      };
+    case 'circularArray':
+      return {
+        kind: 'circularArray',
+        center: reevaluateCoordinate(placement.center, variables),
+        angle: reevaluate(placement.angle, variables),
+        count: reevaluate(placement.count, variables),
+        fullCircle: placement.fullCircle,
+      };
+  }
+}
+
 function reevaluateFeature(
   feature: SketchFeature,
   variables: ReadonlyMap<string, number>,
@@ -392,6 +424,8 @@ function reevaluateFeature(
     case 'offset':
       // オフセットが持つ式は距離だけ(元の要素・側・角は式ではない)。
       return { ...feature, distance: reevaluate(feature.distance, variables) };
+    case 'copy':
+      return { ...feature, placement: reevaluateCopyPlacement(feature.placement, variables) };
   }
 }
 

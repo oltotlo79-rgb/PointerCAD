@@ -80,7 +80,8 @@ export type SketchFeatureKind =
   | 'slot'
   | 'ellipse'
   | 'spline'
-  | 'offset';
+  | 'offset'
+  | 'copy';
 
 interface SketchFeatureBase {
   readonly id: string;
@@ -307,6 +308,97 @@ export interface SketchOffsetFeature extends SketchFeatureBase {
   readonly construction: boolean;
 }
 
+/**
+ * 鏡像(FR-324)の鏡にするもの(タスク20)。
+ *
+ * **計画書のタスク20 は `planeId: WorkPlaneId | null` と `axis: SketchElementRef | null` の
+ * 2 欄で「排他」としていたが、判別子つきの union にした。** 2 欄だと「両方 null」
+ * 「両方指定」という型の上では作れてしまう組み合わせを解決のたびに実行時に断る羽目になり、
+ * UI 側(タスク24)も作れない組み合わせを気にしながら組み立てることになるため。
+ * 型で排他にすれば分岐は 1 つずつで済む。
+ */
+export type MirrorBasis =
+  | {
+      /**
+       * 作図面の中の線分を軸にする(2 次元の鏡像)。**その線分を含み、作図面に垂直な平面**で
+       * 折り返すので、結果は同じ作図面の上に乗る。線分でない曲線は軸にできない。
+       */
+      readonly kind: 'axis';
+      readonly axis: SketchElementRef;
+    }
+  | {
+      /**
+       * 平面そのもので折り返す。3D スケッチ(作図面なし)で使えるのはこちらだけ。
+       * 基準の 3 面を指せば「作図面の X 軸・Y 軸での折り返し」にもなる
+       * (例: XY 面のスケッチを `'xz'` で折り返すと X 軸に対する鏡像になる)。
+       */
+      readonly kind: 'plane';
+      readonly planeId: WorkPlaneId;
+    };
+
+/**
+ * 複製のしかた(FR-324、タスク20)。鏡像・移動・直線状の配列・円形の配列の 4 通り。
+ *
+ * 個数(`count`)は**もとを含めた総数**で、複製されるのは `count − 1` 個
+ * (P3 のパターン `resolvePatternTransforms` と同じ規則)。鏡像と移動は必ず 1 個。
+ *
+ * `delta` / `direction` は**原点から見た向きベクトル**として解く(絶対座標なら成分そのもの、
+ * 極なら「距離と角度」で向きを決められる)。`SketchArcFeature.freeOrientation` と同じ約束で、
+ * 3D スケッチでも同じ形のまま使えるようにするため(計画書は `direction: PointReference` と
+ * していたが、点の参照では向きを表せないので座標指定に寄せた)。
+ */
+export type CopyPlacement =
+  | { readonly kind: 'mirror'; readonly basis: MirrorBasis }
+  | { readonly kind: 'translate'; readonly delta: CoordinateInput }
+  | {
+      readonly kind: 'linearArray';
+      readonly direction: CoordinateInput;
+      /** 1 つあたりの間隔(mm、0 より大きい)。向きは `direction` が決める。 */
+      readonly spacing: ExpressionValue;
+      readonly count: ExpressionValue;
+    }
+  | {
+      /** 回す軸は作図面の法線(中心を通る)。作図面のあるスケッチでだけ作れる。 */
+      readonly kind: 'circularArray';
+      readonly center: CoordinateInput;
+      /** 全体で回す角度(度)。`fullCircle` が true のときは見ない。 */
+      readonly angle: ExpressionValue;
+      readonly count: ExpressionValue;
+      /** 全周を等分するか(true なら 360/個数 の刻み、false なら角度を 個数−1 等分)。 */
+      readonly fullCircle: boolean;
+    };
+
+/**
+ * ミラー・複写・配列複写(FR-324、§2.5、タスク20)。**元の要素は変えず、複製を履歴へ積む**
+ * (複製系、§0.a-0.10)。
+ *
+ * **複製は「参照で追従する 1 フィーチャー」**にしてある。`source` は要素の id だけを持ち、
+ * 解決のたびに元の形を写し直すので、**元を動かせば複製も動く**(FR-311・FR-502 の
+ * 「座標を複製せず id で参照する」方針そのまま)。独立したフィーチャー群として座標を
+ * 焼き付ける形にはしない。理由は 3 つ:
+ *   - 元を直すたびに複製を作り直す操作が要らない(上流追従)。
+ *   - Undo が 1 段で済む(履歴に増えるのは 1 つだけ、FR-505)。
+ *   - 100 個の配列でも保存するのは変換の指定だけで、要素 100 個ぶんの座標を書かない(要件§8)。
+ *
+ * 複製された曲線は `ResolvedSketch.curvesByFeature`(点なら `pointsByFeature`)へ
+ * `featureId#n` の順で積まれ、面の境界・オフセット元・トリムの対象に**普通の要素として**使える。
+ *
+ * `source` は**点だけ、または線・円弧だけ**を並べる(面の境界と同じ約束)。点と曲線が
+ * 混じると `featureId#n` の番号がどちらの並びなのか決まらなくなるため。
+ */
+export interface SketchCopyFeature extends SketchFeatureBase {
+  readonly kind: 'copy';
+  /**
+   * 複製するもと。矩形などの複数曲線フィーチャーは `index` を省けば全体、
+   * 指定すれば n 番目だけ(§0.a-0.8)。**点列も `index` を省けば全部の点**
+   * (面の境界は「省略なら先頭の 1 点」だが、複製では全部を写すほうが素直なため)。
+   */
+  readonly source: readonly SketchElementRef[];
+  readonly placement: CopyPlacement;
+  /** 構築線(FR-320)。複製した結果を参照専用にしたいときに true。既定 false。 */
+  readonly construction: boolean;
+}
+
 export interface SketchFaceFeature extends SketchFeatureBase {
   readonly kind: 'face';
   /** 順序が意味を持つ。点だけ、または線・円弧だけを並べる(§0.a-0.13)。 */
@@ -326,7 +418,8 @@ export type SketchFeature =
   | SketchSlotFeature
   | SketchEllipseFeature
   | SketchSplineFeature
-  | SketchOffsetFeature;
+  | SketchOffsetFeature
+  | SketchCopyFeature;
 
 /** スケッチ文書。変更のたびに新しい配列を作る(P2 の Undo の土台、FR-505)。 */
 export interface SketchDocument {
@@ -488,8 +581,8 @@ export interface ResolvedSketch {
   /** まだ形が決まっていないオフセット(FR-321、タスク15)。無ければ空。 */
   readonly pendingOffsets: readonly PendingOffset[];
   /**
-   * 「1 フィーチャーが複数の曲線を生む」もの(矩形・正多角形・長穴・オフセット)の
-   * 曲線を、フィーチャーの id から順番どおりに引く(§0.a-0.8、タスク4・15)。
+   * 「1 フィーチャーが複数の曲線を生む」もの(矩形・正多角形・長穴・オフセット・複製)の
+   * 曲線を、フィーチャーの id から順番どおりに引く(§0.a-0.8、タスク4・15・20)。
    *
    * `segments` / `arcs` にも同じ曲線が入っているが、そちらは種類ごとに分かれるので
    * **1 フィーチャーの中の並び順(`featureId#n` の n)が分からなくなる**

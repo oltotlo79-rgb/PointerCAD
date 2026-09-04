@@ -14,6 +14,7 @@ import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.j
 import { createOffsetCache } from './offsetMath.js';
 import { recomputeSketch, reevaluateDocument } from './recomputeSketch.js';
 import type {
+  CopyPlacement,
   ResolvedArc,
   ResolvedEllipse,
   ResolvedFace,
@@ -746,5 +747,110 @@ describe('オフセットの再計算(FR-321、タスク15)', () => {
     }
     expect(changed.distance.value).toBe(8);
     expect(changed.distance.source).toBe('t');
+  });
+});
+
+describe('複製の式の再評価(FR-324、FR-206、タスク20)', () => {
+  const LINE: SketchFeature = {
+    id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+    from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 0, 0), construction: false,
+  };
+
+  function copyOf(placement: CopyPlacement): SketchFeature {
+    return {
+      id: 'cp1', name: '複製1', planeId: 'xy', kind: 'copy',
+      source: [{ featureId: 'l1' }], placement, construction: false,
+    };
+  }
+
+  it('直線配列の間隔・個数・向きが変数に追従する', () => {
+    const placement: CopyPlacement = {
+      kind: 'linearArray',
+      direction: {
+        mode: 'absolute',
+        x: expressionOf('1', 1),
+        y: expressionOf('0', 0),
+        z: expressionOf('0', 0),
+      },
+      spacing: expressionOf('t', 20),
+      count: expressionOf('n', 3),
+    };
+    const updated = reevaluateDocument(
+      documentOf(LINE, copyOf(placement)),
+      new Map([
+        ['t', 35],
+        ['n', 4],
+      ]),
+    );
+    const changed = updated.features[1];
+    if (changed.kind !== 'copy' || changed.placement.kind !== 'linearArray') {
+      throw new Error('直線配列のはず');
+    }
+    expect(changed.placement.spacing.value).toBe(35);
+    expect(changed.placement.spacing.source).toBe('t');
+    expect(changed.placement.count.value).toBe(4);
+  });
+
+  it('円形配列の角度・中心が変数に追従し、全周の印はそのまま残る', () => {
+    const placement: CopyPlacement = {
+      kind: 'circularArray',
+      center: {
+        mode: 'absolute',
+        x: expressionOf('c', 0),
+        y: expressionOf('0', 0),
+        z: expressionOf('0', 0),
+      },
+      angle: expressionOf('a', 90),
+      count: expressionOf('3', 3),
+      fullCircle: false,
+    };
+    const updated = reevaluateDocument(
+      documentOf(LINE, copyOf(placement)),
+      new Map([
+        ['a', 180],
+        ['c', 5],
+      ]),
+    );
+    const changed = updated.features[1];
+    if (changed.kind !== 'copy' || changed.placement.kind !== 'circularArray') {
+      throw new Error('円形配列のはず');
+    }
+    expect(changed.placement.angle.value).toBe(180);
+    expect(changed.placement.fullCircle).toBe(false);
+    if (changed.placement.center.mode !== 'absolute') {
+      throw new Error('絶対座標のはず');
+    }
+    expect(changed.placement.center.x.value).toBe(5);
+  });
+
+  it('移動の複写は移動量が追従する', () => {
+    const placement: CopyPlacement = {
+      kind: 'translate',
+      delta: {
+        mode: 'absolute',
+        x: expressionOf('0', 0),
+        y: expressionOf('t', 20),
+        z: expressionOf('0', 0),
+      },
+    };
+    const updated = reevaluateDocument(documentOf(LINE, copyOf(placement)), new Map([['t', 45]]));
+    const changed = updated.features[1];
+    if (changed.kind !== 'copy' || changed.placement.kind !== 'translate') {
+      throw new Error('移動のはず');
+    }
+    if (changed.placement.delta.mode !== 'absolute') {
+      throw new Error('絶対座標のはず');
+    }
+    expect(changed.placement.delta.y.value).toBe(45);
+  });
+
+  it('鏡像は式を持たないので、評価し直しても中身が変わらない', () => {
+    const placement: CopyPlacement = {
+      kind: 'mirror',
+      basis: { kind: 'axis', axis: { featureId: 'l9' } },
+    };
+    const feature = copyOf(placement);
+    const updated = reevaluateDocument(documentOf(LINE, feature), new Map([['t', 45]]));
+    expect(updated.features[1]).toEqual(feature);
   });
 });

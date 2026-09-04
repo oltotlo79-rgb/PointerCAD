@@ -74,6 +74,9 @@ const KIND_ICONS: Readonly<
   // オフセット(FR-321、P4 タスク15)。専用の図柄はツールバーを組み直すタスク32 で足すので、
   // それまでは「線をずらす」ことが分かる線分の図柄を借りる(型の網羅のため)。
   offset: LineToolIcon,
+  // 複製(ミラー・複写・配列複写、FR-324、P4 タスク20)。専用の図柄はツールバーを組み直す
+  // タスク32 で足すので、それまでは「並べて増やす」ことが分かる直線パターンの図柄を借りる。
+  copy: LinearPatternIcon,
   extrude: ExtrudeIcon,
   revolve: RevolveIcon,
   sew: SewIcon,

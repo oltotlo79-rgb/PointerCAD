@@ -29,6 +29,7 @@ import {
   isFullEllipse,
   traceCurveChain,
 } from './intersectionMath.js';
+import { resolveCopyFeature } from './copyMath.js';
 import {
   baseWorkPlane,
   degreesToRadians,
@@ -1319,6 +1320,43 @@ export function resolveSketch(
       vertices.set(vertexKey(feature.id, 'start'), curveStart(firstCreated));
       vertices.set(vertexKey(feature.id, 'end'), curveEnd(lastCreated));
       previous = curveEnd(lastCreated);
+      continue;
+    }
+
+    if (feature.kind === 'copy') {
+      // 複製は「もとを id で参照する 1 フィーチャー」なので、ここまでに解決できた
+      // 点・曲線をそのまま写す(FR-324、タスク20。`copyMath.ts` の注釈)。
+      const copied = resolveCopyFeature(
+        feature,
+        plane,
+        context,
+        { curveByFeature, curvesByFeature, pointsByFeature },
+        lookupWorkPlane,
+      );
+      if (!copied.ok) {
+        errors.push(copied.error);
+        continue;
+      }
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
+      // 点の複製と曲線の複製は同時に起きない(`collectCopySource` が混在を断る)。
+      if (copied.points.length > 0) {
+        points.push(...copied.points);
+        pointsByFeature.set(feature.id, copied.points);
+        const lastPoint = copied.points[copied.points.length - 1];
+        vertices.set(vertexKey(feature.id, 'start'), copied.points[0].position);
+        vertices.set(vertexKey(feature.id, 'end'), lastPoint.position);
+        previous = lastPoint.position;
+        continue;
+      }
+      pushResolvedCurves(copied.curves, segments, arcs, ellipses, splines);
+      curvesByFeature.set(feature.id, copied.curves);
+      const firstCopy = copied.curves[0];
+      const lastCopy = copied.curves[copied.curves.length - 1];
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(firstCopy));
+      vertices.set(vertexKey(feature.id, 'end'), curveEnd(lastCopy));
+      previous = curveEnd(lastCopy);
       continue;
     }
   }

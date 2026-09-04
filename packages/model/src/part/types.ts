@@ -16,6 +16,7 @@
 
 import type { ExpressionValue } from '@pointercad/expression';
 
+import type { AppearanceTable } from '../appearance/types.js';
 import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
 import type {
   EdgeCurveKind,
@@ -470,4 +471,20 @@ export interface PartDocument {
    * (`packages/io`、タスク21。必須にすると版 4 以前が開けなくなる)。
    */
   readonly parameters: readonly Parameter[];
+  /**
+   * 外観の割り当て(色・材質・柄。FR-1106〜1110、要件§4.12、P5 §0.a-0.1)。
+   *
+   * **履歴ではないので `solids` には入れず、文書の別の欄として持つ。** 外観を変えても
+   * 形は変わらず、再計算も段の鍵の作り直しも起こさない(`part/documentChange.ts` の
+   * `affectsShape` と `part/cacheKey.ts` の両方が外観を見ない)。立体はフィーチャー id、
+   * 面は部分形状の指紋(`SubShapeRef`)で指す。
+   *
+   * **いまは省略できる欄で、版 6(P5 タスク5)で `packages/io` が読み書きを実装したときに
+   * 必須へ変える**(`parameters` が版 5 で必須になったのと同じ道筋)。この段階で必須に
+   * すると、まだ外観を知らない `packages/io` の `serializePartDocument` /
+   * `readPartDocument` が型検査で落ち、直すと保存 JSON の中身(=既存の検査の期待値)まで
+   * 変わってしまう。読み出しは `appearance/documentAppearance.ts` の `appearanceOf` を
+   * 通し、欄が無ければ空の表として扱う。
+   */
+  readonly appearance?: AppearanceTable;
 }

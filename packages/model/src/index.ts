@@ -289,3 +289,26 @@ export type { PushUndoOptions, UndoStack } from './history/undoStack.js';
 export {
   canRedo, canUndo, createUndoStack, pushUndo, redo, undo, UNDO_COALESCE_MS, UNDO_LIMIT,
 } from './history/undoStack.js';
+/** 外観(FR-1106〜1110、P5 タスク1・2)。 */
+export { affectsShape } from './part/documentChange.js';
+export type {
+  AppearanceEntry, AppearancePattern, AppearancePresetId, AppearanceSpec, AppearanceTable,
+  AppearanceTarget, WoodSpecies,
+} from './appearance/types.js';
+export {
+  assignAppearance, bodyAppearanceOf, clearAppearance, emptyAppearanceTable,
+  isSameAppearanceTarget, nextAppearanceId, pruneAppearance, removeAppearance,
+} from './appearance/appearanceTable.js';
+export type { MaterialPreset, WoodSpeciesInfo } from './appearance/materialPresets.js';
+export {
+  appearanceFromPreset, DEFAULT_APPEARANCE, densityMaterialFor, findMaterialPreset,
+  MATERIAL_PRESETS, WOOD_SPECIES,
+} from './appearance/materialPresets.js';
+export type { DensityMaterial } from './appearance/densityMaterials.js';
+export {
+  DEFAULT_DENSITY_MATERIAL_ID, DENSITY_MATERIALS, findDensityMaterial,
+} from './appearance/densityMaterials.js';
+export {
+  appearanceOf, assignBodyAppearance, assignFaceAppearance, clearDocumentAppearance,
+  pruneDocumentAppearance, removeDocumentAppearance, resolveAppearanceFor,
+} from './appearance/documentAppearance.js';

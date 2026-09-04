@@ -10,6 +10,7 @@
 import type { ExpressionValue } from '@pointercad/expression';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
+import type { SketchConstraint } from './constraints/types.js';
 import type { WorkPlane, WorkPlaneId } from './planeMath.js';
 import type { Vec3 } from './vec3.js';
 
@@ -468,6 +469,16 @@ export interface SketchDocument {
   readonly id: string;
   readonly name: string;
   readonly features: readonly SketchFeature[];
+  /**
+   * 拘束(FR-313、P4b §0.a-0.5、タスク4)。**順序を持たない**ので履歴(`features`)とは
+   * 別の配列にする。中身の型は `constraints/types.ts`。
+   *
+   * **欄が無いことを許す**のは、拘束の欄を持たない版(`.pcad` のスキーマ版 4 まで)の
+   * ファイルと、拘束を 1 つも持たない文書を作る既存の 40 か所あまりの呼び出しを
+   * そのまま通すため。読む側は `sketchConstraints(document)` を通し、
+   * 「無ければ空」の規約を 1 か所だけに置く。
+   */
+  readonly constraints?: readonly SketchConstraint[];
 }
 
 /** 解決済みの点。id は点フィーチャーなら featureId、点列の n 番目なら `featureId#n`。 */
@@ -562,6 +573,17 @@ export type SketchErrorCode =
    * `missingBase`(スケッチの中の基準が無い)とは原因が違うので分けて持つ。
    */
   | 'missingSubShape'
+  /**
+   * 拘束が同時に成り立たない、または同じ条件が重なっている(FR-313、P4b タスク4・7)。
+   * 「水平と垂直を同じ線分に付けた」「長さ 10 と長さ 12 を同じ線分に付けた」など。
+   * 形は最後に解けた状態のまま描き、理由だけを出す(FR-504、NFR-RE-1)。
+   */
+  | 'constraintConflict'
+  /**
+   * 拘束を付けられる要素が多すぎる(変数が `MAX_CONSTRAINT_VARIABLES` を超えた)。
+   * 解かずに断り、形は拘束を無視した状態のまま描く(P4b §2.2、NFR-PF-2 を守るため)。
+   */
+  | 'constraintTooMany'
   | 'kernelFailed';
 
 /** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */

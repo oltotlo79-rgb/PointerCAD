@@ -77,6 +77,23 @@ export type {
   SketchRectangleFeature, SketchSlotFeature, SketchSplineFeature,
 } from './sketch/types.js';
 export { projectionBodyFeatureId } from './sketch/types.js';
+/** 拘束(FR-313、P4b タスク4)。型と、変数の切り出し・自由度の数え方。 */
+export type {
+  ConstraintTarget, SketchConstraint, SketchConstraintKind,
+} from './sketch/constraints/types.js';
+export {
+  CONSTRAINT_EQUATION_COUNTS, constraintEquationCount, constraintTargets,
+  SKETCH_CONSTRAINT_KINDS, sketchConstraints,
+} from './sketch/constraints/types.js';
+export type {
+  ConstraintVariable, DegreesOfFreedomCount, FrozenReason, ImplicitCircleEquation, RadiusKind,
+  VariableSet,
+} from './sketch/constraints/variables.js';
+export {
+  canonicalPointKey, collectVariables, constraintPointKey, countDegreesOfFreedom,
+  curveEndpointKeys, featureIdOfPointKey, MAX_CONSTRAINT_VARIABLES, pointComponentKey,
+  pointValueAt, radiusComponentKey, radiusValueAt, variableComponentKey,
+} from './sketch/constraints/variables.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
   DEFAULT_FACE_COLOR, findFeature, nextFeatureId, nextFeatureName, removeFeature, replaceFeature,
@@ -156,6 +173,16 @@ export type {
   SpringHandedness, ThreadHoleFeature,
   ThreadRepresentation,
 } from './part/types.js';
+/** パラメータ表(名前を付けた数値。FR-207、P4b タスク2)。 */
+export type {
+  Parameter, ParameterAnalysis, ParameterFailure, ParameterOrder, ParameterUnit,
+} from './parameters/types.js';
+export { PARAMETER_UNITS } from './parameters/types.js';
+export {
+  addParameter, analyzeParameters, nextParameterName, PARAMETER_LABEL, parameterDependencies,
+  parameterEvaluationOrder, referencesTo, removeParameter, renameParameter, reorderParameters,
+  replaceParameter,
+} from './parameters/parameterTable.js';
 export type {
   EdgeCurveKind, FaceSurfaceKind, SubShapeFingerprint, SubShapeKind, SubShapeRef,
 } from './geometry/subShapeRef.js';

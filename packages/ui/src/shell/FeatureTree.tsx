@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 
 import {
+  findFeature,
+  findReference,
   findSolid,
+  removeReference,
   removeSolid,
+  replaceReference,
   replaceSolid,
-  type SketchFeatureKind,
+  type ReferenceFeatureKind,
   type SolidLabelKey,
 } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
-import { featureIdOf } from '../sketch/featureSummary.js';
+import { featureIdOf, renameFeature, type SketchTreeKind } from '../sketch/featureSummary.js';
 import {
+  buildReferenceSection,
   buildTreeSections,
+  renameReference,
   renameSolid,
+  setReferenceVisible,
   setSolidSuppressed,
   type TreeRow,
   type TreeSectionKey,
@@ -23,7 +30,10 @@ import {
   ArcToolIcon,
   ChamferIcon,
   ChevronRightIcon,
+  CircularArrayToolIcon,
   CircularPatternIcon,
+  CoordinateSystemIcon,
+  CopyToolIcon,
   CubeIcon,
   EllipseToolIcon,
   EmptyBoxIcon,
@@ -33,13 +43,21 @@ import {
   HoleIcon,
   IntersectIcon,
   LayersIcon,
+  LinearArrayToolIcon,
   LinearPatternIcon,
   LineToolIcon,
+  MirrorToolIcon,
+  OffsetToolIcon,
   PlaneIcon,
+  PlaneSectionIcon,
   PlotPointIcon,
   PointArrayToolIcon,
   PolygonToolIcon,
+  ProjectCurveIcon,
   RectangleToolIcon,
+  ReferenceAxisIcon,
+  ReferenceGroupIcon,
+  ReferencePointIcon,
   RevolveIcon,
   SewIcon,
   SlotToolIcon,
@@ -57,9 +75,14 @@ import {
  *
  * P3 のタスク13 で種類が13個に増え、タスク26 が加工6種+ばねの図柄(`icons.tsx`)を足した。
  * タスク27 でその7つをここへ差し替え、CubeIcon の仮置き(タスク13〜22 の暫定)を終わらせた。
+ * P4 タスク33 で、タスク32 が用意した図柄(オフセット・ミラー・複写・配列)へ借り物を
+ * 差し替え、複製を配置ごとに分け、基準ジオメトリ 4 種と投影・交差の図柄を足した。
  */
 const KIND_ICONS: Readonly<
-  Record<SketchFeatureKind | SolidLabelKey, (props: IconProps) => React.JSX.Element>
+  Record<
+    SketchTreeKind | SolidLabelKey | ReferenceFeatureKind,
+    (props: IconProps) => React.JSX.Element
+  >
 > = {
   point: PlotPointIcon,
   line: LineToolIcon,
@@ -71,16 +94,20 @@ const KIND_ICONS: Readonly<
   slot: SlotToolIcon,
   ellipse: EllipseToolIcon,
   spline: SplineToolIcon,
-  // オフセット(FR-321、P4 タスク15)。専用の図柄はツールバーを組み直すタスク32 で足すので、
-  // それまでは「線をずらす」ことが分かる線分の図柄を借りる(型の網羅のため)。
-  offset: LineToolIcon,
-  // 複製(ミラー・複写・配列複写、FR-324、P4 タスク20)。専用の図柄はツールバーを組み直す
-  // タスク32 で足すので、それまでは「並べて増やす」ことが分かる直線パターンの図柄を借りる。
-  copy: LinearPatternIcon,
-  // 投影・交差(FR-325、P4 タスク25)。専用の図柄は道具を足すタスク27 で用意するので、
-  // それまでは「立体から線を取り込む」ことが伝わる図柄を借りる(型の網羅のため)。
-  projectedCurve: FaceToolIcon,
-  planeSection: FaceToolIcon,
+  offset: OffsetToolIcon,
+  // 複製(FR-324)は配置ごとに絵を変える。どの複製かが木の絵だけで分かるようにするため。
+  // `copy` そのものは配置の分からない総称なので、いちばん素直な「複写」の絵にする。
+  copy: CopyToolIcon,
+  copyMirror: MirrorToolIcon,
+  copyTranslate: CopyToolIcon,
+  copyLinearArray: LinearArrayToolIcon,
+  copyCircularArray: CircularArrayToolIcon,
+  projectedCurve: ProjectCurveIcon,
+  planeSection: PlaneSectionIcon,
+  referencePlane: PlaneIcon,
+  referenceAxis: ReferenceAxisIcon,
+  referencePoint: ReferencePointIcon,
+  referenceCoordinateSystem: CoordinateSystemIcon,
   extrude: ExtrudeIcon,
   revolve: RevolveIcon,
   sew: SewIcon,
@@ -96,8 +123,9 @@ const KIND_ICONS: Readonly<
   spring: SpringIcon,
 };
 
-/** 節の頭に出す絵。スケッチは作図面、ソリッドは立体の印。 */
+/** 節の頭に出す絵。基準は軸と点、スケッチは作図面、ソリッドは立体の印。 */
 const SECTION_ICONS: Readonly<Record<TreeSectionKey, (props: IconProps) => React.JSX.Element>> = {
+  reference: ReferenceGroupIcon,
   sketch: PlaneIcon,
   solid: CubeIcon,
 };
@@ -164,17 +192,28 @@ export function FeatureTree(): React.JSX.Element {
   const hoveredElementId = useAppStore((state) => state.hoveredElementId);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
   const partErrors = useAppStore((state) => state.partErrors);
+  const resolvedReferences = useAppStore((state) => state.resolvedReferences);
   const [isExpanded, setIsExpanded] = useState(true);
   const [collapsed, setCollapsed] = useState<readonly TreeSectionKey[]>([]);
   const [menu, setMenu] = useState<RowMenuState | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const sections = buildTreeSections(part, part.activeSketchId, sketchErrors, partErrors);
+  // 基準の節(FR-328、FR-329、P4 タスク33)は「作業平面 → スケッチ → 立体」の順で
+  // 使うものなので、いちばん上に置く。中身は履歴順のまま。
+  const sections = [
+    buildReferenceSection(part, resolvedReferences.errors),
+    ...buildTreeSections(part, part.activeSketchId, sketchErrors, partErrors),
+  ];
   const rowCount = sections.reduce((total, section) => total + section.rows.length, 0);
-  // 抑制・改名はソリッドの行だけが持つ(スケッチの行の一覧は削除だけ、P3 §0.a-0.23 ②)。
+  // 抑制はソリッドの行だけが持つ(P3 §0.a-0.23 ②)。
   const menuFeature =
     menu === null || menu.sectionKey !== 'solid' ? undefined : findSolid(part, menu.featureId);
+  // 表示・非表示は基準ジオメトリの行だけが持つ(FR-329)。
+  const menuReference =
+    menu === null || menu.sectionKey !== 'reference'
+      ? undefined
+      : findReference(part, menu.featureId);
 
   // 一覧の外を押したとき・Esc を押したときに閉じる。開いている間だけ見張る。
   useEffect(() => {
@@ -219,11 +258,40 @@ export function FeatureTree(): React.JSX.Element {
       store.removeSketchFeature(featureId);
       return;
     }
+    if (sectionKey === 'reference') {
+      // 参照していた作業平面や軸が消えても止めず、後の段が赤い印になるだけにする
+      // (FR-504、NFR-RE-1。立体の行と同じ扱い)。
+      store.applyDocument(removeReference(store.document, featureId));
+      return;
+    }
     store.applyDocument(removeSolid(store.document, featureId));
   };
 
-  const commitRename = (featureId: string, name: string): void => {
+  /** 名前を変える(FR-503)。どの節の行でも変えられる。 */
+  const commitRename = (featureId: string, sectionKey: TreeSectionKey, name: string): void => {
     const store = useAppStore.getState();
+    if (sectionKey === 'sketch') {
+      const feature = findFeature(store.sketch, featureId);
+      if (feature !== undefined) {
+        const next = renameFeature(feature, name);
+        if (next !== feature) {
+          store.replaceSketchFeature(featureId, next);
+        }
+      }
+      setRenamingId(null);
+      return;
+    }
+    if (sectionKey === 'reference') {
+      const feature = findReference(store.document, featureId);
+      if (feature !== undefined) {
+        const next = renameReference(feature, name);
+        if (next !== feature) {
+          store.applyDocument(replaceReference(store.document, featureId, next));
+        }
+      }
+      setRenamingId(null);
+      return;
+    }
     const feature = findSolid(store.document, featureId);
     if (feature !== undefined) {
       const next = renameSolid(feature, name);
@@ -232,6 +300,18 @@ export function FeatureTree(): React.JSX.Element {
       }
     }
     setRenamingId(null);
+  };
+
+  /** 基準ジオメトリを画面に出す・隠す(FR-329)。参照はどちらでもできる。 */
+  const toggleReferenceVisible = (featureId: string): void => {
+    const store = useAppStore.getState();
+    const feature = findReference(store.document, featureId);
+    if (feature === undefined) {
+      return;
+    }
+    store.applyDocument(
+      replaceReference(store.document, featureId, setReferenceVisible(feature, !feature.visible)),
+    );
   };
 
   const toggleSuppressed = (featureId: string): void => {
@@ -252,7 +332,8 @@ export function FeatureTree(): React.JSX.Element {
       'pcad-tree__row pcad-tree__row--child' +
       (selected ? ' pcad-tree__row--selected' : '') +
       (hoveredId === row.id ? ' pcad-tree__row--hovered' : '') +
-      (row.suppressed ? ' pcad-tree__row--suppressed' : '');
+      // 画面に出していない基準(FR-329)は、抑制中の立体と同じ薄さで出して見分ける。
+      (row.suppressed || row.hidden ? ' pcad-tree__row--suppressed' : '');
     return (
       <li key={row.id}>
         <div
@@ -292,12 +373,12 @@ export function FeatureTree(): React.JSX.Element {
                 event.currentTarget.select();
               }}
               onBlur={(event) => {
-                commitRename(row.id, event.currentTarget.value);
+                commitRename(row.id, sectionKey, event.currentTarget.value);
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault();
-                  commitRename(row.id, event.currentTarget.value);
+                  commitRename(row.id, sectionKey, event.currentTarget.value);
                   return;
                 }
                 if (event.key === 'Escape') {
@@ -335,6 +416,15 @@ export function FeatureTree(): React.JSX.Element {
           )}
           {row.suppressed ? (
             <span className="pcad-tree__badge">{t('featureTree.suppressed')}</span>
+          ) : null}
+          {/*
+            平面や軸を決めるためだけに置かれた基準点(`visible: false`)は「補助」の札で示す。
+            行そのものは消さない。消すと名前を変える・出し直す・消す(FR-503)ができなくなる。
+          */}
+          {row.hidden ? (
+            <span className="pcad-tree__badge" title={t('featureTree.hiddenTooltip')}>
+              {t('featureTree.hidden')}
+            </span>
           ) : null}
           {row.consumed && !row.suppressed ? (
             <span className="pcad-tree__badge" title={t('featureTree.consumedTooltip')}>
@@ -437,7 +527,9 @@ export function FeatureTree(): React.JSX.Element {
                             {t(
                               section.key === 'solid'
                                 ? 'featureTree.solidEmpty'
-                                : 'featureTree.empty',
+                                : section.key === 'reference'
+                                  ? 'featureTree.referenceEmpty'
+                                  : 'featureTree.empty',
                             )}
                           </p>
                         ) : (
@@ -456,10 +548,15 @@ export function FeatureTree(): React.JSX.Element {
       </div>
 
       {/*
-        スケッチの行は削除だけの一覧(ソリッドと違い抑制も改名も持たない、P3 §0.a-0.23 ②)。
-        ソリッドの行が壊れて(消えて)いる間は開かない(旧来の振る舞いのまま)。
+        一覧の中身は節で決める(P3 §0.a-0.23 ②、P4 タスク33)。
+        - ソリッド: 抑制・改名・削除
+        - 基準ジオメトリ: 表示の切替・改名・削除(FR-329、FR-503)
+        - スケッチ: 改名・削除
+        参照先が壊れて(消えて)いる間は開かない(旧来の振る舞いのまま)。
       */}
-      {menu === null || (menu.sectionKey === 'solid' && menuFeature === undefined) ? null : (
+      {menu === null ||
+      (menu.sectionKey === 'solid' && menuFeature === undefined) ||
+      (menu.sectionKey === 'reference' && menuReference === undefined) ? null : (
         <div
           ref={menuRef}
           className="pcad-menu__panel pcad-tree__menu"
@@ -467,31 +564,42 @@ export function FeatureTree(): React.JSX.Element {
           style={{ left: menu.x, top: menu.y }}
         >
           {menu.sectionKey === 'solid' && menuFeature !== undefined ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                className="pcad-button pcad-menu__item"
-                onClick={() => {
-                  toggleSuppressed(menu.featureId);
-                  setMenu(null);
-                }}
-              >
-                {t(menuFeature.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="pcad-button pcad-menu__item"
-                onClick={() => {
-                  setRenamingId(menu.featureId);
-                  setMenu(null);
-                }}
-              >
-                {t('featureTree.rename')}
-              </button>
-            </>
+            <button
+              type="button"
+              role="menuitem"
+              className="pcad-button pcad-menu__item"
+              onClick={() => {
+                toggleSuppressed(menu.featureId);
+                setMenu(null);
+              }}
+            >
+              {t(menuFeature.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
+            </button>
           ) : null}
+          {menu.sectionKey === 'reference' && menuReference !== undefined ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="pcad-button pcad-menu__item"
+              onClick={() => {
+                toggleReferenceVisible(menu.featureId);
+                setMenu(null);
+              }}
+            >
+              {t(menuReference.visible ? 'featureTree.hide' : 'featureTree.show')}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            className="pcad-button pcad-menu__item"
+            onClick={() => {
+              setRenamingId(menu.featureId);
+              setMenu(null);
+            }}
+          >
+            {t('featureTree.rename')}
+          </button>
           <button
             type="button"
             role="menuitem"

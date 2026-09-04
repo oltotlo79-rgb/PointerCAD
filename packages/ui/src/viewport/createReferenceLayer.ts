@@ -195,6 +195,63 @@ function buildCoordinateSystemPositions(
   return new Float32Array(values);
 }
 
+/* ---------------------------------------------------------------------------
+ * 名前の札(P4 タスク33、タスク9・13 の申し送り「基準軸が方眼と同じ長さで見分けにくい」)
+ * ------------------------------------------------------------------------- */
+
+/** 札の文字の大きさ(画素)と、札の内側の余白(画素)。 */
+const LABEL_FONT_PIXELS = 22;
+const LABEL_PADDING_PIXELS = 8;
+
+/**
+ * 札の高さ(mm)を、基準軸の長さに対する割合で決める。方眼の刻みが変わると軸の長さも
+ * 変わるので、札もそれに合わせて大きさを変える(遠くの基準の札が読めなくならないため)。
+ */
+const LABEL_HEIGHT_RATIO = 0.018;
+
+/** 札を軸の端から少し内側へ寄せる割合(端に置くと方眼の外へはみ出して見えるため)。 */
+const LABEL_AXIS_POSITION_RATIO = 0.92;
+
+/** 札 1 枚。名前が同じなら作り直さない。 */
+interface NameTag {
+  readonly sprite: THREE.Sprite;
+  readonly texture: THREE.CanvasTexture;
+  readonly text: string;
+  /** 画面上の幅と高さの比(横長の札がつぶれないようにする)。 */
+  readonly aspect: number;
+}
+
+/**
+ * 文字を描いた小さな絵を作り、札にする。DOM の要素を画面に重ねる方法もあるが、
+ * 視点が動くたびに位置を計算し直す仕掛けが要る。札は 3D の中に置いてしまうほうが、
+ * 描画のたびに three.js が位置を合わせてくれて配線が増えない。
+ */
+function createNameTag(text: string, color: number): NameTag | null {
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (context === null) {
+    // 絵を描けない環境(検査用の見えない画面など)では札を出さない。線と点は出る。
+    return null;
+  }
+  const font = `${String(LABEL_FONT_PIXELS)}px sans-serif`;
+  context.font = font;
+  const width = Math.ceil(context.measureText(text).width) + LABEL_PADDING_PIXELS * 2;
+  const height = LABEL_FONT_PIXELS + LABEL_PADDING_PIXELS * 2;
+  canvas.width = width;
+  canvas.height = height;
+  // 大きさを変えたので設定はやり直す(canvas の決まり)。
+  context.font = font;
+  context.textBaseline = 'middle';
+  context.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+  context.fillText(text, LABEL_PADDING_PIXELS, height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }),
+  );
+  sprite.renderOrder = REFERENCE_RENDER_ORDER;
+  return { sprite, texture, text, aspect: width / height };
+}
+
 /**
  * 基準ジオメトリの層を作る。中身の組み立ては純関数(上の build*)に寄せてあるので、
  * ここは three.js の入れ物と色の管理だけを受け持つ。
@@ -213,8 +270,86 @@ export function createReferenceLayer(): ReferenceLayer {
   group.add(systemY);
   group.add(systemZ);
 
+  /** 名前の札の入れ物。名前が変わったときだけ作り直す(NFR-PF-1)。 */
+  const tagGroup = new THREE.Group();
+  group.add(tagGroup);
+  const tags = new Map<string, NameTag>();
+
   let halfLength = DEFAULT_AXIS_HALF_LENGTH_MM;
   let last: ResolvedReferences | null = null;
+  /** 札の高さをワールドの長さへ直す係数。方眼の広がりに合わせて変える。 */
+  let tagWorldHeight = DEFAULT_AXIS_HALF_LENGTH_MM * LABEL_HEIGHT_RATIO;
+
+  /** 札を 1 枚出す(すでに同じ文字の札があれば置き直すだけ)。 */
+  function placeTag(featureId: string, text: string, position: Vec3, used: Set<string>): void {
+    used.add(featureId);
+    let tag = tags.get(featureId);
+    if (tag === undefined || tag.text !== text) {
+      if (tag !== undefined) {
+        tagGroup.remove(tag.sprite);
+        tag.texture.dispose();
+        tag.sprite.material.dispose();
+        tags.delete(featureId);
+      }
+      const created = createNameTag(text, DEFAULT_THEME_COLORS.sketchCurve);
+      if (created === null) {
+        return;
+      }
+      tagGroup.add(created.sprite);
+      tags.set(featureId, created);
+      tag = created;
+    }
+    tag.sprite.position.set(position[0], position[1], position[2]);
+    tag.sprite.scale.set(tagWorldHeight * tag.aspect, tagWorldHeight, 1);
+  }
+
+  /** いま出していない札を片付ける。 */
+  function pruneTags(used: ReadonlySet<string>): void {
+    for (const [featureId, tag] of [...tags]) {
+      if (used.has(featureId)) {
+        continue;
+      }
+      tagGroup.remove(tag.sprite);
+      tag.texture.dispose();
+      tag.sprite.material.dispose();
+      tags.delete(featureId);
+    }
+  }
+
+  /**
+   * 名前の札を出し直す(FR-329、P4 タスク33)。
+   *
+   * 札を出すのは**軸と座標系だけ**にする。基準点は「どれがどれか」を木で選べば分かるうえ、
+   * 平面や軸を決めるために同じ場所へ重なって置かれることが多く、札を出すと文字どうしが
+   * 重なって却って読めなくなる(実測、2026-09-04)。軸は端の少し内側、座標系は
+   * 矢印の先の高さへ置く。**画面に出していないもの(`visible: false`)には札を出さない。**
+   */
+  function applyTags(references: ResolvedReferences): void {
+    const used = new Set<string>();
+    for (const axis of references.axes) {
+      if (!axis.visible) {
+        continue;
+      }
+      const reach = halfLength * LABEL_AXIS_POSITION_RATIO;
+      placeTag(axis.featureId, axis.name, [
+        axis.origin[0] + axis.direction[0] * reach,
+        axis.origin[1] + axis.direction[1] * reach,
+        axis.origin[2] + axis.direction[2] * reach,
+      ], used);
+    }
+    for (const system of references.coordinateSystems) {
+      if (!system.visible) {
+        continue;
+      }
+      // 原点の真上ではなく Z 軸の矢印の先へ置き、3 本の矢印と重ならないようにする。
+      placeTag(system.featureId, system.name, [
+        system.origin[0] + system.zAxis[0] * COORDINATE_SYSTEM_ARROW_MM,
+        system.origin[1] + system.zAxis[1] * COORDINATE_SYSTEM_ARROW_MM,
+        system.origin[2] + system.zAxis[2] * COORDINATE_SYSTEM_ARROW_MM,
+      ], used);
+    }
+    pruneTags(used);
+  }
 
   function apply(references: ResolvedReferences): void {
     setPositions(axisLines, buildAxisPositions(references.axes, halfLength));
@@ -222,6 +357,7 @@ export function createReferenceLayer(): ReferenceLayer {
     setPositions(systemX, buildCoordinateSystemPositions(references.coordinateSystems, 'x'));
     setPositions(systemY, buildCoordinateSystemPositions(references.coordinateSystems, 'y'));
     setPositions(systemZ, buildCoordinateSystemPositions(references.coordinateSystems, 'z'));
+    applyTags(references);
   }
 
   apply({ planes: [], axes: [], points: [], coordinateSystems: [], errors: [] });
@@ -250,9 +386,12 @@ export function createReferenceLayer(): ReferenceLayer {
         return;
       }
       halfLength = millimetres;
+      // 札の大きさも軸の長さに合わせる。
+      tagWorldHeight = millimetres * LABEL_HEIGHT_RATIO;
       if (last !== null) {
-        // 長さだけが変わったので、軸の線だけを引き直す。
+        // 長さだけが変わったので、軸の線と札だけを引き直す。
         setPositions(axisLines, buildAxisPositions(last.axes, halfLength));
+        applyTags(last);
       }
     },
 
@@ -263,6 +402,12 @@ export function createReferenceLayer(): ReferenceLayer {
       }
       pointMarks.geometry.dispose();
       pointMarks.material.dispose();
+      for (const tag of tags.values()) {
+        tagGroup.remove(tag.sprite);
+        tag.texture.dispose();
+        tag.sprite.material.dispose();
+      }
+      tags.clear();
       last = null;
     },
   };

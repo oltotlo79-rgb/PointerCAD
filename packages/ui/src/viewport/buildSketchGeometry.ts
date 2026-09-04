@@ -10,6 +10,7 @@
  */
 
 import type {
+  ResolvedCurve,
   ResolvedFace,
   ResolvedSketch,
   SketchFaceMesh,
@@ -67,6 +68,12 @@ export interface SketchGeometryBundle {
   readonly points: EmphasisBuffers;
   /** 線・円弧。線分 1 本あたり 6 個(円弧は折れ線に分ける)。 */
   readonly curves: EmphasisBuffers;
+  /**
+   * 構築線(FR-320)として引く線・円弧。中身は `curves` と同じ形で、
+   * 描く側(`createSketchLayer.ts`)が破線の材質で引く。
+   * 実体にならない補助の線だと見た目で分かるようにするため(FR-320、NFR-UX-1)。
+   */
+  readonly constructionCurves: EmphasisBuffers;
   /** 面の縁。線分 1 本あたり 6 個。 */
   readonly faceOutlines: EmphasisBuffers;
   /** 三角形が届いている面だけ。届いていない面は縁だけを見せる。 */
@@ -76,6 +83,9 @@ export interface SketchGeometryBundle {
 }
 
 export const NO_HIGHLIGHT: SketchHighlight = { hoveredElementId: null, selection: [] };
+
+/** 構築線が 1 つも無いとき(FR-320)。 */
+const EMPTY_CONSTRUCTION_IDS: ReadonlySet<string> = new Set<string>();
 
 /** 何も無いスケッチ。起動直後と、片付けたあとの初期値に使う。 */
 export const EMPTY_RESOLVED_SKETCH: ResolvedSketch = {
@@ -190,10 +200,17 @@ export function buildSketchGeometry(
   sketch: ResolvedSketch,
   mesh: SketchMesh | null,
   highlight: SketchHighlight = NO_HIGHLIGHT,
+  /**
+   * 構築線(FR-320)として引く要素の id(`featureSummary.ts` の `constructionFeatureIds`)。
+   * 解決済みの曲線は construction を持たないので、履歴から引いた集合をここへ渡す
+   * (model の型も既存の期待値も変えない、P4 タスク33)。渡さなければ全部が実線。
+   */
+  constructionIds: ReadonlySet<string> = EMPTY_CONSTRUCTION_IDS,
 ): SketchGeometryBundle {
   const selection = new Set(highlight.selection);
   const points = createSink();
   const curves = createSink();
+  const constructionCurves = createSink();
   const faceOutlines = createSink();
   const index = new Map<string, SketchDrawEntry>();
 
@@ -213,20 +230,34 @@ export function buildSketchGeometry(
 
   const drawnCurveFeatureIds = new Set<string>();
   // 楕円(FR-318)とスプライン(FR-317)も線として描く(P4 タスク12)。`sampleCurve` が
-  // どの種類も折れ線へ直すので、ここは 4 種を並べるだけでよい。矩形・正多角形・長穴は
-  // 1 フィーチャーが複数の線分・円弧を生むが、どれも `featureId` が同じなので
-  // 同じ強調・同じ引き当てで 1 つの図形としてまとまる(§0.a-0.8)。
+  // どの種類も折れ線へ直すので、ここは 4 種を並べるだけでよい。
+  //
+  // 矩形・正多角形・長穴・オフセット・複製は 1 フィーチャーが複数の曲線を生む(§0.a-0.8)。
+  // 曲線 1 本ずつの要素 id は `featureId#n` で、順番は `curvesByFeature` が持つ
+  // (`segments` / `arcs` へ分かれて入るので、そちらの並び順からは分からない)。
+  // **強調はフィーチャー単位でも 1 本単位でも効かせる**(`emphasisOf` は
+  // elementId と featureId の両方を見るので、`rect1` を選べば全辺、`rect1#2` を
+  // 選べばその 1 辺だけが光る。タスク4 の申し送り「最後の 1 辺だけ」の直し)。
+  const elementIdByCurve = new Map<ResolvedCurve, string>();
+  for (const [featureId, group] of sketch.curvesByFeature) {
+    group.forEach((curve, position) => {
+      elementIdByCurve.set(curve, `${featureId}#${String(position)}`);
+    });
+  }
+
   for (const curve of [
     ...sketch.segments,
     ...sketch.arcs,
     ...sketch.ellipses,
     ...sketch.splines,
   ]) {
-    const emphasis = emphasisOf(curve.featureId, curve.featureId, highlight, selection);
-    const placement = pushInto(curves, emphasis, toLineSegmentPositions(sampleCurve(curve)));
+    const elementId = elementIdByCurve.get(curve) ?? curve.featureId;
+    const emphasis = emphasisOf(elementId, curve.featureId, highlight, selection);
+    const sink = constructionIds.has(curve.featureId) ? constructionCurves : curves;
+    const placement = pushInto(sink, emphasis, toLineSegmentPositions(sampleCurve(curve)));
     drawnCurveFeatureIds.add(curve.featureId);
-    index.set(curve.featureId, {
-      elementId: curve.featureId,
+    index.set(elementId, {
+      elementId,
       featureId: curve.featureId,
       kind: 'curve',
       emphasis,
@@ -276,6 +307,7 @@ export function buildSketchGeometry(
   return {
     points: toBuffers(points),
     curves: toBuffers(curves),
+    constructionCurves: toBuffers(constructionCurves),
     faceOutlines: toBuffers(faceOutlines),
     faces,
     index,

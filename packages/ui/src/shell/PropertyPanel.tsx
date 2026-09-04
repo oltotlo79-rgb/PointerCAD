@@ -1,21 +1,37 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 
-import { evaluateExpression } from '@pointercad/expression';
-import { replaceSolid, type SketchFeature, type SolidFeature } from '@pointercad/model';
+import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import {
+  findReference,
+  findSolid,
+  replaceReference,
+  replaceSolid,
+  type ReferenceFeature,
+  type SketchFeature,
+  type SolidFeature,
+} from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { initialDraftVersionState, reconcileDraftVersion } from './fieldDraft.js';
 import { ChevronRightIcon } from './icons.js';
 import {
+  addSplinePoint,
   faceBoundaryEntries,
   featureForSelection,
   featureIdOf,
+  RECTANGLE_VIEWS,
+  removeSplinePoint,
   resolvedFields,
+  setCoordinateField,
+  setFeatureChoice,
   setFeatureCoordinateMode,
   setFeatureField,
+  setFeatureToggle,
   summarizeFeature,
+  type FeatureCoordinateSummary,
   type FeatureFieldSummary,
+  type RectangleView,
 } from '../sketch/featureSummary.js';
 import {
   COORDINATE_MODES,
@@ -29,11 +45,15 @@ import {
   missingValueKey,
   partErrorMessage,
   selectionKindLabelKeys,
+  setReferenceCoordinate,
+  setReferenceField,
+  setReferenceVisible,
   setSolidAxis,
   setSolidChoice,
   setSolidField,
   setSolidToggle,
   solidForSelection,
+  summarizeReference,
   summarizeSolid,
   WORLD_AXIS_CHOICES,
   type SolidChoiceSummary,
@@ -65,6 +85,32 @@ interface FieldDraft {
 }
 
 /**
+ * 相対・極で入れた点の「基準」を読める形で出す(FR-302、FR-303、FR-330、P4 タスク33)。
+ * 立体の頂点を基準にしているときは「押し出し1 / 立体の頂点」のように出す
+ * (タスク10 の申し送り)。基準が要素なら押してその要素を選べる。
+ */
+function CoordinateBaseRow({
+  group,
+}: {
+  readonly group: FeatureCoordinateSummary;
+}): React.JSX.Element | null {
+  const base = group.base;
+  if (base === null) {
+    return null;
+  }
+  return (
+    <p className="pcad-coordinate__base">
+      <span className="pcad-coordinate__base-label">{t('propertyPanel.baseLabel')}</span>
+      {base.elementId === null ? (
+        <span className="pcad-coordinate__base-value">{base.text}</span>
+      ) : (
+        <ReferenceButton elementId={base.elementId} name={base.text} />
+      )}
+    </p>
+  );
+}
+
+/**
  * 選ばれている要素 1 つの中身(FR-202、FR-311)。
  *
  * 欄には**入力した式そのもの**を出す。評価値ではない(FR-202)。式として読めたときだけ
@@ -83,11 +129,15 @@ interface FieldDraft {
  * 差し替わった回数)を `fieldDraft.ts` の純関数で見張り、変わっていたら下書きを捨てる。
  */
 function FeatureProperties({ feature }: { readonly feature: SketchFeature }): React.JSX.Element {
+  const part = useAppStore((state) => state.document);
   const sketch = useAppStore((state) => state.sketch);
   const resolved = useAppStore((state) => state.resolvedSketch);
   const sketchMesh = useAppStore((state) => state.sketchMesh);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
   const documentVersion = useAppStore((state) => state.documentVersion);
+  // 矩形の見せ方(対角 2 点 / 中心+幅+高さ)は履歴に残らない画面だけの状態
+  // (rules/04-設計の規律.md「表示専用の一時状態だけ useState に置く」)。
+  const [rectangleView, setRectangleView] = useState<RectangleView>('corners');
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<FieldDraft>(documentVersion),
   );
@@ -99,8 +149,20 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   }
   const draft = reconciled.draft;
 
-  const summary = summarizeFeature(feature, sketchErrors);
+  const summary = summarizeFeature(feature, sketchErrors, {
+    document: sketch,
+    // 立体の名前は部品文書にしかないので、ここで引いて渡す(頂点参照の「押し出し1 / 立体の頂点」)。
+    bodyName: (featureId) => findSolid(part, featureId)?.name ?? null,
+    rectangleView,
+  });
   const computed = resolvedFields(feature, resolved, sketchMesh);
+
+  /** 履歴を差し替える。中身が変わらないときは何もしない(無駄な再計算を起こさない)。 */
+  const apply = (next: SketchFeature): void => {
+    if (next !== feature) {
+      useAppStore.getState().replaceSketchFeature(feature.id, next);
+    }
+  };
 
   const renderField = (item: FeatureFieldSummary): React.JSX.Element => {
     const source = draft !== null && draft.path === item.path ? draft.source : item.value.source;
@@ -144,12 +206,80 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
         <p className="pcad-panel__error">{summary.errorMessage}</p>
       )}
 
-      {summary.coordinates.length === 0 && summary.scalars.length === 0 ? null : (
+      {summary.coordinates.length === 0 &&
+      summary.scalars.length === 0 &&
+      summary.toggles.length === 0 &&
+      summary.choices.length === 0 ? null : (
         <div className="pcad-section">
           <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
-          {summary.coordinates.map((group) => (
+          {/*
+            矩形の見せ方(対角 2 点 / 中心+幅+高さ)の切替は履歴を変えないので、
+            他の選択肢より先に、欄の並びの上へ出す(何の欄を見ているかが先に分かる)。
+          */}
+          {summary.choices
+            .filter((choice) => choice.key === 'rectangleMode')
+            .map((choice) => (
+              <div className="pcad-choice" key={choice.key}>
+                <span className="pcad-choice__label">{t(choice.labelKey)}</span>
+                <div
+                  className="pcad-segmented pcad-choice__options"
+                  role="group"
+                  aria-label={t(choice.labelKey)}
+                >
+                  {RECTANGLE_VIEWS.map((view) => {
+                    const option = choice.options.find((candidate) => candidate.value === view);
+                    return option === undefined ? null : (
+                      <button
+                        key={view}
+                        type="button"
+                        className="pcad-button"
+                        aria-pressed={choice.value === view}
+                        onClick={() => {
+                          setRectangleView(view);
+                        }}
+                      >
+                        {t(option.labelKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          {summary.coordinates.map((group, index) => (
             <div className="pcad-coordinate" key={group.path}>
-              <h4 className="pcad-coordinate__title">{t(group.labelKey)}</h4>
+              <h4 className="pcad-coordinate__title">
+                {group.ordinal === null
+                  ? t(group.labelKey)
+                  : `${t(group.labelKey)} ${String(group.ordinal)}`}
+                {/* スプラインの点は 1 つずつ足せる・消せる(FR-317)。 */}
+                {group.path.startsWith('points.') ? (
+                  <span className="pcad-coordinate__actions">
+                    <button
+                      type="button"
+                      className="pcad-button pcad-coordinate__action"
+                      title={t('propertyPanel.addPointTooltip')}
+                      aria-label={t('propertyPanel.addPointTooltip')}
+                      onClick={() => {
+                        apply(addSplinePoint(feature, index));
+                      }}
+                    >
+                      {t('propertyPanel.addPointMark')}
+                    </button>
+                    <button
+                      type="button"
+                      className="pcad-button pcad-coordinate__action"
+                      title={t('propertyPanel.removePointTooltip')}
+                      aria-label={t('propertyPanel.removePointTooltip')}
+                      disabled={!group.removable}
+                      onClick={() => {
+                        apply(removeSplinePoint(feature, index));
+                      }}
+                    >
+                      {t('propertyPanel.removePointMark')}
+                    </button>
+                  </span>
+                ) : null}
+              </h4>
               <div
                 className="pcad-segmented pcad-coordinate__modes"
                 role="group"
@@ -173,12 +303,82 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
                   </button>
                 ))}
               </div>
+              <CoordinateBaseRow group={group} />
               <div className="pcad-coordinate__fields">{group.fields.map(renderField)}</div>
             </div>
           ))}
           {summary.scalars.length === 0 ? null : (
             <div className="pcad-coordinate__fields">{summary.scalars.map(renderField)}</div>
           )}
+          {summary.choices
+            .filter((choice) => choice.key !== 'rectangleMode')
+            .map((choice) => (
+              <div className="pcad-choice" key={choice.key}>
+                <span className="pcad-choice__label">{t(choice.labelKey)}</span>
+                <div
+                  className="pcad-segmented pcad-choice__options"
+                  role="group"
+                  aria-label={t(choice.labelKey)}
+                >
+                  {choice.options.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className="pcad-button"
+                      aria-pressed={choice.value === option.value}
+                      onClick={() => {
+                        apply(setFeatureChoice(feature, choice.key, option.value));
+                      }}
+                    >
+                      {t(option.labelKey)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          {summary.toggles.length === 0 ? null : (
+            <div className="pcad-toggles">
+              {summary.toggles.map((toggle) => (
+                <button
+                  key={toggle.key}
+                  type="button"
+                  role="switch"
+                  className="pcad-switch"
+                  aria-checked={toggle.value}
+                  onClick={() => {
+                    apply(setFeatureToggle(feature, toggle.key, !toggle.value));
+                  }}
+                >
+                  <span className="pcad-switch__track" aria-hidden="true">
+                    <span className="pcad-switch__thumb" />
+                  </span>
+                  <span>{t(toggle.labelKey)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {summary.references.length === 0 ? null : (
+        <div className="pcad-section">
+          <h3 className="pcad-section__title">{t('propertyPanel.sectionTarget')}</h3>
+          <dl className="pcad-properties">
+            {summary.references.map((reference, index) => (
+              <Fragment key={`${reference.labelKey}-${String(index)}`}>
+                <dt className="pcad-properties__key">{t(reference.labelKey)}</dt>
+                <dd className="pcad-properties__value">
+                  {reference.elementId === null ? (
+                    <span className="pcad-properties__missing" title={reference.name}>
+                      {reference.name}
+                    </span>
+                  ) : (
+                    <ReferenceButton elementId={reference.elementId} name={reference.name} />
+                  )}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
         </div>
       )}
 
@@ -645,6 +845,155 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   );
 }
 
+/** 打っている途中の基準ジオメトリの欄。 */
+interface ReferenceFieldDraft {
+  readonly key: string;
+  readonly source: string;
+}
+
+/**
+ * 選ばれている基準ジオメトリ 1 つの中身(FR-328、FR-329、FR-503、P4 タスク33)。
+ *
+ * 決め方(3 点・辺・面の法線など)は作ったときに決まるので読み取り専用で出し、
+ * 式で決まる欄(平面のオフセット・傾き・角度)と、座標で置いた基準点の位置だけを直せる。
+ * 名前を変えるのはツリーの ⋮ から(立体と同じ流儀)。
+ */
+function ReferenceProperties({
+  feature,
+}: {
+  readonly feature: ReferenceFeature;
+}): React.JSX.Element {
+  const part = useAppStore((state) => state.document);
+  const resolvedReferences = useAppStore((state) => state.resolvedReferences);
+  const documentVersion = useAppStore((state) => state.documentVersion);
+  const [draftState, setDraftState] = useState(() =>
+    initialDraftVersionState<ReferenceFieldDraft>(documentVersion),
+  );
+  const reconciled = reconcileDraftVersion(draftState, documentVersion);
+  if (reconciled !== draftState) {
+    setDraftState(reconciled);
+  }
+  const draft = reconciled.draft;
+
+  const summary = summarizeReference(feature, resolvedReferences.errors);
+
+  const apply = (next: ReferenceFeature): void => {
+    if (next === feature) {
+      return;
+    }
+    const store = useAppStore.getState();
+    store.applyDocument(replaceReference(store.document, feature.id, next));
+  };
+
+  /** 式の 1 欄。打っている途中は下書きに置き、読めたときだけ履歴を差し替える(FR-202)。 */
+  const renderExpression = (
+    key: string,
+    labelKey: MessageKey,
+    unit: 'mm' | 'degree' | 'count',
+    value: { readonly source: string },
+    write: (parsed: ExpressionValue) => void,
+  ): React.JSX.Element => {
+    const source = draft !== null && draft.key === key ? draft.source : value.source;
+    const evaluated = evaluateExpression(source);
+    return (
+      <ExpressionField
+        key={key}
+        field={{
+          key,
+          labelKey,
+          tooltipKey: labelKey,
+          unit,
+          defaultSource: value.source,
+          source,
+        }}
+        result={
+          evaluated.ok
+            ? { key, value: evaluated.value, error: null }
+            : { key, value: null, error: evaluated.error }
+        }
+        focused={false}
+        onFocus={() => undefined}
+        onChange={(next) => {
+          setDraftState({ draft: { key, source: next }, seenVersion: documentVersion });
+          const parsed = evaluateExpression(next);
+          if (parsed.ok) {
+            write(parsed.value);
+          }
+        }}
+      />
+    );
+  };
+
+  const coordinate = summary.coordinate;
+
+  return (
+    <>
+      {summary.errorMessage === null ? null : (
+        <p className="pcad-panel__error">{summary.errorMessage}</p>
+      )}
+
+      <div className="pcad-section">
+        <h3 className="pcad-section__title">{t('propertyPanel.sectionReference')}</h3>
+        <dl className="pcad-properties">
+          <dt className="pcad-properties__key">{t('propertyPanel.selectedKinds')}</dt>
+          <dd className="pcad-properties__value">{t(summary.kindLabelKey)}</dd>
+          <dt className="pcad-properties__key">{t('propertyPanel.referenceDefinition')}</dt>
+          <dd className="pcad-properties__value">{t(summary.definitionLabelKey)}</dd>
+        </dl>
+        {summary.fields.length === 0 ? null : (
+          <div className="pcad-coordinate__fields">
+            {summary.fields.map((item) =>
+              renderExpression(item.key, item.labelKey, item.unit, item.value, (parsed) => {
+                apply(setReferenceField(feature, item.key, parsed));
+              }),
+            )}
+          </div>
+        )}
+        {coordinate === null ? null : (
+          <div className="pcad-coordinate">
+            <h4 className="pcad-coordinate__title">{t(coordinate.labelKey)}</h4>
+            <div className="pcad-coordinate__fields">
+              {coordinate.fields.map((item) =>
+                renderExpression(item.path, item.labelKey, item.unit, item.value, (parsed) => {
+                  const current = findReference(part, feature.id);
+                  if (current === undefined || current.kind !== 'referencePoint') {
+                    return;
+                  }
+                  if (current.definition.kind !== 'coordinate') {
+                    return;
+                  }
+                  const nextAt = setCoordinateField(
+                    current.definition.at,
+                    item.path.slice(item.path.lastIndexOf('.') + 1),
+                    parsed,
+                  );
+                  apply(setReferenceCoordinate(current, nextAt));
+                }),
+              )}
+            </div>
+          </div>
+        )}
+        <div className="pcad-toggles">
+          <button
+            type="button"
+            role="switch"
+            className="pcad-switch"
+            aria-checked={summary.visible}
+            onClick={() => {
+              apply(setReferenceVisible(feature, !summary.visible));
+            }}
+          >
+            <span className="pcad-switch__track" aria-hidden="true">
+              <span className="pcad-switch__thumb" />
+            </span>
+            <span>{t('propertyPanel.referenceVisible')}</span>
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /**
  * 右のプロパティパネル(要件§7.1、FR-202、FR-310、FR-311)。
  *
@@ -660,8 +1009,13 @@ export function PropertyPanel(): React.JSX.Element {
   const featureIds = [...new Set(selection.map((id) => featureIdOf(id)))];
   const single = featureIds.length === 1;
   const feature = single ? featureForSelection(sketch, selection) : null;
-  // スケッチの要素で見つからなければ立体を探す。id は文書の中で重ならない(§0.a-0.5)。
+  // スケッチの要素で見つからなければ立体、それも無ければ基準ジオメトリを探す。
+  // id は文書の中で重ならない(§0.a-0.5)。
   const solid = single && feature === null ? solidForSelection(part, selection) : null;
+  const reference =
+    single && feature === null && solid === null && selection[0] !== undefined
+      ? (findReference(part, selection[0]) ?? null)
+      : null;
   const kinds = selectionKindLabelKeys(part, selection).map((key) => t(key));
 
   return (
@@ -672,6 +1026,8 @@ export function PropertyPanel(): React.JSX.Element {
           <FeatureProperties key={feature.id} feature={feature} />
         ) : solid !== null ? (
           <SolidProperties key={solid.id} feature={solid} />
+        ) : reference !== null ? (
+          <ReferenceProperties key={reference.id} feature={reference} />
         ) : featureIds.length > 1 ? (
           <div className="pcad-section">
             <h3 className="pcad-section__title">{t('propertyPanel.sectionSelection')}</h3>

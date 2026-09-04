@@ -14,6 +14,8 @@ import {
   worldToPlane, type ResolvedSegment, type ResolvedSketch, type Vec3, type WorkPlane,
 } from '@pointercad/model';
 
+import { sampleCurve } from './sampleCurve.js';
+
 /** スナップの種別(FR-107)。 */
 export type SnapKind = 'endpoint' | 'intersection' | 'midpoint' | 'center' | 'grid';
 
@@ -146,6 +148,51 @@ export function collectSnapCandidates(
       position: arc.center,
       featureId: arc.featureId,
       elementId: arc.featureId,
+    });
+  }
+
+  /*
+   * 楕円(FR-318)とスプライン(FR-317)も吸着の候補にする(P4 タスク33、タスク12 の申し送り)。
+   * どちらも `sampleCurve` が折れ線へ直せるので、**折れ線の両端を端点、真ん中を中点**に取る。
+   * 楕円は中心も取る(円弧と同じ)。全周のときは両端が同じ場所に来るが、同じ位置の候補が
+   * 2 つ並ぶだけで選ばれ方は変わらない。
+   *
+   * オフセット・複製・矩形などの結果は、解決の時点で `segments` / `arcs` にも入るので
+   * 上の 2 つの繰り返しがそのまま候補にしている(別に足す必要は無い)。
+   */
+  for (const curve of [...sketch.ellipses, ...sketch.splines]) {
+    const samples = sampleCurve(curve);
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    if (first === undefined || last === undefined) {
+      continue;
+    }
+    candidates.push({
+      kind: 'endpoint',
+      position: first,
+      featureId: curve.featureId,
+      elementId: curve.featureId,
+    });
+    candidates.push({
+      kind: 'endpoint',
+      position: last,
+      featureId: curve.featureId,
+      elementId: curve.featureId,
+    });
+    candidates.push({
+      kind: 'midpoint',
+      position: samples[Math.floor(samples.length / 2)],
+      featureId: curve.featureId,
+      elementId: curve.featureId,
+    });
+  }
+
+  for (const ellipse of sketch.ellipses) {
+    candidates.push({
+      kind: 'center',
+      position: ellipse.center,
+      featureId: ellipse.featureId,
+      elementId: ellipse.featureId,
     });
   }
 

@@ -259,3 +259,62 @@ describe('スケッチの描画データ', () => {
     expect(bundle.index.size).toBe(6);
   });
 });
+
+/* ---------------------------------------------------------------------------
+ * 構築線の破線と、複数の曲線を持つ図形の強調(P4 タスク33)
+ * ------------------------------------------------------------------------- */
+
+/** 矩形 1 つぶん。1 フィーチャーが 4 本の線分を生む(§0.a-0.8)。 */
+const RECTANGLE_EDGES: readonly ResolvedSegment[] = [
+  { kind: 'segment', featureId: 'r1', from: [0, 0, 0], to: [10, 0, 0] },
+  { kind: 'segment', featureId: 'r1', from: [10, 0, 0], to: [10, 5, 0] },
+  { kind: 'segment', featureId: 'r1', from: [10, 5, 0], to: [0, 5, 0] },
+  { kind: 'segment', featureId: 'r1', from: [0, 5, 0], to: [0, 0, 0] },
+];
+
+const RECTANGLE_SKETCH: ResolvedSketch = {
+  ...EMPTY_RESOLVED_SKETCH,
+  segments: RECTANGLE_EDGES,
+  curvesByFeature: new Map([['r1', RECTANGLE_EDGES]]),
+};
+
+describe('構築線と、複数の曲線を持つ図形(P4 タスク33)', () => {
+  it('構築線に指した要素は別の並びへ入り、実線の並びからは消える(FR-320)', () => {
+    const plain = buildSketchGeometry(SKETCH, null);
+    expect(plain.constructionCurves.none).toHaveLength(0);
+    const dashed = buildSketchGeometry(SKETCH, null, NO_HIGHLIGHT, new Set(['l1']));
+    // 線分 1 本(6 個)が実線から破線へ移り、円弧はそのまま実線に残る。
+    expect(dashed.constructionCurves.none).toHaveLength(6);
+    expect(dashed.curves.none).toHaveLength(plain.curves.none.length - 6);
+  });
+
+  it('矩形の 4 辺は全部が並びに入り、対応表は辺ごとに 1 行ずつ持つ', () => {
+    const bundle = buildSketchGeometry(RECTANGLE_SKETCH, null);
+    expect(bundle.curves.none).toHaveLength(4 * 6);
+    expect(Array.from(bundle.index.keys())).toEqual(['r1#0', 'r1#1', 'r1#2', 'r1#3']);
+    expect(bundle.index.get('r1#2')?.featureId).toBe('r1');
+  });
+
+  it('矩形そのものを選ぶと 4 辺すべてが強調される(タスク4 の申し送りの直し)', () => {
+    const bundle = buildSketchGeometry(RECTANGLE_SKETCH, null, {
+      hoveredElementId: null,
+      selection: ['r1'],
+    });
+    expect(bundle.curves.selected).toHaveLength(4 * 6);
+    expect(bundle.curves.none).toHaveLength(0);
+    for (const entry of bundle.index.values()) {
+      expect(entry.emphasis).toBe('selected');
+    }
+  });
+
+  it('辺 1 本(r1#2)を選ぶと、その辺だけが強調される', () => {
+    const bundle = buildSketchGeometry(RECTANGLE_SKETCH, null, {
+      hoveredElementId: null,
+      selection: ['r1#2'],
+    });
+    expect(bundle.curves.selected).toHaveLength(6);
+    expect(bundle.curves.none).toHaveLength(3 * 6);
+    expect(bundle.index.get('r1#2')?.emphasis).toBe('selected');
+    expect(bundle.index.get('r1#0')?.emphasis).toBe('none');
+  });
+});

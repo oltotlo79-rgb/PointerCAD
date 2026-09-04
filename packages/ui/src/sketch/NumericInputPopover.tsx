@@ -244,22 +244,22 @@ export interface NumericInputPopoverProps {
    * 決定されたときに呼ばれる。何を履歴へ積むかはこの部品では決めない
    * (計画書 タスク21 が渡す処理が決める)。
    */
-  readonly onCommit: (commit: NumericInputCommit, state: NumericInputState) => void;
+  readonly onCommit: (commit: NumericInputCommit, state: NumericInputState) => boolean;
   /**
    * ソリッド(押し出し・回転・縫合・P3 の加工6種・ばね)を決めたときに呼ばれる。
    * 渡さなければソリッドの決定は捨てられる(ポップアップは閉じる)。
    */
-  readonly onSolidCommit?: (commit: SolidInputCommit, state: NumericInputState) => void;
+  readonly onSolidCommit?: (commit: SolidInputCommit, state: NumericInputState) => boolean;
   /**
    * 基準ジオメトリ(作業平面・基準軸・基準点・座標系、FR-328、FR-329)を決めたときに
    * 呼ばれる。渡さなければ決定は捨てられる(ポップアップは閉じる)。
    */
-  readonly onReferenceCommit?: (commit: ReferenceInputCommit, state: NumericInputState) => void;
+  readonly onReferenceCommit?: (commit: ReferenceInputCommit, state: NumericInputState) => boolean;
   /**
    * 整形系の道具(オフセット等、FR-321〜324)を決めたときに呼ばれる。渡さなければ決定は
    * 捨てられる(ポップアップは閉じる)。
    */
-  readonly onEditCommit?: (commit: EditInputCommit, state: NumericInputState) => void;
+  readonly onEditCommit?: (commit: EditInputCommit, state: NumericInputState) => boolean;
   /** ビューポートの大きさ(画素)。端での折り返しに使う。 */
   readonly viewportWidth: number;
   readonly viewportHeight: number;
@@ -345,14 +345,18 @@ export function NumericInputPopover({
         return;
       case 'solidCommitted':
         // ソリッドは(ばねの1段目を除き)1段で終わるので、決めたら必ず閉じる
-        // (nextNumericInput も null を返す)。
-        onSolidCommit?.(transition.commit, transition.state);
+        // (nextNumericInput も null を返す)。断られたときは閉じない(下の注釈)。
+        if (onSolidCommit?.(transition.commit, transition.state) === false) {
+          return;
+        }
         useAppStore.getState().closeNumericInput();
         return;
       case 'referenceCommitted': {
         // 基準ジオメトリは 1 つ作ったら閉じる段と、次の点を聞く段がある(タスク13)。
         // どちらかは nextNumericInput が決めるので、スケッチと同じ流れで扱う。
-        onReferenceCommit?.(transition.commit, transition.state);
+        if (onReferenceCommit?.(transition.commit, transition.state) === false) {
+          return;
+        }
         const next = nextNumericInput(transition.state, useAppStore.getState().chaining);
         if (next === null) {
           useAppStore.getState().closeNumericInput();
@@ -362,7 +366,16 @@ export function NumericInputPopover({
         return;
       }
       case 'committed': {
-        onCommit(transition.commit, transition.state);
+        /*
+         * **断られたときはポップアップを閉じない**(P4 タスク33、タスク12 の申し送り)。
+         * 半径が 2 点の間隔の半分に足りないときのように、値そのものは式として読めても
+         * 形が作れないことがある。その場で閉じてしまうと、利用者は入れ直した値を
+         * 全部打ち直す羽目になる。理由は帯に出ているので、欄はそのまま残して直させる
+         * (NFR-UX-5「実行してから失敗させない」、NFR-UX-3)。
+         */
+        if (!onCommit(transition.commit, transition.state)) {
+          return;
+        }
         const next = nextNumericInput(transition.state, useAppStore.getState().chaining);
         if (next === null) {
           useAppStore.getState().closeNumericInput();
@@ -374,7 +387,9 @@ export function NumericInputPopover({
       case 'editCommitted':
         // 整形系(オフセット、FR-321)は対象を選び直さないと続けられないので、
         // ソリッドと同じく決めたら必ず閉じる(nextNumericInput も null を返す)。
-        onEditCommit?.(transition.commit, transition.state);
+        if (onEditCommit?.(transition.commit, transition.state) === false) {
+          return;
+        }
         useAppStore.getState().closeNumericInput();
         return;
     }

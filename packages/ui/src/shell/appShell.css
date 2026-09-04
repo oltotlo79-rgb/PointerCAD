@@ -1580,10 +1580,43 @@ button.pcad-tree__row:focus-visible {
 }
 
 .pcad-coordinate__title {
+  display: flex;
+  align-items: center;
+  gap: var(--pcad-space-1);
   margin: 0;
   font-size: var(--pcad-font-size-small);
   font-weight: 600;
   color: var(--pcad-text-muted);
+}
+
+/* スプラインの点(FR-317)を足す・消すボタン。見出しの右端へ寄せる(P4 タスク33)。 */
+.pcad-coordinate__actions {
+  display: flex;
+  gap: var(--pcad-space-1);
+  margin-left: auto;
+}
+
+.pcad-coordinate__action {
+  min-width: 0;
+  padding: 0 var(--pcad-space-1);
+  line-height: 1.4;
+}
+
+/* 相対・極の点の「基準」(FR-302、FR-303、FR-330)。1 行でそのまま読めるようにする。 */
+.pcad-coordinate__base {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pcad-space-1);
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+}
+
+.pcad-coordinate__base-label {
+  color: var(--pcad-text-muted);
+}
+
+.pcad-coordinate__base-value {
+  color: var(--pcad-text);
 }
 
 /* 絶対 / 相対 / 極 の 3 つを等幅で並べる(その場入力のタブと同じ形)。 */

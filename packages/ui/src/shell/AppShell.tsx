@@ -274,7 +274,8 @@ export function AppShell(): React.JSX.Element {
               // 履歴・取りかけ・断りへの反映は applySketchCommit(commitToStore.ts)が
               // 1 か所で受け持つ。3D スケッチで立体の頂点を押したときも同じ関数を通る
               // (タスク14。同じ手順を 2 か所に書かない)。
-              applySketchCommit(commit, state);
+              // 断られたら false を返し、ポップアップを閉じさせない(P4 タスク33)。
+              return applySketchCommit(commit, state);
             }}
             onSolidCommit={(commit) => {
               /*
@@ -294,7 +295,8 @@ export function AppShell(): React.JSX.Element {
               );
               if (!outcome.ok) {
                 store.setSolidError(outcome.reasonKey);
-                return;
+                // 断られたらポップアップを閉じない(理由は帯に出ている、P4 タスク33)。
+                return false;
               }
               store.applyDocument(outcome.document);
               /*
@@ -306,6 +308,7 @@ export function AppShell(): React.JSX.Element {
               */
               store.setActiveTool('select');
               store.setSelection([outcome.featureId]);
+              return true;
             }}
             onReferenceCommit={(commit) => {
               /*
@@ -331,11 +334,13 @@ export function AppShell(): React.JSX.Element {
               if (outcome.createdPlaneId !== null) {
                 store.setWorkPlane(outcome.createdPlaneId);
               }
+              // 断られたらポップアップを閉じない(P4 タスク33、タスク12 の申し送り)。
+              return outcome.rejection === null;
             }}
             onEditCommit={(commit) => {
               // 整形系の道具(オフセット、FR-321、タスク21)。対象はすでに選ばれているので、
               // 反映は applyEditCommit(commitToStore.ts)が 1 か所で受け持つ。
-              applyEditCommit(commit);
+              return applyEditCommit(commit);
             }}
           />
           {snapIndicator === null ? null : (

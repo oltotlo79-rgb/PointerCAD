@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  WORK_PLANES, type ResolvedArc, type ResolvedPoint, type ResolvedSegment, type ResolvedSketch,
-  type Vec3,
+  WORK_PLANES, type ResolvedArc, type ResolvedEllipse, type ResolvedPoint,
+  type ResolvedSegment, type ResolvedSketch, type ResolvedSpline, type Vec3,
 } from '@pointercad/model';
 
 import {
@@ -194,5 +194,75 @@ describe('スナップ(FR-107)', () => {
     expect(chooseSnap(candidates, project, [500, 500], SNAP_RADIUS_PIXELS, ALL_KINDS)).toBeNull();
     // 画面に写らない候補は数えない。
     expect(chooseSnap(candidates, projectNothing, [5, 2], SNAP_RADIUS_PIXELS, ALL_KINDS)).toBeNull();
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * 楕円・スプラインへの吸着(FR-107、P4 タスク33、タスク12 の申し送り)
+ * ------------------------------------------------------------------------- */
+
+/** 全周の楕円。長半径 20、短半径 10。 */
+const FULL_ELLIPSE: ResolvedEllipse = {
+  kind: 'ellipse',
+  featureId: 'e1',
+  center: [3, 4, 0],
+  normal: [0, 0, 1],
+  majorAxis: [1, 0, 0],
+  majorRadius: 20,
+  minorRadius: 10,
+  startAngle: 0,
+  endAngle: Math.PI * 2,
+};
+
+/** 3 点を通るスプライン。 */
+const SPLINE: ResolvedSpline = {
+  kind: 'spline',
+  featureId: 's1',
+  mode: 'interpolate',
+  points: [
+    [0, 0, 0],
+    [10, 10, 0],
+    [20, 0, 0],
+  ],
+  closed: false,
+};
+
+const CURVE_SKETCH: ResolvedSketch = {
+  points: [],
+  segments: [],
+  arcs: [],
+  ellipses: [FULL_ELLIPSE],
+  splines: [SPLINE],
+  pendingOffsets: [],
+  pendingProjections: [],
+  curvesByFeature: new Map(),
+  faces: [],
+  errors: [],
+};
+
+describe('楕円とスプラインへの吸着(FR-107、P4 タスク33)', () => {
+  it('楕円は中心を候補に出す', () => {
+    const candidates = collectSnapCandidates(CURVE_SKETCH, WORK_PLANES.xy, 0, null);
+    const center = candidates.find(
+      (candidate) => candidate.kind === 'center' && candidate.featureId === 'e1',
+    );
+    expect(center?.position).toEqual([3, 4, 0]);
+  });
+
+  it('スプラインは端点を候補に出す(通過点の 1 つ目と最後)', () => {
+    const candidates = collectSnapCandidates(CURVE_SKETCH, WORK_PLANES.xy, 0, null);
+    const endpoints = candidates.filter(
+      (candidate) => candidate.kind === 'endpoint' && candidate.featureId === 's1',
+    );
+    expect(endpoints).toHaveLength(2);
+    // 通過点補間なので、曲線の両端は与えた点そのもの。
+    expect(endpoints[0].position[0]).toBeCloseTo(0, 6);
+    expect(endpoints[1].position[0]).toBeCloseTo(20, 6);
+  });
+
+  it('楕円もスプラインも中点の候補を 1 つずつ持つ', () => {
+    const candidates = collectSnapCandidates(CURVE_SKETCH, WORK_PLANES.xy, 0, null);
+    const midpoints = candidates.filter((candidate) => candidate.kind === 'midpoint');
+    expect(midpoints.map((candidate) => candidate.featureId).sort()).toEqual(['e1', 's1']);
   });
 });

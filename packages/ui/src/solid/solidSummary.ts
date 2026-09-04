@@ -31,6 +31,8 @@ import {
   threadMinorDiameter,
   type ChamferFeature,
   type ChamferSize,
+  type CoordinateInput,
+  type PlaneSpec,
   type HoleDepth,
   type HoleFeature,
   type MetricThreadSize,
@@ -38,9 +40,13 @@ import {
   type PartRecomputeError,
   type PatternDirection,
   type PatternFeature,
+  type ReferenceAxisDefinition,
+  type ReferenceError,
+  type ReferenceFeature,
+  type ReferenceFeatureKind,
+  type ReferencePointDefinition,
   type SketchError,
   type SketchFaceRef,
-  type SketchFeatureKind,
   type SketchLineRef,
   type SketchPointRef,
   type SolidFeature,
@@ -54,7 +60,13 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
-import { FEATURE_KIND_LABEL_KEYS } from '../sketch/featureSummary.js';
+import {
+  coordinateSummaryFor,
+  FEATURE_KIND_LABEL_KEYS,
+  sketchTreeKindOf,
+  type FeatureCoordinateSummary,
+  type SketchTreeKind,
+} from '../sketch/featureSummary.js';
 import { TOGGLE_LABEL_KEYS, type FieldUnit, type NumericToggleKey } from '../sketch/numericInput.js';
 
 /**
@@ -1348,30 +1360,47 @@ function sketchKindLabelKey(document: PartDocument, elementId: string): MessageK
   for (const sketch of document.sketches) {
     const found = findFeature(sketch, featureId);
     if (found !== undefined) {
-      return FEATURE_KIND_LABEL_KEYS[found.kind];
+      return FEATURE_KIND_LABEL_KEYS[sketchTreeKindOf(found)];
     }
   }
   return null;
 }
 
-/** ツリーの節。スケッチの節とソリッドの節に分ける(FR-501)。 */
-export type TreeSectionKey = 'sketch' | 'solid';
+/**
+ * ツリーの節(FR-501)。スケッチ・ソリッドに加え、P4 タスク33 で基準ジオメトリの節
+ * (作業平面・基準軸・基準点・座標系。FR-328、FR-329)を足した。
+ *
+ * 基準の節は `buildTreeSections` ではなく `buildReferenceSection` が別に作る。
+ * `buildTreeSections` の戻り(スケッチ・ソリッドの 2 節)を変えると、その並びを
+ * 前提にした既存の検査が意味を失うため。並べる順は呼び出し側(`FeatureTree.tsx`)が決める。
+ */
+export type TreeSectionKey = 'sketch' | 'solid' | 'reference';
 
-/** ツリーの行。スケッチの要素と立体を同じ形で並べる。 */
+/** ツリーの行。スケッチの要素・基準ジオメトリ・立体を同じ形で並べる。 */
 export interface TreeRow {
   readonly id: string;
   readonly name: string;
-  /** 行の頭の絵と種類の名前を決める種類。立体のブーリアンは演算ごとに分かれる。 */
-  readonly kind: SketchFeatureKind | SolidLabelKey;
+  /**
+   * 行の頭の絵と種類の名前を決める種類。立体のブーリアンは演算ごとに、
+   * スケッチの複製は配置ごとに分かれる(`sketchTreeKindOf` / `solidKindOf`)。
+   */
+  readonly kind: SketchTreeKind | SolidLabelKey | ReferenceFeatureKind;
   readonly kindLabelKey: MessageKey;
   /** 計算できていない(FR-504)。 */
   readonly hasError: boolean;
   /** 計算できていない理由。ホバーの吹き出しに出す。無ければ null。 */
   readonly errorMessage: string | null;
-  /** 抑制中(FR-503)。スケッチの要素は常に false。 */
+  /** 抑制中(FR-503)。スケッチの要素と基準ジオメトリは常に false。 */
   readonly suppressed: boolean;
   /** ほかの立体と組み合わさって単独では表示されない(§0.a-0.5)。 */
   readonly consumed: boolean;
+  /**
+   * 画面に出していない基準ジオメトリ(`visible: false`、FR-329)。
+   * 平面や軸を決めるためだけに置かれた点がこれになる(`appendCoordinatePoints`)。
+   * 行は消さずに薄く出し、「補助」の札を添える。消してしまうと、名前を変える・
+   * 出し直す・消すの操作(FR-503)がどこからもできなくなるため。
+   */
+  readonly hidden: boolean;
 }
 
 export interface TreeSection {
@@ -1394,15 +1423,18 @@ export function buildTreeSections(
   const sketch = findSketch(document, activeSketchId) ?? document.sketches[0];
   const sketchRows: TreeRow[] = sketch.features.map((feature) => {
     const message = partErrorMessage(sketchErrors, feature.id);
+    // 複製(FR-324)は配置ごとに絵と名前を変える(P4 タスク33、タスク20 の申し送り)。
+    const kind = sketchTreeKindOf(feature);
     return {
       id: feature.id,
       name: feature.name,
-      kind: feature.kind,
-      kindLabelKey: FEATURE_KIND_LABEL_KEYS[feature.kind],
+      kind,
+      kindLabelKey: FEATURE_KIND_LABEL_KEYS[kind],
       hasError: message !== null,
       errorMessage: message,
       suppressed: false,
       consumed: false,
+      hidden: false,
     };
   });
 
@@ -1419,6 +1451,7 @@ export function buildTreeSections(
       errorMessage: message,
       suppressed: feature.suppressed,
       consumed: consumed.has(feature.id),
+      hidden: false,
     };
   });
 
@@ -1426,4 +1459,244 @@ export function buildTreeSections(
     { key: 'sketch', titleKey: 'featureTree.sketchGroup', rows: sketchRows },
     { key: 'solid', titleKey: 'featureTree.solidGroup', rows: solidRows },
   ];
+}
+
+/** 基準ジオメトリの種類の名前(FR-328、FR-329)。道具の名前と同じ言葉にする。 */
+export const REFERENCE_KIND_LABEL_KEYS: Readonly<Record<ReferenceFeatureKind, MessageKey>> = {
+  // 作業平面は決め方が 7 通りあるので、道具の名前(「作業平面(3 点)」など)ではなく
+  // 種類そのものの名前を使う。決め方は `definitionLabelKey` が別に持つ。
+  referencePlane: 'propertyPanel.kind.referencePlane',
+  referenceAxis: 'toolbar.reference.axis',
+  referencePoint: 'toolbar.reference.point',
+  referenceCoordinateSystem: 'toolbar.reference.coordinateSystem',
+};
+
+/**
+ * 基準ジオメトリの節(FR-328、FR-329、P4 タスク33)。
+ *
+ * 履歴順にそのまま並べ、`visible: false` のものも薄く(`hidden`)出す。
+ * 節を `buildTreeSections` の戻りへ足さず別に作るのは、既に固定してある
+ * 「スケッチ・ソリッドの 2 節」という約束を崩さないため(並べる順は呼び出し側が決める)。
+ */
+export function buildReferenceSection(
+  document: PartDocument,
+  errors: readonly ReferenceError[] = [],
+): TreeSection {
+  const rows: TreeRow[] = document.references.map((feature) => {
+    const found = errors.find((error) => error.featureId === feature.id);
+    const message = found === undefined ? null : found.message;
+    return {
+      id: feature.id,
+      name: feature.name,
+      kind: feature.kind,
+      kindLabelKey: REFERENCE_KIND_LABEL_KEYS[feature.kind],
+      hasError: message !== null,
+      errorMessage: message,
+      suppressed: false,
+      consumed: false,
+      hidden: !feature.visible,
+    };
+  });
+  return { key: 'reference', titleKey: 'featureTree.referenceGroup', rows };
+}
+
+/** 基準ジオメトリの決め方の名前(FR-328、FR-329)。その場入力の言葉と同じものを使う。 */
+const PLANE_SPEC_LABEL_KEYS: Readonly<Record<PlaneSpec['kind'], MessageKey>> = {
+  threePoints: 'propertyPanel.planeSpec.threePoints',
+  pointAndEdge: 'propertyPanel.planeSpec.pointAndEdge',
+  pointAndAxis: 'propertyPanel.planeSpec.pointAndAxis',
+  pointAndParallelFace: 'propertyPanel.planeSpec.pointAndParallelFace',
+  face: 'propertyPanel.planeSpec.face',
+  workPlane: 'propertyPanel.planeSpec.workPlane',
+  tilted: 'propertyPanel.planeSpec.tilted',
+};
+
+const AXIS_DEFINITION_LABEL_KEYS: Readonly<
+  Record<ReferenceAxisDefinition['kind'], MessageKey>
+> = {
+  twoPoints: 'numericInput.referenceAxisKind.twoPoints',
+  edge: 'numericInput.referenceAxisKind.edge',
+  faceNormal: 'numericInput.referenceAxisKind.faceNormal',
+  faceIntersection: 'numericInput.referenceAxisKind.faceIntersection',
+};
+
+const POINT_DEFINITION_LABEL_KEYS: Readonly<
+  Record<ReferencePointDefinition['kind'], MessageKey>
+> = {
+  coordinate: 'numericInput.referencePointKind.coordinate',
+  vertex: 'numericInput.referencePointKind.vertex',
+  edgeMidpoint: 'numericInput.referencePointKind.edgeMidpoint',
+  faceCenter: 'numericInput.referencePointKind.faceCenter',
+};
+
+/** 基準ジオメトリで式のまま直せる欄(FR-328)。持たない決め方では空になる。 */
+export type ReferenceFieldKey = 'planeOffset' | 'planeTilt' | 'planeAzimuth' | 'planeAngle';
+
+export interface ReferenceFieldSummary {
+  readonly key: ReferenceFieldKey;
+  readonly labelKey: MessageKey;
+  readonly unit: FieldUnit;
+  readonly value: ExpressionValue;
+}
+
+const REFERENCE_FIELD_DEFINITIONS: Readonly<
+  Record<ReferenceFieldKey, { readonly labelKey: MessageKey; readonly unit: FieldUnit }>
+> = {
+  planeOffset: { labelKey: 'numericInput.field.planeOffset', unit: 'mm' },
+  planeTilt: { labelKey: 'numericInput.field.planeTilt', unit: 'degree' },
+  planeAzimuth: { labelKey: 'numericInput.field.planeAzimuth', unit: 'degree' },
+  planeAngle: { labelKey: 'numericInput.field.planeAngle', unit: 'degree' },
+};
+
+function referenceField(key: ReferenceFieldKey, value: ExpressionValue): ReferenceFieldSummary {
+  const definition = REFERENCE_FIELD_DEFINITIONS[key];
+  return { key, labelKey: definition.labelKey, unit: definition.unit, value };
+}
+
+/** ツリーの行とプロパティ欄が共有する、基準ジオメトリ 1 つの見え方(FR-328、FR-329)。 */
+export interface ReferenceSummary {
+  readonly featureId: string;
+  readonly name: string;
+  readonly kind: ReferenceFeatureKind;
+  readonly kindLabelKey: MessageKey;
+  /** 画面に出しているか(FR-329)。 */
+  readonly visible: boolean;
+  /** どうやって決めたか(3 点・辺・面の法線…)。 */
+  readonly definitionLabelKey: MessageKey;
+  /** 式のまま直せる欄。持たない決め方では空。 */
+  readonly fields: readonly ReferenceFieldSummary[];
+  /** 座標で置いた基準点(FR-329)の位置。それ以外は null。 */
+  readonly coordinate: FeatureCoordinateSummary | null;
+  /** 決まらなかった理由。問題が無ければ null(FR-504)。 */
+  readonly errorMessage: string | null;
+}
+
+/** 平面の決め方が持つ、式のまま直せる欄(FR-328)。 */
+function planeSpecFields(spec: PlaneSpec): readonly ReferenceFieldSummary[] {
+  switch (spec.kind) {
+    case 'face':
+    case 'workPlane':
+      return [referenceField('planeOffset', spec.offset)];
+    case 'pointAndAxis':
+      return [
+        referenceField('planeTilt', spec.tilt),
+        referenceField('planeAzimuth', spec.azimuth),
+      ];
+    case 'tilted':
+      return [referenceField('planeAngle', spec.angle)];
+    case 'threePoints':
+    case 'pointAndEdge':
+    case 'pointAndParallelFace':
+      return [];
+  }
+}
+
+/** 基準ジオメトリ 1 つの見え方をまとめる(FR-328、FR-329、P4 タスク33)。 */
+export function summarizeReference(
+  feature: ReferenceFeature,
+  errors: readonly ReferenceError[] = [],
+): ReferenceSummary {
+  const found = errors.find((error) => error.featureId === feature.id);
+  const base = {
+    featureId: feature.id,
+    name: feature.name,
+    kind: feature.kind,
+    kindLabelKey: REFERENCE_KIND_LABEL_KEYS[feature.kind],
+    visible: feature.visible,
+    errorMessage: found === undefined ? null : found.message,
+  };
+  switch (feature.kind) {
+    case 'referencePlane':
+      return {
+        ...base,
+        definitionLabelKey: PLANE_SPEC_LABEL_KEYS[feature.plane.kind],
+        fields: planeSpecFields(feature.plane),
+        coordinate: null,
+      };
+    case 'referenceAxis':
+      return {
+        ...base,
+        definitionLabelKey: AXIS_DEFINITION_LABEL_KEYS[feature.definition.kind],
+        fields: [],
+        coordinate: null,
+      };
+    case 'referencePoint':
+      return {
+        ...base,
+        definitionLabelKey: POINT_DEFINITION_LABEL_KEYS[feature.definition.kind],
+        fields: [],
+        coordinate:
+          feature.definition.kind === 'coordinate'
+            ? coordinateSummaryFor('at', feature.definition.at)
+            : null,
+      };
+    case 'referenceCoordinateSystem':
+      return {
+        ...base,
+        definitionLabelKey: 'propertyPanel.planeSpec.coordinateSystem',
+        fields: [],
+        coordinate: null,
+      };
+  }
+}
+
+/** 平面の決め方の欄を書き戻す(FR-328)。持たない欄なら同じものを返す。 */
+function setPlaneSpecField(
+  spec: PlaneSpec,
+  key: ReferenceFieldKey,
+  value: ExpressionValue,
+): PlaneSpec {
+  if ((spec.kind === 'face' || spec.kind === 'workPlane') && key === 'planeOffset') {
+    return { ...spec, offset: value };
+  }
+  if (spec.kind === 'pointAndAxis' && key === 'planeTilt') {
+    return { ...spec, tilt: value };
+  }
+  if (spec.kind === 'pointAndAxis' && key === 'planeAzimuth') {
+    return { ...spec, azimuth: value };
+  }
+  if (spec.kind === 'tilted' && key === 'planeAngle') {
+    return { ...spec, angle: value };
+  }
+  return spec;
+}
+
+/** 式の欄を書き戻した新しい基準ジオメトリを作る(FR-202、FR-311)。 */
+export function setReferenceField(
+  feature: ReferenceFeature,
+  key: ReferenceFieldKey,
+  value: ExpressionValue,
+): ReferenceFeature {
+  if (feature.kind !== 'referencePlane') {
+    return feature;
+  }
+  const plane = setPlaneSpecField(feature.plane, key, value);
+  return plane === feature.plane ? feature : { ...feature, plane };
+}
+
+/** 座標で置いた基準点(FR-329)の 1 欄を書き戻す。それ以外は同じものを返す。 */
+export function setReferenceCoordinate(
+  feature: ReferenceFeature,
+  at: CoordinateInput,
+): ReferenceFeature {
+  if (feature.kind !== 'referencePoint' || feature.definition.kind !== 'coordinate') {
+    return feature;
+  }
+  return at === feature.definition.at
+    ? feature
+    : { ...feature, definition: { kind: 'coordinate', at } };
+}
+
+/** 名前を変えた新しい基準ジオメトリを作る(FR-503)。空白だけの名前は受け付けない。 */
+export function renameReference(feature: ReferenceFeature, name: string): ReferenceFeature {
+  const trimmed = name.trim();
+  return trimmed.length === 0 || trimmed === feature.name ? feature : { ...feature, name: trimmed };
+}
+
+/** 表示・非表示を切り替えた新しい基準ジオメトリを作る(FR-329)。 */
+export function setReferenceVisible(
+  feature: ReferenceFeature,
+  visible: boolean,
+): ReferenceFeature {
+  return feature.visible === visible ? feature : { ...feature, visible };
 }

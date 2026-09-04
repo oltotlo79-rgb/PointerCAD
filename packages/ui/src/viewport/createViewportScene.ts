@@ -53,6 +53,11 @@ export interface ViewportScene {
   render(orbit: OrbitState, projection: ProjectionMode, displayStyle: DisplayStyle, showGrid: boolean): void;
   /** スケッチの表示を差し替える(FR-105、FR-310)。 */
   setSketch(sketch: ResolvedSketch, mesh: SketchMesh | null): void;
+  /**
+   * 構築線(FR-320)として破線で引く要素の id を差し替える(P4 タスク33)。
+   * 解決済みの曲線は construction を持たないので、履歴から引いた集合を外から渡す。
+   */
+  setConstructionIds(ids: ReadonlySet<string>): void;
   /** ホバー・選択の強調を差し替える(FR-106)。 */
   setSketchHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
   /** ソリッドの表示を差し替える(FR-105)。ボディの id はフィーチャーの id(§0.a-0.5)。 */
@@ -100,6 +105,8 @@ export interface ViewportScene {
    * (解くのはストア側の `workPlane`、P4 タスク13)。
    */
   setWorkPlane(plane: WorkPlane): void;
+  /** 作図面の矩形を出すか(3D スケッチでは出さない。FR-330、P4 タスク33)。 */
+  setWorkPlaneVisible(visible: boolean): void;
   /**
    * トリム・延長の予告(FR-322、P4 タスク22)。マウスを乗せた区間(消える区間)と、
    * 伸びる区間の折れ線を、もとの線の上へ重ねて描く。`null` で消す。
@@ -359,6 +366,12 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let currentSpacing = 0;
 
   /**
+   * 基準軸(FR-329)を出す長さの、方眼の広がりに対する割合(P4 タスク33)。
+   * 方眼と同じ長さだと方眼の線に紛れるので、はっきり内側で終わるようにする。
+   */
+  const REFERENCE_AXIS_EXTENT_RATIO = 0.55;
+
+  /**
    * 方眼と XYZ 軸を作り直す(FR-104)。間隔が変わったときと、テーマが変わったときだけ呼ぶ
    * (色は頂点ごとの並びへ焼き込むので、テーマの切替では作り直すしかない。
    * 描画のたびには呼ばれないので NFR-PF-1 に触らない)。
@@ -368,9 +381,11 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     grid.geometry = buildGridGeometry(spacing, colors);
     axisLines.geometry.dispose();
     axisLines.geometry = buildAxisGeometry(axisLength(spacing), colors);
-    // 作図面の矩形は方眼と同じ広がりにする。基準軸の長さもそれに合わせる。
+    // 作図面の矩形は方眼と同じ広がりにする。
     sketchLayer.setWorkPlaneExtent(gridExtent(spacing));
-    referenceLayer.setAxisHalfLength(gridExtent(spacing));
+    // 基準軸は方眼より**短く**する(P4 タスク33、タスク9・13 の申し送り)。
+    // 方眼と同じ長さだと方眼の線と見分けが付かず、どこまでが軸なのか分からなかった。
+    referenceLayer.setAxisHalfLength(gridExtent(spacing) * REFERENCE_AXIS_EXTENT_RATIO);
     currentSpacing = spacing;
   }
   rebuildGrid(gridSpacing(HOME_ORBIT.distance));
@@ -382,6 +397,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let resolvedSketch: ResolvedSketch = EMPTY_RESOLVED_SKETCH;
   let sketchMesh: SketchMesh | null = null;
   let sketchHighlight: SketchHighlight = NO_HIGHLIGHT;
+  /** 構築線(FR-320)として破線で引く要素の id。履歴から引いた集合を外から入れてもらう。 */
+  let constructionIds: ReadonlySet<string> = new Set<string>();
   let sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
 
   /** ボディの現在値。組み立て直すのは変化したときだけ(NFR-PF-1)。 */
@@ -456,12 +473,32 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     setSketch(nextSketch, nextMesh): void {
       resolvedSketch = nextSketch;
       sketchMesh = nextMesh;
-      sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
+      sketchBundle = buildSketchGeometry(
+        resolvedSketch,
+        sketchMesh,
+        sketchHighlight,
+        constructionIds,
+      );
+    },
+
+    setConstructionIds(ids): void {
+      constructionIds = ids;
+      sketchBundle = buildSketchGeometry(
+        resolvedSketch,
+        sketchMesh,
+        sketchHighlight,
+        constructionIds,
+      );
     },
 
     setSketchHighlight(hoveredElementId, selection): void {
       sketchHighlight = { hoveredElementId, selection };
-      sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
+      sketchBundle = buildSketchGeometry(
+        resolvedSketch,
+        sketchMesh,
+        sketchHighlight,
+        constructionIds,
+      );
     },
 
     setBodies(nextBodies): void {
@@ -535,6 +572,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       solidLayer.setThemeColors(colors);
       sketchLayer.setThemeColors(colors);
       referenceLayer.setThemeColors(colors);
+    },
+
+    setWorkPlaneVisible(visible): void {
+      sketchLayer.setWorkPlaneVisible(visible);
     },
 
     setWorkPlane(plane): void {

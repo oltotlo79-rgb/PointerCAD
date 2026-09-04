@@ -90,6 +90,14 @@ const WORK_PLANE_BORDER_OPACITY = 0.35;
 const EMPHASES: readonly SketchEmphasis[] = ['none', 'hovered', 'selected'];
 
 /**
+ * 構築線(FR-320)の破線の刻み(mm)。実線と一目で見分く長さにしつつ、
+ * 短い補助線でも 2〜3 個の刻みが見えるくらいの細かさにする。
+ * `LineDashedMaterial` はワールド長で刻むので、`computeLineDistances()` が要る。
+ */
+const CONSTRUCTION_DASH_SIZE_MM = 2.4;
+const CONSTRUCTION_GAP_SIZE_MM = 1.6;
+
+/**
  * 描く順。数が大きいほど後に描かれ、画面では前に出る。
  *
  * 下書きの点・線・円弧は**面より必ず前**に出す。面に隠れると座標を確かめられず、
@@ -121,6 +129,7 @@ const EXTEND_PREVIEW_OPACITY = 0.6;
 
 type PointsObject = THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
 type LinesObject = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+type DashedLinesObject = THREE.LineSegments<THREE.BufferGeometry, THREE.LineDashedMaterial>;
 
 /** 強調の度合いごとに 1 つずつ持つ部品と、中身が入っているかの印。 */
 interface DrawSet<T extends THREE.Object3D> {
@@ -148,6 +157,12 @@ export interface SketchLayer {
   setEditPreview(preview: EditPreview | null): void;
   /** いま描いている作図面。矩形の向きが変わる。 */
   setWorkPlane(plane: WorkPlane): void;
+  /**
+   * 作図面の矩形を出すか(FR-330、P4 タスク33、タスク10 の申し送り)。
+   * 3D スケッチ(作図面なし)では**矩形を出さない**。作図面が無いのに XY の面が
+   * 出ていると「この面の上にかいている」と誤解させるため。
+   */
+  setWorkPlaneVisible(visible: boolean): void;
   /** 作図面の矩形の広がり(原点からの片側の長さ、mm)。方眼と同じにする。 */
   setWorkPlaneExtent(extent: number): void;
   dispose(): void;
@@ -187,6 +202,27 @@ function createLines(color: number, renderOrder: number): LinesObject {
   return object;
 }
 
+/**
+ * 構築線(FR-320)を引く破線の線。実体にならない補助の線だと見た目で分かるようにする。
+ * 色は実線と同じトークンを使い、**破線かどうかだけ**で違いを出す(色を増やさない)。
+ */
+function createDashedLines(color: number): DashedLinesObject {
+  const object = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineDashedMaterial({
+      color,
+      linewidth: CURVE_WIDTH_PIXELS,
+      dashSize: CONSTRUCTION_DASH_SIZE_MM,
+      gapSize: CONSTRUCTION_GAP_SIZE_MM,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  object.renderOrder = CURVE_RENDER_ORDER;
+  return object;
+}
+
 function createPointSet(): DrawSet<PointsObject> {
   return {
     objects: {
@@ -204,6 +240,17 @@ function createLineSet(baseColor: number, renderOrder: number): DrawSet<LinesObj
       none: createLines(baseColor, renderOrder),
       hovered: createLines(DEFAULT_THEME_COLORS.hovered, renderOrder),
       selected: createLines(DEFAULT_THEME_COLORS.selected, renderOrder),
+    },
+    hasData: { none: false, hovered: false, selected: false },
+  };
+}
+
+function createDashedLineSet(baseColor: number): DrawSet<DashedLinesObject> {
+  return {
+    objects: {
+      none: createDashedLines(baseColor),
+      hovered: createDashedLines(DEFAULT_THEME_COLORS.hovered),
+      selected: createDashedLines(DEFAULT_THEME_COLORS.selected),
     },
     hasData: { none: false, hovered: false, selected: false },
   };
@@ -323,10 +370,14 @@ export function createSketchLayer(): SketchLayer {
 
   const outlines = createLineSet(DEFAULT_THEME_COLORS.sketchOutline, FACE_OUTLINE_RENDER_ORDER);
   const curves = createLineSet(DEFAULT_THEME_COLORS.sketchCurve, CURVE_RENDER_ORDER);
+  // 構築線(FR-320)は同じ色の破線で引く。実線とは別の並びに分けてあるので、
+  // 材質を 1 本ずつ塗り分けずに済む(buildSketchGeometry.ts の constructionCurves)。
+  const constructionCurves = createDashedLineSet(DEFAULT_THEME_COLORS.sketchCurve);
   const points = createPointSet();
   for (const emphasis of EMPHASES) {
     group.add(outlines.objects[emphasis]);
     group.add(curves.objects[emphasis]);
+    group.add(constructionCurves.objects[emphasis]);
     group.add(points.objects[emphasis]);
   }
 
@@ -432,6 +483,7 @@ export function createSketchLayer(): SketchLayer {
       outlines.objects[emphasis].visible =
         displayStyle !== 'shaded' && outlines.hasData[emphasis];
       curves.objects[emphasis].visible = curves.hasData[emphasis];
+      constructionCurves.objects[emphasis].visible = constructionCurves.hasData[emphasis];
       points.objects[emphasis].visible = points.hasData[emphasis];
     }
   }
@@ -451,6 +503,12 @@ export function createSketchLayer(): SketchLayer {
             curves.objects[emphasis],
             bundle.curves[emphasis],
           );
+          constructionCurves.hasData[emphasis] = setPositions(
+            constructionCurves.objects[emphasis],
+            bundle.constructionCurves[emphasis],
+          );
+          // 破線の刻みはワールド長で決まるので、位置を入れ替えたら測り直す。
+          constructionCurves.objects[emphasis].computeLineDistances();
           outlines.hasData[emphasis] = setPositions(
             outlines.objects[emphasis],
             bundle.faceOutlines[emphasis],
@@ -469,6 +527,9 @@ export function createSketchLayer(): SketchLayer {
       curves.objects.none.material.color.setHex(colors.sketchCurve);
       curves.objects.hovered.material.color.setHex(colors.hovered);
       curves.objects.selected.material.color.setHex(colors.selected);
+      constructionCurves.objects.none.material.color.setHex(colors.sketchCurve);
+      constructionCurves.objects.hovered.material.color.setHex(colors.hovered);
+      constructionCurves.objects.selected.material.color.setHex(colors.selected);
       outlines.objects.none.material.color.setHex(colors.sketchOutline);
       outlines.objects.hovered.material.color.setHex(colors.hovered);
       outlines.objects.selected.material.color.setHex(colors.selected);
@@ -509,6 +570,10 @@ export function createSketchLayer(): SketchLayer {
       );
     },
 
+    setWorkPlaneVisible(visible): void {
+      workPlaneGroup.visible = visible;
+    },
+
     setWorkPlaneExtent(extent): void {
       // 1 辺 1 の正方形を作ってあるので、拡大率は片側の長さの 2 倍。
       workPlaneGroup.scale.set(extent * 2, extent * 2, 1);
@@ -529,6 +594,8 @@ export function createSketchLayer(): SketchLayer {
         points.objects[emphasis].material.dispose();
         curves.objects[emphasis].geometry.dispose();
         curves.objects[emphasis].material.dispose();
+        constructionCurves.objects[emphasis].geometry.dispose();
+        constructionCurves.objects[emphasis].material.dispose();
         outlines.objects[emphasis].geometry.dispose();
         outlines.objects[emphasis].material.dispose();
       }

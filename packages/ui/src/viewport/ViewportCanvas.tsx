@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { isFreeWorkPlaneId } from '@pointercad/model';
+
 import { t } from '../i18n/t.js';
+import { constructionFeatureIds } from '../sketch/featureSummary.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
@@ -111,6 +114,10 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setBodyHighlight(initial.hoveredElementId, initial.selection);
     scene.setSubShapeHighlight(initial.hoveredElementId, initial.selection);
     scene.setWorkPlane(initial.workPlane);
+    // 3D スケッチ(作図面なし、FR-330)では作図面の矩形を出さない(P4 タスク33)。
+    scene.setWorkPlaneVisible(!isFreeWorkPlaneId(initial.workPlaneId));
+    // 構築線(FR-320)は履歴を見ないと分からないので、文書から引いて渡す(P4 タスク33)。
+    scene.setConstructionIds(constructionFeatureIds(initial.sketch));
     scene.setReferences(initial.resolvedReferences);
     scene.setEditPreview(initial.editPreview);
     requestDraw();
@@ -144,6 +151,13 @@ export function ViewportCanvas(): React.JSX.Element {
       // 文書が変わっても面の位置が動くので、解いた面そのものの変化を見る(タスク13)。
       if (next.workPlane !== previous.workPlane) {
         scene.setWorkPlane(next.workPlane);
+      }
+      if (next.workPlaneId !== previous.workPlaneId) {
+        scene.setWorkPlaneVisible(!isFreeWorkPlaneId(next.workPlaneId));
+      }
+      // 構築線(FR-320)の入り切りは履歴の変化にだけ表れる(解決済みの曲線には出ない)。
+      if (next.sketch !== previous.sketch) {
+        scene.setConstructionIds(constructionFeatureIds(next.sketch));
       }
       // 基準ジオメトリ(FR-329)。文書から解いた控えが変わったときだけ出し直す。
       if (next.resolvedReferences !== previous.resolvedReferences) {

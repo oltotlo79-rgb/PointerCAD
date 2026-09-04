@@ -19,6 +19,7 @@ import {
   type PartDocument,
   type PartRecomputeError,
   type PatternFeature,
+  type ReferenceFeature,
   type RevolveFeature,
   type SewFeature,
   type SketchFaceFeature,
@@ -32,12 +33,16 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildReferenceSection,
   buildTreeSections,
   formatVolume,
   missingValueKey,
   partErrorMessage,
+  renameReference,
   renameSolid,
   selectionKindLabelKeys,
+  setReferenceField,
+  setReferenceVisible,
   setSolidAxis,
   setSolidChoice,
   setSolidDepthKind,
@@ -47,6 +52,7 @@ import {
   SOLID_KIND_LABEL_KEYS,
   solidForSelection,
   solidKindOf,
+  summarizeReference,
   summarizeSolid,
   WORLD_AXIS_CHOICES,
 } from './solidSummary.js';
@@ -1206,5 +1212,123 @@ describe('ばねの書き戻し(FR-311、FR-202、§0.a-0.30、§0.a-0.33、計�
     expect(setSolidChoice(SPRING, 'springAxis', 'w')).toBe(SPRING);
     expect(setSolidChoice(SPRING, 'springDerived', 'width')).toBe(SPRING);
     expect(setSolidField(EXTRUDE, 'coilDiameter', expressionValueFromNumber(1))).toBe(EXTRUDE);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * 基準ジオメトリ(FR-328、FR-329。P4 タスク33)
+ * ------------------------------------------------------------------------- */
+
+const OFFSET_PLANE: ReferenceFeature = {
+  id: 'referencePlane-1',
+  name: '作業平面1',
+  visible: true,
+  kind: 'referencePlane',
+  plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(25) },
+};
+
+const HELPER_POINT: ReferenceFeature = {
+  id: 'referencePoint-2',
+  name: '基準点2',
+  // 平面を決めるためだけに置いた点(`appendCoordinatePoints` が作る)。
+  visible: false,
+  kind: 'referencePoint',
+  definition: {
+    kind: 'coordinate',
+    at: {
+      mode: 'absolute',
+      x: expressionValueFromNumber(1),
+      y: expressionValueFromNumber(2),
+      z: expressionValueFromNumber(3),
+    },
+  },
+};
+
+const REFERENCE_AXIS: ReferenceFeature = {
+  id: 'referenceAxis-3',
+  name: '基準軸3',
+  visible: true,
+  kind: 'referenceAxis',
+  definition: { kind: 'twoPoints', from: { kind: 'origin' }, to: { kind: 'previous' } },
+};
+
+function documentWithReferences(...references: readonly ReferenceFeature[]): PartDocument {
+  return { ...createEmptyPartDocument(), references };
+}
+
+describe('buildReferenceSection(FR-328、FR-329、FR-501)', () => {
+  it('基準の節を履歴順に返し、見出しは「基準」になる', () => {
+    const section = buildReferenceSection(
+      documentWithReferences(OFFSET_PLANE, HELPER_POINT, REFERENCE_AXIS),
+    );
+    expect(section.key).toBe('reference');
+    expect(section.titleKey).toBe('featureTree.referenceGroup');
+    expect(section.rows.map((row) => row.name)).toEqual(['作業平面1', '基準点2', '基準軸3']);
+    expect(section.rows.map((row) => row.kind)).toEqual([
+      'referencePlane',
+      'referencePoint',
+      'referenceAxis',
+    ]);
+  });
+
+  it('画面に出していない基準は行を消さず「補助」の印を立てる(FR-503 の操作を残すため)', () => {
+    const section = buildReferenceSection(documentWithReferences(OFFSET_PLANE, HELPER_POINT));
+    expect(section.rows.map((row) => row.hidden)).toEqual([false, true]);
+  });
+
+  it('決まらなかった基準はその行だけが赤い印になる(FR-504)', () => {
+    const section = buildReferenceSection(documentWithReferences(OFFSET_PLANE, REFERENCE_AXIS), [
+      { featureId: 'referenceAxis-3', code: 'missingPoint', message: '基準の点がありません。' },
+    ]);
+    expect(section.rows.map((row) => row.hasError)).toEqual([false, true]);
+    expect(section.rows[1].errorMessage).toBe('基準の点がありません。');
+  });
+
+  it('基準が 1 つも無いときは行が空の節を返す(NFR-UX-6)', () => {
+    expect(buildReferenceSection(createEmptyPartDocument()).rows).toEqual([]);
+  });
+});
+
+describe('summarizeReference(基準ジオメトリのプロパティ、FR-328、FR-329)', () => {
+  it('基準面からのオフセットは距離の欄を式のまま出す(FR-202)', () => {
+    const summary = summarizeReference(OFFSET_PLANE);
+    // 種類の名前は決め方に依らず「作業平面」。決め方は definitionLabelKey が別に持つ。
+    expect(summary.kindLabelKey).toBe('propertyPanel.kind.referencePlane');
+    expect(summary.definitionLabelKey).toBe('propertyPanel.planeSpec.workPlane');
+    expect(summary.fields.map((item) => item.key)).toEqual(['planeOffset']);
+    expect(summary.fields[0].value.value).toBe(25);
+    expect(summary.fields[0].unit).toBe('mm');
+  });
+
+  it('オフセットの欄を直すと、平面の決め方だけが差し替わる', () => {
+    const next = setReferenceField(OFFSET_PLANE, 'planeOffset', expressionValueFromNumber(60));
+    if (next.kind !== 'referencePlane' || next.plane.kind !== 'workPlane') {
+      throw new Error('作業平面が返るはず');
+    }
+    expect(next.plane.offset.value).toBe(60);
+    expect(next.plane.planeId).toBe('xy');
+    expect(next.name).toBe('作業平面1');
+  });
+
+  it('座標で置いた基準点は位置の欄を持ち、他の決め方は持たない', () => {
+    expect(summarizeReference(HELPER_POINT).coordinate?.fields.map((item) => item.path)).toEqual([
+      'at.x',
+      'at.y',
+      'at.z',
+    ]);
+    expect(summarizeReference(REFERENCE_AXIS).coordinate).toBeNull();
+    expect(summarizeReference(REFERENCE_AXIS).definitionLabelKey).toBe(
+      'numericInput.referenceAxisKind.twoPoints',
+    );
+  });
+
+  it('表示・非表示と名前は元を変えずに差し替える(FR-329、FR-503)', () => {
+    const shown = setReferenceVisible(HELPER_POINT, true);
+    expect(shown.visible).toBe(true);
+    expect(HELPER_POINT.visible).toBe(false);
+    // 同じ値なら同じものを返す(無駄な再計算を起こさない)。
+    expect(setReferenceVisible(HELPER_POINT, false)).toBe(HELPER_POINT);
+    expect(renameReference(HELPER_POINT, ' 天板の基準 ').name).toBe('天板の基準');
+    expect(renameReference(HELPER_POINT, '   ')).toBe(HELPER_POINT);
   });
 });

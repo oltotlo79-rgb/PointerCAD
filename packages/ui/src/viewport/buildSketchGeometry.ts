@@ -85,6 +85,7 @@ export const EMPTY_RESOLVED_SKETCH: ResolvedSketch = {
   ellipses: [],
   splines: [],
   pendingOffsets: [],
+  curvesByFeature: new Map(),
   faces: [],
   errors: [],
 };

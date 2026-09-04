@@ -68,10 +68,22 @@ export {
   arcPointAt, azimuthToEllipseParameter, curveEnd, curveStart, ellipsePointAt, fitPlaneNormal,
   isFullCircle, isFullEllipse, isPlanar, MAX_POINT_ARRAY_COUNT, resolveSketch,
 } from './sketch/resolveSketch.js';
+export type {
+  CurveChain, CurveChainOptions, CurveChainOutcome, CurveEvaluator, CurveIntersection,
+} from './sketch/intersectionMath.js';
+export {
+  curveEvaluator, curveIntersections, curveParameterNear, curvePointAt, FULL_TURN,
+  INTERSECTION_TOLERANCE_MM, isClosedCurve, segmentSegmentIntersection, traceCurveChain,
+} from './sketch/intersectionMath.js';
+export type { ExtendRequest, TrimErrorKey, TrimOutcome, TrimRequest } from './sketch/trimExtend.js';
+export {
+  explodeCompoundFeature, extendCurve, nearestCurveEnd, parseElementId, trimCurve,
+} from './sketch/trimExtend.js';
 export type { SplineCurveData } from './sketch/splineMath.js';
 export {
   hasDuplicateSplinePoint, MAX_SPLINE_POINTS, MIN_CLOSED_SPLINE_POINTS, MIN_SPLINE_POINTS,
-  sampleSpline, sampleSplineCurve, splineCurveData, splineDegree, SPLINE_SEGMENTS_PER_SPAN,
+  sampleSpline, sampleSplineCurve, splineCurveData, splineDegree, splinePointAt,
+  SPLINE_SEGMENTS_PER_SPAN,
 } from './sketch/splineMath.js';
 export type { SketchRecomputeOptions, SketchRecomputeResult } from './sketch/recomputeSketch.js';
 export { recomputeSketch, reevaluateDocument } from './sketch/recomputeSketch.js';

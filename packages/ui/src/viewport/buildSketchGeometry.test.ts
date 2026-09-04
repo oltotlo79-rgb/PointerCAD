@@ -73,6 +73,7 @@ const SKETCH: ResolvedSketch = {
   ellipses: [],
   splines: [],
   pendingOffsets: [],
+  curvesByFeature: new Map(),
   faces: [POINT_FACE],
   errors: [],
 };

@@ -23,6 +23,7 @@ const SKETCH: ResolvedSketch = {
   ellipses: [],
   splines: [],
   pendingOffsets: [],
+  curvesByFeature: new Map(),
   faces: [],
   errors: [],
 };
@@ -39,6 +40,7 @@ const ARC_SKETCH: ResolvedSketch = {
   ellipses: [],
   splines: [],
   pendingOffsets: [],
+  curvesByFeature: new Map(),
   faces: [],
   errors: [],
 };
@@ -54,6 +56,7 @@ const POINT_SKETCH: ResolvedSketch = {
   ellipses: [],
   splines: [],
   pendingOffsets: [],
+  curvesByFeature: new Map(),
   faces: [],
   errors: [],
 };

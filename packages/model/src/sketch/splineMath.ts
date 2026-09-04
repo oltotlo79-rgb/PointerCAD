@@ -462,6 +462,21 @@ export function sampleSplineCurve(data: SplineCurveData, divisions: number): Vec
 }
 
 /**
+ * 曲線の上の 1 点を「0(始まり)〜1(終わり)」の割合で拾う(FR-322、タスク17)。
+ *
+ * `sampleSplineCurve` が全体を等間隔で拾うのに対し、こちらは**狭めた区間の中だけを
+ * 拾い直す**のに使う(`intersectionMath.ts` の交点の追い込み)。等間隔の並びを
+ * 何度も作り直さずに済むよう、点 1 つを返す形にしてある。
+ * 割合は 0〜1 に収めてから使う(範囲の外を渡しても曲線の外へは出ない)。
+ */
+export function splinePointAt(data: SplineCurveData, ratio: number): Vec3 {
+  const fullKnots = expandKnots(data);
+  const [start, end] = curveDomain(data);
+  const clamped = Math.min(Math.max(ratio, 0), 1);
+  return pointAt(data, fullKnots, start + (end - start) * clamped);
+}
+
+/**
  * 表示用の折れ線(FR-317)。両端を必ず含める。
  *
  * 曲線を解けなかったときは、与えられた点をそのまま結んだ折れ線を返す。

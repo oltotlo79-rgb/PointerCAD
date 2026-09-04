@@ -23,6 +23,7 @@ const SKETCH: ResolvedSketch = {
   ellipses: [],
   splines: [],
   pendingOffsets: [],
+  curvesByFeature: new Map(),
   faces: [
     {
       featureId: 'f1',

@@ -10,7 +10,7 @@
  */
 
 import {
-  addVec3, arcPointAt, distanceVec3, dotVec3, lerpVec3, planeToWorld, scaleVec3, subVec3,
+  arcPointAt, lerpVec3, planeToWorld, segmentSegmentIntersection,
   worldToPlane, type ResolvedSegment, type ResolvedSketch, type Vec3, type WorkPlane,
 } from '@pointercad/model';
 
@@ -37,8 +37,12 @@ export const DEFAULT_SNAP_KINDS: readonly SnapKind[] = SNAP_PRIORITY;
 /** 吸い付く画面上の距離(画素)。 */
 export const SNAP_RADIUS_PIXELS = 12;
 
-/** 交点とみなす2直線の最短距離(mm)。これより離れていればねじれの位置。 */
-export const INTERSECTION_TOLERANCE_MM = 1e-3;
+/**
+ * 交点とみなす2直線の最短距離(mm)。これより離れていればねじれの位置。
+ * 交点の計算そのものは model へ引き上げた(FR-322 のトリム・延長が同じ計算を使うため。
+ * `packages/model/src/sketch/intersectionMath.ts`、タスク17)ので、値もそこから借りる。
+ */
+export { INTERSECTION_TOLERANCE_MM } from '@pointercad/model';
 
 export interface SnapCandidate {
   readonly kind: SnapKind;
@@ -58,32 +62,14 @@ export type ProjectToScreen = (point: Vec3) => readonly [number, number] | null;
 
 /**
  * 2 線分の交点。平行・ねじれ・線分の外側なら null。
- * 最短距離を与える媒介変数を解いて、両方が [0,1] に入り、かつ2点が十分近いときだけ交点とする。
+ *
+ * 計算の中身は model の `segmentSegmentIntersection`(`intersectionMath.ts`)に移した。
+ * トリム・延長(FR-322、タスク17)が同じ交点を使うが、model から ui は参照できない
+ * (依存方向 ui → model、`rules/04-設計の規律.md`)ため、ui が使う側へ回った。
+ * 判定の中身も許容誤差も変えていない。
  */
 export function segmentIntersection(a: ResolvedSegment, b: ResolvedSegment): Vec3 | null {
-  const u = subVec3(a.to, a.from);
-  const v = subVec3(b.to, b.from);
-  const w = subVec3(a.from, b.from);
-  const uu = dotVec3(u, u);
-  const uv = dotVec3(u, v);
-  const vv = dotVec3(v, v);
-  const uw = dotVec3(u, w);
-  const vw = dotVec3(v, w);
-  const denominator = uu * vv - uv * uv;
-  if (Math.abs(denominator) <= 1e-12) {
-    return null;
-  }
-  const s = (uv * vw - vv * uw) / denominator;
-  const t = (uu * vw - uv * uw) / denominator;
-  if (s < 0 || s > 1 || t < 0 || t > 1) {
-    return null;
-  }
-  const onA = addVec3(a.from, scaleVec3(u, s));
-  const onB = addVec3(b.from, scaleVec3(v, t));
-  if (distanceVec3(onA, onB) > INTERSECTION_TOLERANCE_MM) {
-    return null;
-  }
-  return lerpVec3(onA, onB, 0.5);
+  return segmentSegmentIntersection(a, b);
 }
 
 /** 作図面の上で、ポインタに最も近い格子点。 */

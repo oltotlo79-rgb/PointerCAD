@@ -19,6 +19,17 @@
 import type { ResolvedSubShape } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import {
+  arcPointAt,
+  curveEnd,
+  curveStart,
+  ellipsePointAt,
+  FULL_TURN,
+  FULL_TURN_EPSILON,
+  isFullCircle,
+  isFullEllipse,
+  traceCurveChain,
+} from './intersectionMath.js';
+import {
   baseWorkPlane,
   degreesToRadians,
   directionInPlane,
@@ -84,76 +95,21 @@ export const MAX_POINT_ARRAY_COUNT = 1000;
 /** 点列の個数の下限。1 個でも点列として成立させる(統括の指示、2026-09-02)。 */
 const MIN_POINT_ARRAY_COUNT = 1;
 
-/** 全周とみなす角度の幅(ラジアン)。これ以上なら円として扱う(FR-305)。 */
-const FULL_TURN = 2 * Math.PI;
-const FULL_TURN_EPSILON = 1e-9;
-
 /** 平面の当てはめに使う円弧の標本点の数(両端を含む)。 */
 const ARC_PLANE_SAMPLES = 5;
 
 /**
- * 曲線の始点。
- *
- * スプラインは、通過点方式なら `points[0]` をぴったり通り、制御点方式でも
- * 開いた曲線は両端の節点を次数+1 重ねてあるので `points[0]` から始まる。
- * 閉じたスプラインだけは輪なので「始まり = 終わり」で、`points[0]` は
- * 制御点方式では曲線の上に無い(輪の中では端のつながりを見ないので影響しない)。
+ * 曲線の上の点・全周の判定は `intersectionMath.ts` にある(交点の計算がこれらを使うため
+ * そちらへ移した。タスク17)。ここから再輸出して、呼び出し側の import を変えずに済ませる。
  */
-export function curveStart(curve: ResolvedCurve): Vec3 {
-  switch (curve.kind) {
-    case 'segment':
-      return curve.from;
-    case 'arc':
-      return arcPointAt(curve, curve.startAngle);
-    case 'ellipse':
-      return ellipsePointAt(curve, curve.startAngle);
-    case 'spline':
-      return curve.points[0];
-  }
-}
-
-/** 曲線の終点(閉じたスプラインは始点へ戻る)。 */
-export function curveEnd(curve: ResolvedCurve): Vec3 {
-  switch (curve.kind) {
-    case 'segment':
-      return curve.to;
-    case 'arc':
-      return arcPointAt(curve, curve.endAngle);
-    case 'ellipse':
-      return ellipsePointAt(curve, curve.endAngle);
-    case 'spline':
-      return curve.closed ? curve.points[0] : curve.points[curve.points.length - 1];
-  }
-}
-
-/** 円弧の上の点。角度は xAxis から normal まわりに正(ラジアン)。 */
-export function arcPointAt(arc: ResolvedArc, angle: number): Vec3 {
-  const yAxis = crossVec3(arc.normal, arc.xAxis);
-  return addVec3(
-    arc.center,
-    addVec3(
-      scaleVec3(arc.xAxis, arc.radius * Math.cos(angle)),
-      scaleVec3(yAxis, arc.radius * Math.sin(angle)),
-    ),
-  );
-}
-
-/**
- * 楕円の上の点(FR-318)。**角度は径数方程式のパラメータ角**(ラジアン)で、
- * 中心から見た幾何の方位角ではない(`ResolvedEllipse` の注釈)。
- *   P(u) = center + majorRadius·cos(u)·majorAxis + minorRadius·sin(u)·(normal × majorAxis)
- * 円弧の `arcPointAt` と同じ式で、半径だけを長軸・短軸に分けた形になっている。
- */
-export function ellipsePointAt(ellipse: ResolvedEllipse, parameter: number): Vec3 {
-  const minorAxis = crossVec3(ellipse.normal, ellipse.majorAxis);
-  return addVec3(
-    ellipse.center,
-    addVec3(
-      scaleVec3(ellipse.majorAxis, ellipse.majorRadius * Math.cos(parameter)),
-      scaleVec3(minorAxis, ellipse.minorRadius * Math.sin(parameter)),
-    ),
-  );
-}
+export {
+  arcPointAt,
+  curveEnd,
+  curveStart,
+  ellipsePointAt,
+  isFullCircle,
+  isFullEllipse,
+} from './intersectionMath.js';
 
 /**
  * 中心から見た幾何の方位角(ラジアン、長軸から短軸へ向かう向きが正)を、
@@ -178,16 +134,6 @@ export function azimuthToEllipseParameter(
   const base = Math.atan2(Math.sin(azimuth) / minorRadius, Math.cos(azimuth) / majorRadius);
   const turns = Math.round((azimuth - base) / FULL_TURN);
   return base + turns * FULL_TURN;
-}
-
-/** 開始角と終了角の差が ±360 度以上なら全周の円(FR-305、§0.a-0.4)。 */
-export function isFullCircle(arc: ResolvedArc): boolean {
-  return Math.abs(arc.endAngle - arc.startAngle) >= FULL_TURN - FULL_TURN_EPSILON;
-}
-
-/** 全周の楕円か(円弧の `isFullCircle` と同じ約束、FR-318)。 */
-export function isFullEllipse(ellipse: ResolvedEllipse): boolean {
-  return Math.abs(ellipse.endAngle - ellipse.startAngle) >= FULL_TURN - FULL_TURN_EPSILON;
 }
 
 /**
@@ -691,20 +637,6 @@ type ContourOutcome =
   | { readonly ok: true; readonly shape: OffsetContourShape }
   | { readonly ok: false; readonly error: SketchError };
 
-/** 1 本だけで輪になる曲線(全周の円・全周の楕円・閉じたスプライン)か。 */
-function isClosedByItself(curve: ResolvedCurve): boolean {
-  if (curve.kind === 'arc') {
-    return isFullCircle(curve);
-  }
-  if (curve.kind === 'ellipse') {
-    return isFullEllipse(curve);
-  }
-  if (curve.kind === 'spline') {
-    return curve.closed;
-  }
-  return false;
-}
-
 /** 開いた輪郭の起点と進む向きをまとめる。向きが定まらなければ断る。 */
 function openContour(
   featureId: string,
@@ -734,9 +666,10 @@ function openContour(
  * オフセット元の曲線の列が並んだ順につながっているかを確かめ、輪になっているか・
  * 開いているならどこからどちら向きにたどり始めるかを返す(FR-321、タスク15)。
  *
- * たどり方は `resolveCurveLoop`(面の境界)と同じで、選んだ向きが逆でも端が合えば
- * 受け入れる。違うのは**閉じていなくてもよい**ところで、開いた輪郭は片側へずらした
- * 1 本の曲線になる(`makeOffsetWire.ts` の `IsOpenResult`)。
+ * たどり方は `resolveCurveLoop`(面の境界)と同じなので、歩き方そのものは
+ * `intersectionMath.ts` の `traceCurveChain` に 1 つだけ置いてある(タスク17 で共通化)。
+ * 違うのは**閉じていなくてもよい**ところと、**1 本目を逆向きにたどってよい**ところで、
+ * 開いた輪郭は片側へずらした 1 本の曲線になる(`makeOffsetWire.ts` の `IsOpenResult`)。
  *
  * 進む向きは 1 本目の**端から端への向き**(弦)で近似する。ずらした側の左右を見分ける
  * のに使うだけなので、接線との差が 90 度未満であれば判定は変わらない(半周までの
@@ -747,50 +680,19 @@ function analyzeOffsetContour(
   curves: readonly ResolvedCurve[],
   normal: Vec3,
 ): ContourOutcome {
-  const first = curves[0];
-  const firstStart = curveStart(first);
-  const firstEnd = curveEnd(first);
-  if (curves.length === 1) {
-    if (isClosedByItself(first)) {
-      return { ok: true, shape: { closed: true } };
-    }
-    return openContour(featureId, firstStart, firstEnd, normal);
-  }
-
-  const second = curves[1];
-  const touchesEnd =
-    isSamePoint(firstEnd, curveStart(second)) || isSamePoint(firstEnd, curveEnd(second));
-  const touchesStart =
-    isSamePoint(firstStart, curveStart(second)) || isSamePoint(firstStart, curveEnd(second));
-  if (!touchesEnd && !touchesStart) {
+  // 1 本だけのときは `traceCurveChain` が「1 本で輪になるか」(全周の円・全周の楕円・
+  // 閉じたスプライン)をそのまま答えるので、ここで分けなくてよい。
+  const traced = traceCurveChain(curves, { allowReversedFirst: true });
+  if (!traced.ok) {
     return {
       ok: false,
       error: error(featureId, 'notClosed', '選んだ線・円弧の端がつながっていません。'),
     };
   }
-  // 2 本目とつながっている端を「1 本目の終わり」とみなす(向きが逆でも受け入れる)。
-  const forward = touchesEnd;
-  const loopStart = forward ? firstStart : firstEnd;
-  let tip = forward ? firstEnd : firstStart;
-  for (let index = 1; index < curves.length; index += 1) {
-    const curve = curves[index];
-    const start = curveStart(curve);
-    const end = curveEnd(curve);
-    if (isSamePoint(start, tip)) {
-      tip = end;
-    } else if (isSamePoint(end, tip)) {
-      tip = start;
-    } else {
-      return {
-        ok: false,
-        error: error(featureId, 'notClosed', '選んだ線・円弧の端がつながっていません。'),
-      };
-    }
-  }
-  if (isSamePoint(tip, loopStart)) {
+  if (traced.chain.closed) {
     return { ok: true, shape: { closed: true } };
   }
-  return openContour(featureId, loopStart, forward ? firstEnd : firstStart, normal);
+  return openContour(featureId, traced.chain.start, traced.chain.afterFirst, normal);
 }
 
 /** 覚え書きから来た曲線に、いまのオフセットフィーチャーの id を付け直す。 */
@@ -1421,7 +1323,17 @@ export function resolveSketch(
     }
   }
 
-  return { points, segments, arcs, ellipses, splines, faces, errors, pendingOffsets };
+  return {
+    points,
+    segments,
+    arcs,
+    ellipses,
+    splines,
+    faces,
+    errors,
+    pendingOffsets,
+    curvesByFeature,
+  };
 }
 
 type SplineOutcome =
@@ -1637,26 +1549,16 @@ function resolveCurveLoop(
     return { ok: false, error: error(feature.id, 'notClosed', '1 本では閉じた形になりません。') };
   }
 
-  const loopStart = curveStart(first);
-  let tip = curveEnd(first);
-  for (let index = 1; index < curves.length; index += 1) {
-    const curve = curves[index];
-    const start = curveStart(curve);
-    const end = curveEnd(curve);
-    // 選んだ向きが逆でもつながっていれば受け入れる。
-    if (isSamePoint(start, tip)) {
-      tip = end;
-    } else if (isSamePoint(end, tip)) {
-      tip = start;
-    } else {
-      return {
-        ok: false,
-        error: error(feature.id, 'notClosed', '選んだ線・円弧の端がつながっていません。'),
-      };
-    }
+  // 2 本目以降は選んだ向きが逆でもつながっていれば受け入れる。1 本目は選んだ向きのまま
+  // 歩き始める(たどり方そのものは `intersectionMath.ts` の `traceCurveChain`、タスク17)。
+  const traced = traceCurveChain(curves);
+  if (!traced.ok) {
+    return {
+      ok: false,
+      error: error(feature.id, 'notClosed', '選んだ線・円弧の端がつながっていません。'),
+    };
   }
-
-  if (!isSamePoint(tip, loopStart)) {
+  if (!traced.chain.closed) {
     return {
       ok: false,
       error: error(feature.id, 'notClosed', '最後の端が最初の端に戻っていません。'),

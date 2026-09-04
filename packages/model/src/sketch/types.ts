@@ -487,6 +487,17 @@ export interface ResolvedSketch {
   readonly errors: readonly SketchError[];
   /** まだ形が決まっていないオフセット(FR-321、タスク15)。無ければ空。 */
   readonly pendingOffsets: readonly PendingOffset[];
+  /**
+   * 「1 フィーチャーが複数の曲線を生む」もの(矩形・正多角形・長穴・オフセット)の
+   * 曲線を、フィーチャーの id から順番どおりに引く(§0.a-0.8、タスク4・15)。
+   *
+   * `segments` / `arcs` にも同じ曲線が入っているが、そちらは種類ごとに分かれるので
+   * **1 フィーチャーの中の並び順(`featureId#n` の n)が分からなくなる**
+   * (長穴は「直線・円弧・直線・円弧」の順で交互に並ぶ)。n 番目の曲線を名指しする側
+   * (面の境界、オフセット元、トリム・延長の対象。FR-322、タスク17)はここを見る。
+   * 線分・円弧のように 1 フィーチャー = 1 曲線のものはここに入らない。
+   */
+  readonly curvesByFeature: ReadonlyMap<string, readonly ResolvedCurve[]>;
 }
 
 /** 面 1 枚のメッシュ。kernel の FaceMeshData を model の言葉へ詰め替えたもの。 */

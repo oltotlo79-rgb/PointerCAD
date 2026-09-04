@@ -2,6 +2,7 @@ import { createKernelBridge, recomputePart } from '@pointercad/model';
 import { useEffect } from 'react';
 
 import { startAutoSave } from '../file/attachAutoSave.js';
+import { attachDisplaySettings } from '../shell/applyDisplaySettings.js';
 import { AppShell } from '../shell/AppShell.js';
 import { attachPartRecompute } from '../store/useAppStore.js';
 
@@ -34,6 +35,16 @@ export function PointerCadApp(): React.JSX.Element {
      * ここは始めて片付けるだけにする(docs/報告記録.md 2026-09-02 22:10 の④)。
      */
     return startAutoSave();
+  }, []);
+
+  useEffect(() => {
+    /*
+     * 表示テーマ・拡大率をルート要素へ反映する(FR-908、FR-909)。起動時の値をすぐに
+     * 反映し、以後はストアの `displaySettings` の変化を見張って追従する(切り替えは
+     * 再起動なしに即時反映、§0.a-0.1・0.2)。中身は `applyDisplaySettings.ts` にあり、
+     * ここは始めて片付けるだけにする。
+     */
+    return attachDisplaySettings(document.documentElement);
   }, []);
 
   return <AppShell />;

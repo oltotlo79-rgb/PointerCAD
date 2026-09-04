@@ -35,6 +35,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import type { AutoSaver } from '@pointercad/io';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { DEFAULT_DISPLAY_SETTINGS } from '../settings/settings.js';
 import { setFeatureField } from '../sketch/featureSummary.js';
 import { createNumericInput } from '../sketch/numericInput.js';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
@@ -191,6 +192,9 @@ beforeEach(() => {
     // createInitialDocumentState の外にある(文書を作り直しても戻らない)ので、
     // ここで明示的に初期化しないと前の検査の値が漏れる(§0.a-0.23 ⑨)。
     kernelLoaded: false,
+    // displaySettings も同じ理由(タスク1)。他の検査が setDisplaySettings を呼んでも
+    // 次の検査へ持ち越さない。
+    displaySettings: DEFAULT_DISPLAY_SETTINGS,
   });
 });
 
@@ -1189,5 +1193,65 @@ describe('選択の種類(FR-106、NFR-UX-1、計画書 P3 タスク21、§0.a-0
     useAppStore.getState().setSelectionKind('edge');
     useAppStore.getState().resetDocument(createEmptyPartDocument());
     expect(useAppStore.getState().selectionKind).toBe('body');
+  });
+
+  it(
+    '加工の確定後、道具を選択へ戻してから作った立体を選ぶと選択が残る' +
+      '(タスク30 不具合(a): AppShell.onSolidCommit が setActiveTool(\'select\') → setSelection の' +
+      '順で呼ぶ。逆順だと setActiveTool が種類の変化(面/辺 → 立体)を見て選択を空にする)',
+    () => {
+      // 穴・ねじ穴・R/C面取りのように選ぶ種類が body 以外になる道具で確定した状況を再現する。
+      useAppStore.getState().setActiveTool('hole');
+      useAppStore.getState().setSelection(['extrude-1#face:0']);
+      expect(useAppStore.getState().selectionKind).toBe('face');
+
+      // 修正後の順(道具を選択へ戻してから、作った立体を選ぶ)。
+      useAppStore.getState().setActiveTool('select');
+      useAppStore.getState().setSelection(['hole-1']);
+
+      const state = useAppStore.getState();
+      expect(state.selectionKind).toBe('body');
+      expect(state.selection).toEqual(['hole-1']);
+    },
+  );
+
+  it('(参考)逆順だと setActiveTool が選択を空にする(タスク30 不具合(a) の再現)', () => {
+    useAppStore.getState().setActiveTool('hole');
+    useAppStore.getState().setSelection(['extrude-1#face:0']);
+
+    // 修正前の順(作った立体を選んでから、道具を選択へ戻す)だと選択が空になる。
+    useAppStore.getState().setSelection(['hole-1']);
+    useAppStore.getState().setActiveTool('select');
+
+    expect(useAppStore.getState().selection).toEqual([]);
+  });
+});
+
+describe('表示設定(FR-908、FR-909、計画書 P4 タスク1、§0.a-0.1〜0.3)', () => {
+  it('起動時の表示設定は既定(ダーク・100%)', () => {
+    expect(useAppStore.getState().displaySettings).toEqual(DEFAULT_DISPLAY_SETTINGS);
+  });
+
+  it('setDisplaySettings で表示設定を丸ごと差し替えられる', () => {
+    useAppStore.getState().setDisplaySettings({ theme: 'light', uiScale: 120 });
+    expect(useAppStore.getState().displaySettings).toEqual({ theme: 'light', uiScale: 120 });
+
+    useAppStore.getState().setDisplaySettings({ theme: 'modern', uiScale: 90 });
+    expect(useAppStore.getState().displaySettings).toEqual({ theme: 'modern', uiScale: 90 });
+  });
+
+  it('localStorage が無い実行環境(このテスト環境)でも例外を投げずに保存を試みる', () => {
+    // Vitest は environment: 'node' で動く(localStorage が無い)。saveSettings が黙って
+    // 諦めることを settings.test.ts で確かめているので、ここでは setDisplaySettings 経由でも
+    // 例外が外へ漏れないことだけを確かめる(NFR-RE-1)。
+    expect(() => {
+      useAppStore.getState().setDisplaySettings({ theme: 'darkModern', uiScale: 140 });
+    }).not.toThrow();
+  });
+
+  it('resetDocument(新規)では表示設定を戻さない(部品ではなく端末の好みのため)', () => {
+    useAppStore.getState().setDisplaySettings({ theme: 'lightModern', uiScale: 150 });
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    expect(useAppStore.getState().displaySettings).toEqual({ theme: 'lightModern', uiScale: 150 });
   });
 });

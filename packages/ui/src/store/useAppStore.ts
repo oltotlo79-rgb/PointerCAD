@@ -41,6 +41,7 @@ import { create } from 'zustand';
 
 import { createBrowserFileGateway, type FileGateway } from '../file/fileGateway.js';
 import type { MessageKey } from '../i18n/t.js';
+import { loadSettings, saveSettings, type DisplaySettings } from '../settings/settings.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
@@ -121,6 +122,12 @@ export interface AppState {
   readonly projection: ProjectionMode;
   readonly displayStyle: DisplayStyle;
   readonly showGrid: boolean;
+  /**
+   * 表示テーマと拡大率(FR-908、FR-909、§0.a-0.1〜0.3)。端末(`localStorage`)へ保存され、
+   * 部品文書とは無関係な利用者・端末の好みなので `resetDocument`(新規)では戻さない。
+   * ルート要素への反映(`data-theme` / `--pcad-scale`)は `shell/applyDisplaySettings.ts`。
+   */
+  readonly displaySettings: DisplaySettings;
   /** ホーム視点への復帰要求を数える(FR-108)。増えるたびにビューポートが反応する。 */
   readonly homeViewRequestCount: number;
   /**
@@ -281,6 +288,8 @@ export interface AppState {
   readonly setProjection: (projection: ProjectionMode) => void;
   readonly setDisplayStyle: (displayStyle: DisplayStyle) => void;
   readonly setShowGrid: (showGrid: boolean) => void;
+  /** 表示テーマ・拡大率を差し替え、`localStorage` へ保存する(FR-908、FR-909)。 */
+  readonly setDisplaySettings: (settings: DisplaySettings) => void;
   readonly requestHomeView: () => void;
   /** ビューポート(canvas)へ焦点を戻してほしい、と頼む。 */
   readonly requestViewportFocus: () => void;
@@ -623,6 +632,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   projection: 'perspective',
   displayStyle: 'shadedWithEdges',
   showGrid: true,
+  // 部品を作り直しても(resetDocument)戻さないので、文書まわりの初期値には含めない
+  // (kernelLoaded と同じ扱い)。起動時に localStorage から読む(壊れていれば既定値)。
+  displaySettings: loadSettings(),
   homeViewRequestCount: 0,
   matchWorkPlaneRequestCount: 0,
   focusViewportRequestCount: 0,
@@ -646,6 +658,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setShowGrid: (showGrid) => {
     set({ showGrid });
+  },
+  setDisplaySettings: (displaySettings) => {
+    saveSettings(displaySettings);
+    set({ displaySettings });
   },
   requestHomeView: () => {
     set((state) => ({ homeViewRequestCount: state.homeViewRequestCount + 1 }));

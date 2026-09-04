@@ -3,11 +3,23 @@
  *
  * 色・書体・間隔・角丸はすべて :root のカスタムプロパティ(--pcad-*)に集約し、
  * 個々の規則へ色を直書きしない。見た目を変えるときはトークンだけを触れば済むようにする。
+ *
+ * 表示テーマ(FR-908)は `[data-theme="…"]` セレクタで :root の色系トークンを丸ごと
+ * 上書きする(計画書 docs/plans/P4-スケッチ拡張.md タスク1、§0.a-0.1)。属性を何も
+ * 付けなければこの :root の値(dark)のまま。ルート要素への `data-theme` の反映は
+ * `shell/applyDisplaySettings.ts`(React 側は触らない、CSS はここで完結する)。
+ *
+ * 表示の拡大率(FR-909、§0.a-0.2)は --pcad-scale(0.9〜1.5)を数値系トークンへ掛ける
+ * 方式。各テーマは自分の基準px値に同じ倍率を掛けるので、テーマを切り替えても
+ * 拡大率はそのまま保たれる。
  */
 
 :root {
   /* ブラウザ既定の下地(スクロールバー・選択色など)も暗色に揃える。 */
   color-scheme: dark;
+
+  /* 表示の拡大率(FR-909)。90〜150% を 0.9〜1.5 の倍率にして渡す(既定は等倍)。 */
+  --pcad-scale: 1;
 
   /* 面 */
   --pcad-bg: #16181d;
@@ -59,22 +71,242 @@
   /* 浮いた要素の下地 */
   --pcad-overlay: rgb(30 33 40 / 88%);
 
-  /* 書体 */
+  /* 書体。拡大率(--pcad-scale)を掛けるので、既定は 13px 等の「等倍のときの値」。 */
   --pcad-font: "Segoe UI", "Yu Gothic UI", "Meiryo", "Noto Sans JP", system-ui, sans-serif;
-  --pcad-font-size: 13px;
-  --pcad-font-size-heading: 12px;
-  --pcad-font-size-small: 11px;
+  --pcad-font-size: calc(13px * var(--pcad-scale, 1));
+  --pcad-font-size-heading: calc(12px * var(--pcad-scale, 1));
+  --pcad-font-size-small: calc(11px * var(--pcad-scale, 1));
 
-  /* 形と間隔 */
-  --pcad-radius: 6px;
-  --pcad-radius-small: 4px;
-  --pcad-space-1: 4px;
-  --pcad-space-2: 8px;
-  --pcad-space-3: 12px;
-  --pcad-space-4: 16px;
+  /* 形と間隔。同じく --pcad-scale を掛ける(FR-909)。 */
+  --pcad-radius: calc(6px * var(--pcad-scale, 1));
+  --pcad-radius-small: calc(4px * var(--pcad-scale, 1));
+  --pcad-space-1: calc(4px * var(--pcad-scale, 1));
+  --pcad-space-2: calc(8px * var(--pcad-scale, 1));
+  --pcad-space-3: calc(12px * var(--pcad-scale, 1));
+  --pcad-space-4: calc(16px * var(--pcad-scale, 1));
   --pcad-shadow: 0 1px 2px rgb(0 0 0 / 40%);
   --pcad-shadow-raised: 0 4px 14px rgb(0 0 0 / 45%);
+
+  /*
+   * 淡い影(FR-908、モダン系だけが持つ「もう一段浮かせる」影)。ダーク・ライトは平坦なので
+   * 通常の影と同じにしておく(見た目は変わらない、テーマごとに再定義するのはモダン系のみ)。
+   * まだどの規則もこのトークンを参照していない(タスク1 はトークン定義のみ)。
+   */
+  --pcad-shadow-soft: var(--pcad-shadow);
+  --pcad-shadow-soft-raised: var(--pcad-shadow-raised);
   --pcad-transition: 120ms ease;
+}
+
+/*
+ * ===== 表示テーマ 5 種(FR-908) =====
+ *
+ * ダーク(上の :root がそのまま該当。ここには書かない)を含めて 5 種。属性セレクタは
+ * :root と同じ詳細度(0,1,0)なので、ここに書いた欄だけがダークの値を上書きする。
+ * **各テーマは自分が使う欄をすべて明示する**(:root の値への意図しない後退を避けるため、
+ * 「丸ごと上書き」で 1 つも欠かさない、§0.a-0.1)。
+ *
+ * コントラスト比は WCAG の相対輝度式で計算した実測値(2026-09-04)。文字は地・面の
+ * どちらに対しても 4.5:1 以上、縁として使う --pcad-accent-border は地の面に合成した
+ * 実効色で 3:1 以上を満たす(--pcad-text-faint は既存のダーク同様、装飾用の弱い文字
+ * なので対象外)。
+ */
+
+/*
+ * ライト: 白地に暗い文字の平坦な配色(ダークと同じ形、色だけを差し替える)。
+ * text/bg 15.44:1、text/surface 16.70:1、textMuted/bg 7.34:1、textMuted/surface 7.94:1、
+ * accent(文字として)/surface 4.70:1、accent-border(75% 合成)/surface 3.06:1、
+ * dangerText/dangerSurface 6.12:1。
+ */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --pcad-bg: #f5f6f8;
+  --pcad-surface: #ffffff;
+  --pcad-surface-raised: #eef0f3;
+  --pcad-border: #d8dbe2;
+  --pcad-border-strong: #c2c6d0;
+
+  --pcad-text: #1b1e24;
+  --pcad-text-muted: #4b5160;
+  --pcad-text-faint: #767c8a;
+
+  --pcad-accent: #2f6fe0;
+  --pcad-accent-hover: #4f86ea;
+  --pcad-accent-active: #1f56b8;
+  --pcad-accent-soft: rgb(47 111 224 / 14%);
+  --pcad-accent-soft-hover: rgb(47 111 224 / 20%);
+  --pcad-accent-border: rgb(47 111 224 / 75%);
+
+  --pcad-success: #1f9d64;
+  --pcad-warning: #b06a00;
+  --pcad-danger: #d23b3b;
+  --pcad-danger-surface: #fbe4e4;
+  --pcad-danger-text: #a3241f;
+
+  --pcad-viewport-top: #eef1f5;
+  --pcad-viewport-bottom: #d7dbe3;
+  --pcad-overlay: rgb(255 255 255 / 92%);
+
+  /* 白地には黒 40% の影が重すぎるので、平坦さは保ったまま淡くする。 */
+  --pcad-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+  --pcad-shadow-raised: 0 4px 14px rgb(0 0 0 / 16%);
+  --pcad-shadow-soft: var(--pcad-shadow);
+  --pcad-shadow-soft-raised: var(--pcad-shadow-raised);
+}
+
+/*
+ * ダークモダン: ダークの配色のまま、角丸・余白を大きく、影を淡く広く、アクセントを
+ * 濃いめの塗り(soft 22%/30%、ダークの 16%/24%より多め)で使う。
+ * text/bg 15.87:1、text/surface 14.31:1、textMuted/bg 8.29:1、textMuted/surface 7.48:1、
+ * accent(文字として)/surface 5.99:1、accent-border(60% 合成)/surface 3.03:1、
+ * dangerText/dangerSurface 6.87:1。
+ */
+[data-theme="darkModern"] {
+  color-scheme: dark;
+
+  --pcad-bg: #14161c;
+  --pcad-surface: #1c2029;
+  --pcad-surface-raised: #262b37;
+  --pcad-border: #333a48;
+  --pcad-border-strong: #454e60;
+
+  --pcad-text: #eef0f6;
+  --pcad-text-muted: #a7b0c2;
+  --pcad-text-faint: #747d90;
+
+  --pcad-accent: #5b9dff;
+  --pcad-accent-hover: #7fb2ff;
+  --pcad-accent-active: #3f82e6;
+  --pcad-accent-soft: rgb(91 157 255 / 22%);
+  --pcad-accent-soft-hover: rgb(91 157 255 / 30%);
+  --pcad-accent-border: rgb(91 157 255 / 60%);
+
+  --pcad-success: #46e0a8;
+  --pcad-warning: #ffc36b;
+  --pcad-danger: #ff6b6b;
+  --pcad-danger-surface: #3c262b;
+  --pcad-danger-text: #ff9a9a;
+
+  --pcad-viewport-top: #2e333f;
+  --pcad-viewport-bottom: #1b1f27;
+  --pcad-overlay: rgb(28 32 41 / 90%);
+
+  /* 大きめの角丸(FR-908)。既定 6px/4px の倍以上。拡大率は掛けたまま。 */
+  --pcad-radius: calc(14px * var(--pcad-scale, 1));
+  --pcad-radius-small: calc(9px * var(--pcad-scale, 1));
+
+  /* 広めの余白(FR-908)。既定比でおおよそ 1.4〜1.5 倍。 */
+  --pcad-space-1: calc(6px * var(--pcad-scale, 1));
+  --pcad-space-2: calc(11px * var(--pcad-scale, 1));
+  --pcad-space-3: calc(16px * var(--pcad-scale, 1));
+  --pcad-space-4: calc(22px * var(--pcad-scale, 1));
+
+  /* 淡く広い影(FR-908)。既定より滲みを大きく・不透明度を下げる。 */
+  --pcad-shadow: 0 3px 10px rgb(0 0 0 / 28%);
+  --pcad-shadow-raised: 0 12px 32px rgb(0 0 0 / 34%);
+  --pcad-shadow-soft: 0 6px 20px rgb(0 0 0 / 22%);
+  --pcad-shadow-soft-raised: 0 18px 44px rgb(0 0 0 / 30%);
+}
+
+/*
+ * ライトモダン: ライトの配色のまま、ダークモダンと同じ角丸・余白・淡い影の形にする。
+ * text/bg 14.42:1、text/surface 16.32:1、textMuted/bg 6.61:1、textMuted/surface 7.48:1、
+ * accent(文字として)/surface 4.70:1、accent-border(75% 合成)/surface 3.06:1、
+ * dangerText/dangerSurface 6.12:1。
+ */
+[data-theme="lightModern"] {
+  color-scheme: light;
+
+  --pcad-bg: #eef1f6;
+  --pcad-surface: #ffffff;
+  --pcad-surface-raised: #f3f5f9;
+  --pcad-border: #dde1e9;
+  --pcad-border-strong: #c7ccd8;
+
+  --pcad-text: #1c2028;
+  --pcad-text-muted: #4d5566;
+  --pcad-text-faint: #78808f;
+
+  --pcad-accent: #2f6fe0;
+  --pcad-accent-hover: #4f86ea;
+  --pcad-accent-active: #1f56b8;
+  --pcad-accent-soft: rgb(47 111 224 / 18%);
+  --pcad-accent-soft-hover: rgb(47 111 224 / 26%);
+  --pcad-accent-border: rgb(47 111 224 / 75%);
+
+  --pcad-success: #1f9d64;
+  --pcad-warning: #b06a00;
+  --pcad-danger: #d23b3b;
+  --pcad-danger-surface: #fbe4e4;
+  --pcad-danger-text: #a3241f;
+
+  --pcad-viewport-top: #eef1f5;
+  --pcad-viewport-bottom: #d7dbe3;
+  --pcad-overlay: rgb(255 255 255 / 92%);
+
+  --pcad-radius: calc(14px * var(--pcad-scale, 1));
+  --pcad-radius-small: calc(9px * var(--pcad-scale, 1));
+  --pcad-space-1: calc(6px * var(--pcad-scale, 1));
+  --pcad-space-2: calc(11px * var(--pcad-scale, 1));
+  --pcad-space-3: calc(16px * var(--pcad-scale, 1));
+  --pcad-space-4: calc(22px * var(--pcad-scale, 1));
+
+  --pcad-shadow: 0 3px 10px rgb(0 0 0 / 10%);
+  --pcad-shadow-raised: 0 14px 34px rgb(0 0 0 / 14%);
+  --pcad-shadow-soft: 0 6px 20px rgb(0 0 0 / 8%);
+  --pcad-shadow-soft-raised: 0 18px 44px rgb(0 0 0 / 12%);
+}
+
+/*
+ * モダン: 中間の明るさのグレー基調(FR-908「モダンは中間の明るさのグレー基調」)。
+ * 灰色地は白地より暗いぶん、アクセントは濃紺にして文字としても読める濃さにする
+ * (accent(文字として)/surface が 4.5:1 を割らない色を実測で選んだ、他の 4 テーマの
+ * アクセントより濃いのはそのため)。
+ * text/bg 6.89:1、text/surface 8.69:1、textMuted/bg 5.11:1、textMuted/surface 6.44:1、
+ * accent(文字として)/surface 5.05:1、accent-border(70% 合成)/surface 3.03:1、
+ * dangerText/dangerSurface 7.51:1。
+ */
+[data-theme="modern"] {
+  color-scheme: light;
+
+  --pcad-bg: #9aa0ab;
+  --pcad-surface: #aeb4bf;
+  --pcad-surface-raised: #bcc2cc;
+  --pcad-border: #7c828d;
+  --pcad-border-strong: #666c77;
+
+  --pcad-text: #14161a;
+  --pcad-text-muted: #2c2f35;
+  --pcad-text-faint: #45484f;
+
+  --pcad-accent: #123a8a;
+  --pcad-accent-hover: #2f57ab;
+  --pcad-accent-active: #0c2c6b;
+  --pcad-accent-soft: rgb(18 58 138 / 22%);
+  --pcad-accent-soft-hover: rgb(18 58 138 / 30%);
+  --pcad-accent-border: rgb(18 58 138 / 70%);
+
+  --pcad-success: #0f7a4c;
+  --pcad-warning: #7a4c00;
+  --pcad-danger: #a8231f;
+  --pcad-danger-surface: #d9b9b7;
+  --pcad-danger-text: #5c110d;
+
+  --pcad-viewport-top: #b7bcc5;
+  --pcad-viewport-bottom: #8b909b;
+  --pcad-overlay: rgb(174 180 191 / 92%);
+
+  --pcad-radius: calc(14px * var(--pcad-scale, 1));
+  --pcad-radius-small: calc(9px * var(--pcad-scale, 1));
+  --pcad-space-1: calc(6px * var(--pcad-scale, 1));
+  --pcad-space-2: calc(11px * var(--pcad-scale, 1));
+  --pcad-space-3: calc(16px * var(--pcad-scale, 1));
+  --pcad-space-4: calc(22px * var(--pcad-scale, 1));
+
+  --pcad-shadow: 0 3px 12px rgb(0 0 0 / 22%);
+  --pcad-shadow-raised: 0 14px 34px rgb(0 0 0 / 28%);
+  --pcad-shadow-soft: 0 6px 20px rgb(0 0 0 / 18%);
+  --pcad-shadow-soft-raised: 0 18px 44px rgb(0 0 0 / 24%);
 }
 
 /* ===== 全体の骨格 ===== */

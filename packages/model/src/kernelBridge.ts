@@ -11,7 +11,10 @@ import {
   type CurveSpec,
   type FaceMeshData,
   type KernelApi,
+  type OffsetJoinType,
   type PlanarFaceRequest,
+  type SketchOffsetItem,
+  type SketchOffsetOutcome,
   type SketchTessellationFailure,
   type SolidBodyMesh,
   type SolidProgress,
@@ -26,7 +29,13 @@ import * as Comlink from 'comlink';
 import type { ResolvedSolidStep, SolidStepPlan, SubShapeQueryPlan } from './part/resolvePart.js';
 import type { EdgeCurveKind, FaceSurfaceKind } from './part/types.js';
 import { isFullEllipse } from './sketch/resolveSketch.js';
-import type { ResolvedCurve, ResolvedFace, SketchFaceMesh, SketchMesh } from './sketch/types.js';
+import type {
+  OffsetCornerKind,
+  ResolvedCurve,
+  ResolvedFace,
+  SketchFaceMesh,
+  SketchMesh,
+} from './sketch/types.js';
 import type { Vec3 } from './sketch/vec3.js';
 
 /** 面 1 枚を作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
@@ -43,6 +52,42 @@ export interface SketchFaceFailure {
 export interface SketchTessellationOutcome {
   readonly mesh: SketchMesh;
   readonly failures: readonly SketchFaceFailure[];
+}
+
+/**
+ * オフセット 1 件の依頼(model の言葉、FR-321、P4 タスク15)。
+ * 距離は**符号つき**で、どちら側かは呼び出し側(`recomputeSketch`)が決めてから渡す。
+ */
+export interface SketchOffsetRequestItem {
+  readonly featureId: string;
+  /** オフセット元の曲線。並んだ順につながっていること。 */
+  readonly curves: readonly ResolvedCurve[];
+  readonly distance: number;
+  readonly corner: OffsetCornerKind;
+}
+
+/** オフセットで得た輪郭 1 本。面の境界に使えるのは閉じているものだけ。 */
+export interface SketchOffsetContour {
+  readonly curves: readonly ResolvedCurve[];
+  readonly closed: boolean;
+}
+
+/** オフセット 1 件の結果。輪郭が 2 本以上に分かれることもある。 */
+export interface SketchOffsetEntry {
+  readonly featureId: string;
+  readonly contours: readonly SketchOffsetContour[];
+}
+
+/** オフセットを 1 件作れなかった理由。カーネルが日本語で返したものを持ち回る(FR-504)。 */
+export interface SketchOffsetFailure {
+  readonly featureId: string;
+  readonly message: string;
+}
+
+/** オフセットの結果。1 件失敗しても残りは作る(FR-504、NFR-RE-1)。 */
+export interface SketchOffsetResult {
+  readonly results: readonly SketchOffsetEntry[];
+  readonly failures: readonly SketchOffsetFailure[];
 }
 
 /** ボディ 1 つの表示用データ(model の言葉)。kernel の SolidBodyMesh を詰め替えたもの。 */
@@ -209,6 +254,13 @@ export interface KernelBridge {
     steps: readonly ResolvedSolidStep[],
     options?: SolidRecomputeOptions,
   ): Promise<SolidRecomputeOutcome>;
+  /**
+   * 輪郭を距離ぶんずらした曲線の列をカーネルへ頼む(FR-321、P4 タスク15)。
+   * 何件でも 1 回の往復でまとめて頼め、1 件失敗しても残りは返る(FR-504)。
+   */
+  offsetSketchCurves(
+    requests: readonly SketchOffsetRequestItem[],
+  ): Promise<SketchOffsetResult>;
   dispose(): void;
 }
 
@@ -267,6 +319,108 @@ export function toCurveSpec(curve: ResolvedCurve): CurveSpec {
 /** 面 1 枚の依頼を作る。結果との対応づけには面フィーチャーの id を使う。 */
 export function toFaceRequest(face: ResolvedFace): PlanarFaceRequest {
   return { id: face.featureId, curves: face.curves.map((curve) => toCurveSpec(curve)) };
+}
+
+/** 全周(ラジアン)。カーネルが角度を省いた楕円は全周の意味になる。 */
+const FULL_TURN = 2 * Math.PI;
+
+/**
+ * カーネルから返った曲線を model の言葉へ直す(FR-321、P4 タスク15)。`toCurveSpec` の逆。
+ *
+ * `featureId` は結果を持つフィーチャー(オフセット)の id を付ける。オフセットが返すのは
+ * 線分と円弧だけ(`makeOffsetWire.ts`)だが、型の上では 4 種すべて来うるので全部を受ける。
+ * B スプラインが返る道(将来の投影・交差)では、曲線の式ではなく**点列**として受ける
+ * (`ResolvedSpline` は通過点・制御点しか持たない、`types.ts` の注釈)。
+ * 全周の楕円は角度が省かれて返るので、0 から 1 周ぶんとして読む(`toCurveSpec` の裏返し)。
+ */
+export function fromCurveSpec(spec: CurveSpec, featureId: string): ResolvedCurve {
+  switch (spec.kind) {
+    case 'segment':
+      return { kind: 'segment', featureId, from: spec.from, to: spec.to };
+    case 'arc':
+      return {
+        kind: 'arc',
+        featureId,
+        center: spec.center,
+        normal: spec.normal,
+        xAxis: spec.xAxis,
+        radius: spec.radius,
+        startAngle: spec.startAngle,
+        endAngle: spec.endAngle,
+      };
+    case 'ellipse':
+      return {
+        kind: 'ellipse',
+        featureId,
+        center: spec.center,
+        normal: spec.normal,
+        majorAxis: spec.majorAxis,
+        majorRadius: spec.majorRadius,
+        minorRadius: spec.minorRadius,
+        startAngle: spec.startAngle ?? 0,
+        endAngle: spec.endAngle ?? FULL_TURN,
+      };
+    case 'spline':
+      return {
+        kind: 'spline',
+        featureId,
+        mode: spec.mode,
+        points: spec.points,
+        closed: spec.closed,
+      };
+  }
+}
+
+/** 角の作り方(model の言葉)をカーネルの言葉へ直す。 */
+function toJoinType(corner: OffsetCornerKind): OffsetJoinType {
+  return corner === 'sharp' ? 'intersection' : 'arc';
+}
+
+/** オフセット 1 件の依頼をカーネルの言葉へ直す。 */
+function toOffsetItem(request: SketchOffsetRequestItem): SketchOffsetItem {
+  return {
+    id: request.featureId,
+    curves: request.curves.map((curve) => toCurveSpec(curve)),
+    distance: request.distance,
+    joinType: toJoinType(request.corner),
+  };
+}
+
+/** オフセットが返らなかったとき(カーネルが id を返さなかったとき)に付ける理由。 */
+const MISSING_OFFSET_MESSAGE = 'カーネルからオフセットの結果が返りませんでした。';
+
+/**
+ * オフセットの結果を model の言葉へ詰め替える。
+ * 頼んだのに結果も理由も返らなかった id は、理由を補って失敗として扱う(FR-504。
+ * 面の詰め替え `toOutcome` と同じ書き方)。
+ */
+export function toOffsetResult(
+  requests: readonly SketchOffsetRequestItem[],
+  outcome: SketchOffsetOutcome,
+): SketchOffsetResult {
+  const results: SketchOffsetEntry[] = outcome.results.map((result) => ({
+    featureId: result.id,
+    contours: result.contours.map((contour) => ({
+      curves: contour.curves.map((curve) => fromCurveSpec(curve, result.id)),
+      closed: contour.closed,
+    })),
+  }));
+  const failures: SketchOffsetFailure[] = outcome.failures.map((failure) => ({
+    featureId: failure.id,
+    message: failure.message,
+  }));
+
+  const reported = new Set<string>(results.map((result) => result.featureId));
+  for (const failure of failures) {
+    reported.add(failure.featureId);
+  }
+  for (const request of requests) {
+    if (!reported.has(request.featureId)) {
+      failures.push({ featureId: request.featureId, message: MISSING_OFFSET_MESSAGE });
+    }
+  }
+
+  return { results, failures };
 }
 
 /**
@@ -709,6 +863,20 @@ export function createKernelBridge(): KernelBridge {
         };
       }
       return toSolidOutcome(steps, race.result);
+    },
+
+    async offsetSketchCurves(requests): Promise<SketchOffsetResult> {
+      if (requests.length === 0) {
+        return { results: [], failures: [] };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      if (health.broken) {
+        restart();
+      }
+      const outcome = await connection.remote.offsetSketchCurves({
+        items: requests.map((request) => toOffsetItem(request)),
+      });
+      return toOffsetResult(requests, outcome);
     },
 
     dispose(): void {

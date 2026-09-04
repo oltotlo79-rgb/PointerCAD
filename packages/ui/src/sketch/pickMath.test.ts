@@ -22,6 +22,7 @@ const SKETCH: ResolvedSketch = {
   ],
   ellipses: [],
   splines: [],
+  pendingOffsets: [],
   faces: [
     {
       featureId: 'f1',

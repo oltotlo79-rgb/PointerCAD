@@ -71,6 +71,9 @@ const KIND_ICONS: Readonly<
   slot: SlotToolIcon,
   ellipse: EllipseToolIcon,
   spline: SplineToolIcon,
+  // オフセット(FR-321、P4 タスク15)。専用の図柄はツールバーを組み直すタスク32 で足すので、
+  // それまでは「線をずらす」ことが分かる線分の図柄を借りる(型の網羅のため)。
+  offset: LineToolIcon,
   extrude: ExtrudeIcon,
   revolve: RevolveIcon,
   sew: SewIcon,

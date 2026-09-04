@@ -8,6 +8,7 @@ import {
   toSolidStepRequest,
   type KernelBridge,
   type PartProgress,
+  type SketchOffsetResult,
   type SketchTessellationOutcome,
   type SolidBody,
   type SolidRecomputeOutcome,
@@ -64,6 +65,9 @@ const EMPTY_SOLID_OUTCOME: SolidRecomputeOutcome = {
   cancelled: false,
 };
 
+/** オフセットを頼まないときの戻り値(FR-321、P4 タスク15)。 */
+const EMPTY_OFFSET_RESULT: SketchOffsetResult = { results: [], failures: [] };
+
 /**
  * 偽のカーネル。OCCT は読み込まない(実物は kernel 側の Node テストで確かめてある)。
  * async を使わないのは、await の無い async 関数を書かないため(計画書 §4)。
@@ -72,6 +76,7 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
   return {
     tessellateSketchFaces: () => Promise.resolve(EMPTY_SKETCH_OUTCOME),
     recomputeSolids: () => Promise.resolve(EMPTY_SOLID_OUTCOME),
+    offsetSketchCurves: () => Promise.resolve(EMPTY_OFFSET_RESULT),
     dispose: () => undefined,
     ...overrides,
   };

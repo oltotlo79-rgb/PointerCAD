@@ -72,6 +72,7 @@ const SKETCH: ResolvedSketch = {
   arcs: [QUARTER_ARC],
   ellipses: [],
   splines: [],
+  pendingOffsets: [],
   faces: [POINT_FACE],
   errors: [],
 };

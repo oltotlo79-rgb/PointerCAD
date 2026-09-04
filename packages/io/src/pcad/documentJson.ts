@@ -28,6 +28,8 @@ import {
   type PatternDirection,
   type PatternPlacement,
   type PlaneSpec,
+  type OffsetCornerKind,
+  type OffsetSide,
   type PointArrayLayout,
   type PointReference,
   type ReferenceAxisDefinition,
@@ -107,7 +109,14 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'slot',
   'ellipse',
   'spline',
+  'offset',
 ];
+/**
+ * オフセット(FR-321、P4 タスク15)の側と角。`model` の `OffsetSide` /
+ * `OffsetCornerKind` と同じ2値ずつ。
+ */
+const OFFSET_SIDES: readonly OffsetSide[] = ['outside', 'inside'];
+const OFFSET_CORNERS: readonly OffsetCornerKind[] = ['round', 'sharp'];
 /** 正多角形(FR-315)の半径の意味。`model` の `SketchPolygonFeature.radiusMode` と同じ2値。 */
 const POLYGON_RADIUS_MODES: readonly ('circumscribed' | 'inscribed')[] = [
   'circumscribed',
@@ -418,6 +427,19 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         mode: feature.mode,
         points: feature.points.map(serializeCoordinate),
         closed: feature.closed,
+        construction: feature.construction,
+      };
+    case 'offset':
+      // ずらした曲線そのものは保存しない(導出できるものは保存しない、rules/04)。
+      return {
+        id: feature.id,
+        kind: 'offset',
+        name: feature.name,
+        planeId: feature.planeId,
+        source: feature.source.map(serializeElementRef),
+        distance: serializeExpression(feature.distance),
+        side: feature.side,
+        corner: feature.corner,
         construction: feature.construction,
       };
   }
@@ -1138,6 +1160,8 @@ function readSketchFeature(value: unknown, path: string): Checked<SketchFeature>
       return readEllipseFeature(record.value, path, base.value);
     case 'spline':
       return readSplineFeature(record.value, path, base.value);
+    case 'offset':
+      return readOffsetFeature(record.value, path, base.value);
   }
 }
 
@@ -1624,6 +1648,50 @@ function readSplineFeature(
       mode: mode.value,
       points: points.value,
       closed: closed.value,
+      construction: construction.value,
+    },
+  };
+}
+
+/**
+ * オフセット(FR-321、P4 タスク15)を読む。
+ * ずらした後の曲線は保存されていない(再計算で導く)ので、読むのは元の要素・距離・
+ * 側・角だけ。距離の符号は使わず、どちら側かは `side` が持つ。
+ */
+function readOffsetFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const source = readList(record, 'source', path, readElementRef);
+  if (!source.ok) {
+    return source;
+  }
+  const distance = readExpression(record, 'distance', path);
+  if (!distance.ok) {
+    return distance;
+  }
+  const side = readLiteral(record, 'side', path, OFFSET_SIDES);
+  if (!side.ok) {
+    return side;
+  }
+  const corner = readLiteral(record, 'corner', path, OFFSET_CORNERS);
+  if (!corner.ok) {
+    return corner;
+  }
+  const construction = readConstructionFlag(record, path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'offset',
+      source: source.value,
+      distance: distance.value,
+      side: side.value,
+      corner: corner.value,
       construction: construction.value,
     },
   };

@@ -14,6 +14,16 @@ export type {
   SketchTessellationFailure,
   SketchTessellationRequest,
 } from './types.js';
+// 輪郭のオフセット(FR-321、P4 タスク15)。Worker 越しの依頼と結果。
+export type {
+  OffsetContour,
+  OffsetJoinType,
+  SketchOffsetFailure,
+  SketchOffsetItem,
+  SketchOffsetOutcome,
+  SketchOffsetRequest,
+  SketchOffsetResult,
+} from './types.js';
 // ソリッド(立体)の依頼と結果(FR-401〜404)。Comlink 越しに渡せる素の値だけで書いてある。
 export type {
   BooleanOperation,

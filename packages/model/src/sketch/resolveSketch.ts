@@ -28,6 +28,7 @@ import {
   type WorkPlane,
   type WorkPlaneId,
 } from './planeMath.js';
+import { offsetCacheKey } from './offsetMath.js';
 import {
   resolveCoordinate,
   vertexKey,
@@ -46,6 +47,8 @@ import {
 } from './splineMath.js';
 import type {
   FreeArcOrientation,
+  OffsetContourShape,
+  PendingOffset,
   PointArrayLayout,
   ResolvedArc,
   ResolvedCurve,
@@ -56,6 +59,7 @@ import type {
   ResolvedSketch,
   ResolvedSpline,
   SketchDocument,
+  SketchElementRef,
   SketchError,
   SketchErrorCode,
   SketchFaceFeature,
@@ -622,6 +626,216 @@ function resolvePointArrayFeature(
   }
 }
 
+type OffsetSourceOutcome =
+  | { readonly ok: true; readonly curves: readonly ResolvedCurve[] }
+  | { readonly ok: false; readonly error: SketchError };
+
+/**
+ * オフセット元(FR-321、タスク15)の要素を、選んだ順に曲線の列へ広げる。
+ *
+ * 参照の解き方は面の境界(`resolveFace`)と同じ約束にそろえる: 単体の線・円弧・楕円・
+ * スプラインはそのまま 1 本、矩形などの複数曲線フィーチャーは `index` を省けば全周、
+ * 指定すれば n 番目だけ(§0.a-0.8)。点・点列は線ではないので選べない。
+ */
+function collectOffsetSource(
+  featureId: string,
+  source: readonly SketchElementRef[],
+  curveByFeature: ReadonlyMap<string, ResolvedCurve>,
+  curvesByFeature: ReadonlyMap<string, readonly ResolvedCurve[]>,
+): OffsetSourceOutcome {
+  if (source.length === 0) {
+    return {
+      ok: false,
+      error: error(featureId, 'tooFewPoints', 'ずらす線・円弧が選ばれていません。'),
+    };
+  }
+  const curves: ResolvedCurve[] = [];
+  for (const reference of source) {
+    const single = curveByFeature.get(reference.featureId);
+    if (single !== undefined) {
+      curves.push(single);
+      continue;
+    }
+    const group = curvesByFeature.get(reference.featureId);
+    if (group === undefined) {
+      return {
+        ok: false,
+        error: error(
+          featureId,
+          'missingBase',
+          `ずらすもとの線が見つかりません: ${reference.featureId}`,
+        ),
+      };
+    }
+    if (reference.index === undefined) {
+      curves.push(...group);
+      continue;
+    }
+    const selected = group[reference.index];
+    if (selected === undefined) {
+      return {
+        ok: false,
+        error: error(
+          featureId,
+          'missingBase',
+          `ずらすもとの線が見つかりません: ${reference.featureId}#${String(reference.index)}`,
+        ),
+      };
+    }
+    curves.push(selected);
+  }
+  return { ok: true, curves };
+}
+
+type ContourOutcome =
+  | { readonly ok: true; readonly shape: OffsetContourShape }
+  | { readonly ok: false; readonly error: SketchError };
+
+/** 1 本だけで輪になる曲線(全周の円・全周の楕円・閉じたスプライン)か。 */
+function isClosedByItself(curve: ResolvedCurve): boolean {
+  if (curve.kind === 'arc') {
+    return isFullCircle(curve);
+  }
+  if (curve.kind === 'ellipse') {
+    return isFullEllipse(curve);
+  }
+  if (curve.kind === 'spline') {
+    return curve.closed;
+  }
+  return false;
+}
+
+/** 開いた輪郭の起点と進む向きをまとめる。向きが定まらなければ断る。 */
+function openContour(
+  featureId: string,
+  startPoint: Vec3,
+  towards: Vec3,
+  normal: Vec3,
+): ContourOutcome {
+  const along = subVec3(towards, startPoint);
+  if (lengthVec3(along) <= SKETCH_TOLERANCE_MM) {
+    return {
+      ok: false,
+      error: error(featureId, 'degenerate', 'ずらすもとの線の向きが定まりません。'),
+    };
+  }
+  return {
+    ok: true,
+    shape: {
+      closed: false,
+      startPoint,
+      startDirection: normalizeVec3(along),
+      normal,
+    },
+  };
+}
+
+/**
+ * オフセット元の曲線の列が並んだ順につながっているかを確かめ、輪になっているか・
+ * 開いているならどこからどちら向きにたどり始めるかを返す(FR-321、タスク15)。
+ *
+ * たどり方は `resolveCurveLoop`(面の境界)と同じで、選んだ向きが逆でも端が合えば
+ * 受け入れる。違うのは**閉じていなくてもよい**ところで、開いた輪郭は片側へずらした
+ * 1 本の曲線になる(`makeOffsetWire.ts` の `IsOpenResult`)。
+ *
+ * 進む向きは 1 本目の**端から端への向き**(弦)で近似する。ずらした側の左右を見分ける
+ * のに使うだけなので、接線との差が 90 度未満であれば判定は変わらない(半周までの
+ * 円弧・楕円弧はこれを満たす)。
+ */
+function analyzeOffsetContour(
+  featureId: string,
+  curves: readonly ResolvedCurve[],
+  normal: Vec3,
+): ContourOutcome {
+  const first = curves[0];
+  const firstStart = curveStart(first);
+  const firstEnd = curveEnd(first);
+  if (curves.length === 1) {
+    if (isClosedByItself(first)) {
+      return { ok: true, shape: { closed: true } };
+    }
+    return openContour(featureId, firstStart, firstEnd, normal);
+  }
+
+  const second = curves[1];
+  const touchesEnd =
+    isSamePoint(firstEnd, curveStart(second)) || isSamePoint(firstEnd, curveEnd(second));
+  const touchesStart =
+    isSamePoint(firstStart, curveStart(second)) || isSamePoint(firstStart, curveEnd(second));
+  if (!touchesEnd && !touchesStart) {
+    return {
+      ok: false,
+      error: error(featureId, 'notClosed', '選んだ線・円弧の端がつながっていません。'),
+    };
+  }
+  // 2 本目とつながっている端を「1 本目の終わり」とみなす(向きが逆でも受け入れる)。
+  const forward = touchesEnd;
+  const loopStart = forward ? firstStart : firstEnd;
+  let tip = forward ? firstEnd : firstStart;
+  for (let index = 1; index < curves.length; index += 1) {
+    const curve = curves[index];
+    const start = curveStart(curve);
+    const end = curveEnd(curve);
+    if (isSamePoint(start, tip)) {
+      tip = end;
+    } else if (isSamePoint(end, tip)) {
+      tip = start;
+    } else {
+      return {
+        ok: false,
+        error: error(featureId, 'notClosed', '選んだ線・円弧の端がつながっていません。'),
+      };
+    }
+  }
+  if (isSamePoint(tip, loopStart)) {
+    return { ok: true, shape: { closed: true } };
+  }
+  return openContour(featureId, loopStart, forward ? firstEnd : firstStart, normal);
+}
+
+/** 覚え書きから来た曲線に、いまのオフセットフィーチャーの id を付け直す。 */
+function retagCurve(curve: ResolvedCurve, featureId: string): ResolvedCurve {
+  switch (curve.kind) {
+    case 'segment':
+      return { ...curve, featureId };
+    case 'arc':
+      return { ...curve, featureId };
+    case 'ellipse':
+      return { ...curve, featureId };
+    case 'spline':
+      return { ...curve, featureId };
+  }
+}
+
+/**
+ * 解決済みの曲線を種類ごとの配列へ積む。オフセットの結果は線分・円弧しか返らない
+ * (`makeOffsetWire.ts`)が、型の上では 4 種すべて来うるので全部を受ける。
+ */
+function pushResolvedCurves(
+  curves: readonly ResolvedCurve[],
+  segments: ResolvedSegment[],
+  arcs: ResolvedArc[],
+  ellipses: ResolvedEllipse[],
+  splines: ResolvedSpline[],
+): void {
+  for (const curve of curves) {
+    switch (curve.kind) {
+      case 'segment':
+        segments.push(curve);
+        break;
+      case 'arc':
+        arcs.push(curve);
+        break;
+      case 'ellipse':
+        ellipses.push(curve);
+        break;
+      case 'spline':
+        splines.push(curve);
+        break;
+    }
+  }
+}
+
 /**
  * 解決のときに外から渡せる手掛かり(P4 タスク9)。
  *
@@ -638,6 +852,14 @@ export interface SketchResolveOptions {
    * 上流の立体の変化への追従は部品文書の側が担う(タスク25 で配線する)。
    */
   readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
+  /**
+   * 計算済みのオフセット(FR-321、タスク15)の曲線を鍵で引く。
+   *
+   * オフセットの形は OCCT に解いてもらうので、ここでは**読むだけ**にして解決を
+   * 純関数のまま保つ。引けなければ「まだ計算していない」として `pendingOffsets` へ
+   * 積み、カーネルへ頼むのは `recomputeSketch` の役目(`offsetMath.ts` の注釈)。
+   */
+  readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
 }
 
 /**
@@ -724,6 +946,9 @@ export function resolveSketch(
   const lookupWorkPlane = options.workPlane ?? baseWorkPlane;
   // 渡されなければ `resolvePointReference` が保存された指紋の位置を使う(タスク10)。
   const subShape = options.subShape;
+  // 渡されなければ、すべてのオフセットが「まだ計算していない」扱いになる(タスク15)。
+  const lookupOffset = options.offsetCurves ?? ((): null => null);
+  const pendingOffsets: PendingOffset[] = [];
   const points: ResolvedPoint[] = [];
   const segments: ResolvedSegment[] = [];
   const arcs: ResolvedArc[] = [];
@@ -1127,9 +1352,76 @@ export function resolveSketch(
       previous = curveEnd(spline.value);
       continue;
     }
+
+    if (feature.kind === 'offset') {
+      // 左右の基準になる法線が要るので、オフセットは作図面のあるスケッチだけで作れる
+      // (3D スケッチでの対応はタスク17 以降の申し送り)。
+      if (plane === null) {
+        errors.push(needsWorkPlane(feature.id, 'オフセット'));
+        continue;
+      }
+      const source = collectOffsetSource(
+        feature.id,
+        feature.source,
+        curveByFeature,
+        curvesByFeature,
+      );
+      if (!source.ok) {
+        errors.push(source.error);
+        continue;
+      }
+      const distance = feature.distance.value;
+      if (!Number.isFinite(distance) || distance < 0) {
+        errors.push(
+          error(feature.id, 'invalidValue', 'ずらす距離は 0 以上の数で指定してください。'),
+        );
+        continue;
+      }
+      const contour = analyzeOffsetContour(feature.id, source.curves, plane.normal);
+      if (!contour.ok) {
+        errors.push(contour.error);
+        continue;
+      }
+      const key = offsetCacheKey({
+        curves: source.curves,
+        distance,
+        side: feature.side,
+        corner: feature.corner,
+      });
+      const remembered = lookupOffset(key);
+      if (remembered === null) {
+        // まだ形が無いだけで失敗ではないので errors には入れない(§2.7 と同じ扱い)。
+        pendingOffsets.push({
+          featureId: feature.id,
+          key,
+          curves: source.curves,
+          distance,
+          side: feature.side,
+          corner: feature.corner,
+          contour: contour.shape,
+        });
+        continue;
+      }
+      if (remembered.length === 0) {
+        errors.push(error(feature.id, 'degenerate', 'ずらした結果が空になりました。'));
+        continue;
+      }
+      const created = remembered.map((curve) => retagCurve(curve, feature.id));
+      pushResolvedCurves(created, segments, arcs, ellipses, splines);
+      curvesByFeature.set(feature.id, created);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
+      const firstCreated = created[0];
+      const lastCreated = created[created.length - 1];
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(firstCreated));
+      vertices.set(vertexKey(feature.id, 'end'), curveEnd(lastCreated));
+      previous = curveEnd(lastCreated);
+      continue;
+    }
   }
 
-  return { points, segments, arcs, ellipses, splines, faces, errors };
+  return { points, segments, arcs, ellipses, splines, faces, errors, pendingOffsets };
 }
 
 type SplineOutcome =

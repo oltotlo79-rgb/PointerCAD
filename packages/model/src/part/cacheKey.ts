@@ -341,8 +341,14 @@ function keyCurve(curve: KeyCurve): string {
   }
 }
 
-/** 曲線の並び1本ぶん。順序を保ったまま連結し、長さも混ぜる(衝突対策)。 */
-function keyCurveList(curves: readonly KeyCurve[]): string {
+/**
+ * 曲線の並び1本ぶん。順序を保ったまま連結し、長さも混ぜる(衝突対策)。
+ *
+ * オフセット(FR-321、P4 タスク15)の鍵も曲線の並びを材料にするので輸出する。
+ * 丸めの規則(`keyNumber`)を2か所に書かないための決めで、`geometry/planeSpec.ts` が
+ * `keyNumber` を借りているのと同じ考え方。
+ */
+export function keyCurveList(curves: readonly KeyCurve[]): string {
   return `${curves.length}:[${curves.map(keyCurve).join(',')}]`;
 }
 

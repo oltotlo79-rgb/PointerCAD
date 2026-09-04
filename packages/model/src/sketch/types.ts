@@ -79,7 +79,8 @@ export type SketchFeatureKind =
   | 'polygon'
   | 'slot'
   | 'ellipse'
-  | 'spline';
+  | 'spline'
+  | 'offset';
 
 interface SketchFeatureBase {
   readonly id: string;
@@ -264,6 +265,48 @@ export interface SketchElementRef {
   readonly index?: number;
 }
 
+/**
+ * オフセットをどちら側へずらすか(FR-321、タスク15)。
+ *
+ * - **閉じた輪郭**: `outside` が外へ広がる側、`inside` が内へ縮む側。
+ *   輪郭を描いた向き(時計回り/反時計回り)にはよらない
+ *   (`offsetMath.ts` 冒頭の実測を参照)。
+ * - **開いた曲線**: 内も外も無いので、**進む向きから見た左が `outside`、右が `inside`**。
+ *   画面には「左/右」と出す(道具の側の言葉づかいはタスク21)。
+ */
+export type OffsetSide = 'outside' | 'inside';
+
+/**
+ * オフセットの角の作り方(FR-321)。
+ * `round` は外側の角を半径 = 距離の丸みでつなぎ、`sharp` は隣り合う辺を延長して尖らせる。
+ */
+export type OffsetCornerKind = 'round' | 'sharp';
+
+/**
+ * オフセット(FR-321、§2.5、タスク15)。選んだ線・円弧・つながった輪郭を、距離ぶん
+ * 平行にずらした**新しい**曲線列を作る。元の要素は変えない(複製系、§0.a-0.10)。
+ *
+ * **曲線の形はここでは決まらない。** ずらした形は OCCT に解いてもらうので、解決
+ * (`resolveSketch`)は「材料がそろっているか」だけを確かめ、まだ形が無いものを
+ * `ResolvedSketch.pendingOffsets` へ積む。実際の形はカーネルの往復を持つ
+ * `recomputeSketch` が入れる(§2.9、`offsetMath.ts` の注釈)。
+ */
+export interface SketchOffsetFeature extends SketchFeatureBase {
+  readonly kind: 'offset';
+  /**
+   * オフセット元。並んだ順につながった 1 本の輪郭として扱う。
+   * 矩形などの複数曲線フィーチャーは、`index` を省けば全周、指定すれば n 番目の曲線
+   * (面の境界と同じ約束、§0.a-0.8)。
+   */
+  readonly source: readonly SketchElementRef[];
+  /** 距離の**大きさ**(mm、0 以上)。どちら側かは `side` が決める(NFR-UX-4)。 */
+  readonly distance: ExpressionValue;
+  readonly side: OffsetSide;
+  readonly corner: OffsetCornerKind;
+  /** 構築線(FR-320)。ずらした結果を参照専用にしたいときに true。既定 false。 */
+  readonly construction: boolean;
+}
+
 export interface SketchFaceFeature extends SketchFeatureBase {
   readonly kind: 'face';
   /** 順序が意味を持つ。点だけ、または線・円弧だけを並べる(§0.a-0.13)。 */
@@ -282,7 +325,8 @@ export type SketchFeature =
   | SketchPolygonFeature
   | SketchSlotFeature
   | SketchEllipseFeature
-  | SketchSplineFeature;
+  | SketchSplineFeature
+  | SketchOffsetFeature;
 
 /** スケッチ文書。変更のたびに新しい配列を作る(P2 の Undo の土台、FR-505)。 */
 export interface SketchDocument {
@@ -392,6 +436,45 @@ export interface SketchError {
   readonly message: string;
 }
 
+/**
+ * オフセット元の輪郭の形(FR-321、タスク15)。
+ *
+ * 閉じているかどうかで、ずらす側の決め方が変わる。開いた曲線は「進む向きの左/右」で
+ * 側を決めるので、たどり始める点・そこでの進む向き・左右の基準になる法線を持つ。
+ */
+export type OffsetContourShape =
+  | { readonly closed: true }
+  | {
+      readonly closed: false;
+      /** 輪郭をたどり始める点。 */
+      readonly startPoint: Vec3;
+      /** 起点での進む向き(単位ベクトル)。 */
+      readonly startDirection: Vec3;
+      /** 左右の基準になる作図面の法線(単位ベクトル)。左は normal × direction。 */
+      readonly normal: Vec3;
+    };
+
+/**
+ * まだ形が決まっていないオフセットの依頼(FR-321、タスク15)。
+ *
+ * 解決(`resolveSketch`)は OCCT を呼ばない純関数なので、覚え書き(`OffsetCache`)に
+ * 結果が無いオフセットはここへ積まれる。これは**失敗ではなく一時的な状態**なので
+ * `errors` には入れない(§2.7 の投影・交差の `pending` と同じ扱い)。
+ * カーネルへ頼んで結果を覚え書きへ入れ、解決し直すのは `recomputeSketch` の役目。
+ */
+export interface PendingOffset {
+  readonly featureId: string;
+  /** 覚え書きの鍵(`offsetMath.ts` の `offsetCacheKey`)。 */
+  readonly key: string;
+  /** オフセット元の曲線。並んだ順につながっている。 */
+  readonly curves: readonly ResolvedCurve[];
+  /** 距離の大きさ(mm、0 以上)。 */
+  readonly distance: number;
+  readonly side: OffsetSide;
+  readonly corner: OffsetCornerKind;
+  readonly contour: OffsetContourShape;
+}
+
 export interface ResolvedSketch {
   readonly points: readonly ResolvedPoint[];
   readonly segments: readonly ResolvedSegment[];
@@ -402,6 +485,8 @@ export interface ResolvedSketch {
   readonly splines: readonly ResolvedSpline[];
   readonly faces: readonly ResolvedFace[];
   readonly errors: readonly SketchError[];
+  /** まだ形が決まっていないオフセット(FR-321、タスク15)。無ければ空。 */
+  readonly pendingOffsets: readonly PendingOffset[];
 }
 
 /** 面 1 枚のメッシュ。kernel の FaceMeshData を model の言葉へ詰め替えたもの。 */

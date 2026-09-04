@@ -2228,3 +2228,83 @@ describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
     expect(PCAD_SCHEMA_VERSION).toBe(3);
   });
 });
+
+describe('オフセットの往復(P4 タスク15、FR-321)', () => {
+  const offset: SketchFeature = {
+    id: 'offset-1',
+    kind: 'offset',
+    name: 'オフセット1',
+    planeId: 'xy',
+    source: [{ featureId: 'rectangle-1' }, { featureId: 'line-1', index: 2 }],
+    distance: ev('5*2', 10),
+    side: 'inside',
+    corner: 'sharp',
+    construction: true,
+  };
+
+  it('元の要素・距離・側・角がすべて往復で一致する', () => {
+    const document = documentWithSketchFeature(offset);
+    expect(roundTrip(document).sketches[0].features[0]).toEqual(offset);
+  });
+
+  it('ずらした後の曲線は保存しない(導出できるものは保存しない)', () => {
+    const text = serializeDocument(documentWithSketchFeature(offset), { savedAt: SAVED_AT });
+    expect(text).toContain('"kind": "offset"');
+    expect(text).toContain('"side": "inside"');
+    expect(text).toContain('"corner": "sharp"');
+    // ずらした結果の曲線は書き出さない(再計算で導く)。
+    expect(text).not.toContain('"curves"');
+  });
+
+  it('側が知らない値なら、その場所を添えて断る(FR-504、NFR-UX-5)', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'offset-1',
+              kind: 'offset',
+              name: 'オフセット1',
+              planeId: 'xy',
+              source: [{ featureId: 'rectangle-1' }],
+              distance: ev('5', 5),
+              side: 'ひだり',
+              corner: 'round',
+              construction: false,
+            },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.message).toContain('side');
+  });
+
+  it('角が知らない値なら、その場所を添えて断る', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'offset-1',
+              kind: 'offset',
+              name: 'オフセット1',
+              planeId: 'xy',
+              source: [{ featureId: 'rectangle-1' }],
+              distance: ev('5', 5),
+              side: 'outside',
+              corner: 'まる',
+              construction: false,
+            },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.message).toContain('corner');
+  });
+});

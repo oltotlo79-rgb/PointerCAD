@@ -8,6 +8,11 @@ export {
   type PartProgress,
   type PartProgressCallback,
   type SketchFaceFailure,
+  type SketchOffsetContour,
+  type SketchOffsetEntry,
+  type SketchOffsetFailure,
+  type SketchOffsetRequestItem,
+  type SketchOffsetResult,
   type SketchTessellationOutcome,
   type SolidBody,
   type SolidBodyFailure,
@@ -40,12 +45,14 @@ export {
   planeFromNormal, planeSpecKeyText, resolvePlaneSpec, subShapeFromFingerprint,
 } from './geometry/planeSpec.js';
 export type {
-  CoordinateInput, FreeArcOrientation, PointArrayLayout, PointReference, ResolvedArc,
+  CoordinateInput, FreeArcOrientation, OffsetContourShape, OffsetCornerKind, OffsetSide,
+  PendingOffset, PointArrayLayout, PointReference, ResolvedArc,
   ResolvedCurve, ResolvedEllipse,
   ResolvedFace, ResolvedPoint, ResolvedSegment, ResolvedSketch, ResolvedSpline, SketchArcFeature,
   SketchDocument, SketchElementRef, SketchEllipseFeature, SketchError, SketchErrorCode,
   SketchFaceFeature, SketchFaceMesh, SketchFeature, SketchFeatureKind, SketchLineFeature,
-  SketchMesh, SketchPointArrayFeature, SketchPointFeature, SketchPolygonFeature,
+  SketchMesh, SketchOffsetFeature, SketchPointArrayFeature, SketchPointFeature,
+  SketchPolygonFeature,
   SketchRectangleFeature, SketchSlotFeature, SketchSplineFeature,
 } from './sketch/types.js';
 export {
@@ -66,8 +73,13 @@ export {
   hasDuplicateSplinePoint, MAX_SPLINE_POINTS, MIN_CLOSED_SPLINE_POINTS, MIN_SPLINE_POINTS,
   sampleSpline, sampleSplineCurve, splineCurveData, splineDegree, SPLINE_SEGMENTS_PER_SPAN,
 } from './sketch/splineMath.js';
-export type { SketchRecomputeResult } from './sketch/recomputeSketch.js';
+export type { SketchRecomputeOptions, SketchRecomputeResult } from './sketch/recomputeSketch.js';
 export { recomputeSketch, reevaluateDocument } from './sketch/recomputeSketch.js';
+export type { OffsetCache, OffsetKeyMaterial } from './sketch/offsetMath.js';
+export {
+  closedOffsetDistance, createOffsetCache, offsetCacheKey, offsetDisplacement, offsetSideOf,
+  OFFSET_CACHE_CAPACITY,
+} from './sketch/offsetMath.js';
 export type { MetricThreadSize, ThreadSeries } from './thread/metricThread.js';
 export {
   DEFAULT_THREAD_DESIGNATION, findMetricThread, METRIC_THREAD_DESIGNATIONS, METRIC_THREADS,

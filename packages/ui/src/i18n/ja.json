@@ -54,6 +54,7 @@
   "toolbar.tool.slotTooltip": "2 つの中心と幅で長穴をかきます",
   "toolbar.tool.ellipseTooltip": "中心・長半径・短半径・傾きで楕円をかきます",
   "toolbar.tool.splineTooltip": "点を順に置いてなめらかな曲線をかきます",
+  "toolbar.tool.offset": "オフセット",
   "toolbar.solid.title": "ソリッド",
   "toolbar.solid.tooltip": "面から立体を作り、立体どうしを組み合わせます",
   "toolbar.solid.extrude": "押し出し",

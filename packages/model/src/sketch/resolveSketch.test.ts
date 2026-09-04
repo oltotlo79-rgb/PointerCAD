@@ -25,8 +25,10 @@ import type {
   ResolvedSegment,
   SketchArcFeature,
   SketchDocument,
+  SketchElementRef,
   SketchEllipseFeature,
   SketchFeature,
+  SketchOffsetFeature,
   SketchSplineFeature,
 } from './types.js';
 import { addVec3, crossVec3, distanceVec3, lengthVec3, type Vec3 } from './vec3.js';
@@ -2512,5 +2514,234 @@ describe('3D スケッチ(FR-330、タスク10)', () => {
     expect(resolved.points).toEqual([]);
     expect(resolved.errors[0].code).toBe('missingBase');
     expect(resolved.errors[0].message).toContain('作図面が見つかりません');
+  });
+});
+
+describe('オフセット(FR-321、タスク15)', () => {
+  /** 40×30 の矩形。1 フィーチャーで 4 本の線分を生む(curvesByFeature)。 */
+  const RECTANGLE: SketchFeature = {
+    id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+    corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+    construction: false,
+  };
+
+  /** つながった 2 本の線分(開いた輪郭)。 */
+  const LINE_A: SketchFeature = {
+    id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+    from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(20, 0, 0), construction: false,
+  };
+  const LINE_B: SketchFeature = {
+    id: 'l2', name: '線分2', planeId: 'xy', kind: 'line',
+    from: absoluteCoordinate(20, 0, 0), to: absoluteCoordinate(20, 15, 0), construction: false,
+  };
+
+  /** カーネルが返したことにする 50×40 の輪郭(40×30 を外へ 5、尖った角)。 */
+  const OFFSET_RESULT: readonly ResolvedCurve[] = [
+    { kind: 'segment', featureId: 'kernel', from: [-5, -5, 0], to: [45, -5, 0] },
+    { kind: 'segment', featureId: 'kernel', from: [45, -5, 0], to: [45, 35, 0] },
+    { kind: 'segment', featureId: 'kernel', from: [45, 35, 0], to: [-5, 35, 0] },
+    { kind: 'segment', featureId: 'kernel', from: [-5, 35, 0], to: [-5, -5, 0] },
+  ];
+
+  function offsetOf(
+    source: SketchElementRef[],
+    overrides: Partial<SketchOffsetFeature> = {},
+  ): SketchFeature {
+    return {
+      id: 'of1', name: 'オフセット1', planeId: 'xy', kind: 'offset',
+      source, distance: num(5), side: 'outside', corner: 'round', construction: false,
+      ...overrides,
+    };
+  }
+
+  /** 鍵 key のときだけ曲線を返す覚え書き(カーネルの代わり)。 */
+  function remembered(key: string): (asking: string) => readonly ResolvedCurve[] | null {
+    return (asking) => (asking === key ? OFFSET_RESULT : null);
+  }
+
+  it('矩形を元に指定すると、依頼が 1 件・元の曲線 4 本で積まれる', () => {
+    const resolved = resolveSketch(documentOf(RECTANGLE, offsetOf([{ featureId: 'r1' }])));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.pendingOffsets).toHaveLength(1);
+    const pending = resolved.pendingOffsets[0];
+    expect(pending.featureId).toBe('of1');
+    expect(pending.curves).toHaveLength(4);
+    expect(pending.distance).toBe(5);
+    expect(pending.side).toBe('outside');
+    expect(pending.corner).toBe('round');
+    expect(pending.contour.closed).toBe(true);
+    expect(pending.key).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('つながった 2 本の線分は開いた輪郭として、起点と進む向きを添えて積まれる', () => {
+    const resolved = resolveSketch(
+      documentOf(LINE_A, LINE_B, offsetOf([{ featureId: 'l1' }, { featureId: 'l2' }])),
+    );
+    expect(resolved.errors).toEqual([]);
+    const pending = resolved.pendingOffsets[0];
+    expect(pending.curves).toHaveLength(2);
+    const contour = pending.contour;
+    if (contour.closed) {
+      throw new Error('開いた輪郭のはず');
+    }
+    expect(contour.startPoint).toEqual([0, 0, 0]);
+    expect(contour.startDirection).toEqual([1, 0, 0]);
+    // 作図面 XY の法線。左右の基準になる。
+    expect(contour.normal).toEqual(WORK_PLANES.xy.normal);
+  });
+
+  it('選んだ向きが逆でもつながっていれば受け入れ、進む向きはたどる向きになる', () => {
+    // 1 本目を (20,0)→(0,0) の向きで作ると、2 本目とつながるのは (20,0) 側。
+    const reversed: SketchFeature = {
+      id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+      from: absoluteCoordinate(20, 0, 0), to: absoluteCoordinate(0, 0, 0), construction: false,
+    };
+    const resolved = resolveSketch(
+      documentOf(reversed, LINE_B, offsetOf([{ featureId: 'l1' }, { featureId: 'l2' }])),
+    );
+    expect(resolved.errors).toEqual([]);
+    const contour = resolved.pendingOffsets[0].contour;
+    if (contour.closed) {
+      throw new Error('開いた輪郭のはず');
+    }
+    expect(contour.startPoint).toEqual([0, 0, 0]);
+    expect(contour.startDirection).toEqual([1, 0, 0]);
+  });
+
+  it('全周の円は 1 本で閉じた輪郭として扱う', () => {
+    const circle: SketchFeature = {
+      id: 'a1', name: '円1', planeId: 'xy', kind: 'arc',
+      center: absoluteCoordinate(0, 0, 0), radius: num(10),
+      startAngle: num(0), endAngle: num(360), construction: false,
+    };
+    const resolved = resolveSketch(documentOf(circle, offsetOf([{ featureId: 'a1' }])));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.pendingOffsets[0].contour.closed).toBe(true);
+  });
+
+  it('矩形の n 番目の辺だけを元にできる(面の境界と同じ約束)', () => {
+    const resolved = resolveSketch(
+      documentOf(RECTANGLE, offsetOf([{ featureId: 'r1', index: 0 }])),
+    );
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.pendingOffsets[0].curves).toHaveLength(1);
+    expect(resolved.pendingOffsets[0].contour.closed).toBe(false);
+  });
+
+  it('存在しない要素を指定すると missingBase', () => {
+    const resolved = resolveSketch(documentOf(RECTANGLE, offsetOf([{ featureId: 'nope' }])));
+    expect(resolved.pendingOffsets).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].featureId).toBe('of1');
+  });
+
+  it('矩形の範囲外の辺を指定しても missingBase', () => {
+    const resolved = resolveSketch(
+      documentOf(RECTANGLE, offsetOf([{ featureId: 'r1', index: 9 }])),
+    );
+    expect(resolved.pendingOffsets).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingBase');
+  });
+
+  it('元の要素が 1 つも選ばれていないと tooFewPoints', () => {
+    const resolved = resolveSketch(documentOf(RECTANGLE, offsetOf([])));
+    expect(resolved.errors[0].code).toBe('tooFewPoints');
+  });
+
+  it('距離が数でなければ invalidValue', () => {
+    const resolved = resolveSketch(
+      documentOf(
+        RECTANGLE,
+        offsetOf([{ featureId: 'r1' }], { distance: brokenNumber('0/0', Number.NaN) }),
+      ),
+    );
+    expect(resolved.pendingOffsets).toEqual([]);
+    expect(resolved.errors[0].code).toBe('invalidValue');
+  });
+
+  it('距離が負なら invalidValue(向きは side が決める)', () => {
+    const resolved = resolveSketch(
+      documentOf(RECTANGLE, offsetOf([{ featureId: 'r1' }], { distance: num(-5) })),
+    );
+    expect(resolved.errors[0].code).toBe('invalidValue');
+    expect(resolved.errors[0].message).toContain('0 以上');
+  });
+
+  it('離れた 2 本を選ぶと notClosed(つながっていない)', () => {
+    const far: SketchFeature = {
+      id: 'l2', name: '線分2', planeId: 'xy', kind: 'line',
+      from: absoluteCoordinate(50, 50, 0), to: absoluteCoordinate(60, 50, 0), construction: false,
+    };
+    const resolved = resolveSketch(
+      documentOf(LINE_A, far, offsetOf([{ featureId: 'l1' }, { featureId: 'l2' }])),
+    );
+    expect(resolved.pendingOffsets).toEqual([]);
+    expect(resolved.errors[0].code).toBe('notClosed');
+    expect(resolved.errors[0].message).toContain('つながっていません');
+  });
+
+  it('3D スケッチでは作れない(左右の基準になる作図面が要る)', () => {
+    const resolved = resolveSketch(
+      documentOf(RECTANGLE, offsetOf([{ featureId: 'r1' }], { planeId: FREE_WORK_PLANE_ID })),
+    );
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toContain('作図面を選んで');
+  });
+
+  it('覚え書きに形があれば曲線として解決され、依頼は積まれない', () => {
+    const document = documentOf(RECTANGLE, offsetOf([{ featureId: 'r1' }]));
+    const key = resolveSketch(document).pendingOffsets[0].key;
+    const resolved = resolveSketch(document, { offsetCurves: remembered(key) });
+
+    expect(resolved.pendingOffsets).toEqual([]);
+    expect(resolved.errors).toEqual([]);
+    // 矩形の 4 本とオフセットの 4 本。オフセットの曲線には自分の id が付く。
+    expect(resolved.segments).toHaveLength(8);
+    expect(resolved.segments.filter((curve) => curve.featureId === 'of1')).toHaveLength(4);
+  });
+
+  it('解決したオフセットは面の境界に使える(押し出しの材料になる)', () => {
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'of1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const document = documentOf(RECTANGLE, offsetOf([{ featureId: 'r1' }]), face);
+    const key = resolveSketch(document).pendingOffsets[0].key;
+    const resolved = resolveSketch(document, { offsetCurves: remembered(key) });
+
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.faces).toHaveLength(1);
+    expect(resolved.faces[0].curves).toHaveLength(4);
+    // 50×40 の輪郭になっている(手計算 = 2000)。
+    expect(polygonArea(resolved.faces[0].curves.map((curve) => curveStart(curve)))).toBeCloseTo(
+      2000,
+      9,
+    );
+  });
+
+  it('構築線にしたオフセットは面の境界に選べない(FR-320)', () => {
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'of1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const document = documentOf(
+      RECTANGLE,
+      offsetOf([{ featureId: 'r1' }], { construction: true }),
+      face,
+    );
+    const key = resolveSketch(document).pendingOffsets[0].key;
+    const resolved = resolveSketch(document, { offsetCurves: remembered(key) });
+    expect(resolved.errors[0].code).toBe('constructionElement');
+  });
+
+  it('別のオフセットを元にできる(オフセットのオフセット)', () => {
+    const second = offsetOf([{ featureId: 'of1' }], { id: 'of2', name: 'オフセット2' });
+    const document = documentOf(RECTANGLE, offsetOf([{ featureId: 'r1' }]), second);
+    const key = resolveSketch(document).pendingOffsets[0].key;
+    const resolved = resolveSketch(document, { offsetCurves: remembered(key) });
+    // 1 段目は解け、2 段目がその結果を元に積まれる。
+    expect(resolved.pendingOffsets).toHaveLength(1);
+    expect(resolved.pendingOffsets[0].featureId).toBe('of2');
+    expect(resolved.pendingOffsets[0].curves).toHaveLength(4);
   });
 });

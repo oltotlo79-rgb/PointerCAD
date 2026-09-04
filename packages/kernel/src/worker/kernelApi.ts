@@ -1,10 +1,15 @@
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 
+import { makeOffsetWire } from '../occt/makeOffsetWire.js';
 import { makePlanarFace } from '../occt/makePlanarFace.js';
 import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
 import { tessellate } from '../occt/tessellate.js';
 import type {
   FaceMeshData,
+  SketchOffsetFailure,
+  SketchOffsetOutcome,
+  SketchOffsetRequest,
+  SketchOffsetResult,
   SketchTessellation,
   SketchTessellationFailure,
   SketchTessellationRequest,
@@ -41,6 +46,14 @@ export interface KernelApi {
     onProgress?: SolidProgressCallback,
     cancelToken?: SolidCancelToken,
   ): Promise<SolidRecomputeResult>;
+  /**
+   * 輪郭を距離ぶん平行にずらした曲線の列を作る(FR-321、P4 タスク15)。
+   *
+   * 何件でも 1 回の往復でまとめて頼める(面のテッセレーションと同じ形)。
+   * 1 件失敗しても残りは作り、理由を `failures` へ入れて返す(FR-504、NFR-RE-1)。
+   * 距離の符号(どちら側へずらすか)は呼び出し側が決める(§0.a-0.22)。
+   */
+  offsetSketchCurves(request: SketchOffsetRequest): Promise<SketchOffsetOutcome>;
 }
 
 /**
@@ -106,6 +119,31 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
     ): Promise<SolidRecomputeResult> {
       const oc = await loadOcct();
       return runSolidRecompute({ oc, cache }, request, options, onProgress, cancelToken);
+    },
+
+    async offsetSketchCurves(request): Promise<SketchOffsetOutcome> {
+      const oc = await loadOcct();
+      const results: SketchOffsetResult[] = [];
+      const failures: SketchOffsetFailure[] = [];
+
+      // 1 件失敗しても残りは作る。失敗は理由つきで返す(FR-504、NFR-RE-1)。
+      for (const item of request.items) {
+        try {
+          const contours = makeOffsetWire(oc, {
+            curves: item.curves,
+            distance: item.distance,
+            joinType: item.joinType,
+          });
+          results.push({ id: item.id, contours });
+        } catch (error) {
+          failures.push({
+            id: item.id,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      return { results, failures };
     },
   };
 }

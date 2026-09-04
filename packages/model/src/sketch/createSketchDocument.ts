@@ -35,6 +35,7 @@ const KIND_LABELS: Readonly<Record<SketchFeatureKind, string>> = {
   slot: '長穴',
   ellipse: '楕円',
   spline: 'スプライン',
+  offset: 'オフセット',
 };
 
 /** 起動時の文書。空の履歴を持つ(§0.a-0.2)。作図面の既定は DEFAULT_WORK_PLANE_ID(XY)。 */

@@ -5,10 +5,13 @@ import {
   toCurveSpec,
   toFaceRequest,
   type KernelBridge,
+  type SketchOffsetContour,
+  type SketchOffsetResult,
   type SketchTessellationOutcome,
   type SolidRecomputeOutcome,
 } from '../kernelBridge.js';
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.js';
+import { createOffsetCache } from './offsetMath.js';
 import { recomputeSketch, reevaluateDocument } from './recomputeSketch.js';
 import type {
   ResolvedArc,
@@ -30,6 +33,9 @@ const EMPTY_SOLID_OUTCOME: SolidRecomputeOutcome = {
   cancelled: false,
 };
 
+/** オフセットを頼まないときの戻り値(FR-321、タスク15)。 */
+const EMPTY_OFFSET_RESULT: SketchOffsetResult = { results: [], failures: [] };
+
 /**
  * 偽のカーネル。OCCT は読み込まない(実物はタスク13・14 の Node テストで確かめる)。
  * async を使わないのは、await の無い async 関数を書かないため(計画書 §4)。
@@ -38,6 +44,7 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
   return {
     tessellateSketchFaces: () => Promise.resolve(EMPTY_OUTCOME),
     recomputeSolids: () => Promise.resolve(EMPTY_SOLID_OUTCOME),
+    offsetSketchCurves: () => Promise.resolve(EMPTY_OFFSET_RESULT),
     dispose: () => undefined,
     ...overrides,
   };
@@ -503,5 +510,241 @@ describe('楕円・スプラインの式の評価し直し(FR-206、タスク5)'
         expect(second.dx.source).toBe('w*2');
       }
     }
+  });
+});
+
+describe('オフセットの再計算(FR-321、タスク15)', () => {
+  const RECTANGLE: SketchFeature = {
+    id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+    corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+    construction: false,
+  };
+
+  const OFFSET: SketchFeature = {
+    id: 'of1', name: 'オフセット1', planeId: 'xy', kind: 'offset',
+    source: [{ featureId: 'r1' }], distance: expressionOf('5', 5),
+    side: 'outside', corner: 'sharp', construction: false,
+  };
+
+  const LINE_A: SketchFeature = {
+    id: 'l1', name: '線分1', planeId: 'xy', kind: 'line',
+    from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(20, 0, 0), construction: false,
+  };
+  const LINE_B: SketchFeature = {
+    id: 'l2', name: '線分2', planeId: 'xy', kind: 'line',
+    from: absoluteCoordinate(20, 0, 0), to: absoluteCoordinate(20, 15, 0), construction: false,
+  };
+
+  /** 50×40 の閉じた輪郭(40×30 を外へ 5、尖った角)。 */
+  const OUTSIDE_RECTANGLE: SketchOffsetContour = {
+    closed: true,
+    curves: [
+      { kind: 'segment', featureId: 'of1', from: [-5, -5, 0], to: [45, -5, 0] },
+      { kind: 'segment', featureId: 'of1', from: [45, -5, 0], to: [45, 35, 0] },
+      { kind: 'segment', featureId: 'of1', from: [45, 35, 0], to: [-5, 35, 0] },
+      { kind: 'segment', featureId: 'of1', from: [-5, 35, 0], to: [-5, -5, 0] },
+    ],
+  };
+
+  /** 折れ線を右(進む向きの -Y 側)へずらした結果。 */
+  const OPEN_RIGHT: SketchOffsetContour = {
+    closed: false,
+    curves: [
+      { kind: 'segment', featureId: 'of1', from: [0, -5, 0], to: [25, -5, 0] },
+      { kind: 'segment', featureId: 'of1', from: [25, -5, 0], to: [25, 15, 0] },
+    ],
+  };
+
+  /** 同じ折れ線を左(+Y 側)へずらした結果。 */
+  const OPEN_LEFT: SketchOffsetContour = {
+    closed: false,
+    curves: [
+      { kind: 'segment', featureId: 'of1', from: [0, 5, 0], to: [15, 5, 0] },
+      { kind: 'segment', featureId: 'of1', from: [15, 5, 0], to: [15, 15, 0] },
+    ],
+  };
+
+  function offsetResultOf(featureId: string, contour: SketchOffsetContour): SketchOffsetResult {
+    return { results: [{ featureId, contours: [contour] }], failures: [] };
+  }
+
+  it('依頼をカーネルへ渡し、返った曲線を解決へ差し込む', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
+      Promise.resolve(offsetResultOf('of1', OUTSIDE_RECTANGLE)),
+    );
+    const result = await recomputeSketch(
+      documentOf(RECTANGLE, OFFSET),
+      fakeBridge({ offsetSketchCurves }),
+    );
+
+    expect(offsetSketchCurves).toHaveBeenCalledTimes(1);
+    const requests = offsetSketchCurves.mock.calls[0][0];
+    expect(requests).toHaveLength(1);
+    expect(requests[0].featureId).toBe('of1');
+    expect(requests[0].curves).toHaveLength(4);
+    // 閉じた輪郭の外側は正(offsetMath.ts 冒頭の実測)。角は尖らせる指定。
+    expect(requests[0].distance).toBe(5);
+    expect(requests[0].corner).toBe('sharp');
+
+    expect(result.errors).toEqual([]);
+    expect(result.resolved.pendingOffsets).toEqual([]);
+    expect(result.resolved.segments.filter((curve) => curve.featureId === 'of1')).toHaveLength(4);
+  });
+
+  it('内側を選ぶと符号を反転して頼む', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
+      Promise.resolve(offsetResultOf('of1', OUTSIDE_RECTANGLE)),
+    );
+    await recomputeSketch(
+      documentOf(RECTANGLE, { ...OFFSET, side: 'inside' }),
+      fakeBridge({ offsetSketchCurves }),
+    );
+    expect(offsetSketchCurves.mock.calls[0][0][0].distance).toBe(-5);
+  });
+
+  it('オフセットが無ければカーネルへ頼まない(NFR-PF-1)', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() => Promise.resolve(EMPTY_OFFSET_RESULT));
+    await recomputeSketch(documentOf(RECTANGLE), fakeBridge({ offsetSketchCurves }));
+    expect(offsetSketchCurves).not.toHaveBeenCalled();
+  });
+
+  it('覚え書きを渡すと 2 回目はカーネルへ頼まない(NFR-PF-2)', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
+      Promise.resolve(offsetResultOf('of1', OUTSIDE_RECTANGLE)),
+    );
+    const offsets = createOffsetCache();
+    const document = documentOf(RECTANGLE, OFFSET);
+    const bridge = fakeBridge({ offsetSketchCurves });
+
+    await recomputeSketch(document, bridge, { offsets });
+    expect(offsetSketchCurves).toHaveBeenCalledTimes(1);
+
+    const second = await recomputeSketch(document, bridge, { offsets });
+    expect(offsetSketchCurves).toHaveBeenCalledTimes(1);
+    expect(second.resolved.segments.filter((curve) => curve.featureId === 'of1')).toHaveLength(4);
+  });
+
+  it('距離を変えると鍵が変わり、もう一度カーネルへ頼む(上流が変われば作り直す)', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
+      Promise.resolve(offsetResultOf('of1', OUTSIDE_RECTANGLE)),
+    );
+    const offsets = createOffsetCache();
+    const bridge = fakeBridge({ offsetSketchCurves });
+
+    await recomputeSketch(documentOf(RECTANGLE, OFFSET), bridge, { offsets });
+    await recomputeSketch(
+      documentOf(RECTANGLE, { ...OFFSET, distance: expressionOf('7', 7) }),
+      bridge,
+      { offsets },
+    );
+    expect(offsetSketchCurves).toHaveBeenCalledTimes(2);
+    expect(offsetSketchCurves.mock.calls[1][0][0].distance).toBe(7);
+  });
+
+  it('開いた曲線が頼んだ側と逆に出たら、符号を反転して頼み直す', async () => {
+    // 進む向きは +X、上は +Z なので左は +Y。1 回目は右(-Y)に出るので頼み直す。
+    const offsetSketchCurves = vi
+      .fn<KernelBridge['offsetSketchCurves']>(() =>
+        Promise.resolve(offsetResultOf('of1', OPEN_RIGHT)),
+      )
+      .mockImplementationOnce(() => Promise.resolve(offsetResultOf('of1', OPEN_RIGHT)))
+      .mockImplementationOnce(() => Promise.resolve(offsetResultOf('of1', OPEN_LEFT)));
+    const openOffset: SketchFeature = {
+      ...OFFSET,
+      source: [{ featureId: 'l1' }, { featureId: 'l2' }],
+      side: 'outside',
+    };
+    const result = await recomputeSketch(
+      documentOf(LINE_A, LINE_B, openOffset),
+      fakeBridge({ offsetSketchCurves }),
+    );
+
+    expect(offsetSketchCurves).toHaveBeenCalledTimes(2);
+    expect(offsetSketchCurves.mock.calls[0][0][0].distance).toBe(5);
+    expect(offsetSketchCurves.mock.calls[1][0][0].distance).toBe(-5);
+    expect(result.errors).toEqual([]);
+    const created = result.resolved.segments.filter((curve) => curve.featureId === 'of1');
+    expect(created).toHaveLength(2);
+    expect(created[0].from).toEqual([0, 5, 0]);
+  });
+
+  it('開いた曲線が頼んだ側に出ていれば頼み直さない', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() => Promise.resolve(offsetResultOf('of1', OPEN_RIGHT)));
+    const openOffset: SketchFeature = {
+      ...OFFSET,
+      source: [{ featureId: 'l1' }, { featureId: 'l2' }],
+      side: 'inside',
+    };
+    await recomputeSketch(
+      documentOf(LINE_A, LINE_B, openOffset),
+      fakeBridge({ offsetSketchCurves }),
+    );
+    expect(offsetSketchCurves).toHaveBeenCalledTimes(1);
+  });
+
+  it('カーネルが断ったら理由を errors へ入れ、形は作らない(FR-504)', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
+      Promise.resolve<SketchOffsetResult>({
+        results: [],
+        failures: [{ featureId: 'of1', message: 'これ以上内側にはオフセットできません。' }],
+      }),
+    );
+    const result = await recomputeSketch(
+      documentOf(RECTANGLE, OFFSET),
+      fakeBridge({ offsetSketchCurves }),
+    );
+
+    expect(result.resolved.segments.filter((curve) => curve.featureId === 'of1')).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].code).toBe('kernelFailed');
+    expect(result.errors[0].featureId).toBe('of1');
+    expect(result.errors[0].message).toContain('これ以上内側には');
+  });
+
+  it('カーネルとの通信ごと失敗しても落ちない(NFR-RE-1)', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() => Promise.reject(new Error('worker が応答しません')));
+    const result = await recomputeSketch(
+      documentOf(RECTANGLE, OFFSET),
+      fakeBridge({ offsetSketchCurves }),
+    );
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].code).toBe('kernelFailed');
+    expect(result.errors[0].message).toContain('worker が応答しません');
+  });
+
+  it('オフセットの曲線で面を張れる(押し出しの材料になる)', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
+      Promise.resolve(offsetResultOf('of1', OUTSIDE_RECTANGLE)),
+    );
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'xy', kind: 'face',
+      boundary: [{ featureId: 'of1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const tessellateSketchFaces = vi.fn(() => Promise.resolve(EMPTY_OUTCOME));
+    const result = await recomputeSketch(
+      documentOf(RECTANGLE, OFFSET, face),
+      fakeBridge({ offsetSketchCurves, tessellateSketchFaces }),
+    );
+
+    expect(result.resolved.faces).toHaveLength(1);
+    expect(result.resolved.faces[0].curves).toHaveLength(4);
+    expect(tessellateSketchFaces).toHaveBeenCalledTimes(1);
+  });
+
+  it('式を変数で評価し直すと、オフセットの距離も追従する(FR-206)', () => {
+    const offset: SketchFeature = {
+      ...OFFSET,
+      distance: expressionOf('t', 5),
+    };
+    const updated = reevaluateDocument(
+      documentOf(RECTANGLE, offset),
+      new Map([['t', 8]]),
+    );
+    const changed = updated.features[1];
+    if (changed.kind !== 'offset') {
+      throw new Error('オフセットのはず');
+    }
+    expect(changed.distance.value).toBe(8);
+    expect(changed.distance.source).toBe('t');
   });
 });

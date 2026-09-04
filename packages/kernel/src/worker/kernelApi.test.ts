@@ -37,6 +37,26 @@ function extrudeStep(id: string, key: string, distance: number): SolidStepReques
   };
 }
 
+/** 線分・円弧の列の長さの合計(mm)。オフセットの結果の確かめに使う。 */
+function perimeterOf(curves: readonly CurveSpec[]): number {
+  return curves.reduce((sum, curve) => {
+    if (curve.kind === 'segment') {
+      return (
+        sum +
+        Math.hypot(
+          curve.to[0] - curve.from[0],
+          curve.to[1] - curve.from[1],
+          curve.to[2] - curve.from[2],
+        )
+      );
+    }
+    if (curve.kind === 'arc') {
+      return sum + curve.radius * Math.abs(curve.endAngle - curve.startAngle);
+    }
+    throw new Error(`線分でも円弧でもありません: ${curve.kind}`);
+  }, 0);
+}
+
 describe('KernelApi', () => {
   const api = createKernelApi(loadOcctForNode);
 
@@ -162,5 +182,74 @@ describe('KernelApi', () => {
     expect(result.failures).toEqual([
       { id: 'ng', message: '選んだ線・円弧がつながっていないため、輪郭を作れませんでした。' },
     ]);
+  });
+
+  it('輪郭をずらした曲線を、1 回の依頼でまとめて返す(FR-321)', async () => {
+    // 40×30 の長方形を外へ 5(尖った角)→ 50×40 の線分 4 本。
+    // 同じ長方形を内へ 5 → 30×20 の線分 4 本。周の長さは 180 と 100(手計算)。
+    const result = await api.offsetSketchCurves({
+      items: [
+        { id: 'outside', curves: RECTANGLE_CURVES, distance: 5, joinType: 'intersection' },
+        { id: 'inside', curves: RECTANGLE_CURVES, distance: -5, joinType: 'intersection' },
+      ],
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(result.results.map((entry) => entry.id)).toEqual(['outside', 'inside']);
+    for (const entry of result.results) {
+      expect(entry.contours).toHaveLength(1);
+      expect(entry.contours[0].closed).toBe(true);
+      expect(entry.contours[0].curves).toHaveLength(4);
+    }
+
+    const outside = result.results[0].contours[0].curves;
+    const inside = result.results[1].contours[0].curves;
+    expect(perimeterOf(outside)).toBeCloseTo(180, 6);
+    expect(perimeterOf(inside)).toBeCloseTo(100, 6);
+  });
+
+  it('丸い角を頼むと、線分 4 本と半径 5 の円弧 4 本が返る(FR-321)', async () => {
+    const result = await api.offsetSketchCurves({
+      items: [{ id: 'round', curves: RECTANGLE_CURVES, distance: 5, joinType: 'arc' }],
+    });
+
+    expect(result.failures).toEqual([]);
+    const curves = result.results[0].contours[0].curves;
+    expect(curves.filter((curve) => curve.kind === 'segment')).toHaveLength(4);
+    const arcs = curves.filter((curve) => curve.kind === 'arc');
+    expect(arcs).toHaveLength(4);
+    for (const arc of arcs) {
+      expect(arc.radius).toBeCloseTo(5, 9);
+    }
+  });
+
+  it('ずらせない依頼は例外にせず、理由つきの失敗として返す(FR-504、NFR-RE-1)', async () => {
+    const circle: readonly CurveSpec[] = [
+      {
+        kind: 'arc',
+        center: [0, 0, 0],
+        normal: [0, 0, 1],
+        xAxis: [1, 0, 0],
+        radius: 10,
+        startAngle: 0,
+        endAngle: 2 * Math.PI,
+      },
+    ];
+    const result = await api.offsetSketchCurves({
+      items: [
+        { id: 'ng', curves: circle, distance: -15, joinType: 'arc' },
+        { id: 'ok', curves: circle, distance: -3, joinType: 'arc' },
+      ],
+    });
+
+    expect(result.failures).toEqual([
+      { id: 'ng', message: 'これ以上内側にはオフセットできません。' },
+    ]);
+    expect(result.results.map((entry) => entry.id)).toEqual(['ok']);
+    const arc = result.results[0].contours[0].curves[0];
+    if (arc.kind !== 'arc') {
+      throw new Error('円弧が返るはず');
+    }
+    expect(arc.radius).toBeCloseTo(7, 9);
   });
 });

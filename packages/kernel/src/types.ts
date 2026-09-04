@@ -1,3 +1,8 @@
+// 輪郭のオフセット(FR-321)の角の種類と結果の形は `occt/makeOffsetWire.ts` が正本。
+// 同じ約束を2か所に書かないため、ここでは取り込んで輸出し直すだけにする
+// (型だけの取り込みなので、実行時の読み込みは起きない)。
+import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
+
 /** 表示用の三角形メッシュ。内部単位は mm(NFR-RE-3)。 */
 export interface MeshData {
   /** 頂点座標。x, y, z の順に 3 個ずつ並ぶ。 */
@@ -134,6 +139,48 @@ export interface SketchTessellation {
   readonly faces: readonly FaceMeshData[];
   /** 面を作れなかった依頼。1 枚失敗しても止めずに返す(FR-504)。 */
   readonly failures: readonly SketchTessellationFailure[];
+}
+
+/**
+ * 輪郭のオフセット(FR-321、P4 タスク15)を Worker 越しに頼むための型。
+ *
+ * 形を作るのは `occt/makeOffsetWire.ts` で、角の種類(`OffsetJoinType`)と結果の輪郭
+ * (`OffsetContour`)はそこの定義をそのまま使う(同じ約束を2か所に書かない)。
+ * 距離は**符号つき**で、どちら側が外かは呼び出し側(model)が決める(§0.a-0.22)。
+ */
+export type { OffsetContour, OffsetJoinType };
+
+/** オフセット 1 件の依頼。`id` は結果の対応づけに使う(面の依頼と同じ約束)。 */
+export interface SketchOffsetItem {
+  readonly id: string;
+  /** オフセット元の輪郭。並んだ順につながっていること。 */
+  readonly curves: readonly CurveSpec[];
+  /** 符号つき距離(mm)。 */
+  readonly distance: number;
+  readonly joinType: OffsetJoinType;
+}
+
+/** オフセットの依頼をまとめたもの。1 回の往復で何件でも頼める。 */
+export interface SketchOffsetRequest {
+  readonly items: readonly SketchOffsetItem[];
+}
+
+/** オフセット 1 件の結果。輪郭が 2 本以上に分かれることもある。 */
+export interface SketchOffsetResult {
+  readonly id: string;
+  readonly contours: readonly OffsetContour[];
+}
+
+/** オフセットを作れなかった依頼と、その理由(利用者へそのまま見せる日本語)。 */
+export interface SketchOffsetFailure {
+  readonly id: string;
+  readonly message: string;
+}
+
+/** オフセットの結果。1 件失敗しても止めずに残りを返す(FR-504、NFR-RE-1)。 */
+export interface SketchOffsetOutcome {
+  readonly results: readonly SketchOffsetResult[];
+  readonly failures: readonly SketchOffsetFailure[];
 }
 
 // ここから下はソリッド(立体)の依頼と結果(FR-401〜404)。

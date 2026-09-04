@@ -20,6 +20,7 @@ import {
   consumedBodyIds,
   consumedTargetsOf,
   createEmptyPartDocument,
+  createSketchFor,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
   DEFAULT_CHAMFER_DISTANCE_MM,
   DEFAULT_CIRCULAR_PATTERN_COUNT,
@@ -43,11 +44,14 @@ import {
   MAX_SPRING_TURNS,
   nextReferenceId,
   nextReferenceName,
+  nextSketchId,
+  nextSketchName,
   nextSolidId,
   nextSolidName,
   PART_SCHEMA_VERSION,
   REFERENCE_LABELS,
   removeReference,
+  removeSketch,
   removeSolid,
   replaceReference,
   replaceSketch,
@@ -1062,5 +1066,50 @@ describe('基準ジオメトリの履歴操作(FR-328、FR-329、タスク9)', (
       'referencePlane',
       'referencePoint',
     ]);
+  });
+});
+
+describe('複数のスケッチ(P4 仕上げ (g)、FR-501、FR-503)', () => {
+  it('採番は連番で、途中を消しても残ったものと重ならない', () => {
+    const base = createEmptyPartDocument();
+    expect(nextSketchId(base)).toBe('sketch-2');
+    expect(nextSketchName(base)).toBe('スケッチ2');
+
+    const two = addSketch(base, createSketchFor(base));
+    expect(two.sketches.map((sketch) => sketch.id)).toEqual(['sketch-1', 'sketch-2']);
+    expect(two.sketches.map((sketch) => sketch.name)).toEqual(['スケッチ1', 'スケッチ2']);
+    // 足しただけでは編集中のスケッチは変わらない(切り替えは setActiveSketch)。
+    expect(two.activeSketchId).toBe('sketch-1');
+
+    const three = addSketch(two, createSketchFor(two));
+    const withoutFirst = removeSketch(three, 'sketch-1');
+    expect(nextSketchId(withoutFirst)).toBe('sketch-4');
+    expect(nextSketchName(withoutFirst)).toBe('スケッチ4');
+  });
+
+  it('編集中のスケッチを消したら残りの先頭へ移る', () => {
+    const base = createEmptyPartDocument();
+    const two = addSketch(base, createSketchFor(base));
+    const active = setActiveSketch(two, 'sketch-2');
+    expect(active.activeSketchId).toBe('sketch-2');
+
+    const removed = removeSketch(active, 'sketch-2');
+    expect(removed.sketches.map((sketch) => sketch.id)).toEqual(['sketch-1']);
+    expect(removed.activeSketchId).toBe('sketch-1');
+  });
+
+  it('最後の 1 本は消さない(作図する場所が無くなるため)', () => {
+    const base = createEmptyPartDocument();
+    expect(removeSketch(base, 'sketch-1')).toBe(base);
+    // 見つからない id も元の文書をそのまま返す。
+    expect(removeSketch(base, 'sketch-9')).toBe(base);
+  });
+
+  it('編集中でないスケッチを消しても編集中はそのまま', () => {
+    const base = createEmptyPartDocument();
+    const two = addSketch(base, createSketchFor(base));
+    const removed = removeSketch(two, 'sketch-2');
+    expect(removed.activeSketchId).toBe('sketch-1');
+    expect(removed.sketches).toHaveLength(1);
   });
 });

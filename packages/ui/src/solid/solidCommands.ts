@@ -36,6 +36,7 @@ import {
   type RevolveFeature,
   type SewFeature,
   type SketchFaceRef,
+  type SketchFeature,
   type SketchLineRef,
   type SketchPointRef,
   type SpringDerived,
@@ -45,7 +46,6 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
-import { featureIdOf } from '../sketch/featureSummary.js';
 import type { SolidInputCommit, SolidToolId } from '../sketch/numericInput.js';
 
 import {
@@ -55,6 +55,7 @@ import {
   machiningToolReadiness,
   type MachiningContext,
 } from './machiningCommands.js';
+import { findSketchFeatureAt } from './sketchRefs.js';
 import type { SubShapeBody } from './subShapeSelection.js';
 
 /** 縫合に要る面の最小枚数(§0.a-0.7)。 */
@@ -142,19 +143,24 @@ export type BodyPairOutcome =
   | { readonly ok: true; readonly targetFeatureId: string; readonly toolFeatureId: string }
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
+/** 面・線分・点だけを当たりとする種類の集合(`findSketchFeatureAt` へ渡す)。 */
+const FACE_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['face']);
+const LINE_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['line']);
+const POINT_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['point']);
+
 /**
  * 要素 id が面フィーチャーを指しているかを、id の接頭辞ではなく文書を引いて判定する。
  * 見つからなければ undefined(面でない、または実在しない)。
+ *
+ * 探す順は `findSketchFeatureAt`(`sketchRefs.ts`)に任せ、**編集中のスケッチを先に**見る。
+ * 文書の並び順に前から探すと、スケッチ 2 の `face-1` を押し出したつもりでスケッチ 1 の
+ * `face-1` が使われる(P4 タスク27 の報告 (B)、仕上げ (g) で修正)。
  */
 function faceRefById(document: PartDocument, elementId: string): SketchFaceRef | undefined {
-  const featureId = featureIdOf(elementId);
-  for (const sketch of document.sketches) {
-    const feature = findFeature(sketch, featureId);
-    if (feature !== undefined && feature.kind === 'face') {
-      return { sketchId: sketch.id, faceFeatureId: featureId };
-    }
-  }
-  return undefined;
+  const found = findSketchFeatureAt(document, elementId, FACE_KINDS);
+  return found === undefined
+    ? undefined
+    : { sketchId: found.sketchId, faceFeatureId: found.featureId };
 }
 
 /**
@@ -206,12 +212,10 @@ export function selectedLineRef(
   selection: readonly string[],
 ): SketchLineRef | undefined {
   for (const elementId of selection) {
-    const featureId = featureIdOf(elementId);
-    for (const sketch of document.sketches) {
-      const feature = findFeature(sketch, featureId);
-      if (feature !== undefined && feature.kind === 'line') {
-        return { sketchId: sketch.id, lineFeatureId: featureId };
-      }
+    // 面と同じく、編集中のスケッチを先に見る(仕上げ (g)。`faceRefById` の注釈を参照)。
+    const found = findSketchFeatureAt(document, elementId, LINE_KINDS);
+    if (found !== undefined) {
+      return { sketchId: found.sketchId, lineFeatureId: found.featureId };
     }
   }
   return undefined;
@@ -277,12 +281,10 @@ export function selectedSpringOrigin(
   selection: readonly string[],
 ): SpringOriginOutcome {
   for (const elementId of selection) {
-    const featureId = featureIdOf(elementId);
-    for (const sketch of document.sketches) {
-      const feature = findFeature(sketch, featureId);
-      if (feature !== undefined && feature.kind === 'point') {
-        return { ok: true, ref: { sketchId: sketch.id, pointFeatureId: featureId } };
-      }
+    // 面・線分と同じく、編集中のスケッチを先に見る(仕上げ (g))。
+    const found = findSketchFeatureAt(document, elementId, POINT_KINDS);
+    if (found !== undefined) {
+      return { ok: true, ref: { sketchId: found.sketchId, pointFeatureId: found.featureId } };
     }
   }
   return { ok: false, reasonKey: 'springError.noOriginPoint' };

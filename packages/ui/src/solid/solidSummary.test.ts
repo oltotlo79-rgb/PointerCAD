@@ -34,11 +34,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildReferenceSection,
+  buildSketchGroups,
   buildTreeSections,
   formatVolume,
   missingValueKey,
   partErrorMessage,
   renameReference,
+  renameSketch,
   renameSolid,
   selectionKindLabelKeys,
   setReferenceField,
@@ -1330,5 +1332,76 @@ describe('summarizeReference(基準ジオメトリのプロパティ、FR-328、
     expect(setReferenceVisible(HELPER_POINT, false)).toBe(HELPER_POINT);
     expect(renameReference(HELPER_POINT, ' 天板の基準 ').name).toBe('天板の基準');
     expect(renameReference(HELPER_POINT, '   ')).toBe(HELPER_POINT);
+  });
+});
+
+describe('buildSketchGroups(P4 仕上げ (g)、FR-501、FR-503)', () => {
+  /** 面 1 枚だけを持つ 2 本目のスケッチを足す。id は 1 本目とわざと重ねる。 */
+  function withSecondSketch(document: PartDocument, activeSketchId: string): PartDocument {
+    const second = appendFeature({ id: 'sketch-2', name: 'スケッチ2', features: [] }, FACE);
+    return { ...document, sketches: [document.sketches[0], second], activeSketchId };
+  }
+
+  it('文書内の全スケッチを名前と要素の行にして返す', () => {
+    const groups = buildSketchGroups(withSecondSketch(documentWith(EXTRUDE), 'sketch-1'));
+    expect(groups.map((group) => group.sketchId)).toEqual(['sketch-1', 'sketch-2']);
+    expect(groups.map((group) => group.name)).toEqual(['スケッチ1', 'スケッチ2']);
+    expect(groups[0].rows.map((row) => row.name)).toEqual(['面1', '面2', '線分9']);
+    expect(groups[1].rows.map((row) => row.name)).toEqual(['面1']);
+  });
+
+  it('編集中のスケッチだけ active が真になる', () => {
+    expect(
+      buildSketchGroups(withSecondSketch(documentWith(EXTRUDE), 'sketch-2')).map(
+        (group) => group.active,
+      ),
+    ).toEqual([false, true]);
+  });
+
+  it('失敗の理由は編集中のスケッチの行にだけ付く(同じ id の他のスケッチへ移さない)', () => {
+    const errors = [
+      { featureId: 'face-1', code: 'invalidValue', message: '式が読めません' },
+    ] as const;
+    const groups = buildSketchGroups(
+      withSecondSketch(documentWith(EXTRUDE), 'sketch-1'),
+      errors,
+    );
+    expect(groups[0].rows[0].errorMessage).toBe('式が読めません');
+    // スケッチ 2 にも face-1 はあるが、こちらは編集中ではないので理由を付けない。
+    expect(groups[1].rows[0].errorMessage).toBeNull();
+  });
+
+  it('立体が使っているスケッチだけ inUse が真になる(FR-504)', () => {
+    // EXTRUDE の断面は sketch-1 の face-1(定数 EXTRUDE のとおり)。
+    const groups = buildSketchGroups(withSecondSketch(documentWith(EXTRUDE), 'sketch-1'));
+    expect(groups.map((group) => group.inUse)).toEqual([true, false]);
+    // 立体が 1 つも無ければどのスケッチも使われていない。
+    expect(
+      buildSketchGroups(withSecondSketch(createEmptyPartDocument(), 'sketch-1')).map(
+        (group) => group.inUse,
+      ),
+    ).toEqual([false, false]);
+  });
+
+  it('スケッチが 1 本だけなら 1 つだけ返し、buildTreeSections と同じ行になる', () => {
+    const document = documentWith(EXTRUDE);
+    const groups = buildSketchGroups(document);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].rows).toEqual(buildTreeSections(document, 'sketch-1', [], [])[0].rows);
+  });
+});
+
+describe('renameSketch(FR-503)', () => {
+  it('名前を変えた新しいスケッチを作る', () => {
+    const sketch = createEmptyPartDocument().sketches[0];
+    expect(renameSketch(sketch, '下描き').name).toBe('下描き');
+    // 元は変えない。
+    expect(sketch.name).toBe('スケッチ1');
+  });
+
+  it('空白だけの名前と同じ名前は元のまま返す', () => {
+    const sketch = createEmptyPartDocument().sketches[0];
+    expect(renameSketch(sketch, '   ')).toBe(sketch);
+    expect(renameSketch(sketch, 'スケッチ1')).toBe(sketch);
   });
 });

@@ -165,16 +165,18 @@ export {
 export type { SolidLabelKey } from './part/createPartDocument.js';
 export {
   addSketch, appendReference, appendSolid, consumedBodyIds, consumedTargetsOf,
-  createEmptyPartDocument,
+  createEmptyPartDocument, createSketchFor,
   DEFAULT_CHAMFER_ANGLE_DEGREES, DEFAULT_CHAMFER_DISTANCE_MM, DEFAULT_CIRCULAR_PATTERN_COUNT,
   DEFAULT_FILLET_RADIUS_MM, DEFAULT_HOLE_DEPTH_MM, DEFAULT_HOLE_DIAMETER_MM, DEFAULT_PATTERN_COUNT,
   DEFAULT_PATTERN_SPACING_MM, DEFAULT_SEW_TOLERANCE_MM, DEFAULT_SPRING_COIL_DIAMETER_MM,
   DEFAULT_SPRING_PITCH_MM, DEFAULT_SPRING_TURNS, DEFAULT_SPRING_WIRE_DIAMETER_MM, findReference,
   findSketch,
   findSolid, isMachiningFeature, isPatternSource, liveBodyIds, MAX_PATTERN_COUNT, MAX_SPRING_TURNS,
-  nextReferenceId, nextReferenceName, nextSolidId, nextSolidName, PART_SCHEMA_VERSION,
-  REFERENCE_LABELS, removeReference, removeSolid, replaceReference, replaceSketch, replaceSolid,
-  setActiveSketch, SOLID_LABELS,
+  nextReferenceId, nextReferenceName, nextSketchId, nextSketchName, nextSolidId, nextSolidName,
+  PART_SCHEMA_VERSION,
+  REFERENCE_LABELS, removeReference, removeSketch, removeSolid, replaceReference, replaceSketch,
+  replaceSolid,
+  setActiveSketch, SKETCH_LABEL, SOLID_LABELS,
 } from './part/createPartDocument.js';
 export type {
   ReferenceError, ReferenceErrorCode, ReferenceResolveDeps, ReferenceResolver,

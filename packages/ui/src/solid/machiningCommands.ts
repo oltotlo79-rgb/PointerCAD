@@ -28,7 +28,6 @@ import {
   DEFAULT_PATTERN_SPACING_MM,
   DEFAULT_THREAD_DESIGNATION,
   dedupeSubShapeRefs,
-  findFeature,
   findMetricThread,
   findSolid,
   isPatternSource,
@@ -48,6 +47,7 @@ import {
   type PatternDirection,
   type PatternFeature,
   type PatternPlacement,
+  type SketchFeature,
   type SketchPointRef,
   type SubShapeRef,
   type ThreadHoleFeature,
@@ -59,6 +59,7 @@ import type { MessageKey } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { SolidInputCommit } from '../sketch/numericInput.js';
 
+import { findSketchFeatureAt } from './sketchRefs.js';
 import type { SolidCommandOutcome, SolidToolReadiness } from './solidCommands.js';
 import {
   commonBodyIdOf,
@@ -200,6 +201,8 @@ function resolveMachiningFace(context: MachiningContext): MachiningFaceOutcome {
  * (`point-1#3`)からもフィーチャー id(`point-1`)を返すので、1 点だけ選んでも点列全体を
  * 指したことになる(展開は resolvePart が行う、§0.a-0.9)。
  */
+const CENTER_POINT_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['point', 'pointArray']);
+
 function selectedCenterPoints(
   document: PartDocument,
   selection: readonly string[],
@@ -211,13 +214,13 @@ function selectedCenterPoints(
     if (seen.has(featureId)) {
       continue;
     }
-    for (const sketch of document.sketches) {
-      const feature = findFeature(sketch, featureId);
-      if (feature !== undefined && (feature.kind === 'point' || feature.kind === 'pointArray')) {
-        refs.push({ sketchId: sketch.id, pointFeatureId: featureId });
-        seen.add(featureId);
-        break;
-      }
+    // 押し出しの面と同じく、**編集中のスケッチを先に**見る(P4 仕上げ (g)、`sketchRefs.ts`)。
+    // 文書の並び順に前から探すと、スケッチ 2 の `point-1` を選んだつもりでスケッチ 1 の
+    // `point-1` が穴の中心になる。
+    const found = findSketchFeatureAt(document, elementId, CENTER_POINT_KINDS);
+    if (found !== undefined) {
+      refs.push({ sketchId: found.sketchId, pointFeatureId: found.featureId });
+      seen.add(featureId);
     }
   }
   return refs;

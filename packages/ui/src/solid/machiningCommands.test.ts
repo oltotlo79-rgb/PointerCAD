@@ -864,3 +864,42 @@ describe('machiningToolReadiness(NFR-UX-5)', () => {
     });
   });
 });
+
+describe('スケッチをまたぐ id の取り違え(P4 仕上げ (g)、穴の中心)', () => {
+  it('中心の点は編集中のスケッチのものを使う(FR-405)', () => {
+    // 両方のスケッチに同じ id(`point-1`)の点を置く。要素 id はスケッチの中でだけ一意。
+    const base = withPoint(documentWithBodies(['extrude-1']));
+    const second = appendFeature(
+      { id: 'sketch-2', name: 'スケッチ2', features: [] },
+      createPointFeature({ id: 'sketch-2', name: 'スケッチ2', features: [] }, absoluteCoordinate(9, 9, 0)),
+    );
+    const document: PartDocument = {
+      ...base.document,
+      sketches: [base.document.sketches[0], second],
+      activeSketchId: 'sketch-2',
+    };
+    const context: MachiningContext = {
+      document,
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0)] })],
+      selection: [subShapeElementId('extrude-1', 'face', 0), base.pointId],
+    };
+    const commit: SolidInputCommit = {
+      kind: 'solid',
+      tool: 'hole',
+      step: 'holeSize',
+      values: { diameter: DIAMETER_6 },
+      flags: {},
+    };
+    const outcome = commitMachiningInput(context, commit);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const hole = findSolid(outcome.document, outcome.featureId);
+    expect(hole?.kind).toBe('hole');
+    if (hole?.kind !== 'hole') {
+      return;
+    }
+    expect(hole.centers).toEqual([{ sketchId: 'sketch-2', pointFeatureId: base.pointId }]);
+  });
+});

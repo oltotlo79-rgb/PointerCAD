@@ -47,6 +47,7 @@ import {
   createInitialDocumentState,
   useAppStore,
   workPlaneForOrbit,
+  workPlaneOfSketch,
   type PartRecomputer,
 } from './useAppStore.js';
 
@@ -1375,3 +1376,80 @@ describe('3D スケッチで押した場所の面(FR-330、タスク14)', () => 
     expect(useAppStore.getState().workPlaneId).toBe(FREE_WORK_PLANE_ID);
   });
 });
+
+describe('複数のスケッチ(P4 仕上げ (g)、FR-501、FR-328)', () => {
+  beforeEach(() => {
+    useAppStore.setState(createInitialDocumentState());
+  });
+
+  /** 指定した作図面に置いた点を 1 つだけ持つスケッチ。 */
+  function sketchOnPlane(id: string, name: string, planeId: 'xy' | 'xz' | 'yz'): SketchDocument {
+    const point: SketchPointFeature = {
+      id: 'point-1',
+      name: '点1',
+      planeId,
+      kind: 'point',
+      at: absoluteCoordinate(1, 2, 3),
+    };
+    return appendFeature({ id, name, features: [] }, point);
+  }
+
+  it('スケッチの作図面は最後に置いた要素の作図面(要素が無ければ決まらない)', () => {
+    expect(workPlaneOfSketch(undefined)).toBeNull();
+    expect(workPlaneOfSketch(createEmptySketchDocument())).toBeNull();
+    expect(workPlaneOfSketch(sketchOnPlane('sketch-2', 'スケッチ2', 'xz'))).toBe('xz');
+  });
+
+  it('スケッチを切り替えると作図面が追従する', () => {
+    const base = createEmptyPartDocument();
+    const document: PartDocument = {
+      ...base,
+      sketches: [sketchOnPlane('sketch-1', 'スケッチ1', 'xy'), sketchOnPlane('sketch-2', 'スケッチ2', 'xz')],
+      activeSketchId: 'sketch-1',
+    };
+    useAppStore.getState().applyDocument(document);
+    expect(useAppStore.getState().workPlaneId).toBe('xy');
+
+    useAppStore.getState().setActiveSketch('sketch-2');
+    expect(useAppStore.getState().document.activeSketchId).toBe('sketch-2');
+    expect(useAppStore.getState().workPlaneId).toBe('xz');
+    // 控えの sketch も切り替わり、作図面を解いた面(workPlane)も追いつく。
+    expect(useAppStore.getState().sketch.id).toBe('sketch-2');
+    expect(useAppStore.getState().workPlane).toEqual(WORK_PLANES.xz);
+
+    useAppStore.getState().setActiveSketch('sketch-1');
+    expect(useAppStore.getState().workPlaneId).toBe('xy');
+  });
+
+  it('要素が 1 つも無いスケッチへ切り替えても作図面は今のまま', () => {
+    const base = createEmptyPartDocument();
+    const document: PartDocument = {
+      ...base,
+      sketches: [sketchOnPlane('sketch-1', 'スケッチ1', 'yz'), createEmptySketchDocument2('sketch-2')],
+      activeSketchId: 'sketch-1',
+    };
+    useAppStore.getState().applyDocument(document);
+    useAppStore.getState().setWorkPlane('yz');
+    useAppStore.getState().setActiveSketch('sketch-2');
+    expect(useAppStore.getState().document.activeSketchId).toBe('sketch-2');
+    expect(useAppStore.getState().workPlaneId).toBe('yz');
+  });
+
+  it('切り替えでは Undo の段を作らない(形は変わらないため)', () => {
+    const base = createEmptyPartDocument();
+    const document: PartDocument = {
+      ...base,
+      sketches: [sketchOnPlane('sketch-1', 'スケッチ1', 'xy'), sketchOnPlane('sketch-2', 'スケッチ2', 'xz')],
+      activeSketchId: 'sketch-1',
+    };
+    useAppStore.getState().applyDocument(document);
+    const before = useAppStore.getState().undoStack.past.length;
+    useAppStore.getState().setActiveSketch('sketch-2');
+    expect(useAppStore.getState().undoStack.past).toHaveLength(before);
+  });
+});
+
+/** 名前だけ差し替えた空のスケッチ(検査の読みやすさのための小さな補助)。 */
+function createEmptySketchDocument2(id: string): SketchDocument {
+  return { ...createEmptySketchDocument(), id, name: id };
+}

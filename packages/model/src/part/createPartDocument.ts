@@ -129,6 +129,13 @@ export const REFERENCE_LABELS: Readonly<Record<ReferenceFeatureKind, string>> = 
   referenceCoordinateSystem: '座標系',
 };
 
+/**
+ * スケッチの既定名の見出し(P4 仕上げ (g))。「スケッチ1」「スケッチ2」…と連番を付ける。
+ * `createEmptySketchDocument` が起動時に付ける名前(「スケッチ1」)と必ず同じ言葉にする。
+ * `SOLID_LABELS` / `REFERENCE_LABELS` と同じくドキュメントの既定データ(UI 文字列とは別扱い)。
+ */
+export const SKETCH_LABEL = 'スケッチ';
+
 /** 起動時の部品。空のスケッチを1本だけ持ち、基準ジオメトリもソリッドも無い(NFR-UX-6)。 */
 export function createEmptyPartDocument(): PartDocument {
   const sketch = createEmptySketchDocument();
@@ -224,6 +231,59 @@ export function addSketch(document: PartDocument, sketch: SketchDocument): PartD
     return document;
   }
   return { ...document, sketches: [...document.sketches, sketch] };
+}
+
+/**
+ * この文書へ足せる空のスケッチを1本作る(P4 仕上げ (g)、FR-501)。
+ * まだ足してはいない(足すのは `addSketch`)。id と名前だけを採番して返す。
+ */
+export function createSketchFor(document: PartDocument): SketchDocument {
+  return {
+    ...createEmptySketchDocument(),
+    id: nextSketchId(document),
+    name: nextSketchName(document),
+  };
+}
+
+/**
+ * 新しいスケッチの id(ソリッド・基準ジオメトリと同じ連番方式、§0.a-0.19)。
+ * 途中の 1 本を消しても残ったものと重ならない(「スケッチ1」を消しても次は「スケッチ3」)。
+ */
+export function nextSketchId(document: PartDocument): string {
+  return nextSerialId(
+    document.sketches.map((sketch) => sketch.id),
+    'sketch-',
+  );
+}
+
+/** 新しいスケッチの名前(id と同じ方式、§0.a-0.19)。利用者が改名した名前とも重ならない。 */
+export function nextSketchName(document: PartDocument): string {
+  return nextSerialName(
+    document.sketches.map((sketch) => sketch.name),
+    SKETCH_LABEL,
+  );
+}
+
+/**
+ * スケッチを1本取り除く(P4 仕上げ (g)、FR-503)。
+ *
+ * **最後の1本は消さない。** 消すと作図する場所が無くなり、`activeSketchId` の指し先も
+ * 作れなくなるため(§0.a-0.4「activeSketchId は sketches のいずれかを指す」)。
+ * 消したものを編集中だったときは、残りの先頭を編集中にする。
+ * このスケッチの要素を参照していた立体は履歴に残し、解決のときに理由つきで断る
+ * (FR-504。止めずに警告する。`removeSolid` / `removeReference` と同じ扱い)。
+ */
+export function removeSketch(document: PartDocument, sketchId: string): PartDocument {
+  if (document.sketches.length <= 1 || findSketch(document, sketchId) === undefined) {
+    return document;
+  }
+  const sketches = document.sketches.filter((sketch) => sketch.id !== sketchId);
+  return {
+    ...document,
+    sketches,
+    activeSketchId:
+      document.activeSketchId === sketchId ? sketches[0].id : document.activeSketchId,
+  };
 }
 
 /** スケッチを1本差し替える。同じ id が無ければ元の文書をそのまま返す。 */

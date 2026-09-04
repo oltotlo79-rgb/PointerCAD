@@ -1142,3 +1142,94 @@ describe('断る理由の文言は ja.json から引く(NFR-MA-5)', () => {
     }
   });
 });
+
+/* ========================================================================== *
+ * スケッチをまたぐ id の取り違え(P4 仕上げ (g)、P4 タスク27 の報告 (B))
+ *
+ * 要素 id はスケッチ 1 本の中でだけ一意なので、スケッチ 1 とスケッチ 2 のどちらにも
+ * `face-1` がある。文書の並び順に前から探していた頃は、スケッチ 2 の `face-1` を
+ * 押し出したつもりでスケッチ 1 の `face-1` が使われていた。
+ * ========================================================================== */
+
+/** 同じ要素 id(`face-1` / `line-1` / `point-1`)を持つスケッチを 2 本持つ部品文書。 */
+function documentWithTwoSketches(activeSketchId: string): PartDocument {
+  const base = createEmptyPartDocument();
+  let first = base.sketches[0];
+  first = addPoint(addLine(addFace(first, 'face-1', '面1'), 'line-1', '線分1'), 'point-1', '点1');
+  const second: SketchDocument = {
+    id: 'sketch-2',
+    name: 'スケッチ2',
+    features: [],
+  };
+  const filled = addPoint(
+    addLine(addFace(second, 'face-1', '面1'), 'line-1', '線分1'),
+    'point-1',
+    '点1',
+  );
+  const withFirst = replaceSketch(base, first);
+  return {
+    ...withFirst,
+    sketches: [first, filled],
+    activeSketchId,
+  };
+}
+
+describe('スケッチをまたぐ id の取り違え(P4 仕上げ (g))', () => {
+  it('編集中のスケッチの面を使う(スケッチ 2 の face-1 はスケッチ 2 のもの)', () => {
+    const second = documentWithTwoSketches('sketch-2');
+    expect(selectedFaceRef(second, ['face-1'])).toEqual({
+      ok: true,
+      ref: { sketchId: 'sketch-2', faceFeatureId: 'face-1' },
+    });
+    // スケッチ 1 を編集中に戻せば、同じ id でもスケッチ 1 の面になる。
+    const first = documentWithTwoSketches('sketch-1');
+    expect(selectedFaceRef(first, ['face-1'])).toEqual({
+      ok: true,
+      ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+    });
+  });
+
+  it('押し出したフィーチャーが編集中のスケッチの面を指す(FR-401)', () => {
+    const second = documentWithTwoSketches('sketch-2');
+    const outcome = commitSolidInput(second, ['face-1'], {
+      kind: 'solid',
+      tool: 'extrude',
+      step: 'extrudeDistance',
+      values: { distance: DISTANCE_10 },
+      flags: {},
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.solids[0];
+    expect(feature.kind).toBe('extrude');
+    if (feature.kind !== 'extrude') {
+      return;
+    }
+    expect(feature.profile).toEqual({ sketchId: 'sketch-2', faceFeatureId: 'face-1' });
+  });
+
+  it('回転軸の線分とばねの始点の点も編集中のスケッチのものを使う(FR-402、FR-414)', () => {
+    const second = documentWithTwoSketches('sketch-2');
+    expect(selectedLineRef(second, ['line-1'])).toEqual({
+      sketchId: 'sketch-2',
+      lineFeatureId: 'line-1',
+    });
+    expect(selectedSpringOrigin(second, ['point-1'])).toEqual({
+      ok: true,
+      ref: { sketchId: 'sketch-2', pointFeatureId: 'point-1' },
+    });
+  });
+
+  it('編集中のスケッチに無い id は、ほかのスケッチから探す(後退路)', () => {
+    const base = documentWithTwoSketches('sketch-2');
+    // スケッチ 2 にだけ face-9 が無い状態を作る(スケッチ 1 にだけある id)。
+    const first = addFace(base.sketches[0], 'face-9', '面9');
+    const document: PartDocument = { ...base, sketches: [first, base.sketches[1]] };
+    expect(selectedFaceRef(document, ['face-9'])).toEqual({
+      ok: true,
+      ref: { sketchId: 'sketch-1', faceFeatureId: 'face-9' },
+    });
+  });
+});

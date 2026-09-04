@@ -64,7 +64,19 @@ export function AppShell(): React.JSX.Element {
   // 幾何カーネルをまだ読み込み終えていないか(§0.a-0.23 ⑨)。初回の計算中だけ帯と札の
   // 文言を分け、固まったように見えないようにする。
   const kernelLoaded = useAppStore((state) => state.kernelLoaded);
-  const featureCount = useAppStore((state) => state.sketch.features.length);
+  /*
+   * 最初の一歩の案内(NFR-UX-6)を出すかどうか。**部品まるごとが空のときだけ**出す。
+   * 編集中のスケッチの要素数だけで決めていた頃は、立体を作ったあとに新しいスケッチを
+   * 足した瞬間(P4 仕上げ (g))に、画面に立体があるのに「点をプロットして最初の形を
+   * 作りましょう」と出てしまっていた。真偽で取り出すので、空でなくなった瞬間にだけ
+   * 描き直す(NFR-PF-1)。
+   */
+  const isEmptyPart = useAppStore(
+    (state) =>
+      state.document.solids.length === 0 &&
+      state.document.references.length === 0 &&
+      state.document.sketches.every((sketch) => sketch.features.length === 0),
+  );
   const viewportSize = useAppStore((state) => state.viewportSize);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
   const fileName = useAppStore((state) => state.fileName);
@@ -255,7 +267,7 @@ export function AppShell(): React.JSX.Element {
                 <span>{t(kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel')}</span>
               </div>
             </div>
-          ) : featureCount === 0 ? (
+          ) : isEmptyPart ? (
             /* 計算が終わって、まだ何もかいていないときだけ最初の一歩を案内する(NFR-UX-6)。 */
             <div className="pcad-viewport__empty-state">
               <PlotPointIcon size={18} />

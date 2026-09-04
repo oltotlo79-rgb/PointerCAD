@@ -28,6 +28,7 @@ import {
   findSolid,
   METRIC_THREAD_DESIGNATIONS,
   metricThreadPitch,
+  referencedSketchIds,
   threadMinorDiameter,
   type ChamferFeature,
   type ChamferSize,
@@ -45,8 +46,10 @@ import {
   type ReferenceFeature,
   type ReferenceFeatureKind,
   type ReferencePointDefinition,
+  type SketchDocument,
   type SketchError,
   type SketchFaceRef,
+  type SketchFeature,
   type SketchLineRef,
   type SketchPointRef,
   type SolidFeature,
@@ -68,6 +71,8 @@ import {
   type SketchTreeKind,
 } from '../sketch/featureSummary.js';
 import { TOGGLE_LABEL_KEYS, type FieldUnit, type NumericToggleKey } from '../sketch/numericInput.js';
+
+import { findSketchFeatureAt } from './sketchRefs.js';
 
 /**
  * プロパティ欄で式のまま直せる欄の種類。種類ごとに1つだけ持つ。
@@ -1353,17 +1358,14 @@ export function selectionKindLabelKeys(
   return keys;
 }
 
-/** スケッチの要素 id から種類の見出しキーを引く。見つからなければ null。 */
+/**
+ * スケッチの要素 id から種類の見出しキーを引く。見つからなければ null。
+ * 探す順は `findSketchFeatureAt`(`sketchRefs.ts`)に任せ、**編集中のスケッチを先に**見る。
+ * 要素 id はスケッチをまたいで重なるため(P4 仕上げ (g))。
+ */
 function sketchKindLabelKey(document: PartDocument, elementId: string): MessageKey | null {
-  const separator = elementId.indexOf('#');
-  const featureId = separator < 0 ? elementId : elementId.slice(0, separator);
-  for (const sketch of document.sketches) {
-    const found = findFeature(sketch, featureId);
-    if (found !== undefined) {
-      return FEATURE_KIND_LABEL_KEYS[sketchTreeKindOf(found)];
-    }
-  }
-  return null;
+  const found = findSketchFeatureAt(document, elementId);
+  return found === undefined ? null : FEATURE_KIND_LABEL_KEYS[sketchTreeKindOf(found.feature)];
 }
 
 /**
@@ -1421,22 +1423,9 @@ export function buildTreeSections(
 ): readonly TreeSection[] {
   // 指し先が消えていたら先頭のスケッチを使う(ストアの activeSketchOf と同じ決め方)。
   const sketch = findSketch(document, activeSketchId) ?? document.sketches[0];
-  const sketchRows: TreeRow[] = sketch.features.map((feature) => {
-    const message = partErrorMessage(sketchErrors, feature.id);
-    // 複製(FR-324)は配置ごとに絵と名前を変える(P4 タスク33、タスク20 の申し送り)。
-    const kind = sketchTreeKindOf(feature);
-    return {
-      id: feature.id,
-      name: feature.name,
-      kind,
-      kindLabelKey: FEATURE_KIND_LABEL_KEYS[kind],
-      hasError: message !== null,
-      errorMessage: message,
-      suppressed: false,
-      consumed: false,
-      hidden: false,
-    };
-  });
+  const sketchRows: readonly TreeRow[] = sketch.features.map((feature) =>
+    sketchFeatureRow(feature, sketchErrors),
+  );
 
   const consumed = consumedIds(document, partErrors);
   const solidRows: TreeRow[] = document.solids.map((feature) => {
@@ -1459,6 +1448,83 @@ export function buildTreeSections(
     { key: 'sketch', titleKey: 'featureTree.sketchGroup', rows: sketchRows },
     { key: 'solid', titleKey: 'featureTree.solidGroup', rows: solidRows },
   ];
+}
+
+/**
+ * スケッチ 1 本ぶんの節の中身(P4 仕上げ (g)、FR-501)。
+ *
+ * 部品文書はもともと**複数のスケッチ**を持てる形だったが(`PartDocument.sketches`)、
+ * ツリーは編集中の 1 本しか出していなかったので、新しいスケッチを作る・切り替える入口が
+ * 画面のどこにも無かった(P4 タスク27 の報告 (A))。ここで文書内の全スケッチを親行として
+ * 並べられるようにする。
+ *
+ * `buildTreeSections` の戻り(スケッチ・ソリッドの 2 節)は 1 行も変えない。あの形を
+ * 前提にした既存の検査と、**スケッチが 1 本だけのときの見え方**(親行を出さない従来どおりの
+ * 平らな並び)をそのまま残すため。親行を出すかどうかは呼び出し側(`FeatureTree.tsx`)が
+ * 本数で決める。
+ */
+export interface SketchTreeGroup {
+  readonly sketchId: string;
+  readonly name: string;
+  /** いま作図しているスケッチか(親行を太字にし、押すと切り替える)。 */
+  readonly active: boolean;
+  /** そのスケッチの要素の行。履歴順のまま。 */
+  readonly rows: readonly TreeRow[];
+  /**
+   * このスケッチの要素を参照している立体があるか(FR-504)。
+   * true のときは消せない(消すと参照先が消えた立体だけが残る)ので、一覧の「削除」を断る。
+   */
+  readonly inUse: boolean;
+}
+
+/** スケッチの要素 1 つを木の行へ直す。`buildTreeSections` と同じ組み立て。 */
+function sketchFeatureRow(feature: SketchFeature, errors: readonly SketchError[]): TreeRow {
+  const message = partErrorMessage(errors, feature.id);
+  // 複製(FR-324)は配置ごとに絵と名前を変える(P4 タスク33、タスク20 の申し送り)。
+  const kind = sketchTreeKindOf(feature);
+  return {
+    id: feature.id,
+    name: feature.name,
+    kind,
+    kindLabelKey: FEATURE_KIND_LABEL_KEYS[kind],
+    hasError: message !== null,
+    errorMessage: message,
+    suppressed: false,
+    consumed: false,
+    hidden: false,
+  };
+}
+
+/**
+ * 文書内の全スケッチを、木に出せる形へ並べる(P4 仕上げ (g)、FR-501)。
+ *
+ * 失敗の理由(`sketchErrors`)を添えるのは**編集中のスケッチだけ**。ストアが持っている
+ * `sketchErrors` は編集中の 1 本ぶんしかないため(`useAppStore.ts` の `activeSketchErrors`)、
+ * 他のスケッチへ当てはめると、たまたま同じ要素 id を持つ行に他人の理由が出てしまう。
+ */
+export function buildSketchGroups(
+  document: PartDocument,
+  sketchErrors: readonly SketchError[] = [],
+): readonly SketchTreeGroup[] {
+  const usedSketchIds = new Set(document.solids.flatMap((feature) => referencedSketchIds(feature)));
+  return document.sketches.map((sketch) => {
+    const active = sketch.id === document.activeSketchId;
+    return {
+      sketchId: sketch.id,
+      name: sketch.name,
+      active,
+      rows: sketch.features.map((feature) =>
+        sketchFeatureRow(feature, active ? sketchErrors : []),
+      ),
+      inUse: usedSketchIds.has(sketch.id),
+    };
+  });
+}
+
+/** 名前を変えたスケッチを作る(FR-503)。空白だけの名前は受け付けず元のまま返す。 */
+export function renameSketch(sketch: SketchDocument, name: string): SketchDocument {
+  const trimmed = name.trim();
+  return trimmed.length === 0 || trimmed === sketch.name ? sketch : { ...sketch, name: trimmed };
 }
 
 /** 基準ジオメトリの種類の名前(FR-328、FR-329)。道具の名前と同じ言葉にする。 */

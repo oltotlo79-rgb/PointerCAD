@@ -16,6 +16,7 @@
 
 import type { ExpressionValue } from '@pointercad/expression';
 
+import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
 import type {
   EdgeCurveKind,
   FaceSurfaceKind,
@@ -23,7 +24,7 @@ import type {
   SubShapeKind,
   SubShapeRef,
 } from '../geometry/subShapeRef.js';
-import type { SketchDocument } from '../sketch/types.js';
+import type { CoordinateInput, PointReference, SketchDocument } from '../sketch/types.js';
 import type { ThreadSeries } from '../thread/metricThread.js';
 
 /** スケッチの面フィーチャー1枚への参照。断面に使う(§0.a-0.7、§0.a-0.8)。 */
@@ -102,10 +103,15 @@ export interface ExtrudeFeature extends SolidFeatureBase {
   readonly symmetric: boolean;
 }
 
-/** 回転軸の指定(FR-402、§0.a-0.9)。既定は world の z 軸。 */
-export type RevolveAxis =
-  | { readonly kind: 'world'; readonly axis: 'x' | 'y' | 'z' }
-  | { readonly kind: 'line'; readonly line: SketchLineRef };
+/**
+ * 回転軸の指定(FR-402、§0.a-0.9)。既定は world の z 軸。
+ *
+ * P4(FR-329、タスク9)で基準軸フィーチャーへの参照 `reference` を足した。基準軸は
+ * 「2 点 / 辺 / 面の法線 / 2 面の交線」で作れるので、これで**立体の辺や面の法線を
+ * 回転軸に使える**ようになる。型は `geometry/planeSpec.ts` の `AxisSpec` と同じで、
+ * 任意の作業平面(FR-328)の「点+軸と角度」もこの値をそのまま受け取る。
+ */
+export type RevolveAxis = AxisSpec;
 
 /** 回転(FR-402)。 */
 export interface RevolveFeature extends SolidFeatureBase {
@@ -238,10 +244,11 @@ export interface ChamferFeature extends SolidFeatureBase {
   readonly swapReferenceFace: boolean;
 }
 
-/** パターンの向き・軸(FR-411、FR-412)。回転軸(RevolveAxis)と同じ形を流用する(§0.a-0.21)。 */
-export type PatternDirection =
-  | { readonly kind: 'world'; readonly axis: 'x' | 'y' | 'z' }
-  | { readonly kind: 'line'; readonly line: SketchLineRef };
+/**
+ * パターンの向き・軸(FR-411、FR-412)。回転軸(RevolveAxis)と同じ形を流用する(§0.a-0.21)。
+ * P4(FR-329)で基準軸への参照が使えるようになった(`AxisSpec`)。
+ */
+export type PatternDirection = AxisSpec;
 
 /** パターンの並べ方(FR-411 直線、FR-412 円形)。 */
 export type PatternPlacement =
@@ -333,6 +340,106 @@ export type SolidFeature =
   | PatternFeature
   | SpringFeature;
 
+// ---------------------------------------------------------------------------
+// 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329。P4 タスク9)
+// ---------------------------------------------------------------------------
+
+/**
+ * 基準ジオメトリの種類(FR-328、FR-329)。**実体(ボディ)を作らない**ので
+ * `SolidFeature` とは別の履歴に並べる(`PartDocument.references`)。
+ */
+export type ReferenceFeatureKind =
+  | 'referencePlane'
+  | 'referenceAxis'
+  | 'referencePoint'
+  | 'referenceCoordinateSystem';
+
+/**
+ * 基準ジオメトリに共通の欄。
+ *
+ * スケッチの中ではなく**部品文書**に置く理由: 平面・軸・点の指定は立体の面・辺・頂点
+ * (`SubShapeRef`)を指せる必要があり(FR-328「既存の面から指定距離だけ離した平面」)、
+ * スケッチ 1 本は立体を知らないため、スケッチの履歴には置けない。部品文書に置けば、
+ * スケッチと立体の両方を見てから解決できる(解決の順序は `resolveReferences.ts`)。
+ */
+interface ReferenceFeatureBase {
+  /** フィーチャーの id。作業平面はこの id がそのまま作図面の id になる(FR-328)。 */
+  readonly id: string;
+  /** フィーチャーツリーの表示名(FR-501)。 */
+  readonly name: string;
+  /** 画面に出すか(FR-329「表示/非表示を切り替えられる」)。false でも参照はできる。 */
+  readonly visible: boolean;
+}
+
+/**
+ * 任意の作業平面(FR-328)。決め方は `PlaneSpec`(7 種)で、P5 の切断(FR-432)と
+ * 同じ型を共有する(P5 §0.a-0.56)。
+ */
+export interface ReferencePlaneFeature extends ReferenceFeatureBase {
+  readonly kind: 'referencePlane';
+  readonly plane: PlaneSpec;
+}
+
+/** 基準軸の決め方(FR-329)。 */
+export type ReferenceAxisDefinition =
+  /** 2 点を通る直線。向きは 1 点目 → 2 点目。 */
+  | { readonly kind: 'twoPoints'; readonly from: PointReference; readonly to: PointReference }
+  /** 立体のまっすぐな辺。向きは辺の向き。 */
+  | { readonly kind: 'edge'; readonly edge: SubShapeRef }
+  /** 立体の平らな面の法線。原点は面の重心。 */
+  | { readonly kind: 'faceNormal'; readonly face: SubShapeRef }
+  /** 2 つの平らな面の交線。平行な 2 面は交わらないので断る。 */
+  | {
+      readonly kind: 'faceIntersection';
+      readonly face1: SubShapeRef;
+      readonly face2: SubShapeRef;
+    };
+
+/** 基準軸(FR-329)。回転・パターン・平面の「点+軸と角度」から参照できる。 */
+export interface ReferenceAxisFeature extends ReferenceFeatureBase {
+  readonly kind: 'referenceAxis';
+  readonly definition: ReferenceAxisDefinition;
+}
+
+/** 基準点の決め方(FR-329)。 */
+export type ReferencePointDefinition =
+  /** 座標の式(FR-202)。極座標の基準になる平面は XY(部品文書には作図面が無いため)。 */
+  | { readonly kind: 'coordinate'; readonly at: CoordinateInput }
+  /** 立体の頂点。 */
+  | { readonly kind: 'vertex'; readonly vertex: SubShapeRef }
+  /** 立体の辺の中点。 */
+  | { readonly kind: 'edgeMidpoint'; readonly edge: SubShapeRef }
+  /** 立体の面の中心(重心)。 */
+  | { readonly kind: 'faceCenter'; readonly face: SubShapeRef };
+
+/** 基準点(FR-329)。平面の 3 点指定・軸の 2 点指定などから参照できる。 */
+export interface ReferencePointFeature extends ReferenceFeatureBase {
+  readonly kind: 'referencePoint';
+  readonly definition: ReferencePointDefinition;
+}
+
+/**
+ * 基準座標系(FR-329「原点と 3 軸の向きを決めたローカル座標系」)。
+ *
+ * 保存するのは**原点と 2 軸**で、第 3 軸(Z)は X × Y から導く(導出できるものは
+ * 保存しない、rules/04)。Y は X と直交していなくてよく、解決のときに直交化する
+ * (X を保ち、Y は Z × X で作り直す)。
+ */
+export interface ReferenceCoordinateSystemFeature extends ReferenceFeatureBase {
+  readonly kind: 'referenceCoordinateSystem';
+  readonly origin: PointReference;
+  /** 第 1 軸(X)の向き。 */
+  readonly xAxis: AxisSpec;
+  /** 第 2 軸(Y)の向きの手掛かり。X と直交化してから使う。 */
+  readonly yAxis: AxisSpec;
+}
+
+export type ReferenceFeature =
+  | ReferencePlaneFeature
+  | ReferenceAxisFeature
+  | ReferencePointFeature
+  | ReferenceCoordinateSystemFeature;
+
 /**
  * 部品(パート)文書。Undo のスナップショットの単位で、.pcad に保存される唯一のもの
  * (FR-505、FR-801)。変更のたびに新しい配列を作る(不変)。
@@ -346,6 +453,11 @@ export interface PartDocument {
   readonly sketches: readonly SketchDocument[];
   /** いま編集しているスケッチの id。sketches のいずれかを指す(§0.a-0.4)。 */
   readonly activeSketchId: string;
+  /**
+   * 基準ジオメトリの履歴(FR-328、FR-329)。順序が意味を持ち、**自分より前のものだけ**を
+   * 参照できる(`resolveReferences.ts`)。実体を作らないので `solids` とは分けて持つ。
+   */
+  readonly references: readonly ReferenceFeature[];
   /** ソリッドフィーチャーの履歴。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
   readonly solids: readonly SolidFeature[];
 }

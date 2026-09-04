@@ -33,7 +33,14 @@
 
 import type { ExpressionValue } from '@pointercad/expression';
 
-import { degreesToRadians } from '../sketch/planeMath.js';
+import type { AxisFrame } from '../geometry/planeSpec.js';
+import {
+  degreesToRadians,
+  tiltedDirection,
+  WORLD_AXIS_DIRECTIONS,
+  type WorkPlane,
+  type WorkPlaneId,
+} from '../sketch/planeMath.js';
 import {
   arcPointAt,
   ellipsePointAt,
@@ -43,7 +50,6 @@ import {
 import type { ResolvedCurve, ResolvedFace, ResolvedSketch } from '../sketch/types.js';
 import {
   addVec3,
-  crossVec3,
   lengthVec3,
   normalizeVec3,
   ORIGIN,
@@ -60,6 +66,12 @@ import {
   type SolidStepKeyMaterial,
 } from './cacheKey.js';
 import { consumedTargetsOf, isPatternSource, MAX_PATTERN_COUNT, MAX_SPRING_TURNS } from './createPartDocument.js';
+import {
+  createReferenceResolver,
+  type ReferenceError,
+  type ReferenceErrorCode,
+  type ResolvedReferences,
+} from './resolveReferences.js';
 import { dedupeSubShapeRefs, fingerprintKeyText, subShapeKindOf } from './subShapeRef.js';
 import type {
   BooleanFeature,
@@ -273,6 +285,11 @@ export type PartErrorCode =
    * 「加工するもとの面(辺)が見つかりません。形が大きく変わったため、選び直してください。」
    */
   | 'missingSubShape'
+  /**
+   * 基準ジオメトリ(FR-328、FR-329)の指定が循環している(P4 タスク9)。
+   * 作業平面 A がスケッチ S の点を使い、S が作業平面 A の上に描かれている、のような場合。
+   */
+  | 'circularReference'
   /** カーネルが形を作れなかった(このファイルでは使わない。タスク12 が使う)。 */
   | 'kernelFailed';
 
@@ -296,6 +313,13 @@ export interface ResolvedPart {
    * (同じ失敗を2箇所に持つと、消したときの取りこぼしが起きるため)。
    */
   readonly sketches: readonly ResolvedPartSketch[];
+  /**
+   * 基準ジオメトリ(任意の作業平面・基準軸・基準点・座標系。FR-328、FR-329)の解決結果。
+   * 失敗は `references.errors` と下の `errors` の両方ではなく、**`errors` へ写して 1 か所に
+   * まとめる**(スケッチの失敗を写さないのと逆にしているのは、基準ジオメトリがツリーの
+   * 独立した行になり、失敗をツリーの行へ出す必要があるため)。
+   */
+  readonly references: ResolvedReferences;
   /** カーネルへ渡す段の一覧。順序が意味を持つ。失敗した段と抑制された段は入らない。 */
   readonly steps: readonly ResolvedSolidStep[];
   /** ソリッドの解決の失敗(FR-504)。抑制は失敗ではないので入れない。 */
@@ -313,13 +337,6 @@ export interface RevolveAxisFrame {
   readonly origin: Vec3;
   readonly direction: Vec3;
 }
-
-/** ワールド軸の向き(§0.a-0.9)。既定は z。 */
-const WORLD_AXIS_DIRECTIONS: Readonly<Record<'x' | 'y' | 'z', Vec3>> = {
-  x: [1, 0, 0],
-  y: [0, 1, 0],
-  z: [0, 0, 1],
-};
 
 /** 平面の当てはめに使う円弧の標本点の数(両端を含む)。resolveSketch の平面判定と揃える。 */
 const ARC_PLANE_SAMPLES = 5;
@@ -406,13 +423,23 @@ export function translateCurve(curve: ResolvedCurve, offset: Vec3): ResolvedCurv
   }
 }
 
-/** 回転軸を解決する。world 軸は原点+単位ベクトル、スケッチの線分は始点+向き(§0.a-0.9)。 */
+/**
+ * 回転軸を解決する。world 軸は原点+単位ベクトル、スケッチの線分は始点+向き(§0.a-0.9)。
+ *
+ * P4(FR-329、タスク9)で基準軸フィーチャーへの参照 `reference` が増えた。基準軸は
+ * 部品文書の履歴を見ないと解けないので、**解決済みの表を第 3 引数で受け取る**
+ * (渡されなければ基準軸は解けず null。既存の呼び出しはそのまま動く)。
+ */
 export function resolveRevolveAxis(
   axis: RevolveAxis,
   sketches: readonly ResolvedPartSketch[],
+  referenceAxes: ReadonlyMap<string, AxisFrame> = new Map<string, AxisFrame>(),
 ): RevolveAxisFrame | null {
   if (axis.kind === 'world') {
     return { origin: ORIGIN, direction: WORLD_AXIS_DIRECTIONS[axis.axis] };
+  }
+  if (axis.kind === 'reference') {
+    return referenceAxes.get(axis.referenceFeatureId) ?? null;
   }
   const sketch = sketches.find((entry) => entry.sketchId === axis.line.sketchId);
   if (sketch === undefined) {
@@ -493,7 +520,11 @@ function planExtrude(feature: ExtrudeFeature, sketches: readonly ResolvedPartSke
 }
 
 /** 回転(FR-402、§0.a-0.9)。角度は度で持ち、ここでラジアンへ直す。 */
-function planRevolve(feature: RevolveFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
+function planRevolve(
+  feature: RevolveFeature,
+  sketches: readonly ResolvedPartSketch[],
+  axisFrames: ReadonlyMap<string, AxisFrame>,
+): PlanOutcome {
   const face = findResolvedFace(sketches, feature.profile);
   if (face === undefined) {
     return fail(
@@ -506,7 +537,7 @@ function planRevolve(feature: RevolveFeature, sketches: readonly ResolvedPartSke
   if (!Number.isFinite(degrees) || degrees <= 0 || degrees > MAX_REVOLVE_DEGREES) {
     return fail(feature.id, 'invalidValue', '回転の角度は 0 より大きく 360 以下にしてください。');
   }
-  const frame = resolveRevolveAxis(feature.axis, sketches);
+  const frame = resolveRevolveAxis(feature.axis, sketches, axisFrames);
   if (frame === null) {
     return fail(
       feature.id,
@@ -1159,22 +1190,6 @@ function cleanZeroVec3(vector: Vec3): Vec3 {
 }
 
 /**
- * 向きに垂直な、方位角 0 の基準になる第1軸・第2軸を作る(§0.a-0.10 と同じ考え方)。
- *
- * 穴は面から `gp_Pln.XAxis()` を基準に取れるが、ばねの軸は面を持たないので model 自身が
- * 基準を決める必要がある。ワールド Z を補助ベクトルに使い、向きが Z に近い(内積の絶対値が
- * 0.9 を超える)ときだけワールド X に切り替える(cross 積が縮退しないようにするため)。
- * どちらを使うかは向きだけで決まるので、同じ軸なら常に同じ基準になる(決定性)。
- * (xAxis, yAxis, direction) がこの順で右手系になるように yAxis = direction × xAxis とする。
- */
-function referenceAxes(direction: Vec3): { readonly xAxis: Vec3; readonly yAxis: Vec3 } {
-  const helper: Vec3 = Math.abs(direction[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1];
-  const xAxis = normalizeVec3(crossVec3(helper, direction));
-  const yAxis = crossVec3(direction, xAxis);
-  return { xAxis, yAxis };
-}
-
-/**
  * 軸を解決し、傾き角・方位角を適用した向きを返す(FR-414、§0.a-0.10、§0.a-0.29)。
  *
  * 穴(タスク15 の `drillDirection`、`packages/kernel/src/occt/makeHole.ts`)と同じ三角関数の形
@@ -1184,27 +1199,18 @@ function referenceAxes(direction: Vec3): { readonly xAxis: Vec3; readonly yAxis:
  * `+ cos(傾き)・軸` になる。またばねには面が無いので、基準の第1軸・第2軸は
  * `referenceAxes` が model 自身で作る(穴は面の `gp_Pln.XAxis()` をカーネルが使う)。
  *
- * `resolveTilt`(角度の範囲検査と度→ラジアンの変換)は穴と共用しているが、
- * 向きベクトルそのものを組み立てる計算は resolvePart.ts に無かった(穴側は kernel の
- * `makeHole.ts` が面の平面から計算しており、model には移せない)ので、この関数は新規に書いた。
+ * `resolveTilt`(角度の範囲検査と度→ラジアンの変換)は穴と共用している。
+ * 向きの組み立てそのものは `planeMath.ts` の `tiltedDirection` が正本で、任意の作業平面
+ * (FR-328 の「点+軸と角度」、P4 タスク9)と同じ規約を 2 か所に書かないようにしている。
+ * ここでは −0 を +0 へ揃える後始末だけを足す。
  */
 export function resolveTiltedDirection(
   frame: RevolveAxisFrame,
   tiltAngleRadians: number,
   tiltAzimuthRadians: number,
 ): Vec3 {
-  const { xAxis, yAxis } = referenceAxes(frame.direction);
-  const lean = Math.sin(tiltAngleRadians);
-  const along = Math.cos(tiltAngleRadians);
-  const ax = Math.cos(tiltAzimuthRadians);
-  const ay = Math.sin(tiltAzimuthRadians);
-  const { direction } = frame;
   return cleanZeroVec3(
-    normalizeVec3([
-      lean * (ax * xAxis[0] + ay * yAxis[0]) + along * direction[0],
-      lean * (ax * xAxis[1] + ay * yAxis[1]) + along * direction[1],
-      lean * (ax * xAxis[2] + ay * yAxis[2]) + along * direction[2],
-    ]),
+    tiltedDirection(frame.direction, tiltAngleRadians, tiltAzimuthRadians),
   );
 }
 
@@ -1215,7 +1221,11 @@ export function resolveTiltedDirection(
  * 全長・ピッチ・巻数(derived の計算)→ ピッチと線径の関係。
  * どの段階で断っても、それより後ろの計算(重い掃引はカーネル側だが)は行わない。
  */
-function planSpring(feature: SpringFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
+function planSpring(
+  feature: SpringFeature,
+  sketches: readonly ResolvedPartSketch[],
+  axisFrames: ReadonlyMap<string, AxisFrame>,
+): PlanOutcome {
   const origin = resolveSpringOrigin(feature.origin, sketches);
   if (origin === null) {
     return fail(
@@ -1224,7 +1234,7 @@ function planSpring(feature: SpringFeature, sketches: readonly ResolvedPartSketc
       'ばねの始点にする点が見つかりません。スケッチで点を作ってからやり直してください。',
     );
   }
-  const axisFrame = resolveRevolveAxis(feature.axis, sketches);
+  const axisFrame = resolveRevolveAxis(feature.axis, sketches, axisFrames);
   if (axisFrame === null) {
     return fail(
       feature.id,
@@ -1317,6 +1327,7 @@ function linearPatternTransform(direction: Vec3, spacing: number, k: number): Ri
 export function resolvePatternTransforms(
   placement: PatternPlacement,
   sketches: readonly ResolvedPartSketch[],
+  axisFrames: ReadonlyMap<string, AxisFrame> = new Map<string, AxisFrame>(),
 ):
   | { readonly ok: true; readonly transforms: readonly RigidTransform[] }
   | { readonly ok: false; readonly code: PartErrorCode; readonly message: string } {
@@ -1343,7 +1354,7 @@ export function resolvePatternTransforms(
         message: '両側へ並べるときは、個数を奇数にしてください。',
       };
     }
-    const frame = resolveRevolveAxis(placement.direction, sketches);
+    const frame = resolveRevolveAxis(placement.direction, sketches, axisFrames);
     if (frame === null) {
       return {
         ok: false,
@@ -1384,7 +1395,7 @@ export function resolvePatternTransforms(
     }
     stepAngle = degreesToRadians(angleDegrees) / (n - 1);
   }
-  const frame = resolveRevolveAxis(placement.axis, sketches);
+  const frame = resolveRevolveAxis(placement.axis, sketches, axisFrames);
   if (frame === null) {
     return {
       ok: false,
@@ -1415,6 +1426,7 @@ function planPattern(
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
+  axisFrames: ReadonlyMap<string, AxisFrame>,
 ): PlanOutcome {
   const notPatternSourceMessage = '繰り返せるのは穴とねじ穴だけです。穴かねじ穴を選び直してください。';
   // 過去の失敗(ブーリアンの対象=相手)と同じ扱いで、自己参照を先に弾く
@@ -1432,7 +1444,7 @@ function planPattern(
   if (!sourceTarget.ok) {
     return sourceTarget;
   }
-  const transformsOutcome = resolvePatternTransforms(feature.placement, sketches);
+  const transformsOutcome = resolvePatternTransforms(feature.placement, sketches, axisFrames);
   if (!transformsOutcome.ok) {
     return fail(feature.id, transformsOutcome.code, transformsOutcome.message);
   }
@@ -1480,12 +1492,13 @@ function planSolid(
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
+  axisFrames: ReadonlyMap<string, AxisFrame>,
 ): PlanOutcome {
   switch (feature.kind) {
     case 'extrude':
       return planExtrude(feature, sketches);
     case 'revolve':
-      return planRevolve(feature, sketches);
+      return planRevolve(feature, sketches, axisFrames);
     case 'sew':
       return planSew(feature, sketches);
     case 'boolean':
@@ -1495,13 +1508,13 @@ function planSolid(
     case 'threadHole':
       return planThreadHole(feature, sketches, bodyKeys, consumed);
     case 'spring':
-      return planSpring(feature, sketches);
+      return planSpring(feature, sketches, axisFrames);
     case 'fillet':
       return planFillet(feature, bodyKeys, consumed);
     case 'chamfer':
       return planChamfer(feature, bodyKeys, consumed);
     case 'pattern':
-      return planPattern(feature, solids, sketches, bodyKeys, consumed);
+      return planPattern(feature, solids, sketches, bodyKeys, consumed, axisFrames);
   }
 }
 
@@ -1672,15 +1685,92 @@ interface StepDraft {
   readonly plan: SolidStepPlan;
 }
 
+/**
+ * 基準ジオメトリの断り(`ReferenceErrorCode`)を、ツリーが読む `PartErrorCode` へ写す。
+ * 失敗の一覧を 1 か所(`ResolvedPart.errors`)にまとめるための詰め替え。
+ */
+const REFERENCE_ERROR_CODES: Readonly<Record<ReferenceErrorCode, PartErrorCode>> = {
+  missingPoint: 'missingProfile',
+  missingSubShape: 'missingSubShape',
+  missingAxis: 'missingProfile',
+  missingPlane: 'missingProfile',
+  collinear: 'notPlanar',
+  notStraightEdge: 'degenerate',
+  notFlatFace: 'degenerate',
+  invalidValue: 'invalidValue',
+  degenerate: 'degenerate',
+  circularReference: 'circularReference',
+};
+
+function toPartError(error: ReferenceError): PartError {
+  return partError(error.featureId, REFERENCE_ERROR_CODES[error.code], error.message);
+}
+
+/**
+ * スケッチと基準ジオメトリを、互いを頼りながら解く(P4 タスク9)。
+ *
+ * スケッチは作図面として任意の作業平面(FR-328)を指せて、その作業平面はスケッチの点を
+ * 基準にできる。どちらを先に解くかは決められないので、**頼まれたときに解いて覚える**形にする。
+ * 解いている最中のスケッチをもう一度頼まれたら null を返し、基準ジオメトリ側が
+ * 「循環しています」と断る(FR-504。無限に呼び合わない)。
+ */
+function resolveSketchesAndReferences(document: PartDocument): {
+  readonly sketches: readonly ResolvedPartSketch[];
+  readonly references: ResolvedReferences;
+  readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
+  readonly axisFrames: ReadonlyMap<string, AxisFrame>;
+} {
+  const resolvedSketches = new Map<string, ResolvedSketch>();
+  const resolvingSketches = new Set<string>();
+
+  const resolver = createReferenceResolver(document, {
+    sketch: (sketchId) => {
+      const remembered = resolvedSketches.get(sketchId);
+      if (remembered !== undefined) {
+        return remembered;
+      }
+      if (resolvingSketches.has(sketchId)) {
+        return null;
+      }
+      const found = document.sketches.find((sketch) => sketch.id === sketchId);
+      if (found === undefined) {
+        return null;
+      }
+      resolvingSketches.add(sketchId);
+      const resolved = resolveSketch(found, { workPlane: (planeId) => resolver.workPlane(planeId) });
+      resolvingSketches.delete(sketchId);
+      resolvedSketches.set(sketchId, resolved);
+      return resolved;
+    },
+  });
+
+  // 基準ジオメトリを先に解く(スケッチが作図面として使うため)。中で必要になった
+  // スケッチはその場で解かれ、覚えられる。
+  const references = resolver.resolveAll();
+  const axisFrames = new Map<string, AxisFrame>(
+    references.axes.map((axis) => [axis.featureId, { origin: axis.origin, direction: axis.direction }]),
+  );
+
+  const sketches: ResolvedPartSketch[] = document.sketches.map((sketch) => {
+    const remembered = resolvedSketches.get(sketch.id);
+    if (remembered !== undefined) {
+      return { sketchId: sketch.id, resolved: remembered };
+    }
+    const resolved = resolveSketch(sketch, { workPlane: (planeId) => resolver.workPlane(planeId) });
+    resolvedSketches.set(sketch.id, resolved);
+    return { sketchId: sketch.id, resolved };
+  });
+
+  return { sketches, references, workPlane: resolver.workPlane, axisFrames };
+}
+
 /** 部品文書を解決して、カーネルへ渡す段の一覧を作る。例外を投げない(FR-504)。 */
 export function resolvePart(document: PartDocument): ResolvedPart {
-  const sketches: ResolvedPartSketch[] = document.sketches.map((sketch) => ({
-    sketchId: sketch.id,
-    resolved: resolveSketch(sketch),
-  }));
+  const { sketches, references, axisFrames } = resolveSketchesAndReferences(document);
 
   const drafts: StepDraft[] = [];
-  const errors: PartError[] = [];
+  // 基準ジオメトリの失敗もツリーの行として出すので、同じ一覧へ写す(FR-504)。
+  const errors: PartError[] = references.errors.map(toPartError);
   /** 作成に成功したボディの鍵。ここに無い id は下流から参照できない。 */
   const bodyKeys = new Map<string, string>();
   /** すでに他のフィーチャーが消費したボディ。同じものを2度は使えない(§2.2)。 */
@@ -1691,7 +1781,7 @@ export function resolvePart(document: PartDocument): ResolvedPart {
     if (feature.suppressed) {
       continue;
     }
-    const outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed);
+    const outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed, axisFrames);
     if (!outcome.ok) {
       errors.push(outcome.error);
       continue;
@@ -1717,6 +1807,7 @@ export function resolvePart(document: PartDocument): ResolvedPart {
 
   return {
     sketches,
+    references,
     steps,
     errors,
     liveBodyIds: steps.filter((step) => step.visible).map((step) => step.featureId),

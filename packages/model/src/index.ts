@@ -22,14 +22,22 @@ export {
 export type { Vec3 } from './sketch/vec3.js';
 export {
   addVec3, crossVec3, distanceVec3, dotVec3, isSamePoint, lengthVec3,
-  lerpVec3, normalizeVec3, ORIGIN, scaleVec3, SKETCH_TOLERANCE_MM, subVec3,
+  lerpVec3, normalizeVec3, ORIGIN, rotateAboutAxis, rotateDirection, scaleVec3,
+  SKETCH_TOLERANCE_MM, subVec3,
 } from './sketch/vec3.js';
-export type { WorkPlane, WorkPlaneId } from './sketch/planeMath.js';
+export type { BaseWorkPlaneId, WorkPlane, WorkPlaneId } from './sketch/planeMath.js';
 export {
-  DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane, distanceToPlane,
-  planeToWorld, polarOffset, projectOntoPlane, radiansToDegrees,
-  WORK_PLANE_IDS, WORK_PLANES, worldToPlane,
+  baseWorkPlane, DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane, distanceToPlane,
+  isBaseWorkPlaneId, planeAxesFor, planeToWorld, polarOffset, projectOntoPlane, radiansToDegrees,
+  tiltedDirection, WORK_PLANE_IDS, WORK_PLANES, WORLD_AXIS_DIRECTIONS, worldToPlane,
 } from './sketch/planeMath.js';
+export type {
+  AxisFrame, AxisSpec, PlaneErrorKey, PlaneOutcome, PlaneResolveContext, PlaneSpec,
+  ResolvedPlane, ResolvedSubShape,
+} from './geometry/planeSpec.js';
+export {
+  planeFromNormal, planeSpecKeyText, resolvePlaneSpec, subShapeFromFingerprint,
+} from './geometry/planeSpec.js';
 export type {
   CoordinateInput, PointArrayLayout, PointReference, ResolvedArc, ResolvedCurve, ResolvedEllipse,
   ResolvedFace, ResolvedPoint, ResolvedSegment, ResolvedSketch, ResolvedSpline, SketchArcFeature,
@@ -46,6 +54,7 @@ export type { ResolveContext, ResolveOutcome } from './sketch/resolveCoordinate.
 export {
   resolveCoordinate, resolvePointReference, vertexKey,
 } from './sketch/resolveCoordinate.js';
+export type { SketchResolveOptions } from './sketch/resolveSketch.js';
 export {
   arcPointAt, azimuthToEllipseParameter, curveEnd, curveStart, ellipsePointAt, fitPlaneNormal,
   isFullCircle, isFullEllipse, isPlanar, MAX_POINT_ARRAY_COUNT, resolveSketch,
@@ -65,7 +74,10 @@ export {
 export type {
   BooleanFeature, BooleanOperation, ChamferFeature, ChamferSize, ExtrudeFeature,
   FilletFeature, HoleDepth, HoleFeature, PartDocument, PatternDirection,
-  PatternFeature, PatternPlacement, RevolveAxis, RevolveFeature, SewFeature, SketchFaceRef,
+  PatternFeature, PatternPlacement, ReferenceAxisDefinition, ReferenceAxisFeature,
+  ReferenceCoordinateSystemFeature, ReferenceFeature, ReferenceFeatureKind,
+  ReferencePlaneFeature, ReferencePointDefinition, ReferencePointFeature,
+  RevolveAxis, RevolveFeature, SewFeature, SketchFaceRef,
   SketchLineRef, SketchPointRef, SolidFeature, SolidFeatureKind, SpringDerived, SpringFeature,
   SpringHandedness, ThreadHoleFeature,
   ThreadRepresentation,
@@ -78,15 +90,26 @@ export {
 } from './geometry/subShapeRef.js';
 export type { SolidLabelKey } from './part/createPartDocument.js';
 export {
-  addSketch, appendSolid, consumedBodyIds, consumedTargetsOf, createEmptyPartDocument,
+  addSketch, appendReference, appendSolid, consumedBodyIds, consumedTargetsOf,
+  createEmptyPartDocument,
   DEFAULT_CHAMFER_ANGLE_DEGREES, DEFAULT_CHAMFER_DISTANCE_MM, DEFAULT_CIRCULAR_PATTERN_COUNT,
   DEFAULT_FILLET_RADIUS_MM, DEFAULT_HOLE_DEPTH_MM, DEFAULT_HOLE_DIAMETER_MM, DEFAULT_PATTERN_COUNT,
   DEFAULT_PATTERN_SPACING_MM, DEFAULT_SEW_TOLERANCE_MM, DEFAULT_SPRING_COIL_DIAMETER_MM,
-  DEFAULT_SPRING_PITCH_MM, DEFAULT_SPRING_TURNS, DEFAULT_SPRING_WIRE_DIAMETER_MM, findSketch,
+  DEFAULT_SPRING_PITCH_MM, DEFAULT_SPRING_TURNS, DEFAULT_SPRING_WIRE_DIAMETER_MM, findReference,
+  findSketch,
   findSolid, isMachiningFeature, isPatternSource, liveBodyIds, MAX_PATTERN_COUNT, MAX_SPRING_TURNS,
-  nextSolidId, nextSolidName, PART_SCHEMA_VERSION, removeSolid, replaceSketch, replaceSolid,
+  nextReferenceId, nextReferenceName, nextSolidId, nextSolidName, PART_SCHEMA_VERSION,
+  REFERENCE_LABELS, removeReference, removeSolid, replaceReference, replaceSketch, replaceSolid,
   setActiveSketch, SOLID_LABELS,
 } from './part/createPartDocument.js';
+export type {
+  ReferenceError, ReferenceErrorCode, ReferenceResolveDeps, ReferenceResolver,
+  ResolvedReferenceAxis, ResolvedReferenceCoordinateSystem, ResolvedReferencePlane,
+  ResolvedReferencePoint, ResolvedReferences,
+} from './part/resolveReferences.js';
+export {
+  createReferenceResolver, workPlaneFromResolved,
+} from './part/resolveReferences.js';
 export type {
   BooleanKeyMaterial, ChamferKeyMaterial, ExtrudeKeyMaterial, FilletKeyMaterial, HoleKeyMaterial,
   KeyArc, KeyCurve, KeyEllipse, KeySegment, KeySpline, KeySubShape, KeyTransform, KeyVec3,

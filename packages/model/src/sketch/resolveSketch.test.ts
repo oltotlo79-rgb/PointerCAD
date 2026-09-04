@@ -2,7 +2,7 @@ import { expressionValueFromNumber as num, type ExpressionValue } from '@pointer
 import { describe, expect, it } from 'vitest';
 
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.js';
-import { WORK_PLANES } from './planeMath.js';
+import { WORK_PLANES, type WorkPlane } from './planeMath.js';
 import {
   arcPointAt,
   azimuthToEllipseParameter,
@@ -2095,5 +2095,93 @@ describe('構築線(タスク6、FR-320)', () => {
     const resolved = resolveSketch(documentOf(rectangle, face));
     expect(resolved.errors).toEqual([]);
     expect(resolved.faces).toHaveLength(1);
+  });
+});
+
+describe('任意の作業平面の上で描く(FR-328、タスク9)', () => {
+  /** XY 面を +Z へ 10mm ずらした作業平面(タスク9 の `PlaneSpec` の `workPlane` に相当)。 */
+  const raised: WorkPlane = {
+    id: 'referencePlane-1',
+    origin: [0, 0, 10],
+    axisU: [1, 0, 0],
+    axisV: [0, 1, 0],
+    normal: [0, 0, 1],
+  };
+
+  const lookup = (planeId: string): WorkPlane | null =>
+    planeId === raised.id ? raised : (WORK_PLANES[planeId as 'xy'] ?? null);
+
+  it('基準の 3 面に無い作図面は、引き口が無ければ missingBase で断る(FR-504)', () => {
+    const point: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'referencePlane-1', kind: 'point',
+      at: absoluteCoordinate(1, 2, 3),
+    };
+    const resolved = resolveSketch(documentOf(point));
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toContain('作図面が見つかりません');
+  });
+
+  it('引き口を渡すと、任意の作業平面の上の円弧が解決できる', () => {
+    // 作業平面の原点が (0,0,10) でも、中心は絶対座標そのまま。法線・第1軸は平面から借りる。
+    const arc: SketchFeature = {
+      id: 'a1', name: '円弧1', planeId: 'referencePlane-1', kind: 'arc',
+      center: absoluteCoordinate(0, 0, 10), radius: num(5),
+      startAngle: num(0), endAngle: num(90), construction: false,
+    };
+    const resolved = resolveSketch(documentOf(arc), { workPlane: lookup });
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.arcs[0].normal).toEqual([0, 0, 1]);
+    expect(resolved.arcs[0].xAxis).toEqual([1, 0, 0]);
+    expect(curveStart(resolved.arcs[0])).toEqual([5, 0, 10]);
+  });
+
+  it('任意の作業平面でも極座標は平面の第1軸・第2軸を基準にする', () => {
+    const first: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'referencePlane-1', kind: 'point',
+      at: absoluteCoordinate(0, 0, 10),
+    };
+    const second: SketchFeature = {
+      id: 'p2', name: '点2', planeId: 'referencePlane-1', kind: 'point',
+      at: { mode: 'polar', base: { kind: 'previous' }, distance: num(10), azimuth: num(90), elevation: num(0) },
+    };
+    const resolved = resolveSketch(documentOf(first, second), { workPlane: lookup });
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.points[1].position[0]).toBeCloseTo(0, 12);
+    expect(resolved.points[1].position[1]).toBeCloseTo(10, 12);
+    expect(resolved.points[1].position[2]).toBeCloseTo(10, 12);
+  });
+
+  it('作図面が引けなくても、面のフィーチャーは境界だけで解決できる', () => {
+    // 面は作図面を使わないので、planeId が未知でも境界がそろっていれば張れる。
+    const rectangle: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: 'xy', kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+      construction: false,
+    };
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: 'referencePlane-9', kind: 'face',
+      boundary: [{ featureId: 'r1' }], color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(rectangle, face));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.faces).toHaveLength(1);
+  });
+
+  it('引き口が null を返す作図面は、そのフィーチャーだけを断って先へ進む(FR-504)', () => {
+    const bad: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'referencePlane-9', kind: 'point',
+      at: absoluteCoordinate(1, 1, 1),
+    };
+    const good: SketchFeature = {
+      id: 'p2', name: '点2', planeId: 'referencePlane-1', kind: 'point',
+      at: absoluteCoordinate(2, 2, 2),
+    };
+    const resolved = resolveSketch(documentOf(bad, good), { workPlane: lookup });
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].featureId).toBe('p1');
+    expect(resolved.points).toHaveLength(1);
+    expect(resolved.points[0].position).toEqual([2, 2, 2]);
   });
 });

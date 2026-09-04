@@ -22,6 +22,7 @@ import {
   DEFAULT_CHAMFER_DISTANCE_MM,
   DEFAULT_HOLE_DEPTH_MM,
   findFeature,
+  findReference,
   findMetricThread,
   findSketch,
   findSolid,
@@ -425,13 +426,30 @@ function lineReferenceName(document: PartDocument, ref: SketchLineRef): string {
   return found === undefined || found.kind !== 'line' ? ref.lineFeatureId : found.name;
 }
 
-/** 回転軸の見え方。線分の軸は名前を引いて読み取り専用で出す(§0.a-0.9)。 */
+/** 基準軸(FR-329)の名前。見つからなければ id をそのまま返す(FR-504)。 */
+function referenceAxisName(document: PartDocument, referenceFeatureId: string): string {
+  const found = findReference(document, referenceFeatureId);
+  return found === undefined || found.kind !== 'referenceAxis' ? referenceFeatureId : found.name;
+}
+
+/**
+ * 回転軸の見え方。線分の軸と基準軸(FR-329)は名前を引いて読み取り専用で出す(§0.a-0.9)。
+ * 基準軸も「名前を出すだけ」で扱いが同じなので `kind: 'line'`(= 読み取り専用の名前)にまとめる。
+ */
 function axisSummary(document: PartDocument, feature: SolidFeature): SolidAxisSummary | null {
   if (feature.kind !== 'revolve') {
     return null;
   }
   if (feature.axis.kind === 'world') {
     return { kind: 'world', axis: feature.axis.axis };
+  }
+  if (feature.axis.kind === 'reference') {
+    const { referenceFeatureId } = feature.axis;
+    return {
+      kind: 'line',
+      name: referenceAxisName(document, referenceFeatureId),
+      elementId: referenceFeatureId,
+    };
   }
   const { line } = feature.axis;
   const sketch = findSketch(document, line.sketchId);
@@ -615,14 +633,17 @@ function directionChoice(
   if (direction.kind === 'world') {
     return { key, labelKey, value: direction.axis, options: patternDirectionOptions() };
   }
+  // 線分の軸も基準軸(FR-329)も「名前を選択肢に足して読み取れるようにする」だけなので、
+  // 同じ 'line' の値へまとめる(選び直しの操作はタスク29・33 が仕上げる)。
+  const label =
+    direction.kind === 'reference'
+      ? referenceAxisName(document, direction.referenceFeatureId)
+      : lineReferenceName(document, direction.line);
   return {
     key,
     labelKey,
     value: 'line',
-    options: [
-      ...patternDirectionOptions(),
-      { value: 'line', label: lineReferenceName(document, direction.line) },
-    ],
+    options: [...patternDirectionOptions(), { value: 'line', label }],
   };
 }
 

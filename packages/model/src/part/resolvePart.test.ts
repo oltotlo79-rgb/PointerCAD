@@ -18,6 +18,7 @@ import type {
   ResolvedArc,
   ResolvedCurve,
   ResolvedSegment,
+  SketchArcFeature,
   SketchDocument,
   SketchFaceFeature,
   SketchLineFeature,
@@ -31,7 +32,12 @@ import {
   type ThreadSeries,
 } from '../thread/metricThread.js';
 import { cacheKeyFor, type KeyCurve } from './cacheKey.js';
-import { appendSolid, createEmptyPartDocument, replaceSketch } from './createPartDocument.js';
+import {
+  appendReference,
+  appendSolid,
+  createEmptyPartDocument,
+  replaceSketch,
+} from './createPartDocument.js';
 import {
   resolveHoleCenters,
   resolveMachiningTarget,
@@ -3162,5 +3168,123 @@ describe('resolvePart パターン', () => {
     expect(result.errors).toEqual([]);
     expect(result.steps).toHaveLength(2);
     expect(result.liveBodyIds).toEqual(['hole-1']);
+  });
+});
+
+describe('基準ジオメトリと部品の解決の噛み合わせ(FR-328、FR-329、タスク9)', () => {
+  /** 作業平面 1 枚(XY を +Z へ 10)だけを持つ部品。 */
+  function withRaisedPlane(): PartDocument {
+    const base = createEmptyPartDocument();
+    return appendReference(base, {
+      id: 'referencePlane-1',
+      kind: 'referencePlane',
+      name: '作業平面1',
+      visible: true,
+      plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(10) },
+    });
+  }
+
+  it('作業平面は解決結果に載り、失敗が無ければ errors は増えない', () => {
+    const resolved = resolvePart(withRaisedPlane());
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.references.planes).toHaveLength(1);
+    expect(resolved.references.planes[0].plane.origin).toEqual([0, 0, 10]);
+  });
+
+  it('スケッチのフィーチャーは作業平面フィーチャーの上に描ける(WorkPlaneId の拡張)', () => {
+    const document = withRaisedPlane();
+    const sketch = document.sketches[0];
+    const arc: SketchArcFeature = {
+      id: 'arc-1',
+      name: '円弧1',
+      planeId: 'referencePlane-1',
+      kind: 'arc',
+      center: absoluteCoordinate(0, 0, 10),
+      radius: expressionValueFromNumber(5),
+      startAngle: expressionValueFromNumber(0),
+      endAngle: expressionValueFromNumber(90),
+      construction: false,
+    };
+    const resolved = resolvePart(replaceSketch(document, appendFeature(sketch, arc)));
+    expect(resolved.sketches[0].resolved.errors).toEqual([]);
+    expect(resolved.sketches[0].resolved.arcs[0].center).toEqual([0, 0, 10]);
+    expect(resolved.sketches[0].resolved.arcs[0].normal).toEqual([0, 0, 1]);
+  });
+
+  it('基準ジオメトリの失敗は部品の errors へ写り、文書は壊れない(FR-504)', () => {
+    const base = createEmptyPartDocument();
+    const document = appendReference(base, {
+      id: 'referencePlane-1',
+      kind: 'referencePlane',
+      name: '作業平面1',
+      visible: true,
+      plane: { kind: 'workPlane', planeId: 'referencePlane-404', offset: expressionValueFromNumber(0) },
+    });
+    const resolved = resolvePart(document);
+    expect(resolved.references.planes).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].featureId).toBe('referencePlane-1');
+    expect(resolved.errors[0].code).toBe('missingProfile');
+  });
+
+  it('回転軸に基準軸を選べる(FR-329「回転体やパターンの向きに使える」)', () => {
+    const fixture = createFixture();
+    // 原点 → (0,0,10) の基準軸。向きは +Z で、ワールド Z 軸と同じ結果になる。
+    const withAxis = appendReference(fixture.document, {
+      id: 'referenceAxis-1',
+      kind: 'referenceAxis',
+      name: '基準軸1',
+      visible: true,
+      definition: {
+        kind: 'twoPoints',
+        from: { kind: 'origin' },
+        to: { kind: 'point', pointId: 'point-5' },
+      },
+    });
+    const revolve: RevolveFeature = {
+      id: 'revolve-1',
+      kind: 'revolve',
+      name: '回転1',
+      suppressed: false,
+      profile: fixture.faceA,
+      axis: { kind: 'reference', referenceFeatureId: 'referenceAxis-1' },
+      angle: expressionValueFromNumber(90),
+      reversed: false,
+    };
+    const resolved = resolvePart(appendSolid(withAxis, revolve));
+    expect(resolved.errors).toEqual([]);
+    const step = resolved.steps.find((candidate) => candidate.featureId === 'revolve-1');
+    expect(step).toBeDefined();
+    if (step === undefined || step.plan.kind !== 'revolve') {
+      return;
+    }
+    expect(step.plan.axisDirection[2]).toBeCloseTo(1, 12);
+  });
+
+  it('基準軸が無ければ回転は理由つきで断り、他のフィーチャーは解決される(FR-504)', () => {
+    const fixture = createFixture();
+    const revolve: RevolveFeature = {
+      id: 'revolve-1',
+      kind: 'revolve',
+      name: '回転1',
+      suppressed: false,
+      profile: fixture.faceA,
+      axis: { kind: 'reference', referenceFeatureId: 'referenceAxis-404' },
+      angle: expressionValueFromNumber(90),
+      reversed: false,
+    };
+    const resolved = resolvePart(appendSolid(fixture.document, revolve));
+    expect(resolved.steps).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].featureId).toBe('revolve-1');
+  });
+
+  it('基準ジオメトリが 1 つも無い部品は、これまでどおり解決される(回帰確認)', () => {
+    const fixture = createFixture();
+    const resolved = resolvePart(fixture.document);
+    expect(resolved.references.planes).toEqual([]);
+    expect(resolved.references.axes).toEqual([]);
+    expect(resolved.references.errors).toEqual([]);
+    expect(resolved.errors).toEqual([]);
   });
 });

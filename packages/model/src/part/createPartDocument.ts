@@ -14,7 +14,13 @@ import {
   nextSerialName,
 } from '../sketch/createSketchDocument.js';
 import type { SketchDocument } from '../sketch/types.js';
-import type { BooleanOperation, PartDocument, SolidFeature } from './types.js';
+import type {
+  BooleanOperation,
+  PartDocument,
+  ReferenceFeature,
+  ReferenceFeatureKind,
+  SolidFeature,
+} from './types.js';
 
 /**
  * 部品文書の保存形式の版(§0.a-0.3)。P3 で 3 になる(P3 計画書 §0.a-0.22、タスク19)。
@@ -109,7 +115,18 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   spring: 'ばね',
 };
 
-/** 起動時の部品。空のスケッチを1本だけ持ち、ソリッドは無い(NFR-UX-6)。 */
+/**
+ * 基準ジオメトリの種類ごとの既定名(FR-328、FR-329)。
+ * `SOLID_LABELS` と同じくドキュメントの既定データとしてここに置く(UI 文字列とは別扱い)。
+ */
+export const REFERENCE_LABELS: Readonly<Record<ReferenceFeatureKind, string>> = {
+  referencePlane: '作業平面',
+  referenceAxis: '基準軸',
+  referencePoint: '基準点',
+  referenceCoordinateSystem: '座標系',
+};
+
+/** 起動時の部品。空のスケッチを1本だけ持ち、基準ジオメトリもソリッドも無い(NFR-UX-6)。 */
 export function createEmptyPartDocument(): PartDocument {
   const sketch = createEmptySketchDocument();
   return {
@@ -118,8 +135,77 @@ export function createEmptyPartDocument(): PartDocument {
     schemaVersion: PART_SCHEMA_VERSION,
     sketches: [sketch],
     activeSketchId: sketch.id,
+    references: [],
     solids: [],
   };
+}
+
+export function findReference(
+  document: PartDocument,
+  featureId: string,
+): ReferenceFeature | undefined {
+  return document.references.find((feature) => feature.id === featureId);
+}
+
+/**
+ * 基準ジオメトリを履歴の末尾へ足す(FR-328、FR-329)。
+ * 作業平面の id はそのまま作図面の id になるので、すでに同じ id があれば足さずに返す。
+ */
+export function appendReference(
+  document: PartDocument,
+  feature: ReferenceFeature,
+): PartDocument {
+  if (findReference(document, feature.id) !== undefined) {
+    return document;
+  }
+  return { ...document, references: [...document.references, feature] };
+}
+
+/** 1つを差し替える(名前の変更・表示の切替もこれで行う)。見つからなければそのまま返す。 */
+export function replaceReference(
+  document: PartDocument,
+  featureId: string,
+  next: ReferenceFeature,
+): PartDocument {
+  if (findReference(document, featureId) === undefined) {
+    return document;
+  }
+  return {
+    ...document,
+    references: document.references.map((feature) =>
+      feature.id === featureId ? next : feature,
+    ),
+  };
+}
+
+/**
+ * 1つを取り除く。これを作図面にしていたスケッチや、これを軸にしていたフィーチャーは
+ * 履歴に残し、解決のときに理由つきで断る(FR-504。止めずに警告する)。
+ */
+export function removeReference(document: PartDocument, featureId: string): PartDocument {
+  if (findReference(document, featureId) === undefined) {
+    return document;
+  }
+  return {
+    ...document,
+    references: document.references.filter((feature) => feature.id !== featureId),
+  };
+}
+
+/** 同じ種類の既存の名前の最大連番 + 1(ソリッドと同じ方式、§0.a-0.19)。 */
+export function nextReferenceName(document: PartDocument, kind: ReferenceFeatureKind): string {
+  const usedNames = document.references
+    .filter((feature) => feature.kind === kind)
+    .map((feature) => feature.name);
+  return nextSerialName(usedNames, REFERENCE_LABELS[kind]);
+}
+
+/** 同じ種類の既存の id の最大連番 + 1(ソリッドと同じ方式、§0.a-0.19)。 */
+export function nextReferenceId(document: PartDocument, kind: ReferenceFeatureKind): string {
+  const usedIds = document.references
+    .filter((feature) => feature.kind === kind)
+    .map((feature) => feature.id);
+  return nextSerialId(usedIds, `${kind}-`);
 }
 
 export function findSketch(document: PartDocument, sketchId: string): SketchDocument | undefined {

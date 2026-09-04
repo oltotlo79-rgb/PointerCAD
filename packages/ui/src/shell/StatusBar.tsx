@@ -1,4 +1,4 @@
-import { liveBodyIds, type WorkPlaneId } from '@pointercad/model';
+import { isBaseWorkPlaneId, liveBodyIds, type BaseWorkPlaneId } from '@pointercad/model';
 import { useEffect, useState } from 'react';
 
 import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
@@ -20,7 +20,15 @@ const PLANE_KEYS = {
   xy: 'toolbar.plane.xy',
   xz: 'toolbar.plane.xz',
   yz: 'toolbar.plane.yz',
-} as const satisfies Record<WorkPlaneId, MessageKey>;
+} as const satisfies Record<BaseWorkPlaneId, MessageKey>;
+
+/**
+ * 作図面の札の文言。任意の作業平面(FR-328)は基準の 3 面に無いので、いまはその id を
+ * そのまま出す(作業平面の名前を出す配線はタスク13・33)。
+ */
+function planeLabel(workPlaneId: string): string {
+  return isBaseWorkPlaneId(workPlaneId) ? t(PLANE_KEYS[workPlaneId]) : workPlaneId;
+}
 
 /** 帯の 1 文に添える印。何を伝えているかで替える。 */
 function statusIcon(kind: StatusLineKind): React.JSX.Element {
@@ -206,7 +214,7 @@ export function StatusBar(): React.JSX.Element {
       </span>
       <span className="pcad-statusbar__state">
         <PlaneIcon size={12} />
-        {`${t('statusBar.plane')} ${t(PLANE_KEYS[workPlaneId])}`}
+        {`${t('statusBar.plane')} ${planeLabel(workPlaneId)}`}
       </span>
       <span className="pcad-statusbar__state">
         <SnapIcon size={12} />

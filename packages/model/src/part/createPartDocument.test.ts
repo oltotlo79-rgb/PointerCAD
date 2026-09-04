@@ -15,6 +15,7 @@ import type { SketchDocument, SketchFaceFeature, SketchLineFeature } from '../sk
 import { DEFAULT_THREAD_DESIGNATION, threadMinorDiameter } from '../thread/metricThread.js';
 import {
   addSketch,
+  appendReference,
   appendSolid,
   consumedBodyIds,
   consumedTargetsOf,
@@ -32,6 +33,7 @@ import {
   DEFAULT_SPRING_PITCH_MM,
   DEFAULT_SPRING_TURNS,
   DEFAULT_SPRING_WIRE_DIAMETER_MM,
+  findReference,
   findSketch,
   findSolid,
   isMachiningFeature,
@@ -39,10 +41,15 @@ import {
   liveBodyIds,
   MAX_PATTERN_COUNT,
   MAX_SPRING_TURNS,
+  nextReferenceId,
+  nextReferenceName,
   nextSolidId,
   nextSolidName,
   PART_SCHEMA_VERSION,
+  REFERENCE_LABELS,
+  removeReference,
   removeSolid,
+  replaceReference,
   replaceSketch,
   replaceSolid,
   setActiveSketch,
@@ -57,6 +64,7 @@ import type {
   HoleFeature,
   PartDocument,
   PatternFeature,
+  ReferenceFeature,
   RevolveFeature,
   SewFeature,
   SketchFaceRef,
@@ -981,5 +989,77 @@ describe('加工・パターン・ばねの消費の判定(§0.a-0.5、§0.a-0.2
     const document = appendSolid(appendSolid(afterFirst, hole), later);
     expect(consumedBodyIds(document).size).toBe(0);
     expect(liveBodyIds(document)).toEqual([first.id, hole.id, later.id]);
+  });
+});
+
+describe('基準ジオメトリの履歴操作(FR-328、FR-329、タスク9)', () => {
+  /** 作業平面 1 枚を作る(既定名・既定 id で)。 */
+  function planeFeature(id: string, name: string): ReferenceFeature {
+    return {
+      id,
+      kind: 'referencePlane',
+      name,
+      visible: true,
+      plane: {
+        kind: 'workPlane',
+        planeId: 'xy',
+        offset: { source: '10', value: 10, display: '10' },
+      },
+    };
+  }
+
+  it('起動時の部品は基準ジオメトリを持たない(NFR-UX-6)', () => {
+    expect(createEmptyPartDocument().references).toEqual([]);
+  });
+
+  it('足す・見つける・差し替える・取り除く(元の文書は変えない)', () => {
+    const base = createEmptyPartDocument();
+    const added = appendReference(base, planeFeature('referencePlane-1', '作業平面1'));
+    expect(base.references).toEqual([]);
+    expect(added.references).toHaveLength(1);
+    expect(findReference(added, 'referencePlane-1')?.name).toBe('作業平面1');
+
+    const renamed = replaceReference(added, 'referencePlane-1', {
+      ...planeFeature('referencePlane-1', '天板の面'),
+      visible: false,
+    });
+    expect(findReference(renamed, 'referencePlane-1')?.name).toBe('天板の面');
+    expect(findReference(renamed, 'referencePlane-1')?.visible).toBe(false);
+
+    const removed = removeReference(renamed, 'referencePlane-1');
+    expect(removed.references).toEqual([]);
+    // 見つからない id は元の文書をそのまま返す。
+    expect(replaceReference(removed, 'referencePlane-1', planeFeature('referencePlane-1', 'x'))).toBe(
+      removed,
+    );
+    expect(removeReference(removed, 'referencePlane-1')).toBe(removed);
+  });
+
+  it('同じ id は足せない(作業平面の id は作図面の id でもあるため)', () => {
+    const base = appendReference(createEmptyPartDocument(), planeFeature('referencePlane-1', '作業平面1'));
+    expect(appendReference(base, planeFeature('referencePlane-1', '別の名前'))).toBe(base);
+  });
+
+  it('種類ごとの連番で id と名前を作る(ソリッドと同じ方式)', () => {
+    const base = createEmptyPartDocument();
+    expect(nextReferenceId(base, 'referencePlane')).toBe('referencePlane-1');
+    expect(nextReferenceName(base, 'referencePlane')).toBe('作業平面1');
+    expect(nextReferenceName(base, 'referenceAxis')).toBe('基準軸1');
+    expect(nextReferenceName(base, 'referencePoint')).toBe('基準点1');
+    expect(nextReferenceName(base, 'referenceCoordinateSystem')).toBe('座標系1');
+    const added = appendReference(base, planeFeature('referencePlane-1', '作業平面1'));
+    expect(nextReferenceId(added, 'referencePlane')).toBe('referencePlane-2');
+    expect(nextReferenceName(added, 'referencePlane')).toBe('作業平面2');
+    // 種類が違えば連番は独立する。
+    expect(nextReferenceName(added, 'referenceAxis')).toBe('基準軸1');
+  });
+
+  it('種類ごとの既定名は 4 種そろっている', () => {
+    expect(Object.keys(REFERENCE_LABELS).sort()).toEqual([
+      'referenceAxis',
+      'referenceCoordinateSystem',
+      'referencePlane',
+      'referencePoint',
+    ]);
   });
 });

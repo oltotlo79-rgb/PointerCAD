@@ -59,6 +59,7 @@ function exampleDocument(): PartDocument {
       },
     ],
     activeSketchId: 'sketch-1',
+    references: [],
     solids: [
       {
         id: 'extrude-1',

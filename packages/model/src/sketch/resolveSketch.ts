@@ -10,12 +10,13 @@
  */
 
 import {
+  baseWorkPlane,
   degreesToRadians,
   directionInPlane,
   planeToWorld,
-  WORK_PLANES,
   worldToPlane,
   type WorkPlane,
+  type WorkPlaneId,
 } from './planeMath.js';
 import { resolveCoordinate, vertexKey, type ResolveContext } from './resolveCoordinate.js';
 import {
@@ -606,11 +607,27 @@ function resolvePointArrayFeature(
 }
 
 /**
+ * 解決のときに外から渡せる手掛かり(P4 タスク9)。
+ *
+ * 基準の 3 面(`WORK_PLANES`)はこのファイルだけで引けるが、任意の作業平面(FR-328)は
+ * 部品文書の基準ジオメトリを見ないと決まらない。スケッチ 1 本は部品文書を知らないので、
+ * 「作図面の id から平面を引く関数」を外から受け取る形にする(`resolvePart` が渡す)。
+ * 渡されなければ基準の 3 面だけを引き、任意平面の id は `missingBase` で断る。
+ */
+export interface SketchResolveOptions {
+  readonly workPlane?: (planeId: WorkPlaneId) => WorkPlane | null;
+}
+
+/**
  * スケッチの履歴を先頭から順に解決する(要件§6.3)。
  * 途中のフィーチャーが解決できなくても止めず、そのフィーチャーだけを errors に入れて先へ進む
  * (FR-504、NFR-RE-1)。解決できなかったフィーチャーは以後の参照先にならない。
  */
-export function resolveSketch(document: SketchDocument): ResolvedSketch {
+export function resolveSketch(
+  document: SketchDocument,
+  options: SketchResolveOptions = {},
+): ResolvedSketch {
+  const lookupWorkPlane = options.workPlane ?? baseWorkPlane;
   const points: ResolvedPoint[] = [];
   const segments: ResolvedSegment[] = [];
   const arcs: ResolvedArc[] = [];
@@ -638,7 +655,32 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
   let previous: Vec3 | null = null;
 
   for (const feature of document.features) {
-    const plane = WORK_PLANES[feature.planeId];
+    // 面は作図面を使わない(境界に選んだ要素だけで決まる)ので、作図面を引く前に片づける。
+    if (feature.kind === 'face') {
+      const face = resolveFace(
+        feature,
+        pointsByFeature,
+        curveByFeature,
+        curvesByFeature,
+        constructionFeatureIds,
+      );
+      if (!face.ok) {
+        errors.push(face.error);
+        continue;
+      }
+      faces.push(face.value);
+      continue;
+    }
+
+    // 作図面は基準の 3 面か、部品文書の作業平面フィーチャー(FR-328、タスク9)。
+    // 見つからなければそのフィーチャーだけを断って先へ進む(FR-504、NFR-RE-1)。
+    const plane = lookupWorkPlane(feature.planeId);
+    if (plane === null) {
+      errors.push(
+        error(feature.id, 'missingBase', `作図面が見つかりません: ${feature.planeId}`),
+      );
+      continue;
+    }
     const context: ResolveContext = { plane, points, previous, vertices };
 
     if (feature.kind === 'point') {
@@ -955,19 +997,6 @@ export function resolveSketch(document: SketchDocument): ResolvedSketch {
       previous = curveEnd(spline.value);
       continue;
     }
-
-    const face = resolveFace(
-      feature,
-      pointsByFeature,
-      curveByFeature,
-      curvesByFeature,
-      constructionFeatureIds,
-    );
-    if (!face.ok) {
-      errors.push(face.error);
-      continue;
-    }
-    faces.push(face.value);
   }
 
   return { points, segments, arcs, ellipses, splines, faces, errors };

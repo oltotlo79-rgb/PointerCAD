@@ -3,9 +3,11 @@ import {
   PART_SCHEMA_VERSION,
   resolveSketch,
   type PartDocument,
+  type ReferenceFeature,
   type SketchDocument,
   type SketchFeature,
   type SolidFeature,
+  type SubShapeRef,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
@@ -111,6 +113,187 @@ function richSketch(): SketchDocument {
       },
     ],
   };
+}
+
+/** 検査で使う面の指紋(P3 §2.2.2)。 */
+function faceRef(bodyFeatureId: string, index: number): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 1200,
+      position: [0, 0, 10],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+}
+
+/** 検査で使うまっすぐな辺の指紋(P3 §2.2.2)。 */
+function edgeRef(bodyFeatureId: string, index: number): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index,
+    fingerprint: {
+      kind: 'edge',
+      curveKind: 'line',
+      length: 40,
+      position: [20, 0, 0],
+      axis: [1, 0, 0],
+      radius: null,
+    },
+  };
+}
+
+/**
+ * 基準ジオメトリ 4 種(FR-328、FR-329)と、平面の決め方 7 種すべて。
+ * 基準軸の決め方 4 種・基準点の決め方 4 種・軸の指定 3 種(world / line / reference)も含める。
+ */
+function richReferences(): readonly ReferenceFeature[] {
+  return [
+    {
+      id: 'referencePoint-1',
+      kind: 'referencePoint',
+      name: '基準点1',
+      visible: true,
+      definition: {
+        kind: 'coordinate',
+        at: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('5', 5) },
+      },
+    },
+    {
+      id: 'referencePoint-2',
+      kind: 'referencePoint',
+      name: '基準点2',
+      visible: false,
+      definition: {
+        kind: 'vertex',
+        vertex: { bodyFeatureId: 'extrude-1', index: 1, fingerprint: { kind: 'vertex', position: [1, 2, 3] } },
+      },
+    },
+    {
+      id: 'referencePoint-3',
+      kind: 'referencePoint',
+      name: '基準点3',
+      visible: true,
+      definition: { kind: 'edgeMidpoint', edge: edgeRef('extrude-1', 2) },
+    },
+    {
+      id: 'referencePoint-4',
+      kind: 'referencePoint',
+      name: '基準点4',
+      visible: true,
+      definition: { kind: 'faceCenter', face: faceRef('extrude-1', 3) },
+    },
+    {
+      id: 'referenceAxis-1',
+      kind: 'referenceAxis',
+      name: '基準軸1',
+      visible: true,
+      definition: { kind: 'twoPoints', from: { kind: 'origin' }, to: { kind: 'point', pointId: 'point-1' } },
+    },
+    {
+      id: 'referenceAxis-2',
+      kind: 'referenceAxis',
+      name: '基準軸2',
+      visible: false,
+      definition: { kind: 'edge', edge: edgeRef('extrude-1', 4) },
+    },
+    {
+      id: 'referenceAxis-3',
+      kind: 'referenceAxis',
+      name: '基準軸3',
+      visible: true,
+      definition: { kind: 'faceNormal', face: faceRef('extrude-1', 5) },
+    },
+    {
+      id: 'referenceAxis-4',
+      kind: 'referenceAxis',
+      name: '基準軸4',
+      visible: true,
+      definition: {
+        kind: 'faceIntersection',
+        face1: faceRef('extrude-1', 6),
+        face2: faceRef('extrude-1', 7),
+      },
+    },
+    {
+      id: 'referencePlane-1',
+      kind: 'referencePlane',
+      name: '作業平面1',
+      visible: true,
+      plane: {
+        kind: 'threePoints',
+        p1: { kind: 'origin' },
+        p2: { kind: 'point', pointId: 'point-1' },
+        p3: { kind: 'vertex', featureId: 'line-1', vertex: 'end' },
+      },
+    },
+    {
+      id: 'referencePlane-2',
+      kind: 'referencePlane',
+      name: '作業平面2',
+      visible: false,
+      plane: { kind: 'pointAndEdge', point: { kind: 'origin' }, edge: edgeRef('extrude-1', 8), mode: 'containing' },
+    },
+    {
+      id: 'referencePlane-3',
+      kind: 'referencePlane',
+      name: '作業平面3',
+      visible: true,
+      plane: {
+        kind: 'pointAndAxis',
+        point: { kind: 'origin' },
+        axis: { kind: 'reference', referenceFeatureId: 'referenceAxis-1' },
+        tilt: ev('30', 30),
+        azimuth: ev('0', 0),
+      },
+    },
+    {
+      id: 'referencePlane-4',
+      kind: 'referencePlane',
+      name: '作業平面4',
+      visible: true,
+      plane: { kind: 'pointAndParallelFace', point: { kind: 'origin' }, face: faceRef('extrude-1', 9) },
+    },
+    {
+      id: 'referencePlane-5',
+      kind: 'referencePlane',
+      name: '作業平面5',
+      visible: true,
+      plane: { kind: 'face', face: faceRef('extrude-1', 10), offset: ev('5', 5) },
+    },
+    {
+      id: 'referencePlane-6',
+      kind: 'referencePlane',
+      name: '作業平面6',
+      visible: true,
+      plane: { kind: 'workPlane', planeId: 'xy', offset: ev('10', 10) },
+    },
+    {
+      id: 'referencePlane-7',
+      kind: 'referencePlane',
+      name: '作業平面7',
+      visible: true,
+      plane: {
+        kind: 'tilted',
+        base: 'referencePlane-6',
+        axis: { kind: 'world', axis: 'x' },
+        angle: ev('45', 45),
+      },
+    },
+    {
+      id: 'referenceCoordinateSystem-1',
+      kind: 'referenceCoordinateSystem',
+      name: '座標系1',
+      visible: true,
+      origin: { kind: 'origin' },
+      xAxis: { kind: 'world', axis: 'x' },
+      yAxis: { kind: 'line', line: { sketchId: 'sketch-1', lineFeatureId: 'line-1' } },
+    },
+  ];
 }
 
 /**
@@ -329,6 +512,7 @@ function richDocument(): PartDocument {
     schemaVersion: PART_SCHEMA_VERSION,
     sketches: [richSketch()],
     activeSketchId: 'sketch-1',
+    references: richReferences(),
     solids: richSolids(),
   };
 }
@@ -431,6 +615,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
       schemaVersion: PART_SCHEMA_VERSION,
       sketches: [{ id: 'sketch-1', name: 'スケッチ1', features: [] }],
       activeSketchId: 'sketch-1',
+      references: [],
       solids: [
         {
           id: 'extrude-1',
@@ -462,6 +647,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
       }
     ],
     "activeSketchId": "sketch-1",
+    "references": [],
     "solids": [
       {
         "id": "extrude-1",
@@ -498,6 +684,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     const document = richDocument();
     const shuffled: PartDocument = {
       solids: document.solids,
+      references: document.references,
       activeSketchId: document.activeSketchId,
       sketches: document.sketches,
       schemaVersion: document.schemaVersion,
@@ -1296,6 +1483,7 @@ describe('版2から版3への移行(§0.a-0.22、SCHEMA_MIGRATIONS[2])', () => 
       schemaVersion: 2,
       sketches: [richSketch()],
       activeSketchId: 'sketch-1',
+      references: [],
       solids: v2Solids,
     };
     const v2File = JSON.stringify({
@@ -1754,6 +1942,7 @@ describe('読み方の規則(計画書 タスク14)', () => {
       'activeSketchId',
       'id',
       'name',
+      'references',
       'schemaVersion',
       'sketches',
       'solids',
@@ -1825,5 +2014,115 @@ describe('読み方の規則(計画書 タスク14)', () => {
     });
     const error = expectError(parseDocument(rawFile({ document })));
     expect(error.message).toContain('document.sketches[0].features[1]');
+  });
+});
+
+describe('基準ジオメトリの読み書き(FR-328、FR-329、P4 タスク9)', () => {
+  it('4 種類の基準ジオメトリと 7 種類の平面の指定が往復しても変わらない', () => {
+    const document = richDocument();
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    const parsed = expectOk(parseDocument(text));
+    expect(parsed.references).toEqual(document.references);
+    expect(parsed.references).toHaveLength(16);
+  });
+
+  it('平面の指定の 7 種類が書き出しに現れる', () => {
+    const text = serializeDocument(richDocument(), { savedAt: SAVED_AT });
+    for (const kind of [
+      'threePoints',
+      'pointAndEdge',
+      'pointAndAxis',
+      'pointAndParallelFace',
+      'face',
+      'workPlane',
+      'tilted',
+    ]) {
+      expect(text, kind).toContain(`"kind": "${kind}"`);
+    }
+  });
+
+  it('references の欄が無い版 3 のファイルも開ける(空の履歴として読む)', () => {
+    // スキーマ版は 3 のまま(版 4 はタスク31)なので、この欄を持たないファイルが実在する。
+    const raw = rawDocument();
+    expect('references' in raw).toBe(false);
+    const parsed = expectOk(parseDocument(rawFile({ document: raw })));
+    expect(parsed.references).toEqual([]);
+    // 読み直したものを書き出すと、欄ありの形へ正規化される。
+    expect(serializeDocument(parsed, { savedAt: SAVED_AT })).toContain('"references": []');
+  });
+
+  it('基準ジオメトリの欄が壊れていればファイル全体を断る(場所つき)', () => {
+    const broken = rawDocument({
+      references: [{ id: 'referencePlane-1', kind: 'referencePlane', name: '作業平面1' }],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('references');
+  });
+
+  it('回転軸・パターンの向きに基準軸を選んだ文書も往復できる(FR-329)', () => {
+    const document: PartDocument = {
+      ...richDocument(),
+      solids: [
+        {
+          id: 'revolve-1',
+          kind: 'revolve',
+          name: '回転1',
+          suppressed: false,
+          profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+          axis: { kind: 'reference', referenceFeatureId: 'referenceAxis-1' },
+          angle: ev('90', 90),
+          reversed: false,
+        },
+      ],
+    };
+    const parsed = expectOk(parseDocument(serializeDocument(document, { savedAt: SAVED_AT })));
+    expect(parsed.solids[0]).toEqual(document.solids[0]);
+  });
+
+  it('作図面に任意の作業平面の id を持つスケッチも往復できる(WorkPlaneId の拡張)', () => {
+    const document: PartDocument = {
+      ...richDocument(),
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'point-1',
+              kind: 'point',
+              name: '点1',
+              planeId: 'referencePlane-6',
+              at: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+            },
+          ],
+        },
+      ],
+      solids: [],
+    };
+    const parsed = expectOk(parseDocument(serializeDocument(document, { savedAt: SAVED_AT })));
+    expect(parsed.sketches[0].features[0].planeId).toBe('referencePlane-6');
+  });
+
+  it('作図面の id が空文字なら断る', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [
+            {
+              id: 'point-1',
+              kind: 'point',
+              name: '点1',
+              planeId: '',
+              at: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+            },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.message).toContain('planeId');
   });
 });

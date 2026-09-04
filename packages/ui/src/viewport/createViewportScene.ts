@@ -1,4 +1,5 @@
 import {
+  baseWorkPlane,
   DEFAULT_WORK_PLANE_ID,
   WORK_PLANES,
   type ResolvedSketch,
@@ -519,7 +520,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     },
 
     setWorkPlane(id): void {
-      sketchLayer.setWorkPlane(WORK_PLANES[id]);
+      // 任意の作業平面(FR-328)は部品文書を見ないと決まらないので、ここでは基準の 3 面だけを
+      // 引き、それ以外は既定の XY に落とす(平面そのものを渡す配線はタスク13・33)。
+      sketchLayer.setWorkPlane(baseWorkPlane(id) ?? WORK_PLANES[DEFAULT_WORK_PLANE_ID]);
     },
 
     worldToScreen(point): readonly [number, number] | null {

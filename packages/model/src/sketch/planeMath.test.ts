@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  computedNormal, DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane,
-  distanceToPlane, planeToWorld, polarOffset, projectOntoPlane, radiansToDegrees,
-  WORK_PLANE_IDS, WORK_PLANES, worldToPlane,
+  baseWorkPlane, computedNormal, DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane,
+  distanceToPlane, isBaseWorkPlaneId, planeAxesFor, planeToWorld, polarOffset, projectOntoPlane,
+  radiansToDegrees, tiltedDirection, WORK_PLANE_IDS, WORK_PLANES, WORLD_AXIS_DIRECTIONS,
+  worldToPlane,
 } from './planeMath.js';
+import { crossVec3, type Vec3 } from './vec3.js';
 
 describe('作図面(要件§4.3、§0.3)', () => {
   it('既定は XY 平面で、3 面すべてが右手系(U × V = N)', () => {
@@ -56,5 +58,61 @@ describe('作図面(要件§4.3、§0.3)', () => {
     expect(directionInPlane(WORK_PLANES.xy, 0)[0]).toBeCloseTo(1, 12);
     expect(directionInPlane(WORK_PLANES.xy, 90)[1]).toBeCloseTo(1, 12);
     expect(directionInPlane(WORK_PLANES.xz, 90)[2]).toBeCloseTo(1, 12);
+  });
+});
+
+describe('任意の作業平面への拡張(FR-328、タスク9)', () => {
+  it('基準の 3 面だけが基準扱いで、任意平面の id は基準ではない', () => {
+    for (const id of WORK_PLANE_IDS) {
+      expect(isBaseWorkPlaneId(id), id).toBe(true);
+      expect(baseWorkPlane(id), id).toBe(WORK_PLANES[id]);
+    }
+    expect(isBaseWorkPlaneId('referencePlane-1')).toBe(false);
+    expect(baseWorkPlane('referencePlane-1')).toBeNull();
+    // 3D スケッチ(FR-330、タスク10)の予約語も基準の 3 面ではない。
+    expect(baseWorkPlane('free')).toBeNull();
+  });
+
+  it('法線から作る第1軸・第2軸は右手系(U × V = N)で、同じ法線からは常に同じ組', () => {
+    const normals: readonly Vec3[] = [
+      [0, 0, 1],
+      [0, 1, 0],
+      [1, 0, 0],
+      [1, 1, 1],
+    ];
+    for (const normal of normals) {
+      const axes = planeAxesFor(normal);
+      const again = planeAxesFor(normal);
+      expect(axes.axisU, String(normal)).toEqual(again.axisU);
+      const computed = crossVec3(axes.axisU, axes.axisV);
+      const length = Math.hypot(normal[0], normal[1], normal[2]);
+      expect(computed[0]).toBeCloseTo(normal[0] / length, 12);
+      expect(computed[1]).toBeCloseTo(normal[1] / length, 12);
+      expect(computed[2]).toBeCloseTo(normal[2] / length, 12);
+    }
+  });
+
+  it('第1軸の手掛かりを渡すと、その向き(法線に垂直な成分)が第1軸になる', () => {
+    const axes = planeAxesFor([0, 0, 1], [1, 0, 0]);
+    expect(axes.axisU[0]).toBeCloseTo(1, 12);
+    expect(axes.axisV[1]).toBeCloseTo(1, 12);
+    // 手掛かりが法線と平行なら使えないので、補助ベクトルの方式へ戻る。
+    const fallback = planeAxesFor([0, 0, 1], [0, 0, 5]);
+    expect(fallback.axisU).toEqual(planeAxesFor([0, 0, 1]).axisU);
+  });
+
+  it('傾き 0 は軸そのまま、傾き 30 度は方位角 0 の第1軸へ sin30 だけ倒れる', () => {
+    // Z 軸に対する方位角 0 の第1軸は planeAxesFor のとおり (0,-1,0)(穴・ばねと同じ規約)。
+    expect(tiltedDirection([0, 0, 1], 0, 0)).toEqual([0, 0, 1]);
+    const tilted = tiltedDirection([0, 0, 1], degreesToRadians(30), 0);
+    expect(tilted[0]).toBeCloseTo(0, 12);
+    expect(tilted[1]).toBeCloseTo(-0.5, 12);
+    expect(tilted[2]).toBeCloseTo(0.8660254037844387, 12);
+  });
+
+  it('ワールドの軸の向きは X / Y / Z の単位ベクトル', () => {
+    expect(WORLD_AXIS_DIRECTIONS.x).toEqual([1, 0, 0]);
+    expect(WORLD_AXIS_DIRECTIONS.y).toEqual([0, 1, 0]);
+    expect(WORLD_AXIS_DIRECTIONS.z).toEqual([0, 0, 1]);
   });
 });

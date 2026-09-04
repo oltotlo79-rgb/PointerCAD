@@ -9,13 +9,14 @@ import {
   COORDINATE_MODES,
   evaluateNumericInput,
   focusedTarget,
-  isCoordinateStep,
+  asksCoordinate,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
   nextNumericInput,
   NUMERIC_INPUT_KEYS,
   numericChoiceOptionLabel,
   reduceNumericInput,
+  splineFinishStateFrom,
   STEP_TITLE_KEYS,
   toggleNumericInput,
   type NumericChoice,
@@ -24,6 +25,7 @@ import {
   type NumericInputKey,
   type NumericInputState,
   type NumericInputTransition,
+  type ReferenceInputCommit,
   type SolidInputCommit,
 } from './numericInput.js';
 
@@ -243,6 +245,11 @@ export interface NumericInputPopoverProps {
    * 渡さなければソリッドの決定は捨てられる(ポップアップは閉じる)。
    */
   readonly onSolidCommit?: (commit: SolidInputCommit, state: NumericInputState) => void;
+  /**
+   * 基準ジオメトリ(作業平面・基準軸・基準点・座標系、FR-328、FR-329)を決めたときに
+   * 呼ばれる。渡さなければ決定は捨てられる(ポップアップは閉じる)。
+   */
+  readonly onReferenceCommit?: (commit: ReferenceInputCommit, state: NumericInputState) => void;
   /** ビューポートの大きさ(画素)。端での折り返しに使う。 */
   readonly viewportWidth: number;
   readonly viewportHeight: number;
@@ -261,6 +268,7 @@ export interface NumericInputPopoverProps {
 export function NumericInputPopover({
   onCommit,
   onSolidCommit,
+  onReferenceCommit,
   viewportWidth,
   viewportHeight,
 }: NumericInputPopoverProps): React.JSX.Element | null {
@@ -294,7 +302,7 @@ export function NumericInputPopover({
 
   const evaluation = evaluateNumericInput(state);
   const position = clampAnchor(anchor, viewportWidth, viewportHeight);
-  const coordinateStep = isCoordinateStep(state.step);
+  const coordinateStep = asksCoordinate(state.step);
   // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
   // (css の .pcad-popover__fields--wide の意図どおり)。2欄以上の段は P1 の座標と同じ
   // 固定幅に揃える(欄ごとに見出しの長さが大きく違っても列がずれないようにするため)。
@@ -327,6 +335,18 @@ export function NumericInputPopover({
         onSolidCommit?.(transition.commit, transition.state);
         useAppStore.getState().closeNumericInput();
         return;
+      case 'referenceCommitted': {
+        // 基準ジオメトリは 1 つ作ったら閉じる段と、次の点を聞く段がある(タスク13)。
+        // どちらかは nextNumericInput が決めるので、スケッチと同じ流れで扱う。
+        onReferenceCommit?.(transition.commit, transition.state);
+        const next = nextNumericInput(transition.state, useAppStore.getState().chaining);
+        if (next === null) {
+          useAppStore.getState().closeNumericInput();
+          return;
+        }
+        update(next);
+        return;
+      }
       case 'committed': {
         onCommit(transition.commit, transition.state);
         const next = nextNumericInput(transition.state, useAppStore.getState().chaining);
@@ -466,6 +486,24 @@ export function NumericInputPopover({
       <p className="pcad-popover__hint">{t('numericInput.keyHint')}</p>
 
       <div className="pcad-popover__actions">
+        {/*
+          スプラインだけは「点をいくつ置くか」が決まっていないので、Enter は点を 1 つ置く
+          合図のままにして、置き終えたことを伝えるボタンをここへ出す(FR-317、タスク12)。
+          押すと「決め方」の段(通過点/制御点・閉じる)へ進む。
+        */}
+        {state.step === 'splinePoint' ? (
+          <button
+            type="button"
+            className="pcad-button pcad-button--action"
+            title={t('numericInput.splineFinishTooltip')}
+            onMouseDown={keepFocus}
+            onClick={() => {
+              update(splineFinishStateFrom(state));
+            }}
+          >
+            {t('numericInput.splineFinish')}
+          </button>
+        ) : null}
         <button
           type="button"
           className="pcad-button pcad-button--action"

@@ -11,6 +11,7 @@ import {
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
+import { commitReferenceInput } from '../sketch/referenceCommands.js';
 import { commitSketchInput } from '../sketch/sketchCommands.js';
 import { commitSolidInput } from '../solid/solidCommands.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
@@ -269,18 +270,26 @@ export function AppShell(): React.JSX.Element {
           <NumericInputPopover
             viewportWidth={viewportSize[0]}
             viewportHeight={viewportSize[1]}
-            onCommit={(commit) => {
+            onCommit={(commit, state) => {
               const store = useAppStore.getState();
               const outcome = commitSketchInput(commit, {
                 document: store.sketch,
                 planeId: store.workPlaneId,
                 chaining: store.chaining,
                 pendingStart: store.pendingStart,
+                // P4 の新しい図形は、置いた点と前の段の値を下書きへ積む(タスク12)。
+                // 欄の値を名前で引くのに、確定した段の状態も渡す。
+                shapeDraft: store.shapeDraft,
+                input: state,
               });
+              // 断りは先に出す。setSketch(=applyDocument)は古い断りを消すので、
+              // 順序を逆にすると出したばかりの理由が消える(NFR-UX-5)。
+              store.setShapeError(outcome.rejection);
               if (outcome.document !== store.sketch) {
                 store.setSketch(outcome.document);
               }
               store.setPendingStart(outcome.pendingStart);
+              store.setShapeDraft(outcome.shapeDraft);
             }}
             onSolidCommit={(commit) => {
               /*
@@ -312,6 +321,31 @@ export function AppShell(): React.JSX.Element {
               */
               store.setActiveTool('select');
               store.setSelection([outcome.featureId]);
+            }}
+            onReferenceCommit={(commit) => {
+              /*
+                基準ジオメトリ(作業平面・基準軸・基準点・座標系)を部品文書へ積む
+                (FR-328、FR-329、タスク13)。何を作るかは純関数 commitReferenceInput が
+                決め、断られたら理由を帯へ出して履歴は変えない(FR-504、NFR-UX-5)。
+                作業平面ができたら、そのまま作図面として選ぶ(次の一手が続く、NFR-UX-1)。
+              */
+              const store = useAppStore.getState();
+              const outcome = commitReferenceInput(commit, {
+                document: store.document,
+                planeId: store.workPlaneId,
+                bodies: subShapeBodiesOf(store.bodies),
+                selection: store.selection,
+                draft: store.referenceDraft,
+              });
+              // 断りは先に出す。applyDocument は古い断りを消すので、逆順にすると消える。
+              store.setReferenceError(outcome.rejection);
+              if (outcome.document !== store.document) {
+                store.applyDocument(outcome.document);
+              }
+              store.setReferenceDraft(outcome.draft);
+              if (outcome.createdPlaneId !== null) {
+                store.setWorkPlane(outcome.createdPlaneId);
+              }
             }}
           />
           {snapIndicator === null ? null : (

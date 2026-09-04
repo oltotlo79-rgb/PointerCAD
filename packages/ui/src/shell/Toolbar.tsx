@@ -8,11 +8,21 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
 import {
   createNumericInput,
+  REFERENCE_TOOL_STEPS,
+  SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
   type NumericInputStep,
+  type NumericInputToolId,
+  type ReferenceToolId,
+  type ShapeToolId,
   type SketchToolId,
   type SolidToolId,
 } from '../sketch/numericInput.js';
+import {
+  referenceAxisOptionsOf,
+  workPlaneEntries,
+  type WorkPlaneEntry,
+} from '../sketch/referenceCommands.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import type { MachiningToolId } from '../solid/machiningCommands.js';
 import {
@@ -189,6 +199,34 @@ const TOOLS = [
 ] as const satisfies readonly (ButtonEntry & { readonly id: SketchToolId })[];
 
 /**
+ * P4 で足した図形の道具(FR-314〜318、FR-326)。「スケッチ」区画の中の畳んだ一覧
+ * 「作図」に入れる(§0.a-0.14)。基本の 6 道具を平置きのまま保ちつつ、1440 画素で
+ * 1 段に収めるため(実測は報告に記す)。図柄は作らず名前だけの一覧にしてある
+ * (`PlaneMenu` と同じ作り)。区画そのものの再編と図柄はタスク32 が行う。
+ */
+const SHAPE_TOOLS = [
+  { id: 'circle', labelKey: 'toolbar.tool.circle', tooltipKey: 'toolbar.tool.circleTooltip' },
+  {
+    id: 'twoPointArc',
+    labelKey: 'toolbar.tool.twoPointArc',
+    tooltipKey: 'toolbar.tool.twoPointArcTooltip',
+  },
+  {
+    id: 'rectangle',
+    labelKey: 'toolbar.tool.rectangle',
+    tooltipKey: 'toolbar.tool.rectangleTooltip',
+  },
+  { id: 'polygon', labelKey: 'toolbar.tool.polygon', tooltipKey: 'toolbar.tool.polygonTooltip' },
+  { id: 'slot', labelKey: 'toolbar.tool.slot', tooltipKey: 'toolbar.tool.slotTooltip' },
+  { id: 'ellipse', labelKey: 'toolbar.tool.ellipse', tooltipKey: 'toolbar.tool.ellipseTooltip' },
+  { id: 'spline', labelKey: 'toolbar.tool.spline', tooltipKey: 'toolbar.tool.splineTooltip' },
+] as const satisfies readonly {
+  readonly id: ShapeToolId;
+  readonly labelKey: MessageKey;
+  readonly tooltipKey: MessageKey;
+}[];
+
+/**
  * ソリッドの道具(FR-401〜404)。左の3つは面を選んでから数値を聞き、
  * 右の3つは立体を2つ選んで押すだけで決まる(§0.a-0.6)。
  */
@@ -289,6 +327,61 @@ const PLANES = [
   { id: 'yz', labelKey: 'toolbar.plane.yz', tooltipKey: 'toolbar.plane.yzTooltip' },
 ] as const satisfies readonly {
   readonly id: WorkPlaneId;
+  readonly labelKey: MessageKey;
+  readonly tooltipKey: MessageKey;
+}[];
+
+/**
+ * 作業平面の作り方(FR-328、タスク13)。作図面の畳んだ一覧の中に「作業平面を作る…」として
+ * 並べる。新しいトリガーを増やさないのは、ツールバーを 1440 画素で 1 段に保つため
+ * (§0.a-0.14、§0.34)。区画そのものの再編と図柄はタスク32 が行う。
+ */
+const PLANE_TOOLS = [
+  {
+    id: 'referencePlaneThreePoints',
+    labelKey: 'toolbar.reference.planeThreePoints',
+    tooltipKey: 'toolbar.reference.planeThreePointsTooltip',
+  },
+  {
+    id: 'referencePlaneOffset',
+    labelKey: 'toolbar.reference.planeOffset',
+    tooltipKey: 'toolbar.reference.planeOffsetTooltip',
+  },
+  {
+    id: 'referencePlaneTilted',
+    labelKey: 'toolbar.reference.planeTilted',
+    tooltipKey: 'toolbar.reference.planeTiltedTooltip',
+  },
+  {
+    id: 'referencePlaneThroughPoint',
+    labelKey: 'toolbar.reference.planeThroughPoint',
+    tooltipKey: 'toolbar.reference.planeThroughPointTooltip',
+  },
+] as const satisfies readonly {
+  readonly id: ReferenceToolId;
+  readonly labelKey: MessageKey;
+  readonly tooltipKey: MessageKey;
+}[];
+
+/** 基準軸・基準点・座標系(FR-329、タスク13)。同じ畳んだ一覧の下の段に並べる。 */
+const REFERENCE_TOOLS = [
+  {
+    id: 'referenceAxis',
+    labelKey: 'toolbar.reference.axis',
+    tooltipKey: 'toolbar.reference.axisTooltip',
+  },
+  {
+    id: 'referencePoint',
+    labelKey: 'toolbar.reference.point',
+    tooltipKey: 'toolbar.reference.pointTooltip',
+  },
+  {
+    id: 'referenceCoordinateSystem',
+    labelKey: 'toolbar.reference.coordinateSystem',
+    tooltipKey: 'toolbar.reference.coordinateSystemTooltip',
+  },
+] as const satisfies readonly {
+  readonly id: ReferenceToolId;
   readonly labelKey: MessageKey;
   readonly tooltipKey: MessageKey;
 }[];
@@ -397,6 +490,46 @@ function activateTool(id: SketchToolId, pressed: boolean): void {
   // 選択と面はクリックとキーで進める道具。押した直後の焦点はボタンに残るので、
   // ビューポートへ戻してもらう。そうしないと面を選んだ直後の Enter が効かない(NFR-UX-4)。
   store.requestViewportFocus();
+}
+
+/**
+ * P4 の新しい図形(FR-314〜318、FR-326)の道具を選ぶ(タスク12)。
+ *
+ * 最初に開く段は `SHAPE_TOOL_STEPS`(numericInput.ts)が正本で、ここへ表を作り直さない。
+ * 同じ道具をもう一度押したら選択へ戻すのは `activateTool` と同じ約束にする。
+ */
+function activateShapeTool(id: ShapeToolId, pressed: boolean): void {
+  const store = useAppStore.getState();
+  if (pressed) {
+    store.setActiveTool('select');
+    store.requestViewportFocus();
+    return;
+  }
+  store.setActiveTool(id);
+  store.openNumericInput(createNumericInput(id, SHAPE_TOOL_STEPS[id]), viewportCenterAnchor());
+}
+
+/**
+ * 基準ジオメトリ(FR-328、FR-329)の道具を選ぶ(タスク13)。
+ *
+ * 最初に開く段は `REFERENCE_TOOL_STEPS`(numericInput.ts)が正本。軸の選択肢に並べる
+ * 基準軸の一覧は、開くときの文書から引いて渡す(段をまたいで持ち越されるので 1 度でよい)。
+ * 同じ道具をもう一度押したら選択へ戻すのは `activateTool` と同じ約束にする。
+ */
+function activateReferenceTool(id: ReferenceToolId, pressed: boolean): void {
+  const store = useAppStore.getState();
+  if (pressed) {
+    store.setActiveTool('select');
+    store.requestViewportFocus();
+    return;
+  }
+  store.setActiveTool(id);
+  store.openNumericInput(
+    createNumericInput(id, REFERENCE_TOOL_STEPS[id], undefined, {
+      referenceAxes: referenceAxisOptionsOf(store.document),
+    }),
+    viewportCenterAnchor(),
+  );
 }
 
 /**
@@ -546,6 +679,10 @@ function SnapKindsMenu({ snapEnabled, snapKinds }: SnapKindsMenuProps): React.JS
 
 interface PlaneMenuProps {
   readonly workPlaneId: WorkPlaneId;
+  /** いま選ばれている道具。基準ジオメトリの道具なら一覧の中で押されて見える。 */
+  readonly activeTool: NumericInputToolId;
+  /** 文書にある任意の作業平面(FR-328)。基準の 3 面の下に名前で並べる。 */
+  readonly customPlanes: readonly WorkPlaneEntry[];
 }
 
 /**
@@ -559,7 +696,7 @@ interface PlaneMenuProps {
  * 札に出す**(畳んでも状態が分かる、§0.34)。モーダルにしない(NFR-UX-2)ので、
  * 開いている間も背後の操作はそのまま効く。
  */
-function PlaneMenu({ workPlaneId }: PlaneMenuProps): React.JSX.Element {
+function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -579,7 +716,11 @@ function PlaneMenu({ workPlaneId }: PlaneMenuProps): React.JSX.Element {
     };
   }, [open]);
 
-  const current = PLANES.find((plane) => plane.id === workPlaneId) ?? PLANES[0];
+  const base = PLANES.find((plane) => plane.id === workPlaneId);
+  const custom = customPlanes.find((plane) => plane.id === workPlaneId);
+  // トリガーの札は、基準の 3 面なら「XY」、任意の作業平面なら付いている名前を出す。
+  const currentLabel = base === undefined ? (custom?.name ?? t(PLANES[0].labelKey)) : t(base.labelKey);
+  const currentTooltip = base === undefined ? t('toolbar.plane.tooltip') : t(base.tooltipKey);
 
   return (
     <div
@@ -595,15 +736,15 @@ function PlaneMenu({ workPlaneId }: PlaneMenuProps): React.JSX.Element {
       <button
         type="button"
         className="pcad-button pcad-menu__trigger"
-        title={t(current.tooltipKey)}
-        aria-label={`${t('toolbar.plane.groupLabel')}${LABEL_SEPARATOR}${t(current.labelKey)}`}
+        title={currentTooltip}
+        aria-label={`${t('toolbar.plane.groupLabel')}${LABEL_SEPARATOR}${currentLabel}`}
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => {
           setOpen(!open);
         }}
       >
-        <span className="pcad-menu__count">{t(current.labelKey)}</span>
+        <span className="pcad-menu__count">{currentLabel}</span>
         <ChevronRightIcon className="pcad-menu__chevron" />
       </button>
       {open ? (
@@ -621,6 +762,143 @@ function PlaneMenu({ workPlaneId }: PlaneMenuProps): React.JSX.Element {
               }}
             >
               {t(plane.labelKey)}
+            </button>
+          ))}
+          {/* 文書にある任意の作業平面(FR-328)。作った順に名前で並べる。 */}
+          {customPlanes.map((plane) => (
+            <button
+              key={plane.id}
+              type="button"
+              className="pcad-button pcad-menu__item"
+              title={t('toolbar.plane.tooltip')}
+              aria-pressed={workPlaneId === plane.id}
+              onClick={() => {
+                useAppStore.getState().setWorkPlane(plane.id);
+                setOpen(false);
+              }}
+            >
+              {plane.name}
+            </button>
+          ))}
+          {/* 作業平面の作り方 4 通り(FR-328)と、基準軸・基準点・座標系(FR-329)。 */}
+          <span className="pcad-menu__section">{t('toolbar.plane.createPlane')}</span>
+          {PLANE_TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              className="pcad-button pcad-menu__item"
+              title={t(tool.tooltipKey)}
+              aria-pressed={activeTool === tool.id}
+              onClick={() => {
+                activateReferenceTool(tool.id, activeTool === tool.id);
+                setOpen(false);
+              }}
+            >
+              {t(tool.labelKey)}
+            </button>
+          ))}
+          <span className="pcad-menu__section">{t('toolbar.reference.groupLabel')}</span>
+          {REFERENCE_TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              className="pcad-button pcad-menu__item"
+              title={t(tool.tooltipKey)}
+              aria-pressed={activeTool === tool.id}
+              onClick={() => {
+                activateReferenceTool(tool.id, activeTool === tool.id);
+                setOpen(false);
+              }}
+            >
+              {t(tool.labelKey)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+interface ShapeMenuProps {
+  readonly activeTool: NumericInputToolId;
+}
+
+/**
+ * 新しい図形の畳んだ一覧「作図」(FR-314〜318、FR-326、§0.a-0.14、タスク12)。
+ *
+ * `PlaneMenu` と同じ作り(非モーダル、外を押すと閉じる、トリガーに今の状態を出す)。
+ * いま選ばれているのが作図の道具なら、その名前をトリガーに出して畳んでも分かるようにする。
+ */
+function ShapeMenu({ activeTool }: ShapeMenuProps): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent): void => {
+      const container = containerRef.current;
+      if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    globalThis.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      globalThis.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open]);
+
+  const current = SHAPE_TOOLS.find((tool) => tool.id === activeTool) ?? null;
+  const groupLabel = t('toolbar.shape.groupLabel');
+
+  return (
+    <div
+      className="pcad-menu"
+      ref={containerRef}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="pcad-button pcad-menu__trigger"
+        title={t('toolbar.shape.tooltip')}
+        aria-label={
+          current === null
+            ? groupLabel
+            : `${groupLabel}${LABEL_SEPARATOR}${t(current.labelKey)}`
+        }
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-pressed={current !== null}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        <span className="pcad-menu__count">
+          {current === null ? groupLabel : t(current.labelKey)}
+        </span>
+        <ChevronRightIcon className="pcad-menu__chevron" />
+      </button>
+      {open ? (
+        <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
+          {SHAPE_TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              className="pcad-button pcad-menu__item"
+              title={t(tool.tooltipKey)}
+              aria-pressed={activeTool === tool.id}
+              onClick={() => {
+                activateShapeTool(tool.id, activeTool === tool.id);
+                setOpen(false);
+              }}
+            >
+              {t(tool.labelKey)}
             </button>
           ))}
         </div>
@@ -817,6 +1095,8 @@ export function Toolbar(): React.JSX.Element {
   const snapKinds = useAppStore((state) => state.snapKinds);
   const chaining = useAppStore((state) => state.chaining);
   const partDocument = useAppStore((state) => state.document);
+  // 文書にある任意の作業平面(FR-328、タスク13)。作図面の一覧に名前で並べる。
+  const customPlanes = workPlaneEntries(partDocument);
   const bodies = useAppStore((state) => state.bodies);
   // ソリッド・加工の押せる条件の判定(solidToolReadiness)が要る形へ詰め替える
   // (タスク17 の後は state.bodies をそのまま渡せるようになる、subShapeBodiesOf の注釈)。
@@ -926,6 +1206,8 @@ export function Toolbar(): React.JSX.Element {
             </button>
           ))}
         </div>
+        {/* 新しい図形は畳んだ一覧へ入れて、基本の 6 道具の平置きを崩さない(§0.a-0.14)。 */}
+        <ShapeMenu activeTool={activeTool} />
       </div>
 
       <SolidGroup document={partDocument} bodies={subShapeBodies} selection={selection} />
@@ -936,7 +1218,11 @@ export function Toolbar(): React.JSX.Element {
           {t('toolbar.plane.groupLabel')}
         </span>
         <div className="pcad-segmented">
-          <PlaneMenu workPlaneId={workPlaneId} />
+          <PlaneMenu
+            workPlaneId={workPlaneId}
+            activeTool={activeTool}
+            customPlanes={customPlanes}
+          />
           {/*
             いま見ている向きに最も近い作図面へ移る(§0.a-0.3)。視点の正本はビューポートの
             中にあるので、ここでは要求を数えるだけにしてビューポートに応えてもらう。

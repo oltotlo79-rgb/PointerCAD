@@ -74,6 +74,10 @@ export function StatusBar(): React.JSX.Element {
   const partErrors = useAppStore((state) => state.partErrors);
   const faceErrorKey = useAppStore((state) => state.faceErrorKey);
   const solidErrorKey = useAppStore((state) => state.solidErrorKey);
+  // 新しい図形を作れなかった理由(P4 タスク12)。文言キーではなく組み立て済みの文。
+  const shapeErrorMessage = useAppStore((state) => state.shapeErrorMessage);
+  // 基準ジオメトリを作れなかった理由(P4 タスク13)。こちらも組み立て済みの文。
+  const referenceErrorMessage = useAppStore((state) => state.referenceErrorMessage);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   const snapEnabled = useAppStore((state) => state.snapEnabled);
@@ -142,6 +146,8 @@ export function StatusBar(): React.JSX.Element {
     fileMessage,
     faceErrorKey,
     solidErrorKey,
+    shapeErrorMessage,
+    referenceErrorMessage,
     errorMessage,
     partErrors,
     sketchErrors,

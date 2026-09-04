@@ -1,6 +1,7 @@
 import type { AutoSaver } from '@pointercad/io';
 import {
   canRedo as stackCanRedo,
+  baseWorkPlane,
   canUndo as stackCanUndo,
   createEmptyPartDocument,
   createUndoStack,
@@ -25,6 +26,7 @@ import {
   type PartRecomputeOptions,
   type PartRecomputeResult,
   type PartSketchResult,
+  type ResolvedReferences,
   type ResolvedSketch,
   type SketchDocument,
   type SketchError,
@@ -35,6 +37,7 @@ import {
   type SolidBody,
   type UndoStack,
   type Vec3,
+  type WorkPlane,
   type WorkPlaneId,
 } from '@pointercad/model';
 import { create } from 'zustand';
@@ -44,6 +47,13 @@ import type { MessageKey } from '../i18n/t.js';
 import { loadSettings, saveSettings, type DisplaySettings } from '../settings/settings.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
+import {
+  EMPTY_REFERENCE_DRAFT,
+  resolveReferencesOf,
+  resolveWorkPlaneOf,
+  type ReferenceDraft,
+} from '../sketch/referenceCommands.js';
+import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import { selectionKindForTool, type SelectionKind } from '../solid/subShapeSelection.js';
 import type { OrbitState } from '../viewport/cameraMath.js';
@@ -167,8 +177,20 @@ export interface AppState {
    * 切り替える。手動の切替は `setSelectionKind`(`1`〜`4` キーの受け口はタスク26)。
    */
   readonly selectionKind: SelectionKind;
-  /** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
+  /** 作図面(要件§4.3、§0.a-0.3)。既定は XY。任意の作業平面はその id(FR-328)。 */
   readonly workPlaneId: WorkPlaneId;
+  /**
+   * `workPlaneId` を実際の面(原点・2 軸・法線)まで解いた控え(FR-328、タスク13)。
+   * 基準の 3 面は決め打ちで引けるが、任意の作業平面は部品文書を見ないと決まらないので、
+   * **文書か作図面が変わるたびにここで 1 度だけ解いて**、ビューポート・当たり判定・
+   * その場入力が同じ 1 つを読む(同じ計算を各所でやり直さない)。
+   */
+  readonly workPlane: WorkPlane;
+  /**
+   * 基準ジオメトリ(作業平面・基準軸・基準点・座標系)を解いた控え(FR-328、FR-329)。
+   * 3D 表示と一覧が読む。文書から導けるので保存しない(rules/04)。
+   */
+  readonly resolvedReferences: ResolvedReferences;
 
   /**
    * 部品文書。**これが唯一の正本**で、`.pcad` に保存されるのもこれだけ(要件§8、§0.a-0.4)。
@@ -237,6 +259,28 @@ export interface AppState {
   readonly numericInputAnchor: readonly [number, number] | null;
   /** 線分の始点・円弧の中心・点列の基準として先に決めた座標。まだ無ければ null。 */
   readonly pendingStart: CoordinateInput | null;
+  /**
+   * P4 の新しい図形(矩形・長穴・楕円・スプライン等)の途中経過(FR-314〜318、タスク12)。
+   * 置いた点と前の段の欄の値を積む。道具を変える・ポップアップを閉じると空へ戻る。
+   */
+  readonly shapeDraft: ShapeDraft;
+  /**
+   * 図形を作れなかった理由(FR-314〜318、NFR-UX-5)。`faceErrorKey` / `solidErrorKey` と
+   * 同じ扱いだが、限界値(点の数・半径)を差し込んだ文になるので文言キーではなく文で持つ
+   * (`numericInput.ts` の `describeRange` と同じ事情)。ステータスバーが
+   * 「図形を作れませんでした:」の言い回しで出す。
+   */
+  readonly shapeErrorMessage: string | null;
+  /**
+   * 基準ジオメトリ(作業平面・基準軸・基準点・座標系)の途中経過(FR-328、FR-329、タスク13)。
+   * 置いた点とこれまでの段で選んだ決め方を積む。道具を変える・ポップアップを閉じると空へ戻る。
+   */
+  readonly referenceDraft: ReferenceDraft;
+  /**
+   * 基準ジオメトリを作れなかった理由(FR-328、FR-329、NFR-UX-5)。`shapeErrorMessage` と
+   * 同じ扱いで、ステータスバーが「基準ジオメトリを作れませんでした:」の言い回しで出す。
+   */
+  readonly referenceErrorMessage: string | null;
   /** いま吸い付いている場所。無ければ null(FR-107)。 */
   readonly snapIndicator: SnapIndicator | null;
   /**
@@ -365,6 +409,14 @@ export interface AppState {
   readonly updateNumericInput: (state: NumericInputState) => void;
   readonly closeNumericInput: () => void;
   readonly setPendingStart: (start: CoordinateInput | null) => void;
+  /** 新しい図形の途中経過を置き換える(タスク12)。 */
+  readonly setShapeDraft: (draft: ShapeDraft) => void;
+  /** 図形を作れなかった理由を出す・消す(NFR-UX-5)。 */
+  readonly setShapeError: (message: string | null) => void;
+  /** 基準ジオメトリの途中経過を置き換える(タスク13)。 */
+  readonly setReferenceDraft: (draft: ReferenceDraft) => void;
+  /** 基準ジオメトリを作れなかった理由を出す・消す(NFR-UX-5)。 */
+  readonly setReferenceError: (message: string | null) => void;
   readonly setSnapIndicator: (indicator: SnapIndicator | null) => void;
   /** 面を張れなかった理由を出す・消す。 */
   readonly setFaceError: (key: MessageKey | null) => void;
@@ -441,13 +493,22 @@ function activeSketchOf(document: PartDocument): SketchDocument {
 /**
  * 面の境界に使える要素の種類(§0.a-0.23 ⑨)。
  * `packages/ui/src/sketch/sketchCommands.ts` の `commitFace`(実体は `boundaryElementKind`)が
- * 受け付ける種類(点・線・円弧・点列)にそろえる。面フィーチャー自身は境界に使えない。
+ * 受け付ける種類にそろえる。面フィーチャー自身は境界に使えない。
+ *
+ * P4 タスク12 で新しい図形(矩形・正多角形・長穴・楕円・スプライン)を足した。いずれも
+ * 曲線を生むので面の囲みに使える(矩形・正多角形・長穴は 1 フィーチャーが複数の曲線を生み、
+ * `resolveFace` が全周を展開する。§0.a-0.8)。
  */
 const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
   'point',
   'line',
   'arc',
   'pointArray',
+  'rectangle',
+  'polygon',
+  'slot',
+  'ellipse',
+  'spline',
 ]);
 
 /**
@@ -480,6 +541,8 @@ type DocumentPatch = Pick<
   | 'featureNames'
   | 'selection'
   | 'hoveredElementId'
+  | 'workPlane'
+  | 'resolvedReferences'
 >;
 
 /**
@@ -517,8 +580,42 @@ function documentPatch(
     featureNames: sketch.features.map((feature) => feature.name),
     selection: state.selection.filter((id) => liveIds.has(featureIdOf(id))),
     hoveredElementId: hovered !== null && !liveIds.has(featureIdOf(hovered)) ? null : hovered,
+    // 基準ジオメトリ(FR-328、FR-329)は文書から導ける控えなので、ここで作り直す。
+    ...referencePatch(next, state.workPlaneId),
   };
 }
+
+/**
+ * 作業平面と基準ジオメトリの控えを作り直す(タスク13)。
+ *
+ * 基準ジオメトリが 1 つも無い文書(P4 より前に作ったものを含む)では解決そのものを
+ * 省く。プロパティ欄で 1 文字打つたびにここを通るので、要らない計算を積まないため
+ * (NFR-PF-1)。
+ */
+function referencePatch(
+  document: PartDocument,
+  planeId: WorkPlaneId,
+): Pick<AppState, 'workPlane' | 'resolvedReferences'> {
+  if (document.references.length === 0) {
+    return {
+      workPlane: baseWorkPlane(planeId) ?? WORK_PLANES[DEFAULT_WORK_PLANE_ID],
+      resolvedReferences: EMPTY_RESOLVED_REFERENCES,
+    };
+  }
+  return {
+    workPlane: resolveWorkPlaneOf(document, planeId),
+    resolvedReferences: resolveReferencesOf(document),
+  };
+}
+
+/** 基準ジオメトリが 1 つも無いときの控え。作り直さずに使い回す(参照の同一性を保つ)。 */
+const EMPTY_RESOLVED_REFERENCES: ResolvedReferences = {
+  planes: [],
+  axes: [],
+  points: [],
+  coordinateSystems: [],
+  errors: [],
+};
 
 /**
  * いま編集しているスケッチの失敗だけを控えへ写す(§0.a-0.4、FR-504)。
@@ -556,6 +653,8 @@ export function createInitialDocumentState(): Pick<
   | 'activeTool'
   | 'selectionKind'
   | 'workPlaneId'
+  | 'workPlane'
+  | 'resolvedReferences'
   | 'document'
   | 'documentVersion'
   | 'undoStack'
@@ -583,6 +682,10 @@ export function createInitialDocumentState(): Pick<
   | 'numericInput'
   | 'numericInputAnchor'
   | 'pendingStart'
+  | 'shapeDraft'
+  | 'shapeErrorMessage'
+  | 'referenceDraft'
+  | 'referenceErrorMessage'
   | 'snapIndicator'
   | 'faceErrorKey'
   | 'solidErrorKey'
@@ -603,6 +706,9 @@ export function createInitialDocumentState(): Pick<
     // 'select' は立体を選ぶ道具(選択の種類の対応は selectionKindForTool の既定分岐、§0.a-0.6)。
     selectionKind: 'body',
     workPlaneId: DEFAULT_WORK_PLANE_ID,
+    // 起動時の部品には基準ジオメトリが 1 つも無いので、作図面は基準の XY そのもの。
+    workPlane: WORK_PLANES[DEFAULT_WORK_PLANE_ID],
+    resolvedReferences: EMPTY_RESOLVED_REFERENCES,
     document,
     documentVersion: 0,
     undoStack: createUndoStack(document),
@@ -630,6 +736,10 @@ export function createInitialDocumentState(): Pick<
     numericInput: null,
     numericInputAnchor: null,
     pendingStart: null,
+    shapeDraft: EMPTY_SHAPE_DRAFT,
+    shapeErrorMessage: null,
+    referenceDraft: EMPTY_REFERENCE_DRAFT,
+    referenceErrorMessage: null,
     snapIndicator: null,
     faceErrorKey: null,
     solidErrorKey: null,
@@ -704,6 +814,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         numericInput: null,
         numericInputAnchor: null,
         pendingStart: null,
+        // 新しい図形の取りかけ(置いた点・前の段の値)も持ち越さない(タスク12)。
+        shapeDraft: EMPTY_SHAPE_DRAFT,
+        shapeErrorMessage: null,
+        // 基準ジオメトリの取りかけ(置いた点・選んだ決め方)も持ち越さない(タスク13)。
+        referenceDraft: EMPTY_REFERENCE_DRAFT,
+        referenceErrorMessage: null,
         snapIndicator: null,
         faceErrorKey: null,
         solidErrorKey: null,
@@ -724,13 +840,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
     );
   },
   setWorkPlane: (workPlaneId) => {
-    set({ workPlaneId });
+    // 作図面が変われば、解いた面(`workPlane`)も引き直す(FR-328、タスク13)。
+    set((state) => ({ workPlaneId, ...referencePatch(state.document, workPlaneId) }));
   },
   requestMatchWorkPlaneToView: () => {
     set((state) => ({ matchWorkPlaneRequestCount: state.matchWorkPlaneRequestCount + 1 }));
   },
   matchWorkPlaneToView: (orbit) => {
-    set({ workPlaneId: workPlaneForOrbit(orbit) });
+    set((state) => {
+      const workPlaneId = workPlaneForOrbit(orbit);
+      return { workPlaneId, ...referencePatch(state.document, workPlaneId) };
+    });
   },
 
   applyDocument: (next, options) => {
@@ -757,9 +877,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
         fileMessage: null,
         // 中止の知らせも、次の計算が始まる時点で用済み(NFR-PF-4)。
         recomputeCancelled: false,
-        // 古い「面/立体を作れませんでした」の断りも文書が変われば用済み(§0.a-0.23 ⑦)。
+        // 古い「面/立体/図形を作れませんでした」の断りも文書が変われば用済み(§0.a-0.23 ⑦)。
         faceErrorKey: null,
         solidErrorKey: null,
+        shapeErrorMessage: null,
+        referenceErrorMessage: null,
       };
     });
   },
@@ -907,7 +1029,26 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set({ numericInput });
   },
   closeNumericInput: () => {
-    set({ numericInput: null, numericInputAnchor: null });
+    // 取りかけの図形(置いた点・前の段の値)も一緒に捨てる。ポップアップが閉じたあとに
+    // 別の道具で置いた点と混ざらないようにするため(NFR-UX-3、タスク12)。
+    set({
+      numericInput: null,
+      numericInputAnchor: null,
+      shapeDraft: EMPTY_SHAPE_DRAFT,
+      referenceDraft: EMPTY_REFERENCE_DRAFT,
+    });
+  },
+  setShapeDraft: (shapeDraft) => {
+    set({ shapeDraft });
+  },
+  setShapeError: (shapeErrorMessage) => {
+    set({ shapeErrorMessage });
+  },
+  setReferenceDraft: (referenceDraft) => {
+    set({ referenceDraft });
+  },
+  setReferenceError: (referenceErrorMessage) => {
+    set({ referenceErrorMessage });
   },
   setPendingStart: (pendingStart) => {
     set({ pendingStart });
@@ -965,6 +1106,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
       numericInput: null,
       numericInputAnchor: null,
       pendingStart: null,
+      shapeDraft: EMPTY_SHAPE_DRAFT,
+      shapeErrorMessage: null,
+      referenceDraft: EMPTY_REFERENCE_DRAFT,
+      referenceErrorMessage: null,
       snapIndicator: null,
       faceErrorKey: null,
       solidErrorKey: null,

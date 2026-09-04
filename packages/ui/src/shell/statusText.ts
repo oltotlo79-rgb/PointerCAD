@@ -58,6 +58,15 @@ const GUIDE_KEYS = {
   slot: 'statusBar.guide.slot',
   ellipse: 'statusBar.guide.ellipse',
   spline: 'statusBar.guide.spline',
+  // P4 タスク13 が `ReferenceToolId` へ足した基準ジオメトリ(FR-328、FR-329)。
+  // 上と同じ理由で、道具を足した同じタスクで案内も足す。
+  referencePlaneThreePoints: 'statusBar.guide.referencePlaneThreePoints',
+  referencePlaneOffset: 'statusBar.guide.referencePlaneOffset',
+  referencePlaneTilted: 'statusBar.guide.referencePlaneTilted',
+  referencePlaneThroughPoint: 'statusBar.guide.referencePlaneThroughPoint',
+  referenceAxis: 'statusBar.guide.referenceAxis',
+  referencePoint: 'statusBar.guide.referencePoint',
+  referenceCoordinateSystem: 'statusBar.guide.referenceCoordinateSystem',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**
@@ -155,6 +164,18 @@ export interface StatusInput {
   readonly faceErrorKey: MessageKey | null;
   /** 立体を作れなかった理由(FR-401〜404)。 */
   readonly solidErrorKey: MessageKey | null;
+  /**
+   * 図形を作れなかった理由(FR-314〜318、FR-326、P4 タスク12)。限界値(点の数・半径)を
+   * 差し込んだ文になるので、文言キーではなく組み立て済みの文で受け取る。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly shapeErrorMessage?: string | null;
+  /**
+   * 基準ジオメトリ(作業平面・基準軸・基準点・座標系)を作れなかった理由
+   * (FR-328、FR-329、P4 タスク13)。`shapeErrorMessage` と同じ扱いで、選んでいるものが
+   * 足りないときの案内を差し込んだ文になるので文言キーではなく組み立て済みの文で受け取る。
+   */
+  readonly referenceErrorMessage?: string | null;
   /** 再計算そのものが投げた理由。 */
   readonly errorMessage: string | null;
   /** 部品まるごとの再計算で集めた失敗(FR-504)。 */
@@ -386,7 +407,7 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * 帯に出す 1 文を決める(FR-905)。優先順位は上から順に次のとおり。
  *
  * 1. ファイル操作の失敗 … いま押したボタンへの返事。理由の文だけで通じるので頭の言葉は付けない。
- * 2. 面・立体を作れなかった断り … これもいま押した Enter やボタンへの返事(NFR-UX-5)。
+ * 2. 面・立体・図形を作れなかった断り … これもいま押した Enter やボタンへの返事(NFR-UX-5)。
  * 3. 計算の失敗 … 再計算が投げた理由、続いて集まった失敗の件数と先頭の理由(FR-504)。
  * 4. 中止の知らせ … 失敗ではないので赤くしない(NFR-PF-4)。
  * 5. 進み具合 … 長い計算のあいだだけ(NFR-PF-4)。
@@ -410,6 +431,12 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   }
   if (input.solidErrorKey !== null) {
     return failureLine('statusBar.solidError', t(input.solidErrorKey));
+  }
+  if (input.shapeErrorMessage !== undefined && input.shapeErrorMessage !== null) {
+    return failureLine('statusBar.shapeError', input.shapeErrorMessage);
+  }
+  if (input.referenceErrorMessage !== undefined && input.referenceErrorMessage !== null) {
+    return failureLine('statusBar.referenceError', input.referenceErrorMessage);
   }
   if (input.errorMessage !== null) {
     return failureLine('statusBar.error', input.errorMessage);

@@ -38,6 +38,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_DISPLAY_SETTINGS } from '../settings/settings.js';
 import { setFeatureField } from '../sketch/featureSummary.js';
 import { createNumericInput } from '../sketch/numericInput.js';
+import { EMPTY_SHAPE_DRAFT } from '../sketch/shapeCommands.js';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
 import {
   attachPartRecompute,
@@ -357,6 +358,32 @@ describe('画面の状態(rules/04: ストア1本)', () => {
     expect(useAppStore.getState().pendingStart).toBe(start);
     useAppStore.getState().setPendingStart(null);
     expect(useAppStore.getState().pendingStart).toBeNull();
+  });
+
+  it('新しい図形の取りかけを出し入れでき、道具を変えると空へ戻る(P4 タスク12)', () => {
+    const draft = {
+      ...EMPTY_SHAPE_DRAFT,
+      points: [absoluteCoordinate(1, 2, 3)],
+    };
+    useAppStore.getState().setShapeDraft(draft);
+    expect(useAppStore.getState().shapeDraft.points).toHaveLength(1);
+
+    useAppStore.getState().setActiveTool('line');
+    expect(useAppStore.getState().shapeDraft).toEqual(EMPTY_SHAPE_DRAFT);
+
+    // ポップアップを閉じたときも取りかけを持ち越さない(NFR-UX-3)。
+    useAppStore.getState().setShapeDraft(draft);
+    useAppStore.getState().closeNumericInput();
+    expect(useAppStore.getState().shapeDraft).toEqual(EMPTY_SHAPE_DRAFT);
+  });
+
+  it('図形を作れなかった理由を出し入れできる(NFR-UX-5)', () => {
+    useAppStore.getState().setShapeError('スプラインには点が 2 個以上必要です。');
+    expect(useAppStore.getState().shapeErrorMessage).toBe(
+      'スプラインには点が 2 個以上必要です。',
+    );
+    useAppStore.getState().setShapeError(null);
+    expect(useAppStore.getState().shapeErrorMessage).toBeNull();
   });
 
   it('吸着の印を出し入れできる(FR-107)', () => {

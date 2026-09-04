@@ -85,6 +85,46 @@ describe('選択の当たり判定(FR-106)', () => {
     expect(pickSketchElement(SKETCH, project, [200, 200])).toBeNull();
   });
 
+  it('楕円とスプラインも曲線として拾える(FR-317、FR-318、P4 タスク12)', () => {
+    const withCurves: ResolvedSketch = {
+      ...SKETCH,
+      ellipses: [
+        {
+          kind: 'ellipse',
+          featureId: 'e1',
+          center: [200, 0, 0],
+          normal: [0, 0, 1],
+          majorAxis: [1, 0, 0],
+          majorRadius: 20,
+          minorRadius: 10,
+          startAngle: 0,
+          endAngle: 2 * Math.PI,
+        },
+      ],
+      splines: [
+        {
+          kind: 'spline',
+          featureId: 's1',
+          mode: 'control',
+          points: [
+            [300, 0, 0],
+            [310, 0, 0],
+            [320, 0, 0],
+          ],
+          closed: false,
+        },
+      ],
+    };
+    // 楕円の長軸の端(220, 0)。
+    expect(pickSketchElement(withCurves, project, [220, 0])).toEqual({
+      kind: 'curve', featureId: 'e1', elementId: 'e1',
+    });
+    // 制御点方式のスプラインは 3 点が一直線なので、その線の上を拾える。
+    expect(pickSketchElement(withCurves, project, [310, 0])).toEqual({
+      kind: 'curve', featureId: 's1', elementId: 's1',
+    });
+  });
+
   it('判定半径は引数で変えられる', () => {
     // (30,10) は l1 まで 10。既定の 6 では当たらないが、12 なら当たる。
     expect(pickSketchElement(SKETCH, project, [30, 10])).toBeNull();

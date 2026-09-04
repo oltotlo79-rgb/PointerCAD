@@ -107,6 +107,27 @@ describe('帯に出す 1 文の優先順位(FR-905)', () => {
     expect(line.text).toBe(`${t('statusBar.solidError')} ${t('solidError.needTwoBodies')}`);
   });
 
+  it('図形の断りは計算の失敗に優先し、立体の断りには譲る(P4 タスク12、NFR-UX-5)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      shapeErrorMessage: 'スプラインには点が 2 個以上必要です。',
+      partErrors: [partError('図形を作れませんでした')],
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.shapeError')} スプラインには点が 2 個以上必要です。`);
+
+    const withSolid = describeStatus({
+      ...quiet(),
+      solidErrorKey: 'solidError.noBody',
+      shapeErrorMessage: 'スプラインには点が 2 個以上必要です。',
+    });
+    expect(withSolid.text).toBe(`${t('statusBar.solidError')} ${t('solidError.noBody')}`);
+  });
+
+  it('図形の断りを渡さない呼び出しは今までどおり動く(欄は省略できる)', () => {
+    expect(describeStatus(quiet()).kind).toBe('guide');
+  });
+
   it('計算の失敗は中止の知らせにも進み具合にも優先する(FR-504)', () => {
     const line = describeStatus({
       ...quiet(),

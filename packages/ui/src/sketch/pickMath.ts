@@ -98,7 +98,14 @@ export function pickSketchElement(
 
   let bestCurve: PickResult | null = null;
   let bestCurveDistance = Number.POSITIVE_INFINITY;
-  for (const curve of [...sketch.segments, ...sketch.arcs]) {
+  // 楕円(FR-318)とスプライン(FR-317)も曲線として拾う(P4 タスク12)。
+  // `sampleCurve` がどの種類も折れ線へ直せるので、当たり判定の中身は 4 種で共通。
+  for (const curve of [
+    ...sketch.segments,
+    ...sketch.arcs,
+    ...sketch.ellipses,
+    ...sketch.splines,
+  ]) {
     const screen = projectAll(sampleCurve(curve), project);
     for (let index = 0; index + 1 < screen.length; index += 1) {
       const distance = distanceToSegment2d(pointer, screen[index], screen[index + 1]);

@@ -125,6 +125,48 @@ describe('スケッチの描画データ', () => {
     expect(bundle.index.get('a1')?.length).toBe(96);
   });
 
+  it('楕円とスプラインも線として描く(FR-317、FR-318、P4 タスク12)', () => {
+    const withCurves: ResolvedSketch = {
+      ...EMPTY_RESOLVED_SKETCH,
+      ellipses: [
+        {
+          kind: 'ellipse',
+          featureId: 'e1',
+          center: [0, 0, 0],
+          normal: [0, 0, 1],
+          majorAxis: [1, 0, 0],
+          majorRadius: 20,
+          minorRadius: 10,
+          startAngle: 0,
+          endAngle: 2 * Math.PI,
+        },
+      ],
+      splines: [
+        {
+          kind: 'spline',
+          featureId: 's1',
+          mode: 'control',
+          points: [
+            [0, 0, 0],
+            [10, 10, 0],
+            [20, 0, 0],
+          ],
+          closed: false,
+        },
+      ],
+    };
+    const bundle = buildSketchGeometry(withCurves, null);
+    // 全周の楕円は円弧と同じ 64 区間 → 64 × 6 = 384 個。
+    expect(bundle.index.get('e1')?.kind).toBe('curve');
+    expect(bundle.index.get('e1')?.length).toBe(384);
+    // スプラインは model が解いた点の並びぶん。空でないことだけを見る(点の数は model の担当)。
+    expect(bundle.index.get('s1')?.kind).toBe('curve');
+    expect(bundle.index.get('s1')?.length).toBeGreaterThan(0);
+    expect(bundle.curves.none.length).toBe(
+      (bundle.index.get('e1')?.length ?? 0) + (bundle.index.get('s1')?.length ?? 0),
+    );
+  });
+
   it('点だけで張った面の縁は曲線ごとに 1 本ずつ、3 本ぶん 18 個の数になる', () => {
     const bundle = buildSketchGeometry(SKETCH, null);
     expect(bundle.faceOutlines.none).toHaveLength(18);

@@ -15,6 +15,7 @@ import {
   type NumericInputCommit,
   type NumericInputState,
   type NumericInputStep,
+  type NumericInputToolId,
   type SketchToolId,
 } from './numericInput.js';
 import {
@@ -317,5 +318,99 @@ describe('選んだ要素から面を張る(FR-309、FR-310)', () => {
       expect(MESSAGE_KEYS).toContain(key);
       expect(t(key).length, key).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('新しい図形の段は shapeCommands.ts へ渡す(P4 タスク12)', () => {
+  /** 新しい図形は欄の値を名前で引くので、確定した段の状態も一緒に渡す。 */
+  function shapeStep(
+    context: CommitContext,
+    toolId: NumericInputToolId,
+    inputStep: NumericInputStep,
+    sources: readonly string[],
+  ): CommitContext {
+    const state = createNumericInput(toolId, inputStep);
+    let filled = state;
+    sources.forEach((source, index) => {
+      filled = reduceNumericInput(filled, { type: 'edit', index, source });
+    });
+    const transition = commitNumericInput(filled);
+    if (transition.kind !== 'committed') {
+      throw new Error(`確定できませんでした: ${transition.kind}`);
+    }
+    const outcome = commitSketchInput(transition.commit, {
+      ...context,
+      input: transition.state,
+    });
+    return {
+      ...context,
+      document: outcome.document,
+      pendingStart: outcome.pendingStart,
+      shapeDraft: outcome.shapeDraft,
+    };
+  }
+
+  it('円の 2 段が通ると円弧(全周)が 1 つ積まれる(FR-326)', () => {
+    let context = contextOf();
+    context = shapeStep(context, 'circle', 'circleCenter', ['0', '0', '0']);
+    expect(context.document.features).toHaveLength(0);
+    context = shapeStep(context, 'circle', 'circleRadius', ['10']);
+    const feature = context.document.features[0];
+    if (feature === undefined || feature.kind !== 'arc') {
+      throw new Error('円弧ではありません');
+    }
+    expect(feature.endAngle.value).toBe(360);
+  });
+
+  it('矩形は 2 点目で 1 つ積まれる(FR-314)', () => {
+    let context = contextOf();
+    context = shapeStep(context, 'rectangle', 'rectangleCorner1', ['0', '0', '0']);
+    context = shapeStep(context, 'rectangle', 'rectangleCorner2', ['40', '30', '0']);
+    expect(context.document.features.map((feature) => feature.kind)).toEqual(['rectangle']);
+  });
+
+  it('点列の直線状は P1 のまま sketchCommands.ts が積む(FR-308)', () => {
+    let context = contextOf();
+    context = step(context, 'pointArray', 'pointArrayBase', 'absolute', ['0', '0', '0']);
+    context = step(context, 'pointArray', 'pointArrayShape', 'absolute', ['0', '10', '3']);
+    const feature = context.document.features[0];
+    if (feature === undefined || feature.kind !== 'pointArray') {
+      throw new Error('点列ではありません');
+    }
+    expect(feature.layout.kind).toBe('linear');
+  });
+
+  it('新しい図形はどれも面の囲みに使える曲線として数える(FR-309、FR-314〜318)', () => {
+    let context = contextOf();
+    context = shapeStep(context, 'rectangle', 'rectangleCorner1', ['0', '0', '0']);
+    context = shapeStep(context, 'rectangle', 'rectangleCorner2', ['40', '30', '0']);
+    context = shapeStep(context, 'ellipse', 'ellipseCenter', ['100', '0', '0']);
+    context = shapeStep(context, 'ellipse', 'ellipseShape', ['20', '10']);
+    context = shapeStep(context, 'ellipse', 'ellipseAngles', ['0']);
+    context = shapeStep(context, 'spline', 'splinePoint', ['200', '0', '0']);
+    context = shapeStep(context, 'spline', 'splinePoint', ['210', '10', '0']);
+    context = shapeStep(context, 'spline', 'splinePoint', ['220', '0', '0']);
+    context = shapeStep(context, 'spline', 'splineShape', []);
+
+    const resolved = resolveSketch(context.document);
+    for (const id of featureIds(context.document)) {
+      expect(boundaryElementKind(resolved, id), id).toBe('curve');
+    }
+  });
+
+  it('断りは outcome.rejection に載り、履歴は変わらない(NFR-UX-5)', () => {
+    let context = contextOf();
+    context = shapeStep(context, 'spline', 'splinePoint', ['0', '0', '0']);
+    const state = createNumericInput('spline', 'splineShape');
+    const transition = commitNumericInput(state);
+    if (transition.kind !== 'committed') {
+      throw new Error('確定できませんでした');
+    }
+    const outcome = commitSketchInput(transition.commit, {
+      ...context,
+      input: transition.state,
+    });
+    expect(outcome.rejection).not.toBeNull();
+    expect(outcome.document.features).toHaveLength(0);
   });
 });

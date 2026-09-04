@@ -209,7 +209,16 @@ export function buildSketchGeometry(
   }
 
   const drawnCurveFeatureIds = new Set<string>();
-  for (const curve of [...sketch.segments, ...sketch.arcs]) {
+  // 楕円(FR-318)とスプライン(FR-317)も線として描く(P4 タスク12)。`sampleCurve` が
+  // どの種類も折れ線へ直すので、ここは 4 種を並べるだけでよい。矩形・正多角形・長穴は
+  // 1 フィーチャーが複数の線分・円弧を生むが、どれも `featureId` が同じなので
+  // 同じ強調・同じ引き当てで 1 つの図形としてまとまる(§0.a-0.8)。
+  for (const curve of [
+    ...sketch.segments,
+    ...sketch.arcs,
+    ...sketch.ellipses,
+    ...sketch.splines,
+  ]) {
     const emphasis = emphasisOf(curve.featureId, curve.featureId, highlight, selection);
     const placement = pushInto(curves, emphasis, toLineSegmentPositions(sampleCurve(curve)));
     drawnCurveFeatureIds.add(curve.featureId);

@@ -33,6 +33,8 @@ import {
   createNumericInput,
   DEFAULT_COORDINATE_BASE,
   isCoordinateStep,
+  isReferenceCoordinateStep,
+  isReferenceTool,
   reduceNumericInput,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
@@ -44,6 +46,7 @@ import {
   type SolidToolId,
 } from '../sketch/numericInput.js';
 import { pickSketchElement } from '../sketch/pickMath.js';
+import { resolveShapePoints } from '../sketch/shapeCommands.js';
 import { commitFace } from '../sketch/sketchCommands.js';
 import {
   chooseSnap,
@@ -247,10 +250,15 @@ export function attachSketchInteraction(
 
   /**
    * 操作に使う作図面。任意の作業平面(FR-328)は部品文書を見ないと決まらないので、
-   * ここでは基準の 3 面だけを引き、それ以外は既定の XY に落とす
-   * (任意平面の上で描く操作の配線はタスク13・33)。
+   * **解くのはストアの `workPlane`**(文書か作図面が変わるたびに 1 度だけ解く、タスク13)。
+   * ここではそれを読むだけにして、同じ計算を押すたびにやり直さない(NFR-PF-1)。
+   * 引数の id は「いま読んだ状態と食い違っていないか」を確かめるためだけに使う。
    */
   function interactionPlane(planeId: string): WorkPlane {
+    const state = useAppStore.getState();
+    if (state.workPlane.id === planeId) {
+      return state.workPlane;
+    }
     return baseWorkPlane(planeId) ?? WORK_PLANES[DEFAULT_WORK_PLANE_ID];
   }
 
@@ -429,6 +437,20 @@ export function attachSketchInteraction(
       const start = resolveCoordinate(state.pendingStart, context, BASE_PROBE_ID);
       return start.ok ? start.value : null;
     }
+    /*
+      P4 の新しい図形(矩形の対角・長穴の 2 つ目の中心・2 点+半径の円弧の 2 点目・
+      スプラインの 2 点目以降)は、**まだ履歴に無い「いま置いた点」**が基準になる
+      (タスク12)。置いた点の並びをそのまま解けば、確定したフィーチャーを resolveSketch が
+      解くときと同じ位置になるので、押した場所が欄へ正しいずれとして入る。
+    */
+    const placed = state.shapeDraft.points;
+    if (placed.length > 0) {
+      const positions = resolveShapePoints(state.sketch, state.workPlaneId, placed);
+      const last = positions?.[positions.length - 1];
+      if (last !== undefined) {
+        return last;
+      }
+    }
     const base = resolvePointReference(DEFAULT_COORDINATE_BASE, context, BASE_PROBE_ID);
     return base.ok ? base.value : null;
   }
@@ -501,6 +523,25 @@ export function attachSketchInteraction(
       // (P1・P2 のまま。手動で部分形状の種類へ切り替えていても面の境界の順が壊れないように、
       // この判定を選択の種類より先に置く)。
       pickInto(pointer, tool === 'face' || event.shiftKey);
+      return;
+    }
+
+    if (isReferenceTool(tool)) {
+      /*
+        基準ジオメトリの道具(FR-328、FR-329、タスク13)。座標を聞いている段では押した場所を
+        欄へ入れ(NFR-UX-1)、決め方の段では辺・面・頂点を選ぶ(選択の種類は道具を選んだ
+        ときに `selectionKindForTool` が切り替えている)。開いている欄から焦点は奪わない。
+      */
+      event.preventDefault();
+      const opened = state.numericInput;
+      if (opened !== null && opened.toolId === tool && isReferenceCoordinateStep(opened.step)) {
+        const world = pointAt(pointer, findSnap(pointer));
+        if (world !== null) {
+          state.openNumericInput(fillClickedPoint(opened, world), pointer);
+          return;
+        }
+      }
+      pickInto(pointer, event.shiftKey);
       return;
     }
 

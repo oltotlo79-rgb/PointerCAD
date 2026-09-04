@@ -24,6 +24,7 @@ import type {
   SubShapeKind,
   SubShapeRef,
 } from '../geometry/subShapeRef.js';
+import type { Parameter } from '../parameters/types.js';
 import type { CoordinateInput, PointReference, SketchDocument } from '../sketch/types.js';
 import type { ThreadSeries } from '../thread/metricThread.js';
 
@@ -460,4 +461,13 @@ export interface PartDocument {
   readonly references: readonly ReferenceFeature[];
   /** ソリッドフィーチャーの履歴。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
   readonly solids: readonly SolidFeature[];
+  /**
+   * 名前を付けた数値の表(FR-207、P4b §0.a-0.17)。部品に 1 つだけ持ち、スケッチごとには
+   * 持たない(「どの数値欄からも名前で参照でき」が部品全体を対象にしているため)。
+   * 並び順は利用者が並べ替えた順で、そのまま保存する(評価の順序とは別物。§2.6)。
+   *
+   * 旧い版のファイルにはこの欄が無いので、**読み手は無ければ空の配列として読む**
+   * (`packages/io`、タスク21。必須にすると版 4 以前が開けなくなる)。
+   */
+  readonly parameters: readonly Parameter[];
 }

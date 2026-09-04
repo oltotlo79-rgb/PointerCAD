@@ -94,6 +94,14 @@ export {
   curveEndpointKeys, featureIdOfPointKey, MAX_CONSTRAINT_VARIABLES, pointComponentKey,
   pointValueAt, radiusComponentKey, radiusValueAt, variableComponentKey,
 } from './sketch/constraints/variables.js';
+/** 拘束の残差とヤコビアン(FR-313、P4b タスク5)。 */
+export type {
+  ResidualReport, ResidualRow, ResidualSkipReason, SkippedResidual,
+} from './sketch/constraints/residuals.js';
+export {
+  buildResidualReport, buildResiduals, IMPLICIT_CONSTRAINT_ID_PREFIX, implicitEquationId,
+  isImplicitConstraintId,
+} from './sketch/constraints/residuals.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
   DEFAULT_FACE_COLOR, findFeature, nextFeatureId, nextFeatureName, removeFeature, replaceFeature,

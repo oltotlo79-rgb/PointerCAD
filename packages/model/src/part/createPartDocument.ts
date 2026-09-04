@@ -147,6 +147,8 @@ export function createEmptyPartDocument(): PartDocument {
     activeSketchId: sketch.id,
     references: [],
     solids: [],
+    // パラメータ表(FR-207)の既定は空。名前を付けた数値は利用者が足す(P4b タスク2)。
+    parameters: [],
   };
 }
 

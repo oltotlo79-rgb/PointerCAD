@@ -514,6 +514,8 @@ function richDocument(): PartDocument {
     activeSketchId: 'sketch-1',
     references: richReferences(),
     solids: richSolids(),
+    // パラメータ表(FR-207、P4b タスク2)。中身の読み書きは版5(タスク21)から。
+    parameters: [],
   };
 }
 
@@ -641,6 +643,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
           symmetric: false,
         },
       ],
+      parameters: [],
     };
     expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(
       `{
@@ -679,7 +682,8 @@ describe('部品文書の書き出し(serializeDocument)', () => {
         "reversed": false,
         "symmetric": false
       }
-    ]
+    ],
+    "parameters": []
   }
 }
 `,
@@ -696,6 +700,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
   it('欄を書いた順が違っても同じ文字列ができる(決定的)', () => {
     const document = richDocument();
     const shuffled: PartDocument = {
+      parameters: document.parameters,
       solids: document.solids,
       references: document.references,
       activeSketchId: document.activeSketchId,
@@ -1578,6 +1583,7 @@ describe('版2から版3への移行(§0.a-0.22、SCHEMA_MIGRATIONS[2])', () => 
       activeSketchId: 'sketch-1',
       references: [],
       solids: v2Solids,
+      parameters: [],
     };
     const v2File = JSON.stringify({
       schema: 2,
@@ -2036,6 +2042,8 @@ describe('読み方の規則(計画書 タスク14)', () => {
       'activeSketchId',
       'id',
       'name',
+      // パラメータ表(FR-207、P4b タスク2)。読み手は常に空の配列で補う(中身は版5から)。
+      'parameters',
       'references',
       'schemaVersion',
       'sketches',

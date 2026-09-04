@@ -32,6 +32,7 @@ import {
   type PlaneSpec,
   type OffsetCornerKind,
   type OffsetSide,
+  type Parameter,
   type PointArrayLayout,
   type PointReference,
   type ReferenceAxisDefinition,
@@ -929,6 +930,20 @@ function serializeReferenceFeature(feature: ReferenceFeature): ReferenceFeature 
   }
 }
 
+/**
+ * パラメータ表の1行(FR-207、P4b タスク2)。欄を決まった順で組み立てて決定性を保つ。
+ * **単位や名前の妥当性の検査と、読み戻し**は版5(P4b タスク21)の担当なので、ここでは
+ * 書き出しだけを行う。いま書き出しても読み手が捨てない形(欄の名前と並びは版5と同じ)にしてある。
+ */
+function serializeParameter(parameter: Parameter): Parameter {
+  return {
+    name: parameter.name,
+    value: serializeExpression(parameter.value),
+    unit: parameter.unit,
+    description: parameter.description,
+  };
+}
+
 function serializePartDocument(document: PartDocument): PartDocument {
   return {
     id: document.id,
@@ -938,6 +953,7 @@ function serializePartDocument(document: PartDocument): PartDocument {
     activeSketchId: document.activeSketchId,
     references: document.references.map(serializeReferenceFeature),
     solids: document.solids.map(serializeSolidFeature),
+    parameters: document.parameters.map(serializeParameter),
   };
 }
 
@@ -3357,6 +3373,10 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
       activeSketchId: activeSketchId.value,
       references: references.value,
       solids: solids.value,
+      // パラメータ表(FR-207、P4b タスク2)。**読むのは版5(P4b タスク21)から。**
+      // それまでは常に空の配列として読む。旧い版のファイルにはこの欄が無いので、
+      // 必須にすると版4以前が開けなくなる(docs/報告記録.md 2026-09-04 15:20 の差し戻し)。
+      parameters: [],
     },
   };
 }

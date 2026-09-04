@@ -72,6 +72,8 @@ function exampleDocument(): PartDocument {
         symmetric: false,
       },
     ],
+    // パラメータ表(FR-207、P4b タスク2)。中身の読み書きは版5(タスク21)から。
+    parameters: [],
   };
 }
 

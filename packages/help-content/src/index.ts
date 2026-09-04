@@ -37,6 +37,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '基準の軸・点・座標系を作る',
     path: 'docs/ja/reference-geometry.md',
   },
+  {
+    id: 'edit-curves',
+    title: 'オフセット・トリム・延長',
+    path: 'docs/ja/edit-curves.md',
+  },
   { id: 'snap', title: '点にぴったり合わせる(吸着)', path: 'docs/ja/snap.md' },
   { id: 'face-and-color', title: '面を張る・色を変える', path: 'docs/ja/face-and-color.md' },
   { id: 'edit-sketch', title: 'かいたものを直す', path: 'docs/ja/edit-sketch.md' },

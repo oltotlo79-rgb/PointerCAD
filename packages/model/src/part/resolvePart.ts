@@ -1714,7 +1714,10 @@ function toPartError(error: ReferenceError): PartError {
  * 解いている最中のスケッチをもう一度頼まれたら null を返し、基準ジオメトリ側が
  * 「循環しています」と断る(FR-504。無限に呼び合わない)。
  */
-function resolveSketchesAndReferences(document: PartDocument): {
+function resolveSketchesAndReferences(
+  document: PartDocument,
+  offsetCurves: (key: string) => readonly ResolvedCurve[] | null,
+): {
   readonly sketches: readonly ResolvedPartSketch[];
   readonly references: ResolvedReferences;
   readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
@@ -1737,7 +1740,10 @@ function resolveSketchesAndReferences(document: PartDocument): {
         return null;
       }
       resolvingSketches.add(sketchId);
-      const resolved = resolveSketch(found, { workPlane: (planeId) => resolver.workPlane(planeId) });
+      const resolved = resolveSketch(found, {
+        workPlane: (planeId) => resolver.workPlane(planeId),
+        offsetCurves,
+      });
       resolvingSketches.delete(sketchId);
       resolvedSketches.set(sketchId, resolved);
       return resolved;
@@ -1756,7 +1762,10 @@ function resolveSketchesAndReferences(document: PartDocument): {
     if (remembered !== undefined) {
       return { sketchId: sketch.id, resolved: remembered };
     }
-    const resolved = resolveSketch(sketch, { workPlane: (planeId) => resolver.workPlane(planeId) });
+    const resolved = resolveSketch(sketch, {
+      workPlane: (planeId) => resolver.workPlane(planeId),
+      offsetCurves,
+    });
     resolvedSketches.set(sketch.id, resolved);
     return { sketchId: sketch.id, resolved };
   });
@@ -1764,9 +1773,29 @@ function resolveSketchesAndReferences(document: PartDocument): {
   return { sketches, references, workPlane: resolver.workPlane, axisFrames };
 }
 
+/**
+ * `resolvePart` へ渡せるもの(P4 タスク21、FR-321)。
+ *
+ * オフセット(FR-321)の実際の形は OCCT に任せてある(model タスク15)ので、
+ * `resolveSketch` と同じく「計算済みのオフセットを覚え書きから読むだけ」の関数を渡す。
+ * まだ計算していないものは各スケッチの `ResolvedSketch.pendingOffsets` へ積まれ、
+ * カーネルへ頼んで埋めるのは `recomputePart`(タスク21)の役目。
+ */
+export interface ResolvePartOptions {
+  readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
+}
+
+/** まだ計算していないオフセットが無いときに使う、常に null を返す関数。 */
+function noOffsetCurves(): null {
+  return null;
+}
+
 /** 部品文書を解決して、カーネルへ渡す段の一覧を作る。例外を投げない(FR-504)。 */
-export function resolvePart(document: PartDocument): ResolvedPart {
-  const { sketches, references, axisFrames } = resolveSketchesAndReferences(document);
+export function resolvePart(document: PartDocument, options: ResolvePartOptions = {}): ResolvedPart {
+  const { sketches, references, axisFrames } = resolveSketchesAndReferences(
+    document,
+    options.offsetCurves ?? noOffsetCurves,
+  );
 
   const drafts: StepDraft[] = [];
   // 基準ジオメトリの失敗もツリーの行として出すので、同じ一覧へ写す(FR-504)。

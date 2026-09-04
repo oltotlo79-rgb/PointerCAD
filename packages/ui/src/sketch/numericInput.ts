@@ -105,6 +105,15 @@ export type ShapeToolId =
   | 'spline';
 
 /**
+ * P4 で足す、既存要素を参照して整形する道具(FR-321〜324、タスク21〜24)。
+ *
+ * `ShapeToolId` と同じ理由で `SketchToolId` へは足さない(ツールバーの「基本」区画とは
+ * 1対1に結び付かない)。今回はオフセットだけを実装し、トリム・延長・フィレット/面取り・
+ * ミラー/複写/配列複写はタスク22〜24 がここへ追加する(計画書ファイル構成)。
+ */
+export type EditToolId = 'offset';
+
+/**
  * P4 タスク13 で足す基準ジオメトリの道具(FR-328 の任意の作業平面、FR-329 の基準軸・
  * 基準点・座標系)。
  *
@@ -131,7 +140,12 @@ export type ReferenceToolId =
   | 'referenceCoordinateSystem';
 
 /** ポップアップを開ける道具。スケッチの道具より広い。 */
-export type NumericInputToolId = SketchToolId | SolidToolId | ShapeToolId | ReferenceToolId;
+export type NumericInputToolId =
+  | SketchToolId
+  | SolidToolId
+  | ShapeToolId
+  | ReferenceToolId
+  | EditToolId;
 
 /** 座標の指定方法(FR-301〜303)。 */
 export type CoordinateMode = 'absolute' | 'relative' | 'polar';
@@ -243,11 +257,18 @@ export type ReferenceShapeStep =
 /** 基準ジオメトリの段。確定結果 `ReferenceInputCommit` の step はここに限る。 */
 export type ReferenceNumericInputStep = ReferenceCoordinateStep | ReferenceShapeStep;
 
+/**
+ * 整形系の道具の段(P4 タスク21〜24、FR-321〜324)。オフセットは「距離」の 1 段だけで
+ * 終わる(選択はすでに済んでいる前提。§0.a-0.10「複製系」)。
+ */
+export type EditNumericInputStep = 'offsetDistance';
+
 /** ポップアップの段階。 */
 export type NumericInputStep =
   | SketchNumericInputStep
   | SolidNumericInputStep
-  | ReferenceNumericInputStep;
+  | ReferenceNumericInputStep
+  | EditNumericInputStep;
 
 export type FieldUnit = 'mm' | 'degree' | 'count';
 
@@ -345,7 +366,12 @@ export type NumericChoiceKey =
   /** 基準座標系の第 1 軸(X)。 */
   | 'referenceCsXAxis'
   /** 基準座標系の第 2 軸(Y)の手掛かり。 */
-  | 'referenceCsYAxis';
+  | 'referenceCsYAxis'
+  /* ---- P4 タスク21: オフセット(FR-321) ---- */
+  /** オフセットの側。閉じた輪郭は外/内、開いた曲線は左/右と言葉を替える(値は共通)。 */
+  | 'offsetSide'
+  /** オフセットの角の作り方(丸める/尖らせる)。 */
+  | 'offsetCorner';
 
 export interface NumericChoiceOption {
   readonly value: string;
@@ -776,6 +802,21 @@ const POINT_ARRAY_GRID_COLUMN_FIELDS: readonly NumericFieldDefinition[] = [
 /** 欄を持たない段(スプラインの決め方)。選択肢とつまみだけで決める。 */
 const NO_FIELDS: readonly NumericFieldDefinition[] = [];
 
+/* ---- P4 タスク21: 編集(オフセット、FR-321) ---- */
+
+/** オフセットの距離(mm)。既定 5mm(NFR-UX-4)。側は選択肢(offsetSide)で決める。 */
+const OFFSET_DISTANCE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'distance', labelKey: 'numericInput.field.offsetDistance', tooltipKey: 'numericInput.tooltip.offsetDistance', unit: 'mm', defaultSource: '5', range: POSITIVE },
+];
+
+/** 整形系の段の欄。今回はオフセットの 1 段だけ(タスク22〜24 がここへ足す)。 */
+function editFieldDefinitionsFor(step: EditNumericInputStep): readonly NumericFieldDefinition[] {
+  switch (step) {
+    case 'offsetDistance':
+      return OFFSET_DISTANCE_FIELDS;
+  }
+}
+
 /** 点列の並べ方ごとの欄。直線は P1 のまま(欄も既定値も変えない)。 */
 function pointArrayFieldDefinitions(layout: string | undefined): readonly NumericFieldDefinition[] {
   if (layout === 'circular') {
@@ -959,6 +1000,7 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   referencePointAt: 'numericInput.title.referencePointAt',
   referenceCsOrigin: 'numericInput.title.referenceCsOrigin',
   referenceCsAxes: 'numericInput.title.referenceCsAxes',
+  offsetDistance: 'numericInput.title.offsetDistance',
 };
 
 /** 段階の一覧。タスク18 の部品と、キーの網羅検査が舐めるために公開する。 */
@@ -1014,6 +1056,7 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'referencePointAt',
   'referenceCsOrigin',
   'referenceCsAxes',
+  'offsetDistance',
 ];
 
 /** ソリッドの道具が最初に聞く段階。ツールバーがここから開く。ばねは形(springShape)から。 */
@@ -1115,6 +1158,29 @@ export function isReferenceCoordinateStep(
   step: NumericInputStep,
 ): step is ReferenceCoordinateStep {
   return step in REFERENCE_COORDINATE_STEPS;
+}
+
+/**
+ * 整形系の道具が最初に開く段(P4 タスク21〜24、FR-321〜324)。
+ * `SHAPE_TOOL_STEPS` / `REFERENCE_TOOL_STEPS` と同じ役目で、道具の一覧の正本でもある。
+ */
+export const EDIT_TOOL_STEPS: Readonly<Record<EditToolId, EditNumericInputStep>> = {
+  offset: 'offsetDistance',
+};
+
+/** 整形系の道具かどうか。一覧は `EDIT_TOOL_STEPS` の 1 か所だけに置く。 */
+export function isEditTool(tool: NumericInputToolId): tool is EditToolId {
+  return tool in EDIT_TOOL_STEPS;
+}
+
+/** 段から道具を引く。確定結果へ入れる道具名の正本(`SOLID_STEP_TOOLS` と同じ役目)。 */
+const EDIT_STEP_TOOLS: Readonly<Record<EditNumericInputStep, EditToolId>> = {
+  offsetDistance: 'offset',
+};
+
+/** 段が整形系のものかどうか。 */
+export function isEditStep(step: NumericInputStep): step is EditNumericInputStep {
+  return step in EDIT_STEP_TOOLS;
 }
 
 /** 段階から道具を引く。確定結果へ入れる道具名の正本。ばねは springShape / springLength とも spring。 */
@@ -1382,6 +1448,44 @@ function arcBulgeChoice(): NumericChoice {
   };
 }
 
+/* ---- P4 タスク21: 編集(オフセット)の選択肢(FR-321) ---- */
+
+/**
+ * オフセットのどちら側か(FR-321)。**値は常に `outside` / `inside`**(model の `OffsetSide`)
+ * だが、見出しは閉じた輪郭なら「外/内」、開いた曲線なら「左/右」に替える
+ * (`types.ts` の `OffsetSide` の注釈、開いた曲線は「進む向きから見た左が outside」)。
+ * どちらへずらしても結果は見えるので、既定は外側(左)でよい(NFR-UX-4)。
+ */
+function offsetSideChoice(open: boolean): NumericChoice {
+  return {
+    key: 'offsetSide',
+    labelKey: 'numericInput.choice.offsetSide',
+    value: 'outside',
+    options: open
+      ? [
+          { value: 'outside', labelKey: 'numericInput.offsetSide.left' },
+          { value: 'inside', labelKey: 'numericInput.offsetSide.right' },
+        ]
+      : [
+          { value: 'outside', labelKey: 'numericInput.offsetSide.outside' },
+          { value: 'inside', labelKey: 'numericInput.offsetSide.inside' },
+        ],
+  };
+}
+
+/** オフセットの角の作り方(FR-321)。既定は丸め(NFR-UX-4、角のとがりを避ける方が安全)。 */
+function offsetCornerChoice(): NumericChoice {
+  return {
+    key: 'offsetCorner',
+    labelKey: 'numericInput.choice.offsetCorner',
+    value: 'round',
+    options: [
+      { value: 'round', labelKey: 'numericInput.offsetCorner.round' },
+      { value: 'sharp', labelKey: 'numericInput.offsetCorner.sharp' },
+    ],
+  };
+}
+
 /* ---- P4 タスク13: 基準ジオメトリの選択肢(FR-328、FR-329) ---- */
 
 /** 選択肢の値で「文書にある基準軸」を指すときの頭(`reference:基準軸-1` の形)。 */
@@ -1487,6 +1591,8 @@ function referencePointKindChoice(): NumericChoice {
 /** 段階ごとの選択肢の並び。持たない段は空配列。 */
 function choicesFor(step: NumericInputStep, options: NumericInputOptions): readonly NumericChoice[] {
   switch (step) {
+    case 'offsetDistance':
+      return [offsetSideChoice(options.offsetOpenContour ?? false), offsetCornerChoice()];
     case 'referencePlaneOffset':
       return [referencePlaneBaseChoice()];
     case 'referencePlaneTilt':
@@ -1681,6 +1787,9 @@ function definitionsFor(
   if (isReferenceStep(step)) {
     return referenceFieldDefinitionsFor(step, choices);
   }
+  if (isEditStep(step)) {
+    return editFieldDefinitionsFor(step);
+  }
   return sketchShapeFieldDefinitionsFor(step, choices);
 }
 
@@ -1691,6 +1800,10 @@ function toFields(definitions: readonly NumericFieldDefinition[]): NumericField[
 function togglesFor(step: NumericInputStep): readonly NumericToggle[] {
   if (isReferenceStep(step)) {
     // 基準ジオメトリの段は入切のつまみを持たない(構築線も楕円弧も関わらない、タスク13)。
+    return [];
+  }
+  if (isEditStep(step)) {
+    // オフセットは今回つまみを持たない(構築線にする欄はタスク33 のプロパティへ譲る)。
     return [];
   }
   const keys = isSolidStep(step) ? STEP_TOGGLE_KEYS[step] : SKETCH_STEP_TOGGLE_KEYS[step];
@@ -1718,6 +1831,12 @@ export interface NumericInputOptions {
    * 渡されなければワールドの X / Y / Z だけになる。
    */
   readonly referenceAxes?: readonly ReferenceAxisOption[];
+  /**
+   * オフセットの元が開いた曲線かどうか(FR-321、タスク21)。ツールバーが選択から見込んで
+   * 渡す(`editCommands.ts` の `offsetContourIsOpen`)。渡されなければ閉じた輪郭として扱い、
+   * 側の見出しは「外/内」になる。
+   */
+  readonly offsetOpenContour?: boolean;
 }
 
 export function createNumericInput(
@@ -2448,11 +2567,44 @@ export interface ReferenceInputCommit {
   readonly choices: ReferenceCommitChoices;
 }
 
+/** 整形系の道具の数値(P4 タスク21〜24)。段ごとに使う欄だけが入る。 */
+export interface EditCommitValues {
+  /** オフセットの距離(mm、FR-321)。 */
+  readonly distance?: ExpressionValue;
+}
+
+/**
+ * 整形系の道具の選択肢(P4 タスク21〜24)。値は選択肢の文字列そのままで、`editCommands.ts`
+ * が組み立て直す(§2.11「確定側で value から引き直す」と同じ約束)。
+ */
+export interface EditCommitChoices {
+  /** オフセットの側('outside' | 'inside'、FR-321)。 */
+  readonly side?: string;
+  /** オフセットの角の作り方('round' | 'sharp')。 */
+  readonly corner?: string;
+}
+
+/**
+ * 整形系の道具を決めたときに外へ渡すもの(P4 タスク21〜24、FR-321〜324)。積む先は
+ * スケッチだが、選択から作る構図が `NumericInputCommit` の座標/形の段と違う
+ * (対象はすでに選ばれている、§2.5)ので別の形にする。`flags` は構築線のつまみを
+ * 将来の段(タスク23 のフィレット等)でも使えるよう `SketchCommitFlags` を再利用する。
+ */
+export interface EditInputCommit {
+  readonly kind: 'edit';
+  readonly tool: EditToolId;
+  readonly step: EditNumericInputStep;
+  readonly values: EditCommitValues;
+  readonly flags: SketchCommitFlags;
+  readonly choices: EditCommitChoices;
+}
+
 /** ポップアップが返しうる確定結果のすべて。 */
 export type AnyNumericInputCommit =
   | NumericInputCommit
   | SolidInputCommit
-  | ReferenceInputCommit;
+  | ReferenceInputCommit
+  | EditInputCommit;
 
 /**
  * 「決め方」の段(splineShape)の確定を下書きへ写す(FR-317)。
@@ -2493,6 +2645,11 @@ export type NumericInputTransition =
       readonly kind: 'referenceCommitted';
       readonly state: NumericInputState;
       readonly commit: ReferenceInputCommit;
+    }
+  | {
+      readonly kind: 'editCommitted';
+      readonly state: NumericInputState;
+      readonly commit: EditInputCommit;
     }
   | {
       readonly kind: 'blocked';
@@ -2828,6 +2985,41 @@ function referenceChoicesFor(choices: readonly NumericChoice[]): ReferenceCommit
   };
 }
 
+/** オフセットの欄を、確定結果の形へ写す(P4 タスク21)。 */
+function editValuesFor(
+  step: EditNumericInputStep,
+  fields: readonly NumericField[],
+  values: readonly ExpressionValue[],
+): EditCommitValues {
+  const own = fieldValueMap(fields, values);
+  switch (step) {
+    case 'offsetDistance':
+      return { distance: own.get('distance') };
+  }
+}
+
+/**
+ * 整形系の確定を組み立てる(P4 タスク21〜24)。呼び出し元(commitNumericInput)が
+ * 整形系の段でだけ呼ぶので、step はここで `EditNumericInputStep` へ絞り込み済み。
+ */
+function buildEditCommit(
+  step: EditNumericInputStep,
+  filled: NumericInputState,
+  values: readonly ExpressionValue[],
+): EditInputCommit {
+  return {
+    kind: 'edit',
+    tool: EDIT_STEP_TOOLS[step],
+    step,
+    values: editValuesFor(step, filled.fields, values),
+    flags: sketchFlagsFor(filled.toggles),
+    choices: {
+      side: choiceValueFrom(filled.choices, 'offsetSide'),
+      corner: choiceValueFrom(filled.choices, 'offsetCorner'),
+    },
+  };
+}
+
 /**
  * 「決定」を押したとき、または Enter を打ったときの処理。
  * 空欄を既定値で埋めてから評価し(NFR-UX-4)、1 つでも不正なら決定させずに
@@ -2900,6 +3092,15 @@ export function commitNumericInput(
         values: referenceValuesFor(filled.fields, values),
         choices: referenceChoicesFor(filled.choices),
       },
+    };
+  }
+  if (isEditStep(step)) {
+    // 整形系(オフセット、FR-321)。対象はすでに選ばれているので、座標は組み立てない
+    // (`editCommands.ts` が選択+この確定から `SketchOffsetFeature` を組み立てる)。
+    return {
+      kind: 'editCommitted',
+      state: filled,
+      commit: buildEditCommit(step, filled, values),
     };
   }
   const flags = sketchFlagsFor(filled.toggles);
@@ -3051,6 +3252,10 @@ export function nextNumericInput(
     case 'linearPattern':
     case 'circularPattern':
     case 'springLength':
+      return null;
+    // 整形系(P4 タスク21)。オフセットは対象を選び直さないと続けられないので、
+    // ソリッドの段と同じく「続けてかく」に関わらずいつでも閉じる(§2.5)。
+    case 'offsetDistance':
       return null;
   }
 }

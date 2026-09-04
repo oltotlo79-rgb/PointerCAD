@@ -125,7 +125,12 @@ function isWrongSide(pending: PendingOffset, entry: SketchOffsetEntry): boolean 
  * 2 回目でまとめて頼み直す。返すのは失敗の一覧だけで、成功したものは覚え書きに入る
  * (呼び出し側が解決をやり直すと、そこから曲線が入る)。
  */
-async function fillOffsets(
+/**
+ * `recomputePart.ts`(タスク21)が、部品の中の複数スケッチぶんの `pendingOffsets` を
+ * まとめて 1 回のカーネル往復で埋めるのにも使うため、この関数だけは輸出する。
+ * 他はスケッチ単体の再計算(`recomputeSketch`)の内側だけで完結させる。
+ */
+export async function fillOffsets(
   bridge: KernelBridge,
   pendingOffsets: readonly PendingOffset[],
   offsets: OffsetCache,

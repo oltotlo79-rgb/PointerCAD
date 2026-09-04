@@ -8,6 +8,7 @@ import {
   toSolidStepRequest,
   type KernelBridge,
   type PartProgress,
+  type SketchOffsetContour,
   type SketchOffsetResult,
   type SketchTessellationOutcome,
   type SolidBody,
@@ -21,11 +22,13 @@ import {
   nextFeatureId,
   nextFeatureName,
 } from '../sketch/createSketchDocument.js';
+import { createOffsetCache } from '../sketch/offsetMath.js';
 import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
 import type {
   SketchDocument,
   SketchFaceFeature,
   SketchFaceMesh,
+  SketchFeature,
   SketchLineFeature,
 } from '../sketch/types.js';
 import { appendSolid, createEmptyPartDocument, replaceSketch } from './createPartDocument.js';
@@ -1311,5 +1314,110 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
     expect(result.errors).toEqual([
       { featureId: 'extrude-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE },
     ]);
+  });
+});
+
+/*
+ * オフセット(FR-321、タスク15・21)は resolvePart 単体では完結せず、`recomputePart` が
+ * `resolvePart` → カーネルで形を作る → `resolvePart` をやり直す、の2段で埋める
+ * (`recomputeSketch.ts` の同名の2段構成と同じ考え方)。resolvePart / recomputeSketch は
+ * それぞれ単体の検査で固定済みなので、ここでは「部品全体を通したときに、この配線が
+ * 実際に効くこと」だけを確かめる(統括の目視検査 2026-09-04 で見つかった配線もれの回帰検査)。
+ */
+describe('部品を通したオフセットの解決(FR-321、タスク21)', () => {
+  const RECTANGLE: SketchFeature = {
+    id: 'r1',
+    name: '矩形1',
+    planeId: DEFAULT_WORK_PLANE_ID,
+    kind: 'rectangle',
+    corner1: absoluteCoordinate(0, 0, 0),
+    corner2: absoluteCoordinate(40, 30, 0),
+    construction: false,
+  };
+
+  const OFFSET: SketchFeature = {
+    id: 'of1',
+    name: 'オフセット1',
+    planeId: DEFAULT_WORK_PLANE_ID,
+    kind: 'offset',
+    source: [{ featureId: 'r1' }],
+    distance: expr('5'),
+    side: 'outside',
+    corner: 'sharp',
+    construction: false,
+  };
+
+  /** 50×40 の閉じた輪郭(40×30 を外へ 5、尖った角。recomputeSketch.test.ts と同じ形)。 */
+  const OUTSIDE_RECTANGLE: SketchOffsetContour = {
+    closed: true,
+    curves: [
+      { kind: 'segment', featureId: 'of1', from: [-5, -5, 0], to: [45, -5, 0] },
+      { kind: 'segment', featureId: 'of1', from: [45, -5, 0], to: [45, 35, 0] },
+      { kind: 'segment', featureId: 'of1', from: [45, 35, 0], to: [-5, 35, 0] },
+      { kind: 'segment', featureId: 'of1', from: [-5, 35, 0], to: [-5, -5, 0] },
+    ],
+  };
+
+  function partWithRectangleAndOffset(): PartDocument {
+    const base = createEmptyPartDocument();
+    const sketch = appendFeature(appendFeature(base.sketches[0], RECTANGLE), OFFSET);
+    return replaceSketch(base, sketch);
+  }
+
+  it('resolvePart はカーネルを呼べないので pendingOffsets へ積んだままになる(回帰検査)', () => {
+    const resolved = resolvePart(partWithRectangleAndOffset());
+    expect(resolved.sketches[0].resolved.pendingOffsets).toHaveLength(1);
+    expect(resolved.sketches[0].resolved.segments.filter((s) => s.featureId === 'of1')).toEqual([]);
+  });
+
+  it('recomputePart はカーネルへ頼んでオフセットの曲線を解決に差し込む', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
+      Promise.resolve({ results: [{ featureId: 'of1', contours: [OUTSIDE_RECTANGLE] }], failures: [] }),
+    );
+    const result = await recomputePart(
+      partWithRectangleAndOffset(),
+      fakeBridge({ offsetSketchCurves }),
+    );
+
+    expect(offsetSketchCurves).toHaveBeenCalledTimes(1);
+    expect(result.errors).toEqual([]);
+    const resolvedSketch = result.sketches[0].resolved;
+    expect(resolvedSketch.pendingOffsets).toEqual([]);
+    expect(resolvedSketch.segments.filter((s) => s.featureId === 'of1')).toHaveLength(4);
+  });
+
+  it('オフセットの結果は面の境界にも使える(このタスクの完了条件)', async () => {
+    const offsetSketchCurves = () =>
+      Promise.resolve<SketchOffsetResult>({
+        results: [{ featureId: 'of1', contours: [OUTSIDE_RECTANGLE] }],
+        failures: [],
+      });
+    const withFace = (() => {
+      const base = partWithRectangleAndOffset();
+      const sketch = appendFeature(base.sketches[0], {
+        id: 'face1',
+        name: '面1',
+        planeId: DEFAULT_WORK_PLANE_ID,
+        kind: 'face',
+        boundary: [{ featureId: 'of1' }],
+        color: DEFAULT_FACE_COLOR,
+      });
+      return replaceSketch(base, sketch);
+    })();
+
+    const result = await recomputePart(withFace, fakeBridge({ offsetSketchCurves }));
+    expect(result.errors).toEqual([]);
+    expect(result.sketches[0].resolved.faces).toHaveLength(1);
+  });
+
+  it('計算済みのオフセットを覚え書きで渡すと、2 回目はカーネルへ頼まない(NFR-PF-2)', async () => {
+    const offsetSketchCurves = vi.fn<KernelBridge['offsetSketchCurves']>(() =>
+      Promise.resolve({ results: [{ featureId: 'of1', contours: [OUTSIDE_RECTANGLE] }], failures: [] }),
+    );
+    const offsets = createOffsetCache();
+    const document = partWithRectangleAndOffset();
+    await recomputePart(document, fakeBridge({ offsetSketchCurves }), { offsets });
+    await recomputePart(document, fakeBridge({ offsetSketchCurves }), { offsets });
+    expect(offsetSketchCurves).toHaveBeenCalledTimes(1);
   });
 });

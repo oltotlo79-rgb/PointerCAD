@@ -19,7 +19,9 @@ import type {
   PartProgressCallback,
   SolidBody,
 } from '../kernelBridge.js';
-import type { ResolvedSketch, SketchError, SketchMesh } from '../sketch/types.js';
+import { createOffsetCache, type OffsetCache } from '../sketch/offsetMath.js';
+import { fillOffsets } from '../sketch/recomputeSketch.js';
+import type { ResolvedCurve, ResolvedSketch, SketchError, SketchMesh } from '../sketch/types.js';
 import { resolvePart, type PartError, type PartErrorCode } from './resolvePart.js';
 import type { PartDocument } from './types.js';
 
@@ -64,6 +66,14 @@ export interface PartRecomputeOptions {
   readonly generation?: number;
   readonly onProgress?: PartProgressCallback;
   readonly shouldCancel?: PartCancelToken;
+  /**
+   * 計算済みのオフセット(FR-321、タスク15・21)を覚えておく入れ物。
+   *
+   * 渡さないと呼び出しのたびに新しく作るので、毎回カーネルへ頼み直すことになる。
+   * 画面から繰り返し呼ぶ側(ui、タスク21)は 1 つ作って持ち回る(NFR-PF-2、
+   * `recomputeSketch.ts` の `SketchRecomputeOptions.offsets` と同じ約束)。
+   */
+  readonly offsets?: OffsetCache;
 }
 
 /** 面を作れなかったとき(P1 の recomputeSketch と同じ文言に揃える)。 */
@@ -147,7 +157,19 @@ export async function recomputePart(
   options: PartRecomputeOptions = {},
 ): Promise<PartRecomputeResult> {
   const generation = options.generation ?? 0;
-  const resolved = resolvePart(document);
+  // オフセット(FR-321、タスク15・21)があるときは、**解決 → カーネルで形を作る → 解決し直す**
+  // の順で進む(`recomputeSketch.ts` の recomputeSketch と同じ2段構成)。解決そのものは
+  // OCCT を呼ばない純関数のままで、形は覚え書き(offsets)越しに差し込む。
+  const offsets = options.offsets ?? createOffsetCache();
+  const offsetCurves = (key: string): readonly ResolvedCurve[] | null => offsets.get(key);
+  let resolved = resolvePart(document, { offsetCurves });
+  const offsetErrors: SketchError[] = [];
+  const pendingOffsets = resolved.sketches.flatMap((entry) => entry.resolved.pendingOffsets);
+  if (pendingOffsets.length > 0) {
+    offsetErrors.push(...(await fillOffsets(bridge, pendingOffsets, offsets)));
+    // 形が入ったので解決し直す。オフセットの曲線が面の境界にも使えるようになる。
+    resolved = resolvePart(document, { offsetCurves });
+  }
 
   // 上流(スケッチ)から下流(ソリッド)の順に失敗を並べる。直す順序がそのまま読めるように。
   const errors: PartRecomputeError[] = [];
@@ -158,6 +180,7 @@ export async function recomputePart(
     errors.push(...outcome.errors);
     sketches.push({ sketchId: entry.sketchId, resolved: entry.resolved, mesh: outcome.mesh });
   }
+  errors.push(...offsetErrors);
   errors.push(...resolved.errors);
 
   if (resolved.steps.length === 0) {

@@ -28,11 +28,14 @@ import {
   DEFAULT_GRID_ROW_AZIMUTH_DEGREES,
   DEFAULT_POLYGON_SIDES,
   defaultModeForStep,
+  EDIT_TOOL_STEPS,
   EMPTY_SPLINE_DRAFT,
   evaluateNumericInput,
   fillDefaults,
   focusedTarget,
   isCoordinateStep,
+  isEditStep,
+  isEditTool,
   isReferenceCoordinateStep,
   isReferenceStep,
   isReferenceTool,
@@ -1905,6 +1908,15 @@ function expectReferenceCommitted(
   return transition;
 }
 
+function expectEditCommitted(
+  transition: NumericInputTransition,
+): Extract<NumericInputTransition, { kind: 'editCommitted' }> {
+  if (transition.kind !== 'editCommitted') {
+    throw new Error(`expected editCommitted transition, got ${transition.kind}`);
+  }
+  return transition;
+}
+
 describe('基準ジオメトリの段(FR-328、FR-329)', () => {
   it('道具から最初の段が引ける。7 つとも基準ジオメトリの段になる', () => {
     expect(REFERENCE_TOOL_STEPS).toEqual({
@@ -2113,6 +2125,120 @@ describe('基準ジオメトリの段(FR-328、FR-329)', () => {
         expect(MESSAGE_KEYS).toContain(field.labelKey);
         expect(MESSAGE_KEYS).toContain(field.tooltipKey);
       }
+    }
+  });
+});
+
+describe('整形系(オフセット、FR-321、計画書 docs/plans/P4-スケッチ拡張.md タスク21)', () => {
+  it('道具から最初の段が引ける。offset は offsetDistance の 1 段だけ', () => {
+    expect(EDIT_TOOL_STEPS).toEqual({ offset: 'offsetDistance' });
+    expect(isEditStep('offsetDistance')).toBe(true);
+    expect(isSolidStep('offsetDistance')).toBe(false);
+    expect(isReferenceStep('offsetDistance')).toBe(false);
+  });
+
+  it('道具の見分けは表 1 つだけを見る', () => {
+    expect(isEditTool('offset')).toBe(true);
+    expect(isEditTool('circle')).toBe(false);
+    expect(isEditTool('extrude')).toBe(false);
+  });
+
+  it('段が一覧と見出しの表に載っている(NFR-MA-5)', () => {
+    expect(NUMERIC_INPUT_STEPS).toContain('offsetDistance');
+    expect(MESSAGE_KEYS).toContain(STEP_TITLE_KEYS.offsetDistance);
+    expect(t(STEP_TITLE_KEYS.offsetDistance).length).toBeGreaterThan(0);
+  });
+
+  it('座標を聞く段ではない(選択はすでに済んでいる、§2.5)', () => {
+    expect(asksCoordinate('offsetDistance')).toBe(false);
+    expect(isCoordinateStep('offsetDistance')).toBe(false);
+  });
+
+  it('距離の欄は既定 5mm、0 より大きい値だけを許す', () => {
+    const state = createNumericInput('offset', 'offsetDistance');
+    expect(state.fields.map((field) => field.key)).toEqual(['distance']);
+    expect(state.fields[0].source).toBe('5');
+    expect(state.fields[0].range).toEqual({
+      min: 0,
+      minInclusive: false,
+      max: null,
+      maxInclusive: false,
+    });
+    expect(state.toggles).toEqual([]);
+  });
+
+  it('閉じた輪郭(既定)では側の見出しが外/内になる', () => {
+    const state = createNumericInput('offset', 'offsetDistance');
+    const side = state.choices.find((choice) => choice.key === 'offsetSide');
+    expect(side?.value).toBe('outside');
+    expect(side?.options.map((option) => option.labelKey)).toEqual([
+      'numericInput.offsetSide.outside',
+      'numericInput.offsetSide.inside',
+    ]);
+  });
+
+  it('開いた曲線(offsetOpenContour)では側の見出しが左/右になる。値は変わらない', () => {
+    const state = createNumericInput('offset', 'offsetDistance', undefined, {
+      offsetOpenContour: true,
+    });
+    const side = state.choices.find((choice) => choice.key === 'offsetSide');
+    expect(side?.value).toBe('outside');
+    expect(side?.options.map((option) => option.value)).toEqual(['outside', 'inside']);
+    expect(side?.options.map((option) => option.labelKey)).toEqual([
+      'numericInput.offsetSide.left',
+      'numericInput.offsetSide.right',
+    ]);
+  });
+
+  it('角の選択肢は丸める/尖らせるの 2 択で、既定は丸める', () => {
+    const state = createNumericInput('offset', 'offsetDistance');
+    const corner = state.choices.find((choice) => choice.key === 'offsetCorner');
+    expect(corner?.value).toBe('round');
+    expect(corner?.options.map((option) => option.value)).toEqual(['round', 'sharp']);
+  });
+
+  it('確定すると editCommitted になり、道具・段・欄・選択肢が写る', () => {
+    const state = chooseNumericInput(
+      chooseNumericInput(createNumericInput('offset', 'offsetDistance'), 'offsetSide', 'inside'),
+      'offsetCorner',
+      'sharp',
+    );
+    const filled = reduceNumericInput(state, { type: 'edit', index: 0, source: '8' });
+    const committed = expectEditCommitted(commitNumericInput(filled));
+    expect(committed.commit.kind).toBe('edit');
+    expect(committed.commit.tool).toBe('offset');
+    expect(committed.commit.step).toBe('offsetDistance');
+    expect(committed.commit.values.distance?.value).toBe(8);
+    expect(committed.commit.choices).toEqual({ side: 'inside', corner: 'sharp' });
+  });
+
+  it('確定すると必ず閉じる(対象を選び直さないと続けられない、§2.5)', () => {
+    const state = createNumericInput('offset', 'offsetDistance');
+    const committed = expectEditCommitted(commitNumericInput(state));
+    expect(nextNumericInput(committed.state, true)).toBeNull();
+    expect(nextNumericInput(committed.state, false)).toBeNull();
+  });
+
+  it('欄が 0 以下では確定させない(NFR-UX-5)', () => {
+    const state = reduceNumericInput(createNumericInput('offset', 'offsetDistance'), {
+      type: 'edit',
+      index: 0,
+      source: '0',
+    });
+    expectBlocked(commitNumericInput(state));
+  });
+
+  it('選択肢の見出しと札はすべて ja.json に実在する(NFR-MA-5)', () => {
+    const state = createNumericInput('offset', 'offsetDistance');
+    for (const choice of state.choices) {
+      expect(MESSAGE_KEYS).toContain(choice.labelKey);
+      for (const option of choice.options) {
+        expect(numericChoiceOptionLabel(option).length).toBeGreaterThan(0);
+      }
+    }
+    for (const field of state.fields) {
+      expect(MESSAGE_KEYS).toContain(field.labelKey);
+      expect(MESSAGE_KEYS).toContain(field.tooltipKey);
     }
   });
 });

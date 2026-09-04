@@ -1,4 +1,4 @@
-import { createKernelBridge, recomputePart } from '@pointercad/model';
+import { createKernelBridge, createOffsetCache, recomputePart } from '@pointercad/model';
 import { useEffect } from 'react';
 
 import { startAutoSave } from '../file/attachAutoSave.js';
@@ -18,8 +18,11 @@ import { attachPartRecompute } from '../store/useAppStore.js';
 export function PointerCadApp(): React.JSX.Element {
   useEffect(() => {
     const bridge = createKernelBridge();
+    // オフセット(FR-321、タスク15・21)の計算済みの結果を持ち回る。1 つ作って渡さないと
+    // 呼び出しのたびにカーネルへ頼み直すことになる(NFR-PF-2、`recomputePart` の注釈)。
+    const offsets = createOffsetCache();
     const detach = attachPartRecompute((document, options) =>
-      recomputePart(document, bridge, options),
+      recomputePart(document, bridge, { ...options, offsets }),
     );
 
     return () => {

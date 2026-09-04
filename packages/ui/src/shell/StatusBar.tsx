@@ -96,6 +96,8 @@ export function StatusBar(): React.JSX.Element {
   const shapeErrorMessage = useAppStore((state) => state.shapeErrorMessage);
   // 基準ジオメトリを作れなかった理由(P4 タスク13)。こちらも組み立て済みの文。
   const referenceErrorMessage = useAppStore((state) => state.referenceErrorMessage);
+  // 原点を移したときの一言(FR-331、P4 タスク35b)。断りではないので赤くしない。
+  const originNoticeMessage = useAppStore((state) => state.originNoticeMessage);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   // 任意の作業平面(FR-328)の名前を札に出すための一覧(タスク13)。
@@ -170,6 +172,7 @@ export function StatusBar(): React.JSX.Element {
     editNoticeKey,
     shapeErrorMessage,
     referenceErrorMessage,
+    originNoticeMessage,
     errorMessage,
     partErrors,
     sketchErrors,

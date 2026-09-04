@@ -1278,6 +1278,72 @@ button.pcad-tree__row:focus-visible {
   padding-left: 20px;
 }
 
+/*
+ * 節の見出しの器。見出しの折りたたみボタンと「＋」(スケッチを追加)を横に並べる
+ * (入れ子のボタンは作れないため。P4 仕上げ (g))。
+ */
+.pcad-tree__section {
+  display: flex;
+  align-items: center;
+}
+
+.pcad-tree__section .pcad-tree__row--section {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+/*
+ * 「＋」(スケッチを追加、FR-501)。行の「⋮」と同じ大きさ・同じ薄さの流儀にそろえるが、
+ * こちらは節の見出しにいつも出しておく(新しいスケッチの作り方が画面から読めるように)。
+ */
+.pcad-tree__add {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-right: var(--pcad-space-1);
+  font: inherit;
+  line-height: 1;
+  color: var(--pcad-text-faint);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pcad-radius-small);
+  transition: color var(--pcad-transition);
+}
+
+.pcad-tree__add:hover {
+  color: var(--pcad-text);
+  background: var(--pcad-surface-raised);
+}
+
+.pcad-tree__add:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+/*
+ * スケッチそのものの親行(P4 仕上げ (g))。スケッチが 2 本以上あるときだけ出る。
+ * 節の見出しと要素の行のあいだの深さなので、字下げも中間に置く。
+ */
+.pcad-tree__select--sketch {
+  padding-left: 32px;
+}
+
+/* 親行の下にぶら下がる要素の行。1 段深いぶんだけ字下げと縦線をずらす。 */
+.pcad-tree__children--nested::before {
+  left: 39px;
+}
+
+.pcad-tree__children--nested .pcad-tree__select {
+  padding-left: 56px;
+}
+
+.pcad-tree__hint--nested {
+  padding-left: 56px;
+}
+
 /* 節に入っている数。畳んでいても中身の有無が読める(NFR-UX-6)。 */
 .pcad-tree__count {
   flex: none;
@@ -1463,6 +1529,22 @@ button.pcad-tree__row:focus-visible {
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--pcad-text-muted);
+}
+
+/*
+  プロパティの節に直接置く押しボタン(「ここを原点にする」、FR-331、P4 タスク35b)。
+  区画は増やさず、その場入力の決定ボタンと同じ見え方にして「押せる」ことを見せる
+  (NFR-UX-1)。色はトークンなので表示テーマ・拡大率にそのまま従う。
+*/
+.pcad-section > .pcad-button--action {
+  margin: 0 var(--pcad-space-3);
+  color: var(--pcad-text);
+  background: var(--pcad-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
+}
+
+.pcad-section > .pcad-button--action:hover {
+  background: var(--pcad-accent-soft-hover);
 }
 
 .pcad-properties {

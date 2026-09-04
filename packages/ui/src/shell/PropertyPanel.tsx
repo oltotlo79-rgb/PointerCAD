@@ -33,6 +33,7 @@ import {
   type FeatureFieldSummary,
   type RectangleView,
 } from '../sketch/featureSummary.js';
+import { originChangeFor, originPickFor, type OriginPick } from '../sketch/originCommands.js';
 import {
   COORDINATE_MODES,
   MODE_LABEL_KEYS,
@@ -994,6 +995,79 @@ function ReferenceProperties({
   );
 }
 
+/** 原点にできる 1 点が選ばれているときの、その要素 id と指し方。 */
+interface OriginSelection {
+  readonly elementId: string;
+  readonly pick: OriginPick;
+}
+
+/**
+ * いま選ばれているものが「原点にできる 1 点」かを見る(FR-331、P4 タスク35b)。
+ *
+ * 立体の頂点は木に行が無いのでプロパティが唯一の入り口になる。頂点を選ぶと
+ * `solidForSelection` は何も返さない(要素 id が `押し出し1#vertex:3` の形で立体の id と
+ * 一致しない)ので、その場合は「選択されているものはありません。」の代わりにこの節だけを出す。
+ */
+function useOriginSelection(): OriginSelection | null {
+  const part = useAppStore((state) => state.document);
+  const sketch = useAppStore((state) => state.sketch);
+  const resolvedSketch = useAppStore((state) => state.resolvedSketch);
+  const resolvedReferences = useAppStore((state) => state.resolvedReferences);
+  const bodies = useAppStore((state) => state.bodies);
+  const selection = useAppStore((state) => state.selection);
+
+  const elementId = selection.length === 1 ? selection[0] : undefined;
+  if (elementId === undefined) {
+    return null;
+  }
+  const pick = originPickFor({
+    document: part,
+    sketch,
+    resolvedSketch,
+    resolvedReferences,
+    bodies,
+    elementId,
+  });
+  return pick === null ? null : { elementId, pick };
+}
+
+/**
+ * 「ここを原点にする」のボタン(FR-331、P4 タスク35b)。
+ *
+ * 押すと、その点が (0, 0, 0) になるよう文書内の絶対座標が**式のまま**平行移動し、ほかの
+ * 要素は式のまま追従する。ツールバーには道具を増やさない決まりなので、入り口はここと
+ * モデルブラウザの「⋮」一覧の 2 つ(§0.a-0.25 ③)。頂点は式を持たないため、丸めない
+ * 倍精度の数値で移す(FR-331)。
+ *
+ * 何が選ばれているか(欄の中身)とは別の話なので、上の欄と並ばず独立した節にする。
+ */
+function OriginSection({ origin }: { readonly origin: OriginSelection }): React.JSX.Element {
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('originCommand.sectionTitle')}</h3>
+      <button
+        type="button"
+        className="pcad-button pcad-button--action"
+        title={t('originCommand.tooltip')}
+        onClick={() => {
+          const store = useAppStore.getState();
+          const change = originChangeFor(store, origin.elementId);
+          if (change === null) {
+            // 位置が計算できていない点は断って何も変えない(FR-504、NFR-RE-1)。
+            store.setEditError('originCommand.failed');
+            return;
+          }
+          // 式を書き換えるだけなので履歴に段は増えず、Undo 1 回で戻る(利用者の決定)。
+          store.applyDocument(change.document);
+          store.setOriginNotice(change.notice);
+        }}
+      >
+        {t(origin.pick.labelKey)}
+      </button>
+    </div>
+  );
+}
+
 /**
  * 右のプロパティパネル(要件§7.1、FR-202、FR-310、FR-311)。
  *
@@ -1017,6 +1091,8 @@ export function PropertyPanel(): React.JSX.Element {
       ? (findReference(part, selection[0]) ?? null)
       : null;
   const kinds = selectionKindLabelKeys(part, selection).map((key) => t(key));
+  // 「ここを原点にする」を出せる 1 点(FR-331、タスク35b)。立体の頂点はここだけに出る。
+  const origin = useOriginSelection();
 
   return (
     <section className="pcad-panel pcad-panel--right">
@@ -1038,11 +1114,14 @@ export function PropertyPanel(): React.JSX.Element {
               <dd className="pcad-properties__value">{kinds.join(' / ')}</dd>
             </dl>
           </div>
-        ) : (
+        ) : origin !== null ? null : (
+          /* 立体の頂点だけを選んでいるときは「原点」の節が出るので、空の案内は出さない。 */
           <div className="pcad-panel__empty">
             <p className="pcad-panel__empty-text">{t('propertyPanel.empty')}</p>
           </div>
         )}
+        {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331、タスク35b)。 */}
+        {origin === null ? null : <OriginSection origin={origin} />}
       </div>
     </section>
   );

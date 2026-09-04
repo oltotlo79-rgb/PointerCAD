@@ -328,6 +328,14 @@ export interface AppState {
    */
   readonly editNoticeKey: MessageKey | null;
   /**
+   * 原点を移したときに帯へ出す一言(FR-331、P4 タスク35b)。
+   *
+   * `editNoticeKey` と同じ「うまくいったときの知らせ」だが、もとの原点の座標の**式**を
+   * 差し込んだ文になるので、文言キーではなく組み立て済みの文で持つ
+   * (`shapeErrorMessage` と同じ事情)。文書が変われば用済みなので `applyDocument` が落とす。
+   */
+  readonly originNoticeMessage: string | null;
+  /**
    * 最後にビューポートで何かを選んだ場所(canvas の左上を原点とした画素)。
    * ソリッドの道具のその場入力を、選んだものの近くへ出すのに使う(NFR-UX-2)。
    * まだ何も選んでいなければ null で、そのときはビューポートの中央に出す。
@@ -462,6 +470,8 @@ export interface AppState {
   readonly setEditError: (key: MessageKey | null) => void;
   /** 整形系の道具が成功したときの案内を出す・消す(FR-323、タスク23)。 */
   readonly setEditNotice: (key: MessageKey | null) => void;
+  /** 原点を移したときの一言を出す・消す(FR-331、タスク35b)。 */
+  readonly setOriginNotice: (message: string | null) => void;
   /** ビューポートで選んだ場所を覚える・忘れる。 */
   readonly setPickAnchor: (anchor: readonly [number, number] | null) => void;
 
@@ -518,6 +528,24 @@ export function workPlaneForOrbit(orbit: OrbitState): WorkPlaneId {
 /** いま編集しているスケッチ(§0.a-0.4)。指し先が消えていたら先頭を使う。 */
 function activeSketchOf(document: PartDocument): SketchDocument {
   return findSketch(document, document.activeSketchId) ?? document.sketches[0];
+}
+
+/**
+ * そのスケッチが使っている作図面(P4 仕上げ (g)、FR-328、FR-501)。
+ *
+ * スケッチ文書そのものは作図面を持たない(持つのは要素 1 つ 1 つの `planeId`)。
+ * だからスケッチを切り替えたときに札とビューポートを合わせる先は、**最後に置いた要素の
+ * 作図面**から引く。文書から導ける値なので新しい控えを持たずに済み(rules/04「導出できる
+ * ものは保存しない」)、ファイルを開き直しても同じ面へ戻る。
+ *
+ * まだ 1 つも要素が無いスケッチは面を決めようがないので null を返し、呼び出し側は
+ * いまの作図面のままにする(新しく足した直後のスケッチがこれにあたる)。
+ */
+export function workPlaneOfSketch(sketch: SketchDocument | undefined): WorkPlaneId | null {
+  if (sketch === undefined || sketch.features.length === 0) {
+    return null;
+  }
+  return sketch.features[sketch.features.length - 1].planeId;
 }
 
 /**
@@ -733,6 +761,7 @@ export function createInitialDocumentState(): Pick<
   | 'solidErrorKey'
   | 'editErrorKey'
   | 'editNoticeKey'
+  | 'originNoticeMessage'
   | 'pickAnchor'
   | 'fileGateway'
   | 'fileName'
@@ -792,6 +821,7 @@ export function createInitialDocumentState(): Pick<
     solidErrorKey: null,
     editErrorKey: null,
     editNoticeKey: null,
+    originNoticeMessage: null,
     pickAnchor: null,
     // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める(§2.10)。
     fileGateway: createBrowserFileGateway(),
@@ -877,6 +907,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         solidErrorKey: null,
         editErrorKey: null,
         editNoticeKey: null,
+        originNoticeMessage: null,
         // 種類が変わったら、違う種類の選択が加工の対象に紛れ込まないよう選択を空にする
         // (§0.a-0.6)。種類が変わらないときだけ、面の道具の掃除(§0.a-0.23 ⑨)を従来どおり行う。
         selection: kindChanged
@@ -943,6 +974,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         editNoticeKey: null,
         shapeErrorMessage: null,
         referenceErrorMessage: null,
+        // 原点を移した知らせも、次に形が変われば用済み(FR-331、タスク35b)。
+        // 原点の再設定そのものは applyDocument のあとで setOriginNotice を呼んで立て直す。
+        originNoticeMessage: null,
         // トリム・延長の予告は「いまの形」の上の区間なので、形が変われば描き直し
         // (次にマウスが動いたときに出し直す。タスク22)。
         editPreview: null,
@@ -955,8 +989,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
       // すでにそれを編集している。文書を作り直すと再計算まで走ってしまう(NFR-PF-1)。
       return;
     }
+    const next = activateSketch(state.document, sketchId);
+    if (next === state.document) {
+      // 実在しない id。何も変えない(model の setActiveSketch と同じ扱い)。
+      return;
+    }
+    // 切り替えた先のスケッチが使っていた作図面へ、札とビューポートを合わせる
+    // (P4 仕上げ (g))。まだ何も置いていないスケッチは面が決まらないので今のままにする。
+    // `applyDocument` より先に立てるのは、その中の `documentPatch` が新しい作図面で
+    // 基準ジオメトリを解き直せるようにするため。
+    const planeId = workPlaneOfSketch(findSketch(next, sketchId));
+    if (planeId !== null && planeId !== state.workPlaneId) {
+      // 3D スケッチで押した場所の面(タスク14)は作図面が変われば意味を失うので捨てる。
+      set({ workPlaneId: planeId, freeSketchPlane: null, ...referencePatch(next, planeId) });
+    }
     // 編集する対象を変えるだけで形は変わらないので、Undo の段は作らない(§0.a-0.13)。
-    state.applyDocument(activateSketch(state.document, sketchId), { undoable: false });
+    state.applyDocument(next, { undoable: false });
   },
   setSketch: (sketch) => {
     // 解決はここではしない。attachPartRecompute が非同期に行い applyRecompute で戻す。
@@ -1018,6 +1066,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         isComputing: true,
         fileMessage: null,
         recomputeCancelled: false,
+        // 「原点を移しました」は取り消した後には嘘になるので落とす(FR-331、タスク35b)。
+        originNoticeMessage: null,
       };
     });
   },
@@ -1033,6 +1083,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         isComputing: true,
         fileMessage: null,
         recomputeCancelled: false,
+        // やり直しでも同じ(取り消しの `undo` と揃える。FR-331、タスク35b)。
+        originNoticeMessage: null,
       };
     });
   },
@@ -1146,6 +1198,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setEditNotice: (editNoticeKey) => {
     set({ editNoticeKey });
   },
+  setOriginNotice: (originNoticeMessage) => {
+    set({ originNoticeMessage });
+  },
   setPickAnchor: (pickAnchor) => {
     set({ pickAnchor });
   },
@@ -1201,6 +1256,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       solidErrorKey: null,
       editErrorKey: null,
       editNoticeKey: null,
+      originNoticeMessage: null,
       errorMessage: null,
       fileMessage: null,
       recomputeCancelled: false,

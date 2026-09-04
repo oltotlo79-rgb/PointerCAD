@@ -58,10 +58,16 @@ const FULL_TURN = 2 * Math.PI;
  */
 const RATIO_EPSILON = 1e-7;
 
-/** 予告に出す折れ線 1 本。ビューポートはこれをそのまま重ねて描く。 */
+/**
+ * 予告に出す折れ線 1 本。ビューポートはこれをそのまま重ねて描く。
+ *
+ * 種類は「消える区間(trim)」「伸びる区間(extend)」に加え、P4 タスク23 が
+ * 「丸めたあとの形(fillet)」「面取りしたあとの形(chamfer)」を足した(FR-323)。
+ * 描く層(`createSketchLayer.ts`)は消える区間だけを赤く濃く出し、それ以外は
+ * ホバーと同じ色で薄く出す作りなので、種類を足しても描く側は変えなくてよい。
+ */
 export interface EditPreview {
-  /** 消える区間(trim)か、伸びる区間(extend)か。色と濃さがこれで決まる。 */
-  readonly kind: 'trim' | 'extend';
+  readonly kind: 'trim' | 'extend' | 'fillet' | 'chamfer';
   /** 世界座標の折れ線(2 点以上)。 */
   readonly points: readonly Vec3[];
 }

@@ -27,6 +27,8 @@ import {
   DEFAULT_GRID_COLUMN_AZIMUTH_DEGREES,
   DEFAULT_GRID_ROW_AZIMUTH_DEGREES,
   DEFAULT_POLYGON_SIDES,
+  DEFAULT_SKETCH_CHAMFER_DISTANCE_MM,
+  DEFAULT_SKETCH_FILLET_RADIUS_MM,
   defaultModeForStep,
   EDIT_TOOL_STEPS,
   EMPTY_SPLINE_DRAFT,
@@ -34,6 +36,7 @@ import {
   fillDefaults,
   focusedTarget,
   isCoordinateStep,
+  isCornerEditTool,
   isEditStep,
   isEditTool,
   isReferenceCoordinateStep,
@@ -1257,10 +1260,11 @@ function splinePoint(x: string): CoordinateInput {
 }
 
 describe('P4 新しい図形の道具と段(計画書 docs/plans/P4-スケッチ拡張.md タスク11)', () => {
-  it('道具から最初の段が引ける。7 つとも座標を聞く段から始まる(FR-314〜318、FR-326)', () => {
+  it('道具から最初の段が引ける。8 つとも座標を聞く段から始まる(FR-314〜318、FR-326、FR-330)', () => {
     expect(SHAPE_TOOL_STEPS).toEqual({
       circle: 'circleCenter',
       twoPointArc: 'twoPointArcStart',
+      threePointArc: 'threePointArcStart',
       rectangle: 'rectangleCorner1',
       polygon: 'polygonCenter',
       slot: 'slotCenter1',
@@ -1277,6 +1281,7 @@ describe('P4 新しい図形の道具と段(計画書 docs/plans/P4-スケッチ
     const shapeTools = [
       'circle',
       'twoPointArc',
+      'threePointArc',
       'rectangle',
       'polygon',
       'slot',
@@ -1802,6 +1807,55 @@ describe('P4 点列の拡張(FR-327)', () => {
     expect(backToCircular.fields.map((field) => field.source)).toEqual(['10', '6']);
     // 半径の欄は名前が同じなので、円周 ⇄ 格子でも「間隔」とは混ざらない。
     expect(backToCircular.fields[0].key).toBe('radius');
+  });
+});
+
+describe('3 点の円弧(FR-330、P4 タスク36、2026-09-04 追加要件)', () => {
+  it('3 段とも座標(x/y/z)の 3 欄だけで、半径や角度の欄は無い(始点・終点・通過点をクリックするだけ)', () => {
+    for (const step of ['threePointArcStart', 'threePointArcEnd', 'threePointArcVia'] as const) {
+      expect(isCoordinateStep(step), step).toBe(true);
+      expect(createNumericInput('threePointArc', step).fields, step).toHaveLength(3);
+    }
+  });
+
+  it('2・3 点目の既定は相対(直前の点からの続きで入れられる、FR-307)', () => {
+    for (const step of ['threePointArcEnd', 'threePointArcVia'] as const) {
+      expect(defaultModeForStep(step)).toBe('relative');
+    }
+    expect(defaultModeForStep('threePointArcStart')).toBe('absolute');
+  });
+
+  it('構築線のつまみは 3 点目(通過点)の段だけに付く(FR-320)', () => {
+    expect(
+      createNumericInput('threePointArc', 'threePointArcVia').toggles.some(
+        (toggle) => toggle.key === 'construction',
+      ),
+    ).toBe(true);
+    for (const step of ['threePointArcStart', 'threePointArcEnd'] as const) {
+      expect(
+        createNumericInput('threePointArc', step).toggles.some(
+          (toggle) => toggle.key === 'construction',
+        ),
+        step,
+      ).toBe(false);
+    }
+  });
+
+  it('段の遷移は始点 → 終点 → 通過点 → (続けてかくなら)始点', () => {
+    expect(nextNumericInput(createNumericInput('threePointArc', 'threePointArcStart'), false)?.step)
+      .toBe('threePointArcEnd');
+    expect(nextNumericInput(createNumericInput('threePointArc', 'threePointArcEnd'), false)?.step)
+      .toBe('threePointArcVia');
+    expect(nextNumericInput(createNumericInput('threePointArc', 'threePointArcVia'), true)?.step)
+      .toBe('threePointArcStart');
+    expect(nextNumericInput(createNumericInput('threePointArc', 'threePointArcVia'), false)).toBeNull();
+  });
+
+  it('見出しがすべて ja.json のキーとして実在する', () => {
+    for (const step of ['threePointArcStart', 'threePointArcEnd', 'threePointArcVia'] as const) {
+      expect(NUMERIC_INPUT_STEPS, step).toContain(step);
+      expect(MESSAGE_KEYS, step).toContain(STEP_TITLE_KEYS[step]);
+    }
   });
 });
 
@@ -2454,6 +2508,115 @@ describe('複製系(ミラー・複写・配列複写、FR-324、計画書 タ�
       }
       for (const toggle of state.toggles) {
         expect(MESSAGE_KEYS, toggle.key).toContain(toggle.labelKey);
+      }
+      for (const choice of state.choices) {
+        expect(MESSAGE_KEYS, choice.key).toContain(choice.labelKey);
+        for (const option of choice.options) {
+          expect(numericChoiceOptionLabel(option).length).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+});
+
+describe('スケッチの角の丸め・面取りの段(FR-323、計画書 タスク23)', () => {
+  const CORNER_STEPS = ['sketchFilletRadius', 'sketchChamferSize'] as const;
+
+  it('道具から最初の段が引ける。どちらも整形系の段になる', () => {
+    expect(EDIT_TOOL_STEPS.sketchFillet).toBe('sketchFilletRadius');
+    expect(EDIT_TOOL_STEPS.sketchChamfer).toBe('sketchChamferSize');
+    for (const step of CORNER_STEPS) {
+      expect(isEditStep(step), step).toBe(true);
+      expect(isSolidStep(step), step).toBe(false);
+      expect(NUMERIC_INPUT_STEPS, step).toContain(step);
+    }
+    expect(isEditTool('sketchFillet')).toBe(true);
+    expect(isEditTool('sketchChamfer')).toBe(true);
+  });
+
+  it('角を指して使う道具として見分けられる(トリム・延長とは別の扱い)', () => {
+    expect(isCornerEditTool('sketchFillet')).toBe(true);
+    expect(isCornerEditTool('sketchChamfer')).toBe(true);
+    expect(isCornerEditTool('trim')).toBe(false);
+    expect(isCornerEditTool('offset')).toBe(false);
+  });
+
+  it('丸めは半径の 1 欄だけ。既定は 5mm(NFR-UX-4)', () => {
+    const state = createNumericInput('sketchFillet', 'sketchFilletRadius');
+    expect(state.fields.map((field) => field.key)).toEqual(['cornerRadius']);
+    expect(state.fields[0].source).toBe(String(DEFAULT_SKETCH_FILLET_RADIUS_MM));
+    expect(state.choices).toEqual([]);
+    expect(state.toggles).toEqual([]);
+  });
+
+  it('面取りは既定が等距離の 1 欄で、「2つの距離」を選ぶと 2 欄になる', () => {
+    const equal = createNumericInput('sketchChamfer', 'sketchChamferSize');
+    expect(equal.fields.map((field) => field.key)).toEqual(['cornerDistance1']);
+    expect(equal.fields[0].source).toBe(String(DEFAULT_SKETCH_CHAMFER_DISTANCE_MM));
+    expect(choiceValueOf(equal, 'chamferMode')).toBe('equal');
+    const two = chooseNumericInput(equal, 'chamferMode', 'twoDistances');
+    expect(two.fields.map((field) => field.key)).toEqual(['cornerDistance1', 'cornerDistance2']);
+    // 距離と角度(立体の C 面取りにはある決め方)は、スケッチの角では出さない。
+    expect(equal.choices[0].options.map((option) => option.value)).toEqual([
+      'equal',
+      'twoDistances',
+    ]);
+  });
+
+  it('Enter だけで既定値の丸めが決まる(NFR-UX-4)', () => {
+    const committed = expectEditCommitted(
+      commitNumericInput(createNumericInput('sketchFillet', 'sketchFilletRadius')),
+    );
+    expect(committed.commit.tool).toBe('sketchFillet');
+    expect(committed.commit.step).toBe('sketchFilletRadius');
+    expect(committed.commit.values.cornerRadius?.value).toBe(DEFAULT_SKETCH_FILLET_RADIUS_MM);
+  });
+
+  it('2 距離の面取りは、決め方と 2 つの値が確定へ写る', () => {
+    const two = chooseNumericInput(
+      createNumericInput('sketchChamfer', 'sketchChamferSize'),
+      'chamferMode',
+      'twoDistances',
+    );
+    const filled = reduceNumericInput(
+      reduceNumericInput(two, { type: 'edit', index: 0, source: '3' }),
+      { type: 'edit', index: 1, source: '4' },
+    );
+    const committed = expectEditCommitted(commitNumericInput(filled));
+    expect(committed.commit.tool).toBe('sketchChamfer');
+    expect(committed.commit.values.cornerDistance1?.value).toBe(3);
+    expect(committed.commit.values.cornerDistance2?.value).toBe(4);
+    expect(committed.commit.choices.chamferMode).toBe('twoDistances');
+  });
+
+  it('半径・距離が 0 以下では確定させない(NFR-UX-5)', () => {
+    for (const tool of ['sketchFillet', 'sketchChamfer'] as const) {
+      const state = reduceNumericInput(createNumericInput(tool, EDIT_TOOL_STEPS[tool]), {
+        type: 'edit',
+        index: 0,
+        source: '0',
+      });
+      expectBlocked(commitNumericInput(state));
+    }
+  });
+
+  it('確定したら閉じる(次の角はビューポートで指し直す)', () => {
+    for (const step of CORNER_STEPS) {
+      const committed = expectEditCommitted(
+        commitNumericInput(createNumericInput('sketchFillet', step)),
+      );
+      expect(nextNumericInput(committed.state, true), step).toBeNull();
+      expect(nextNumericInput(committed.state, false), step).toBeNull();
+    }
+  });
+
+  it('見出し・説明・札はすべて ja.json のキーで返す(NFR-MA-5)', () => {
+    for (const step of CORNER_STEPS) {
+      const state = createNumericInput('sketchFillet', step);
+      expect(MESSAGE_KEYS, step).toContain(STEP_TITLE_KEYS[step]);
+      for (const field of state.fields) {
+        expect(MESSAGE_KEYS, field.key).toContain(field.labelKey);
+        expect(MESSAGE_KEYS, field.key).toContain(field.tooltipKey);
       }
       for (const choice of state.choices) {
         expect(MESSAGE_KEYS, choice.key).toContain(choice.labelKey);

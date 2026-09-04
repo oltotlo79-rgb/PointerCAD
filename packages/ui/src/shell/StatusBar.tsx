@@ -90,6 +90,8 @@ export function StatusBar(): React.JSX.Element {
   const solidErrorKey = useAppStore((state) => state.solidErrorKey);
   // 整形系の道具(オフセット等)を作れなかった理由(FR-321、P4 タスク21)。
   const editErrorKey = useAppStore((state) => state.editErrorKey);
+  // 整形系の道具がうまくいったときの案内(FR-323、P4 タスク23)。断りではないので赤くしない。
+  const editNoticeKey = useAppStore((state) => state.editNoticeKey);
   // 新しい図形を作れなかった理由(P4 タスク12)。文言キーではなく組み立て済みの文。
   const shapeErrorMessage = useAppStore((state) => state.shapeErrorMessage);
   // 基準ジオメトリを作れなかった理由(P4 タスク13)。こちらも組み立て済みの文。
@@ -165,6 +167,7 @@ export function StatusBar(): React.JSX.Element {
     faceErrorKey,
     solidErrorKey,
     editErrorKey,
+    editNoticeKey,
     shapeErrorMessage,
     referenceErrorMessage,
     errorMessage,

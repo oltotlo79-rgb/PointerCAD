@@ -14,6 +14,8 @@ import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/
 import { t, type MessageKey } from '../i18n/t.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
 import { mirrorAxisAvailability } from '../sketch/copyCommands.js';
+import { applyProjectionCommit } from '../sketch/commitToStore.js';
+import { cornerFromSelection } from '../sketch/cornerCommands.js';
 import {
   editToolReadiness,
   offsetContourIsOpen,
@@ -24,6 +26,8 @@ import {
   createNumericInput,
   EDIT_TOOL_STEPS,
   isClickEditTool,
+  isCornerEditTool,
+  isPickEditTool,
   REFERENCE_TOOL_STEPS,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
@@ -37,6 +41,7 @@ import {
   type SketchToolId,
   type SolidToolId,
 } from '../sketch/numericInput.js';
+import { projectionSourcesFromSelection } from '../sketch/projectionCommands.js';
 import {
   referenceAxisOptionsOf,
   workPlaneEntries,
@@ -571,8 +576,12 @@ function editInputOptionsFor(id: EditToolId): NumericInputOptions {
       };
     case 'copy':
       return { freeSketch: isFreeWorkPlaneId(store.workPlaneId) };
+    // 角の丸め・面取り(タスク23)は、開く前に決めておく見込みを持たない
+    // (半径・距離の欄も面取りの決め方も、対象の角によらず同じ)。
     case 'linearArray':
     case 'circularArray':
+    case 'sketchFillet':
+    case 'sketchChamfer':
       return {};
   }
 }
@@ -594,6 +603,10 @@ function editInputOptionsFor(id: EditToolId): NumericInputOptions {
  * 道具にしたらビューポートへ焦点を戻すだけにして、あとはビューポートの上で
  * 「消したい部分/伸ばしたい端の近く」を押してもらう(`attachSketchInteraction.ts`)。
  * 焦点を戻すのは、Esc(道具を終える)がその場で効くようにするため(NFR-UX-7)。
+ *
+ * **投影・断面**(FR-325、タスク27)も数値を聞かず、押した瞬間に決まる。こちらは
+ * どちらの順でも成立させる(NFR-UX-1)ので、押した時点ですでに面・辺・立体が選ばれて
+ * いればその場でまとめて取り込み、選ばれていなければ道具のままビューポートで押してもらう。
  */
 function activateEditTool(id: EditMenuToolId, pressed: boolean): void {
   if (blockedInFreeSketch(id)) {
@@ -605,10 +618,43 @@ function activateEditTool(id: EditMenuToolId, pressed: boolean): void {
     store.requestViewportFocus();
     return;
   }
+  /*
+    投影・断面は選ぶものの種類(`selectionKind`)を切り替える道具で、`setActiveTool` は
+    種類が変わると選択を空にする(§0.a-0.6)。「選んでから道具」を成立させるため、
+    道具を切り替える**前**にいまの選択から対象を拾っておく。
+  */
+  const picked = isPickEditTool(id)
+    ? projectionSourcesFromSelection(id, subShapeBodiesOf(store.bodies), store.selection)
+    : [];
   store.setActiveTool(id);
+  if (isPickEditTool(id)) {
+    store.setEditError(null);
+    if (picked.length > 0) {
+      applyProjectionCommit(id, picked);
+    }
+    store.requestViewportFocus();
+    return;
+  }
   if (isClickEditTool(id)) {
     store.setEditError(null);
     store.requestViewportFocus();
+    return;
+  }
+  if (isCornerEditTool(id)) {
+    /*
+      角の丸め・面取り(FR-323、タスク23)。**どちらの順でも成立させる**(NFR-UX-1)。
+      すでに角を作る 2 本が選ばれていれば、その場で半径/距離の欄を開く(「選んでから道具」)。
+      選ばれていなければ道具にしてビューポートへ焦点を戻し、角へマウスを乗せて予告を見ながら
+      押してもらう(「道具を選んでから対象」)。選ばれていないことは間違いではないので、
+      ここでは理由を出さない(帯には道具の案内が出る)。
+    */
+    store.setEditError(null);
+    const hit = cornerFromSelection(store.sketch, store.resolvedSketch, store.selection);
+    if (hit === null) {
+      store.requestViewportFocus();
+      return;
+    }
+    store.openNumericInput(createNumericInput(id, EDIT_TOOL_STEPS[id]), viewportCenterAnchor());
     return;
   }
   const readiness = editToolReadiness(id, store.resolvedSketch, store.selection);

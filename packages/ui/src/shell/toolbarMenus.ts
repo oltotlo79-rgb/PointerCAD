@@ -26,9 +26,14 @@ import {
   MirrorToolIcon,
   OffsetToolIcon,
   PolygonToolIcon,
+  ProjectToolIcon,
   RectangleToolIcon,
+  SectionToolIcon,
+  SketchChamferToolIcon,
+  SketchFilletToolIcon,
   SlotToolIcon,
   SplineToolIcon,
+  ThreePointArcToolIcon,
   TrimToolIcon,
   TwoPointArcToolIcon,
   type IconComponent,
@@ -63,6 +68,12 @@ export const SHAPE_MENU_ITEMS: readonly ToolMenuItem<ShapeToolId>[] = [
     labelKey: 'toolbar.tool.twoPointArc',
     tooltipKey: 'toolbar.tool.twoPointArcTooltip',
     Icon: TwoPointArcToolIcon,
+  },
+  {
+    id: 'threePointArc',
+    labelKey: 'toolbar.tool.threePointArc',
+    tooltipKey: 'toolbar.tool.threePointArcTooltip',
+    Icon: ThreePointArcToolIcon,
   },
   {
     id: 'rectangle',
@@ -125,6 +136,19 @@ export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
     tooltipKey: 'toolbar.tool.extendTooltip',
     Icon: ExtendToolIcon,
   },
+  // 角を指して使う 2 つ(タスク23)。整形系なので複製系より前へ置く。
+  {
+    id: 'sketchFillet',
+    labelKey: 'toolbar.tool.sketchFillet',
+    tooltipKey: 'toolbar.tool.sketchFilletTooltip',
+    Icon: SketchFilletToolIcon,
+  },
+  {
+    id: 'sketchChamfer',
+    labelKey: 'toolbar.tool.sketchChamfer',
+    tooltipKey: 'toolbar.tool.sketchChamferTooltip',
+    Icon: SketchChamferToolIcon,
+  },
   {
     id: 'mirror',
     labelKey: 'toolbar.tool.mirror',
@@ -148,6 +172,23 @@ export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
     labelKey: 'toolbar.tool.circularArray',
     tooltipKey: 'toolbar.tool.circularArrayTooltip',
     Icon: CircularArrayToolIcon,
+  },
+  /*
+    投影・断面(FR-325、タスク27)。かいた線をいじる道具ではなく「立体からかたちを
+    取り込む」道具なので、一覧の最後にまとめて並べる。押す相手がスケッチではなく立体
+    なので、押せる条件(`editToolReadiness`)は常に押せる側へ振り分けてある。
+  */
+  {
+    id: 'projectedCurve',
+    labelKey: 'toolbar.tool.projectedCurve',
+    tooltipKey: 'toolbar.tool.projectedCurveTooltip',
+    Icon: ProjectToolIcon,
+  },
+  {
+    id: 'planeSection',
+    labelKey: 'toolbar.tool.planeSection',
+    tooltipKey: 'toolbar.tool.planeSectionTooltip',
+    Icon: SectionToolIcon,
   },
 ];
 

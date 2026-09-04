@@ -4,12 +4,21 @@ export {
   createKernelHealth,
   KERNEL_BROKEN_MESSAGE,
   selectSubShape,
+  // 角の丸め・面取りの形を求める同期の純関数(FR-323、P4 タスク18・19)。ui の予告表示
+  // (`cornerCommands.ts`)が、確定に使うのとまったく同じ式で形を先に見せるために使う。
+  // 式の正本は kernel 側の 1 か所だけなので、写して 2 か所に持つことはしない。
+  sketchChamferGeometry,
+  sketchFilletGeometry,
   type KernelBridge,
   type KernelHealth,
   type PartCancelToken,
   type PartProgress,
   type PartProgressCallback,
+  type SketchChamferGeometry,
+  type SketchCornerPlane,
+  type SketchCornerSegment,
   type SketchFaceFailure,
+  type SketchFilletGeometry,
   type SketchOffsetContour,
   type SketchOffsetEntry,
   type SketchOffsetFailure,
@@ -50,6 +59,9 @@ export type {
 export {
   planeFromNormal, planeSpecKeyText, resolvePlaneSpec, subShapeFromFingerprint,
 } from './geometry/planeSpec.js';
+/** 3D スケッチの 3 点(始点・終点・通過点)の円弧(FR-330、P4 タスク36)。 */
+export type { ArcThroughPointsResult } from './geometry/arcThroughPoints.js';
+export { arcThroughPoints } from './geometry/arcThroughPoints.js';
 export type {
   CoordinateInput, CopyPlacement, FreeArcOrientation, MirrorBasis, OffsetContourShape,
   OffsetCornerKind, OffsetSide,

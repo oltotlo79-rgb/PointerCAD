@@ -100,6 +100,12 @@ export type ShapeToolId =
   | 'circle'
   /** 2 点+半径の円弧(FR-326)。中心は 2 点と半径から求める(§0.a-0.18)。 */
   | 'twoPointArc'
+  /**
+   * 3 点(始点・終点・通過点)の円弧(FR-330、P4 タスク36、2026-09-04 追加要件)。
+   * 3D スケッチ専用として追加した決定だが、通常の作図面上でも同じ道具で描ける
+   * (道具そのものは平面に依らない)。
+   */
+  | 'threePointArc'
   | 'rectangle'
   | 'polygon'
   | 'slot'
@@ -122,7 +128,33 @@ export type EditToolId =
   /** 直線状の配列複写(FR-324)。向き+間隔 → 個数 の 2 段。 */
   | 'linearArray'
   /** 円形の配列複写(FR-324)。中心 → 角度+個数 の 2 段。 */
-  | 'circularArray';
+  | 'circularArray'
+  /** スケッチの角の丸め(FR-323、タスク23)。角を指してから半径の 1 段。 */
+  | 'sketchFillet'
+  /** スケッチの角の面取り(FR-323、タスク23)。角を指してから距離の 1 段。 */
+  | 'sketchChamfer';
+
+/**
+ * 整形系のうち、**角(端点を共有する 2 本の線分)を指してから数値を聞く**道具
+ * (FR-323、タスク23)。
+ *
+ * オフセット・複製系は「選んでから道具」だけだが、この 2 つは**どちらの順でも成立させる**
+ * (NFR-UX-1)。道具を先に選んだときはビューポートで角を指し、指した 2 本がそのまま選択に
+ * 入って段が開く(`attachSketchInteraction.ts`)。2 本を先に選んでから道具を押したときは
+ * その場で段が開く(`Toolbar.tsx` の `activateEditTool`)。どちらの道でも、確定が読むのは
+ * 「選択に入っている 2 本」の 1 通りだけになる。
+ */
+const CORNER_EDIT_TOOLS: Readonly<Record<'sketchFillet' | 'sketchChamfer', true>> = {
+  sketchFillet: true,
+  sketchChamfer: true,
+};
+
+/** 角を指して使う整形系の道具かどうか。一覧は `CORNER_EDIT_TOOLS` の 1 か所だけ。 */
+export type CornerEditToolId = keyof typeof CORNER_EDIT_TOOLS;
+
+export function isCornerEditTool(tool: NumericInputToolId): tool is CornerEditToolId {
+  return tool in CORNER_EDIT_TOOLS;
+}
 
 /**
  * 整形系のうち、**数値をひとつも聞かない**道具(FR-322、タスク22)。
@@ -134,8 +166,20 @@ export type EditToolId =
  */
 export type ClickEditToolId = 'trim' | 'extend';
 
+/**
+ * 整形系のうち、**数値を聞かず、ビューポートで立体の一部を押して決まる**道具
+ * (FR-325、タスク27)。
+ *
+ * 投影は「立体の面の外周・辺を、いまの作図面へ写す」、断面(交差)は「立体と作図面が
+ * 交わってできる線を取り込む」道具で、どちらも距離も角度も聞かない。`ClickEditToolId`
+ * (トリム・延長)と分けてあるのは、**押す相手がスケッチの曲線ではなく立体の部分形状・
+ * 立体そのもの**だからで、当たり判定も選択の種類の切替(`selectionKindForTool`)も
+ * 別の道を通る。ツールバーの「編集」の一覧には他の整形系と一緒に並ぶ。
+ */
+export type PickEditToolId = 'projectedCurve' | 'planeSection';
+
 /** ツールバーの「編集」の一覧に並ぶ道具(段のあるものと、クリックだけのもの)。 */
-export type EditMenuToolId = EditToolId | ClickEditToolId;
+export type EditMenuToolId = EditToolId | ClickEditToolId | PickEditToolId;
 
 /** 一覧の正本。`EDIT_TOOL_STEPS` と同じ役目で、こちらは段を持たない側。 */
 const CLICK_EDIT_TOOLS: Readonly<Record<ClickEditToolId, true>> = {
@@ -146,6 +190,17 @@ const CLICK_EDIT_TOOLS: Readonly<Record<ClickEditToolId, true>> = {
 /** クリックだけで決まる整形系の道具かどうか。一覧は `CLICK_EDIT_TOOLS` の 1 か所だけ。 */
 export function isClickEditTool(tool: NumericInputToolId): tool is ClickEditToolId {
   return tool in CLICK_EDIT_TOOLS;
+}
+
+/** 一覧の正本。立体の一部を押して決まる側(タスク27)。 */
+const PICK_EDIT_TOOLS: Readonly<Record<PickEditToolId, true>> = {
+  projectedCurve: true,
+  planeSection: true,
+};
+
+/** 立体を押して決まる整形系の道具かどうか。一覧は `PICK_EDIT_TOOLS` の 1 か所だけ。 */
+export function isPickEditTool(tool: NumericInputToolId): tool is PickEditToolId {
+  return tool in PICK_EDIT_TOOLS;
 }
 
 /**
@@ -181,7 +236,8 @@ export type NumericInputToolId =
   | ShapeToolId
   | ReferenceToolId
   | EditToolId
-  | ClickEditToolId;
+  | ClickEditToolId
+  | PickEditToolId;
 
 /** 座標の指定方法(FR-301〜303)。 */
 export type CoordinateMode = 'absolute' | 'relative' | 'polar';
@@ -198,6 +254,10 @@ export type CoordinateNumericInputStep =
   /** 2 点+半径の円弧の 1 点目・2 点目(FR-326)。 */
   | 'twoPointArcStart'
   | 'twoPointArcEnd'
+  /** 3 点の円弧の始点・終点・通過点(FR-330、タスク36)。欄は無く、3 クリックで確定する。 */
+  | 'threePointArcStart'
+  | 'threePointArcEnd'
+  | 'threePointArcVia'
   /** 矩形の対角 2 点(FR-314)。 */
   | 'rectangleCorner1'
   | 'rectangleCorner2'
@@ -313,7 +373,11 @@ export type EditNumericInputStep =
   /** 円形配列の 1 段目(中心の座標)。 */
   | 'circularArrayCenter'
   /** 円形配列の 2 段目(角度・個数・全周)。 */
-  | 'circularArrayShape';
+  | 'circularArrayShape'
+  /** スケッチの角を丸める半径(FR-323)。 */
+  | 'sketchFilletRadius'
+  /** スケッチの角の面取りの距離(FR-323)。等距離なら 1 欄、2 距離なら 2 欄。 */
+  | 'sketchChamferSize';
 
 /** ポップアップの段階。 */
 export type NumericInputStep =
@@ -940,15 +1004,55 @@ const CIRCULAR_ARRAY_SHAPE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'count', labelKey: 'numericInput.field.count', tooltipKey: 'numericInput.tooltip.arrayCount', unit: 'count', defaultSource: String(DEFAULT_CIRCULAR_ARRAY_COUNT), range: COPY_COUNT_RANGE },
 ];
 
+/* ---- P4 タスク23: スケッチの角の丸め・面取り(FR-323) ---- */
+
 /**
- * 整形系の段の欄(オフセットと複製系)。
+ * 角を丸める半径の既定(mm、NFR-UX-4)。板物・ブラケットの角に使う手ごろな大きさで、
+ * 統括の指示どおり 5mm から始める(立体の R 面取りの既定 2mm とは別の値。スケッチの角は
+ * 輪郭そのものなので、立体の縁より大きめの丸めを置くことが多い)。
+ */
+export const DEFAULT_SKETCH_FILLET_RADIUS_MM = 5;
+
+/** 角の面取りの距離の既定(mm、NFR-UX-4)。統括の指示どおり 3mm。 */
+export const DEFAULT_SKETCH_CHAMFER_DISTANCE_MM = 3;
+
+/** 角を丸める半径。0 より大きい数だけを許す(model の `filletCorner` と同じ判定)。 */
+const SKETCH_FILLET_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'cornerRadius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.filletRadius', unit: 'mm', defaultSource: String(DEFAULT_SKETCH_FILLET_RADIUS_MM), range: POSITIVE },
+];
+
+/** 面取りの距離(等距離)。1 欄だけで、2 本とも同じだけ削る。 */
+const SKETCH_CHAMFER_EQUAL_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'cornerDistance1', labelKey: 'numericInput.field.chamferDistance', tooltipKey: 'numericInput.tooltip.chamferDistance', unit: 'mm', defaultSource: String(DEFAULT_SKETCH_CHAMFER_DISTANCE_MM), range: POSITIVE },
+];
+
+/** 面取りの距離(2 距離)。1 本目・2 本目の線を別々の距離だけ削る。 */
+const SKETCH_CHAMFER_TWO_FIELDS: readonly NumericFieldDefinition[] = [
+  ...SKETCH_CHAMFER_EQUAL_FIELDS,
+  { key: 'cornerDistance2', labelKey: 'numericInput.field.chamferDistance2', tooltipKey: 'numericInput.tooltip.chamferDistance2', unit: 'mm', defaultSource: String(DEFAULT_SKETCH_CHAMFER_DISTANCE_MM), range: POSITIVE },
+];
+
+/**
+ * 面取りの欄は「決め方」で変わる(立体の C 面取り `chamferFieldDefinitions` と同じ作り)。
+ * 等距離なら 1 欄、2 距離なら 2 欄。スケッチの角には「距離と角度」を置かない
+ * (model の `chamferCorner` が受け取るのは 2 つの距離だけで、角度から距離を出す式は
+ * 角のなす角に依存し、立体の面取りの「距離と角度」とは意味が違うため)。
+ */
+function sketchChamferFieldDefinitions(mode: string | undefined): readonly NumericFieldDefinition[] {
+  return mode === 'twoDistances' ? SKETCH_CHAMFER_TWO_FIELDS : SKETCH_CHAMFER_EQUAL_FIELDS;
+}
+
+/**
+ * 整形系の段の欄(オフセット・複製系・角の丸め/面取り)。
  *
  * 複写だけ、作図面のあるスケッチ(2 欄)と 3D スケッチ(3 欄)で欄の数が変わるので
- * `options.freeSketch` を見る。座標の段(円形配列の中心)はここを通らない
+ * `options.freeSketch` を見る。面取りは選んだ決め方(`chamferMode`)で欄の数が変わるので
+ * 選択肢を見る。座標の段(円形配列の中心)はここを通らない
  * (`definitionsFor` が座標の欄を返す)。
  */
 function editFieldDefinitionsFor(
   step: Exclude<EditNumericInputStep, EditCoordinateStep>,
+  choices: readonly NumericChoice[],
   options: NumericInputOptions,
 ): readonly NumericFieldDefinition[] {
   switch (step) {
@@ -965,6 +1069,10 @@ function editFieldDefinitionsFor(
       return LINEAR_ARRAY_COUNT_FIELDS;
     case 'circularArrayShape':
       return CIRCULAR_ARRAY_SHAPE_FIELDS;
+    case 'sketchFilletRadius':
+      return SKETCH_FILLET_FIELDS;
+    case 'sketchChamferSize':
+      return sketchChamferFieldDefinitions(choiceValueFrom(choices, 'chamferMode'));
   }
 }
 
@@ -1113,6 +1221,9 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   twoPointArcStart: 'numericInput.title.twoPointArcStart',
   twoPointArcEnd: 'numericInput.title.twoPointArcEnd',
   twoPointArcRadius: 'numericInput.title.twoPointArcRadius',
+  threePointArcStart: 'numericInput.title.threePointArcStart',
+  threePointArcEnd: 'numericInput.title.threePointArcEnd',
+  threePointArcVia: 'numericInput.title.threePointArcVia',
   rectangleCorner1: 'numericInput.title.rectangleCorner1',
   rectangleCorner2: 'numericInput.title.rectangleCorner2',
   polygonCenter: 'numericInput.title.polygonCenter',
@@ -1158,6 +1269,10 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   linearArrayCount: 'numericInput.title.linearArrayCount',
   circularArrayCenter: 'numericInput.title.circularArrayCenter',
   circularArrayShape: 'numericInput.title.circularArrayShape',
+  // 立体の R 面取り・C 面取りと同じ見出し。利用者から見ればどちらも「角を丸める」
+  // 「面を取る」操作で、対象(線か立体の辺か)は選んでいる道具から分かる。
+  sketchFilletRadius: 'numericInput.title.fillet',
+  sketchChamferSize: 'numericInput.title.chamfer',
 };
 
 /** 段階の一覧。タスク18 の部品と、キーの網羅検査が舐めるために公開する。 */
@@ -1175,6 +1290,9 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'twoPointArcStart',
   'twoPointArcEnd',
   'twoPointArcRadius',
+  'threePointArcStart',
+  'threePointArcEnd',
+  'threePointArcVia',
   'rectangleCorner1',
   'rectangleCorner2',
   'polygonCenter',
@@ -1220,6 +1338,8 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'linearArrayCount',
   'circularArrayCenter',
   'circularArrayShape',
+  'sketchFilletRadius',
+  'sketchChamferSize',
 ];
 
 /** ソリッドの道具が最初に聞く段階。ツールバーがここから開く。ばねは形(springShape)から。 */
@@ -1244,6 +1364,7 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
 export const SHAPE_TOOL_STEPS: Readonly<Record<ShapeToolId, NumericInputStep>> = {
   circle: 'circleCenter',
   twoPointArc: 'twoPointArcStart',
+  threePointArc: 'threePointArcStart',
   rectangle: 'rectangleCorner1',
   polygon: 'polygonCenter',
   slot: 'slotCenter1',
@@ -1333,6 +1454,8 @@ export const EDIT_TOOL_STEPS: Readonly<Record<EditToolId, EditNumericInputStep>>
   copy: 'copyDelta',
   linearArray: 'linearArrayDirection',
   circularArray: 'circularArrayCenter',
+  sketchFillet: 'sketchFilletRadius',
+  sketchChamfer: 'sketchChamferSize',
 };
 
 /** 整形系の道具かどうか。一覧は `EDIT_TOOL_STEPS` の 1 か所だけに置く。 */
@@ -1349,6 +1472,8 @@ const EDIT_STEP_TOOLS: Readonly<Record<EditNumericInputStep, EditToolId>> = {
   linearArrayCount: 'linearArray',
   circularArrayCenter: 'circularArray',
   circularArrayShape: 'circularArray',
+  sketchFilletRadius: 'sketchFillet',
+  sketchChamferSize: 'sketchChamfer',
 };
 
 /** 段が整形系のものかどうか。 */
@@ -1437,6 +1562,10 @@ const SKETCH_STEP_TOGGLE_KEYS: Readonly<
   twoPointArcStart: [],
   twoPointArcEnd: [],
   twoPointArcRadius: ['construction'],
+  threePointArcStart: [],
+  threePointArcEnd: [],
+  // 3 点目(通過点)で確定するので、構築線のつまみはここに付く(FR-330、タスク36)。
+  threePointArcVia: ['construction'],
   rectangleCorner1: [],
   rectangleCorner2: ['construction'],
   polygonCenter: [],
@@ -1470,6 +1599,14 @@ const EDIT_STEP_TOGGLE_KEYS: Readonly<
   linearArrayCount: ['construction'],
   circularArrayCenter: [],
   circularArrayShape: ['fullCircle', 'construction'],
+  /*
+    角の丸め・面取り(タスク23)はつまみを持たない。足す円弧・線分が構築線になるかは
+    利用者が選ぶことではなく、**丸める 2 本が両方とも構築線のときだけ構築線**と
+    model 側(`cornerCommands.ts` の `addedConstruction`)が決める。片方でも実体の線なら、
+    丸めた角も実体でないと輪郭が途切れるため(FR-320)。
+  */
+  sketchFilletRadius: [],
+  sketchChamferSize: [],
 };
 
 /** つまみの見出し。 */
@@ -1850,9 +1987,30 @@ function referencePointKindChoice(): NumericChoice {
   };
 }
 
+/* ---- P4 タスク23: スケッチの角の面取りの選択肢(FR-323) ---- */
+
+/**
+ * スケッチの角の面取りの決め方(FR-323)。既定は等距離(Enter 連打で正方形の切り落とし、
+ * NFR-UX-4)。選択肢の鍵と見出しは立体の C 面取り(`chamferModeChoice`)と同じものを使い、
+ * 「距離と角度」だけを外す(`sketchChamferFieldDefinitions` の注釈)。
+ */
+function sketchChamferModeChoice(): NumericChoice {
+  return {
+    key: 'chamferMode',
+    labelKey: 'numericInput.choice.chamferMode',
+    value: 'equal',
+    options: [
+      { value: 'equal', labelKey: 'numericInput.chamferMode.equal' },
+      { value: 'twoDistances', labelKey: 'numericInput.chamferMode.twoDistances' },
+    ],
+  };
+}
+
 /** 段階ごとの選択肢の並び。持たない段は空配列。 */
 function choicesFor(step: NumericInputStep, options: NumericInputOptions): readonly NumericChoice[] {
   switch (step) {
+    case 'sketchChamferSize':
+      return [sketchChamferModeChoice()];
     case 'offsetDistance':
       return [offsetSideChoice(options.offsetOpenContour ?? false), offsetCornerChoice()];
     case 'mirrorBasis':
@@ -1975,6 +2133,9 @@ const COORDINATE_STEPS: Readonly<Record<CoordinateNumericInputStep, true>> = {
   circleCenter: true,
   twoPointArcStart: true,
   twoPointArcEnd: true,
+  threePointArcStart: true,
+  threePointArcEnd: true,
+  threePointArcVia: true,
   rectangleCorner1: true,
   rectangleCorner2: true,
   polygonCenter: true,
@@ -2013,6 +2174,8 @@ export function isSolidStep(step: NumericInputStep): step is SolidNumericInputSt
 const RELATIVE_FIRST_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> = {
   lineEnd: true,
   twoPointArcEnd: true,
+  threePointArcEnd: true,
+  threePointArcVia: true,
   rectangleCorner2: true,
   slotCenter2: true,
   // 基準ジオメトリの 2 点目以降も「1 つ前の点からの続き」で入れるほうが自然(タスク13)。
@@ -2053,7 +2216,7 @@ function definitionsFor(
     return referenceFieldDefinitionsFor(step, choices);
   }
   if (isEditStep(step)) {
-    return editFieldDefinitionsFor(step, options);
+    return editFieldDefinitionsFor(step, choices, options);
   }
   return sketchShapeFieldDefinitionsFor(step, choices);
 }
@@ -2276,6 +2439,8 @@ const CHOICE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> 
   pointArrayShape: true,
   // 「軸に垂直」を選んだときだけ傾き角・方位角の欄が出る(タスク13)。
   referencePlaneThrough: true,
+  // 「等距離」で 1 欄、「2つの距離」で 2 欄になる(タスク23)。
+  sketchChamferSize: true,
 };
 
 /**
@@ -2880,6 +3045,13 @@ export interface EditCommitValues {
   readonly spacing?: ExpressionValue;
   /** 配列複写の個数(もとを含めた総数)。 */
   readonly count?: ExpressionValue;
+  /* ---- P4 タスク23: 角の丸め・面取り(FR-323) ---- */
+  /** 角を丸める半径(mm)。 */
+  readonly cornerRadius?: ExpressionValue;
+  /** 角から 1 本目の線に沿って削る距離(mm)。 */
+  readonly cornerDistance1?: ExpressionValue;
+  /** 角から 2 本目の線に沿って削る距離(mm)。等距離のときは欄が無く undefined。 */
+  readonly cornerDistance2?: ExpressionValue;
 }
 
 /**
@@ -2893,6 +3065,8 @@ export interface EditCommitChoices {
   readonly corner?: string;
   /** 鏡にするもの('axisU' | 'axisV' | 'line'、FR-324)。 */
   readonly mirrorBasis?: string;
+  /** 角の面取りの決め方('equal' | 'twoDistances'、FR-323、タスク23)。 */
+  readonly chamferMode?: string;
 }
 
 /**
@@ -3337,6 +3511,12 @@ function editValuesFor(
       return { angle: get('angle'), spacing: get('spacing'), count: get('count') };
     case 'circularArrayShape':
       return { angle: get('angle'), count: get('count') };
+    case 'sketchFilletRadius':
+      return { cornerRadius: get('cornerRadius') };
+    case 'sketchChamferSize':
+      // 等距離のときは 2 つ目の欄が無いので undefined のまま。距離をそろえるのは
+      // `cornerCommands.ts` の役目(欄の有無と値の解釈を 1 か所に閉じる)。
+      return { cornerDistance1: get('cornerDistance1'), cornerDistance2: get('cornerDistance2') };
   }
 }
 
@@ -3394,6 +3574,7 @@ function buildEditCommit(
       side: choiceValueFrom(filled.choices, 'offsetSide'),
       corner: choiceValueFrom(filled.choices, 'offsetCorner'),
       mirrorBasis: choiceValueFrom(filled.choices, 'mirrorBasis'),
+      chamferMode: choiceValueFrom(filled.choices, 'chamferMode'),
     },
     coordinate: carriedCoordinateOf(
       filled,
@@ -3547,6 +3728,10 @@ export function nextNumericInput(
       return createNumericInput(state.toolId, 'twoPointArcEnd');
     case 'twoPointArcEnd':
       return createNumericInput(state.toolId, 'twoPointArcRadius');
+    case 'threePointArcStart':
+      return createNumericInput(state.toolId, 'threePointArcEnd');
+    case 'threePointArcEnd':
+      return createNumericInput(state.toolId, 'threePointArcVia');
     case 'rectangleCorner1':
       return createNumericInput(state.toolId, 'rectangleCorner2');
     case 'polygonCenter':
@@ -3586,6 +3771,8 @@ export function nextNumericInput(
       return chaining ? createNumericInput(state.toolId, 'circleCenter') : null;
     case 'twoPointArcRadius':
       return chaining ? createNumericInput(state.toolId, 'twoPointArcStart') : null;
+    case 'threePointArcVia':
+      return chaining ? createNumericInput(state.toolId, 'threePointArcStart') : null;
     case 'rectangleCorner2':
       return chaining ? createNumericInput(state.toolId, 'rectangleCorner1') : null;
     case 'polygonShape':
@@ -3652,11 +3839,17 @@ export function nextNumericInput(
       return editStage2StateFrom(state, 'linearArrayCount');
     case 'circularArrayCenter':
       return editStage2StateFrom(state, 'circularArrayShape');
+    /*
+      角の丸め・面取り(タスク23)も 1 段で終わる。道具は選んだまま残す(続けて別の角を
+      指せる)が、次の角はビューポートで指し直すので段からは開かない。
+    */
     case 'offsetDistance':
     case 'mirrorBasis':
     case 'copyDelta':
     case 'linearArrayCount':
     case 'circularArrayShape':
+    case 'sketchFilletRadius':
+    case 'sketchChamferSize':
       return null;
   }
 }

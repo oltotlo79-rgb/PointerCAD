@@ -319,6 +319,15 @@ export interface AppState {
    */
   readonly editErrorKey: MessageKey | null;
   /**
+   * 整形系の道具が**成功したときに添える案内**の文言キー(FR-323、タスク23)。
+   *
+   * 断り(`editErrorKey`)と分けてあるのは、赤い帯で「できませんでした」と出すのが
+   * 事実に反するため。いまの使い道は 1 つで、角を丸めた 2 本を境界に使っている面が
+   * あったときに「面の境界に足した曲線を入れ直してください」と伝える(t18 の申し送り)。
+   * 文書が変われば用済みなので `applyDocument` が落とす。
+   */
+  readonly editNoticeKey: MessageKey | null;
+  /**
    * 最後にビューポートで何かを選んだ場所(canvas の左上を原点とした画素)。
    * ソリッドの道具のその場入力を、選んだものの近くへ出すのに使う(NFR-UX-2)。
    * まだ何も選んでいなければ null で、そのときはビューポートの中央に出す。
@@ -451,6 +460,8 @@ export interface AppState {
   readonly setSolidError: (key: MessageKey | null) => void;
   /** 整形系の道具(オフセット等)を作れなかった理由を出す・消す(FR-321、NFR-UX-5)。 */
   readonly setEditError: (key: MessageKey | null) => void;
+  /** 整形系の道具が成功したときの案内を出す・消す(FR-323、タスク23)。 */
+  readonly setEditNotice: (key: MessageKey | null) => void;
   /** ビューポートで選んだ場所を覚える・忘れる。 */
   readonly setPickAnchor: (anchor: readonly [number, number] | null) => void;
 
@@ -721,6 +732,7 @@ export function createInitialDocumentState(): Pick<
   | 'faceErrorKey'
   | 'solidErrorKey'
   | 'editErrorKey'
+  | 'editNoticeKey'
   | 'pickAnchor'
   | 'fileGateway'
   | 'fileName'
@@ -779,6 +791,7 @@ export function createInitialDocumentState(): Pick<
     faceErrorKey: null,
     solidErrorKey: null,
     editErrorKey: null,
+    editNoticeKey: null,
     pickAnchor: null,
     // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める(§2.10)。
     fileGateway: createBrowserFileGateway(),
@@ -863,6 +876,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         faceErrorKey: null,
         solidErrorKey: null,
         editErrorKey: null,
+        editNoticeKey: null,
         // 種類が変わったら、違う種類の選択が加工の対象に紛れ込まないよう選択を空にする
         // (§0.a-0.6)。種類が変わらないときだけ、面の道具の掃除(§0.a-0.23 ⑨)を従来どおり行う。
         selection: kindChanged
@@ -926,6 +940,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         faceErrorKey: null,
         solidErrorKey: null,
         editErrorKey: null,
+        editNoticeKey: null,
         shapeErrorMessage: null,
         referenceErrorMessage: null,
         // トリム・延長の予告は「いまの形」の上の区間なので、形が変われば描き直し
@@ -1044,7 +1059,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setSelection: (selection) => {
     // 選び直したら、直前に断られた面・立体・オフセットの理由は用済みなので消す(NFR-UX-5)。
-    set({ selection, faceErrorKey: null, solidErrorKey: null, editErrorKey: null });
+    set({
+      selection,
+      faceErrorKey: null,
+      solidErrorKey: null,
+      editErrorKey: null,
+      editNoticeKey: null,
+    });
   },
   toggleSelection: (id) => {
     set((state) => ({
@@ -1054,6 +1075,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,
+      editNoticeKey: null,
     }));
   },
   setHovered: (hoveredElementId) => {
@@ -1121,6 +1143,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setEditError: (editErrorKey) => {
     set({ editErrorKey });
   },
+  setEditNotice: (editNoticeKey) => {
+    set({ editNoticeKey });
+  },
   setPickAnchor: (pickAnchor) => {
     set({ pickAnchor });
   },
@@ -1175,6 +1200,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,
+      editNoticeKey: null,
       errorMessage: null,
       fileMessage: null,
       recomputeCancelled: false,

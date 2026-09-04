@@ -375,6 +375,18 @@ describe('trimErrorMessageKey / editToolReadiness', () => {
     expect(editToolReadiness('extend', resolved, [])).toEqual({ ready: true, reasonKey: null });
   });
 
+  it('角の丸め・面取りは選択が空でも押せる(角をクリックする道でも成立する、FR-323)', () => {
+    const resolved = resolveSketch(rectangleDocument());
+    expect(editToolReadiness('sketchFillet', resolved, [])).toEqual({
+      ready: true,
+      reasonKey: null,
+    });
+    expect(editToolReadiness('sketchChamfer', resolved, [])).toEqual({
+      ready: true,
+      reasonKey: null,
+    });
+  });
+
   it('オフセットは従来どおり選択を要る', () => {
     const resolved = resolveSketch(rectangleDocument());
     expect(editToolReadiness('offset', resolved, [])).toEqual({

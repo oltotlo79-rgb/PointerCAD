@@ -21,10 +21,11 @@ import {
 } from './toolbarMenus.js';
 
 describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
-  it('「作図」には P4 で足した 7 つの形が並ぶ', () => {
+  it('「作図」には P4 で足した 8 つの形が並ぶ(タスク36 の 3 点の円弧を含む)', () => {
     expect(SHAPE_MENU_ITEMS.map((item) => item.id)).toEqual([
       'circle',
       'twoPointArc',
+      'threePointArc',
       'rectangle',
       'polygon',
       'slot',
@@ -33,18 +34,33 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
     ]);
   });
 
-  it('「編集」には整形系と複製系が並ぶ(タスク23 のフィレット・面取りがここへ足す)', () => {
+  it('「編集」には整形系と複製系が並ぶ', () => {
     expect(EDIT_MENU_ITEMS.map((item) => item.id)).toEqual([
       'offset',
       // クリックだけで決まる 2 つ(タスク22)。
       'trim',
       'extend',
+      // 角を指してから数値を聞く 2 つ(タスク23)。
+      'sketchFillet',
+      'sketchChamfer',
       // 選んでから確定する複製系(タスク24)。
       'mirror',
       'copy',
       'linearArray',
       'circularArray',
+      // 立体からかたちを取り込む 2 つ(タスク27)。
+      'projectedCurve',
+      'planeSection',
     ]);
+  });
+
+  it('角の丸め・面取りは整形系の並び(オフセット〜延長)の直後に入る(タスク23)', () => {
+    // 表の拡張で上の一覧が伸びても、この 2 つが複製系より前にあることは変えない
+    // (整形系は「元の線を書き換える」、複製系は「増やす」で意味が違うため。§0.a-0.10)。
+    const ids = EDIT_MENU_ITEMS.map((item) => item.id);
+    expect(ids.indexOf('sketchFillet')).toBe(ids.indexOf('extend') + 1);
+    expect(ids.indexOf('sketchChamfer')).toBe(ids.indexOf('sketchFillet') + 1);
+    expect(ids.indexOf('sketchChamfer')).toBeLessThan(ids.indexOf('mirror'));
   });
 
   it('どの項目も図柄・名前・説明を持つ(名前だけの項目を作らない)', () => {

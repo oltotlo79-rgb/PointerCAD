@@ -500,3 +500,34 @@ describe('3D スケッチの案内(FR-330、NFR-UX-7、タスク14)', () => {
     expect(describeStatus({ ...quiet(), activeTool: 'face', workPlaneId: 'free' }).hint).toBeNull();
   });
 });
+
+describe('角の丸め・面取りの案内と、面の境界の知らせ(FR-323、タスク23)', () => {
+  it('道具を選ぶと「角にマウスを乗せてクリック」の案内が出る(NFR-UX-7)', () => {
+    for (const tool of ['sketchFillet', 'sketchChamfer'] as const) {
+      expect(guideKeyFor(tool, 0), tool).toBe(`statusBar.guide.${tool}`);
+      const line = describeStatus({ ...quiet(), activeTool: tool });
+      expect(line.kind, tool).toBe('guide');
+      expect(line.text.length, tool).toBeGreaterThan(0);
+    }
+  });
+
+  it('面の境界の知らせは赤くしない(断りではないので failure にしない)', () => {
+    const line = describeStatus({ ...quiet(), editNoticeKey: 'corner.notice.faceBoundary' });
+    expect(line.kind).toBe('saved');
+    expect(line.text).toBe(t('corner.notice.faceBoundary'));
+  });
+
+  it('断り(整形系・立体・面)のほうが知らせより優先する(NFR-UX-5)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      editErrorKey: 'corner.error.tooLarge',
+      editNoticeKey: 'corner.notice.faceBoundary',
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.editError')} ${t('corner.error.tooLarge')}`);
+  });
+
+  it('知らせを渡さない呼び出しは今までどおり動く(欄は省略できる)', () => {
+    expect(describeStatus(quiet()).kind).toBe('guide');
+  });
+});

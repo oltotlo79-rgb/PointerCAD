@@ -60,6 +60,8 @@ const GUIDE_KEYS = {
   //  docs/報告記録.md 2026-09-04 03:20 ③)。ツールバーのボタンはタスク32。
   circle: 'statusBar.guide.circle',
   twoPointArc: 'statusBar.guide.twoPointArc',
+  // P4 タスク36(2026-09-04 追加要件)が `ShapeToolId` へ足した 3 点の円弧(FR-330)。
+  threePointArc: 'statusBar.guide.threePointArc',
   rectangle: 'statusBar.guide.rectangle',
   polygon: 'statusBar.guide.polygon',
   slot: 'statusBar.guide.slot',
@@ -88,6 +90,16 @@ const GUIDE_KEYS = {
   copy: 'statusBar.guide.copy',
   linearArray: 'statusBar.guide.linearArray',
   circularArray: 'statusBar.guide.circularArray',
+  // P4 タスク23 が `EditToolId` へ足した角の丸め・面取り(FR-323)。「選んでから」でも
+  // 「道具を選んでから角をクリック」でも成立する道具なので、案内は後者(何も選んでいない
+  // ときの次の一手)を書く(§0.a-0.26 のトリムと同じ考え方、NFR-UX-7)。
+  sketchFillet: 'statusBar.guide.sketchFillet',
+  sketchChamfer: 'statusBar.guide.sketchChamfer',
+  // P4 タスク27 が `PickEditToolId` へ足した投影・断面(FR-325)。数値を聞かず、立体の
+  // 面・辺・立体そのものを押して決める道具なので、案内は「何を押すか」と「順序の制約」
+  // (このスケッチを使う立体より前の立体だけ)を伝える文にしてある(§0.a-0.11、NFR-UX-7)。
+  projectedCurve: 'statusBar.guide.projectedCurve',
+  planeSection: 'statusBar.guide.planeSection',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**
@@ -191,6 +203,14 @@ export interface StatusInput {
    * そのまま通すため。
    */
   readonly editErrorKey?: MessageKey | null;
+  /**
+   * 整形系の道具が**うまくいったときに添える案内**(FR-323、P4 タスク23)。断りではないので
+   * 帯を赤くせず、「保存しました」等と同じ短い知らせとして出す。いまの使い道は 1 つで、
+   * 角を丸めた 2 本を境界に使っている面があったときの「面の境界に足した曲線を入れ直して
+   * ください」(t18 の申し送り)。省略できるようにしてあるのは、この欄を持たない既存の
+   * 呼び出し(検査)をそのまま通すため。
+   */
+  readonly editNoticeKey?: MessageKey | null;
   /**
    * 図形を作れなかった理由(FR-314〜318、FR-326、P4 タスク12)。限界値(点の数・半径)を
    * 差し込んだ文になるので、文言キーではなく組み立て済みの文で受け取る。
@@ -445,6 +465,7 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * 3. 計算の失敗 … 再計算が投げた理由、続いて集まった失敗の件数と先頭の理由(FR-504)。
  * 4. 中止の知らせ … 失敗ではないので赤くしない(NFR-PF-4)。
  * 5. 進み具合 … 長い計算のあいだだけ(NFR-PF-4)。
+ * 5.5. 整形系の道具がうまくいったときの案内(FR-323。赤くしない)。
  * 6. 保存できたなどの知らせ(FR-806)。
  * 7. 案内 … 計算中の札、吸着の案内、加工の選択が進んだ具合、道具ごとの次の一手。
  *
@@ -494,6 +515,10 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
       hint: t('statusBar.progressHint'),
       progress: progressView(input.progress),
     };
+  }
+  if (input.editNoticeKey !== undefined && input.editNoticeKey !== null) {
+    // 断りではないので赤くしない(FR-323 の「面の境界を入れ直してください」の案内)。
+    return { kind: 'saved', text: t(input.editNoticeKey), hint: null, progress: null };
   }
   if (input.fileMessage !== null) {
     return { kind: 'saved', text: t(input.fileMessage.key), hint: null, progress: null };

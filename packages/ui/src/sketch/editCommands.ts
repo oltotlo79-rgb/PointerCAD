@@ -43,7 +43,13 @@ import {
 
 import type { MessageKey } from '../i18n/t.js';
 import { copyToolReadiness } from './copyCommands.js';
-import { isClickEditTool, type EditInputCommit, type EditMenuToolId } from './numericInput.js';
+import {
+  isClickEditTool,
+  isCornerEditTool,
+  isPickEditTool,
+  type EditInputCommit,
+  type EditMenuToolId,
+} from './numericInput.js';
 import { boundaryElementKind, toElementRef } from './sketchCommands.js';
 
 /** オフセットの既定距離(mm、NFR-UX-4)。5mm は板物・ブラケットの縁取りでよく使う値。 */
@@ -190,7 +196,17 @@ export function editToolReadiness(
   resolved: ResolvedSketch,
   selection: readonly string[],
 ): EditToolReadiness {
-  if (isClickEditTool(tool)) {
+  if (isClickEditTool(tool) || isCornerEditTool(tool) || isPickEditTool(tool)) {
+    /*
+      トリム・延長は選択を使わない。角の丸め・面取り(FR-323、タスク23)は「選んでから
+      道具」でも「道具を選んでから角をクリック」でも成立する(NFR-UX-1)ので、選択が
+      空でも押せる。選んでいる 2 本が角を作っているかは、押したときに
+      `cornerFromSelection` が見て、作っていなければ欄を開かずに角を指してもらう。
+      投影・断面(FR-325、タスク27)も同じで、道具を選んでからビューポートで立体の面・辺・
+      立体を押せる。押す相手はスケッチではなく立体なので、判定の材料(いま画面にあるボディ)
+      をこの関数は持たない。取り込めない立体を押したときの断りは押した瞬間に帯へ出る
+      (`projectionOrderRejection`)。
+    */
     return { ready: true, reasonKey: null };
   }
   if (tool === 'offset') {

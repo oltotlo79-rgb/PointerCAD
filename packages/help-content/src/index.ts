@@ -43,6 +43,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/edit-curves.md',
   },
   {
+    id: 'sketch-fillet',
+    title: '線の角を丸める・面取りする',
+    path: 'docs/ja/sketch-fillet.md',
+  },
+  {
     id: 'copy-array',
     title: 'ミラー・複写・並べる',
     path: 'docs/ja/copy-array.md',

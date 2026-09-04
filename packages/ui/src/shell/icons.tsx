@@ -290,6 +290,21 @@ export function TwoPointArcToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
+ * 3 点の円弧(FR-330、P4 タスク36、2026-09-04 追加要件)。2 点+半径の円弧と同じ弧の上に、
+ * 通過点(塗りつぶした小さな点、弧の上に乗る)を添えて「3 点をクリックしてかく」ことを表す。
+ */
+export function ThreePointArcToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.4 11.4A7.4 7.4 0 0 1 12.6 11.4" />
+      <circle cx="3.4" cy="11.4" r="1.3" />
+      <circle cx="12.6" cy="11.4" r="1.3" />
+      <circle cx="8" cy="9.8" r="1.1" fill="currentColor" stroke="none" />
+    </SvgIcon>
+  );
+}
+
+/**
  * 矩形(FR-314)。長方形の輪郭で表す(P4 タスク4、統括の指示 2026-09-04)。
  * `FeatureTree.tsx` の KIND_ICONS がツリーの行の頭に、道具アイコンとしてタスク12 が使う。
  */
@@ -379,6 +394,37 @@ export function ExtendToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
+ * スケッチの角の丸め(FR-323、P4 タスク23)。直角に交わる 2 本の実線の角が円弧で丸まり、
+ * 落ちる角の先が破線で残る絵柄。立体の R 面取り(`FilletIcon`)とは別の図柄にして、
+ * 「線の角」と「立体の辺」を取り違えないようにしてある。
+ */
+export function SketchFilletToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 13.5H8.5" />
+      <path d="M13.5 8.5V2" />
+      <path d="M8.5 13.5A5 5 0 0 0 13.5 8.5" />
+      <path d="M8.5 13.5H13.5V8.5" strokeDasharray="1.3 1.3" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * スケッチの角の面取り(FR-323、P4 タスク23)。丸めの図柄と同じ形で、角を斜めの実線で
+ * 切り落とす絵柄。並べて置いても円弧と斜線の違いで見分けられる。
+ */
+export function SketchChamferToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 13.5H8.5" />
+      <path d="M13.5 8.5V2" />
+      <path d="M8.5 13.5 13.5 8.5" />
+      <path d="M8.5 13.5H13.5V8.5" strokeDasharray="1.3 1.3" />
+    </SvgIcon>
+  );
+}
+
+/**
  * ミラー(FR-324、P4 タスク24)。鏡の軸(縦の破線)をはさんで、実線の三角と破線の三角が
  * 向かい合う絵柄。「軸で折り返した複製ができる」ことが 1 枚で読める。
  */
@@ -440,6 +486,37 @@ export function CircularArrayToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
+ * 投影(FR-325、P4 タスク27)。上にある立体の面(実線の四角)から、まっすぐ下の作図面へ
+ * 落ちる**破線の矢**と、落ちた先の輪郭(細い四角)を描く。「上の形が下の面へ写る」ことが
+ * 1 枚で読める絵柄にしてある。
+ */
+export function ProjectToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="3.4" y="1.6" width="9.2" height="4.2" />
+      <path d="M4.6 6.4V9.6" strokeDasharray="1.3 1.3" />
+      <path d="M11.4 6.4V9.6" strokeDasharray="1.3 1.3" />
+      <rect x="3.4" y="10.2" width="9.2" height="4.2" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 断面(交差、FR-325、P4 タスク27)。立体(縦長の四角)を横切る作図面を**太い横線**で表し、
+ * 交わってできる線(切り口)を線の上に置く。投影の図柄と作りを変えて、隣に並べても
+ * 取り違えないようにした。
+ */
+export function SectionToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="4.4" y="1.8" width="7.2" height="12.4" strokeDasharray="1.6 1.6" />
+      <path d="M1.4 8H14.6" />
+      <path d="M4.4 8H11.6" strokeWidth="2.2" />
+    </SvgIcon>
+  );
+}
+
+/**
  * 畳んだ一覧「作図」のボタン(§0.a-0.14、P4 タスク32)。四角と楕円を重ねて
  * 「いろいろな形をまとめてかく入口」を表す。中の道具を一度でも使うと、ボタンの図柄は
  * 最後に使った道具のものへ変わるので、これは何も使っていないときの顔になる。
@@ -476,6 +553,79 @@ export function PlaneIcon(props: IconProps): React.JSX.Element {
       <path d="M1.8 11.2 6.2 4.8h8l-4.4 6.4z" />
       <path d="M4 8h8" />
       <path d="M5.8 11.2 10.2 4.8" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 基準ジオメトリの節(P4 タスク33、FR-328・FR-329)。原点から出る 2 本の軸と点で
+ * 「形を作らない基準のあつまり」を表す。作図面(PlaneIcon)と見分けるため軸を主にする。
+ */
+export function ReferenceGroupIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3 13V3" />
+      <path d="M3 13h10" />
+      <circle cx="9.5" cy="6.5" r="1.4" />
+    </SvgIcon>
+  );
+}
+
+/** 基準軸(FR-329)。両端に矢じりを付けた 1 本の線で「向きだけを持つ基準」を表す。 */
+export function ReferenceAxisIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 12 14 4" />
+      <path d="M2 12 4.6 11.4" />
+      <path d="M2 12 2.6 9.4" />
+      <path d="M14 4 11.4 4.6" />
+      <path d="M14 4 13.4 6.6" />
+    </SvgIcon>
+  );
+}
+
+/** 基準点(FR-329)。十字の交点に丸を置いて「参照のためだけの点」を表す。 */
+export function ReferencePointIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 2v3.2" />
+      <path d="M8 10.8V14" />
+      <path d="M2 8h3.2" />
+      <path d="M10.8 8H14" />
+      <circle cx="8" cy="8" r="1.8" />
+    </SvgIcon>
+  );
+}
+
+/** 基準座標系(FR-329)。原点から 3 方向へ出る短い軸で表す。 */
+export function CoordinateSystemIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M5 11V3.5" />
+      <path d="M5 11h7.5" />
+      <path d="M5 11 1.8 14" />
+    </SvgIcon>
+  );
+}
+
+/** 投影(FR-325)。立体の辺から作図面へ落ちる矢印で「面へ写す」を表す。 */
+export function ProjectCurveIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.4 3.2h9.2" />
+      <path d="M8 4.6v5.2" />
+      <path d="M6.4 8.4 8 10.2l1.6-1.8" />
+      <path d="M2.2 13.4 4.6 11.6h8.8" />
+    </SvgIcon>
+  );
+}
+
+/** 交差(FR-325)。面と立体が交わってできる線を、面の中の閉じた輪で表す。 */
+export function PlaneSectionIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M1.8 11.2 6.2 4.8h8l-4.4 6.4z" />
+      <ellipse cx="8" cy="8" rx="2.6" ry="1.6" />
     </SvgIcon>
   );
 }

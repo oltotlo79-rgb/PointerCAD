@@ -33,15 +33,26 @@ import {
   type WorkPlane,
 } from '@pointercad/model';
 
-import { applySketchCommit } from '../sketch/commitToStore.js';
+import { applyProjectionCommit, applySketchCommit } from '../sketch/commitToStore.js';
+import {
+  cornerNear,
+  cornerPreview,
+  type CornerHit,
+  type CornerShape,
+} from '../sketch/cornerCommands.js';
 import { commitExtend, commitTrim } from '../sketch/editCommands.js';
 import { freeClickPlane, picksSolidVertices } from '../sketch/freeSketch.js';
 import {
   commitNumericInput,
   createNumericInput,
   DEFAULT_COORDINATE_BASE,
+  DEFAULT_SKETCH_CHAMFER_DISTANCE_MM,
+  DEFAULT_SKETCH_FILLET_RADIUS_MM,
+  EDIT_TOOL_STEPS,
   isClickEditTool,
+  isCornerEditTool,
   isCoordinateStep,
+  isPickEditTool,
   isReferenceCoordinateStep,
   isReferenceTool,
   nextNumericInput,
@@ -49,14 +60,20 @@ import {
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
   type ClickEditToolId,
+  type CornerEditToolId,
   type NumericInputState,
   type NumericInputStep,
   type NumericInputToolId,
+  type PickEditToolId,
   type ShapeToolId,
   type SketchToolId,
   type SolidToolId,
 } from '../sketch/numericInput.js';
 import { pickSketchElement } from '../sketch/pickMath.js';
+import {
+  projectionSourceOf,
+  projectionTakesSubShape,
+} from '../sketch/projectionCommands.js';
 import { resolveShapePoints } from '../sketch/shapeCommands.js';
 import { commitFace, commitSubShapePoint } from '../sketch/sketchCommands.js';
 import { extendPreviewAt, sameEditPreview, trimPreviewAt } from '../sketch/trimPreview.js';
@@ -122,9 +139,12 @@ export function isSolidTool(tool: NumericInputToolId): tool is SolidToolId {
  * 選択のときと、立体の道具(押し出し・回転・縫合、ブーリアンの相手選び、パターン・ばねの
  * 対象選び)のときに効かせる。面の道具は面の境界を順にクリックする道具なので、立体を拾うと
  * 選ぶ順が壊れる。かき込む道具(点・線分・円弧・点列)は押した場所が座標そのものなので拾わない。
+ *
+ * 断面(FR-325、タスク27)も立体そのものを押して決める道具なので、ここへ入れる
+ * (`isPickEditTool` の 2 つのうち、投影は面・辺を押すので `picksSubShapes` 側を通る)。
  */
 function picksBodies(tool: NumericInputToolId): boolean {
-  return tool === 'select' || isSolidTool(tool);
+  return tool === 'select' || isSolidTool(tool) || isPickEditTool(tool);
 }
 
 /** 位置を数値で決める、かき込む道具かどうか(FIRST_STEP のキーと同じ集合)。 */
@@ -466,9 +486,140 @@ export function attachSketchInteraction(
     state.setSketch(outcome.document);
   }
 
+  /* ---------------------------------------------------------------- *
+   * 投影・断面(FR-325、計画書タスク27)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * 投影・断面のクリック(FR-325)。押した瞬間に決まり、**1 クリック = Undo 1 回**。
+   * 道具は選んだまま残るので、続けて何枚でも投影できる(トリム・延長と同じ、§0.a-0.26)。
+   *
+   * 拾う相手は道具で分かれる。投影は立体の面・辺(選ぶ種類は `selectionKindForTool` が
+   * 面へ切り替えてあり、`2` キーで辺へ替えられる)、断面は立体そのもの。何にも当たって
+   * いなければ「何を押せばよいか」を帯へ出すだけで、履歴は変えない(FR-504、NFR-UX-5)。
+   */
+  function commitProjectionClick(tool: PickEditToolId, pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    const elementId = projectionTakesSubShape(tool)
+      ? pickSubShapeAt(pointer)
+      : pickBodyAt(pointer);
+    const source =
+      elementId === null
+        ? null
+        : projectionSourceOf(tool, toSubShapeBodies(state.bodies), elementId);
+    applyProjectionCommit(tool, source === null ? [] : [source]);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * 角の丸め・面取り(FR-323、計画書タスク23)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * 角を拾う輪の大きさ(画素)。当たり判定(6 画素)や吸着(12 画素)より広くしてある。
+   * 狙っているのは線そのものではなく「2 本が交わる 1 点」で、細い線と違って多少ずれても
+   * 迷う相手がいないため(近い角が 2 つあるときは近いほうを採る、`cornerNear`)。
+   */
+  const CORNER_PICK_RADIUS_PIXELS = 20;
+
+  /**
+   * 画素で決めた輪を、世界の長さ(mm)へ直す。拡大率を変えても「画面上で同じ広さ」に
+   * 見えるようにするため(近い/遠いで拾いやすさが変わらない)。
+   * 作図面の上で真横へ `CORNER_PICK_RADIUS_PIXELS` だけ動いた点との距離で測る。
+   */
+  function cornerRadiusInWorld(
+    pointer: readonly [number, number],
+    plane: WorkPlane,
+    at: Vec3,
+  ): number {
+    const offset = scene.screenToPlanePoint(
+      pointer[0] + CORNER_PICK_RADIUS_PIXELS,
+      pointer[1],
+      plane,
+    );
+    return offset === null ? CORNER_PICK_RADIUS_PIXELS : lengthVec3(subVec3(offset, at));
+  }
+
+  /** 角の丸め・面取りで、いま指している角。指していなければ null。 */
+  function cornerTargetAt(pointer: readonly [number, number]): CornerHit | null {
+    const state = useAppStore.getState();
+    const plane = interactionPlane(state.workPlaneId);
+    const at = scene.screenToPlanePoint(pointer[0], pointer[1], plane);
+    if (at === null) {
+      return null;
+    }
+    return cornerNear(
+      state.sketch,
+      state.resolvedSketch,
+      at,
+      cornerRadiusInWorld(pointer, plane, at),
+    );
+  }
+
+  /** 予告に使う作図面。3D スケッチ(FR-330)は角そのものから面を作るので null を渡す。 */
+  function cornerPlane(): WorkPlane | null {
+    const state = useAppStore.getState();
+    return isFreeWorkPlaneId(state.workPlaneId) ? null : state.workPlane;
+  }
+
+  /** いま欄に入っている値、まだ開いていなければ既定値で予告する形(NFR-UX-4)。 */
+  function cornerShapeOf(tool: CornerEditToolId): CornerShape {
+    return tool === 'sketchFillet'
+      ? { kind: 'fillet', radius: DEFAULT_SKETCH_FILLET_RADIUS_MM }
+      : {
+          kind: 'chamfer',
+          distance1: DEFAULT_SKETCH_CHAMFER_DISTANCE_MM,
+          distance2: DEFAULT_SKETCH_CHAMFER_DISTANCE_MM,
+        };
+  }
+
+  /**
+   * 角の丸め・面取りのときのマウスの動き(FR-323、NFR-UX-5)。乗せた角に、丸めた形/
+   * 面取りした形を薄く予告する。角に乗っていなければ何も強調しない。
+   */
+  function updateCornerPreview(tool: CornerEditToolId, pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    const hit = cornerTargetAt(pointer);
+    // 角を作っている 1 本目を強調して、どの角を指しているかを分かりやすくする。
+    const nextHovered = hit === null ? null : hit.firstElementId;
+    if (nextHovered !== state.hoveredElementId) {
+      state.setHovered(nextHovered);
+    }
+    if (state.snapIndicator !== null) {
+      state.setSnapIndicator(null);
+    }
+    const preview = hit === null ? null : cornerPreview(hit, cornerPlane(), cornerShapeOf(tool));
+    if (!sameEditPreview(state.editPreview, preview)) {
+      state.setEditPreview(preview);
+    }
+  }
+
+  /**
+   * 角の丸め・面取りのクリック(FR-323)。指した角の 2 本をそのまま選択に入れ、半径/距離を
+   * 聞く欄をその場に開く(NFR-UX-2)。**確定が読むのは選択の 2 本**なので、「2 本を選んで
+   * から道具を押す」道(`Toolbar.tsx`)と 1 本の経路に合流する(NFR-UX-1)。
+   */
+  function openCornerInput(tool: CornerEditToolId, pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    const hit = cornerTargetAt(pointer);
+    if (hit === null) {
+      state.setEditError('corner.error.noCornerHere');
+      return;
+    }
+    state.setSelection([hit.firstElementId, hit.secondElementId]);
+    state.setPickAnchor(pointer);
+    state.openNumericInput(createNumericInput(tool, EDIT_TOOL_STEPS[tool]), pointer);
+  }
+
   function onPointerMove(event: PointerEvent): void {
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
+
+    if (isCornerEditTool(state.activeTool)) {
+      // 角の丸め・面取り(FR-323)。乗せた角に「丸めたあとの形」を薄く出すだけの道具なので、
+      // 吸着も立体の当たり判定も通さない(トリム・延長と同じ扱い)。
+      updateCornerPreview(state.activeTool, pointer);
+      return;
+    }
 
     if (isClickEditTool(state.activeTool)) {
       // トリム・延長は「乗せた区間を強調 → 押して消す/伸ばす」だけの道具なので、
@@ -743,6 +894,28 @@ export function attachSketchInteraction(
       return;
     }
 
+    if (isPickEditTool(tool)) {
+      /*
+        投影・断面(FR-325、タスク27)。押した立体の面・辺・立体そのものがそのまま
+        取り込む相手になる。選択もその場入力も挟まず、押した瞬間に決まる。この判定を
+        下の「部分形状を選ぶ道具」より先に置くのは、そちらへ流れると選ぶだけで
+        終わってしまうため。
+      */
+      event.preventDefault();
+      commitProjectionClick(tool, pointer);
+      return;
+    }
+
+    if (isCornerEditTool(tool)) {
+      /*
+        角の丸め・面取り(FR-323、タスク23)。押した角の 2 本を選んで、その場で半径/距離を
+        聞く。確定したあとも道具は残るので、続けて別の角を押せる(Esc で終わる)。
+      */
+      event.preventDefault();
+      openCornerInput(tool, pointer);
+      return;
+    }
+
     if (isReferenceTool(tool)) {
       /*
         基準ジオメトリの道具(FR-328、FR-329、タスク13)。座標を聞いている段では押した場所を
@@ -833,9 +1006,13 @@ export function attachSketchInteraction(
       state.setSelection([]);
       state.setPendingStart(null);
       state.closeNumericInput();
-      if (isClickEditTool(state.activeTool)) {
-        // トリム・延長は Esc で終わり、選択の道具へ戻る(§0.a-0.26 の利用者の決定)。
-        // 予告の赤は `setActiveTool` が落とす。
+      if (
+        isClickEditTool(state.activeTool) ||
+        isCornerEditTool(state.activeTool) ||
+        isPickEditTool(state.activeTool)
+      ) {
+        // トリム・延長(§0.a-0.26)、角の丸め・面取り(FR-323)、投影・断面(FR-325)は
+        // Esc で終わり、選択の道具へ戻る。予告は `setActiveTool` が落とす。
         state.setActiveTool('select');
       }
       return;

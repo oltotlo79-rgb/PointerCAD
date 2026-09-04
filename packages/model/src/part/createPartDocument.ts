@@ -23,14 +23,17 @@ import type {
 } from './types.js';
 
 /**
- * 部品文書の保存形式の版(§0.a-0.3)。P3 で 3 になる(P3 計画書 §0.a-0.22、タスク19)。
+ * 部品文書の保存形式の版(§0.a-0.3)。P3 で 3 になり(P3 計画書 §0.a-0.22、タスク19)、
+ * P4 タスク31(§0.a-0.24)で 4 になった。
  *
- * P3 が足したのは加工フィーチャー(穴・ねじ穴・R 面取り・C 面取り・パターン)とばねの
- * 新しい種類だけで、版 2 に出てくる欄は 1 つも変えていない。そのため io 側の移行
- * (`packages/io/src/pcad/schema.ts` の `SCHEMA_MIGRATIONS[2]`)は版の数字を
- * 書き換えるだけで済み、版 2 のファイルはそのまま開ける。
+ * P4 が足したのは新しいスケッチの種類(矩形・正多角形・長穴・楕円・スプライン・オフセット・
+ * 複製・投影/交差)と基準ジオメトリ・任意平面・3D スケッチ・構築線フラグで、版 3 まで
+ * 一部のファイルで省略できていた欄(`construction`・点列の `layout`・`references`)を
+ * 版 4 からは必須にする。この値は io 側の `PCAD_SCHEMA_VERSION`
+ * (`packages/io/src/pcad/schema.ts`)と必ず同じにする(`documentJson.test.ts` が検査する)。
+ * 版 3 以前のファイルは `SCHEMA_MIGRATIONS[3]` が上記の省略を明示的に補って読み込む。
  */
-export const PART_SCHEMA_VERSION = 3;
+export const PART_SCHEMA_VERSION = 4;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;

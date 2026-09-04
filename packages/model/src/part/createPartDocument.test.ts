@@ -396,8 +396,9 @@ describe('部品文書の生成(要件§8、FR-501)', () => {
     expect(document.solids).toEqual([]);
   });
 
-  it('保存形式の版は 3(§0.a-0.3、§0.a-0.22)', () => {
-    expect(PART_SCHEMA_VERSION).toBe(3);
+  // P4 タスク31・§0.a-0.24 で版 4 へ上げた(io 側 PCAD_SCHEMA_VERSION と同じ値を保つ)。
+  it('保存形式の版は 4(§0.a-0.3、§0.a-0.22、§0.a-0.24)', () => {
+    expect(PART_SCHEMA_VERSION).toBe(4);
     expect(createEmptyPartDocument().schemaVersion).toBe(PART_SCHEMA_VERSION);
   });
 

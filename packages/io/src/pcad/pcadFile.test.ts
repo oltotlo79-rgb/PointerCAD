@@ -263,14 +263,15 @@ describe('他のアプリが作った ZIP の読み込み', () => {
 });
 
 describe(
-  '版3以前の .pcad の読み込み(construction 無し・pointArray がフラット形式、' +
-    '統括の差し戻し 2026-09-04、要件§8・P3完了条件9)',
+  '版3 → 版4の移行(construction 無し・pointArray がフラット形式、SCHEMA_MIGRATIONS[3]、' +
+    'P4 タスク31・§0.a-0.24。元は統括の差し戻し 2026-09-04、要件§8・P3完了条件9)',
   () => {
-    it('construction の無い線分・layout の無い点列を含む .pcad も読める', () => {
+    it('construction の無い線分・layout の無い点列を含む版3の .pcad も読める', () => {
       const legacyDocument = {
         id: 'part-1',
         name: '部品1',
-        schemaVersion: PART_SCHEMA_VERSION,
+        // 封筒(schema)と文書自身の版をそろえた、genuine な版3の文書(references も無い)。
+        schemaVersion: 3,
         sketches: [
           {
             id: 'sketch-1',
@@ -318,7 +319,7 @@ describe(
         solids: [],
       };
       const zip = makeZip(
-        { [PCAD_DOCUMENT_ENTRY]: strToU8(envelopeText({ document: legacyDocument })) },
+        { [PCAD_DOCUMENT_ENTRY]: strToU8(envelopeText({ schema: 3, document: legacyDocument })) },
         1,
       );
       const result = expectOk(readPcadFile(zip));
@@ -332,6 +333,9 @@ describe(
         throw new Error('点列のはず');
       }
       expect(array.layout.kind).toBe('linear');
+      // 移行の結果、文書自身も現在の版になっている。
+      expect(result.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+      expect(result.document.references).toEqual([]);
     });
   },
 );

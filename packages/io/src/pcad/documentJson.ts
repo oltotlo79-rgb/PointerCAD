@@ -1254,15 +1254,14 @@ function readSketchFeature(value: unknown, path: string): Checked<SketchFeature>
 }
 
 /**
- * 構築線(FR-320)の欄。**版3以前(スキーマ版は上げない、統括の差し戻し 2026-09-04)は
- * この欄を持たないファイルもあるため、無ければ false として読む**(要件§8の前方互換、
- * P3完了条件9「版2のファイルも開ける」と同じ考え方)。書き手(`serializeSketchFeature`)は
- * 常にこの欄を書くので、往復すると新形式(欄あり)へ正規化される。
+ * 構築線(FR-320)の欄。**版4からは必須**(欠けていれば `missingField`)。
+ * 版3以前(スキーマ版は上げなかった、統括の差し戻し 2026-09-04)はこの欄を持たない
+ * ファイルもあったが、その寛容さは P4 タスク31(§0.a-0.24)で
+ * `schema.ts` の `SCHEMA_MIGRATIONS[3]`(版3→4の移行)へ移した。移行済みの版4データは
+ * 必ずこの欄を持つので、ここでは寛容に読まない。書き手(`serializeSketchFeature`)は
+ * 常にこの欄を書く。
  */
 function readConstructionFlag(record: Record<string, unknown>, path: string): Checked<boolean> {
-  if (!('construction' in record)) {
-    return { ok: true, value: false };
-  }
   return readBoolean(record, 'construction', path);
 }
 
@@ -1310,8 +1309,11 @@ function readLineFeature(
 /**
  * 3D スケッチの円弧の向き(FR-330、P4 タスク10)の欄。
  *
- * **作図面の上の円弧はこの欄を持たない**(版 3 以前のファイルも当然持たない)ので、
- * 無ければ「向きの指定なし」として null を返す(`readConstructionFlag` と同じ寛容さ)。
+ * **作図面の上の円弧はこの欄を持たない**(版に関係なく恒常的に省略可能。書き手も
+ * `feature.freeOrientation === undefined` のときは書かない)。`construction`・点列の
+ * `layout`・`references` と違い、これは「版3以前だけの寛容さ」ではないので、
+ * P4 タスク31(§0.a-0.24)の版4厳密化・`SCHEMA_MIGRATIONS[3]` の対象にしない
+ * (版4でもこのまま無ければ null を返す)。
  * 欄があるのに中身が読めない場合はファイル全体を断る(このファイル冒頭の決めごと)。
  */
 function readFreeOrientation(
@@ -1511,25 +1513,17 @@ function readGridLayout(
 }
 
 /**
- * 点列(FR-308、FR-327)。**版3以前(スキーマ版は上げない)は `layout` を挟まず、
- * `base`/`azimuth`/`spacing`/`count` を直下に持つ**(統括の差し戻し 2026-09-04、要件§8の
- * 前方互換、P3完了条件9)。`layout` が無ければ旧形式とみなし、直線状(`kind: 'linear'`)へ
- * 包み直して読む。`readLinearLayout` は「base/azimuth/spacing/count を直下に持つ record」を
- * 読む関数なので、`layout` サブレコードにも版3以前のフラットな record にもそのまま使える。
- * 書き手は常に `layout` を書くので、往復すると新形式へ正規化される。
+ * 点列(FR-308、FR-327)。**版4からは `layout` が必須**(欠けていれば `missingField`)。
+ * 版3以前(スキーマ版は上げなかった、統括の差し戻し 2026-09-04)は `layout` を挟まず
+ * `base`/`azimuth`/`spacing`/`count` を直下に持つフラットな形もあったが、その寛容さは
+ * P4 タスク31(§0.a-0.24)で `schema.ts` の `SCHEMA_MIGRATIONS[3]` へ移した
+ * (直線状 `kind: 'linear'` の `layout` へ包み直す変換)。書き手は常に `layout` を書く。
  */
 function readPointArrayFeature(
   record: Record<string, unknown>,
   path: string,
   base: SketchFeatureBase,
 ): Checked<SketchFeature> {
-  if (!('layout' in record)) {
-    const legacy = readLinearLayout(record, path);
-    if (!legacy.ok) {
-      return legacy;
-    }
-    return { ok: true, value: { ...base, kind: 'pointArray', layout: legacy.value } };
-  }
   const layout = readPointArrayLayout(record, 'layout', path);
   if (!layout.ok) {
     return layout;
@@ -3308,17 +3302,15 @@ function readReferenceFeature(value: unknown, path: string): Checked<ReferenceFe
 /**
  * 基準ジオメトリの履歴を読む(FR-328、FR-329)。
  *
- * **スキーマ版は 3 のままなので(版 4 はタスク31)、この欄を持たないファイルもある。**
- * 無ければ空の履歴として読む(要件§8 の前方互換。構築線 `readConstructionFlag` と同じ扱い)。
- * 書き手は常にこの欄を書くので、往復すると欄ありへ正規化される。
+ * **版4からは必須**(欠けていれば `missingField`)。版3のまま追加されていた期間
+ * (タスク9)はこの欄を持たないファイルもあったが、その寛容さは P4 タスク31(§0.a-0.24)で
+ * `schema.ts` の `SCHEMA_MIGRATIONS[3]`(欄が無ければ空配列で補う)へ移した。
+ * 書き手は常にこの欄を書く。
  */
 function readReferences(
   record: Record<string, unknown>,
   path: string,
 ): Checked<readonly ReferenceFeature[]> {
-  if (!('references' in record)) {
-    return { ok: true, value: [] };
-  }
   return readList(record, 'references', path, readReferenceFeature);
 }
 
@@ -3494,6 +3486,33 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
 }
 
 /**
+ * 移行を試みる前に、封筒の版と文書自身が持つ版が食い違っていないかを確かめる
+ * (要件§8、統括の決定④)。移行は封筒の版だけで判定し(このファイル冒頭の決めごと)、
+ * `SCHEMA_MIGRATIONS` の各段は `schemaVersion` を無条件に書き換えるため、
+ * ここで先に確かめないと版4への移行(P4 タスク31)が移行前の食い違いを握りつぶしてしまう
+ * (`readEnvelope` の同種の検査は移行の要らない=封筒が今の版のときにしか通らない)。
+ * `document` が record でない、または `schemaVersion` が数でなければ、
+ * その不備は通常の欄検査(`readPartDocument`)に断らせるのでここでは何もしない。
+ */
+function envelopeDocumentVersionMismatch(
+  raw: Record<string, unknown>,
+  schema: number,
+): ParseDocumentResult | null {
+  const document = raw['document'];
+  if (!isRecord(document)) {
+    return null;
+  }
+  const declared = document['schemaVersion'];
+  if (typeof declared !== 'number' || declared === schema) {
+    return null;
+  }
+  return fail(
+    'versionMismatch',
+    `ファイルの版の記録が食い違っています(封筒 ${String(schema)} / 文書 ${String(declared)})。`,
+  );
+}
+
+/**
  * `document.json` の中身(すでに JSON.parse 済みのもの)から部品文書を読む。
  * 封筒の `schema` を先に検査してから中身を読む(統括の決定④)。
  */
@@ -3512,6 +3531,15 @@ function decodeFile(raw: unknown): ParseDocumentResult {
     );
   }
   if (schema.value < PCAD_SCHEMA_VERSION) {
+    // 移行先(`SCHEMA_MIGRATIONS[schema.value]`)が無い版(例: 版1)は、この時点では
+    // まだ移行を試みないので、文書側の版と比べても意味が無い(必ず unsupportedOldVersion
+    // になるべきところを versionMismatch にすり替えない)。移行が実在する版だけ検査する。
+    if (SCHEMA_MIGRATIONS[schema.value] !== undefined) {
+      const mismatch = envelopeDocumentVersionMismatch(raw, schema.value);
+      if (mismatch !== null) {
+        return mismatch;
+      }
+    }
     const lifted = migrateToCurrentSchema(raw, schema.value);
     if (lifted === null) {
       return fail('unsupportedOldVersion', `対応していない古い版です(版 ${String(schema.value)})。`);

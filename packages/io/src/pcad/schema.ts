@@ -12,17 +12,25 @@ import type { PartDocument } from '@pointercad/model';
 import { isRecord } from './guards.js';
 
 /**
- * .pcad の書式の版(§0.a-0.3)。P3 で 3 になる(P3 計画書 §0.a-0.22、§2.10)。
+ * .pcad の書式の版(§0.a-0.3)。P3 で 3 になり(P3 計画書 §0.a-0.22、§2.10)、
+ * P4 タスク31(§0.a-0.24)で 4 になった。
  * 版 1 で保存されたファイルはこの世に 1 つも無い(P0 には保存機能が無かった)ので、
  * 版 1 は「対応していない古い版」として断る。
  * この値は部品文書の `PART_SCHEMA_VERSION` と必ず同じにする(documentJson.test.ts が検査する)。
  *
- * **次の版(4)の予定:** 外観(FR-1106〜1110)の割り当ては P3 では見送り、P5 で版 4 として足す
- * (P3 計画書 §7)。P3 が足すのはフィーチャーの種類だけで既存の欄を1つも変えていないのと同じく、
- * 版 4 も欄の追加だけになる見込みなので、`SCHEMA_MIGRATIONS[3]` は版の数字を書き換えるだけで
- * 済むはずである(下の `SCHEMA_MIGRATIONS[2]` と同じ形)。
+ * **版 3 → 版 4(P4 タスク31、§0.a-0.24):** P4 が足したのは新しいスケッチの種類
+ * (矩形・正多角形・長穴・楕円・スプライン・オフセット・複製・投影/交差)と基準ジオメトリ・
+ * 任意平面・3D スケッチ・構築線フラグである。これらの実装過程(タスク6・9)で、版 3 のままの
+ * 段階的な追加として「欄が無ければ寛容に読む」扱いにしていたものが3つある
+ * (`construction` 無し→false、点列の `base`/`azimuth`/`spacing`/`count` が `layout` を
+ * 挟まないフラットな形→`layout: { kind: 'linear', ... }`、`references` 無し→空配列)。
+ * 版を4へ上げたことで、この寛容さを「版3以前からの移行」として `SCHEMA_MIGRATIONS[3]` へ
+ * 明示的に切り出し、版4の読み手(`documentJson.ts` の各 read 関数)はこれらの欄が
+ * 無ければ `missingField` で断る(寛容な読みを版3以前だけに限定し、版4以降に持ち越さない)。
+ * `freeOrientation`(3D スケッチの円弧の向き、タスク10)は版に関係なく恒常的に省略可能な欄
+ * (作図面上の円弧はそもそも持たない)なので、この移行の対象にしない。
  */
-export const PCAD_SCHEMA_VERSION = 3;
+export const PCAD_SCHEMA_VERSION = 4;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -68,6 +76,81 @@ export type SchemaMigration = (raw: unknown) => unknown;
  * そのまま返し、呼び出し側(`documentJson.ts` の `migrateToCurrentSchema`)の
  * `isRecord` の検査に断らせる(変換そのものは例外を投げない)。
  */
+/**
+ * 版3以前で `construction` を省略できたスケッチフィーチャーの種類
+ * (`documentJson.ts` の `readConstructionFlag` が版4から必須にする対象と同じ一覧)。
+ * `point`・`pointArray`・`face` はもともと `construction` を持たない種類なので含めない。
+ */
+const CONSTRUCTION_FEATURE_KINDS: ReadonlySet<string> = new Set([
+  'line',
+  'arc',
+  'rectangle',
+  'polygon',
+  'slot',
+  'ellipse',
+  'spline',
+  'offset',
+  'copy',
+  'projectedCurve',
+  'planeSection',
+]);
+
+/**
+ * 版3以前のスケッチフィーチャー1件を版4の形へ補う(構築線フラグ・点列の layout)。
+ * 型を検査せずベストエフォートで補うだけで、欄の妥当性そのものは
+ * 呼び出し側(`documentJson.ts` の版4の読み手)が厳密に検査する。
+ */
+function migrateSketchFeatureToV4(feature: unknown): unknown {
+  if (!isRecord(feature)) {
+    return feature;
+  }
+  let migrated: Record<string, unknown> = feature;
+  const kind = migrated['kind'];
+  if (
+    typeof kind === 'string' &&
+    CONSTRUCTION_FEATURE_KINDS.has(kind) &&
+    !('construction' in migrated)
+  ) {
+    migrated = { ...migrated, construction: false };
+  }
+  if (kind === 'pointArray' && !('layout' in migrated)) {
+    // 版3以前は base/azimuth/spacing/count を直下に持つ(タスク6の統括の差し戻し)。
+    // 直線状(linear)の layout へ包み直し、フラットだった4欄は取り除く。
+    const { base, azimuth, spacing, count, ...rest } = migrated;
+    migrated = { ...rest, layout: { kind: 'linear', base, azimuth, spacing, count } };
+  }
+  return migrated;
+}
+
+/** 版3以前のスケッチ1本を版4の形へ補う(features の各要素へ上の変換をかける)。 */
+function migrateSketchToV4(sketch: unknown): unknown {
+  if (!isRecord(sketch)) {
+    return sketch;
+  }
+  const features = sketch['features'];
+  if (!Array.isArray(features)) {
+    return sketch;
+  }
+  return { ...sketch, features: features.map(migrateSketchFeatureToV4) };
+}
+
+/**
+ * 版3以前の部品文書を版4の形へ補う。`schemaVersion` の書き換え、各スケッチの
+ * `construction`/`layout` の補完、`references`(基準ジオメトリの履歴、タスク9)が
+ * 無ければ空配列で補う(§0.a-0.24)。
+ */
+function migrateDocumentToV4(document: Record<string, unknown>): Record<string, unknown> {
+  let migrated: Record<string, unknown> = { ...document, schemaVersion: 4 };
+  const sketches = migrated['sketches'];
+  if (Array.isArray(sketches)) {
+    migrated = { ...migrated, sketches: sketches.map(migrateSketchToV4) };
+  }
+  if (!('references' in migrated)) {
+    migrated = { ...migrated, references: [] };
+  }
+  return migrated;
+}
+
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
   2: (raw) => {
     if (!isRecord(raw)) {
@@ -78,5 +161,22 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
       return raw;
     }
     return { ...raw, schema: 3, document: { ...document, schemaVersion: 3 } };
+  },
+  /**
+   * 版3 → 版4(P4 タスク31、§0.a-0.24): 版3のままの段階的な追加(タスク6・9)で
+   * 「欄が無ければ寛容に読む」扱いにしていた3つ(`construction`・点列の `layout`・
+   * `references`)を、ここで明示的に「移行」として補う。中身が `isRecord` で
+   * 絞れないほど壊れているときはそのまま返し、呼び出し側の `isRecord` の検査に
+   * 断らせる(`SCHEMA_MIGRATIONS[2]` と同じ決めごと)。
+   */
+  3: (raw) => {
+    if (!isRecord(raw)) {
+      return raw;
+    }
+    const document = raw['document'];
+    if (!isRecord(document)) {
+      return raw;
+    }
+    return { ...raw, schema: 4, document: migrateDocumentToV4(document) };
   },
 };

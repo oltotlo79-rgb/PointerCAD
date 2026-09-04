@@ -518,6 +518,9 @@ function richDocument(): PartDocument {
 }
 
 /** 型を通さない生の部品文書。欄の欠落や型違いを自由に作れる。 */
+// 版4(P4 タスク31)は construction・layout・references のいずれも必須なので、
+// 既定値は「壊す前提の欄以外はすべて版4として妥当」な形にしておく
+// (references は空配列で足す。個別の検査は overrides で意図的に外す)。
 function rawDocument(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'part-1',
@@ -525,9 +528,17 @@ function rawDocument(overrides: Record<string, unknown> = {}): Record<string, un
     schemaVersion: PCAD_SCHEMA_VERSION,
     sketches: [{ id: 'sketch-1', name: 'スケッチ1', features: [] }],
     activeSketchId: 'sketch-1',
+    references: [],
     solids: [],
     ...overrides,
   };
+}
+
+/** `rawDocument` の既定に入っている `references` を取り除く(欄が無い版3を模す検査専用)。 */
+function withoutReferences(document: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...document };
+  delete copy['references'];
+  return copy;
 }
 
 /** 型を通さない生のファイル。 */
@@ -561,14 +572,15 @@ function roundTrip(document: PartDocument): PartDocument {
   return expectOk(parseDocument(serializeDocument(document, { savedAt: SAVED_AT })));
 }
 
-describe('.pcad の版(§0.a-0.3、§0.a-0.22)', () => {
-  it('封筒の版は 3 で、部品文書の版と同じ値である', () => {
-    expect(PCAD_SCHEMA_VERSION).toBe(3);
+// P4 タスク31(§0.a-0.24)で版 3 → 4 へ上げた。
+describe('.pcad の版(§0.a-0.3、§0.a-0.22、§0.a-0.24)', () => {
+  it('封筒の版は 4 で、部品文書の版と同じ値である', () => {
+    expect(PCAD_SCHEMA_VERSION).toBe(4);
     expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
   });
 
-  it('版を上げる変換表は版 2 → 3 の1つだけを持つ(P3 が版 3 を追加したため)', () => {
-    expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(['2']);
+  it('版を上げる変換表は版 2 → 3 と版 3 → 4 の2つを持つ(P3・P4 タスク31が版を1つずつ足したため)', () => {
+    expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(['2', '3']);
   });
 });
 
@@ -608,6 +620,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     expect(at).toBeLessThanOrEqual(after);
   });
 
+  // 版の数字は P4 タスク31(§0.a-0.24)で 3 → 4 に更新(PCAD_SCHEMA_VERSION の値そのもの)。
   it('封筒と文書の並びが計画書 §2.8 の例のとおりになる', () => {
     const document: PartDocument = {
       id: 'part-1',
@@ -631,14 +644,14 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     };
     expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(
       `{
-  "schema": 3,
+  "schema": 4,
   "kind": "part",
   "app": "PointerCAD",
   "savedAt": "2026-09-03T01:23:45.678Z",
   "document": {
     "id": "part-1",
     "name": "部品1",
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "sketches": [
       {
         "id": "sketch-1",
@@ -816,6 +829,60 @@ function documentWithSketchFeature(feature: SketchFeature): PartDocument {
   };
 }
 
+// P4 タスク31(§0.a-0.24): 矩形・正多角形・長穴(タスク4)の専用の往復検査が
+// 無かったため、ここで1件ずつ足す(他の検査では複製系の source としてしか使われていない)。
+describe('矩形・正多角形・長穴の往復(P4 タスク4、FR-314〜316)', () => {
+  it('矩形(対角の2点)の欄がすべて往復で一致する', () => {
+    const rectangle: SketchFeature = {
+      id: 'rectangle-9',
+      kind: 'rectangle',
+      name: '矩形1',
+      planeId: 'xy',
+      corner1: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      corner2: { mode: 'absolute', x: ev('40', 40), y: ev('30', 30), z: ev('0', 0) },
+      construction: false,
+    };
+    expect(roundTrip(documentWithSketchFeature(rectangle)).sketches[0].features[0]).toEqual(
+      rectangle,
+    );
+  });
+
+  it('正多角形(内接・外接)の欄がすべて往復で一致する', () => {
+    const inscribed: SketchFeature = {
+      id: 'polygon-9',
+      kind: 'polygon',
+      name: '正多角形1',
+      planeId: 'xy',
+      center: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      sides: ev('6', 6),
+      radius: ev('10', 10),
+      radiusMode: 'inscribed',
+      construction: false,
+    };
+    const circumscribed: SketchFeature = { ...inscribed, id: 'polygon-10', radiusMode: 'circumscribed' };
+    expect(roundTrip(documentWithSketchFeature(inscribed)).sketches[0].features[0]).toEqual(
+      inscribed,
+    );
+    expect(roundTrip(documentWithSketchFeature(circumscribed)).sketches[0].features[0]).toEqual(
+      circumscribed,
+    );
+  });
+
+  it('長穴(2つの中心点+幅)の欄がすべて往復で一致する', () => {
+    const slot: SketchFeature = {
+      id: 'slot-9',
+      kind: 'slot',
+      name: '長穴1',
+      planeId: 'xy',
+      center1: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      center2: { mode: 'absolute', x: ev('20', 20), y: ev('0', 0), z: ev('0', 0) },
+      width: ev('8', 8),
+      construction: true,
+    };
+    expect(roundTrip(documentWithSketchFeature(slot)).sketches[0].features[0]).toEqual(slot);
+  });
+});
+
 describe('楕円・スプラインの往復(P4 タスク5、FR-317・FR-318)', () => {
   const ellipse: SketchFeature = {
     id: 'ellipse-1',
@@ -979,8 +1046,8 @@ describe('点列の拡張・構築線の往復(P4 タスク6、FR-320・FR-327)'
 });
 
 describe(
-  '版3以前の前方互換(construction 無し・pointArray がフラット形式、' +
-    '統括の差し戻し 2026-09-04、要件§8・P3完了条件9)',
+  '版3 → 版4の移行(construction 無し・pointArray がフラット形式、' +
+    'SCHEMA_MIGRATIONS[3]、P4 タスク31・§0.a-0.24。元は統括の差し戻し 2026-09-04、要件§8・P3完了条件9)',
   () => {
     /** 版3の書き手が construction をまだ書いていなかった頃の線分。 */
     const legacyLine = {
@@ -1004,16 +1071,23 @@ describe(
       count: ev('3', 3),
     };
 
+    /** 版3として保存された(schema/schemaVersion とも 3 の)生の部品文書。 */
     function legacyRawDocument(): Record<string, unknown> {
       return rawDocument({
+        schemaVersion: 3,
         sketches: [
           { id: 'sketch-1', name: 'スケッチ1', features: [legacyLine, legacyPointArray] },
         ],
       });
     }
 
-    it('construction の無い線分は false として読める', () => {
-      const document = expectOk(parseDocument(rawFile({ document: legacyRawDocument() })));
+    /** 版3の生ファイル。封筒の schema も 3(SCHEMA_MIGRATIONS[3] を通す)。 */
+    function legacyRawFile(): string {
+      return rawFile({ schema: 3, document: legacyRawDocument() });
+    }
+
+    it('construction の無い線分は移行で false になる', () => {
+      const document = expectOk(parseDocument(legacyRawFile()));
       const line = document.sketches[0].features[0];
       if (line.kind !== 'line') {
         throw new Error('線分のはず');
@@ -1021,8 +1095,8 @@ describe(
       expect(line.construction).toBe(false);
     });
 
-    it('layout の無い点列は直線状(linear)へ包み直して読める', () => {
-      const document = expectOk(parseDocument(rawFile({ document: legacyRawDocument() })));
+    it('layout の無い点列は移行で直線状(linear)へ包み直される', () => {
+      const document = expectOk(parseDocument(legacyRawFile()));
       const array = document.sketches[0].features[1];
       if (array.kind !== 'pointArray') {
         throw new Error('点列のはず');
@@ -1036,8 +1110,8 @@ describe(
       });
     });
 
-    it('版3以前の読み込み結果は、新形式で書いた同じ内容と同じ解決結果になる', () => {
-      const legacyResult = expectOk(parseDocument(rawFile({ document: legacyRawDocument() })));
+    it('版3から移行した読み込み結果は、版4で書いた同じ内容と同じ解決結果になる', () => {
+      const legacyResult = expectOk(parseDocument(legacyRawFile()));
       const modernDocument = rawDocument({
         sketches: [
           {
@@ -1068,14 +1142,33 @@ describe(
       );
     });
 
-    it('読み込んだ文書を書き出すと新形式(construction・layout あり)へ正規化される', () => {
-      const document = expectOk(parseDocument(rawFile({ document: legacyRawDocument() })));
+    it('版3を読み込んだ文書を書き出すと版4(construction・layout あり)で正規化される', () => {
+      const document = expectOk(parseDocument(legacyRawFile()));
       const text = serializeDocument(document, { savedAt: SAVED_AT });
+      expect(text).toContain('"schema": 4');
       expect(text).toContain('"construction": false');
       expect(text).toContain('"layout"');
       // 正規化後は自分自身との往復でも文字列が変わらない(決定的、§0.a-0.2 と同じ確認)。
       const again = serializeDocument(expectOk(parseDocument(text)), { savedAt: SAVED_AT });
       expect(again).toBe(text);
+    });
+
+    it('版4になったのに construction が無ければ断る(寛容な読みは版3までに限る)', () => {
+      const broken = rawDocument({
+        sketches: [{ id: 'sketch-1', name: 'スケッチ1', features: [legacyLine] }],
+      });
+      const error = expectError(parseDocument(rawFile({ document: broken })));
+      expect(error.code).toBe('missingField');
+      expect(error.message).toContain('construction');
+    });
+
+    it('版4になったのに pointArray に layout が無ければ断る(寛容な読みは版3までに限る)', () => {
+      const broken = rawDocument({
+        sketches: [{ id: 'sketch-1', name: 'スケッチ1', features: [legacyPointArray] }],
+      });
+      const error = expectError(parseDocument(rawFile({ document: broken })));
+      expect(error.code).toBe('missingField');
+      expect(error.message).toContain('layout');
     });
   },
 );
@@ -1849,11 +1942,12 @@ describe('読み込みの断り方(FR-504、NFR-UX-5)', () => {
     expect(error.code).toBe('notPcad');
   });
 
-  it('版 4 は「新しい版で保存されています」と断る', () => {
-    const error = expectError(parseDocument(rawFile({ schema: 4 })));
+  // 現在の版が 4(P4 タスク31)になったので、断るべき「新しすぎる版」も 5 に更新する。
+  it('版 5 は「新しい版で保存されています」と断る', () => {
+    const error = expectError(parseDocument(rawFile({ schema: 5 })));
     expect(error.code).toBe('unsupportedNewVersion');
     expect(error.message).toContain('新しい版の PointerCAD で保存されています');
-    expect(error.message).toContain('4');
+    expect(error.message).toContain('5');
   });
 
   it('版 1 は「対応していない古い版です」と断る(版2への移行表が無いため)', () => {
@@ -2041,14 +2135,25 @@ describe('基準ジオメトリの読み書き(FR-328、FR-329、P4 タスク9)'
     }
   });
 
-  it('references の欄が無い版 3 のファイルも開ける(空の履歴として読む)', () => {
-    // スキーマ版は 3 のまま(版 4 はタスク31)なので、この欄を持たないファイルが実在する。
-    const raw = rawDocument();
+  // P4 タスク31(§0.a-0.24)で版4になった: references の無い版3のファイルは
+  // SCHEMA_MIGRATIONS[3] が空配列で補ってから開く(版4自身はこの欄を必須にする)。
+  it('references の欄が無い版 3 のファイルも開ける(移行で空の履歴として読む)', () => {
+    const raw = withoutReferences(rawDocument({ schemaVersion: 3 }));
     expect('references' in raw).toBe(false);
-    const parsed = expectOk(parseDocument(rawFile({ document: raw })));
+    const parsed = expectOk(parseDocument(rawFile({ schema: 3, document: raw })));
     expect(parsed.references).toEqual([]);
-    // 読み直したものを書き出すと、欄ありの形へ正規化される。
-    expect(serializeDocument(parsed, { savedAt: SAVED_AT })).toContain('"references": []');
+    // 読み直したものを書き出すと、版4・欄ありの形へ正規化される。
+    const text = serializeDocument(parsed, { savedAt: SAVED_AT });
+    expect(text).toContain('"schema": 4');
+    expect(text).toContain('"references": []');
+  });
+
+  it('版4になったのに references の欄が無ければ断る(寛容な読みは版3までに限る)', () => {
+    const raw = withoutReferences(rawDocument());
+    expect('references' in raw).toBe(false);
+    const error = expectError(parseDocument(rawFile({ document: raw })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('references');
   });
 
   it('基準ジオメトリの欄が壊れていればファイル全体を断る(場所つき)', () => {
@@ -2222,10 +2327,15 @@ describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
     expect('freeOrientation' in arc).toBe(false);
   });
 
-  it('版は 3 のまま上げない(新種の欄はどちらも省略可能なので前方互換が壊れない)', () => {
+  // タスク10の時点では freeOrientation・subShape 参照のどちらも省略可能なので
+  // 版は3のまま上げなかった(前方互換が壊れないため)。P4 タスク31(§0.a-0.24)で
+  // 版4へ上げたのは construction・point列の layout・references の3件が理由で、
+  // この2件(freeOrientation・subShape 参照)は版4になった今も省略可能なまま
+  // (`readFreeOrientation` のコメント参照。§0.a-0.24 は移行対象にしていない)。
+  it('freeOrientation・subShape 参照は版4でも省略可能(前方互換とは無関係な理由で版が上がった)', () => {
     const text = serializeDocument(documentWith(freeSketch()), { savedAt: SAVED_AT });
-    expect(text).toContain('"schema": 3');
-    expect(PCAD_SCHEMA_VERSION).toBe(3);
+    expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
+    expect(PCAD_SCHEMA_VERSION).toBe(4);
   });
 });
 
@@ -2379,9 +2489,12 @@ describe('ミラー・複写・配列複写の往復(P4 タスク20、FR-324)', 
     expect(text).not.toContain('"planeId": null');
   });
 
-  it('版は 3 のまま上げない(新種を足しただけで既存の欄は変えていない)', () => {
+  // タスク20の時点では新種(copy)を足しただけで既存の欄は変えていないので版は3のまま
+  // 上げなかった。P4 タスク31(§0.a-0.24)で版4へ上げたのは construction・点列の
+  // layout・references の3件が理由で、この copy 自体とは無関係(現在の版を確認するだけ)。
+  it('現在の版(4)で書き出される(copy 自体は版が上がった理由ではない)', () => {
     const text = serializeDocument(documentWithSketchFeature(linearArray), { savedAt: SAVED_AT });
-    expect(text).toContain('"schema": 3');
+    expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
   });
 
   it('知らない並べ方なら、その場所を添えて断る(FR-504、NFR-UX-5)', () => {
@@ -2571,11 +2684,14 @@ describe('投影・交差の往復(P4 タスク25、FR-325)', () => {
     ]);
   });
 
-  it('スキーマ版は 3 のまま(新しい種類を足しても版は上げない)', () => {
+  // タスク25の時点では新種(projectedCurve・planeSection)を足しただけで版は3のまま
+  // 上げなかった。P4 タスク31(§0.a-0.24)で版4へ上げたのは construction・点列の
+  // layout・references の3件が理由で、この2種類自体とは無関係(現在の版を確認するだけ)。
+  it('現在の版(4)で書き出される(projectedCurve・planeSection 自体は版が上がった理由ではない)', () => {
     const json = JSON.parse(
       serializeDocument(sketchWith(projection), { savedAt: SAVED_AT }),
     ) as { readonly schema: number; readonly document: { readonly schemaVersion: number } };
-    expect(json.schema).toBe(3);
-    expect(json.document.schemaVersion).toBe(3);
+    expect(json.schema).toBe(PCAD_SCHEMA_VERSION);
+    expect(json.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
   });
 });

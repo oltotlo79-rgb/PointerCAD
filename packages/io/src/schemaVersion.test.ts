@@ -4,10 +4,12 @@ import { canRoundTrip, EXPORT_FORMATS, IMPORT_FORMATS, PCAD_SCHEMA_VERSION } fro
 
 describe('入出力の骨組み', () => {
   // P0 は 1 を置いていたが、版 1 で保存されたファイルは 1 つも無い(保存機能が無かった)。
-  // P2 で書式が確定して 2 になり、P3 が加工フィーチャー・ばねの種類を足して 3 になった
-  // (§0.a-0.22 の統括承認)。これは仕様変更であり、期待値の緩和ではない。
-  it('.pcad のスキーマバージョンは 3 である(要件§8、§0.a-0.22)', () => {
-    expect(PCAD_SCHEMA_VERSION).toBe(3);
+  // P2 で書式が確定して 2 になり、P3 が加工フィーチャー・ばねの種類を足して 3 になり
+  // (§0.a-0.22 の統括承認)、P4 タスク31が construction・点列の layout・references の
+  // 3件を「版3以前だけの寛容な読み」から「版4の必須欄」へ切り出して 4 になった
+  // (§0.a-0.24)。これは仕様変更であり、期待値の緩和ではない。
+  it('.pcad のスキーマバージョンは 4 である(要件§8、§0.a-0.22、§0.a-0.24)', () => {
+    expect(PCAD_SCHEMA_VERSION).toBe(4);
   });
 
   it('書き出しは STEP / STL / 3MF / OBJ / glTF に対応する(FR-803)', () => {

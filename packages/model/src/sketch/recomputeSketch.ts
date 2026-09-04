@@ -14,6 +14,7 @@ import type {
   SketchOffsetEntry,
   SketchOffsetRequestItem,
 } from '../kernelBridge.js';
+import { mapSketchExpressions } from './mapExpressions.js';
 import {
   closedOffsetDistance,
   createOffsetCache,
@@ -23,16 +24,11 @@ import {
 } from './offsetMath.js';
 import { curveEnd, curveStart, resolveSketch } from './resolveSketch.js';
 import type {
-  CoordinateInput,
-  CopyPlacement,
-  FreeArcOrientation,
   PendingOffset,
-  PointArrayLayout,
   ResolvedCurve,
   ResolvedSketch,
   SketchDocument,
   SketchError,
-  SketchFeature,
   SketchMesh,
 } from './types.js';
 
@@ -234,215 +230,35 @@ export async function recomputeSketch(
   }
 }
 
-/** 1 つの式を評価し直す。評価できなくなったら元の値を残す。 */
+/**
+ * 1 つの式を評価し直す。評価できなくなったら元の値を残す。
+ *
+ * 値も表示も変わらなければ**元のオブジェクトをそのまま返す**。こうしておくと、
+ * `mapSketchExpressions` が「1 つも変わらなかった」ことを参照の比較だけで判定でき、
+ * 中身が同じ文書を作り直して下流の鍵を無駄に変えることがなくなる(P4b タスク3)。
+ */
 function reevaluate(value: ExpressionValue, variables: ReadonlyMap<string, number>): ExpressionValue {
   const result = evaluateExpression(value.source, { variables });
-  // 評価できない式で文書を壊さない。解決の段で invalidValue として拾われる(FR-504)。
-  return result.ok ? result.value : value;
-}
-
-function reevaluateCoordinate(
-  input: CoordinateInput,
-  variables: ReadonlyMap<string, number>,
-): CoordinateInput {
-  if (input.mode === 'absolute') {
-    return {
-      mode: 'absolute',
-      x: reevaluate(input.x, variables),
-      y: reevaluate(input.y, variables),
-      z: reevaluate(input.z, variables),
-    };
+  if (!result.ok) {
+    // 評価できない式で文書を壊さない。解決の段で invalidValue として拾われる(FR-504)。
+    return value;
   }
-  if (input.mode === 'relative') {
-    return {
-      mode: 'relative',
-      base: input.base,
-      dx: reevaluate(input.dx, variables),
-      dy: reevaluate(input.dy, variables),
-      dz: reevaluate(input.dz, variables),
-    };
-  }
-  return {
-    mode: 'polar',
-    base: input.base,
-    distance: reevaluate(input.distance, variables),
-    azimuth: reevaluate(input.azimuth, variables),
-    elevation: reevaluate(input.elevation, variables),
-  };
-}
-
-/**
- * 3D スケッチの円弧の向き(FR-330、タスク10)を評価し直す。向きは 2 つの座標指定なので、
- * 座標と同じ扱いでよい。**指定が無い(作図面がある)ときは無いままにする**
- * (`undefined` を返す。空の指定を作ると「向きを指定した円弧」に化けるため)。
- */
-function reevaluateFreeOrientation(
-  orientation: FreeArcOrientation | undefined,
-  variables: ReadonlyMap<string, number>,
-): FreeArcOrientation | undefined {
-  if (orientation === undefined) {
-    return undefined;
-  }
-  return {
-    normal: reevaluateCoordinate(orientation.normal, variables),
-    xAxis: reevaluateCoordinate(orientation.xAxis, variables),
-  };
-}
-
-/**
- * 点列の並べ方(FR-327、タスク6)を種類ごとに評価し直す。`layout.kind` は式を持たないので
- * そのまま引き継ぎ、各欄の式だけを再評価する。
- */
-function reevaluatePointArrayLayout(
-  layout: PointArrayLayout,
-  variables: ReadonlyMap<string, number>,
-): PointArrayLayout {
-  switch (layout.kind) {
-    case 'linear':
-      return {
-        kind: 'linear',
-        base: reevaluateCoordinate(layout.base, variables),
-        azimuth: reevaluate(layout.azimuth, variables),
-        spacing: reevaluate(layout.spacing, variables),
-        count: reevaluate(layout.count, variables),
-      };
-    case 'circular':
-      return {
-        kind: 'circular',
-        center: reevaluateCoordinate(layout.center, variables),
-        radius: reevaluate(layout.radius, variables),
-        count: reevaluate(layout.count, variables),
-      };
-    case 'grid':
-      return {
-        kind: 'grid',
-        base: reevaluateCoordinate(layout.base, variables),
-        rowAzimuth: reevaluate(layout.rowAzimuth, variables),
-        rowSpacing: reevaluate(layout.rowSpacing, variables),
-        rowCount: reevaluate(layout.rowCount, variables),
-        colAzimuth: reevaluate(layout.colAzimuth, variables),
-        colSpacing: reevaluate(layout.colSpacing, variables),
-        colCount: reevaluate(layout.colCount, variables),
-      };
-  }
-}
-
-/**
- * 複製のしかた(FR-324、タスク20)を並べ方ごとに評価し直す。鏡像は式を持たない
- * (鏡にする軸・平面の参照だけ)ので、そのまま返す。
- */
-function reevaluateCopyPlacement(
-  placement: CopyPlacement,
-  variables: ReadonlyMap<string, number>,
-): CopyPlacement {
-  switch (placement.kind) {
-    case 'mirror':
-      return placement;
-    case 'translate':
-      return { kind: 'translate', delta: reevaluateCoordinate(placement.delta, variables) };
-    case 'linearArray':
-      return {
-        kind: 'linearArray',
-        direction: reevaluateCoordinate(placement.direction, variables),
-        spacing: reevaluate(placement.spacing, variables),
-        count: reevaluate(placement.count, variables),
-      };
-    case 'circularArray':
-      return {
-        kind: 'circularArray',
-        center: reevaluateCoordinate(placement.center, variables),
-        angle: reevaluate(placement.angle, variables),
-        count: reevaluate(placement.count, variables),
-        fullCircle: placement.fullCircle,
-      };
-  }
-}
-
-function reevaluateFeature(
-  feature: SketchFeature,
-  variables: ReadonlyMap<string, number>,
-): SketchFeature {
-  switch (feature.kind) {
-    case 'point':
-      return { ...feature, at: reevaluateCoordinate(feature.at, variables) };
-    case 'line':
-      return {
-        ...feature,
-        from: reevaluateCoordinate(feature.from, variables),
-        to: reevaluateCoordinate(feature.to, variables),
-      };
-    case 'arc':
-      return {
-        ...feature,
-        center: reevaluateCoordinate(feature.center, variables),
-        radius: reevaluate(feature.radius, variables),
-        startAngle: reevaluate(feature.startAngle, variables),
-        endAngle: reevaluate(feature.endAngle, variables),
-        freeOrientation: reevaluateFreeOrientation(feature.freeOrientation, variables),
-      };
-    case 'pointArray':
-      return { ...feature, layout: reevaluatePointArrayLayout(feature.layout, variables) };
-    case 'face':
-      // 面は式を持たない(境界の参照と色だけ)。
-      return feature;
-    case 'rectangle':
-      return {
-        ...feature,
-        corner1: reevaluateCoordinate(feature.corner1, variables),
-        corner2: reevaluateCoordinate(feature.corner2, variables),
-      };
-    case 'polygon':
-      return {
-        ...feature,
-        center: reevaluateCoordinate(feature.center, variables),
-        sides: reevaluate(feature.sides, variables),
-        radius: reevaluate(feature.radius, variables),
-      };
-    case 'slot':
-      return {
-        ...feature,
-        center1: reevaluateCoordinate(feature.center1, variables),
-        center2: reevaluateCoordinate(feature.center2, variables),
-        width: reevaluate(feature.width, variables),
-      };
-    case 'ellipse':
-      return {
-        ...feature,
-        center: reevaluateCoordinate(feature.center, variables),
-        majorRadius: reevaluate(feature.majorRadius, variables),
-        minorRadius: reevaluate(feature.minorRadius, variables),
-        rotation: reevaluate(feature.rotation, variables),
-        startAngle: reevaluate(feature.startAngle, variables),
-        endAngle: reevaluate(feature.endAngle, variables),
-      };
-    case 'spline':
-      // スプラインが持つ式は点の座標だけ(通過点・制御点とも同じ扱い)。
-      return {
-        ...feature,
-        points: feature.points.map((input) => reevaluateCoordinate(input, variables)),
-      };
-    case 'offset':
-      // オフセットが持つ式は距離だけ(元の要素・側・角は式ではない)。
-      return { ...feature, distance: reevaluate(feature.distance, variables) };
-    case 'copy':
-      return { ...feature, placement: reevaluateCopyPlacement(feature.placement, variables) };
-    case 'projectedCurve':
-    case 'planeSection':
-      // 投影・交差が持つのは立体への参照と作図面だけで、式は 1 つも無い(FR-325)。
-      return feature;
-  }
+  const next = result.value;
+  return next.value === value.value && next.display === value.display ? value : next;
 }
 
 /**
  * すべての式を評価し直す(FR-206 の変数変更、FR-502 の下流再計算の土台)。
  * 式文字列は変えない。変わるのは評価値と表示用の文字列だけ(FR-202)。
+ *
+ * 「スケッチのどこに式があるか」を知っているのは `mapExpressions.ts` の 1 か所だけ。
+ * 部品文書の全域(立体・基準ジオメトリ)を回す `part/reevaluatePart.ts` も**同じ歩き方**
+ * (`mapSketchExpressions`)を通るので、要素の種類が増えても両方が同時に追従する
+ * (同じ規則を 2 か所に書かない。P4b タスク3)。
  */
 export function reevaluateDocument(
   document: SketchDocument,
   variables: ReadonlyMap<string, number>,
 ): SketchDocument {
-  return {
-    ...document,
-    features: document.features.map((feature) => reevaluateFeature(feature, variables)),
-  };
+  return mapSketchExpressions(document, (value) => reevaluate(value, variables));
 }

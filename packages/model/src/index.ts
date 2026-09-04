@@ -243,6 +243,16 @@ export type {
   PartRecomputeError, PartRecomputeOptions, PartRecomputeResult, PartSketchResult,
 } from './part/recomputePart.js';
 export { recomputePart } from './part/recomputePart.js';
+/**
+ * 部品文書の全式の評価し直し(FR-207、FR-502、P4b タスク3)。
+ * パラメータ表の値を 1 か所変えると、参照している全ての欄が追従する仕組みの入口。
+ */
+export type {
+  AppliedParameters, PartReevaluation, ReevaluationFailure,
+} from './part/reevaluatePart.js';
+export {
+  applyParameters, collectExpressionSources, reevaluatePartDocument, renameVariableInPartDocument,
+} from './part/reevaluatePart.js';
 export type { PushUndoOptions, UndoStack } from './history/undoStack.js';
 export {
   canRedo, canUndo, createUndoStack, pushUndo, redo, undo, UNDO_COALESCE_MS, UNDO_LIMIT,

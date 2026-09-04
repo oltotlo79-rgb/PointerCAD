@@ -33,6 +33,7 @@ import {
   type ResolvedProjection,
   type ResolvePartOptions,
 } from './resolvePart.js';
+import { applyParameters } from './reevaluatePart.js';
 import { createSubShapeCache, type SubShapeCache } from './subShapeCache.js';
 import type { PartDocument } from './types.js';
 
@@ -337,6 +338,13 @@ async function fillProjections(
  * (ほとんどの部品)では 1 巡で終わり、これまでと同じ費用で済む(NFR-PF-3)。
  * 2 巡目の立体の再計算も、変わっていない段は鍵が当たって作り直されない。
  * 途中で打ち切られた(NFR-PF-4)ときは 2 巡目へ進まない。
+ *
+ * ## パラメータ表(FR-207、P4b タスク3)
+ *
+ * 解決を始める前に、パラメータ表(名前を付けた数値)の値を**文書の全ての式へ配る**
+ * (`applyParameters`)。ここを通さないと、表の値を変えても押し出しの距離や穴の径が
+ * 追従しない(FR-502)。**表が空なら `applyParameters` は元の文書をそのまま返す**ので、
+ * パラメータを使わない部品では費用も結果も変わらない。
  */
 export async function recomputePart(
   document: PartDocument,
@@ -344,6 +352,7 @@ export async function recomputePart(
   options: PartRecomputeOptions = {},
 ): Promise<PartRecomputeResult> {
   const generation = options.generation ?? 0;
+  const evaluated = applyParameters(document).document;
   // 解決そのものは OCCT を呼ばない純関数のままで、形は覚え書き越しに差し込む。
   const offsets = options.offsets ?? createOffsetCache();
   const projections = options.projections ?? createProjectionCache();
@@ -358,7 +367,7 @@ export async function recomputePart(
 
   const offsetErrors: SketchError[] = [];
   const projectionErrors: SketchError[] = [];
-  let resolved = await resolveWithOffsets(document, bridge, offsets, resolveOptions, offsetErrors);
+  let resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
   let solid = await callSolids(bridge, resolved, generation, options);
 
   if (solid.ok && !solid.outcome.cancelled) {
@@ -372,7 +381,7 @@ export async function recomputePart(
       projectionErrors,
     );
     if (reselected || projected) {
-      resolved = await resolveWithOffsets(document, bridge, offsets, resolveOptions, offsetErrors);
+      resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
       solid = await callSolids(bridge, resolved, generation, options);
     }
   }

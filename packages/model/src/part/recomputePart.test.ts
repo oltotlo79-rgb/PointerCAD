@@ -376,6 +376,45 @@ describe('部品の再計算(要件§6.3)', () => {
     expect(steps[0].plan).toEqual(step.plan);
   });
 
+  /**
+   * パラメータ表(FR-207)の配線。**部品の再計算の経路で実際に効く**ことをここで固定する
+   * (`reevaluateDocument` が P1 から一度も呼ばれていなかったのと同じ配線もれを防ぐため。
+   * docs/報告記録.md 2026-09-04 21:05 の教訓、計画書 タスク3)。
+   *
+   * 距離の式 `板厚 * 2` は変数表が無ければ評価できず、保存値の 0 が残る。0 の押し出しは
+   * `resolvePart` が断って段を作らないので、段が 1 つあって距離が 6 であることが
+   * 「表の値が式へ配られた」ことの証明になる。
+   */
+  /** 距離が `板厚 * 2`(そのままでは評価できない)の押し出しと、板厚の値を持つ部品。 */
+  function withThicknessParameter(thickness: string, savedDistance: number): PartDocument {
+    const fixture = createFixture();
+    const extrude: ExtrudeFeature = {
+      ...extrudeFeature('extrude-1', fixture.faceA),
+      distance: { source: '板厚 * 2', value: savedDistance, display: String(savedDistance) },
+    };
+    return {
+      ...withSolids(fixture.document, extrude),
+      parameters: [{ name: '板厚', value: expr(thickness), unit: 'mm', description: '' }],
+    };
+  }
+
+  it('パラメータ表の値を全式へ配ってから解決する(FR-207、FR-502)', async () => {
+    const recomputeSolids = recordSolids();
+    await recomputePart(withThicknessParameter('3', 0), fakeBridge({ recomputeSolids }));
+
+    const steps = recomputeSolids.mock.calls[0][0];
+    expect(steps).toHaveLength(1);
+    expect(steps[0].plan).toEqual(expect.objectContaining({ kind: 'extrude', distance: 6 }));
+  });
+
+  it('パラメータの値を変えると立体の寸法が追従する(板厚 3 → 5 で 6 → 10)', async () => {
+    const recomputeSolids = recordSolids();
+    await recomputePart(withThicknessParameter('5', 6), fakeBridge({ recomputeSolids }));
+
+    const steps = recomputeSolids.mock.calls[0][0];
+    expect(steps[0].plan).toEqual(expect.objectContaining({ kind: 'extrude', distance: 10 }));
+  });
+
   it('段は履歴の順に並び、消費されたボディは visible が false になる(§0.a-0.5)', async () => {
     const recomputeSolids = recordSolids();
     const fixture = createFixture();

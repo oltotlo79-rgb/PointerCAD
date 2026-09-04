@@ -332,6 +332,11 @@ export function shiftSketchFeature(feature: SketchFeature, shift: CoordinateShif
           }
         : // 鏡像は軸・平面の参照だけ、移動と直線状の配列は向き(ずれ)なので動かさない。
           feature;
+    case 'projectedCurve':
+    case 'planeSection':
+      // 投影・交差が持つのは立体への参照だけ(座標を持たない)。形は立体の側が動けば
+      // 一緒に動くので、ここで書き換えるものは無い(FR-325、FR-331)。
+      return feature;
   }
 }
 

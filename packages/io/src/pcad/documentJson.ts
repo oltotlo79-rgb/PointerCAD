@@ -113,6 +113,9 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'spline',
   'offset',
   'copy',
+  // 投影・交差(FR-325、P4 タスク25)。曲線そのものは保存せず、立体への参照だけを持つ。
+  'projectedCurve',
+  'planeSection',
 ];
 /**
  * オフセット(FR-321、P4 タスク15)の側と角。`model` の `OffsetSide` /
@@ -500,6 +503,25 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         planeId: feature.planeId,
         source: feature.source.map(serializeElementRef),
         placement: serializeCopyPlacement(feature.placement),
+        construction: feature.construction,
+      };
+    case 'projectedCurve':
+      // 投影された曲線そのものは保存しない(立体と作図面から再計算で導ける、rules/04)。
+      return {
+        id: feature.id,
+        kind: 'projectedCurve',
+        name: feature.name,
+        planeId: feature.planeId,
+        source: serializeSubShapeRef(feature.source),
+        construction: feature.construction,
+      };
+    case 'planeSection':
+      return {
+        id: feature.id,
+        kind: 'planeSection',
+        name: feature.name,
+        planeId: feature.planeId,
+        targetFeatureId: feature.targetFeatureId,
         construction: feature.construction,
       };
   }
@@ -1224,6 +1246,10 @@ function readSketchFeature(value: unknown, path: string): Checked<SketchFeature>
       return readOffsetFeature(record.value, path, base.value);
     case 'copy':
       return readCopyFeature(record.value, path, base.value);
+    case 'projectedCurve':
+      return readProjectedCurveFeature(record.value, path, base.value);
+    case 'planeSection':
+      return readPlaneSectionFeature(record.value, path, base.value);
   }
 }
 
@@ -1919,6 +1945,60 @@ function readCopyFeature(
       kind: 'copy',
       source: source.value,
       placement: placement.value,
+      construction: construction.value,
+    },
+  };
+}
+
+/**
+ * 投影(FR-325、P4 タスク25)を読む。
+ * 投影された曲線は保存されていない(立体と作図面から再計算で導く)ので、
+ * 読むのは投影元の面・辺への参照だけ。
+ */
+function readProjectedCurveFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const source = readSubShapeRefField(record, 'source', path);
+  if (!source.ok) {
+    return source;
+  }
+  const construction = readConstructionFlag(record, path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'projectedCurve',
+      source: source.value,
+      construction: construction.value,
+    },
+  };
+}
+
+/** 交差(FR-325、P4 タスク25)を読む。断面を取る立体の id だけを持つ。 */
+function readPlaneSectionFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SketchFeatureBase,
+): Checked<SketchFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const construction = readConstructionFlag(record, path);
+  if (!construction.ok) {
+    return construction;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'planeSection',
+      targetFeatureId: targetFeatureId.value,
       construction: construction.value,
     },
   };

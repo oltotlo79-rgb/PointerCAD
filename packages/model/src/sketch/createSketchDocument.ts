@@ -39,6 +39,10 @@ const KIND_LABELS: Readonly<Record<SketchFeatureKind, string>> = {
   // ミラー・複写・配列複写はどれも `kind: 'copy'` の 1 種類(`types.ts` の `CopyPlacement`)。
   // 木に出す名前を並べ方ごとに分けるかはタスク33(ツリー・プロパティ)で判断する。
   copy: '複製',
+  // 投影・交差(FR-325、タスク25)。どちらも立体を下描きへ取り込む道具なので、
+  // 木に出す名前も利用者の言葉(「投影」「断面」)にそろえる。
+  projectedCurve: '投影',
+  planeSection: '断面',
 };
 
 /** 起動時の文書。空の履歴を持つ(§0.a-0.2)。作図面の既定は DEFAULT_WORK_PLANE_ID(XY)。 */

@@ -13,7 +13,7 @@ import {
   nextFeatureId,
   nextFeatureName,
 } from '../sketch/createSketchDocument.js';
-import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
+import { DEFAULT_WORK_PLANE_ID, FREE_WORK_PLANE_ID } from '../sketch/planeMath.js';
 import type {
   ResolvedArc,
   ResolvedCurve,
@@ -21,6 +21,7 @@ import type {
   SketchArcFeature,
   SketchDocument,
   SketchFaceFeature,
+  SketchFeature,
   SketchLineFeature,
   SketchPointArrayFeature,
 } from '../sketch/types.js';
@@ -33,12 +34,14 @@ import {
 } from '../thread/metricThread.js';
 import { cacheKeyFor, type KeyCurve } from './cacheKey.js';
 import {
+  addSketch,
   appendReference,
   appendSolid,
   createEmptyPartDocument,
   replaceSketch,
 } from './createPartDocument.js';
 import {
+  referencedSketchIds,
   resolveHoleCenters,
   resolveMachiningTarget,
   resolvePart,
@@ -3286,5 +3289,359 @@ describe('基準ジオメトリと部品の解決の噛み合わせ(FR-328、FR-
     expect(resolved.references.axes).toEqual([]);
     expect(resolved.references.errors).toEqual([]);
     expect(resolved.errors).toEqual([]);
+  });
+});
+
+describe('投影・交差の解決順序(FR-325、§0.a-0.11、タスク25)', () => {
+  /** 立体 `bodyFeatureId` の平らな面を指す指紋。 */
+  function faceRef(bodyFeatureId: string): SubShapeRef {
+    return {
+      bodyFeatureId,
+      index: 4,
+      fingerprint: {
+        kind: 'face',
+        surfaceKind: 'plane',
+        area: 1200,
+        position: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: null,
+      },
+    };
+  }
+
+  /** 40×30 の長方形(カーネルが返したことにする投影の結果)。 */
+  const RECTANGLE: readonly ResolvedCurve[] = [
+    { kind: 'segment', featureId: 'from-kernel', from: [0, 0, 0], to: [40, 0, 0] },
+    { kind: 'segment', featureId: 'from-kernel', from: [40, 0, 0], to: [40, 30, 0] },
+    { kind: 'segment', featureId: 'from-kernel', from: [40, 30, 0], to: [0, 30, 0] },
+    { kind: 'segment', featureId: 'from-kernel', from: [0, 30, 0], to: [0, 0, 0] },
+  ];
+
+  /**
+   * 検査の土台。スケッチ2 に投影(または交差)を 1 つ持ち、`extrude-1`(面Aを
+   * 押し出した立体)を参照する。`useProjection` を false にすると、投影の面を
+   * 使う押し出しを置かない(スケッチがどの立体からも使われない場合)。
+   */
+  function documentWithProjection(
+    feature: 'projectedCurve' | 'planeSection',
+    options: { readonly bodyFeatureId?: string; readonly useProjection?: boolean } = {},
+  ): { readonly document: PartDocument } {
+    const fixture = createFixture();
+    const bodyFeatureId = options.bodyFeatureId ?? 'extrude-1';
+    const projected: SketchFeature =
+      feature === 'projectedCurve'
+        ? {
+            id: 'pj1',
+            name: '投影1',
+            planeId: DEFAULT_WORK_PLANE_ID,
+            kind: 'projectedCurve',
+            source: faceRef(bodyFeatureId),
+            construction: false,
+          }
+        : {
+            id: 'pj1',
+            name: '断面1',
+            planeId: DEFAULT_WORK_PLANE_ID,
+            kind: 'planeSection',
+            targetFeatureId: bodyFeatureId,
+            construction: false,
+          };
+    const face: SketchFaceFeature = {
+      id: 'f-pj',
+      name: '面-投影',
+      planeId: DEFAULT_WORK_PLANE_ID,
+      kind: 'face',
+      boundary: [{ featureId: 'pj1' }],
+      color: DEFAULT_FACE_COLOR,
+    };
+    let document = addSketch(fixture.document, {
+      id: 'sketch-2',
+      name: 'スケッチ2',
+      features: [projected, face],
+    });
+    document = appendSolid(document, extrudeFeature('extrude-1', fixture.faceA));
+    if (options.useProjection !== false) {
+      document = appendSolid(
+        document,
+        extrudeFeature(
+          'extrude-2',
+          { sketchId: 'sketch-2', faceFeatureId: 'f-pj' },
+          { distance: '5' },
+        ),
+      );
+    }
+    return { document };
+  }
+
+  it('形がまだ無いときは、段の鍵つきの依頼を projections へ積む', () => {
+    const { document } = documentWithProjection('projectedCurve');
+    const resolved = resolvePart(document);
+
+    expect(resolved.projections).toHaveLength(1);
+    const request = resolved.projections[0];
+    expect(request.featureId).toBe('pj1');
+    expect(request.sketchId).toBe('sketch-2');
+    expect(request.source).toEqual({ kind: 'subShape', ref: faceRef('extrude-1') });
+    // もとの立体の段の鍵をそのまま持つので、カーネルが形状キャッシュから引ける。
+    expect(request.bodyKey).toBe(
+      resolved.steps.find((step) => step.featureId === 'extrude-1')?.key,
+    );
+    expect(request.key.length).toBeGreaterThan(0);
+    // 投影の面がまだ無いので、それを使う押し出しだけが失敗する(FR-504)。
+    expect(resolved.errors.map((error) => error.featureId)).toEqual(['extrude-2']);
+  });
+
+  it('交差の依頼は立体そのものを指す', () => {
+    const { document } = documentWithProjection('planeSection');
+    const resolved = resolvePart(document);
+
+    expect(resolved.projections).toHaveLength(1);
+    expect(resolved.projections[0].source).toEqual({
+      kind: 'body',
+      bodyFeatureId: 'extrude-1',
+    });
+  });
+
+  it('もとの立体の鍵が変われば、投影の鍵も必ず変わる(上流追従、NFR-PF-3)', () => {
+    const { document } = documentWithProjection('projectedCurve');
+    const before = resolvePart(document).projections[0];
+
+    const changed: PartDocument = {
+      ...document,
+      solids: document.solids.map((feature) =>
+        feature.id === 'extrude-1' && feature.kind === 'extrude'
+          ? { ...feature, distance: expr('20') }
+          : feature,
+      ),
+    };
+    const after = resolvePart(changed).projections[0];
+
+    expect(after.bodyKey).not.toBe(before.bodyKey);
+    expect(after.key).not.toBe(before.key);
+  });
+
+  it('作図面が変われば投影の鍵も変わる(投影先が違えば別の曲線になる)', () => {
+    const { document } = documentWithProjection('projectedCurve');
+    const before = resolvePart(document).projections[0];
+
+    const onXz: PartDocument = {
+      ...document,
+      sketches: document.sketches.map((sketch) =>
+        sketch.id === 'sketch-2'
+          ? {
+              ...sketch,
+              features: sketch.features.map((feature) =>
+                feature.id === 'pj1' ? { ...feature, planeId: 'xz' } : feature,
+              ),
+            }
+          : sketch,
+      ),
+    };
+    const after = resolvePart(onXz).projections[0];
+
+    expect(after.bodyKey).toBe(before.bodyKey);
+    expect(after.key).not.toBe(before.key);
+  });
+
+  it('覚え書きから曲線が引けると、投影の面を使う押し出しまで解決する', () => {
+    const { document } = documentWithProjection('projectedCurve');
+    const resolved = resolvePart(document, { projectedCurves: () => RECTANGLE });
+
+    expect(resolved.projections).toEqual([]);
+    expect(resolved.errors).toEqual([]);
+    const step = resolved.steps.find((candidate) => candidate.featureId === 'extrude-2');
+    if (step === undefined) {
+      throw new Error('投影の面を押し出した段があるはず');
+    }
+    expect(extrudePlan(step).profile).toHaveLength(4);
+    expect(extrudePlan(step).distance).toBe(5);
+  });
+
+  it('参照先の立体が無いときは missingBody で断り、他は解決する(FR-504)', () => {
+    const { document } = documentWithProjection('projectedCurve', {
+      bodyFeatureId: 'extrude-404',
+    });
+    const resolved = resolvePart(document);
+
+    expect(resolved.projections).toEqual([]);
+    const failure = resolved.errors.find((error) => error.featureId === 'pj1');
+    expect(failure?.code).toBe('missingBody');
+    expect(failure?.message).toContain('投影のもとになる立体が見つかりません');
+    // もとの立体そのものは作れている(文書は壊れない)。
+    expect(resolved.steps.map((step) => step.featureId)).toEqual(['extrude-1']);
+  });
+
+  it('自分より後に作られる立体を指すと順序違反として断る(§0.a-0.11)', () => {
+    const fixture = createFixture();
+    const projected: SketchFeature = {
+      id: 'pj1',
+      name: '投影1',
+      planeId: DEFAULT_WORK_PLANE_ID,
+      kind: 'projectedCurve',
+      // まだ作られていない後ろの立体(extrude-2)を指す。
+      source: faceRef('extrude-2'),
+      construction: false,
+    };
+    const face: SketchFaceFeature = {
+      id: 'f-pj',
+      name: '面-投影',
+      planeId: DEFAULT_WORK_PLANE_ID,
+      kind: 'face',
+      boundary: [{ featureId: 'pj1' }],
+      color: DEFAULT_FACE_COLOR,
+    };
+    let document = addSketch(fixture.document, {
+      id: 'sketch-2',
+      name: 'スケッチ2',
+      features: [projected, face],
+    });
+    // スケッチ2 を使うのは extrude-1(位置 0)、参照先の extrude-2 は位置 1 なので順序違反。
+    document = appendSolid(
+      document,
+      extrudeFeature('extrude-1', { sketchId: 'sketch-2', faceFeatureId: 'f-pj' }),
+    );
+    document = appendSolid(document, extrudeFeature('extrude-2', fixture.faceA));
+
+    const resolved = resolvePart(document);
+
+    expect(resolved.projections).toEqual([]);
+    const failure = resolved.errors.find((error) => error.featureId === 'pj1');
+    expect(failure?.code).toBe('missingBody');
+    expect(failure?.message).toContain('このスケッチを使う立体より前に作られた立体だけ');
+    // 後ろの立体そのものは作れている(FR-504「止めずに警告する」)。
+    expect(resolved.steps.map((step) => step.featureId)).toEqual(['extrude-2']);
+  });
+
+  it('そのスケッチをどの立体も使っていなければ、どの立体でも参照できる', () => {
+    const { document } = documentWithProjection('projectedCurve', { useProjection: false });
+    const resolved = resolvePart(document);
+
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.projections).toHaveLength(1);
+    expect(resolved.projections[0].featureId).toBe('pj1');
+  });
+
+  it('投影を持たない部品では projections は空のまま(費用を増やさない、NFR-PF-3)', () => {
+    const fixture = createFixture();
+    const document = appendSolid(fixture.document, extrudeFeature('extrude-1', fixture.faceA));
+
+    expect(resolvePart(document).projections).toEqual([]);
+  });
+
+  it('部分形状の選び直しの口を渡すと、3D スケッチの頂点参照がいまの形へ追従する(FR-330)', () => {
+    const fixture = createFixture();
+    const vertex: SubShapeRef = {
+      bodyFeatureId: 'extrude-1',
+      index: 2,
+      fingerprint: { kind: 'vertex', position: [40, 30, 10] },
+    };
+    const document = appendSolid(
+      addSketch(fixture.document, {
+        id: 'sketch-2',
+        name: 'スケッチ2',
+        features: [
+          {
+            id: 'p-v',
+            name: '点-頂点',
+            planeId: FREE_WORK_PLANE_ID,
+            kind: 'point',
+            at: {
+              mode: 'relative',
+              base: { kind: 'subShape', ref: vertex },
+              dx: expr('0'),
+              dy: expr('0'),
+              dz: expr('0'),
+            },
+          },
+        ],
+      }),
+      extrudeFeature('extrude-1', fixture.faceA),
+    );
+
+    // 口を渡さないと、保存された指紋の位置のまま(タスク10 の振る舞い)。
+    const fixed = resolvePart(document);
+    const fixedSketch = fixed.sketches.find((entry) => entry.sketchId === 'sketch-2');
+    expect(fixedSketch?.resolved.points[0].position).toEqual([40, 30, 10]);
+
+    // 口を渡すと、いまの形で選び直した位置になる(タスク25 で配線した上流追従)。
+    const followed = resolvePart(document, {
+      subShape: () => ({
+        kind: 'vertex',
+        position: [40, 30, 20],
+        axis: null,
+        surfaceKind: null,
+        curveKind: null,
+      }),
+    });
+    const followedSketch = followed.sketches.find((entry) => entry.sketchId === 'sketch-2');
+    expect(followedSketch?.resolved.points[0].position).toEqual([40, 30, 20]);
+  });
+
+  it('部分形状の選び直しの口は基準ジオメトリ(FR-329)にも効く', () => {
+    const fixture = createFixture();
+    const document = appendReference(fixture.document, {
+      id: 'ref-1',
+      name: '基準点1',
+      visible: true,
+      kind: 'referencePoint',
+      definition: {
+        kind: 'vertex',
+        vertex: {
+          bodyFeatureId: 'extrude-1',
+          index: 2,
+          fingerprint: { kind: 'vertex', position: [40, 30, 10] },
+        },
+      },
+    });
+
+    const fixed = resolvePart(document);
+    expect(fixed.references.points[0].position).toEqual([40, 30, 10]);
+
+    const followed = resolvePart(document, {
+      subShape: () => ({
+        kind: 'vertex',
+        position: [40, 30, 20],
+        axis: null,
+        surfaceKind: null,
+        curveKind: null,
+      }),
+    });
+    expect(followed.references.points[0].position).toEqual([40, 30, 20]);
+  });
+});
+
+describe('referencedSketchIds(FR-325 の順序の判定、タスク25)', () => {
+  it('押し出しは断面のスケッチを使う', () => {
+    expect(
+      referencedSketchIds(
+        extrudeFeature('e1', { sketchId: 'sketch-9', faceFeatureId: 'face-1' }),
+      ),
+    ).toEqual(['sketch-9']);
+  });
+
+  it('回転は断面と、軸に使った線分のスケッチの両方を使う', () => {
+    expect(
+      referencedSketchIds(
+        revolveFeature(
+          'r1',
+          { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+          { axis: { kind: 'line', line: { sketchId: 'sketch-2', lineFeatureId: 'line-1' } } },
+        ),
+      ),
+    ).toEqual(['sketch-1', 'sketch-2']);
+  });
+
+  it('ブーリアンはスケッチを使わない(指すのはボディの id だけ)', () => {
+    expect(
+      referencedSketchIds({
+        id: 'b1',
+        name: 'b1',
+        suppressed: false,
+        kind: 'boolean',
+        operation: 'union',
+        targetFeatureId: 'a',
+        toolFeatureId: 'b',
+      }),
+    ).toEqual([]);
   });
 });

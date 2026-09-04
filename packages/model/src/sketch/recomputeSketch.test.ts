@@ -7,6 +7,7 @@ import {
   type KernelBridge,
   type SketchOffsetContour,
   type SketchOffsetResult,
+  type SketchProjectionResult,
   type SketchTessellationOutcome,
   type SolidRecomputeOutcome,
 } from '../kernelBridge.js';
@@ -37,6 +38,9 @@ const EMPTY_SOLID_OUTCOME: SolidRecomputeOutcome = {
 /** オフセットを頼まないときの戻り値(FR-321、タスク15)。 */
 const EMPTY_OFFSET_RESULT: SketchOffsetResult = { results: [], failures: [] };
 
+/** 投影・交差を頼まないときの戻り値(FR-325、P4 タスク25)。 */
+const EMPTY_PROJECTION_RESULT: SketchProjectionResult = { results: [], failures: [] };
+
 /**
  * 偽のカーネル。OCCT は読み込まない(実物はタスク13・14 の Node テストで確かめる)。
  * async を使わないのは、await の無い async 関数を書かないため(計画書 §4)。
@@ -46,6 +50,9 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
     tessellateSketchFaces: () => Promise.resolve(EMPTY_OUTCOME),
     recomputeSolids: () => Promise.resolve(EMPTY_SOLID_OUTCOME),
     offsetSketchCurves: () => Promise.resolve(EMPTY_OFFSET_RESULT),
+    // 投影・交差(FR-325、P4 タスク25)はスケッチ単体では起きない(立体が要る)。
+    projectSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
+    sectionSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
     dispose: () => undefined,
     ...overrides,
   };

@@ -2,6 +2,16 @@
 // 同じ約束を2か所に書かないため、ここでは取り込んで輸出し直すだけにする
 // (型だけの取り込みなので、実行時の読み込みは起きない)。
 import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
+// 投影・交差(FR-325、P4 タスク26)の作図面と、作図面の上の 2 次元の曲線も
+// `occt/makeProjection.ts` が正本。オフセットと同じ理由で取り込んで輸出し直す。
+import type {
+  PlaneArc,
+  PlaneCurve,
+  PlanePolyline,
+  PlaneSegment,
+  SketchPlaneFrame,
+  Vec2Tuple,
+} from './occt/makeProjection.js';
 
 /** 表示用の三角形メッシュ。内部単位は mm(NFR-RE-3)。 */
 export interface MeshData {
@@ -181,6 +191,73 @@ export interface SketchOffsetFailure {
 export interface SketchOffsetOutcome {
   readonly results: readonly SketchOffsetResult[];
   readonly failures: readonly SketchOffsetFailure[];
+}
+
+/**
+ * 投影・交差(FR-325、P4 タスク25・26)を Worker 越しに頼むための型。
+ *
+ * 形を作るのは `occt/makeProjection.ts` / `occt/makeSection.ts` で、作図面
+ * (`SketchPlaneFrame`)と作図面の上の曲線(`PlaneCurve`)はそこの定義をそのまま使う。
+ *
+ * **もとの立体は形状キャッシュの鍵で指す。** 立体の B-rep は Worker の中にしか無く、
+ * Comlink 越しには渡せないため、`recomputeSolids` が段ごとに預けた鍵
+ * (`SolidStepRequest.key`)をそのまま渡して引く。鍵は上流の値から作られている
+ * (model の `part/cacheKey.ts`)ので、**上流の立体が変われば鍵が変わり、
+ * 投影も必ず作り直される**(NFR-PF-3 の鍵の連鎖と同じ仕組み)。
+ */
+export type { PlaneArc, PlaneCurve, PlanePolyline, PlaneSegment, SketchPlaneFrame, Vec2Tuple };
+
+/** 投影 1 件の依頼。`id` は結果の対応づけに使う(オフセットと同じ約束)。 */
+export interface SketchProjectionItem {
+  readonly id: string;
+  /** もとの立体の形状キャッシュの鍵。 */
+  readonly shapeKey: string;
+  /**
+   * 投影する面・辺の指紋。カーネルが立体の中から選び直す(§2.2.4)。
+   * `null` なら立体そのもの(含まれるすべての辺)を投影する。
+   */
+  readonly subShape: SubShapeQuery | null;
+  /** 投影先の作図面。 */
+  readonly plane: SketchPlaneFrame;
+}
+
+/** 交差 1 件の依頼。切るのは立体そのものなので、部分形状の指紋は取らない。 */
+export interface SketchSectionItem {
+  readonly id: string;
+  readonly shapeKey: string;
+  readonly plane: SketchPlaneFrame;
+}
+
+/** 投影の依頼をまとめたもの。1 回の往復で何件でも頼める。 */
+export interface SketchProjectionRequest {
+  readonly items: readonly SketchProjectionItem[];
+}
+
+/** 交差の依頼をまとめたもの。 */
+export interface SketchSectionRequest {
+  readonly items: readonly SketchSectionItem[];
+}
+
+/**
+ * 投影・交差 1 件の結果。曲線は作図面の上の 2 次元座標で、つながる順に並ぶ。
+ * **交差が空(立体と作図面が交わらない)ときは `curves` が空**で返る。
+ * 「交わりません」と断るのは呼び出し側の役目(`makeSection.ts` の注釈)。
+ */
+export interface SketchProjectionResult {
+  readonly id: string;
+  readonly curves: readonly PlaneCurve[];
+}
+
+/** 投影・交差を作れなかった依頼と、その理由(利用者へそのまま見せる日本語)。 */
+export interface SketchProjectionFailure {
+  readonly id: string;
+  readonly message: string;
+}
+
+/** 投影・交差の結果。1 件失敗しても止めずに残りを返す(FR-504、NFR-RE-1)。 */
+export interface SketchProjectionOutcome {
+  readonly results: readonly SketchProjectionResult[];
+  readonly failures: readonly SketchProjectionFailure[];
 }
 
 // ここから下はソリッド(立体)の依頼と結果(FR-401〜404)。

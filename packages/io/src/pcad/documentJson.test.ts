@@ -2500,3 +2500,82 @@ describe('ミラー・複写・配列複写の往復(P4 タスク20、FR-324)', 
     expect(resolved.curvesByFeature.get('copy-1')).toHaveLength(4);
   });
 });
+
+describe('投影・交差の往復(P4 タスク25、FR-325)', () => {
+  const source: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 4,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 1200,
+      position: [20, 15, 10],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+
+  const projection: SketchFeature = {
+    id: 'projectedCurve-1',
+    name: '投影1',
+    planeId: 'xy',
+    kind: 'projectedCurve',
+    source,
+    construction: false,
+  };
+
+  const section: SketchFeature = {
+    id: 'planeSection-1',
+    name: '断面1',
+    planeId: 'xz',
+    kind: 'planeSection',
+    targetFeatureId: 'extrude-1',
+    construction: true,
+  };
+
+  function sketchWith(...features: SketchFeature[]): PartDocument {
+    return {
+      ...createEmptyPartDocument(),
+      sketches: [{ id: 'sketch-1', name: 'スケッチ1', features }],
+    };
+  }
+
+  it('投影は投影元の面の指紋ごと往復で一致する', () => {
+    const restored = roundTrip(sketchWith(projection));
+    expect(restored.sketches[0].features[0]).toEqual(projection);
+  });
+
+  it('交差は相手の立体の id と構築線の印が往復で一致する', () => {
+    const restored = roundTrip(sketchWith(section));
+    expect(restored.sketches[0].features[0]).toEqual(section);
+  });
+
+  it('投影された曲線そのものは保存しない(再計算で導く、rules/04)', () => {
+    const json = JSON.parse(
+      serializeDocument(sketchWith(projection), { savedAt: SAVED_AT }),
+    ) as Record<string, unknown>;
+    const text = JSON.stringify(json);
+    expect(text).toContain('projectedCurve');
+    // 曲線の欄(curves / segments)は 1 つも書かれない。
+    expect(text).not.toContain('"curves"');
+    expect(text).not.toContain('"segments"');
+  });
+
+  it('往復した投影・交差はそのまま解決でき、形が無ければ pendingProjections へ積む', () => {
+    const restored = roundTrip(sketchWith(projection, section));
+    const resolved = resolveSketch(restored.sketches[0]);
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.pendingProjections.map((pending) => pending.featureId)).toEqual([
+      'projectedCurve-1',
+      'planeSection-1',
+    ]);
+  });
+
+  it('スキーマ版は 3 のまま(新しい種類を足しても版は上げない)', () => {
+    const json = JSON.parse(
+      serializeDocument(sketchWith(projection), { savedAt: SAVED_AT }),
+    ) as { readonly schema: number; readonly document: { readonly schemaVersion: number } };
+    expect(json.schema).toBe(3);
+    expect(json.document.schemaVersion).toBe(3);
+  });
+});

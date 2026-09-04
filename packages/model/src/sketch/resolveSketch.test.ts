@@ -3165,3 +3165,180 @@ describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
     expect(resolved.faces[0].curves).toHaveLength(4);
   });
 });
+
+describe('投影・交差(FR-325、タスク25)', () => {
+  function faceRef(bodyFeatureId: string, index: number): SubShapeRef {
+    return {
+      bodyFeatureId,
+      index,
+      fingerprint: {
+        kind: 'face',
+        surfaceKind: 'plane',
+        area: 1200,
+        position: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: null,
+      },
+    };
+  }
+
+  function projection(id: string, planeId = 'xy'): SketchFeature {
+    return {
+      id,
+      name: id,
+      planeId,
+      kind: 'projectedCurve',
+      source: faceRef('extrude-1', 4),
+      construction: false,
+    };
+  }
+
+  function section(id: string, planeId = 'xy'): SketchFeature {
+    return {
+      id,
+      name: id,
+      planeId,
+      kind: 'planeSection',
+      targetFeatureId: 'extrude-1',
+      construction: false,
+    };
+  }
+
+  /** 40×30 の長方形(投影の結果として差し込む曲線)。 */
+  const RECTANGLE: readonly ResolvedCurve[] = [
+    { kind: 'segment', featureId: 'from-kernel', from: [0, 0, 0], to: [40, 0, 0] },
+    { kind: 'segment', featureId: 'from-kernel', from: [40, 0, 0], to: [40, 30, 0] },
+    { kind: 'segment', featureId: 'from-kernel', from: [40, 30, 0], to: [0, 30, 0] },
+    { kind: 'segment', featureId: 'from-kernel', from: [0, 30, 0], to: [0, 0, 0] },
+  ];
+
+  it('覚え書きに形が無いときは pendingProjections へ積み、errors には入れない', () => {
+    const resolved = resolveSketch(documentOf(projection('pj1')));
+
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.pendingProjections).toHaveLength(1);
+    expect(resolved.pendingProjections[0].featureId).toBe('pj1');
+    expect(resolved.pendingProjections[0].source).toEqual({
+      kind: 'subShape',
+      ref: faceRef('extrude-1', 4),
+    });
+    expect(resolved.pendingProjections[0].plane.id).toBe('xy');
+    expect(resolved.curvesByFeature.has('pj1')).toBe(false);
+  });
+
+  it('交差も同じく pendingProjections へ積み、もとは立体そのものになる', () => {
+    const resolved = resolveSketch(documentOf(section('sc1')));
+
+    expect(resolved.pendingProjections).toHaveLength(1);
+    expect(resolved.pendingProjections[0].source).toEqual({
+      kind: 'body',
+      bodyFeatureId: 'extrude-1',
+    });
+  });
+
+  it('覚え書きから曲線が引けると、フィーチャーの id を付け直して取り込む', () => {
+    const resolved = resolveSketch(documentOf(projection('pj1')), {
+      projectedCurves: (featureId) => (featureId === 'pj1' ? RECTANGLE : null),
+    });
+
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.pendingProjections).toEqual([]);
+    expect(resolved.curvesByFeature.get('pj1')).toHaveLength(4);
+    expect(resolved.segments).toHaveLength(4);
+    for (const segment of resolved.segments) {
+      expect(segment.featureId).toBe('pj1');
+    }
+    expect(polygonArea(resolved.segments.map((segment) => segment.from))).toBeCloseTo(1200, 9);
+  });
+
+  it('取り込んだ輪郭は面の境界にそのまま使える(FR-325 の「押し出しの材料になる」)', () => {
+    const resolved = resolveSketch(
+      documentOf(projection('pj1'), {
+        id: 'f1',
+        name: '面1',
+        planeId: 'xy',
+        kind: 'face',
+        boundary: [{ featureId: 'pj1' }],
+        color: DEFAULT_FACE_COLOR,
+      }),
+      { projectedCurves: () => RECTANGLE },
+    );
+
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.faces).toHaveLength(1);
+    expect(resolved.faces[0].curves).toHaveLength(4);
+  });
+
+  it('構築線にした投影は面の境界に使えない(FR-320)', () => {
+    const construction: SketchFeature = {
+      id: 'pj1',
+      name: 'pj1',
+      planeId: 'xy',
+      kind: 'projectedCurve',
+      source: faceRef('extrude-1', 4),
+      construction: true,
+    };
+    const resolved = resolveSketch(
+      documentOf(construction, {
+        id: 'f1',
+        name: '面1',
+        planeId: 'xy',
+        kind: 'face',
+        boundary: [{ featureId: 'pj1' }],
+        color: DEFAULT_FACE_COLOR,
+      }),
+      { projectedCurves: () => RECTANGLE },
+    );
+
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors.map((error) => error.code)).toEqual(['constructionElement']);
+  });
+
+  it('交差の結果が 0 本のときは「交わりません」と断る(FR-504)', () => {
+    const resolved = resolveSketch(documentOf(section('sc1')), {
+      projectedCurves: () => [],
+    });
+
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('degenerate');
+    expect(resolved.errors[0].message).toContain('交わりません');
+  });
+
+  it('投影の結果が 0 本のときは「線になりません」と断る(FR-504)', () => {
+    const resolved = resolveSketch(documentOf(projection('pj1')), {
+      projectedCurves: () => [],
+    });
+
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('degenerate');
+    expect(resolved.errors[0].message).toContain('線になりません');
+  });
+
+  it('3D スケッチ(作図面なし)では投影も交差も作れない(FR-330)', () => {
+    const resolved = resolveSketch(
+      documentOf(projection('pj1', FREE_WORK_PLANE_ID), section('sc1', FREE_WORK_PLANE_ID)),
+    );
+
+    expect(resolved.pendingProjections).toEqual([]);
+    expect(resolved.errors.map((error) => error.code)).toEqual(['missingBase', 'missingBase']);
+    expect(resolved.errors[0].message).toContain('投影');
+    expect(resolved.errors[1].message).toContain('交差');
+  });
+
+  it('投影の終点が「直前の点」になり、端点は参照できる(FR-302、FR-303)', () => {
+    const resolved = resolveSketch(
+      documentOf(projection('pj1'), {
+        id: 'p1',
+        name: '点1',
+        planeId: 'xy',
+        kind: 'point',
+        at: { mode: 'relative', base: { kind: 'previous' }, dx: num(0), dy: num(0), dz: num(0) },
+      }),
+      { projectedCurves: () => RECTANGLE },
+    );
+
+    expect(resolved.errors).toEqual([]);
+    // 4 本目の線分の終点(0, 0, 0)が「直前の点」になる。
+    expectCloseTo(resolved.points[0].position, [0, 0, 0]);
+  });
+});

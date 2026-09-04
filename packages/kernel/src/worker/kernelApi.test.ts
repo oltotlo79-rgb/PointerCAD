@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
-import type { CurveSpec, SolidProgress, SolidStepRequest } from '../types.js';
+import type {
+  CurveSpec,
+  PlaneCurve,
+  SketchPlaneFrame,
+  SolidBodyMesh,
+  SolidProgress,
+  SolidStepRequest,
+  SubShapeQuery,
+} from '../types.js';
 import { createKernelApi } from './kernelApi.js';
 
 /** XY 平面の 10×10 の正方形を、隣り合う頂点をつなぐ 4 本の線分で表す。 */
@@ -251,5 +259,174 @@ describe('KernelApi', () => {
       throw new Error('円弧が返るはず');
     }
     expect(arc.radius).toBeCloseTo(7, 9);
+  });
+
+  // ------------------------------------------------------------------
+  // 投影・交差(FR-325、P4 タスク25)。形状キャッシュの鍵でもとの立体を引く。
+  // ------------------------------------------------------------------
+
+  /** XY と平行な作図面(第 1 軸 = X)。2 次元座標はそのまま (x, y) になる。 */
+  function xyPlaneAt(z: number): SketchPlaneFrame {
+    return { origin: [0, 0, z], axisU: [1, 0, 0], normal: [0, 0, 1] };
+  }
+
+  /** 作図面の上の線分の列がなす閉じた輪郭の面積(靴ひもの公式)。 */
+  function planeAreaOf(curves: readonly PlaneCurve[]): number {
+    let twice = 0;
+    for (const curve of curves) {
+      if (curve.kind !== 'segment') {
+        throw new Error(`線分が返るはず: ${curve.kind}`);
+      }
+      twice += curve.from[0] * curve.to[1] - curve.to[0] * curve.from[1];
+    }
+    return Math.abs(twice) / 2;
+  }
+
+  /** 40×30×10 の板を作り、その段の鍵と面の一覧を返す。 */
+  async function makePlate(key: string): Promise<SolidBodyMesh> {
+    const result = await api.recomputeSolids({
+      steps: [extrudeStep('plate', key, 10)],
+      generation: 1,
+    });
+    expect(result.failures).toEqual([]);
+    return result.bodies[0];
+  }
+
+  /** 一覧の中から、指定した向きの平らな面の指紋を作る。 */
+  function planeFaceQuery(body: SolidBodyMesh, height: number): SubShapeQuery {
+    const found = body.faces.find(
+      (face) =>
+        face.surfaceKind === 'plane' &&
+        face.axis !== null &&
+        Math.abs(Math.abs(face.axis[2]) - 1) < 1e-9 &&
+        Math.abs(face.centroid[2] - height) < 1e-9,
+    );
+    if (found === undefined) {
+      throw new Error(`z=${height} の平らな面が見つかりません`);
+    }
+    return {
+      kind: 'face',
+      index: found.index,
+      surfaceKind: found.surfaceKind,
+      area: found.area,
+      position: found.centroid,
+      axis: found.axis,
+      radius: found.radius,
+    };
+  }
+
+  it('板の上面を XY 面へ投影すると、線分 4 本・面積 1200 の長方形になる(FR-325)', async () => {
+    const body = await makePlate('api-project-plate');
+    const result = await api.projectSketchCurves({
+      items: [
+        {
+          id: 'proj-1',
+          shapeKey: 'api-project-plate',
+          subShape: planeFaceQuery(body, 10),
+          plane: xyPlaneAt(0),
+        },
+      ],
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(result.results).toHaveLength(1);
+    const curves = result.results[0].curves;
+    expect(curves).toHaveLength(4);
+    expect(planeAreaOf(curves)).toBeCloseTo(1200, 6);
+  });
+
+  it('立体そのもの(部分形状の指定なし)を投影すると、潰れない辺だけが返る', async () => {
+    await makePlate('api-project-whole');
+    const result = await api.projectSketchCurves({
+      items: [
+        { id: 'proj-2', shapeKey: 'api-project-whole', subShape: null, plane: xyPlaneAt(0) },
+      ],
+    });
+
+    expect(result.failures).toEqual([]);
+    // 箱の 12 辺のうち、作図面の法線と平行な縦 4 本は点に潰れるので 8 本(makeProjection.test.ts)。
+    expect(result.results[0].curves).toHaveLength(8);
+  });
+
+  it('もとの立体が形状キャッシュに無い依頼は、例外にせず理由つきの失敗にする(FR-504)', async () => {
+    const result = await api.projectSketchCurves({
+      items: [{ id: 'proj-3', shapeKey: 'api-no-such-key', subShape: null, plane: xyPlaneAt(0) }],
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.failures).toEqual([
+      {
+        id: 'proj-3',
+        message: 'もとになる立体が見つかりませんでした。もう一度計算し直してください。',
+      },
+    ]);
+  });
+
+  it('指紋に合う面が無い依頼は、例外にせず理由つきの失敗にする(FR-504)', async () => {
+    await makePlate('api-project-missing');
+    const result = await api.projectSketchCurves({
+      items: [
+        {
+          id: 'proj-4',
+          shapeKey: 'api-project-missing',
+          // 球面は板に 1 枚も無いので、種類の一致条件で候補が 0 になる。
+          subShape: {
+            kind: 'face',
+            index: 99,
+            surfaceKind: 'sphere',
+            area: 1,
+            position: [0, 0, 0],
+            axis: null,
+            radius: 1,
+          },
+          plane: xyPlaneAt(0),
+        },
+      ],
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.failures[0].id).toBe('proj-4');
+    expect(result.failures[0].message).toContain('形が大きく変わったため、選び直してください。');
+  });
+
+  it('板を z=5 の作図面で切ると、線分 4 本・面積 1200 の断面になる(FR-325)', async () => {
+    await makePlate('api-section-plate');
+    const result = await api.sectionSketchCurves({
+      items: [{ id: 'sec-1', shapeKey: 'api-section-plate', plane: xyPlaneAt(5) }],
+    });
+
+    expect(result.failures).toEqual([]);
+    const curves = result.results[0].curves;
+    expect(curves).toHaveLength(4);
+    expect(planeAreaOf(curves)).toBeCloseTo(1200, 6);
+  });
+
+  it('交わらない作図面で切っても失敗にせず、曲線 0 本で返す(呼び出し側が断る)', async () => {
+    await makePlate('api-section-away');
+    const result = await api.sectionSketchCurves({
+      items: [{ id: 'sec-2', shapeKey: 'api-section-away', plane: xyPlaneAt(50) }],
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(result.results).toEqual([{ id: 'sec-2', curves: [] }]);
+  });
+
+  it('1 件失敗しても残りの投影は作る(FR-504、NFR-RE-1)', async () => {
+    const body = await makePlate('api-project-mixed');
+    const result = await api.projectSketchCurves({
+      items: [
+        { id: 'ng', shapeKey: 'api-no-such-key', subShape: null, plane: xyPlaneAt(0) },
+        {
+          id: 'ok',
+          shapeKey: 'api-project-mixed',
+          subShape: planeFaceQuery(body, 0),
+          plane: xyPlaneAt(0),
+        },
+      ],
+    });
+
+    expect(result.failures.map((failure) => failure.id)).toEqual(['ng']);
+    expect(result.results.map((entry) => entry.id)).toEqual(['ok']);
+    expect(planeAreaOf(result.results[0].curves)).toBeCloseTo(1200, 6);
   });
 });

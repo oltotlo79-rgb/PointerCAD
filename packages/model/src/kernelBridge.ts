@@ -10,13 +10,21 @@ import {
   createKernelWorker,
   makeSketchChamfer,
   makeSketchFillet,
+  matchEdge,
+  matchFace,
+  matchVertex,
   type CurveSpec,
   type FaceMeshData,
   type KernelApi,
   type OffsetJoinType,
   type PlanarFaceRequest,
+  type PlaneCurve,
   type SketchOffsetItem,
   type SketchOffsetOutcome,
+  type SketchPlaneFrame,
+  type SketchProjectionItem,
+  type SketchProjectionOutcome,
+  type SketchSectionItem,
   type SketchTessellationFailure,
   type SolidBodyMesh,
   type SolidProgress,
@@ -25,11 +33,15 @@ import {
   type SolidStepRequest,
   type SolidStepSpec,
   type SubShapeQuery,
+  type Vec2Tuple,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
 
+import type { ResolvedSubShape } from './geometry/planeSpec.js';
+import type { SubShapeRef } from './geometry/subShapeRef.js';
 import type { ResolvedSolidStep, SolidStepPlan, SubShapeQueryPlan } from './part/resolvePart.js';
 import type { EdgeCurveKind, FaceSurfaceKind } from './part/types.js';
+import type { WorkPlane } from './sketch/planeMath.js';
 import { isFullEllipse } from './sketch/resolveSketch.js';
 import type {
   OffsetCornerKind,
@@ -38,7 +50,7 @@ import type {
   SketchFaceMesh,
   SketchMesh,
 } from './sketch/types.js';
-import type { Vec3 } from './sketch/vec3.js';
+import { addVec3, scaleVec3, type Vec3 } from './sketch/vec3.js';
 
 /** 面 1 枚を作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
 export interface SketchFaceFailure {
@@ -90,6 +102,49 @@ export interface SketchOffsetFailure {
 export interface SketchOffsetResult {
   readonly results: readonly SketchOffsetEntry[];
   readonly failures: readonly SketchOffsetFailure[];
+}
+
+/* ------------------------------------------------------------------ *
+ * 投影・交差(FR-325、P4 タスク25・26)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 投影・交差 1 件の依頼(model の言葉)。
+ *
+ * **もとの立体は「段の鍵」で指す。** 立体の B-rep はカーネル(Worker)の中にしか無く、
+ * 形そのものは渡せないので、`recomputeSolids` が預けたときの鍵(`ResolvedSolidStep.key`)を
+ * そのまま渡してカーネル側の形状キャッシュから引いてもらう。鍵は上流の値から作られている
+ * ので、上流が変われば鍵が変わり、投影も必ず作り直される(NFR-PF-3 の鍵の連鎖)。
+ */
+export interface SketchProjectionRequestItem {
+  readonly featureId: string;
+  /** もとの立体の段の鍵。 */
+  readonly bodyKey: string;
+  /**
+   * 投影する面・辺。**`null` なら立体そのもの**(交差、または立体全体の投影)。
+   * 面・辺は指紋で渡し、選び直しはカーネルの中で行う(§2.2.4)。
+   */
+  readonly source: SubShapeRef | null;
+  /** 投影先・切り口の作図面。 */
+  readonly plane: WorkPlane;
+}
+
+/** 投影・交差 1 件の結果。曲線はワールド座標へ戻した後の形で、つながる順に並ぶ。 */
+export interface SketchProjectionEntry {
+  readonly featureId: string;
+  readonly curves: readonly ResolvedCurve[];
+}
+
+/** 投影・交差を 1 件作れなかった理由。カーネルが日本語で返したものを持ち回る(FR-504)。 */
+export interface SketchProjectionFailure {
+  readonly featureId: string;
+  readonly message: string;
+}
+
+/** 投影・交差の結果。1 件失敗しても残りは作る(FR-504、NFR-RE-1)。 */
+export interface SketchProjectionResult {
+  readonly results: readonly SketchProjectionEntry[];
+  readonly failures: readonly SketchProjectionFailure[];
 }
 
 /* ------------------------------------------------------------------ *
@@ -354,6 +409,20 @@ export interface KernelBridge {
   offsetSketchCurves(
     requests: readonly SketchOffsetRequestItem[],
   ): Promise<SketchOffsetResult>;
+  /**
+   * 立体の面・辺の輪郭を作図面へ投影した曲線をカーネルへ頼む(FR-325、P4 タスク25)。
+   * 何件でも 1 回の往復でまとめて頼め、1 件失敗しても残りは返る(FR-504)。
+   */
+  projectSketchCurves(
+    requests: readonly SketchProjectionRequestItem[],
+  ): Promise<SketchProjectionResult>;
+  /**
+   * 立体と作図面の交線(断面の輪郭)をカーネルへ頼む(FR-325)。
+   * **交わらないときは失敗ではなく曲線 0 本**で返る(断るのは呼び出し側)。
+   */
+  sectionSketchCurves(
+    requests: readonly SketchProjectionRequestItem[],
+  ): Promise<SketchProjectionResult>;
   dispose(): void;
 }
 
@@ -516,6 +585,132 @@ export function toOffsetResult(
   return { results, failures };
 }
 
+/* ------------------------------------------------------------------ *
+ * 投影・交差の詰め替え(FR-325、P4 タスク25)
+ * ------------------------------------------------------------------ */
+
+/** 作図面の 2 次元座標をワールド座標へ戻す。第 2 軸は `WorkPlane.axisV`(= 法線 × 第 1 軸)。 */
+function planePointToWorld(plane: WorkPlane, uv: Vec2Tuple): Vec3 {
+  return addVec3(
+    plane.origin,
+    addVec3(scaleVec3(plane.axisU, uv[0]), scaleVec3(plane.axisV, uv[1])),
+  );
+}
+
+/**
+ * カーネルが返した作図面の上の曲線を、model の解決済みの曲線へ戻す(FR-325)。
+ *
+ * - 線分・円弧は形のまま残る(投影のほとんどの用途がここに入る。`makeProjection.ts`)。
+ * - 点列(傾いた円・楕円・自由曲線)は**通過点のスプライン**として受ける。
+ *   `ResolvedSpline` は通過点しか持たない型なので、そのまま詰められる
+ *   (`fromCurveSpec` の注釈が予告していた「B スプラインが返る道」がこれ)。
+ *
+ * 円弧の角度は「第 1 軸から第 2 軸へ回る向きが正」で、`ResolvedArc` の約束と同じ
+ * (`makeProjection.ts` の `PlaneArc` の注釈)。そのまま渡してよい。
+ */
+export function fromPlaneCurve(
+  curve: PlaneCurve,
+  plane: WorkPlane,
+  featureId: string,
+): ResolvedCurve {
+  switch (curve.kind) {
+    case 'segment':
+      return {
+        kind: 'segment',
+        featureId,
+        from: planePointToWorld(plane, curve.from),
+        to: planePointToWorld(plane, curve.to),
+      };
+    case 'arc':
+      return {
+        kind: 'arc',
+        featureId,
+        center: planePointToWorld(plane, curve.center),
+        normal: plane.normal,
+        xAxis: plane.axisU,
+        radius: curve.radius,
+        startAngle: curve.startAngle,
+        endAngle: curve.endAngle,
+      };
+    case 'polyline':
+      return {
+        kind: 'spline',
+        featureId,
+        mode: 'interpolate',
+        points: curve.points.map((point) => planePointToWorld(plane, point)),
+        closed: curve.closed,
+      };
+  }
+}
+
+/** 作図面を kernel の言葉へ直す。第 2 軸は kernel が「法線 × 第 1 軸」で作り直す。 */
+function toPlaneFrame(plane: WorkPlane): SketchPlaneFrame {
+  return { origin: plane.origin, axisU: plane.axisU, normal: plane.normal };
+}
+
+/** 投影の依頼をカーネルの言葉へ直す。 */
+function toProjectionItem(request: SketchProjectionRequestItem): SketchProjectionItem {
+  return {
+    id: request.featureId,
+    shapeKey: request.bodyKey,
+    subShape: request.source === null ? null : toSubShapeQuery(request.source),
+    plane: toPlaneFrame(request.plane),
+  };
+}
+
+/** 交差の依頼をカーネルの言葉へ直す(切るのは立体そのものなので指紋は渡さない)。 */
+function toSectionItem(request: SketchProjectionRequestItem): SketchSectionItem {
+  return {
+    id: request.featureId,
+    shapeKey: request.bodyKey,
+    plane: toPlaneFrame(request.plane),
+  };
+}
+
+/** 投影・交差が返らなかったとき(カーネルが id を返さなかったとき)に付ける理由。 */
+const MISSING_PROJECTION_MESSAGE = 'カーネルから投影・交差の結果が返りませんでした。';
+
+/**
+ * 投影・交差の結果を model の言葉へ詰め替える。
+ * 頼んだのに結果も理由も返らなかった id は理由を補って失敗にする(`toOffsetResult` と同じ)。
+ */
+export function toProjectionResult(
+  requests: readonly SketchProjectionRequestItem[],
+  outcome: SketchProjectionOutcome,
+): SketchProjectionResult {
+  const planeByFeature = new Map(requests.map((request) => [request.featureId, request.plane]));
+  const results: SketchProjectionEntry[] = [];
+  const failures: SketchProjectionFailure[] = outcome.failures.map((failure) => ({
+    featureId: failure.id,
+    message: failure.message,
+  }));
+
+  for (const result of outcome.results) {
+    const plane = planeByFeature.get(result.id);
+    if (plane === undefined) {
+      // 頼んでいない id が返ることは無いが、返ってきても黙って捨てず理由を残す。
+      failures.push({ featureId: result.id, message: MISSING_PROJECTION_MESSAGE });
+      continue;
+    }
+    results.push({
+      featureId: result.id,
+      curves: result.curves.map((curve) => fromPlaneCurve(curve, plane, result.id)),
+    });
+  }
+
+  const reported = new Set<string>(results.map((result) => result.featureId));
+  for (const failure of failures) {
+    reported.add(failure.featureId);
+  }
+  for (const request of requests) {
+    if (!reported.has(request.featureId)) {
+      failures.push({ featureId: request.featureId, message: MISSING_PROJECTION_MESSAGE });
+    }
+  }
+
+  return { results, failures };
+}
+
 /**
  * 部分形状の指紋を kernel の言葉(`SubShapeQuery`)へ詰め替える(§2.4.2、§2.8、タスク17 手順3)。
  *
@@ -661,6 +856,98 @@ export function toSolidStepRequest(step: ResolvedSolidStep): SolidStepRequest {
     step: toSolidStepSpec(step.plan),
     visible: step.visible,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * 部分形状の選び直し(FR-325・FR-328〜330 の上流追従、P4 タスク25)— 同期の純関数
+ * ------------------------------------------------------------------ */
+
+/**
+ * 位置の点を部品の大きさで割るための長さ(境界箱の対角長の半分)。
+ *
+ * カーネル側(`makeHole.ts` 等)は `boundingDiagonal`(OCCT の `Bnd_Box`)で測るが、
+ * model は B-rep を持たないので**三角形の頂点の並び**から同じ量を測る。
+ * 三角形は形の表面を覆っているので、境界箱は実用上ほぼ一致する(曲面では
+ * 近似の分だけわずかに小さく出るが、位置の点は 0〜1 の連続な値で、しきい値
+ * (`SUB_SHAPE_MATCH_THRESHOLD`)の判定がこの差で覆るほど敏感ではない)。
+ */
+function matchScaleOf(body: SolidBody): number {
+  const positions = body.mesh.positions;
+  if (positions.length < 3) {
+    return 0;
+  }
+  const low: [number, number, number] = [positions[0], positions[1], positions[2]];
+  const high: [number, number, number] = [positions[0], positions[1], positions[2]];
+  for (let index = 3; index + 2 < positions.length; index += 3) {
+    for (let axis = 0; axis < 3; axis += 1) {
+      const value = positions[index + axis];
+      low[axis] = Math.min(low[axis], value);
+      high[axis] = Math.max(high[axis], value);
+    }
+  }
+  return Math.hypot(high[0] - low[0], high[1] - low[1], high[2] - low[2]) * 0.5;
+}
+
+/**
+ * 指紋に最も近い面・辺・頂点を、いまのボディの中から選び直す(FR-325、FR-330、タスク25)。
+ *
+ * 採点は kernel の `matchFace` / `matchEdge` / `matchVertex`(OCCT を使わない純関数)を
+ * そのまま使うので、**重み・しきい値・同点の決め方は加工フィーチャーと完全に同じ**である
+ * (§0.a-0.4)。この関数を通すと、スケッチの頂点参照・作業平面・基準ジオメトリが
+ * 「保存された指紋の位置」ではなく「いまの形の位置」を見るようになる。
+ *
+ * 届かなければ null(呼び出し側が `missingSubShape` で断る、FR-504)。
+ * Worker を通らない同期の純関数なので、`KernelBridge` のメソッドにはしない
+ * (`sketchFilletGeometry` と同じ扱い、このファイルの §「なぜ Worker を往復しないのか」)。
+ */
+export function selectSubShape(body: SolidBody, reference: SubShapeRef): ResolvedSubShape | null {
+  const query = toSubShapeQuery(reference);
+  const scale = matchScaleOf(body);
+  switch (query.kind) {
+    case 'face': {
+      const match = matchFace(body.faces, query, scale);
+      const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
+      if (found === undefined) {
+        return null;
+      }
+      return {
+        kind: 'face',
+        position: found.centroid,
+        axis: found.axis,
+        surfaceKind: found.surfaceKind,
+        curveKind: null,
+      };
+    }
+    case 'edge': {
+      const match = matchEdge(body.edges, query, scale);
+      const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
+      if (found === undefined) {
+        return null;
+      }
+      return {
+        kind: 'edge',
+        position: found.midpoint,
+        axis: found.axis,
+        surfaceKind: null,
+        curveKind: found.curveKind,
+      };
+    }
+    case 'vertex': {
+      const match = matchVertex(body.vertices, query, scale);
+      const found =
+        match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
+      if (found === undefined) {
+        return null;
+      }
+      return {
+        kind: 'vertex',
+        position: found.position,
+        axis: null,
+        surfaceKind: null,
+        curveKind: null,
+      };
+    }
+  }
 }
 
 /** 立体が消えたとき(画面に出すはずの段の結果も理由も返らなかったとき)に付ける理由。 */
@@ -972,8 +1259,120 @@ export function createKernelBridge(): KernelBridge {
       return toOffsetResult(requests, outcome);
     },
 
+    async projectSketchCurves(requests): Promise<SketchProjectionResult> {
+      if (requests.length === 0) {
+        return { results: [], failures: [] };
+      }
+      if (health.broken) {
+        restart();
+      }
+      const outcome = await connection.remote.projectSketchCurves({
+        items: requests.map((request) => toProjectionItem(request)),
+      });
+      return toProjectionResult(requests, outcome);
+    },
+
+    async sectionSketchCurves(requests): Promise<SketchProjectionResult> {
+      if (requests.length === 0) {
+        return { results: [], failures: [] };
+      }
+      if (health.broken) {
+        restart();
+      }
+      const outcome = await connection.remote.sectionSketchCurves({
+        items: requests.map((request) => toSectionItem(request)),
+      });
+      return toProjectionResult(requests, outcome);
+    },
+
     dispose(): void {
       closeKernelConnection(connection);
+    },
+  };
+}
+
+/**
+ * Worker を通さず、同じプロセスの `KernelApi` へ直につなぐ橋(P4 タスク25)。
+ *
+ * **本番では使わない。** ブラウザ・Electron は必ず `createKernelBridge`(Worker 版)を使う
+ * (幾何カーネルは Web Worker 上で動かす、rules/04・NFR-PF-4)。この関数があるのは、
+ * **Node の検査で「部品文書の経路が実カーネルで最後まで通る」ことを確かめる**ためである
+ * (t21 の教訓: 偽の橋だけでは配線もれが見つからない。`docs/報告記録.md` 2026-09-04 21:05)。
+ *
+ * Worker が無いので壊れの検知・作り直し(§2.9)は持たない。`dispose` も何もしない
+ * (形状キャッシュは渡された `KernelApi` の持ち物で、寿命は呼び出し側が決める)。
+ */
+export function createDirectKernelBridge(api: KernelApi): KernelBridge {
+  return {
+    async tessellateSketchFaces(faces): Promise<SketchTessellationOutcome> {
+      if (faces.length === 0) {
+        return { mesh: { faces: [] }, failures: [] };
+      }
+      const result = await api.tessellateSketch({
+        curves: [],
+        faces: faces.map((face) => toFaceRequest(face)),
+      });
+      return toOutcome(faces, result.faces, result.failures);
+    },
+
+    async recomputeSolids(steps, options = {}): Promise<SolidRecomputeOutcome> {
+      if (steps.length === 0) {
+        return { bodies: [], failures: [], cacheHits: 0, cancelled: false };
+      }
+      const request: SolidRecomputeRequest = {
+        steps: steps.map((step) => toSolidStepRequest(step)),
+        generation: options.generation ?? 0,
+      };
+      // Comlink を通らないので、進捗・中止の関数は proxy で包まずそのまま渡せる。
+      const result = await api.recomputeSolids(
+        request,
+        undefined,
+        options.onProgress === undefined
+          ? undefined
+          : (progress: SolidProgress) =>
+              options.onProgress?.({
+                featureId: progress.stepId,
+                index: progress.index,
+                total: progress.total,
+                label: progress.label,
+              }),
+        options.shouldCancel,
+      );
+      return toSolidOutcome(steps, result);
+    },
+
+    async offsetSketchCurves(requests): Promise<SketchOffsetResult> {
+      if (requests.length === 0) {
+        return { results: [], failures: [] };
+      }
+      const outcome = await api.offsetSketchCurves({
+        items: requests.map((request) => toOffsetItem(request)),
+      });
+      return toOffsetResult(requests, outcome);
+    },
+
+    async projectSketchCurves(requests): Promise<SketchProjectionResult> {
+      if (requests.length === 0) {
+        return { results: [], failures: [] };
+      }
+      const outcome = await api.projectSketchCurves({
+        items: requests.map((request) => toProjectionItem(request)),
+      });
+      return toProjectionResult(requests, outcome);
+    },
+
+    async sectionSketchCurves(requests): Promise<SketchProjectionResult> {
+      if (requests.length === 0) {
+        return { results: [], failures: [] };
+      }
+      const outcome = await api.sectionSketchCurves({
+        items: requests.map((request) => toSectionItem(request)),
+      });
+      return toProjectionResult(requests, outcome);
+    },
+
+    dispose(): void {
+      // Worker を持たないので閉じるものが無い。
     },
   };
 }

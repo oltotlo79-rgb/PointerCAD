@@ -1,4 +1,10 @@
-import { createKernelBridge, createOffsetCache, recomputePart } from '@pointercad/model';
+import {
+  createKernelBridge,
+  createOffsetCache,
+  createProjectionCache,
+  createSubShapeCache,
+  recomputePart,
+} from '@pointercad/model';
 import { useEffect } from 'react';
 
 import { startAutoSave } from '../file/attachAutoSave.js';
@@ -21,8 +27,13 @@ export function PointerCadApp(): React.JSX.Element {
     // オフセット(FR-321、タスク15・21)の計算済みの結果を持ち回る。1 つ作って渡さないと
     // 呼び出しのたびにカーネルへ頼み直すことになる(NFR-PF-2、`recomputePart` の注釈)。
     const offsets = createOffsetCache();
+    // 投影・交差(FR-325、タスク25)と、立体の面・辺・頂点の選び直し(FR-328〜330 の
+    // 上流追従)も同じ理由で持ち回る。持ち回らないと、上流が変わっていない再計算でも
+    // 毎回カーネルへ頼み直し、解決も 2 巡することになる(NFR-PF-2、NFR-PF-3)。
+    const projections = createProjectionCache();
+    const subShapes = createSubShapeCache();
     const detach = attachPartRecompute((document, options) =>
-      recomputePart(document, bridge, { ...options, offsets }),
+      recomputePart(document, bridge, { ...options, offsets, projections, subShapes }),
     );
 
     return () => {

@@ -10,7 +10,7 @@
 import type { ExpressionValue } from '@pointercad/expression';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
-import type { WorkPlaneId } from './planeMath.js';
+import type { WorkPlane, WorkPlaneId } from './planeMath.js';
 import type { Vec3 } from './vec3.js';
 
 /**
@@ -81,7 +81,9 @@ export type SketchFeatureKind =
   | 'ellipse'
   | 'spline'
   | 'offset'
-  | 'copy';
+  | 'copy'
+  | 'projectedCurve'
+  | 'planeSection';
 
 interface SketchFeatureBase {
   readonly id: string;
@@ -407,6 +409,44 @@ export interface SketchFaceFeature extends SketchFeatureBase {
   readonly color: string;
 }
 
+/**
+ * 投影(FR-325、§2.7、タスク25)。既存の立体の**面の外周**または**辺**を、
+ * このフィーチャーの作図面(`planeId`)へ直交投影した曲線を作る。
+ *
+ * **曲線の形はここでは決まらない**(オフセットと同じ、`SketchOffsetFeature` の注釈)。
+ * 立体の B-rep はカーネル(Worker)の中にしか無いので、解決(`resolveSketch`)は
+ * 「作図面と参照がそろっているか」だけを確かめ、まだ形が無いものを
+ * `ResolvedSketch.pendingProjections` へ積む。実際の形を入れるのは
+ * カーネルの往復を持つ `recomputePart`(タスク25)である。
+ *
+ * **参照できるのは「このスケッチを使う立体より前に作られた立体」だけ**(§0.a-0.11)。
+ * 後から作られる立体を指すと `resolvePart` が `missingBody` で断る(循環を作らないため)。
+ *
+ * 結果は `curvesByFeature` へ線分・円弧・スプライン(点列)として積まれ、
+ * 面の境界・押し出しの材料に**普通の要素として**使える。
+ */
+export interface SketchProjectedCurveFeature extends SketchFeatureBase {
+  readonly kind: 'projectedCurve';
+  /** 投影元(立体の面または辺)。面なら外周、辺ならその 1 本(`makeProjection.ts` の約束)。 */
+  readonly source: SubShapeRef;
+  /** 構築線(FR-320)。投影した結果を参照専用にしたいときに true。既定 false。 */
+  readonly construction: boolean;
+}
+
+/**
+ * 交差(FR-325、§2.7、タスク25)。既存の立体と、このフィーチャーの作図面が
+ * 交わってできる線(断面の輪郭)を取り込む。
+ *
+ * 解決の流れと参照できる範囲は `SketchProjectedCurveFeature` と同じ。
+ * **交わらないときは失敗ではなく「交わりません」の断り**を出す(FR-504)。
+ */
+export interface SketchPlaneSectionFeature extends SketchFeatureBase {
+  readonly kind: 'planeSection';
+  /** 断面を取る立体を作ったフィーチャーの id(= ボディの id、§0.a-0.5)。 */
+  readonly targetFeatureId: string;
+  readonly construction: boolean;
+}
+
 export type SketchFeature =
   | SketchPointFeature
   | SketchLineFeature
@@ -419,7 +459,9 @@ export type SketchFeature =
   | SketchEllipseFeature
   | SketchSplineFeature
   | SketchOffsetFeature
-  | SketchCopyFeature;
+  | SketchCopyFeature
+  | SketchProjectedCurveFeature
+  | SketchPlaneSectionFeature;
 
 /** スケッチ文書。変更のたびに新しい配列を作る(P2 の Undo の土台、FR-505)。 */
 export interface SketchDocument {
@@ -568,6 +610,41 @@ export interface PendingOffset {
   readonly contour: OffsetContourShape;
 }
 
+/**
+ * 投影・交差のもと(FR-325、タスク25)。どちらも「立体の何を使うか」だけが違う。
+ *
+ * `subShape` は面・辺の指紋つきの参照で、上流の立体が変わればカーネルが選び直す。
+ * `body` は立体そのもの(交差が使う)。どちらも `bodyFeatureId` でボディを指すので、
+ * 参照先の履歴上の位置を `resolvePart` が確かめられる(§0.a-0.11 の順序の制約)。
+ */
+export type ProjectionSource =
+  | { readonly kind: 'subShape'; readonly ref: SubShapeRef }
+  | { readonly kind: 'body'; readonly bodyFeatureId: string };
+
+/** 投影・交差のもとになるボディを作ったフィーチャーの id を取り出す。 */
+export function projectionBodyFeatureId(source: ProjectionSource): string {
+  return source.kind === 'subShape' ? source.ref.bodyFeatureId : source.bodyFeatureId;
+}
+
+/**
+ * まだ形が決まっていない投影・交差(FR-325、タスク25)。
+ *
+ * `PendingOffset` と同じ扱いで、**失敗ではなく一時的な状態**なので `errors` には入れない
+ * (§2.7 の「pending の印は errors とは別に持つ」)。違いは、投影・交差の形を作るには
+ * **もとの立体が先に出来ていなければならない**ことで、そのため覚え書きの鍵を作るのに
+ * 必要な「立体の段の鍵」はスケッチ 1 本からは分からない。鍵を組み立てて覚え書きを引き、
+ * カーネルへ頼むのは部品文書の側(`resolvePart` / `recomputePart`)である。
+ */
+export interface PendingProjection {
+  readonly featureId: string;
+  readonly source: ProjectionSource;
+  /**
+   * 投影先の作図面(解決済み)。`WorkPlane` をそのまま持つので、カーネルへ渡す
+   * `SketchPlaneFrame { origin, axisU, normal }` を作れる(第 2 軸は法線 × 第 1 軸)。
+   */
+  readonly plane: WorkPlane;
+}
+
 export interface ResolvedSketch {
   readonly points: readonly ResolvedPoint[];
   readonly segments: readonly ResolvedSegment[];
@@ -580,6 +657,8 @@ export interface ResolvedSketch {
   readonly errors: readonly SketchError[];
   /** まだ形が決まっていないオフセット(FR-321、タスク15)。無ければ空。 */
   readonly pendingOffsets: readonly PendingOffset[];
+  /** まだ形が決まっていない投影・交差(FR-325、タスク25)。無ければ空。 */
+  readonly pendingProjections: readonly PendingProjection[];
   /**
    * 「1 フィーチャーが複数の曲線を生む」もの(矩形・正多角形・長穴・オフセット・複製)の
    * 曲線を、フィーチャーの id から順番どおりに引く(§0.a-0.8、タスク4・15・20)。

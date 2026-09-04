@@ -24,6 +24,25 @@ export type {
   SketchOffsetRequest,
   SketchOffsetResult,
 } from './types.js';
+// 投影・交差(FR-325、P4 タスク25・26)。Worker 越しの依頼と結果、作図面と 2 次元の曲線。
+export type {
+  PlaneArc,
+  PlaneCurve,
+  PlanePolyline,
+  PlaneSegment,
+  SketchPlaneFrame,
+  SketchProjectionFailure,
+  SketchProjectionItem,
+  SketchProjectionOutcome,
+  SketchProjectionRequest,
+  SketchProjectionResult,
+  SketchSectionItem,
+  SketchSectionRequest,
+  Vec2Tuple,
+} from './types.js';
+export { makeProjection, orderPlaneCurves, planeBasisOf, projectPointToPlane } from './occt/makeProjection.js';
+export { makeSection } from './occt/makeSection.js';
+export { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './occt/pickSubShape.js';
 // ソリッド(立体)の依頼と結果(FR-401〜404)。Comlink 越しに渡せる素の値だけで書いてある。
 export type {
   BooleanOperation,

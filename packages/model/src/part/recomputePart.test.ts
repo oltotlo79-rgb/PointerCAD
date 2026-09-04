@@ -10,6 +10,7 @@ import {
   type PartProgress,
   type SketchOffsetContour,
   type SketchOffsetResult,
+  type SketchProjectionResult,
   type SketchTessellationOutcome,
   type SolidBody,
   type SolidRecomputeOutcome,
@@ -23,15 +24,23 @@ import {
   nextFeatureName,
 } from '../sketch/createSketchDocument.js';
 import { createOffsetCache } from '../sketch/offsetMath.js';
+import { createProjectionCache } from '../sketch/projectionMath.js';
 import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
 import type {
+  ResolvedCurve,
   SketchDocument,
   SketchFaceFeature,
   SketchFaceMesh,
   SketchFeature,
   SketchLineFeature,
 } from '../sketch/types.js';
-import { appendSolid, createEmptyPartDocument, replaceSketch } from './createPartDocument.js';
+import type { SubShapeRef } from '../geometry/subShapeRef.js';
+import {
+  addSketch,
+  appendSolid,
+  createEmptyPartDocument,
+  replaceSketch,
+} from './createPartDocument.js';
 import { recomputePart } from './recomputePart.js';
 import { resolvePart, type ResolvedSolidStep, type SubShapeQueryPlan } from './resolvePart.js';
 import type {
@@ -71,6 +80,9 @@ const EMPTY_SOLID_OUTCOME: SolidRecomputeOutcome = {
 /** オフセットを頼まないときの戻り値(FR-321、P4 タスク15)。 */
 const EMPTY_OFFSET_RESULT: SketchOffsetResult = { results: [], failures: [] };
 
+/** 投影・交差を頼まないときの戻り値(FR-325、P4 タスク25)。 */
+const EMPTY_PROJECTION_RESULT: SketchProjectionResult = { results: [], failures: [] };
+
 /**
  * 偽のカーネル。OCCT は読み込まない(実物は kernel 側の Node テストで確かめてある)。
  * async を使わないのは、await の無い async 関数を書かないため(計画書 §4)。
@@ -80,6 +92,8 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
     tessellateSketchFaces: () => Promise.resolve(EMPTY_SKETCH_OUTCOME),
     recomputeSolids: () => Promise.resolve(EMPTY_SOLID_OUTCOME),
     offsetSketchCurves: () => Promise.resolve(EMPTY_OFFSET_RESULT),
+    projectSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
+    sectionSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
     dispose: () => undefined,
     ...overrides,
   };
@@ -1419,5 +1433,249 @@ describe('部品を通したオフセットの解決(FR-321、タスク21)', () 
     await recomputePart(document, fakeBridge({ offsetSketchCurves }), { offsets });
     await recomputePart(document, fakeBridge({ offsetSketchCurves }), { offsets });
     expect(offsetSketchCurves).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('部品を通した投影・交差の解決(FR-325、タスク25)', () => {
+  const FACE_REF: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 4,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 1200,
+      position: [20, 15, 10],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+
+  /** カーネルが返したことにする 40×30 の輪郭(線分 4 本)。 */
+  const RECTANGLE: readonly ResolvedCurve[] = [
+    { kind: 'segment', featureId: 'pj1', from: [0, 0, 0], to: [40, 0, 0] },
+    { kind: 'segment', featureId: 'pj1', from: [40, 0, 0], to: [40, 30, 0] },
+    { kind: 'segment', featureId: 'pj1', from: [40, 30, 0], to: [0, 30, 0] },
+    { kind: 'segment', featureId: 'pj1', from: [0, 30, 0], to: [0, 0, 0] },
+  ];
+
+  /**
+   * 面Aを押し出した立体と、その面を投影(または交差)して面を張るスケッチ2 を持つ文書。
+   * `sketch-2` の面はどの立体も使わないので、順序の制約には引っかからない。
+   */
+  function partWithProjection(kind: 'projectedCurve' | 'planeSection'): PartDocument {
+    const fixture = createFixture();
+    const source: SketchFeature =
+      kind === 'projectedCurve'
+        ? {
+            id: 'pj1',
+            name: '投影1',
+            planeId: DEFAULT_WORK_PLANE_ID,
+            kind: 'projectedCurve',
+            source: FACE_REF,
+            construction: false,
+          }
+        : {
+            id: 'pj1',
+            name: '断面1',
+            planeId: DEFAULT_WORK_PLANE_ID,
+            kind: 'planeSection',
+            targetFeatureId: 'extrude-1',
+            construction: false,
+          };
+    const document = addSketch(fixture.document, {
+      id: 'sketch-2',
+      name: 'スケッチ2',
+      features: [
+        source,
+        {
+          id: 'face-pj',
+          name: '面-投影',
+          planeId: DEFAULT_WORK_PLANE_ID,
+          kind: 'face',
+          boundary: [{ featureId: 'pj1' }],
+          color: DEFAULT_FACE_COLOR,
+        },
+      ],
+    });
+    return withSolids(document, extrudeFeature('extrude-1', fixture.faceA));
+  }
+
+  /** 立体を 1 つ返す偽のカーネル(投影のもとになる立体が出来たことにする)。 */
+  function bridgeWithBody(overrides: Partial<KernelBridge> = {}): KernelBridge {
+    return fakeBridge({
+      recomputeSolids: () =>
+        Promise.resolve({
+          bodies: [solidBody('extrude-1')],
+          failures: [],
+          cacheHits: 0,
+          cancelled: false,
+        }),
+      ...overrides,
+    });
+  }
+
+  it('resolvePart はカーネルを呼べないので pendingProjections へ積んだままになる(回帰検査)', () => {
+    const resolved = resolvePart(partWithProjection('projectedCurve'));
+    expect(resolved.sketches[1].resolved.pendingProjections).toHaveLength(1);
+    expect(resolved.projections).toHaveLength(1);
+  });
+
+  it('recomputePart は投影をカーネルへ頼み、結果を解決へ差し込む(配線の検査)', async () => {
+    const projectSketchCurves = vi.fn<KernelBridge['projectSketchCurves']>(() =>
+      Promise.resolve({ results: [{ featureId: 'pj1', curves: RECTANGLE }], failures: [] }),
+    );
+    const result = await recomputePart(
+      partWithProjection('projectedCurve'),
+      bridgeWithBody({ projectSketchCurves }),
+    );
+
+    expect(projectSketchCurves).toHaveBeenCalledTimes(1);
+    // 依頼にはもとの立体の段の鍵が乗る(カーネルが形状キャッシュから引くため)。
+    const request = projectSketchCurves.mock.calls[0][0][0];
+    expect(request.featureId).toBe('pj1');
+    expect(request.bodyKey.length).toBeGreaterThan(0);
+    expect(request.source).toEqual(FACE_REF);
+    expect(result.errors).toEqual([]);
+    const sketch2 = result.sketches[1].resolved;
+    expect(sketch2.pendingProjections).toEqual([]);
+    expect(sketch2.curvesByFeature.get('pj1')).toHaveLength(4);
+    // 取り込んだ輪郭は面の境界にそのまま使える(FR-325)。
+    expect(sketch2.faces).toHaveLength(1);
+  });
+
+  it('交差は sectionSketchCurves へ頼み、立体の指定に指紋を渡さない', async () => {
+    const sectionSketchCurves = vi.fn<KernelBridge['sectionSketchCurves']>(() =>
+      Promise.resolve({ results: [{ featureId: 'pj1', curves: RECTANGLE }], failures: [] }),
+    );
+    const projectSketchCurves = vi.fn<KernelBridge['projectSketchCurves']>(() =>
+      Promise.resolve(EMPTY_PROJECTION_RESULT),
+    );
+    const result = await recomputePart(
+      partWithProjection('planeSection'),
+      bridgeWithBody({ sectionSketchCurves, projectSketchCurves }),
+    );
+
+    expect(projectSketchCurves).not.toHaveBeenCalled();
+    expect(sectionSketchCurves).toHaveBeenCalledTimes(1);
+    expect(sectionSketchCurves.mock.calls[0][0][0].source).toBeNull();
+    expect(result.errors).toEqual([]);
+    expect(result.sketches[1].resolved.curvesByFeature.get('pj1')).toHaveLength(4);
+  });
+
+  it('曲線が入ると立体の再計算をもう一度行う(投影の面を使う下流のため)', async () => {
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() =>
+      Promise.resolve({
+        bodies: [solidBody('extrude-1')],
+        failures: [],
+        cacheHits: 0,
+        cancelled: false,
+      }),
+    );
+    await recomputePart(
+      partWithProjection('projectedCurve'),
+      fakeBridge({
+        recomputeSolids,
+        projectSketchCurves: () =>
+          Promise.resolve({ results: [{ featureId: 'pj1', curves: RECTANGLE }], failures: [] }),
+      }),
+    );
+
+    expect(recomputeSolids).toHaveBeenCalledTimes(2);
+  });
+
+  it('投影を持たない部品では 2 巡目が起きない(費用を増やさない、NFR-PF-3)', async () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA));
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() =>
+      Promise.resolve({
+        bodies: [solidBody('extrude-1')],
+        failures: [],
+        cacheHits: 0,
+        cancelled: false,
+      }),
+    );
+
+    await recomputePart(document, fakeBridge({ recomputeSolids }));
+
+    expect(recomputeSolids).toHaveBeenCalledTimes(1);
+  });
+
+  it('カーネルが断ったときは理由を持ち回り、文書は壊れない(FR-504)', async () => {
+    const result = await recomputePart(
+      partWithProjection('projectedCurve'),
+      bridgeWithBody({
+        projectSketchCurves: () =>
+          Promise.resolve({
+            results: [],
+            failures: [{ featureId: 'pj1', message: '投影できる辺がありません。' }],
+          }),
+      }),
+    );
+
+    const failure = result.errors.find((error) => error.featureId === 'pj1');
+    expect(failure?.code).toBe('kernelFailed');
+    expect(failure?.message).toContain('投影・交差を作れませんでした');
+    // もとの立体は返っている(止めずに警告する)。
+    expect(result.bodies.map((body) => body.featureId)).toEqual(['extrude-1']);
+  });
+
+  it('選び直せなかった面の断りは missingSubShape へ詰め替える', async () => {
+    const result = await recomputePart(
+      partWithProjection('projectedCurve'),
+      bridgeWithBody({
+        projectSketchCurves: () =>
+          Promise.resolve({
+            results: [],
+            failures: [
+              {
+                featureId: 'pj1',
+                message: '選んだ面(辺)が見つかりません。形が大きく変わったため、選び直してください。',
+              },
+            ],
+          }),
+      }),
+    );
+
+    expect(result.errors.find((error) => error.featureId === 'pj1')?.code).toBe('missingSubShape');
+  });
+
+  it('Worker との通信ごと失敗しても例外にせず、理由を持ち回る(NFR-RE-1)', async () => {
+    const result = await recomputePart(
+      partWithProjection('projectedCurve'),
+      bridgeWithBody({
+        projectSketchCurves: () => Promise.reject(new Error('worker が応答しません')),
+      }),
+    );
+
+    const failure = result.errors.find((error) => error.featureId === 'pj1');
+    expect(failure?.message).toContain('worker が応答しません');
+  });
+
+  it('計算済みの投影を覚え書きで渡すと、2 回目はカーネルへ頼まない(NFR-PF-2)', async () => {
+    const projectSketchCurves = vi.fn<KernelBridge['projectSketchCurves']>(() =>
+      Promise.resolve({ results: [{ featureId: 'pj1', curves: RECTANGLE }], failures: [] }),
+    );
+    const projections = createProjectionCache();
+    const document = partWithProjection('projectedCurve');
+    await recomputePart(document, bridgeWithBody({ projectSketchCurves }), { projections });
+    await recomputePart(document, bridgeWithBody({ projectSketchCurves }), { projections });
+
+    expect(projectSketchCurves).toHaveBeenCalledTimes(1);
+  });
+
+  it('途中で打ち切られたときは投影を頼まない(NFR-PF-4)', async () => {
+    const projectSketchCurves = vi.fn<KernelBridge['projectSketchCurves']>(() =>
+      Promise.resolve(EMPTY_PROJECTION_RESULT),
+    );
+    await recomputePart(
+      partWithProjection('projectedCurve'),
+      fakeBridge({
+        recomputeSolids: () =>
+          Promise.resolve({ bodies: [], failures: [], cacheHits: 0, cancelled: true }),
+        projectSketchCurves,
+      }),
+    );
+
+    expect(projectSketchCurves).not.toHaveBeenCalled();
   });
 });

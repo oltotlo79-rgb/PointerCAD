@@ -77,6 +77,10 @@ const KIND_ICONS: Readonly<
   // 複製(ミラー・複写・配列複写、FR-324、P4 タスク20)。専用の図柄はツールバーを組み直す
   // タスク32 で足すので、それまでは「並べて増やす」ことが分かる直線パターンの図柄を借りる。
   copy: LinearPatternIcon,
+  // 投影・交差(FR-325、P4 タスク25)。専用の図柄は道具を足すタスク27 で用意するので、
+  // それまでは「立体から線を取り込む」ことが伝わる図柄を借りる(型の網羅のため)。
+  projectedCurve: FaceToolIcon,
+  planeSection: FaceToolIcon,
   extrude: ExtrudeIcon,
   revolve: RevolveIcon,
   sew: SewIcon,

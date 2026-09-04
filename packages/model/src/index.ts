@@ -1,7 +1,9 @@
 export {
+  createDirectKernelBridge,
   createKernelBridge,
   createKernelHealth,
   KERNEL_BROKEN_MESSAGE,
+  selectSubShape,
   type KernelBridge,
   type KernelHealth,
   type PartCancelToken,
@@ -13,6 +15,10 @@ export {
   type SketchOffsetFailure,
   type SketchOffsetRequestItem,
   type SketchOffsetResult,
+  type SketchProjectionEntry,
+  type SketchProjectionFailure,
+  type SketchProjectionRequestItem,
+  type SketchProjectionResult,
   type SketchTessellationOutcome,
   type SolidBody,
   type SolidBodyFailure,
@@ -47,16 +53,18 @@ export {
 export type {
   CoordinateInput, CopyPlacement, FreeArcOrientation, MirrorBasis, OffsetContourShape,
   OffsetCornerKind, OffsetSide,
-  PendingOffset, PointArrayLayout, PointReference, ResolvedArc,
+  PendingOffset, PendingProjection, PointArrayLayout, PointReference, ProjectionSource,
+  ResolvedArc,
   ResolvedCurve, ResolvedEllipse,
   ResolvedFace, ResolvedPoint, ResolvedSegment, ResolvedSketch, ResolvedSpline, SketchArcFeature,
   SketchCopyFeature,
   SketchDocument, SketchElementRef, SketchEllipseFeature, SketchError, SketchErrorCode,
   SketchFaceFeature, SketchFaceMesh, SketchFeature, SketchFeatureKind, SketchLineFeature,
   SketchMesh, SketchOffsetFeature, SketchPointArrayFeature, SketchPointFeature,
-  SketchPolygonFeature,
+  SketchPlaneSectionFeature, SketchPolygonFeature, SketchProjectedCurveFeature,
   SketchRectangleFeature, SketchSlotFeature, SketchSplineFeature,
 } from './sketch/types.js';
+export { projectionBodyFeatureId } from './sketch/types.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
   DEFAULT_FACE_COLOR, findFeature, nextFeatureId, nextFeatureName, removeFeature, replaceFeature,
@@ -114,6 +122,12 @@ export {
   closedOffsetDistance, createOffsetCache, offsetCacheKey, offsetDisplacement, offsetSideOf,
   OFFSET_CACHE_CAPACITY,
 } from './sketch/offsetMath.js';
+export type { ProjectionCache, ProjectionKeyMaterial } from './sketch/projectionMath.js';
+export {
+  createProjectionCache, projectionCacheKey, PROJECTION_CACHE_CAPACITY,
+} from './sketch/projectionMath.js';
+export type { SubShapeCache } from './part/subShapeCache.js';
+export { createSubShapeCache } from './part/subShapeCache.js';
 export type { MetricThreadSize, ThreadSeries } from './thread/metricThread.js';
 export {
   DEFAULT_THREAD_DESIGNATION, findMetricThread, METRIC_THREAD_DESIGNATIONS, METRIC_THREADS,
@@ -166,10 +180,12 @@ export type {
 export { cacheKeyFor, hash64, KEY_DECIMALS } from './part/cacheKey.js';
 export type {
   HoleCentersOutcome, MachiningTargetOutcome, PartError, PartErrorCode, ResolvedPart,
-  ResolvedPartSketch, ResolvedSolidStep, RevolveAxisFrame, RigidTransform, SolidStepPlan,
+  ResolvedPartSketch, ResolvedProjection, ResolvedSolidStep, ResolvePartOptions,
+  RevolveAxisFrame, RigidTransform, SolidStepPlan,
   SubShapeQueryPlan,
 } from './part/resolvePart.js';
 export {
+  referencedSketchIds,
   resolveHoleCenters, resolveMachiningTarget, resolvePart, resolvePatternTransforms,
   resolveRevolveAxis, resolveSpringLength, resolveSpringOrigin, resolveTiltedDirection,
   translateCurve,

@@ -33,7 +33,8 @@
 
 import type { ExpressionValue } from '@pointercad/expression';
 
-import type { AxisFrame } from '../geometry/planeSpec.js';
+import type { AxisFrame, AxisSpec, ResolvedSubShape } from '../geometry/planeSpec.js';
+import { projectionCacheKey } from '../sketch/projectionMath.js';
 import {
   degreesToRadians,
   tiltedDirection,
@@ -47,7 +48,14 @@ import {
   fitPlaneNormal,
   resolveSketch,
 } from '../sketch/resolveSketch.js';
-import type { ResolvedCurve, ResolvedFace, ResolvedSketch } from '../sketch/types.js';
+import { projectionBodyFeatureId } from '../sketch/types.js';
+import type {
+  PendingProjection,
+  ProjectionSource,
+  ResolvedCurve,
+  ResolvedFace,
+  ResolvedSketch,
+} from '../sketch/types.js';
 import {
   addVec3,
   lengthVec3,
@@ -306,6 +314,27 @@ export interface ResolvedPartSketch {
   readonly resolved: ResolvedSketch;
 }
 
+/**
+ * まだ形の無い投影・交差を、カーネルへ頼める形まで組み立てたもの(FR-325、タスク25)。
+ *
+ * スケッチ側の `PendingProjection` は「どの立体の何を、どの作図面へ」までしか知らない。
+ * ここでその立体の**段の鍵**(`ResolvedSolidStep.key`)を足すことで、
+ * ①覚え書きの鍵が作れる(上流が変われば必ず変わる)、②カーネルが形状キャッシュから
+ * もとの立体を引ける、の 2 つがそろう。頼むのは `recomputePart` の役目。
+ */
+export interface ResolvedProjection {
+  /** この投影・交差を持つスケッチの id。 */
+  readonly sketchId: string;
+  /** 投影・交差フィーチャーの id。結果の対応づけに使う。 */
+  readonly featureId: string;
+  /** 覚え書き(`ProjectionCache`)の鍵。 */
+  readonly key: string;
+  /** もとの立体の段の鍵。 */
+  readonly bodyKey: string;
+  readonly source: ProjectionSource;
+  readonly plane: WorkPlane;
+}
+
 export interface ResolvedPart {
   /**
    * スケッチ id ごとの解決結果(P1 の resolveSketch をそのまま呼ぶ)。文書の順を保つ。
@@ -322,6 +351,12 @@ export interface ResolvedPart {
   readonly references: ResolvedReferences;
   /** カーネルへ渡す段の一覧。順序が意味を持つ。失敗した段と抑制された段は入らない。 */
   readonly steps: readonly ResolvedSolidStep[];
+  /**
+   * まだ形の無い投影・交差(FR-325、タスク25)。無ければ空。
+   * `recomputePart` がカーネルへ頼み、覚え書きへ入れてから解決し直す
+   * (`ResolvedSketch.pendingOffsets` と同じ 2 段の流れ)。
+   */
+  readonly projections: readonly ResolvedProjection[];
   /** ソリッドの解決の失敗(FR-504)。抑制は失敗ではないので入れない。 */
   readonly errors: readonly PartError[];
   /**
@@ -1716,13 +1751,15 @@ function toPartError(error: ReferenceError): PartError {
  */
 function resolveSketchesAndReferences(
   document: PartDocument,
-  offsetCurves: (key: string) => readonly ResolvedCurve[] | null,
+  options: Required<Pick<ResolvePartOptions, 'offsetCurves' | 'projectedCurves'>> &
+    Pick<ResolvePartOptions, 'subShape'>,
 ): {
   readonly sketches: readonly ResolvedPartSketch[];
   readonly references: ResolvedReferences;
   readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
   readonly axisFrames: ReadonlyMap<string, AxisFrame>;
 } {
+  const { offsetCurves, projectedCurves, subShape } = options;
   const resolvedSketches = new Map<string, ResolvedSketch>();
   const resolvingSketches = new Set<string>();
 
@@ -1743,11 +1780,15 @@ function resolveSketchesAndReferences(
       const resolved = resolveSketch(found, {
         workPlane: (planeId) => resolver.workPlane(planeId),
         offsetCurves,
+        projectedCurves,
+        subShape,
       });
       resolvingSketches.delete(sketchId);
       resolvedSketches.set(sketchId, resolved);
       return resolved;
     },
+    // 基準ジオメトリ(FR-328、FR-329)も同じ口で「いまの形」を見る(タスク25)。
+    subShape,
   });
 
   // 基準ジオメトリを先に解く(スケッチが作図面として使うため)。中で必要になった
@@ -1765,6 +1806,8 @@ function resolveSketchesAndReferences(
     const resolved = resolveSketch(sketch, {
       workPlane: (planeId) => resolver.workPlane(planeId),
       offsetCurves,
+      projectedCurves,
+      subShape,
     });
     resolvedSketches.set(sketch.id, resolved);
     return { sketchId: sketch.id, resolved };
@@ -1773,16 +1816,104 @@ function resolveSketchesAndReferences(
   return { sketches, references, workPlane: resolver.workPlane, axisFrames };
 }
 
+/* ------------------------------------------------------------------ *
+ * 投影・交差の解決順序(FR-325、§0.a-0.11、タスク25)
+ * ------------------------------------------------------------------ */
+
+/** 軸の指定がスケッチの線分を指しているなら、そのスケッチの id。 */
+function axisSketchIds(spec: AxisSpec): readonly string[] {
+  return spec.kind === 'line' ? [spec.line.sketchId] : [];
+}
+
 /**
- * `resolvePart` へ渡せるもの(P4 タスク21、FR-321)。
+ * 1 つのソリッドフィーチャーが使うスケッチの id(FR-325 の順序の制約、タスク25)。
  *
- * オフセット(FR-321)の実際の形は OCCT に任せてある(model タスク15)ので、
- * `resolveSketch` と同じく「計算済みのオフセットを覚え書きから読むだけ」の関数を渡す。
- * まだ計算していないものは各スケッチの `ResolvedSketch.pendingOffsets` へ積まれ、
- * カーネルへ頼んで埋めるのは `recomputePart`(タスク21)の役目。
+ * 「投影のもとにできるのは、そのスケッチを使う立体より前に作られた立体だけ」(§0.a-0.11)を
+ * 機械的に判定するために要る。断面・回転軸・穴の中心・ばねの始点・パターンの向きの
+ * どれもスケッチを指しうるので、種類ごとに列挙する(網羅 switch なので、
+ * 新しいソリッドフィーチャーを足すとここで型検査が落ちて足し忘れを防げる)。
+ */
+export function referencedSketchIds(feature: SolidFeature): readonly string[] {
+  switch (feature.kind) {
+    case 'extrude':
+      return [feature.profile.sketchId];
+    case 'revolve':
+      return [feature.profile.sketchId, ...axisSketchIds(feature.axis)];
+    case 'sew':
+      return feature.faces.map((face) => face.sketchId);
+    case 'boolean':
+      return [];
+    case 'hole':
+    case 'threadHole':
+      return feature.centers.map((center) => center.sketchId);
+    case 'fillet':
+    case 'chamfer':
+      // 辺・頂点の指紋しか持たない(スケッチを見ない)。
+      return [];
+    case 'pattern':
+      return feature.placement.kind === 'linear'
+        ? axisSketchIds(feature.placement.direction)
+        : axisSketchIds(feature.placement.axis);
+    case 'spring':
+      return [feature.origin.sketchId, ...axisSketchIds(feature.axis)];
+  }
+}
+
+/**
+ * スケッチごとに「そのスケッチを最初に使うソリッドフィーチャーの履歴上の位置」を作る。
+ * 使われていないスケッチは表に入らない(= どの立体を参照してもよい)。
+ * 抑制されたフィーチャー(FR-503)はボディを作らないので数えない。
+ */
+function firstSketchUseIndexes(solids: readonly SolidFeature[]): ReadonlyMap<string, number> {
+  const first = new Map<string, number>();
+  solids.forEach((feature, index) => {
+    if (feature.suppressed) {
+      return;
+    }
+    for (const sketchId of referencedSketchIds(feature)) {
+      if (!first.has(sketchId)) {
+        first.set(sketchId, index);
+      }
+    }
+  });
+  return first;
+}
+
+/** 参照先の立体が見つからない(未作成・抑制中・上流が失敗・削除された)。 */
+function missingProjectionBodyMessage(source: ProjectionSource): string {
+  return source.kind === 'subShape'
+    ? '投影のもとになる立体が見つかりません。立体を選び直してください。'
+    : '断面をとる立体が見つかりません。立体を選び直してください。';
+}
+
+/** 順序違反(自分より後に作られる立体を指した)。§0.a-0.11 の制約。 */
+function laterProjectionBodyMessage(source: ProjectionSource): string {
+  const what = source.kind === 'subShape' ? '投影' : '断面';
+  return `${what}のもとにできるのは、このスケッチを使う立体より前に作られた立体だけです。履歴の順序を見直してください。`;
+}
+
+/**
+ * `resolvePart` へ渡せるもの(P4 タスク21・25、FR-321、FR-325、FR-330)。
+ *
+ * オフセット(FR-321)と投影・交差(FR-325)の実際の形は OCCT に任せてある(タスク15・26)
+ * ので、`resolveSketch` と同じく「計算済みの形を覚え書きから読むだけ」の関数を渡す。
+ * まだ計算していないものは `ResolvedSketch.pendingOffsets` / `ResolvedPart.projections` へ
+ * 積まれ、カーネルへ頼んで埋めるのは `recomputePart` の役目。
  */
 export interface ResolvePartOptions {
   readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
+  /** 計算済みの投影・交差の曲線をフィーチャーの id で引く(タスク25)。 */
+  readonly projectedCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
+  /**
+   * 立体の面・辺・頂点の選び直し(FR-325、FR-328〜330 の上流追従、タスク25)。
+   *
+   * 渡されなければ保存された指紋の位置・向きをそのまま使う
+   * (`geometry/planeSpec.ts` の `subShapeFromFingerprint`)。**渡すと、3D スケッチの
+   * 頂点参照・任意の作業平面・基準ジオメトリが「いまの形」を見るようになる**
+   * (指紋の位置に固定されなくなる)。選び直しの採点はカーネル側の純関数が正本で、
+   * この関数を作るのは `recomputePart`(`kernelBridge.ts` の `selectSubShape`)である。
+   */
+  readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
 }
 
 /** まだ計算していないオフセットが無いときに使う、常に null を返す関数。 */
@@ -1790,12 +1921,18 @@ function noOffsetCurves(): null {
   return null;
 }
 
+/** まだ計算していない投影・交差が無いときに使う、常に null を返す関数。 */
+function noProjectedCurves(): null {
+  return null;
+}
+
 /** 部品文書を解決して、カーネルへ渡す段の一覧を作る。例外を投げない(FR-504)。 */
 export function resolvePart(document: PartDocument, options: ResolvePartOptions = {}): ResolvedPart {
-  const { sketches, references, axisFrames } = resolveSketchesAndReferences(
-    document,
-    options.offsetCurves ?? noOffsetCurves,
-  );
+  const { sketches, references, axisFrames } = resolveSketchesAndReferences(document, {
+    offsetCurves: options.offsetCurves ?? noOffsetCurves,
+    projectedCurves: options.projectedCurves ?? noProjectedCurves,
+    subShape: options.subShape,
+  });
 
   const drafts: StepDraft[] = [];
   // 基準ジオメトリの失敗もツリーの行として出すので、同じ一覧へ写す(FR-504)。
@@ -1834,11 +1971,114 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     visible: !consumed.has(draft.featureId),
   }));
 
+  // まだ形の無い投影・交差(FR-325)を、段の鍵がそろったここで組み立てる。
+  // 段のループの中ではなくループの後で行うのは、①鍵はループが作るもの、
+  // ②順序の制約は「そのスケッチを使う立体より前か」で決まり、履歴全体を見ないと
+  // 判定できない、の 2 つによる(§0.a-0.11)。
+  const projections = collectProjections(document, sketches, bodyKeys, errors);
+
   return {
     sketches,
     references,
     steps,
+    projections,
     errors,
     liveBodyIds: steps.filter((step) => step.visible).map((step) => step.featureId),
+  };
+}
+
+/**
+ * まだ形の無い投影・交差を、カーネルへ頼める形(`ResolvedProjection`)へ組み立てる。
+ * 参照先が見つからない・順序違反のものは頼まず、理由を `errors` へ積む(FR-504)。
+ */
+function collectProjections(
+  document: PartDocument,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  errors: PartError[],
+): readonly ResolvedProjection[] {
+  const anyPending = sketches.some((entry) => entry.resolved.pendingProjections.length > 0);
+  if (!anyPending) {
+    // 投影・交差を持たない部品(ほとんどの部品)では、表も作らず素通りする(NFR-PF-3)。
+    return [];
+  }
+  const bodyOrder = new Map<string, number>();
+  document.solids.forEach((feature, index) => {
+    if (!bodyOrder.has(feature.id)) {
+      bodyOrder.set(feature.id, index);
+    }
+  });
+  const firstUse = firstSketchUseIndexes(document.solids);
+
+  const requests: ResolvedProjection[] = [];
+  for (const entry of sketches) {
+    for (const pending of entry.resolved.pendingProjections) {
+      const request = planProjection(
+        entry.sketchId,
+        pending,
+        bodyKeys,
+        bodyOrder,
+        firstUse.get(entry.sketchId),
+      );
+      if (!request.ok) {
+        errors.push(request.error);
+        continue;
+      }
+      requests.push(request.projection);
+    }
+  }
+  return requests;
+}
+
+type ProjectionOutcome =
+  | { readonly ok: true; readonly projection: ResolvedProjection }
+  | { readonly ok: false; readonly error: PartError };
+
+/** 1 件の投影・交差について、参照先と順序を確かめてから鍵を作る。 */
+function planProjection(
+  sketchId: string,
+  pending: PendingProjection,
+  bodyKeys: ReadonlyMap<string, string>,
+  bodyOrder: ReadonlyMap<string, number>,
+  firstUseIndex: number | undefined,
+): ProjectionOutcome {
+  const bodyFeatureId = projectionBodyFeatureId(pending.source);
+  const bodyKey = bodyKeys.get(bodyFeatureId);
+  if (bodyKey === undefined) {
+    return {
+      ok: false,
+      error: partError(
+        pending.featureId,
+        'missingBody',
+        missingProjectionBodyMessage(pending.source),
+      ),
+    };
+  }
+  // 順序の制約(§0.a-0.11)。そのスケッチをどの立体も使っていなければ制約は無い。
+  const bodyIndex = bodyOrder.get(bodyFeatureId);
+  if (
+    firstUseIndex !== undefined &&
+    bodyIndex !== undefined &&
+    bodyIndex >= firstUseIndex
+  ) {
+    return {
+      ok: false,
+      error: partError(
+        pending.featureId,
+        'missingBody',
+        laterProjectionBodyMessage(pending.source),
+      ),
+    };
+  }
+  return {
+    ok: true,
+    projection: {
+      sketchId,
+      featureId: pending.featureId,
+      key: projectionCacheKey({ bodyKey, source: pending.source, plane: pending.plane }),
+      bodyKey,
+      source: pending.source,
+      plane: pending.plane,
+    },
   };
 }

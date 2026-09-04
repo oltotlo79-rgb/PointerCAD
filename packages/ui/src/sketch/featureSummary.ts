@@ -10,22 +10,39 @@
  * 新しい要素を作る(P2 の Undo の土台、FR-505)。
  */
 
-import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
+import {
+  evaluateExpression,
+  expressionValueFromNumber,
+  type ExpressionValue,
+} from '@pointercad/expression';
 import {
   distanceVec3,
+  type CopyPlacement,
   type CoordinateInput,
+  type OffsetCornerKind,
+  type OffsetSide,
+  type PointArrayLayout,
   type PointReference,
   type ResolvedSketch,
+  type SketchCopyFeature,
   type SketchDocument,
+  type SketchElementRef,
+  type SketchEllipseFeature,
   type SketchError,
   type SketchFaceFeature,
   type SketchFeature,
   type SketchFeatureKind,
   type SketchMesh,
+  type SketchOffsetFeature,
   type SketchPointArrayFeature,
+  type SketchPolygonFeature,
+  type SketchRectangleFeature,
+  type SketchSlotFeature,
+  type SketchSplineFeature,
+  type WorkPlaneId,
 } from '@pointercad/model';
 
-import type { MessageKey } from '../i18n/t.js';
+import { t, type MessageKey } from '../i18n/t.js';
 import { DEFAULT_COORDINATE_BASE, type CoordinateMode, type FieldUnit } from './numericInput.js';
 
 /** プロパティ欄の 1 行。式は source をそのまま出す(FR-202)。 */
@@ -37,15 +54,120 @@ export interface FeatureFieldSummary {
   readonly value: ExpressionValue;
 }
 
-/** 座標を指定する場所。要素の種類ごとに持てる場所が決まっている。 */
-export type CoordinateSlot = 'at' | 'from' | 'to' | 'center' | 'base';
+/**
+ * 座標を指定する場所。要素の種類ごとに持てる場所が決まっている。
+ *
+ * P4 タスク33 で新しい図形ぶんを足した。スプラインの点だけは個数が決まらないので
+ * `points.0` のような文字列になり、この union には入らない(`FeatureCoordinateSummary.path`
+ * は文字列で持つ)。
+ */
+export type CoordinateSlot =
+  | 'at'
+  | 'from'
+  | 'to'
+  | 'center'
+  | 'base'
+  /** 矩形の対角 2 点(FR-314)。 */
+  | 'corner1'
+  | 'corner2'
+  /** 長穴の 2 つの中心(FR-316)。 */
+  | 'center1'
+  | 'center2'
+  /** 3D スケッチの円弧の向き(FR-330)。 */
+  | 'normal'
+  | 'xAxis'
+  /** 複製の移動量・並べる向き(FR-324)。 */
+  | 'delta'
+  | 'direction';
+
+/** スプラインの n 番目の点の道筋(`points.0`)。 */
+export function splinePointSlot(index: number): string {
+  return `points.${String(index)}`;
+}
+
+/**
+ * 座標の基準(FR-302、FR-303、FR-330)の読める表示。
+ * 「押し出し1 / 立体の頂点」のように、参照先の名前と何を指しているかを並べて出す。
+ */
+export interface CoordinateBaseSummary {
+  /** 何を指しているか(原点・直前の点・立体の頂点など)。 */
+  readonly labelKey: MessageKey;
+  /** 参照先の名前。名前を引けないときは null。 */
+  readonly name: string | null;
+  /** 押すとその要素を選べる id。選べないときは null。 */
+  readonly elementId: string | null;
+  /** 画面にそのまま出す 1 行(名前 + 種類)。 */
+  readonly text: string;
+}
 
 /** 1 点ぶんの欄のまとまり。指定方法(絶対・相対・極)を切り替える単位でもある。 */
 export interface FeatureCoordinateSummary {
-  readonly path: CoordinateSlot;
+  /** `at`・`corner1` などの場所。スプラインの点だけ `points.0` の形になる。 */
+  readonly path: string;
   readonly labelKey: MessageKey;
   readonly mode: CoordinateMode;
   readonly fields: readonly FeatureFieldSummary[];
+  /**
+   * 見出しに添える番号(スプラインの点は 1 から数える)。番号を持たない場所は null。
+   */
+  readonly ordinal: number | null;
+  /** 基準の点(相対・極のときだけ)。絶対座標では null。 */
+  readonly base: CoordinateBaseSummary | null;
+  /** 消せる点(スプラインの点)なら true。 */
+  readonly removable: boolean;
+}
+
+/** 入切のつまみ(構築線・閉じる)。式ではないので値は真偽。 */
+export type FeatureToggleKey = 'construction' | 'splineClosed' | 'fullCircle';
+
+export interface FeatureToggleSummary {
+  readonly key: FeatureToggleKey;
+  readonly labelKey: MessageKey;
+  readonly value: boolean;
+}
+
+/** いくつかから 1 つを選ぶ欄(半径の測り方・点の使い方・オフセットの側と角など)。 */
+export type FeatureChoiceKey =
+  /** 矩形の見せ方(対角 2 点 / 中心+幅+高さ)。履歴には残らない画面だけの切替。 */
+  | 'rectangleMode'
+  | 'polygonRadiusMode'
+  | 'splineMode'
+  | 'offsetSide'
+  | 'offsetCorner';
+
+export interface FeatureChoiceOption {
+  readonly value: string;
+  readonly labelKey: MessageKey;
+}
+
+export interface FeatureChoiceSummary {
+  readonly key: FeatureChoiceKey;
+  readonly labelKey: MessageKey;
+  readonly value: string;
+  readonly options: readonly FeatureChoiceOption[];
+}
+
+/** 参照しているもの(オフセット元・複製元・鏡の軸)。名前だけを引く(FR-311)。 */
+export interface FeatureReferenceSummary {
+  readonly labelKey: MessageKey;
+  readonly name: string;
+  /** 押すとその要素を選べる id。引けないときは null(FR-504)。 */
+  readonly elementId: string | null;
+}
+
+/** 矩形の見せ方(FR-314、計画書タスク33)。履歴の形(対角 2 点)は変わらない。 */
+export type RectangleView = 'corners' | 'centerSize';
+
+export const RECTANGLE_VIEWS: readonly RectangleView[] = ['corners', 'centerSize'];
+
+/** 要約を組み立てるときの手掛かり。渡さなければ従来どおりの要約になる。 */
+export interface FeatureSummaryOptions {
+  /** 基準の点・参照先の名前を引くためのスケッチ文書。 */
+  readonly document?: SketchDocument;
+  /** 立体の名前を引く(頂点参照の「押し出し1 / 立体の頂点」)。 */
+  readonly bodyName?: (featureId: string) => string | null;
+  /** 矩形の見せ方。既定は対角 2 点。 */
+  readonly rectangleView?: RectangleView;
 }
 
 /** ツリーの行とプロパティ欄が共有する、要素 1 つの見え方。 */
@@ -57,12 +179,47 @@ export interface FeatureSummary {
   readonly coordinates: readonly FeatureCoordinateSummary[];
   /** 座標ではない数の欄(半径・角度・間隔・個数)。 */
   readonly scalars: readonly FeatureFieldSummary[];
+  /** 入切のつまみ(構築線・閉じる)。持たない種類は空。 */
+  readonly toggles: readonly FeatureToggleSummary[];
+  /** いくつかから 1 つを選ぶ欄。持たない種類は空。 */
+  readonly choices: readonly FeatureChoiceSummary[];
+  /** 参照しているもの(オフセット元・複製元・鏡の軸)。持たない種類は空。 */
+  readonly references: readonly FeatureReferenceSummary[];
   /** 計算できていない理由。問題が無ければ null(FR-504)。 */
   readonly errorMessage: string | null;
 }
 
+/**
+ * ツリーの行に出す種類(絵と名前を決める粒度)。複製は配置ごとに分ける。
+ * 立体側の `solidKindOf`(ブーリアンを演算ごとに分ける)と同じ考え方で、
+ * 「ミラー1」「直線配列1」のような名前と絵が食い違わないようにする(FR-501)。
+ */
+export type SketchTreeKind =
+  | SketchFeatureKind
+  | 'copyMirror'
+  | 'copyTranslate'
+  | 'copyLinearArray'
+  | 'copyCircularArray';
+
+/** 複製(FR-324)は配置ごとに、それ以外はそのままの種類を返す。 */
+export function sketchTreeKindOf(feature: SketchFeature): SketchTreeKind {
+  if (feature.kind !== 'copy') {
+    return feature.kind;
+  }
+  switch (feature.placement.kind) {
+    case 'mirror':
+      return 'copyMirror';
+    case 'translate':
+      return 'copyTranslate';
+    case 'linearArray':
+      return 'copyLinearArray';
+    case 'circularArray':
+      return 'copyCircularArray';
+  }
+}
+
 /** ツリーの行に出す種類の名前。道具の名前と同じ言葉にする。 */
-export const FEATURE_KIND_LABEL_KEYS: Readonly<Record<SketchFeatureKind, MessageKey>> = {
+export const FEATURE_KIND_LABEL_KEYS: Readonly<Record<SketchTreeKind, MessageKey>> = {
   point: 'toolbar.tool.point',
   line: 'toolbar.tool.line',
   arc: 'toolbar.tool.arc',
@@ -75,6 +232,15 @@ export const FEATURE_KIND_LABEL_KEYS: Readonly<Record<SketchFeatureKind, Message
   spline: 'toolbar.tool.spline',
   offset: 'toolbar.tool.offset',
   copy: 'toolbar.tool.copy',
+  // 投影・交差(FR-325、P4 タスク25)。道具そのものはタスク27 で足す。
+  projectedCurve: 'toolbar.tool.projectedCurve',
+  planeSection: 'toolbar.tool.planeSection',
+  // 複製(FR-324)の 4 通り。木の行の名前(ミラー1・複写1・直線配列1・円形配列1)と
+  // 同じ言葉にする(P4 タスク33、タスク20 の申し送り)。
+  copyMirror: 'propertyPanel.kind.mirror',
+  copyTranslate: 'propertyPanel.kind.translate',
+  copyLinearArray: 'propertyPanel.kind.linearArray',
+  copyCircularArray: 'propertyPanel.kind.circularArray',
 };
 
 /** 座標のまとまりの見出し。 */
@@ -84,7 +250,18 @@ const COORDINATE_LABEL_KEYS: Readonly<Record<CoordinateSlot, MessageKey>> = {
   to: 'propertyPanel.coordinate.to',
   center: 'propertyPanel.coordinate.center',
   base: 'propertyPanel.coordinate.base',
+  corner1: 'propertyPanel.coordinate.corner1',
+  corner2: 'propertyPanel.coordinate.corner2',
+  center1: 'propertyPanel.coordinate.center1',
+  center2: 'propertyPanel.coordinate.center2',
+  normal: 'propertyPanel.coordinate.normal',
+  xAxis: 'propertyPanel.coordinate.xAxis',
+  delta: 'propertyPanel.coordinate.delta',
+  direction: 'propertyPanel.coordinate.direction',
 };
+
+/** スプラインの点の見出し(番号は `ordinal` が持つ)。 */
+const SPLINE_POINT_LABEL_KEY: MessageKey = 'propertyPanel.coordinate.splinePoint';
 
 /** 欄の見出し。その場数値入力(numericInput.ts)と同じ言葉を使う。 */
 const FIELD_LABEL_KEYS = {
@@ -102,6 +279,21 @@ const FIELD_LABEL_KEYS = {
   endAngle: 'numericInput.field.endAngle',
   spacing: 'numericInput.field.spacing',
   count: 'numericInput.field.count',
+  // P4 の新しい図形(FR-314〜318、FR-321、FR-324、FR-327)。
+  sides: 'numericInput.field.sides',
+  width: 'numericInput.field.width',
+  height: 'propertyPanel.height',
+  majorRadius: 'numericInput.field.majorRadius',
+  minorRadius: 'numericInput.field.minorRadius',
+  rotation: 'numericInput.field.rotation',
+  rowAzimuth: 'propertyPanel.rowAzimuth',
+  rowSpacing: 'numericInput.field.rowSpacing',
+  rowCount: 'numericInput.field.rowCount',
+  colAzimuth: 'propertyPanel.colAzimuth',
+  colSpacing: 'numericInput.field.colSpacing',
+  colCount: 'numericInput.field.colCount',
+  offsetDistance: 'numericInput.field.offsetDistance',
+  angle: 'numericInput.field.angle',
 } as const satisfies Record<string, MessageKey>;
 
 /**
@@ -226,8 +418,11 @@ export function summarizeFeature(
     case 'spline':
     case 'offset':
     case 'copy':
-      // P4 タスク4・5・15・20(model)は型と解決だけを足す。ツリー・プロパティ欄への表示・編集の
-      // 配線はタスク33(ui: ツリー・プロパティの対応)の範囲(型の網羅性のためだけに空で満たす)。
+    case 'projectedCurve':
+    case 'planeSection':
+      // P4 タスク4・5・15・20・25(model)は型と解決だけを足す。ツリー・プロパティ欄への
+      // 表示・編集の配線はタスク33(ui: ツリー・プロパティの対応)の範囲
+      // (型の網羅性のためだけに空で満たす)。投影・交差は式を 1 つも持たない(FR-325)。
       return { ...base, coordinates: [], scalars: [] };
   }
 }
@@ -513,6 +708,8 @@ export function resolvedFields(
     case 'spline':
     case 'offset':
     case 'copy':
+    case 'projectedCurve':
+    case 'planeSection':
       // タスク33(ui: ツリー・プロパティの対応)の範囲(型の網羅性のためだけに空で満たす)。
       return [];
   }

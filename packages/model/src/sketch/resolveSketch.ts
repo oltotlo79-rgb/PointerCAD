@@ -61,6 +61,7 @@ import type {
   FreeArcOrientation,
   OffsetContourShape,
   PendingOffset,
+  PendingProjection,
   PointArrayLayout,
   ResolvedArc,
   ResolvedCurve,
@@ -763,6 +764,16 @@ export interface SketchResolveOptions {
    * 積み、カーネルへ頼むのは `recomputeSketch` の役目(`offsetMath.ts` の注釈)。
    */
   readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
+  /**
+   * 計算済みの投影・交差(FR-325、タスク25)の曲線を**フィーチャーの id で**引く。
+   *
+   * オフセット(`offsetCurves`)が鍵で引くのに対してこちらが id で引くのは、
+   * 投影の鍵の材料に「もとの立体の段の鍵」が要り、それはスケッチ 1 本からは
+   * 分からないため(`projectionMath.ts` の `ProjectionKeyMaterial` の注釈)。
+   * 鍵を組み立てて覚え書きを引き、この関数を作るのは `resolvePart` の役目である。
+   * 引けなければ「まだ計算していない」として `pendingProjections` へ積む。
+   */
+  readonly projectedCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
 }
 
 /**
@@ -851,7 +862,10 @@ export function resolveSketch(
   const subShape = options.subShape;
   // 渡されなければ、すべてのオフセットが「まだ計算していない」扱いになる(タスク15)。
   const lookupOffset = options.offsetCurves ?? ((): null => null);
+  // 渡されなければ、すべての投影・交差が「まだ計算していない」扱いになる(タスク25)。
+  const lookupProjection = options.projectedCurves ?? ((): null => null);
   const pendingOffsets: PendingOffset[] = [];
+  const pendingProjections: PendingProjection[] = [];
   const points: ResolvedPoint[] = [];
   const segments: ResolvedSegment[] = [];
   const arcs: ResolvedArc[] = [];
@@ -1359,6 +1373,55 @@ export function resolveSketch(
       previous = curveEnd(lastCopy);
       continue;
     }
+
+    if (feature.kind === 'projectedCurve' || feature.kind === 'planeSection') {
+      // 投影先・切り口は作図面そのものなので、3D スケッチ(作図面なし)では作れない。
+      if (plane === null) {
+        errors.push(
+          needsWorkPlane(feature.id, feature.kind === 'projectedCurve' ? '投影' : '交差'),
+        );
+        continue;
+      }
+      const remembered = lookupProjection(feature.id);
+      if (remembered === null) {
+        // まだ形が無いだけで失敗ではないので errors には入れない(オフセットと同じ扱い)。
+        pendingProjections.push({
+          featureId: feature.id,
+          source:
+            feature.kind === 'projectedCurve'
+              ? { kind: 'subShape', ref: feature.source }
+              : { kind: 'body', bodyFeatureId: feature.targetFeatureId },
+          plane,
+        });
+        continue;
+      }
+      if (remembered.length === 0) {
+        // 交差は「交わらなければ 0 本」が正しい結果なので、ここで理由を出して断る
+        // (カーネルは例外を投げない。`makeSection.ts` の決め)。
+        errors.push(
+          error(
+            feature.id,
+            'degenerate',
+            feature.kind === 'projectedCurve'
+              ? '投影しても線になりませんでした。作図面の向きを見直してください。'
+              : '立体と作図面が交わりません。作図面の位置を見直してください。',
+          ),
+        );
+        continue;
+      }
+      const created = remembered.map((curve) => retagCurve(curve, feature.id));
+      pushResolvedCurves(created, segments, arcs, ellipses, splines);
+      curvesByFeature.set(feature.id, created);
+      if (feature.construction) {
+        constructionFeatureIds.add(feature.id);
+      }
+      const firstCreated = created[0];
+      const lastCreated = created[created.length - 1];
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(firstCreated));
+      vertices.set(vertexKey(feature.id, 'end'), curveEnd(lastCreated));
+      previous = curveEnd(lastCreated);
+      continue;
+    }
   }
 
   return {
@@ -1370,6 +1433,7 @@ export function resolveSketch(
     faces,
     errors,
     pendingOffsets,
+    pendingProjections,
     curvesByFeature,
   };
 }

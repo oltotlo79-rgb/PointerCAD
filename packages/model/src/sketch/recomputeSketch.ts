@@ -426,6 +426,10 @@ function reevaluateFeature(
       return { ...feature, distance: reevaluate(feature.distance, variables) };
     case 'copy':
       return { ...feature, placement: reevaluateCopyPlacement(feature.placement, variables) };
+    case 'projectedCurve':
+    case 'planeSection':
+      // 投影・交差が持つのは立体への参照と作図面だけで、式は 1 つも無い(FR-325)。
+      return feature;
   }
 }
 

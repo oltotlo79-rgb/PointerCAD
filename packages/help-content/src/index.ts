@@ -14,6 +14,11 @@ export interface HelpTopic {
 export const HELP_TOPICS: readonly HelpTopic[] = [
   { id: 'viewport', title: '画面を回す・動かす・拡大する', path: 'docs/ja/viewport.md' },
   { id: 'numeric-input', title: '数値と式の入れ方', path: 'docs/ja/numeric-input.md' },
+  {
+    id: 'parameters',
+    title: '名前を付けた数値(パラメータ)',
+    path: 'docs/ja/parameters.md',
+  },
   { id: 'sketch-tools', title: '点・線・円弧をかく', path: 'docs/ja/sketch-tools.md' },
   {
     id: 'shapes',

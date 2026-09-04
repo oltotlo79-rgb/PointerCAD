@@ -32,7 +32,6 @@ import {
   applyParameters,
   collectExpressionSources,
   nextParameterName,
-  referencesTo,
   removeParameter,
   renameParameter,
   renameVariableInPartDocument,
@@ -130,18 +129,42 @@ function hasName(parameters: readonly Parameter[], name: string): boolean {
 }
 
 /**
- * 文書の中(パラメータ表以外)で、その名前が何箇所から参照されているか。
- * `collectExpressionSources` はパラメータ表自身の式を含まないので、二重に数えない
- * (`referencesTo` がパラメータどうしの参照を数える)。
+ * 名前ごとの「使われている数」を一度に数える(FR-207)。
+ *
+ * 数えるのは 2 つ。①その名前を式で呼んでいる**他の**パラメータ、②文書の側の式
+ * (`collectExpressionSources` はパラメータ表自身の式を含まないので二重に数えない)。
+ * 1 つの式が同じ名前を 2 回使っていても 1 と数え、自分自身への参照は数えない
+ * (model の `referencesTo` と同じ規則。`A = 'A + 1'` は循環として別に印が付き、これを
+ * 「使われている」と数えると誰も使っていない名前が消せなくなる)。
+ *
+ * **削除を断るときの件数(`commitRemoveParameter`)も、パネルが行の脇へ出す数
+ * (タスク11)も、どちらもこの関数だけを見る。**同じ規則を 2 か所に書かない。
+ * 1 行ずつ数えると文書を名前の数だけ歩くことになるので、文書の式は 1 度だけ集めて
+ * 全部の名前をまとめて数える(NFR-PF-1)。
  */
-function documentUsageCount(document: PartDocument, name: string): number {
-  let count = 0;
-  for (const source of collectExpressionSources(document)) {
-    if (collectVariableNames(source).includes(name)) {
-      count += 1;
-    }
+export function parameterUsageCounts(document: PartDocument): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const parameter of document.parameters) {
+    counts.set(parameter.name, 0);
   }
-  return count;
+  const bump = (names: Iterable<string>): void => {
+    for (const name of new Set(names)) {
+      const current = counts.get(name);
+      if (current !== undefined) {
+        counts.set(name, current + 1);
+      }
+    }
+  };
+  for (const parameter of document.parameters) {
+    // 自分自身への参照は数えない(model の `referencesTo` と同じ規則)。
+    bump(
+      collectVariableNames(parameter.value.source).filter((name) => name !== parameter.name),
+    );
+  }
+  for (const source of collectExpressionSources(document)) {
+    bump(collectVariableNames(source));
+  }
+  return counts;
 }
 
 /** 部品文書のパラメータ表を差し替えて `applyParameters` を通す(全確定関数の最後の一歩)。 */
@@ -192,14 +215,14 @@ export function commitAddParameter(document: PartDocument, draft: Parameter): Pa
 
 /**
  * 1 行を消す(FR-207)。参照が残っていれば断り、件数を文へ差し込む
- * (他のパラメータからの参照は `referencesTo`、文書の側からの参照は `collectExpressionSources`
- * を数える。model の `removeParameter` 自身は消すだけで可否を見ないので、ここで判断する)。
+ * (数え方は `parameterUsageCounts` の 1 か所だけに置く。model の `removeParameter` 自身は
+ * 消すだけで可否を見ないので、ここで判断する)。
  */
 export function commitRemoveParameter(document: PartDocument, name: string): ParameterCommandOutcome {
   if (!hasName(document.parameters, name)) {
     return notFound();
   }
-  const total = referencesTo(document.parameters, name).length + documentUsageCount(document, name);
+  const total = parameterUsageCounts(document).get(name) ?? 0;
   if (total > 0) {
     return { ok: false, reason: 'referenced', message: referencedMessage(total) };
   }

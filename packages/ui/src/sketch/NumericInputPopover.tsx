@@ -259,6 +259,13 @@ export function NumericInputPopover({
   // 3D スケッチ(FR-330)では極座標の指定方法を隠す(§0.a-0.5、タスク14)。
   const workPlaneId = useAppStore((store) => store.workPlaneId);
   const modes = coordinateModesFor(workPlaneId);
+  /*
+   * パラメータ表の変数表(FR-207、FR-201、P4b タスク11)。ここで渡さないと、
+   * `板厚 * 2` がプロパティの欄では通るのに、その場入力では「知らない名前です」に
+   * なってしまう(タスク18 の申し送り。3 つの入口へ**同じ表**を渡す)。
+   * 評価と確定の両方へ渡す。片方だけだと、欄では緑なのに決定で断られる。
+   */
+  const variables = useAppStore((store) => store.parameterAnalysis.variables);
 
   // つまみと選択肢は入力欄ではないので、焦点は状態機械の指示でこちらから移す。
   const toggleRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -285,7 +292,7 @@ export function NumericInputPopover({
     return null;
   }
 
-  const evaluation = evaluateNumericInput(state);
+  const evaluation = evaluateNumericInput(state, variables);
   const position = clampAnchor(anchor, viewportWidth, viewportHeight);
   const coordinateStep = asksCoordinate(state.step);
   // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
@@ -308,7 +315,7 @@ export function NumericInputPopover({
    * まったく同じ関数を通るので、どちらから打っても同じ道筋になる(NFR-UX-1)。
    */
   const handleKey = (key: NumericInputKey): void => {
-    applyNumericTransition(applyNumericInputKey(state, key));
+    applyNumericTransition(applyNumericInputKey(state, key, { variables }));
   };
 
   /** ボタンを押しても欄から焦点を奪わない(NFR-UX-2 の「焦点を外へ逃がさない」)。 */

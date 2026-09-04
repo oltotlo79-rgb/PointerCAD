@@ -12,6 +12,7 @@ import {
 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { ParameterPanel } from '../parameters/ParameterPanel.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { initialDraftVersionState, reconcileDraftVersion } from './fieldDraft.js';
 import { ChevronRightIcon } from './icons.js';
@@ -136,6 +137,9 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   const sketchMesh = useAppStore((state) => state.sketchMesh);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
   const documentVersion = useAppStore((state) => state.documentVersion);
+  // パラメータ表の変数表(FR-207、FR-201)。`板厚 * 2` のような式をここでも読めるようにする。
+  // その場入力・コマンドラインの欄と**同じ表**を渡す(タスク18 の申し送り)。
+  const variables = useAppStore((state) => state.parameterAnalysis.variables);
   // 矩形の見せ方(対角 2 点 / 中心+幅+高さ)は履歴に残らない画面だけの状態
   // (rules/04-設計の規律.md「表示専用の一時状態だけ useState に置く」)。
   const [rectangleView, setRectangleView] = useState<RectangleView>('corners');
@@ -167,7 +171,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
 
   const renderField = (item: FeatureFieldSummary): React.JSX.Element => {
     const source = draft !== null && draft.path === item.path ? draft.source : item.value.source;
-    const evaluated = evaluateExpression(source);
+    const evaluated = evaluateExpression(source, { variables });
     return (
       <ExpressionField
         key={item.path}
@@ -189,7 +193,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { path: item.path, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next);
+          const parsed = evaluateExpression(next, { variables });
           if (!parsed.ok) {
             return;
           }
@@ -621,6 +625,8 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   const bodies = useAppStore((state) => state.bodies);
   const partErrors = useAppStore((state) => state.partErrors);
   const documentVersion = useAppStore((state) => state.documentVersion);
+  // パラメータ表の変数表(FR-207)。押し出しの距離に `板厚 * 2` と書けるようにする。
+  const variables = useAppStore((state) => state.parameterAnalysis.variables);
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<SolidFieldDraft>(documentVersion),
   );
@@ -646,7 +652,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
 
   const renderField = (item: SolidFieldSummary): React.JSX.Element => {
     const source = draft !== null && draft.key === item.key ? draft.source : item.value.source;
-    const evaluated = evaluateExpression(source);
+    const evaluated = evaluateExpression(source, { variables });
     return (
       <ExpressionField
         key={item.key}
@@ -668,7 +674,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: item.key, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next);
+          const parsed = evaluateExpression(next, { variables });
           if (!parsed.ok) {
             return;
           }
@@ -867,6 +873,8 @@ function ReferenceProperties({
   const part = useAppStore((state) => state.document);
   const resolvedReferences = useAppStore((state) => state.resolvedReferences);
   const documentVersion = useAppStore((state) => state.documentVersion);
+  // パラメータ表の変数表(FR-207)。作業平面のオフセットにも名前で書けるようにする。
+  const variables = useAppStore((state) => state.parameterAnalysis.variables);
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<ReferenceFieldDraft>(documentVersion),
   );
@@ -895,7 +903,7 @@ function ReferenceProperties({
     write: (parsed: ExpressionValue) => void,
   ): React.JSX.Element => {
     const source = draft !== null && draft.key === key ? draft.source : value.source;
-    const evaluated = evaluateExpression(source);
+    const evaluated = evaluateExpression(source, { variables });
     return (
       <ExpressionField
         key={key}
@@ -916,7 +924,7 @@ function ReferenceProperties({
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next);
+          const parsed = evaluateExpression(next, { variables });
           if (parsed.ok) {
             write(parsed.value);
           }
@@ -1068,14 +1076,22 @@ function OriginSection({ origin }: { readonly origin: OriginSelection }): React.
   );
 }
 
+/** 右の区画のタブ(§0.a-0.15)。区画は 5 つのままで、この 2 枚だけを切り替える。 */
+type PanelTab = 'properties' | 'parameters';
+
 /**
- * 右のプロパティパネル(要件§7.1、FR-202、FR-310、FR-311)。
+ * 右のプロパティパネル(要件§7.1、FR-202、FR-310、FR-311、FR-207)。
  *
  * 1 つだけ選ばれているときは中身を出して式のまま直せるようにし、いくつも選ばれているときは
  * 数と種類だけを出す(面を張るときは順に選んでいくので、そのたびに欄が入れ替わらないように)。
  * 節ごとに「鍵(補助色)と値(等幅の数字)」の2列で並べる形は P0 から変えない。
+ *
+ * P4b から「プロパティ」「パラメータ」の 2 タブを持つ(§0.a-0.15、FR-207)。
+ * **区画は増やさない**(rules/04-設計の規律.md)。どちらを開いているかは履歴に残らない
+ * 画面だけの状態なので `useState` に置く(同上「表示専用の一時状態だけ」)。
  */
 export function PropertyPanel(): React.JSX.Element {
+  const [tab, setTab] = useState<PanelTab>('properties');
   const part = useAppStore((state) => state.document);
   const sketch = useAppStore((state) => state.sketch);
   const selection = useAppStore((state) => state.selection);
@@ -1097,6 +1113,37 @@ export function PropertyPanel(): React.JSX.Element {
   return (
     <section className="pcad-panel pcad-panel--right">
       <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
+      <div className="pcad-panel__tabs" role="tablist" aria-label={t('propertyPanel.tabsLabel')}>
+        <button
+          type="button"
+          role="tab"
+          className="pcad-tab"
+          aria-selected={tab === 'properties'}
+          aria-pressed={tab === 'properties'}
+          onClick={() => {
+            setTab('properties');
+          }}
+        >
+          {t('propertyPanel.tabProperties')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className="pcad-tab"
+          aria-selected={tab === 'parameters'}
+          aria-pressed={tab === 'parameters'}
+          onClick={() => {
+            setTab('parameters');
+          }}
+        >
+          {t('propertyPanel.tabParameters')}
+        </button>
+      </div>
+      {tab === 'parameters' ? (
+        <div className="pcad-panel__body">
+          <ParameterPanel />
+        </div>
+      ) : (
       <div className="pcad-panel__body">
         {feature !== null ? (
           <FeatureProperties key={feature.id} feature={feature} />
@@ -1123,6 +1170,7 @@ export function PropertyPanel(): React.JSX.Element {
         {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331、タスク35b)。 */}
         {origin === null ? null : <OriginSection origin={origin} />}
       </div>
+      )}
     </section>
   );
 }

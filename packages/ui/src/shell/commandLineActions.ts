@@ -213,11 +213,11 @@ export function nextFieldLabels(state: NumericInputState | null): readonly strin
 /**
  * 打った文字列を解くのに要る手掛かりを、いまのストアから作る(§2.5 の `context`)。
  *
- * `variables`(パラメータ表、FR-207)はまだ画面側へ配線されていない。その場入力の
- * ポップアップも `applyNumericInputKey` に変数表を渡していないので、**同じ**空の表に
- * そろえてある(片方だけ変数を使えると、同じ式がどちらから打つかで通ったり通らなかったり
- * する)。配線はタスク11 の受け持ちで、そのときにここと `NumericInputPopover.tsx` の
- * 両方へ同じ表を渡す(申し送り)。
+ * `variables`(パラメータ表、FR-207)はストアの控え `parameterAnalysis.variables` を
+ * そのまま渡す(P4b タスク11 で配線)。**その場入力のポップアップ
+ * (`NumericInputPopover.tsx`)とプロパティの欄(`PropertyPanel.tsx`)へ渡すのも同じ表**で、
+ * 出どころはストアの 1 か所だけにしてある。片方だけに渡すと、同じ式がどちらから打つかで
+ * 通ったり通らなかったりする(タスク18 の申し送り)。
  */
 export function commandLineContext(): CommandLineContext {
   const store = useAppStore.getState();
@@ -225,7 +225,7 @@ export function commandLineContext(): CommandLineContext {
     // 3D スケッチ(作図面なし、FR-330)では作図面が無いので null を渡す。
     // `commandLine.ts` はこれを見て、極座標を断り、座標を 3 つ受け取る。
     plane: isFreeWorkPlaneId(store.workPlaneId) ? null : store.workPlane,
-    variables: new Map<string, number>(),
+    variables: store.parameterAnalysis.variables,
     hasPrevious: hasPreviousPoint(),
   };
 }
@@ -336,13 +336,16 @@ function activateCommandTool(tool: NumericInputToolId): CommandLineSubmission {
  * いまの姿そのまま)。断られた理由は帯に出るので、ここでは断りかどうかだけを返す。
  */
 function commitStep(filled: NumericInputState): CommandLineSubmission {
-  const transition = applyNumericInputKey(filled, 'Enter');
+  // 確定にも変数表を渡す(FR-207、タスク11)。渡さないと `板厚 * 2` を打ち込めても
+  // Enter で断られ、欄と決定で食い違う。
+  const variables = useAppStore.getState().parameterAnalysis.variables;
+  const transition = applyNumericInputKey(filled, 'Enter', { variables });
   applyNumericTransition(transition);
   if (transition.kind !== 'blocked') {
     return { kind: 'committed' };
   }
   // 値そのものが読めない・範囲外(NFR-UX-5)。最初に間違っている欄の理由をそのまま返す。
-  const evaluation = evaluateNumericInput(filled);
+  const evaluation = evaluateNumericInput(filled, variables);
   const first = evaluation.results[evaluation.firstErrorIndex];
   return failed(first?.error?.message ?? t('commandLine.error.tooFewValues'));
 }

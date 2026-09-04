@@ -14,6 +14,7 @@ import { MESSAGE_KEYS, t, type MessageKey } from '../i18n/t.js';
 import {
   appendSplinePoint,
   applyNumericInputKey,
+  asksCoordinate,
   applySplineShapeCommit,
   buildCoordinateInput,
   checkSplineDraft,
@@ -32,6 +33,9 @@ import {
   fillDefaults,
   focusedTarget,
   isCoordinateStep,
+  isReferenceCoordinateStep,
+  isReferenceStep,
+  isReferenceTool,
   isShapeTool,
   isSolidStep,
   MODE_LABEL_KEYS,
@@ -43,6 +47,7 @@ import {
   numericFocusTargets,
   rangeErrorFor,
   reduceNumericInput,
+  REFERENCE_TOOL_STEPS,
   removeLastSplinePoint,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
@@ -1885,6 +1890,229 @@ describe('P4 段の網羅と、既存の段を壊していないこと', () => {
     for (const key of ['construction', 'ellipseArc', 'splineClosed'] as const) {
       expect(MESSAGE_KEYS).toContain(TOGGLE_LABEL_KEYS[key]);
       expect(t(TOGGLE_LABEL_KEYS[key]).length).toBeGreaterThan(0);
+    }
+  });
+});
+
+/* ---- P4 タスク13: 基準ジオメトリの段(FR-328、FR-329) ---- */
+
+function expectReferenceCommitted(
+  transition: NumericInputTransition,
+): Extract<NumericInputTransition, { kind: 'referenceCommitted' }> {
+  if (transition.kind !== 'referenceCommitted') {
+    throw new Error(`expected referenceCommitted transition, got ${transition.kind}`);
+  }
+  return transition;
+}
+
+describe('基準ジオメトリの段(FR-328、FR-329)', () => {
+  it('道具から最初の段が引ける。7 つとも基準ジオメトリの段になる', () => {
+    expect(REFERENCE_TOOL_STEPS).toEqual({
+      referencePlaneThreePoints: 'referencePlanePoint1',
+      referencePlaneOffset: 'referencePlaneOffset',
+      referencePlaneTilted: 'referencePlaneTilt',
+      referencePlaneThroughPoint: 'referencePlaneBasePoint',
+      referenceAxis: 'referenceAxisKind',
+      referencePoint: 'referencePointKind',
+      referenceCoordinateSystem: 'referenceCsOrigin',
+    });
+    for (const step of Object.values(REFERENCE_TOOL_STEPS)) {
+      expect(isReferenceStep(step)).toBe(true);
+      expect(isSolidStep(step)).toBe(false);
+    }
+  });
+
+  it('道具の見分けは表 1 つだけを見る', () => {
+    expect(isReferenceTool('referenceAxis')).toBe(true);
+    expect(isReferenceTool('circle')).toBe(false);
+    expect(isReferenceTool('extrude')).toBe(false);
+  });
+
+  it('すべての段が一覧と見出しの表に載っている(NFR-MA-5)', () => {
+    const steps = NUMERIC_INPUT_STEPS.filter((step) => isReferenceStep(step));
+    expect(steps).toHaveLength(14);
+    for (const step of steps) {
+      expect(MESSAGE_KEYS).toContain(STEP_TITLE_KEYS[step]);
+      expect(t(STEP_TITLE_KEYS[step]).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('点を聞く段は位置の決め方のタブを出し、値を聞く段は出さない', () => {
+    expect(asksCoordinate('referencePlanePoint1')).toBe(true);
+    expect(isReferenceCoordinateStep('referencePlanePoint1')).toBe(true);
+    expect(asksCoordinate('referencePlaneOffset')).toBe(false);
+    // P1 の段の判定は変わっていない(回帰)。
+    expect(asksCoordinate('lineStart')).toBe(true);
+    expect(isCoordinateStep('referencePlanePoint1')).toBe(false);
+  });
+
+  it('2 点目・3 点目は相対が既定になる(1 つ前の点からの続きで入れる)', () => {
+    expect(defaultModeForStep('referencePlanePoint1')).toBe('absolute');
+    expect(defaultModeForStep('referencePlanePoint2')).toBe('relative');
+    expect(defaultModeForStep('referencePlanePoint3')).toBe('relative');
+    expect(defaultModeForStep('referenceAxisEnd')).toBe('relative');
+  });
+
+  it('どの段も入切のつまみを持たない', () => {
+    for (const step of NUMERIC_INPUT_STEPS.filter((candidate) => isReferenceStep(candidate))) {
+      expect(createNumericInput('referenceAxis', step).toggles).toEqual([]);
+    }
+  });
+
+  it('面から離す段は距離 1 欄と「もとにする面」の選択肢を持つ', () => {
+    const state = createNumericInput('referencePlaneOffset', 'referencePlaneOffset');
+    expect(state.fields.map((field) => field.key)).toEqual(['planeOffset']);
+    expect(state.fields[0].source).toBe('10');
+    // 距離は負の値も向きの意味を持つので範囲を付けない。
+    expect(state.fields[0].range).toBeUndefined();
+    expect(choiceValueOf(state, 'referencePlaneBase')).toBe('current');
+    expect(state.choices[0].options.map((option) => option.value)).toEqual([
+      'current',
+      'xy',
+      'xz',
+      'yz',
+      'face',
+    ]);
+  });
+
+  it('傾ける段は角度 1 欄と軸の選択肢を持ち、文書の基準軸も並ぶ', () => {
+    const state = createNumericInput('referencePlaneTilted', 'referencePlaneTilt', undefined, {
+      referenceAxes: [{ id: 'referenceAxis-1', name: '基準軸1' }],
+    });
+    expect(state.fields.map((field) => field.key)).toEqual(['planeAngle']);
+    expect(state.fields[0].source).toBe('45');
+    expect(state.choices[0].options.map((option) => option.value)).toEqual([
+      'x',
+      'y',
+      'z',
+      'reference:referenceAxis-1',
+    ]);
+    expect(state.choices[0].options[3].label).toBe('基準軸1');
+  });
+
+  it('点を通る段は「軸に垂直」を選んだときだけ傾き・向きの欄が出る(NFR-UX-2)', () => {
+    const state = createNumericInput('referencePlaneThroughPoint', 'referencePlaneThrough');
+    expect(state.fields).toEqual([]);
+    const withAxis = chooseNumericInput(state, 'referencePlaneThroughMode', 'axis');
+    expect(withAxis.fields.map((field) => field.key)).toEqual(['planeTilt', 'planeAzimuth']);
+    const back = chooseNumericInput(withAxis, 'referencePlaneThroughMode', 'containingEdge');
+    expect(back.fields).toEqual([]);
+  });
+
+  it('傾き角は 0 度以上 180 度未満だけを受け付ける(model の断りと同じ範囲)', () => {
+    const state = chooseNumericInput(
+      createNumericInput('referencePlaneThroughPoint', 'referencePlaneThrough'),
+      'referencePlaneThroughMode',
+      'axis',
+    );
+    expect(evaluateNumericInput(edited(state, '180')).canCommit).toBe(false);
+    expect(evaluateNumericInput(edited(state, '179')).canCommit).toBe(true);
+    expect(evaluateNumericInput(edited(state, '-1')).canCommit).toBe(false);
+  });
+
+  it('決め方だけを聞く段は欄を持たず、選択肢だけで決まる', () => {
+    const axis = createNumericInput('referenceAxis', 'referenceAxisKind');
+    expect(axis.fields).toEqual([]);
+    expect(choiceValueOf(axis, 'referenceAxisKind')).toBe('twoPoints');
+    const point = createNumericInput('referencePoint', 'referencePointKind');
+    expect(point.fields).toEqual([]);
+    expect(choiceValueOf(point, 'referencePointKind')).toBe('coordinate');
+  });
+
+  it('座標系の段は 2 つの軸の選択肢を持つ', () => {
+    const state = createNumericInput('referenceCoordinateSystem', 'referenceCsAxes');
+    expect(state.choices.map((choice) => choice.key)).toEqual([
+      'referenceCsXAxis',
+      'referenceCsYAxis',
+    ]);
+    expect(choiceValueOf(state, 'referenceCsXAxis')).toBe('x');
+    expect(choiceValueOf(state, 'referenceCsYAxis')).toBe('y');
+  });
+
+  it('段の遷移: 3 点は 3 段、決め方で分かれる段は選んだ値で行き先が変わる', () => {
+    const first = createNumericInput('referencePlaneThreePoints', 'referencePlanePoint1');
+    expect(nextNumericInput(first, false)?.step).toBe('referencePlanePoint2');
+    expect(
+      nextNumericInput(
+        createNumericInput('referencePlaneThreePoints', 'referencePlanePoint2'),
+        true,
+      )?.step,
+    ).toBe('referencePlanePoint3');
+    // 「続けてかく」が入でも、基準ジオメトリは 1 つ作ったら閉じる。
+    expect(
+      nextNumericInput(
+        createNumericInput('referencePlaneThreePoints', 'referencePlanePoint3'),
+        true,
+      ),
+    ).toBeNull();
+    expect(
+      nextNumericInput(createNumericInput('referencePlaneOffset', 'referencePlaneOffset'), true),
+    ).toBeNull();
+    const axisKind = createNumericInput('referenceAxis', 'referenceAxisKind');
+    expect(nextNumericInput(axisKind, false)?.step).toBe('referenceAxisStart');
+    expect(
+      nextNumericInput(chooseNumericInput(axisKind, 'referenceAxisKind', 'edge'), false),
+    ).toBeNull();
+    const pointKind = createNumericInput('referencePoint', 'referencePointKind');
+    expect(nextNumericInput(pointKind, false)?.step).toBe('referencePointAt');
+    expect(
+      nextNumericInput(chooseNumericInput(pointKind, 'referencePointKind', 'vertex'), false),
+    ).toBeNull();
+  });
+
+  it('軸の一覧は次の段へ持ち越す(原点の次の段でも基準軸が選べる)', () => {
+    const origin = createNumericInput('referenceCoordinateSystem', 'referenceCsOrigin', undefined, {
+      referenceAxes: [{ id: 'referenceAxis-1', name: '基準軸1' }],
+    });
+    const axes = nextNumericInput(origin, false);
+    expect(axes?.step).toBe('referenceCsAxes');
+    expect(axes?.choices[0].options.map((option) => option.value)).toEqual([
+      'x',
+      'y',
+      'z',
+      'reference:referenceAxis-1',
+    ]);
+  });
+
+  it('点を聞く段の確定は座標つきの基準ジオメトリの結果になる', () => {
+    const state = createNumericInput('referencePlaneThreePoints', 'referencePlanePoint1');
+    const committed = expectReferenceCommitted(commitNumericInput(state));
+    expect(committed.commit.kind).toBe('reference');
+    expect(committed.commit.tool).toBe('referencePlaneThreePoints');
+    expect(committed.commit.coordinate).toEqual({
+      mode: 'absolute',
+      x: expressionValueFromNumber(0),
+      y: expressionValueFromNumber(0),
+      z: expressionValueFromNumber(0),
+    });
+    expect(committed.commit.mode).toBe('absolute');
+  });
+
+  it('値を聞く段の確定は欄と選択肢だけを渡す', () => {
+    const state = chooseNumericInput(
+      createNumericInput('referencePlaneOffset', 'referencePlaneOffset'),
+      'referencePlaneBase',
+      'face',
+    );
+    const committed = expectReferenceCommitted(commitNumericInput(state));
+    expect(committed.commit.coordinate).toBeNull();
+    expect(committed.commit.values.offset?.value).toBe(10);
+    expect(committed.commit.choices.planeBase).toBe('face');
+  });
+
+  it('選択肢の見出しと札はすべて ja.json に実在する(NFR-MA-5)', () => {
+    for (const step of NUMERIC_INPUT_STEPS.filter((candidate) => isReferenceStep(candidate))) {
+      const state = createNumericInput('referenceAxis', step);
+      for (const choice of state.choices) {
+        expect(MESSAGE_KEYS).toContain(choice.labelKey);
+        for (const option of choice.options) {
+          expect(numericChoiceOptionLabel(option).length).toBeGreaterThan(0);
+        }
+      }
+      for (const field of state.fields) {
+        expect(MESSAGE_KEYS).toContain(field.labelKey);
+        expect(MESSAGE_KEYS).toContain(field.tooltipKey);
+      }
     }
   });
 });

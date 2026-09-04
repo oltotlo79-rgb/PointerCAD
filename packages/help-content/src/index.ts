@@ -27,6 +27,16 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/spline.md',
   },
   { id: 'work-plane', title: '作図面を選ぶ', path: 'docs/ja/work-plane.md' },
+  {
+    id: 'work-plane-custom',
+    title: '好きな向きの作業平面を作る',
+    path: 'docs/ja/work-plane-custom.md',
+  },
+  {
+    id: 'reference-geometry',
+    title: '基準の軸・点・座標系を作る',
+    path: 'docs/ja/reference-geometry.md',
+  },
   { id: 'snap', title: '点にぴったり合わせる(吸着)', path: 'docs/ja/snap.md' },
   { id: 'face-and-color', title: '面を張る・色を変える', path: 'docs/ja/face-and-color.md' },
   { id: 'edit-sketch', title: 'かいたものを直す', path: 'docs/ja/edit-sketch.md' },

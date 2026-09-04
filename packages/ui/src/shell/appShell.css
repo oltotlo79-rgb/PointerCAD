@@ -904,6 +904,16 @@
   min-width: 116px;
 }
 
+/*
+ * 一覧の中の小見出し(作図面の一覧に「作業平面を作る…」「基準」を足したときの区切り、
+ * P4 タスク13)。押せないただの文字なので、ボタンより小さく淡くして押せる項目と見分ける。
+ */
+.pcad-menu__section {
+  padding: var(--pcad-space-1) var(--pcad-space-2) 0;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+}
+
 /* ===== 表示設定(FR-908 テーマ・FR-909 拡大率) ===== */
 
 /*

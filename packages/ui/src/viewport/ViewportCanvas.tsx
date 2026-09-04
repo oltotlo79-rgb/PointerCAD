@@ -108,7 +108,8 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setBodies(initial.bodies);
     scene.setBodyHighlight(initial.hoveredElementId, initial.selection);
     scene.setSubShapeHighlight(initial.hoveredElementId, initial.selection);
-    scene.setWorkPlane(initial.workPlaneId);
+    scene.setWorkPlane(initial.workPlane);
+    scene.setReferences(initial.resolvedReferences);
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
@@ -136,9 +137,14 @@ export function ViewportCanvas(): React.JSX.Element {
         scene.setBodyHighlight(next.hoveredElementId, next.selection);
         scene.setSubShapeHighlight(next.hoveredElementId, next.selection);
       }
-      // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。
-      if (next.workPlaneId !== previous.workPlaneId) {
-        scene.setWorkPlane(next.workPlaneId);
+      // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。任意の作業平面(FR-328)は
+      // 文書が変わっても面の位置が動くので、解いた面そのものの変化を見る(タスク13)。
+      if (next.workPlane !== previous.workPlane) {
+        scene.setWorkPlane(next.workPlane);
+      }
+      // 基準ジオメトリ(FR-329)。文書から解いた控えが変わったときだけ出し直す。
+      if (next.resolvedReferences !== previous.resolvedReferences) {
+        scene.setReferences(next.resolvedReferences);
       }
       // 表示テーマが変わったら 3D の色も読み直す(FR-908。拡大率は 3D の色を変えない)。
       if (next.displaySettings.theme !== previous.displaySettings.theme) {

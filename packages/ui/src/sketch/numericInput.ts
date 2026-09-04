@@ -104,8 +104,34 @@ export type ShapeToolId =
   | 'ellipse'
   | 'spline';
 
+/**
+ * P4 タスク13 で足す基準ジオメトリの道具(FR-328 の任意の作業平面、FR-329 の基準軸・
+ * 基準点・座標系)。
+ *
+ * 作った平面・軸・点・座標系は**スケッチではなく部品文書**の `references` へ積む
+ * (`referenceCommands.ts`)。既存の面からのオフセットのように立体を見ないと決まらない
+ * 決め方があり、スケッチ 1 本は立体を知らないため(model 側タスク9 の判断)。
+ *
+ * 平面は 4 つの道具に分けてある。決め方によって**置く点の個数そのものが違う**ので、
+ * 1 つの道具の選択肢で切り替えると欄と段の並びが大きく変わり、その場で決められなくなる
+ * (NFR-UX-2)。7 通りの決め方(`PlaneSpec`)との対応は次のとおり。
+ *
+ *   3 点                 → referencePlaneThreePoints(threePoints)
+ *   面/基準面のオフセット → referencePlaneOffset(face / workPlane)
+ *   基準面を軸で傾ける    → referencePlaneTilted(tilted)
+ *   点+辺/面/軸          → referencePlaneThroughPoint(pointAndEdge / pointAndParallelFace / pointAndAxis)
+ */
+export type ReferenceToolId =
+  | 'referencePlaneThreePoints'
+  | 'referencePlaneOffset'
+  | 'referencePlaneTilted'
+  | 'referencePlaneThroughPoint'
+  | 'referenceAxis'
+  | 'referencePoint'
+  | 'referenceCoordinateSystem';
+
 /** ポップアップを開ける道具。スケッチの道具より広い。 */
-export type NumericInputToolId = SketchToolId | SolidToolId | ShapeToolId;
+export type NumericInputToolId = SketchToolId | SolidToolId | ShapeToolId | ReferenceToolId;
 
 /** 座標の指定方法(FR-301〜303)。 */
 export type CoordinateMode = 'absolute' | 'relative' | 'polar';
@@ -177,8 +203,51 @@ export type SolidNumericInputStep =
   /** ばねの2段目(長さ)。確定でようやく閉じる。 */
   | 'springLength';
 
+/**
+ * 基準ジオメトリで座標を 1 点聞く段(P4 タスク13、FR-328・FR-329)。
+ *
+ * スケッチの段(`CoordinateNumericInputStep`)とは別の型にしてある。積む先が
+ * スケッチではなく部品文書なので、確定の受け取り手(`referenceCommands.ts`)も
+ * `sketchCommands.ts` / `shapeCommands.ts` とは別になるため。
+ */
+export type ReferenceCoordinateStep =
+  /** 3 点で決める平面の 1〜3 点目。 */
+  | 'referencePlanePoint1'
+  | 'referencePlanePoint2'
+  | 'referencePlanePoint3'
+  /** 点+辺/面/軸で決める平面が通る点。 */
+  | 'referencePlaneBasePoint'
+  /** 2 点で決める基準軸の 1 点目・2 点目。 */
+  | 'referenceAxisStart'
+  | 'referenceAxisEnd'
+  /** 座標で決める基準点。 */
+  | 'referencePointAt'
+  /** 基準座標系の原点。 */
+  | 'referenceCsOrigin';
+
+/** 基準ジオメトリで座標以外(距離・角度・決め方)を聞く段(P4 タスク13)。 */
+export type ReferenceShapeStep =
+  /** もとにする面と、そこから離す距離。 */
+  | 'referencePlaneOffset'
+  /** 傾ける軸と角度。もとにする平面はいまの作図面。 */
+  | 'referencePlaneTilt'
+  /** 点を通る平面の決め方(辺に垂直/辺を含む/面に平行/軸に垂直)。 */
+  | 'referencePlaneThrough'
+  /** 基準軸の決め方(2 点/辺/面の法線/2 面の交線)。 */
+  | 'referenceAxisKind'
+  /** 基準点の決め方(座標/頂点/辺の中点/面の中心)。 */
+  | 'referencePointKind'
+  /** 基準座標系の 2 軸の向き。 */
+  | 'referenceCsAxes';
+
+/** 基準ジオメトリの段。確定結果 `ReferenceInputCommit` の step はここに限る。 */
+export type ReferenceNumericInputStep = ReferenceCoordinateStep | ReferenceShapeStep;
+
 /** ポップアップの段階。 */
-export type NumericInputStep = SketchNumericInputStep | SolidNumericInputStep;
+export type NumericInputStep =
+  | SketchNumericInputStep
+  | SolidNumericInputStep
+  | ReferenceNumericInputStep;
 
 export type FieldUnit = 'mm' | 'degree' | 'count';
 
@@ -261,7 +330,22 @@ export type NumericChoiceKey =
   /** スプラインの点の使い方(通過点 / 制御点、FR-317)。 */
   | 'splineMode'
   /** 2 点+半径の円弧が、進む向きのどちら側へふくらむか(FR-326)。 */
-  | 'arcBulge';
+  | 'arcBulge'
+  /* ---- P4 タスク13: 基準ジオメトリ(FR-328、FR-329) ---- */
+  /** オフセットのもとにする面(いまの作図面 / 基準の 3 面 / 選んだ面)。 */
+  | 'referencePlaneBase'
+  /** 軸の向き(ワールドの X・Y・Z、または文書にある基準軸)。傾け・座標系で使う。 */
+  | 'referenceAxisSpec'
+  /** 点を通る平面の決め方(辺に垂直 / 辺を含む / 面に平行 / 軸に垂直)。 */
+  | 'referencePlaneThroughMode'
+  /** 基準軸の決め方(2 点 / 辺 / 面の法線 / 2 面の交線)。 */
+  | 'referenceAxisKind'
+  /** 基準点の決め方(座標 / 頂点 / 辺の中点 / 面の中心)。 */
+  | 'referencePointKind'
+  /** 基準座標系の第 1 軸(X)。 */
+  | 'referenceCsXAxis'
+  /** 基準座標系の第 2 軸(Y)の手掛かり。 */
+  | 'referenceCsYAxis';
 
 export interface NumericChoiceOption {
   readonly value: string;
@@ -328,6 +412,12 @@ export interface NumericInputState {
     readonly choices: readonly NumericChoice[];
     readonly axisLine?: SketchLineRef;
   };
+  /**
+   * 軸の選択肢に並べる、文書にある基準軸(FR-329、タスク13)。`axisLine` と同じ役目で、
+   * **次の段へ持ち越す**ために状態へ残す(基準座標系は原点の段の次に軸の段が来るので、
+   * 開き直しのときに一覧が消えないようにする)。
+   */
+  readonly referenceAxes?: readonly ReferenceAxisOption[];
 }
 
 export type NumericInputEvent =
@@ -443,6 +533,19 @@ const POINT_ARRAY_COUNT_RANGE: NumericFieldRange = {
   minInclusive: true,
   max: MAX_POINT_ARRAY_COUNT,
   maxInclusive: true,
+};
+
+/**
+ * 0 度以上 180 度未満(点+軸で決める平面の傾き角、FR-328)。
+ * model の `resolvePlaneSpec`(geometry/planeSpec.ts)が同じ範囲で断るので、
+ * 数を 2 か所に書かないよう**上限の意味もそちらの注釈に合わせる**
+ * (180 度以上は裏返るだけで新しい平面にならない)。
+ */
+const TILT_RANGE: NumericFieldRange = {
+  min: 0,
+  minInclusive: true,
+  max: 180,
+  maxInclusive: false,
 };
 
 const EXTRUDE_DISTANCE_FIELDS: readonly NumericFieldDefinition[] = [
@@ -715,6 +818,63 @@ function sketchShapeFieldDefinitionsFor(
   }
 }
 
+/* ---- P4 タスク13: 基準ジオメトリの欄(FR-328、FR-329) ---- */
+
+/**
+ * もとにする面から離す距離(FR-328)。**負の値も向きの意味を持つ**(法線と逆へ離す)ので
+ * 範囲は付けない。0 なら面そのものと同じ位置の平面になる。
+ */
+const REFERENCE_PLANE_OFFSET_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'planeOffset', labelKey: 'numericInput.field.planeOffset', tooltipKey: 'numericInput.tooltip.planeOffset', unit: 'mm', defaultSource: '10' },
+];
+
+/** 軸のまわりに傾ける角度(度、FR-328)。負の角度は逆まわりなので範囲は付けない。 */
+const REFERENCE_PLANE_TILT_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'planeAngle', labelKey: 'numericInput.field.planeAngle', tooltipKey: 'numericInput.tooltip.planeAngle', unit: 'degree', defaultSource: '45' },
+];
+
+/**
+ * 軸に垂直な平面をさらに倒す傾き角・方位角(度、FR-328 の「点+軸と角度」)。
+ * 範囲(0 度以上 180 度未満)の判定は model の `resolvePlaneSpec` が受け持つので、
+ * ここでは傾き角にだけ下限を置き、方位角は向きなので範囲を付けない。
+ */
+const REFERENCE_PLANE_AXIS_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'planeTilt', labelKey: 'numericInput.field.planeTilt', tooltipKey: 'numericInput.tooltip.planeTilt', unit: 'degree', defaultSource: '0', range: TILT_RANGE },
+  { key: 'planeAzimuth', labelKey: 'numericInput.field.planeAzimuth', tooltipKey: 'numericInput.tooltip.planeAzimuth', unit: 'degree', defaultSource: '0' },
+];
+
+/**
+ * 点を通る平面の段の欄。「軸に垂直」を選んだときだけ傾き角・方位角を聞く
+ * (他の決め方では角度の意味が無いので欄を出さない、NFR-UX-2)。
+ */
+function referencePlaneThroughFieldDefinitions(
+  mode: string | undefined,
+): readonly NumericFieldDefinition[] {
+  return mode === 'axis' ? REFERENCE_PLANE_AXIS_FIELDS : NO_FIELDS;
+}
+
+/** 基準ジオメトリの段の欄。座標を聞く段はここを通らない。 */
+function referenceFieldDefinitionsFor(
+  step: ReferenceShapeStep,
+  choices: readonly NumericChoice[],
+): readonly NumericFieldDefinition[] {
+  switch (step) {
+    case 'referencePlaneOffset':
+      return REFERENCE_PLANE_OFFSET_FIELDS;
+    case 'referencePlaneTilt':
+      return REFERENCE_PLANE_TILT_FIELDS;
+    case 'referencePlaneThrough':
+      return referencePlaneThroughFieldDefinitions(
+        choiceValueFrom(choices, 'referencePlaneThroughMode'),
+      );
+    case 'referenceAxisKind':
+    case 'referencePointKind':
+    case 'referenceCsAxes':
+      // 決め方と軸の向きだけで決まる段。欄は持たない。
+      return NO_FIELDS;
+  }
+}
+
 /** 段ごとの静的な欄の並び。動的な段(chamferSize・springLength)はここを通らない。 */
 function solidFieldDefinitionsFor(
   step: SolidNumericInputStep,
@@ -785,6 +945,20 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   circularPattern: 'numericInput.title.circularPattern',
   springShape: 'numericInput.title.springShape',
   springLength: 'numericInput.title.springLength',
+  referencePlanePoint1: 'numericInput.title.referencePlanePoint1',
+  referencePlanePoint2: 'numericInput.title.referencePlanePoint2',
+  referencePlanePoint3: 'numericInput.title.referencePlanePoint3',
+  referencePlaneBasePoint: 'numericInput.title.referencePlaneBasePoint',
+  referencePlaneThrough: 'numericInput.title.referencePlaneThrough',
+  referencePlaneOffset: 'numericInput.title.referencePlaneOffset',
+  referencePlaneTilt: 'numericInput.title.referencePlaneTilt',
+  referenceAxisKind: 'numericInput.title.referenceAxisKind',
+  referenceAxisStart: 'numericInput.title.referenceAxisStart',
+  referenceAxisEnd: 'numericInput.title.referenceAxisEnd',
+  referencePointKind: 'numericInput.title.referencePointKind',
+  referencePointAt: 'numericInput.title.referencePointAt',
+  referenceCsOrigin: 'numericInput.title.referenceCsOrigin',
+  referenceCsAxes: 'numericInput.title.referenceCsAxes',
 };
 
 /** 段階の一覧。タスク18 の部品と、キーの網羅検査が舐めるために公開する。 */
@@ -826,6 +1000,20 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'circularPattern',
   'springShape',
   'springLength',
+  'referencePlanePoint1',
+  'referencePlanePoint2',
+  'referencePlanePoint3',
+  'referencePlaneBasePoint',
+  'referencePlaneThrough',
+  'referencePlaneOffset',
+  'referencePlaneTilt',
+  'referenceAxisKind',
+  'referenceAxisStart',
+  'referenceAxisEnd',
+  'referencePointKind',
+  'referencePointAt',
+  'referenceCsOrigin',
+  'referenceCsAxes',
 ];
 
 /** ソリッドの道具が最初に聞く段階。ツールバーがここから開く。ばねは形(springShape)から。 */
@@ -864,6 +1052,69 @@ export const SHAPE_TOOL_STEPS: Readonly<Record<ShapeToolId, NumericInputStep>> =
  */
 export function isShapeTool(tool: NumericInputToolId): tool is ShapeToolId {
   return tool in SHAPE_TOOL_STEPS;
+}
+
+/**
+ * 基準ジオメトリの道具が最初に開く段(P4 タスク13、FR-328、FR-329)。
+ * `SOLID_TOOL_STEPS` / `SHAPE_TOOL_STEPS` と同じ役目で、道具の一覧の正本でもある。
+ */
+export const REFERENCE_TOOL_STEPS: Readonly<Record<ReferenceToolId, ReferenceNumericInputStep>> = {
+  referencePlaneThreePoints: 'referencePlanePoint1',
+  referencePlaneOffset: 'referencePlaneOffset',
+  referencePlaneTilted: 'referencePlaneTilt',
+  referencePlaneThroughPoint: 'referencePlaneBasePoint',
+  referenceAxis: 'referenceAxisKind',
+  referencePoint: 'referencePointKind',
+  referenceCoordinateSystem: 'referenceCsOrigin',
+};
+
+/** 基準ジオメトリの道具かどうか。一覧は `REFERENCE_TOOL_STEPS` の 1 か所だけに置く。 */
+export function isReferenceTool(tool: NumericInputToolId): tool is ReferenceToolId {
+  return tool in REFERENCE_TOOL_STEPS;
+}
+
+/** 段から道具を引く。確定結果へ入れる道具名の正本(`SOLID_STEP_TOOLS` と同じ役目)。 */
+const REFERENCE_STEP_TOOLS: Readonly<Record<ReferenceNumericInputStep, ReferenceToolId>> = {
+  referencePlanePoint1: 'referencePlaneThreePoints',
+  referencePlanePoint2: 'referencePlaneThreePoints',
+  referencePlanePoint3: 'referencePlaneThreePoints',
+  referencePlaneBasePoint: 'referencePlaneThroughPoint',
+  referencePlaneThrough: 'referencePlaneThroughPoint',
+  referencePlaneOffset: 'referencePlaneOffset',
+  referencePlaneTilt: 'referencePlaneTilted',
+  referenceAxisKind: 'referenceAxis',
+  referenceAxisStart: 'referenceAxis',
+  referenceAxisEnd: 'referenceAxis',
+  referencePointKind: 'referencePoint',
+  referencePointAt: 'referencePoint',
+  referenceCsOrigin: 'referenceCoordinateSystem',
+  referenceCsAxes: 'referenceCoordinateSystem',
+};
+
+/** 段が基準ジオメトリのものかどうか。 */
+export function isReferenceStep(step: NumericInputStep): step is ReferenceNumericInputStep {
+  return step in REFERENCE_STEP_TOOLS;
+}
+
+/**
+ * 基準ジオメトリの段のうち、座標を 1 点聞くもの(位置の決め方のタブを出す段)。
+ * 一覧を 2 か所に書かないよう、`REFERENCE_COORDINATE_STEPS` の表だけを正本にする。
+ */
+const REFERENCE_COORDINATE_STEPS: Readonly<Record<ReferenceCoordinateStep, true>> = {
+  referencePlanePoint1: true,
+  referencePlanePoint2: true,
+  referencePlanePoint3: true,
+  referencePlaneBasePoint: true,
+  referenceAxisStart: true,
+  referenceAxisEnd: true,
+  referencePointAt: true,
+  referenceCsOrigin: true,
+};
+
+export function isReferenceCoordinateStep(
+  step: NumericInputStep,
+): step is ReferenceCoordinateStep {
+  return step in REFERENCE_COORDINATE_STEPS;
 }
 
 /** 段階から道具を引く。確定結果へ入れる道具名の正本。ばねは springShape / springLength とも spring。 */
@@ -1131,9 +1382,151 @@ function arcBulgeChoice(): NumericChoice {
   };
 }
 
+/* ---- P4 タスク13: 基準ジオメトリの選択肢(FR-328、FR-329) ---- */
+
+/** 選択肢の値で「文書にある基準軸」を指すときの頭(`reference:基準軸-1` の形)。 */
+export const REFERENCE_AXIS_VALUE_PREFIX = 'reference:';
+
+/** ポップアップの軸の選択肢に並べる、文書にある基準軸(FR-329)。 */
+export interface ReferenceAxisOption {
+  readonly id: string;
+  /** ツリーに出るのと同じ名前。ja.json に置けないので札の文字をそのまま使う。 */
+  readonly name: string;
+}
+
+/**
+ * 軸の選択肢。ワールドの X / Y / Z に、文書にある基準軸を足す(FR-329)。
+ * 基準軸の名前は利用者が付け替えられるので `labelKey` ではなく `label` に入れる
+ * (ねじの呼び径と同じ扱い、§2.11「手順3」)。
+ */
+function referenceAxisOptions(
+  axes: readonly ReferenceAxisOption[] | undefined,
+): readonly NumericChoiceOption[] {
+  const named = (axes ?? []).map((axis) => ({
+    value: `${REFERENCE_AXIS_VALUE_PREFIX}${axis.id}`,
+    label: axis.name,
+  }));
+  return [...WORLD_AXIS_OPTIONS, ...named];
+}
+
+function referenceAxisChoice(
+  key: 'referenceAxisSpec' | 'referenceCsXAxis' | 'referenceCsYAxis',
+  labelKey: MessageKey,
+  defaultValue: string,
+  axes: readonly ReferenceAxisOption[] | undefined,
+): NumericChoice {
+  return { key, labelKey, value: defaultValue, options: referenceAxisOptions(axes) };
+}
+
+/**
+ * オフセットのもとにする面(FR-328)。既定は「いまの作図面」で、Enter を続けて押すだけで
+ * いま描いている面から離れた平面ができる(NFR-UX-4)。「選んだ面」は立体の平らな面を
+ * 選んでいないときは確定で断る(NFR-UX-5。選択の有無で選択肢を出し分けると、
+ * 選び直すたびに欄の並びが変わって落ち着かないため)。
+ */
+function referencePlaneBaseChoice(): NumericChoice {
+  return {
+    key: 'referencePlaneBase',
+    labelKey: 'numericInput.choice.referencePlaneBase',
+    value: 'current',
+    options: [
+      { value: 'current', labelKey: 'numericInput.referencePlaneBase.current' },
+      { value: 'xy', labelKey: 'toolbar.plane.xy' },
+      { value: 'xz', labelKey: 'toolbar.plane.xz' },
+      { value: 'yz', labelKey: 'toolbar.plane.yz' },
+      { value: 'face', labelKey: 'numericInput.referencePlaneBase.face' },
+    ],
+  };
+}
+
+/** 点を通る平面の決め方(FR-328)。既定は「辺に垂直」。 */
+function referencePlaneThroughModeChoice(): NumericChoice {
+  return {
+    key: 'referencePlaneThroughMode',
+    labelKey: 'numericInput.choice.referencePlaneThroughMode',
+    value: 'perpendicularEdge',
+    options: [
+      { value: 'perpendicularEdge', labelKey: 'numericInput.referencePlaneThrough.perpendicularEdge' },
+      { value: 'containingEdge', labelKey: 'numericInput.referencePlaneThrough.containingEdge' },
+      { value: 'parallelFace', labelKey: 'numericInput.referencePlaneThrough.parallelFace' },
+      { value: 'axis', labelKey: 'numericInput.referencePlaneThrough.axis' },
+    ],
+  };
+}
+
+/** 基準軸の決め方(FR-329)。既定は 2 点(何も選んでいなくても作れる)。 */
+function referenceAxisKindChoice(): NumericChoice {
+  return {
+    key: 'referenceAxisKind',
+    labelKey: 'numericInput.choice.referenceAxisKind',
+    value: 'twoPoints',
+    options: [
+      { value: 'twoPoints', labelKey: 'numericInput.referenceAxisKind.twoPoints' },
+      { value: 'edge', labelKey: 'numericInput.referenceAxisKind.edge' },
+      { value: 'faceNormal', labelKey: 'numericInput.referenceAxisKind.faceNormal' },
+      { value: 'faceIntersection', labelKey: 'numericInput.referenceAxisKind.faceIntersection' },
+    ],
+  };
+}
+
+/** 基準点の決め方(FR-329)。既定は座標(何も選んでいなくても作れる)。 */
+function referencePointKindChoice(): NumericChoice {
+  return {
+    key: 'referencePointKind',
+    labelKey: 'numericInput.choice.referencePointKind',
+    value: 'coordinate',
+    options: [
+      { value: 'coordinate', labelKey: 'numericInput.referencePointKind.coordinate' },
+      { value: 'vertex', labelKey: 'numericInput.referencePointKind.vertex' },
+      { value: 'edgeMidpoint', labelKey: 'numericInput.referencePointKind.edgeMidpoint' },
+      { value: 'faceCenter', labelKey: 'numericInput.referencePointKind.faceCenter' },
+    ],
+  };
+}
+
 /** 段階ごとの選択肢の並び。持たない段は空配列。 */
 function choicesFor(step: NumericInputStep, options: NumericInputOptions): readonly NumericChoice[] {
   switch (step) {
+    case 'referencePlaneOffset':
+      return [referencePlaneBaseChoice()];
+    case 'referencePlaneTilt':
+      return [
+        referenceAxisChoice(
+          'referenceAxisSpec',
+          'numericInput.choice.referenceAxisSpec',
+          'x',
+          options.referenceAxes,
+        ),
+      ];
+    case 'referencePlaneThrough':
+      return [
+        referencePlaneThroughModeChoice(),
+        referenceAxisChoice(
+          'referenceAxisSpec',
+          'numericInput.choice.referenceAxisSpec',
+          'z',
+          options.referenceAxes,
+        ),
+      ];
+    case 'referenceAxisKind':
+      return [referenceAxisKindChoice()];
+    case 'referencePointKind':
+      return [referencePointKindChoice()];
+    case 'referenceCsAxes':
+      return [
+        referenceAxisChoice(
+          'referenceCsXAxis',
+          'numericInput.choice.referenceCsXAxis',
+          'x',
+          options.referenceAxes,
+        ),
+        referenceAxisChoice(
+          'referenceCsYAxis',
+          'numericInput.choice.referenceCsYAxis',
+          'y',
+          options.referenceAxes,
+        ),
+      ];
     case 'polygonShape':
       return [polygonRadiusModeChoice()];
     case 'pointArrayShape':
@@ -1252,11 +1645,26 @@ const RELATIVE_FIRST_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> = 
   twoPointArcEnd: true,
   rectangleCorner2: true,
   slotCenter2: true,
+  // 基準ジオメトリの 2 点目以降も「1 つ前の点からの続き」で入れるほうが自然(タスク13)。
+  // 基準は `referenceCommands.ts` が 1 つ前に作った基準点へ付け替える。
+  referencePlanePoint2: true,
+  referencePlanePoint3: true,
+  referenceAxisEnd: true,
 };
 
 /** 段階ごとの既定の座標モード。2 点目を聞く段だけは相対が自然(FR-307)。 */
 export function defaultModeForStep(step: NumericInputStep): CoordinateMode {
   return RELATIVE_FIRST_STEPS[step] === true ? 'relative' : 'absolute';
+}
+
+/**
+ * 位置の決め方(絶対 / 相対 / 極)のタブを出す段かどうか。
+ * スケッチの座標の段(`isCoordinateStep`)と基準ジオメトリの座標の段
+ * (`isReferenceCoordinateStep`)の両方を含む。型の絞り込みが要る場所では、
+ * 絞り込みができる元の 2 つを使う。
+ */
+export function asksCoordinate(step: NumericInputStep): boolean {
+  return isCoordinateStep(step) || isReferenceCoordinateStep(step);
 }
 
 function definitionsFor(
@@ -1267,8 +1675,11 @@ function definitionsFor(
   if (isSolidStep(step)) {
     return solidFieldDefinitionsFor(step, choices);
   }
-  if (isCoordinateStep(step)) {
+  if (isReferenceCoordinateStep(step) || isCoordinateStep(step)) {
     return COORDINATE_FIELDS[mode];
+  }
+  if (isReferenceStep(step)) {
+    return referenceFieldDefinitionsFor(step, choices);
   }
   return sketchShapeFieldDefinitionsFor(step, choices);
 }
@@ -1278,6 +1689,10 @@ function toFields(definitions: readonly NumericFieldDefinition[]): NumericField[
 }
 
 function togglesFor(step: NumericInputStep): readonly NumericToggle[] {
+  if (isReferenceStep(step)) {
+    // 基準ジオメトリの段は入切のつまみを持たない(構築線も楕円弧も関わらない、タスク13)。
+    return [];
+  }
   const keys = isSolidStep(step) ? STEP_TOGGLE_KEYS[step] : SKETCH_STEP_TOGGLE_KEYS[step];
   return keys.map((key) => ({
     key,
@@ -1298,6 +1713,11 @@ export interface NumericInputOptions {
    * 線分が選ばれているときだけタスク21 が渡し、渡されなければ軸は X / Y / Z だけになる。
    */
   readonly axisLine?: SketchLineRef;
+  /**
+   * 文書にある基準軸(FR-329、タスク13)。傾けの軸・座標系の 2 軸の選択肢に並べる。
+   * 渡されなければワールドの X / Y / Z だけになる。
+   */
+  readonly referenceAxes?: readonly ReferenceAxisOption[];
 }
 
 export function createNumericInput(
@@ -1316,6 +1736,7 @@ export function createNumericInput(
     toggles: togglesFor(step),
     choices,
     axisLine: options.axisLine,
+    referenceAxes: options.referenceAxes,
   };
 }
 
@@ -1341,6 +1762,20 @@ function springLengthStateFrom(state: NumericInputState): NumericInputState {
  */
 export function splineFinishStateFrom(state: NumericInputState): NumericInputState {
   return createNumericInput(state.toolId, 'splineShape');
+}
+
+/**
+ * 基準ジオメトリの次の段を開く(タスク13)。軸の一覧(`referenceAxes`)を持ち越すためだけの
+ * 薄い包み。段ごとに `createNumericInput` を素で呼ぶと一覧が空になり、原点の次の段で
+ * 基準軸が選べなくなる。
+ */
+function referenceStep(
+  state: NumericInputState,
+  step: ReferenceNumericInputStep,
+): NumericInputState {
+  return createNumericInput(state.toolId, step, undefined, {
+    referenceAxes: state.referenceAxes,
+  });
 }
 
 /** 焦点が当たれる場所。並びは「欄 → 選択肢(順に)→ つまみ」で、画面の並びと同じにする。 */
@@ -1424,6 +1859,8 @@ const CHOICE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> 
   springLength: true,
   // 直線(角度・間隔・個数)/ 円周(半径・個数)/ 格子(行の間隔・行数)で欄が入れ替わる。
   pointArrayShape: true,
+  // 「軸に垂直」を選んだときだけ傾き角・方位角の欄が出る(タスク13)。
+  referencePlaneThrough: true,
 };
 
 /**
@@ -1479,7 +1916,7 @@ export function reduceNumericInput(
       return { ...state, focusedIndex: next };
     }
     case 'setMode': {
-      if (!isCoordinateStep(state.step) || state.mode === event.mode) {
+      if (!asksCoordinate(state.step) || state.mode === event.mode) {
         return state;
       }
       // モードが変わると欄の意味が変わるので、入力は引き継がず既定値へ戻す(§2.9)。
@@ -1969,8 +2406,53 @@ export interface SolidInputCommit {
   readonly springDerived?: SpringDerived;
 }
 
+/** 基準ジオメトリの数値(P4 タスク13)。段ごとに使う欄だけが入る。 */
+export interface ReferenceCommitValues {
+  /** もとにする面から離す距離(mm、FR-328)。 */
+  readonly offset?: ExpressionValue;
+  /** 軸のまわりに傾ける角度(度、FR-328)。 */
+  readonly angle?: ExpressionValue;
+  /** 軸に垂直な平面をさらに倒す傾き角(度)。 */
+  readonly tilt?: ExpressionValue;
+  /** 倒す向き(方位角、度)。 */
+  readonly azimuth?: ExpressionValue;
+}
+
+/**
+ * 基準ジオメトリの選択肢(P4 タスク13)。値は選択肢の文字列そのままで、
+ * `PlaneSpec` / `ReferenceAxisDefinition` への組み立ては `referenceCommands.ts` が行う
+ * (「確定側で value から引き直す」§2.11 と同じ約束)。
+ */
+export interface ReferenceCommitChoices {
+  readonly planeBase?: string;
+  readonly axis?: string;
+  readonly throughMode?: string;
+  readonly axisKind?: string;
+  readonly pointKind?: string;
+  readonly csXAxis?: string;
+  readonly csYAxis?: string;
+}
+
+/**
+ * 基準ジオメトリを決めたときに外へ渡すもの(P4 タスク13、FR-328、FR-329)。
+ * 積む先がスケッチではなく部品文書なので、`NumericInputCommit` とは別の形にする。
+ */
+export interface ReferenceInputCommit {
+  readonly kind: 'reference';
+  readonly tool: ReferenceToolId;
+  readonly step: ReferenceNumericInputStep;
+  /** 座標を聞く段のときだけ入る。 */
+  readonly coordinate: CoordinateInput | null;
+  readonly mode: CoordinateMode | null;
+  readonly values: ReferenceCommitValues;
+  readonly choices: ReferenceCommitChoices;
+}
+
 /** ポップアップが返しうる確定結果のすべて。 */
-export type AnyNumericInputCommit = NumericInputCommit | SolidInputCommit;
+export type AnyNumericInputCommit =
+  | NumericInputCommit
+  | SolidInputCommit
+  | ReferenceInputCommit;
 
 /**
  * 「決め方」の段(splineShape)の確定を下書きへ写す(FR-317)。
@@ -2006,6 +2488,11 @@ export type NumericInputTransition =
       readonly kind: 'solidCommitted';
       readonly state: NumericInputState;
       readonly commit: SolidInputCommit;
+    }
+  | {
+      readonly kind: 'referenceCommitted';
+      readonly state: NumericInputState;
+      readonly commit: ReferenceInputCommit;
     }
   | {
       readonly kind: 'blocked';
@@ -2314,6 +2801,33 @@ function buildSolidCommit(
   };
 }
 
+/** 基準ジオメトリの欄を、確定結果の形へ写す(P4 タスク13)。持たない欄は入らない。 */
+function referenceValuesFor(
+  fields: readonly NumericField[],
+  values: readonly ExpressionValue[],
+): ReferenceCommitValues {
+  const own = fieldValueMap(fields, values);
+  return {
+    offset: own.get('planeOffset'),
+    angle: own.get('planeAngle'),
+    tilt: own.get('planeTilt'),
+    azimuth: own.get('planeAzimuth'),
+  };
+}
+
+/** 基準ジオメトリの選択肢を、確定結果の形へ写す(P4 タスク13)。 */
+function referenceChoicesFor(choices: readonly NumericChoice[]): ReferenceCommitChoices {
+  return {
+    planeBase: choiceValueFrom(choices, 'referencePlaneBase'),
+    axis: choiceValueFrom(choices, 'referenceAxisSpec'),
+    throughMode: choiceValueFrom(choices, 'referencePlaneThroughMode'),
+    axisKind: choiceValueFrom(choices, 'referenceAxisKind'),
+    pointKind: choiceValueFrom(choices, 'referencePointKind'),
+    csXAxis: choiceValueFrom(choices, 'referenceCsXAxis'),
+    csYAxis: choiceValueFrom(choices, 'referenceCsYAxis'),
+  };
+}
+
 /**
  * 「決定」を押したとき、または Enter を打ったときの処理。
  * 空欄を既定値で埋めてから評価し(NFR-UX-4)、1 つでも不正なら決定させずに
@@ -2346,6 +2860,46 @@ export function commitNumericInput(
       kind: 'solidCommitted',
       state: filled,
       commit: buildSolidCommit(step, filled, values, context.variables),
+    };
+  }
+  if (isReferenceStep(step)) {
+    // 基準ジオメトリ(FR-328、FR-329)。座標を聞く段では 1 点を組み立て、
+    // それ以外の段は距離・角度・決め方だけを渡す(組み立ては referenceCommands.ts)。
+    if (!isReferenceCoordinateStep(step)) {
+      return {
+        kind: 'referenceCommitted',
+        state: filled,
+        commit: {
+          kind: 'reference',
+          tool: REFERENCE_STEP_TOOLS[step],
+          step,
+          coordinate: null,
+          mode: null,
+          values: referenceValuesFor(filled.fields, values),
+          choices: referenceChoicesFor(filled.choices),
+        },
+      };
+    }
+    const point = buildCoordinateInput(
+      filled.mode,
+      values,
+      context.base ?? DEFAULT_COORDINATE_BASE,
+    );
+    if (point === null) {
+      return { kind: 'blocked', state: filled, evaluation };
+    }
+    return {
+      kind: 'referenceCommitted',
+      state: filled,
+      commit: {
+        kind: 'reference',
+        tool: REFERENCE_STEP_TOOLS[step],
+        step,
+        coordinate: point,
+        mode: filled.mode,
+        values: referenceValuesFor(filled.fields, values),
+        choices: referenceChoicesFor(filled.choices),
+      },
     };
   }
   const flags = sketchFlagsFor(filled.toggles);
@@ -2455,6 +3009,38 @@ export function nextNumericInput(
       return chaining ? createNumericInput(state.toolId, 'splinePoint') : null;
     case 'springShape':
       return springLengthStateFrom(state);
+    /*
+      基準ジオメトリ(FR-328、FR-329、タスク13)。1 つ作ったら閉じる(「続けてかく」は
+      スケッチの要素のための入切なので、平面・軸・点・座標系には効かせない)。
+      軸の一覧(referenceAxes)は次の段へ持ち越す(段ごとに作り直すと一覧が消えるため)。
+    */
+    case 'referencePlanePoint1':
+      return referenceStep(state, 'referencePlanePoint2');
+    case 'referencePlanePoint2':
+      return referenceStep(state, 'referencePlanePoint3');
+    case 'referencePlaneBasePoint':
+      return referenceStep(state, 'referencePlaneThrough');
+    case 'referenceAxisKind':
+      // 2 点で決めるときだけ点を聞きに進む。辺・面から決めるときはその場で作って終わる。
+      return choiceValueFrom(state.choices, 'referenceAxisKind') === 'twoPoints'
+        ? referenceStep(state, 'referenceAxisStart')
+        : null;
+    case 'referenceAxisStart':
+      return referenceStep(state, 'referenceAxisEnd');
+    case 'referencePointKind':
+      return choiceValueFrom(state.choices, 'referencePointKind') === 'coordinate'
+        ? referenceStep(state, 'referencePointAt')
+        : null;
+    case 'referenceCsOrigin':
+      return referenceStep(state, 'referenceCsAxes');
+    case 'referencePlanePoint3':
+    case 'referencePlaneThrough':
+    case 'referencePlaneOffset':
+    case 'referencePlaneTilt':
+    case 'referenceAxisEnd':
+    case 'referencePointAt':
+    case 'referenceCsAxes':
+      return null;
     case 'extrudeDistance':
     case 'revolveAngle':
     case 'sewTolerance':

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { workPlaneEntries, type WorkPlaneEntry } from '../sketch/referenceCommands.js';
 import { solidToolReadiness } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { AlertIcon, MouseIcon, PlaneIcon, SaveIcon, SnapIcon } from './icons.js';
@@ -23,11 +24,15 @@ const PLANE_KEYS = {
 } as const satisfies Record<BaseWorkPlaneId, MessageKey>;
 
 /**
- * 作図面の札の文言。任意の作業平面(FR-328)は基準の 3 面に無いので、いまはその id を
- * そのまま出す(作業平面の名前を出す配線はタスク13・33)。
+ * 作図面の札の文言。基準の 3 面は名前を ja.json から引き、任意の作業平面(FR-328)は
+ * 文書に付いている名前(「作業平面1」など)をそのまま出す(タスク13)。
+ * 名前が引けないとき(消えた平面を指したまま)は id を出して、何を指しているか分かるようにする。
  */
-function planeLabel(workPlaneId: string): string {
-  return isBaseWorkPlaneId(workPlaneId) ? t(PLANE_KEYS[workPlaneId]) : workPlaneId;
+function planeLabel(workPlaneId: string, customPlanes: readonly WorkPlaneEntry[]): string {
+  if (isBaseWorkPlaneId(workPlaneId)) {
+    return t(PLANE_KEYS[workPlaneId]);
+  }
+  return customPlanes.find((plane) => plane.id === workPlaneId)?.name ?? workPlaneId;
 }
 
 /** 帯の 1 文に添える印。何を伝えているかで替える。 */
@@ -80,6 +85,8 @@ export function StatusBar(): React.JSX.Element {
   const referenceErrorMessage = useAppStore((state) => state.referenceErrorMessage);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
+  // 任意の作業平面(FR-328)の名前を札に出すための一覧(タスク13)。
+  const customPlanes = workPlaneEntries(useAppStore((state) => state.document));
   const snapEnabled = useAppStore((state) => state.snapEnabled);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
   const fileName = useAppStore((state) => state.fileName);
@@ -220,7 +227,7 @@ export function StatusBar(): React.JSX.Element {
       </span>
       <span className="pcad-statusbar__state">
         <PlaneIcon size={12} />
-        {`${t('statusBar.plane')} ${planeLabel(workPlaneId)}`}
+        {`${t('statusBar.plane')} ${planeLabel(workPlaneId, customPlanes)}`}
       </span>
       <span className="pcad-statusbar__state">
         <SnapIcon size={12} />

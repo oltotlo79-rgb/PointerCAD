@@ -1,13 +1,12 @@
 import {
-  baseWorkPlane,
   DEFAULT_WORK_PLANE_ID,
   WORK_PLANES,
+  type ResolvedReferences,
   type ResolvedSketch,
   type SketchMesh,
   type SolidBody,
   type Vec3,
   type WorkPlane,
-  type WorkPlaneId,
 } from '@pointercad/model';
 import * as THREE from 'three';
 
@@ -30,6 +29,7 @@ import {
   VERTICAL_FIELD_OF_VIEW,
   type OrbitState,
 } from './cameraMath.js';
+import { createReferenceLayer } from './createReferenceLayer.js';
 import { createSketchLayer } from './createSketchLayer.js';
 import { createSolidLayer, type ThreadMarkInfo } from './createSolidLayer.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
@@ -93,8 +93,14 @@ export interface ViewportScene {
    * 立体・スケッチの各層は材質の色を塗り替えるだけ。**テーマを変えたときにだけ呼ぶ。**
    */
   setThemeColors(colors: ThemeColors): void;
-  /** いま描いている作図面(§0.a-0.3)。薄い矩形で向きを示す。 */
-  setWorkPlane(id: WorkPlaneId): void;
+  /**
+   * いま描いている作図面(§0.a-0.3)。薄い矩形で向きを示す。
+   * 任意の作業平面(FR-328)も出せるよう、id ではなく**解いた面そのもの**を受け取る
+   * (解くのはストア側の `workPlane`、P4 タスク13)。
+   */
+  setWorkPlane(plane: WorkPlane): void;
+  /** 基準ジオメトリ(基準軸・基準点・座標系、FR-329)を出す。 */
+  setReferences(references: ResolvedReferences): void;
   /** ワールド座標を canvas 上の画素座標へ。まだ一度も描いていない・画面の外なら null。 */
   worldToScreen(point: Vec3): readonly [number, number] | null;
   /** canvas 上の画素座標から、作図面の上の点を求める。平面と視線が平行なら null。 */
@@ -340,6 +346,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   sketchLayer.setWorkPlane(WORK_PLANES[DEFAULT_WORK_PLANE_ID]);
   scene.add(sketchLayer.group);
 
+  // 基準ジオメトリ(FR-329)。スケッチの層と同じ理由で、面より後に描く。
+  const referenceLayer = createReferenceLayer();
+  scene.add(referenceLayer.group);
+
   let currentSpacing = 0;
 
   /**
@@ -352,8 +362,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     grid.geometry = buildGridGeometry(spacing, colors);
     axisLines.geometry.dispose();
     axisLines.geometry = buildAxisGeometry(axisLength(spacing), colors);
-    // 作図面の矩形は方眼と同じ広がりにする。
+    // 作図面の矩形は方眼と同じ広がりにする。基準軸の長さもそれに合わせる。
     sketchLayer.setWorkPlaneExtent(gridExtent(spacing));
+    referenceLayer.setAxisHalfLength(gridExtent(spacing));
     currentSpacing = spacing;
   }
   rebuildGrid(gridSpacing(HOME_ORBIT.distance));
@@ -517,12 +528,15 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       skyLight.groundColor.setHex(colors.sceneGround);
       solidLayer.setThemeColors(colors);
       sketchLayer.setThemeColors(colors);
+      referenceLayer.setThemeColors(colors);
     },
 
-    setWorkPlane(id): void {
-      // 任意の作業平面(FR-328)は部品文書を見ないと決まらないので、ここでは基準の 3 面だけを
-      // 引き、それ以外は既定の XY に落とす(平面そのものを渡す配線はタスク13・33)。
-      sketchLayer.setWorkPlane(baseWorkPlane(id) ?? WORK_PLANES[DEFAULT_WORK_PLANE_ID]);
+    setWorkPlane(plane): void {
+      sketchLayer.setWorkPlane(plane);
+    },
+
+    setReferences(references): void {
+      referenceLayer.update(references);
     },
 
     worldToScreen(point): readonly [number, number] | null {
@@ -564,6 +578,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     dispose(): void {
       solidLayer.dispose();
       sketchLayer.dispose();
+      referenceLayer.dispose();
       grid.geometry.dispose();
       axisLines.geometry.dispose();
       lineMaterial.dispose();

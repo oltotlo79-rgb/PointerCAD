@@ -346,6 +346,19 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
     case 'fillet':
     case 'chamfer':
       return 'edge';
+    /*
+      基準ジオメトリ(FR-328、FR-329、P4 タスク13)。決め方の選択肢で「辺」「面」「頂点」の
+      どれを指すかが変わるので、**その道具で最もよく使う種類**を既定にする(足りなければ
+      `1`〜`4` キーか帯の札から切り替えられる)。オフセットは面、点を通る平面と基準軸は辺、
+      基準点は頂点をよく使う。3 点の平面・傾け・座標系は何も選ばずに作れるので立体のまま。
+    */
+    case 'referencePlaneOffset':
+      return 'face';
+    case 'referencePlaneThroughPoint':
+    case 'referenceAxis':
+      return 'edge';
+    case 'referencePoint':
+      return 'vertex';
     default:
       return 'body';
   }

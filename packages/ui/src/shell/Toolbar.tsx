@@ -5,6 +5,7 @@ import type { BooleanOperation, PartDocument, SolidBody, WorkPlaneId } from '@po
 import { hasFileSystemAccess } from '../file/fileGateway.js';
 import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { SettingsPanel } from '../settings/SettingsPanel.js';
 import {
   createNumericInput,
   SOLID_TOOL_STEPS,
@@ -1121,6 +1122,15 @@ export function Toolbar(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {/*
+        表示設定(FR-908、FR-909)。歯車ひとつを視点区画の右へ置き、押すとその場に
+        テーマの見本と拡大率が開く(固定の区画は増やさない、要件§7.1)。
+        区画名を持たない図柄だけのボタンなので、名前は読み上げ名とツールチップが担う。
+        溝(.pcad-segmented)で囲まないのは、1 つしか無いことと、1440 画素の窓で
+        1 段を保つ幅の予算のため(囲むと 6 画素増える)。
+      */}
+      <SettingsPanel />
     </header>
   );
 }

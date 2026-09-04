@@ -14,7 +14,14 @@
 /** 表示テーマ 5 種(FR-908)。既定は `dark`(現状の配色をそのまま複製)。 */
 export type ThemeId = 'dark' | 'light' | 'darkModern' | 'lightModern' | 'modern';
 
-const THEME_IDS: readonly ThemeId[] = ['dark', 'light', 'darkModern', 'lightModern', 'modern'];
+/** 5 種の並び。設定パネルの見本カードもこの順に並べる(1 か所で決める)。 */
+export const THEME_IDS: readonly ThemeId[] = [
+  'dark',
+  'light',
+  'darkModern',
+  'lightModern',
+  'modern',
+];
 
 export interface DisplaySettings {
   readonly theme: ThemeId;
@@ -66,6 +73,67 @@ function isDisplaySettings(value: unknown): value is DisplaySettings {
 /** 拡大率を 90〜150 の範囲内へ丸める(スライダー等、利用者の入力をその場で丸める用途)。 */
 export function clampUiScale(value: number): number {
   return Math.min(MAX_UI_SCALE, Math.max(MIN_UI_SCALE, value));
+}
+
+// ---------------------------------------------------------------------------
+// 設定パネルが使う刻みとキー操作(タスク2。ここも DOM に触れない純関数)
+// ---------------------------------------------------------------------------
+
+/**
+ * 拡大率の段(%)。90〜150(FR-909)を、迷わず押せる 5 つに絞る。
+ *
+ * 連続のつまみ(スライダー)ではなく段にしたのは、①つまみは掴んで動かす細かい操作が要り、
+ * ②いまいくつなのかを別に数字で出さないと読めないため(NFR-UX-1「説明を読まずに触れる」)。
+ * 100 の前後を 10% 刻みで、大きくしたい人向けに 125 と 150 を置く。
+ */
+export const UI_SCALE_STEPS: readonly number[] = [90, 100, 110, 125, 150];
+
+/**
+ * 与えた拡大率にいちばん近い段。**どの値でも必ず 1 つの段が選ばれた状態になる**ので、
+ * 段に無い値(前の版で保存された値など)でも設定パネルが空白にならない(NFR-UX-4)。
+ * 同じ距離なら小さいほうを選ぶ。数でない値は既定(100)。
+ */
+export function nearestUiScaleStep(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_DISPLAY_SETTINGS.uiScale;
+  }
+  const target = clampUiScale(value);
+  let nearest = UI_SCALE_STEPS[0];
+  for (const step of UI_SCALE_STEPS) {
+    if (Math.abs(step - target) < Math.abs(nearest - target)) {
+      nearest = step;
+    }
+  }
+  return nearest;
+}
+
+const FORWARD_KEYS: readonly string[] = ['ArrowRight', 'ArrowDown'];
+const BACKWARD_KEYS: readonly string[] = ['ArrowLeft', 'ArrowUp'];
+
+/**
+ * 矢印キーでテーマの見本カードを送ったときの、次に選ぶ番号(端は反対側へ回る)。
+ * Home / End は先頭 / 末尾。それ以外のキーでは null を返し、押した側は何もしない。
+ *
+ * 選択肢が並ぶ操作の作法(WAI-ARIA の radiogroup)に合わせる: Tab では中へ入るだけ、
+ * 中の移動と選択は矢印で行う(NFR-UX-7)。
+ */
+export function nextThemeIndex(currentIndex: number, key: string): number | null {
+  const count = THEME_IDS.length;
+  // 見つからなかった(-1)ときは先頭から動かし始める。
+  const from = currentIndex < 0 ? 0 : currentIndex % count;
+  if (FORWARD_KEYS.includes(key)) {
+    return (from + 1) % count;
+  }
+  if (BACKWARD_KEYS.includes(key)) {
+    return (from + count - 1) % count;
+  }
+  if (key === 'Home') {
+    return 0;
+  }
+  if (key === 'End') {
+    return count - 1;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

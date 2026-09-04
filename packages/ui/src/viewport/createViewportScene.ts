@@ -32,6 +32,7 @@ import {
 import { createSketchLayer } from './createSketchLayer.js';
 import { createSolidLayer, type ThreadMarkInfo } from './createSolidLayer.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
+import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
 /**
  * 1 枚描くときの見せ方。視点はここでも持たず、呼び出しごとに渡されたものを控えるだけ
@@ -86,6 +87,11 @@ export interface ViewportScene {
    * **描いた直後の同じ同期処理の中**で読む。まだ一度も描いていなければ null。
    */
   captureThumbnail(size?: number): Uint8Array | null;
+  /**
+   * 表示テーマの色を反映する(FR-908)。方眼と軸は色を頂点へ焼き込んでいるので作り直し、
+   * 立体・スケッチの各層は材質の色を塗り替えるだけ。**テーマを変えたときにだけ呼ぶ。**
+   */
+  setThemeColors(colors: ThemeColors): void;
   /** いま描いている作図面(§0.a-0.3)。薄い矩形で向きを示す。 */
   setWorkPlane(id: WorkPlaneId): void;
   /** ワールド座標を canvas 上の画素座標へ。まだ一度も描いていない・画面の外なら null。 */
@@ -122,28 +128,33 @@ const MAX_PIXEL_RATIO = 2;
 const NEAR_PLANE = 0.05;
 const FAR_PLANE = 200_000;
 
-/** 方眼の色。副線は背景から浮きすぎない濃さに、主線はその一段上に置く(FR-104)。 */
-const GRID_MINOR_COLOR = 0x343945;
-const GRID_MAJOR_COLOR = 0x454b59;
+/*
+ * 方眼の色(副線は地から浮きすぎない濃さ、主線はその一段上)と軸の色(X 赤・Y 緑・Z 青)は
+ * テーマが決める(FR-104、FR-908)。明るいテーマでは、地が明るいぶん線を濃くする。
+ * ビューポートの地そのものは canvas の下の CSS(.pcad-viewport の縦グラデーション)なので、
+ * ここでは扱わない。
+ */
 
-interface AxisDefinition {
-  readonly color: number;
-  readonly direction: readonly [number, number, number];
-}
-
-/** 原点を通る 3 本の軸。色は X 赤・Y 緑・Z 青(FR-104)。 */
-const AXES: readonly AxisDefinition[] = [
-  { color: 0xe5484d, direction: [1, 0, 0] },
-  { color: 0x46a758, direction: [0, 1, 0] },
-  { color: 0x3e63dd, direction: [0, 0, 1] },
+/** 原点を通る 3 本の軸の向き。色はテーマから取る。 */
+const AXIS_DIRECTIONS: readonly (readonly [number, number, number])[] = [
+  [1, 0, 0],
+  [0, 1, 0],
+  [0, 0, 1],
 ];
+
+/** 軸 1 本ぶんの色を、向きの並びと同じ順で取り出す。 */
+function axisColorsOf(colors: ThemeColors): readonly number[] {
+  return [colors.axisX, colors.axisY, colors.axisZ];
+}
 
 /** 軸 1 本を何本の線分に割るか。頂点ごとの薄まりを線の途中でも効かせるために分ける。 */
 const AXIS_SEGMENTS_PER_SIDE = 40;
 
-/** 空と地面の色で全体を起こす補助光。真上は白、地面側は背景に馴染む暗い灰。 */
+/**
+ * 空と地面の色で全体を起こす補助光。真上は白のまま、地面側は地の色に馴染ませるので
+ * テーマが決める(--pcad-scene-ground)。明るいテーマでは下面が沈みすぎない明るさにする。
+ */
 const SKY_COLOR = 0xffffff;
-const GROUND_COLOR = 0x3a3f4a;
 const HEMISPHERE_INTENSITY = 0.9;
 
 /** 面の明暗差を作る主光源。視点の右上前方に置き、カメラに追従させる。 */
@@ -199,11 +210,11 @@ function toLineGeometry(buffer: LineBuffer): THREE.BufferGeometry {
  * 原点を通る 2 本は軸として別に描くのでここでは引かない。同じ位置に 2 本重ねると
  * 深度が競って縞模様になるため、重ねない作りにして縞模様そのものを起こさせない。
  */
-function buildGridGeometry(spacing: number): THREE.BufferGeometry {
+function buildGridGeometry(spacing: number, colors: ThemeColors): THREE.BufferGeometry {
   const extent = gridExtent(spacing);
   const halfCount = Math.round(extent / spacing);
-  const minorColor = new THREE.Color(GRID_MINOR_COLOR);
-  const majorColor = new THREE.Color(GRID_MAJOR_COLOR);
+  const minorColor = new THREE.Color(colors.gridMinor);
+  const majorColor = new THREE.Color(colors.gridMajor);
   const buffer = createLineBuffer();
 
   for (let line = -halfCount; line <= halfCount; line += 1) {
@@ -224,18 +235,20 @@ function buildGridGeometry(spacing: number): THREE.BufferGeometry {
 }
 
 /** 原点を通る XYZ 軸の線分列を作る(FR-104)。方眼と同じ薄まり方をさせる。 */
-function buildAxisGeometry(length: number): THREE.BufferGeometry {
+function buildAxisGeometry(length: number, colors: ThemeColors): THREE.BufferGeometry {
   const buffer = createLineBuffer();
+  const axisColors = axisColorsOf(colors);
 
-  for (const axis of AXES) {
-    const color = new THREE.Color(axis.color);
+  for (let axis = 0; axis < AXIS_DIRECTIONS.length; axis += 1) {
+    const direction = AXIS_DIRECTIONS[axis];
+    const color = new THREE.Color(axisColors[axis]);
     for (let step = -AXIS_SEGMENTS_PER_SIDE; step < AXIS_SEGMENTS_PER_SIDE; step += 1) {
       const from = (step / AXIS_SEGMENTS_PER_SIDE) * length;
       const to = ((step + 1) / AXIS_SEGMENTS_PER_SIDE) * length;
       pushFadedSegment(
         buffer,
-        [axis.direction[0] * from, axis.direction[1] * from, axis.direction[2] * from],
-        [axis.direction[0] * to, axis.direction[1] * to, axis.direction[2] * to],
+        [direction[0] * from, direction[1] * from, direction[2] * from],
+        [direction[0] * to, direction[1] * to, direction[2] * to],
         color,
         length,
       );
@@ -253,7 +266,14 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
   const scene = new THREE.Scene();
 
-  const skyLight = new THREE.HemisphereLight(SKY_COLOR, GROUND_COLOR, HEMISPHERE_INTENSITY);
+  /** いま効いているテーマの色。`setThemeColors` が来るまでは既定(ダーク)。 */
+  let colors: ThemeColors = DEFAULT_THEME_COLORS;
+
+  const skyLight = new THREE.HemisphereLight(
+    SKY_COLOR,
+    DEFAULT_THEME_COLORS.sceneGround,
+    HEMISPHERE_INTENSITY,
+  );
   // 半球光の「空」の向きは position が決める。Z 上の座標系に合わせる。
   skyLight.position.set(0, 0, 1);
   scene.add(skyLight);
@@ -321,12 +341,16 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
   let currentSpacing = 0;
 
-  /** 方眼と XYZ 軸を作り直す(FR-104)。間隔が変わったときだけ呼ぶ。 */
+  /**
+   * 方眼と XYZ 軸を作り直す(FR-104)。間隔が変わったときと、テーマが変わったときだけ呼ぶ
+   * (色は頂点ごとの並びへ焼き込むので、テーマの切替では作り直すしかない。
+   * 描画のたびには呼ばれないので NFR-PF-1 に触らない)。
+   */
   function rebuildGrid(spacing: number): void {
     grid.geometry.dispose();
-    grid.geometry = buildGridGeometry(spacing);
+    grid.geometry = buildGridGeometry(spacing, colors);
     axisLines.geometry.dispose();
-    axisLines.geometry = buildAxisGeometry(axisLength(spacing));
+    axisLines.geometry = buildAxisGeometry(axisLength(spacing), colors);
     // 作図面の矩形は方眼と同じ広がりにする。
     sketchLayer.setWorkPlaneExtent(gridExtent(spacing));
     currentSpacing = spacing;
@@ -483,6 +507,15 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       // **同じ同期処理の中で**読む。間に非同期の待ちを挟んではいけない。
       drawScene(lastRender);
       return captureThumbnailPng(canvas, size);
+    },
+
+    setThemeColors(next): void {
+      colors = next;
+      // 方眼と軸は頂点ごとの色を持つので、いまの間隔のまま組み立て直す。
+      rebuildGrid(currentSpacing);
+      skyLight.groundColor.setHex(colors.sceneGround);
+      solidLayer.setThemeColors(colors);
+      sketchLayer.setThemeColors(colors);
     },
 
     setWorkPlane(id): void {

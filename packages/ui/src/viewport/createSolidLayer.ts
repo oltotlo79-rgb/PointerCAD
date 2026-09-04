@@ -9,8 +9,10 @@
  * 並びの中身を書き写す。常時の描画ループはここにも作らない
  * (docs/報告記録.md 2026-09-02 15:42)。
  *
- * 色は画面の配色(packages/ui/src/shell/appShell.css の --pcad-* トークン)と同じ値を
- * 16 進の定数として持つ。CSS 変数は three.js から読めないため。
+ * 色は画面の配色(packages/ui/src/shell/appShell.css の --pcad-* トークン)から
+ * `themeColors.ts` が読み取って渡す(three.js は CSS 変数を直接読めないため)。
+ * テーマを変えたときは `setThemeColors` で材質の色だけを塗り替え、**部品は作り直さない**
+ * (FR-908 の即時反映、NFR-PF-1)。
  */
 
 import { addVec3, crossVec3, normalizeVec3, scaleVec3, type Vec3 } from '@pointercad/model';
@@ -19,34 +21,24 @@ import * as THREE from 'three';
 import type { DisplayStyle } from '../store/useAppStore.js';
 import type { SolidDrawEntry, SolidEmphasis, SolidGeometryBundle } from './buildSolidGeometry.js';
 import type { SubShapeEmphasis, SubShapeHighlight, SubShapeHighlightBundle } from './buildSubShapeGeometry.js';
+import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
 /**
- * 立体の色味。艶を抑えた樹脂のような明るい灰にして、面の向きの差を読み取りやすくする。
- * P2 のボディは既定の 1 色(§0.a-0.21)。面ごと・ボディごとの色指定は P3 の「外観」で足す。
+ * 立体の艶。艶を抑えた樹脂のように見せて、面の向きの差を読み取りやすくする。
+ * 色そのもの(--pcad-solid)はテーマが決める。P2 のボディは既定の 1 色(§0.a-0.21)で、
+ * 面ごと・ボディごとの色指定は P5 の「外観」で足す。
  */
-const SOLID_COLOR = 0xb8bfcc;
 const SOLID_ROUGHNESS = 0.55;
 const SOLID_METALNESS = 0.05;
 
-/** 面の上に重ねる稜線は暗く、稜線だけのときは背景から浮くよう明るくする(FR-105)。 */
-const EDGE_COLOR_OVER_SOLID = 0x0f1115;
-const EDGE_COLOR_WIREFRAME = 0xd6dae2;
-
-/**
- * ホバーと選択の色(§0.a-0.23-⑩)。以前は --pcad-accent(0x4f8cff)と --pcad-accent-hover
- * (0x6b9eff)の色差だけで示していたが、実機の目視で見分けにくいと分かった
- * (`docs/報告記録.md` 2026-09-03 20:40 の②)。ホバーを明るい水色 `0x8ec5ff` にして
- * 明度差を広げる(選択は --pcad-accent の `0x4f8cff` のまま据え置く)。
+/*
+ * 稜線は、面の上に重ねるときは暗く、稜線だけのときは地から浮くよう明るくする(FR-105)。
+ * 明るいテーマではどちらも暗い側へ寄せる(値は appShell.css のテーマごとの塊)。
  *
- * 選択の色を濃い青 `0x2f6fe0` へ変える案は、背景 --pcad-surface(#1e2128)に対する
- * コントラストが約 3.43:1 となり、既存の `0x4f8cff`(約 5.02:1)を下回って基準の 4.5:1 も
- * 割るため統括の判断で不採用にした(2026-09-03)。ホバー `0x8ec5ff` は約 8.88:1 で基準を
- * 満たす。ホバーと選択は同系色+明度差、加えて選択した辺の端点表示(§0.a-0.23-⑩)で見分ける。
- * **`createSketchLayer.ts` の同名の定数も同じ値に揃える**
- * (スケッチと立体で強調の色が違うと、同じ「選んでいる」が 2 通りに見えるため)。
+ * ホバーと選択の色の決め方は `createSketchLayer.ts` の注釈にまとめてある。
+ * **同じトークン(--pcad-emphasis-hovered / --pcad-emphasis-selected)を使う**ので、
+ * スケッチと立体で「選んでいる」の見え方が 2 通りに割れることはない。
  */
-const SELECTED_COLOR = 0x4f8cff;
-const HOVERED_COLOR = 0x8ec5ff;
 
 /**
  * 描く順。スケッチの作図面 -1 → 面 0 → **立体 1** → 面の縁 2 → 線 3 → 点 4 の間に入れる。
@@ -94,9 +86,7 @@ export interface ThreadMarkInfo {
   readonly length: number;
 }
 
-/** ねじの印の線の色(細実線。JIS の簡略図示に倣う)。 */
-const THREAD_MARK_COLOR = 0x8a93a6;
-/** ねじの印を描く円の分割数。 */
+/** ねじの印を描く円の分割数(線の色は --pcad-thread-mark。細実線、JIS の簡略図示に倣う)。 */
 const THREAD_MARK_SEGMENTS = 48;
 
 /** 円の基底(u・v)を作るための参照軸。direction とほぼ平行にならないものを選ぶ。 */
@@ -194,6 +184,11 @@ export interface SolidLayer {
    * 並びを触らない。
    */
   updateThreadMarks(marks: readonly ThreadMarkInfo[]): void;
+  /**
+   * 表示テーマの色を反映する(FR-908)。材質の色を塗り替えるだけで、
+   * 部品も並びも作り直さない(NFR-PF-1)。
+   */
+  setThemeColors(colors: ThemeColors): void;
   /** 光線に当たったボディの featureId。当たらなければ null(FR-106)。 */
   pickBody(raycaster: THREE.Raycaster): string | null;
   /**
@@ -338,6 +333,12 @@ function disposeSubShapeOverlay(overlay: SubShapeOverlay): void {
 export function createSolidLayer(): SolidLayer {
   const group = new THREE.Group();
 
+  /** いま効いているテーマの色。`setThemeColors` が来るまでは既定(ダーク)。 */
+  let colors: ThemeColors = DEFAULT_THEME_COLORS;
+
+  /** いまの表示スタイル。テーマが変わったとき、稜線の色をどちらへ塗るかの判断に使う。 */
+  let lastDisplayStyle: DisplayStyle = 'shadedWithEdges';
+
   /**
    * 面の材質は全ボディで 1 つを共有する(P2 のボディは同じ色、§0.a-0.21)。
    * 面と稜線を同時に出すとき、稜線が面に埋もれてちらつくのを防ぐ(FR-105)。
@@ -347,7 +348,7 @@ export function createSolidLayer(): SolidLayer {
    * `SolidFaceEntry.triangleOffset` / `triangleCount` から作る形に差し替える(実装はしない)。
    */
   const faceMaterial = new THREE.MeshStandardMaterial({
-    color: SOLID_COLOR,
+    color: DEFAULT_THEME_COLORS.solid,
     roughness: SOLID_ROUGHNESS,
     metalness: SOLID_METALNESS,
     // 閉じた立体なので裏面は見えない。両面を描くと稜線の裏側が透けて見えて重くなる。
@@ -363,14 +364,9 @@ export function createSolidLayer(): SolidLayer {
    * `none` の色だけは表示スタイルで変わる(面の上か、稜線だけか)。
    */
   const edgeMaterials: Readonly<Record<SolidEmphasis, THREE.LineBasicMaterial>> = {
-    none: new THREE.LineBasicMaterial({ color: EDGE_COLOR_OVER_SOLID }),
-    hovered: new THREE.LineBasicMaterial({ color: HOVERED_COLOR }),
-    selected: new THREE.LineBasicMaterial({ color: SELECTED_COLOR }),
-  };
-
-  const subShapeColors: Readonly<Record<SubShapeEmphasis, number>> = {
-    hovered: HOVERED_COLOR,
-    selected: SELECTED_COLOR,
+    none: new THREE.LineBasicMaterial({ color: DEFAULT_THEME_COLORS.solidEdgeOverSolid }),
+    hovered: new THREE.LineBasicMaterial({ color: DEFAULT_THEME_COLORS.hovered }),
+    selected: new THREE.LineBasicMaterial({ color: DEFAULT_THEME_COLORS.selected }),
   };
 
   /**
@@ -378,8 +374,8 @@ export function createSolidLayer(): SolidLayer {
    * ボディごとには増やさない(全ボディの強調中の要素を 1 本のバッファへまとめる)。
    */
   const subShapeOverlays: Readonly<Record<SubShapeEmphasis, SubShapeOverlay>> = {
-    hovered: createSubShapeOverlay(subShapeColors.hovered),
-    selected: createSubShapeOverlay(subShapeColors.selected),
+    hovered: createSubShapeOverlay(DEFAULT_THEME_COLORS.hovered),
+    selected: createSubShapeOverlay(DEFAULT_THEME_COLORS.selected),
   };
   for (const emphasis of SUB_SHAPE_EMPHASES) {
     const overlay = subShapeOverlays[emphasis];
@@ -399,7 +395,7 @@ export function createSolidLayer(): SolidLayer {
   const threadMarkLines = new THREE.LineSegments(
     new THREE.BufferGeometry(),
     new THREE.LineBasicMaterial({
-      color: THREAD_MARK_COLOR,
+      color: DEFAULT_THEME_COLORS.threadMark,
       transparent: true,
       opacity: 0.75,
       depthTest: false,
@@ -501,10 +497,11 @@ export function createSolidLayer(): SolidLayer {
    * 何を選んでいるのか分からなくなるため(NFR-UX-7)。
    */
   function applyStyle(entries: readonly SolidDrawEntry[], displayStyle: DisplayStyle): void {
+    lastDisplayStyle = displayStyle;
     const showFaces = displayStyle !== 'wireframe';
     const showEdges = displayStyle !== 'shaded';
     edgeMaterials.none.color.setHex(
-      displayStyle === 'wireframe' ? EDGE_COLOR_WIREFRAME : EDGE_COLOR_OVER_SOLID,
+      displayStyle === 'wireframe' ? colors.solidEdgeWireframe : colors.solidEdgeOverSolid,
     );
     for (let position = 0; position < entries.length; position += 1) {
       const draw = draws[position];
@@ -545,6 +542,24 @@ export function createSolidLayer(): SolidLayer {
       setVectorAttribute(threadMarkLines.geometry, 'position', positions);
       threadMarkLines.geometry.computeBoundingSphere();
       threadMarkLines.visible = positions.length > 0;
+    },
+
+    setThemeColors(next): void {
+      colors = next;
+      faceMaterial.color.setHex(colors.solid);
+      edgeMaterials.none.color.setHex(
+        lastDisplayStyle === 'wireframe' ? colors.solidEdgeWireframe : colors.solidEdgeOverSolid,
+      );
+      edgeMaterials.hovered.color.setHex(colors.hovered);
+      edgeMaterials.selected.color.setHex(colors.selected);
+      for (const emphasis of SUB_SHAPE_EMPHASES) {
+        const overlay = subShapeOverlays[emphasis];
+        const color = emphasis === 'hovered' ? colors.hovered : colors.selected;
+        overlay.faces.material.color.setHex(color);
+        overlay.edges.material.color.setHex(color);
+        overlay.vertices.material.color.setHex(color);
+      }
+      threadMarkLines.material.color.setHex(colors.threadMark);
     },
 
     pickFace(raycaster): { readonly featureId: string; readonly triangleIndex: number } | null {

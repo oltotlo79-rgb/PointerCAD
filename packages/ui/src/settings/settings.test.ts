@@ -14,7 +14,11 @@ import {
   loadSettings,
   MAX_UI_SCALE,
   MIN_UI_SCALE,
+  nearestUiScaleStep,
+  nextThemeIndex,
   saveSettings,
+  THEME_IDS,
+  UI_SCALE_STEPS,
   type DisplaySettings,
   type SettingsStorage,
 } from './settings.js';
@@ -126,5 +130,62 @@ describe('表示設定の永続化(FR-908, FR-909)', () => {
     // 既定引数(globalThis)での判定がここでも false になることを確かめる。
     expect(hasLocalStorage()).toBe(false);
     expect(loadSettings()).toEqual(DEFAULT_DISPLAY_SETTINGS);
+  });
+});
+
+describe('設定パネルの刻みとキー操作(タスク2)', () => {
+  it('テーマは 5 種で、既定のダークが先頭にある(FR-908)', () => {
+    expect(THEME_IDS).toEqual(['dark', 'light', 'darkModern', 'lightModern', 'modern']);
+    expect(THEME_IDS[0]).toBe(DEFAULT_DISPLAY_SETTINGS.theme);
+  });
+
+  it('拡大率の段は 90〜150 の中にあり、既定の 100 を含む(FR-909)', () => {
+    expect(UI_SCALE_STEPS).toEqual([90, 100, 110, 125, 150]);
+    for (const step of UI_SCALE_STEPS) {
+      expect(step).toBeGreaterThanOrEqual(MIN_UI_SCALE);
+      expect(step).toBeLessThanOrEqual(MAX_UI_SCALE);
+    }
+    expect(UI_SCALE_STEPS).toContain(DEFAULT_DISPLAY_SETTINGS.uiScale);
+  });
+
+  it('段そのものは自分自身へ丸まる', () => {
+    for (const step of UI_SCALE_STEPS) {
+      expect(nearestUiScaleStep(step)).toBe(step);
+    }
+  });
+
+  it('段に無い値はいちばん近い段になり、同じ距離なら小さいほうを選ぶ', () => {
+    expect(nearestUiScaleStep(104)).toBe(100);
+    expect(nearestUiScaleStep(106)).toBe(110);
+    // 105 は 100 と 110 のちょうど中間。
+    expect(nearestUiScaleStep(105)).toBe(100);
+    expect(nearestUiScaleStep(130)).toBe(125);
+  });
+
+  it('範囲外や数でない値でも必ず段が 1 つ決まる(空白にならない)', () => {
+    expect(nearestUiScaleStep(10)).toBe(90);
+    expect(nearestUiScaleStep(1000)).toBe(150);
+    expect(nearestUiScaleStep(Number.NaN)).toBe(DEFAULT_DISPLAY_SETTINGS.uiScale);
+  });
+
+  it('矢印キーは前後へ動き、端では反対側へ回る', () => {
+    expect(nextThemeIndex(0, 'ArrowRight')).toBe(1);
+    expect(nextThemeIndex(0, 'ArrowDown')).toBe(1);
+    expect(nextThemeIndex(4, 'ArrowRight')).toBe(0);
+    expect(nextThemeIndex(0, 'ArrowLeft')).toBe(4);
+    expect(nextThemeIndex(2, 'ArrowUp')).toBe(1);
+  });
+
+  it('Home / End は先頭と末尾、それ以外のキーでは動かない', () => {
+    expect(nextThemeIndex(2, 'Home')).toBe(0);
+    expect(nextThemeIndex(2, 'End')).toBe(THEME_IDS.length - 1);
+    expect(nextThemeIndex(2, 'Enter')).toBeNull();
+    expect(nextThemeIndex(2, 'a')).toBeNull();
+    expect(nextThemeIndex(2, 'Escape')).toBeNull();
+  });
+
+  it('いまのテーマが分からない(-1)ときは先頭から動き始める', () => {
+    expect(nextThemeIndex(-1, 'ArrowRight')).toBe(1);
+    expect(nextThemeIndex(-1, 'ArrowLeft')).toBe(THEME_IDS.length - 1);
   });
 });

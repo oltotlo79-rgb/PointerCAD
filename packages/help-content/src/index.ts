@@ -45,6 +45,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
   { id: 'thread', title: 'ねじ穴をあける', path: 'docs/ja/thread.md' },
   { id: 'pattern', title: '同じ加工を並べる', path: 'docs/ja/pattern.md' },
   { id: 'spring', title: 'ばねを作る', path: 'docs/ja/spring.md' },
+  {
+    id: 'display-settings',
+    title: '画面の見た目を変える',
+    path: 'docs/ja/display-settings.md',
+  },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

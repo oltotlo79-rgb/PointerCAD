@@ -14,12 +14,25 @@
  * 拡大率はそのまま保たれる。
  */
 
+/*
+ * 表示の拡大率(FR-909)。90〜150% を 0.9〜1.5 の倍率にして渡す(既定は等倍)。
+ * **ルート要素だけに置く。** テーマの塊(下)へ入れると、設定の見本カードのように
+ * 途中の要素へ data-theme を付けたときに、そこだけ拡大率が等倍へ戻ってしまう。
+ */
 :root {
+  --pcad-scale: 1;
+}
+
+/*
+ * ダーク(既定)。:root と [data-theme="dark"] の両方を受けるのは、画面全体だけでなく
+ * **途中の要素に data-theme を付けたときにも一式が効く**ようにするため(設定パネルの
+ * 見本カードは、この仕組みでテーマ 5 種の実際の色をそのまま見せる)。他の 4 テーマと
+ * 同じ詳細度(0,1,0)なので、ルート要素では後に書いたテーマの塊が勝つ。
+ */
+:root,
+[data-theme="dark"] {
   /* ブラウザ既定の下地(スクロールバー・選択色など)も暗色に揃える。 */
   color-scheme: dark;
-
-  /* 表示の拡大率(FR-909)。90〜150% を 0.9〜1.5 の倍率にして渡す(既定は等倍)。 */
-  --pcad-scale: 1;
 
   /* 面 */
   --pcad-bg: #16181d;
@@ -88,13 +101,48 @@
   --pcad-shadow-raised: 0 4px 14px rgb(0 0 0 / 45%);
 
   /*
-   * 淡い影(FR-908、モダン系だけが持つ「もう一段浮かせる」影)。ダーク・ライトは平坦なので
-   * 通常の影と同じにしておく(見た目は変わらない、テーマごとに再定義するのはモダン系のみ)。
-   * まだどの規則もこのトークンを参照していない(タスク1 はトークン定義のみ)。
+   * 淡い影(FR-908、モダン系だけが持つ「もう一段浮かせる」影)。
+   * --pcad-shadow-soft は区画そのもの(ツールバー・左右のパネル)を浮かせる影で、
+   * **平坦なダーク・ライトでは影を出さない**(境目は 1px の線が担う。現状の見た目のまま)。
+   * --pcad-shadow-soft-raised は元から浮いているもの(畳んだ一覧・その場入力・札)の影で、
+   * ダーク・ライトでは通常の影と同じ(こちらも現状の見た目のまま)。
    */
-  --pcad-shadow-soft: var(--pcad-shadow);
+  --pcad-shadow-soft: none;
   --pcad-shadow-soft-raised: var(--pcad-shadow-raised);
   --pcad-transition: 120ms ease;
+
+  /*
+   * ツールバーの区画のあいだの隙間。**ここだけはテーマに依らない**(この 1 か所で決め、
+   * テーマごとの塊で上書きしない)。1440 画素の窓で拡大率 110% まで 5 テーマとも 1 段に
+   * 収めるための幅の予算で、モダン系の広い余白(--pcad-space-2 = 11px)をそのまま使うと
+   * 隙間 12 か所で 60 画素ふくらんで 1 段に収まらない(2026-09-04 実測)。
+   * 区画の見分けは、隙間より区画名と溝(.pcad-segmented)が担う。
+   */
+  --pcad-toolbar-gap: calc(6px * var(--pcad-scale, 1));
+
+  /*
+   * 3D 表示の色(FR-908 のテーマ連動)。three.js は CSS 変数を読めないので、
+   * viewport/themeColors.ts が getComputedStyle で読んで 16 進へ直す。
+   * **この 16 個はどのテーマも 1 つ残らず持つ**(欠けると別テーマの色が混ざる)。
+   * ダークの値は P0〜P3 で各層が直接持っていた定数そのままで、
+   * viewport/themeColors.test.ts が DEFAULT_THEME_COLORS との一致を固定する。
+   */
+  --pcad-grid-minor: #343945;
+  --pcad-grid-major: #454b59;
+  --pcad-axis-x: #e5484d;
+  --pcad-axis-y: #46a758;
+  --pcad-axis-z: #3e63dd;
+  --pcad-sketch-point: #e8eaf0;
+  --pcad-sketch-curve: #9aa3b2;
+  --pcad-sketch-outline: #6b7380;
+  --pcad-emphasis-hovered: #8ec5ff;
+  --pcad-emphasis-selected: #4f8cff;
+  --pcad-solid: #b8bfcc;
+  --pcad-solid-edge: #0f1115;
+  --pcad-solid-edge-wireframe: #d6dae2;
+  --pcad-thread-mark: #8a93a6;
+  --pcad-work-plane: #4f8cff;
+  --pcad-scene-ground: #3a3f4a;
 }
 
 /*
@@ -150,8 +198,30 @@
   /* 白地には黒 40% の影が重すぎるので、平坦さは保ったまま淡くする。 */
   --pcad-shadow: 0 1px 2px rgb(0 0 0 / 12%);
   --pcad-shadow-raised: 0 4px 14px rgb(0 0 0 / 16%);
-  --pcad-shadow-soft: var(--pcad-shadow);
+  --pcad-shadow-soft: none;
   --pcad-shadow-soft-raised: var(--pcad-shadow-raised);
+
+  /*
+   * 3D 表示の色。明るい地に合わせて、方眼と下書きを**濃く**する(暗いテーマの反転)。
+   * 強調はホバーを淡い青・選択を濃い青にして、明るい地の上でも明度差で見分けられるようにする
+   * (暗いテーマでは逆に、ホバーのほうが明るい)。
+   */
+  --pcad-grid-minor: #b9c0cc;
+  --pcad-grid-major: #99a1b0;
+  --pcad-axis-x: #cc3b40;
+  --pcad-axis-y: #2f8544;
+  --pcad-axis-z: #2f4fc0;
+  --pcad-sketch-point: #1b1e24;
+  --pcad-sketch-curve: #4b5160;
+  --pcad-sketch-outline: #767c8a;
+  --pcad-emphasis-hovered: #4a90e2;
+  --pcad-emphasis-selected: #1b4fb0;
+  --pcad-solid: #9ea6b4;
+  --pcad-solid-edge: #1a1d23;
+  --pcad-solid-edge-wireframe: #3a4150;
+  --pcad-thread-mark: #6b7380;
+  --pcad-work-plane: #2f6fe0;
+  --pcad-scene-ground: #cfd5df;
 }
 
 /*
@@ -206,6 +276,24 @@
   --pcad-shadow-raised: 0 12px 32px rgb(0 0 0 / 34%);
   --pcad-shadow-soft: 0 6px 20px rgb(0 0 0 / 22%);
   --pcad-shadow-soft-raised: 0 18px 44px rgb(0 0 0 / 30%);
+
+  /* 3D 表示の色。地の暗さがダークとほぼ同じなので、同じ値をそのまま持つ。 */
+  --pcad-grid-minor: #343945;
+  --pcad-grid-major: #454b59;
+  --pcad-axis-x: #e5484d;
+  --pcad-axis-y: #46a758;
+  --pcad-axis-z: #3e63dd;
+  --pcad-sketch-point: #eef0f6;
+  --pcad-sketch-curve: #a7b0c2;
+  --pcad-sketch-outline: #747d90;
+  --pcad-emphasis-hovered: #8ec5ff;
+  --pcad-emphasis-selected: #5b9dff;
+  --pcad-solid: #b8bfcc;
+  --pcad-solid-edge: #0f1115;
+  --pcad-solid-edge-wireframe: #d6dae2;
+  --pcad-thread-mark: #8a93a6;
+  --pcad-work-plane: #5b9dff;
+  --pcad-scene-ground: #3a3f4a;
 }
 
 /*
@@ -255,6 +343,24 @@
   --pcad-shadow-raised: 0 14px 34px rgb(0 0 0 / 14%);
   --pcad-shadow-soft: 0 6px 20px rgb(0 0 0 / 8%);
   --pcad-shadow-soft-raised: 0 18px 44px rgb(0 0 0 / 12%);
+
+  /* 3D 表示の色。ライトと同じ明るい地なので、同じ値をそのまま持つ。 */
+  --pcad-grid-minor: #b9c0cc;
+  --pcad-grid-major: #99a1b0;
+  --pcad-axis-x: #cc3b40;
+  --pcad-axis-y: #2f8544;
+  --pcad-axis-z: #2f4fc0;
+  --pcad-sketch-point: #1c2028;
+  --pcad-sketch-curve: #4d5566;
+  --pcad-sketch-outline: #78808f;
+  --pcad-emphasis-hovered: #4a90e2;
+  --pcad-emphasis-selected: #1b4fb0;
+  --pcad-solid: #9ea6b4;
+  --pcad-solid-edge: #1a1d23;
+  --pcad-solid-edge-wireframe: #3a4150;
+  --pcad-thread-mark: #6b7380;
+  --pcad-work-plane: #2f6fe0;
+  --pcad-scene-ground: #cfd5df;
 }
 
 /*
@@ -307,6 +413,27 @@
   --pcad-shadow-raised: 0 14px 34px rgb(0 0 0 / 28%);
   --pcad-shadow-soft: 0 6px 20px rgb(0 0 0 / 18%);
   --pcad-shadow-soft-raised: 0 18px 44px rgb(0 0 0 / 24%);
+
+  /*
+   * 3D 表示の色。中間の明るさの灰の地なので、方眼と下書きは濃く、立体は逆に明るくして
+   * 地から浮かせる(明るいテーマでも暗いテーマでもない中間ならではの組み合わせ)。
+   */
+  --pcad-grid-minor: #7f8590;
+  --pcad-grid-major: #6a7079;
+  --pcad-axis-x: #a32f34;
+  --pcad-axis-y: #23663a;
+  --pcad-axis-z: #1f3f9e;
+  --pcad-sketch-point: #14161a;
+  --pcad-sketch-curve: #2c2f35;
+  --pcad-sketch-outline: #45484f;
+  --pcad-emphasis-hovered: #2f6fe0;
+  --pcad-emphasis-selected: #0c2c6b;
+  --pcad-solid: #d5d9e0;
+  --pcad-solid-edge: #23262c;
+  --pcad-solid-edge-wireframe: #1c1f25;
+  --pcad-thread-mark: #45484f;
+  --pcad-work-plane: #123a8a;
+  --pcad-scene-ground: #b9bec7;
 }
 
 /* ===== 全体の骨格 ===== */
@@ -341,14 +468,26 @@
  * (1 段に必要な幅の実測は docs/報告記録.md を参照)。
  */
 .pcad-toolbar {
+  /*
+   * 重なりの順(z-index 3)を明示するのは、下の帯へ影を落とすため(FR-908 のモダン系)。
+   * 3 は、この中から開く畳んだ一覧(.pcad-menu__panel)がこれまで持っていた値と同じで、
+   * その場入力(.pcad-popover の 2)との前後関係は変わらない。
+   */
+  position: relative;
+  z-index: 3;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--pcad-space-2);
+  gap: var(--pcad-toolbar-gap);
   align-items: flex-end;
-  padding: var(--pcad-space-2);
+
+  /* 左右は幅の予算(--pcad-toolbar-gap)、上下はテーマの余白のまま(モダン系は厚い帯)。 */
+  padding: var(--pcad-space-2) var(--pcad-toolbar-gap);
   user-select: none;
   background: var(--pcad-surface);
   border-bottom: 1px solid var(--pcad-border);
+
+  /* 平坦なダーク・ライトでは none、モダン系だけが淡く浮く(FR-908)。 */
+  box-shadow: var(--pcad-shadow-soft);
 }
 
 .pcad-toolbar__brand {
@@ -624,6 +763,15 @@
   display: flex;
 }
 
+/*
+ * 表示設定の歯車だけは、開く一覧の位置の基準を自分ではなくツールバーにする
+ * (理由は .pcad-settings の注釈)。position を static に戻すと、中の
+ * .pcad-menu__panel は position: relative を持つ最も近い先祖 = .pcad-toolbar を基準にする。
+ */
+.pcad-menu--settings {
+  position: static;
+}
+
 /* 畳んでいる間も「いくつ効いているか」が読めるように、数と開閉の印を並べる。 */
 .pcad-menu__trigger {
   gap: 3px;
@@ -660,7 +808,9 @@
   background: var(--pcad-surface-raised);
   border: 1px solid var(--pcad-border-strong);
   border-radius: var(--pcad-radius);
-  box-shadow: var(--pcad-shadow-raised);
+
+  /* ダーク・ライトでは従来の影のまま、モダン系だけ淡く広い影になる(FR-908)。 */
+  box-shadow: var(--pcad-shadow-soft-raised);
 }
 
 /* 一覧の中は名前つき。4 状態(通常・ホバー・押下・焦点)は .pcad-button から受け継ぐ。 */
@@ -669,15 +819,202 @@
   min-width: 116px;
 }
 
+/* ===== 表示設定(FR-908 テーマ・FR-909 拡大率) ===== */
+
+/*
+ * 歯車から開く設定の一覧。開閉・外を押して閉じる・Esc の作りは吸着の種別
+ * (.pcad-menu)と同じで、中身だけが違う。固定の区画は増やさない(要件§7.1)。
+ * .pcad-menu__panel の後に書いて、幅と余白だけを上書きする。
+ */
+.pcad-settings {
+  /*
+   * 出す場所はツールバーの右下(歯車の真下ではない)。歯車は行の折り返しで左端へ回ることが
+   * あり(拡大率 150% など)、そのとき歯車を基準にすると 248 画素の一覧が窓の外へはみ出す
+   * (2026-09-04 実測)。入れ物 .pcad-menu--settings を位置の基準から外し、
+   * 位置の基準を .pcad-toolbar にしてあるので、ここは常に窓の中に収まる。
+   */
+  right: var(--pcad-space-2);
+  gap: var(--pcad-space-3);
+
+  /*
+   * 幅も拡大率に従わせる(FR-909)。固定の 248px のままだと、文字だけが大きくなって
+   * 拡大率の段(90%〜150%)が枠からはみ出す(2026-09-04 実測)。狭い窓でも収まるよう、
+   * 窓の幅からはみ出す手前で止める。
+   */
+  width: min(calc(248px * var(--pcad-scale, 1)), calc(100vw - 4 * var(--pcad-space-3)));
+  padding: var(--pcad-space-3);
+}
+
+/* 見出し。歯車には文字が無いので、何が開いたのかをここで言う(NFR-UX-7)。 */
+.pcad-settings__title {
+  font-size: var(--pcad-font-size-heading);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--pcad-text);
+}
+
+.pcad-settings__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+}
+
+.pcad-settings__label {
+  font-size: var(--pcad-font-size-small);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--pcad-text-muted);
+  cursor: help;
+}
+
+/* テーマの見本カード 5 枚。2 列で 3 段になり、最後の 1 枚は左に残る。 */
+.pcad-settings__themes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--pcad-space-1);
+}
+
+/*
+ * 見本カード 1 枚。中の縮図は data-theme を持つので、**そのテーマのトークンが
+ * カードの中だけで効く**(色を JS へ写し取らないので、appShell.css を変えれば
+ * 見本もそのまま変わる)。
+ */
+.pcad-theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--pcad-space-1);
+  font: inherit;
+  color: var(--pcad-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  transition:
+    background-color var(--pcad-transition),
+    border-color var(--pcad-transition),
+    color var(--pcad-transition);
+}
+
+.pcad-theme-card:hover {
+  color: var(--pcad-text);
+  background: var(--pcad-surface-raised);
+  border-color: var(--pcad-border-strong);
+}
+
+.pcad-theme-card:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: 1px;
+}
+
+/* いま使っているテーマは枠で示す(面の色の見本 .pcad-swatch と同じ示し方)。 */
+.pcad-theme-card[aria-checked="true"] {
+  color: var(--pcad-text);
+  border-color: var(--pcad-accent);
+  box-shadow: 0 0 0 1px var(--pcad-accent);
+}
+
+.pcad-theme-card__name {
+  overflow: hidden;
+  font-size: var(--pcad-font-size-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 画面の縮図。上の帯=ツールバー、左の柱=区画、残り=3D 表示。 */
+.pcad-theme-card__preview {
+  display: flex;
+  flex-direction: column;
+  height: 40px;
+  overflow: hidden;
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+}
+
+.pcad-theme-card__bar {
+  display: flex;
+  flex: none;
+  gap: 3px;
+  align-items: center;
+  height: 11px;
+  padding: 0 3px;
+  background: var(--pcad-surface);
+  border-bottom: 1px solid var(--pcad-border);
+}
+
+.pcad-theme-card__dot {
+  width: 5px;
+  height: 5px;
+  background: var(--pcad-accent);
+  border-radius: 50%;
+}
+
+.pcad-theme-card__dot--muted {
+  background: var(--pcad-text-faint);
+}
+
+.pcad-theme-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pcad-theme-card__side {
+  flex: none;
+  width: 22%;
+  background: var(--pcad-surface);
+  border-right: 1px solid var(--pcad-border);
+}
+
+.pcad-theme-card__view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  justify-content: center;
+  padding: 0 4px;
+  background: linear-gradient(180deg, var(--pcad-viewport-top) 0%, var(--pcad-viewport-bottom) 100%);
+}
+
+.pcad-theme-card__line {
+  height: 2px;
+  background: var(--pcad-text);
+  border-radius: 1px;
+}
+
+.pcad-theme-card__line--accent {
+  width: 60%;
+  background: var(--pcad-accent);
+}
+
+/* 拡大率の 5 段。等幅で並べ、いまの段を押した状態にする。 */
+.pcad-settings__scale .pcad-button {
+  flex: 1 1 0;
+  justify-content: center;
+  padding: 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pcad-settings__hint {
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+}
+
 /* ===== 左右のパネル ===== */
 
 .pcad-panel {
+  /* ツールバーと同じ理由(影をビューポートの上へ出す)。ツールバー(3)より下に置く。 */
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--pcad-surface);
+  box-shadow: var(--pcad-shadow-soft);
 }
 
 .pcad-panel--left {
@@ -1286,7 +1623,7 @@ button.pcad-tree__row:focus-visible {
   background: var(--pcad-overlay);
   border: 1px solid var(--pcad-border-strong);
   border-radius: var(--pcad-radius);
-  box-shadow: var(--pcad-shadow-raised);
+  box-shadow: var(--pcad-shadow-soft-raised);
 }
 
 /*
@@ -1416,7 +1753,7 @@ button.pcad-tree__row:focus-visible {
   background: var(--pcad-surface);
   border: 1px solid var(--pcad-border-strong);
   border-radius: var(--pcad-radius);
-  box-shadow: var(--pcad-shadow-raised);
+  box-shadow: var(--pcad-shadow-soft-raised);
 }
 
 .pcad-popover__title {

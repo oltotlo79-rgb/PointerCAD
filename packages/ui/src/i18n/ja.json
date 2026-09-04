@@ -41,6 +41,8 @@
   "toolbar.tool.rectangle": "矩形",
   "toolbar.tool.polygon": "正多角形",
   "toolbar.tool.slot": "長穴",
+  "toolbar.tool.ellipse": "楕円",
+  "toolbar.tool.spline": "スプライン",
   "toolbar.solid.title": "ソリッド",
   "toolbar.solid.tooltip": "面から立体を作り、立体どうしを組み合わせます",
   "toolbar.solid.extrude": "押し出し",
@@ -430,11 +432,14 @@
   "restore.documentName": "部品の名前",
   "settings.title": "表示設定",
   "settings.theme.label": "テーマ",
+  "settings.theme.tooltip": "画面全体の配色を選びます。見本を押すとすぐ切り替わります",
   "settings.theme.dark": "ダーク",
   "settings.theme.light": "ライト",
   "settings.theme.darkModern": "ダークモダン",
   "settings.theme.lightModern": "ライトモダン",
   "settings.theme.modern": "モダン",
   "settings.scale.label": "拡大率",
+  "settings.scale.tooltip": "文字とボタンの大きさを変えます(90〜150%)",
+  "settings.hint": "選んだ内容は、この端末に覚えます。",
   "bootstrap.rootMissing": "画面の土台が見つかりません。"
 }

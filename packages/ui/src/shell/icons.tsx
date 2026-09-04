@@ -286,6 +286,24 @@ export function SlotToolIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/** 楕円(FR-318)。横長の楕円の輪郭で表す(P4 タスク5)。 */
+export function EllipseToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <ellipse cx="8" cy="8" rx="6" ry="3.6" />
+    </SvgIcon>
+  );
+}
+
+/** スプライン(FR-317)。点の間をなめらかにうねる曲線で表す(P4 タスク5)。 */
+export function SplineToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 11.5C4.5 11.5 4.5 4.5 8 4.5s3.5 7 6 7" />
+    </SvgIcon>
+  );
+}
+
 /** 作図面。斜めに見た平行四辺形に、方眼の線を1本ずつ入れて表す。 */
 export function PlaneIcon(props: IconProps): React.JSX.Element {
   return (
@@ -622,6 +640,19 @@ export function SpringIcon(props: IconProps): React.JSX.Element {
       <circle cx="7" cy="8" r="2.4" />
       <circle cx="10.6" cy="8" r="2.4" />
       <circle cx="13.6" cy="8" r="2.2" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 設定(FR-908、FR-909)。世の中の道具と同じ歯車で、表示設定の入口を表す。
+ * 歯は 8 枚を 45 度ごとに置き、中心に軸の丸を 1 つ。
+ */
+export function GearIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="2.3" />
+      <path d="M8 1.4v1.9M8 12.7v1.9M14.6 8h-1.9M3.3 8H1.4M12.67 3.33l-1.35 1.35M4.68 11.32l-1.35 1.35M12.67 12.67l-1.35-1.35M4.68 4.68 3.33 3.33" />
     </SvgIcon>
   );
 }

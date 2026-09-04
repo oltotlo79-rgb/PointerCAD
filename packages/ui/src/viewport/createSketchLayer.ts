@@ -8,8 +8,10 @@
  * 要素数が変わらないときは並びの中身だけを差し替える(NFR-PF-1)。
  * 常時の描画ループはここにも作らない(docs/報告記録.md 2026-09-02 15:42)。
  *
- * 色は画面の配色(packages/ui/src/shell/appShell.css の --pcad-* トークン)と
- * 同じ値を 16 進の定数として持つ。CSS 変数は three.js から読めないため。
+ * 色は画面の配色(packages/ui/src/shell/appShell.css の --pcad-* トークン)から
+ * `themeColors.ts` が読み取って渡す(three.js は CSS 変数を直接読めないため)。
+ * テーマを変えたときは `setThemeColors` で材質の色だけを塗り替え、**部品は作り直さない**
+ * (FR-908 の即時反映、NFR-PF-1)。
  */
 
 import type { WorkPlane } from '@pointercad/model';
@@ -17,6 +19,7 @@ import * as THREE from 'three';
 
 import type { DisplayStyle } from '../store/useAppStore.js';
 import type { SketchEmphasis, SketchFaceDraw, SketchGeometryBundle } from './buildSketchGeometry.js';
+import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
 /**
  * 点の大きさ(画素)。遠近で大きさを変えない(sizeAttenuation: false)ので、
@@ -31,26 +34,19 @@ const POINT_SIZE_PIXELS = 6;
  */
 const CURVE_WIDTH_PIXELS = 1.5;
 
-/** 点の色 = --pcad-text。線の色 = --pcad-text-muted。面の縁 = --pcad-text-faint。 */
-const POINT_COLOR = 0xe8eaf0;
-const CURVE_COLOR = 0x9aa3b2;
-const FACE_OUTLINE_COLOR = 0x6b7380;
-
-/**
- * ホバーと選択の色(§0.a-0.23-⑩)。以前は --pcad-accent(0x4f8cff)と --pcad-accent-hover
- * (0x6b9eff)の色差だけで示していたが、実機の目視で見分けにくいと分かった
- * (`docs/報告記録.md` 2026-09-03 20:40 の②)。ホバーを明るい水色 `0x8ec5ff` にして
- * 明度差を広げる(選択は --pcad-accent の `0x4f8cff` のまま据え置く)。
+/*
+ * 点の色 = --pcad-sketch-point、線の色 = --pcad-sketch-curve、面の縁 = --pcad-sketch-outline、
+ * ホバー・選択 = --pcad-emphasis-hovered / --pcad-emphasis-selected(themeColors.ts)。
  *
- * 選択の色を濃い青 `0x2f6fe0` へ変える案は、背景 --pcad-surface(#1e2128)に対する
- * コントラストが約 3.43:1 となり、既存の `0x4f8cff`(約 5.02:1)を下回って基準の 4.5:1 も
- * 割るため統括の判断で不採用にした(2026-09-03)。ホバー `0x8ec5ff` は約 8.88:1 で基準を
- * 満たす。ホバーと選択は同系色+明度差、加えて選択した辺の端点表示(§0.a-0.23-⑩)で見分ける。
- * **`createSolidLayer.ts` の同名の定数と同じ値に揃える**
- * (スケッチと立体で強調の色が違うと、同じ「選んでいる」が 2 通りに見えるため)。
+ * ホバーと選択の色の決め方(§0.a-0.23-⑩): 以前は --pcad-accent と --pcad-accent-hover の
+ * 色差だけで示していたが、実機の目視で見分けにくいと分かった(`docs/報告記録.md`
+ * 2026-09-03 20:40 の②)。ダークではホバーを明るい水色 `0x8ec5ff` にして明度差を広げ、
+ * 選択は `0x4f8cff` に据え置いた(背景 --pcad-surface に対して約 8.88:1 と約 5.02:1 で、
+ * どちらも 4.5:1 以上。濃い青 `0x2f6fe0` 案は約 3.43:1 で不採用、2026-09-03)。
+ * 明るいテーマでは地が反転するので、**ホバーを淡い青・選択を濃い青**にして同じだけの
+ * 明度差を作る(値は appShell.css のテーマごとの塊にある)。立体側
+ * (`createSolidLayer.ts`)も同じトークンを使い、「選んでいる」の見え方を 1 通りに保つ。
  */
-const SELECTED_COLOR = 0x4f8cff;
-const HOVERED_COLOR = 0x8ec5ff;
 
 /** 面の艶。立体(createViewportScene.ts)より少しだけ艶を抑える。 */
 const FACE_ROUGHNESS = 0.6;
@@ -70,14 +66,22 @@ const FACE_EMISSIVE_INTENSITY: Readonly<Record<SketchEmphasis, number>> = {
   selected: 0.35,
 };
 
-const EMPHASIS_COLOR: Readonly<Record<SketchEmphasis, number>> = {
-  none: 0x000000,
-  hovered: HOVERED_COLOR,
-  selected: SELECTED_COLOR,
-};
+/** 強調していないときは発光させないので黒(発光の強さも 0)。 */
+const NO_EMISSIVE_COLOR = 0x000000;
+
+/** 面の発光に使う色。強調していないときだけテーマに依らない。 */
+function emphasisColorOf(colors: ThemeColors, emphasis: SketchEmphasis): number {
+  switch (emphasis) {
+    case 'hovered':
+      return colors.hovered;
+    case 'selected':
+      return colors.selected;
+    case 'none':
+      return NO_EMISSIVE_COLOR;
+  }
+}
 
 /** 作図面の矩形。塗りはごく薄く、縁でだけ向きを示す(NFR-UX-1 の「見れば分かる」)。 */
-const WORK_PLANE_COLOR = 0x4f8cff;
 const WORK_PLANE_FILL_OPACITY = 0.05;
 const WORK_PLANE_BORDER_OPACITY = 0.35;
 
@@ -114,6 +118,11 @@ export interface SketchLayer {
    * 同じ組み立て結果(同一オブジェクト)を渡し直したときは並びを触らない。
    */
   update(bundle: SketchGeometryBundle, displayStyle: DisplayStyle): void;
+  /**
+   * 表示テーマの色を反映する(FR-908)。材質の色を塗り替えるだけで、
+   * 部品も並びも作り直さない(NFR-PF-1)。
+   */
+  setThemeColors(colors: ThemeColors): void;
   /** いま描いている作図面。矩形の向きが変わる。 */
   setWorkPlane(plane: WorkPlane): void;
   /** 作図面の矩形の広がり(原点からの片側の長さ、mm)。方眼と同じにする。 */
@@ -158,9 +167,9 @@ function createLines(color: number, renderOrder: number): LinesObject {
 function createPointSet(): DrawSet<PointsObject> {
   return {
     objects: {
-      none: createPoints(POINT_COLOR),
-      hovered: createPoints(HOVERED_COLOR),
-      selected: createPoints(SELECTED_COLOR),
+      none: createPoints(DEFAULT_THEME_COLORS.sketchPoint),
+      hovered: createPoints(DEFAULT_THEME_COLORS.hovered),
+      selected: createPoints(DEFAULT_THEME_COLORS.selected),
     },
     hasData: { none: false, hovered: false, selected: false },
   };
@@ -170,8 +179,8 @@ function createLineSet(baseColor: number, renderOrder: number): DrawSet<LinesObj
   return {
     objects: {
       none: createLines(baseColor, renderOrder),
-      hovered: createLines(HOVERED_COLOR, renderOrder),
-      selected: createLines(SELECTED_COLOR, renderOrder),
+      hovered: createLines(DEFAULT_THEME_COLORS.hovered, renderOrder),
+      selected: createLines(DEFAULT_THEME_COLORS.selected, renderOrder),
     },
     hasData: { none: false, hovered: false, selected: false },
   };
@@ -199,15 +208,22 @@ function setPositions(object: THREE.Points | THREE.LineSegments, values: Float32
   return values.length > 0;
 }
 
-/** 面の色と強調を材質へ写す。作り直さずに塗り替えられるよう、ここに1箇所だけ置く。 */
-function applyFaceMaterial(material: THREE.MeshStandardMaterial, face: SketchFaceDraw): void {
+/**
+ * 面の色と強調を材質へ写す。作り直さずに塗り替えられるよう、ここに1箇所だけ置く。
+ * 面そのものの色(FR-310)は利用者が選んだ値なのでテーマに従わず、強調の発光だけが従う。
+ */
+function applyFaceMaterial(
+  material: THREE.MeshStandardMaterial,
+  face: SketchFaceDraw,
+  colors: ThemeColors,
+): void {
   material.color.set(face.color);
-  material.emissive.setHex(EMPHASIS_COLOR[face.emphasis]);
+  material.emissive.setHex(emphasisColorOf(colors, face.emphasis));
   material.emissiveIntensity = FACE_EMISSIVE_INTENSITY[face.emphasis];
   material.opacity = FACE_OPACITY[face.emphasis];
 }
 
-function faceMaterial(face: SketchFaceDraw): THREE.MeshStandardMaterial {
+function faceMaterial(face: SketchFaceDraw, colors: ThemeColors): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({
     roughness: FACE_ROUGHNESS,
     metalness: FACE_METALNESS,
@@ -220,7 +236,7 @@ function faceMaterial(face: SketchFaceDraw): THREE.MeshStandardMaterial {
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
   });
-  applyFaceMaterial(material, face);
+  applyFaceMaterial(material, face, colors);
   return material;
 }
 
@@ -247,13 +263,16 @@ function createSquareBorderGeometry(): THREE.BufferGeometry {
 export function createSketchLayer(): SketchLayer {
   const group = new THREE.Group();
 
+  /** いま効いているテーマの色。`setThemeColors` が来るまでは既定(ダーク)。 */
+  let colors: ThemeColors = DEFAULT_THEME_COLORS;
+
   // 作図面 → 面 → 縁 → 線 → 点 の順に足す。前後は足した順ではなく renderOrder が決める
   // (作図面 -1 → 面 0 → 縁 2 → 線 3 → 点 4)。小さいものほど後に描いて上に出す。
   const workPlaneGroup = new THREE.Group();
   const workPlaneFill = new THREE.Mesh(
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshBasicMaterial({
-      color: WORK_PLANE_COLOR,
+      color: DEFAULT_THEME_COLORS.workPlane,
       transparent: true,
       opacity: WORK_PLANE_FILL_OPACITY,
       side: THREE.DoubleSide,
@@ -265,7 +284,7 @@ export function createSketchLayer(): SketchLayer {
   const workPlaneBorder = new THREE.LineSegments(
     createSquareBorderGeometry(),
     new THREE.LineBasicMaterial({
-      color: WORK_PLANE_COLOR,
+      color: DEFAULT_THEME_COLORS.workPlane,
       transparent: true,
       opacity: WORK_PLANE_BORDER_OPACITY,
       depthWrite: false,
@@ -279,8 +298,8 @@ export function createSketchLayer(): SketchLayer {
   const faceGroup = new THREE.Group();
   group.add(faceGroup);
 
-  const outlines = createLineSet(FACE_OUTLINE_COLOR, FACE_OUTLINE_RENDER_ORDER);
-  const curves = createLineSet(CURVE_COLOR, CURVE_RENDER_ORDER);
+  const outlines = createLineSet(DEFAULT_THEME_COLORS.sketchOutline, FACE_OUTLINE_RENDER_ORDER);
+  const curves = createLineSet(DEFAULT_THEME_COLORS.sketchCurve, CURVE_RENDER_ORDER);
   const points = createPointSet();
   for (const emphasis of EMPHASES) {
     group.add(outlines.objects[emphasis]);
@@ -317,7 +336,7 @@ export function createSketchLayer(): SketchLayer {
       geometry.setAttribute('normal', new THREE.BufferAttribute(face.normals, 3));
       geometry.setIndex(new THREE.BufferAttribute(face.indices, 1));
       geometry.computeBoundingSphere();
-      const surface = new THREE.Mesh(geometry, faceMaterial(face));
+      const surface = new THREE.Mesh(geometry, faceMaterial(face, colors));
       // どの面フィーチャーかを名前で持つ(userData は型が any になるので使わない)。
       surface.name = face.featureId;
       faceGroup.add(surface);
@@ -351,7 +370,7 @@ export function createSketchLayer(): SketchLayer {
   function updateFaces(faces: readonly SketchFaceDraw[]): void {
     if (hasSameFaceGeometry(faces)) {
       for (let index = 0; index < faces.length; index += 1) {
-        applyFaceMaterial(faceSurfaces[index].material, faces[index]);
+        applyFaceMaterial(faceSurfaces[index].material, faces[index], colors);
       }
     } else {
       rebuildFaces(faces);
@@ -395,6 +414,26 @@ export function createSketchLayer(): SketchLayer {
         updateFaces(bundle.faces);
       }
       applyDisplayStyle(displayStyle);
+    },
+
+    setThemeColors(next): void {
+      colors = next;
+      points.objects.none.material.color.setHex(colors.sketchPoint);
+      points.objects.hovered.material.color.setHex(colors.hovered);
+      points.objects.selected.material.color.setHex(colors.selected);
+      curves.objects.none.material.color.setHex(colors.sketchCurve);
+      curves.objects.hovered.material.color.setHex(colors.hovered);
+      curves.objects.selected.material.color.setHex(colors.selected);
+      outlines.objects.none.material.color.setHex(colors.sketchOutline);
+      outlines.objects.hovered.material.color.setHex(colors.hovered);
+      outlines.objects.selected.material.color.setHex(colors.selected);
+      workPlaneFill.material.color.setHex(colors.workPlane);
+      workPlaneBorder.material.color.setHex(colors.workPlane);
+      // いま出している面の強調(発光)も、次の組み立てを待たずにその場で塗り替える。
+      const shared = Math.min(faceSurfaces.length, lastFaces.length);
+      for (let index = 0; index < shared; index += 1) {
+        applyFaceMaterial(faceSurfaces[index].material, lastFaces[index], colors);
+      }
     },
 
     setWorkPlane(plane): void {

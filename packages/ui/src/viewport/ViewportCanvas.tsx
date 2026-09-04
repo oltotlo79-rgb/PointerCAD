@@ -7,6 +7,7 @@ import { attachCameraControls, type CameraControls } from './attachCameraControl
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import { createViewportScene } from './createViewportScene.js';
+import { readThemeColors } from './themeColors.js';
 
 /**
  * 3D ビューポート(FR-101、FR-102、FR-104、FR-105、FR-106、FR-108、FR-310)。
@@ -55,8 +56,20 @@ export function ViewportCanvas(): React.JSX.Element {
     const listeners = drawListenersRef.current;
     let frameId = 0;
 
+    /**
+     * 3D の色をテーマから読み直すべきか(FR-908)。ルート要素へ `data-theme` を書くのは
+     * `applyDisplaySettings.ts` の見張りなので、**読むのは次の描画機会まで待つ**。
+     * こうすると見張りが呼ばれる順に依らず、属性が効いた後の色を必ず読める。
+     * 起動時も 1 回読む(保存されていたテーマで始まるため)。
+     */
+    let themeDirty = true;
+
     function draw(): void {
       frameId = 0;
+      if (themeDirty) {
+        themeDirty = false;
+        scene.setThemeColors(readThemeColors());
+      }
       const { projection, displayStyle, showGrid } = useAppStore.getState();
       scene.render(controls.getOrbit(), projection, displayStyle, showGrid);
       // 本体を描いた後にだけ知らせる。視点はこの時点で確定している。
@@ -126,6 +139,10 @@ export function ViewportCanvas(): React.JSX.Element {
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。
       if (next.workPlaneId !== previous.workPlaneId) {
         scene.setWorkPlane(next.workPlaneId);
+      }
+      // 表示テーマが変わったら 3D の色も読み直す(FR-908。拡大率は 3D の色を変えない)。
+      if (next.displaySettings.theme !== previous.displaySettings.theme) {
+        themeDirty = true;
       }
       // ホーム視点への復帰要求(FR-108)。数が増えたときだけ戻す。
       if (next.homeViewRequestCount !== previous.homeViewRequestCount) {

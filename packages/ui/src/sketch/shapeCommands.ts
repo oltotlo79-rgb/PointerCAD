@@ -20,6 +20,7 @@ import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/exp
 import {
   absoluteCoordinate,
   appendFeature,
+  arcThroughPoints,
   baseWorkPlane,
   nextFeatureId,
   nextFeatureName,
@@ -138,6 +139,60 @@ export function commitTwoPointArc(
       startAngle: expressionValueFromNumber(geometry.startAngleDegrees),
       endAngle: expressionValueFromNumber(geometry.endAngleDegrees),
       construction,
+    }),
+  };
+}
+
+/** 3 点の円弧を作れなかったときは理由を返す(NFR-UX-5)。 */
+export type ThreePointArcOutcome =
+  | { readonly ok: true; readonly document: SketchDocument }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * 3 点(始点・終点・通過点)の円弧(FR-330、P4 タスク36、2026-09-04 追加要件)。
+ *
+ * 3 点の世界座標から `arcThroughPoints`(model)で中心・半径・法線・第1軸・角度を求め、
+ * 既存の `SketchArcFeature`(中心+半径+開始角/終了角+`freeOrientation`)として積む
+ * (新しい `SketchFeatureKind` は作らない)。**中心・半径は数値になり、3 点が頂点参照でも
+ * 追従しない**(2 点+半径の円弧(`commitTwoPointArc`)と同じ制約)。
+ *
+ * `freeOrientation` は 3D スケッチ(`planeId === 'free'`)以外では model が無視するが
+ * (`resolveArcOrientation`)、計画書タスク36 の指定どおり常に渡す(平面上でも
+ * `arcThroughPoints` の法線は作図面の法線と一致する)。
+ */
+export function commitThreePointArc(
+  document: SketchDocument,
+  planeId: WorkPlaneId,
+  plane: WorkPlane,
+  start: CoordinateInput,
+  end: CoordinateInput,
+  via: CoordinateInput,
+  construction = false,
+): ThreePointArcOutcome {
+  const positions = resolveShapePoints(document, planeId, [start, end, via], plane);
+  if (positions === null) {
+    return { ok: false, reason: t('shape.error.unresolvedPoint') };
+  }
+  const geometry = arcThroughPoints(positions[0], positions[1], positions[2]);
+  if (geometry === null) {
+    return { ok: false, reason: t('shape.error.threePointArcCollinear') };
+  }
+  return {
+    ok: true,
+    document: appendFeature(document, {
+      id: nextFeatureId(document, 'arc'),
+      name: nextFeatureName(document, 'arc'),
+      planeId,
+      kind: 'arc',
+      center: absoluteCoordinate(geometry.center[0], geometry.center[1], geometry.center[2]),
+      radius: expressionValueFromNumber(geometry.radius),
+      startAngle: expressionValueFromNumber(radiansToDegrees(geometry.startAngle)),
+      endAngle: expressionValueFromNumber(radiansToDegrees(geometry.endAngle)),
+      construction,
+      freeOrientation: {
+        normal: absoluteCoordinate(geometry.normal[0], geometry.normal[1], geometry.normal[2]),
+        xAxis: absoluteCoordinate(geometry.xAxis[0], geometry.xAxis[1], geometry.xAxis[2]),
+      },
     }),
   };
 }
@@ -512,6 +567,7 @@ function placeShapePoint(
   switch (step) {
     case 'circleCenter':
     case 'twoPointArcStart':
+    case 'threePointArcStart':
     case 'rectangleCorner1':
     case 'polygonCenter':
     case 'slotCenter1':
@@ -520,8 +576,28 @@ function placeShapePoint(
       return unchanged(withDraft(context, { points: [coordinate], values: [] }));
 
     case 'twoPointArcEnd':
+    case 'threePointArcEnd':
     case 'slotCenter2':
       return unchanged(withDraft(context, { points: [...context.draft.points, coordinate] }));
+
+    case 'threePointArcVia': {
+      // 3 点目(通過点)で確定する(FR-330、タスク36。欄は無い)。
+      const start = context.draft.points[0];
+      const end = context.draft.points[1];
+      if (start === undefined || end === undefined) {
+        return unchanged(context);
+      }
+      const outcome = commitThreePointArc(
+        context.document,
+        context.planeId,
+        context.plane,
+        start,
+        end,
+        coordinate,
+        context.draft.flags.construction ?? false,
+      );
+      return outcome.ok ? finished(outcome.document) : rejected(context, outcome.reason);
+    }
 
     case 'rectangleCorner2': {
       const corner1 = context.draft.points[0];

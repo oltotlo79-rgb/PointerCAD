@@ -57,19 +57,26 @@ const PLANE_BOUND_TOOLS: Readonly<Partial<Record<NumericInputToolId, true>>> = {
   mirror: true,
   linearArray: true,
   circularArray: true,
+  // 投影・交差(FR-325、タスク27)。投影先の面・切り口の面が作図面そのものなので、
+  // 作図面が無い 3D スケッチでは行き先が決まらない(model の `resolveSketch` も同じ理由で
+  // 「作図面がありません」と断る)。
+  projectedCurve: true,
+  planeSection: true,
 };
 
 /**
- * 3D スケッチで立体の頂点を直に押して点にできる道具(FR-330、タスク14)。
+ * 3D スケッチで立体の頂点を直に押して点にできる道具(FR-330、タスク14・36)。
  *
  * 3D スケッチで作れる 5 種(点・線分・円弧・スプライン・面)のうち、位置を 1 点ずつ
- * 押して決める 4 つ。面は既にある要素を選んで囲む道具なので、頂点そのものは押さない。
+ * 押して決める 4 つに加え、3 点の円弧(タスク36、2026-09-04 追加要件)。面は既にある要素を
+ * 選んで囲む道具なので、頂点そのものは押さない。
  */
 const VERTEX_PICKING_TOOLS: Readonly<Partial<Record<NumericInputToolId, true>>> = {
   point: true,
   line: true,
   arc: true,
   spline: true,
+  threePointArc: true,
 };
 
 /**

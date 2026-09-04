@@ -34,6 +34,7 @@ import {
   commitShapeInput,
   commitSlot,
   commitSpline,
+  commitThreePointArc,
   commitTwoPointArc,
   EMPTY_SHAPE_DRAFT,
   resolveShapePoints,
@@ -394,6 +395,109 @@ describe('2 点+半径の円弧を履歴へ積む', () => {
   });
 });
 
+describe('3 点の円弧を履歴へ積む(FR-330、P4 タスク36、2026-09-04 追加要件)', () => {
+  const absolute = (x: number, y: number, z: number) =>
+    ({ mode: 'absolute' as const, x: value(x), y: value(y), z: value(z) });
+
+  it('頂点 (10,0,0)(0,10,0)(0,0,10) を通ると、中心 (10/3,10/3,10/3)・半径 10√(2/3)・法線 (1,1,1)/√3 の円弧になる', () => {
+    const outcome = commitThreePointArc(
+      createEmptySketchDocument(),
+      'xy',
+      XY,
+      absolute(10, 0, 0),
+      absolute(0, 10, 0),
+      absolute(0, 0, 10),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.features[0];
+    if (feature.kind !== 'arc') {
+      throw new Error('円弧ではありません');
+    }
+    expect(feature.center.mode).toBe('absolute');
+    if (feature.center.mode !== 'absolute') {
+      return;
+    }
+    expect(feature.center.x.value).toBeCloseTo(10 / 3, 9);
+    expect(feature.center.y.value).toBeCloseTo(10 / 3, 9);
+    expect(feature.center.z.value).toBeCloseTo(10 / 3, 9);
+    expect(feature.radius.value).toBeCloseTo(10 * Math.sqrt(2 / 3), 9);
+    expect(feature.radius.value).toBeCloseTo(8.16496580927726, 9);
+    const invSqrt3 = 1 / Math.sqrt(3);
+    expect(feature.freeOrientation).toBeDefined();
+    if (feature.freeOrientation === undefined || feature.freeOrientation.normal.mode !== 'absolute') {
+      return;
+    }
+    expect(feature.freeOrientation.normal.x.value).toBeCloseTo(invSqrt3, 9);
+    expect(feature.freeOrientation.normal.y.value).toBeCloseTo(invSqrt3, 9);
+    expect(feature.freeOrientation.normal.z.value).toBeCloseTo(invSqrt3, 9);
+  });
+
+  it('通常の作図面(XY 面)の 3 点では、freeOrientation の法線が作図面の法線と一致する', () => {
+    const outcome = commitThreePointArc(
+      createEmptySketchDocument(),
+      'xy',
+      XY,
+      absolute(0, 0, 0),
+      absolute(10, 0, 0),
+      absolute(0, 10, 0),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.features[0];
+    if (feature.kind !== 'arc' || feature.freeOrientation === undefined) {
+      throw new Error('円弧または freeOrientation がありません');
+    }
+    if (feature.freeOrientation.normal.mode !== 'absolute') {
+      return;
+    }
+    expect(feature.freeOrientation.normal.x.value).toBeCloseTo(0, 9);
+    expect(feature.freeOrientation.normal.y.value).toBeCloseTo(0, 9);
+    expect(feature.freeOrientation.normal.z.value).toBeCloseTo(1, 9);
+  });
+
+  it('3 点が一直線に並んでいるときは理由を返し、履歴を変えない', () => {
+    const document = createEmptySketchDocument();
+    const outcome = commitThreePointArc(
+      document,
+      'xy',
+      XY,
+      absolute(0, 0, 0),
+      absolute(10, 0, 0),
+      absolute(20, 0, 0),
+    );
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      return;
+    }
+    expect(outcome.reason).toContain('一直線');
+  });
+
+  it('構築線のつまみが渡ればそのまま積む(FR-320)', () => {
+    const outcome = commitThreePointArc(
+      createEmptySketchDocument(),
+      'xy',
+      XY,
+      absolute(10, 0, 0),
+      absolute(0, 10, 0),
+      absolute(0, 0, 10),
+      true,
+    );
+    if (!outcome.ok) {
+      throw new Error('円弧を作れませんでした');
+    }
+    const feature = outcome.document.features[0];
+    if (feature.kind !== 'arc') {
+      throw new Error('円弧ではありません');
+    }
+    expect(feature.construction).toBe(true);
+  });
+});
+
 describe('まだ履歴に無い点の位置を求める', () => {
   it('2 点目の相対指定は 1 点目からのずれとして解ける', () => {
     const positions = resolveShapePoints(createEmptySketchDocument(), 'xy', [
@@ -558,6 +662,27 @@ describe('段をたどって図形を作る(その場数値入力からの通し
     context = stepShape(context, 'twoPointArc', 'twoPointArcEnd', ['30', '0', '0']);
     const reason = rejectionOf(context, 'twoPointArc', 'twoPointArcRadius', ['10']);
     expect(reason).not.toBeNull();
+    expect(context.document.features).toHaveLength(0);
+  });
+
+  it('3 点の円弧: 始点 → 終点 → 通過点の 3 段(欄なし)で 1 つ積む(FR-330、タスク36)', () => {
+    let context = contextOf();
+    context = stepShape(context, 'threePointArc', 'threePointArcStart', ['0', '0', '0']);
+    expect(context.document.features).toHaveLength(0);
+    // 2・3 点目は「直前の点からの続き」が既定(相対)なので、ずれで入れる。
+    context = stepShape(context, 'threePointArc', 'threePointArcEnd', ['10', '0', '0']);
+    expect(context.document.features).toHaveLength(0);
+    context = stepShape(context, 'threePointArc', 'threePointArcVia', ['-5', '10', '0']);
+    expect(kindsOf(context.document)).toEqual(['arc']);
+    expect(context.draft.points).toHaveLength(0);
+  });
+
+  it('3 点の円弧: 3 点が一直線に並ぶと理由が返り、履歴は変わらない', () => {
+    let context = contextOf();
+    context = stepShape(context, 'threePointArc', 'threePointArcStart', ['0', '0', '0']);
+    context = stepShape(context, 'threePointArc', 'threePointArcEnd', ['10', '0', '0']);
+    const reason = rejectionOf(context, 'threePointArc', 'threePointArcVia', ['-5', '0', '0']);
+    expect(reason).toContain('一直線');
     expect(context.document.features).toHaveLength(0);
   });
 

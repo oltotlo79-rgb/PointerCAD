@@ -39,8 +39,16 @@ describe('3D スケッチで使える道具(FR-330、タスク14)', () => {
     }
   });
 
-  it('3D スケッチで作れるのは点・線分・円弧・スプライン・面の 5 つ', () => {
-    for (const tool of ['point', 'line', 'arc', 'spline', 'face', 'select'] as const) {
+  it('3D スケッチで作れるのは点・線分・円弧・スプライン・面・3 点の円弧の 6 つ(タスク36)', () => {
+    for (const tool of [
+      'point',
+      'line',
+      'arc',
+      'spline',
+      'face',
+      'select',
+      'threePointArc',
+    ] as const) {
       expect(freeSketchToolRejection(FREE_WORK_PLANE_ID, tool), tool).toBeNull();
     }
   });
@@ -66,13 +74,13 @@ describe('3D スケッチで使える道具(FR-330、タスク14)', () => {
     // (`SHAPE_TOOL_STEPS` が図形の道具の一覧の正本)。
     for (const tool of Object.keys(SHAPE_TOOL_STEPS)) {
       const reason = freeSketchToolRejection(FREE_WORK_PLANE_ID, tool as NumericInputToolId);
-      // spline だけが 3D スケッチで使える図形の道具。
-      expect(reason === null, tool).toBe(tool === 'spline');
+      // spline と 3 点の円弧(タスク36)だけが 3D スケッチで使える図形の道具。
+      expect(reason === null, tool).toBe(tool === 'spline' || tool === 'threePointArc');
     }
   });
 
-  it('立体の頂点を押して点にできるのは、位置を 1 点ずつ押す 4 道具だけ', () => {
-    for (const tool of ['point', 'line', 'arc', 'spline'] as const) {
+  it('立体の頂点を押して点にできるのは、位置を 1 点ずつ押す 4 道具+3 点の円弧(タスク36)', () => {
+    for (const tool of ['point', 'line', 'arc', 'spline', 'threePointArc'] as const) {
       expect(picksSolidVertices(FREE_WORK_PLANE_ID, tool), tool).toBe(true);
     }
     for (const tool of ['select', 'face', 'rectangle', 'extrude'] as const) {

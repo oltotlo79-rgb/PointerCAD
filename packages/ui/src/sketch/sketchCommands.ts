@@ -199,6 +199,9 @@ const SHAPE_STEPS: Readonly<Partial<Record<NumericInputCommit['step'], true>>> =
   twoPointArcStart: true,
   twoPointArcEnd: true,
   twoPointArcRadius: true,
+  threePointArcStart: true,
+  threePointArcEnd: true,
+  threePointArcVia: true,
   rectangleCorner1: true,
   rectangleCorner2: true,
   polygonCenter: true,
@@ -318,6 +321,9 @@ function commitCoordinate(
     case 'circleCenter':
     case 'twoPointArcStart':
     case 'twoPointArcEnd':
+    case 'threePointArcStart':
+    case 'threePointArcEnd':
+    case 'threePointArcVia':
     case 'rectangleCorner1':
     case 'rectangleCorner2':
     case 'polygonCenter':
@@ -325,8 +331,8 @@ function commitCoordinate(
     case 'slotCenter2':
     case 'ellipseCenter':
     case 'splinePoint':
-      // P4 の新しい図形(FR-314〜318、FR-326)。commitSketchInput が shapeCommands.ts へ
-      // 先に渡すのでここへは来ないが、段の網羅を型検査で保つために枝は残す。
+      // P4 の新しい図形(FR-314〜318、FR-326、FR-330)。commitSketchInput が
+      // shapeCommands.ts へ先に渡すのでここへは来ないが、段の網羅を型検査で保つために枝を残す。
       return { document, pendingStart };
 
     case 'arcShape':
@@ -420,6 +426,9 @@ function commitShape(
     case 'circleCenter':
     case 'twoPointArcStart':
     case 'twoPointArcEnd':
+    case 'threePointArcStart':
+    case 'threePointArcEnd':
+    case 'threePointArcVia':
     case 'rectangleCorner1':
     case 'rectangleCorner2':
     case 'polygonCenter':

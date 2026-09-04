@@ -1,0 +1,368 @@
+import { describe, expect, it } from 'vitest';
+import {
+  WORK_PLANES, type ResolvedSegment, type ResolvedSketch, type Vec3,
+} from '@pointercad/model';
+
+import {
+  chooseTrack, collectTrackCandidates, DEFAULT_TRACK_ANGLE_STEP, polarCandidate,
+  TRACK_ANGLE_STEPS, type TrackKind,
+} from './trackMath.js';
+import type { ProjectToScreen } from './snapMath.js';
+
+/** ワールドの (x, y) をそのまま画面座標にする、テスト用の写し方(snapMath.test.ts と同じ)。 */
+const project: ProjectToScreen = (point: Vec3): readonly [number, number] => [point[0], point[1]];
+
+/** テストの慣例(snapMath.test.ts と同じ): ポインタの画面座標は作図面へ落とした点の (x, y)。 */
+const pointerOf = (pointOnPlane: Vec3): readonly [number, number] =>
+  [pointOnPlane[0], pointOnPlane[1]];
+
+const XY = WORK_PLANES.xy;
+
+const ALL_KINDS: ReadonlySet<TrackKind> = new Set(['polar', 'extension', 'perpendicular', 'parallel']);
+
+function emptySketch(segments: readonly ResolvedSegment[]): ResolvedSketch {
+  return {
+    points: [], segments, arcs: [], ellipses: [], splines: [],
+    pendingOffsets: [], pendingProjections: [], curvesByFeature: new Map(), faces: [], errors: [],
+  };
+}
+
+const degToRad = (degrees: number): number => (degrees * Math.PI) / 180;
+
+describe('向きの吸着(FR-110、トラッキング)', () => {
+  it('刻み角度の候補は 5/10/15/30/45/90、既定は15°(§0.12)', () => {
+    expect(TRACK_ANGLE_STEPS).toEqual([5, 10, 15, 30, 45, 90]);
+    expect(DEFAULT_TRACK_ANGLE_STEP).toBe(15);
+  });
+
+  describe('極(polar)', () => {
+    it('20∠17°、刻み15° → 20∠15°(角度は15、位置は距離を保ったまま丸めた向きへ載る)', () => {
+      const pointOnPlane: Vec3 = [20 * Math.cos(degToRad(17)), 20 * Math.sin(degToRad(17)), 0];
+      const candidate = polarCandidate(XY, [0, 0, 0], pointOnPlane, 15);
+      expect(candidate).not.toBeNull();
+      expect(candidate?.angleDegrees).toBe(15);
+
+      const result = chooseTrack([candidate!], project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result).not.toBeNull();
+      const [x, y, z] = result!.position;
+      expect(x).toBeCloseTo(20 * Math.cos(degToRad(15)), 9);
+      expect(y).toBeCloseTo(20 * Math.sin(degToRad(15)), 9);
+      expect(z).toBe(0);
+    });
+
+    it('刻み15°、角度7.4° → 0(7.5°未満は0側)', () => {
+      const pointOnPlane: Vec3 = [10 * Math.cos(degToRad(7.4)), 10 * Math.sin(degToRad(7.4)), 0];
+      expect(polarCandidate(XY, [0, 0, 0], pointOnPlane, 15)?.angleDegrees).toBe(0);
+    });
+
+    it('刻み15°、角度7.6° → 15', () => {
+      const pointOnPlane: Vec3 = [10 * Math.cos(degToRad(7.6)), 10 * Math.sin(degToRad(7.6)), 0];
+      expect(polarCandidate(XY, [0, 0, 0], pointOnPlane, 15)?.angleDegrees).toBe(15);
+    });
+
+    it('刻み15°、角度88°、距離20 → 位置(0,20,0)、角度90(90は15の倍数)', () => {
+      const pointOnPlane: Vec3 = [20 * Math.cos(degToRad(88)), 20 * Math.sin(degToRad(88)), 0];
+      const candidate = polarCandidate(XY, [0, 0, 0], pointOnPlane, 15);
+      expect(candidate?.angleDegrees).toBe(90);
+      const result = chooseTrack([candidate!], project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      const [x, y, z] = result!.position;
+      expect(x).toBeCloseTo(0, 9);
+      expect(y).toBeCloseTo(20, 9);
+      expect(z).toBe(0);
+    });
+
+    it('刻み90°(直交モード)、角度44° → 0、角度46° → 90', () => {
+      const p44: Vec3 = [Math.cos(degToRad(44)), Math.sin(degToRad(44)), 0];
+      const p46: Vec3 = [Math.cos(degToRad(46)), Math.sin(degToRad(46)), 0];
+      expect(polarCandidate(XY, [0, 0, 0], p44, 90)?.angleDegrees).toBe(0);
+      expect(polarCandidate(XY, [0, 0, 0], p46, 90)?.angleDegrees).toBe(90);
+    });
+
+    it('起点が無い(origin === null)ときは極の候補を作らない', () => {
+      const candidates = collectTrackCandidates(
+        emptySketch([]), XY, null, [10, 5, 0], 15, ALL_KINDS,
+      );
+      expect(candidates).toEqual([]);
+    });
+
+    it('負の角(−17° = 343°)も0〜360へ正規化してから丸める → 345', () => {
+      const pointOnPlane: Vec3 = [10 * Math.cos(degToRad(-17)), 10 * Math.sin(degToRad(-17)), 0];
+      expect(polarCandidate(XY, [0, 0, 0], pointOnPlane, 15)?.angleDegrees).toBe(345);
+    });
+
+    it('enabledから\'polar\'を外すと極の候補が作られない', () => {
+      const segment: ResolvedSegment = { kind: 'segment', featureId: 'l1', from: [0, 0, 0], to: [10, 0, 0] };
+      const withoutPolar = new Set<TrackKind>(['extension', 'perpendicular', 'parallel']);
+      const candidates = collectTrackCandidates(
+        emptySketch([segment]), XY, [0, 0, 0], [10, 0.1, 0], 15, withoutPolar,
+      );
+      expect(candidates.some((candidate) => candidate.kind === 'polar')).toBe(false);
+      expect(candidates.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('延長線(extension)', () => {
+    const HORIZONTAL: ResolvedSegment = { kind: 'segment', featureId: 'l1', from: [0, 0, 0], to: [10, 0, 0] };
+
+    it('線分(0,0)-(10,0)、ポインタ(14,0.3) → 位置(14,0,0)、kind: extension', () => {
+      const pointOnPlane: Vec3 = [14, 0.3, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([HORIZONTAL]), XY, null, pointOnPlane, 15, new Set<TrackKind>(['extension']),
+      );
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result).not.toBeNull();
+      expect(result?.position).toEqual([14, 0, 0]);
+      expect(result?.candidates).toHaveLength(1);
+      expect(result?.candidates[0]?.kind).toBe('extension');
+    });
+
+    it('ポインタ(14,20)は判定半径(12画素)の外なので null', () => {
+      const pointOnPlane: Vec3 = [14, 20, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([HORIZONTAL]), XY, null, pointOnPlane, 15, new Set<TrackKind>(['extension']),
+      );
+      expect(candidates.length).toBeGreaterThan(0);
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('垂線(perpendicular)', () => {
+    it('線分(0,0)-(10,0)の終点(10,0)を通る垂線、ポインタ(10.2,7) → 位置(10,7,0)', () => {
+      const segment: ResolvedSegment = { kind: 'segment', featureId: 'l1', from: [0, 0, 0], to: [10, 0, 0] };
+      const pointOnPlane: Vec3 = [10.2, 7, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([segment]), XY, null, pointOnPlane, 15, new Set<TrackKind>(['perpendicular']),
+      );
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result?.position).toEqual([10, 7, 0]);
+      expect(result?.candidates[0]?.kind).toBe('perpendicular');
+    });
+  });
+
+  describe('平行線(parallel)', () => {
+    it('線分(0,0)-(10,10)、起点(0,5)、ポインタ(6.2,11) → 位置(6.1,11.1,0)', () => {
+      const segment: ResolvedSegment = { kind: 'segment', featureId: 'l1', from: [0, 0, 0], to: [10, 10, 0] };
+      const origin: Vec3 = [0, 5, 0];
+      const pointOnPlane: Vec3 = [6.2, 11, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([segment]), XY, origin, pointOnPlane, 15, new Set<TrackKind>(['parallel']),
+      );
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result).not.toBeNull();
+      const [x, y, z] = result!.position;
+      expect(x).toBeCloseTo(6.1, 9);
+      expect(y).toBeCloseTo(11.1, 9);
+      expect(z).toBe(0);
+      expect(result?.candidates[0]?.kind).toBe('parallel');
+    });
+  });
+
+  describe('交点(2本の案内線)', () => {
+    it('極0°(起点(0,0))と線分(5,-10)-(5,10)の延長線、ポインタ(5.1,0.2) → 位置(5,0,0)、candidatesが2本', () => {
+      const segment: ResolvedSegment = { kind: 'segment', featureId: 'l2', from: [5, -10, 0], to: [5, 10, 0] };
+      const origin: Vec3 = [0, 0, 0];
+      const pointOnPlane: Vec3 = [5.1, 0.2, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([segment]), XY, origin, pointOnPlane, 15, new Set<TrackKind>(['polar', 'extension']),
+      );
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result).not.toBeNull();
+      const [x, y, z] = result!.position;
+      expect(x).toBeCloseTo(5, 9);
+      expect(y).toBeCloseTo(0, 9);
+      expect(z).toBe(0);
+      expect(result?.candidates).toHaveLength(2);
+      expect(result?.candidates[0]?.kind).toBe('polar');
+      expect(result?.candidates[1]?.kind).toBe('extension');
+    });
+
+    it('優先順位: 極と延長線が両方半径内なら極を1本目に採る', () => {
+      const segment: ResolvedSegment = { kind: 'segment', featureId: 'l2', from: [5, -10, 0], to: [5, 10, 0] };
+      const origin: Vec3 = [0, 0, 0];
+      const pointOnPlane: Vec3 = [5.1, 0.2, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([segment]), XY, origin, pointOnPlane, 15, new Set<TrackKind>(['polar', 'extension']),
+      );
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result?.candidates[0]?.kind).toBe('polar');
+    });
+
+    it('平行な2本(極0°と水平な延長線)は1本目だけを採り、交点を作らない', () => {
+      const segment: ResolvedSegment = { kind: 'segment', featureId: 'l3', from: [0, 0.4, 0], to: [10, 0.4, 0] };
+      const origin: Vec3 = [0, 0, 0];
+      const pointOnPlane: Vec3 = [10, 0, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([segment]), XY, origin, pointOnPlane, 15, new Set<TrackKind>(['polar', 'extension']),
+      );
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result).not.toBeNull();
+      expect(result?.position).toEqual([10, 0, 0]);
+      expect(result?.candidates).toHaveLength(1);
+      expect(result?.candidates[0]?.kind).toBe('polar');
+    });
+  });
+
+  describe('円弧・楕円・スプラインからは向きの候補を作らない(§2.4 の落とし穴)', () => {
+    it('線分が無いスケッチでは延長線・垂線・平行線の候補が0件', () => {
+      const candidates = collectTrackCandidates(
+        emptySketch([]), XY, [0, 0, 0], [10, 0, 0], 15,
+        new Set<TrackKind>(['extension', 'perpendicular', 'parallel']),
+      );
+      expect(candidates).toEqual([]);
+    });
+  });
+
+  describe('角度の丸めの境界(落とし穴)', () => {
+    it('刻み15°、角度がちょうど7.5°(半分)は15°側へ丸める(Math.round が0.5を上へ丸めるため)', () => {
+      const pointOnPlane: Vec3 = [10 * Math.cos(degToRad(7.5)), 10 * Math.sin(degToRad(7.5)), 0];
+      expect(polarCandidate(XY, [0, 0, 0], pointOnPlane, 15)?.angleDegrees).toBe(15);
+    });
+
+    it('刻み15°、角度358° → 丸めると360だが0へ正規化される', () => {
+      const pointOnPlane: Vec3 = [10 * Math.cos(degToRad(358)), 10 * Math.sin(degToRad(358)), 0];
+      expect(polarCandidate(XY, [0, 0, 0], pointOnPlane, 15)?.angleDegrees).toBe(0);
+    });
+  });
+
+  describe('polarCandidate の退化(§2.4)', () => {
+    it('刻み角度が0以下なら候補を作らない', () => {
+      expect(polarCandidate(XY, [0, 0, 0], [10, 0, 0], 0)).toBeNull();
+      expect(polarCandidate(XY, [0, 0, 0], [10, 0, 0], -5)).toBeNull();
+    });
+
+    it('起点とポインタが同じ位置なら向きが決まらないので候補を作らない', () => {
+      expect(polarCandidate(XY, [3, 3, 0], [3, 3, 0], 15)).toBeNull();
+    });
+  });
+
+  describe('候補の構造(件数・向き・要素id)', () => {
+    const HORIZONTAL: ResolvedSegment = { kind: 'segment', featureId: 'lh', from: [0, 0, 0], to: [10, 0, 0] };
+
+    it('延長線は線分1本につき2件、向きが互いに逆で、要素idを持つ', () => {
+      const candidates = collectTrackCandidates(
+        emptySketch([HORIZONTAL]), XY, null, [5, 0.1, 0], 15, new Set<TrackKind>(['extension']),
+      );
+      expect(candidates).toHaveLength(2);
+      expect(candidates.every((candidate) => candidate.sourceFeatureId === 'lh')).toBe(true);
+      expect(candidates.every((candidate) => candidate.angleDegrees === null)).toBe(true);
+      const [first, second] = candidates;
+      expect(first.direction).toEqual([-second.direction[0], -second.direction[1], -second.direction[2]]);
+    });
+
+    it('垂線は線分1本につき2件、向きはどちらも同じ(端点が違うだけ)', () => {
+      const candidates = collectTrackCandidates(
+        emptySketch([HORIZONTAL]), XY, null, [5, 5, 0], 15, new Set<TrackKind>(['perpendicular']),
+      );
+      expect(candidates).toHaveLength(2);
+      expect(candidates.every((candidate) => candidate.kind === 'perpendicular')).toBe(true);
+      const [first, second] = candidates;
+      expect(first.direction).toEqual(second.direction);
+      expect(first.origin).not.toEqual(second.origin);
+    });
+
+    it('平行線は起点を通る1件だけ(半直線ではないので両端は作らない)', () => {
+      const origin: Vec3 = [0, 5, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([HORIZONTAL]), XY, origin, [5, 5, 0], 15, new Set<TrackKind>(['parallel']),
+      );
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0]?.kind).toBe('parallel');
+      expect(candidates[0]?.origin).toEqual(origin);
+      expect(candidates[0]?.direction).toEqual([1, 0, 0]);
+    });
+
+    it('起点(origin)が無ければ平行線の候補も作らない(極と同じ扱い)', () => {
+      const candidates = collectTrackCandidates(
+        emptySketch([HORIZONTAL]), XY, null, [5, 5, 0], 15, new Set<TrackKind>(['parallel']),
+      );
+      expect(candidates).toEqual([]);
+    });
+
+    it('長さ0の線分からは候補を作らない(向きが決まらない縮退)', () => {
+      const degenerate: ResolvedSegment = { kind: 'segment', featureId: 'zero', from: [1, 1, 0], to: [1, 1, 0] };
+      const candidates = collectTrackCandidates(
+        emptySketch([degenerate]), XY, [0, 0, 0], [1, 1, 0], 15,
+        new Set<TrackKind>(['extension', 'perpendicular', 'parallel']),
+      );
+      expect(candidates).toEqual([]);
+    });
+
+    it('ポインタから200mmを超えて離れた線分は粗い当たり判定で除外される(§2.9)', () => {
+      const farSegment: ResolvedSegment = {
+        kind: 'segment', featureId: 'far', from: [10000, 10000, 0], to: [10010, 10000, 0],
+      };
+      const candidates = collectTrackCandidates(
+        emptySketch([farSegment]), XY, null, [0, 0, 0], 15,
+        new Set<TrackKind>(['extension', 'perpendicular', 'parallel']),
+      );
+      expect(candidates).toEqual([]);
+    });
+
+    it('集めた候補の向きはすべて単位ベクトル(長さ1)', () => {
+      const candidates = collectTrackCandidates(
+        emptySketch([HORIZONTAL]), XY, [0, 5, 0], [5, 0.1, 0], 15,
+        new Set<TrackKind>(['extension', 'perpendicular', 'parallel']),
+      );
+      expect(candidates.length).toBeGreaterThan(0);
+      for (const candidate of candidates) {
+        const length = Math.hypot(...candidate.direction);
+        expect(length).toBeCloseTo(1, 9);
+      }
+    });
+  });
+
+  describe('chooseTrack の境界', () => {
+    it('候補が1件も無ければ null', () => {
+      expect(chooseTrack([], project, [0, 0], 12, [0, 0, 0])).toBeNull();
+    });
+
+    it('優先順位: 垂線(perpendicular)は平行線(parallel)より先に採る(距離が同着でも)', () => {
+      const segment: ResolvedSegment = { kind: 'segment', featureId: 'lp', from: [0, 0, 0], to: [10, 0, 0] };
+      const origin: Vec3 = [5, 5, 0];
+      const pointOnPlane: Vec3 = [10, 5, 0];
+      const candidates = collectTrackCandidates(
+        emptySketch([segment]), XY, origin, pointOnPlane, 15,
+        new Set<TrackKind>(['perpendicular', 'parallel']),
+      );
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result).not.toBeNull();
+      expect(result?.candidates[0]?.kind).toBe('perpendicular');
+    });
+  });
+
+  describe('性能(§2.9、1フレーム16msの1/4 = 4ms以内)', () => {
+    it('線分200本(うちポインタ近傍10本)から候補を集める', () => {
+      const nearby: ResolvedSegment[] = [];
+      for (let i = 0; i < 10; i += 1) {
+        nearby.push({
+          kind: 'segment', featureId: `near-${i}`,
+          from: [i, 0, 0], to: [i, 10, 0],
+        });
+      }
+      const far: ResolvedSegment[] = [];
+      for (let i = 0; i < 190; i += 1) {
+        far.push({
+          kind: 'segment', featureId: `far-${i}`,
+          from: [100000 + i, 0, 0], to: [100000 + i, 10, 0],
+        });
+      }
+      const sketch = emptySketch([...nearby, ...far]);
+      const origin: Vec3 = [0, 0, 0];
+      const pointOnPlane: Vec3 = [5, 5, 0];
+
+      const started = performance.now();
+      const candidates = collectTrackCandidates(
+        sketch, XY, origin, pointOnPlane, 15,
+        new Set<TrackKind>(['extension', 'perpendicular', 'parallel']),
+      );
+      const elapsedMs = performance.now() - started;
+
+      console.log(`[参考] トラッキング候補集め(線分200本、近傍10本): ${elapsedMs.toFixed(3)}ms`);
+
+      // 近傍10本だけが残る: 1本あたり 延長線2 + 垂線2 + 平行線1 = 5件 → 50件。
+      expect(candidates).toHaveLength(50);
+      expect(elapsedMs).toBeLessThan(4);
+    });
+  });
+});

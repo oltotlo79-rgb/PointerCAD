@@ -50,6 +50,13 @@ export interface ThemeColors {
    * 延長の予告はホバーと同じ色を薄く使うので、専用の欄は持たない。
    */
   readonly trimRemove: number;
+  /**
+   * 向きの吸着の案内線(FR-110、P4b タスク16)。細い破線で画面いっぱいに引く線の色で、
+   * **吸着の印(`--pcad-accent`)と同じアクセント色**にする(§0.14 の利用者の決定)。
+   * 5 テーマすべてで、ビューポートの地(`--pcad-viewport-top` / `--pcad-viewport-bottom`)
+   * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
+   */
+  readonly track: number;
   /** 半球光の地面側の色。明るいテーマでは立体の下面が沈みすぎないよう明るくする。 */
   readonly sceneGround: number;
   /**
@@ -89,6 +96,8 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   threadMark: 0x8a93a6,
   workPlane: 0x4f8cff,
   trimRemove: 0xff6b6b,
+  // ダークの --pcad-accent と同じ値(吸着の印と同じアクセント色、§0.14)。
+  track: 0x4f8cff,
   sceneGround: 0x3a3f4a,
   // ビューキューブ(P0〜P3 で faceTexture.ts / createViewCubeScene.ts が直接持っていた定数)。
   viewCubeFaceTop: 0xeef1f6,
@@ -102,7 +111,7 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
 };
 
 /**
- * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 25 個がそろっていること
+ * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 26 個がそろっていること
  * (どのテーマでも 1 つも欠けないこと)は `themeColors.test.ts` が固定する。
  */
 export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
@@ -122,6 +131,7 @@ export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
   threadMark: '--pcad-thread-mark',
   workPlane: '--pcad-work-plane',
   trimRemove: '--pcad-trim-remove',
+  track: '--pcad-track',
   sceneGround: '--pcad-scene-ground',
   viewCubeFaceTop: '--pcad-viewcube-face-top',
   viewCubeFaceFront: '--pcad-viewcube-face-front',
@@ -213,6 +223,7 @@ export function themeColorsFrom(read: (token: string) => string): ThemeColors {
     threadMark: colors.threadMark,
     workPlane: colors.workPlane,
     trimRemove: colors.trimRemove,
+    track: colors.track,
     sceneGround: colors.sceneGround,
     viewCubeFaceTop: colors.viewCubeFaceTop,
     viewCubeFaceFront: colors.viewCubeFaceFront,

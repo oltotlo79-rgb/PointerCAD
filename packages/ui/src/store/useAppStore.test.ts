@@ -220,13 +220,41 @@ describe('画面の状態(rules/04: ストア1本)', () => {
     expect(state.snapIndicator).toBeNull();
   });
 
-  it('スナップは既定で入、種別は 5 つとも有効(§0.a-0.10)', () => {
+  it('スナップは既定で入、種別は 9 つとも有効(§0.a-0.10、§0.12)', () => {
     const state = useAppStore.getState();
     expect(state.snapEnabled).toBe(true);
-    expect([...state.snapKinds].sort()).toEqual(
-      ['center', 'endpoint', 'grid', 'intersection', 'midpoint'],
-    );
+    // P4b タスク16(FR-110)で向きの吸着の 4 種が同じ一覧へ加わった(§0.13)。
+    expect([...state.snapKinds].sort()).toEqual([
+      'center',
+      'endpoint',
+      'extension',
+      'grid',
+      'intersection',
+      'midpoint',
+      'parallel',
+      'perpendicular',
+      'polar',
+    ]);
     expect(state.chaining).toBe(true);
+  });
+
+  it('向きの吸着の案内線を出す・消せる(FR-110、タスク16)', () => {
+    expect(useAppStore.getState().trackIndicator).toBeNull();
+    const lines = [
+      {
+        kind: 'polar',
+        origin: [0, 0, 0],
+        direction: [1, 0, 0],
+        sourceFeatureId: null,
+        angleDegrees: 0,
+      },
+    ] as const;
+    useAppStore.getState().setTrackIndicator(lines);
+    expect(useAppStore.getState().trackIndicator).toEqual(lines);
+
+    // 道具を変えたら案内線は持ち越さない(向きを合わせる相手が変わるため)。
+    useAppStore.getState().setActiveTool('line');
+    expect(useAppStore.getState().trackIndicator).toBeNull();
   });
 
   it('履歴を差し替えると計算中になる', () => {
@@ -1330,11 +1358,11 @@ describe('表示設定(FR-908、FR-909、計画書 P4 タスク1、§0.a-0.1〜0
   });
 
   it('setDisplaySettings で表示設定を丸ごと差し替えられる', () => {
-    useAppStore.getState().setDisplaySettings({ theme: 'light', uiScale: 120 });
-    expect(useAppStore.getState().displaySettings).toEqual({ theme: 'light', uiScale: 120 });
+    useAppStore.getState().setDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'light', uiScale: 120 });
+    expect(useAppStore.getState().displaySettings).toEqual({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'light', uiScale: 120 });
 
-    useAppStore.getState().setDisplaySettings({ theme: 'modern', uiScale: 90 });
-    expect(useAppStore.getState().displaySettings).toEqual({ theme: 'modern', uiScale: 90 });
+    useAppStore.getState().setDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'modern', uiScale: 90 });
+    expect(useAppStore.getState().displaySettings).toEqual({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'modern', uiScale: 90 });
   });
 
   it('localStorage が無い実行環境(このテスト環境)でも例外を投げずに保存を試みる', () => {
@@ -1342,14 +1370,14 @@ describe('表示設定(FR-908、FR-909、計画書 P4 タスク1、§0.a-0.1〜0
     // 諦めることを settings.test.ts で確かめているので、ここでは setDisplaySettings 経由でも
     // 例外が外へ漏れないことだけを確かめる(NFR-RE-1)。
     expect(() => {
-      useAppStore.getState().setDisplaySettings({ theme: 'darkModern', uiScale: 140 });
+      useAppStore.getState().setDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'darkModern', uiScale: 140 });
     }).not.toThrow();
   });
 
   it('resetDocument(新規)では表示設定を戻さない(部品ではなく端末の好みのため)', () => {
-    useAppStore.getState().setDisplaySettings({ theme: 'lightModern', uiScale: 150 });
+    useAppStore.getState().setDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'lightModern', uiScale: 150 });
     useAppStore.getState().resetDocument(createEmptyPartDocument());
-    expect(useAppStore.getState().displaySettings).toEqual({ theme: 'lightModern', uiScale: 150 });
+    expect(useAppStore.getState().displaySettings).toEqual({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'lightModern', uiScale: 150 });
   });
 });
 

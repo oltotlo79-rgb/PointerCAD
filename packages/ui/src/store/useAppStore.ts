@@ -54,6 +54,7 @@ import {
 } from '../sketch/referenceCommands.js';
 import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
+import type { TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
 import { selectionKindForTool, type SelectionKind } from '../solid/subShapeSelection.js';
 import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
@@ -292,6 +293,15 @@ export interface AppState {
   /** いま吸い付いている場所。無ければ null(FR-107)。 */
   readonly snapIndicator: SnapIndicator | null;
   /**
+   * いま出している向きの吸着の案内線(FR-110、P4b タスク16)。無ければ null。
+   *
+   * ビューポートが細い破線で画面いっぱいに引き、ステータスバーが「15° に合わせています」
+   * 「線分1 の延長線」の一言を組み立てる材料にする。同時に出すのは最大 2 本(§0.14)。
+   * `snapIndicator` と同じく、作るのは React の外(`attachSketchInteraction.ts`)なので
+   * ここに置く(rules/04-設計の規律.md「フロントの状態は Zustand 1 本」)。
+   */
+  readonly trackIndicator: readonly TrackCandidate[] | null;
+  /**
    * トリム・延長の道具でマウスを乗せているときの予告(FR-322、タスク22)。
    * 消える区間・伸びる区間の折れ線で、ビューポートがもとの線の上へ重ねて描く。
    *
@@ -460,6 +470,8 @@ export interface AppState {
   /** 基準ジオメトリを作れなかった理由を出す・消す(NFR-UX-5)。 */
   readonly setReferenceError: (message: string | null) => void;
   readonly setSnapIndicator: (indicator: SnapIndicator | null) => void;
+  /** 向きの吸着の案内線を出す・消す(FR-110、タスク16)。 */
+  readonly setTrackIndicator: (lines: readonly TrackCandidate[] | null) => void;
   /** トリム・延長の予告を出す・消す(FR-322、タスク22)。 */
   readonly setEditPreview: (preview: EditPreview | null) => void;
   /** 面を張れなかった理由を出す・消す。 */
@@ -756,6 +768,7 @@ export function createInitialDocumentState(): Pick<
   | 'referenceDraft'
   | 'referenceErrorMessage'
   | 'snapIndicator'
+  | 'trackIndicator'
   | 'editPreview'
   | 'faceErrorKey'
   | 'solidErrorKey'
@@ -816,6 +829,7 @@ export function createInitialDocumentState(): Pick<
     referenceDraft: EMPTY_REFERENCE_DRAFT,
     referenceErrorMessage: null,
     snapIndicator: null,
+    trackIndicator: null,
     editPreview: null,
     faceErrorKey: null,
     solidErrorKey: null,
@@ -902,6 +916,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // 3D スケッチで押した場所の面も持ち越さない(タスク14)。
         freeSketchPlane: null,
         snapIndicator: null,
+        // 案内線も持ち越さない(道具が変われば向きを合わせる相手も変わる、FR-110)。
+        trackIndicator: null,
         editPreview: null,
         faceErrorKey: null,
         solidErrorKey: null,
@@ -1183,6 +1199,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setSnapIndicator: (snapIndicator) => {
     set({ snapIndicator });
   },
+  setTrackIndicator: (trackIndicator) => {
+    set({ trackIndicator });
+  },
   setEditPreview: (editPreview) => {
     set({ editPreview });
   },
@@ -1251,6 +1270,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       referenceErrorMessage: null,
       freeSketchPlane: null,
       snapIndicator: null,
+      trackIndicator: null,
       editPreview: null,
       faceErrorKey: null,
       solidErrorKey: null,

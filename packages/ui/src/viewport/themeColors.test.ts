@@ -115,7 +115,7 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     expect(themeColorsFrom(readerFor('[data-theme="dark"]'))).toEqual(DEFAULT_THEME_COLORS);
   });
 
-  it('5 テーマとも 25 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
+  it('5 テーマとも 26 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
     for (const [theme, selector] of THEME_SELECTORS) {
       const block = blockOf(selector);
       for (const field of COLOR_FIELDS) {
@@ -162,6 +162,45 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     ] as const) {
       expect(light[face], face).toBeLessThan(dark[face]);
       expect(lightModern[face], face).toBe(light[face]);
+    }
+  });
+
+  /**
+   * 相対輝度(WCAG の定義)。案内線と地の明度差を測るのに使う。
+   */
+  function relativeLuminance(color: number): number {
+    const channels = [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff].map((value) => {
+      const ratio = value / 255;
+      return ratio <= 0.03928 ? ratio / 12.92 : Math.pow((ratio + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  }
+
+  /** 2 色の明度差(1〜21)。 */
+  function contrastRatio(a: number, b: number): number {
+    const first = relativeLuminance(a);
+    const second = relativeLuminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  }
+
+  it('案内線(FR-110)は 5 テーマとも吸着の印と同じアクセント色で、地と 3:1 以上(§0.14)', () => {
+    for (const [theme, selector] of THEME_SELECTORS) {
+      const block = blockOf(selector);
+      const track = parseCssColor(tokenValue(block, '--pcad-track'));
+      const accent = parseCssColor(tokenValue(block, '--pcad-accent'));
+      expect(track, `${theme} の --pcad-track`).not.toBeNull();
+      // 吸着の印(.pcad-snap-marker の縁)と同じ色にする(§0.14 の利用者の決定)。
+      expect(track, `${theme}: 案内線と吸着の印が同じ色`).toBe(accent);
+
+      // ビューポートの地は上下のグラデーションなので、両端に対して 3:1 以上を求める。
+      for (const groundToken of ['--pcad-viewport-top', '--pcad-viewport-bottom']) {
+        const ground = parseCssColor(tokenValue(block, groundToken));
+        expect(ground, `${theme} の ${groundToken}`).not.toBeNull();
+        if (track === null || ground === null) {
+          continue;
+        }
+        expect(contrastRatio(track, ground), `${theme} の ${groundToken}`).toBeGreaterThanOrEqual(3);
+      }
     }
   });
 

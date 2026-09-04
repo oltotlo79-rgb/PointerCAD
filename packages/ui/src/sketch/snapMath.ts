@@ -15,15 +15,32 @@ import {
 } from '@pointercad/model';
 
 import { sampleCurve } from './sampleCurve.js';
-
-/** スナップの種別(FR-107)。 */
-export type SnapKind = 'endpoint' | 'intersection' | 'midpoint' | 'center' | 'grid';
+import type { TrackKind } from './trackMath.js';
 
 /**
- * 優先順位(§0.a-0.10)。判定半径の中に複数の候補があれば、まずこの順で選び、
+ * 向きの吸着(FR-110)の 4 種。**候補の型は別**(`trackMath.ts` の `TrackCandidate`。
+ * 1 点に決まらず線になるため)だが、**入切の一覧は 1 つに揃える**(§0.13 の決定)。
+ * 利用者から見れば「どこに吸い付くか」の設定は 1 か所であるべきなので、ここでは
+ * 種別だけを `SnapKind` の仲間へ足す。型だけを借りるので実行時の相互参照は起きない。
+ */
+export const TRACK_SNAP_KINDS: readonly TrackKind[] = [
+  'polar',
+  'extension',
+  'perpendicular',
+  'parallel',
+];
+
+/** スナップの種別(FR-107)と、向きの吸着の種別(FR-110)。 */
+export type SnapKind = 'endpoint' | 'intersection' | 'midpoint' | 'center' | 'grid' | TrackKind;
+
+/**
+ * 優先順位(§0.a-0.10、§0.13)。判定半径の中に複数の候補があれば、まずこの順で選び、
  * 同じ種別の中でだけ画面距離の近さで選ぶ。
  * 距離を先に見ると、ポインタのすぐ近くに必ず現れる格子点が常に勝ってしまい、
  * 端点や交点へ吸い付けなくなるため。
+ *
+ * **点の候補がすべて先**で、向きの候補(FR-110)は末尾へ並べる。点は 1 点に決まるが
+ * 向きは線なので、両方が判定半径に入ったら点を採る(§0.13)。
  */
 export const SNAP_PRIORITY: readonly SnapKind[] = [
   'endpoint',
@@ -31,10 +48,19 @@ export const SNAP_PRIORITY: readonly SnapKind[] = [
   'midpoint',
   'center',
   'grid',
+  ...TRACK_SNAP_KINDS,
 ];
 
-/** 既定では全種別が有効(§0.a-0.10「スナップ既定有効」)。 */
+/** 既定では全種別が有効(§0.a-0.10「スナップ既定有効」、§0.12「トラッキングの既定は入」)。 */
 export const DEFAULT_SNAP_KINDS: readonly SnapKind[] = SNAP_PRIORITY;
+
+/**
+ * 入切の一覧のうち、向きの吸着(FR-110)として効いているものだけを取り出す。
+ * `collectTrackCandidates` の `enabled` はこの形で受け取る(§0.13)。
+ */
+export function enabledTrackKinds(enabled: ReadonlySet<SnapKind>): ReadonlySet<TrackKind> {
+  return new Set(TRACK_SNAP_KINDS.filter((kind) => enabled.has(kind)));
+}
 
 /** 吸い付く画面上の距離(画素)。 */
 export const SNAP_RADIUS_PIXELS = 12;

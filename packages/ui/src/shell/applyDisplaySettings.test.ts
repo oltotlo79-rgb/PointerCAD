@@ -35,38 +35,38 @@ beforeEach(() => {
 describe('applyDisplaySettings(FR-908, FR-909)', () => {
   it('data-theme 属性を設定する', () => {
     const root = createFakeRoot();
-    applyDisplaySettings({ theme: 'light', uiScale: 100 }, root);
+    applyDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'light', uiScale: 100 }, root);
     expect(root.dataset.theme).toBe('light');
   });
 
   it('--pcad-scale を uiScale/100 の倍率で設定する(90〜150% → 0.9〜1.5)', () => {
     const root = createFakeRoot();
-    applyDisplaySettings({ theme: 'dark', uiScale: 130 }, root);
+    applyDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'dark', uiScale: 130 }, root);
     expect(root.properties.get('--pcad-scale')).toBe('1.3');
   });
 
   it('拡大率 90 と 150 の境界でも正しい倍率になる', () => {
     const root = createFakeRoot();
-    applyDisplaySettings({ theme: 'dark', uiScale: 90 }, root);
+    applyDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'dark', uiScale: 90 }, root);
     expect(root.properties.get('--pcad-scale')).toBe('0.9');
-    applyDisplaySettings({ theme: 'dark', uiScale: 150 }, root);
+    applyDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'dark', uiScale: 150 }, root);
     expect(root.properties.get('--pcad-scale')).toBe('1.5');
   });
 
   it('data-ui-scale 属性を uiScale の数のまま設定する(appShell.css の2段の整形が読む、P4 タスク2 仕上げ)', () => {
     const root = createFakeRoot();
-    applyDisplaySettings({ theme: 'dark', uiScale: 125 }, root);
+    applyDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'dark', uiScale: 125 }, root);
     expect(root.dataset.uiScale).toBe('125');
-    applyDisplaySettings({ theme: 'dark', uiScale: 150 }, root);
+    applyDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'dark', uiScale: 150 }, root);
     expect(root.dataset.uiScale).toBe('150');
-    applyDisplaySettings({ theme: 'dark', uiScale: 100 }, root);
+    applyDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'dark', uiScale: 100 }, root);
     expect(root.dataset.uiScale).toBe('100');
   });
 });
 
 describe('attachDisplaySettings(ストアの変化への配線)', () => {
   it('つないだ直後に今の表示設定を反映する', () => {
-    useAppStore.getState().setDisplaySettings({ theme: 'modern', uiScale: 110 });
+    useAppStore.getState().setDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'modern', uiScale: 110 });
     const root = createFakeRoot();
 
     const detach = attachDisplaySettings(root);
@@ -82,7 +82,7 @@ describe('attachDisplaySettings(ストアの変化への配線)', () => {
     const detach = attachDisplaySettings(root);
     expect(root.dataset.theme).toBe(DEFAULT_DISPLAY_SETTINGS.theme);
 
-    useAppStore.getState().setDisplaySettings({ theme: 'lightModern', uiScale: 140 });
+    useAppStore.getState().setDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'lightModern', uiScale: 140 });
     expect(root.dataset.theme).toBe('lightModern');
     expect(root.properties.get('--pcad-scale')).toBe('1.4');
     expect(root.dataset.uiScale).toBe('140');
@@ -104,7 +104,7 @@ describe('attachDisplaySettings(ストアの変化への配線)', () => {
     const detach = attachDisplaySettings(root);
     detach();
 
-    useAppStore.getState().setDisplaySettings({ theme: 'darkModern', uiScale: 120 });
+    useAppStore.getState().setDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'darkModern', uiScale: 120 });
     // 見張りを外した後の変化は反映されない(直前の値のまま)。
     expect(root.dataset.theme).toBe(DEFAULT_DISPLAY_SETTINGS.theme);
   });

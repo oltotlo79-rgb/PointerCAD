@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
   clampUiScale,
   DEFAULT_DISPLAY_SETTINGS,
@@ -71,14 +72,14 @@ describe('表示設定の永続化(FR-908, FR-909)', () => {
 
   it('保存して読み直すと同じ値になる(往復)', () => {
     const storage = createFakeStorage();
-    const settings: DisplaySettings = { theme: 'lightModern', uiScale: 130 };
+    const settings: DisplaySettings = { ...DEFAULT_DISPLAY_SETTINGS, theme: 'lightModern', uiScale: 130 };
     saveSettings(settings, storage);
     expect(loadSettings(storage)).toEqual(settings);
   });
 
   it('storage が無いときの保存は何もせず、例外も投げない', () => {
     expect(() => {
-      saveSettings({ theme: 'modern', uiScale: 110 }, null);
+      saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'modern', uiScale: 110 }, null);
     }).not.toThrow();
   });
 
@@ -90,8 +91,54 @@ describe('表示設定の永続化(FR-908, FR-909)', () => {
       },
     };
     expect(() => {
-      saveSettings({ theme: 'darkModern', uiScale: 100 }, storage);
+      saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'darkModern', uiScale: 100 }, storage);
     }).not.toThrow();
+  });
+
+  it('角度の刻みの既定は 15°(FR-110、§0.12)', () => {
+    expect(DEFAULT_DISPLAY_SETTINGS.trackAngleStep).toBe(15);
+    expect(TRACK_ANGLE_STEPS).toContain(DEFAULT_DISPLAY_SETTINGS.trackAngleStep);
+  });
+
+  it('選んだ角度の刻みを覚え、読み直しても保たれる(端末に保存)', () => {
+    const storage = createFakeStorage();
+    for (const step of TRACK_ANGLE_STEPS) {
+      saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, trackAngleStep: step }, storage);
+      expect(loadSettings(storage).trackAngleStep).toBe(step);
+    }
+  });
+
+  it('一覧に無い角度の刻み(7°)はこの欄だけ既定の 15° へ戻す(NFR-UX-4)', () => {
+    const storage = createFakeStorage({
+      'pointercad.settings': JSON.stringify({ theme: 'light', uiScale: 120, trackAngleStep: 7 }),
+    });
+    const loaded = loadSettings(storage);
+    expect(loaded.trackAngleStep).toBe(15);
+    // テーマと拡大率は壊れていないので、そちらは保存された値のまま残る。
+    expect(loaded.theme).toBe('light');
+    expect(loaded.uiScale).toBe(120);
+  });
+
+  it('角度の刻みが数でない・欄そのものが無いときも既定の 15° にし、他の欄は捨てない', () => {
+    // 欄が無いのは P4b より前に保存された値の形。テーマまで既定へ戻すと、
+    // 前の版から使っている利用者の好みを失う(前方互換、settings.ts の注釈)。
+    const old = createFakeStorage({
+      'pointercad.settings': JSON.stringify({ theme: 'modern', uiScale: 110 }),
+    });
+    expect(loadSettings(old)).toEqual({
+      ...DEFAULT_DISPLAY_SETTINGS,
+      theme: 'modern',
+      uiScale: 110,
+    });
+
+    const broken = createFakeStorage({
+      'pointercad.settings': JSON.stringify({
+        theme: 'modern',
+        uiScale: 110,
+        trackAngleStep: '15',
+      }),
+    });
+    expect(loadSettings(broken).trackAngleStep).toBe(15);
   });
 
   it('getItem が例外を投げる環境では既定値を返す', () => {

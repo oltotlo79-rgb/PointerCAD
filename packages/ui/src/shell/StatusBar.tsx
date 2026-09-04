@@ -19,6 +19,7 @@ import {
   PROGRESS_DELAY_MS,
   type SpringNumericInputStep,
   type StatusLineKind,
+  type TrackStatus,
 } from './statusText.js';
 
 /** 作図面の表記。ツールバーの区画名と同じ言葉にする。 */
@@ -104,6 +105,10 @@ export function StatusBar(): React.JSX.Element {
   const customPlanes = workPlaneEntries(useAppStore((state) => state.document));
   const snapEnabled = useAppStore((state) => state.snapEnabled);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
+  // 向きの吸着の案内線(FR-110、P4b タスク16)。帯の一言に角度と要素の名前を出す。
+  const trackIndicator = useAppStore((state) => state.trackIndicator);
+  // 名前(「線分1」)は履歴が持っている。案内線のもとになった要素だけを引く。
+  const sketchFeatures = useAppStore((state) => state.sketch.features);
   const fileName = useAppStore((state) => state.fileName);
   const fileMessage = useAppStore((state) => state.fileMessage);
   const recomputeProgress = useAppStore((state) => state.recomputeProgress);
@@ -164,6 +169,20 @@ export function StatusBar(): React.JSX.Element {
   // 開いているファイルの名前。保存していない変更があれば末尾に印が付く(FR-806)。
   const fileLabel = documentLabel(fileName, unsaved);
 
+  // 案内線 1 本ごとに、帯へ出す材料(種類・角度・もとの要素の名前)へ詰め替える。
+  const track: readonly TrackStatus[] | null =
+    trackIndicator === null
+      ? null
+      : trackIndicator.map((line) => ({
+          kind: line.kind,
+          angleDegrees: line.angleDegrees,
+          sourceName:
+            line.sourceFeatureId === null
+              ? null
+              : (sketchFeatures.find((feature) => feature.id === line.sourceFeatureId)?.name ??
+                null),
+        }));
+
   const line = describeStatus({
     fileMessage,
     faceErrorKey,
@@ -181,6 +200,7 @@ export function StatusBar(): React.JSX.Element {
     isComputing,
     kernelLoaded,
     snapKind: snapIndicator === null ? null : snapIndicator.kind,
+    track,
     activeTool,
     selectedBodyCount,
     selectedSubShapeCount,

@@ -20,6 +20,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { picksSolidVertices } from '../sketch/freeSketch.js';
 import type { NumericInputToolId } from '../sketch/numericInput.js';
 import type { SnapKind } from '../sketch/snapMath.js';
+import type { TrackKind } from '../sketch/trackMath.js';
 import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
 import type { FileMessage } from '../store/useAppStore.js';
 
@@ -121,7 +122,25 @@ const SNAP_GUIDE_KEYS = {
   midpoint: 'statusBar.snap.midpoint',
   center: 'statusBar.snap.center',
   grid: 'statusBar.snap.grid',
+  /*
+   * 向きの吸着(FR-110、P4b タスク16)。角度や要素の名前が分かるときは下の
+   * `trackGuideText` の詳しい文言が先に選ばれるので、ここはその材料が無いときの後退先。
+   * この表は網羅が要る(`satisfies Record<SnapKind, …>`)ので、種別を足した同じタスクで
+   * 案内も足す(P3 タスク24 で網羅が崩れた前例、docs/報告記録.md 2026-09-04 03:20 ③)。
+   */
+  polar: 'statusBar.snap.polar',
+  extension: 'statusBar.snap.extension',
+  perpendicular: 'statusBar.snap.perpendicular',
+  parallel: 'statusBar.snap.parallel',
 } as const satisfies Record<SnapKind, MessageKey>;
+
+/** 向きの吸着の案内(FR-110、NFR-UX-7)。極は角度、他はもとの要素の名前を差し込む。 */
+const TRACK_GUIDE_KEYS = {
+  polar: 'statusBar.track.polar',
+  extension: 'statusBar.track.extension',
+  perpendicular: 'statusBar.track.perpendicular',
+  parallel: 'statusBar.track.parallel',
+} as const satisfies Record<TrackKind, MessageKey>;
 
 /** 頭の言葉と本文をつなぐ空白。文字そのものは言葉に依らないのでここに置く。 */
 const PREFIX_SEPARATOR = ' ';
@@ -184,6 +203,34 @@ export interface StatusLine {
    * [作図面] [吸着] [単位]` の並び、`docs/報告記録.md` 2026-09-03 18:30 の残件(f))。
    */
   readonly selectionKindLabel: string;
+}
+
+/** 帯に出す、いま合っている向き 1 本ぶん(FR-110、P4b タスク16)。 */
+export interface TrackStatus {
+  readonly kind: TrackKind;
+  /** 極(角度)のときの角度(度)。他の種類は null。 */
+  readonly angleDegrees: number | null;
+  /** もとになった要素の名前(「線分1」)。極や、名前を引けないときは null。 */
+  readonly sourceName: string | null;
+}
+
+/**
+ * 向きの吸着の案内(FR-110、NFR-UX-7)。「15° に合わせています」「線分1 の延長線」。
+ * 2 本の案内線が交わる点に合っているときは両方を並べて出す(§2.4 の交点)。
+ * 合っている向きが無ければ null を返し、呼び出し側は点の吸着・道具の案内へ後退する。
+ */
+export function trackGuideText(tracks: readonly TrackStatus[]): string | null {
+  if (tracks.length === 0) {
+    return null;
+  }
+  const phrases = tracks.map((track) =>
+    fill(t(TRACK_GUIDE_KEYS[track.kind]), {
+      angle: track.angleDegrees === null ? '' : String(track.angleDegrees),
+      // 名前を引けないとき(消えた要素を指したまま)でも文が崩れないようにする。
+      name: track.sourceName ?? t('statusBar.track.unnamedSource'),
+    }),
+  );
+  return `${phrases.join(t('statusBar.track.separator'))}${t('statusBar.track.suffix')}`;
 }
 
 /** ばねのその場入力の段(§2.11)。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
@@ -253,6 +300,11 @@ export interface StatusInput {
   readonly kernelLoaded: boolean;
   /** いま吸い付いている先。無ければ null(FR-107)。 */
   readonly snapKind: SnapKind | null;
+  /**
+   * いま合っている向き(FR-110、P4b タスク16)。案内線が 2 本出ているときは 2 件入る。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly track?: readonly TrackStatus[] | null;
   /** 選んでいる道具(FR-301〜309、FR-401〜403)。 */
   readonly activeTool: NumericInputToolId;
   /** いま選ばれている立体の数(FR-404 の対象指定)。 */
@@ -540,6 +592,15 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // (§0.a-0.23 ⑨。実測で初回は 3〜7 秒かかり、固まったように見えるため)。
     const key = input.kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel';
     return { kind: 'computing', text: t(key), hint: null, progress: null };
+  }
+  /*
+    向きの吸着(FR-110)は点の吸着と同じ「いま合っている先」の知らせだが、角度や
+    もとの要素の名前まで言えるので、材料があるときはそちらを先に出す(NFR-UX-7)。
+  */
+  const trackText =
+    input.track === undefined || input.track === null ? null : trackGuideText(input.track);
+  if (trackText !== null) {
+    return { kind: 'snap', text: trackText, hint: null, progress: null };
   }
   if (input.snapKind !== null) {
     return {

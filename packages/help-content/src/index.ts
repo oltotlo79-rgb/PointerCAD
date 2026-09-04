@@ -63,6 +63,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/project-intersect.md',
   },
   { id: 'snap', title: '点にぴったり合わせる(吸着)', path: 'docs/ja/snap.md' },
+  {
+    id: 'tracking',
+    title: '向きをそろえる(直交・角度・延長線)',
+    path: 'docs/ja/tracking.md',
+  },
   { id: 'face-and-color', title: '面を張る・色を変える', path: 'docs/ja/face-and-color.md' },
   { id: 'edit-sketch', title: 'かいたものを直す', path: 'docs/ja/edit-sketch.md' },
   { id: 'solid-basics', title: '厚みをつける・回す', path: 'docs/ja/solid-basics.md' },

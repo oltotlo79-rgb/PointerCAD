@@ -11,6 +11,7 @@ import {
 import * as THREE from 'three';
 
 import { captureThumbnailPng, THUMBNAIL_SIZE } from '../file/thumbnail.js';
+import type { TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
 import { faceIndexOfTriangle } from '../solid/pickSubShape.js';
 import type { DisplayStyle, ProjectionMode } from '../store/useAppStore.js';
@@ -32,6 +33,7 @@ import {
 } from './cameraMath.js';
 import { createReferenceLayer } from './createReferenceLayer.js';
 import { createSketchLayer } from './createSketchLayer.js';
+import { createTrackingLayer } from './createTrackingLayer.js';
 import { createSolidLayer, type ThreadMarkInfo } from './createSolidLayer.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
@@ -123,6 +125,11 @@ export interface ViewportScene {
    * 伸びる区間の折れ線を、もとの線の上へ重ねて描く。`null` で消す。
    */
   setEditPreview(preview: EditPreview | null): void;
+  /**
+   * 向きの吸着の案内線(FR-110、P4b タスク16)。細い破線を画面いっぱいに引く。
+   * 同時に出すのは最大 2 本で、`null` か空で消す。
+   */
+  setTracking(lines: readonly TrackCandidate[] | null): void;
   /** 基準ジオメトリ(基準軸・基準点・座標系、FR-329)を出す。 */
   setReferences(references: ResolvedReferences): void;
   /** ワールド座標を canvas 上の画素座標へ。まだ一度も描いていない・画面の外なら null。 */
@@ -374,6 +381,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   const referenceLayer = createReferenceLayer();
   scene.add(referenceLayer.group);
 
+  // 向きの吸着の案内線(FR-110、P4b タスク16)。下書きより後ろ・面より前に出す。
+  const trackingLayer = createTrackingLayer();
+  scene.add(trackingLayer.group);
+
   let currentSpacing = 0;
 
   /**
@@ -397,6 +408,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     // 基準軸は方眼より**短く**する(P4 タスク33、タスク9・13 の申し送り)。
     // 方眼と同じ長さだと方眼の線と見分けが付かず、どこまでが軸なのか分からなかった。
     referenceLayer.setAxisHalfLength(gridExtent(spacing) * REFERENCE_AXIS_EXTENT_RATIO);
+    // 案内線は方眼と同じ広がりまで伸ばす(視野のおよそ 2 倍なので「画面いっぱい」になる)。
+    trackingLayer.setHalfLength(gridExtent(spacing));
     currentSpacing = spacing;
   }
   rebuildGrid(gridSpacing(HOME_ORBIT.distance));
@@ -586,6 +599,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       solidLayer.setThemeColors(colors);
       sketchLayer.setThemeColors(colors);
       referenceLayer.setThemeColors(colors);
+      trackingLayer.setThemeColors(colors);
     },
 
     setWorkPlaneVisible(visible): void {
@@ -598,6 +612,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     setEditPreview(preview): void {
       sketchLayer.setEditPreview(preview);
+    },
+
+    setTracking(lines): void {
+      trackingLayer.setLines(lines);
     },
 
     setReferences(references): void {
@@ -644,6 +662,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       solidLayer.dispose();
       sketchLayer.dispose();
       referenceLayer.dispose();
+      trackingLayer.dispose();
       grid.geometry.dispose();
       axisLines.geometry.dispose();
       lineMaterial.dispose();

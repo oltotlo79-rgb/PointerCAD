@@ -123,9 +123,12 @@
   /*
    * 3D 表示の色(FR-908 のテーマ連動)。three.js は CSS 変数を読めないので、
    * viewport/themeColors.ts が getComputedStyle で読んで 16 進へ直す。
-   * **この 24 個はどのテーマも 1 つ残らず持つ**(欠けると別テーマの色が混ざる)。
+   * **この 26 個はどのテーマも 1 つ残らず持つ**(欠けると別テーマの色が混ざる)。
    * ダークの値は P0〜P3 で各層が直接持っていた定数そのままで、
    * viewport/themeColors.test.ts が DEFAULT_THEME_COLORS との一致を固定する。
+   *
+   * --pcad-track は向きの吸着の案内線(FR-110、P4b タスク16)。吸着の印と同じ
+   * アクセント色にするので、どのテーマも --pcad-accent と同じ値を書く(§0.14)。
    */
   --pcad-grid-minor: #343945;
   --pcad-grid-major: #454b59;
@@ -143,6 +146,7 @@
   --pcad-thread-mark: #8a93a6;
   --pcad-work-plane: #4f8cff;
   --pcad-trim-remove: #ff6b6b;
+  --pcad-track: #4f8cff;
   --pcad-scene-ground: #3a3f4a;
 
   /*
@@ -238,6 +242,7 @@
   --pcad-thread-mark: #6b7380;
   --pcad-work-plane: #2f6fe0;
   --pcad-trim-remove: #d92d20;
+  --pcad-track: #2f6fe0;
   --pcad-scene-ground: #cfd5df;
 
   /*
@@ -326,6 +331,7 @@
   --pcad-thread-mark: #8a93a6;
   --pcad-work-plane: #5b9dff;
   --pcad-trim-remove: #ff6b6b;
+  --pcad-track: #5b9dff;
   --pcad-scene-ground: #3a3f4a;
 
   /* ビューキューブ。地の暗さがダークとほぼ同じなので、同じ値をそのまま持つ。 */
@@ -404,6 +410,7 @@
   --pcad-thread-mark: #6b7380;
   --pcad-work-plane: #2f6fe0;
   --pcad-trim-remove: #d92d20;
+  --pcad-track: #2f6fe0;
   --pcad-scene-ground: #cfd5df;
 
   /* ビューキューブ。ライトと同じ明るい地なので、同じ値をそのまま持つ。 */
@@ -488,6 +495,7 @@
   --pcad-thread-mark: #45484f;
   --pcad-work-plane: #123a8a;
   --pcad-trim-remove: #b42318;
+  --pcad-track: #123a8a;
   --pcad-scene-ground: #b9bec7;
 
   /*
@@ -946,6 +954,21 @@
   padding: var(--pcad-space-1) var(--pcad-space-2) 0;
   font-size: var(--pcad-font-size-small);
   color: var(--pcad-text-muted);
+}
+
+/*
+ * 向きの吸着の角度の刻み(FR-110、P4b タスク16)。吸着の種別の一覧の中へ、
+ * 表示設定の拡大率と同じ溝(.pcad-segmented)で 6 択を置く。項目(116px)より
+ * 広がるが、畳んだ一覧は浮いて出るのでツールバーの幅には響かない。
+ */
+.pcad-menu__steps {
+  margin-top: 2px;
+}
+
+.pcad-menu__steps .pcad-button {
+  flex: 1;
+  min-width: 0;
+  padding: 0 5px;
 }
 
 /* ===== 表示設定(FR-908 テーマ・FR-909 拡大率) ===== */

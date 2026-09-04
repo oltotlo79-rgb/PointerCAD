@@ -48,6 +48,7 @@ import {
   type WorkPlaneEntry,
 } from '../sketch/referenceCommands.js';
 import type { SnapKind } from '../sketch/snapMath.js';
+import { TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import type { MachiningToolId } from '../solid/machiningCommands.js';
 import {
   commitBooleanFromSelection,
@@ -96,10 +97,14 @@ import {
   ShapeGroupIcon,
   SnapCenterIcon,
   SnapEndpointIcon,
+  SnapExtensionIcon,
   SnapGridIcon,
   SnapIcon,
   SnapIntersectionIcon,
   SnapMidpointIcon,
+  SnapParallelIcon,
+  SnapPerpendicularIcon,
+  SnapPolarIcon,
   SpringIcon,
   SubtractIcon,
   ThreadHoleIcon,
@@ -429,6 +434,35 @@ const SNAP_KINDS_UI = [
     tooltipKey: 'toolbar.snap.gridTooltip',
     Icon: SnapGridIcon,
   },
+  /*
+   * 向きの吸着(FR-110、P4b タスク16)。**同じ一覧に並べる**のは、利用者から見れば
+   * 「どこに吸い付くか」の設定が 1 か所であるべきだから(§0.13 の決定、NFR-UX-1)。
+   * 並びは `SNAP_PRIORITY` の末尾 4 つと同じ順にして、優先順位が見た目にも表れるようにする。
+   */
+  {
+    kind: 'polar',
+    labelKey: 'toolbar.snap.polar',
+    tooltipKey: 'toolbar.snap.polarTooltip',
+    Icon: SnapPolarIcon,
+  },
+  {
+    kind: 'extension',
+    labelKey: 'toolbar.snap.extension',
+    tooltipKey: 'toolbar.snap.extensionTooltip',
+    Icon: SnapExtensionIcon,
+  },
+  {
+    kind: 'perpendicular',
+    labelKey: 'toolbar.snap.perpendicular',
+    tooltipKey: 'toolbar.snap.perpendicularTooltip',
+    Icon: SnapPerpendicularIcon,
+  },
+  {
+    kind: 'parallel',
+    labelKey: 'toolbar.snap.parallel',
+    tooltipKey: 'toolbar.snap.parallelTooltip',
+    Icon: SnapParallelIcon,
+  },
 ] as const satisfies readonly (ButtonEntry & { readonly kind: SnapKind })[];
 
 /**
@@ -749,6 +783,21 @@ function unavailableTooltip(labelKey: MessageKey, reasonKey: MessageKey | null):
 interface SnapKindsMenuProps {
   readonly snapEnabled: boolean;
   readonly snapKinds: readonly SnapKind[];
+  /** 向きの吸着の角度の刻み(度)。`settings.ts` が端末に覚える(FR-110、§0.12)。 */
+  readonly trackAngleStep: number;
+}
+
+/** 角度の札(「15°」)。言葉に依らない書き方なのでここで組み立てる(SettingsPanel と同じ流儀)。 */
+const DEGREE_SIGN = '°';
+
+function angleStepLabel(step: number): string {
+  return `${String(step)}${DEGREE_SIGN}`;
+}
+
+/** 角度の刻みを差し替える(テーマと拡大率はそのまま)。 */
+function selectTrackAngleStep(step: number): void {
+  const store = useAppStore.getState();
+  store.setDisplaySettings({ ...store.displaySettings, trackAngleStep: step });
 }
 
 /**
@@ -759,7 +808,11 @@ interface SnapKindsMenuProps {
  * (rules/04-設計の規律.md「useState は表示専用の一時状態だけ」)。
  * 吸着の入り切りと種別そのものはストアが正本。
  */
-function SnapKindsMenu({ snapEnabled, snapKinds }: SnapKindsMenuProps): React.JSX.Element {
+function SnapKindsMenu({
+  snapEnabled,
+  snapKinds,
+  trackAngleStep,
+}: SnapKindsMenuProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -836,6 +889,33 @@ function SnapKindsMenu({ snapEnabled, snapKinds }: SnapKindsMenuProps): React.JS
               {t(entry.labelKey)}
             </button>
           ))}
+          {/*
+            角度の刻み(FR-110、§0.12)。**「角度」の入切のすぐ下**へ置く。この値が効くのは
+            「角度」だけなので、設定パネル(テーマ・拡大率)へ離して置くより、切り替える札の
+            隣にあるほうが結び付きが分かる(NFR-UX-1)。値そのものは表示設定と同じ 1 つの鍵で
+            端末に覚える(`settings.ts`)。
+          */}
+          <span className="pcad-menu__section">{t('toolbar.snap.angleStepLabel')}</span>
+          <div
+            className="pcad-segmented pcad-menu__steps"
+            role="group"
+            aria-label={t('toolbar.snap.angleStepLabel')}
+          >
+            {TRACK_ANGLE_STEPS.map((step) => (
+              <button
+                key={step}
+                type="button"
+                className="pcad-button"
+                title={t('toolbar.snap.angleStepTooltip')}
+                aria-pressed={step === trackAngleStep}
+                onClick={() => {
+                  selectTrackAngleStep(step);
+                }}
+              >
+                {angleStepLabel(step)}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
     </div>
@@ -1387,6 +1467,8 @@ export function Toolbar(): React.JSX.Element {
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   const snapEnabled = useAppStore((state) => state.snapEnabled);
   const snapKinds = useAppStore((state) => state.snapKinds);
+  // 向きの吸着の角度の刻み(FR-110)。数だけを取り出して、他の表示設定の変化では描き直さない。
+  const trackAngleStep = useAppStore((state) => state.displaySettings.trackAngleStep);
   const chaining = useAppStore((state) => state.chaining);
   const partDocument = useAppStore((state) => state.document);
   // 文書にある任意の作業平面(FR-328、タスク13)。作図面の一覧に名前で並べる。
@@ -1710,7 +1792,11 @@ export function Toolbar(): React.JSX.Element {
           >
             <SnapIcon />
           </button>
-          <SnapKindsMenu snapEnabled={snapEnabled} snapKinds={snapKinds} />
+          <SnapKindsMenu
+            snapEnabled={snapEnabled}
+            snapKinds={snapKinds}
+            trackAngleStep={trackAngleStep}
+          />
         </div>
       </div>
 

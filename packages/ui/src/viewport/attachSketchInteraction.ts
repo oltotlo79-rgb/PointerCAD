@@ -80,10 +80,17 @@ import { extendPreviewAt, sameEditPreview, trimPreviewAt } from '../sketch/trimP
 import {
   chooseSnap,
   collectSnapCandidates,
+  enabledTrackKinds,
   SNAP_RADIUS_PIXELS,
   type ProjectToScreen,
   type SnapCandidate,
 } from '../sketch/snapMath.js';
+import {
+  chooseTrack,
+  collectTrackCandidates,
+  type TrackCandidate,
+  type TrackResult,
+} from '../sketch/trackMath.js';
 import { pickSolidSubShape } from '../solid/pickSubShape.js';
 import {
   subShapeElementId,
@@ -269,6 +276,33 @@ function sameIndicator(a: SnapIndicator | null, b: SnapIndicator | null): boolea
   );
 }
 
+/** 案内線 1 本ぶんが同じか。線そのもの(通る点と向き)だけを見る。 */
+function sameTrackLine(a: TrackCandidate, b: TrackCandidate): boolean {
+  return (
+    a.kind === b.kind &&
+    a.sourceFeatureId === b.sourceFeatureId &&
+    a.angleDegrees === b.angleDegrees &&
+    a.origin.every((value, index) => value === b.origin[index]) &&
+    a.direction.every((value, index) => value === b.direction[index])
+  );
+}
+
+/**
+ * 案内線を引き直す必要があるかどうか(FR-110、NFR-PF-1)。
+ *
+ * **線の上をポインタが滑っている間は同じ線**なので、位置ではなく線そのものを比べる。
+ * 位置で比べると 1 回動かすたびにストアが書き換わり、案内線を毎フレーム引き直すことになる。
+ */
+function sameTrack(
+  a: readonly TrackCandidate[] | null,
+  b: readonly TrackCandidate[] | null,
+): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  return a.length === b.length && a.every((line, index) => sameTrackLine(line, b[index]));
+}
+
 export function attachSketchInteraction(
   canvas: HTMLCanvasElement,
   scene: ViewportScene,
@@ -304,6 +338,20 @@ export function attachSketchInteraction(
     return baseWorkPlane(planeId) ?? WORK_PLANES[DEFAULT_WORK_PLANE_ID];
   }
 
+  /**
+   * 吸着の印と向きの案内線をまとめて消す(FR-107、FR-110)。乗せているだけの道具
+   * (トリム・延長・角の丸め・部分形状を拾う種類)と、ポインタが画面から出たときに呼ぶ。
+   */
+  function clearSnapIndicators(): void {
+    const state = useAppStore.getState();
+    if (state.snapIndicator !== null) {
+      state.setSnapIndicator(null);
+    }
+    if (state.trackIndicator !== null) {
+      state.setTrackIndicator(null);
+    }
+  }
+
   /** いま吸い付いている候補。吸着が切なら null(FR-107)。 */
   function findSnap(pointer: readonly [number, number]): SnapCandidate | null {
     const state = useAppStore.getState();
@@ -328,6 +376,74 @@ export function attachSketchInteraction(
     }
     const plane = interactionPlane(useAppStore.getState().workPlaneId);
     return scene.screenToPlanePoint(pointer[0], pointer[1], plane);
+  }
+
+  /**
+   * 向きの吸着(FR-110)を効かせる道具かどうか。
+   *
+   * 押した場所がそのまま座標になる道具(かき込む道具・基準ジオメトリの道具)のときだけ
+   * 案内線を出す。選択やトリムのように場所が座標にならない道具では、案内線は画面を
+   * 賑やかにするだけで何の役にも立たないため(NFR-UX-1)。
+   */
+  function tracksDirection(tool: NumericInputToolId): boolean {
+    return isDrawingTool(tool) || isReferenceTool(tool);
+  }
+
+  /**
+   * いま合っている向き(FR-110)。点の吸着(`snap`)が採れているときは**そちらが優先**
+   * なので何も返さない(§0.13。点は 1 点に決まるが向きは線なので、点を先に採る)。
+   * 吸着そのものが切、または向きの種別が 1 つも効いていないときも返さない(FR-107 と揃える)。
+   */
+  function findTrack(
+    pointer: readonly [number, number],
+    snap: SnapCandidate | null,
+  ): TrackResult | null {
+    const state = useAppStore.getState();
+    if (snap !== null || !state.snapEnabled || !tracksDirection(state.activeTool)) {
+      return null;
+    }
+    const kinds = enabledTrackKinds(new Set(state.snapKinds));
+    if (kinds.size === 0) {
+      return null;
+    }
+    const plane = interactionPlane(state.workPlaneId);
+    const onPlane = scene.screenToPlanePoint(pointer[0], pointer[1], plane);
+    if (onPlane === null) {
+      return null;
+    }
+    /*
+      極(角度)と平行線の起点は「直前に置いた点」。いま座標を聞いている段があるなら、
+      その段の基準(線分の終点なら自分の始点、新しい図形なら直前に置いた点)がそれに当たる
+      ので `baseWorldPoint` をそのまま使う(同じ決め方を 2 か所に書かない)。段が開いて
+      いないときは履歴の末尾の点(`lastCreatedPoint`)。
+    */
+    const opened = state.numericInput;
+    const origin =
+      opened !== null && isCoordinateStep(opened.step)
+        ? baseWorldPoint(opened.step)
+        : lastCreatedPoint(state.sketch, state.resolvedSketch);
+    const candidates = collectTrackCandidates(
+      state.resolvedSketch,
+      plane,
+      origin,
+      onPlane,
+      state.displaySettings.trackAngleStep,
+      kinds,
+    );
+    return chooseTrack(candidates, project, pointer, SNAP_RADIUS_PIXELS, onPlane);
+  }
+
+  /**
+   * 押した場所の座標(FR-107、FR-110)。点の吸着 → 向きの吸着 → 作図面の上の点、の順で決める。
+   * 押したときとマウスを動かしたときで同じ順序になるよう、決め方はここ 1 か所に置く。
+   */
+  function pickedPointAt(pointer: readonly [number, number]): Vec3 | null {
+    const snap = findSnap(pointer);
+    if (snap !== null) {
+      return snap.position;
+    }
+    const track = findTrack(pointer, null);
+    return track === null ? pointAt(pointer, null) : track.position;
   }
 
   /**
@@ -428,9 +544,7 @@ export function attachSketchInteraction(
     if (nextHovered !== state.hoveredElementId) {
       state.setHovered(nextHovered);
     }
-    if (state.snapIndicator !== null) {
-      state.setSnapIndicator(null);
-    }
+    clearSnapIndicators();
     const outcome =
       target === null
         ? null
@@ -584,9 +698,7 @@ export function attachSketchInteraction(
     if (nextHovered !== state.hoveredElementId) {
       state.setHovered(nextHovered);
     }
-    if (state.snapIndicator !== null) {
-      state.setSnapIndicator(null);
-    }
+    clearSnapIndicators();
     const preview = hit === null ? null : cornerPreview(hit, cornerPlane(), cornerShapeOf(tool));
     if (!sameEditPreview(state.editPreview, preview)) {
       state.setEditPreview(preview);
@@ -638,13 +750,13 @@ export function attachSketchInteraction(
       if (nextHovered !== state.hoveredElementId) {
         state.setHovered(nextHovered);
       }
-      if (state.snapIndicator !== null) {
-        state.setSnapIndicator(null);
-      }
+      clearSnapIndicators();
       return;
     }
 
     const snap = findSnap(pointer);
+    // 点に吸い付いていないときだけ向きを見る(§0.13 の優先順位)。
+    const track = findTrack(pointer, snap);
 
     // 当たり判定(6 画素)から外れていても、吸着(12 画素)が拾った要素は強調して
     // 「どこへ吸い付くのか」を見せる(FR-106、FR-107)。
@@ -659,17 +771,31 @@ export function attachSketchInteraction(
       state.setHovered(nextHovered);
     }
 
+    /*
+      印は点の吸着と向きの吸着で同じものを使う(利用者から見れば「ここに置かれる」の印は
+      1 種類。`SnapKind` に向きの 4 種を足してあるので、そのまま種別として渡せる)。
+      案内線そのものは別に持つ(`trackIndicator`)。
+    */
+    const indicatorSource = snap ?? track?.candidates[0] ?? null;
+    const indicatorPosition = snap?.position ?? track?.position ?? null;
     const nextIndicator: SnapIndicator | null =
-      snap === null
+      indicatorSource === null || indicatorPosition === null
         ? null
         : {
             // 画面の外へ出るほど傾いた面でも印を見失わないよう、写せなければ指の位置に置く。
-            screen: project(snap.position) ?? pointer,
-            kind: snap.kind,
-            elementId: snap.elementId,
+            screen: project(indicatorPosition) ?? pointer,
+            kind: indicatorSource.kind,
+            // 向きの候補は「どの要素から来たか」だけを持つ(極は要素を持たないので null)。
+            elementId: 'elementId' in indicatorSource
+              ? indicatorSource.elementId
+              : indicatorSource.sourceFeatureId,
           };
     if (!sameIndicator(state.snapIndicator, nextIndicator)) {
       state.setSnapIndicator(nextIndicator);
+    }
+    const nextTrack = track === null ? null : track.candidates;
+    if (!sameTrack(state.trackIndicator, nextTrack)) {
+      state.setTrackIndicator(nextTrack);
     }
   }
 
@@ -678,9 +804,7 @@ export function attachSketchInteraction(
     if (state.hoveredElementId !== null) {
       state.setHovered(null);
     }
-    if (state.snapIndicator !== null) {
-      state.setSnapIndicator(null);
-    }
+    clearSnapIndicators();
     // 画面から出たら「ここが消える」の赤も消す(タスク22)。
     if (state.editPreview !== null) {
       state.setEditPreview(null);
@@ -817,7 +941,7 @@ export function attachSketchInteraction(
       opened !== null && opened.toolId === tool ? opened : createNumericInput(tool, FIRST_STEP[tool]);
 
     // 円弧の半径や点列の個数は座標ではないので、位置だけを動かす。
-    const world = isCoordinateStep(current.step) ? pointAt(pointer, findSnap(pointer)) : null;
+    const world = isCoordinateStep(current.step) ? pickedPointAt(pointer) : null;
     const filled = world === null ? current : fillClickedPoint(current, world);
     state.openNumericInput(filled, pointer);
   }
@@ -925,7 +1049,7 @@ export function attachSketchInteraction(
       event.preventDefault();
       const opened = state.numericInput;
       if (opened !== null && opened.toolId === tool && isReferenceCoordinateStep(opened.step)) {
-        const world = pointAt(pointer, findSnap(pointer));
+        const world = pickedPointAt(pointer);
         if (world !== null) {
           state.openNumericInput(fillClickedPoint(opened, world), pointer);
           return;

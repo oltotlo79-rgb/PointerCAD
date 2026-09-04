@@ -723,6 +723,57 @@ export function SnapGridIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/*
+ * 向きの吸着(FR-110、P4b タスク16)の 4 つ。点に合わせる 5 つと同じ一覧に並ぶので、
+ * 同じ 16×16 の枠と線の太さで描き、**破線(画面に出る案内線と同じ見た目)**で
+ * 「線に沿って合わせる」ことを示す。点に合わせる 5 つが持っている四角は入れない
+ * (合う先が 1 点ではなく向きなので、四角があると点に合うものと見分けが付かない)。
+ */
+
+/** 角度。起点から 2 本が開き、その間に角度の弧を描く。 */
+export function SnapPolarIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.6 13.4h11" />
+      <path d="M2.6 13.4 12.4 4.2" strokeDasharray="2.4 1.6" />
+      <path d="M8.2 13.4a6 6 0 0 0 1.9-4.4" />
+      <circle cx="2.6" cy="13.4" r="1.1" fill="currentColor" stroke="none" />
+    </SvgIcon>
+  );
+}
+
+/** 延長線。実線の先が破線でそのまま伸びる。 */
+export function SnapExtensionIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.2 8h5.6" />
+      <path d="M7.8 8h6" strokeDasharray="2.4 1.6" />
+      <circle cx="7.8" cy="8" r="1.1" fill="currentColor" stroke="none" />
+    </SvgIcon>
+  );
+}
+
+/** 垂線。実線の端から破線が直角に立ち上がる。 */
+export function SnapPerpendicularIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.4 13.2h11.2" />
+      <path d="M8 13.2V2.4" strokeDasharray="2.4 1.6" />
+      <path d="M8 10.6h2.6v2.6" />
+    </SvgIcon>
+  );
+}
+
+/** 平行線。同じ向きの実線と破線が並ぶ。 */
+export function SnapParallelIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.6 11.6 9.4 4.8" />
+      <path d="M6.6 13.4 13.4 6.6" strokeDasharray="2.4 1.6" />
+    </SvgIcon>
+  );
+}
+
 /** 続けてかく。つながった 2 つの輪で表す。 */
 export function ChainIcon(props: IconProps): React.JSX.Element {
   return (

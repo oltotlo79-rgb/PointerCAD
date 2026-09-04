@@ -21,6 +21,7 @@ import {
   PROGRESS_DELAY_MS,
   springGuideText,
   summarizeFailures,
+  trackGuideText,
   type StatusInput,
 } from './statusText.js';
 
@@ -199,11 +200,69 @@ describe('帯に出す 1 文の優先順位(FR-905)', () => {
     expect(line.text).toBe(t('statusBar.snap.midpoint'));
   });
 
+  it('向きの吸着は点の吸着より詳しい一言を出す(FR-110、NFR-UX-7)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      // 案内線が出ているときは印の種別も向きの種別になる。
+      snapKind: 'polar',
+      track: [{ kind: 'polar', angleDegrees: 15, sourceName: null }],
+    });
+    expect(line.kind).toBe('snap');
+    expect(line.text).toContain('15° に合わせています');
+    // 種別だけの後退の文言(statusBar.snap.polar)は使われない。
+    expect(line.text).not.toBe(t('statusBar.snap.polar'));
+  });
+
+  it('案内線の材料が無ければ、種別だけの一言へ後退する(FR-110)', () => {
+    const line = describeStatus({ ...quiet(), snapKind: 'extension', track: null });
+    expect(line.text).toBe(t('statusBar.snap.extension'));
+  });
+
   it('待ち時間の前(progress が null)なら進み具合を出さない(NFR-PF-4)', () => {
     // 待ち時間の判定は StatusBar.tsx が行い、出さないあいだは null を渡す約束。
     const line = describeStatus({ ...quiet(), progress: null, isComputing: true });
     expect(line.kind).toBe('computing');
     expect(PROGRESS_DELAY_MS).toBe(300);
+  });
+});
+
+describe('向きの吸着の案内(FR-110、NFR-UX-7)', () => {
+  it('極は角度を差し込む(「15° に合わせています」)', () => {
+    const text = trackGuideText([{ kind: 'polar', angleDegrees: 15, sourceName: null }]);
+    expect(text).toBe(`15° に合わせています${t('statusBar.track.suffix')}`);
+  });
+
+  it('刻みを変えれば角度も変わる(90° の直交)', () => {
+    const text = trackGuideText([{ kind: 'polar', angleDegrees: 90, sourceName: null }]);
+    expect(text).toContain('90° に合わせています');
+  });
+
+  it('延長線・垂線・平行線はもとの要素の名前を差し込む', () => {
+    expect(trackGuideText([{ kind: 'extension', angleDegrees: null, sourceName: '線分1' }]))
+      .toContain('線分1 の延長線');
+    expect(trackGuideText([{ kind: 'perpendicular', angleDegrees: null, sourceName: '線分1' }]))
+      .toContain('線分1 に垂直');
+    expect(trackGuideText([{ kind: 'parallel', angleDegrees: null, sourceName: '線分2' }]))
+      .toContain('線分2 に平行');
+  });
+
+  it('名前を引けないときも文が崩れない(「線 の延長線」)', () => {
+    const text = trackGuideText([{ kind: 'extension', angleDegrees: null, sourceName: null }]);
+    expect(text).toContain(`${t('statusBar.track.unnamedSource')} の延長線`);
+  });
+
+  it('案内線が 2 本(交点)のときは両方を並べる(§2.4)', () => {
+    const text = trackGuideText([
+      { kind: 'polar', angleDegrees: 0, sourceName: null },
+      { kind: 'extension', angleDegrees: null, sourceName: '線分1' },
+    ]);
+    expect(text).toContain('0° に合わせています');
+    expect(text).toContain('線分1 の延長線');
+    expect(text).toContain(t('statusBar.track.separator'));
+  });
+
+  it('合っている向きが無ければ null(点の吸着・道具の案内へ後退する)', () => {
+    expect(trackGuideText([])).toBeNull();
   });
 });
 

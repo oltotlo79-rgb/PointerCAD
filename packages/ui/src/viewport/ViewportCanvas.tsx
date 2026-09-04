@@ -120,6 +120,7 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setConstructionIds(constructionFeatureIds(initial.sketch));
     scene.setReferences(initial.resolvedReferences);
     scene.setEditPreview(initial.editPreview);
+    scene.setTracking(initial.trackIndicator);
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
@@ -167,6 +168,11 @@ export function ViewportCanvas(): React.JSX.Element {
       // `attachSketchInteraction` 側が入れ直さないので、ここは変化だけを見ればよい。
       if (next.editPreview !== previous.editPreview) {
         scene.setEditPreview(next.editPreview);
+      }
+      // 向きの吸着の案内線(FR-110、P4b タスク16)。同じ線のままポインタが滑っている間は
+      // `attachSketchInteraction` 側が入れ直さないので、ここは変化だけを見ればよい。
+      if (next.trackIndicator !== previous.trackIndicator) {
+        scene.setTracking(next.trackIndicator);
       }
       // 表示テーマが変わったら 3D の色も読み直す(FR-908。拡大率は 3D の色を変えない)。
       if (next.displaySettings.theme !== previous.displaySettings.theme) {

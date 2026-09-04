@@ -11,6 +11,8 @@
  * (`displaySettings` / `setDisplaySettings`)は `packages/ui/src/store/useAppStore.ts`。
  */
 
+import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
+
 /** 表示テーマ 5 種(FR-908)。既定は `dark`(現状の配色をそのまま複製)。 */
 export type ThemeId = 'dark' | 'light' | 'darkModern' | 'lightModern' | 'modern';
 
@@ -27,9 +29,21 @@ export interface DisplaySettings {
   readonly theme: ThemeId;
   /** 表示の拡大率(%)。90〜150(FR-909)。 */
   readonly uiScale: number;
+  /**
+   * 向きの吸着(FR-110)の角度の刻み(度)。`TRACK_ANGLE_STEPS` の 6 つ
+   * (5 / 10 / 15 / 30 / 45 / 90)から選ぶ。既定は 15(§0.12 の利用者の決定)。
+   *
+   * テーマや拡大率と同じ「端末に覚える設定」なので、同じ 1 つの鍵へまとめて入れる
+   * (`localStorage` の鍵を増やさない)。
+   */
+  readonly trackAngleStep: number;
 }
 
-export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = { theme: 'dark', uiScale: 100 };
+export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  theme: 'dark',
+  uiScale: 100,
+  trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
+};
 export const MIN_UI_SCALE = 90;
 export const MAX_UI_SCALE = 150;
 
@@ -54,12 +68,23 @@ function isValidUiScale(value: unknown): value is number {
   );
 }
 
+/** 角度の刻みとして選べる 6 つのどれかか(§0.12)。中間の値は受け付けない。 */
+function isValidTrackAngleStep(value: unknown): value is number {
+  return typeof value === 'number' && TRACK_ANGLE_STEPS.some((step) => step === value);
+}
+
+/** 保存されている値のうち、P4 までにもあった 2 欄。 */
+interface StoredDisplayCore {
+  readonly theme: ThemeId;
+  readonly uiScale: number;
+}
+
 /**
  * 保存されている形として妥当か。`theme` と `uiScale` のどちらか一方でも壊れていれば
  * 全体を捨てて既定値に戻す(1 つの欄が壊れていても部分的に採用しない。
  * P2 の自動保存の控えの壊れ方への対処(docs/報告記録.md 2026-09-03 19:10)と同じ判断)。
  */
-function isDisplaySettings(value: unknown): value is DisplaySettings {
+function hasValidDisplayCore(value: unknown): value is StoredDisplayCore {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -68,6 +93,22 @@ function isDisplaySettings(value: unknown): value is DisplaySettings {
     isThemeId(value.theme) &&
     isValidUiScale(value.uiScale)
   );
+}
+
+/**
+ * 保存されている値から角度の刻みを読む。**この欄だけは欄ごとに既定へ後退させる。**
+ *
+ * 理由: この欄は P4b で足したので、それより前に保存された値には**無いのが正常**である。
+ * 上の「1 つでも壊れていたら全部捨てる」をこの欄にも当てはめると、前の版から使っている
+ * 利用者のテーマと拡大率まで既定へ戻ってしまう(必須の欄を足して旧いデータが読めなく
+ * なった P4 タスク6 の差し戻しと同じ前方互換の問題、docs/報告記録.md 2026-09-04 15:20)。
+ * 欄はあるが値が壊れている・範囲外のときも、同じ理由でこの欄だけを既定へ戻す(NFR-UX-4)。
+ */
+function readTrackAngleStep(value: object): number {
+  if (!('trackAngleStep' in value) || !isValidTrackAngleStep(value.trackAngleStep)) {
+    return DEFAULT_DISPLAY_SETTINGS.trackAngleStep;
+  }
+  return value.trackAngleStep;
 }
 
 /** 拡大率を 90〜150 の範囲内へ丸める(スライダー等、利用者の入力をその場で丸める用途)。 */
@@ -199,7 +240,14 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       return DEFAULT_DISPLAY_SETTINGS;
     }
     const parsed: unknown = JSON.parse(raw);
-    return isDisplaySettings(parsed) ? parsed : DEFAULT_DISPLAY_SETTINGS;
+    if (!hasValidDisplayCore(parsed)) {
+      return DEFAULT_DISPLAY_SETTINGS;
+    }
+    return {
+      theme: parsed.theme,
+      uiScale: parsed.uiScale,
+      trackAngleStep: readTrackAngleStep(parsed),
+    };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;
   }

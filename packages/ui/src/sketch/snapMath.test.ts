@@ -5,8 +5,9 @@ import {
 } from '@pointercad/model';
 
 import {
-  chooseSnap, collectSnapCandidates, DEFAULT_SNAP_KINDS, nearestGridPoint, segmentIntersection,
-  SNAP_PRIORITY, SNAP_RADIUS_PIXELS, type ProjectToScreen, type SnapKind,
+  chooseSnap, collectSnapCandidates, DEFAULT_SNAP_KINDS, enabledTrackKinds, nearestGridPoint,
+  segmentIntersection, SNAP_PRIORITY, SNAP_RADIUS_PIXELS, TRACK_SNAP_KINDS,
+  type ProjectToScreen, type SnapKind,
 } from './snapMath.js';
 
 const HORIZONTAL: ResolvedSegment = {
@@ -77,10 +78,48 @@ const without = (...excluded: readonly SnapKind[]): ReadonlySet<SnapKind> =>
 
 describe('スナップ(FR-107)', () => {
   it('優先順位は 端点 > 交点 > 中点 > 円中心 > グリッド、判定半径は 12 画素(§0.a-0.10)', () => {
-    expect(SNAP_PRIORITY).toEqual(['endpoint', 'intersection', 'midpoint', 'center', 'grid']);
+    // P4b タスク16(FR-110)で向きの吸着の 4 種が末尾へ加わった(§0.13。点の候補がすべて先)。
+    expect(SNAP_PRIORITY).toEqual([
+      'endpoint',
+      'intersection',
+      'midpoint',
+      'center',
+      'grid',
+      'polar',
+      'extension',
+      'perpendicular',
+      'parallel',
+    ]);
     expect(SNAP_RADIUS_PIXELS).toBe(12);
-    // 既定は全種別が有効。
+    // 既定は全種別が有効(向きの吸着も既定で入、§0.12)。
     expect(DEFAULT_SNAP_KINDS).toEqual(SNAP_PRIORITY);
+    expect(DEFAULT_SNAP_KINDS).toHaveLength(9);
+  });
+
+  it('向きの吸着の 4 種だけを一覧から取り出せる(§0.13)', () => {
+    expect(TRACK_SNAP_KINDS).toEqual(['polar', 'extension', 'perpendicular', 'parallel']);
+    expect([...enabledTrackKinds(ALL_KINDS)].sort()).toEqual(
+      ['extension', 'parallel', 'perpendicular', 'polar'],
+    );
+    // 「角度」だけを切ると、残りの 3 つが返る。
+    expect([...enabledTrackKinds(without('polar'))].sort()).toEqual(
+      ['extension', 'parallel', 'perpendicular'],
+    );
+    // 点の候補しか効いていなければ空(案内線は 1 本も出ない)。
+    expect(
+      enabledTrackKinds(new Set<SnapKind>(['endpoint', 'midpoint'])).size,
+    ).toBe(0);
+  });
+
+  it('向きの候補は点の候補より後ろ(点が先に採られる、§0.13)', () => {
+    for (const trackKind of TRACK_SNAP_KINDS) {
+      for (const pointKind of ['endpoint', 'intersection', 'midpoint', 'center', 'grid'] as const) {
+        expect(
+          SNAP_PRIORITY.indexOf(pointKind),
+          `${pointKind} < ${trackKind}`,
+        ).toBeLessThan(SNAP_PRIORITY.indexOf(trackKind));
+      }
+    }
   });
 
   it('交差する 2 線分の交点を求める', () => {

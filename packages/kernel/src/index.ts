@@ -80,6 +80,20 @@ export {
   type BSplineData,
   type SplineSpec,
 } from './occt/makeSplineEdge.js';
+// スケッチの角の丸め・面取り(FR-323、タスク19)。**OCCT を呼ばない純関数**なので、
+// Worker を往復させず model 側(kernelBridge.ts、タスク18)がそのまま呼ぶ。
+// OCCT の ChFi2d を使わないと決めた理由は makeSketchFillet2d.ts の冒頭にある。
+export {
+  makeSketchFillet,
+  type SketchFilletPlaneSpec,
+  type SketchFilletResult,
+  type SketchFilletSpec,
+} from './occt/makeSketchFillet2d.js';
+export {
+  makeSketchChamfer,
+  type SketchChamferResult,
+  type SketchChamferSpec,
+} from './occt/makeSketchChamfer2d.js';
 export { tessellate, type FaceTriangleRange, type SurfaceMesh } from './occt/tessellate.js';
 export { extractEdges, type EdgeLines, type EdgeSegmentRange } from './occt/extractEdges.js';
 export {

@@ -8,6 +8,8 @@
 
 import {
   createKernelWorker,
+  makeSketchChamfer,
+  makeSketchFillet,
   type CurveSpec,
   type FaceMeshData,
   type KernelApi,
@@ -88,6 +90,97 @@ export interface SketchOffsetFailure {
 export interface SketchOffsetResult {
   readonly results: readonly SketchOffsetEntry[];
   readonly failures: readonly SketchOffsetFailure[];
+}
+
+/* ------------------------------------------------------------------ *
+ * スケッチの角の丸め・面取り(FR-323、P4 タスク18・19)— Worker を通らない同期の口
+ * ------------------------------------------------------------------ */
+
+/**
+ * ## なぜ Worker を往復しないのか、なぜここに置くのか(統括の決定 §0.a-0.20)
+ *
+ * 角の丸め・面取りの形は、角を作るのが 2 本の**線分**である限り閉じた式で解ける。
+ * タスク19 の実測で OCCT(`ChFi2d_FilletAlgo` / `ChFi2d_ChamferAPI`)は使わないと決まり、
+ * kernel の `makeSketchFillet2d.ts` / `makeSketchChamfer2d.ts` は **OCCT に触れない純関数**
+ * になった(理由は同ファイルの冒頭)。だから Worker への往復は要らない。
+ *
+ * それでも呼び出しをこのファイルに通すのは、**model からカーネルを呼ぶのは
+ * `kernelBridge.ts` だけ**という決め(このファイルの冒頭、P0 §0.11)を守るため。
+ * 式そのものは kernel が単一の正本を持ち(OCCT との一致を検査で固定しているのは
+ * kernel 側だけで、model からは OCCT を呼べない)、model 側へ写して 2 か所に持つことは
+ * しない(`splineMath.ts` が抱えている二重定義を増やさない)。
+ *
+ * ほかの口と違って**同期の純関数**である。Worker を持たないので `KernelBridge` の
+ * メソッドにはせず、このファイルの関数として置く。
+ */
+
+/** 角を作る線分 1 本(model の言葉)。 */
+export interface SketchCornerSegment {
+  readonly from: Vec3;
+  readonly to: Vec3;
+}
+
+/**
+ * 丸めの円弧を置く作図面。**角度 0 の向き(第1軸)を含む**のは、model の円弧
+ * (`SketchArcFeature`)の開始角・終了角が作図面の第1軸から測ると決まっているため。
+ */
+export interface SketchCornerPlane {
+  readonly origin: Vec3;
+  readonly normal: Vec3;
+  readonly axisU: Vec3;
+}
+
+/** 丸めた結果。角度は plane.axisU を 0 とし plane.normal まわりに正(ラジアン)。 */
+export interface SketchFilletGeometry {
+  /** 丸め後、1 本目の線の新しい端点(円弧との接点)。 */
+  readonly trimmed1: Vec3;
+  readonly trimmed2: Vec3;
+  readonly arcCenter: Vec3;
+  readonly arcRadius: number;
+  readonly arcStartAngle: number;
+  readonly arcEndAngle: number;
+}
+
+/** 面取りした結果。足す線分は trimmed1 から trimmed2 へ引く。 */
+export interface SketchChamferGeometry {
+  readonly trimmed1: Vec3;
+  readonly trimmed2: Vec3;
+}
+
+/**
+ * 角を丸めた形を求める(FR-323)。角として成り立たないとき、半径が線の長さに
+ * 収まらないときは日本語の `Error` を投げる(呼び出し側が断りへ直す)。
+ */
+export function sketchFilletGeometry(
+  line1: SketchCornerSegment,
+  line2: SketchCornerSegment,
+  plane: SketchCornerPlane,
+  radius: number,
+): SketchFilletGeometry {
+  return makeSketchFillet({
+    line1: { kind: 'segment', from: line1.from, to: line1.to },
+    line2: { kind: 'segment', from: line2.from, to: line2.to },
+    plane,
+    radius,
+  });
+}
+
+/**
+ * 角を面取りした形を求める(FR-323)。作図面を取らないのは、面取りの結果が
+ * 2 つの絶対座標だけで決まるため(kernel の `makeSketchChamfer2d.ts` の注釈)。
+ */
+export function sketchChamferGeometry(
+  line1: SketchCornerSegment,
+  line2: SketchCornerSegment,
+  distance1: number,
+  distance2: number,
+): SketchChamferGeometry {
+  return makeSketchChamfer({
+    line1: { kind: 'segment', from: line1.from, to: line1.to },
+    line2: { kind: 'segment', from: line2.from, to: line2.to },
+    distance1,
+    distance2,
+  });
 }
 
 /** ボディ 1 つの表示用データ(model の言葉)。kernel の SolidBodyMesh を詰め替えたもの。 */

@@ -79,6 +79,11 @@ export type { ExtendRequest, TrimErrorKey, TrimOutcome, TrimRequest } from './sk
 export {
   explodeCompoundFeature, extendCurve, nearestCurveEnd, parseElementId, trimCurve,
 } from './sketch/trimExtend.js';
+export type {
+  SketchChamferRequest, SketchCornerElements, SketchCornerErrorKey, SketchCornerOutcome,
+  SketchFilletRequest,
+} from './sketch/cornerCommands.js';
+export { chamferCorner, filletCorner } from './sketch/cornerCommands.js';
 export type { SplineCurveData } from './sketch/splineMath.js';
 export {
   hasDuplicateSplinePoint, MAX_SPLINE_POINTS, MIN_CLOSED_SPLINE_POINTS, MIN_SPLINE_POINTS,

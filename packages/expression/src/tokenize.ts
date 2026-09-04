@@ -45,20 +45,49 @@ export function normalizeExpressionSource(source: string): string {
 const OPERATOR_CHARACTERS: ReadonlySet<string> = new Set(['+', '-', '*', '/', '^', '√']);
 const SPACE_CHARACTERS: ReadonlySet<string> = new Set([' ', '\t', '\n', '\r']);
 
-function isDigit(character: string): boolean {
+/**
+ * 識別子として使える追加のコードポイント範囲(日本語の変数名。§0.16、記法バージョン2)。
+ * 範囲はコードポイントのエスケープで書く。文字そのものを書くと、この行を写した先の
+ * コメント等で no-irregular-whitespace に触れ、見た目では原因が分からなくなる
+ * (docs/報告記録.md 2026-09-02 15:09 の教訓)。
+ * 全角英数・全角記号は含めない(normalizeExpressionSource がここへ来る前に半角へ直すため。
+ * 含めると演算子や数字が名前の一部になってしまう)。
+ * 基本多言語面(BMP)の範囲だけを扱う。サロゲートペアを使う拡張漢字(U+20000 以降)は対象外
+ * (このファイルの走査は1 UTF-16単位ずつであり、コードポイント単位に全面的に書き直す
+ * ほどの範囲ではないと判断した。docs/plans/P4b-スケッチの仕上げ.md タスク1の落とし穴)。
+ */
+const IDENTIFIER_RANGES: readonly (readonly [number, number])[] = [
+  [0x3041, 0x309f], // ひらがな
+  [0x30a0, 0x30ff], // カタカナ(長音符 U+30FC を含む)
+  [0x4e00, 0x9fff], // CJK統合漢字
+];
+
+function isIdentifierRangeCharacter(character: string): boolean {
+  const codePoint = character.codePointAt(0);
+  if (codePoint === undefined) {
+    return false;
+  }
+  return IDENTIFIER_RANGES.some(([start, end]) => codePoint >= start && codePoint <= end);
+}
+
+/** `checkVariableName`(variableNames.ts)からも使う。数字1文字かどうかの判定。 */
+export function isDigit(character: string): boolean {
   return character >= '0' && character <= '9';
 }
 
-function isIdentifierStart(character: string): boolean {
+/** `checkVariableName`(variableNames.ts)からも使う。識別子の先頭に来てよい1文字かどうか。 */
+export function isIdentifierStart(character: string): boolean {
   return (
     (character >= 'A' && character <= 'Z') ||
     (character >= 'a' && character <= 'z') ||
     character === '_' ||
-    character === 'π'
+    character === 'π' ||
+    isIdentifierRangeCharacter(character)
   );
 }
 
-function isIdentifierPart(character: string): boolean {
+/** `checkVariableName`(variableNames.ts)からも使う。識別子の2文字目以降に来てよい1文字かどうか。 */
+export function isIdentifierPart(character: string): boolean {
   return isIdentifierStart(character) || isDigit(character);
 }
 

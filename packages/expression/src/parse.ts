@@ -3,6 +3,14 @@ import { expressionError, ExpressionFailure } from './errors.js';
 import { tokenize, type Token } from './tokenize.js';
 
 /**
+ * 定数として扱う識別子の名前(`pi` / `π` / `e`)。
+ * 輸出するのは、この名前の集合をパラメータ名の予約語判定(variableNames.ts の
+ * checkVariableName)からも使うため。定数名の一覧を2か所に書かない
+ * (docs/plans/P4b-スケッチの仕上げ.md タスク1)。
+ */
+export const CONSTANT_TOKEN_NAMES: ReadonlySet<string> = new Set(['pi', 'π', 'e']);
+
+/**
  * 式を構文木へ直す(計画書 docs/plans/P1-式とスケッチ.md §2.1 の BNF)。優先順位は
  * 「+ -(2項) < * / < + -(単項) < ^ < √ < 括弧・関数」。^ は右結合。
  * 失敗したら ExpressionFailure を投げる。
@@ -122,11 +130,12 @@ export function parse(source: string): Node {
         const args = parseArguments(after.position);
         return { kind: 'call', name: token.text, args, position: token.position };
       }
-      if (token.text === 'pi' || token.text === 'π') {
-        return { kind: 'constant', name: 'pi', position: token.position };
-      }
-      if (token.text === 'e') {
-        return { kind: 'constant', name: 'e', position: token.position };
+      if (CONSTANT_TOKEN_NAMES.has(token.text)) {
+        return {
+          kind: 'constant',
+          name: token.text === 'e' ? 'e' : 'pi',
+          position: token.position,
+        };
       }
       return { kind: 'variable', name: token.text, position: token.position };
     }

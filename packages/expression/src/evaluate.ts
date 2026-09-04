@@ -31,8 +31,13 @@ export const PI = ExpressionDecimal.acos(-1);
 /** 自然対数の底。同上。 */
 export const E = ExpressionDecimal.exp(1);
 
-/** 使える関数と、その引数の個数(§2.3)。 */
-const FUNCTION_ARITY: ReadonlyMap<string, number> = new Map([
+/**
+ * 使える関数と、その引数の個数(§2.3)。
+ * 輸出するのは、この名前の集合をパラメータ名の予約語判定(variableNames.ts の
+ * checkVariableName)からも使うため。関数名の一覧を2か所に書かない
+ * (docs/plans/P4b-スケッチの仕上げ.md タスク1)。
+ */
+export const FUNCTION_ARITY: ReadonlyMap<string, number> = new Map([
   ['sqrt', 1],
   ['cbrt', 1],
   ['abs', 1],

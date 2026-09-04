@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ExpressionFailure, type ExpressionError } from './errors.js';
+import { evaluateExpression } from './evaluateExpression.js';
 import { normalizeExpressionSource, tokenize, type Token } from './tokenize.js';
 
 /**
@@ -129,5 +130,53 @@ describe('字句解析(FR-201)', () => {
 
   it('長すぎる式は tooLong', () => {
     expect(codeOf('1'.repeat(1001))).toBe('tooLong');
+  });
+});
+
+describe('日本語の変数名(FR-207、記法バージョン2)', () => {
+  it('ひらがな・カタカナ・漢字を含む名前を1つの識別子として読む', () => {
+    expect(summarize(tokenize('板厚'))).toEqual(['identifier:板厚@0']);
+    expect(summarize(tokenize('あなが'))).toEqual(['identifier:あなが@0']);
+    expect(summarize(tokenize('アナガ'))).toEqual(['identifier:アナガ@0']);
+    expect(summarize(tokenize('穴径ー'))).toEqual(['identifier:穴径ー@0']);
+  });
+
+  it('数字は識別子の先頭に来られない(2文字目以降では続く)', () => {
+    expect(summarize(tokenize('2倍'))).toEqual(['number:2@0', 'identifier:倍@1']);
+    expect(summarize(tokenize('穴径2'))).toEqual(['identifier:穴径2@0']);
+  });
+
+  it('半角カタカナは範囲に入れず、使えない文字として断る(§0.16の決定)', () => {
+    expect(codeOf('ｱ1')).toBe('unexpectedCharacter');
+  });
+
+  it('全角空白を挟んでも識別子は変わらない(normalizeExpressionSource は空白だけ半角へ直す)', () => {
+    expect(summarize(tokenize(`板厚${FULL_WIDTH_SPACE}*${FULL_WIDTH_SPACE}2`))).toEqual([
+      'identifier:板厚@0',
+      'operator:*@3',
+      'number:2@5',
+    ]);
+  });
+
+  it('日本語の名前を変数として評価できる(FR-201)', () => {
+    const result = evaluateExpression('板厚 * 2', { variables: new Map([['板厚', 3]]) });
+    expect(result).toEqual({
+      ok: true,
+      value: { source: '板厚 * 2', value: 6, display: '6' },
+    });
+  });
+
+  it('変数表を渡さなければ従来どおり unknownVariable で断る', () => {
+    const result = evaluateExpression('板厚 * 2');
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.code).toBe('unknownVariable');
+  });
+
+  it('全角空白を挟んだ日本語の変数名も評価できる', () => {
+    const result = evaluateExpression('板厚　* 2', { variables: new Map([['板厚', 3]]) });
+    expect(result).toEqual({
+      ok: true,
+      value: { source: '板厚　* 2', value: 6, display: '6' },
+    });
   });
 });

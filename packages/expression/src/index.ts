@@ -7,8 +7,13 @@
  * 余地を残すため(計画書 docs/plans/P1-式とスケッチ.md タスク7 手順2)。
  */
 
-/** このパッケージが受け付ける式の記法バージョン。保存した式を読み戻すときの互換判定に使う。 */
-export const EXPRESSION_SYNTAX_VERSION = 1;
+/**
+ * このパッケージが受け付ける式の記法バージョン。保存した式を読み戻すときの互換判定に使う。
+ * 1 → 2(2026-09-04、P4b タスク1): 変数名にひらがな・カタカナ・CJK統合漢字を許すよう
+ * `tokenize.ts` の識別子の文字集合を広げた(FR-207)。版1で書かれた式(ASCIIの名前・π・
+ * 関数呼び出し)はすべて版2でも同じように読めるので、読み手の後方互換は保たれる。
+ */
+export const EXPRESSION_SYNTAX_VERSION = 2;
 
 /** 角度の単位。度を既定とする(FR-205)。 */
 export type AngleUnit = 'degree' | 'radian';
@@ -33,3 +38,10 @@ export {
   type ExpressionResult,
   type ExpressionValue,
 } from './evaluateExpression.js';
+export {
+  checkVariableName,
+  collectVariableNames,
+  isNumericLiteral,
+  renameVariable,
+  type VariableNameIssue,
+} from './variableNames.js';

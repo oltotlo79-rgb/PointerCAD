@@ -264,8 +264,10 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     return;
   }
   // ここまで来たら中身は確かめ済み。文書を差し替え、Undo で開く前へ戻れるようにする。
+  // 文書まるごとの差し替えなので、プロパティ欄の打ちかけの下書きは捨てる
+  // (§0.a-0.1〜、docs/報告記録.md 2026-09-04 14:05 の 9b)。
   const store = useAppStore.getState();
-  store.applyDocument(result.document);
+  store.applyDocument(result.document, { replacesDocument: true });
   store.setFileState(picked.name, result.document);
 }
 

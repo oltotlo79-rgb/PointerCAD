@@ -103,6 +103,14 @@ export interface ApplyDocumentOptions {
    * 利用者の操作ではない差し替えでは false にする。
    */
   readonly undoable?: boolean;
+  /**
+   * 文書をまるごと差し替える呼び出しか(ファイルを開く等)。既定は false(いまの編集の続き)。
+   * true のときだけ `documentVersion` を進める(§0.a-0.1〜、docs/報告記録.md 2026-09-04
+   * 14:05 の 9b)。プロパティ欄の打ちかけの下書き(`FieldDraft` 等)は、選択している
+   * フィーチャーの id が変わらないまま文書だけが差し替わると `key` での作り直しが起きず
+   * 古い下書きが残ってしまうため、この数の変化を見て下書きを捨てる。
+   */
+  readonly replacesDocument?: boolean;
 }
 
 export interface AppState {
@@ -167,6 +175,13 @@ export interface AppState {
    * 差し替える口は `applyDocument` の 1 つだけにし、下の控えはそこで作り直す。
    */
   readonly document: PartDocument;
+  /**
+   * 文書がまるごと差し替わった回数(開く・新規・復元・Undo/Redo)。プロパティ欄の
+   * 打ちかけの下書きを、この数の変化で捨てる判定に使う(`shell/fieldDraft.ts`、
+   * docs/報告記録.md 2026-09-04 14:05 の 9b)。プロパティ欄の 1 文字ずつの編集
+   * (`coalesceKey` を伴う `applyDocument`)では増えない。
+   */
+  readonly documentVersion: number;
   /** Undo / Redo の履歴(FR-505)。`present` は常に `document` と同じものを指す。 */
   readonly undoStack: UndoStack<PartDocument>;
   /** 戻せる段・進める段があるか。ツールバーのボタンの入り切りに使う(FR-505)。 */
@@ -542,6 +557,7 @@ export function createInitialDocumentState(): Pick<
   | 'selectionKind'
   | 'workPlaneId'
   | 'document'
+  | 'documentVersion'
   | 'undoStack'
   | 'canUndo'
   | 'canRedo'
@@ -588,6 +604,7 @@ export function createInitialDocumentState(): Pick<
     selectionKind: 'body',
     workPlaneId: DEFAULT_WORK_PLANE_ID,
     document,
+    documentVersion: 0,
     undoStack: createUndoStack(document),
     canUndo: false,
     canRedo: false,
@@ -729,6 +746,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
           : pushUndo(state.undoStack, next, { coalesceKey });
       return {
         ...documentPatch(state, next, stack),
+        // 文書をまるごと差し替える呼び出し(開く等)のときだけ進める(§0.a-0.1〜)。
+        documentVersion:
+          options?.replacesDocument === true ? state.documentVersion + 1 : state.documentVersion,
         // 束ねる変更(プロパティ欄の 1 文字ごと)では計算中の札を立てない。立てると
         // 打つたびに札が点滅する。再計算は attachPartRecompute が拾い、終わり次第
         // そのまま形が動く(NFR-PF-1)。
@@ -807,6 +827,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       }
       return {
         ...documentPatch(state, stack.present, stack),
+        // 時をまたぐ差し替えなので、プロパティ欄の打ちかけの下書きは捨てる(§0.a-0.1〜)。
+        documentVersion: state.documentVersion + 1,
         isComputing: true,
         fileMessage: null,
         recomputeCancelled: false,
@@ -821,6 +843,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       }
       return {
         ...documentPatch(state, stack.present, stack),
+        documentVersion: state.documentVersion + 1,
         isComputing: true,
         fileMessage: null,
         recomputeCancelled: false,
@@ -931,6 +954,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   resetDocument: (next) => {
     set((state) => ({
       ...documentPatch(state, next, createUndoStack(next)),
+      // 新規・復元も文書の丸ごとの差し替え(§0.a-0.1〜)。
+      documentVersion: state.documentVersion + 1,
       isComputing: true,
       // 新しい部品に、前の部品の取りかけ・選択・断りの理由を持ち越さない(NFR-UX-3)。
       activeTool: 'select',

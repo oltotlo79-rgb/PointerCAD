@@ -570,6 +570,17 @@ describe('開く(FR-806、NFR-RE-1)', () => {
 
     expect(useAppStore.getState().canUndo).toBe(true);
   });
+
+  it('開くと documentVersion が進む(選んでいる欄の下書きを捨てる合図、9b)', async () => {
+    const fake = createFakeGateway({ savedName: '部品1.pcad' });
+    useFake(fake);
+    await savePart(createFakeDeps(true).deps, false);
+    const before = useAppStore.getState().documentVersion;
+
+    await openPart(createFakeDeps(true).deps);
+
+    expect(useAppStore.getState().documentVersion).toBe(before + 1);
+  });
 });
 
 describe('新規(FR-806、NFR-UX-3)', () => {
@@ -613,5 +624,14 @@ describe('新規(FR-806、NFR-UX-3)', () => {
 
     expect(deps.confirmed).toEqual([]);
     expect(useAppStore.getState().document).toEqual(createEmptyPartDocument());
+  });
+
+  it('新規にすると documentVersion が進む(選んでいる欄の下書きを捨てる合図、9b)', async () => {
+    useFake(createFakeGateway());
+    const before = useAppStore.getState().documentVersion;
+
+    await newPart(createFakeDeps(true).deps);
+
+    expect(useAppStore.getState().documentVersion).toBe(before + 1);
   });
 });

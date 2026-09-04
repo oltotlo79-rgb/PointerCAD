@@ -20,16 +20,21 @@ import { useAppStore } from '../store/useAppStore.js';
  * この形を満たす偽物を渡せる。
  */
 export interface ThemeRootElement {
-  dataset: { theme?: string };
+  dataset: { theme?: string; uiScale?: string };
   readonly style: { setProperty: (property: string, value: string) => void };
 }
 
 /**
  * 表示設定をルート要素へ書く。`data-theme` は `appShell.css` の `[data-theme="…"]` を
  * 選び直し、`--pcad-scale` は 0.9〜1.5 の倍率(`uiScale` は 90〜150 の百分率)として渡す。
+ *
+ * `data-ui-scale` は `uiScale` をそのまま文字列にした属性(例: `data-ui-scale="150"`)。
+ * `appShell.css` のツールバーの 2 段の整形が、窓幅の媒体条件だけでなくこの属性でも
+ * 効くようにするため(P4 タスク2 仕上げ。拡大率は媒体条件からは読めない)。
  */
 export function applyDisplaySettings(settings: DisplaySettings, root: ThemeRootElement): void {
   root.dataset.theme = settings.theme;
+  root.dataset.uiScale = String(settings.uiScale);
   root.style.setProperty('--pcad-scale', String(settings.uiScale / 100));
 }
 

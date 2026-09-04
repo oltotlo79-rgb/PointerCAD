@@ -123,7 +123,7 @@
   /*
    * 3D 表示の色(FR-908 のテーマ連動)。three.js は CSS 変数を読めないので、
    * viewport/themeColors.ts が getComputedStyle で読んで 16 進へ直す。
-   * **この 16 個はどのテーマも 1 つ残らず持つ**(欠けると別テーマの色が混ざる)。
+   * **この 24 個はどのテーマも 1 つ残らず持つ**(欠けると別テーマの色が混ざる)。
    * ダークの値は P0〜P3 で各層が直接持っていた定数そのままで、
    * viewport/themeColors.test.ts が DEFAULT_THEME_COLORS との一致を固定する。
    */
@@ -143,6 +143,21 @@
   --pcad-thread-mark: #8a93a6;
   --pcad-work-plane: #4f8cff;
   --pcad-scene-ground: #3a3f4a;
+
+  /*
+   * ビューキューブ(P4 タスク2 仕上げ、docs/報告記録.md 2026-09-04 14:05)。
+   * P0〜P3 は viewcube/faceTexture.ts と createViewCubeScene.ts に固定の 16 進定数として
+   * 持っていて、テーマを切り替えても白い立方体のまま地に埋もれていた。ダークの値は
+   * そのときの定数のままで、見た目を変えない。
+   */
+  --pcad-viewcube-face-top: #eef1f6;
+  --pcad-viewcube-face-front: #e3e7ee;
+  --pcad-viewcube-face-right: #dfe3ea;
+  --pcad-viewcube-face-left: #cbd0da;
+  --pcad-viewcube-face-back: #c6cbd6;
+  --pcad-viewcube-face-bottom: #b6bcc9;
+  --pcad-viewcube-edge: #8a91a0;
+  --pcad-viewcube-text: #1f2430;
 }
 
 /*
@@ -222,6 +237,21 @@
   --pcad-thread-mark: #6b7380;
   --pcad-work-plane: #2f6fe0;
   --pcad-scene-ground: #cfd5df;
+
+  /*
+   * ビューキューブ。白地に近い元の面色(ダークの値)をそのまま使うと、白い地に埋もれて
+   * 見えなくなるため(P4 タスク2 仕上げの不具合)、暗い面 + 明るい文字へ反転する
+   * (テキストは text-ratio 4.5 以上、面は viewport の地に対し 4:1 以上、実測は
+   * viewport/themeColors.test.ts)。
+   */
+  --pcad-viewcube-face-top: #63708e;
+  --pcad-viewcube-face-front: #60698a;
+  --pcad-viewcube-face-right: #576080;
+  --pcad-viewcube-face-left: #4c5573;
+  --pcad-viewcube-face-back: #434b66;
+  --pcad-viewcube-face-bottom: #3a4159;
+  --pcad-viewcube-edge: #242a40;
+  --pcad-viewcube-text: #f4f6fb;
 }
 
 /*
@@ -294,6 +324,16 @@
   --pcad-thread-mark: #8a93a6;
   --pcad-work-plane: #5b9dff;
   --pcad-scene-ground: #3a3f4a;
+
+  /* ビューキューブ。地の暗さがダークとほぼ同じなので、同じ値をそのまま持つ。 */
+  --pcad-viewcube-face-top: #eef1f6;
+  --pcad-viewcube-face-front: #e3e7ee;
+  --pcad-viewcube-face-right: #dfe3ea;
+  --pcad-viewcube-face-left: #cbd0da;
+  --pcad-viewcube-face-back: #c6cbd6;
+  --pcad-viewcube-face-bottom: #b6bcc9;
+  --pcad-viewcube-edge: #8a91a0;
+  --pcad-viewcube-text: #1f2430;
 }
 
 /*
@@ -361,6 +401,16 @@
   --pcad-thread-mark: #6b7380;
   --pcad-work-plane: #2f6fe0;
   --pcad-scene-ground: #cfd5df;
+
+  /* ビューキューブ。ライトと同じ明るい地なので、同じ値をそのまま持つ。 */
+  --pcad-viewcube-face-top: #63708e;
+  --pcad-viewcube-face-front: #60698a;
+  --pcad-viewcube-face-right: #576080;
+  --pcad-viewcube-face-left: #4c5573;
+  --pcad-viewcube-face-back: #434b66;
+  --pcad-viewcube-face-bottom: #3a4159;
+  --pcad-viewcube-edge: #242a40;
+  --pcad-viewcube-text: #f4f6fb;
 }
 
 /*
@@ -434,6 +484,20 @@
   --pcad-thread-mark: #45484f;
   --pcad-work-plane: #123a8a;
   --pcad-scene-ground: #b9bec7;
+
+  /*
+   * ビューキューブ。中間の明るさの地なので、solid(#d5d9e0)と同じ「地より明るい面」の
+   * 方針にそろえつつ、稜線・文字はモダンの暗い基調(solid-edge / text)を使う
+   * (ダークの値をそのまま流用すると稜線が viewport の地とほぼ同色になって埋もれるため)。
+   */
+  --pcad-viewcube-face-top: #f8fafc;
+  --pcad-viewcube-face-front: #f2f4f8;
+  --pcad-viewcube-face-right: #ebeef3;
+  --pcad-viewcube-face-left: #e3e6ec;
+  --pcad-viewcube-face-back: #dde1e7;
+  --pcad-viewcube-face-bottom: #d5d9e0;
+  --pcad-viewcube-edge: #23262c;
+  --pcad-viewcube-text: #14161a;
 }
 
 /* ===== 全体の骨格 ===== */
@@ -616,6 +680,27 @@
     flex-basis: 100%;
     height: var(--pcad-space-2);
   }
+}
+
+/*
+ * 拡大率が 125% 以上のときも、窓幅の境目に関係なく 2 段の整形を効かせる(FR-909、
+ * P4 タスク2 仕上げ)。窓の CSS 画素幅は拡大率で変わらないので、上の
+ * `@media (max-width: 1399px)` だけでは 125%/150% で文字・余白だけが大きくなって
+ * 1 段からあふれ、崩れた折り返しになってしまう。拡大率は媒体条件から読めないので、
+ * ルート要素の `data-ui-scale`(`shell/applyDisplaySettings.ts` が書く、例:
+ * `data-ui-scale="150"`)を見る。拡大率の段は 90/100/110/125/150 の 5 つだけ
+ * (`settings.ts` の UI_SCALE_STEPS)で、125 以上はこの 2 値なのでどちらも明示する。
+ * 中身は上の @media ブロックと同じ規則を流用する。
+ */
+:root[data-ui-scale="125"] .pcad-toolbar,
+:root[data-ui-scale="150"] .pcad-toolbar {
+  row-gap: 0;
+}
+
+:root[data-ui-scale="125"] .pcad-toolbar__spacer,
+:root[data-ui-scale="150"] .pcad-toolbar__spacer {
+  flex-basis: 100%;
+  height: var(--pcad-space-2);
 }
 
 /* ===== 操作要素(タブ・ボタン・セグメント) ===== */

@@ -1,21 +1,24 @@
 import * as THREE from 'three';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import type { ThemeColors } from '../viewport/themeColors.js';
 
 /** 面 1 枚ぶんの画像の一辺(画素)。表示寸法より大きく描いて文字のにじみを防ぐ。 */
 const TEXTURE_SIZE = 128;
 
-const FACE_TEXT_COLOR = '#1f2430';
 const FACE_FONT = '700 54px "Yu Gothic UI", "Meiryo", sans-serif';
 
 /**
  * 立方体の 1 面ぶんの文字入り画像を作る。
  *
- * 面の文字は ja.json から引く(NFR-MA-5)。地の色は面ごとに変え、光を上・前・右から
- * 当てたときの明るさの差を表す(立体に見えるようにするため)。稜線は 3 次元の線で
- * 別に描くので、ここでは枠を描かない。
+ * 面の文字は ja.json から引く(NFR-MA-5)。地の色・文字の色は呼び出し側(テーマの色、
+ * P4 タスク2 仕上げ)が渡す。稜線は 3 次元の線で別に描くので、ここでは枠を描かない。
  */
-export function createFaceTexture(labelKey: MessageKey, fillColor: string): THREE.CanvasTexture {
+export function createFaceTexture(
+  labelKey: MessageKey,
+  fillColor: string,
+  textColor: string,
+): THREE.CanvasTexture {
   const canvas = globalThis.document.createElement('canvas');
   canvas.width = TEXTURE_SIZE;
   canvas.height = TEXTURE_SIZE;
@@ -28,7 +31,7 @@ export function createFaceTexture(labelKey: MessageKey, fillColor: string): THRE
   context.fillStyle = fillColor;
   context.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
 
-  context.fillStyle = FACE_TEXT_COLOR;
+  context.fillStyle = textColor;
   context.font = FACE_FONT;
   context.textAlign = 'center';
   context.textBaseline = 'middle';
@@ -39,10 +42,11 @@ export function createFaceTexture(labelKey: MessageKey, fillColor: string): THRE
   return texture;
 }
 
-/** 立方体の 1 面の見た目。文字と地の色。 */
+/** 立方体の 1 面の見た目。文字の言葉と、テーマの色から地の色を引く欄。 */
 export interface ViewCubeFace {
   readonly labelKey: MessageKey;
-  readonly fillColor: string;
+  /** `ThemeColors` のうち、この面の地の色を持つ欄。 */
+  readonly fillField: keyof ThemeColors;
 }
 
 /**
@@ -63,13 +67,15 @@ export interface ViewCubeFace {
  * 相互に矛盾していたため、検算のうえ修正した)。
  *
  * 地の色は「上・前・右の方向から光が当たっている」と見えるように、
- * 上 > 前 > 右 > 左 > 後 > 下 の順で暗くする。文字が読めるよう、どの面も十分明るく保つ。
+ * 上 > 前 > 右 > 左 > 後 > 下 の順で暗くする(ダークの値。テーマごとの実際の値は
+ * `viewport/themeColors.ts` の `ThemeColors` / `appShell.css` の `--pcad-viewcube-face-*`)。
+ * 文字が読めるよう、どの面も十分明るく保つ。
  */
 export const CUBE_FACES: readonly ViewCubeFace[] = [
-  { labelKey: 'viewCube.right', fillColor: '#dfe3ea' },
-  { labelKey: 'viewCube.left', fillColor: '#cbd0da' },
-  { labelKey: 'viewCube.top', fillColor: '#eef1f6' },
-  { labelKey: 'viewCube.bottom', fillColor: '#b6bcc9' },
-  { labelKey: 'viewCube.front', fillColor: '#e3e7ee' },
-  { labelKey: 'viewCube.back', fillColor: '#c6cbd6' },
+  { labelKey: 'viewCube.right', fillField: 'viewCubeFaceRight' },
+  { labelKey: 'viewCube.left', fillField: 'viewCubeFaceLeft' },
+  { labelKey: 'viewCube.top', fillField: 'viewCubeFaceTop' },
+  { labelKey: 'viewCube.bottom', fillField: 'viewCubeFaceBottom' },
+  { labelKey: 'viewCube.front', fillField: 'viewCubeFaceFront' },
+  { labelKey: 'viewCube.back', fillField: 'viewCubeFaceBack' },
 ];

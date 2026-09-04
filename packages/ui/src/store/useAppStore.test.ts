@@ -158,6 +158,7 @@ function partWithMixedFeatures(): PartDocument {
     kind: 'line',
     from: absoluteCoordinate(0, 0, 0),
     to: absoluteCoordinate(10, 0, 0),
+    construction: false,
   };
   const face: SketchFaceFeature = {
     id: 'face-1',
@@ -624,6 +625,72 @@ describe('Undo / Redo(FR-505、§0.a-0.13)', () => {
     useAppStore.getState().setSketch(documentWithPoint());
     useAppStore.getState().setSketch(createEmptySketchDocument());
     expect(useAppStore.getState().undoStack.past).toHaveLength(2);
+  });
+});
+
+describe('documentVersion(プロパティ欄の下書きを捨てる判定、docs/報告記録.md 2026-09-04 14:05 の 9b)', () => {
+  it('起動直後は 0', () => {
+    expect(useAppStore.getState().documentVersion).toBe(0);
+  });
+
+  it('プロパティ欄の 1 文字ずつの反映(coalesceKey あり)では進まない', () => {
+    useAppStore.getState().setSketch(documentWithPoint());
+    const before = useAppStore.getState().documentVersion;
+
+    const target = useAppStore.getState().sketch.features[0];
+    for (const value of [4, 5, 6]) {
+      const current = useAppStore.getState().sketch.features[0];
+      useAppStore
+        .getState()
+        .replaceSketchFeature(
+          target.id,
+          setFeatureField(current, 'at.x', expressionValueFromNumber(value)),
+        );
+    }
+    expect(useAppStore.getState().documentVersion).toBe(before);
+  });
+
+  it('普通の applyDocument(新しい要素の追加など)では進まない', () => {
+    const before = useAppStore.getState().documentVersion;
+    useAppStore.getState().applyDocument(partWithPoint());
+    expect(useAppStore.getState().documentVersion).toBe(before);
+  });
+
+  it('replacesDocument: true を渡すと進む(開くファイルの読み込みと同じ扱い)', () => {
+    const before = useAppStore.getState().documentVersion;
+    useAppStore.getState().applyDocument(partWithPoint(), { replacesDocument: true });
+    expect(useAppStore.getState().documentVersion).toBe(before + 1);
+  });
+
+  it('undo / redo で進む(時をまたぐ差し替えなので下書きを信用しない)', () => {
+    useAppStore.getState().applyDocument(partWithPoint());
+    const afterApply = useAppStore.getState().documentVersion;
+
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().documentVersion).toBe(afterApply + 1);
+
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().documentVersion).toBe(afterApply + 2);
+  });
+
+  it('戻せる段が無い undo / redo は何も起きないので進まない', () => {
+    const before = useAppStore.getState().documentVersion;
+    useAppStore.getState().undo();
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().documentVersion).toBe(before);
+  });
+
+  it('resetDocument(新規・復元)で進む', () => {
+    const before = useAppStore.getState().documentVersion;
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    expect(useAppStore.getState().documentVersion).toBe(before + 1);
+  });
+
+  it('同じ文書を入れ直しても(何も変わらないとき)進まない', () => {
+    const before = useAppStore.getState().document;
+    const beforeVersion = useAppStore.getState().documentVersion;
+    useAppStore.getState().applyDocument(before, { replacesDocument: true });
+    expect(useAppStore.getState().documentVersion).toBe(beforeVersion);
   });
 });
 

@@ -45,6 +45,20 @@ export interface ThemeColors {
   readonly workPlane: number;
   /** 半球光の地面側の色。明るいテーマでは立体の下面が沈みすぎないよう明るくする。 */
   readonly sceneGround: number;
+  /**
+   * ビューキューブの 6 面(P4 タスク2 仕上げ、docs/報告記録.md 2026-09-04 14:05)。
+   * 面ごとに明るさを変えて立体に見せる(上・前・右から光が当たっている想定)。
+   */
+  readonly viewCubeFaceTop: number;
+  readonly viewCubeFaceFront: number;
+  readonly viewCubeFaceRight: number;
+  readonly viewCubeFaceLeft: number;
+  readonly viewCubeFaceBack: number;
+  readonly viewCubeFaceBottom: number;
+  /** ビューキューブの稜線。 */
+  readonly viewCubeEdge: number;
+  /** ビューキューブの面の文字。 */
+  readonly viewCubeText: number;
 }
 
 /**
@@ -68,10 +82,19 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   threadMark: 0x8a93a6,
   workPlane: 0x4f8cff,
   sceneGround: 0x3a3f4a,
+  // ビューキューブ(P0〜P3 で faceTexture.ts / createViewCubeScene.ts が直接持っていた定数)。
+  viewCubeFaceTop: 0xeef1f6,
+  viewCubeFaceFront: 0xe3e7ee,
+  viewCubeFaceRight: 0xdfe3ea,
+  viewCubeFaceLeft: 0xcbd0da,
+  viewCubeFaceBack: 0xc6cbd6,
+  viewCubeFaceBottom: 0xb6bcc9,
+  viewCubeEdge: 0x8a91a0,
+  viewCubeText: 0x1f2430,
 };
 
 /**
- * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 16 個がそろっていること
+ * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 24 個がそろっていること
  * (どのテーマでも 1 つも欠けないこと)は `themeColors.test.ts` が固定する。
  */
 export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
@@ -91,6 +114,14 @@ export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
   threadMark: '--pcad-thread-mark',
   workPlane: '--pcad-work-plane',
   sceneGround: '--pcad-scene-ground',
+  viewCubeFaceTop: '--pcad-viewcube-face-top',
+  viewCubeFaceFront: '--pcad-viewcube-face-front',
+  viewCubeFaceRight: '--pcad-viewcube-face-right',
+  viewCubeFaceLeft: '--pcad-viewcube-face-left',
+  viewCubeFaceBack: '--pcad-viewcube-face-back',
+  viewCubeFaceBottom: '--pcad-viewcube-face-bottom',
+  viewCubeEdge: '--pcad-viewcube-edge',
+  viewCubeText: '--pcad-viewcube-text',
 };
 
 const COLOR_FIELDS: readonly (keyof ThemeColors)[] = Object.keys(
@@ -173,7 +204,24 @@ export function themeColorsFrom(read: (token: string) => string): ThemeColors {
     threadMark: colors.threadMark,
     workPlane: colors.workPlane,
     sceneGround: colors.sceneGround,
+    viewCubeFaceTop: colors.viewCubeFaceTop,
+    viewCubeFaceFront: colors.viewCubeFaceFront,
+    viewCubeFaceRight: colors.viewCubeFaceRight,
+    viewCubeFaceLeft: colors.viewCubeFaceLeft,
+    viewCubeFaceBack: colors.viewCubeFaceBack,
+    viewCubeFaceBottom: colors.viewCubeFaceBottom,
+    viewCubeEdge: colors.viewCubeEdge,
+    viewCubeText: colors.viewCubeText,
   };
+}
+
+/**
+ * `parseCssColor` の逆変換。0xRRGGBB の整数を、canvas や three.js の材質へ渡せる
+ * `#rrggbb` の文字列に直す(ビューキューブの面はテクスチャに焼き込むので、色を
+ * 数のまま渡せない。`createFaceTexture` がここを使う)。
+ */
+export function cssColor(value: number): string {
+  return `#${value.toString(16).padStart(6, '0')}`;
 }
 
 /**

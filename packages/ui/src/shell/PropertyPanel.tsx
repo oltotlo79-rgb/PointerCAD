@@ -5,6 +5,7 @@ import { replaceSolid, type SketchFeature, type SolidFeature } from '@pointercad
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
+import { initialDraftVersionState, reconcileDraftVersion } from './fieldDraft.js';
 import { ChevronRightIcon } from './icons.js';
 import {
   faceBoundaryEntries,
@@ -74,13 +75,29 @@ interface FieldDraft {
  * 書き戻せないものを覚えておかないと、打っている途中で欄の中身が前の値へ戻ってしまう。
  * 見た目だけの一時状態なので `useState` に置いてよい(rules/04-設計の規律.md)。
  * 選ぶ要素が変わったときは `key` で作り直され、この途中の文字も消える。
+ *
+ * ただし**選ぶ要素が変わらないまま文書だけが差し替わる**(焦点を残したまま開く・新規・
+ * 復元・Undo/Redo をすると、開き直した文書にも同じ id のフィーチャーが残っているため
+ * `key` は変わらない)ときは、この作り直しが起きず古い下書きが残ってしまう
+ * (docs/報告記録.md 2026-09-04 14:05 の 9b)。`documentVersion`(文書が丸ごと
+ * 差し替わった回数)を `fieldDraft.ts` の純関数で見張り、変わっていたら下書きを捨てる。
  */
 function FeatureProperties({ feature }: { readonly feature: SketchFeature }): React.JSX.Element {
   const sketch = useAppStore((state) => state.sketch);
   const resolved = useAppStore((state) => state.resolvedSketch);
   const sketchMesh = useAppStore((state) => state.sketchMesh);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
-  const [draft, setDraft] = useState<FieldDraft | null>(null);
+  const documentVersion = useAppStore((state) => state.documentVersion);
+  const [draftState, setDraftState] = useState(() =>
+    initialDraftVersionState<FieldDraft>(documentVersion),
+  );
+  // 文書が丸ごと差し替わっていたら、この描画のうちに下書きを捨てて文書の値を出す
+  // (焦点は同じ DOM のまま残るので、ここで動かす必要は無い)。
+  const reconciled = reconcileDraftVersion(draftState, documentVersion);
+  if (reconciled !== draftState) {
+    setDraftState(reconciled);
+  }
+  const draft = reconciled.draft;
 
   const summary = summarizeFeature(feature, sketchErrors);
   const computed = resolvedFields(feature, resolved, sketchMesh);
@@ -108,7 +125,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
         focused={false}
         onFocus={() => undefined}
         onChange={(next) => {
-          setDraft({ path: item.path, source: next });
+          setDraftState({ draft: { path: item.path, source: next }, seenVersion: documentVersion });
           const parsed = evaluateExpression(next);
           if (!parsed.ok) {
             return;
@@ -393,12 +410,24 @@ interface SolidFieldDraft {
  *
  * 形が作れていない立体でも欄は編集できる。直せばそのまま作り直せるようにするため(FR-504)。
  * 体積と三角形の数は形ができたときだけ出し、出せないときは「—」ではなく理由を言葉で出す。
+ *
+ * 下書きが**選ぶ要素が変わらないまま文書だけ差し替わった**ときに残ってしまう不具合
+ * (docs/報告記録.md 2026-09-04 14:05 の 9b)への対処は `FeatureProperties` と同じ
+ * (`fieldDraft.ts` の `documentVersion` の見張り)。
  */
 function SolidProperties({ feature }: { readonly feature: SolidFeature }): React.JSX.Element {
   const part = useAppStore((state) => state.document);
   const bodies = useAppStore((state) => state.bodies);
   const partErrors = useAppStore((state) => state.partErrors);
-  const [draft, setDraft] = useState<SolidFieldDraft | null>(null);
+  const documentVersion = useAppStore((state) => state.documentVersion);
+  const [draftState, setDraftState] = useState(() =>
+    initialDraftVersionState<SolidFieldDraft>(documentVersion),
+  );
+  const reconciled = reconcileDraftVersion(draftState, documentVersion);
+  if (reconciled !== draftState) {
+    setDraftState(reconciled);
+  }
+  const draft = reconciled.draft;
 
   const summary = summarizeSolid(part, feature, partErrors);
   const errorMessage = partErrorMessage(partErrors, feature.id);
@@ -437,7 +466,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         focused={false}
         onFocus={() => undefined}
         onChange={(next) => {
-          setDraft({ key: item.key, source: next });
+          setDraftState({ draft: { key: item.key, source: next }, seenVersion: documentVersion });
           const parsed = evaluateExpression(next);
           if (!parsed.ok) {
             return;

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
+import { useAppStore } from '../store/useAppStore.js';
 import { orbit, type OrbitState } from '../viewport/cameraMath.js';
+import { readThemeColors } from '../viewport/themeColors.js';
 import { createViewCubeScene } from './createViewCubeScene.js';
 import {
   interpolateOrbit,
@@ -64,6 +66,11 @@ export interface ViewCubeProps {
  *
  * 面を押して視点が移り始めたら、指が止まったままでも強調(面の青と丸い下地)を消す。
  * 押した後も光ったままだと、まだ押せる場所を指しているのか区別が付かないため(NFR-UX-7)。
+ *
+ * 面・稜線・文字・ホバーの色はテーマに追従する(FR-908、P4 タスク2 仕上げ)。
+ * `ViewportCanvas.tsx` と同じ作り(`themeDirty` を立てておき、次の描画機会に一度だけ
+ * `readThemeColors()` を読み直す)にそろえる。テーマだけが変わっても本体ビューポートは
+ * 必ず描き直す(`requestDraw`)ので、その通知(`subscribeDraw`)に乗って自分も気づける。
  */
 export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -85,9 +92,15 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
     let movedDistance = 0;
     let lastX = 0;
     let lastY = 0;
+    // 起動直後も 1 回読む(保存されていたテーマで始まるため)。ViewportCanvas.tsx と同じ理由。
+    let themeDirty = true;
 
-    /** いまの視点とホバー状態で 1 回だけ描く。 */
+    /** いまの視点とホバー状態で 1 回だけ描く。テーマが変わっていれば先に読み直す。 */
     const drawOnce = (): void => {
+      if (themeDirty) {
+        themeDirty = false;
+        scene.setThemeColors(readThemeColors());
+      }
       scene.render(getOrbit(), highlighted);
     };
 
@@ -142,6 +155,15 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
 
     // ビューポートが描いたら、同じ視点でビューキューブも描き直す。
     const unsubscribeDraw = subscribeDraw(drawOnce);
+
+    // テーマが変わったことを覚えておく。実際に読み直すのは次の描画機会(drawOnce)。
+    // 属性(data-theme)を書くのは applyDisplaySettings.ts の見張りなので、読むのは
+    // ここでの記録だけにして、実際の値は次の描画のときに読む(ViewportCanvas.tsx と同じ)。
+    const unsubscribeTheme = useAppStore.subscribe((next, previous) => {
+      if (next.displaySettings.theme !== previous.displaySettings.theme) {
+        themeDirty = true;
+      }
+    });
 
     /** canvas 上の位置から、指している領域を求める。 */
     const pickAt = (event: PointerEvent): ViewCubeRegion | null => {
@@ -267,6 +289,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
         globalThis.cancelAnimationFrame(frameId);
       }
       unsubscribeDraw();
+      unsubscribeTheme();
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);

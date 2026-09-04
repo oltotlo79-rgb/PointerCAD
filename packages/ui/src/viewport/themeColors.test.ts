@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  cssColor,
   DEFAULT_THEME_COLORS,
   parseCssColor,
   THEME_COLOR_TOKENS,
@@ -91,6 +92,15 @@ describe('CSS の色の読み取り(FR-908)', () => {
     expect(themeColorsFrom(() => '')).toEqual(DEFAULT_THEME_COLORS);
   });
 
+  it('cssColor は parseCssColor の逆変換(ビューキューブの面のテクスチャ用)', () => {
+    expect(cssColor(0x16181d)).toBe('#16181d');
+    expect(cssColor(0x000000)).toBe('#000000');
+    expect(cssColor(0xffffff)).toBe('#ffffff');
+    // 桁落ちしない(0x00abcd のように上位が 0 の値でも 6 桁を保つ)。
+    expect(cssColor(0x00abcd)).toBe('#00abcd');
+    expect(parseCssColor(cssColor(0x4f8cff))).toBe(0x4f8cff);
+  });
+
   it('読めた欄だけが差し替わり、読めない欄は既定のまま残る', () => {
     const colors = themeColorsFrom((token) =>
       token === THEME_COLOR_TOKENS.gridMinor ? '#112233' : 'oklch(0.5 0.1 200)',
@@ -105,7 +115,7 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     expect(themeColorsFrom(readerFor('[data-theme="dark"]'))).toEqual(DEFAULT_THEME_COLORS);
   });
 
-  it('5 テーマとも 16 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
+  it('5 テーマとも 24 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
     for (const [theme, selector] of THEME_SELECTORS) {
       const block = blockOf(selector);
       for (const field of COLOR_FIELDS) {
@@ -127,6 +137,32 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     // ホバー(淡い)と選択(濃い)は、どのテーマでも別の色で見分けられる。
     expect(light.hovered).not.toBe(light.selected);
     expect(dark.hovered).not.toBe(dark.selected);
+  });
+
+  it('ビューキューブ: ダークモダンはダークと同じ値(見た目を変えない、P4 タスク2 仕上げ)', () => {
+    const dark = themeColorsFrom(readerFor('[data-theme="dark"]'));
+    const darkModern = themeColorsFrom(readerFor('[data-theme="darkModern"]'));
+    expect(darkModern.viewCubeFaceTop).toBe(dark.viewCubeFaceTop);
+    expect(darkModern.viewCubeFaceBottom).toBe(dark.viewCubeFaceBottom);
+    expect(darkModern.viewCubeEdge).toBe(dark.viewCubeEdge);
+    expect(darkModern.viewCubeText).toBe(dark.viewCubeText);
+  });
+
+  it('ビューキューブ: ライトはダークより暗い面色を持つ(白い立方体が地に埋もれる不具合の対処)', () => {
+    const dark = themeColorsFrom(readerFor('[data-theme="dark"]'));
+    const light = themeColorsFrom(readerFor('[data-theme="light"]'));
+    const lightModern = themeColorsFrom(readerFor('[data-theme="lightModern"]'));
+    for (const face of [
+      'viewCubeFaceTop',
+      'viewCubeFaceFront',
+      'viewCubeFaceRight',
+      'viewCubeFaceLeft',
+      'viewCubeFaceBack',
+      'viewCubeFaceBottom',
+    ] as const) {
+      expect(light[face], face).toBeLessThan(dark[face]);
+      expect(lightModern[face], face).toBe(light[face]);
+    }
   });
 
   it('拡大率の倍率はルート要素だけが持つ(見本カードの中で等倍へ戻らない)', () => {

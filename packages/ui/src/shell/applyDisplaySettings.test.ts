@@ -52,6 +52,16 @@ describe('applyDisplaySettings(FR-908, FR-909)', () => {
     applyDisplaySettings({ theme: 'dark', uiScale: 150 }, root);
     expect(root.properties.get('--pcad-scale')).toBe('1.5');
   });
+
+  it('data-ui-scale 属性を uiScale の数のまま設定する(appShell.css の2段の整形が読む、P4 タスク2 仕上げ)', () => {
+    const root = createFakeRoot();
+    applyDisplaySettings({ theme: 'dark', uiScale: 125 }, root);
+    expect(root.dataset.uiScale).toBe('125');
+    applyDisplaySettings({ theme: 'dark', uiScale: 150 }, root);
+    expect(root.dataset.uiScale).toBe('150');
+    applyDisplaySettings({ theme: 'dark', uiScale: 100 }, root);
+    expect(root.dataset.uiScale).toBe('100');
+  });
 });
 
 describe('attachDisplaySettings(ストアの変化への配線)', () => {
@@ -63,6 +73,7 @@ describe('attachDisplaySettings(ストアの変化への配線)', () => {
 
     expect(root.dataset.theme).toBe('modern');
     expect(root.properties.get('--pcad-scale')).toBe('1.1');
+    expect(root.dataset.uiScale).toBe('110');
     detach();
   });
 
@@ -74,6 +85,7 @@ describe('attachDisplaySettings(ストアの変化への配線)', () => {
     useAppStore.getState().setDisplaySettings({ theme: 'lightModern', uiScale: 140 });
     expect(root.dataset.theme).toBe('lightModern');
     expect(root.properties.get('--pcad-scale')).toBe('1.4');
+    expect(root.dataset.uiScale).toBe('140');
     detach();
   });
 

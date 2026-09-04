@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import { cameraPosition, type OrbitState } from '../viewport/cameraMath.js';
+import { cssColor, DEFAULT_THEME_COLORS, type ThemeColors } from '../viewport/themeColors.js';
 import { createFaceTexture, CUBE_FACES } from './faceTexture.js';
 import {
   regionFromLocalPoint,
@@ -17,6 +18,13 @@ export interface ViewCubeScene {
   pick(normalizedX: number, normalizedY: number): ViewCubeRegion | null;
   /** 表示の一辺(画素)を合わせる。 */
   resize(sizePixels: number): void;
+  /**
+   * 面・稜線・ホバーの下地の色をテーマから読み直す(FR-908、P4 タスク2 仕上げ)。
+   * 面はテクスチャに色を焼き込んでいるため、材質の色を差し替えるのではなく
+   * テクスチャを作り直す(呼ぶのはテーマ変更時だけなので毎フレームの負荷にはならない、
+   * NFR-PF-1)。呼んだ後、視点やホバーが直前と同じでも次の `render` は描き直す。
+   */
+  setThemeColors(colors: ThemeColors): void;
   dispose(): void;
 }
 
@@ -45,12 +53,12 @@ const MAX_PIXEL_RATIO = 2;
 
 /** ホバー中の領域を示す板を、面からわずかに浮かせる量。面と重なってちらつくのを防ぐ。 */
 const HIGHLIGHT_LIFT = 0.012;
-/** 画面全体で共通のアクセント色。押せる場所であることを一目で分かるようにする(NFR-UX-7)。 */
-const HIGHLIGHT_COLOR = 0x4f8cff;
+/**
+ * ホバーの下地の不透明度。色そのもの(押せる場所であることを一目で分かるようにする、
+ * NFR-UX-7)はテーマの `selected`(スケッチ・立体の選択と同じ色)を使う(P4 タスク2 仕上げ)。
+ */
 const HIGHLIGHT_OPACITY = 0.42;
 
-/** 立方体の稜線の色。面の地の色より一段暗くして、角の位置を読み取れるようにする。 */
-const EDGE_COLOR = 0x8a91a0;
 /**
  * 稜線を面よりわずかに外へ広げる倍率。面とちょうど同じ位置だと深度が競って線が途切れる。
  * 一辺 120 画素の表示で 0.4% は 0.3 画素未満なので、太って見えることはない。
@@ -85,10 +93,10 @@ export function createViewCubeScene(canvas: HTMLCanvasElement, sizePixels: numbe
 
   // 面の文字を確実に読ませたいので、光の当たり方に左右されない材質で描く。
   // 面ごとの明暗は光ではなく地の色で付ける(向きを変えても各面の明るさが変わらないので、
-  // どの面を見ているかが色でも分かる)。
-  const materials = CUBE_FACES.map(
-    (face) => new THREE.MeshBasicMaterial({ map: createFaceTexture(face.labelKey, face.fillColor) }),
-  );
+  // どの面を見ているかが色でも分かる)。テクスチャは色を焼き込む都合上、初期状態は空で
+  // 作り(まだテーマの色が無い)、この関数の末尾の `applyThemeColors(DEFAULT_THEME_COLORS)`
+  // で最初のテクスチャを用意する(P4 タスク2 仕上げ)。
+  const materials = CUBE_FACES.map(() => new THREE.MeshBasicMaterial());
   const cubeGeometry = new THREE.BoxGeometry(
     CUBE_HALF_SIZE * 2,
     CUBE_HALF_SIZE * 2,
@@ -101,15 +109,17 @@ export function createViewCubeScene(canvas: HTMLCanvasElement, sizePixels: numbe
   scene.add(cube);
 
   // 12 本の稜線。立方体の子にして向きを合わせ、当たり判定(intersectObject の非再帰)からは外す。
+  // 色は面の地の色より一段暗くして、角の位置を読み取れるようにする(テーマの
+  // viewCubeEdge、applyThemeColors が設定する)。
   const edgeGeometry = new THREE.EdgesGeometry(cubeGeometry);
-  const edgeMaterial = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
+  const edgeMaterial = new THREE.LineBasicMaterial();
   const cubeEdges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
   cubeEdges.scale.setScalar(EDGE_SCALE);
   cube.add(cubeEdges);
 
   // ホバー中の面・辺・頂点を示す板(NFR-UX-7)。位置と大きさは領域ごとに付け替える。
+  // 色はテーマの selected(スケッチ・立体の選択と同じ色、applyThemeColors が設定する)。
   const highlightMaterial = new THREE.MeshBasicMaterial({
-    color: HIGHLIGHT_COLOR,
     transparent: true,
     opacity: HIGHLIGHT_OPACITY,
     depthWrite: false,
@@ -140,6 +150,32 @@ export function createViewCubeScene(canvas: HTMLCanvasElement, sizePixels: numbe
     renderer.setSize(size, size, false);
   }
   applySize(sizePixels);
+
+  /**
+   * 面・稜線・ホバーの下地の色をテーマから読み直す。面は色をテクスチャに焼き込んでいるので
+   * 材質の色(`material.color`)ではなく、テクスチャそのものを作り直す。古いテクスチャは
+   * 破棄してから差し替える(GPU 資源を残さない)。
+   */
+  function applyThemeColors(colors: ThemeColors): void {
+    for (const [index, face] of CUBE_FACES.entries()) {
+      const material = materials[index];
+      const previousMap = material.map;
+      material.map = createFaceTexture(
+        face.labelKey,
+        cssColor(colors[face.fillField]),
+        cssColor(colors.viewCubeText),
+      );
+      material.needsUpdate = true;
+      previousMap?.dispose();
+    }
+    edgeMaterial.color.setHex(colors.viewCubeEdge);
+    // ホバーの色は選択と同じ色にそろえる(スケッチ・立体の強調と一貫させる)。
+    highlightMaterial.color.setHex(colors.selected);
+    // 色が変わったこと自体は視点・ホバーの変化ではないので、直前の記録を無効にして
+    // 次の render を確実に描き直させる(resize と同じやり方)。
+    lastAzimuth = Number.NaN;
+  }
+  applyThemeColors(DEFAULT_THEME_COLORS);
 
   return {
     render(orbit, highlighted): void {
@@ -207,6 +243,8 @@ export function createViewCubeScene(canvas: HTMLCanvasElement, sizePixels: numbe
       // 大きさが変わったら描き直しが要るので、前回の記録を無効にする。
       lastAzimuth = Number.NaN;
     },
+
+    setThemeColors: applyThemeColors,
 
     dispose(): void {
       cube.geometry.dispose();

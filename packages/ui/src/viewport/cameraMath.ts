@@ -60,6 +60,22 @@ export function zoom(state: OrbitState, wheelDeltaY: number): OrbitState {
   };
 }
 
+/**
+ * カメラから注視点へ向かう単位ベクトル(視線の向き)。Z 軸が上の球面座標から作る。
+ *
+ * 「視点に最も近い作図面」(`useAppStore.ts` の `workPlaneForOrbit`)と、3D スケッチで
+ * 押した場所に置く面(`sketch/freeSketch.ts` の `freeClickPlane`、FR-330)が共有する。
+ * 同じ式を 2 か所に書かないよう、カメラの幾何を持つここ 1 か所に置く。
+ */
+export function viewDirection(state: OrbitState): [number, number, number] {
+  const horizontal = Math.cos(state.elevation);
+  return [
+    -horizontal * Math.cos(state.azimuth),
+    -horizontal * Math.sin(state.azimuth),
+    -Math.sin(state.elevation),
+  ];
+}
+
 /** カメラの位置(ワールド座標)。Z 軸が上。 */
 export function cameraPosition(state: OrbitState): [number, number, number] {
   const horizontal = state.distance * Math.cos(state.elevation);

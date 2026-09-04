@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ExpressionField } from './ExpressionField.js';
+import { coordinateModesFor } from './freeSketch.js';
 import {
   applyNumericInputKey,
   chooseNumericInput,
-  COORDINATE_MODES,
   evaluateNumericInput,
   focusedTarget,
   asksCoordinate,
@@ -19,6 +19,8 @@ import {
   splineFinishStateFrom,
   STEP_TITLE_KEYS,
   toggleNumericInput,
+  type CoordinateMode,
+  type EditInputCommit,
   type NumericChoice,
   type NumericFocusTarget,
   type NumericInputCommit,
@@ -82,6 +84,7 @@ function numericInputKeyFor(
   event: React.KeyboardEvent,
   coordinateStep: boolean,
   focusKind: FocusKind,
+  modes: readonly CoordinateMode[],
 ): NumericInputKey | null {
   // 日本語入力の変換中に押した Enter は確定の合図なので、こちらでは扱わない。
   if (event.nativeEvent.isComposing) {
@@ -114,7 +117,9 @@ function numericInputKeyFor(
     if (event.key === '2') {
       return 'Alt2';
     }
-    if (event.key === '3') {
+    // 3D スケッチでは極座標のタブを出さない(§0.a-0.5、タスク14)ので、
+    // そのときは Alt+3 も効かせない(見えていない指定方法へ切り替わらないように)。
+    if (event.key === '3' && modes.includes('polar')) {
       return 'Alt3';
     }
   }
@@ -250,6 +255,11 @@ export interface NumericInputPopoverProps {
    * 呼ばれる。渡さなければ決定は捨てられる(ポップアップは閉じる)。
    */
   readonly onReferenceCommit?: (commit: ReferenceInputCommit, state: NumericInputState) => void;
+  /**
+   * 整形系の道具(オフセット等、FR-321〜324)を決めたときに呼ばれる。渡さなければ決定は
+   * 捨てられる(ポップアップは閉じる)。
+   */
+  readonly onEditCommit?: (commit: EditInputCommit, state: NumericInputState) => void;
   /** ビューポートの大きさ(画素)。端での折り返しに使う。 */
   readonly viewportWidth: number;
   readonly viewportHeight: number;
@@ -269,11 +279,15 @@ export function NumericInputPopover({
   onCommit,
   onSolidCommit,
   onReferenceCommit,
+  onEditCommit,
   viewportWidth,
   viewportHeight,
 }: NumericInputPopoverProps): React.JSX.Element | null {
   const state = useAppStore((store) => store.numericInput);
   const anchor = useAppStore((store) => store.numericInputAnchor);
+  // 3D スケッチ(FR-330)では極座標の指定方法を隠す(§0.a-0.5、タスク14)。
+  const workPlaneId = useAppStore((store) => store.workPlaneId);
+  const modes = coordinateModesFor(workPlaneId);
 
   // つまみと選択肢は入力欄ではないので、焦点は状態機械の指示でこちらから移す。
   const toggleRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -357,6 +371,12 @@ export function NumericInputPopover({
         update(next);
         return;
       }
+      case 'editCommitted':
+        // 整形系(オフセット、FR-321)は対象を選び直さないと続けられないので、
+        // ソリッドと同じく決めたら必ず閉じる(nextNumericInput も null を返す)。
+        onEditCommit?.(transition.commit, transition.state);
+        useAppStore.getState().closeNumericInput();
+        return;
     }
   };
 
@@ -376,7 +396,7 @@ export function NumericInputPopover({
       role="dialog"
       aria-label={t(STEP_TITLE_KEYS[state.step])}
       onKeyDown={(event) => {
-        const key = numericInputKeyFor(event, coordinateStep, focusKind);
+        const key = numericInputKeyFor(event, coordinateStep, focusKind, modes);
         if (key === null) {
           return;
         }
@@ -395,7 +415,7 @@ export function NumericInputPopover({
           role="group"
           aria-label={t('numericInput.modeGroupLabel')}
         >
-          {COORDINATE_MODES.map((mode) => (
+          {modes.map((mode) => (
             <button
               key={mode}
               type="button"

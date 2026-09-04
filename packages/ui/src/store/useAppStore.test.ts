@@ -17,9 +17,11 @@ import {
   createEmptySketchDocument,
   createPointFeature,
   findSketch,
+  FREE_WORK_PLANE_ID,
   removeSolid,
   replaceSketch,
   resolveSketch,
+  WORK_PLANES,
   type ExtrudeFeature,
   type PartDocument,
   type PartRecomputeOptions,
@@ -1347,5 +1349,29 @@ describe('表示設定(FR-908、FR-909、計画書 P4 タスク1、§0.a-0.1〜0
     useAppStore.getState().setDisplaySettings({ theme: 'lightModern', uiScale: 150 });
     useAppStore.getState().resetDocument(createEmptyPartDocument());
     expect(useAppStore.getState().displaySettings).toEqual({ theme: 'lightModern', uiScale: 150 });
+  });
+});
+
+describe('3D スケッチで押した場所の面(FR-330、タスク14)', () => {
+  /** 画面に正対する面の代わり。向きだけが要るので基準の XY をそのまま使う。 */
+  const plane = { ...WORK_PLANES.xy, id: FREE_WORK_PLANE_ID };
+
+  it('初期値は null(まだ一度も押していない)', () => {
+    expect(useAppStore.getState().freeSketchPlane).toBeNull();
+  });
+
+  it('道具を変えたら捨てる(取りかけを持ち越さない、NFR-UX-3)', () => {
+    useAppStore.getState().setFreeSketchPlane(plane);
+    expect(useAppStore.getState().freeSketchPlane).toEqual(plane);
+    useAppStore.getState().setActiveTool('line');
+    expect(useAppStore.getState().freeSketchPlane).toBeNull();
+  });
+
+  it('作図面を変えたら捨てる(前の作図面の面を持ち越さない)', () => {
+    useAppStore.getState().setFreeSketchPlane(plane);
+    useAppStore.getState().setWorkPlane(FREE_WORK_PLANE_ID);
+    expect(useAppStore.getState().freeSketchPlane).toBeNull();
+    // 3D スケッチを選んだこと自体は残る。
+    expect(useAppStore.getState().workPlaneId).toBe(FREE_WORK_PLANE_ID);
   });
 });

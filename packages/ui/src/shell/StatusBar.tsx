@@ -1,4 +1,9 @@
-import { isBaseWorkPlaneId, liveBodyIds, type BaseWorkPlaneId } from '@pointercad/model';
+import {
+  isBaseWorkPlaneId,
+  isFreeWorkPlaneId,
+  liveBodyIds,
+  type BaseWorkPlaneId,
+} from '@pointercad/model';
 import { useEffect, useState } from 'react';
 
 import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
@@ -25,12 +30,16 @@ const PLANE_KEYS = {
 
 /**
  * 作図面の札の文言。基準の 3 面は名前を ja.json から引き、任意の作業平面(FR-328)は
- * 文書に付いている名前(「作業平面1」など)をそのまま出す(タスク13)。
+ * 文書に付いている名前(「作業平面1」など)をそのまま出す(タスク13)。3D スケッチ
+ * (作図面なし、FR-330)は「3D」と出す(タスク14)。
  * 名前が引けないとき(消えた平面を指したまま)は id を出して、何を指しているか分かるようにする。
  */
 function planeLabel(workPlaneId: string, customPlanes: readonly WorkPlaneEntry[]): string {
   if (isBaseWorkPlaneId(workPlaneId)) {
     return t(PLANE_KEYS[workPlaneId]);
+  }
+  if (isFreeWorkPlaneId(workPlaneId)) {
+    return t('toolbar.plane.free');
   }
   return customPlanes.find((plane) => plane.id === workPlaneId)?.name ?? workPlaneId;
 }
@@ -79,6 +88,8 @@ export function StatusBar(): React.JSX.Element {
   const partErrors = useAppStore((state) => state.partErrors);
   const faceErrorKey = useAppStore((state) => state.faceErrorKey);
   const solidErrorKey = useAppStore((state) => state.solidErrorKey);
+  // 整形系の道具(オフセット等)を作れなかった理由(FR-321、P4 タスク21)。
+  const editErrorKey = useAppStore((state) => state.editErrorKey);
   // 新しい図形を作れなかった理由(P4 タスク12)。文言キーではなく組み立て済みの文。
   const shapeErrorMessage = useAppStore((state) => state.shapeErrorMessage);
   // 基準ジオメトリを作れなかった理由(P4 タスク13)。こちらも組み立て済みの文。
@@ -153,6 +164,7 @@ export function StatusBar(): React.JSX.Element {
     fileMessage,
     faceErrorKey,
     solidErrorKey,
+    editErrorKey,
     shapeErrorMessage,
     referenceErrorMessage,
     errorMessage,
@@ -169,6 +181,8 @@ export function StatusBar(): React.JSX.Element {
     selectionKind,
     springOriginSelected,
     springStep,
+    // 3D スケッチのときだけ案内へ一言を添える(FR-330、タスク14)。
+    workPlaneId,
   });
   const className =
     line.kind === 'failure' ? 'pcad-statusbar pcad-statusbar--error' : 'pcad-statusbar';
@@ -185,6 +199,13 @@ export function StatusBar(): React.JSX.Element {
       <span className="pcad-statusbar__message" aria-live="polite">
         {statusIcon(line.kind)}
         <span className="pcad-statusbar__text">{line.text}</span>
+        {/*
+          案内に添える一言(3D スケッチで頂点を押せること、FR-330 / NFR-UX-7、タスク14)。
+          計算中の進み具合に添える一言は下の進捗の並びで出すので、ここでは案内のときだけ。
+        */}
+        {line.kind === 'guide' && line.hint !== null ? (
+          <span className="pcad-statusbar__hint">{line.hint}</span>
+        ) : null}
       </span>
       {line.progress === null ? null : (
         /*

@@ -15,7 +15,9 @@ import {
   curveStart,
   DEFAULT_WORK_PLANE_ID,
   dotVec3,
+  isFreeWorkPlaneId,
   lengthVec3,
+  ORIGIN,
   radiansToDegrees,
   resolveCoordinate,
   resolvePointReference,
@@ -25,16 +27,21 @@ import {
   type ResolveContext,
   type ResolvedSketch,
   type SketchDocument,
+  type SubShapeRef,
   type Vec3,
   type WorkPlane,
 } from '@pointercad/model';
 
+import { applySketchCommit } from '../sketch/commitToStore.js';
+import { freeClickPlane, picksSolidVertices } from '../sketch/freeSketch.js';
 import {
+  commitNumericInput,
   createNumericInput,
   DEFAULT_COORDINATE_BASE,
   isCoordinateStep,
   isReferenceCoordinateStep,
   isReferenceTool,
+  nextNumericInput,
   reduceNumericInput,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
@@ -47,7 +54,7 @@ import {
 } from '../sketch/numericInput.js';
 import { pickSketchElement } from '../sketch/pickMath.js';
 import { resolveShapePoints } from '../sketch/shapeCommands.js';
-import { commitFace } from '../sketch/sketchCommands.js';
+import { commitFace, commitSubShapePoint } from '../sketch/sketchCommands.js';
 import {
   chooseSnap,
   collectSnapCandidates,
@@ -58,11 +65,13 @@ import {
 import { pickSolidSubShape } from '../solid/pickSubShape.js';
 import {
   subShapeElementId,
+  subShapeRefOf,
   type SelectionKind,
   type SubShapeBody,
 } from '../solid/subShapeSelection.js';
 import { useAppStore, type SnapIndicator } from '../store/useAppStore.js';
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
+import { viewDirection, type OrbitState } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { gridSpacing } from './gridMath.js';
 
@@ -238,7 +247,7 @@ function sameIndicator(a: SnapIndicator | null, b: SnapIndicator | null): boolea
 export function attachSketchInteraction(
   canvas: HTMLCanvasElement,
   scene: ViewportScene,
-  getCameraDistance: () => number,
+  getOrbit: () => OrbitState,
 ): SketchInteraction {
   // メソッドをそのまま値として渡さない(@typescript-eslint/unbound-method)。
   const project: ProjectToScreen = (point) => scene.worldToScreen(point);
@@ -253,9 +262,17 @@ export function attachSketchInteraction(
    * **解くのはストアの `workPlane`**(文書か作図面が変わるたびに 1 度だけ解く、タスク13)。
    * ここではそれを読むだけにして、同じ計算を押すたびにやり直さない(NFR-PF-1)。
    * 引数の id は「いま読んだ状態と食い違っていないか」を確かめるためだけに使う。
+   *
+   * 3D スケッチ(FR-330、タスク14)には作図面が無いので、代わりに**直前に置いた点を通り
+   * 画面に正対する面**を毎回作る(`freeSketch.ts` の `freeClickPlane`。理由はそちらの注釈)。
+   * カメラが動けば向きが変わる面なので、ストアには置かず押すたびに作る。
    */
   function interactionPlane(planeId: string): WorkPlane {
     const state = useAppStore.getState();
+    if (isFreeWorkPlaneId(planeId)) {
+      const base = lastCreatedPoint(state.sketch, state.resolvedSketch) ?? ORIGIN;
+      return freeClickPlane(base, viewDirection(getOrbit()));
+    }
     if (state.workPlane.id === planeId) {
       return state.workPlane;
     }
@@ -273,7 +290,7 @@ export function attachSketchInteraction(
     const candidates = collectSnapCandidates(
       state.resolvedSketch,
       plane,
-      gridSpacing(getCameraDistance()),
+      gridSpacing(getOrbit().distance),
       onPlane,
     );
     return chooseSnap(candidates, project, pointer, SNAP_RADIUS_PIXELS, new Set(state.snapKinds));
@@ -324,6 +341,33 @@ export function attachSketchInteraction(
     return picked === null ? null : picked.elementId;
   }
 
+  /**
+   * 3D スケッチ(FR-330、タスク14)で、押した場所にある立体の頂点。
+   *
+   * 作図面のあるスケッチでは、かき込む道具は立体も部分形状も拾わない(押した場所が座標
+   * そのものになる道具なので、当たり判定を挟むと座標の入り口が曖昧になる)。3D スケッチだけは
+   * **立体の頂点を押すことが座標の入り口そのもの**なので、点・線分・円弧・スプラインの
+   * 道具のときに限って頂点を拾う(`picksSolidVertices`)。辺・面は拾わない(点にできるのは
+   * 頂点だけ。辺の中点・面の中心を点にするのは基準点の道具の役目、FR-329)。
+   */
+  function pickFreeVertexAt(pointer: readonly [number, number]): string | null {
+    const state = useAppStore.getState();
+    if (!picksSolidVertices(state.workPlaneId, state.activeTool) || state.bodies.length === 0) {
+      return null;
+    }
+    const picked = pickSolidSubShape(toSubShapeBodies(state.bodies), project, pointer, 'vertex');
+    return picked === null ? null : picked.elementId;
+  }
+
+  /** 押した頂点から、文書へ保存する参照(選んだ瞬間の指紋つき)を作る。 */
+  function freeVertexRefAt(pointer: readonly [number, number]): SubShapeRef | null {
+    const elementId = pickFreeVertexAt(pointer);
+    if (elementId === null) {
+      return null;
+    }
+    return subShapeRefOf(toSubShapeBodies(useAppStore.getState().bodies), elementId);
+  }
+
   function onPointerMove(event: PointerEvent): void {
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
@@ -348,10 +392,13 @@ export function attachSketchInteraction(
 
     // 当たり判定(6 画素)から外れていても、吸着(12 画素)が拾った要素は強調して
     // 「どこへ吸い付くのか」を見せる(FR-106、FR-107)。
-    // スケッチにも吸着にも当たらなかったときだけ、奥にある立体を拾う。
+    // スケッチにも吸着にも当たらなかったときだけ、3D スケッチの頂点(タスク14)、
+    // 続いて奥にある立体を拾う。頂点は既存の強調(setSubShapeHighlight)でそのまま光る。
     const picked = pickSketchElement(state.resolvedSketch, project, pointer);
     const nextHovered =
-      picked !== null ? picked.elementId : (snap?.elementId ?? pickBodyAt(pointer));
+      picked !== null
+        ? picked.elementId
+        : (snap?.elementId ?? pickFreeVertexAt(pointer) ?? pickBodyAt(pointer));
     if (nextHovered !== state.hoveredElementId) {
       state.setHovered(nextHovered);
     }
@@ -445,7 +492,13 @@ export function attachSketchInteraction(
     */
     const placed = state.shapeDraft.points;
     if (placed.length > 0) {
-      const positions = resolveShapePoints(state.sketch, state.workPlaneId, placed);
+      // 任意の作業平面(FR-328)の上の点も解けるよう、解いた面も渡す(タスク13 の申し送り)。
+      const positions = resolveShapePoints(
+        state.sketch,
+        state.workPlaneId,
+        placed,
+        context.plane,
+      );
       const last = positions?.[positions.length - 1];
       if (last !== undefined) {
         return last;
@@ -509,6 +562,50 @@ export function attachSketchInteraction(
     state.openNumericInput(filled, pointer);
   }
 
+  /**
+   * 3D スケッチで立体の頂点を押したときに、点を 1 つ作る(FR-330、計画書タスク14)。
+   *
+   * **点の道具**は押した瞬間に確定する(その場数値入力は開かない。計画書タスク14 の
+   * 「もう 1 つの点の作り方」)。**線分・円弧・スプライン**の道具では、いま聞いている
+   * 座標の段の答えとして頂点を渡す。段の進み方(始点 → 終点、点を積み上げる)は
+   * `commitNumericInput` / `nextNumericInput` に任せるので、数値を打ったときとまったく
+   * 同じ道筋になる(NFR-UX-1)。
+   *
+   * どちらの経路でも保存するのは「頂点の参照+ずれ 0」(`subShapeCoordinate`)なので、
+   * あとから立体を変えても点はその頂点に付いて動く。
+   */
+  function commitVertexPoint(ref: SubShapeRef, pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    if (state.activeTool === 'point') {
+      state.setShapeError(null);
+      state.setSketch(commitSubShapePoint(state.sketch, state.workPlaneId, ref));
+      return;
+    }
+    const opened = state.numericInput;
+    if (opened === null || !isCoordinateStep(opened.step)) {
+      // 線分・円弧・スプラインで座標を聞いていないとき(半径や決め方の段)は、
+      // 頂点を押しても入れる先が無いので何もしない(壊れた形を黙って作らない)。
+      return;
+    }
+    // 相対のずれ 0 として、基準に頂点の参照を渡す。欄の値は 0 に揃える
+    // (指定方法を切り替えると値は既定へ戻る約束なので、切り替えてから 0 を入れる)。
+    const relative = reduceNumericInput(
+      reduceNumericInput(opened, { type: 'setMode', mode: 'relative' }),
+      { type: 'setValues', values: [0, 0, 0] },
+    );
+    const transition = commitNumericInput(relative, { base: { kind: 'subShape', ref } });
+    if (transition.kind !== 'committed') {
+      return;
+    }
+    applySketchCommit(transition.commit, transition.state);
+    const next = nextNumericInput(transition.state, useAppStore.getState().chaining);
+    if (next === null) {
+      useAppStore.getState().closeNumericInput();
+      return;
+    }
+    useAppStore.getState().openNumericInput(next, pointer);
+  }
+
   function onPointerDown(event: PointerEvent): void {
     if (event.button !== LEFT_BUTTON || event.altKey) {
       return;
@@ -558,6 +655,30 @@ export function attachSketchInteraction(
     // 既定の動作(canvas へ焦点を移す)を止めて、開いている欄から焦点を奪わない。
     // 押した場所の座標が欄へ入った直後に、そのまま Enter で決められるようにする(NFR-UX-2)。
     event.preventDefault();
+
+    if (isFreeWorkPlaneId(state.workPlaneId) && isDrawingTool(tool)) {
+      /*
+        3D スケッチ(FR-330、タスク14)。立体の頂点を押したらその頂点を参照する点にし
+        (押した場所そのものより頂点を優先する。狙って押しているのは頂点のほう)、
+        頂点でないところを押したときは、押した場所を「直前の点を通り画面に正対する面」の
+        上の点として欄へ入れる(面の作り方と理由は `freeSketch.ts` の `freeClickPlane`)。
+        その面は、続けて決まる円弧の向き(`freeOrientation`)にも使うので覚えておく。
+      */
+      const ref = freeVertexRefAt(pointer);
+      if (ref !== null) {
+        commitVertexPoint(ref, pointer);
+        return;
+      }
+      state.setFreeSketchPlane(interactionPlane(state.workPlaneId));
+      openInputAt(tool, pointer);
+      return;
+    }
+
+    if (!isDrawingTool(tool)) {
+      // 押した場所が座標にならない道具(オフセットのように既にある要素を選ぶ道具、
+      // タスク21・22)は、ここでは何もしない。段の開き方はその道具の受け持ち。
+      return;
+    }
     openInputAt(tool, pointer);
   }
 

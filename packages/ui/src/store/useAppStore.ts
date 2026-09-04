@@ -36,7 +36,6 @@ import {
   type SketchRecomputeResult,
   type SolidBody,
   type UndoStack,
-  type Vec3,
   type WorkPlane,
   type WorkPlaneId,
 } from '@pointercad/model';
@@ -56,7 +55,7 @@ import {
 import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import { selectionKindForTool, type SelectionKind } from '../solid/subShapeSelection.js';
-import type { OrbitState } from '../viewport/cameraMath.js';
+import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
 
 /** 透視投影 / 平行投影(FR-102)。 */
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -187,6 +186,14 @@ export interface AppState {
    */
   readonly workPlane: WorkPlane;
   /**
+   * 3D スケッチ(FR-330、タスク14)で最後に押した場所の面。押した場所を世界座標へ直した
+   * 面(`freeSketch.ts` の `freeClickPlane`。直前の点を通り画面に正対する面)をそのまま
+   * 覚えておき、**その続きで決まる円弧の向き**(`freeOrientation`)に使う。作図面が無い
+   * スケッチだけの一時的な控えなので、道具や作図面を変えたら捨てる。まだ一度も押して
+   * いなければ null。
+   */
+  readonly freeSketchPlane: WorkPlane | null;
+  /**
    * 基準ジオメトリ(作業平面・基準軸・基準点・座標系)を解いた控え(FR-328、FR-329)。
    * 3D 表示と一覧が読む。文書から導けるので保存しない(rules/04)。
    */
@@ -295,6 +302,12 @@ export interface AppState {
    * 「立体を作れませんでした:」の言い回しで出す。
    */
   readonly solidErrorKey: MessageKey | null;
+  /**
+   * 整形系の道具(オフセット、FR-321、タスク21)を作れなかった理由の文言キー。
+   * `faceErrorKey` / `solidErrorKey` と同じ扱いで、ステータスバーが
+   * 「オフセットを作れませんでした:」の言い回しで出す。
+   */
+  readonly editErrorKey: MessageKey | null;
   /**
    * 最後にビューポートで何かを選んだ場所(canvas の左上を原点とした画素)。
    * ソリッドの道具のその場入力を、選んだものの近くへ出すのに使う(NFR-UX-2)。
@@ -409,6 +422,8 @@ export interface AppState {
   readonly updateNumericInput: (state: NumericInputState) => void;
   readonly closeNumericInput: () => void;
   readonly setPendingStart: (start: CoordinateInput | null) => void;
+  /** 3D スケッチで押した場所の面を覚える・捨てる(FR-330、タスク14)。 */
+  readonly setFreeSketchPlane: (plane: WorkPlane | null) => void;
   /** 新しい図形の途中経過を置き換える(タスク12)。 */
   readonly setShapeDraft: (draft: ShapeDraft) => void;
   /** 図形を作れなかった理由を出す・消す(NFR-UX-5)。 */
@@ -422,6 +437,8 @@ export interface AppState {
   readonly setFaceError: (key: MessageKey | null) => void;
   /** 立体を作れなかった理由を出す・消す(FR-401〜404)。 */
   readonly setSolidError: (key: MessageKey | null) => void;
+  /** 整形系の道具(オフセット等)を作れなかった理由を出す・消す(FR-321、NFR-UX-5)。 */
+  readonly setEditError: (key: MessageKey | null) => void;
   /** ビューポートで選んだ場所を覚える・忘れる。 */
   readonly setPickAnchor: (anchor: readonly [number, number] | null) => void;
 
@@ -443,16 +460,6 @@ export interface AppState {
    * 断りの理由も持ち越さない(NFR-UX-3)。
    */
   readonly resetDocument: (next: PartDocument) => void;
-}
-
-/** カメラから注視点へ向かう単位ベクトル。Z 軸が上の球面座標から作る。 */
-function viewDirection(orbit: OrbitState): Vec3 {
-  const horizontal = Math.cos(orbit.elevation);
-  return [
-    -horizontal * Math.cos(orbit.azimuth),
-    -horizontal * Math.sin(orbit.azimuth),
-    -Math.sin(orbit.elevation),
-  ];
 }
 
 /**
@@ -498,6 +505,8 @@ function activeSketchOf(document: PartDocument): SketchDocument {
  * P4 タスク12 で新しい図形(矩形・正多角形・長穴・楕円・スプライン)を足した。いずれも
  * 曲線を生むので面の囲みに使える(矩形・正多角形・長穴は 1 フィーチャーが複数の曲線を生み、
  * `resolveFace` が全周を展開する。§0.a-0.8)。
+ * P4 タスク21 でオフセット(複製の曲線列)を足した。結果は元と同じ曲線なので同様に使える
+ * (§2「結果の曲線は…面の境界に使える」)。
  */
 const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
   'point',
@@ -509,6 +518,7 @@ const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
   'slot',
   'ellipse',
   'spline',
+  'offset',
 ]);
 
 /**
@@ -654,6 +664,7 @@ export function createInitialDocumentState(): Pick<
   | 'selectionKind'
   | 'workPlaneId'
   | 'workPlane'
+  | 'freeSketchPlane'
   | 'resolvedReferences'
   | 'document'
   | 'documentVersion'
@@ -689,6 +700,7 @@ export function createInitialDocumentState(): Pick<
   | 'snapIndicator'
   | 'faceErrorKey'
   | 'solidErrorKey'
+  | 'editErrorKey'
   | 'pickAnchor'
   | 'fileGateway'
   | 'fileName'
@@ -708,6 +720,8 @@ export function createInitialDocumentState(): Pick<
     workPlaneId: DEFAULT_WORK_PLANE_ID,
     // 起動時の部品には基準ジオメトリが 1 つも無いので、作図面は基準の XY そのもの。
     workPlane: WORK_PLANES[DEFAULT_WORK_PLANE_ID],
+    // 3D スケッチで押した場所の面(FR-330、タスク14)。まだ一度も押していない。
+    freeSketchPlane: null,
     resolvedReferences: EMPTY_RESOLVED_REFERENCES,
     document,
     documentVersion: 0,
@@ -743,6 +757,7 @@ export function createInitialDocumentState(): Pick<
     snapIndicator: null,
     faceErrorKey: null,
     solidErrorKey: null,
+    editErrorKey: null,
     pickAnchor: null,
     // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める(§2.10)。
     fileGateway: createBrowserFileGateway(),
@@ -820,9 +835,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // 基準ジオメトリの取りかけ(置いた点・選んだ決め方)も持ち越さない(タスク13)。
         referenceDraft: EMPTY_REFERENCE_DRAFT,
         referenceErrorMessage: null,
+        // 3D スケッチで押した場所の面も持ち越さない(タスク14)。
+        freeSketchPlane: null,
         snapIndicator: null,
         faceErrorKey: null,
         solidErrorKey: null,
+        editErrorKey: null,
         // 種類が変わったら、違う種類の選択が加工の対象に紛れ込まないよう選択を空にする
         // (§0.a-0.6)。種類が変わらないときだけ、面の道具の掃除(§0.a-0.23 ⑨)を従来どおり行う。
         selection: kindChanged
@@ -841,7 +859,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setWorkPlane: (workPlaneId) => {
     // 作図面が変われば、解いた面(`workPlane`)も引き直す(FR-328、タスク13)。
-    set((state) => ({ workPlaneId, ...referencePatch(state.document, workPlaneId) }));
+    // 3D スケッチで押した場所の面(タスク14)は作図面が変われば意味を失うので捨てる。
+    set((state) => ({
+      workPlaneId,
+      freeSketchPlane: null,
+      ...referencePatch(state.document, workPlaneId),
+    }));
   },
   requestMatchWorkPlaneToView: () => {
     set((state) => ({ matchWorkPlaneRequestCount: state.matchWorkPlaneRequestCount + 1 }));
@@ -880,6 +903,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // 古い「面/立体/図形を作れませんでした」の断りも文書が変われば用済み(§0.a-0.23 ⑦)。
         faceErrorKey: null,
         solidErrorKey: null,
+        editErrorKey: null,
         shapeErrorMessage: null,
         referenceErrorMessage: null,
       };
@@ -994,8 +1018,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     );
   },
   setSelection: (selection) => {
-    // 選び直したら、直前に断られた面・立体の理由は用済みなので消す(NFR-UX-5)。
-    set({ selection, faceErrorKey: null, solidErrorKey: null });
+    // 選び直したら、直前に断られた面・立体・オフセットの理由は用済みなので消す(NFR-UX-5)。
+    set({ selection, faceErrorKey: null, solidErrorKey: null, editErrorKey: null });
   },
   toggleSelection: (id) => {
     set((state) => ({
@@ -1004,6 +1028,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         : [...state.selection, id],
       faceErrorKey: null,
       solidErrorKey: null,
+      editErrorKey: null,
     }));
   },
   setHovered: (hoveredElementId) => {
@@ -1053,6 +1078,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setPendingStart: (pendingStart) => {
     set({ pendingStart });
   },
+  setFreeSketchPlane: (freeSketchPlane) => {
+    set({ freeSketchPlane });
+  },
   setSnapIndicator: (snapIndicator) => {
     set({ snapIndicator });
   },
@@ -1061,6 +1089,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setSolidError: (solidErrorKey) => {
     set({ solidErrorKey });
+  },
+  setEditError: (editErrorKey) => {
+    set({ editErrorKey });
   },
   setPickAnchor: (pickAnchor) => {
     set({ pickAnchor });
@@ -1110,9 +1141,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       shapeErrorMessage: null,
       referenceDraft: EMPTY_REFERENCE_DRAFT,
       referenceErrorMessage: null,
+      freeSketchPlane: null,
       snapIndicator: null,
       faceErrorKey: null,
       solidErrorKey: null,
+      editErrorKey: null,
       errorMessage: null,
       fileMessage: null,
       recomputeCancelled: false,

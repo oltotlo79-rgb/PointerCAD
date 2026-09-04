@@ -1,8 +1,11 @@
 import {
   createEmptySketchDocument,
   DEFAULT_FACE_COLOR,
+  FREE_WORK_PLANE_ID,
   resolveSketch,
+  WORK_PLANES,
   type SketchDocument,
+  type SubShapeRef,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
@@ -22,7 +25,10 @@ import {
   boundaryElementKind,
   commitFace,
   commitSketchInput,
+  commitSubShapePoint,
   continueFrom,
+  freeArcOrientationOf,
+  subShapeCoordinate,
   toElementRef,
   type CommitContext,
 } from './sketchCommands.js';
@@ -44,6 +50,7 @@ function contextOf(overrides: Partial<CommitContext> = {}): CommitContext {
   return {
     document: createEmptySketchDocument(),
     planeId: 'xy',
+    plane: WORK_PLANES.xy,
     chaining: false,
     pendingStart: null,
     ...overrides,
@@ -412,5 +419,162 @@ describe('新しい図形の段は shapeCommands.ts へ渡す(P4 タスク12)', 
     });
     expect(outcome.rejection).not.toBeNull();
     expect(outcome.document.features).toHaveLength(0);
+  });
+});
+
+describe('3D スケッチ(作図面なし、FR-330、タスク14)', () => {
+  /** 箱の角(5,5,5)を指す頂点の参照。指紋は選んだ瞬間の位置を持つ(タスク10)。 */
+  function vertexRef(position: readonly [number, number, number]): SubShapeRef {
+    return {
+      bodyFeatureId: 'extrude-1',
+      index: 3,
+      fingerprint: { kind: 'vertex', position },
+    };
+  }
+
+  it('頂点の参照から、その頂点に付く点の指定ができる', () => {
+    const coordinate = subShapeCoordinate(vertexRef([5, 5, 5]));
+    expect(coordinate.mode).toBe('relative');
+    if (coordinate.mode !== 'relative') {
+      return;
+    }
+    expect(coordinate.base).toEqual({ kind: 'subShape', ref: vertexRef([5, 5, 5]) });
+    // ずれは 0。頂点そのものの位置になる。
+    expect([coordinate.dx.value, coordinate.dy.value, coordinate.dz.value]).toEqual([0, 0, 0]);
+  });
+
+  it('commitSubShapePoint は点フィーチャーを 1 つ積み、頂点の位置に解決される', () => {
+    const document = commitSubShapePoint(
+      createEmptySketchDocument(),
+      FREE_WORK_PLANE_ID,
+      vertexRef([5, 5, 5]),
+    );
+    expect(document.features).toHaveLength(1);
+    const feature = document.features[0];
+    expect(feature.kind).toBe('point');
+    expect(feature.planeId).toBe(FREE_WORK_PLANE_ID);
+    const resolved = resolveSketch(document);
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.points[0].position).toEqual([5, 5, 5]);
+  });
+
+  it('元の文書は変わらない(履歴は不変、FR-502)', () => {
+    const before = createEmptySketchDocument();
+    commitSubShapePoint(before, FREE_WORK_PLANE_ID, vertexRef([1, 2, 3]));
+    expect(before.features).toHaveLength(0);
+  });
+
+  it('頂点 3 つを結んだ点から面を張れる(FR-330 の「頂点から面」)', () => {
+    let document = createEmptySketchDocument();
+    for (const position of [[0, 0, 0], [10, 0, 0], [0, 10, 0]] as const) {
+      document = commitSubShapePoint(document, FREE_WORK_PLANE_ID, vertexRef(position));
+    }
+    const resolved = resolveSketch(document);
+    const outcome = commitFace(
+      document,
+      resolved,
+      FREE_WORK_PLANE_ID,
+      resolved.points.map((point) => point.id),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(resolveSketch(outcome.document).faces).toHaveLength(1);
+  });
+
+  it('3D スケッチの円弧には、押していた面から作った向きが付く', () => {
+    // 押していた面を「YZ と同じ向き(法線 +X)」にすると、円弧はその面の上に乗る。
+    const plane = WORK_PLANES.yz;
+    let context = contextOf({ planeId: FREE_WORK_PLANE_ID, plane });
+    context = step(context, 'arc', 'arcCenter', 'absolute', ['0', '0', '0']);
+    context = step(context, 'arc', 'arcShape', 'absolute', ['10', '0', '90']);
+    const arc = context.document.features[0];
+    expect(arc.kind).toBe('arc');
+    if (arc.kind !== 'arc') {
+      return;
+    }
+    expect(arc.freeOrientation).toBeDefined();
+    const resolved = resolveSketch(context.document);
+    expect(resolved.errors).toEqual([]);
+    // 法線が +X なので、円弧の全ての点の x は 0 のまま。
+    expect(resolved.arcs[0].normal).toEqual(plane.normal);
+  });
+
+  it('作図面のあるスケッチの円弧には向きを付けない(model が作図面から借りる)', () => {
+    let context = contextOf();
+    context = step(context, 'arc', 'arcCenter', 'absolute', ['0', '0', '0']);
+    context = step(context, 'arc', 'arcShape', 'absolute', ['10', '0', '90']);
+    const arc = context.document.features[0];
+    if (arc.kind !== 'arc') {
+      throw new Error('円弧が積まれていません');
+    }
+    expect(arc.freeOrientation).toBeUndefined();
+  });
+
+  it('作図面から借りた向きと同じ組を作る(freeArcOrientationOf)', () => {
+    const orientation = freeArcOrientationOf(WORK_PLANES.xz);
+    expect(orientation.normal.mode).toBe('absolute');
+    if (orientation.normal.mode !== 'absolute' || orientation.xAxis.mode !== 'absolute') {
+      return;
+    }
+    expect([
+      orientation.normal.x.value,
+      orientation.normal.y.value,
+      orientation.normal.z.value,
+    ]).toEqual([...WORK_PLANES.xz.normal]);
+    expect([
+      orientation.xAxis.x.value,
+      orientation.xAxis.y.value,
+      orientation.xAxis.z.value,
+    ]).toEqual([...WORK_PLANES.xz.axisU]);
+  });
+});
+
+describe('3D スケッチで頂点どうしを結ぶ線分(FR-330、タスク14)', () => {
+  function vertexAt(position: readonly [number, number, number]): SubShapeRef {
+    return { bodyFeatureId: 'extrude-1', index: 0, fingerprint: { kind: 'vertex', position } };
+  }
+
+  /** 頂点を押して座標を決めた 1 段(`attachSketchInteraction` の頂点の経路と同じ形)。 */
+  function vertexStep(
+    context: CommitContext,
+    inputStep: NumericInputStep,
+    ref: SubShapeRef,
+  ): CommitContext {
+    const state = reduceNumericInput(
+      reduceNumericInput(createNumericInput('line', inputStep), {
+        type: 'setMode',
+        mode: 'relative',
+      }),
+      { type: 'setValues', values: [0, 0, 0] },
+    );
+    const transition = commitNumericInput(state, { base: { kind: 'subShape', ref } });
+    if (transition.kind !== 'committed') {
+      throw new Error(`確定できませんでした: ${transition.kind}`);
+    }
+    const outcome = commitSketchInput(transition.commit, context);
+    return { ...context, document: outcome.document, pendingStart: outcome.pendingStart };
+  }
+
+  it('始点と終点を頂点で決めた線分が、その 2 頂点を結ぶ', () => {
+    let context = contextOf({ planeId: FREE_WORK_PLANE_ID });
+    context = vertexStep(context, 'lineStart', vertexAt([0, 0, 10]));
+    context = vertexStep(context, 'lineEnd', vertexAt([40, 0, 10]));
+    const resolved = resolveSketch(context.document);
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.segments).toHaveLength(1);
+    expect(resolved.segments[0].from).toEqual([0, 0, 10]);
+    // 終点の基準を「直前の点」へ置き換えてしまうと、ここが (0,0,10) になり長さ 0 で断られる。
+    expect(resolved.segments[0].to).toEqual([40, 0, 10]);
+  });
+
+  it('数値で打った終点は、これまでどおり自分の始点からのずれになる(FR-307)', () => {
+    let context = contextOf();
+    context = step(context, 'line', 'lineStart', 'absolute', ['0', '0', '0']);
+    context = step(context, 'line', 'lineEnd', 'relative', ['10', '0', '0']);
+    const resolved = resolveSketch(context.document);
+    expect(resolved.segments[0].from).toEqual([0, 0, 0]);
+    expect(resolved.segments[0].to).toEqual([10, 0, 0]);
   });
 });

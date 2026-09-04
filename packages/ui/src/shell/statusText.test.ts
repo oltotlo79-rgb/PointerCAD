@@ -482,3 +482,21 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
     expect(line.selectionKindLabel).toBe(`${t('selection.kindLabel')} ${t('selection.kind.edge')}`);
   });
 });
+
+describe('3D スケッチの案内(FR-330、NFR-UX-7、タスク14)', () => {
+  it('3D スケッチで点をかいているときは、頂点を押せることを添える', () => {
+    const line = describeStatus({ ...quiet(), activeTool: 'point', workPlaneId: 'free' });
+    expect(line.kind).toBe('guide');
+    expect(line.hint).toBe(t('statusBar.guide.freeSketch'));
+  });
+
+  it('作図面があるときは添えない(3D スケッチだけの入り口のため)', () => {
+    expect(describeStatus({ ...quiet(), activeTool: 'point', workPlaneId: 'xy' }).hint).toBeNull();
+    // 作図面の id を渡さない既存の呼び出しでも変わらない。
+    expect(describeStatus({ ...quiet(), activeTool: 'point' }).hint).toBeNull();
+  });
+
+  it('3D スケッチでも、頂点を押せない道具(面)には添えない', () => {
+    expect(describeStatus({ ...quiet(), activeTool: 'face', workPlaneId: 'free' }).hint).toBeNull();
+  });
+});

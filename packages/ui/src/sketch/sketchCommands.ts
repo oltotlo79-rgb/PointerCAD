@@ -11,15 +11,20 @@
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
+  absoluteCoordinate,
   appendFeature,
   DEFAULT_FACE_COLOR,
+  isFreeWorkPlaneId,
   nextFeatureId,
   nextFeatureName,
   type CoordinateInput,
+  type FreeArcOrientation,
   type PointReference,
   type ResolvedSketch,
   type SketchDocument,
   type SketchElementRef,
+  type SubShapeRef,
+  type WorkPlane,
   type WorkPlaneId,
 } from '@pointercad/model';
 
@@ -50,6 +55,58 @@ export function continueFrom(featureId: string): CoordinateInput {
   };
 }
 
+/**
+ * 「立体の頂点(部分形状)の位置」を表す座標(FR-330、タスク10・14)。
+ *
+ * `continueFrom` と同じ「基準を名指しして、ずれ 0 で置く」形にしてある(計画書タスク14 の
+ * 推奨どおり `CoordinateInput` のモードを増やさない)。基準が指すのは選んだ瞬間の指紋なので、
+ * 立体の形が変わっても指紋で選び直され、点がその頂点に付いて動く(FR-311、FR-502)。
+ */
+export function subShapeCoordinate(ref: SubShapeRef): CoordinateInput {
+  return {
+    mode: 'relative',
+    base: { kind: 'subShape', ref },
+    dx: ZERO,
+    dy: ZERO,
+    dz: ZERO,
+  };
+}
+
+/**
+ * 立体の頂点を押して 3D スケッチの点を 1 つ作る(FR-330、計画書タスク14)。
+ *
+ * 数値を打つ経路(`commitSketchInput` の `point` の段)と並ぶ、もう 1 つの点の作り方。
+ * 押した瞬間に決まるので、その場数値入力のポップアップは開かない。
+ */
+export function commitSubShapePoint(
+  document: SketchDocument,
+  planeId: WorkPlaneId,
+  ref: SubShapeRef,
+): SketchDocument {
+  return appendFeature(document, {
+    id: nextFeatureId(document, 'point'),
+    name: nextFeatureName(document, 'point'),
+    planeId,
+    kind: 'point',
+    at: subShapeCoordinate(ref),
+  });
+}
+
+/**
+ * 3D スケッチの円弧の向き(FR-330、タスク10 の `freeOrientation`)を、押していた面から作る。
+ *
+ * 作図面が無いので、円弧が乗る平面と角度 0 の向きを円弧自身が持つ必要がある。3D スケッチで
+ * 中心を押したときの面(`freeSketch.ts` の `freeClickPlane`。画面に正対する面)をそのまま
+ * 使うので、**押した場所に見えているとおりの向き**で円弧ができる。
+ * 向きを後から変えるのはプロパティ欄の役目(タスク33)。
+ */
+export function freeArcOrientationOf(plane: WorkPlane): FreeArcOrientation {
+  return {
+    normal: absoluteCoordinate(plane.normal[0], plane.normal[1], plane.normal[2]),
+    xAxis: absoluteCoordinate(plane.axisU[0], plane.axisU[1], plane.axisU[2]),
+  };
+}
+
 /** 相対・極の基準だけを差し替える。絶対座標は基準を持たないのでそのまま返す。 */
 function rebase(coordinate: CoordinateInput, base: PointReference): CoordinateInput {
   if (coordinate.mode === 'relative') {
@@ -59,6 +116,21 @@ function rebase(coordinate: CoordinateInput, base: PointReference): CoordinateIn
     return { ...coordinate, base };
   }
   return coordinate;
+}
+
+/**
+ * 線分の終点の基準を「直前の点」(= 自分の始点)へそろえる(FR-307)。
+ *
+ * ただし基準が**別のものを名指ししている**ときは、その名指しをそのまま残す。3D スケッチで
+ * 立体の頂点を押して終点を決めると基準は `subShape`(その頂点)になり(FR-330、タスク14)、
+ * これを「直前の点からのずれ 0」へ置き換えると終点が始点と同じ場所になって、
+ * 長さ 0 の線分ができてしまう(2026-09-04 の撮影で実際に「線分の長さが 0 です。」が出た)。
+ */
+function rebaseLineEnd(coordinate: CoordinateInput): CoordinateInput {
+  if (coordinate.mode !== 'absolute' && coordinate.base.kind !== 'previous') {
+    return coordinate;
+  }
+  return rebase(coordinate, { kind: 'previous' });
 }
 
 /** 選択中の要素 id を、面の境界の参照へ直す(点列の n 番目は `featureId#n`)。 */
@@ -77,6 +149,12 @@ export interface CommitContext {
   readonly document: SketchDocument;
   /** 作るフィーチャーの作図面。極座標の角度と円弧の向きの基準になる。 */
   readonly planeId: WorkPlaneId;
+  /**
+   * `planeId` を解いた面(FR-328、タスク13・14)。任意の作業平面は部品文書を見ないと
+   * 決まらないので、解くのは呼び出し側(`commitToStore.ts` の `drawingPlane`)にする。
+   * 3D スケッチ(`planeId` が `FREE_WORK_PLANE_ID`)のときは、押した場所の面が入る。
+   */
+  readonly plane: WorkPlane;
   /** 「続けてかく」が入かどうか(FR-307)。切なら次の基準を持ち越さない。 */
   readonly chaining: boolean;
   /** 線分の始点・円弧の中心・点列の基準として先に決めた座標。まだ無ければ null。 */
@@ -177,6 +255,7 @@ export function commitSketchInput(
       commitShapeInput(commit, {
         document: context.document,
         planeId: context.planeId,
+        plane: context.plane,
         pendingStart: context.pendingStart,
         draft: shapeDraft,
         input: context.input ?? null,
@@ -227,8 +306,9 @@ function commitCoordinate(
         planeId,
         kind: 'line',
         from: pendingStart,
-        // 終点の基準は自分の始点。resolveSketch が線分の終点をそう解決する。
-        to: rebase(coordinate, { kind: 'previous' }),
+        // 終点の基準は自分の始点。resolveSketch が線分の終点をそう解決する
+        // (名指しの基準があるときはそちらを残す。`rebaseLineEnd` の注釈)。
+        to: rebaseLineEnd(coordinate),
         // 構築線(FR-320)を作る道具はタスク11・12 の範囲。ここでは既定の false を積む。
         construction: false,
       });
@@ -271,7 +351,7 @@ function commitShape(
   values: readonly ExpressionValue[],
   context: CommitContext,
 ): BasicCommitOutcome {
-  const { document, planeId, pendingStart } = context;
+  const { document, planeId, plane, pendingStart } = context;
 
   switch (step) {
     case 'arcShape': {
@@ -290,6 +370,9 @@ function commitShape(
         endAngle: values[2],
         // 構築線(FR-320)を作る道具はタスク11・12 の範囲。ここでは既定の false を積む。
         construction: false,
+        // 3D スケッチ(FR-330)では作図面から向きを借りられないので、押していた面から作る
+        // (タスク10 の `freeOrientation`。作図面があるときは model が無視するので付けない)。
+        ...(isFreeWorkPlaneId(planeId) ? { freeOrientation: freeArcOrientationOf(plane) } : {}),
       });
       return { document: next, pendingStart: null };
     }

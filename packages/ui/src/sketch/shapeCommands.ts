@@ -21,13 +21,11 @@ import {
   absoluteCoordinate,
   appendFeature,
   baseWorkPlane,
-  DEFAULT_WORK_PLANE_ID,
   nextFeatureId,
   nextFeatureName,
   planeToWorld,
   radiansToDegrees,
   resolveSketch,
-  WORK_PLANES,
   worldToPlane,
   type CoordinateInput,
   type PointReference,
@@ -107,17 +105,17 @@ export type TwoPointArcOutcome =
 export function commitTwoPointArc(
   document: SketchDocument,
   planeId: WorkPlaneId,
+  plane: WorkPlane,
   start: CoordinateInput,
   end: CoordinateInput,
   radius: ExpressionValue,
   bulge: ArcBulge,
   construction = false,
 ): TwoPointArcOutcome {
-  const positions = resolveShapePoints(document, planeId, [start, end]);
+  const positions = resolveShapePoints(document, planeId, [start, end], plane);
   if (positions === null) {
     return { ok: false, reason: t('shape.error.unresolvedPoint') };
   }
-  const plane = shapePlane(planeId);
   const geometry = twoPointArcGeometry(plane, positions[0], positions[1], radius.value, bulge);
   if (geometry === null) {
     const [startU, startV] = worldToPlane(plane, positions[0]);
@@ -457,6 +455,15 @@ export function draftValue(draft: ShapeDraft, key: string): ExpressionValue | un
 export interface ShapeCommitContext {
   readonly document: SketchDocument;
   readonly planeId: WorkPlaneId;
+  /**
+   * `planeId` を解いた面(FR-328、タスク13・14)。任意の作業平面は部品文書を見ないと
+   * 決まらないので、解くのは呼び出し側(`commitToStore.ts` の `drawingPlane`)にする。
+   *
+   * **タスク13 の申し送りの直し**: 以前はここで基準の 3 面だけを引き、それ以外を既定の
+   * XY に落としていたため、任意の作業平面の上で 2 点+半径の円弧を作ると XY 平面の上の
+   * 円弧になっていた。面そのものを受け取ることで、どの作業平面でも押した場所どおりになる。
+   */
+  readonly plane: WorkPlane;
   /** 点列の基準点(P1 の道具と共有する取りかけ)。新しい図形の点は `draft.points`。 */
   readonly pendingStart: CoordinateInput | null;
   readonly draft: ShapeDraft;
@@ -584,6 +591,7 @@ function buildShapeFeature(
       const outcome = commitTwoPointArc(
         document,
         planeId,
+        context.plane,
         first,
         second,
         radius,
@@ -865,15 +873,6 @@ function rebaseToPrevious(coordinate: CoordinateInput): CoordinateInput {
   return coordinate;
 }
 
-/**
- * 操作に使う作図面。任意の作業平面(FR-328)は部品文書を見ないと決まらないので、
- * ここでは基準の 3 面だけを引き、それ以外は既定の XY に落とす
- * (`attachSketchInteraction.ts` の `interactionPlane` と同じ扱い。任意平面の配線はタスク13)。
- */
-function shapePlane(planeId: WorkPlaneId): WorkPlane {
-  return baseWorkPlane(planeId) ?? WORK_PLANES[DEFAULT_WORK_PLANE_ID];
-}
-
 /** 世界座標を求めるためだけに履歴へ足す仮の点の id の頭。文書には残さない。 */
 const PROBE_ID_PREFIX = 'shape-probe-';
 
@@ -885,11 +884,15 @@ const PROBE_ID_PREFIX = 'shape-probe-';
  * (足した文書は捨てるので履歴は汚れない)。2 点目以降は 1 つ前の点を「直前の点」として
  * 解けるので、矩形の対角・長穴の 2 中心・スプラインの点の並びが、出来上がった
  * フィーチャーを `resolveSketch` が解くときと同じ位置になる。
+ *
+ * `plane` を渡すと、任意の作業平面(FR-328)の上の点も解ける。渡さないときは基準の 3 面
+ * だけを引く(3D スケッチは `resolveSketch` が作図面を引く前に分けるので、どちらでもよい)。
  */
 export function resolveShapePoints(
   document: SketchDocument,
   planeId: WorkPlaneId,
   points: readonly CoordinateInput[],
+  plane: WorkPlane | null = null,
 ): readonly Vec3[] | null {
   let probed = document;
   const ids: string[] = [];
@@ -898,7 +901,9 @@ export function resolveShapePoints(
     ids.push(id);
     probed = appendFeature(probed, { id, name: id, planeId, kind: 'point', at });
   });
-  const resolved = resolveSketch(probed);
+  const resolved = resolveSketch(probed, {
+    workPlane: (id) => (plane !== null && id === planeId ? plane : baseWorkPlane(id)),
+  });
   const positions: Vec3[] = [];
   for (const id of ids) {
     const found = resolved.points.find((point) => point.id === id);

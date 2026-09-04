@@ -8,9 +8,16 @@
  * 「操作の判断は純関数へ切り出して Node で検査する」)。
  */
 
-import type { PartProgress, PartRecomputeError, SketchError } from '@pointercad/model';
+import {
+  isFreeWorkPlaneId,
+  type PartProgress,
+  type PartRecomputeError,
+  type SketchError,
+  type WorkPlaneId,
+} from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { picksSolidVertices } from '../sketch/freeSketch.js';
 import type { NumericInputToolId } from '../sketch/numericInput.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
@@ -67,6 +74,9 @@ const GUIDE_KEYS = {
   referenceAxis: 'statusBar.guide.referenceAxis',
   referencePoint: 'statusBar.guide.referencePoint',
   referenceCoordinateSystem: 'statusBar.guide.referenceCoordinateSystem',
+  // P4 タスク21 が `EditToolId`(`NumericInputToolId` の一部)へ足した整形系の道具
+  // (FR-321)。上と同じ理由で、道具を足した同じタスクで案内も足す。
+  offset: 'statusBar.guide.offset',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**
@@ -165,6 +175,12 @@ export interface StatusInput {
   /** 立体を作れなかった理由(FR-401〜404)。 */
   readonly solidErrorKey: MessageKey | null;
   /**
+   * 整形系の道具(オフセット等)を作れなかった理由(FR-321、P4 タスク21)。`shapeErrorMessage`
+   * と同じく省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)を
+   * そのまま通すため。
+   */
+  readonly editErrorKey?: MessageKey | null;
+  /**
    * 図形を作れなかった理由(FR-314〜318、FR-326、P4 タスク12)。限界値(点の数・半径)を
    * 差し込んだ文になるので、文言キーではなく組み立て済みの文で受け取る。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
@@ -226,6 +242,12 @@ export interface StatusInput {
    * `activeTool === 'spring'` のときだけ)。
    */
   readonly springStep: SpringNumericInputStep | null;
+  /**
+   * いまの作図面の id(FR-328、FR-330、タスク14)。3D スケッチ(作図面なし)のときだけ、
+   * 道具ごとの案内へ「立体の頂点を押すと点になる」という一言を添えるのに使う(NFR-UX-7)。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly workPlaneId?: WorkPlaneId;
 }
 
 /** 選択のうち、いま画面にある立体を指しているものの数(§0.a-0.5、FR-404)。 */
@@ -407,7 +429,8 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * 帯に出す 1 文を決める(FR-905)。優先順位は上から順に次のとおり。
  *
  * 1. ファイル操作の失敗 … いま押したボタンへの返事。理由の文だけで通じるので頭の言葉は付けない。
- * 2. 面・立体・図形を作れなかった断り … これもいま押した Enter やボタンへの返事(NFR-UX-5)。
+ * 2. 面・立体・整形系(オフセット等)・図形を作れなかった断り … これもいま押した Enter や
+ *    ボタンへの返事(NFR-UX-5)。
  * 3. 計算の失敗 … 再計算が投げた理由、続いて集まった失敗の件数と先頭の理由(FR-504)。
  * 4. 中止の知らせ … 失敗ではないので赤くしない(NFR-PF-4)。
  * 5. 進み具合 … 長い計算のあいだだけ(NFR-PF-4)。
@@ -431,6 +454,9 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   }
   if (input.solidErrorKey !== null) {
     return failureLine('statusBar.solidError', t(input.solidErrorKey));
+  }
+  if (input.editErrorKey !== undefined && input.editErrorKey !== null) {
+    return failureLine('statusBar.editError', t(input.editErrorKey));
   }
   if (input.shapeErrorMessage !== undefined && input.shapeErrorMessage !== null) {
     return failureLine('statusBar.shapeError', input.shapeErrorMessage);
@@ -488,7 +514,21 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   return {
     kind: 'guide',
     text: machiningText ?? t(guideKeyFor(input.activeTool, input.selectedBodyCount)),
-    hint: null,
+    // 3D スケッチ(FR-330、タスク14)では、道具の案内に「立体の頂点を押すと、その頂点に
+    // 付く点ができる」ことを添える。3D スケッチにしかない入り口で、押せることが画面から
+    // だけでは分からないため(NFR-UX-7)。
+    hint: freeSketchHint(input.workPlaneId, input.activeTool),
     progress: null,
   };
+}
+
+/** 3D スケッチで、立体の頂点を押せる道具のときだけ添える一言。それ以外は null。 */
+function freeSketchHint(
+  workPlaneId: WorkPlaneId | undefined,
+  activeTool: NumericInputToolId,
+): string | null {
+  if (workPlaneId === undefined || !isFreeWorkPlaneId(workPlaneId)) {
+    return null;
+  }
+  return picksSolidVertices(workPlaneId, activeTool) ? t('statusBar.guide.freeSketch') : null;
 }

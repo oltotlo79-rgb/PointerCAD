@@ -1,16 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { BooleanOperation, PartDocument, SolidBody, WorkPlaneId } from '@pointercad/model';
+import {
+  FREE_WORK_PLANE_ID,
+  isFreeWorkPlaneId,
+  type BooleanOperation,
+  type PartDocument,
+  type ResolvedSketch,
+  type SolidBody,
+  type WorkPlaneId,
+} from '@pointercad/model';
 
 import { hasFileSystemAccess } from '../file/fileGateway.js';
 import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
+import { offsetContourIsOpen, offsetToolReadiness } from '../sketch/editCommands.js';
+import { freeSketchToolRejection } from '../sketch/freeSketch.js';
 import {
   createNumericInput,
+  EDIT_TOOL_STEPS,
   REFERENCE_TOOL_STEPS,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
+  type EditToolId,
   type NumericInputStep,
   type NumericInputToolId,
   type ReferenceToolId,
@@ -222,6 +234,19 @@ const SHAPE_TOOLS = [
   { id: 'spline', labelKey: 'toolbar.tool.spline', tooltipKey: 'toolbar.tool.splineTooltip' },
 ] as const satisfies readonly {
   readonly id: ShapeToolId;
+  readonly labelKey: MessageKey;
+  readonly tooltipKey: MessageKey;
+}[];
+
+/**
+ * P4 で足す整形系の道具(FR-321〜324)。「スケッチ」区画の中の畳んだ一覧「編集」に入れる
+ * (§0.a-0.14、`ShapeMenu` と同じ作り)。今回はオフセットだけを実装する。トリム・延長・
+ * フィレット/面取り・ミラー/複写/配列複写はタスク22〜24 がここへ追加する。
+ */
+const EDIT_TOOLS = [
+  { id: 'offset', labelKey: 'toolbar.tool.offset', tooltipKey: 'toolbar.tool.offsetTooltip' },
+] as const satisfies readonly {
+  readonly id: EditToolId;
   readonly labelKey: MessageKey;
   readonly tooltipKey: MessageKey;
 }[];
@@ -477,7 +502,42 @@ function solidAnchor(): readonly [number, number] {
  * 同じ道具をもう一度押したら解除して選択へ戻す(取りかけの操作を残さない、NFR-UX-3)。
  * 数値で位置を決める道具は、選んだ時点で入力欄を開く(NFR-UX-1)。
  */
+/**
+ * 3D スケッチ(FR-330)で使えない道具は選ばせず、理由を帯へ出す(NFR-UX-5、タスク14)。
+ *
+ * 使える・使えないの判断は `freeSketch.ts` の `freeSketchToolRejection` 1 か所に置いてある。
+ * 押せなくするのではなく「押したら理由が出る」形にしてあるのは、押せない見た目だけだと
+ * なぜ使えないのかが分からないため(P3 の加工6種と同じ扱い、`docs/報告記録.md`
+ * 2026-09-04 10:50 の仕上げ (e)-(b))。
+ */
+function blockedInFreeSketch(tool: NumericInputToolId): boolean {
+  const store = useAppStore.getState();
+  const rejection = freeSketchToolRejection(store.workPlaneId, tool);
+  if (rejection === null) {
+    return false;
+  }
+  store.setShapeError(rejection);
+  return true;
+}
+
+/**
+ * 作図面を選び直す(FR-328、FR-330)。3D スケッチへ切り替えたときに、作図面が要る道具を
+ * 選んだままにしない(その道具のまま押すと理由も出せずに何も起きないため)。
+ */
+function selectWorkPlane(planeId: WorkPlaneId): void {
+  const store = useAppStore.getState();
+  store.setWorkPlane(planeId);
+  const rejection = freeSketchToolRejection(planeId, store.activeTool);
+  if (rejection !== null) {
+    store.setActiveTool('select');
+    store.setShapeError(rejection);
+  }
+}
+
 function activateTool(id: SketchToolId, pressed: boolean): void {
+  if (blockedInFreeSketch(id)) {
+    return;
+  }
   const store = useAppStore.getState();
   const next: SketchToolId = pressed && id !== 'select' ? 'select' : id;
   // 道具を変えると入力中のポップアップは閉じるので、開き直すのはこの後。
@@ -499,6 +559,9 @@ function activateTool(id: SketchToolId, pressed: boolean): void {
  * 同じ道具をもう一度押したら選択へ戻すのは `activateTool` と同じ約束にする。
  */
 function activateShapeTool(id: ShapeToolId, pressed: boolean): void {
+  if (blockedInFreeSketch(id)) {
+    return;
+  }
   const store = useAppStore.getState();
   if (pressed) {
     store.setActiveTool('select');
@@ -507,6 +570,39 @@ function activateShapeTool(id: ShapeToolId, pressed: boolean): void {
   }
   store.setActiveTool(id);
   store.openNumericInput(createNumericInput(id, SHAPE_TOOL_STEPS[id]), viewportCenterAnchor());
+}
+
+/**
+ * 整形系の道具(オフセット、FR-321、タスク21)を選ぶ。対象はあらかじめ選択道具(既存の
+ * `select`)で選んでおく約束(§2.5「選んでから操作」)なので、押した時点の選択で押せる
+ * 条件(`offsetToolReadiness`)を確かめ、足りなければ道具だけ切り替えて理由を帯へ出す
+ * (§0.a-0.6 の穴・ばね等と同じ作り、NFR-UX-5「実行してから失敗させない」)。押せれば、
+ * 選んだ曲線が閉じた輪郭か開いた曲線かを見込んで(`offsetContourIsOpen`)側の見出しを
+ * 切り替えたその場入力を開く(FR-321)。
+ */
+function activateEditTool(id: EditToolId, pressed: boolean): void {
+  if (blockedInFreeSketch(id)) {
+    return;
+  }
+  const store = useAppStore.getState();
+  if (pressed) {
+    store.setActiveTool('select');
+    store.requestViewportFocus();
+    return;
+  }
+  store.setActiveTool(id);
+  const readiness = offsetToolReadiness(store.resolvedSketch, store.selection);
+  if (!readiness.ready) {
+    store.setEditError(readiness.reasonKey);
+    return;
+  }
+  store.setEditError(null);
+  store.openNumericInput(
+    createNumericInput(id, EDIT_TOOL_STEPS[id], undefined, {
+      offsetOpenContour: offsetContourIsOpen(store.resolvedSketch, store.selection),
+    }),
+    viewportCenterAnchor(),
+  );
 }
 
 /**
@@ -718,9 +814,19 @@ function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuProps): R
 
   const base = PLANES.find((plane) => plane.id === workPlaneId);
   const custom = customPlanes.find((plane) => plane.id === workPlaneId);
-  // トリガーの札は、基準の 3 面なら「XY」、任意の作業平面なら付いている名前を出す。
-  const currentLabel = base === undefined ? (custom?.name ?? t(PLANES[0].labelKey)) : t(base.labelKey);
-  const currentTooltip = base === undefined ? t('toolbar.plane.tooltip') : t(base.tooltipKey);
+  const free = isFreeWorkPlaneId(workPlaneId);
+  // トリガーの札は、基準の 3 面なら「XY」、任意の作業平面なら付いている名前、
+  // 3D スケッチ(作図面なし、FR-330)なら「3D」を出す。
+  const currentLabel = free
+    ? t('toolbar.plane.free')
+    : base === undefined
+      ? (custom?.name ?? t(PLANES[0].labelKey))
+      : t(base.labelKey);
+  const currentTooltip = free
+    ? t('toolbar.plane.freeTooltip')
+    : base === undefined
+      ? t('toolbar.plane.tooltip')
+      : t(base.tooltipKey);
 
   return (
     <div
@@ -757,7 +863,7 @@ function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuProps): R
               title={t(plane.tooltipKey)}
               aria-pressed={workPlaneId === plane.id}
               onClick={() => {
-                useAppStore.getState().setWorkPlane(plane.id);
+                selectWorkPlane(plane.id);
                 setOpen(false);
               }}
             >
@@ -773,13 +879,29 @@ function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuProps): R
               title={t('toolbar.plane.tooltip')}
               aria-pressed={workPlaneId === plane.id}
               onClick={() => {
-                useAppStore.getState().setWorkPlane(plane.id);
+                selectWorkPlane(plane.id);
                 setOpen(false);
               }}
             >
               {plane.name}
             </button>
           ))}
+          {/*
+            3D スケッチ(作図面なし、FR-330)。作図面の一覧の最後に置く。空間に直接
+            点・線分・円弧・スプライン・面を置く状態で、立体の頂点を押して点にできる。
+          */}
+          <button
+            type="button"
+            className="pcad-button pcad-menu__item"
+            title={t('toolbar.plane.freeTooltip')}
+            aria-pressed={free}
+            onClick={() => {
+              selectWorkPlane(FREE_WORK_PLANE_ID);
+              setOpen(false);
+            }}
+          >
+            {t('toolbar.plane.free')}
+          </button>
           {/* 作業平面の作り方 4 通り(FR-328)と、基準軸・基準点・座標系(FR-329)。 */}
           <span className="pcad-menu__section">{t('toolbar.plane.createPlane')}</span>
           {PLANE_TOOLS.map((tool) => (
@@ -895,6 +1017,103 @@ function ShapeMenu({ activeTool }: ShapeMenuProps): React.JSX.Element {
               aria-pressed={activeTool === tool.id}
               onClick={() => {
                 activateShapeTool(tool.id, activeTool === tool.id);
+                setOpen(false);
+              }}
+            >
+              {t(tool.labelKey)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+interface EditMenuProps {
+  readonly activeTool: NumericInputToolId;
+  /** 押せる条件(`offsetToolReadiness`)の判定に要る、いまのスケッチの解決結果。 */
+  readonly resolvedSketch: ResolvedSketch;
+  readonly selection: readonly string[];
+}
+
+/**
+ * 整形系の畳んだ一覧「編集」(FR-321、§0.a-0.14、タスク21)。
+ *
+ * `ShapeMenu` と同じ作り(非モーダル、外を押すと閉じる、トリガーに今の状態を出す)。
+ * 今回はオフセットだけを入れる(トリム・延長・フィレット/面取り・ミラー/複写/配列複写は
+ * タスク22〜24 がここへ追加する)。対象を選んでから押す道具(§2.5)なので、押せない条件を
+ * 一覧の項目にも出す(NFR-UX-5「実行前に理由提示」、`MachiningGroup` と同じ作り)。
+ */
+function EditMenu({ activeTool, resolvedSketch, selection }: EditMenuProps): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent): void => {
+      const container = containerRef.current;
+      if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    globalThis.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      globalThis.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open]);
+
+  const current = EDIT_TOOLS.find((tool) => tool.id === activeTool) ?? null;
+  const groupLabel = t('toolbar.edit.groupLabel');
+  // 今回はオフセットだけなので判定は 1 つ。タスク22〜24 が道具ごとの判定を足したら
+  // ここを道具 id で振り分ける表へ広げる。
+  const readiness = offsetToolReadiness(resolvedSketch, selection);
+
+  return (
+    <div
+      className="pcad-menu"
+      ref={containerRef}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="pcad-button pcad-menu__trigger"
+        title={t('toolbar.edit.tooltip')}
+        aria-label={
+          current === null ? groupLabel : `${groupLabel}${LABEL_SEPARATOR}${t(current.labelKey)}`
+        }
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-pressed={current !== null}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        <span className="pcad-menu__count">
+          {current === null ? groupLabel : t(current.labelKey)}
+        </span>
+        <ChevronRightIcon className="pcad-menu__chevron" />
+      </button>
+      {open ? (
+        <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
+          {EDIT_TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              className="pcad-button pcad-menu__item"
+              title={
+                readiness.ready ? t(tool.tooltipKey) : unavailableTooltip(tool.labelKey, readiness.reasonKey)
+              }
+              aria-pressed={activeTool === tool.id}
+              aria-disabled={!readiness.ready}
+              onClick={() => {
+                activateEditTool(tool.id, activeTool === tool.id);
                 setOpen(false);
               }}
             >
@@ -1102,6 +1321,8 @@ export function Toolbar(): React.JSX.Element {
   // (タスク17 の後は state.bodies をそのまま渡せるようになる、subShapeBodiesOf の注釈)。
   const subShapeBodies = subShapeBodiesOf(bodies);
   const selection = useAppStore((state) => state.selection);
+  // 整形系(オフセット、FR-321、タスク21)の押せる条件の判定に要る。
+  const resolvedSketch = useAppStore((state) => state.resolvedSketch);
   const canUndo = useAppStore((state) => state.canUndo);
   const canRedo = useAppStore((state) => state.canRedo);
 
@@ -1208,6 +1429,8 @@ export function Toolbar(): React.JSX.Element {
         </div>
         {/* 新しい図形は畳んだ一覧へ入れて、基本の 6 道具の平置きを崩さない(§0.a-0.14)。 */}
         <ShapeMenu activeTool={activeTool} />
+        {/* 整形系(オフセット、FR-321)も同じ畳んだ一覧の作りで隣へ置く(§0.a-0.14、タスク21)。 */}
+        <EditMenu activeTool={activeTool} resolvedSketch={resolvedSketch} selection={selection} />
       </div>
 
       <SolidGroup document={partDocument} bodies={subShapeBodies} selection={selection} />

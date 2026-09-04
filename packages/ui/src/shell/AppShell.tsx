@@ -11,8 +11,8 @@ import {
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
+import { applyEditCommit, applySketchCommit } from '../sketch/commitToStore.js';
 import { commitReferenceInput } from '../sketch/referenceCommands.js';
-import { commitSketchInput } from '../sketch/sketchCommands.js';
 import { commitSolidInput } from '../solid/solidCommands.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -271,25 +271,10 @@ export function AppShell(): React.JSX.Element {
             viewportWidth={viewportSize[0]}
             viewportHeight={viewportSize[1]}
             onCommit={(commit, state) => {
-              const store = useAppStore.getState();
-              const outcome = commitSketchInput(commit, {
-                document: store.sketch,
-                planeId: store.workPlaneId,
-                chaining: store.chaining,
-                pendingStart: store.pendingStart,
-                // P4 の新しい図形は、置いた点と前の段の値を下書きへ積む(タスク12)。
-                // 欄の値を名前で引くのに、確定した段の状態も渡す。
-                shapeDraft: store.shapeDraft,
-                input: state,
-              });
-              // 断りは先に出す。setSketch(=applyDocument)は古い断りを消すので、
-              // 順序を逆にすると出したばかりの理由が消える(NFR-UX-5)。
-              store.setShapeError(outcome.rejection);
-              if (outcome.document !== store.sketch) {
-                store.setSketch(outcome.document);
-              }
-              store.setPendingStart(outcome.pendingStart);
-              store.setShapeDraft(outcome.shapeDraft);
+              // 履歴・取りかけ・断りへの反映は applySketchCommit(commitToStore.ts)が
+              // 1 か所で受け持つ。3D スケッチで立体の頂点を押したときも同じ関数を通る
+              // (タスク14。同じ手順を 2 か所に書かない)。
+              applySketchCommit(commit, state);
             }}
             onSolidCommit={(commit) => {
               /*
@@ -346,6 +331,11 @@ export function AppShell(): React.JSX.Element {
               if (outcome.createdPlaneId !== null) {
                 store.setWorkPlane(outcome.createdPlaneId);
               }
+            }}
+            onEditCommit={(commit) => {
+              // 整形系の道具(オフセット、FR-321、タスク21)。対象はすでに選ばれているので、
+              // 反映は applyEditCommit(commitToStore.ts)が 1 か所で受け持つ。
+              applyEditCommit(commit);
             }}
           />
           {snapIndicator === null ? null : (

@@ -54,6 +54,7 @@ function contextOf(overrides: Partial<ShapeCommitContext> = {}): ShapeCommitCont
   return {
     document: createEmptySketchDocument(),
     planeId: 'xy',
+    plane: XY,
     pendingStart: null,
     draft: EMPTY_SHAPE_DRAFT,
     input: null,
@@ -331,6 +332,7 @@ describe('2 点+半径の円弧を履歴へ積む', () => {
     const outcome = commitTwoPointArc(
       createEmptySketchDocument(),
       'xy',
+      XY,
       start,
       end,
       value(10),
@@ -348,10 +350,19 @@ describe('2 点+半径の円弧を履歴へ積む', () => {
   });
 
   it('ふくらむ向きで円弧の中心が入れ替わる', () => {
-    const left = commitTwoPointArc(createEmptySketchDocument(), 'xy', start, end, value(10), 'left');
+    const left = commitTwoPointArc(
+      createEmptySketchDocument(),
+      'xy',
+      XY,
+      start,
+      end,
+      value(10),
+      'left',
+    );
     const right = commitTwoPointArc(
       createEmptySketchDocument(),
       'xy',
+      XY,
       start,
       end,
       value(10),
@@ -369,6 +380,7 @@ describe('2 点+半径の円弧を履歴へ積む', () => {
     const outcome = commitTwoPointArc(
       document,
       'xy',
+      XY,
       start,
       { mode: 'absolute', x: value(30), y: value(0), z: value(0) },
       value(10),

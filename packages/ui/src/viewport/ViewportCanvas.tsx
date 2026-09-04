@@ -92,7 +92,9 @@ export function ViewportCanvas(): React.JSX.Element {
     const controls = attachCameraControls(canvas, requestDraw);
     controlsRef.current = controls;
     // 視点操作を先に結び、その後ろでスケッチの操作を結ぶ(中ボタン・Alt の取り合いを避ける)。
-    const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit().distance);
+    // 視点そのものを渡す。距離は方眼の刻みに、向きは 3D スケッチで押した場所に置く面に使う
+    // (FR-330、P4 タスク14)。
+    const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit());
     setControlsReady(true);
 
     const observer = new ResizeObserver(() => {

@@ -102,6 +102,22 @@ export {
   buildResidualReport, buildResiduals, IMPLICIT_CONSTRAINT_ID_PREFIX, implicitEquationId,
   isImplicitConstraintId,
 } from './sketch/constraints/residuals.js';
+/** 連立の解き方(FR-313、NFR-PF-2、P4b タスク6)。行列の道具と Levenberg–Marquardt。 */
+export type {
+  LinearizedRow, QrDecomposition, SolveIterationRecord, SolveOptions, SolveOutcome, SolveStopReason,
+} from './sketch/constraints/solve.js';
+export {
+  CONSTRAINT_INITIAL_DAMPING, CONSTRAINT_MAX_ITERATIONS, CONSTRAINT_TOLERANCE, matrixRank,
+  qrDecomposition, solveLeastSquares, solveLevenbergMarquardt, solveLinearSystem,
+} from './sketch/constraints/solve.js';
+/** 拘束の診断(足りない・足しすぎ・矛盾。FR-313、NFR-UX-5、P4b タスク7)。 */
+export type {
+  ConflictingConstraint, ConstraintDiagnosis, ConstraintDiagnosisMessage,
+  ConstraintDiagnosisMessageKind, DiagnoseOptions, RedundantConstraint, RedundantReason,
+} from './sketch/constraints/diagnose.js';
+export {
+  CONFLICT_REPORT_LIMIT, CONSTRAINT_TOO_MANY_MESSAGE, diagnoseConstraints, remainingMessage,
+} from './sketch/constraints/diagnose.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
   DEFAULT_FACE_COLOR, findFeature, nextFeatureId, nextFeatureName, removeFeature, replaceFeature,

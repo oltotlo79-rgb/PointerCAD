@@ -7,18 +7,33 @@
  *
  * 座標 1 点の解決は resolveCoordinate.ts の担当で、ここは
  * 「そこまでに解決できたもの」(ResolveContext)を育てながら順に渡す。
+ *
+ * 作図面は 3 通りある(P4)。基準の 3 面(`WORK_PLANES`)、部品文書の作業平面
+ * (FR-328、タスク9。`SketchResolveOptions.workPlane` で引く)、そして
+ * **作図面を持たない 3D スケッチ**(FR-330、タスク10。`isFreeWorkPlaneId`)。
+ * 3D スケッチで作れるのは点・線分・円弧・スプライン・面の 5 つで、円弧だけは
+ * 向き(法線・角度 0 の向き)をフィーチャー自身が持つ。面は境界が同じ平面に乗るときだけ
+ * 張れ、乗らなければ `notPlanar` で断る(非平面の面張りはタスク10b)。
  */
 
+import type { ResolvedSubShape } from '../geometry/planeSpec.js';
+import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import {
   baseWorkPlane,
   degreesToRadians,
   directionInPlane,
+  isFreeWorkPlaneId,
   planeToWorld,
   worldToPlane,
   type WorkPlane,
   type WorkPlaneId,
 } from './planeMath.js';
-import { resolveCoordinate, vertexKey, type ResolveContext } from './resolveCoordinate.js';
+import {
+  resolveCoordinate,
+  vertexKey,
+  type ResolveContext,
+  type ResolveOutcome,
+} from './resolveCoordinate.js';
 import {
   hasDuplicateSplinePoint,
   MAX_SPLINE_POINTS,
@@ -30,6 +45,7 @@ import {
   SPLINE_TOO_MANY_MESSAGE,
 } from './splineMath.js';
 import type {
+  FreeArcOrientation,
   PointArrayLayout,
   ResolvedArc,
   ResolvedCurve,
@@ -616,6 +632,84 @@ function resolvePointArrayFeature(
  */
 export interface SketchResolveOptions {
   readonly workPlane?: (planeId: WorkPlaneId) => WorkPlane | null;
+  /**
+   * 立体の部分形状(頂点・辺・面)の選び直し(FR-330、タスク10)。
+   * 渡されなければ保存された指紋の位置をそのまま使う(`resolveCoordinate.ts` の注釈)。
+   * 上流の立体の変化への追従は部品文書の側が担う(タスク25 で配線する)。
+   */
+  readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
+}
+
+/**
+ * 3D スケッチ(FR-330)の円弧の向きを解く(タスク10)。作図面があればそこから借り、
+ * 無ければフィーチャー自身の `freeOrientation` から作る。
+ *
+ * 第1軸は法線に垂直な成分だけを使う(`planeMath.ts` の `planeAxesFor` と同じ考え方)。
+ * ただしここでは補助ベクトルへ戻さず、垂直な成分が無い(法線と平行な)ときは断る。
+ * 利用者が指定した向きを黙って別の向きに置き換えると、画面に出る角度 0 の位置が
+ * 予測できなくなるため。
+ */
+function resolveArcOrientation(
+  featureId: string,
+  plane: WorkPlane | null,
+  orientation: FreeArcOrientation | undefined,
+  context: ResolveContext,
+): ResolveOutcome<{ readonly normal: Vec3; readonly xAxis: Vec3 }> {
+  if (plane !== null) {
+    return { ok: true, value: { normal: plane.normal, xAxis: plane.axisU } };
+  }
+  if (orientation === undefined) {
+    return {
+      ok: false,
+      error: error(
+        featureId,
+        'missingBase',
+        '3D スケッチの円弧には向きの指定が必要です。法線と角度 0 の向きを決めてください。',
+      ),
+    };
+  }
+  const normal = resolveCoordinate(orientation.normal, context, featureId);
+  if (!normal.ok) {
+    return normal;
+  }
+  if (lengthVec3(normal.value) <= SKETCH_TOLERANCE_MM) {
+    return {
+      ok: false,
+      error: error(featureId, 'degenerate', '円弧の向き(法線)の長さが 0 です。'),
+    };
+  }
+  const unitNormal = normalizeVec3(normal.value);
+  const hint = resolveCoordinate(orientation.xAxis, context, featureId);
+  if (!hint.ok) {
+    return hint;
+  }
+  const projected = subVec3(hint.value, scaleVec3(unitNormal, dotVec3(hint.value, unitNormal)));
+  if (lengthVec3(projected) <= SKETCH_TOLERANCE_MM) {
+    return {
+      ok: false,
+      error: error(
+        featureId,
+        'degenerate',
+        '角度 0 の向きが法線と平行です。法線と違う向きを指定してください。',
+      ),
+    };
+  }
+  return { ok: true, value: { normal: unitNormal, xAxis: normalizeVec3(projected) } };
+}
+
+/**
+ * 3D スケッチ(作図面なし、FR-330)では作れない図形を断る(タスク10)。
+ *
+ * 3D スケッチで作れるのは点・線分・円弧・スプライン・面の 5 つ(要件 FR-330)。
+ * 矩形・正多角形・長穴・楕円・点列は「作図面の中の並び」で形が決まる図形なので、
+ * 平面が無いと形自体が定まらない。作図面を選び直せば作れるので、そう伝える。
+ */
+function needsWorkPlane(featureId: string, label: string): SketchError {
+  return error(
+    featureId,
+    'missingBase',
+    `3D スケッチでは${label}を作れません。作図面を選んでから作ってください。`,
+  );
 }
 
 /**
@@ -628,6 +722,8 @@ export function resolveSketch(
   options: SketchResolveOptions = {},
 ): ResolvedSketch {
   const lookupWorkPlane = options.workPlane ?? baseWorkPlane;
+  // 渡されなければ `resolvePointReference` が保存された指紋の位置を使う(タスク10)。
+  const subShape = options.subShape;
   const points: ResolvedPoint[] = [];
   const segments: ResolvedSegment[] = [];
   const arcs: ResolvedArc[] = [];
@@ -673,15 +769,18 @@ export function resolveSketch(
     }
 
     // 作図面は基準の 3 面か、部品文書の作業平面フィーチャー(FR-328、タスク9)。
-    // 見つからなければそのフィーチャーだけを断って先へ進む(FR-504、NFR-RE-1)。
-    const plane = lookupWorkPlane(feature.planeId);
-    if (plane === null) {
+    // 3D スケッチ(FR-330、タスク10)だけは「作図面が無い」ことが正しい状態なので、
+    // 引く前に分ける。それ以外で見つからなければ、そのフィーチャーだけを断って先へ進む
+    // (FR-504、NFR-RE-1)。
+    const free = isFreeWorkPlaneId(feature.planeId);
+    const plane = free ? null : lookupWorkPlane(feature.planeId);
+    if (!free && plane === null) {
       errors.push(
         error(feature.id, 'missingBase', `作図面が見つかりません: ${feature.planeId}`),
       );
       continue;
     }
-    const context: ResolveContext = { plane, points, previous, vertices };
+    const context: ResolveContext = { plane, points, previous, vertices, subShape };
 
     if (feature.kind === 'point') {
       const at = resolveCoordinate(feature.at, context, feature.id);
@@ -757,12 +856,23 @@ export function resolveSketch(
         errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
         continue;
       }
+      // 向きは作図面から借りるか、3D スケッチなら円弧自身の指定から作る(FR-330、タスク10)。
+      const orientation = resolveArcOrientation(
+        feature.id,
+        plane,
+        feature.freeOrientation,
+        context,
+      );
+      if (!orientation.ok) {
+        errors.push(orientation.error);
+        continue;
+      }
       const arc: ResolvedArc = {
         kind: 'arc',
         featureId: feature.id,
         center: center.value,
-        normal: plane.normal,
-        xAxis: plane.axisU,
+        normal: orientation.value.normal,
+        xAxis: orientation.value.xAxis,
         radius,
         startAngle,
         endAngle,
@@ -780,6 +890,10 @@ export function resolveSketch(
     }
 
     if (feature.kind === 'pointArray') {
+      if (plane === null) {
+        errors.push(needsWorkPlane(feature.id, '点列'));
+        continue;
+      }
       const outcome = resolvePointArrayFeature(feature.id, feature.layout, plane, context);
       if (!outcome.ok) {
         errors.push(outcome.error);
@@ -796,6 +910,10 @@ export function resolveSketch(
     }
 
     if (feature.kind === 'rectangle') {
+      if (plane === null) {
+        errors.push(needsWorkPlane(feature.id, '矩形'));
+        continue;
+      }
       const corner1 = resolveCoordinate(feature.corner1, context, feature.id);
       if (!corner1.ok) {
         errors.push(corner1.error);
@@ -830,6 +948,10 @@ export function resolveSketch(
     }
 
     if (feature.kind === 'polygon') {
+      if (plane === null) {
+        errors.push(needsWorkPlane(feature.id, '正多角形'));
+        continue;
+      }
       const center = resolveCoordinate(feature.center, context, feature.id);
       if (!center.ok) {
         errors.push(center.error);
@@ -876,6 +998,10 @@ export function resolveSketch(
     }
 
     if (feature.kind === 'slot') {
+      if (plane === null) {
+        errors.push(needsWorkPlane(feature.id, '長穴'));
+        continue;
+      }
       const center1 = resolveCoordinate(feature.center1, context, feature.id);
       if (!center1.ok) {
         errors.push(center1.error);
@@ -914,6 +1040,10 @@ export function resolveSketch(
     }
 
     if (feature.kind === 'ellipse') {
+      if (plane === null) {
+        errors.push(needsWorkPlane(feature.id, '楕円'));
+        continue;
+      }
       const center = resolveCoordinate(feature.center, context, feature.id);
       if (!center.ok) {
         errors.push(center.error);

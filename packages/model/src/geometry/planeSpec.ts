@@ -555,8 +555,18 @@ export function resolvePlaneSpec(spec: PlaneSpec, context: PlaneResolveContext):
   }
 }
 
-/** 点の参照を鍵の材料の文字列にする。同じ参照からは常に同じ文字列が出る(決定性)。 */
-function pointReferenceKeyText(reference: PointReference): string {
+/**
+ * 点の参照を鍵の材料の文字列にする。同じ参照からは常に同じ文字列が出る(決定性)。
+ *
+ * 立体の部分形状(FR-330 の 3D スケッチの点、タスク10)は指紋そのものを材料にする。
+ * 指紋の文字列は呼び出し側が渡す(`fingerprintKeyText`。循環 import を避けるため、
+ * `planeSpecKeyText` と同じ約束)。位置・大きさが変われば鍵も変わるので、
+ * 上流の立体が変わったときに古い形状キャッシュを拾わない。
+ */
+function pointReferenceKeyText(
+  reference: PointReference,
+  fingerprintText: (reference: SubShapeRef) => string,
+): string {
   switch (reference.kind) {
     case 'origin':
       return 'origin';
@@ -566,6 +576,8 @@ function pointReferenceKeyText(reference: PointReference): string {
       return `point:${reference.pointId}`;
     case 'vertex':
       return `vertex:${reference.featureId}:${reference.vertex}`;
+    case 'subShape':
+      return `subShape:${fingerprintText(reference.ref)}`;
   }
 }
 
@@ -595,24 +607,24 @@ export function planeSpecKeyText(
   switch (spec.kind) {
     case 'threePoints':
       return (
-        `threePoints{p1=${pointReferenceKeyText(spec.p1)}` +
-        `;p2=${pointReferenceKeyText(spec.p2)}` +
-        `;p3=${pointReferenceKeyText(spec.p3)}}`
+        `threePoints{p1=${pointReferenceKeyText(spec.p1, fingerprintText)}` +
+        `;p2=${pointReferenceKeyText(spec.p2, fingerprintText)}` +
+        `;p3=${pointReferenceKeyText(spec.p3, fingerprintText)}}`
       );
     case 'pointAndEdge':
       return (
-        `pointAndEdge{point=${pointReferenceKeyText(spec.point)}` +
+        `pointAndEdge{point=${pointReferenceKeyText(spec.point, fingerprintText)}` +
         `;edge=${fingerprintText(spec.edge)};mode=${spec.mode}}`
       );
     case 'pointAndAxis':
       return (
-        `pointAndAxis{point=${pointReferenceKeyText(spec.point)}` +
+        `pointAndAxis{point=${pointReferenceKeyText(spec.point, fingerprintText)}` +
         `;axis=${axisSpecKeyText(spec.axis)}` +
         `;tilt=${keyNumber(spec.tilt.value)};azimuth=${keyNumber(spec.azimuth.value)}}`
       );
     case 'pointAndParallelFace':
       return (
-        `pointAndParallelFace{point=${pointReferenceKeyText(spec.point)}` +
+        `pointAndParallelFace{point=${pointReferenceKeyText(spec.point, fingerprintText)}` +
         `;face=${fingerprintText(spec.face)}}`
       );
     case 'face':

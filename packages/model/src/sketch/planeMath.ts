@@ -13,12 +13,15 @@ import {
 export type BaseWorkPlaneId = 'xy' | 'xz' | 'yz';
 
 /**
- * 作図面の id。基準の 3 面か、部品文書の作業平面フィーチャーの id(FR-328、P4 §0.a-0.13)。
+ * 作図面の id。基準の 3 面か、部品文書の作業平面フィーチャーの id(FR-328、P4 §0.a-0.13)、
+ * または 3D スケッチを表す `FREE_WORK_PLANE_ID`(FR-330、P4 §0.a-0.4、タスク10)。
  *
  * 任意の文字列を許すので `WORK_PLANES[id]` のような固定表の引きは**型で守られない**。
  * 基準の 3 面かどうかは `isBaseWorkPlaneId` で判定し、平面そのものは `baseWorkPlane`
  * (見つからなければ null)で引く。任意平面は文書を見ないと解決できないので、
  * `resolveSketch` は呼び出し側から平面を引く関数を受け取る(`SketchResolveOptions`)。
+ * 3D スケッチだけは「平面が無い」ことが正しい状態なので、平面を引く前に
+ * `isFreeWorkPlaneId` で分ける(引けなかったのか、そもそも要らないのかを区別するため)。
  */
 export type WorkPlaneId = string;
 
@@ -51,12 +54,29 @@ export const WORLD_AXIS_DIRECTIONS: Readonly<Record<'x' | 'y' | 'z', Vec3>> = {
   z: [0, 0, 1],
 };
 
+/**
+ * 3D スケッチ(作図面に依らないスケッチ、FR-330)の作図面 id(P4 §0.a-0.4、タスク10)。
+ *
+ * 新しい文書種は作らず、`SketchFeatureBase.planeId` がこの値のときだけ「作図面が無い」
+ * とみなす。基準の 3 面・任意の作業平面の id とぶつからないよう、フィーチャー id の形
+ * (`referencePlane-1` のような接頭辞+連番)とも違う短い語にしてある。
+ */
+export const FREE_WORK_PLANE_ID = 'free';
+
 /** 基準の 3 面のどれかか(FR-328 の任意平面と見分ける)。 */
 export function isBaseWorkPlaneId(id: string): id is BaseWorkPlaneId {
   return id === 'xy' || id === 'xz' || id === 'yz';
 }
 
-/** 基準の 3 面を引く。任意平面の id(や未知の id)なら null(FR-328)。 */
+/** 3D スケッチ(作図面なし)か(FR-330)。平面を引く前にこれで分ける。 */
+export function isFreeWorkPlaneId(id: WorkPlaneId): boolean {
+  return id === FREE_WORK_PLANE_ID;
+}
+
+/**
+ * 基準の 3 面を引く。任意平面の id(や未知の id)なら null(FR-328)。
+ * 3D スケッチの `FREE_WORK_PLANE_ID` も「基準の 3 面ではない」ので null になる。
+ */
 export function baseWorkPlane(id: WorkPlaneId): WorkPlane | null {
   return isBaseWorkPlaneId(id) ? WORK_PLANES[id] : null;
 }

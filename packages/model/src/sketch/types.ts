@@ -9,6 +9,7 @@
 
 import type { ExpressionValue } from '@pointercad/expression';
 
+import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import type { WorkPlaneId } from './planeMath.js';
 import type { Vec3 } from './vec3.js';
 
@@ -17,6 +18,16 @@ import type { Vec3 } from './vec3.js';
  * 基準が動けば下流が追従する(FR-311、FR-502 の土台)。
  * `previous` は保存しても履歴上の位置から導けるため、解決のときに
  * 「そのフィーチャーより前で最後に作られた点」として求める。
+ *
+ * **新しい基準の足し方(P4 §0.a-0.6):** この union に 1 種類足し、
+ * `resolveCoordinate.ts` の `resolvePointReference` に 1 case、
+ * `geometry/planeSpec.ts` の `pointReferenceKeyText` に 1 case、
+ * `io` の `POINT_REFERENCE_KINDS` / `serializePointReference` / `readPointReference` に
+ * 1 か所ずつ足すだけで済む形を保つ。**P5 の球面上の点(FR-431)はこの形で
+ * `{ readonly kind: 'sphereGrid'; readonly sphereFeatureId: string;
+ *    readonly latitude: ExpressionValue; readonly longitude: ExpressionValue }`
+ * を足す予定**(球というフィーチャーが P5 まで無いので、P4 では型に入れない。
+ * 解決できない種類を先に型へ持ち込むと、意味を持たない分岐が残るため)。
  */
 export type PointReference =
   | { readonly kind: 'origin' }
@@ -26,7 +37,14 @@ export type PointReference =
       readonly kind: 'vertex';
       readonly featureId: string;
       readonly vertex: 'start' | 'end' | 'center';
-    };
+    }
+  /**
+   * 立体の部分形状(頂点・辺・面)の位置(FR-330、P4 §2.4・§2.6、タスク10)。
+   * 3D スケッチで「立体の頂点を結んで線を引く / 面を張る」ための基準。
+   * 位置は頂点ならその点、辺なら中点、面なら重心(`SubShapeFingerprint.position` の約束)。
+   * 上流の立体が変われば指紋で選び直す(`SketchResolveOptions.subShape`)。
+   */
+  | { readonly kind: 'subShape'; readonly ref: SubShapeRef };
 
 /** 1 点の指定方法(FR-301〜303)。x/y/z はワールド座標、角度は度。 */
 export type CoordinateInput =
@@ -84,6 +102,24 @@ export interface SketchLineFeature extends SketchFeatureBase {
   readonly construction: boolean;
 }
 
+/**
+ * 3D スケッチ(`planeId` が `FREE_WORK_PLANE_ID`)の円弧の向き(FR-330、§2.4、タスク10)。
+ *
+ * 作図面が無いと法線・第1軸を借りる先が無いので、その円弧専用の向きをここで持つ。
+ * どちらも「原点から見た向きベクトル」として解く(絶対座標なら成分そのもの)。
+ * `xAxis` は法線に垂直な成分だけを使うので、多少ずれていてもよい(法線と平行なときだけ断る)。
+ *
+ * 3 点(始点・終点・通過点)から円弧を作る指定方法は、UI 側(タスク14)が中心・半径・
+ * 角度とこの向きを計算してから保存する(2 点+半径の円弧を UI で中心へ直す §0.a-0.18 と
+ * 同じ考え方。model の保存形は「中心+半径+角度+向き」の 1 通りに揃える)。
+ */
+export interface FreeArcOrientation {
+  /** 円弧が乗る平面の法線。 */
+  readonly normal: CoordinateInput;
+  /** 角度 0 の向き。法線に垂直な成分を使う。 */
+  readonly xAxis: CoordinateInput;
+}
+
 export interface SketchArcFeature extends SketchFeatureBase {
   readonly kind: 'arc';
   readonly center: CoordinateInput;
@@ -93,6 +129,11 @@ export interface SketchArcFeature extends SketchFeatureBase {
   readonly endAngle: ExpressionValue;
   /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
   readonly construction: boolean;
+  /**
+   * 3D スケッチ専用の向き(FR-330、タスク10)。`planeId` が作図面を指すときは
+   * 作図面の法線・第1軸を使うので不要(無視する)。3D スケッチで無ければ `missingBase`。
+   */
+  readonly freeOrientation?: FreeArcOrientation;
 }
 
 /**
@@ -336,6 +377,12 @@ export type SketchErrorCode =
   | 'mixedBoundary'
   /** 構築線(FR-320)を面の境界に選んだ(タスク6)。 */
   | 'constructionElement'
+  /**
+   * 立体の部分形状(頂点・辺・面)の参照を選び直せなかった(FR-330、タスク10)。
+   * 上流の立体が大きく変わって指紋に合う形が無くなった場合で、
+   * `missingBase`(スケッチの中の基準が無い)とは原因が違うので分けて持つ。
+   */
+  | 'missingSubShape'
   | 'kernelFailed';
 
 /** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */

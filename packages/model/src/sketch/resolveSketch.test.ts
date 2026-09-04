@@ -1,8 +1,9 @@
 import { expressionValueFromNumber as num, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
+import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.js';
-import { WORK_PLANES, type WorkPlane } from './planeMath.js';
+import { FREE_WORK_PLANE_ID, WORK_PLANES, type WorkPlane } from './planeMath.js';
 import {
   arcPointAt,
   azimuthToEllipseParameter,
@@ -22,6 +23,7 @@ import type {
   ResolvedCurve,
   ResolvedEllipse,
   ResolvedSegment,
+  SketchArcFeature,
   SketchDocument,
   SketchEllipseFeature,
   SketchFeature,
@@ -2183,5 +2185,332 @@ describe('任意の作業平面の上で描く(FR-328、タスク9)', () => {
     expect(resolved.errors[0].featureId).toBe('p1');
     expect(resolved.points).toHaveLength(1);
     expect(resolved.points[0].position).toEqual([2, 2, 2]);
+  });
+});
+
+describe('3D スケッチ(FR-330、タスク10)', () => {
+  /** 立体の頂点への参照。指紋には選んだ瞬間の位置が入る(P3 §2.2.2)。 */
+  function vertexRef(bodyFeatureId: string, index: number, position: Vec3): SubShapeRef {
+    return { bodyFeatureId, index, fingerprint: { kind: 'vertex', position } };
+  }
+
+  /**
+   * 立体の頂点にぴったり重なる 3D スケッチの点。ずれ 0 の相対指定へ寄せてあるので、
+   * `CoordinateInput` の指定方法を増やさずに済む(計画書のタスク14 の推奨どおり)。
+   */
+  function vertexPoint(id: string, reference: SubShapeRef): SketchFeature {
+    return {
+      id,
+      name: id,
+      planeId: FREE_WORK_PLANE_ID,
+      kind: 'point',
+      at: {
+        mode: 'relative',
+        base: { kind: 'subShape', ref: reference },
+        dx: num(0),
+        dy: num(0),
+        dz: num(0),
+      },
+    };
+  }
+
+  /** 解決済みの点をそのまま基準にする指定(ずれ 0)。 */
+  function atPoint(pointId: string): CoordinateInput {
+    return {
+      mode: 'relative',
+      base: { kind: 'point', pointId },
+      dx: num(0),
+      dy: num(0),
+      dz: num(0),
+    };
+  }
+
+  function freeArc(orientation: SketchArcFeature['freeOrientation']): SketchArcFeature {
+    return {
+      id: 'a1',
+      name: '円弧1',
+      planeId: FREE_WORK_PLANE_ID,
+      kind: 'arc',
+      center: absoluteCoordinate(0, 0, 0),
+      radius: num(10),
+      startAngle: num(0),
+      endAngle: num(90),
+      construction: false,
+      freeOrientation: orientation,
+    };
+  }
+
+  it('作図面に依らない点は、座標の式をそのまま使う(§0.a-0.4)', () => {
+    const point: SketchFeature = {
+      id: 'p1', name: '点1', planeId: FREE_WORK_PLANE_ID, kind: 'point',
+      at: absoluteCoordinate(1, 2, 3),
+    };
+    const resolved = resolveSketch(documentOf(point));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.points[0].position).toEqual([1, 2, 3]);
+  });
+
+  it('作図面に依らない線分は 3 次元の 2 点を結ぶ', () => {
+    const line: SketchFeature = {
+      id: 'l1', name: '線分1', planeId: FREE_WORK_PLANE_ID, kind: 'line',
+      from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(10, 10, 10),
+      construction: false,
+    };
+    const resolved = resolveSketch(documentOf(line));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.segments[0].from).toEqual([0, 0, 0]);
+    expect(resolved.segments[0].to).toEqual([10, 10, 10]);
+  });
+
+  it('立体の 2 頂点を結ぶ線分が引ける(FR-330 の完了条件)', () => {
+    const a = vertexPoint('p1', vertexRef('extrude-1', 0, [40, 30, 10]));
+    const b = vertexPoint('p2', vertexRef('extrude-1', 1, [0, 0, 0]));
+    const line: SketchFeature = {
+      id: 'l1', name: '線分1', planeId: FREE_WORK_PLANE_ID, kind: 'line',
+      from: atPoint('p1'), to: atPoint('p2'), construction: false,
+    };
+    const resolved = resolveSketch(documentOf(a, b, line));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.points.map((point) => point.position)).toEqual([[40, 30, 10], [0, 0, 0]]);
+    // 長さは √(40² + 30² + 10²) = √2600 = 50.99019513592785。
+    const segment = resolved.segments[0];
+    expect(distanceVec3(segment.from, segment.to)).toBeCloseTo(50.99019513592785, 12);
+  });
+
+  it('上流の立体が動くと、頂点を参照した点が追従する(FR-311、FR-502)', () => {
+    const point = vertexPoint('p1', vertexRef('extrude-1', 0, [40, 30, 10]));
+    // 押し出しの高さが 10 から 25 に変わり、選び直しの結果だけが新しい位置を知っている状態。
+    const resolved = resolveSketch(documentOf(point), {
+      subShape: (reference) => ({
+        kind: 'vertex',
+        position: [reference.fingerprint.position[0], reference.fingerprint.position[1], 25],
+        axis: null,
+        surfaceKind: null,
+        curveKind: null,
+      }),
+    });
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.points[0].position).toEqual([40, 30, 25]);
+  });
+
+  it('選び直せなかった頂点は missingSubShape で断り、後続は止まらない(FR-504)', () => {
+    const gone = vertexPoint('p1', vertexRef('extrude-1', 0, [40, 30, 10]));
+    const kept: SketchFeature = {
+      id: 'p2', name: '点2', planeId: FREE_WORK_PLANE_ID, kind: 'point',
+      at: absoluteCoordinate(1, 1, 1),
+    };
+    const resolved = resolveSketch(documentOf(gone, kept), { subShape: () => null });
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('missingSubShape');
+    expect(resolved.errors[0].featureId).toBe('p1');
+    expect(resolved.points).toHaveLength(1);
+    expect(resolved.points[0].position).toEqual([1, 1, 1]);
+  });
+
+  it('3D スケッチの円弧は向きの指定が要る(無ければ missingBase)', () => {
+    const resolved = resolveSketch(documentOf(freeArc(undefined)));
+    expect(resolved.arcs).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toContain('向きの指定');
+  });
+
+  it('法線 (0,0,1)・角度 0 の向き (1,0,0) の円弧は XY 面の円弧と同じになる', () => {
+    const free = freeArc({
+      normal: absoluteCoordinate(0, 0, 1),
+      xAxis: absoluteCoordinate(1, 0, 0),
+    });
+    const onPlane: SketchArcFeature = { ...free, planeId: 'xy', freeOrientation: undefined };
+    const freeResolved = resolveSketch(documentOf(free));
+    const planeResolved = resolveSketch(documentOf(onPlane));
+    expect(freeResolved.errors).toEqual([]);
+    expect(freeResolved.arcs[0].normal).toEqual([0, 0, 1]);
+    expect(freeResolved.arcs[0].xAxis).toEqual([1, 0, 0]);
+    expect(freeResolved.arcs[0]).toEqual(planeResolved.arcs[0]);
+    expect(curveStart(freeResolved.arcs[0])).toEqual([10, 0, 0]);
+  });
+
+  it('法線 (0,1,0)・角度 0 の向き (1,0,0) の円弧は Z の負側へ回る', () => {
+    // 第2軸 = 法線 × 第1軸 = (0,1,0) × (1,0,0) = (0,0,-1)。
+    // よって 0 度は (10,0,0)、90 度は中心 + 10 ×(0,0,-1) = (0,0,-10)。
+    const resolved = resolveSketch(
+      documentOf(
+        freeArc({ normal: absoluteCoordinate(0, 1, 0), xAxis: absoluteCoordinate(1, 0, 0) }),
+      ),
+    );
+    expect(resolved.errors).toEqual([]);
+    expectCloseTo(curveStart(resolved.arcs[0]), [10, 0, 0]);
+    expectCloseTo(curveEnd(resolved.arcs[0]), [0, 0, -10]);
+  });
+
+  it('長さのそろっていない向きも使える(単位ベクトルに直す)', () => {
+    // 法線 (0,0,5) と第1軸 (3,0,0) は向きだけが意味を持つ。
+    const resolved = resolveSketch(
+      documentOf(
+        freeArc({ normal: absoluteCoordinate(0, 0, 5), xAxis: absoluteCoordinate(3, 0, 0) }),
+      ),
+    );
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.arcs[0].normal).toEqual([0, 0, 1]);
+    expect(resolved.arcs[0].xAxis).toEqual([1, 0, 0]);
+    expect(resolved.arcs[0].radius).toBe(10);
+  });
+
+  it('角度 0 の向きが法線と平行なら degenerate で断る', () => {
+    const resolved = resolveSketch(
+      documentOf(
+        freeArc({ normal: absoluteCoordinate(0, 0, 1), xAxis: absoluteCoordinate(0, 0, 5) }),
+      ),
+    );
+    expect(resolved.arcs).toEqual([]);
+    expect(resolved.errors[0].code).toBe('degenerate');
+    expect(resolved.errors[0].message).toContain('法線と平行');
+  });
+
+  it('向き(法線)の長さが 0 なら degenerate で断る', () => {
+    const resolved = resolveSketch(
+      documentOf(
+        freeArc({ normal: absoluteCoordinate(0, 0, 0), xAxis: absoluteCoordinate(1, 0, 0) }),
+      ),
+    );
+    expect(resolved.arcs).toEqual([]);
+    expect(resolved.errors[0].code).toBe('degenerate');
+    expect(resolved.errors[0].message).toContain('法線');
+  });
+
+  it('作図面があるときは、円弧の向きの指定より作図面を優先する', () => {
+    const arc: SketchArcFeature = {
+      ...freeArc({ normal: absoluteCoordinate(0, 1, 0), xAxis: absoluteCoordinate(1, 0, 0) }),
+      planeId: 'yz',
+    };
+    const resolved = resolveSketch(documentOf(arc));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.arcs[0].normal).toEqual(WORK_PLANES.yz.normal);
+    expect(resolved.arcs[0].xAxis).toEqual(WORK_PLANES.yz.axisU);
+  });
+
+  it('立体の 3 頂点から面を張れる(FR-330 の完了条件、法線は (1,1,1)/√3)', () => {
+    const p1 = vertexPoint('p1', vertexRef('extrude-1', 0, [10, 0, 0]));
+    const p2 = vertexPoint('p2', vertexRef('extrude-1', 1, [0, 10, 0]));
+    const p3 = vertexPoint('p3', vertexRef('extrude-1', 2, [0, 0, 10]));
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: FREE_WORK_PLANE_ID, kind: 'face',
+      boundary: [{ featureId: 'p1' }, { featureId: 'p2' }, { featureId: 'p3' }],
+      color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(p1, p2, p3, face));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.faces).toHaveLength(1);
+    expect(resolved.faces[0].curves).toHaveLength(3);
+    // (p2−p1) × (p3−p1) = (−10,10,0) × (−10,0,10) = (100,100,100) → 単位化で (1,1,1)/√3。
+    const corners = resolved.faces[0].curves.map((curve) => curveStart(curve));
+    const normal = fitPlaneNormal(corners);
+    if (normal === null) {
+      throw new Error('3 頂点から平面が決まりませんでした');
+    }
+    const unit = 1 / Math.sqrt(3);
+    expectCloseTo(normal, [unit, unit, unit]);
+    expect(unit).toBeCloseTo(0.5773502691896258, 15);
+  });
+
+  it('同じ平面に乗らない 4 頂点の面は notPlanar で断る(非平面の面張りはタスク10b)', () => {
+    const p1 = vertexPoint('p1', vertexRef('extrude-1', 0, [0, 0, 0]));
+    const p2 = vertexPoint('p2', vertexRef('extrude-1', 1, [10, 0, 0]));
+    const p3 = vertexPoint('p3', vertexRef('extrude-1', 2, [10, 10, 0]));
+    const p4 = vertexPoint('p4', vertexRef('extrude-1', 3, [0, 0, 10]));
+    const face: SketchFeature = {
+      id: 'f1', name: '面1', planeId: FREE_WORK_PLANE_ID, kind: 'face',
+      boundary: [
+        { featureId: 'p1' }, { featureId: 'p2' }, { featureId: 'p3' }, { featureId: 'p4' },
+      ],
+      color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(documentOf(p1, p2, p3, p4, face));
+    expect(resolved.faces).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('notPlanar');
+  });
+
+  it('3D スケッチのスプラインは 3 次元の点を通る(FR-317 + FR-330)', () => {
+    const spline: SketchFeature = {
+      id: 'sp1', name: 'スプライン1', planeId: FREE_WORK_PLANE_ID, kind: 'spline',
+      mode: 'interpolate',
+      points: [
+        absoluteCoordinate(0, 0, 0),
+        absoluteCoordinate(10, 0, 5),
+        absoluteCoordinate(20, 10, 10),
+      ],
+      closed: false, construction: false,
+    };
+    const resolved = resolveSketch(documentOf(spline));
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.splines[0].points).toEqual([[0, 0, 0], [10, 0, 5], [20, 10, 10]]);
+  });
+
+  it('3D スケッチでは角度と距離での指定は使えない(§0.a-0.5)', () => {
+    const point: SketchFeature = {
+      id: 'p1', name: '点1', planeId: FREE_WORK_PLANE_ID, kind: 'point',
+      at: {
+        mode: 'polar', base: { kind: 'origin' },
+        distance: num(10), azimuth: num(45), elevation: num(0),
+      },
+    };
+    const resolved = resolveSketch(documentOf(point));
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toContain('3D スケッチ');
+  });
+
+  it('作図面の中の並びで決まる図形は 3D スケッチでは作れない(FR-330 の 5 種だけ)', () => {
+    const rectangle: SketchFeature = {
+      id: 'r1', name: '矩形1', planeId: FREE_WORK_PLANE_ID, kind: 'rectangle',
+      corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+      construction: false,
+    };
+    const polygon: SketchFeature = {
+      id: 'pg1', name: '正多角形1', planeId: FREE_WORK_PLANE_ID, kind: 'polygon',
+      center: absoluteCoordinate(0, 0, 0), sides: num(6), radius: num(10),
+      radiusMode: 'circumscribed', construction: false,
+    };
+    const slot: SketchFeature = {
+      id: 'sl1', name: '長穴1', planeId: FREE_WORK_PLANE_ID, kind: 'slot',
+      center1: absoluteCoordinate(0, 0, 0), center2: absoluteCoordinate(20, 0, 0),
+      width: num(10), construction: false,
+    };
+    const ellipse: SketchFeature = {
+      id: 'e1', name: '楕円1', planeId: FREE_WORK_PLANE_ID, kind: 'ellipse',
+      center: absoluteCoordinate(0, 0, 0), majorRadius: num(20), minorRadius: num(10),
+      rotation: num(0), startAngle: num(0), endAngle: num(360), construction: false,
+    };
+    const array: SketchFeature = {
+      id: 'pa1', name: '点列1', planeId: FREE_WORK_PLANE_ID, kind: 'pointArray',
+      layout: {
+        kind: 'linear', base: absoluteCoordinate(0, 0, 0),
+        azimuth: num(0), spacing: num(10), count: num(3),
+      },
+    };
+    const resolved = resolveSketch(documentOf(rectangle, polygon, slot, ellipse, array));
+    expect(resolved.segments).toEqual([]);
+    expect(resolved.arcs).toEqual([]);
+    expect(resolved.ellipses).toEqual([]);
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors.map((item) => item.code)).toEqual([
+      'missingBase', 'missingBase', 'missingBase', 'missingBase', 'missingBase',
+    ]);
+    expect(resolved.errors.map((item) => item.featureId)).toEqual([
+      'r1', 'pg1', 'sl1', 'e1', 'pa1',
+    ]);
+    expect(resolved.errors[0].message).toContain('作図面を選んで');
+  });
+
+  it('3D スケッチでも任意の作業平面でもない作図面は missingBase(タスク9 と同じ扱い)', () => {
+    const point: SketchFeature = {
+      id: 'p1', name: '点1', planeId: 'nope', kind: 'point',
+      at: absoluteCoordinate(1, 1, 1),
+    };
+    const resolved = resolveSketch(documentOf(point));
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toContain('作図面が見つかりません');
   });
 });

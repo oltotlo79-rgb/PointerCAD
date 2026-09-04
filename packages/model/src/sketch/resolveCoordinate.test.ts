@@ -1,6 +1,7 @@
 import { expressionValueFromNumber as num } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
+import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { WORK_PLANES } from './planeMath.js';
 import {
   resolveCoordinate,
@@ -406,5 +407,92 @@ describe('座標の解決(FR-301〜303)', () => {
     };
     const outcome = resolveCoordinate(input, context, 'f1');
     expect(outcome.ok ? '' : outcome.error.code).toBe('missingBase');
+  });
+});
+
+describe('3D スケッチの座標(FR-330、タスク10)', () => {
+  /** 立体の頂点への参照。指紋には選んだ瞬間の位置が入る(P3 §2.2.2)。 */
+  function vertexRef(bodyFeatureId: string, index: number, position: Vec3): SubShapeRef {
+    return { bodyFeatureId, index, fingerprint: { kind: 'vertex', position } };
+  }
+
+  /** 作図面を持たない手掛かり(3D スケッチ)。他の欄は CONTEXT と同じ。 */
+  const FREE_CONTEXT: ResolveContext = { ...CONTEXT, plane: null };
+
+  it('立体の頂点の参照は、選び直しの口が無ければ指紋の位置をそのまま使う', () => {
+    const reference = vertexRef('extrude-1', 3, [5, 5, 5]);
+    expect(
+      expectOk(resolvePointReference({ kind: 'subShape', ref: reference }, CONTEXT, 'point-1')),
+    ).toEqual([5, 5, 5]);
+
+    // 相対の基準にも使える(ずれ 0 なら頂点そのもの、タスク14 の点の作り方)。
+    const input: CoordinateInput = {
+      mode: 'relative',
+      base: { kind: 'subShape', ref: reference },
+      dx: num(0),
+      dy: num(0),
+      dz: num(2),
+    };
+    expect(expectOk(resolveCoordinate(input, CONTEXT, 'point-1'))).toEqual([5, 5, 7]);
+  });
+
+  it('選び直しの口を渡すと、上流の立体が動いた後の位置に追従する(FR-311)', () => {
+    // 指紋は (5,5,5) のままでも、選び直しの口が返す位置が使われる。
+    const context: ResolveContext = {
+      ...CONTEXT,
+      subShape: () => ({
+        kind: 'vertex',
+        position: [5, 5, 25],
+        axis: null,
+        surfaceKind: null,
+        curveKind: null,
+      }),
+    };
+    const reference = vertexRef('extrude-1', 3, [5, 5, 5]);
+    expect(
+      expectOk(resolvePointReference({ kind: 'subShape', ref: reference }, context, 'point-1')),
+    ).toEqual([5, 5, 25]);
+  });
+
+  it('選び直せなかった立体の頂点は missingSubShape で断る(FR-504)', () => {
+    const context: ResolveContext = { ...CONTEXT, subShape: () => null };
+    const outcome = resolvePointReference(
+      { kind: 'subShape', ref: vertexRef('extrude-1', 3, [5, 5, 5]) },
+      context,
+      'point-1',
+    );
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? '' : outcome.error.code).toBe('missingSubShape');
+    expect(outcome.ok ? '' : outcome.error.featureId).toBe('point-1');
+    expect(outcome.ok ? '' : outcome.error.message).toContain('選び直してください');
+  });
+
+  it('作図面が無くても絶対・相対の指定はそのまま解ける(§0.a-0.4)', () => {
+    const absolute: CoordinateInput = { mode: 'absolute', x: num(1), y: num(2), z: num(3) };
+    expect(expectOk(resolveCoordinate(absolute, FREE_CONTEXT, 'point-9'))).toEqual([1, 2, 3]);
+
+    const relative: CoordinateInput = {
+      mode: 'relative',
+      base: { kind: 'previous' },
+      dx: num(10),
+      dy: num(0),
+      dz: num(-5),
+    };
+    // 直前の点は CONTEXT の (1,2,3)。
+    expect(expectOk(resolveCoordinate(relative, FREE_CONTEXT, 'point-9'))).toEqual([11, 2, -2]);
+  });
+
+  it('作図面が無いと角度と距離での指定は使えない(§0.a-0.5)', () => {
+    const polar: CoordinateInput = {
+      mode: 'polar',
+      base: { kind: 'origin' },
+      distance: num(10),
+      azimuth: num(45),
+      elevation: num(0),
+    };
+    const outcome = resolveCoordinate(polar, FREE_CONTEXT, 'point-9');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? '' : outcome.error.code).toBe('missingBase');
+    expect(outcome.ok ? '' : outcome.error.message).toContain('3D スケッチ');
   });
 });

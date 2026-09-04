@@ -28,8 +28,9 @@ export {
 export type { BaseWorkPlaneId, WorkPlane, WorkPlaneId } from './sketch/planeMath.js';
 export {
   baseWorkPlane, DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane, distanceToPlane,
-  isBaseWorkPlaneId, planeAxesFor, planeToWorld, polarOffset, projectOntoPlane, radiansToDegrees,
-  tiltedDirection, WORK_PLANE_IDS, WORK_PLANES, WORLD_AXIS_DIRECTIONS, worldToPlane,
+  FREE_WORK_PLANE_ID, isBaseWorkPlaneId, isFreeWorkPlaneId, planeAxesFor, planeToWorld,
+  polarOffset, projectOntoPlane, radiansToDegrees, tiltedDirection, WORK_PLANE_IDS, WORK_PLANES,
+  WORLD_AXIS_DIRECTIONS, worldToPlane,
 } from './sketch/planeMath.js';
 export type {
   AxisFrame, AxisSpec, PlaneErrorKey, PlaneOutcome, PlaneResolveContext, PlaneSpec,
@@ -39,7 +40,8 @@ export {
   planeFromNormal, planeSpecKeyText, resolvePlaneSpec, subShapeFromFingerprint,
 } from './geometry/planeSpec.js';
 export type {
-  CoordinateInput, PointArrayLayout, PointReference, ResolvedArc, ResolvedCurve, ResolvedEllipse,
+  CoordinateInput, FreeArcOrientation, PointArrayLayout, PointReference, ResolvedArc,
+  ResolvedCurve, ResolvedEllipse,
   ResolvedFace, ResolvedPoint, ResolvedSegment, ResolvedSketch, ResolvedSpline, SketchArcFeature,
   SketchDocument, SketchElementRef, SketchEllipseFeature, SketchError, SketchErrorCode,
   SketchFaceFeature, SketchFaceMesh, SketchFeature, SketchFeatureKind, SketchLineFeature,

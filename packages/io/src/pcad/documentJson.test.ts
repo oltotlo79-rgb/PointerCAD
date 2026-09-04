@@ -2126,3 +2126,105 @@ describe('基準ジオメトリの読み書き(FR-328、FR-329、P4 タスク9)'
     expect(error.message).toContain('planeId');
   });
 });
+
+describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
+  /** 立体の頂点の指紋(P3 §2.2.2)。3D スケッチの点はこれを基準にする。 */
+  function vertexRef(bodyFeatureId: string, index: number): SubShapeRef {
+    return { bodyFeatureId, index, fingerprint: { kind: 'vertex', position: [40, 30, 10] } };
+  }
+
+  /** 作図面 'free' の点(立体の頂点を基準)と、向きを持つ円弧。 */
+  function freeSketch(): SketchDocument {
+    return {
+      id: 'sketch-1',
+      name: 'スケッチ1',
+      features: [
+        {
+          id: 'point-1',
+          kind: 'point',
+          name: '点1',
+          planeId: 'free',
+          at: {
+            mode: 'relative',
+            base: { kind: 'subShape', ref: vertexRef('extrude-1', 7) },
+            dx: ev('0', 0),
+            dy: ev('0', 0),
+            dz: ev('0', 0),
+          },
+        },
+        {
+          id: 'arc-1',
+          kind: 'arc',
+          name: '円弧1',
+          planeId: 'free',
+          center: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+          radius: ev('10', 10),
+          startAngle: ev('0', 0),
+          endAngle: ev('90', 90),
+          construction: false,
+          freeOrientation: {
+            normal: { mode: 'absolute', x: ev('0', 0), y: ev('1', 1), z: ev('0', 0) },
+            xAxis: { mode: 'absolute', x: ev('1', 1), y: ev('0', 0), z: ev('0', 0) },
+          },
+        },
+      ],
+    };
+  }
+
+  /** 作図面の上の円弧だけを持つスケッチ(向きの欄を持たないことの確認用)。 */
+  function planeArcSketch(): SketchDocument {
+    return {
+      id: 'sketch-1',
+      name: 'スケッチ1',
+      features: [
+        {
+          id: 'arc-1',
+          kind: 'arc',
+          name: '円弧1',
+          planeId: 'xy',
+          center: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+          radius: ev('10', 10),
+          startAngle: ev('0', 0),
+          endAngle: ev('90', 90),
+          construction: false,
+        },
+      ],
+    };
+  }
+
+  function documentWith(sketch: SketchDocument): PartDocument {
+    return { ...createEmptyPartDocument(), sketches: [sketch] };
+  }
+
+  it('立体の頂点の参照と円弧の向きが往復で一致する', () => {
+    const document = documentWith(freeSketch());
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('保存した頂点の参照は、読み戻しても同じ位置に解決できる(指紋をそのまま保つ)', () => {
+    const roundTripped = roundTrip(documentWith(freeSketch()));
+    const resolved = resolveSketch(roundTripped.sketches[0]);
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.points[0].position).toEqual([40, 30, 10]);
+    // 向きの指定も生きていて、法線 (0,1,0) の円弧として解ける。
+    expect(resolved.arcs[0].normal).toEqual([0, 1, 0]);
+    expect(resolved.arcs[0].xAxis).toEqual([1, 0, 0]);
+  });
+
+  it('作図面の上の円弧には向きの欄を書かない(版 3 以前の読み手が読めるまま)', () => {
+    const text = serializeDocument(documentWith(planeArcSketch()), { savedAt: SAVED_AT });
+    expect(text).not.toContain('freeOrientation');
+    const arc = roundTrip(documentWith(planeArcSketch())).sketches[0].features[0];
+    if (arc.kind !== 'arc') {
+      throw new Error('最初の要素は円弧のはず');
+    }
+    // 欄そのものが無い(undefined が入った状態にもしない)。
+    expect('freeOrientation' in arc).toBe(false);
+  });
+
+  it('版は 3 のまま上げない(新種の欄はどちらも省略可能なので前方互換が壊れない)', () => {
+    const text = serializeDocument(documentWith(freeSketch()), { savedAt: SAVED_AT });
+    expect(text).toContain('"schema": 3');
+    expect(PCAD_SCHEMA_VERSION).toBe(3);
+  });
+});

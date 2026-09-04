@@ -13,6 +13,7 @@ import type { KernelBridge } from '../kernelBridge.js';
 import { resolveSketch } from './resolveSketch.js';
 import type {
   CoordinateInput,
+  FreeArcOrientation,
   PointArrayLayout,
   ResolvedSketch,
   SketchDocument,
@@ -99,6 +100,24 @@ function reevaluateCoordinate(
 }
 
 /**
+ * 3D スケッチの円弧の向き(FR-330、タスク10)を評価し直す。向きは 2 つの座標指定なので、
+ * 座標と同じ扱いでよい。**指定が無い(作図面がある)ときは無いままにする**
+ * (`undefined` を返す。空の指定を作ると「向きを指定した円弧」に化けるため)。
+ */
+function reevaluateFreeOrientation(
+  orientation: FreeArcOrientation | undefined,
+  variables: ReadonlyMap<string, number>,
+): FreeArcOrientation | undefined {
+  if (orientation === undefined) {
+    return undefined;
+  }
+  return {
+    normal: reevaluateCoordinate(orientation.normal, variables),
+    xAxis: reevaluateCoordinate(orientation.xAxis, variables),
+  };
+}
+
+/**
  * 点列の並べ方(FR-327、タスク6)を種類ごとに評価し直す。`layout.kind` は式を持たないので
  * そのまま引き継ぎ、各欄の式だけを再評価する。
  */
@@ -156,6 +175,7 @@ function reevaluateFeature(
         radius: reevaluate(feature.radius, variables),
         startAngle: reevaluate(feature.startAngle, variables),
         endAngle: reevaluate(feature.endAngle, variables),
+        freeOrientation: reevaluateFreeOrientation(feature.freeOrientation, variables),
       };
     case 'pointArray':
       return { ...feature, layout: reevaluatePointArrayLayout(feature.layout, variables) };

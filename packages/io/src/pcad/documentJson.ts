@@ -22,6 +22,7 @@ import {
   type CoordinateInput,
   type EdgeCurveKind,
   type FaceSurfaceKind,
+  type FreeArcOrientation,
   type HoleDepth,
   type PartDocument,
   type PatternDirection,
@@ -34,6 +35,7 @@ import {
   type ReferenceFeatureKind,
   type ReferencePointDefinition,
   type RevolveAxis,
+  type SketchArcFeature,
   type SketchDocument,
   type SketchElementRef,
   type SketchFaceRef,
@@ -89,6 +91,8 @@ const POINT_REFERENCE_KINDS: readonly PointReference['kind'][] = [
   'previous',
   'point',
   'vertex',
+  // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
+  'subShape',
 ];
 type VertexReference = Extract<PointReference, { readonly kind: 'vertex' }>;
 const VERTEX_NAMES: readonly VertexReference['vertex'][] = ['start', 'end', 'center'];
@@ -222,6 +226,8 @@ function serializePointReference(reference: PointReference): PointReference {
       return { kind: 'point', pointId: reference.pointId };
     case 'vertex':
       return { kind: 'vertex', featureId: reference.featureId, vertex: reference.vertex };
+    case 'subShape':
+      return { kind: 'subShape', ref: serializeSubShapeRef(reference.ref) };
   }
 }
 
@@ -251,6 +257,14 @@ function serializeCoordinate(input: CoordinateInput): CoordinateInput {
         elevation: serializeExpression(input.elevation),
       };
   }
+}
+
+/** 3D スケッチの円弧の向き(FR-330、P4 タスク10)。中身は 2 つの座標指定。 */
+function serializeFreeOrientation(orientation: FreeArcOrientation): FreeArcOrientation {
+  return {
+    normal: serializeCoordinate(orientation.normal),
+    xAxis: serializeCoordinate(orientation.xAxis),
+  };
 }
 
 /** 点列の並べ方(FR-327、タスク6)。種類ごとに欄が違うので `kind` で分岐する。 */
@@ -312,8 +326,8 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         to: serializeCoordinate(feature.to),
         construction: feature.construction,
       };
-    case 'arc':
-      return {
+    case 'arc': {
+      const arc: SketchArcFeature = {
         id: feature.id,
         kind: 'arc',
         name: feature.name,
@@ -324,6 +338,13 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         endAngle: serializeExpression(feature.endAngle),
         construction: feature.construction,
       };
+      // 3D スケッチの円弧の向き(FR-330、P4 タスク10)。作図面のある円弧は持たないので、
+      // そのときは欄そのものを書かない(持たない状態と「空の向き」を混ぜないため)。
+      if (feature.freeOrientation === undefined) {
+        return arc;
+      }
+      return { ...arc, freeOrientation: serializeFreeOrientation(feature.freeOrientation) };
+    }
     case 'pointArray':
       return {
         id: feature.id,
@@ -905,6 +926,14 @@ function readPointReference(
         value: { kind: 'vertex', featureId: featureId.value, vertex: vertex.value },
       };
     }
+    case 'subShape': {
+      // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
+      const ref = readSubShapeRefField(record.value, 'ref', path);
+      if (!ref.ok) {
+        return ref;
+      }
+      return { ok: true, value: { kind: 'subShape', ref: ref.value } };
+    }
   }
 }
 
@@ -1166,6 +1195,36 @@ function readLineFeature(
   };
 }
 
+/**
+ * 3D スケッチの円弧の向き(FR-330、P4 タスク10)の欄。
+ *
+ * **作図面の上の円弧はこの欄を持たない**(版 3 以前のファイルも当然持たない)ので、
+ * 無ければ「向きの指定なし」として null を返す(`readConstructionFlag` と同じ寛容さ)。
+ * 欄があるのに中身が読めない場合はファイル全体を断る(このファイル冒頭の決めごと)。
+ */
+function readFreeOrientation(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<FreeArcOrientation | null> {
+  if (!('freeOrientation' in record)) {
+    return { ok: true, value: null };
+  }
+  const found = readRecord(record, 'freeOrientation', path);
+  if (!found.ok) {
+    return found;
+  }
+  const orientationPath = joinPath(path, 'freeOrientation');
+  const normal = readCoordinate(found.value, 'normal', orientationPath);
+  if (!normal.ok) {
+    return normal;
+  }
+  const xAxis = readCoordinate(found.value, 'xAxis', orientationPath);
+  if (!xAxis.ok) {
+    return xAxis;
+  }
+  return { ok: true, value: { normal: normal.value, xAxis: xAxis.value } };
+}
+
 function readArcFeature(
   record: Record<string, unknown>,
   path: string,
@@ -1191,18 +1250,23 @@ function readArcFeature(
   if (!construction.ok) {
     return construction;
   }
-  return {
-    ok: true,
-    value: {
-      ...base,
-      kind: 'arc',
-      center: center.value,
-      radius: radius.value,
-      startAngle: startAngle.value,
-      endAngle: endAngle.value,
-      construction: construction.value,
-    },
+  const freeOrientation = readFreeOrientation(record, path);
+  if (!freeOrientation.ok) {
+    return freeOrientation;
+  }
+  const arc: SketchArcFeature = {
+    ...base,
+    kind: 'arc',
+    center: center.value,
+    radius: radius.value,
+    startAngle: startAngle.value,
+    endAngle: endAngle.value,
+    construction: construction.value,
   };
+  if (freeOrientation.value === null) {
+    return { ok: true, value: arc };
+  }
+  return { ok: true, value: { ...arc, freeOrientation: freeOrientation.value } };
 }
 
 /**

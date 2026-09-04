@@ -300,6 +300,12 @@ export function createReferenceResolver(
         }
         return null;
       }
+      case 'subShape': {
+        // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
+        // 頂点はその位置、辺は中点、面は重心(`subShapeFromFingerprint` と同じ約束)。
+        const found = resolveSubShape(reference.ref);
+        return found === null ? null : found.position;
+      }
     }
   }
 

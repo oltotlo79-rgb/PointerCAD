@@ -2,8 +2,11 @@ import {
   createEmptyPartDocument,
   PART_SCHEMA_VERSION,
   resolveSketch,
+  sketchConstraints,
   type PartDocument,
+  type Parameter,
   type ReferenceFeature,
+  type SketchConstraint,
   type SketchDocument,
   type SketchFeature,
   type SolidFeature,
@@ -112,7 +115,114 @@ function richSketch(): SketchDocument {
         color: '#7aa2f7',
       },
     ],
+    // 拘束14種すべて(FR-313、P4b タスク21)。往復で id・名前・対象・目標値の式が保たれることを
+    // この一覧で確かめる(documentJson.test.ts の「拘束の往復」節)。
+    constraints: richConstraints(),
   };
+}
+
+/** 拘束14種すべて(FR-313)。`richSketch` の要素(point-1・line-1・arc-1)を指す。 */
+function richConstraints(): readonly SketchConstraint[] {
+  return [
+    {
+      id: 'coincident-1',
+      name: '一致1',
+      kind: 'coincident',
+      a: { kind: 'point', pointId: 'point-1' },
+      b: { kind: 'vertex', featureId: 'line-1', vertex: 'start' },
+    },
+    {
+      id: 'horizontal-1',
+      name: '水平1',
+      kind: 'horizontal',
+      target: { kind: 'curve', element: { featureId: 'line-1' } },
+    },
+    {
+      id: 'vertical-1',
+      name: '垂直1',
+      kind: 'vertical',
+      target: { kind: 'curve', element: { featureId: 'line-1' } },
+    },
+    {
+      id: 'parallel-1',
+      name: '平行1',
+      kind: 'parallel',
+      a: { kind: 'curve', element: { featureId: 'line-1' } },
+      b: { kind: 'curve', element: { featureId: 'arc-1' } },
+    },
+    {
+      id: 'perpendicular-1',
+      name: '直角1',
+      kind: 'perpendicular',
+      a: { kind: 'curve', element: { featureId: 'line-1' } },
+      b: { kind: 'curve', element: { featureId: 'arc-1' } },
+    },
+    {
+      id: 'tangent-1',
+      name: '接線1',
+      kind: 'tangent',
+      line: { kind: 'curve', element: { featureId: 'line-1' } },
+      circle: { kind: 'curve', element: { featureId: 'arc-1' } },
+    },
+    {
+      id: 'concentric-1',
+      name: '同心1',
+      kind: 'concentric',
+      a: { kind: 'vertex', featureId: 'arc-1', vertex: 'center' },
+      b: { kind: 'point', pointId: 'point-1' },
+    },
+    {
+      id: 'equal-1',
+      name: '等しい1',
+      kind: 'equal',
+      a: { kind: 'curve', element: { featureId: 'line-1' } },
+      b: { kind: 'curve', element: { featureId: 'arc-1' } },
+    },
+    {
+      id: 'symmetric-1',
+      name: '対称1',
+      kind: 'symmetric',
+      a: { kind: 'point', pointId: 'point-1' },
+      b: { kind: 'vertex', featureId: 'line-1', vertex: 'end' },
+      axis: { featureId: 'arc-1' },
+    },
+    {
+      id: 'fix-1',
+      name: '固定1',
+      kind: 'fix',
+      target: { kind: 'point', pointId: 'point-1' },
+    },
+    {
+      id: 'distance-1',
+      name: '距離1',
+      kind: 'distance',
+      a: { kind: 'vertex', featureId: 'line-1', vertex: 'start' },
+      b: { kind: 'vertex', featureId: 'line-1', vertex: 'end' },
+      length: ev('幅 / 2', 20),
+    },
+    {
+      id: 'angle-1',
+      name: '角度1',
+      kind: 'angle',
+      a: { kind: 'curve', element: { featureId: 'line-1' } },
+      b: { kind: 'curve', element: { featureId: 'arc-1' } },
+      angle: ev('30', 30),
+    },
+    {
+      id: 'radius-1',
+      name: '半径1',
+      kind: 'radius',
+      target: { kind: 'curve', element: { featureId: 'arc-1' } },
+      size: ev('5*2', 10),
+    },
+    {
+      id: 'diameter-1',
+      name: '直径1',
+      kind: 'diameter',
+      target: { kind: 'curve', element: { featureId: 'arc-1' } },
+      size: ev('12', 12),
+    },
+  ];
 }
 
 /** 検査で使う面の指紋(P3 §2.2.2)。 */
@@ -514,15 +624,27 @@ function richDocument(): PartDocument {
     activeSketchId: 'sketch-1',
     references: richReferences(),
     solids: richSolids(),
-    // パラメータ表(FR-207、P4b タスク2)。中身の読み書きは版5(タスク21)から。
-    parameters: [],
+    // パラメータ表(FR-207、P4b タスク21)。3件・日本語の名前・並び順を含む。
+    parameters: richParameters(),
   };
 }
 
+/** パラメータ3件(FR-207)。日本語の名前と、他のパラメータを参照する式を含む。 */
+function richParameters(): readonly Parameter[] {
+  return [
+    { name: '板厚', value: ev('3', 3), unit: 'mm', description: '板の厚み' },
+    { name: '個数', value: ev('板厚 + 1', 4), unit: 'none', description: '' },
+    { name: '角度', value: ev('30', 30), unit: 'degree', description: '傾き' },
+  ];
+}
+
 /** 型を通さない生の部品文書。欄の欠落や型違いを自由に作れる。 */
-// 版4(P4 タスク31)は construction・layout・references のいずれも必須なので、
-// 既定値は「壊す前提の欄以外はすべて版4として妥当」な形にしておく
-// (references は空配列で足す。個別の検査は overrides で意図的に外す)。
+// 版4(P4 タスク31)は construction・layout・references のいずれも必須で、
+// 版5(P4b タスク21)は parameters も必須になったので、既定値は
+// 「壊す前提の欄以外はすべて版5として妥当」な形にしておく
+// (references・parameters は空配列で足す。個別の検査は overrides で意図的に外す)。
+// スケッチの constraints は型自体が恒常的に省略可能なので、既定のスケッチには含めない
+// (省略時も欄が無いスケッチとして自然に読める。§0.a-0.17)。
 function rawDocument(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'part-1',
@@ -532,6 +654,7 @@ function rawDocument(overrides: Record<string, unknown> = {}): Record<string, un
     activeSketchId: 'sketch-1',
     references: [],
     solids: [],
+    parameters: [],
     ...overrides,
   };
 }
@@ -540,6 +663,13 @@ function rawDocument(overrides: Record<string, unknown> = {}): Record<string, un
 function withoutReferences(document: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...document };
   delete copy['references'];
+  return copy;
+}
+
+/** `rawDocument` の既定に入っている `parameters` を取り除く(欄が無い版4を模す検査専用)。 */
+function withoutParameters(document: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...document };
+  delete copy['parameters'];
   return copy;
 }
 
@@ -574,15 +704,15 @@ function roundTrip(document: PartDocument): PartDocument {
   return expectOk(parseDocument(serializeDocument(document, { savedAt: SAVED_AT })));
 }
 
-// P4 タスク31(§0.a-0.24)で版 3 → 4 へ上げた。
-describe('.pcad の版(§0.a-0.3、§0.a-0.22、§0.a-0.24)', () => {
-  it('封筒の版は 4 で、部品文書の版と同じ値である', () => {
-    expect(PCAD_SCHEMA_VERSION).toBe(4);
+// P4 タスク31(§0.a-0.24)で版 3 → 4 へ上げ、P4b タスク21(§0.a-0.17)で版 4 → 5 へ上げた。
+describe('.pcad の版(§0.a-0.3、§0.a-0.22、§0.a-0.24、§0.a-0.17)', () => {
+  it('封筒の版は 5 で、部品文書の版と同じ値である', () => {
+    expect(PCAD_SCHEMA_VERSION).toBe(5);
     expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
   });
 
-  it('版を上げる変換表は版 2 → 3 と版 3 → 4 の2つを持つ(P3・P4 タスク31が版を1つずつ足したため)', () => {
-    expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(['2', '3']);
+  it('版を上げる変換表は版 2→3・3→4・4→5 の3つを持つ(P3・P4 タスク31・P4b タスク21が版を1つずつ足したため)', () => {
+    expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(['2', '3', '4']);
   });
 });
 
@@ -622,7 +752,8 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     expect(at).toBeLessThanOrEqual(after);
   });
 
-  // 版の数字は P4 タスク31(§0.a-0.24)で 3 → 4 に更新(PCAD_SCHEMA_VERSION の値そのもの)。
+  // 版の数字は P4 タスク31(§0.a-0.24)で 3 → 4、P4b タスク21(§0.a-0.17)で 4 → 5 に更新
+  // (PCAD_SCHEMA_VERSION の値そのもの)。
   it('封筒と文書の並びが計画書 §2.8 の例のとおりになる', () => {
     const document: PartDocument = {
       id: 'part-1',
@@ -647,14 +778,14 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     };
     expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(
       `{
-  "schema": 4,
+  "schema": 5,
   "kind": "part",
   "app": "PointerCAD",
   "savedAt": "2026-09-03T01:23:45.678Z",
   "document": {
     "id": "part-1",
     "name": "部品1",
-    "schemaVersion": 4,
+    "schemaVersion": 5,
     "sketches": [
       {
         "id": "sketch-1",
@@ -1147,10 +1278,10 @@ describe(
       );
     });
 
-    it('版3を読み込んだ文書を書き出すと版4(construction・layout あり)で正規化される', () => {
+    it('版3を読み込んだ文書を書き出すと現在の版(construction・layout あり)で正規化される', () => {
       const document = expectOk(parseDocument(legacyRawFile()));
       const text = serializeDocument(document, { savedAt: SAVED_AT });
-      expect(text).toContain('"schema": 4');
+      expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
       expect(text).toContain('"construction": false');
       expect(text).toContain('"layout"');
       // 正規化後は自分自身との往復でも文字列が変わらない(決定的、§0.a-0.2 と同じ確認)。
@@ -1174,6 +1305,52 @@ describe(
       const error = expectError(parseDocument(rawFile({ document: broken })));
       expect(error.code).toBe('missingField');
       expect(error.message).toContain('layout');
+    });
+  },
+);
+
+describe(
+  '版4 → 版5の移行(parameters 無し、SCHEMA_MIGRATIONS[4]、P4b タスク21・§0.a-0.17)',
+  () => {
+    /** 版4として保存された(schema/schemaVersion とも 4 の、parameters を持たない)生の部品文書。 */
+    function legacyRawDocument(): Record<string, unknown> {
+      return withoutParameters(rawDocument({ schemaVersion: 4 }));
+    }
+
+    /** 版4の生ファイル。封筒の schema も 4(SCHEMA_MIGRATIONS[4] を通す)。 */
+    function legacyRawFile(): string {
+      return rawFile({ schema: 4, document: legacyRawDocument() });
+    }
+
+    it('parameters の欄が無い版4のファイルも開ける(移行で空の表として読む)', () => {
+      const document = expectOk(parseDocument(legacyRawFile()));
+      expect(document.parameters).toEqual([]);
+    });
+
+    it('版4を読み込んだ文書を書き出すと版5(parameters あり)で正規化される', () => {
+      const document = expectOk(parseDocument(legacyRawFile()));
+      const text = serializeDocument(document, { savedAt: SAVED_AT });
+      expect(text).toContain('"schema": 5');
+      expect(text).toContain('"parameters": []');
+      // 正規化後は自分自身との往復でも文字列が変わらない(決定的、§0.a-0.2 と同じ確認)。
+      const again = serializeDocument(expectOk(parseDocument(text)), { savedAt: SAVED_AT });
+      expect(again).toBe(text);
+    });
+
+    it('版5になったのに parameters の欄が無ければ断る(寛容な読みは版4までに限る)', () => {
+      const broken = withoutParameters(rawDocument());
+      expect('parameters' in broken).toBe(false);
+      const error = expectError(parseDocument(rawFile({ document: broken })));
+      expect(error.code).toBe('missingField');
+      expect(error.message).toContain('parameters');
+    });
+
+    // スケッチの constraints は型自体が恒常的に省略可能なので、版に関係なく
+    // 「無ければ触らない」まま読み込む(migrateDocumentToV5 のコメント参照)。移行の対象にしない。
+    it('constraints の欄が無いスケッチは版に関係なく開ける(欄そのものを持たないまま読む)', () => {
+      const document = expectOk(parseDocument(rawFile()));
+      expect('constraints' in document.sketches[0]).toBe(false);
+      expect(sketchConstraints(document.sketches[0])).toEqual([]);
     });
   },
 );
@@ -1948,12 +2125,12 @@ describe('読み込みの断り方(FR-504、NFR-UX-5)', () => {
     expect(error.code).toBe('notPcad');
   });
 
-  // 現在の版が 4(P4 タスク31)になったので、断るべき「新しすぎる版」も 5 に更新する。
-  it('版 5 は「新しい版で保存されています」と断る', () => {
-    const error = expectError(parseDocument(rawFile({ schema: 5 })));
+  // 現在の版が 5(P4b タスク21)になったので、断るべき「新しすぎる版」も 6 に更新する。
+  it('版 6 は「新しい版で保存されています」と断る', () => {
+    const error = expectError(parseDocument(rawFile({ schema: 6 })));
     expect(error.code).toBe('unsupportedNewVersion');
     expect(error.message).toContain('新しい版の PointerCAD で保存されています');
-    expect(error.message).toContain('5');
+    expect(error.message).toContain('6');
   });
 
   it('版 1 は「対応していない古い版です」と断る(版2への移行表が無いため)', () => {
@@ -2150,9 +2327,9 @@ describe('基準ジオメトリの読み書き(FR-328、FR-329、P4 タスク9)'
     expect('references' in raw).toBe(false);
     const parsed = expectOk(parseDocument(rawFile({ schema: 3, document: raw })));
     expect(parsed.references).toEqual([]);
-    // 読み直したものを書き出すと、版4・欄ありの形へ正規化される。
+    // 読み直したものを書き出すと、現在の版・欄ありの形へ正規化される。
     const text = serializeDocument(parsed, { savedAt: SAVED_AT });
-    expect(text).toContain('"schema": 4');
+    expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
     expect(text).toContain('"references": []');
   });
 
@@ -2340,10 +2517,10 @@ describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
   // 版4へ上げたのは construction・point列の layout・references の3件が理由で、
   // この2件(freeOrientation・subShape 参照)は版4になった今も省略可能なまま
   // (`readFreeOrientation` のコメント参照。§0.a-0.24 は移行対象にしていない)。
-  it('freeOrientation・subShape 参照は版4でも省略可能(前方互換とは無関係な理由で版が上がった)', () => {
+  it('freeOrientation・subShape 参照は現在の版でも省略可能(前方互換とは無関係な理由で版が上がった)', () => {
     const text = serializeDocument(documentWith(freeSketch()), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(4);
+    expect(PCAD_SCHEMA_VERSION).toBe(5);
   });
 });
 
@@ -2500,7 +2677,7 @@ describe('ミラー・複写・配列複写の往復(P4 タスク20、FR-324)', 
   // タスク20の時点では新種(copy)を足しただけで既存の欄は変えていないので版は3のまま
   // 上げなかった。P4 タスク31(§0.a-0.24)で版4へ上げたのは construction・点列の
   // layout・references の3件が理由で、この copy 自体とは無関係(現在の版を確認するだけ)。
-  it('現在の版(4)で書き出される(copy 自体は版が上がった理由ではない)', () => {
+  it('現在の版で書き出される(copy 自体は版が上がった理由ではない)', () => {
     const text = serializeDocument(documentWithSketchFeature(linearArray), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
   });
@@ -2695,11 +2872,115 @@ describe('投影・交差の往復(P4 タスク25、FR-325)', () => {
   // タスク25の時点では新種(projectedCurve・planeSection)を足しただけで版は3のまま
   // 上げなかった。P4 タスク31(§0.a-0.24)で版4へ上げたのは construction・点列の
   // layout・references の3件が理由で、この2種類自体とは無関係(現在の版を確認するだけ)。
-  it('現在の版(4)で書き出される(projectedCurve・planeSection 自体は版が上がった理由ではない)', () => {
+  it('現在の版で書き出される(projectedCurve・planeSection 自体は版が上がった理由ではない)', () => {
     const json = JSON.parse(
       serializeDocument(sketchWith(projection), { savedAt: SAVED_AT }),
     ) as { readonly schema: number; readonly document: { readonly schemaVersion: number } };
     expect(json.schema).toBe(PCAD_SCHEMA_VERSION);
     expect(json.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+  });
+});
+
+describe('パラメータ表の往復(FR-207、P4b タスク21)', () => {
+  it('3件のパラメータが名前・式・単位・説明・並び順のまま往復する', () => {
+    const document = richDocument();
+    const restored = roundTrip(document);
+    expect(restored.parameters).toEqual(document.parameters);
+    expect(restored.parameters.map((parameter) => parameter.name)).toEqual([
+      '板厚',
+      '個数',
+      '角度',
+    ]);
+  });
+
+  it('日本語の名前と、他のパラメータを参照する式がそのまま往復する', () => {
+    const restored = roundTrip(richDocument());
+    const count = restored.parameters[1];
+    expect(count.name).toBe('個数');
+    expect(count.value).toEqual(ev('板厚 + 1', 4));
+  });
+
+  it('単位3種(mm・none・degree)が往復する', () => {
+    const restored = roundTrip(richDocument());
+    expect(restored.parameters.map((parameter) => parameter.unit)).toEqual([
+      'mm',
+      'none',
+      'degree',
+    ]);
+  });
+
+  it('知らない単位が入った JSON は場所を添えて断る', () => {
+    const broken = rawDocument({
+      parameters: [{ name: 'x', value: ev('1', 1), unit: 'inch', description: '' }],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('unit');
+  });
+});
+
+describe('拘束の往復(FR-313、P4b タスク21)', () => {
+  function documentWithConstraints(): PartDocument {
+    return { ...createEmptyPartDocument(), sketches: [richSketch()] };
+  }
+
+  it('14種類すべての拘束が id・名前・対象・目標値の式のまま往復する', () => {
+    const restored = roundTrip(documentWithConstraints());
+    const constraints = restored.sketches[0].constraints ?? [];
+    expect(constraints).toEqual(richConstraints());
+    expect(constraints).toHaveLength(14);
+    expect(new Set(constraints.map((constraint) => constraint.kind)).size).toBe(14);
+  });
+
+  it('距離拘束の目標値はパラメータ表を参照する式のまま保存される(幅 / 2)', () => {
+    const restored = roundTrip(documentWithConstraints());
+    const constraints = restored.sketches[0].constraints ?? [];
+    const distance = constraints.find((constraint) => constraint.kind === 'distance');
+    if (distance === undefined || distance.kind !== 'distance') {
+      throw new Error('距離拘束のはず');
+    }
+    expect(distance.length.source).toBe('幅 / 2');
+  });
+
+  it('知らない拘束の種類が入った JSON は場所を添えて断る', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [],
+          constraints: [{ id: 'c-1', name: '謎1', kind: 'これはない' }],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('kind');
+  });
+
+  it('拘束の id がスケッチをまたいで重なっていれば理由つきで断る', () => {
+    const broken = rawDocument({
+      sketches: [
+        {
+          id: 'sketch-1',
+          name: 'スケッチ1',
+          features: [],
+          constraints: [
+            { id: 'dup-1', name: '固定1', kind: 'fix', target: { kind: 'point', pointId: 'p' } },
+          ],
+        },
+        {
+          id: 'sketch-2',
+          name: 'スケッチ2',
+          features: [],
+          constraints: [
+            { id: 'dup-1', name: '固定2', kind: 'fix', target: { kind: 'point', pointId: 'q' } },
+          ],
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('dup-1');
   });
 });

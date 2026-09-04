@@ -19,6 +19,7 @@
 import {
   type BooleanOperation,
   type ChamferSize,
+  type ConstraintTarget,
   type CoordinateInput,
   type CopyPlacement,
   type EdgeCurveKind,
@@ -26,13 +27,15 @@ import {
   type FreeArcOrientation,
   type HoleDepth,
   type MirrorBasis,
+  type Parameter,
+  type ParameterUnit,
+  PARAMETER_UNITS,
   type PartDocument,
   type PatternDirection,
   type PatternPlacement,
   type PlaneSpec,
   type OffsetCornerKind,
   type OffsetSide,
-  type Parameter,
   type PointArrayLayout,
   type PointReference,
   type ReferenceAxisDefinition,
@@ -40,13 +43,16 @@ import {
   type ReferenceFeatureKind,
   type ReferencePointDefinition,
   type RevolveAxis,
+  SKETCH_CONSTRAINT_KINDS,
   type SketchArcFeature,
+  type SketchConstraint,
   type SketchDocument,
   type SketchElementRef,
   type SketchFaceRef,
   type SketchFeature,
   type SketchLineRef,
   type SketchPointRef,
+  sketchConstraints,
   type SolidFeature,
   type SolidFeatureKind,
   type SpringDerived,
@@ -101,6 +107,12 @@ const POINT_REFERENCE_KINDS: readonly PointReference['kind'][] = [
 ];
 type VertexReference = Extract<PointReference, { readonly kind: 'vertex' }>;
 const VERTEX_NAMES: readonly VertexReference['vertex'][] = ['start', 'end', 'center'];
+/**
+ * 拘束が指す先の種類(FR-313、P4b タスク21)。`ConstraintTarget['vertex']` は
+ * `PointReference` の同名の欄と同じ3値なので `VERTEX_NAMES` をそのまま使い回す
+ * (同じ一覧を2か所に書かない)。
+ */
+const CONSTRAINT_TARGET_KINDS: readonly ConstraintTarget['kind'][] = ['point', 'vertex', 'curve'];
 const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'point',
   'line',
@@ -528,12 +540,112 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
   }
 }
 
+/**
+ * 拘束が指す先(FR-313、P4b タスク21)。`resolveCoordinate.ts` の `vertexKey` /
+ * `ResolvedPoint.id` と同じ規約(`constraints/types.ts` の `ConstraintTarget` のコメント参照)。
+ */
+function serializeConstraintTarget(target: ConstraintTarget): ConstraintTarget {
+  switch (target.kind) {
+    case 'point':
+      return { kind: 'point', pointId: target.pointId };
+    case 'vertex':
+      return { kind: 'vertex', featureId: target.featureId, vertex: target.vertex };
+    case 'curve':
+      return { kind: 'curve', element: serializeElementRef(target.element) };
+  }
+}
+
+/**
+ * 拘束1件(FR-313、P4b タスク21)。寸法の目標値(距離・角度・半径・直径)は式のまま保存する
+ * (FR-202)。拘束の**解**(座標の上書き)は保存しない(rules/04「導出できるものは保存しない」)。
+ */
+function serializeConstraint(constraint: SketchConstraint): SketchConstraint {
+  const base = { id: constraint.id, name: constraint.name };
+  switch (constraint.kind) {
+    case 'coincident':
+      return {
+        ...base,
+        kind: 'coincident',
+        a: serializeConstraintTarget(constraint.a),
+        b: serializeConstraintTarget(constraint.b),
+      };
+    case 'horizontal':
+    case 'vertical':
+      return { ...base, kind: constraint.kind, target: serializeConstraintTarget(constraint.target) };
+    case 'parallel':
+    case 'perpendicular':
+    case 'equal':
+      return {
+        ...base,
+        kind: constraint.kind,
+        a: serializeConstraintTarget(constraint.a),
+        b: serializeConstraintTarget(constraint.b),
+      };
+    case 'tangent':
+      return {
+        ...base,
+        kind: 'tangent',
+        line: serializeConstraintTarget(constraint.line),
+        circle: serializeConstraintTarget(constraint.circle),
+      };
+    case 'concentric':
+      return {
+        ...base,
+        kind: 'concentric',
+        a: serializeConstraintTarget(constraint.a),
+        b: serializeConstraintTarget(constraint.b),
+      };
+    case 'symmetric':
+      return {
+        ...base,
+        kind: 'symmetric',
+        a: serializeConstraintTarget(constraint.a),
+        b: serializeConstraintTarget(constraint.b),
+        axis: serializeElementRef(constraint.axis),
+      };
+    case 'fix':
+      return { ...base, kind: 'fix', target: serializeConstraintTarget(constraint.target) };
+    case 'distance':
+      return {
+        ...base,
+        kind: 'distance',
+        a: serializeConstraintTarget(constraint.a),
+        b: serializeConstraintTarget(constraint.b),
+        length: serializeExpression(constraint.length),
+      };
+    case 'angle':
+      return {
+        ...base,
+        kind: 'angle',
+        a: serializeConstraintTarget(constraint.a),
+        b: serializeConstraintTarget(constraint.b),
+        angle: serializeExpression(constraint.angle),
+      };
+    case 'radius':
+    case 'diameter':
+      return {
+        ...base,
+        kind: constraint.kind,
+        target: serializeConstraintTarget(constraint.target),
+        size: serializeExpression(constraint.size),
+      };
+  }
+}
+
 function serializeSketch(sketch: SketchDocument): SketchDocument {
-  return {
+  const base: SketchDocument = {
     id: sketch.id,
     name: sketch.name,
     features: sketch.features.map(serializeSketchFeature),
   };
+  // 拘束(FR-313、P4b タスク21)。**型自体が恒常的に省略可能**(`SketchDocument.constraints?`)
+  // なので、`freeOrientation` と同じ約束で「有れば有るまま、無ければ書かない」にする
+  // (`references` と違い、無い文書に `[]` を足す正規化はしない。往復が元の文書と
+  // deep equal になることを不変条件にするため。統括の決定 2026-09-04)。
+  if (sketch.constraints === undefined) {
+    return base;
+  }
+  return { ...base, constraints: sketch.constraints.map(serializeConstraint) };
 }
 
 function serializeFaceRef(reference: SketchFaceRef): SketchFaceRef {
@@ -931,9 +1043,9 @@ function serializeReferenceFeature(feature: ReferenceFeature): ReferenceFeature 
 }
 
 /**
- * パラメータ表の1行(FR-207、P4b タスク2)。欄を決まった順で組み立てて決定性を保つ。
- * **単位や名前の妥当性の検査と、読み戻し**は版5(P4b タスク21)の担当なので、ここでは
- * 書き出しだけを行う。いま書き出しても読み手が捨てない形(欄の名前と並びは版5と同じ)にしてある。
+ * パラメータ表の1行(FR-207、P4b タスク2・タスク21)。欄を決まった順で組み立てて決定性を保つ。
+ * 並び順(利用者が並べ替えた順)は呼び出し側の `document.parameters.map` がそのまま保つ
+ * (§2.6「表の並び順を評価順で上書きしない」)。
  */
 function serializeParameter(parameter: Parameter): Parameter {
   return {
@@ -2014,6 +2126,232 @@ function readPlaneSectionFeature(
   };
 }
 
+/** 拘束が指す先(FR-313、P4b タスク21)。値そのものから読む(埋め込み先が多いため)。 */
+function readConstraintTargetItem(value: unknown, path: string): Checked<ConstraintTarget> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const kind = readLiteral(record.value, 'kind', path, CONSTRAINT_TARGET_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'point': {
+      const pointId = readString(record.value, 'pointId', path);
+      if (!pointId.ok) {
+        return pointId;
+      }
+      return { ok: true, value: { kind: 'point', pointId: pointId.value } };
+    }
+    case 'vertex': {
+      const featureId = readString(record.value, 'featureId', path);
+      if (!featureId.ok) {
+        return featureId;
+      }
+      const vertex = readLiteral(record.value, 'vertex', path, VERTEX_NAMES);
+      if (!vertex.ok) {
+        return vertex;
+      }
+      return {
+        ok: true,
+        value: { kind: 'vertex', featureId: featureId.value, vertex: vertex.value },
+      };
+    }
+    case 'curve': {
+      const elementField = readValue(record.value, 'element', path);
+      if (!elementField.ok) {
+        return elementField;
+      }
+      const element = readElementRef(elementField.value, joinPath(path, 'element'));
+      if (!element.ok) {
+        return element;
+      }
+      return { ok: true, value: { kind: 'curve', element: element.value } };
+    }
+  }
+}
+
+/** 拘束が指す先を欄から読む(`a` / `b` / `target` / `line` / `circle` の各欄用)。 */
+function readConstraintTarget(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<ConstraintTarget> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readConstraintTargetItem(found.value, joinPath(parentPath, key));
+}
+
+/**
+ * 拘束1件(FR-313、P4b タスク21)を読む。`SKETCH_CONSTRAINT_KINDS` を網羅するので、
+ * 知らない種類は `readLiteral` が場所つきで断る(既存の流儀と同じ)。
+ */
+function readConstraint(value: unknown, path: string): Checked<SketchConstraint> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) {
+    return id;
+  }
+  const name = readString(record.value, 'name', path);
+  if (!name.ok) {
+    return name;
+  }
+  const kind = readLiteral(record.value, 'kind', path, SKETCH_CONSTRAINT_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  const base = { id: id.value, name: name.value };
+  switch (kind.value) {
+    case 'coincident': {
+      const a = readConstraintTarget(record.value, 'a', path);
+      if (!a.ok) {
+        return a;
+      }
+      const b = readConstraintTarget(record.value, 'b', path);
+      if (!b.ok) {
+        return b;
+      }
+      return { ok: true, value: { ...base, kind: 'coincident', a: a.value, b: b.value } };
+    }
+    case 'horizontal':
+    case 'vertical': {
+      const target = readConstraintTarget(record.value, 'target', path);
+      if (!target.ok) {
+        return target;
+      }
+      return { ok: true, value: { ...base, kind: kind.value, target: target.value } };
+    }
+    case 'parallel':
+    case 'perpendicular':
+    case 'equal': {
+      const a = readConstraintTarget(record.value, 'a', path);
+      if (!a.ok) {
+        return a;
+      }
+      const b = readConstraintTarget(record.value, 'b', path);
+      if (!b.ok) {
+        return b;
+      }
+      return { ok: true, value: { ...base, kind: kind.value, a: a.value, b: b.value } };
+    }
+    case 'tangent': {
+      const line = readConstraintTarget(record.value, 'line', path);
+      if (!line.ok) {
+        return line;
+      }
+      const circle = readConstraintTarget(record.value, 'circle', path);
+      if (!circle.ok) {
+        return circle;
+      }
+      return { ok: true, value: { ...base, kind: 'tangent', line: line.value, circle: circle.value } };
+    }
+    case 'concentric': {
+      const a = readConstraintTarget(record.value, 'a', path);
+      if (!a.ok) {
+        return a;
+      }
+      const b = readConstraintTarget(record.value, 'b', path);
+      if (!b.ok) {
+        return b;
+      }
+      return { ok: true, value: { ...base, kind: 'concentric', a: a.value, b: b.value } };
+    }
+    case 'symmetric': {
+      const a = readConstraintTarget(record.value, 'a', path);
+      if (!a.ok) {
+        return a;
+      }
+      const b = readConstraintTarget(record.value, 'b', path);
+      if (!b.ok) {
+        return b;
+      }
+      const axisField = readValue(record.value, 'axis', path);
+      if (!axisField.ok) {
+        return axisField;
+      }
+      const axis = readElementRef(axisField.value, joinPath(path, 'axis'));
+      if (!axis.ok) {
+        return axis;
+      }
+      return {
+        ok: true,
+        value: { ...base, kind: 'symmetric', a: a.value, b: b.value, axis: axis.value },
+      };
+    }
+    case 'fix': {
+      const target = readConstraintTarget(record.value, 'target', path);
+      if (!target.ok) {
+        return target;
+      }
+      return { ok: true, value: { ...base, kind: 'fix', target: target.value } };
+    }
+    case 'distance': {
+      const a = readConstraintTarget(record.value, 'a', path);
+      if (!a.ok) {
+        return a;
+      }
+      const b = readConstraintTarget(record.value, 'b', path);
+      if (!b.ok) {
+        return b;
+      }
+      const length = readExpression(record.value, 'length', path);
+      if (!length.ok) {
+        return length;
+      }
+      return { ok: true, value: { ...base, kind: 'distance', a: a.value, b: b.value, length: length.value } };
+    }
+    case 'angle': {
+      const a = readConstraintTarget(record.value, 'a', path);
+      if (!a.ok) {
+        return a;
+      }
+      const b = readConstraintTarget(record.value, 'b', path);
+      if (!b.ok) {
+        return b;
+      }
+      const angle = readExpression(record.value, 'angle', path);
+      if (!angle.ok) {
+        return angle;
+      }
+      return { ok: true, value: { ...base, kind: 'angle', a: a.value, b: b.value, angle: angle.value } };
+    }
+    case 'radius':
+    case 'diameter': {
+      const target = readConstraintTarget(record.value, 'target', path);
+      if (!target.ok) {
+        return target;
+      }
+      const size = readExpression(record.value, 'size', path);
+      if (!size.ok) {
+        return size;
+      }
+      return { ok: true, value: { ...base, kind: kind.value, target: target.value, size: size.value } };
+    }
+  }
+}
+
+/**
+ * スケッチの拘束(FR-313、P4b タスク21)を読む。**型自体が恒常的に省略可能**
+ * (`SketchDocument.constraints?`)なので、`freeOrientation` と同じ約束で「欄が無ければ
+ * `null`」を返し、呼び出し側は欄そのものを持たない(`undefined` にもしない)。
+ * 版に関係なく同じ扱いにする(移行の対象にしない。`schema.ts` の `migrateDocumentToV5` 参照)。
+ */
+function readSketchConstraintsField(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<readonly SketchConstraint[] | null> {
+  if (!('constraints' in record)) {
+    return { ok: true, value: null };
+  }
+  return readList(record, 'constraints', path, readConstraint);
+}
+
 function readSketch(value: unknown, path: string): Checked<SketchDocument> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -2031,7 +2369,15 @@ function readSketch(value: unknown, path: string): Checked<SketchDocument> {
   if (!features.ok) {
     return features;
   }
-  return { ok: true, value: { id: id.value, name: name.value, features: features.value } };
+  const constraints = readSketchConstraintsField(record.value, path);
+  if (!constraints.ok) {
+    return constraints;
+  }
+  const sketch: SketchDocument = { id: id.value, name: name.value, features: features.value };
+  if (constraints.value === null) {
+    return { ok: true, value: sketch };
+  }
+  return { ok: true, value: { ...sketch, constraints: constraints.value } };
 }
 
 function readFaceRef(
@@ -3330,6 +3676,51 @@ function readReferences(
   return readList(record, 'references', path, readReferenceFeature);
 }
 
+/** パラメータ表の1行(FR-207、P4b タスク21)を読む。単位は `PARAMETER_UNITS` を網羅表にする。 */
+function readParameter(value: unknown, path: string): Checked<Parameter> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const name = readString(record.value, 'name', path);
+  if (!name.ok) {
+    return name;
+  }
+  const parameterValue = readExpression(record.value, 'value', path);
+  if (!parameterValue.ok) {
+    return parameterValue;
+  }
+  const unit: Checked<ParameterUnit> = readLiteral(record.value, 'unit', path, PARAMETER_UNITS);
+  if (!unit.ok) {
+    return unit;
+  }
+  const description = readString(record.value, 'description', path);
+  if (!description.ok) {
+    return description;
+  }
+  return {
+    ok: true,
+    value: {
+      name: name.value,
+      value: parameterValue.value,
+      unit: unit.value,
+      description: description.value,
+    },
+  };
+}
+
+/**
+ * パラメータ表(FR-207、P4b タスク21)を読む。**版5からは必須**(欠けていれば `missingField`)。
+ * 版4以前のこの欄が無いファイルは `schema.ts` の `SCHEMA_MIGRATIONS[4]`(欄が無ければ空配列で
+ * 補う)へ移す。書き手は常にこの欄を書く。並び順は利用者が並べ替えた順のまま返す(§2.6)。
+ */
+function readParameters(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<readonly Parameter[]> {
+  return readList(record, 'parameters', path, readParameter);
+}
+
 function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -3363,6 +3754,10 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!solids.ok) {
     return solids;
   }
+  const parameters = readParameters(record.value, path);
+  if (!parameters.ok) {
+    return parameters;
+  }
   return {
     ok: true,
     value: {
@@ -3373,10 +3768,7 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
       activeSketchId: activeSketchId.value,
       references: references.value,
       solids: solids.value,
-      // パラメータ表(FR-207、P4b タスク2)。**読むのは版5(P4b タスク21)から。**
-      // それまでは常に空の配列として読む。旧い版のファイルにはこの欄が無いので、
-      // 必須にすると版4以前が開けなくなる(docs/報告記録.md 2026-09-04 15:20 の差し戻し)。
-      parameters: [],
+      parameters: parameters.value,
     },
   };
 }
@@ -3502,7 +3894,31 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
       `ファイルの版の記録が食い違っています(封筒 ${String(schema)} / 文書 ${String(decoded.value.schemaVersion)})。`,
     );
   }
+  const duplicateConstraintId = findDuplicateConstraintId(decoded.value.sketches);
+  if (duplicateConstraintId !== null) {
+    return fail(
+      'invalidField',
+      `拘束の id が文書の中で重なっています(${duplicateConstraintId})。ファイルが壊れている可能性があります。`,
+    );
+  }
   return { ok: true, document: decoded.value, savedAt: savedAt.value };
+}
+
+/**
+ * 拘束の `id` は文書の中(複数スケッチをまたいで)重ならないことを確かめる(P4b タスク21の
+ * 落とし穴)。重なると一覧と印が混ざるため、見つけたら理由つきで断る。
+ */
+function findDuplicateConstraintId(sketches: readonly SketchDocument[]): string | null {
+  const seen = new Set<string>();
+  for (const sketch of sketches) {
+    for (const constraint of sketchConstraints(sketch)) {
+      if (seen.has(constraint.id)) {
+        return constraint.id;
+      }
+      seen.add(constraint.id);
+    }
+  }
+  return null;
 }
 
 /**

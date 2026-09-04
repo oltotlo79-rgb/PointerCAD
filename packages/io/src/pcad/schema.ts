@@ -13,7 +13,7 @@ import { isRecord } from './guards.js';
 
 /**
  * .pcad の書式の版(§0.a-0.3)。P3 で 3 になり(P3 計画書 §0.a-0.22、§2.10)、
- * P4 タスク31(§0.a-0.24)で 4 になった。
+ * P4 タスク31(§0.a-0.24)で 4 になり、P4b タスク21(§0.a-0.17、案 A)で 5 になった。
  * 版 1 で保存されたファイルはこの世に 1 つも無い(P0 には保存機能が無かった)ので、
  * 版 1 は「対応していない古い版」として断る。
  * この値は部品文書の `PART_SCHEMA_VERSION` と必ず同じにする(documentJson.test.ts が検査する)。
@@ -29,8 +29,18 @@ import { isRecord } from './guards.js';
  * 無ければ `missingField` で断る(寛容な読みを版3以前だけに限定し、版4以降に持ち越さない)。
  * `freeOrientation`(3D スケッチの円弧の向き、タスク10)は版に関係なく恒常的に省略可能な欄
  * (作図面上の円弧はそもそも持たない)なので、この移行の対象にしない。
+ *
+ * **版 4 → 版 5(P4b タスク21、§0.a-0.17):** P4b が足したのはパラメータ表
+ * (`PartDocument.parameters`、FR-207)とスケッチの拘束(`SketchDocument.constraints`、
+ * FR-313)である。`parameters` は部品文書の必須の欄になるので、版4以前のファイル
+ * (この欄を持たない)は `SCHEMA_MIGRATIONS[4]` が空配列で補う(`references` と同じ扱い)。
+ * `constraints` は型自体が恒常的に省略可能なまま(`SketchDocument.constraints?`)なので、
+ * `freeOrientation` と同じく版に関係なく「無ければ触らない」まま読み込む
+ * (`documentJson.ts` の `readSketch`。移行の対象にしない)。拘束の**解**(座標の上書き)は
+ * 保存しない(式と目標値だけを保存し、解決のたびに解き直す。rules/04「導出できるものは
+ * 保存しない」)。
  */
-export const PCAD_SCHEMA_VERSION = 4;
+export const PCAD_SCHEMA_VERSION = 5;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -151,6 +161,23 @@ function migrateDocumentToV4(document: Record<string, unknown>): Record<string, 
   return migrated;
 }
 
+/**
+ * 版4以前の部品文書を版5の形へ補う(P4b タスク21、§0.a-0.17)。`schemaVersion` の書き換えと、
+ * `parameters`(パラメータ表、FR-207)が無ければ空配列で補う。
+ *
+ * スケッチの `constraints`(FR-313)はここで補わない。**型自体が恒常的に省略可能**
+ * (`SketchDocument.constraints?`)なので、`references` のように「版4以前だけの寛容さ」を
+ * 「版5の必須欄」へ切り出す対象にしない(`documentJson.ts` の `readSketch` が版に関係なく
+ * 「無ければ触らない」まま読む。`freeOrientation` と同じ扱い)。
+ */
+function migrateDocumentToV5(document: Record<string, unknown>): Record<string, unknown> {
+  const migrated: Record<string, unknown> = { ...document, schemaVersion: 5 };
+  if ('parameters' in migrated) {
+    return migrated;
+  }
+  return { ...migrated, parameters: [] };
+}
+
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
   2: (raw) => {
     if (!isRecord(raw)) {
@@ -178,5 +205,20 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
       return raw;
     }
     return { ...raw, schema: 4, document: migrateDocumentToV4(document) };
+  },
+  /**
+   * 版4 → 版5(P4b タスク21、§0.a-0.17): パラメータ表(`parameters`、FR-207)が無ければ
+   * 空配列で補う。スケッチの `constraints`(FR-313)は型が恒常的に省略可能なので、
+   * ここでは補わない(`migrateDocumentToV5` のコメント参照)。
+   */
+  4: (raw) => {
+    if (!isRecord(raw)) {
+      return raw;
+    }
+    const document = raw['document'];
+    if (!isRecord(document)) {
+      return raw;
+    }
+    return { ...raw, schema: 5, document: migrateDocumentToV5(document) };
   },
 };

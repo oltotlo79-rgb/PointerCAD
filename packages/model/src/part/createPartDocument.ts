@@ -24,16 +24,20 @@ import type {
 
 /**
  * 部品文書の保存形式の版(§0.a-0.3)。P3 で 3 になり(P3 計画書 §0.a-0.22、タスク19)、
- * P4 タスク31(§0.a-0.24)で 4 になった。
+ * P4 タスク31(§0.a-0.24)で 4 になり、P4b タスク21(§0.a-0.17、案 A)で 5 になった。
  *
  * P4 が足したのは新しいスケッチの種類(矩形・正多角形・長穴・楕円・スプライン・オフセット・
  * 複製・投影/交差)と基準ジオメトリ・任意平面・3D スケッチ・構築線フラグで、版 3 まで
  * 一部のファイルで省略できていた欄(`construction`・点列の `layout`・`references`)を
- * 版 4 からは必須にする。この値は io 側の `PCAD_SCHEMA_VERSION`
+ * 版 4 からは必須にした。P4b が足したのはパラメータ表(`parameters`、FR-207)とスケッチの
+ * 拘束(`SketchDocument.constraints`、FR-313)で、`parameters` は版 5 から必須の欄にする
+ * (拘束は型自体が恒常的に省略可能なままなので、版を理由に必須化はしない。
+ * `packages/io/src/pcad/documentJson.ts` の `readSketch` を参照)。
+ * この値は io 側の `PCAD_SCHEMA_VERSION`
  * (`packages/io/src/pcad/schema.ts`)と必ず同じにする(`documentJson.test.ts` が検査する)。
- * 版 3 以前のファイルは `SCHEMA_MIGRATIONS[3]` が上記の省略を明示的に補って読み込む。
+ * 版 4 以前のファイルは `SCHEMA_MIGRATIONS[4]` が `parameters` の省略を明示的に補って読み込む。
  */
-export const PART_SCHEMA_VERSION = 4;
+export const PART_SCHEMA_VERSION = 5;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;

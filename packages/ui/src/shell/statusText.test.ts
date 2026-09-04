@@ -19,6 +19,7 @@ import {
   progressText,
   progressView,
   PROGRESS_DELAY_MS,
+  springGuideText,
   summarizeFailures,
   type StatusInput,
 } from './statusText.js';
@@ -43,6 +44,9 @@ function quiet(): StatusInput {
     // §0.a-0.6(タスク28)。既定は「立体を選ぶ」状態で、部分形状は数えない。
     selectedSubShapeCount: 0,
     selectionKind: 'body',
+    // §0.a-0.29(仕上げ (d))。既定はばねの始点が未選択、ポップアップも開いていない。
+    springOriginSelected: false,
+    springStep: null,
   };
 }
 
@@ -312,6 +316,64 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
       expect(machiningGuideText('spring', 0, 1)).toBeNull();
     },
   );
+
+  it('springGuideText: 始点が未選択なら null(基本案内へ後退、§0.a-0.29)', () => {
+    expect(springGuideText(false, null)).toBeNull();
+  });
+
+  it('springGuideText: 始点を選んだら「コイル径と線径を入れて Enter」(その場入力の1段目)', () => {
+    expect(springGuideText(true, null)).toBe(t('statusBar.guide.springShapeReady'));
+    // ポップアップが springShape の段で実際に開いていても同じ文言(§2.11)。
+    expect(springGuideText(true, 'springShape')).toBe(t('statusBar.guide.springShapeReady'));
+    expect(t('statusBar.guide.springShapeReady')).toBe('コイル径と線径を入れて Enter を押してください。');
+  });
+
+  it('springGuideText: 1段目を確定して springLength の段に進んだら「ピッチと巻数(または全長)を」', () => {
+    expect(springGuideText(true, 'springLength')).toBe(t('statusBar.guide.springLengthReady'));
+    expect(t('statusBar.guide.springLengthReady')).toBe(
+      'ピッチと巻数(または全長)を入れて Enter を押してください。',
+    );
+  });
+
+  it('machiningGuideText はばねの4引数目・5引数目を渡すと段階的な案内を返す(§0.a-0.6、仕上げ (d))', () => {
+    // ①始点が未選択(第4引数省略時の既定 false と同じ)。
+    expect(machiningGuideText('spring', 0, 0, false, null)).toBeNull();
+    // ②始点を選んだ(ポップアップが開く前でも「コイル径と線径」を促す)。
+    expect(machiningGuideText('spring', 0, 0, true, null)).toBe(t('statusBar.guide.springShapeReady'));
+    expect(machiningGuideText('spring', 0, 0, true, 'springShape')).toBe(
+      t('statusBar.guide.springShapeReady'),
+    );
+    // ③1段目を確定して2段目(springLength)に進んだ。
+    expect(machiningGuideText('spring', 0, 0, true, 'springLength')).toBe(
+      t('statusBar.guide.springLengthReady'),
+    );
+  });
+
+  it('describeStatus はばねの段階的な案内を4段とも正しく出す(§0.a-0.6、仕上げ (d))', () => {
+    // ①始点にする点が選ばれていない。
+    const noOrigin = describeStatus({ ...quiet(), activeTool: 'spring' });
+    expect(noOrigin.text).toBe(t('statusBar.guide.spring'));
+    // ②点を選んだ(その場入力の1段目、ポップアップの開閉によらず同じ文言)。
+    const shapeStep = describeStatus({
+      ...quiet(),
+      activeTool: 'spring',
+      springOriginSelected: true,
+      springStep: 'springShape',
+    });
+    expect(shapeStep.text).toBe(t('statusBar.guide.springShapeReady'));
+    // ③1段目を確定し、2段目(ピッチ・巻数)に進んだ。
+    const lengthStep = describeStatus({
+      ...quiet(),
+      activeTool: 'spring',
+      springOriginSelected: true,
+      springStep: 'springLength',
+    });
+    expect(lengthStep.text).toBe(t('statusBar.guide.springLengthReady'));
+    // ④確定後、道具が選択へ戻る(AppShell.tsx が setActiveTool('select') する)と、
+    // ばねの案内は出ず通常の案内に戻る。
+    const afterCommit = describeStatus({ ...quiet(), activeTool: 'select' });
+    expect(afterCommit.text).toBe(t('statusBar.ready'));
+  });
 
   it('穴・ねじ穴は面を選ぶまでは基本案内、面を選んだら「中心にする点を選んでください」', () => {
     expect(machiningGuideText('hole', 0)).toBeNull();

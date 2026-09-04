@@ -133,6 +133,9 @@ export interface StatusLine {
   readonly selectionKindLabel: string;
 }
 
+/** ばねのその場入力の段(§2.11)。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
+export type SpringNumericInputStep = 'springShape' | 'springLength';
+
 /** 帯に出す 1 文を選ぶのに要るもの。すべてストアから読める値。 */
 export interface StatusInput {
   /** ファイル操作の知らせ(FR-806)。失敗は最優先、成功は案内より優先。 */
@@ -176,6 +179,21 @@ export interface StatusInput {
   readonly selectedSubShapeCount: number;
   /** 選択の種類の札(頂点/辺/面/立体、§0.a-0.6)。いまストアが持っている値をそのまま渡す。 */
   readonly selectionKind: SelectionKind;
+  /**
+   * ばねの始点にする点フィーチャーが選ばれているか(§0.a-0.29、仕上げ (d))。
+   * ばねは対象が立体でも部分形状でもなくスケッチの点なので、`selectedBodyCount` /
+   * `selectedSubShapeCount` では判定できない(いずれも数えない)。ツールバーの「ばね」
+   * ボタンの押せる条件と同じ `solidToolReadiness(document, selection, 'spring').ready`
+   * で判定した値を呼び出し側(`StatusBar.tsx`)が渡す(同じ判断を2か所に書かない)。
+   */
+  readonly springOriginSelected: boolean;
+  /**
+   * いま開いているその場入力がばねの何段目か(§2.11「ばねの2段」)。ポップアップが
+   * 開いていない、または他の道具のポップアップのときは null。`activeTool !== 'spring'`
+   * のときは呼び出し側が常に null を渡してよい(`machiningGuideText` が見るのは
+   * `activeTool === 'spring'` のときだけ)。
+   */
+  readonly springStep: SpringNumericInputStep | null;
 }
 
 /** 選択のうち、いま画面にある立体を指しているものの数(§0.a-0.5、FR-404)。 */
@@ -204,10 +222,37 @@ function selectionKindText(kind: SelectionKind): string {
 }
 
 /**
- * 加工の道具(穴・ねじ穴・R 面取り・C 面取り・直線/円形パターン)で、選択が進むにつれて案内を
- * 更新する(§0.a-0.6「選択の数を案内に出す」、P3 タスク29 でパターンの段を追加)。
- * その道具にとって何も選ばれていなければ null を返し、呼び出し側は道具の基本案内
- * (`guideKeyFor`)へ後退する。
+ * ばねの段階的な案内(§0.a-0.6、§0.a-0.29、仕上げ (d))。「ばね」ボタンを押した後、
+ * 段が進むにつれて案内を更新する。文言は `packages/help-content/docs/ja/spring.md` の手順と
+ * `numericInput.ts` の段名(`springShape` = 「ばねの形を決める」、`springLength` = 「ばねの
+ * 長さを決める」)に揃える。
+ *
+ * - 始点の点がまだ選ばれていなければ null を返し、呼び出し側は道具の基本案内
+ *   (`guideKeyFor` → `statusBar.guide.spring`「ばねの始点にする点を選んでください。」)へ
+ *   後退する。
+ * - 始点の点が選ばれていれば、ポップアップが実際に開いているかによらず「コイル径と線径を」
+ *   促す(直線/円形パターンの `linearPatternReady` / `circularPatternReady` と同じ
+ *   「選択が整ったら伝える」流儀。ポップアップは「ばね」を押した時点で開くので、この文言は
+ *   ポップアップを開く前の後押しにも、開いた後の入力の促しにも使える)。
+ * - その場入力が2段目(`springLength`)まで進んだら、「ピッチと巻数(全長)を」促す文言に
+ *   替える。`derived` によって実際に出る2つの欄は変わる(§0.a-0.30)ので、3つの量をまとめて
+ *   案内し、どれが出ていても通じるようにする。
+ */
+export function springGuideText(
+  originSelected: boolean,
+  step: SpringNumericInputStep | null,
+): string | null {
+  if (step === 'springLength') {
+    return t('statusBar.guide.springLengthReady');
+  }
+  return originSelected ? t('statusBar.guide.springShapeReady') : null;
+}
+
+/**
+ * 加工の道具(穴・ねじ穴・R 面取り・C 面取り・直線/円形パターン・ばね)で、選択が進むにつれて
+ * 案内を更新する(§0.a-0.6「選択の数を案内に出す」、P3 タスク29 でパターンの段、
+ * 仕上げ (d) でばねの段を追加)。その道具にとって何も選ばれていなければ null を返し、
+ * 呼び出し側は道具の基本案内(`guideKeyFor`)へ後退する。
  *
  * - 穴・ねじ穴: 面を 1 つ以上選んだら「中心にする点を選んでください。」に進む(面を選ぶまでは
  *   基本案内が「面と点の両方を」とまとめて伝えている)。
@@ -218,11 +263,17 @@ function selectionKindText(kind: SelectionKind): string {
  *   同じ判定材料)なので、`selectedSubShapeCount` ではなく `selectedBodyCount` で進み具合を見る。
  *   1 つも選んでいなければ基本案内「並べる穴を選んでください。」のまま、選んでいれば
  *   直線は「向きと間隔、個数を」、円形は「軸と角度、個数を」入れるよう促す。
+ * - ばね: 始点の点はスケッチの点フィーチャーで、立体でも部分形状でもない
+ *   (`selectionKindForTool('spring')` は `'body'` のまま変わらない)ので、
+ *   `selectedSubShapeCount` / `selectedBodyCount` のどちらでも進み具合を判定できない。
+ *   代わりに `springOriginSelected` / `springStep` を見る(`springGuideText`)。
  */
 export function machiningGuideText(
   activeTool: NumericInputToolId,
   selectedSubShapeCount: number,
   selectedBodyCount = 0,
+  springOriginSelected = false,
+  springStep: SpringNumericInputStep | null = null,
 ): string | null {
   switch (activeTool) {
     case 'hole':
@@ -237,6 +288,8 @@ export function machiningGuideText(
       return selectedBodyCount <= 0 ? null : t('statusBar.guide.linearPatternReady');
     case 'circularPattern':
       return selectedBodyCount <= 0 ? null : t('statusBar.guide.circularPatternReady');
+    case 'spring':
+      return springGuideText(springOriginSelected, springStep);
     default:
       return null;
   }
@@ -384,12 +437,15 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
       progress: null,
     };
   }
-  // 加工の道具は、部分形状(またはパターンなら立体)を選ぶにつれて具体的な案内へ進める
-  // (§0.a-0.6)。何も選んでいなければ null が返り、道具の基本案内(guideKeyFor)へ後退する。
+  // 加工の道具は、部分形状(またはパターンなら立体、ばねなら始点の点)を選ぶにつれて
+  // 具体的な案内へ進める(§0.a-0.6)。何も選んでいなければ null が返り、道具の基本案内
+  // (guideKeyFor)へ後退する。
   const machiningText = machiningGuideText(
     input.activeTool,
     input.selectedSubShapeCount,
     input.selectedBodyCount,
+    input.springOriginSelected,
+    input.springStep,
   );
   return {
     kind: 'guide',

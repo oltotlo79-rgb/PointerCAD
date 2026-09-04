@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { solidToolReadiness } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { AlertIcon, MouseIcon, PlaneIcon, SaveIcon, SnapIcon } from './icons.js';
 import {
@@ -10,6 +11,7 @@ import {
   countSelectedSubShapes,
   describeStatus,
   PROGRESS_DELAY_MS,
+  type SpringNumericInputStep,
   type StatusLineKind,
 } from './statusText.js';
 
@@ -84,6 +86,25 @@ export function StatusBar(): React.JSX.Element {
   const selectedSubShapeCount = useAppStore((state) =>
     state.selectionKind === 'body' ? 0 : countSelectedSubShapes(state.selection, state.selectionKind),
   );
+  /*
+   * ばねの段階的な案内(§0.a-0.29、仕上げ (d))。始点にする点が選ばれているかは、
+   * ツールバーの「ばね」ボタンの押せる条件と同じ solidToolReadiness で判定する
+   * (同じ判断を2か所に書かない)。activeTool が spring でないときは常に false にし、
+   * 無関係な選択の変化のたびには描き直さない(NFR-PF-1、上の selectedBodyCount と同じ考え方)。
+   */
+  const springOriginSelected = useAppStore((state) =>
+    state.activeTool === 'spring'
+      ? solidToolReadiness(state.document, state.selection, 'spring').ready
+      : false,
+  );
+  // いま開いているその場入力がばねの何段目か(springShape / springLength)。それ以外は null。
+  const springStep = useAppStore((state): SpringNumericInputStep | null => {
+    if (state.numericInput === null || state.numericInput.toolId !== 'spring') {
+      return null;
+    }
+    const { step } = state.numericInput;
+    return step === 'springShape' || step === 'springLength' ? step : null;
+  });
 
   /*
    * 進み具合を出してよいかどうかだけを持つ表示専用の状態(rules/04: useState は
@@ -125,6 +146,8 @@ export function StatusBar(): React.JSX.Element {
     selectedBodyCount,
     selectedSubShapeCount,
     selectionKind,
+    springOriginSelected,
+    springStep,
   });
   const className =
     line.kind === 'failure' ? 'pcad-statusbar pcad-statusbar--error' : 'pcad-statusbar';

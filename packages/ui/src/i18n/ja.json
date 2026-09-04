@@ -826,5 +826,13 @@
   "commandLine.suggestionsLabel": "打てる語の候補",
   "commandLine.nextLabel": "次に打つもの",
   "commandLine.error": "コマンド:",
-  "commandLine.errorSuggestions": "もしかして:"
+  "commandLine.errorSuggestions": "もしかして:",
+  "parameter.error.empty": "名前を入れてください。",
+  "parameter.error.startsWithDigit": "名前は数字で始められません。",
+  "parameter.error.reserved": "その名前は使えません(計算に使う言葉です)。",
+  "parameter.error.invalidCharacter": "名前に使えない文字が入っています。",
+  "parameter.error.duplicateName": "その名前はすでにあります。",
+  "parameter.error.notFound": "その名前が見つかりません。",
+  "parameter.error.referencedPrefix": "この名前は ",
+  "parameter.error.referencedSuffix": " か所から使われています。先にそちらを直してください。"
 }

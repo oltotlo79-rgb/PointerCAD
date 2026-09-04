@@ -13,6 +13,12 @@ export interface IconProps {
   readonly className?: string;
 }
 
+/**
+ * 図柄そのものの型。図柄を値として並べる表(`toolbarMenus.ts` の畳んだ一覧など)が
+ * React の型に触れずに済むよう、ここで名前を付けて輸出する。
+ */
+export type IconComponent = (props: IconProps) => React.JSX.Element;
+
 interface SvgIconProps extends IconProps {
   readonly children: React.ReactNode;
 }
@@ -257,6 +263,33 @@ export function FaceToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
+ * 円(FR-326)。中心の点を添えた真円で表す(P4 タスク32)。
+ * 円弧(四分円+破線の半径)とも楕円(横長)とも絵柄が重ならないようにしてある。
+ */
+export function CircleToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="5.5" />
+      <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 2 点+半径の円弧(FR-313)。通したい 2 点を両端に置いた弧で表す(P4 タスク32)。
+ * 線分(2 点を直線で結ぶ)と対になる絵柄で、結ぶ線が弧かどうかで見分ける。
+ */
+export function TwoPointArcToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.4 11.4A7.4 7.4 0 0 1 12.6 11.4" />
+      <circle cx="3.4" cy="11.4" r="1.5" />
+      <circle cx="12.6" cy="11.4" r="1.5" />
+    </SvgIcon>
+  );
+}
+
+/**
  * 矩形(FR-314)。長方形の輪郭で表す(P4 タスク4、統括の指示 2026-09-04)。
  * `FeatureTree.tsx` の KIND_ICONS がツリーの行の頭に、道具アイコンとしてタスク12 が使う。
  */
@@ -300,6 +333,49 @@ export function SplineToolIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>
       <path d="M2 11.5C4.5 11.5 4.5 4.5 8 4.5s3.5 7 6 7" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * オフセット(FR-321)。もとの輪郭(実線)と、それをずらした複製(破線)を入れ子にして表す。
+ * 「元は残り、ずらした複製ができる」ことが 1 枚で読める絵柄にしてある(P4 タスク32)。
+ */
+export function OffsetToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="1.5" y="4.2" width="13" height="7.6" rx="1.6" strokeDasharray="1.6 1.6" />
+      <rect x="4.3" y="6.4" width="7.4" height="3.2" rx="1" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 畳んだ一覧「作図」のボタン(§0.a-0.14、P4 タスク32)。四角と楕円を重ねて
+ * 「いろいろな形をまとめてかく入口」を表す。中の道具を一度でも使うと、ボタンの図柄は
+ * 最後に使った道具のものへ変わるので、これは何も使っていないときの顔になる。
+ */
+export function ShapeGroupIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="1.6" y="5.6" width="8" height="7.2" />
+      <circle cx="10.6" cy="6.4" r="4.2" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 畳んだ一覧「編集」のボタン(§0.a-0.14、P4 タスク32)。はさみで「かいたものへ手を入れる」
+ * ことを表す。中身はオフセットから始まり、トリム・延長・フィレット・面取り・ミラー・複写が
+ * 加わる(タスク22〜24)ので、特定の道具ではなく道具箱の顔にしてある。
+ */
+export function EditGroupIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.2 2.4 11.4 11.1" />
+      <path d="M12.8 2.4 4.6 11.1" />
+      <circle cx="3.3" cy="12.7" r="1.7" />
+      <circle cx="12.7" cy="12.7" r="1.7" />
     </SvgIcon>
   );
 }

@@ -5,7 +5,6 @@ import {
   isFreeWorkPlaneId,
   type BooleanOperation,
   type PartDocument,
-  type ResolvedSketch,
   type SolidBody,
   type WorkPlaneId,
 } from '@pointercad/model';
@@ -14,7 +13,11 @@ import { hasFileSystemAccess } from '../file/fileGateway.js';
 import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
-import { offsetContourIsOpen, offsetToolReadiness } from '../sketch/editCommands.js';
+import {
+  offsetContourIsOpen,
+  offsetToolReadiness,
+  type EditToolReadiness,
+} from '../sketch/editCommands.js';
 import { freeSketchToolRejection } from '../sketch/freeSketch.js';
 import {
   createNumericInput,
@@ -58,6 +61,7 @@ import {
   CircularPatternIcon,
   CubeIcon,
   CursorIcon,
+  EditGroupIcon,
   ExtrudeIcon,
   FaceToolIcon,
   FilletIcon,
@@ -80,6 +84,7 @@ import {
   SewIcon,
   ShadedIcon,
   ShadedWithEdgesIcon,
+  ShapeGroupIcon,
   SnapCenterIcon,
   SnapEndpointIcon,
   SnapGridIcon,
@@ -92,8 +97,17 @@ import {
   UndoIcon,
   UnionIcon,
   WireframeIcon,
+  type IconComponent,
   type IconProps,
 } from './icons.js';
+import {
+  EDIT_MENU_ITEMS,
+  SHAPE_MENU_ITEMS,
+  nextHighlightIndex,
+  rememberRecentTool,
+  triggerItemOf,
+  type ToolMenuItem,
+} from './toolbarMenus.js';
 
 /** 図柄のボタン 1 つぶんの定義。区画ごとの表はすべてこの形に揃える。 */
 interface ButtonEntry {
@@ -209,47 +223,6 @@ const TOOLS = [
     Icon: FaceToolIcon,
   },
 ] as const satisfies readonly (ButtonEntry & { readonly id: SketchToolId })[];
-
-/**
- * P4 で足した図形の道具(FR-314〜318、FR-326)。「スケッチ」区画の中の畳んだ一覧
- * 「作図」に入れる(§0.a-0.14)。基本の 6 道具を平置きのまま保ちつつ、1440 画素で
- * 1 段に収めるため(実測は報告に記す)。図柄は作らず名前だけの一覧にしてある
- * (`PlaneMenu` と同じ作り)。区画そのものの再編と図柄はタスク32 が行う。
- */
-const SHAPE_TOOLS = [
-  { id: 'circle', labelKey: 'toolbar.tool.circle', tooltipKey: 'toolbar.tool.circleTooltip' },
-  {
-    id: 'twoPointArc',
-    labelKey: 'toolbar.tool.twoPointArc',
-    tooltipKey: 'toolbar.tool.twoPointArcTooltip',
-  },
-  {
-    id: 'rectangle',
-    labelKey: 'toolbar.tool.rectangle',
-    tooltipKey: 'toolbar.tool.rectangleTooltip',
-  },
-  { id: 'polygon', labelKey: 'toolbar.tool.polygon', tooltipKey: 'toolbar.tool.polygonTooltip' },
-  { id: 'slot', labelKey: 'toolbar.tool.slot', tooltipKey: 'toolbar.tool.slotTooltip' },
-  { id: 'ellipse', labelKey: 'toolbar.tool.ellipse', tooltipKey: 'toolbar.tool.ellipseTooltip' },
-  { id: 'spline', labelKey: 'toolbar.tool.spline', tooltipKey: 'toolbar.tool.splineTooltip' },
-] as const satisfies readonly {
-  readonly id: ShapeToolId;
-  readonly labelKey: MessageKey;
-  readonly tooltipKey: MessageKey;
-}[];
-
-/**
- * P4 で足す整形系の道具(FR-321〜324)。「スケッチ」区画の中の畳んだ一覧「編集」に入れる
- * (§0.a-0.14、`ShapeMenu` と同じ作り)。今回はオフセットだけを実装する。トリム・延長・
- * フィレット/面取り・ミラー/複写/配列複写はタスク22〜24 がここへ追加する。
- */
-const EDIT_TOOLS = [
-  { id: 'offset', labelKey: 'toolbar.tool.offset', tooltipKey: 'toolbar.tool.offsetTooltip' },
-] as const satisfies readonly {
-  readonly id: EditToolId;
-  readonly labelKey: MessageKey;
-  readonly tooltipKey: MessageKey;
-}[];
 
 /**
  * ソリッドの道具(FR-401〜404)。左の3つは面を選んでから数値を聞き、
@@ -941,24 +914,61 @@ function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuProps): R
   );
 }
 
-interface ShapeMenuProps {
+interface ToolMenuProps<Id extends string> {
+  /** 一覧に並べる道具(`toolbarMenus.ts` の表)。項目を足すときは表へ 1 行足すだけ。 */
+  readonly items: readonly ToolMenuItem<Id>[];
+  /** 区画の名前と説明。畳んだボタンの読み上げ名とツールチップの頭に出る。 */
+  readonly groupLabelKey: MessageKey;
+  readonly groupTooltipKey: MessageKey;
+  /** まだ一度もこの一覧を使っていないときに、ボタンへ出す図柄。 */
+  readonly GroupIcon: IconComponent;
   readonly activeTool: NumericInputToolId;
+  /**
+   * 道具ごとの押せる条件(NFR-UX-5「実行前に理由提示」)。渡さなければ常に押せる。
+   * タスク22〜24 が道具ごとに違う条件を足すときは、ここを id で振り分ける。
+   */
+  readonly readinessOf?: (id: Id) => EditToolReadiness;
+  /** 項目を選んだときの処理。`pressed` は「同じ道具をもう一度押した」かどうか。 */
+  readonly onChoose: (id: Id, pressed: boolean) => void;
 }
 
 /**
- * 新しい図形の畳んだ一覧「作図」(FR-314〜318、FR-326、§0.a-0.14、タスク12)。
+ * 図柄つきの畳んだ一覧(「作図」「編集」、§0.a-0.14、タスク32)。
  *
- * `PlaneMenu` と同じ作り(非モーダル、外を押すと閉じる、トリガーに今の状態を出す)。
- * いま選ばれているのが作図の道具なら、その名前をトリガーに出して畳んでも分かるようにする。
+ * **1 段に戻すための形**(利用者の決定 2026-09-04)。基本の 6 道具と同じ溝の中に、
+ * 図柄+小さな ▾ のボタンとして並ぶ。t12・t21 の時点では名前つきのボタンが基本の道具の
+ * 下へ積まれ、ツールバーが 1440 画素で 2〜3 段相当(実測 97.5〜126.5px)になっていた。
+ *
+ * 作り(非モーダル、外を押すと閉じる、Esc で閉じる)は `PlaneMenu` と同じ。加えて
+ * ①項目は**図柄+名前**で並べ、②↑↓ Home End で選べ(`nextHighlightIndex`)、
+ * ③選ぶと一覧が閉じ、ボタンの図柄が最後に使った道具のものへ変わる(`triggerItemOf`)。
+ * ③は「よく使う道具は 1 クリック、それ以外は 2 クリック」にするための工夫。
+ *
+ * 開いているかどうかと「最後に使った道具」は見た目だけの一時状態なのでここで持つ
+ * (道具そのものの正本はストア、rules/04-設計の規律.md)。
  */
-function ShapeMenu({ activeTool }: ShapeMenuProps): React.JSX.Element {
+function ToolMenu<Id extends string>({
+  items,
+  groupLabelKey,
+  groupTooltipKey,
+  GroupIcon,
+  activeTool,
+  readinessOf,
+  onChoose,
+}: ToolMenuProps<Id>): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [recentId, setRecentId] = useState<Id | null>(null);
+  /** キーボードで選んでいる位置(0 起点)。開くたびに今の道具の行から始める。 */
+  const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     if (!open) {
       return;
     }
+    // 外を押したら閉じる。モーダルの覆いを作らないので、押した先の操作はそのまま通る。
     const onPointerDown = (event: PointerEvent): void => {
       const container = containerRef.current;
       if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
@@ -971,104 +981,33 @@ function ShapeMenu({ activeTool }: ShapeMenuProps): React.JSX.Element {
     };
   }, [open]);
 
-  const current = SHAPE_TOOLS.find((tool) => tool.id === activeTool) ?? null;
-  const groupLabel = t('toolbar.shape.groupLabel');
-
-  return (
-    <div
-      className="pcad-menu"
-      ref={containerRef}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && open) {
-          event.stopPropagation();
-          setOpen(false);
-        }
-      }}
-    >
-      <button
-        type="button"
-        className="pcad-button pcad-menu__trigger"
-        title={t('toolbar.shape.tooltip')}
-        aria-label={
-          current === null
-            ? groupLabel
-            : `${groupLabel}${LABEL_SEPARATOR}${t(current.labelKey)}`
-        }
-        aria-haspopup="true"
-        aria-expanded={open}
-        aria-pressed={current !== null}
-        onClick={() => {
-          setOpen(!open);
-        }}
-      >
-        <span className="pcad-menu__count">
-          {current === null ? groupLabel : t(current.labelKey)}
-        </span>
-        <ChevronRightIcon className="pcad-menu__chevron" />
-      </button>
-      {open ? (
-        <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
-          {SHAPE_TOOLS.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              className="pcad-button pcad-menu__item"
-              title={t(tool.tooltipKey)}
-              aria-pressed={activeTool === tool.id}
-              onClick={() => {
-                activateShapeTool(tool.id, activeTool === tool.id);
-                setOpen(false);
-              }}
-            >
-              {t(tool.labelKey)}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-interface EditMenuProps {
-  readonly activeTool: NumericInputToolId;
-  /** 押せる条件(`offsetToolReadiness`)の判定に要る、いまのスケッチの解決結果。 */
-  readonly resolvedSketch: ResolvedSketch;
-  readonly selection: readonly string[];
-}
-
-/**
- * 整形系の畳んだ一覧「編集」(FR-321、§0.a-0.14、タスク21)。
- *
- * `ShapeMenu` と同じ作り(非モーダル、外を押すと閉じる、トリガーに今の状態を出す)。
- * 今回はオフセットだけを入れる(トリム・延長・フィレット/面取り・ミラー/複写/配列複写は
- * タスク22〜24 がここへ追加する)。対象を選んでから押す道具(§2.5)なので、押せない条件を
- * 一覧の項目にも出す(NFR-UX-5「実行前に理由提示」、`MachiningGroup` と同じ作り)。
- */
-function EditMenu({ activeTool, resolvedSketch, selection }: EditMenuProps): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
+  // 開いている間は選んでいる行そのものに焦点を移す。こうすると決めるのは Enter / Space の
+  // 既定の動きで済み、押せない項目の理由もその場で読み上げられる(NFR-UX-7)。
   useEffect(() => {
-    if (!open) {
-      return;
+    if (open) {
+      itemRefs.current[highlight]?.focus();
     }
-    const onPointerDown = (event: PointerEvent): void => {
-      const container = containerRef.current;
-      if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-    globalThis.addEventListener('pointerdown', onPointerDown);
-    return () => {
-      globalThis.removeEventListener('pointerdown', onPointerDown);
-    };
-  }, [open]);
+  }, [open, highlight]);
 
-  const current = EDIT_TOOLS.find((tool) => tool.id === activeTool) ?? null;
-  const groupLabel = t('toolbar.edit.groupLabel');
-  // 今回はオフセットだけなので判定は 1 つ。タスク22〜24 が道具ごとの判定を足したら
-  // ここを道具 id で振り分ける表へ広げる。
-  const readiness = offsetToolReadiness(resolvedSketch, selection);
+  const groupLabel = t(groupLabelKey);
+  const shown = triggerItemOf(items, activeTool, recentId);
+  const activeHere = items.some((item) => item.id === activeTool);
+
+  function openMenu(): void {
+    const index = items.findIndex((item) => item.id === activeTool);
+    setHighlight(index < 0 ? 0 : index);
+    setOpen(true);
+  }
+
+  // ツールチップは「名前: 説明」を重ねる(FR-904)。畳んだ図柄が何の道具なのかと、
+  // 一覧の開き方・選び方をここだけで読み切れるようにする(NFR-UX-7)。
+  const tooltip = [
+    `${groupLabel}${LABEL_SEPARATOR}${t(groupTooltipKey)}`,
+    shown === null ? null : `${t(shown.labelKey)}${LABEL_SEPARATOR}${t(shown.tooltipKey)}`,
+    t('toolbar.menu.keyboardHint'),
+  ]
+    .filter((line) => line !== null)
+    .join(TOOLTIP_LINE_BREAK);
 
   return (
     <div
@@ -1078,48 +1017,81 @@ function EditMenu({ activeTool, resolvedSketch, selection }: EditMenuProps): Rea
         if (event.key === 'Escape' && open) {
           event.stopPropagation();
           setOpen(false);
+          triggerRef.current?.focus();
+          return;
         }
+        if (!open) {
+          // 畳んだボタンに焦点があるときの ↓ で開く(世の中の畳んだ一覧と同じ)。
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            openMenu();
+          }
+          return;
+        }
+        const next = nextHighlightIndex(highlight, event.key, items.length);
+        if (next === null) {
+          return;
+        }
+        event.preventDefault();
+        setHighlight(next);
       }}
     >
       <button
         type="button"
-        className="pcad-button pcad-menu__trigger"
-        title={t('toolbar.edit.tooltip')}
+        ref={triggerRef}
+        className="pcad-button pcad-menu__trigger pcad-menu__trigger--icon"
+        title={tooltip}
         aria-label={
-          current === null ? groupLabel : `${groupLabel}${LABEL_SEPARATOR}${t(current.labelKey)}`
+          shown === null ? groupLabel : `${groupLabel}${LABEL_SEPARATOR}${t(shown.labelKey)}`
         }
         aria-haspopup="true"
         aria-expanded={open}
-        aria-pressed={current !== null}
+        aria-pressed={activeHere}
         onClick={() => {
-          setOpen(!open);
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          openMenu();
         }}
       >
-        <span className="pcad-menu__count">
-          {current === null ? groupLabel : t(current.labelKey)}
-        </span>
-        <ChevronRightIcon className="pcad-menu__chevron" />
+        {shown === null ? <GroupIcon /> : <shown.Icon />}
+        <ChevronRightIcon className="pcad-menu__chevron pcad-menu__chevron--small" />
       </button>
       {open ? (
         <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
-          {EDIT_TOOLS.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              className="pcad-button pcad-menu__item"
-              title={
-                readiness.ready ? t(tool.tooltipKey) : unavailableTooltip(tool.labelKey, readiness.reasonKey)
-              }
-              aria-pressed={activeTool === tool.id}
-              aria-disabled={!readiness.ready}
-              onClick={() => {
-                activateEditTool(tool.id, activeTool === tool.id);
-                setOpen(false);
-              }}
-            >
-              {t(tool.labelKey)}
-            </button>
-          ))}
+          {items.map((item, index) => {
+            const readiness = readinessOf?.(item.id) ?? null;
+            const ready = readiness === null || readiness.ready;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                ref={(element) => {
+                  itemRefs.current[index] = element;
+                }}
+                className="pcad-button pcad-menu__item"
+                title={
+                  ready
+                    ? `${t(item.labelKey)}${LABEL_SEPARATOR}${t(item.tooltipKey)}`
+                    : unavailableTooltip(item.labelKey, readiness?.reasonKey ?? null)
+                }
+                aria-pressed={activeTool === item.id}
+                aria-disabled={!ready}
+                onFocus={() => {
+                  setHighlight(index);
+                }}
+                onClick={() => {
+                  setRecentId(rememberRecentTool(items, recentId, item.id));
+                  onChoose(item.id, activeTool === item.id);
+                  setOpen(false);
+                }}
+              >
+                <item.Icon />
+                {t(item.labelKey)}
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -1298,7 +1270,14 @@ function SolidGroup({ document, bodies, selection }: SolidGroupProps): React.JSX
  * 機能グループは区画名を頭に置き、いま選ばれているものをアクセント色の面で示す(NFR-UX-7)。
  * 状態の正本は Zustand ストア1本(rules/04-設計の規律.md)。
  *
+ * 「スケッチ」区画は、基本の 6 道具(選択・点・線分・円弧・点列・面)の右に「作図」「編集」の
+ * 畳んだボタンを**同じ行**へ並べた 1 行にする(利用者の決定 2026-09-04、タスク32)。
+ * よく使う道具は 1 クリック、それ以外は 2 クリックで届く。
+ *
  * 横幅の方針: 1440 画素の窓で 1 段に収まることを条件にする(§0.a-0.15)。
+ * 実測(2026-09-04、ダーク・拡大率 100%): 高さ 68.5 画素の 1 段、1 段に必要な幅 1366.3 画素、
+ * 1440 画素の窓での余裕 73.7 画素。畳んだ一覧へ道具を足しても幅は増えない
+ * (`toolbarMenus.ts` の `segmentedWidthPixels`)。
  * 図柄で分かるものは図柄だけのボタン(`pcad-button--icon`)にして詰め、
  * 文字を添えたい道具(スケッチ・続けてかく)には `pcad-button--collapsible` を付けて、
  * 窓が 1600 画素より狭いときだけ文字を畳む(appShell.css)。図柄だけになるボタンには
@@ -1426,11 +1405,36 @@ export function Toolbar(): React.JSX.Element {
               <span className="pcad-button__label">{t(tool.labelKey)}</span>
             </button>
           ))}
+          {/*
+            「作図」「編集」は基本の 6 道具と**同じ溝の中**へ図柄+▾ のボタンとして置く
+            (利用者の決定 2026-09-04、タスク32)。区画(.pcad-toolbar__group)は縦積みなので、
+            溝の外へ出すと道具の下の段に落ちてツールバーが 2〜3 段相当になってしまう
+            (t12・t21 の申し送り、実測 97.5〜126.5px)。ここへ入れておけば、一覧に道具を
+            いくつ足しても横幅は 31 画素のまま増えない(toolbarMenus.ts の幅の見積もり)。
+          */}
+          <ToolMenu
+            items={SHAPE_MENU_ITEMS}
+            groupLabelKey="toolbar.shape.groupLabel"
+            groupTooltipKey="toolbar.shape.tooltip"
+            GroupIcon={ShapeGroupIcon}
+            activeTool={activeTool}
+            onChoose={activateShapeTool}
+          />
+          <ToolMenu
+            items={EDIT_MENU_ITEMS}
+            groupLabelKey="toolbar.edit.groupLabel"
+            groupTooltipKey="toolbar.edit.tooltip"
+            GroupIcon={EditGroupIcon}
+            activeTool={activeTool}
+            /*
+              整形系は「対象を選んでから操作」(§2.5)なので、押せない理由を一覧の項目にも
+              出す(NFR-UX-5)。いまはオフセットだけなので判定は 1 つ。タスク22〜24 が
+              道具ごとの判定を足すときは、ここを道具 id で振り分ける。
+            */
+            readinessOf={() => offsetToolReadiness(resolvedSketch, selection)}
+            onChoose={activateEditTool}
+          />
         </div>
-        {/* 新しい図形は畳んだ一覧へ入れて、基本の 6 道具の平置きを崩さない(§0.a-0.14)。 */}
-        <ShapeMenu activeTool={activeTool} />
-        {/* 整形系(オフセット、FR-321)も同じ畳んだ一覧の作りで隣へ置く(§0.a-0.14、タスク21)。 */}
-        <EditMenu activeTool={activeTool} resolvedSketch={resolvedSketch} selection={selection} />
       </div>
 
       <SolidGroup document={partDocument} bodies={subShapeBodies} selection={selection} />

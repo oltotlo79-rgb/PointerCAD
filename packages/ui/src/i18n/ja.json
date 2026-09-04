@@ -58,6 +58,8 @@
   "toolbar.edit.tooltip": "選んだ線・円弧をずらした複製を作ります",
   "toolbar.tool.offset": "オフセット",
   "toolbar.tool.offsetTooltip": "選んだ線・円弧を、指定した距離だけずらした複製を作ります",
+  "toolbar.tool.copy": "複製",
+  "toolbar.menu.keyboardHint": "押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます",
   "toolbar.solid.title": "ソリッド",
   "toolbar.solid.tooltip": "面から立体を作り、立体どうしを組み合わせます",
   "toolbar.solid.extrude": "押し出し",

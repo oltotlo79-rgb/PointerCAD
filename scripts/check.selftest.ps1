@@ -99,6 +99,28 @@ try {
         $after5 = Get-TrackedTreeSnapshot -Root $tempRoot -Level "Push"
         $result5 = Compare-TrackedTreeSnapshot -Before $before5 -After $after5
         Assert-True ($result5.Unchanged) "-Level Push で何も変わらなければ成功とする"
+
+        # === シナリオ6(-Level Commit): 日本語名ファイルもスナップショットに含まれ、内容変化を検出する ===
+        # 実測の再発防止試験: core.quotepath の既定(true)のままだと `git diff --cached --name-only` が
+        # 日本語名を二重引用符+8進エスケープ(例 "記\346\255\...md")で返し、そのままファイルパスとして
+        # 使うと Test-Path が「パスに無効な文字が含まれています」で例外になり、日本語名ファイルが
+        # 比較から漏れていた(gitTreeGuard.ps1 の Invoke-GitUtf8Output と -c core.quotepath=false / -z で対処)。
+        $japaneseFileName = "記録.md"
+        $japaneseFilePath = Join-Path $tempRoot $japaneseFileName
+        Set-Content -LiteralPath $japaneseFilePath -Value "最初の内容" -NoNewline -Encoding UTF8
+        & git add -- $japaneseFileName | Out-Null
+        $before6 = Get-TrackedTreeSnapshot -Root $tempRoot -Level "Commit"
+        Assert-True ($before6.Ok) "シナリオ6 前提: 日本語名ファイルの stage 取得で例外にならない"
+        Assert-True (@($before6.Paths) -contains $japaneseFileName) `
+            "シナリオ6: 日本語名ファイル($japaneseFileName)がスナップショットに含まれる"
+
+        Set-Content -LiteralPath $japaneseFilePath -Value "書き換え後の内容" -NoNewline -Encoding UTF8
+        $after6 = Get-TrackedTreeSnapshot -Root $tempRoot -Level "Commit"
+        Assert-True ($after6.Ok) "シナリオ6: 変化後の再取得でも例外にならない"
+        $result6 = Compare-TrackedTreeSnapshot -Before $before6 -After $after6
+        Assert-True (-not $result6.Unchanged) "シナリオ6: 日本語名ファイルの内容変化を検出して失敗とする"
+        Assert-True (@($result6.ChangedPaths) -contains $japaneseFileName) `
+            "シナリオ6: 変化したファイル名(日本語名)を正しく報告する"
     }
     finally {
         Pop-Location

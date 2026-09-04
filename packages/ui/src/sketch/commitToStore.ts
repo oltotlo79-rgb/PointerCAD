@@ -18,7 +18,14 @@ import {
 } from '@pointercad/model';
 
 import { useAppStore } from '../store/useAppStore.js';
-import { commitOffset } from './editCommands.js';
+import {
+  commitCircularArray,
+  commitCopy,
+  commitLinearArray,
+  commitMirror,
+  type CopyCommitOutcome,
+} from './copyCommands.js';
+import { commitOffset, type OffsetCommitOutcome } from './editCommands.js';
 import type { EditInputCommit, NumericInputCommit, NumericInputState } from './numericInput.js';
 import { commitSketchInput } from './sketchCommands.js';
 
@@ -69,23 +76,19 @@ export function applySketchCommit(
 }
 
 /**
- * 整形系の道具(オフセット、FR-321、タスク21)の確定をストアへ反映する。
- * 対象はすでに選ばれているので `commitSketchInput` は経由せず、`editCommands.ts` を直に呼ぶ。
- * 作れたら道具を選択へ戻し、作った複製を選んでおく(続けて別のオフセットを重ねられる、
- * NFR-UX-1。`Toolbar.tsx` の `commitBooleanAction` と同じ順序: 道具を先に戻してから選ぶ)。
+ * 整形系の道具(オフセット FR-321、ミラー・複写・配列複写 FR-324)の確定をストアへ反映する。
+ * 対象はすでに選ばれているので `commitSketchInput` は経由せず、`editCommands.ts` /
+ * `copyCommands.ts` を直に呼ぶ。作れたら道具を選択へ戻し、作った複製を選んでおく
+ * (続けてもう 1 つ重ねられる、NFR-UX-1。`Toolbar.tsx` の `commitBooleanAction` と同じ順序)。
+ *
+ * 断りは帯へ出すだけで、履歴も選択も変えない(NFR-UX-5、FR-504)。
  */
 export function applyEditCommit(commit: EditInputCommit): void {
   const store = useAppStore.getState();
-  if (commit.tool !== 'offset') {
+  const outcome = editCommitOutcome(commit, store);
+  if (outcome === null) {
     return;
   }
-  const outcome = commitOffset(
-    store.sketch,
-    store.resolvedSketch,
-    store.workPlaneId,
-    store.selection,
-    commit,
-  );
   if (!outcome.ok) {
     store.setEditError(outcome.reasonKey);
     return;
@@ -94,4 +97,54 @@ export function applyEditCommit(commit: EditInputCommit): void {
   store.setSketch(outcome.document);
   store.setActiveTool('select');
   store.setSelection([outcome.featureId]);
+}
+
+/** 道具ごとの確定の振り分け。段を持たない道具(トリム・延長)はここへ来ないので null。 */
+function editCommitOutcome(
+  commit: EditInputCommit,
+  store: ReturnType<typeof useAppStore.getState>,
+): OffsetCommitOutcome | CopyCommitOutcome | null {
+  switch (commit.tool) {
+    case 'offset':
+      return commitOffset(
+        store.sketch,
+        store.resolvedSketch,
+        store.workPlaneId,
+        store.selection,
+        commit,
+      );
+    case 'mirror':
+      return commitMirror(
+        store.sketch,
+        store.resolvedSketch,
+        store.workPlaneId,
+        store.selection,
+        commit,
+      );
+    case 'copy':
+      return commitCopy(
+        store.sketch,
+        store.resolvedSketch,
+        store.workPlaneId,
+        drawingPlane(),
+        store.selection,
+        commit,
+      );
+    case 'linearArray':
+      return commitLinearArray(
+        store.sketch,
+        store.resolvedSketch,
+        store.workPlaneId,
+        store.selection,
+        commit,
+      );
+    case 'circularArray':
+      return commitCircularArray(
+        store.sketch,
+        store.resolvedSketch,
+        store.workPlaneId,
+        store.selection,
+        commit,
+      );
+  }
 }

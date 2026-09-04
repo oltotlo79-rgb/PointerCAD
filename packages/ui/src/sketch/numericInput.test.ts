@@ -2131,7 +2131,9 @@ describe('基準ジオメトリの段(FR-328、FR-329)', () => {
 
 describe('整形系(オフセット、FR-321、計画書 docs/plans/P4-スケッチ拡張.md タスク21)', () => {
   it('道具から最初の段が引ける。offset は offsetDistance の 1 段だけ', () => {
-    expect(EDIT_TOOL_STEPS).toEqual({ offset: 'offsetDistance' });
+    // タスク24 で複製系の 4 道具が同じ表へ入った(この表が道具の一覧の正本なので、
+    // 道具を足すと期待値も増える。緩めたのではなく、増えたぶんを書き足してある)。
+    expect(EDIT_TOOL_STEPS.offset).toBe('offsetDistance');
     expect(isEditStep('offsetDistance')).toBe(true);
     expect(isSolidStep('offsetDistance')).toBe(false);
     expect(isReferenceStep('offsetDistance')).toBe(false);
@@ -2239,6 +2241,226 @@ describe('整形系(オフセット、FR-321、計画書 docs/plans/P4-スケッ
     for (const field of state.fields) {
       expect(MESSAGE_KEYS).toContain(field.labelKey);
       expect(MESSAGE_KEYS).toContain(field.tooltipKey);
+    }
+  });
+});
+
+describe('複製系(ミラー・複写・配列複写、FR-324、計画書 タスク24)', () => {
+  const COPY_TOOLS = ['mirror', 'copy', 'linearArray', 'circularArray'] as const;
+  const COPY_STEPS = [
+    'mirrorBasis',
+    'copyDelta',
+    'linearArrayDirection',
+    'linearArrayCount',
+    'circularArrayCenter',
+    'circularArrayShape',
+  ] as const;
+
+  it('4 つの道具が最初に開く段は表 1 つだけで決まる', () => {
+    expect(EDIT_TOOL_STEPS.mirror).toBe('mirrorBasis');
+    expect(EDIT_TOOL_STEPS.copy).toBe('copyDelta');
+    expect(EDIT_TOOL_STEPS.linearArray).toBe('linearArrayDirection');
+    expect(EDIT_TOOL_STEPS.circularArray).toBe('circularArrayCenter');
+    for (const tool of COPY_TOOLS) {
+      expect(isEditTool(tool), tool).toBe(true);
+    }
+  });
+
+  it('6 つの段が一覧と見出しの表に載っている(NFR-MA-5)', () => {
+    for (const step of COPY_STEPS) {
+      expect(NUMERIC_INPUT_STEPS, step).toContain(step);
+      expect(MESSAGE_KEYS, step).toContain(STEP_TITLE_KEYS[step]);
+      expect(isEditStep(step), step).toBe(true);
+      expect(isSolidStep(step), step).toBe(false);
+      expect(isReferenceStep(step), step).toBe(false);
+    }
+  });
+
+  it('欄は 1 段あたり 2 個まで(統括の指示)', () => {
+    for (const step of COPY_STEPS) {
+      const state = createNumericInput('mirror', step);
+      expect(state.fields.length, step).toBeLessThanOrEqual(
+        // 円形配列の中心だけは座標の 3 欄(P1 からある座標の段と同じ形)。
+        step === 'circularArrayCenter' ? 3 : 2,
+      );
+    }
+  });
+
+  it('ミラーは欄を持たず、鏡にするものだけを選ばせる', () => {
+    const state = createNumericInput('mirror', 'mirrorBasis');
+    expect(state.fields).toEqual([]);
+    const basis = state.choices.find((choice) => choice.key === 'mirrorBasis');
+    expect(basis?.value).toBe('axisU');
+    expect(basis?.options.map((option) => option.value)).toEqual(['axisU', 'axisV']);
+    expect(state.toggles.map((toggle) => toggle.key)).toEqual(['construction']);
+  });
+
+  it('選んだ線があるときだけ「選んだ線」が選択肢に並ぶ(NFR-UX-5)', () => {
+    const state = createNumericInput('mirror', 'mirrorBasis', undefined, {
+      mirrorAxes: { planeAxes: true, selectedLine: true },
+    });
+    const basis = state.choices.find((choice) => choice.key === 'mirrorBasis');
+    expect(basis?.options.map((option) => option.value)).toEqual(['axisU', 'axisV', 'line']);
+  });
+
+  it('任意の作業平面では作図面の軸が並ばず、既定が「選んだ線」になる', () => {
+    const state = createNumericInput('mirror', 'mirrorBasis', undefined, {
+      mirrorAxes: { planeAxes: false, selectedLine: true },
+    });
+    const basis = state.choices.find((choice) => choice.key === 'mirrorBasis');
+    expect(basis?.options.map((option) => option.value)).toEqual(['line']);
+    expect(basis?.value).toBe('line');
+  });
+
+  it('複写は作図面の 2 軸ぶんの欄。3D スケッチでは 3 つ目が増える', () => {
+    expect(createNumericInput('copy', 'copyDelta').fields.map((field) => field.key)).toEqual([
+      'dx',
+      'dy',
+    ]);
+    const free = createNumericInput('copy', 'copyDelta', undefined, { freeSketch: true });
+    expect(free.fields.map((field) => field.key)).toEqual(['dx', 'dy', 'dz']);
+  });
+
+  it('複写の既定は「横へ 20mm」(Enter 連打で隣に 1 つ増える、NFR-UX-4)', () => {
+    const state = createNumericInput('copy', 'copyDelta');
+    expect(state.fields.map((field) => field.source)).toEqual(['20', '0']);
+  });
+
+  it('直線配列は 2 段。1 段目を決めると閉じずに 2 段目が開く', () => {
+    const first = createNumericInput('linearArray', 'linearArrayDirection');
+    expect(first.fields.map((field) => field.key)).toEqual(['angle', 'spacing']);
+    const transition = commitNumericInput(first);
+    expect(transition.kind).toBe('open');
+    if (transition.kind !== 'open') {
+      return;
+    }
+    expect(transition.state.step).toBe('linearArrayCount');
+    expect(transition.state.fields.map((field) => field.key)).toEqual(['count']);
+    expect(transition.state.fields[0].source).toBe('3');
+  });
+
+  it('直線配列の 2 段目の確定に、1 段目の向き・間隔が持ち越される', () => {
+    const first = reduceNumericInput(
+      reduceNumericInput(createNumericInput('linearArray', 'linearArrayDirection'), {
+        type: 'edit',
+        index: 0,
+        source: '90',
+      }),
+      { type: 'edit', index: 1, source: '12' },
+    );
+    const opened = commitNumericInput(first);
+    if (opened.kind !== 'open') {
+      throw new Error('2 段目が開いていません');
+    }
+    const committed = expectEditCommitted(commitNumericInput(opened.state));
+    expect(committed.commit.tool).toBe('linearArray');
+    expect(committed.commit.step).toBe('linearArrayCount');
+    expect(committed.commit.values.angle?.value).toBe(90);
+    expect(committed.commit.values.spacing?.value).toBe(12);
+    expect(committed.commit.values.count?.value).toBe(3);
+  });
+
+  it('個数は 2 以上 100 以下しか受け付けない(NFR-UX-5)', () => {
+    const opened = commitNumericInput(createNumericInput('linearArray', 'linearArrayDirection'));
+    if (opened.kind !== 'open') {
+      throw new Error('2 段目が開いていません');
+    }
+    for (const source of ['1', '101']) {
+      expectBlocked(
+        commitNumericInput(reduceNumericInput(opened.state, { type: 'edit', index: 0, source })),
+      );
+    }
+    expect(opened.state.fields[0].range).toEqual({
+      min: 2,
+      minInclusive: true,
+      max: 100,
+      maxInclusive: true,
+    });
+  });
+
+  it('円形配列の 1 段目は座標を聞き、位置の決め方のタブが出る', () => {
+    expect(asksCoordinate('circularArrayCenter')).toBe(true);
+    // スケッチの座標の段(点・線分など)とは別の型なので、そちらの判定は偽のまま。
+    expect(isCoordinateStep('circularArrayCenter')).toBe(false);
+    const state = createNumericInput('circularArray', 'circularArrayCenter');
+    expect(state.fields.map((field) => field.key)).toEqual(['x', 'y', 'z']);
+  });
+
+  it('円形配列の 2 段目は角度・個数と「全周」。既定は全周・4 個', () => {
+    const opened = commitNumericInput(createNumericInput('circularArray', 'circularArrayCenter'));
+    if (opened.kind !== 'open') {
+      throw new Error('2 段目が開いていません');
+    }
+    expect(opened.state.step).toBe('circularArrayShape');
+    expect(opened.state.fields.map((field) => field.key)).toEqual(['angle', 'count']);
+    expect(opened.state.fields[1].source).toBe('4');
+    expect(opened.state.toggles.map((toggle) => toggle.key)).toEqual([
+      'fullCircle',
+      'construction',
+    ]);
+    expect(toggleValueOf(opened.state, 'fullCircle')).toBe(true);
+  });
+
+  it('円形配列の確定に、1 段目で入れた中心が写る', () => {
+    const center = reduceNumericInput(
+      createNumericInput('circularArray', 'circularArrayCenter'),
+      { type: 'setValues', values: [20, 30, 0] },
+    );
+    const opened = commitNumericInput(center);
+    if (opened.kind !== 'open') {
+      throw new Error('2 段目が開いていません');
+    }
+    const committed = expectEditCommitted(commitNumericInput(opened.state));
+    expect(committed.commit.tool).toBe('circularArray');
+    expect(committed.commit.flags.fullCircle).toBe(true);
+    const coordinate = committed.commit.coordinate;
+    if (coordinate?.mode !== 'absolute') {
+      throw new Error('中心が絶対座標として写っていません');
+    }
+    expect([coordinate.x.value, coordinate.y.value, coordinate.z.value]).toEqual([20, 30, 0]);
+  });
+
+  it('ミラー・複写は 1 段で終わり、確定したら必ず閉じる(§2.5)', () => {
+    for (const step of ['mirrorBasis', 'copyDelta'] as const) {
+      const committed = expectEditCommitted(commitNumericInput(createNumericInput('mirror', step)));
+      expect(nextNumericInput(committed.state, true), step).toBeNull();
+      expect(nextNumericInput(committed.state, false), step).toBeNull();
+    }
+  });
+
+  it('ミラーの確定に、鏡にするものの選択肢が写る', () => {
+    const state = chooseNumericInput(
+      createNumericInput('mirror', 'mirrorBasis', undefined, {
+        mirrorAxes: { planeAxes: true, selectedLine: true },
+      }),
+      'mirrorBasis',
+      'line',
+    );
+    const committed = expectEditCommitted(commitNumericInput(state));
+    expect(committed.commit.tool).toBe('mirror');
+    expect(committed.commit.choices.mirrorBasis).toBe('line');
+    expect(committed.commit.flags.construction).toBe(false);
+  });
+
+  it('見出し・説明・札はすべて ja.json のキーで返す(NFR-MA-5)', () => {
+    for (const step of COPY_STEPS) {
+      const state = createNumericInput('mirror', step, undefined, {
+        mirrorAxes: { planeAxes: true, selectedLine: true },
+      });
+      expect(MESSAGE_KEYS, step).toContain(STEP_TITLE_KEYS[step]);
+      for (const field of state.fields) {
+        expect(MESSAGE_KEYS, field.key).toContain(field.labelKey);
+        expect(MESSAGE_KEYS, field.key).toContain(field.tooltipKey);
+      }
+      for (const toggle of state.toggles) {
+        expect(MESSAGE_KEYS, toggle.key).toContain(toggle.labelKey);
+      }
+      for (const choice of state.choices) {
+        expect(MESSAGE_KEYS, choice.key).toContain(choice.labelKey);
+        for (const option of choice.options) {
+          expect(numericChoiceOptionLabel(option).length).toBeGreaterThan(0);
+        }
+      }
     }
   });
 });

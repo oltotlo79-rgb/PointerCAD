@@ -42,6 +42,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: 'オフセット・トリム・延長',
     path: 'docs/ja/edit-curves.md',
   },
+  {
+    id: 'copy-array',
+    title: 'ミラー・複写・並べる',
+    path: 'docs/ja/copy-array.md',
+  },
   { id: 'snap', title: '点にぴったり合わせる(吸着)', path: 'docs/ja/snap.md' },
   { id: 'face-and-color', title: '面を張る・色を変える', path: 'docs/ja/face-and-color.md' },
   { id: 'edit-sketch', title: 'かいたものを直す', path: 'docs/ja/edit-sketch.md' },

@@ -144,8 +144,31 @@ function commitCoordinate(
       return { document: next, pendingStart: chaining ? continueFrom(id) : null };
     }
 
+    case 'circleCenter':
+    case 'twoPointArcStart':
+    case 'twoPointArcEnd':
+    case 'rectangleCorner1':
+    case 'rectangleCorner2':
+    case 'polygonCenter':
+    case 'slotCenter1':
+    case 'slotCenter2':
+    case 'ellipseCenter':
+    case 'splinePoint':
+      // P4 の新しい図形(FR-314〜318、FR-326)。段の定義はタスク11 で入ったが、履歴へ積むのは
+      // タスク12 の shapeCommands.ts の受け持ちなので、ここでは何も変えない。
+      return { document, pendingStart };
+
     case 'arcShape':
     case 'pointArrayShape':
+    case 'pointArrayGridColumns':
+    case 'circleRadius':
+    case 'twoPointArcRadius':
+    case 'polygonShape':
+    case 'slotShape':
+    case 'ellipseShape':
+    case 'ellipseAngles':
+    case 'ellipseArcAngles':
+    case 'splineShape':
       // 座標ではなく欄の値を聞く段階。ここへは来ない。
       return { document, pendingStart };
   }
@@ -202,11 +225,34 @@ function commitShape(
       return { document: next, pendingStart: null };
     }
 
+    case 'pointArrayGridColumns':
+    case 'circleRadius':
+    case 'twoPointArcRadius':
+    case 'polygonShape':
+    case 'slotShape':
+    case 'ellipseShape':
+    case 'ellipseAngles':
+    case 'ellipseArcAngles':
+    case 'splineShape':
+      // P4 の新しい図形(FR-314〜318、FR-326、FR-327)。履歴へ積むのはタスク12 の
+      // shapeCommands.ts の受け持ちなので、ここでは何も変えない。
+      return { document, pendingStart };
+
     case 'point':
     case 'lineStart':
     case 'lineEnd':
     case 'arcCenter':
     case 'pointArrayBase':
+    case 'circleCenter':
+    case 'twoPointArcStart':
+    case 'twoPointArcEnd':
+    case 'rectangleCorner1':
+    case 'rectangleCorner2':
+    case 'polygonCenter':
+    case 'slotCenter1':
+    case 'slotCenter2':
+    case 'ellipseCenter':
+    case 'splinePoint':
       // 座標を聞く段階。ここへは来ない。
       return { document, pendingStart };
   }

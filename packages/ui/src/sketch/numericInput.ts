@@ -17,6 +17,14 @@
  * P3 で選択肢(NumericChoice)を「1つだけ」から「配列」へ広げた(§2.11)。
  * ねじ穴は「呼び」と「系列」の2つ、C面取りは「決め方」1つ、パターンは「向き/軸」1つを持つため。
  * P1・P2 の段の振る舞いは1つも変えていない(既存の検査はそのまま緑)。
+ *
+ * P4 タスク11 で新しい図形(円・2点+半径の円弧・矩形・正多角形・長穴・楕円・スプライン)の段と、
+ * 点列の並べ方(直線/円周/格子)の選択肢、構築線のつまみを足した
+ * (計画書 docs/plans/P4-スケッチ拡張.md タスク11、FR-314〜318 / FR-320 / FR-326 / FR-327)。
+ *
+ * P4 の新しい段は**欄を1段あたり2個まで**にする(統括の指示。NFR-UX-2「その場で」を保つため、
+ * 欄が3個以上になる道具は段を分ける)。既存の P1 の段(円弧の形・点列の並べ方)は3欄のまま
+ * 変えない。構築線(FR-320)は段を増やさず、要素を確定する最後の段のつまみとして持たせる。
  */
 
 import {
@@ -40,8 +48,12 @@ import {
   DEFAULT_SPRING_WIRE_DIAMETER_MM,
   DEFAULT_THREAD_DESIGNATION,
   MAX_PATTERN_COUNT,
+  MAX_POINT_ARRAY_COUNT,
+  MAX_SPLINE_POINTS,
   MAX_SPRING_TURNS,
   METRIC_THREAD_DESIGNATIONS,
+  MIN_CLOSED_SPLINE_POINTS,
+  MIN_SPLINE_POINTS,
   type ChamferSize,
   type CoordinateInput,
   type PointReference,
@@ -74,8 +86,26 @@ export type SolidToolId =
   /** ばね(FR-414)。2段で聞く(§2.11)。 */
   | 'spring';
 
+/**
+ * P4 で足す新しい図形の道具(FR-314〜318、FR-326)。
+ *
+ * 既存の `SketchToolId` へ足さないのは、`SketchToolId` がツールバーの「基本」区画の並び
+ * (`Toolbar.tsx` の `SKETCH_TOOLS` と `FIRST_STEP`)と1対1に結び付いているため。
+ * 新しい図形は タスク32 で畳んだ「作図」の一覧へ入るので、別の型にして区画の対応を崩さない。
+ */
+export type ShapeToolId =
+  /** 円(中心+半径、FR-326)。model は既存の `arc` の全周として保存する。 */
+  | 'circle'
+  /** 2 点+半径の円弧(FR-326)。中心は 2 点と半径から求める(§0.a-0.18)。 */
+  | 'twoPointArc'
+  | 'rectangle'
+  | 'polygon'
+  | 'slot'
+  | 'ellipse'
+  | 'spline';
+
 /** ポップアップを開ける道具。スケッチの道具より広い。 */
-export type NumericInputToolId = SketchToolId | SolidToolId;
+export type NumericInputToolId = SketchToolId | SolidToolId | ShapeToolId;
 
 /** 座標の指定方法(FR-301〜303)。 */
 export type CoordinateMode = 'absolute' | 'relative' | 'polar';
@@ -86,10 +116,47 @@ export type CoordinateNumericInputStep =
   | 'lineStart'
   | 'lineEnd'
   | 'arcCenter'
-  | 'pointArrayBase';
+  | 'pointArrayBase'
+  /** 円の中心(FR-326)。 */
+  | 'circleCenter'
+  /** 2 点+半径の円弧の 1 点目・2 点目(FR-326)。 */
+  | 'twoPointArcStart'
+  | 'twoPointArcEnd'
+  /** 矩形の対角 2 点(FR-314)。 */
+  | 'rectangleCorner1'
+  | 'rectangleCorner2'
+  /** 正多角形の中心(FR-315)。 */
+  | 'polygonCenter'
+  /** 長穴の 2 つの中心(FR-316)。 */
+  | 'slotCenter1'
+  | 'slotCenter2'
+  /** 楕円の中心(FR-318)。 */
+  | 'ellipseCenter'
+  /**
+   * スプラインの通過点・制御点(FR-317)。確定するたびに同じ段が開き直り、点が積み上がる
+   * (下書きは `SplineDraft`。積んだ点を曲線にするのは `splineFinishStateFrom` が開く
+   * `splineShape` の段)。
+   */
+  | 'splinePoint';
 
-/** 座標ではなく形の値を聞く段階(FR-305、FR-308)。 */
-export type ShapeNumericInputStep = 'arcShape' | 'pointArrayShape';
+/** 座標ではなく形の値を聞く段階(FR-305、FR-308、P4 で FR-314〜318 / FR-326 / FR-327 を追加)。 */
+export type ShapeNumericInputStep =
+  | 'arcShape'
+  | 'pointArrayShape'
+  /** 格子状の点列の 2 段目(列の間隔・列数、FR-327)。 */
+  | 'pointArrayGridColumns'
+  | 'circleRadius'
+  | 'twoPointArcRadius'
+  | 'polygonShape'
+  | 'slotShape'
+  /** 楕円の長半径・短半径(FR-318)。 */
+  | 'ellipseShape'
+  /** 楕円の傾きと、「一部だけ(楕円弧)」のつまみ(FR-318)。 */
+  | 'ellipseAngles'
+  /** 楕円弧の開始角・終了角(FR-318)。「一部だけ」を入にしたときだけ通る。 */
+  | 'ellipseArcAngles'
+  /** スプラインの決め方(通過点/制御点・閉じる・構築線)。欄は持たない(FR-317)。 */
+  | 'splineShape';
 
 /** スケッチの段階。確定結果 NumericInputCommit の step はここに限る。 */
 export type SketchNumericInputStep = CoordinateNumericInputStep | ShapeNumericInputStep;
@@ -154,7 +221,16 @@ export type NumericToggleKey =
   | 'through'
   | 'modeledThread'
   | 'patternSymmetric'
-  | 'fullCircle';
+  | 'fullCircle'
+  /**
+   * 構築線にするか(FR-320)。段を増やさず、要素を確定する最後の段へ付ける
+   * (線分・円弧・円・2点+半径の円弧・矩形・正多角形・長穴・楕円・スプライン)。既定は切。
+   */
+  | 'construction'
+  /** 楕円を一部だけ(楕円弧)にするか(FR-318)。既定は切=全周。 */
+  | 'ellipseArc'
+  /** スプラインの最後の点から最初の点へ戻してつなぐか(FR-317)。既定は切。 */
+  | 'splineClosed';
 
 export interface NumericToggle {
   readonly key: NumericToggleKey;
@@ -177,7 +253,15 @@ export type NumericChoiceKey =
   | 'chamferMode'
   | 'patternDirection'
   | 'springHandedness'
-  | 'springDerived';
+  | 'springDerived'
+  /** 正多角形の半径の測り方(外接=頂点まで / 内接=辺まで、FR-315)。 */
+  | 'polygonRadiusMode'
+  /** 点列の並べ方(直線 / 円周 / 格子、FR-327)。選ぶと欄の並びが変わる。 */
+  | 'pointArrayLayout'
+  /** スプラインの点の使い方(通過点 / 制御点、FR-317)。 */
+  | 'splineMode'
+  /** 2 点+半径の円弧が、進む向きのどちら側へふくらむか(FR-326)。 */
+  | 'arcBulge';
 
 export interface NumericChoiceOption {
   readonly value: string;
@@ -278,7 +362,13 @@ const COORDINATE_FIELDS: Readonly<Record<CoordinateMode, readonly NumericFieldDe
   ],
 };
 
-const SHAPE_FIELDS: Readonly<Record<ShapeNumericInputStep, readonly NumericFieldDefinition[]>> = {
+/**
+ * P1 からある形の段の欄。P4 で足した段は `sketchShapeFieldDefinitionsFor` が返すので、
+ * ここは `arcShape` / `pointArrayShape` の 2 つだけを持つ(P1 の欄は 1 つも変えない)。
+ */
+const SHAPE_FIELDS: Readonly<
+  Record<'arcShape' | 'pointArrayShape', readonly NumericFieldDefinition[]>
+> = {
   arcShape: [
     { key: 'radius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.radius', unit: 'mm', defaultSource: '10' },
     { key: 'startAngle', labelKey: 'numericInput.field.startAngle', tooltipKey: 'numericInput.tooltip.startAngle', unit: 'degree', defaultSource: '0' },
@@ -327,6 +417,31 @@ const SPRING_TURNS_RANGE: NumericFieldRange = {
   min: 0,
   minInclusive: false,
   max: MAX_SPRING_TURNS,
+  maxInclusive: true,
+};
+
+/**
+ * 3 以上(正多角形の辺数、FR-315)。整数かどうかはここでは見ない
+ * (`NumericFieldRange` は上下限しか表せないため。整数の判定は model の解決が受け持つ
+ *  — `resolveSketch.ts` の「辺の数は 3 以上にしてください。」。P3 のパターンの個数と同じ分担)。
+ */
+const POLYGON_SIDES_RANGE: NumericFieldRange = {
+  min: 3,
+  minInclusive: true,
+  max: null,
+  maxInclusive: false,
+};
+
+/**
+ * 1 以上 MAX_POINT_ARRAY_COUNT 以下(円周上・格子の点の個数、FR-327)。
+ * model の `MIN_POINT_ARRAY_COUNT` / `MAX_POINT_ARRAY_COUNT` と同じ範囲にする。
+ * P1 からある直線の点列の「個数」の欄には範囲を足さない(既存の振る舞いを変えないため。
+ * 検査「P1 の欄には範囲の縛りを足していない」の趣旨に合わせる)。
+ */
+const POINT_ARRAY_COUNT_RANGE: NumericFieldRange = {
+  min: 1,
+  minInclusive: true,
+  max: MAX_POINT_ARRAY_COUNT,
   maxInclusive: true,
 };
 
@@ -467,6 +582,139 @@ function springLengthFieldDefinitions(derived: string | undefined): readonly Num
   return SPRING_LENGTH_FIELD_DEFS.filter((definition) => definition.key !== excludedKey);
 }
 
+/* ---- P4 タスク11: 新しい図形の欄(FR-314〜318、FR-326、FR-327) ---- */
+
+/** 正多角形の既定の辺数(FR-315。六角形が最もよく使われる)。 */
+export const DEFAULT_POLYGON_SIDES = 6;
+
+/**
+ * 格子状の点列の行・列の向き(度、FR-327)。統括の指示で、格子の段は「間隔と個数」だけを
+ * 聞いて欄を 1 段 2 個までに収める。向きは作図面の第1軸(行)とそれに直交する向き(列)へ
+ * 固定し、傾けたいときはプロパティ(タスク33)で `rowAzimuth` / `colAzimuth` を直す。
+ * model の `resolveGridPointArray` は 0 度を作図面の第1軸、90 度を第2軸として解決する。
+ */
+export const DEFAULT_GRID_ROW_AZIMUTH_DEGREES = 0;
+export const DEFAULT_GRID_COLUMN_AZIMUTH_DEGREES = 90;
+
+/** 円の半径(FR-326)。中心は前の段(circleCenter)で座標として聞く。 */
+const CIRCLE_RADIUS_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'radius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.circleRadius', unit: 'mm', defaultSource: '10', range: POSITIVE },
+];
+
+/**
+ * 2 点+半径の円弧の半径(FR-326)。2 点の間の長さの半分より大きくないと中心が求まらないが、
+ * その判定は 2 点が決まってからでないとできないので、ここでは「0 より大きい」だけを見る
+ * (2 点との突き合わせは `twoPointArcRadiusRejection`)。
+ */
+const TWO_POINT_ARC_RADIUS_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'radius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.twoPointArcRadius', unit: 'mm', defaultSource: '10', range: POSITIVE },
+];
+
+/** 正多角形の辺数と半径(FR-315)。半径の意味は選択肢 polygonRadiusMode で切り替える。 */
+const POLYGON_SHAPE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'sides', labelKey: 'numericInput.field.sides', tooltipKey: 'numericInput.tooltip.sides', unit: 'count', defaultSource: String(DEFAULT_POLYGON_SIDES), range: POLYGON_SIDES_RANGE },
+  { key: 'radius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.polygonRadius', unit: 'mm', defaultSource: '10', range: POSITIVE },
+];
+
+/** 長穴の幅(FR-316)。2 つの中心は前の 2 段で聞く。 */
+const SLOT_SHAPE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'width', labelKey: 'numericInput.field.width', tooltipKey: 'numericInput.tooltip.slotWidth', unit: 'mm', defaultSource: '10', range: POSITIVE },
+];
+
+/**
+ * 楕円の長半径・短軸半径(FR-318)。長半径 ≥ 短半径 の突き合わせは欄をまたぐので
+ * `NumericFieldRange` では表せない。model の解決が「長軸の半径は短軸の半径より
+ * 大きくしてください。」で断る(resolveSketch.ts)。
+ */
+const ELLIPSE_SHAPE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'majorRadius', labelKey: 'numericInput.field.majorRadius', tooltipKey: 'numericInput.tooltip.majorRadius', unit: 'mm', defaultSource: '20', range: POSITIVE },
+  { key: 'minorRadius', labelKey: 'numericInput.field.minorRadius', tooltipKey: 'numericInput.tooltip.minorRadius', unit: 'mm', defaultSource: '10', range: POSITIVE },
+];
+
+/** 楕円の傾き(FR-318)。負の角度も向きとして意味を持つので範囲は付けない(円弧の角度と同じ)。 */
+const ELLIPSE_ANGLE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'rotation', labelKey: 'numericInput.field.rotation', tooltipKey: 'numericInput.tooltip.rotation', unit: 'degree', defaultSource: '0' },
+];
+
+/**
+ * 楕円弧の開始角・終了角(FR-318)。長軸から測った方位角(度)で、model が保存するのも方位角
+ * (タスク5 の申し送り)。既定は 0 と 360 で、そのまま Enter を押せば全周と同じ形になる。
+ */
+const ELLIPSE_ARC_ANGLE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'startAngle', labelKey: 'numericInput.field.startAngle', tooltipKey: 'numericInput.tooltip.ellipseStartAngle', unit: 'degree', defaultSource: '0' },
+  { key: 'endAngle', labelKey: 'numericInput.field.endAngle', tooltipKey: 'numericInput.tooltip.ellipseEndAngle', unit: 'degree', defaultSource: '360' },
+];
+
+/**
+ * 円周上の点列(FR-327)。開始角は作図面の第1軸に固定(model の PointArrayLayout どおり)。
+ *
+ * 個数の欄の名前を直線の `count` と分けて `circularCount` にしてある。同じ名前だと
+ * `mergeFieldValues` が直線の値をそのまま引き継いでしまい(欄の並びが変わっても同じ名前の
+ * 欄は値を保つ規則)、円周の既定値が画面に一度も出ないため。行・列の `rowCount` /
+ * `colCount` と同じ考え方で、並べ方ごとに自分の既定値から始まるようにする(NFR-UX-4)。
+ */
+const POINT_ARRAY_CIRCULAR_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'radius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.pointArrayRadius', unit: 'mm', defaultSource: '10', range: POSITIVE },
+  { key: 'circularCount', labelKey: 'numericInput.field.count', tooltipKey: 'numericInput.tooltip.count', unit: 'count', defaultSource: '6', range: POINT_ARRAY_COUNT_RANGE },
+];
+
+/** 格子状の点列の 1 段目(行の間隔・行数、FR-327)。 */
+const POINT_ARRAY_GRID_ROW_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'rowSpacing', labelKey: 'numericInput.field.rowSpacing', tooltipKey: 'numericInput.tooltip.rowSpacing', unit: 'mm', defaultSource: '10', range: POSITIVE },
+  { key: 'rowCount', labelKey: 'numericInput.field.rowCount', tooltipKey: 'numericInput.tooltip.rowCount', unit: 'count', defaultSource: '3', range: POINT_ARRAY_COUNT_RANGE },
+];
+
+/** 格子状の点列の 2 段目(列の間隔・列数、FR-327)。 */
+const POINT_ARRAY_GRID_COLUMN_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'colSpacing', labelKey: 'numericInput.field.colSpacing', tooltipKey: 'numericInput.tooltip.colSpacing', unit: 'mm', defaultSource: '10', range: POSITIVE },
+  { key: 'colCount', labelKey: 'numericInput.field.colCount', tooltipKey: 'numericInput.tooltip.colCount', unit: 'count', defaultSource: '3', range: POINT_ARRAY_COUNT_RANGE },
+];
+
+/** 欄を持たない段(スプラインの決め方)。選択肢とつまみだけで決める。 */
+const NO_FIELDS: readonly NumericFieldDefinition[] = [];
+
+/** 点列の並べ方ごとの欄。直線は P1 のまま(欄も既定値も変えない)。 */
+function pointArrayFieldDefinitions(layout: string | undefined): readonly NumericFieldDefinition[] {
+  if (layout === 'circular') {
+    return POINT_ARRAY_CIRCULAR_FIELDS;
+  }
+  if (layout === 'grid') {
+    return POINT_ARRAY_GRID_ROW_FIELDS;
+  }
+  return SHAPE_FIELDS.pointArrayShape;
+}
+
+/** 形の段(座標を聞かない段)の欄。点列だけが選択肢(並べ方)で欄の並びを変える。 */
+function sketchShapeFieldDefinitionsFor(
+  step: ShapeNumericInputStep,
+  choices: readonly NumericChoice[],
+): readonly NumericFieldDefinition[] {
+  switch (step) {
+    case 'arcShape':
+      return SHAPE_FIELDS.arcShape;
+    case 'pointArrayShape':
+      return pointArrayFieldDefinitions(choiceValueFrom(choices, 'pointArrayLayout'));
+    case 'pointArrayGridColumns':
+      return POINT_ARRAY_GRID_COLUMN_FIELDS;
+    case 'circleRadius':
+      return CIRCLE_RADIUS_FIELDS;
+    case 'twoPointArcRadius':
+      return TWO_POINT_ARC_RADIUS_FIELDS;
+    case 'polygonShape':
+      return POLYGON_SHAPE_FIELDS;
+    case 'slotShape':
+      return SLOT_SHAPE_FIELDS;
+    case 'ellipseShape':
+      return ELLIPSE_SHAPE_FIELDS;
+    case 'ellipseAngles':
+      return ELLIPSE_ANGLE_FIELDS;
+    case 'ellipseArcAngles':
+      return ELLIPSE_ARC_ANGLE_FIELDS;
+    case 'splineShape':
+      return NO_FIELDS;
+  }
+}
+
 /** 段ごとの静的な欄の並び。動的な段(chamferSize・springLength)はここを通らない。 */
 function solidFieldDefinitionsFor(
   step: SolidNumericInputStep,
@@ -507,6 +755,25 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   arcShape: 'numericInput.title.arc',
   pointArrayBase: 'numericInput.title.pointArrayBase',
   pointArrayShape: 'numericInput.title.pointArray',
+  pointArrayGridColumns: 'numericInput.title.pointArrayGridColumns',
+  circleCenter: 'numericInput.title.circleCenter',
+  circleRadius: 'numericInput.title.circleRadius',
+  twoPointArcStart: 'numericInput.title.twoPointArcStart',
+  twoPointArcEnd: 'numericInput.title.twoPointArcEnd',
+  twoPointArcRadius: 'numericInput.title.twoPointArcRadius',
+  rectangleCorner1: 'numericInput.title.rectangleCorner1',
+  rectangleCorner2: 'numericInput.title.rectangleCorner2',
+  polygonCenter: 'numericInput.title.polygonCenter',
+  polygonShape: 'numericInput.title.polygonShape',
+  slotCenter1: 'numericInput.title.slotCenter1',
+  slotCenter2: 'numericInput.title.slotCenter2',
+  slotShape: 'numericInput.title.slotShape',
+  ellipseCenter: 'numericInput.title.ellipseCenter',
+  ellipseShape: 'numericInput.title.ellipseShape',
+  ellipseAngles: 'numericInput.title.ellipseAngles',
+  ellipseArcAngles: 'numericInput.title.ellipseArcAngles',
+  splinePoint: 'numericInput.title.splinePoint',
+  splineShape: 'numericInput.title.splineShape',
   extrudeDistance: 'numericInput.title.extrude',
   revolveAngle: 'numericInput.title.revolve',
   sewTolerance: 'numericInput.title.sew',
@@ -529,6 +796,25 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'arcShape',
   'pointArrayBase',
   'pointArrayShape',
+  'pointArrayGridColumns',
+  'circleCenter',
+  'circleRadius',
+  'twoPointArcStart',
+  'twoPointArcEnd',
+  'twoPointArcRadius',
+  'rectangleCorner1',
+  'rectangleCorner2',
+  'polygonCenter',
+  'polygonShape',
+  'slotCenter1',
+  'slotCenter2',
+  'slotShape',
+  'ellipseCenter',
+  'ellipseShape',
+  'ellipseAngles',
+  'ellipseArcAngles',
+  'splinePoint',
+  'splineShape',
   'extrudeDistance',
   'revolveAngle',
   'sewTolerance',
@@ -555,6 +841,30 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
   circularPattern: 'circularPattern',
   spring: 'springShape',
 };
+
+/**
+ * P4 の新しい図形の道具が最初に開く段(FR-314〜318、FR-326)。
+ * ツールバー(タスク32)とビューポートの操作(タスク12)はここから開く。
+ * `SOLID_TOOL_STEPS` と同じ役目で、道具の一覧の正本でもある(`isShapeTool` がこの表を使う)。
+ */
+export const SHAPE_TOOL_STEPS: Readonly<Record<ShapeToolId, NumericInputStep>> = {
+  circle: 'circleCenter',
+  twoPointArc: 'twoPointArcStart',
+  rectangle: 'rectangleCorner1',
+  polygon: 'polygonCenter',
+  slot: 'slotCenter1',
+  ellipse: 'ellipseCenter',
+  spline: 'splinePoint',
+};
+
+/**
+ * P4 の新しい図形の道具かどうか。一覧をここへ書き出さず `SHAPE_TOOL_STEPS` から引く
+ * (P3 の `isSolidTool` が一覧の二重管理で追随漏れを起こした前例に合わせる、
+ *  `attachSketchInteraction.ts` の注釈)。
+ */
+export function isShapeTool(tool: NumericInputToolId): tool is ShapeToolId {
+  return tool in SHAPE_TOOL_STEPS;
+}
 
 /** 段階から道具を引く。確定結果へ入れる道具名の正本。ばねは springShape / springLength とも spring。 */
 const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
@@ -586,6 +896,47 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   springLength: [],
 };
 
+/**
+ * スケッチの段のつまみ(P4 タスク11)。
+ *
+ * 構築線(FR-320)は**要素が履歴へ積まれる最後の段**にだけ置く。前の段に置いても、
+ * 段ごとに状態を作り直す作りなので確定のときに値が残らないため
+ * (矩形は 2 つ目の角、長穴は幅、スプラインは決め方の段が「最後」になる)。
+ * P1 の段のうち `lineEnd` と `arcShape` にもここで構築線が付く(FR-320 の主な使い道が
+ * 補助の線・円であり、新しい図形だけに付けても要件を満たせないため)。
+ */
+const SKETCH_STEP_TOGGLE_KEYS: Readonly<
+  Record<SketchNumericInputStep, readonly NumericToggleKey[]>
+> = {
+  point: [],
+  lineStart: [],
+  lineEnd: ['construction'],
+  arcCenter: [],
+  arcShape: ['construction'],
+  pointArrayBase: [],
+  pointArrayShape: [],
+  pointArrayGridColumns: [],
+  circleCenter: [],
+  circleRadius: ['construction'],
+  twoPointArcStart: [],
+  twoPointArcEnd: [],
+  twoPointArcRadius: ['construction'],
+  rectangleCorner1: [],
+  rectangleCorner2: ['construction'],
+  polygonCenter: [],
+  polygonShape: ['construction'],
+  slotCenter1: [],
+  slotCenter2: [],
+  slotShape: ['construction'],
+  ellipseCenter: [],
+  ellipseShape: [],
+  // 「一部だけ」を入にすると、次に開始角・終了角の段(ellipseArcAngles)へ進む。
+  ellipseAngles: ['ellipseArc', 'construction'],
+  ellipseArcAngles: [],
+  splinePoint: [],
+  splineShape: ['splineClosed', 'construction'],
+};
+
 /** つまみの見出し。 */
 export const TOGGLE_LABEL_KEYS: Readonly<Record<NumericToggleKey, MessageKey>> = {
   reversed: 'numericInput.toggle.reversed',
@@ -594,6 +945,9 @@ export const TOGGLE_LABEL_KEYS: Readonly<Record<NumericToggleKey, MessageKey>> =
   modeledThread: 'numericInput.toggle.modeledThread',
   patternSymmetric: 'numericInput.toggle.patternSymmetric',
   fullCircle: 'numericInput.toggle.fullCircle',
+  construction: 'numericInput.toggle.construction',
+  ellipseArc: 'numericInput.toggle.ellipseArc',
+  splineClosed: 'numericInput.toggle.splineClosed',
 };
 
 /**
@@ -607,6 +961,11 @@ const TOGGLE_DEFAULT_VALUES: Readonly<Record<NumericToggleKey, boolean>> = {
   modeledThread: false,
   patternSymmetric: false,
   fullCircle: true,
+  // 構築線・楕円弧・閉じたスプラインは、いずれも「ふつうはしないこと」なので既定は切
+  // (FR-320 の既定オフ、楕円は全周、スプラインは開いた曲線)。
+  construction: false,
+  ellipseArc: false,
+  splineClosed: false,
 };
 
 /** ワールドの X / Y / Z 軸(+選んだ線分)の選択肢。回転軸・円形パターン・ばねの軸で共用する。 */
@@ -712,9 +1071,77 @@ function springDerivedChoice(): NumericChoice {
   };
 }
 
+/**
+ * 正多角形の半径の測り方(FR-315)。既定は外接(頂点を通る)。
+ * 計画書タスク12 が「UI の既定値は 'circumscribed'(FR-315 の主要な指定方法)」と決めている。
+ */
+function polygonRadiusModeChoice(): NumericChoice {
+  return {
+    key: 'polygonRadiusMode',
+    labelKey: 'numericInput.choice.polygonRadiusMode',
+    value: 'circumscribed',
+    options: [
+      { value: 'circumscribed', labelKey: 'numericInput.polygonRadiusMode.circumscribed' },
+      { value: 'inscribed', labelKey: 'numericInput.polygonRadiusMode.inscribed' },
+    ],
+  };
+}
+
+/** 点列の並べ方(FR-327)。既定は直線(P1 からの振る舞いをそのまま既定にする)。 */
+function pointArrayLayoutChoice(): NumericChoice {
+  return {
+    key: 'pointArrayLayout',
+    labelKey: 'numericInput.choice.pointArrayLayout',
+    value: 'linear',
+    options: [
+      { value: 'linear', labelKey: 'numericInput.pointArrayLayout.linear' },
+      { value: 'circular', labelKey: 'numericInput.pointArrayLayout.circular' },
+      { value: 'grid', labelKey: 'numericInput.pointArrayLayout.grid' },
+    ],
+  };
+}
+
+/** スプラインの点の使い方(FR-317)。既定は通過点(指定した点を必ず通る)。 */
+function splineModeChoice(): NumericChoice {
+  return {
+    key: 'splineMode',
+    labelKey: 'numericInput.choice.splineMode',
+    value: 'interpolate',
+    options: [
+      { value: 'interpolate', labelKey: 'numericInput.splineMode.interpolate' },
+      { value: 'control', labelKey: 'numericInput.splineMode.control' },
+    ],
+  };
+}
+
+/**
+ * 2 点+半径の円弧のふくらむ向き(FR-326)。1 点目から 2 点目へ進む向きに対して
+ * 左右どちらへふくらむかで、2 つある中心のどちらを採るかが決まる(§0.a-0.18)。
+ * どちらを選んでも短い方の弧(劣弧)になるので、既定は左でよい(NFR-UX-4)。
+ */
+function arcBulgeChoice(): NumericChoice {
+  return {
+    key: 'arcBulge',
+    labelKey: 'numericInput.choice.arcBulge',
+    value: 'left',
+    options: [
+      { value: 'left', labelKey: 'numericInput.arcBulge.left' },
+      { value: 'right', labelKey: 'numericInput.arcBulge.right' },
+    ],
+  };
+}
+
 /** 段階ごとの選択肢の並び。持たない段は空配列。 */
 function choicesFor(step: NumericInputStep, options: NumericInputOptions): readonly NumericChoice[] {
   switch (step) {
+    case 'polygonShape':
+      return [polygonRadiusModeChoice()];
+    case 'pointArrayShape':
+      return [pointArrayLayoutChoice()];
+    case 'splineShape':
+      return [splineModeChoice()];
+    case 'twoPointArcRadius':
+      return [arcBulgeChoice()];
     case 'revolveAngle':
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
     case 'threadSize':
@@ -771,15 +1198,32 @@ export const NUMERIC_INPUT_KEYS: Readonly<
 /** 相対・極の基準点の既定。直前に作った点からの続きが自然(FR-302、FR-307)。 */
 export const DEFAULT_COORDINATE_BASE: PointReference = { kind: 'previous' };
 
+/**
+ * 座標を聞く段の一覧。`Record<CoordinateNumericInputStep, true>` にすることで、
+ * 段を足したときにここを直し忘れると型検査が落ちる(P4 で段が 5 個から 15 個に増えたため、
+ * `||` の並びから表へ変えた)。
+ */
+const COORDINATE_STEPS: Readonly<Record<CoordinateNumericInputStep, true>> = {
+  point: true,
+  lineStart: true,
+  lineEnd: true,
+  arcCenter: true,
+  pointArrayBase: true,
+  circleCenter: true,
+  twoPointArcStart: true,
+  twoPointArcEnd: true,
+  rectangleCorner1: true,
+  rectangleCorner2: true,
+  polygonCenter: true,
+  slotCenter1: true,
+  slotCenter2: true,
+  ellipseCenter: true,
+  splinePoint: true,
+};
+
 /** 段階が座標を聞くものかどうか。円弧の半径・角度やソリッドの距離は座標モードを持たない。 */
 export function isCoordinateStep(step: NumericInputStep): step is CoordinateNumericInputStep {
-  return (
-    step === 'point' ||
-    step === 'lineStart' ||
-    step === 'lineEnd' ||
-    step === 'arcCenter' ||
-    step === 'pointArrayBase'
-  );
+  return step in COORDINATE_STEPS;
 }
 
 /** 段階がソリッドのものかどうか(P2 タスク19、P3 タスク24)。 */
@@ -799,9 +1243,20 @@ export function isSolidStep(step: NumericInputStep): step is SolidNumericInputSt
   );
 }
 
-/** 段階ごとの既定の座標モード。線分の終点だけは相対が自然(FR-307)。 */
+/**
+ * 既定を相対にする段(FR-307)。「直前に決めた点からの続き」で入れるほうが自然な 2 点目
+ * (線分の終点、矩形の対角、長穴の 2 つ目の中心、円弧の 2 点目)がこれに当たる。
+ */
+const RELATIVE_FIRST_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> = {
+  lineEnd: true,
+  twoPointArcEnd: true,
+  rectangleCorner2: true,
+  slotCenter2: true,
+};
+
+/** 段階ごとの既定の座標モード。2 点目を聞く段だけは相対が自然(FR-307)。 */
 export function defaultModeForStep(step: NumericInputStep): CoordinateMode {
-  return step === 'lineEnd' ? 'relative' : 'absolute';
+  return RELATIVE_FIRST_STEPS[step] === true ? 'relative' : 'absolute';
 }
 
 function definitionsFor(
@@ -812,13 +1267,10 @@ function definitionsFor(
   if (isSolidStep(step)) {
     return solidFieldDefinitionsFor(step, choices);
   }
-  if (step === 'arcShape') {
-    return SHAPE_FIELDS.arcShape;
+  if (isCoordinateStep(step)) {
+    return COORDINATE_FIELDS[mode];
   }
-  if (step === 'pointArrayShape') {
-    return SHAPE_FIELDS.pointArrayShape;
-  }
-  return COORDINATE_FIELDS[mode];
+  return sketchShapeFieldDefinitionsFor(step, choices);
 }
 
 function toFields(definitions: readonly NumericFieldDefinition[]): NumericField[] {
@@ -826,14 +1278,17 @@ function toFields(definitions: readonly NumericFieldDefinition[]): NumericField[
 }
 
 function togglesFor(step: NumericInputStep): readonly NumericToggle[] {
-  if (!isSolidStep(step)) {
-    return [];
-  }
-  return STEP_TOGGLE_KEYS[step].map((key) => ({
+  const keys = isSolidStep(step) ? STEP_TOGGLE_KEYS[step] : SKETCH_STEP_TOGGLE_KEYS[step];
+  return keys.map((key) => ({
     key,
     labelKey: TOGGLE_LABEL_KEYS[key],
     value: TOGGLE_DEFAULT_VALUES[key],
   }));
+}
+
+/** つまみの現在値。持たない段・持たないつまみは false 扱い(既定はすべて切のため)。 */
+export function toggleValueOf(state: NumericInputState, key: NumericToggleKey): boolean {
+  return state.toggles.find((toggle) => toggle.key === key)?.value ?? false;
 }
 
 /** ポップアップを開くときに外から渡せるもの。無くても既定で成り立つ(NFR-UX-4)。 */
@@ -875,6 +1330,17 @@ function springLengthStateFrom(state: NumericInputState): NumericInputState {
     ...next,
     carriedStage1: { fields: state.fields, choices: state.choices, axisLine: state.axisLine },
   };
+}
+
+/**
+ * スプラインの点を置き終えて「決め方」の段(splineShape)を開く(FR-317)。
+ *
+ * ばねの `springLengthStateFrom` と同じ役目だが、ばねと違って点の数が決まっていないので
+ * 段の遷移(`nextNumericInput`)からは開かない。タスク12 が「点を置き終えた」合図
+ * (ツールバーの決定・二重クリック等)を受けてここを呼ぶ。
+ */
+export function splineFinishStateFrom(state: NumericInputState): NumericInputState {
+  return createNumericInput(state.toolId, 'splineShape');
 }
 
 /** 焦点が当たれる場所。並びは「欄 → 選択肢(順に)→ つまみ」で、画面の並びと同じにする。 */
@@ -950,19 +1416,31 @@ function reindexFocusAfterFieldCountChange(
 }
 
 /**
- * 選択肢の値を更新したあと、欄の並びがその選択肢に依存する段(C面取り・ばねの長さ)だけ
+ * 選んだ値で欄の並びが変わる段(C面取り・ばねの長さ・P4 の点列の並べ方)。
+ * ここに無い段は選択肢を変えても欄が変わらない。
+ */
+const CHOICE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> = {
+  chamferSize: true,
+  springLength: true,
+  // 直線(角度・間隔・個数)/ 円周(半径・個数)/ 格子(行の間隔・行数)で欄が入れ替わる。
+  pointArrayShape: true,
+};
+
+/**
+ * 選択肢の値を更新したあと、欄の並びがその選択肢に依存する段(C面取り・ばねの長さ・点列)だけ
  * 欄を組み替える。ばねの長さは欄が常に2つのままなので焦点の位置(focusedIndex)は
- * 動かさなくてよいが、C面取りは「等距離」で欄が1つに減るため、欄の数が変わったときだけ
- * reindexFocusAfterFieldCountChange で輪の中の焦点を指し直す。
+ * 動かさなくてよいが、C面取りは「等距離」で欄が1つに減り、点列は直線(3欄)と円周・格子(2欄)で
+ * 数が変わるため、欄の数が変わったときだけ reindexFocusAfterFieldCountChange で
+ * 輪の中の焦点を指し直す。
  */
 function applyChoiceToFields(
   state: NumericInputState,
   choices: readonly NumericChoice[],
 ): NumericInputState {
-  if (state.step !== 'chamferSize' && state.step !== 'springLength') {
+  if (CHOICE_DEPENDENT_STEPS[state.step] !== true) {
     return { ...state, choices };
   }
-  const definitions = solidFieldDefinitionsFor(state.step, choices);
+  const definitions = definitionsFor(state.step, state.mode, choices);
   const fields = mergeFieldValues(state.fields, definitions);
   const focusedIndex =
     fields.length === state.fields.length
@@ -1088,6 +1566,123 @@ function choiceValueFrom(choices: readonly NumericChoice[], key: NumericChoiceKe
 /** 指定したつまみの現在値。持たない・見つからないときは null。 */
 export function choiceValueOf(state: NumericInputState, key: NumericChoiceKey): string | null {
   return choiceValueFrom(state.choices, key) ?? null;
+}
+
+/* ---- P4 タスク11: 2 点+半径の円弧(FR-326、統括の決定 §0.a-0.18) ---- */
+
+/** 断りの文へ長さを差し込むときの丸め(1μm 単位)。桁が伸びて読みにくくなるのを防ぐ。 */
+function lengthText(millimetres: number): string {
+  return String(Math.round(millimetres * 1000) / 1000);
+}
+
+/**
+ * 2 点の中点から、2 点+半径の円弧の中心までの距離(FR-326)。
+ *
+ * 中心は 2 点を結ぶ線分の垂直二等分線上にあり、弦の半分を h とすると
+ * 中点から √(半径² − h²) 進んだところにある(解は 2 つで、どちらを採るかは
+ * 「ふくらむ向き」の選択肢が決める)。半径が弦の半分より小さいと 2 点を通る円が
+ * 引けないので null を返す。
+ *
+ * 向きを持たない長さだけをここで受け持ち、作図面の中で実際の中心を組み立てるのは
+ * タスク12 の `shapeCommands.ts`(`arcCenterFromTwoPointsAndRadius`)。
+ */
+export function twoPointArcCenterOffset(chordLength: number, radius: number): number | null {
+  if (!Number.isFinite(chordLength) || !Number.isFinite(radius)) {
+    return null;
+  }
+  const half = chordLength / 2;
+  if (half <= 0 || radius < half) {
+    return null;
+  }
+  return Math.sqrt(radius * radius - half * half);
+}
+
+/**
+ * 2 点と半径で円弧が引けないときの断りの文(NFR-UX-5)。引けるなら null。
+ * 限界値(弦の半分)を差し込んだ文になるので ja.json のキー1つでは組み立てられない
+ * (`describeRange` と同じ事情)。見出しの語だけ ja.json から引く。
+ */
+export function twoPointArcRadiusRejection(chordLength: number, radius: number): string | null {
+  if (twoPointArcCenterOffset(chordLength, radius) !== null) {
+    return null;
+  }
+  if (!Number.isFinite(chordLength) || chordLength <= 0) {
+    return '2 点が同じ位置にあるので円弧になりません。';
+  }
+  const label = t('numericInput.field.radius');
+  return `${label}は 2 点の間の長さの半分(${lengthText(chordLength / 2)}mm)以上にしてください。`;
+}
+
+/* ---- P4 タスク11: スプラインの下書き(FR-317、計画書タスク11 の splineDraft) ---- */
+
+/**
+ * 置いた点をためておく下書き。
+ *
+ * スプラインだけは「クリックのたびに点を積み、最後にまとめて 1 本の曲線にする」進行なので、
+ * 「1 段 = 1 要素」の `NumericInputState` では表せない。どこへ置くか(ストアの欄)は
+ * タスク12 が決め、ここでは形と規則(足せるか・曲線にできるか)だけを純関数で持つ。
+ */
+export interface SplineDraft {
+  /** 置いた順がそのまま曲線の向きになる。 */
+  readonly points: readonly CoordinateInput[];
+  readonly mode: 'interpolate' | 'control';
+  readonly closed: boolean;
+}
+
+/** 道具を選んだ直後の下書き(点なし・通過点・開いた曲線)。 */
+export const EMPTY_SPLINE_DRAFT: SplineDraft = {
+  points: [],
+  mode: 'interpolate',
+  closed: false,
+};
+
+export type SplineDraftOutcome =
+  | { readonly ok: true; readonly draft: SplineDraft }
+  /** 断った理由。文言は限界値を差し込むのでここで組み立てる(`describeRange` と同じ事情)。 */
+  | { readonly ok: false; readonly reason: string };
+
+/** 点を 1 つ置く。上限(model の MAX_SPLINE_POINTS)を超えるときは断って下書きを変えない。 */
+export function appendSplinePoint(draft: SplineDraft, point: CoordinateInput): SplineDraftOutcome {
+  if (draft.points.length >= MAX_SPLINE_POINTS) {
+    return {
+      ok: false,
+      reason: `スプラインの点は ${String(MAX_SPLINE_POINTS)} 個までです。`,
+    };
+  }
+  return { ok: true, draft: { ...draft, points: [...draft.points, point] } };
+}
+
+/** 最後に置いた点を取り消す。点が無ければ同じ下書きをそのまま返す。 */
+export function removeLastSplinePoint(draft: SplineDraft): SplineDraft {
+  return draft.points.length === 0 ? draft : { ...draft, points: draft.points.slice(0, -1) };
+}
+
+export type SplineDraftCheck =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * 下書きを 1 本の曲線にできるか(FR-317)。下限・上限は model の `splineMath.ts` と同じ値を
+ * 使い、UI 側で数を持たない(開いた曲線は 2 点以上、閉じた曲線は 3 点以上、上限 100 点)。
+ */
+export function checkSplineDraft(draft: SplineDraft): SplineDraftCheck {
+  const count = draft.points.length;
+  if (draft.closed && count < MIN_CLOSED_SPLINE_POINTS) {
+    return {
+      ok: false,
+      reason: `閉じたスプラインには点が ${String(MIN_CLOSED_SPLINE_POINTS)} 個以上必要です。`,
+    };
+  }
+  if (!draft.closed && count < MIN_SPLINE_POINTS) {
+    return {
+      ok: false,
+      reason: `スプラインには点が ${String(MIN_SPLINE_POINTS)} 個以上必要です。`,
+    };
+  }
+  if (count > MAX_SPLINE_POINTS) {
+    return { ok: false, reason: `スプラインの点は ${String(MAX_SPLINE_POINTS)} 個までです。` };
+  }
+  return { ok: true };
 }
 
 export interface NumericFieldResult {
@@ -1240,9 +1835,40 @@ export function buildCoordinateInput(
   }
 }
 
+/** 点列の並べ方(FR-327)。model の `PointArrayLayout` の種類と同じ 3 つ。 */
+export type PointArrayLayoutChoice = 'linear' | 'circular' | 'grid';
+
+/**
+ * スケッチの段のつまみ(P4 タスク11)。持たない段では入らない。
+ * 確定を受けるタスク12 は `commit.flags.construction ?? false` のように読む。
+ */
+export interface SketchCommitFlags {
+  /** 構築線にするか(FR-320)。 */
+  readonly construction?: boolean;
+  /** 楕円を一部だけ(楕円弧)にするか(FR-318)。 */
+  readonly ellipseArc?: boolean;
+  /** スプラインを閉じるか(FR-317)。 */
+  readonly splineClosed?: boolean;
+}
+
+/** スケッチの段の選択肢(P4 タスク11)。持たない段では入らない。 */
+export interface SketchCommitChoices {
+  /** 正多角形の半径の測り方(FR-315)。 */
+  readonly polygonRadiusMode?: 'circumscribed' | 'inscribed';
+  /** 点列の並べ方(FR-327)。 */
+  readonly pointArrayLayout?: PointArrayLayoutChoice;
+  /** スプラインの点の使い方(FR-317)。 */
+  readonly splineMode?: 'interpolate' | 'control';
+  /** 2 点+半径の円弧のふくらむ向き(FR-326)。 */
+  readonly arcBulge?: 'left' | 'right';
+}
+
 /**
  * 決めた後に外へ渡すもの(スケッチ)。座標を聞く段階かどうかで中身が変わる。
  * ソリッドの確定は形が違うので SolidInputCommit で別に返す。
+ *
+ * P4 タスク11 で `flags` / `choices` を両方の形へ足した。矩形のように**最後の段が座標**の
+ * 道具があり(2 つ目の角で確定する)、構築線のつまみを座標の段にも置く必要があるため。
  */
 export type NumericInputCommit =
   | {
@@ -1252,11 +1878,15 @@ export type NumericInputCommit =
       readonly coordinate: CoordinateInput;
       /** 欄の並び順の評価値。`valueByFieldKey` で名前から引ける。 */
       readonly values: readonly ExpressionValue[];
+      readonly flags: SketchCommitFlags;
+      readonly choices: SketchCommitChoices;
     }
   | {
       readonly kind: 'shape';
       readonly step: ShapeNumericInputStep;
       readonly values: readonly ExpressionValue[];
+      readonly flags: SketchCommitFlags;
+      readonly choices: SketchCommitChoices;
     };
 
 /** ソリッドの数値。道具ごとに使う欄だけが入る(§2.11 の表)。 */
@@ -1341,6 +1971,24 @@ export interface SolidInputCommit {
 
 /** ポップアップが返しうる確定結果のすべて。 */
 export type AnyNumericInputCommit = NumericInputCommit | SolidInputCommit;
+
+/**
+ * 「決め方」の段(splineShape)の確定を下書きへ写す(FR-317)。
+ * 選ばれていない項目は今の下書きの値を残す(NFR-UX-4)。
+ */
+export function applySplineShapeCommit(
+  draft: SplineDraft,
+  commit: NumericInputCommit,
+): SplineDraft {
+  if (commit.step !== 'splineShape') {
+    return draft;
+  }
+  return {
+    ...draft,
+    mode: commit.choices.splineMode ?? draft.mode,
+    closed: commit.flags.splineClosed ?? draft.closed,
+  };
+}
 
 /**
  * ポップアップの次の姿。`open` は開いたまま(ばねの1段目→2段目の遷移もここを通る、
@@ -1452,6 +2100,11 @@ function solidValuesFor(
   }
 }
 
+/**
+ * つまみを立体の確定結果の形へ写す。
+ * P4 でスケッチ専用のつまみ(構築線・楕円弧・閉じる)が `NumericToggleKey` へ入ったので、
+ * 「全部そのまま代入する」書き方をやめ、立体が持つつまみだけを明示して写す。
+ */
 function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
   const flags: {
     reversed?: boolean;
@@ -1462,7 +2115,29 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
     fullCircle?: boolean;
   } = {};
   for (const toggle of toggles) {
-    flags[toggle.key] = toggle.value;
+    switch (toggle.key) {
+      case 'reversed':
+        flags.reversed = toggle.value;
+        break;
+      case 'symmetric':
+        flags.symmetric = toggle.value;
+        break;
+      case 'through':
+        flags.through = toggle.value;
+        break;
+      case 'modeledThread':
+        flags.modeledThread = toggle.value;
+        break;
+      case 'patternSymmetric':
+        flags.patternSymmetric = toggle.value;
+        break;
+      case 'fullCircle':
+        flags.fullCircle = toggle.value;
+        break;
+      default:
+        // スケッチのつまみ(構築線・楕円弧・閉じる)は立体の確定には入らない。
+        break;
+    }
   }
   return flags;
 }
@@ -1514,6 +2189,84 @@ function toSpringHandedness(value: string | undefined): SpringHandedness | undef
     default:
       return undefined;
   }
+}
+
+function toPolygonRadiusMode(value: string | undefined): 'circumscribed' | 'inscribed' | undefined {
+  switch (value) {
+    case 'circumscribed':
+      return 'circumscribed';
+    case 'inscribed':
+      return 'inscribed';
+    default:
+      return undefined;
+  }
+}
+
+function toPointArrayLayout(value: string | undefined): PointArrayLayoutChoice | undefined {
+  switch (value) {
+    case 'linear':
+      return 'linear';
+    case 'circular':
+      return 'circular';
+    case 'grid':
+      return 'grid';
+    default:
+      return undefined;
+  }
+}
+
+function toSplineMode(value: string | undefined): 'interpolate' | 'control' | undefined {
+  switch (value) {
+    case 'interpolate':
+      return 'interpolate';
+    case 'control':
+      return 'control';
+    default:
+      return undefined;
+  }
+}
+
+function toArcBulge(value: string | undefined): 'left' | 'right' | undefined {
+  switch (value) {
+    case 'left':
+      return 'left';
+    case 'right':
+      return 'right';
+    default:
+      return undefined;
+  }
+}
+
+/** スケッチのつまみを確定結果の形へ写す。持たないつまみは欄ごと現れない。 */
+function sketchFlagsFor(toggles: readonly NumericToggle[]): SketchCommitFlags {
+  const flags: { construction?: boolean; ellipseArc?: boolean; splineClosed?: boolean } = {};
+  for (const toggle of toggles) {
+    switch (toggle.key) {
+      case 'construction':
+        flags.construction = toggle.value;
+        break;
+      case 'ellipseArc':
+        flags.ellipseArc = toggle.value;
+        break;
+      case 'splineClosed':
+        flags.splineClosed = toggle.value;
+        break;
+      default:
+        // ソリッドのつまみ(反転・両側・貫通など)はスケッチの確定には入らない。
+        break;
+    }
+  }
+  return flags;
+}
+
+/** スケッチの選択肢を確定結果の形へ写す。持たない選択肢は undefined のままにする。 */
+function sketchChoicesFor(choices: readonly NumericChoice[]): SketchCommitChoices {
+  return {
+    polygonRadiusMode: toPolygonRadiusMode(choiceValueFrom(choices, 'polygonRadiusMode')),
+    pointArrayLayout: toPointArrayLayout(choiceValueFrom(choices, 'pointArrayLayout')),
+    splineMode: toSplineMode(choiceValueFrom(choices, 'splineMode')),
+    arcBulge: toArcBulge(choiceValueFrom(choices, 'arcBulge')),
+  };
 }
 
 function toSpringDerived(value: string | undefined): SpringDerived | undefined {
@@ -1595,11 +2348,13 @@ export function commitNumericInput(
       commit: buildSolidCommit(step, filled, values, context.variables),
     };
   }
+  const flags = sketchFlagsFor(filled.toggles);
+  const choices = sketchChoicesFor(filled.choices);
   if (!isCoordinateStep(step)) {
     return {
       kind: 'committed',
       state: filled,
-      commit: { kind: 'shape', step, values },
+      commit: { kind: 'shape', step, values, flags, choices },
     };
   }
   const coordinate = buildCoordinateInput(
@@ -1614,7 +2369,7 @@ export function commitNumericInput(
   return {
     kind: 'committed',
     state: filled,
-    commit: { kind: 'coordinate', step, mode: filled.mode, coordinate, values },
+    commit: { kind: 'coordinate', step, mode: filled.mode, coordinate, values, flags, choices },
   };
 }
 
@@ -1641,6 +2396,40 @@ export function nextNumericInput(
       return createNumericInput(state.toolId, 'arcShape');
     case 'pointArrayBase':
       return createNumericInput(state.toolId, 'pointArrayShape');
+    case 'circleCenter':
+      return createNumericInput(state.toolId, 'circleRadius');
+    case 'twoPointArcStart':
+      return createNumericInput(state.toolId, 'twoPointArcEnd');
+    case 'twoPointArcEnd':
+      return createNumericInput(state.toolId, 'twoPointArcRadius');
+    case 'rectangleCorner1':
+      return createNumericInput(state.toolId, 'rectangleCorner2');
+    case 'polygonCenter':
+      return createNumericInput(state.toolId, 'polygonShape');
+    case 'slotCenter1':
+      return createNumericInput(state.toolId, 'slotCenter2');
+    case 'slotCenter2':
+      return createNumericInput(state.toolId, 'slotShape');
+    case 'ellipseCenter':
+      return createNumericInput(state.toolId, 'ellipseShape');
+    case 'ellipseShape':
+      return createNumericInput(state.toolId, 'ellipseAngles');
+    case 'ellipseAngles':
+      // 「一部だけ(楕円弧)」が入なら開始角・終了角を続けて聞く。切なら全周でここで終わる。
+      if (toggleValueOf(state, 'ellipseArc')) {
+        return createNumericInput(state.toolId, 'ellipseArcAngles');
+      }
+      return chaining ? createNumericInput(state.toolId, 'ellipseCenter') : null;
+    case 'pointArrayShape':
+      // 格子は「行」「列」の 2 段に分けてある(欄を 1 段 2 個までにするため)。
+      if (choiceValueFrom(state.choices, 'pointArrayLayout') === 'grid') {
+        return createNumericInput(state.toolId, 'pointArrayGridColumns');
+      }
+      return chaining ? createNumericInput(state.toolId, 'pointArrayBase') : null;
+    case 'splinePoint':
+      // 点は「続けてかく」の入切に関わらず積み上げる。曲線にするのは splineFinishStateFrom
+      // が開く splineShape の段(タスク12 が Enter 以外の合図で呼ぶ)。
+      return createNumericInput(state.toolId, 'splinePoint', state.mode);
     case 'point':
       // 点は 1 段階で終わるので、同じ指定方法のまま次の点を聞く。
       return chaining ? createNumericInput(state.toolId, 'point', state.mode) : null;
@@ -1648,8 +2437,22 @@ export function nextNumericInput(
       return chaining ? createNumericInput(state.toolId, 'lineEnd') : null;
     case 'arcShape':
       return chaining ? createNumericInput(state.toolId, 'arcCenter') : null;
-    case 'pointArrayShape':
+    case 'circleRadius':
+      return chaining ? createNumericInput(state.toolId, 'circleCenter') : null;
+    case 'twoPointArcRadius':
+      return chaining ? createNumericInput(state.toolId, 'twoPointArcStart') : null;
+    case 'rectangleCorner2':
+      return chaining ? createNumericInput(state.toolId, 'rectangleCorner1') : null;
+    case 'polygonShape':
+      return chaining ? createNumericInput(state.toolId, 'polygonCenter') : null;
+    case 'slotShape':
+      return chaining ? createNumericInput(state.toolId, 'slotCenter1') : null;
+    case 'ellipseArcAngles':
+      return chaining ? createNumericInput(state.toolId, 'ellipseCenter') : null;
+    case 'pointArrayGridColumns':
       return chaining ? createNumericInput(state.toolId, 'pointArrayBase') : null;
+    case 'splineShape':
+      return chaining ? createNumericInput(state.toolId, 'splinePoint') : null;
     case 'springShape':
       return springLengthStateFrom(state);
     case 'extrudeDistance':

@@ -10,8 +10,10 @@
  */
 
 import {
+  baseWorkPlane,
   curveEnd,
   curveStart,
+  DEFAULT_WORK_PLANE_ID,
   dotVec3,
   lengthVec3,
   radiansToDegrees,
@@ -24,6 +26,7 @@ import {
   type ResolvedSketch,
   type SketchDocument,
   type Vec3,
+  type WorkPlane,
 } from '@pointercad/model';
 
 import {
@@ -31,10 +34,12 @@ import {
   DEFAULT_COORDINATE_BASE,
   isCoordinateStep,
   reduceNumericInput,
+  SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
   type NumericInputState,
   type NumericInputStep,
   type NumericInputToolId,
+  type ShapeToolId,
   type SketchToolId,
   type SolidToolId,
 } from '../sketch/numericInput.js';
@@ -60,15 +65,21 @@ import { gridSpacing } from './gridMath.js';
 
 const LEFT_BUTTON = 0;
 
-/** 数値入力で位置を決める道具。選択と面はクリックだけで進む。 */
-type DrawingToolId = Exclude<SketchToolId, 'select' | 'face'>;
+/**
+ * 数値入力で位置を決める道具。選択と面はクリックだけで進む。
+ * P4 タスク11 で新しい図形(円・2点+半径の円弧・矩形・正多角形・長穴・楕円・スプライン)も
+ * ここへ入った。いずれも「押した場所が座標そのもの」になる道具なので、既存のかき込む
+ * 4 道具とまったく同じ扱いにする(立体も部分形状も拾わない)。
+ */
+type DrawingToolId = Exclude<SketchToolId, 'select' | 'face'> | ShapeToolId;
 
-/** 道具ごとの、最初に開く段階。 */
+/** 道具ごとの、最初に開く段階。新しい図形の最初の段は `SHAPE_TOOL_STEPS` が正本。 */
 const FIRST_STEP: Readonly<Record<DrawingToolId, NumericInputStep>> = {
   point: 'point',
   line: 'lineStart',
   arc: 'arcCenter',
   pointArray: 'pointArrayBase',
+  ...SHAPE_TOOL_STEPS,
 };
 
 /** 基準点を引くだけの問い合わせに使う名前。失敗の理由は捨てるので画面には出ない。 */
@@ -234,13 +245,22 @@ export function attachSketchInteraction(
     return [event.clientX - bounds.left, event.clientY - bounds.top];
   }
 
+  /**
+   * 操作に使う作図面。任意の作業平面(FR-328)は部品文書を見ないと決まらないので、
+   * ここでは基準の 3 面だけを引き、それ以外は既定の XY に落とす
+   * (任意平面の上で描く操作の配線はタスク13・33)。
+   */
+  function interactionPlane(planeId: string): WorkPlane {
+    return baseWorkPlane(planeId) ?? WORK_PLANES[DEFAULT_WORK_PLANE_ID];
+  }
+
   /** いま吸い付いている候補。吸着が切なら null(FR-107)。 */
   function findSnap(pointer: readonly [number, number]): SnapCandidate | null {
     const state = useAppStore.getState();
     if (!state.snapEnabled) {
       return null;
     }
-    const plane = WORK_PLANES[state.workPlaneId];
+    const plane = interactionPlane(state.workPlaneId);
     const onPlane = scene.screenToPlanePoint(pointer[0], pointer[1], plane);
     const candidates = collectSnapCandidates(
       state.resolvedSketch,
@@ -256,7 +276,7 @@ export function attachSketchInteraction(
     if (snap !== null) {
       return snap.position;
     }
-    const plane = WORK_PLANES[useAppStore.getState().workPlaneId];
+    const plane = interactionPlane(useAppStore.getState().workPlaneId);
     return scene.screenToPlanePoint(pointer[0], pointer[1], plane);
   }
 
@@ -397,7 +417,7 @@ export function attachSketchInteraction(
   function baseWorldPoint(step: NumericInputStep): Vec3 | null {
     const state = useAppStore.getState();
     const context: ResolveContext = {
-      plane: WORK_PLANES[state.workPlaneId],
+      plane: interactionPlane(state.workPlaneId),
       points: state.resolvedSketch.points,
       previous: lastCreatedPoint(state.sketch, state.resolvedSketch),
       vertices: collectVertices(state.resolvedSketch),
@@ -434,7 +454,7 @@ export function attachSketchInteraction(
       return reduceNumericInput(input, { type: 'setValues', values: offset });
     }
     // 極座標は polarOffset(planeMath.ts)の逆算。角度は第1軸から第2軸へ向かう向きが正。
-    const plane = WORK_PLANES[useAppStore.getState().workPlaneId];
+    const plane = interactionPlane(useAppStore.getState().workPlaneId);
     const alongU = dotVec3(offset, plane.axisU);
     const alongV = dotVec3(offset, plane.axisV);
     const alongNormal = dotVec3(offset, plane.normal);

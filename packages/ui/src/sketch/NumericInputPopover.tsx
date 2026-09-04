@@ -393,22 +393,29 @@ export function NumericInputPopover({
         </div>
       ) : null}
 
-      <div className={wideFields ? 'pcad-popover__fields pcad-popover__fields--wide' : 'pcad-popover__fields'}>
-        {state.fields.map((field, index) => (
-          <ExpressionField
-            key={field.key}
-            field={field}
-            result={evaluation.results[index]}
-            focused={index === state.focusedIndex}
-            onChange={(source) => {
-              update(reduceNumericInput(state, { type: 'edit', index, source }));
-            }}
-            onFocus={() => {
-              update(reduceNumericInput(state, { type: 'focus', index }));
-            }}
-          />
-        ))}
-      </div>
+      {/*
+        欄を持たない段(P4 のスプラインの決め方)では入れ物ごと出さない。
+        .pcad-popover は縦並びの gap を持つので、空の入れ物を置くと見出しと選択肢の間に
+        すき間が 1 つ余分に空くため(タスク11 で欄が 0 個の段ができた)。
+      */}
+      {state.fields.length === 0 ? null : (
+        <div className={wideFields ? 'pcad-popover__fields pcad-popover__fields--wide' : 'pcad-popover__fields'}>
+          {state.fields.map((field, index) => (
+            <ExpressionField
+              key={field.key}
+              field={field}
+              result={evaluation.results[index]}
+              focused={index === state.focusedIndex}
+              onChange={(source) => {
+                update(reduceNumericInput(state, { type: 'edit', index, source }));
+              }}
+              onFocus={() => {
+                update(reduceNumericInput(state, { type: 'focus', index }));
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {state.choices.map((choice, choiceIndex) => (
         <ChoiceGroup

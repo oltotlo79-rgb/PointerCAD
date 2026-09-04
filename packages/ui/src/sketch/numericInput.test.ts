@@ -1,23 +1,38 @@
 import { describe, expect, it } from 'vitest';
 
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { MAX_PATTERN_COUNT, MAX_SPRING_TURNS, METRIC_THREAD_DESIGNATIONS } from '@pointercad/model';
+import {
+  MAX_PATTERN_COUNT,
+  MAX_POINT_ARRAY_COUNT,
+  MAX_SPLINE_POINTS,
+  MAX_SPRING_TURNS,
+  METRIC_THREAD_DESIGNATIONS,
+  type CoordinateInput,
+} from '@pointercad/model';
 
 import { MESSAGE_KEYS, t, type MessageKey } from '../i18n/t.js';
 import {
+  appendSplinePoint,
   applyNumericInputKey,
+  applySplineShapeCommit,
   buildCoordinateInput,
+  checkSplineDraft,
   choiceValueOf,
   chooseNumericInput,
   commitNumericInput,
   commitValues,
   COORDINATE_MODES,
   createNumericInput,
+  DEFAULT_GRID_COLUMN_AZIMUTH_DEGREES,
+  DEFAULT_GRID_ROW_AZIMUTH_DEGREES,
+  DEFAULT_POLYGON_SIDES,
   defaultModeForStep,
+  EMPTY_SPLINE_DRAFT,
   evaluateNumericInput,
   fillDefaults,
   focusedTarget,
   isCoordinateStep,
+  isShapeTool,
   isSolidStep,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
@@ -28,14 +43,23 @@ import {
   numericFocusTargets,
   rangeErrorFor,
   reduceNumericInput,
+  removeLastSplinePoint,
+  SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
+  splineFinishStateFrom,
   STEP_TITLE_KEYS,
   toggleNumericInput,
   TOGGLE_LABEL_KEYS,
+  toggleValueOf,
+  twoPointArcCenterOffset,
+  twoPointArcRadiusRejection,
   UNIT_KEYS,
   valueByFieldKey,
+  type NumericInputCommit,
   type NumericInputState,
   type NumericInputTransition,
+  type SplineDraft,
+  type SplineDraftOutcome,
 } from './numericInput.js';
 
 /** 判別共用体を検査で絞り込む。強制変換(as)を使わずに中身へ触るための小道具。 */
@@ -448,8 +472,14 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
     expect(reduceNumericInput(state, { type: 'setMode', mode: 'polar' })).toBe(state);
   });
 
-  it('P1 の段はつまみも選択肢も持たない(P1 の振る舞いを変えない)', () => {
-    for (const step of ['point', 'lineEnd', 'arcShape', 'pointArrayShape'] as const) {
+  /**
+   * P4 タスク11 で、P1 の段のうち**要素が履歴へ積まれる最後の段**にだけ、つまみ・選択肢が
+   * 付いた(`lineEnd` / `arcShape` に構築線(FR-320)、`pointArrayShape` に並べ方(FR-327))。
+   * 座標を聞く前半の段は P1 のまま何も持たないので、その 4 つをここで固定し続ける。
+   * 足した側の振る舞いは「P4 の新しい図形の段」の describe で別に固定する。
+   */
+  it('P1 の座標の段はつまみも選択肢も持たない(P1 の振る舞いを変えない)', () => {
+    for (const step of ['point', 'lineStart', 'arcCenter', 'pointArrayBase'] as const) {
       const state = createNumericInput('point', step);
       expect(state.toggles, step).toEqual([]);
       expect(state.choices, step).toEqual([]);
@@ -1187,5 +1217,674 @@ describe('P3 の細部(キーボード操作・境界値・不変性)', () => {
     expect(
       numericChoiceOptionLabel({ value: 'coarse', labelKey: 'numericInput.threadSeries.coarse' }),
     ).toBe(t('numericInput.threadSeries.coarse'));
+  });
+});
+
+/** 判別共用体の中身へ強制変換なしで触るための小道具(既存の expectCommitted と同じ流儀)。 */
+function expectCoordinateCommit(
+  state: NumericInputState,
+): Extract<NumericInputCommit, { readonly kind: 'coordinate' }> {
+  const { commit } = expectCommitted(commitNumericInput(state));
+  if (commit.kind !== 'coordinate') {
+    throw new Error(`expected coordinate commit, got ${commit.kind}`);
+  }
+  return commit;
+}
+
+function coordinateOf(state: NumericInputState): CoordinateInput {
+  const commit = expectCoordinateCommit(state);
+  return commit.coordinate;
+}
+
+function expectDraft(outcome: SplineDraftOutcome): SplineDraft {
+  if (!outcome.ok) {
+    throw new Error(`expected an appended draft, got a rejection: ${outcome.reason}`);
+  }
+  return outcome.draft;
+}
+
+/** スプラインの下書きへ入れる 1 点。ポップアップと同じ道筋(段の確定)で作る。 */
+function splinePoint(x: string): CoordinateInput {
+  return coordinateOf(edited(createNumericInput('spline', 'splinePoint'), x));
+}
+
+describe('P4 新しい図形の道具と段(計画書 docs/plans/P4-スケッチ拡張.md タスク11)', () => {
+  it('道具から最初の段が引ける。7 つとも座標を聞く段から始まる(FR-314〜318、FR-326)', () => {
+    expect(SHAPE_TOOL_STEPS).toEqual({
+      circle: 'circleCenter',
+      twoPointArc: 'twoPointArcStart',
+      rectangle: 'rectangleCorner1',
+      polygon: 'polygonCenter',
+      slot: 'slotCenter1',
+      ellipse: 'ellipseCenter',
+      spline: 'splinePoint',
+    });
+    for (const step of Object.values(SHAPE_TOOL_STEPS)) {
+      expect(isCoordinateStep(step), step).toBe(true);
+      expect(isSolidStep(step), step).toBe(false);
+    }
+  });
+
+  it('新しい図形の道具かどうかを一覧の二重管理なしで見分けられる', () => {
+    const shapeTools = [
+      'circle',
+      'twoPointArc',
+      'rectangle',
+      'polygon',
+      'slot',
+      'ellipse',
+      'spline',
+    ] as const;
+    expect(Object.keys(SHAPE_TOOL_STEPS).sort()).toEqual([...shapeTools].sort());
+    for (const tool of shapeTools) {
+      expect(isShapeTool(tool), tool).toBe(true);
+    }
+    expect(isShapeTool('line')).toBe(false);
+    expect(isShapeTool('extrude')).toBe(false);
+    expect(isShapeTool('select')).toBe(false);
+  });
+
+  it('2 点目を聞く段の既定は相対(直前の点からの続きで入れられる、FR-307)', () => {
+    for (const step of ['twoPointArcEnd', 'rectangleCorner2', 'slotCenter2'] as const) {
+      expect(defaultModeForStep(step), step).toBe('relative');
+      expect(createNumericInput('point', step).fields.map((field) => field.key)).toEqual([
+        'dx',
+        'dy',
+        'dz',
+      ]);
+    }
+    // 1 点目は絶対のまま(基準になる点がまだ無いため)。
+    for (const step of ['twoPointArcStart', 'rectangleCorner1', 'slotCenter1'] as const) {
+      expect(defaultModeForStep(step), step).toBe('absolute');
+    }
+  });
+
+  it('構築線のつまみは、要素が履歴へ積まれる最後の段だけに付く(FR-320、既定は切)', () => {
+    const finalSteps = [
+      'lineEnd',
+      'arcShape',
+      'circleRadius',
+      'twoPointArcRadius',
+      'rectangleCorner2',
+      'polygonShape',
+      'slotShape',
+      'ellipseAngles',
+      'splineShape',
+    ] as const;
+    for (const step of finalSteps) {
+      const state = createNumericInput('point', step);
+      expect(toggleValueOf(state, 'construction'), step).toBe(false);
+      expect(
+        state.toggles.some((toggle) => toggle.key === 'construction'),
+        step,
+      ).toBe(true);
+    }
+    // 前半の段には付けない(段ごとに状態を作り直すので、確定のときに値が残らないため)。
+    for (const step of ['lineStart', 'arcCenter', 'circleCenter', 'rectangleCorner1'] as const) {
+      expect(
+        createNumericInput('point', step).toggles.some((toggle) => toggle.key === 'construction'),
+        step,
+      ).toBe(false);
+    }
+  });
+
+  it('構築線を入にして決めると、確定結果のつまみに入って外へ渡る(FR-320)', () => {
+    const state = createNumericInput('circle', 'circleRadius');
+    expect(expectCommitted(commitNumericInput(state)).commit.flags.construction).toBe(false);
+    const on = toggleNumericInput(state, 'construction');
+    expect(expectCommitted(commitNumericInput(on)).commit.flags.construction).toBe(true);
+    // 座標で終わる道具(矩形)でも同じように渡る。
+    const corner = toggleNumericInput(createNumericInput('rectangle', 'rectangleCorner2'), 'construction');
+    expect(expectCoordinateCommit(corner).flags.construction).toBe(true);
+  });
+
+  it('P1 の線分・円弧の最後の段にも構築線が付いた(FR-320。欄と既定値は変えていない)', () => {
+    const lineEnd = createNumericInput('line', 'lineEnd');
+    expect(lineEnd.fields.map((field) => field.key)).toEqual(['dx', 'dy', 'dz']);
+    expect(lineEnd.toggles.map((toggle) => toggle.key)).toEqual(['construction']);
+    const arcShape = createNumericInput('arc', 'arcShape');
+    expect(arcShape.fields.map((field) => field.source)).toEqual(['10', '0', '90']);
+    expect(arcShape.toggles.map((toggle) => toggle.key)).toEqual(['construction']);
+    // 巡回は「欄 → つまみ」の順に伸びる(NFR-UX-2)。
+    expect(numericFocusTargets(arcShape)).toEqual([
+      { kind: 'field', index: 0 },
+      { kind: 'field', index: 1 },
+      { kind: 'field', index: 2 },
+      { kind: 'toggle', index: 0 },
+    ]);
+  });
+});
+
+describe('P4 円と 2 点+半径の円弧(FR-326、統括の決定 §0.a-0.18)', () => {
+  it('円は「中心 → 半径」の 2 段。半径は 1 欄・既定 10・0 より大きい', () => {
+    expect(nextNumericInput(createNumericInput('circle', 'circleCenter'), false)?.step).toBe(
+      'circleRadius',
+    );
+    const state = createNumericInput('circle', 'circleRadius');
+    expect(state.fields.map((field) => field.key)).toEqual(['radius']);
+    expect(state.fields.map((field) => field.source)).toEqual(['10']);
+    expect(evaluateNumericInput(edited(state, '0')).canCommit).toBe(false);
+    expect(evaluateNumericInput(edited(state, '0.001')).canCommit).toBe(true);
+    expect(expectBlocked(applyNumericInputKey(edited(state, '0'), 'Enter')).evaluation.results[0]
+      .error?.code).toBe('outOfRange');
+  });
+
+  it('円は「続けてかく」が入なら次の円の中心へ戻り、切なら閉じる', () => {
+    const state = createNumericInput('circle', 'circleRadius');
+    expect(nextNumericInput(state, true)?.step).toBe('circleCenter');
+    expect(nextNumericInput(state, false)).toBeNull();
+  });
+
+  it('2 点+半径の円弧は「1 点目 → 2 点目 → 半径」の 3 段(FR-326)', () => {
+    expect(nextNumericInput(createNumericInput('twoPointArc', 'twoPointArcStart'), false)?.step)
+      .toBe('twoPointArcEnd');
+    expect(nextNumericInput(createNumericInput('twoPointArc', 'twoPointArcEnd'), false)?.step)
+      .toBe('twoPointArcRadius');
+    expect(nextNumericInput(createNumericInput('twoPointArc', 'twoPointArcRadius'), true)?.step)
+      .toBe('twoPointArcStart');
+  });
+
+  it('半径の段は「ふくらむ向き」の選択肢を持ち、既定は左(NFR-UX-4)', () => {
+    const state = createNumericInput('twoPointArc', 'twoPointArcRadius');
+    expect(state.choices.map((choice) => choice.key)).toEqual(['arcBulge']);
+    expect(choiceValueOf(state, 'arcBulge')).toBe('left');
+    expect(state.choices[0].options.map((option) => option.value)).toEqual(['left', 'right']);
+    const flipped = chooseNumericInput(state, 'arcBulge', 'right');
+    expect(expectCommitted(commitNumericInput(flipped)).commit.choices.arcBulge).toBe('right');
+    // 選択肢を変えても欄は変わらない(欄の並びが選択肢に依らない段)。
+    expect(flipped.fields.map((field) => field.key)).toEqual(['radius']);
+  });
+
+  it('2 点 (0,0,0)-(10,0,0) と半径 10 なら、中点から中心まで 8.660254…(√75)', () => {
+    // 弦の半分 h = 5、中心までの距離 = √(10² − 5²) = √75 = 5√3 = 8.660254037844386。
+    // 中心は (5, ±8.660254…, 0) の 2 つで、どちらを採るかは「ふくらむ向き」が決める。
+    expect(twoPointArcCenterOffset(10, 10)).toBeCloseTo(8.660254037844386, 12);
+    expect(twoPointArcCenterOffset(10, 10)).toBeCloseTo(Math.sqrt(3) * 5, 12);
+    // 半径が弦の半分ちょうどなら中心は中点(半円)。
+    expect(twoPointArcCenterOffset(10, 5)).toBe(0);
+    // 8 と 5 は 3-4-5 の直角三角形。
+    expect(twoPointArcCenterOffset(8, 5)).toBe(3);
+  });
+
+  it('半径が 2 点の間の長さの半分より小さいと円弧にならない(日本語で断る、NFR-UX-5)', () => {
+    // 2 点間 30、半径 10 なら半弦 15 > 10 で解が無い(計画書タスク12 の検証表)。
+    expect(twoPointArcCenterOffset(30, 10)).toBeNull();
+    expect(twoPointArcRadiusRejection(30, 10)).toBe(
+      '半径は 2 点の間の長さの半分(15mm)以上にしてください。',
+    );
+    // 引けるときは断らない。
+    expect(twoPointArcRadiusRejection(10, 10)).toBeNull();
+    expect(twoPointArcRadiusRejection(10, 5)).toBeNull();
+  });
+
+  it('2 点が同じ位置なら円弧にならない(長さ 0 の弦)', () => {
+    expect(twoPointArcCenterOffset(0, 10)).toBeNull();
+    expect(twoPointArcRadiusRejection(0, 10)).toBe('2 点が同じ位置にあるので円弧になりません。');
+    expect(twoPointArcCenterOffset(Number.NaN, 10)).toBeNull();
+    expect(twoPointArcCenterOffset(10, Number.NaN)).toBeNull();
+  });
+});
+
+describe('P4 矩形・正多角形・長穴(FR-314、FR-315、FR-316)', () => {
+  it('矩形は対角 2 点の 2 段で、2 つ目の角で確定する(FR-314)', () => {
+    expect(nextNumericInput(createNumericInput('rectangle', 'rectangleCorner1'), false)?.step)
+      .toBe('rectangleCorner2');
+    const corner2 = createNumericInput('rectangle', 'rectangleCorner2');
+    expect(corner2.mode).toBe('relative');
+    expect(corner2.fields.map((field) => field.source)).toEqual(['0', '0', '0']);
+    expect(nextNumericInput(corner2, false)).toBeNull();
+    expect(nextNumericInput(corner2, true)?.step).toBe('rectangleCorner1');
+    // 確定は座標(1 つ目の角と組にするのはタスク12)。
+    expect(expectCoordinateCommit(corner2).step).toBe('rectangleCorner2');
+  });
+
+  it('正多角形は「中心 → 辺数・半径」で、辺数の既定は 6(FR-315)', () => {
+    expect(nextNumericInput(createNumericInput('polygon', 'polygonCenter'), false)?.step)
+      .toBe('polygonShape');
+    const state = createNumericInput('polygon', 'polygonShape');
+    expect(state.fields.map((field) => field.key)).toEqual(['sides', 'radius']);
+    expect(state.fields.map((field) => field.source)).toEqual([String(DEFAULT_POLYGON_SIDES), '10']);
+    expect(DEFAULT_POLYGON_SIDES).toBe(6);
+    expect(state.fields.map((field) => field.unit)).toEqual(['count', 'mm']);
+  });
+
+  it('辺数は 3 未満を受け付けない。整数かどうかは model の解決が見る(NFR-UX-5)', () => {
+    const state = createNumericInput('polygon', 'polygonShape');
+    expect(evaluateNumericInput(edited(state, '2')).canCommit).toBe(false);
+    expect(evaluateNumericInput(edited(state, '2')).results[0].error?.message).toBe(
+      '辺数は 3 以上の値を入れてください。',
+    );
+    expect(evaluateNumericInput(edited(state, '3')).canCommit).toBe(true);
+    // 3.5 は範囲では止まらない(整数の判定は resolveSketch の「辺の数は 3 以上にしてください。」)。
+    expect(evaluateNumericInput(edited(state, '3.5')).canCommit).toBe(true);
+  });
+
+  it('半径の測り方は外接(既定)と内接から選べ、確定結果に入る(FR-315)', () => {
+    const state = createNumericInput('polygon', 'polygonShape');
+    expect(state.choices.map((choice) => choice.key)).toEqual(['polygonRadiusMode']);
+    expect(choiceValueOf(state, 'polygonRadiusMode')).toBe('circumscribed');
+    expect(expectCommitted(commitNumericInput(state)).commit.choices.polygonRadiusMode).toBe(
+      'circumscribed',
+    );
+    // 内接を選んでも欄は変わらない(半径の意味だけが変わる。
+    // 正六角形で内接 10 なら model は外接 10 / cos(π/6) = 11.547005383792515 として頂点を置く)。
+    const inscribed = chooseNumericInput(state, 'polygonRadiusMode', 'inscribed');
+    expect(inscribed.fields.map((field) => field.key)).toEqual(['sides', 'radius']);
+    expect(expectCommitted(commitNumericInput(inscribed)).commit.choices.polygonRadiusMode).toBe(
+      'inscribed',
+    );
+  });
+
+  it('長穴は「中心 1 → 中心 2 → 幅」の 3 段。幅は 1 欄・既定 10(FR-316)', () => {
+    expect(nextNumericInput(createNumericInput('slot', 'slotCenter1'), false)?.step)
+      .toBe('slotCenter2');
+    expect(nextNumericInput(createNumericInput('slot', 'slotCenter2'), false)?.step)
+      .toBe('slotShape');
+    const state = createNumericInput('slot', 'slotShape');
+    expect(state.fields.map((field) => field.key)).toEqual(['width']);
+    expect(state.fields.map((field) => field.source)).toEqual(['10']);
+    expect(evaluateNumericInput(edited(state, '0')).canCommit).toBe(false);
+    expect(nextNumericInput(state, true)?.step).toBe('slotCenter1');
+    expect(nextNumericInput(state, false)).toBeNull();
+  });
+
+  it('長穴の幅を式で入れても、式の文字列のまま確定へ渡る(FR-202)', () => {
+    const state = edited(createNumericInput('slot', 'slotShape'), '4*2.5');
+    const commit = expectCommitted(commitNumericInput(state)).commit;
+    expect(commit.values[0].source).toBe('4*2.5');
+    expect(commit.values[0].value).toBe(10);
+  });
+});
+
+describe('P4 楕円と楕円弧(FR-318)', () => {
+  it('楕円は「中心 → 長半径・短半径 → 傾き」で、Enter 連打なら全周になる', () => {
+    expect(nextNumericInput(createNumericInput('ellipse', 'ellipseCenter'), false)?.step)
+      .toBe('ellipseShape');
+    const shape = createNumericInput('ellipse', 'ellipseShape');
+    expect(shape.fields.map((field) => field.key)).toEqual(['majorRadius', 'minorRadius']);
+    expect(shape.fields.map((field) => field.source)).toEqual(['20', '10']);
+    expect(nextNumericInput(shape, false)?.step).toBe('ellipseAngles');
+
+    const angles = createNumericInput('ellipse', 'ellipseAngles');
+    expect(angles.fields.map((field) => field.key)).toEqual(['rotation']);
+    expect(angles.fields.map((field) => field.source)).toEqual(['0']);
+    // 「一部だけ」が切なので、傾きを決めたところで終わる(全周の楕円)。
+    expect(nextNumericInput(angles, false)).toBeNull();
+    expect(nextNumericInput(angles, true)?.step).toBe('ellipseCenter');
+  });
+
+  it('半径は 0 を受け付けない。傾きは負の角度も受け付ける(向きに意味があるため)', () => {
+    const shape = createNumericInput('ellipse', 'ellipseShape');
+    expect(evaluateNumericInput(edited(shape, '0')).canCommit).toBe(false);
+    expect(evaluateNumericInput(edited(shape, '0', 1)).canCommit).toBe(false);
+    const angles = createNumericInput('ellipse', 'ellipseAngles');
+    expect(evaluateNumericInput(edited(angles, '-30')).canCommit).toBe(true);
+    expect(evaluateNumericInput(edited(angles, '400')).canCommit).toBe(true);
+  });
+
+  it('「一部だけ(楕円弧)」を入にすると開始角・終了角の段へ進む(FR-318)', () => {
+    const angles = createNumericInput('ellipse', 'ellipseAngles');
+    expect(angles.toggles.map((toggle) => toggle.key)).toEqual(['ellipseArc', 'construction']);
+    expect(toggleValueOf(angles, 'ellipseArc')).toBe(false);
+    const arc = toggleNumericInput(angles, 'ellipseArc');
+    expect(nextNumericInput(arc, false)?.step).toBe('ellipseArcAngles');
+    // つまみは確定結果にも入る(タスク12 が全周か楕円弧かを見分ける手掛かり)。
+    expect(expectCommitted(commitNumericInput(arc)).commit.flags.ellipseArc).toBe(true);
+  });
+
+  it('楕円弧の角度の既定は 0 と 360。そのまま決めれば全周と同じ形になる(NFR-UX-4)', () => {
+    const state = createNumericInput('ellipse', 'ellipseArcAngles');
+    expect(state.fields.map((field) => field.key)).toEqual(['startAngle', 'endAngle']);
+    expect(state.fields.map((field) => field.source)).toEqual(['0', '360']);
+    const commit = expectCommitted(commitNumericInput(state)).commit;
+    expect(commit.values.map((value) => value.value)).toEqual([0, 360]);
+    expect(nextNumericInput(state, false)).toBeNull();
+    expect(nextNumericInput(state, true)?.step).toBe('ellipseCenter');
+  });
+
+  it('楕円の欄は 1 段あたり 2 個まで(統括の指示、NFR-UX-2)', () => {
+    for (const step of ['ellipseShape', 'ellipseAngles', 'ellipseArcAngles'] as const) {
+      expect(createNumericInput('ellipse', step).fields.length, step).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
+describe('P4 スプライン(FR-317、統括の決定 §0.a-0.17)', () => {
+  it('点の段は座標を聞き、決めても閉じずに次の点を聞き続ける', () => {
+    const state = createNumericInput('spline', 'splinePoint');
+    expect(isCoordinateStep('splinePoint')).toBe(true);
+    expect(state.fields.map((field) => field.key)).toEqual(['x', 'y', 'z']);
+    // 「続けてかく」の入切に関わらず点を積み上げる(終わらせるのは splineFinishStateFrom)。
+    expect(nextNumericInput(state, false)?.step).toBe('splinePoint');
+    expect(nextNumericInput(state, true)?.step).toBe('splinePoint');
+    // 指定方法は引き継ぐ(打ち直しの手間を増やさない)。
+    const polar = createNumericInput('spline', 'splinePoint', 'polar');
+    expect(nextNumericInput(polar, true)?.mode).toBe('polar');
+  });
+
+  it('決め方の段は欄を持たず、選択肢とつまみだけで決める(FR-317)', () => {
+    const state = splineFinishStateFrom(createNumericInput('spline', 'splinePoint'));
+    expect(state.step).toBe('splineShape');
+    expect(state.toolId).toBe('spline');
+    expect(state.fields).toEqual([]);
+    expect(state.choices.map((choice) => choice.key)).toEqual(['splineMode']);
+    expect(choiceValueOf(state, 'splineMode')).toBe('interpolate');
+    expect(state.toggles.map((toggle) => toggle.key)).toEqual(['splineClosed', 'construction']);
+    // 焦点の輪は選択肢から始まる(欄が無いため)。
+    expect(numericFocusTargets(state)).toEqual([
+      { kind: 'choice', index: 0 },
+      { kind: 'toggle', index: 0 },
+      { kind: 'toggle', index: 1 },
+    ]);
+  });
+
+  it('欄が無い段でもそのまま決められ、選択肢とつまみが確定結果に入る', () => {
+    const state = splineFinishStateFrom(createNumericInput('spline', 'splinePoint'));
+    const commit = expectCommitted(commitNumericInput(state)).commit;
+    expect(commit.kind).toBe('shape');
+    expect(commit.step).toBe('splineShape');
+    expect(commit.values).toEqual([]);
+    expect(commit.choices.splineMode).toBe('interpolate');
+    expect(commit.flags.splineClosed).toBe(false);
+    expect(commit.flags.construction).toBe(false);
+  });
+
+  it('制御点・閉じるを選ぶと確定結果に入り、下書きへ写せる', () => {
+    const state = toggleNumericInput(
+      chooseNumericInput(
+        splineFinishStateFrom(createNumericInput('spline', 'splinePoint')),
+        'splineMode',
+        'control',
+      ),
+      'splineClosed',
+    );
+    const commit = expectCommitted(commitNumericInput(state)).commit;
+    expect(commit.choices.splineMode).toBe('control');
+    expect(commit.flags.splineClosed).toBe(true);
+    const draft = applySplineShapeCommit(EMPTY_SPLINE_DRAFT, commit);
+    expect(draft.mode).toBe('control');
+    expect(draft.closed).toBe(true);
+    // 元の下書きは書き換えない(不変)。
+    expect(EMPTY_SPLINE_DRAFT.mode).toBe('interpolate');
+    expect(EMPTY_SPLINE_DRAFT.closed).toBe(false);
+  });
+
+  it('決め方の段以外の確定では下書きを変えない', () => {
+    const commit = expectCommitted(
+      commitNumericInput(createNumericInput('arc', 'arcShape')),
+    ).commit;
+    expect(applySplineShapeCommit(EMPTY_SPLINE_DRAFT, commit)).toBe(EMPTY_SPLINE_DRAFT);
+  });
+
+  it('下書きは点なし・通過点・開いた曲線から始まる(NFR-UX-4)', () => {
+    expect(EMPTY_SPLINE_DRAFT.points).toEqual([]);
+    expect(EMPTY_SPLINE_DRAFT.mode).toBe('interpolate');
+    expect(EMPTY_SPLINE_DRAFT.closed).toBe(false);
+  });
+
+  it('点を置くと下書きが伸び、取り消すと 1 つ戻る(元の下書きは書き換えない)', () => {
+    const one = expectDraft(appendSplinePoint(EMPTY_SPLINE_DRAFT, splinePoint('1')));
+    const two = expectDraft(appendSplinePoint(one, splinePoint('2')));
+    expect(one.points).toHaveLength(1);
+    expect(two.points).toHaveLength(2);
+    expect(EMPTY_SPLINE_DRAFT.points).toHaveLength(0);
+    expect(removeLastSplinePoint(two).points).toHaveLength(1);
+    // 点が無ければ同じ下書きをそのまま返す。
+    expect(removeLastSplinePoint(EMPTY_SPLINE_DRAFT)).toBe(EMPTY_SPLINE_DRAFT);
+  });
+
+  it('点は 100 個まで。超える 1 個は断って下書きを変えない(§0.a-0.17)', () => {
+    let draft: SplineDraft = EMPTY_SPLINE_DRAFT;
+    for (let index = 0; index < MAX_SPLINE_POINTS; index += 1) {
+      draft = expectDraft(appendSplinePoint(draft, splinePoint(String(index))));
+    }
+    expect(draft.points).toHaveLength(MAX_SPLINE_POINTS);
+    expect(checkSplineDraft(draft).ok).toBe(true);
+    const overflow = appendSplinePoint(draft, splinePoint('101'));
+    expect(overflow.ok).toBe(false);
+    if (overflow.ok) {
+      throw new Error('expected the 101st point to be rejected');
+    }
+    expect(overflow.reason).toBe('スプラインの点は 100 個までです。');
+  });
+
+  it('開いた曲線は 2 点以上、閉じた曲線は 3 点以上ないと曲線にできない(日本語で断る)', () => {
+    const one = expectDraft(appendSplinePoint(EMPTY_SPLINE_DRAFT, splinePoint('1')));
+    const two = expectDraft(appendSplinePoint(one, splinePoint('2')));
+    const three = expectDraft(appendSplinePoint(two, splinePoint('3')));
+
+    const empty = checkSplineDraft(EMPTY_SPLINE_DRAFT);
+    expect(empty.ok).toBe(false);
+    if (empty.ok) {
+      throw new Error('expected an empty draft to be rejected');
+    }
+    expect(empty.reason).toBe('スプラインには点が 2 個以上必要です。');
+    expect(checkSplineDraft(one).ok).toBe(false);
+    expect(checkSplineDraft(two).ok).toBe(true);
+
+    const closedTwo = checkSplineDraft({ ...two, closed: true });
+    expect(closedTwo.ok).toBe(false);
+    if (closedTwo.ok) {
+      throw new Error('expected a closed 2-point draft to be rejected');
+    }
+    expect(closedTwo.reason).toBe('閉じたスプラインには点が 3 個以上必要です。');
+    expect(checkSplineDraft({ ...three, closed: true }).ok).toBe(true);
+  });
+});
+
+describe('P4 点列の拡張(FR-327)', () => {
+  it('並べ方の選択肢が付き、既定は直線。直線の欄は P1 のまま', () => {
+    const state = createNumericInput('pointArray', 'pointArrayShape');
+    expect(state.choices.map((choice) => choice.key)).toEqual(['pointArrayLayout']);
+    expect(choiceValueOf(state, 'pointArrayLayout')).toBe('linear');
+    expect(state.choices[0].options.map((option) => option.value)).toEqual([
+      'linear',
+      'circular',
+      'grid',
+    ]);
+    expect(state.fields.map((field) => field.key)).toEqual(['azimuth', 'spacing', 'count']);
+    expect(state.fields.map((field) => field.source)).toEqual(['0', '10', '5']);
+    // 直線の欄には範囲を足していない(P1 の振る舞いを変えない)。
+    expect(evaluateNumericInput(edited(state, '0', 2)).canCommit).toBe(true);
+  });
+
+  it('円周を選ぶと欄が「半径」「個数」の 2 つに変わる(中心 → 半径+個数)', () => {
+    const state = chooseNumericInput(
+      createNumericInput('pointArray', 'pointArrayShape'),
+      'pointArrayLayout',
+      'circular',
+    );
+    // 個数の欄の名前は直線の count と分けてある(直線の値を引き継いで既定値が
+    // 画面に出なくなるのを避けるため。numericInput.ts の POINT_ARRAY_CIRCULAR_FIELDS の注釈)。
+    expect(state.fields.map((field) => field.key)).toEqual(['radius', 'circularCount']);
+    expect(state.fields.map((field) => field.labelKey)).toEqual([
+      'numericInput.field.radius',
+      'numericInput.field.count',
+    ]);
+    expect(state.fields.map((field) => field.source)).toEqual(['10', '6']);
+    expect(expectCommitted(commitNumericInput(state)).commit.choices.pointArrayLayout).toBe(
+      'circular',
+    );
+    // 円周は 1 段で終わる(「続けてかく」が切なら閉じる)。
+    expect(nextNumericInput(state, false)).toBeNull();
+    expect(nextNumericInput(state, true)?.step).toBe('pointArrayBase');
+  });
+
+  it('円周の半径と個数は範囲で守る(半径 > 0、個数 1〜1000。NFR-UX-5)', () => {
+    const state = chooseNumericInput(
+      createNumericInput('pointArray', 'pointArrayShape'),
+      'pointArrayLayout',
+      'circular',
+    );
+    expect(evaluateNumericInput(edited(state, '0')).canCommit).toBe(false);
+    expect(evaluateNumericInput(edited(state, '0', 1)).canCommit).toBe(false);
+    expect(evaluateNumericInput(edited(state, '1', 1)).canCommit).toBe(true);
+    expect(evaluateNumericInput(edited(state, String(MAX_POINT_ARRAY_COUNT), 1)).canCommit).toBe(
+      true,
+    );
+    expect(
+      evaluateNumericInput(edited(state, String(MAX_POINT_ARRAY_COUNT + 1), 1)).canCommit,
+    ).toBe(false);
+  });
+
+  it('格子は「行の間隔・行数」→「列の間隔・列数」の 2 段(1 段あたり 2 欄まで)', () => {
+    const rows = chooseNumericInput(
+      createNumericInput('pointArray', 'pointArrayShape'),
+      'pointArrayLayout',
+      'grid',
+    );
+    expect(rows.fields.map((field) => field.key)).toEqual(['rowSpacing', 'rowCount']);
+    expect(rows.fields.map((field) => field.source)).toEqual(['10', '3']);
+    expect(nextNumericInput(rows, false)?.step).toBe('pointArrayGridColumns');
+
+    const columns = createNumericInput('pointArray', 'pointArrayGridColumns');
+    expect(columns.fields.map((field) => field.key)).toEqual(['colSpacing', 'colCount']);
+    expect(columns.fields.map((field) => field.source)).toEqual(['10', '3']);
+    expect(nextNumericInput(columns, false)).toBeNull();
+    expect(nextNumericInput(columns, true)?.step).toBe('pointArrayBase');
+  });
+
+  it('格子の行・列の向きは作図面の第1軸と第2軸に固定する(欄を 2 個までに収めるため)', () => {
+    expect(DEFAULT_GRID_ROW_AZIMUTH_DEGREES).toBe(0);
+    expect(DEFAULT_GRID_COLUMN_AZIMUTH_DEGREES).toBe(90);
+    // 角度の欄はどちらの段にも出さない(傾けるのはプロパティ側の受け持ち)。
+    for (const step of ['pointArrayShape', 'pointArrayGridColumns'] as const) {
+      const state = chooseNumericInput(
+        createNumericInput('pointArray', step),
+        'pointArrayLayout',
+        'grid',
+      );
+      expect(state.fields.some((field) => field.key.endsWith('Azimuth')), step).toBe(false);
+    }
+  });
+
+  it('並べ方を ← → で送っても欄が入れ替わり、焦点は選択肢を指したまま(NFR-UX-2)', () => {
+    const state = createNumericInput('pointArray', 'pointArrayShape');
+    // 直線は欄が 3 つなので、選択肢の焦点は輪の 4 番目(添字 3)。
+    const onChoice = reduceNumericInput(state, { type: 'focus', index: 3 });
+    expect(focusedTarget(onChoice)).toEqual({ kind: 'choice', index: 0 });
+    const circular = expectOpen(applyNumericInputKey(onChoice, 'ArrowRight')).state;
+    expect(choiceValueOf(circular, 'pointArrayLayout')).toBe('circular');
+    expect(circular.fields.map((field) => field.key)).toEqual(['radius', 'circularCount']);
+    expect(focusedTarget(circular)).toEqual({ kind: 'choice', index: 0 });
+
+    const grid = expectOpen(applyNumericInputKey(circular, 'ArrowRight')).state;
+    expect(choiceValueOf(grid, 'pointArrayLayout')).toBe('grid');
+    expect(grid.fields.map((field) => field.key)).toEqual(['rowSpacing', 'rowCount']);
+    // 末尾から先頭(直線)へ回り込むと欄も 3 つへ戻る。
+    const wrapped = expectOpen(applyNumericInputKey(grid, 'ArrowRight')).state;
+    expect(choiceValueOf(wrapped, 'pointArrayLayout')).toBe('linear');
+    expect(wrapped.fields.map((field) => field.key)).toEqual(['azimuth', 'spacing', 'count']);
+    expect(focusedTarget(wrapped)).toEqual({ kind: 'choice', index: 0 });
+  });
+
+  it('並べ方ごとに欄の名前を分けてあるので、切り替えるとその並べ方の既定値から始まる', () => {
+    const circular = chooseNumericInput(
+      createNumericInput('pointArray', 'pointArrayShape'),
+      'pointArrayLayout',
+      'circular',
+    );
+    // 直線の「個数 5」を引き継がず、円周の既定 6 が出る(既定値が画面に出ないのを避けるため)。
+    expect(circular.fields.map((field) => field.source)).toEqual(['10', '6']);
+    const edited8 = reduceNumericInput(circular, { type: 'edit', index: 1, source: '8' });
+    const grid = chooseNumericInput(edited8, 'pointArrayLayout', 'grid');
+    expect(grid.fields.map((field) => field.source)).toEqual(['10', '3']);
+    // 戻すと既定値から。並べ方ごとの打ち込みを覚えておく仕組みは持たない。
+    const backToCircular = chooseNumericInput(grid, 'pointArrayLayout', 'circular');
+    expect(backToCircular.fields.map((field) => field.source)).toEqual(['10', '6']);
+    // 半径の欄は名前が同じなので、円周 ⇄ 格子でも「間隔」とは混ざらない。
+    expect(backToCircular.fields[0].key).toBe('radius');
+  });
+});
+
+describe('P4 段の網羅と、既存の段を壊していないこと', () => {
+  it('新しい段はすべて段の一覧に載っている(見出しの網羅検査が舐めるため)', () => {
+    const added = [
+      'pointArrayGridColumns',
+      'circleCenter',
+      'circleRadius',
+      'twoPointArcStart',
+      'twoPointArcEnd',
+      'twoPointArcRadius',
+      'rectangleCorner1',
+      'rectangleCorner2',
+      'polygonCenter',
+      'polygonShape',
+      'slotCenter1',
+      'slotCenter2',
+      'slotShape',
+      'ellipseCenter',
+      'ellipseShape',
+      'ellipseAngles',
+      'ellipseArcAngles',
+      'splinePoint',
+      'splineShape',
+    ] as const;
+    for (const step of added) {
+      expect(NUMERIC_INPUT_STEPS, step).toContain(step);
+      expect(MESSAGE_KEYS, step).toContain(STEP_TITLE_KEYS[step]);
+      expect(isSolidStep(step), step).toBe(false);
+    }
+  });
+
+  it('形を聞く新しい段は欄が 1 段あたり 2 個まで(統括の指示)', () => {
+    const shapeSteps = [
+      'pointArrayGridColumns',
+      'circleRadius',
+      'twoPointArcRadius',
+      'polygonShape',
+      'slotShape',
+      'ellipseShape',
+      'ellipseAngles',
+      'ellipseArcAngles',
+      'splineShape',
+    ] as const;
+    for (const step of shapeSteps) {
+      expect(createNumericInput('point', step).fields.length, step).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('新しい段でもモードの切替は座標の段だけに効く(P1 と同じ規則)', () => {
+    const radius = createNumericInput('circle', 'circleRadius');
+    expect(reduceNumericInput(radius, { type: 'setMode', mode: 'polar' })).toBe(radius);
+    const center = createNumericInput('circle', 'circleCenter');
+    expect(reduceNumericInput(center, { type: 'setMode', mode: 'polar' }).fields.map((f) => f.key))
+      .toEqual(['distance', 'azimuth', 'elevation']);
+  });
+
+  it('新しい段でも Esc は取消、不正な欄があれば決めさせない(NFR-UX-3、NFR-UX-5)', () => {
+    const state = edited(createNumericInput('polygon', 'polygonShape'), '1+');
+    expect(applyNumericInputKey(state, 'Escape')).toEqual({ kind: 'cancelled' });
+    const blocked = expectBlocked(applyNumericInputKey(state, 'Enter'));
+    expect(blocked.evaluation.canCommit).toBe(false);
+    expect(blocked.state.focusedIndex).toBe(0);
+  });
+
+  it('確定処理・段の遷移は元の state を書き換えない(不変性)', () => {
+    const state = toggleNumericInput(createNumericInput('ellipse', 'ellipseAngles'), 'ellipseArc');
+    const before = JSON.stringify(state);
+    commitNumericInput(state);
+    nextNumericInput(state, true);
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it('P1・P2・P3 の段の遷移は 1 つも変わっていない(回帰)', () => {
+    expect(nextNumericInput(createNumericInput('line', 'lineStart'), false)?.step).toBe('lineEnd');
+    expect(nextNumericInput(createNumericInput('arc', 'arcCenter'), false)?.step).toBe('arcShape');
+    expect(nextNumericInput(createNumericInput('pointArray', 'pointArrayBase'), false)?.step)
+      .toBe('pointArrayShape');
+    expect(nextNumericInput(createNumericInput('pointArray', 'pointArrayShape'), true)?.step)
+      .toBe('pointArrayBase');
+    expect(nextNumericInput(createNumericInput('pointArray', 'pointArrayShape'), false)).toBeNull();
+    expect(nextNumericInput(createNumericInput('spring', 'springShape'), false)?.step)
+      .toBe('springLength');
+    expect(nextNumericInput(createNumericInput('extrude', 'extrudeDistance'), true)).toBeNull();
+  });
+
+  it('つまみの見出しは新しい 3 つも ja.json に実在する(NFR-MA-5)', () => {
+    for (const key of ['construction', 'ellipseArc', 'splineClosed'] as const) {
+      expect(MESSAGE_KEYS).toContain(TOGGLE_LABEL_KEYS[key]);
+      expect(t(TOGGLE_LABEL_KEYS[key]).length).toBeGreaterThan(0);
+    }
   });
 });

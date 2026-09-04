@@ -47,6 +47,17 @@ const GUIDE_KEYS = {
   linearPattern: 'statusBar.guide.linearPattern',
   circularPattern: 'statusBar.guide.circularPattern',
   spring: 'statusBar.guide.spring',
+  // P4 タスク11 が `ShapeToolId`(`NumericInputToolId` の一部)へ足した新しい図形
+  // (FR-314〜318、FR-326)。この表は網羅が要るので、段を足した同じタスクで案内も足す
+  // (P3 タスク24 で `Record<NumericInputToolId>` が非網羅になった前例、
+  //  docs/報告記録.md 2026-09-04 03:20 ③)。ツールバーのボタンはタスク32。
+  circle: 'statusBar.guide.circle',
+  twoPointArc: 'statusBar.guide.twoPointArc',
+  rectangle: 'statusBar.guide.rectangle',
+  polygon: 'statusBar.guide.polygon',
+  slot: 'statusBar.guide.slot',
+  ellipse: 'statusBar.guide.ellipse',
+  spline: 'statusBar.guide.spline',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**

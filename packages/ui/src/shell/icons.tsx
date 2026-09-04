@@ -351,6 +351,95 @@ export function OffsetToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
+ * トリム(FR-322)。交わる線(縦)で区切られた横線の、**消える側を破線**にして表す。
+ * 「交点で区切って、押した側が消える」ことが 1 枚で読める絵柄にしてある(P4 タスク22)。
+ */
+export function TrimToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 2.2V13.8" />
+      <path d="M1.6 10.5H8" />
+      <path d="M8 10.5H14.4" strokeDasharray="1.6 1.6" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 延長(FR-322)。短い線(実線)が、破線でぶつかる相手の線(縦)まで伸びる絵柄
+ * (P4 タスク22)。トリムの図柄と左右対称の作りにして、隣に並べても取り違えないようにした。
+ */
+export function ExtendToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M13.2 2.2V13.8" />
+      <path d="M1.6 8H7" />
+      <path d="M7 8H13.2" strokeDasharray="1.6 1.6" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * ミラー(FR-324、P4 タスク24)。鏡の軸(縦の破線)をはさんで、実線の三角と破線の三角が
+ * 向かい合う絵柄。「軸で折り返した複製ができる」ことが 1 枚で読める。
+ */
+export function MirrorToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 1.6V14.4" strokeDasharray="1.6 1.6" />
+      <path d="M6.4 3.6 1.8 8l4.6 4.4z" />
+      <path d="M9.6 3.6 14.2 8l-4.6 4.4z" strokeDasharray="1.3 1.3" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 複写(FR-324、P4 タスク24)。実線の四角から矢印が伸び、ずれた先に破線の四角が並ぶ。
+ * オフセットの図柄(入れ子の四角)とは重ならない絵柄にしてある。
+ */
+export function CopyToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="1.4" y="6.6" width="6" height="6" />
+      <rect x="8.6" y="2.4" width="6" height="6" strokeDasharray="1.3 1.3" />
+      <path d="M6.6 5.6 9.8 2.4" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 直線配列(FR-324、P4 タスク24)。実線の縦棒 1 本と破線の縦棒 2 本を等間隔に並べ、
+ * 下に間隔の矢印を添える。加工の直線パターン(丸を並べる)とは絵柄を分けてある
+ * (こちらはスケッチの線を並べる道具なので、並ぶものを棒にした)。
+ */
+export function LinearArrayToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.4 2.2V10" />
+      <path d="M8 2.2V10" strokeDasharray="1.3 1.3" />
+      <path d="M13.6 2.2V10" strokeDasharray="1.3 1.3" />
+      <path d="M2.4 13H13.6" />
+      <path d="M11.8 11.6 13.6 13 11.8 14.4" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 円形配列(FR-324、P4 タスク24)。破線の軌道の上に、実線の棒 1 本と破線の棒 2 本を
+ * 120 度おきに置く。加工の円形パターン(丸を並べる)と同じ構図だが、並ぶものを棒にして
+ * 「スケッチの線を並べる道具」だと分かるようにした。
+ */
+export function CircularArrayToolIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="5.4" strokeDasharray="1.6 1.6" />
+      <path d="M8 1.4V5" />
+      <path d="M13.7 11.3 10.6 9.5" strokeDasharray="1.3 1.3" />
+      <path d="M2.3 11.3 5.4 9.5" strokeDasharray="1.3 1.3" />
+    </SvgIcon>
+  );
+}
+
+/**
  * 畳んだ一覧「作図」のボタン(§0.a-0.14、P4 タスク32)。四角と楕円を重ねて
  * 「いろいろな形をまとめてかく入口」を表す。中の道具を一度でも使うと、ボタンの図柄は
  * 最後に使った道具のものへ変わるので、これは何も使っていないときの顔になる。

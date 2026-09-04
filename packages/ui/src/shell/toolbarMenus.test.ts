@@ -33,8 +33,18 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
     ]);
   });
 
-  it('「編集」にはオフセットが並ぶ(タスク22〜24 がここへ足す)', () => {
-    expect(EDIT_MENU_ITEMS.map((item) => item.id)).toEqual(['offset']);
+  it('「編集」には整形系と複製系が並ぶ(タスク23 のフィレット・面取りがここへ足す)', () => {
+    expect(EDIT_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'offset',
+      // クリックだけで決まる 2 つ(タスク22)。
+      'trim',
+      'extend',
+      // 選んでから確定する複製系(タスク24)。
+      'mirror',
+      'copy',
+      'linearArray',
+      'circularArray',
+    ]);
   });
 
   it('どの項目も図柄・名前・説明を持つ(名前だけの項目を作らない)', () => {

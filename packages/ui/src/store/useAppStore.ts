@@ -534,6 +534,10 @@ const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
   // P4 タスク20 で複製(ミラー・複写・配列複写)を足した。複製の結果は元と同じ形の
   // 曲線・点なので、面の囲みにもそのまま使える(FR-324)。
   'copy',
+  // P4 タスク25 で投影・交差を足した。取り込んだ輪郭は普通の線・円弧として扱えるので、
+  // 面の囲みにも押し出しの材料にも使える(FR-325、計画書 §2「結果の曲線は…使える」)。
+  'projectedCurve',
+  'planeSection',
 ]);
 
 /**

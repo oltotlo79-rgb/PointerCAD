@@ -27,17 +27,20 @@ import {
   type ResolveContext,
   type ResolvedSketch,
   type SketchDocument,
+  type SketchResolveOptions,
   type SubShapeRef,
   type Vec3,
   type WorkPlane,
 } from '@pointercad/model';
 
 import { applySketchCommit } from '../sketch/commitToStore.js';
+import { commitExtend, commitTrim } from '../sketch/editCommands.js';
 import { freeClickPlane, picksSolidVertices } from '../sketch/freeSketch.js';
 import {
   commitNumericInput,
   createNumericInput,
   DEFAULT_COORDINATE_BASE,
+  isClickEditTool,
   isCoordinateStep,
   isReferenceCoordinateStep,
   isReferenceTool,
@@ -45,6 +48,7 @@ import {
   reduceNumericInput,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
+  type ClickEditToolId,
   type NumericInputState,
   type NumericInputStep,
   type NumericInputToolId,
@@ -55,6 +59,7 @@ import {
 import { pickSketchElement } from '../sketch/pickMath.js';
 import { resolveShapePoints } from '../sketch/shapeCommands.js';
 import { commitFace, commitSubShapePoint } from '../sketch/sketchCommands.js';
+import { extendPreviewAt, sameEditPreview, trimPreviewAt } from '../sketch/trimPreview.js';
 import {
   chooseSnap,
   collectSnapCandidates,
@@ -368,9 +373,109 @@ export function attachSketchInteraction(
     return subShapeRefOf(toSubShapeBodies(useAppStore.getState().bodies), elementId);
   }
 
+  /* ---------------------------------------------------------------- *
+   * トリム・延長(FR-322、計画書タスク22、§0.a-0.26 の利用者の決定)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * トリム・延長で押した「曲線と、その上の場所」。曲線に当たっていなければ null。
+   *
+   * 点や面ではなく**曲線に当たったときだけ**対象にする(切る・伸ばす相手は線・円弧だけ)。
+   * 場所は作図面の上の点で、吸着は使わない(吸着は端点・中点へ引き寄せるので、
+   * 「いま指している区間」がずれてしまう。狙っているのは点ではなく区間)。
+   */
+  function editTargetAt(
+    pointer: readonly [number, number],
+  ): { readonly elementId: string; readonly at: Vec3 } | null {
+    const state = useAppStore.getState();
+    const picked = pickSketchElement(state.resolvedSketch, project, pointer);
+    if (picked === null || picked.kind !== 'curve') {
+      return null;
+    }
+    const at = pointAt(pointer, null);
+    return at === null ? null : { elementId: picked.elementId, at };
+  }
+
+  /**
+   * トリム・延長のときのマウスの動き。乗っている区間(トリムなら消える区間、
+   * 延長なら伸びる区間)を予告として出す(§0.a-0.26、NFR-UX-5)。
+   * 断られる場面では何も強調しない。理由はクリックしたときに帯へ出る。
+   */
+  function updateEditPreview(tool: ClickEditToolId, pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    const target = editTargetAt(pointer);
+    const nextHovered = target === null ? null : target.elementId;
+    if (nextHovered !== state.hoveredElementId) {
+      state.setHovered(nextHovered);
+    }
+    if (state.snapIndicator !== null) {
+      state.setSnapIndicator(null);
+    }
+    const outcome =
+      target === null
+        ? null
+        : tool === 'trim'
+          ? trimPreviewAt(state.resolvedSketch, target.elementId, target.at)
+          : extendPreviewAt(state.resolvedSketch, target.elementId, target.at);
+    const preview = outcome !== null && outcome.ok ? outcome.preview : null;
+    if (!sameEditPreview(state.editPreview, preview)) {
+      state.setEditPreview(preview);
+    }
+  }
+
+  /**
+   * 作図面の引き方。model の `trimCurve` / `extendCurve` は中で文書を解き直すので、
+   * 任意の作業平面(FR-328)も引けるように、いま解いてある面を渡す(`shapeCommands.ts` の
+   * `resolveShapePoints` と同じ渡し方)。3D スケッチ(`'free'`)は model 側が
+   * 「作図面が無い」ものとして扱うので、ここへは来ない。
+   */
+  function editResolveOptions(): SketchResolveOptions {
+    const state = useAppStore.getState();
+    return {
+      workPlane: (planeId) =>
+        planeId === state.workPlaneId ? state.workPlane : baseWorkPlane(planeId),
+    };
+  }
+
+  /**
+   * トリム・延長のクリック(FR-322)。押した瞬間に決まり、**1 クリック = Undo 1 回**
+   * (`setSketch` が文書を 1 段だけ積む、FR-505)。道具は選んだままなので、
+   * 続けて何か所でも消せる・伸ばせる(§0.a-0.26)。
+   *
+   * 断りは model の 6 種をそのまま帯へ出す(`editCommands.ts` が文言キーへ移し替える)。
+   * 文書は変わらないので、失敗しても線は消えない(FR-504、NFR-UX-5)。
+   */
+  function commitEditClick(tool: ClickEditToolId, pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    const target = editTargetAt(pointer);
+    if (target === null) {
+      state.setEditError('trim.error.missingElement');
+      return;
+    }
+    const options = editResolveOptions();
+    const outcome =
+      tool === 'trim'
+        ? commitTrim(state.sketch, target.elementId, target.at, options)
+        : commitExtend(state.sketch, target.elementId, target.at, options);
+    if (!outcome.ok) {
+      state.setEditError(outcome.reasonKey);
+      return;
+    }
+    // 形が変わるので、いま出している予告は用済み(次にマウスが動いたら出し直す)。
+    state.setEditPreview(null);
+    state.setSketch(outcome.document);
+  }
+
   function onPointerMove(event: PointerEvent): void {
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
+
+    if (isClickEditTool(state.activeTool)) {
+      // トリム・延長は「乗せた区間を強調 → 押して消す/伸ばす」だけの道具なので、
+      // 吸着も立体の当たり判定も通さない(§0.a-0.26)。
+      updateEditPreview(state.activeTool, pointer);
+      return;
+    }
 
     if (skipsSketchElements(state.selectionKind)) {
       /*
@@ -424,6 +529,10 @@ export function attachSketchInteraction(
     }
     if (state.snapIndicator !== null) {
       state.setSnapIndicator(null);
+    }
+    // 画面から出たら「ここが消える」の赤も消す(タスク22)。
+    if (state.editPreview !== null) {
+      state.setEditPreview(null);
     }
   }
 
@@ -623,6 +732,17 @@ export function attachSketchInteraction(
       return;
     }
 
+    if (isClickEditTool(tool)) {
+      /*
+        トリム・延長(FR-322、§0.a-0.26 の利用者の決定)。押した瞬間に決まる道具なので、
+        選択もその場入力も挟まない。焦点は canvas に残して、続けて何か所でも押せて
+        Esc で終われるようにする(NFR-UX-7)。
+      */
+      event.preventDefault();
+      commitEditClick(tool, pointer);
+      return;
+    }
+
     if (isReferenceTool(tool)) {
       /*
         基準ジオメトリの道具(FR-328、FR-329、タスク13)。座標を聞いている段では押した場所を
@@ -713,6 +833,11 @@ export function attachSketchInteraction(
       state.setSelection([]);
       state.setPendingStart(null);
       state.closeNumericInput();
+      if (isClickEditTool(state.activeTool)) {
+        // トリム・延長は Esc で終わり、選択の道具へ戻る(§0.a-0.26 の利用者の決定)。
+        // 予告の赤は `setActiveTool` が落とす。
+        state.setActiveTool('select');
+      }
       return;
     }
     if (event.key === 'Enter' && state.activeTool === 'face') {

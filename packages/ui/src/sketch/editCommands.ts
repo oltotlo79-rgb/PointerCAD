@@ -12,7 +12,12 @@
  * 距離が大きすぎて輪郭が潰れる等の失敗は再計算後に `sketchErrors` へ現れる(§2.9)。
  *
  * トリム・延長・フィレット/面取り・ミラー/複写/配列複写(タスク22〜24)もこのファイルへ集める
- * 想定(計画書ファイル構成)。今回はオフセットだけを実装する。
+ * 想定(計画書ファイル構成)。タスク22 でトリム・延長を足した。
+ *
+ * **トリム・延長だけは選択を使わない。** 「道具を選んで、消したい部分/伸ばしたい端の近くを
+ * クリック」(§0.a-0.26 の利用者の決定 2026-09-04)なので、押した要素と押した場所を
+ * そのまま model の `trimCurve` / `extendCurve` へ渡す。ここでするのは断りの鍵を
+ * 画面の文言キー(ja.json)へ移し替えることだけで、幾何の判断は 1 つも持たない。
  */
 
 import { expressionValueFromNumber } from '@pointercad/expression';
@@ -20,19 +25,25 @@ import {
   appendFeature,
   curveEnd,
   curveStart,
+  extendCurve,
   isSamePoint,
   nextFeatureId,
   nextFeatureName,
+  trimCurve,
   type OffsetCornerKind,
   type OffsetSide,
   type ResolvedCurve,
   type ResolvedSketch,
   type SketchDocument,
+  type SketchResolveOptions,
+  type TrimErrorKey,
+  type Vec3,
   type WorkPlaneId,
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
-import type { EditInputCommit } from './numericInput.js';
+import { copyToolReadiness } from './copyCommands.js';
+import { isClickEditTool, type EditInputCommit, type EditMenuToolId } from './numericInput.js';
 import { boundaryElementKind, toElementRef } from './sketchCommands.js';
 
 /** オフセットの既定距離(mm、NFR-UX-4)。5mm は板物・ブラケットの縁取りでよく使う値。 */
@@ -93,10 +104,99 @@ export function commitOffset(
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * トリム・延長(FR-322、タスク22)
+ * ------------------------------------------------------------------ */
+
+/**
+ * model の断り 6 種と、画面に出す文言(ja.json)の対応。
+ *
+ * model 側(`trimExtend.ts` の `TrimErrorKey`)は日本語の文も一緒に返すが、UI の文言は
+ * すべて `ja.json` に置く決まり(NFR-MA-5)なので、ここで鍵へ移し替える。
+ * 種類が増えたらこの表が型検査で落ちるので、文言の足し忘れが起きない。
+ */
+const TRIM_ERROR_KEYS: Readonly<Record<TrimErrorKey, MessageKey>> = {
+  missingElement: 'trim.error.missingElement',
+  unsupportedCurve: 'trim.error.unsupportedCurve',
+  noIntersection: 'trim.error.noIntersection',
+  singleIntersection: 'trim.error.singleIntersection',
+  wholeCurve: 'trim.error.wholeCurve',
+  noBoundary: 'trim.error.noBoundary',
+};
+
+/** 断りの鍵を画面の文言キーへ。予告(`trimPreview.ts`)の断りもここを通す。 */
+export function trimErrorMessageKey(reason: TrimErrorKey): MessageKey {
+  return TRIM_ERROR_KEYS[reason];
+}
+
+export type TrimCommitOutcome =
+  | { readonly ok: true; readonly document: SketchDocument }
+  | { readonly ok: false; readonly reasonKey: MessageKey };
+
+/**
+ * トリム(FR-322)。押した要素の、押した場所を含む区間を消す。
+ *
+ * 矩形・正多角形・長穴を押したときは model が先に線分・円弧へ分解してから切る
+ * (`explodeCompoundFeature`)。文書の差し替えは 1 回なので、取り消し(Ctrl+Z)も
+ * 1 回で分解前の図形へ戻る(FR-505)。
+ */
+export function commitTrim(
+  document: SketchDocument,
+  elementId: string,
+  at: Vec3,
+  options: SketchResolveOptions = {},
+): TrimCommitOutcome {
+  const outcome = trimCurve(document, { elementId, at }, options);
+  return outcome.ok
+    ? { ok: true, document: outcome.document }
+    : { ok: false, reasonKey: TRIM_ERROR_KEYS[outcome.reason] };
+}
+
+/**
+ * 延長(FR-322)。押した場所に近いほうの端を、その先で最初にぶつかる曲線まで伸ばす。
+ * ぶつかる相手が無ければ文書は変えず、理由だけを返す(NFR-UX-5)。
+ */
+export function commitExtend(
+  document: SketchDocument,
+  elementId: string,
+  at: Vec3,
+  options: SketchResolveOptions = {},
+): TrimCommitOutcome {
+  const outcome = extendCurve(document, { elementId, at }, options);
+  return outcome.ok
+    ? { ok: true, document: outcome.document }
+    : { ok: false, reasonKey: TRIM_ERROR_KEYS[outcome.reason] };
+}
+
 /** ツールバーのボタンが押せる条件(§0.a-0.6 と同じ「対象を選んでから」の判定)。 */
 export interface EditToolReadiness {
   readonly ready: boolean;
   readonly reasonKey: MessageKey | null;
+}
+
+/**
+ * 「編集」の一覧の道具が押せる条件(NFR-UX-5)。
+ *
+ * オフセットは「選んでから操作」なので選択を見るが、**トリム・延長は選択を使わない**
+ * (道具を選んでからビューポートをクリックする、§0.a-0.26)ので、選択が空でも押せる。
+ * 押した先に切れない/伸ばせない事情があるときは、押した瞬間に帯へ理由が出る。
+ *
+ * 複製系(ミラー・複写・配列複写、FR-324、タスク24)も「選んでから操作」だが、点も
+ * 複製できる(オフセットは曲線だけ)ので判定が違う。振り分けはここ 1 か所に置き、
+ * 判定そのものは `copyCommands.ts` の `copyToolReadiness` が持つ。
+ */
+export function editToolReadiness(
+  tool: EditMenuToolId,
+  resolved: ResolvedSketch,
+  selection: readonly string[],
+): EditToolReadiness {
+  if (isClickEditTool(tool)) {
+    return { ready: true, reasonKey: null };
+  }
+  if (tool === 'offset') {
+    return offsetToolReadiness(resolved, selection);
+  }
+  return copyToolReadiness(resolved, selection);
 }
 
 /**

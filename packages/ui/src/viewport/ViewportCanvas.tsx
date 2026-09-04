@@ -112,6 +112,7 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setSubShapeHighlight(initial.hoveredElementId, initial.selection);
     scene.setWorkPlane(initial.workPlane);
     scene.setReferences(initial.resolvedReferences);
+    scene.setEditPreview(initial.editPreview);
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
@@ -147,6 +148,11 @@ export function ViewportCanvas(): React.JSX.Element {
       // 基準ジオメトリ(FR-329)。文書から解いた控えが変わったときだけ出し直す。
       if (next.resolvedReferences !== previous.resolvedReferences) {
         scene.setReferences(next.resolvedReferences);
+      }
+      // トリム・延長の予告(FR-322、タスク22)。同じ区間なら
+      // `attachSketchInteraction` 側が入れ直さないので、ここは変化だけを見ればよい。
+      if (next.editPreview !== previous.editPreview) {
+        scene.setEditPreview(next.editPreview);
       }
       // 表示テーマが変わったら 3D の色も読み直す(FR-908。拡大率は 3D の色を変えない)。
       if (next.displaySettings.theme !== previous.displaySettings.theme) {

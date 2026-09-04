@@ -47,12 +47,14 @@ import {
   DEFAULT_SPRING_TURNS,
   DEFAULT_SPRING_WIRE_DIAMETER_MM,
   DEFAULT_THREAD_DESIGNATION,
+  MAX_COPY_COUNT,
   MAX_PATTERN_COUNT,
   MAX_POINT_ARRAY_COUNT,
   MAX_SPLINE_POINTS,
   MAX_SPRING_TURNS,
   METRIC_THREAD_DESIGNATIONS,
   MIN_CLOSED_SPLINE_POINTS,
+  MIN_COPY_COUNT,
   MIN_SPLINE_POINTS,
   type ChamferSize,
   type CoordinateInput,
@@ -108,10 +110,43 @@ export type ShapeToolId =
  * P4 で足す、既存要素を参照して整形する道具(FR-321〜324、タスク21〜24)。
  *
  * `ShapeToolId` と同じ理由で `SketchToolId` へは足さない(ツールバーの「基本」区画とは
- * 1対1に結び付かない)。今回はオフセットだけを実装し、トリム・延長・フィレット/面取り・
- * ミラー/複写/配列複写はタスク22〜24 がここへ追加する(計画書ファイル構成)。
+ * 1対1に結び付かない)。タスク21 がオフセット、タスク24 がミラー・複写・直線配列・円形配列
+ * (FR-324)を足した。フィレット/面取り(タスク23)もここへ足す(計画書ファイル構成)。
  */
-export type EditToolId = 'offset';
+export type EditToolId =
+  | 'offset'
+  /** 鏡像複写(FR-324)。鏡にするものを選ぶ 1 段だけ。 */
+  | 'mirror'
+  /** 平行移動の複写(FR-324)。移動量の 1 段だけ。 */
+  | 'copy'
+  /** 直線状の配列複写(FR-324)。向き+間隔 → 個数 の 2 段。 */
+  | 'linearArray'
+  /** 円形の配列複写(FR-324)。中心 → 角度+個数 の 2 段。 */
+  | 'circularArray';
+
+/**
+ * 整形系のうち、**数値をひとつも聞かない**道具(FR-322、タスク22)。
+ *
+ * トリム・延長は「道具を選んで、消したい部分/伸ばしたい端の近くをクリック」で決まる
+ * (§0.a-0.26 の利用者の決定 2026-09-04)。距離も角度も聞かないので `EDIT_TOOL_STEPS`
+ * には入れず、段を持たない道具として別の型にしてある(段の表へ嘘の段を書かないため)。
+ * ツールバーの「編集」の一覧には `EditToolId` と一緒に並ぶ。
+ */
+export type ClickEditToolId = 'trim' | 'extend';
+
+/** ツールバーの「編集」の一覧に並ぶ道具(段のあるものと、クリックだけのもの)。 */
+export type EditMenuToolId = EditToolId | ClickEditToolId;
+
+/** 一覧の正本。`EDIT_TOOL_STEPS` と同じ役目で、こちらは段を持たない側。 */
+const CLICK_EDIT_TOOLS: Readonly<Record<ClickEditToolId, true>> = {
+  trim: true,
+  extend: true,
+};
+
+/** クリックだけで決まる整形系の道具かどうか。一覧は `CLICK_EDIT_TOOLS` の 1 か所だけ。 */
+export function isClickEditTool(tool: NumericInputToolId): tool is ClickEditToolId {
+  return tool in CLICK_EDIT_TOOLS;
+}
 
 /**
  * P4 タスク13 で足す基準ジオメトリの道具(FR-328 の任意の作業平面、FR-329 の基準軸・
@@ -145,7 +180,8 @@ export type NumericInputToolId =
   | SolidToolId
   | ShapeToolId
   | ReferenceToolId
-  | EditToolId;
+  | EditToolId
+  | ClickEditToolId;
 
 /** 座標の指定方法(FR-301〜303)。 */
 export type CoordinateMode = 'absolute' | 'relative' | 'polar';
@@ -260,8 +296,24 @@ export type ReferenceNumericInputStep = ReferenceCoordinateStep | ReferenceShape
 /**
  * 整形系の道具の段(P4 タスク21〜24、FR-321〜324)。オフセットは「距離」の 1 段だけで
  * 終わる(選択はすでに済んでいる前提。§0.a-0.10「複製系」)。
+ *
+ * 複製系(タスク24、FR-324)は**欄を 1 段あたり 2 個まで**にする統括の指示に合わせ、
+ * 配列複写だけ 2 段に分けてある(直線は「向き+間隔」→「個数」、円形は「中心」→「角度+個数」)。
  */
-export type EditNumericInputStep = 'offsetDistance';
+export type EditNumericInputStep =
+  | 'offsetDistance'
+  /** ミラーの鏡にするもの(作図面の横軸/縦軸/選んだ線)。欄は持たない。 */
+  | 'mirrorBasis'
+  /** 複写の移動量(作図面の 2 軸ぶん。3D スケッチでは 3 つ目の欄も出る)。 */
+  | 'copyDelta'
+  /** 直線配列の 1 段目(向き・間隔)。 */
+  | 'linearArrayDirection'
+  /** 直線配列の 2 段目(個数)。 */
+  | 'linearArrayCount'
+  /** 円形配列の 1 段目(中心の座標)。 */
+  | 'circularArrayCenter'
+  /** 円形配列の 2 段目(角度・個数・全周)。 */
+  | 'circularArrayShape';
 
 /** ポップアップの段階。 */
 export type NumericInputStep =
@@ -371,7 +423,10 @@ export type NumericChoiceKey =
   /** オフセットの側。閉じた輪郭は外/内、開いた曲線は左/右と言葉を替える(値は共通)。 */
   | 'offsetSide'
   /** オフセットの角の作り方(丸める/尖らせる)。 */
-  | 'offsetCorner';
+  | 'offsetCorner'
+  /* ---- P4 タスク24: ミラー(FR-324) ---- */
+  /** 鏡にするもの(作図面の横軸 / 縦軸 / 選んだ線)。 */
+  | 'mirrorBasis';
 
 export interface NumericChoiceOption {
   readonly value: string;
@@ -437,6 +492,11 @@ export interface NumericInputState {
     readonly fields: readonly NumericField[];
     readonly choices: readonly NumericChoice[];
     readonly axisLine?: SketchLineRef;
+    /**
+     * 1 段目の位置の決め方(P4 タスク24)。1 段目が座標を聞く道具(円形配列の中心)でだけ
+     * 入る。2 段目の確定で、持ち越した欄から中心の座標を組み立て直すのに要る。
+     */
+    readonly mode?: CoordinateMode;
   };
   /**
    * 軸の選択肢に並べる、文書にある基準軸(FR-329、タスク13)。`axisLine` と同じ役目で、
@@ -809,11 +869,102 @@ const OFFSET_DISTANCE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'distance', labelKey: 'numericInput.field.offsetDistance', tooltipKey: 'numericInput.tooltip.offsetDistance', unit: 'mm', defaultSource: '5', range: POSITIVE },
 ];
 
-/** 整形系の段の欄。今回はオフセットの 1 段だけ(タスク22〜24 がここへ足す)。 */
-function editFieldDefinitionsFor(step: EditNumericInputStep): readonly NumericFieldDefinition[] {
+/* ---- P4 タスク24: 複製系(ミラー・複写・配列複写、FR-324) ---- */
+
+/**
+ * 複製系の既定値(NFR-UX-4「Enter 連打だけでも意味のある結果になる」)。
+ *
+ * 欄の既定と `copyCommands.ts` の「欄が渡されなかったときの値」を**同じ数**にするため、
+ * 段の側(このファイル)へ置いて `copyCommands.ts` から引く。逆向き(コマンド側に置く)に
+ * すると、段の表がコマンドを輸入することになって輸入の向きが往復するため。
+ */
+/** 複写の既定の移動量(mm)。作図面の第1軸へ 20mm、図形の隣に並ぶ大きさ。 */
+export const DEFAULT_COPY_DELTA_MM = 20;
+/** 配列複写の既定の間隔(mm)。複写の既定と同じにして、道具を変えても勘が働くようにする。 */
+export const DEFAULT_ARRAY_SPACING_MM = 20;
+/** 直線配列の既定の個数(もとを含めた総数、統括の指示)。 */
+export const DEFAULT_LINEAR_ARRAY_COUNT = 3;
+/** 円形配列の既定の個数(もとを含めた総数、統括の指示)。 */
+export const DEFAULT_CIRCULAR_ARRAY_COUNT = 4;
+/** 円形配列の既定の角度(度)。既定は「全周」が入なので、切にしたときの出発点。 */
+export const DEFAULT_ARRAY_ANGLE_DEGREES = 360;
+/** 直線配列の既定の向き(度)。作図面の第1軸から測る角度で、0 は第1軸そのもの。 */
+export const DEFAULT_ARRAY_DIRECTION_DEGREES = 0;
+
+/**
+ * 並べる個数(もとを含めた総数)の範囲。model の `MIN_COPY_COUNT` / `MAX_COPY_COUNT` を
+ * そのまま使うので、上限・下限が 2 か所に分かれない。整数かどうかは欄では見ない
+ * (`NumericFieldRange` は上下限しか表せない。判定は `copyCountRejection` と model)。
+ */
+const COPY_COUNT_RANGE: NumericFieldRange = {
+  min: MIN_COPY_COUNT,
+  minInclusive: true,
+  max: MAX_COPY_COUNT,
+  maxInclusive: true,
+};
+
+/**
+ * 複写の移動量(mm、FR-324)。**作図面の第1軸・第2軸ぶん**で聞く(見出しは ΔX / ΔY を
+ * 流用する)。ワールドの X / Y で聞くと、XZ 面にかいた図形を動かしたときに作図面から
+ * 浮いてしまうため(`copyCommands.ts` の `planeDeltaCoordinate` の注釈)。
+ * 既定は「第1軸へ 20mm」で、Enter を続けて押すだけで隣に 1 つ増える(NFR-UX-4)。
+ */
+const COPY_DELTA_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'dx', labelKey: 'numericInput.field.dx', tooltipKey: 'numericInput.tooltip.copyDx', unit: 'mm', defaultSource: String(DEFAULT_COPY_DELTA_MM) },
+  { key: 'dy', labelKey: 'numericInput.field.dy', tooltipKey: 'numericInput.tooltip.copyDy', unit: 'mm', defaultSource: '0' },
+];
+
+/** 3D スケッチ(作図面なし)の複写。ワールドの 3 成分をそのまま聞く。 */
+const COPY_DELTA_FREE_FIELDS: readonly NumericFieldDefinition[] = [
+  ...COPY_DELTA_FIELDS,
+  { key: 'dz', labelKey: 'numericInput.field.dz', tooltipKey: 'numericInput.tooltip.copyDz', unit: 'mm', defaultSource: '0' },
+];
+
+/**
+ * 直線配列の 1 段目(向き・間隔、FR-324)。向きは作図面の第1軸から測った角度で、
+ * 負の角度も逆向きとして意味を持つので範囲は付けない。
+ */
+const LINEAR_ARRAY_DIRECTION_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'angle', labelKey: 'numericInput.field.arrayDirection', tooltipKey: 'numericInput.tooltip.arrayDirection', unit: 'degree', defaultSource: String(DEFAULT_ARRAY_DIRECTION_DEGREES) },
+  { key: 'spacing', labelKey: 'numericInput.field.spacing', tooltipKey: 'numericInput.tooltip.arraySpacing', unit: 'mm', defaultSource: String(DEFAULT_ARRAY_SPACING_MM), range: POSITIVE },
+];
+
+/** 直線配列の 2 段目(個数、FR-324)。 */
+const LINEAR_ARRAY_COUNT_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'count', labelKey: 'numericInput.field.count', tooltipKey: 'numericInput.tooltip.arrayCount', unit: 'count', defaultSource: String(DEFAULT_LINEAR_ARRAY_COUNT), range: COPY_COUNT_RANGE },
+];
+
+/** 円形配列の 2 段目(角度・個数、FR-324)。中心は 1 段目で座標として聞く。 */
+const CIRCULAR_ARRAY_SHAPE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'angle', labelKey: 'numericInput.field.patternAngle', tooltipKey: 'numericInput.tooltip.arrayAngle', unit: 'degree', defaultSource: String(DEFAULT_ARRAY_ANGLE_DEGREES), range: ANGLE_UP_TO_360 },
+  { key: 'count', labelKey: 'numericInput.field.count', tooltipKey: 'numericInput.tooltip.arrayCount', unit: 'count', defaultSource: String(DEFAULT_CIRCULAR_ARRAY_COUNT), range: COPY_COUNT_RANGE },
+];
+
+/**
+ * 整形系の段の欄(オフセットと複製系)。
+ *
+ * 複写だけ、作図面のあるスケッチ(2 欄)と 3D スケッチ(3 欄)で欄の数が変わるので
+ * `options.freeSketch` を見る。座標の段(円形配列の中心)はここを通らない
+ * (`definitionsFor` が座標の欄を返す)。
+ */
+function editFieldDefinitionsFor(
+  step: Exclude<EditNumericInputStep, EditCoordinateStep>,
+  options: NumericInputOptions,
+): readonly NumericFieldDefinition[] {
   switch (step) {
     case 'offsetDistance':
       return OFFSET_DISTANCE_FIELDS;
+    case 'mirrorBasis':
+      // 鏡にするものは選択肢だけで決まる(欄は無い)。
+      return NO_FIELDS;
+    case 'copyDelta':
+      return options.freeSketch === true ? COPY_DELTA_FREE_FIELDS : COPY_DELTA_FIELDS;
+    case 'linearArrayDirection':
+      return LINEAR_ARRAY_DIRECTION_FIELDS;
+    case 'linearArrayCount':
+      return LINEAR_ARRAY_COUNT_FIELDS;
+    case 'circularArrayShape':
+      return CIRCULAR_ARRAY_SHAPE_FIELDS;
   }
 }
 
@@ -1001,6 +1152,12 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   referenceCsOrigin: 'numericInput.title.referenceCsOrigin',
   referenceCsAxes: 'numericInput.title.referenceCsAxes',
   offsetDistance: 'numericInput.title.offsetDistance',
+  mirrorBasis: 'numericInput.title.mirrorBasis',
+  copyDelta: 'numericInput.title.copyDelta',
+  linearArrayDirection: 'numericInput.title.linearArrayDirection',
+  linearArrayCount: 'numericInput.title.linearArrayCount',
+  circularArrayCenter: 'numericInput.title.circularArrayCenter',
+  circularArrayShape: 'numericInput.title.circularArrayShape',
 };
 
 /** 段階の一覧。タスク18 の部品と、キーの網羅検査が舐めるために公開する。 */
@@ -1057,6 +1214,12 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'referenceCsOrigin',
   'referenceCsAxes',
   'offsetDistance',
+  'mirrorBasis',
+  'copyDelta',
+  'linearArrayDirection',
+  'linearArrayCount',
+  'circularArrayCenter',
+  'circularArrayShape',
 ];
 
 /** ソリッドの道具が最初に聞く段階。ツールバーがここから開く。ばねは形(springShape)から。 */
@@ -1166,6 +1329,10 @@ export function isReferenceCoordinateStep(
  */
 export const EDIT_TOOL_STEPS: Readonly<Record<EditToolId, EditNumericInputStep>> = {
   offset: 'offsetDistance',
+  mirror: 'mirrorBasis',
+  copy: 'copyDelta',
+  linearArray: 'linearArrayDirection',
+  circularArray: 'circularArrayCenter',
 };
 
 /** 整形系の道具かどうか。一覧は `EDIT_TOOL_STEPS` の 1 か所だけに置く。 */
@@ -1176,12 +1343,44 @@ export function isEditTool(tool: NumericInputToolId): tool is EditToolId {
 /** 段から道具を引く。確定結果へ入れる道具名の正本(`SOLID_STEP_TOOLS` と同じ役目)。 */
 const EDIT_STEP_TOOLS: Readonly<Record<EditNumericInputStep, EditToolId>> = {
   offsetDistance: 'offset',
+  mirrorBasis: 'mirror',
+  copyDelta: 'copy',
+  linearArrayDirection: 'linearArray',
+  linearArrayCount: 'linearArray',
+  circularArrayCenter: 'circularArray',
+  circularArrayShape: 'circularArray',
 };
 
 /** 段が整形系のものかどうか。 */
 export function isEditStep(step: NumericInputStep): step is EditNumericInputStep {
   return step in EDIT_STEP_TOOLS;
 }
+
+/**
+ * 整形系のうち、座標を 1 点聞く段(P4 タスク24)。いまは円形配列の中心だけ。
+ * 基準ジオメトリの `REFERENCE_COORDINATE_STEPS` と同じ役目で、位置の決め方(絶対/相対/極)の
+ * タブを出すかどうかもここで決まる(`asksCoordinate`)。
+ */
+const EDIT_COORDINATE_STEPS: Readonly<Record<'circularArrayCenter', true>> = {
+  circularArrayCenter: true,
+};
+
+/** 座標を聞く整形系の段の型。欄の並びは座標の 3 欄になる。 */
+export type EditCoordinateStep = keyof typeof EDIT_COORDINATE_STEPS;
+
+export function isEditCoordinateStep(step: NumericInputStep): step is EditCoordinateStep {
+  return step in EDIT_COORDINATE_STEPS;
+}
+
+/**
+ * 1 段目を確定したら閉じずに次の段を開く整形系の道具(P4 タスク24)。
+ * ばねの `springShape → springLength` と同じ作りで、1 段目の欄・選択肢・位置の決め方は
+ * `carriedStage1` に持ち越して 2 段目の確定でまとめて 1 つの `EditInputCommit` にする。
+ */
+const EDIT_SECOND_STEPS: Readonly<Partial<Record<EditNumericInputStep, EditNumericInputStep>>> = {
+  linearArrayDirection: 'linearArrayCount',
+  circularArrayCenter: 'circularArrayShape',
+};
 
 /** 段階から道具を引く。確定結果へ入れる道具名の正本。ばねは springShape / springLength とも spring。 */
 const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
@@ -1252,6 +1451,25 @@ const SKETCH_STEP_TOGGLE_KEYS: Readonly<
   ellipseArcAngles: [],
   splinePoint: [],
   splineShape: ['splineClosed', 'construction'],
+};
+
+/**
+ * 整形系の段のつまみ(P4 タスク21・24)。
+ *
+ * 構築線(FR-320)は**要素が履歴へ積まれる最後の段**にだけ置く(スケッチの段と同じ約束)。
+ * 配列複写は 2 段あるので、つまみが付くのは 2 段目のほう。円形配列の「全周」は、入なら
+ * 360 度を等分し、切なら「角度」の欄を個数 − 1 で等分する(P3 の円形パターンと同じ)。
+ */
+const EDIT_STEP_TOGGLE_KEYS: Readonly<
+  Record<EditNumericInputStep, readonly NumericToggleKey[]>
+> = {
+  offsetDistance: [],
+  mirrorBasis: ['construction'],
+  copyDelta: ['construction'],
+  linearArrayDirection: [],
+  linearArrayCount: ['construction'],
+  circularArrayCenter: [],
+  circularArrayShape: ['fullCircle', 'construction'],
 };
 
 /** つまみの見出し。 */
@@ -1486,6 +1704,50 @@ function offsetCornerChoice(): NumericChoice {
   };
 }
 
+/* ---- P4 タスク24: ミラーの選択肢(FR-324) ---- */
+
+/**
+ * ミラーで鏡にできるものの一覧(P4 タスク24)。ツールバーが選択と作図面から見込んで渡す
+ * (`copyCommands.ts` の `mirrorAxisAvailability`)。渡されなければ「作図面の軸が使える」
+ * として扱う(基準の 3 面の上でかいているのが普通のため)。
+ */
+export interface MirrorAxisOptions {
+  /** 作図面の横軸・縦軸で折り返せるか。基準の 3 面(XY・XZ・YZ)のときだけ真。 */
+  readonly planeAxes: boolean;
+  /** 選択の中に、鏡にできる線分があるか。 */
+  readonly selectedLine: boolean;
+}
+
+/** 何も渡されなかったときの見込み。基準の 3 面の上でかいている前提。 */
+const DEFAULT_MIRROR_AXES: MirrorAxisOptions = { planeAxes: true, selectedLine: false };
+
+/**
+ * 鏡にするもの(FR-324)。
+ *
+ * 見出しを「作図面の X 軸 / Y 軸」ではなく「横軸 / 縦軸」にしてある。XZ 面の縦向きの軸は Z、
+ * YZ 面の横向きの軸は Y なので、「Y 軸」と書くと作図面によっては嘘になるため(統括の指示
+ * との違いとして報告する)。ヘルプでは「XY 面なら X 軸」と言い添える。
+ */
+function mirrorBasisChoice(axes: MirrorAxisOptions): NumericChoice {
+  const options: NumericChoiceOption[] = [];
+  if (axes.planeAxes) {
+    options.push(
+      { value: 'axisU', labelKey: 'numericInput.mirrorBasis.axisU' },
+      { value: 'axisV', labelKey: 'numericInput.mirrorBasis.axisV' },
+    );
+  }
+  if (axes.selectedLine) {
+    options.push({ value: 'line', labelKey: 'numericInput.mirrorBasis.line' });
+  }
+  return {
+    key: 'mirrorBasis',
+    labelKey: 'numericInput.choice.mirrorBasis',
+    // 使えるものの先頭を既定にする(押せない選択肢を初期値にしない、NFR-UX-5)。
+    value: options[0]?.value ?? 'axisU',
+    options,
+  };
+}
+
 /* ---- P4 タスク13: 基準ジオメトリの選択肢(FR-328、FR-329) ---- */
 
 /** 選択肢の値で「文書にある基準軸」を指すときの頭(`reference:基準軸-1` の形)。 */
@@ -1593,6 +1855,8 @@ function choicesFor(step: NumericInputStep, options: NumericInputOptions): reado
   switch (step) {
     case 'offsetDistance':
       return [offsetSideChoice(options.offsetOpenContour ?? false), offsetCornerChoice()];
+    case 'mirrorBasis':
+      return [mirrorBasisChoice(options.mirrorAxes ?? DEFAULT_MIRROR_AXES)];
     case 'referencePlaneOffset':
       return [referencePlaneBaseChoice()];
     case 'referencePlaneTilt':
@@ -1770,25 +2034,26 @@ export function defaultModeForStep(step: NumericInputStep): CoordinateMode {
  * 絞り込みができる元の 2 つを使う。
  */
 export function asksCoordinate(step: NumericInputStep): boolean {
-  return isCoordinateStep(step) || isReferenceCoordinateStep(step);
+  return isCoordinateStep(step) || isReferenceCoordinateStep(step) || isEditCoordinateStep(step);
 }
 
 function definitionsFor(
   step: NumericInputStep,
   mode: CoordinateMode,
   choices: readonly NumericChoice[],
+  options: NumericInputOptions = {},
 ): readonly NumericFieldDefinition[] {
   if (isSolidStep(step)) {
     return solidFieldDefinitionsFor(step, choices);
   }
-  if (isReferenceCoordinateStep(step) || isCoordinateStep(step)) {
+  if (isReferenceCoordinateStep(step) || isCoordinateStep(step) || isEditCoordinateStep(step)) {
     return COORDINATE_FIELDS[mode];
   }
   if (isReferenceStep(step)) {
     return referenceFieldDefinitionsFor(step, choices);
   }
   if (isEditStep(step)) {
-    return editFieldDefinitionsFor(step);
+    return editFieldDefinitionsFor(step, options);
   }
   return sketchShapeFieldDefinitionsFor(step, choices);
 }
@@ -1803,8 +2068,13 @@ function togglesFor(step: NumericInputStep): readonly NumericToggle[] {
     return [];
   }
   if (isEditStep(step)) {
-    // オフセットは今回つまみを持たない(構築線にする欄はタスク33 のプロパティへ譲る)。
-    return [];
+    // オフセットはつまみを持たない(構築線にする欄はタスク33 のプロパティへ譲る)。
+    // 複製系(タスク24)は**要素が履歴へ積まれる最後の段**にだけ構築線のつまみを置く。
+    return EDIT_STEP_TOGGLE_KEYS[step].map((key) => ({
+      key,
+      labelKey: TOGGLE_LABEL_KEYS[key],
+      value: TOGGLE_DEFAULT_VALUES[key],
+    }));
   }
   const keys = isSolidStep(step) ? STEP_TOGGLE_KEYS[step] : SKETCH_STEP_TOGGLE_KEYS[step];
   return keys.map((key) => ({
@@ -1837,6 +2107,16 @@ export interface NumericInputOptions {
    * 側の見出しは「外/内」になる。
    */
   readonly offsetOpenContour?: boolean;
+  /**
+   * ミラーで鏡にできるもの(FR-324、タスク24)。ツールバーが作図面と選択から見込んで渡す。
+   * 渡されなければ `DEFAULT_MIRROR_AXES`(作図面の軸が使える)として扱う。
+   */
+  readonly mirrorAxes?: MirrorAxisOptions;
+  /**
+   * 3D スケッチ(作図面なし、FR-330)かどうか。複写の移動量の欄を 2 つ(作図面の 2 軸)に
+   * するか 3 つ(ワールドの 3 成分)にするかだけに使う。渡されなければ作図面がある扱い。
+   */
+  readonly freeSketch?: boolean;
 }
 
 export function createNumericInput(
@@ -1850,12 +2130,28 @@ export function createNumericInput(
     toolId,
     step,
     mode,
-    fields: toFields(definitionsFor(step, mode, choices)),
+    fields: toFields(definitionsFor(step, mode, choices, options)),
     focusedIndex: 0,
     toggles: togglesFor(step),
     choices,
     axisLine: options.axisLine,
     referenceAxes: options.referenceAxes,
+  };
+}
+
+/**
+ * 整形系の 2 段目を、1 段目(state)の入力を持ち越して開く(P4 タスク24)。
+ * ばねの `springLengthStateFrom` と同じ役目で、**位置の決め方(mode)も持ち越す**のが違う
+ * (円形配列の 1 段目は座標を聞くので、2 段目で中心を組み立て直すのに要る)。
+ */
+function editStage2StateFrom(
+  state: NumericInputState,
+  step: EditNumericInputStep,
+): NumericInputState {
+  const next = createNumericInput(state.toolId, step);
+  return {
+    ...next,
+    carriedStage1: { fields: state.fields, choices: state.choices, mode: state.mode },
   };
 }
 
@@ -2571,6 +2867,19 @@ export interface ReferenceInputCommit {
 export interface EditCommitValues {
   /** オフセットの距離(mm、FR-321)。 */
   readonly distance?: ExpressionValue;
+  /* ---- P4 タスク24: 複製系(FR-324) ---- */
+  /** 複写の移動量。作図面の第1軸ぶん(3D スケッチではワールドの X)。 */
+  readonly dx?: ExpressionValue;
+  /** 複写の移動量。作図面の第2軸ぶん(3D スケッチではワールドの Y)。 */
+  readonly dy?: ExpressionValue;
+  /** 複写の移動量。3D スケッチのときだけ入る(ワールドの Z)。 */
+  readonly dz?: ExpressionValue;
+  /** 直線配列の向き / 円形配列の全体の角度(度)。 */
+  readonly angle?: ExpressionValue;
+  /** 直線配列の間隔(mm)。 */
+  readonly spacing?: ExpressionValue;
+  /** 配列複写の個数(もとを含めた総数)。 */
+  readonly count?: ExpressionValue;
 }
 
 /**
@@ -2582,6 +2891,17 @@ export interface EditCommitChoices {
   readonly side?: string;
   /** オフセットの角の作り方('round' | 'sharp')。 */
   readonly corner?: string;
+  /** 鏡にするもの('axisU' | 'axisV' | 'line'、FR-324)。 */
+  readonly mirrorBasis?: string;
+}
+
+/**
+ * 整形系の道具のつまみ(P4 タスク21〜24)。スケッチのつまみ(構築線)に、複製系だけが持つ
+ * 「全周」を足したもの。スケッチの確定(`SketchCommitFlags`)へ全周を混ぜないために分けた。
+ */
+export interface EditCommitFlags extends SketchCommitFlags {
+  /** 円形配列を全周へ等間隔で並べるか(FR-324)。既定は入。 */
+  readonly fullCircle?: boolean;
 }
 
 /**
@@ -2595,8 +2915,13 @@ export interface EditInputCommit {
   readonly tool: EditToolId;
   readonly step: EditNumericInputStep;
   readonly values: EditCommitValues;
-  readonly flags: SketchCommitFlags;
+  readonly flags: EditCommitFlags;
   readonly choices: EditCommitChoices;
+  /**
+   * 座標を聞く段で決めた 1 点(P4 タスク24)。いまは円形配列の中心だけで、2 段目の確定に
+   * 1 段目(`carriedStage1`)の欄から組み立て直したものが入る。持たない道具では undefined。
+   */
+  readonly coordinate?: CoordinateInput;
 }
 
 /** ポップアップが返しうる確定結果のすべて。 */
@@ -2985,17 +3310,67 @@ function referenceChoicesFor(choices: readonly NumericChoice[]): ReferenceCommit
   };
 }
 
-/** オフセットの欄を、確定結果の形へ写す(P4 タスク21)。 */
+/**
+ * 整形系の欄を、確定結果の形へ写す(P4 タスク21・24)。
+ * 配列複写の 2 段目は 1 段目(`carried`)の欄も合わせて読む(ばねの 2 段目と同じ約束)。
+ */
 function editValuesFor(
   step: EditNumericInputStep,
   fields: readonly NumericField[],
   values: readonly ExpressionValue[],
+  carried: ReadonlyMap<string, ExpressionValue>,
 ): EditCommitValues {
   const own = fieldValueMap(fields, values);
+  const get = (key: string): ExpressionValue | undefined => own.get(key) ?? carried.get(key);
   switch (step) {
     case 'offsetDistance':
-      return { distance: own.get('distance') };
+      return { distance: get('distance') };
+    case 'mirrorBasis':
+    case 'circularArrayCenter':
+      // 鏡にするものは選択肢だけ、円形配列の中心は座標だけで決まる(数の欄は無い)。
+      return {};
+    case 'copyDelta':
+      return { dx: get('dx'), dy: get('dy'), dz: get('dz') };
+    case 'linearArrayDirection':
+      return { angle: get('angle'), spacing: get('spacing') };
+    case 'linearArrayCount':
+      return { angle: get('angle'), spacing: get('spacing'), count: get('count') };
+    case 'circularArrayShape':
+      return { angle: get('angle'), count: get('count') };
   }
+}
+
+/** 整形系のつまみを確定結果の形へ写す(構築線と、複製系の「全周」)。 */
+function editFlagsFor(toggles: readonly NumericToggle[]): EditCommitFlags {
+  const fullCircle = toggles.find((toggle) => toggle.key === 'fullCircle');
+  return fullCircle === undefined
+    ? sketchFlagsFor(toggles)
+    : { ...sketchFlagsFor(toggles), fullCircle: fullCircle.value };
+}
+
+/**
+ * 1 段目(`carriedStage1`)の欄から、そのときの位置の決め方で 1 点を組み立て直す
+ * (P4 タスク24、円形配列の中心)。1 段目が座標を聞く段でなければ undefined。
+ */
+function carriedCoordinateOf(
+  filled: NumericInputState,
+  variables: ReadonlyMap<string, number> | undefined,
+  base: PointReference,
+): CoordinateInput | undefined {
+  const carried = filled.carriedStage1;
+  if (carried === undefined || carried.mode === undefined) {
+    return undefined;
+  }
+  const evaluated = evaluateCarried(carried.fields, variables);
+  const ordered: ExpressionValue[] = [];
+  for (const definition of COORDINATE_FIELDS[carried.mode]) {
+    const value = evaluated.get(definition.key);
+    if (value === undefined) {
+      return undefined;
+    }
+    ordered.push(value);
+  }
+  return buildCoordinateInput(carried.mode, ordered, base) ?? undefined;
 }
 
 /**
@@ -3006,17 +3381,25 @@ function buildEditCommit(
   step: EditNumericInputStep,
   filled: NumericInputState,
   values: readonly ExpressionValue[],
+  context: NumericInputContext,
 ): EditInputCommit {
+  const carried = evaluateCarried(filled.carriedStage1?.fields, context.variables);
   return {
     kind: 'edit',
     tool: EDIT_STEP_TOOLS[step],
     step,
-    values: editValuesFor(step, filled.fields, values),
-    flags: sketchFlagsFor(filled.toggles),
+    values: editValuesFor(step, filled.fields, values, carried),
+    flags: editFlagsFor(filled.toggles),
     choices: {
       side: choiceValueFrom(filled.choices, 'offsetSide'),
       corner: choiceValueFrom(filled.choices, 'offsetCorner'),
+      mirrorBasis: choiceValueFrom(filled.choices, 'mirrorBasis'),
     },
+    coordinate: carriedCoordinateOf(
+      filled,
+      context.variables,
+      context.base ?? DEFAULT_COORDINATE_BASE,
+    ),
   };
 }
 
@@ -3095,12 +3478,19 @@ export function commitNumericInput(
     };
   }
   if (isEditStep(step)) {
-    // 整形系(オフセット、FR-321)。対象はすでに選ばれているので、座標は組み立てない
-    // (`editCommands.ts` が選択+この確定から `SketchOffsetFeature` を組み立てる)。
+    // 整形系(オフセット FR-321、複製系 FR-324)。対象はすでに選ばれているので、
+    // 選択から `SketchOffsetFeature` / `SketchCopyFeature` を組み立てるのは
+    // `editCommands.ts` / `copyCommands.ts` の役目。
+    //
+    // 配列複写だけは 1 段目で閉じずに 2 段目を開く(ばねの springShape と同じ扱い)。
+    const secondStep = EDIT_SECOND_STEPS[step];
+    if (secondStep !== undefined) {
+      return { kind: 'open', state: editStage2StateFrom(filled, secondStep) };
+    }
     return {
       kind: 'editCommitted',
       state: filled,
-      commit: buildEditCommit(step, filled, values),
+      commit: buildEditCommit(step, filled, values, context),
     };
   }
   const flags = sketchFlagsFor(filled.toggles);
@@ -3253,9 +3643,20 @@ export function nextNumericInput(
     case 'circularPattern':
     case 'springLength':
       return null;
-    // 整形系(P4 タスク21)。オフセットは対象を選び直さないと続けられないので、
-    // ソリッドの段と同じく「続けてかく」に関わらずいつでも閉じる(§2.5)。
+    /*
+      整形系(P4 タスク21・24)。対象を選び直さないと続けられないので、ソリッドの段と
+      同じく「続けてかく」に関わらずいつでも閉じる(§2.5)。配列複写だけは 1 段目から
+      2 段目へ進む(`commitNumericInput` が `kind: 'open'` を返すのと同じ理由)。
+    */
+    case 'linearArrayDirection':
+      return editStage2StateFrom(state, 'linearArrayCount');
+    case 'circularArrayCenter':
+      return editStage2StateFrom(state, 'circularArrayShape');
     case 'offsetDistance':
+    case 'mirrorBasis':
+    case 'copyDelta':
+    case 'linearArrayCount':
+    case 'circularArrayShape':
       return null;
   }
 }

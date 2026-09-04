@@ -11,6 +11,7 @@ import {
 import * as THREE from 'three';
 
 import { captureThumbnailPng, THUMBNAIL_SIZE } from '../file/thumbnail.js';
+import type { EditPreview } from '../sketch/trimPreview.js';
 import { faceIndexOfTriangle } from '../solid/pickSubShape.js';
 import type { DisplayStyle, ProjectionMode } from '../store/useAppStore.js';
 import {
@@ -99,6 +100,11 @@ export interface ViewportScene {
    * (解くのはストア側の `workPlane`、P4 タスク13)。
    */
   setWorkPlane(plane: WorkPlane): void;
+  /**
+   * トリム・延長の予告(FR-322、P4 タスク22)。マウスを乗せた区間(消える区間)と、
+   * 伸びる区間の折れ線を、もとの線の上へ重ねて描く。`null` で消す。
+   */
+  setEditPreview(preview: EditPreview | null): void;
   /** 基準ジオメトリ(基準軸・基準点・座標系、FR-329)を出す。 */
   setReferences(references: ResolvedReferences): void;
   /** ワールド座標を canvas 上の画素座標へ。まだ一度も描いていない・画面の外なら null。 */
@@ -533,6 +539,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     setWorkPlane(plane): void {
       sketchLayer.setWorkPlane(plane);
+    },
+
+    setEditPreview(preview): void {
+      sketchLayer.setEditPreview(preview);
     },
 
     setReferences(references): void {

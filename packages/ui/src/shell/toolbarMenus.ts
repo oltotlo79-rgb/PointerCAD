@@ -14,16 +14,22 @@
  */
 
 import type { MessageKey } from '../i18n/t.js';
-import type { EditToolId, ShapeToolId } from '../sketch/numericInput.js';
+import type { EditMenuToolId, ShapeToolId } from '../sketch/numericInput.js';
 
 import {
   CircleToolIcon,
+  CircularArrayToolIcon,
+  CopyToolIcon,
   EllipseToolIcon,
+  ExtendToolIcon,
+  LinearArrayToolIcon,
+  MirrorToolIcon,
   OffsetToolIcon,
   PolygonToolIcon,
   RectangleToolIcon,
   SlotToolIcon,
   SplineToolIcon,
+  TrimToolIcon,
   TwoPointArcToolIcon,
   type IconComponent,
 } from './icons.js';
@@ -91,20 +97,57 @@ export const SHAPE_MENU_ITEMS: readonly ToolMenuItem<ShapeToolId>[] = [
 ];
 
 /**
- * 「編集」の一覧(FR-321〜324)。いまはオフセットだけ。
+ * 「編集」の一覧(FR-321〜324)。オフセット・トリム・延長。
  *
- * **タスク22〜24 への申し送り**: トリム・延長・スケッチのフィレット・スケッチの面取り・
- * ミラー・複写・配列複写は、この表へ `{ id, labelKey, tooltipKey, Icon }` の 1 行を足すだけで
- * 一覧に並ぶ。押せる条件を道具ごとに変えるときは `Toolbar.tsx` の `ToolMenu` へ渡している
- * `readinessOf` を、道具 id で振り分ける形へ広げる(今は 1 つなので分岐がない)。
- * 一覧の項目が増えてもツールバーの幅は変わらない(`segmentedWidthPixels` の注釈)。
+ * **タスク23・24 への申し送り**: スケッチのフィレット・スケッチの面取り・ミラー・複写・
+ * 配列複写は、この表へ `{ id, labelKey, tooltipKey, Icon }` の 1 行を足すだけで一覧に並ぶ。
+ * 押せる条件は `editCommands.ts` の `editToolReadiness` が道具 id で振り分けているので、
+ * 「選んでから操作」でない道具を足すときはそちらへ 1 行足す(タスク22 でトリム・延長の
+ * ぶんを足した)。一覧の項目が増えてもツールバーの幅は変わらない
+ * (`segmentedWidthPixels` の注釈)。
  */
-export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditToolId>[] = [
+export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
   {
     id: 'offset',
     labelKey: 'toolbar.tool.offset',
     tooltipKey: 'toolbar.tool.offsetTooltip',
     Icon: OffsetToolIcon,
+  },
+  {
+    id: 'trim',
+    labelKey: 'toolbar.tool.trim',
+    tooltipKey: 'toolbar.tool.trimTooltip',
+    Icon: TrimToolIcon,
+  },
+  {
+    id: 'extend',
+    labelKey: 'toolbar.tool.extend',
+    tooltipKey: 'toolbar.tool.extendTooltip',
+    Icon: ExtendToolIcon,
+  },
+  {
+    id: 'mirror',
+    labelKey: 'toolbar.tool.mirror',
+    tooltipKey: 'toolbar.tool.mirrorTooltip',
+    Icon: MirrorToolIcon,
+  },
+  {
+    id: 'copy',
+    labelKey: 'toolbar.tool.copyMove',
+    tooltipKey: 'toolbar.tool.copyMoveTooltip',
+    Icon: CopyToolIcon,
+  },
+  {
+    id: 'linearArray',
+    labelKey: 'toolbar.tool.linearArray',
+    tooltipKey: 'toolbar.tool.linearArrayTooltip',
+    Icon: LinearArrayToolIcon,
+  },
+  {
+    id: 'circularArray',
+    labelKey: 'toolbar.tool.circularArray',
+    tooltipKey: 'toolbar.tool.circularArrayTooltip',
+    Icon: CircularArrayToolIcon,
   },
 ];
 

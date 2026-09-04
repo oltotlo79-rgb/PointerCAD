@@ -43,6 +43,13 @@ export interface ThemeColors {
   readonly threadMark: number;
   /** 作図面の薄い矩形。 */
   readonly workPlane: number;
+  /**
+   * トリムで消える区間の強調(FR-322、P4 タスク22)。マウスを乗せた区間だけをこの色で
+   * 重ねて描き、クリックするとそこが消える(§0.a-0.26 の利用者の決定)。
+   * 「消える」を示す色なので、ホバー・選択の青とは別の赤系にする。
+   * 延長の予告はホバーと同じ色を薄く使うので、専用の欄は持たない。
+   */
+  readonly trimRemove: number;
   /** 半球光の地面側の色。明るいテーマでは立体の下面が沈みすぎないよう明るくする。 */
   readonly sceneGround: number;
   /**
@@ -81,6 +88,7 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   solidEdgeWireframe: 0xd6dae2,
   threadMark: 0x8a93a6,
   workPlane: 0x4f8cff,
+  trimRemove: 0xff6b6b,
   sceneGround: 0x3a3f4a,
   // ビューキューブ(P0〜P3 で faceTexture.ts / createViewCubeScene.ts が直接持っていた定数)。
   viewCubeFaceTop: 0xeef1f6,
@@ -94,7 +102,7 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
 };
 
 /**
- * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 24 個がそろっていること
+ * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 25 個がそろっていること
  * (どのテーマでも 1 つも欠けないこと)は `themeColors.test.ts` が固定する。
  */
 export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
@@ -113,6 +121,7 @@ export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
   solidEdgeWireframe: '--pcad-solid-edge-wireframe',
   threadMark: '--pcad-thread-mark',
   workPlane: '--pcad-work-plane',
+  trimRemove: '--pcad-trim-remove',
   sceneGround: '--pcad-scene-ground',
   viewCubeFaceTop: '--pcad-viewcube-face-top',
   viewCubeFaceFront: '--pcad-viewcube-face-front',
@@ -203,6 +212,7 @@ export function themeColorsFrom(read: (token: string) => string): ThemeColors {
     solidEdgeWireframe: colors.solidEdgeWireframe,
     threadMark: colors.threadMark,
     workPlane: colors.workPlane,
+    trimRemove: colors.trimRemove,
     sceneGround: colors.sceneGround,
     viewCubeFaceTop: colors.viewCubeFaceTop,
     viewCubeFaceFront: colors.viewCubeFaceFront,

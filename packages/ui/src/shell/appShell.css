@@ -142,6 +142,7 @@
   --pcad-solid-edge-wireframe: #d6dae2;
   --pcad-thread-mark: #8a93a6;
   --pcad-work-plane: #4f8cff;
+  --pcad-trim-remove: #ff6b6b;
   --pcad-scene-ground: #3a3f4a;
 
   /*
@@ -236,6 +237,7 @@
   --pcad-solid-edge-wireframe: #3a4150;
   --pcad-thread-mark: #6b7380;
   --pcad-work-plane: #2f6fe0;
+  --pcad-trim-remove: #d92d20;
   --pcad-scene-ground: #cfd5df;
 
   /*
@@ -323,6 +325,7 @@
   --pcad-solid-edge-wireframe: #d6dae2;
   --pcad-thread-mark: #8a93a6;
   --pcad-work-plane: #5b9dff;
+  --pcad-trim-remove: #ff6b6b;
   --pcad-scene-ground: #3a3f4a;
 
   /* ビューキューブ。地の暗さがダークとほぼ同じなので、同じ値をそのまま持つ。 */
@@ -400,6 +403,7 @@
   --pcad-solid-edge-wireframe: #3a4150;
   --pcad-thread-mark: #6b7380;
   --pcad-work-plane: #2f6fe0;
+  --pcad-trim-remove: #d92d20;
   --pcad-scene-ground: #cfd5df;
 
   /* ビューキューブ。ライトと同じ明るい地なので、同じ値をそのまま持つ。 */
@@ -483,6 +487,7 @@
   --pcad-solid-edge-wireframe: #1c1f25;
   --pcad-thread-mark: #45484f;
   --pcad-work-plane: #123a8a;
+  --pcad-trim-remove: #b42318;
   --pcad-scene-ground: #b9bec7;
 
   /*

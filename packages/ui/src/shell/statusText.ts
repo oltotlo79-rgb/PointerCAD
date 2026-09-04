@@ -77,6 +77,17 @@ const GUIDE_KEYS = {
   // P4 タスク21 が `EditToolId`(`NumericInputToolId` の一部)へ足した整形系の道具
   // (FR-321)。上と同じ理由で、道具を足した同じタスクで案内も足す。
   offset: 'statusBar.guide.offset',
+  // P4 タスク22 が `ClickEditToolId` へ足したトリム・延長(FR-322)。数値を聞かず
+  // ビューポートを押して決める道具なので、案内は「どこを押すか」を伝える文にしてある
+  // (§0.a-0.26 の利用者の決定、NFR-UX-7)。
+  trim: 'statusBar.guide.trim',
+  extend: 'statusBar.guide.extend',
+  // P4 タスク24 が `EditToolId` へ足した複製系(FR-324)。上と同じ理由で、道具を足した
+  // 同じタスクで案内も足す。どれも「先に選んでから道具を押す」道具なので、その順を伝える。
+  mirror: 'statusBar.guide.mirror',
+  copy: 'statusBar.guide.copy',
+  linearArray: 'statusBar.guide.linearArray',
+  circularArray: 'statusBar.guide.circularArray',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**

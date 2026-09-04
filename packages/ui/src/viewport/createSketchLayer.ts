@@ -17,6 +17,8 @@
 import type { WorkPlane } from '@pointercad/model';
 import * as THREE from 'three';
 
+import { toLineSegmentPositions } from '../sketch/sampleCurve.js';
+import type { EditPreview } from '../sketch/trimPreview.js';
 import type { DisplayStyle } from '../store/useAppStore.js';
 import type { SketchEmphasis, SketchFaceDraw, SketchGeometryBundle } from './buildSketchGeometry.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
@@ -101,6 +103,22 @@ const FACE_OUTLINE_RENDER_ORDER = 2;
 const CURVE_RENDER_ORDER = 3;
 const POINT_RENDER_ORDER = 4;
 
+/**
+ * トリム・延長の予告(FR-322、P4 タスク22)を描く順。
+ *
+ * **もとの線とまったく同じ場所に重ねる**ので、いちばん後に描いて必ず上に出す。
+ * ここが線(3)より小さいと、消える区間の赤がもとの灰色の線に隠れて見えない
+ * (深度は `depthTest: false` なので、前後はこの数だけで決まる)。
+ */
+const EDIT_PREVIEW_RENDER_ORDER = 5;
+
+/**
+ * 予告の濃さ。トリムは「ここが消える」と言い切る強調なので濃く、延長は「まだ無い線」の
+ * 予告なので薄くする(§0.a-0.26 の「薄く予告表示」)。
+ */
+const TRIM_PREVIEW_OPACITY = 1;
+const EXTEND_PREVIEW_OPACITY = 0.6;
+
 type PointsObject = THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
 type LinesObject = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
@@ -123,6 +141,11 @@ export interface SketchLayer {
    * 部品も並びも作り直さない(NFR-PF-1)。
    */
   setThemeColors(colors: ThemeColors): void;
+  /**
+   * トリム・延長の予告(FR-322、P4 タスク22)。消える区間・伸びる区間の折れ線を
+   * もとの線の上へ重ねて描く。`null` で消す。
+   */
+  setEditPreview(preview: EditPreview | null): void;
   /** いま描いている作図面。矩形の向きが変わる。 */
   setWorkPlane(plane: WorkPlane): void;
   /** 作図面の矩形の広がり(原点からの片側の長さ、mm)。方眼と同じにする。 */
@@ -307,6 +330,28 @@ export function createSketchLayer(): SketchLayer {
     group.add(points.objects[emphasis]);
   }
 
+  /*
+   * トリム・延長の予告(FR-322、P4 タスク22)。要素ごとではなく**同時に 1 本だけ**出る
+   * 一時的な線なので、強調(none / hovered / selected)の 3 本組は作らず 1 本で持つ。
+   * 色と濃さは種類(消える区間 / 伸びる区間)で塗り替える。
+   */
+  const editPreviewLines = createLines(
+    DEFAULT_THEME_COLORS.trimRemove,
+    EDIT_PREVIEW_RENDER_ORDER,
+  );
+  editPreviewLines.visible = false;
+  group.add(editPreviewLines);
+
+  /** いま出している予告。テーマを変えたときに色を塗り直すために覚えておく。 */
+  let lastEditPreview: EditPreview | null = null;
+
+  /** 予告の色と濃さを、いまのテーマと種類から材質へ写す。 */
+  function applyEditPreviewMaterial(preview: EditPreview): void {
+    const trim = preview.kind === 'trim';
+    editPreviewLines.material.color.setHex(trim ? colors.trimRemove : colors.hovered);
+    editPreviewLines.material.opacity = trim ? TRIM_PREVIEW_OPACITY : EXTEND_PREVIEW_OPACITY;
+  }
+
   let lastBundle: SketchGeometryBundle | null = null;
 
   /**
@@ -429,11 +474,28 @@ export function createSketchLayer(): SketchLayer {
       outlines.objects.selected.material.color.setHex(colors.selected);
       workPlaneFill.material.color.setHex(colors.workPlane);
       workPlaneBorder.material.color.setHex(colors.workPlane);
+      // 出しっぱなしの予告も、次にマウスが動くのを待たずにその場で塗り替える。
+      if (lastEditPreview !== null) {
+        applyEditPreviewMaterial(lastEditPreview);
+      }
       // いま出している面の強調(発光)も、次の組み立てを待たずにその場で塗り替える。
       const shared = Math.min(faceSurfaces.length, lastFaces.length);
       for (let index = 0; index < shared; index += 1) {
         applyFaceMaterial(faceSurfaces[index].material, lastFaces[index], colors);
       }
+    },
+
+    setEditPreview(preview): void {
+      lastEditPreview = preview;
+      if (preview === null) {
+        editPreviewLines.visible = false;
+        return;
+      }
+      applyEditPreviewMaterial(preview);
+      editPreviewLines.visible = setPositions(
+        editPreviewLines,
+        new Float32Array(toLineSegmentPositions(preview.points)),
+      );
     },
 
     setWorkPlane(plane): void {
@@ -459,6 +521,9 @@ export function createSketchLayer(): SketchLayer {
       workPlaneFill.material.dispose();
       workPlaneBorder.geometry.dispose();
       workPlaneBorder.material.dispose();
+      editPreviewLines.geometry.dispose();
+      editPreviewLines.material.dispose();
+      lastEditPreview = null;
       for (const emphasis of EMPHASES) {
         points.objects[emphasis].geometry.dispose();
         points.objects[emphasis].material.dispose();

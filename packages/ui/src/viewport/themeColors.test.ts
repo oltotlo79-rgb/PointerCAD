@@ -115,7 +115,7 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     expect(themeColorsFrom(readerFor('[data-theme="dark"]'))).toEqual(DEFAULT_THEME_COLORS);
   });
 
-  it('5 テーマとも 24 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
+  it('5 テーマとも 25 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
     for (const [theme, selector] of THEME_SELECTORS) {
       const block = blockOf(selector);
       for (const field of COLOR_FIELDS) {

@@ -8,7 +8,15 @@ import {
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
-import { commitOffset, offsetContourIsOpen, offsetToolReadiness } from './editCommands.js';
+import {
+  commitExtend,
+  commitOffset,
+  commitTrim,
+  editToolReadiness,
+  offsetContourIsOpen,
+  offsetToolReadiness,
+  trimErrorMessageKey,
+} from './editCommands.js';
 import type { EditInputCommit } from './numericInput.js';
 
 /** 40×30 の矩形(反時計回り)を 1 つだけ持つ文書。`curvesByFeature` は 4 曲線を積む(§0.a-0.8)。 */
@@ -206,5 +214,176 @@ describe('offsetContourIsOpen', () => {
   it('選んだ要素が 1 つも解決できなければ false(既定は閉じた輪郭の見出し)', () => {
     const resolved = resolveSketch(rectangleDocument());
     expect(offsetContourIsOpen(resolved, ['missing'])).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * トリム・延長(FR-322、タスク22)
+ * ------------------------------------------------------------------ */
+
+/** 十字に交わる 2 本の線分。横線 `line1` は (0,0)–(20,0)、縦線 `line2` は x=10。 */
+function crossDocument(): SketchDocument {
+  let document = appendFeature(createEmptySketchDocument(), {
+    id: 'line1',
+    name: '線分1',
+    planeId: 'xy',
+    kind: 'line',
+    from: absoluteCoordinate(0, 0, 0),
+    to: absoluteCoordinate(20, 0, 0),
+    construction: false,
+  });
+  document = appendFeature(document, {
+    id: 'line2',
+    name: '線分2',
+    planeId: 'xy',
+    kind: 'line',
+    from: absoluteCoordinate(10, -10, 0),
+    to: absoluteCoordinate(10, 10, 0),
+    construction: false,
+  });
+  return document;
+}
+
+/** 解決した線分の両端(検算に使う)。見つからなければ null。 */
+function segmentEndsOf(
+  document: SketchDocument,
+  featureId: string,
+): { readonly from: readonly number[]; readonly to: readonly number[] } | null {
+  const found = resolveSketch(document).segments.find(
+    (segment) => segment.featureId === featureId,
+  );
+  return found === undefined ? null : { from: found.from, to: found.to };
+}
+
+describe('commitTrim(FR-322)', () => {
+  it('交点から右を押すと、線が交点までに縮む(端の区間が消える)', () => {
+    const outcome = commitTrim(crossDocument(), 'line1', [15, 0, 0]);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      // 線分は 1 本のまま(2 本には分かれない)。
+      expect(outcome.document.features.length).toBe(2);
+      const ends = segmentEndsOf(outcome.document, 'line1');
+      expect(ends?.from[0]).toBeCloseTo(0, 9);
+      expect(ends?.to[0]).toBeCloseTo(10, 9);
+    }
+  });
+
+  it('真ん中の区間を押すと線が 2 本に分かれる(フィーチャーが 1 つ増える)', () => {
+    let document = crossDocument();
+    document = appendFeature(document, {
+      id: 'line3',
+      name: '線分3',
+      planeId: 'xy',
+      kind: 'line',
+      from: absoluteCoordinate(15, -10, 0),
+      to: absoluteCoordinate(15, 10, 0),
+      construction: false,
+    });
+    const outcome = commitTrim(document, 'line1', [12, 0, 0]);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.document.features.length).toBe(4);
+      const ends = segmentEndsOf(outcome.document, 'line1');
+      expect(ends?.from[0]).toBeCloseTo(0, 9);
+      expect(ends?.to[0]).toBeCloseTo(10, 9);
+    }
+  });
+
+  it('矩形の 1 辺を切ると、先に線分 4 本へ分解されてからその辺が縮む', () => {
+    let document = rectangleDocument();
+    document = appendFeature(document, {
+      id: 'line1',
+      name: '線分1',
+      planeId: 'xy',
+      kind: 'line',
+      from: absoluteCoordinate(20, -10, 0),
+      to: absoluteCoordinate(20, 40, 0),
+      construction: false,
+    });
+    const outcome = commitTrim(document, 'rect1', [30, 0, 0]);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      // 矩形 1 + 線分 1 → 線分 4 + 線分 1。
+      expect(outcome.document.features.length).toBe(5);
+      expect(outcome.document.features.some((feature) => feature.kind === 'rectangle')).toBe(false);
+    }
+  });
+
+  it('交わる線が無ければ文書は変わらず、理由キーを返す', () => {
+    const document = openPolylineDocument();
+    const outcome = commitTrim(document, 'line1', [5, 0, 0]);
+    expect(outcome).toEqual({ ok: false, reasonKey: 'trim.error.noIntersection' });
+  });
+
+  it('知らない要素を指したら missingElement の文言キー', () => {
+    expect(commitTrim(crossDocument(), 'なにもない', [0, 0, 0])).toEqual({
+      ok: false,
+      reasonKey: 'trim.error.missingElement',
+    });
+  });
+});
+
+describe('commitExtend(FR-322)', () => {
+  it('押した端が、その先でぶつかる線まで伸びる', () => {
+    let document = appendFeature(createEmptySketchDocument(), {
+      id: 'line1',
+      name: '線分1',
+      planeId: 'xy',
+      kind: 'line',
+      from: absoluteCoordinate(0, 0, 0),
+      to: absoluteCoordinate(10, 0, 0),
+      construction: false,
+    });
+    document = appendFeature(document, {
+      id: 'line2',
+      name: '線分2',
+      planeId: 'xy',
+      kind: 'line',
+      from: absoluteCoordinate(20, -10, 0),
+      to: absoluteCoordinate(20, 10, 0),
+      construction: false,
+    });
+    const outcome = commitExtend(document, 'line1', [9, 0, 0]);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      const ends = segmentEndsOf(outcome.document, 'line1');
+      expect(ends?.from[0]).toBeCloseTo(0, 9);
+      expect(ends?.to[0]).toBeCloseTo(20, 9);
+      expect(ends?.to[1]).toBeCloseTo(0, 9);
+    }
+  });
+
+  it('伸ばした先に何も無ければ文書は変わらず、理由キーを返す', () => {
+    const outcome = commitExtend(openPolylineDocument(), 'line1', [1, 0, 0]);
+    expect(outcome).toEqual({ ok: false, reasonKey: 'trim.error.noBoundary' });
+  });
+});
+
+describe('trimErrorMessageKey / editToolReadiness', () => {
+  it('model の断り 6 種すべてに文言キーがある(NFR-MA-5)', () => {
+    expect(trimErrorMessageKey('missingElement')).toBe('trim.error.missingElement');
+    expect(trimErrorMessageKey('unsupportedCurve')).toBe('trim.error.unsupportedCurve');
+    expect(trimErrorMessageKey('noIntersection')).toBe('trim.error.noIntersection');
+    expect(trimErrorMessageKey('singleIntersection')).toBe('trim.error.singleIntersection');
+    expect(trimErrorMessageKey('wholeCurve')).toBe('trim.error.wholeCurve');
+    expect(trimErrorMessageKey('noBoundary')).toBe('trim.error.noBoundary');
+  });
+
+  it('トリム・延長は選択が空でも押せる(道具を選んでからクリックする、§0.a-0.26)', () => {
+    const resolved = resolveSketch(rectangleDocument());
+    expect(editToolReadiness('trim', resolved, [])).toEqual({ ready: true, reasonKey: null });
+    expect(editToolReadiness('extend', resolved, [])).toEqual({ ready: true, reasonKey: null });
+  });
+
+  it('オフセットは従来どおり選択を要る', () => {
+    const resolved = resolveSketch(rectangleDocument());
+    expect(editToolReadiness('offset', resolved, [])).toEqual({
+      ready: false,
+      reasonKey: 'offset.error.emptySelection',
+    });
+    expect(editToolReadiness('offset', resolved, RECTANGLE_SELECTION)).toEqual({
+      ready: true,
+      reasonKey: null,
+    });
   });
 });

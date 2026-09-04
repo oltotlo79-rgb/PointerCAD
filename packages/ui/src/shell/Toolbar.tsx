@@ -13,19 +13,23 @@ import { hasFileSystemAccess } from '../file/fileGateway.js';
 import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
+import { mirrorAxisAvailability } from '../sketch/copyCommands.js';
 import {
+  editToolReadiness,
   offsetContourIsOpen,
-  offsetToolReadiness,
   type EditToolReadiness,
 } from '../sketch/editCommands.js';
 import { freeSketchToolRejection } from '../sketch/freeSketch.js';
 import {
   createNumericInput,
   EDIT_TOOL_STEPS,
+  isClickEditTool,
   REFERENCE_TOOL_STEPS,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
+  type EditMenuToolId,
   type EditToolId,
+  type NumericInputOptions,
   type NumericInputStep,
   type NumericInputToolId,
   type ReferenceToolId,
@@ -546,14 +550,52 @@ function activateShapeTool(id: ShapeToolId, pressed: boolean): void {
 }
 
 /**
- * 整形系の道具(オフセット、FR-321、タスク21)を選ぶ。対象はあらかじめ選択道具(既存の
- * `select`)で選んでおく約束(§2.5「選んでから操作」)なので、押した時点の選択で押せる
- * 条件(`offsetToolReadiness`)を確かめ、足りなければ道具だけ切り替えて理由を帯へ出す
- * (§0.a-0.6 の穴・ばね等と同じ作り、NFR-UX-5「実行してから失敗させない」)。押せれば、
- * 選んだ曲線が閉じた輪郭か開いた曲線かを見込んで(`offsetContourIsOpen`)側の見出しを
- * 切り替えたその場入力を開く(FR-321)。
+ * 整形系の道具を開くときに、その道具だけが要る見込みを渡す(タスク21・24)。
+ *
+ * オフセットは「選んだ輪郭が閉じているか」(側の見出しの切り替え)、ミラーは「鏡に何が
+ * 使えるか」(選択肢の並び)、複写は「3D スケッチか」(欄が 2 つか 3 つか)。どれも
+ * 開いたあとの選択では変えられないので、開く瞬間の選択と作図面から決める(NFR-UX-5)。
  */
-function activateEditTool(id: EditToolId, pressed: boolean): void {
+function editInputOptionsFor(id: EditToolId): NumericInputOptions {
+  const store = useAppStore.getState();
+  switch (id) {
+    case 'offset':
+      return { offsetOpenContour: offsetContourIsOpen(store.resolvedSketch, store.selection) };
+    case 'mirror':
+      return {
+        mirrorAxes: mirrorAxisAvailability(
+          store.workPlaneId,
+          store.resolvedSketch,
+          store.selection,
+        ),
+      };
+    case 'copy':
+      return { freeSketch: isFreeWorkPlaneId(store.workPlaneId) };
+    case 'linearArray':
+    case 'circularArray':
+      return {};
+  }
+}
+
+/**
+ * 整形系の道具(オフセット・トリム・延長・ミラー・複写・配列複写、FR-321・322・324、
+ * タスク21・22・24)を選ぶ。
+ *
+ * **オフセット・複製系**は対象をあらかじめ選択道具(既存の `select`)で選んでおく約束
+ * (§2.5「選んでから操作」)なので、押した時点の選択で押せる条件(`editToolReadiness`)を
+ * 確かめ、足りなければ道具だけ切り替えて理由を帯へ出す(§0.a-0.6 の穴・ばね等と同じ作り、
+ * NFR-UX-5「実行してから失敗させない」)。押せれば、道具ごとの見込み(`editInputOptionsFor`)を
+ * 渡してその場入力を開く。
+ *
+ * **ミラーだけ**は選択のほかに「鏡になるもの」が要るので、それも先に確かめる。任意の作業平面の
+ * 上で線分も選んでいないときは鏡にできるものが 1 つも無いので、開かずに理由を出す。
+ *
+ * **トリム・延長**は数値を 1 つも聞かず、選択も使わない(§0.a-0.26 の利用者の決定)。
+ * 道具にしたらビューポートへ焦点を戻すだけにして、あとはビューポートの上で
+ * 「消したい部分/伸ばしたい端の近く」を押してもらう(`attachSketchInteraction.ts`)。
+ * 焦点を戻すのは、Esc(道具を終える)がその場で効くようにするため(NFR-UX-7)。
+ */
+function activateEditTool(id: EditMenuToolId, pressed: boolean): void {
   if (blockedInFreeSketch(id)) {
     return;
   }
@@ -564,16 +606,24 @@ function activateEditTool(id: EditToolId, pressed: boolean): void {
     return;
   }
   store.setActiveTool(id);
-  const readiness = offsetToolReadiness(store.resolvedSketch, store.selection);
+  if (isClickEditTool(id)) {
+    store.setEditError(null);
+    store.requestViewportFocus();
+    return;
+  }
+  const readiness = editToolReadiness(id, store.resolvedSketch, store.selection);
   if (!readiness.ready) {
     store.setEditError(readiness.reasonKey);
     return;
   }
+  const options = editInputOptionsFor(id);
+  if (options.mirrorAxes !== undefined && !options.mirrorAxes.planeAxes && !options.mirrorAxes.selectedLine) {
+    store.setEditError('mirror.error.noAxis');
+    return;
+  }
   store.setEditError(null);
   store.openNumericInput(
-    createNumericInput(id, EDIT_TOOL_STEPS[id], undefined, {
-      offsetOpenContour: offsetContourIsOpen(store.resolvedSketch, store.selection),
-    }),
+    createNumericInput(id, EDIT_TOOL_STEPS[id], undefined, options),
     viewportCenterAnchor(),
   );
 }
@@ -1427,11 +1477,12 @@ export function Toolbar(): React.JSX.Element {
             GroupIcon={EditGroupIcon}
             activeTool={activeTool}
             /*
-              整形系は「対象を選んでから操作」(§2.5)なので、押せない理由を一覧の項目にも
-              出す(NFR-UX-5)。いまはオフセットだけなので判定は 1 つ。タスク22〜24 が
-              道具ごとの判定を足すときは、ここを道具 id で振り分ける。
+              整形系のうち「対象を選んでから操作」(§2.5)の道具は、押せない理由を一覧の
+              項目にも出す(NFR-UX-5)。道具ごとの振り分けは `editToolReadiness`
+              (editCommands.ts)の 1 か所に置いてある。トリム・延長は選択を使わないので
+              いつでも押せる(§0.a-0.26、タスク22)。
             */
-            readinessOf={() => offsetToolReadiness(resolvedSketch, selection)}
+            readinessOf={(id) => editToolReadiness(id, resolvedSketch, selection)}
             onChoose={activateEditTool}
           />
         </div>

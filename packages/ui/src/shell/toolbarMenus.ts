@@ -13,29 +13,45 @@
  * この場では呼ばない(JSX を書かないので拡張子は .ts のまま)。
  */
 
+import type { SketchConstraintKind } from '@pointercad/model';
+
 import type { MessageKey } from '../i18n/t.js';
 import type { EditMenuToolId, ShapeToolId } from '../sketch/numericInput.js';
 
 import {
+  AngleConstraintIcon,
   CircleToolIcon,
   CircularArrayToolIcon,
+  CoincidentConstraintIcon,
+  ConcentricConstraintIcon,
   CopyToolIcon,
+  DiameterConstraintIcon,
+  DistanceConstraintIcon,
   EllipseToolIcon,
+  EqualConstraintIcon,
   ExtendToolIcon,
+  FixConstraintIcon,
+  HorizontalConstraintIcon,
   LinearArrayToolIcon,
   MirrorToolIcon,
   OffsetToolIcon,
+  ParallelConstraintIcon,
+  PerpendicularConstraintIcon,
   PolygonToolIcon,
   ProjectToolIcon,
+  RadiusConstraintIcon,
   RectangleToolIcon,
   SectionToolIcon,
   SketchChamferToolIcon,
   SketchFilletToolIcon,
   SlotToolIcon,
   SplineToolIcon,
+  SymmetricConstraintIcon,
+  TangentConstraintIcon,
   ThreePointArcToolIcon,
   TrimToolIcon,
   TwoPointArcToolIcon,
+  VerticalConstraintIcon,
   type IconComponent,
 } from './icons.js';
 
@@ -193,6 +209,104 @@ export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
 ];
 
 /**
+ * 「拘束」の一覧(FR-313、P4b タスク13)。幾何拘束 10 種 → 寸法拘束 4 種の 14 種を並べる。
+ *
+ * **区画は増やさず、畳んだ一覧を 1 つ足すだけ**にする(統括の決定 2026-09-05)。
+ * 溝の幅は畳んだボタン 1 つぶん(31 画素)しか増えず、一覧の中に 14 種を入れても
+ * ツールバーの高さは 1 段(68.5 画素)のまま(`segmentedWidthPixels` の注釈)。
+ *
+ * 並びは `constraintCommands.ts` の `CONSTRAINT_KIND_ORDER` と同じにする。あちらが画面の
+ * 並びの正本で、ここは図柄と説明を足した表。`SketchConstraintKind` を網羅する形にして
+ * あるので、model 側で種類が増えたらこの表が型検査で落ちる。
+ */
+export const CONSTRAINT_MENU_ITEMS: readonly ToolMenuItem<SketchConstraintKind>[] = [
+  {
+    id: 'coincident',
+    labelKey: 'constraint.kind.coincident',
+    tooltipKey: 'toolbar.constraint.coincidentTooltip',
+    Icon: CoincidentConstraintIcon,
+  },
+  {
+    id: 'horizontal',
+    labelKey: 'constraint.kind.horizontal',
+    tooltipKey: 'toolbar.constraint.horizontalTooltip',
+    Icon: HorizontalConstraintIcon,
+  },
+  {
+    id: 'vertical',
+    labelKey: 'constraint.kind.vertical',
+    tooltipKey: 'toolbar.constraint.verticalTooltip',
+    Icon: VerticalConstraintIcon,
+  },
+  {
+    id: 'parallel',
+    labelKey: 'constraint.kind.parallel',
+    tooltipKey: 'toolbar.constraint.parallelTooltip',
+    Icon: ParallelConstraintIcon,
+  },
+  {
+    id: 'perpendicular',
+    labelKey: 'constraint.kind.perpendicular',
+    tooltipKey: 'toolbar.constraint.perpendicularTooltip',
+    Icon: PerpendicularConstraintIcon,
+  },
+  {
+    id: 'tangent',
+    labelKey: 'constraint.kind.tangent',
+    tooltipKey: 'toolbar.constraint.tangentTooltip',
+    Icon: TangentConstraintIcon,
+  },
+  {
+    id: 'concentric',
+    labelKey: 'constraint.kind.concentric',
+    tooltipKey: 'toolbar.constraint.concentricTooltip',
+    Icon: ConcentricConstraintIcon,
+  },
+  {
+    id: 'equal',
+    labelKey: 'constraint.kind.equal',
+    tooltipKey: 'toolbar.constraint.equalTooltip',
+    Icon: EqualConstraintIcon,
+  },
+  {
+    id: 'symmetric',
+    labelKey: 'constraint.kind.symmetric',
+    tooltipKey: 'toolbar.constraint.symmetricTooltip',
+    Icon: SymmetricConstraintIcon,
+  },
+  {
+    id: 'fix',
+    labelKey: 'constraint.kind.fix',
+    tooltipKey: 'toolbar.constraint.fixTooltip',
+    Icon: FixConstraintIcon,
+  },
+  {
+    id: 'distance',
+    labelKey: 'constraint.kind.distance',
+    tooltipKey: 'toolbar.constraint.distanceTooltip',
+    Icon: DistanceConstraintIcon,
+  },
+  {
+    id: 'angle',
+    labelKey: 'constraint.kind.angle',
+    tooltipKey: 'toolbar.constraint.angleTooltip',
+    Icon: AngleConstraintIcon,
+  },
+  {
+    id: 'radius',
+    labelKey: 'constraint.kind.radius',
+    tooltipKey: 'toolbar.constraint.radiusTooltip',
+    Icon: RadiusConstraintIcon,
+  },
+  {
+    id: 'diameter',
+    labelKey: 'constraint.kind.diameter',
+    tooltipKey: 'toolbar.constraint.diameterTooltip',
+    Icon: DiameterConstraintIcon,
+  },
+];
+
+/**
  * 畳んだボタンに出す図柄のもとになる項目。
  *
  * ①いまその一覧の道具を使っているならその道具、②使っていなければ**最後にこの一覧から
@@ -293,5 +407,9 @@ export function segmentedWidthPixels(iconButtons: number, menuTriggers: number):
 /** 「スケッチ」区画に平置きする基本の道具の数(選択・点・線分・円弧・点列・面)。 */
 export const BASIC_SKETCH_TOOL_COUNT = 6;
 
-/** 「スケッチ」区画に置く畳んだ一覧の数(「作図」「編集」)。 */
-export const SKETCH_MENU_COUNT = 2;
+/**
+ * 「スケッチ」区画に置く畳んだ一覧の数(「作図」「編集」「拘束」)。
+ * P4b タスク13 で「拘束」を足して 2 → 3 になった。溝の幅は 31 画素だけ増える
+ * (`segmentedWidthPixels`)ので、1440 画素の窓では 1 段(68.5 画素)のまま。
+ */
+export const SKETCH_MENU_COUNT = 3;

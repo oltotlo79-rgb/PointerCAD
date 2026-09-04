@@ -13,6 +13,7 @@ import {
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { ParameterPanel } from '../parameters/ParameterPanel.js';
+import { ConstraintList } from '../sketch/ConstraintList.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { initialDraftVersionState, reconcileDraftVersion } from './fieldDraft.js';
 import { ChevronRightIcon } from './icons.js';
@@ -1169,6 +1170,12 @@ export function PropertyPanel(): React.JSX.Element {
         )}
         {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331、タスク35b)。 */}
         {origin === null ? null : <OriginSection origin={origin} />}
+        {/*
+          拘束の一覧(FR-313、P4b タスク13)。**区画もタブも増やさない**(rules/04)。
+          いま編集しているスケッチの拘束をここへ並べ、行を押すと 3D の印が光り、
+          寸法拘束は値をその場で書き換えられる。拘束が 1 つも無ければ何も出ない。
+        */}
+        <ConstraintList />
       </div>
       )}
     </section>

@@ -10,6 +10,7 @@ import {
   windowTitle,
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
+import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -314,6 +315,12 @@ export function AppShell(): React.JSX.Element {
             viewportWidth={viewportSize[0]}
             viewportHeight={viewportSize[1]}
           />
+          {/*
+            寸法拘束(距離・角度・半径・直径)の値をその場で聞く小さな入力
+            (FR-313、NFR-UX-2、P4b タスク13)。道具のその場入力と同じ見た目・同じ操作で、
+            聞くのは式 1 つだけ。開いているときだけ自分で姿を現す。
+          */}
+          <ConstraintValuePopover />
           {snapIndicator === null ? null : (
             /* 吸い付いている場所の印(FR-107)。 */
             <span

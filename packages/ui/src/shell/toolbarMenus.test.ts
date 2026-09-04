@@ -1,14 +1,18 @@
 /**
- * ツールバーの畳んだ一覧(「作図」「編集」)の決まりごとの検査
- * (計画書 docs/plans/P4-スケッチ拡張.md タスク32、§0.a-0.14)。
+ * ツールバーの畳んだ一覧(「作図」「編集」「拘束」)の決まりごとの検査
+ * (計画書 docs/plans/P4-スケッチ拡張.md タスク32、§0.a-0.14。
+ *  「拘束」は docs/plans/P4b-スケッチの仕上げ.md タスク13)。
  *
  * 画面(DOM)は撮影で確かめるので、ここでは表と純関数だけを見る。
  */
 
+import { SKETCH_CONSTRAINT_KINDS } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
+import { t } from '../i18n/t.js';
 import {
   BASIC_SKETCH_TOOL_COUNT,
+  CONSTRAINT_MENU_ITEMS,
   EDIT_MENU_ITEMS,
   ICON_BUTTON_WIDTH_PIXELS,
   MENU_TRIGGER_WIDTH_PIXELS,
@@ -141,12 +145,19 @@ describe('キーボードで一覧の項目を選ぶ(NFR-UX-7)', () => {
 
 describe('区画の幅の見積もり(1440 画素の窓で 1 段、§0.a-0.14)', () => {
   /*
-   * 「スケッチ」区画は、基本の 6 道具+畳んだ一覧 2 つを 1 つの溝へ並べた 1 行。
-   * 26×6 + 31×2 + 隙間 2×7 + 内余白 2×2 + 枠 1×2 = 238 画素。
-   * 実測(1440 画素・ダーク・拡大率 100%)も 238 画素で一致する(報告に記載)。
+   * 「スケッチ」区画は、基本の 6 道具+畳んだ一覧を 1 つの溝へ並べた 1 行。
+   *
+   * P4 タスク32 の時点は畳んだ一覧が 2 つ(作図・編集)で
+   * 26×6 + 31×2 + 隙間 2×7 + 内余白 2×2 + 枠 1×2 = 238 画素だった。
+   * P4b タスク13 で「拘束」を足して 3 つになったので
+   * 26×6 + 31×3 + 隙間 2×8 + 内余白 2×2 + 枠 1×2 = 156 + 93 + 16 + 4 + 2 = 271 画素。
+   * 増えるのは畳んだボタン 1 つぶん+隙間(33 画素)だけで、一覧の中身が 14 種でも
+   * 幅は変わらない。実測(1440 画素・ダーク・拡大率 100%)も 271 画素で一致する(報告に記載)。
    */
-  it('基本 6 道具と畳んだ一覧 2 つで 238 画素', () => {
-    expect(segmentedWidthPixels(BASIC_SKETCH_TOOL_COUNT, SKETCH_MENU_COUNT)).toBe(238);
+  it('基本 6 道具と畳んだ一覧 3 つで 271 画素', () => {
+    expect(segmentedWidthPixels(BASIC_SKETCH_TOOL_COUNT, SKETCH_MENU_COUNT)).toBe(271);
+    // 一覧を 1 つ足したぶんだけ増える(畳んだボタン 31 + 隙間 2)。
+    expect(segmentedWidthPixels(BASIC_SKETCH_TOOL_COUNT, SKETCH_MENU_COUNT - 1)).toBe(238);
   });
 
   it('基本の 5 道具(FR-301〜309 の Must)は畳まれていない', () => {
@@ -165,6 +176,23 @@ describe('区画の幅の見積もり(1440 画素の窓で 1 段、§0.a-0.14)',
     const flat = segmentedWidthPixels(
       BASIC_SKETCH_TOOL_COUNT + SHAPE_MENU_ITEMS.length + EDIT_MENU_ITEMS.length,
       0,
+    );
+    expect(flat).toBeGreaterThan(folded);
+  });
+
+  it('拘束の一覧は 14 種すべてを図柄と名前つきで持つ(FR-313、P4b タスク13)', () => {
+    expect(CONSTRAINT_MENU_ITEMS.map((item) => item.id)).toEqual(SKETCH_CONSTRAINT_KINDS);
+    for (const item of CONSTRAINT_MENU_ITEMS) {
+      expect(t(item.labelKey).length, item.id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).length, item.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('拘束の一覧に道具を足してもツールバーの幅は変わらない(畳む理由)', () => {
+    const folded = segmentedWidthPixels(BASIC_SKETCH_TOOL_COUNT, SKETCH_MENU_COUNT);
+    const flat = segmentedWidthPixels(
+      BASIC_SKETCH_TOOL_COUNT + CONSTRAINT_MENU_ITEMS.length,
+      SKETCH_MENU_COUNT - 1,
     );
     expect(flat).toBeGreaterThan(folded);
   });

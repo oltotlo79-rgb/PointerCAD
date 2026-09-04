@@ -12,6 +12,11 @@ import { hasFileSystemAccess } from '../file/fileGateway.js';
 import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
+import {
+  cancelConstraintTool,
+  chooseConstraintTool,
+  constraintToolReadinessOf,
+} from '../sketch/constraintActions.js';
 import { mirrorAxisAvailability } from '../sketch/copyCommands.js';
 import { applyProjectionCommit } from '../sketch/commitToStore.js';
 import { cornerFromSelection } from '../sketch/cornerCommands.js';
@@ -69,6 +74,7 @@ import {
   ChamferIcon,
   ChevronRightIcon,
   CircularPatternIcon,
+  ConstraintGroupIcon,
   CubeIcon,
   CursorIcon,
   EditGroupIcon,
@@ -115,6 +121,7 @@ import {
   type IconProps,
 } from './icons.js';
 import {
+  CONSTRAINT_MENU_ITEMS,
   EDIT_MENU_ITEMS,
   SHAPE_MENU_ITEMS,
   nextHighlightIndex,
@@ -1098,7 +1105,13 @@ interface ToolMenuProps<Id extends string> {
   readonly groupTooltipKey: MessageKey;
   /** まだ一度もこの一覧を使っていないときに、ボタンへ出す図柄。 */
   readonly GroupIcon: IconComponent;
-  readonly activeTool: NumericInputToolId;
+  /**
+   * いま選んでいる道具の id。畳んだボタンの図柄と `aria-pressed` を決めるためだけに使う
+   * ので、道具 id の型ではなく**文字列**で受ける(P4b タスク13 で「拘束」の一覧を足した。
+   * 拘束の種類は `NumericInputToolId` ではなく `SketchConstraintKind` で、
+   * `triggerItemOf` もこの用途のために `string` を受ける形になっている)。
+   */
+  readonly activeTool: string;
   /**
    * 道具ごとの押せる条件(NFR-UX-5「実行前に理由提示」)。渡さなければ常に押せる。
    * タスク22〜24 が道具ごとに違う条件を足すときは、ここを id で振り分ける。
@@ -1445,6 +1458,15 @@ export function Toolbar(): React.JSX.Element {
   const resolvedSketch = useAppStore((state) => state.resolvedSketch);
   const canUndo = useAppStore((state) => state.canUndo);
   const canRedo = useAppStore((state) => state.canRedo);
+  // 拘束(FR-313、タスク13)。いま選んでいる拘束の道具と、履歴そのもの(下見に要る)。
+  const activeConstraintKind = useAppStore((state) => state.activeConstraintKind);
+  useAppStore((state) => state.sketch);
+  /*
+   * 「拘束」の一覧の入り切り。材料(解決結果)を作るのは**一覧を開いたときだけ**なので、
+   * ここで作った関数を渡す(`constraintToolReadinessOf` の注釈、NFR-PF-1)。
+   * 上で `sketch` と `selection` を購読しているので、どちらかが変われば描き直される。
+   */
+  const constraintReadinessOf = constraintToolReadinessOf();
 
   return (
     <header className="pcad-toolbar">
@@ -1575,6 +1597,31 @@ export function Toolbar(): React.JSX.Element {
             */
             readinessOf={(id) => editToolReadiness(id, resolvedSketch, selection)}
             onChoose={activateEditTool}
+          />
+          {/*
+            「拘束」(FR-313、P4b タスク13)。区画も段も増やさず、畳んだ一覧を 1 つ足すだけ
+            (統括の決定 2026-09-05)。溝の幅は 31 画素しか増えないので、1440 画素の窓では
+            1 段(68.5 画素)のまま(`toolbarMenus.ts` の `segmentedWidthPixels`)。
+
+            押した後の流れは `constraintActions.ts` の 1 か所に置く。選んでいるものだけで
+            条件が足りていればその場で付き、足りなければ「道具を選んだ状態」になって
+            ビューポートで押した要素を順に受け取る(トリムと同じ流儀)。
+          */}
+          <ToolMenu
+            items={CONSTRAINT_MENU_ITEMS}
+            groupLabelKey="toolbar.constraint.groupLabel"
+            groupTooltipKey="toolbar.constraint.tooltip"
+            GroupIcon={ConstraintGroupIcon}
+            activeTool={activeConstraintKind ?? ''}
+            readinessOf={constraintReadinessOf}
+            onChoose={(kind, pressed) => {
+              if (pressed) {
+                // 同じ道具をもう一度押したらやめる(トリム・延長と同じ、NFR-UX-1)。
+                cancelConstraintTool();
+                return;
+              }
+              chooseConstraintTool(kind);
+            }}
           />
         </div>
       </div>

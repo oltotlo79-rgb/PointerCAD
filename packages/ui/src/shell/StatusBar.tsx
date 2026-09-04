@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 
 import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { constraintPickGuide } from '../sketch/constraintActions.js';
 import { workPlaneEntries, type WorkPlaneEntry } from '../sketch/referenceCommands.js';
 import { solidToolReadiness } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -117,6 +118,17 @@ export function StatusBar(): React.JSX.Element {
    * 断りの向け先(壊れる側の行)の印は `FeatureTree.tsx` が同じ値から出す。
    */
   const timelineRefusalMessage = useAppStore((state) => state.timelineRefusal?.message ?? null);
+  /*
+   * 拘束(FR-313、P4b タスク13)。断りと「次に何を押せばよいか」、そして決まり具合の 1 文。
+   * 決まり具合は model の診断(`ConstraintDiagnosis.summary`)をそのまま出す
+   * (「あと N か所決まっていません」「すべて決まりました」「付けすぎの拘束が N 件あります」
+   * 「同時に成り立たない拘束が N 件あります」)。同じ文言を ja.json に二重に書かない。
+   */
+  const constraintErrorMessage = useAppStore((state) => state.constraintErrorMessage);
+  const constraintPickMessage = useAppStore((state) => constraintPickGuide(state));
+  const constraintSummaryText = useAppStore(
+    (state) => state.constraintDiagnosis?.summary ?? null,
+  );
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   // 任意の作業平面(FR-328)の名前を札に出すための一覧(タスク13)。
@@ -222,6 +234,9 @@ export function StatusBar(): React.JSX.Element {
     rollback: rollbackOf(historyCount, timelineIndex),
     timelineNoticeKey,
     timelineRefusalMessage,
+    constraintErrorMessage,
+    constraintPickMessage,
+    constraintSummaryText,
     errorMessage,
     partErrors,
     sketchErrors,

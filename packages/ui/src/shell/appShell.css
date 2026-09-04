@@ -123,12 +123,17 @@
   /*
    * 3D 表示の色(FR-908 のテーマ連動)。three.js は CSS 変数を読めないので、
    * viewport/themeColors.ts が getComputedStyle で読んで 16 進へ直す。
-   * **この 26 個はどのテーマも 1 つ残らず持つ**(欠けると別テーマの色が混ざる)。
+   * **この 30 個はどのテーマも 1 つ残らず持つ**(欠けると別テーマの色が混ざる)。
    * ダークの値は P0〜P3 で各層が直接持っていた定数そのままで、
    * viewport/themeColors.test.ts が DEFAULT_THEME_COLORS との一致を固定する。
    *
    * --pcad-track は向きの吸着の案内線(FR-110、P4b タスク16)。吸着の印と同じ
    * アクセント色にするので、どのテーマも --pcad-accent と同じ値を書く(§0.14)。
+   *
+   * --pcad-constraint-* は拘束の印(FR-313、P4b タスク13、§0.a-0.7 の①)。
+   * 満たしている(ok)・足しすぎ(redundant)・矛盾(conflict)・固定(fixed)の 4 色で、
+   * どのテーマもビューポートの地(--pcad-viewport-top / --pcad-viewport-bottom)に対して
+   * 3:1 以上の明度差を持つ(viewport/themeColors.test.ts が実測で固定する)。
    */
   --pcad-grid-minor: #343945;
   --pcad-grid-major: #454b59;
@@ -147,6 +152,10 @@
   --pcad-work-plane: #4f8cff;
   --pcad-trim-remove: #ff6b6b;
   --pcad-track: #4f8cff;
+  --pcad-constraint-ok: #5ad1c8;
+  --pcad-constraint-redundant: #c8a04a;
+  --pcad-constraint-conflict: #ff6b6b;
+  --pcad-constraint-fixed: #c08cff;
   --pcad-scene-ground: #3a3f4a;
 
   /*
@@ -243,6 +252,10 @@
   --pcad-work-plane: #2f6fe0;
   --pcad-trim-remove: #d92d20;
   --pcad-track: #2f6fe0;
+  --pcad-constraint-ok: #0f766e;
+  --pcad-constraint-redundant: #8a6d1f;
+  --pcad-constraint-conflict: #d92d20;
+  --pcad-constraint-fixed: #6b21a8;
   --pcad-scene-ground: #cfd5df;
 
   /*
@@ -332,6 +345,10 @@
   --pcad-work-plane: #5b9dff;
   --pcad-trim-remove: #ff6b6b;
   --pcad-track: #5b9dff;
+  --pcad-constraint-ok: #6bdcd3;
+  --pcad-constraint-redundant: #d4ab55;
+  --pcad-constraint-conflict: #ff6b6b;
+  --pcad-constraint-fixed: #c9a0ff;
   --pcad-scene-ground: #3a3f4a;
 
   /* ビューキューブ。地の暗さがダークとほぼ同じなので、同じ値をそのまま持つ。 */
@@ -411,6 +428,10 @@
   --pcad-work-plane: #2f6fe0;
   --pcad-trim-remove: #d92d20;
   --pcad-track: #2f6fe0;
+  --pcad-constraint-ok: #0f766e;
+  --pcad-constraint-redundant: #8a6d1f;
+  --pcad-constraint-conflict: #d92d20;
+  --pcad-constraint-fixed: #6b21a8;
   --pcad-scene-ground: #cfd5df;
 
   /* ビューキューブ。ライトと同じ明るい地なので、同じ値をそのまま持つ。 */
@@ -496,6 +517,10 @@
   --pcad-work-plane: #123a8a;
   --pcad-trim-remove: #b42318;
   --pcad-track: #123a8a;
+  --pcad-constraint-ok: #06403c;
+  --pcad-constraint-redundant: #4a3708;
+  --pcad-constraint-conflict: #6b1008;
+  --pcad-constraint-fixed: #3b0a63;
   --pcad-scene-ground: #b9bec7;
 
   /*
@@ -2826,4 +2851,128 @@ button.pcad-tree__row:focus-visible {
 
 .pcad-parameters__footer .pcad-button--action:hover {
   background: var(--pcad-accent-soft-hover);
+}
+
+/* ===========================================================================
+ * 拘束の一覧(FR-313、P4b タスク13)
+ *
+ * 右のプロパティ区画の中に置く(区画は 5 つのまま)。1 行は
+ * 「記号 名前 何を指しているか」+「値(寸法拘束だけ)」+「×」の 3 つ。
+ * 色は状態(満たしている / 足しすぎ / 矛盾 / 指す先が消えた)で分け、3D の印と同じ
+ * 意味づけにする(--pcad-constraint-* の 4 色。viewport/themeColors.ts)。
+ * ======================================================================== */
+
+.pcad-constraint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pcad-constraint-row {
+  display: flex;
+  gap: var(--pcad-space-1);
+  align-items: center;
+  padding: 2px;
+  background: var(--pcad-surface-raised);
+  border: 1px solid var(--pcad-border);
+  border-left: 3px solid var(--pcad-constraint-ok);
+  border-radius: var(--pcad-radius-small);
+}
+
+/* 一覧で選んでいる行。3D の印も同時に大きくなる(同じ 1 つの状態を見ている)。 */
+.pcad-constraint-row--selected {
+  border-color: var(--pcad-accent-border);
+  background: var(--pcad-accent-soft);
+}
+
+/* 足しすぎ(冗長)。消してよいものなので、薄い印にする。 */
+.pcad-constraint-row--redundant {
+  border-left-color: var(--pcad-constraint-redundant);
+}
+
+/* 同時に成り立たない・指す先が消えた。直すべきものなので赤い印にする(FR-504)。 */
+.pcad-constraint-row--conflicting,
+.pcad-constraint-row--dangling {
+  border-left-color: var(--pcad-constraint-conflict);
+}
+
+.pcad-constraint-row__pick {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--pcad-space-1);
+  align-items: center;
+  min-width: 0;
+  padding: 2px 4px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--pcad-radius-small);
+  cursor: pointer;
+}
+
+.pcad-constraint-row__pick:hover {
+  background: var(--pcad-accent-soft);
+}
+
+.pcad-constraint-row__symbol {
+  flex: none;
+  width: 16px;
+  color: var(--pcad-constraint-ok);
+  text-align: center;
+}
+
+.pcad-constraint-row--redundant .pcad-constraint-row__symbol {
+  color: var(--pcad-constraint-redundant);
+}
+
+.pcad-constraint-row--conflicting .pcad-constraint-row__symbol,
+.pcad-constraint-row--dangling .pcad-constraint-row__symbol {
+  color: var(--pcad-constraint-conflict);
+}
+
+.pcad-constraint-row__label {
+  flex: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.pcad-constraint-row__detail {
+  overflow: hidden;
+  color: var(--pcad-text-muted);
+  font-size: var(--pcad-font-size-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pcad-constraint-row__value {
+  flex: none;
+  width: 72px;
+  padding: 2px 4px;
+  color: var(--pcad-text);
+  font-size: var(--pcad-font-size-small);
+  background: var(--pcad-surface);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+}
+
+.pcad-constraint-row__value--error {
+  border-color: var(--pcad-danger);
+}
+
+.pcad-constraint-row__remove {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* 拘束の値のその場入力。道具のその場入力と同じ見た目で、欄が 1 つだけの短い形。 */
+.pcad-popover--constraint {
+  width: 200px;
 }

@@ -1022,3 +1022,174 @@ export function GearIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+/* ===========================================================================
+ * 拘束の図柄(FR-313、P4b タスク13)
+ *
+ * 14 種すべてに図柄を用意する。ビューポートの印は 1 文字の記号
+ * (`constraintSummary.ts` の `symbol`)だが、ツールバーの畳んだ一覧と拘束の一覧は
+ * ボタンの大きさの図柄が要るため(t12 の申し送り)。
+ *
+ * 描き分けの決まり: **拘束の相手(線・円・点)を薄い線で描き、条件そのものを濃い印で
+ * 重ねる**のではなく、16×16 の中で「何と何がどうなるか」だけを線で表す。細かい記号を
+ * 入れると 16 画素では潰れるため。
+ * ======================================================================== */
+
+/** 一致(点 2 つを重ねる)。重なった 2 つの丸で表す。 */
+export function CoincidentConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="6.4" cy="8" r="3.1" />
+      <circle cx="9.6" cy="8" r="3.1" />
+    </SvgIcon>
+  );
+}
+
+/** 水平(線を横向きにそろえる)。横線と、その両端の小さな縦の目印。 */
+export function HorizontalConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 8h12" />
+      <path d="M2 5.6v4.8M14 5.6v4.8" />
+    </SvgIcon>
+  );
+}
+
+/** 垂直(線を縦向きにそろえる)。水平の図柄を 90 度回したもの。 */
+export function VerticalConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 2v12" />
+      <path d="M5.6 2h4.8M5.6 14h4.8" />
+    </SvgIcon>
+  );
+}
+
+/** 平行(2 本の線が平行)。同じ傾きの 2 本。 */
+export function ParallelConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M5 2.4 2.4 13.6" />
+      <path d="M13.6 2.4 11 13.6" />
+    </SvgIcon>
+  );
+}
+
+/** 直角(2 本の線が直角)。縦線と横線、角の小さな四角。 */
+export function PerpendicularConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4 2v11.2h9.6" />
+      <path d="M4 10.4h3.2v2.8" />
+    </SvgIcon>
+  );
+}
+
+/** 接線(線が円に接する)。円と、その下側に触れる横線。 */
+export function TangentConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="6.6" r="4.2" />
+      <path d="M1.6 11h12.8" />
+    </SvgIcon>
+  );
+}
+
+/** 同心(2 つの円の中心が重なる)。大小の円と中心の点。 */
+export function ConcentricConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="6" />
+      <circle cx="8" cy="8" r="2.6" />
+    </SvgIcon>
+  );
+}
+
+/** 等しい(長さ・半径が同じ)。長さの等しい 2 本の横線。 */
+export function EqualConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3 5.6h10" />
+      <path d="M3 10.4h10" />
+    </SvgIcon>
+  );
+}
+
+/** 対称(軸をはさんで向かい合う)。中央の破線の軸と、左右の点。 */
+export function SymmetricConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 1.8v12.4" strokeDasharray="1.8 1.6" />
+      <circle cx="3.4" cy="8" r="1.6" />
+      <circle cx="12.6" cy="8" r="1.6" />
+    </SvgIcon>
+  );
+}
+
+/** 固定(その場に留めて動かなくする)。四隅を留めた四角。 */
+export function FixConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="3.2" y="3.2" width="9.6" height="9.6" rx="1" />
+      <path d="M8 6.4v3.2M6.4 8h3.2" />
+    </SvgIcon>
+  );
+}
+
+/** 距離(2 点の間の長さ)。両端に止め線のある矢印。 */
+export function DistanceConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.6 3.6v8.8M13.4 3.6v8.8" />
+      <path d="M2.6 8h10.8" />
+      <path d="M5.2 6 2.6 8l2.6 2M10.8 6l2.6 2-2.6 2" />
+    </SvgIcon>
+  );
+}
+
+/** 角度(2 本の線のなす角)。開いた 2 本と、間の弧。 */
+export function AngleConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.4 13.4h11.2" />
+      <path d="M2.4 13.4 12 3.6" />
+      <path d="M8.4 13.4A6 6 0 0 0 6.6 9.2" />
+    </SvgIcon>
+  );
+}
+
+/** 半径。円と、中心から縁への矢印。 */
+export function RadiusConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M8 8h5.2" />
+      <path d="M11 6.2 13.2 8 11 9.8" />
+    </SvgIcon>
+  );
+}
+
+/** 直径。円と、端から端への矢印。 */
+export function DiameterConstraintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M2.6 8h10.8" />
+      <path d="M4.8 6.2 2.8 8l2 1.8M11.2 6.2 13.2 8l-2 1.8" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 「拘束」の区画そのものの図柄(まだ一度も使っていないときに畳んだボタンへ出る)。
+ * 直角の印を大きく描いて、「条件で形を決める」ことを表す。
+ */
+export function ConstraintGroupIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3 2.4v11.2h10" />
+      <path d="M3 10.6h3v3" />
+      <circle cx="12.2" cy="4.2" r="1.6" />
+    </SvgIcon>
+  );
+}

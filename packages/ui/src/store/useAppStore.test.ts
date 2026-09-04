@@ -20,6 +20,7 @@ import {
   FREE_WORK_PLANE_ID,
   removeSolid,
   replaceSketch,
+  sketchConstraints,
   resolveSketch,
   WORK_PLANES,
   type ExtrudeFeature,
@@ -41,6 +42,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_DISPLAY_SETTINGS } from '../settings/settings.js';
 import { setFeatureField } from '../sketch/featureSummary.js';
 import { createNumericInput } from '../sketch/numericInput.js';
+import { commitConstraintFromSelection } from '../sketch/constraintCommands.js';
 import { EMPTY_SHAPE_DRAFT } from '../sketch/shapeCommands.js';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
 import {
@@ -1718,5 +1720,91 @@ describe('タイムラインのつまみ(FR-507、FR-506、P4b タスク19)', ()
     useAppStore.getState().setTimelineIndex(null);
     expect(fake.calls).toHaveLength(1);
     detach();
+  });
+});
+
+describe('拘束の控えと後始末(FR-313、P4b タスク13)', () => {
+  /** 線分 2 本を持つスケッチと、その 2 本に付けた直角の拘束。 */
+  function partWithPerpendicular(): PartDocument {
+    let sketch = appendFeature(createEmptySketchDocument(), {
+      id: 'line-1',
+      name: '線分1',
+      planeId: 'xy',
+      kind: 'line',
+      from: absoluteCoordinate(0, 0, 0),
+      to: absoluteCoordinate(10, 0, 0),
+      construction: false,
+    });
+    sketch = appendFeature(sketch, {
+      id: 'line-2',
+      name: '線分2',
+      planeId: 'xy',
+      kind: 'line',
+      from: absoluteCoordinate(0, 0, 0),
+      to: absoluteCoordinate(3, 9, 0),
+      construction: false,
+    });
+    const outcome = commitConstraintFromSelection(sketch, 'perpendicular', ['line-1', 'line-2']);
+    if (!outcome.ok) {
+      throw new Error(`拘束を足せなかった: ${outcome.reason}`);
+    }
+    return replaceSketch(createEmptyPartDocument(), outcome.document);
+  }
+
+  it('拘束が無ければ一覧も診断も空のまま(要らない計算をしない)', () => {
+    const store = useAppStore.getState();
+    store.applySketch(documentWithPoint(), sketchResultFor(documentWithPoint()));
+    expect(useAppStore.getState().constraintSummaries).toEqual([]);
+    expect(useAppStore.getState().constraintDiagnosis).toBeNull();
+  });
+
+  it('再計算の結果から拘束の一覧と診断を控える', () => {
+    const part = partWithPerpendicular();
+    useAppStore.getState().applyDocument(part);
+    const sketch = part.sketches[0];
+    useAppStore.getState().applySketch(sketch, sketchResultFor(sketch));
+    const summaries = useAppStore.getState().constraintSummaries;
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].label).toBe('直角1');
+    // 印は 2 本の線の中点に 1 つずつ(`constraintSummary.ts` の `anchors`)。
+    expect(summaries[0].anchors).toHaveLength(2);
+  });
+
+  it('要素を消すと、それを指していた拘束も一緒に消える(取り消し 1 回で戻る)', () => {
+    const part = partWithPerpendicular();
+    useAppStore.getState().applyDocument(part);
+    expect(sketchConstraints(useAppStore.getState().sketch)).toHaveLength(1);
+
+    useAppStore.getState().removeSketchFeature('line-2');
+    expect(useAppStore.getState().sketch.features.map((feature) => feature.id)).toEqual(['line-1']);
+    expect(sketchConstraints(useAppStore.getState().sketch)).toHaveLength(0);
+
+    useAppStore.getState().undo();
+    expect(sketchConstraints(useAppStore.getState().sketch)).toHaveLength(1);
+    expect(useAppStore.getState().sketch.features).toHaveLength(2);
+  });
+
+  it('拘束の道具を選ぶと、下地の道具は選択に戻り、選択と押した相手は空になる', () => {
+    useAppStore.getState().setActiveTool('line');
+    useAppStore.getState().setSelection(['line-1']);
+    useAppStore.getState().setConstraintTool('perpendicular');
+    const state = useAppStore.getState();
+    expect(state.activeConstraintKind).toBe('perpendicular');
+    expect(state.activeTool).toBe('select');
+    expect(state.selection).toEqual([]);
+    expect(state.constraintTargets).toEqual([]);
+  });
+
+  it('別の道具を選ぶと拘束の道具はやめる(取りかけを持ち越さない)', () => {
+    useAppStore.getState().setConstraintTool('parallel');
+    useAppStore.getState().setActiveTool('line');
+    expect(useAppStore.getState().activeConstraintKind).toBeNull();
+  });
+
+  it('文書が変われば拘束の断りは用済み(FR-504)', () => {
+    useAppStore.getState().setConstraintError('線を 2 本選んでください。');
+    expect(useAppStore.getState().constraintErrorMessage).not.toBeNull();
+    useAppStore.getState().applyDocument(partWithPoint());
+    expect(useAppStore.getState().constraintErrorMessage).toBeNull();
   });
 });

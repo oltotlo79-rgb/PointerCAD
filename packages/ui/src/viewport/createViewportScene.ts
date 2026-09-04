@@ -31,6 +31,9 @@ import {
   VERTICAL_FIELD_OF_VIEW,
   type OrbitState,
 } from './cameraMath.js';
+import type { ConstraintMark } from '../sketch/constraintPicking.js';
+import { constraintKindSymbol } from '../sketch/constraintSummary.js';
+import { createConstraintLayer } from './createConstraintLayer.js';
 import { createReferenceLayer } from './createReferenceLayer.js';
 import { createSketchLayer } from './createSketchLayer.js';
 import { createTrackingLayer } from './createTrackingLayer.js';
@@ -130,6 +133,14 @@ export interface ViewportScene {
    * 同時に出すのは最大 2 本で、`null` か空で消す。
    */
   setTracking(lines: readonly TrackCandidate[] | null): void;
+  /**
+   * 拘束の印(FR-313、P4b タスク13)。要素の脇に記号の小さな札を常時出す(§0.a-0.7 の①)。
+   * `null` か空で消す。当たり判定は `constraintPicking.ts` の `constraintMarkAt` が
+   * 同じ並びを見て行う(描画・当たり判定・選択の 3 つをそろえる、P4 タスク12 の失敗)。
+   */
+  setConstraintMarks(marks: readonly ConstraintMark[] | null): void;
+  /** 一覧・印で選んでいる拘束(FR-313)。その印だけ大きく出す。`null` で解除。 */
+  setSelectedConstraint(constraintId: string | null): void;
   /** 基準ジオメトリ(基準軸・基準点・座標系、FR-329)を出す。 */
   setReferences(references: ResolvedReferences): void;
   /** ワールド座標を canvas 上の画素座標へ。まだ一度も描いていない・画面の外なら null。 */
@@ -391,6 +402,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   // 向きの吸着の案内線(FR-110、P4b タスク16)。下書きより後ろ・面より前に出す。
   const trackingLayer = createTrackingLayer();
   scene.add(trackingLayer.group);
+  // 拘束の印(FR-313、タスク13)。「固定」の記号だけは色を分けるので、記号の表の正本
+  // (`constraintSummary.ts`)から値として受け取る(同じ表を 2 か所に書かない)。
+  const constraintLayer = createConstraintLayer(constraintKindSymbol('fix'));
+  scene.add(constraintLayer.group);
 
   let currentSpacing = 0;
 
@@ -607,6 +622,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       sketchLayer.setThemeColors(colors);
       referenceLayer.setThemeColors(colors);
       trackingLayer.setThemeColors(colors);
+      constraintLayer.setThemeColors(colors);
     },
 
     setWorkPlaneVisible(visible): void {
@@ -623,6 +639,14 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     setTracking(lines): void {
       trackingLayer.setLines(lines);
+    },
+
+    setConstraintMarks(marks): void {
+      constraintLayer.setMarks(marks);
+    },
+
+    setSelectedConstraint(constraintId): void {
+      constraintLayer.setSelected(constraintId);
     },
 
     setReferences(references): void {
@@ -684,6 +708,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       sketchLayer.dispose();
       referenceLayer.dispose();
       trackingLayer.dispose();
+      constraintLayer.dispose();
       grid.geometry.dispose();
       axisLines.geometry.dispose();
       lineMaterial.dispose();

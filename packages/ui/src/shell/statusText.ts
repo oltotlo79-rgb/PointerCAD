@@ -309,6 +309,25 @@ export interface StatusInput {
    */
   readonly commandLineFailure?: CommandLineFailureView | null;
   /**
+   * 拘束を付けられなかった理由(FR-313、FR-504、P4b タスク13)。いま押した道具・要素への
+   * 返事なので、他の断りと同じ高さの優先順位に置く(NFR-UX-5)。model / t12 が組み立てた
+   * 日本語をそのまま持つので、文言キーではなく文で受け取る(`shapeErrorMessage` と同じ扱い。
+   * 省略できるのも同じ理由)。
+   */
+  readonly constraintErrorMessage?: string | null;
+  /**
+   * 拘束の道具で「次に何を押せばよいか」(FR-313、NFR-UX-7、P4b タスク13)。
+   * 道具を選んでいなければ null。道具ごとの案内(`guideKeyFor`)を押しのけて出す。
+   */
+  readonly constraintPickMessage?: string | null;
+  /**
+   * 拘束の決まり具合の 1 文(FR-313「足りない拘束の数を示し」、P4b タスク13)。
+   * 「あと N か所決まっていません」「すべて決まりました」「付けすぎの拘束が N 件あります」
+   * 「同時に成り立たない拘束が N 件あります」。model の診断(`ConstraintDiagnosis.summary`)を
+   * そのまま受け取る(同じ文言を 2 か所に書かない)。拘束が無ければ null。
+   */
+  readonly constraintSummaryText?: string | null;
+  /**
    * 原点を移したときの一言(FR-331、P4 タスク35b)。`editNoticeKey` と同じ「うまくいった
    * ときの知らせ」だが、もとの原点の座標の式を差し込んだ文になるので組み立て済みの文で
    * 受け取る。省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)を
@@ -598,7 +617,8 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * 5.5. 整形系の道具がうまくいったときの案内(FR-323。赤くしない)。
  * 5.6. 原点を移したときの一言(FR-331。赤くしない)。
  * 6. 保存できたなどの知らせ(FR-806)。
- * 7. 案内 … 計算中の札、吸着の案内、加工の選択が進んだ具合、道具ごとの次の一手。
+ * 7. 案内 … 計算中の札、吸着の案内、拘束の道具の次の一手、加工の選択が進んだ具合、
+ *    拘束の決まり具合(「あと N か所決まっていません」、FR-313)、道具ごとの次の一手。
  *
  * 選択の種類の札(`selectionKindLabel`)は、この優先順位のどれを選んでいても常に出す
  * (`[選ぶもの]` の札は状況の1文と独立、§0.a-0.6)ので、内側の `resolveLine` には含めず
@@ -631,6 +651,11 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   }
   if (input.referenceErrorMessage !== undefined && input.referenceErrorMessage !== null) {
     return failureLine('statusBar.referenceError', input.referenceErrorMessage);
+  }
+  if (input.constraintErrorMessage !== undefined && input.constraintErrorMessage !== null) {
+    // 拘束を付けられなかった断り(FR-313、タスク13)。いま押したボタン・要素への返事なので、
+    // 他の断りと同じ高さに置く。理由の文は t12 / model が組み立てたものをそのまま出す。
+    return failureLine('statusBar.constraintError', input.constraintErrorMessage);
   }
   if (input.timelineRefusalMessage !== undefined && input.timelineRefusalMessage !== null) {
     // 順序の入れ替えの断り(FR-507、タスク20)。いま離したドラッグへの返事なので、
@@ -709,9 +734,28 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     input.springOriginSelected,
     input.springStep,
   );
+  /*
+    拘束(FR-313、タスク13)は 2 段に分けて出す。
+    ①道具を選んでいるあいだは「次に何を押せばよいか」を最優先で出す(いま進んでいる操作)。
+    ②そうでなければ、拘束の決まり具合(「あと N か所決まっていません」)を道具の案内の
+      代わりに出す。拘束を使っている文書ではこちらのほうが知りたいことのため。
+      加工の道具のように具体的な案内があるときはそちらを先に出す。
+  */
+  const constraintText =
+    input.constraintPickMessage !== undefined && input.constraintPickMessage !== null
+      ? input.constraintPickMessage
+      : null;
+  const summaryText =
+    input.constraintSummaryText !== undefined && input.constraintSummaryText !== null
+      ? input.constraintSummaryText
+      : null;
   return {
     kind: 'guide',
-    text: machiningText ?? t(guideKeyFor(input.activeTool, input.selectedBodyCount)),
+    text:
+      constraintText ??
+      machiningText ??
+      summaryText ??
+      t(guideKeyFor(input.activeTool, input.selectedBodyCount)),
     // 3D スケッチ(FR-330、タスク14)では、道具の案内に「立体の頂点を押すと、その頂点に
     // 付く点ができる」ことを添える。3D スケッチにしかない入り口で、押せることが画面から
     // だけでは分からないため(NFR-UX-7)。

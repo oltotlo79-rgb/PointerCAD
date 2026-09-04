@@ -204,6 +204,40 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     }
   });
 
+  it('拘束の印(FR-313)は 5 テーマとも地と 3:1 以上で、4 つが互いに違う色(P4b タスク13)', () => {
+    const tokens = [
+      '--pcad-constraint-ok',
+      '--pcad-constraint-redundant',
+      '--pcad-constraint-conflict',
+      '--pcad-constraint-fixed',
+    ];
+    for (const [theme, selector] of THEME_SELECTORS) {
+      const block = blockOf(selector);
+      const values = tokens.map((token) => parseCssColor(tokenValue(block, token)));
+      for (const [index, token] of tokens.entries()) {
+        const color = values[index];
+        expect(color, `${theme} の ${token}`).not.toBeNull();
+        if (color === null) {
+          continue;
+        }
+        // ビューポートの地は上下のグラデーションなので、両端に対して 3:1 以上を求める。
+        for (const groundToken of ['--pcad-viewport-top', '--pcad-viewport-bottom']) {
+          const ground = parseCssColor(tokenValue(block, groundToken));
+          expect(ground, `${theme} の ${groundToken}`).not.toBeNull();
+          if (ground === null) {
+            continue;
+          }
+          expect(
+            contrastRatio(color, ground),
+            `${theme} の ${token} / ${groundToken}`,
+          ).toBeGreaterThanOrEqual(3);
+        }
+      }
+      // 状態を色で見分けるので、4 つが同じ色になっていないことを固定する。
+      expect(new Set(values).size, `${theme} の拘束の印`).toBe(tokens.length);
+    }
+  });
+
   it('拡大率の倍率はルート要素だけが持つ(見本カードの中で等倍へ戻らない)', () => {
     // `:root { --pcad-scale: 1; }` は単独の塊で、テーマの塊には入っていない。
     for (const [theme, selector] of THEME_SELECTORS) {

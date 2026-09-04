@@ -57,6 +57,19 @@ export interface ThemeColors {
    * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
    */
   readonly track: number;
+  /**
+   * 拘束の印(FR-313、P4b タスク13、§0.a-0.7 の①)。要素の脇に出す記号の色を状態で
+   * 分ける(統括の指示「満たしている / 冗長は薄い / 矛盾は赤 / 動かない点は鍵」)。
+   * 5 テーマすべてで、ビューポートの地(`--pcad-viewport-top` / `--pcad-viewport-bottom`)
+   * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
+   */
+  readonly constraintOk: number;
+  /** 足しすぎ(冗長)の印。満たしている印より弱い色にして「消してよい」と見せる。 */
+  readonly constraintRedundant: number;
+  /** 同時に成り立たない・指す先が消えた印。直すべきものなので赤系。 */
+  readonly constraintConflict: number;
+  /** 「固定」の印。動かない点であることを、他の拘束と別の色で見分ける。 */
+  readonly constraintFixed: number;
   /** 半球光の地面側の色。明るいテーマでは立体の下面が沈みすぎないよう明るくする。 */
   readonly sceneGround: number;
   /**
@@ -98,6 +111,11 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   trimRemove: 0xff6b6b,
   // ダークの --pcad-accent と同じ値(吸着の印と同じアクセント色、§0.14)。
   track: 0x4f8cff,
+  // 拘束の印(P4b タスク13)。ダークの値は appShell.css の :root と同じ。
+  constraintOk: 0x5ad1c8,
+  constraintRedundant: 0xc8a04a,
+  constraintConflict: 0xff6b6b,
+  constraintFixed: 0xc08cff,
   sceneGround: 0x3a3f4a,
   // ビューキューブ(P0〜P3 で faceTexture.ts / createViewCubeScene.ts が直接持っていた定数)。
   viewCubeFaceTop: 0xeef1f6,
@@ -111,7 +129,7 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
 };
 
 /**
- * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 26 個がそろっていること
+ * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 30 個がそろっていること
  * (どのテーマでも 1 つも欠けないこと)は `themeColors.test.ts` が固定する。
  */
 export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
@@ -132,6 +150,10 @@ export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
   workPlane: '--pcad-work-plane',
   trimRemove: '--pcad-trim-remove',
   track: '--pcad-track',
+  constraintOk: '--pcad-constraint-ok',
+  constraintRedundant: '--pcad-constraint-redundant',
+  constraintConflict: '--pcad-constraint-conflict',
+  constraintFixed: '--pcad-constraint-fixed',
   sceneGround: '--pcad-scene-ground',
   viewCubeFaceTop: '--pcad-viewcube-face-top',
   viewCubeFaceFront: '--pcad-viewcube-face-front',
@@ -224,6 +246,10 @@ export function themeColorsFrom(read: (token: string) => string): ThemeColors {
     workPlane: colors.workPlane,
     trimRemove: colors.trimRemove,
     track: colors.track,
+    constraintOk: colors.constraintOk,
+    constraintRedundant: colors.constraintRedundant,
+    constraintConflict: colors.constraintConflict,
+    constraintFixed: colors.constraintFixed,
     sceneGround: colors.sceneGround,
     viewCubeFaceTop: colors.viewCubeFaceTop,
     viewCubeFaceFront: colors.viewCubeFaceFront,

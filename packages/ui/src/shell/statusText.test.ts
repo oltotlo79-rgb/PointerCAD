@@ -712,3 +712,53 @@ describe('タイムラインのつまみの札(FR-507、NFR-UX-7。P4b タスク
     expect(line.text).toBe('図形を作れませんでした: 半径が小さすぎます');
   });
 });
+
+describe('拘束の帯(FR-313、P4b タスク13)', () => {
+  it('拘束の断りは計算の失敗に優先し、頭に「拘束を付けられませんでした:」が付く', () => {
+    const line = describeStatus({
+      ...quiet(),
+      constraintErrorMessage: '線を 2 本選んでください。',
+      partErrors: [partError('立体を作れませんでした')],
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.constraintError')} 線を 2 本選んでください。`);
+  });
+
+  it('拘束の断りは面・立体の断りには譲る(いま押したボタンへの返事の順)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      solidErrorKey: 'solidError.noBody',
+      constraintErrorMessage: '線を 2 本選んでください。',
+    });
+    expect(line.text).toBe(`${t('statusBar.solidError')} ${t('solidError.noBody')}`);
+  });
+
+  it('道具を選んでいるあいだは「次に何を押せばよいか」を道具の案内より先に出す', () => {
+    const line = describeStatus({
+      ...quiet(),
+      constraintPickMessage: '直角: 線を 2 本選んでください。',
+      constraintSummaryText: 'あと 4 か所決まっていません。',
+    });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe('直角: 線を 2 本選んでください。');
+  });
+
+  it('道具を選んでいなければ、決まり具合を道具の案内の代わりに出す(FR-313)', () => {
+    const line = describeStatus({ ...quiet(), constraintSummaryText: 'あと 4 か所決まっていません。' });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe('あと 4 か所決まっていません。');
+  });
+
+  it('決まり具合より、吸着している先の案内が先(いま起きていることを出す)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      snapKind: 'endpoint',
+      constraintSummaryText: 'すべて決まりました。',
+    });
+    expect(line.kind).toBe('snap');
+  });
+
+  it('拘束の欄を渡さない呼び出しは今までどおり動く(欄は省略できる)', () => {
+    expect(describeStatus(quiet()).text).toBe(t('statusBar.ready'));
+  });
+});

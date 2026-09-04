@@ -20,9 +20,12 @@ import {
   replaceSketch,
   resolveSketch,
   setActiveSketch as activateSketch,
+  sketchConstraints,
   undo as undoStep,
   WORK_PLANE_IDS,
   WORK_PLANES,
+  type ConstraintDiagnosis,
+  type ConstraintTarget,
   type CoordinateInput,
   type PartDocument,
   type PartProgress,
@@ -39,6 +42,7 @@ import {
   type SketchFeatureKind,
   type SketchMesh,
   type SketchRecomputeResult,
+  type SketchConstraintKind,
   type SolidBody,
   type UndoStack,
   type WorkPlane,
@@ -60,6 +64,12 @@ import {
   resolveWorkPlaneOf,
   type ReferenceDraft,
 } from '../sketch/referenceCommands.js';
+import {
+  commitRemoveConstraints,
+  constraintsReferencing,
+} from '../sketch/constraintCommands.js';
+import type { ConstraintValuePrompt } from '../sketch/constraintPicking.js';
+import { summarizeConstraints, type ConstraintSummary } from '../sketch/constraintSummary.js';
 import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import type { TrackCandidate } from '../sketch/trackMath.js';
@@ -290,6 +300,54 @@ export interface AppState {
   readonly sketchMesh: SketchMesh | null;
   /** いま編集しているスケッチの失敗(FR-504)。部品全体の失敗は `partErrors`。 */
   readonly sketchErrors: readonly SketchError[];
+  /**
+   * いま編集しているスケッチの拘束の診断(FR-313、P4b タスク13)。
+   *
+   * 中身は model が解いた結果(`PartSketchResult.diagnosis` / `SketchRecomputeResult.diagnosis`)
+   * をそのまま写したもので、**拘束が 1 つも無いスケッチと 3D スケッチでは null**
+   * (model が解く計算そのものを省くため)。帯の「あと N か所決まっていません」、
+   * 一覧の状態、印の色がここ 1 つを見る(同じ計算を各所でやり直さない)。
+   *
+   * 文書から導ける控えなので保存しない(rules/04-設計の規律.md)。
+   */
+  readonly constraintDiagnosis: ConstraintDiagnosis | null;
+  /**
+   * 拘束の一覧の行(FR-313、P4b タスク13)。プロパティの一覧・3D の印・印の当たり判定が
+   * **同じ 1 つ**を見る(描画・当たり判定・選択の 3 つをそろえる、P4 タスク12 の失敗の
+   * 再発防止)。文書と解決結果から導ける控えなので保存しない(rules/04-設計の規律.md)。
+   *
+   * 拘束が 1 つも無ければ空の並びを使い回す(解決を歩き直さない、NFR-PF-1)。
+   */
+  readonly constraintSummaries: readonly ConstraintSummary[];
+  /**
+   * いま選んでいる拘束の道具(FR-313、P4b タスク13)。選んでいなければ null。
+   *
+   * 拘束の道具は**トリム・延長と同じ流儀**(道具を選んでから要素を順に押す。統括の決定
+   * 2026-09-05)なので、`activeTool` とは別に持つ。`activeTool` は `'select'` のままで、
+   * ビューポートの押下だけがこちらを先に見る(`attachSketchInteraction.ts`)。
+   */
+  readonly activeConstraintKind: SketchConstraintKind | null;
+  /**
+   * 拘束の道具で押した相手(FR-313)。必要な数がそろうと拘束が付いて空へ戻る。
+   * 同じところをもう一度押すと外れる(`toggleConstraintTarget`)。
+   */
+  readonly constraintTargets: readonly ConstraintTarget[];
+  /**
+   * 拘束を付けられなかった理由(FR-504、NFR-UX-5)。`shapeErrorMessage` と同じ扱いで、
+   * ステータスバーが「拘束を付けられませんでした:」の言い回しで出す。model の日本語を
+   * そのまま持つので文言キーではなく文で持つ。
+   */
+  readonly constraintErrorMessage: string | null;
+  /**
+   * 寸法拘束(距離・角度・半径・直径)の値を聞いているところ(NFR-UX-2)。開いていなければ null。
+   * 既定値は「いま測った値」(NFR-UX-4)。
+   */
+  readonly constraintPrompt: ConstraintValuePrompt | null;
+  /**
+   * 一覧で選んでいる拘束の id(FR-313)。3D の印を大きく出す。選んでいなければ null。
+   * 印を押すとここへ入り(当たり判定)、一覧の行を押しても同じところへ入る。
+   */
+  readonly selectedConstraintId: string | null;
 
   /** ソリッドのボディ(§0.a-0.5)。カーネルが返した三角形と稜線。 */
   readonly bodies: readonly SolidBody[];
@@ -525,6 +583,19 @@ export interface AppState {
    * (FR-504、NFR-RE-1)。消えたものは選択とホバーからも外れる。
    */
   readonly removeSketchFeature: (featureId: string) => void;
+  /**
+   * 拘束の道具を選ぶ・やめる(FR-313、P4b タスク13)。`null` でやめる。
+   * 道具を選ぶと、取りかけの入力・選択・押した相手は持ち越さない(NFR-UX-3)。
+   */
+  readonly setConstraintTool: (kind: SketchConstraintKind | null) => void;
+  /** 拘束の道具で押した相手を置き換える(タスク13)。 */
+  readonly setConstraintTargets: (targets: readonly ConstraintTarget[]) => void;
+  /** 拘束を付けられなかった理由を出す・消す(NFR-UX-5)。 */
+  readonly setConstraintError: (message: string | null) => void;
+  /** 寸法拘束の値を聞くところを開く・閉じる(NFR-UX-2)。 */
+  readonly setConstraintPrompt: (prompt: ConstraintValuePrompt | null) => void;
+  /** 一覧・印で選んでいる拘束を差し替える(FR-313)。 */
+  readonly setSelectedConstraint: (constraintId: string | null) => void;
   readonly setSelection: (ids: readonly string[]) => void;
   readonly toggleSelection: (id: string) => void;
   readonly setHovered: (id: string | null) => void;
@@ -837,6 +908,39 @@ function activeSketchErrors(
   return kernelErrors.length === 0 ? resolveErrors : [...resolveErrors, ...kernelErrors];
 }
 
+/** 拘束の道具でまだ何も押していないときの並び。作り直さずに使い回す。 */
+const NO_CONSTRAINT_TARGETS: readonly ConstraintTarget[] = [];
+
+/** 拘束が 1 つも無いときの一覧。作り直さずに使い回す(参照の同一性を保つ)。 */
+const NO_CONSTRAINT_SUMMARIES: readonly ConstraintSummary[] = [];
+
+/**
+ * 拘束の一覧の行を作り直す(FR-313、タスク13)。**拘束が 1 つも無い文書では歩き直さない**
+ * (`parameterPatch` / `referencePatch` と同じ理由。いまの既定の部品は拘束を持たない)。
+ *
+ * 材料は「いま描いている解決結果」をそのまま使い回す。印に要るのは位置と名前だけで、
+ * 動かせる数(`variableSet`)は診断(`diagnosis`)が持っているため、ここで解き直さない。
+ */
+function constraintSummaryPatch(
+  sketch: SketchDocument,
+  resolved: ResolvedSketch,
+  diagnosis: ConstraintDiagnosis | null,
+): Pick<AppState, 'constraintSummaries'> {
+  // `constraints` は版 5 で足した任意の欄なので、古い文書では持たないことがある
+  // (model の `sketchConstraints` と同じ扱い)。
+  if (sketchConstraints(sketch).length === 0) {
+    return { constraintSummaries: NO_CONSTRAINT_SUMMARIES };
+  }
+  return {
+    constraintSummaries: summarizeConstraints(sketch, diagnosis, {
+      resolved,
+      // 位置と名前しか読まないので、作図面と動かせる数は要らない(上の注釈のとおり)。
+      plane: null,
+      variableSet: null,
+    }),
+  };
+}
+
 /** テストで元へ戻せるよう、文書まわりの初期値を1箇所にまとめる。 */
 export function createInitialDocumentState(): Pick<
   AppState,
@@ -859,6 +963,13 @@ export function createInitialDocumentState(): Pick<
   | 'resolvedSketch'
   | 'sketchMesh'
   | 'sketchErrors'
+  | 'constraintDiagnosis'
+  | 'constraintSummaries'
+  | 'activeConstraintKind'
+  | 'constraintTargets'
+  | 'constraintErrorMessage'
+  | 'constraintPrompt'
+  | 'selectedConstraintId'
   | 'bodies'
   | 'partErrors'
   | 'cacheHits'
@@ -926,6 +1037,14 @@ export function createInitialDocumentState(): Pick<
     resolvedSketch: resolveSketch(sketch),
     sketchMesh: null,
     sketchErrors: [],
+    // 起動時の部品は拘束を 1 つも持たない(FR-313、P4b タスク13)。
+    constraintDiagnosis: null,
+    constraintSummaries: NO_CONSTRAINT_SUMMARIES,
+    activeConstraintKind: null,
+    constraintTargets: NO_CONSTRAINT_TARGETS,
+    constraintErrorMessage: null,
+    constraintPrompt: null,
+    selectedConstraintId: null,
     bodies: [],
     partErrors: [],
     cacheHits: 0,
@@ -1050,6 +1169,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
         snapIndicator: null,
         // 案内線も持ち越さない(道具が変われば向きを合わせる相手も変わる、FR-110)。
         trackIndicator: null,
+        // 拘束の道具も持ち越さない(別の道具を押したらやめる、NFR-UX-3。P4b タスク13)。
+        activeConstraintKind: null,
+        constraintTargets: NO_CONSTRAINT_TARGETS,
+        constraintErrorMessage: null,
+        constraintPrompt: null,
         editPreview: null,
         faceErrorKey: null,
         solidErrorKey: null,
@@ -1146,6 +1270,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         editNoticeKey: null,
         shapeErrorMessage: null,
         referenceErrorMessage: null,
+        // 拘束の断りも文書が変われば用済み(FR-504、タスク13)。
+        constraintErrorMessage: null,
         // 原点を移した知らせも、次に形が変われば用済み(FR-331、タスク35b)。
         // 原点の再設定そのものは applyDocument のあとで setOriginNotice を呼んで立て直す。
         originNoticeMessage: null,
@@ -1192,6 +1318,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         resolvedSketch: result.resolved,
         sketchMesh: result.mesh,
         sketchErrors: result.errors,
+        // 拘束の診断(FR-313、タスク13)。拘束が無ければ model が null を返す。
+        constraintDiagnosis: result.diagnosis,
+        ...constraintSummaryPatch(sketch, result.resolved, result.diagnosis),
         isComputing: false,
         recomputeProgress: null,
       };
@@ -1208,6 +1337,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
           active === undefined
             ? state.sketchErrors
             : activeSketchErrors(sketch, active, result.errors),
+        // 拘束の診断(FR-313、タスク13)。いま編集しているスケッチのぶんだけを控える。
+        constraintDiagnosis: active === undefined ? state.constraintDiagnosis : active.diagnosis,
+        ...(active === undefined
+          ? { constraintSummaries: state.constraintSummaries }
+          : constraintSummaryPatch(sketch, active.resolved, active.diagnosis)),
         // 途中で打ち切られた結果は「作れたところまで」でしかないので、前のボディを
         // 半分だけの形へ置き換えない(NFR-PF-4、§2.6 の限界)。
         bodies: result.cancelled ? state.bodies : result.bodies,
@@ -1324,9 +1458,45 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   removeSketchFeature: (featureId) => {
     const state = get();
-    state.applyDocument(
-      replaceSketch(state.document, removeFeature(state.sketch, featureId)),
-    );
+    /*
+     * 要素を消したら、それを指している拘束も一緒に消す(FR-313、P4b タスク13)。
+     *
+     * 残しておくと「指している要素がありません」の拘束が一覧に溜まり、診断の
+     * `dangling` として毎回数えられる。取り消し(Ctrl+Z)は文書ごと 1 段で戻るので、
+     * 要素と拘束が同じ 1 回の取り消しで戻る(NFR-UX-3)。
+     */
+    const withoutFeature = removeFeature(state.sketch, featureId);
+    const orphaned = constraintsReferencing(withoutFeature, featureId);
+    const outcome =
+      orphaned.length === 0 ? null : commitRemoveConstraints(withoutFeature, orphaned);
+    const nextSketch = outcome !== null && outcome.ok ? outcome.document : withoutFeature;
+    state.applyDocument(replaceSketch(state.document, nextSketch));
+  },
+  setConstraintTool: (kind) => {
+    const state = get();
+    // 取りかけの入力・下書き・案内線の後始末は `setActiveTool` に任せ、規則を 2 か所に書かない。
+    // 拘束の道具はビューポートを押して相手を決めるので、下地の道具は選択にしておく。
+    state.setActiveTool('select');
+    set({
+      activeConstraintKind: kind,
+      constraintTargets: NO_CONSTRAINT_TARGETS,
+      constraintErrorMessage: null,
+      constraintPrompt: null,
+      // 前の道具で選んでいたものを拘束の相手に紛れ込ませない(NFR-UX-3)。
+      selection: [],
+    });
+  },
+  setConstraintTargets: (constraintTargets) => {
+    set({ constraintTargets });
+  },
+  setConstraintError: (constraintErrorMessage) => {
+    set({ constraintErrorMessage });
+  },
+  setConstraintPrompt: (constraintPrompt) => {
+    set({ constraintPrompt });
+  },
+  setSelectedConstraint: (selectedConstraintId) => {
+    set({ selectedConstraintId });
   },
   setSelection: (selection) => {
     // 選び直したら、直前に断られた面・立体・オフセットの理由は用済みなので消す(NFR-UX-5)。
@@ -1479,6 +1649,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       snapIndicator: null,
       trackIndicator: null,
       editPreview: null,
+      // 拘束まわりの一時状態も持ち越さない(FR-313、タスク13)。診断は次の計算で入り直す。
+      constraintDiagnosis: null,
+      constraintSummaries: NO_CONSTRAINT_SUMMARIES,
+      activeConstraintKind: null,
+      constraintTargets: NO_CONSTRAINT_TARGETS,
+      constraintErrorMessage: null,
+      constraintPrompt: null,
+      selectedConstraintId: null,
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,

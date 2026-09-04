@@ -34,6 +34,12 @@ import {
 } from '@pointercad/model';
 
 import { applyProjectionCommit, applySketchCommit } from '../sketch/commitToStore.js';
+import { cancelConstraintTool, pickForConstraint } from '../sketch/constraintActions.js';
+import {
+  constraintMarkAt,
+  constraintMarksOf,
+  pickConstraintTarget,
+} from '../sketch/constraintPicking.js';
 import {
   cornerNear,
   cornerPreview,
@@ -855,6 +861,51 @@ export function attachSketchInteraction(
   }
 
   /**
+   * 拘束の道具でビューポートを押したとき(FR-313、P4b タスク13)。
+   *
+   * 拘束の道具は**トリム・延長と同じ流儀**(道具を選んでから要素を順に押す。統括の決定
+   * 2026-09-05)。押した相手は `constraintPicking.ts` が決め、**端点・中心を先に見る**ので
+   * 「線分の端どうしを一致させる」が成立する(`pickMath.ts` は端点を個別に拾えない)。
+   * 積み方と確定は `constraintActions.ts` の 1 か所に置き、ここは押した場所を渡すだけにする。
+   */
+  function pickConstraintAt(pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    const pick = pickConstraintTarget(state.resolvedSketch, project, pointer);
+    if (pick === null) {
+      // 何も無いところを押したら、押した相手をいったん捨てる(選び直せる、NFR-UX-3)。
+      state.setConstraintTargets([]);
+      state.setSelection([]);
+      return;
+    }
+    // 数値を聞く拘束のその場入力を、押したところの近くへ出す(NFR-UX-2)。
+    state.setPickAnchor(pointer);
+    pickForConstraint(pick, pointer);
+  }
+
+  /**
+   * 拘束の印を押したら、その拘束を一覧で選ぶ(FR-106 と同じ「押したら選ばれる」)。
+   * 印に当たらなければ false を返し、呼び出し側はふつうの当たり判定へ進む。
+   * **描画・当たり判定・選択の 3 つをそろえる**(P4 タスク12 の失敗の再発防止)ため、
+   * 見るのは 3D へ渡したものと同じ `constraintSummaries` 1 つだけ。
+   */
+  function pickConstraintMark(pointer: readonly [number, number]): boolean {
+    const state = useAppStore.getState();
+    if (state.constraintSummaries.length === 0) {
+      return false;
+    }
+    const constraintId = constraintMarkAt(
+      constraintMarksOf(state.constraintSummaries),
+      project,
+      pointer,
+    );
+    if (constraintId === null) {
+      return false;
+    }
+    state.setSelectedConstraint(constraintId);
+    return true;
+  }
+
+  /**
    * 押した場所の基準になる点(FR-302、FR-303)。
    *
    * 線分の終点だけは自分の始点が基準で、それ以外は「直前の点」。
@@ -1016,6 +1067,22 @@ export function attachSketchInteraction(
     const pointer = pointerPosition(event);
     const tool = state.activeTool;
 
+    if (state.activeConstraintKind !== null) {
+      /*
+        拘束の道具(FR-313、タスク13)。押した要素・端点を順に受け取り、必要な数がそろったら
+        拘束が付く。焦点は canvas に残して、続けて何か所でも押せて Esc で終われるようにする
+        (トリム・延長と同じ、NFR-UX-7)。
+      */
+      event.preventDefault();
+      pickConstraintAt(pointer);
+      return;
+    }
+
+    if (tool === 'select' && pickConstraintMark(pointer)) {
+      // 拘束の印を押した。要素の選択は変えずに、その拘束を一覧で選ぶだけにする。
+      return;
+    }
+
     if (tool === 'select' || tool === 'face') {
       // 面の道具では 1 つずつ足していく。選択の道具は Shift を押したときだけ足す。
       // 選択の種類(selectionKind)がどうであっても、この2つの道具の振る舞いは変えない
@@ -1148,6 +1215,15 @@ export function attachSketchInteraction(
       state.setSelection([]);
       state.setPendingStart(null);
       state.closeNumericInput();
+      if (state.activeConstraintKind !== null) {
+        // 拘束の道具(FR-313、タスク13)も Esc で終わる(トリム・延長と同じ)。
+        cancelConstraintTool();
+        return;
+      }
+      // 拘束の印を選んでいたら解く(選択を解くのと同じ Esc の一手で、NFR-UX-1)。
+      if (state.selectedConstraintId !== null) {
+        state.setSelectedConstraint(null);
+      }
       if (
         isClickEditTool(state.activeTool) ||
         isCornerEditTool(state.activeTool) ||

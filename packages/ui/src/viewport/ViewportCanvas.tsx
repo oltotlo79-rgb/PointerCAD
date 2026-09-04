@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isFreeWorkPlaneId } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
+import { constraintMarksOf } from '../sketch/constraintPicking.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
@@ -121,6 +122,9 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setReferences(initial.resolvedReferences);
     scene.setEditPreview(initial.editPreview);
     scene.setTracking(initial.trackIndicator);
+    // 拘束の印(FR-313、P4b タスク13)。一覧の行(`constraintSummaries`)を印へ開く。
+    scene.setConstraintMarks(constraintMarksOf(initial.constraintSummaries));
+    scene.setSelectedConstraint(initial.selectedConstraintId);
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
@@ -173,6 +177,14 @@ export function ViewportCanvas(): React.JSX.Element {
       // `attachSketchInteraction` 側が入れ直さないので、ここは変化だけを見ればよい。
       if (next.trackIndicator !== previous.trackIndicator) {
         scene.setTracking(next.trackIndicator);
+      }
+      // 拘束の印(FR-313、タスク13)。一覧・当たり判定と同じ 1 つ(`constraintSummaries`)を
+      // 見るので、ここでは控えが差し替わったときだけ開き直せばよい。
+      if (next.constraintSummaries !== previous.constraintSummaries) {
+        scene.setConstraintMarks(constraintMarksOf(next.constraintSummaries));
+      }
+      if (next.selectedConstraintId !== previous.selectedConstraintId) {
+        scene.setSelectedConstraint(next.selectedConstraintId);
       }
       // 表示テーマが変わったら 3D の色も読み直す(FR-908。拡大率は 3D の色を変えない)。
       if (next.displaySettings.theme !== previous.displaySettings.theme) {

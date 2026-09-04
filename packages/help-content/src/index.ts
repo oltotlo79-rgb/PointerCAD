@@ -53,6 +53,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/edit-curves.md',
   },
   {
+    id: 'constraints',
+    title: '形を条件で決める(拘束)',
+    path: 'docs/ja/constraints.md',
+  },
+  {
     id: 'sketch-fillet',
     title: '線の角を丸める・面取りする',
     path: 'docs/ja/sketch-fillet.md',

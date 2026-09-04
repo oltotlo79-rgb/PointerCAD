@@ -326,6 +326,12 @@ export interface StatusInput {
    * `editNoticeKey` と同じ扱い(省略できるのも同じ理由)。
    */
   readonly timelineNoticeKey?: MessageKey | null;
+  /**
+   * 順序の入れ替えを断った理由(FR-507、FR-504。P4b タスク20)。断らなかったときは null。
+   * 相手のフィーチャーの名前が入る文なので、文言キーではなく組み立て済みの文で受け取る
+   * (`shapeErrorMessage` と同じ扱い。省略できるのも同じ理由)。
+   */
+  readonly timelineRefusalMessage?: string | null;
   /** 再計算そのものが投げた理由。 */
   readonly errorMessage: string | null;
   /** 部品まるごとの再計算で集めた失敗(FR-504)。 */
@@ -583,8 +589,9 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * 帯に出す 1 文を決める(FR-905)。優先順位は上から順に次のとおり。
  *
  * 1. ファイル操作の失敗 … いま押したボタンへの返事。理由の文だけで通じるので頭の言葉は付けない。
- * 2. 面・立体・整形系(オフセット等)・図形を作れなかった断り … これもいま押した Enter や
- *    ボタンへの返事(NFR-UX-5)。
+ * 2. 面・立体・整形系(オフセット等)・図形を作れなかった断り、順序の入れ替えの断り
+ *    (FR-507、タスク20)… これもいま押した Enter やボタン、いま離したドラッグへの返事
+ *    (NFR-UX-5)。
  * 3. 計算の失敗 … 再計算が投げた理由、続いて集まった失敗の件数と先頭の理由(FR-504)。
  * 4. 中止の知らせ … 失敗ではないので赤くしない(NFR-PF-4)。
  * 5. 進み具合 … 長い計算のあいだだけ(NFR-PF-4)。
@@ -624,6 +631,11 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   }
   if (input.referenceErrorMessage !== undefined && input.referenceErrorMessage !== null) {
     return failureLine('statusBar.referenceError', input.referenceErrorMessage);
+  }
+  if (input.timelineRefusalMessage !== undefined && input.timelineRefusalMessage !== null) {
+    // 順序の入れ替えの断り(FR-507、タスク20)。いま離したドラッグへの返事なので、
+    // 他の断りと同じ高さに置く。理由の文は model が相手の名前つきで組み立てたものをそのまま出す。
+    return failureLine('statusBar.timelineError', input.timelineRefusalMessage);
   }
   if (input.commandLineFailure !== undefined && input.commandLineFailure !== null) {
     // コマンドラインで打った 1 行への返事(FR-208)。他の断りと同じ扱いで、頭に「コマンド:」を付ける。

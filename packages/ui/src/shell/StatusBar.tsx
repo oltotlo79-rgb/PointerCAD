@@ -112,6 +112,11 @@ export function StatusBar(): React.JSX.Element {
     (state) => state.document.references.length + state.document.solids.length,
   );
   const timelineNoticeKey = useAppStore((state) => state.timelineNoticeKey);
+  /*
+   * 順序の入れ替えの断り(FR-507、FR-504。P4b タスク20)。文だけを取り出す。
+   * 断りの向け先(壊れる側の行)の印は `FeatureTree.tsx` が同じ値から出す。
+   */
+  const timelineRefusalMessage = useAppStore((state) => state.timelineRefusal?.message ?? null);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   // 任意の作業平面(FR-328)の名前を札に出すための一覧(タスク13)。
@@ -216,6 +221,7 @@ export function StatusBar(): React.JSX.Element {
     // つまみが末尾でないことの札と、末尾へ戻したことの知らせ(FR-507、タスク19)。
     rollback: rollbackOf(historyCount, timelineIndex),
     timelineNoticeKey,
+    timelineRefusalMessage,
     errorMessage,
     partErrors,
     sketchErrors,

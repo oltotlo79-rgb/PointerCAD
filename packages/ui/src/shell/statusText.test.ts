@@ -671,18 +671,44 @@ describe('タイムラインのつまみの札(FR-507、NFR-UX-7。P4b タスク
     expect(rollbackText({ position: 2, total: 4 })).toBe('途中まで戻しています(2 件目 / 4 件)');
   });
 
-  it('末尾へ戻したことの知らせは、断りではないので赤くしない', () => {
-    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.returnedToEnd' });
+  /*
+   * タスク19 は「戻したまま作ったら末尾へ戻して知らせる」(`timeline.returnedToEnd`)
+   * だったが、タスク20 で**つまみの位置へ差し込む**ようになったので、知らせも
+   * 「差し込みました」(`timeline.inserted`)へ替わった。知らせの扱い(断りではないので
+   * 赤くしない・失敗のほうが先に出る)は変えていない。
+   */
+  it('つまみのところへ差し込んだ知らせは、断りではないので赤くしない', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.inserted' });
     expect(line.kind).toBe('saved');
-    expect(line.text).toBe(t('timeline.returnedToEnd'));
+    expect(line.text).toBe(t('timeline.inserted'));
   });
 
-  it('末尾へ戻したことの知らせより、計算の失敗のほうが先に出る(FR-504)', () => {
+  it('差し込んだ知らせより、計算の失敗のほうが先に出る(FR-504)', () => {
     const line = describeStatus({
       ...quiet(),
-      timelineNoticeKey: 'timeline.returnedToEnd',
+      timelineNoticeKey: 'timeline.inserted',
       errorMessage: '計算できません',
     });
     expect(line.kind).toBe('failure');
+  });
+
+  it('順序の入れ替えの断りは赤い 1 文になり、理由をそのまま出す(FR-507、FR-504)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      timelineRefusalMessage: 'R面取り1は穴1を使っているので、穴1より後ろでなければなりません。',
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(
+      '順序を入れ替えられませんでした: R面取り1は穴1を使っているので、穴1より後ろでなければなりません。',
+    );
+  });
+
+  it('順序の入れ替えの断りより、押した Enter への返事(図形の断り)のほうが先に出る', () => {
+    const line = describeStatus({
+      ...quiet(),
+      shapeErrorMessage: '半径が小さすぎます',
+      timelineRefusalMessage: '動かすものが履歴の中にありません。',
+    });
+    expect(line.text).toBe('図形を作れませんでした: 半径が小さすぎます');
   });
 });

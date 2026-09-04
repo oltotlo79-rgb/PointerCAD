@@ -1657,6 +1657,10 @@ describe('タイムラインのつまみ(FR-507、FR-506、P4b タスク19)', ()
     expect(useAppStore.getState().document.solids.map((solid) => solid.id)).toEqual(['2', '1', 'h']);
     expect(useAppStore.getState().undoStack.past).toHaveLength(undoBefore + 1);
     expect(useAppStore.getState().timelineRefusal).toBeNull();
+    // 動かしたのは並びだけで、フィーチャーそのものは同じ物のまま(NFR-PF-3。
+    // 中身を作り直すと、変わっていない段まで形の計算をやり直すことになる)。
+    expect(useAppStore.getState().document.solids[1]).toBe(base.solids[0]);
+    expect(useAppStore.getState().document.solids[2]).toBe(base.solids[1]);
     useAppStore.getState().undo();
     expect(useAppStore.getState().document.solids.map((solid) => solid.id)).toEqual(['1', 'h', '2']);
 

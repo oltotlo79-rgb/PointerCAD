@@ -1594,6 +1594,49 @@ button.pcad-tree__row:focus-visible {
   color: var(--pcad-text-faint);
 }
 
+/* ===== 順序の入れ替え(FR-507、FR-504。P4b タスク20) =====
+ *
+ * 行を上下へドラッグして作る順序を入れ替える。落ちる場所には**離す前に**線を引き、
+ * 落とせない位置では赤くする(NFR-UX-5「実行してから失敗させない」)。
+ * 線は疑似要素で行の上に重ねるので、**行の高さ 26px は 1 画素も変わらない**
+ * (過去の失敗: docs/報告記録.md 2026-09-04 20:30)。
+ */
+.pcad-tree__row--dragging {
+  opacity: 0.55;
+}
+
+.pcad-tree__row--drop-above,
+.pcad-tree__row--drop-below {
+  position: relative;
+}
+
+.pcad-tree__row--drop-above::after,
+.pcad-tree__row--drop-below::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: 2px;
+  pointer-events: none;
+  content: '';
+  background: var(--pcad-accent);
+}
+
+.pcad-tree__row--drop-above::after {
+  top: -1px;
+}
+
+.pcad-tree__row--drop-below::after {
+  bottom: -1px;
+}
+
+/* そこへは落とせない。色だけでなく破線にもして、色の見分けにくい人にも伝える。 */
+.pcad-tree__row--drop-refused::after {
+  height: 0;
+  background: transparent;
+  border-top: 2px dashed var(--pcad-danger);
+}
+
 /*
  * 行から開く一覧(FR-503)。モデルブラウザは縦に流れる区画なので、中に置くと縁で
  * 切り取られる。画面に対して固定して出し、右端をボタン(またはカーソル)にそろえる。
@@ -2653,4 +2696,134 @@ button.pcad-tree__row:focus-visible {
 .pcad-commandline__suggestion-word {
   font-variant-numeric: tabular-nums;
   color: var(--pcad-text-faint);
+}
+
+/* ===== プロパティ区画のタブとパラメータ表(FR-207、§0.a-0.15、P4b タスク11) ===== */
+
+/*
+  「プロパティ」「パラメータ」の 2 タブ。区画は増やさず、区画の見出しの下へ 1 段だけ足す
+  (rules/04-設計の規律.md「固定区画を増やさない」)。高さは既存の .pcad-tab と同じ 24px。
+*/
+.pcad-panel__tabs {
+  display: flex;
+  flex: none;
+  gap: var(--pcad-space-1);
+  padding: var(--pcad-space-1) var(--pcad-space-2);
+  border-bottom: 1px solid var(--pcad-border);
+}
+
+.pcad-panel__tabs .pcad-tab {
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+.pcad-parameters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+}
+
+.pcad-parameters__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  padding: 0 var(--pcad-space-3);
+  margin: 0;
+  list-style: none;
+}
+
+/*
+  1 つのパラメータのかたまり。右の区画は 280px しかないので、名前・式・値・単位・説明を
+  横 5 列には並べられない。縦に積み、かたまりの境目を薄い線で見せる。
+*/
+.pcad-parameter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-1);
+  padding: var(--pcad-space-2);
+  background: var(--pcad-surface-raised);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+}
+
+/* 参照が循環している行(FR-207)。理由は表の頭の 1 文で出す。 */
+.pcad-parameter--circular {
+  border-color: var(--pcad-danger);
+}
+
+.pcad-parameter__head {
+  display: flex;
+  gap: var(--pcad-space-1);
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+}
+
+.pcad-parameter__marks {
+  display: flex;
+  gap: var(--pcad-space-1);
+  align-items: center;
+  min-width: 0;
+}
+
+.pcad-parameter__mark {
+  overflow: hidden;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 使われていない名前は薄い印(FR-207)。断りではないので赤にしない。 */
+.pcad-parameter__mark--unused {
+  color: var(--pcad-text-faint);
+}
+
+.pcad-parameter__mark--circular {
+  color: var(--pcad-danger-text);
+}
+
+.pcad-parameter__actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.pcad-parameter__action {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+}
+
+.pcad-parameter__action:disabled {
+  color: var(--pcad-text-faint);
+  cursor: default;
+}
+
+.pcad-parameter__action:disabled:hover {
+  color: var(--pcad-text-faint);
+  background: transparent;
+}
+
+/* 単位は 3 つだけなので横並びのまま入る(mm / ° / なし)。 */
+.pcad-parameter__units .pcad-choice__label {
+  font-size: var(--pcad-font-size-small);
+}
+
+.pcad-parameters__footer {
+  display: flex;
+  padding: 0 var(--pcad-space-3);
+}
+
+.pcad-parameters__footer .pcad-button--action {
+  justify-content: center;
+  width: 100%;
+  color: var(--pcad-text);
+  background: var(--pcad-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
+}
+
+.pcad-parameters__footer .pcad-button--action:hover {
+  background: var(--pcad-accent-soft-hover);
 }

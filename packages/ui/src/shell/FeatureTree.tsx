@@ -80,7 +80,17 @@ import {
 } from './icons.js';
 import { TimelineStopHandle } from './Timeline.js';
 import {
+  beginTimelineDrag,
+  dropMarkerFor,
+  parseDropIndex,
+  timelineMoveOffer,
+  withDropTarget,
+  type TimelineDrag,
+  type TimelineMoveOffer,
+} from './timelineMove.js';
+import {
   buildTimelineStops,
+  historySize,
   isTimelineAtEnd,
   timelineStopsById,
   type TimelineStop,
@@ -172,9 +182,10 @@ type RowMenuSection = TreeSectionKey | 'sketchDocument';
 
 /**
  * 一覧の高さの見込み(画素)。下端からはみ出すときに上へ出すかを決めるのに使う。
- * いちばん項目が多いのは基準点の行(表示の切替・原点にする・改名・削除の 4 つ、P4 タスク35b)。
+ * いちばん項目が多いのは基準点の行で、表示の切替・1 つ上へ・1 つ下へ・原点にする・改名・
+ * 削除の 6 つ(P4b タスク20 で並べ替えの 2 つが増えた)。
  */
-const ROW_MENU_HEIGHT = 128;
+const ROW_MENU_HEIGHT = 192;
 /** 一覧の幅の見込み(画素)。css の .pcad-menu__item の min-width と左右の余白から。 */
 const ROW_MENU_WIDTH = 132;
 /** ボタンやカーソルと一覧の間の隙間、および画面の端との余白(画素)。 */
@@ -197,6 +208,27 @@ function menuRight(right: number): number {
   const smallest = ROW_MENU_WIDTH + ROW_MENU_MARGIN;
   const largest = window.innerWidth - ROW_MENU_MARGIN;
   return Math.min(Math.max(right, smallest), Math.max(smallest, largest));
+}
+
+/**
+ * ここまで動いたら「掴んで動かしている」とみなす距離(画素)。
+ * これ未満の動きは押し間違いの震えとみなし、これまでどおり行の選択にする。
+ * 26px の行を 1 つ跨ぐより十分に小さく、指の震えより大きい値として 4 を採る。
+ */
+const DRAG_THRESHOLD_PX = 4;
+
+/** 行に付けた通し番号の印。落とし先を画面の座標から引くのに使う。 */
+const TIMELINE_INDEX_ATTRIBUTE = 'data-timeline-index';
+
+/**
+ * その画面座標の下にある行の、帯の通し番号。行の上に無ければ null。
+ * ドラッグ中は指の下の行が変わり続けるので、行ごとの `onPointerEnter` ではなく
+ * 画面の座標から引く(押している間は入る・出るの知らせが届かないことがあるため)。
+ */
+function dropIndexAtPoint(x: number, y: number, total: number): number | null {
+  const found = window.document.elementFromPoint(x, y);
+  const row = found === null ? null : found.closest(`[${TIMELINE_INDEX_ATTRIBUTE}]`);
+  return parseDropIndex(row?.getAttribute(TIMELINE_INDEX_ATTRIBUTE), total);
 }
 
 /**
@@ -225,12 +257,33 @@ export function FeatureTree(): React.JSX.Element {
   // タイムラインのつまみ(FR-507、FR-506、P4b タスク19)。区画は増やさず、履歴の行の
   // 左端をなぞる細いレールとして木の中に出す(§0.a-0.18 の利用者の決定は案 B)。
   const timelineIndex = useAppStore((state) => state.timelineIndex);
+  // 順序の入れ替えを断った理由(FR-507、FR-504。タスク20)。壊れる側の行に印を出す。
+  const timelineRefusal = useAppStore((state) => state.timelineRefusal);
   const [isExpanded, setIsExpanded] = useState(true);
   const [collapsed, setCollapsed] = useState<readonly TreeSectionKey[]>([]);
   const [collapsedSketchIds, setCollapsedSketchIds] = useState<readonly string[]>([]);
   const [menu, setMenu] = useState<RowMenuState | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  /*
+   * 順序を入れ替えるドラッグ(FR-507、タスク20)。掴んでいるものと落とし先、そこへ
+   * 落とせるかどうかを持つ。見た目だけの一時状態なのでコンポーネントに持つ
+   * (rules/04-設計の規律.md。一覧・改名中と同じ扱い)。形の正本はストアの `document` だけ。
+   *
+   * 依存(HTML5 のドラッグ&ドロップ)は使わず、pointer の押す・動く・離すで自前に組む。
+   * ①落とせない位置を**離す前**に赤い線で予告できる(NFR-UX-5)、②行の中に押せるもの
+   * (つまみ・「⋮」)があっても掴む場所を選り分けられる、③ペンや指でも同じに動く、
+   * の 3 つが要るため。ライブラリは足さない(rules/02-禁止事項.md)。
+   */
+  const [drag, setDrag] = useState<TimelineDrag | null>(null);
+  /** 掴んだ場所(画面座標)。ここから離れて初めて「動かした」とみなす。 */
+  const dragOriginRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
+  /**
+   * 直前の押し下げがドラッグだったか。ドラッグの後には `click` も飛んでくるので、
+   * 行の選択が起きないようにここで見分ける(過去の失敗: docs/報告記録.md 2026-09-04 11:10
+   * の (a) と同じ「確定と選択の順序」の話)。
+   */
+  const draggedRef = useRef(false);
 
   // 基準の節(FR-328、FR-329、P4 タスク33)は「作業平面 → スケッチ → 立体」の順で
   // 使うものなので、いちばん上に置く。中身は履歴順のまま。
@@ -289,6 +342,16 @@ export function FeatureTree(): React.JSX.Element {
         : menuSketchGroup.inUse
           ? 'featureTree.sketchDeleteBlocked'
           : null;
+  /*
+   * 「⋮」の一覧に出す「1 つ上へ」「1 つ下へ」(FR-507、タスク20、NFR-UX-3)。
+   * 帯に出る行(基準ジオメトリ・立体)にだけ出す。マウスのドラッグが苦手でも同じことが
+   * できるようにするための入り口で、押せるかどうか・断りの理由はドラッグと同じ判定
+   * (`timelineMoveOffer` → `canMoveHistoryItem`)から引く(同じ規約を 2 か所に書かない)。
+   */
+  const menuInTimeline =
+    menu !== null && (menu.sectionKey === 'solid' || menu.sectionKey === 'reference');
+  const menuMoveUp = menuInTimeline && menu !== null ? timelineMoveOffer(part, menu.featureId, -1) : null;
+  const menuMoveDown = menuInTimeline && menu !== null ? timelineMoveOffer(part, menu.featureId, 1) : null;
   // 「ここを原点にする」(FR-331)を出せる行かどうかは行の種類だけで決まる(タスク35b)。
   const menuRow =
     menu === null
@@ -335,6 +398,70 @@ export function FeatureTree(): React.JSX.Element {
     }
     menuRef.current?.querySelector('button')?.focus();
   }, [menu]);
+
+  /*
+   * 順序を入れ替えるドラッグの見張り(FR-507、タスク20)。掴んでいる間だけ窓に付ける。
+   *
+   * 落とせるかどうかは `canMoveHistoryItem`(文書を作らない)で毎回引き直すので、
+   * 指を動かすたびに呼んでも形の計算は 1 回も起きない。離した瞬間にだけ
+   * `moveTimelineItem`(= `moveHistoryItem`)で文書を 1 回積む(NFR-UX-3、NFR-UX-5)。
+   */
+  useEffect(() => {
+    if (drag === null) {
+      return undefined;
+    }
+    const total = historySize(part);
+    const onPointerMove = (event: PointerEvent): void => {
+      const origin = dragOriginRef.current;
+      if (
+        !drag.moved &&
+        origin !== null &&
+        Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < DRAG_THRESHOLD_PX
+      ) {
+        // まだ震えの範囲。掴んだだけとみなし、行の選択(click)を邪魔しない。
+        return;
+      }
+      draggedRef.current = true;
+      const index = dropIndexAtPoint(event.clientX, event.clientY, total);
+      const next =
+        index === null
+          ? // 帯の外(スケッチの行や区画の余白)。落とし先は変えず、掴んでいることだけ示す。
+            { ...drag, moved: true }
+          : withDropTarget(part, drag, index);
+      if (next.toIndex !== drag.toIndex || next.moved !== drag.moved) {
+        setDrag(next);
+      }
+    };
+    const onPointerUp = (): void => {
+      setDrag(null);
+      dragOriginRef.current = null;
+      if (!drag.moved || drag.toIndex === drag.fromIndex) {
+        return;
+      }
+      // 断られたら文書は 1 バイトも変わらず、理由が帯と壊れる側の行に出る(FR-504)。
+      useAppStore.getState().moveTimelineItem(drag.featureId, drag.toIndex);
+    };
+    const onCancel = (): void => {
+      // 窓の外へ出た・Esc を押した。並べ替えはやめて元の順序のままにする(NFR-UX-3)。
+      setDrag(null);
+      dragOriginRef.current = null;
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [drag, part]);
 
   const selectedIds = new Set(selection.map((id) => featureIdOf(id)));
   const hoveredId = hoveredElementId === null ? null : featureIdOf(hoveredElementId);
@@ -448,6 +575,47 @@ export function FeatureTree(): React.JSX.Element {
     }
     store.applyDocument(change.document);
     store.setOriginNotice(change.notice);
+  };
+
+  /**
+   * 「⋮」の一覧の「1 つ上へ」「1 つ下へ」1 項目ぶん(FR-507、タスク20)。
+   *
+   * 動かせないときは**押せなくして理由を吹き出しで読める**ようにする(NFR-UX-5)。
+   * 押してから断る形にしないのは、ドラッグの予告(赤い線)と同じ考え方。
+   */
+  const renderMoveItem = (
+    offer: TimelineMoveOffer | null,
+    featureId: string,
+    labelKey: MessageKey,
+    tooltipKey: MessageKey,
+    edgeKey: MessageKey,
+  ): React.JSX.Element | null => {
+    if (offer === null) {
+      return null;
+    }
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        className="pcad-button pcad-menu__item"
+        disabled={offer.kind !== 'ready'}
+        title={
+          offer.kind === 'ready'
+            ? t(tooltipKey)
+            : offer.kind === 'edge'
+              ? t(edgeKey)
+              : offer.refusal.message
+        }
+        onClick={() => {
+          if (offer.kind === 'ready') {
+            useAppStore.getState().moveTimelineItem(featureId, offer.toIndex);
+          }
+          setMenu(null);
+        }}
+      >
+        {t(labelKey)}
+      </button>
+    );
   };
 
   const toggleSuppressed = (featureId: string): void => {
@@ -619,18 +787,59 @@ export function FeatureTree(): React.JSX.Element {
      */
     const stop: TimelineStop | undefined = timelineStops.get(row.id);
     const ahead = stop !== undefined && stop.state === 'ahead';
+    /*
+     * 順序を入れ替えるドラッグの予告(FR-507、タスク20、NFR-UX-5)。
+     * 落ちる場所に線を引き、落とせない位置では赤くする。離してから断るのではなく、
+     * 離す前に見て分かるようにするため。
+     */
+    const marker = stop === undefined ? null : dropMarkerFor(drag, stop.entry.index);
+    const dragging = drag !== null && drag.moved && drag.featureId === row.id;
+    // 断りの向け先は「壊れる側」の行(model の `blockingFeatureId`)。
+    const refused = timelineRefusal !== null && timelineRefusal.blockingFeatureId === row.id;
     const rowClassName =
       'pcad-tree__row pcad-tree__row--child' +
       (stop === undefined ? '' : ' pcad-tree__row--timeline') +
       (selected ? ' pcad-tree__row--selected' : '') +
       (hoveredId === row.id ? ' pcad-tree__row--hovered' : '') +
       (ahead ? ' pcad-tree__row--ahead' : '') +
+      (dragging ? ' pcad-tree__row--dragging' : '') +
+      (marker === null ? '' : ` pcad-tree__row--drop-${marker}`) +
+      (marker !== null && drag !== null && drag.refusal !== null
+        ? ' pcad-tree__row--drop-refused'
+        : '') +
       // 画面に出していない基準(FR-329)は、抑制中の立体と同じ薄さで出して見分ける。
       (row.suppressed || row.hidden ? ' pcad-tree__row--suppressed' : '');
     return (
       <li key={row.id}>
         <div
           className={rowClassName}
+          // 落とし先は指の下の行から引く(`dropIndexAtPoint`)。帯に出る行だけが持つ。
+          data-timeline-index={stop === undefined ? undefined : stop.entry.index}
+          title={stop === undefined ? undefined : t('timeline.dragTooltip')}
+          onPointerDown={(event) => {
+            /*
+             * 掴む(FR-507、タスク20)。帯に出る行だけが掴める。左ボタン以外・つまみ・
+             * 「⋮」・名前の欄の上では掴まない(それぞれ別の役目を持つため)。
+             * この時点ではまだ「押しただけ」で、`DRAG_THRESHOLD_PX` を超えて動いて
+             * 初めて並べ替えになる(押しただけなら今までどおり行の選択)。
+             */
+            draggedRef.current = false;
+            if (stop === undefined || event.button !== 0 || renamingId === row.id) {
+              return;
+            }
+            if (
+              event.target instanceof Element &&
+              event.target.closest('.pcad-timeline__stop, .pcad-tree__more') !== null
+            ) {
+              return;
+            }
+            const started = beginTimelineDrag(part, row.id);
+            if (started === null) {
+              return;
+            }
+            dragOriginRef.current = { x: event.clientX, y: event.clientY };
+            setDrag(started);
+          }}
           onPointerEnter={() => {
             useAppStore.getState().setHovered(row.id);
           }}
@@ -694,6 +903,12 @@ export function FeatureTree(): React.JSX.Element {
               aria-pressed={selected}
               title={t(row.kindLabelKey)}
               onClick={(event) => {
+                // 並べ替えのために掴んで動かした後にも `click` は飛んでくる。その 1 回だけは
+                // 選択にしない(掴んで動かしたのに選択が入れ替わると読み取れないため)。
+                if (draggedRef.current) {
+                  draggedRef.current = false;
+                  return;
+                }
                 const store = useAppStore.getState();
                 if (event.shiftKey) {
                   store.toggleSelection(row.id);
@@ -736,6 +951,19 @@ export function FeatureTree(): React.JSX.Element {
             <span
               className="pcad-tree__alert"
               title={`${row.errorMessage} ${t('featureTree.errorTooltip')}`}
+            >
+              <AlertIcon size={12} />
+            </span>
+          )}
+          {/*
+            並べ替えを断った理由(FR-507、FR-504。タスク20)。出す先は動かした行ではなく
+            **壊れる側の行**(model の `blockingFeatureId`)。「どれが困るのか」がその場で
+            分かるようにするため。同じ文はステータスバーの帯にも 1 行で出る。
+          */}
+          {!refused || timelineRefusal === null ? null : (
+            <span
+              className="pcad-tree__alert"
+              title={`${timelineRefusal.message} ${t('timeline.refusalTooltip')}`}
             >
               <AlertIcon size={12} />
             </span>
@@ -921,6 +1149,24 @@ export function FeatureTree(): React.JSX.Element {
               {t(menuReference.visible ? 'featureTree.hide' : 'featureTree.show')}
             </button>
           ) : null}
+          {/*
+            作る順序を 1 段ずつ入れ替える(FR-507、タスク20)。帯に出る行にだけ出す。
+            ドラッグと同じことができる入り口で、マウスの操作が苦手でも使える(NFR-UX-3)。
+          */}
+          {renderMoveItem(
+            menuMoveUp,
+            menu.featureId,
+            'timeline.moveUp',
+            'timeline.moveUpTooltip',
+            'timeline.moveAtTop',
+          )}
+          {renderMoveItem(
+            menuMoveDown,
+            menu.featureId,
+            'timeline.moveDown',
+            'timeline.moveDownTooltip',
+            'timeline.moveAtBottom',
+          )}
           {/* スケッチの親行からも新しいスケッチを作れる(節の頭の「＋」と同じ、仕上げ (g))。 */}
           {menu.sectionKey === 'sketchDocument' ? (
             <button

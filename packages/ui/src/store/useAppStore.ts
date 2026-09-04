@@ -1,8 +1,10 @@
 import type { AutoSaver } from '@pointercad/io';
 import {
+  analyzeParameters,
   canRedo as stackCanRedo,
   baseWorkPlane,
   canUndo as stackCanUndo,
+  collectExpressionSources,
   createEmptyPartDocument,
   createUndoStack,
   DEFAULT_WORK_PLANE_ID,
@@ -10,6 +12,7 @@ import {
   dotVec3,
   findFeature,
   findSketch,
+  moveHistoryItem,
   pushUndo,
   redo as redoStep,
   removeFeature,
@@ -25,6 +28,7 @@ import {
   type PartProgress,
   type PartRecomputeError,
   type PartRecomputeOptions,
+  type ParameterAnalysis,
   type PartRecomputeResult,
   type PartSketchResult,
   type ResolvedReferences,
@@ -45,9 +49,9 @@ import { create } from 'zustand';
 import { createBrowserFileGateway, type FileGateway } from '../file/fileGateway.js';
 import type { MessageKey } from '../i18n/t.js';
 import { loadSettings, saveSettings, type DisplaySettings } from '../settings/settings.js';
-// タイムラインのつまみ(FR-507、P4b タスク19)の判断は shell の純関数 1 か所に置く。
+// タイムラインのつまみ(FR-507、P4b タスク19・20)の判断は shell の純関数 1 か所に置く。
 // 描く側(Timeline.tsx / FeatureTree.tsx)と同じ規則をここでも使い、2 か所に書かない。
-import { historyGrew } from '../shell/timelineRail.js';
+import { placeNewFeatures, type TimelineRefusal } from '../shell/timelineMove.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
 import {
@@ -219,6 +223,16 @@ export interface AppState {
    * 3D 表示と一覧が読む。文書から導けるので保存しない(rules/04)。
    */
   readonly resolvedReferences: ResolvedReferences;
+  /**
+   * パラメータ表(名前を付けた数値)を解いた控え(FR-207、P4b タスク11)。文書から
+   * 導けるので保存しない(`resolvedReferences` と同じ扱い、rules/04-設計の規律.md)。
+   *
+   * **`variables`(変数表)は式を受け付ける 3 つの入口が共通で読む**。プロパティの欄
+   * (`PropertyPanel.tsx`)・その場入力(`NumericInputPopover.tsx`)・コマンドラインの欄
+   * (`shell/commandLineActions.ts`)のどれか 1 つにだけ渡すと、同じ式が打つ場所によって
+   * 通ったり通らなかったりする(タスク18 の申し送り)。ここを唯一の出どころにする。
+   */
+  readonly parameterAnalysis: ParameterAnalysis;
 
   /**
    * 部品文書。**これが唯一の正本**で、`.pcad` に保存されるのもこれだけ(要件§8、§0.a-0.4)。
@@ -250,6 +264,14 @@ export interface AppState {
    * 文書が次に変われば用済みなので `applyDocument` が落とす。
    */
   readonly timelineNoticeKey: MessageKey | null;
+  /**
+   * 順序の入れ替えを断った理由(FR-504、FR-507。P4b タスク20)。断らなかったときは null。
+   *
+   * 理由の文は model(`moveHistoryItem` の `reason`)が相手の名前つきで組み立てたものを
+   * そのまま持つ。`blockingFeatureId` は**壊れる側**(指している方)なので、木のその行に
+   * 印を出す。文書が次に変われば用済みなので `applyDocument` が落とす。
+   */
+  readonly timelineRefusal: TimelineRefusal | null;
   /** Undo / Redo の履歴(FR-505)。`present` は常に `document` と同じものを指す。 */
   readonly undoStack: UndoStack<PartDocument>;
   /** 戻せる段・進める段があるか。ツールバーのボタンの入り切りに使う(FR-505)。 */
@@ -484,6 +506,16 @@ export interface AppState {
    */
   readonly setTimelineIndex: (index: number | null) => void;
   /**
+   * 履歴の順序を入れ替える(FR-507、FR-504。P4b タスク20)。`toIndex` は帯の通し番号。
+   *
+   * 動かせるなら文書を 1 回だけ積むので、取り消し(Ctrl+Z)1 回で元の順序に戻る
+   * (NFR-UX-3)。依存を壊すなら**文書は 1 バイトも変えず**、理由を `timelineRefusal` へ
+   * 置いて帯と木の行で知らせる(rules/04-設計の規律.md「止めずに警告する」)。
+   */
+  readonly moveTimelineItem: (featureId: string, toIndex: number) => void;
+  /** 順序の入れ替えの断りを出す・消す(FR-504)。 */
+  readonly setTimelineRefusal: (refusal: TimelineRefusal | null) => void;
+  /**
    * 履歴の 1 つを差し替える(FR-311)。式を直したときに 1 文字ごとに呼ばれる。
    * 下流は再計算で追従し、壊れたものは `sketchErrors` に出る(FR-504)。
    */
@@ -670,6 +702,7 @@ type DocumentPatch = Pick<
   | 'hoveredElementId'
   | 'workPlane'
   | 'resolvedReferences'
+  | 'parameterAnalysis'
 >;
 
 /**
@@ -709,8 +742,38 @@ function documentPatch(
     hoveredElementId: hovered !== null && !liveIds.has(featureIdOf(hovered)) ? null : hovered,
     // 基準ジオメトリ(FR-328、FR-329)は文書から導ける控えなので、ここで作り直す。
     ...referencePatch(next, state.workPlaneId),
+    // パラメータ表(FR-207)も同じく文書から導ける控え。
+    ...parameterPatch(next),
   };
 }
+
+/**
+ * パラメータ表の控えを作り直す(FR-207、タスク11)。
+ *
+ * **パラメータが 1 つも無い文書では解析そのものを省く**(`referencePatch` と同じ理由)。
+ * 解析は文書の全ての式を集めて「使われていない名前」を数えるので、欄で 1 文字打つたびに
+ * 文書を歩くことになる。名前を 1 つも付けていない部品(いまの既定)では要らない費用なので
+ * 空の解析を使い回す(NFR-PF-1)。
+ */
+function parameterPatch(document: PartDocument): Pick<AppState, 'parameterAnalysis'> {
+  if (document.parameters.length === 0) {
+    return { parameterAnalysis: EMPTY_PARAMETER_ANALYSIS };
+  }
+  return {
+    parameterAnalysis: analyzeParameters(
+      document.parameters,
+      collectExpressionSources(document),
+    ),
+  };
+}
+
+/** パラメータが 1 つも無いときの控え。作り直さずに使い回す(参照の同一性を保つ)。 */
+const EMPTY_PARAMETER_ANALYSIS: ParameterAnalysis = {
+  variables: new Map<string, number>(),
+  circular: [],
+  unused: [],
+  failures: [],
+};
 
 /**
  * 作業平面と基準ジオメトリの控えを作り直す(タスク13)。
@@ -783,10 +846,12 @@ export function createInitialDocumentState(): Pick<
   | 'workPlane'
   | 'freeSketchPlane'
   | 'resolvedReferences'
+  | 'parameterAnalysis'
   | 'document'
   | 'documentVersion'
   | 'timelineIndex'
   | 'timelineNoticeKey'
+  | 'timelineRefusal'
   | 'undoStack'
   | 'canUndo'
   | 'canRedo'
@@ -846,11 +911,14 @@ export function createInitialDocumentState(): Pick<
     // 3D スケッチで押した場所の面(FR-330、タスク14)。まだ一度も押していない。
     freeSketchPlane: null,
     resolvedReferences: EMPTY_RESOLVED_REFERENCES,
+    // 起動時の部品はパラメータを 1 つも持たない(FR-207、タスク11)。
+    parameterAnalysis: EMPTY_PARAMETER_ANALYSIS,
     document,
     documentVersion: 0,
     // つまみは常に末尾から始まる(§0.a-0.19。保存しないので開き直しても同じ)。
     timelineIndex: null,
     timelineNoticeKey: null,
+    timelineRefusal: null,
     undoStack: createUndoStack(document),
     canUndo: false,
     canRedo: false,
@@ -1023,41 +1091,46 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
-  applyDocument: (next, options) => {
+  applyDocument: (incoming, options) => {
     set((state) => {
-      if (next === state.document) {
+      if (incoming === state.document) {
         return {};
       }
+      /*
+       * タイムラインのつまみ(FR-507、タスク19・20)の面倒を見る。
+       *
+       * ①文書をまるごと差し替えたとき(開く)は、つまみを末尾へ戻す。前の部品のつまみを
+       *   持ち越さないため(§0.a-0.19「開いた直後は常に末尾」)。
+       * ②途中まで戻したまま履歴が伸びたときは、**つまみの位置へ差し込む**(タスク20)。
+       *   末尾へ積んだままだと戻した画面に作ったものが出てこないので、差し込んだうえで
+       *   つまみをその段へ進めて見せる。止めて断ることはしない
+       *   (rules/04-設計の規律.md「操作をブロックするゲートも作らない」)。
+       * ③それ以外(名前の変更・削除・順序の入れ替え)は、つまみをそのままにする。
+       *
+       * 差し込みは `placeNewFeatures` が行い、差し込んだ後の文書を以降でそのまま使う
+       * (Undo に積むのも保存されるのも差し込んだ後の並び)。
+       */
+      const placement =
+        options?.replacesDocument === true
+          ? { document: incoming, timelineIndex: null, inserted: false }
+          : placeNewFeatures(state.document, incoming, state.timelineIndex);
+      const next = placement.document;
       const coalesceKey = options?.coalesceKey;
       const stack =
         options?.undoable === false
           ? // 段は増やさないが、present は常に document と同じものにしておく。
             { ...state.undoStack, present: next }
           : pushUndo(state.undoStack, next, { coalesceKey });
-      /*
-       * タイムラインのつまみ(FR-507、タスク19)を末尾へ戻すかどうか。戻すのは 2 つ。
-       * ①文書をまるごと差し替えたとき(開く)。つまみは前の部品のものなので持ち越さない
-       *   (§0.a-0.19「開いた直後は常に末尾」)。
-       * ②途中まで戻したまま履歴が伸びたとき。新しいものは配列の末尾へ積まれるので、
-       *   戻したままでは**作ったものが画面に出てこない**。止めて断るのではなく
-       *   (rules/04-設計の規律.md「操作をブロックするゲートも作らない」)、つまみを
-       *   末尾へ戻して作ったものを見せ、そうしたことを帯で一言知らせる。
-       *   つまみの位置へ差し込む(`insertPositionAt`)のはタスク20 の範囲。
-       */
-      const grew = historyGrew(state.document, next);
-      const returnsToEnd =
-        options?.replacesDocument === true || (state.timelineIndex !== null && grew);
       return {
         ...documentPatch(state, next, stack),
         // 文書をまるごと差し替える呼び出し(開く等)のときだけ進める(§0.a-0.1〜)。
         documentVersion:
           options?.replacesDocument === true ? state.documentVersion + 1 : state.documentVersion,
-        timelineIndex: returnsToEnd ? null : state.timelineIndex,
-        // 知らせを出すのは②のときだけ。開いた直後に「戻しました」と言っても意味が無い。
-        timelineNoticeKey:
-          state.timelineIndex !== null && grew && options?.replacesDocument !== true
-            ? 'timeline.returnedToEnd'
-            : null,
+        timelineIndex: placement.timelineIndex,
+        // 知らせを出すのは②のときだけ。開いた直後や末尾で作ったときは何も言わない。
+        timelineNoticeKey: placement.inserted ? 'timeline.inserted' : null,
+        // 順序の入れ替えの断りは、形が変われば用済み(FR-504)。
+        timelineRefusal: null,
         // 束ねる変更(プロパティ欄の 1 文字ごと)では計算中の札を立てない。立てると
         // 打つたびに札が点滅する。再計算は attachPartRecompute が拾い、終わり次第
         // そのまま形が動く(NFR-PF-1)。
@@ -1171,6 +1244,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // 変わりうるので、同じ通し番号が前と同じ段を指すとは限らない。
         timelineIndex: null,
         timelineNoticeKey: null,
+        // 順序の入れ替えの断りも、時をまたぐ差し替えの後には合わないので落とす(FR-504)。
+        timelineRefusal: null,
       };
     });
   },
@@ -1190,6 +1265,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         originNoticeMessage: null,
         timelineIndex: null,
         timelineNoticeKey: null,
+        // 順序の入れ替えの断りも、時をまたぐ差し替えの後には合わないので落とす(FR-504)。
+        timelineRefusal: null,
       };
     });
   },
@@ -1213,6 +1290,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
             timelineNoticeKey: null,
           },
     );
+  },
+  moveTimelineItem: (featureId, toIndex) => {
+    const state = get();
+    const outcome = moveHistoryItem(state.document, featureId, toIndex);
+    if (!outcome.ok) {
+      // 断りは文書を変えずに理由だけ置く(FR-504、NFR-RE-1)。壊れる側の行に印が出る。
+      set({
+        timelineRefusal: {
+          message: outcome.reason,
+          blockingFeatureId: outcome.blockingFeatureId,
+        },
+      });
+      return;
+    }
+    // 動かす必要が無かった(同じ位置)ときは `applyDocument` が何もしないので、
+    // 前の断りをここで先に落としておく。
+    set({ timelineRefusal: null });
+    // 文書を 1 回だけ積む。取り消し 1 回で元の順序へ戻る(NFR-UX-3)。
+    state.applyDocument(outcome.document);
+  },
+  setTimelineRefusal: (timelineRefusal) => {
+    set({ timelineRefusal });
   },
   replaceSketchFeature: (featureId, feature) => {
     const state = get();
@@ -1362,6 +1461,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       // 新しい部品のつまみは常に末尾から(§0.a-0.19、FR-507)。
       timelineIndex: null,
       timelineNoticeKey: null,
+      timelineRefusal: null,
       isComputing: true,
       // 新しい部品に、前の部品の取りかけ・選択・断りの理由を持ち越さない(NFR-UX-3)。
       activeTool: 'select',

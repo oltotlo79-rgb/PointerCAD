@@ -430,7 +430,14 @@ export function attachSketchInteraction(
       state.displaySettings.trackAngleStep,
       kinds,
     );
-    return chooseTrack(candidates, project, pointer, SNAP_RADIUS_PIXELS, onPlane);
+    /*
+      候補の直線上でどこが「吸い付く点」かは、ポインタの光線に最も近い点で決める
+      (P4b 仕上げ (a))。視点が斜めだと、作図面上のポインタ点への垂直射影(光線を渡さない
+      ときの後退先)では画面上の最近点とずれ、案内線の印がポインタから遠くに決まってしまう
+      実測があったための修正(`trackMath.ts` の `closestParameterToRay` の注釈)。
+    */
+    const ray = scene.pointerRay(pointer[0], pointer[1]);
+    return chooseTrack(candidates, project, pointer, SNAP_RADIUS_PIXELS, onPlane, ray);
   }
 
   /**
@@ -995,6 +1002,17 @@ export function attachSketchInteraction(
       return;
     }
     const state = useAppStore.getState();
+    if (state.commandLineFocused) {
+      /*
+        コマンドラインの欄(FR-208、P4b タスク18)に焦点があるあいだの押下は、
+        **欄から出るための押下**として当たり判定を飛ばす。ここで下の各枝へ流すと、
+        どの枝も `event.preventDefault()` で既定の動作を止めて開いている欄から焦点を
+        奪わないようにしている(NFR-UX-2)ため、押しても焦点がコマンドラインに残ったままになり、
+        続けて打った文字が 3D の表示ではなくコマンドラインへ入り続けてしまう。
+        ここで何もせずに返せば、既定の動作で canvas が焦点を受け取り、欄の焦点が外れる。
+      */
+      return;
+    }
     const pointer = pointerPosition(event);
     const tool = state.activeTool;
 

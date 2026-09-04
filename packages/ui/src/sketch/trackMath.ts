@@ -187,17 +187,93 @@ export function collectTrackCandidates(
 }
 
 /**
- * 候補の直線の上で、ポインタに最も近い点(§2.4)。
+ * ポインタの光線(カメラの視点からポインタの画素を通る半直線)。ワールド座標系の
+ * origin/direction(単位ベクトル)を持つ。ビューポート側(`createViewportScene.ts` の
+ * `pointerRay`)が three.js の `Raycaster.ray` からそのまま作って渡す(P4b 仕上げ (a))。
+ */
+export interface PointerRay {
+  readonly origin: Vec3;
+  readonly direction: Vec3;
+}
+
+/**
+ * 直線 L: line.origin + t・line.direction の上で、光線 ray に最も近い点のパラメータ t
+ * (P4b 仕上げ (a)、§2.4)。
  *
- * ただし極(polar)だけは例外。極は「起点からの距離を保ったまま角度だけ丸める」という
+ * 【なぜ】タスク15の `positionAlongCandidate` は「候補の直線上で、作図面上のポインタ点に
+ * ワールド座標で最も近い点」(直線への垂直射影)を採っていたが、視点が斜めだと、この
+ * ワールドの最近点と画面上での最近点がずれ、案内線の印がポインタから遠くに決まってしまう
+ * (実測、`docs/報告記録.md` 2026-09-05 00:10 の t16 の懸念)。**候補の直線上の点は
+ * 「ポインタの光線に最も近い点」で決めれば、この食い違いが起きない**(下記の導出)。
+ *
+ * 【導出】d = line.direction、v = ray.direction とし、
+ *   a = d・d、b = d・v、c = v・v、
+ *   e = d・(ray.origin − line.origin)、f = v・(ray.origin − line.origin)
+ * とおくと、L 上の点 P(t) と光線上の点 Q(s) の距離の 2 乗を t, s それぞれで偏微分して
+ * 0 と置くと連立 1 次方程式 a・t − b・s = e、b・t − c・s = f になり、これを t について解くと
+ *   t = (c・e − b・f) / (a・c − b・b)
+ * になる(2 直線の最近点の標準の閉じた式)。
+ *
+ * 分母 a・c − b・b は、d・v が単位ベクトルどうしの内積のときは 1 − (d・v)²(= |d×v|²、
+ * ラグランジュの恒等式)に等しく、**L と光線がちょうど平行(視線と案内線の向きが一致する、
+ * めったに起きない退化)のときだけ 0 になる。** そのときは t が一意に決まらないので null を
+ * 返し、呼び出し側(`positionAlongCandidate`)が従来の方法(ポインタを作図面へ落とした点への
+ * 垂直射影)へ後退する。
+ *
+ * 【なぜ画面座標の最近点と一致するか】平行投影では、画面座標は光線の向き(視線方向、
+ * どの画素でも同じ)に沿った成分を無視してワールド座標を写す写像なので、L 上の点と光線との
+ * 距離は、その点を画面へ写した位置とポインタの画面距離**そのもの**になる。したがってこの t
+ * で決めた点は、画面上でポインタに最も近い点と厳密に一致する(`trackMath.test.ts` の
+ * 「斜めの視点」の節で、この一致をブルートフォースの数値探索と突き合わせて検証している)。
+ * 透視投影では画角の全域で厳密には一致しないが、案内線が効く近傍(判定半径12画素)では
+ * 画角による歪みは無視できるほど小さく、近似として使う。
+ */
+export function closestParameterToRay(
+  line: { readonly origin: Vec3; readonly direction: Vec3 },
+  ray: PointerRay,
+): number | null {
+  const a = dotVec3(line.direction, line.direction);
+  const b = dotVec3(line.direction, ray.direction);
+  const c = dotVec3(ray.direction, ray.direction);
+  const denominator = a * c - b * b;
+  if (Math.abs(denominator) <= PARALLEL_DOT_EPSILON) {
+    // 案内線が視線とほぼ平行(退化)。呼び出し側が従来の方法へ後退する。
+    return null;
+  }
+  const originDelta = subVec3(ray.origin, line.origin);
+  const e = dotVec3(line.direction, originDelta);
+  const f = dotVec3(ray.direction, originDelta);
+  return (c * e - b * f) / denominator;
+}
+
+/**
+ * 候補の直線の上で、吸い付く点を決める(§2.4、P4b 仕上げ (a))。
+ *
+ * 極(polar)だけは例外。極は「起点からの距離を保ったまま角度だけ丸める」という
  * 利用者の意図(AutoCADの極トラッキングと同じ挙動)に合わせるため、直線への垂直な
  * 射影ではなく、**起点からポインタまでの距離をそのまま向きへ載せる**(検証表の
  * 「極: 20∠17°→20∠15°」がこの式でないと一致しない。垂直射影だと 20·cos2° まで縮む)。
+ * この式は画面上の最近点とは無関係な意図的な挙動なので、光線が渡っても変えない。
+ *
+ * 延長線・垂線・平行線は、**光線 ray が渡っていれば** `closestParameterToRay` で
+ * 「ポインタの光線に最も近い点」を採る(P4b 仕上げ (a) の直し方)。光線が無い
+ * (呼び出し側が渡していない、既存の呼び出し方との後方互換)か、案内線が視線と
+ * 平行で t が求まらないときだけ、従来の「作図面上のポインタ点への垂直射影」へ後退する。
  */
-function positionAlongCandidate(candidate: TrackCandidate, pointOnPlane: Vec3): Vec3 {
+function positionAlongCandidate(
+  candidate: TrackCandidate,
+  pointOnPlane: Vec3,
+  ray: PointerRay | null,
+): Vec3 {
   if (candidate.kind === 'polar') {
     const distance = distanceVec3(candidate.origin, pointOnPlane);
     return addVec3(candidate.origin, scaleVec3(candidate.direction, distance));
+  }
+  if (ray !== null) {
+    const rayParameter = closestParameterToRay(candidate, ray);
+    if (rayParameter !== null) {
+      return addVec3(candidate.origin, scaleVec3(candidate.direction, rayParameter));
+    }
   }
   const projected = dotVec3(subVec3(pointOnPlane, candidate.origin), candidate.direction);
   return addVec3(candidate.origin, scaleVec3(candidate.direction, projected));
@@ -220,6 +296,7 @@ function bestTrackCandidate(
   radiusPixels: number,
   pointOnPlane: Vec3,
   excludeKind: TrackKind | null,
+  ray: PointerRay | null,
 ): ScoredTrackCandidate | null {
   let best: ScoredTrackCandidate | null = null;
   let bestPriority = TRACK_PRIORITY.length;
@@ -228,7 +305,7 @@ function bestTrackCandidate(
     if (excludeKind !== null && candidate.kind === excludeKind) {
       continue;
     }
-    const position = positionAlongCandidate(candidate, pointOnPlane);
+    const position = positionAlongCandidate(candidate, pointOnPlane, ray);
     const screen = project(position);
     if (screen === null) {
       continue;
@@ -271,6 +348,11 @@ function intersectTrackLines(a: TrackCandidate, b: TrackCandidate): Vec3 | null 
  * 画面距離で1〜2本を選び、吸い付く位置を返す(FR-110)。
  * 2本目が1本目と別の種類で、かつ平行でなければ、その交点を吸着点にする
  * (AutoCADのオブジェクトスナップトラッキングと同じ挙動、§2.4)。
+ *
+ * `ray`(ポインタの光線、P4b 仕上げ (a))は**省略可**にしてある。既存の呼び出し(t15・t16)は
+ * 渡さないので、そのときは従来どおり `pointOnPlane` への垂直射影で候補の位置を決める
+ * (`positionAlongCandidate` を参照)。呼び出し側(`attachSketchInteraction.ts`)が
+ * `scene.pointerRay` で作った光線を渡すと、画面上でポインタに最も近い点で決まる。
  */
 export function chooseTrack(
   candidates: readonly TrackCandidate[],
@@ -278,14 +360,17 @@ export function chooseTrack(
   pointer: readonly [number, number],
   radiusPixels: number,
   pointOnPlane: Vec3,
+  ray: PointerRay | null = null,
 ): TrackResult | null {
-  const first = bestTrackCandidate(candidates, project, pointer, radiusPixels, pointOnPlane, null);
+  const first = bestTrackCandidate(
+    candidates, project, pointer, radiusPixels, pointOnPlane, null, ray,
+  );
   if (first === null) {
     return null;
   }
 
   const second = bestTrackCandidate(
-    candidates, project, pointer, radiusPixels, pointOnPlane, first.candidate.kind,
+    candidates, project, pointer, radiusPixels, pointOnPlane, first.candidate.kind, ray,
   );
   if (second !== null) {
     const intersection = intersectTrackLines(first.candidate, second.candidate);

@@ -20,6 +20,8 @@ import {
   type WorkPlane,
 } from '@pointercad/model';
 
+import { commitSolidInput } from '../solid/solidCommands.js';
+import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { commitSketchChamfer, commitSketchFillet } from './cornerCommands.js';
 import {
@@ -30,17 +32,22 @@ import {
   type CopyCommitOutcome,
 } from './copyCommands.js';
 import { commitOffset, type OffsetCommitOutcome } from './editCommands.js';
+import { nextNumericInput } from './numericInput.js';
 import type {
   EditInputCommit,
   NumericInputCommit,
   NumericInputState,
+  NumericInputTransition,
   PickEditToolId,
+  ReferenceInputCommit,
+  SolidInputCommit,
 } from './numericInput.js';
 import {
   commitProjectionSources,
   projectionMissingTargetKey,
   projectionSourcesRejection,
 } from './projectionCommands.js';
+import { commitReferenceInput } from './referenceCommands.js';
 import { commitSketchInput } from './sketchCommands.js';
 
 /**
@@ -89,6 +96,145 @@ export function applySketchCommit(
   store.setPendingStart(outcome.pendingStart);
   store.setShapeDraft(outcome.shapeDraft);
   return outcome.rejection === null;
+}
+
+/**
+ * 立体を 1 つ作って部品文書へ積む(FR-401〜403)。**受け取れたら true、断ったら false。**
+ *
+ * 何を作るかは純関数 `commitSolidInput` が決め、断られたら理由を帯へ出して履歴は変えない
+ * (FR-504、NFR-UX-5)。作れたらその立体を選び、道具は選択へ戻す。
+ *
+ * 道具を先に選択へ戻し、そのあとで作ったフィーチャーを選ぶ(P4 タスク30 不具合(a))。
+ * 逆順(選ぶ→道具を戻す)だと、穴・ねじ穴・R/C面取りのように選ぶ種類が面/辺から立体へ
+ * 変わる道具では、`setActiveTool` が種類の変化を見て選択を空にしてしまい、作った直後の
+ * 立体が選ばれない。`setActiveTool` を先に呼べば、選択が空になるのはこの時点までで、
+ * その後の `setSelection` が確定して残る。
+ *
+ * (P4b タスク18 で `AppShell.tsx` から移した。ポップアップとコマンドラインの 2 つの入口が
+ * 同じ手順を通るようにするため。手順そのものは 1 行も変えていない。)
+ */
+export function applySolidCommit(commit: SolidInputCommit): boolean {
+  const store = useAppStore.getState();
+  // 加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の確定には部分形状の一覧が
+  // 要る(solidCommands.ts タスク25b の4引数目)。
+  const outcome = commitSolidInput(
+    store.document,
+    store.selection,
+    commit,
+    subShapeBodiesOf(store.bodies),
+  );
+  if (!outcome.ok) {
+    store.setSolidError(outcome.reasonKey);
+    // 断られたらポップアップを閉じない(理由は帯に出ている、P4 タスク33)。
+    return false;
+  }
+  store.applyDocument(outcome.document);
+  store.setActiveTool('select');
+  store.setSelection([outcome.featureId]);
+  return true;
+}
+
+/**
+ * 基準ジオメトリ(作業平面・基準軸・基準点・座標系)を部品文書へ積む(FR-328、FR-329)。
+ *
+ * 何を作るかは純関数 `commitReferenceInput` が決め、断られたら理由を帯へ出して履歴は
+ * 変えない(FR-504、NFR-UX-5)。作業平面ができたら、そのまま作図面として選ぶ
+ * (次の一手が続く、NFR-UX-1)。断りは `applyDocument` より**先に**出す
+ * (`applyDocument` は古い断りを消すので、逆順にすると消える)。
+ *
+ * (P4b タスク18 で `AppShell.tsx` から移した。手順そのものは 1 行も変えていない。)
+ */
+export function applyReferenceCommit(commit: ReferenceInputCommit): boolean {
+  const store = useAppStore.getState();
+  const outcome = commitReferenceInput(commit, {
+    document: store.document,
+    planeId: store.workPlaneId,
+    bodies: subShapeBodiesOf(store.bodies),
+    selection: store.selection,
+    draft: store.referenceDraft,
+  });
+  store.setReferenceError(outcome.rejection);
+  if (outcome.document !== store.document) {
+    store.applyDocument(outcome.document);
+  }
+  store.setReferenceDraft(outcome.draft);
+  if (outcome.createdPlaneId !== null) {
+    store.setWorkPlane(outcome.createdPlaneId);
+  }
+  // 断られたらポップアップを閉じない(P4 タスク33、タスク12 の申し送り)。
+  return outcome.rejection === null;
+}
+
+/**
+ * その場入力の 1 手(`applyNumericInputKey` が返した移り変わり)をストアへ反映する
+ * (P4b タスク18)。
+ *
+ * **ここが唯一の入口**で、その場入力のポップアップ(`NumericInputPopover.tsx`)と
+ * コマンドライン(`shell/CommandLine.tsx`)の両方がこれを呼ぶ。どちらから打っても
+ * まったく同じ道筋を通る(NFR-UX-1、§0.a-0.9「どちらから打っても同じ確定処理」)。
+ *
+ * **断られたときはポップアップを閉じない**(P4 タスク33、タスク12 の申し送り)。
+ * 半径が 2 点の間隔の半分に足りないときのように、値そのものは式として読めても形が
+ * 作れないことがある。その場で閉じてしまうと、利用者は入れ直した値を全部打ち直す羽目に
+ * なる。理由は帯に出ているので、欄はそのまま残して直させる(NFR-UX-5、NFR-UX-3)。
+ */
+export function applyNumericTransition(transition: NumericInputTransition): void {
+  const store = useAppStore.getState();
+  switch (transition.kind) {
+    case 'open':
+      store.updateNumericInput(transition.state);
+      return;
+    case 'blocked':
+      // 決定させず、最初に間違っている欄へ焦点を戻す(NFR-UX-5)。
+      store.updateNumericInput(transition.state);
+      return;
+    case 'cancelled':
+      store.closeNumericInput();
+      return;
+    case 'solidCommitted':
+      // ソリッドは(ばねの1段目を除き)1段で終わるので、決めたら必ず閉じる
+      // (nextNumericInput も null を返す)。断られたときは閉じない。
+      if (!applySolidCommit(transition.commit)) {
+        return;
+      }
+      store.closeNumericInput();
+      return;
+    case 'referenceCommitted': {
+      // 基準ジオメトリは 1 つ作ったら閉じる段と、次の点を聞く段がある(P4 タスク13)。
+      // どちらかは nextNumericInput が決めるので、スケッチと同じ流れで扱う。
+      if (!applyReferenceCommit(transition.commit)) {
+        return;
+      }
+      openNext(transition.state);
+      return;
+    }
+    case 'committed': {
+      if (!applySketchCommit(transition.commit, transition.state)) {
+        return;
+      }
+      openNext(transition.state);
+      return;
+    }
+    case 'editCommitted':
+      // 整形系(オフセット、FR-321)は対象を選び直さないと続けられないので、
+      // ソリッドと同じく決めたら必ず閉じる(nextNumericInput も null を返す)。
+      if (!applyEditCommit(transition.commit)) {
+        return;
+      }
+      store.closeNumericInput();
+      return;
+  }
+}
+
+/** 決めた後に続けて聞くことがあれば開き直し、無ければ閉じる(FR-307)。 */
+function openNext(state: NumericInputState): void {
+  const store = useAppStore.getState();
+  const next = nextNumericInput(state, store.chaining);
+  if (next === null) {
+    store.closeNumericInput();
+    return;
+  }
+  store.updateNumericInput(next);
 }
 
 /**

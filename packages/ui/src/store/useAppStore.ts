@@ -6,6 +6,7 @@ import {
   createEmptyPartDocument,
   createUndoStack,
   DEFAULT_WORK_PLANE_ID,
+  documentUpTo,
   dotVec3,
   findFeature,
   findSketch,
@@ -44,6 +45,9 @@ import { create } from 'zustand';
 import { createBrowserFileGateway, type FileGateway } from '../file/fileGateway.js';
 import type { MessageKey } from '../i18n/t.js';
 import { loadSettings, saveSettings, type DisplaySettings } from '../settings/settings.js';
+// タイムラインのつまみ(FR-507、P4b タスク19)の判断は shell の純関数 1 か所に置く。
+// 描く側(Timeline.tsx / FeatureTree.tsx)と同じ規則をここでも使い、2 か所に書かない。
+import { historyGrew } from '../shell/timelineRail.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
 import {
@@ -160,6 +164,21 @@ export interface AppState {
    * 道具を選んだ直後に Enter が効くようにするため(NFR-UX-1、NFR-UX-4)。
    */
   readonly focusViewportRequestCount: number;
+  /**
+   * コマンドラインの欄(FR-208、P4b タスク18)へ焦点を移す要求を数える。欄を持っているのは
+   * `shell/CommandLine.tsx` だけなので、増加に気づいた向こう側が焦点を移す
+   * (`focusViewportRequestCount` と対になる仕組み)。`AppShell.tsx` の `Space` が増やす。
+   */
+  readonly commandLineFocusRequestCount: number;
+  /**
+   * コマンドラインの欄に焦点があるか(FR-208、P4b タスク18)。
+   *
+   * ビューポート(`attachSketchInteraction.ts`)は React の外にいて、どこに焦点があるかを
+   * props からは知れない。欄に焦点があるあいだの押下は「欄から出るための押下」として
+   * 当たり判定を飛ばすので、その判定材料をここに置く(rules/04-設計の規律.md
+   * 「フロントの状態は Zustand 1 本」。DOM を直接探しに行かない)。
+   */
+  readonly commandLineFocused: boolean;
   /** ビューポート区画の大きさ(画素)。その場入力を端で折り返すのに使う。 */
   readonly viewportSize: readonly [number, number];
 
@@ -213,6 +232,24 @@ export interface AppState {
    * (`coalesceKey` を伴う `applyDocument`)では増えない。
    */
   readonly documentVersion: number;
+  /**
+   * タイムラインのつまみの位置(FR-507、FR-506、P4b タスク19)。帯の通し番号で、
+   * `null` が末尾(全部作られた状態)。**保存しない**(§0.a-0.19)ので `.pcad` には
+   * 入らず、開く・新規・復元・Undo / Redo のたびに `null` へ戻す。
+   *
+   * 形の正本はあくまで `document`(全体)で、ここが変わっても `document` は 1 バイトも
+   * 変わらない。3D へ出す形だけが `documentUpTo(document, timelineIndex)` で切られる。
+   * `null` のときは `documentUpTo` が同じ文書をそのまま返す(`===`)ので、これまでの
+   * 経路も性能も何も変わらない(NFR-PF-3)。
+   */
+  readonly timelineIndex: number | null;
+  /**
+   * つまみについての知らせの文言キー(P4b タスク19)。断りではないので帯を赤くしない。
+   * いまの使い道は 1 つで、途中まで戻したまま新しいものを作ったときに
+   * 「新しく作ったものを出すため、最後まで戻しました」と伝える。
+   * 文書が次に変われば用済みなので `applyDocument` が落とす。
+   */
+  readonly timelineNoticeKey: MessageKey | null;
   /** Undo / Redo の履歴(FR-505)。`present` は常に `document` と同じものを指す。 */
   readonly undoStack: UndoStack<PartDocument>;
   /** 戻せる段・進める段があるか。ツールバーのボタンの入り切りに使う(FR-505)。 */
@@ -402,6 +439,10 @@ export interface AppState {
   readonly requestHomeView: () => void;
   /** ビューポート(canvas)へ焦点を戻してほしい、と頼む。 */
   readonly requestViewportFocus: () => void;
+  /** コマンドラインの欄へ焦点を移してほしい、と頼む(FR-208。`Space` の受け口)。 */
+  readonly requestCommandLineFocus: () => void;
+  /** コマンドラインの欄が焦点を得た・失ったことを知らせる(FR-208)。 */
+  readonly setCommandLineFocused: (focused: boolean) => void;
   readonly setViewportSize: (size: readonly [number, number]) => void;
 
   readonly setActiveTool: (tool: NumericInputToolId) => void;
@@ -436,6 +477,12 @@ export interface AppState {
   readonly setRecomputeProgress: (progress: PartProgress | null) => void;
   /** 計算を止めるよう頼む(NFR-PF-4)。段と段の間でしか止まらない(§2.6 の限界)。 */
   readonly cancelRecompute: () => void;
+  /**
+   * タイムラインのつまみを置き直す(FR-507、FR-506)。`null` で末尾へ戻す。
+   * **文書は変えない**ので Undo の段も作らない(つまみを動かすのは形を変える操作ではない)。
+   * 3D へ出す形の切り直しは `attachPartRecompute` がこの値の変化に気づいて行う。
+   */
+  readonly setTimelineIndex: (index: number | null) => void;
   /**
    * 履歴の 1 つを差し替える(FR-311)。式を直したときに 1 文字ごとに呼ばれる。
    * 下流は再計算で追従し、壊れたものは `sketchErrors` に出る(FR-504)。
@@ -738,6 +785,8 @@ export function createInitialDocumentState(): Pick<
   | 'resolvedReferences'
   | 'document'
   | 'documentVersion'
+  | 'timelineIndex'
+  | 'timelineNoticeKey'
   | 'undoStack'
   | 'canUndo'
   | 'canRedo'
@@ -799,6 +848,9 @@ export function createInitialDocumentState(): Pick<
     resolvedReferences: EMPTY_RESOLVED_REFERENCES,
     document,
     documentVersion: 0,
+    // つまみは常に末尾から始まる(§0.a-0.19。保存しないので開き直しても同じ)。
+    timelineIndex: null,
+    timelineNoticeKey: null,
     undoStack: createUndoStack(document),
     canUndo: false,
     canRedo: false,
@@ -858,6 +910,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   homeViewRequestCount: 0,
   matchWorkPlaneRequestCount: 0,
   focusViewportRequestCount: 0,
+  // コマンドライン(FR-208、P4b タスク18)。文書を作り直しても要求の数は戻さないので、
+  // ここ(createInitialDocumentState の外)に置く。欄の打ちかけは部品側が捨てる。
+  commandLineFocusRequestCount: 0,
+  commandLineFocused: false,
   viewportSize: [0, 0],
   // 幾何カーネルは部品を作り直しても積み直さないので、文書まわりの初期値には含めない
   // (createInitialDocumentState は resetDocument の後には呼ばれない、§0.a-0.23 ⑨)。
@@ -888,6 +944,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   requestViewportFocus: () => {
     set((state) => ({ focusViewportRequestCount: state.focusViewportRequestCount + 1 }));
+  },
+  requestCommandLineFocus: () => {
+    set((state) => ({
+      commandLineFocusRequestCount: state.commandLineFocusRequestCount + 1,
+    }));
+  },
+  setCommandLineFocused: (commandLineFocused) => {
+    set({ commandLineFocused });
   },
   setViewportSize: (viewportSize) => {
     set({ viewportSize });
@@ -970,11 +1034,30 @@ export const useAppStore = create<AppState>()((set, get) => ({
           ? // 段は増やさないが、present は常に document と同じものにしておく。
             { ...state.undoStack, present: next }
           : pushUndo(state.undoStack, next, { coalesceKey });
+      /*
+       * タイムラインのつまみ(FR-507、タスク19)を末尾へ戻すかどうか。戻すのは 2 つ。
+       * ①文書をまるごと差し替えたとき(開く)。つまみは前の部品のものなので持ち越さない
+       *   (§0.a-0.19「開いた直後は常に末尾」)。
+       * ②途中まで戻したまま履歴が伸びたとき。新しいものは配列の末尾へ積まれるので、
+       *   戻したままでは**作ったものが画面に出てこない**。止めて断るのではなく
+       *   (rules/04-設計の規律.md「操作をブロックするゲートも作らない」)、つまみを
+       *   末尾へ戻して作ったものを見せ、そうしたことを帯で一言知らせる。
+       *   つまみの位置へ差し込む(`insertPositionAt`)のはタスク20 の範囲。
+       */
+      const grew = historyGrew(state.document, next);
+      const returnsToEnd =
+        options?.replacesDocument === true || (state.timelineIndex !== null && grew);
       return {
         ...documentPatch(state, next, stack),
         // 文書をまるごと差し替える呼び出し(開く等)のときだけ進める(§0.a-0.1〜)。
         documentVersion:
           options?.replacesDocument === true ? state.documentVersion + 1 : state.documentVersion,
+        timelineIndex: returnsToEnd ? null : state.timelineIndex,
+        // 知らせを出すのは②のときだけ。開いた直後に「戻しました」と言っても意味が無い。
+        timelineNoticeKey:
+          state.timelineIndex !== null && grew && options?.replacesDocument !== true
+            ? 'timeline.returnedToEnd'
+            : null,
         // 束ねる変更(プロパティ欄の 1 文字ごと)では計算中の札を立てない。立てると
         // 打つたびに札が点滅する。再計算は attachPartRecompute が拾い、終わり次第
         // そのまま形が動く(NFR-PF-1)。
@@ -1084,6 +1167,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
         recomputeCancelled: false,
         // 「原点を移しました」は取り消した後には嘘になるので落とす(FR-331、タスク35b)。
         originNoticeMessage: null,
+        // つまみは末尾へ戻す(FR-507、タスク19)。取り消し・やり直しで履歴の件数が
+        // 変わりうるので、同じ通し番号が前と同じ段を指すとは限らない。
+        timelineIndex: null,
+        timelineNoticeKey: null,
       };
     });
   },
@@ -1101,6 +1188,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         recomputeCancelled: false,
         // やり直しでも同じ(取り消しの `undo` と揃える。FR-331、タスク35b)。
         originNoticeMessage: null,
+        timelineIndex: null,
+        timelineNoticeKey: null,
       };
     });
   },
@@ -1109,6 +1198,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   cancelRecompute: () => {
     set((state) => ({ cancelRequestCount: state.cancelRequestCount + 1 }));
+  },
+  setTimelineIndex: (timelineIndex) => {
+    set((state) =>
+      state.timelineIndex === timelineIndex
+        ? {}
+        : {
+            timelineIndex,
+            // 3D へ出す形を切り直すので、計算中の札は素直に立てる。つまみを動かした
+            // だけなら段の鍵が変わらず全段がキャッシュに当たるので、すぐ下りる
+            // (NFR-PF-3。§2.7「巻き戻しても再計算が起きない」)。
+            isComputing: true,
+            // つまみを動かしたら、前の位置についての知らせは用済み。
+            timelineNoticeKey: null,
+          },
+    );
   },
   replaceSketchFeature: (featureId, feature) => {
     const state = get();
@@ -1255,6 +1359,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       ...documentPatch(state, next, createUndoStack(next)),
       // 新規・復元も文書の丸ごとの差し替え(§0.a-0.1〜)。
       documentVersion: state.documentVersion + 1,
+      // 新しい部品のつまみは常に末尾から(§0.a-0.19、FR-507)。
+      timelineIndex: null,
+      timelineNoticeKey: null,
       isComputing: true,
       // 新しい部品に、前の部品の取りかけ・選択・断りの理由を持ち越さない(NFR-UX-3)。
       activeTool: 'select',
@@ -1377,11 +1484,23 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
     start(document);
   }
 
-  request(useAppStore.getState().document);
+  /**
+   * 計算に渡す文書。**保存されるのは常に `document`(全体)で、ここで切ったものは
+   * 画面に出す形を決めるためだけに使う**(FR-506、タスク19 の落とし穴)。
+   * つまみが末尾(`null`)のときは `documentUpTo` が同じ文書をそのまま返す(`===`)ので、
+   * これまでの経路と 1 ミリ秒も変わらない(NFR-PF-3)。
+   */
+  function shownDocument(state: AppState): PartDocument {
+    return documentUpTo(state.document, state.timelineIndex);
+  }
+
+  request(shownDocument(useAppStore.getState()));
 
   const unsubscribe = useAppStore.subscribe((next, previous) => {
-    if (next.document !== previous.document) {
-      request(next.document);
+    // つまみを動かしたときも計算し直す(FR-507)。切った文書のフィーチャーは複製されない
+    // ので段の鍵は変わらず、前半の段は全部キャッシュに当たる(§2.7)。
+    if (next.document !== previous.document || next.timelineIndex !== previous.timelineIndex) {
+      request(shownDocument(next));
     }
   });
 

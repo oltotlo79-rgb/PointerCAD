@@ -23,6 +23,7 @@ import type { SnapKind } from '../sketch/snapMath.js';
 import type { TrackKind } from '../sketch/trackMath.js';
 import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
 import type { FileMessage } from '../store/useAppStore.js';
+import type { TimelineRollback } from './timelineRail.js';
 
 /**
  * 進み具合を出すまでの待ち時間(NFR-PF-4)。進み具合が届いてからこれだけ経つまでは
@@ -203,6 +204,14 @@ export interface StatusLine {
    * [作図面] [吸着] [単位]` の並び、`docs/報告記録.md` 2026-09-03 18:30 の残件(f))。
    */
   readonly selectionKindLabel: string;
+  /**
+   * つまみが末尾でないことの札(FR-507、NFR-UX-7。P4b タスク19)。末尾なら null。
+   *
+   * `selectionKindLabel` と同じく、優先順位のどの 1 文を選んでいても**常に出す**。
+   * 帯の 1 文は 1 つしか出せないので、失敗や吸着の案内に押しのけられて
+   * 「戻したままなのに何も出ていない」状態にならないよう、独立した札にしてある。
+   */
+  readonly rollbackLabel: string | null;
 }
 
 /** 帯に出す、いま合っている向き 1 本ぶん(FR-110、P4b タスク16)。 */
@@ -231,6 +240,29 @@ export function trackGuideText(tracks: readonly TrackStatus[]): string | null {
     }),
   );
   return `${phrases.join(t('statusBar.track.separator'))}${t('statusBar.track.suffix')}`;
+}
+
+/**
+ * コマンドラインの断り 1 つぶん(FR-208、P4b タスク18)。`commandLineActions.ts` の
+ * `CommandLineFailure` と同じ形だが、`statusText.ts` は画面側の一番下の層(純関数だけ)
+ * なので、上の層の型に依存しないよう同じ欄をここに持つ。
+ */
+export interface CommandLineFailureView {
+  readonly message: string;
+  /** 「もしかして」の候補。無ければ空配列。 */
+  readonly suggestions: readonly string[];
+}
+
+/**
+ * コマンドラインの断りの 1 文(FR-208、FR-204 と同じ流儀)。
+ * 打ち間違いの候補があれば「もしかして: l、c」と添える(NFR-UX-5)。
+ */
+export function commandLineFailureText(failure: CommandLineFailureView): string {
+  if (failure.suggestions.length === 0) {
+    return failure.message;
+  }
+  const listed = failure.suggestions.join(t('statusBar.track.separator'));
+  return `${failure.message}${PREFIX_SEPARATOR}${t('commandLine.errorSuggestions')}${PREFIX_SEPARATOR}${listed}`;
 }
 
 /** ばねのその場入力の段(§2.11)。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
@@ -271,12 +303,29 @@ export interface StatusInput {
    */
   readonly referenceErrorMessage?: string | null;
   /**
+   * コマンドラインで打った 1 行を受け取れなかった理由(FR-208、P4b タスク18)。
+   * いま押した Enter への返事なので、他の断りと同じ高さの優先順位に置く(NFR-UX-5)。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly commandLineFailure?: CommandLineFailureView | null;
+  /**
    * 原点を移したときの一言(FR-331、P4 タスク35b)。`editNoticeKey` と同じ「うまくいった
    * ときの知らせ」だが、もとの原点の座標の式を差し込んだ文になるので組み立て済みの文で
    * 受け取る。省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)を
    * そのまま通すため。
    */
   readonly originNoticeMessage?: string | null;
+  /**
+   * タイムラインのつまみが末尾でないときの位置(FR-507、P4b タスク19)。末尾なら null。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly rollback?: TimelineRollback | null;
+  /**
+   * つまみについての知らせ(P4b タスク19)。断りではないので赤くしない。いまの使い道は
+   * 1 つで、途中まで戻したまま新しいものを作ったときの「最後まで戻しました」。
+   * `editNoticeKey` と同じ扱い(省略できるのも同じ理由)。
+   */
+  readonly timelineNoticeKey?: MessageKey | null;
   /** 再計算そのものが投げた理由。 */
   readonly errorMessage: string | null;
   /** 部品まるごとの再計算で集めた失敗(FR-504)。 */
@@ -363,6 +412,20 @@ export function countSelectedSubShapes(
 /** 選択の種類の札の文言(§0.a-0.6)。「選ぶもの 面」のように出す。 */
 function selectionKindText(kind: SelectionKind): string {
   return `${t('selection.kindLabel')}${PREFIX_SEPARATOR}${t(SELECTION_KIND_LABEL_KEYS[kind])}`;
+}
+
+/**
+ * つまみが末尾でないことの札(FR-507、NFR-UX-7。P4b タスク19)。
+ * 「途中まで戻しています(3 件目 / 5 件)」。末尾なら null で、札そのものを出さない。
+ */
+export function rollbackText(rollback: TimelineRollback | null | undefined): string | null {
+  if (rollback === undefined || rollback === null) {
+    return null;
+  }
+  return fill(t('timeline.rollback'), {
+    position: String(rollback.position),
+    total: String(rollback.total),
+  });
 }
 
 /**
@@ -507,9 +570,10 @@ function withPrefix(prefixKey: MessageKey | null, text: string): string {
   return prefixKey === null ? text : `${t(prefixKey)}${PREFIX_SEPARATOR}${text}`;
 }
 
-/** `describeStatus` の本体が組み立てる値。選択の種類の札(`selectionKindLabel`)は
- * 優先順位のどれを選んでも常に添えるものなので、ここには含めず呼び出し側で足す。 */
-type StatusLineWithoutSelectionKind = Omit<StatusLine, 'selectionKindLabel'>;
+/** `describeStatus` の本体が組み立てる値。選択の種類の札(`selectionKindLabel`)と
+ * つまみの札(`rollbackLabel`)は優先順位のどれを選んでも常に添えるものなので、
+ * ここには含めず呼び出し側で足す。 */
+type StatusLineWithoutSelectionKind = Omit<StatusLine, 'selectionKindLabel' | 'rollbackLabel'>;
 
 function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWithoutSelectionKind {
   return { kind: 'failure', text: withPrefix(prefixKey, text), hint: null, progress: null };
@@ -534,7 +598,12 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * ここで一度だけ足す。
  */
 export function describeStatus(input: StatusInput): StatusLine {
-  return { ...resolveLine(input), selectionKindLabel: selectionKindText(input.selectionKind) };
+  return {
+    ...resolveLine(input),
+    selectionKindLabel: selectionKindText(input.selectionKind),
+    // つまみの札も 1 文とは独立に常に添える(FR-507、タスク19)。
+    rollbackLabel: rollbackText(input.rollback),
+  };
 }
 
 function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
@@ -555,6 +624,10 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   }
   if (input.referenceErrorMessage !== undefined && input.referenceErrorMessage !== null) {
     return failureLine('statusBar.referenceError', input.referenceErrorMessage);
+  }
+  if (input.commandLineFailure !== undefined && input.commandLineFailure !== null) {
+    // コマンドラインで打った 1 行への返事(FR-208)。他の断りと同じ扱いで、頭に「コマンド:」を付ける。
+    return failureLine('commandLine.error', commandLineFailureText(input.commandLineFailure));
   }
   if (input.errorMessage !== null) {
     return failureLine('statusBar.error', input.errorMessage);
@@ -583,6 +656,10 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   if (input.originNoticeMessage !== undefined && input.originNoticeMessage !== null) {
     // 原点を移したときの一言(FR-331)。これも断りではないので赤くしない。
     return { kind: 'saved', text: input.originNoticeMessage, hint: null, progress: null };
+  }
+  if (input.timelineNoticeKey !== undefined && input.timelineNoticeKey !== null) {
+    // つまみを末尾へ戻したことの知らせ(FR-507、タスク19)。断りではないので赤くしない。
+    return { kind: 'saved', text: t(input.timelineNoticeKey), hint: null, progress: null };
   }
   if (input.fileMessage !== null) {
     return { kind: 'saved', text: t(input.fileMessage.key), hint: null, progress: null };

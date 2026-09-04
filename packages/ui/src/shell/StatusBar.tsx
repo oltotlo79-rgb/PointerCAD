@@ -11,7 +11,10 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { workPlaneEntries, type WorkPlaneEntry } from '../sketch/referenceCommands.js';
 import { solidToolReadiness } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { CommandLine } from './CommandLine.js';
+import type { CommandLineFailure } from './commandLineActions.js';
 import { AlertIcon, MouseIcon, PlaneIcon, SaveIcon, SnapIcon } from './icons.js';
+import { rollbackOf } from './timelineRail.js';
 import {
   countSelectedBodies,
   countSelectedSubShapes,
@@ -99,6 +102,16 @@ export function StatusBar(): React.JSX.Element {
   const referenceErrorMessage = useAppStore((state) => state.referenceErrorMessage);
   // 原点を移したときの一言(FR-331、P4 タスク35b)。断りではないので赤くしない。
   const originNoticeMessage = useAppStore((state) => state.originNoticeMessage);
+  /*
+   * タイムラインのつまみ(FR-507、P4b タスク19)。末尾でないあいだは札を出したままにする。
+   * 取り出すのは数だけにして、札の組み立て(新しい物を作る計算)は下の本体で行う。
+   * 取り出す式が毎回新しい物を返すと、変わっていなくても描き直しになるため。
+   */
+  const timelineIndex = useAppStore((state) => state.timelineIndex);
+  const historyCount = useAppStore(
+    (state) => state.document.references.length + state.document.solids.length,
+  );
+  const timelineNoticeKey = useAppStore((state) => state.timelineNoticeKey);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   // 任意の作業平面(FR-328)の名前を札に出すための一覧(タスク13)。
@@ -153,6 +166,13 @@ export function StatusBar(): React.JSX.Element {
    */
   const hasProgress = recomputeProgress !== null;
   const [progressVisible, setProgressVisible] = useState(false);
+  /*
+   * コマンドラインで打った 1 行を受け取れなかった理由(FR-208、P4b タスク18)。
+   * 帯に出すのは 1 文だけなので、他の断りと同じ優先順位の列(`describeStatus`)へ渡す。
+   * 断りは「いま押した Enter への返事」で、次に打ち直せば消える表示だけの一時状態なので
+   * ここで持つ(rules/04-設計の規律.md。欄の打ちかけも `CommandLine.tsx` が同じ扱いで持つ)。
+   */
+  const [commandFailure, setCommandFailure] = useState<CommandLineFailure | null>(null);
   useEffect(() => {
     if (!hasProgress) {
       setProgressVisible(false);
@@ -191,7 +211,11 @@ export function StatusBar(): React.JSX.Element {
     editNoticeKey,
     shapeErrorMessage,
     referenceErrorMessage,
+    commandLineFailure: commandFailure,
     originNoticeMessage,
+    // つまみが末尾でないことの札と、末尾へ戻したことの知らせ(FR-507、タスク19)。
+    rollback: rollbackOf(historyCount, timelineIndex),
+    timelineNoticeKey,
     errorMessage,
     partErrors,
     sketchErrors,
@@ -222,6 +246,12 @@ export function StatusBar(): React.JSX.Element {
       >
         {fileLabel}
       </span>
+      {/*
+        キーボードだけで作図するためのコマンドラインの欄(FR-208、§0.a-0.8)。
+        ファイル名の右・状況の 1 文の左へ入れる。**区画は 5 つのまま**で、打っている間だけ
+        欄が広がり、そのぶんを右の余白と状況の 1 文が譲る(appShell.css)。
+      */}
+      <CommandLine onFailureChange={setCommandFailure} />
       <span className="pcad-statusbar__message" aria-live="polite">
         {statusIcon(line.kind)}
         <span className="pcad-statusbar__text">{line.text}</span>
@@ -268,6 +298,16 @@ export function StatusBar(): React.JSX.Element {
         </span>
       )}
       <span className="pcad-statusbar__spacer" />
+      {/*
+        タイムラインのつまみが末尾でないことの札(FR-507、NFR-UX-7)。状況の1文とは
+        独立に、戻しているあいだは必ず出す。戻したままだと「作ったはずのものが消えた」
+        と見えるため(P4b タスク19)。
+      */}
+      {line.rollbackLabel === null ? null : (
+        <span className="pcad-statusbar__rollback" title={t('timeline.rollbackTooltip')}>
+          {line.rollbackLabel}
+        </span>
+      )}
       {/* 選択の種類の札(§0.a-0.6)。`1`〜`4` キーで切り替えられることをツールチップで添える。 */}
       <span className="pcad-statusbar__state" title={t('selection.kindHint')}>
         {line.selectionKindLabel}

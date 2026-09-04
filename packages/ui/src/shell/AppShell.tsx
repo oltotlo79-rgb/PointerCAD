@@ -11,16 +11,13 @@ import {
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
-import { applyEditCommit, applySketchCommit } from '../sketch/commitToStore.js';
-import { commitReferenceInput } from '../sketch/referenceCommands.js';
-import { commitSolidInput } from '../solid/solidCommands.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
 import { PropertyPanel } from './PropertyPanel.js';
 import { StatusBar } from './StatusBar.js';
-import { subShapeBodiesOf, Toolbar } from './Toolbar.js';
+import { Toolbar } from './Toolbar.js';
 
 /**
  * 3D 表示は three.js を伴って重いので、画面の枠より後から読み込む(NFR-PF-5)。
@@ -41,6 +38,25 @@ function isTextEntry(target: EventTarget | null): boolean {
     return false;
   }
   return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+}
+
+/**
+ * `Space` が「押す」意味を持つ相手か(FR-208、P4b タスク18)。
+ *
+ * ボタン・スイッチ・一覧の項目に焦点があるとき、`Space` はブラウザの決まりで「押す」操作に
+ * なる(その場入力のつまみの入切もこれに当たる)。コマンドラインの欄へ入る `Space`
+ * (§0.a-0.10 の③)は**ビューポートに焦点があるとき**のものなので、こういう相手からは
+ * 横取りしない。横取りすると、いまあるボタンの操作が 1 つ変わってしまう。
+ */
+function activatedBySpace(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return (
+    target.closest(
+      'button, select, summary, a[href], [role="switch"], [role="menuitem"], [role="option"], [role="tab"]',
+    ) !== null
+  );
 }
 
 /**
@@ -136,6 +152,20 @@ export function AppShell(): React.JSX.Element {
         if (kind !== undefined) {
           event.preventDefault();
           useAppStore.getState().setSelectionKind(kind);
+          return;
+        }
+        /*
+         * コマンドラインの欄へ入る(FR-208、§0.a-0.10 の③)。`Space` は P0〜P4 のどこにも
+         * 割り当てが無いことを Grep で確かめてある(その場入力のつまみの入切だけが Space を
+         * 使うが、あれはポップアップの中(`NumericInputPopover.tsx`)で止まるのでここへ来ない)。
+         *
+         * **文字を打っている最中は横取りしない**(上の `isTextEntry`)。式の欄で空白が
+         * 打てなくなり、コマンドラインの欄そのものでも空白が打てなくなるため。
+         * 欄から出るのは `Esc`(欄の中で受ける。`CommandLine.tsx`)。
+         */
+        if (event.key === ' ' && !activatedBySpace(event.target)) {
+          event.preventDefault();
+          useAppStore.getState().requestCommandLineFocus();
           return;
         }
       }
@@ -277,83 +307,12 @@ export function AppShell(): React.JSX.Element {
           {/*
             その場数値入力(NFR-UX-2)。開いているときだけ自分で姿を現す。
             決まった値から何を履歴へ積むかは純関数 commitSketchInput が決め、
-            次に何を聞くか・閉じるかはポップアップ自身が決める(FR-307)。
+            決まった 1 手をストアへ反映するのは commitToStore.ts の applyNumericTransition
+            (ポップアップとコマンドラインの共通の入口。P4b タスク18 でここから移した)。
           */}
           <NumericInputPopover
             viewportWidth={viewportSize[0]}
             viewportHeight={viewportSize[1]}
-            onCommit={(commit, state) => {
-              // 履歴・取りかけ・断りへの反映は applySketchCommit(commitToStore.ts)が
-              // 1 か所で受け持つ。3D スケッチで立体の頂点を押したときも同じ関数を通る
-              // (タスク14。同じ手順を 2 か所に書かない)。
-              // 断られたら false を返し、ポップアップを閉じさせない(P4 タスク33)。
-              return applySketchCommit(commit, state);
-            }}
-            onSolidCommit={(commit) => {
-              /*
-                立体を1つ作って部品文書へ積む(FR-401〜403)。何を作るかは純関数
-                commitSolidInput が決め、断られたら理由を帯へ出して履歴は変えない
-                (FR-504、NFR-UX-5)。作れたらその立体を選び、道具は選択へ戻す。
-              */
-              const store = useAppStore.getState();
-              // 加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の確定には
-              // 部分形状の一覧(bodies)が要る(solidCommands.ts タスク25b の4引数目)。
-              // Toolbar.tsx と同じ詰め替えを使い回す(同じ判断を2か所に書かない)。
-              const outcome = commitSolidInput(
-                store.document,
-                store.selection,
-                commit,
-                subShapeBodiesOf(store.bodies),
-              );
-              if (!outcome.ok) {
-                store.setSolidError(outcome.reasonKey);
-                // 断られたらポップアップを閉じない(理由は帯に出ている、P4 タスク33)。
-                return false;
-              }
-              store.applyDocument(outcome.document);
-              /*
-                道具を先に選択へ戻し、そのあとで作ったフィーチャーを選ぶ(タスク30 不具合(a))。
-                逆順(選ぶ→道具を戻す)だと、穴・ねじ穴・R/C面取りのように選ぶ種類が
-                面/辺から立体へ変わる道具では、setActiveTool が種類の変化を見て選択を
-                空にしてしまい、作った直後の立体が選ばれない。setActiveTool を先に呼べば、
-                選択が空になるのはこの時点までで、その後の setSelection が確定して残る。
-              */
-              store.setActiveTool('select');
-              store.setSelection([outcome.featureId]);
-              return true;
-            }}
-            onReferenceCommit={(commit) => {
-              /*
-                基準ジオメトリ(作業平面・基準軸・基準点・座標系)を部品文書へ積む
-                (FR-328、FR-329、タスク13)。何を作るかは純関数 commitReferenceInput が
-                決め、断られたら理由を帯へ出して履歴は変えない(FR-504、NFR-UX-5)。
-                作業平面ができたら、そのまま作図面として選ぶ(次の一手が続く、NFR-UX-1)。
-              */
-              const store = useAppStore.getState();
-              const outcome = commitReferenceInput(commit, {
-                document: store.document,
-                planeId: store.workPlaneId,
-                bodies: subShapeBodiesOf(store.bodies),
-                selection: store.selection,
-                draft: store.referenceDraft,
-              });
-              // 断りは先に出す。applyDocument は古い断りを消すので、逆順にすると消える。
-              store.setReferenceError(outcome.rejection);
-              if (outcome.document !== store.document) {
-                store.applyDocument(outcome.document);
-              }
-              store.setReferenceDraft(outcome.draft);
-              if (outcome.createdPlaneId !== null) {
-                store.setWorkPlane(outcome.createdPlaneId);
-              }
-              // 断られたらポップアップを閉じない(P4 タスク33、タスク12 の申し送り)。
-              return outcome.rejection === null;
-            }}
-            onEditCommit={(commit) => {
-              // 整形系の道具(オフセット、FR-321、タスク21)。対象はすでに選ばれているので、
-              // 反映は applyEditCommit(commitToStore.ts)が 1 か所で受け持つ。
-              return applyEditCommit(commit);
-            }}
           />
           {snapIndicator === null ? null : (
             /* 吸い付いている場所の印(FR-107)。 */

@@ -5,7 +5,6 @@ import {
   isFreeWorkPlaneId,
   type BooleanOperation,
   type PartDocument,
-  type SolidBody,
   type WorkPlaneId,
 } from '@pointercad/model';
 
@@ -56,12 +55,13 @@ import {
   solidToolReadiness,
   type SolidActionId,
 } from '../solid/solidCommands.js';
-import type {
-  SolidEdgeEntry,
-  SolidFaceEntry,
-  SolidVertexEntry,
-  SubShapeBody,
-} from '../solid/subShapeSelection.js';
+/*
+ * ボディ一覧の詰め替え(`subShapeBodiesOf`)は `solid/subShapeSelection.ts` が正本
+ * (作るのが `SubShapeBody` なので、その型を持つファイルに置く。P4b タスク18 で移した)。
+ * ここから輸出し直してあるのは、P3 からの読み手の import をそのまま生かすため。
+ */
+export { subShapeBodiesOf } from '../solid/subShapeSelection.js';
+import { subShapeBodiesOf, type SubShapeBody } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   ArcToolIcon,
@@ -1272,43 +1272,6 @@ function ToolMenu<Id extends string>({
       ) : null}
     </div>
   );
-}
-
-/**
- * `state.bodies`(model の `SolidBody`)に面・辺・頂点の一覧を(あれば)添えた形。
- *
- * その一覧が `SolidBody` へ届くのはタスク17(model の橋渡しの拡張)の後で、このタスクの
- * 着手時点ではまだ届いていない。`viewport/buildSolidGeometry.ts` の `SolidBodyWithSubShapes`
- * と同じ考え方(そちらは描画専用で `viewport/**` の担当外なので import せず、ここでは
- * 加工の押せる条件の判定に要る形だけを組み立てる。3 つとも省略可なので、`SolidBody` の値を
- * そのまま渡せる)。タスク17 が欄を必須で足したら、この型と変換関数は不要になり、
- * `state.bodies` をそのまま渡せる。
- */
-export type SolidBodyWithSubShapes = SolidBody & {
-  readonly faces?: readonly SolidFaceEntry[];
-  readonly edges?: readonly SolidEdgeEntry[];
-  readonly vertices?: readonly SolidVertexEntry[];
-};
-
-/**
- * ボディ一覧を `solidToolReadiness` / `commitSolidInput`(タスク25b の4引数目、`bodies`)が
- * 要る `SubShapeBody[]` へ詰め替える。面・辺・頂点の一覧がまだ届いていないボディは空の一覧
- * として扱う(その結果、加工のボタンは「対象が選ばれていません」の理由で押せないまま出る。
- * タスク17 の後に自動で解消する)。
- *
- * `AppShell.tsx` の `onSolidCommit` も同じ詰め替えを要るので、ここで輸出して使い回す
- * (`solidCommands.ts` 自身が「同じ判断を2か所に書かない」を掲げているのに合わせる)。
- */
-export function subShapeBodiesOf(
-  bodies: readonly SolidBodyWithSubShapes[],
-): readonly SubShapeBody[] {
-  return bodies.map((body) => ({
-    featureId: body.featureId,
-    mesh: { edgePositions: body.mesh.edgePositions },
-    faces: body.faces ?? [],
-    edges: body.edges ?? [],
-    vertices: body.vertices ?? [],
-  }));
 }
 
 interface MachiningGroupProps {

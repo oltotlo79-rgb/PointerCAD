@@ -1481,3 +1481,139 @@ describe('複数のスケッチ(P4 仕上げ (g)、FR-501、FR-328)', () => {
 function createEmptySketchDocument2(id: string): SketchDocument {
   return { ...createEmptySketchDocument(), id, name: id };
 }
+
+/** 押し出しを 3 段積んだ部品文書(タイムラインの帯が 3 件になる)。 */
+function partWithThreeSolids(): PartDocument {
+  let document = createEmptyPartDocument();
+  for (const id of ['1', '2', '3']) {
+    document = appendSolid(document, extrudeFeature(id));
+  }
+  return document;
+}
+
+describe('タイムラインのつまみ(FR-507、FR-506、P4b タスク19)', () => {
+  it('起動直後のつまみは末尾(null)で、知らせも出ていない(§0.a-0.19)', () => {
+    expect(useAppStore.getState().timelineIndex).toBeNull();
+    expect(useAppStore.getState().timelineNoticeKey).toBeNull();
+  });
+
+  it('つまみを動かしても文書は 1 バイトも変わらず、Undo の段も増えない', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    const before = useAppStore.getState().document;
+    const undoBefore = useAppStore.getState().undoStack.past.length;
+
+    useAppStore.getState().setTimelineIndex(0);
+
+    expect(useAppStore.getState().timelineIndex).toBe(0);
+    // 形の正本は全体のまま。保存されるのはこれ(`savePart` は document を書く)。
+    expect(useAppStore.getState().document).toBe(before);
+    expect(useAppStore.getState().document.solids).toHaveLength(3);
+    expect(useAppStore.getState().undoStack.past).toHaveLength(undoBefore);
+  });
+
+  it('文書をまるごと差し替えたら(開く)つまみは末尾へ戻る', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    useAppStore.getState().setTimelineIndex(1);
+    expect(useAppStore.getState().timelineIndex).toBe(1);
+
+    useAppStore.getState().applyDocument(partWithPoint(), { replacesDocument: true });
+
+    expect(useAppStore.getState().timelineIndex).toBeNull();
+    // 開いただけで「最後まで戻しました」とは言わない(言っても意味が無い)。
+    expect(useAppStore.getState().timelineNoticeKey).toBeNull();
+  });
+
+  it('新規・復元(resetDocument)でもつまみは末尾へ戻る', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    useAppStore.getState().setTimelineIndex(0);
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    expect(useAppStore.getState().timelineIndex).toBeNull();
+  });
+
+  it('元に戻す・やり直すでもつまみは末尾へ戻る(履歴の件数が変わりうるため)', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    useAppStore.getState().setTimelineIndex(1);
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().timelineIndex).toBeNull();
+
+    useAppStore.getState().setTimelineIndex(0);
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().timelineIndex).toBeNull();
+  });
+
+  it('途中まで戻したまま履歴が伸びたら、末尾へ戻して帯で知らせる(操作は止めない)', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    useAppStore.getState().setTimelineIndex(0);
+
+    const grown = appendSolid(useAppStore.getState().document, extrudeFeature('4'));
+    useAppStore.getState().applyDocument(grown);
+
+    // 作ったものは消えず、つまみが末尾へ動いて画面に出る。
+    expect(useAppStore.getState().document.solids).toHaveLength(4);
+    expect(useAppStore.getState().timelineIndex).toBeNull();
+    expect(useAppStore.getState().timelineNoticeKey).toBe('timeline.returnedToEnd');
+  });
+
+  it('つまみが末尾のまま履歴が伸びても、知らせは出ない(これまでどおり)', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    const grown = appendSolid(useAppStore.getState().document, extrudeFeature('4'));
+    useAppStore.getState().applyDocument(grown);
+
+    expect(useAppStore.getState().timelineIndex).toBeNull();
+    expect(useAppStore.getState().timelineNoticeKey).toBeNull();
+  });
+
+  it('戻したまま名前を変える・消すなど履歴が伸びない差し替えでは、つまみは動かない', () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    useAppStore.getState().setTimelineIndex(0);
+
+    useAppStore.getState().applyDocument(removeSolid(useAppStore.getState().document, '3'));
+
+    expect(useAppStore.getState().timelineIndex).toBe(0);
+    expect(useAppStore.getState().timelineNoticeKey).toBeNull();
+  });
+
+  it('つまみを動かすと、切った文書で計算し直す(保存する文書は全体のまま)', async () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+
+    // つないだ直後は末尾なので、渡るのは文書そのもの(=== を保つ、NFR-PF-3)。
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0].document).toBe(useAppStore.getState().document);
+    fake.calls[0].settle(resultFor(fake.calls[0].document));
+    await tick();
+
+    useAppStore.getState().setTimelineIndex(0);
+    expect(fake.calls).toHaveLength(2);
+    // 渡るのは 1 段目までに切った文書。
+    expect(fake.calls[1].document.solids).toHaveLength(1);
+    expect(fake.calls[1].document).not.toBe(useAppStore.getState().document);
+    // 切っても中のフィーチャーは複製しないので、形の作り直しが起きない(§2.7)。
+    expect(fake.calls[1].document.solids[0]).toBe(useAppStore.getState().document.solids[0]);
+    // ストアの正本(保存されるもの)は全体のまま。
+    expect(useAppStore.getState().document.solids).toHaveLength(3);
+    fake.calls[1].settle(resultFor(fake.calls[1].document));
+    await tick();
+
+    // 末尾へ戻すと、また文書そのものが渡る。
+    useAppStore.getState().setTimelineIndex(null);
+    expect(fake.calls).toHaveLength(3);
+    expect(fake.calls[2].document).toBe(useAppStore.getState().document);
+    fake.calls[2].settle(resultFor(fake.calls[2].document));
+    await tick();
+    detach();
+  });
+
+  it('同じ位置へ置き直しても計算し直さない', async () => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle(resultFor(fake.calls[0].document));
+    await tick();
+
+    useAppStore.getState().setTimelineIndex(null);
+    expect(fake.calls).toHaveLength(1);
+    detach();
+  });
+});

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { applyNumericTransition } from './commitToStore.js';
 import { ExpressionField } from './ExpressionField.js';
 import { coordinateModesFor } from './freeSketch.js';
 import {
@@ -12,7 +13,6 @@ import {
   asksCoordinate,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
-  nextNumericInput,
   NUMERIC_INPUT_KEYS,
   numericChoiceOptionLabel,
   reduceNumericInput,
@@ -20,15 +20,10 @@ import {
   STEP_TITLE_KEYS,
   toggleNumericInput,
   type CoordinateMode,
-  type EditInputCommit,
   type NumericChoice,
   type NumericFocusTarget,
-  type NumericInputCommit,
   type NumericInputKey,
   type NumericInputState,
-  type NumericInputTransition,
-  type ReferenceInputCommit,
-  type SolidInputCommit,
 } from './numericInput.js';
 
 /** ポップアップを基準点から右下へずらす量(画素)。指やカーソルで隠れないようにする。 */
@@ -240,26 +235,6 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
 }
 
 export interface NumericInputPopoverProps {
-  /**
-   * 決定されたときに呼ばれる。何を履歴へ積むかはこの部品では決めない
-   * (計画書 タスク21 が渡す処理が決める)。
-   */
-  readonly onCommit: (commit: NumericInputCommit, state: NumericInputState) => boolean;
-  /**
-   * ソリッド(押し出し・回転・縫合・P3 の加工6種・ばね)を決めたときに呼ばれる。
-   * 渡さなければソリッドの決定は捨てられる(ポップアップは閉じる)。
-   */
-  readonly onSolidCommit?: (commit: SolidInputCommit, state: NumericInputState) => boolean;
-  /**
-   * 基準ジオメトリ(作業平面・基準軸・基準点・座標系、FR-328、FR-329)を決めたときに
-   * 呼ばれる。渡さなければ決定は捨てられる(ポップアップは閉じる)。
-   */
-  readonly onReferenceCommit?: (commit: ReferenceInputCommit, state: NumericInputState) => boolean;
-  /**
-   * 整形系の道具(オフセット等、FR-321〜324)を決めたときに呼ばれる。渡さなければ決定は
-   * 捨てられる(ポップアップは閉じる)。
-   */
-  readonly onEditCommit?: (commit: EditInputCommit, state: NumericInputState) => boolean;
   /** ビューポートの大きさ(画素)。端での折り返しに使う。 */
   readonly viewportWidth: number;
   readonly viewportHeight: number;
@@ -276,10 +251,6 @@ export interface NumericInputPopoverProps {
  * ばねの1段目の確定は `kind: 'open'` で返る(まだ利用者へ渡す完成した加工ではないため)。
  */
 export function NumericInputPopover({
-  onCommit,
-  onSolidCommit,
-  onReferenceCommit,
-  onEditCommit,
   viewportWidth,
   viewportHeight,
 }: NumericInputPopoverProps): React.JSX.Element | null {
@@ -331,72 +302,13 @@ export function NumericInputPopover({
     update(reduceNumericInput(next, { type: 'focus', index }));
   };
 
-  const applyTransition = (transition: NumericInputTransition): void => {
-    switch (transition.kind) {
-      case 'open':
-        update(transition.state);
-        return;
-      case 'blocked':
-        // 決定させず、最初に間違っている欄へ焦点を戻す(NFR-UX-5)。
-        update(transition.state);
-        return;
-      case 'cancelled':
-        useAppStore.getState().closeNumericInput();
-        return;
-      case 'solidCommitted':
-        // ソリッドは(ばねの1段目を除き)1段で終わるので、決めたら必ず閉じる
-        // (nextNumericInput も null を返す)。断られたときは閉じない(下の注釈)。
-        if (onSolidCommit?.(transition.commit, transition.state) === false) {
-          return;
-        }
-        useAppStore.getState().closeNumericInput();
-        return;
-      case 'referenceCommitted': {
-        // 基準ジオメトリは 1 つ作ったら閉じる段と、次の点を聞く段がある(タスク13)。
-        // どちらかは nextNumericInput が決めるので、スケッチと同じ流れで扱う。
-        if (onReferenceCommit?.(transition.commit, transition.state) === false) {
-          return;
-        }
-        const next = nextNumericInput(transition.state, useAppStore.getState().chaining);
-        if (next === null) {
-          useAppStore.getState().closeNumericInput();
-          return;
-        }
-        update(next);
-        return;
-      }
-      case 'committed': {
-        /*
-         * **断られたときはポップアップを閉じない**(P4 タスク33、タスク12 の申し送り)。
-         * 半径が 2 点の間隔の半分に足りないときのように、値そのものは式として読めても
-         * 形が作れないことがある。その場で閉じてしまうと、利用者は入れ直した値を
-         * 全部打ち直す羽目になる。理由は帯に出ているので、欄はそのまま残して直させる
-         * (NFR-UX-5「実行してから失敗させない」、NFR-UX-3)。
-         */
-        if (!onCommit(transition.commit, transition.state)) {
-          return;
-        }
-        const next = nextNumericInput(transition.state, useAppStore.getState().chaining);
-        if (next === null) {
-          useAppStore.getState().closeNumericInput();
-          return;
-        }
-        update(next);
-        return;
-      }
-      case 'editCommitted':
-        // 整形系(オフセット、FR-321)は対象を選び直さないと続けられないので、
-        // ソリッドと同じく決めたら必ず閉じる(nextNumericInput も null を返す)。
-        if (onEditCommit?.(transition.commit, transition.state) === false) {
-          return;
-        }
-        useAppStore.getState().closeNumericInput();
-        return;
-    }
-  };
-
+  /*
+   * 決めた・取り消したときの反映は `commitToStore.ts` の `applyNumericTransition` が
+   * 1 か所で受け持つ(P4b タスク18)。コマンドライン(`shell/CommandLine.tsx`)も
+   * まったく同じ関数を通るので、どちらから打っても同じ道筋になる(NFR-UX-1)。
+   */
   const handleKey = (key: NumericInputKey): void => {
-    applyTransition(applyNumericInputKey(state, key));
+    applyNumericTransition(applyNumericInputKey(state, key));
   };
 
   /** ボタンを押しても欄から焦点を奪わない(NFR-UX-2 の「焦点を外へ逃がさない」)。 */

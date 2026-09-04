@@ -21,7 +21,7 @@
  * 「消えたフィーチャーを選択から外す」掃除は 1 行も変えずにそのまま効く。
  */
 
-import type { SubShapeKind, SubShapeRef, Vec3 } from '@pointercad/model';
+import type { SolidBody, SubShapeKind, SubShapeRef, Vec3 } from '@pointercad/model';
 
 import type { NumericInputToolId } from '../sketch/numericInput.js';
 
@@ -122,6 +122,24 @@ export interface SubShapeBody {
   readonly faces: readonly SolidFaceEntry[];
   readonly edges: readonly SolidEdgeEntry[];
   readonly vertices: readonly SolidVertexEntry[];
+}
+
+/**
+ * カーネルが返したボディを、部分形状を選ぶのに要る欄だけへ詰め替える。
+ *
+ * 置き場をここにしてあるのは、作るのが `SubShapeBody`(この型の正本がここ)だからで、
+ * 画面の部品(`Toolbar.tsx`)にあると画面を持たない呼び出し側(その場入力の確定を
+ * ストアへ反映する `sketch/commitToStore.ts`)から使えないため(P4b タスク18 で移した)。
+ * DOM にも React にも触れないので、そのまま Node で検査できる。
+ */
+export function subShapeBodiesOf(bodies: readonly SolidBody[]): readonly SubShapeBody[] {
+  return bodies.map((body) => ({
+    featureId: body.featureId,
+    mesh: { edgePositions: body.mesh.edgePositions },
+    faces: body.faces,
+    edges: body.edges,
+    vertices: body.vertices,
+  }));
 }
 
 /** `extrude-1#face:12` の形の要素 id を作る。番号は 0 以上の整数(一覧の通し番号)。 */

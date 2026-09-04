@@ -4,8 +4,8 @@ import {
 } from '@pointercad/model';
 
 import {
-  chooseTrack, collectTrackCandidates, DEFAULT_TRACK_ANGLE_STEP, polarCandidate,
-  TRACK_ANGLE_STEPS, type TrackKind,
+  chooseTrack, closestParameterToRay, collectTrackCandidates, DEFAULT_TRACK_ANGLE_STEP,
+  polarCandidate, TRACK_ANGLE_STEPS, type PointerRay, type TrackKind,
 } from './trackMath.js';
 import type { ProjectToScreen } from './snapMath.js';
 
@@ -363,6 +363,154 @@ describe('向きの吸着(FR-110、トラッキング)', () => {
       // 近傍10本だけが残る: 1本あたり 延長線2 + 垂線2 + 平行線1 = 5件 → 50件。
       expect(candidates).toHaveLength(50);
       expect(elapsedMs).toBeLessThan(4);
+    });
+  });
+
+  describe('ポインタの光線に最も近い点(P4b 仕上げ (a))', () => {
+    /*
+     * 視点が斜めのときの検証に使う、平行投影のカメラの向き(視線 v、画面の右 right、
+     * 画面の上 up の正規直交系)。v = (1,1,2)/√6 は作図面の法線(Z軸)から傾いた向きで、
+     * right = (1,-1,0)/√2、up = (1,1,-1)/√3 はどちらも v と直交し、互いにも直交する
+     * (手計算で確認済み: v・right = v・up = right・up = 0、いずれも単位ベクトル)。
+     * 平行投影なので、画面座標は「視線方向の深さを捨てて right・up 成分だけを読む」写像
+     * になる(このカメラのもとでは、この写像が worldToScreen の役を果たす)。
+     */
+    const VIEW_DIRECTION: Vec3 = [1 / Math.sqrt(6), 1 / Math.sqrt(6), 2 / Math.sqrt(6)];
+    const SCREEN_RIGHT: Vec3 = [1 / Math.sqrt(2), -1 / Math.sqrt(2), 0];
+    const SCREEN_UP: Vec3 = [1 / Math.sqrt(3), 1 / Math.sqrt(3), -1 / Math.sqrt(3)];
+
+    const dot3 = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+    /*
+     * 斜めの平行投影(検証専用): ワールド座標を (point・right, point・up) へ写す。
+     * ブルートフォースの数値探索(下のテスト)でだけ使うので、`ProjectToScreen` の
+     * `| null` は持たず、常に画面座標を返す形にしておく(この写像は画面の外という
+     * 概念を持たないため)。
+     */
+    const obliqueProject = (point: Vec3): readonly [number, number] => [
+      dot3(point, SCREEN_RIGHT), dot3(point, SCREEN_UP),
+    ];
+
+    /** 画面座標 (px, py) を通る光線。平行投影なのでどの画素でも向きは同じ(視線の向き)。 */
+    function obliqueRay(px: number, py: number): PointerRay {
+      return {
+        origin: [
+          px * SCREEN_RIGHT[0] + py * SCREEN_UP[0],
+          px * SCREEN_RIGHT[1] + py * SCREEN_UP[1],
+          px * SCREEN_RIGHT[2] + py * SCREEN_UP[2],
+        ],
+        direction: VIEW_DIRECTION,
+      };
+    }
+
+    it('斜めの光線では、作図面上の点への垂直射影(従来の方法)と異なる t を返す(自分で計算した例)', () => {
+      // 直線 L: 起点 (2,0,0)、向き (0,1,0)(作図面 z=0 の上、Y 軸に平行)。
+      const line = { origin: [2, 0, 0] as Vec3, direction: [0, 1, 0] as Vec3 };
+      // 画面 (0,0) を通る光線(斜め視点)。原点 C=(0,0,0)、向き v=(1,1,2)/√6。
+      const ray = obliqueRay(0, 0);
+
+      const t = closestParameterToRay(line, ray);
+      expect(t).not.toBeNull();
+      /*
+       * 手計算(報告に記す導出): d=(0,1,0)、v=(1,1,2)/√6、C-P0=(0,0,0)-(2,0,0)=(-2,0,0)。
+       *   a = d・d = 1
+       *   b = d・v = 1/√6
+       *   c = v・v = 1
+       *   e = d・(C-P0) = 0
+       *   f = v・(C-P0) = -2/√6
+       *   分母 = a・c - b・b = 1 - 1/6 = 5/6
+       *   t = (c・e - b・f) / 分母 = (0 - (1/√6)・(-2/√6)) / (5/6) = (2/6) / (5/6) = 2/5 = 0.4
+       */
+      expect(t!).toBeCloseTo(0.4, 9);
+
+      // 従来の方法(光線と作図面 z=0 の交点(0,0,0)への垂直射影)は 0 を返す。
+      // 2つの方法が異なる値を返すことが、この修正の理由そのものになる。
+      const pointOnPlane: Vec3 = [0, 0, 0];
+      const originDelta: Vec3 = [
+        pointOnPlane[0] - line.origin[0], pointOnPlane[1] - line.origin[1],
+        pointOnPlane[2] - line.origin[2],
+      ];
+      const oldT = dot3(originDelta, line.direction);
+      expect(oldT).toBeCloseTo(0, 9);
+      expect(t!).not.toBeCloseTo(oldT, 6);
+    });
+
+    it('その t で決めた点は、この斜め視点でポインタに最も近い(ブルートフォースの数値探索と一致)', () => {
+      const line = { origin: [2, 0, 0] as Vec3, direction: [0, 1, 0] as Vec3 };
+      const ray = obliqueRay(0, 0);
+      const t = closestParameterToRay(line, ray)!;
+
+      const pointAt = (parameter: number): Vec3 => [
+        line.origin[0] + parameter * line.direction[0],
+        line.origin[1] + parameter * line.direction[1],
+        line.origin[2] + parameter * line.direction[2],
+      ];
+      const screenDistanceAt = (parameter: number): number => {
+        const [x, y] = obliqueProject(pointAt(parameter));
+        return Math.hypot(x, y);
+      };
+
+      const distanceAtT = screenDistanceAt(t);
+      // 実装とは独立に、t を細かく振って総当たりで最小点を探る。
+      // (理論上の最小点は上のテストの手計算どおり t=0.4。)
+      for (let candidate = 0; candidate <= 1; candidate += 0.001) {
+        expect(distanceAtT).toBeLessThanOrEqual(screenDistanceAt(candidate) + 1e-9);
+      }
+    });
+
+    it('視線に垂直な光線(正面から見た視点)では、光線なし(従来の方法)と同じ点になる(退行なし)', () => {
+      // 正面視点: 光線は作図面(z=0)に垂直、向きは (0,0,-1)。この場合、光線と作図面の
+      // 交点(pointOnPlane)への垂直射影(従来の方法)と、光線への最近点(新しい方法)は
+      // 一致する(§2.4、`closestParameterToRay` の注釈「なぜ画面座標の最近点と一致するか」)。
+      const pointer: readonly [number, number] = [4, 7];
+      const pointOnPlane: Vec3 = [pointer[0], pointer[1], 0];
+      const ray: PointerRay = { origin: [pointer[0], pointer[1], 100], direction: [0, 0, -1] };
+      const candidates = [{
+        kind: 'extension' as const, origin: [0, 0, 0] as Vec3, direction: [1, 0, 0] as Vec3,
+        sourceFeatureId: 'l1', angleDegrees: null,
+      }];
+
+      const withoutRay = chooseTrack(candidates, project, pointer, 12, pointOnPlane);
+      const withRay = chooseTrack(candidates, project, pointer, 12, pointOnPlane, ray);
+      expect(withoutRay).not.toBeNull();
+      expect(withRay).not.toBeNull();
+      expect(withRay!.position).toEqual(withoutRay!.position);
+    });
+
+    it('案内線が視線とちょうど平行(退化)なら null を返す', () => {
+      const line = { origin: [0, 0, 0] as Vec3, direction: [0, 0, 1] as Vec3 };
+      const ray: PointerRay = { origin: [5, 5, 5], direction: [0, 0, 1] };
+      expect(closestParameterToRay(line, ray)).toBeNull();
+    });
+
+    it('退化(案内線が視線と平行)のとき、chooseTrack は光線なしと同じ結果へ後退する', () => {
+      const candidates = [{
+        kind: 'extension' as const, origin: [0, 0, 0] as Vec3, direction: [0, 0, 1] as Vec3,
+        sourceFeatureId: 'l9', angleDegrees: null,
+      }];
+      const pointOnPlane: Vec3 = [0, 0, 5];
+      const pointer: readonly [number, number] = [0, 0];
+      const ray: PointerRay = { origin: [3, 3, 3], direction: [0, 0, 1] };
+
+      const withoutRay = chooseTrack(candidates, project, pointer, 12, pointOnPlane);
+      const withRay = chooseTrack(candidates, project, pointer, 12, pointOnPlane, ray);
+      expect(withoutRay).not.toBeNull();
+      expect(withRay).not.toBeNull();
+      expect(withRay!.position).toEqual(withoutRay!.position);
+    });
+
+    it('極(polar)は光線を渡しても位置が変わらない(距離を保つ意図的な挙動、§2.4)', () => {
+      const origin: Vec3 = [0, 0, 0];
+      const pointOnPlane: Vec3 = [20 * Math.cos(degToRad(17)), 20 * Math.sin(degToRad(17)), 0];
+      const candidate = polarCandidate(XY, origin, pointOnPlane, 15)!;
+      const pointer = pointerOf(pointOnPlane);
+      const ray = obliqueRay(pointer[0], pointer[1]);
+
+      const withoutRay = chooseTrack([candidate], project, pointer, 12, pointOnPlane);
+      const withRay = chooseTrack([candidate], project, pointer, 12, pointOnPlane, ray);
+      expect(withoutRay).not.toBeNull();
+      expect(withRay).not.toBeNull();
+      expect(withRay!.position).toEqual(withoutRay!.position);
     });
   });
 });

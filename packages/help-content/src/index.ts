@@ -68,6 +68,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '向きをそろえる(直交・角度・延長線)',
     path: 'docs/ja/tracking.md',
   },
+  {
+    id: 'command-line',
+    title: 'キーボードだけでかく(コマンドの欄)',
+    path: 'docs/ja/command-line.md',
+  },
   { id: 'face-and-color', title: '面を張る・色を変える', path: 'docs/ja/face-and-color.md' },
   { id: 'edit-sketch', title: 'かいたものを直す', path: 'docs/ja/edit-sketch.md' },
   { id: 'solid-basics', title: '厚みをつける・回す', path: 'docs/ja/solid-basics.md' },
@@ -80,6 +85,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: 'feature-tree',
     title: '作ったものの一覧と、やり直し',
     path: 'docs/ja/feature-tree.md',
+  },
+  {
+    id: 'timeline',
+    title: '途中まで戻して確かめる(タイムライン)',
+    path: 'docs/ja/timeline.md',
   },
   { id: 'save-and-open', title: '保存する・開く', path: 'docs/ja/save-and-open.md' },
   {

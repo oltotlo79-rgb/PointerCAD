@@ -78,6 +78,13 @@ import {
   UnionIcon,
   type IconProps,
 } from './icons.js';
+import { TimelineStopHandle } from './Timeline.js';
+import {
+  buildTimelineStops,
+  isTimelineAtEnd,
+  timelineStopsById,
+  type TimelineStop,
+} from './timelineRail.js';
 
 /**
  * 行の頭に出す種類の絵。道具のアイコンと同じ図柄にして、作ったものと道具を結び付ける
@@ -215,6 +222,9 @@ export function FeatureTree(): React.JSX.Element {
   const sketchErrors = useAppStore((state) => state.sketchErrors);
   const partErrors = useAppStore((state) => state.partErrors);
   const resolvedReferences = useAppStore((state) => state.resolvedReferences);
+  // タイムラインのつまみ(FR-507、FR-506、P4b タスク19)。区画は増やさず、履歴の行の
+  // 左端をなぞる細いレールとして木の中に出す(§0.a-0.18 の利用者の決定は案 B)。
+  const timelineIndex = useAppStore((state) => state.timelineIndex);
   const [isExpanded, setIsExpanded] = useState(true);
   const [collapsed, setCollapsed] = useState<readonly TreeSectionKey[]>([]);
   const [collapsedSketchIds, setCollapsedSketchIds] = useState<readonly string[]>([]);
@@ -236,6 +246,14 @@ export function FeatureTree(): React.JSX.Element {
    */
   const sketchGroups = buildSketchGroups(part, sketchErrors);
   const grouped = sketchGroups.length > 1;
+  /*
+   * タイムラインの段(FR-507)。並びは model の `buildTimeline` が正本で、
+   * 「基準(順)→ ソリッド(順)」の 1 本の通し。木の行の id はフィーチャーの id
+   * (`buildReferenceSection` / `buildTreeSections`)なので、そのまま引ける。
+   * スケッチの要素の行は帯に出ないので引けず、つまみも付かない。
+   */
+  const timelineStops = timelineStopsById(buildTimelineStops(part, timelineIndex));
+  const timelineAtEnd = isTimelineAtEnd(part, timelineIndex);
   // 束ねているときは親行も数に入れる。要素が 1 つも無くても親行は出るので、
   // それだけで「まだ何もありません」の空状態には落とさない。
   const groupedRowCount = sketchGroups.reduce((total, group) => total + group.rows.length + 1, 0);
@@ -594,10 +612,19 @@ export function FeatureTree(): React.JSX.Element {
   ): React.JSX.Element => {
     const KindIcon = KIND_ICONS[row.kind];
     const selected = selectedIds.has(row.id);
+    /*
+     * タイムラインのつまみが付く行か(FR-507)。付くのは帯に出る行、つまり基準
+     * ジオメトリと立体の行だけ。つまみより後ろの行は「いまは形になっていない」ので
+     * 薄く出す(抑制とは別の薄さ。抑制は保存されるが、つまみの位置は保存されない)。
+     */
+    const stop: TimelineStop | undefined = timelineStops.get(row.id);
+    const ahead = stop !== undefined && stop.state === 'ahead';
     const rowClassName =
       'pcad-tree__row pcad-tree__row--child' +
+      (stop === undefined ? '' : ' pcad-tree__row--timeline') +
       (selected ? ' pcad-tree__row--selected' : '') +
       (hoveredId === row.id ? ' pcad-tree__row--hovered' : '') +
+      (ahead ? ' pcad-tree__row--ahead' : '') +
       // 画面に出していない基準(FR-329)は、抑制中の立体と同じ薄さで出して見分ける。
       (row.suppressed || row.hidden ? ' pcad-tree__row--suppressed' : '');
     return (
@@ -626,6 +653,12 @@ export function FeatureTree(): React.JSX.Element {
             });
           }}
         >
+          {/*
+            行の左端のつまみ(FR-507、FR-506)。行の高さも字下げも変えないよう、行の
+            余白の上へ重ねて置く(過去の失敗: docs/報告記録.md 2026-09-04 20:30 で
+            画面へ足したものが区画を 1 段分押し広げた)。
+          */}
+          {stop === undefined ? null : <TimelineStopHandle stop={stop} atEnd={timelineAtEnd} />}
           {renamingId === row.id ? (
             <input
               className="pcad-tree__rename"

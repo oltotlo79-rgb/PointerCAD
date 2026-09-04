@@ -1504,6 +1504,96 @@ button.pcad-tree__row:focus-visible {
   color: var(--pcad-text-faint);
 }
 
+/* ===== タイムラインのつまみ(FR-507、FR-506。P4b タスク19) =====
+ *
+ * 置き場は木の中(§0.a-0.18 の利用者の決定は案 B)。**固定区画は 5 つのまま増やさない。**
+ * 行の左端の余白(`.pcad-tree__select` の padding-left 44px の内側)へ重ねて置くので、
+ * 行の高さ 26px も字下げも 1 画素も変わらない。
+ */
+.pcad-tree__row--timeline {
+  position: relative;
+}
+
+.pcad-timeline__stop {
+  position: absolute;
+  top: 0;
+  left: 4px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 100%;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.pcad-timeline__stop:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+  border-radius: var(--pcad-radius-small);
+}
+
+/* 段と段をつなぐ縦のレール。行の上端から下端まで通し、1 本の帯に見せる。 */
+.pcad-timeline__rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--pcad-border);
+}
+
+/* つまみより前(すでに形になっている段)はレールを濃くして、どこまで作られたかを示す。 */
+.pcad-timeline__stop--past .pcad-timeline__rail,
+.pcad-timeline__stop--current .pcad-timeline__rail {
+  background: var(--pcad-accent);
+}
+
+/* いまのつまみの行から下は「まだ作られていない」ので、下半分のレールを薄いままにする。 */
+.pcad-timeline__stop--current .pcad-timeline__rail {
+  bottom: 50%;
+}
+
+/* 段の節(まる)。押せる場所がここだと分かるよう、どの段にも出しておく。 */
+.pcad-timeline__knob {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  background: var(--pcad-border-strong);
+  border-radius: 50%;
+  transition:
+    background-color var(--pcad-transition),
+    box-shadow var(--pcad-transition);
+}
+
+.pcad-timeline__stop--past .pcad-timeline__knob {
+  background: var(--pcad-accent);
+}
+
+/* いまのつまみだけ大きく、輪を付けて目立たせる(どこまで戻しているかの目印)。 */
+.pcad-timeline__stop--current .pcad-timeline__knob {
+  width: 10px;
+  height: 10px;
+  background: var(--pcad-accent);
+  box-shadow: 0 0 0 2px var(--pcad-accent-soft);
+}
+
+.pcad-timeline__stop:hover .pcad-timeline__knob {
+  background: var(--pcad-accent-hover);
+}
+
+/*
+ * つまみより後ろの行(いまは形になっていない段)。抑制の薄さと同じ色にそろえるが、
+ * こちらは保存されない一時の見え方なので、行そのものは消さずに字だけを弱める。
+ */
+.pcad-tree__row--ahead .pcad-tree__label,
+.pcad-tree__row--ahead .pcad-tree__icon,
+.pcad-tree__row--ahead .pcad-tree__badge {
+  color: var(--pcad-text-faint);
+}
+
 /*
  * 行から開く一覧(FR-503)。モデルブラウザは縦に流れる区画なので、中に置くと縁で
  * 切り取られる。画面に対して固定して出し、右端をボタン(またはカーソル)にそろえる。
@@ -2281,6 +2371,7 @@ button.pcad-tree__row:focus-visible {
   .pcad-switch__thumb,
   .pcad-tree__row,
   .pcad-tree__chevron,
+  .pcad-timeline__knob,
   .pcad-statusbar__progress-fill,
   .pcad-viewcube {
     transition: none;
@@ -2433,6 +2524,23 @@ button.pcad-tree__row:focus-visible {
   border-radius: 999px;
 }
 
+/*
+ * タイムラインのつまみが末尾でないことの札(FR-507、NFR-UX-7。P4b タスク19)。
+ * 状況の 1 文とは独立に**出したままにする**。戻したままだと「作ったはずのものが消えた」
+ * と見えるため。断りではないので赤くはせず、アクセントの縁で目立たせる。
+ */
+.pcad-statusbar__rollback {
+  flex: none;
+  padding: 0 var(--pcad-space-2);
+  font-size: var(--pcad-font-size-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-accent);
+  cursor: default;
+  background: var(--pcad-accent-soft);
+  border: 1px solid var(--pcad-accent-border);
+  border-radius: 999px;
+}
+
 /* 計算が失敗したときの帯。 */
 .pcad-statusbar--error {
   color: var(--pcad-danger-text);
@@ -2442,4 +2550,107 @@ button.pcad-tree__row:focus-visible {
 
 .pcad-statusbar--error .pcad-icon {
   color: var(--pcad-danger);
+}
+/* ===== コマンドラインの欄(FR-208、P4b タスク18) ===== */
+
+/*
+ * ステータスバーの左、ファイル名の右へ埋め込む 1 行の欄(§0.a-0.8)。**区画は 5 つのまま**
+ * 増やさない(rules/04-設計の規律.md、要件§7.1)。位置の基準(position: relative)は、
+ * 候補の一覧を欄の**上**へ出すためのもの(下はステータスバーの外)。
+ */
+.pcad-commandline {
+  position: relative;
+  display: flex;
+  flex: none;
+  gap: var(--pcad-space-1);
+  align-items: center;
+}
+
+.pcad-commandline__label {
+  flex: none;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-faint);
+}
+
+.pcad-commandline__input {
+  box-sizing: border-box;
+  width: 132px;
+  height: 20px;
+  padding: 0 var(--pcad-space-2);
+  font: inherit;
+  font-size: var(--pcad-font-size-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-text);
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  transition: width var(--pcad-transition);
+}
+
+/*
+ * 打っている間だけ広げる(計画書 タスク18「帯の 1 文が幅を譲る(打っている間だけ)」)。
+ * 譲るぶんは、まず右の余白(.pcad-statusbar__spacer)が詰め、余白が尽きたら状況の 1 文が
+ * 詰まる(.pcad-statusbar__text が末尾を省く)。区画の数もツールバーの幅も変わらない。
+ */
+.pcad-commandline__input:focus {
+  width: 272px;
+  border-color: var(--pcad-accent);
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+/* 次に打つもの(いま開いている段の欄名)。狭い窓では畳む(帯の但し書きと同じ扱い)。 */
+.pcad-commandline__next {
+  flex: none;
+  overflow: hidden;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1279px) {
+  .pcad-commandline__label,
+  .pcad-commandline__next {
+    display: none;
+  }
+}
+
+/*
+ * 打ちかけの語に前方一致する道具の候補(最大 5 件、§0.a-0.11)。欄の上へ吹き出しで出す。
+ * 重なりの前後は畳んだ一覧(.pcad-menu__panel)と同じ 3 にそろえる。
+ */
+.pcad-commandline__suggestions {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  padding: var(--pcad-space-1);
+  background: var(--pcad-surface-raised);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius);
+  box-shadow: var(--pcad-shadow-soft-raised);
+}
+
+/* 候補 1 件。4 状態(通常・ホバー・押下・焦点)は .pcad-button から受け継ぐ。 */
+.pcad-commandline__suggestion {
+  gap: var(--pcad-space-2);
+  justify-content: space-between;
+  height: 22px;
+  padding: 0 var(--pcad-space-2);
+  font-size: var(--pcad-font-size-small);
+}
+
+/* 1 件目は Tab でそのまま採れるので、採れることが分かるように少し強調する。 */
+.pcad-commandline__suggestion[aria-selected='true'] {
+  box-shadow: inset 0 0 0 1px var(--pcad-accent);
+}
+
+.pcad-commandline__suggestion-word {
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-text-faint);
 }

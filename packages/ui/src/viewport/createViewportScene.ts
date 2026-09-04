@@ -11,7 +11,7 @@ import {
 import * as THREE from 'three';
 
 import { captureThumbnailPng, THUMBNAIL_SIZE } from '../file/thumbnail.js';
-import type { TrackCandidate } from '../sketch/trackMath.js';
+import type { PointerRay, TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
 import { faceIndexOfTriangle } from '../solid/pickSubShape.js';
 import type { DisplayStyle, ProjectionMode } from '../store/useAppStore.js';
@@ -136,6 +136,13 @@ export interface ViewportScene {
   worldToScreen(point: Vec3): readonly [number, number] | null;
   /** canvas 上の画素座標から、作図面の上の点を求める。平面と視線が平行なら null。 */
   screenToPlanePoint(x: number, y: number, plane: WorkPlane): Vec3 | null;
+  /**
+   * canvas 上の画素座標にあるポインタの光線(カメラの視点からその画素を通る半直線)。
+   * ワールド座標系の origin/direction(単位ベクトル)を返す。まだ一度も描いていなければ
+   * null。案内線(向きの吸着)の候補位置を、画面上でポインタに最も近い点で決めるのに使う
+   * (P4b 仕上げ (a)、`trackMath.ts` の `closestParameterToRay`)。
+   */
+  pointerRay(x: number, y: number): PointerRay | null;
   resize(widthPixels: number, heightPixels: number): void;
   dispose(): void;
 }
@@ -645,6 +652,20 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       pickPlane.setFromNormalAndCoplanarPoint(planeNormal, planeOrigin);
       const hit = raycaster.ray.intersectPlane(pickPlane, intersection);
       return hit === null ? null : [hit.x, hit.y, hit.z];
+    },
+
+    pointerRay(x, y): PointerRay | null {
+      if (lastCamera === null) {
+        return null;
+      }
+      pointerNdc.set((x / width) * 2 - 1, -((y / height) * 2 - 1));
+      // 平行投影でも setFromCamera が視線の起点と向きを組み立て直す(pickBody と同じ事情)。
+      raycaster.setFromCamera(pointerNdc, lastCamera);
+      const { origin, direction } = raycaster.ray;
+      return {
+        origin: [origin.x, origin.y, origin.z],
+        direction: [direction.x, direction.y, direction.z],
+      };
     },
 
     resize(widthPixels, heightPixels): void {

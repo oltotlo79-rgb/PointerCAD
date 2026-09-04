@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
 import {
+  commandLineFailureText,
   countSelectedBodies,
   countSelectedSubShapes,
   describeStatus,
@@ -19,6 +20,7 @@ import {
   progressText,
   progressView,
   PROGRESS_DELAY_MS,
+  rollbackText,
   springGuideText,
   summarizeFailures,
   trackGuideText,
@@ -588,5 +590,99 @@ describe('角の丸め・面取りの案内と、面の境界の知らせ(FR-323
 
   it('知らせを渡さない呼び出しは今までどおり動く(欄は省略できる)', () => {
     expect(describeStatus(quiet()).kind).toBe('guide');
+  });
+});
+
+describe('コマンドラインの断り(FR-208、P4b タスク18)', () => {
+  it('打った 1 行への断りは、頭に「コマンド:」を付けて帯へ出す', () => {
+    const line = describeStatus({
+      ...quiet(),
+      commandLineFailure: { message: t('commandLine.error.noSuchTool'), suggestions: [] },
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('commandLine.error')} ${t('commandLine.error.noSuchTool')}`);
+  });
+
+  it('もしかしての候補があれば添える(FR-204 と同じ流儀)', () => {
+    expect(
+      commandLineFailureText({ message: t('commandLine.error.noSuchTool'), suggestions: ['l', 'c'] }),
+    ).toBe(
+      `${t('commandLine.error.noSuchTool')} ${t('commandLine.errorSuggestions')} l${t('statusBar.track.separator')}c`,
+    );
+  });
+
+  it('候補が無ければ理由だけを出す', () => {
+    expect(commandLineFailureText({ message: '値が足りません', suggestions: [] })).toBe(
+      '値が足りません',
+    );
+  });
+
+  it('面・立体・図形の断りのほうがコマンドラインの断りより優先する(NFR-UX-5)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      faceErrorKey: 'solidError.noFace',
+      commandLineFailure: { message: 'そのような道具はありません', suggestions: [] },
+    });
+    expect(line.text).toBe(`${t('statusBar.faceError')} ${t('solidError.noFace')}`);
+  });
+
+  it('コマンドラインの断りは計算の失敗・吸着の案内より優先する(いま押した Enter への返事)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      commandLineFailure: { message: 'そのような道具はありません', suggestions: [] },
+      errorMessage: '計算できません',
+      snapKind: 'endpoint',
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toContain('そのような道具はありません');
+  });
+
+  it('コマンドラインの断りを渡さない呼び出しは今までどおり動く(欄は省略できる)', () => {
+    expect(describeStatus({ ...quiet(), commandLineFailure: null }).kind).toBe('guide');
+  });
+});
+
+describe('タイムラインのつまみの札(FR-507、NFR-UX-7。P4b タスク19)', () => {
+  it('途中まで戻しているあいだは、状況の 1 文と独立に札を出す', () => {
+    const line = describeStatus({ ...quiet(), rollback: { position: 3, total: 5 } });
+    expect(line.rollbackLabel).toBe('途中まで戻しています(3 件目 / 5 件)');
+    // 1 文のほうは今までどおり道具の案内のまま(札に押しのけられない)。
+    expect(line.kind).toBe('guide');
+  });
+
+  it('失敗が出ているときも札は消えない(戻したままだと形が欠けて見えるため)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      rollback: { position: 1, total: 3 },
+      errorMessage: '計算できません',
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.rollbackLabel).toBe('途中まで戻しています(1 件目 / 3 件)');
+  });
+
+  it('末尾にいるとき・欄を渡さない呼び出しでは札を出さない', () => {
+    expect(describeStatus({ ...quiet(), rollback: null }).rollbackLabel).toBeNull();
+    expect(describeStatus(quiet()).rollbackLabel).toBeNull();
+  });
+
+  it('rollbackText は末尾(null / 段が無い)なら null を返す', () => {
+    expect(rollbackText(null)).toBeNull();
+    expect(rollbackText(undefined)).toBeNull();
+    expect(rollbackText({ position: 2, total: 4 })).toBe('途中まで戻しています(2 件目 / 4 件)');
+  });
+
+  it('末尾へ戻したことの知らせは、断りではないので赤くしない', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.returnedToEnd' });
+    expect(line.kind).toBe('saved');
+    expect(line.text).toBe(t('timeline.returnedToEnd'));
+  });
+
+  it('末尾へ戻したことの知らせより、計算の失敗のほうが先に出る(FR-504)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      timelineNoticeKey: 'timeline.returnedToEnd',
+      errorMessage: '計算できません',
+    });
+    expect(line.kind).toBe('failure');
   });
 });

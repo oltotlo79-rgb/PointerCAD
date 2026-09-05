@@ -1,11 +1,16 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   appendFeature,
+  appendSolid,
+  createEmptyPartDocument,
   createEmptySketchDocument,
+  createPrimitiveFeature,
   DEFAULT_FACE_COLOR,
   FREE_WORK_PLANE_ID,
   resolveSketch,
   WORK_PLANES,
+  type PartDocument,
+  type PrimitiveFeature,
   type SketchDocument,
   type SubShapeRef,
 } from '@pointercad/model';
@@ -29,9 +34,14 @@ import {
   boundaryElementKind,
   commitFace,
   commitSketchInput,
+  commitSphereGridPoint,
   commitSubShapePoint,
   continueFrom,
   freeArcOrientationOf,
+  selectedSphereFeature,
+  sphereGridCoordinate,
+  sphereGridSphereOf,
+  sphereGridTargetSphere,
   subShapeCoordinate,
   toElementRef,
   type CommitContext,
@@ -701,5 +711,179 @@ describe('3D スケッチで頂点どうしを結ぶ線分(FR-330、タスク14)
     const resolved = resolveSketch(context.document);
     expect(resolved.segments[0].from).toEqual([0, 0, 0]);
     expect(resolved.segments[0].to).toEqual([10, 0, 0]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 球面上の点(FR-431、P5 タスク21・22)
+ * ------------------------------------------------------------------ */
+
+/** 半径 `radius` の球を 1 つだけ持つ部品文書(中心は絶対座標)。 */
+function sphereDocument(radius: number, center: readonly [number, number, number] = [0, 0, 0]): PartDocument {
+  const empty = createEmptyPartDocument();
+  const base = createPrimitiveFeature(empty, 'sphere', {
+    kind: 'coordinate',
+    value: {
+      mode: 'absolute',
+      x: expressionValueFromNumber(center[0]),
+      y: expressionValueFromNumber(center[1]),
+      z: expressionValueFromNumber(center[2]),
+    },
+  });
+  return appendSolid(empty, {
+    ...base,
+    shape: { kind: 'sphere', radius: expressionValueFromNumber(radius) },
+  });
+}
+
+/** 文書の中の球のフィーチャー(検査の中で必ず 1 つだけ作る)。 */
+function sphereOf(document: PartDocument): PrimitiveFeature {
+  const found = selectedSphereFeature(document, document.solids.map((solid) => solid.id));
+  if (found === null) {
+    throw new Error('球が見つかりません。');
+  }
+  return found;
+}
+
+describe('sphereGridCoordinate / commitSphereGridPoint(FR-431)', () => {
+  it('球の id と緯度・経度だけを持ち、ずれは 0 になる(座標を保存しない)', () => {
+    const coordinate = sphereGridCoordinate(
+      'sphere-1',
+      expressionValueFromNumber(30),
+      expressionValueFromNumber(45),
+    );
+    expect(coordinate.mode).toBe('relative');
+    if (coordinate.mode !== 'relative') {
+      throw new Error('相対の座標ではありません。');
+    }
+    expect(coordinate.base).toEqual({
+      kind: 'sphereGrid',
+      sphereFeatureId: 'sphere-1',
+      latitude: expressionValueFromNumber(30),
+      longitude: expressionValueFromNumber(45),
+    });
+    expect([coordinate.dx.value, coordinate.dy.value, coordinate.dz.value]).toEqual([0, 0, 0]);
+  });
+
+  it('点を 1 つ積み、3D スケッチの点として作る(FR-330)', () => {
+    const sketch = commitSphereGridPoint(
+      createEmptySketchDocument(),
+      FREE_WORK_PLANE_ID,
+      'sphere-1',
+      expressionValueFromNumber(0),
+      expressionValueFromNumber(90),
+    );
+    expect(sketch.features).toHaveLength(1);
+    const feature = sketch.features[0];
+    expect(feature.kind).toBe('point');
+    expect(feature.planeId).toBe(FREE_WORK_PLANE_ID);
+  });
+
+  it('式のまま保存される(FR-201、FR-202)', () => {
+    const sketch = commitSphereGridPoint(
+      createEmptySketchDocument(),
+      FREE_WORK_PLANE_ID,
+      'sphere-1',
+      expressionValueFromNumber(30 * 2),
+      expressionValueFromNumber(45),
+    );
+    const feature = sketch.features[0];
+    if (feature.kind !== 'point' || feature.at.mode !== 'relative') {
+      throw new Error('球面上の点になっていません。');
+    }
+    expect(feature.at.base.kind).toBe('sphereGrid');
+  });
+});
+
+describe('selectedSphereFeature(FR-431 の「球を選ぶと」)', () => {
+  it('立体そのものを選んでいれば見つかる', () => {
+    const document = sphereDocument(10);
+    const id = document.solids[0].id;
+    expect(selectedSphereFeature(document, [id])?.id).toBe(id);
+  });
+
+  it('球面(面の部分形状)を選んでいても同じ球に行き着く(§0.a-0.21)', () => {
+    const document = sphereDocument(10);
+    const id = document.solids[0].id;
+    expect(selectedSphereFeature(document, [`${id}#face:0`])?.id).toBe(id);
+  });
+
+  it('何も選んでいない・球でないものを選んでいるときは null', () => {
+    const document = sphereDocument(10);
+    expect(selectedSphereFeature(document, [])).toBeNull();
+    expect(selectedSphereFeature(document, ['point-1'])).toBeNull();
+  });
+
+  it('抑制した球は選べない(画面に無いものの上に点は置けない)', () => {
+    const document = sphereDocument(10);
+    const suppressed: PartDocument = {
+      ...document,
+      solids: document.solids.map((solid) => ({ ...solid, suppressed: true })),
+    };
+    expect(selectedSphereFeature(suppressed, [suppressed.solids[0].id])).toBeNull();
+  });
+});
+
+describe('sphereGridTargetSphere(案内線を出す球、FR-431)', () => {
+  it('選んでいる球があればそれを出す', () => {
+    const document = sphereDocument(10);
+    const id = document.solids[0].id;
+    expect(sphereGridTargetSphere(document, [id], false)?.id).toBe(id);
+  });
+
+  it('選んでいなければ出さない(「いつも出す」が切のとき)', () => {
+    const document = sphereDocument(10);
+    expect(sphereGridTargetSphere(document, [], false)).toBeNull();
+  });
+
+  it('「いつも出す」が入なら、選んでいなくてもいちばん後に作った球を出す', () => {
+    const first = sphereDocument(10);
+    const second = appendSolid(first, {
+      ...createPrimitiveFeature(first, 'sphere'),
+      shape: { kind: 'sphere', radius: expressionValueFromNumber(4) },
+    });
+    expect(sphereGridTargetSphere(second, [], true)?.id).toBe(second.solids[1].id);
+  });
+
+  it('球が 1 つも無い文書では、「いつも出す」が入でも出さない(費用ゼロ)', () => {
+    expect(sphereGridTargetSphere(createEmptyPartDocument(), [], true)).toBeNull();
+  });
+});
+
+describe('sphereGridSphereOf(案内線を引くための中心と半径)', () => {
+  it('絶対座標で置いた球の中心と半径を返す', () => {
+    const document = sphereDocument(10, [5, 5, 5]);
+    const sphere = sphereGridSphereOf(sphereOf(document), resolveSketch(createEmptySketchDocument()));
+    expect(sphere).toEqual({ featureId: document.solids[0].id, center: [5, 5, 5], radius: 10 });
+  });
+
+  it('半径が 0 以下の球では線を引かない', () => {
+    const document = sphereDocument(0);
+    expect(sphereGridSphereOf(sphereOf(document), resolveSketch(createEmptySketchDocument()))).toBeNull();
+  });
+
+  it('スケッチの点に置いた球は、その点が解けていれば中心が決まる', () => {
+    const sketch = appendFeature(createEmptySketchDocument(), {
+      id: 'point-1',
+      name: '点1',
+      planeId: FREE_WORK_PLANE_ID,
+      kind: 'point',
+      at: {
+        mode: 'absolute',
+        x: expressionValueFromNumber(0),
+        y: expressionValueFromNumber(0),
+        z: expressionValueFromNumber(30),
+      },
+    });
+    const empty = createEmptyPartDocument();
+    const document = appendSolid(empty, {
+      ...createPrimitiveFeature(empty, 'sphere', {
+        kind: 'sketchPoint',
+        ref: { sketchId: empty.sketches[0].id, pointFeatureId: 'point-1' },
+      }),
+      shape: { kind: 'sphere', radius: expressionValueFromNumber(10) },
+    });
+    const sphere = sphereGridSphereOf(sphereOf(document), resolveSketch(sketch));
+    expect(sphere?.center).toEqual([0, 0, 30]);
   });
 });

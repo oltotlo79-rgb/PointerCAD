@@ -48,13 +48,17 @@ describe('ヘルプの目録', () => {
     expect(findHelpTopic('cut')?.path).toBe('docs/ja/cut.md');
   });
 
+  it('球の表面に点を置く説明を id で引ける(FR-431、P5 タスク22)', () => {
+    expect(findHelpTopic('sphere-grid')?.path).toBe('docs/ja/sphere-grid.md');
+  });
+
   /**
    * 目録の件数(P5 タスク52・27f)。**新しい機能はヘルプを必ず伴う**(NFR-MA-4)ので、
    * 道具を足したのに目録が増えていない取りこぼしをここで止める。
-   * P4 完了時 27 + P5 で足した 15(外観 3・画面の見た目・基本形状・面をつなぐ/ロフト・
-   * 測定 2・立体の形を変える・平面で切る ほか)= 42。
+   * P4 完了時 27 + P5 で足した 16(外観 3・画面の見た目・基本形状・球の表面に点を置く・
+   * 面をつなぐ/ロフト・測定 2・立体の形を変える・平面で切る ほか)= 43。
    */
   it('目録の件数が数えたとおりになる(NFR-MA-4)', () => {
-    expect(HELP_TOPICS).toHaveLength(42);
+    expect(HELP_TOPICS).toHaveLength(43);
   });
 });

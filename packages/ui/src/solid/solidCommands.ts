@@ -28,9 +28,11 @@ import {
   DEFAULT_TAPER_ANGLE_DEGREES,
   findFeature,
   findSketch,
+  FREE_WORK_PLANE_ID,
   liveBodyIds,
   nextSolidId,
   nextSolidName,
+  replaceSketch,
   type BooleanOperation,
   type ExtrudeEnd,
   type ExtrudeFeature,
@@ -82,6 +84,10 @@ import {
   ruledToolReadiness,
   type RuledContext,
 } from './ruledCommands.js';
+import {
+  commitSphereGridPoint,
+  selectedSphereFeature,
+} from '../sketch/sketchCommands.js';
 import { findSketchFeatureAt } from './sketchRefs.js';
 import { selectedSubShapeRefs, type SubShapeBody } from './subShapeSelection.js';
 
@@ -134,6 +140,13 @@ export const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 export const DEFAULT_SPRING_HANDEDNESS: SpringHandedness = 'right';
 /** 全長・ピッチ・巻数のうち計算で求める欄の既定値(§0.a-0.30)。 */
 export const DEFAULT_SPRING_DERIVED: SpringDerived = 'length';
+/**
+ * 球面上の点の緯度・経度の既定値(度。FR-431、タスク22)。**赤道の +X 側**で、
+ * 段の欄の既定(`numericInput.ts` の `SPHERE_GRID_POINT_FIELDS`)と同じ 0 / 0 にする。
+ * 何も打たずに Enter を押しても点が 1 つできる(NFR-UX-4)。
+ */
+export const DEFAULT_SPHERE_GRID_LATITUDE: ExpressionValue = expressionValueFromNumber(0);
+export const DEFAULT_SPHERE_GRID_LONGITUDE: ExpressionValue = expressionValueFromNumber(0);
 /**
  * ばねの全長の欄が無いとき(既定の `derived: 'length'` のとき、springLength は
  * その場入力に出てこない)に `commitSpring` へ渡す穴埋め値。`commitSpring` は
@@ -702,6 +715,15 @@ export function solidToolReadiness(
       return primitiveToolReadiness(context, tool);
     }
     /*
+      球面上の点(FR-431、タスク22)。押せる条件は「球を 1 つ選んでいること」だけ。
+      緯度・経度は既定(0 / 0)があるので何も打たずに決められる(NFR-UX-4)。
+      **どの球かは選択からしか決まらない**ので、ここだけは断る理由を持つ。
+    */
+    case 'sphereGridPoint':
+      return selectedSphereFeature(document, selection) === null
+        ? { ready: false, reasonKey: 'solidError.sphereGridMissingSphere' }
+        : READY;
+    /*
       面をつなぐ(FR-430)とロフト(FR-410)。タスク27、§2.9。押せる条件は
       `ruledCommands.ts` の 1 か所だけに置く(判断を 2 か所に書かない)。どちらも
       **先に輪郭を選んでから押す**道具なので、基本形状と違って押せない理由を持つ。
@@ -881,6 +903,40 @@ export function commitSolidInput(
     case 'torus': {
       const context: PrimitiveContext = { document, bodies, selection };
       return commitPrimitive(context, commit);
+    }
+    /*
+      球面上の点(FR-431、タスク22)。**作る先だけが違う**(立体ではなく 3D スケッチの点)
+      ので、ここで部品文書のスケッチを差し替えて返す。点の組み立てそのものは
+      `sketchCommands.ts` の `commitSphereGridPoint` 1 か所にあり、案内の交点を押した経路
+      (`attachSketchInteraction.ts`)とまったく同じ形の文書になる。
+
+      作図面(`planeId`)はいま編集しているスケッチの既定のものを使う。球面上の点の座標は
+      基準(球の緯度・経度)だけで決まり、作図面を 1 度も見ない(model の
+      `resolvePointReference`)ので、どの面で編集していても同じ点ができる。
+    */
+    case 'sphereGridPoint': {
+      const sphere = selectedSphereFeature(document, selection);
+      if (sphere === null) {
+        return { ok: false, reasonKey: 'solidError.sphereGridMissingSphere' };
+      }
+      const sketch = findSketch(document, document.activeSketchId) ?? document.sketches[0];
+      if (sketch === undefined) {
+        // 部品文書はスケッチを必ず 1 本持つので通らないが、型の絞り込みに要る。
+        return { ok: false, reasonKey: 'solidError.sphereGridNoSketch' };
+      }
+      const next = commitSphereGridPoint(
+        sketch,
+        // 球面上の点は 3D スケッチの点(FR-330)。作図面の上には乗らない。
+        FREE_WORK_PLANE_ID,
+        sphere.id,
+        commit.values.latitude ?? DEFAULT_SPHERE_GRID_LATITUDE,
+        commit.values.longitude ?? DEFAULT_SPHERE_GRID_LONGITUDE,
+      );
+      const created = next.features[next.features.length - 1];
+      if (created === undefined) {
+        return { ok: false, reasonKey: 'solidError.sphereGridNoSketch' };
+      }
+      return { ok: true, document: replaceSketch(document, next), featureId: created.id };
     }
     // 面をつなぐ・ロフト(タスク27、FR-430、FR-410)。対象を消費しない「作る」
     // フィーチャー(§0.a-0.27)なので、加工ではなくここから `ruledCommands.ts` へ渡す。

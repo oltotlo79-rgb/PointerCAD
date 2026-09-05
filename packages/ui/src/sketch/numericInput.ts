@@ -144,6 +144,14 @@ export type SolidToolId =
   | 'cylinder'
   | 'cone'
   | 'torus'
+  /**
+   * 球面上の点(FR-431、P5 タスク22)。**立体ではなく 3D スケッチの点を 1 つ作る**道具だが、
+   * 「球を選んでから押し、1 段だけ数値を聞いて確定する」流れが基本形状とまったく同じなので、
+   * 道具の一覧・段の表・ツールバーの「作る」を基本形状と共有する(利用者から見ても
+   * 球のとなりに並んでいるほうが探しやすい)。作る先だけが違うので、確定は
+   * `solidCommands.ts` から `sketchCommands.ts` の `commitSphereGridPoint` へ回す。
+   */
+  | 'sphereGridPoint'
   /*
     面をつなぐ(罫線面、FR-430)とロフト(FR-410。P5 タスク27、§2.9)。どちらも
     「輪郭を選んでから 1 段だけ数値を聞き、新しいボディを作る」道具で、対象を消費しない
@@ -452,6 +460,11 @@ export type SolidNumericInputStep =
   | 'cylinderSize'
   | 'coneSize'
   | 'torusSize'
+  /**
+   * 球面上の点の緯度・経度(FR-431、タスク22、§2.15 の段の表)。1 段・欄 2 つで終わる。
+   * ビューポートで案内の交点に吸い付くと、この 2 欄が吸い付いた先の値で埋まる。
+   */
+  | 'sphereGridPoint'
   /*
     面をつなぐ・ロフトのねじれの段(FR-430、FR-410。P5 タスク27、§2.15 の段の表)。
     どちらも 1 段で終わる。罫線面だけは「なめらかさ」の選択肢を添えるが、**球を含まない
@@ -1302,6 +1315,27 @@ const TORUS_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'torusMinorRadius', labelKey: 'numericInput.field.torusMinorRadius', tooltipKey: 'numericInput.tooltip.torusMinorRadius', unit: 'mm', defaultSource: String(DEFAULT_TORUS_MINOR_RADIUS_MM), range: POSITIVE },
 ];
 
+/**
+ * 緯度の範囲(度)。**両端を含む**(±90 は極そのもので、正しい点になる)。
+ * 極を越えると裏側へ回り込んで利用者の意図と一致しないので、model の
+ * `resolvePointReference` も同じ範囲で断る(`LATITUDE_RANGE_MESSAGE`)。
+ * 同じ条件を欄の側でも見て、**決める前に赤くする**(NFR-UX-5)。
+ */
+const LATITUDE_RANGE: NumericFieldRange = { min: -90, minInclusive: true, max: 90, maxInclusive: true };
+
+/**
+ * 球面上の点の緯度・経度(FR-431、タスク22)。**欄 2 つの段**(§2.15 の表)。
+ *
+ * 経度は範囲を持たない。360 度回れば同じ点に戻るので、`450` と書いても `90` と同じ点になる
+ * (model の `sphereGridPosition` が剰余を取らずそのまま三角関数へ渡す)。
+ * 既定はどちらも 0(赤道の +X 側)で、空欄のまま Enter を押してもそこに点ができる
+ * (NFR-UX-4)。
+ */
+const SPHERE_GRID_POINT_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'latitude', labelKey: 'numericInput.field.latitude', tooltipKey: 'numericInput.tooltip.latitude', unit: 'degree', defaultSource: '0', range: LATITUDE_RANGE },
+  { key: 'longitude', labelKey: 'numericInput.field.longitude', tooltipKey: 'numericInput.tooltip.longitude', unit: 'degree', defaultSource: '0' },
+];
+
 /* ---- P5 タスク27: 面をつなぐ・ロフトの欄(FR-430、FR-410、§2.15) ---- */
 
 /**
@@ -1880,6 +1914,9 @@ function solidFieldDefinitionsFor(
       return CONE_SIZE_FIELDS;
     case 'torusSize':
       return TORUS_SIZE_FIELDS;
+    // 球面上の点(FR-431、タスク22)。緯度・経度の 2 欄で、選択肢もつまみも持たない。
+    case 'sphereGridPoint':
+      return SPHERE_GRID_POINT_FIELDS;
     // 面をつなぐ・ロフト(FR-430、FR-410、タスク27)。どちらも欄はねじれ 1 つだけで、
     // 罫線面の「なめらかさ」は選択肢(欄ではない)なのでここには出てこない。
     case 'ruledTwist':
@@ -1968,6 +2005,7 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   cylinderSize: 'numericInput.title.cylinder',
   coneSize: 'numericInput.title.cone',
   torusSize: 'numericInput.title.torus',
+  sphereGridPoint: 'numericInput.title.sphereGridPoint',
   ruledTwist: 'numericInput.title.ruled',
   loftTwist: 'numericInput.title.loft',
   // P5 の Should / Could 群(タスク48 が ja.json へ足した見出し、タスク49 の段)。
@@ -2058,6 +2096,7 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'cylinderSize',
   'coneSize',
   'torusSize',
+  'sphereGridPoint',
   'ruledTwist',
   'loftTwist',
   'draftAngle',
@@ -2116,6 +2155,8 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
   cylinder: 'cylinderSize',
   cone: 'coneSize',
   torus: 'torusSize',
+  // 球面上の点(FR-431、タスク22)。緯度・経度の 1 段だけで終わる。
+  sphereGridPoint: 'sphereGridPoint',
   // 面をつなぐ・ロフト(FR-430、FR-410、タスク27)。どちらもねじれの 1 段だけで終わる。
   ruled: 'ruledTwist',
   loft: 'loftTwist',
@@ -2306,6 +2347,7 @@ const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
   cylinderSize: 'cylinder',
   coneSize: 'cone',
   torusSize: 'torus',
+  sphereGridPoint: 'sphereGridPoint',
   ruledTwist: 'ruled',
   loftTwist: 'loft',
   // P5 の Should / Could 群(タスク49)。移動/回転は 2 段とも同じ道具を指す(ばねと同じ)。
@@ -2346,6 +2388,8 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   cylinderSize: [],
   coneSize: [],
   torusSize: [],
+  // 球面上の点もつまみを持たない(緯度・経度の 2 欄だけ、§2.15 の段の表)。
+  sphereGridPoint: [],
   // 面をつなぐ・ロフトもつまみを持たない(§2.15 の段の表。ロフトの「閉じる」は
   // 常に入で文書にも UI にも出さない決まりになった。タスク25 の統括の決定)。
   ruledTwist: [],
@@ -4113,6 +4157,13 @@ export interface SolidCommitValues {
   readonly torusMajorRadius?: ExpressionValue;
   readonly torusMinorRadius?: ExpressionValue;
   /**
+   * 球面上の点の緯度・経度(度。FR-431、タスク22)。緯度は −90〜90、経度は 360 で回る。
+   * 名前を `latitude` / `longitude` と分けてあるのは、他の角度の欄(`angle`)と
+   * 取り違えないため(基本形状の半径を形ごとに分けてあるのと同じ考え方)。
+   */
+  readonly latitude?: ExpressionValue;
+  readonly longitude?: ExpressionValue;
+  /**
    * 面をつなぐ・ロフトのねじれの補正(個。FR-430、FR-410、§0.a-0.28)。
    * 2 つの道具で意味も単位も同じなので欄の名前も 1 つにする(基本形状の半径のように
    * 「どの形の値か」で取り違える余地が無い)。
@@ -4552,6 +4603,9 @@ function solidValuesFor(
         torusMajorRadius: get('torusMajorRadius'),
         torusMinorRadius: get('torusMinorRadius'),
       };
+    // 球面上の点(FR-431、タスク22)。欄の名前がそのまま緯度・経度になる。
+    case 'sphereGridPoint':
+      return { latitude: get('latitude'), longitude: get('longitude') };
     // 面をつなぐ・ロフト(FR-430、FR-410、タスク27)。欄はねじれ 1 つだけ。
     case 'ruledTwist':
     case 'loftTwist':
@@ -5285,6 +5339,7 @@ export function nextNumericInput(
     case 'cylinderSize':
     case 'coneSize':
     case 'torusSize':
+    case 'sphereGridPoint':
     case 'ruledTwist':
     case 'loftTwist':
     case 'draftAngle':

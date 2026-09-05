@@ -11,7 +11,25 @@ import { startAutoSave } from '../file/attachAutoSave.js';
 import { attachDisplaySettings } from '../shell/applyDisplaySettings.js';
 import { AppShell } from '../shell/AppShell.js';
 import { createPartMeasurer } from '../solid/measureCommands.js';
-import { attachPartMeasure, attachPartRecompute } from '../store/useAppStore.js';
+import { attachPartMeasure, attachPartRecompute, useAppStore } from '../store/useAppStore.js';
+
+/** 検査だけが使う読み取り口の 1 件ぶんの形(下の `useEffect` の注釈が理由)。 */
+interface RecomputeStats {
+  /** 作り直さずに済んだ段の数(ストアの `cacheHits`)。 */
+  readonly cacheHits: number;
+  /** 計算中か(ストアの `isComputing`)。 */
+  readonly isComputing: boolean;
+}
+
+declare global {
+  interface Window {
+    /**
+     * **検査専用**。いまの再計算の様子を読む(アプリは 1 か所も呼ばない)。
+     * 頁を開いてから `PointerCadApp` が載るまでの間は `undefined`。
+     */
+    pcadRecomputeStats?: () => RecomputeStats;
+  }
+}
 
 /**
  * アプリの入口。Web 版とデスクトップ版で同じものを使う(要件§1.5、機能差を作らない)。
@@ -75,6 +93,27 @@ export function PointerCadApp(): React.JSX.Element {
      * ここは始めて片付けるだけにする。
      */
     return attachDisplaySettings(document.documentElement);
+  }, []);
+
+  useEffect(() => {
+    /*
+     * **検査だけが使う読み取り口**(P5 タスク56、§0.a-0.53 の (b))。アプリはこれを
+     * 読まないし書かない。外した形は `e2e/tests/solid.spec.ts` の `pcadProgressSightings`
+     * と同じで、**頁の外(Playwright)からしか見えない状態を 1 つだけ差し出す**。
+     *
+     * 要る理由: 「色を変えても再計算が走らない」(§2.3、FR-1106)は**起きなかったこと**の
+     * 検査なので、画面に出る印だけでは足りない。計算し直せば作り直さずに済んだ段の数
+     * (`cacheHits`)が必ず増えるので、外観を変える前後で**増えていない**ことを見れば、
+     * 計算そのものが走らなかったと言い切れる(帯や三角形の数は「速すぎて見えなかった」
+     * だけかもしれない)。
+     */
+    window.pcadRecomputeStats = () => {
+      const state = useAppStore.getState();
+      return { cacheHits: state.cacheHits, isComputing: state.isComputing };
+    };
+    return () => {
+      delete window.pcadRecomputeStats;
+    };
   }, []);
 
   return <AppShell />;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { featureIdOf } from '../sketch/featureSummary.js';
+import type { NumericInputToolId } from '../sketch/numericInput.js';
 
 import {
   commonBodyIdOf,
@@ -13,6 +14,7 @@ import {
   subShapeElementId,
   subShapeRefOf,
   SUB_SHAPE_SEPARATOR,
+  type SelectionKind,
   type SubShapeBody,
 } from './subShapeSelection.js';
 
@@ -354,13 +356,88 @@ describe('Should 群の道具が選ぶ種類(P5 タスク50・27e、§2.15)', ()
 
   it('切断は選ぶ種類を切り替えない(平面の材料を 1〜3 キーで選ぶ、§2.15)', () => {
     expect(keepsSelectionKind('cut')).toBe(true);
-    // 面を選ぶ 4 つは切り替える(対象を選び直してもらう道具)。
-    for (const tool of ['draft', 'shell', 'emboss', 'threadShaft'] as const) {
+    /*
+      面を選ぶ 4 つのうち、**面が必須の 3 つ**(抜き勾配・エンボス・外ねじ)は切り替える
+      (対象を選び直してもらう道具)。くり抜きだけは切り替えない(下の節の理由)。
+    */
+    for (const tool of ['draft', 'emboss', 'threadShaft'] as const) {
       expect(keepsSelectionKind(tool), tool).toBe(false);
     }
+    expect(keepsSelectionKind('shell')).toBe(true);
     // 立体のまま始める道具も、切り替えないのは切断だけ(ほかは既定の body へ切り替わる)。
     for (const tool of ['mirrorSolid', 'transform', 'scale'] as const) {
       expect(keepsSelectionKind(tool), tool).toBe(false);
+    }
+  });
+
+  it('球面上の点も選ぶ種類を切り替えない(球面を選んでから押せる、FR-431・P5 タスク22)', () => {
+    /*
+      対象は「どの球か」の 1 つだけで、立体そのものを選んでいても球面(面)・稜線・頂点を
+      選んでいても**同じ球に行き着く**(`selectedSphereFeature` が `立体の id#face:0` の
+      区切りより前で引く)。決め打ちで `body` へ切り替えると、球面を押して選んでから道具を
+      押した瞬間にその選択が消え、「球を選んでから押してください。」になってしまう。
+    */
+    expect(keepsSelectionKind('sphereGridPoint')).toBe(true);
+    // 種類そのものは「立体」から始める(何も選んでいなければ球を立体として選べる)。
+    expect(selectionKindForTool('sphereGridPoint')).toBe('body');
+  });
+});
+
+/* ===== P5 タスク56: 面を選ぶ 4 つの道具を押したときに選択が残るか(タスク52 の申し送り) ===== */
+
+/**
+ * 道具を押した後の「選ぶ種類」と選択。`store/useAppStore.ts` の `setActiveTool` が
+ * この 2 行だけで決めているので、同じ規則をここへ写して**押した瞬間の結末**を検査する
+ * (ストアを組み立てずに済み、規則が食い違えばここが落ちる)。
+ */
+function afterPressingTool(
+  currentKind: SelectionKind,
+  selection: readonly string[],
+  tool: NumericInputToolId,
+): { readonly kind: SelectionKind; readonly selection: readonly string[] } {
+  const kind = keepsSelectionKind(tool) ? currentKind : selectionKindForTool(tool);
+  return { kind, selection: kind === currentKind ? selection : [] };
+}
+
+describe('面を選ぶ 4 つの道具と、押したときの選択の行方(P5 タスク56)', () => {
+  /*
+    タスク52 の申し送り(docs/報告記録.md 2026-09-06 04:30): 面を 1 枚も選ばずに
+    くり抜こうとすると `selectionKindForTool('shell')` が face を返して選択が空になり、
+    「対象になる立体が選ばれていません」で作れなかった。くり抜きは**開ける面 0 枚**でも
+    成立する(全面くり抜き = 開口なしの中空)ので、立体だけの選択が残らなければならない。
+  */
+  it('立体を選んでから「くり抜き」を押しても、その立体が選ばれたまま残る(FR-418)', () => {
+    const pressed = afterPressingTool('body', ['extrude-1'], 'shell');
+    expect(pressed.kind).toBe('body');
+    expect(pressed.selection).toEqual(['extrude-1']);
+  });
+
+  it('面を選んでから「くり抜き」を押しても、その面が残る(開ける面を先に選ぶ順)', () => {
+    const pressed = afterPressingTool('face', ['extrude-1#face:0'], 'shell');
+    expect(pressed.kind).toBe('face');
+    expect(pressed.selection).toEqual(['extrude-1#face:0']);
+    // 面の属する立体が対象になる(`shapeEditCommands.ts` の `shapeEditTargetOf`)。
+    expect(commonBodyIdOf(pressed.selection)).toBe('extrude-1');
+  });
+
+  it('抜き勾配・エンボス・外ねじは立体だけの選択では作れないので、面を選ぶ状態へ移る', () => {
+    /*
+      この 3 つは面が必須(抜き勾配は基準の平らな面+傾ける面、エンボスは平らな面、
+      外ねじは円柱の面)。立体だけを選んだ状態から押したときは、選択を持ち越しても
+      作れないので、**その場でビューポートの面を押せる状態**へ移して後から足せるようにする。
+    */
+    for (const tool of ['draft', 'emboss', 'threadShaft'] as const) {
+      const pressed = afterPressingTool('body', ['extrude-1'], tool);
+      expect(pressed.kind, tool).toBe('face');
+      expect(pressed.selection, tool).toEqual([]);
+    }
+  });
+
+  it('4 つとも「面を選んでから道具」の順では選択が消えない(NFR-UX-1)', () => {
+    for (const tool of ['draft', 'shell', 'emboss', 'threadShaft'] as const) {
+      const pressed = afterPressingTool('face', ['extrude-1#face:0', 'extrude-1#face:1'], tool);
+      expect(pressed.kind, tool).toBe('face');
+      expect(pressed.selection, tool).toEqual(['extrude-1#face:0', 'extrude-1#face:1']);
     }
   });
 });

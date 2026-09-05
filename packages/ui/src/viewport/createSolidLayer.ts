@@ -93,6 +93,12 @@ const SOLID_RENDER_ORDER = 1;
  */
 const SOLID_EDGE_RENDER_ORDER = SOLID_RENDER_ORDER + 0.25;
 
+/**
+ * 球面の案内線(FR-431、タスク21)の不透明度。形そのものより控えめにして、
+ * 案内であることが見た目で分かるようにする(§0.a-0.21)。
+ */
+const SPHERE_GRID_OPACITY = 0.5;
+
 /** 部分形状の強調(重ね描き)の面の不透明度(§0.a-0.7)。 */
 const SUB_SHAPE_FACE_OPACITY = 0.35;
 /** 部分形状の面の強調は、立体の面(SOLID_RENDER_ORDER)のすぐ後ろに描く。 */
@@ -322,6 +328,14 @@ export interface SolidLayer {
    * 並びを触らない。
    */
   updateThreadMarks(marks: readonly ThreadMarkInfo[]): void;
+  /**
+   * 球面の案内線(球面グリッド、FR-431、P5 タスク21)の線分列を差し替える。
+   *
+   * **緯線・経線をまとめて 1 本の `LineSegments`** に入れる(§0.a-0.21)。`null` で消える。
+   * **同じ並び(同一参照)を渡し直したときは並びを触らない**(NFR-PF-1。ねじの印・
+   * 切断の予告と同じ約束)ので、呼び出し側は球も間隔も変わっていないときに組み立て直さない。
+   */
+  updateSphereGrid(positions: Float32Array | null): void;
   /**
    * 切断面の予告表示を差し替える(FR-432、P5 タスク27e、§0.a-0.61)。
    *
@@ -584,6 +598,33 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   cutPreviewFace.visible = false;
   group.add(cutPreviewFace);
 
+  /*
+    球面の案内線(球面グリッド、FR-431、§0.a-0.21、タスク21)。**全球ぶんを 1 本の
+    `LineSegments` にまとめる**ので、5° の 7,704 本でもドローコールは 1 回で済む。
+
+    色は方眼の主線(`--pcad-grid-major` に当たる薄い灰)にする。**ホバー・選択の色とは
+    別の色**にするのが要点で(docs/報告記録.md 2026-09-03 20:40 の①(b)「ホバーと選択の色が
+    近いと見分けられない」)、案内線が強調と同じ色だと「いま何を選んでいるか」が読めなくなる。
+
+    `depthTest: true` にして球の裏側の線は手前の面に隠す(§0.a-0.21 の手順2)。
+    球の三角形は真球の内側に張られる(弦なので必ず内側)ため、案内線を真半径で引くと
+    面と競って縞になる。**半径をごくわずかに持ち上げて**(`SPHERE_GRID_LIFT`)その競りを
+    避ける(持ち上げ量は組み立て側=`createViewportScene.ts` が決める)。
+  */
+  const sphereGridLines = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      color: DEFAULT_THEME_COLORS.gridMajor,
+      transparent: true,
+      opacity: SPHERE_GRID_OPACITY,
+      depthWrite: false,
+    }),
+  );
+  sphereGridLines.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
+  sphereGridLines.visible = false;
+  group.add(sphereGridLines);
+  let lastSphereGridPositions: Float32Array | null = null;
+
   const cutPreviewArrow = new THREE.LineSegments(
     new THREE.BufferGeometry(),
     new THREE.LineBasicMaterial({
@@ -792,6 +833,21 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       threadMarkLines.visible = positions.length > 0;
     },
 
+    updateSphereGrid(positions): void {
+      if (positions === lastSphereGridPositions) {
+        // 同じ球・同じ間隔を渡し直したときは並びを 1 つも触らない(NFR-PF-1)。
+        return;
+      }
+      lastSphereGridPositions = positions;
+      if (positions === null || positions.length === 0) {
+        sphereGridLines.visible = false;
+        return;
+      }
+      setVectorAttribute(sphereGridLines.geometry, 'position', positions);
+      sphereGridLines.geometry.computeBoundingSphere();
+      sphereGridLines.visible = true;
+    },
+
     updateCutPreview(preview): void {
       if (preview === lastCutPreview) {
         // 同じ平面を渡し直したときは並びを 1 つも触らない(NFR-PF-1)。
@@ -831,6 +887,8 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
         overlay.vertices.material.color.setHex(color);
       }
       threadMarkLines.material.color.setHex(colors.threadMark);
+      // 案内線もテーマの薄い灰へ塗り替える(部品は作り直さない、FR-908)。
+      sphereGridLines.material.color.setHex(colors.gridMajor);
     },
 
     pickFace(raycaster): { readonly featureId: string; readonly triangleIndex: number } | null {
@@ -876,6 +934,8 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       }
       threadMarkLines.geometry.dispose();
       threadMarkLines.material.dispose();
+      sphereGridLines.geometry.dispose();
+      sphereGridLines.material.dispose();
       cutPreviewFace.geometry.dispose();
       cutPreviewFace.material.dispose();
       cutPreviewArrow.geometry.dispose();
@@ -884,6 +944,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       lastBundle = null;
       lastSubShapeBundle = null;
       lastThreadMarks = null;
+      lastSphereGridPositions = null;
       environment = null;
       appearanceDirty = true;
     },

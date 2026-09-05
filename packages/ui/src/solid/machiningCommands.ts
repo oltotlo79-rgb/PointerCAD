@@ -713,6 +713,7 @@ export function commitMachiningInput(
     case 'cylinder':
     case 'cone':
     case 'torus':
+    case 'sphereGridPoint':
     case 'ruled':
     case 'loft':
     case 'draft':

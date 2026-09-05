@@ -30,6 +30,11 @@ import {
 import { createEnvironmentStore, createEnvironmentTarget } from './createEnvironment.js';
 import { buildSubShapeGeometry, EMPTY_SUB_SHAPE_HIGHLIGHT } from './buildSubShapeGeometry.js';
 import {
+  buildSphereGridPositions,
+  isValidSphereGridStep,
+  type SphereGridSpec,
+} from './buildSphereGrid.js';
+import {
   cameraPosition,
   clamp,
   HOME_ORBIT,
@@ -119,6 +124,17 @@ export interface ViewportScene {
    */
   setCutPreview(preview: CutPreview | null): void;
   /**
+   * 球面の案内線(球面グリッド、FR-431、P5 タスク21)を差し替える。`null` で消える。
+   *
+   * **中身が同じなら組み立て直さない。** 呼び出し側(`ViewportCanvas.tsx`)は文書が
+   * 変わるたびに新しい値を作るので、参照ではなく**中心・半径・間隔の値**で見比べる
+   * (5 つの数の比較で、7,704 本の組み立てを丸ごと省ける。NFR-PF-1)。
+   *
+   * 間隔が 1 度未満・90 度超、半径が 0 以下のときは線を引かない(`buildSphereGrid.ts` の
+   * 断りをここで受け止め、例外を描画へ持ち込まない。FR-504)。
+   */
+  setSphereGrid(spec: SphereGridSpec | null): void;
+  /**
    * 画面座標(canvas の左上を原点とした画素)にあるボディの featureId。無ければ null
    * (FR-106)。透視投影でも平行投影でも、最後に描いたカメラで判定する。
    */
@@ -207,6 +223,16 @@ function collectThreadMarks(
 ): readonly ThreadMarkInfo[] {
   return bodies.flatMap((body) => body.threadMarks ?? []);
 }
+
+/**
+ * 球面の案内線を球の面からどれだけ外へ持ち上げるか(半径に対する割合、FR-431)。
+ *
+ * 球の三角形は真球の**内側**に張られる(弦なので必ず内側へ入る)ので、案内線を真半径で
+ * 引くと面と深度が競って縞になる。半径の 0.2% だけ外へ出せば、いちばん粗い分割でも面より
+ * 確実に手前に来る(r=10 なら 0.02mm。画面では 1 画素に満たない)。吸着で決まる点そのものは
+ * **真半径のまま**なので、作られる点の位置はこの持ち上げの影響を受けない。
+ */
+const SPHERE_GRID_LIFT = 0.002;
 
 /** 本アプリは Z 軸が上(計画書 §0.a-0.9)。three.js の既定(Y 上)から変える。 */
 const UP_AXIS = new THREE.Vector3(0, 0, 1);
@@ -345,6 +371,20 @@ function buildAxisGeometry(length: number, colors: ThemeColors): THREE.BufferGeo
   }
 
   return toLineGeometry(buffer);
+}
+
+/** 球面の案内線の中身が同じか(中心・半径・間隔の 5 つの数だけで決まる)。 */
+function sameSphereGridSpec(a: SphereGridSpec | null, b: SphereGridSpec | null): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  return (
+    a.radius === b.radius &&
+    a.stepDegrees === b.stepDegrees &&
+    a.center[0] === b.center[0] &&
+    a.center[1] === b.center[1] &&
+    a.center[2] === b.center[2]
+  );
 }
 
 export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
@@ -535,6 +575,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   /** 切断面の予告(FR-432、タスク27e)。道具を使っている間だけ入り、確定・取消で null に戻る。 */
   let cutPreview: CutPreview | null = null;
 
+  /** 球面の案内線(FR-431、タスク21)。出していないときは null。 */
+  let sphereGridSpec: SphereGridSpec | null = null;
+  let sphereGridPositions: Float32Array | null = null;
+
   /** 最後に描いたときのカメラ。画面座標との行き来はこれが決まってからでないとできない。 */
   let lastCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
   /** 最後に描いたときの見せ方。サムネイルを撮るときに同じ絵を描き直すのに使う。 */
@@ -561,6 +605,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     solidLayer.updateSubShapes(subShapeBundle);
     solidLayer.updateThreadMarks(threadMarks);
     solidLayer.updateCutPreview(cutPreview);
+    solidLayer.updateSphereGrid(sphereGridPositions);
     sketchLayer.update(sketchBundle, displayStyle);
     // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す(P4 仕上げ (f))。
     // ズームでカメラ距離が変わるたびに効くよう、描画のたびに計算し直す。
@@ -669,6 +714,17 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     setCutPreview(preview): void {
       cutPreview = preview;
+    },
+
+    setSphereGrid(spec): void {
+      if (sameSphereGridSpec(sphereGridSpec, spec)) {
+        return;
+      }
+      sphereGridSpec = spec;
+      sphereGridPositions =
+        spec === null || !isValidSphereGridStep(spec.stepDegrees) || !(spec.radius > 0)
+          ? null
+          : buildSphereGridPositions({ ...spec, radius: spec.radius * (1 + SPHERE_GRID_LIFT) });
     },
 
     pickBody(screenX, screenY): string | null {

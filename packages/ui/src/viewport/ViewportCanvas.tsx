@@ -16,6 +16,7 @@ import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
+import { sphereGridSphereOf, sphereGridTargetSphere } from '../sketch/sketchCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
@@ -23,6 +24,7 @@ import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import { createViewportScene } from './createViewportScene.js';
 import type { CutPreview } from './createSolidLayer.js';
+import type { SphereGridSpec } from './buildSphereGrid.js';
 import { readThemeColors } from './themeColors.js';
 
 /** 切断の予告を組み立てる材料。ストアから読むものだけを並べる。 */
@@ -77,6 +79,43 @@ function cutPreviewOf(source: CutPreviewSource): CutPreview | null {
   const keepOpposite =
     input.toggles.find((toggle) => toggle.key === 'cutKeepOpposite')?.value === true;
   return { plane, diagonal, keep: keepOpposite ? 'negative' : 'positive' };
+}
+
+/** 球面の案内線を組み立てる材料。ストアから読むものだけを並べる。 */
+interface SphereGridSource {
+  readonly document: ReturnType<typeof useAppStore.getState>['document'];
+  readonly resolvedSketch: ReturnType<typeof useAppStore.getState>['resolvedSketch'];
+  readonly selection: readonly string[];
+  readonly sphereGridStep: ReturnType<typeof useAppStore.getState>['sphereGridStep'];
+  readonly sphereGridAlwaysVisible: boolean;
+}
+
+/**
+ * 球面の案内線(球面グリッド、FR-431、P5 タスク21、§0.a-0.21)をストアの状態から組み立てる。
+ *
+ * **出す条件**は「球を選んでいること、または『いつも出す』が入で球が 1 つでもあること」。
+ * 球が 1 つも無い文書では null になり、線分を 1 本も組み立てない(費用ゼロ)。
+ * 中心を求められない置き方(立体の頂点に置いた球)でも null になる
+ * (`sphereGridSphereOf` の注釈。緯度・経度を打って点を作る道はそのまま使える)。
+ */
+function sphereGridSpecOf(source: SphereGridSource): SphereGridSpec | null {
+  const feature = sphereGridTargetSphere(
+    source.document,
+    source.selection,
+    source.sphereGridAlwaysVisible,
+  );
+  if (feature === null) {
+    return null;
+  }
+  const sphere = sphereGridSphereOf(feature, source.resolvedSketch);
+  if (sphere === null) {
+    return null;
+  }
+  return {
+    center: sphere.center,
+    radius: sphere.radius,
+    stepDegrees: source.sphereGridStep.value,
+  };
 }
 
 /**
@@ -204,6 +243,8 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setMeasurement(initial.measurement);
     // 切断面の予告(FR-432、P5 タスク27e)。切断の段が開いている間だけ出る。
     scene.setCutPreview(cutPreviewOf(initial));
+    // 球面の案内線(FR-431、P5 タスク21)。球を選んでいる間(または「いつも出す」)だけ出る。
+    scene.setSphereGrid(sphereGridSpecOf(initial));
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
@@ -254,6 +295,21 @@ export function ViewportCanvas(): React.JSX.Element {
         next.document !== previous.document
       ) {
         scene.setCutPreview(cutPreviewOf(next));
+      }
+      /*
+        球面の案内線(FR-431、タスク21)。**材料が変わったときだけ**組み立て直す。
+        中心と半径は文書と解決結果から、出すか出さないかは選択と設定から決まるので、
+        その 5 つのどれかが変わったときに作り直せばよい。中身が同じなら `setSphereGrid` が
+        線分の組み立てそのものを省く(NFR-PF-1)。
+      */
+      if (
+        next.document !== previous.document ||
+        next.resolvedSketch !== previous.resolvedSketch ||
+        next.selection !== previous.selection ||
+        next.sphereGridStep !== previous.sphereGridStep ||
+        next.sphereGridAlwaysVisible !== previous.sphereGridAlwaysVisible
+      ) {
+        scene.setSphereGrid(sphereGridSpecOf(next));
       }
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。任意の作業平面(FR-328)は
       // 文書が変わっても面の位置が動くので、解いた面そのものの変化を見る(タスク13)。

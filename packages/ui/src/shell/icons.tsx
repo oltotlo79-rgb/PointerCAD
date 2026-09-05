@@ -1028,6 +1028,21 @@ export function SphereIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/**
+ * 球面上の点(FR-431、P5 タスク22)。球に緯線・経線の案内を 1 本ずつ引き、その交点に
+ * 点を打った形。球の図柄(`SphereIcon`)とは「交点の丸」があるかどうかで見分けられる。
+ */
+export function SphereGridPointIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="5.8" fill="currentColor" fillOpacity={0.2} />
+      <path d="M8 2.2c1.9 1.6 1.9 10 0 11.6" />
+      <path d="M2.4 6.2c3.4 1.3 7.8 1.3 11.2 0" />
+      <circle cx="10.6" cy="5.6" r="1.5" fill="currentColor" />
+    </SvgIcon>
+  );
+}
+
 /** 箱。立方体を斜めから見た形(製品の印の立方体と同じ描き方で、面を塗る)。 */
 export function BoxIcon(props: IconProps): React.JSX.Element {
   return (

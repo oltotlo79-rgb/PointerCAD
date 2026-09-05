@@ -9,11 +9,13 @@
  * (attachCameraControls)とぶつからないよう、左ボタン以外と Alt 併用は何もしない。
  */
 
+import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   baseWorkPlane,
   curveEnd,
   curveStart,
   DEFAULT_WORK_PLANE_ID,
+  FREE_WORK_PLANE_ID,
   dotVec3,
   isFreeWorkPlaneId,
   lengthVec3,
@@ -91,7 +93,13 @@ import {
   projectionTakesSubShape,
 } from '../sketch/projectionCommands.js';
 import { resolveShapePoints } from '../sketch/shapeCommands.js';
-import { commitFace, commitSubShapePoint } from '../sketch/sketchCommands.js';
+import {
+  commitFace,
+  commitSphereGridPoint,
+  commitSubShapePoint,
+  selectedSphereFeature,
+  sphereGridSphereOf,
+} from '../sketch/sketchCommands.js';
 import { extendPreviewAt, sameEditPreview, trimPreviewAt } from '../sketch/trimPreview.js';
 import {
   chooseSnap,
@@ -127,6 +135,7 @@ import {
 } from './dragSketch.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { gridSpacing } from './gridMath.js';
+import { snapToSphereGrid, type SphereGridPoint, type SphereGridSpec } from './buildSphereGrid.js';
 
 const LEFT_BUTTON = 0;
 
@@ -571,6 +580,123 @@ export function attachSketchInteraction(
   }
 
   /* ---------------------------------------------------------------- *
+   * 球面上の点(FR-431、計画書タスク21・22)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * いま吸着の相手にする球と間隔(FR-431)。相手がいなければ null。
+   *
+   * 相手は**選んでいる球だけ**にする(「いつも出す」で見えているだけの球は相手にしない。
+   * どの球の上に点を置くかは利用者が選んだもので決める、`sphereGridTargetSphere` の注釈)。
+   * 吸着そのものが切(FR-107)のときも相手にしない。
+   */
+  function sphereGridTarget(): { readonly spec: SphereGridSpec; readonly sphereFeatureId: string } | null {
+    const state = useAppStore.getState();
+    if (state.activeTool !== 'sphereGridPoint' || !state.snapEnabled) {
+      return null;
+    }
+    const feature = selectedSphereFeature(state.document, state.selection);
+    if (feature === null) {
+      return null;
+    }
+    const sphere = sphereGridSphereOf(feature, state.resolvedSketch);
+    if (sphere === null) {
+      return null;
+    }
+    return {
+      sphereFeatureId: sphere.featureId,
+      spec: {
+        center: sphere.center,
+        radius: sphere.radius,
+        stepDegrees: state.sphereGridStep.value,
+      },
+    };
+  }
+
+  /**
+   * ポインタの下にある案内線の交点(FR-431、§0.a-0.22)。無ければ null。
+   *
+   * **候補を全部回さない。** 光線と球の交点を解いて緯度・経度へ直し、間隔で丸めるだけなので、
+   * 費用は交点の数(5° で 2,522 個)に依らず一定になる(`buildSphereGrid.ts` の
+   * `nearestSphereGridPoint`)。P1 の当たり判定(`pickMath.ts`)のように候補を毎回
+   * 画面へ写していたら `pointermove` ごとに 2,522 回の変換になり、NFR-PF-1 を割る。
+   * 画面座標で 12 画素まで、の判定だけは `snapToSphereGrid` が 1 点ぶん行う。
+   */
+  function sphereGridPointAtPointer(
+    pointer: readonly [number, number],
+  ): { readonly point: SphereGridPoint; readonly sphereFeatureId: string } | null {
+    const target = sphereGridTarget();
+    if (target === null) {
+      return null;
+    }
+    const ray = scene.pointerRay(pointer[0], pointer[1]);
+    if (ray === null) {
+      return null;
+    }
+    const point = snapToSphereGrid(target.spec, ray, project, pointer);
+    return point === null ? null : { point, sphereFeatureId: target.sphereFeatureId };
+  }
+
+  /**
+   * 案内線の交点に吸い付いた緯度・経度を、開いている段の欄へ入れる(タスク22 手順2)。
+   *
+   * **値が変わったときだけ**ストアへ書く。ポインタが同じ升の中を滑っている間は丸めた
+   * 緯度・経度が変わらないので、`pointermove` のたびに書き直すことはない(NFR-PF-1)。
+   */
+  function updateSphereGridInput(pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    const opened = state.numericInput;
+    if (opened === null || opened.toolId !== 'sphereGridPoint') {
+      return;
+    }
+    const found = sphereGridPointAtPointer(pointer);
+    if (found === null) {
+      return;
+    }
+    const latitude = expressionValueFromNumber(found.point.latitude).source;
+    const longitude = expressionValueFromNumber(found.point.longitude).source;
+    if (opened.fields[0]?.source === latitude && opened.fields[1]?.source === longitude) {
+      return;
+    }
+    state.updateNumericInput(
+      reduceNumericInput(opened, {
+        type: 'setValues',
+        values: [found.point.latitude, found.point.longitude],
+      }),
+    );
+  }
+
+  /**
+   * 案内線の交点を押して球面上の点を 1 つ作る(FR-431)。作れたら true。
+   *
+   * 交点に吸い付いていないときは false を返し、呼び出し側はふつうの選択(球を選び直す)へ
+   * 落とす。**押した瞬間に決まる**(立体の頂点を押して点を作る `commitVertexPoint` と同じ)
+   * ので、道具も選択もそのまま残り、続けて何点でも取れる。
+   *
+   * 作る中身は緯度・経度を打つ経路(`solidCommands.ts`)と同じ `commitSphereGridPoint`
+   * なので、どちらから作っても文書はまったく同じ形になる(NFR-UX-1)。
+   */
+  function commitSphereGridClick(pointer: readonly [number, number]): boolean {
+    const found = sphereGridPointAtPointer(pointer);
+    if (found === null) {
+      return false;
+    }
+    const state = useAppStore.getState();
+    state.setSolidError(null);
+    state.setSketch(
+      commitSphereGridPoint(
+        state.sketch,
+        // 球面上の点は 3D スケッチの点(FR-330)。作図面の上には乗らない。
+        FREE_WORK_PLANE_ID,
+        found.sphereFeatureId,
+        expressionValueFromNumber(found.point.latitude),
+        expressionValueFromNumber(found.point.longitude),
+      ),
+    );
+    return true;
+  }
+
+  /* ---------------------------------------------------------------- *
    * トリム・延長(FR-322、計画書タスク22、§0.a-0.26 の利用者の決定)
    * ---------------------------------------------------------------- */
 
@@ -817,6 +943,22 @@ export function attachSketchInteraction(
         タスク30 不具合(c))。吸着も使わない。
       */
       const nextHovered = pickSubShapeAt(pointer);
+      if (nextHovered !== state.hoveredElementId) {
+        state.setHovered(nextHovered);
+      }
+      clearSnapIndicators();
+      return;
+    }
+
+    if (state.activeTool === 'sphereGridPoint') {
+      /*
+        球面上の点(FR-431、タスク21・22)。案内線の交点に吸い付いた緯度・経度を段の欄へ
+        入れ、押せば点になることを見せる(NFR-UX-5)。スケッチの要素の吸着も向きの吸着も
+        通さない——狙っているのは球の上の交点だけなので、他の候補を混ぜると交点から
+        引き離される。乗せている球そのものは強調して「どの球の上か」を示す。
+      */
+      updateSphereGridInput(pointer);
+      const nextHovered = pickBodyAt(pointer);
       if (nextHovered !== state.hoveredElementId) {
         state.setHovered(nextHovered);
       }
@@ -1457,6 +1599,19 @@ export function attachSketchInteraction(
         }
       }
       pickInto(pointer, event.shiftKey);
+      return;
+    }
+
+    if (tool === 'sphereGridPoint') {
+      /*
+        球面上の点(FR-431、タスク22)。案内線の交点を押したらその場で点ができ、
+        交点から外れたところを押したときは**球を選び直す**ふつうの選択になる
+        (どの球の上に置くかを押し直せる)。開いている欄から焦点は奪わない。
+      */
+      event.preventDefault();
+      if (!commitSphereGridClick(pointer)) {
+        pickInto(pointer, event.shiftKey);
+      }
       return;
     }
 

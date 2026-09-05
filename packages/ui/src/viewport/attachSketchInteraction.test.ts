@@ -8,6 +8,7 @@
  * 形への詰め替えだけを、DOM に触れない純関数として検査する。実際の pointermove /
  * pointerdown の配線は E2E(タスク30)で確かめる。
  */
+import type { Vec3 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -20,6 +21,9 @@ import {
   toSubShapeBodies,
 } from './attachSketchInteraction.js';
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
+import { snapToSphereGrid, type SphereGridSpec } from './buildSphereGrid.js';
+import type { ProjectToScreen } from '../sketch/snapMath.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 describe('isSolidTool', () => {
   it('P2 の3道具(押し出し・回転・縫合)を拾う', () => {
@@ -196,5 +200,58 @@ describe('toSubShapeBodies', () => {
     expect(result.faces).toEqual([]);
     expect(result.edges).toEqual([]);
     expect(result.vertices).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 球面上の点の吸着の費用(FR-431、NFR-PF-1、P5 タスク21 手順6)
+ * ------------------------------------------------------------------ */
+
+/** 実測に使う球面の案内線(既定の 5°、半径 10 の球)。 */
+const SPHERE_GRID_SPEC: SphereGridSpec = { center: [0, 0, 0], radius: 10, stepDegrees: 5 };
+
+/** 5° の交点の数(緯線 35 × 経線 72 + 極 2、計画書 §2.8.3)。 */
+const SPHERE_GRID_POINT_COUNT = 35 * 72 + 2;
+
+/**
+ * `pointermove` 1 回ぶんの予算(ミリ秒)。1 コマ 16ms(60fps、NFR-PF-1)のうち、
+ * 吸着に使ってよいのはごく一部なので **1ms** を上限にする(P4b の向きの吸着と同じ考え方)。
+ */
+const POINTER_MOVE_BUDGET_MS = 1;
+
+/** 実測の平均を取る回数。1 回だけだと計測の揺れがそのまま出る。 */
+const SNAP_ROUNDS = 2000;
+
+/**
+ * ワールド → 画面のいちばん素朴な写し。**判定半径(12 画素)の中に必ず入る倍率**にして、
+ * 吸い付いた側(いちばん重い経路)の所要を測る。実測で効くのは変換の回数だけで、
+ * 倍率そのものは費用に関係しない。
+ */
+const projectForTest: ProjectToScreen = (point) => [point[0] * 0.1 + 400, point[1] * 0.1 + 300];
+
+describe('球面の案内線の交点への吸着の費用(FR-431、NFR-PF-1、§1.5-13)', () => {
+  it(`交点 ${String(SPHERE_GRID_POINT_COUNT)} 個でも pointermove 1 回が 1ms に収まる`, () => {
+    // 球の中心へ向かう光線(必ず当たる = いちばん重い経路)を少しずつ振りながら測る。
+    const started = performance.now();
+    let hits = 0;
+    for (let round = 0; round < SNAP_ROUNDS; round += 1) {
+      const angle = (round / SNAP_ROUNDS) * Math.PI * 2;
+      const origin: Vec3 = [Math.cos(angle) * 100, Math.sin(angle) * 100, 30];
+      const direction: Vec3 = [-Math.cos(angle), -Math.sin(angle), -0.3];
+      const point = snapToSphereGrid(SPHERE_GRID_SPEC, { origin, direction }, projectForTest, [
+        400,
+        300,
+      ]);
+      if (point !== null) {
+        hits += 1;
+      }
+    }
+    const elapsed = (performance.now() - started) / SNAP_ROUNDS;
+    // どの回も交点に吸い付いている(いちばん重い経路を測っている)。
+    expect(hits).toBe(SNAP_ROUNDS);
+    console.log(
+      `[実測] 球面の案内線の吸着(交点 ${String(SPHERE_GRID_POINT_COUNT)} 個): ${elapsed.toFixed(5)} ms / pointermove(吸い付いた回数 ${String(hits)})`,
+    );
+    expectWithinBudget(elapsed, POINTER_MOVE_BUDGET_MS, '球面の案内線の交点への吸着');
   });
 });

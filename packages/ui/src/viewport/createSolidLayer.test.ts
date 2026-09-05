@@ -26,6 +26,20 @@ import {
   type ThreadMarkInfo,
 } from './createSolidLayer.js';
 import { DEFAULT_THEME_COLORS } from './themeColors.js';
+import { buildSphereGridPositions, type SphereGridSpec } from './buildSphereGrid.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
+
+/** 実測に使う球面の案内線(既定の 5°、半径 10 の球)。 */
+const SPHERE_GRID_SPEC: SphereGridSpec = { center: [0, 0, 0], radius: 10, stepDegrees: 5 };
+
+/** 5° の線分の本数(緯線 35 × 72 + 経線 72 × 72、計画書 §2.8.3)。 */
+const SPHERE_GRID_SEGMENTS = 35 * 72 + 72 * 72;
+
+/** 1 コマぶんの予算(60fps、NFR-PF-1)。 */
+const FRAME_BUDGET_MS = 16;
+
+/** 実測の平均を取る回数。1 回だけだと計測の揺れがそのまま出る。 */
+const SPHERE_GRID_ROUNDS = 20;
 
 /** 円 1 つ(48 分割)+ 軸線 1 本ぶんの数値の個数。 */
 const FLOATS_PER_MARK = 48 * 6 * 2 + 6;
@@ -407,5 +421,121 @@ describe('createSolidLayer(材質の配列とまとまり、FR-1106)', () => {
 
     layer.dispose();
     expect(disposed).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 球面の案内線(球面グリッド、FR-431、P5 タスク21)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 層の中の「球面の案内線」の線分。色が方眼の主線(`gridMajor`)であることで見分ける。
+ * ねじの印・切断の予告・部分形状の重ね描きは別の色なので取り違えない。
+ */
+type SphereGridLines = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+
+/**
+ * 球面の案内線の線分か。中身まで確かめてから絞り込むので、後の取り出しで型を偽らずに済む
+ * (`isBodyMesh` と同じ作り)。
+ */
+function isSphereGridLines(object: THREE.Object3D): object is SphereGridLines {
+  if (!(object instanceof THREE.LineSegments)) {
+    return false;
+  }
+  const material: unknown = object.material;
+  return (
+    material instanceof THREE.LineBasicMaterial &&
+    material.color.getHex() === DEFAULT_THEME_COLORS.gridMajor
+  );
+}
+
+/** 見つからなければ検査を止める(戻り値の絞り込みを兼ねる)。 */
+function requireSphereGridLines(group: THREE.Object3D): SphereGridLines {
+  const found = group.children.find(isSphereGridLines);
+  if (found === undefined) {
+    throw new Error('球面の案内線の入れ物が見つかりません。');
+  }
+  return found;
+}
+
+describe('createSolidLayer の球面の案内線(FR-431、タスク21)', () => {
+  it('線分を渡すと出て、null で消える(球を選んでいる間だけ出す土台)', () => {
+    const layer = createSolidLayer();
+    const lines = requireSphereGridLines(layer.group);
+    // 何も渡していない間は出ていない(球が 1 つも無い文書では費用ゼロ)。
+    expect(lines.visible).toBe(false);
+
+    layer.updateSphereGrid(buildSphereGridPositions(SPHERE_GRID_SPEC));
+    expect(lines.visible).toBe(true);
+    expect(lines.geometry.getAttribute('position').count).toBe(SPHERE_GRID_SEGMENTS * 2);
+
+    layer.updateSphereGrid(null);
+    expect(lines.visible).toBe(false);
+    layer.dispose();
+  });
+
+  it('同じ並び(同一参照)を渡し直すと入れ物を 1 つも触らない(NFR-PF-1)', () => {
+    const layer = createSolidLayer();
+    const positions = buildSphereGridPositions(SPHERE_GRID_SPEC);
+    layer.updateSphereGrid(positions);
+    const lines = requireSphereGridLines(layer.group);
+    const attribute = lines.geometry.getAttribute('position');
+    const sphere = lines.geometry.boundingSphere;
+
+    layer.updateSphereGrid(positions);
+    expect(lines.geometry.getAttribute('position')).toBe(attribute);
+    expect(lines.geometry.boundingSphere).toBe(sphere);
+    layer.dispose();
+  });
+
+  it('案内線の色はホバー・選択のどちらとも違う(見分けられる、2026-09-03 20:40 ①(b))', () => {
+    const layer = createSolidLayer();
+    const lines = requireSphereGridLines(layer.group);
+    expect(lines.material.color.getHex()).not.toBe(DEFAULT_THEME_COLORS.hovered);
+    expect(lines.material.color.getHex()).not.toBe(DEFAULT_THEME_COLORS.selected);
+    // 案内であることが分かるよう、形そのものより控えめに出す。
+    expect(lines.material.transparent).toBe(true);
+    expect(lines.material.opacity).toBeLessThan(1);
+    // 球の裏側の線は手前の面に隠れてよい(§0.a-0.21 の手順2)。
+    expect(lines.material.depthTest).toBe(true);
+    layer.dispose();
+  });
+
+  it('テーマを変えると案内線の色も塗り替わる(FR-908。部品は作り直さない)', () => {
+    const layer = createSolidLayer();
+    const lines = requireSphereGridLines(layer.group);
+    const material = lines.material;
+    layer.setThemeColors({ ...DEFAULT_THEME_COLORS, gridMajor: 0x123456 });
+    expect(material.color.getHex()).toBe(0x123456);
+    // 部品も材質も作り直さない(同じ入れ物・同じ材質のまま色だけが変わる)。
+    expect(layer.group.children).toContain(lines);
+    layer.dispose();
+  });
+
+  /**
+   * §1.5-13 の実測。**5° の案内線(7,704 本)を出し入れする所要**を測る。
+   *
+   * 上限は 1 コマぶんの予算 16ms(NFR-PF-1 の 60fps)。案内線は球を選んだ瞬間と
+   * 間隔を変えたときにしか作り直さない(同じ内容なら `createViewportScene` が
+   * 組み立てそのものを省く)ので、この 1 回が 1 コマに収まれば 60fps を割らない。
+   */
+  it('5° の案内線の組み立てと流し込みが 1 コマ(16ms)に収まる(NFR-PF-1、§1.5-13)', () => {
+    const layer = createSolidLayer();
+    // 計り始める前に 1 回通して、初回だけの入れ物作りを外へ出す。
+    layer.updateSphereGrid(buildSphereGridPositions(SPHERE_GRID_SPEC));
+
+    const started = performance.now();
+    for (let round = 0; round < SPHERE_GRID_ROUNDS; round += 1) {
+      // 半径を変えた並びを毎回作り直す(球を選び直したときと同じ手間)。
+      layer.updateSphereGrid(
+        buildSphereGridPositions({ ...SPHERE_GRID_SPEC, radius: 10 + round }),
+      );
+    }
+    const elapsed = (performance.now() - started) / SPHERE_GRID_ROUNDS;
+    console.log(
+      `[実測] 球面の案内線(5°・線分 ${String(SPHERE_GRID_SEGMENTS)} 本)の更新: ${elapsed.toFixed(3)} ms`,
+    );
+    expectWithinBudget(elapsed, FRAME_BUDGET_MS, '球面の案内線の更新');
+    layer.dispose();
   });
 });

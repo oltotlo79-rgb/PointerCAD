@@ -64,6 +64,12 @@ const AUTO_SAVE_SAVED_AT_LABEL = new Intl.DateTimeFormat('ja-JP', {
 const PROGRESS_STEP_COUNT = 24;
 
 /**
+ * 進み具合を出すまでの待ち(`packages/ui/src/shell/statusText.ts` の `PROGRESS_DELAY_MS`)。
+ * これより短く終わった計算では帯を出さない、というのが「短い計算では点滅しない」の中身。
+ */
+const PROGRESS_DELAY_MS = 300;
+
+/**
  * 進み具合を出すために CPU を絞る倍率(遅い計算機の再現)。
  *
  * 絞らないと、変えていない段の計算し直しは 1 段 5ms ほどで終わり、
@@ -856,8 +862,16 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
   await page.goto('/');
   await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
 
-  // 1) 押し出し 1 段は一瞬で終わるので、進み具合は**一度も出ない**(PROGRESS_DELAY_MS)。
-  //    短い計算のたびに札が点滅した過去(docs/報告記録.md 2026-09-02 23:35 の②)の確認。
+  /*
+   * 1) 短い計算では進み具合の帯を出さない(PROGRESS_DELAY_MS)。短い計算のたびに札が
+   *    点滅した過去(docs/報告記録.md 2026-09-02 23:35 の②)の確認。
+   *
+   *    **最初の押し出しでは測らない**(P5 タスク56 で前提を直した)。1 回目の計算には
+   *    幾何カーネル(Worker + OCCT、約 50MB)の読み込みが入るので、**短い計算ではない**。
+   *    ここで「一度も出ない」を課すと、混んでいる計算機で読み込みが延びたときに落ちる
+   *    (docs/報告記録.md 2026-09-06 04:30 の申し送り)。読み込みの済んだ 2 回目以降で
+   *    測る、というのが「短い計算では出ない」の本来の前提。
+   */
   await drawRectangle(page, ['0', '0'], ['40', '30']);
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
   await extrudeFace(page, '面1', null);
@@ -865,9 +879,40 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
   await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
+  // 読み込みを含む 1 回目の控えは捨てる。終わった時点で帯が残っていないことだけを見る。
+  await takeProgressSightings(page);
   await expect(progressBar(page)).toHaveCount(0);
   await expect(page.getByRole('progressbar')).toHaveCount(0);
-  expect(await takeProgressSightings(page)).toEqual([]);
+
+  /*
+   *    カーネルが暖まった状態で、距離を書き換えて 1 段だけ計算し直させる。
+   *    かかった時間を測り、**300ms(PROGRESS_DELAY_MS)未満で終わったのに帯が出ていたら
+   *    落とす**。300ms を超えたとき(混んでいる計算機)は、出ていた帯が
+   *    「この計算のもの」(段の総数が 1)で、終わった時点で消えていることを確かめる。
+   *    ゆるめたのではなく、「短い計算」の判定を実測に置き換えた。
+   *
+   *    測った時間には Playwright が結果を見に行く間隔(最短 100ms 前後)も入るので、
+   *    **300ms 未満で終わったなら計算そのものは確実に 300ms より短い**(厳しい側に倒れる)。
+   */
+  const shortStart = Date.now();
+  await propertyInputs(page).first().fill('12');
+  await expect(propertyValue(page, '体積')).toHaveText(`14400 ${VOLUME_UNIT}`);
+  const shortElapsed = Date.now() - shortStart;
+  const shortSightings = await takeProgressSightings(page);
+  if (shortElapsed < PROGRESS_DELAY_MS) {
+    expect(shortSightings, `${String(shortElapsed)}ms で終わった計算`).toEqual([]);
+  } else {
+    for (const sighting of shortSightings) {
+      expect(sighting.text).toMatch(progressTextPattern('1'));
+    }
+  }
+  await expect(progressBar(page)).toHaveCount(0);
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
+
+  // 距離を既定へ戻し、この後の段数と体積の期待値を元のままにする。
+  await propertyInputs(page).first().fill('10');
+  await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`);
+  await takeProgressSightings(page);
 
   // 2) 段を積む。距離を段ごとに変えて、同じ形の使い回しが起きないようにする。
   //    1 段ごとの確認は置かない(段の数はこの下の `aria-valuemax` で確かめられる)。

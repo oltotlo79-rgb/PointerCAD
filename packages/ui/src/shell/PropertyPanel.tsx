@@ -102,6 +102,7 @@ import {
   type CutContext,
 } from '../solid/cutCommands.js';
 import { ruledTwistNoteKey } from '../solid/ruledCommands.js';
+import { isValidSphereGridStep } from '../viewport/buildSphereGrid.js';
 import {
   COORDINATE_MODES,
   MODE_LABEL_KEYS,
@@ -1210,6 +1211,203 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
         )}
       </div>
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * 球面の案内線と球面上の点(FR-431、P5 タスク21・22)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 球を選んでいるときに出す「球面の案内線」の節(FR-431、§0.a-0.21)。
+ *
+ * 線の間隔(式、FR-201)と「いつも出す」の 2 つだけを持つ。**どちらも文書には残らない**
+ * 画面の設定なので、履歴にも保存にも触れない(ストアの `sphereGridStep` /
+ * `sphereGridAlwaysVisible` が正本)。間隔が 1 度未満・90 度超のときは案内線を出せないので、
+ * 赤い断りではなく注記で理由を伝える(rules/04「止めずに警告する」)。
+ */
+function SphereGridSection(): React.JSX.Element {
+  const step = useAppStore((state) => state.sphereGridStep);
+  const alwaysVisible = useAppStore((state) => state.sphereGridAlwaysVisible);
+  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const [draft, setDraft] = useState<string | null>(null);
+  const source = draft ?? step.source;
+  const evaluated = evaluateExpression(source, { variables });
+  const outOfRange = evaluated.ok && !isValidSphereGridStep(evaluated.value.value);
+
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionSphereGrid')}</h3>
+      <div className="pcad-coordinate__fields">
+        <ExpressionField
+          field={{
+            key: 'sphereGridStep',
+            labelKey: 'propertyPanel.sphereGridStep',
+            tooltipKey: 'propertyPanel.sphereGridStepTooltip',
+            unit: 'degree',
+            defaultSource: step.source,
+            source,
+          }}
+          result={
+            evaluated.ok
+              ? { key: 'sphereGridStep', value: evaluated.value, error: null }
+              : { key: 'sphereGridStep', value: null, error: evaluated.error }
+          }
+          focused={false}
+          onFocus={() => undefined}
+          onChange={(next) => {
+            setDraft(next);
+            const parsed = evaluateExpression(next, { variables });
+            if (parsed.ok) {
+              useAppStore.getState().setSphereGridStep(parsed.value);
+            }
+          }}
+        />
+      </div>
+      {outOfRange ? (
+        <p className="pcad-panel__note">{t('propertyPanel.sphereGridStepRange')}</p>
+      ) : null}
+      <div className="pcad-toggles">
+        <button
+          type="button"
+          role="switch"
+          className="pcad-switch"
+          aria-checked={alwaysVisible}
+          onClick={() => {
+            useAppStore.getState().setSphereGridAlwaysVisible(!alwaysVisible);
+          }}
+        >
+          <span className="pcad-switch__track" aria-hidden="true">
+            <span className="pcad-switch__thumb" />
+          </span>
+          <span>{t('propertyPanel.sphereGridAlways')}</span>
+        </button>
+      </div>
+      <p className="pcad-panel__note">{t('propertyPanel.sphereGridHint')}</p>
+    </div>
+  );
+}
+
+/** 球面上の点の緯度・経度(度)。基準が球でなければ null。 */
+export function sphereGridAnglesOf(
+  feature: SketchFeature,
+): { readonly latitude: ExpressionValue; readonly longitude: ExpressionValue } | null {
+  if (feature.kind !== 'point' || feature.at.mode === 'absolute') {
+    return null;
+  }
+  const base = feature.at.base;
+  return base.kind === 'sphereGrid'
+    ? { latitude: base.latitude, longitude: base.longitude }
+    : null;
+}
+
+/** 球面上の点の緯度・経度のどちらを直すか。 */
+export type SphereGridAngleKey = 'latitude' | 'longitude';
+
+/**
+ * 球面上の点の緯度・経度を 1 つ書き戻す(FR-431、FR-202、FR-502)。
+ *
+ * 基準が球でない要素が来たら**そのまま返す**(`setPrimitiveField` と同じ約束。
+ * 呼び出し側が要素の種類を数え直さずに済む)。座標そのものは書き換えないので、
+ * 直した点は球面の上に留まったまま緯度・経度だけが動く。
+ */
+export function setSphereGridAngle(
+  feature: SketchFeature,
+  key: SphereGridAngleKey,
+  value: ExpressionValue,
+): SketchFeature {
+  if (feature.kind !== 'point' || feature.at.mode === 'absolute') {
+    return feature;
+  }
+  const base = feature.at.base;
+  if (base.kind !== 'sphereGrid') {
+    return feature;
+  }
+  return {
+    ...feature,
+    at: {
+      ...feature.at,
+      base:
+        key === 'latitude' ? { ...base, latitude: value } : { ...base, longitude: value },
+    },
+  };
+}
+
+/**
+ * 球面上の点の「球の上の位置」の節(FR-431、FR-202、タスク22)。
+ *
+ * 緯度・経度を**式のまま**直せる。座標(ΔX / ΔY / ΔZ)は 0 のままで意味を持たないので、
+ * 直すのはこの 2 つだけにする。半径や中心を変えれば点はひとりでに動くので、
+ * ここには位置の欄を置かない(rules/04「導出できるものは保存しない」)。
+ */
+function SphereGridPointSection({
+  feature,
+}: {
+  readonly feature: SketchFeature;
+}): React.JSX.Element | null {
+  const documentVersion = useAppStore((state) => state.documentVersion);
+  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const [draftState, setDraftState] = useState(() =>
+    initialDraftVersionState<FieldDraft>(documentVersion),
+  );
+  const reconciled = reconcileDraftVersion(draftState, documentVersion);
+  if (reconciled !== draftState) {
+    setDraftState(reconciled);
+  }
+  const draft = reconciled.draft;
+  const angles = sphereGridAnglesOf(feature);
+  if (angles === null) {
+    return null;
+  }
+
+  const renderAngle = (
+    key: SphereGridAngleKey,
+    labelKey: MessageKey,
+    value: ExpressionValue,
+  ): React.JSX.Element => {
+    const path = `sphereGrid.${key}`;
+    const source = draft !== null && draft.path === path ? draft.source : value.source;
+    const evaluated = evaluateExpression(source, { variables });
+    return (
+      <ExpressionField
+        key={path}
+        field={{
+          key: path,
+          labelKey,
+          tooltipKey: labelKey,
+          unit: 'degree',
+          defaultSource: value.source,
+          source,
+        }}
+        result={
+          evaluated.ok
+            ? { key: path, value: evaluated.value, error: null }
+            : { key: path, value: null, error: evaluated.error }
+        }
+        focused={false}
+        onFocus={() => undefined}
+        onChange={(next) => {
+          setDraftState({ draft: { path, source: next }, seenVersion: documentVersion });
+          const parsed = evaluateExpression(next, { variables });
+          if (!parsed.ok) {
+            return;
+          }
+          useAppStore
+            .getState()
+            .replaceSketchFeature(feature.id, setSphereGridAngle(feature, key, parsed.value));
+        }}
+      />
+    );
+  };
+
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionSphereGridPoint')}</h3>
+      <div className="pcad-coordinate__fields">
+        {renderAngle('latitude', 'propertyPanel.latitude', angles.latitude)}
+        {renderAngle('longitude', 'propertyPanel.longitude', angles.longitude)}
+      </div>
+    </div>
   );
 }
 
@@ -2337,6 +2535,18 @@ const CUT_KEY_PREFIX = 'cut:';
  * 性質で、それを `PropertyPanel.test.ts` が固定する。フィーチャーの id は model の
  * `nextSolidId` が作る `cut-1` の形で `cut:` から始まることは無い(`-` と `:` の違い)。
  */
+export function sphereGridSectionKey(featureId: string): string {
+  return `${SPHERE_GRID_KEY_PREFIX}${featureId}`;
+}
+
+/**
+ * 球面の案内線・球の上の位置の節の `key` に付ける接頭辞(P5 タスク21・22、rules/06 10.9)。
+ * 外観・基本形状・つなぎ方・切断の節とまったく同じ理由で付ける。フィーチャーの id は
+ * model の `nextSolidId` / `nextFeatureId` が作る `sphere-1` / `point-1` の形なので、
+ * `sphereGrid:` から始まることは無い(`-` と `:` の違い)。
+ */
+const SPHERE_GRID_KEY_PREFIX = 'sphereGrid:';
+
 export function cutSectionKey(featureId: string): string {
   return `${CUT_KEY_PREFIX}${featureId}`;
 }
@@ -2511,6 +2721,22 @@ export function PropertyPanel(): React.JSX.Element {
         */}
         {solid === null || solid.kind !== 'cut' ? null : (
           <CutSection key={cutSectionKey(solid.id)} feature={solid} />
+        )}
+        {/*
+          球面の案内線(FR-431、タスク21)。球を選んでいるときだけ出す。線の間隔と
+          「いつも出す」は画面の設定で、履歴にも保存にも触れない。**`key` には必ず
+          `SPHERE_GRID_KEY_PREFIX` を付ける**(基本形状の節と同じ理由。rules/06 10.9)。
+        */}
+        {solid === null || solid.kind !== 'primitive' || solid.shape.kind !== 'sphere' ? null : (
+          <SphereGridSection key={sphereGridSectionKey(solid.id)} />
+        )}
+        {/*
+          球の上の位置(FR-431、FR-202、タスク22)。球面上の点を選んでいるときだけ出す。
+          **`key` の接頭辞**は上と同じ理由(`FeatureProperties` の `key={feature.id}` と
+          兄弟になるので、接頭辞が無いと鍵が重なる)。
+        */}
+        {feature === null || sphereGridAnglesOf(feature) === null ? null : (
+          <SphereGridPointSection key={sphereGridSectionKey(feature.id)} feature={feature} />
         )}
         {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331、タスク35b)。 */}
         {origin === null ? null : <OriginSection origin={origin} />}

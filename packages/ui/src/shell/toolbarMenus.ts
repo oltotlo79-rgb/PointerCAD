@@ -81,6 +81,7 @@ import {
   SketchChamferToolIcon,
   SketchFilletToolIcon,
   SlotToolIcon,
+  SphereGridPointIcon,
   SphereIcon,
   SplineToolIcon,
   SpringIcon,
@@ -425,6 +426,18 @@ export const CREATE_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
     labelKey: 'toolbar.solid.torus',
     tooltipKey: 'toolbar.solid.torusTooltip',
     Icon: TorusIcon,
+  },
+  /*
+    球面上の点(FR-431、タスク22)。作るのは立体ではなく 3D スケッチの点だが、
+    **球を選んでから押す**という使い方が基本形状と地続きなので、球のすぐ後ろへ置く
+    (利用者は「球まわりの道具」を 1 か所で探せる)。**この 1 行を足してもツールバーの幅は
+    1 画素も増えない**(`segmentedWidthPixels` は溝に並ぶボタンの個数しか見ない。§0.a-0.80)。
+  */
+  {
+    id: 'sphereGridPoint',
+    labelKey: 'toolbar.solid.sphereGridPoint',
+    tooltipKey: 'toolbar.solid.sphereGridPointTooltip',
+    Icon: SphereGridPointIcon,
   },
   /*
     面をつなぐ(罫線面、FR-430)とロフト(FR-410。タスク27)。どちらも対象を消費しない

@@ -19,11 +19,14 @@ import {
   nextFeatureName,
   type CoordinateInput,
   type FreeArcOrientation,
+  type PartDocument,
   type PointReference,
+  type PrimitiveFeature,
   type ResolvedSketch,
   type SketchDocument,
   type SketchElementRef,
   type SubShapeRef,
+  type Vec3,
   type WorkPlane,
   type WorkPlaneId,
 } from '@pointercad/model';
@@ -90,6 +93,190 @@ export function commitSubShapePoint(
     kind: 'point',
     at: subShapeCoordinate(ref),
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * 球面上の点(FR-431、P5 タスク22)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 「ある球の緯度・経度の位置」を表す座標(FR-431、計画書 §2.8.1)。
+ *
+ * `subShapeCoordinate` とまったく同じ「基準を名指しして、ずれ 0 で置く」形にしてある
+ * (`CoordinateInput` のモードを増やさない)。**座標そのものは保存されない**ので、球の
+ * 半径・中心を変えると点も球面の上を追いかけて動き、そこから引いた線・面も一緒に動く
+ * (要件 FR-431 の太字部分)。
+ */
+export function sphereGridCoordinate(
+  sphereFeatureId: string,
+  latitude: ExpressionValue,
+  longitude: ExpressionValue,
+): CoordinateInput {
+  return {
+    mode: 'relative',
+    base: { kind: 'sphereGrid', sphereFeatureId, latitude, longitude },
+    dx: ZERO,
+    dy: ZERO,
+    dz: ZERO,
+  };
+}
+
+/**
+ * 球面上の点を 1 つ作る(FR-431、FR-330)。
+ *
+ * 立体の頂点を押して点を作る `commitSubShapePoint` と同じ作りで、基準の種類だけが違う。
+ * 案内の交点を押した経路(`attachSketchInteraction.ts`)と、緯度・経度を打った経路
+ * (`solidCommands.ts` の `sphereGridPoint` の段)の**どちらもここを通る**ので、
+ * 作られる文書は必ず同じ形になる。
+ */
+export function commitSphereGridPoint(
+  document: SketchDocument,
+  planeId: WorkPlaneId,
+  sphereFeatureId: string,
+  latitude: ExpressionValue,
+  longitude: ExpressionValue,
+): SketchDocument {
+  return appendFeature(document, {
+    id: nextFeatureId(document, 'point'),
+    name: nextFeatureName(document, 'point'),
+    planeId,
+    kind: 'point',
+    at: sphereGridCoordinate(sphereFeatureId, latitude, longitude),
+  });
+}
+
+/**
+ * 要素 id から、それが指すフィーチャーの id を取り出す(`立体の id#face:3` → `立体の id`)。
+ * 部分形状の id の作り方は `solid/subShapeSelection.ts` の 1 か所だけが正本なので、
+ * ここでは**区切りより前を取るだけ**にして、種類の読み取りには踏み込まない。
+ */
+function featureIdOfElement(elementId: string): string {
+  const separator = elementId.indexOf('#');
+  return separator < 0 ? elementId : elementId.slice(0, separator);
+}
+
+/**
+ * 選んでいるものの中から球の基本形状(FR-429)を 1 つ探す(FR-431 の「球を選ぶと」)。
+ *
+ * 立体そのもの(`立体の id`)でも球面(`立体の id#face:0`)でも同じ球に行き着くよう、
+ * 区切りより前の id で引く(§0.a-0.21 の「球のボディ(または球面)を選んだとき」)。
+ * 抑制した球は画面に無いので選べない(model の `sphereAt` と同じ扱い)。
+ * 選んだ順に見て**最初に見つかった球**を返す。
+ */
+export function selectedSphereFeature(
+  document: PartDocument,
+  selection: readonly string[],
+): PrimitiveFeature | null {
+  for (const elementId of selection) {
+    const featureId = featureIdOfElement(elementId);
+    const found = document.solids.find((candidate) => candidate.id === featureId);
+    if (
+      found !== undefined &&
+      found.kind === 'primitive' &&
+      found.shape.kind === 'sphere' &&
+      !found.suppressed
+    ) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * 案内線を出す球を決める(FR-431、タスク21)。
+ *
+ * ①選んでいる球があればそれ。②「いつも出す」が入のときは、選んでいなくても**いちばん後に
+ * 作った球**を出す。③どちらでもなければ出さない(球が 1 つも無い文書では何も組み立てない)。
+ *
+ * **同時に出せるのは 1 つの球ぶんだけ**。案内線は 1 本の `LineSegments` にまとめてある
+ * (§0.a-0.21)ので、球ごとに増やすとドローコールが球の数だけ増える。いちばん後に作った球を
+ * 選ぶのは、置いたばかりの球の上に点を取りたい場面がいちばん多いためである。
+ *
+ * **点を作るときはこの関数を使わない**(`selectedSphereFeature` を使う)。「いつも出す」は
+ * 案内線を見せるだけの設定で、どの球の上に点を置くかは利用者が選んだものだけで決める。
+ */
+export function sphereGridTargetSphere(
+  document: PartDocument,
+  selection: readonly string[],
+  alwaysVisible: boolean,
+): PrimitiveFeature | null {
+  const selected = selectedSphereFeature(document, selection);
+  if (selected !== null) {
+    return selected;
+  }
+  if (!alwaysVisible) {
+    return null;
+  }
+  for (let index = document.solids.length - 1; index >= 0; index -= 1) {
+    const candidate = document.solids[index];
+    if (
+      candidate.kind === 'primitive' &&
+      candidate.shape.kind === 'sphere' &&
+      !candidate.suppressed
+    ) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/** 球面の案内線を引くのに要る、球の中心と半径(mm)。 */
+export interface SphereGridSphere {
+  readonly featureId: string;
+  readonly center: Vec3;
+  readonly radius: number;
+}
+
+/**
+ * 球の中心と半径を、**画面に線を引くために**求める(FR-431、タスク21)。
+ *
+ * 点そのものの位置は model が解く(`resolveCoordinate.ts` の `sphereGrid`)ので、ここは
+ * 案内線と吸着のためだけの見積もりである。だから解けない置き方があってもよく、そのときは
+ * null にして**線を引かない**(緯度・経度を打って点を作る道はそのまま使える)。
+ *
+ * 中心を求められるのは次の 2 通り。
+ * - 絶対座標で置いた球(既定の置き方。`selectedPrimitiveOrigin` はいつもこの形で作る)。
+ * - スケッチの点に置いた球で、その点が**いま編集しているスケッチ**にあるとき。
+ *
+ * 立体の頂点に置いた球と、別のスケッチの点に置いた球は null になる。どちらも中心を解くには
+ * 部品文書ぜんぶを解き直すことになり(`resolvePart.ts` の `sphereAt`)、ビューポートの
+ * 描画のたびにそれを行うと NFR-PF-1 を割るため。
+ */
+export function sphereGridSphereOf(
+  feature: PrimitiveFeature,
+  resolved: ResolvedSketch,
+): SphereGridSphere | null {
+  const shape = feature.shape;
+  if (shape.kind !== 'sphere') {
+    return null;
+  }
+  const radius = shape.radius.value;
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return null;
+  }
+  const center = sphereCenterOf(feature, resolved);
+  return center === null ? null : { featureId: feature.id, center, radius };
+}
+
+/** 球の中心。求められない置き方では null(`sphereGridSphereOf` の注釈)。 */
+function sphereCenterOf(feature: PrimitiveFeature, resolved: ResolvedSketch): Vec3 | null {
+  const origin = feature.origin;
+  if (origin.kind === 'coordinate') {
+    const value = origin.value;
+    if (value.mode !== 'absolute') {
+      return null;
+    }
+    const center: Vec3 = [value.x.value, value.y.value, value.z.value];
+    return center.every((number) => Number.isFinite(number)) ? center : null;
+  }
+  if (origin.kind === 'sketchPoint') {
+    // 点列を指していれば先頭の 1 点(`resolvePart.ts` の `resolveSolidOrigin` と同じ規約)。
+    const point = resolved.points.find(
+      (candidate) => candidate.featureId === origin.ref.pointFeatureId,
+    );
+    return point === undefined ? null : point.position;
+  }
+  return null;
 }
 
 /**

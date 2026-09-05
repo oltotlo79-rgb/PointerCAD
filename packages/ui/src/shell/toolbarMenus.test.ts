@@ -217,7 +217,7 @@ describe('区画の幅の見積もり(1440 画素の窓で 1 段、§0.a-0.14)',
 });
 
 describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () => {
-  it('「作る」には数値を聞いて立体を作る 14 つが並ぶ', () => {
+  it('「作る」には数値を聞いて立体を作る 15 つが並ぶ', () => {
     expect(CREATE_MENU_ITEMS.map((item) => item.id)).toEqual([
       'extrude',
       'revolve',
@@ -230,6 +230,9 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       'cylinder',
       'cone',
       'torus',
+      // 球面上の点(FR-431、P5 タスク22)。作るのは 3D スケッチの点だが、球を選んでから
+      // 押す使い方が基本形状と地続きなので球のすぐ後ろへ置く。
+      'sphereGridPoint',
       // 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク27)。§0.a-0.27 で対象を消費しない
       // 「作る」フィーチャーと決まっているので、基本形状と同じ理由でここへ入る。
       'ruled',
@@ -324,8 +327,9 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
     /*
       平置きにしたときの幅。タスク51 の時点(図柄 13 個)は 368 画素、タスク18 が
       基本形状 5 種を足して図柄 18 個・508 画素、タスク27 が面をつなぐ・ロフトを足して
-      図柄 20 個・564 画素になり、タスク50・27e が Should 群 12 種を足したいまは
-      図柄 32 個・900 画素になる。**畳んだ一覧のほうは 103 画素のまま 1 画素も
+      図柄 20 個・564 画素になり、タスク50・27e が Should 群 12 種を足して図柄 32 個・
+      900 画素、タスク22 が球面上の点を足したいまは図柄 33 個・928 画素になる。
+      **畳んだ一覧のほうは 103 画素のまま 1 画素も
       増えていない**(上の行)ことがこの検査の眼目で、平置きの数はその対比として
       置いてある(§0.a-0.80、§0.a-0.64)。
     */
@@ -334,7 +338,7 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
         CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length,
         0,
       ),
-    ).toBe(900);
+    ).toBe(928);
   });
 
   it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
@@ -528,5 +532,39 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
     expect(triggerItemOf(CREATE_MENU_ITEMS, 'mirrorSolid', null)?.id).toBe('mirrorSolid');
     // 一覧に無い道具のときは「最後に使った道具」へ後退する。
     expect(triggerItemOf(MACHINING_MENU_ITEMS, 'extrude', 'draft')?.id).toBe('draft');
+  });
+});
+
+describe('球面上の点を「作る」の一覧へ足す(FR-431、P5 タスク22、§0.a-0.80)', () => {
+  it('球・箱・円柱・円錐・トーラスのすぐ後ろに並ぶ', () => {
+    const ids = CREATE_MENU_ITEMS.map((item) => item.id);
+    expect(ids[ids.indexOf('torus') + 1]).toBe('sphereGridPoint');
+  });
+
+  it('図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
+    const item = CREATE_MENU_ITEMS.find((candidate) => candidate.id === 'sphereGridPoint');
+    expect(item).toBeDefined();
+    if (item === undefined) {
+      return;
+    }
+    expect(typeof item.Icon).toBe('function');
+    expect(t(item.labelKey).length).toBeGreaterThan(0);
+    expect(t(item.tooltipKey).length).toBeGreaterThan(0);
+    expect(t(item.tooltipKey).startsWith(`${t(item.labelKey)}: `)).toBe(false);
+  });
+
+  it('図柄は球のものと別(選ぶときに見分けられる)', () => {
+    const sphere = CREATE_MENU_ITEMS.find((candidate) => candidate.id === 'sphere')?.Icon;
+    const point = CREATE_MENU_ITEMS.find((candidate) => candidate.id === 'sphereGridPoint')?.Icon;
+    expect(sphere).toBeDefined();
+    expect(point).toBeDefined();
+    expect(point).not.toBe(sphere);
+  });
+
+  it('1 つ足してもツールバーの幅は 1 画素も増えない(畳んだ一覧に入れる理由)', () => {
+    expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(103);
+    const flatBefore = segmentedWidthPixels(CREATE_MENU_ITEMS.length - 1, 0);
+    const flatAfter = segmentedWidthPixels(CREATE_MENU_ITEMS.length, 0);
+    expect(flatAfter - flatBefore).toBe(28);
   });
 });

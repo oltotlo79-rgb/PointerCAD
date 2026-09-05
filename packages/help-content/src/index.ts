@@ -122,6 +122,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/primitive.md',
   },
   {
+    id: 'sphere-grid',
+    title: '球の表面に点を置く',
+    path: 'docs/ja/sphere-grid.md',
+  },
+  {
     id: 'ruled-loft',
     title: '面と面をつなぐ・ロフト',
     path: 'docs/ja/ruled-loft.md',

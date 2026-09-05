@@ -447,6 +447,8 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
       spring: 'springShape',
       // 基本形状5種(FR-429、P5 タスク18)。どれも寸法の 1 段だけ。
       sphere: 'sphereSize',
+      // 球面上の点(FR-431、P5 タスク22)。緯度・経度の 1 段だけ。
+      sphereGridPoint: 'sphereGridPoint',
       box: 'boxSize',
       cylinder: 'cylinderSize',
       cone: 'coneSize',
@@ -3817,5 +3819,65 @@ describe('P5 タスク49: 新しい道具の id と段の一意性、確定結�
     const { commit } = expectSolidCommitted(commitNumericInput(state));
     expect(commit.values.shellThickness?.value).toBe(1.2);
     expect(commit.flags.shellOutward).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 球面上の点の段(FR-431、P5 タスク22、§2.15 の段の表)
+ * ------------------------------------------------------------------ */
+
+describe('球面上の点の段(sphereGridPoint、FR-431)', () => {
+  it('欄は緯度・経度の 2 つで、どちらも既定は 0 度(NFR-UX-4)', () => {
+    const state = createNumericInput('sphereGridPoint', 'sphereGridPoint');
+    expect(state.fields.map((field) => field.key)).toEqual(['latitude', 'longitude']);
+    expect(state.fields.map((field) => field.unit)).toEqual(['degree', 'degree']);
+    expect(state.fields.map((field) => field.defaultSource)).toEqual(['0', '0']);
+    // 座標の段ではない(基準の点も指定方法の切替も出さない)。
+    expect(isCoordinateStep(state.step)).toBe(false);
+    expect(isSolidStep(state.step)).toBe(true);
+  });
+
+  it('つまみも選択肢も持たない(§2.15 の段の表)', () => {
+    const state = createNumericInput('sphereGridPoint', 'sphereGridPoint');
+    expect(state.toggles).toEqual([]);
+    expect(state.choices).toEqual([]);
+  });
+
+  it('緯度は −90〜90 の外を実行前に断る(NFR-UX-5)。両端は正しい点として通す', () => {
+    const state = createNumericInput('sphereGridPoint', 'sphereGridPoint');
+    expect(rangeErrorFor(state.fields[0], expressionValueFromNumber(95))).not.toBeNull();
+    expect(rangeErrorFor(state.fields[0], expressionValueFromNumber(-95))).not.toBeNull();
+    expect(rangeErrorFor(state.fields[0], expressionValueFromNumber(90))).toBeNull();
+    expect(rangeErrorFor(state.fields[0], expressionValueFromNumber(-90))).toBeNull();
+  });
+
+  it('経度は範囲を持たない(360 度回れば同じ点に戻る)', () => {
+    const state = createNumericInput('sphereGridPoint', 'sphereGridPoint');
+    expect(rangeErrorFor(state.fields[1], expressionValueFromNumber(450))).toBeNull();
+    expect(rangeErrorFor(state.fields[1], expressionValueFromNumber(-30))).toBeNull();
+  });
+
+  it('式のまま決められ、確定は緯度・経度の 2 つを運ぶ(FR-202)', () => {
+    const state = createNumericInput('sphereGridPoint', 'sphereGridPoint');
+    let filled = reduceNumericInput(state, { type: 'edit', index: 0, source: '30*2' });
+    filled = reduceNumericInput(filled, { type: 'edit', index: 1, source: '45' });
+    const transition = commitNumericInput(filled);
+    expect(transition.kind).toBe('solidCommitted');
+    if (transition.kind !== 'solidCommitted') {
+      throw new Error('確定していません。');
+    }
+    expect(transition.commit.tool).toBe('sphereGridPoint');
+    expect(transition.commit.values.latitude?.source).toBe('30*2');
+    expect(transition.commit.values.latitude?.value).toBe(60);
+    expect(transition.commit.values.longitude?.value).toBe(45);
+  });
+
+  it('決めたら閉じる(続けて聞くことは無い)', () => {
+    const state = createNumericInput('sphereGridPoint', 'sphereGridPoint');
+    expect(nextNumericInput(state, true)).toBeNull();
+  });
+
+  it('見出しが「球面上の点」になる(FR-905)', () => {
+    expect(t(STEP_TITLE_KEYS.sphereGridPoint)).toBe('球面上の点');
   });
 });

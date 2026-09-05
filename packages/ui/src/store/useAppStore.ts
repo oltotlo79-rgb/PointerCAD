@@ -1,3 +1,4 @@
+import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import type { AutoSaver } from '@pointercad/io';
 import {
   affectsShape,
@@ -91,6 +92,7 @@ import {
   subShapeBodiesOf,
   type SelectionKind,
 } from '../solid/subShapeSelection.js';
+import { DEFAULT_SPHERE_GRID_STEP_DEGREES } from '../viewport/buildSphereGrid.js';
 import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
 import {
   runMeasure,
@@ -99,6 +101,14 @@ import {
 } from '../solid/measureCommands.js';
 import type { MeasurementState } from '../viewport/createMeasureLayer.js';
 import type { SketchDrag } from '../viewport/dragSketch.js';
+
+/**
+ * 球面の案内線の間隔の既定(度。FR-431、§0.a-0.21)。**数そのものは
+ * `buildSphereGrid.ts` の 1 か所だけ**にあり、ここはそれを式へ直して持つ(FR-201)。
+ */
+const DEFAULT_SPHERE_GRID_STEP: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_SPHERE_GRID_STEP_DEGREES,
+);
 
 /** 透視投影 / 平行投影(FR-102)。 */
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -428,6 +438,21 @@ export interface AppState {
   /** スナップの入り切りと、有効な種別(FR-107、§0.a-0.10)。 */
   readonly snapEnabled: boolean;
   readonly snapKinds: readonly SnapKind[];
+  /**
+   * 球面の案内線(球面グリッド、FR-431、P5 タスク21)の間隔(度)。**式のまま持つ**
+   * (FR-201)ので `ExpressionValue`。既定は 5 度(§0.a-0.21)で、1 度未満と 90 度超は
+   * 線が引けないので案内線そのものを出さない(`buildSphereGrid.ts` の断り)。
+   *
+   * **文書には持たない。** 見えるか見えないかだけを決める表示の設定で、形にも保存する
+   * 内容にも 1 ミリも影響しないため(rules/04「導出できるものは保存しない」と同じ切り分けで、
+   * 方眼の表示・表示スタイルと同じ側に置く)。
+   */
+  readonly sphereGridStep: ExpressionValue;
+  /**
+   * 球面の案内線をいつも出すか(FR-431「常時表示への切替」、§0.a-0.21)。
+   * 既定は切で、そのときは**球を選んでいる間だけ**出る。
+   */
+  readonly sphereGridAlwaysVisible: boolean;
   /** 連続描画(FR-307)。 */
   readonly chaining: boolean;
   /** その場数値入力の状態。開いていなければ null(NFR-UX-2)。 */
@@ -715,6 +740,10 @@ export interface AppState {
   readonly setHovered: (id: string | null) => void;
   readonly setSnapEnabled: (enabled: boolean) => void;
   readonly toggleSnapKind: (kind: SnapKind) => void;
+  /** 球面の案内線の間隔を式のまま差し替える(FR-431、FR-201)。 */
+  readonly setSphereGridStep: (step: ExpressionValue) => void;
+  /** 球面の案内線をいつも出すかを切り替える(FR-431)。 */
+  readonly setSphereGridAlwaysVisible: (always: boolean) => void;
   readonly setChaining: (chaining: boolean) => void;
   readonly openNumericInput: (
     state: NumericInputState,
@@ -1220,6 +1249,8 @@ export function createInitialDocumentState(): Pick<
   | 'hoveredElementId'
   | 'snapEnabled'
   | 'snapKinds'
+  | 'sphereGridStep'
+  | 'sphereGridAlwaysVisible'
   | 'chaining'
   | 'numericInput'
   | 'numericInputAnchor'
@@ -1306,6 +1337,8 @@ export function createInitialDocumentState(): Pick<
     hoveredElementId: null,
     snapEnabled: true,
     snapKinds: DEFAULT_SNAP_KINDS,
+    sphereGridStep: DEFAULT_SPHERE_GRID_STEP,
+    sphereGridAlwaysVisible: false,
     chaining: true,
     numericInput: null,
     numericInputAnchor: null,
@@ -1869,6 +1902,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setSnapEnabled: (snapEnabled) => {
     set({ snapEnabled });
+  },
+  setSphereGridStep: (sphereGridStep) => {
+    set({ sphereGridStep });
+  },
+  setSphereGridAlwaysVisible: (sphereGridAlwaysVisible) => {
+    set({ sphereGridAlwaysVisible });
   },
   toggleSnapKind: (kind) => {
     set((state) => ({

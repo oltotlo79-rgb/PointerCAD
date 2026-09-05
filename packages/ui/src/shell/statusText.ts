@@ -115,6 +115,11 @@ const GUIDE_KEYS = {
   cylinder: 'statusBar.guide.cylinder',
   cone: 'statusBar.guide.cone',
   torus: 'statusBar.guide.torus',
+  // P5 タスク22 が `SolidToolId` へ足した球面上の点(FR-431)。**先に球を選んでから押す**
+  // 道具で、押した後は「案内の交点をクリックする」か「緯度・経度を打つ」の 2 通りがある
+  // ので、案内はその両方を伝える(NFR-UX-1、NFR-UX-7)。上と同じ理由(この表は網羅が
+  // 要る)で、道具を足した同じタスクで案内も足す。
+  sphereGridPoint: 'statusBar.guide.sphereGridPoint',
   // P5 タスク27 が `SolidToolId` へ足した面をつなぐ(FR-430)とロフト(FR-410)。どちらも
   // **先に輪郭を選んでから押す**道具なので、案内は「何をいくつ選ぶか」を伝える
   // (NFR-UX-1、NFR-UX-7)。罫線面だけは球も選べることを添える(§0.a-0.26)。

@@ -1003,3 +1003,17 @@ describe('P5 Should / Could 群 12 種の案内(FR-905、タスク48・49・50)'
     }
   });
 });
+
+describe('球面上の点の案内(FR-431、P5 タスク22)', () => {
+  it('球の上の交点を押すことと、緯度・経度を打てることの両方を伝える(NFR-UX-7)', () => {
+    expect(guideKeyFor('sphereGridPoint', 0)).toBe('statusBar.guide.sphereGridPoint');
+    const text = t(guideKeyFor('sphereGridPoint', 0));
+    expect(text).toContain('交点');
+    expect(text).toContain('緯度');
+    expect(text).toContain('経度');
+  });
+
+  it('道具を選んでいる間は帯にその案内が出る', () => {
+    expect(describeStatus({ ...quiet(), activeTool: 'sphereGridPoint' }).text).toContain('交点');
+  });
+});

@@ -5,6 +5,8 @@
  * (vitest の include は `src/**\/*.test.ts` のみで `.tsx` を含まないので、
  * このファイルはコンポーネントを描画せず純関数だけを呼ぶ)。
  */
+import { expressionValueFromNumber } from '@pointercad/expression';
+import { FREE_WORK_PLANE_ID, type SketchFeature } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -15,6 +17,9 @@ import {
   primitiveSectionKey,
   roundSolvedCoordinateText,
   ruledSectionKey,
+  setSphereGridAngle,
+  sphereGridAnglesOf,
+  sphereGridSectionKey,
 } from './PropertyPanel.js';
 
 describe('roundSolvedCoordinateText', () => {
@@ -183,5 +188,104 @@ describe('cutSectionKey', () => {
 
   it('同じ切断なら同じ文字列になる(選び直していないのに作り直さない)', () => {
     expect(cutSectionKey('cut-3')).toBe(cutSectionKey('cut-3'));
+  });
+});
+
+/**
+ * 球面の案内線・球の上の位置の節の `key`(P5 タスク21・22、rules/06 10.9)。
+ *
+ * この 2 つも `SolidProperties`(`key={solid.id}`)・`FeatureProperties`(`key={feature.id}`)・
+ * 基本形状の節・つなぎ方の節・切断の節・外観の節・測定と質量特性の節と**同じ親**
+ * (`.pcad-panel__body`)に並ぶ。鍵が絶対に重ならないことをここで固定する。
+ */
+describe('sphereGridSectionKey', () => {
+  it('立体・要素の id と同じ文字列にならない(兄弟の鍵が重ならない)', () => {
+    expect(sphereGridSectionKey('sphere-1')).not.toBe('sphere-1');
+    expect(sphereGridSectionKey('point-3')).not.toBe('point-3');
+  });
+
+  it('他の節の鍵とも重ならない', () => {
+    expect(sphereGridSectionKey('sphere-1')).not.toBe(appearanceSectionKey(['sphere-1']));
+    expect(sphereGridSectionKey('sphere-1')).not.toBe(primitiveSectionKey('sphere-1'));
+    expect(sphereGridSectionKey('sphere-1')).not.toBe(ruledSectionKey('sphere-1'));
+    expect(sphereGridSectionKey('sphere-1')).not.toBe(cutSectionKey('sphere-1'));
+    expect(sphereGridSectionKey('sphere-1')).not.toBe(measureSectionKey(['sphere-1']));
+    expect(sphereGridSectionKey('sphere-1')).not.toBe(massSectionKey('sphere-1'));
+  });
+
+  it('別の球なら別の文字列、同じ球なら同じ文字列になる', () => {
+    expect(sphereGridSectionKey('sphere-1')).not.toBe(sphereGridSectionKey('sphere-2'));
+    expect(sphereGridSectionKey('sphere-1')).toBe(sphereGridSectionKey('sphere-1'));
+  });
+});
+
+/**
+ * 球面上の点の緯度・経度をプロパティから直す(FR-431、FR-202、FR-502、P5 タスク22)。
+ * 座標そのものは書き換えないので、直した点は球面の上に留まったまま動く。
+ */
+describe('sphereGridAnglesOf / setSphereGridAngle', () => {
+  const sphereGridPoint: SketchFeature = {
+    id: 'point-1',
+    name: '点1',
+    planeId: FREE_WORK_PLANE_ID,
+    kind: 'point',
+    at: {
+      mode: 'relative',
+      base: {
+        kind: 'sphereGrid',
+        sphereFeatureId: 'sphere-1',
+        latitude: expressionValueFromNumber(30),
+        longitude: expressionValueFromNumber(45),
+      },
+      dx: expressionValueFromNumber(0),
+      dy: expressionValueFromNumber(0),
+      dz: expressionValueFromNumber(0),
+    },
+  };
+
+  const plainPoint: SketchFeature = {
+    id: 'point-2',
+    name: '点2',
+    planeId: FREE_WORK_PLANE_ID,
+    kind: 'point',
+    at: {
+      mode: 'absolute',
+      x: expressionValueFromNumber(1),
+      y: expressionValueFromNumber(2),
+      z: expressionValueFromNumber(3),
+    },
+  };
+
+  it('球面上の点なら緯度・経度を取り出せる', () => {
+    expect(sphereGridAnglesOf(sphereGridPoint)?.latitude.value).toBe(30);
+    expect(sphereGridAnglesOf(sphereGridPoint)?.longitude.value).toBe(45);
+  });
+
+  it('球面上の点でなければ null(節そのものを出さない)', () => {
+    expect(sphereGridAnglesOf(plainPoint)).toBeNull();
+  });
+
+  it('緯度だけを式のまま差し替える(経度と座標は触らない)', () => {
+    const next = setSphereGridAngle(sphereGridPoint, 'latitude', {
+      source: '30*2',
+      value: 60,
+      display: '60',
+    });
+    const angles = sphereGridAnglesOf(next);
+    expect(angles?.latitude.source).toBe('30*2');
+    expect(angles?.latitude.value).toBe(60);
+    expect(angles?.longitude.value).toBe(45);
+  });
+
+  it('経度だけを差し替える', () => {
+    const next = setSphereGridAngle(sphereGridPoint, 'longitude', expressionValueFromNumber(120));
+    expect(sphereGridAnglesOf(next)?.longitude.value).toBe(120);
+    expect(sphereGridAnglesOf(next)?.latitude.value).toBe(30);
+  });
+
+  it('球面上の点でない要素はそのまま返す(呼び出し側が種類を数え直さずに済む)', () => {
+    expect(setSphereGridAngle(plainPoint, 'latitude', expressionValueFromNumber(10))).toBe(
+      plainPoint,
+    );
   });
 });

@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { ExpressionFailure, type ExpressionError } from './errors.js';
 import { E, evaluateNode, EXPRESSION_PRECISION, ExpressionDecimal, PI } from './evaluate.js';
+import { evaluateExpression } from './evaluateExpression.js';
+import { MM_PER_INCH_TEXT } from './lengthUnits.js';
 import { parse } from './parse.js';
 
 /**
@@ -227,5 +229,121 @@ describe('任意精度の評価(FR-203、NFR-RE-4)', () => {
     expect(codeAt('2^-100000')).toBe('exponentTooLarge@1');
     // 上限ちょうどは通る。2^1000 は2の冪なので double でも厳密に表せる。
     expect(evaluate('2^1000').toNumber()).toBe(2 ** 1000);
+  });
+});
+
+/**
+ * 単位つきの数の期待値の出どころ:
+ * 1 inch = 25.4 mm(国際インチの定義値、厳密)。ほかの値はすべて 10 進の掛け算で導ける。
+ *   1.5in  = 1.5 × 25.4 = 38.1
+ *   3/8"   = 0.375 × 25.4 = 9.525
+ *   1in+2mm = 25.4 + 2 = 27.4
+ *   (10*2)in = 20 × 25.4 = 508
+ * 割り切れない値(1/3in、π*1in)だけは、既知の定数から独立に組み立てた式と突き合わせる。
+ */
+describe('長さの単位の評価(FR-814、計画書 docs/plans/P6-入出力.md §2.9.1)', () => {
+  it('単位つきの数は必ず mm の値になる', () => {
+    expect(evaluate('1in').toString()).toBe('25.4');
+    expect(evaluate('1.5in').toString()).toBe('38.1');
+    expect(evaluate('2mm').toString()).toBe('2');
+    // 空白を挟んでも、大文字でも、" でも同じ。
+    expect(evaluate('1.5 in').toString()).toBe('38.1');
+    expect(evaluate('1.5IN').toString()).toBe('38.1');
+    expect(evaluate('1.5"').toString()).toBe('38.1');
+  });
+
+  it('分数のインチ(3/8")は 3÷8 インチとして読む', () => {
+    expect(evaluate('3/8"').toString()).toBe('9.525');
+    expect(evaluate('3/8in').toString()).toBe('9.525');
+  });
+
+  it('割り切れない値も丸めずに任意精度で持つ(NFR-RE-4)', () => {
+    // 1/3in = 25.4/3。有効数字 30 桁で突き合わせる(40 桁の内部精度の最後の桁は、
+    // (1÷3)×25.4 と 25.4÷3 で丸めの向きが変わりうるため)。
+    const expected = new ExpressionDecimal(MM_PER_INCH_TEXT).dividedBy(3);
+    expect(evaluate('1/3in').toSignificantDigits(30).toString()).toBe(
+      expected.toSignificantDigits(30).toString(),
+    );
+  });
+
+  it('括弧・関数・単項マイナスの後ろにも単位を付けられる', () => {
+    expect(evaluate('(1+0.5)in').toString()).toBe('38.1');
+    expect(evaluate('sqrt(4)in').toString()).toBe('50.8');
+    expect(evaluate('-1in').toString()).toBe('-25.4');
+    expect(evaluate('(10*2)in').toString()).toBe('508');
+  });
+
+  it('無次元との掛け算・割り算は通り、単位の付いた辺どうしの足し算も通る', () => {
+    expect(evaluate('1in*2').toString()).toBe('50.8');
+    expect(evaluate('1in/2').toString()).toBe('12.7');
+    expect(evaluate('1in+2mm').toString()).toBe('27.4');
+    // π は無次元。25.4π になる。
+    const expected = PI.times(new ExpressionDecimal(MM_PER_INCH_TEXT));
+    expect(evaluate('π*1in').toSignificantDigits(30).toString()).toBe(
+      expected.toSignificantDigits(30).toString(),
+    );
+  });
+
+  it('単位の空間の中ではパラメータも表示の単位の数として扱う(§0.a-0.63)', () => {
+    // w は内部の値(mm)。単位の中では 25.4 で割ってから式へ入り、最後に 25.4 を掛け直す。
+    const variables = new Map([['w', 25.4]]);
+    expect(evaluate('(w*2)in', variables).toString()).toBe('50.8');
+    expect(evaluate('(w)in', variables).toString()).toBe('25.4');
+    expect(evaluate('(w/2)in', variables).toString()).toBe('12.7');
+    // 線形でない式(リテラルが足される)は mm のときと値が変わる。これは意図した結果。
+    expect(evaluate('(w+10)in', variables).toString()).toBe('279.4');
+    expect(evaluate('w+10', variables).toString()).toBe('35.4');
+    // mm は倍率 1 なので、割り算も掛け算も恒等になる。
+    expect(evaluate('(w*2)mm', variables).toString()).toBe('50.8');
+  });
+
+  it('単位が合っていない式は unitMismatch で断る', () => {
+    // 片方だけ単位(§2.9.1「単位は最後にだけ付けられる」)。
+    expect(codeAt('1in+2')).toBe('unitMismatch@3');
+    expect(failureOf('1in+2').message).toBe('単位をそろえてください。(4 文字目)');
+    expect(codeAt('2+(1in)')).toBe('unitMismatch@1');
+    // 単位どうしの掛け算(面積になる)と、割る側の単位。
+    expect(codeAt('1in*(2mm)')).toBe('unitMismatch@3');
+    expect(codeAt('2/(1in)')).toBe('unitMismatch@1');
+    // 単位つきの累乗。
+    expect(codeAt('1in^2')).toBe('unitMismatch@3');
+    // 単位の入れ子。位置は内側の単位を指す。
+    expect(codeAt('(1.5in*2)in')).toBe('unitMismatch@4');
+    expect(codeAt('1in*2in')).toBe('unitMismatch@1');
+    // 関数の引数に単位は書けない(`sqrt(4)in` と書く)。
+    expect(codeAt('sqrt(4in)')).toBe('unitMismatch@6');
+  });
+
+  it('長さでないパラメータは単位の空間でも換算しない(手順5b)', () => {
+    // 個数のパラメータ n = 5。長さとして扱うと (5/25.4+10)×25.4 = 5+254 = 259 になり、
+    // 長さでないと伝えれば (5+10)×25.4 = 381 になる。
+    const variables = new Map([['n', 5]]);
+    expect(evaluate('(n+10)in', variables).toNumber()).toBe(259);
+    const asCount = evaluateExpression('(n+10)in', {
+      variables,
+      nonLengthVariables: new Set(['n']),
+    });
+    expect(asCount.ok && asCount.value.value).toBe(381);
+  });
+
+  it('式は文字列のまま保存される(FR-202)', () => {
+    expect(evaluateExpression('1.5in')).toEqual({
+      ok: true,
+      value: { source: '1.5in', value: 38.1, display: '38.1' },
+    });
+    expect(evaluateExpression('(10*2)in')).toEqual({
+      ok: true,
+      value: { source: '(10*2)in', value: 508, display: '508' },
+    });
+  });
+
+  it('単位を書かない既存の式は 1 つも振る舞いが変わらない', () => {
+    expect(evaluate('5*2').toString()).toBe('10');
+    expect(evaluate('3/4').toString()).toBe('0.75');
+    expect(evaluate('sqrt(2)').toString()).toBe(new ExpressionDecimal(2).sqrt().toString());
+    expect(evaluate('pi').toString()).toBe(PI.toString());
+    // 単位と同じ綴りのパラメータも、これまでどおり変数として使える。
+    expect(evaluate('mm*2', new Map([['mm', 3]])).toString()).toBe('6');
+    expect(evaluate('2*in', new Map([['in', 3]])).toString()).toBe('6');
   });
 });

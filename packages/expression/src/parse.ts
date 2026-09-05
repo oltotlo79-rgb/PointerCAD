@@ -1,5 +1,6 @@
 import type { Node } from './ast.js';
 import { expressionError, ExpressionFailure } from './errors.js';
+import { toLengthUnit } from './lengthUnits.js';
 import { tokenize, type Token } from './tokenize.js';
 
 /**
@@ -47,7 +48,35 @@ export function parse(source: string): Node {
     let left = parseUnaryExpr();
     for (;;) {
       const token = peek();
-      if (token === null || token.type !== 'operator') {
+      if (token === null) {
+        return left;
+      }
+      if (token.type === 'unit') {
+        // 単位は掛け算・割り算の**並び全体**の後ろに付く(§2.9.1)。数 1 つに付けると
+        // `3/8"` が `3 ÷ (8 inch)` になってしまい、製図の書き方(3/8 インチ)と食い違う。
+        // 逆に `1in*2` は、`1` に付けてから掛け算を続けるので 50.8 になる。
+        const unit = toLengthUnit(token.text);
+        if (unit === null) {
+          // 字句(tokenize.ts)は正規形の綴りしか作らないので、ここへは来ない。
+          // 綴りの表と字句が食い違ったときだけ通る道として残す。
+          throw new ExpressionFailure(
+            expressionError('unexpectedToken', token.text, token.position),
+          );
+        }
+        index += 1;
+        left = { kind: 'unit', unit, operand: left, position: token.position };
+        continue;
+      }
+      if (left.kind === 'unit' && token.type === 'operator' && token.text === '^') {
+        // 単位つきの値の累乗(`1in^2`)。次元が合わないので評価が `unitMismatch` で断るが、
+        // 構文としてはここで受ける。受けないと「式の後ろに余分なものがあります」という
+        // 原因の分かりにくい断り方になるため(NFR-UX-5)。
+        index += 1;
+        const exponent = parseUnaryExpr();
+        left = { kind: 'binary', operator: '^', left, right: exponent, position: token.position };
+        continue;
+      }
+      if (token.type !== 'operator') {
         return left;
       }
       if (token.text !== '*' && token.text !== '/') {

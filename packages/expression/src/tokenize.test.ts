@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { ExpressionFailure, type ExpressionError } from './errors.js';
 import { evaluateExpression } from './evaluateExpression.js';
-import { normalizeExpressionSource, tokenize, type Token } from './tokenize.js';
+import {
+  containsLengthUnit,
+  normalizeExpressionSource,
+  tokenize,
+  type Token,
+} from './tokenize.js';
 
 /**
  * 全角空白(U+3000)。文字そのものを書くと見分けが付かず、混入や消失に気付けないので
@@ -178,5 +183,82 @@ describe('日本語の変数名(FR-207、記法バージョン2)', () => {
       ok: true,
       value: { source: '板厚　* 2', value: 6, display: '6' },
     });
+  });
+});
+
+describe('長さの単位の字句(FR-814、計画書 docs/plans/P6-入出力.md §2.9.1)', () => {
+  it('数の直後の単位を 1 つの字句にする', () => {
+    expect(summarize(tokenize('1.5in'))).toEqual(['number:1.5@0', 'unit:in@3']);
+    expect(summarize(tokenize('2mm'))).toEqual(['number:2@0', 'unit:mm@1']);
+  });
+
+  it('数と単位の間の空白を許す', () => {
+    expect(summarize(tokenize('1.5 in'))).toEqual(['number:1.5@0', 'unit:in@4']);
+    expect(summarize(tokenize(`1.5${FULL_WIDTH_SPACE}in`))).toEqual([
+      'number:1.5@0',
+      'unit:in@4',
+    ]);
+  });
+
+  it('大文字小文字を問わず、字句には正規形(小文字)で入る', () => {
+    expect(summarize(tokenize('1.5IN'))).toEqual(['number:1.5@0', 'unit:in@3']);
+    expect(summarize(tokenize('2Mm'))).toEqual(['number:2@0', 'unit:mm@1']);
+  });
+
+  it('" は inch の別名として受ける(製図の慣習)', () => {
+    expect(summarize(tokenize('3/8"'))).toEqual([
+      'number:3@0',
+      'operator:/@1',
+      'number:8@2',
+      'unit:"@3',
+    ]);
+  });
+
+  it('閉じ括弧の直後にも単位が来られる(タスク3b が保存する形)', () => {
+    expect(summarize(tokenize('(10*2)in'))).toEqual([
+      'leftParenthesis:(@0',
+      'number:10@1',
+      'operator:*@3',
+      'number:2@4',
+      'rightParenthesis:)@5',
+      'unit:in@6',
+    ]);
+  });
+
+  it('数・閉じ括弧の直後でない mm / in は今までどおり変数の名前', () => {
+    // ここを単位にすると、`mm` や `in` という名前のパラメータを含む既存の式の意味が変わる。
+    expect(summarize(tokenize('mm*2'))).toEqual([
+      'identifier:mm@0',
+      'operator:*@2',
+      'number:2@3',
+    ]);
+    expect(summarize(tokenize('2*in'))).toEqual([
+      'number:2@0',
+      'operator:*@1',
+      'identifier:in@2',
+    ]);
+  });
+
+  it('単位でない綴りは変数のまま(1.5inch は単位にしない)', () => {
+    expect(summarize(tokenize('1.5inch'))).toEqual(['number:1.5@0', 'identifier:inch@3']);
+  });
+
+  it('" が数・閉じ括弧の直後でなければ今までどおり使えない文字', () => {
+    expect(codeOf('"1')).toBe('unexpectedCharacter');
+    expect(failureOf('"1').position).toBe(0);
+    // フィート(')は受けない(要件に無い)。
+    expect(codeOf("1'")).toBe('unexpectedCharacter');
+    expect(failureOf("1'").position).toBe(1);
+  });
+
+  it('containsLengthUnit は式に単位が書かれているかを字句で判定する(タスク3b)', () => {
+    expect(containsLengthUnit('1.5in')).toBe(true);
+    expect(containsLengthUnit('(w*2)in')).toBe(true);
+    expect(containsLengthUnit('2*1.5"')).toBe(true);
+    expect(containsLengthUnit('10*2')).toBe(false);
+    expect(containsLengthUnit('mm*2')).toBe(false);
+    // 読めない式は false(包んでも包まなくても断りの文言はそのまま出る)。
+    expect(containsLengthUnit('1+')).toBe(false);
+    expect(containsLengthUnit('')).toBe(false);
   });
 });

@@ -43,6 +43,11 @@ function collectFromNode(node: Node, names: string[], seen: Set<string>): void {
         collectFromNode(argument, names, seen);
       }
       return;
+    case 'unit':
+      // 単位の中の名前も参照として数える。`(w*2)in` の `w` を落とすと、パラメータ表の
+      // 依存グラフ(parameterTable.ts)がその式を「何も参照していない」と誤解する。
+      collectFromNode(node.operand, names, seen);
+      return;
     case 'number':
     case 'constant':
       return;

@@ -19,6 +19,8 @@ function show(node: Node): string {
       return `(${node.operator} ${show(node.left)} ${show(node.right)})`;
     case 'call':
       return `(${[node.name, ...node.args.map((argument) => show(argument))].join(' ')})`;
+    case 'unit':
+      return `(${node.unit} ${show(node.operand)})`;
   }
 }
 
@@ -38,6 +40,8 @@ function showWithPosition(node: Node): string {
       const args = node.args.map((argument) => ` ${showWithPosition(argument)}`).join('');
       return `(${node.name}${at}${args})`;
     }
+    case 'unit':
+      return `(${node.unit}${at} ${showWithPosition(node.operand)})`;
   }
 }
 
@@ -185,5 +189,48 @@ describe('構文解析(FR-201)', () => {
     expect(codeAt('   ')).toBe('empty@-1');
     expect(codeAt('1@2')).toBe('unexpectedCharacter@1');
     expect(codeAt('1'.repeat(1001))).toBe('tooLong@-1');
+  });
+});
+
+describe('長さの単位の構文(FR-814、計画書 docs/plans/P6-入出力.md §2.9.1)', () => {
+  it('数の後ろの単位を節にする', () => {
+    expect(show(parse('1.5in'))).toBe('(in 1.5)');
+    expect(show(parse('2mm'))).toBe('(mm 2)');
+    expect(show(parse('1.5"'))).toBe('(" 1.5)');
+  });
+
+  it('単位は掛け算・割り算の並び全体に付く(3/8" は 3÷8 インチ)', () => {
+    // 数 1 つに付けると `3 ÷ (8 インチ)` になり、製図の書き方(3/8 インチ)と食い違う。
+    expect(show(parse('3/8"'))).toBe('(" (/ 3 8))');
+    expect(show(parse('1/3in'))).toBe('(in (/ 1 3))');
+    // 逆に単位より後ろの掛け算は、単位の付いた値との掛け算になる。
+    expect(show(parse('1in*2'))).toBe('(* (in 1) 2)');
+    expect(show(parse('π*1in'))).toBe('(in (* pi 1))');
+  });
+
+  it('括弧・関数の結果の後ろにも付けられる(タスク3b が保存する形)', () => {
+    expect(show(parse('(1+0.5)in'))).toBe('(in (+ 1 0.5))');
+    expect(show(parse('sqrt(4)in'))).toBe('(in (sqrt 4))');
+    expect(show(parse('(10*2)in'))).toBe('(in (* 10 2))');
+    expect(show(parse('(w*2)in'))).toBe('(in (* w 2))');
+    expect(show(parse('(w)in'))).toBe('(in w)');
+  });
+
+  it('単項のマイナスと単位の入れ子も構文としては読める(断るのは評価)', () => {
+    expect(show(parse('-1in'))).toBe('(in (- 1))');
+    expect(show(parse('(1.5in*2)in'))).toBe('(in (* (in 1.5) 2))');
+    expect(show(parse('1in*2in'))).toBe('(in (* (in 1) 2))');
+    // 単位つきの値の累乗も読む。読まないと「式の後ろに余分なものがあります」になり、
+    // 断りの理由が単位の話だと分からなくなる(NFR-UX-5)。
+    expect(show(parse('1in^2'))).toBe('(^ (in 1) 2)');
+  });
+
+  it('単位の節の位置は単位の綴りの位置', () => {
+    expect(showWithPosition(parse('1.5in'))).toBe('(in@3 1.5@0)');
+    expect(showWithPosition(parse('(10*2)in'))).toBe('(in@6 (*@3 10@1 2@4))');
+  });
+
+  it("フィート(')は受けない", () => {
+    expect(codeAt("1'")).toBe('unexpectedCharacter@1');
   });
 });

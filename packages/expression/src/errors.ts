@@ -22,6 +22,14 @@ export type ExpressionErrorCode =
   | 'exponentTooLarge'
   | 'notFinite'
   /**
+   * 長さの単位の付け方が合っていない(§2.9.1)。`1in + 2`(片方だけ単位)、`1in * 2in`
+   * (面積になる)、`1in^2`、`(1.5in*2)in`(単位の入れ子)が当たる。
+   * 既存の code で代用しなかったのは、これらがどれも「構文としては読めているが単位が
+   * そろっていない」ものであり、`unexpectedToken`(読めない)とも `notFinite`(計算不能)とも
+   * 原因が違うため。利用者へ「単位をそろえてください。」と伝える必要がある(NFR-UX-5)。
+   */
+  | 'unitMismatch'
+  /**
    * 値は数として正しいが、その欄が受け付ける範囲の外(NFR-UX-5)。
    * 限界値を差し込んだ文になるため、message はこのパッケージの外(呼び出し側)が組み立て、
    * detail としてそのまま渡す(wrongArgumentCount と同じ形、P3 §0.a-0.23 ①)。
@@ -96,6 +104,8 @@ export function expressionError(
       };
     case 'notFinite':
       return { code, message: '計算結果が数として表せません。', position };
+    case 'unitMismatch':
+      return { code, message: `単位をそろえてください。${where}`, position };
     case 'outOfRange':
       // 文言は呼び出し側(packages/ui)が組み立てて detail へ渡す(wrongArgumentCount と同じ形)。
       return { code, message: detail, position };

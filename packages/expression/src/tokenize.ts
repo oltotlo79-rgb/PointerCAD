@@ -1,4 +1,5 @@
 import { EXPRESSION_MAX_LENGTH, expressionError, ExpressionFailure } from './errors.js';
+import { toLengthUnit } from './lengthUnits.js';
 
 export type TokenType =
   | 'number'
@@ -6,7 +7,9 @@ export type TokenType =
   | 'operator'
   | 'leftParenthesis'
   | 'rightParenthesis'
-  | 'comma';
+  | 'comma'
+  /** 長さの単位(`mm` / `in` / `"`)。数か閉じ括弧の直後にだけ現れる(§2.9.1)。 */
+  | 'unit';
 
 export interface Token {
   readonly type: TokenType;
@@ -92,6 +95,20 @@ export function isIdentifierPart(character: string): boolean {
 }
 
 /**
+ * 単位の綴り(`mm` / `in` / `"`)を単位として読んでよい位置か(§2.9.1「数の直後」)。
+ *
+ * **直前の字句が数か閉じ括弧のときだけ**単位にする。いつでも単位にすると、`mm` や `in` と
+ * いう名前のパラメータ(FR-207。どちらも変数名として使える綴り)を含む既存の式の意味が
+ * 変わってしまう。`mm*2` の `mm` はこれまでどおり変数、`2mm` の `mm` は単位になる。
+ */
+function canPrecedeUnit(previous: Token | undefined): boolean {
+  if (previous === undefined) {
+    return false;
+  }
+  return previous.type === 'number' || previous.type === 'rightParenthesis';
+}
+
+/**
  * 添字の位置にある1文字を、コードポイント単位で取り出す。絵文字のように UTF-16 で
  * 2 単位を占める文字を半分に切らないため(docs/報告記録.md 2026-09-02 18:10 の残件)。
  * 切れた片割れを文言へ入れると「使えない文字があります: 「□」」のように読めない字が出る。
@@ -146,7 +163,15 @@ export function tokenize(source: string): readonly Token[] {
       while (isIdentifierPart(text.charAt(index))) {
         index += 1;
       }
-      tokens.push({ type: 'identifier', text: text.slice(start, index), position: start });
+      const spelling = text.slice(start, index);
+      // 数か閉じ括弧の直後にある単位の綴りは、1 つの単位の字句にする(§2.9.1 手順3)。
+      // 綴りは正規形(小文字)で持つので `1.5IN` も `1.5in` と同じ字句になる。
+      const unit = canPrecedeUnit(tokens[tokens.length - 1]) ? toLengthUnit(spelling) : null;
+      if (unit !== null) {
+        tokens.push({ type: 'unit', text: unit, position: start });
+        continue;
+      }
+      tokens.push({ type: 'identifier', text: spelling, position: start });
       continue;
     }
 
@@ -174,6 +199,14 @@ export function tokenize(source: string): readonly Token[] {
       continue;
     }
 
+    // `"` は inch の別名(§2.9.1)。数か閉じ括弧の直後だけで単位として受け、
+    // それ以外の場所ではこれまでどおり「使えない文字」として断る。
+    if (character === '"' && canPrecedeUnit(tokens[tokens.length - 1])) {
+      tokens.push({ type: 'unit', text: '"', position: index });
+      index += 1;
+      continue;
+    }
+
     throw new ExpressionFailure(expressionError('unexpectedCharacter', character, index));
   }
 
@@ -181,4 +214,22 @@ export function tokenize(source: string): readonly Token[] {
     throw new ExpressionFailure(expressionError('empty', ''));
   }
   return tokens;
+}
+
+/**
+ * 式に長さの単位が 1 つでも書かれているか(§2.9.1 ②、タスク3b)。
+ *
+ * 表示が inch のときに「単位の書かれていない入力だけを `(…)in` で包む」判定へ使う。
+ * 判定を呼び出し側の正規表現でなく**この字句解析**で行うのは、単位の綴りの規則を
+ * 2 か所に書かないため(綴りが食い違うと、包んだ式が二重の単位になってしまう)。
+ * 読めない式は false を返す(包んでも包まなくても、そのまま断りの文言が出る)。
+ */
+export function containsLengthUnit(source: string): boolean {
+  let tokens: readonly Token[];
+  try {
+    tokens = tokenize(source);
+  } catch {
+    return false;
+  }
+  return tokens.some((token) => token.type === 'unit');
 }

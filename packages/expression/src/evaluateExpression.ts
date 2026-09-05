@@ -25,6 +25,12 @@ export type ExpressionResult =
 export interface EvaluateOptions {
   /** 変数表(FR-206)。P1 の UI は渡さない(= 空として扱う)。 */
   readonly variables?: ReadonlyMap<string, number>;
+  /**
+   * 長さでないパラメータの名前(角度・無次元。§0.a-0.63)。
+   * 単位つきの式(`(w+10)in`)の中では、長さのパラメータだけを単位の倍率で割る。
+   * 渡さなければ**すべてを長さとして扱う**(単位を書かない式の値は変わらない)。
+   */
+  readonly nonLengthVariables?: ReadonlySet<string>;
 }
 
 /**
@@ -43,7 +49,9 @@ export function evaluateExpression(
 ): ExpressionResult {
   try {
     const node = parse(source);
-    const result = evaluateNode(node, options.variables ?? NO_VARIABLES);
+    const result = evaluateNode(node, options.variables ?? NO_VARIABLES, {
+      nonLengthVariables: options.nonLengthVariables,
+    });
     if (!result.isFinite()) {
       // 変数表から無限大を渡された場合など、評価の途中では弾かれない経路がある。
       return { ok: false, error: expressionError('notFinite', '') };

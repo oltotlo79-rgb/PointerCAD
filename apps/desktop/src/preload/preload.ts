@@ -23,4 +23,16 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
     ipcRenderer.invoke('pcad:save', suggestedName, bytes, saveAs),
   /** 上書き先を覚えているか。答えは真偽。 */
   hasSaveTarget: (): Promise<unknown> => ipcRenderer.invoke('pcad:hasTarget'),
+  /**
+   * 種類を選んで「開く」(P6 計画書 タスク4)。答えは `{ name, kind, bytes }` か null。
+   * **パスは含まれない**(NFR-SE-1)。
+   */
+  openFile: (kinds: readonly string[]): Promise<unknown> =>
+    ipcRenderer.invoke('pcad:openAny', kinds),
+  /**
+   * 種類を選んで「書き出す」。答えは書けたかどうかの真偽で、**名前もパスも返さない**
+   * (NFR-SE-1)。呼ぶたびに名前を訊く(上書き先を覚えない。§0.a-0.4)。
+   */
+  saveFileAs: (fileName: string, kind: string, bytes: Uint8Array): Promise<unknown> =>
+    ipcRenderer.invoke('pcad:saveAs', fileName, kind, bytes),
 });

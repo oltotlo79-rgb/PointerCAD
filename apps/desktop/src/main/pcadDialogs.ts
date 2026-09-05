@@ -4,14 +4,20 @@ import { promises as fileSystem } from 'node:fs';
 import { basename, extname } from 'node:path';
 
 /**
- * デスクトップ版の「開く」「保存」「名前を付けて保存」(計画書 docs/plans/P2-ソリッド基礎.md タスク26)。
+ * デスクトップ版の「開く」「保存」「名前を付けて保存」(計画書 docs/plans/P2-ソリッド基礎.md タスク26)と、
+ * 種類を選ぶ「開く」「書き出す」(docs/plans/P6-入出力.md §2.2、§0.a-0.5、タスク4)。
  *
- * 対応要件: FR-806(保存・読込)、要件§1.5(Web 版とデスクトップ版に機能差を作らない)、NFR-SE-1。
+ * 対応要件: FR-806(保存・読込)、FR-802(読み込み)、FR-803(書き出し)、
+ * 要件§1.5(Web 版とデスクトップ版に機能差を作らない)、NFR-SE-1。
  *
  * 画面(レンダラ)は `contextIsolation: true` / `sandbox: true` / `nodeIntegration: false` のまま
  * 動かすので、ファイルの実体に触れるのはこの本体プロセスだけにする。画面から来るのは
- * 「名前」「バイト列」「名前を付けて保存かどうか」の3つだけで、**パスは画面へ渡さない**
- * (NFR-SE-1「外へ出す情報は最小にする」)。上書き先はここで覚える。
+ * 「名前」「バイト列」「名前を付けて保存かどうか」「ファイルの種類」だけで、
+ * **パスは画面へ渡さない**(NFR-SE-1「外へ出す情報は最小にする」)。上書き先はここで覚える。
+ *
+ * **上書き先を覚えるのは `.pcad` の 3 本(`pcad:open` / `pcad:save` / `pcad:hasTarget`)だけ。**
+ * 種類つきの 2 本(`pcad:openAny` / `pcad:saveAs`)は `lastPaths` を読みも書きもしない
+ * (§0.a-0.4。書き出した先を覚えると、次の Ctrl+S が部品ではなく書き出した先を上書きしかねない)。
  *
  * `node:fs/promises` ではなく `node:fs` の `promises` を使う。本体プロセスの束ね方
  * (`apps/desktop/vite.main.config.ts` の `rollupOptions.external`)が外に置くのは
@@ -26,6 +32,8 @@ import { basename, extname } from 'node:path';
 export const PCAD_OPEN_CHANNEL = 'pcad:open';
 export const PCAD_SAVE_CHANNEL = 'pcad:save';
 export const PCAD_HAS_TARGET_CHANNEL = 'pcad:hasTarget';
+export const PCAD_OPEN_ANY_CHANNEL = 'pcad:openAny';
+export const PCAD_SAVE_AS_CHANNEL = 'pcad:saveAs';
 
 /** 部品ファイルの拡張子(要件§8)。 */
 const PCAD_EXTENSION = 'pcad';
@@ -39,6 +47,35 @@ const PCAD_EXTENSION = 'pcad';
  * 窓の題名は指定しない。指定しなければ OS が「開く」「名前を付けて保存」を各国語で出す。
  */
 const PCAD_FILE_FILTER = { name: 'PointerCAD の部品ファイル', extensions: [PCAD_EXTENSION] };
+
+/** ダイアログのフィルタ 1 つぶん(Electron の `FileFilter` と同じ形)。 */
+interface KindFilter {
+  readonly name: string;
+  /** 拡張子。**先頭の `.` を付けない**(Electron の決まり)。先頭が代表で、書き出しのときに足す。 */
+  readonly extensions: readonly string[];
+}
+
+/**
+ * ファイルの種類ごとのダイアログのフィルタ(§2.2)。
+ *
+ * **正本は `packages/ui/src/file/fileGateway.ts` の表**で、ここはその写しである。写している
+ * 理由は上の `PCAD_FILE_FILTER` と同じで、本体プロセスから `@pointercad/ui` を読むと
+ * 画面用の実装まで本体側の束へ入ってしまうため。**片方を直したらもう片方も直す。**
+ *
+ * 鍵は `FileKind`(`@pointercad/model`)の文字列。本体プロセスはその型を持てない(依存が
+ * `@pointercad/ui` だけ)ので、鍵の綴りは文字列として持ち、画面から来た値はこの表に
+ * 載っているかどうかだけで確かめる。
+ */
+const KIND_FILTERS: Readonly<Record<string, KindFilter | undefined>> = {
+  pcad: PCAD_FILE_FILTER,
+  pcadt: { name: 'PointerCAD', extensions: ['pcadt'] },
+  step: { name: 'STEP', extensions: ['step', 'stp'] },
+  stl: { name: 'STL', extensions: ['stl'] },
+  obj: { name: 'OBJ', extensions: ['obj'] },
+  glb: { name: 'glTF', extensions: ['glb', 'gltf'] },
+  '3mf': { name: '3MF', extensions: ['3mf'] },
+  dxf: { name: 'DXF', extensions: ['dxf'] },
+};
 
 /** 「開く」で選ばれたファイル。`path` は本体プロセスの中だけで使う。 */
 export interface OpenedPcadFile {
@@ -69,11 +106,12 @@ function withPcadExtension(filePath: string): string {
 
 /**
  * ファイルを読む。失敗は日本語の `Error` にして `invoke` の拒否として返す。
+ * 部品ファイルにも、種類つきの読み込み(`pcad:openAny`)にも同じものを使う。
  *
  * 文面にパスを入れない。この文面は画面側まで届くため(NFR-SE-1)。画面が利用者へ出す文言は
  * `ja.json` の `file.openFailed` で、ここの文面は記録用。
  */
-async function readPcadBytes(filePath: string): Promise<Uint8Array> {
+async function readBytesFrom(filePath: string): Promise<Uint8Array> {
   try {
     const contents = await fileSystem.readFile(filePath);
     // Buffer は Node の内部で使い回す記憶を指すことがあるので、自前の記憶へ写してから渡す。
@@ -85,8 +123,8 @@ async function readPcadBytes(filePath: string): Promise<Uint8Array> {
   }
 }
 
-/** ファイルを書く。失敗は日本語の `Error`(文面にパスを入れない理由は `readPcadBytes` と同じ)。 */
-async function writePcadBytes(filePath: string, bytes: Uint8Array): Promise<void> {
+/** ファイルを書く。失敗は日本語の `Error`(文面にパスを入れない理由は `readBytesFrom` と同じ)。 */
+async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> {
   try {
     await fileSystem.writeFile(filePath, bytes);
   } catch (cause) {
@@ -113,7 +151,7 @@ export async function openPcadDialog(window: BrowserWindow | null): Promise<Open
   if (result.canceled || filePath === undefined) {
     return null;
   }
-  return { name: basename(filePath), path: filePath, bytes: await readPcadBytes(filePath) };
+  return { name: basename(filePath), path: filePath, bytes: await readBytesFrom(filePath) };
 }
 
 /**
@@ -144,8 +182,128 @@ export async function savePcadDialog(
     }
     filePath = withPcadExtension(result.filePath);
   }
-  await writePcadBytes(filePath, bytes);
+  await writeBytesTo(filePath, bytes);
   return { name: basename(filePath), path: filePath };
+}
+
+// ---------------------------------------------------------------------------
+// 種類つきの「開く」「書き出す」(§2.2、§0.a-0.4・0.5)
+// ---------------------------------------------------------------------------
+
+/** 種類つきで開かれたファイル。**パスを持たない**(覚えないので要らない。NFR-SE-1)。 */
+export interface OpenedAnyFile {
+  /** 拡張子を含むファイル名(パスは含まない)。 */
+  readonly name: string;
+  /** どの種類として開かれたか。頼まれた種類の中から、拡張子で選び直したもの。 */
+  readonly kind: string;
+  readonly bytes: Uint8Array;
+}
+
+/** 表に載っている種類か。載っていなければ undefined。 */
+function filterOf(kind: string): KindFilter | undefined {
+  return KIND_FILTERS[kind];
+}
+
+/** 画面から来た「頼む種類の一覧」を確かめる。1 つも無い・知らない綴りが混じるものは受けない。 */
+function toKnownKinds(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+  const kinds: string[] = [];
+  for (const kind of value) {
+    if (typeof kind !== 'string' || filterOf(kind) === undefined) {
+      return null;
+    }
+    kinds.push(kind);
+  }
+  return kinds;
+}
+
+/**
+ * 選ばれたファイルの拡張子から、頼まれた種類のどれかを選び直す。
+ * **頼まれていない種類には答えない**(画面側の `fileKindOfName` と同じ決まり)。
+ */
+function kindOfPath(filePath: string, kinds: readonly string[]): string | null {
+  const extension = extname(filePath).toLowerCase().replace('.', '');
+  for (const kind of kinds) {
+    if (filterOf(kind)?.extensions.includes(extension) === true) {
+      return kind;
+    }
+  }
+  return null;
+}
+
+/** 保存先の名前を、その種類の代表の拡張子で終わらせる(`withPcadExtension` と同じ考え方)。 */
+function withKindExtension(filePath: string, kind: string): string {
+  const extensions = filterOf(kind)?.extensions ?? [];
+  const current = extname(filePath).toLowerCase().replace('.', '');
+  if (extensions.includes(current)) {
+    return filePath;
+  }
+  const first = extensions[0];
+  return first === undefined ? filePath : `${filePath}.${first}`;
+}
+
+/**
+ * 種類を選んで「開く」。取り消されたら null。**上書き先は覚えない**(§0.a-0.4)。
+ *
+ * フィルタは頼まれた順に並べる(先頭が既定)。拡張子で種類を見分けられないファイルは
+ * 断る。中身の先頭のバイト列で見分ける段構え(§0.a-0.27)は読み込む側の担当。
+ */
+export async function openAnyDialog(
+  window: BrowserWindow | null,
+  kinds: readonly string[],
+): Promise<OpenedAnyFile | null> {
+  // Electron の `FileFilter` は書き換えられる並びを求めるので、写しを渡す。
+  const filters: { name: string; extensions: string[] }[] = [];
+  for (const kind of kinds) {
+    const filter = filterOf(kind);
+    if (filter !== undefined) {
+      filters.push({ name: filter.name, extensions: [...filter.extensions] });
+    }
+  }
+  const options: OpenDialogOptions = { properties: ['openFile'], filters };
+  const result =
+    window === null
+      ? await dialog.showOpenDialog(options)
+      : await dialog.showOpenDialog(window, options);
+  const filePath = result.filePaths[0];
+  if (result.canceled || filePath === undefined) {
+    return null;
+  }
+  const kind = kindOfPath(filePath, kinds);
+  if (kind === null) {
+    throw new Error('この拡張子のファイルは、頼まれた種類として読めません。');
+  }
+  return { name: basename(filePath), kind, bytes: await readBytesFrom(filePath) };
+}
+
+/**
+ * 種類を選んで「書き出す」。**呼ぶたびに必ず窓を出す**(上書き先を覚えない。§0.a-0.4)。
+ * 書けたら true、取り消されたら false。**返り値にパスも名前も含めない**(NFR-SE-1)。
+ */
+export async function saveAsDialog(
+  window: BrowserWindow | null,
+  fileName: string,
+  kind: string,
+  bytes: Uint8Array,
+): Promise<boolean> {
+  const filter = filterOf(kind);
+  const options: SaveDialogOptions = {
+    // 画面が勧めてきた名前から始める(既定の保存先フォルダに置かれる)。
+    defaultPath: fileName,
+    filters:
+      filter === undefined ? [] : [{ name: filter.name, extensions: [...filter.extensions] }],
+  };
+  const result =
+    window === null
+      ? await dialog.showSaveDialog(options)
+      : await dialog.showSaveDialog(window, options);
+  if (result.canceled || result.filePath === '') {
+    return false;
+  }
+  await writeBytesTo(withKindExtension(result.filePath, kind), bytes);
+  return true;
 }
 
 /**
@@ -174,9 +332,10 @@ function windowOf(event: IpcMainInvokeEvent): BrowserWindow | null {
 }
 
 /**
- * IPC を登録する。チャンネルは `pcad:open` / `pcad:save` / `pcad:hasTarget` の3本だけ。
+ * IPC を登録する。チャンネルは `pcad:open` / `pcad:save` / `pcad:hasTarget` の3本と、
+ * 種類つきの `pcad:openAny` / `pcad:saveAs` の2本(§0.a-0.5)。
  *
- * 往復する値は文字列・真偽・`Uint8Array` に限る(構造化複製でそのまま往復できるもの)。
+ * 往復する値は文字列・真偽・`Uint8Array`・文字列の並びに限る(構造化複製でそのまま往復できるもの)。
  * 画面から来た値は素性が分からないので、使う前に必ず形を確かめる。
  *
  * `app.whenReady()` の中から1回だけ呼ぶ(2回呼ぶと Electron が二重登録で失敗する)。
@@ -223,5 +382,34 @@ export function registerPcadIpc(): void {
 
   ipcMain.handle(PCAD_HAS_TARGET_CHANNEL, (event: IpcMainInvokeEvent): boolean =>
     lastPaths.has(event.sender.id),
+  );
+
+  ipcMain.handle(
+    PCAD_OPEN_ANY_CHANNEL,
+    async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<OpenedAnyFile | null> => {
+      const kinds = toKnownKinds(args[0]);
+      if (kinds === null) {
+        throw new Error('読み込みの依頼の形が正しくありません。');
+      }
+      // `rememberPath` を呼ばない。ここで開いたものは上書き先にしない(§0.a-0.4)。
+      return openAnyDialog(windowOf(event), kinds);
+    },
+  );
+
+  ipcMain.handle(
+    PCAD_SAVE_AS_CHANNEL,
+    async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<boolean> => {
+      const [fileName, kind, bytes] = args;
+      if (
+        typeof fileName !== 'string' ||
+        typeof kind !== 'string' ||
+        filterOf(kind) === undefined ||
+        !(bytes instanceof Uint8Array)
+      ) {
+        throw new Error('保存の依頼の形が正しくありません。');
+      }
+      // `rememberPath` を呼ばない。書き出した先は覚えないので、次の Ctrl+S は部品へ向かう。
+      return saveAsDialog(windowOf(event), fileName, kind, bytes);
+    },
   );
 }

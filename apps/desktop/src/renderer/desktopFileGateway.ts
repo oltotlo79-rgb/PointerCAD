@@ -23,6 +23,15 @@ interface DesktopFileApi {
   hasSaveTarget(): Promise<unknown>;
 }
 
+/**
+ * 種類つきの出し入れの口(P6 計画書 タスク4)。**別の型にしてある**のは、古い preload
+ * (この 2 本を出さない版)でも部品の読み書きだけは動かすため(§1.5 の保険)。
+ */
+interface DesktopExchangeApi {
+  openFile(kinds: readonly string[]): Promise<unknown>;
+  saveFileAs(fileName: string, kind: string, bytes: Uint8Array): Promise<unknown>;
+}
+
 function isObject(value: unknown): value is object {
   return typeof value === 'object' && value !== null;
 }
@@ -37,6 +46,31 @@ function isDesktopFileApi(value: unknown): value is DesktopFileApi {
     'hasSaveTarget' in value &&
     typeof value.hasSaveTarget === 'function'
   );
+}
+
+function isDesktopExchangeApi(value: object): value is DesktopExchangeApi {
+  return (
+    'openFile' in value &&
+    typeof value.openFile === 'function' &&
+    'saveFileAs' in value &&
+    typeof value.saveFileAs === 'function'
+  );
+}
+
+/**
+ * 本体プロセスが答えた種類を、頼んだ種類の一覧の中から見つけ直す。
+ *
+ * 型引数で受けているのは、`FileKind` という型の名前をこのファイルへ持ち込まずに
+ * (`apps/desktop` が依存しているのは `@pointercad/ui` だけ)、`as` を使わずに
+ * 「頼んだ種類のどれか」という型を取り戻すため。頼んでいない綴りには答えない。
+ */
+function matchKind<Kind extends string>(kinds: readonly Kind[], value: unknown): Kind | null {
+  for (const kind of kinds) {
+    if (kind === value) {
+      return kind;
+    }
+  }
+  return null;
 }
 
 /**
@@ -65,6 +99,15 @@ interface OpenedShape {
 
 function isOpenedShape(value: unknown): value is OpenedShape {
   return isObject(value) && 'name' in value && typeof value.name === 'string' && 'bytes' in value;
+}
+
+/** 種類つきの「開く」の答えの形。`kind` の綴りは `matchKind` で確かめる。 */
+interface OpenedTypedShape extends OpenedShape {
+  readonly kind: unknown;
+}
+
+function isOpenedTypedShape(value: unknown): value is OpenedTypedShape {
+  return isOpenedShape(value) && 'kind' in value;
 }
 
 /**
@@ -108,7 +151,7 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
     },
   );
 
-  return {
+  const base: FileGateway = {
     async openPcad(): Promise<PickedFile | null> {
       const result: unknown = await api.openPcad();
       if (result === null || result === undefined) {
@@ -142,6 +185,48 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
 
     hasSaveTarget(): boolean {
       return hasTarget;
+    },
+  };
+
+  if (!isDesktopExchangeApi(api)) {
+    // 古い preload。部品の読み書きだけを渡す(画面は種類つきの口が無い口として扱い、
+    // `openFileThrough` / `saveFileAsThrough` がブラウザ用の実装で答える)。
+    return base;
+  }
+
+  return {
+    ...base,
+
+    // 返り値の形(`PickedTypedFile`)は `@pointercad/ui` の公開口に名前が出ていないので、
+    // ここには書かずに `FileGateway` から受け取る(引数の種類の型も同じ経路で決まる)。
+    async openFile(kinds) {
+      const result: unknown = await api.openFile(kinds);
+      if (result === null || result === undefined) {
+        // 取り消された。
+        return null;
+      }
+      if (!isOpenedTypedShape(result)) {
+        throw new Error(t('file.openFailed'));
+      }
+      const bytes = toBytes(result.bytes);
+      const kind = matchKind(kinds, result.kind);
+      if (bytes === null || kind === null) {
+        throw new Error(t('file.openFailed'));
+      }
+      // `hasTarget` を触らない。ここで開いたものは部品の上書き先にならない(§0.a-0.4)。
+      return { kind, fileName: result.name, bytes };
+    },
+
+    async saveFileAs(fileName, kind, bytes): Promise<boolean> {
+      const result: unknown = await api.saveFileAs(fileName, kind, bytes);
+      if (result === true) {
+        return true;
+      }
+      if (result === false || result === null || result === undefined) {
+        // 取り消された。
+        return false;
+      }
+      throw new Error(t('file.saveFailed'));
     },
   };
 }

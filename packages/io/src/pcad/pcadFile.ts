@@ -34,8 +34,11 @@ export const PCAD_THUMBNAIL_ENTRY = 'thumbnail.png';
 /**
  * ZIP のヘッダへ書く固定の日時。年・月・日・時・分・秒がそのまま書かれるので、
  * 時間帯に依らず同じ値になるよう、実行環境の時間帯での日時として組み立てる。
+ *
+ * **3MF の書き出し(`threemf/writeThreeMf.ts`)も同じ値を使う**(計画書 P6 §2.6。
+ * 決定性の決めを 2 か所に書かないため)ので、このファイルから輸出している。
  */
-const FIXED_ENTRY_MTIME = new Date(1980, 0, 2, 12, 0, 0, 0);
+export const FIXED_ENTRY_MTIME = new Date(1980, 0, 2, 12, 0, 0, 0);
 
 /** `document.json` の圧縮の強さ。6 は fflate の既定で、速さと大きさの釣り合いが良い。 */
 const DOCUMENT_LEVEL = 6;

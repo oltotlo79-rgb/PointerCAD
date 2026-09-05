@@ -1,4 +1,9 @@
-import { createEmptyPartDocument, PART_SCHEMA_VERSION, type PartDocument } from '@pointercad/model';
+import {
+  createEmptyPartDocument,
+  emptyAppearanceTable,
+  PART_SCHEMA_VERSION,
+  type PartDocument,
+} from '@pointercad/model';
 import { strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -74,6 +79,8 @@ function exampleDocument(): PartDocument {
     ],
     // パラメータ表(FR-207、P4b タスク2)。中身の読み書きは版5(タスク21)から。
     parameters: [],
+    // 外観の割り当て(FR-1106〜1110、P5 タスク5)。この例は割り当てを持たない。
+    appearance: emptyAppearanceTable(),
   };
 }
 
@@ -194,13 +201,16 @@ describe('.pcad の書き出し(writePcadFile)', () => {
 
   it('空の部品文書の .pcad は数百バイトに収まる', () => {
     const bytes = writePcadFile(createEmptyPartDocument(), { savedAt: SAVED_AT });
-    // 実測 337 バイト(document.json の文字列は 350 バイト。2026-09-03)。
+    // 実測 373 バイト(document.json の文字列は 441 バイト。2026-09-05、P5 タスク5で
+    // appearance の欄が増えた後の値。P4b までの実測 337/350 バイトより増えたのは、この
+    // 欄の分だけであり、上限には十分収まる)。
     expect(bytes.length).toBeGreaterThan(100);
     expect(bytes.length).toBeLessThan(1000);
   });
 
   it('計画書 §2.8 の例の .pcad は 4KB 未満に収まる', () => {
-    // 実測 683 バイト(document.json の文字列は 2154 バイト。2026-09-03)。
+    // 実測 728 バイト(document.json の文字列は 2280 バイト。2026-09-05、appearance の
+    // 欄が増えた後の値。P4b までの実測 683/2154 バイトより増えたのはこの欄の分だけ)。
     expect(writePcadFile(exampleDocument(), { savedAt: SAVED_AT }).length).toBeLessThan(4096);
   });
 });

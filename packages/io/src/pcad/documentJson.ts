@@ -17,6 +17,12 @@
  */
 
 import {
+  type AppearanceEntry,
+  type AppearancePattern,
+  type AppearancePresetId,
+  type AppearanceSpec,
+  type AppearanceTable,
+  type AppearanceTarget,
   type BooleanOperation,
   type ChamferSize,
   type ConstraintTarget,
@@ -63,6 +69,7 @@ import {
   type ThreadRepresentation,
   type ThreadSeries,
   type Vec3,
+  type WoodSpecies,
   type WorkPlaneId,
 } from '@pointercad/model';
 
@@ -241,6 +248,47 @@ const REFERENCE_POINT_KINDS: readonly ReferencePointDefinition['kind'][] = [
 const PATTERN_PLACEMENT_KINDS: readonly PatternPlacement['kind'][] = ['linear', 'circular'];
 const SPRING_DERIVED_VALUES: readonly SpringDerived[] = ['length', 'pitch', 'turns'];
 const SPRING_HANDEDNESS_VALUES: readonly SpringHandedness[] = ['right', 'left'];
+
+// ---------------------------------------------------------------------------
+// P5(FR-1106〜1110、要件§4.12、タスク5)が足す外観の割り当ての判別の一覧
+// ---------------------------------------------------------------------------
+
+/** 外観の割り当て先(§2.2.1)。立体はフィーチャー id、面は部分形状の参照。 */
+const APPEARANCE_TARGET_KINDS: readonly AppearanceTarget['kind'][] = ['body', 'face'];
+/**
+ * 材質プリセットの id(§2.4.1、11 種)。**未来のプリセットが増えたときの前方互換のため**、
+ * ここに無い文字列は `readLiteral` のように断らず、その割り当てだけを落として読み進める
+ * (`readAppearanceSpec` 参照)。
+ */
+const APPEARANCE_PRESET_IDS: readonly AppearancePresetId[] = [
+  'default',
+  'steel',
+  'checkerPlate',
+  'expandedMetal',
+  'aluminum',
+  'stainless',
+  'plastic',
+  'wood',
+  'mirror',
+  'glass',
+  'custom',
+];
+/** 柄の種類(FR-1108)。未知の種類は前方互換のため割り当てを落とす(プリセット id と同じ理由)。 */
+const APPEARANCE_PATTERN_KINDS: readonly AppearancePattern['kind'][] = [
+  'none',
+  'expandedMetal',
+  'checkerPlate',
+  'woodGrain',
+];
+/** 木材の樹種(§0.a-0.5、6 種)。未知の樹種も同じ理由で割り当てを落とす。 */
+const WOOD_SPECIES_VALUES: readonly WoodSpecies[] = [
+  'hinoki',
+  'sugi',
+  'oak',
+  'walnut',
+  'teak',
+  'maple',
+];
 
 // ---------------------------------------------------------------------------
 // 書き出し
@@ -1056,6 +1104,59 @@ function serializeParameter(parameter: Parameter): Parameter {
   };
 }
 
+/** 柄(FR-1108)。繰り返しの間隔は式のまま保存する(FR-202)。 */
+function serializeAppearancePattern(pattern: AppearancePattern): AppearancePattern {
+  switch (pattern.kind) {
+    case 'none':
+      return { kind: 'none' };
+    case 'expandedMetal':
+      return { kind: 'expandedMetal', spacing: serializeExpression(pattern.spacing) };
+    case 'checkerPlate':
+      return { kind: 'checkerPlate', spacing: serializeExpression(pattern.spacing) };
+    case 'woodGrain':
+      return {
+        kind: 'woodGrain',
+        spacing: serializeExpression(pattern.spacing),
+        species: pattern.species,
+      };
+  }
+}
+
+/** 見た目そのもの(FR-1107、FR-1109)。透過率・光沢・粗さは式のまま保存する(FR-202)。 */
+function serializeAppearanceSpec(spec: AppearanceSpec): AppearanceSpec {
+  return {
+    preset: spec.preset,
+    color: spec.color,
+    transmission: serializeExpression(spec.transmission),
+    gloss: serializeExpression(spec.gloss),
+    roughness: serializeExpression(spec.roughness),
+    pattern: serializeAppearancePattern(spec.pattern),
+  };
+}
+
+/** 外観の割り当て先(FR-1106)。面は部分形状の参照(P3 の `serializeSubShapeRef` を使い回す)。 */
+function serializeAppearanceTarget(target: AppearanceTarget): AppearanceTarget {
+  switch (target.kind) {
+    case 'body':
+      return { kind: 'body', bodyFeatureId: target.bodyFeatureId };
+    case 'face':
+      return { kind: 'face', ref: serializeSubShapeRef(target.ref) };
+  }
+}
+
+function serializeAppearanceEntry(entry: AppearanceEntry): AppearanceEntry {
+  return {
+    id: entry.id,
+    target: serializeAppearanceTarget(entry.target),
+    appearance: serializeAppearanceSpec(entry.appearance),
+  };
+}
+
+/** 外観の割り当て表(FR-1106〜1110、版6、P5 タスク5)。 */
+function serializeAppearanceTable(table: AppearanceTable): AppearanceTable {
+  return { entries: table.entries.map(serializeAppearanceEntry) };
+}
+
 function serializePartDocument(document: PartDocument): PartDocument {
   return {
     id: document.id,
@@ -1066,6 +1167,7 @@ function serializePartDocument(document: PartDocument): PartDocument {
     references: document.references.map(serializeReferenceFeature),
     solids: document.solids.map(serializeSolidFeature),
     parameters: document.parameters.map(serializeParameter),
+    appearance: serializeAppearanceTable(document.appearance),
   };
 }
 
@@ -3721,6 +3823,266 @@ function readParameters(
   return readList(record, 'parameters', path, readParameter);
 }
 
+/**
+ * 決まった文字列のどれかとして読むが、`readLiteral` と違い**一致しなくても断らない**
+ * (`{ ok: true, value: null }` を返す)。将来プリセット・柄・樹種が増えても、古い版の
+ * アプリで新しい文書を(部分的に)開けるようにするための前方互換の道具
+ * (計画書 P5-高度なソリッド・外観と測定.md タスク5「未知のプリセット id / 柄の種類は、
+ * その割り当てを落として読み進める」)。欄そのものが無い・文字列でない場合は通常どおり断る。
+ */
+function readKnownLiteralOrNull<T extends string>(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+  allowed: readonly T[],
+): Checked<T | null> {
+  const text = readString(source, key, parentPath);
+  if (!text.ok) {
+    return text;
+  }
+  for (const candidate of allowed) {
+    if (candidate === text.value) {
+      return { ok: true, value: candidate };
+    }
+  }
+  return { ok: true, value: null };
+}
+
+/**
+ * 光沢・粗さ・透過率(FR-1107、FR-1109)。0〜100(%)の式を読む。式が壊れて評価値が NaN の
+ * ときは `readExpression` が既に許容しているので対象にしないが、有限の数で 0〜100 の範囲外
+ * なら壊れたファイルとして断る(統括の指示。範囲外は `invalidField`)。
+ */
+function readAppearancePercent(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<ExpressionValueJson> {
+  const value = readExpression(source, key, parentPath);
+  if (!value.ok) {
+    return value;
+  }
+  const path = joinPath(parentPath, key);
+  const evaluated = value.value.value;
+  if (!Number.isNaN(evaluated) && (evaluated < 0 || evaluated > 100)) {
+    return fieldProblem(path, 'type');
+  }
+  return value;
+}
+
+/**
+ * 柄(FR-1108)を読む。**未知の柄の種類・未知の樹種は `null` を返し**、呼び出し側
+ * (`readAppearanceSpec`)がその割り当てごと落とす(前方互換、タスク5)。
+ */
+function readAppearancePattern(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<AppearancePattern | null> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readKnownLiteralOrNull(record.value, 'kind', path, APPEARANCE_PATTERN_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  if (kind.value === null) {
+    return { ok: true, value: null };
+  }
+  switch (kind.value) {
+    case 'none':
+      return { ok: true, value: { kind: 'none' } };
+    case 'expandedMetal': {
+      const spacing = readExpression(record.value, 'spacing', path);
+      if (!spacing.ok) {
+        return spacing;
+      }
+      return { ok: true, value: { kind: 'expandedMetal', spacing: spacing.value } };
+    }
+    case 'checkerPlate': {
+      const spacing = readExpression(record.value, 'spacing', path);
+      if (!spacing.ok) {
+        return spacing;
+      }
+      return { ok: true, value: { kind: 'checkerPlate', spacing: spacing.value } };
+    }
+    case 'woodGrain': {
+      const spacing = readExpression(record.value, 'spacing', path);
+      if (!spacing.ok) {
+        return spacing;
+      }
+      const species = readKnownLiteralOrNull(record.value, 'species', path, WOOD_SPECIES_VALUES);
+      if (!species.ok) {
+        return species;
+      }
+      if (species.value === null) {
+        return { ok: true, value: null };
+      }
+      return {
+        ok: true,
+        value: { kind: 'woodGrain', spacing: spacing.value, species: species.value },
+      };
+    }
+  }
+}
+
+/**
+ * 見た目そのもの(FR-1107、FR-1109)を読む。**未知のプリセット id・未知の柄・未知の樹種は
+ * `null` を返し**、呼び出し側(`readAppearanceEntry`)がその割り当てごと落とす(前方互換)。
+ */
+function readAppearanceSpec(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<AppearanceSpec | null> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const preset = readKnownLiteralOrNull(record.value, 'preset', path, APPEARANCE_PRESET_IDS);
+  if (!preset.ok) {
+    return preset;
+  }
+  if (preset.value === null) {
+    return { ok: true, value: null };
+  }
+  const color = readString(record.value, 'color', path);
+  if (!color.ok) {
+    return color;
+  }
+  const transmission = readAppearancePercent(record.value, 'transmission', path);
+  if (!transmission.ok) {
+    return transmission;
+  }
+  const gloss = readAppearancePercent(record.value, 'gloss', path);
+  if (!gloss.ok) {
+    return gloss;
+  }
+  const roughness = readAppearancePercent(record.value, 'roughness', path);
+  if (!roughness.ok) {
+    return roughness;
+  }
+  const pattern = readAppearancePattern(record.value, 'pattern', path);
+  if (!pattern.ok) {
+    return pattern;
+  }
+  if (pattern.value === null) {
+    return { ok: true, value: null };
+  }
+  return {
+    ok: true,
+    value: {
+      preset: preset.value,
+      color: color.value,
+      transmission: transmission.value,
+      gloss: gloss.value,
+      roughness: roughness.value,
+      pattern: pattern.value,
+    },
+  };
+}
+
+/** 外観の割り当て先(FR-1106)。面は部分形状の参照(P3 の `readSubShapeRefField` を使い回す)。 */
+function readAppearanceTarget(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<AppearanceTarget> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, APPEARANCE_TARGET_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'body': {
+      const bodyFeatureId = readString(record.value, 'bodyFeatureId', path);
+      if (!bodyFeatureId.ok) {
+        return bodyFeatureId;
+      }
+      return { ok: true, value: { kind: 'body', bodyFeatureId: bodyFeatureId.value } };
+    }
+    case 'face': {
+      const ref = readSubShapeRefField(record.value, 'ref', path);
+      if (!ref.ok) {
+        return ref;
+      }
+      return { ok: true, value: { kind: 'face', ref: ref.value } };
+    }
+  }
+}
+
+/**
+ * 外観の割り当て 1 件を読む。**未知のプリセット id・柄の種類・樹種は、この割り当てだけを
+ * 落として読み進める**(戻り値 `null`。ファイル全体は断らない。前方互換、計画書タスク5)。
+ * それ以外の壊れ方(id・対象・欄の型違い等)は、このファイルの他の読み手と同じく
+ * ファイル全体を断る。
+ */
+function readAppearanceEntry(value: unknown, path: string): Checked<AppearanceEntry | null> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) {
+    return id;
+  }
+  const target = readAppearanceTarget(record.value, 'target', path);
+  if (!target.ok) {
+    return target;
+  }
+  const spec = readAppearanceSpec(record.value, 'appearance', path);
+  if (!spec.ok) {
+    return spec;
+  }
+  if (spec.value === null) {
+    return { ok: true, value: null };
+  }
+  return { ok: true, value: { id: id.value, target: target.value, appearance: spec.value } };
+}
+
+/**
+ * 外観の割り当て表(FR-1106〜1110、要件§4.12)を読む。**版6からは必須**(欠けていれば
+ * `missingField`)。版5以前のこの欄が無いファイルは `schema.ts` の `SCHEMA_MIGRATIONS[5]`
+ * (欄が無ければ空の表で補う)へ移す。書き手は常にこの欄を書く。
+ *
+ * id の重複は、表全体を読み終えてから `readEnvelope` がまとめて検査する
+ * (`findDuplicateConstraintId` と同じ流儀。1件ずつ読むこの関数では前の割り当てを覚える
+ * 状態を持たずに済む)。
+ */
+function readAppearanceTable(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<AppearanceTable> {
+  const table = readRecord(record, 'appearance', path);
+  if (!table.ok) {
+    return table;
+  }
+  const tablePath = joinPath(path, 'appearance');
+  const array = readArray(table.value, 'entries', tablePath);
+  if (!array.ok) {
+    return array;
+  }
+  const entriesPath = joinPath(tablePath, 'entries');
+  const entries: AppearanceEntry[] = [];
+  for (let index = 0; index < array.value.length; index += 1) {
+    const entry = readAppearanceEntry(array.value[index], indexPath(entriesPath, index));
+    if (!entry.ok) {
+      return entry;
+    }
+    if (entry.value !== null) {
+      entries.push(entry.value);
+    }
+  }
+  return { ok: true, value: { entries } };
+}
+
 function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -3758,6 +4120,10 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!parameters.ok) {
     return parameters;
   }
+  const appearance = readAppearanceTable(record.value, path);
+  if (!appearance.ok) {
+    return appearance;
+  }
   return {
     ok: true,
     value: {
@@ -3769,6 +4135,7 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
       references: references.value,
       solids: solids.value,
       parameters: parameters.value,
+      appearance: appearance.value,
     },
   };
 }
@@ -3901,6 +4268,13 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
       `拘束の id が文書の中で重なっています(${duplicateConstraintId})。ファイルが壊れている可能性があります。`,
     );
   }
+  const duplicateAppearanceId = findDuplicateAppearanceId(decoded.value.appearance);
+  if (duplicateAppearanceId !== null) {
+    return fail(
+      'invalidField',
+      `外観の割り当ての id が重なっています(${duplicateAppearanceId})。ファイルが壊れている可能性があります。`,
+    );
+  }
   return { ok: true, document: decoded.value, savedAt: savedAt.value };
 }
 
@@ -3917,6 +4291,22 @@ function findDuplicateConstraintId(sketches: readonly SketchDocument[]): string 
       }
       seen.add(constraint.id);
     }
+  }
+  return null;
+}
+
+/**
+ * 外観の割り当ての `id` は表の中で重ならないことを確かめる(FR-1106〜1110、P5 タスク5)。
+ * `findDuplicateConstraintId` と同じ理由(重なると「1 つずつ外す」(FR-1110)がどちらを
+ * 外すか決まらない。統括の指示により、重複は前方互換の対象にせず `invalidField` で断る)。
+ */
+function findDuplicateAppearanceId(table: AppearanceTable): string | null {
+  const seen = new Set<string>();
+  for (const entry of table.entries) {
+    if (seen.has(entry.id)) {
+      return entry.id;
+    }
+    seen.add(entry.id);
   }
   return null;
 }

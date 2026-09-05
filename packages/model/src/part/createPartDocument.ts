@@ -8,6 +8,7 @@
  * part/resolvePart.ts の担当にする。
  */
 
+import { emptyAppearanceTable } from '../appearance/appearanceTable.js';
 import {
   createEmptySketchDocument,
   nextSerialId,
@@ -38,11 +39,11 @@ import type {
  * 版 4 以前のファイルは `SCHEMA_MIGRATIONS[4]` が `parameters` の省略を明示的に補って読み込む。
  *
  * P5 タスク2 で足した外観の割り当て(`PartDocument.appearance`、FR-1106〜1110)は、
- * **まだこの版に含めない**。読み書きと移行(`SCHEMA_MIGRATIONS[5]`)を作る P5 タスク5 で
- * `PCAD_SCHEMA_VERSION` と同時に 6 へ上げる(片方だけ上げると `schemaVersion.test.ts` が
- * 落ちるため。P5 §0.a-0.15)。
+ * P5 タスク5(§0.a-0.15、P4b が版 5 を使ったための読み替えで版 6)で `packages/io` が
+ * 読み書きと移行(`SCHEMA_MIGRATIONS[5]`)を実装したので版 6 から必須の欄にした。
+ * 版 5 以前のファイルは `SCHEMA_MIGRATIONS[5]` が `appearance` の省略を空の表で補って読み込む。
  */
-export const PART_SCHEMA_VERSION = 5;
+export const PART_SCHEMA_VERSION = 6;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;
@@ -158,12 +159,9 @@ export function createEmptyPartDocument(): PartDocument {
     solids: [],
     // パラメータ表(FR-207)の既定は空。名前を付けた数値は利用者が足す(P4b タスク2)。
     parameters: [],
-    // 外観の割り当て(FR-1106〜1110)の欄はここでは入れない。`packages/io` が保存も復元も
-    // しない今の段(版 5)で入れると、書いて読み戻した文書と一致しなくなる(往復の検査)。
-    // 割り当てが1つも無い文書は P2 からの単色(`DEFAULT_APPEARANCE`)で描かれ、見た目は
-    // 変わらない(P5 §0.a-0.4)。読み出しは `appearance/documentAppearance.ts` の
-    // `appearanceOf` を通し、欄が無ければ空の表として扱う。**版 6(P5 タスク5)で欄を
-    // 必須にするときに、ここへ `appearance: emptyAppearanceTable()` を足す。**
+    // 外観の割り当て(FR-1106〜1110)の既定は空の表。割り当てが1つも無い文書は
+    // P2 からの単色(`DEFAULT_APPEARANCE`)で描かれ、見た目は変わらない(P5 §0.a-0.4)。
+    appearance: emptyAppearanceTable(),
   };
 }
 

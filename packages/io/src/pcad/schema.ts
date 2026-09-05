@@ -39,8 +39,14 @@ import { isRecord } from './guards.js';
  * (`documentJson.ts` の `readSketch`。移行の対象にしない)。拘束の**解**(座標の上書き)は
  * 保存しない(式と目標値だけを保存し、解決のたびに解き直す。rules/04「導出できるものは
  * 保存しない」)。
+ *
+ * **版 5 → 版 6(P5 タスク5、§0.a-0.15):** P5 が足したのは外観の割り当て
+ * (`PartDocument.appearance`、FR-1106〜1110)である。計画書は「版 5」と書いているが、
+ * P4b タスク21が先に版 5 を使ったため、統括の決定により P5 のこの節はすべて版 6 に
+ * 読み替える。`appearance` は部品文書の必須の欄になるので、版5以前のファイル(この欄を
+ * 持たない)は `SCHEMA_MIGRATIONS[5]` が空の表で補う(`parameters` と同じ扱い)。
  */
-export const PCAD_SCHEMA_VERSION = 5;
+export const PCAD_SCHEMA_VERSION = 6;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -178,6 +184,19 @@ function migrateDocumentToV5(document: Record<string, unknown>): Record<string, 
   return { ...migrated, parameters: [] };
 }
 
+/**
+ * 版5以前の部品文書を版6の形へ補う(P5 タスク5、§0.a-0.15)。`schemaVersion` の書き換えと、
+ * `appearance`(外観の割り当て、FR-1106〜1110)が無ければ空の表で補う
+ * (`migrateDocumentToV5` の `parameters` と同じ扱い)。
+ */
+function migrateDocumentToV6(document: Record<string, unknown>): Record<string, unknown> {
+  const migrated: Record<string, unknown> = { ...document, schemaVersion: 6 };
+  if ('appearance' in migrated) {
+    return migrated;
+  }
+  return { ...migrated, appearance: { entries: [] } };
+}
+
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
   2: (raw) => {
     if (!isRecord(raw)) {
@@ -220,5 +239,19 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
       return raw;
     }
     return { ...raw, schema: 5, document: migrateDocumentToV5(document) };
+  },
+  /**
+   * 版5 → 版6(P5 タスク5、§0.a-0.15): 外観の割り当て(`appearance`、FR-1106〜1110)が
+   * 無ければ空の表で補う。
+   */
+  5: (raw) => {
+    if (!isRecord(raw)) {
+      return raw;
+    }
+    const document = raw['document'];
+    if (!isRecord(document)) {
+      return raw;
+    }
+    return { ...raw, schema: 6, document: migrateDocumentToV6(document) };
   },
 };

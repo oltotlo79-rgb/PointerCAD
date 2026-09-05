@@ -1,8 +1,10 @@
 import {
   createEmptyPartDocument,
+  emptyAppearanceTable,
   PART_SCHEMA_VERSION,
   resolveSketch,
   sketchConstraints,
+  type AppearanceTable,
   type PartDocument,
   type Parameter,
   type ReferenceFeature,
@@ -626,6 +628,9 @@ function richDocument(): PartDocument {
     solids: richSolids(),
     // パラメータ表(FR-207、P4b タスク21)。3件・日本語の名前・並び順を含む。
     parameters: richParameters(),
+    // 外観の割り当て(FR-1106〜1110、P5 タスク5)。立体1つと面1枚、プリセットと個別調整を
+    // 両方含む。
+    appearance: richAppearance(),
   };
 }
 
@@ -638,13 +643,64 @@ function richParameters(): readonly Parameter[] {
   ];
 }
 
+/** 面 1 枚の参照(union-1 の面。P3 の指紋と同じ形)。外観の面割り当ての検査に使う。 */
+function richAppearanceFaceRef(): SubShapeRef {
+  return {
+    bodyFeatureId: 'union-1',
+    index: 2,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 800,
+      position: [0, 0, 5],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+}
+
+/**
+ * 外観の割り当て2件(FR-1106〜1110)。立体1つ(鉄板プリセット)と面1枚(個別調整・
+ * 木目の柄・透過率は式のまま(`50*2`))を両方含む。
+ */
+function richAppearance(): AppearanceTable {
+  return {
+    entries: [
+      {
+        id: 'appearance-1',
+        target: { kind: 'body', bodyFeatureId: 'extrude-1' },
+        appearance: {
+          preset: 'steel',
+          color: '#8c9199',
+          transmission: ev('0', 0),
+          gloss: ev('100', 100),
+          roughness: ev('42', 42),
+          pattern: { kind: 'none' },
+        },
+      },
+      {
+        id: 'appearance-2',
+        target: { kind: 'face', ref: richAppearanceFaceRef() },
+        appearance: {
+          preset: 'custom',
+          color: '#3355ff',
+          transmission: ev('50*2', 100),
+          gloss: ev('10', 10),
+          roughness: ev('20', 20),
+          pattern: { kind: 'woodGrain', spacing: ev('6', 6), species: 'oak' },
+        },
+      },
+    ],
+  };
+}
+
 /** 型を通さない生の部品文書。欄の欠落や型違いを自由に作れる。 */
 // 版4(P4 タスク31)は construction・layout・references のいずれも必須で、
-// 版5(P4b タスク21)は parameters も必須になったので、既定値は
-// 「壊す前提の欄以外はすべて版5として妥当」な形にしておく
-// (references・parameters は空配列で足す。個別の検査は overrides で意図的に外す)。
-// スケッチの constraints は型自体が恒常的に省略可能なので、既定のスケッチには含めない
-// (省略時も欄が無いスケッチとして自然に読める。§0.a-0.17)。
+// 版5(P4b タスク21)は parameters も必須になり、版6(P5 タスク5)は appearance も
+// 必須になったので、既定値は「壊す前提の欄以外はすべて版6として妥当」な形にしておく
+// (references・parameters は空配列、appearance は空の表で足す。個別の検査は overrides
+// で意図的に外す)。スケッチの constraints は型自体が恒常的に省略可能なので、既定の
+// スケッチには含めない(省略時も欄が無いスケッチとして自然に読める。§0.a-0.17)。
 function rawDocument(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'part-1',
@@ -655,6 +711,7 @@ function rawDocument(overrides: Record<string, unknown> = {}): Record<string, un
     references: [],
     solids: [],
     parameters: [],
+    appearance: { entries: [] },
     ...overrides,
   };
 }
@@ -670,6 +727,13 @@ function withoutReferences(document: Record<string, unknown>): Record<string, un
 function withoutParameters(document: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...document };
   delete copy['parameters'];
+  return copy;
+}
+
+/** `rawDocument` の既定に入っている `appearance` を取り除く(欄が無い版5を模す検査専用)。 */
+function withoutAppearance(document: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...document };
+  delete copy['appearance'];
   return copy;
 }
 
@@ -705,15 +769,19 @@ function roundTrip(document: PartDocument): PartDocument {
 }
 
 // P4 タスク31(§0.a-0.24)で版 3 → 4 へ上げ、P4b タスク21(§0.a-0.17)で版 4 → 5 へ上げた。
-describe('.pcad の版(§0.a-0.3、§0.a-0.22、§0.a-0.24、§0.a-0.17)', () => {
-  it('封筒の版は 5 で、部品文書の版と同じ値である', () => {
-    expect(PCAD_SCHEMA_VERSION).toBe(5);
+describe('.pcad の版(§0.a-0.3、§0.a-0.22、§0.a-0.24、§0.a-0.17、P5 タスク5・§0.a-0.15)', () => {
+  it('封筒の版は 6 で、部品文書の版と同じ値である', () => {
+    expect(PCAD_SCHEMA_VERSION).toBe(6);
     expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
   });
 
-  it('版を上げる変換表は版 2→3・3→4・4→5 の3つを持つ(P3・P4 タスク31・P4b タスク21が版を1つずつ足したため)', () => {
-    expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(['2', '3', '4']);
-  });
+  it(
+    '版を上げる変換表は版 2→3・3→4・4→5・5→6 の4つを持つ' +
+      '(P3・P4 タスク31・P4b タスク21・P5 タスク5が版を1つずつ足したため)',
+    () => {
+      expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(['2', '3', '4', '5']);
+    },
+  );
 });
 
 describe('部品文書の書き出し(serializeDocument)', () => {
@@ -752,8 +820,8 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     expect(at).toBeLessThanOrEqual(after);
   });
 
-  // 版の数字は P4 タスク31(§0.a-0.24)で 3 → 4、P4b タスク21(§0.a-0.17)で 4 → 5 に更新
-  // (PCAD_SCHEMA_VERSION の値そのもの)。
+  // 版の数字は P4 タスク31(§0.a-0.24)で 3 → 4、P4b タスク21(§0.a-0.17)で 4 → 5、
+  // P5 タスク5(§0.a-0.15)で 5 → 6 に更新(PCAD_SCHEMA_VERSION の値そのもの)。
   it('封筒と文書の並びが計画書 §2.8 の例のとおりになる', () => {
     const document: PartDocument = {
       id: 'part-1',
@@ -775,17 +843,18 @@ describe('部品文書の書き出し(serializeDocument)', () => {
         },
       ],
       parameters: [],
+      appearance: emptyAppearanceTable(),
     };
     expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(
       `{
-  "schema": 5,
+  "schema": 6,
   "kind": "part",
   "app": "PointerCAD",
   "savedAt": "2026-09-03T01:23:45.678Z",
   "document": {
     "id": "part-1",
     "name": "部品1",
-    "schemaVersion": 5,
+    "schemaVersion": 6,
     "sketches": [
       {
         "id": "sketch-1",
@@ -814,7 +883,10 @@ describe('部品文書の書き出し(serializeDocument)', () => {
         "symmetric": false
       }
     ],
-    "parameters": []
+    "parameters": [],
+    "appearance": {
+      "entries": []
+    }
   }
 }
 `,
@@ -832,6 +904,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     const document = richDocument();
     const shuffled: PartDocument = {
       parameters: document.parameters,
+      appearance: document.appearance,
       solids: document.solids,
       references: document.references,
       activeSketchId: document.activeSketchId,
@@ -1327,11 +1400,17 @@ describe(
       expect(document.parameters).toEqual([]);
     });
 
-    it('版4を読み込んだ文書を書き出すと版5(parameters あり)で正規化される', () => {
+    it('版4のファイルは appearance も空の表になる(4→5→6と連続して移行する)', () => {
+      const document = expectOk(parseDocument(legacyRawFile()));
+      expect(document.appearance.entries).toEqual([]);
+    });
+
+    it('版4を読み込んだ文書を書き出すと現在の版(parameters・appearance あり)で正規化される', () => {
       const document = expectOk(parseDocument(legacyRawFile()));
       const text = serializeDocument(document, { savedAt: SAVED_AT });
-      expect(text).toContain('"schema": 5');
+      expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
       expect(text).toContain('"parameters": []');
+      expect(text).toContain('"appearance": {\n      "entries": []\n    }');
       // 正規化後は自分自身との往復でも文字列が変わらない(決定的、§0.a-0.2 と同じ確認)。
       const again = serializeDocument(expectOk(parseDocument(text)), { savedAt: SAVED_AT });
       expect(again).toBe(text);
@@ -1354,6 +1433,259 @@ describe(
     });
   },
 );
+
+describe(
+  '版5 → 版6の移行(appearance 無し、SCHEMA_MIGRATIONS[5]、P5 タスク5・§0.a-0.15)',
+  () => {
+    /** 版5として保存された(schema/schemaVersion とも 5 の、appearance を持たない)生の部品文書。 */
+    function legacyRawDocument(): Record<string, unknown> {
+      return withoutAppearance(rawDocument({ schemaVersion: 5 }));
+    }
+
+    /** 版5の生ファイル。封筒の schema も 5(SCHEMA_MIGRATIONS[5] を通す)。 */
+    function legacyRawFile(): string {
+      return rawFile({ schema: 5, document: legacyRawDocument() });
+    }
+
+    it('appearance の欄が無い版5のファイルも開ける(移行で空の表として読む)', () => {
+      const document = expectOk(parseDocument(legacyRawFile()));
+      expect(document.appearance.entries).toEqual([]);
+    });
+
+    it('版5を読み込んだ文書を書き出すと版6(appearance あり)で正規化される', () => {
+      const document = expectOk(parseDocument(legacyRawFile()));
+      const text = serializeDocument(document, { savedAt: SAVED_AT });
+      expect(text).toContain('"schema": 6');
+      expect(text).toContain('"appearance": {\n      "entries": []\n    }');
+      // 正規化後は自分自身との往復でも文字列が変わらない(決定的、§0.a-0.2 と同じ確認)。
+      const again = serializeDocument(expectOk(parseDocument(text)), { savedAt: SAVED_AT });
+      expect(again).toBe(text);
+    });
+
+    it('版6になったのに appearance の欄が無ければ断る(寛容な読みは版5までに限る)', () => {
+      const broken = withoutAppearance(rawDocument());
+      expect('appearance' in broken).toBe(false);
+      const error = expectError(parseDocument(rawFile({ document: broken })));
+      expect(error.code).toBe('missingField');
+      expect(error.message).toContain('appearance');
+    });
+  },
+);
+
+describe('外観の往復と断り方(FR-1106〜1110、要件§4.12、P5 タスク5)', () => {
+  it('立体1つ・面1枚の割り当てが id・対象・外観のまま往復する(外観2件)', () => {
+    const restored = roundTrip(richDocument());
+    expect(restored.appearance).toEqual(richAppearance());
+    expect(restored.appearance.entries).toHaveLength(2);
+  });
+
+  it('透過率の式(50*2)が文字列のまま往復する', () => {
+    const restored = roundTrip(richDocument());
+    const faceEntry = restored.appearance.entries.find((entry) => entry.target.kind === 'face');
+    if (faceEntry === undefined) {
+      throw new Error('面の割り当てのはず');
+    }
+    expect(faceEntry.appearance.transmission.source).toBe('50*2');
+    expect(faceEntry.appearance.transmission.value).toBe(100);
+  });
+
+  it('面の割り当ての SubShapeRef が往復する(指紋の数値が一致)', () => {
+    const restored = roundTrip(richDocument());
+    const faceEntry = restored.appearance.entries.find((entry) => entry.target.kind === 'face');
+    if (faceEntry === undefined || faceEntry.target.kind !== 'face') {
+      throw new Error('面の割り当てのはず');
+    }
+    expect(faceEntry.target.ref).toEqual(richAppearanceFaceRef());
+  });
+
+  it('柄の間隔(spacing)の式が文字列のまま往復する(woodGrain)', () => {
+    const restored = roundTrip(richDocument());
+    const faceEntry = restored.appearance.entries.find((entry) => entry.target.kind === 'face');
+    if (faceEntry === undefined || faceEntry.appearance.pattern.kind !== 'woodGrain') {
+      throw new Error('woodGrain の割り当てのはず');
+    }
+    expect(faceEntry.appearance.pattern.spacing.source).toBe('6');
+    expect(faceEntry.appearance.pattern.species).toBe('oak');
+  });
+
+  it('立体の割り当てのプリセット id・光沢・粗さの式が往復する(steel)', () => {
+    const restored = roundTrip(richDocument());
+    const bodyEntry = restored.appearance.entries.find((entry) => entry.target.kind === 'body');
+    if (bodyEntry === undefined) {
+      throw new Error('立体の割り当てのはず');
+    }
+    expect(bodyEntry.appearance.preset).toBe('steel');
+    expect(bodyEntry.appearance.color).toBe('#8c9199');
+    expect(bodyEntry.appearance.gloss.source).toBe('100');
+    expect(bodyEntry.appearance.roughness.source).toBe('42');
+  });
+
+  it('未知のプリセット id を含む割り当ては、その割り当てだけ落ちる。ほかは読める(前方互換)', () => {
+    const broken = rawDocument({
+      appearance: {
+        entries: [
+          {
+            id: 'appearance-1',
+            target: { kind: 'body', bodyFeatureId: 'extrude-1' },
+            appearance: {
+              preset: 'これはない',
+              color: '#ffffff',
+              transmission: ev('0', 0),
+              gloss: ev('0', 0),
+              roughness: ev('0', 0),
+              pattern: { kind: 'none' },
+            },
+          },
+          {
+            id: 'appearance-2',
+            target: { kind: 'body', bodyFeatureId: 'extrude-2' },
+            appearance: {
+              preset: 'steel',
+              color: '#8c9199',
+              transmission: ev('0', 0),
+              gloss: ev('100', 100),
+              roughness: ev('42', 42),
+              pattern: { kind: 'none' },
+            },
+          },
+        ],
+      },
+    });
+    const document = expectOk(parseDocument(rawFile({ document: broken })));
+    expect(document.appearance.entries).toHaveLength(1);
+    expect(document.appearance.entries[0].id).toBe('appearance-2');
+  });
+
+  it('未知の柄の種類を含む割り当ては、その割り当てだけ落ちる(前方互換)', () => {
+    const broken = rawDocument({
+      appearance: {
+        entries: [
+          {
+            id: 'appearance-1',
+            target: { kind: 'body', bodyFeatureId: 'extrude-1' },
+            appearance: {
+              preset: 'custom',
+              color: '#ffffff',
+              transmission: ev('0', 0),
+              gloss: ev('0', 0),
+              roughness: ev('0', 0),
+              pattern: { kind: 'これはない' },
+            },
+          },
+        ],
+      },
+    });
+    const document = expectOk(parseDocument(rawFile({ document: broken })));
+    expect(document.appearance.entries).toEqual([]);
+  });
+
+  it('未知の樹種を含む woodGrain の割り当ては、その割り当てだけ落ちる(前方互換)', () => {
+    const broken = rawDocument({
+      appearance: {
+        entries: [
+          {
+            id: 'appearance-1',
+            target: { kind: 'body', bodyFeatureId: 'extrude-1' },
+            appearance: {
+              preset: 'custom',
+              color: '#ffffff',
+              transmission: ev('0', 0),
+              gloss: ev('0', 0),
+              roughness: ev('0', 0),
+              pattern: { kind: 'woodGrain', spacing: ev('6', 6), species: 'これはない' },
+            },
+          },
+        ],
+      },
+    });
+    const document = expectOk(parseDocument(rawFile({ document: broken })));
+    expect(document.appearance.entries).toEqual([]);
+  });
+
+  it('光沢が範囲外(101%)なら断る(統括の指示、範囲外は invalidField)', () => {
+    const broken = rawDocument({
+      appearance: {
+        entries: [
+          {
+            id: 'appearance-1',
+            target: { kind: 'body', bodyFeatureId: 'extrude-1' },
+            appearance: {
+              preset: 'custom',
+              color: '#ffffff',
+              transmission: ev('0', 0),
+              gloss: ev('101', 101),
+              roughness: ev('0', 0),
+              pattern: { kind: 'none' },
+            },
+          },
+        ],
+      },
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('gloss');
+  });
+
+  it('透過率が範囲外(負)なら断る', () => {
+    const broken = rawDocument({
+      appearance: {
+        entries: [
+          {
+            id: 'appearance-1',
+            target: { kind: 'body', bodyFeatureId: 'extrude-1' },
+            appearance: {
+              preset: 'custom',
+              color: '#ffffff',
+              transmission: ev('-1', -1),
+              gloss: ev('0', 0),
+              roughness: ev('0', 0),
+              pattern: { kind: 'none' },
+            },
+          },
+        ],
+      },
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('transmission');
+  });
+
+  it('id が表の中で重なっていれば断る(統括の指示)', () => {
+    const broken = rawDocument({
+      appearance: {
+        entries: [
+          {
+            id: 'dup-1',
+            target: { kind: 'body', bodyFeatureId: 'extrude-1' },
+            appearance: {
+              preset: 'steel',
+              color: '#8c9199',
+              transmission: ev('0', 0),
+              gloss: ev('100', 100),
+              roughness: ev('42', 42),
+              pattern: { kind: 'none' },
+            },
+          },
+          {
+            id: 'dup-1',
+            target: { kind: 'body', bodyFeatureId: 'extrude-2' },
+            appearance: {
+              preset: 'aluminum',
+              color: '#c9ced6',
+              transmission: ev('0', 0),
+              gloss: ev('100', 100),
+              roughness: ev('32', 32),
+              pattern: { kind: 'none' },
+            },
+          },
+        ],
+      },
+    });
+    const error = expectError(parseDocument(rawFile({ document: broken })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('dup-1');
+  });
+});
 
 describe('穴の深さ(HoleDepth)の往復(§0.a-0.11、§0.a-0.12)', () => {
   it('貫通(through)が往復で一致する', () => {
@@ -1761,6 +2093,7 @@ describe('版2から版3への移行(§0.a-0.22、SCHEMA_MIGRATIONS[2])', () => 
       references: [],
       solids: v2Solids,
       parameters: [],
+      appearance: emptyAppearanceTable(),
     };
     const v2File = JSON.stringify({
       schema: 2,
@@ -2125,12 +2458,12 @@ describe('読み込みの断り方(FR-504、NFR-UX-5)', () => {
     expect(error.code).toBe('notPcad');
   });
 
-  // 現在の版が 5(P4b タスク21)になったので、断るべき「新しすぎる版」も 6 に更新する。
-  it('版 6 は「新しい版で保存されています」と断る', () => {
-    const error = expectError(parseDocument(rawFile({ schema: 6 })));
+  // 現在の版が 6(P5 タスク5)になったので、断るべき「新しすぎる版」も 7 に更新する。
+  it('版 7 は「新しい版で保存されています」と断る', () => {
+    const error = expectError(parseDocument(rawFile({ schema: 7 })));
     expect(error.code).toBe('unsupportedNewVersion');
     expect(error.message).toContain('新しい版の PointerCAD で保存されています');
-    expect(error.message).toContain('6');
+    expect(error.message).toContain('7');
   });
 
   it('版 1 は「対応していない古い版です」と断る(版2への移行表が無いため)', () => {
@@ -2217,6 +2550,8 @@ describe('読み方の規則(計画書 タスク14)', () => {
     expect(serializeDocument(parsed, { savedAt: SAVED_AT })).not.toContain('foo');
     expect(Object.keys(parsed).sort()).toEqual([
       'activeSketchId',
+      // 外観の割り当て(FR-1106〜1110、P5 タスク5)。読み手は常に空の表で補う(§0.a-0.15)。
+      'appearance',
       'id',
       'name',
       // パラメータ表(FR-207、P4b タスク2)。読み手は常に空の配列で補う(中身は版5から)。
@@ -2520,7 +2855,7 @@ describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
   it('freeOrientation・subShape 参照は現在の版でも省略可能(前方互換とは無関係な理由で版が上がった)', () => {
     const text = serializeDocument(documentWith(freeSketch()), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(5);
+    expect(PCAD_SCHEMA_VERSION).toBe(6);
   });
 });
 

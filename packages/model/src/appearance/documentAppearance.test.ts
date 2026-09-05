@@ -51,31 +51,20 @@ function boxDocument(): PartDocument {
   return appendSolid(createEmptyPartDocument(), extrude('extrude-1'));
 }
 
+// P5 タスク5(§0.a-0.15)で `PartDocument.appearance` が必須の欄になったため、
+// 「欄そのものが無い文書」は有効な TypeScript では作れなくなった(`part/types.ts` の
+// コメント参照)。そのため、以前ここにあった「欄が無い文書でも appearanceOf が空の表を
+// 返す」「欄が無い文書どうしの空の表は同じものを使い回す」の2件は前提が成り立たなくなり、
+// 削除した(版5以前のファイルは `packages/io` の `SCHEMA_MIGRATIONS[5]` が読み込み時に
+// 空の表を補うので、実際の運用でこの状態の文書ができることはない)。
 describe('createEmptyPartDocument の外観', () => {
   it('起動時の文書の割り当ては空', () => {
     expect(appearanceOf(createEmptyPartDocument()).entries).toEqual([]);
   });
 
-  it('appearanceOf は欄が無い文書でも空の表を返す', () => {
+  it('同じ文書に対しては同じ表を返す(余計な作り直しをしない)', () => {
     const document = boxDocument();
-    const withoutField: PartDocument = {
-      id: document.id,
-      name: document.name,
-      schemaVersion: document.schemaVersion,
-      sketches: document.sketches,
-      activeSketchId: document.activeSketchId,
-      references: document.references,
-      solids: document.solids,
-      parameters: document.parameters,
-    };
-    expect(appearanceOf(withoutField).entries).toEqual([]);
-  });
-
-  it('欄が無い文書どうしの空の表は同じものを使い回す(余計な作り直しをしない)', () => {
-    const document = boxDocument();
-    const a: PartDocument = { ...document, appearance: undefined };
-    const b: PartDocument = { ...document, appearance: undefined };
-    expect(appearanceOf(a)).toBe(appearanceOf(b));
+    expect(appearanceOf(document)).toBe(appearanceOf(document));
   });
 });
 

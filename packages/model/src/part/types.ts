@@ -479,12 +479,10 @@ export interface PartDocument {
    * `affectsShape` と `part/cacheKey.ts` の両方が外観を見ない)。立体はフィーチャー id、
    * 面は部分形状の指紋(`SubShapeRef`)で指す。
    *
-   * **いまは省略できる欄で、版 6(P5 タスク5)で `packages/io` が読み書きを実装したときに
-   * 必須へ変える**(`parameters` が版 5 で必須になったのと同じ道筋)。この段階で必須に
-   * すると、まだ外観を知らない `packages/io` の `serializePartDocument` /
-   * `readPartDocument` が型検査で落ち、直すと保存 JSON の中身(=既存の検査の期待値)まで
-   * 変わってしまう。読み出しは `appearance/documentAppearance.ts` の `appearanceOf` を
-   * 通し、欄が無ければ空の表として扱う。
+   * **版 6(P5 タスク5)で `packages/io` が読み書き・移行(`SCHEMA_MIGRATIONS[5]`)を
+   * 実装したので必須の欄にした**(`parameters` が版 5 で必須になったのと同じ道筋)。
+   * 版 5 以前のファイルは移行が空の表で補う。読み出しは `appearance/documentAppearance.ts`
+   * の `appearanceOf` を通しておけば、この欄が将来また整理されても呼び出し側は変わらない。
    */
-  readonly appearance?: AppearanceTable;
+  readonly appearance: AppearanceTable;
 }

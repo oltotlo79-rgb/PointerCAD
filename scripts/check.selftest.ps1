@@ -1,6 +1,9 @@
-﻿# scripts/lib/gitTreeGuard.ps1 の自己試験(Pester不使用の最小試験)。
-# `check.ps1` の (0) 前後比較を変更したら必ず実行する(rules/00-施行の仕組み.md)。
-# 本リポジトリには一切書き込まず、一時ディレクトリに専用のgitリポジトリを作って試験する。
+﻿# scripts/lib/gitTreeGuard.ps1、および scripts/check.ps1 の性能検査モード判定(-ShowPerfModeOnly)の
+# 自己試験(Pester不使用の最小試験)。
+# `check.ps1` の (0) 前後比較や性能検査モードの判定を変更したら必ず実行する(rules/00-施行の仕組み.md)。
+# 本リポジトリには一切書き込まず、一時ディレクトリに専用のgitリポジトリを作って試験する
+# (シナリオ12だけは本物の scripts/check.ps1 を `-ShowPerfModeOnly` で子プロセス起動するが、
+#  読み取りと表示だけで終了し、本リポジトリへは一切書き込まない)。
 # 実行: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.selftest.ps1
 $ErrorActionPreference = 'Stop'
 
@@ -338,10 +341,54 @@ finally {
     }
 }
 
+# === シナリオ12: scripts/check.ps1 の性能検査モード表示が $env:CI の値に応じて切り替わる ===
+# (rules/06-過去の失敗と対策.md 10.12: 共有CIランナーの速さは制御できないため、CI上では
+#  性能検査の上限判定を参考にとどめ、厳密な判定は手元のpre-push(-Level Push、CI以外)だけで行う)
+# 実際の scripts/check.ps1 を子プロセスとして `-ShowPerfModeOnly` で起動し(pnpmは一切実行せず、
+# 判定モードの表示だけで終了する)、表示メッセージで切替の実装を直接確認する。本リポジトリの
+# 作業ツリー・indexには一切書き込まない(読み取りと表示だけ)。
+$checkScriptPath = Join-Path $scriptDirectory "check.ps1"
+Assert-True (Test-Path -LiteralPath $checkScriptPath -PathType Leaf) "シナリオ12 前提: scripts/check.ps1 が存在する"
+
+$perfModeShellCommand = $null
+if (Get-Command powershell.exe -ErrorAction SilentlyContinue) {
+    $perfModeShellCommand = "powershell.exe"
+} elseif (Get-Command pwsh -ErrorAction SilentlyContinue) {
+    $perfModeShellCommand = "pwsh"
+}
+Assert-True ($null -ne $perfModeShellCommand) "シナリオ12 前提: powershell.exe または pwsh が見つかる"
+
+if ($null -ne $perfModeShellCommand) {
+    $originalCIEnvValue = $env:CI
+    try {
+        # 12a: CI 未設定 + -Level Push は従来どおり厳密
+        Remove-Item Env:CI -ErrorAction SilentlyContinue
+        # 2>&1 は使わない(Windows PowerShell 5.1 でネイティブコマンドのstderrをリダイレクトすると
+        # $ErrorActionPreference='Stop' 下で終端エラー扱いになる実測がある。rules/06 10.7)。
+        $output12a = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath -Level Push -ShowPerfModeOnly | Out-String
+        Assert-True ($output12a -match [regex]::Escape("性能検査: 厳密(-Level Push)")) `
+            "シナリオ12a: CI未設定 + -Level Push は「性能検査: 厳密(-Level Push)」と表示する"
+
+        # 12b: CI=true + -Level Push は参考(CI)に切り替わる(上限の数値・段は変えない)
+        $env:CI = 'true'
+        $output12b = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath -Level Push -ShowPerfModeOnly | Out-String
+        Assert-True ($output12b -match [regex]::Escape("性能検査: 参考(CI)")) `
+            "シナリオ12b: CI=true + -Level Push は「性能検査: 参考(CI)」と表示する"
+
+        # 12c: CI=true でも -Level Commit の表示は変わらない(pre-commitは元々参考のまま)
+        $output12c = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath -Level Commit -ShowPerfModeOnly | Out-String
+        Assert-True ($output12c -match [regex]::Escape("性能検査: 参考(-Level Commit)")) `
+            "シナリオ12c: CI=true でも -Level Commit は従来どおり「性能検査: 参考(-Level Commit)」と表示する"
+    }
+    finally {
+        if ($null -eq $originalCIEnvValue) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $originalCIEnvValue }
+    }
+}
+
 Write-Host ""
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red
     exit 1
 }
-Write-Host "[OK] gitTreeGuard の自己試験に全て合格しました" -ForegroundColor Green
+Write-Host "[OK] gitTreeGuard / check.ps1 性能検査モード判定の自己試験に全て合格しました" -ForegroundColor Green
 exit 0

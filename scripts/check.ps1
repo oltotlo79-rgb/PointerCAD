@@ -26,7 +26,10 @@ param(
     # Commit: 型検査・書き方・ユニットテスト・組み立ての4つ(pre-commit 用)
     # Push  : 上記に E2E を足した5つ(pre-push、CI、統括の手動実行の既定)
     [ValidateSet("Commit", "Push")]
-    [string]$Level = "Push"
+    [string]$Level = "Push",
+    # 診断用: 性能検査の判定モード(厳密/参考)の表示だけを行って終了する(pnpmは一切実行しない)。
+    # 統括の動作確認、および scripts/check.selftest.ps1 からの検証に使う。
+    [switch]$ShowPerfModeOnly
 )
 
 $scriptDirectory = [string]$PSScriptRoot
@@ -69,16 +72,31 @@ function Invoke-Check {
 
 Push-Location $root
 try {
-    # 性能検査(NFR-PF-2/PF-3、packages/kernel/src/worker/solidPerformance.test.ts)の
+    # 性能検査(NFR-PF-2/PF-3、packages/kernel/src/worker/solidPerformance.test.ts、および
+    # packages/model/src/sketch/constraints の solve.test.ts / diagnose.test.ts が同じ流儀で読む)の
     # 上限判定を厳密にするか参考にとどめるかの切替。並列作業中の CPU 競合で境界値の検査が
     # 落ちる問題への対策(rules/06-過去の失敗と対策.md 10.3)。上限の数値は変えない。
-    # -Level Push(pre-push・CI・既定)は厳密、-Level Commit(pre-commit)は明示的に空にして参考とする。
-    if ($Level -eq "Push") {
+    # -Level Push(pre-push・統括の手動実行)は厳密、-Level Commit(pre-commit)は明示的に空にして参考とする。
+    # ただし -Level Push であっても CI(共有ランナー)上では厳密判定をしない。共有ランナーは基準の
+    # 機械より遅く、実行のたびの速さも揃わないため、ミリ秒単位の上限判定がCPU競合と無関係に揺れて
+    # 落ちる(実測: GitHub Actions run 33972658785。rules/06-過去の失敗と対策.md 10.12)。CIでは実測を
+    # ログに残すだけにとどめ、厳密な合否判定は基準の機械で行う手元のpre-push(-Level Push、CI以外)に
+    # 委ねる。`CI` 環境変数はGitHub Actionsが自動で `true` を設定する(ci.ymlでの追加設定は不要)。
+    $isRunningOnCI = $env:CI -eq 'true'
+    if ($Level -eq "Push" -and -not $isRunningOnCI) {
         $env:POINTERCAD_PERF_STRICT = '1'
         Write-Host "性能検査: 厳密(-Level Push)" -ForegroundColor Cyan
+    } elseif ($Level -eq "Push" -and $isRunningOnCI) {
+        $env:POINTERCAD_PERF_STRICT = ''
+        Write-Host "性能検査: 参考(CI)" -ForegroundColor Cyan
     } else {
         $env:POINTERCAD_PERF_STRICT = ''
         Write-Host "性能検査: 参考(-Level Commit)" -ForegroundColor Cyan
+    }
+
+    if ($ShowPerfModeOnly) {
+        Write-Host "[診断] -ShowPerfModeOnly のため、性能検査の判定モード表示だけで終了します(pnpmは実行していません)" -ForegroundColor Yellow
+        exit 0
     }
 
     $packageJsonPath = Join-Path $root "package.json"

@@ -121,6 +121,203 @@ try {
         Assert-True (-not $result6.Unchanged) "シナリオ6: 日本語名ファイルの内容変化を検出して失敗とする"
         Assert-True (@($result6.ChangedPaths) -contains $japaneseFileName) `
             "シナリオ6: 変化したファイル名(日本語名)を正しく報告する"
+
+        # === シナリオ7(a): -Level Commit の写し(git worktree)には stage 済みの差分だけが載る ===
+        # 実運用の再現: 追加・変更・削除に加え、写しに含めてはいけない「未 stage の壊れたファイル」を
+        # 作業ツリーに置く(他担当の書きかけを模す)。写しにはそれが一切現れないことを確認する。
+        Set-Content -LiteralPath (Join-Path $tempRoot "a.txt") -Value "staged-change" -NoNewline -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $tempRoot "new7.txt") -Value "new file for scenario7" -NoNewline -Encoding UTF8
+        Remove-Item -LiteralPath (Join-Path $tempRoot "c.txt") -Force
+        & git add -A -- a.txt new7.txt c.txt | Out-Null
+        # 未 stage の壊れたファイル(他担当の書きかけ相当)。写しに載れば検査失敗の原因になるはずのもの。
+        Set-Content -LiteralPath (Join-Path $tempRoot "broken-unstaged.ts") -Value "this is not valid ts (((" -NoNewline -Encoding UTF8
+
+        $copy7 = New-StagedTreeWorktree -Root $tempRoot
+        try {
+            Assert-True ($copy7.Ok) "シナリオ7 前提: 写し(git worktree)の用意と stage 済み差分の適用に成功する"
+            if ($copy7.Ok) {
+                Assert-True ((Get-Content -LiteralPath (Join-Path $copy7.Path "a.txt") -Raw) -eq "staged-change") `
+                    "シナリオ7: 変更した stage 済みファイル(a.txt)の内容が写しに反映される"
+                Assert-True ((Get-Content -LiteralPath (Join-Path $copy7.Path "new7.txt") -Raw) -eq "new file for scenario7") `
+                    "シナリオ7: 新規の stage 済みファイル(new7.txt)が写しに現れる"
+                Assert-True (-not (Test-Path -LiteralPath (Join-Path $copy7.Path "c.txt"))) `
+                    "シナリオ7: stage 済みの削除(c.txt)が写しへ反映される"
+                Assert-True (-not (Test-Path -LiteralPath (Join-Path $copy7.Path "broken-unstaged.ts"))) `
+                    "シナリオ7: 未 stage の壊れたファイル(broken-unstaged.ts)は写しに現れない(他担当の書きかけに影響されない)"
+            }
+        }
+        finally {
+            Remove-StagedTreeWorktree -Root $tempRoot -WorktreePath $copy7.Path -JunctionPaths @()
+        }
+
+        # 後片付け: シナリオ8・9のために不要なファイルを片付ける(コミットはしない、作業ツリーのみ)
+        Remove-Item -LiteralPath (Join-Path $tempRoot "broken-unstaged.ts") -Force -ErrorAction SilentlyContinue
+        & git reset --quiet | Out-Null
+        Set-Content -LiteralPath (Join-Path $tempRoot "c.txt") -Value "base" -NoNewline -Encoding UTF8
+        Remove-Item -LiteralPath (Join-Path $tempRoot "new7.txt") -Force -ErrorAction SilentlyContinue
+        & git add -A | Out-Null
+        & git commit --quiet -m "scenario7 base sync" | Out-Null
+
+        # === シナリオ8(b): 片付けで worktree の一覧に残らず、ジャンクションも消える(実体は無事) ===
+        Set-Content -LiteralPath (Join-Path $tempRoot "a.txt") -Value "for-scenario8" -NoNewline -Encoding UTF8
+        & git add a.txt | Out-Null
+
+        $realNodeModules = Join-Path $tempRoot "node_modules_real8"
+        New-Item -ItemType Directory -Path $realNodeModules | Out-Null
+        Set-Content -LiteralPath (Join-Path $realNodeModules "precious.txt") -Value "precious-data" -NoNewline -Encoding UTF8
+
+        $copy8 = New-StagedTreeWorktree -Root $tempRoot
+        Assert-True ($copy8.Ok) "シナリオ8 前提: 写しの用意に成功する"
+        $junctionPath8 = Join-Path $copy8.Path "node_modules"
+        New-Item -ItemType Junction -Path $junctionPath8 -Target $realNodeModules | Out-Null
+        Assert-True (Test-Path -LiteralPath (Join-Path $junctionPath8 "precious.txt")) `
+            "シナリオ8 前提: ジャンクション越しに実体(precious.txt)が見える"
+
+        Remove-StagedTreeWorktree -Root $tempRoot -WorktreePath $copy8.Path -JunctionPaths @($junctionPath8)
+
+        Assert-True (-not (Test-Path -LiteralPath $copy8.Path)) "シナリオ8: 写しのディレクトリが消える"
+        $worktreeListing8 = (& git -C $tempRoot worktree list) -join "`n"
+        Assert-True (-not ($worktreeListing8 -match [regex]::Escape($copy8.Path))) `
+            "シナリオ8: git worktree list に写しが残らない"
+        Assert-True ((Test-Path -LiteralPath $realNodeModules) -and (Test-Path -LiteralPath (Join-Path $realNodeModules "precious.txt"))) `
+            "シナリオ8: ジャンクションの実体(node_modules_real8/precious.txt)は消えずに残る"
+
+        Remove-Item -LiteralPath $realNodeModules -Recurse -Force -ErrorAction SilentlyContinue
+        & git reset --quiet | Out-Null
+        Set-Content -LiteralPath (Join-Path $tempRoot "a.txt") -Value "base-restored" -NoNewline -Encoding UTF8
+        & git add a.txt | Out-Null
+        & git commit --quiet -m "scenario8 base sync" | Out-Null
+
+        # === シナリオ9(c): 適用できない patch は理由を出して Ok=$false になる ===
+        Set-Content -LiteralPath (Join-Path $tempRoot "a.txt") -Value "for-scenario9" -NoNewline -Encoding UTF8
+        & git add a.txt | Out-Null
+
+        $badPatchPath = Join-Path $tempRoot "bad9.patch"
+        # 存在しないファイルへの、文脈が一致しようがない patch(意図的に壊す)
+        @(
+            "diff --git a/does-not-exist-anywhere.txt b/does-not-exist-anywhere.txt",
+            "index 0000000..1111111 100644",
+            "--- a/does-not-exist-anywhere.txt",
+            "+++ b/does-not-exist-anywhere.txt",
+            "@@ -1,1 +1,1 @@",
+            "-this context line cannot possibly match",
+            "+replacement"
+        ) | Set-Content -LiteralPath $badPatchPath -Encoding UTF8
+
+        $copy9 = New-StagedTreeWorktree -Root $tempRoot -PatchFileOverride $badPatchPath
+        try {
+            Assert-True (-not $copy9.Ok) "シナリオ9: 適用できない patch は Ok=\$false になる"
+            Assert-True (-not [string]::IsNullOrWhiteSpace($copy9.Reason)) "シナリオ9: 失敗の理由が空でない"
+        }
+        finally {
+            Remove-StagedTreeWorktree -Root $tempRoot -WorktreePath $copy9.Path -JunctionPaths @()
+            Remove-Item -LiteralPath $badPatchPath -Force -ErrorAction SilentlyContinue
+        }
+        Assert-True (-not (Test-Path -LiteralPath $copy9.Path)) `
+            "シナリオ9: 適用が失敗しても写し(git worktree)は後片付けされる(後片付け漏れが無い)"
+
+        & git reset --quiet | Out-Null
+        Set-Content -LiteralPath (Join-Path $tempRoot "a.txt") -Value "base-restored" -NoNewline -Encoding UTF8
+
+        # === シナリオ10: pre-commit フックの環境(GIT_DIR / GIT_INDEX_FILE の継承)を模しても
+        #     写しが作れて検査が通り、片付けも漏れない ===
+        # 実測(2026-09-05、統括の実運用での報告): 実際の pre-commit の子プロセスには
+        # `GIT_INDEX_FILE=.git/index`(相対パス)が継承されており、これを写しに対する
+        # git 呼び出し(`worktree add` 等)がそのまま使うと、`-C` で写し側へ実効カレント
+        # ディレクトリが移った時点でこの相対パスが写し基準で解決され、写しの `.git`
+        # (linked worktree のためファイルでありディレクトリではない)の下に index.lock を
+        # 作ろうとして `fatal: Unable to create '.../.git/index.lock': No such file or directory`
+        # で失敗した(自己試験はフックの外(この変数が無い状態)で走るため、この追加まで
+        # 再現しなかった)。対策: New-StagedTreeWorktree / Remove-StagedTreeWorktree が
+        # Clear-InheritedGitEnv / Restore-InheritedGitEnv で一時的に消す(rules/06 10.7)。
+        Set-Content -LiteralPath (Join-Path $tempRoot "a.txt") -Value "for-scenario10" -NoNewline -Encoding UTF8
+        & git add a.txt | Out-Null
+
+        $originalGitDir = $env:GIT_DIR
+        $originalGitIndexFile = $env:GIT_INDEX_FILE
+        # git が実際に pre-commit へ渡す値を模す(相対パス。フックは通常リポジトリ直下で動く)。
+        $env:GIT_DIR = ".git"
+        $env:GIT_INDEX_FILE = ".git/index"
+        try {
+            $copy10 = New-StagedTreeWorktree -Root $tempRoot
+            Assert-True ($copy10.Ok) "シナリオ10: フックの環境(GIT_DIR/GIT_INDEX_FILE 継承)を模しても写しが作れる($($copy10.Reason))"
+            if ($copy10.Ok) {
+                Assert-True ((Get-Content -LiteralPath (Join-Path $copy10.Path "a.txt") -Raw) -eq "for-scenario10") `
+                    "シナリオ10: フックの環境下でも stage 済み差分が写しへ正しく適用される"
+            }
+            Remove-StagedTreeWorktree -Root $tempRoot -WorktreePath $copy10.Path -JunctionPaths @()
+            Assert-True (-not (Test-Path -LiteralPath $copy10.Path)) "シナリオ10: フックの環境下でも写しの片付けが漏れない"
+            $worktreeListing10 = (& git -C $tempRoot worktree list) -join "`n"
+            Assert-True (-not ($worktreeListing10 -match [regex]::Escape($copy10.Path))) `
+                "シナリオ10: フックの環境下でも git worktree list に写しが残らない"
+        }
+        finally {
+            if ($null -eq $originalGitDir) { Remove-Item Env:GIT_DIR -ErrorAction SilentlyContinue } else { $env:GIT_DIR = $originalGitDir }
+            if ($null -eq $originalGitIndexFile) { Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue } else { $env:GIT_INDEX_FILE = $originalGitIndexFile }
+        }
+
+        & git reset --quiet | Out-Null
+        Set-Content -LiteralPath (Join-Path $tempRoot "a.txt") -Value "base-restored" -NoNewline -Encoding UTF8
+
+        # === シナリオ11: workspace 内パッケージ間の node_modules リンクは、写しの対応する
+        #     パッケージへ差し替わり、本物の作業ツリーの未 stage な変更を見ない ===
+        # 実測(2026-09-05、統括の実運用での報告): HEAD + stage 済み(scripts と rules だけ)の
+        # 写しで typecheck が4件落ちた。原因は `packages/io/node_modules/@pointercad/model` の
+        # ような pnpm のワークスペース内リンクが**絶対パスで本物の packages/model を指す
+        # ジャンクション**であり、`packages/*/node_modules` を丸ごとジャンクションにすると
+        # このリンク経由で本物の作業ツリー(未 stage の `packages/model/src/sketch/types.ts` の
+        # 変更を含む)を読んでしまうため。ここでは io→model の関係を模した2パッケージの
+        # 疑似ワークスペースを作り、同じ形(絶対パスのジャンクション)で再現する。
+        New-Item -ItemType Directory -Path (Join-Path $tempRoot "packages\pkgConsumer") -Force | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $tempRoot "packages\pkgDependency") -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $tempRoot "packages\pkgConsumer\index.ts") -Value "// consumer" -NoNewline -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $tempRoot "packages\pkgDependency\index.ts") -Value "export const kind = 'HEAD-5-kinds';" -NoNewline -Encoding UTF8
+        & git add -- packages/pkgConsumer/index.ts packages/pkgDependency/index.ts | Out-Null
+        & git commit --quiet -m "scenario11 base: 2 packages" | Out-Null
+
+        # pnpm と同じ形: 絶対パスでワークスペース内の実パッケージを指すジャンクション
+        $consumerNodeModules = Join-Path $tempRoot "packages\pkgConsumer\node_modules"
+        New-Item -ItemType Directory -Path (Join-Path $consumerNodeModules "@scope") -Force | Out-Null
+        $workspaceLinkPath = Join-Path $consumerNodeModules "@scope\pkgDependency"
+        New-Item -ItemType Junction -Path $workspaceLinkPath -Target (Join-Path $tempRoot "packages\pkgDependency") | Out-Null
+
+        # 本物の作業ツリーだけに、未 stage の変更を置く(コミットの queue が扱う実際の状況を模す:
+        # scripts/rules だけ stage 済み、packages/model は未 stage で書きかけ中)。
+        Set-Content -LiteralPath (Join-Path $tempRoot "packages\pkgDependency\index.ts") -Value "export const kind = 'UNSTAGED-6-kinds (sphereGrid 相当)';" -NoNewline -Encoding UTF8
+        # stage 済みの差分(scripts/rules 相当)を1件だけ用意する。
+        Set-Content -LiteralPath (Join-Path $tempRoot "packages\pkgConsumer\index.ts") -Value "// consumer (staged change)" -NoNewline -Encoding UTF8
+        & git add -- packages/pkgConsumer/index.ts | Out-Null
+
+        $copy11 = New-StagedTreeWorktree -Root $tempRoot
+        $junctions11 = @()
+        try {
+            Assert-True ($copy11.Ok) "シナリオ11 前提: 写しの用意に成功する($($copy11.Reason))"
+            if ($copy11.Ok) {
+                $junctions11 = New-NodeModulesJunctions -Root $tempRoot -WorktreePath $copy11.Path
+                $copyLinkPath = Join-Path $copy11.Path "packages\pkgConsumer\node_modules\@scope\pkgDependency"
+                Assert-True (Test-Path -LiteralPath $copyLinkPath) "シナリオ11: 写しの中に workspace 内リンクが用意される"
+                if (Test-Path -LiteralPath $copyLinkPath) {
+                    $linkItem = Get-Item -LiteralPath $copyLinkPath
+                    $linkTargetValue = if ($linkItem.Target -is [array]) { $linkItem.Target[0] } else { $linkItem.Target }
+                    $expectedInsideCopy = ([IO.Path]::GetFullPath((Join-Path $copy11.Path "packages\pkgDependency"))).TrimEnd([char[]]"\/")
+                    $actualTargetFull = ([IO.Path]::GetFullPath($linkTargetValue)).TrimEnd([char[]]"\/")
+                    Assert-True ($actualTargetFull -eq $expectedInsideCopy) `
+                        "シナリオ11: workspace 内リンクの向き先が写しの中の対応パッケージになる(本物ではない)"
+
+                    $seenContent = Get-Content -LiteralPath (Join-Path $copyLinkPath "index.ts") -Raw
+                    Assert-True ($seenContent -eq "export const kind = 'HEAD-5-kinds';") `
+                        "シナリオ11: workspace 内リンク経由で読める内容が HEAD の状態(本物の作業ツリーの未 stage な変更を見ない)"
+                }
+            }
+        }
+        finally {
+            Remove-StagedTreeWorktree -Root $tempRoot -WorktreePath $copy11.Path -JunctionPaths $junctions11
+        }
+        Assert-True (-not (Test-Path -LiteralPath $copy11.Path)) "シナリオ11: 写しの片付けが漏れない"
+        Assert-True ((Get-Content -LiteralPath (Join-Path $tempRoot "packages\pkgDependency\index.ts") -Raw) -eq "export const kind = 'UNSTAGED-6-kinds (sphereGrid 相当)';") `
+            "シナリオ11: 本物の作業ツリーの未 stage な変更(pkgDependency)は片付け後も無事"
+
+        & git reset --quiet | Out-Null
     }
     finally {
         Pop-Location

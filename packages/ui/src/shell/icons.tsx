@@ -1193,3 +1193,60 @@ export function ConstraintGroupIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+/**
+ * 「作る」の一覧そのものの図柄(P5 タスク51)。立体の輪郭に小さな「+」を添えて
+ * 「立体を新しく作る道具のまとまり」を表す。中身は押し出し・回転・縫合・ばねで始まり、
+ * 基本形状・罫線・スイープ・ロフト(タスク18・49)が加わるので、特定の道具ではなく
+ * 道具箱の顔にしてある(`ShapeGroupIcon` / `EditGroupIcon` と同じ考え方)。
+ */
+export function CreateGroupIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.6 5.6 7 3.2l4.4 2.4v4.8L7 12.8l-4.4-2.4z" />
+      <path d="M13.4 1.8v3.4M11.7 3.5h3.4" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 「合わせる」の一覧そのものの図柄(P5 タスク51)。2 つの輪郭が重なるところを描いて
+ * 「立体どうしを組み合わせる(和・差・積)」ことを表す。和・差・積の図柄(`UnionIcon` 等)は
+ * 塗りで結果を描き分けているので、こちらは塗らずに「重なりそのもの」だけを描いて見分ける。
+ */
+export function CombineGroupIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="6" cy="8" r="4.2" />
+      <circle cx="10" cy="8" r="4.2" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 「加工」の一覧そのものの図柄(P5 タスク51)。角を落とした塊に穴を 1 つあけて
+ * 「できた立体へ手を入れる」ことを表す。中身は穴・ねじ穴・R面取り・C面取り・パターンで
+ * 始まり、切断・シェル・リブ(タスク27f・49)が加わる。
+ */
+export function MachiningGroupIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.4 13.2V5.8l3.4-3h7.8v10.4z" />
+      <circle cx="8.4" cy="8.6" r="1.9" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 外観(色・材質、FR-1106〜1110、P5 タスク12)。角の丸い正方形を十字に4分割し、
+ * 1 区画だけを薄く塗って「色を選ぶ見本」を表す。
+ */
+export function AppearanceIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="1.6" />
+      <path d="M8 2.2v11.6M2.2 8h11.6" />
+      <path d="M8 2.2h3.8a1.6 1.6 0 0 1 1.6 1.6V8H8z" fill="currentColor" fillOpacity={0.35} stroke="none" />
+    </SvgIcon>
+  );
+}

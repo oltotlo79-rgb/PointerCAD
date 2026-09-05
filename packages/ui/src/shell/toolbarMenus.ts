@@ -1,6 +1,9 @@
 /**
- * ツールバーの畳んだ一覧(「作図」「編集」)の中身と、その決まりごとの純関数
- * (計画書 docs/plans/P4-スケッチ拡張.md タスク32、§0.a-0.14。FR-904、NFR-UX-7)。
+ * ツールバーの畳んだ一覧(「作図」「編集」「拘束」「作る」「合わせる」「加工」「投影」
+ * 「見た目」)の中身と、その決まりごとの純関数
+ * (計画書 docs/plans/P4-スケッチ拡張.md タスク32、§0.a-0.14。
+ *  ソリッド側の組み替えは docs/plans/P5-高度なソリッド・外観と測定.md タスク51、§0.a-0.51。
+ *  FR-904、NFR-UX-7)。
  *
  * 画面(`Toolbar.tsx`)から表と判断を分けてあるのは 2 つの理由による。
  * ①**項目の追加を 1 行で済ませる**ため。トリム・延長・フィレット・面取り・ミラー・複写・
@@ -13,15 +16,25 @@
  * この場では呼ばない(JSX を書かないので拡張子は .ts のまま)。
  */
 
-import type { SketchConstraintKind } from '@pointercad/model';
+import type { BooleanOperation, SketchConstraintKind } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
-import type { EditMenuToolId, ShapeToolId } from '../sketch/numericInput.js';
+import type {
+  AppearanceToolId,
+  EditMenuToolId,
+  ShapeToolId,
+  SolidToolId,
+} from '../sketch/numericInput.js';
+import type { MachiningToolId } from '../solid/machiningCommands.js';
+import type { ProjectionMode } from '../store/useAppStore.js';
 
 import {
   AngleConstraintIcon,
+  AppearanceIcon,
+  ChamferIcon,
   CircleToolIcon,
   CircularArrayToolIcon,
+  CircularPatternIcon,
   CoincidentConstraintIcon,
   ConcentricConstraintIcon,
   CopyToolIcon,
@@ -30,27 +43,40 @@ import {
   EllipseToolIcon,
   EqualConstraintIcon,
   ExtendToolIcon,
+  ExtrudeIcon,
+  FilletIcon,
   FixConstraintIcon,
+  HoleIcon,
   HorizontalConstraintIcon,
+  IntersectIcon,
   LinearArrayToolIcon,
+  LinearPatternIcon,
   MirrorToolIcon,
   OffsetToolIcon,
+  OrthographicIcon,
   ParallelConstraintIcon,
   PerpendicularConstraintIcon,
+  PerspectiveIcon,
   PolygonToolIcon,
   ProjectToolIcon,
   RadiusConstraintIcon,
   RectangleToolIcon,
+  RevolveIcon,
   SectionToolIcon,
+  SewIcon,
   SketchChamferToolIcon,
   SketchFilletToolIcon,
   SlotToolIcon,
   SplineToolIcon,
+  SpringIcon,
+  SubtractIcon,
   SymmetricConstraintIcon,
   TangentConstraintIcon,
+  ThreadHoleIcon,
   ThreePointArcToolIcon,
   TrimToolIcon,
   TwoPointArcToolIcon,
+  UnionIcon,
   VerticalConstraintIcon,
   type IconComponent,
 } from './icons.js';
@@ -307,6 +333,158 @@ export const CONSTRAINT_MENU_ITEMS: readonly ToolMenuItem<SketchConstraintKind>[
 ];
 
 /**
+ * 「作る」の一覧(FR-401〜403、FR-414。P5 タスク51、§0.a-0.51)。
+ *
+ * 押し出し・回転・縫合・ばねは、どれも「面や点を選んでから数値を聞き、立体を新しく作る」
+ * 道具なので 1 つの一覧にまとめる。**タスク18(基本形状 5 種)とタスク49(罫線・スイープ・
+ * ロフト・ミラー)は、この表へ 1 行足すだけで一覧に並ぶ**(ツールバーの幅は 1 画素も
+ * 増えない。`segmentedWidthPixels` の注釈)。
+ */
+export const CREATE_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
+  {
+    id: 'extrude',
+    labelKey: 'toolbar.solid.extrude',
+    tooltipKey: 'toolbar.solid.extrudeTooltip',
+    Icon: ExtrudeIcon,
+  },
+  {
+    id: 'revolve',
+    labelKey: 'toolbar.solid.revolve',
+    tooltipKey: 'toolbar.solid.revolveTooltip',
+    Icon: RevolveIcon,
+  },
+  {
+    id: 'sew',
+    labelKey: 'toolbar.solid.sew',
+    tooltipKey: 'toolbar.solid.sewTooltip',
+    Icon: SewIcon,
+  },
+  /*
+    ばね(FR-414)。対象を消費しない「作る」フィーチャーで加工ではない(§0.a-0.36)ので、
+    加工の一覧ではなくこちらへ入れる(P4 までツールバーで「ソリッド」区画の 7 個目に
+    置いていたのと同じ切り分け)。
+  */
+  {
+    id: 'spring',
+    labelKey: 'toolbar.solid.spring',
+    tooltipKey: 'toolbar.solid.springTooltip',
+    Icon: SpringIcon,
+  },
+];
+
+/**
+ * 「合わせる」の一覧(FR-404。P5 タスク51、§0.a-0.51)。
+ *
+ * 和・差・積は「立体を 2 つ選んで押すだけで決まる」点が「作る」の 4 つと違う(数値を
+ * 聞かない、§0.a-0.6)ので、同じ「ソリッド」区画の中でも別の一覧に分ける。
+ * 並びは `BooleanOperation` の意味の順(足す → 引く → 重なりだけ残す)。
+ */
+export const COMBINE_MENU_ITEMS: readonly ToolMenuItem<BooleanOperation>[] = [
+  {
+    id: 'union',
+    labelKey: 'toolbar.solid.union',
+    tooltipKey: 'toolbar.solid.unionTooltip',
+    Icon: UnionIcon,
+  },
+  {
+    id: 'subtract',
+    labelKey: 'toolbar.solid.subtract',
+    tooltipKey: 'toolbar.solid.subtractTooltip',
+    Icon: SubtractIcon,
+  },
+  {
+    id: 'intersect',
+    labelKey: 'toolbar.solid.intersect',
+    tooltipKey: 'toolbar.solid.intersectTooltip',
+    Icon: IntersectIcon,
+  },
+];
+
+/**
+ * 「加工」の一覧(FR-405〜408、FR-411、FR-412。P5 タスク51、§0.a-0.51)。
+ *
+ * できあがった立体へ手を入れる道具。**タスク27f(切断)とタスク49(抜き勾配・シェル・
+ * リブ・エンボス・外ねじ・移動/回転・拡大縮小・点パターン)は、この表へ 1 行足すだけ**で
+ * 一覧に並び、ツールバーの幅は変わらない。
+ */
+export const MACHINING_MENU_ITEMS: readonly ToolMenuItem<MachiningToolId>[] = [
+  {
+    id: 'hole',
+    labelKey: 'toolbar.machining.hole',
+    tooltipKey: 'toolbar.machining.holeTooltip',
+    Icon: HoleIcon,
+  },
+  {
+    id: 'threadHole',
+    labelKey: 'toolbar.machining.threadHole',
+    tooltipKey: 'toolbar.machining.threadHoleTooltip',
+    Icon: ThreadHoleIcon,
+  },
+  {
+    id: 'fillet',
+    labelKey: 'toolbar.machining.fillet',
+    tooltipKey: 'toolbar.machining.filletTooltip',
+    Icon: FilletIcon,
+  },
+  {
+    id: 'chamfer',
+    labelKey: 'toolbar.machining.chamfer',
+    tooltipKey: 'toolbar.machining.chamferTooltip',
+    Icon: ChamferIcon,
+  },
+  {
+    id: 'linearPattern',
+    labelKey: 'toolbar.machining.linearPattern',
+    tooltipKey: 'toolbar.machining.linearPatternTooltip',
+    Icon: LinearPatternIcon,
+  },
+  {
+    id: 'circularPattern',
+    labelKey: 'toolbar.machining.circularPattern',
+    tooltipKey: 'toolbar.machining.circularPatternTooltip',
+    Icon: CircularPatternIcon,
+  },
+];
+
+/**
+ * 「投影」の一覧(FR-102。P5 タスク51、§0.a-0.51)。
+ *
+ * 2 つしかないが、畳んだボタンには**いま効いているほうの図柄が出る**(`triggerItemOf` が
+ * `activeTool` = いまの投影と一致する項目を返す)ので、畳んでも今の見え方は読み取れる
+ * (`PlaneMenu` のトリガーに作図面の名前を出すのと同じ考え方)。
+ */
+export const PROJECTION_MENU_ITEMS: readonly ToolMenuItem<ProjectionMode>[] = [
+  {
+    id: 'perspective',
+    labelKey: 'toolbar.projection.perspective',
+    tooltipKey: 'toolbar.projection.perspectiveTooltip',
+    Icon: PerspectiveIcon,
+  },
+  {
+    id: 'orthographic',
+    labelKey: 'toolbar.projection.orthographic',
+    tooltipKey: 'toolbar.projection.orthographicTooltip',
+    Icon: OrthographicIcon,
+  },
+];
+
+/**
+ * 「見た目」の一覧(FR-1106〜1110。P5 タスク51、§0.a-0.51)。
+ *
+ * いまは外観 1 つだけだが、**タスク32 の「測る」がここへ 2 行目として入る**(§0.a-0.29 が
+ * 「測る」をボタン 1 つと決めているため、区画を増やさずにこの一覧へ足せる。要件§7.1 の
+ * 「固定の区画は増やさない」)。
+ */
+export const LOOK_MENU_ITEMS: readonly ToolMenuItem<AppearanceToolId>[] = [
+  {
+    id: 'appearance',
+    labelKey: 'toolbar.appearance.assign',
+    tooltipKey: 'toolbar.appearance.assignTooltip',
+    Icon: AppearanceIcon,
+  },
+];
+
+/**
  * 畳んだボタンに出す図柄のもとになる項目。
  *
  * ①いまその一覧の道具を使っているならその道具、②使っていなければ**最後にこの一覧から
@@ -413,3 +591,15 @@ export const BASIC_SKETCH_TOOL_COUNT = 6;
  * (`segmentedWidthPixels`)ので、1440 画素の窓では 1 段(68.5 画素)のまま。
  */
 export const SKETCH_MENU_COUNT = 3;
+
+/**
+ * 「ソリッド」区画に置く畳んだ一覧の数(「作る」「合わせる」「加工」、P5 タスク51)。
+ *
+ * P4b までは 図柄 7 個の「ソリッド」区画(実測 200 画素)と 図柄 6 個の「加工」区画
+ * (同 172 画素)が別々に並んでいた。3 つの一覧へ畳んで 1 つの溝へまとめると
+ * `segmentedWidthPixels(0, 3)` = 103 画素になり、区画のあいだの隙間(6 画素)も 1 つ減る。
+ */
+export const SOLID_MENU_COUNT = 3;
+
+/** 「投影」「見た目」の区画に置く畳んだ一覧の数(どちらも 1 つ、P5 タスク51)。 */
+export const SINGLE_MENU_COUNT = 1;

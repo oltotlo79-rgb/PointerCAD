@@ -121,6 +121,21 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '画面の見た目を変える',
     path: 'docs/ja/display-settings.md',
   },
+  {
+    id: 'appearance-color',
+    title: '色と材質を選ぶ',
+    path: 'docs/ja/appearance-color.md',
+  },
+  {
+    id: 'appearance-pattern',
+    title: '柄を選ぶ',
+    path: 'docs/ja/appearance-pattern.md',
+  },
+  {
+    id: 'appearance-glass',
+    title: 'ガラス・鏡と映り込み',
+    path: 'docs/ja/appearance-glass.md',
+  },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

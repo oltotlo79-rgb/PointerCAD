@@ -134,6 +134,9 @@
    * 満たしている(ok)・足しすぎ(redundant)・矛盾(conflict)・固定(fixed)の 4 色で、
    * どのテーマもビューポートの地(--pcad-viewport-top / --pcad-viewport-bottom)に対して
    * 3:1 以上の明度差を持つ(viewport/themeColors.test.ts が実測で固定する)。
+   *
+   * --pcad-measure は測定の線・端の丸・弧・値の札(FR-1102、P5 タスク31)。選択(青)・
+   * トリムで消える区間(赤)と混ざらない橙系で、こちらも地に対して 3:1 以上の明度差を持つ。
    */
   --pcad-grid-minor: #343945;
   --pcad-grid-major: #454b59;
@@ -157,6 +160,7 @@
   --pcad-constraint-redundant: #c8a04a;
   --pcad-constraint-conflict: #ff6b6b;
   --pcad-constraint-fixed: #c08cff;
+  --pcad-measure: #ffa64d;
   --pcad-scene-ground: #3a3f4a;
 
   /*
@@ -258,6 +262,7 @@
   --pcad-constraint-redundant: #8a6d1f;
   --pcad-constraint-conflict: #d92d20;
   --pcad-constraint-fixed: #6b21a8;
+  --pcad-measure: #a34700;
   --pcad-scene-ground: #cfd5df;
 
   /*
@@ -352,6 +357,7 @@
   --pcad-constraint-redundant: #d4ab55;
   --pcad-constraint-conflict: #ff6b6b;
   --pcad-constraint-fixed: #c9a0ff;
+  --pcad-measure: #ffb266;
   --pcad-scene-ground: #3a3f4a;
 
   /* ビューキューブ。地の暗さがダークとほぼ同じなので、同じ値をそのまま持つ。 */
@@ -436,6 +442,7 @@
   --pcad-constraint-redundant: #8a6d1f;
   --pcad-constraint-conflict: #d92d20;
   --pcad-constraint-fixed: #6b21a8;
+  --pcad-measure: #a34700;
   --pcad-scene-ground: #cfd5df;
 
   /* ビューキューブ。ライトと同じ明るい地なので、同じ値をそのまま持つ。 */
@@ -526,6 +533,7 @@
   --pcad-constraint-redundant: #4a3708;
   --pcad-constraint-conflict: #6b1008;
   --pcad-constraint-fixed: #3b0a63;
+  --pcad-measure: #6b3200;
   --pcad-scene-ground: #b9bec7;
 
   /*
@@ -673,8 +681,8 @@
  * 境目を 1760 にしたのは、文字を出したときに 1 段へ必要な幅が実測 1713.1 画素で
  * (2026-09-04 実測、P4 タスク32。「作図」「編集」の畳んだボタンを足したぶんで P3 の値
  * 1643 画素から増えたが、1760 との余裕は 46.9 画素あり折り返さない)、書体の差で
- * 数画素ふくらんでも折り返さない余裕を持たせるため。文字を畳めば 1366.3 画素で
- * 1 段に収まる(下の 1400 画素の境目の根拠も参照)。
+ * 数画素ふくらんでも折り返さない余裕を持たせるため。文字を畳めば 1 段に収まる
+ * (P5 タスク51 の組み替え後の実測は 1144.3 画素。下の 1200 画素の境目の根拠も参照)。
  */
 @media (max-width: 1759px) {
   .pcad-button--collapsible .pcad-button__label {
@@ -697,6 +705,11 @@
  * 増えて 1440 画素の窓に収まらなくなる。製品名の文字(実測 88.4 画素)を省くと
  * 1366.3 画素になり、1440 画素で余裕 73.7 画素の 1 段に戻る。1520 画素以上の窓では
  * 製品名を出しても 1454.8 < 1520 なので 1 段のままで、折り返さない。
+ *
+ * **P5 タスク51 の組み替えで 1 段に必要な幅が 1144.3 画素まで下がった**ので、製品名を
+ * 出しても 1232.7 画素で 1440 画素の窓に収まる。境目を下げれば 1440 画素でも製品名を
+ * 出し続けられるが、見た目が変わりヘルプのスクリーンショットの撮り直しを伴うので、
+ * ここは 1519 のまま据え置く(統括への申し送り。docs/報告記録.md の P5 タスク51 を参照)。
  */
 @media (max-width: 1519px) {
   .pcad-toolbar__wordmark {
@@ -709,19 +722,22 @@
 }
 
 /*
- * 1400 画素より狭い窓では 1 段に収まらないので、崩れた折り返しに任せず 2 段に分ける。
+ * 1200 画素より狭い窓では 1 段に収まらないので、崩れた折り返しに任せず 2 段に分ける。
  * 隙間を行いっぱいに広げて区切りにし、「作るための道具(製品名・ファイル・履歴・モード・
- * スケッチ・ソリッド・加工・作図面)」を上の段、「見え方の設定(投影・表示・補助・吸着・視点)」を
- * 下の段へ置く。区切りそのものを段のあいだの余白にするので、行の余白は 0 にする。
+ * スケッチ・ソリッド・見た目・作図面)」を上の段、「見え方の設定(投影・表示・補助・吸着・
+ * 視点)」を下の段へ置く。区切りそのものを段のあいだの余白にするので、行の余白は 0 にする。
  *
- * 境目は、文字と製品名を畳んだ状態で 1 段に必要な幅の実測 1366.3 画素(2026-09-04 実測、
- * P4 タスク32)に余裕を足した値。P3 の 1385 画素から下がったのは、「作図」「編集」の
- * 畳んだボタン 2 つ(+66 画素)を足したうえで製品名の文字(−88.4 画素)を畳んだため。
- * 1440 画素の窓では 1 段のまま余裕 73.7 画素を保てている(高さの実測 68.5 画素、
- * 拡大率 110% でも 71.7 画素の 1 段)。境目そのものは P4 でも 1399 のまま据え置き、
- * 1400〜1440 画素の窓に余裕を残す。実測値は docs/報告記録.md を参照。
+ * 境目は、文字と製品名を畳んだ状態で 1 段に必要な幅の実測に余裕を足した値。
+ * P4 タスク32 の時点は必要な幅が 1366.3 画素で境目は 1399 画素だった。
+ * **P5 タスク51(ソリッド・加工・投影・外観を畳んだ一覧へ組み替え)で必要な幅が
+ * 1144.3 画素まで下がった**(2026-09-05 実測、ダーク・拡大率 100%。図柄 13 個の
+ * 「ソリッド」+「加工」区画 378 画素 → 畳んだ一覧 3 つの 1 区画 103 画素、
+ * 「投影」60 → 37 画素、「外観」32 →「見た目」37 画素)ので、境目も 1399 → 1199 へ下げる。
+ * これで 1280 画素の窓でも 1 段(余裕 135.7 画素)になり、1440 画素の窓の余裕は
+ * 73.7 → 295.7 画素になる(高さの実測はどちらも 68.5 画素の 1 段)。
+ * 実測値は docs/報告記録.md を参照。
  */
-@media (max-width: 1399px) {
+@media (max-width: 1199px) {
   .pcad-toolbar {
     row-gap: 0;
   }
@@ -735,7 +751,7 @@
 /*
  * 拡大率が 125% 以上のときも、窓幅の境目に関係なく 2 段の整形を効かせる(FR-909、
  * P4 タスク2 仕上げ)。窓の CSS 画素幅は拡大率で変わらないので、上の
- * `@media (max-width: 1399px)` だけでは 125%/150% で文字・余白だけが大きくなって
+ * `@media (max-width: 1199px)` だけでは 125%/150% で文字・余白だけが大きくなって
  * 1 段からあふれ、崩れた折り返しになってしまう。拡大率は媒体条件から読めないので、
  * ルート要素の `data-ui-scale`(`shell/applyDisplaySettings.ts` が書く、例:
  * `data-ui-scale="150"`)を見る。拡大率の段は 90/100/110/125/150 の 5 つだけ
@@ -2990,4 +3006,40 @@ button.pcad-tree__row:focus-visible {
 /* 拘束の値のその場入力。道具のその場入力と同じ見た目で、欄が 1 つだけの短い形。 */
 .pcad-popover--constraint {
   width: 200px;
+}
+
+/* ===== 外観(FR-1106〜1110、要件§4.12、P5 タスク12) ===== */
+
+/* 「この割り当てを外す」「すべて既定に戻す」。等幅の 2 つ並び(.pcad-choice__options と同じ考え方)。 */
+.pcad-appearance__actions {
+  display: flex;
+  gap: var(--pcad-space-1);
+  padding: var(--pcad-space-1) var(--pcad-space-3) 0;
+}
+
+.pcad-appearance__actions .pcad-button {
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+/* 選び直せなかった外観の割り当て(FR-1106)の一覧。行ごとに外せる。 */
+.pcad-appearance-missing {
+  padding: 0 var(--pcad-space-3);
+  margin: 0;
+  list-style: none;
+}
+
+.pcad-appearance-missing__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pcad-space-1);
+  height: 22px;
+}
+
+.pcad-appearance-missing__label {
+  overflow: hidden;
+  color: var(--pcad-danger-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

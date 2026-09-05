@@ -95,6 +95,34 @@ function solidTool(page: Page, label: string): Locator {
     .getByRole('button', { name: label, exact: true });
 }
 
+/**
+ * ツールバーの畳んだ一覧(「作る」「合わせる」「加工」)を開く(P5 タスク51、§0.a-0.51)。
+ *
+ * ソリッドと加工の図柄ボタンは、この一覧の中へ移った(ツールバーを 1440 画素で 1 段に
+ * 保つため)。**検査の中身は 1 つも変えていない**: 押せる/押せない、ツールチップの
+ * 「名前: 理由」、押した結果はそのままで、道具に届くまでに一覧を開く手順が 1 つ増えただけ。
+ *
+ * 畳んだボタンの読み上げ名は、最後に使った道具があると「加工: 穴」のように後ろが付くので
+ * 頭の一致で引く。開いた一覧そのものは、区画と同じ名前(「作る」など)の group になる。
+ */
+function toolMenuTrigger(page: Page, menu: string): Locator {
+  return page
+    .locator('.pcad-toolbar')
+    .getByRole('button', { name: new RegExp(`^${menu}`) })
+    .first();
+}
+
+function toolMenuPanel(page: Page, menu: string): Locator {
+  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
+}
+
+async function openToolMenu(page: Page, menu: string): Promise<void> {
+  if ((await toolMenuPanel(page, menu).count()) === 0) {
+    await toolMenuTrigger(page, menu).click();
+  }
+  await expect(toolMenuPanel(page, menu)).toBeVisible();
+}
+
 /** ツールバーの「ファイル」区画のボタン(新規・開く・保存)。 */
 function fileAction(page: Page, label: string): Locator {
   return page
@@ -293,6 +321,7 @@ async function makeFace(page: Page, elementNames: readonly string[]): Promise<vo
 /** 面を 1 枚選んで押し出す(FR-401)。 */
 async function extrudeFace(page: Page, faceName: string, distance: string): Promise<void> {
   await treeRow(page, faceName).click();
+  await openToolMenu(page, '作る');
   await solidTool(page, '押し出し').click();
   await expect(popoverTitle(page)).toHaveText('押し出す');
   await fillFields(page, [distance]);

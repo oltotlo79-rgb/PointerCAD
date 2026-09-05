@@ -1,7 +1,9 @@
 /**
- * ツールバーの畳んだ一覧(「作図」「編集」「拘束」)の決まりごとの検査
+ * ツールバーの畳んだ一覧(「作図」「編集」「拘束」「作る」「合わせる」「加工」「投影」
+ * 「見た目」)の決まりごとの検査
  * (計画書 docs/plans/P4-スケッチ拡張.md タスク32、§0.a-0.14。
- *  「拘束」は docs/plans/P4b-スケッチの仕上げ.md タスク13)。
+ *  「拘束」は docs/plans/P4b-スケッチの仕上げ.md タスク13。
+ *  ソリッド側の組み替えは docs/plans/P5-高度なソリッド・外観と測定.md タスク51、§0.a-0.51)。
  *
  * 画面(DOM)は撮影で確かめるので、ここでは表と純関数だけを見る。
  */
@@ -12,12 +14,19 @@ import { describe, expect, it } from 'vitest';
 import { t } from '../i18n/t.js';
 import {
   BASIC_SKETCH_TOOL_COUNT,
+  COMBINE_MENU_ITEMS,
   CONSTRAINT_MENU_ITEMS,
+  CREATE_MENU_ITEMS,
   EDIT_MENU_ITEMS,
   ICON_BUTTON_WIDTH_PIXELS,
+  LOOK_MENU_ITEMS,
+  MACHINING_MENU_ITEMS,
   MENU_TRIGGER_WIDTH_PIXELS,
+  PROJECTION_MENU_ITEMS,
   SHAPE_MENU_ITEMS,
+  SINGLE_MENU_COUNT,
   SKETCH_MENU_COUNT,
+  SOLID_MENU_COUNT,
   nextHighlightIndex,
   rememberRecentTool,
   segmentedWidthPixels,
@@ -204,5 +213,104 @@ describe('区画の幅の見積もり(1440 画素の窓で 1 段、§0.a-0.14)',
   it('図柄のボタンと畳んだ一覧のボタンの幅は CSS と同じ値', () => {
     expect(ICON_BUTTON_WIDTH_PIXELS).toBe(26);
     expect(MENU_TRIGGER_WIDTH_PIXELS).toBe(31);
+  });
+});
+
+describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () => {
+  it('「作る」には数値を聞いて立体を作る 4 つが並ぶ', () => {
+    expect(CREATE_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'extrude',
+      'revolve',
+      'sew',
+      // ばねは対象を消費しない「作る」フィーチャーなので加工ではない(§0.a-0.36)。
+      'spring',
+    ]);
+  });
+
+  it('「合わせる」には和・差・積が並ぶ', () => {
+    expect(COMBINE_MENU_ITEMS.map((item) => item.id)).toEqual(['union', 'subtract', 'intersect']);
+  });
+
+  it('「加工」には立体へ手を入れる 6 つが並ぶ', () => {
+    expect(MACHINING_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'hole',
+      'threadHole',
+      'fillet',
+      'chamfer',
+      'linearPattern',
+      'circularPattern',
+    ]);
+  });
+
+  it('「投影」「見た目」の一覧の中身', () => {
+    expect(PROJECTION_MENU_ITEMS.map((item) => item.id)).toEqual(['perspective', 'orthographic']);
+    // タスク32 の「測る」がここへ 2 行目として入る(§0.a-0.29)。
+    expect(LOOK_MENU_ITEMS.map((item) => item.id)).toEqual(['appearance']);
+  });
+
+  it('どの項目も図柄・名前・説明を持ち、名前が説明に重ならない(FR-904)', () => {
+    /*
+     * 一覧の中の項目のツールチップは `ToolMenu` が「名前: 説明」に組み立てる。
+     * 説明の側にも名前が入っていると「押し出し: 押し出し: 面を…」と二重になるので、
+     * 説明が名前+「: 」で始まっていないことをここで固定する(P5 タスク51 で
+     * 図柄ボタンから一覧へ移したときに ja.json から頭の名前を外した)。
+     */
+    for (const item of [
+      ...CREATE_MENU_ITEMS,
+      ...COMBINE_MENU_ITEMS,
+      ...MACHINING_MENU_ITEMS,
+      ...PROJECTION_MENU_ITEMS,
+      ...LOOK_MENU_ITEMS,
+    ]) {
+      expect(typeof item.Icon, item.id).toBe('function');
+      expect(t(item.labelKey).length, item.id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).length, item.id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).startsWith(`${t(item.labelKey)}: `), item.id).toBe(false);
+    }
+  });
+
+  it('項目の id が一覧をまたいで重複しない', () => {
+    const ids = [
+      ...CREATE_MENU_ITEMS.map((item) => item.id),
+      ...COMBINE_MENU_ITEMS.map((item) => item.id),
+      ...MACHINING_MENU_ITEMS.map((item) => item.id),
+    ];
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.a-0.51)', () => {
+  /*
+   * P4b までの「ソリッド」区画は図柄 7 個、その右の「加工」区画は図柄 6 個の平置きで、
+   * 溝の幅は実測 200 画素と 172 画素(区画のあいだの隙間 6 画素を含めて 378 画素)、
+   * 1440 画素の窓で 1 段に必要な幅は実測 1437.3 画素・余裕 2.7 画素しか無かった。
+   * 3 つの畳んだ一覧へまとめると溝は 1 つ・103 画素になり、区画も 1 つ減る。
+   */
+  it('「作る」「合わせる」「加工」の 3 つで 103 画素', () => {
+    expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(103);
+    // 平置きのまま(図柄 13 個)を 1 つの溝へ入れても 368 画素、区画 2 つに分けると 378 画素。
+    expect(
+      segmentedWidthPixels(
+        CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length,
+        0,
+      ),
+    ).toBe(368);
+  });
+
+  it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
+    /*
+     * タスク18(基本形状 5)・27f(切断)・32(測る)・49(Should 群 12)が足すボタンは、
+     * すべて既存の一覧の中へ入る。平置きなら図柄 1 個につき 28 画素(26+隙間 2)増えるが、
+     * 畳んだ一覧では 0 画素。ここを固定しておけば、後のタスクが表へ 1 行足すだけで済む。
+     */
+    const folded = segmentedWidthPixels(0, SOLID_MENU_COUNT);
+    expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(folded);
+    expect(segmentedWidthPixels(20, SOLID_MENU_COUNT)).toBeGreaterThan(folded);
+  });
+
+  it('「投影」「見た目」は畳んだ一覧 1 つずつで 37 画素', () => {
+    expect(segmentedWidthPixels(0, SINGLE_MENU_COUNT)).toBe(37);
+    // 「投影」は図柄 2 個で 60 画素だったので 23 画素減る。
+    expect(segmentedWidthPixels(PROJECTION_MENU_ITEMS.length, 0)).toBe(60);
   });
 });

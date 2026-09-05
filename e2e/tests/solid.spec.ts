@@ -169,13 +169,55 @@ function sketchTool(page: Page, label: string): Locator {
 }
 
 /**
- * ツールバーの「ソリッド」区画の操作(押し出し・回転・縫合・和・差・積)。
+ * ツールバーの「ソリッド」区画の操作(押し出し・回転・縫合・和・差・積・ばね)。
  * 図柄だけのボタンなので、名前は読み上げ名(aria-label)が持つ。
+ * P5 タスク51 以降は「作る」「合わせる」の畳んだ一覧の中にあるので、
+ * `openToolMenu` で一覧を開いてから引く(一覧は「ソリッド」区画の中に開く)。
  */
 function solidTool(page: Page, label: string): Locator {
   return page
     .getByRole('group', { name: 'ソリッド' })
     .getByRole('button', { name: label, exact: true });
+}
+
+/**
+ * ツールバーの畳んだ一覧(「作る」「合わせる」「加工」)を開く(P5 タスク51、§0.a-0.51)。
+ *
+ * ソリッドと加工の図柄ボタンは、この一覧の中へ移った(ツールバーを 1440 画素で 1 段に
+ * 保つため)。**検査の中身は 1 つも変えていない**: 押せる/押せない、ツールチップの
+ * 「名前: 理由」、押した結果はそのままで、道具に届くまでに一覧を開く手順が 1 つ増えただけ。
+ *
+ * 畳んだボタンの読み上げ名は、最後に使った道具があると「加工: 穴」のように後ろが付くので
+ * 頭の一致で引く。開いた一覧そのものは、区画と同じ名前(「作る」など)の group になる。
+ */
+function toolMenuTrigger(page: Page, menu: string): Locator {
+  return page
+    .locator('.pcad-toolbar')
+    .getByRole('button', { name: new RegExp(`^${menu}`) })
+    .first();
+}
+
+function toolMenuPanel(page: Page, menu: string): Locator {
+  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
+}
+
+async function openToolMenu(page: Page, menu: string): Promise<void> {
+  if ((await toolMenuPanel(page, menu).count()) === 0) {
+    await toolMenuTrigger(page, menu).click();
+  }
+  await expect(toolMenuPanel(page, menu)).toBeVisible();
+}
+
+/**
+ * 開いた一覧を閉じる。開いた一覧はビューポートに重なるので、**道具を押さずに
+ * 押せる/押せないを確かめただけのとき**は、次のクリックを奪われないよう閉じてから進む
+ * (道具を押した場合は一覧が自分で閉じるので、これを呼ぶ必要はない)。
+ */
+async function closeToolMenu(page: Page, menu: string): Promise<void> {
+  if ((await toolMenuPanel(page, menu).count()) > 0) {
+    await toolMenuTrigger(page, menu).click();
+  }
+  await expect(toolMenuPanel(page, menu)).toHaveCount(0);
 }
 
 /** ツールバーの「ファイル」区画のボタン(新規・開く・保存)。 */
@@ -411,6 +453,7 @@ async function makeFace(page: Page, lineNames: readonly string[]): Promise<void>
 /** 面を 1 枚選んで押し出す(FR-401)。距離に null を渡すと既定の 10 のまま決める。 */
 async function extrudeFace(page: Page, faceName: string, distance: string | null): Promise<void> {
   await treeRow(page, faceName).click();
+  await openToolMenu(page, '作る');
   await solidTool(page, '押し出し').click();
   await expect(popoverTitle(page)).toHaveText('押し出す');
   if (distance !== null) {
@@ -548,6 +591,7 @@ test('点→線→面→押し出し→保存→再読込→編集ができる(�
 
   // 3) 面1 を選んで「押し出し」。表題と距離の既定値を確かめる(NFR-UX-4)。
   await treeRow(page, '面1').click();
+  await openToolMenu(page, '作る');
   await solidTool(page, '押し出し').click();
   await expect(popoverTitle(page)).toHaveText('押し出す');
   await expect(popoverInputs(page).first()).toHaveValue('10');
@@ -648,6 +692,7 @@ test('立体どうしを組み合わせられる(FR-404)', async ({ page }) => {
   await solidRow(page, '押し出し1').click();
   await solidRow(page, '押し出し2').click({ modifiers: ['Shift'] });
   await expect(propertyPanel(page)).toContainText('選んだ数');
+  await openToolMenu(page, '合わせる');
   await solidTool(page, '差').click();
 
   // 4) 差1 ができ、体積は 8000 − 1000 = 7000。
@@ -681,6 +726,7 @@ test('間違った操作は理由が出て、何も作られない(NFR-UX-5、FR
    * ツールチップとステータスバーの両方に理由が読めること、押しても何も
    * 作られないことを確かめる。
    */
+  await openToolMenu(page, '作る');
   const extrudeButton = solidTool(page, '押し出し');
   await expect(extrudeButton).toBeDisabled();
   await expect(extrudeButton).toHaveAttribute('title', `押し出し: ${NO_FACE_REASON}`);
@@ -695,6 +741,7 @@ test('間違った操作は理由が出て、何も作られない(NFR-UX-5、FR
   await drawRectangle(page, ['0', '0'], ['20', '20']);
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
   await treeRow(page, '面1').click();
+  await openToolMenu(page, '作る');
   await solidTool(page, '押し出し').click();
   await expect(popoverTitle(page)).toHaveText('押し出す');
   await treeRow(page, '線分1').click();
@@ -711,6 +758,7 @@ test('間違った操作は理由が出て、何も作られない(NFR-UX-5、FR
   });
 
   // 4) 立体を 1 つだけ選んで「差」。理由が読めて、押しても立体は増えない(§0.a-0.6)。
+  await openToolMenu(page, '合わせる');
   const subtractButton = solidTool(page, '差');
   await expect(subtractButton).toBeDisabled();
   await expect(subtractButton).toHaveAttribute('title', `差: ${NEED_TWO_BODIES_REASON}`);
@@ -1036,7 +1084,11 @@ function topFaceCenter(thicknessMm: number): WorldPoint {
   return [20, 15, thicknessMm];
 }
 
-/** ツールバーの「加工」区画の道具(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)。 */
+/**
+ * ツールバーの「加工」の道具(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)。
+ * P5 タスク51 以降は「加工」の畳んだ一覧の中にあり、開いた一覧が「加工」という名前の
+ * group になるので、引き方は変わらない(`openToolMenu` で開いてから使う)。
+ */
 function machiningTool(page: Page, label: string): Locator {
   return page
     .getByRole('group', { name: '加工' })
@@ -1151,6 +1203,7 @@ test.describe('P3 加工フィーチャー', () => {
     await expect(treeRow(page, '点1')).toBeVisible();
 
     // 3) 「穴」を押す。条件が揃っていなくても選ぶものが「面」へ切り替わる(§0.a-0.6)。
+    await openToolMenu(page, '加工');
     const holeButton = machiningTool(page, '穴');
     await expect(holeButton).toBeDisabled();
     await holeButton.click({ force: true });
@@ -1160,6 +1213,7 @@ test.describe('P3 加工フィーチャー', () => {
     //    Shift でツリーの 点1 を足す。両方そろって初めて「穴」が押せる。
     await clickWorldPoint(page, topFaceCenter(10));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
+    await openToolMenu(page, '加工');
     await expect(holeButton).toBeEnabled();
 
     // 5) もう一度「穴」を押す。直径の既定は 6(NFR-UX-4)。貫通にして決める。
@@ -1187,6 +1241,7 @@ test.describe('P3 加工フィーチャー', () => {
 
     // 7) その穴を選んだまま「直線パターン」で 3 つ並べる(FR-411、§0.a-0.20)。
     //    既定は「X・間隔 20・個数 3」。間隔 20 では 3 つ目が板からはみ出すので 15 にする。
+    await openToolMenu(page, '加工');
     await expect(machiningTool(page, '直線パターン')).toBeEnabled();
     await machiningTool(page, '直線パターン').click();
     await expect(popoverTitle(page)).toHaveText('まっすぐ並べる');
@@ -1279,12 +1334,14 @@ test.describe('P3 加工フィーチャー', () => {
 
     // 3) 「ねじ穴」を押すと選ぶものが「面」へ切り替わる(§0.a-0.6)。面 → 点の順に選んで、
     //    もう一度押す。呼びの既定は M6、系列の既定は並目。
+    await openToolMenu(page, '加工');
     const threadHoleButton = machiningTool(page, 'ねじ穴');
     await expect(threadHoleButton).toBeDisabled();
     await threadHoleButton.click({ force: true });
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
     await clickWorldPoint(page, topFaceCenter(15));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
+    await openToolMenu(page, '加工');
     await expect(threadHoleButton).toBeEnabled();
     await threadHoleButton.click();
 
@@ -1343,8 +1400,12 @@ test.describe('P3 加工フィーチャー', () => {
     await sketchTool(page, '選択').click();
     await page.keyboard.press('2');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+    await openToolMenu(page, '加工');
     await expect(machiningTool(page, 'C面取り')).toBeDisabled();
+    // 開いた一覧はビューポートに重なるので、押さずに確かめただけのときは閉じてから進む。
+    await closeToolMenu(page, '加工');
     await clickWorldPoint(page, [20, 0, 10]);
+    await openToolMenu(page, '加工');
     await expect(machiningTool(page, 'C面取り')).toBeEnabled();
 
     // 2) C 面取り(等距離)距離 2。45 度なので、取れる量は 1/2·2·2·40。
@@ -1372,6 +1433,7 @@ test.describe('P3 加工フィーチャー', () => {
     await page.keyboard.press('2');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
     await clickWorldPoint(page, [0, 0, 5]);
+    await openToolMenu(page, '加工');
     await expect(machiningTool(page, 'R面取り')).toBeEnabled();
     await machiningTool(page, 'R面取り').click();
     await expect(popoverTitle(page)).toHaveText('角を丸める');
@@ -1455,11 +1517,13 @@ test.describe('P3 加工フィーチャー', () => {
     await commitPopover(page);
     await cancelPopover(page);
 
+    await openToolMenu(page, '加工');
     const holeButton = machiningTool(page, '穴');
     await holeButton.click({ force: true });
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
     await clickWorldPoint(page, topFaceCenter(10));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
+    await openToolMenu(page, '加工');
     await holeButton.click();
     await popover(page).getByRole('switch', { name: '貫通', exact: true }).click();
     await commitPopover(page);
@@ -1506,6 +1570,7 @@ test.describe('P3 加工フィーチャー', () => {
 
     // 1) 面を選ばずに「穴」。押せない状態でも選ぶものが「面」へ切り替わり(§0.a-0.6、
     //    タスク30 不具合(b) の修正)、ツールチップと帯の両方に理由が読める。
+    await openToolMenu(page, '加工');
     const holeButton = machiningTool(page, '穴');
     await expect(holeButton).toBeDisabled();
     await expect(holeButton).toHaveAttribute('title', '穴: 穴をあける面が選ばれていません。');
@@ -1519,6 +1584,7 @@ test.describe('P3 加工フィーチャー', () => {
     // 2) 立体の上面の中央を押す(押し出したもとのスケッチ面より立体の面が優先して当たる、
     //    タスク30 不具合(c) の修正)。今度は中心の点が無いという理由に変わる。
     await clickWorldPoint(page, topFaceCenter(10));
+    await openToolMenu(page, '加工');
     await expect(holeButton).toHaveAttribute('title', '穴: 穴の中心にする点が選ばれていません。');
     await holeButton.click({ force: true });
     await expect(statusText(page)).toHaveText(
@@ -1530,6 +1596,7 @@ test.describe('P3 加工フィーチャー', () => {
     await page.keyboard.press('4');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
     await solidRow(page, '押し出し1').click();
+    await openToolMenu(page, '加工');
     const patternButton = machiningTool(page, '直線パターン');
     await expect(patternButton).toBeDisabled();
     await patternButton.click({ force: true });
@@ -1567,6 +1634,7 @@ test.describe('P3 加工フィーチャー', () => {
     await page.keyboard.press('2');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
     await clickWorldPoint(page, [0, 0, 5]);
+    await openToolMenu(page, '加工');
     await machiningTool(page, 'R面取り').click();
     await commitPopover(page);
     await expect(solidRow(page, 'R面取り1')).toBeVisible();
@@ -1608,6 +1676,7 @@ test.describe('P3 加工フィーチャー', () => {
     await treeRow(page, '点1').click();
 
     // 2) 1 段目「ばねの形」。コイル径 20・線径 2 が既定(§0.a-0.30)。
+    await openToolMenu(page, '作る');
     await solidTool(page, 'ばね').click();
     await expect(popoverTitle(page)).toHaveText('ばねの形を決める');
     await expect(popoverInputs(page).nth(0)).toHaveValue('20');

@@ -179,6 +179,15 @@ async function makeFace(page: Page, elementNames: readonly string[]): Promise<vo
 /** 面を 1 枚選んで押し出す。距離の式は好きな文字列を渡せる(FR-207 の変数を含めてよい)。 */
 async function extrudeFace(page: Page, faceName: string, distanceSource: string): Promise<void> {
   await treeRow(page, faceName).click();
+  /*
+    P5 タスク51 で「押し出し」は「作る」の畳んだ一覧の中へ移った(§0.a-0.51)。
+    検査の中身は変えず、道具に届くまでに一覧を開く手順が 1 つ増えただけ。
+  */
+  await page
+    .locator('.pcad-toolbar')
+    .getByRole('button', { name: /^作る/ })
+    .first()
+    .click();
   await page.getByRole('group', { name: 'ソリッド' }).getByRole('button', { name: '押し出し', exact: true }).click();
   await expect(popoverTitle(page)).toHaveText('押し出す');
   await fillFields(page, [distanceSource]);

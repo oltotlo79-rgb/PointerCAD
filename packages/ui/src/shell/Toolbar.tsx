@@ -3,10 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   FREE_WORK_PLANE_ID,
   isFreeWorkPlaneId,
+  type AppearanceMatchEntry,
   type BooleanOperation,
   type PartDocument,
   type WorkPlaneId,
 } from '@pointercad/model';
+
+import { appearanceReadiness } from '../appearance/appearanceCommands.js';
 
 import { hasFileSystemAccess } from '../file/fileGateway.js';
 import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
@@ -53,12 +56,12 @@ import {
 } from '../sketch/referenceCommands.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import { TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
-import type { MachiningToolId } from '../solid/machiningCommands.js';
 import {
   commitBooleanFromSelection,
   selectedLineRef,
   solidToolReadiness,
   type SolidActionId,
+  type SolidToolReadiness,
 } from '../solid/solidCommands.js';
 /*
  * ボディ一覧の詰め替え(`subShapeBodiesOf`)は `solid/subShapeSelection.ts` が正本
@@ -66,38 +69,36 @@ import {
  * ここから輸出し直してあるのは、P3 からの読み手の import をそのまま生かすため。
  */
 export { subShapeBodiesOf } from '../solid/subShapeSelection.js';
-import { subShapeBodiesOf, type SubShapeBody } from '../solid/subShapeSelection.js';
+import {
+  subShapeBodiesOf,
+  type SelectionKind,
+  type SubShapeBody,
+} from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
+  AppearanceIcon,
   ArcToolIcon,
   ChainIcon,
-  ChamferIcon,
   ChevronRightIcon,
-  CircularPatternIcon,
+  CombineGroupIcon,
   ConstraintGroupIcon,
+  CreateGroupIcon,
   CubeIcon,
   CursorIcon,
   EditGroupIcon,
-  ExtrudeIcon,
   FaceToolIcon,
-  FilletIcon,
   GridIcon,
-  HoleIcon,
   HomeIcon,
-  IntersectIcon,
-  LinearPatternIcon,
   LineToolIcon,
+  MachiningGroupIcon,
   MatchViewIcon,
   NewFileIcon,
   OpenFileIcon,
-  OrthographicIcon,
   PerspectiveIcon,
   PlotPointIcon,
   PointArrayToolIcon,
   RedoIcon,
-  RevolveIcon,
   SaveIcon,
-  SewIcon,
   ShadedIcon,
   ShadedWithEdgesIcon,
   ShapeGroupIcon,
@@ -111,18 +112,19 @@ import {
   SnapParallelIcon,
   SnapPerpendicularIcon,
   SnapPolarIcon,
-  SpringIcon,
-  SubtractIcon,
-  ThreadHoleIcon,
   UndoIcon,
-  UnionIcon,
   WireframeIcon,
   type IconComponent,
   type IconProps,
 } from './icons.js';
 import {
+  COMBINE_MENU_ITEMS,
   CONSTRAINT_MENU_ITEMS,
+  CREATE_MENU_ITEMS,
   EDIT_MENU_ITEMS,
+  LOOK_MENU_ITEMS,
+  MACHINING_MENU_ITEMS,
+  PROJECTION_MENU_ITEMS,
   SHAPE_MENU_ITEMS,
   nextHighlightIndex,
   rememberRecentTool,
@@ -245,99 +247,12 @@ const TOOLS = [
   },
 ] as const satisfies readonly (ButtonEntry & { readonly id: SketchToolId })[];
 
-/**
- * ソリッドの道具(FR-401〜404)。左の3つは面を選んでから数値を聞き、
- * 右の3つは立体を2つ選んで押すだけで決まる(§0.a-0.6)。
+/*
+ * ソリッドと加工の道具の表は `toolbarMenus.ts` の `CREATE_MENU_ITEMS` /
+ * `COMBINE_MENU_ITEMS` / `MACHINING_MENU_ITEMS` へ移した(P5 タスク51、§0.a-0.51)。
+ * 図柄 13 個を平置きしていた 2 つの区画を「作る」「合わせる」「加工」の畳んだ一覧
+ * 3 つへまとめたので、区画ごとの表もそちらへ寄せてある(同じ表を 2 か所に書かない)。
  */
-const SOLID_ACTIONS = [
-  {
-    id: 'extrude',
-    labelKey: 'toolbar.solid.extrude',
-    tooltipKey: 'toolbar.solid.extrudeTooltip',
-    Icon: ExtrudeIcon,
-  },
-  {
-    id: 'revolve',
-    labelKey: 'toolbar.solid.revolve',
-    tooltipKey: 'toolbar.solid.revolveTooltip',
-    Icon: RevolveIcon,
-  },
-  {
-    id: 'sew',
-    labelKey: 'toolbar.solid.sew',
-    tooltipKey: 'toolbar.solid.sewTooltip',
-    Icon: SewIcon,
-  },
-  {
-    id: 'union',
-    labelKey: 'toolbar.solid.union',
-    tooltipKey: 'toolbar.solid.unionTooltip',
-    Icon: UnionIcon,
-  },
-  {
-    id: 'subtract',
-    labelKey: 'toolbar.solid.subtract',
-    tooltipKey: 'toolbar.solid.subtractTooltip',
-    Icon: SubtractIcon,
-  },
-  {
-    id: 'intersect',
-    labelKey: 'toolbar.solid.intersect',
-    tooltipKey: 'toolbar.solid.intersectTooltip',
-    Icon: IntersectIcon,
-  },
-  /**
-   * ばね(FR-414)。対象を消費しない「作る」フィーチャーで加工ではない(§0.a-0.36)ため、
-   * 加工6種とは別に「ソリッド」区画の7個目として置く(§0.34)。数値を聞くので、他の
-   * 押し出し・回転・縫合と同じく openSolidInput 経由でその場入力を開く(runSolidAction)。
-   */
-  {
-    id: 'spring',
-    labelKey: 'toolbar.solid.spring',
-    tooltipKey: 'toolbar.solid.springTooltip',
-    Icon: SpringIcon,
-  },
-] as const satisfies readonly (ButtonEntry & { readonly id: SolidActionId })[];
-
-/** 加工の道具 6 つ(§2.11 の「加工」区画)。「ソリッド」の右へ置く(§0.a-0.25 ③)。 */
-const MACHINING_ACTIONS = [
-  {
-    id: 'hole',
-    labelKey: 'toolbar.machining.hole',
-    tooltipKey: 'toolbar.machining.holeTooltip',
-    Icon: HoleIcon,
-  },
-  {
-    id: 'threadHole',
-    labelKey: 'toolbar.machining.threadHole',
-    tooltipKey: 'toolbar.machining.threadHoleTooltip',
-    Icon: ThreadHoleIcon,
-  },
-  {
-    id: 'fillet',
-    labelKey: 'toolbar.machining.fillet',
-    tooltipKey: 'toolbar.machining.filletTooltip',
-    Icon: FilletIcon,
-  },
-  {
-    id: 'chamfer',
-    labelKey: 'toolbar.machining.chamfer',
-    tooltipKey: 'toolbar.machining.chamferTooltip',
-    Icon: ChamferIcon,
-  },
-  {
-    id: 'linearPattern',
-    labelKey: 'toolbar.machining.linearPattern',
-    tooltipKey: 'toolbar.machining.linearPatternTooltip',
-    Icon: LinearPatternIcon,
-  },
-  {
-    id: 'circularPattern',
-    labelKey: 'toolbar.machining.circularPattern',
-    tooltipKey: 'toolbar.machining.circularPatternTooltip',
-    Icon: CircularPatternIcon,
-  },
-] as const satisfies readonly (ButtonEntry & { readonly id: MachiningToolId })[];
 
 /** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
 const PLANES = [
@@ -773,13 +688,36 @@ function commitBooleanAction(operation: BooleanOperation): void {
   store.setActiveTool('select');
 }
 
-/** ソリッドのボタンを押したときの処理。前の3つは入力を開き、後の3つはその場で作る。 */
-function runSolidAction(id: SolidActionId): void {
-  if (id === 'union' || id === 'subtract' || id === 'intersect') {
-    commitBooleanAction(id);
+/**
+ * 「作る」「加工」の一覧から道具を選んだときの処理(P5 タスク51)。
+ *
+ * 押せるならその場入力を開く。押せなくても、押した時点で選ぶものを道具が要る種類へ
+ * 切り替える(§0.a-0.6、P3 タスク30 不具合(b))。これで「穴を選ぶ → 面を選ぶ →
+ * 点を Shift で足す → もう一度穴」の流れが成立する。あわせて理由を帯へも出す
+ * (ツールチップだけでは押した瞬間に読めないため、NFR-UX-5)。
+ */
+function runSolidTool(id: SolidToolId, readiness: SolidToolReadiness): void {
+  if (readiness.ready) {
+    openSolidInput(id);
     return;
   }
-  openSolidInput(id);
+  const store = useAppStore.getState();
+  store.setActiveTool(id);
+  store.setSolidError(readiness.reasonKey);
+}
+
+/**
+ * 「合わせる」の一覧(和・差・積)から選んだときの処理(P5 タスク51)。
+ *
+ * 数値を聞かず、選ぶものも常に立体のままなので、押せないときも道具を切り替えず
+ * 理由だけを出す(P4b までの図柄ボタンと同じ切り分け)。
+ */
+function runCombineTool(operation: BooleanOperation, readiness: SolidToolReadiness): void {
+  if (!readiness.ready) {
+    useAppStore.getState().setSolidError(readiness.reasonKey);
+    return;
+  }
+  commitBooleanAction(operation);
 }
 
 /** 押せないときのツールチップ。「名前: 理由」で、なぜ押せないのかを読めるようにする。 */
@@ -1287,64 +1225,62 @@ function ToolMenu<Id extends string>({
   );
 }
 
-interface MachiningGroupProps {
+interface LookGroupProps {
   readonly document: PartDocument;
   readonly bodies: readonly SubShapeBody[];
   readonly selection: readonly string[];
+  readonly selectionKind: SelectionKind;
+  readonly matches: readonly AppearanceMatchEntry[];
+  readonly activeTool: NumericInputToolId;
 }
 
 /**
- * 加工の区画(§2.11、FR-405〜408、FR-411、FR-412)。「ソリッド」の右へ置く(§0.a-0.25 ③)。
- * 図柄だけのボタンで、押せる条件と理由は `solidToolReadiness`(solidCommands.ts、
- * タスク25b)で決める。加工6種の判定そのものは `machiningToolReadiness`
- * (machiningCommands.ts、タスク25)にあるが、`solidToolReadiness` がすでにそこへ
- * 委譲しているので、ここで2重に呼ばない(同じ判断を2か所に書かない)。数値を聞くのは
- * 押し出し・回転・縫合と同じ道具の形なので、ボタンを押したときの処理も `openSolidInput`
- * をそのまま使う(`MachiningToolId` は `SolidToolId` の部分集合)。押せない道具を押したときに
- * 帯へも理由を出す作りは `SolidGroup` と揃える(§0.a-0.6、NFR-UX-5)。
+ * 「見た目」の区画(FR-1106〜1110、要件§4.12。P5 タスク12 で外観、タスク51 で畳んだ一覧へ)。
+ *
+ * 専用パネル/ダイアログは採らず、畳んだ一覧 1 つにする(§0.a-0.13、§0.a-0.51)。
+ * いまの中身は外観 1 つだけだが、**タスク32 の「測る」がこの一覧の 2 行目に入る**
+ * (§0.a-0.29 が「測る」をボタン 1 つと決めているので、区画を増やさずに済む。要件§7.1)。
+ * 押せる条件と理由は `appearanceReadiness`(`appearance/appearanceCommands.ts`、タスク11)に
+ * 1 本化してあるのでここで 2 重に判定しない(`SolidGroup` と同じ作り)。
+ *
+ * **入れ物側に `role="group"` を付けない**のは、開いた一覧(`.pcad-menu__panel`)がすでに
+ * 同じ「見た目」という名前の group だから。同じ名前の group を入れ子にすると、読み上げでも
+ * 検査でもどちらを指しているのか取り違える(区画名と一覧名が違う「ソリッド」区画は
+ * 従来どおり `role="group"` を付ける)。
  */
-function MachiningGroup({ document, bodies, selection }: MachiningGroupProps): React.JSX.Element {
+function LookGroup({
+  document,
+  bodies,
+  selection,
+  selectionKind,
+  matches,
+  activeTool,
+}: LookGroupProps): React.JSX.Element {
+  const readiness = appearanceReadiness({ document, bodies, selection, selectionKind, matches });
   return (
-    <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.machining.title')}>
-      <span className="pcad-toolbar__group-label" title={t('toolbar.machining.tooltip')}>
-        {t('toolbar.machining.title')}
+    <div className="pcad-toolbar__group">
+      <span className="pcad-toolbar__group-label" title={t('toolbar.look.tooltip')}>
+        {t('toolbar.look.groupLabel')}
       </span>
       <div className="pcad-segmented">
-        {MACHINING_ACTIONS.map((action) => {
-          const readiness = solidToolReadiness(document, selection, action.id, bodies);
-          return (
-            <button
-              key={action.id}
-              type="button"
-              className="pcad-button pcad-button--icon"
-              title={
-                readiness.ready
-                  ? t(action.tooltipKey)
-                  : unavailableTooltip(action.labelKey, readiness.reasonKey)
-              }
-              aria-label={t(action.labelKey)}
-              aria-disabled={!readiness.ready}
-              onClick={() => {
-                if (readiness.ready) {
-                  openSolidInput(action.id);
-                  return;
-                }
-                /*
-                  条件が揃っていなくても、押した時点で選ぶものを道具が要る種類へ切り替える
-                  (§0.a-0.6、タスク30 不具合(b))。これで「穴を押す → 面を選ぶ → 点を Shift で
-                  足す → 穴を押す」の流れが成立する(その場入力は開かない。setActiveTool の
-                  絞り込みでポップアップは自然に閉じたままになる)。
-                */
-                useAppStore.getState().setActiveTool(action.id);
-                // 押せない道具を押しても、ツールチップだけでなく帯にも理由を出す
-                // (§0.a-0.6、NFR-UX-5。SolidGroup と同じ作り)。
-                useAppStore.getState().setSolidError(readiness.reasonKey);
-              }}
-            >
-              <action.Icon />
-            </button>
-          );
-        })}
+        <ToolMenu
+          items={LOOK_MENU_ITEMS}
+          groupLabelKey="toolbar.look.groupLabel"
+          groupTooltipKey="toolbar.look.tooltip"
+          GroupIcon={AppearanceIcon}
+          activeTool={activeTool}
+          readinessOf={() => ({ ready: readiness.ok, reasonKey: readiness.reasonKey })}
+          onChoose={(id, pressed) => {
+            const store = useAppStore.getState();
+            // 同じ道具をもう一度選んだら解除して選択へ戻す(他の一覧と同じ約束、NFR-UX-3)。
+            store.setActiveTool(pressed ? 'select' : id);
+            store.requestViewportFocus();
+            if (!readiness.ok) {
+              // 押せなくても、ツールチップだけでなく帯にも理由を出す(NFR-UX-5)。
+              store.setAppearanceError(readiness.reasonKey);
+            }
+          }}
+        />
       </div>
     </div>
   );
@@ -1354,60 +1290,85 @@ interface SolidGroupProps {
   readonly document: PartDocument;
   readonly bodies: readonly SubShapeBody[];
   readonly selection: readonly string[];
+  /** いま選んでいる道具。畳んだボタンの図柄と `aria-pressed` を決めるために使う。 */
+  readonly activeTool: NumericInputToolId;
 }
 
 /**
- * ソリッドの区画(FR-401〜404、FR-414)。7 つとも図柄だけのボタンで、名前は読み上げ名と
- * ツールチップが担う(FR-904、NFR-UX-7)。いま押せないものは aria-disabled にし、
- * ツールチップで「名前: 理由」を読めるようにする。押しても立体は作らないが、
- * 押した瞬間にステータスバーへも同じ理由を出す(§0.a-0.6、NFR-UX-5)。7 個目のばねは
- * 対象を消費しない「作る」フィーチャーで加工ではないが(§0.a-0.36)、この区画へ足す
- * (§0.34)。
+ * ソリッドの区画(FR-401〜404、FR-414、FR-405〜408、FR-411、FR-412)。
+ *
+ * **P5 タスク51 でここを畳んだ一覧 3 つへ組み替えた**(§0.a-0.51、統括の決定 2026-09-05)。
+ * P4b までは「ソリッド」区画に図柄 7 個(実測 200 画素)、その右の「加工」区画に図柄 6 個
+ * (同 172 画素)が平置きされていて、1440 画素の窓で 1 段に必要な幅は実測 1437.3 画素・
+ * 余裕 2.7 画素しか無かった。タスク18(基本形状 5)・27f(切断)・32(測る)・49(Should 群)で
+ * ボタンがさらに 20 個ほど増えるため、計画書の順(32・50 の後)を待たずに前倒しした。
+ *
+ * 一覧の切り分けは「押したあとに何が起きるか」で決めてある。
+ * ①**作る**(押し出し・回転・縫合・ばね): 面や点を選んでから**数値を聞いて**立体を作る。
+ * ②**合わせる**(和・差・積): 立体を 2 つ選んで**押すだけで決まる**(§0.a-0.6)。
+ * ③**加工**(穴・ねじ穴・R面取り・C面取り・直線/円形パターン): できた立体へ手を入れる。
+ * 3 つとも同じ「ソリッド」区画の 1 つの溝に並ぶので、区画は増えない(要件§7.1)。
+ *
+ * 押せる条件と理由は `solidToolReadiness`(solidCommands.ts)1 か所で決める。加工 6 種の
+ * 判定そのものは `machiningToolReadiness`(machiningCommands.ts)にあるが、
+ * `solidToolReadiness` がすでにそこへ委譲しているのでここで 2 重に呼ばない。
  */
-function SolidGroup({ document, bodies, selection }: SolidGroupProps): React.JSX.Element {
+function SolidGroup({
+  document,
+  bodies,
+  selection,
+  activeTool,
+}: SolidGroupProps): React.JSX.Element {
+  /*
+    一覧を開いたときに項目ごとの押せる条件を引く関数。`SolidActionId` は
+    「作る」「合わせる」「加工」の id をすべて含むので、3 つの一覧で同じ 1 つを使い回す。
+  */
+  const readinessOf = (id: SolidActionId): SolidToolReadiness =>
+    solidToolReadiness(document, selection, id, bodies);
+
   return (
     <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.solid.title')}>
       <span className="pcad-toolbar__group-label" title={t('toolbar.solid.tooltip')}>
         {t('toolbar.solid.title')}
       </span>
       <div className="pcad-segmented">
-        {SOLID_ACTIONS.map((action) => {
-          const readiness = solidToolReadiness(document, selection, action.id, bodies);
-          return (
-            <button
-              key={action.id}
-              type="button"
-              className="pcad-button pcad-button--icon"
-              title={
-                readiness.ready
-                  ? t(action.tooltipKey)
-                  : unavailableTooltip(action.labelKey, readiness.reasonKey)
-              }
-              aria-label={t(action.labelKey)}
-              aria-disabled={!readiness.ready}
-              onClick={() => {
-                if (readiness.ready) {
-                  runSolidAction(action.id);
-                  return;
-                }
-                /*
-                  押し出し・回転・縫合・ばね(その場入力を開く4つ)は、条件が揃っていなくても
-                  押した時点で選ぶものを道具の種類へ切り替える(§0.a-0.6、タスク30 不具合(b))。
-                  和・差・積は数値を聞かず選ぶものも常に立体のままなので対象外(runSolidAction の
-                  分岐と同じ切り分け)。
-                */
-                if (action.id !== 'union' && action.id !== 'subtract' && action.id !== 'intersect') {
-                  useAppStore.getState().setActiveTool(action.id);
-                }
-                // 押せない道具を押しても、ツールチップだけでなく帯にも理由を出す
-                // (§0.a-0.6、NFR-UX-5。2026-09-03 19:35 の統括の決定)。
-                useAppStore.getState().setSolidError(readiness.reasonKey);
-              }}
-            >
-              <action.Icon />
-            </button>
-          );
-        })}
+        <ToolMenu
+          items={CREATE_MENU_ITEMS}
+          groupLabelKey="toolbar.create.groupLabel"
+          groupTooltipKey="toolbar.create.tooltip"
+          GroupIcon={CreateGroupIcon}
+          activeTool={activeTool}
+          readinessOf={readinessOf}
+          onChoose={(id) => {
+            runSolidTool(id, readinessOf(id));
+          }}
+        />
+        <ToolMenu
+          items={COMBINE_MENU_ITEMS}
+          groupLabelKey="toolbar.combine.groupLabel"
+          groupTooltipKey="toolbar.combine.tooltip"
+          GroupIcon={CombineGroupIcon}
+          /*
+            和・差・積は道具として選ばれた状態にならない(押した瞬間に作って選択へ戻る)ので、
+            畳んだボタンの図柄は `ToolMenu` が覚える「最後に使った道具」だけで決まる。
+          */
+          activeTool={activeTool}
+          readinessOf={readinessOf}
+          onChoose={(operation) => {
+            runCombineTool(operation, readinessOf(operation));
+          }}
+        />
+        <ToolMenu
+          items={MACHINING_MENU_ITEMS}
+          groupLabelKey="toolbar.machining.title"
+          groupTooltipKey="toolbar.machining.tooltip"
+          GroupIcon={MachiningGroupIcon}
+          activeTool={activeTool}
+          readinessOf={readinessOf}
+          onChoose={(id) => {
+            runSolidTool(id, readinessOf(id));
+          }}
+        />
       </div>
     </div>
   );
@@ -1417,19 +1378,22 @@ function SolidGroup({ document, bodies, selection }: SolidGroupProps): React.JSX
  * 画面上端のツールバー(要件§7.1)。
  *
  * 左から「製品名 → ファイル → 元に戻す・やり直す → モードのタブ → スケッチ → ソリッド →
- * 加工 → 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」の機能グループを並べる
- * (§0.a-0.25 ③「加工」をソリッドの右へ)。
+ * 見た目 → 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」の機能グループを並べる
+ * (P5 タスク51 で「加工」区画を「ソリッド」区画の中の畳んだ一覧へ寄せ、「外観」区画を
+ * 「見た目」へ改めた。§0.a-0.51)。
  * 機能グループは区画名を頭に置き、いま選ばれているものをアクセント色の面で示す(NFR-UX-7)。
  * 状態の正本は Zustand ストア1本(rules/04-設計の規律.md)。
  *
- * 「スケッチ」区画は、基本の 6 道具(選択・点・線分・円弧・点列・面)の右に「作図」「編集」の
- * 畳んだボタンを**同じ行**へ並べた 1 行にする(利用者の決定 2026-09-04、タスク32)。
+ * 「スケッチ」区画は、基本の 6 道具(選択・点・線分・円弧・点列・面)の右に「作図」「編集」
+ * 「拘束」の畳んだボタンを**同じ行**へ並べた 1 行にする(利用者の決定 2026-09-04、タスク32)。
+ * 「ソリッド」区画も同じ作りで「作る」「合わせる」「加工」の 3 つを 1 つの溝に並べる。
  * よく使う道具は 1 クリック、それ以外は 2 クリックで届く。
  *
  * 横幅の方針: 1440 画素の窓で 1 段に収まることを条件にする(§0.a-0.15)。
- * 実測(2026-09-04、ダーク・拡大率 100%): 高さ 68.5 画素の 1 段、1 段に必要な幅 1366.3 画素、
- * 1440 画素の窓での余裕 73.7 画素。畳んだ一覧へ道具を足しても幅は増えない
- * (`toolbarMenus.ts` の `segmentedWidthPixels`)。
+ * 実測(2026-09-05、ダーク・拡大率 100%、1440×900): 高さ 68.5 画素の 1 段、1 段に必要な幅
+ * 1144.3 画素、1440 画素の窓での余裕 295.7 画素(タスク51 の前は 1437.3 画素・余裕 2.7 画素)。
+ * 畳んだ一覧へ道具を足しても幅は増えない(`toolbarMenus.ts` の `segmentedWidthPixels`)ので、
+ * タスク18・27f・32・49 が足すボタンはすべて既存の一覧の中へ入る。
  * 図柄で分かるものは図柄だけのボタン(`pcad-button--icon`)にして詰め、
  * 文字を添えたい道具(スケッチ・続けてかく)には `pcad-button--collapsible` を付けて、
  * 窓が 1600 画素より狭いときだけ文字を畳む(appShell.css)。図柄だけになるボタンには
@@ -1454,6 +1418,9 @@ export function Toolbar(): React.JSX.Element {
   // (タスク17 の後は state.bodies をそのまま渡せるようになる、subShapeBodiesOf の注釈)。
   const subShapeBodies = subShapeBodiesOf(bodies);
   const selection = useAppStore((state) => state.selection);
+  // 外観(FR-1106〜1110、タスク12)の押せる条件の判定に要る。
+  const selectionKind = useAppStore((state) => state.selectionKind);
+  const appearanceMatches = useAppStore((state) => state.appearanceMatches);
   // 整形系(オフセット、FR-321、タスク21)の押せる条件の判定に要る。
   const resolvedSketch = useAppStore((state) => state.resolvedSketch);
   const canUndo = useAppStore((state) => state.canUndo);
@@ -1626,8 +1593,20 @@ export function Toolbar(): React.JSX.Element {
         </div>
       </div>
 
-      <SolidGroup document={partDocument} bodies={subShapeBodies} selection={selection} />
-      <MachiningGroup document={partDocument} bodies={subShapeBodies} selection={selection} />
+      <SolidGroup
+        document={partDocument}
+        bodies={subShapeBodies}
+        selection={selection}
+        activeTool={activeTool}
+      />
+      <LookGroup
+        document={partDocument}
+        bodies={subShapeBodies}
+        selection={selection}
+        selectionKind={selectionKind}
+        matches={appearanceMatches}
+        activeTool={activeTool}
+      />
 
       <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.plane.groupLabel')}>
         <span className="pcad-toolbar__group-label" title={t('toolbar.plane.tooltip')}>
@@ -1659,43 +1638,29 @@ export function Toolbar(): React.JSX.Element {
 
       <span className="pcad-toolbar__spacer" />
 
-      <div
-        className="pcad-toolbar__group"
-        role="group"
-        aria-label={t('toolbar.projection.groupLabel')}
-      >
+      {/*
+        投影(FR-102)。P5 タスク51 で 2 つの図柄ボタンを畳んだ一覧 1 つへまとめた
+        (§0.a-0.51)。畳んだボタンには**いま効いているほうの図柄**が出るので、開かなくても
+        今の見え方が読み取れる(`triggerItemOf` が `activeTool` = いまの投影と一致する項目を
+        返す。作図面の一覧が「XY」を札に出すのと同じ考え方)。
+        入れ物側に `role="group"` を付けないのは、開いた一覧がすでに同じ「投影」という名前の
+        group だから(`LookGroup` の注釈と同じ理由)。
+      */}
+      <div className="pcad-toolbar__group">
         <span className="pcad-toolbar__group-label" title={t('toolbar.projection.tooltip')}>
           {t('toolbar.projection.groupLabel')}
         </span>
-        {/*
-          奥へ集まる線と平行なままの線という、見え方そのものを写した図柄なので
-          文字を添えずに並べる。名前は読み上げ名とツールチップが持つ。
-        */}
         <div className="pcad-segmented">
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            title={t('toolbar.projection.perspectiveTooltip')}
-            aria-label={t('toolbar.projection.perspective')}
-            aria-pressed={projection === 'perspective'}
-            onClick={() => {
-              useAppStore.getState().setProjection('perspective');
+          <ToolMenu
+            items={PROJECTION_MENU_ITEMS}
+            groupLabelKey="toolbar.projection.groupLabel"
+            groupTooltipKey="toolbar.projection.tooltip"
+            GroupIcon={PerspectiveIcon}
+            activeTool={projection}
+            onChoose={(mode) => {
+              useAppStore.getState().setProjection(mode);
             }}
-          >
-            <PerspectiveIcon />
-          </button>
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            title={t('toolbar.projection.orthographicTooltip')}
-            aria-label={t('toolbar.projection.orthographic')}
-            aria-pressed={projection === 'orthographic'}
-            onClick={() => {
-              useAppStore.getState().setProjection('orthographic');
-            }}
-          >
-            <OrthographicIcon />
-          </button>
+          />
         </div>
       </div>
 

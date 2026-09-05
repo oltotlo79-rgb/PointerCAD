@@ -1,5 +1,6 @@
 import {
   createEmptyPartDocument,
+  createPrimitiveFeature,
   emptyAppearanceTable,
   PART_SCHEMA_VERSION,
   resolveSketch,
@@ -7,11 +8,14 @@ import {
   type AppearanceTable,
   type PartDocument,
   type Parameter,
+  type PrimitiveFeature,
+  type PrimitiveShape,
   type ReferenceFeature,
   type SketchConstraint,
   type SketchDocument,
   type SketchFeature,
   type SolidFeature,
+  type SolidOrigin,
   type SubShapeRef,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
@@ -1980,6 +1984,192 @@ describe('ばね(SpringFeature)の derived / handedness の往復(FR-414、§0.a
     const error = expectError(parseDocument(rawFile({ document })));
     expect(error.code).toBe('invalidField');
     expect(error.message).toContain('document.solids[0].handedness');
+  });
+});
+
+describe('基本形状(PrimitiveFeature)の読み書き(FR-429、FR-801、P5 タスク17)', () => {
+  const SHAPE_KINDS = ['sphere', 'box', 'cylinder', 'cone', 'torus'] as const;
+  type PrimitiveShapeTestKind = (typeof SHAPE_KINDS)[number];
+
+  /** 5 種の寸法(§2.7.1)。球だけ式(`5*2`)を含めて FR-202 の確認も兼ねる。 */
+  function primitiveShapeFor(kind: PrimitiveShapeTestKind): PrimitiveShape {
+    switch (kind) {
+      case 'sphere':
+        return { kind: 'sphere', radius: ev('5*2', 10) };
+      case 'box':
+        return { kind: 'box', sizeX: ev('20', 20), sizeY: ev('20', 20), sizeZ: ev('20', 20) };
+      case 'cylinder':
+        return { kind: 'cylinder', radius: ev('10', 10), height: ev('20', 20) };
+      case 'cone':
+        return {
+          kind: 'cone',
+          bottomRadius: ev('10', 10),
+          topRadius: ev('0', 0),
+          height: ev('20', 20),
+        };
+      case 'torus':
+        return { kind: 'torus', majorRadius: ev('20', 20), minorRadius: ev('5', 5) };
+    }
+  }
+
+  const ORIGIN_KINDS = ['coordinate', 'sketchPoint', 'vertex'] as const;
+  type SolidOriginTestKind = (typeof ORIGIN_KINDS)[number];
+
+  /** 基準点の3通り(§0.a-0.18)。`vertex` は指紋つきの部分形状の参照を持つ。 */
+  function originFor(kind: SolidOriginTestKind): SolidOrigin {
+    switch (kind) {
+      case 'coordinate':
+        return {
+          kind: 'coordinate',
+          value: { mode: 'absolute', x: ev('5*2', 10), y: ev('0', 0), z: ev('0', 0) },
+        };
+      case 'sketchPoint':
+        return { kind: 'sketchPoint', ref: { sketchId: 'sketch-1', pointFeatureId: 'point-1' } };
+      case 'vertex':
+        return {
+          kind: 'vertex',
+          ref: {
+            bodyFeatureId: 'extrude-1',
+            index: 3,
+            fingerprint: { kind: 'vertex', position: [1.5, 2.5, 3.5] },
+          },
+        };
+    }
+  }
+
+  function primitiveFeatureFor(
+    shapeKind: PrimitiveShapeTestKind,
+    originKind: SolidOriginTestKind,
+  ): PrimitiveFeature {
+    return {
+      id: 'primitive-1',
+      kind: 'primitive',
+      name: '基本形状1',
+      suppressed: false,
+      origin: originFor(originKind),
+      axis: { kind: 'world', axis: 'z' },
+      shape: primitiveShapeFor(shapeKind),
+    };
+  }
+
+  for (const shapeKind of SHAPE_KINDS) {
+    for (const originKind of ORIGIN_KINDS) {
+      it(`${shapeKind} × 基準点(${originKind})が往復で一致する`, () => {
+        const feature = primitiveFeatureFor(shapeKind, originKind);
+        const parsed = roundTrip(documentWithSolid(feature));
+        expect(parsed.solids[0]).toEqual(feature);
+      });
+    }
+  }
+
+  it('式は文字列のまま往復する(FR-202、球の半径 "5*2")', () => {
+    const feature = primitiveFeatureFor('sphere', 'coordinate');
+    const parsed = roundTrip(documentWithSolid(feature));
+    const primitive = parsed.solids[0];
+    if (primitive.kind !== 'primitive' || primitive.shape.kind !== 'sphere') {
+      throw new Error('球のはず');
+    }
+    expect(primitive.shape.radius.source).toBe('5*2');
+  });
+
+  it('頂点参照の指紋が往復で一致する(位置の数値が変わらない)', () => {
+    const feature = primitiveFeatureFor('box', 'vertex');
+    const parsed = roundTrip(documentWithSolid(feature));
+    const primitive = parsed.solids[0];
+    if (primitive.kind !== 'primitive' || primitive.origin.kind !== 'vertex') {
+      throw new Error('頂点基準のはず');
+    }
+    expect(primitive.origin.ref.fingerprint).toEqual({
+      kind: 'vertex',
+      position: [1.5, 2.5, 3.5],
+    });
+  });
+
+  it('向き(軸)がスケッチの線分でも往復で一致する', () => {
+    const feature: SolidFeature = {
+      ...primitiveFeatureFor('cylinder', 'coordinate'),
+      axis: { kind: 'line', line: { sketchId: 'sketch-1', lineFeatureId: 'line-1' } },
+    };
+    const parsed = roundTrip(documentWithSolid(feature));
+    expect(parsed.solids[0]).toEqual(feature);
+  });
+
+  it('shape.kind に知らない種類(\'cube\')があれば断る(エラーコードを増やさない)', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'primitive-1',
+          kind: 'primitive',
+          name: '基本形状1',
+          suppressed: false,
+          origin: {
+            kind: 'coordinate',
+            value: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+          },
+          axis: { kind: 'world', axis: 'z' },
+          shape: { kind: 'cube', size: ev('10', 10) },
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].shape.kind');
+  });
+
+  it('origin.kind に知らない種類(\'face\')があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'primitive-1',
+          kind: 'primitive',
+          name: '基本形状1',
+          suppressed: false,
+          origin: { kind: 'face', ref: { bodyFeatureId: 'extrude-1', index: 0 } },
+          axis: { kind: 'world', axis: 'z' },
+          shape: { kind: 'sphere', radius: ev('10', 10) },
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].origin.kind');
+  });
+
+  it('球の寸法から radius の欄が欠けていれば断る(missingField)', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'primitive-1',
+          kind: 'primitive',
+          name: '基本形状1',
+          suppressed: false,
+          origin: {
+            kind: 'coordinate',
+            value: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+          },
+          axis: { kind: 'world', axis: 'z' },
+          shape: { kind: 'sphere' },
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.solids[0].shape.radius');
+  });
+
+  it('基本形状を含まない版5のファイルは移行で開ける(旧版は基本形状を持たない)', () => {
+    const legacyDocument = withoutAppearance(rawDocument({ schemaVersion: 5 }));
+    const legacyFile = rawFile({ schema: 5, document: legacyDocument });
+    const document = expectOk(parseDocument(legacyFile));
+    expect(document.solids).toEqual([]);
+  });
+
+  it('既定の球1つだけの文書のバイト数(参考、FR-801)', () => {
+    const empty = createEmptyPartDocument();
+    const sphere = createPrimitiveFeature(empty, 'sphere');
+    const document: PartDocument = { ...empty, solids: [sphere] };
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    expect(Buffer.byteLength(text, 'utf8')).toBe(1313);
   });
 });
 

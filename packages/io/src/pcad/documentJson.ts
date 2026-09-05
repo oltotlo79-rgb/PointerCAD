@@ -44,6 +44,7 @@ import {
   type OffsetSide,
   type PointArrayLayout,
   type PointReference,
+  type PrimitiveShape,
   type ReferenceAxisDefinition,
   type ReferenceFeature,
   type ReferenceFeatureKind,
@@ -61,6 +62,7 @@ import {
   sketchConstraints,
   type SolidFeature,
   type SolidFeatureKind,
+  type SolidOrigin,
   type SpringDerived,
   type SpringHandedness,
   type SubShapeFingerprint,
@@ -169,17 +171,12 @@ const POINT_ARRAY_LAYOUT_KINDS: readonly PointArrayLayout['kind'][] = [
 ];
 /**
  * `.pcad` から読める立体の種類。P2 の4種類(押し出し・回転・縫合・ブーリアン)に、
- * P3 の加工フィーチャー5種(穴・ねじ穴・R 面取り・C 面取り・パターン)とばねを足した10種類
- * (P3 計画書 §2.10、タスク19)。知らない種類の `kind` は `readLiteral` が
- * 「その欄の型が違う」として断る(新しい欄の解釈を推測しないため)。
+ * P3 の加工フィーチャー5種(穴・ねじ穴・R 面取り・C 面取り・パターン)とばね、
+ * P5 の基本形状(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7、タスク17)を
+ * 足した11種類。知らない種類の `kind` は `readLiteral` が「その欄の型が違う」として
+ * 断る(新しい欄の解釈を推測しないため)。
  */
-/*
-  基本形状(`'primitive'`、FR-429)は **P5 タスク17 で足す**。それまでは読める種類から
-  外しておく(型からも除く)ので、`readSolidFeature` の網羅 switch は10種類のままで足り、
-  版 6 のファイルにこの種類が書かれていれば「その欄の型が違う」として断る。
-  タスク15(型の追加)とタスク17(読み書き)の間に、読めない種類を読めるふりをさせない。
-*/
-const SOLID_FEATURE_KINDS: readonly Exclude<SolidFeatureKind, 'primitive'>[] = [
+const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = [
   'extrude',
   'revolve',
   'sew',
@@ -190,11 +187,26 @@ const SOLID_FEATURE_KINDS: readonly Exclude<SolidFeatureKind, 'primitive'>[] = [
   'chamfer',
   'pattern',
   'spring',
+  'primitive',
 ];
 const REVOLVE_AXIS_KINDS: readonly RevolveAxis['kind'][] = ['world', 'line', 'reference'];
 type WorldRevolveAxis = Extract<RevolveAxis, { readonly kind: 'world' }>;
 const WORLD_AXES: readonly WorldRevolveAxis['axis'][] = ['x', 'y', 'z'];
 const BOOLEAN_OPERATIONS: readonly BooleanOperation[] = ['union', 'subtract', 'intersect'];
+
+/**
+ * 基本形状(FR-429、P5 計画書 §0.a-0.18、タスク17)の基準点の3通り
+ * (座標の式・スケッチの点・立体の頂点)。
+ */
+const SOLID_ORIGIN_KINDS: readonly SolidOrigin['kind'][] = ['coordinate', 'sketchPoint', 'vertex'];
+/** 基本形状5種の判別(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7.1、タスク17)。 */
+const PRIMITIVE_SHAPE_KINDS: readonly PrimitiveShape['kind'][] = [
+  'sphere',
+  'box',
+  'cylinder',
+  'cone',
+  'torus',
+];
 
 // P3(§2.10、タスク19)が足す判別の一覧。
 const SUB_SHAPE_KINDS: readonly SubShapeKind[] = ['face', 'edge', 'vertex'];
@@ -832,6 +844,59 @@ function serializePatternPlacement(placement: PatternPlacement): PatternPlacemen
   }
 }
 
+/**
+ * 基本形状の基準点(FR-429、P5 計画書 §2.7.1、タスク17)。3通りで欄が違うので
+ * `kind` で分岐する。`vertex` の指紋は `serializeSubShapeRef` をそのまま使い回す
+ * (P3 の加工フィーチャーと同じ形)。
+ */
+function serializeSolidOrigin(origin: SolidOrigin): SolidOrigin {
+  switch (origin.kind) {
+    case 'coordinate':
+      return { kind: 'coordinate', value: serializeCoordinate(origin.value) };
+    case 'sketchPoint':
+      return { kind: 'sketchPoint', ref: serializePointRef(origin.ref) };
+    case 'vertex':
+      return { kind: 'vertex', ref: serializeSubShapeRef(origin.ref) };
+  }
+}
+
+/**
+ * 基本形状の寸法(FR-429、P5 計画書 §2.7.1、タスク17)。種類ごとに欄が違うので
+ * `kind` で分岐する。寸法は式のまま保存する(FR-202)。
+ */
+function serializePrimitiveShape(shape: PrimitiveShape): PrimitiveShape {
+  switch (shape.kind) {
+    case 'sphere':
+      return { kind: 'sphere', radius: serializeExpression(shape.radius) };
+    case 'box':
+      return {
+        kind: 'box',
+        sizeX: serializeExpression(shape.sizeX),
+        sizeY: serializeExpression(shape.sizeY),
+        sizeZ: serializeExpression(shape.sizeZ),
+      };
+    case 'cylinder':
+      return {
+        kind: 'cylinder',
+        radius: serializeExpression(shape.radius),
+        height: serializeExpression(shape.height),
+      };
+    case 'cone':
+      return {
+        kind: 'cone',
+        bottomRadius: serializeExpression(shape.bottomRadius),
+        topRadius: serializeExpression(shape.topRadius),
+        height: serializeExpression(shape.height),
+      };
+    case 'torus':
+      return {
+        kind: 'torus',
+        majorRadius: serializeExpression(shape.majorRadius),
+        minorRadius: serializeExpression(shape.minorRadius),
+      };
+  }
+}
+
 function serializeSolidFeature(feature: SolidFeature): SolidFeature {
   switch (feature.kind) {
     case 'extrude':
@@ -957,13 +1022,17 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         handedness: feature.handedness,
       };
     case 'primitive':
-      /*
-        基本形状(FR-429)の書き出しは **P5 タスク17 で本実装**する。ここはタスク15 で
-        `SolidFeature` の union が広がったときに、この網羅 switch を落とさないための
-        最小の枝である。読み手も `SOLID_FEATURE_KINDS` からこの種類を外してあるので、
-        いまはこの枝を通った文書を読み返せない(タスク17 で両方をそろえて入れる)。
-      */
-      return feature;
+      // 基本形状(FR-429、P5 計画書 §2.7.1、タスク17)。対象を消費しない「作る」
+      // フィーチャーなので、押し出し・ばねと同じく欄をそのまま組み立てる。
+      return {
+        id: feature.id,
+        kind: 'primitive',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        origin: serializeSolidOrigin(feature.origin),
+        axis: serializeRevolveAxis(feature.axis),
+        shape: serializePrimitiveShape(feature.shape),
+      };
   }
 }
 
@@ -3055,6 +3124,8 @@ function readSolidFeature(value: unknown, path: string): Checked<SolidFeature> {
       return readPatternFeature(record.value, path, base.value);
     case 'spring':
       return readSpringFeature(record.value, path, base.value);
+    case 'primitive':
+      return readPrimitiveFeature(record.value, path, base.value);
   }
 }
 
@@ -3453,6 +3524,187 @@ function readSpringFeature(
       coilDiameter: coilDiameter.value,
       wireDiameter: wireDiameter.value,
       handedness: handedness.value,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// P5(FR-429、計画書 §2.7.1、タスク17)が足す基本形状の読み込み
+// ---------------------------------------------------------------------------
+
+/**
+ * 基本形状の基準点を読む(FR-429)。3通りで欄が違うので `kind` で分岐する。
+ * `sketchPoint` は `readPointRefField`、`vertex` は `readSubShapeRefField`(P3 の
+ * 加工フィーチャーと同じ組み立て)をそのまま使い回す。
+ */
+function readSolidOrigin(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<SolidOrigin> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, SOLID_ORIGIN_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'coordinate': {
+      const coordinate = readCoordinate(record.value, 'value', path);
+      if (!coordinate.ok) {
+        return coordinate;
+      }
+      return { ok: true, value: { kind: 'coordinate', value: coordinate.value } };
+    }
+    case 'sketchPoint': {
+      const ref = readPointRefField(record.value, 'ref', path);
+      if (!ref.ok) {
+        return ref;
+      }
+      return { ok: true, value: { kind: 'sketchPoint', ref: ref.value } };
+    }
+    case 'vertex': {
+      const ref = readSubShapeRefField(record.value, 'ref', path);
+      if (!ref.ok) {
+        return ref;
+      }
+      return { ok: true, value: { kind: 'vertex', ref: ref.value } };
+    }
+  }
+}
+
+/** 基本形状の寸法を読む(FR-429)。種類ごとに欄が違うので `kind` で分岐する。 */
+function readPrimitiveShape(value: unknown, path: string): Checked<PrimitiveShape> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const kind = readLiteral(record.value, 'kind', path, PRIMITIVE_SHAPE_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'sphere': {
+      const radius = readExpression(record.value, 'radius', path);
+      if (!radius.ok) {
+        return radius;
+      }
+      return { ok: true, value: { kind: 'sphere', radius: radius.value } };
+    }
+    case 'box': {
+      const sizeX = readExpression(record.value, 'sizeX', path);
+      if (!sizeX.ok) {
+        return sizeX;
+      }
+      const sizeY = readExpression(record.value, 'sizeY', path);
+      if (!sizeY.ok) {
+        return sizeY;
+      }
+      const sizeZ = readExpression(record.value, 'sizeZ', path);
+      if (!sizeZ.ok) {
+        return sizeZ;
+      }
+      return {
+        ok: true,
+        value: { kind: 'box', sizeX: sizeX.value, sizeY: sizeY.value, sizeZ: sizeZ.value },
+      };
+    }
+    case 'cylinder': {
+      const radius = readExpression(record.value, 'radius', path);
+      if (!radius.ok) {
+        return radius;
+      }
+      const height = readExpression(record.value, 'height', path);
+      if (!height.ok) {
+        return height;
+      }
+      return { ok: true, value: { kind: 'cylinder', radius: radius.value, height: height.value } };
+    }
+    case 'cone': {
+      const bottomRadius = readExpression(record.value, 'bottomRadius', path);
+      if (!bottomRadius.ok) {
+        return bottomRadius;
+      }
+      const topRadius = readExpression(record.value, 'topRadius', path);
+      if (!topRadius.ok) {
+        return topRadius;
+      }
+      const height = readExpression(record.value, 'height', path);
+      if (!height.ok) {
+        return height;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'cone',
+          bottomRadius: bottomRadius.value,
+          topRadius: topRadius.value,
+          height: height.value,
+        },
+      };
+    }
+    case 'torus': {
+      const majorRadius = readExpression(record.value, 'majorRadius', path);
+      if (!majorRadius.ok) {
+        return majorRadius;
+      }
+      const minorRadius = readExpression(record.value, 'minorRadius', path);
+      if (!minorRadius.ok) {
+        return minorRadius;
+      }
+      return {
+        ok: true,
+        value: { kind: 'torus', majorRadius: majorRadius.value, minorRadius: minorRadius.value },
+      };
+    }
+  }
+}
+
+function readPrimitiveShapeField(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<PrimitiveShape> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readPrimitiveShape(found.value, joinPath(parentPath, key));
+}
+
+/**
+ * 基本形状(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7.1、タスク17)を読む。
+ * 対象を消費しない「作る」フィーチャーなので、押し出し・ばねと同じ構え(基本の欄 +
+ * 種類固有の欄)で読む。
+ */
+function readPrimitiveFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const origin = readSolidOrigin(record, 'origin', path);
+  if (!origin.ok) {
+    return origin;
+  }
+  const axis = readRevolveAxis(record, 'axis', path);
+  if (!axis.ok) {
+    return axis;
+  }
+  const shape = readPrimitiveShapeField(record, 'shape', path);
+  if (!shape.ok) {
+    return shape;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'primitive',
+      origin: origin.value,
+      axis: axis.value,
+      shape: shape.value,
     },
   };
 }

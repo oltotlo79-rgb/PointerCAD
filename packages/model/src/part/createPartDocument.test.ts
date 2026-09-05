@@ -24,6 +24,37 @@ import {
   createPrimitiveFeature,
   createSketchFor,
   DEFAULT_BOX_SIZE_MM,
+  DEFAULT_COUNTERBORE_DEPTH_MM,
+  DEFAULT_COUNTERBORE_DIAMETER_MM,
+  DEFAULT_COUNTERSINK_ANGLE_DEGREES,
+  DEFAULT_COUNTERSINK_DIAMETER_MM,
+  DEFAULT_DRAFT_ANGLE_DEGREES,
+  DEFAULT_EMBOSS_HEIGHT_MM,
+  DEFAULT_EMBOSS_RAISED,
+  DEFAULT_EXTRUDE_END,
+  DEFAULT_EXTRUDE_THICKNESS_MM,
+  DEFAULT_HOLE_ENTRY,
+  DEFAULT_MIRROR_PLANE_ID,
+  DEFAULT_RIB_EXTEND_TO_BODY,
+  DEFAULT_RIB_SIDE,
+  DEFAULT_RIB_THICKNESS_MM,
+  DEFAULT_SCALE_FACTOR,
+  DEFAULT_SURFACE_ANGLE_DEGREES,
+  DEFAULT_SURFACE_DISTANCE_MM,
+  DEFAULT_SWEEP_FRENET,
+  DEFAULT_TAPER_ANGLE_DEGREES,
+  DEFAULT_THICKNESS_SIDE,
+  DEFAULT_THREAD_SHAFT_FROM_END,
+  DEFAULT_THREAD_SHAFT_LENGTH_MM,
+  DEFAULT_THREAD_SHAFT_MODELED,
+  DEFAULT_TRANSFORM_ROTATION_DEGREES,
+  DEFAULT_TRANSLATION_MM,
+  extrudeShapingOf,
+  holeEntryOf,
+  MAX_DRAFT_ANGLE_DEGREES,
+  MAX_SCALE,
+  MAX_TAPER_ANGLE_DEGREES,
+  MIN_SCALE,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
   DEFAULT_CHAMFER_DISTANCE_MM,
   DEFAULT_CIRCULAR_PATTERN_COUNT,
@@ -80,6 +111,16 @@ import type {
   BooleanFeature,
   BooleanOperation,
   ChamferFeature,
+  DraftFeature,
+  EmbossFeature,
+  MirrorFeature,
+  RibFeature,
+  ScaleFeature,
+  SurfaceFeature,
+  SurfaceOperation,
+  SweepFeature,
+  ThreadShaftFeature,
+  TransformFeature,
   ExtrudeFeature,
   FilletFeature,
   HoleFeature,
@@ -590,6 +631,17 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       torus: 'トーラス',
       ruled: '面をつなぐ',
       loft: 'ロフト',
+      // P5 の Should 群(§2.11、タスク43)。9 種 + 点パターン。
+      draft: '抜き勾配',
+      mirror: 'ミラー',
+      transform: '移動・回転',
+      scale: '拡大縮小',
+      sweep: 'スイープ',
+      rib: 'リブ',
+      emboss: 'エンボス',
+      threadShaft: '外ねじ',
+      surface: '曲面',
+      pointPattern: '点パターン',
     });
     expect(findSolid(document, 'subtract-1')?.name).toBe('差1');
     expect(nextSolidName(document, 'subtract')).toBe('差2');
@@ -699,10 +751,11 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('種類ごとの既定名は20個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2)', () => {
+  it('種類ごとの既定名は30個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2 + Should 群10)', () => {
     // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になり、
     // タスク25 で面をつなぐ(FR-430)・ロフト(FR-410)が増えて 18 → 20 になった。
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(20);
+    // タスク43 で Should 群 9 種と点パターン(FR-425)が増えて 20 → 30 になった。
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(30);
     expect(SOLID_LABELS.hole).toBe('穴');
     expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
     expect(SOLID_LABELS.spring).toBe('ばね');
@@ -710,6 +763,9 @@ describe('加工フィーチャーとばねの名前・id の採番(P3 タスク
     expect(SOLID_LABELS.torus).toBe('トーラス');
     expect(SOLID_LABELS.ruled).toBe('面をつなぐ');
     expect(SOLID_LABELS.loft).toBe('ロフト');
+    expect(SOLID_LABELS.draft).toBe('抜き勾配');
+    expect(SOLID_LABELS.threadShaft).toBe('外ねじ');
+    expect(SOLID_LABELS.pointPattern).toBe('点パターン');
   });
 
   it('穴は同じ種類の最大連番+1で数え、1つ消しても番号は戻らない', () => {
@@ -1284,11 +1340,12 @@ describe('基本形状(FR-429、P5 タスク15)', () => {
 });
 
 describe('基本形状を足したあとの立体フィーチャーの種類(FR-501)', () => {
-  it('種類は13種になり、数え漏れは型検査で落ちる', () => {
+  it('種類は22種になり、数え漏れは型検査で落ちる', () => {
     /*
       `Record<SolidFeatureKind, true>` にしておくと、種類を足したのにこの表を直し忘れた
       ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
-      数は P2 の4種 + P3 の加工5種・ばね + P5 の基本形状1種 + P5 の面をつなぐ・ロフト = 13。
+      数は P2 の4種 + P3 の加工5種・ばね + P5 の基本形状1種 + P5 の面をつなぐ・ロフト = 13 に、
+      P5 の Should 群 9 種(§2.11、タスク43)を足して 22。
       **この検査は「数え漏れを型で止める」仕掛けなので、種類が増えたら数も一緒に増やす**
       (期待値を緩めているのではなく、仕掛けが働いた結果を写し取っている)。
     */
@@ -1306,8 +1363,17 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       primitive: true,
       ruled: true,
       loft: true,
+      draft: true,
+      mirror: true,
+      transform: true,
+      scale: true,
+      sweep: true,
+      rib: true,
+      emboss: true,
+      threadShaft: true,
+      surface: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(13);
+    expect(Object.keys(kinds)).toHaveLength(22);
   });
 
   it('基本形状に基準点と向きを渡すと、そのまま入る', () => {
@@ -1364,5 +1430,380 @@ describe('面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)の既定
     expect(DEFAULT_RULED_SPHERE_SEGMENTS).toBe(24);
     // 既定は必ず選択肢の中にある(io の妥当性検査と UI の選択肢が同じ表を見るため)。
     expect(RULED_SPHERE_SEGMENT_CHOICES).toContain(DEFAULT_RULED_SPHERE_SEGMENTS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P5 の Should 群(FR-401、FR-409、FR-415、FR-417、FR-419〜425、FR-427、FR-428。
+// P5 計画書 §2.11、タスク43)。**型と履歴の振る舞いだけ**を確かめる(解決は t45・t46)。
+// ---------------------------------------------------------------------------
+
+/** 抜き勾配(FR-417)。上面を中立面にして側面を傾ける。 */
+function buildDraft(document: PartDocument, targetFeatureId: string): DraftFeature {
+  return {
+    id: nextSolidId(document, 'draft'),
+    name: nextSolidName(document, 'draft'),
+    suppressed: false,
+    kind: 'draft',
+    targetFeatureId,
+    faces: [faceRefOf(targetFeatureId, 1), faceRefOf(targetFeatureId, 2)],
+    neutralFace: faceRefOf(targetFeatureId),
+    angle: expr(String(DEFAULT_DRAFT_ANGLE_DEGREES)),
+    reversed: false,
+  };
+}
+
+/** ミラー(FR-419)。基準の XY 面に映す。**対象を消費しない。** */
+function buildMirror(document: PartDocument, targetFeatureId: string): MirrorFeature {
+  return {
+    id: nextSolidId(document, 'mirror'),
+    name: nextSolidName(document, 'mirror'),
+    suppressed: false,
+    kind: 'mirror',
+    targetFeatureId,
+    plane: { kind: 'workPlane', planeId: DEFAULT_MIRROR_PLANE_ID },
+  };
+}
+
+/** 移動/回転(FR-424)。**対象を消費する。** */
+function buildTransform(document: PartDocument, targetFeatureId: string): TransformFeature {
+  return {
+    id: nextSolidId(document, 'transform'),
+    name: nextSolidName(document, 'transform'),
+    suppressed: false,
+    kind: 'transform',
+    targetFeatureId,
+    translation: [expr('10'), expr('0'), expr('0')],
+    rotationAxis: { kind: 'world', axis: 'z' },
+    rotationAngle: expr(String(DEFAULT_TRANSFORM_ROTATION_DEGREES)),
+  };
+}
+
+/** 拡大縮小(FR-424)。**対象を消費する。** */
+function buildScale(document: PartDocument, targetFeatureId: string): ScaleFeature {
+  return {
+    id: nextSolidId(document, 'scale'),
+    name: nextSolidName(document, 'scale'),
+    suppressed: false,
+    kind: 'scale',
+    targetFeatureId,
+    origin: { kind: 'origin' },
+    factor: { kind: 'uniform', value: expr(String(DEFAULT_SCALE_FACTOR)) },
+  };
+}
+
+/** スイープ(FR-409)。対象を取らない「作る」種類。 */
+function buildSweep(document: PartDocument, profile: SketchFaceRef): SweepFeature {
+  return {
+    id: nextSolidId(document, 'sweep'),
+    name: nextSolidName(document, 'sweep'),
+    suppressed: false,
+    kind: 'sweep',
+    profile,
+    path: { sketchId: profile.sketchId, curveIds: ['line-1'] },
+    frenet: DEFAULT_SWEEP_FRENET,
+  };
+}
+
+/** リブ(FR-420)。**対象を消費する。** */
+function buildRib(document: PartDocument, targetFeatureId: string): RibFeature {
+  return {
+    id: nextSolidId(document, 'rib'),
+    name: nextSolidName(document, 'rib'),
+    suppressed: false,
+    kind: 'rib',
+    targetFeatureId,
+    profile: { sketchId: document.activeSketchId, curveIds: ['line-1'] },
+    thickness: expr(String(DEFAULT_RIB_THICKNESS_MM)),
+    side: DEFAULT_RIB_SIDE,
+    extendToBody: DEFAULT_RIB_EXTEND_TO_BODY,
+  };
+}
+
+/** エンボス(FR-421)。**対象を消費する。** */
+function buildEmboss(
+  document: PartDocument,
+  targetFeatureId: string,
+  profile: SketchFaceRef,
+): EmbossFeature {
+  return {
+    id: nextSolidId(document, 'emboss'),
+    name: nextSolidName(document, 'emboss'),
+    suppressed: false,
+    kind: 'emboss',
+    targetFeatureId,
+    face: faceRefOf(targetFeatureId),
+    profile,
+    height: expr(String(DEFAULT_EMBOSS_HEIGHT_MM)),
+    raised: DEFAULT_EMBOSS_RAISED,
+  };
+}
+
+/** 外ねじ(FR-423)。**対象を消費する。** */
+function buildThreadShaft(document: PartDocument, targetFeatureId: string): ThreadShaftFeature {
+  return {
+    id: nextSolidId(document, 'threadShaft'),
+    name: nextSolidName(document, 'threadShaft'),
+    suppressed: false,
+    kind: 'threadShaft',
+    targetFeatureId,
+    face: faceRefOf(targetFeatureId),
+    nominal: DEFAULT_THREAD_DESIGNATION,
+    series: 'coarse',
+    pitch: expr('1'),
+    length: expr(String(DEFAULT_THREAD_SHAFT_LENGTH_MM)),
+    fromEnd: DEFAULT_THREAD_SHAFT_FROM_END,
+    modeled: DEFAULT_THREAD_SHAFT_MODELED,
+  };
+}
+
+/** 曲面(FR-428)。作り方は 5 種のいずれか。**どれも対象を消費しない。** */
+function buildSurface(document: PartDocument, operation: SurfaceOperation): SurfaceFeature {
+  return {
+    id: nextSolidId(document, 'surface'),
+    name: nextSolidName(document, 'surface'),
+    suppressed: false,
+    kind: 'surface',
+    operation,
+  };
+}
+
+/** 平らな面 1 枚を張る曲面(いちばん短い作り方。検査の中で何度も使う)。 */
+function planarSurfaceOperation(document: PartDocument): SurfaceOperation {
+  return { kind: 'planar', profile: { sketchId: document.activeSketchId, curveIds: ['line-1'] } };
+}
+
+describe('Should 群の消費・加工・パターンの対象(P5 §2.11、タスク43)', () => {
+  it('抜き勾配・移動/回転・拡大縮小・リブ・エンボス・外ねじは対象1つを消費する', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const document = appendSolid(withFace, extrude);
+    for (const feature of [
+      buildDraft(document, extrude.id),
+      buildTransform(document, extrude.id),
+      buildScale(document, extrude.id),
+      buildRib(document, extrude.id),
+      buildEmboss(document, extrude.id, faceRef),
+      buildThreadShaft(document, extrude.id),
+    ]) {
+      expect(consumedTargetsOf(feature)).toEqual([extrude.id]);
+    }
+  });
+
+  it('ミラー・スイープ・曲面は何も消費しない(§0.a-0.36、§0.a-0.45)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const document = appendSolid(withFace, extrude);
+    // ミラーは対象を**指す**が消費しない。曲面の `face` も面を借りるだけで消費しない。
+    expect(consumedTargetsOf(buildMirror(document, extrude.id))).toEqual([]);
+    expect(consumedTargetsOf(buildSweep(document, faceRef))).toEqual([]);
+    const borrowed = buildSurface(document, {
+      kind: 'face',
+      targetFeatureId: extrude.id,
+      face: faceRefOf(extrude.id),
+    });
+    expect(consumedTargetsOf(borrowed)).toEqual([]);
+  });
+
+  it('加工に数えるのは抜き勾配・リブ・エンボス・外ねじの4種だけ', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const document = appendSolid(withFace, extrude);
+    expect(isMachiningFeature(buildDraft(document, extrude.id))).toBe(true);
+    expect(isMachiningFeature(buildRib(document, extrude.id))).toBe(true);
+    expect(isMachiningFeature(buildEmboss(document, extrude.id, faceRef))).toBe(true);
+    expect(isMachiningFeature(buildThreadShaft(document, extrude.id))).toBe(true);
+    // 移動/回転・拡大縮小は対象を消費するが、形は変えないので加工には数えない。
+    expect(isMachiningFeature(buildTransform(document, extrude.id))).toBe(false);
+    expect(isMachiningFeature(buildScale(document, extrude.id))).toBe(false);
+    expect(isMachiningFeature(buildMirror(document, extrude.id))).toBe(false);
+    expect(isMachiningFeature(buildSweep(document, faceRef))).toBe(false);
+    expect(isMachiningFeature(buildSurface(document, planarSurfaceOperation(document)))).toBe(
+      false,
+    );
+  });
+
+  it('新しい種類はどれもパターンの対象にならない(§0.a-0.42)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const document = appendSolid(withFace, extrude);
+    const features: readonly SolidFeature[] = [
+      buildDraft(document, extrude.id),
+      buildMirror(document, extrude.id),
+      buildTransform(document, extrude.id),
+      buildScale(document, extrude.id),
+      buildSweep(document, faceRef),
+      buildRib(document, extrude.id),
+      buildEmboss(document, extrude.id, faceRef),
+      buildThreadShaft(document, extrude.id),
+      buildSurface(document, planarSurfaceOperation(document)),
+    ];
+    for (const feature of features) {
+      expect(isPatternSource(feature)).toBe(false);
+    }
+  });
+
+  it('ミラーは元と鏡像の両方が画面に残る(§0.a-0.36)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const afterExtrude = appendSolid(withFace, extrude);
+    const mirror = buildMirror(afterExtrude, extrude.id);
+    const document = appendSolid(afterExtrude, mirror);
+    expect([...consumedBodyIds(document)]).toEqual([]);
+    expect(liveBodyIds(document)).toEqual([extrude.id, mirror.id]);
+  });
+
+  it('移動/回転は元が消えて動かした立体だけが残る(§0.a-0.41)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const afterExtrude = appendSolid(withFace, extrude);
+    const moved = buildTransform(afterExtrude, extrude.id);
+    const document = appendSolid(afterExtrude, moved);
+    expect([...consumedBodyIds(document)]).toEqual([extrude.id]);
+    expect(liveBodyIds(document)).toEqual([moved.id]);
+  });
+
+  it('id と名前は種類ごとの連番で採る(§0.a-0.19、FR-501)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const document = appendSolid(withFace, extrude);
+    expect(buildDraft(document, extrude.id).name).toBe('抜き勾配1');
+    expect(buildMirror(document, extrude.id).id).toBe('mirror-1');
+    expect(buildThreadShaft(document, extrude.id).name).toBe('外ねじ1');
+    expect(nextSolidName(document, 'pointPattern')).toBe('点パターン1');
+  });
+});
+
+describe('Should 群の既定値と上限(P5 §2.15、§0.a-0.72、タスク43)', () => {
+  it('押し出しの省略した欄は既定で埋まり、両側の押し出しは両側のまま読める(FR-415)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    // 版 6 までのファイルの押し出し(足した 5 欄を 1 つも持たない)。
+    expect(extrudeShapingOf(extrude)).toEqual({
+      end: { kind: 'distance' },
+      taperAngle: expr('0'),
+      taperOutward: false,
+      thickness: null,
+      thicknessSide: DEFAULT_THICKNESS_SIDE,
+    });
+    // `symmetric: true` の古い押し出しは、終端を一律 distance にすると片側へ変わってしまう。
+    expect(extrudeShapingOf({ ...extrude, symmetric: true }).end).toEqual({ kind: 'symmetric' });
+    // 欄がある文書はその値がそのまま返る(既定で上書きしない)。
+    const tapered: ExtrudeFeature = {
+      ...extrude,
+      end: { kind: 'toNext' },
+      taperAngle: expr('5'),
+      taperOutward: true,
+      thickness: expr('2'),
+      thicknessSide: 'both',
+    };
+    expect(extrudeShapingOf(tapered)).toEqual({
+      end: { kind: 'toNext' },
+      taperAngle: expr('5'),
+      taperOutward: true,
+      thickness: expr('2'),
+      thicknessSide: 'both',
+    });
+  });
+
+  it('穴・ねじ穴の入口の既定は「広げない」(FR-422、§0.a-0.39)', () => {
+    const { document, extrude } = documentWithHole();
+    const hole = buildHole(document, extrude.id);
+    const threadHole = buildThreadHole(document, extrude.id);
+    expect(holeEntryOf(hole)).toEqual({ kind: 'plain' });
+    expect(holeEntryOf(threadHole)).toEqual({ kind: 'plain' });
+    expect(DEFAULT_HOLE_ENTRY).toEqual({ kind: 'plain' });
+    // ざぐりを入れた穴はその値が返る。
+    const counterbored = holeEntryOf({
+      ...hole,
+      entry: { kind: 'counterbore', diameter: expr('11'), depth: expr('4') },
+    });
+    expect(counterbored.kind).toBe('counterbore');
+  });
+
+  it('抜き勾配の上限は 60 度で、既定はその範囲に入る(§0.a-0.72)', () => {
+    // 計画書タスク43 の手順5 は 89 だったが、統括の決定 §0.a-0.72 が 60 に狭めた。
+    expect(MAX_DRAFT_ANGLE_DEGREES).toBe(60);
+    expect(DEFAULT_DRAFT_ANGLE_DEGREES).toBeGreaterThan(0);
+    expect(DEFAULT_DRAFT_ANGLE_DEGREES).toBeLessThanOrEqual(MAX_DRAFT_ANGLE_DEGREES);
+  });
+
+  it('押し出しの傾きの上限は抜き勾配と同じ 60 度で、既定 0 は範囲内(FR-401)', () => {
+    expect(MAX_TAPER_ANGLE_DEGREES).toBe(MAX_DRAFT_ANGLE_DEGREES);
+    expect(DEFAULT_TAPER_ANGLE_DEGREES).toBe(0);
+    expect(DEFAULT_TAPER_ANGLE_DEGREES).toBeLessThanOrEqual(MAX_TAPER_ANGLE_DEGREES);
+  });
+
+  it('拡大縮小の倍率は 0.001〜1000 で、既定はその範囲に入る(FR-424)', () => {
+    expect(MIN_SCALE).toBe(0.001);
+    expect(MAX_SCALE).toBe(1000);
+    expect(DEFAULT_SCALE_FACTOR).toBeGreaterThanOrEqual(MIN_SCALE);
+    expect(DEFAULT_SCALE_FACTOR).toBeLessThanOrEqual(MAX_SCALE);
+  });
+
+  it('寸法の既定はどれも 0 より大きい(NFR-UX-4「押しただけで意味のある形」)', () => {
+    for (const value of [
+      DEFAULT_COUNTERBORE_DIAMETER_MM,
+      DEFAULT_COUNTERBORE_DEPTH_MM,
+      DEFAULT_COUNTERSINK_DIAMETER_MM,
+      DEFAULT_COUNTERSINK_ANGLE_DEGREES,
+      DEFAULT_RIB_THICKNESS_MM,
+      DEFAULT_EMBOSS_HEIGHT_MM,
+      DEFAULT_THREAD_SHAFT_LENGTH_MM,
+      DEFAULT_EXTRUDE_THICKNESS_MM,
+      DEFAULT_SURFACE_DISTANCE_MM,
+      DEFAULT_SURFACE_ANGLE_DEGREES,
+    ]) {
+      expect(value).toBeGreaterThan(0);
+    }
+    // ざぐり・皿もみの径は穴の径より大きくないと入口が広がらない。
+    expect(DEFAULT_COUNTERBORE_DIAMETER_MM).toBeGreaterThan(DEFAULT_HOLE_DIAMETER_MM);
+    expect(DEFAULT_COUNTERSINK_DIAMETER_MM).toBeGreaterThan(DEFAULT_HOLE_DIAMETER_MM);
+    // 皿もみの開き角は 180 度より小さい(でないと円錐にならない)。
+    expect(DEFAULT_COUNTERSINK_ANGLE_DEGREES).toBeLessThan(180);
+    // 曲面の回転は 360 度以下。
+    expect(DEFAULT_SURFACE_ANGLE_DEGREES).toBeLessThanOrEqual(360);
+  });
+
+  it('つまみの既定は「作ったときにいちばん驚かない」側(§2.15 の段の表)', () => {
+    expect(DEFAULT_EXTRUDE_END).toEqual({ kind: 'distance' });
+    expect(DEFAULT_THICKNESS_SIDE).toBe('inner');
+    expect(DEFAULT_RIB_SIDE).toBe('both');
+    expect(DEFAULT_RIB_EXTEND_TO_BODY).toBe(true);
+    // 彫る(false)が既定。浮き出すのはつまみを入れたとき。
+    expect(DEFAULT_EMBOSS_RAISED).toBe(false);
+    // 実らせんは 1 本で数秒かかるので、既定は簡略表示(§0.a-0.15)。
+    expect(DEFAULT_THREAD_SHAFT_MODELED).toBe(false);
+    expect(DEFAULT_THREAD_SHAFT_FROM_END).toBe('first');
+    expect(DEFAULT_SWEEP_FRENET).toBe(false);
+    expect(DEFAULT_TRANSFORM_ROTATION_DEGREES).toBe(0);
+    expect(DEFAULT_TRANSLATION_MM).toBe(0);
+    // 鏡の既定は基準の 3 面のうち XY。
+    expect(DEFAULT_MIRROR_PLANE_ID).toBe('xy');
+  });
+});
+
+describe('点の集まりへ複製(FR-425、§0.a-0.42、タスク43)', () => {
+  it('点集合パターンは対象の穴を消費し、パターンの対象にはならない', () => {
+    const { document, hole } = documentWithHole();
+    const pattern: PatternFeature = {
+      id: nextSolidId(document, 'pointPattern'),
+      name: nextSolidName(document, 'pointPattern'),
+      suppressed: false,
+      kind: 'pattern',
+      sourceFeatureId: hole.id,
+      placement: {
+        kind: 'points',
+        points: [
+          { kind: 'point', pointId: 'point-1' },
+          { kind: 'point', pointId: 'point-2' },
+        ],
+      },
+    };
+    expect(consumedTargetsOf(pattern)).toEqual([hole.id]);
+    // パターンそのものは工具ではないので、もとにはできない(§0.a-0.20)。
+    expect(isPatternSource(pattern)).toBe(false);
+    expect(isMachiningFeature(pattern)).toBe(true);
+    expect(liveBodyIds(appendSolid(document, pattern))).toEqual([pattern.id]);
   });
 });

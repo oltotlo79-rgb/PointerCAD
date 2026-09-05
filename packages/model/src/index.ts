@@ -358,3 +358,30 @@ export type { ThruSectionPlan } from './part/resolvePart.js';
 export {
   DEFAULT_RULED_SPHERE_SEGMENTS, DEFAULT_RULED_TWIST, RULED_SPHERE_SEGMENT_CHOICES,
 } from './part/createPartDocument.js';
+/**
+ * P5 の Should 群(FR-401、FR-409、FR-415、FR-417、FR-419〜425、FR-427、FR-428)。
+ * P5 計画書 §2.11、タスク43。**型と既定値だけ**で、解決はタスク45・46、鍵の材料はタスク44。
+ *
+ * 押し出しの終端・傾き・薄板(FR-415・FR-401・FR-416)と穴の入口(FR-422)は
+ * 既存のフィーチャーの省略できる欄なので、読む側は必ず `extrudeShapingOf` /
+ * `holeEntryOf` を通す(既定値をここ以外へ写さない)。
+ */
+export type {
+  DraftFeature, EmbossFeature, ExtrudeEnd, HoleEntry, MirrorFeature, MirrorPlane,
+  RibFeature, RibSide, ScaleFactor, ScaleFeature, SketchCurveRef, SurfaceFeature,
+  SurfaceOperation, SweepFeature, ThicknessSide, ThreadShaftFeature, TransformFeature,
+} from './part/types.js';
+export type { ExtrudeShaping } from './part/createPartDocument.js';
+export {
+  DEFAULT_COUNTERBORE_DEPTH_MM, DEFAULT_COUNTERBORE_DIAMETER_MM,
+  DEFAULT_COUNTERSINK_ANGLE_DEGREES, DEFAULT_COUNTERSINK_DIAMETER_MM,
+  DEFAULT_DRAFT_ANGLE_DEGREES, DEFAULT_EMBOSS_HEIGHT_MM, DEFAULT_EMBOSS_RAISED,
+  DEFAULT_EXTRUDE_END, DEFAULT_EXTRUDE_THICKNESS_MM, DEFAULT_HOLE_ENTRY,
+  DEFAULT_MIRROR_PLANE_ID, DEFAULT_RIB_EXTEND_TO_BODY, DEFAULT_RIB_SIDE,
+  DEFAULT_RIB_THICKNESS_MM, DEFAULT_SCALE_FACTOR, DEFAULT_SURFACE_ANGLE_DEGREES,
+  DEFAULT_SURFACE_DISTANCE_MM, DEFAULT_SWEEP_FRENET, DEFAULT_TAPER_ANGLE_DEGREES,
+  DEFAULT_THICKNESS_SIDE, DEFAULT_THREAD_SHAFT_FROM_END, DEFAULT_THREAD_SHAFT_LENGTH_MM,
+  DEFAULT_THREAD_SHAFT_MODELED, DEFAULT_TRANSFORM_ROTATION_DEGREES, DEFAULT_TRANSLATION_MM,
+  extrudeShapingOf, holeEntryOf,
+  MAX_DRAFT_ANGLE_DEGREES, MAX_SCALE, MAX_TAPER_ANGLE_DEGREES, MIN_SCALE,
+} from './part/createPartDocument.js';

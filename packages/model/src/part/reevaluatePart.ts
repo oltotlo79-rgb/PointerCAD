@@ -36,12 +36,15 @@ import {
 import type {
   ChamferSize,
   HoleDepth,
+  HoleEntry,
   PartDocument,
   PatternPlacement,
   PrimitiveShape,
   ReferenceFeature,
+  ScaleFactor,
   SolidFeature,
   SolidOrigin,
+  SurfaceOperation,
 } from './types.js';
 
 /** 評価し直せなかった式1つ(FR-504)。画面はこれを見て欄を赤く出す。 */
@@ -88,6 +91,27 @@ function rebuildHoleDepth(depth: HoleDepth, map: ValueMapper): HoleDepth {
   }
 }
 
+/**
+ * 穴の入口(ざぐり・皿もみ。FR-422、P5 タスク43)。
+ * **省略されている(= 広げない)ときは省略のまま返す**(既定を書き込まない)。
+ */
+function rebuildHoleEntry(
+  entry: HoleEntry | undefined,
+  map: ValueMapper,
+): HoleEntry | undefined {
+  if (entry === undefined) {
+    return undefined;
+  }
+  switch (entry.kind) {
+    case 'plain':
+      return entry;
+    case 'counterbore':
+      return { kind: 'counterbore', diameter: map(entry.diameter), depth: map(entry.depth) };
+    case 'countersink':
+      return { kind: 'countersink', diameter: map(entry.diameter), angle: map(entry.angle) };
+  }
+}
+
 /** C 面取りの大きさ(FR-408 の①②③)。 */
 function rebuildChamferSize(size: ChamferSize, map: ValueMapper): ChamferSize {
   switch (size.kind) {
@@ -104,13 +128,22 @@ function rebuildChamferSize(size: ChamferSize, map: ValueMapper): ChamferSize {
   }
 }
 
-/** パターンの並べ方(FR-411 直線、FR-412 円形)。向き・軸は参照だけで式を持たない。 */
+/**
+ * パターンの並べ方(FR-411 直線、FR-412 円形、FR-425 点集合)。向き・軸は参照だけで
+ * 式を持たない。**点集合(P5 タスク43)は間隔・個数の欄を持たず、点そのものが式を持つ**
+ * (球面上の点の緯度・経度。FR-431)ので、平面の指定と同じく点を写す。
+ */
 function rebuildPatternPlacement(placement: PatternPlacement, map: ValueMapper): PatternPlacement {
   switch (placement.kind) {
     case 'linear':
       return { ...placement, spacing: map(placement.spacing), count: map(placement.count) };
     case 'circular':
       return { ...placement, angle: map(placement.angle), count: map(placement.count) };
+    case 'points':
+      return {
+        ...placement,
+        points: placement.points.map((point) => mapPointReferenceExpressions(point, map)),
+      };
   }
 }
 
@@ -162,7 +195,18 @@ function rebuildSolidOrigin(origin: SolidOrigin, map: ValueMapper): SolidOrigin 
 function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeature {
   switch (feature.kind) {
     case 'extrude':
-      return { ...feature, distance: map(feature.distance) };
+      // 終端(FR-415)・傾き(FR-401)・薄板(FR-416)の欄は省略できる(P5 タスク43)。
+      // 省略されている欄は `undefined` のまま残し、既定を書き込まない
+      // (`createPartDocument.ts` の `extrudeShapingOf` が読むときに埋める)。
+      return {
+        ...feature,
+        distance: map(feature.distance),
+        taperAngle: feature.taperAngle === undefined ? undefined : map(feature.taperAngle),
+        thickness:
+          feature.thickness === undefined || feature.thickness === null
+            ? feature.thickness
+            : map(feature.thickness),
+      };
     case 'revolve':
       return { ...feature, angle: map(feature.angle) };
     case 'sew':
@@ -175,6 +219,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         ...feature,
         diameter: map(feature.diameter),
         depth: rebuildHoleDepth(feature.depth, map),
+        entry: rebuildHoleEntry(feature.entry, map),
         tiltAngle: map(feature.tiltAngle),
         tiltAzimuth: map(feature.tiltAzimuth),
       };
@@ -184,6 +229,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         pitch: map(feature.pitch),
         drillDiameter: map(feature.drillDiameter),
         depth: rebuildHoleDepth(feature.depth, map),
+        entry: rebuildHoleEntry(feature.entry, map),
         threadLength: map(feature.threadLength),
         tiltAngle: map(feature.tiltAngle),
         tiltAzimuth: map(feature.tiltAzimuth),
@@ -216,6 +262,70 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       // 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)。断面は参照だけで式を持たず、
       // 式の欄は「ねじれの補正」1 つだけ(§0.a-0.28)。
       return { ...feature, twist: map(feature.twist) };
+    /*
+      P5 の Should 群(§2.11、タスク43)。**式を持つ欄だけを写す。**
+      面・辺の指紋、フィーチャーの id、真偽のつまみ、ねじの呼び・系列は式ではないので
+      そのまま残る(`...feature` が持ち回る)。
+    */
+    case 'draft':
+      return { ...feature, angle: map(feature.angle) };
+    case 'mirror':
+      // 鏡にする平面は作業平面の id か面の指紋だけで、式を 1 つも持たない。
+      return feature;
+    case 'transform':
+      return {
+        ...feature,
+        translation: [
+          map(feature.translation[0]),
+          map(feature.translation[1]),
+          map(feature.translation[2]),
+        ],
+        rotationAngle: map(feature.rotationAngle),
+      };
+    case 'scale':
+      return {
+        ...feature,
+        origin: mapPointReferenceExpressions(feature.origin, map),
+        factor: rebuildScaleFactor(feature.factor, map),
+      };
+    case 'sweep':
+      // 断面と経路は参照だけで、式の欄を 1 つも持たない。
+      return feature;
+    case 'rib':
+      return { ...feature, thickness: map(feature.thickness) };
+    case 'emboss':
+      return { ...feature, height: map(feature.height) };
+    case 'threadShaft':
+      return { ...feature, pitch: map(feature.pitch), length: map(feature.length) };
+    case 'surface':
+      return { ...feature, operation: rebuildSurfaceOperation(feature.operation, map) };
+  }
+}
+
+/** 拡大縮小の倍率(FR-424、P5 タスク43)。全体は1つ、軸ごとは3つの式を持つ。 */
+function rebuildScaleFactor(factor: ScaleFactor, map: ValueMapper): ScaleFactor {
+  switch (factor.kind) {
+    case 'uniform':
+      return { kind: 'uniform', value: map(factor.value) };
+    case 'perAxis':
+      return { kind: 'perAxis', x: map(factor.x), y: map(factor.y), z: map(factor.z) };
+  }
+}
+
+/** 曲面の作り方5種(FR-428、P5 タスク43)。輪郭・軸・面は参照だけで式を持たない。 */
+function rebuildSurfaceOperation(
+  operation: SurfaceOperation,
+  map: ValueMapper,
+): SurfaceOperation {
+  switch (operation.kind) {
+    case 'extrude':
+      return { ...operation, distance: map(operation.distance) };
+    case 'revolve':
+      return { ...operation, angle: map(operation.angle) };
+    case 'planar':
+    case 'loft':
+    case 'face':
+      return operation;
   }
 }
 

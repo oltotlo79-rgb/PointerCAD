@@ -748,3 +748,329 @@ describe('球面上の点の緯度・経度がパラメータ表に追従する(
     ).toEqual(['referenceCoordinateSystem-1', 'referenceAxis-1', 'referencePlane-1']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// P5 の Should 群(§2.11、タスク43)の式の欄が、パラメータ表の値に追従すること。
+//
+// **足した欄はどれもここを通らないと「値を変えても追従しない欄」になる。**
+// 種類ごとに 1 件ずつ確かめる(`rebuildSolidFeature` の網羅 switch と対になる検査)。
+// ---------------------------------------------------------------------------
+
+describe('Should 群の式の欄の評価し直し(FR-207、P5 タスク43)', () => {
+  it('抜き勾配の角度が追従する(角 = 3 で 3)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'draft-1',
+          name: 'draft-1',
+          suppressed: false,
+          kind: 'draft',
+          targetFeatureId: 'extrude-1',
+          faces: [faceRef()],
+          neutralFace: faceRef(),
+          angle: pending('角'),
+          reversed: false,
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ 角: 3 })).document.solids[0];
+    if (solid.kind !== 'draft') {
+      throw new Error('抜き勾配のはず');
+    }
+    expect(solid.angle.value).toBe(3);
+  });
+
+  it('移動/回転の移動量 3 つと角度が追従する(送り = 7)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'transform-1',
+          name: 'transform-1',
+          suppressed: false,
+          kind: 'transform',
+          targetFeatureId: 'extrude-1',
+          translation: [pending('送り'), pending('送り * 2'), pending('送り / 7')],
+          rotationAxis: { kind: 'world', axis: 'z' },
+          rotationAngle: pending('送り + 3'),
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ 送り: 7 })).document.solids[0];
+    if (solid.kind !== 'transform') {
+      throw new Error('移動/回転のはず');
+    }
+    expect(solid.translation.map((value) => value.value)).toEqual([7, 14, 1]);
+    expect(solid.rotationAngle.value).toBe(10);
+  });
+
+  it('拡大縮小の軸ごとの倍率 3 つが追従する(倍 = 2)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'scale-1',
+          name: 'scale-1',
+          suppressed: false,
+          kind: 'scale',
+          targetFeatureId: 'extrude-1',
+          origin: { kind: 'origin' },
+          factor: {
+            kind: 'perAxis',
+            x: pending('倍'),
+            y: pending('倍 * 2'),
+            z: pending('倍 / 2'),
+          },
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ 倍: 2 })).document.solids[0];
+    if (solid.kind !== 'scale' || solid.factor.kind !== 'perAxis') {
+      throw new Error('軸ごとの拡大縮小のはず');
+    }
+    expect([solid.factor.x.value, solid.factor.y.value, solid.factor.z.value]).toEqual([2, 4, 1]);
+  });
+
+  it('リブの厚みが追従する(肉厚 = 4 で 4)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'rib-1',
+          name: 'rib-1',
+          suppressed: false,
+          kind: 'rib',
+          targetFeatureId: 'extrude-1',
+          profile: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+          thickness: pending('肉厚'),
+          side: 'both',
+          extendToBody: true,
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ 肉厚: 4 })).document.solids[0];
+    if (solid.kind !== 'rib') {
+      throw new Error('リブのはず');
+    }
+    expect(solid.thickness.value).toBe(4);
+  });
+
+  it('エンボスの高さが追従する(彫り = 2 で 2)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'emboss-1',
+          name: 'emboss-1',
+          suppressed: false,
+          kind: 'emboss',
+          targetFeatureId: 'extrude-1',
+          face: faceRef(),
+          profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+          height: pending('彫り'),
+          raised: false,
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ 彫り: 2 })).document.solids[0];
+    if (solid.kind !== 'emboss') {
+      throw new Error('エンボスのはず');
+    }
+    expect(solid.height.value).toBe(2);
+  });
+
+  it('外ねじのピッチと長さが追従する(ねじ長 = 30)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'threadShaft-1',
+          name: 'threadShaft-1',
+          suppressed: false,
+          kind: 'threadShaft',
+          targetFeatureId: 'extrude-1',
+          face: faceRef(),
+          nominal: 'M6',
+          series: 'coarse',
+          pitch: pending('ねじ長 / 30'),
+          length: pending('ねじ長'),
+          fromEnd: 'first',
+          modeled: false,
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ ねじ長: 30 })).document.solids[0];
+    if (solid.kind !== 'threadShaft') {
+      throw new Error('外ねじのはず');
+    }
+    expect(solid.pitch.value).toBe(1);
+    expect(solid.length.value).toBe(30);
+  });
+
+  it('曲面の押し出しの距離が追従する(高さ = 8 で 8)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'surface-1',
+          name: 'surface-1',
+          suppressed: false,
+          kind: 'surface',
+          operation: {
+            kind: 'extrude',
+            profile: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+            distance: pending('高さ'),
+            reversed: false,
+          },
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ 高さ: 8 })).document.solids[0];
+    if (solid.kind !== 'surface' || solid.operation.kind !== 'extrude') {
+      throw new Error('押し出しの曲面のはず');
+    }
+    expect(solid.operation.distance.value).toBe(8);
+  });
+
+  it('ミラー・スイープは式を 1 つも持たないので、そのまま返る', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'mirror-1',
+          name: 'mirror-1',
+          suppressed: false,
+          kind: 'mirror',
+          targetFeatureId: 'extrude-1',
+          plane: { kind: 'workPlane', planeId: 'xy' },
+        },
+        {
+          id: 'sweep-1',
+          name: 'sweep-1',
+          suppressed: false,
+          kind: 'sweep',
+          profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+          path: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+          frenet: false,
+        },
+      ],
+    });
+    const result = reevaluatePartDocument(document, variables({}));
+    expect(result.document.solids).toEqual(document.solids);
+    expect(result.failures).toEqual([]);
+  });
+
+  it('押し出しの傾きと薄板の厚みが追従し、省略された欄は省略のまま残る(FR-401、FR-416)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'extrude-1',
+          name: 'extrude-1',
+          suppressed: false,
+          kind: 'extrude',
+          profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+          distance: expr('10'),
+          reversed: false,
+          symmetric: false,
+          taperAngle: pending('傾き'),
+          thickness: pending('傾き / 5'),
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ 傾き: 5 })).document.solids[0];
+    if (solid.kind !== 'extrude') {
+      throw new Error('押し出しのはず');
+    }
+    expect(solid.taperAngle?.value).toBe(5);
+    expect(solid.thickness?.value).toBe(1);
+    // 持っていない欄は既定を書き込まずに省略のまま(既定は `extrudeShapingOf` が与える)。
+    expect(solid.end).toBeUndefined();
+    expect(solid.thicknessSide).toBeUndefined();
+  });
+
+  it('穴のざぐりの径と深さが追従し、入口の無い穴は入口の無いまま残る(FR-422)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'hole-1',
+          name: 'hole-1',
+          suppressed: false,
+          kind: 'hole',
+          targetFeatureId: 'extrude-1',
+          face: faceRef(),
+          centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+          diameter: expr('6'),
+          depth: { kind: 'through' },
+          entry: { kind: 'counterbore', diameter: pending('ざぐり'), depth: pending('ざぐり / 3') },
+          tiltAngle: expr('0'),
+          tiltAzimuth: expr('0'),
+        },
+        hole('hole-2', expr('6'), expr('10')),
+      ],
+    });
+    const solids = reevaluatePartDocument(document, variables({ ざぐり: 12 })).document.solids;
+    const first = solids[0];
+    if (first.kind !== 'hole' || first.entry?.kind !== 'counterbore') {
+      throw new Error('ざぐり付きの穴のはず');
+    }
+    expect(first.entry.diameter.value).toBe(12);
+    expect(first.entry.depth.value).toBe(4);
+    const second = solids[1];
+    if (second.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(second.entry).toBeUndefined();
+  });
+
+  it('点集合パターンの球面上の点の緯度・経度が追従する(FR-425、FR-431)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'pointPattern-1',
+          name: 'pointPattern-1',
+          suppressed: false,
+          kind: 'pattern',
+          sourceFeatureId: 'hole-1',
+          placement: {
+            kind: 'points',
+            points: [
+              {
+                kind: 'sphereGrid',
+                sphereFeatureId: 'sphere-1',
+                latitude: pending('緯'),
+                longitude: pending('緯 * 2'),
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const solid = reevaluatePartDocument(document, variables({ 緯: 30 })).document.solids[0];
+    if (solid.kind !== 'pattern' || solid.placement.kind !== 'points') {
+      throw new Error('点集合パターンのはず');
+    }
+    const first = solid.placement.points[0];
+    if (first.kind !== 'sphereGrid') {
+      throw new Error('球面上の点のはず');
+    }
+    expect(first.latitude.value).toBe(30);
+    expect(first.longitude.value).toBe(60);
+  });
+
+  it('足した欄の式も「どこから使われているか」に数えられる(パラメータの削除の断り)', () => {
+    const document = buildDocument({
+      solids: [
+        {
+          id: 'draft-1',
+          name: '抜き勾配1',
+          suppressed: false,
+          kind: 'draft',
+          targetFeatureId: 'extrude-1',
+          faces: [faceRef()],
+          neutralFace: faceRef(),
+          angle: pending('角'),
+          reversed: false,
+        },
+      ],
+    });
+    expect(collectExpressionSources(document)).toContain('角');
+    expect(collectExpressionOwners(document)).toContainEqual({
+      source: '角',
+      ownerId: 'draft-1',
+      ownerName: '抜き勾配1',
+    });
+  });
+});

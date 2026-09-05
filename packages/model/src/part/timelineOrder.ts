@@ -413,14 +413,18 @@ function solidDependencies(
       }
       break;
     case 'pattern':
-      found.push(
-        ...axisSpecDependencies(
-          context,
-          feature.placement.kind === 'linear'
-            ? feature.placement.direction
-            : feature.placement.axis,
-        ),
-      );
+      // 点集合(FR-425、P5 タスク43)は軸を持たないので、軸の依存は数えない
+      // (点そのものの依存は `PointReference` が id しか持たず追えない。t46 への申し送り)。
+      if (feature.placement.kind !== 'points') {
+        found.push(
+          ...axisSpecDependencies(
+            context,
+            feature.placement.kind === 'linear'
+              ? feature.placement.direction
+              : feature.placement.axis,
+          ),
+        );
+      }
       break;
     case 'spring':
       found.push(...axisSpecDependencies(context, feature.axis));

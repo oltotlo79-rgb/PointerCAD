@@ -8,7 +8,7 @@
  * part/resolvePart.ts の担当にする。
  */
 
-import { expressionValueFromNumber } from '@pointercad/expression';
+import { type ExpressionValue, expressionValueFromNumber } from '@pointercad/expression';
 
 import { emptyAppearanceTable } from '../appearance/appearanceTable.js';
 import type { AxisSpec } from '../geometry/planeSpec.js';
@@ -17,18 +17,26 @@ import {
   nextSerialId,
   nextSerialName,
 } from '../sketch/createSketchDocument.js';
+import type { BaseWorkPlaneId } from '../sketch/planeMath.js';
 import type { SketchDocument } from '../sketch/types.js';
 import type {
   BooleanOperation,
+  ExtrudeEnd,
+  ExtrudeFeature,
+  HoleEntry,
+  HoleFeature,
   PartDocument,
   PrimitiveFeature,
   PrimitiveShape,
   PrimitiveShapeKind,
   ReferenceFeature,
   ReferenceFeatureKind,
+  RibSide,
   RuledSphereSegments,
   SolidFeature,
   SolidOrigin,
+  ThicknessSide,
+  ThreadHoleFeature,
 } from './types.js';
 
 /**
@@ -155,6 +163,165 @@ export const DEFAULT_RULED_SPHERE_SEGMENTS: RuledSphereSegments = 24;
 /** 段ごとに選べる球の近似の点の数(§0.a-0.74)。UI の選択肢と io の妥当性検査が共有する。 */
 export const RULED_SPHERE_SEGMENT_CHOICES: readonly RuledSphereSegments[] = [24, 48, 72];
 
+/*
+  P5 の Should 群(FR-401、FR-409、FR-415〜425、FR-428。計画書 §2.11、§2.15、タスク43)の
+  既定値と上限。
+
+  既定値は §2.15 の「その場数値入力」の表の「既定」列をそのまま写したもので、表に無いものは
+  「何も選ばずに道具を押しただけで意味のある形ができる」大きさにしてある(NFR-UX-4)。
+  上限は解決(タスク45・46)が範囲の検査に使い、UI(タスク49)も同じ値を見る
+  (同じ数を 2 か所に書かない)。
+*/
+
+/**
+ * 押し出しの終端の既定(FR-415)。`{ kind: 'distance' }` = P2 からの「長さを指定して片側へ」。
+ * この欄が無い古い文書は `symmetric` の真偽から作る(`packages/io`)。
+ */
+export const DEFAULT_EXTRUDE_END: ExtrudeEnd = { kind: 'distance' };
+
+/** 押し出しのテーパ角の既定(度、FR-401)。0 なら傾けない(P2 からの押し出しと同じ形)。 */
+export const DEFAULT_TAPER_ANGLE_DEGREES = 0;
+
+/**
+ * 押し出しのテーパ角の上限(度、FR-401)。
+ *
+ * カーネル(`occt/makeSolidSweep.ts`)は「0 度以上 90 度未満」で受けるが、**抜き勾配と
+ * 同じ 60 度で止める**(§0.a-0.72)。89.99999 度のような値が妥当性検査を通ると巨大な形が
+ * できてしまうのは押し出しの傾きでも同じで、2 つの道具で上限が違うと利用者が覚えられない
+ * (NFR-UX-1)ためである。統括の判断が要る決定なので報告に載せる。
+ */
+export const MAX_TAPER_ANGLE_DEGREES = 60;
+
+/** 薄板押し出しの厚みの向きの既定(FR-416、§0.a-0.46)。輪郭を壁の外側の境界にする。 */
+export const DEFAULT_THICKNESS_SIDE: ThicknessSide = 'inner';
+
+/** 薄板押し出しの厚みの既定(mm、FR-416)。`thickness` に数を入れたときの最初の値。 */
+export const DEFAULT_EXTRUDE_THICKNESS_MM = 2;
+
+/** 穴の入口の既定(FR-422、§0.a-0.39)。広げない。欄が無い古い文書もこれになる。 */
+export const DEFAULT_HOLE_ENTRY: HoleEntry = { kind: 'plain' };
+
+/** ざぐりの径の既定(mm、FR-422)。穴の径(既定 6mm)より大きくする。 */
+export const DEFAULT_COUNTERBORE_DIAMETER_MM = 11;
+
+/** ざぐりの深さの既定(mm、FR-422)。 */
+export const DEFAULT_COUNTERBORE_DEPTH_MM = 4;
+
+/** 皿もみの頭径の既定(mm、FR-422)。 */
+export const DEFAULT_COUNTERSINK_DIAMETER_MM = 12;
+
+/** 皿もみの開き角の既定(度、FR-422)。JIS の皿頭ねじの標準。 */
+export const DEFAULT_COUNTERSINK_ANGLE_DEGREES = 90;
+
+/** 抜き勾配の角度の既定(度、§2.15 の段の表)。 */
+export const DEFAULT_DRAFT_ANGLE_DEGREES = 1;
+
+/**
+ * 抜き勾配の角度の上限(度、§0.a-0.72)。計画書タスク43 の手順5 は 89 だったが、
+ * **統括の決定 §0.a-0.72(2026-09-05 14:21)が 60 度に狭めた**のでそちらを採る。
+ */
+export const MAX_DRAFT_ANGLE_DEGREES = 60;
+
+/** ミラーの鏡にする平面の既定(§0.a-0.36)。基準の 3 面のうち XY。 */
+export const DEFAULT_MIRROR_PLANE_ID: BaseWorkPlaneId = 'xy';
+
+/** 移動/回転の回転角の既定(度、§2.15 の段の表)。0 なら平行移動だけ。 */
+export const DEFAULT_TRANSFORM_ROTATION_DEGREES = 0;
+
+/** 移動/回転の移動量の既定(mm、§2.15 の段の表)。X / Y / Z とも 0。 */
+export const DEFAULT_TRANSLATION_MM = 0;
+
+/** 拡大縮小の倍率の既定(§2.15 の段の表)。全体倍率・軸ごとのどちらも 2 倍から始める。 */
+export const DEFAULT_SCALE_FACTOR = 2;
+
+/** 拡大縮小の倍率の下限(§2.11、計画書タスク43 の手順5)。 */
+export const MIN_SCALE = 0.001;
+
+/** 拡大縮小の倍率の上限(§2.11、計画書タスク43 の手順5)。 */
+export const MAX_SCALE = 1000;
+
+/**
+ * スイープの向きの決め方の既定(FR-409、§2.15 の段の表)。
+ * false は「ねじれを抑える」側で、つまみを入れると Frenet になる。
+ */
+export const DEFAULT_SWEEP_FRENET = false;
+
+/** リブの厚みの既定(mm、§2.15 の段の表)。 */
+export const DEFAULT_RIB_THICKNESS_MM = 3;
+
+/** リブの厚みを付ける側の既定(§2.15 の段の表のつまみ「両側へ」)。 */
+export const DEFAULT_RIB_SIDE: RibSide = 'both';
+
+/** リブを材料に届くまで伸ばすかの既定(FR-420)。届かない壁は用を成さないので true。 */
+export const DEFAULT_RIB_EXTEND_TO_BODY = true;
+
+/** エンボスの高さ(深さ)の既定(mm、§2.15 の段の表)。 */
+export const DEFAULT_EMBOSS_HEIGHT_MM = 1;
+
+/** エンボスが浮き出すかの既定(FR-421)。false は彫る側(§2.15 の段の表のつまみ「浮き出す」)。 */
+export const DEFAULT_EMBOSS_RAISED = false;
+
+/** 外ねじの長さの既定(mm、§2.15 の段の表)。 */
+export const DEFAULT_THREAD_SHAFT_LENGTH_MM = 20;
+
+/** 外ねじを切り始める端の既定(FR-423)。円柱面の軸のパラメータが小さいほうの端。 */
+export const DEFAULT_THREAD_SHAFT_FROM_END: 'first' | 'last' = 'first';
+
+/**
+ * 外ねじを実らせんで切るかの既定(FR-423、§0.a-0.15)。
+ * 実らせんは 1 本で数秒かかる(2026-09-05 実測 中央値 4184ms)ので、既定は簡略表示。
+ */
+export const DEFAULT_THREAD_SHAFT_MODELED = false;
+
+/** 曲面の押し出し・ロフトの既定の距離(mm、FR-428)。押し出しの既定と揃える必要はない。 */
+export const DEFAULT_SURFACE_DISTANCE_MM = 20;
+
+/** 曲面の回転の既定の角度(度、FR-428)。全周。 */
+export const DEFAULT_SURFACE_ANGLE_DEGREES = 360;
+
+/**
+ * 押し出しの「終端・傾き・薄板」の欄をすべて埋めた形(FR-415、FR-401、FR-416)。
+ *
+ * 欄名はカーネルの `ExtrudeShapeOptions`(`occt/makeSolidSweep.ts`)と同じにしてあるので、
+ * 解決(タスク45)は式を数へ直すだけで詰め替えられる。
+ */
+export interface ExtrudeShaping {
+  readonly end: ExtrudeEnd;
+  readonly taperAngle: ExpressionValue;
+  readonly taperOutward: boolean;
+  readonly thickness: ExpressionValue | null;
+  readonly thicknessSide: ThicknessSide;
+}
+
+/**
+ * 押し出しの省略された欄を既定で埋める(FR-415、FR-401、FR-416。タスク43)。
+ *
+ * **既定値をここ 1 か所だけに置くための口。** 解決・読み書き・プロパティ・その場入力は
+ * `feature.end ?? ...` と自分で書かず、必ずこれを通す(同じ既定を各所へ写すと、片方だけ
+ * 変えたときに黙って食い違う。`RuledSphereSegments` の既定と同じ考え方)。
+ *
+ * **終端の省略は `symmetric` から決める。** `end` は P5 タスク43 で足した欄で、それ以前の
+ * 文書は「両側へ出すか」を `symmetric`(P2 からの欄)だけで表していた。既定を一律に
+ * `distance` にすると、両側へ出していた古い押し出しが片側へ変わってしまう。
+ */
+export function extrudeShapingOf(feature: ExtrudeFeature): ExtrudeShaping {
+  return {
+    end: feature.end ?? (feature.symmetric ? { kind: 'symmetric' } : DEFAULT_EXTRUDE_END),
+    taperAngle: feature.taperAngle ?? expressionValueFromNumber(DEFAULT_TAPER_ANGLE_DEGREES),
+    taperOutward: feature.taperOutward ?? false,
+    thickness: feature.thickness ?? null,
+    thicknessSide: feature.thicknessSide ?? DEFAULT_THICKNESS_SIDE,
+  };
+}
+
+/**
+ * 穴・ねじ穴の入口の形(FR-422)。省略は「広げない」(§0.a-0.39)。
+ * 既定を 1 か所に置く理由は `extrudeShapingOf` と同じ。
+ */
+export function holeEntryOf(feature: HoleFeature | ThreadHoleFeature): HoleEntry {
+  return feature.entry ?? DEFAULT_HOLE_ENTRY;
+}
+
 /**
  * 連番を分ける単位。ブーリアンは演算ごとに別の連番にするので、
  * フィーチャーの種類そのもの(`boolean`)ではなく演算名を鍵にする(§2.3)。
@@ -183,7 +350,26 @@ export type SolidLabelKey =
     利用者から見て別の道具なので(§0.a-0.25)、木に「面をつなぐ1」「ロフト1」と出す。
   */
   | 'ruled'
-  | 'loft';
+  | 'loft'
+  /*
+    P5 の Should 群(§2.11、タスク43)。9 種はフィーチャーの種類とそのまま 1 対 1 で、
+    ブーリアン・パターン・基本形状のように 1 つの種類を複数の連番へ分けるものは無い
+    (曲面 5 種は「押し出し面1」ではなく「曲面1」で数える。利用者から見て道具が 1 つだから)。
+  */
+  | 'draft'
+  | 'mirror'
+  | 'transform'
+  | 'scale'
+  | 'sweep'
+  | 'rib'
+  | 'emboss'
+  | 'threadShaft'
+  | 'surface'
+  /*
+    点集合パターン(FR-425、§0.a-0.42)。直線・円形と同じ理由で配置ごとに連番を分ける
+    (`PatternPlacement` に case が 1 つ増えたので、鍵も 1 つ増える)。
+  */
+  | 'pointPattern';
 
 /**
  * ソリッドの種類ごとの既定名。ドキュメントの既定データとしてここに置く
@@ -210,6 +396,18 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   torus: 'トーラス',
   ruled: '面をつなぐ',
   loft: 'ロフト',
+  // P5 の Should 群(§2.11、タスク43)。ツールバーの道具の名前(タスク48 の ja.json)と
+  // 同じ言葉にする(FR-501「木の名前と道具の名前が食い違わない」)。
+  draft: '抜き勾配',
+  mirror: 'ミラー',
+  transform: '移動・回転',
+  scale: '拡大縮小',
+  sweep: 'スイープ',
+  rib: 'リブ',
+  emboss: 'エンボス',
+  threadShaft: '外ねじ',
+  surface: '曲面',
+  pointPattern: '点パターン',
 };
 
 /**
@@ -558,6 +756,16 @@ export function createPrimitiveFeature(
  *   輪郭に借りても、輪郭を読むだけなので元の立体はそのまま画面に残る。残しておかないと
  *   「球と柱を罫線でつないだあと和でまとめる」ができなくなる。
  *
+ * P5 の Should 群(§2.11、タスク43)は種類ごとに分かれる:
+ * - **抜き勾配・移動/回転・拡大縮小・リブ・エンボス・外ねじ**は対象1つを消費する
+ *   (加工と同じで、変換・加工した立体1つだけが残る。§0.a-0.41)。
+ * - **ミラー**は消費しない(§0.a-0.36)。鏡像を作ったあと元と鏡像を和でつなぐのが普通の
+ *   使い方で、元を消すと和が取れない。
+ * - **スイープ**は対象を取らない「作る」フィーチャー。
+ * - **曲面**も消費しない。作り方が `face`(既にある立体の面を取り出す)のときだけ相手の
+ *   立体を指すが、面を読むだけなので貸した立体はそのまま画面に残る(罫線面の
+ *   `solidFace`・基本形状の頂点と同じ扱い。§0.a-0.45)。
+ *
 
  * 順序は文書に書かれた順のまま返す(重複の除去はしない。同じ id を2度指すブーリアンは
  * 解決のときに `consumedTwice` で断る)。
@@ -571,6 +779,9 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'primitive':
     case 'ruled':
     case 'loft':
+    case 'mirror':
+    case 'sweep':
+      // ミラー(§0.a-0.36)は対象を指すが消費しない。スイープは対象を取らない。
       return [];
     case 'boolean':
       return [feature.targetFeatureId, feature.toolFeatureId];
@@ -578,9 +789,21 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'threadHole':
     case 'fillet':
     case 'chamfer':
+    case 'draft':
+    case 'transform':
+    case 'scale':
+    case 'rib':
+    case 'emboss':
+    case 'threadShaft':
+      // 加工4種と、P5 の Should 群のうち対象1つを消費するもの(§2.11 の表)。
       return [feature.targetFeatureId];
     case 'pattern':
       return [feature.sourceFeatureId];
+    case 'surface':
+      // 曲面(FR-428)。`face` のときだけ相手の立体を指すが、面を読むだけなので
+      // **どの作り方でも消費しない**(§0.a-0.45)。分岐を残してあるのは、面のオフセット・
+      // 厚み付け(消費しうる種類)が後で足されたときにここを直すと分かるようにするため。
+      return [];
   }
 }
 
@@ -590,6 +813,12 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
  * ブーリアンは対象を2つ取るので加工には数えない。ばねは対象を取らないので `false`(§0.a-0.36)。
  * 基本形状も対象を取らないので `false`(P5 §0.a-0.19)。
  * 面をつなぐ・ロフトも対象を取らない「作る」フィーチャーなので `false`(P5 §0.a-0.27)。
+ *
+ * P5 の Should 群(§2.11 の表、タスク43)では、**抜き勾配・リブ・エンボス・外ねじ**が
+ * `true`(対象1つを取って形を変える加工)、**ミラー・移動/回転・拡大縮小・スイープ・曲面**が
+ * `false` になる。移動/回転と拡大縮小は対象を1つ消費するが、形そのものは変えず位置と
+ * 大きさを変えるだけなので「加工」には数えない(§2.11 の表が `isMachining` を分けている
+ * のはこのため。§2.15 のツールバーでは「加工」の一覧に同居する)。
  */
 export function isMachiningFeature(feature: SolidFeature): boolean {
   switch (feature.kind) {
@@ -598,6 +827,10 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'fillet':
     case 'chamfer':
     case 'pattern':
+    case 'draft':
+    case 'rib':
+    case 'emboss':
+    case 'threadShaft':
       return true;
     case 'extrude':
     case 'revolve':
@@ -607,6 +840,11 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'primitive':
     case 'ruled':
     case 'loft':
+    case 'mirror':
+    case 'transform':
+    case 'scale':
+    case 'sweep':
+    case 'surface':
       return false;
   }
 }
@@ -620,6 +858,10 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
  *
  * **面をつなぐ・ロフトも対象にしない**(P5 §0.a-0.27)。押し出し・回転・縫合・ばね・
  * 基本形状と同じ「作る」フィーチャーで、差し引く工具の形を持たないためである。
+ *
+ * **P5 の Should 群 9 種もすべて対象にしない**(§0.a-0.42)。P5 で足すパターンの拡張は
+ * 「点の集まりへ複製」だけで、複製できるもとを穴・ねじ穴から広げる話ではない
+ * (面取り・R 面取りを対象にする案は Could として P6 以降へ回した)。
  */
 export function isPatternSource(feature: SolidFeature): boolean {
   return feature.kind === 'hole' || feature.kind === 'threadHole';

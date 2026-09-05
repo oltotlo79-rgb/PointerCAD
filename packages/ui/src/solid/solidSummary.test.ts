@@ -13,17 +13,22 @@ import {
   replaceSketch,
   type BooleanFeature,
   type ChamferFeature,
+  type DraftFeature,
+  type EmbossFeature,
   type ExtrudeFeature,
   type FilletFeature,
   type HoleFeature,
   type LoftFeature,
+  type MirrorFeature,
   type PartDocument,
   type PartRecomputeError,
   type PatternFeature,
   type PrimitiveFeature,
   type ReferenceFeature,
   type RevolveFeature,
+  type RibFeature,
   type RuledFeature,
+  type ScaleFeature,
   type SewFeature,
   type SketchFaceFeature,
   type SketchLineFeature,
@@ -31,7 +36,11 @@ import {
   type SolidFeature,
   type SpringFeature,
   type SubShapeRef,
+  type SurfaceFeature,
+  type SweepFeature,
   type ThreadHoleFeature,
+  type ThreadShaftFeature,
+  type TransformFeature,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
@@ -1523,5 +1532,223 @@ describe('面をつなぐ・ロフトの要約(FR-430、FR-410、P5 タスク25 
       'スケッチ1 / 面2',
       '押し出し1',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P5 の Should 群(§2.11、タスク43)の最小の枝。
+//
+// **式の欄・つまみ・選択肢をプロパティへ出すのは タスク52** なので、ここで固定するのは
+// 「木とプロパティに種類の名前と対象が出ること」と「網羅 switch が落ちていないこと」だけ。
+// ---------------------------------------------------------------------------
+
+const DRAFT: DraftFeature = {
+  id: 'draft-1',
+  name: '抜き勾配1',
+  suppressed: false,
+  kind: 'draft',
+  targetFeatureId: 'extrude-1',
+  faces: [faceRef(1), faceRef(2)],
+  neutralFace: faceRef(0),
+  angle: expressionValueFromNumber(1),
+  reversed: false,
+};
+
+const MIRROR: MirrorFeature = {
+  id: 'mirror-1',
+  name: 'ミラー1',
+  suppressed: false,
+  kind: 'mirror',
+  targetFeatureId: 'extrude-1',
+  plane: { kind: 'workPlane', planeId: 'xy' },
+};
+
+const TRANSFORM: TransformFeature = {
+  id: 'transform-1',
+  name: '移動・回転1',
+  suppressed: false,
+  kind: 'transform',
+  targetFeatureId: 'extrude-1',
+  translation: [
+    expressionValueFromNumber(10),
+    expressionValueFromNumber(0),
+    expressionValueFromNumber(0),
+  ],
+  rotationAxis: null,
+  rotationAngle: expressionValueFromNumber(0),
+};
+
+const SCALE: ScaleFeature = {
+  id: 'scale-1',
+  name: '拡大縮小1',
+  suppressed: false,
+  kind: 'scale',
+  targetFeatureId: 'extrude-1',
+  origin: { kind: 'origin' },
+  factor: { kind: 'uniform', value: expressionValueFromNumber(2) },
+};
+
+const SWEEP: SweepFeature = {
+  id: 'sweep-1',
+  name: 'スイープ1',
+  suppressed: false,
+  kind: 'sweep',
+  profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+  path: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+  frenet: false,
+};
+
+const RIB: RibFeature = {
+  id: 'rib-1',
+  name: 'リブ1',
+  suppressed: false,
+  kind: 'rib',
+  targetFeatureId: 'extrude-1',
+  profile: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+  thickness: expressionValueFromNumber(3),
+  side: 'both',
+  extendToBody: true,
+};
+
+const EMBOSS: EmbossFeature = {
+  id: 'emboss-1',
+  name: 'エンボス1',
+  suppressed: false,
+  kind: 'emboss',
+  targetFeatureId: 'extrude-1',
+  face: faceRef(0),
+  profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+  height: expressionValueFromNumber(1),
+  raised: false,
+};
+
+const THREAD_SHAFT: ThreadShaftFeature = {
+  id: 'threadShaft-1',
+  name: '外ねじ1',
+  suppressed: false,
+  kind: 'threadShaft',
+  targetFeatureId: 'extrude-1',
+  face: faceRef(0),
+  nominal: 'M6',
+  series: 'coarse',
+  pitch: expressionValueFromNumber(1),
+  length: expressionValueFromNumber(20),
+  fromEnd: 'first',
+  modeled: false,
+};
+
+const SURFACE: SurfaceFeature = {
+  id: 'surface-1',
+  name: '曲面1',
+  suppressed: false,
+  kind: 'surface',
+  operation: {
+    kind: 'extrude',
+    profile: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+    distance: expressionValueFromNumber(20),
+    reversed: false,
+  },
+};
+
+const POINT_PATTERN: PatternFeature = {
+  id: 'pointPattern-1',
+  name: '点パターン1',
+  suppressed: false,
+  kind: 'pattern',
+  sourceFeatureId: 'hole-1',
+  placement: {
+    kind: 'points',
+    points: [
+      { kind: 'point', pointId: 'point-1' },
+      { kind: 'point', pointId: 'point-2' },
+    ],
+  },
+};
+
+describe('Should 群の要約(P5 §2.11、タスク43)', () => {
+  it('種類の名前は 9 種とも道具の名前と同じ言葉になる(FR-501)', () => {
+    const document = documentWith(EXTRUDE);
+    const cases: readonly (readonly [SolidFeature, string])[] = [
+      [DRAFT, 'toolbar.machining.draft'],
+      [MIRROR, 'toolbar.solid.mirror'],
+      [TRANSFORM, 'toolbar.machining.transform'],
+      [SCALE, 'toolbar.machining.scale'],
+      [SWEEP, 'toolbar.solid.sweep'],
+      [RIB, 'toolbar.machining.rib'],
+      [EMBOSS, 'toolbar.machining.emboss'],
+      [THREAD_SHAFT, 'toolbar.machining.threadShaft'],
+      [SURFACE, 'toolbar.solid.surface'],
+    ];
+    for (const [feature, labelKey] of cases) {
+      const summary = summarizeSolid(appendSolid(document, feature), feature);
+      expect(summary.kindLabelKey).toBe(labelKey);
+      expect(summary.name).toBe(feature.name);
+    }
+  });
+
+  it('抜き勾配は対象の立体と選んだ面の数を出す', () => {
+    const document = appendSolid(documentWith(EXTRUDE), DRAFT);
+    const summary = summarizeSolid(document, DRAFT);
+    expect(summary.references).toEqual([
+      { labelKey: 'propertyPanel.targetBody', name: '押し出し1', elementId: 'extrude-1' },
+    ]);
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.selectedFaces', count: 2 },
+    ]);
+  });
+
+  it('ミラーは対象を消費しないので、木では元も鏡像も「使われた」印にならない', () => {
+    const document = appendSolid(documentWith(EXTRUDE), MIRROR);
+    expect(summarizeSolid(document, EXTRUDE).consumed).toBe(false);
+    expect(summarizeSolid(document, MIRROR).consumed).toBe(false);
+  });
+
+  it('移動/回転は対象を消費するので、木で元が「使われた」印になる', () => {
+    const document = appendSolid(documentWith(EXTRUDE), TRANSFORM);
+    expect(summarizeSolid(document, EXTRUDE).consumed).toBe(true);
+    expect(summarizeSolid(document, TRANSFORM).consumed).toBe(false);
+  });
+
+  it('スイープは対象を取らないので、断面の名前だけを出す', () => {
+    const document = appendSolid(documentWith(), SWEEP);
+    expect(summarizeSolid(document, SWEEP).references).toEqual([
+      { labelKey: 'propertyPanel.profile', name: 'スケッチ1 / 面1', elementId: 'face-1' },
+    ]);
+  });
+
+  it('エンボスは対象の立体と輪郭の面の 2 つを出す', () => {
+    const document = appendSolid(documentWith(EXTRUDE), EMBOSS);
+    const summary = summarizeSolid(document, EMBOSS);
+    expect(summary.references.map((reference) => reference.labelKey)).toEqual([
+      'propertyPanel.targetBody',
+      'propertyPanel.profile',
+    ]);
+  });
+
+  it('点集合パターンは点パターンとして数え、並べる点の数を出す(FR-425)', () => {
+    const document = appendSolid(documentWith(EXTRUDE), POINT_PATTERN);
+    expect(solidKindOf(POINT_PATTERN)).toBe('pointPattern');
+    const summary = summarizeSolid(document, POINT_PATTERN);
+    expect(summary.kindLabelKey).toBe('toolbar.machining.pointPattern');
+    expect(summary.fields).toEqual([]);
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.patternPoints', count: 2 },
+    ]);
+  });
+
+  it('欄をまだ持たないので、式の書き戻しは同じものを返す(欄を出すのは タスク52)', () => {
+    const value = expressionValueFromNumber(9);
+    for (const feature of [DRAFT, MIRROR, TRANSFORM, SCALE, SWEEP, RIB, EMBOSS, THREAD_SHAFT, SURFACE]) {
+      expect(setSolidField(feature, 'distance', value)).toBe(feature);
+    }
+    // 点集合パターンも間隔・個数の欄を持たない。
+    expect(setSolidField(POINT_PATTERN, 'count', value)).toBe(POINT_PATTERN);
+  });
+
+  it('種類の名前の表は SolidLabelKey を 1 つ残らず持つ(数え漏れを型で止める)', () => {
+    // model の `SOLID_LABELS` と同じ 30 個(P2〜P5 タスク43)。
+    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(30);
+    expect(SOLID_KIND_LABEL_KEYS.draft).toBe('toolbar.machining.draft');
+    expect(SOLID_KIND_LABEL_KEYS.pointPattern).toBe('toolbar.machining.pointPattern');
   });
 });

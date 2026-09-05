@@ -245,6 +245,22 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   // 面をつなぐ(FR-430)とロフト(FR-410)。P5 タスク25。道具のボタンと案内は **タスク27**。
   ruled: 'toolbar.solid.ruled',
   loft: 'toolbar.solid.loft',
+  /*
+    P5 の Should 群(§2.11、タスク43)。道具のボタン・案内・説明の文言は **タスク48・50**。
+    ここは木とプロパティに種類の名前を出すための最小の割り当てで、
+    「作る」の一覧に入る 3 つ(ミラー・スイープ・曲面)は `toolbar.solid.*`、
+    「加工」の一覧に入る 6 つ(§2.15 の表)は `toolbar.machining.*` にする。
+  */
+  mirror: 'toolbar.solid.mirror',
+  sweep: 'toolbar.solid.sweep',
+  surface: 'toolbar.solid.surface',
+  draft: 'toolbar.machining.draft',
+  rib: 'toolbar.machining.rib',
+  emboss: 'toolbar.machining.emboss',
+  threadShaft: 'toolbar.machining.threadShaft',
+  transform: 'toolbar.machining.transform',
+  scale: 'toolbar.machining.scale',
+  pointPattern: 'toolbar.machining.pointPattern',
 };
 
 /** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
@@ -415,7 +431,16 @@ export function solidKindOf(feature: SolidFeature): SolidLabelKey {
     return feature.operation;
   }
   if (feature.kind === 'pattern') {
-    return feature.placement.kind === 'linear' ? 'linearPattern' : 'circularPattern';
+    // 点集合(FR-425、P5 タスク43)も直線・円形と同じく配置ごとに別の連番にする
+    // (model の `SolidLabelKey` と同じ粒度でないと、木の名前と種類の名前が食い違う)。
+    switch (feature.placement.kind) {
+      case 'linear':
+        return 'linearPattern';
+      case 'circular':
+        return 'circularPattern';
+      case 'points':
+        return 'pointPattern';
+    }
   }
   if (feature.kind === 'primitive') {
     // 基本形状(FR-429)はブーリアンと同じ理屈で、形ごとに別の連番・別の名前にする
@@ -868,6 +893,24 @@ export function summarizeSolid(
           subShapeCounts: [],
         };
       }
+      if (placement.kind === 'points') {
+        /*
+          点の集まりへ複製(FR-425、P5 タスク43)。間隔・角度・個数の欄を持たず、
+          置き場所は点そのものが決める。点の一覧をプロパティに並べるのは **タスク52** で、
+          ここは `PatternPlacement` に case が増えたときにこの枝を落とさないための最小の
+          形である(いまはもとの穴と点の数だけを出す)。
+        */
+        return {
+          ...base,
+          fields: [],
+          toggles: [],
+          choices: [],
+          references: [bodyReference(document, 'propertyPanel.patternSource', feature.sourceFeatureId)],
+          subShapeCounts: [
+            { labelKey: 'propertyPanel.patternPoints', count: placement.points.length },
+          ],
+        };
+      }
       // 全周(fullCircle)のときは角度が 360/個数 で自動なので欄を出さない(NFR-UX-4)。
       const fields = placement.fullCircle
         ? [fieldSummary('count', placement.count)]
@@ -939,6 +982,77 @@ export function summarizeSolid(
         references: feature.sections.map((section) => ruledSectionReference(document, section)),
         subShapeCounts: [],
       };
+    /*
+      P5 の Should 群 9 種(§2.11、P5 タスク43)。**式の欄・つまみ・選択肢をプロパティへ
+      出すのは タスク52** で、ここは `SolidFeature` の union が広がったときにこの網羅
+      switch を落とさないための最小の枝である。いまは「何にかけた加工か」が木と
+      プロパティで読めるよう、対象の立体と選んだ面の数だけを出す。
+    */
+    case 'draft':
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [
+          { labelKey: 'propertyPanel.selectedFaces', count: feature.faces.length },
+        ],
+      };
+    case 'mirror':
+    case 'transform':
+    case 'scale':
+      // 対象の立体だけを出す(鏡の平面・移動量・倍率の欄は タスク52)。
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [],
+      };
+    case 'sweep':
+      // スイープ(FR-409)。対象を取らないので断面だけを出す(経路は タスク52)。
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [profileReference(document, feature.profile)],
+        subShapeCounts: [],
+      };
+    case 'rib':
+    case 'threadShaft':
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [],
+      };
+    case 'emboss':
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [
+          bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId),
+          profileReference(document, feature.profile),
+        ],
+        subShapeCounts: [],
+      };
+    case 'surface':
+      // 曲面(FR-428)。作り方 5 種で欄が違うので、出し分けは タスク52 に任せる。
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [],
+        subShapeCounts: [],
+      };
   }
 }
 
@@ -983,6 +1097,18 @@ export function setSolidField(
     case 'ruled':
     case 'loft':
       // 面をつなぐ・ロフトの「ねじれ」の書き戻しは **タスク27**(欄を出すのと同じ段)。
+      return feature;
+    case 'draft':
+    case 'mirror':
+    case 'transform':
+    case 'scale':
+    case 'sweep':
+    case 'rib':
+    case 'emboss':
+    case 'threadShaft':
+    case 'surface':
+      // P5 の Should 群(§2.11、タスク43)の書き戻しは **タスク52**(欄を出すのと同じ段)。
+      // いまは欄を 1 つも出していないので、そのまま返す。
       return feature;
   }
 }
@@ -1183,6 +1309,10 @@ function setPatternField(
     }
     return feature;
   }
+  if (placement.kind === 'points') {
+    // 点集合(FR-425、P5 タスク43)は式の欄を持たない(置き場所は点そのもの)。
+    return feature;
+  }
   if (key === 'patternAngle') {
     return { ...feature, placement: { ...placement, angle: value } };
   }
@@ -1298,9 +1428,15 @@ function setPatternDirection(feature: SolidFeature, axis: 'x' | 'y' | 'z'): Soli
     return feature;
   }
   const direction: PatternDirection = { kind: 'world', axis };
-  return feature.placement.kind === 'linear'
-    ? { ...feature, placement: { ...feature.placement, direction } }
-    : { ...feature, placement: { ...feature.placement, axis: direction } };
+  switch (feature.placement.kind) {
+    case 'linear':
+      return { ...feature, placement: { ...feature.placement, direction } };
+    case 'circular':
+      return { ...feature, placement: { ...feature.placement, axis: direction } };
+    case 'points':
+      // 点集合(FR-425、P5 タスク43)は向きの欄を持たない(置き場所は点そのもの)。
+      return feature;
+  }
 }
 
 /** ばねの軸をワールドの X / Y / Z へ変える(パターンの向き・回転軸と同じ扱い、§0.a-0.29)。 */

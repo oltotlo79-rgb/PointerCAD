@@ -29,6 +29,9 @@ import type {
   SubShapeRef,
 } from '../geometry/subShapeRef.js';
 import type { Parameter } from '../parameters/types.js';
+// ミラーの基準にする平面の id(基準の 3 面 `xy` / `xz` / `yz` と、任意の作業平面
+// (FR-328)のフィーチャー id の両方が入る文字列。P5 §0.a-0.36)。
+import type { WorkPlaneId } from '../sketch/planeMath.js';
 import type { CoordinateInput, PointReference, SketchDocument } from '../sketch/types.js';
 import type { ThreadSeries } from '../thread/metricThread.js';
 
@@ -36,6 +39,22 @@ import type { ThreadSeries } from '../thread/metricThread.js';
 export interface SketchFaceRef {
   readonly sketchId: string;
   readonly faceFeatureId: string;
+}
+
+/**
+ * スケッチの曲線フィーチャーの並びへの参照(P5 §2.11、タスク43)。
+ *
+ * スイープの経路・リブの輪郭・曲面の輪郭のように、**閉じているとは限らない線の連なり**を
+ * 指すために使う。閉じた輪郭 1 枚を指す `SketchFaceRef`(面フィーチャー)とは別物で、
+ * 面を作れない開いた線からでも形が作れる種類がこちらを持つ。
+ *
+ * 並びが意味を持つ(経路は書かれた順につながっている前提)。実際につながっているか、
+ * 1 つの平面に乗っているかは解決(タスク46)とカーネルが確かめて理由つきで断る(FR-504)。
+ */
+export interface SketchCurveRef {
+  readonly sketchId: string;
+  /** 曲線フィーチャー(線分・円弧・スプライン等)の id。1 つ以上。並びが意味を持つ。 */
+  readonly curveIds: readonly string[];
 }
 
 /** スケッチの線分フィーチャー1本への参照。回転軸に使う(§0.a-0.9)。 */
@@ -97,7 +116,30 @@ export type SolidFeatureKind =
    * ロフト(FR-410、P5 計画書 §2.9)。2 つ以上の断面をなめらかに結ぶ。
    * 罫線面と道具が別なので種類も分ける(P5 §0.a-0.25)が、カーネルの段は同じ 1 種類。
    */
-  | 'loft';
+  | 'loft'
+  /*
+    ここから下は P5 の Should 群(P5 計画書 §2.11、タスク43)。
+    9 種を一度に足す。消費するかどうかは種類ごとに違うので
+    `createPartDocument.ts` の `consumedTargetsOf` の表を必ず見ること。
+  */
+  /** 抜き勾配(FR-417)。中立面を基準に選んだ面を傾ける。対象を消費する。 */
+  | 'draft'
+  /** ミラー(FR-419)。鏡像を 1 つ作る。**対象を消費しない**(§0.a-0.36)。 */
+  | 'mirror'
+  /** 移動/回転(FR-424)。剛体変換した立体を作る。対象を消費する(§0.a-0.41)。 */
+  | 'transform'
+  /** 拡大縮小(FR-424)。倍率を掛けた立体を作る。対象を消費する(§0.a-0.41)。 */
+  | 'scale'
+  /** スイープ(FR-409)。断面を経路に沿って掃く。対象を取らない「作る」種類。 */
+  | 'sweep'
+  /** リブ(FR-420)。開いた輪郭に厚みを付けた壁を足す。対象を消費する。 */
+  | 'rib'
+  /** エンボス(FR-421)。平らな面へ輪郭を彫る / 浮き出す。対象を消費する。 */
+  | 'emboss'
+  /** 外ねじ(FR-423)。円柱面にねじを切る。対象を消費する。 */
+  | 'threadShaft'
+  /** 曲面(FR-428)。閉じた立体ではなく面だけのボディを作る。対象を消費しない。 */
+  | 'surface';
 
 interface SolidFeatureBase {
   /**
@@ -111,7 +153,48 @@ interface SolidFeatureBase {
   readonly suppressed: boolean;
 }
 
-/** 押し出し(FR-401)。テーパーは P3(§0.a-0.8)。 */
+/**
+ * 押し出しの終端(FR-415、P5 計画書 §2.11、タスク43)。
+ *
+ * **長さそのものは `ExtrudeFeature.distance` が持ち続ける。** ここは「どこまで押し出すか」の
+ * 決め方だけを 4 通りで持つ。距離を種類の中へ写すと、終端の種類を切り替えるたびに利用者が
+ * 入れた長さが消えてしまうためである(NFR-UX-1)。
+ *
+ * - `distance`: 長さを指定して片側へ(P2 からの押し出し)。
+ * - `symmetric`: 断面の両側へ(長さの半分ずつ)。
+ * - `toFace`: 指定した面まで。距離は解決(タスク45)が面までの距離として計算する。
+ * - `toNext`: 断面から先で最初に当たった材料の中まで(タスク33 の実測での意味)。
+ *
+ * カーネルの `ExtrudeEndSpec`(`occt/makeSolidSweep.ts`)は同じ 4 種を**数値**で持つ。
+ * 式から数値への変換は解決の担当なので、ここでは参照と種類だけを保存する(要件§8)。
+ */
+export type ExtrudeEnd =
+  | { readonly kind: 'distance' }
+  | { readonly kind: 'symmetric' }
+  | { readonly kind: 'toFace'; readonly face: SubShapeRef }
+  | { readonly kind: 'toNext' };
+
+/**
+ * 薄板押し出し(FR-416、§0.a-0.46)の厚みの向き。
+ *
+ * カーネルの `ThinExtrudeSide`(`occt/makeThinExtrude.ts`)と同じ 3 値。
+ * §0.a-0.46 は「厚みの欄 1 つ」の想定だったが、タスク53 の実測で向きの欄も要ると分かった
+ * (`docs/報告記録.md` 2026-09-05 16:13 の申し送り)。
+ */
+export type ThicknessSide = 'inner' | 'outer' | 'both';
+
+/**
+ * 押し出し(FR-401)。
+ *
+ * P5 タスク43 で終端(FR-415)・テーパ(FR-401)・薄板(FR-416)の欄を足した。
+ *
+ * **足した 5 欄はすべて省略できる。** 省略したときは P2 からの押し出し(距離ぶんを片側へ、
+ * 傾きなし、中実)と 1 ドットも変わらない形になる。カーネルの `ExtrudeShapeOptions`
+ * (`occt/makeSolidSweep.ts`、タスク33)が同じ理由で全欄を省略可能にしているのと同じ決めで、
+ * 版 6 までの `.pcad` と既存の呼び出し側(その場入力・コマンド・検査の見本)を 1 か所も
+ * 書き換えずに済む。**既定値は 1 か所** — `createPartDocument.ts` の `extrudeShapingOf` が
+ * 省略を埋めるので、読む側は必ずそれを通す(既定を各所へ写さない)。
+ */
 export interface ExtrudeFeature extends SolidFeatureBase {
   readonly kind: 'extrude';
   readonly profile: SketchFaceRef;
@@ -119,8 +202,34 @@ export interface ExtrudeFeature extends SolidFeatureBase {
   readonly distance: ExpressionValue;
   /** 面の法線と逆向きへ出すか。 */
   readonly reversed: boolean;
-  /** 両側へ出すか。true なら距離の半分ずつ両方向(平行移動は model 側で計算する)。 */
+  /**
+   * 両側へ出すか。true なら距離の半分ずつ両方向(平行移動は model 側で計算する)。
+   *
+   * **P5 タスク43 以降は `end` が正本で、この欄は `end.kind === 'symmetric'` と同じ意味を
+   * 持つ P2 からの欄である。** 消さずに残したのは、解決(`resolvePart.ts`)・プロパティ・
+   * その場入力がこの欄を読んでおり、それらを書き換えるのはタスク45・49・52 の担当だから。
+   * 読み手(`packages/io`)は `end` の欄が無い古い文書ではこの欄から `end` を作る。
+   */
   readonly symmetric: boolean;
+  /**
+   * どこまで押し出すか(FR-415)。省略すると `symmetric` から決まる
+   * (`symmetric` が真なら両側、偽なら距離。`extrudeShapingOf` が埋める)。
+   */
+  readonly end?: ExtrudeEnd;
+  /**
+   * 側面の傾き(度)。**大きさだけ**を持ち、0 以上 MAX_TAPER_ANGLE_DEGREES 以下。既定 0。
+   * 向きは `taperOutward` が持つ(抜き勾配の `angle` + `reversed` と同じ持ち方。タスク33)。
+   */
+  readonly taperAngle?: ExpressionValue;
+  /** true で押し出すほど外へ広がり、false(既定)で内へ絞る(FR-401)。 */
+  readonly taperOutward?: boolean;
+  /**
+   * 薄板にするときの壁の厚み(mm)。**null(と省略)なら中身の詰まった押し出し**
+   * (既定、FR-416)。数を入れると輪郭をオフセットした輪郭との差を押し出す(§0.a-0.46)。
+   */
+  readonly thickness?: ExpressionValue | null;
+  /** 厚みをどちら側へ付けるか(FR-416)。既定 inner。`thickness` が null のときは使わない。 */
+  readonly thicknessSide?: ThicknessSide;
 }
 
 /**
@@ -167,6 +276,33 @@ export interface BooleanFeature extends SolidFeatureBase {
   readonly toolFeatureId: string;
 }
 
+/**
+ * 穴の入口の形(ざぐり・皿もみ。FR-422、P5 §0.a-0.39、タスク43)。
+ *
+ * 穴の種類を増やすのではなく**同じ穴の入口だけを広げる**指定にしてある(§0.a-0.39 の承認)。
+ * 既定は `plain`(広げない)で、この欄が無い古い文書も `plain` として読む。
+ *
+ * **角度はここでは度で持つ。** カーネルの `HoleEntrySpec`(`occt/makeHole.ts`)はラジアンで
+ * 受け取るので、換算は解決(タスク46)が行う(§0.a-0.9「角度はラジアンへ」と同じ約束)。
+ * 皿もみの円錐の深さは `(頭径 − 穴の径) / 2 / tan(角度 / 2)` でカーネルが決めるので、
+ * model は欄として持たない(導出できるものは保存しない、rules/04)。
+ */
+export type HoleEntry =
+  /** 広げない(既定)。 */
+  | { readonly kind: 'plain' }
+  /** ざぐり。径 `diameter`・深さ `depth` の円柱で入口を広げる。 */
+  | {
+      readonly kind: 'counterbore';
+      readonly diameter: ExpressionValue;
+      readonly depth: ExpressionValue;
+    }
+  /** 皿もみ。頭径 `diameter`・開き角 `angle`(度、既定 90)の円錐で入口を広げる。 */
+  | {
+      readonly kind: 'countersink';
+      readonly diameter: ExpressionValue;
+      readonly angle: ExpressionValue;
+    };
+
 /** 穴の深さの指定(FR-405)。貫通の長さはカーネルが境界箱から決める(§0.a-0.12)。 */
 export type HoleDepth =
   | { readonly kind: 'through' }
@@ -186,6 +322,11 @@ export interface HoleFeature extends SolidFeatureBase {
   readonly centers: readonly SketchPointRef[];
   readonly diameter: ExpressionValue;
   readonly depth: HoleDepth;
+  /**
+   * 入口の形(ざぐり・皿もみ。FR-422、タスク43)。**省略は `plain`**(広げない)。
+   * 押し出しの終端と同じ理由で省略可能にしてある(`holeEntryOf` が埋める)。
+   */
+  readonly entry?: HoleEntry;
   /** 面の法線からの傾き(度)。0 なら面に垂直(FR-405)。 */
   readonly tiltAngle: ExpressionValue;
   /**
@@ -215,6 +356,8 @@ export interface ThreadHoleFeature extends SolidFeatureBase {
   /** 下穴径(mm)。既定はめねじ内径 D1(§0.a-0.14)。式で書き換えられる。 */
   readonly drillDiameter: ExpressionValue;
   readonly depth: HoleDepth;
+  /** 入口の形(ざぐり・皿もみ。FR-422、タスク43)。省略は `plain`。穴とまったく同じ扱い。 */
+  readonly entry?: HoleEntry;
   /** ねじ部の長さ(mm)。止まり穴では深さ以下にする。 */
   readonly threadLength: ExpressionValue;
   /** 簡略表示(既定)か実らせん形状か(FR-406、§0.a-0.15、§0.a-0.16)。 */
@@ -293,7 +436,16 @@ export type PatternPlacement =
       readonly count: ExpressionValue;
       /** 全周へ等間隔で並べるか。真なら angle は使わず 360/count で刻む(NFR-UX-4)。 */
       readonly fullCircle: boolean;
-    };
+    }
+  /**
+   * 点の集まりへ複製(FR-425、P5 §0.a-0.42、タスク43)。
+   *
+   * もとの工具を、並べた点それぞれの位置へ平行移動して差し引く。個数は点の数そのもので、
+   * 間隔・角度・総数の欄を持たない(位置は点が決める)。**もとの位置には工具を置かない**
+   * かどうかは解決(タスク46)が決める(直線・円形が「もとを含めた総数」なのと違い、
+   * 点集合は「並べたい場所を全部書く」ものなので、点の一覧がそのまま置き場所になる)。
+   */
+  | { readonly kind: 'points'; readonly points: readonly PointReference[] };
 
 /**
  * パターン(FR-411、FR-412)。もとの加工フィーチャー(穴・ねじ穴に限る、§0.a-0.20)の
@@ -501,6 +653,275 @@ export interface LoftFeature extends SolidFeatureBase {
   readonly twist: ExpressionValue;
 }
 
+// ---------------------------------------------------------------------------
+// P5 の Should 群(FR-401、FR-409、FR-415、FR-417、FR-419〜425、FR-427、FR-428。
+// P5 計画書 §2.11、タスク43)。
+//
+// **型だけを足す段で、解決(座標・向き・段の依頼の組み立て)はタスク45・46 の担当。**
+// 欄の名前と意味は、カーネルの段の型(`packages/kernel/src/types.ts` の `DraftStepSpec`
+// ほか)と揃えてある。ただし**保存するのは式と参照だけ**で、数値・ラジアン・世界座標へ
+// 直すのは解決の仕事である(要件§8、rules/04「導出できるものは保存しない」)。
+// ---------------------------------------------------------------------------
+
+/**
+ * 抜き勾配(FR-417、P5 §2.11)。中立面を基準に、選んだ面を型が抜ける向きへ傾ける。
+ *
+ * **対象を消費する**(傾けた立体 1 つだけが残る)。抜く向きは中立面の法線が決めるので
+ * 軸の欄を持たず、思っていたのと逆なら `reversed` 1 つで直せる(§2.15 の段の表の
+ * つまみ「向きを反転」。タスク34 の実測で `Add` の `Flag` は向きを変えなかったため、
+ * カーネルも `reversed` で抜き方向そのものを反転する)。
+ */
+export interface DraftFeature extends SolidFeatureBase {
+  readonly kind: 'draft';
+  /** 傾ける立体を作ったフィーチャーの id。消費する。 */
+  readonly targetFeatureId: string;
+  /** 傾ける面。1 枚以上。円柱の側面のような曲面でもよい(円錐台になる)。 */
+  readonly faces: readonly SubShapeRef[];
+  /** 基準にする面(中立面)。この面は動かない。**平らな面だけ**(タスク34)。 */
+  readonly neutralFace: SubShapeRef;
+  /** 傾きの大きさ(度)。0 より大きく MAX_DRAFT_ANGLE_DEGREES 以下(§0.a-0.72)。 */
+  readonly angle: ExpressionValue;
+  /** 抜き方向を反転する(内側へ狭める)。既定 false。 */
+  readonly reversed: boolean;
+}
+
+/**
+ * ミラーの鏡にする平面(FR-419、§0.a-0.36)。
+ *
+ * **基準の 3 面(XY / XZ / YZ)と任意の作業平面(FR-328)は同じ `workPlane` で持つ。**
+ * `WorkPlaneId` が両方を表す文字列だからで、種類を分けると同じものを 2 通りに書けてしまう。
+ * 立体の平らな面を鏡にするときだけ `face`(指紋)になる。
+ *
+ * 平面の決め方 7 種の `PlaneSpec`(FR-328、切断 FR-432 と共有)はここでは使わない。
+ * ミラーの基準として §0.a-0.36 が認めたのは「基準平面・作業平面・立体の平らな面」の
+ * 3 つだけで、`PlaneSpec` の 3 点指定などを鏡にする道具は用意しないためである。
+ */
+export type MirrorPlane =
+  | { readonly kind: 'workPlane'; readonly planeId: WorkPlaneId }
+  | { readonly kind: 'face'; readonly face: SubShapeRef };
+
+/**
+ * ミラー(FR-419、§0.a-0.36)。平面に対する鏡像のボディを 1 つ作る。
+ *
+ * **対象を消費しない。** 鏡像を作ったあと元と鏡像を「和」(FR-404)でつなぐのが普通の
+ * 使い方で、元を消してしまうと和が取れない(基本形状・罫線面と同じ「作る」フィーチャー)。
+ * したがって `liveBodyIds` には元と鏡像の両方が残る。
+ */
+export interface MirrorFeature extends SolidFeatureBase {
+  readonly kind: 'mirror';
+  /** 鏡に映す立体を作ったフィーチャーの id。**消費しない。** */
+  readonly targetFeatureId: string;
+  readonly plane: MirrorPlane;
+}
+
+/**
+ * 移動/回転(FR-424、§0.a-0.41)。対象を剛体変換したボディを 1 つ作る。
+ *
+ * **対象を消費する**(元の位置に残すと同じ形が二重になる)。回転と平行移動を 1 つの
+ * フィーチャーにまとめてあるのは、カーネルの `RigidTransformSpec`(P3 の
+ * `transformShape.ts`)がそのまま両方を受け取るためである(§0.a-0.41)。
+ */
+export interface TransformFeature extends SolidFeatureBase {
+  readonly kind: 'transform';
+  /** 動かす立体を作ったフィーチャーの id。消費する。 */
+  readonly targetFeatureId: string;
+  /** 平行移動の量(mm)。X / Y / Z の順で式 3 つ。 */
+  readonly translation: readonly [ExpressionValue, ExpressionValue, ExpressionValue];
+  /** 回転軸。null なら回さない(平行移動だけ)。 */
+  readonly rotationAxis: AxisSpec | null;
+  /** 回転角(度)。`rotationAxis` が null のときは使わない。 */
+  readonly rotationAngle: ExpressionValue;
+}
+
+/**
+ * 拡大縮小の倍率(FR-424、§0.a-0.41)。全体か軸ごとかの 2 通り。
+ *
+ * どちらも MIN_SCALE 以上 MAX_SCALE 以下(範囲の検査は解決、タスク45)。
+ * **軸ごとに倍率が違うと円柱面が楕円柱面に変わり、下流の指紋が外れうる**
+ * (タスク35 の実測)。断りではなく警告の対象で、判断は解決とカーネルに任せる。
+ */
+export type ScaleFactor =
+  | { readonly kind: 'uniform'; readonly value: ExpressionValue }
+  | {
+      readonly kind: 'perAxis';
+      readonly x: ExpressionValue;
+      readonly y: ExpressionValue;
+      readonly z: ExpressionValue;
+    };
+
+/** 拡大縮小(FR-424、§0.a-0.41)。**対象を消費する。** */
+export interface ScaleFeature extends SolidFeatureBase {
+  readonly kind: 'scale';
+  /** 拡大縮小する立体を作ったフィーチャーの id。消費する。 */
+  readonly targetFeatureId: string;
+  /** 拡大縮小の中心。この点は動かない。 */
+  readonly origin: PointReference;
+  readonly factor: ScaleFactor;
+}
+
+/**
+ * スイープ(FR-409、§0.a-0.43、§0.a-0.76)。断面を経路に沿って掃く。
+ *
+ * **対象を取らない「作る」フィーチャー**(押し出し・回転・縫合・ばね・基本形状と同じ)。
+ * 断面の重心は経路の始点へ移され、断面の法線は経路の接線へ最小回転で合わせられる
+ * (タスク37)。経路はスケッチの曲線の連なりで、閉じていてもよい。
+ */
+export interface SweepFeature extends SolidFeatureBase {
+  readonly kind: 'sweep';
+  /** 掃く断面(閉じた輪郭 1 枚)。 */
+  readonly profile: SketchFaceRef;
+  /** 経路。並んだ順につながっていること。 */
+  readonly path: SketchCurveRef;
+  /**
+   * 向きの決め方。true で Frenet(曲線の曲がりに合わせて断面も回る)、
+   * false(既定)で「ねじれを抑える」(§2.15 の段の表のつまみ)。
+   */
+  readonly frenet: boolean;
+}
+
+/** リブの厚みを輪郭のどちら側へ付けるか(FR-420、§2.15)。 */
+export type RibSide =
+  /** 輪郭を壁の中心にして両側へ半分ずつ(既定)。 */
+  | 'both'
+  /** 輪郭の平面の法線の側だけへ。 */
+  | 'positive'
+  /** 法線と逆の側だけへ。 */
+  | 'negative';
+
+/**
+ * リブ(FR-420、§0.a-0.37、§0.a-0.75)。開いた輪郭に厚みを付けた壁を立体へ足す。
+ *
+ * **対象を消費する**(リブが付いた立体 1 つだけが残る)。輪郭は**開いた線**でよく、
+ * 面を作れないので `SketchCurveRef` で持つ。
+ */
+export interface RibFeature extends SolidFeatureBase {
+  readonly kind: 'rib';
+  /** リブを足す立体を作ったフィーチャーの id。消費する。 */
+  readonly targetFeatureId: string;
+  /** 壁にする輪郭(閉じていなくてよい)。 */
+  readonly profile: SketchCurveRef;
+  /** 壁の厚み(mm)。0 より大きい。 */
+  readonly thickness: ExpressionValue;
+  /** 厚みを輪郭のどちら側へ付けるか。既定 both。 */
+  readonly side: RibSide;
+  /**
+   * 材料に届くまで壁を伸ばすか(既定 true)。false なら輪郭の長さぶんだけの壁を立てる。
+   * 伸ばす向きは輪郭の平面と対象の位置から解決(タスク46)が決める。
+   */
+  readonly extendToBody: boolean;
+}
+
+/**
+ * エンボス(FR-421、§0.a-0.38)。平らな面へ輪郭を彫る / 浮き出す。
+ *
+ * **対象を消費する。** 面は平らな面だけ(曲面へのラップは P6 以降。タスク39)。
+ */
+export interface EmbossFeature extends SolidFeatureBase {
+  readonly kind: 'emboss';
+  /** 彫る(浮き出す)立体を作ったフィーチャーの id。消費する。 */
+  readonly targetFeatureId: string;
+  /** 相手の面。**平らな面だけ。** */
+  readonly face: SubShapeRef;
+  /** 面の上に置く閉じた輪郭(スケッチの面フィーチャー1 枚)。 */
+  readonly profile: SketchFaceRef;
+  /** 面から測った高さ(mm)。0 より大きい。彫るときはそのぶんの深さになる。 */
+  readonly height: ExpressionValue;
+  /** true なら浮き出す(和)、false(既定)なら彫る(差)。 */
+  readonly raised: boolean;
+}
+
+/**
+ * 外ねじ(FR-423、§0.a-0.40)。円柱面にねじを切る。
+ *
+ * **対象を消費する。** 選ぶのは**円柱面 1 つ**で、ねじ穴(`ThreadHoleFeature`)のように
+ * 平らな面と中心点を選ぶのではない。だから別の種類にしてある(タスク40)。
+ * **軸の径は面から測るので利用者に入れさせない**(NFR-UX-4)。`nominal` は呼び(M6 など)で、
+ * 呼び径と軸の実寸が食い違う指定(φ20 の軸に M10 など)は解決(タスク46)が断る。
+ *
+ * 既定は簡略表示(`modeled: false`)。実らせんは 1 本で数秒かかる(2026-09-05 実測、
+ * 負荷下で中央値 4184ms)ので、選んだときだけ切る(§0.a-0.15、ねじ穴と同じ決め)。
+ */
+export interface ThreadShaftFeature extends SolidFeatureBase {
+  readonly kind: 'threadShaft';
+  /** ねじを切る立体を作ったフィーチャーの id。消費する。 */
+  readonly targetFeatureId: string;
+  /** ねじを切る円柱面。平面など円柱でない面は解決とカーネルが断る。 */
+  readonly face: SubShapeRef;
+  /** JIS の呼び(例 'M6')。`ThreadHoleFeature.designation` と同じ規格表の鍵(FR-406)。 */
+  readonly nominal: string;
+  readonly series: ThreadSeries;
+  /** ピッチ(mm)。規格表から入るが、式で書き換えられる(FR-202)。 */
+  readonly pitch: ExpressionValue;
+  /** ねじ部の長さ(mm)。 */
+  readonly length: ExpressionValue;
+  /** 軸のどちらの端から切り始めるか。`first` は円柱面の軸のパラメータが小さいほうの端。 */
+  readonly fromEnd: 'first' | 'last';
+  /** 実らせんを切るなら true。false(既定)は簡略表示で、形そのものは変わらない。 */
+  readonly modeled: boolean;
+}
+
+/**
+ * 曲面の作り方(FR-428、§0.a-0.45)。
+ *
+ * **5 種の実名と欄はカーネルの `SurfaceInput`(`occt/makeSurface.ts`)に揃えてある。**
+ * 同じ操作を model と kernel で別の名前で呼ぶと、解決(タスク46)が詰め替えのたびに
+ * 対応表を持つことになるためである(基本形状の `PrimitiveShape` と同じ流儀)。
+ *
+ * 輪郭は**開いていてよい**(線分 1 本からでも面になる)ので `SketchCurveRef` で持つ。
+ * `face` だけが既にある立体の面を材料にするが、**面を読むだけなので対象は消費しない**
+ * (罫線面の `solidFace`・基本形状の頂点とまったく同じ扱い。§0.a-0.27)。
+ */
+export type SurfaceOperation =
+  /** 輪郭を面の法線の向きへ掃いた面。 */
+  | {
+      readonly kind: 'extrude';
+      readonly profile: SketchCurveRef;
+      readonly distance: ExpressionValue;
+      /** 輪郭の平面の法線と逆向きへ掃くか(押し出しの `reversed` と同じ意味)。 */
+      readonly reversed: boolean;
+    }
+  /** 輪郭を軸まわりに回した面。半円弧を全周回せば球面になる。 */
+  | {
+      readonly kind: 'revolve';
+      readonly profile: SketchCurveRef;
+      readonly axis: AxisSpec;
+      /** 回転角(度)。0 より大きく 360 以下。 */
+      readonly angle: ExpressionValue;
+      readonly reversed: boolean;
+    }
+  /** 閉じた輪郭から張った平らな面 1 枚。 */
+  | { readonly kind: 'planar'; readonly profile: SketchCurveRef }
+  /** 輪郭どうしをつないだ面(ロフトの面版)。2 つ以上。 */
+  | {
+      readonly kind: 'loft';
+      readonly sections: readonly SketchCurveRef[];
+      /** true なら直線で結ぶ(罫線)、false ならなめらかに結ぶ(ロフト)。 */
+      readonly ruled: boolean;
+    }
+  /** すでにある立体の面を 1 枚取り出した面。**対象は消費しない。** */
+  | {
+      readonly kind: 'face';
+      /** 面を借りる立体を作ったフィーチャーの id。**消費しない。** */
+      readonly targetFeatureId: string;
+      readonly face: SubShapeRef;
+    };
+
+/**
+ * 曲面(FR-428、§0.a-0.45)。**閉じた立体ではなく面だけのボディ**を作る。
+ *
+ * カーネルは `bodyKind: 'shell'` の印を付けて返し、体積ではなく面積で意味を持つ
+ * (ふたの無い開いた殻の体積は 0 とは限らない、タスク41 の実測)。
+ * フィレット・面取り・穴のような加工は面だけの形には掛けられず、カーネルが断る。
+ *
+ * **5 種のどれも対象を消費しない。** 計画書 §2.11 は「オフセット・厚み付けは消費する」と
+ * 書いていたが、タスク41 の `SurfaceInput` にその 2 種は無い(面のオフセットは
+ * タスク42 の追加、厚み付けはシェル FR-418 としてタスク53 が別に作った)。
+ */
+export interface SurfaceFeature extends SolidFeatureBase {
+  readonly kind: 'surface';
+  readonly operation: SurfaceOperation;
+}
+
 export type SolidFeature =
   | ExtrudeFeature
   | RevolveFeature
@@ -514,7 +935,17 @@ export type SolidFeature =
   | SpringFeature
   | PrimitiveFeature
   | RuledFeature
-  | LoftFeature;
+  | LoftFeature
+  // P5 の Should 群 9 種(§2.11、タスク43)。
+  | DraftFeature
+  | MirrorFeature
+  | TransformFeature
+  | ScaleFeature
+  | SweepFeature
+  | RibFeature
+  | EmbossFeature
+  | ThreadShaftFeature
+  | SurfaceFeature;
 
 // ---------------------------------------------------------------------------
 // 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329。P4 タスク9)

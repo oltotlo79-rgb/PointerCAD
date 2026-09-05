@@ -477,6 +477,11 @@ export function commitChamfer(
  * 二重の安全網になるだけで壊れない)。
  */
 function invalidPatternPlacementReasonKey(placement: PatternPlacement): MessageKey | null {
+  if (placement.kind === 'points') {
+    // 点集合(FR-425、P5 タスク43)は個数の欄を持たず、置き場所は点の数そのもの。
+    // 事前に断る規則はまだ無い(道具はタスク50、解決はタスク46)。
+    return null;
+  }
   const count = placement.count.value;
   if (!Number.isFinite(count) || !Number.isInteger(count) || count < 2 || count > MAX_PATTERN_COUNT) {
     return 'machiningError.invalidPatternCount';

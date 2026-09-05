@@ -162,6 +162,24 @@ const KIND_ICONS: Readonly<
   // それまでは基本形状と同じく `CubeIcon` を借りる。
   ruled: CubeIcon,
   loft: CubeIcon,
+  /*
+    P5 の Should 群(§2.11、P5 タスク43)。専用の図柄は **タスク50・51**(道具のボタンを
+    足す段)で入れるので、それまでは基本形状・罫線面と同じく借り物にする。
+    ミラーだけはスケッチの鏡(FR-324)の図柄がすでにあるので、それを使い回す
+    (同じ「鏡に映す」操作なので、利用者から見た絵の意味も変わらない)。
+  */
+  mirror: MirrorToolIcon,
+  draft: CubeIcon,
+  transform: CubeIcon,
+  scale: CubeIcon,
+  sweep: CubeIcon,
+  rib: CubeIcon,
+  emboss: CubeIcon,
+  threadShaft: ThreadHoleIcon,
+  surface: CubeIcon,
+  // 点パターン(FR-425)。直線・円形パターンと同じ絵では見分けが付かないので、
+  // 「点を並べる」という意味がいちばん近い点列(FR-308)の図柄を借りる。
+  pointPattern: PointArrayToolIcon,
 };
 
 /** 節の頭に出す絵。基準は軸と点、スケッチは作図面、ソリッドは立体の印。 */

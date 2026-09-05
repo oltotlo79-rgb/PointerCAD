@@ -29,10 +29,14 @@ import {
   type CoordinateInput,
   type CopyPlacement,
   type EdgeCurveKind,
+  // P5 の Should 群(§2.11、タスク43)が足した型。
+  type ExtrudeEnd,
   type FaceSurfaceKind,
   type FreeArcOrientation,
   type HoleDepth,
+  type HoleEntry,
   type MirrorBasis,
+  type MirrorPlane,
   type Parameter,
   type ParameterUnit,
   PARAMETER_UNITS,
@@ -50,13 +54,16 @@ import {
   type ReferenceFeatureKind,
   type ReferencePointDefinition,
   type RevolveAxis,
+  type RibSide,
   DEFAULT_RULED_SPHERE_SEGMENTS,
   RULED_SPHERE_SEGMENT_CHOICES,
   type RuledSection,
   type RuledSphereSegments,
+  type ScaleFactor,
   SKETCH_CONSTRAINT_KINDS,
   type SketchArcFeature,
   type SketchConstraint,
+  type SketchCurveRef,
   type SketchDocument,
   type SketchElementRef,
   type SketchFaceRef,
@@ -72,6 +79,8 @@ import {
   type SubShapeFingerprint,
   type SubShapeKind,
   type SubShapeRef,
+  type SurfaceOperation,
+  type ThicknessSide,
   type ThreadRepresentation,
   type ThreadSeries,
   type Vec3,
@@ -197,6 +206,43 @@ const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = [
   // 面をつなぐ(FR-430)とロフト(FR-410)。P5 計画書 §2.9、タスク25。
   'ruled',
   'loft',
+  // P5 の Should 群 9 種(§2.11、タスク43)。FR-417、419、424、409、420、421、423、428。
+  'draft',
+  'mirror',
+  'transform',
+  'scale',
+  'sweep',
+  'rib',
+  'emboss',
+  'threadShaft',
+  'surface',
+];
+/** 押し出しの終端の4通り(FR-415、P5 タスク43)。 */
+const EXTRUDE_END_KINDS: readonly ExtrudeEnd['kind'][] = [
+  'distance',
+  'symmetric',
+  'toFace',
+  'toNext',
+];
+/** 薄板押し出しの厚みの向き(FR-416、§0.a-0.46)。カーネルの `ThinExtrudeSide` と同じ3値。 */
+const THICKNESS_SIDES: readonly ThicknessSide[] = ['inner', 'outer', 'both'];
+/** 穴の入口の3通り(ざぐり・皿もみ。FR-422、§0.a-0.39)。 */
+const HOLE_ENTRY_KINDS: readonly HoleEntry['kind'][] = ['plain', 'counterbore', 'countersink'];
+/** ミラーの鏡にする平面の2通り(FR-419、§0.a-0.36)。 */
+const MIRROR_PLANE_KINDS: readonly MirrorPlane['kind'][] = ['workPlane', 'face'];
+/** 拡大縮小の倍率の2通り(FR-424、§0.a-0.41)。 */
+const SCALE_FACTOR_KINDS: readonly ScaleFactor['kind'][] = ['uniform', 'perAxis'];
+/** リブの厚みを付ける側(FR-420)。 */
+const RIB_SIDES: readonly RibSide[] = ['both', 'positive', 'negative'];
+/** 外ねじを切り始める端(FR-423)。 */
+const THREAD_SHAFT_ENDS: readonly ('first' | 'last')[] = ['first', 'last'];
+/** 曲面の作り方5種(FR-428)。カーネルの `SurfaceInput` と同じ実名(§0.a-0.45)。 */
+const SURFACE_OPERATION_KINDS: readonly SurfaceOperation['kind'][] = [
+  'extrude',
+  'revolve',
+  'planar',
+  'loft',
+  'face',
 ];
 /** 罫線面・ロフトの断面の 3 通り(P5 §2.9.1)。知らない `kind` は `readLiteral` が断る。 */
 const RULED_SECTION_KINDS: readonly RuledSection['kind'][] = ['sketchFace', 'solidFace', 'sphere'];
@@ -274,7 +320,12 @@ const REFERENCE_POINT_KINDS: readonly ReferencePointDefinition['kind'][] = [
   'edgeMidpoint',
   'faceCenter',
 ];
-const PATTERN_PLACEMENT_KINDS: readonly PatternPlacement['kind'][] = ['linear', 'circular'];
+const PATTERN_PLACEMENT_KINDS: readonly PatternPlacement['kind'][] = [
+  'linear',
+  'circular',
+  // 点の集まりへ複製(FR-425、P5 §0.a-0.42、タスク43)。
+  'points',
+];
 const SPRING_DERIVED_VALUES: readonly SpringDerived[] = ['length', 'pitch', 'turns'];
 const SPRING_HANDEDNESS_VALUES: readonly SpringHandedness[] = ['right', 'left'];
 
@@ -843,6 +894,107 @@ function serializePatternDirection(direction: PatternDirection): PatternDirectio
   }
 }
 
+/**
+ * 押し出しの終端(FR-415、P5 タスク43)。呼び出し側が**省略されていない**ときだけ呼ぶ
+ * (既定を書き込むと版 6 までのファイルの往復で欄が増えてしまう)。
+ */
+function serializeExtrudeEnd(end: ExtrudeEnd): ExtrudeEnd {
+  switch (end.kind) {
+    case 'distance':
+    case 'symmetric':
+    case 'toNext':
+      // 欄を持たない 3 種。`kind` だけを写す(元の入れ物を持ち回らない)。
+      return { kind: end.kind };
+    case 'toFace':
+      return { kind: 'toFace', face: serializeSubShapeRef(end.face) };
+  }
+}
+
+/** 穴の入口(ざぐり・皿もみ。FR-422、P5 タスク43)。省略でないときだけ呼ぶ。 */
+function serializeHoleEntry(entry: HoleEntry): HoleEntry {
+  switch (entry.kind) {
+    case 'plain':
+      return { kind: 'plain' };
+    case 'counterbore':
+      return {
+        kind: 'counterbore',
+        diameter: serializeExpression(entry.diameter),
+        depth: serializeExpression(entry.depth),
+      };
+    case 'countersink':
+      return {
+        kind: 'countersink',
+        diameter: serializeExpression(entry.diameter),
+        angle: serializeExpression(entry.angle),
+      };
+  }
+}
+
+/** スケッチの曲線の並びへの参照(P5 タスク43)。id の配列は写して持つ。 */
+function serializeCurveRef(reference: SketchCurveRef): SketchCurveRef {
+  return { sketchId: reference.sketchId, curveIds: [...reference.curveIds] };
+}
+
+/** ミラーの鏡にする平面(FR-419、P5 タスク43)。 */
+function serializeMirrorPlane(plane: MirrorPlane): MirrorPlane {
+  switch (plane.kind) {
+    case 'workPlane':
+      return { kind: 'workPlane', planeId: plane.planeId };
+    case 'face':
+      return { kind: 'face', face: serializeSubShapeRef(plane.face) };
+  }
+}
+
+/** 拡大縮小の倍率(FR-424、P5 タスク43)。 */
+function serializeScaleFactor(factor: ScaleFactor): ScaleFactor {
+  switch (factor.kind) {
+    case 'uniform':
+      return { kind: 'uniform', value: serializeExpression(factor.value) };
+    case 'perAxis':
+      return {
+        kind: 'perAxis',
+        x: serializeExpression(factor.x),
+        y: serializeExpression(factor.y),
+        z: serializeExpression(factor.z),
+      };
+  }
+}
+
+/** 曲面の作り方5種(FR-428、P5 タスク43)。実名はカーネルの `SurfaceInput` と同じ。 */
+function serializeSurfaceOperation(operation: SurfaceOperation): SurfaceOperation {
+  switch (operation.kind) {
+    case 'extrude':
+      return {
+        kind: 'extrude',
+        profile: serializeCurveRef(operation.profile),
+        distance: serializeExpression(operation.distance),
+        reversed: operation.reversed,
+      };
+    case 'revolve':
+      return {
+        kind: 'revolve',
+        profile: serializeCurveRef(operation.profile),
+        axis: serializeRevolveAxis(operation.axis),
+        angle: serializeExpression(operation.angle),
+        reversed: operation.reversed,
+      };
+    case 'planar':
+      return { kind: 'planar', profile: serializeCurveRef(operation.profile) };
+    case 'loft':
+      return {
+        kind: 'loft',
+        sections: operation.sections.map(serializeCurveRef),
+        ruled: operation.ruled,
+      };
+    case 'face':
+      return {
+        kind: 'face',
+        targetFeatureId: operation.targetFeatureId,
+        face: serializeSubShapeRef(operation.face),
+      };
+  }
+}
+
 function serializePatternPlacement(placement: PatternPlacement): PatternPlacement {
   switch (placement.kind) {
     case 'linear':
@@ -861,6 +1013,9 @@ function serializePatternPlacement(placement: PatternPlacement): PatternPlacemen
         count: serializeExpression(placement.count),
         fullCircle: placement.fullCircle,
       };
+    case 'points':
+      // 点の集まりへ複製(FR-425、P5 タスク43)。個数・間隔の欄は無く、点の並びだけ。
+      return { kind: 'points', points: placement.points.map(serializePointReference) };
   }
 }
 
@@ -944,6 +1099,22 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         distance: serializeExpression(feature.distance),
         reversed: feature.reversed,
         symmetric: feature.symmetric,
+        /*
+          終端・傾き・薄板(FR-415、FR-401、FR-416。P5 タスク43)。**省略は欄ごと省略のまま**
+          にするので、版 6 までのファイルは往復しても欄が 1 つも増えない。
+        */
+        ...(feature.end === undefined ? {} : { end: serializeExtrudeEnd(feature.end) }),
+        ...(feature.taperAngle === undefined
+          ? {}
+          : { taperAngle: serializeExpression(feature.taperAngle) }),
+        ...(feature.taperOutward === undefined ? {} : { taperOutward: feature.taperOutward }),
+        ...(feature.thickness === undefined
+          ? {}
+          : {
+              thickness:
+                feature.thickness === null ? null : serializeExpression(feature.thickness),
+            }),
+        ...(feature.thicknessSide === undefined ? {} : { thicknessSide: feature.thicknessSide }),
       };
     case 'revolve':
       return {
@@ -986,6 +1157,8 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         centers: feature.centers.map(serializePointRef),
         diameter: serializeExpression(feature.diameter),
         depth: serializeHoleDepth(feature.depth),
+        // 入口(ざぐり・皿もみ。FR-422、P5 タスク43)。省略は欄ごと省略のまま。
+        ...(feature.entry === undefined ? {} : { entry: serializeHoleEntry(feature.entry) }),
         tiltAngle: serializeExpression(feature.tiltAngle),
         tiltAzimuth: serializeExpression(feature.tiltAzimuth),
       };
@@ -1003,6 +1176,7 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         pitch: serializeExpression(feature.pitch),
         drillDiameter: serializeExpression(feature.drillDiameter),
         depth: serializeHoleDepth(feature.depth),
+        ...(feature.entry === undefined ? {} : { entry: serializeHoleEntry(feature.entry) }),
         threadLength: serializeExpression(feature.threadLength),
         representation: feature.representation,
         tiltAngle: serializeExpression(feature.tiltAngle),
@@ -1089,6 +1263,114 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         suppressed: feature.suppressed,
         sections: feature.sections.map(serializeRuledSection),
         twist: serializeExpression(feature.twist),
+      };
+    /*
+      P5 の Should 群 9 種(§2.11、タスク43)。**参照は id と指紋のまま、寸法は式のまま**
+      書き出す(座標・ラジアン・解決した形は 1 つも保存しない。要件§8、rules/04)。
+    */
+    case 'draft':
+      return {
+        id: feature.id,
+        kind: 'draft',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        faces: feature.faces.map(serializeSubShapeRef),
+        neutralFace: serializeSubShapeRef(feature.neutralFace),
+        angle: serializeExpression(feature.angle),
+        reversed: feature.reversed,
+      };
+    case 'mirror':
+      return {
+        id: feature.id,
+        kind: 'mirror',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        plane: serializeMirrorPlane(feature.plane),
+      };
+    case 'transform':
+      return {
+        id: feature.id,
+        kind: 'transform',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        translation: [
+          serializeExpression(feature.translation[0]),
+          serializeExpression(feature.translation[1]),
+          serializeExpression(feature.translation[2]),
+        ],
+        rotationAxis:
+          feature.rotationAxis === null ? null : serializeRevolveAxis(feature.rotationAxis),
+        rotationAngle: serializeExpression(feature.rotationAngle),
+      };
+    case 'scale':
+      return {
+        id: feature.id,
+        kind: 'scale',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        origin: serializePointReference(feature.origin),
+        factor: serializeScaleFactor(feature.factor),
+      };
+    case 'sweep':
+      return {
+        id: feature.id,
+        kind: 'sweep',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        profile: serializeFaceRef(feature.profile),
+        path: serializeCurveRef(feature.path),
+        frenet: feature.frenet,
+      };
+    case 'rib':
+      return {
+        id: feature.id,
+        kind: 'rib',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        profile: serializeCurveRef(feature.profile),
+        thickness: serializeExpression(feature.thickness),
+        side: feature.side,
+        extendToBody: feature.extendToBody,
+      };
+    case 'emboss':
+      return {
+        id: feature.id,
+        kind: 'emboss',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        face: serializeSubShapeRef(feature.face),
+        profile: serializeFaceRef(feature.profile),
+        height: serializeExpression(feature.height),
+        raised: feature.raised,
+      };
+    case 'threadShaft':
+      return {
+        id: feature.id,
+        kind: 'threadShaft',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        face: serializeSubShapeRef(feature.face),
+        nominal: feature.nominal,
+        series: feature.series,
+        pitch: serializeExpression(feature.pitch),
+        length: serializeExpression(feature.length),
+        fromEnd: feature.fromEnd,
+        modeled: feature.modeled,
+      };
+    case 'surface':
+      return {
+        id: feature.id,
+        kind: 'surface',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        operation: serializeSurfaceOperation(feature.operation),
       };
   }
 }
@@ -1369,8 +1651,27 @@ function readPointReference(
   if (!record.ok) {
     return record;
   }
-  const path = joinPath(parentPath, key);
-  const kind = readLiteral(record.value, 'kind', path, POINT_REFERENCE_KINDS);
+  return readPointReferenceRecord(record.value, joinPath(parentPath, key));
+}
+
+/**
+ * 点の指定を値そのものから読む(一覧の 1 件用。P5 タスク43 の点集合パターンが使う)。
+ * `readFaceRef` / `readFaceRefItem` と同じ「欄用と値用の組」の流儀
+ * (`readPlaneSpecRecord` と同じく、中身の読み方は 1 か所にだけ置く)。
+ */
+function readPointReferenceItem(value: unknown, path: string): Checked<PointReference> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  return readPointReferenceRecord(record.value, path);
+}
+
+function readPointReferenceRecord(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<PointReference> {
+  const kind = readLiteral(record, 'kind', path, POINT_REFERENCE_KINDS);
   if (!kind.ok) {
     return kind;
   }
@@ -1380,18 +1681,18 @@ function readPointReference(
     case 'previous':
       return { ok: true, value: { kind: 'previous' } };
     case 'point': {
-      const pointId = readString(record.value, 'pointId', path);
+      const pointId = readString(record, 'pointId', path);
       if (!pointId.ok) {
         return pointId;
       }
       return { ok: true, value: { kind: 'point', pointId: pointId.value } };
     }
     case 'vertex': {
-      const featureId = readString(record.value, 'featureId', path);
+      const featureId = readString(record, 'featureId', path);
       if (!featureId.ok) {
         return featureId;
       }
-      const vertex = readLiteral(record.value, 'vertex', path, VERTEX_NAMES);
+      const vertex = readLiteral(record, 'vertex', path, VERTEX_NAMES);
       if (!vertex.ok) {
         return vertex;
       }
@@ -1402,7 +1703,7 @@ function readPointReference(
     }
     case 'subShape': {
       // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
-      const ref = readSubShapeRefField(record.value, 'ref', path);
+      const ref = readSubShapeRefField(record, 'ref', path);
       if (!ref.ok) {
         return ref;
       }
@@ -1410,15 +1711,15 @@ function readPointReference(
     }
     case 'sphereGrid': {
       // 球面上の点(FR-431。P5 タスク19)。球の id と緯度・経度の式だけを読む。
-      const sphereFeatureId = readString(record.value, 'sphereFeatureId', path);
+      const sphereFeatureId = readString(record, 'sphereFeatureId', path);
       if (!sphereFeatureId.ok) {
         return sphereFeatureId;
       }
-      const latitude = readExpression(record.value, 'latitude', path);
+      const latitude = readExpression(record, 'latitude', path);
       if (!latitude.ok) {
         return latitude;
       }
-      const longitude = readExpression(record.value, 'longitude', path);
+      const longitude = readExpression(record, 'longitude', path);
       if (!longitude.ok) {
         return longitude;
       }
@@ -2940,6 +3241,201 @@ function readHoleDepthField(
   return readHoleDepth(found.value, joinPath(parentPath, key));
 }
 
+/**
+ * 穴の入口(ざぐり・皿もみ。FR-422、P5 タスク43)を読む。
+ *
+ * **欄が無い古いファイルは `undefined` のまま返す**(`RuledSphereSegments` は既定値を
+ * 埋めたが、こちらは型が省略可能なので既定を書き込まない。読む側は model の
+ * `holeEntryOf` を通せば `plain` が返る)。知らない `kind` は `readLiteral` が断る。
+ */
+function readHoleEntry(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<HoleEntry | undefined> {
+  if (!('entry' in record)) {
+    return { ok: true, value: undefined };
+  }
+  const found = readRecord(record, 'entry', path);
+  if (!found.ok) {
+    return found;
+  }
+  const entryPath = joinPath(path, 'entry');
+  const kind = readLiteral(found.value, 'kind', entryPath, HOLE_ENTRY_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'plain':
+      return { ok: true, value: { kind: 'plain' } };
+    case 'counterbore': {
+      const diameter = readExpression(found.value, 'diameter', entryPath);
+      if (!diameter.ok) {
+        return diameter;
+      }
+      const depth = readExpression(found.value, 'depth', entryPath);
+      if (!depth.ok) {
+        return depth;
+      }
+      return {
+        ok: true,
+        value: { kind: 'counterbore', diameter: diameter.value, depth: depth.value },
+      };
+    }
+    case 'countersink': {
+      const diameter = readExpression(found.value, 'diameter', entryPath);
+      if (!diameter.ok) {
+        return diameter;
+      }
+      const angle = readExpression(found.value, 'angle', entryPath);
+      if (!angle.ok) {
+        return angle;
+      }
+      return {
+        ok: true,
+        value: { kind: 'countersink', diameter: diameter.value, angle: angle.value },
+      };
+    }
+  }
+}
+
+/**
+ * 押し出しの終端(FR-415、P5 タスク43)を読む。欄が無いファイルは `undefined` のまま
+ * 返す(既定は model の `extrudeShapingOf` が `symmetric` から決める)。
+ */
+function readExtrudeEnd(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<ExtrudeEnd | undefined> {
+  if (!('end' in record)) {
+    return { ok: true, value: undefined };
+  }
+  const found = readRecord(record, 'end', path);
+  if (!found.ok) {
+    return found;
+  }
+  const endPath = joinPath(path, 'end');
+  const kind = readLiteral(found.value, 'kind', endPath, EXTRUDE_END_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'distance':
+    case 'symmetric':
+    case 'toNext':
+      return { ok: true, value: { kind: kind.value } };
+    case 'toFace': {
+      const face = readSubShapeRefField(found.value, 'face', endPath);
+      if (!face.ok) {
+        return face;
+      }
+      return { ok: true, value: { kind: 'toFace', face: face.value } };
+    }
+  }
+}
+
+/** 欄が無ければ `undefined`、あれば式として読む(P5 タスク43 の省略できる式の欄)。 */
+function readOptionalExpression(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+): Checked<ExpressionValueJson | undefined> {
+  if (!(key in record)) {
+    return { ok: true, value: undefined };
+  }
+  return readExpression(record, key, path);
+}
+
+/**
+ * 欄が無ければ `undefined`、`null` なら `null`、あれば式として読む
+ * (薄板押し出しの厚み。FR-416。**`null` は「中実」という意味を持つ値**なので保つ)。
+ */
+function readNullableExpression(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+): Checked<ExpressionValueJson | null | undefined> {
+  if (!(key in record)) {
+    return { ok: true, value: undefined };
+  }
+  const found = readValue(record, key, path);
+  if (!found.ok) {
+    return found;
+  }
+  if (found.value === null) {
+    return { ok: true, value: null };
+  }
+  return readExpression(record, key, path);
+}
+
+/** 欄が無ければ `undefined`、あれば真偽として読む(P5 タスク43 の省略できるつまみ)。 */
+function readOptionalBoolean(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+): Checked<boolean | undefined> {
+  if (!(key in record)) {
+    return { ok: true, value: undefined };
+  }
+  return readBoolean(record, key, path);
+}
+
+/** 欄が無ければ `undefined`、あれば決められた文字列として読む(P5 タスク43)。 */
+function readOptionalLiteral<T extends string>(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+  allowed: readonly T[],
+): Checked<T | undefined> {
+  if (!(key in record)) {
+    return { ok: true, value: undefined };
+  }
+  return readLiteral(record, key, path, allowed);
+}
+
+/** スケッチの曲線の並びへの参照(P5 タスク43)。id の配列は 1 つ以上でなくてもここでは断らない。 */
+function readCurveRefRecord(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<SketchCurveRef> {
+  const sketchId = readString(record, 'sketchId', path);
+  if (!sketchId.ok) {
+    return sketchId;
+  }
+  const curveIds = readList(record, 'curveIds', path, readStringItem);
+  if (!curveIds.ok) {
+    return curveIds;
+  }
+  return { ok: true, value: { sketchId: sketchId.value, curveIds: curveIds.value } };
+}
+
+function readCurveRef(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<SketchCurveRef> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  return readCurveRefRecord(record.value, joinPath(parentPath, key));
+}
+
+function readCurveRefItem(value: unknown, path: string): Checked<SketchCurveRef> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  return readCurveRefRecord(record.value, path);
+}
+
+/** 文字列 1 件(id の一覧に使う)。 */
+function readStringItem(value: unknown, path: string): Checked<string> {
+  if (typeof value !== 'string') {
+    return fieldProblem(path, 'type');
+  }
+  return { ok: true, value };
+}
+
 /** C 面取りの大きさ(等距離・2距離・距離と角度、§0.a-0.18)を読む。 */
 function readChamferSize(value: unknown, path: string): Checked<ChamferSize> {
   const record = checkRecord(value, path);
@@ -3130,6 +3626,14 @@ function readPatternPlacement(value: unknown, path: string): Checked<PatternPlac
         },
       };
     }
+    case 'points': {
+      // 点の集まりへ複製(FR-425、P5 タスク43)。個数・間隔の欄は無い。
+      const points = readList(record.value, 'points', path, readPointReferenceItem);
+      if (!points.ok) {
+        return points;
+      }
+      return { ok: true, value: { kind: 'points', points: points.value } };
+    }
   }
 }
 
@@ -3211,6 +3715,25 @@ function readSolidFeature(value: unknown, path: string): Checked<SolidFeature> {
       return readRuledFeature(record.value, path, base.value);
     case 'loft':
       return readLoftFeature(record.value, path, base.value);
+    // P5 の Should 群 9 種(§2.11、タスク43)。
+    case 'draft':
+      return readDraftFeature(record.value, path, base.value);
+    case 'mirror':
+      return readMirrorFeature(record.value, path, base.value);
+    case 'transform':
+      return readTransformFeature(record.value, path, base.value);
+    case 'scale':
+      return readScaleFeature(record.value, path, base.value);
+    case 'sweep':
+      return readSweepFeature(record.value, path, base.value);
+    case 'rib':
+      return readRibFeature(record.value, path, base.value);
+    case 'emboss':
+      return readEmbossFeature(record.value, path, base.value);
+    case 'threadShaft':
+      return readThreadShaftFeature(record.value, path, base.value);
+    case 'surface':
+      return readSurfaceFeature(record.value, path, base.value);
   }
 }
 
@@ -3235,6 +3758,31 @@ function readExtrudeFeature(
   if (!symmetric.ok) {
     return symmetric;
   }
+  /*
+    終端・傾き・薄板(FR-415、FR-401、FR-416。P5 タスク43)。**5 欄とも省略できる。**
+    版 6 までのファイルはどれも持たないので、無いときは `undefined` のまま読み、
+    既定は model の `extrudeShapingOf` が与える(既定値を io にも書くと 2 か所になる)。
+  */
+  const end = readExtrudeEnd(record, path);
+  if (!end.ok) {
+    return end;
+  }
+  const taperAngle = readOptionalExpression(record, 'taperAngle', path);
+  if (!taperAngle.ok) {
+    return taperAngle;
+  }
+  const taperOutward = readOptionalBoolean(record, 'taperOutward', path);
+  if (!taperOutward.ok) {
+    return taperOutward;
+  }
+  const thickness = readNullableExpression(record, 'thickness', path);
+  if (!thickness.ok) {
+    return thickness;
+  }
+  const thicknessSide = readOptionalLiteral(record, 'thicknessSide', path, THICKNESS_SIDES);
+  if (!thicknessSide.ok) {
+    return thicknessSide;
+  }
   return {
     ok: true,
     value: {
@@ -3244,6 +3792,16 @@ function readExtrudeFeature(
       distance: distance.value,
       reversed: reversed.value,
       symmetric: symmetric.value,
+      /*
+        **省略されていた欄は欄ごと省略のまま返す**(`end: undefined` を持たせない)。
+        `Object.keys` で欄の顔ぶれを固定している検査があり、値が undefined でも
+        欄があると数が変わってしまうためで、意味の上でも「無い」と「未定」を分けない。
+      */
+      ...(end.value === undefined ? {} : { end: end.value }),
+      ...(taperAngle.value === undefined ? {} : { taperAngle: taperAngle.value }),
+      ...(taperOutward.value === undefined ? {} : { taperOutward: taperOutward.value }),
+      ...(thickness.value === undefined ? {} : { thickness: thickness.value }),
+      ...(thicknessSide.value === undefined ? {} : { thicknessSide: thicknessSide.value }),
     },
   };
 }
@@ -3356,6 +3914,11 @@ function readHoleFeature(
   if (!depth.ok) {
     return depth;
   }
+  // 入口(ざぐり・皿もみ。FR-422、P5 タスク43)。欄が無ければ省略のまま(= 広げない)。
+  const entry = readHoleEntry(record, path);
+  if (!entry.ok) {
+    return entry;
+  }
   const tiltAngle = readExpression(record, 'tiltAngle', path);
   if (!tiltAngle.ok) {
     return tiltAngle;
@@ -3374,6 +3937,8 @@ function readHoleFeature(
       centers: centers.value,
       diameter: diameter.value,
       depth: depth.value,
+      // 押し出しの終端と同じ理由で、省略されていた入口は欄ごと省略のまま返す。
+      ...(entry.value === undefined ? {} : { entry: entry.value }),
       tiltAngle: tiltAngle.value,
       tiltAzimuth: tiltAzimuth.value,
     },
@@ -3418,6 +3983,11 @@ function readThreadHoleFeature(
   if (!depth.ok) {
     return depth;
   }
+  // 入口(ざぐり・皿もみ。FR-422、P5 タスク43)。穴とまったく同じ扱い。
+  const entry = readHoleEntry(record, path);
+  if (!entry.ok) {
+    return entry;
+  }
   const threadLength = readExpression(record, 'threadLength', path);
   if (!threadLength.ok) {
     return threadLength;
@@ -3447,6 +4017,7 @@ function readThreadHoleFeature(
       pitch: pitch.value,
       drillDiameter: drillDiameter.value,
       depth: depth.value,
+      ...(entry.value === undefined ? {} : { entry: entry.value }),
       threadLength: threadLength.value,
       representation: representation.value,
       tiltAngle: tiltAngle.value,
@@ -3918,6 +4489,538 @@ function readLoftFeature(
     ok: true,
     value: { ...base, kind: 'loft', sections: sections.value, twist: twist.value },
   };
+}
+
+// ---------------------------------------------------------------------------
+// P5 の Should 群 9 種の読み込み(§2.11、タスク43)。
+//
+// **書き出し(`serializeSolidFeature`)と欄名・順序を必ず揃える。** 参照は id と指紋、
+// 寸法は式のままで、座標・ラジアン・解決した形は 1 つも読まない(要件§8)。
+// ---------------------------------------------------------------------------
+
+/** 抜き勾配(FR-417)を読む。傾ける面は 1 枚以上、中立面は 1 枚。 */
+function readDraftFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const faces = readList(record, 'faces', path, readSubShapeRef);
+  if (!faces.ok) {
+    return faces;
+  }
+  const neutralFace = readSubShapeRefField(record, 'neutralFace', path);
+  if (!neutralFace.ok) {
+    return neutralFace;
+  }
+  const angle = readExpression(record, 'angle', path);
+  if (!angle.ok) {
+    return angle;
+  }
+  const reversed = readBoolean(record, 'reversed', path);
+  if (!reversed.ok) {
+    return reversed;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'draft',
+      targetFeatureId: targetFeatureId.value,
+      faces: faces.value,
+      neutralFace: neutralFace.value,
+      angle: angle.value,
+      reversed: reversed.value,
+    },
+  };
+}
+
+/** ミラー(FR-419)を読む。鏡は作業平面の id か立体の平らな面。 */
+function readMirrorFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const plane = readMirrorPlane(record, 'plane', path);
+  if (!plane.ok) {
+    return plane;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'mirror',
+      targetFeatureId: targetFeatureId.value,
+      plane: plane.value,
+    },
+  };
+}
+
+function readMirrorPlane(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<MirrorPlane> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, MIRROR_PLANE_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'workPlane': {
+      const planeId = readString(record.value, 'planeId', path);
+      if (!planeId.ok) {
+        return planeId;
+      }
+      return { ok: true, value: { kind: 'workPlane', planeId: planeId.value } };
+    }
+    case 'face': {
+      const face = readSubShapeRefField(record.value, 'face', path);
+      if (!face.ok) {
+        return face;
+      }
+      return { ok: true, value: { kind: 'face', face: face.value } };
+    }
+  }
+}
+
+/** 移動/回転(FR-424)を読む。移動は式 3 つ、回転軸は無し(null)でもよい。 */
+function readTransformFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const translation = readList(record, 'translation', path, readExpressionItem);
+  if (!translation.ok) {
+    return translation;
+  }
+  if (translation.value.length !== 3) {
+    return fieldProblem(joinPath(path, 'translation'), 'type');
+  }
+  const rotationAxis = readOptionalRevolveAxis(record, 'rotationAxis', path);
+  if (!rotationAxis.ok) {
+    return rotationAxis;
+  }
+  const rotationAngle = readExpression(record, 'rotationAngle', path);
+  if (!rotationAngle.ok) {
+    return rotationAngle;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'transform',
+      targetFeatureId: targetFeatureId.value,
+      translation: [translation.value[0], translation.value[1], translation.value[2]],
+      rotationAxis: rotationAxis.value,
+      rotationAngle: rotationAngle.value,
+    },
+  };
+}
+
+/** 式 1 件(一覧に使う)。 */
+function readExpressionItem(value: unknown, path: string): Checked<ExpressionValueJson> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  // `readExpression` は親のレコードと欄名で受け取る形なので、1 欄だけの入れ物に包む。
+  // 断りの位置は包む前の `path` のままにしたいので、欄名は同じ `path` の下に付かない。
+  const text = readString(record.value, 'source', path);
+  if (!text.ok) {
+    return text;
+  }
+  const display = readString(record.value, 'display', path);
+  if (!display.ok) {
+    return display;
+  }
+  const found = readValue(record.value, 'value', path);
+  if (!found.ok) {
+    return found;
+  }
+  // 数でない `value` は NaN として読む(`readExpression` と同じ扱い。FR-504)。
+  const number = typeof found.value === 'number' ? found.value : Number.NaN;
+  return { ok: true, value: { source: text.value, value: number, display: display.value } };
+}
+
+/** 無い(null)ことがある軸(移動/回転の回転軸)。 */
+function readOptionalRevolveAxis(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<RevolveAxis | null> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  if (found.value === null) {
+    return { ok: true, value: null };
+  }
+  return readRevolveAxis(source, key, parentPath);
+}
+
+/** 拡大縮小(FR-424)を読む。中心は点の指定、倍率は全体か軸ごと。 */
+function readScaleFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const origin = readPointReference(record, 'origin', path);
+  if (!origin.ok) {
+    return origin;
+  }
+  const factor = readScaleFactor(record, 'factor', path);
+  if (!factor.ok) {
+    return factor;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'scale',
+      targetFeatureId: targetFeatureId.value,
+      origin: origin.value,
+      factor: factor.value,
+    },
+  };
+}
+
+function readScaleFactor(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<ScaleFactor> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, SCALE_FACTOR_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'uniform': {
+      const value = readExpression(record.value, 'value', path);
+      if (!value.ok) {
+        return value;
+      }
+      return { ok: true, value: { kind: 'uniform', value: value.value } };
+    }
+    case 'perAxis': {
+      const x = readExpression(record.value, 'x', path);
+      if (!x.ok) {
+        return x;
+      }
+      const y = readExpression(record.value, 'y', path);
+      if (!y.ok) {
+        return y;
+      }
+      const z = readExpression(record.value, 'z', path);
+      if (!z.ok) {
+        return z;
+      }
+      return { ok: true, value: { kind: 'perAxis', x: x.value, y: y.value, z: z.value } };
+    }
+  }
+}
+
+/** スイープ(FR-409)を読む。断面はスケッチの面、経路はスケッチの曲線の並び。 */
+function readSweepFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const profile = readFaceRef(record, 'profile', path);
+  if (!profile.ok) {
+    return profile;
+  }
+  const sweepPath = readCurveRef(record, 'path', path);
+  if (!sweepPath.ok) {
+    return sweepPath;
+  }
+  const frenet = readBoolean(record, 'frenet', path);
+  if (!frenet.ok) {
+    return frenet;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'sweep',
+      profile: profile.value,
+      path: sweepPath.value,
+      frenet: frenet.value,
+    },
+  };
+}
+
+/** リブ(FR-420)を読む。輪郭は開いていてよいのでスケッチの曲線の並び。 */
+function readRibFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const profile = readCurveRef(record, 'profile', path);
+  if (!profile.ok) {
+    return profile;
+  }
+  const thickness = readExpression(record, 'thickness', path);
+  if (!thickness.ok) {
+    return thickness;
+  }
+  const side = readLiteral(record, 'side', path, RIB_SIDES);
+  if (!side.ok) {
+    return side;
+  }
+  const extendToBody = readBoolean(record, 'extendToBody', path);
+  if (!extendToBody.ok) {
+    return extendToBody;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'rib',
+      targetFeatureId: targetFeatureId.value,
+      profile: profile.value,
+      thickness: thickness.value,
+      side: side.value,
+      extendToBody: extendToBody.value,
+    },
+  };
+}
+
+/** エンボス(FR-421)を読む。相手の面は指紋、輪郭はスケッチの面。 */
+function readEmbossFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const face = readSubShapeRefField(record, 'face', path);
+  if (!face.ok) {
+    return face;
+  }
+  const profile = readFaceRef(record, 'profile', path);
+  if (!profile.ok) {
+    return profile;
+  }
+  const height = readExpression(record, 'height', path);
+  if (!height.ok) {
+    return height;
+  }
+  const raised = readBoolean(record, 'raised', path);
+  if (!raised.ok) {
+    return raised;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'emboss',
+      targetFeatureId: targetFeatureId.value,
+      face: face.value,
+      profile: profile.value,
+      height: height.value,
+      raised: raised.value,
+    },
+  };
+}
+
+/** 外ねじ(FR-423)を読む。呼びはねじ穴と同じ規格表の鍵で、面は円柱面。 */
+function readThreadShaftFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const face = readSubShapeRefField(record, 'face', path);
+  if (!face.ok) {
+    return face;
+  }
+  const nominal = readString(record, 'nominal', path);
+  if (!nominal.ok) {
+    return nominal;
+  }
+  const series = readLiteral(record, 'series', path, THREAD_SERIES);
+  if (!series.ok) {
+    return series;
+  }
+  const pitch = readExpression(record, 'pitch', path);
+  if (!pitch.ok) {
+    return pitch;
+  }
+  const length = readExpression(record, 'length', path);
+  if (!length.ok) {
+    return length;
+  }
+  const fromEnd = readLiteral(record, 'fromEnd', path, THREAD_SHAFT_ENDS);
+  if (!fromEnd.ok) {
+    return fromEnd;
+  }
+  const modeled = readBoolean(record, 'modeled', path);
+  if (!modeled.ok) {
+    return modeled;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'threadShaft',
+      targetFeatureId: targetFeatureId.value,
+      face: face.value,
+      nominal: nominal.value,
+      series: series.value,
+      pitch: pitch.value,
+      length: length.value,
+      fromEnd: fromEnd.value,
+      modeled: modeled.value,
+    },
+  };
+}
+
+/** 曲面(FR-428)を読む。作り方 5 種で欄が違う。 */
+function readSurfaceFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const operation = readSurfaceOperation(record, 'operation', path);
+  if (!operation.ok) {
+    return operation;
+  }
+  return { ok: true, value: { ...base, kind: 'surface', operation: operation.value } };
+}
+
+function readSurfaceOperation(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<SurfaceOperation> {
+  const record = readRecord(source, key, parentPath);
+  if (!record.ok) {
+    return record;
+  }
+  const path = joinPath(parentPath, key);
+  const kind = readLiteral(record.value, 'kind', path, SURFACE_OPERATION_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'extrude': {
+      const profile = readCurveRef(record.value, 'profile', path);
+      if (!profile.ok) {
+        return profile;
+      }
+      const distance = readExpression(record.value, 'distance', path);
+      if (!distance.ok) {
+        return distance;
+      }
+      const reversed = readBoolean(record.value, 'reversed', path);
+      if (!reversed.ok) {
+        return reversed;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'extrude',
+          profile: profile.value,
+          distance: distance.value,
+          reversed: reversed.value,
+        },
+      };
+    }
+    case 'revolve': {
+      const profile = readCurveRef(record.value, 'profile', path);
+      if (!profile.ok) {
+        return profile;
+      }
+      const axis = readRevolveAxis(record.value, 'axis', path);
+      if (!axis.ok) {
+        return axis;
+      }
+      const angle = readExpression(record.value, 'angle', path);
+      if (!angle.ok) {
+        return angle;
+      }
+      const reversed = readBoolean(record.value, 'reversed', path);
+      if (!reversed.ok) {
+        return reversed;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'revolve',
+          profile: profile.value,
+          axis: axis.value,
+          angle: angle.value,
+          reversed: reversed.value,
+        },
+      };
+    }
+    case 'planar': {
+      const profile = readCurveRef(record.value, 'profile', path);
+      if (!profile.ok) {
+        return profile;
+      }
+      return { ok: true, value: { kind: 'planar', profile: profile.value } };
+    }
+    case 'loft': {
+      const sections = readList(record.value, 'sections', path, readCurveRefItem);
+      if (!sections.ok) {
+        return sections;
+      }
+      const ruled = readBoolean(record.value, 'ruled', path);
+      if (!ruled.ok) {
+        return ruled;
+      }
+      return { ok: true, value: { kind: 'loft', sections: sections.value, ruled: ruled.value } };
+    }
+    case 'face': {
+      const targetFeatureId = readString(record.value, 'targetFeatureId', path);
+      if (!targetFeatureId.ok) {
+        return targetFeatureId;
+      }
+      const face = readSubShapeRefField(record.value, 'face', path);
+      if (!face.ok) {
+        return face;
+      }
+      return {
+        ok: true,
+        value: { kind: 'face', targetFeatureId: targetFeatureId.value, face: face.value },
+      };
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -89,6 +89,7 @@ import {
   isPatternSource,
   MAX_PATTERN_COUNT,
   MAX_SPRING_TURNS,
+  SOLID_LABELS,
 } from './createPartDocument.js';
 import {
   createReferenceResolver,
@@ -122,6 +123,7 @@ import type {
   SketchPointRef,
   SolidFeature,
   SolidOrigin,
+  SurfaceOperation,
   SpringDerived,
   SpringFeature,
   SubShapeRef,
@@ -1490,6 +1492,19 @@ export function resolvePatternTransforms(
 ):
   | { readonly ok: true; readonly transforms: readonly RigidTransform[] }
   | { readonly ok: false; readonly code: PartErrorCode; readonly message: string } {
+  if (placement.kind === 'points') {
+    /*
+      点の集まりへ複製(FR-425、P5 §0.a-0.42)。**型だけがタスク43 で入った段階**で、
+      点の解決(スケッチの点・立体の頂点・球面上の点)と変換の組み立ては **タスク46** の
+      担当である。ここは `PatternPlacement` に case が増えたときにこの関数を落とさない
+      ための最小の枝で、いまは理由と代わりの道具を添えて断る(FR-504、NFR-UX-5)。
+    */
+    return {
+      ok: false,
+      code: 'degenerate',
+      message: '点の集まりへ複製は準備中です。直線・円形のパターンを使ってください。',
+    };
+  }
   const countOutcome = resolvePatternCount(placement.count);
   if (!countOutcome.ok) {
     return { ok: false, code: 'invalidValue', message: countOutcome.message };
@@ -2209,6 +2224,29 @@ function planSolid(
       return planRuled(feature, solids, sketches, bodyKeys);
     case 'loft':
       return planLoft(feature, solids, sketches, bodyKeys);
+    /*
+      P5 の Should 群 9 種(§2.11)。**型を足したのはタスク43 で、段の組み立ては
+      タスク45(押し出し終端・抜き勾配・ミラー・移動/拡縮)とタスク46(スイープ・リブ・
+      エンボス・外ねじ・曲面)の担当**である。ここは `SolidFeature` の union が広がった
+      ときにこの網羅 switch を落とさないための最小の枝で、いまは理由つきで断る
+      (FR-504。止めずに警告として持ち回る)。
+      **`.pcad` を手で書けば到達しうる**が、道具(タスク50)がまだ無いので
+      画面の操作からは作れない。
+    */
+    case 'draft':
+    case 'mirror':
+    case 'transform':
+    case 'scale':
+    case 'sweep':
+    case 'rib':
+    case 'emboss':
+    case 'threadShaft':
+    case 'surface':
+      return fail(
+        feature.id,
+        'degenerate',
+        `${SOLID_LABELS[feature.kind]}は準備中です。この版ではまだ形を作れません。`,
+      );
   }
 }
 
@@ -2632,9 +2670,7 @@ export function referencedSketchIds(feature: SolidFeature): readonly string[] {
       // 辺・頂点の指紋しか持たない(スケッチを見ない)。
       return [];
     case 'pattern':
-      return feature.placement.kind === 'linear'
-        ? axisSketchIds(feature.placement.direction)
-        : axisSketchIds(feature.placement.axis);
+      return patternSketchIds(feature.placement);
     case 'spring':
       return [feature.origin.sketchId, ...axisSketchIds(feature.axis)];
     case 'primitive':
@@ -2650,6 +2686,61 @@ export function referencedSketchIds(feature: SolidFeature): readonly string[] {
       return sectionSketchIds([feature.first, feature.second]);
     case 'loft':
       return sectionSketchIds(feature.sections);
+    /*
+      P5 の Should 群(§2.11、タスク43)。**参照の欄はこの段で確定しているので、
+      「どのスケッチを使うか」はいまここで正しく数え上げる**(解決の実装を待たない)。
+      §0.a-0.11 の順序の制約は解決の成否と無関係に効く判定だからである。
+    */
+    case 'draft':
+    case 'mirror':
+    case 'threadShaft':
+      // 面の指紋とフィーチャーの id しか持たない(スケッチを見ない)。
+      return [];
+    case 'emboss':
+      // 相手の面は指紋で、輪郭だけがスケッチの面フィーチャー。
+      return [feature.profile.sketchId];
+    case 'transform':
+      return feature.rotationAxis === null ? [] : axisSketchIds(feature.rotationAxis);
+    case 'scale':
+      // 中心の点はスケッチの点でありうるが、`PointReference` は「どのスケッチか」を
+      // 持たない(`resolveReferences.ts` と同じく、id で全スケッチを探す約束)。
+      // したがってここでは数えられない。**タスク46 への申し送り。**
+      return [];
+    case 'sweep':
+      return [feature.profile.sketchId, feature.path.sketchId];
+    case 'rib':
+      return [feature.profile.sketchId];
+    case 'surface':
+      return surfaceSketchIds(feature.operation);
+  }
+}
+
+/** パターンの並べ方が使うスケッチの id(FR-411、FR-412、FR-425)。 */
+function patternSketchIds(placement: PatternPlacement): readonly string[] {
+  switch (placement.kind) {
+    case 'linear':
+      return axisSketchIds(placement.direction);
+    case 'circular':
+      return axisSketchIds(placement.axis);
+    case 'points':
+      // 点集合(FR-425)。`scale` の中心と同じ理由でスケッチを特定できない(申し送り)。
+      return [];
+  }
+}
+
+/** 曲面の作り方が使うスケッチの id(FR-428、タスク43)。 */
+function surfaceSketchIds(operation: SurfaceOperation): readonly string[] {
+  switch (operation.kind) {
+    case 'extrude':
+    case 'planar':
+      return [operation.profile.sketchId];
+    case 'revolve':
+      return [operation.profile.sketchId, ...axisSketchIds(operation.axis)];
+    case 'loft':
+      return operation.sections.map((section) => section.sketchId);
+    case 'face':
+      // 立体の面を取り出すだけなのでスケッチを見ない。
+      return [];
   }
 }
 

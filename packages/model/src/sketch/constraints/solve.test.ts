@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { expectWithinBudget } from '../../testUtils/perfBudget.js';
+
 import {
   CONSTRAINT_INITIAL_DAMPING,
   CONSTRAINT_MAX_ITERATIONS,
@@ -26,25 +28,6 @@ import {
 /** 期待値との差を絶対量で見る(`toBeCloseTo` は桁で見るので、1e-9 の判定に使いにくい)。 */
 function expectClose(actual: number, expected: number, tolerance = 1e-9): void {
   expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
-}
-
-/**
- * 性能上限の判定を「厳密」と「参考」で切り替える窓口。
- * 作業担当が並列にテストを走らせている間は CPU 競合で境界の判定が落ちる
- * (rules/06-過去の失敗と対策.md 10.3)。上限は緩めない代わりに、環境変数
- * `POINTERCAD_PERF_STRICT` が `'1'` のとき(push前検査・CI)だけ厳密に判定する。
- * `packages/kernel/src/worker/solidPerformance.test.ts` の `expectWithinBudget` と同じ流儀。
- */
-function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
-  if (process.env.POINTERCAD_PERF_STRICT === '1') {
-    expect(actualMs).toBeLessThan(limitMs);
-    return;
-  }
-  if (actualMs >= limitMs) {
-    console.log(
-      `[参考] 上限超過: ${label}(実測 ${actualMs.toFixed(1)} ms ≥ 上限 ${limitMs} ms。コミット前検査のため失敗にしません)`,
-    );
-  }
 }
 
 /* ------------------------------------------------------------------ *

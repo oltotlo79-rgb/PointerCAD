@@ -8,6 +8,7 @@ import {
   polarCandidate, TRACK_ANGLE_STEPS, type PointerRay, type TrackKind,
 } from './trackMath.js';
 import type { ProjectToScreen } from './snapMath.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 /** ワールドの (x, y) をそのまま画面座標にする、テスト用の写し方(snapMath.test.ts と同じ)。 */
 const project: ProjectToScreen = (point: Vec3): readonly [number, number] => [point[0], point[1]];
@@ -399,7 +400,7 @@ describe('向きの吸着(FR-110、トラッキング)', () => {
 
       // 近傍10本だけが残る: 1本あたり 延長線2 + 垂線2 + 平行線1 = 5件 → 50件。
       expect(candidates).toHaveLength(50);
-      expect(elapsedMs).toBeLessThan(4);
+      expectWithinBudget(elapsedMs, 4, 'トラッキング候補集め(線分200本、近傍10本)');
     });
   });
 

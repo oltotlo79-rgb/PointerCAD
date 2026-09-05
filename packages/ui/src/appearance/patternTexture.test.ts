@@ -18,6 +18,8 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
+
 import {
   createPatternTexture,
   disposePatternTextures,
@@ -283,7 +285,7 @@ describe('1枚の生成にかかる時間(実測、目標10ms未満。§1.5-10 �
     }
     console.info('[実測][patternTexture] 命令の作成+適用(512px、偽の道具)の所要(ms):', measurements);
     for (const kind of kinds) {
-      expect(measurements[kind]).toBeLessThan(200);
+      expectWithinBudget(measurements[kind], 200, `柄「${kind}」の命令の作成+適用`);
     }
   });
 });

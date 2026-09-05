@@ -9,6 +9,7 @@ import type { Vec3 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import type { PointerRay } from '../sketch/trackMath.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   buildSphereGrid, buildSphereGridPositions, nearestSphereGridPoint, sphereGridLatitudes,
   sphereGridLatLonOf, sphereGridLongitudes, sphereGridPointAt, sphereGridPoints,
@@ -394,7 +395,7 @@ describe('費用の実測(NFR-PF-1。上限は参考判定)', () => {
       `buildSphereGridPositions(1°): 頂点 ${positions.length / 3} 個 ${elapsedMs.toFixed(2)}ms / `
       + `(5°): 頂点 ${defaultPositions.length / 3} 個 ${defaultElapsedMs.toFixed(2)}ms`,
     );
-    expect(elapsedMs).toBeLessThan(200);
+    expectWithinBudget(elapsedMs, 200, 'buildSphereGridPositions(1°)');
   });
 
   it('吸着(nearestSphereGridPoint)を 10,000 回呼んだ所要を実測する(目標 10ms)', () => {
@@ -411,6 +412,6 @@ describe('費用の実測(NFR-PF-1。上限は参考判定)', () => {
     console.log(
       `nearestSphereGridPoint: 10,000 回 ${elapsedMs.toFixed(2)}ms = ${(elapsedMs / 10000).toFixed(5)}ms/回`,
     );
-    expect(elapsedMs).toBeLessThan(200);
+    expectWithinBudget(elapsedMs, 200, 'nearestSphereGridPoint 10,000 回');
   });
 });

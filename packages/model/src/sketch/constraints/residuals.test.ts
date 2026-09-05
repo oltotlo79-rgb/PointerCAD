@@ -18,6 +18,7 @@ import {
   type ResidualRow,
 } from './residuals.js';
 import type { ConstraintTarget, SketchConstraint } from './types.js';
+import { expectWithinBudget } from '../../testUtils/perfBudget.js';
 import { collectVariables, type VariableSet } from './variables.js';
 
 // --- 文書の組み立て -------------------------------------------------------
@@ -960,6 +961,6 @@ describe('性能(§2.9。ドラッグ中は毎フレーム回る)', () => {
     console.log(`[実測] 変数 400・拘束 200 のヤコビアン 1 回: ${elapsed.toFixed(3)}ms`);
     // 目標は 5ms。ここでの上限は「桁が変わる退化」を捕まえるための緩い網で、
     // 並列の検査中の CPU 競合で落ちないようにしてある(rules/06-過去の失敗と対策.md 10.3)。
-    expect(elapsed).toBeLessThan(200);
+    expectWithinBudget(elapsed, 200, '変数 400・拘束 200 のヤコビアン 1 回');
   });
 });

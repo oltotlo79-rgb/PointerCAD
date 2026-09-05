@@ -2,6 +2,7 @@ import { evaluateExpression, type ExpressionValue } from '@pointercad/expression
 import { describe, expect, it } from 'vitest';
 
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   addParameter,
   analyzeParameters,
@@ -388,6 +389,6 @@ describe('性能(NFR-PF-3 の内訳)', () => {
     console.log(`パラメータ 200 件の連鎖の解析: ${elapsedMs.toFixed(1)}ms / 上限 50ms`);
     expect(analysis.variables.get('A200')).toBe(200);
     expect(analysis.circular).toEqual([]);
-    expect(elapsedMs).toBeLessThan(50);
+    expectWithinBudget(elapsedMs, 50, '200 件の連鎖の解析');
   });
 });

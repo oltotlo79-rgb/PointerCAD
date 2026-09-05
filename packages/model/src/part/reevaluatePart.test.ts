@@ -13,6 +13,7 @@ import type {
   SketchFeature,
 } from '../sketch/types.js';
 import { createEmptyPartDocument } from './createPartDocument.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   applyParameters,
   collectExpressionOwners,
@@ -549,7 +550,7 @@ describe('reevaluatePartDocument', () => {
     const elapsedMs = performance.now() - startedAt;
     console.log(`式 1000 個の評価し直し: ${elapsedMs.toFixed(1)} ms / 上限 200 ms`);
     expect(result.document.solids).toHaveLength(1000);
-    expect(elapsedMs).toBeLessThan(200);
+    expectWithinBudget(elapsedMs, 200, '式 1000 個の評価し直し');
   });
 
   it('式 1000 個の入口(applyParameters)が 200ms 以内で終わる(再計算のたびに通る道)', () => {
@@ -563,7 +564,7 @@ describe('reevaluatePartDocument', () => {
     const elapsedMs = performance.now() - startedAt;
     console.log(`式 1000 個の applyParameters: ${elapsedMs.toFixed(1)} ms / 上限 200 ms`);
     expect(applied.analysis.unused).toEqual([]);
-    expect(elapsedMs).toBeLessThan(200);
+    expectWithinBudget(elapsedMs, 200, '式 1000 個の applyParameters');
   });
 });
 

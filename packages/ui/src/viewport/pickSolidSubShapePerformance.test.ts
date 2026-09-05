@@ -13,10 +13,11 @@
  * ここに置いても対象の関数を変更するわけではない)。
  */
 import type { Vec3 } from '@pointercad/model';
-import { describe, expect, it } from 'vitest';
+import { describe, it } from 'vitest';
 
 import { pickSolidSubShape } from '../solid/pickSubShape.js';
 import type { SolidEdgeEntry, SolidVertexEntry, SubShapeBody } from '../solid/subShapeSelection.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 const EDGE_COUNT = 200;
 const SEGMENTS_PER_EDGE = 4;
@@ -83,6 +84,6 @@ describe('pickSolidSubShape の性能(計画書タスク23 手順6)', () => {
       `pickSolidSubShape: 合計 ${elapsedMs.toFixed(2)}ms / ${CALL_COUNT}回 = ${perCallMs.toFixed(4)}ms/回`,
     );
 
-    expect(perCallMs).toBeLessThan(MAX_MS_PER_CALL);
+    expectWithinBudget(perCallMs, MAX_MS_PER_CALL, 'pickSolidSubShape 1回あたり');
   });
 });

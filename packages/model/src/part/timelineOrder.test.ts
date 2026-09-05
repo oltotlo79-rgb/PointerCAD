@@ -17,6 +17,7 @@ import type {
 } from '../sketch/types.js';
 import { createEmptyPartDocument } from './createPartDocument.js';
 import { resolvePart } from './resolvePart.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   buildTimeline,
   canMoveHistoryItem,
@@ -625,7 +626,7 @@ describe('並べ替えの妥当性(FR-507、FR-504)', () => {
     const elapsedMs = performance.now() - started;
     expect(outcome.ok).toBe(false);
     console.log(`[実測] 100 フィーチャーの並べ替えの判定: ${elapsedMs.toFixed(3)}ms`);
-    expect(elapsedMs).toBeLessThan(20);
+    expectWithinBudget(elapsedMs, 20, '100 フィーチャーの並べ替えの判定');
   });
 });
 

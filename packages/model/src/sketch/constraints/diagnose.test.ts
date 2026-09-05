@@ -16,6 +16,7 @@ import { buildResiduals, type ResidualRow } from './residuals.js';
 import { matrixRank, solveLevenbergMarquardt } from './solve.js';
 import { sketchConstraints, type ConstraintTarget, type SketchConstraint } from './types.js';
 import { collectVariables, MAX_CONSTRAINT_VARIABLES, type VariableSet } from './variables.js';
+import { expectWithinBudget } from '../../testUtils/perfBudget.js';
 
 /**
  * タスク7 の検査。**期待値はすべて手で導ける形にしてある。**
@@ -714,19 +715,6 @@ describe('画面へ出す文言と決定性', () => {
 /* ------------------------------------------------------------------ *
  * 7. 性能(§2.9)
  * ------------------------------------------------------------------ */
-
-/** 上限の判定を「厳密」と「参考」で切り替える(rules/06-過去の失敗と対策.md 10.3)。 */
-function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
-  if (process.env.POINTERCAD_PERF_STRICT === '1') {
-    expect(actualMs).toBeLessThan(limitMs);
-    return;
-  }
-  if (actualMs >= limitMs) {
-    console.log(
-      `[参考] 上限超過: ${label}(実測 ${actualMs.toFixed(1)} ms ≥ 上限 ${limitMs} ms。コミット前検査のため失敗にしません)`,
-    );
-  }
-}
 
 describe('診断の速さ(§2.9)', () => {
   it('変数 400・拘束 200 の診断 1 回が 30ms 以内で終わる', () => {

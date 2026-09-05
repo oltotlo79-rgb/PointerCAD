@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 
 import { dataUrlToBytes, THUMBNAIL_SIZE, thumbnailFitRect } from '../file/thumbnail.js';
 import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 import {
   buildBoxProjectedUv,
@@ -32,29 +33,6 @@ import {
   type SolidBodyWithSubShapes,
   type SolidGeometryBundle,
 } from './buildSolidGeometry.js';
-
-/**
- * 性能上限の判定を「厳密」と「参考」で切り替える窓口。
- *
- * `packages/kernel/src/worker/solidPerformance.test.ts` の `expectWithinBudget` と同じ形。
- * ui 側にはまだ同等の共有ヘルパーが無いため、この検査ファイルの中に同じ形の小さな補助を
- * 置く(2 か所目。既存の前例を再利用せず複製したことを報告する)。
- * 環境変数 `POINTERCAD_PERF_STRICT` が `'1'` のときだけ `expect(...).toBeLessThan(...)` で
- * 厳密に判定してテストを落とす(push前検査・CI。rules/03-品質ゲート.md §7.1)。
- * それ以外(コミット前検査の既定)は実測値の記録にとどめ、上限超過でも失敗にしない
- * (rules/06-過去の失敗と対策.md 10.3)。上限の数値と検査内容は変えない。
- */
-function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
-  if (process.env.POINTERCAD_PERF_STRICT === '1') {
-    expect(actualMs).toBeLessThan(limitMs);
-    return;
-  }
-  if (actualMs >= limitMs) {
-    console.log(
-      `[参考] 上限超過: ${label}(実測 ${actualMs.toFixed(3)} ms ≥ 上限 ${limitMs} ms。コミット前検査のため失敗にしません)`,
-    );
-  }
-}
 
 /**
  * 検査用のボディ。三角形の数と稜線の本数だけを指定し、中身は 0 のままにする
@@ -729,6 +707,10 @@ describe('buildSolidGeometry の外観(FR-1106、計画書 P5 タスク7)', () =
     expect(entry.groups.length).toBe(2);
     expect(entry.groups.reduce((sum, group) => sum + group.count, 0)).toBe(triangleCount * 3);
     expect(entry.uv.length).toBe(triangleCount * 6);
-    expect(elapsed).toBeLessThan(16);
+    expectWithinBudget(
+      elapsed,
+      16,
+      `buildSolidGeometry(面 ${String(faces.length)}・三角形 ${String(triangleCount)})`,
+    );
   });
 });

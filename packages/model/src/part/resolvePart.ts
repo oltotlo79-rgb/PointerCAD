@@ -48,7 +48,11 @@ import {
   resolveConstrainedSketch,
   type ConstrainedSketch,
 } from '../sketch/constraints/solveSketch.js';
-import { resolveCoordinate, type ResolveContext } from '../sketch/resolveCoordinate.js';
+import {
+  resolveCoordinate,
+  type ResolvedSphere,
+  type ResolveContext,
+} from '../sketch/resolveCoordinate.js';
 import { arcPointAt, ellipsePointAt, fitPlaneNormal } from '../sketch/resolveSketch.js';
 import { projectionBodyFeatureId } from '../sketch/types.js';
 import type {
@@ -2111,6 +2115,20 @@ function toPartError(error: ReferenceError): PartError {
 }
 
 /**
+ * 拘束まで解いたスケッチ(`ConstrainedSketch`)を、外へ返す形(`ResolvedPartSketch`)へ詰め替える。
+ * `resolveSketchesAndReferences` の中で2か所(球の基準点の解決 タスク19b、最終の一覧)から
+ * 同じ詰め替えが要るので、ここへ1つだけ置く(同じ規則を2か所に書かない)。
+ */
+function toResolvedPartSketch(sketchId: string, constrained: ConstrainedSketch): ResolvedPartSketch {
+  return {
+    sketchId,
+    resolved: constrained.resolved,
+    diagnosis: constrained.diagnosis,
+    constraintErrors: constrained.errors,
+  };
+}
+
+/**
  * スケッチと基準ジオメトリを、互いを頼りながら解く(P4 タスク9)。
  *
  * スケッチは作図面として任意の作業平面(FR-328)を指せて、その作業平面はスケッチの点を
@@ -2134,12 +2152,53 @@ function resolveSketchesAndReferences(
   // (片方だけ差し替えると拘束が効かない経路が残る。P4 タスク21 の教訓)。
   const resolvedSketches = new Map<string, ConstrainedSketch>();
   const resolvingSketches = new Set<string>();
+
+  /**
+   * 球の基本形状(FR-429)を id で引き、中心と半径にする(球面上の点 FR-431、P5 タスク19b)。
+   *
+   * 球を引くのは部品文書の側の役目(`resolveCoordinate.ts` の `ResolveContext.sphere` の
+   * 注釈)。中心は `resolveSolidOrigin`(基本形状の基準点の正本)、半径は `shape.radius.value`
+   * をそのまま使う(同じ規則を2か所に書かない)。
+   *
+   * **その時点までに解決できたスケッチだけ**を渡す。スケッチの解決はこの関数の中で
+   * 「頼まれたときに解いて覚える」形になっており、球の基準点にまだ解けていないスケッチの
+   * 点(`SolidOrigin.sketchPoint`)を指していれば `resolveSolidOrigin` が missingProfile を
+   * 返し、ここでは null(呼び出し側の「球が見つかりません」)になる。基準点に立体の頂点
+   * (`SolidOrigin.vertex`)を指す球も同じ理由で解けない(`bodyKeys` はソリッドの段を作る前
+   * なのでまだ空)。どちらも P5 タスク19b の検証範囲(座標で指定した球)には現れない。
+   */
+  function sphereAt(sphereFeatureId: string): ResolvedSphere | null {
+    const feature = document.solids.find((candidate) => candidate.id === sphereFeatureId);
+    if (feature === undefined || feature.kind !== 'primitive' || feature.shape.kind !== 'sphere') {
+      return null;
+    }
+    if (feature.suppressed) {
+      // 抑制した球は画面に無いので、その球面上の点も置けない(計画書 §2.8.1 の断り)。
+      return null;
+    }
+    const radius = feature.shape.radius.value;
+    if (!Number.isFinite(radius) || radius <= 0) {
+      return null;
+    }
+    const knownSketches: readonly ResolvedPartSketch[] = Array.from(
+      resolvedSketches.entries(),
+    ).map(([sketchId, constrained]) => toResolvedPartSketch(sketchId, constrained));
+    const origin = resolveSolidOrigin(
+      feature.id,
+      feature.origin,
+      knownSketches,
+      new Map<string, string>(),
+    );
+    return origin.ok ? { center: origin.value.origin, radius } : null;
+  }
+
   const solveOne = (sketch: SketchDocument): ConstrainedSketch =>
     resolveConstrainedSketch(sketch, {
       workPlane: (planeId) => resolver.workPlane(planeId),
       offsetCurves,
       projectedCurves,
       subShape,
+      sphere: sphereAt,
     });
 
   const resolver = createReferenceResolver(document, {
@@ -2178,12 +2237,7 @@ function resolveSketchesAndReferences(
     if (remembered === undefined) {
       resolvedSketches.set(sketch.id, constrained);
     }
-    return {
-      sketchId: sketch.id,
-      resolved: constrained.resolved,
-      diagnosis: constrained.diagnosis,
-      constraintErrors: constrained.errors,
-    };
+    return toResolvedPartSketch(sketch.id, constrained);
   });
 
   return { sketches, references, workPlane: resolver.workPlane, axisFrames };

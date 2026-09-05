@@ -4294,3 +4294,67 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     ).toEqual([fixture.pointA.sketchId, fixture.axisLine.sketchId]);
   });
 });
+
+describe('スケッチの球面上の点(FR-431、P5 タスク19b: resolvePart の配線)', () => {
+  /** 球面上の点(緯度・経度)を原点にした点フィーチャー1つだけを持つスケッチの部品文書。 */
+  function documentWithSphereGridPoint(
+    latitude: number,
+    longitude: number,
+    solids: readonly SolidFeature[],
+    sphereFeatureId = 'sphere-1',
+  ): PartDocument {
+    const base = createEmptyPartDocument();
+    const sketchBase = base.sketches[0];
+    const at: CoordinateInput = {
+      mode: 'relative',
+      base: {
+        kind: 'sphereGrid',
+        sphereFeatureId,
+        latitude: expressionValueFromNumber(latitude),
+        longitude: expressionValueFromNumber(longitude),
+      },
+      dx: expressionValueFromNumber(0),
+      dy: expressionValueFromNumber(0),
+      dz: expressionValueFromNumber(0),
+    };
+    const point = createPointFeature(sketchBase, at);
+    const sketch = appendFeature(sketchBase, point);
+    return { ...replaceSketch(base, sketch), solids };
+  }
+
+  it('球 r10(中心原点)の球面上の点(緯度30・経度45)が resolvePart で解ける', () => {
+    const document = documentWithSphereGridPoint(30, 45, [
+      primitiveFeature('sphere-1', sphereShape('10'), { origin: coordinateOrigin('0', '0', '0') }),
+    ]);
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const points = sketchesOf(document)[0].resolved.points;
+    expect(points).toHaveLength(1);
+    expect(points[0].position[0]).toBeCloseTo(6.123724356957945, 9);
+    expect(points[0].position[1]).toBeCloseTo(6.123724356957945, 9);
+    expect(points[0].position[2]).toBeCloseTo(5, 9);
+  });
+
+  it('球の半径を 10 → 20 にすると点も外へ動く(追従、FR-431)', () => {
+    const before = documentWithSphereGridPoint(30, 45, [
+      primitiveFeature('sphere-1', sphereShape('10'), { origin: coordinateOrigin('0', '0', '0') }),
+    ]);
+    const after = documentWithSphereGridPoint(30, 45, [
+      primitiveFeature('sphere-1', sphereShape('20'), { origin: coordinateOrigin('0', '0', '0') }),
+    ]);
+    const beforePosition = sketchesOf(before)[0].resolved.points[0].position;
+    const afterPosition = sketchesOf(after)[0].resolved.points[0].position;
+    expect(afterPosition[0]).toBeCloseTo(beforePosition[0] * 2, 9);
+    expect(afterPosition[1]).toBeCloseTo(beforePosition[1] * 2, 9);
+    expect(afterPosition[2]).toBeCloseTo(beforePosition[2] * 2, 9);
+  });
+
+  it('球を消すと missingBase(球が見つかりません)で断る', () => {
+    const document = documentWithSphereGridPoint(30, 45, []);
+    const resolved = sketchesOf(document)[0].resolved;
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('missingBase');
+    expect(resolved.errors[0].message).toBe('球が見つかりません。球を選び直してください。');
+  });
+});

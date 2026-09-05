@@ -45,6 +45,7 @@ import { offsetCacheKey } from './offsetMath.js';
 import {
   resolveCoordinate,
   vertexKey,
+  type ResolvedSphere,
   type ResolveContext,
   type ResolveOutcome,
 } from './resolveCoordinate.js';
@@ -798,6 +799,15 @@ export interface SketchResolveOptions {
    * だけでは区別できないのでこの鍵を借りる。
    */
   readonly radiusOverrides?: ReadonlyMap<string, number>;
+  /**
+   * 球の基本形状(FR-429)を id から引く(球面上の点 FR-431、P5 タスク19b)。
+   *
+   * スケッチ 1 本は立体を知らないので、`ResolveContext.sphere` と同じ口をここでも外から
+   * 受け取る(`subShape` と同じ考え方)。渡されなければ球を 1 つも知らない扱いになり、
+   * `sphereGrid` の点は `resolveCoordinate.ts` の `MISSING_SPHERE_MESSAGE` で断る。
+   * 球を引くのは部品文書の側(`resolvePart.ts`)の役目である。
+   */
+  readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
 }
 
 /** 円弧の面の中で、その点が中心から見て何ラジアンの向きにあるか(`arcPointAt` の逆)。 */
@@ -924,6 +934,8 @@ export function resolveSketch(
   const lookupWorkPlane = options.workPlane ?? baseWorkPlane;
   // 渡されなければ `resolvePointReference` が保存された指紋の位置を使う(タスク10)。
   const subShape = options.subShape;
+  // 渡されなければ球面上の点(FR-431)は「球が見つかりません」で断る(タスク19b)。
+  const sphere = options.sphere;
   // 渡されなければ、すべてのオフセットが「まだ計算していない」扱いになる(タスク15)。
   const lookupOffset = options.offsetCurves ?? ((): null => null);
   // 渡されなければ、すべての投影・交差が「まだ計算していない」扱いになる(タスク25)。
@@ -993,7 +1005,7 @@ export function resolveSketch(
       );
       continue;
     }
-    const context: ResolveContext = { plane, points, previous, vertices, subShape };
+    const context: ResolveContext = { plane, points, previous, vertices, subShape, sphere };
 
     if (feature.kind === 'point') {
       const at = resolveCoordinate(feature.at, context, feature.id);

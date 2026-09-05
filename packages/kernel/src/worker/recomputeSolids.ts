@@ -18,6 +18,7 @@ import { makeRib } from '../occt/makeRib.js';
 import { makeShell } from '../occt/makeShell.js';
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
+import type { SurfaceResult } from '../occt/makeSurface.js';
 import { makeSurface } from '../occt/makeSurface.js';
 import { makeSweep } from '../occt/makeSweep.js';
 import { makeThinExtrude } from '../occt/makeThinExtrude.js';
@@ -509,16 +510,15 @@ function createFilletSolid(
 /**
  * 曲面の段(FR-428、§0.a-0.45)。**閉じた立体ではなく面のボディ**を作る。
  *
- * 作り方が「すでにある立体の面を取り出す」(`shape.kind === 'face'`)ときだけ、
- * `targetKey` の形と部分形状の一覧をキャッシュから引いて渡す。引き方は穴・面取り・
- * 罫線面とまったく同じ `findStepInput` で、**同じ手順を 2 か所に書かない**。
- * **対象は消費しない**(面を貸した立体はそのまま画面に残る)。
+ * 作り方が「すでにある立体の面を取り出す」(`shape.kind === 'face'`)か「その面を距離だけ
+ * 離す」(`shape.kind === 'offset'`)ときだけ、`targetKey` の形と部分形状の一覧を
+ * キャッシュから引いて渡す。引き方は穴・面取り・罫線面とまったく同じ `findStepInput` で、
+ * **同じ手順を 2 か所に書かない**。**対象は消費しない**(面を貸した立体は画面に残る)。
  *
  * `makeSurface` は「面ができたか」の判定のために面積を必ず 1 回測っており、その値を
- * `SurfaceResult.area` に添えて返す。ここでは受け取らない——`SolidBodyMesh.area` は
- * 依頼が `measureAreas` で求めたときだけ入る欄で(統括の決定 2026-09-05)、その配線は
- * `buildSolidBodyMesh` の中にあるためである。添えた面積を渡せるようにするのは
- * `solidMesh.ts` の引数が増える整理(タスク42b)の仕事。
+ * `SurfaceResult.area` に添えて返す。**その面積をそのまま持ち帰り、`buildSolidBodyMesh` の
+ * `knownArea` へ渡して測り直さない**(タスク42b。ブーリアンが体積を添えて返すのと同じ流儀)。
+ * 面積を欄に載せるかどうかの判断(`measureAreas`)は変えていない。
  */
 function createSurfaceSolid(
   oc: OpenCascadeInstance,
@@ -526,7 +526,7 @@ function createSurfaceSolid(
   options: TessellationOptions,
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
-): OcctShapeHandle {
+): SurfaceResult {
   if (spec.targetKey === null) {
     return makeSurface(oc, spec.shape, null, null, options);
   }
@@ -549,11 +549,20 @@ interface StepSolidResult {
    * 測り直しても同じ値になるだけで、そのぶん(面 26 枚の板で 7.5〜11ms)が無駄になる。
    */
   readonly volume?: number;
+  /**
+   * 作り手がすでに測ってある表面積(mm²)。無ければ `buildSolidBodyMesh` がその場で測る
+   * (求められているときだけ。`SolidBodyMesh.area` の注釈)。
+   *
+   * いま値を持って帰るのは曲面の段(`makeSurface`)だけで、「面ができたか」の判定のために
+   * 結果の面積を必ず 1 回測っている(`makeSurface.ts` の `SurfaceResult`)。
+   * 同じ形なので測り直しても同じ値になるだけである(タスク42b)。
+   */
+  readonly area?: number;
 }
 
 /** ねじの印を持たない段の結果を組み立てる(押し出し・穴・面取り・ばね等)。 */
-function noMarks(handle: OcctShapeHandle, volume?: number): StepSolidResult {
-  return { handle, threadMarks: [], volume };
+function noMarks(handle: OcctShapeHandle, volume?: number, area?: number): StepSolidResult {
+  return { handle, threadMarks: [], volume, area };
 }
 
 /**
@@ -675,10 +684,13 @@ function createStepSolid(
       const { handle, mark } = makeThreadShaft(oc, target.shape, target.mesh, spec);
       return { handle, threadMarks: [mark] };
     }
-    case 'surface':
+    case 'surface': {
       // 曲面(FR-428)。ここだけが `bodyKind: 'shell'` のボディを作る。
       // 判定そのものは buildSolidBodyMesh の hasSolid が行うので、ここに分岐は要らない。
-      return noMarks(createSurfaceSolid(oc, spec, options, cache, failedLabels));
+      // 面積は makeSurface が測り済みなので添えて返し、測り直させない(タスク42b)。
+      const surface = createSurfaceSolid(oc, spec, options, cache, failedLabels);
+      return noMarks(surface, undefined, surface.area);
+    }
     case 'cut': {
       // 平面による切断(FR-432)。`makeCut` は積(intersect)を通るので体積を測り済みだが、
       // 平面が対象と交わらない道(複製して返す)では測っていないため、戻りは
@@ -702,7 +714,8 @@ function createStepSolid(
  *
  * `threadMarks` はねじ穴の段だけが非空(§0.a-0.15)。それ以外は `noMarks` が空配列にする。
  * `measureAreas` は依頼が表面積を求めたかどうか(`SolidRecomputeRequest` の注釈)。
- * `knownVolume` は作り手がすでに測ってある体積(`StepSolidResult.volume` の注釈)。
+ * `knownVolume` / `knownArea` は作り手がすでに測ってある体積・表面積
+ * (`StepSolidResult.volume` / `.area` の注釈)。
  */
 function buildCachedSolid(
   oc: OpenCascadeInstance,
@@ -712,6 +725,7 @@ function buildCachedSolid(
   threadMarks: readonly ThreadMarkInfo[],
   measureAreas: boolean,
   knownVolume?: number,
+  knownArea?: number,
 ): CachedSolid {
   try {
     const mesh = buildSolidBodyMesh(
@@ -722,6 +736,7 @@ function buildCachedSolid(
       threadMarks,
       measureAreas,
       knownVolume,
+      knownArea,
     );
     return {
       shape: handle.shape,
@@ -908,6 +923,7 @@ export async function recomputeSolids(
         stepResult.threadMarks,
         measureAreas,
         stepResult.volume,
+        stepResult.area,
       );
       cache.set(step.key, entry);
       if (step.visible) {

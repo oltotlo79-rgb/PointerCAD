@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type {
   CurveSpec,
   SphereSegmentCount,
@@ -26,27 +27,6 @@ beforeAll(async () => {
 
 /** 単一フィーチャーの上限(NFR-PF-2)。この段は上限の中に収まっていることを確かめる。 */
 const SINGLE_FEATURE_BUDGET_MS = 500;
-
-/**
- * 性能上限の判定を「厳密」と「参考」で切り替える窓口。
- * 決めと理由は packages/kernel/src/worker/solidPerformance.test.ts の
- * expectWithinBudget と同じ(rules/03-品質ゲート.md §7.1、rules/06 の 10.3)。
- * 上限の数値は変えない。
- *
- * **t42 で `src/testUtils/` へ 1 本にまとめる**(いまは makeRib / makeShell / makeCut
- * などの検査ごとに同じ関数が並んでいる。統括の決定 2026-09-05)。
- */
-function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
-  if (process.env.POINTERCAD_PERF_STRICT === '1') {
-    expect(actualMs).toBeLessThan(limitMs);
-    return;
-  }
-  if (actualMs >= limitMs) {
-    console.log(
-      `[参考] 上限超過: ${label}(実測 ${actualMs.toFixed(1)} ms ≥ 上限 ${String(limitMs)} ms。コミット前検査のため失敗にしません)`,
-    );
-  }
-}
 
 /**
  * (a) 軸対称の罫線立体の体積(球 r=10、円 r=20、距離 30)。

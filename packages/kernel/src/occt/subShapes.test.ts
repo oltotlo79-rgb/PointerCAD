@@ -8,6 +8,7 @@ import { makeBox } from './makeBox.js';
 import { makeExtrudeSolid, makeRevolveSolid } from './makeSolidSweep.js';
 import type { SubShapeTables } from './subShapes.js';
 import {
+  booleanMargin,
   boundingDiagonal,
   collectSubShapes,
   edgeAt,
@@ -386,6 +387,33 @@ describe('ソリッドの面・辺・頂点の一覧と素性(FR-106、FR-405〜
     const plate = makeBox(oc, PLATE);
     try {
       expect(boundingDiagonal(oc, plate.shape)).toBeCloseTo(Math.sqrt(1600 + 900 + 100), 9);
+    } finally {
+      plate.delete();
+    }
+  });
+
+  /**
+   * ブーリアンの余裕(§0.a-0.12)を 1 か所へまとめた(§0.a-0.78、タスク42b)ので、
+   * **まとめる前に 5 か所(makeHole / makeEmboss / makeRib / makeCut / makeSolidSweep)へ
+   * 写されていた値とまったく同じ数**であることをここで固定する。期待値はまとめた式を
+   * 呼び直さず、`対角長 × 0.01 + 1mm` を手で書いて確かめる(定数を変えたら赤くなる)。
+   */
+  it('ブーリアンの余裕は 対角長 × 0.01 + 1mm(まとめる前の 5 か所と同じ数)', () => {
+    // 40×30×10 の板。対角長 √2600 = 50.99019513592785 → 余裕 1.5099019513592786。
+    const plateDiagonal = Math.sqrt(2600);
+    expect(booleanMargin(plateDiagonal)).toBe(plateDiagonal * 0.01 + 1);
+    expect(booleanMargin(plateDiagonal)).toBeCloseTo(1.5099019513592786, 12);
+    // 10×20×30 の箱。対角長 √1400 = 37.416573867739416 → 余裕 1.3741657386773942。
+    expect(booleanMargin(Math.sqrt(1400))).toBe(Math.sqrt(1400) * 0.01 + 1);
+    expect(booleanMargin(Math.sqrt(1400))).toBeCloseTo(1.3741657386773942, 12);
+    // 部品が小さくても下限の 1mm は必ず取る(割合と下限の 2 本立て)。
+    expect(booleanMargin(0)).toBe(1);
+    expect(booleanMargin(1)).toBe(1.01);
+    // 実際の形から測った対角長でも同じ式になる(呼び出し側と同じ経路)。
+    const plate = makeBox(oc, PLATE);
+    try {
+      const measured = boundingDiagonal(oc, plate.shape);
+      expect(booleanMargin(measured)).toBe(measured * 0.01 + 1);
     } finally {
       plate.delete();
     }

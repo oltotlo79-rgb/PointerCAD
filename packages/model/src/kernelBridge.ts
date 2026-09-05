@@ -379,8 +379,10 @@ export interface SolidBody {
    */
   readonly area?: number;
   /**
-   * 形の種類(FR-428)。任意にしてある理由は `area` と同じ。
-   * **詰め替えでは必ず値を入れる**(カーネルが返さなければ `'solid'` として読む)ので、
+   * 形の種類(FR-428)。**model の型ではまだ任意**にしてあるが、任意にしてある理由は
+   * `area` と同じ(`SolidBody` を組み立てている ui の見本を直せるのが ui のタスク)。
+   * **詰め替えでは必ず値を入れる**——カーネル側は §0.a-0.77(タスク42b)で必須の欄に
+   * なったので、`toSolidBody` は既定へ落とさずカーネルの値をそのまま写す。
    * 実際の再計算の結果でこの欄が空になることは無い。
    */
   readonly bodyKind?: SolidBodyKind;
@@ -1338,9 +1340,9 @@ function toSolidBody(mesh: SolidBodyMesh): SolidBody {
     // 表面積は依頼が求めたときだけカーネルが測る(SolidRecomputeOptions.measureAreas)。
     // 測っていなければ欄ごと空のまま渡し、0 と偽らない。
     area: mesh.area,
-    // 形の種類はカーネルが必ず入れるが、型の上では省略できるので既定を決めておく。
-    // 曲面(FR-428)が入るまではどの段も閉じた立体しか作らないので 'solid' でよい。
-    bodyKind: mesh.bodyKind ?? 'solid',
+    // 形の種類はカーネルの必須の欄(§0.a-0.77、タスク42b)なので、そのまま写す。
+    // 判定は kernel の `hasSolid` そのままで、体積では決めない(体積 8000 の開いた殻がある)。
+    bodyKind: mesh.bodyKind,
     isValid: mesh.triangleCount > 0 && Number.isFinite(mesh.volume) && mesh.volume > 0,
     faces: mesh.faces,
     edges: mesh.edges,

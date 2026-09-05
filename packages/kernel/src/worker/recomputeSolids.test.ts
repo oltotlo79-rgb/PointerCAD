@@ -2036,6 +2036,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       'ざぐり穴',
       '外ねじ(簡略)',
       '曲面(押し出し面)',
+      '曲面(面のオフセット)',
       '切断',
       'くり抜き',
       '可変半径フィレット',
@@ -2356,6 +2357,34 @@ describe('履歴の再計算(recomputeSolids)', () => {
               // 長さ 40 の線を 10 掃いた面。面積 400 mm²・立体ではない(FR-428、§0.a-0.45)。
               expect(bodies[0].bodyKind).toBe('shell');
               expect(bodies[0].area).toBeCloseTo(400, 6);
+            },
+          };
+        case '曲面(面のオフセット)':
+          // 板の上面(z = 10、面積 1200)を +5 ずらした殻。**板は消費しない**ので
+          // 画面には板と殻の 2 つが残る(§0.a-0.45、タスク42b)。
+          return {
+            steps: [
+              plateStep(true),
+              step('曲面1', 'key-offset', {
+                kind: 'surface',
+                shape: {
+                  kind: 'offset',
+                  face: plateFaces(40, 30, 10).top,
+                  distance: 5,
+                },
+                targetKey: 'key-plate',
+              }),
+            ],
+            bodyCount: 2,
+            built: 2,
+            measureAreas: true,
+            check: (bodies) => {
+              // 板はそのまま立体で残る(対象を消費しない段)。
+              expect(bodies[0].bodyKind).toBe('solid');
+              expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
+              // ずらした面は面だけの形。面積は makeSurface が測った値がそのまま載る。
+              expect(bodies[1].bodyKind).toBe('shell');
+              expect(bodies[1].area).toBeCloseTo(1200, 6);
             },
           };
         case '切断':

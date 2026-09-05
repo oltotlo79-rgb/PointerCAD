@@ -170,12 +170,15 @@ function kernelBody(
   id: string,
   volume: number,
   triangleCount = 12,
-  // P5 タスク3 で SolidBodyMesh へ足された任意の欄(表面積と形の種類)。
-  // 既定では入れず、詰め替えの検査だけが明示的に渡す。
+  // P5 タスク3 で SolidBodyMesh へ足された欄(表面積と形の種類)。
+  // 表面積は「求めたときだけ測る」ので既定では入れず、詰め替えの検査だけが明示的に渡す。
   extra: { readonly area?: number; readonly bodyKind?: 'solid' | 'shell' } = {},
 ) {
   return {
     ...extra,
+    // 形の種類は §0.a-0.77(タスク42b)で SolidBodyMesh の必須の欄になったので、
+    // 見本のカーネルも必ず入れる。指定が無いときは閉じた立体(= hasSolid が真)とみなす。
+    bodyKind: extra.bodyKind ?? 'solid',
     id,
     positions: new Float32Array([0, 0, 0, 40, 0, 0, 40, 30, 0]),
     normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
@@ -1100,6 +1103,8 @@ describe('結果の詰め替え', () => {
           faceCount: 1,
           edgeCount: 1,
           volume: 12000,
+          // 形の種類は §0.a-0.77(タスク42b)で必須の欄になった。閉じた立体の見本なので 'solid'。
+          bodyKind: 'solid',
           faces: [
             {
               index: 0,

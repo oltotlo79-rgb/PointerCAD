@@ -13,7 +13,7 @@ import { makePlanarFace } from './makePlanarFace.js';
 import { matchFace } from './matchSubShape.js';
 import { measureArea, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
-import { boundingDiagonal, faceAt } from './subShapes.js';
+import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
 import { makeCompound } from './transformShape.js';
 
 /**
@@ -44,20 +44,13 @@ import { makeCompound } from './transformShape.js';
  * 面の指紋から向きを決める段も持たない。ここで要るのは「面の上の複数の輪郭を
  * まとめて 1 つの工具にして 1 回のブーリアンで足し引きする」ことなので、
  * 共通で使えるところ(`makePlanarFace` / `makeCompound` / `booleanOp` /
- * `boundingDiagonal`)だけを呼んでいる。「長い形に余裕を足す」決め
- * (`MARGIN_RATIO` / `MARGIN_MIN_MM`)は `makeSolidSweep.ts` / `makeHole.ts` /
- * `makeRib.ts` と同じ値を持つ(共通の置き場への集約はタスク42 で提案する)。
+ * `boundingDiagonal`)だけを呼んでいる。「長い形に余裕を足す」決めも
+ * `subShapes.ts` の `booleanMargin` 1 か所へまとめてあり(§0.a-0.78、タスク42b)、
+ * `makeSolidSweep.ts` / `makeHole.ts` / `makeRib.ts` / `makeCut.ts` と同じ値になる。
  */
 
 /** これ未満(mm³)の増減は「形が変わらなかった」とみなす(booleanOp.ts と同じ下限)。 */
 const MIN_CHANGED_VOLUME_MM3 = 1e-9;
-
-/**
- * 面と接する形を作らないための余裕(P3 §0.a-0.12。makeHole.ts の貫通穴と同じ決め)。
- * 対象の境界箱の対角長 L に対し `L × 0.01 + 1mm`。
- */
-const MARGIN_RATIO = 0.01;
-const MARGIN_MIN_MM = 1;
 
 /**
  * 「輪郭の平面が面と平行」とみなす法線の内積のしきい値。
@@ -367,7 +360,8 @@ export function makeEmboss(
     throw new Error(EMBOSS_FAILED_MESSAGE);
   }
   const faceIndex = resolvePlanarFaceIndex(tables, input.face, diagonal * 0.5);
-  const margin = diagonal * MARGIN_RATIO + MARGIN_MIN_MM;
+  // 面と接する形を作らないための余裕(§0.a-0.12。makeHole.ts の貫通穴と同じ決め)。
+  const margin = booleanMargin(diagonal);
 
   const { keep, release } = createAllocations();
 

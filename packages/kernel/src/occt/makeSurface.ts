@@ -21,6 +21,7 @@
  * | `planar` | 閉じた輪郭から平らな面を 1 枚張る(`makePlanarFace`) | 面 |
  * | `loft` | `BRepOffsetAPI_ThruSections` を `isSolid = false` で回す | 殻 |
  * | `face` | すでにある立体の面を指紋で選び直して取り出す(`pickSubShape`) | 面 |
+ * | `offset` | 選び直した面を `BRepOffsetAPI_MakeOffsetShape.PerformBySimple` で距離だけ離す | 殻 |
  *
  * **押し出しと回転が立体の版(`makeSolidSweep.ts`)と違うのは 1 か所だけ**である。
  * あちらは `makePlanarFace` で張った**面**を掃き、こちらは輪郭の**ワイヤ**をそのまま掃く。
@@ -32,11 +33,12 @@
  *
  * 計画書タスク41 の `SurfaceOperation` は `extrude` / `revolve` / `offset` / `sew` /
  * `thicken` の 5 つだったが、統括の指示は §0.a-0.45 の「曲面の段の種類」(開いた輪郭の
- * 押し出し・回転の面版、既存の面の複製、ロフトの面版)に沿った 5 つを求めている。
- * **面のオフセット(`PerformBySimple`)と厚み付け(`MakeThickSolidBySimple`)はここには無い。**
- * 厚み付けは結果が立体になるので、そもそもこの関数の「立体ができたら失敗」と噛み合わない
- * (シェル(FR-418)としてタスク53 で作る)。オフセットは面を材料に面を作る操作なので
- * ここへ足せる形だが、指示の範囲外なので作っていない(申し送り)。
+ * 押し出し・回転の面版、既存の面の複製、ロフトの面版)に沿った 5 つを求めていた。
+ * タスク42b で**面のオフセット(`offset`)を 6 つ目として足した**(§0.a-0.83)ので、
+ * いまは 6 種ある。
+ * **厚み付け(`MakeThickSolidBySimple`)はここには無い。** 結果が立体になるので、
+ * そもそもこの関数の「立体ができたら失敗」と噛み合わないためである
+ * (くり抜き(FR-418)としてタスク53 の `makeShell.ts` が受け持つ)。
  *
  * ## 曲面に対する加工を断る場所
  *
@@ -110,6 +112,12 @@ const NO_TARGET_MESSAGE = '面を取り出す立体が選ばれていません�
 /** 面ではないもの(辺・頂点)の指紋が来たとき。 */
 const NOT_A_FACE_QUERY_MESSAGE = '面を選んでください。線や点からは面を作れません。';
 
+/** 面をずらす距離が 0、または数でないとき(FR-504)。 */
+const OFFSET_DISTANCE_MESSAGE = '面をずらす距離は 0 以外の数にしてください。';
+
+/** ずらした面が作れなかったとき(距離が大きすぎて面が潰れる等)。 */
+const OFFSET_FAILED_MESSAGE = '面をずらせませんでした。距離を小さくしてください。';
+
 /**
  * 面だけの形(`bodyKind === 'shell'`)には掛けられない加工の断り(FR-504、NFR-RE-1)。
  *
@@ -136,7 +144,8 @@ export function isShellShape(oc: OpenCascadeInstance, shape: TopoDS_Shape): bool
 }
 
 /**
- * 曲面の段の入力(FR-428)。**5 つのうち `face` だけが相手の立体を要る。**
+ * 曲面の段の入力(FR-428)。**6 つのうち `face` と `offset` だけが相手の立体を要る**
+ * (どちらも借りるだけで消費しない)。
  *
  * 角度はラジアンで受け取る(度からの換算は model 側の責務。§0.a-0.9)。
  */
@@ -166,7 +175,14 @@ export type SurfaceInput =
       readonly ruled: boolean;
     }
   /** すでにある立体の面を指紋で選び直して取り出した面 1 枚。 */
-  | { readonly kind: 'face'; readonly face: SubShapeQuery };
+  | { readonly kind: 'face'; readonly face: SubShapeQuery }
+  /**
+   * すでにある立体の面を指紋で選び直し、その面を距離だけ離した殻(FR-428)。
+   *
+   * `face` と同じく相手の立体を借りるだけで**消費しない**(材料にした立体は画面に残る)。
+   * `distance` は面の向き(法線)の側を正とし、負にすれば逆へ離れる。0 と数でない値は断る。
+   */
+  | { readonly kind: 'offset'; readonly face: SubShapeQuery; readonly distance: number };
 
 /**
  * 曲面の段の結果。**測り済みの面積を持ったまま返る。**
@@ -346,6 +362,44 @@ function copyExistingFace(
   return keep(picked);
 }
 
+/**
+ * 選び直した面を距離だけ離した殻(§0.a-0.45 の「面のオフセット」、FR-428)。
+ *
+ * **`BRepOffsetAPI_MakeOffsetShape.PerformBySimple(形, 距離)` を使う**(§0.a-0.45 の承認)。
+ * この呼び方は**列挙引数を 1 つも取らない**ので、述語ガードを増やさずに済む
+ * (列挙 2 個を取る `PerformByJoin` は `makeShell.ts` のくり抜きだけが使う)。
+ * `MakeOffset()` は呼ばない——戻り型の `BRepOffset_MakeOffset` は型定義にクラス宣言が
+ * 無く、参照すると型が壊れるためである(計画書 §1.4)。
+ *
+ * 距離 0 は「離さない」ので面がそのまま返り、オフセットの段として意味を持たない。
+ * 数でない値も含めて入口で断る(FR-504、NFR-RE-1。止めずに理由を出す)。
+ * 距離が負なら法線の逆側へ離れる(利用者が向きを選べるようにしてある)ので弾かない。
+ *
+ * 面を選び直す手順は `copyExistingFace` とまったく同じ(同じ指紋からは同じ面が選ばれる)。
+ * 結果が立体になっていないこと・面積が出ていることの確認は、呼び出し元の `makeSurface` が
+ * 他の 5 種とまとめて行う。
+ */
+function offsetExistingFace(
+  oc: OpenCascadeInstance,
+  keep: Allocations['keep'],
+  input: Extract<SurfaceInput, { kind: 'offset' }>,
+  target: TopoDS_Shape | null,
+  tables: SubShapeTables | null,
+): TopoDS_Shape {
+  if (!Number.isFinite(input.distance) || input.distance === 0) {
+    throw new Error(OFFSET_DISTANCE_MESSAGE);
+  }
+  const face = copyExistingFace(oc, keep, { kind: 'face', face: input.face }, target, tables);
+  const maker = keep(new oc.BRepOffsetAPI_MakeOffsetShape());
+  maker.PerformBySimple(face, input.distance);
+  // IsDone() が偽のまま Shape() を呼ぶと C++ の例外が飛ぶので、先に見る
+  // (`makeShell.ts` / `makeThruSections.ts` と同じ扱い)。
+  if (!maker.IsDone()) {
+    throw new Error(OFFSET_FAILED_MESSAGE);
+  }
+  return keep(maker.Shape());
+}
+
 /** 種類ごとの作り分け。`switch` の各節は必ず `return` で閉じる(`no-fallthrough`)。 */
 function buildSurfaceShape(
   oc: OpenCascadeInstance,
@@ -368,6 +422,8 @@ function buildSurfaceShape(
       return loftProfiles(oc, keep, input);
     case 'face':
       return copyExistingFace(oc, keep, input, target, tables);
+    case 'offset':
+      return offsetExistingFace(oc, keep, input, target, tables);
   }
 }
 
@@ -377,7 +433,7 @@ function buildSurfaceShape(
  * **対象を消費しない「作る」段**(押し出し・回転・基本形状と同じ。§0.a-0.27)。
  * `face`(既存の面の取り出し)で材料にした立体もそのまま画面に残る。
  *
- * `target` と `tables` は `input.kind === 'face'` のときだけ要る。**`target` は
+ * `target` と `tables` は `input.kind` が `'face'` か `'offset'` のときだけ要る。**`target` は
  * 解放しない**(形状キャッシュの持ち物。`booleanOp.ts` / `makeEmboss.ts` と同じ約束)。
  * `tables` は `target` から作った部分形状の一覧で、別の形から作った一覧を渡すと
  * 「面が見つかりません」で断る。

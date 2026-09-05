@@ -639,3 +639,28 @@ export function boundingDiagonal(oc: OpenCascadeInstance, shape: TopoDS_Shape): 
     release();
   }
 }
+
+/** 余裕の割合(境界箱の対角長に対する 1%)。`booleanMargin` の中だけで使う。 */
+const BOOLEAN_MARGIN_RATIO = 0.01;
+
+/** 余裕の下限(mm)。部品が小さくても必ずこれだけは離す。 */
+const BOOLEAN_MARGIN_MIN_MM = 1;
+
+/**
+ * ブーリアンで「面と面がぴったり重なる」配置を避けるための余裕(mm)。§0.a-0.12。
+ *
+ * 対象の境界箱の対角長 L に対し `L × 0.01 + 1mm` を返す。割合(1%)と下限(1mm)の
+ * 2 本立てにしてあるのは、部品が大きいときは比例して、小さいときでも必ず 1mm 以上の
+ * 余裕を取るためである。OCCT のブーリアンが最も苦手とするのは接触面ができる配置なので、
+ * 工具はこのぶんだけ対象より大きく・遠くに取って必ず突き抜けさせる。
+ *
+ * **同じ式が `makeHole.ts` / `makeEmboss.ts` / `makeRib.ts` / `makeCut.ts` /
+ * `makeSolidSweep.ts` の 5 か所に写されていたので、ここ 1 か所へまとめた**
+ * (P5 §0.a-0.78、タスク42b)。値は 5 か所とまったく同じで、振る舞いは変えていない。
+ *
+ * 対角長が数でない・0 以下のときは呼び出し側がすでに断っている前提だが、
+ * ここでも下限だけは返せるように、そのまま式を通す(NaN はそのまま NaN になる)。
+ */
+export function booleanMargin(diagonal: number): number {
+  return diagonal * BOOLEAN_MARGIN_RATIO + BOOLEAN_MARGIN_MIN_MM;
+}

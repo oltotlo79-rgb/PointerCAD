@@ -118,9 +118,10 @@ export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean 
  * `threadMarks` はねじ穴(タスク9)だけが渡す、B-rep に現れない描画用の印(§0.a-0.15)。
  * 渡されなければ空配列にする(押し出し・回転・穴・面取り・ばね等はねじの印を持たない)。
  *
- * **形の種類(`bodyKind`)は必ず返す**(P5 タスク3、FR-428)。`hasSolid` の判定そのままで
- * 安く、P5 タスク3 の時点ではどの段も閉じた立体しか作らないため必ず `'solid'` になる。
- * `'shell'` が来るのは曲面の段(タスク41)から。
+ * **形の種類(`bodyKind`)は必ず返す**(FR-428。`SolidBodyMesh` の必須の欄。§0.a-0.77)。
+ * 判定は `hasSolid` そのままで安く、**体積では決めない**——ふたの無い開いた殻は体積が 0 とは
+ * 限らない(タスク41 の実測: 体積 8000 の開いた殻)ので、体積からは見分けられないためである。
+ * `'shell'` が来るのは曲面の段(`makeSurface.ts`)から。
  *
  * **表面積(`area`)は `measureAreas` が true のときだけ返す**(P5 タスク14、統括の決定
  * 2026-09-05)。形が手元にあるこの場でしか安く測れないが、それでもただではない
@@ -128,6 +129,12 @@ export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean 
  * 値を要る依頼のときだけ測る。理由の全文は `types.ts` の `SolidRecomputeRequest.measureAreas`
  * の注釈にある。**測るときは、面ごとの面積を足し合わせるのではなく形そのものから直に測る**
  * (足し合わせると、面の一覧の作り方(共有面の数え方)に結果が引きずられるため)。
+ *
+ * **表面積も `knownArea` が渡されたらそれを使い、測り直さない**(P5 タスク42b、
+ * §0.a-0.83)。曲面の段(`makeSurface.ts`)は「面ができたか」を確かめるために結果の面積を
+ * 必ず 1 回測っており(`SurfaceResult.area`)、同じ形をもう一度測っても同じ値にしかならない。
+ * `knownVolume` とまったく同じ流儀で、**測るかどうかの判断(`measureAreas`)は変えない**
+ * ——求められていなければ、覚えている値があっても欄ごと落とす(振る舞いを変えないため)。
  *
  * **体積(`volume`)は `knownVolume` が渡されたらそれを使い、測り直さない**
  * (P5 仕上げ (b)、2026-09-05)。ブーリアンを通った段(和・差・積・穴)は
@@ -144,6 +151,7 @@ export function buildSolidBodyMesh(
   threadMarks: readonly ThreadMarkInfo[] = [],
   measureAreas = true,
   knownVolume?: number,
+  knownArea?: number,
 ): SolidBodyMesh {
   const surface = tessellate(oc, shape, options);
   const edges = extractEdges(oc, shape, options);
@@ -162,7 +170,8 @@ export function buildSolidBodyMesh(
     volume: knownVolume ?? measureVolume(oc, shape),
     // 求められていないときは欄ごと落とす(undefined を入れるのと同じだが、
     // 「測っていない」ことが JSON の見た目でも分かるようにする)。
-    ...(measureAreas ? { area: measureArea(oc, shape) } : {}),
+    // 作り手がすでに測ってあれば(`knownArea`)その値を使い、同じ形を測り直さない。
+    ...(measureAreas ? { area: knownArea ?? measureArea(oc, shape) } : {}),
     bodyKind,
     faces: subShapes.faces,
     edges: subShapes.edges,

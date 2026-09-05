@@ -5,10 +5,12 @@
  * (キャッシュの持ち物をそのまま渡せる)。測った値は丸めずにそのまま返し、
  * 桁をどう見せるかは表示側が決める(`rules/04-設計の規律.md` の数値精度)。
  *
- * **単位.** 長さ mm、面積 mm²、体積 mm³、角度は度。質量特性のうち密度を掛けないもの
- * (`measureMassProperties`)の慣性モーメントは体積の 2 次モーメントなので mm⁵ で、
- * 密度(g/cm³)を掛けたもの(`massProperties`)は質量 g・慣性モーメント g·mm² になる
- * (§0.a-0.32 の「質量 g・重心 mm・慣性 g·mm²、密度の入力は g/cm³」)。
+ * **単位.** 長さ mm、面積 mm²、体積 mm³、角度は度。**カーネルが返すのは密度に依らない
+ * 幾何量だけ**で、`measureMassProperties` の慣性モーメントは体積の 2 次モーメント(mm⁵)。
+ * 質量(g)と g·mm² の慣性モーメントは、密度(g/cm³)を持っている model 側が
+ * `measure/massProperties.ts` の `massFromVolume` / `inertiaWithDensity` で掛ける
+ * (§0.a-0.32、§0.a-0.78、タスク29)。**密度を引数に取る版はここに置かない**
+ * ——同じ掛け算を 2 か所に持つと、片方だけ直したときに食い違うため(タスク42b で削除)。
  *
  * **慣性モーメントの基準は重心**(§0.a-0.32)。重心を通る主軸まわりの 3 つを返す。
  * 主軸は `GProp_PrincipalProps` が決めた第 1・第 2・第 3 の順で、
@@ -51,9 +53,6 @@ export const MASS_PROPERTIES_FAILED_MESSAGE = '体積と重心を測れません
  */
 const VOLUME_ONLY_CLOSED = false;
 
-/** g/cm³ を g/mm³ へ直す係数(1 cm³ = 1000 mm³)。単位の変換はこの 1 か所だけで行う。 */
-export const GRAM_PER_CM3_TO_GRAM_PER_MM3 = 1e-3;
-
 /** 2 つの形の最短距離と、その距離を与える点(FR-1102)。 */
 export interface ShapeDistance {
   /** 最短距離(mm)。交わっているときは 0。 */
@@ -75,22 +74,6 @@ export interface ShapeVolumeProperties {
   /** 重心(mm)。 */
   readonly centreOfMass: Vec3Tuple;
   /** 重心を通る主軸まわりの体積の 2 次モーメント(mm⁵)。並びは主軸と同じ。 */
-  readonly principalMoments: readonly [number, number, number];
-  /** 主軸の向き(長さ 1)。第 1・第 2・第 3 の順。 */
-  readonly principalAxes: readonly [Vec3Tuple, Vec3Tuple, Vec3Tuple];
-}
-
-/** 密度(g/cm³)を掛けた質量特性(FR-1101)。 */
-export interface ShapeMassProperties {
-  /** 体積(mm³)。 */
-  readonly volume: number;
-  /** 表面積(mm²)。 */
-  readonly area: number;
-  /** 質量(g)。 */
-  readonly mass: number;
-  /** 重心(mm)。密度は一様なので、密度を掛けても重心は動かない。 */
-  readonly centreOfMass: Vec3Tuple;
-  /** 重心を通る主軸まわりの慣性モーメント(g·mm²)。並びは主軸と同じ。 */
   readonly principalMoments: readonly [number, number, number];
   /** 主軸の向き(長さ 1)。第 1・第 2・第 3 の順。 */
   readonly principalAxes: readonly [Vec3Tuple, Vec3Tuple, Vec3Tuple];
@@ -325,37 +308,4 @@ export function measureMassProperties(
   } finally {
     release();
   }
-}
-
-/**
- * 密度(g/cm³)つきの質量特性(FR-1101)。
- *
- * 体積 mm³ と表面積 mm² はそのまま、質量は g、慣性モーメントは g·mm² で返す
- * (§0.a-0.32)。密度が一様なので重心と主軸は密度に依らず、体積の 2 次モーメント
- * (mm⁵)へ g/mm³ を掛けたものが慣性モーメントになる。
- */
-export function massProperties(
-  oc: OpenCascadeInstance,
-  shape: TopoDS_Shape,
-  densityGPerCm3: number,
-): ShapeMassProperties {
-  if (!(densityGPerCm3 > 0)) {
-    throw new Error(`密度は正の数である必要があります: ${densityGPerCm3}`);
-  }
-  const base = measureMassProperties(oc, shape);
-  const densityGPerMm3 = densityGPerCm3 * GRAM_PER_CM3_TO_GRAM_PER_MM3;
-  const [firstMoment, secondMoment, thirdMoment] = base.principalMoments;
-
-  return {
-    volume: base.volume,
-    area: base.area,
-    mass: base.volume * densityGPerMm3,
-    centreOfMass: base.centreOfMass,
-    principalMoments: [
-      firstMoment * densityGPerMm3,
-      secondMoment * densityGPerMm3,
-      thirdMoment * densityGPerMm3,
-    ],
-    principalAxes: base.principalAxes,
-  };
 }

@@ -37,7 +37,7 @@ import { booleanOp, type BooleanResult } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { matchFace } from './matchSubShape.js';
 import { measureVolume } from './solidMesh.js';
-import { boundingDiagonal, faceAt } from './subShapes.js';
+import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
 import { isIdentityTransform, transformShape, transformsOrIdentity } from './transformShape.js';
 
 /** 面が選び直せなかったとき(FR-504、§2.2.5)。 */
@@ -104,17 +104,6 @@ const NOTHING_REMOVED_MESSAGE = '穴が材料に当たりませんでした。�
  * `booleanOp` の「立体が残らなかった」の判定と同じ大きさに揃えてある。
  */
 const MIN_REMOVED_VOLUME_MM3 = 1e-9;
-
-/**
- * 貫通穴の余裕(§0.a-0.12)。対象の境界箱の対角長 L に対し `L × 0.01 + 1mm`。
- *
- * 面とちょうど接する円柱は OCCT のブーリアンが最も苦手とする形(接触面ができる)なので、
- * 口の外側へこのぶん伸ばした位置から掘り始め、長さも両側へこのぶん足す。
- * 割合(1%)と下限(1mm)の 2 本立てにしてあるのは、部品が大きいときは比例して、
- * 小さいときでも必ず 1mm 以上の余裕を取るためである。
- */
-const MARGIN_RATIO = 0.01;
-const MARGIN_MIN_MM = 1;
 
 /**
  * 穴の入口の形(FR-422、計画書 P5 §0.a-0.39)。
@@ -526,7 +515,10 @@ export function makeHoleTools(
     throw new Error(HOLE_FAILED_MESSAGE);
   }
 
-  const margin = diagonal * MARGIN_RATIO + MARGIN_MIN_MM;
+  // 貫通穴の余裕(§0.a-0.12)。面とちょうど接する円柱は OCCT のブーリアンが最も苦手と
+  // する形(接触面ができる)なので、口の外側へこのぶん伸ばした位置から掘り始め、
+  // 長さも両側へこのぶん足す。
+  const margin = booleanMargin(diagonal);
   const length = depth === null ? diagonal + 2 * margin : depth + margin;
   const { direction } = frame;
   const placements = transformsOrIdentity(transforms);

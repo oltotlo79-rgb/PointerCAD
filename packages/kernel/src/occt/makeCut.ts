@@ -6,7 +6,7 @@ import { createAllocations } from './allocations.js';
 import type { BooleanResult } from './booleanOp.js';
 import { booleanOp } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { boundingDiagonal } from './subShapes.js';
+import { booleanMargin, boundingDiagonal } from './subShapes.js';
 
 /**
  * 平面による切断(FR-432、FR-424 の分割の統合、計画書 P5 §0.a-0.59・§2.9b.3、タスク27b)。
@@ -45,15 +45,6 @@ import { boundingDiagonal } from './subShapes.js';
 
 /** これ未満の体積(mm³)は「立体が残らなかった」とみなす(booleanOp.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
-
-/**
- * 切断面と対象が正確に接する配置を避けるための余裕。
- * 対角長の 1% + 1mm(P3 §0.a-0.12、makeHole.ts と同じ決め)。
- * ブーリアンが最も苦手なのは「面と面がぴったり重なる」配置なので、
- * 平面の面も参照点もこのぶんだけ対象より大きく・遠くに取る。
- */
-const MARGIN_RATIO = 0.01;
-const MARGIN_MIN_MM = 1;
 
 /**
  * 境界箱の隅を「平面のどちら側か」で分けるときの許容誤差(対角長に対する比)。
@@ -341,7 +332,10 @@ export function makeCut(
     // 中身の無い形。切るものが無いので、切断の言葉で断る。
     throw new Error(CUT_FAILED_MESSAGE);
   }
-  const margin = diagonal * MARGIN_RATIO + MARGIN_MIN_MM;
+  // 切断面と対象が正確に接する配置を避けるための余裕(§0.a-0.12)。
+  // ブーリアンが最も苦手なのは「面と面がぴったり重なる」配置なので、
+  // 平面の面も参照点もこのぶんだけ対象より大きく・遠くに取る。
+  const margin = booleanMargin(diagonal);
   const size = diagonal + margin;
 
   // ③ 平面が対象と交わるか。交わらないなら、残る側なら複製、残らない側なら断る。

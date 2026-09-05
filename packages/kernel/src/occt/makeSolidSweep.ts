@@ -12,7 +12,7 @@ import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
-import { boundingDiagonal } from './subShapes.js';
+import { booleanMargin, boundingDiagonal } from './subShapes.js';
 
 /**
  * BRepPrimAPI_MakePrism_1 / BRepPrimAPI_MakeRevol_1 の Copy に渡す値。
@@ -61,14 +61,6 @@ const MAX_TAPER_ANGLE = Math.PI / 2;
  * 1 に十分近い値で切れば足りる(ふたの法線は向きと平行、側面の法線は直交する)。
  */
 const CAP_NORMAL_DOT = 1 - 1e-7;
-
-/**
- * 「次の面まで」で使う角柱の余裕(P3 §0.a-0.12 と同じ決め)。
- * 対象の境界箱の対角長へ `対角長 × MARGIN_RATIO + MARGIN_MIN_MM` を足した長さの角柱を作る。
- * 面とちょうど接する形はブーリアンが最も苦手なので、必ず突き抜けさせる。
- */
-const MARGIN_RATIO = 0.01;
-const MARGIN_MIN_MM = 1;
 
 /** 傾きの角度が受け取れないとき(FR-504)。 */
 const TAPER_RANGE_MESSAGE = '押し出しの傾きは 0 度以上 90 度未満にしてください。';
@@ -157,7 +149,9 @@ function resolveExtrudeRange(
     if (!(diagonal > 0)) {
       throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
     }
-    return { startOffset: 0, length: diagonal + 2 * (diagonal * MARGIN_RATIO + MARGIN_MIN_MM) };
+    // 「次の面まで」で使う角柱の余裕(§0.a-0.12 と同じ決め)。対象の境界箱の対角長へ
+    // 両側 `booleanMargin` ぶんを足した長さの角柱を作り、必ず突き抜けさせる。
+    return { startOffset: 0, length: diagonal + 2 * booleanMargin(diagonal) };
   }
   if (end.kind === 'symmetric') {
     if (

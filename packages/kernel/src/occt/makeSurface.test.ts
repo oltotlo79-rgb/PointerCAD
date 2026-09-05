@@ -1,6 +1,7 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { CurveSpec, SolidBodyKind, SolidFaceInfo, SubShapeQuery, Vec3Tuple } from '../types.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
@@ -27,24 +28,6 @@ import { tessellate } from './tessellate.js';
 
 /** 単一フィーチャーの所要の上限(ms)。要件 §5.2(NFR-PF-2)の数値そのままで、緩めない。 */
 const SINGLE_STEP_BUDGET_MS = 500;
-
-/**
- * 性能上限の判定を「厳密」と「参考」で切り替える窓口。
- * 決めと理由は `packages/kernel/src/worker/solidPerformance.test.ts` の
- * expectWithinBudget と同じ(rules/03-品質ゲート.md §7.1、rules/06 の 10.3)。
- * 上限の数値は変えない。
- */
-function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
-  if (process.env.POINTERCAD_PERF_STRICT === '1') {
-    expect(actualMs).toBeLessThan(limitMs);
-    return;
-  }
-  if (actualMs >= limitMs) {
-    console.log(
-      `[参考] 上限超過: ${label}(実測 ${actualMs.toFixed(1)} ms ≥ 上限 ${String(limitMs)} ms。コミット前検査のため失敗にしません)`,
-    );
-  }
-}
 
 /** 開いた輪郭(長さ 40 の線分 1 本)を 10 押し出した面の面積 = 40 × 10。 */
 const SEGMENT_EXTRUDE_AREA = 400;
@@ -216,7 +199,7 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
   }
 
   describe('手順1: 使う道具が実行時にあるか(§1.4-15)', () => {
-    it('曲面に使う 5 つのクラスが実行時に存在する', () => {
+    it('曲面に使う 6 つのクラスが実行時に存在する', () => {
       // 型定義に載っていても embind が wasm 側で登録していなければ実行時には無い。
       // 確かめ方は loadOcct.node.test.ts の toBeTypeOf('function') 方式に揃える。
       expect(oc.BRepPrimAPI_MakePrism_1).toBeTypeOf('function');
@@ -224,6 +207,8 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
       expect(oc.BRepOffsetAPI_ThruSections).toBeTypeOf('function');
       expect(oc.BRepBuilderAPI_MakeWire_1).toBeTypeOf('function');
       expect(oc.BRepBuilderAPI_MakeFace_15).toBeTypeOf('function');
+      // 面のオフセット(§0.a-0.45)。列挙を取らない PerformBySimple だけを使う。
+      expect(oc.BRepOffsetAPI_MakeOffsetShape).toBeTypeOf('function');
     });
   });
 
@@ -383,13 +368,18 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
     });
   });
 
+  /** 40 × 30 × 10 の箱の上面(法線が Z 向き・重心の z が 10)。 */
+  function topFaceOf(tables: SubShapeTables): SolidFaceInfo | undefined {
+    return tables.faces.find(
+      (face) => face.axis !== null && Math.abs(face.axis[2]) > 0.999 && face.centroid[2] > 5,
+    );
+  }
+
   describe('既存の面の取り出し(指紋)', () => {
     it('40 × 30 × 10 の箱の上面を取り出すと、面積 1200 の面 1 枚になる', () => {
       const box = prepareBox();
       try {
-        const top = box.tables.faces.find(
-          (face) => face.axis !== null && Math.abs(face.axis[2]) > 0.999 && face.centroid[2] > 5,
-        );
+        const top = topFaceOf(box.tables);
         expect(top).toBeDefined();
         if (top === undefined) {
           return;
@@ -417,6 +407,142 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
 
         expect(hasSolid(oc, box.shape)).toBe(true);
         expect(measureVolume(oc, box.shape)).toBeCloseTo(12000, 6);
+      } finally {
+        box.delete();
+      }
+    });
+  });
+
+  /**
+   * 面のオフセット(FR-428、§0.a-0.45 の承認、タスク42b)。
+   *
+   * 選び直した面を `BRepOffsetAPI_MakeOffsetShape.PerformBySimple` で距離だけ離す。
+   * 検証は統括の指示のとおり「40×30×10 の上面を +5 → 殻・面積 1200・z = 15」。
+   */
+  describe('面のオフセット(§0.a-0.45)', () => {
+    it('40 × 30 × 10 の上面を +5 ずらすと、面積 1200・z = 15 の殻になる', () => {
+      const box = prepareBox();
+      try {
+        const top = topFaceOf(box.tables);
+        expect(top).toBeDefined();
+        if (top === undefined) {
+          return;
+        }
+        // もとの上面は z = 10 にある(ずれ幅が 5 であることの基準)。
+        expect(top.centroid[2]).toBeCloseTo(10, 9);
+
+        const input: SurfaceInput = { kind: 'offset', face: faceQuery(top), distance: 5 };
+        const measured = measureSurface(input, box.shape, box.tables);
+        expect(measured.area).toBeCloseTo(BOX_FACE_AREA, 6);
+        expect(measured.reportedArea).toBeCloseTo(BOX_FACE_AREA, 6);
+        expect(measured.faceCount).toBe(1);
+        expect(measured.solid).toBe(false);
+        expect(measured.shell).toBe(true);
+        expect(measured.meshBodyKind).toBe('shell');
+
+        // 離した先の位置。面 1 枚なので、その重心の z がそのままずらした先になる。
+        const result = makeSurface(oc, input, box.shape, box.tables);
+        try {
+          const faces = collectTables(result.shape).faces;
+          expect(faces).toHaveLength(1);
+          console.log(
+            `面のオフセット: 面積 ${faces[0].area.toFixed(6)} / 重心 z ${faces[0].centroid[2].toFixed(6)}`,
+          );
+          expect(faces[0].centroid[2]).toBeCloseTo(15, 6);
+          expect(faces[0].area).toBeCloseTo(BOX_FACE_AREA, 6);
+        } finally {
+          result.delete();
+        }
+        expectWithinBudget(measured.elapsedMs, SINGLE_STEP_BUDGET_MS, '曲面(面のオフセット)1 段');
+      } finally {
+        box.delete();
+      }
+    });
+
+    it('負の距離なら逆側(z = 5)へ離れる', () => {
+      const box = prepareBox();
+      try {
+        const top = topFaceOf(box.tables);
+        expect(top).toBeDefined();
+        if (top === undefined) {
+          return;
+        }
+        const result = makeSurface(
+          oc,
+          { kind: 'offset', face: faceQuery(top), distance: -5 },
+          box.shape,
+          box.tables,
+        );
+        try {
+          const faces = collectTables(result.shape).faces;
+          expect(faces).toHaveLength(1);
+          expect(faces[0].centroid[2]).toBeCloseTo(5, 6);
+          expect(faces[0].area).toBeCloseTo(BOX_FACE_AREA, 6);
+        } finally {
+          result.delete();
+        }
+      } finally {
+        box.delete();
+      }
+    });
+
+    it('材料の立体は消費しない(ずらしたあとも箱は立体のまま)', () => {
+      const box = prepareBox();
+      try {
+        const top = topFaceOf(box.tables);
+        expect(top).toBeDefined();
+        if (top === undefined) {
+          return;
+        }
+        const result = makeSurface(
+          oc,
+          { kind: 'offset', face: faceQuery(top), distance: 5 },
+          box.shape,
+          box.tables,
+        );
+        result.delete();
+
+        expect(hasSolid(oc, box.shape)).toBe(true);
+        expect(measureVolume(oc, box.shape)).toBeCloseTo(12000, 6);
+      } finally {
+        box.delete();
+      }
+    });
+
+    it('距離が 0 や NaN なら日本語で断る', () => {
+      const box = prepareBox();
+      try {
+        const top = topFaceOf(box.tables);
+        expect(top).toBeDefined();
+        if (top === undefined) {
+          return;
+        }
+        for (const distance of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+          expect(() =>
+            makeSurface(
+              oc,
+              { kind: 'offset', face: faceQuery(top), distance },
+              box.shape,
+              box.tables,
+            ),
+          ).toThrow('面をずらす距離は 0 以外の数にしてください。');
+        }
+      } finally {
+        box.delete();
+      }
+    });
+
+    it('相手の立体が渡されていなければ断る(targetKey が要る段)', () => {
+      const box = prepareBox();
+      try {
+        const top = topFaceOf(box.tables);
+        expect(top).toBeDefined();
+        if (top === undefined) {
+          return;
+        }
+        expect(() =>
+          makeSurface(oc, { kind: 'offset', face: faceQuery(top), distance: 5 }),
+        ).toThrow('面を取り出す立体が選ばれていません。');
       } finally {
         box.delete();
       }

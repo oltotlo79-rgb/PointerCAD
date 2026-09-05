@@ -507,14 +507,17 @@ export interface SolidBodyMesh {
    */
   readonly area?: number;
   /**
-   * 形の種類(FR-428)。`hasSolid` の判定そのままなので安く、**常に入る**。
+   * 形の種類(FR-428)。**必須の欄**(§0.a-0.77、タスク42b)。
    *
-   * 任意の欄にしてあるのは、この欄を組み立てている呼び出し側(model の
-   * `part/recomputePart.test.ts` の見本のカーネル)を直せるのが、model の詰め替えを
-   * 受け持つ P5 タスク4 だからである。**タスク4 が model 側を直したら必須へ引き上げてよい**
-   * (`area` は上のとおり任意のまま)。
+   * 判定は `buildSolidBodyMesh` の `hasSolid(oc, shape)` そのままで、**体積では決めない**。
+   * タスク41 で「ふたの無い開いた殻は体積が 0 とは限らない」ことが実測(体積 8000 の
+   * 開いた殻)で確かめられたため、体積からは `solid` / `shell` を判別できない。
+   * `hasSolid` は部分形状を数えるだけなので安く、どの段でも必ず入れられる。
+   *
+   * §0.a-0.4 等で任意にしていたのは、この欄を組み立てる model 側の見本が揃うまでの
+   * 経過措置だった(`area` は「求めたときだけ測る」ので任意のまま。理由が違う)。
    */
-  readonly bodyKind?: SolidBodyKind;
+  readonly bodyKind: SolidBodyKind;
   /** 面の一覧(§2.2、§2.3)。並びは通し番号の順。 */
   readonly faces: readonly SolidFaceInfo[];
   readonly edges: readonly SolidEdgeInfo[];
@@ -1177,8 +1180,9 @@ export interface ThreadShaftStepSpec {
  * 曲面(FR-428、§0.a-0.45)。**閉じた立体ではなく面のボディ**(`bodyKind: 'shell'`)を作る。
  *
  * **対象を取らない「作る」段。** ただし作り方が「すでにある立体の面を取り出す」
- * (`shape.kind === 'face'`)ときだけ `targetKey` の形から面を選び直すので、そのときは
- * 鍵を添える。**それでも対象は消費しない**(面を貸した立体はそのまま画面に残る。
+ * (`shape.kind === 'face'`)か「その面を距離だけ離す」(`shape.kind === 'offset'`)の
+ * ときだけ `targetKey` の形から面を選び直すので、そのときは鍵を添える。
+ * **それでも対象は消費しない**(面を貸した立体はそのまま画面に残る。
  * `PrimitiveStepSpec` の頂点・`ThruSectionSpec` の `faceQuery` と同じ扱い)。
  *
  * **呼び出し側は、`targetKey` を使う段の鍵の材料に `targetKey` と面の指紋を必ず含める**
@@ -1186,9 +1190,12 @@ export interface ThreadShaftStepSpec {
  */
 export interface SurfaceStepSpec {
   readonly kind: 'surface';
-  /** 作り方。5 種の定義は `occt/makeSurface.ts` の `SurfaceInput` が正本。 */
+  /** 作り方。6 種の定義は `occt/makeSurface.ts` の `SurfaceInput` が正本。 */
   readonly shape: SurfaceInput;
-  /** 面を取り出す立体の段の鍵。`shape.kind !== 'face'` なら null。**消費しない。** */
+  /**
+   * 面を借りる立体の段の鍵。**`shape.kind` が `'face'` か `'offset'` のときだけ要る**
+   * (それ以外は null)。**消費しない。**
+   */
   readonly targetKey: string | null;
 }
 

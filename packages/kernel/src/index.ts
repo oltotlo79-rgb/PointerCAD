@@ -207,17 +207,17 @@ export {
 // 測定と質量特性(FR-1101、FR-1102、P5 §2.10、タスク28)。Worker 越しの依頼と結果は
 // `measure`(kernelApi)が受け、純関数は model 側の橋(タスク29)からも使える。
 export type { MeasureRequest, MeasureResult, MeasureTargetSpec } from './types.js';
+// **密度を引数に取る版(旧 `massProperties` / `ShapeMassProperties` /
+// `GRAM_PER_CM3_TO_GRAM_PER_MM3`)は輸出しない。** 質量への密度の掛け算は model の
+// `measure/massProperties.ts` の 1 か所だけで行う(§0.a-0.78、タスク42b で kernel から削除)。
 export {
   angleBetween,
   distanceBetween,
   edgeLength,
-  massProperties,
   measureMassProperties,
   DISTANCE_FAILED_MESSAGE,
-  GRAM_PER_CM3_TO_GRAM_PER_MM3,
   MASS_PROPERTIES_FAILED_MESSAGE,
   type ShapeDistance,
-  type ShapeMassProperties,
   type ShapeVolumeProperties,
 } from './occt/measureShape.js';
 export { makeExtrudeSolid, makeRevolveSolid } from './occt/makeSolidSweep.js';

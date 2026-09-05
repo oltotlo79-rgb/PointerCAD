@@ -8,7 +8,7 @@ import { booleanOp } from './booleanOp.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { distanceBetween } from './measureShape.js';
 import { measureVolume } from './solidMesh.js';
-import { boundingDiagonal } from './subShapes.js';
+import { booleanMargin, boundingDiagonal } from './subShapes.js';
 import { makeCompound } from './transformShape.js';
 
 /**
@@ -40,20 +40,12 @@ import { makeCompound } from './transformShape.js';
  *      リブの断面は開いた線を法線へ掃いた**帯**で、輪郭が円弧を含めば平面ですらない。
  *   同じ手順を 2 か所に書かないため、共通で使えるところ(境界箱の対角 `boundingDiagonal`、
  *   コンパウンド `makeCompound`、和 `booleanOp`)は既存の関数をそのまま呼んでいる。
- *   「長い角柱を作って余裕を足す」決め(`MARGIN_RATIO` / `MARGIN_MIN_MM`)だけは
- *   `makeSolidSweep.ts` と同じ値を持つ。タスク42 で段の型を足すときに、
- *   共通の置き場(例: `occt/sweepMargin.ts`)へ寄せることを提案する。
+ *   「長い角柱を作って余裕を足す」決めも `subShapes.ts` の `booleanMargin` 1 か所へ
+ *   まとめてあり(§0.a-0.78、タスク42b)、`makeSolidSweep.ts` と同じ値になる。
  */
 
 /** 「厚みが出た」とみなす体積の下限(mm³)。makeSolidSweep.ts と同じ考え方。 */
 const MIN_SOLID_VOLUME = 1e-9;
-
-/**
- * 壁を伸ばす長さの余裕(P3 §0.a-0.12、makeSolidSweep.ts の `toNext` と同じ決め)。
- * 対象の面とちょうど接する形はブーリアンが最も苦手なので、必ず突き抜けさせる。
- */
-const MARGIN_RATIO = 0.01;
-const MARGIN_MIN_MM = 1;
 
 /**
  * 「帯に接している」とみなす距離の上限(mm)。
@@ -345,7 +337,9 @@ export function makeRib(
     if (!(diagonal > 0)) {
       throw new Error(NOT_REACHED_MESSAGE);
     }
-    const wallLength = diagonal + 2 * (diagonal * MARGIN_RATIO + MARGIN_MIN_MM);
+    // 壁を伸ばす長さの余裕(§0.a-0.12、makeSolidSweep.ts の `toNext` と同じ決め)。
+    // 対象の面とちょうど接する形はブーリアンが最も苦手なので、必ず突き抜けさせる。
+    const wallLength = diagonal + 2 * booleanMargin(diagonal);
     const wall = extrude(oc, keep, strip, direction, wallLength);
 
     // 法線と伸ばす向きが平行だと、帯を自分の面の中で掃くことになり体積が出ない。

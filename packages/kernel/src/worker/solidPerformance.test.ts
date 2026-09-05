@@ -6,6 +6,7 @@ import { makePrimitive } from '../occt/makePrimitive.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type {
   ChamferStepSpec,
   CurveSpec,
@@ -168,30 +169,6 @@ async function measure(
   // 測っているのが計算時間かタイマーの粒度かが分からなくなる(recomputeSolids.ts の注釈)。
   const result = await recomputeSolids({ oc, cache }, { steps, generation: 1 });
   return { result, elapsedMs: performance.now() - startedAt };
-}
-
-/**
- * 性能上限の判定を「厳密」と「参考」で切り替える単一の窓口。
- *
- * 作業担当が並列にテストや E2E を走らせている間に統括がコミットすると、
- * CPU 競合でこのファイルの上限判定が落ちる(rules/06-過去の失敗と対策.md 10.3)。
- * 上限は緩めない代わりに、環境変数 `POINTERCAD_PERF_STRICT` が `'1'` のときだけ
- * 厳密に判定してテストを落とす(push前検査・CI。rules/03-品質ゲート.md §7.1)。
- * それ以外(コミット前検査の既定)は実測値の記録にとどめ、上限超過でも失敗にしない。
- * 呼び出し側は実測値と上限を既存の console.log で出力済みの前提で、
- * この関数は判定の切替と、参考モードで超過したときの警告表示だけを担う。
- * 上限の数値と検査内容は変えない。
- */
-function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
-  if (process.env.POINTERCAD_PERF_STRICT === '1') {
-    expect(actualMs).toBeLessThan(limitMs);
-    return;
-  }
-  if (actualMs >= limitMs) {
-    console.log(
-      `[参考] 上限超過: ${label}(実測 ${actualMs.toFixed(1)} ms ≥ 上限 ${limitMs} ms。コミット前検査のため失敗にしません)`,
-    );
-  }
 }
 
 describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {

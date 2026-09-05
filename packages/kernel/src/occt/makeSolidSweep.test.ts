@@ -1,6 +1,7 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { CurveSpec, ExtrudeStepSpec, RevolveStepSpec } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makePlanarFace } from './makePlanarFace.js';
@@ -429,24 +430,6 @@ const TAPER_IN_PLATE_VOLUME = 10234.177884247418;
 
 /** 押し出し 1 段の所要の上限(ms)。要件 §5.2(NFR-PF-2)の数値そのままで、緩めない。 */
 const SINGLE_STEP_BUDGET_MS = 500;
-
-/**
- * 性能上限の判定を「厳密」と「参考」で切り替える窓口。
- * 決めと理由は packages/kernel/src/worker/solidPerformance.test.ts の
- * expectWithinBudget と同じ(rules/03-品質ゲート.md §7.1、rules/06 の 10.3)。
- * 上限の数値は変えない。
- */
-function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
-  if (process.env.POINTERCAD_PERF_STRICT === '1') {
-    expect(actualMs).toBeLessThan(limitMs);
-    return;
-  }
-  if (actualMs >= limitMs) {
-    console.log(
-      `[参考] 上限超過: ${label}(実測 ${actualMs.toFixed(1)} ms ≥ 上限 ${String(limitMs)} ms。コミット前検査のため失敗にしません)`,
-    );
-  }
-}
 
 describe('押し出しの終端の指定(FR-415)', () => {
   let oc: OpenCascadeInstance;

@@ -11,7 +11,6 @@ import {
   angleBetween,
   distanceBetween,
   edgeLength,
-  massProperties,
   measureMassProperties,
 } from './measureShape.js';
 import { measureArea } from './solidMesh.js';
@@ -26,10 +25,6 @@ const PLATE = { dx: 40, dy: 30, dz: 10 } as const;
 const PLATE_VOLUME = 12000;
 /** 表面積 2(40·30 + 40·10 + 30·10) = 2(1200 + 400 + 300)。 */
 const PLATE_AREA = 3800;
-/** 鋼の密度(g/cm³)。P5 §2.4.2 の密度の表と同じ値。 */
-const STEEL_DENSITY = 7.85;
-/** アルミの密度(g/cm³)。 */
-const ALUMINIUM_DENSITY = 2.7;
 
 /** 面・辺・頂点の一覧(指紋の材料)。makePrimitive.test.ts と同じ組み立て方。 */
 function tablesOf(oc: OpenCascadeInstance, shape: TopoDS_Shape): SubShapeTables {
@@ -175,47 +170,31 @@ describe('測定と質量特性(measureShape)', () => {
       }
     });
 
-    it('板を鋼(7.85 g/cm³)で測ると質量 94.2 g、慣性は 7850 / 13345 / 19625 g·mm²', () => {
+    /**
+     * **密度を引数に取る版(旧 `massProperties` / `ShapeMassProperties`)は §0.a-0.78 で
+     * kernel から削除した**(タスク42b)。質量への密度の掛け算は model の
+     * `measure/massProperties.ts`(`massFromVolume` / `inertiaWithDensity`)の 1 か所だけで
+     * 行う決めなので、kernel が返す欄に g や g·mm² が混ざっていないことをここで固定する。
+     * 削除前の期待値(12000 mm³ × 7.85e-3 = 94.2 g、1.0e6 / 1.7e6 / 2.5e6 mm⁵ × 7.85e-3 =
+     * 7850 / 13345 / 19625 g·mm²)は、model 側の掛け算を通せばそのまま再現できる。
+     */
+    it('返る欄は幾何量だけで、質量(g)や密度の欄を持たない', () => {
       const box = makeBox(oc, PLATE);
       try {
-        const found = massProperties(oc, box.shape, STEEL_DENSITY);
-        // 12000 mm³ × 7.85e-3 g/mm³(手計算)。
-        expect(found.mass).toBeCloseTo(94.2, 9);
-        expect(found.volume).toBeCloseTo(PLATE_VOLUME, 6);
-        expect(found.area).toBeCloseTo(PLATE_AREA, 6);
-        // m(b²+c²)/12 = 94.2 × 1000/12、94.2 × 1700/12、94.2 × 2500/12(手計算)。
-        const sorted = [...found.principalMoments].sort((a, b) => a - b);
-        expect(sorted[0]).toBeCloseTo(7850, 6);
-        expect(sorted[1]).toBeCloseTo(13345, 6);
-        expect(sorted[2]).toBeCloseTo(19625, 6);
+        const found = measureMassProperties(oc, box.shape);
+        expect(Object.keys(found).sort()).toEqual([
+          'area',
+          'centreOfMass',
+          'principalAxes',
+          'principalMoments',
+          'volume',
+        ]);
       } finally {
         box.delete();
       }
     });
 
-    it('密度を掛けても重心と主軸は動かない', () => {
-      const box = makeBox(oc, PLATE);
-      try {
-        const plain = measureMassProperties(oc, box.shape);
-        const withDensity = massProperties(oc, box.shape, STEEL_DENSITY);
-        expect(withDensity.centreOfMass).toEqual(plain.centreOfMass);
-        expect(withDensity.principalAxes).toEqual(plain.principalAxes);
-      } finally {
-        box.delete();
-      }
-    });
-
-    it('密度が 0 以下なら断る', () => {
-      const box = makeBox(oc, PLATE);
-      try {
-        expect(() => massProperties(oc, box.shape, 0)).toThrow('密度は正の数');
-        expect(() => massProperties(oc, box.shape, -1)).toThrow('密度は正の数');
-      } finally {
-        box.delete();
-      }
-    });
-
-    it('球 r=10 は体積 4188.79 mm³、慣性は 2/5·V·r²、アルミなら 11.31 g', () => {
+    it('球 r=10 は体積 4188.79 mm³、2 次モーメントは 2/5·V·r² = 167551.6 mm⁵', () => {
       const sphere = makePrimitive(oc, {
         kind: 'primitive',
         origin: [0, 0, 0],
@@ -225,15 +204,17 @@ describe('測定と質量特性(measureShape)', () => {
         targetKey: null,
       });
       try {
-        const found = massProperties(oc, sphere.shape, ALUMINIUM_DENSITY);
+        const found = measureMassProperties(oc, sphere.shape);
         // 4/3·π·1000 = 4188.790204786391、4πr² = 1256.6370614359173(手計算)。
         expect(found.volume).toBeCloseTo(4188.790204786391, 6);
         expect(found.area).toBeCloseTo(1256.6370614359173, 5);
-        // 4188.790204786391 × 2.70e-3(手計算)。
-        expect(found.mass).toBeCloseTo(11.309733552923253, 9);
-        // 2/5·m·r² = 0.4 × 11.309733552923253 × 100(手計算)。どの軸でも同じ。
+        // 2/5·V·r² = 0.4 × (4/3)π·1000 × 100 ≒ 167551.6 mm⁵。どの軸でも同じ。
+        // 期待値は倍精度に載らない桁までは書かず、式のまま持つ(no-loss-of-precision)。
+        // 密度 2.70 g/cm³ を model 側で掛ければ 452.38934211693015 g·mm² になり、
+        // 削除前の期待値と一致する。
+        const sphereMoment = 0.4 * ((4 / 3) * Math.PI * 1000) * 100;
         for (const moment of found.principalMoments) {
-          expect(moment / 452.38934211693015).toBeCloseTo(1, 4);
+          expect(moment / sphereMoment).toBeCloseTo(1, 4);
         }
       } finally {
         sphere.delete();

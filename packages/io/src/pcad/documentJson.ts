@@ -189,8 +189,10 @@ const POINT_ARRAY_LAYOUT_KINDS: readonly PointArrayLayout['kind'][] = [
 /**
  * `.pcad` から読める立体の種類。P2 の4種類(押し出し・回転・縫合・ブーリアン)に、
  * P3 の加工フィーチャー5種(穴・ねじ穴・R 面取り・C 面取り・パターン)とばね、
- * P5 の基本形状(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7、タスク17)を
- * 足した11種類。知らない種類の `kind` は `readLiteral` が「その欄の型が違う」として
+ * P5 の基本形状(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7、タスク17)、
+ * 面をつなぐ・ロフト、Should 群 9 種、くり抜き、切断を足した **24 種**
+ * (model の `SolidFeatureKind` と同じ数。documentJson.test.ts が種類ごとの往復で
+ * 数まで固定する)。知らない種類の `kind` は `readLiteral` が「その欄の型が違う」として
  * 断る(新しい欄の解釈を推測しないため)。
  */
 const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = [

@@ -10,6 +10,8 @@ import {
   holeEntryOf,
   PART_SCHEMA_VERSION,
   resolveSketch,
+  // 球へつなぐときの点の数の選択肢(§0.a-0.74)。3 値すべての往復に使う(P5 タスク47)。
+  RULED_SPHERE_SEGMENT_CHOICES,
   sketchConstraints,
   type AppearanceTable,
   type ExtrudeEnd,
@@ -19,6 +21,8 @@ import {
   type Parameter,
   // 平面による切断(FR-432、P5 タスク27c)。切断面は作業平面と同じ型を共有する。
   type PlaneSpec,
+  // 点の指定 6 種の往復(P5 タスク47)。
+  type PointReference,
   type PrimitiveFeature,
   type PrimitiveShape,
   type ReferenceFeature,
@@ -27,9 +31,12 @@ import {
   type SketchDocument,
   type SketchFeature,
   type SolidFeature,
+  // 24 種の全欄の往復(P5 タスク47)。種類が増えたら見本の表が型エラーになる。
+  type SolidFeatureKind,
   type SolidOrigin,
   type SubShapeRef,
   type SurfaceOperation,
+  type ThicknessSide,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
@@ -4431,5 +4438,973 @@ describe('平面による切断の読み書き(FR-432、§2.9b。P5 タスク27c
       }),
     });
     expect(expectError(parseDocument(file)).message).toContain('plane');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P5 タスク47: io の読み書きの本実装(FR-801、FR-202、NFR-RE-3)。
+//
+// タスク43・46・27c が置いたのは「型が通るだけの最小の枝」(種類ごとに往復 1 件)だった。
+// ここでは **24 種の全欄の往復・古い版の読み込み・断りの網羅・書き出しの字面** まで広げる。
+// スキーマ版は 6 のままで、移行(SCHEMA_MIGRATIONS)は 1 つも増やさない(欄の追加だけ)。
+// ---------------------------------------------------------------------------
+
+/**
+ * 種類ごとのソリッドフィーチャー 1 件ずつの表。**鍵が `SolidFeatureKind` そのもの**なので、
+ * model が種類を 1 つ足すとこの表が型エラーになる(検査が黙って古びないための仕掛け)。
+ */
+type SolidFeatureByKind = {
+  readonly [K in SolidFeatureKind]: Extract<SolidFeature, { readonly kind: K }>;
+};
+
+/** 点の指定 6 種(FR-330、FR-431 を含む)。点集合パターンに入れて往復を確かめる。 */
+function allPointReferences(): readonly PointReference[] {
+  return [
+    { kind: 'origin' },
+    { kind: 'previous' },
+    { kind: 'point', pointId: 'point-1' },
+    { kind: 'vertex', featureId: 'line-1', vertex: 'center' },
+    { kind: 'subShape', ref: edgeRef('extrude-1', 9) },
+    {
+      kind: 'sphereGrid',
+      sphereFeatureId: 'primitive-1',
+      latitude: ev('30', 30),
+      longitude: ev('60', 60),
+    },
+  ];
+}
+
+/**
+ * 24 種すべてを、**省略できる欄も含めて全部埋めた**見本。参照(部分形状の指紋・
+ * スケッチの面/点/曲線)と式は種類をまたいで一通り出てくるようにしてある。
+ */
+function allSolidFeatures(): SolidFeatureByKind {
+  return {
+    extrude: {
+      id: 'extrude-1',
+      kind: 'extrude',
+      name: '押し出し1',
+      suppressed: false,
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+      distance: ev('板厚 * 2', 6),
+      reversed: true,
+      symmetric: false,
+      end: { kind: 'toFace', face: faceRef('sew-1', 2) },
+      taperAngle: ev('3', 3),
+      taperOutward: true,
+      thickness: ev('1.5', 1.5),
+      thicknessSide: 'outer',
+    },
+    revolve: {
+      id: 'revolve-1',
+      kind: 'revolve',
+      name: '回転1',
+      suppressed: true,
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-2' },
+      axis: { kind: 'reference', referenceFeatureId: 'referenceAxis-1' },
+      angle: ev('360', 360),
+      reversed: false,
+    },
+    sew: {
+      id: 'sew-1',
+      kind: 'sew',
+      name: '縫合1',
+      suppressed: false,
+      faces: [
+        { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+        { sketchId: 'sketch-1', faceFeatureId: 'face-2' },
+      ],
+      tolerance: ev('0.01', 0.01),
+    },
+    boolean: {
+      id: 'boolean-1',
+      kind: 'boolean',
+      name: '差1',
+      suppressed: false,
+      operation: 'subtract',
+      targetFeatureId: 'extrude-1',
+      toolFeatureId: 'sew-1',
+    },
+    hole: {
+      id: 'hole-1',
+      kind: 'hole',
+      name: '穴1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      face: faceRef('extrude-1', 3),
+      centers: [
+        { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+        { sketchId: 'sketch-1', pointFeatureId: 'pointArray-1' },
+      ],
+      diameter: ev('6', 6),
+      depth: { kind: 'blind', depth: ev('10', 10) },
+      entry: { kind: 'counterbore', diameter: ev('11', 11), depth: ev('4', 4) },
+      tiltAngle: ev('5', 5),
+      tiltAzimuth: ev('45', 45),
+    },
+    threadHole: {
+      id: 'threadHole-1',
+      kind: 'threadHole',
+      name: 'ねじ穴1',
+      suppressed: false,
+      targetFeatureId: 'hole-1',
+      face: faceRef('hole-1', 5),
+      centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+      designation: 'M6',
+      series: 'coarse',
+      pitch: ev('1', 1),
+      drillDiameter: ev('5.16', 5.16),
+      depth: { kind: 'through' },
+      entry: { kind: 'countersink', diameter: ev('12', 12), angle: ev('90', 90) },
+      threadLength: ev('10', 10),
+      representation: 'modeled',
+      tiltAngle: ev('0', 0),
+      tiltAzimuth: ev('0', 0),
+    },
+    fillet: {
+      id: 'fillet-1',
+      kind: 'fillet',
+      name: 'R面取り1',
+      suppressed: false,
+      targetFeatureId: 'threadHole-1',
+      targets: [
+        edgeRef('threadHole-1', 2),
+        { bodyFeatureId: 'threadHole-1', index: 7, fingerprint: { kind: 'vertex', position: [4, 5, 6] } },
+      ],
+      radius: ev('2', 2),
+      radiusEnd: ev('5', 5),
+    },
+    chamfer: {
+      id: 'chamfer-1',
+      kind: 'chamfer',
+      name: 'C面取り1',
+      suppressed: false,
+      targetFeatureId: 'fillet-1',
+      targets: [edgeRef('fillet-1', 0)],
+      size: { kind: 'distanceAngle', distance: ev('1', 1), angle: ev('45', 45) },
+      swapReferenceFace: true,
+    },
+    pattern: {
+      id: 'pattern-1',
+      kind: 'pattern',
+      name: '点パターン1',
+      suppressed: false,
+      sourceFeatureId: 'hole-1',
+      placement: { kind: 'points', points: allPointReferences() },
+    },
+    spring: {
+      id: 'spring-1',
+      kind: 'spring',
+      name: 'ばね1',
+      suppressed: false,
+      origin: { sketchId: 'sketch-1', pointFeatureId: 'point-1' },
+      axis: { kind: 'line', line: { sketchId: 'sketch-1', lineFeatureId: 'line-1' } },
+      tiltAngle: ev('3', 3),
+      tiltAzimuth: ev('30', 30),
+      length: ev('20', 20),
+      pitch: ev('5', 5),
+      turns: ev('4', 4),
+      derived: 'turns',
+      coilDiameter: ev('20', 20),
+      wireDiameter: ev('2', 2),
+      handedness: 'left',
+    },
+    primitive: {
+      id: 'primitive-1',
+      kind: 'primitive',
+      name: '基本形状1',
+      suppressed: false,
+      origin: {
+        kind: 'vertex',
+        ref: { bodyFeatureId: 'extrude-1', index: 3, fingerprint: { kind: 'vertex', position: [1.5, 2.5, 3.5] } },
+      },
+      axis: { kind: 'world', axis: 'y' },
+      shape: { kind: 'torus', majorRadius: ev('20', 20), minorRadius: ev('5', 5) },
+    },
+    ruled: {
+      id: 'ruled-1',
+      kind: 'ruled',
+      name: '面をつなぐ1',
+      suppressed: false,
+      first: { kind: 'solidFace', ref: faceRef('extrude-1', 4) },
+      second: { kind: 'sphere', sphereFeatureId: 'primitive-1' },
+      twist: ev('1+1', 2),
+      sphereSegments: 72,
+    },
+    loft: {
+      id: 'loft-1',
+      kind: 'loft',
+      name: 'ロフト1',
+      suppressed: false,
+      sections: [
+        { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+        { kind: 'solidFace', ref: faceRef('extrude-1', 5) },
+        { kind: 'sphere', sphereFeatureId: 'primitive-1' },
+      ],
+      twist: ev('0', 0),
+    },
+    draft: {
+      id: 'draft-1',
+      kind: 'draft',
+      name: '抜き勾配1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      faces: [faceRef('extrude-1', 1), faceRef('extrude-1', 2)],
+      neutralFace: faceRef('extrude-1', 0),
+      angle: ev('1', 1),
+      reversed: true,
+    },
+    mirror: {
+      id: 'mirror-1',
+      kind: 'mirror',
+      name: 'ミラー1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      plane: { kind: 'face', face: faceRef('extrude-1', 6) },
+    },
+    transform: {
+      id: 'transform-1',
+      kind: 'transform',
+      name: '移動・回転1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      translation: [ev('10', 10), ev('0', 0), ev('2.5', 2.5)],
+      rotationAxis: { kind: 'reference', referenceFeatureId: 'referenceAxis-1' },
+      rotationAngle: ev('45', 45),
+    },
+    scale: {
+      id: 'scale-1',
+      kind: 'scale',
+      name: '拡大縮小1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      origin: { kind: 'previous' },
+      factor: { kind: 'perAxis', x: ev('2', 2), y: ev('1', 1), z: ev('0.5', 0.5) },
+    },
+    sweep: {
+      id: 'sweep-1',
+      kind: 'sweep',
+      name: 'スイープ1',
+      suppressed: false,
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+      path: { sketchId: 'sketch-1', curveIds: ['line-1', 'arc-1', 'line-2'] },
+      frenet: true,
+    },
+    rib: {
+      id: 'rib-1',
+      kind: 'rib',
+      name: 'リブ1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      profile: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+      thickness: ev('3', 3),
+      side: 'negative',
+      extendToBody: true,
+    },
+    emboss: {
+      id: 'emboss-1',
+      kind: 'emboss',
+      name: 'エンボス1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      face: faceRef('extrude-1', 7),
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-2' },
+      height: ev('2', 2),
+      raised: false,
+    },
+    threadShaft: {
+      id: 'threadShaft-1',
+      kind: 'threadShaft',
+      name: '外ねじ1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      face: faceRef('extrude-1', 8),
+      nominal: 'M10',
+      series: 'fine',
+      pitch: ev('1.25', 1.25),
+      length: ev('20', 20),
+      fromEnd: 'last',
+      modeled: true,
+    },
+    surface: {
+      id: 'surface-1',
+      kind: 'surface',
+      name: '曲面1',
+      suppressed: false,
+      operation: {
+        kind: 'loft',
+        sections: [
+          { sketchId: 'sketch-1', curveIds: ['line-1'] },
+          { sketchId: 'sketch-1', curveIds: ['line-2', 'arc-1'] },
+        ],
+        ruled: false,
+      },
+    },
+    shell: {
+      id: 'shell-1',
+      kind: 'shell',
+      name: 'くり抜き1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      openFaces: [faceRef('extrude-1', 1)],
+      thickness: ev('2', 2),
+      outward: true,
+    },
+    cut: {
+      id: 'cut-1',
+      kind: 'cut',
+      name: '切断1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      plane: {
+        kind: 'pointAndEdge',
+        point: { kind: 'point', pointId: 'point-1' },
+        edge: edgeRef('extrude-1', 3),
+        mode: 'perpendicular',
+      },
+      keep: 'negative',
+      pairedWith: 'cut-2',
+    },
+  };
+}
+
+/** いくつかのソリッドフィーチャーだけを持つ最小の文書(`documentWithSolid` の複数版)。 */
+function documentWithSolids(features: readonly SolidFeature[]): PartDocument {
+  return { ...createEmptyPartDocument(), solids: features };
+}
+
+/** 24 種を並べた部品文書(順序は `allSolidFeatures` の欄の順)。 */
+function documentWithAllSolids(): PartDocument {
+  return documentWithSolids(Object.values(allSolidFeatures()));
+}
+
+describe('24 種すべての読み書き(P5 タスク47、FR-801、FR-202)', () => {
+  it('24 種のソリッドフィーチャーが 1 つの文書で往復しても一致する', () => {
+    const document = documentWithAllSolids();
+    expect(document.solids).toHaveLength(24);
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('24 種すべての kind が書き出しに現れる(種類を取りこぼしていない)', () => {
+    const text = serializeDocument(documentWithAllSolids(), { savedAt: SAVED_AT });
+    for (const kind of Object.keys(allSolidFeatures())) {
+      expect(text).toContain(`"kind": "${kind}"`);
+    }
+  });
+
+  it('24 種の文書は何度書き出しても同じ文字列になる(欄の順が決まっている)', () => {
+    const document = documentWithAllSolids();
+    const first = serializeDocument(document, { savedAt: SAVED_AT });
+    const second = serializeDocument(document, { savedAt: SAVED_AT });
+    expect(second).toBe(first);
+    // 往復してから書き出しても同じ(読みが欄を並べ替えたり足したりしない)。
+    expect(serializeDocument(roundTrip(document), { savedAt: SAVED_AT })).toBe(first);
+  });
+
+  it('部分形状の参照(指紋)は種類をまたいで数値まで一致する', () => {
+    const restored = roundTrip(documentWithAllSolids());
+    const draft = restored.solids.find((solid) => solid.kind === 'draft');
+    if (draft === undefined || draft.kind !== 'draft') {
+      throw new Error('抜き勾配のはず');
+    }
+    expect(draft.faces).toEqual([faceRef('extrude-1', 1), faceRef('extrude-1', 2)]);
+    expect(draft.neutralFace.fingerprint).toEqual(faceRef('extrude-1', 0).fingerprint);
+    const fillet = restored.solids.find((solid) => solid.kind === 'fillet');
+    if (fillet === undefined || fillet.kind !== 'fillet') {
+      throw new Error('R 面取りのはず');
+    }
+    // 辺・頂点の指紋も種類ごと(kind)保たれる。
+    expect(fillet.targets[0].fingerprint.kind).toBe('edge');
+    expect(fillet.targets[1].fingerprint).toEqual({ kind: 'vertex', position: [4, 5, 6] });
+  });
+
+  it('点の指定 6 種が往復で一致する(点集合パターンの中)', () => {
+    const restored = roundTrip(documentWithAllSolids());
+    const pattern = restored.solids.find((solid) => solid.kind === 'pattern');
+    if (pattern === undefined || pattern.kind !== 'pattern' || pattern.placement.kind !== 'points') {
+      throw new Error('点集合パターンのはず');
+    }
+    expect(pattern.placement.points).toEqual(allPointReferences());
+    expect(pattern.placement.points).toHaveLength(6);
+  });
+
+  it('スケッチの面・点・曲線の並びへの参照が往復で一致する', () => {
+    const restored = roundTrip(documentWithAllSolids());
+    const sweep = restored.solids.find((solid) => solid.kind === 'sweep');
+    if (sweep === undefined || sweep.kind !== 'sweep') {
+      throw new Error('スイープのはず');
+    }
+    expect(sweep.profile).toEqual({ sketchId: 'sketch-1', faceFeatureId: 'face-1' });
+    // 曲線の並びは順序が意味を持つので、並べ替えずにそのまま返る。
+    expect(sweep.path.curveIds).toEqual(['line-1', 'arc-1', 'line-2']);
+    const spring = restored.solids.find((solid) => solid.kind === 'spring');
+    if (spring === undefined || spring.kind !== 'spring') {
+      throw new Error('ばねのはず');
+    }
+    expect(spring.origin).toEqual({ sketchId: 'sketch-1', pointFeatureId: 'point-1' });
+  });
+
+  it('式は評価値ではなく式文字列のまま往復する(FR-202、押し出しの距離)', () => {
+    const restored = roundTrip(documentWithAllSolids());
+    const extrude = restored.solids.find((solid) => solid.kind === 'extrude');
+    if (extrude === undefined || extrude.kind !== 'extrude') {
+      throw new Error('押し出しのはず');
+    }
+    expect(extrude.distance.source).toBe('板厚 * 2');
+    expect(extrude.distance.value).toBe(6);
+  });
+
+  it('薄板の向き 3 種(inner / outer / both)がすべて往復で一致する', () => {
+    const sides: readonly ThicknessSide[] = ['inner', 'outer', 'both'];
+    for (const thicknessSide of sides) {
+      const document = documentWithSolid({
+        id: 'extrude-1',
+        kind: 'extrude',
+        name: '押し出し1',
+        suppressed: false,
+        profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+        distance: ev('10', 10),
+        reversed: false,
+        symmetric: false,
+        thickness: ev('2', 2),
+        thicknessSide,
+      });
+      expect(roundTrip(document)).toEqual(document);
+    }
+  });
+
+  it('薄板の厚みの null(中実)は null のまま往復する(欄ごと省略にならない)', () => {
+    const document = documentWithSolid({
+      id: 'extrude-1',
+      kind: 'extrude',
+      name: '押し出し1',
+      suppressed: false,
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+      distance: ev('10', 10),
+      reversed: false,
+      symmetric: false,
+      thickness: null,
+    });
+    const parsed = roundTrip(document);
+    expect(parsed).toEqual(document);
+    const extrude = parsed.solids[0];
+    if (extrude.kind !== 'extrude') {
+      throw new Error('押し出しのはず');
+    }
+    expect(extrude.thickness).toBeNull();
+  });
+
+  it('ねじ穴の入口 3 種すべてが往復で一致する(穴とまったく同じ扱い)', () => {
+    const entries: readonly HoleEntry[] = [
+      { kind: 'plain' },
+      { kind: 'counterbore', diameter: ev('11', 11), depth: ev('4', 4) },
+      { kind: 'countersink', diameter: ev('12', 12), angle: ev('90', 90) },
+    ];
+    for (const entry of entries) {
+      const document = documentWithSolid({
+        id: 'threadHole-1',
+        kind: 'threadHole',
+        name: 'ねじ穴1',
+        suppressed: false,
+        targetFeatureId: 'extrude-1',
+        face: faceRef('extrude-1', 0),
+        centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+        designation: 'M6',
+        series: 'coarse',
+        pitch: ev('1', 1),
+        drillDiameter: ev('5', 5),
+        depth: { kind: 'through' },
+        entry,
+        threadLength: ev('10', 10),
+        representation: 'simplified',
+        tiltAngle: ev('0', 0),
+        tiltAzimuth: ev('0', 0),
+      });
+      expect(roundTrip(document)).toEqual(document);
+    }
+  });
+
+  it('球へつなぐ点の数 3 値(24 / 48 / 72)がすべて往復で一致する', () => {
+    for (const sphereSegments of RULED_SPHERE_SEGMENT_CHOICES) {
+      const document = documentWithSolid({
+        id: 'ruled-1',
+        kind: 'ruled',
+        name: '面をつなぐ1',
+        suppressed: false,
+        first: { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+        second: { kind: 'sphere', sphereFeatureId: 'primitive-1' },
+        twist: ev('0', 0),
+        sphereSegments,
+      });
+      expect(roundTrip(document)).toEqual(document);
+    }
+  });
+
+  it('曲面の作り方 6 種すべてが往復で一致する(FR-428)', () => {
+    const operations: readonly SurfaceOperation[] = [
+      {
+        kind: 'extrude',
+        profile: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+        distance: ev('20', 20),
+        reversed: false,
+      },
+      {
+        kind: 'revolve',
+        profile: { sketchId: 'sketch-1', curveIds: ['arc-1'] },
+        axis: { kind: 'reference', referenceFeatureId: 'referenceAxis-1' },
+        angle: ev('360', 360),
+        reversed: true,
+      },
+      { kind: 'planar', profile: { sketchId: 'sketch-1', curveIds: ['line-1', 'line-2'] } },
+      {
+        kind: 'loft',
+        sections: [
+          { sketchId: 'sketch-1', curveIds: ['line-1'] },
+          { sketchId: 'sketch-1', curveIds: ['line-2'] },
+        ],
+        ruled: true,
+      },
+      { kind: 'face', targetFeatureId: 'extrude-1', face: faceRef('extrude-1', 0) },
+      {
+        kind: 'offset',
+        targetFeatureId: 'extrude-1',
+        face: faceRef('extrude-1', 1),
+        distance: ev('5', 5),
+      },
+    ];
+    expect(operations).toHaveLength(6);
+    for (const operation of operations) {
+      const document = documentWithSolid({
+        id: 'surface-1',
+        kind: 'surface',
+        name: '曲面1',
+        suppressed: false,
+        operation,
+      });
+      expect(roundTrip(document)).toEqual(document);
+    }
+  });
+});
+
+describe('古いファイルの読み込み(NFR-RE-3、P5 タスク47)', () => {
+  /** P5 が足した欄(end / taperAngle / thickness / entry / radiusEnd)を 1 つも持たない立体 3 件。 */
+  function legacySolids(): readonly Record<string, unknown>[] {
+    return [
+      {
+        id: 'extrude-1',
+        kind: 'extrude',
+        name: '押し出し1',
+        suppressed: false,
+        profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+        distance: ev('10', 10),
+        reversed: false,
+        symmetric: true,
+      },
+      {
+        id: 'hole-1',
+        kind: 'hole',
+        name: '穴1',
+        suppressed: false,
+        targetFeatureId: 'extrude-1',
+        face: faceRef('extrude-1', 0),
+        centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+        diameter: ev('6', 6),
+        depth: { kind: 'through' },
+        tiltAngle: ev('0', 0),
+        tiltAzimuth: ev('0', 0),
+      },
+      {
+        id: 'fillet-1',
+        kind: 'fillet',
+        name: 'R面取り1',
+        suppressed: false,
+        targetFeatureId: 'hole-1',
+        targets: [edgeRef('hole-1', 1)],
+        radius: ev('2', 2),
+      },
+    ];
+  }
+
+  /** 版 4 として保存された生の文書(parameters も appearance も持たない)。 */
+  function legacyRawFile(): string {
+    return rawFile({
+      schema: 4,
+      document: withoutParameters(
+        withoutAppearance(rawDocument({ schemaVersion: 4, solids: legacySolids() })),
+      ),
+    });
+  }
+
+  it('版 4 のファイル(P5 の欄を 1 つも持たない)がそのまま開ける', () => {
+    const document = expectOk(parseDocument(legacyRawFile()));
+    expect(document.solids).toHaveLength(3);
+    expect(document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+    expect(document.parameters).toEqual([]);
+    expect(document.appearance.entries).toEqual([]);
+  });
+
+  it('版 4 の押し出しは欄が無いまま読め、既定は extrudeShapingOf が与える(両側・傾き 0・中実)', () => {
+    const extrude = expectOk(parseDocument(legacyRawFile())).solids[0];
+    if (extrude.kind !== 'extrude') {
+      throw new Error('押し出しのはず');
+    }
+    expect(extrude.end).toBeUndefined();
+    expect(extrude.taperAngle).toBeUndefined();
+    expect(extrude.thickness).toBeUndefined();
+    const shaping = extrudeShapingOf(extrude);
+    expect(shaping.end).toEqual({ kind: 'symmetric' });
+    expect(shaping.taperAngle.value).toBe(0);
+    expect(shaping.taperOutward).toBe(false);
+    expect(shaping.thickness).toBeNull();
+  });
+
+  it('版 4 の穴は入口を持たず、R 面取りは終点側の半径を持たない(既定は model が与える)', () => {
+    const solids = expectOk(parseDocument(legacyRawFile())).solids;
+    const hole = solids[1];
+    const fillet = solids[2];
+    if (hole.kind !== 'hole' || fillet.kind !== 'fillet') {
+      throw new Error('穴と R 面取りのはず');
+    }
+    expect(hole.entry).toBeUndefined();
+    expect(holeEntryOf(hole)).toEqual({ kind: 'plain' });
+    expect(fillet.radiusEnd).toBeUndefined();
+    expect(filletRadiusOf(fillet)).toEqual({ kind: 'constant', radius: ev('2', 2) });
+  });
+
+  it('版 4 のファイルを開いて書き戻しても、P5 の欄は 1 つも増えない(往復でファイルが太らない)', () => {
+    const document = expectOk(parseDocument(legacyRawFile()));
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    for (const added of ['"end"', 'taperAngle', 'taperOutward', 'thicknessSide', '"entry"', 'radiusEnd']) {
+      expect(text).not.toContain(added);
+    }
+    // 版だけが 6 へ正規化され、以後は自分自身との往復で字面が変わらない。
+    expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
+    expect(serializeDocument(expectOk(parseDocument(text)), { savedAt: SAVED_AT })).toBe(text);
+  });
+
+  it('省略できる欄を持たない文書は、版 5 前半と同じ字面のまま往復する(1 バイトも変わらない)', () => {
+    const document = expectOk(parseDocument(legacyRawFile()));
+    const before = serializeDocument(document, { savedAt: SAVED_AT });
+    const after = serializeDocument(roundTrip(document), { savedAt: SAVED_AT });
+    expect(after).toBe(before);
+  });
+
+  it('欄を足しただけなので、移行表は版 2〜5 の 4 つのままで版は 6 のままである', () => {
+    expect(Object.keys(SCHEMA_MIGRATIONS).sort()).toEqual(['2', '3', '4', '5']);
+    expect(PCAD_SCHEMA_VERSION).toBe(6);
+    expect(PART_SCHEMA_VERSION).toBe(PCAD_SCHEMA_VERSION);
+  });
+});
+
+describe('断りの網羅(P5 タスク47、FR-504、NFR-UX-5)', () => {
+  /** 立体 1 件だけの生ファイルを読ませて、断りの中身を返す。 */
+  function rejectSolid(solid: Record<string, unknown>): ParseError {
+    return expectError(parseDocument(rawFile({ document: rawDocument({ solids: [solid] }) })));
+  }
+
+  /** 全欄を埋めた押し出しの生の形(欄を 1 つずつ壊すための土台)。 */
+  function rawExtrude(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: 'extrude-1',
+      kind: 'extrude',
+      name: '押し出し1',
+      suppressed: false,
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+      distance: ev('10', 10),
+      reversed: false,
+      symmetric: false,
+      ...overrides,
+    };
+  }
+
+  it('薄板の向きに知らない値があれば、その場所を添えて断る', () => {
+    const error = rejectSolid(rawExtrude({ thickness: ev('2', 2), thicknessSide: 'middle' }));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].thicknessSide');
+  });
+
+  it('押し出しの終端に知らない種類があれば断る', () => {
+    const error = rejectSolid(rawExtrude({ end: { kind: 'toBody' } }));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].end.kind');
+  });
+
+  it('終端が toFace なのに面が無ければ、どこが無いかを添えて断る', () => {
+    const error = rejectSolid(rawExtrude({ end: { kind: 'toFace' } }));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.solids[0].end.face');
+  });
+
+  it('ミラーの鏡にする平面に知らない種類があれば断る', () => {
+    const error = rejectSolid({
+      id: 'mirror-1',
+      kind: 'mirror',
+      name: 'ミラー1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      plane: { kind: 'edge', planeId: 'xy' },
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].plane.kind');
+  });
+
+  it('拡大縮小の倍率に知らない種類があれば断る', () => {
+    const error = rejectSolid({
+      id: 'scale-1',
+      kind: 'scale',
+      name: '拡大縮小1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      origin: { kind: 'origin' },
+      factor: { kind: 'perFace', value: ev('2', 2) },
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].factor.kind');
+  });
+
+  it('移動/回転の移動量が 3 つでなければ断る(欄の数を推測で補わない)', () => {
+    const error = rejectSolid({
+      id: 'transform-1',
+      kind: 'transform',
+      name: '移動・回転1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      translation: [ev('1', 1), ev('2', 2)],
+      rotationAxis: null,
+      rotationAngle: ev('0', 0),
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].translation');
+  });
+
+  it('移動/回転の回転軸に知らない種類があれば断る(null は許すが、知らない形は許さない)', () => {
+    const error = rejectSolid({
+      id: 'transform-1',
+      kind: 'transform',
+      name: '移動・回転1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      translation: [ev('1', 1), ev('2', 2), ev('3', 3)],
+      rotationAxis: { kind: 'screw' },
+      rotationAngle: ev('0', 0),
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].rotationAxis.kind');
+  });
+
+  it('リブの厚みを付ける側に知らない値があれば断る', () => {
+    const error = rejectSolid({
+      id: 'rib-1',
+      kind: 'rib',
+      name: 'リブ1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      profile: { sketchId: 'sketch-1', curveIds: ['line-1'] },
+      thickness: ev('3', 3),
+      side: 'left',
+      extendToBody: false,
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].side');
+  });
+
+  it('外ねじを切り始める端に知らない値があれば断る', () => {
+    const error = rejectSolid({
+      id: 'threadShaft-1',
+      kind: 'threadShaft',
+      name: '外ねじ1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      face: faceRef('extrude-1', 0),
+      nominal: 'M10',
+      series: 'coarse',
+      pitch: ev('1.5', 1.5),
+      length: ev('20', 20),
+      fromEnd: 'middle',
+      modeled: false,
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].fromEnd');
+  });
+
+  it('曲面の作り方に知らない種類があれば断る', () => {
+    const error = rejectSolid({
+      id: 'surface-1',
+      kind: 'surface',
+      name: '曲面1',
+      suppressed: false,
+      operation: { kind: 'sweep', profile: { sketchId: 'sketch-1', curveIds: ['line-1'] } },
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].operation.kind');
+  });
+
+  it('抜き勾配の中立面が欠けていれば、どこが無いかを添えて断る', () => {
+    const error = rejectSolid({
+      id: 'draft-1',
+      kind: 'draft',
+      name: '抜き勾配1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      faces: [faceRef('extrude-1', 1)],
+      angle: ev('1', 1),
+      reversed: false,
+    });
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.solids[0].neutralFace');
+  });
+
+  it('数のところに文字列があれば断る(球へつなぐ点の数)', () => {
+    const error = rejectSolid({
+      id: 'ruled-1',
+      kind: 'ruled',
+      name: '面をつなぐ1',
+      suppressed: false,
+      first: { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+      second: { kind: 'sphere', sphereFeatureId: 'primitive-1' },
+      twist: ev('0', 0),
+      sphereSegments: '48',
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].sphereSegments');
+  });
+
+  it('数のところに文字列があれば断る(部分形状の参照の index)', () => {
+    const error = rejectSolid({
+      id: 'shell-1',
+      kind: 'shell',
+      name: 'くり抜き1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      openFaces: [{ ...faceRef('extrude-1', 0), index: '0' }],
+      thickness: ev('2', 2),
+      outward: false,
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].openFaces[0].index');
+  });
+
+  it('曲線の並びに文字列でない id が混ざれば、その位置を添えて断る', () => {
+    const error = rejectSolid({
+      id: 'rib-1',
+      kind: 'rib',
+      name: 'リブ1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      profile: { sketchId: 'sketch-1', curveIds: ['line-1', 3] },
+      thickness: ev('3', 3),
+      side: 'both',
+      extendToBody: false,
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].profile.curveIds[1]');
+  });
+
+  it('真偽のところに文字列があれば断る(エンボスの向き)', () => {
+    const error = rejectSolid({
+      id: 'emboss-1',
+      kind: 'emboss',
+      name: 'エンボス1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      face: faceRef('extrude-1', 0),
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+      height: ev('2', 2),
+      raised: 'true',
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].raised');
+  });
+
+  it('くり抜きの開ける面が配列でなければ断る', () => {
+    const error = rejectSolid({
+      id: 'shell-1',
+      kind: 'shell',
+      name: 'くり抜き1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      openFaces: faceRef('extrude-1', 0),
+      thickness: ev('2', 2),
+      outward: false,
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].openFaces');
+  });
+
+  it('切断面に知らない決め方があれば断る(作業平面と同じ一覧で絞る)', () => {
+    const error = rejectSolid({
+      id: 'cut-1',
+      kind: 'cut',
+      name: '切断1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      plane: { kind: 'twoEdges', planeId: 'xy', offset: ev('0', 0) },
+      keep: 'positive',
+      pairedWith: null,
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].plane.kind');
+  });
+
+  it('点集合パターンの点に知らない種類があれば、その位置を添えて断る', () => {
+    const error = rejectSolid({
+      id: 'pattern-1',
+      kind: 'pattern',
+      name: '点パターン1',
+      suppressed: false,
+      sourceFeatureId: 'hole-1',
+      placement: { kind: 'points', points: [{ kind: 'origin' }, { kind: 'faceCenter' }] },
+    });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].placement.points[1].kind');
+  });
+
+  it('知らない種類のフィーチャーはコードを増やさずに断る(24 種の外は読まない)', () => {
+    const error = rejectSolid({ id: 'x-1', kind: 'thicken', name: '厚み付け1', suppressed: false });
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].kind');
+  });
+
+  it('寸法が範囲外でも io は断らない(範囲の判定は model の解決側)', () => {
+    // io は「形」だけを見る。負の厚み・0 個・360 度を超える角度は、
+    // 解決の段(model)が invalidValue として利用者へ知らせる担当なので、
+    // ここで断ると古いファイルが開けなくなる。
+    const document = documentWithSolids([
+      {
+        id: 'shell-1',
+        kind: 'shell',
+        name: 'くり抜き1',
+        suppressed: false,
+        targetFeatureId: 'extrude-1',
+        openFaces: [],
+        thickness: ev('-2', -2),
+        outward: false,
+      },
+      {
+        id: 'pattern-1',
+        kind: 'pattern',
+        name: '直線パターン1',
+        suppressed: false,
+        sourceFeatureId: 'hole-1',
+        placement: {
+          kind: 'linear',
+          direction: { kind: 'world', axis: 'x' },
+          spacing: ev('0', 0),
+          count: ev('0', 0),
+          symmetric: false,
+        },
+      },
+      {
+        id: 'revolve-1',
+        kind: 'revolve',
+        name: '回転1',
+        suppressed: false,
+        profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' },
+        axis: { kind: 'world', axis: 'z' },
+        angle: ev('720', 720),
+        reversed: false,
+      },
+    ]);
+    expect(roundTrip(document)).toEqual(document);
   });
 });

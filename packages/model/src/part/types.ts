@@ -139,7 +139,13 @@ export type SolidFeatureKind =
   /** 外ねじ(FR-423)。円柱面にねじを切る。対象を消費する。 */
   | 'threadShaft'
   /** 曲面(FR-428)。閉じた立体ではなく面だけのボディを作る。対象を消費しない。 */
-  | 'surface';
+  | 'surface'
+  /**
+   * くり抜き(シェル。FR-418、§0.a-0.47、P5 計画書 §2.12)。壁の厚さを残して中身を抜く。
+   * 対象を消費する。Could 群だが、型・解決・読み書きはタスク46 で前倒しした
+   * (カーネルの段(タスク53)と鍵の材料(タスク44)が先にそろっていたため)。
+   */
+  | 'shell';
 
 interface SolidFeatureBase {
   /**
@@ -376,7 +382,26 @@ export interface FilletFeature extends SolidFeatureBase {
   readonly targetFeatureId: string;
   /** 丸める辺・頂点。 */
   readonly targets: readonly SubShapeRef[];
+  /**
+   * 丸める半径(mm)。**可変半径(FR-426)のときは辺の始点側の半径**になる。
+   *
+   * P5 タスク46 で可変半径を足したが、**欄の形は P3 のまま**にしてある。終点側の半径を
+   * 省略できる欄 `radiusEnd` として足すほうが、①版 4 以前 / 版 5 前半の `.pcad` を
+   * 読み手の分岐なしでそのまま読める、②省略した文書と一定半径を明示した文書が 1 ドットも
+   * 違わない段・鍵になる、③既存の呼び出し側(その場入力・プロパティ・コマンド・検査の見本)を
+   * 1 か所も書き換えずに済む、の 3 つが同時に成り立つためである(押し出しの `end` と
+   * 穴の `entry` をタスク43 が省略できる欄にしたのとまったく同じ決め)。
+   */
   readonly radius: ExpressionValue;
+  /**
+   * 可変半径(FR-426、§0.a-0.48)の**終点側の半径**(mm)。
+   *
+   * **null(と省略)なら一定半径**(既定、P3 からのふるまい)。数を入れると、辺の始点側で
+   * `radius`、終点側で `radiusEnd` になるように半径が変わる(カーネルの
+   * `FilletRadiusSpec = number | { start; end }` の `start` / `end` に 1 対 1 で対応)。
+   * **読む側は必ず `filletRadiusOf` を通す**(既定を各所へ写さない。`holeEntryOf` と同じ約束)。
+   */
+  readonly radiusEnd?: ExpressionValue | null;
 }
 
 /** C 面取りの大きさの指定(FR-408 の①②③)。 */
@@ -904,6 +929,21 @@ export type SurfaceOperation =
       /** 面を借りる立体を作ったフィーチャーの id。**消費しない。** */
       readonly targetFeatureId: string;
       readonly face: SubShapeRef;
+    }
+  /**
+   * すでにある立体の面を 1 枚取り出し、距離だけ離した面(FR-428)。**対象は消費しない。**
+   *
+   * カーネルの `SurfaceInput` に 6 種目として足された(タスク42b、`PerformBySimple`)。
+   * `distance` は面の法線の側を正とし、負にすれば逆へ離れる。**0 は解決が断る**
+   * (離れないので `face` と同じ形になり、同じ形に 2 通りの書き方ができてしまう)。
+   */
+  | {
+      readonly kind: 'offset';
+      /** 面を借りる立体を作ったフィーチャーの id。**消費しない。** */
+      readonly targetFeatureId: string;
+      readonly face: SubShapeRef;
+      /** 離す距離(mm)。0 以外。 */
+      readonly distance: ExpressionValue;
     };
 
 /**
@@ -920,6 +960,32 @@ export type SurfaceOperation =
 export interface SurfaceFeature extends SolidFeatureBase {
   readonly kind: 'surface';
   readonly operation: SurfaceOperation;
+}
+
+/**
+ * くり抜き(シェル。FR-418、§0.a-0.47、P5 計画書 §2.12)。壁の厚さを残して中身を抜く。
+ *
+ * **対象を消費する**(くり抜いた立体 1 つだけが残る)。欄はカーネルの `ShellStepSpec`
+ * (`packages/kernel/src/types.ts`、タスク53)と同じ意味・同じ名前にしてあるので、解決は
+ * 式を数へ直すだけで詰め替えられる。
+ *
+ * **開ける面は 0 枚でもよい。** そのときは外から見た形が変わらず、中だけが空になる
+ * (タスク53 の実測: 20³ を厚さ 2 で閉じたままくり抜くと 3904 = 8000 − 16³)。
+ * 同じ面を 2 度指しても 1 度だけ数える(解決が重複を除く。R 面取りと同じ扱い)。
+ */
+export interface ShellFeature extends SolidFeatureBase {
+  readonly kind: 'shell';
+  /** くり抜く立体を作ったフィーチャーの id。消費する。 */
+  readonly targetFeatureId: string;
+  /** 開ける面。**0 枚でもよい。** 対象の立体の面だけを指せる(解決が確かめる)。 */
+  readonly openFaces: readonly SubShapeRef[];
+  /** 壁の厚さ(mm)。0 より大きい。 */
+  readonly thickness: ExpressionValue;
+  /**
+   * true で外向きに肉を付ける(外側の大きさが変わる)。
+   * false(既定の使い方)で内向き——外側の大きさが変わらない。
+   */
+  readonly outward: boolean;
 }
 
 export type SolidFeature =
@@ -945,7 +1011,9 @@ export type SolidFeature =
   | RibFeature
   | EmbossFeature
   | ThreadShaftFeature
-  | SurfaceFeature;
+  | SurfaceFeature
+  // P5 の Could 群のうち、型・解決・読み書きをタスク46 が前倒しした 1 種(FR-418)。
+  | ShellFeature;
 
 // ---------------------------------------------------------------------------
 // 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329。P4 タスク9)

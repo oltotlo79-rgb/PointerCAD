@@ -75,10 +75,12 @@ import type {
   ChamferFeature,
   ChamferSize,
   DraftFeature,
+  EmbossFeature,
   ExtrudeEnd,
   ExtrudeFeature,
   FilletFeature,
   HoleDepth,
+  HoleEntry,
   HoleFeature,
   LoftFeature,
   MirrorFeature,
@@ -91,12 +93,16 @@ import type {
   PrimitiveShape,
   RevolveAxis,
   RevolveFeature,
+  RibFeature,
+  RibSide,
   RuledFeature,
   RuledSection,
   RuledSphereSegments,
   ScaleFactor,
   ScaleFeature,
   SewFeature,
+  ShellFeature,
+  SketchCurveRef,
   SketchFaceRef,
   SketchLineRef,
   SketchPointRef,
@@ -106,9 +112,13 @@ import type {
   SpringFeature,
   SpringHandedness,
   SubShapeRef,
+  SurfaceFeature,
+  SurfaceOperation,
+  SweepFeature,
   ThicknessSide,
   ThreadHoleFeature,
   ThreadRepresentation,
+  ThreadShaftFeature,
   TransformFeature,
 } from './types.js';
 
@@ -5481,5 +5491,1084 @@ describe('移動/回転と拡大縮小(FR-424)', () => {
 
   it('拡大縮小は対象を消費するので、残るのは拡大縮小した立体だけ', () => {
     expect(resolvePart(scaleDocument(uniformFactor('2'))).liveBodyIds).toEqual(['scale-1']);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * P5 タスク46: スイープ(FR-409)・リブ(FR-420)・エンボス(FR-421)・
+ * ざぐり/皿もみ(FR-422)・外ねじ(FR-423)・点集合パターン(FR-425)・
+ * 曲面(FR-428)・くり抜き(FR-418)・可変半径フィレット(FR-426)
+ * ------------------------------------------------------------------ */
+
+/** 線分フィーチャーを 1 本足す。作図面を変えられるのは「輪郭の平面」の検査のため。 */
+function addLine(
+  sketch: SketchDocument,
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+  planeId: WorkPlaneId = DEFAULT_WORK_PLANE_ID,
+): { readonly sketch: SketchDocument; readonly id: string } {
+  const line: SketchLineFeature = {
+    id: nextFeatureId(sketch, 'line'),
+    name: nextFeatureName(sketch, 'line'),
+    planeId,
+    kind: 'line',
+    from: absoluteCoordinate(from[0], from[1], from[2]),
+    to: absoluteCoordinate(to[0], to[1], to[2]),
+    construction: false,
+  };
+  return { sketch: appendFeature(sketch, line), id: line.id };
+}
+
+interface CurveFixture {
+  readonly document: PartDocument;
+  readonly faceA: SketchFaceRef;
+  readonly faceB: SketchFaceRef;
+  readonly brokenFace: SketchFaceRef;
+  readonly sketchId: string;
+  /** (0,0,0) → (0,0,50) の線分。スイープの経路に使う。 */
+  readonly path: SketchCurveRef;
+  /** (10,10,20) → (30,10,20) の線分(XY 面)。リブ・曲面の輪郭に使う。 */
+  readonly flat: SketchCurveRef;
+  /** (0,15,30) → (40,15,30) の線分(XZ 面)。リブの伸ばす向きの検査に使う。 */
+  readonly upright: SketchCurveRef;
+  /** 上と同じ線を逆向きにかいたもの。かいた順で向きが変わらないことの検査に使う。 */
+  readonly uprightReversed: SketchCurveRef;
+  /** 実在しない曲線 id を指す参照。 */
+  readonly missing: SketchCurveRef;
+  /** 曲線 id が空の参照(道筋を 1 本も選んでいない)。 */
+  readonly empty: SketchCurveRef;
+}
+
+function curveFixture(): CurveFixture {
+  const fixture = createFixture();
+  const base = fixture.document.sketches[0];
+  const path = addLine(base, [0, 0, 0], [0, 0, 50]);
+  const flat = addLine(path.sketch, [10, 10, 20], [30, 10, 20]);
+  const upright = addLine(flat.sketch, [0, 15, 30], [40, 15, 30], 'xz');
+  const uprightReversed = addLine(upright.sketch, [40, 15, 30], [0, 15, 30], 'xz');
+  const sketch = uprightReversed.sketch;
+  const sketchId = sketch.id;
+  return {
+    document: replaceSketch(fixture.document, sketch),
+    faceA: fixture.faceA,
+    faceB: fixture.faceB,
+    brokenFace: fixture.brokenFace,
+    sketchId,
+    path: { sketchId, curveIds: [path.id] },
+    flat: { sketchId, curveIds: [flat.id] },
+    upright: { sketchId, curveIds: [upright.id] },
+    uprightReversed: { sketchId, curveIds: [uprightReversed.id] },
+    missing: { sketchId, curveIds: ['line-404'] },
+    empty: { sketchId, curveIds: [] },
+  };
+}
+
+function sweepPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'sweep' }> {
+  if (step.plan.kind !== 'sweep') {
+    throw new Error(`テストの前提が壊れている: スイープでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function ribPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'rib' }> {
+  if (step.plan.kind !== 'rib') {
+    throw new Error(`テストの前提が壊れている: リブでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function embossPlan(
+  step: ResolvedSolidStep,
+): Extract<ResolvedSolidStep['plan'], { kind: 'emboss' }> {
+  if (step.plan.kind !== 'emboss') {
+    throw new Error(`テストの前提が壊れている: エンボスでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function threadShaftPlan(
+  step: ResolvedSolidStep,
+): Extract<ResolvedSolidStep['plan'], { kind: 'threadShaft' }> {
+  if (step.plan.kind !== 'threadShaft') {
+    throw new Error(`テストの前提が壊れている: 外ねじでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function surfacePlan(
+  step: ResolvedSolidStep,
+): Extract<ResolvedSolidStep['plan'], { kind: 'surface' }> {
+  if (step.plan.kind !== 'surface') {
+    throw new Error(`テストの前提が壊れている: 曲面でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function shellPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'shell' }> {
+  if (step.plan.kind !== 'shell') {
+    throw new Error(`テストの前提が壊れている: くり抜きでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+/**
+ * 外ねじを切る円柱面の指紋(P5 タスク46)。**半径を引数に取る**ところだけが既にある
+ * `cylinderFaceRef` と違う——呼び径と軸の実寸の食い違い(§0.a-0.85)を作るのに要る。
+ */
+function threadFaceRef(bodyFeatureId: string, radius: number): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index: 3,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'cylinder',
+      area: 628.3185307179587,
+      position: [0, 0, 10],
+      axis: [0, 0, 1],
+      radius,
+    },
+  };
+}
+
+describe('スイープ(FR-409、P5 タスク46)', () => {
+  function sweepFeature(
+    id: string,
+    profile: SketchFaceRef,
+    path: SketchCurveRef,
+    frenet = false,
+  ): SweepFeature {
+    return { id, name: id, suppressed: false, kind: 'sweep', profile, path, frenet };
+  }
+
+  it('断面の輪郭と経路の曲線が段に乗る', () => {
+    const fixture = curveFixture();
+    const document = withSolids(
+      fixture.document,
+      sweepFeature('sweep-1', fixture.faceA, fixture.path),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = sweepPlan(result.steps[0]);
+    expect(segmentEnds(plan.profile)).toEqual(rectangleEnds(0));
+    expect(segmentEnds(plan.path)).toEqual([
+      [
+        [0, 0, 0],
+        [0, 0, 50],
+      ],
+    ]);
+    expect(plan.frenet).toBe(false);
+  });
+
+  it('Frenet のつまみがそのまま段に乗る', () => {
+    const fixture = curveFixture();
+    const plan = sweepPlan(
+      resolvePart(
+        withSolids(fixture.document, sweepFeature('sweep-1', fixture.faceA, fixture.path, true)),
+      ).steps[0],
+    );
+    expect(plan.frenet).toBe(true);
+  });
+
+  it('経路が空なら断る(文言に「道筋」)', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(
+      withSolids(fixture.document, sweepFeature('sweep-1', fixture.faceA, fixture.empty)),
+    );
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('missingProfile');
+    expect(result.errors[0].message).toContain('道筋');
+  });
+
+  it('経路の曲線が見つからなければ断る', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(
+      withSolids(fixture.document, sweepFeature('sweep-1', fixture.faceA, fixture.missing)),
+    );
+    expect(result.errors[0].code).toBe('missingProfile');
+    expect(result.errors[0].message).toContain('道筋');
+  });
+
+  it('断面が見つからなければ断る(文言は「掃くもとの面」)', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(
+      withSolids(fixture.document, sweepFeature('sweep-1', fixture.brokenFace, fixture.path)),
+    );
+    expect(result.errors.some((error) => error.message.includes('掃くもとの面'))).toBe(true);
+  });
+
+  it('スイープは対象を取らないので、先に作った立体はそのまま残る', () => {
+    const fixture = curveFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      sweepFeature('sweep-1', fixture.faceA, fixture.path),
+    );
+    expect(resolvePart(document).liveBodyIds).toEqual(['extrude-1', 'sweep-1']);
+    expect(consumedTargetsOf(sweepFeature('sweep-1', fixture.faceA, fixture.path))).toEqual([]);
+  });
+
+  it('同じ入力なら同じ鍵、経路を変えれば違う鍵(NFR-PF-3)', () => {
+    const fixture = curveFixture();
+    const build = (path: SketchCurveRef): string =>
+      resolvePart(withSolids(fixture.document, sweepFeature('sweep-1', fixture.faceA, path)))
+        .steps[0].key;
+    expect(build(fixture.path)).toBe(build(fixture.path));
+    expect(build(fixture.flat)).not.toBe(build(fixture.path));
+  });
+});
+
+describe('リブ(FR-420、P5 タスク46)', () => {
+  interface RibOptions {
+    readonly thickness?: string;
+    readonly side?: RibSide;
+    readonly extendToBody?: boolean;
+  }
+
+  function ribFeature(
+    id: string,
+    targetFeatureId: string,
+    profile: SketchCurveRef,
+    options: RibOptions = {},
+  ): RibFeature {
+    return {
+      id,
+      name: id,
+      suppressed: false,
+      kind: 'rib',
+      targetFeatureId,
+      profile,
+      thickness: expr(options.thickness ?? '3'),
+      side: options.side ?? 'both',
+      extendToBody: options.extendToBody ?? true,
+    };
+  }
+
+  function ribDocument(profile: SketchCurveRef, options: RibOptions = {}): PartDocument {
+    const fixture = curveFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      ribFeature('rib-1', 'extrude-1', profile, options),
+    );
+  }
+
+  it('輪郭・厚み・法線・両側が段に乗る(法線は作図面から)', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(ribDocument(fixture.flat));
+    expect(result.errors).toEqual([]);
+    const plan = ribPlan(result.steps[1]);
+    expect(segmentEnds(plan.profile)).toEqual([
+      [
+        [10, 10, 20],
+        [30, 10, 20],
+      ],
+    ]);
+    expect(plan.thickness).toBe(3);
+    expect(plan.normal).toEqual([0, 0, 1]);
+    expect(plan.symmetric).toBe(true);
+    expect(plan.direction).toEqual([0, 1, 0]);
+  });
+
+  it('片側(positive)は両側にしない', () => {
+    const fixture = curveFixture();
+    const plan = ribPlan(resolvePart(ribDocument(fixture.flat, { side: 'positive' })).steps[1]);
+    expect(plan.symmetric).toBe(false);
+    expect(plan.normal).toEqual([0, 0, 1]);
+  });
+
+  it('片側(negative)は法線を裏返して片側にする', () => {
+    const fixture = curveFixture();
+    const plan = ribPlan(resolvePart(ribDocument(fixture.flat, { side: 'negative' })).steps[1]);
+    expect(plan.symmetric).toBe(false);
+    expect(plan.normal).toEqual([0, 0, -1]);
+  });
+
+  it('伸ばす向きは、輪郭をかいた順に関わらず下を向く', () => {
+    const fixture = curveFixture();
+    const forward = ribPlan(resolvePart(ribDocument(fixture.upright)).steps[1]);
+    const backward = ribPlan(resolvePart(ribDocument(fixture.uprightReversed)).steps[1]);
+    expect(forward.direction).toEqual([0, 0, -1]);
+    expect(backward.direction).toEqual([0, 0, -1]);
+  });
+
+  it('厚み 0 は断る(文言に「0 より大きい」)', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(ribDocument(fixture.flat, { thickness: '0' }));
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('0 より大きい');
+  });
+
+  it('輪郭が見つからなければ断る', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(ribDocument(fixture.missing));
+    expect(result.errors[0].code).toBe('missingProfile');
+    expect(result.errors[0].message).toContain('リブの輪郭');
+  });
+
+  it('「材料まで伸ばす」を切ったリブは、いまは理由をつけて断る', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(ribDocument(fixture.flat, { extendToBody: false }));
+    expect(result.errors[0].code).toBe('degenerate');
+    expect(result.errors[0].message).toContain('材料に届くまで');
+  });
+
+  it('リブは対象を消費するので、残るのはリブを足した立体だけ', () => {
+    const fixture = curveFixture();
+    expect(resolvePart(ribDocument(fixture.flat)).liveBodyIds).toEqual(['rib-1']);
+  });
+
+  it('厚みを変えれば鍵が変わり、同じ入力なら同じ鍵', () => {
+    const fixture = curveFixture();
+    const build = (thickness: string): string =>
+      resolvePart(ribDocument(fixture.flat, { thickness })).steps[1].key;
+    expect(build('3')).toBe(build('3'));
+    expect(build('4')).not.toBe(build('3'));
+  });
+});
+
+describe('エンボス(FR-421、P5 タスク46)', () => {
+  interface EmbossOptions {
+    readonly face?: SubShapeRef;
+    readonly height?: string;
+    readonly raised?: boolean;
+  }
+
+  function embossFeature(
+    id: string,
+    targetFeatureId: string,
+    profile: SketchFaceRef,
+    options: EmbossOptions = {},
+  ): EmbossFeature {
+    return {
+      id,
+      name: id,
+      suppressed: false,
+      kind: 'emboss',
+      targetFeatureId,
+      face: options.face ?? topFaceRef(targetFeatureId),
+      profile,
+      height: expr(options.height ?? '2'),
+      raised: options.raised ?? false,
+    };
+  }
+
+  function embossDocument(options: EmbossOptions = {}): PartDocument {
+    const fixture = createFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      embossFeature('emboss-1', 'extrude-1', fixture.faceB, options),
+    );
+  }
+
+  it('面の指紋・輪郭・深さ・彫るかどうかが段に乗る', () => {
+    const result = resolvePart(embossDocument());
+    expect(result.errors).toEqual([]);
+    const plan = embossPlan(result.steps[1]);
+    expect(plan.face).toEqual(topFaceRef('extrude-1'));
+    expect(plan.profiles).toHaveLength(1);
+    expect(segmentEnds(plan.profiles[0])).toEqual(rectangleEnds(10));
+    expect(plan.depth).toBe(2);
+    expect(plan.raised).toBe(false);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+  });
+
+  it('浮き出す指定がそのまま段に乗る', () => {
+    const plan = embossPlan(resolvePart(embossDocument({ raised: true })).steps[1]);
+    expect(plan.raised).toBe(true);
+  });
+
+  it('別のボディの面を指したら断る', () => {
+    const result = resolvePart(embossDocument({ face: topFaceRef('extrude-9') }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('もとの立体の面');
+  });
+
+  it('面でないもの(辺)を指したら断る', () => {
+    const result = resolvePart(embossDocument({ face: edgeRef('extrude-1') }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('面だけ');
+  });
+
+  it('高さ 0 は断る', () => {
+    const result = resolvePart(embossDocument({ height: '0' }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('0 より大きい');
+  });
+
+  it('エンボスは対象を消費するので、残るのは彫った立体だけ', () => {
+    expect(resolvePart(embossDocument()).liveBodyIds).toEqual(['emboss-1']);
+  });
+});
+
+describe('ざぐり・皿もみ(FR-422、P5 タスク46)', () => {
+  function holeDocument(entry: HoleEntry | undefined, diameter = '6'): PartDocument {
+    const fixture = createFixture();
+    const hole = holeFeature('hole-1', 'extrude-1', [fixture.pointA], { diameter });
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      entry === undefined ? hole : { ...hole, entry },
+    );
+  }
+
+  it('ざぐり(径 11・深さ 4)が段に乗る', () => {
+    const result = resolvePart(
+      holeDocument({ kind: 'counterbore', diameter: expr('11'), depth: expr('4') }),
+    );
+    expect(result.errors).toEqual([]);
+    const plan = holePlan(result.steps[1]);
+    expect(plan.entry).toEqual({ kind: 'counterbore', diameter: 11, depth: 4 });
+  });
+
+  it('皿もみ(頭径 12・角度 90 度)はラジアンへ直る(π/2)', () => {
+    const plan = holePlan(
+      resolvePart(
+        holeDocument({ kind: 'countersink', diameter: expr('12'), angle: expr('90') }),
+      ).steps[1],
+    );
+    expect(plan.entry).toEqual({
+      kind: 'countersink',
+      diameter: 12,
+      angle: 1.5707963267948966,
+    });
+  });
+
+  it('皿もみの深さは段に載せない(カーネルが角度と径から出す)', () => {
+    const plan = holePlan(
+      resolvePart(
+        holeDocument({ kind: 'countersink', diameter: expr('12'), angle: expr('90') }),
+      ).steps[1],
+    );
+    expect(plan.entry).not.toHaveProperty('depth');
+  });
+
+  it('ざぐりの径が下穴の径以下なら断る(先出し検査)', () => {
+    const result = resolvePart(
+      holeDocument({ kind: 'counterbore', diameter: expr('6'), depth: expr('4') }),
+    );
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('ざぐりの径');
+  });
+
+  it('ざぐりの深さ 0 は断る', () => {
+    const result = resolvePart(
+      holeDocument({ kind: 'counterbore', diameter: expr('11'), depth: expr('0') }),
+    );
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('ざぐりの深さ');
+  });
+
+  it('皿もみの角度 0 度・180 度は断る', () => {
+    const zero = resolvePart(
+      holeDocument({ kind: 'countersink', diameter: expr('12'), angle: expr('0') }),
+    );
+    const flat = resolvePart(
+      holeDocument({ kind: 'countersink', diameter: expr('12'), angle: expr('180') }),
+    );
+    expect(zero.errors[0].message).toContain('皿もみの角度');
+    expect(flat.errors[0].message).toContain('皿もみの角度');
+  });
+
+  it('皿もみの頭径が穴の径以下なら断る', () => {
+    const result = resolvePart(
+      holeDocument({ kind: 'countersink', diameter: expr('6'), angle: expr('90') }),
+    );
+    expect(result.errors[0].message).toContain('皿もみの頭の径');
+  });
+
+  it('入口を省いた穴と「広げない」を書いた穴は、段も鍵も同じ', () => {
+    const omitted = resolvePart(holeDocument(undefined));
+    const plain = resolvePart(holeDocument({ kind: 'plain' }));
+    expect(holePlan(omitted.steps[1])).not.toHaveProperty('entry');
+    expect(holePlan(plain.steps[1])).not.toHaveProperty('entry');
+    expect(plain.steps[1].key).toBe(omitted.steps[1].key);
+  });
+
+  it('ざぐりを足すと鍵が変わる(NFR-PF-3)', () => {
+    const plain = resolvePart(holeDocument(undefined)).steps[1].key;
+    const bored = resolvePart(
+      holeDocument({ kind: 'counterbore', diameter: expr('11'), depth: expr('4') }),
+    ).steps[1].key;
+    expect(bored).not.toBe(plain);
+  });
+
+  it('ねじ穴のざぐりは、段が受け取れないので理由をつけて断る', () => {
+    const fixture = createFixture();
+    const thread = threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA]);
+    const result = resolvePart(
+      withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), {
+        ...thread,
+        entry: { kind: 'counterbore', diameter: expr('11'), depth: expr('4') },
+      }),
+    );
+    expect(result.errors[0].code).toBe('degenerate');
+    expect(result.errors[0].message).toContain('ねじ穴のざぐり');
+  });
+});
+
+describe('外ねじ(FR-423、P5 タスク46)', () => {
+  interface ThreadShaftOptions {
+    readonly face?: SubShapeRef;
+    readonly nominal?: string;
+    readonly pitch?: string;
+    readonly length?: string;
+    readonly fromEnd?: 'first' | 'last';
+    readonly modeled?: boolean;
+  }
+
+  function threadShaftFeature(
+    id: string,
+    targetFeatureId: string,
+    options: ThreadShaftOptions = {},
+  ): ThreadShaftFeature {
+    return {
+      id,
+      name: id,
+      suppressed: false,
+      kind: 'threadShaft',
+      targetFeatureId,
+      face: options.face ?? threadFaceRef(targetFeatureId, 5),
+      nominal: options.nominal ?? 'M10',
+      series: 'coarse',
+      pitch: expr(options.pitch ?? '1.5'),
+      length: expr(options.length ?? '20'),
+      fromEnd: options.fromEnd ?? 'first',
+      modeled: options.modeled ?? false,
+    };
+  }
+
+  function shaftDocument(options: ThreadShaftOptions = {}): PartDocument {
+    const fixture = createFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      threadShaftFeature('threadShaft-1', 'extrude-1', options),
+    );
+  }
+
+  it('M10 の呼び径 10・ピッチ 1.5 が段に乗る(規格表から呼び径、文書からピッチ)', () => {
+    const result = resolvePart(shaftDocument());
+    expect(result.errors).toEqual([]);
+    const plan = threadShaftPlan(result.steps[1]);
+    expect(plan.majorDiameter).toBe(10);
+    expect(plan.pitch).toBe(1.5);
+    expect(plan.length).toBe(20);
+    expect(plan.fromEnd).toBe('first');
+    expect(plan.modeled).toBe(false);
+    expect(findMetricThread('M10')?.diameter).toBe(10);
+  });
+
+  it('実らせんのつまみがそのまま段に乗る', () => {
+    const plan = threadShaftPlan(resolvePart(shaftDocument({ modeled: true })).steps[1]);
+    expect(plan.modeled).toBe(true);
+  });
+
+  it('呼び径と軸の実寸が食い違えば断る(φ20 の軸に M10)', () => {
+    const result = resolvePart(
+      shaftDocument({ face: threadFaceRef('extrude-1', 10), nominal: 'M10' }),
+    );
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('呼び径と軸の径が合いません');
+  });
+
+  it('0.5mm までの差は通す(許容の境目)', () => {
+    const inside = resolvePart(shaftDocument({ face: threadFaceRef('extrude-1', 5.2) }));
+    expect(inside.errors).toEqual([]);
+    const outside = resolvePart(shaftDocument({ face: threadFaceRef('extrude-1', 5.3) }));
+    expect(outside.errors[0].code).toBe('invalidValue');
+  });
+
+  it('平らな面にはねじを切れない', () => {
+    const result = resolvePart(shaftDocument({ face: topFaceRef('extrude-1') }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('円柱の面');
+  });
+
+  it('別のボディの面を指したら断る', () => {
+    const result = resolvePart(shaftDocument({ face: threadFaceRef('extrude-9', 5) }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('もとの立体の面');
+  });
+
+  it('知らない呼びは断る', () => {
+    const result = resolvePart(shaftDocument({ nominal: 'M99' }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('ねじの呼び');
+  });
+
+  it('ねじ部の長さ 0 は断る', () => {
+    const result = resolvePart(shaftDocument({ length: '0' }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('ねじ部の長さ');
+  });
+
+  it('外ねじは対象を消費するので、残るのはねじを切った立体だけ', () => {
+    expect(resolvePart(shaftDocument()).liveBodyIds).toEqual(['threadShaft-1']);
+  });
+});
+
+describe('点の集まりへ複製(FR-425、P5 タスク46)', () => {
+  /** 点 count 個を持つスケッチと、その点を使う点集合パターンの文書を作る。 */
+  function pointPatternDocument(
+    count = 5,
+    options: { readonly missing?: boolean } = {},
+  ): { readonly document: PartDocument; readonly pointIds: readonly string[] } {
+    const fixture = createFixture();
+    const base = fixture.document.sketches[0];
+    const coordinates: (readonly [number, number, number])[] = [];
+    for (let index = 0; index < count; index += 1) {
+      coordinates.push([10 + index * 5, 10, 0]);
+    }
+    const added = addPoints(base, coordinates);
+    const document = replaceSketch(fixture.document, added.sketch);
+    const points: readonly PointReference[] = options.missing
+      ? [{ kind: 'point', pointId: 'point-404' }]
+      : added.pointIds.map((pointId): PointReference => ({ kind: 'point', pointId }));
+    const centers: readonly SketchPointRef[] =
+      added.pointIds.length === 0
+        ? [fixture.pointA]
+        : [{ sketchId: added.sketch.id, pointFeatureId: added.pointIds[0] }];
+    const pattern: PatternFeature = {
+      id: 'pattern-1',
+      name: 'pattern-1',
+      suppressed: false,
+      kind: 'pattern',
+      sourceFeatureId: 'hole-1',
+      placement: { kind: 'points', points },
+    };
+    return {
+      document: withSolids(
+        document,
+        extrudeFeature('extrude-1', fixture.faceA),
+        holeFeature('hole-1', 'extrude-1', centers),
+        pattern,
+      ),
+      pointIds: added.pointIds,
+    };
+  }
+
+  it('点 5 個なら変換が 5 個できて、最初は恒等(基準は最初の点)', () => {
+    const { document } = pointPatternDocument(5);
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = holePlan(result.steps[2]);
+    expect(plan.transforms).toHaveLength(5);
+    expect(plan.transforms[0].translation).toEqual([0, 0, 0]);
+    expect(plan.transforms[0].rotationAngle).toBe(0);
+    expect(plan.transforms.map((transform) => transform.translation)).toEqual([
+      [0, 0, 0],
+      [5, 0, 0],
+      [10, 0, 0],
+      [15, 0, 0],
+      [20, 0, 0],
+    ]);
+  });
+
+  it('もとの穴を再解決しても消費の記録を共有しない(2026-09-04 06:10 の②)', () => {
+    const { document } = pointPatternDocument(3);
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual([]);
+    expect(result.steps.map((step) => step.featureId)).toEqual([
+      'extrude-1',
+      'hole-1',
+      'pattern-1',
+    ]);
+    expect(result.liveBodyIds).toEqual(['pattern-1']);
+  });
+
+  it('点が引けなければ断る', () => {
+    const { document } = pointPatternDocument(3, { missing: true });
+    const result = resolvePart(document);
+    expect(result.errors.some((error) => error.message.includes('並べる点'))).toBe(true);
+  });
+
+  it('点が 1 つも選ばれていなければ断る', () => {
+    const { document } = pointPatternDocument(0);
+    const result = resolvePart(document);
+    expect(result.errors.some((error) => error.message.includes('並べる点'))).toBe(true);
+  });
+
+  it('resolvePatternTransforms は点の解決を渡さなければ断る(既定は「引けない」)', () => {
+    const outcome = resolvePatternTransforms(
+      { kind: 'points', points: [{ kind: 'point', pointId: 'point-1' }] },
+      [],
+    );
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('点の解決を渡せば、最初の点を基準に平行移動が並ぶ(純関数として)', () => {
+    const positions: ReadonlyMap<string, Vec3> = new Map<string, Vec3>([
+      ['a', [1, 2, 3]],
+      ['b', [4, 2, 3]],
+    ]);
+    const outcome = resolvePatternTransforms(
+      {
+        kind: 'points',
+        points: [
+          { kind: 'point', pointId: 'a' },
+          { kind: 'point', pointId: 'b' },
+        ],
+      },
+      [],
+      new Map(),
+      (reference) =>
+        reference.kind === 'point' ? (positions.get(reference.pointId) ?? null) : null,
+    );
+    if (!outcome.ok) {
+      throw new Error('テストの前提が壊れている: 点の解決が失敗した');
+    }
+    expect(outcome.transforms.map((transform) => transform.translation)).toEqual([
+      [0, 0, 0],
+      [3, 0, 0],
+    ]);
+  });
+
+  it('点の参照先のスケッチを referencedSketchIds が数える(FR-325 の順序の制約)', () => {
+    const { document, pointIds } = pointPatternDocument(3);
+    const pattern = document.solids.find((solid) => solid.id === 'pattern-1');
+    if (pattern === undefined) {
+      throw new Error('テストの前提が壊れている: パターンが無い');
+    }
+    // スケッチの一覧を渡さなければ数えられない(P5 タスク43 のまま)。
+    expect(referencedSketchIds(pattern)).toEqual([]);
+    expect(referencedSketchIds(pattern, document.sketches)).toEqual([
+      document.sketches[0].id,
+      document.sketches[0].id,
+      document.sketches[0].id,
+    ]);
+    expect(pointIds).toHaveLength(3);
+  });
+});
+
+describe('曲面(FR-428、P5 タスク46)', () => {
+  function surfaceFeature(id: string, operation: SurfaceOperation): SurfaceFeature {
+    return { id, name: id, suppressed: false, kind: 'surface', operation };
+  }
+
+  function surfaceDocument(operation: SurfaceOperation): PartDocument {
+    const fixture = curveFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      surfaceFeature('surface-1', operation),
+    );
+  }
+
+  it('押し出し面は輪郭・向き・長さが段に乗る', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(
+      surfaceDocument({
+        kind: 'extrude',
+        profile: fixture.flat,
+        distance: expr('20'),
+        reversed: false,
+      }),
+    );
+    expect(result.errors).toEqual([]);
+    const plan = surfacePlan(result.steps[1]);
+    if (plan.shape.kind !== 'extrude') {
+      throw new Error('テストの前提が壊れている: 押し出し面でない');
+    }
+    expect(plan.shape.direction).toEqual([0, 0, 1]);
+    expect(plan.shape.distance).toBe(20);
+    expect(plan.targetKey).toBeNull();
+  });
+
+  it('押し出し面の向きを反転すると法線が裏返る', () => {
+    const fixture = curveFixture();
+    const plan = surfacePlan(
+      resolvePart(
+        surfaceDocument({
+          kind: 'extrude',
+          profile: fixture.flat,
+          distance: expr('20'),
+          reversed: true,
+        }),
+      ).steps[1],
+    );
+    if (plan.shape.kind !== 'extrude') {
+      throw new Error('テストの前提が壊れている: 押し出し面でない');
+    }
+    expect(plan.shape.direction).toEqual([0, 0, -1]);
+  });
+
+  it('押し出し面の長さ 0 は断る', () => {
+    const fixture = curveFixture();
+    const result = resolvePart(
+      surfaceDocument({
+        kind: 'extrude',
+        profile: fixture.flat,
+        distance: expr('0'),
+        reversed: false,
+      }),
+    );
+    expect(result.errors[0].code).toBe('invalidValue');
+  });
+
+  it('回転面の角度は度からラジアンへ直る', () => {
+    const fixture = curveFixture();
+    const plan = surfacePlan(
+      resolvePart(
+        surfaceDocument({
+          kind: 'revolve',
+          profile: fixture.flat,
+          axis: { kind: 'world', axis: 'z' },
+          angle: expr('90'),
+          reversed: false,
+        }),
+      ).steps[1],
+    );
+    if (plan.shape.kind !== 'revolve') {
+      throw new Error('テストの前提が壊れている: 回転面でない');
+    }
+    expect(plan.shape.angle).toBe(1.5707963267948966);
+    expect(plan.shape.axisDirection).toEqual([0, 0, 1]);
+  });
+
+  it('平らな面は輪郭だけが段に乗る', () => {
+    const fixture = curveFixture();
+    const plan = surfacePlan(
+      resolvePart(surfaceDocument({ kind: 'planar', profile: fixture.flat })).steps[1],
+    );
+    expect(plan.shape.kind).toBe('planar');
+    expect(plan.targetKey).toBeNull();
+  });
+
+  it('ロフト面は断面が 2 つ以上要る', () => {
+    const fixture = curveFixture();
+    const ok = resolvePart(
+      surfaceDocument({ kind: 'loft', sections: [fixture.flat, fixture.path], ruled: true }),
+    );
+    expect(ok.errors).toEqual([]);
+    const plan = surfacePlan(ok.steps[1]);
+    if (plan.shape.kind !== 'loft') {
+      throw new Error('テストの前提が壊れている: ロフト面でない');
+    }
+    expect(plan.shape.sections).toHaveLength(2);
+    expect(plan.shape.ruled).toBe(true);
+    const tooFew = resolvePart(
+      surfaceDocument({ kind: 'loft', sections: [fixture.flat], ruled: false }),
+    );
+    expect(tooFew.errors[0].code).toBe('missingProfile');
+  });
+
+  it('立体の面を取り出す曲面は、面を借りる立体の鍵を持つ(消費しない)', () => {
+    const result = resolvePart(
+      surfaceDocument({
+        kind: 'face',
+        targetFeatureId: 'extrude-1',
+        face: topFaceRef('extrude-1'),
+      }),
+    );
+    expect(result.errors).toEqual([]);
+    const plan = surfacePlan(result.steps[1]);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+    expect(result.liveBodyIds).toEqual(['extrude-1', 'surface-1']);
+  });
+
+  it('面のオフセットは距離と面の指紋が段に乗る', () => {
+    const result = resolvePart(
+      surfaceDocument({
+        kind: 'offset',
+        targetFeatureId: 'extrude-1',
+        face: topFaceRef('extrude-1'),
+        distance: expr('5'),
+      }),
+    );
+    expect(result.errors).toEqual([]);
+    const plan = surfacePlan(result.steps[1]);
+    if (plan.shape.kind !== 'offset') {
+      throw new Error('テストの前提が壊れている: オフセットでない');
+    }
+    expect(plan.shape.distance).toBe(5);
+    expect(plan.shape.face).toEqual(topFaceRef('extrude-1'));
+    expect(plan.targetKey).toBe(result.steps[0].key);
+  });
+
+  it('オフセットの距離 0 は断る(元の面と同じ形になるため)', () => {
+    const result = resolvePart(
+      surfaceDocument({
+        kind: 'offset',
+        targetFeatureId: 'extrude-1',
+        face: topFaceRef('extrude-1'),
+        distance: expr('0'),
+      }),
+    );
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('0 以外');
+  });
+
+  it('面でないもの(辺)を取り出そうとしたら断る', () => {
+    const result = resolvePart(
+      surfaceDocument({
+        kind: 'face',
+        targetFeatureId: 'extrude-1',
+        face: edgeRef('extrude-1'),
+      }),
+    );
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('立体の面だけ');
+  });
+
+  it('面を借りる立体が無ければ断る', () => {
+    const result = resolvePart(
+      surfaceDocument({
+        kind: 'face',
+        targetFeatureId: 'extrude-9',
+        face: topFaceRef('extrude-9'),
+      }),
+    );
+    expect(result.errors[0].code).toBe('missingBody');
+  });
+
+  it('上流を伸ばすと、面を借りた曲面の鍵も変わる(NFR-PF-3)', () => {
+    const fixture = curveFixture();
+    const build = (distance: string): string =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA, { distance }),
+          surfaceFeature('surface-1', {
+            kind: 'face',
+            targetFeatureId: 'extrude-1',
+            face: topFaceRef('extrude-1'),
+          }),
+        ),
+      ).steps[1].key;
+    expect(build('20')).not.toBe(build('10'));
+  });
+});
+
+describe('くり抜き(FR-418、P5 タスク46)', () => {
+  interface ShellOptions {
+    readonly openFaces?: readonly SubShapeRef[];
+    readonly thickness?: string;
+    readonly outward?: boolean;
+  }
+
+  function shellFeature(
+    id: string,
+    targetFeatureId: string,
+    options: ShellOptions = {},
+  ): ShellFeature {
+    return {
+      id,
+      name: id,
+      suppressed: false,
+      kind: 'shell',
+      targetFeatureId,
+      openFaces: options.openFaces ?? [topFaceRef(targetFeatureId)],
+      thickness: expr(options.thickness ?? '2'),
+      outward: options.outward ?? false,
+    };
+  }
+
+  function shellDocument(options: ShellOptions = {}): PartDocument {
+    const fixture = createFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      shellFeature('shell-1', 'extrude-1', options),
+    );
+  }
+
+  it('開ける面・厚さ・向きが段に乗る', () => {
+    const result = resolvePart(shellDocument());
+    expect(result.errors).toEqual([]);
+    const plan = shellPlan(result.steps[1]);
+    expect(plan.openFaces).toEqual([topFaceRef('extrude-1')]);
+    expect(plan.thickness).toBe(2);
+    expect(plan.outward).toBe(false);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+  });
+
+  it('開ける面が 0 枚でも作れる(中だけが空になる)', () => {
+    const result = resolvePart(shellDocument({ openFaces: [] }));
+    expect(result.errors).toEqual([]);
+    expect(shellPlan(result.steps[1]).openFaces).toEqual([]);
+  });
+
+  it('同じ面を 2 度指しても 1 度だけ数える', () => {
+    const face = topFaceRef('extrude-1');
+    const plan = shellPlan(resolvePart(shellDocument({ openFaces: [face, face] })).steps[1]);
+    expect(plan.openFaces).toHaveLength(1);
+  });
+
+  it('厚さ 0 は断る', () => {
+    const result = resolvePart(shellDocument({ thickness: '0' }));
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('壁の厚さ');
+  });
+
+  it('面でないもの(辺)を開けようとしたら断る', () => {
+    const result = resolvePart(shellDocument({ openFaces: [edgeRef('extrude-1')] }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('面だけ');
+  });
+
+  it('別のボディの面を開けようとしたら断る', () => {
+    const result = resolvePart(shellDocument({ openFaces: [topFaceRef('extrude-9')] }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('もとの立体の面');
+  });
+
+  it('くり抜きは対象を消費するので、残るのはくり抜いた立体だけ', () => {
+    expect(resolvePart(shellDocument()).liveBodyIds).toEqual(['shell-1']);
+    expect(consumedTargetsOf(shellFeature('shell-1', 'extrude-1'))).toEqual(['extrude-1']);
+  });
+
+  it('外向きにすると鍵が変わる、同じ入力なら同じ鍵', () => {
+    const inner = resolvePart(shellDocument()).steps[1].key;
+    expect(resolvePart(shellDocument()).steps[1].key).toBe(inner);
+    expect(resolvePart(shellDocument({ outward: true })).steps[1].key).not.toBe(inner);
+  });
+});
+
+describe('可変半径フィレット(FR-426、P5 タスク46)', () => {
+  function filletDocument(radius: string, radiusEnd?: string): PartDocument {
+    const fixture = createFixture();
+    const fillet = filletFeature('fillet-1', 'extrude-1', [edgeRef('extrude-1')], { radius });
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      radiusEnd === undefined ? fillet : { ...fillet, radiusEnd: expr(radiusEnd) },
+    );
+  }
+
+  it('終点側の半径を入れると、段が始点と終点の 2 値になる', () => {
+    const result = resolvePart(filletDocument('2', '5'));
+    expect(result.errors).toEqual([]);
+    expect(filletPlan(result.steps[1]).radius).toEqual({ start: 2, end: 5 });
+  });
+
+  it('終点側を省くと一定半径のまま(段は P3 と同じ数 1 つ)', () => {
+    const omitted = resolvePart(filletDocument('2'));
+    expect(filletPlan(omitted.steps[1]).radius).toBe(2);
+  });
+
+  it('可変半径は一定半径と違う鍵になる', () => {
+    expect(resolvePart(filletDocument('2', '5')).steps[1].key).not.toBe(
+      resolvePart(filletDocument('2')).steps[1].key,
+    );
+  });
+
+  it('始点と終点が同じでも可変のまま段に乗る(カーネルが一定半径と同じ形にする)', () => {
+    expect(filletPlan(resolvePart(filletDocument('2', '2')).steps[1]).radius).toEqual({
+      start: 2,
+      end: 2,
+    });
+  });
+
+  it('終点側の半径 0 は断る(カーネルの Add_3(0, r) をここで止める)', () => {
+    const result = resolvePart(filletDocument('2', '0'));
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('0 より大きい');
   });
 });

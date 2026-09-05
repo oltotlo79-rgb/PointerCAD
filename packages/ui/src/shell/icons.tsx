@@ -1076,6 +1076,43 @@ export function TorusIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/*
+ * 面をつなぐ(罫線面、FR-430)とロフト(FR-410)。P5 タスク27。「作る」の一覧に並ぶ。
+ *
+ * どちらも「上下 2 つの輪郭を結ぶ」形だが、**結び方の違いがひと目で分かる**ように描き分ける。
+ * 面をつなぐは横の線を**まっすぐ**に、ロフトは**ふくらませた曲線**にしてある(§0.a-0.25 の
+ * 違いは `ruled` の真偽 1 つだけなので、絵でもその 1 点だけを変える)。
+ * 輪郭の楕円は上を小さく下を大きくして、「大きさの違う 2 つを結ぶ」ことを表す。
+ */
+
+/** 面をつなぐ(罫線面)。上下の輪郭を**直線**で結ぶ。 */
+export function RuledIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M5.2 3.4 2.6 12.6h10.8L10.8 3.4z" fill="currentColor" fillOpacity={0.35} />
+      <ellipse cx="8" cy="3.4" rx="2.8" ry="1.2" />
+      <path d="M5.2 3.4 2.6 12.6M10.8 3.4l2.6 9.2" />
+      <path d="M2.6 12.6c0 .9 2.42 1.6 5.4 1.6s5.4-.7 5.4-1.6" />
+    </SvgIcon>
+  );
+}
+
+/** ロフト。上下の輪郭を**なめらかな曲線**で結ぶ。 */
+export function LoftIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path
+        d="M5.2 3.4C3.4 6.2 6.2 9.4 2.6 12.6h10.8C9.8 9.4 12.6 6.2 10.8 3.4z"
+        fill="currentColor"
+        fillOpacity={0.35}
+      />
+      <ellipse cx="8" cy="3.4" rx="2.8" ry="1.2" />
+      <path d="M5.2 3.4C3.4 6.2 6.2 9.4 2.6 12.6M10.8 3.4c1.8 2.8-1 6 2.6 9.2" />
+      <path d="M2.6 12.6c0 .9 2.42 1.6 5.4 1.6s5.4-.7 5.4-1.6" />
+    </SvgIcon>
+  );
+}
+
 /**
  * 設定(FR-908、FR-909)。世の中の道具と同じ歯車で、表示設定の入口を表す。
  * 歯は 8 枚を 45 度ごとに置き、中心に軸の丸を 1 つ。

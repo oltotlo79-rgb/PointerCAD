@@ -54,7 +54,13 @@ import {
   type ResolvedSphere,
   type ResolveContext,
 } from '../sketch/resolveCoordinate.js';
-import { arcPointAt, ellipsePointAt, fitPlaneNormal } from '../sketch/resolveSketch.js';
+import {
+  arcPointAt,
+  curveEnd,
+  curveStart,
+  ellipsePointAt,
+  fitPlaneNormal,
+} from '../sketch/resolveSketch.js';
 import { projectionBodyFeatureId } from '../sketch/types.js';
 import type {
   PendingProjection,
@@ -68,6 +74,7 @@ import type {
 } from '../sketch/types.js';
 import {
   addVec3,
+  crossVec3,
   dotVec3,
   lengthVec3,
   normalizeVec3,
@@ -80,17 +87,22 @@ import { findMetricThread } from '../thread/metricThread.js';
 import {
   cacheKeyFor,
   type ExtrudeEndKeyMaterial,
+  type FilletRadiusKeyMaterial,
+  type HoleEntryKeyMaterial,
   type KeyCurve,
   type KeyTransform,
   type KeyVec3,
   type PrimitiveShapeKeyMaterial,
   type SolidStepKeyMaterial,
+  type SurfaceShapeKeyMaterial,
   type ThruSectionKeyMaterial,
 } from './cacheKey.js';
 import {
   consumedTargetsOf,
   DEFAULT_RULED_SPHERE_SEGMENTS,
   extrudeShapingOf,
+  filletRadiusOf,
+  holeEntryOf,
   isPatternSource,
   MAX_DRAFT_ANGLE_DEGREES,
   MAX_PATTERN_COUNT,
@@ -98,7 +110,6 @@ import {
   MAX_SPRING_TURNS,
   MAX_TAPER_ANGLE_DEGREES,
   MIN_SCALE,
-  SOLID_LABELS,
 } from './createPartDocument.js';
 import {
   createReferenceResolver,
@@ -113,10 +124,12 @@ import type {
   ChamferFeature,
   ChamferSize,
   DraftFeature,
+  EmbossFeature,
   ExtrudeEnd,
   ExtrudeFeature,
   FilletFeature,
   HoleDepth,
+  HoleEntry,
   HoleFeature,
   LoftFeature,
   MirrorFeature,
@@ -128,21 +141,27 @@ import type {
   PrimitiveShape,
   RevolveAxis,
   RevolveFeature,
+  RibFeature,
   RuledFeature,
   RuledSection,
   RuledSphereSegments,
   ScaleFeature,
   SewFeature,
+  ShellFeature,
+  SketchCurveRef,
   SketchFaceRef,
   SketchPointRef,
   SolidFeature,
   SolidOrigin,
+  SurfaceFeature,
   SurfaceOperation,
   SpringDerived,
   SpringFeature,
   SubShapeRef,
+  SweepFeature,
   ThicknessSide,
   ThreadHoleFeature,
+  ThreadShaftFeature,
   TransformFeature,
 } from './types.js';
 
@@ -223,6 +242,68 @@ export interface ThinExtrudePlan {
   readonly thickness: number;
   readonly side: ThicknessSide;
 }
+
+/**
+ * 穴・ねじ穴の入口の形(ざぐり・皿もみ。FR-422、P5 §0.a-0.39、タスク46)を解決した結果。
+ *
+ * 3 種と欄名は kernel の `HoleEntrySpec`(`occt/makeHole.ts`)と同じで、**皿もみの角度は
+ * ラジアン**(文書は度で持ち、換算はここが行う。`HoleEntry` の注釈)。
+ * **皿もみの円錐の深さは持たない**——頭径・穴の径・角度からカーネルが導くためである
+ * (導出できるものは渡さない。統括の決定 2026-09-05 17:37)。
+ *
+ * `plain`(広げない)の段は**この欄そのものを省く**ので、入口を指定していない穴と
+ * 「広げない」を明示した穴は段も鍵も 1 ドット違わない(押し出しの終端と同じ決め)。
+ */
+export type HoleEntryPlan =
+  | { readonly kind: 'counterbore'; readonly diameter: number; readonly depth: number }
+  /** `angle` は**ラジアン**。 */
+  | { readonly kind: 'countersink'; readonly diameter: number; readonly angle: number };
+
+/**
+ * 丸める半径(FR-407、可変半径は FR-426、§0.a-0.48)を解決した結果。
+ *
+ * kernel の `FilletRadiusSpec` と同じ形(`number | { start; end }`)にしてあるので、
+ * `kernelBridge` はそのまま渡せる。`start` は辺の始点側、`end` は終点側の半径(mm)。
+ */
+export type FilletRadiusPlan = number | { readonly start: number; readonly end: number };
+
+/**
+ * 曲面の作り方(FR-428、§0.a-0.45)を解決した結果。6 種。
+ *
+ * 種類と欄名は kernel の `SurfaceInput`(`occt/makeSurface.ts`)に揃えてあるので、
+ * `kernelBridge` は曲線と指紋を詰め替えるだけで渡せる。角度はラジアン、距離は mm。
+ * **`face` と `offset` だけが立体の面を材料にする**が、どちらも借りるだけで消費しない
+ * (罫線面の `faceQuery`・基本形状の頂点と同じ扱い、§0.a-0.27)。
+ */
+export type SurfaceShapePlan =
+  | {
+      readonly kind: 'extrude';
+      readonly profile: readonly ResolvedCurve[];
+      /** 掃く向き(単位ベクトル)。反転を適用した後の向き。 */
+      readonly direction: Vec3;
+      readonly distance: number;
+    }
+  | {
+      readonly kind: 'revolve';
+      readonly profile: readonly ResolvedCurve[];
+      readonly axisOrigin: Vec3;
+      readonly axisDirection: Vec3;
+      /** 回転角(ラジアン)。 */
+      readonly angle: number;
+    }
+  | { readonly kind: 'planar'; readonly profile: readonly ResolvedCurve[] }
+  | {
+      readonly kind: 'loft';
+      readonly sections: readonly (readonly ResolvedCurve[])[];
+      readonly ruled: boolean;
+    }
+  | { readonly kind: 'face'; readonly face: SubShapeQueryPlan }
+  | {
+      readonly kind: 'offset';
+      readonly face: SubShapeQueryPlan;
+      /** 離す距離(mm)。0 以外(0 は解決が断る)。 */
+      readonly distance: number;
+    };
 
 /**
  * model 側の「1段の作り方」。kernel の SolidStepSpec とは別の型にして、
@@ -308,6 +389,11 @@ export type SolidStepPlan =
       /** 傾ける向き(面内の方位角、ラジアン)。基準は面の第1軸(§0.a-0.10)。 */
       readonly tiltAzimuth: number;
       readonly transforms: readonly RigidTransform[];
+      /**
+       * 入口の形(ざぐり・皿もみ。FR-422、タスク46)。**広げないときは省く**
+       * (`HoleEntryPlan` の注釈。省略と「広げない」を同じ段・同じ鍵にするため)。
+       */
+      readonly entry?: HoleEntryPlan;
     }
   | {
       readonly kind: 'thread';
@@ -336,6 +422,13 @@ export type SolidStepPlan =
        * kernel 側は `ThreadMarkSpec | null` だが、**model は簡略表示でも実らせんでも必ず作る**
        * ので null を取らない(印は実形状のときも出す、§2.4.2)。
        */
+      /**
+       * 3D の簡略表示に使うねじの印。
+       *
+       * **入口の形(ざぐり・皿もみ、FR-422)の欄はここに無い。** カーネルの
+       * `ThreadStepSpec` がまだ受け取れないためで、非 `plain` の指定は解決が断る
+       * (`planThreadHole` の注釈。段に欄が増えたら穴と同じ形で足す)。
+       */
       readonly mark: { readonly majorDiameter: number; readonly length: number };
     }
   | {
@@ -360,8 +453,11 @@ export type SolidStepPlan =
       readonly targetKey: string;
       /** 丸める辺・頂点の指紋。通し番号の昇順に並べる(鍵を安定させるため、タスク16)。 */
       readonly targets: readonly SubShapeQueryPlan[];
-      /** 丸める半径(mm)。0 より大きい。 */
-      readonly radius: number;
+      /**
+       * 丸める半径(mm)。0 より大きい。**可変半径(FR-426)のときは始点と終点の 2 値**
+       * (`FilletRadiusPlan`)。一定半径のときは P3 と同じ数 1 つで、段も鍵も変わらない。
+       */
+      readonly radius: FilletRadiusPlan;
     }
   | {
       readonly kind: 'chamfer';
@@ -492,6 +588,97 @@ export type SolidStepPlan =
       readonly uniform: number | null;
       /** 軸ごとの倍率(X, Y, Z)。全体の倍率のときは null。 */
       readonly perAxis: Vec3 | null;
+    }
+  | {
+      /**
+       * スイープ(FR-409、§0.a-0.43、タスク46)。断面を経路に沿って掃く。
+       * **対象を取らない「作る」段**(押し出し・ばね・基本形状と同じ)。
+       */
+      readonly kind: 'sweep';
+      /** 掃く断面の閉ループ。 */
+      readonly profile: readonly ResolvedCurve[];
+      /** 経路。並びが意味を持つ(書かれた順につながっている前提)。 */
+      readonly path: readonly ResolvedCurve[];
+      /** true で Frenet、false(既定)で「ねじれを抑える」。 */
+      readonly frenet: boolean;
+    }
+  | {
+      /**
+       * リブ(FR-420、§0.a-0.37、タスク46)。開いた輪郭に厚みを付けた壁を足す。
+       * **対象を消費する。**
+       */
+      readonly kind: 'rib';
+      readonly targetKey: string;
+      /** 壁にする輪郭(閉じていなくてよい)。 */
+      readonly profile: readonly ResolvedCurve[];
+      /** 輪郭の平面の単位法線。厚みはこの向きへ付く。 */
+      readonly normal: Vec3;
+      /** 壁の厚み(mm)。0 より大きい。 */
+      readonly thickness: number;
+      /** 両側へ付けるか(false なら法線の側だけ)。 */
+      readonly symmetric: boolean;
+      /** 伸ばす向き(材料へ向かう向き、単位ベクトル)。輪郭の平面の中にある。 */
+      readonly direction: Vec3;
+    }
+  | {
+      /**
+       * エンボス(FR-421、§0.a-0.38、タスク46)。平らな面へ輪郭を彫る / 浮き出す。
+       * **対象を消費する。**
+       */
+      readonly kind: 'emboss';
+      readonly targetKey: string;
+      /** 相手の面の指紋。平らな面だけ(選び直しはカーネル、§2.2)。 */
+      readonly face: SubShapeQueryPlan;
+      /** 面の上に置く閉じた輪郭。model のフィーチャーは 1 枚だが、段は列で受ける。 */
+      readonly profiles: readonly (readonly ResolvedCurve[])[];
+      /** 面から測った深さ(mm)。0 より大きい(文書の `height` そのもの)。 */
+      readonly depth: number;
+      /** true なら浮き出す(和)、false なら彫る(差)。 */
+      readonly raised: boolean;
+    }
+  | {
+      /**
+       * 外ねじ(FR-423、§0.a-0.40、タスク46)。円柱面にねじを切る。**対象を消費する。**
+       * 呼び径は規格表(`thread/metricThread.ts`)から引き、軸の実寸との食い違いは
+       * 解決が先に断る(§0.a-0.85、`THREAD_SHAFT_DIAMETER_TOLERANCE_MM`)。
+       */
+      readonly kind: 'threadShaft';
+      readonly targetKey: string;
+      /** ねじを切る円柱面の指紋。 */
+      readonly face: SubShapeQueryPlan;
+      /** 呼び径 d(mm)。印に載せる値で、削る深さはカーネルがピッチから決める。 */
+      readonly majorDiameter: number;
+      readonly pitch: number;
+      /** ねじ部の長さ(mm)。 */
+      readonly length: number;
+      readonly fromEnd: 'first' | 'last';
+      /** 実らせんを切るなら true。false(既定)は簡略表示で B-rep に触れない。 */
+      readonly modeled: boolean;
+    }
+  | {
+      /**
+       * 曲面(FR-428、§0.a-0.45、タスク46)。**面だけのボディ**を作る。
+       * **どの作り方でも対象を消費しない**が、`face` / `offset` のときは面を借りる立体の
+       * 鍵を必ず持つ(鍵の連鎖。混ぜないと上流を編集しても古い面の形が返る、NFR-PF-3)。
+       */
+      readonly kind: 'surface';
+      readonly shape: SurfaceShapePlan;
+      /** 面を借りる立体の段の鍵。`face` / `offset` 以外は null。**消費しない。** */
+      readonly targetKey: string | null;
+    }
+  | {
+      /**
+       * くり抜き(シェル。FR-418、§0.a-0.47、タスク46)。壁の厚さを残して中身を抜く。
+       * **対象を消費する。**
+       */
+      readonly kind: 'shell';
+      readonly targetKey: string;
+      /** 開ける面の指紋。**0 枚でもよい。** 通し番号の昇順(R 面取りと同じ理由)。 */
+      readonly openFaces: readonly SubShapeQueryPlan[];
+      /** 壁の厚さ(mm)。0 より大きい。 */
+      readonly thickness: number;
+      /** true で外向きに肉を付ける。false(既定)で内向き。 */
+      readonly outward: boolean;
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -777,6 +964,12 @@ interface SolidPlanContext {
   readonly point: (reference: PointReference) => Vec3 | null;
   /** 基準軸(FR-329)の解決結果。`resolveRevolveAxis` へそのまま渡す。 */
   readonly axisFrames: ReadonlyMap<string, AxisFrame>;
+  /**
+   * スケッチの**保存形**(P5 タスク46)。解決済みの `ResolvedPartSketch` は作図面の id を
+   * 持たないので、**開いた輪郭の平面の法線**を作図面から取るためにここで持つ
+   * (リブ FR-420・曲面の押し出し FR-428。線分 1 本の輪郭は座標だけからは平面が決まらない)。
+   */
+  readonly sketchDocuments: readonly SketchDocument[];
 }
 
 function partError(featureId: string, code: PartErrorCode, message: string): PartError {
@@ -1296,6 +1489,101 @@ function resolveTilt(
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * 穴の入口(ざぐり・皿もみ。FR-422、P5 §0.a-0.39)。タスク46
+ * ------------------------------------------------------------------ */
+
+/**
+ * ざぐり・皿もみの断りの文言(FR-504、NFR-UX-5)。
+ *
+ * **同じ検査がカーネル(`packages/kernel/src/occt/makeHole.ts` の `checkHoleEntry`)にもある。**
+ * model が先に断るので利用者が見るのはここの文言だけだが、片方だけ直すと理由が食い違うため
+ * **文言は 1 字も違えずに揃える**(基本形状・罫線面の断りと同じ扱い)。
+ * model 側で先に断るのは、重い OCCT の呼び出しの前にツリーへ理由を出すためである。
+ */
+const COUNTERBORE_DIAMETER_MESSAGE = 'ざぐりの径は穴の径より大きくしてください。';
+const COUNTERBORE_DEPTH_MESSAGE = 'ざぐりの深さは 0 より大きい数にしてください。';
+const COUNTERSINK_ANGLE_MESSAGE = '皿もみの角度は 0 度より大きく 180 度未満にしてください。';
+const COUNTERSINK_DIAMETER_MESSAGE = '皿もみの頭の径は穴の径より大きくしてください。';
+
+/** 皿もみの開き角の上限(度、含まない)。180 度では円錐が平らになり深さ 0 になる。 */
+const MAX_COUNTERSINK_DEGREES = 180;
+
+/**
+ * ねじ穴のざぐり・皿もみ(FR-422)。カーネルの段(`ThreadStepSpec`)に `entry` の欄が
+ * まだ無いので、黙って真っ直ぐな下穴にせず理由をつけて断る(`planThreadHole` の注釈)。
+ */
+const THREAD_HOLE_ENTRY_MESSAGE =
+  'ねじ穴のざぐり・皿もみはこの版ではまだ作れません。入口の形を「広げない」にしてください。';
+
+type HoleEntryOutcome =
+  | { readonly ok: true; readonly entry: HoleEntryPlan | null }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 穴の入口の形(FR-422)を段の欄へ直す(§0.a-0.39、タスク46)。
+ *
+ * - `plain`(広げない)は **null** を返し、段へ欄そのものを載せない(省略と同じ鍵にする)。
+ * - `counterbore` は径と深さをそのまま。**径は下穴の径より大きい**こと(先出し検査)。
+ * - `countersink` は角度を**度からラジアンへ**直す。**円錐の深さは計算しない**——
+ *   `(頭径 − 穴の径) / 2 / tan(角度 / 2)` はカーネルが導く(統括の決定 2026-09-05 17:37)。
+ *
+ * `drillDiameter` は「入口を広げるもとの穴の径」で、穴では直径、ねじ穴では下穴径になる。
+ * 見る順(角度 → 頭径)はカーネルの `checkHoleEntry` と同じにしてある——深さの式が角度の
+ * 正しさに乗っているためで、同じ入力から必ず同じ理由が出るようにする。
+ */
+function resolveHoleEntry(
+  featureId: string,
+  entry: HoleEntry,
+  drillDiameter: number,
+): HoleEntryOutcome {
+  switch (entry.kind) {
+    case 'plain':
+      return { ok: true, entry: null };
+    case 'counterbore': {
+      const diameter = entry.diameter.value;
+      if (!Number.isFinite(diameter) || diameter <= drillDiameter) {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', COUNTERBORE_DIAMETER_MESSAGE),
+        };
+      }
+      const depth = entry.depth.value;
+      if (!isPositiveFinite(depth)) {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', COUNTERBORE_DEPTH_MESSAGE),
+        };
+      }
+      return { ok: true, entry: { kind: 'counterbore', diameter, depth } };
+    }
+    case 'countersink': {
+      const angleDegrees = entry.angle.value;
+      if (
+        !Number.isFinite(angleDegrees) ||
+        angleDegrees <= 0 ||
+        angleDegrees >= MAX_COUNTERSINK_DEGREES
+      ) {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', COUNTERSINK_ANGLE_MESSAGE),
+        };
+      }
+      const diameter = entry.diameter.value;
+      if (!Number.isFinite(diameter) || diameter <= drillDiameter) {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', COUNTERSINK_DIAMETER_MESSAGE),
+        };
+      }
+      return {
+        ok: true,
+        entry: { kind: 'countersink', diameter, angle: degreesToRadians(angleDegrees) },
+      };
+    }
+  }
+}
+
 /** 穴とねじ穴に共通する欄。どちらも対象・面・中心・深さ・傾きを同じ意味で持つ。 */
 type HoleLikeFeature = HoleFeature | ThreadHoleFeature;
 
@@ -1403,6 +1691,11 @@ function planHole(
   if (!isPositiveFinite(diameter)) {
     return fail(feature.id, 'invalidValue', '穴の直径は 0 より大きい数にしてください。');
   }
+  // 入口の形(FR-422、タスク46)。省略された欄は `holeEntryOf` が既定で埋める。
+  const entry = resolveHoleEntry(feature.id, holeEntryOf(feature), diameter);
+  if (!entry.ok) {
+    return entry;
+  }
   return {
     ok: true,
     plan: {
@@ -1415,6 +1708,8 @@ function planHole(
       tiltAngle: base.tiltAngle,
       tiltAzimuth: base.tiltAzimuth,
       transforms: [],
+      // 広げないときは欄そのものを載せない(省略と「広げない」を同じ鍵にするため)。
+      ...(entry.entry === null ? {} : { entry: entry.entry }),
     },
   };
 }
@@ -1464,6 +1759,24 @@ function planThreadHole(
   // 止まり穴のときだけ深さと比べる。貫通穴は深さが無いので比べる相手がない。
   if (base.depth !== null && threadLength > base.depth) {
     return fail(feature.id, 'invalidValue', 'ねじ部の長さは、穴の深さ以下にしてください。');
+  }
+  /*
+    入口の形(FR-422)。比べる相手は**下穴の径**(ざぐり・皿もみは下穴を広げるため)で、
+    値の検査は穴とまったく同じ口を通す。
+
+    **ただしカーネルのねじ穴の段(`ThreadStepSpec`)にはまだ `entry` の欄が無い**
+    (`makeThreadHole` は `makeHoleTools` を既定の `plain` で呼ぶ。タスク40・42a の範囲は
+    穴の入口までだった)。段へ載せずに黙って真っ直ぐな下穴を掘ると、画面の指定と形が
+    食い違ってしまうので、**値を確かめたうえで理由をつけて断る**(FR-504)。
+    段に欄が増えたら、ここを穴と同じ `...(entry === null ? {} : { entry })` へ変えるだけでよい
+    (**タスク47・55、およびカーネル側への申し送り**)。
+  */
+  const entry = resolveHoleEntry(feature.id, holeEntryOf(feature), drillDiameter);
+  if (!entry.ok) {
+    return entry;
+  }
+  if (entry.entry !== null) {
+    return fail(feature.id, 'degenerate', THREAD_HOLE_ENTRY_MESSAGE);
   }
   const modeled = feature.representation === 'modeled';
   return {
@@ -1518,13 +1831,34 @@ function planFillet(
   if (targets.length === 0) {
     return fail(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
   }
-  const radius = feature.radius.value;
-  if (!isPositiveFinite(radius)) {
+  /*
+    半径(FR-407)と可変半径(FR-426、§0.a-0.48、タスク46)。省略できる欄は必ず
+    `filletRadiusOf` を通して読む(既定は `createPartDocument.ts` の 1 か所)。
+    **可変でも始点と終点の両方が 0 より大きい**ことを先に確かめる(カーネルの
+    `makeVariableFillet.ts` は `Add_3(0, r)` も成功させてしまうので入口で断る、タスク53)。
+    始点と終点が同じ値のときも `{ start; end }` のまま渡す——カーネルの実測で
+    「始点 = 終点は一定半径と 1e-6 一致」が固定されており(2026-09-05 16:13)、
+    ここで数 1 つへ畳むと利用者が入れた「可変」の指定が段の形から消えてしまうためである。
+  */
+  const radiusInput = filletRadiusOf(feature);
+  if (radiusInput.kind === 'constant') {
+    const radius = radiusInput.radius.value;
+    if (!isPositiveFinite(radius)) {
+      return fail(feature.id, 'invalidValue', '丸める半径は 0 より大きい数にしてください。');
+    }
+    return {
+      ok: true,
+      plan: { kind: 'fillet', targetKey: target.targetKey, targets, radius },
+    };
+  }
+  const start = radiusInput.start.value;
+  const end = radiusInput.end.value;
+  if (!isPositiveFinite(start) || !isPositiveFinite(end)) {
     return fail(feature.id, 'invalidValue', '丸める半径は 0 より大きい数にしてください。');
   }
   return {
     ok: true,
-    plan: { kind: 'fillet', targetKey: target.targetKey, targets, radius },
+    plan: { kind: 'fillet', targetKey: target.targetKey, targets, radius: { start, end } },
   };
 }
 
@@ -1828,6 +2162,13 @@ function planSpring(
   };
 }
 
+/** 点集合パターン(FR-425)で点が 1 つも選ばれていない。 */
+const POINT_PATTERN_EMPTY_MESSAGE =
+  '並べる点が選ばれていません。スケッチで点を作ってから選び直してください。';
+/** 点集合パターンの点が引けない(消された・上流が失敗した・履歴の順序が合わない)。 */
+const POINT_PATTERN_MISSING_MESSAGE =
+  '並べる点が見つかりません。スケッチで点を作ってからやり直してください。';
+
 /** パターンの並べ方の個数(FR-411、FR-412、§2.7)。2 以上 MAX_PATTERN_COUNT 以下の整数。 */
 type PatternCountOutcome =
   | { readonly ok: true; readonly count: number }
@@ -1861,20 +2202,46 @@ export function resolvePatternTransforms(
   placement: PatternPlacement,
   sketches: readonly ResolvedPartSketch[],
   axisFrames: ReadonlyMap<string, AxisFrame> = new Map<string, AxisFrame>(),
+  point: (reference: PointReference) => Vec3 | null = () => null,
 ):
   | { readonly ok: true; readonly transforms: readonly RigidTransform[] }
   | { readonly ok: false; readonly code: PartErrorCode; readonly message: string } {
   if (placement.kind === 'points') {
     /*
-      点の集まりへ複製(FR-425、P5 §0.a-0.42)。**型だけがタスク43 で入った段階**で、
-      点の解決(スケッチの点・立体の頂点・球面上の点)と変換の組み立ては **タスク46** の
-      担当である。ここは `PatternPlacement` に case が増えたときにこの関数を落とさない
-      ための最小の枝で、いまは理由と代わりの道具を添えて断る(FR-504、NFR-UX-5)。
+      点の集まりへ複製(FR-425、P5 §0.a-0.42、タスク46)。
+
+      **点の一覧がそのまま置き場所になる。** 直線・円形が「もとを含めた総数」を持ち
+      もとの位置ぶんの変換を作らない(n−1 個)のと違い、点集合は利用者が「並べたい場所を
+      全部書く」ものなので、**点の数だけ変換を作る**(n 個)。**基準は最初の点**で、
+      最初の変換は必ず恒等になる——もとの工具は最初の点の位置で作られている前提だからで、
+      基準を重心などにすると、点を 1 つ足すたびに既にある穴が全部動いてしまう。
+
+      点の解決(座標の式・スケッチの点・立体の頂点・球面上の点)は `PointReference` の
+      正本(`resolveReferences.ts` の `point`)を関数のまま受け取る。ここへ写すと同じ規約が
+      2 か所になるためである(`SolidPlanContext` の注釈と同じ理由)。
     */
+    if (placement.points.length === 0) {
+      return { ok: false, code: 'missingProfile', message: POINT_PATTERN_EMPTY_MESSAGE };
+    }
+    const positions: Vec3[] = [];
+    for (const reference of placement.points) {
+      const resolved = point(reference);
+      if (resolved === null) {
+        return { ok: false, code: 'missingProfile', message: POINT_PATTERN_MISSING_MESSAGE };
+      }
+      positions.push(resolved);
+    }
+    const base = positions[0] ?? ORIGIN;
     return {
-      ok: false,
-      code: 'degenerate',
-      message: '点の集まりへ複製は準備中です。直線・円形のパターンを使ってください。',
+      ok: true,
+      transforms: positions.map((position) => ({
+        // 最初の点は自分自身との差なので恒等(平行移動 0)になる。
+        translation: cleanZeroVec3(subVec3(position, base)),
+        rotationOrigin: ORIGIN,
+        // 回さないので軸は世界の Z にして角 0(移動/回転の段と同じ約束)。
+        rotationAxis: WORLD_AXIS_DIRECTIONS.z,
+        rotationAngle: 0,
+      })),
     };
   }
   const countOutcome = resolvePatternCount(placement.count);
@@ -1972,7 +2339,7 @@ function planPattern(
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
-  axisFrames: ReadonlyMap<string, AxisFrame>,
+  context: SolidPlanContext,
 ): PlanOutcome {
   const notPatternSourceMessage = '繰り返せるのは穴とねじ穴だけです。穴かねじ穴を選び直してください。';
   // 過去の失敗(ブーリアンの対象=相手)と同じ扱いで、自己参照を先に弾く
@@ -1990,7 +2357,12 @@ function planPattern(
   if (!sourceTarget.ok) {
     return sourceTarget;
   }
-  const transformsOutcome = resolvePatternTransforms(feature.placement, sketches, axisFrames);
+  const transformsOutcome = resolvePatternTransforms(
+    feature.placement,
+    sketches,
+    context.axisFrames,
+    context.point,
+  );
   if (!transformsOutcome.ok) {
     return fail(feature.id, transformsOutcome.code, transformsOutcome.message);
   }
@@ -2849,6 +3221,627 @@ function planScale(
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * スイープ・リブ・エンボス・外ねじ・曲面・くり抜き
+ * (FR-409、FR-420、FR-421、FR-423、FR-428、FR-418)。P5 §2.11・§2.12、タスク46
+ * ------------------------------------------------------------------ */
+
+/**
+ * スケッチの曲線フィーチャーの並び(`SketchCurveRef`)を解決済みの曲線へ直す。
+ *
+ * `ResolvedSketch.curvesByFeature` は「フィーチャー id → その形になった曲線」の表で、
+ * 矩形・正多角形のように 1 つのフィーチャーが複数の曲線になるものも 1 つの束で引ける
+ * (P4 タスク17 で公開された表。同じ引き方を 2 通りに書かない)。
+ *
+ * **並びは書かれた順のまま**にする(経路は順につながっている前提。`SketchCurveRef` の注釈)。
+ * 1 本でも引けなければ null を返し、呼び出し側が種類ごとの文言で断る(FR-504)。
+ * 曲線 id が空の並びも null になる——「道筋を 1 本も選んでいない」は形が決まらないためである。
+ */
+function findResolvedCurves(
+  sketches: readonly ResolvedPartSketch[],
+  reference: SketchCurveRef,
+): readonly ResolvedCurve[] | null {
+  const sketch = sketches.find((entry) => entry.sketchId === reference.sketchId);
+  if (sketch === undefined) {
+    return null;
+  }
+  const resolved = sketch.resolved;
+  // **`curvesByFeature` に入るのは「1 フィーチャーが複数の曲線を生む」ものだけ**
+  // (矩形・正多角形・長穴・オフセット・複製。`ResolvedSketch` の注釈)。線分・円弧・
+  // 楕円・スプラインは種類ごとの配列にしか入らないので、そちらからも拾う。
+  const singles: readonly ResolvedCurve[] = [
+    ...resolved.segments,
+    ...resolved.arcs,
+    ...resolved.ellipses,
+    ...resolved.splines,
+  ];
+  const curves: ResolvedCurve[] = [];
+  for (const featureId of reference.curveIds) {
+    const group = resolved.curvesByFeature.get(featureId);
+    if (group !== undefined && group.length > 0) {
+      curves.push(...group);
+      continue;
+    }
+    const found = singles.filter((curve) => curve.featureId === featureId);
+    if (found.length === 0) {
+      return null;
+    }
+    curves.push(...found);
+  }
+  return curves.length === 0 ? null : curves;
+}
+
+/**
+ * 開いた輪郭が乗っている平面の単位法線(リブ FR-420・曲面の押し出し FR-428、タスク46)。
+ *
+ * まず座標から当てはめる(`fitPlaneNormal`)。**線分 1 本の輪郭は座標だけからは平面が
+ * 決まらない**(直線を含む平面は無数にある)ので、そのときは輪郭をかいた**作図面**の
+ * 法線を使う。作図面は保存形の `planeId` にあり、解決済みの曲線には残らないので
+ * `SolidPlanContext.sketchDocuments` から引く。3D スケッチ(`free`)の線分 1 本のように
+ * どちらでも決まらないときは null を返し、呼び出し側が理由をつけて断る(FR-504)。
+ */
+function curveProfileNormal(
+  reference: SketchCurveRef,
+  curves: readonly ResolvedCurve[],
+  context: SolidPlanContext,
+): Vec3 | null {
+  const fitted = fitPlaneNormal(curves.flatMap((curve) => curveSamplePoints(curve)));
+  if (fitted !== null) {
+    return fitted;
+  }
+  const sketch = context.sketchDocuments.find((entry) => entry.id === reference.sketchId);
+  if (sketch === undefined) {
+    return null;
+  }
+  const first = reference.curveIds[0];
+  const feature = sketch.features.find((candidate) => candidate.id === first);
+  if (feature === undefined) {
+    return null;
+  }
+  const plane = context.workPlane(feature.planeId);
+  return plane === null ? null : plane.normal;
+}
+
+/** スイープの断りの文言(FR-409、FR-504)。 */
+const SWEEP_MISSING_PROFILE_MESSAGE =
+  '掃くもとの面が見つかりません。スケッチで面を張ってからやり直してください。';
+/** 経路が空・引けない。**「道筋」**の語で断面と区別する(利用者から見て別のもの)。 */
+const SWEEP_MISSING_PATH_MESSAGE =
+  '掃く道筋が見つかりません。スケッチで線をかいてから選び直してください。';
+
+/**
+ * スイープ(FR-409、§0.a-0.43、§0.a-0.76)。断面を経路に沿って掃く。
+ *
+ * **対象を取らない「作る」段**なので `bodyKeys` も `consumed` も見ない。
+ * 断面の重心を経路の始点へ移すこと・法線を接線へ合わせることはカーネルの役目
+ * (タスク37)で、model は断面と経路の座標を渡すだけである。
+ */
+function planSweep(feature: SweepFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
+  const face = findResolvedFace(sketches, feature.profile);
+  if (face === undefined) {
+    return fail(feature.id, 'missingProfile', SWEEP_MISSING_PROFILE_MESSAGE);
+  }
+  const path = findResolvedCurves(sketches, feature.path);
+  if (path === null) {
+    return fail(feature.id, 'missingProfile', SWEEP_MISSING_PATH_MESSAGE);
+  }
+  return {
+    ok: true,
+    plan: { kind: 'sweep', profile: face.curves, path, frenet: feature.frenet },
+  };
+}
+
+/** リブの輪郭が引けない(FR-420、FR-504)。 */
+const RIB_MISSING_PROFILE_MESSAGE =
+  'リブの輪郭が見つかりません。スケッチで線をかいてから選び直してください。';
+/** 輪郭の平面が決まらない。厚みを付ける向きが法線なので、平らでないと決まらない。 */
+const RIB_NOT_PLANAR_MESSAGE =
+  'リブの輪郭が 1 つの平面に乗っていません。輪郭をかき直してください。';
+/** 厚みが 0 以下。**カーネル(`makeRib.ts` の `THICKNESS_MESSAGE`)と同文に揃える。** */
+const RIB_THICKNESS_MESSAGE = '厚みは 0 より大きい数にしてください。';
+/** 伸ばす向きが決まらない。カーネルの `NO_DIRECTION_MESSAGE` と同文。 */
+const RIB_NO_DIRECTION_MESSAGE =
+  'リブの向きが決まりません。輪郭の面と伸ばす向きを確かめてください。';
+/**
+ * 「材料に届くまで伸ばさない」リブ(`extendToBody: false`)は、いまのカーネルの段
+ * (`RibStepSpec`、タスク38)に対応する欄が無い。黙って伸ばしてしまうと利用者の
+ * つまみが効かないので、理由をつけて断る(FR-504。段の欄が増えたらここを外す)。
+ */
+const RIB_EXTEND_REQUIRED_MESSAGE =
+  'いまは材料に届くまで伸ばすリブだけが作れます。「材料まで伸ばす」を入にしてください。';
+
+/**
+ * リブ(FR-420、§0.a-0.37、§0.a-0.75)。開いた輪郭に厚みを付けた壁を立体へ足す。
+ *
+ * **厚みの向き(`side`)と伸ばす向き(`direction`)は別物である。**
+ * - 厚みは輪郭の平面の法線の側へ付く。`both` は両側へ半分ずつ(段の `symmetric` が真)、
+ *   `positive` は法線の側だけ、`negative` は法線を裏返して片側だけにする
+ *   (カーネルの `RibStepSpec` は `symmetric` の真偽しか持たないので、向きは法線で表す)。
+ * - 伸ばす向きは**輪郭の平面の中**にあり、`法線 × 輪郭の弦`(始点 → 終点)で決める。
+ *   カーネルの検査(`makeRib.test.ts`)の例——法線 (0,1,0)・弦 +X・伸ばす向き (0,0,−1)——が
+ *   ちょうどこの式になる。輪郭をかいた順で向きが決まるので、思っていたのと逆になったら
+ *   輪郭をかき直す(段に向きの欄が無いため。**タスク49・50 への申し送り**)。
+ */
+function planRib(
+  feature: RibFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const profile = findResolvedCurves(sketches, feature.profile);
+  if (profile === null) {
+    return fail(feature.id, 'missingProfile', RIB_MISSING_PROFILE_MESSAGE);
+  }
+  if (!feature.extendToBody) {
+    return fail(feature.id, 'degenerate', RIB_EXTEND_REQUIRED_MESSAGE);
+  }
+  const thickness = feature.thickness.value;
+  if (!isPositiveFinite(thickness)) {
+    return fail(feature.id, 'invalidValue', RIB_THICKNESS_MESSAGE);
+  }
+  const planeNormal = curveProfileNormal(feature.profile, profile, context);
+  if (planeNormal === null) {
+    return fail(feature.id, 'notPlanar', RIB_NOT_PLANAR_MESSAGE);
+  }
+  const first = profile[0];
+  const last = profile[profile.length - 1];
+  if (first === undefined || last === undefined) {
+    return fail(feature.id, 'missingProfile', RIB_MISSING_PROFILE_MESSAGE);
+  }
+  const chord = subVec3(curveEnd(last), curveStart(first));
+  const extend = crossVec3(planeNormal, chord);
+  // 閉じた輪郭(弦が 0)・弦が法線と平行なときは外積が潰れる。どちらも壁を立てる向きが
+  // 決まらないので、OCCT を呼ぶ前に断る(NFR-UX-5)。
+  if (!Number.isFinite(lengthVec3(extend)) || lengthVec3(extend) === 0) {
+    return fail(feature.id, 'degenerate', RIB_NO_DIRECTION_MESSAGE);
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'rib',
+      targetKey: target.targetKey,
+      profile,
+      // `negative` は法線を裏返して「法線の側だけ」に読み替える(上の注釈)。
+      normal: feature.side === 'negative' ? negateVec3(planeNormal) : cleanZeroVec3(planeNormal),
+      thickness,
+      symmetric: feature.side === 'both',
+      direction: ribExtendDirection(extend),
+    },
+  };
+}
+
+/**
+ * リブを伸ばす向きを 1 つに決める(FR-420、タスク46)。
+ *
+ * 弦に直交する向きは平面の中に 2 つ(互いに逆)あり、**どちらに材料があるかは model には
+ * 分からない**(段は相手の形を鍵でしか持たない)。そこで「材料は輪郭の下にある」という
+ * いちばん普通の使い方を採り、**世界の下向き(−Z)に近いほうを選ぶ**。カーネルの実装が
+ * 検査で使っている例(板の上に置いた線 → 伸ばす向き (0,0,−1))もこの選び方になる。
+ * 輪郭の平面が水平で上下の別が付かない(内積 0)ときだけ、外積の向きをそのまま採る。
+ *
+ * 思っていたのと逆になったら輪郭をかき直す。段にもフィーチャーにも向きの欄が無いので、
+ * つまみが要るかどうかは画面の段(**タスク49・50**)で判断する。
+ */
+function ribExtendDirection(extend: Vec3): Vec3 {
+  const unit = normalizeVec3(extend);
+  const downward = dotVec3(unit, WORLD_DOWN);
+  return cleanZeroVec3(downward < 0 ? negateVec3(unit) : unit);
+}
+
+/** 世界の下向き。リブを伸ばす向きの選び方(`ribExtendDirection`)の基準。 */
+const WORLD_DOWN: Vec3 = [0, 0, -1];
+
+/** エンボスの断りの文言(FR-421、FR-504)。 */
+const EMBOSS_OTHER_BODY_MESSAGE = '彫る面は、加工するもとの立体の面にしてください。';
+const EMBOSS_NOT_FACE_MESSAGE = '彫れるのは面だけです。面を選び直してください。';
+/** 曲面へのラップは P6 以降(タスク39)。いまは平らな面だけ。 */
+const EMBOSS_NOT_FLAT_MESSAGE = '彫れるのは平らな面だけです。平らな面を選び直してください。';
+const EMBOSS_MISSING_PROFILE_MESSAGE =
+  '彫る輪郭が見つかりません。スケッチで面を張ってからやり直してください。';
+
+/**
+ * エンボス(FR-421、§0.a-0.38)。平らな面へ輪郭を彫る / 浮き出す。**対象を消費する。**
+ *
+ * 面の選び直しはカーネルが行う(model は指紋を渡すだけ、§2.2)。ここで確かめるのは
+ * 「面か」「対象の立体の面か」「平らか」「輪郭があるか」「高さが正か」の 5 つで、
+ * どれも OCCT を呼ぶ前に赤くできる(NFR-UX-5)。
+ * 文書の `height`(面から測った高さ)がカーネルの `depth` になる——彫るときは
+ * そのぶんの深さ、浮き出すときはそのぶんの高さで、値の意味は同じである。
+ */
+function planEmboss(
+  feature: EmbossFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  if (subShapeKindOf(feature.face) !== 'face') {
+    return fail(feature.id, 'invalidValue', EMBOSS_NOT_FACE_MESSAGE);
+  }
+  if (feature.face.bodyFeatureId !== feature.targetFeatureId) {
+    return fail(feature.id, 'invalidValue', EMBOSS_OTHER_BODY_MESSAGE);
+  }
+  // 面の平らさは「いまの形」で見る(抜き勾配の中立面と同じ扱い)。引けないときは
+  // カーネルの選び直しに任せる(model が指紋を持っていても選び直しの結果は知らない)。
+  const resolved = context.subShape(feature.face);
+  if (resolved !== null && (resolved.surfaceKind !== 'plane' || resolved.axis === null)) {
+    return fail(feature.id, 'degenerate', EMBOSS_NOT_FLAT_MESSAGE);
+  }
+  const profile = findResolvedFace(sketches, feature.profile);
+  if (profile === undefined) {
+    return fail(feature.id, 'missingProfile', EMBOSS_MISSING_PROFILE_MESSAGE);
+  }
+  const depth = feature.height.value;
+  if (!isPositiveFinite(depth)) {
+    return fail(feature.id, 'invalidValue', '彫る深さは 0 より大きい数にしてください。');
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'emboss',
+      targetKey: target.targetKey,
+      face: feature.face,
+      // model のフィーチャーは輪郭 1 枚だが、段は複数の輪郭を受ける(カーネルの
+      // `EmbossStepSpec.profiles`)。1 枚を 1 要素の列にして渡す。
+      profiles: [profile.curves],
+      depth,
+      raised: feature.raised,
+    },
+  };
+}
+
+/** 外ねじの断りの文言(FR-423、FR-504)。 */
+const THREAD_SHAFT_OTHER_BODY_MESSAGE = 'ねじを切る面は、加工するもとの立体の面にしてください。';
+const THREAD_SHAFT_NOT_CYLINDER_MESSAGE =
+  'ねじを切れるのは円柱の面だけです。円柱の面を選び直してください。';
+/**
+ * 呼び径と軸の実寸が食い違う(§0.a-0.85、統括の決定 2026-09-05 17:37)。
+ * **カーネルでは断らず model で断る**ので、この文言が唯一の理由になる。
+ */
+const THREAD_SHAFT_DIAMETER_MESSAGE =
+  '呼び径と軸の径が合いません。ねじの呼びか、ねじを切る面を選び直してください。';
+
+/**
+ * 呼び径と軸の実寸の許容差(mm、§0.a-0.85)。
+ * おねじの外径は軸の径とほぼ同じ(JIS のはめあいで数十 μm 差)なので、
+ * 0.5mm も違えば「別の太さの軸にその呼びを付けた」とみなしてよい。
+ */
+const THREAD_SHAFT_DIAMETER_TOLERANCE_MM = 0.5;
+
+/**
+ * 外ねじ(FR-423、§0.a-0.40)。円柱面にねじを切る。**対象を消費する。**
+ *
+ * 呼び(`nominal`)から規格表(`thread/metricThread.ts`)を引いて呼び径 d を得る。
+ * ピッチは規格表から入るが式で書き換えられる(FR-202)ので**文書の値を正**とし、
+ * 表からは呼び径だけを取る(ねじ穴 `planThreadHole` とまったく同じ扱い)。
+ *
+ * **呼び径と円柱面の実寸の食い違いは、保存された指紋の半径で見る**(§0.a-0.85)。
+ * 「いまの形」で選び直した半径は model に無い(`ResolvedSubShape` は面積・重心・軸しか
+ * 持たない)ためで、上流を大きく作り替えて軸の太さが変わった場合は、カーネルの選び直しの
+ * 結果とここの判定がずれうる。**そのときはカーネルがねじを切れずに断る**ので黙って
+ * 間違った形になることはないが、理由の出どころが変わる(**タスク47・55 への申し送り**)。
+ */
+function planThreadShaft(
+  feature: ThreadShaftFeature,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const fingerprint = feature.face.fingerprint;
+  if (fingerprint.kind !== 'face') {
+    return fail(feature.id, 'invalidValue', THREAD_SHAFT_NOT_CYLINDER_MESSAGE);
+  }
+  if (feature.face.bodyFeatureId !== feature.targetFeatureId) {
+    return fail(feature.id, 'invalidValue', THREAD_SHAFT_OTHER_BODY_MESSAGE);
+  }
+  if (fingerprint.surfaceKind !== 'cylinder') {
+    return fail(feature.id, 'invalidValue', THREAD_SHAFT_NOT_CYLINDER_MESSAGE);
+  }
+  const size = findMetricThread(feature.nominal);
+  if (size === undefined) {
+    return fail(
+      feature.id,
+      'invalidValue',
+      'そのねじの呼びは使えません。一覧から選び直してください。',
+    );
+  }
+  const radius = fingerprint.radius;
+  if (
+    radius !== null &&
+    Math.abs(2 * radius - size.diameter) > THREAD_SHAFT_DIAMETER_TOLERANCE_MM
+  ) {
+    return fail(feature.id, 'invalidValue', THREAD_SHAFT_DIAMETER_MESSAGE);
+  }
+  const pitch = feature.pitch.value;
+  if (!isPositiveFinite(pitch)) {
+    return fail(feature.id, 'invalidValue', 'ねじのピッチは 0 より大きい数にしてください。');
+  }
+  const length = feature.length.value;
+  if (!isPositiveFinite(length)) {
+    return fail(feature.id, 'invalidValue', 'ねじ部の長さは 0 より大きい数にしてください。');
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'threadShaft',
+      targetKey: target.targetKey,
+      face: feature.face,
+      majorDiameter: size.diameter,
+      pitch,
+      length,
+      fromEnd: feature.fromEnd,
+      modeled: feature.modeled,
+    },
+  };
+}
+
+/** 曲面の断りの文言(FR-428、FR-504)。 */
+const SURFACE_MISSING_PROFILE_MESSAGE =
+  '曲面のもとになる線が見つかりません。スケッチで線をかいてから選び直してください。';
+const SURFACE_NOT_PLANAR_MESSAGE =
+  '曲面のもとの線が 1 つの平面に乗っていません。輪郭をかき直してください。';
+const SURFACE_MISSING_AXIS_MESSAGE =
+  '回転の軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
+const SURFACE_NOT_FACE_MESSAGE = '取り出せるのは立体の面だけです。面を選び直してください。';
+const SURFACE_MISSING_BODY_MESSAGE =
+  '面を借りるもとの立体が見つかりません。立体を選び直してください。';
+/** 距離 0 のオフセットは元の面と同じ形になる(同じ形に 2 通りの書き方を残さない)。 */
+const SURFACE_OFFSET_ZERO_MESSAGE = '離す距離は 0 以外の数にしてください。';
+
+/** 曲面の作り方を解決した結果。`targetKey` は `face` / `offset` のときだけ入る。 */
+interface SurfaceShapeOutcomeValue {
+  readonly shape: SurfaceShapePlan;
+  readonly targetKey: string | null;
+}
+
+type SurfaceShapeOutcome =
+  | { readonly ok: true; readonly value: SurfaceShapeOutcomeValue }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 曲面の作り方 6 種(FR-428、§0.a-0.45)を段の欄へ直す。
+ *
+ * **種類ごとに材料が違う**——押し出し・回転・平面・ロフトはスケッチの曲線、
+ * 面・オフセットは立体の面の指紋である。前者は座標まで解けるが、後者は指紋のまま渡し、
+ * 選び直しはカーネルが行う(罫線面の `solidFace` とまったく同じ扱い、§2.2)。
+ * **どの作り方でも対象を消費しない**ので `consumed` を見ない(§0.a-0.45)。
+ */
+function resolveSurfaceShape(
+  featureId: string,
+  operation: SurfaceOperation,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
+): SurfaceShapeOutcome {
+  switch (operation.kind) {
+    case 'extrude': {
+      const profile = findResolvedCurves(sketches, operation.profile);
+      if (profile === null) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
+        };
+      }
+      // 掃く向きは輪郭の平面の法線(リブと同じ引き方。線分 1 本なら作図面から取る)。
+      const normal = curveProfileNormal(operation.profile, profile, context);
+      if (normal === null) {
+        return {
+          ok: false,
+          error: partError(featureId, 'notPlanar', SURFACE_NOT_PLANAR_MESSAGE),
+        };
+      }
+      const distance = operation.distance.value;
+      if (!isPositiveFinite(distance)) {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', positiveFieldMessage('掃く長さ')),
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          shape: {
+            kind: 'extrude',
+            profile,
+            direction: operation.reversed ? negateVec3(normal) : cleanZeroVec3(normal),
+            distance,
+          },
+          targetKey: null,
+        },
+      };
+    }
+    case 'revolve': {
+      const profile = findResolvedCurves(sketches, operation.profile);
+      if (profile === null) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
+        };
+      }
+      const degrees = operation.angle.value;
+      if (!Number.isFinite(degrees) || degrees <= 0 || degrees > MAX_REVOLVE_DEGREES) {
+        return {
+          ok: false,
+          error: partError(
+            featureId,
+            'invalidValue',
+            '回転の角度は 0 より大きく 360 以下にしてください。',
+          ),
+        };
+      }
+      const frame = resolveRevolveAxis(operation.axis, sketches, context.axisFrames);
+      if (frame === null) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingProfile', SURFACE_MISSING_AXIS_MESSAGE),
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          shape: {
+            kind: 'revolve',
+            profile,
+            axisOrigin: frame.origin,
+            axisDirection: operation.reversed
+              ? negateVec3(frame.direction)
+              : cleanZeroVec3(frame.direction),
+            angle: degreesToRadians(degrees),
+          },
+          targetKey: null,
+        },
+      };
+    }
+    case 'planar': {
+      const profile = findResolvedCurves(sketches, operation.profile);
+      if (profile === null) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
+        };
+      }
+      return { ok: true, value: { shape: { kind: 'planar', profile }, targetKey: null } };
+    }
+    case 'loft': {
+      if (operation.sections.length < MIN_THRU_SECTIONS) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingProfile', THRU_SECTIONS_TOO_FEW_MESSAGE),
+        };
+      }
+      const sections: (readonly ResolvedCurve[])[] = [];
+      for (const reference of operation.sections) {
+        const curves = findResolvedCurves(sketches, reference);
+        if (curves === null) {
+          return {
+            ok: false,
+            error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
+          };
+        }
+        sections.push(curves);
+      }
+      return {
+        ok: true,
+        value: { shape: { kind: 'loft', sections, ruled: operation.ruled }, targetKey: null },
+      };
+    }
+    case 'face':
+    case 'offset': {
+      if (subShapeKindOf(operation.face) !== 'face') {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', SURFACE_NOT_FACE_MESSAGE),
+        };
+      }
+      const targetKey = bodyKeys.get(operation.targetFeatureId);
+      if (targetKey === undefined) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingBody', SURFACE_MISSING_BODY_MESSAGE),
+        };
+      }
+      if (operation.kind === 'face') {
+        // **消費しない**(§0.a-0.45)ので `consumed` は見ない。鍵は連鎖のために持つ。
+        return {
+          ok: true,
+          value: { shape: { kind: 'face', face: operation.face }, targetKey },
+        };
+      }
+      const distance = operation.distance.value;
+      if (!Number.isFinite(distance) || distance === 0) {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', SURFACE_OFFSET_ZERO_MESSAGE),
+        };
+      }
+      return {
+        ok: true,
+        value: { shape: { kind: 'offset', face: operation.face, distance }, targetKey },
+      };
+    }
+  }
+}
+
+/**
+ * 曲面(FR-428、§0.a-0.45)。**閉じた立体ではなく面だけのボディ**を作る。
+ * **どの作り方でも対象を消費しない**(面を貸した立体はそのまま画面に残る)。
+ */
+function planSurface(
+  feature: SurfaceFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const outcome = resolveSurfaceShape(feature.id, feature.operation, sketches, bodyKeys, context);
+  if (!outcome.ok) {
+    return outcome;
+  }
+  return {
+    ok: true,
+    plan: { kind: 'surface', shape: outcome.value.shape, targetKey: outcome.value.targetKey },
+  };
+}
+
+/** くり抜きの断りの文言(FR-418、FR-504)。 */
+const SHELL_NOT_FACE_MESSAGE = '開けられるのは面だけです。面を選び直してください。';
+const SHELL_OTHER_BODY_MESSAGE = '開ける面は、くり抜くもとの立体の面にしてください。';
+/** 厚さが 0 以下。**カーネル(`makeShell.ts`)と同じ状況の断り。** */
+const SHELL_THICKNESS_MESSAGE = '壁の厚さは 0 より大きい数にしてください。';
+
+/**
+ * くり抜き(シェル。FR-418、§0.a-0.47、§2.12)。壁の厚さを残して中身を抜く。
+ * **対象を消費する。**
+ *
+ * **開ける面は 0 枚でもよい**(そのときは外から見た形が変わらず、中だけが空になる)ので、
+ * R 面取りのような「1 つも指していない」の断りは持たない。重複を除いて通し番号の昇順に
+ * 並べるのは R 面取りと同じ理由(同じ面の組なら必ず同じ鍵になる)。
+ */
+function planShell(
+  feature: ShellFeature,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const openFaces = sortedUniqueTargets(feature.openFaces);
+  for (const face of openFaces) {
+    if (subShapeKindOf(face) !== 'face') {
+      return fail(feature.id, 'invalidValue', SHELL_NOT_FACE_MESSAGE);
+    }
+    if (face.bodyFeatureId !== feature.targetFeatureId) {
+      return fail(feature.id, 'invalidValue', SHELL_OTHER_BODY_MESSAGE);
+    }
+  }
+  const thickness = feature.thickness.value;
+  if (!isPositiveFinite(thickness)) {
+    return fail(feature.id, 'invalidValue', SHELL_THICKNESS_MESSAGE);
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'shell',
+      targetKey: target.targetKey,
+      openFaces,
+      thickness,
+      outward: feature.outward,
+    },
+  };
+}
+
 function planSolid(
   feature: SolidFeature,
   solids: readonly SolidFeature[],
@@ -2878,7 +3871,7 @@ function planSolid(
     case 'chamfer':
       return planChamfer(feature, bodyKeys, consumed);
     case 'pattern':
-      return planPattern(feature, solids, sketches, bodyKeys, consumed, axisFrames);
+      return planPattern(feature, solids, sketches, bodyKeys, consumed, context);
     case 'primitive':
       return planPrimitive(feature, sketches, bodyKeys, axisFrames);
     case 'ruled':
@@ -2893,24 +3886,19 @@ function planSolid(
       return planTransform(feature, sketches, bodyKeys, consumed, context);
     case 'scale':
       return planScale(feature, bodyKeys, consumed, context);
-    /*
-      P5 の Should 群の残り 5 種(§2.11)。**型を足したのはタスク43 で、段の組み立ては
-      タスク46(スイープ・リブ・エンボス・外ねじ・曲面)の担当**である。ここは
-      `SolidFeature` の union が広がったときにこの網羅 switch を落とさないための最小の枝で、
-      いまは理由つきで断る(FR-504。止めずに警告として持ち回る)。
-      **`.pcad` を手で書けば到達しうる**が、道具(タスク50)がまだ無いので
-      画面の操作からは作れない。
-    */
+    // P5 の Should 群の残り 5 種(§2.11、タスク46)と、前倒しした Could 群の 1 種(§2.12)。
     case 'sweep':
+      return planSweep(feature, sketches);
     case 'rib':
+      return planRib(feature, sketches, bodyKeys, consumed, context);
     case 'emboss':
+      return planEmboss(feature, sketches, bodyKeys, consumed, context);
     case 'threadShaft':
+      return planThreadShaft(feature, bodyKeys, consumed);
     case 'surface':
-      return fail(
-        feature.id,
-        'degenerate',
-        `${SOLID_LABELS[feature.kind]}は準備中です。この版ではまだ形を作れません。`,
-      );
+      return planSurface(feature, sketches, bodyKeys, context);
+    case 'shell':
+      return planShell(feature, bodyKeys, consumed);
   }
 }
 
@@ -3030,6 +4018,68 @@ function toKeyExtrudeEnd(end: ExtrudeEndPlan): ExtrudeEndKeyMaterial {
   }
 }
 
+/**
+ * 穴の入口を鍵の材料へ詰め替える(cacheKey.ts の `HoleEntryKeyMaterial`、タスク46)。
+ * 段に欄が無い(広げない)ときは `{ kind: 'plain' }` を渡す——`keyHoleEntryExtra` が
+ * `plain` を鍵の文字列に出さないので、省略と「広げない」は同じ鍵になる。
+ */
+function toKeyHoleEntry(entry: HoleEntryPlan | undefined): HoleEntryKeyMaterial {
+  if (entry === undefined) {
+    return { kind: 'plain' };
+  }
+  return entry.kind === 'counterbore'
+    ? { kind: 'counterbore', diameter: entry.diameter, depth: entry.depth }
+    : { kind: 'countersink', diameter: entry.diameter, angle: entry.angle };
+}
+
+/**
+ * 丸める半径を鍵の材料へ詰め替える(cacheKey.ts の `FilletRadiusKeyMaterial`)。
+ * 一定半径は数 1 つのままなので、P3 からの R 面取りの鍵は 1 文字も変わらない。
+ */
+function toKeyFilletRadius(radius: FilletRadiusPlan): FilletRadiusKeyMaterial {
+  return typeof radius === 'number' ? radius : { start: radius.start, end: radius.end };
+}
+
+/**
+ * 曲面の作り方を鍵の材料へ詰め替える(cacheKey.ts の `SurfaceShapeKeyMaterial`)。
+ * `toKeyCurve` と同じ理由で、欄が同じでも種類ごとに写す(偶然の構造の一致に頼らない)。
+ */
+function toKeySurfaceShape(shape: SurfaceShapePlan): SurfaceShapeKeyMaterial {
+  switch (shape.kind) {
+    case 'extrude':
+      return {
+        kind: 'extrude',
+        profile: shape.profile.map(toKeyCurve),
+        direction: toKeyVec3(shape.direction),
+        distance: shape.distance,
+      };
+    case 'revolve':
+      return {
+        kind: 'revolve',
+        profile: shape.profile.map(toKeyCurve),
+        axisOrigin: toKeyVec3(shape.axisOrigin),
+        axisDirection: toKeyVec3(shape.axisDirection),
+        angle: shape.angle,
+      };
+    case 'planar':
+      return { kind: 'planar', profile: shape.profile.map(toKeyCurve) };
+    case 'loft':
+      return {
+        kind: 'loft',
+        sections: shape.sections.map((section) => section.map(toKeyCurve)),
+        ruled: shape.ruled,
+      };
+    case 'face':
+      return { kind: 'face', face: fingerprintKeyText(shape.face) };
+    case 'offset':
+      return {
+        kind: 'offset',
+        face: fingerprintKeyText(shape.face),
+        distance: shape.distance,
+      };
+  }
+}
+
 /** 1段ぶんの鍵の材料(§0.a-0.20)。名前・抑制・色は混ぜない(形が変わらないため)。 */
 function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
   switch (plan.kind) {
@@ -3086,6 +4136,8 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         tiltAngle: plan.tiltAngle,
         tiltAzimuth: plan.tiltAzimuth,
         transforms: plan.transforms.map(toKeyTransform),
+        // 入口の形(FR-422)。省略と「広げない」は同じ鍵になる(`toKeyHoleEntry` の注釈)。
+        entry: toKeyHoleEntry(plan.entry),
       };
     case 'thread':
       return {
@@ -3103,6 +4155,8 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         modeled: plan.thread !== null,
         tiltAngle: plan.tiltAngle,
         tiltAzimuth: plan.tiltAzimuth,
+        // 入口の形は段が受け取れないので鍵にも混ぜない(`ThreadKeyMaterial.entry` は
+        // 省略でき、省略と `plain` は同じ鍵になる。cacheKey.ts の決め 3)。
         transforms: plan.transforms.map(toKeyTransform),
       };
     case 'spring':
@@ -3123,7 +4177,7 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         targetKey: plan.targetKey,
         // 並びはすでに planFillet が通し番号の昇順に揃えてある(FilletKeyMaterial の注釈)。
         targets: plan.targets.map(fingerprintKeyText),
-        radius: plan.radius,
+        radius: toKeyFilletRadius(plan.radius),
       };
     case 'chamfer': {
       const size = plan.size;
@@ -3203,6 +4257,61 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         origin: toKeyVec3(plan.origin),
         uniform: plan.uniform,
         perAxis: plan.perAxis === null ? null : toKeyVec3(plan.perAxis),
+      };
+    case 'sweep':
+      // 対象を取らない「作る」段なので targetKey を持たない(押し出し・ばねと同じ)。
+      return {
+        kind: 'sweep',
+        profile: plan.profile.map(toKeyCurve),
+        path: plan.path.map(toKeyCurve),
+        frenet: plan.frenet,
+      };
+    case 'rib':
+      return {
+        kind: 'rib',
+        targetKey: plan.targetKey,
+        profile: plan.profile.map(toKeyCurve),
+        normal: toKeyVec3(plan.normal),
+        thickness: plan.thickness,
+        symmetric: plan.symmetric,
+        direction: toKeyVec3(plan.direction),
+      };
+    case 'emboss':
+      return {
+        kind: 'emboss',
+        targetKey: plan.targetKey,
+        face: fingerprintKeyText(plan.face),
+        profiles: plan.profiles.map((profile) => profile.map(toKeyCurve)),
+        depth: plan.depth,
+        raised: plan.raised,
+      };
+    case 'threadShaft':
+      return {
+        kind: 'threadShaft',
+        targetKey: plan.targetKey,
+        face: fingerprintKeyText(plan.face),
+        majorDiameter: plan.majorDiameter,
+        pitch: plan.pitch,
+        length: plan.length,
+        fromEnd: plan.fromEnd,
+        modeled: plan.modeled,
+      };
+    case 'surface':
+      // 面を借りる作り方(face / offset)でも消費しないが targetKey は必ず混ぜる
+      // (混ぜないと上流を編集しても鍵が変わらず古い面の形が返る。NFR-PF-3)。
+      return {
+        kind: 'surface',
+        shape: toKeySurfaceShape(plan.shape),
+        targetKey: plan.targetKey,
+      };
+    case 'shell':
+      return {
+        kind: 'shell',
+        targetKey: plan.targetKey,
+        // 並びはすでに planShell が通し番号の昇順に揃えてある(R 面取りと同じ)。
+        openFaces: plan.openFaces.map(fingerprintKeyText),
+        thickness: plan.thickness,
+        outward: plan.outward,
       };
   }
 }
@@ -3383,6 +4492,49 @@ function axisSketchIds(spec: AxisSpec): readonly string[] {
 }
 
 /**
+ * 点の参照(`PointReference`)が指しているスケッチの id(FR-325 の順序の制約、タスク46)。
+ *
+ * `PointReference` は**どのスケッチかを持たない**(`{ kind: 'point'; pointId }` のように
+ * フィーチャーの id だけ)ので、`resolveReferences.ts` と同じ約束で**全スケッチを id で
+ * 探す**。座標の式・立体の頂点・球面上の点はスケッチを見ないので null になる。
+ *
+ * これが要るのは、拡大縮小の中心(FR-424)と点集合パターンの点(FR-425)だけが
+ * 「スケッチを使うのに参照からスケッチ id を読めない」種類だからである。数え上げられないと
+ * §0.a-0.11 の順序の制約(投影のもとにできるのは、そのスケッチを使う立体より前の立体だけ)が
+ * その 2 種で効かず、**自分より後の立体を投影したスケッチの点で穴を並べられてしまう**
+ * (docs/報告記録.md 2026-09-05 19:38 の t43 → t46 への申し送り)。
+ */
+export function sketchIdOfPointReference(
+  reference: PointReference,
+  sketches: readonly SketchDocument[],
+): string | null {
+  let featureId: string | null = null;
+  if (reference.kind === 'point') {
+    featureId = reference.pointId;
+  } else if (reference.kind === 'vertex') {
+    featureId = reference.featureId;
+  }
+  if (featureId === null) {
+    return null;
+  }
+  const owner = sketches.find((sketch) =>
+    sketch.features.some((feature) => feature.id === featureId),
+  );
+  return owner === undefined ? null : owner.id;
+}
+
+/** 点の参照の並びから、重複を除かずにスケッチの id を集める(並びは呼び出し側で使わない)。 */
+function pointSketchIds(
+  references: readonly PointReference[],
+  sketches: readonly SketchDocument[],
+): readonly string[] {
+  return references.flatMap((reference) => {
+    const sketchId = sketchIdOfPointReference(reference, sketches);
+    return sketchId === null ? [] : [sketchId];
+  });
+}
+
+/**
  * 1 つのソリッドフィーチャーが使うスケッチの id(FR-325 の順序の制約、タスク25)。
  *
  * 「投影のもとにできるのは、そのスケッチを使う立体より前に作られた立体だけ」(§0.a-0.11)を
@@ -3390,7 +4542,10 @@ function axisSketchIds(spec: AxisSpec): readonly string[] {
  * どれもスケッチを指しうるので、種類ごとに列挙する(網羅 switch なので、
  * 新しいソリッドフィーチャーを足すとここで型検査が落ちて足し忘れを防げる)。
  */
-export function referencedSketchIds(feature: SolidFeature): readonly string[] {
+export function referencedSketchIds(
+  feature: SolidFeature,
+  sketches: readonly SketchDocument[] = [],
+): readonly string[] {
   switch (feature.kind) {
     case 'extrude':
       return [feature.profile.sketchId];
@@ -3408,7 +4563,7 @@ export function referencedSketchIds(feature: SolidFeature): readonly string[] {
       // 辺・頂点の指紋しか持たない(スケッチを見ない)。
       return [];
     case 'pattern':
-      return patternSketchIds(feature.placement);
+      return patternSketchIds(feature.placement, sketches);
     case 'spring':
       return [feature.origin.sketchId, ...axisSketchIds(feature.axis)];
     case 'primitive':
@@ -3432,7 +4587,9 @@ export function referencedSketchIds(feature: SolidFeature): readonly string[] {
     case 'draft':
     case 'mirror':
     case 'threadShaft':
+    case 'shell':
       // 面の指紋とフィーチャーの id しか持たない(スケッチを見ない)。
+      // くり抜き(FR-418、§2.12)も同じで、開ける面は指紋で持つ。
       return [];
     case 'emboss':
       // 相手の面は指紋で、輪郭だけがスケッチの面フィーチャー。
@@ -3440,10 +4597,10 @@ export function referencedSketchIds(feature: SolidFeature): readonly string[] {
     case 'transform':
       return feature.rotationAxis === null ? [] : axisSketchIds(feature.rotationAxis);
     case 'scale':
-      // 中心の点はスケッチの点でありうるが、`PointReference` は「どのスケッチか」を
-      // 持たない(`resolveReferences.ts` と同じく、id で全スケッチを探す約束)。
-      // したがってここでは数えられない。**タスク46 への申し送り。**
-      return [];
+      // 中心の点はスケッチの点でありうる。`PointReference` は「どのスケッチか」を持たない
+      // ので、**スケッチの一覧を渡されたときだけ** id で探して数える(タスク46。
+      // 渡されないときは P5 タスク43 のまま空——既存の呼び出しのふるまいを変えないため)。
+      return pointSketchIds([feature.origin], sketches);
     case 'sweep':
       return [feature.profile.sketchId, feature.path.sketchId];
     case 'rib':
@@ -3454,19 +4611,22 @@ export function referencedSketchIds(feature: SolidFeature): readonly string[] {
 }
 
 /** パターンの並べ方が使うスケッチの id(FR-411、FR-412、FR-425)。 */
-function patternSketchIds(placement: PatternPlacement): readonly string[] {
+function patternSketchIds(
+  placement: PatternPlacement,
+  sketches: readonly SketchDocument[],
+): readonly string[] {
   switch (placement.kind) {
     case 'linear':
       return axisSketchIds(placement.direction);
     case 'circular':
       return axisSketchIds(placement.axis);
     case 'points':
-      // 点集合(FR-425)。`scale` の中心と同じ理由でスケッチを特定できない(申し送り)。
-      return [];
+      // 点集合(FR-425)。`scale` の中心とまったく同じ扱いで、id から探す(タスク46)。
+      return pointSketchIds(placement.points, sketches);
   }
 }
 
-/** 曲面の作り方が使うスケッチの id(FR-428、タスク43)。 */
+/** 曲面の作り方が使うスケッチの id(FR-428、タスク43・46)。 */
 function surfaceSketchIds(operation: SurfaceOperation): readonly string[] {
   switch (operation.kind) {
     case 'extrude':
@@ -3477,7 +4637,8 @@ function surfaceSketchIds(operation: SurfaceOperation): readonly string[] {
     case 'loft':
       return operation.sections.map((section) => section.sketchId);
     case 'face':
-      // 立体の面を取り出すだけなのでスケッチを見ない。
+    case 'offset':
+      // 立体の面を取り出す(離す)だけなのでスケッチを見ない。
       return [];
   }
 }
@@ -3494,13 +4655,16 @@ function sectionSketchIds(sections: readonly RuledSection[]): readonly string[] 
  * 使われていないスケッチは表に入らない(= どの立体を参照してもよい)。
  * 抑制されたフィーチャー(FR-503)はボディを作らないので数えない。
  */
-function firstSketchUseIndexes(solids: readonly SolidFeature[]): ReadonlyMap<string, number> {
+function firstSketchUseIndexes(
+  solids: readonly SolidFeature[],
+  sketches: readonly SketchDocument[],
+): ReadonlyMap<string, number> {
   const first = new Map<string, number>();
   solids.forEach((feature, index) => {
     if (feature.suppressed) {
       return;
     }
-    for (const sketchId of referencedSketchIds(feature)) {
+    for (const sketchId of referencedSketchIds(feature, sketches)) {
       if (!first.has(sketchId)) {
         first.set(sketchId, index);
       }
@@ -3573,6 +4737,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     workPlane,
     point,
     axisFrames,
+    sketchDocuments: document.sketches,
   };
 
   const drafts: StepDraft[] = [];
@@ -3649,7 +4814,8 @@ function collectProjections(
       bodyOrder.set(feature.id, index);
     }
   });
-  const firstUse = firstSketchUseIndexes(document.solids);
+  // 点の参照からスケッチを引けるように、スケッチの一覧も渡す(FR-425・FR-424、タスク46)。
+  const firstUse = firstSketchUseIndexes(document.solids, document.sketches);
 
   const requests: ResolvedProjection[] = [];
   for (const entry of sketches) {

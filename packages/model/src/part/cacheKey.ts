@@ -629,7 +629,12 @@ export type SurfaceShapeKeyMaterial =
       readonly ruled: boolean;
     }
   /** すでにある立体の面 1 枚。指紋と、段の `targetKey` の**両方**が鍵に効く。 */
-  | { readonly kind: 'face'; readonly face: KeySubShape };
+  | { readonly kind: 'face'; readonly face: KeySubShape }
+  /**
+   * すでにある立体の面を距離だけ離した殻(カーネルの `SurfaceInput` の 6 種目、タスク42b)。
+   * `face` と同じく指紋と `targetKey` の両方が鍵に効き、距離も形を変えるので混ぜる。
+   */
+  | { readonly kind: 'offset'; readonly face: KeySubShape; readonly distance: number };
 
 /**
  * 曲面(FR-428、§0.a-0.45)の鍵の材料。面だけのボディを作る。
@@ -1019,6 +1024,8 @@ function keySurfaceShape(shape: SurfaceShapeKeyMaterial): string {
       return `loft(${keyCurveListGroup(shape.sections)}|${keyBoolean(shape.ruled)})`;
     case 'face':
       return `face(${shape.face})`;
+    case 'offset':
+      return `offset(${shape.face}|${keyNumber(shape.distance)})`;
   }
 }
 

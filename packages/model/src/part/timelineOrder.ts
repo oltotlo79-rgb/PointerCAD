@@ -392,7 +392,9 @@ function solidDependencies(
   for (const consumedId of consumedTargetsOf(feature)) {
     found.push(...solidDependency(context, consumedId));
   }
-  for (const sketchId of referencedSketchIds(feature)) {
+  // スケッチの一覧を渡すのは、拡大縮小の中心と点集合パターンの点(`PointReference`)が
+  // 「どのスケッチか」を持たず、id で探さないと数えられないためである(タスク46)。
+  for (const sketchId of referencedSketchIds(feature, context.sketches)) {
     found.push(...sketchDependencies(context, sketchId));
   }
   switch (feature.kind) {
@@ -506,12 +508,20 @@ function solidDependencies(
         取り出す)のときだけ上流を指すので、ミラーと同じ理由で数える(t45 への申し送り)。
         ほかの 4 種はスケッチの面・軸だけで、上の 2 つに数え終えている。
       */
-      if (feature.operation.kind === 'face') {
+      if (feature.operation.kind === 'face' || feature.operation.kind === 'offset') {
         // 面を借りる立体は `targetFeatureId` と面の指紋の両方が指す(ふつうは同じ id)。
+        // 面のオフセット(タスク42b の 6 種目)も面を借りるだけなので同じ扱い。
         found.push(...solidDependency(context, feature.operation.targetFeatureId));
         found.push(...subShapeDependencies(context, feature.operation.face));
       } else if (feature.operation.kind === 'revolve') {
         found.push(...axisSpecDependencies(context, feature.operation.axis));
+      }
+      break;
+    case 'shell':
+      // くり抜き(FR-418、§2.12)。対象は消費するので上で数え終えているが、開ける面の
+      // 指紋は別のボディを指しうる(解決は断るが、並べ替えの判定は解決の成否と無関係)。
+      for (const face of feature.openFaces) {
+        found.push(...subShapeDependencies(context, face));
       }
       break;
   }

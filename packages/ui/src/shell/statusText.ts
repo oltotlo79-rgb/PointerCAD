@@ -115,6 +115,12 @@ const GUIDE_KEYS = {
   cylinder: 'statusBar.guide.cylinder',
   cone: 'statusBar.guide.cone',
   torus: 'statusBar.guide.torus',
+  // P5 タスク27 が `SolidToolId` へ足した面をつなぐ(FR-430)とロフト(FR-410)。どちらも
+  // **先に輪郭を選んでから押す**道具なので、案内は「何をいくつ選ぶか」を伝える
+  // (NFR-UX-1、NFR-UX-7)。罫線面だけは球も選べることを添える(§0.a-0.26)。
+  // 上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで案内も足す。
+  ruled: 'statusBar.guide.ruled',
+  loft: 'statusBar.guide.loft',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**

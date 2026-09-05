@@ -11,6 +11,7 @@ import {
   appearanceSectionKey,
   primitiveSectionKey,
   roundSolvedCoordinateText,
+  ruledSectionKey,
 } from './PropertyPanel.js';
 
 describe('roundSolvedCoordinateText', () => {
@@ -85,5 +86,33 @@ describe('primitiveSectionKey', () => {
 
   it('同じ立体なら同じ文字列になる(選び直していないのに作り直さない)', () => {
     expect(primitiveSectionKey('torus-3')).toBe(primitiveSectionKey('torus-3'));
+  });
+});
+
+/**
+ * 面をつなぐ・ロフトの注記の節の `key`(P5 タスク27、rules/06 10.9)。
+ *
+ * この節も `SolidProperties`(`key={solid.id}`)・基本形状の節・外観の節と**同じ親**
+ * (`.pcad-panel__body`)に並ぶ。4 つの鍵が絶対に重ならないことをここで固定する
+ * (重なると React が古い節を消し損ね、選び直すたびに節が積み上がる。10.9 の再発防止)。
+ */
+describe('ruledSectionKey', () => {
+  it('立体の id と同じ文字列にならない(兄弟の鍵が重ならない)', () => {
+    expect(ruledSectionKey('ruled-1')).not.toBe('ruled-1');
+    expect(ruledSectionKey('loft-12')).not.toBe('loft-12');
+  });
+
+  it('外観の節・基本形状の節の鍵とも重ならない', () => {
+    expect(ruledSectionKey('ruled-1')).not.toBe(appearanceSectionKey(['ruled-1']));
+    expect(ruledSectionKey('ruled-1')).not.toBe(primitiveSectionKey('ruled-1'));
+  });
+
+  it('別の立体なら別の文字列になる(選び直したら打ちかけの下書きを捨てる)', () => {
+    expect(ruledSectionKey('ruled-1')).not.toBe(ruledSectionKey('ruled-2'));
+    expect(ruledSectionKey('ruled-1')).not.toBe(ruledSectionKey('loft-1'));
+  });
+
+  it('同じ立体なら同じ文字列になる(選び直していないのに作り直さない)', () => {
+    expect(ruledSectionKey('loft-3')).toBe(ruledSectionKey('loft-3'));
   });
 });

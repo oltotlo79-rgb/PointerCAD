@@ -58,6 +58,7 @@ import {
   LinearArrayToolIcon,
   LinearPatternIcon,
   LineToolIcon,
+  LoftIcon,
   MirrorToolIcon,
   OffsetToolIcon,
   PlaneIcon,
@@ -71,6 +72,7 @@ import {
   ReferenceGroupIcon,
   ReferencePointIcon,
   RevolveIcon,
+  RuledIcon,
   SewIcon,
   SlotToolIcon,
   SplineToolIcon,
@@ -158,10 +160,10 @@ const KIND_ICONS: Readonly<
   cylinder: CubeIcon,
   cone: CubeIcon,
   torus: CubeIcon,
-  // 面をつなぐ(FR-430)とロフト(FR-410)。P5 タスク25。専用の図柄は **タスク27** で足すので、
-  // それまでは基本形状と同じく `CubeIcon` を借りる。
-  ruled: CubeIcon,
-  loft: CubeIcon,
+  // 面をつなぐ(FR-430)とロフト(FR-410)。P5 タスク27 で専用の図柄を入れた
+  // (直線で結ぶ / なめらかに結ぶの違いが絵でも分かる。`icons.tsx` の注釈)。
+  ruled: RuledIcon,
+  loft: LoftIcon,
   /*
     P5 の Should 群(§2.11、P5 タスク43)。専用の図柄は **タスク50・51**(道具のボタンを
     足す段)で入れるので、それまでは基本形状・罫線面と同じく借り物にする。
@@ -180,6 +182,9 @@ const KIND_ICONS: Readonly<
   // 点パターン(FR-425)。直線・円形パターンと同じ絵では見分けが付かないので、
   // 「点を並べる」という意味がいちばん近い点列(FR-308)の図柄を借りる。
   pointPattern: PointArrayToolIcon,
+  // くり抜き(FR-418、P5 タスク46)。専用の図柄は **タスク55**(道具のボタンを足す段)で
+  // 入れるので、それまでは Should 群と同じく立体の絵を借りる。
+  shell: CubeIcon,
 };
 
 /** 節の頭に出す絵。基準は軸と点、スケッチは作図面、ソリッドは立体の印。 */

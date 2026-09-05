@@ -23,6 +23,7 @@ import type {
   BooleanOperation,
   ExtrudeEnd,
   ExtrudeFeature,
+  FilletFeature,
   HoleEntry,
   HoleFeature,
   PartDocument,
@@ -280,6 +281,27 @@ export const DEFAULT_SURFACE_DISTANCE_MM = 20;
 export const DEFAULT_SURFACE_ANGLE_DEGREES = 360;
 
 /**
+ * 曲面のオフセットの既定の距離(mm、FR-428、タスク42b で足した 6 種目)。
+ * 押し出しの距離(20mm)と分けてあるのは、面を「少し離す」使い方が普通だからである。
+ */
+export const DEFAULT_SURFACE_OFFSET_MM = 5;
+
+/* -- P5 の Could 群のうちタスク46 が前倒しした 2 つ(FR-418、FR-426、§2.12)-- */
+
+/** くり抜きの壁の厚さの既定(mm、FR-418、§0.a-0.47)。 */
+export const DEFAULT_SHELL_THICKNESS_MM = 2;
+
+/** くり抜きの向きの既定(FR-418)。false = 内向き(外側の大きさが変わらない)。 */
+export const DEFAULT_SHELL_OUTWARD = false;
+
+/**
+ * 可変半径フィレットの終点側の半径の既定(mm、FR-426、§0.a-0.48)。
+ * 始点側の既定(`DEFAULT_FILLET_RADIUS_MM` = 2)と違う値にしてあるのは、
+ * 「可変にする」を選んだ瞬間に一定半径と同じ形にならないようにするためである。
+ */
+export const DEFAULT_FILLET_RADIUS_END_MM = 5;
+
+/**
  * 押し出しの「終端・傾き・薄板」の欄をすべて埋めた形(FR-415、FR-401、FR-416)。
  *
  * 欄名はカーネルの `ExtrudeShapeOptions`(`occt/makeSolidSweep.ts`)と同じにしてあるので、
@@ -320,6 +342,32 @@ export function extrudeShapingOf(feature: ExtrudeFeature): ExtrudeShaping {
  */
 export function holeEntryOf(feature: HoleFeature | ThreadHoleFeature): HoleEntry {
   return feature.entry ?? DEFAULT_HOLE_ENTRY;
+}
+
+/**
+ * R 面取りの半径(FR-407、可変半径は FR-426)。省略は「一定半径」(§0.a-0.48)。
+ *
+ * 既定を 1 か所に置く理由は `extrudeShapingOf` / `holeEntryOf` と同じ。
+ * 種類を付けて返すのは、読む側(解決・鍵・プロパティ)が `radiusEnd` の null 判定を
+ * それぞれ書かずに済ませるためである。カーネルの `FilletRadiusSpec`
+ * (`number | { start; end }`)とは 1 対 1 に対応する。
+ */
+export type FilletRadius =
+  | { readonly kind: 'constant'; readonly radius: ExpressionValue }
+  | {
+      readonly kind: 'variable';
+      /** 辺の始点側の半径。`FilletFeature.radius` そのもの。 */
+      readonly start: ExpressionValue;
+      /** 辺の終点側の半径。 */
+      readonly end: ExpressionValue;
+    };
+
+export function filletRadiusOf(feature: FilletFeature): FilletRadius {
+  const end = feature.radiusEnd;
+  if (end === undefined || end === null) {
+    return { kind: 'constant', radius: feature.radius };
+  }
+  return { kind: 'variable', start: feature.radius, end };
 }
 
 /**
@@ -369,7 +417,9 @@ export type SolidLabelKey =
     点集合パターン(FR-425、§0.a-0.42)。直線・円形と同じ理由で配置ごとに連番を分ける
     (`PatternPlacement` に case が 1 つ増えたので、鍵も 1 つ増える)。
   */
-  | 'pointPattern';
+  | 'pointPattern'
+  /** くり抜き(FR-418、§2.12)。P5 の Could 群のうちタスク46 が前倒しした 1 種。 */
+  | 'shell';
 
 /**
  * ソリッドの種類ごとの既定名。ドキュメントの既定データとしてここに置く
@@ -408,6 +458,8 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   threadShaft: '外ねじ',
   surface: '曲面',
   pointPattern: '点パターン',
+  // くり抜き(FR-418、§2.12。P5 の Could 群、タスク46 で前倒し)。
+  shell: 'くり抜き',
 };
 
 /**
@@ -795,7 +847,9 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'rib':
     case 'emboss':
     case 'threadShaft':
-      // 加工4種と、P5 の Should 群のうち対象1つを消費するもの(§2.11 の表)。
+    case 'shell':
+      // 加工4種、P5 の Should 群のうち対象1つを消費するもの(§2.11 の表)、そして
+      // くり抜き(FR-418、§2.12。中身を抜いた立体 1 つだけが残る)。
       return [feature.targetFeatureId];
     case 'pattern':
       return [feature.sourceFeatureId];
@@ -831,6 +885,8 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'rib':
     case 'emboss':
     case 'threadShaft':
+    case 'shell':
+      // くり抜き(FR-418、§2.12)も対象 1 つを取って形を変えるので加工に数える。
       return true;
     case 'extrude':
     case 'revolve':

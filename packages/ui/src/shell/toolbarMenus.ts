@@ -54,6 +54,7 @@ import {
   IntersectIcon,
   LinearArrayToolIcon,
   LinearPatternIcon,
+  LoftIcon,
   MirrorToolIcon,
   OffsetToolIcon,
   OrthographicIcon,
@@ -65,6 +66,7 @@ import {
   RadiusConstraintIcon,
   RectangleToolIcon,
   RevolveIcon,
+  RuledIcon,
   SectionToolIcon,
   SewIcon,
   SketchChamferToolIcon,
@@ -410,6 +412,25 @@ export const CREATE_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
     labelKey: 'toolbar.solid.torus',
     tooltipKey: 'toolbar.solid.torusTooltip',
     Icon: TorusIcon,
+  },
+  /*
+    面をつなぐ(罫線面、FR-430)とロフト(FR-410。タスク27)。どちらも対象を消費しない
+    「作る」フィーチャー(§0.a-0.27)なのでこの一覧に入る。**この 2 行を足しても
+    ツールバーの幅は 1 画素も増えない**(`segmentedWidthPixels` は溝に並ぶボタンの個数しか
+    見ない。§0.a-0.80)。並びは基本形状の後ろで、直線で結ぶ「面をつなぐ」→ なめらかに
+    結ぶ「ロフト」の順(利用者から見て素直な方を先に置く)。
+  */
+  {
+    id: 'ruled',
+    labelKey: 'toolbar.solid.ruled',
+    tooltipKey: 'toolbar.solid.ruledTooltip',
+    Icon: RuledIcon,
+  },
+  {
+    id: 'loft',
+    labelKey: 'toolbar.solid.loft',
+    tooltipKey: 'toolbar.solid.loftTooltip',
+    Icon: LoftIcon,
   },
 ];
 

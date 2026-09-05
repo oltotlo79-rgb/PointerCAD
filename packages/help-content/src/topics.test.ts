@@ -27,4 +27,8 @@ describe('ヘルプの目録', () => {
   it('存在しない id では undefined を返す', () => {
     expect(findHelpTopic('この項目はない')).toBeUndefined();
   });
+
+  it('面と面をつなぐ・ロフトの説明を id で引ける(FR-430、FR-410、P5 タスク27)', () => {
+    expect(findHelpTopic('ruled-loft')?.path).toBe('docs/ja/ruled-loft.md');
+  });
 });

@@ -872,3 +872,39 @@ describe('基本形状 5 種の案内(FR-429、FR-905、P5 タスク18)', () => 
     }
   });
 });
+
+describe('面をつなぐ・ロフトの案内(FR-430、FR-410、FR-905、P5 タスク27)', () => {
+  const RULED_TOOLS = ['ruled', 'loft'] as const;
+
+  it('2 種とも自分の案内キーを返す(`Record<NumericInputToolId>` の網羅)', () => {
+    for (const tool of RULED_TOOLS) {
+      expect(guideKeyFor(tool, 0), tool).toBe(`statusBar.guide.${tool}`);
+    }
+  });
+
+  it('立体を選んでいても、これらの道具ならブーリアンの案内に化けない', () => {
+    for (const tool of RULED_TOOLS) {
+      expect(guideKeyFor(tool, 2), tool).toBe(`statusBar.guide.${tool}`);
+    }
+  });
+
+  it('帯には案内として出て、赤くならない(断りではない)', () => {
+    for (const tool of RULED_TOOLS) {
+      const line = describeStatus({ ...quiet(), activeTool: tool });
+      expect(line.kind, tool).toBe('guide');
+      expect(line.text, tool).toBe(t(`statusBar.guide.${tool}`));
+    }
+  });
+
+  it('案内は「何をいくつ選ぶか」を伝える(NFR-UX-7)', () => {
+    // 罫線面は球も選べることを添える(§0.a-0.26)。ロフトは順が意味を持つことを添える。
+    expect(t('statusBar.guide.ruled')).toContain('球');
+    expect(t('statusBar.guide.loft')).toContain('順');
+  });
+
+  it('加工の段階的な案内は持たない(選択が進んでも基本案内のまま)', () => {
+    for (const tool of RULED_TOOLS) {
+      expect(machiningGuideText(tool, 3, 2), tool).toBeNull();
+    }
+  });
+});

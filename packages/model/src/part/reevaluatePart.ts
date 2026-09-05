@@ -235,7 +235,16 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         tiltAzimuth: map(feature.tiltAzimuth),
       };
     case 'fillet':
-      return { ...feature, radius: map(feature.radius) };
+      // 可変半径(FR-426、タスク46)の終点側は**省略できる欄**なので、押し出しの
+      // `taperAngle` と同じく「あるときだけ写す」(既定を各所へ写さない)。
+      return {
+        ...feature,
+        radius: map(feature.radius),
+        radiusEnd:
+          feature.radiusEnd === undefined || feature.radiusEnd === null
+            ? feature.radiusEnd
+            : map(feature.radiusEnd),
+      };
     case 'chamfer':
       return { ...feature, size: rebuildChamferSize(feature.size, map) };
     case 'pattern':
@@ -299,6 +308,10 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       return { ...feature, pitch: map(feature.pitch), length: map(feature.length) };
     case 'surface':
       return { ...feature, operation: rebuildSurfaceOperation(feature.operation, map) };
+    case 'shell':
+      // くり抜き(FR-418、§2.12、タスク46)。式の欄は壁の厚さ 1 つだけで、
+      // 開ける面の指紋・向きのつまみは式ではない。
+      return { ...feature, thickness: map(feature.thickness) };
   }
 }
 
@@ -322,6 +335,9 @@ function rebuildSurfaceOperation(
       return { ...operation, distance: map(operation.distance) };
     case 'revolve':
       return { ...operation, angle: map(operation.angle) };
+    case 'offset':
+      // 面のオフセット(タスク42b が足した 6 種目)。式の欄は距離 1 つ。
+      return { ...operation, distance: map(operation.distance) };
     case 'planar':
     case 'loft':
     case 'face':

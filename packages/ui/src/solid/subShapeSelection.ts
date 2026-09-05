@@ -398,3 +398,26 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
       return 'body';
   }
 }
+
+/**
+ * 道具を選んでも**選ぶ種類を切り替えない**道具かどうか(§2.15 の表、NFR-UX-1)。
+ *
+ * `selectionKindForTool` が返す種類は、いまの種類と違えば**選択を空にする**
+ * (`useAppStore.setActiveTool`、§0.a-0.6)。穴のように「対象を選び直してもらう」道具では
+ * それが正しいが、**いま選んでいるものをそのまま材料にする道具**では、押した瞬間に
+ * 材料が消えてしまう。§2.15 の表が「測る」を『切り替えない(いま選んでいる種類のまま測る)』と
+ * している(P5 タスク32)のと同じ扱いをここに置く。
+ *
+ * **面をつなぐ・ロフト**(FR-430、FR-410、タスク27)がこれに当たる。輪郭にできるのは
+ * ①スケッチの面(種類に関わらず選べる)、②立体の面(種類が `face` のときだけ選べる)、
+ * ③球(立体そのものなら `body`、球の表面なら `face`)の 3 通りで、**どの種類でも
+ * 何かしら選べる**。決め打ちで切り替えると、たとえば球(立体)とスケッチの面を選んでから
+ * 押したときに `face` へ切り替わって両方消える(2026-09-05 のヘッドレスで実測)。
+ * 立体の面を輪郭にしたいときは `3` キーか帯の札で先に「面」へ切り替えてから選ぶ
+ * (ヘルプ `ruled-loft.md` にそう書いてある)。
+ *
+ * **この表もここ 1 か所だけに置く**(`selectionKindForTool` と同じ理由)。
+ */
+export function keepsSelectionKind(tool: NumericInputToolId): boolean {
+  return tool === 'ruled' || tool === 'loft';
+}

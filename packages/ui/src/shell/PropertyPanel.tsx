@@ -20,7 +20,9 @@ import {
   type AppearancePresetId,
   type AppearanceSpec,
   type ReferenceFeature,
+  type LoftFeature,
   type PrimitiveFeature,
+  type RuledFeature,
   type SketchFeature,
   type SolidFeature,
   type WoodSpecies,
@@ -76,6 +78,7 @@ import {
   type PrimitiveFieldKey,
   type PrimitiveOriginAxis,
 } from '../solid/primitiveCommands.js';
+import { ruledTwistNoteKey } from '../solid/ruledCommands.js';
 import {
   COORDINATE_MODES,
   MODE_LABEL_KEYS,
@@ -613,6 +616,14 @@ function referencesSectionTitleKey(feature: SolidFeature): MessageKey {
     return 'propertyPanel.sectionCombine';
   }
   if (feature.kind === 'extrude' || feature.kind === 'revolve' || feature.kind === 'sew') {
+    return 'propertyPanel.sectionProfile';
+  }
+  /*
+    面をつなぐ・ロフト(FR-430、FR-410、P5 タスク27)が参照するのは「加工するもとの立体」
+    ではなく**つなぐ断面**なので、押し出し・回転・縫合と同じ「断面」の見出しにする
+    (対象を消費しないので「対象」という言葉が実態に合わない。§0.a-0.27)。
+  */
+  if (feature.kind === 'ruled' || feature.kind === 'loft') {
     return 'propertyPanel.sectionProfile';
   }
   return 'propertyPanel.sectionTarget';
@@ -1165,6 +1176,40 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
         )}
       </div>
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク27)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 面をつなぐ・ロフトの「つなぎ方」の節(FR-430、FR-410、§0.a-0.87)。
+ *
+ * ねじれの式の欄・なめらかさの 3 択・つなぐ面の一覧は、どれも `solidSummary.ts` の
+ * `fields` / `choices` / `references` に載せてあるので、すぐ上の `SolidProperties` が
+ * そのまま描く。**この節が持つのは注記 1 行だけ**である。
+ *
+ * 注記が要るのは「立体の面から取り出した断面にはねじれが効かない」ことで(タスク24b の
+ * 実装。カーネルは面の外周を元の並びのまま結び、ずらしを断りもしない)、欄を伏せるわけには
+ * いかない(値は保存され、スケッチの面の断面には効く)。効かないだけで**間違いではない**
+ * ので赤い断りにはせず、淡い注記で伝える(rules/04「止めずに警告する」)。
+ * 注記が要らないとき(断面が全部スケッチの面・球)は何も出さない。
+ */
+function RuledNoteSection({
+  feature,
+}: {
+  readonly feature: RuledFeature | LoftFeature;
+}): React.JSX.Element | null {
+  const noteKey = ruledTwistNoteKey(feature);
+  if (noteKey === null) {
+    return null;
+  }
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionRuled')}</h3>
+      <p className="pcad-panel__note">{t(noteKey)}</p>
+    </div>
   );
 }
 
@@ -1951,6 +1996,26 @@ export function primitiveSectionKey(featureId: string): string {
   return `${PRIMITIVE_KEY_PREFIX}${featureId}`;
 }
 
+/**
+ * 面をつなぐ・ロフトの注記の節の `key` に付ける接頭辞(P5 タスク27、rules/06 10.9)。
+ *
+ * 基本形状の節・外観の節とまったく同じ理由で付ける。接頭辞が無いとフィーチャーの id を
+ * そのまま `key` にすることになり、同じ親(`.pcad-panel__body`)に並ぶ `SolidProperties`
+ * (`key={solid.id}`)と兄弟の鍵が必ず重なる。`feature.id` は model の `nextSolidId` が
+ * 作る `ruled-1` の形で `ruled:` から始まることは無い(`-` と `:` で区切りが違う)ので、
+ * この接頭辞を付ければ兄弟の鍵は必ず食い違う。
+ */
+const RULED_KEY_PREFIX = 'ruled:';
+
+/**
+ * 面をつなぐ・ロフトの注記の節の `key`。**同じ親に並ぶ他の節の `key`(`solid.id` /
+ * `feature.id` / `reference.id` / `primitiveSectionKey(...)` / `appearanceSectionKey(...)`)と
+ * 絶対に重ならないこと**が満たすべき性質で、それを `PropertyPanel.test.ts` が固定する。
+ */
+export function ruledSectionKey(featureId: string): string {
+  return `${RULED_KEY_PREFIX}${featureId}`;
+}
+
 /** 右の区画のタブ(§0.a-0.15)。区画は 5 つのままで、この 2 枚だけを切り替える。 */
 type PanelTab = 'properties' | 'parameters';
 
@@ -2066,6 +2131,15 @@ export function PropertyPanel(): React.JSX.Element {
         */}
         {solid === null || solid.kind !== 'primitive' ? null : (
           <PrimitiveSection key={primitiveSectionKey(solid.id)} feature={solid} />
+        )}
+        {/*
+          面をつなぐ・ロフトの注記(FR-430、タスク27)。欄・選択肢・つなぐ面の一覧は
+          `SolidProperties` がすでに描いているので、ここは「立体の面にはねじれが効かない」
+          注記だけを添える。**`key` には必ず `RULED_KEY_PREFIX` を付ける**(基本形状の節と
+          同じ理由。rules/06 10.9 の再発を防ぐ)。
+        */}
+        {solid === null || (solid.kind !== 'ruled' && solid.kind !== 'loft') ? null : (
+          <RuledNoteSection key={ruledSectionKey(solid.id)} feature={solid} />
         )}
         {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331、タスク35b)。 */}
         {origin === null ? null : <OriginSection origin={origin} />}

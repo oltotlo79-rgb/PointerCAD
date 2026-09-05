@@ -122,6 +122,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/primitive.md',
   },
   {
+    id: 'ruled-loft',
+    title: '面と面をつなぐ・ロフト',
+    path: 'docs/ja/ruled-loft.md',
+  },
+  {
     id: 'display-settings',
     title: '画面の見た目を変える',
     path: 'docs/ja/display-settings.md',

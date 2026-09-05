@@ -5,6 +5,8 @@ import {
   // P5 の Should 群(§2.11、タスク43)の既定値を与える口。省略された欄の意味を
   // io に写さず、model の 1 か所から取る。
   extrudeShapingOf,
+  // 可変半径フィレット(FR-426、P5 タスク46)の既定を与える口。
+  filletRadiusOf,
   holeEntryOf,
   PART_SCHEMA_VERSION,
   resolveSketch,
@@ -2264,9 +2266,12 @@ describe('加工フィーチャーの読み方の規則(タスク19)', () => {
     expect(Number.isNaN(hole.diameter.value)).toBe(true);
   });
 
-  it('知らない種類のフィーチャー(未実装のシェル等)は断る(§0.a-0.1)', () => {
+  it('知らない種類のフィーチャー(未実装の厚み付け等)は断る(§0.a-0.1)', () => {
+    // 見本は P5 タスク46 まで「シェル」だったが、くり抜き(FR-418)が実装された
+    // (`SOLID_FEATURE_KINDS` に入った)ので、まだ無い「厚み付け」に取り替えた。
+    // **確かめている規則(知らない `kind` は `invalidField` で断る)は変えていない。**
     const document = rawDocument({
-      solids: [{ id: 'shell-1', kind: 'shell', name: 'シェル1', suppressed: false }],
+      solids: [{ id: 'thicken-1', kind: 'thicken', name: '厚み付け1', suppressed: false }],
     });
     const error = expectError(parseDocument(rawFile({ document })));
     expect(error.code).toBe('invalidField');
@@ -4125,9 +4130,140 @@ describe('押し出しの終端・傾き・薄板と穴の入口の読み書き(
     expect(expectError(parseDocument(withUnknownEntry)).code).toBe('invalidField');
     const withUnknownKind = rawFile({
       document: rawDocument({
-        solids: [{ id: 'x-1', kind: 'shell', name: 'くり抜き1', suppressed: false }],
+        // 上と同じ理由で、まだ無い「厚み付け」を知らない種類の見本にする(タスク46)。
+        solids: [{ id: 'x-1', kind: 'thicken', name: '厚み付け1', suppressed: false }],
       }),
     });
     expect(expectError(parseDocument(withUnknownKind)).code).toBe('invalidField');
+  });
+});
+
+describe('くり抜き・可変半径・面のオフセットの読み書き(FR-418、FR-426、FR-428。P5 タスク46)', () => {
+  it('くり抜き(FR-418)は開ける面が 1 枚でも 0 枚でも往復で一致する', () => {
+    const opened = documentWithSolid({
+      id: 'shell-1',
+      kind: 'shell',
+      name: 'くり抜き1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      openFaces: [shouldFaceRef('extrude-1', 1), shouldFaceRef('extrude-1', 2)],
+      thickness: ev('2', 2),
+      outward: false,
+    });
+    expect(roundTrip(opened)).toEqual(opened);
+    const closed = documentWithSolid({
+      id: 'shell-1',
+      kind: 'shell',
+      name: 'くり抜き1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      openFaces: [],
+      thickness: ev('2', 2),
+      outward: true,
+    });
+    expect(roundTrip(closed)).toEqual(closed);
+  });
+
+  it('くり抜きの厚さは式のまま往復する(FR-202)', () => {
+    const document = documentWithSolid({
+      id: 'shell-1',
+      kind: 'shell',
+      name: 'くり抜き1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      openFaces: [],
+      thickness: { source: '板厚 / 2', value: 1.5, display: '1.5' },
+      outward: false,
+    });
+    const parsed = roundTrip(document).solids[0];
+    if (parsed.kind !== 'shell') {
+      throw new Error('テストの前提が壊れている: くり抜きでない');
+    }
+    expect(parsed.thickness.source).toBe('板厚 / 2');
+  });
+
+  it('可変半径フィレット(FR-426)は終点側の半径が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'fillet-1',
+      kind: 'fillet',
+      name: 'R面取り1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      targets: [shouldFaceRef()],
+      radius: ev('2', 2),
+      radiusEnd: ev('5', 5),
+    });
+    const parsed = roundTrip(document).solids[0];
+    if (parsed.kind !== 'fillet') {
+      throw new Error('テストの前提が壊れている: R面取りでない');
+    }
+    expect(parsed.radiusEnd).toEqual(ev('5', 5));
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('終点側の半径が無い古い R 面取りは、欄が無いまま読める(一定半径)', () => {
+    const document = documentWithSolid({
+      id: 'fillet-1',
+      kind: 'fillet',
+      name: 'R面取り1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      targets: [shouldFaceRef()],
+      radius: ev('2', 2),
+    });
+    const parsed = roundTrip(document).solids[0];
+    if (parsed.kind !== 'fillet') {
+      throw new Error('テストの前提が壊れている: R面取りでない');
+    }
+    expect(parsed.radiusEnd).toBeUndefined();
+    expect(filletRadiusOf(parsed)).toEqual({ kind: 'constant', radius: ev('2', 2) });
+  });
+
+  it('一定半径の R 面取りは書き出しにも `radiusEnd` を出さない(版 5 前半と同じ字面)', () => {
+    const document = documentWithSolid({
+      id: 'fillet-1',
+      kind: 'fillet',
+      name: 'R面取り1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      targets: [shouldFaceRef()],
+      radius: ev('2', 2),
+    });
+    const text = JSON.stringify(serializeDocument(document, { savedAt: SAVED_AT }));
+    expect(text).not.toContain('radiusEnd');
+  });
+
+  it('面のオフセット(FR-428 の 6 種目)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'surface-1',
+      kind: 'surface',
+      name: '曲面1',
+      suppressed: false,
+      operation: {
+        kind: 'offset',
+        targetFeatureId: 'extrude-1',
+        face: shouldFaceRef(),
+        distance: ev('5', 5),
+      },
+    });
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('くり抜きの欄が足りなければ断る(欄の意味を推測しない)', () => {
+    const missing = rawFile({
+      document: rawDocument({
+        solids: [
+          {
+            id: 'shell-1',
+            kind: 'shell',
+            name: 'くり抜き1',
+            suppressed: false,
+            targetFeatureId: 'extrude-1',
+            openFaces: [],
+          },
+        ],
+      }),
+    });
+    expect(expectError(parseDocument(missing)).message).toContain('thickness');
   });
 });

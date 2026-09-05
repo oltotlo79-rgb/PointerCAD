@@ -60,6 +60,12 @@ import {
   primitiveToolReadiness,
   type PrimitiveContext,
 } from './primitiveCommands.js';
+import {
+  commitRuledInput,
+  loftToolReadiness,
+  ruledToolReadiness,
+  type RuledContext,
+} from './ruledCommands.js';
 import { findSketchFeatureAt } from './sketchRefs.js';
 import type { SubShapeBody } from './subShapeSelection.js';
 
@@ -600,6 +606,19 @@ export function solidToolReadiness(
       const context: PrimitiveContext = { document, bodies, selection };
       return primitiveToolReadiness(context, tool);
     }
+    /*
+      面をつなぐ(FR-430)とロフト(FR-410)。タスク27、§2.9。押せる条件は
+      `ruledCommands.ts` の 1 か所だけに置く(判断を 2 か所に書かない)。どちらも
+      **先に輪郭を選んでから押す**道具なので、基本形状と違って押せない理由を持つ。
+    */
+    case 'ruled': {
+      const context: RuledContext = { document, bodies, selection };
+      return ruledToolReadiness(context);
+    }
+    case 'loft': {
+      const context: RuledContext = { document, bodies, selection };
+      return loftToolReadiness(context);
+    }
   }
 }
 
@@ -702,6 +721,13 @@ export function commitSolidInput(
     case 'torus': {
       const context: PrimitiveContext = { document, bodies, selection };
       return commitPrimitive(context, commit);
+    }
+    // 面をつなぐ・ロフト(タスク27、FR-430、FR-410)。対象を消費しない「作る」
+    // フィーチャー(§0.a-0.27)なので、加工ではなくここから `ruledCommands.ts` へ渡す。
+    case 'ruled':
+    case 'loft': {
+      const context: RuledContext = { document, bodies, selection };
+      return commitRuledInput(context, commit);
     }
   }
 }

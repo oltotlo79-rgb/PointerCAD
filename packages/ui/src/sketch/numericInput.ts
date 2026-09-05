@@ -48,6 +48,8 @@ import {
   DEFAULT_HOLE_DIAMETER_MM,
   DEFAULT_PATTERN_COUNT,
   DEFAULT_PATTERN_SPACING_MM,
+  DEFAULT_RULED_SPHERE_SEGMENTS,
+  DEFAULT_RULED_TWIST,
   DEFAULT_SPHERE_RADIUS_MM,
   DEFAULT_SPRING_COIL_DIAMETER_MM,
   DEFAULT_SPRING_PITCH_MM,
@@ -65,10 +67,12 @@ import {
   MIN_CLOSED_SPLINE_POINTS,
   MIN_COPY_COUNT,
   MIN_SPLINE_POINTS,
+  RULED_SPHERE_SEGMENT_CHOICES,
   type ChamferSize,
   type CoordinateInput,
   type PointReference,
   type RevolveAxis,
+  type RuledSphereSegments,
   type SketchLineRef,
   type SpringDerived,
   type SpringHandedness,
@@ -105,7 +109,15 @@ export type SolidToolId =
   | 'box'
   | 'cylinder'
   | 'cone'
-  | 'torus';
+  | 'torus'
+  /*
+    面をつなぐ(罫線面、FR-430)とロフト(FR-410。P5 タスク27、§2.9)。どちらも
+    「輪郭を選んでから 1 段だけ数値を聞き、新しいボディを作る」道具で、対象を消費しない
+    (§0.a-0.27)。押し出し・回転と同じく**選んでから押す**道具なので、基本形状と違って
+    押せない条件を持つ(`ruledCommands.ts` の `ruledToolReadiness` / `loftToolReadiness`)。
+  */
+  | 'ruled'
+  | 'loft';
 
 /**
  * P4 で足す新しい図形の道具(FR-314〜318、FR-326)。
@@ -352,7 +364,19 @@ export type SolidNumericInputStep =
   | 'boxSize'
   | 'cylinderSize'
   | 'coneSize'
-  | 'torusSize';
+  | 'torusSize'
+  /*
+    面をつなぐ・ロフトのねじれの段(FR-430、FR-410。P5 タスク27、§2.15 の段の表)。
+    どちらも 1 段で終わる。罫線面だけは「なめらかさ」の選択肢を添えるが、**球を含まない
+    断面では効かない**(§0.a-0.87)ので欄ごと伏せる(`ruledHasSphere`)。
+
+    計画書 §2.15 の表はロフトの段を `loftOptions`(「閉じる」のつまみ)と書いていたが、
+    `closed` は常に true で文書にも UI にも出さない決まりになった(タスク25 の統括の決定、
+    docs/報告記録.md 2026-09-05 18:15)ので、残る欄はねじれ 1 つだけである。中身と名前を
+    合わせて `loftTwist` にした(判断に迷った点として報告する)。
+  */
+  | 'ruledTwist'
+  | 'loftTwist';
 
 /**
  * 基準ジオメトリで座標を 1 点聞く段(P4 タスク13、FR-328・FR-329)。
@@ -531,7 +555,13 @@ export type NumericChoiceKey =
   | 'offsetCorner'
   /* ---- P4 タスク24: ミラー(FR-324) ---- */
   /** 鏡にするもの(作図面の横軸 / 縦軸 / 選んだ線)。 */
-  | 'mirrorBasis';
+  | 'mirrorBasis'
+  /* ---- P5 タスク27: 面をつなぐ(FR-430) ---- */
+  /**
+   * 球へつなぐときのなめらかさ(24 / 48 / 72 点。§0.a-0.74、§0.a-0.87)。
+   * **球を含まない断面では形に効かない**ので、そのときは選択肢ごと出さない。
+   */
+  | 'ruledSphereSegments';
 
 export interface NumericChoiceOption {
   readonly value: string;
@@ -936,6 +966,54 @@ const TORUS_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'torusMinorRadius', labelKey: 'numericInput.field.torusMinorRadius', tooltipKey: 'numericInput.tooltip.torusMinorRadius', unit: 'mm', defaultSource: String(DEFAULT_TORUS_MINOR_RADIUS_MM), range: POSITIVE },
 ];
 
+/* ---- P5 タスク27: 面をつなぐ・ロフトの欄(FR-430、FR-410、§2.15) ---- */
+
+/**
+ * ねじれの補正(§0.a-0.28)。**2 つ目の輪郭の始点を何頂点ぶん回すか**で、既定は 0。
+ *
+ * 範囲を持たない。負の数は「逆向きに回す」意味で正しく、上限も輪郭の頂点数で決まる
+ * (カーネルが頂点数で割った余りを使う)ためである。**整数であること**は
+ * `NumericFieldRange`(上下限しか表せない)では言えないので、確定のとき
+ * (`ruledTwistRejection`)に断る。正多角形の辺数・パターンの個数と同じ切り分け。
+ *
+ * 既定値は model の定数(`DEFAULT_RULED_TWIST`)から引く。同じ数を 2 か所に書かないため。
+ */
+const RULED_TWIST_FIELDS: readonly NumericFieldDefinition[] = [
+  {
+    key: 'ruledTwist',
+    labelKey: 'numericInput.field.ruledTwist',
+    tooltipKey: 'numericInput.tooltip.ruledTwist',
+    unit: 'count',
+    defaultSource: String(DEFAULT_RULED_TWIST),
+  },
+];
+
+/**
+ * なめらかさ(球へつなぐときの接点の数、§0.a-0.74)の選択肢。
+ *
+ * 値は model の `RULED_SPHERE_SEGMENT_CHOICES`(= カーネルの `SphereSegmentCount`)から
+ * 組み立てるので、選べる数の正本は 1 か所しかない。見出しだけをここで日本語に付け替える
+ * (24 / 48 / 72 という数そのものは利用者にとって意味が無く、「どれくらい細かいか」だけが
+ * 伝わればよい。24b の文言案、docs/報告記録.md 2026-09-05 17:23)。
+ */
+const RULED_SPHERE_SEGMENT_LABEL_KEYS: Readonly<Record<RuledSphereSegments, MessageKey>> = {
+  24: 'numericInput.choice.ruledSphereSegments24',
+  48: 'numericInput.choice.ruledSphereSegments48',
+  72: 'numericInput.choice.ruledSphereSegments72',
+};
+
+function ruledSphereSegmentsChoice(): NumericChoice {
+  return {
+    key: 'ruledSphereSegments',
+    labelKey: 'numericInput.choice.ruledSphereSegments',
+    value: String(DEFAULT_RULED_SPHERE_SEGMENTS),
+    options: RULED_SPHERE_SEGMENT_CHOICES.map((count) => ({
+      value: String(count),
+      labelKey: RULED_SPHERE_SEGMENT_LABEL_KEYS[count],
+    })),
+  };
+}
+
 /* ---- P4 タスク11: 新しい図形の欄(FR-314〜318、FR-326、FR-327) ---- */
 
 /** 正多角形の既定の辺数(FR-315。六角形が最もよく使われる)。 */
@@ -1315,6 +1393,11 @@ function solidFieldDefinitionsFor(
       return CONE_SIZE_FIELDS;
     case 'torusSize':
       return TORUS_SIZE_FIELDS;
+    // 面をつなぐ・ロフト(FR-430、FR-410、タスク27)。どちらも欄はねじれ 1 つだけで、
+    // 罫線面の「なめらかさ」は選択肢(欄ではない)なのでここには出てこない。
+    case 'ruledTwist':
+    case 'loftTwist':
+      return RULED_TWIST_FIELDS;
   }
 }
 
@@ -1365,6 +1448,8 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   cylinderSize: 'numericInput.title.cylinder',
   coneSize: 'numericInput.title.cone',
   torusSize: 'numericInput.title.torus',
+  ruledTwist: 'numericInput.title.ruled',
+  loftTwist: 'numericInput.title.loft',
   referencePlanePoint1: 'numericInput.title.referencePlanePoint1',
   referencePlanePoint2: 'numericInput.title.referencePlanePoint2',
   referencePlanePoint3: 'numericInput.title.referencePlanePoint3',
@@ -1439,6 +1524,8 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'cylinderSize',
   'coneSize',
   'torusSize',
+  'ruledTwist',
+  'loftTwist',
   'referencePlanePoint1',
   'referencePlanePoint2',
   'referencePlanePoint3',
@@ -1482,6 +1569,9 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
   cylinder: 'cylinderSize',
   cone: 'coneSize',
   torus: 'torusSize',
+  // 面をつなぐ・ロフト(FR-430、FR-410、タスク27)。どちらもねじれの 1 段だけで終わる。
+  ruled: 'ruledTwist',
+  loft: 'loftTwist',
 };
 
 /**
@@ -1653,6 +1743,8 @@ const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
   cylinderSize: 'cylinder',
   coneSize: 'cone',
   torusSize: 'torus',
+  ruledTwist: 'ruled',
+  loftTwist: 'loft',
 };
 
 /** 段階ごとのつまみ。縫合・R面取り・C面取り・ばねは向きも両側も持たない(§2.11 の表)。 */
@@ -1674,6 +1766,10 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   cylinderSize: [],
   coneSize: [],
   torusSize: [],
+  // 面をつなぐ・ロフトもつまみを持たない(§2.15 の段の表。ロフトの「閉じる」は
+  // 常に入で文書にも UI にも出さない決まりになった。タスク25 の統括の決定)。
+  ruledTwist: [],
+  loftTwist: [],
 };
 
 /**
@@ -2229,6 +2325,15 @@ function choicesFor(step: NumericInputStep, options: NumericInputOptions): reado
     case 'coneSize':
     case 'torusSize':
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
+    /*
+      面をつなぐ(FR-430、タスク27)の「なめらかさ」(§0.a-0.74)。
+      **球を含まない断面では形に効かない**(§0.a-0.87)ので、そのときは選択肢ごと伏せる。
+      効かない欄を出すと「変えたのに形が変わらない」ことになり、利用者は理由を推し量れない
+      (NFR-UX-5「できないことは示す」の裏返し)。球を含むかどうかはツールバーが選択から
+      見込んで `ruledHasSphere` で渡す。ロフト(`loftTwist`)には球を置けないので選択肢は無い。
+    */
+    case 'ruledTwist':
+      return options.ruledHasSphere === true ? [ruledSphereSegmentsChoice()] : [];
     default:
       return [];
   }
@@ -2321,7 +2426,10 @@ export function isSolidStep(step: NumericInputStep): step is SolidNumericInputSt
     step === 'boxSize' ||
     step === 'cylinderSize' ||
     step === 'coneSize' ||
-    step === 'torusSize'
+    step === 'torusSize' ||
+    // 面をつなぐ・ロフト(FR-430、FR-410、タスク27)。
+    step === 'ruledTwist' ||
+    step === 'loftTwist'
   );
 }
 
@@ -2438,6 +2546,13 @@ export interface NumericInputOptions {
    * するか 3 つ(ワールドの 3 成分)にするかだけに使う。渡されなければ作図面がある扱い。
    */
   readonly freeSketch?: boolean;
+  /**
+   * 面をつなぐ(FR-430、タスク27)で、選んだ断面に**球が含まれるか**(§0.a-0.87)。
+   * ツールバーが選択から見込んで渡す(`ruledCommands.ts` の `ruledSelectionHasSphere`)。
+   * 渡されなければ球を含まない扱いにして「なめらかさ」の選択肢を伏せる
+   * (球を含まない断面では点の数が形に効かないため)。
+   */
+  readonly ruledHasSphere?: boolean;
 }
 
 export function createNumericInput(
@@ -3121,6 +3236,12 @@ export interface SolidCommitValues {
   /** トーラスの主半径・管の半径(mm)。 */
   readonly torusMajorRadius?: ExpressionValue;
   readonly torusMinorRadius?: ExpressionValue;
+  /**
+   * 面をつなぐ・ロフトのねじれの補正(個。FR-430、FR-410、§0.a-0.28)。
+   * 2 つの道具で意味も単位も同じなので欄の名前も 1 つにする(基本形状の半径のように
+   * 「どの形の値か」で取り違える余地が無い)。
+   */
+  readonly ruledTwist?: ExpressionValue;
 }
 
 /** ソリッドのつまみ。持たない道具では欄ごと現れない。 */
@@ -3163,6 +3284,12 @@ export interface SolidInputCommit {
   /** ばねのときだけ入る(FR-414)。 */
   readonly springHandedness?: SpringHandedness;
   readonly springDerived?: SpringDerived;
+  /**
+   * 面をつなぐで**球を含む断面を選んだときだけ**入る(FR-430、§0.a-0.74)。
+   * 球を含まないときは選択肢そのものを出さないので undefined になり、確定側は既定
+   * (`DEFAULT_RULED_SPHERE_SEGMENTS`)を使う。
+   */
+  readonly ruledSphereSegments?: RuledSphereSegments;
 }
 
 /** 基準ジオメトリの数値(P4 タスク13)。段ごとに使う欄だけが入る。 */
@@ -3437,6 +3564,10 @@ function solidValuesFor(
         torusMajorRadius: get('torusMajorRadius'),
         torusMinorRadius: get('torusMinorRadius'),
       };
+    // 面をつなぐ・ロフト(FR-430、FR-410、タスク27)。欄はねじれ 1 つだけ。
+    case 'ruledTwist':
+    case 'loftTwist':
+      return { ruledTwist: get('ruledTwist') };
   }
 }
 
@@ -3609,6 +3740,23 @@ function sketchChoicesFor(choices: readonly NumericChoice[]): SketchCommitChoice
   };
 }
 
+/**
+ * なめらかさの選択肢の文字列を、点の数へ直す(§0.a-0.74)。知らない値は undefined にして
+ * 確定側の既定へ落とす(`as` を使わずに絞り込む。ねじの系列・ばねの巻き方向と同じ形)。
+ */
+function toRuledSphereSegments(value: string | undefined): RuledSphereSegments | undefined {
+  switch (value) {
+    case '24':
+      return 24;
+    case '48':
+      return 48;
+    case '72':
+      return 72;
+    default:
+      return undefined;
+  }
+}
+
 function toSpringDerived(value: string | undefined): SpringDerived | undefined {
   switch (value) {
     case 'length':
@@ -3651,6 +3799,9 @@ function buildSolidCommit(
     chamferMode: toChamferMode(choiceValueFrom(combinedChoices, 'chamferMode')),
     springHandedness: toSpringHandedness(choiceValueFrom(combinedChoices, 'springHandedness')),
     springDerived: toSpringDerived(choiceValueFrom(combinedChoices, 'springDerived')),
+    ruledSphereSegments: toRuledSphereSegments(
+      choiceValueFrom(combinedChoices, 'ruledSphereSegments'),
+    ),
   };
 }
 
@@ -4031,9 +4182,12 @@ export function nextNumericInput(
     case 'cylinderSize':
     case 'coneSize':
     case 'torusSize':
+    case 'ruledTwist':
+    case 'loftTwist':
       /*
-        基本形状5種(FR-429、タスク18)も1段で終わる。「続けてかく」はスケッチの要素のための
-        入切なので、立体を作る道具には効かせない(押し出し・回転と同じ扱い)。
+        基本形状5種(FR-429、タスク18)も、面をつなぐ・ロフト(FR-430、FR-410、タスク27)も
+        1段で終わる。「続けてかく」はスケッチの要素のための入切なので、立体を作る道具には
+        効かせない(押し出し・回転と同じ扱い)。
       */
       return null;
     /*

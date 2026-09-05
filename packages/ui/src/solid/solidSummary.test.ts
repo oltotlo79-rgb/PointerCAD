@@ -30,6 +30,8 @@ import {
   type RuledFeature,
   type ScaleFeature,
   type SewFeature,
+  // くり抜き(FR-418、P5 タスク46)。
+  type ShellFeature,
   type SketchFaceFeature,
   type SketchLineFeature,
   type SketchPointFeature,
@@ -43,6 +45,8 @@ import {
   type TransformFeature,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
+
+import { MESSAGE_KEYS } from '../i18n/t.js';
 
 import {
   buildReferenceSection,
@@ -1467,7 +1471,7 @@ describe('renameSketch(FR-503)', () => {
   });
 });
 
-describe('面をつなぐ・ロフトの要約(FR-430、FR-410、P5 タスク25 の最小の枝)', () => {
+describe('面をつなぐ・ロフトの要約(FR-430、FR-410、P5 タスク27)', () => {
   /** つなぐ相手にする球(FR-429)。名前は「球1」。 */
   const SPHERE: PrimitiveFeature = {
     id: 'sphere-1',
@@ -1515,7 +1519,12 @@ describe('面をつなぐ・ロフトの要約(FR-430、FR-410、P5 タスク25 
     const summary = summarizeSolid(documentWith(SPHERE, RULED), RULED);
     expect(summary.name).toBe('面をつなぐ1');
     expect(summary.kindLabelKey).toBe('toolbar.solid.ruled');
-    expect(summary.fields).toEqual([]);
+    /*
+      タスク25 はここを `fields: []`(欄を 1 つも出さない最小の枝)で固定していた。
+      タスク27 で本実装になり、ねじれ 1 欄が出る(欄を出すのがこのタスクの仕事なので、
+      置き換えるのが正しい。期待値を緩めたのではない)。
+    */
+    expect(summary.fields.map((field) => field.key)).toEqual(['ruledTwist']);
     expect(summary.references.map((reference) => reference.name)).toEqual([
       'スケッチ1 / 面1',
       '球1',
@@ -1532,6 +1541,67 @@ describe('面をつなぐ・ロフトの要約(FR-430、FR-410、P5 タスク25 
       'スケッチ1 / 面2',
       '押し出し1',
     ]);
+  });
+
+  it('参照の見出しは 1 つ目 / 2 つ目、ロフトは全部「断面」(何番目かが読める)', () => {
+    const ruled = summarizeSolid(documentWith(SPHERE, RULED), RULED);
+    expect(ruled.references.map((reference) => reference.labelKey)).toEqual([
+      'propertyPanel.ruledFirst',
+      'propertyPanel.ruledSecond',
+    ]);
+    const loft = summarizeSolid(documentWith(EXTRUDE, LOFT), LOFT);
+    expect(loft.references.map((reference) => reference.labelKey)).toEqual([
+      'propertyPanel.loftSection',
+      'propertyPanel.loftSection',
+      'propertyPanel.loftSection',
+    ]);
+    for (const reference of [...ruled.references, ...loft.references]) {
+      expect(MESSAGE_KEYS, reference.labelKey).toContain(reference.labelKey);
+    }
+  });
+
+  it('なめらかさの 3 択は球を含む断面のときだけ出る(§0.a-0.87)', () => {
+    // 球を含む罫線面。3 択(24 / 48 / 72)と、いまの値が出る。
+    const withSphere = summarizeSolid(documentWith(SPHERE, RULED), RULED);
+    expect(withSphere.choices.map((choice) => choice.key)).toEqual(['ruledSphereSegments']);
+    expect(withSphere.choices[0].value).toBe('24');
+    expect(withSphere.choices[0].options.map((option) => option.value)).toEqual(['24', '48', '72']);
+    for (const option of withSphere.choices[0].options) {
+      expect(MESSAGE_KEYS, option.value).toContain(option.labelKey);
+    }
+    // 球を含まない罫線面。点の数は形に効かないので欄ごと伏せる。
+    const flat: RuledFeature = {
+      ...RULED,
+      second: { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-2' } },
+    };
+    expect(summarizeSolid(documentWith(SPHERE, flat), flat).choices).toEqual([]);
+    // ロフトには球を置けないので、そもそも選択肢を持たない。
+    expect(summarizeSolid(documentWith(EXTRUDE, LOFT), LOFT).choices).toEqual([]);
+  });
+
+  it('ねじれの欄は式のまま出て、書き戻せる(FR-202、FR-502)', () => {
+    const summary = summarizeSolid(documentWith(SPHERE, RULED), RULED);
+    expect(summary.fields.map((field) => field.key)).toEqual(['ruledTwist']);
+    expect(summary.fields[0].unit).toBe('count');
+    expect(summary.fields[0].readOnly).toBe(false);
+    const next = setSolidField(RULED, 'ruledTwist', {
+      source: '1+1',
+      value: 2,
+      display: '2',
+    });
+    expect(next.kind === 'ruled' ? next.twist.source : null).toBe('1+1');
+    // 持たない欄の名前ならそのまま返す(`setPrimitiveField` と同じ約束)。
+    expect(setSolidField(RULED, 'distance', expressionValueFromNumber(1))).toBe(RULED);
+    const loftNext = setSolidField(LOFT, 'ruledTwist', expressionValueFromNumber(3));
+    expect(loftNext.kind === 'loft' ? loftNext.twist.value : null).toBe(3);
+  });
+
+  it('なめらかさを選び直すと点の数が変わる。3 択の外の値は捨てる', () => {
+    const finer = setSolidChoice(RULED, 'ruledSphereSegments', '48');
+    expect(finer.kind === 'ruled' ? finer.sphereSegments : null).toBe(48);
+    expect(setSolidChoice(RULED, 'ruledSphereSegments', '96')).toBe(RULED);
+    // 面をつなぐ以外のフィーチャーへ来ても何も変えない。
+    expect(setSolidChoice(LOFT, 'ruledSphereSegments', '48')).toBe(LOFT);
   });
 });
 
@@ -1746,9 +1816,57 @@ describe('Should 群の要約(P5 §2.11、タスク43)', () => {
   });
 
   it('種類の名前の表は SolidLabelKey を 1 つ残らず持つ(数え漏れを型で止める)', () => {
-    // model の `SOLID_LABELS` と同じ 30 個(P2〜P5 タスク43)。
-    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(30);
+    // model の `SOLID_LABELS` と同じ 31 個(P2〜P5 タスク43 の 30 個 +
+    // タスク46 が前倒ししたくり抜き 1 個)。
+    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(31);
     expect(SOLID_KIND_LABEL_KEYS.draft).toBe('toolbar.machining.draft');
     expect(SOLID_KIND_LABEL_KEYS.pointPattern).toBe('toolbar.machining.pointPattern');
+    expect(SOLID_KIND_LABEL_KEYS.shell).toBe('toolbar.machining.shell');
+  });
+});
+
+describe('くり抜きの要約(FR-418、§2.12、P5 タスク46)', () => {
+  const SHELL: ShellFeature = {
+    id: 'shell-1',
+    name: 'くり抜き1',
+    suppressed: false,
+    kind: 'shell',
+    targetFeatureId: 'extrude-1',
+    openFaces: [faceRef(1)],
+    thickness: expressionValueFromNumber(2),
+    outward: false,
+  };
+
+  it('種類の名前は道具の名前と同じ言葉になる(FR-501)', () => {
+    const document = appendSolid(documentWith(EXTRUDE), SHELL);
+    const summary = summarizeSolid(document, SHELL);
+    expect(summary.kind).toBe('shell');
+    expect(summary.kindLabelKey).toBe('toolbar.machining.shell');
+    expect(summary.name).toBe('くり抜き1');
+  });
+
+  it('対象の立体と開ける面の数を出す', () => {
+    const document = appendSolid(documentWith(EXTRUDE), SHELL);
+    const summary = summarizeSolid(document, SHELL);
+    expect(summary.references).toEqual([
+      { labelKey: 'propertyPanel.targetBody', name: '押し出し1', elementId: 'extrude-1' },
+    ]);
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.selectedFaces', count: 1 },
+    ]);
+  });
+
+  it('開ける面が 0 枚でも要約できる(中だけが空になるくり抜き)', () => {
+    const closed: ShellFeature = { ...SHELL, openFaces: [] };
+    const document = appendSolid(documentWith(EXTRUDE), closed);
+    expect(summarizeSolid(document, closed).subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.selectedFaces', count: 0 },
+    ]);
+  });
+
+  it('くり抜きは対象を消費するので、木で元が「使われた」印になる', () => {
+    const document = appendSolid(documentWith(EXTRUDE), SHELL);
+    expect(summarizeSolid(document, EXTRUDE).consumed).toBe(true);
+    expect(summarizeSolid(document, SHELL).consumed).toBe(false);
   });
 });

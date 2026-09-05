@@ -642,6 +642,8 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       threadShaft: '外ねじ',
       surface: '曲面',
       pointPattern: '点パターン',
+      // P5 の Could 群のうちタスク46 が前倒しした 1 種(FR-418、§2.12)。
+      shell: 'くり抜き',
     });
     expect(findSolid(document, 'subtract-1')?.name).toBe('差1');
     expect(nextSolidName(document, 'subtract')).toBe('差2');
@@ -751,11 +753,12 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('種類ごとの既定名は30個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2 + Should 群10)', () => {
+  it('種類ごとの既定名は31個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2 + Should 群10 + くり抜き1)', () => {
     // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になり、
     // タスク25 で面をつなぐ(FR-430)・ロフト(FR-410)が増えて 18 → 20 になった。
-    // タスク43 で Should 群 9 種と点パターン(FR-425)が増えて 20 → 30 になった。
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(30);
+    // タスク43 で Should 群 9 種と点パターン(FR-425)が増えて 20 → 30 になり、
+    // タスク46 でくり抜き(FR-418、§2.12)が増えて 30 → 31 になった。
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(31);
     expect(SOLID_LABELS.hole).toBe('穴');
     expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
     expect(SOLID_LABELS.spring).toBe('ばね');
@@ -766,6 +769,7 @@ describe('加工フィーチャーとばねの名前・id の採番(P3 タスク
     expect(SOLID_LABELS.draft).toBe('抜き勾配');
     expect(SOLID_LABELS.threadShaft).toBe('外ねじ');
     expect(SOLID_LABELS.pointPattern).toBe('点パターン');
+    expect(SOLID_LABELS.shell).toBe('くり抜き');
   });
 
   it('穴は同じ種類の最大連番+1で数え、1つ消しても番号は戻らない', () => {
@@ -1340,12 +1344,13 @@ describe('基本形状(FR-429、P5 タスク15)', () => {
 });
 
 describe('基本形状を足したあとの立体フィーチャーの種類(FR-501)', () => {
-  it('種類は22種になり、数え漏れは型検査で落ちる', () => {
+  it('種類は23種になり、数え漏れは型検査で落ちる', () => {
     /*
       `Record<SolidFeatureKind, true>` にしておくと、種類を足したのにこの表を直し忘れた
       ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
       数は P2 の4種 + P3 の加工5種・ばね + P5 の基本形状1種 + P5 の面をつなぐ・ロフト = 13 に、
-      P5 の Should 群 9 種(§2.11、タスク43)を足して 22。
+      P5 の Should 群 9 種(§2.11、タスク43)を足して 22、さらに Could 群のうち
+      タスク46 が前倒しした くり抜き(FR-418、§2.12)を足して 23。
       **この検査は「数え漏れを型で止める」仕掛けなので、種類が増えたら数も一緒に増やす**
       (期待値を緩めているのではなく、仕掛けが働いた結果を写し取っている)。
     */
@@ -1372,8 +1377,9 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       emboss: true,
       threadShaft: true,
       surface: true,
+      shell: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(22);
+    expect(Object.keys(kinds)).toHaveLength(23);
   });
 
   it('基本形状に基準点と向きを渡すと、そのまま入る', () => {

@@ -38,6 +38,7 @@ import {
   type SolidStepRequest,
   type SolidStepSpec,
   type SubShapeQuery,
+  type SurfaceInput,
   type ThruSectionSpec,
   type Vec2Tuple,
 } from '@pointercad/kernel';
@@ -49,6 +50,7 @@ import type {
   ResolvedSolidStep,
   SolidStepPlan,
   SubShapeQueryPlan,
+  SurfaceShapePlan,
   ThruSectionPlan,
 } from './part/resolvePart.js';
 import type { EdgeCurveKind, FaceSurfaceKind } from './part/types.js';
@@ -1056,6 +1058,9 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         tiltAngle: plan.tiltAngle,
         tiltAzimuth: plan.tiltAzimuth,
         transforms: plan.transforms,
+        // 入口の形(ざぐり・皿もみ、FR-422、タスク46)。**広げないときは段にも載せない**
+        // (省くとカーネルでも `{ kind: 'plain' }` になる。`HoleStepSpec.entry` の注釈)。
+        ...(plan.entry === undefined ? {} : { entry: plan.entry }),
       };
     case 'thread':
       return {
@@ -1167,6 +1172,106 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         origin: plan.origin,
         uniform: plan.uniform,
         perAxis: plan.perAxis,
+      };
+    /*
+      P5 の Should 群のうちタスク46 が解決する 5 種(FR-409・420・421・423・428)と、
+      前倒しした Could 群の 1 種(FR-418)。断面・経路の座標、向き、角度のラジアン化、
+      呼び径の引き当ては resolvePart が済ませてあるので、ここでやるのは曲線と指紋の
+      詰め替えだけである(欄の名前と形は model と kernel でそろえてある)。
+    */
+    case 'sweep':
+      return {
+        kind: 'sweep',
+        profile: plan.profile.map((curve) => toCurveSpec(curve)),
+        path: plan.path.map((curve) => toCurveSpec(curve)),
+        frenet: plan.frenet,
+      };
+    case 'rib':
+      return {
+        kind: 'rib',
+        targetKey: plan.targetKey,
+        profile: plan.profile.map((curve) => toCurveSpec(curve)),
+        normal: plan.normal,
+        thickness: plan.thickness,
+        symmetric: plan.symmetric,
+        direction: plan.direction,
+      };
+    case 'emboss':
+      return {
+        kind: 'emboss',
+        targetKey: plan.targetKey,
+        face: toSubShapeQuery(plan.face),
+        profiles: plan.profiles.map((profile) => profile.map((curve) => toCurveSpec(curve))),
+        depth: plan.depth,
+        raised: plan.raised,
+      };
+    case 'threadShaft':
+      return {
+        kind: 'threadShaft',
+        targetKey: plan.targetKey,
+        face: toSubShapeQuery(plan.face),
+        majorDiameter: plan.majorDiameter,
+        pitch: plan.pitch,
+        length: plan.length,
+        fromEnd: plan.fromEnd,
+        modeled: plan.modeled,
+      };
+    case 'surface':
+      // 曲面(FR-428)。作り方 6 種の詰め替えは `toSurfaceInput`。`face` / `offset` の
+      // ときだけ面を借りる立体の鍵を添えるが、**消費はしない**(§0.a-0.45)。
+      return {
+        kind: 'surface',
+        shape: toSurfaceInput(plan.shape),
+        targetKey: plan.targetKey,
+      };
+    case 'shell':
+      return {
+        kind: 'shell',
+        targetKey: plan.targetKey,
+        openFaces: plan.openFaces.map((face) => toSubShapeQuery(face)),
+        thickness: plan.thickness,
+        outward: plan.outward,
+      };
+  }
+}
+
+/**
+ * 曲面の作り方(FR-428)をカーネルの `SurfaceInput` へ直す(タスク46)。
+ * 種類も欄名も同じだが、曲線(`ResolvedCurve` → `CurveSpec`)と指紋
+ * (`SubShapeRef` → `SubShapeQuery`)だけは詰め替えが要る。各節は return で閉じる。
+ */
+function toSurfaceInput(shape: SurfaceShapePlan): SurfaceInput {
+  switch (shape.kind) {
+    case 'extrude':
+      return {
+        kind: 'extrude',
+        profile: shape.profile.map((curve) => toCurveSpec(curve)),
+        direction: shape.direction,
+        distance: shape.distance,
+      };
+    case 'revolve':
+      return {
+        kind: 'revolve',
+        profile: shape.profile.map((curve) => toCurveSpec(curve)),
+        axisOrigin: shape.axisOrigin,
+        axisDirection: shape.axisDirection,
+        angle: shape.angle,
+      };
+    case 'planar':
+      return { kind: 'planar', profile: shape.profile.map((curve) => toCurveSpec(curve)) };
+    case 'loft':
+      return {
+        kind: 'loft',
+        sections: shape.sections.map((section) => section.map((curve) => toCurveSpec(curve))),
+        ruled: shape.ruled,
+      };
+    case 'face':
+      return { kind: 'face', face: toSubShapeQuery(shape.face) };
+    case 'offset':
+      return {
+        kind: 'offset',
+        face: toSubShapeQuery(shape.face),
+        distance: shape.distance,
       };
   }
 }

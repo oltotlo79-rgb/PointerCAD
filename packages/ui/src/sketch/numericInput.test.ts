@@ -429,6 +429,9 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
       cylinder: 'cylinderSize',
       cone: 'coneSize',
       torus: 'torusSize',
+      // 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク27)。どちらもねじれの 1 段だけ。
+      ruled: 'ruledTwist',
+      loft: 'loftTwist',
     });
     for (const step of Object.values(SOLID_TOOL_STEPS)) {
       expect(isSolidStep(step), step).toBe(true);
@@ -2803,6 +2806,115 @@ describe('基本形状 5 種の段(FR-429、§2.15 の段の表)', () => {
         expect(MESSAGE_KEYS, field.key).toContain(field.labelKey);
         expect(MESSAGE_KEYS, field.key).toContain(field.tooltipKey);
         expect(t(field.labelKey).length, field.key).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 面をつなぐ・ロフトの段(FR-430、FR-410、P5 タスク27、§2.15 の段の表)
+ * ------------------------------------------------------------------ */
+
+describe('面をつなぐ・ロフトの段(FR-430、FR-410、§2.15 の段の表)', () => {
+  const RULED_STEPS = [
+    { tool: 'ruled', step: 'ruledTwist' },
+    { tool: 'loft', step: 'loftTwist' },
+  ] as const;
+
+  it('道具から段が引け、2 つともソリッドの段で座標を聞かない', () => {
+    for (const { tool, step } of RULED_STEPS) {
+      expect(SOLID_TOOL_STEPS[tool], tool).toBe(step);
+      expect(isSolidStep(step), step).toBe(true);
+      expect(asksCoordinate(step), step).toBe(false);
+      expect(NUMERIC_INPUT_STEPS, step).toContain(step);
+    }
+  });
+
+  it('どちらもねじれ 1 欄(既定 0、単位は個)で、つまみは持たない', () => {
+    for (const { tool, step } of RULED_STEPS) {
+      const state = createNumericInput(tool, step);
+      expect(state.fields.map((field) => field.key), tool).toEqual(['ruledTwist']);
+      expect(state.fields.map((field) => field.source), tool).toEqual(['0']);
+      expect(state.fields[0].unit, tool).toBe('count');
+      expect(state.toggles, tool).toEqual([]);
+    }
+  });
+
+  it('ねじれの欄は範囲を持たない(負も大きい数も打てる。整数の判定は確定側)', () => {
+    // 「1.5 は整数でない」は上下限では言えないので `NumericFieldRange` を置かない
+    // (正多角形の辺数・パターンの個数と同じ切り分け)。断るのは `ruledTwistRejection`。
+    expect(createNumericInput('ruled', 'ruledTwist').fields[0].range).toBeUndefined();
+    expect(
+      rangeErrorFor(
+        createNumericInput('ruled', 'ruledTwist').fields[0],
+        expressionValueFromNumber(-3),
+      ),
+    ).toBeNull();
+  });
+
+  it('なめらかさの 3 択は、球を含む断面のときだけ出る(§0.a-0.87)', () => {
+    const withSphere = createNumericInput('ruled', 'ruledTwist', undefined, {
+      ruledHasSphere: true,
+    });
+    expect(withSphere.choices.map((choice) => choice.key)).toEqual(['ruledSphereSegments']);
+    expect(withSphere.choices[0].value).toBe('24');
+    expect(withSphere.choices[0].options.map((option) => option.value)).toEqual(['24', '48', '72']);
+    // 球を含まないとき(渡さないとき)は選択肢ごと伏せる。
+    expect(createNumericInput('ruled', 'ruledTwist').choices).toEqual([]);
+    expect(
+      createNumericInput('ruled', 'ruledTwist', undefined, { ruledHasSphere: false }).choices,
+    ).toEqual([]);
+    // ロフトには球を置けないので、渡されても選択肢は出ない。
+    expect(
+      createNumericInput('loft', 'loftTwist', undefined, { ruledHasSphere: true }).choices,
+    ).toEqual([]);
+  });
+
+  it('Enter を打つだけで既定(ねじれ 0)が確定し、そこで閉じる(NFR-UX-4)', () => {
+    for (const { tool, step } of RULED_STEPS) {
+      const committed = expectSolidCommitted(commitNumericInput(createNumericInput(tool, step)));
+      expect(committed.commit.tool, tool).toBe(tool);
+      expect(committed.commit.step, tool).toBe(step);
+      expect(committed.commit.values.ruledTwist?.value, tool).toBe(0);
+      expect(committed.commit.ruledSphereSegments, tool).toBeUndefined();
+      expect(nextNumericInput(committed.state, true), tool).toBeNull();
+      expect(nextNumericInput(committed.state, false), tool).toBeNull();
+    }
+  });
+
+  it('なめらかさを選ぶと、確定結果に点の数が入る(§0.a-0.74)', () => {
+    const chosen = reduceNumericInput(
+      createNumericInput('ruled', 'ruledTwist', undefined, { ruledHasSphere: true }),
+      { type: 'choose', key: 'ruledSphereSegments', value: '72' },
+    );
+    const committed = expectSolidCommitted(commitNumericInput(chosen));
+    expect(committed.commit.ruledSphereSegments).toBe(72);
+  });
+
+  it('ねじれに式を書くと、式そのものと評価値の両方が渡る(FR-202)', () => {
+    const edited = reduceNumericInput(createNumericInput('ruled', 'ruledTwist'), {
+      type: 'edit',
+      index: 0,
+      source: '1+1',
+    });
+    const committed = expectSolidCommitted(commitNumericInput(edited));
+    expect(committed.commit.values.ruledTwist?.source).toBe('1+1');
+    expect(committed.commit.values.ruledTwist?.value).toBe(2);
+  });
+
+  it('見出し・欄の名前・説明・選択肢はすべて ja.json のキーで返す(NFR-MA-5)', () => {
+    for (const { tool, step } of RULED_STEPS) {
+      const state = createNumericInput(tool, step, undefined, { ruledHasSphere: true });
+      expect(MESSAGE_KEYS, step).toContain(STEP_TITLE_KEYS[step]);
+      for (const field of state.fields) {
+        expect(MESSAGE_KEYS, field.key).toContain(field.labelKey);
+        expect(MESSAGE_KEYS, field.key).toContain(field.tooltipKey);
+      }
+      for (const choice of state.choices) {
+        expect(MESSAGE_KEYS, choice.key).toContain(choice.labelKey);
+        for (const option of choice.options) {
+          expect(numericChoiceOptionLabel(option).length, option.value).toBeGreaterThan(0);
+        }
       }
     }
   });

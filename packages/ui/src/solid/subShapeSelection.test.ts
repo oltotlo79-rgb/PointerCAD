@@ -8,6 +8,7 @@ import {
   parseSubShapeId,
   selectedBodyIds,
   selectedSubShapeRefs,
+  keepsSelectionKind,
   selectionKindForTool,
   subShapeElementId,
   subShapeRefOf,
@@ -279,5 +280,21 @@ describe('道具ごとの選択の種類(§0.a-0.6、§2.3.2)', () => {
     expect(selectionKindForTool('extrude')).toBe('body');
     expect(selectionKindForTool('revolve')).toBe('body');
     expect(selectionKindForTool('sew')).toBe('body');
+  });
+
+  it('面をつなぐ・ロフトは種類を切り替えない(§2.15 の「測る」と同じ扱い、P5 タスク27)', () => {
+    /*
+      輪郭にできるのはスケッチの面(種類に依らず選べる)・立体の面(`face` のとき)・
+      球(`body` でも `face` でも)の 3 通りで、**どの種類でも何かしら選べる**。
+      決め打ちで切り替えると、押した瞬間に材料の選択が消える(2026-09-05 の実測)。
+    */
+    expect(keepsSelectionKind('ruled')).toBe(true);
+    expect(keepsSelectionKind('loft')).toBe(true);
+  });
+
+  it('それ以外の道具は今までどおり切り替える(既存の振る舞いを狭めない)', () => {
+    for (const tool of ['hole', 'fillet', 'appearance', 'select', 'extrude'] as const) {
+      expect(keepsSelectionKind(tool), tool).toBe(false);
+    }
   });
 });

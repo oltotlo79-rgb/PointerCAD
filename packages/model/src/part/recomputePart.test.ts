@@ -1954,7 +1954,11 @@ describe('外観の橋渡し(FR-1106、タスク4)', () => {
     expect(outcome.bodies[0].bodyKind).toBe('shell');
   });
 
-  it('形の種類が来なければ solid として読み、測っていない表面積は空のまま残す', () => {
+  // 検査名の直し(P5 タスク46): 「形の種類が来なければ solid として読み」は
+  // `bodyKind` が任意の欄だったころの言い方で、タスク42b(§0.a-0.77)で必須になった
+  // いまは**カーネルは必ず種類を返す**(見本の `kernelBody` も既定で 'solid' を入れる)。
+  // 確かめている中身は変えず、名前だけを実際のふるまいへ合わせる。
+  it('閉じた立体のボディは solid のまま届き、測っていない表面積は空のまま残す', () => {
     const outcome = toSolidOutcome([stepA], {
       bodies: [kernelBody('extrude-1', 12000)],
       failures: [],

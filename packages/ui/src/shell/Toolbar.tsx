@@ -56,6 +56,7 @@ import {
 } from '../sketch/referenceCommands.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import { TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
+import { ruledSelectionHasSphere } from '../solid/ruledCommands.js';
 import {
   commitBooleanFromSelection,
   selectedLineRef,
@@ -661,13 +662,24 @@ function openSolidInput(tool: SolidToolId): void {
   const store = useAppStore.getState();
   store.setActiveTool(tool);
   const axisLine = tool === 'revolve' ? selectedLineRef(store.document, store.selection) : undefined;
+  /*
+    面をつなぐ(FR-430)の「なめらかさ」は、**球を含む断面のときだけ**出す(§0.a-0.87)。
+    球を含まない断面では点の数が形に 1 つも効かないので、出すと「変えたのに形が変わらない」
+    ことになる。判定は `ruledCommands.ts` の 1 か所に置き、ここは選択から見込んで渡すだけ。
+  */
+  const ruledHasSphere =
+    tool === 'ruled'
+      ? ruledSelectionHasSphere({
+          document: store.document,
+          bodies: subShapeBodiesOf(store.bodies),
+          selection: store.selection,
+        })
+      : undefined;
   store.openNumericInput(
-    createNumericInput(
-      tool,
-      SOLID_TOOL_STEPS[tool],
-      undefined,
-      axisLine === undefined ? {} : { axisLine },
-    ),
+    createNumericInput(tool, SOLID_TOOL_STEPS[tool], undefined, {
+      ...(axisLine === undefined ? {} : { axisLine }),
+      ...(ruledHasSphere === undefined ? {} : { ruledHasSphere }),
+    }),
     solidAnchor(),
   );
 }

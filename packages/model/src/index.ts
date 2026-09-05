@@ -403,3 +403,32 @@ export type {
   SweepKeyMaterial, ThinExtrudeKeyMaterial, ThreadShaftKeyMaterial, TransformKeyMaterial,
 } from './part/cacheKey.js';
 export type { ExtrudeEndPlan, ThinExtrudePlan } from './part/resolvePart.js';
+/**
+ * P5 タスク46: スイープ・リブ・エンボス・ざぐり/皿もみ・外ねじ・点集合パターン・曲面
+ * (FR-409、FR-420〜423、FR-425、FR-428)と、Could 群から前倒しした
+ * くり抜き(FR-418)・可変半径フィレット(FR-426)。
+ *
+ * **`ShellFeature` は新しい保存形**なので型を出す。可変半径は `FilletFeature` に
+ * 省略できる欄 `radiusEnd` を足しただけなので、読む側のための口
+ * (`filletRadiusOf` / `FilletRadius`)と既定値だけを出す(既定を各所へ写さない。
+ * `extrudeShapingOf` / `holeEntryOf` とまったく同じ約束)。
+ *
+ * 段の型(`SolidStepPlan`)は P2 から輸出していないので、ここでも出さない。
+ * ただし**段の欄の型**(入口の形・丸める半径・曲面の作り方)は、ui とその場入力が
+ * 「同じ形なら同じ段」を確かめられるように出す(`ExtrudeEndPlan` と同じ扱い)。
+ */
+export type { ShellFeature } from './part/types.js';
+export type { FilletRadius } from './part/createPartDocument.js';
+export {
+  DEFAULT_FILLET_RADIUS_END_MM, DEFAULT_SHELL_OUTWARD, DEFAULT_SHELL_THICKNESS_MM,
+  DEFAULT_SURFACE_OFFSET_MM, filletRadiusOf,
+} from './part/createPartDocument.js';
+export type {
+  FilletRadiusPlan, HoleEntryPlan, SurfaceShapePlan,
+} from './part/resolvePart.js';
+/**
+ * 点の参照(`PointReference`)が指すスケッチの id(FR-325 の順序の制約、タスク46)。
+ * 拡大縮小の中心と点集合パターンの点だけは参照からスケッチを読めないので、
+ * 全スケッチを id で探すこの口を通す(`referencedSketchIds` の第 2 引数も同じ材料)。
+ */
+export { sketchIdOfPointReference } from './part/resolvePart.js';

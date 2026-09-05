@@ -216,6 +216,8 @@ const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = [
   'emboss',
   'threadShaft',
   'surface',
+  // P5 の Could 群のうちタスク46 が前倒しした 1 種(FR-418)。
+  'shell',
 ];
 /** 押し出しの終端の4通り(FR-415、P5 タスク43)。 */
 const EXTRUDE_END_KINDS: readonly ExtrudeEnd['kind'][] = [
@@ -243,6 +245,8 @@ const SURFACE_OPERATION_KINDS: readonly SurfaceOperation['kind'][] = [
   'planar',
   'loft',
   'face',
+  // 面のオフセット(P5 タスク42b が kernel へ足した 6 種目。FR-428)。
+  'offset',
 ];
 /** 罫線面・ロフトの断面の 3 通り(P5 §2.9.1)。知らない `kind` は `readLiteral` が断る。 */
 const RULED_SECTION_KINDS: readonly RuledSection['kind'][] = ['sketchFace', 'solidFace', 'sphere'];
@@ -992,6 +996,14 @@ function serializeSurfaceOperation(operation: SurfaceOperation): SurfaceOperatio
         targetFeatureId: operation.targetFeatureId,
         face: serializeSubShapeRef(operation.face),
       };
+    case 'offset':
+      // 面のオフセット(FR-428 の 6 種目、P5 タスク42b・46)。面と距離を書く。
+      return {
+        kind: 'offset',
+        targetFeatureId: operation.targetFeatureId,
+        face: serializeSubShapeRef(operation.face),
+        distance: serializeExpression(operation.distance),
+      };
   }
 }
 
@@ -1191,6 +1203,11 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         targetFeatureId: feature.targetFeatureId,
         targets: feature.targets.map(serializeSubShapeRef),
         radius: serializeExpression(feature.radius),
+        // 可変半径(FR-426、P5 タスク46)。**一定半径のときは欄そのものを書かない**ので、
+        // 版 4 以前・版 5 前半のファイルと 1 バイトも変わらない(押し出しの `end` と同じ決め)。
+        ...(feature.radiusEnd === undefined || feature.radiusEnd === null
+          ? {}
+          : { radiusEnd: serializeExpression(feature.radiusEnd) }),
       };
     case 'chamfer':
       return {
@@ -1371,6 +1388,18 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         name: feature.name,
         suppressed: feature.suppressed,
         operation: serializeSurfaceOperation(feature.operation),
+      };
+    case 'shell':
+      // くり抜き(FR-418、§2.12、P5 タスク46)。開ける面は 0 枚でもよい。
+      return {
+        id: feature.id,
+        kind: 'shell',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        openFaces: feature.openFaces.map(serializeSubShapeRef),
+        thickness: serializeExpression(feature.thickness),
+        outward: feature.outward,
       };
   }
 }
@@ -3734,6 +3763,9 @@ function readSolidFeature(value: unknown, path: string): Checked<SolidFeature> {
       return readThreadShaftFeature(record.value, path, base.value);
     case 'surface':
       return readSurfaceFeature(record.value, path, base.value);
+    // P5 の Could 群のうちタスク46 が前倒しした 1 種(FR-418)。
+    case 'shell':
+      return readShellFeature(record.value, path, base.value);
   }
 }
 
@@ -4044,6 +4076,16 @@ function readFilletFeature(
   if (!radius.ok) {
     return radius;
   }
+  /*
+    可変半径の終点側(FR-426、P5 タスク46)。**省略できる欄**なので、版 4 以前・
+    版 5 前半のファイル(`radius` だけを持つ)は欄が無いまま読めて、`filletRadiusOf` が
+    「一定半径」として返す。読み手で 2 通りの形へ分岐する必要も、移行を増やす必要もない
+    (計画書 タスク54 の注意書きが求めていた「両方の形を読める」を、欄を足す形で満たす)。
+  */
+  const radiusEnd = readOptionalExpression(record, 'radiusEnd', path);
+  if (!radiusEnd.ok) {
+    return radiusEnd;
+  }
   return {
     ok: true,
     value: {
@@ -4052,6 +4094,7 @@ function readFilletFeature(
       targetFeatureId: targetFeatureId.value,
       targets: targets.value,
       radius: radius.value,
+      ...(radiusEnd.value === undefined ? {} : { radiusEnd: radiusEnd.value }),
     },
   };
 }
@@ -5020,7 +5063,65 @@ function readSurfaceOperation(
         value: { kind: 'face', targetFeatureId: targetFeatureId.value, face: face.value },
       };
     }
+    case 'offset': {
+      const targetFeatureId = readString(record.value, 'targetFeatureId', path);
+      if (!targetFeatureId.ok) {
+        return targetFeatureId;
+      }
+      const face = readSubShapeRefField(record.value, 'face', path);
+      if (!face.ok) {
+        return face;
+      }
+      const distance = readExpression(record.value, 'distance', path);
+      if (!distance.ok) {
+        return distance;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'offset',
+          targetFeatureId: targetFeatureId.value,
+          face: face.value,
+          distance: distance.value,
+        },
+      };
+    }
   }
+}
+
+/** くり抜き(FR-418、§2.12、P5 タスク46)を読む。開ける面は 0 枚でもよい。 */
+function readShellFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const openFaces = readList(record, 'openFaces', path, readSubShapeRef);
+  if (!openFaces.ok) {
+    return openFaces;
+  }
+  const thickness = readExpression(record, 'thickness', path);
+  if (!thickness.ok) {
+    return thickness;
+  }
+  const outward = readBoolean(record, 'outward', path);
+  if (!outward.ok) {
+    return outward;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'shell',
+      targetFeatureId: targetFeatureId.value,
+      openFaces: openFaces.value,
+      thickness: thickness.value,
+      outward: outward.value,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

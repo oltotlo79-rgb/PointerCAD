@@ -217,7 +217,7 @@ describe('区画の幅の見積もり(1440 画素の窓で 1 段、§0.a-0.14)',
 });
 
 describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () => {
-  it('「作る」には数値を聞いて立体を作る 9 つが並ぶ', () => {
+  it('「作る」には数値を聞いて立体を作る 11 つが並ぶ', () => {
     expect(CREATE_MENU_ITEMS.map((item) => item.id)).toEqual([
       'extrude',
       'revolve',
@@ -230,6 +230,10 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       'cylinder',
       'cone',
       'torus',
+      // 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク27)。§0.a-0.27 で対象を消費しない
+      // 「作る」フィーチャーと決まっているので、基本形状と同じ理由でここへ入る。
+      'ruled',
+      'loft',
     ]);
   });
 
@@ -295,17 +299,18 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
   it('「作る」「合わせる」「加工」の 3 つで 103 画素', () => {
     expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(103);
     /*
-      平置きにしたときの幅。タスク51 の時点(図柄 13 個)は 368 画素で、タスク18 が
-      基本形状 5 種を足したいまは図柄 18 個・508 画素になる。**畳んだ一覧のほうは
-      103 画素のまま 1 画素も増えていない**(上の行)ことがこの検査の眼目で、
-      平置きの数はその対比として置いてある(§0.a-0.80)。
+      平置きにしたときの幅。タスク51 の時点(図柄 13 個)は 368 画素、タスク18 が
+      基本形状 5 種を足して図柄 18 個・508 画素になり、タスク27 が面をつなぐ・ロフトを
+      足したいまは図柄 20 個・564 画素になる。**畳んだ一覧のほうは 103 画素のまま
+      1 画素も増えていない**(上の行)ことがこの検査の眼目で、平置きの数はその対比として
+      置いてある(§0.a-0.80)。
     */
     expect(
       segmentedWidthPixels(
         CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length,
         0,
       ),
-    ).toBe(508);
+    ).toBe(564);
   });
 
   it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
@@ -329,10 +334,17 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
 describe('基本形状 5 種を「作る」の一覧へ足す(FR-429、P5 タスク18、§0.a-0.80)', () => {
   const PRIMITIVE_IDS = ['sphere', 'box', 'cylinder', 'cone', 'torus'] as const;
 
-  it('5 つとも一覧の末尾に、球・箱・円柱・円錐・トーラスの順で並ぶ(§2.15)', () => {
-    expect(CREATE_MENU_ITEMS.slice(-PRIMITIVE_IDS.length).map((item) => item.id)).toEqual([
-      ...PRIMITIVE_IDS,
-    ]);
+  it('5 つとも続けて、球・箱・円柱・円錐・トーラスの順で並ぶ(§2.15)', () => {
+    /*
+      タスク18 の時点では一覧の末尾だったが、タスク27 が面をつなぐ・ロフトをその後ろへ
+      足したので「末尾から 5 つ」では引けなくなった。**5 種が続けてこの順に並ぶ**ことが
+      §2.15 の段の表と揃えるための条件なので、球の位置から 5 つを切り出して確かめる
+      (期待の中身は 1 つも変えていない)。
+    */
+    const ids = CREATE_MENU_ITEMS.map((item) => item.id);
+    const start = ids.indexOf(PRIMITIVE_IDS[0]);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(ids.slice(start, start + PRIMITIVE_IDS.length)).toEqual([...PRIMITIVE_IDS]);
   });
 
   it('5 つとも図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
@@ -364,5 +376,55 @@ describe('基本形状 5 種を「作る」の一覧へ足す(FR-429、P5 タス
   it('畳んだボタンの図柄は、いま選んでいる基本形状のものになる(triggerItemOf)', () => {
     const trigger = triggerItemOf(CREATE_MENU_ITEMS, 'torus', null);
     expect(trigger?.id).toBe('torus');
+  });
+});
+
+describe('面をつなぐ・ロフトを「作る」の一覧へ足す(FR-430、FR-410、P5 タスク27、§0.a-0.80)', () => {
+  const RULED_IDS = ['ruled', 'loft'] as const;
+
+  it('2 つとも一覧の末尾に、面をつなぐ → ロフトの順で並ぶ', () => {
+    expect(CREATE_MENU_ITEMS.slice(-RULED_IDS.length).map((item) => item.id)).toEqual([
+      ...RULED_IDS,
+    ]);
+  });
+
+  it('2 つとも図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
+    for (const id of RULED_IDS) {
+      const item = CREATE_MENU_ITEMS.find((candidate) => candidate.id === id);
+      expect(item, id).toBeDefined();
+      if (item === undefined) {
+        continue;
+      }
+      expect(typeof item.Icon, id).toBe('function');
+      expect(t(item.labelKey).length, id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).length, id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).startsWith(`${t(item.labelKey)}: `), id).toBe(false);
+    }
+  });
+
+  it('図柄は 2 つで別のもの(木の借り物 CubeIcon を卒業した)', () => {
+    const icons = RULED_IDS.map(
+      (id) => CREATE_MENU_ITEMS.find((candidate) => candidate.id === id)?.Icon,
+    );
+    expect(icons[0]).not.toBe(icons[1]);
+    expect(icons[0]).toBeDefined();
+    expect(icons[1]).toBeDefined();
+  });
+
+  it('2 つ足してもツールバーの幅は 1 画素も増えない(畳んだ一覧に入れる理由)', () => {
+    /*
+      溝の幅は「溝に並ぶボタンの個数」だけで決まる(`segmentedWidthPixels`)。ソリッドの
+      区画は「作る」「合わせる」「加工」の 3 つの畳んだボタンのままなので、一覧の中身が
+      9 → 11 に増えても 103 画素で変わらない。平置きにしていたら 2 × 28 = 56 画素増える。
+    */
+    expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(103);
+    const flatBefore = segmentedWidthPixels(CREATE_MENU_ITEMS.length - RULED_IDS.length, 0);
+    const flatAfter = segmentedWidthPixels(CREATE_MENU_ITEMS.length, 0);
+    expect(flatAfter - flatBefore).toBe(56);
+  });
+
+  it('畳んだボタンの図柄は、いま選んでいる道具のものになる(triggerItemOf)', () => {
+    expect(triggerItemOf(CREATE_MENU_ITEMS, 'ruled', null)?.id).toBe('ruled');
+    expect(triggerItemOf(CREATE_MENU_ITEMS, 'loft', null)?.id).toBe('loft');
   });
 });

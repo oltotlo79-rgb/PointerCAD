@@ -29,6 +29,7 @@ import {
   METRIC_THREAD_DESIGNATIONS,
   metricThreadPitch,
   referencedSketchIds,
+  RULED_SPHERE_SEGMENT_CHOICES,
   threadMinorDiameter,
   type ChamferFeature,
   type ChamferSize,
@@ -47,6 +48,7 @@ import {
   type ReferenceFeatureKind,
   type ReferencePointDefinition,
   type RuledSection,
+  type RuledSphereSegments,
   type SketchDocument,
   type SketchError,
   type SketchFaceRef,
@@ -104,7 +106,13 @@ export type SolidFieldKey =
   | 'wireDiameter'
   | 'springPitch'
   | 'springTurns'
-  | 'springLength';
+  | 'springLength'
+  /**
+   * 面をつなぐ・ロフトのねじれの補正(FR-430、FR-410、§0.a-0.28。P5 タスク27)。
+   * 2 つの道具で意味も単位も同じなので欄の名前も 1 つにする(その場入力の
+   * `SolidCommitValues.ruledTwist` と同じ名前)。
+   */
+  | 'ruledTwist';
 
 /**
  * プロパティ欄の1行。式は source をそのまま出す(FR-202)。
@@ -157,7 +165,12 @@ export interface SolidChoiceSummary {
     /** ばね(FR-414)。タスク29b が使う。 */
     | 'springAxis'
     | 'springHandedness'
-    | 'springDerived';
+    | 'springDerived'
+    /**
+     * 面をつなぐの「なめらかさ」(球へつなぐときの接点の数、§0.a-0.74。P5 タスク27)。
+     * **球を含まない断面では形に効かない**ので、そのときは欄ごと出さない(§0.a-0.87)。
+     */
+    | 'ruledSphereSegments';
   readonly labelKey: MessageKey;
   readonly value: string;
   readonly options: readonly {
@@ -261,6 +274,9 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   transform: 'toolbar.machining.transform',
   scale: 'toolbar.machining.scale',
   pointPattern: 'toolbar.machining.pointPattern',
+  // くり抜き(FR-418、§2.12。P5 タスク46 で型・解決・読み書きを前倒しした)。
+  // 道具のボタン・案内・説明の文言は **タスク55**。
+  shell: 'toolbar.machining.shell',
 };
 
 /** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
@@ -392,6 +408,13 @@ const FIELD_DEFINITIONS: Readonly<
     tooltipKey: 'numericInput.tooltip.springLength',
     unit: 'mm',
   },
+  // 面をつなぐ・ロフトのねじれ(タスク27)。その場入力の欄とまったく同じ文言キーを使う
+  // (同じ数を 2 通りの名前で呼ばない)。単位は個(頂点の数)。
+  ruledTwist: {
+    labelKey: 'numericInput.field.ruledTwist',
+    tooltipKey: 'numericInput.tooltip.ruledTwist',
+    unit: 'count',
+  },
 };
 
 /** readOnly は既定 false。既存の呼び出し(加工6種・パターン)は1つも変えない(タスク29b)。 */
@@ -465,23 +488,30 @@ function profileReference(document: PartDocument, ref: SketchFaceRef): SolidRefe
 }
 
 /**
- * 罫線面・ロフトの断面 1 つを、プロパティに出す参照へ直す(FR-430、FR-410、P5 タスク25)。
+ * 罫線面・ロフトの断面 1 つを、プロパティに出す参照へ直す(FR-430、FR-410、P5 タスク27)。
  *
- * スケッチの面は既存の `profileReference`(「スケッチ名 / 面の名前」)をそのまま使い、
- * 立体の面と球は名前しか出せないので `bodyReference` を使う(面の通し番号はプロパティに
- * 出す約束が無く、指紋の中身を利用者に見せても意味がないため)。
+ * スケッチの面は「スケッチ名 / 面の名前」、立体の面と球は名前だけを出す(面の通し番号は
+ * プロパティに出す約束が無く、指紋の中身を利用者に見せても意味がないため)。
+ *
+ * 見出し(`labelKey`)は**呼び出し側が渡す**。罫線面は「1 つ目の面」「2 つ目の面」で
+ * どちらがどちらか読めるようにし、ロフトは並びが意味を持つので全部「断面」にする
+ * (タスク27。タスク25 の最小の枝は断面の種類で見出しを変えていたが、種類ではなく
+ * **何番目か**のほうが利用者に要る情報である)。
  */
 function ruledSectionReference(
   document: PartDocument,
   section: RuledSection,
+  labelKey: MessageKey,
 ): SolidReferenceSummary {
   switch (section.kind) {
-    case 'sketchFace':
-      return profileReference(document, section.ref);
+    case 'sketchFace': {
+      const profile = profileReference(document, section.ref);
+      return { ...profile, labelKey };
+    }
     case 'solidFace':
-      return bodyReference(document, 'propertyPanel.profile', section.ref.bodyFeatureId);
+      return bodyReference(document, labelKey, section.ref.bodyFeatureId);
     case 'sphere':
-      return bodyReference(document, 'propertyPanel.target', section.sphereFeatureId);
+      return bodyReference(document, labelKey, section.sphereFeatureId);
   }
 }
 
@@ -776,6 +806,33 @@ function springDerivedChoice(derived: SpringDerived): SolidChoiceSummary {
   };
 }
 
+/**
+ * 面をつなぐの「なめらかさ」(球へつなぐときの接点の数、§0.a-0.74)。
+ *
+ * 選べる数の正本は model の `RULED_SPHERE_SEGMENT_CHOICES`(= カーネルの
+ * `SphereSegmentCount`)1 か所だけで、ここは見出しを日本語に付け替えるだけにする。
+ * 見出しはその場入力の選択肢とまったく同じ文言キーを使う(同じものを 2 通りの名前で
+ * 呼ばない。24b の文言案、docs/報告記録.md 2026-09-05 17:23)。
+ */
+function ruledSphereSegmentsChoice(segments: RuledSphereSegments): SolidChoiceSummary {
+  return {
+    key: 'ruledSphereSegments',
+    labelKey: 'numericInput.choice.ruledSphereSegments',
+    value: String(segments),
+    options: RULED_SPHERE_SEGMENT_CHOICES.map((count) => ({
+      value: String(count),
+      labelKey: RULED_SPHERE_SEGMENT_LABEL_KEYS[count],
+    })),
+  };
+}
+
+/** なめらかさの選択肢の見出し(`numericInput.ts` の同名の表と同じ割り当て)。 */
+const RULED_SPHERE_SEGMENT_LABEL_KEYS: Readonly<Record<RuledSphereSegments, MessageKey>> = {
+  24: 'numericInput.choice.ruledSphereSegments24',
+  48: 'numericInput.choice.ruledSphereSegments48',
+  72: 'numericInput.choice.ruledSphereSegments72',
+};
+
 /** 立体1つの見え方をまとめる。ツリーの行とプロパティ欄の両方がこれを読む。 */
 export function summarizeSolid(
   document: PartDocument,
@@ -956,30 +1013,42 @@ export function summarizeSolid(
       };
     case 'ruled':
       /*
-        面をつなぐ(FR-430、P5 タスク25)。ねじれの式の欄と球のなめらかさの選択肢を
-        プロパティへ出すのは **タスク27** で、ここは `SolidFeature` の union が広がった
-        ときにこの網羅 switch を落とさないための最小の枝である。いまは 2 つの断面を
-        参照として出すだけにする(木とプロパティで「何と何をつないだか」が読める)。
+        面をつなぐ(FR-430、P5 タスク27)。ねじれの式の欄と、球へつなぐときの
+        「なめらかさ」の 3 択を出す。
+
+        **なめらかさは球を含む断面のときだけ出す**(§0.a-0.87)。球を含まない断面では
+        点の数が形に 1 つも効かないので、出すと「変えたのに形が変わらない」ことになる。
+        「ねじれが立体の面には効かない」ほうは値が保存されるので欄は出したまま、
+        プロパティが注記を添える(`ruledCommands.ts` の `ruledTwistNoteKey`)。
       */
       return {
         ...base,
-        fields: [],
+        fields: [fieldSummary('ruledTwist', feature.twist)],
         toggles: [],
-        choices: [],
+        choices:
+          feature.first.kind === 'sphere' || feature.second.kind === 'sphere'
+            ? [ruledSphereSegmentsChoice(feature.sphereSegments)]
+            : [],
         references: [
-          ruledSectionReference(document, feature.first),
-          ruledSectionReference(document, feature.second),
+          ruledSectionReference(document, feature.first, 'propertyPanel.ruledFirst'),
+          ruledSectionReference(document, feature.second, 'propertyPanel.ruledSecond'),
         ],
         subShapeCounts: [],
       };
     case 'loft':
-      // ロフト(FR-410)。断面は 2 つ以上なので、並びのまま参照として出す。
+      /*
+        ロフト(FR-410)。断面は 2 つ以上なので、**選んだ順のまま**参照として出す
+        (並びが形の順そのものなので、順を読めることに意味がある)。球は置けないので
+        なめらかさの選択肢は持たない。
+      */
       return {
         ...base,
-        fields: [],
+        fields: [fieldSummary('ruledTwist', feature.twist)],
         toggles: [],
         choices: [],
-        references: feature.sections.map((section) => ruledSectionReference(document, section)),
+        references: feature.sections.map((section) =>
+          ruledSectionReference(document, section, 'propertyPanel.loftSection'),
+        ),
         subShapeCounts: [],
       };
     /*
@@ -1030,6 +1099,19 @@ export function summarizeSolid(
         choices: [],
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: [],
+      };
+    case 'shell':
+      // くり抜き(FR-418、P5 タスク46)。厚さ・向きの欄は **タスク55**。開ける面は
+      // 0 枚でもよいので、枚数だけを抜き勾配と同じ形で出す。
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [
+          { labelKey: 'propertyPanel.selectedFaces', count: feature.openFaces.length },
+        ],
       };
     case 'emboss':
       return {
@@ -1096,8 +1178,13 @@ export function setSolidField(
       return feature;
     case 'ruled':
     case 'loft':
-      // 面をつなぐ・ロフトの「ねじれ」の書き戻しは **タスク27**(欄を出すのと同じ段)。
-      return feature;
+      /*
+        面をつなぐ・ロフト(FR-430、FR-410、タスク27)。直せるのはねじれ 1 つだけで、
+        断面(つなぐ面)はプロパティから選び直せない(選び直すには画面で面を指す操作が
+        要る。回転の線分の軸・穴の面と同じ切り分け)。他の欄の名前が来たらそのまま返す
+        (`setPrimitiveField` と同じ約束)。
+      */
+      return key === 'ruledTwist' ? { ...feature, twist: value } : feature;
     case 'draft':
     case 'mirror':
     case 'transform':
@@ -1107,7 +1194,9 @@ export function setSolidField(
     case 'emboss':
     case 'threadShaft':
     case 'surface':
-      // P5 の Should 群(§2.11、タスク43)の書き戻しは **タスク52**(欄を出すのと同じ段)。
+    case 'shell':
+      // P5 の Should 群(§2.11、タスク43)の書き戻しは **タスク52**(欄を出すのと同じ段)、
+      // くり抜き(FR-418、タスク46)は **タスク55**。
       // いまは欄を 1 つも出していないので、そのまま返す。
       return feature;
   }
@@ -1509,7 +1598,22 @@ export function setSolidChoice(
       return value === 'length' || value === 'pitch' || value === 'turns'
         ? setSpringDerived(feature, value, variables)
         : feature;
+    case 'ruledSphereSegments':
+      // 面をつなぐの「なめらかさ」(§0.a-0.74)。3 択の外の値は黙って捨てる(他の選択肢と同じ)。
+      return setRuledSphereSegments(feature, value);
   }
+}
+
+/**
+ * なめらかさ(球へつなぐときの接点の数)を書き戻す(§0.a-0.74)。
+ * 面をつなぐ以外のフィーチャー・3 択の外の値ならそのまま返す。
+ */
+function setRuledSphereSegments(feature: SolidFeature, value: string): SolidFeature {
+  if (feature.kind !== 'ruled') {
+    return feature;
+  }
+  const segments = RULED_SPHERE_SEGMENT_CHOICES.find((count) => String(count) === value);
+  return segments === undefined ? feature : { ...feature, sphereSegments: segments };
 }
 
 /** つまみを切り替えた新しいフィーチャーを作る。持たないつまみなら同じものを返す。 */

@@ -86,6 +86,7 @@ import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import type { TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
 import {
+  keepsSelectionKind,
   selectionKindForTool,
   subShapeBodiesOf,
   type SelectionKind,
@@ -1337,7 +1338,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // 道具に応じて自動で切り替える(selectionKindForTool は subShapeSelection.ts の
     // 1 か所だけに置き、ここで対応表を作り直さない)。
     set((state) => {
-      const selectionKind = selectionKindForTool(activeTool);
+      /*
+        いま選んでいるものをそのまま材料にする道具(面をつなぐ・ロフト。§2.15 の「測る」と
+        同じ扱い)では種類を切り替えない。切り替えると下の `kindChanged` が真になり、押した
+        瞬間に材料の選択が消えてしまう(`keepsSelectionKind` の注釈、2026-09-05 の実測)。
+      */
+      const selectionKind = keepsSelectionKind(activeTool)
+        ? state.selectionKind
+        : selectionKindForTool(activeTool);
       const kindChanged = selectionKind !== state.selectionKind;
       return {
         activeTool,

@@ -321,7 +321,9 @@ export type SolidStepSpec =
   /** ばね(FR-414、§2.7b)。対象を取らず、新しい形を作る(§0.36)。 */
   | SpringStepSpec
   /** 基本形状(FR-429、P5 §2.7)。ばねと同じく対象を取らない「作る」段(§0.a-0.19)。 */
-  | PrimitiveStepSpec;
+  | PrimitiveStepSpec
+  /** 罫線面(FR-430)とロフト(FR-410、P5 §2.9)。これも対象を取らない「作る」段(§0.a-0.27)。 */
+  | ThruSectionsStepSpec;
 
 /** 履歴 1 段ぶんの依頼。 */
 export interface SolidStepRequest {
@@ -805,6 +807,39 @@ export interface PrimitiveStepSpec {
    * 鍵の連鎖は「材料が変われば鍵が変わる」ことに全面的に頼っているため)。
    */
   readonly targetKey: string | null;
+}
+
+/**
+ * 罫線面・ロフトの断面 1 つ(FR-430、FR-410、計画書 P5 §2.9、タスク24)。
+ *
+ * ふつうは閉じた輪郭(`curves`)だが、**球だけは縁を持たない**ので中心と半径で渡す。
+ * 球が入っているときは `ThruSections` にそのまま渡さず、球に外接する直線
+ * (接する円錐面)で結ぶ経路へ入る(`occt/makeThruSections.ts` の冒頭)。
+ */
+export type ThruSectionSpec =
+  | { readonly kind: 'curves'; readonly curves: readonly CurveSpec[] }
+  | { readonly kind: 'sphere'; readonly center: Vec3Tuple; readonly radius: number };
+
+/**
+ * 輪郭をつないで立体にする 1 手順(罫線面 FR-430・ロフト FR-410、計画書 P5 §2.9)。
+ *
+ * **対象を取らない「作る」段**(押し出し・回転・縫合・ばね・基本形状と同じ。§0.a-0.27)。
+ * 輪郭の材料になった立体はそのまま画面に残る。
+ *
+ * 罫線面(直線で結ぶ)とロフト(なめらかに結ぶ)は、利用者から見て別の道具なので
+ * **model 側のフィーチャーの種類は分ける**が、カーネルでは `ruled` の真偽だけが違うので
+ * 段は 1 種類にまとめてある(§0.a-0.25。同じものを 2 つ作らない)。
+ */
+export interface ThruSectionsStepSpec {
+  readonly kind: 'thruSections';
+  /** つなぐ断面。2 つ以上。球を入れられるのは 1 つまでで、そのとき輪郭は 1 つだけ。 */
+  readonly sections: readonly ThruSectionSpec[];
+  /** true なら直線で結ぶ(罫線面)、false ならなめらかに結ぶ(ロフト)。 */
+  readonly ruled: boolean;
+  /** true なら両端に面を張って閉じた立体にする。false なら殻のまま(いまは常に true)。 */
+  readonly closed: boolean;
+  /** 輪郭のねじれを直すための、2 つ目以降の輪郭の稜線のずらし数(整数。§0.a-0.28)。 */
+  readonly twist: number;
 }
 
 /**

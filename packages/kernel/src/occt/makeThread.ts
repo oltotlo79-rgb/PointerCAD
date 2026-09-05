@@ -319,7 +319,7 @@ export function makeThreadHole(
     const { keep, release } = createAllocations();
     try {
       const drills = keep(
-        makeHoleTools(oc, target, frame, spec.drillDiameter, spec.depth, spec.transforms),
+        makeHoleTools(oc, frame, spec.drillDiameter, spec.depth, spec.transforms),
       );
 
       let tool: TopoDS_Shape = drills.shape;

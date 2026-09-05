@@ -31,7 +31,7 @@ import type {
 } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
-import { booleanOp } from './booleanOp.js';
+import { booleanOp, type BooleanResult } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { matchFace } from './matchSubShape.js';
 import { measureVolume } from './solidMesh.js';
@@ -102,6 +102,15 @@ export interface HoleFrame {
   readonly direction: Vec3Tuple;
   /** 面の平面へ投影した中心点。centers と同じ並び。 */
   readonly origins: readonly Vec3Tuple[];
+  /**
+   * もとの立体の境界箱の対角長(mm)。
+   *
+   * 面の指紋の位置を正規化する物差し(§2.2.3、この半分)と、貫通穴の長さ・口の余裕
+   * (§0.a-0.12)の両方がこの値を使う。**同じ立体から 2 回測ると同じ値になるので、
+   * `resolveHoleFrame` が測った 1 回ぶんを `makeHoleTools` へ持ち回る**
+   * (以前は段ごとに 2 回測っていた)。
+   */
+  readonly diagonal: number;
 }
 
 /** 数値 3 つがすべて有限か。NaN・∞ を OCCT へ渡すと C++ 側が落ちうるので手前で弾く。 */
@@ -248,6 +257,7 @@ function resolvePlanarFace(
   shape: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
   query: SubShapeQuery,
+  diagonal: number,
 ): TopoDS_Face {
   if (query.kind !== 'face') {
     // 面以外(辺・頂点)の指紋が来るのは model 側の取り違えだが、
@@ -256,7 +266,7 @@ function resolvePlanarFace(
   }
 
   // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する(§2.2.3)。
-  const scale = boundingDiagonal(oc, shape) * 0.5;
+  const scale = diagonal * 0.5;
   const match = matchFace(faces, query, scale);
   if (match === null) {
     throw new Error(MISSING_FACE_MESSAGE);
@@ -307,7 +317,10 @@ export function resolveHoleFrame(
     throw new Error(TILT_AZIMUTH_MESSAGE);
   }
 
-  const face = resolvePlanarFace(oc, shape, faces, spec.face);
+  // 境界箱の対角長は、指紋の物差しと工具の長さの両方が使う。段で 1 回だけ測って持ち回る
+  // (`HoleFrame.diagonal` の注釈)。
+  const diagonal = boundingDiagonal(oc, shape);
+  const face = resolvePlanarFace(oc, shape, faces, spec.face, diagonal);
   const { keep, release } = createAllocations();
 
   try {
@@ -320,6 +333,7 @@ export function resolveHoleFrame(
     return {
       direction,
       origins: spec.centers.map((center) => projectOntoPlane(center, planeFrame)),
+      diagonal,
     };
   } finally {
     release();
@@ -341,11 +355,10 @@ export function resolveHoleFrame(
  * (要らない複製を作らないため。結果は同じ)。
  *
  * 返した handle の delete() で、円柱・軸・複製・コンパウンドをまとめて解放する。
- * 引数の `target` には触れない(呼び出し側の持ち物)。
+ * もとの立体そのものは要らない(`frame.diagonal` にその境界箱の対角長が入っている)。
  */
 export function makeHoleTools(
   oc: OpenCascadeInstance,
-  target: TopoDS_Shape,
   frame: HoleFrame,
   diameter: number,
   depth: number | null,
@@ -361,7 +374,7 @@ export function makeHoleTools(
     throw new Error(NO_CENTER_MESSAGE);
   }
 
-  const diagonal = boundingDiagonal(oc, target);
+  const { diagonal } = frame;
   if (!Number.isFinite(diagonal) || diagonal <= 0) {
     // 中身の無い形。ここまで来ることは無い想定だが、0 長の円柱を作らせない。
     throw new Error(HOLE_FAILED_MESSAGE);
@@ -425,7 +438,7 @@ function cutHoles(
   oc: OpenCascadeInstance,
   target: TopoDS_Shape,
   tools: TopoDS_Shape,
-): OcctShapeHandle {
+): BooleanResult {
   try {
     return booleanOp(oc, 'subtract', target, tools);
   } catch (error) {
@@ -446,17 +459,20 @@ function cutHoles(
  * 工具(円柱のコンパウンド)は差し引いた直後にこの関数が解放する。
  * 差し引きが終われば結果の形は工具と切り離されている(2026-09-03 に Node で実測:
  * 工具の解放後も体積・面数・妥当性・三角形分割がすべて解放前と同じだった)。
+ *
+ * 返す値は `booleanOp` の結果そのもので、**測り済みの体積を持ったまま**返る
+ * (`BooleanResult` の注釈。呼び出し側の `buildSolidBodyMesh` が測り直さずに使う)。
  */
 export function makeHole(
   oc: OpenCascadeInstance,
   spec: HoleStepSpec,
   target: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
-): OcctShapeHandle {
+): BooleanResult {
   const frame = resolveHoleFrame(oc, target, faces, spec);
-  const tools = makeHoleTools(oc, target, frame, spec.diameter, spec.depth, spec.transforms);
+  const tools = makeHoleTools(oc, frame, spec.diameter, spec.depth, spec.transforms);
 
-  let result: OcctShapeHandle;
+  let result: BooleanResult;
   try {
     result = cutHoles(oc, target, tools.shape);
   } finally {
@@ -466,7 +482,8 @@ export function makeHole(
   try {
     // 何も削れていないなら断る(NOTHING_REMOVED_MESSAGE の説明を参照)。
     // hasSolid と体積 0 は booleanOp が済ませてあるので、ここでは減った量だけを見る。
-    const removed = measureVolume(oc, target) - measureVolume(oc, result.shape);
+    // 結果の体積は booleanOp がすでに測ってあるので測り直さない。
+    const removed = measureVolume(oc, target) - result.volume;
     if (!(removed >= MIN_REMOVED_VOLUME_MM3)) {
       throw new Error(NOTHING_REMOVED_MESSAGE);
     }

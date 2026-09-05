@@ -1,6 +1,6 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
-import { booleanOp } from '../occt/booleanOp.js';
+import { booleanOp, type BooleanResult } from '../occt/booleanOp.js';
 import type { OcctShapeHandle } from '../occt/makeBox.js';
 import { makeChamfer } from '../occt/makeChamfer.js';
 import { makeFillet } from '../occt/makeFillet.js';
@@ -9,6 +9,7 @@ import { makePrimitive, resolvePrimitiveOrigin } from '../occt/makePrimitive.js'
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { makeThreadHole } from '../occt/makeThread.js';
+import { makeThruSections } from '../occt/makeThruSections.js';
 import { matchFace } from '../occt/matchSubShape.js';
 import { sewSolid } from '../occt/sewSolid.js';
 import { buildSolidBodyMesh, measureArea } from '../occt/solidMesh.js';
@@ -273,7 +274,7 @@ function createBooleanSolid(
   spec: BooleanStepSpec,
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
-): OcctShapeHandle {
+): BooleanResult {
   const target = findStepInput(cache, failedLabels, spec.targetKey);
   const tool = findStepInput(cache, failedLabels, spec.toolKey);
   return booleanOp(oc, spec.operation, target.shape, tool.shape);
@@ -333,11 +334,19 @@ function createPrimitiveSolid(
 interface StepSolidResult {
   readonly handle: OcctShapeHandle;
   readonly threadMarks: readonly ThreadMarkInfo[];
+  /**
+   * 作り手がすでに測ってある体積(mm³)。無ければ `buildSolidBodyMesh` がその場で測る。
+   *
+   * ブーリアンを通る段(和・差・積・穴)は、`booleanOp` が「立体が残ったか」の判定のために
+   * 結果の体積を必ず 1 回測っている(`booleanOp.ts` の `BooleanResult`)。同じ形なので
+   * 測り直しても同じ値になるだけで、そのぶん(面 26 枚の板で 7.5〜11ms)が無駄になる。
+   */
+  readonly volume?: number;
 }
 
 /** ねじの印を持たない段の結果を組み立てる(押し出し・穴・面取り・ばね等)。 */
-function noMarks(handle: OcctShapeHandle): StepSolidResult {
-  return { handle, threadMarks: [] };
+function noMarks(handle: OcctShapeHandle, volume?: number): StepSolidResult {
+  return { handle, threadMarks: [], volume };
 }
 
 /**
@@ -369,11 +378,14 @@ function createStepSolid(
       return noMarks(makeRevolveSolid(oc, spec, options));
     case 'sew':
       return noMarks(sewSolid(oc, spec, options));
-    case 'boolean':
-      return noMarks(createBooleanSolid(oc, spec, cache, failedLabels));
+    case 'boolean': {
+      const combined = createBooleanSolid(oc, spec, cache, failedLabels);
+      return noMarks(combined, combined.volume);
+    }
     case 'hole': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      return noMarks(makeHole(oc, spec, target.shape, target.mesh.faces));
+      const drilled = makeHole(oc, spec, target.shape, target.mesh.faces);
+      return noMarks(drilled, drilled.volume);
     }
     case 'thread': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
@@ -394,6 +406,10 @@ function createStepSolid(
       // 基本形状(FR-429)。中心・向き・寸法だけで決まるが、基準点を立体の頂点に
       // したときだけ対象の形から頂点を引く(消費はしない。タスク14b)。
       return noMarks(createPrimitiveSolid(oc, spec, cache, failedLabels));
+    case 'thruSections':
+      // 罫線面(FR-430)とロフト(FR-410)。輪郭(と球)だけで決まるので上流の形を見ない。
+      // 材料にした立体は消費しない(§0.a-0.27。要るなら利用者が和を取る)。
+      return noMarks(makeThruSections(oc, spec, options));
   }
 }
 
@@ -406,6 +422,7 @@ function createStepSolid(
  *
  * `threadMarks` はねじ穴の段だけが非空(§0.a-0.15)。それ以外は `noMarks` が空配列にする。
  * `measureAreas` は依頼が表面積を求めたかどうか(`SolidRecomputeRequest` の注釈)。
+ * `knownVolume` は作り手がすでに測ってある体積(`StepSolidResult.volume` の注釈)。
  */
 function buildCachedSolid(
   oc: OpenCascadeInstance,
@@ -414,9 +431,18 @@ function buildCachedSolid(
   options: TessellationOptions,
   threadMarks: readonly ThreadMarkInfo[],
   measureAreas: boolean,
+  knownVolume?: number,
 ): CachedSolid {
   try {
-    const mesh = buildSolidBodyMesh(oc, id, handle.shape, options, threadMarks, measureAreas);
+    const mesh = buildSolidBodyMesh(
+      oc,
+      id,
+      handle.shape,
+      options,
+      threadMarks,
+      measureAreas,
+      knownVolume,
+    );
     return {
       shape: handle.shape,
       mesh,
@@ -601,6 +627,7 @@ export async function recomputeSolids(
         meshOptions,
         stepResult.threadMarks,
         measureAreas,
+        stepResult.volume,
       );
       cache.set(step.key, entry);
       if (step.visible) {

@@ -28,6 +28,20 @@ const INVALID_RESULT_MESSAGE =
   '組み合わせた立体の形が正しくありませんでした。位置や形を見直してください。';
 
 /**
+ * ブーリアンの結果。形と解放手続きに加えて、**演算のあとに測った体積**を持ち歩く。
+ *
+ * 体積は「立体が残らなかった」の判定(下の `MIN_SOLID_VOLUME_MM3`)のために
+ * どのみち 1 回測る。同じ形を呼び出し側がもう一度測ると、その回数ぶん丸ごと無駄になる
+ * (2026-09-05 実測: 面 26 枚・辺 72 本の板で 1 回 7.5〜11ms。穴の段では
+ * `booleanOp` → `makeHole` の「削れた量」→ `buildSolidBodyMesh` の 3 回測っていた)。
+ * 形はこのあと誰も作り変えないので、測り直しても必ず同じ値になる。
+ */
+export interface BooleanResult extends OcctShapeHandle {
+  /** 結果の体積(mm³)。`measureVolume` と同じ測り方で、同じ形なら同じ値。 */
+  readonly volume: number;
+}
+
+/**
  * 演算に応じた maker を作る。
  * BRepAlgoAPI_Fuse_3 / Cut_3 / Common_3 はいずれも
  * (S1, S2, theRange: Message_ProgressRange) を取り、構築した時点で演算を終える。
@@ -61,7 +75,7 @@ function buildBooleanResult(
   target: TopoDS_Shape,
   tool: TopoDS_Shape,
   range: Message_ProgressRange,
-): OcctShapeHandle {
+): BooleanResult {
   const maker = createBooleanMaker(oc, operation, target, tool, range);
 
   // 成否は HasErrors() と IsDone() だけで見る。Error() の戻り値は
@@ -86,7 +100,15 @@ function buildBooleanResult(
   // 2026-09-03 の実測では、交わらない 2 体の積や、含まれる側から含む側を引いた結果も
   // IsDone() は true・HasErrors() は false で、中身が空の COMPOUND が返る
   // (体積 0、IsNull() は false)。空かどうかはここで別に確かめる。
-  if (!hasSolid(oc, shape) || measureVolume(oc, shape) < MIN_SOLID_VOLUME_MM3) {
+  // ソリッドが 1 つも無ければ体積を測るまでもないので、順に見て早く抜ける
+  // (測るのは 1 回だけで、その値は結果と一緒に返す。BooleanResult の注釈)。
+  if (!hasSolid(oc, shape)) {
+    abandon();
+    throw new Error(NOTHING_LEFT_MESSAGE);
+  }
+
+  const volume = measureVolume(oc, shape);
+  if (volume < MIN_SOLID_VOLUME_MM3) {
     abandon();
     throw new Error(NOTHING_LEFT_MESSAGE);
   }
@@ -96,7 +118,7 @@ function buildBooleanResult(
     throw new Error(INVALID_RESULT_MESSAGE);
   }
 
-  return { shape, delete: deleteResult };
+  return { shape, volume, delete: deleteResult };
 }
 
 /**
@@ -108,13 +130,16 @@ function buildBooleanResult(
  *
  * **引数の target / tool は解放しない。** どちらも呼び出し側(形状キャッシュ)の持ち物で、
  * 演算のあとも別の段の入力として使われる。断ったときも同じで、この関数は引数に触れない。
+ *
+ * 返す値には、判定のために測った結果の体積が入る(`BooleanResult`)。
+ * 呼び出し側は測り直さずにこの値を使う。
  */
 export function booleanOp(
   oc: OpenCascadeInstance,
   operation: BooleanOperation,
   target: TopoDS_Shape,
   tool: TopoDS_Shape,
-): OcctShapeHandle {
+): BooleanResult {
   // 進捗の入れ物。2026-09-03 に Node で実測したところ、引数なしの
   // Message_ProgressRange_1 をそのまま渡して 3 種の演算とも成立した
   // (計画書 §1.2 の未確認点 4)。

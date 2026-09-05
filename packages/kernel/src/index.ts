@@ -79,6 +79,16 @@ export {
   PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE,
   type AxesFrame,
 } from './occt/makePrimitive.js';
+// 罫線面(FR-430)とロフト(FR-410、P5 §2.9、タスク23・24)。段の依頼の型と作り手、
+// 球への外接直線の純関数(OCCT を使わないので model / 検査からそのまま呼べる)。
+// model 側(resolvePart.ts、タスク25)が ThruSectionsStepSpec を組み立てて段に乗せる。
+export type { ThruSectionSpec, ThruSectionsStepSpec } from './types.js';
+export { makeThruSections } from './occt/makeThruSections.js';
+export {
+  tangentConeThroughCircle,
+  tangentPointOnSphere,
+  type TangentCone,
+} from './occt/sphereTangent.js';
 // 加工フィーチャー(FR-405〜408、FR-411、FR-412、FR-414)の型(計画書 §2.8)。
 // 段の依頼(*StepSpec)と、部分形状の一覧・指紋(SolidFaceInfo 等・SubShapeQuery)を輸出する。
 // model 側(kernelBridge.ts、タスク17)がこれらを取り込んで詰め替える。

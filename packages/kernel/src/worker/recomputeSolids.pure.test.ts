@@ -287,7 +287,8 @@ describe('外観の面の照合(matchAppearances、FR-1106)', () => {
  *
  * 型そのものは実行時に無いので、`SolidStepSpec['kind']` を鍵とする表を作って数える。
  * **表を `Record` にしてあるので、union に種類を足したのにここを直し忘れると型検査が落ちる**
- * (数え漏れを機械で防ぐ)。P5 は基本形状(`primitive`)を足して 9 → 10 になった。
+ * (数え漏れを機械で防ぐ)。P5 は基本形状(`primitive`)を足して 9 → 10 に、
+ * 罫線面とロフト(`thruSections`、タスク24)を足して 10 → 11 になった。
  */
 describe('段の種類(SolidStepSpec の union)', () => {
   const STEP_KINDS: Readonly<Record<SolidStepSpec['kind'], true>> = {
@@ -301,10 +302,12 @@ describe('段の種類(SolidStepSpec の union)', () => {
     chamfer: true,
     spring: true,
     primitive: true,
+    thruSections: true,
   };
 
-  it('段の種類は 10 種で、基本形状(primitive)を含む', () => {
-    expect(Object.keys(STEP_KINDS)).toHaveLength(10);
+  it('段の種類は 11 種で、基本形状(primitive)と罫線面・ロフト(thruSections)を含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(11);
     expect(Object.keys(STEP_KINDS)).toContain('primitive');
+    expect(Object.keys(STEP_KINDS)).toContain('thruSections');
   });
 });

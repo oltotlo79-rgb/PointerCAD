@@ -560,8 +560,8 @@ describe('穴あけ(FR-405、FR-504)', () => {
     const { handle, faces, top } = plateWithTopFace();
     try {
       const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
-      const single = makeHoleTools(oc, handle.shape, frame, 6, 4, []);
-      const doubled = makeHoleTools(oc, handle.shape, frame, 6, 4, [
+      const single = makeHoleTools(oc, frame, 6, 4, []);
+      const doubled = makeHoleTools(oc, frame, 6, 4, [
         {
           translation: [0, 0, 0],
           rotationOrigin: [0, 0, 0],
@@ -592,8 +592,8 @@ describe('穴あけ(FR-405、FR-504)', () => {
     const { handle, faces, top } = plateWithTopFace();
     try {
       const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
-      const through = makeHoleTools(oc, handle.shape, frame, 6, null, []);
-      const blind = makeHoleTools(oc, handle.shape, frame, 6, 4, []);
+      const through = makeHoleTools(oc, frame, 6, null, []);
+      const blind = makeHoleTools(oc, frame, 6, 4, []);
       try {
         // 対角長 √2600 = 50.990195…、margin = 0.5099… + 1 = 1.5099…
         const diagonal = Math.hypot(PLATE.dx, PLATE.dy, PLATE.dz);

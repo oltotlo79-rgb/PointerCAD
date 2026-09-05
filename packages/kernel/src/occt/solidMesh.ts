@@ -128,6 +128,13 @@ export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean 
  * 値を要る依頼のときだけ測る。理由の全文は `types.ts` の `SolidRecomputeRequest.measureAreas`
  * の注釈にある。**測るときは、面ごとの面積を足し合わせるのではなく形そのものから直に測る**
  * (足し合わせると、面の一覧の作り方(共有面の数え方)に結果が引きずられるため)。
+ *
+ * **体積(`volume`)は `knownVolume` が渡されたらそれを使い、測り直さない**
+ * (P5 仕上げ (b)、2026-09-05)。ブーリアンを通った段(和・差・積・穴)は
+ * `booleanOp` が「立体が残ったか」の判定のために同じ形の体積をすでに測っている
+ * (`booleanOp.ts` の `BooleanResult`)。同じ形をもう一度測っても必ず同じ値になるので、
+ * 測り直すぶん(面 26 枚・辺 72 本の板で 7.5〜11ms)がそのまま無駄になる。
+ * 渡されなければ従来どおりここで測る。
  */
 export function buildSolidBodyMesh(
   oc: OpenCascadeInstance,
@@ -136,6 +143,7 @@ export function buildSolidBodyMesh(
   options: TessellationOptions = {},
   threadMarks: readonly ThreadMarkInfo[] = [],
   measureAreas = true,
+  knownVolume?: number,
 ): SolidBodyMesh {
   const surface = tessellate(oc, shape, options);
   const edges = extractEdges(oc, shape, options);
@@ -151,7 +159,7 @@ export function buildSolidBodyMesh(
     triangleCount: surface.triangleCount,
     faceCount: surface.faceCount,
     edgeCount: edges.edgeCount,
-    volume: measureVolume(oc, shape),
+    volume: knownVolume ?? measureVolume(oc, shape),
     // 求められていないときは欄ごと落とす(undefined を入れるのと同じだが、
     // 「測っていない」ことが JSON の見た目でも分かるようにする)。
     ...(measureAreas ? { area: measureArea(oc, shape) } : {}),

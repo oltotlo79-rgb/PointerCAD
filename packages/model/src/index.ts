@@ -453,3 +453,58 @@ export { DEFAULT_CUT_KEEP } from './part/createPartDocument.js';
  * `packages/ui` の自前の一覧の置き換えは後続タスクの担当。
  */
 export { SOLID_FEATURE_KINDS } from './part/createPartDocument.js';
+/**
+ * 表示と入力の長さの単位(FR-811、FR-814、P6 タスク1)。**内部は mm 固定**(NFR-RE-3)で、
+ * ここにあるのは表示と入力の境目で使う純関数だけ。文書には単位を保存しない。
+ *
+ * `parseDisplayInput` が返すのは**式の文字列**(値ではない)。表示が inch のとき、単位を
+ * 書かない入力を `(…)in` で包む(§0.a-0.63)。包むかどうかの判定は
+ * `@pointercad/expression` の字句に任せてあり、単位の綴りはあちらの 1 か所だけにある。
+ *
+ * `nonLengthVariables` は `evaluateExpression` の同名の選択肢へ渡す集合を作る。
+ * **文書全体の評価(`applyParameters`)へ配線するかは統括の判断待ち**なので、ここでは
+ * 純関数を出すだけにしてある。
+ */
+export type { LengthUnit } from './units/length.js';
+export {
+  DEFAULT_INCH_DENOMINATOR, formatDisplayLength, fromDisplayLength, INCH_DISPLAY_DIGITS,
+  LENGTH_UNITS, MM_PER_INCH, nonLengthVariables, normalizeInchQuotes, parseDisplayInput,
+  toDisplayLength, toFractionalInch,
+} from './units/length.js';
+/**
+ * 新しく付けるパラメータ名の検査(P6 §0.a-0.1、統括の決定)。長さの単位の綴り
+ * (`mm` / `in` / `"`)を**これから打つ名前としてだけ**断る。既存の文書に同じ名前が
+ * あっても読み込みは通す(`checkVariableName` は変えていない)。
+ */
+export type { NewParameterNameIssue } from './parameters/parameterTable.js';
+export {
+  checkNewParameterName, isLengthUnitName, LENGTH_UNIT_NAME_MESSAGE,
+} from './parameters/parameterTable.js';
+/**
+ * 書き出し・読み込みの型と、書き出す対象の決め方(FR-803、FR-804、FR-427、P6 タスク2)。
+ *
+ * **`ExportFormat` / `ImportFormat` / `EXPORT_FORMATS` / `IMPORT_FORMATS` / `canRoundTrip` の
+ * 正本はここ**である。P2 が `packages/io` に置いた同じ 5 つは、P6 でこの再輸出に置き換えた
+ * (二重定義にしない。io は model に依存しているので依存方向に反しない)。
+ *
+ * 断りと警告は**文字列のキー**(`ExportNoticeKey`)で返し、日本語の文言は持たない
+ * (NFR-MA-5。文言は `packages/ui` の `ja.json`)。エラーコードの体系は増やしていない。
+ *
+ * **DXF は `ExportFormat` に入っていない。** DXF へ書き出すのは平らなスケッチの線であって
+ * 立体ではない(§0.a-0.34)ため、依頼の形が別になる。ただし「なめらかさが効くか」だけは
+ * 形式の性質なので、`usesTriangles` / `exportDeviationMm` は `FileKind` で受けて DXF も答える。
+ */
+export type {
+  ExportFormat, ExportNoticeKey, ExportOutcome, ExportQuality, ExportRequest,
+  ExportRequestOptions, ExportScope, ExportSelection, FileKind, ImportFormat,
+} from './exchange/types.js';
+export {
+  createExportRequest, DEFAULT_EXPORT_ASCII, DEFAULT_EXPORT_QUALITY, DEFAULT_EXPORT_SCOPE,
+  DEFAULT_EXPORT_WITH_COLORS, EXPORT_DEVIATION_MM, EXPORT_FORMATS, EXPORT_QUALITIES,
+  FILE_KINDS, IMPORT_FORMATS,
+} from './exchange/types.js';
+export type { ExportBodyKind } from './exchange/exportPart.js';
+export {
+  acceptsMeshBody, acceptsShellBody, canRoundTrip, carriesColor, checkExportBodyKind,
+  exportDeviationMm, selectExportBodies, usesTriangles,
+} from './exchange/exportPart.js';

@@ -45,13 +45,9 @@ export {
   type AutoSaveTimerHandle,
 } from './autoSave.js';
 
-export type ExportFormat = 'step' | 'stl' | '3mf' | 'obj' | 'glb';
-export type ImportFormat = 'step' | 'stl' | 'obj';
-
-export const EXPORT_FORMATS: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
-export const IMPORT_FORMATS: readonly ImportFormat[] = ['step', 'stl', 'obj'];
-
-/** 読み込めるファイルは書き出しもできること(要件 FR-802 / FR-803 の整合)。 */
-export function canRoundTrip(format: ImportFormat): boolean {
-  return (EXPORT_FORMATS as readonly string[]).includes(format);
-}
+// 書き出し・読み込みの形式(FR-803、FR-802)。**正本は `@pointercad/model` の
+// `exchange/types.ts` と `exchange/exportPart.ts`**(P6 タスク2)へ移したので、ここは
+// 同じ名前を再輸出するだけにしてある(二重定義にしない。io は model に依存している)。
+export {
+  canRoundTrip, EXPORT_FORMATS, IMPORT_FORMATS, type ExportFormat, type ImportFormat,
+} from '@pointercad/model';

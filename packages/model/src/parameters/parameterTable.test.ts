@@ -5,6 +5,9 @@ import { createEmptyPartDocument } from '../part/createPartDocument.js';
 import {
   addParameter,
   analyzeParameters,
+  checkNewParameterName,
+  isLengthUnitName,
+  LENGTH_UNIT_NAME_MESSAGE,
   nextParameterName,
   parameterDependencies,
   parameterEvaluationOrder,
@@ -322,6 +325,53 @@ describe('referencesTo / nextParameterName', () => {
 describe('部品文書のパラメータ表', () => {
   it('新しい部品文書のパラメータ表は空', () => {
     expect(createEmptyPartDocument().parameters).toEqual([]);
+  });
+});
+
+describe('checkNewParameterName(新しく付ける名前。P6 §0.a-0.1)', () => {
+  it('単位の綴り in / mm / " は新しい名前として断る', () => {
+    expect(checkNewParameterName('in')).toBe('lengthUnitName');
+    expect(checkNewParameterName('mm')).toBe('lengthUnitName');
+    expect(checkNewParameterName('"')).toBe('lengthUnitName');
+  });
+
+  it('大文字小文字を問わず断る(式の字句が大文字小文字を問わないため)', () => {
+    expect(checkNewParameterName('IN')).toBe('lengthUnitName');
+    expect(checkNewParameterName('Mm')).toBe('lengthUnitName');
+  });
+
+  it('断りの文言は「in と mm は単位の名前なので、パラメータの名前には使えません。」', () => {
+    expect(LENGTH_UNIT_NAME_MESSAGE).toBe(
+      'in と mm は単位の名前なので、パラメータの名前には使えません。',
+    );
+  });
+
+  it('単位でない名前はこれまでどおり通る', () => {
+    expect(checkNewParameterName('板厚')).toBeNull();
+    expect(checkNewParameterName('inch')).toBeNull();
+    expect(checkNewParameterName('mm2')).toBeNull();
+  });
+
+  it('これまでの理由(予約語・数字始まり・空・使えない文字)はそのまま返る', () => {
+    expect(checkNewParameterName('sqrt')).toBe('reserved');
+    expect(checkNewParameterName('2倍')).toBe('startsWithDigit');
+    expect(checkNewParameterName('')).toBe('empty');
+    expect(checkNewParameterName('板 厚')).toBe('invalidCharacter');
+  });
+
+  it('isLengthUnitName は綴りだけを見る', () => {
+    expect(isLengthUnitName('in')).toBe(true);
+    expect(isLengthUnitName('inch')).toBe(false);
+    expect(isLengthUnitName('')).toBe(false);
+  });
+
+  it('既存の文書に mm / in という名前があっても読み込みと評価は通る(弾かない)', () => {
+    // 断るのは「これから打つ名前」だけ(統括の決定)。表の解析は何も変えていない。
+    const parameters = [param('mm', '5'), param('in', 'mm * 2')];
+    const analysis = analyzeParameters(parameters, []);
+    expect(plain(analysis.variables)).toEqual({ mm: 5, in: 10 });
+    expect(analysis.failures).toEqual([]);
+    expect(analysis.circular).toEqual([]);
   });
 });
 

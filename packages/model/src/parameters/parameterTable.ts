@@ -14,9 +14,12 @@
  */
 
 import {
+  checkVariableName,
   collectVariableNames,
   evaluateExpression,
   renameVariable,
+  toLengthUnit,
+  type VariableNameIssue,
 } from '@pointercad/expression';
 
 import { nextSerialName } from '../sketch/createSketchDocument.js';
@@ -297,4 +300,53 @@ export function nextParameterName(parameters: readonly Parameter[]): string {
     parameters.map((parameter) => parameter.name),
     PARAMETER_LABEL,
   );
+}
+
+/* ---------------------------------------------------------------------------
+ * 新しく付ける名前の検査(P6 §0.a-0.1、`docs/報告記録.md` 2026-09-06 02:16 の統括の決定)
+ * ------------------------------------------------------------------------- */
+
+/**
+ * その綴りが長さの単位か(`mm` / `in` / `"`。大文字小文字を問わない)。
+ * 綴りの正本は `@pointercad/expression` の `lengthUnits.ts` 1 か所だけなので、ここでは
+ * その表(`toLengthUnit`)に尋ねる。単位を増やしたときに、こちらの書き漏らしが起きない。
+ */
+export function isLengthUnitName(name: string): boolean {
+  return toLengthUnit(name) !== null;
+}
+
+/**
+ * **新しく付ける**パラメータ名として使えない理由。`checkVariableName` の理由に、
+ * 「単位の名前」1 つを足したもの。
+ */
+export type NewParameterNameIssue = VariableNameIssue | 'lengthUnitName';
+
+/**
+ * 単位の名前をパラメータ名にしようとしたときの断り(NFR-UX-5)。
+ *
+ * 文言をここに置くのは、`packages/model` から `ja.json`(`packages/ui`)を引けないため
+ * (`diagnose.ts` の `CONSTRAINT_TOO_MANY_MESSAGE` と同じ扱い)。画面側がこの文言を
+ * ja.json のキーへ移すなら、この定数を消して 1 か所に戻す。
+ */
+export const LENGTH_UNIT_NAME_MESSAGE = 'in と mm は単位の名前なので、パラメータの名前には使えません。';
+
+/**
+ * **新しく付ける**パラメータ名として使えるか。使えない理由を返し、使えるなら null を返す。
+ *
+ * `checkVariableName`(式として読める名前か)に加えて、**長さの単位の綴り**(`mm` / `in` /
+ * `"`)を断る。これらは変数名としては書けてしまうが、`2mm` や `(w)in` のように数や閉じ
+ * 括弧の直後では単位として読まれるので(`expression` の `tokenize.ts` の `canPrecedeUnit`)、
+ * 同じ綴りのパラメータを新しく作らせると「どちらの意味か式によって変わる」名前が生まれる。
+ *
+ * **既存の文書に `mm` や `in` という名前があっても、これで弾かない。** 読み込みと評価は
+ * これまでどおり通す(`checkVariableName` も `analyzeParameters` も変えていない)。
+ * 断るのは利用者がこれから名前を打つとき(追加・改名)だけである(統括の決定)。
+ */
+export function checkNewParameterName(name: string): NewParameterNameIssue | null {
+  // 単位の判定を先に置く。`"` は識別子の文字ではないので `checkVariableName` を先に呼ぶと
+  // 「使えない文字があります」になり、単位だから断ったことが利用者へ伝わらない。
+  if (isLengthUnitName(name)) {
+    return 'lengthUnitName';
+  }
+  return checkVariableName(name);
 }

@@ -51,3 +51,42 @@ export {
 export {
   canRoundTrip, EXPORT_FORMATS, IMPORT_FORMATS, type ExportFormat, type ImportFormat,
 } from '@pointercad/model';
+
+// DXF の読み書き(FR-813、計画書 §2.7)。字句(タグ)→ 曲線の換算 → 実体の読み取り、の 3 段を
+// この順で並べる。**座標の単位は換算していない**(`DxfReadResult.unit` を見て上の段が決める)。
+export {
+  DXF_UNSUPPORTED_FORMAT_MESSAGE,
+  formatDxfTags,
+  parseDxfTags,
+  type DxfTag,
+} from './dxf/dxfTags.js';
+export {
+  bulgeToArc,
+  DXF_SPLINE_WEIGHT_IGNORED_MESSAGE,
+  ellipseFromDxf,
+  parseDxfInteger,
+  parseDxfNumber,
+  splineFromDxf,
+  type DxfArcGeometry,
+  type DxfEllipseGeometry,
+  type DxfPoint2d,
+  type DxfSplineGeometry,
+  type DxfSplineInput,
+} from './dxf/dxfCurves.js';
+export {
+  DXF_BLOCK_NESTING_MESSAGE,
+  DXF_MAX_BLOCK_NESTING_DEPTH,
+  DXF_MAX_ENTITY_COUNT,
+  DXF_NON_UNIFORM_SCALE_MESSAGE,
+  DXF_TOO_MANY_ENTITIES_MESSAGE,
+  readDxf,
+  type DxfEntity,
+  type DxfEntityBase,
+  type DxfArcEntity,
+  type DxfEllipseEntity,
+  type DxfLengthUnit,
+  type DxfLineEntity,
+  type DxfPointEntity,
+  type DxfReadResult,
+  type DxfSplineEntity,
+} from './dxf/readDxf.js';

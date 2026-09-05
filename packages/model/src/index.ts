@@ -312,3 +312,7 @@ export {
   appearanceOf, assignBodyAppearance, assignFaceAppearance, clearDocumentAppearance,
   pruneDocumentAppearance, removeDocumentAppearance, resolveAppearanceFor,
 } from './appearance/documentAppearance.js';
+/** 外観の橋渡し(P5 タスク4)。 */
+export type {
+  AppearanceFaceRequest, AppearanceMatchEntry, SolidBodyKind,
+} from './kernelBridge.js';

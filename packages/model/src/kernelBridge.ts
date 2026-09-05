@@ -13,6 +13,8 @@ import {
   matchEdge,
   matchFace,
   matchVertex,
+  type AppearanceMatch,
+  type AppearanceQuery,
   type CurveSpec,
   type FaceMeshData,
   type KernelApi,
@@ -309,12 +311,70 @@ export interface ThreadMarkEntry {
   readonly length: number;
 }
 
+/**
+ * 形の種類(FR-428、P5 §0.a-0.45)。閉じた立体を含む形は `'solid'`、面だけのボディ
+ * (押し出し面・回転面など)は `'shell'`。
+ *
+ * kernel にも同じ名前・同じ並びの型があるが、**kernel の型は再輸出しない**約束
+ * (このファイルの冒頭、P0 §0.11)なので model 側で持つ。P5 タスク3 の時点では
+ * どの段も閉じた立体しか作らないので必ず `'solid'` で、`'shell'` が実際に来るのは
+ * 曲面の段が入るタスク41 から。
+ */
+export type SolidBodyKind = 'solid' | 'shell';
+
+/**
+ * 外観を割り当てた面 1 つぶんの照合の依頼(FR-1106、P5 §2.2.3、§0.a-0.2)。
+ *
+ * 文書は面を指紋(`SubShapeRef`)で覚えているだけなので、形を作り直すと面の通し番号が
+ * ずれる。**選び直しの採点はカーネルにしか無い**(`matchSubShape.ts`。重みとしきい値を
+ * model へ複製しない、§0.a-0.2)ので、再計算のたびにこの依頼をカーネルへ添えて
+ * 選び直してもらう。`bodyFeatureId` はその面を持つボディを作ったフィーチャーの id で、
+ * 橋がそれを段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
+ */
+export interface AppearanceFaceRequest {
+  /** 割り当て 1 つの id(`AppearanceEntry.id`)。結果との対応づけだけに使う。 */
+  readonly id: string;
+  readonly bodyFeatureId: string;
+  readonly ref: SubShapeRef;
+}
+
+/**
+ * 外観の面の照合の結果 1 件(FR-1106)。**依頼と同じ並び・同じ件数で返る**
+ * (1 件も落とさない)。
+ *
+ * `faceIndex` が `null` なら「選び直せなかった」で、呼び出し側(ui)は警告を出して
+ * その面を既定の外観で描く(FR-1106「選び直せなかった割り当ては警告し、既定の外観に
+ * 戻す」)。**割り当て自体は文書から消さない**ので、利用者が形を元に戻せば復活する。
+ */
+export interface AppearanceMatchEntry {
+  readonly id: string;
+  readonly bodyFeatureId: string;
+  readonly faceIndex: number | null;
+}
+
 /** 画面に出るボディ 1 つ。id はそれを作ったフィーチャーの id と同じ(§0.a-0.5)。 */
 export interface SolidBody {
   readonly featureId: string;
   readonly mesh: SolidBodyMeshData;
   /** 体積(mm³)。プロパティ欄に出す(FR-501)。 */
   readonly volume: number;
+  /**
+   * 表面積(mm²)。測定(FR-1102)と曲面(FR-428)で使う。
+   *
+   * **任意の欄にしてあるのは、`SolidBody` を組み立てている見本(`packages/ui` の
+   * ビューポートとストアの検査、`part/subShapeCache.test.ts`)を直せるのが、
+   * それぞれのパッケージを受け持つ後続のタスク(ui のタスク10・11)だからである。**
+   * ここを必須にすると、P5 タスク4 の担当が触れない範囲の型検査が落ちる。
+   * カーネルから来た値はそのまま写し、**カーネルが返さなかったときは欄ごと省く**
+   * (0 と偽らない)。kernel 側で必須へ引き上げる話は kernel の後続タスクが持つ。
+   */
+  readonly area?: number;
+  /**
+   * 形の種類(FR-428)。任意にしてある理由は `area` と同じ。
+   * **詰め替えでは必ず値を入れる**(カーネルが返さなければ `'solid'` として読む)ので、
+   * 実際の再計算の結果でこの欄が空になることは無い。
+   */
+  readonly bodyKind?: SolidBodyKind;
   /**
    * 中身のある立体として受け取れたか。三角形が 1 枚以上あり、体積が有限の正の値であること。
    *
@@ -351,6 +411,14 @@ export interface SolidRecomputeOutcome {
   readonly cacheHits: number;
   /** 段と段の間で打ち切られたか(NFR-PF-4)。 */
   readonly cancelled: boolean;
+  /**
+   * 外観の面の照合の結果(FR-1106)。`SolidRecomputeOptions.appearance` と
+   * 同じ並び・同じ件数で返り、頼まなければ空配列。
+   *
+   * 任意の欄にしてあるのは `SolidBody.area` と同じ理由(この型を組み立てている見本を
+   * 直せるのが別のタスクの担当だから)で、詰め替えでは必ず値を入れる。
+   */
+  readonly appearanceMatches?: readonly AppearanceMatchEntry[];
 }
 
 /** 計算の進み具合(NFR-PF-4)。kernel の SolidProgress を model の言葉へ写したもの。 */
@@ -383,6 +451,21 @@ export interface SolidRecomputeOptions {
   readonly generation?: number;
   readonly onProgress?: PartProgressCallback;
   readonly shouldCancel?: PartCancelToken;
+  /**
+   * 外観を割り当てた面(FR-1106、§2.2.3)。**省略か空なら照合を一切頼まない。**
+   * 照合の物差し(境界箱の対角長)を測るのにもカーネルは OCCT を呼ぶので、外観を
+   * 1 つも割り当てていない文書では費用をゼロにする(§0.a-0.54)。
+   */
+  readonly appearance?: readonly AppearanceFaceRequest[];
+  /**
+   * ボディの表面積(`SolidBody.area`)を測るか(FR-1102、統括の決定 2026-09-05 07:28)。
+   *
+   * **既定は測らない。** 表面積は測定・質量特性(タスク29 以降)が求めたときだけ要る値で、
+   * 測る費用(カーネルの実測で面 26 枚の板に 11.4ms)を毎回の再計算で払わないため。
+   * **外観の面の照合はこの値を使わない**(照合が見るのは面ごとの面積で、それは
+   * 面の一覧に元から入っている)ので、`appearance` を渡してもここは真にならない。
+   */
+  readonly measureAreas?: boolean;
 }
 
 /** model から幾何カーネルへの唯一の接点。ここ以外から kernel を呼ばない。 */
@@ -859,6 +942,96 @@ export function toSolidStepRequest(step: ResolvedSolidStep): SolidStepRequest {
 }
 
 /* ------------------------------------------------------------------ *
+ * 外観の面の照合(FR-1106、P5 §2.2.3、タスク4)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 外観を割り当てた面を、カーネルへの照合の依頼へ詰め替える(§2.2.3)。
+ *
+ * **依頼が 1 件も無ければ空配列を返す。** カーネルは空なら照合の段そのものを飛ばし、
+ * 物差し(境界箱の対角長)を測るための OCCT の呼び出しも 1 回も行わない
+ * (§0.a-0.54「外観の追加で所要を増やさない」)。
+ *
+ * 次の 2 つは依頼に乗せずに落とす。落とした割り当ては `toAppearanceMatches` が
+ * `faceIndex: null`(= 見つからない)で必ず補うので、件数は依頼元と食い違わない。
+ *
+ * - **段が見つからない割り当て**: そのフィーチャーが履歴から消えた、抑制された、
+ *   ブーリアンに消費された場合。鍵が引けないので照合しようがない。
+ * - **面以外の指紋**: 外観は面にしか付かない(`AppearanceTarget`)が、指紋の型は
+ *   辺・頂点も表せるので、種類で守る(カーネルも面以外は断る)。
+ */
+export function toAppearanceQueries(
+  steps: readonly ResolvedSolidStep[],
+  requests: readonly AppearanceFaceRequest[],
+): readonly AppearanceQuery[] {
+  if (requests.length === 0) {
+    return [];
+  }
+  const keyByFeatureId = new Map(steps.map((step) => [step.featureId, step.key]));
+  const queries: AppearanceQuery[] = [];
+  for (const request of requests) {
+    const bodyKey = keyByFeatureId.get(request.bodyFeatureId);
+    if (bodyKey === undefined || request.ref.fingerprint.kind !== 'face') {
+      continue;
+    }
+    queries.push({ id: request.id, bodyKey, query: toSubShapeQuery(request.ref) });
+  }
+  return queries;
+}
+
+/**
+ * 照合の結果を model の言葉へ詰め替える(§2.2.3)。
+ *
+ * **戻りは依頼(`requests`)と同じ並び・同じ件数**で、依頼に乗せなかったもの・
+ * カーネルが返さなかったものは `faceIndex: null` で補う。呼び出し側(ui)は
+ * 「見つからない割り当てが n 件」を数えるだけでよく、どこで落ちたかを気にしなくて済む。
+ *
+ * ボディの id は**文書側の値をそのまま返す**。カーネルは面の属するボディが
+ * 見つからないときに空文字を返す約束だが、見つかったときの値は「段の id = ボディの id」
+ * (§0.a-0.5)より必ず `request.bodyFeatureId` と同じなので、空文字を外へ出す意味が無い。
+ */
+export function toAppearanceMatches(
+  requests: readonly AppearanceFaceRequest[],
+  matches: readonly AppearanceMatch[] | undefined,
+): readonly AppearanceMatchEntry[] {
+  if (requests.length === 0) {
+    return [];
+  }
+  const faceIndexById = new Map((matches ?? []).map((match) => [match.id, match.faceIndex]));
+  return requests.map((request) => ({
+    id: request.id,
+    bodyFeatureId: request.bodyFeatureId,
+    faceIndex: faceIndexById.get(request.id) ?? null,
+  }));
+}
+
+/**
+ * 立体の再計算の依頼を 1 つ組み立てる(Worker 版と直結版で同じものを使う)。
+ *
+ * ## 段ごとの三角形分割の粗さ(§2.13、§0.a-0.54)について
+ *
+ * `SolidStepRequest.tessellation` にはここでは何も入れず、**粗さの規則はカーネルに
+ * 1 か所だけ置いたままにする**(`recomputeSolids.ts` の `isRelaxableSweepStep`。
+ * ばねと実らせんのねじ穴を 0.15 / 0.7 へ緩める、P3 仕上げ (a) の実測)。
+ * 同じ規則を model にも書くと 2 か所になり、片方だけ直したときに食い違うため。
+ * カーネルは「段ごとの指定 > 全体の指定 > 段の種類の既定」の順で選ぶので、ここで
+ * 値を添えるとカーネルの既定の方が負けてしまう。基本形状(球・トーラス)を緩める案は
+ * **効き目が無いことがタスク14 で実測された**(球 r10 は 0.8 を添えても 978 枚のまま)
+ * ので入れない。利用者が粗さを選べるようにする段になったら、その値だけをここへ通す。
+ */
+function toSolidRecomputeRequest(
+  steps: readonly ResolvedSolidStep[],
+  options: SolidRecomputeOptions,
+): SolidRecomputeRequest {
+  return {
+    steps: steps.map((step) => toSolidStepRequest(step)),
+    generation: options.generation ?? 0,
+    appearanceQueries: toAppearanceQueries(steps, options.appearance ?? []),
+    measureAreas: options.measureAreas ?? false,
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * 部分形状の選び直し(FR-325・FR-328〜330 の上流追従、P4 タスク25)— 同期の純関数
  * ------------------------------------------------------------------ */
 
@@ -970,6 +1143,12 @@ function toSolidBody(mesh: SolidBodyMesh): SolidBody {
       triangleCount: mesh.triangleCount,
     },
     volume: mesh.volume,
+    // 表面積は依頼が求めたときだけカーネルが測る(SolidRecomputeOptions.measureAreas)。
+    // 測っていなければ欄ごと空のまま渡し、0 と偽らない。
+    area: mesh.area,
+    // 形の種類はカーネルが必ず入れるが、型の上では省略できるので既定を決めておく。
+    // 曲面(FR-428)が入るまではどの段も閉じた立体しか作らないので 'solid' でよい。
+    bodyKind: mesh.bodyKind ?? 'solid',
     isValid: mesh.triangleCount > 0 && Number.isFinite(mesh.volume) && mesh.volume > 0,
     faces: mesh.faces,
     edges: mesh.edges,
@@ -986,6 +1165,7 @@ function toSolidBody(mesh: SolidBodyMesh): SolidBody {
 export function toSolidOutcome(
   steps: readonly ResolvedSolidStep[],
   result: SolidRecomputeResult,
+  appearance: readonly AppearanceFaceRequest[] = [],
 ): SolidRecomputeOutcome {
   const bodies = result.bodies.map((mesh) => toSolidBody(mesh));
   const collected: SolidBodyFailure[] = result.failures.map((failure) => ({
@@ -1004,7 +1184,13 @@ export function toSolidOutcome(
     }
   }
 
-  return { bodies, failures: collected, cacheHits: result.cacheHits, cancelled: result.cancelled };
+  return {
+    bodies,
+    failures: collected,
+    cacheHits: result.cacheHits,
+    cancelled: result.cancelled,
+    appearanceMatches: toAppearanceMatches(appearance, result.appearanceMatches),
+  };
 }
 
 /**
@@ -1205,18 +1391,16 @@ export function createKernelBridge(): KernelBridge {
 
     async recomputeSolids(steps, options = {}): Promise<SolidRecomputeOutcome> {
       if (steps.length === 0) {
-        return { bodies: [], failures: [], cacheHits: 0, cancelled: false };
+        return { bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] };
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
       if (health.broken) {
         restart();
       }
       const active = connection;
-      const request: SolidRecomputeRequest = {
-        steps: steps.map((step) => toSolidStepRequest(step)),
-        generation: options.generation ?? 0,
-      };
-      // 第 2 引数はテッセレーションの粗さ。既定のままでよいので undefined を渡す。
+      const request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
+      // 第 2 引数は全体のテッセレーションの粗さ。段の種類ごとの既定はカーネルが持っており
+      // (toSolidRecomputeRequest の注釈)、ここで値を渡すとその既定が負けるので undefined。
       const race = await Promise.race<SolidRecomputeRace>([
         active.remote
           .recomputeSolids(
@@ -1240,9 +1424,12 @@ export function createKernelBridge(): KernelBridge {
             .map((step) => ({ featureId: step.featureId, message: KERNEL_BROKEN_MESSAGE })),
           cacheHits: 0,
           cancelled: false,
+          // 照合そのものを行えていないので空で返す。ここで全件を「見つからない」にすると、
+          // 段の失敗の警告に「色を付けた面が見つかりません」を重ねてしまう(FR-504)。
+          appearanceMatches: [],
         };
       }
-      return toSolidOutcome(steps, race.result);
+      return toSolidOutcome(steps, race.result, options.appearance ?? []);
     },
 
     async offsetSketchCurves(requests): Promise<SketchOffsetResult> {
@@ -1317,12 +1504,9 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge {
 
     async recomputeSolids(steps, options = {}): Promise<SolidRecomputeOutcome> {
       if (steps.length === 0) {
-        return { bodies: [], failures: [], cacheHits: 0, cancelled: false };
+        return { bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] };
       }
-      const request: SolidRecomputeRequest = {
-        steps: steps.map((step) => toSolidStepRequest(step)),
-        generation: options.generation ?? 0,
-      };
+      const request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
       // Comlink を通らないので、進捗・中止の関数は proxy で包まずそのまま渡せる。
       const result = await api.recomputeSolids(
         request,
@@ -1338,7 +1522,7 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge {
               }),
         options.shouldCancel,
       );
-      return toSolidOutcome(steps, result);
+      return toSolidOutcome(steps, result, options.appearance ?? []);
     },
 
     async offsetSketchCurves(requests): Promise<SketchOffsetResult> {

@@ -13,7 +13,10 @@
  * 呼ぶ頻度は「文書が変わったときだけ」。ホバー・選択・視点操作では呼ばない(§2.4、NFR-PF-1)。
  */
 
+import { appearanceOf } from '../appearance/documentAppearance.js';
 import type {
+  AppearanceFaceRequest,
+  AppearanceMatchEntry,
   KernelBridge,
   PartCancelToken,
   PartProgressCallback,
@@ -77,6 +80,19 @@ export interface PartRecomputeResult {
    * 呼び出し側は自分が数えている世代と見比べ、古い応答を捨てる。
    */
   readonly generation: number;
+  /**
+   * 外観を割り当てた面が、いまの形のどの面に当たるか(FR-1106、P5 §2.2.3)。
+   *
+   * 文書の `appearance` のうち**面への割り当てだけ**が、文書と同じ並びで入る。
+   * `faceIndex` が `null` のものは選び直せなかった割り当てで、画面はそこを既定の外観で
+   * 描いて警告を出す(FR-1106)。**割り当て自体は文書から消さない。**
+   * 立体への割り当ては指紋を持たず照合が要らないので、ここには入らない(§2.2.2)。
+   *
+   * 任意の欄にしてあるのは `SolidBody.area` と同じ理由(この型を組み立てている
+   * `packages/ui` の見本を直せるのが ui のタスク10・11 の担当だから)で、
+   * `recomputePart` は必ず値を入れる。
+   */
+  readonly appearanceMatches?: readonly AppearanceMatchEntry[];
 }
 
 export interface PartRecomputeOptions {
@@ -187,7 +203,27 @@ const NO_SOLIDS: SolidRecomputeOutcome = {
   failures: [],
   cacheHits: 0,
   cancelled: false,
+  appearanceMatches: [],
 };
+
+/**
+ * 面へ割り当てた外観を、カーネルへの照合の依頼へ集める(FR-1106、P5 §2.2.3)。
+ *
+ * 立体への割り当て(`kind: 'body'`)は指紋を持たず、フィーチャーの id で直に引けるので
+ * 照合そのものが要らない(§2.2.2 の優先順位の 2 段目)。ここで集めるのは面だけで、
+ * **1 件も無ければ空配列**になり、カーネルは照合の段を丸ごと飛ばす(費用ゼロ)。
+ */
+function toAppearanceRequests(document: PartDocument): readonly AppearanceFaceRequest[] {
+  const requests: AppearanceFaceRequest[] = [];
+  for (const entry of appearanceOf(document).entries) {
+    if (entry.target.kind !== 'face') {
+      continue;
+    }
+    const { ref } = entry.target;
+    requests.push({ id: entry.id, bodyFeatureId: ref.bodyFeatureId, ref });
+  }
+  return requests;
+}
 
 type SolidCallOutcome =
   | { readonly ok: true; readonly outcome: SolidRecomputeOutcome }
@@ -202,6 +238,7 @@ async function callSolids(
   resolved: ResolvedPart,
   generation: number,
   options: PartRecomputeOptions,
+  appearance: readonly AppearanceFaceRequest[],
 ): Promise<SolidCallOutcome> {
   if (resolved.steps.length === 0) {
     return { ok: true, outcome: NO_SOLIDS };
@@ -213,6 +250,7 @@ async function callSolids(
         generation,
         onProgress: options.onProgress,
         shouldCancel: options.shouldCancel,
+        appearance,
       }),
     };
   } catch (error) {
@@ -345,6 +383,18 @@ async function fillProjections(
  * 2 巡目の立体の再計算も、変わっていない段は鍵が当たって作り直されない。
  * 途中で打ち切られた(NFR-PF-4)ときは 2 巡目へ進まない。
  *
+ * ## 外観の面の照合(FR-1106、P5 §2.2.3)
+ *
+ * 面に付けた色は指紋(`SubShapeRef`)で覚えているだけなので、形を作り直すと面の通し番号が
+ * ずれる。そこで**立体の再計算に相乗りして**、割り当ての一覧をカーネルへ添え、
+ * 選び直した結果を `appearanceMatches` で受け取る(採点を model へ複製しないための決め、
+ * §0.a-0.2)。**割り当てが 1 件も無ければ何も添えないので、費用は増えない。**
+ *
+ * **外観だけを変えたときは、そもそもこの関数を呼ばない。** 呼ぶかどうかの判定は
+ * `part/documentChange.ts` の `affectsShape` が持ち、画面側(ストアの購読)が使う。
+ * 段の鍵(`cacheKeyFor`)も外観を見ないので、仮に呼んでも全段がキャッシュに当たる
+ * (§2.2.3「鍵に混ぜない」との二重の保証)。
+ *
  * ## パラメータ表(FR-207、P4b タスク3)
  *
  * 解決を始める前に、パラメータ表(名前を付けた数値)の値を**文書の全ての式へ配る**
@@ -373,8 +423,10 @@ export async function recomputePart(
 
   const offsetErrors: SketchError[] = [];
   const projectionErrors: SketchError[] = [];
+  // 外観の割り当ては解決の結果に影響しないので、巡ごとに作り直さず 1 回だけ集める。
+  const appearance = toAppearanceRequests(evaluated);
   let resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
-  let solid = await callSolids(bridge, resolved, generation, options);
+  let solid = await callSolids(bridge, resolved, generation, options, appearance);
 
   if (solid.ok && !solid.outcome.cancelled) {
     // ①いまの形で面・辺・頂点を選び直す(上流追従)。②投影・交差の曲線を埋める。
@@ -388,7 +440,7 @@ export async function recomputePart(
     );
     if (reselected || projected) {
       resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
-      solid = await callSolids(bridge, resolved, generation, options);
+      solid = await callSolids(bridge, resolved, generation, options, appearance);
     }
   }
 
@@ -416,7 +468,17 @@ export async function recomputePart(
     for (const step of resolved.steps) {
       errors.push(solidKernelFailed(step.featureId, solid.message));
     }
-    return { sketches, bodies: [], errors, cacheHits: 0, cancelled: false, generation };
+    // 呼び出しごと失敗したときは照合も行えていない。段の失敗の警告に
+    // 「色を付けた面が見つかりません」を重ねないよう空で返す(FR-504)。
+    return {
+      sketches,
+      bodies: [],
+      errors,
+      cacheHits: 0,
+      cancelled: false,
+      generation,
+      appearanceMatches: [],
+    };
   }
 
   for (const failure of solid.outcome.failures) {
@@ -429,5 +491,6 @@ export async function recomputePart(
     cacheHits: solid.outcome.cacheHits,
     cancelled: solid.outcome.cancelled,
     generation,
+    appearanceMatches: solid.outcome.appearanceMatches ?? [],
   };
 }

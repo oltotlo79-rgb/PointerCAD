@@ -4,8 +4,11 @@ import { describe, expect, it, vi, type Mock } from 'vitest';
 import {
   createKernelHealth,
   KERNEL_BROKEN_MESSAGE,
+  toAppearanceMatches,
+  toAppearanceQueries,
   toSolidOutcome,
   toSolidStepRequest,
+  type AppearanceFaceRequest,
   type KernelBridge,
   type PartProgress,
   type SketchOffsetContour,
@@ -41,6 +44,9 @@ import {
   createEmptyPartDocument,
   replaceSketch,
 } from './createPartDocument.js';
+import { appearanceOf, assignFaceAppearance } from '../appearance/documentAppearance.js';
+import { DEFAULT_APPEARANCE } from '../appearance/materialPresets.js';
+import { affectsShape } from './documentChange.js';
 import { recomputePart } from './recomputePart.js';
 import { resolvePart, type ResolvedSolidStep, type SubShapeQueryPlan } from './resolvePart.js';
 import type {
@@ -149,8 +155,16 @@ function solidBody(featureId: string, volume = 12000): SolidBody {
  * 「faces / edges / vertices / threadMarks を model の言葉へそのまま写す」検査(タスク17)で
  * 個別に固定する。
  */
-function kernelBody(id: string, volume: number, triangleCount = 12) {
+function kernelBody(
+  id: string,
+  volume: number,
+  triangleCount = 12,
+  // P5 タスク3 で SolidBodyMesh へ足された任意の欄(表面積と形の種類)。
+  // 既定では入れず、詰め替えの検査だけが明示的に渡す。
+  extra: { readonly area?: number; readonly bodyKind?: 'solid' | 'shell' } = {},
+) {
   return {
+    ...extra,
     id,
     positions: new Float32Array([0, 0, 0, 40, 0, 0, 40, 30, 0]),
     normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
@@ -1716,5 +1730,337 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
     );
 
     expect(projectSketchCurves).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 外観の橋渡し(FR-1106、FR-428、P5 §2.2.3、タスク4)。
+//
+// 面に付けた色は指紋で覚えているだけなので、形を作り直すと面の通し番号がずれる。
+// 選び直しの採点はカーネルにしか無い(§0.a-0.2)ので、model は「依頼を組み立てて渡し、
+// 返った結果を詰め替える」だけを受け持つ。ここで固定するのはその詰め替えの規約である。
+// ---------------------------------------------------------------------------
+
+describe('外観の橋渡し(FR-1106、タスク4)', () => {
+  const stepA: ResolvedSolidStep = {
+    featureId: 'extrude-1',
+    name: '押し出し1',
+    key: 'key-extrude-1',
+    visible: true,
+    plan: { kind: 'extrude', profile: [], direction: [0, 0, 1], distance: 10 },
+  };
+  const stepB: ResolvedSolidStep = {
+    ...stepA,
+    featureId: 'extrude-2',
+    name: '押し出し2',
+    key: 'key-extrude-2',
+  };
+
+  /** 面の指紋(外観の割り当て先)。番号だけを変えて並びの検査に使う。 */
+  function faceRefOf(bodyFeatureId: string, index: number): SubShapeRef {
+    return {
+      bodyFeatureId,
+      index,
+      fingerprint: {
+        kind: 'face',
+        surfaceKind: 'plane',
+        area: 1200,
+        position: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: null,
+      },
+    };
+  }
+
+  /** 辺の指紋。外観は面にしか付かないので、依頼から落ちることの検査に使う。 */
+  function edgeRefOf(bodyFeatureId: string, index: number): SubShapeRef {
+    return {
+      bodyFeatureId,
+      index,
+      fingerprint: {
+        kind: 'edge',
+        curveKind: 'line',
+        length: 40,
+        position: [20, 0, 10],
+        axis: [1, 0, 0],
+        radius: null,
+      },
+    };
+  }
+
+  function faceRequest(id: string, bodyFeatureId: string, index: number): AppearanceFaceRequest {
+    return { id, bodyFeatureId, ref: faceRefOf(bodyFeatureId, index) };
+  }
+
+  // -------------------------------------------------------------------------
+  // 依頼の組み立て(toAppearanceQueries)
+  // -------------------------------------------------------------------------
+
+  it('割り当てが 1 件も無ければ依頼は空になる(カーネルに費用を払わせない、§0.a-0.54)', () => {
+    expect(toAppearanceQueries([stepA, stepB], [])).toEqual([]);
+  });
+
+  it('面の割り当て 3 件は依頼 3 件になり、段の鍵とともに渡る', () => {
+    const queries = toAppearanceQueries(
+      [stepA, stepB],
+      [
+        faceRequest('appearance-1', 'extrude-1', 0),
+        faceRequest('appearance-2', 'extrude-1', 4),
+        faceRequest('appearance-3', 'extrude-2', 2),
+      ],
+    );
+
+    expect(queries).toHaveLength(3);
+    expect(queries.map((query) => query.id)).toEqual([
+      'appearance-1',
+      'appearance-2',
+      'appearance-3',
+    ]);
+    expect(queries.map((query) => query.bodyKey)).toEqual([
+      'key-extrude-1',
+      'key-extrude-1',
+      'key-extrude-2',
+    ]);
+    // 指紋は kernel の平らな形へ展開され、bodyFeatureId は落ちる(§2.4.2 の詰め替え)。
+    expect(queries[1].query).toEqual({
+      kind: 'face',
+      index: 4,
+      surfaceKind: 'plane',
+      area: 1200,
+      position: [20, 15, 10],
+      axis: [0, 0, 1],
+      radius: null,
+    });
+  });
+
+  it('段が見つからない割り当ては依頼に乗らない(消えた・抑制された・消費された段)', () => {
+    const queries = toAppearanceQueries(
+      [stepA],
+      [faceRequest('appearance-1', 'extrude-1', 0), faceRequest('appearance-2', 'extrude-404', 1)],
+    );
+
+    expect(queries.map((query) => query.id)).toEqual(['appearance-1']);
+  });
+
+  it('面以外の指紋は依頼に乗らない(外観は面にしか付かない)', () => {
+    const queries = toAppearanceQueries(
+      [stepA],
+      [{ id: 'appearance-1', bodyFeatureId: 'extrude-1', ref: edgeRefOf('extrude-1', 3) }],
+    );
+
+    expect(queries).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // 結果の詰め替え(toAppearanceMatches)
+  // -------------------------------------------------------------------------
+
+  it('照合の結果は依頼と同じ並び・同じ件数で返る', () => {
+    const requests = [
+      faceRequest('appearance-1', 'extrude-1', 0),
+      faceRequest('appearance-2', 'extrude-2', 5),
+    ];
+    const matches = toAppearanceMatches(requests, [
+      { id: 'appearance-2', bodyId: 'extrude-2', faceIndex: 3 },
+      { id: 'appearance-1', bodyId: 'extrude-1', faceIndex: 1 },
+    ]);
+
+    expect(matches).toEqual([
+      { id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: 1 },
+      { id: 'appearance-2', bodyFeatureId: 'extrude-2', faceIndex: 3 },
+    ]);
+  });
+
+  it('選び直せなかった割り当ては faceIndex が null で返る(FR-1106 の「警告して既定へ」)', () => {
+    const requests = [faceRequest('appearance-1', 'extrude-1', 0)];
+    const matches = toAppearanceMatches(requests, [
+      { id: 'appearance-1', bodyId: 'extrude-1', faceIndex: null },
+    ]);
+
+    expect(matches).toEqual([{ id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: null }]);
+  });
+
+  it('カーネルが返さなかった割り当ても null で補い、件数を合わせる', () => {
+    const requests = [
+      faceRequest('appearance-1', 'extrude-1', 0),
+      faceRequest('appearance-2', 'extrude-404', 1),
+    ];
+    const matches = toAppearanceMatches(requests, [
+      { id: 'appearance-1', bodyId: 'extrude-1', faceIndex: 2 },
+    ]);
+
+    expect(matches).toEqual([
+      { id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: 2 },
+      // 段が無いので照合しようがない。ボディの id は文書側の値をそのまま見せる。
+      { id: 'appearance-2', bodyFeatureId: 'extrude-404', faceIndex: null },
+    ]);
+  });
+
+  it('カーネルが照合の欄そのものを返さなくても落ちない(欄が任意のあいだの守り)', () => {
+    const requests = [faceRequest('appearance-1', 'extrude-1', 0)];
+
+    expect(toAppearanceMatches(requests, undefined)).toEqual([
+      { id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: null },
+    ]);
+  });
+
+  it('依頼が空なら結果も空(頼んでいないものを勝手に返さない)', () => {
+    expect(
+      toAppearanceMatches([], [{ id: 'appearance-1', bodyId: 'extrude-1', faceIndex: 0 }]),
+    ).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // ボディの表面積と形の種類(FR-1102、FR-428)
+  // -------------------------------------------------------------------------
+
+  it('表面積と形の種類をカーネルの値のまま持ち回る', () => {
+    const outcome = toSolidOutcome([stepA], {
+      bodies: [kernelBody('extrude-1', 12000, 12, { area: 3800, bodyKind: 'solid' })],
+      failures: [],
+      cacheHits: 0,
+      cancelled: false,
+    });
+
+    // 40×30×10 の箱の表面積 = 2(40×30 + 40×10 + 30×10) = 2(1200+400+300) = 3800。
+    expect(outcome.bodies[0].area).toBe(3800);
+    expect(outcome.bodies[0].bodyKind).toBe('solid');
+  });
+
+  it('面だけのボディは bodyKind が shell のまま届く(FR-428、タスク41 の下ごしらえ)', () => {
+    const outcome = toSolidOutcome([stepA], {
+      bodies: [kernelBody('extrude-1', 12000, 12, { area: 400, bodyKind: 'shell' })],
+      failures: [],
+      cacheHits: 0,
+      cancelled: false,
+    });
+
+    expect(outcome.bodies[0].bodyKind).toBe('shell');
+  });
+
+  it('形の種類が来なければ solid として読み、測っていない表面積は空のまま残す', () => {
+    const outcome = toSolidOutcome([stepA], {
+      bodies: [kernelBody('extrude-1', 12000)],
+      failures: [],
+      cacheHits: 0,
+      cancelled: false,
+    });
+
+    expect(outcome.bodies[0].bodyKind).toBe('solid');
+    // 表面積は依頼が求めたときだけ測る(統括の決定 2026-09-05 07:28)。0 と偽らない。
+    expect(outcome.bodies[0].area).toBeUndefined();
+  });
+
+  it('外観を頼まなければ照合の結果は空(既存の詰め替えの振る舞いを変えない)', () => {
+    const outcome = toSolidOutcome([stepA], {
+      bodies: [kernelBody('extrude-1', 12000)],
+      failures: [],
+      cacheHits: 0,
+      cancelled: false,
+    });
+
+    expect(outcome.appearanceMatches).toEqual([]);
+  });
+
+  it('カーネルの照合の結果を詰め替えて outcome に載せる', () => {
+    const requests = [faceRequest('appearance-1', 'extrude-1', 0)];
+    const outcome = toSolidOutcome(
+      [stepA],
+      {
+        bodies: [kernelBody('extrude-1', 12000)],
+        failures: [],
+        cacheHits: 0,
+        cancelled: false,
+        appearanceMatches: [{ id: 'appearance-1', bodyId: 'extrude-1', faceIndex: 4 }],
+      },
+      requests,
+    );
+
+    expect(outcome.appearanceMatches).toEqual([
+      { id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: 4 },
+    ]);
+  });
+
+  // -------------------------------------------------------------------------
+  // recomputePart を通した配線(FR-1106)
+  // -------------------------------------------------------------------------
+
+  it('割り当てが 1 つも無ければ、橋へ渡す外観の一覧は空(費用ゼロ)', async () => {
+    const recomputeSolids = recordSolids();
+    const { document } = oneExtrude();
+    await recomputePart(document, fakeBridge({ recomputeSolids }));
+
+    expect(recomputeSolids.mock.calls[0][1]?.appearance).toEqual([]);
+  });
+
+  it('面へ割り当てた外観を橋へ渡す(立体への割り当ては指紋が無いので渡らない、§2.2.2)', async () => {
+    const recomputeSolids = recordSolids();
+    const { document } = oneExtrude();
+    const painted = assignFaceAppearance(document, faceRefOf('extrude-1', 2), DEFAULT_APPEARANCE);
+    await recomputePart(painted, fakeBridge({ recomputeSolids }));
+
+    const appearance = recomputeSolids.mock.calls[0][1]?.appearance;
+    expect(appearance).toHaveLength(1);
+    expect(appearance?.[0].bodyFeatureId).toBe('extrude-1');
+    expect(appearance?.[0].ref.index).toBe(2);
+  });
+
+  it('照合の結果を PartRecomputeResult に載せる', async () => {
+    const { document } = oneExtrude();
+    const painted = assignFaceAppearance(document, faceRefOf('extrude-1', 2), DEFAULT_APPEARANCE);
+    const entryId = appearanceOf(painted).entries[0].id;
+    const result = await recomputePart(
+      painted,
+      fakeBridge({
+        recomputeSolids: (steps, options) =>
+          Promise.resolve(
+            toSolidOutcome(
+              steps,
+              {
+                bodies: [kernelBody('extrude-1', 12000)],
+                failures: [],
+                cacheHits: 0,
+                cancelled: false,
+                appearanceMatches: [{ id: entryId, bodyId: 'extrude-1', faceIndex: 5 }],
+              },
+              options?.appearance ?? [],
+            ),
+          ),
+      }),
+    );
+
+    expect(result.appearanceMatches).toEqual([
+      { id: entryId, bodyFeatureId: 'extrude-1', faceIndex: 5 },
+    ]);
+  });
+
+  it('カーネルの呼び出しごと失敗したときは照合の結果を空で返す(警告を重ねない)', async () => {
+    const { document } = oneExtrude();
+    const painted = assignFaceAppearance(document, faceRefOf('extrude-1', 2), DEFAULT_APPEARANCE);
+    const result = await recomputePart(
+      painted,
+      fakeBridge({ recomputeSolids: () => Promise.reject(new Error('通信が切れました')) }),
+    );
+
+    expect(result.appearanceMatches).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it('外観だけを変えても形に影響せず、段の鍵も変わらない(全段がキャッシュに当たる)', async () => {
+    const recomputeSolids = recordSolids();
+    const { document } = oneExtrude();
+    const painted = assignFaceAppearance(document, faceRefOf('extrude-1', 2), DEFAULT_APPEARANCE);
+
+    // ①そもそも再計算を起こさない判定(画面側はここを見て呼ばない、§2.3.2)。
+    expect(affectsShape(document, painted)).toBe(false);
+
+    // ②仮に呼んでも、段の鍵は 1 つも変わらない(cacheKeyFor が外観を見ない、§2.2.3)。
+    await recomputePart(document, fakeBridge({ recomputeSolids }));
+    await recomputePart(painted, fakeBridge({ recomputeSolids }));
+
+    const before = recomputeSolids.mock.calls[0][0].map((step) => step.key);
+    const after = recomputeSolids.mock.calls[1][0].map((step) => step.key);
+    expect(before).toHaveLength(1);
+    expect(after).toEqual(before);
   });
 });

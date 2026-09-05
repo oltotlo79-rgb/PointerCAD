@@ -839,3 +839,157 @@ describe('球面上の点の依存(FR-431)', () => {
     expect(dependenciesOf(document, 'referencePoint-1')).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 「消費しないが上流を指す」種類の依存(P5 タスク45)
+//
+// ミラー(FR-419)・曲面の `face`(FR-428)・罫線面の立体の面(FR-430)・押し出しの
+// 「選んだ面まで」(FR-415)・基本形状の頂点(FR-429)は、対象を消費しないので
+// `consumedTargetsOf` には現れない。それでも上流の立体が変われば形が変わるので、
+// **並べ替えで上流より前へ動かせてはいけない**(docs/報告記録.md 2026-09-05 19:38)。
+// ---------------------------------------------------------------------------
+
+describe('消費しないが上流を指す種類の依存(P5 タスク45)', () => {
+  /** 箱 1 つ(押し出し1)と、それを指す立体 1 つを持つ文書。 */
+  function withUpstream(feature: SolidFeature): PartDocument {
+    const fixture = createFixture();
+    const extrude1 = fixture.document.solids[0];
+    return { ...fixture.document, solids: [extrude1, feature] };
+  }
+
+  it('ミラーは、消費しない対象の立体に依存する', () => {
+    const mirror: SolidFeature = {
+      id: 'mirror-1',
+      name: 'ミラー1',
+      suppressed: false,
+      kind: 'mirror',
+      targetFeatureId: 'extrude-1',
+      plane: { kind: 'workPlane', planeId: 'xy' },
+    };
+    expect(dependenciesOf(withUpstream(mirror), 'mirror-1')).toEqual(['extrude-1']);
+  });
+
+  it('ミラーは対象より前へ動かせない(並べ替えの判定、FR-507)', () => {
+    const mirror: SolidFeature = {
+      id: 'mirror-1',
+      name: 'ミラー1',
+      suppressed: false,
+      kind: 'mirror',
+      targetFeatureId: 'extrude-1',
+      plane: { kind: 'face', face: topFaceRef('extrude-1') },
+    };
+    // 帯は 作業平面1(0)→ 押し出し1(1)→ ミラー1(2)。ミラーを 1 へ動かすと対象より前になる。
+    const refused = canMoveHistoryItem(withUpstream(mirror), 'mirror-1', 1);
+    expect(refused.ok).toBe(false);
+  });
+
+  it('曲面は、面を借りるだけの立体にも依存する(§0.a-0.45)', () => {
+    const surface: SolidFeature = {
+      id: 'surface-1',
+      name: '曲面1',
+      suppressed: false,
+      kind: 'surface',
+      operation: {
+        kind: 'face',
+        targetFeatureId: 'extrude-1',
+        face: topFaceRef('extrude-1'),
+      },
+    };
+    expect(dependenciesOf(withUpstream(surface), 'surface-1')).toEqual(['extrude-1']);
+  });
+
+  it('罫線面は、輪郭を借りた立体の面に依存する(§0.a-0.27)', () => {
+    const fixture = createFixture();
+    const ruled: SolidFeature = {
+      id: 'ruled-1',
+      name: '面をつなぐ1',
+      suppressed: false,
+      kind: 'ruled',
+      first: { kind: 'solidFace', ref: topFaceRef('extrude-1') },
+      second: { kind: 'sketchFace', ref: fixture.faceB },
+      twist: ev(0),
+      sphereSegments: 48,
+    };
+    // 断面の並び順に数えるので、スケッチの面(作業平面1)が先、立体の面が後になる。
+    expect(dependenciesOf(withUpstream(ruled), 'ruled-1')).toEqual([
+      'referencePlane-1',
+      'extrude-1',
+    ]);
+  });
+
+  it('押し出しの「選んだ面まで」は、その面を持つ立体に依存する(FR-415)', () => {
+    const fixture = createFixture();
+    const extrude2: SolidFeature = {
+      id: 'extrude-2',
+      name: '押し出し2',
+      suppressed: false,
+      kind: 'extrude',
+      profile: fixture.faceB,
+      distance: ev(5),
+      reversed: false,
+      symmetric: false,
+      end: { kind: 'toFace', face: topFaceRef('extrude-1') },
+    };
+    // 輪郭のスケッチが乗る作業平面1 と、面を借りた押し出し1 の 2 つ。
+    expect(dependenciesOf(withUpstream(extrude2), 'extrude-2')).toEqual([
+      'referencePlane-1',
+      'extrude-1',
+    ]);
+  });
+
+  it('基本形状は、中心にした頂点を持つ立体に依存する(§0.a-0.19)', () => {
+    const primitive: SolidFeature = {
+      id: 'primitive-1',
+      name: '球1',
+      suppressed: false,
+      kind: 'primitive',
+      origin: {
+        kind: 'vertex',
+        ref: {
+          bodyFeatureId: 'extrude-1',
+          index: 2,
+          fingerprint: { kind: 'vertex', position: [40, 30, 10] },
+        },
+      },
+      axis: { kind: 'world', axis: 'z' },
+      shape: { kind: 'sphere', radius: ev(5) },
+    };
+    expect(dependenciesOf(withUpstream(primitive), 'primitive-1')).toEqual(['extrude-1']);
+  });
+
+  it('抜き勾配・移動/回転・拡大縮小は対象 1 つに依存する(消費するので二重にはしない)', () => {
+    const draft: SolidFeature = {
+      id: 'draft-1',
+      name: '抜き勾配1',
+      suppressed: false,
+      kind: 'draft',
+      targetFeatureId: 'extrude-1',
+      faces: [topFaceRef('extrude-1')],
+      neutralFace: topFaceRef('extrude-1'),
+      angle: ev(3),
+      reversed: false,
+    };
+    const transform: SolidFeature = {
+      id: 'transform-1',
+      name: '移動/回転1',
+      suppressed: false,
+      kind: 'transform',
+      targetFeatureId: 'extrude-1',
+      translation: [ev(10), ev(0), ev(0)],
+      rotationAxis: null,
+      rotationAngle: ev(0),
+    };
+    const scale: SolidFeature = {
+      id: 'scale-1',
+      name: '拡大縮小1',
+      suppressed: false,
+      kind: 'scale',
+      targetFeatureId: 'extrude-1',
+      origin: { kind: 'origin' },
+      factor: { kind: 'uniform', value: ev(2) },
+    };
+    expect(dependenciesOf(withUpstream(draft), 'draft-1')).toEqual(['extrude-1']);
+    expect(dependenciesOf(withUpstream(transform), 'transform-1')).toEqual(['extrude-1']);
+    expect(dependenciesOf(withUpstream(scale), 'scale-1')).toEqual(['extrude-1']);
+  });
+});

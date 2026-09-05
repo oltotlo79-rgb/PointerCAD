@@ -20,6 +20,7 @@ import {
 } from '../sketch/planeMath.js';
 import type {
   CoordinateInput,
+  PointReference,
   ResolvedArc,
   ResolvedCurve,
   ResolvedSegment,
@@ -73,11 +74,15 @@ import type {
   BooleanOperation,
   ChamferFeature,
   ChamferSize,
+  DraftFeature,
+  ExtrudeEnd,
   ExtrudeFeature,
   FilletFeature,
   HoleDepth,
   HoleFeature,
   LoftFeature,
+  MirrorFeature,
+  MirrorPlane,
   PartDocument,
   PatternDirection,
   PatternFeature,
@@ -89,6 +94,8 @@ import type {
   RuledFeature,
   RuledSection,
   RuledSphereSegments,
+  ScaleFactor,
+  ScaleFeature,
   SewFeature,
   SketchFaceRef,
   SketchLineRef,
@@ -99,8 +106,10 @@ import type {
   SpringFeature,
   SpringHandedness,
   SubShapeRef,
+  ThicknessSide,
   ThreadHoleFeature,
   ThreadRepresentation,
+  TransformFeature,
 } from './types.js';
 
 /** テストの中で式を書くための補助。評価できない式はテストの誤りとして落とす。 */
@@ -4800,5 +4809,677 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
         ]),
       ),
     ).toEqual([fixture.faceA.sketchId, fixture.faceB.sketchId]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P5 の Should 群 前半(押し出しの終端・テーパ・薄板 FR-415/FR-401/FR-416、
+// 抜き勾配 FR-417、ミラー FR-419、移動/回転・拡大縮小 FR-424)。§2.11、タスク45
+// ---------------------------------------------------------------------------
+
+interface ShapedExtrudeOptions extends ExtrudeOptions {
+  readonly end?: ExtrudeEnd;
+  readonly taperAngle?: string | ExpressionValue;
+  readonly taperOutward?: boolean;
+  readonly thickness?: string | ExpressionValue | null;
+  readonly thicknessSide?: ThicknessSide;
+}
+
+/**
+ * 終端・傾き・薄板を足した押し出し。**省略した欄は文書にも入れない**
+ * (省略と既定が同じ段・同じ鍵になることを検査で見るため、undefined を書き込まない)。
+ */
+function shapedExtrude(
+  id: string,
+  profile: SketchFaceRef,
+  options: ShapedExtrudeOptions = {},
+): ExtrudeFeature {
+  return {
+    ...extrudeFeature(id, profile, options),
+    ...(options.end === undefined ? {} : { end: options.end }),
+    ...(options.taperAngle === undefined ? {} : { taperAngle: toExpr(options.taperAngle) }),
+    ...(options.taperOutward === undefined ? {} : { taperOutward: options.taperOutward }),
+    ...(options.thickness === undefined
+      ? {}
+      : { thickness: options.thickness === null ? null : toExpr(options.thickness) }),
+    ...(options.thicknessSide === undefined ? {} : { thicknessSide: options.thicknessSide }),
+  };
+}
+
+/** 箱の側面(x = 40、法線 +X)の指紋。抜き勾配の「傾ける面」・平行な面の検査に使う。 */
+function sideFaceRef(bodyFeatureId: string, index = 1): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 300,
+      position: [40, 15, 5],
+      axis: [1, 0, 0],
+      radius: null,
+    },
+  };
+}
+
+/** 平らでない面(円柱の側面)の指紋。「平らな面だけ」の断りに使う。 */
+function cylinderFaceRef(bodyFeatureId: string): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index: 4,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'cylinder',
+      area: 314,
+      position: [20, 15, 5],
+      axis: [0, 0, 1],
+      radius: 5,
+    },
+  };
+}
+
+interface DraftOptions {
+  readonly faces?: readonly SubShapeRef[];
+  readonly neutralFace?: SubShapeRef;
+  readonly angle?: string | ExpressionValue;
+  readonly reversed?: boolean;
+}
+
+function draftFeature(
+  id: string,
+  targetFeatureId: string,
+  options: DraftOptions = {},
+): DraftFeature {
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    kind: 'draft',
+    targetFeatureId,
+    faces: options.faces ?? [sideFaceRef(targetFeatureId)],
+    neutralFace: options.neutralFace ?? topFaceRef(targetFeatureId),
+    angle: toExpr(options.angle ?? '3'),
+    reversed: options.reversed ?? false,
+  };
+}
+
+function mirrorFeature(
+  id: string,
+  targetFeatureId: string,
+  plane: MirrorPlane = { kind: 'workPlane', planeId: 'xy' },
+): MirrorFeature {
+  return { id, name: id, suppressed: false, kind: 'mirror', targetFeatureId, plane };
+}
+
+interface TransformOptions {
+  readonly translation?: readonly [string, string, string];
+  readonly rotationAxis?: RevolveAxis | null;
+  readonly rotationAngle?: string | ExpressionValue;
+}
+
+function transformFeature(
+  id: string,
+  targetFeatureId: string,
+  options: TransformOptions = {},
+): TransformFeature {
+  const [x, y, z] = options.translation ?? ['0', '0', '0'];
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    kind: 'transform',
+    targetFeatureId,
+    translation: [expr(x), expr(y), expr(z)],
+    rotationAxis: options.rotationAxis ?? null,
+    rotationAngle: toExpr(options.rotationAngle ?? '0'),
+  };
+}
+
+function scaleFeature(
+  id: string,
+  targetFeatureId: string,
+  factor: ScaleFactor,
+  origin: PointReference = { kind: 'origin' },
+): ScaleFeature {
+  return { id, name: id, suppressed: false, kind: 'scale', targetFeatureId, origin, factor };
+}
+
+function uniformFactor(value: string): ScaleFactor {
+  return { kind: 'uniform', value: expr(value) };
+}
+
+function perAxisFactor(x: string, y: string, z: string): ScaleFactor {
+  return { kind: 'perAxis', x: expr(x), y: expr(y), z: expr(z) };
+}
+
+function draftPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'draft' }> {
+  if (step.plan.kind !== 'draft') {
+    throw new Error(`テストの前提が壊れている: 抜き勾配でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function mirrorPlan(
+  step: ResolvedSolidStep,
+): Extract<ResolvedSolidStep['plan'], { kind: 'mirror' }> {
+  if (step.plan.kind !== 'mirror') {
+    throw new Error(`テストの前提が壊れている: ミラーでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function transformPlan(
+  step: ResolvedSolidStep,
+): Extract<ResolvedSolidStep['plan'], { kind: 'transform' }> {
+  if (step.plan.kind !== 'transform') {
+    throw new Error(`テストの前提が壊れている: 移動/回転でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function scalePlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'scale' }> {
+  if (step.plan.kind !== 'scale') {
+    throw new Error(`テストの前提が壊れている: 拡大縮小でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+/** 5π/180。計画書 タスク45 の検証表の期待値(± 1e-12)。 */
+const FIVE_DEGREES_IN_RADIANS = 0.08726646259971647;
+/** π/2。同じく検証表の期待値。 */
+const NINETY_DEGREES_IN_RADIANS = 1.5707963267948966;
+
+describe('押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)', () => {
+  it('5 欄を省くと段も鍵も P2 の押し出しと 1 ドットも変わらない', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, shapedExtrude('extrude-1', fixture.faceA));
+    const plan = extrudePlan(resolvePart(document).steps[0]);
+    expect(plan.end).toBeUndefined();
+    expect(plan.taperAngle).toBeUndefined();
+    expect(plan.thin).toBeUndefined();
+    expect(plan.targetKey).toBeUndefined();
+    expect(plan.distance).toBe(10);
+  });
+
+  it('既定を明示しても、省略したときと同じ鍵になる(タスク44 の決め 3)', () => {
+    const fixture = createFixture();
+    const keyOf = (feature: ExtrudeFeature): string =>
+      resolvePart(withSolids(fixture.document, feature)).steps[0].key;
+    expect(
+      keyOf(
+        shapedExtrude('extrude-1', fixture.faceA, {
+          end: { kind: 'distance' },
+          taperAngle: '0',
+          taperOutward: false,
+          thickness: null,
+          thicknessSide: 'inner',
+        }),
+      ),
+    ).toBe(keyOf(extrudeFeature('extrude-1', fixture.faceA)));
+  });
+
+  it('同じ入力なら鍵は 2 回とも同じ(決定性)', () => {
+    const fixture = createFixture();
+    const build = (): string =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          shapedExtrude('extrude-1', fixture.faceA, { taperAngle: '5', thickness: '2' }),
+        ),
+      ).steps[0].key;
+    expect(build()).toBe(build());
+  });
+
+  it('両側へ 20 なら断面が 10 手前へ動き、前後 10 / 10 の形になる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      shapedExtrude('extrude-1', fixture.faceA, { distance: '20', end: { kind: 'symmetric' } }),
+    );
+    const plan = extrudePlan(resolvePart(document).steps[0]);
+    // 断面を距離の半分だけ逆向きへ動かすのは model の役目(§0.a-0.8)なので、
+    // 段は「前へ 10・後ろへ 10」を平行移動と長さ 20 で表す(end は載せない)。
+    expect(segmentEnds(plan.profile)).toEqual(rectangleEnds(-10));
+    expect(plan.distance).toBe(20);
+    expect(plan.end).toBeUndefined();
+  });
+
+  it('end が正本: 旧 symmetric と end.symmetric は同じ段になる', () => {
+    const fixture = createFixture();
+    const keyOf = (feature: ExtrudeFeature): string =>
+      resolvePart(withSolids(fixture.document, feature)).steps[0].key;
+    expect(keyOf(shapedExtrude('extrude-1', fixture.faceA, { end: { kind: 'symmetric' } }))).toBe(
+      keyOf(extrudeFeature('extrude-1', fixture.faceA, { symmetric: true })),
+    );
+  });
+
+  it('end が正本: 旧 symmetric が真でも end が距離なら片側へ出す', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      shapedExtrude('extrude-1', fixture.faceA, { symmetric: true, end: { kind: 'distance' } }),
+    );
+    expect(segmentEnds(extrudePlan(resolvePart(document).steps[0]).profile)).toEqual(
+      rectangleEnds(0),
+    );
+  });
+
+  it('選んだ面まで: 同じ箱の上面(z = 10)までの距離 10 を model が計算する', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      shapedExtrude('extrude-2', fixture.faceA, {
+        end: { kind: 'toFace', face: topFaceRef('extrude-1') },
+      }),
+    );
+    const result = resolvePart(document);
+    const plan = extrudePlan(result.steps[1]);
+    expect(plan.end).toEqual({ kind: 'toFace', distance: 10 });
+    expect(plan.distance).toBe(10);
+    // 面を借りるだけで消費しないので、もとの箱は画面に残る(§0.a-0.33)。
+    expect(result.liveBodyIds).toEqual(['extrude-1', 'extrude-2']);
+  });
+
+  it('選んだ面まで: 面が押し出す向きの後ろ側なら断る(FR-504)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      shapedExtrude('extrude-2', fixture.faceA, {
+        reversed: true,
+        end: { kind: 'toFace', face: topFaceRef('extrude-1') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('向きの先');
+  });
+
+  it('選んだ面まで: 向きと面が平行なら断る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      shapedExtrude('extrude-2', fixture.faceA, {
+        end: { kind: 'toFace', face: sideFaceRef('extrude-1') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors[0].code).toBe('degenerate');
+    expect(result.errors[0].message).toContain('平行');
+  });
+
+  it('選んだ面まで: 平らでない面は断る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      shapedExtrude('extrude-2', fixture.faceA, {
+        end: { kind: 'toFace', face: cylinderFaceRef('extrude-1') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors[0].code).toBe('degenerate');
+    expect(result.errors[0].message).toContain('平らな面');
+  });
+
+  it('選んだ面が動けば距離も鍵も変わる(NFR-PF-3)', () => {
+    const fixture = createFixture();
+    const build = (z: number): ResolvedSolidStep => {
+      const face = topFaceRef('extrude-1');
+      const document = withSolids(
+        fixture.document,
+        extrudeFeature('extrude-1', fixture.faceA),
+        shapedExtrude('extrude-2', fixture.faceA, {
+          end: {
+            kind: 'toFace',
+            face: { ...face, fingerprint: { ...face.fingerprint, position: [20, 15, z] } },
+          },
+        }),
+      );
+      return resolvePart(document).steps[1];
+    };
+    expect(extrudePlan(build(20)).distance).toBe(20);
+    expect(build(20).key).not.toBe(build(10).key);
+  });
+
+  it('次の面まで: 直前の生きた立体の鍵を持ち、その立体は消費しない', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      shapedExtrude('extrude-2', fixture.faceB, { end: { kind: 'toNext' } }),
+    );
+    const result = resolvePart(document);
+    const plan = extrudePlan(result.steps[1]);
+    expect(plan.end).toEqual({ kind: 'toNext' });
+    expect(plan.targetKey).toBe(result.steps[0].key);
+    expect(result.liveBodyIds).toEqual(['extrude-1', 'extrude-2']);
+  });
+
+  it('次の面まで: 相手にできる立体が無ければ断る(文言はカーネルと同じ)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      shapedExtrude('extrude-1', fixture.faceA, { end: { kind: 'toNext' } }),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('missingBody');
+    expect(result.errors[0].message).toBe('押し出す先に立体がありません。');
+  });
+
+  it('テーパ 5 度は 5π/180 ラジアンで段に乗る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      shapedExtrude('extrude-1', fixture.faceA, { taperAngle: '5', taperOutward: true }),
+    );
+    const plan = extrudePlan(resolvePart(document).steps[0]);
+    expect(plan.taperAngle).toBeCloseTo(FIVE_DEGREES_IN_RADIANS, 12);
+    expect(plan.taperOutward).toBe(true);
+  });
+
+  it('テーパ 61 度は断る(上限は抜き勾配と同じ 60 度、§0.a-0.72)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      shapedExtrude('extrude-1', fixture.faceA, { taperAngle: '61' }),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('60 度以下');
+  });
+
+  it('テーパの向きだけを変えても、角が 0 なら同じ鍵(形が同じだから)', () => {
+    const fixture = createFixture();
+    const keyOf = (taperOutward: boolean): string =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          shapedExtrude('extrude-1', fixture.faceA, { taperAngle: '0', taperOutward }),
+        ),
+      ).steps[0].key;
+    expect(keyOf(true)).toBe(keyOf(false));
+  });
+
+  it('薄板 2mm・内側は thin として段に乗り、向きが変われば鍵も変わる', () => {
+    const fixture = createFixture();
+    const build = (thicknessSide: ThicknessSide): ResolvedSolidStep =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          shapedExtrude('extrude-1', fixture.faceA, { thickness: '2', thicknessSide }),
+        ),
+      ).steps[0];
+    expect(extrudePlan(build('inner')).thin).toEqual({ thickness: 2, side: 'inner' });
+    expect(build('outer').key).not.toBe(build('inner').key);
+  });
+
+  it('薄板の厚みが 0 なら断る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      shapedExtrude('extrude-1', fixture.faceA, { thickness: '0' }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('0 より大きい');
+  });
+});
+
+describe('抜き勾配(FR-417)', () => {
+  /** 箱 1 つと、その側面を傾ける抜き勾配 1 つを持つ文書。 */
+  function draftDocument(options: DraftOptions = {}): PartDocument {
+    const fixture = createFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      draftFeature('draft-1', 'extrude-1', options),
+    );
+  }
+
+  it('傾ける面と中立面の指紋が段に乗り、角度はラジアンになる', () => {
+    const result = resolvePart(draftDocument({ angle: '5', reversed: true }));
+    const plan = draftPlan(result.steps[1]);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+    expect(plan.faces).toEqual([sideFaceRef('extrude-1')]);
+    expect(plan.neutralFace).toEqual(topFaceRef('extrude-1'));
+    expect(plan.angle).toBeCloseTo(FIVE_DEGREES_IN_RADIANS, 12);
+    expect(plan.reversed).toBe(true);
+  });
+
+  it('対象を消費するので、残るのは傾けた立体だけ', () => {
+    expect(resolvePart(draftDocument()).liveBodyIds).toEqual(['draft-1']);
+  });
+
+  it('傾ける面は通し番号の昇順に並べ、同じ面を 2 度選んでも 1 度だけ渡す', () => {
+    const faces = [
+      sideFaceRef('extrude-1', 3),
+      sideFaceRef('extrude-1', 1),
+      sideFaceRef('extrude-1', 3),
+    ];
+    const plan = draftPlan(resolvePart(draftDocument({ faces })).steps[1]);
+    expect(plan.faces.map((face) => face.index)).toEqual([1, 3]);
+  });
+
+  it('角度が 61 度なら断る(上限 60 度、§0.a-0.72)', () => {
+    const result = resolvePart(draftDocument({ angle: '61' }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('60 度以下');
+  });
+
+  it('角度が 0 なら断る(傾かない)', () => {
+    const result = resolvePart(draftDocument({ angle: '0' }));
+    expect(result.errors[0].code).toBe('invalidValue');
+  });
+
+  it('面を 1 つも指していなければ断る', () => {
+    const result = resolvePart(draftDocument({ faces: [] }));
+    expect(result.errors[0].code).toBe('missingSubShape');
+  });
+
+  it('面でないもの(辺)を指したら断る', () => {
+    const result = resolvePart(draftDocument({ faces: [edgeRef('extrude-1')] }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('面だけ');
+  });
+
+  it('別の立体の面を指したら断る(カーネルは対象の中から選び直すため)', () => {
+    const result = resolvePart(draftDocument({ faces: [sideFaceRef('extrude-9')] }));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('もとの立体の面');
+  });
+
+  it('中立面が平らでなければ断る', () => {
+    const result = resolvePart(draftDocument({ neutralFace: cylinderFaceRef('extrude-1') }));
+    expect(result.errors[0].code).toBe('degenerate');
+    expect(result.errors[0].message).toContain('平らな面');
+  });
+});
+
+describe('ミラー(FR-419)', () => {
+  function mirrorDocument(plane?: MirrorPlane): PartDocument {
+    const fixture = createFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      plane === undefined
+        ? mirrorFeature('mirror-1', 'extrude-1')
+        : mirrorFeature('mirror-1', 'extrude-1', plane),
+    );
+  }
+
+  it('基準の XY 面は「原点を通る +Z 法線の平面」になる', () => {
+    const result = resolvePart(mirrorDocument());
+    const plan = mirrorPlan(result.steps[1]);
+    expect(plan.origin).toEqual([0, 0, 0]);
+    expect(plan.normal).toEqual([0, 0, 1]);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+  });
+
+  it('立体の平らな面を鏡にすると、面の重心と法線が段に乗る', () => {
+    const document = mirrorDocument({ kind: 'face', face: topFaceRef('extrude-1') });
+    const plan = mirrorPlan(resolvePart(document).steps[1]);
+    expect(plan.origin).toEqual([20, 15, 10]);
+    expect(plan.normal).toEqual([0, 0, 1]);
+  });
+
+  it('対象を消費しないので、元と鏡像の両方が残る(§0.a-0.36)', () => {
+    expect(resolvePart(mirrorDocument()).liveBodyIds).toEqual(['extrude-1', 'mirror-1']);
+  });
+
+  it('鏡にする面が平らでなければ断る', () => {
+    const document = mirrorDocument({ kind: 'face', face: cylinderFaceRef('extrude-1') });
+    const result = resolvePart(document);
+    expect(result.errors[0].code).toBe('degenerate');
+    expect(result.errors[0].message).toContain('平らな面');
+  });
+
+  it('鏡にできるのは面だけ(辺を指したら断る)', () => {
+    const document = mirrorDocument({ kind: 'face', face: edgeRef('extrude-1') });
+    const result = resolvePart(document);
+    expect(result.errors[0].code).toBe('invalidValue');
+  });
+
+  it('鏡に映すもとの立体が無ければ断る', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, mirrorFeature('mirror-1', 'extrude-9'));
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('missingBody');
+  });
+
+  it('元を伸ばすと鏡像の鍵も変わる(消費しないが targetKey を混ぜる、NFR-PF-3)', () => {
+    const fixture = createFixture();
+    const build = (distance: string): string =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA, { distance }),
+          mirrorFeature('mirror-1', 'extrude-1'),
+        ),
+      ).steps[1].key;
+    expect(build('20')).not.toBe(build('10'));
+  });
+});
+
+describe('移動/回転と拡大縮小(FR-424)', () => {
+  function transformDocument(options: TransformOptions = {}): PartDocument {
+    const fixture = createFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      transformFeature('transform-1', 'extrude-1', options),
+    );
+  }
+
+  function scaleDocument(factor: ScaleFactor, origin?: PointReference): PartDocument {
+    const fixture = createFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      origin === undefined
+        ? scaleFeature('scale-1', 'extrude-1', factor)
+        : scaleFeature('scale-1', 'extrude-1', factor, origin),
+    );
+  }
+
+  it('平行移動だけなら、回転角 0 の剛体変換になる', () => {
+    const plan = transformPlan(
+      resolvePart(transformDocument({ translation: ['10', '0', '0'] })).steps[1],
+    );
+    expect(plan.translation).toEqual([10, 0, 0]);
+    expect(plan.rotationAngle).toBe(0);
+  });
+
+  it('回転 90 度は π/2 ラジアンで、軸の原点と向きが段に乗る', () => {
+    const plan = transformPlan(
+      resolvePart(
+        transformDocument({ rotationAxis: { kind: 'world', axis: 'z' }, rotationAngle: '90' }),
+      ).steps[1],
+    );
+    expect(plan.rotationAngle).toBeCloseTo(NINETY_DEGREES_IN_RADIANS, 12);
+    expect(plan.rotationOrigin).toEqual([0, 0, 0]);
+    expect(plan.rotationAxis).toEqual([0, 0, 1]);
+  });
+
+  it('移動/回転は対象を消費するので、残るのは動かした立体だけ', () => {
+    expect(resolvePart(transformDocument()).liveBodyIds).toEqual(['transform-1']);
+  });
+
+  it('移動の量が数でなければ断る', () => {
+    const fixture = createFixture();
+    const feature = transformFeature('transform-1', 'extrude-1');
+    const document = withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), {
+      ...feature,
+      translation: [notANumber('1 +'), expr('0'), expr('0')],
+    });
+    const result = resolvePart(document);
+    expect(result.errors[0].code).toBe('invalidValue');
+  });
+
+  it('回転の軸が引けなければ断る', () => {
+    const result = resolvePart(
+      transformDocument({
+        rotationAxis: { kind: 'line', line: { sketchId: 'sketch-9', lineFeatureId: 'line-9' } },
+        rotationAngle: '90',
+      }),
+    );
+    expect(result.errors[0].code).toBe('missingProfile');
+  });
+
+  it('全体の倍率は uniform だけに入る(perAxis は null)', () => {
+    const plan = scalePlan(resolvePart(scaleDocument(uniformFactor('2'))).steps[1]);
+    expect(plan.uniform).toBe(2);
+    expect(plan.perAxis).toBeNull();
+    expect(plan.origin).toEqual([0, 0, 0]);
+  });
+
+  it('軸ごとの倍率が 3 つとも同じなら全体の倍率へ正規化する(同じ形に鍵を 2 つ作らない)', () => {
+    const plan = scalePlan(resolvePart(scaleDocument(perAxisFactor('2', '2', '2'))).steps[1]);
+    expect(plan.uniform).toBe(2);
+    expect(plan.perAxis).toBeNull();
+    expect(resolvePart(scaleDocument(perAxisFactor('2', '2', '2'))).steps[1].key).toBe(
+      resolvePart(scaleDocument(uniformFactor('2'))).steps[1].key,
+    );
+  });
+
+  it('軸ごとの倍率が違えば perAxis のまま段に乗る', () => {
+    const plan = scalePlan(resolvePart(scaleDocument(perAxisFactor('2', '3', '4'))).steps[1]);
+    expect(plan.uniform).toBeNull();
+    expect(plan.perAxis).toEqual([2, 3, 4]);
+  });
+
+  it('倍率 0 は断る(文言に「0 より大きい」)', () => {
+    const result = resolvePart(scaleDocument(uniformFactor('0')));
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('0 より大きい');
+  });
+
+  it('倍率 1001 は断る(上限 1000)', () => {
+    const result = resolvePart(scaleDocument(uniformFactor('1001')));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('1000 以下');
+  });
+
+  it('軸ごとの倍率の 1 つが範囲の外なら断る', () => {
+    const result = resolvePart(scaleDocument(perAxisFactor('2', '0', '2')));
+    expect(result.errors[0].code).toBe('invalidValue');
+  });
+
+  it('中心にする点が引けなければ断る', () => {
+    const result = resolvePart(
+      scaleDocument(uniformFactor('2'), { kind: 'point', pointId: 'point-404' }),
+    );
+    expect(result.errors[0].code).toBe('missingProfile');
+  });
+
+  it('拡大縮小は対象を消費するので、残るのは拡大縮小した立体だけ', () => {
+    expect(resolvePart(scaleDocument(uniformFactor('2'))).liveBodyIds).toEqual(['scale-1']);
   });
 });

@@ -6,15 +6,14 @@
  * (mm³・mm⁵)。密度(g/cm³)を持っているのは model 側(質量の材料の表、
  * `appearance/densityMaterials.ts`)なので、**密度の掛け算はこのファイルの 2 関数
  * (`massFromVolume` / `inertiaWithDensity`)だけで行う**(統括の決定。kernel 側にも
- * 同じ計算をする `massProperties`(`occt/measureShape.ts`)があるが、二重に持たない
- * ための整理は後続のタスクで kernel 側を消す)。
+ * 同じ計算をする `massProperties`(`occt/measureShape.ts`)があったが、二重に持たない
+ * ため P5 §0.a-0.78・タスク42b で削除した。いま密度の掛け算はここだけにある)。
  *
  * `packages/model/src/kernelBridge.ts` は kernel の型を扱う唯一の場所(P0 §0.11)なので、
  * ここは kernel を一切 import しない**純粋な数値計算**だけを持つ。単位の変換
- * (g/cm³ → g/mm³)は `GRAM_PER_CM3_TO_GRAM_PER_MM3` の 1 か所だけで行い、
- * kernel 側の同名の定数(`occt/measureShape.ts`)を import はしない(model は
- * `kernelBridge.ts` 以外から `@pointercad/kernel` を import しない約束、P0 §0.11)。
- * 値(1e-3)は同じ意味の変換なので一致させてあるが、定義は独立している。
+ * (g/cm³ → g/mm³)は `GRAM_PER_CM3_TO_GRAM_PER_MM3` の 1 か所だけで行う
+ * (model は `kernelBridge.ts` 以外から `@pointercad/kernel` を import しない約束、
+ * P0 §0.11。kernel 側にあった同名の定数はタスク42b で消えたので、いまはここが唯一の定義)。
  *
  * **数値精度(rules/04-設計の規律.md):** 計算そのもの(`massFromVolume` /
  * `inertiaWithDensity`)は一切丸めない。`formatMass` / `formatLength` は表示用の文字列

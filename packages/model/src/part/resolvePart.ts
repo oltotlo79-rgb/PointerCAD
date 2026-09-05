@@ -34,6 +34,7 @@
 import type { ExpressionValue } from '@pointercad/expression';
 
 import type { AxisFrame, AxisSpec, ResolvedSubShape } from '../geometry/planeSpec.js';
+import { subShapeFromFingerprint } from '../geometry/planeSpec.js';
 import { projectionCacheKey } from '../sketch/projectionMath.js';
 import {
   degreesToRadians,
@@ -57,6 +58,7 @@ import { arcPointAt, ellipsePointAt, fitPlaneNormal } from '../sketch/resolveSke
 import { projectionBodyFeatureId } from '../sketch/types.js';
 import type {
   PendingProjection,
+  PointReference,
   ProjectionSource,
   ResolvedCurve,
   ResolvedFace,
@@ -66,6 +68,7 @@ import type {
 } from '../sketch/types.js';
 import {
   addVec3,
+  dotVec3,
   lengthVec3,
   normalizeVec3,
   ORIGIN,
@@ -76,6 +79,7 @@ import {
 import { findMetricThread } from '../thread/metricThread.js';
 import {
   cacheKeyFor,
+  type ExtrudeEndKeyMaterial,
   type KeyCurve,
   type KeyTransform,
   type KeyVec3,
@@ -86,9 +90,14 @@ import {
 import {
   consumedTargetsOf,
   DEFAULT_RULED_SPHERE_SEGMENTS,
+  extrudeShapingOf,
   isPatternSource,
+  MAX_DRAFT_ANGLE_DEGREES,
   MAX_PATTERN_COUNT,
+  MAX_SCALE,
   MAX_SPRING_TURNS,
+  MAX_TAPER_ANGLE_DEGREES,
+  MIN_SCALE,
   SOLID_LABELS,
 } from './createPartDocument.js';
 import {
@@ -103,11 +112,15 @@ import type {
   BooleanOperation,
   ChamferFeature,
   ChamferSize,
+  DraftFeature,
+  ExtrudeEnd,
   ExtrudeFeature,
   FilletFeature,
   HoleDepth,
   HoleFeature,
   LoftFeature,
+  MirrorFeature,
+  MirrorPlane,
   PartDocument,
   PatternFeature,
   PatternPlacement,
@@ -118,6 +131,7 @@ import type {
   RuledFeature,
   RuledSection,
   RuledSphereSegments,
+  ScaleFeature,
   SewFeature,
   SketchFaceRef,
   SketchPointRef,
@@ -127,7 +141,9 @@ import type {
   SpringDerived,
   SpringFeature,
   SubShapeRef,
+  ThicknessSide,
   ThreadHoleFeature,
+  TransformFeature,
 } from './types.js';
 
 /**
@@ -183,6 +199,32 @@ export type ThruSectionPlan =
     };
 
 /**
+ * 押し出しの終端(FR-415、P5 §2.11、タスク45)を解決した結果。
+ *
+ * 4 種と欄名は kernel の `ExtrudeEndSpec`(`occt/makeSolidSweep.ts`)と同じで、距離は mm。
+ * **`toFace`(選んだ面まで)の距離は model が計算して数値で渡す**(§0.a-0.33)ので、
+ * カーネルから見ると `distance` と同じ扱いになる。`toNext`(次の面まで)だけは相手の形が
+ * 要るので、段の `targetKey` と組で使う。
+ *
+ * **`distance` と `symmetric` の段は P2 のまま**(`SolidStepPlan.extrude` の注釈)なので、
+ * ここへ現れるのは `toFace` と `toNext` だけである。4 種を書いてあるのは、カーネルの型と
+ * 1 対 1 に保って詰め替えを分岐なしにするためと、鍵の材料(`ExtrudeEndKeyMaterial`)が
+ * 同じ 4 種を持つためである。
+ */
+export type ExtrudeEndPlan =
+  | { readonly kind: 'distance'; readonly distance: number }
+  | { readonly kind: 'symmetric'; readonly forward: number; readonly backward: number }
+  | { readonly kind: 'toFace'; readonly distance: number }
+  | { readonly kind: 'toNext' };
+
+/** 薄板押し出し(FR-416、§0.a-0.46)。kernel の `ThinExtrudeSpec` と同じ欄名。 */
+export interface ThinExtrudePlan {
+  /** 壁の厚み(mm)。0 より大きい。 */
+  readonly thickness: number;
+  readonly side: ThicknessSide;
+}
+
+/**
  * model 側の「1段の作り方」。kernel の SolidStepSpec とは別の型にして、
  * kernelBridge(タスク12)が詰め替える(NFR-MA-1。model は kernel の型を再輸出しない)。
  * 向き・反転・両側の平行移動はここまでで済ませてあり、kernel へは断面・向き・長さだけが渡る。
@@ -194,8 +236,37 @@ export type SolidStepPlan =
       readonly profile: readonly ResolvedCurve[];
       /** 押し出す向き(単位ベクトル)。反転(reversed)を適用した後の向き。 */
       readonly direction: Vec3;
-      /** 押し出す長さ(mm)。正の数。両側でも半分にしない(断面をずらして表す)。 */
+      /**
+       * 押し出す長さ(mm)。正の数。両側でも半分にしない(断面をずらして表す)。
+       * 「選んだ面まで」(FR-415)のときは**面まで測った距離**が入る(利用者が入れた長さは
+       * 使わない)ので、`end` を見ないカーネルでも同じ形になる。
+       */
       readonly distance: number;
+      /**
+       * どこまで押し出すか(FR-415、P5 タスク45)。**省略は「距離ぶんを片側へ」と同じ。**
+       *
+       * **両側(`symmetric`)でも省略する。** 断面を距離の半分だけ逆向きへ動かすのは
+       * P2 からの model の役目(§0.a-0.8)で、`profile` にその平行移動が入っている。
+       * ここへ kernel の `symmetric`(前後の長さ)を重ねて渡すと、カーネルがもう一度
+       * 同じぶんだけずらしてしまう。したがって現れるのは `toFace` と `toNext` だけ。
+       */
+      readonly end?: ExtrudeEndPlan;
+      /**
+       * 側面の傾き(**ラジアン**、FR-401)。大きさだけを持ち、向きは `taperOutward`。
+       * 省略・0 は「傾けない」(P2 からの押し出しと同じ形)。
+       */
+      readonly taperAngle?: number;
+      /** true で押し出すほど外へ広がり、false(既定)で内へ絞る。 */
+      readonly taperOutward?: boolean;
+      /** 薄板にするときの厚みと向き(FR-416)。省略・null は中身の詰まった押し出し。 */
+      readonly thin?: ThinExtrudePlan | null;
+      /**
+       * 「次の面まで」(`end.kind === 'toNext'`)の相手の立体の段の鍵。
+       * **この段は相手を消費しない**(長さを決めるために形を読むだけ)が、相手が変われば
+       * 長さが変わるので**鍵には必ず混ぜる**(NFR-PF-3。基本形状の頂点と同じ扱い)。
+       * それ以外の終端では省略する。
+       */
+      readonly targetKey?: string | null;
     }
   | {
       readonly kind: 'revolve';
@@ -367,6 +438,60 @@ export type SolidStepPlan =
        * 既定(`DEFAULT_RULED_SPHERE_SEGMENTS`)が入る(段の欄を種類で出し分けないため)。
        */
       readonly sphereSegments: RuledSphereSegments;
+    }
+  | {
+      /**
+       * 抜き勾配(FR-417、P5 §2.11、タスク45)。**対象を消費する。**
+       * 面の選び直しはカーネルが行う(model は指紋を渡すだけ。穴の面と同じ扱い、§2.2)。
+       */
+      readonly kind: 'draft';
+      readonly targetKey: string;
+      /** 傾ける面の指紋。1 枚以上。通し番号の昇順(R 面取りと同じ理由で鍵を安定させる)。 */
+      readonly faces: readonly SubShapeQueryPlan[];
+      /** 基準にする平らな面(中立面)の指紋。この面は動かない。 */
+      readonly neutralFace: SubShapeQueryPlan;
+      /** 傾きの大きさ(ラジアン)。0 より大きく MAX_DRAFT_ANGLE_DEGREES 以下。 */
+      readonly angle: number;
+      readonly reversed: boolean;
+    }
+  | {
+      /**
+       * ミラー(FR-419、§0.a-0.36)。平面に対する鏡像のボディを 1 つ作る。
+       * **対象を消費しない**(元と鏡像を後で和でまとめるため)が、`targetKey` は必ず持つ。
+       */
+      readonly kind: 'mirror';
+      readonly targetKey: string;
+      /** 鏡の平面が通る点(mm)。 */
+      readonly origin: Vec3;
+      /** 鏡の平面の単位法線。 */
+      readonly normal: Vec3;
+    }
+  | {
+      /**
+       * 移動/回転(FR-424、§0.a-0.41)。**対象を消費する。**
+       * 欄の意味は `RigidTransform`(パターンの剛体変換)と同じで、回転角はラジアン。
+       */
+      readonly kind: 'transform';
+      readonly targetKey: string;
+      readonly translation: Vec3;
+      readonly rotationOrigin: Vec3;
+      readonly rotationAxis: Vec3;
+      /** 回転角(ラジアン)。0 なら平行移動だけ。 */
+      readonly rotationAngle: number;
+    }
+  | {
+      /**
+       * 拡大縮小(FR-424、§0.a-0.41)。**対象を消費する。**
+       * `uniform` と `perAxis` は**どちらか一方だけ**が入る(解決が正規化する、§2.11)。
+       */
+      readonly kind: 'scale';
+      readonly targetKey: string;
+      /** 拡大縮小の中心(mm)。この点は動かない。 */
+      readonly origin: Vec3;
+      /** 全体の倍率。軸ごとに変えるときは null。 */
+      readonly uniform: number | null;
+      /** 軸ごとの倍率(X, Y, Z)。全体の倍率のときは null。 */
+      readonly perAxis: Vec3 | null;
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -629,6 +754,31 @@ type PlanOutcome =
   | { readonly ok: true; readonly plan: SolidStepPlan }
   | { readonly ok: false; readonly error: PartError };
 
+/**
+ * 段を組み立てるのに要る「部品文書の外から解ける道具」(P5 タスク45)。
+ *
+ * P5 の Should 群(押し出しの「選んだ面まで」・ミラー・拡大縮小)は、断面と式のほかに
+ * **立体の面の平面・作業平面・点の参照**を要る。どれも既に正本の解決が別の場所にあり
+ * (`geometry/planeSpec.ts` の `subShapeFromFingerprint`、`part/resolveReferences.ts` の
+ * `workPlane` / `point`)、ここへ写すと同じ規約が 2 か所になる。そこで**関数のまま束ねて
+ * 渡す**。引数を 1 つずつ足していくと `planSolid` の引数が 8 個を超えて読めなくなるのも
+ * 束ねる理由である。
+ */
+interface SolidPlanContext {
+  /**
+   * 面・辺・頂点の位置と向き。`resolvePart` の `options.subShape` が渡されていれば
+   * 「いまの形」で選び直した値、渡されていなければ保存された指紋の値になる
+   * (`ResolvePartOptions.subShape` の注釈と同じ約束)。
+   */
+  readonly subShape: (reference: SubShapeRef) => ResolvedSubShape | null;
+  /** 作図面(基準の 3 面と FR-328 の任意の作業平面)を id で引く。 */
+  readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
+  /** 点の参照(座標の式・スケッチの点・立体の頂点ほか)を世界座標へ。 */
+  readonly point: (reference: PointReference) => Vec3 | null;
+  /** 基準軸(FR-329)の解決結果。`resolveRevolveAxis` へそのまま渡す。 */
+  readonly axisFrames: ReadonlyMap<string, AxisFrame>;
+}
+
 function partError(featureId: string, code: PartErrorCode, message: string): PartError {
   return { featureId, code, message };
 }
@@ -642,8 +792,179 @@ function isPositiveFinite(value: number): boolean {
   return Number.isFinite(value) && value > 0;
 }
 
-/** 押し出し(FR-401、§0.a-0.8)。向き・反転・両側の平行移動をここで決める。 */
-function planExtrude(feature: ExtrudeFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
+/* ------------------------------------------------------------------ *
+ * 押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)。P5 §2.11、タスク45
+ * ------------------------------------------------------------------ */
+
+/** 選んだ面が引けない(消えた・上流が失敗した)。面取りの言い回しに揃える。 */
+const EXTRUDE_TO_FACE_MISSING_MESSAGE =
+  '押し出す先の面が見つかりません。形が大きく変わったため、選び直してください。';
+/** 面までの距離は平面でないと測れない(曲面までの距離は 1 つに決まらない)。 */
+const EXTRUDE_TO_FACE_NOT_FLAT_MESSAGE =
+  '押し出す先にできるのは平らな面だけです。面を選び直してください。';
+/** 向きと面が平行だと交わらないので、どこまで伸ばしても面に届かない。 */
+const EXTRUDE_TO_FACE_PARALLEL_MESSAGE =
+  '押し出す向きと面が平行です。別の面を選ぶか、押し出す向きを変えてください。';
+/** 面が断面の後ろ側にある(向きの先に無い)。反転すれば届く。 */
+const EXTRUDE_TO_FACE_BEHIND_MESSAGE =
+  '押し出す向きの先に面がありません。向きを反転するか、別の面を選んでください。';
+/**
+ * 「次の面まで」の相手にできる立体が 1 つも無い。
+ * **文言はカーネル(`makeSolidSweep.ts` の `NO_MATERIAL_AHEAD_MESSAGE`)と 1 字も違えずに
+ * 揃える**(基本形状の断りと同じ決め。片方だけ直すと理由が食い違う)。
+ */
+const EXTRUDE_TO_NEXT_MISSING_MESSAGE = '押し出す先に立体がありません。';
+
+/** 向きと面の法線がこれ以下しか噛み合っていなければ「平行」とみなす(平面の当てはめと同じ桁)。 */
+const EXTRUDE_TO_FACE_EPSILON = 1e-9;
+
+/** 押し出しの終端を解決した結果。`targetKey` は `toNext` のときだけ入る。 */
+interface ExtrudeEndOutcomeValue {
+  readonly end: ExtrudeEndPlan | null;
+  /** 段の `distance`。`toFace` は測った距離、それ以外は利用者が入れた長さ。 */
+  readonly distance: number;
+  readonly targetKey: string | null;
+}
+
+type ExtrudeEndOutcome =
+  | { readonly ok: true; readonly value: ExtrudeEndOutcomeValue }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 「選んだ面まで」の距離を model 側で計算する(FR-415、§0.a-0.33)。
+ *
+ * 面の平面は **P4 タスク9 と同じ仕組み**(`geometry/planeSpec.ts` の
+ * `subShapeFromFingerprint`、または `resolvePart` に渡された選び直しの関数)で解く。
+ * カーネルを呼ばずに済むのは、面の重心と法線が指紋そのものに入っているためである。
+ *
+ * 距離は「断面の平面上の 1 点から、向きに沿って面の平面と交わるまで」で、
+ * 交点までの長さ `t` は `((面の点 − 断面の点)・法線) / (向き・法線)` で決まる。
+ * 向きと面が平行(分母 ≈ 0)、面が後ろ側(t ≤ 0)のときは理由をつけて断る(FR-504)。
+ */
+function resolveExtrudeToFace(
+  featureId: string,
+  face: SubShapeRef,
+  profilePoint: Vec3,
+  direction: Vec3,
+  context: SolidPlanContext,
+): { readonly ok: true; readonly distance: number } | { readonly ok: false; readonly error: PartError } {
+  const resolved = context.subShape(face);
+  if (resolved === null) {
+    return {
+      ok: false,
+      error: partError(featureId, 'missingSubShape', EXTRUDE_TO_FACE_MISSING_MESSAGE),
+    };
+  }
+  if (resolved.kind !== 'face' || resolved.surfaceKind !== 'plane' || resolved.axis === null) {
+    return {
+      ok: false,
+      error: partError(featureId, 'degenerate', EXTRUDE_TO_FACE_NOT_FLAT_MESSAGE),
+    };
+  }
+  const normal = normalizeVec3(resolved.axis);
+  const denominator = dotVec3(direction, normal);
+  if (Math.abs(denominator) <= EXTRUDE_TO_FACE_EPSILON) {
+    return {
+      ok: false,
+      error: partError(featureId, 'degenerate', EXTRUDE_TO_FACE_PARALLEL_MESSAGE),
+    };
+  }
+  const distance = dotVec3(subVec3(resolved.position, profilePoint), normal) / denominator;
+  if (!Number.isFinite(distance) || distance <= 0) {
+    return {
+      ok: false,
+      error: partError(featureId, 'invalidValue', EXTRUDE_TO_FACE_BEHIND_MESSAGE),
+    };
+  }
+  return { ok: true, distance };
+}
+
+/**
+ * 「次の面まで」の相手にする立体を選ぶ(FR-415)。
+ *
+ * `ExtrudeEnd.toNext` は相手を指す欄を持たない(利用者は「次にぶつかるまで」としか
+ * 言っていない)ので、**履歴で自分より前にあり、まだ消費されていない立体のうち、
+ * いちばん新しいもの**を相手にする。`bodyKeys` は履歴順に積まれるので、その最後が
+ * 「直前に作った立体」になる。どこまで伸ばすかを決めるのはカーネル(相手の境界箱)で、
+ * model は相手の鍵を渡すだけである。**消費はしない**(相手はそのまま画面に残る)。
+ */
+function lastLiveBodyKey(
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): string | null {
+  let found: string | null = null;
+  for (const [featureId, key] of bodyKeys) {
+    if (!consumed.has(featureId)) {
+      found = key;
+    }
+  }
+  return found;
+}
+
+/**
+ * 押し出しの終端(FR-415)を段の欄へ直す。
+ *
+ * `distance` と `symmetric` は **P2 のまま**(段に `end` を載せない)。両側の平行移動は
+ * model の役目(§0.a-0.8)で `profile` に入っており、kernel の `symmetric` を重ねると
+ * 二重にずれるためである(`SolidStepPlan.extrude.end` の注釈)。
+ */
+function resolveExtrudeEnd(
+  feature: ExtrudeFeature,
+  end: ExtrudeEnd,
+  profilePoint: Vec3,
+  direction: Vec3,
+  distance: number,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): ExtrudeEndOutcome {
+  switch (end.kind) {
+    case 'distance':
+    case 'symmetric':
+      return { ok: true, value: { end: null, distance, targetKey: null } };
+    case 'toFace': {
+      const outcome = resolveExtrudeToFace(feature.id, end.face, profilePoint, direction, context);
+      if (!outcome.ok) {
+        return outcome;
+      }
+      // 段の `distance` も測った距離にする(`end` を見ないカーネルでも同じ形になる)。
+      return {
+        ok: true,
+        value: {
+          end: { kind: 'toFace', distance: outcome.distance },
+          distance: outcome.distance,
+          targetKey: null,
+        },
+      };
+    }
+    case 'toNext': {
+      const targetKey = lastLiveBodyKey(bodyKeys, consumed);
+      if (targetKey === null) {
+        return {
+          ok: false,
+          error: partError(feature.id, 'missingBody', EXTRUDE_TO_NEXT_MISSING_MESSAGE),
+        };
+      }
+      return { ok: true, value: { end: { kind: 'toNext' }, distance, targetKey } };
+    }
+  }
+}
+
+/**
+ * 押し出し(FR-401、FR-415、FR-416、§0.a-0.8)。向き・反転・両側の平行移動をここで決める。
+ *
+ * P5 タスク45 で終端(FR-415)・テーパ(FR-401)・薄板(FR-416)を足した。省略できる 5 欄は
+ * **必ず `extrudeShapingOf` を通して読む**(既定値は createPartDocument.ts の 1 か所)。
+ * 段へは**既定から外れた欄だけ**を載せるので、欄を省いた押し出しと既定を明示した押し出しは
+ * 段も鍵も 1 ドット違わない(cacheKey.ts の `keyExtrudeExtras` と同じ決め)。
+ */
+function planExtrude(
+  feature: ExtrudeFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
   const face = findResolvedFace(sketches, feature.profile);
   if (face === undefined) {
     return fail(
@@ -652,11 +973,12 @@ function planExtrude(feature: ExtrudeFeature, sketches: readonly ResolvedPartSke
       '押し出すもとの面が見つかりません。スケッチで面を張ってからやり直してください。',
     );
   }
-  const distance = feature.distance.value;
-  if (!Number.isFinite(distance) || distance <= 0) {
+  const entered = feature.distance.value;
+  if (!Number.isFinite(entered) || entered <= 0) {
     return fail(feature.id, 'invalidValue', '押し出す長さは 0 より大きい数にしてください。');
   }
-  const normal = fitPlaneNormal(face.curves.flatMap((curve) => curveSamplePoints(curve)));
+  const samples = face.curves.flatMap((curve) => curveSamplePoints(curve));
+  const normal = fitPlaneNormal(samples);
   // resolveSketch が平面に乗らない面を断るので通常は起きない。断っても止めない(FR-504)。
   if (normal === null) {
     return fail(
@@ -666,14 +988,64 @@ function planExtrude(feature: ExtrudeFeature, sketches: readonly ResolvedPartSke
     );
   }
   const direction = feature.reversed ? negateVec3(normal) : normal;
-  if (!feature.symmetric) {
-    return { ok: true, plan: { kind: 'extrude', profile: face.curves, direction, distance } };
+  const shaping = extrudeShapingOf(feature);
+
+  // 面の平面上の 1 点。断面は平らなのでどの点で測っても同じ距離になる(標本点の先頭を使う)。
+  const endOutcome = resolveExtrudeEnd(
+    feature,
+    shaping.end,
+    samples[0] ?? ORIGIN,
+    direction,
+    entered,
+    bodyKeys,
+    consumed,
+    context,
+  );
+  if (!endOutcome.ok) {
+    return endOutcome;
   }
+
+  const taperDegrees = shaping.taperAngle.value;
+  if (
+    !Number.isFinite(taperDegrees) ||
+    taperDegrees < 0 ||
+    taperDegrees > MAX_TAPER_ANGLE_DEGREES
+  ) {
+    return fail(feature.id, 'invalidValue', '側面の傾きは 0 以上 60 度以下にしてください。');
+  }
+  let thin: ThinExtrudePlan | null = null;
+  if (shaping.thickness !== null) {
+    if (!isPositiveFinite(shaping.thickness.value)) {
+      return fail(feature.id, 'invalidValue', '壁の厚みは 0 より大きい数にしてください。');
+    }
+    thin = { thickness: shaping.thickness.value, side: shaping.thicknessSide };
+  }
+
   // 「両側へ」は、断面を逆向きへ距離の半分だけ動かしてから距離ぶん押し出す(§0.a-0.8)。
   // 平行移動を model 側で行うので、カーネルへは断面・向き・長さだけを渡せる。
-  const offset = scaleVec3(negateVec3(direction), distance / 2);
-  const profile = face.curves.map((curve) => translateCurve(curve, offset));
-  return { ok: true, plan: { kind: 'extrude', profile, direction, distance } };
+  const profile =
+    shaping.end.kind === 'symmetric'
+      ? face.curves.map((curve) =>
+          translateCurve(curve, scaleVec3(negateVec3(direction), entered / 2)),
+        )
+      : face.curves;
+  const { end, distance, targetKey } = endOutcome.value;
+  return {
+    ok: true,
+    plan: {
+      kind: 'extrude',
+      profile,
+      direction,
+      distance,
+      // 既定の欄は載せない(省略と既定を同じ段・同じ鍵にするため)。
+      ...(end === null ? {} : { end }),
+      ...(taperDegrees === 0
+        ? {}
+        : { taperAngle: degreesToRadians(taperDegrees), taperOutward: shaping.taperOutward }),
+      ...(thin === null ? {} : { thin }),
+      ...(targetKey === null ? {} : { targetKey }),
+    },
+  };
 }
 
 /** 回転(FR-402、§0.a-0.9)。角度は度で持ち、ここでラジアンへ直す。 */
@@ -2189,17 +2561,306 @@ function planLoft(
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * 抜き勾配・ミラー・移動/回転・拡大縮小(FR-417、FR-419、FR-424)。P5 §2.11、タスク45
+ * ------------------------------------------------------------------ */
+
+/** 傾ける面・中立面に面でないもの(辺・頂点)を選んだ。穴の「面だけ」と同じ守り。 */
+const DRAFT_NOT_FACE_MESSAGE = '傾けられるのは面だけです。面を選び直してください。';
+/** 中立面が平らでない。抜き方向は中立面の法線で決まるので、平らでないと向きが定まらない。 */
+const DRAFT_NEUTRAL_NOT_FLAT_MESSAGE =
+  '基準にする面は平らな面にしてください。平らな面を選び直してください。';
+/** 別のボディの面を指した(穴の同じ守りと同じ理由。カーネルは対象の中から選び直す)。 */
+const DRAFT_OTHER_BODY_MESSAGE = '傾ける面は、加工するもとの立体の面にしてください。';
+
+/**
+ * 抜き勾配(FR-417、§2.11)。対象のボディを消費して 1 つの新しいボディを作る。
+ *
+ * 面の選び直しはカーネルが行う(model は指紋を渡すだけ、§2.2)。ここで確かめるのは
+ * 「面を指しているか」「対象の立体の面か」「角度が範囲の中か」の 3 つで、どれも
+ * OCCT を呼ぶ前に赤くできる(NFR-UX-5)。
+ */
+function planDraft(
+  feature: DraftFeature,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  // 重複を除いて通し番号の昇順にする(R 面取りと同じ。同じ面の組なら必ず同じ鍵になる)。
+  const faces = sortedUniqueTargets(feature.faces);
+  if (faces.length === 0) {
+    return fail(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
+  }
+  for (const face of [...faces, feature.neutralFace]) {
+    if (subShapeKindOf(face) !== 'face') {
+      return fail(feature.id, 'invalidValue', DRAFT_NOT_FACE_MESSAGE);
+    }
+    if (face.bodyFeatureId !== feature.targetFeatureId) {
+      return fail(feature.id, 'invalidValue', DRAFT_OTHER_BODY_MESSAGE);
+    }
+  }
+  // 中立面だけは平らでなければならない(types.ts の `neutralFace` の注釈、タスク34 の実測)。
+  const neutral = context.subShape(feature.neutralFace);
+  if (neutral !== null && (neutral.surfaceKind !== 'plane' || neutral.axis === null)) {
+    return fail(feature.id, 'degenerate', DRAFT_NEUTRAL_NOT_FLAT_MESSAGE);
+  }
+  const angleDegrees = feature.angle.value;
+  if (
+    !Number.isFinite(angleDegrees) ||
+    angleDegrees <= 0 ||
+    angleDegrees > MAX_DRAFT_ANGLE_DEGREES
+  ) {
+    return fail(feature.id, 'invalidValue', '抜き勾配の角度は 0 より大きく 60 度以下にしてください。');
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'draft',
+      targetKey: target.targetKey,
+      faces,
+      neutralFace: feature.neutralFace,
+      angle: degreesToRadians(angleDegrees),
+      reversed: feature.reversed,
+    },
+  };
+}
+
+/** 鏡に映すもとの立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。 */
+const MIRROR_MISSING_BODY_MESSAGE = '鏡に映すもとの立体が見つかりません。立体を選び直してください。';
+/** 鏡にする作業平面が引けない(任意の作業平面が消された・解決に失敗した)。 */
+const MIRROR_MISSING_PLANE_MESSAGE = '鏡にする平面が見つかりません。平面を選び直してください。';
+/** 鏡にできるのは面だけ(辺・頂点は平面を決めない)。 */
+const MIRROR_NOT_FACE_MESSAGE = '鏡にできるのは立体の平らな面だけです。面を選び直してください。';
+/** 曲面は鏡にならない(法線が場所によって変わる)。 */
+const MIRROR_NOT_FLAT_MESSAGE = '鏡にできるのは平らな面だけです。平らな面を選び直してください。';
+
+type MirrorPlaneOutcome =
+  | { readonly ok: true; readonly origin: Vec3; readonly normal: Vec3 }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * ミラーの鏡にする平面(FR-419、§0.a-0.36)を「通る点+単位法線」へ直す。
+ *
+ * 基準の 3 面と任意の作業平面(FR-328)は同じ `workPlane`(P4 タスク9 の解決結果)から、
+ * 立体の平らな面は面の指紋(または選び直し)から取る。どちらも既にある仕組みを呼ぶだけで、
+ * 平面の作り方をここへ写さない。
+ */
+function resolveMirrorPlane(
+  featureId: string,
+  plane: MirrorPlane,
+  context: SolidPlanContext,
+): MirrorPlaneOutcome {
+  if (plane.kind === 'workPlane') {
+    const resolved = context.workPlane(plane.planeId);
+    if (resolved === null) {
+      return {
+        ok: false,
+        error: partError(featureId, 'missingProfile', MIRROR_MISSING_PLANE_MESSAGE),
+      };
+    }
+    return { ok: true, origin: resolved.origin, normal: cleanZeroVec3(resolved.normal) };
+  }
+  if (subShapeKindOf(plane.face) !== 'face') {
+    return { ok: false, error: partError(featureId, 'invalidValue', MIRROR_NOT_FACE_MESSAGE) };
+  }
+  const resolved = context.subShape(plane.face);
+  if (resolved === null) {
+    return {
+      ok: false,
+      error: partError(featureId, 'missingSubShape', MIRROR_NOT_FACE_MESSAGE),
+    };
+  }
+  if (resolved.surfaceKind !== 'plane' || resolved.axis === null) {
+    return { ok: false, error: partError(featureId, 'degenerate', MIRROR_NOT_FLAT_MESSAGE) };
+  }
+  return {
+    ok: true,
+    origin: resolved.position,
+    normal: cleanZeroVec3(normalizeVec3(resolved.axis)),
+  };
+}
+
+/**
+ * ミラー(FR-419、§0.a-0.36)。平面に対する鏡像のボディを 1 つ作る。
+ *
+ * **対象を消費しない**ので `consumed` を見ない(罫線面の立体の面と同じ扱い、§0.a-0.27)。
+ * 元と鏡像の両方が `liveBodyIds` に残り、要るなら和(FR-404)でまとめられる。
+ * それでも `targetKey` は必ず持つ——元を編集したら鏡像も作り直すためである(NFR-PF-3)。
+ */
+function planMirror(
+  feature: MirrorFeature,
+  bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const targetKey = bodyKeys.get(feature.targetFeatureId);
+  if (targetKey === undefined) {
+    return fail(feature.id, 'missingBody', MIRROR_MISSING_BODY_MESSAGE);
+  }
+  const plane = resolveMirrorPlane(feature.id, feature.plane, context);
+  if (!plane.ok) {
+    return plane;
+  }
+  return {
+    ok: true,
+    plan: { kind: 'mirror', targetKey, origin: plane.origin, normal: plane.normal },
+  };
+}
+
+/** 移動/回転の軸が引けない(回転軸・ばねの言い回しに揃える)。 */
+const TRANSFORM_MISSING_AXIS_MESSAGE =
+  '回転の軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
+
+/**
+ * 移動/回転(FR-424、§0.a-0.41)。対象を剛体変換したボディを 1 つ作る。**対象を消費する。**
+ *
+ * 回転軸は回転(FR-402)・パターン(FR-411)と同じ `AxisSpec` なので `resolveRevolveAxis` を
+ * 再利用する(同じものを 2 つ作らない、§0.a-0.21)。軸が null なら平行移動だけで、
+ * 段には恒等の回転(角 0)を入れる——kernel の `RigidTransformSpec` が軸の欄を必ず持つため。
+ */
+function planTransform(
+  feature: TransformFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const translation = feature.translation.map((value) => value.value);
+  if (!translation.every((value) => Number.isFinite(value))) {
+    return fail(feature.id, 'invalidValue', '移動の量は数にしてください。');
+  }
+  const moved: Vec3 = cleanZeroVec3([translation[0], translation[1], translation[2]]);
+  if (feature.rotationAxis === null) {
+    // 回さないときも軸の欄は要る。向きは世界の Z にして角 0 を渡す(形は変わらない)。
+    return {
+      ok: true,
+      plan: {
+        kind: 'transform',
+        targetKey: target.targetKey,
+        translation: moved,
+        rotationOrigin: ORIGIN,
+        rotationAxis: WORLD_AXIS_DIRECTIONS.z,
+        rotationAngle: 0,
+      },
+    };
+  }
+  const frame = resolveRevolveAxis(feature.rotationAxis, sketches, context.axisFrames);
+  if (frame === null) {
+    return fail(feature.id, 'missingProfile', TRANSFORM_MISSING_AXIS_MESSAGE);
+  }
+  const angleDegrees = feature.rotationAngle.value;
+  if (!Number.isFinite(angleDegrees)) {
+    return fail(feature.id, 'invalidValue', '回転の角度が数になっていません。');
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'transform',
+      targetKey: target.targetKey,
+      translation: moved,
+      rotationOrigin: frame.origin,
+      rotationAxis: cleanZeroVec3(frame.direction),
+      rotationAngle: degreesToRadians(angleDegrees),
+    },
+  };
+}
+
+/** 拡大縮小の中心にする点が引けない(基本形状の中心の言い回しに揃える)。 */
+const SCALE_MISSING_ORIGIN_MESSAGE = '拡大縮小の中心にする点が見つかりません。点を選び直してください。';
+/** 倍率の断り 3 種(§2.11 の範囲 MIN_SCALE 〜 MAX_SCALE)。 */
+const SCALE_NOT_POSITIVE_MESSAGE = '倍率は 0 より大きい数にしてください。';
+const SCALE_TOO_SMALL_MESSAGE = '倍率は 0.001 以上にしてください。';
+const SCALE_TOO_LARGE_MESSAGE = '倍率は 1000 以下にしてください。';
+
+/** 倍率 1 つの範囲を確かめる。理由は 3 つに分ける(何を直せばよいかが分かるようにする)。 */
+function checkScaleFactor(value: number): string | null {
+  if (!Number.isFinite(value) || value <= 0) {
+    return SCALE_NOT_POSITIVE_MESSAGE;
+  }
+  if (value < MIN_SCALE) {
+    return SCALE_TOO_SMALL_MESSAGE;
+  }
+  if (value > MAX_SCALE) {
+    return SCALE_TOO_LARGE_MESSAGE;
+  }
+  return null;
+}
+
+/**
+ * 拡大縮小(FR-424、§0.a-0.41)。**対象を消費する。**
+ *
+ * **軸ごとの倍率が 3 つとも同じなら全体の倍率へ正規化する。** 倍率 2 の立方体は
+ * `uniform: 2` でも `perAxis: [2,2,2]` でもまったく同じ形なので、正規化しないと
+ * 同じ形に 2 つの鍵ができ、キャッシュが 2 度計算する(cacheKey.ts の
+ * `ScaleKeyMaterial` の注釈が「判断はタスク45」としているのがここ)。
+ */
+function planScale(
+  feature: ScaleFeature,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const origin = context.point(feature.origin);
+  if (origin === null) {
+    return fail(feature.id, 'missingProfile', SCALE_MISSING_ORIGIN_MESSAGE);
+  }
+  if (feature.factor.kind === 'uniform') {
+    const value = feature.factor.value.value;
+    const message = checkScaleFactor(value);
+    if (message !== null) {
+      return fail(feature.id, 'invalidValue', message);
+    }
+    return {
+      ok: true,
+      plan: { kind: 'scale', targetKey: target.targetKey, origin, uniform: value, perAxis: null },
+    };
+  }
+  const x = feature.factor.x.value;
+  const y = feature.factor.y.value;
+  const z = feature.factor.z.value;
+  for (const value of [x, y, z]) {
+    const message = checkScaleFactor(value);
+    if (message !== null) {
+      return fail(feature.id, 'invalidValue', message);
+    }
+  }
+  // 3 つとも同じなら全体の倍率と同じ形なので、書き方を 1 つに揃える(上の注釈)。
+  const uniform = x === y && y === z;
+  return {
+    ok: true,
+    plan: {
+      kind: 'scale',
+      targetKey: target.targetKey,
+      origin,
+      uniform: uniform ? x : null,
+      perAxis: uniform ? null : [x, y, z],
+    },
+  };
+}
+
 function planSolid(
   feature: SolidFeature,
   solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
-  axisFrames: ReadonlyMap<string, AxisFrame>,
+  context: SolidPlanContext,
 ): PlanOutcome {
+  const axisFrames = context.axisFrames;
   switch (feature.kind) {
     case 'extrude':
-      return planExtrude(feature, sketches);
+      return planExtrude(feature, sketches, bodyKeys, consumed, context);
     case 'revolve':
       return planRevolve(feature, sketches, axisFrames);
     case 'sew':
@@ -2224,19 +2885,22 @@ function planSolid(
       return planRuled(feature, solids, sketches, bodyKeys);
     case 'loft':
       return planLoft(feature, solids, sketches, bodyKeys);
+    case 'draft':
+      return planDraft(feature, bodyKeys, consumed, context);
+    case 'mirror':
+      return planMirror(feature, bodyKeys, context);
+    case 'transform':
+      return planTransform(feature, sketches, bodyKeys, consumed, context);
+    case 'scale':
+      return planScale(feature, bodyKeys, consumed, context);
     /*
-      P5 の Should 群 9 種(§2.11)。**型を足したのはタスク43 で、段の組み立ては
-      タスク45(押し出し終端・抜き勾配・ミラー・移動/拡縮)とタスク46(スイープ・リブ・
-      エンボス・外ねじ・曲面)の担当**である。ここは `SolidFeature` の union が広がった
-      ときにこの網羅 switch を落とさないための最小の枝で、いまは理由つきで断る
-      (FR-504。止めずに警告として持ち回る)。
+      P5 の Should 群の残り 5 種(§2.11)。**型を足したのはタスク43 で、段の組み立ては
+      タスク46(スイープ・リブ・エンボス・外ねじ・曲面)の担当**である。ここは
+      `SolidFeature` の union が広がったときにこの網羅 switch を落とさないための最小の枝で、
+      いまは理由つきで断る(FR-504。止めずに警告として持ち回る)。
       **`.pcad` を手で書けば到達しうる**が、道具(タスク50)がまだ無いので
       画面の操作からは作れない。
     */
-    case 'draft':
-    case 'mirror':
-    case 'transform':
-    case 'scale':
     case 'sweep':
     case 'rib':
     case 'emboss':
@@ -2349,15 +3013,45 @@ function toKeyThruSection(section: ThruSectionPlan): ThruSectionKeyMaterial {
   }
 }
 
+/**
+ * 押し出しの終端を鍵の材料へ詰め替える(cacheKey.ts の `ExtrudeEndKeyMaterial`)。
+ * 欄も種類も同じだが、`toKeyCurve` と同じ理由で偶然の構造の一致に頼らず種類ごとに写す。
+ */
+function toKeyExtrudeEnd(end: ExtrudeEndPlan): ExtrudeEndKeyMaterial {
+  switch (end.kind) {
+    case 'distance':
+      return { kind: 'distance', distance: end.distance };
+    case 'symmetric':
+      return { kind: 'symmetric', forward: end.forward, backward: end.backward };
+    case 'toFace':
+      return { kind: 'toFace', distance: end.distance };
+    case 'toNext':
+      return { kind: 'toNext' };
+  }
+}
+
 /** 1段ぶんの鍵の材料(§0.a-0.20)。名前・抑制・色は混ぜない(形が変わらないため)。 */
 function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
   switch (plan.kind) {
     case 'extrude':
+      // P5 で足した 5 欄は**省略された欄も既定で埋めてから**渡す。埋めても
+      // `keyExtrudeExtras` が既定を空文字列に畳むので、P2 からの押し出しの鍵は変わらず、
+      // 「欄を省いた押し出し」と「既定を明示した押し出し」も同じ鍵になる(タスク44 の決め 3)。
       return {
         kind: 'extrude',
         profile: plan.profile.map(toKeyCurve),
         direction: toKeyVec3(plan.direction),
         distance: plan.distance,
+        end:
+          plan.end === undefined
+            ? { kind: 'distance', distance: plan.distance }
+            : toKeyExtrudeEnd(plan.end),
+        taperAngle: plan.taperAngle ?? 0,
+        taperOutward: plan.taperOutward ?? false,
+        thin: plan.thin === undefined || plan.thin === null
+          ? null
+          : { thickness: plan.thin.thickness, side: plan.thin.side },
+        targetKey: plan.targetKey ?? null,
       };
     case 'revolve':
       return {
@@ -2474,6 +3168,42 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         twist: plan.twist,
         sphereSegments: plan.sphereSegments,
       };
+    case 'draft':
+      return {
+        kind: 'draft',
+        targetKey: plan.targetKey,
+        // 並びはすでに planDraft が通し番号の昇順に揃えてある(R 面取りと同じ)。
+        faces: plan.faces.map(fingerprintKeyText),
+        neutralFace: fingerprintKeyText(plan.neutralFace),
+        angle: plan.angle,
+        reversed: plan.reversed,
+      };
+    case 'mirror':
+      // 対象を消費しないが targetKey を必ず混ぜる(元を編集したら鏡像も作り直す、NFR-PF-3)。
+      return {
+        kind: 'mirror',
+        targetKey: plan.targetKey,
+        origin: toKeyVec3(plan.origin),
+        normal: toKeyVec3(plan.normal),
+      };
+    case 'transform':
+      return {
+        kind: 'transform',
+        targetKey: plan.targetKey,
+        translation: toKeyVec3(plan.translation),
+        rotationOrigin: toKeyVec3(plan.rotationOrigin),
+        rotationAxis: toKeyVec3(plan.rotationAxis),
+        rotationAngle: plan.rotationAngle,
+      };
+    case 'scale':
+      // uniform / perAxis はどちらか一方だけが入る(planScale が正規化済み)。
+      return {
+        kind: 'scale',
+        targetKey: plan.targetKey,
+        origin: toKeyVec3(plan.origin),
+        uniform: plan.uniform,
+        perAxis: plan.perAxis === null ? null : toKeyVec3(plan.perAxis),
+      };
   }
 }
 
@@ -2536,6 +3266,8 @@ function resolveSketchesAndReferences(
   readonly sketches: readonly ResolvedPartSketch[];
   readonly references: ResolvedReferences;
   readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
+  /** 点の参照の解決(拡大縮小の中心 FR-424 が使う。P5 タスク45)。 */
+  readonly point: (reference: PointReference) => Vec3 | null;
   readonly axisFrames: ReadonlyMap<string, AxisFrame>;
 } {
   const { offsetCurves, projectedCurves, subShape } = options;
@@ -2632,7 +3364,13 @@ function resolveSketchesAndReferences(
     return toResolvedPartSketch(sketch.id, constrained);
   });
 
-  return { sketches, references, workPlane: resolver.workPlane, axisFrames };
+  return {
+    sketches,
+    references,
+    workPlane: resolver.workPlane,
+    point: resolver.point,
+    axisFrames,
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -2820,11 +3558,22 @@ function noProjectedCurves(): null {
 
 /** 部品文書を解決して、カーネルへ渡す段の一覧を作る。例外を投げない(FR-504)。 */
 export function resolvePart(document: PartDocument, options: ResolvePartOptions = {}): ResolvedPart {
-  const { sketches, references, axisFrames } = resolveSketchesAndReferences(document, {
-    offsetCurves: options.offsetCurves ?? noOffsetCurves,
-    projectedCurves: options.projectedCurves ?? noProjectedCurves,
-    subShape: options.subShape,
-  });
+  const { sketches, references, workPlane, point, axisFrames } = resolveSketchesAndReferences(
+    document,
+    {
+      offsetCurves: options.offsetCurves ?? noOffsetCurves,
+      projectedCurves: options.projectedCurves ?? noProjectedCurves,
+      subShape: options.subShape,
+    },
+  );
+  // 面・辺・頂点の位置は、選び直しの関数があればそれ、無ければ保存された指紋から取る
+  // (`resolveReferences.ts` の `resolveSubShape` とまったく同じ既定。§0.a-0.33)。
+  const context: SolidPlanContext = {
+    subShape: options.subShape ?? subShapeFromFingerprint,
+    workPlane,
+    point,
+    axisFrames,
+  };
 
   const drafts: StepDraft[] = [];
   // 基準ジオメトリの失敗もツリーの行として出すので、同じ一覧へ写す(FR-504)。
@@ -2839,7 +3588,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     if (feature.suppressed) {
       continue;
     }
-    const outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed, axisFrames);
+    const outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed, context);
     if (!outcome.ok) {
       errors.push(outcome.error);
       continue;

@@ -1007,11 +1007,22 @@ function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
 function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
   switch (plan.kind) {
     case 'extrude':
+      // P5 で足した終端・傾き・薄板(FR-415・FR-401・FR-416)は**省略されたまま渡す**。
+      // 段に無い欄はカーネルでも既定(距離ぶんを片側へ、傾きなし、中実)になるので、
+      // P2 からの押し出しの依頼は 1 ドットも変わらない(`ExtrudeStepSpec` の注釈)。
       return {
         kind: 'extrude',
         profile: plan.profile.map((curve) => toCurveSpec(curve)),
         direction: plan.direction,
         distance: plan.distance,
+        ...(plan.end === undefined ? {} : { end: plan.end }),
+        ...(plan.taperAngle === undefined
+          ? {}
+          : { taperAngle: plan.taperAngle, taperOutward: plan.taperOutward ?? false }),
+        ...(plan.thin === undefined || plan.thin === null ? {} : { thin: plan.thin }),
+        ...(plan.targetKey === undefined || plan.targetKey === null
+          ? {}
+          : { targetKey: plan.targetKey }),
       };
     case 'revolve':
       return {
@@ -1117,6 +1128,45 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         closed: plan.closed,
         twist: plan.twist,
         sphereSegments: plan.sphereSegments,
+      };
+    /*
+      P5 の Should 群のうちタスク45 が解決する 4 種(FR-417・FR-419・FR-424)。
+      角度のラジアン化・平面の数値化・倍率の正規化は resolvePart が済ませてあるので、
+      ここでやるのは指紋(`faces` / `neutralFace`)の詰め替えだけである。
+      **消費するかどうかは `visible` を決める model 側の話**で、依頼の形には出ない。
+    */
+    case 'draft':
+      return {
+        kind: 'draft',
+        targetKey: plan.targetKey,
+        faces: plan.faces.map((face) => toSubShapeQuery(face)),
+        neutralFace: toSubShapeQuery(plan.neutralFace),
+        angle: plan.angle,
+        reversed: plan.reversed,
+      };
+    case 'mirror':
+      return {
+        kind: 'mirror',
+        targetKey: plan.targetKey,
+        origin: plan.origin,
+        normal: plan.normal,
+      };
+    case 'transform':
+      return {
+        kind: 'transform',
+        targetKey: plan.targetKey,
+        translation: plan.translation,
+        rotationOrigin: plan.rotationOrigin,
+        rotationAxis: plan.rotationAxis,
+        rotationAngle: plan.rotationAngle,
+      };
+    case 'scale':
+      return {
+        kind: 'scale',
+        targetKey: plan.targetKey,
+        origin: plan.origin,
+        uniform: plan.uniform,
+        perAxis: plan.perAxis,
       };
   }
 }

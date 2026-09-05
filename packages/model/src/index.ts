@@ -385,3 +385,21 @@ export {
   extrudeShapingOf, holeEntryOf,
   MAX_DRAFT_ANGLE_DEGREES, MAX_SCALE, MAX_TAPER_ANGLE_DEGREES, MIN_SCALE,
 } from './part/createPartDocument.js';
+/**
+ * P5 の Should 群の鍵の材料と段(FR-401、FR-415〜FR-419、FR-424、FR-428、FR-432。タスク45)。
+ *
+ * 鍵の材料 16 件は**タスク44 が作ったもの**で、輸出だけがこのタスクに残っていた
+ * (`docs/報告記録.md` 2026-09-05 20:04 の t45 への申し送り)。ui とその場入力が
+ * 「同じ形なら同じ鍵」を確かめられるように、`SolidStepKeyMaterial` の枝をすべて出す。
+ *
+ * 段の側は、タスク45 が解決した 4 種(抜き勾配・ミラー・移動/回転・拡大縮小)と、
+ * 押し出しに足した終端・薄板の型を出す。段の union(`SolidStepPlan`)そのものは
+ * P2 から輸出していないので、ここでも出さない(kernelBridge が唯一の読み手)。
+ */
+export type {
+  CutKeyMaterial, DraftKeyMaterial, EmbossKeyMaterial, ExtrudeEndKeyMaterial,
+  FilletRadiusKeyMaterial, HoleEntryKeyMaterial, MirrorKeyMaterial, RibKeyMaterial,
+  ScaleKeyMaterial, ShellKeyMaterial, SurfaceKeyMaterial, SurfaceShapeKeyMaterial,
+  SweepKeyMaterial, ThinExtrudeKeyMaterial, ThreadShaftKeyMaterial, TransformKeyMaterial,
+} from './part/cacheKey.js';
+export type { ExtrudeEndPlan, ThinExtrudePlan } from './part/resolvePart.js';

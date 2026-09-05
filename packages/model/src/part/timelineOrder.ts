@@ -16,6 +16,7 @@
  * | 立体 → 立体(消費) | `consumedTargetsOf`(createPartDocument.ts) |
  * | 立体 → スケッチ → 立体 / 作業平面 | `referencedSketchIds`(resolvePart.ts)+ そのスケッチの依存 |
  * | 立体 → 立体(部分形状) | `SubShapeRef.bodyFeatureId`(穴・ねじ穴の面、フィレット・面取りの辺) |
+ * | 立体 → 立体(消費しないが指す) | ミラーの対象・鏡の面、曲面の `face`、罫線面/ロフトの立体の面と球、基本形状の頂点、押し出しの「選んだ面まで」(P5 タスク45) |
  * | 立体 → 基準ジオメトリ | `AxisSpec` の `reference`(回転軸・パターンの向き・ばねの軸) |
  * | 基準ジオメトリ → 何でも | `PlaneSpec` / `ReferenceAxisDefinition` / `ReferencePointDefinition` / `AxisSpec` / `PointReference` |
  * | スケッチ → 立体 | 投影(`SketchProjectedCurveFeature.source`)・交差(`planeSection.targetFeatureId`)・3D スケッチの頂点参照(`PointReference` の `subShape`)・球面上の点(同 `sphereGrid`、FR-431) |
@@ -48,6 +49,7 @@ import type {
   ReferenceFeature,
   ReferenceFeatureKind,
   ReferencePointDefinition,
+  RuledSection,
   SolidFeature,
   SolidFeatureKind,
 } from './types.js';
@@ -394,10 +396,21 @@ function solidDependencies(
     found.push(...sketchDependencies(context, sketchId));
   }
   switch (feature.kind) {
-    case 'extrude':
     case 'sew':
     case 'boolean':
       // 面の参照と対象の id だけで、上の 2 つに数え終えている。
+      break;
+    case 'extrude':
+      /*
+        押し出し(FR-401、FR-415)。「選んだ面まで」(`end.toFace`)だけが立体の面を指す
+        (P5 タスク43・45)。**消費しないが上流を指す**ので、ここで数えないと
+        「面を借りている立体」より前へ押し出しを動かせてしまう(FR-507)。
+        「次の面まで」(`toNext`)は相手を指す欄を持たない(解決が「直前の生きた立体」を
+        選ぶ)ので、文書だけを見るここでは数えられない。
+      */
+      if (feature.end !== undefined && feature.end.kind === 'toFace') {
+        found.push(...subShapeDependencies(context, feature.end.face));
+      }
       break;
     case 'revolve':
       found.push(...axisSpecDependencies(context, feature.axis));
@@ -429,8 +442,104 @@ function solidDependencies(
     case 'spring':
       found.push(...axisSpecDependencies(context, feature.axis));
       break;
+    case 'primitive':
+      // 基本形状(FR-429)。中心に立体の頂点を指したときだけ上流を指す(**消費しない**、
+      // §0.a-0.19)。向きの軸は他の種類と同じ扱い。
+      if (feature.origin.kind === 'vertex') {
+        found.push(...subShapeDependencies(context, feature.origin.ref));
+      }
+      found.push(...axisSpecDependencies(context, feature.axis));
+      break;
+    case 'ruled':
+      found.push(...ruledSectionDependencies(context, [feature.first, feature.second]));
+      break;
+    case 'loft':
+      found.push(...ruledSectionDependencies(context, feature.sections));
+      break;
+    case 'draft':
+      // 抜き勾配(FR-417)。対象は消費するので上で数え終えているが、面の指紋は別の
+      // ボディを指しうる(解決は断るが、並べ替えの判定は解決の成否と無関係に効く)。
+      for (const face of [...feature.faces, feature.neutralFace]) {
+        found.push(...subShapeDependencies(context, face));
+      }
+      break;
+    case 'mirror':
+      /*
+        ミラー(FR-419、§0.a-0.36)。**対象を消費しないので `consumedTargetsOf` には
+        現れない**が、鏡に映すもとの立体は必ず自分より前になければならない
+        (docs/報告記録.md 2026-09-05 19:38 の t45 への申し送り)。鏡が立体の面のときは
+        その面を持つ立体も同じ理由で数える。
+      */
+      found.push(...solidDependency(context, feature.targetFeatureId));
+      if (feature.plane.kind === 'workPlane') {
+        found.push(...workPlaneDependencies(context, feature.plane.planeId));
+      } else {
+        found.push(...subShapeDependencies(context, feature.plane.face));
+      }
+      break;
+    case 'transform':
+      // 移動/回転(FR-424)。対象は消費するので上で数え終えている。軸だけを足す。
+      if (feature.rotationAxis !== null) {
+        found.push(...axisSpecDependencies(context, feature.rotationAxis));
+      }
+      break;
+    case 'scale':
+      // 拡大縮小(FR-424)。中心は `PointReference` なので、基準点・立体の頂点を
+      // 指していれば数えられる(スケッチの点は id から引く。`pointReferenceDependencies`)。
+      found.push(...pointReferenceDependencies(context, feature.origin));
+      break;
+    case 'sweep':
+      // スイープ(FR-409)。断面も経路もスケッチの中なので、上のスケッチの依存で数え終えている。
+      break;
+    case 'rib':
+      // リブ(FR-420)。対象は消費するので上で数え終えており、輪郭はスケッチの中にある。
+      break;
+    case 'emboss':
+    case 'threadShaft':
+      // エンボス・外ねじ(FR-421、FR-423)。対象は消費するので上で数え終えているが、
+      // 面の指紋は別のボディを指しうる(解決は断るが、並べ替えの判定は解決の成否と無関係)。
+      found.push(...subShapeDependencies(context, feature.face));
+      break;
+    case 'surface':
+      /*
+        曲面(FR-428、§0.a-0.45)。**どの作り方でも消費しない**が、`face`(立体の面を
+        取り出す)のときだけ上流を指すので、ミラーと同じ理由で数える(t45 への申し送り)。
+        ほかの 4 種はスケッチの面・軸だけで、上の 2 つに数え終えている。
+      */
+      if (feature.operation.kind === 'face') {
+        // 面を借りる立体は `targetFeatureId` と面の指紋の両方が指す(ふつうは同じ id)。
+        found.push(...solidDependency(context, feature.operation.targetFeatureId));
+        found.push(...subShapeDependencies(context, feature.operation.face));
+      } else if (feature.operation.kind === 'revolve') {
+        found.push(...axisSpecDependencies(context, feature.operation.axis));
+      }
+      break;
   }
   return found;
+}
+
+/**
+ * 罫線面・ロフト(FR-430、FR-410)の断面が指しているもの。
+ *
+ * **立体の面(`solidFace`)と球(`sphere`)は消費しない**ので `consumedTargetsOf` には
+ * 現れないが、輪郭を借りるもとの立体は必ず自分より前になければならない
+ * (docs/報告記録.md 2026-09-05 19:38 の t45 への申し送り)。
+ * スケッチの面は上のスケッチの依存で数え終えている。
+ */
+function ruledSectionDependencies(
+  context: DependencyContext,
+  sections: readonly RuledSection[],
+): readonly string[] {
+  return sections.flatMap((section) => {
+    switch (section.kind) {
+      case 'sketchFace':
+        return [];
+      case 'sphere':
+        return solidDependency(context, section.sphereFeatureId);
+      case 'solidFace':
+        return subShapeDependencies(context, section.ref);
+    }
+  });
 }
 
 function referenceAxisDependencies(

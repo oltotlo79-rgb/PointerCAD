@@ -1,0 +1,52 @@
+{
+  "standard": "JIS Z 8317-1",
+  "edition": "2008",
+  "title": "製図—寸法及び公差の記入方法—第1部：一般原則",
+  "scope": "寸法線・寸法補助線・端末記号(矢印)の形と大きさ、寸法補助記号の一覧",
+  "sourceUrls": [
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8317-1:2008",
+    "https://jp.misumi-ec.com/tech-info/categories/technical_data/td01/g0049.html",
+    "https://zumen-bank.com/column/8962",
+    "https://d-engineer.com/seizu/sunpouhojyo.html",
+    "https://mechanic.chansato.com/dimension-auxiliary-symbols/",
+    "https://kikai-seizu.s-projects.net/dimension-general.html"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "symbol": "寸法補助記号",
+    "reading": "呼び方",
+    "meaning": "意味",
+    "placement": "書く位置"
+  },
+  "notes": [
+    "**数値はほとんど得られなかった。** 矢印の長さ・開き角、寸法補助線のはみ出し、寸法線どうしの間隔は、JIS Z 8317-1 の附属書に入っており、公開資料に数値が無い。全部 null にした。**推測で埋めていない。**",
+    "寸法補助記号の名前と意味は、独立した 3 件以上の資料が一致した。確認済み。",
+    "円弧の寸法は 180° までは半径(R)、それを超えるときは直径(φ)で表す(1 件のみ。要確認)。",
+    "寸法線・寸法補助線・引出線は細い実線(JIS B 0001。line-types-jis-b-0001.json を参照)。",
+    "寸法数値の文字高さは JIS Z 8313 の系列による(text-heights-jis-z-8313.json)。JIS Z 8317 側に独自の数値は見つからなかった。",
+    "P8 §0.9 の矢印の候補値(長さ = 文字高さ、開き角 15°)と すきまの候補値(1mm / 2mm / 8mm)は**この調査では裏づけが取れなかった。** 統括の判断が要る。"
+  ],
+  "geometry": {
+    "arrowLength": null,
+    "arrowIncludedAngleDeg": null,
+    "arrowStyle": "塗りつぶした閉じた矢が一般的だが、開いた矢・斜線・黒丸も認められる(要確認)",
+    "extensionLineGapFromOutline": null,
+    "extensionLineOvershootBeyondDimensionLine": null,
+    "spacingBetweenDimensionLines": null,
+    "dimensionLineWidth": null,
+    "verified": false,
+    "note": "すべて公開資料から得られなかった。null のまま。"
+  },
+  "rows": [
+    { "symbol": "φ", "reading": "まる / ファイ", "meaning": "直径", "placement": "寸法数値の前", "verified": true, "note": "" },
+    { "symbol": "R", "reading": "アール", "meaning": "半径", "placement": "寸法数値の前", "verified": true, "note": "" },
+    { "symbol": "Sφ", "reading": "エスまる / エスファイ", "meaning": "球の直径", "placement": "寸法数値の前", "verified": true, "note": "" },
+    { "symbol": "SR", "reading": "エスアール", "meaning": "球の半径", "placement": "寸法数値の前", "verified": true, "note": "" },
+    { "symbol": "□", "reading": "かく", "meaning": "正方形の辺", "placement": "寸法数値の前", "verified": true, "note": "" },
+    { "symbol": "t", "reading": "ティー", "meaning": "板の厚さ", "placement": "寸法数値の前", "verified": true, "note": "" },
+    { "symbol": "C", "reading": "シー", "meaning": "45° の面取り", "placement": "寸法数値の前", "verified": true, "note": "" },
+    { "symbol": "⌒", "reading": "えんこ", "meaning": "円弧の長さ", "placement": "寸法数値の上", "verified": true, "note": "" },
+    { "symbol": "( )", "reading": "かっこ", "meaning": "参考寸法", "placement": "寸法数値を囲む", "verified": false, "note": "1〜2 件。要確認" }
+  ]
+}

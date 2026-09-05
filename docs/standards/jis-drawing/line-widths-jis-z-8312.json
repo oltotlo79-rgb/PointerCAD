@@ -1,0 +1,55 @@
+{
+  "standard": "JIS Z 8312",
+  "edition": "1999",
+  "title": "製図—表示の一般原則—線の基本原則",
+  "scope": "線の太さの数列と、太さの組(細線:太線:極太線)。線の基本形の名前。",
+  "sourceUrls": [
+    "https://www.pref.gifu.lg.jp/uploaded/attachment/4099.PDF",
+    "https://mechanical-engineer48.com/post-2965/",
+    "https://moriumm.hatenablog.com/entry/2024/02/22/102144",
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8316:1999"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "width": "線の太さ(mm)",
+    "step": "数列の並び順(細い方から 1)"
+  },
+  "notes": [
+    "太さの数列は 0.13 / 0.18 / 0.25 / 0.35 / 0.5 / 0.7 / 1 / 1.4 / 2 の 9 段。岐阜県 CAD製図基準(案)と機械設計者のメモの 2 件が一致した。公比はおよそ √2。",
+    "細線:太線:極太線 = 1:2:4。岐阜県 CAD製図基準(案)が明記。JIS Z 8316 は「太線と細線の 2 種類、比は 2:1 以上」とする。",
+    "破線・鎖線の要素の長さ(線分・すきま・点)の推奨値は、公開資料から得られなかった。全部 null。",
+    "平行な線の最小のすきまは 0.7mm という記述が 1 件だけあった。要確認。",
+    "線の基本形の名前は JIS B 0001 側の一覧(line-types-jis-b-0001.json)に持たせた。"
+  ],
+  "widthRatio": {
+    "thin": 1,
+    "thick": 2,
+    "extraThick": 4,
+    "verified": true,
+    "note": "1:2:4。2 件の資料が一致。JIS Z 8316:1999 は太線:細線 = 2:1 以上とする。"
+  },
+  "minimumGapBetweenParallelLines": {
+    "value": 0.7,
+    "verified": false,
+    "note": "1 件のみ。要確認。"
+  },
+  "dashPattern": {
+    "dashLength": null,
+    "gapLength": null,
+    "dotLength": null,
+    "verified": false,
+    "note": "破線・一点鎖線・二点鎖線の要素の長さは公開資料から得られなかった。"
+  },
+  "rows": [
+    { "step": 1, "width": 0.13, "verified": true, "note": "" },
+    { "step": 2, "width": 0.18, "verified": true, "note": "" },
+    { "step": 3, "width": 0.25, "verified": true, "note": "" },
+    { "step": 4, "width": 0.35, "verified": true, "note": "" },
+    { "step": 5, "width": 0.5, "verified": true, "note": "" },
+    { "step": 6, "width": 0.7, "verified": true, "note": "" },
+    { "step": 7, "width": 1, "verified": true, "note": "" },
+    { "step": 8, "width": 1.4, "verified": true, "note": "" },
+    { "step": 9, "width": 2, "verified": true, "note": "" }
+  ]
+}

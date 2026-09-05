@@ -1,0 +1,64 @@
+{
+  "standard": "JIS B 0419",
+  "edition": "1991",
+  "title": "普通公差—第2部：個々に公差の指示がない形体に対する幾何公差",
+  "scope": "公差等級 H・K・L の、真直度・平面度、直角度、対称度、円周振れ",
+  "sourceUrls": [
+    "https://www.mikipulley.co.jp/JP/Services/Tech_data/tech02.html",
+    "https://eco-ksk.jp/wp-content/uploads/2024/02/4343ad48909d9c7059d0d6a58619028e.pdf"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "over": "呼び長さの区分の下限(を超え)",
+    "upTo": "呼び長さの区分の上限(以下)",
+    "H": "公差等級 H の公差値",
+    "K": "公差等級 K の公差値",
+    "L": "公差等級 L の公差値"
+  },
+  "notes": [
+    "真直度・平面度、直角度、円周振れの 3 表は独立した 2 件(三木プーリ / eco-ksk)が一致した。確認済み。",
+    "**対称度の表は三木プーリ 1 件しか得られなかった。全行 要確認。**",
+    "真直度・平面度の区分は呼び長さ、直角度と対称度の区分は短い方の辺の呼び長さ。",
+    "円周振れは長さの区分によらず一定。",
+    "対称度の H は 100 以下も 300 以下も 0.5 で同じ(区分の下限が資料に無いため over を 0 とした)。",
+    "P8 では幾何公差は P9 の範囲。この表は番号と数値を控えておくためのもの。"
+  ],
+  "straightnessAndFlatness": {
+    "verified": true,
+    "rows": [
+      { "over": 0, "upTo": 10, "H": 0.02, "K": 0.05, "L": 0.1, "verified": true, "note": "" },
+      { "over": 10, "upTo": 30, "H": 0.05, "K": 0.1, "L": 0.2, "verified": true, "note": "" },
+      { "over": 30, "upTo": 100, "H": 0.1, "K": 0.2, "L": 0.4, "verified": true, "note": "" },
+      { "over": 100, "upTo": 300, "H": 0.2, "K": 0.4, "L": 0.8, "verified": true, "note": "" },
+      { "over": 300, "upTo": 1000, "H": 0.3, "K": 0.6, "L": 1.2, "verified": true, "note": "" },
+      { "over": 1000, "upTo": 3000, "H": 0.4, "K": 0.8, "L": 1.6, "verified": true, "note": "" }
+    ]
+  },
+  "perpendicularity": {
+    "verified": true,
+    "rows": [
+      { "over": 0, "upTo": 100, "H": 0.2, "K": 0.4, "L": 0.6, "verified": true, "note": "" },
+      { "over": 100, "upTo": 300, "H": 0.3, "K": 0.6, "L": 1, "verified": true, "note": "" },
+      { "over": 300, "upTo": 1000, "H": 0.4, "K": 0.8, "L": 1.5, "verified": true, "note": "" },
+      { "over": 1000, "upTo": 3000, "H": 0.5, "K": 1, "L": 2, "verified": true, "note": "" }
+    ]
+  },
+  "symmetry": {
+    "verified": false,
+    "note": "三木プーリ 1 件のみ。全行 要確認。100 以下の区分の値は資料の表から読み取れなかった。",
+    "rows": [
+      { "over": 0, "upTo": 100, "H": 0.5, "K": 0.6, "L": 0.6, "verified": false, "note": "1 件のみ。表の並びから読み取ったもので、特に K・L は要確認。" },
+      { "over": 100, "upTo": 300, "H": 0.5, "K": 0.6, "L": 1, "verified": false, "note": "1 件のみ" },
+      { "over": 300, "upTo": 1000, "H": 0.5, "K": 0.8, "L": 1.5, "verified": false, "note": "1 件のみ" },
+      { "over": 1000, "upTo": 3000, "H": 0.5, "K": 1, "L": 2, "verified": false, "note": "1 件のみ" }
+    ]
+  },
+  "circularRunout": {
+    "verified": true,
+    "rows": [
+      { "over": null, "upTo": null, "H": 0.1, "K": 0.2, "L": 0.5, "verified": true, "note": "長さの区分によらない" }
+    ]
+  },
+  "rows": []
+}

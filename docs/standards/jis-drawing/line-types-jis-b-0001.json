@@ -1,0 +1,47 @@
+{
+  "standard": "JIS B 0001",
+  "edition": "2019",
+  "title": "機械製図",
+  "scope": "用途による線の名前と、対応する線の種類。用途の説明は要約であり、規格の条文は写していない。",
+  "sourceUrls": [
+    "https://jp.misumi-ec.com/tech-info/categories/technical_data/td01/g0048.html",
+    "https://kikakurui.com/b0/B0001-2019-01.html"
+  ],
+  "verified": false,
+  "unit": "—",
+  "columns": {
+    "name": "用途による名称",
+    "lineType": "線の種類",
+    "use": "用途(この調査による短い要約。規格の条文ではない)"
+  },
+  "notes": [
+    "一覧の出どころはミスミの技術情報「2010年に改正された製図の線(JIS B 0001:2010 より抜粋)」1 件。JIS B 0001 は 2019 年に改正されており、2010 年版との差は照合していない。全行 要確認。",
+    "kikakurui.com は規格本文の転載とみられるため出典としては採らず、番号と版の存在の確認だけに使った(sourceUrls の 2 件目)。",
+    "「用途」の欄はこの調査による短い要約で、規格の文言ではない。",
+    "P8 §0.9 が要る 6 種(外形線・かくれ線・中心線/切断線・寸法線系・想像線・破断線)は下の一覧に全部ある。"
+  ],
+  "rows": [
+    { "name": "外形線", "lineType": "太い実線", "use": "見える部分の形状", "verified": false, "note": "" },
+    { "name": "寸法線", "lineType": "細い実線", "use": "寸法の記入", "verified": false, "note": "" },
+    { "name": "寸法補助線", "lineType": "細い実線", "use": "図形から寸法を引き出す", "verified": false, "note": "" },
+    { "name": "引出線", "lineType": "細い実線", "use": "記述・記号を引き出す(参照線を含む)", "verified": false, "note": "" },
+    { "name": "回転断面線", "lineType": "細い実線", "use": "切り口を 90° 回して図形内に表す", "verified": false, "note": "" },
+    { "name": "中心線(簡略)", "lineType": "細い実線", "use": "中心線の簡略な表し方", "verified": false, "note": "" },
+    { "name": "水準面線", "lineType": "細い実線", "use": "水面・液面の位置", "verified": false, "note": "" },
+    { "name": "かくれ線", "lineType": "細い破線 または 太い破線", "use": "見えない部分の形状", "verified": false, "note": "" },
+    { "name": "中心線", "lineType": "細い一点鎖線", "use": "図形の中心、中心の軌跡", "verified": false, "note": "" },
+    { "name": "基準線", "lineType": "細い一点鎖線", "use": "位置決定のよりどころ", "verified": false, "note": "" },
+    { "name": "ピッチ線", "lineType": "細い一点鎖線", "use": "繰返し図形のピッチの基準", "verified": false, "note": "" },
+    { "name": "特殊指定線", "lineType": "太い一点鎖線", "use": "特別な要求事項を適用する範囲", "verified": false, "note": "" },
+    { "name": "想像線", "lineType": "細い二点鎖線", "use": "隣接部分・可動部分・加工前後の形状など", "verified": false, "note": "" },
+    { "name": "重心線", "lineType": "細い二点鎖線", "use": "断面の重心を連ねた線", "verified": false, "note": "" },
+    { "name": "光軸線", "lineType": "細い二点鎖線", "use": "レンズを通る光軸", "verified": false, "note": "" },
+    { "name": "破断線", "lineType": "不規則な波形の細い実線 または ジグザグ線", "use": "一部を破った・取り去った境界", "verified": false, "note": "" },
+    { "name": "切断線", "lineType": "細い一点鎖線で端部と方向の変わる部分を太くした線", "use": "断面の位置", "verified": false, "note": "" },
+    { "name": "ハッチング", "lineType": "細い実線を規則的に並べたもの", "use": "断面の切り口など、特定の部分の区別", "verified": false, "note": "" },
+    { "name": "特殊な用途の線", "lineType": "細い実線", "use": "外形線・かくれ線の延長、平面の X 字表示、位置の明示", "verified": false, "note": "" },
+    { "name": "特殊な用途の線(薄肉)", "lineType": "極太の実線", "use": "圧延鋼板・ガラスなど薄肉部の単線図示", "verified": false, "note": "" },
+    { "name": "ミシン目線", "lineType": "跳び破線", "use": "布・皮・シート材の縫い目", "verified": false, "note": "" },
+    { "name": "連結線", "lineType": "点線", "use": "制御機器の内部リンク、開閉機器の連動動作", "verified": false, "note": "" }
+  ]
+}

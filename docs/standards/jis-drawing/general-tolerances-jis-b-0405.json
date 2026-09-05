@@ -1,0 +1,63 @@
+{
+  "standard": "JIS B 0405",
+  "edition": "1991",
+  "title": "普通公差—第1部：個々に公差の指示がない長さ寸法及び角度寸法に対する公差",
+  "scope": "精級 f・中級 m・粗級 c・極粗級 v の 4 等級。長さ寸法(面取りを除く)、面取り部分、角度寸法。",
+  "sourceUrls": [
+    "https://www.mikipulley.co.jp/JP/Services/Tech_data/tech02.html",
+    "https://eco-ksk.jp/wp-content/uploads/2024/02/4343ad48909d9c7059d0d6a58619028e.pdf",
+    "https://hayamihyou.net/tolerance/",
+    "https://jp.c.misumi-ec.com/book/NGS1_T09/pdf/0458.pdf"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "over": "基準寸法区分の下限(を超え)。長さの表では 0.5 が最小",
+    "upTo": "基準寸法区分の上限(以下)",
+    "f": "精級の許容差 (±)",
+    "m": "中級の許容差 (±)",
+    "c": "粗級の許容差 (±)",
+    "v": "極粗級の許容差 (±)"
+  },
+  "notes": [
+    "長さ寸法(面取りを除く)・面取り部分・角度寸法の 3 表とも、独立した 2 件(三木プーリ / eco-ksk)が値ごと一致した。さらに はやみひょう が長さと角度を裏づけた。**確認済み。**",
+    "0.5mm 未満の基準寸法には普通公差を使わず、寸法ごとに許容差を書く。",
+    "角度の許容差の区分は、角度を構成する**短い方の辺の長さ**(mm)による。",
+    "角度の単位は度と分。JSON では `deg` と `min` の 2 つの数で持つ。",
+    "精級 f と中級 m は、面取りの表でも角度の表でも同じ値。粗級 c と極粗級 v は面取りの表で同じ値。"
+  ],
+  "lengthExcludingChamfer": {
+    "verified": true,
+    "rows": [
+      { "over": 0.5, "upTo": 3, "f": 0.05, "m": 0.1, "c": 0.2, "v": null, "verified": true, "note": "極粗級 v は規定されていない" },
+      { "over": 3, "upTo": 6, "f": 0.05, "m": 0.1, "c": 0.3, "v": 0.5, "verified": true, "note": "" },
+      { "over": 6, "upTo": 30, "f": 0.1, "m": 0.2, "c": 0.5, "v": 1, "verified": true, "note": "" },
+      { "over": 30, "upTo": 120, "f": 0.15, "m": 0.3, "c": 0.8, "v": 1.5, "verified": true, "note": "" },
+      { "over": 120, "upTo": 400, "f": 0.2, "m": 0.5, "c": 1.2, "v": 2.5, "verified": true, "note": "" },
+      { "over": 400, "upTo": 1000, "f": 0.3, "m": 0.8, "c": 2, "v": 4, "verified": true, "note": "" },
+      { "over": 1000, "upTo": 2000, "f": 0.5, "m": 1.2, "c": 3, "v": 6, "verified": true, "note": "" },
+      { "over": 2000, "upTo": 4000, "f": null, "m": 2, "c": 4, "v": 8, "verified": true, "note": "精級 f は規定されていない" }
+    ]
+  },
+  "chamfer": {
+    "verified": true,
+    "note": "面取り部分(角の丸みと角の面取り寸法)の長さ寸法に対する許容差",
+    "rows": [
+      { "over": 0.5, "upTo": 3, "f": 0.2, "m": 0.2, "c": 0.4, "v": 0.4, "verified": true, "note": "" },
+      { "over": 3, "upTo": 6, "f": 0.5, "m": 0.5, "c": 1, "v": 1, "verified": true, "note": "" },
+      { "over": 6, "upTo": null, "f": 1, "m": 1, "c": 2, "v": 2, "verified": true, "note": "6 を超えるもの" }
+    ]
+  },
+  "angle": {
+    "verified": true,
+    "note": "角度を構成する短い方の辺の長さ(mm)による区分。値は ± の度・分。",
+    "rows": [
+      { "over": 0, "upTo": 10, "f": { "deg": 1, "min": 0 }, "m": { "deg": 1, "min": 0 }, "c": { "deg": 1, "min": 30 }, "v": { "deg": 3, "min": 0 }, "verified": true, "note": "" },
+      { "over": 10, "upTo": 50, "f": { "deg": 0, "min": 30 }, "m": { "deg": 0, "min": 30 }, "c": { "deg": 1, "min": 0 }, "v": { "deg": 2, "min": 0 }, "verified": true, "note": "" },
+      { "over": 50, "upTo": 120, "f": { "deg": 0, "min": 20 }, "m": { "deg": 0, "min": 20 }, "c": { "deg": 0, "min": 30 }, "v": { "deg": 1, "min": 0 }, "verified": true, "note": "" },
+      { "over": 120, "upTo": 400, "f": { "deg": 0, "min": 10 }, "m": { "deg": 0, "min": 10 }, "c": { "deg": 0, "min": 15 }, "v": { "deg": 0, "min": 30 }, "verified": true, "note": "" },
+      { "over": 400, "upTo": null, "f": { "deg": 0, "min": 5 }, "m": { "deg": 0, "min": 5 }, "c": { "deg": 0, "min": 10 }, "v": { "deg": 0, "min": 20 }, "verified": true, "note": "400 を超えるもの" }
+    ]
+  },
+  "rows": []
+}

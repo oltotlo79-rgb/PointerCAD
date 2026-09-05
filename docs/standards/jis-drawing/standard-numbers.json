@@ -1,0 +1,258 @@
+{
+  "standard": "—",
+  "title": "P8「図面と寸法」で使う JIS 製図規格の番号と版",
+  "edition": "2026-09-06 調査時点",
+  "scope": "P8 計画書 §0.8 の候補 12 件(と関連する部・追加の 1 件)の番号・名称・版を、web の公開資料で照合した結果",
+  "sourceUrls": [
+    "https://webdesk.jsa.or.jp/common/W10K0010/?post_type=book_common&page_id=seizu_jis"
+  ],
+  "verified": false,
+  "unit": "—",
+  "columns": {
+    "id": "規格番号",
+    "title": "名称",
+    "edition": "版(年)",
+    "planItem": "P8 計画書 §0.8 の候補の番号",
+    "jsaUrl": "JSA の書誌ページ",
+    "usedInP8": "P8 の実装で数値を使うか"
+  },
+  "notes": [
+    "**候補 12 件は、番号・名称ともすべて正しかった。訂正は無い。** 版(年)は候補に書かれていなかったので、この調査で付けた。",
+    "版は JSA の書誌ページ(webdesk.jsa.or.jp/books/W11M0090/…)で照合できたものと、他の資料からしか得られなかったものがある。**規格票そのものは見ていない。**",
+    "JIS Z 8313 と JIS Z 8315 と JIS Z 8317 と JIS B 0401 は部(-0 / -1 / -2 …)に分かれる。P8 で使う部だけを挙げた。",
+    "**この一覧の verified は「版(年)を照合できたか」を表す。** JSA の書誌ページが得られた 9 件と、独立した 2 件以上の資料が一致した 5 件を確認済みとし、残り 8 件は要確認とした。",
+    "**番号と名称そのものは 23 行すべて確認できた。訂正は無い。** 要確認なのは版(年)だけ。"
+  ],
+  "rows": [
+    {
+      "id": "JIS Z 8310",
+      "title": "製図総則",
+      "edition": "2010",
+      "planItem": "①",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8310:2010",
+      "usedInP8": false,
+      "verified": false,
+      "note": "総則。数値は取らない / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 8311",
+      "title": "製図—製図用紙のサイズ及び図面の様式",
+      "edition": "1998",
+      "planItem": "②",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8311%3A1998",
+      "usedInP8": true,
+      "verified": true,
+      "note": "paper-sizes-jis-z-8311.json / 版は JSA の書誌ページで照合"
+    },
+    {
+      "id": "JIS P 0138",
+      "title": "紙加工仕上寸法",
+      "edition": "1998",
+      "planItem": "②",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+P+0138:1998",
+      "usedInP8": false,
+      "verified": true,
+      "note": "A 列は ISO 216 と同じ。B 列は日本独自(B0 = 1.5m²)。P8 は A 列だけ / 版は JSA の書誌ページで照合"
+    },
+    {
+      "id": "JIS Z 8312",
+      "title": "製図—表示の一般原則—線の基本原則",
+      "edition": "1999",
+      "planItem": "③",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8312:1999",
+      "usedInP8": true,
+      "verified": false,
+      "note": "line-widths-jis-z-8312.json / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 8313-0",
+      "title": "製図—文字—第0部：通則",
+      "edition": "1998",
+      "planItem": "④",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8313-0%3A1998",
+      "usedInP8": true,
+      "verified": false,
+      "note": "text-heights-jis-z-8313.json / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 8313-1",
+      "title": "製図—文字—第1部：ローマ字，数字及び記号",
+      "edition": "1998",
+      "planItem": "④",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8313-1%3A1998",
+      "usedInP8": false,
+      "verified": false,
+      "note": "A形・B形書体の字形 / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 8313-5",
+      "title": "製図—文字—第5部：CAD用文字，数字及び記号",
+      "edition": "2000",
+      "planItem": "④",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8313-5%3A2000",
+      "usedInP8": true,
+      "verified": false,
+      "note": "CAD 用。線の太さは h/10 が基準 / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 8314",
+      "title": "製図—尺度",
+      "edition": "1998",
+      "planItem": "⑤(尺度)",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8314%3A1998",
+      "usedInP8": true,
+      "verified": true,
+      "note": "scales-jis-z-8314.json / 版は JSA の書誌ページで照合"
+    },
+    {
+      "id": "JIS Z 8315-1",
+      "title": "製図—投影法—第1部：通則",
+      "edition": "1999",
+      "planItem": "⑤",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8315-1:1999",
+      "usedInP8": false,
+      "verified": false,
+      "note": "数値は無い / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 8315-2",
+      "title": "製図—投影法—第2部：正投影法",
+      "edition": "1999",
+      "planItem": "⑤",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8315-2:1999",
+      "usedInP8": false,
+      "verified": true,
+      "note": "第三角法・第一角法の記号はここ / 版は JSA の書誌ページで照合"
+    },
+    {
+      "id": "JIS Z 8315-3",
+      "title": "製図—投影法—第3部：軸測投影",
+      "edition": "1999",
+      "planItem": "⑤",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8315-3:1999",
+      "usedInP8": false,
+      "verified": false,
+      "note": "等角図はここ / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 8316",
+      "title": "製図—図形の表し方の原則",
+      "edition": "1999",
+      "planItem": "⑥",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8316:1999",
+      "usedInP8": true,
+      "verified": true,
+      "note": "太線:細線 = 2:1 以上。断面・部分拡大の数値は得られず / 版は JSA の書誌ページで照合"
+    },
+    {
+      "id": "JIS Z 8317-1",
+      "title": "製図—寸法及び公差の記入方法—第1部：一般原則",
+      "edition": "2008",
+      "planItem": "⑦",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8317-1:2008",
+      "usedInP8": true,
+      "verified": true,
+      "note": "dimensioning-jis-z-8317.json。矢印の大きさは附属書 A で、数値が得られなかった / 版は JSA の書誌ページで照合"
+    },
+    {
+      "id": "JIS B 0001",
+      "title": "機械製図",
+      "edition": "2019",
+      "planItem": "⑧",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0001:2019",
+      "usedInP8": true,
+      "verified": true,
+      "note": "line-types-jis-b-0001.json。一覧の出どころは 2010 年版の抜粋 / 版は独立した 2 件以上の資料で照合(JSA の書誌は未確認)"
+    },
+    {
+      "id": "JIS B 0401-1",
+      "title": "製品の幾何特性仕様(GPS)—長さに関わるサイズ公差の ISO コード方式—第1部：サイズ公差，サイズ差及びはめあいの基礎",
+      "edition": "2016",
+      "planItem": "⑨",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0401-1:2016",
+      "usedInP8": true,
+      "verified": true,
+      "note": "tolerance-grades-jis-b-0401.json / 版は独立した 2 件以上の資料で照合(JSA の書誌は未確認)"
+    },
+    {
+      "id": "JIS B 0401-2",
+      "title": "製品の幾何特性仕様(GPS)—長さに関わるサイズ公差の ISO コード方式—第2部：穴及び軸の許容差並びに基本サイズ公差クラスの表",
+      "edition": "2016",
+      "planItem": "⑨",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0401-2:2016",
+      "usedInP8": true,
+      "verified": true,
+      "note": "fits-jis-b-0401.json / 版は独立した 2 件以上の資料で照合(JSA の書誌は未確認)"
+    },
+    {
+      "id": "JIS B 0405",
+      "title": "普通公差—第1部：個々に公差の指示がない長さ寸法及び角度寸法に対する公差",
+      "edition": "1991",
+      "planItem": "⑩",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0405:1991",
+      "usedInP8": true,
+      "verified": true,
+      "note": "general-tolerances-jis-b-0405.json / 版は独立した 2 件以上の資料で照合(JSA の書誌は未確認)"
+    },
+    {
+      "id": "JIS B 0419",
+      "title": "普通公差—第2部：個々に公差の指示がない形体に対する幾何公差",
+      "edition": "1991",
+      "planItem": "⑩",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0419:1991",
+      "usedInP8": false,
+      "verified": true,
+      "note": "geometric-general-tolerances-jis-b-0419.json。P9 の範囲 / 版は独立した 2 件以上の資料で照合(JSA の書誌は未確認)"
+    },
+    {
+      "id": "JIS B 0031",
+      "title": "製品の幾何特性仕様(GPS)—表面性状の図示方法",
+      "edition": "2003",
+      "planItem": "⑪",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0031:2003",
+      "usedInP8": true,
+      "verified": true,
+      "note": "記号の字形の数値は得られなかった / 版は JSA の書誌ページで照合"
+    },
+    {
+      "id": "JIS B 0601",
+      "title": "製品の幾何特性仕様(GPS)—表面性状：輪郭曲線方式—用語，定義及び表面性状パラメータ",
+      "edition": "2013",
+      "planItem": "⑪",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0601:2013",
+      "usedInP8": true,
+      "verified": true,
+      "note": "surface-roughness-jis-b-0601.json。数列の出どころは 1994 年版 / 版は JSA の書誌ページで照合"
+    },
+    {
+      "id": "JIS B 0021",
+      "title": "製品の幾何特性仕様(GPS)—幾何公差表示方式—形状，姿勢，位置及び振れの公差表示方式",
+      "edition": "1998",
+      "planItem": "⑫",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0021:1998",
+      "usedInP8": false,
+      "verified": false,
+      "note": "**版を照合できていない。要確認。** P9 の範囲 / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 3021",
+      "title": "溶接記号",
+      "edition": "2016",
+      "planItem": "⑫",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+3021:2016",
+      "usedInP8": false,
+      "verified": false,
+      "note": "**版を照合できていない。要確認。** P9 の範囲 / **版は 1 件の資料からで、JSA の書誌で照合できていない。要確認。**"
+    },
+    {
+      "id": "JIS Z 8114",
+      "title": "製図—製図用語",
+      "edition": "1999",
+      "planItem": "追加",
+      "jsaUrl": "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8114%3A1999",
+      "usedInP8": false,
+      "verified": true,
+      "note": "名称の確認だけ。数値は無い / 版は JSA の書誌ページで照合"
+    }
+  ]
+}

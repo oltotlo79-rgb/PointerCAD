@@ -1,0 +1,46 @@
+{
+  "standard": "JIS Z 8313",
+  "edition": "1998 (第0部・第1部) / 2000 (第5部 CAD用文字)",
+  "title": "製図—文字",
+  "scope": "文字の大きさの呼び(高さ)の系列と、文字の線の太さの決め方",
+  "sourceUrls": [
+    "https://www.pref.gifu.lg.jp/uploaded/attachment/4099.PDF",
+    "https://www.nilim.go.jp/lab/bcg/siryou/tnn/tnn0403pdf/ks0403013.pdf",
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8313-0%3A1998"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "h": "文字の大きさの呼び(= 文字の高さ)",
+    "dA": "A形書体の線の太さ(h/14)",
+    "dB": "B形書体の線の太さ(h/10)"
+  },
+  "notes": [
+    "高さの系列 1.8 / 2.5 / 3.5 / 5 / 7 / 10 / 14 / 20 は、岐阜県 CAD製図基準(案)と国総研の資料の 2 件が一致した。確認済み。",
+    "線の太さの決め方(A形 = h/14、B形 = h/10。CAD用の第5部は h/10 を基準とし、必要なら h/14)も 2 件が一致した。確認済み。",
+    "各段の dA / dB の丸めた値(0.13 / 0.18 / 0.25 …)は、規格本文の転載とみられるサイトにしか無かったため、出典に採らなかった。**下の dA / dB は h/14 と h/10 を JIS Z 8312 の太さの数列に丸めた候補**であり、原典と食い違う可能性がある。全行 要確認。",
+    "漢字は 3.5mm 以上、仮名は 2.5mm 以上にするとよい(CAD製図基準の記述。1 件のみ、要確認)。"
+  ],
+  "strokeWidthRule": {
+    "typeA": "h/14",
+    "typeB": "h/10",
+    "cadDefault": "h/10 (JIS Z 8313-5。読みにくいときは h/14)",
+    "verified": true
+  },
+  "minimumHeight": {
+    "kanji": 3.5,
+    "kana": 2.5,
+    "verified": false,
+    "note": "1 件のみ。要確認。"
+  },
+  "rows": [
+    { "h": 1.8, "dA": 0.13, "dB": 0.18, "verified": false, "note": "dA/dB は丸めた候補。要確認。" },
+    { "h": 2.5, "dA": 0.18, "dB": 0.25, "verified": false, "note": "dA/dB は丸めた候補。要確認。" },
+    { "h": 3.5, "dA": 0.25, "dB": 0.35, "verified": false, "note": "dA/dB は丸めた候補。要確認。" },
+    { "h": 5, "dA": 0.35, "dB": 0.5, "verified": false, "note": "dA/dB は丸めた候補。要確認。" },
+    { "h": 7, "dA": 0.5, "dB": 0.7, "verified": false, "note": "dA/dB は丸めた候補。要確認。" },
+    { "h": 10, "dA": 0.7, "dB": 1, "verified": false, "note": "dA/dB は丸めた候補。要確認。" },
+    { "h": 14, "dA": 1, "dB": 1.4, "verified": false, "note": "dA/dB は丸めた候補。要確認。" },
+    { "h": 20, "dA": 1.4, "dB": 2, "verified": false, "note": "dA/dB は丸めた候補。要確認。" }
+  ]
+}

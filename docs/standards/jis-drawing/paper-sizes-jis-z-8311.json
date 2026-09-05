@@ -1,0 +1,81 @@
+{
+  "standard": "JIS Z 8311",
+  "edition": "1998",
+  "title": "製図—製図用紙のサイズ及び図面の様式",
+  "scope": "A列サイズ(第1類)と延長サイズ(第2類・第3類)の仕上寸法、輪郭の幅、輪郭線・中心マーク・比較目盛・格子参照の要点",
+  "sourceUrls": [
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+Z+8311%3A1998",
+    "https://manual.persc.jp/jwcad/standards/drawing-frame-spec",
+    "https://kikai-seizu.s-projects.net/style.html",
+    "https://ocf.or.jp/pdf/referencebook/2017/reference_book_04_20170613.pdf",
+    "https://mechanical-engineer48.com/post-2965/"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "name": "呼び方",
+    "class": "第1類=A列サイズ / 第2類=特別延長サイズ / 第3類=例外延長サイズ",
+    "a": "短辺(横置きのとき縦寸法)",
+    "b": "長辺",
+    "c": "とじしろを設けない側の、用紙の端から輪郭線までの最小の幅",
+    "d": "とじしろを設ける側の、用紙の端から輪郭線までの最小の幅"
+  },
+  "notes": [
+    "c は A0・A1 が 20、A2・A3・A4 が 10。独立した 2 件の公開資料が一致した。",
+    "d は資料どうしで食い違う。PERSC は「外周余白 c に加えてとじ代 20 を足す(A2 なら左余白 30)」と読み、機械製図(s-projects)は「用紙の端から 20 以上」と読む。全行 d を要確認とした。",
+    "第2類・第3類の延長サイズは OCF の SXF リファレンスブック 1 件だけから写した。要確認。",
+    "輪郭線の太さは最小 0.5mm(実線)。2 件の資料が一致した。",
+    "表題欄は図面の右下に置く。大きさは JIS Z 8311 では定めていない(様式は ISO 7200 系)ので null にした。"
+  ],
+  "sheetFormat": {
+    "frameLineType": "太い実線",
+    "frameLineWidthMin": 0.5,
+    "frameLineWidthMinVerified": true,
+    "titleBlockPosition": "右下",
+    "titleBlockPositionVerified": true,
+    "titleBlockWidth": null,
+    "titleBlockHeight": null,
+    "titleBlockNote": "大きさの規定は得られなかった。JIS Z 8311 は位置(右下)だけを定めるとみられる。",
+    "centreMarkLineWidthMin": 0.5,
+    "centreMarkCount": 4,
+    "centreMarkOvershootMax": 5,
+    "centreMarkPositionToleranceMm": 0.5,
+    "centreMarkVerified": false,
+    "comparisonScaleLengthMin": 100,
+    "comparisonScaleWidthMax": 5,
+    "comparisonScaleDivision": 10,
+    "comparisonScaleVerified": false,
+    "gridReferenceNote": "輪郭線を偶数等分し、横は左から 1,2,3…、縦は上から A,B,C…。分割数の指定は無い。",
+    "gridReferenceVerified": false,
+    "foldedSize": "210×297 (A4)",
+    "foldedSizeVerified": false
+  },
+  "rows": [
+    { "name": "A0", "class": 1, "a": 841, "b": 1189, "c": 20, "d": 20, "verified": false, "note": "a×b は確認済み。c は確認済み。d は要確認(資料が食い違う)。" },
+    { "name": "A1", "class": 1, "a": 594, "b": 841, "c": 20, "d": 20, "verified": false, "note": "a×b は確認済み。c は確認済み。d は要確認。" },
+    { "name": "A2", "class": 1, "a": 420, "b": 594, "c": 10, "d": 20, "verified": false, "note": "a×b は確認済み。c は確認済み。d は要確認。" },
+    { "name": "A3", "class": 1, "a": 297, "b": 420, "c": 10, "d": 20, "verified": false, "note": "a×b は確認済み。c は確認済み。d は要確認。" },
+    { "name": "A4", "class": 1, "a": 210, "b": 297, "c": 10, "d": 20, "verified": false, "note": "a×b は確認済み。c は確認済み。d は要確認。" },
+
+    { "name": "A3×3", "class": 2, "a": 420, "b": 891, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A3×4", "class": 2, "a": 420, "b": 1189, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A4×3", "class": 2, "a": 297, "b": 630, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A4×4", "class": 2, "a": 297, "b": 841, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A4×5", "class": 2, "a": 297, "b": 1051, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+
+    { "name": "A0×2", "class": 3, "a": 1189, "b": 1682, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A0×3", "class": 3, "a": 1189, "b": 2523, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A1×3", "class": 3, "a": 841, "b": 1783, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A1×4", "class": 3, "a": 841, "b": 2378, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A2×3", "class": 3, "a": 594, "b": 1261, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A2×4", "class": 3, "a": 594, "b": 1682, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A2×5", "class": 3, "a": 594, "b": 2102, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A3×5", "class": 3, "a": 420, "b": 1486, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A3×6", "class": 3, "a": 420, "b": 1783, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A3×7", "class": 3, "a": 420, "b": 2080, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A4×6", "class": 3, "a": 297, "b": 1261, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A4×7", "class": 3, "a": 297, "b": 1471, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A4×8", "class": 3, "a": 297, "b": 1682, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" },
+    { "name": "A4×9", "class": 3, "a": 297, "b": 1892, "c": null, "d": null, "verified": false, "note": "OCF 1 件のみ" }
+  ]
+}

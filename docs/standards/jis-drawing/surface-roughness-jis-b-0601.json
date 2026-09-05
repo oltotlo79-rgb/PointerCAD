@@ -1,0 +1,47 @@
+{
+  "standard": "JIS B 0601",
+  "edition": "2013 (現行) / 1994 (下の数列の出どころ)",
+  "title": "製品の幾何特性仕様(GPS)—表面性状：輪郭曲線方式—用語，定義及び表面性状パラメータ",
+  "scope": "算術平均粗さ Ra と 最大高さ Ry / 十点平均粗さ Rz の標準数列、カットオフ値、旧仕上げ記号との対応",
+  "sourceUrls": [
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+0601:2013",
+    "https://www.linex.co.jp/products/jis/parts13/",
+    "https://www.punch-web.net/catalog_data/P6/pdf/1166.pdf",
+    "https://eco-ksk.jp/wp-content/uploads/2024/02/c07936fe52c77892828dc86db498525b.pdf"
+  ],
+  "verified": false,
+  "unit": "μm",
+  "columns": {
+    "ra": "算術平均粗さ Ra の標準数列 (μm)",
+    "ryRzOld": "旧 JIS(1994)の 最大高さ Ry / 十点平均粗さ Rz の標準数列 (μm)",
+    "cutoff": "カットオフ値 λc (mm)",
+    "samplingLength": "基準長さ (mm)",
+    "oldFinishSymbol": "旧仕上げ記号(▽ の数)",
+    "grade": "仕上げの程度"
+  },
+  "notes": [
+    "**記号の意味が版で変わっている。** 1994 年版は Ry = 最大高さ、Rz = 十点平均粗さ。2001 年版以降(現行は 2013 年版)は **Rz = 最大高さ** で、十点平均粗さは廃止された。下の `ryRzOld` は 1994 年版の値。**統括が、実装でどちらの記号を出すかを決める。**",
+    "Ra の標準数列 0.012〜100 は、独立した 2 件(リネックス / パンチ工業)が一致した。**確認済み。**",
+    "Ry / Rz(1994)の 0.05〜200 も 2 件が一致した。400 は 1 件だけ。",
+    "**カットオフ値 λc の区切り方は 2 件の資料で食い違う。** リネックスは 0.012→0.08 / 0.025〜0.1→0.25 / 0.2〜1.6→0.8 …、パンチ工業は 0.012〜0.025→0.08 / 0.05〜0.2→0.25 / 0.4〜1.6→0.8 … と読める。**全行 cutoff を要確認とし、値は入れたが verified: false にした。**",
+    "旧仕上げ記号(▽ ▽▽ ▽▽▽ ▽▽▽▽)との対応はリネックス 1 件のみ。要確認。",
+    "表面性状の図示方法(記号の形と数値の書き方)は JIS B 0031:2003。**この調査では記号の字形の数値は得られなかった。**"
+  ],
+  "cutoffVerified": false,
+  "rows": [
+    { "ra": 0.012, "ryRzOld": 0.05, "cutoff": 0.08, "samplingLength": 0.4, "oldFinishSymbol": 4, "grade": "精密仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 0.025, "ryRzOld": 0.1, "cutoff": 0.08, "samplingLength": 0.4, "oldFinishSymbol": 4, "grade": "精密仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 0.05, "ryRzOld": 0.2, "cutoff": 0.25, "samplingLength": 1.25, "oldFinishSymbol": 4, "grade": "精密仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 0.1, "ryRzOld": 0.4, "cutoff": 0.25, "samplingLength": 1.25, "oldFinishSymbol": 4, "grade": "精密仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 0.2, "ryRzOld": 0.8, "cutoff": 0.25, "samplingLength": 1.25, "oldFinishSymbol": 4, "grade": "精密仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 0.4, "ryRzOld": 1.6, "cutoff": 0.8, "samplingLength": 4, "oldFinishSymbol": 3, "grade": "上仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 0.8, "ryRzOld": 3.2, "cutoff": 0.8, "samplingLength": 4, "oldFinishSymbol": 3, "grade": "上仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 1.6, "ryRzOld": 6.3, "cutoff": 0.8, "samplingLength": 4, "oldFinishSymbol": 3, "grade": "上仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 3.2, "ryRzOld": 12.5, "cutoff": 2.5, "samplingLength": 12.5, "oldFinishSymbol": 2, "grade": "並仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 6.3, "ryRzOld": 25, "cutoff": 2.5, "samplingLength": 12.5, "oldFinishSymbol": 2, "grade": "並仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 12.5, "ryRzOld": 50, "cutoff": 2.5, "samplingLength": 12.5, "oldFinishSymbol": 1, "grade": "荒仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 25, "ryRzOld": 100, "cutoff": 8, "samplingLength": 40, "oldFinishSymbol": 1, "grade": "荒仕上げ", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 50, "ryRzOld": 200, "cutoff": 8, "samplingLength": 40, "oldFinishSymbol": 0, "grade": "除去加工しない指示", "verified": false, "note": "Ra・Ry/Rz は確認済み。cutoff と 仕上げ記号は要確認。" },
+    { "ra": 100, "ryRzOld": 400, "cutoff": null, "samplingLength": null, "oldFinishSymbol": 0, "grade": "除去加工しない指示", "verified": false, "note": "Ra 100 は確認済み。Ry/Rz 400 は 1 件のみ。cutoff は資料に無し。" }
+  ]
+}

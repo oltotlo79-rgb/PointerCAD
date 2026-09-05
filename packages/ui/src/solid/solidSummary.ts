@@ -235,6 +235,12 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   linearPattern: 'toolbar.machining.linearPattern',
   circularPattern: 'toolbar.machining.circularPattern',
   spring: 'toolbar.solid.spring',
+  // 基本形状5種(FR-429、P5 タスク15)。道具のボタンと案内は **タスク18**。
+  sphere: 'toolbar.solid.sphere',
+  box: 'toolbar.solid.box',
+  cylinder: 'toolbar.solid.cylinder',
+  cone: 'toolbar.solid.cone',
+  torus: 'toolbar.solid.torus',
 };
 
 /** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
@@ -406,6 +412,11 @@ export function solidKindOf(feature: SolidFeature): SolidLabelKey {
   }
   if (feature.kind === 'pattern') {
     return feature.placement.kind === 'linear' ? 'linearPattern' : 'circularPattern';
+  }
+  if (feature.kind === 'primitive') {
+    // 基本形状(FR-429)はブーリアンと同じ理屈で、形ごとに別の連番・別の名前にする
+    // (「球1」「箱1」…)。木を見て何を置いたのかが分かるようにするため。
+    return feature.shape.kind;
   }
   return feature.kind;
 }
@@ -861,17 +872,35 @@ export function summarizeSolid(
         references: [springOriginReference(document, feature.origin)],
         subShapeCounts: [],
       };
+    case 'primitive':
+      /*
+        基本形状(FR-429)。寸法の欄・中心・向きをプロパティへ出すのは **タスク18** で、
+        ここはタスク15 で `SolidFeature` の union が広がったときにこの網羅 switch を
+        落とさないための最小の枝である。いまは種類と名前(base)だけを出す。
+      */
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [],
+        subShapeCounts: [],
+      };
   }
 }
 
 /**
  * 式の欄を書き戻した新しいフィーチャーを作る(元は変えない、FR-311)。
  * 妥当な式になったときだけ呼ぶ。その種類が持たない欄なら同じものを返す。
+ *
+ * `variables` はパラメータ表(FR-207)の変数表(任意引数、P4b タスク22a で追加)。
+ * ばね以外の種類は自動生成した式を持たないので使わない。
  */
 export function setSolidField(
   feature: SolidFeature,
   key: SolidFieldKey,
   value: ExpressionValue,
+  variables?: ReadonlyMap<string, number>,
 ): SolidFeature {
   switch (feature.kind) {
     case 'extrude':
@@ -891,8 +920,12 @@ export function setSolidField(
     case 'pattern':
       return setPatternField(feature, key, value);
     case 'spring':
-      return setSpringField(feature, key, value);
+      return setSpringField(feature, key, value, variables);
     case 'boolean':
+      return feature;
+    case 'primitive':
+      // 基本形状の寸法の書き戻しは **タスク18**(プロパティに欄を出すのと同じ段)。
+      // いまは欄が1つも無いので、そのまま返す。
       return feature;
   }
 }
@@ -911,9 +944,16 @@ const SPRING_DERIVED_FIELD_KEY: Readonly<Record<SpringDerived, SolidFieldKey>> =
  * 式 `source` を評価する(`solidCommands.ts` の `evaluatedExpressionValue` と同じ考え方。
  * 互いに独立した純関数のパッケージなので同じ小さな式をそれぞれに書く)。失敗しても止めず、
  * source は残して値 0 で作る(FR-504「止めずに警告する」)。
+ *
+ * `variables` はパラメータ表(FR-207)の変数表。渡さなければ空として扱う(§0.a-9 の申し送り①、
+ * P4b タスク22a。ピッチ・巻数にパラメータ名を書いても、ここへ通さないと自動生成した式
+ * `板厚*4` の `板厚` が読めず読み取り専用の全長欄だけ `= 0` になっていた)。
  */
-function evaluatedExpressionValue(source: string): ExpressionValue {
-  const result = evaluateExpression(source);
+function evaluatedExpressionValue(
+  source: string,
+  variables?: ReadonlyMap<string, number>,
+): ExpressionValue {
+  const result = evaluateExpression(source, { variables });
   return result.ok ? result.value : { source, value: 0, display: '0' };
 }
 
@@ -921,30 +961,49 @@ function evaluatedExpressionValue(source: string): ExpressionValue {
  * ばねの全長・ピッチ・巻数のうち、`derived` が指す1つを他の2つから自動生成した式で
  * 計算し直す(§0.a-0.30)。`solidCommands.ts` の `commitSpring` が使う式(タスク25b で
  * 固定済み)と同じものを、欄を書き換えた直後・求める値を切り替えた直後の書き戻しにも使う。
+ *
+ * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
  */
 function resolveSpringDerivedFields(
   derived: SpringDerived,
   length: ExpressionValue,
   pitch: ExpressionValue,
   turns: ExpressionValue,
+  variables?: ReadonlyMap<string, number>,
 ): { readonly length: ExpressionValue; readonly pitch: ExpressionValue; readonly turns: ExpressionValue } {
   switch (derived) {
     case 'length':
-      return { length: evaluatedExpressionValue(`${pitch.source}*${turns.source}`), pitch, turns };
+      return {
+        length: evaluatedExpressionValue(`${pitch.source}*${turns.source}`, variables),
+        pitch,
+        turns,
+      };
     case 'pitch':
-      return { length, pitch: evaluatedExpressionValue(`${length.source}/${turns.source}`), turns };
+      return {
+        length,
+        pitch: evaluatedExpressionValue(`${length.source}/${turns.source}`, variables),
+        turns,
+      };
     case 'turns':
-      return { length, pitch, turns: evaluatedExpressionValue(`${length.source}/${pitch.source}`) };
+      return {
+        length,
+        pitch,
+        turns: evaluatedExpressionValue(`${length.source}/${pitch.source}`, variables),
+      };
   }
 }
 
 /** derived が指す欄を計算し直した新しいばねフィーチャーを作る。 */
-function recomputeSpringDerived(feature: SpringFeature): SpringFeature {
+function recomputeSpringDerived(
+  feature: SpringFeature,
+  variables?: ReadonlyMap<string, number>,
+): SpringFeature {
   const { length, pitch, turns } = resolveSpringDerivedFields(
     feature.derived,
     feature.length,
     feature.pitch,
     feature.turns,
+    variables,
   );
   return { ...feature, length, pitch, turns };
 }
@@ -955,11 +1014,14 @@ function recomputeSpringDerived(feature: SpringFeature): SpringFeature {
  * 全長・ピッチ・巻数のどれかを書き換えたときは、derived が指す欄を計算し直して画面の数字を
  * 合わせる(NFR-UX-4。E2E「巻数を書き換えると全長が変わる」の土台)。コイル径・線径は
  * `全長 = ピッチ × 巻数` の関係に関わらないので、書き換えても他の欄は変わらない。
+ *
+ * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
  */
 function setSpringField(
   feature: SpringFeature,
   key: SolidFieldKey,
   value: ExpressionValue,
+  variables?: ReadonlyMap<string, number>,
 ): SolidFeature {
   if (key === SPRING_DERIVED_FIELD_KEY[feature.derived]) {
     return feature;
@@ -970,11 +1032,11 @@ function setSpringField(
     case 'wireDiameter':
       return { ...feature, wireDiameter: value };
     case 'springPitch':
-      return recomputeSpringDerived({ ...feature, pitch: value });
+      return recomputeSpringDerived({ ...feature, pitch: value }, variables);
     case 'springTurns':
-      return recomputeSpringDerived({ ...feature, turns: value });
+      return recomputeSpringDerived({ ...feature, turns: value }, variables);
     case 'springLength':
-      return recomputeSpringDerived({ ...feature, length: value });
+      return recomputeSpringDerived({ ...feature, length: value }, variables);
     default:
       return feature;
   }
@@ -1197,22 +1259,32 @@ function setSpringHandedness(feature: SolidFeature, handedness: SpringHandedness
 /**
  * 「求める値」を切り替える(§0.a-0.30)。切り替えた直後に、新しく derived になった欄を
  * 他の2つから計算し直して書き戻す(NFR-UX-4「切り替えた瞬間に画面の数字が合う」)。
+ *
+ * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
  */
-function setSpringDerived(feature: SolidFeature, derived: SpringDerived): SolidFeature {
+function setSpringDerived(
+  feature: SolidFeature,
+  derived: SpringDerived,
+  variables?: ReadonlyMap<string, number>,
+): SolidFeature {
   if (feature.kind !== 'spring') {
     return feature;
   }
-  return recomputeSpringDerived({ ...feature, derived });
+  return recomputeSpringDerived({ ...feature, derived }, variables);
 }
 
 /**
  * 選択肢の欄を書き戻した新しいフィーチャーを作る(元は変えない、FR-311)。
  * 妥当な値でない・その種類が持たない選択肢なら同じものを返す。
+ *
+ * `variables` はパラメータ表の変数表(任意引数、P4b タスク22a で追加)。`springDerived` の
+ * 切り替え直後の書き戻しにだけ使う。
  */
 export function setSolidChoice(
   feature: SolidFeature,
   key: SolidChoiceSummary['key'],
   value: string,
+  variables?: ReadonlyMap<string, number>,
 ): SolidFeature {
   switch (key) {
     case 'depthKind':
@@ -1242,7 +1314,7 @@ export function setSolidChoice(
       return value === 'right' || value === 'left' ? setSpringHandedness(feature, value) : feature;
     case 'springDerived':
       return value === 'length' || value === 'pitch' || value === 'turns'
-        ? setSpringDerived(feature, value)
+        ? setSpringDerived(feature, value, variables)
         : feature;
   }
 }

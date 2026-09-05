@@ -27,6 +27,7 @@ import {
   commitAddConstraint,
   commitRemoveConstraint,
   commitSetConstraintValue,
+  constraintContextFrom,
   constraintContextOf,
   constraintKindLabel,
   constraintNeedsValue,
@@ -35,6 +36,7 @@ import {
   measuredConstraintValue,
   type ConstraintContext,
 } from './constraintCommands.js';
+import { fullyConstrainedFeatureIds } from './constrainedElements.js';
 import type { EditToolReadiness } from './editCommands.js';
 import {
   constraintTargetCount,
@@ -63,6 +65,22 @@ export function constraintResolveOptions(store: Store): SketchResolveOptions {
  */
 export function constraintContextOfStore(store: Store): ConstraintContext {
   return constraintContextOf(store.sketch, constraintResolveOptions(store));
+}
+
+/**
+ * 完全に決まった要素のフィーチャー id(FR-313、利用者の決定②(2026-09-05)、タスク22b)。
+ *
+ * 判定そのものは純関数(`constrainedElements.ts`)に置き、ここは材料を集めるだけ。
+ * **解決し直さない**(いま描いている `resolvedSketch` をそのまま使う。NFR-PF-1)。
+ * 3D スケッチ・作図面が決まらないスケッチでは空になる。
+ */
+export function constrainedFeatureIdsOfStore(store: Store): ReadonlySet<string> {
+  const context = constraintContextFrom(
+    store.sketch,
+    store.resolvedSketch,
+    constraintResolveOptions(store),
+  );
+  return fullyConstrainedFeatureIds(store.sketch, context.variableSet, store.constraintDiagnosis);
 }
 
 /**

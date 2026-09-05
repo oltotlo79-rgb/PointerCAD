@@ -29,12 +29,19 @@ export const MARK_SIZE_PIXELS = 16;
 const SELECTED_SCALE = 1.6;
 
 /**
- * 記号の絵の 1 辺の画素数。**表示の大きさ(16 画素)の 2 倍**にとどめる。
+ * 記号の絵の細かさ。**表示の大きさの 2 倍**にとどめる。
  * これより細かく描くと、画面へ縮めるときの補間で線が薄まり、地の色に溶けて読めなくなる
  * (実測 2026-09-05: 64 画素で描いた `H` は明るいテーマで #0f766e が #45b5af まで
  * 薄まっていた)。高 DPI の画面でも 2 倍あれば輪郭は保てる。
  */
-const TEXTURE_SIZE_PIXELS = 32;
+const TEXTURE_SCALE = 2;
+
+/**
+ * 絵の 1 辺の画素数の上限。ずらし量(`MARK_SPREAD_PIXELS` × 重なった数)が大きいほど
+ * 四角も大きくなるので、描画側(`gl_PointSize`)の実装上の上限に近づかないよう頭を打つ。
+ * 256 は「1 か所に 14 個の印が重なる」までを描ける大きさ(16 + 2×13×9 = 250)。
+ */
+const MAX_QUAD_PIXELS = 256;
 
 /** 絵の中の文字の大きさ(1 辺に対する割合)。記号は 1 文字なので大きめに取れる。 */
 const GLYPH_RATIO = 0.78;
@@ -72,14 +79,28 @@ export function markColorField(mark: ConstraintMark, fixedSymbol: string): keyof
   return STATE_COLOR_FIELDS[mark.state];
 }
 
-/** 同じ絵を使い回すための鍵(記号 + 色)。 */
-function textureKey(symbol: string, color: number): string {
-  return `${symbol}|${color.toString(16)}`;
+/**
+ * まとめて描く単位の鍵(記号 + 色 + 強調 + ずらし量)。
+ *
+ * ずらし量(P4b タスク22b)を鍵に含めるのは、**ずらしを記号の絵の中に焼き込む**ため。
+ * `PointsMaterial` は点 1 つずつに画面上のずれを持たせられないので、四角を
+ * 「表示の大きさ + ずらし量の 2 倍」まで広げ、その中で記号を中心からずらして描く。
+ * 四角の大きさは画素で決まる(`sizeAttenuation: false`)ので、ずれも画素で正確に効く。
+ * ずらし量の種類は実際には数種類しか出ないので、描画の呼び出しはほとんど増えない。
+ */
+function batchKey(
+  symbol: string,
+  color: number,
+  selected: boolean,
+  offset: readonly [number, number],
+): string {
+  return `${symbol}|${color.toString(16)}|${selected ? 's' : 'n'}|${String(offset[0])},${String(offset[1])}`;
 }
 
-/** まとめて描く単位の鍵(記号 + 色 + 選ばれているか)。 */
-function batchKey(symbol: string, color: number, selected: boolean): string {
-  return `${textureKey(symbol, color)}|${selected ? 's' : 'n'}`;
+/** ずらし量まで含めた四角の 1 辺(画素)。中心から `offset` だけ動かしても入る大きさ。 */
+export function quadPixelsFor(markPixels: number, offset: readonly [number, number]): number {
+  const reach = Math.max(Math.abs(offset[0]), Math.abs(offset[1]));
+  return Math.min(MAX_QUAD_PIXELS, markPixels + 2 * reach);
 }
 
 /**
@@ -89,25 +110,37 @@ function batchKey(symbol: string, color: number, selected: boolean): string {
  * 絵を描けない場面(検査用の見えない画面など)では null を返し、印を出さずに済ませる
  * (`createReferenceLayer.ts` の名前の札と同じ扱い。線と点は出る)。
  */
-function createSymbolTexture(symbol: string, color: number): THREE.CanvasTexture | null {
+function createSymbolTexture(
+  symbol: string,
+  color: number,
+  markPixels: number,
+  offset: readonly [number, number],
+): THREE.CanvasTexture | null {
+  const quadPixels = quadPixelsFor(markPixels, offset);
+  const size = Math.round(quadPixels * TEXTURE_SCALE);
   const canvas = globalThis.document.createElement('canvas');
-  canvas.width = TEXTURE_SIZE_PIXELS;
-  canvas.height = TEXTURE_SIZE_PIXELS;
+  canvas.width = size;
+  canvas.height = size;
   const context = canvas.getContext('2d');
   if (context === null) {
     return null;
   }
-  context.font = `${String(Math.round(TEXTURE_SIZE_PIXELS * GLYPH_RATIO))}px sans-serif`;
+  // 記号そのものの大きさは四角の広さに依らず一定(表示 16 画素)にする。
+  const glyphPixels = markPixels * GLYPH_RATIO * TEXTURE_SCALE;
+  context.font = `${String(Math.round(glyphPixels))}px sans-serif`;
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   const fill = cssColor(color);
   context.fillStyle = fill;
   context.strokeStyle = fill;
-  context.lineWidth = TEXTURE_SIZE_PIXELS * GLYPH_STROKE_RATIO;
+  context.lineWidth = markPixels * GLYPH_STROKE_RATIO * TEXTURE_SCALE;
   context.lineJoin = 'round';
-  const centre = TEXTURE_SIZE_PIXELS / 2;
-  context.strokeText(symbol, centre, centre);
-  context.fillText(symbol, centre, centre);
+  // 四角の中心から、画面上のずらし量ぶんだけ動かして描く(y は下が正で画面と同じ向き)。
+  const centre = size / 2;
+  const x = centre + offset[0] * TEXTURE_SCALE;
+  const y = centre + offset[1] * TEXTURE_SCALE;
+  context.strokeText(symbol, x, y);
+  context.fillText(symbol, x, y);
   const texture = new THREE.CanvasTexture(canvas);
   // 記号は小さく描くので、縮小のときにぼやけないよう線形補間にし、ミップマップも作らない
   // (ミップマップの段が選ばれると、さらに薄まって読めなくなる)。
@@ -160,17 +193,27 @@ export function createConstraintLayer(fixedSymbol: string): ConstraintLayer {
   /** いまの印・強調・色で、まとめて描く単位を作り直す。 */
   function refresh(): void {
     /** 鍵 → 座標の並び。 */
-    const grouped = new Map<string, { color: number; symbol: string; selected: boolean; positions: number[] }>();
+    const grouped = new Map<
+      string,
+      {
+        color: number;
+        symbol: string;
+        selected: boolean;
+        offset: readonly [number, number];
+        positions: number[];
+      }
+    >();
     for (const mark of marks) {
       const color = colors[markColorField(mark, fixedSymbol)];
       const selected = mark.constraintId === selectedId;
-      const key = batchKey(mark.symbol, color, selected);
+      const key = batchKey(mark.symbol, color, selected, mark.offset);
       const found = grouped.get(key);
       if (found === undefined) {
         grouped.set(key, {
           color,
           symbol: mark.symbol,
           selected,
+          offset: mark.offset,
           positions: [mark.position[0], mark.position[1], mark.position[2]],
         });
         continue;
@@ -197,7 +240,8 @@ export function createConstraintLayer(fixedSymbol: string): ConstraintLayer {
         existing.points.geometry = geometry;
         continue;
       }
-      const texture = createSymbolTexture(entry.symbol, entry.color);
+      const markPixels = MARK_SIZE_PIXELS * (entry.selected ? SELECTED_SCALE : 1);
+      const texture = createSymbolTexture(entry.symbol, entry.color, markPixels, entry.offset);
       if (texture === null) {
         // 絵を描けない場面。印は出さないが、線と点はそのまま出る。
         continue;
@@ -207,7 +251,8 @@ export function createConstraintLayer(fixedSymbol: string): ConstraintLayer {
       geometry.computeBoundingSphere();
       const material = new THREE.PointsMaterial({
         map: texture,
-        size: MARK_SIZE_PIXELS * (entry.selected ? SELECTED_SCALE : 1),
+        // ずらしを絵の中に焼き込むぶん、四角そのものは広く取る(`batchKey` の注釈)。
+        size: quadPixelsFor(markPixels, entry.offset),
         // 大きさを画素で決める(定数サイズ)。寄っても引いても同じ大きさで読める。
         sizeAttenuation: false,
         transparent: true,

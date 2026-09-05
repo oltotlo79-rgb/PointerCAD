@@ -47,7 +47,9 @@ import {
   setFeatureField,
   setFeatureToggle,
   sketchTreeKindOf,
+  solvedCoordinateText,
   summarizeFeature,
+  withSolvedCoordinates,
 } from './featureSummary.js';
 
 /** 式を評価して値の組にする(π などシンボルを含む式を欄へ入れるテスト用)。 */
@@ -471,6 +473,44 @@ const GRID_POINT_ARRAY: SketchPointArrayFeature = {
     colCount: expressionValueFromNumber(2),
   },
 };
+
+describe('拘束で決まった座標(FR-313、タスク22b (g))', () => {
+  /** 線分 1 本(始点 (0,0,0)、終点 (7,0,0))のスケッチ。 */
+  function lineDocument(): SketchDocument {
+    return appendFeature(createEmptySketchDocument(), LINE);
+  }
+
+  it('拘束が動かしていなければ何も添えない', () => {
+    const document = lineDocument();
+    const resolved = resolveSketch(document);
+    expect(solvedCoordinateText(LINE, 'to', resolved, resolved)).toBeNull();
+    expect(withSolvedCoordinates(summarizeFeature(LINE), LINE, resolved, resolved)).toEqual(
+      summarizeFeature(LINE),
+    );
+  });
+
+  it('拘束で動いた欄には「= (x, y, z)(拘束で決まった値)」を添える', () => {
+    const document = lineDocument();
+    const stored = resolveSketch(document);
+    // 拘束を解いた形(水平+長さ 10 で終点が (10, 0, 0) になった状態)を上書きで作る。
+    const solved = resolveSketch(document, {
+      pointOverrides: new Map([['line-2:end', [10, 0, 0]]]),
+    });
+    expect(solvedCoordinateText(LINE, 'to', stored, solved)).toBe('= (10, 0, 0)(拘束で決まった値)');
+    // 動いていない始点には添えない。
+    expect(solvedCoordinateText(LINE, 'from', stored, solved)).toBeNull();
+
+    const summary = withSolvedCoordinates(summarizeFeature(LINE), LINE, stored, solved);
+    const to = summary.coordinates.find((coordinate) => coordinate.path === 'to');
+    expect(to?.solvedText).toBe('= (10, 0, 0)(拘束で決まった値)');
+    expect(summary.coordinates.find((coordinate) => coordinate.path === 'from')?.solvedText).toBeNull();
+  });
+
+  it('規則から作られる欄(矩形の角)には添えない', () => {
+    const resolved = resolveSketch(createEmptySketchDocument());
+    expect(solvedCoordinateText(RECTANGLE, 'corner1', resolved, resolved)).toBeNull();
+  });
+});
 
 describe('P4 の新しい図形の要約(FR-314〜318、FR-321、FR-324、FR-327)', () => {
   it('矩形は対角 2 点と構築線のつまみを持ち、見せ方の切替を出す', () => {

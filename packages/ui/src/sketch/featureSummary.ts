@@ -42,6 +42,7 @@ import {
   type SketchRectangleFeature,
   type SketchSlotFeature,
   type SketchSplineFeature,
+  type Vec3,
   type WorkPlaneId,
 } from '@pointercad/model';
 
@@ -119,6 +120,15 @@ export interface FeatureCoordinateSummary {
   readonly base: CoordinateBaseSummary | null;
   /** 消せる点(スプラインの点)なら true。 */
   readonly removable: boolean;
+  /**
+   * 拘束で決まった、いまの位置(FR-313、P4b タスク22b (g))。拘束が動かしていなければ null。
+   *
+   * 拘束で解いた座標は文書に書かない(`rules/04-設計の規律.md`「導出できるものは保存しない」)
+   * ので、上の欄には**保存された式と指定方法**しか出ない。形は動いているのに数字が変わらない
+   * と読めてしまうため、動いたときだけ「= (x, y, z)(拘束で決まった値)」を欄の下へ添える
+   * (NFR-UX-7)。編集の入口は上の欄のままで、ここは読むだけ。
+   */
+  readonly solvedText: string | null;
 }
 
 /** 入切のつまみ(構築線・閉じる)。式ではないので値は真偽。 */
@@ -442,6 +452,9 @@ function coordinateSummaryAt(
     ordinal,
     base: input.mode === 'absolute' ? null : baseSummary(input.base, options),
     removable,
+    // 拘束で動いたかは解決結果を 2 つ突き合わせないと分からないので、ここでは付けない。
+    // 呼び出し側(`PropertyPanel.tsx`)が `withSolvedCoordinates` で後から差し込む。
+    solvedText: null,
   };
 }
 
@@ -1665,6 +1678,105 @@ export interface ResolvedFieldSummary {
 /** 表示用の数の文字列。有効数字 12 桁で、指数表記にしない(§2.4)。 */
 function formatNumber(value: number): string {
   return expressionValueFromNumber(value).display;
+}
+
+/* ---------------------------------------------------------------------------
+ * 拘束で決まった座標(FR-313、P4b タスク22b (g))
+ * ------------------------------------------------------------------------- */
+
+/** 座標の欄と解決結果の点の対応。ここに無い場所(矩形の角など)は規則から作られる点。 */
+function coordinateSlotPosition(
+  feature: SketchFeature,
+  slotPath: string,
+  resolved: ResolvedSketch,
+): Vec3 | null {
+  if (feature.kind === 'point' && slotPath === 'at') {
+    return resolved.points.find((point) => point.id === feature.id)?.position ?? null;
+  }
+  if (feature.kind === 'line' && (slotPath === 'from' || slotPath === 'to')) {
+    const segment = resolved.segments.find((entry) => entry.featureId === feature.id);
+    if (segment === undefined) {
+      return null;
+    }
+    return slotPath === 'from' ? segment.from : segment.to;
+  }
+  if (feature.kind === 'arc' && slotPath === 'center') {
+    return resolved.arcs.find((entry) => entry.featureId === feature.id)?.center ?? null;
+  }
+  if (feature.kind === 'ellipse' && slotPath === 'center') {
+    return resolved.ellipses.find((entry) => entry.featureId === feature.id)?.center ?? null;
+  }
+  if (feature.kind === 'spline' && slotPath.startsWith('points.')) {
+    const index = Number(slotPath.slice('points.'.length));
+    if (!Number.isInteger(index)) {
+      return null;
+    }
+    const spline = resolved.splines.find((entry) => entry.featureId === feature.id);
+    return spline?.points[index] ?? null;
+  }
+  return null;
+}
+
+/** 拘束が動かしたと見なす最小の差(mm)。解の許容量(1e-9)より粗く、表示の桁より細かい。 */
+const SOLVED_COORDINATE_EPSILON_MM = 1e-7;
+
+/** 2 点が同じ位置か(上の許容量で)。 */
+function samePosition(a: Vec3, b: Vec3): boolean {
+  return (
+    Math.abs(a[0] - b[0]) <= SOLVED_COORDINATE_EPSILON_MM &&
+    Math.abs(a[1] - b[1]) <= SOLVED_COORDINATE_EPSILON_MM &&
+    Math.abs(a[2] - b[2]) <= SOLVED_COORDINATE_EPSILON_MM
+  );
+}
+
+/**
+ * 拘束で決まった、いまの位置の 1 文(FR-313、P4b タスク22b (g))。
+ *
+ * `stored` は**保存された式だけで解いた形**、`solved` は**拘束を解いた後の形**(いま
+ * 描いている形)。2 つが同じなら拘束は何も動かしていないので null(欄の下は今までどおり
+ * 式の評価値だけ)。動いていれば「= (x, y, z)(拘束で決まった値)」を返す。
+ *
+ * 数の書き方は読み取り専用の欄(`resolvedFields`)と同じ `formatNumber` にそろえる
+ * (同じ画面の中で桁の出方が 2 通りにならないようにする)。
+ */
+export function solvedCoordinateText(
+  feature: SketchFeature,
+  slotPath: string,
+  stored: ResolvedSketch,
+  solved: ResolvedSketch,
+): string | null {
+  const after = coordinateSlotPosition(feature, slotPath, solved);
+  if (after === null) {
+    return null;
+  }
+  const before = coordinateSlotPosition(feature, slotPath, stored);
+  if (before !== null && samePosition(before, after)) {
+    return null;
+  }
+  const listed = [after[0], after[1], after[2]].map(formatNumber).join(t('propertyPanel.solvedSeparator'));
+  return `${t('propertyPanel.solvedPrefix')}${listed}${t('propertyPanel.solvedSuffix')}`;
+}
+
+/**
+ * 座標の欄へ「拘束で決まった、いまの位置」を差し込む(FR-313、タスク22b (g))。
+ * 動いた欄が 1 つも無ければ**元の要約をそのまま返す**(無駄な描き直しを起こさない)。
+ */
+export function withSolvedCoordinates(
+  summary: FeatureSummary,
+  feature: SketchFeature,
+  stored: ResolvedSketch,
+  solved: ResolvedSketch,
+): FeatureSummary {
+  let changed = false;
+  const coordinates = summary.coordinates.map((coordinate) => {
+    const solvedText = solvedCoordinateText(feature, coordinate.path, stored, solved);
+    if (solvedText === null) {
+      return coordinate;
+    }
+    changed = true;
+    return { ...coordinate, solvedText };
+  });
+  return changed ? { ...summary, coordinates } : summary;
 }
 
 /**

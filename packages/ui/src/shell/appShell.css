@@ -143,6 +143,7 @@
   --pcad-sketch-point: #e8eaf0;
   --pcad-sketch-curve: #9aa3b2;
   --pcad-sketch-outline: #6b7380;
+  --pcad-sketch-constrained: #7ee08a;
   --pcad-emphasis-hovered: #8ec5ff;
   --pcad-emphasis-selected: #4f8cff;
   --pcad-solid: #b8bfcc;
@@ -243,6 +244,7 @@
   --pcad-sketch-point: #1b1e24;
   --pcad-sketch-curve: #4b5160;
   --pcad-sketch-outline: #767c8a;
+  --pcad-sketch-constrained: #15803d;
   --pcad-emphasis-hovered: #4a90e2;
   --pcad-emphasis-selected: #1b4fb0;
   --pcad-solid: #9ea6b4;
@@ -336,6 +338,7 @@
   --pcad-sketch-point: #eef0f6;
   --pcad-sketch-curve: #a7b0c2;
   --pcad-sketch-outline: #747d90;
+  --pcad-sketch-constrained: #8ae695;
   --pcad-emphasis-hovered: #8ec5ff;
   --pcad-emphasis-selected: #5b9dff;
   --pcad-solid: #b8bfcc;
@@ -419,6 +422,7 @@
   --pcad-sketch-point: #1c2028;
   --pcad-sketch-curve: #4d5566;
   --pcad-sketch-outline: #78808f;
+  --pcad-sketch-constrained: #15803d;
   --pcad-emphasis-hovered: #4a90e2;
   --pcad-emphasis-selected: #1b4fb0;
   --pcad-solid: #9ea6b4;
@@ -508,6 +512,7 @@
   --pcad-sketch-point: #14161a;
   --pcad-sketch-curve: #2c2f35;
   --pcad-sketch-outline: #45484f;
+  --pcad-sketch-constrained: #0b3d1f;
   --pcad-emphasis-hovered: #2f6fe0;
   --pcad-emphasis-selected: #0c2c6b;
   --pcad-solid: #d5d9e0;
@@ -1880,6 +1885,16 @@ button.pcad-tree__row:focus-visible {
 
 .pcad-coordinate__base-value {
   color: var(--pcad-text);
+}
+
+/*
+ * 拘束で決まった、いまの位置(FR-313、P4b タスク22b-(g))。上の欄には保存された式が
+ * 出ているので、それと見分けが付くように控えめな色にし、決まり具合の色を少し借りる。
+ */
+.pcad-coordinate__solved {
+  margin: 0;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-sketch-constrained);
 }
 
 /* 絶対 / 相対 / 極 の 3 つを等幅で並べる(その場入力のタブと同じ形)。 */

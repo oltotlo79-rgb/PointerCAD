@@ -24,6 +24,8 @@ import {
   subVec3,
   vertexKey,
   WORK_PLANES,
+  worldToPlane,
+  type ConstraintTarget,
   type ResolveContext,
   type ResolvedSketch,
   type SketchDocument,
@@ -34,11 +36,17 @@ import {
 } from '@pointercad/model';
 
 import { applyProjectionCommit, applySketchCommit } from '../sketch/commitToStore.js';
-import { cancelConstraintTool, pickForConstraint } from '../sketch/constraintActions.js';
+import {
+  cancelConstraintTool,
+  constraintContextOfStore,
+  constraintResolveOptions,
+  pickForConstraint,
+} from '../sketch/constraintActions.js';
 import {
   constraintMarkAt,
   constraintMarksOf,
   pickConstraintTarget,
+  vertexAt,
 } from '../sketch/constraintPicking.js';
 import {
   cornerNear,
@@ -107,6 +115,14 @@ import {
 import { useAppStore, type SnapIndicator } from '../store/useAppStore.js';
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
 import { viewDirection, type OrbitState } from './cameraMath.js';
+import {
+  commitDrag,
+  dragRefusalMessageKey,
+  dragTargetUv,
+  draggableAt,
+  isDraggable,
+  solveWithDrag,
+} from './dragSketch.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { gridSpacing } from './gridMath.js';
 
@@ -739,6 +755,15 @@ export function attachSketchInteraction(
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
 
+    if (state.sketchDrag !== null) {
+      /*
+        引っぱっている最中(FR-313、タスク14)。ホバーも当たり判定も要らない
+        (掴む相手はもう決まっている)ので、解き直しだけをコマごとに予約する。
+      */
+      scheduleDragSolve(pointer);
+      return;
+    }
+
     if (isCornerEditTool(state.activeTool)) {
       // 角の丸め・面取り(FR-323)。乗せた角に「丸めたあとの形」を薄く出すだけの道具なので、
       // 吸着も立体の当たり判定も通さない(トリム・延長と同じ扱い)。
@@ -812,8 +837,23 @@ export function attachSketchInteraction(
     }
   }
 
+  /** 離したら引っぱりを確定する(FR-313、タスク14)。掴んでいなければ何もしない。 */
+  function onPointerUp(event: PointerEvent): void {
+    if (useAppStore.getState().sketchDrag === null) {
+      return;
+    }
+    if (canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+    finishDrag();
+  }
+
   function onPointerLeave(): void {
     const state = useAppStore.getState();
+    if (state.sketchDrag !== null) {
+      // 引っぱっている最中は、ポインタを捕まえてあるので画面の外へ出ても続ける。
+      return;
+    }
     if (state.hoveredElementId !== null) {
       state.setHovered(null);
     }
@@ -903,6 +943,226 @@ export function attachSketchInteraction(
     }
     state.setSelectedConstraint(constraintId);
     return true;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * 引っぱって形を変える(FR-313、計画書タスク14)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * 引っぱっている間の作図面。**押した瞬間に 1 度だけ決めて、離すまで変えない。**
+   * 面の決め方は model(`solveSketch.ts` の `sketchWorkPlane`)と同じ 1 か所
+   * (`constraintContextOfStore`)から取るので、規約が 2 通りに割れない。
+   */
+  let dragPlane: WorkPlane | null = null;
+  /** 引っぱりの解き直しを 1 コマ 1 回にまとめる(NFR-PF-1)。0 なら予約が無い。 */
+  let dragFrameId = 0;
+  /** そのコマで最後に届いたポインタの位置。動かすたびに解かず、最後の 1 つだけ解く。 */
+  let dragPointer: readonly [number, number] | null = null;
+  /** 最後に解けた座標(離したときに文書へ書き戻すもと)。 */
+  let dragSolution: ReadonlyMap<string, Vec3> | null = null;
+  /**
+   * 掴んだ場所に重なっていた拘束の印(タスク13)。**動かさずに離したら、その印を選ぶ。**
+   *
+   * 距離拘束の印は指し先の点そのものの上に出る(`constraintSummary.ts` の `anchorsOf`)ので、
+   * 印を先に見ると端点をいつまでも掴めない。逆に掴みを先にすると印を押せない。
+   * どちらかを捨てずに済むよう、**押した時点では掴み、離した時点で「動いたか」で決める**
+   * (動いた = 引っぱり、動いていない = 印を押した)。
+   */
+  let dragMarkId: string | null = null;
+
+  /** 引っぱっている面の上での、ポインタの (u, v)。面から外れていれば null。 */
+  function dragPointerUv(pointer: readonly [number, number]): readonly [number, number] | null {
+    if (dragPlane === null) {
+      return null;
+    }
+    const world = scene.screenToPlanePoint(pointer[0], pointer[1], dragPlane);
+    return world === null ? null : worldToPlane(dragPlane, world);
+  }
+
+  /**
+   * 引っぱっている間の点の吸着(FR-107)。**案内線(向きの吸着)は出さない**
+   * (統括の決定 2026-09-05。引いている線が無いので極や延長線の起点が決まらず、
+   * 画面を賑やかにするだけになる)。
+   *
+   * **引っぱっている要素そのものから来た候補は外す。** 線分の終点を引くときに自分の始点へ
+   * 吸い付くと、長さ 0 の線分ができてしまう(P4 タスク14 の失敗と同じ壊れ方)。
+   */
+  function dragSnapAt(
+    pointer: readonly [number, number],
+    featureId: string,
+  ): SnapCandidate | null {
+    const state = useAppStore.getState();
+    if (!state.snapEnabled || dragPlane === null) {
+      return null;
+    }
+    const onPlane = scene.screenToPlanePoint(pointer[0], pointer[1], dragPlane);
+    const candidates = collectSnapCandidates(
+      state.resolvedSketch,
+      dragPlane,
+      gridSpacing(getOrbit().distance),
+      onPlane,
+    ).filter((candidate) => candidate.featureId !== featureId);
+    return chooseSnap(candidates, project, pointer, SNAP_RADIUS_PIXELS, new Set(state.snapKinds));
+  }
+
+  /** 引っぱりを片付ける。予約したコマも捨てる。 */
+  function stopDrag(keepShape: boolean): void {
+    if (dragFrameId !== 0) {
+      globalThis.cancelAnimationFrame(dragFrameId);
+      dragFrameId = 0;
+    }
+    dragPointer = null;
+    dragPlane = null;
+    dragSolution = null;
+    dragMarkId = null;
+    useAppStore.getState().endSketchDrag(keepShape);
+    clearSnapIndicators();
+  }
+
+  /**
+   * 1 コマぶんの解き直し。**文書は変えず**、解いた形を表示専用の控えへ置く
+   * (`dragResolved`)。拘束が 0 個のスケッチでは model が連立を解かずに点を置くだけなので、
+   * 拘束を使わない文書の手触りは落ちない(§2.2)。
+   */
+  function solveDragAt(pointer: readonly [number, number]): void {
+    const state = useAppStore.getState();
+    const drag = state.sketchDrag;
+    if (drag === null) {
+      return;
+    }
+    const snap = dragSnapAt(pointer, drag.featureId);
+    const pointerUv = dragPointerUv(pointer);
+    const target =
+      snap !== null && dragPlane !== null
+        ? worldToPlane(dragPlane, snap.position)
+        : pointerUv === null
+          ? null
+          : dragTargetUv(drag, pointerUv);
+    if (target === null) {
+      return;
+    }
+    // 吸い付いている先の印だけを出す(案内線は出さない)。
+    const nextIndicator: SnapIndicator | null =
+      snap === null
+        ? null
+        : { screen: project(snap.position) ?? pointer, kind: snap.kind, elementId: snap.elementId };
+    if (!sameIndicator(state.snapIndicator, nextIndicator)) {
+      state.setSnapIndicator(nextIndicator);
+    }
+    const solved = solveWithDrag(state.sketch, drag, target, constraintResolveOptions(state));
+    dragSolution = solved.solution;
+    useAppStore.getState().setDragResolved(solved.resolved);
+  }
+
+  /** 動かすたびではなく、コマごとに最後の位置だけを解く(§2.9 の落とし穴)。 */
+  function scheduleDragSolve(pointer: readonly [number, number]): void {
+    dragPointer = pointer;
+    if (dragFrameId !== 0) {
+      return;
+    }
+    dragFrameId = globalThis.requestAnimationFrame(() => {
+      dragFrameId = 0;
+      const at = dragPointer;
+      dragPointer = null;
+      if (at !== null) {
+        solveDragAt(at);
+      }
+    });
+  }
+
+  /**
+   * 押した場所の点を掴む(FR-313)。掴めたら true。
+   *
+   * 掴む相手は**端点・中心(12 画素)と点フィーチャー**で、判定は拘束の道具と同じ
+   * `constraintPicking.ts` の 1 か所を使う(同じ「点を狙う」判定を 2 つ作らない)。
+   * 引っぱれない点(式・固定・導かれる点)は掴まず、理由を帯へ出してから通常の選択へ落とす
+   * (押したのに何も起きない、を作らない。P4 タスク12 の失敗)。
+   */
+  function beginDragAt(pointer: readonly [number, number]): boolean {
+    const state = useAppStore.getState();
+    const context = constraintContextOfStore(state);
+    const vertex = vertexAt(state.resolvedSketch, project, pointer);
+    const picked = vertex === null ? pickSketchElement(state.resolvedSketch, project, pointer) : null;
+    if (vertex === null && (picked === null || picked.kind !== 'point')) {
+      // 点でも端点でもない(線の途中・面・何も無いところ)。掴まない。
+      return false;
+    }
+    if (context.variableSet === null || context.plane === null) {
+      // 3D スケッチ(作図面が無い)。理由を出して掴まない(§0.a-0.3)。
+      state.setDragRefusal(dragRefusalMessageKey('freeSketch'));
+      return false;
+    }
+    dragPlane = context.plane;
+    const grabWorld = scene.screenToPlanePoint(pointer[0], pointer[1], context.plane);
+    if (grabWorld === null) {
+      dragPlane = null;
+      return false;
+    }
+    const target: ConstraintTarget =
+      vertex !== null
+        ? { kind: 'vertex', featureId: vertex.featureId, vertex: vertex.vertex }
+        : { kind: 'point', pointId: picked?.elementId ?? '' };
+    const outcome = draggableAt(
+      state.sketch,
+      context.variableSet,
+      target,
+      worldToPlane(context.plane, grabWorld),
+    );
+    if (outcome === null) {
+      dragPlane = null;
+      return false;
+    }
+    if (!isDraggable(outcome)) {
+      dragPlane = null;
+      state.setDragRefusal(dragRefusalMessageKey(outcome.reason));
+      return false;
+    }
+    state.beginSketchDrag(outcome);
+    // 同じところに拘束の印が重なっていたら覚えておく(動かさずに離したらそちらを選ぶ)。
+    dragMarkId = constraintMarkAt(constraintMarksOf(state.constraintSummaries), project, pointer);
+    // 掴んだ要素は選択にも入れて 3D で光らせる(何を掴んだかが見えるように、NFR-UX-7)。
+    state.setSelection([outcome.featureId]);
+    state.setPickAnchor(pointer);
+    return true;
+  }
+
+  /**
+   * 離したときの確定(§0.a-0.4)。**引っぱった点の座標だけ**を書き換えて取り消し 1 段。
+   * 1 度も動かしていなければ(掴んだだけ)文書は変えない。
+   */
+  function finishDrag(): void {
+    const state = useAppStore.getState();
+    const drag = state.sketchDrag;
+    if (drag === null) {
+      return;
+    }
+    if (state.dragResolved === null) {
+      // 掴んだだけで動かしていない。押しただけで履歴が伸びないようにする。
+      const markId = dragMarkId;
+      stopDrag(false);
+      if (markId !== null) {
+        // 印の上を押して離しただけ = 印を押したということ(タスク13 の「押したら選ばれる」)。
+        useAppStore.getState().setSelectedConstraint(markId);
+      }
+      return;
+    }
+    const solution = dragSolution;
+    if (solution === null) {
+      stopDrag(false);
+      return;
+    }
+    /*
+      書き戻しは**保存されている指定方法のまま**行う(統括の決定 2026-09-05、案 A。
+      P4b タスク22b)。相対・極の基準の位置は「引っぱった後の形」(`dragResolved`)から
+      読み、角度の基準は掴んだときの作図面(`dragPlane`)を使う。
+    */
+    const next = commitDrag(state.sketch, drag, solution, state.dragResolved, dragPlane);
+    // 離した形は次の再計算が届くまで残す(元の形へ一瞬戻ってちらつかないように)。
+    stopDrag(true);
+    if (next !== state.sketch) {
+      useAppStore.getState().setSketch(next);
+    }
   }
 
   /**
@@ -1078,6 +1338,30 @@ export function attachSketchInteraction(
       return;
     }
 
+    if (
+      tool === 'select' &&
+      !event.shiftKey &&
+      !skipsSketchElements(state.selectionKind) &&
+      beginDragAt(pointer)
+    ) {
+      /*
+        点・端点・中心を掴んで引っぱる(FR-313、タスク14)。順は §0.a 追記 5 の
+        「①拘束の道具 → ②印の当たり判定 → ③従来」を守りつつ、**掴めるときだけ②より先**に
+        置く。理由: 距離拘束の印は指し先の点そのものの上に出る(`constraintSummary.ts` の
+        `anchorsOf`)ので、印を必ず先に見ると端点をいつまでも掴めない。掴んでおいて
+        **動かさずに離したら印を選ぶ**(`finishDrag`)ので、印の「押したら選ばれる」も
+        そのまま生きている。掴めなかったときは下の②へ落ちる。
+
+        Shift を押しているときは「選択に足す」操作なので掴まない。選ぶものの種類が
+        立体の面・辺・頂点のときは、そもそもスケッチ要素を拾わない(§2.3.2)。
+
+        ポインタを捕まえて、canvas の外へ出ても離すまで追い続ける。既定の動作は止めない
+        (canvas に焦点が移り、Esc が効くようにする)。
+      */
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
     if (tool === 'select' && pickConstraintMark(pointer)) {
       // 拘束の印を押した。要素の選択は変えずに、その拘束を一覧で選ぶだけにする。
       return;
@@ -1212,6 +1496,15 @@ export function attachSketchInteraction(
     const state = useAppStore.getState();
     if (event.key === 'Escape') {
       event.preventDefault();
+      if (state.sketchDrag !== null) {
+        /*
+          引っぱりの取り消し(FR-313、タスク14、NFR-UX-3)。文書は 1 度も変えていないので、
+          仮の形を捨てるだけで押す前の形へ戻る。選択も取りかけも巻き込まないよう、
+          ここで返して他の Esc の後始末はしない。
+        */
+        stopDrag(false);
+        return;
+      }
       state.setSelection([]);
       state.setPendingStart(null);
       state.closeNumericInput();
@@ -1244,6 +1537,9 @@ export function attachSketchInteraction(
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerleave', onPointerLeave);
   canvas.addEventListener('pointerdown', onPointerDown);
+  // 引っぱりの確定(FR-313、タスク14)。取り消し(pointercancel)も同じ後始末にする。
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
   canvas.addEventListener('keydown', onKeyDown);
 
   /*
@@ -1259,9 +1555,16 @@ export function attachSketchInteraction(
   return {
     detach(): void {
       unsubscribe();
+      // 引っぱっている途中で外されても、予約したコマを残さない(タスク14)。
+      if (dragFrameId !== 0) {
+        globalThis.cancelAnimationFrame(dragFrameId);
+        dragFrameId = 0;
+      }
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('keydown', onKeyDown);
     },
   };

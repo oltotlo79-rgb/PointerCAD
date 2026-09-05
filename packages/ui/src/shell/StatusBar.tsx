@@ -129,6 +129,9 @@ export function StatusBar(): React.JSX.Element {
   const constraintSummaryText = useAppStore(
     (state) => state.constraintDiagnosis?.summary ?? null,
   );
+  // 引っぱり(FR-313、P4b タスク14)。掴めなかった理由と、引っぱっている最中の案内。
+  const dragRefusalKey = useAppStore((state) => state.dragRefusalKey);
+  const dragging = useAppStore((state) => state.sketchDrag !== null);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   // 任意の作業平面(FR-328)の名前を札に出すための一覧(タスク13)。
@@ -237,6 +240,8 @@ export function StatusBar(): React.JSX.Element {
     constraintErrorMessage,
     constraintPickMessage,
     constraintSummaryText,
+    dragRefusalKey,
+    dragging,
     errorMessage,
     partErrors,
     sketchErrors,

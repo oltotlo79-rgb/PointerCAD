@@ -16,6 +16,8 @@ import {
   type KeySpline,
   type KeySubShape,
   type KeyTransform,
+  type KeyVec3,
+  type PrimitiveKeyMaterial,
   type RevolveKeyMaterial,
   type SewKeyMaterial,
   type SolidStepKeyMaterial,
@@ -176,7 +178,32 @@ function spring(overrides: Partial<Omit<SpringKeyMaterial, 'kind'>> = {}): Sprin
   };
 }
 
-/** 9種類ぶんの材料を1つずつ。順序は SolidStepKeyMaterial の union の並びに合わせる。 */
+/** 頂点の指紋の文字列(基本形状の基準点に立体の頂点を指したとき)。 */
+function vertexFingerprint(index = 0, position: KeyVec3 = [0, 0, 0]): KeySubShape {
+  return fingerprintKeyText({
+    bodyFeatureId: 'extrude-1',
+    index,
+    fingerprint: { kind: 'vertex', position },
+  });
+}
+
+/**
+ * 既定の基本形状(§0.a-0.16: 球 半径10)。基準点は原点の座標なので
+ * `originQuery` / `targetKey` は無い(頂点を指したときだけ入る)。
+ */
+function primitive(overrides: Partial<Omit<PrimitiveKeyMaterial, 'kind'>> = {}): PrimitiveKeyMaterial {
+  return {
+    kind: 'primitive',
+    origin: [0, 0, 0],
+    axis: [0, 0, 1],
+    shape: { kind: 'sphere', radius: 10 },
+    originQuery: null,
+    targetKey: null,
+    ...overrides,
+  };
+}
+
+/** 10種類ぶんの材料を1つずつ。順序は SolidStepKeyMaterial の union の並びに合わせる。 */
 const ALL_KINDS: readonly SolidStepKeyMaterial[] = [
   extrude(10),
   revolve(90),
@@ -187,6 +214,7 @@ const ALL_KINDS: readonly SolidStepKeyMaterial[] = [
   fillet(),
   chamfer(),
   spring(),
+  primitive(),
 ];
 
 describe('KEY_DECIMALS', () => {
@@ -804,7 +832,138 @@ describe('cacheKeyFor: ばねの欄', () => {
   });
 });
 
-/** 9種類の材料を index で少しずつ変えて作る(衝突検査用)。 */
+describe('基本形状(FR-429、P5 タスク15)の鍵の材料', () => {
+  it('既定の球(半径10・原点・Z 軸)の材料の文字列が固定される', () => {
+    expect(keyMaterialText(primitive())).toBe(
+      'primitive{shape=sphere(10.000000000)' +
+        ';origin=0.000000000,0.000000000,0.000000000' +
+        ';axis=0.000000000,0.000000000,1.000000000' +
+        ';originQuery=none;targetKey=none}',
+    );
+  });
+
+  it('同じ内容なら同じ鍵になる(決定性)', () => {
+    expect(cacheKeyFor(primitive())).toBe(cacheKeyFor(primitive()));
+  });
+
+  it('残りの4種の寸法の文字列も、欄の並びのまま固定される', () => {
+    const shapeTextOf = (material: PrimitiveKeyMaterial): string =>
+      keyMaterialText(material).slice('primitive{shape='.length).split(';')[0];
+    expect(
+      shapeTextOf(primitive({ shape: { kind: 'box', sizeX: 20, sizeY: 30, sizeZ: 40 } })),
+    ).toBe('box(20.000000000,30.000000000,40.000000000)');
+    expect(shapeTextOf(primitive({ shape: { kind: 'cylinder', radius: 10, height: 20 } }))).toBe(
+      'cylinder(10.000000000,20.000000000)',
+    );
+    expect(
+      shapeTextOf(
+        primitive({ shape: { kind: 'cone', bottomRadius: 10, topRadius: 0, height: 20 } }),
+      ),
+    ).toBe('cone(10.000000000,0.000000000,20.000000000)');
+    expect(
+      shapeTextOf(primitive({ shape: { kind: 'torus', majorRadius: 20, minorRadius: 5 } })),
+    ).toBe('torus(20.000000000,5.000000000)');
+  });
+
+  it('円柱の半径と高さ、トーラスの主半径と管半径を入れ替えると別の鍵になる', () => {
+    expect(
+      cacheKeyFor(primitive({ shape: { kind: 'cylinder', radius: 10, height: 20 } })),
+    ).not.toBe(cacheKeyFor(primitive({ shape: { kind: 'cylinder', radius: 20, height: 10 } })));
+    expect(
+      cacheKeyFor(primitive({ shape: { kind: 'torus', majorRadius: 20, minorRadius: 5 } })),
+    ).not.toBe(
+      cacheKeyFor(primitive({ shape: { kind: 'torus', majorRadius: 5, minorRadius: 20 } })),
+    );
+  });
+
+  it('寸法を変えると鍵が変わる', () => {
+    const base = cacheKeyFor(primitive());
+    expect(cacheKeyFor(primitive({ shape: { kind: 'sphere', radius: 10.5 } }))).not.toBe(base);
+
+    const box = primitive({ shape: { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 } });
+    const boxKey = cacheKeyFor(box);
+    expect(
+      cacheKeyFor(primitive({ shape: { kind: 'box', sizeX: 20.001, sizeY: 20, sizeZ: 20 } })),
+    ).not.toBe(boxKey);
+    // 欄の取り違えを防ぐ: 同じ3つの数でも並びが違えば別の形なので別の鍵。
+    expect(
+      cacheKeyFor(primitive({ shape: { kind: 'box', sizeX: 30, sizeY: 20, sizeZ: 40 } })),
+    ).not.toBe(
+      cacheKeyFor(primitive({ shape: { kind: 'box', sizeX: 20, sizeY: 30, sizeZ: 40 } })),
+    );
+    // 円錐の上下の半径も入れ替えれば別の形(上半径 0 は尖った円錐)。
+    expect(
+      cacheKeyFor(
+        primitive({ shape: { kind: 'cone', bottomRadius: 10, topRadius: 5, height: 20 } }),
+      ),
+    ).not.toBe(
+      cacheKeyFor(
+        primitive({ shape: { kind: 'cone', bottomRadius: 5, topRadius: 10, height: 20 } }),
+      ),
+    );
+  });
+
+  it('形の種類が5つとも互いに違う鍵になる', () => {
+    const keys = new Set(
+      [
+        primitive({ shape: { kind: 'sphere', radius: 10 } }),
+        primitive({ shape: { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 } }),
+        primitive({ shape: { kind: 'cylinder', radius: 10, height: 20 } }),
+        primitive({ shape: { kind: 'cone', bottomRadius: 10, topRadius: 0, height: 20 } }),
+        primitive({ shape: { kind: 'torus', majorRadius: 20, minorRadius: 5 } }),
+      ].map(cacheKeyFor),
+    );
+    expect(keys.size).toBe(5);
+  });
+
+  it('基準点と向きを変えると鍵が変わる', () => {
+    const base = cacheKeyFor(primitive());
+    expect(cacheKeyFor(primitive({ origin: [0, 0, 0.001] }))).not.toBe(base);
+    expect(cacheKeyFor(primitive({ axis: [1, 0, 0] }))).not.toBe(base);
+  });
+
+  it('頂点を基準にすると、指す頂点が変われば鍵が変わる(§0.a-0.18)', () => {
+    const onCoordinate = cacheKeyFor(primitive());
+    const onVertex = primitive({
+      originQuery: vertexFingerprint(0, [0, 0, 0]),
+      targetKey: TARGET_KEY,
+    });
+    // 座標で原点を指すのと、原点にある頂点を指すのは別物(選び直しの有無が違う)。
+    expect(cacheKeyFor(onVertex)).not.toBe(onCoordinate);
+    // 別の頂点(通し番号も位置も違う)を指せば別の鍵。
+    expect(
+      cacheKeyFor(
+        primitive({ originQuery: vertexFingerprint(3, [40, 30, 10]), targetKey: TARGET_KEY }),
+      ),
+    ).not.toBe(cacheKeyFor(onVertex));
+  });
+
+  it('頂点を貸した立体の鍵が変われば、基本形状の鍵も必ず変わる(鍵の連鎖、NFR-PF-3)', () => {
+    /*
+      これが `targetKey` を材料へ混ぜる理由(P5 タスク14b の申し送り)。上流の押し出しを
+      10 から 20 へ伸ばすと、頂点の位置は動くが**指紋の中身は選び直しの結果でしか変わらない**
+      ので、材料が `originQuery` だけだと鍵が同じままになり、古い位置の形がキャッシュから返る。
+    */
+    const before = primitive({
+      originQuery: vertexFingerprint(0, [0, 0, 10]),
+      targetKey: 'aaaa1111bbbb2222',
+    });
+    const after = primitive({
+      // 指紋は同じ(選び直しで同じ頂点に当たった)まま、上流の段の鍵だけが変わった場合。
+      originQuery: vertexFingerprint(0, [0, 0, 10]),
+      targetKey: 'cccc3333dddd4444',
+    });
+    expect(cacheKeyFor(after)).not.toBe(cacheKeyFor(before));
+  });
+
+  it('頂点を指していないときの none は、指紋とも鍵とも重ならない', () => {
+    // `keyOptionalText` の 'none' が指紋(vertex{…})や16進16桁の鍵と衝突しないことの確認。
+    expect(keyMaterialText(primitive())).toContain(';originQuery=none;targetKey=none}');
+    expect(vertexFingerprint()).not.toContain('none');
+  });
+});
+
+/** 10種類の材料を index で少しずつ変えて作る(衝突検査用)。 */
 function variantValue(index: number): number {
   return 1 + index * 0.001;
 }
@@ -819,11 +978,12 @@ const VARIANT_BUILDERS: readonly ((index: number) => SolidStepKeyMaterial)[] = [
   (index) => fillet({ radius: variantValue(index) }),
   (index) => chamfer({ distance1: variantValue(index) }),
   (index) => spring({ pitch: variantValue(index) }),
+  (index) => primitive({ shape: { kind: 'sphere', radius: variantValue(index) } }),
 ];
 
-describe('cacheKeyFor: 9種類が互いに衝突しない', () => {
-  it('9種類すべての鍵が長さ16の16進文字列になる', () => {
-    expect(ALL_KINDS).toHaveLength(9);
+describe('cacheKeyFor: 10種類が互いに衝突しない', () => {
+  it('10種類すべての鍵が長さ16の16進文字列になる', () => {
+    expect(ALL_KINDS).toHaveLength(10);
     for (const material of ALL_KINDS) {
       const key = cacheKeyFor(material);
       expect(key).toHaveLength(16);
@@ -831,12 +991,12 @@ describe('cacheKeyFor: 9種類が互いに衝突しない', () => {
     }
   });
 
-  it('9種類の鍵が互いに違う(種類が違えば必ず別の鍵)', () => {
+  it('10種類の鍵が互いに違う(種類が違えば必ず別の鍵)', () => {
     const keys = new Set(ALL_KINDS.map(cacheKeyFor));
     expect(keys.size).toBe(ALL_KINDS.length);
   });
 
-  it('9種類の材料を1つずつ少しずつ変えた1000通りで、鍵の重複が0件', () => {
+  it('10種類の材料を1つずつ少しずつ変えた1000通りで、鍵の重複が0件', () => {
     const keys = new Set<string>();
     for (let index = 0; index < 1000; index += 1) {
       keys.add(cacheKeyFor(VARIANT_BUILDERS[index % VARIANT_BUILDERS.length](index)));

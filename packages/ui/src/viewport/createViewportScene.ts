@@ -21,7 +21,13 @@ import {
   NO_HIGHLIGHT,
   type SketchHighlight,
 } from './buildSketchGeometry.js';
-import { buildSolidGeometry, EMPTY_SOLID_GEOMETRY } from './buildSolidGeometry.js';
+import { anyNeedsEnvironment } from '../appearance/createAppearanceMaterial.js';
+import {
+  buildSolidGeometry,
+  EMPTY_SOLID_GEOMETRY,
+  type AppearanceInput,
+} from './buildSolidGeometry.js';
+import { createEnvironmentStore, createEnvironmentTarget } from './createEnvironment.js';
 import { buildSubShapeGeometry, EMPTY_SUB_SHAPE_HIGHLIGHT } from './buildSubShapeGeometry.js';
 import {
   cameraPosition,
@@ -74,10 +80,25 @@ export interface ViewportScene {
    * 解決済みの曲線は construction を持たないので、履歴から引いた集合を外から渡す。
    */
   setConstructionIds(ids: ReadonlySet<string>): void;
+  /**
+   * 完全に決まった要素(FR-313、利用者の決定②(2026-09-05)、P4b タスク22b)の
+   * フィーチャー id を差し替える。判定は `constrainedElements.ts` が行い、ここは
+   * 受け取った集合を組み立てへ渡すだけにする(判定を 2 か所に置かない)。
+   */
+  setConstrainedFeatureIds(ids: ReadonlySet<string>): void;
   /** ホバー・選択の強調を差し替える(FR-106)。 */
   setSketchHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
   /** ソリッドの表示を差し替える(FR-105)。ボディの id はフィーチャーの id(§0.a-0.5)。 */
   setBodies(bodies: readonly SolidBody[]): void;
+  /**
+   * 外観の割り当てを差し替える(FR-1106〜1109、P5 タスク10)。文書の割り当てと、
+   * カーネルが選び直した面の対応から `createSolidLayer.ts` の `buildAppearanceInput` が
+   * 組み立てたものを渡す。`null` で「割り当て無し」(既定の外観 1 色)に戻る。
+   *
+   * **形は作り直さない。** 三角形の並びは前のまま(同一参照)で、まとまりと材質だけが
+   * 変わる(要件§4.12「外観を変えても再計算は起きず、描画だけが変わる」)。
+   */
+  setAppearance(appearance: AppearanceInput | null): void;
   /**
    * ボディのホバー・選択の強調を差し替える(FR-106)。
    * ストアの `hoveredElementId` / `selection` をそのまま渡してよい
@@ -445,13 +466,48 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let sketchHighlight: SketchHighlight = NO_HIGHLIGHT;
   /** 構築線(FR-320)として破線で引く要素の id。履歴から引いた集合を外から入れてもらう。 */
   let constructionIds: ReadonlySet<string> = new Set<string>();
+  /** 完全に決まった要素(FR-313、タスク22b)の id。これも外から入れてもらう。 */
+  let constrainedIds: ReadonlySet<string> = new Set<string>();
   let sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
 
   /** ボディの現在値。組み立て直すのは変化したときだけ(NFR-PF-1)。 */
   let bodies: readonly SolidBody[] = [];
   let hoveredBodyId: string | null = null;
   let selectedBodyIds: readonly string[] = [];
+  /** 外観の割り当て(FR-1106)。無ければ既定の外観 1 色になる。 */
+  let appearanceInput: AppearanceInput | null = null;
   let solidBundle = EMPTY_SOLID_GEOMETRY;
+
+  /**
+   * 映り込み用の環境マップ(FR-1107、§0.a-0.9)。**鏡・ガラスを 1 つでも使っているときだけ
+   * 作り、使わなくなったら捨てる**(NFR-PF-5)。レンダラを持っているのはここだけなので、
+   * 作る・捨てるの判断もここで行い、`createSolidLayer` へはできあがったものを渡す。
+   */
+  const environments = createEnvironmentStore(() => createEnvironmentTarget(renderer));
+
+  /**
+   * いまの外観で環境マップが要るかを見直す。**組み立て直したときにだけ呼ぶ**
+   * (毎コマ呼ぶと、鏡を 1 つ足すたびに焼き直すことになる)。
+   */
+  function refreshEnvironment(): void {
+    const used = solidBundle.entries.flatMap((entry) => entry.appearances);
+    if (anyNeedsEnvironment(used)) {
+      environments.ensureEnvironment(scene);
+      return;
+    }
+    environments.releaseEnvironment(scene);
+  }
+
+  /** ボディ・強調・外観のどれかが変わったときに、描画用の並びを作り直す。 */
+  function rebuildSolidBundle(): void {
+    solidBundle = buildSolidGeometry(
+      bodies,
+      hoveredBodyId,
+      selectedBodyIds,
+      appearanceInput ?? undefined,
+    );
+    refreshEnvironment();
+  }
 
   /** 部分形状(面・辺・頂点)の強調の現在値(§0.a-0.7)。 */
   let subShapeHoveredElementId: string | null = null;
@@ -483,7 +539,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     gridGroup.visible = showGrid;
 
     // 立体とスケッチは組み立て直したときだけ並びを差し替える(同じ結果なら表示の入切だけ)。
-    solidLayer.update(solidBundle, displayStyle);
+    solidLayer.update(solidBundle, displayStyle, environments.texture);
     solidLayer.updateSubShapes(subShapeBundle);
     solidLayer.updateThreadMarks(threadMarks);
     sketchLayer.update(sketchBundle, displayStyle);
@@ -527,6 +583,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
         sketchMesh,
         sketchHighlight,
         constructionIds,
+        constrainedIds,
       );
     },
 
@@ -537,6 +594,18 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
         sketchMesh,
         sketchHighlight,
         constructionIds,
+        constrainedIds,
+      );
+    },
+
+    setConstrainedFeatureIds(ids): void {
+      constrainedIds = ids;
+      sketchBundle = buildSketchGeometry(
+        resolvedSketch,
+        sketchMesh,
+        sketchHighlight,
+        constructionIds,
+        constrainedIds,
       );
     },
 
@@ -547,12 +616,13 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
         sketchMesh,
         sketchHighlight,
         constructionIds,
+        constrainedIds,
       );
     },
 
     setBodies(nextBodies): void {
       bodies = nextBodies;
-      solidBundle = buildSolidGeometry(bodies, hoveredBodyId, selectedBodyIds);
+      rebuildSolidBundle();
       // ボディの形が変わると強調する三角形・線分の座標も変わるので組み立て直す。
       subShapeBundle = buildSubShapeGeometry(bodies, subShapeHoveredElementId, subShapeSelection);
       // ねじの印もボディの一覧から導く値なので、ここで一緒に組み立て直す(§0.a-0.15)。
@@ -562,7 +632,12 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     setBodyHighlight(nextHovered, nextSelected): void {
       hoveredBodyId = nextHovered;
       selectedBodyIds = nextSelected;
-      solidBundle = buildSolidGeometry(bodies, hoveredBodyId, selectedBodyIds);
+      rebuildSolidBundle();
+    },
+
+    setAppearance(appearance): void {
+      appearanceInput = appearance;
+      rebuildSolidBundle();
     },
 
     setSubShapeHighlight(hoveredElementId, selection): void {
@@ -704,6 +779,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     },
 
     dispose(): void {
+      // 環境マップはレンダーターゲット 1 枚ぶんの資源なので、画面ごと閉じるときに捨てる。
+      environments.dispose();
       solidLayer.dispose();
       sketchLayer.dispose();
       referenceLayer.dispose();

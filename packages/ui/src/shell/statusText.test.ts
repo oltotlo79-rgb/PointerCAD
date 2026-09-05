@@ -762,3 +762,39 @@ describe('拘束の帯(FR-313、P4b タスク13)', () => {
     expect(describeStatus(quiet()).text).toBe(t('statusBar.ready'));
   });
 });
+
+describe('引っぱりの帯(FR-313、P4b タスク14)', () => {
+  it('引っぱれない理由は「引っぱれません:」の頭で赤く出す(NFR-UX-5)', () => {
+    const line = describeStatus({ ...quiet(), dragRefusalKey: 'drag.error.expression' });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.dragError')} ${t('drag.error.expression')}`);
+  });
+
+  it('引っぱれない理由は、拘束の決まり具合より先に出る(いま押した点への返事)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      dragRefusalKey: 'drag.error.fixed',
+      constraintSummaryText: 'あと 4 か所決まっていません。',
+    });
+    expect(line.text).toBe(`${t('statusBar.dragError')} ${t('drag.error.fixed')}`);
+  });
+
+  it('引っぱっている最中は「離すと決まります」を出す(NFR-UX-7)', () => {
+    const line = describeStatus({ ...quiet(), dragging: true });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe(t('statusBar.guide.dragging'));
+  });
+
+  it('引っぱっている最中の案内は、拘束の決まり具合より先に出る', () => {
+    const line = describeStatus({
+      ...quiet(),
+      dragging: true,
+      constraintSummaryText: 'すべて決まりました。',
+    });
+    expect(line.text).toBe(t('statusBar.guide.dragging'));
+  });
+
+  it('引っぱりの欄を渡さない呼び出しは今までどおり動く(欄は省略できる)', () => {
+    expect(describeStatus({ ...quiet(), dragging: false }).text).toBe(t('statusBar.ready'));
+  });
+});

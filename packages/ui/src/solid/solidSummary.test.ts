@@ -1168,6 +1168,43 @@ describe('ばねの書き戻し(FR-311、FR-202、§0.a-0.30、§0.a-0.33、計�
     expect(next.kind === 'spring' ? next.length.source : null).toBe('10*4');
   });
 
+  it(
+    'ピッチにパラメータ名を書いても variables を渡せば全長が正しく計算される' +
+      '(P4b タスク22a-(1)、板厚=3・巻数4 → 全長12)',
+    () => {
+      const variables = new Map([['板厚', 3]]);
+      const next = setSolidField(
+        SPRING,
+        'springPitch',
+        { source: '板厚', value: 0, display: '0' },
+        variables,
+      );
+      expect(next.kind === 'spring' ? next.pitch.source : null).toBe('板厚');
+      expect(next.kind === 'spring' ? next.length.source : null).toBe('板厚*4');
+      expect(next.kind === 'spring' ? next.length.value : null).toBe(12);
+    },
+  );
+
+  it('variables を渡さなければ、変数名のピッチは読めず全長は 0(止めずに警告する、FR-504)', () => {
+    const next = setSolidField(SPRING, 'springPitch', { source: '板厚', value: 0, display: '0' });
+    expect(next.kind === 'spring' ? next.length.value : null).toBe(0);
+  });
+
+  it(
+    "setSolidChoice('springDerived', 'pitch') も variables を渡せば、全長にパラメータ名があっても計算できる" +
+      '(P4b タスク22a-(1))',
+    () => {
+      const variables = new Map([['全長', 20]]);
+      const withVariable: SpringFeature = {
+        ...SPRING,
+        length: { source: '全長', value: 0, display: '0' },
+      };
+      const next = setSolidChoice(withVariable, 'springDerived', 'pitch', variables);
+      expect(next.kind === 'spring' ? next.pitch.source : null).toBe('全長/4');
+      expect(next.kind === 'spring' ? next.pitch.value : null).toBe(5);
+    },
+  );
+
   it('derived の欄(読み取り専用)への setSolidField は何も変えない', () => {
     expect(
       setSolidField(SPRING, 'springLength', { source: '99', value: 99, display: '99' }),

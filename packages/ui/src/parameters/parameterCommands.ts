@@ -30,6 +30,7 @@ import {
 import {
   addParameter,
   applyParameters,
+  collectExpressionOwners,
   collectExpressionSources,
   nextParameterName,
   removeParameter,
@@ -122,6 +123,58 @@ function referencedMessage(count: number): string {
   return `${t('parameter.error.referencedPrefix')}${String(count)}${t(
     'parameter.error.referencedSuffix',
   )}`;
+}
+
+/** 断りに並べる参照元の名前の数。これを超えたぶんは「ほか N 件」にまとめる。 */
+export const REFERENCED_NAME_LIMIT = 3;
+
+/**
+ * 削除を断る文(**参照元のフィーチャー名つき**、P4b タスク22b)。
+ *
+ * 「この名前は 押し出し1、穴1 から使われています。先にそちらを直してください。」の形にする。
+ * 件数だけでは利用者がどこを直せばよいか分からなかった(t10・t11 の申し送り、NFR-UX-5)。
+ * 名前が 3 件を超えたら「ほか N 件」でまとめる(帯の 1 行に収める)。
+ * 名前が 1 つも引けないとき(パラメータ表の中だけで参照されているとき)は件数の文へ戻す。
+ */
+export function referencedByMessage(names: readonly string[], count: number): string {
+  if (names.length === 0) {
+    return referencedMessage(count);
+  }
+  const separator = t('parameter.error.referencedSeparator');
+  const shown = names.slice(0, REFERENCED_NAME_LIMIT).join(separator);
+  const rest = names.length - REFERENCED_NAME_LIMIT;
+  const listed =
+    rest > 0
+      ? `${shown}${separator}${t('parameter.error.referencedMorePrefix')}${String(rest)}${t(
+          'parameter.error.referencedMoreSuffix',
+        )}`
+      : shown;
+  return `${t('parameter.error.referencedByPrefix')}${listed}${t(
+    'parameter.error.referencedBySuffix',
+  )}`;
+}
+
+/**
+ * その名前を式で使っているフィーチャーの表示名(重複を除き、文書の並びのまま)。
+ *
+ * 数え方(`parameterUsageCounts`)と同じ材料を使うが、あちらは「何か所で使われているか」を
+ * 名前ごとにまとめて数えるのが役目で、こちらは「どこから使われているか」を並べる。
+ * パラメータ表の中の参照は名前を持たない(表の行そのもの)ので、ここには入れない。
+ */
+export function referencingFeatureNames(
+  document: PartDocument,
+  name: string,
+): readonly string[] {
+  const names: string[] = [];
+  for (const owner of collectExpressionOwners(document)) {
+    if (names.includes(owner.ownerName)) {
+      continue;
+    }
+    if (collectVariableNames(owner.source).includes(name)) {
+      names.push(owner.ownerName);
+    }
+  }
+  return names;
 }
 
 function hasName(parameters: readonly Parameter[], name: string): boolean {
@@ -224,7 +277,13 @@ export function commitRemoveParameter(document: PartDocument, name: string): Par
   }
   const total = parameterUsageCounts(document).get(name) ?? 0;
   if (total > 0) {
-    return { ok: false, reason: 'referenced', message: referencedMessage(total) };
+    // どこから使われているかを名前で言う(P4b タスク22b)。名前を引けない参照
+    // (パラメータ表の中だけ)のときは件数の文へ戻る。
+    return {
+      ok: false,
+      reason: 'referenced',
+      message: referencedByMessage(referencingFeatureNames(document, name), total),
+    };
   }
   return applied({ ...document, parameters: removeParameter(document.parameters, name) });
 }

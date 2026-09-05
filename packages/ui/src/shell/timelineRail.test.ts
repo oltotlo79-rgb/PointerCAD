@@ -21,8 +21,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildTimelineStops,
+  consumedIdsUpToTimeline,
   historyGrew,
   historySize,
+  isFeatureAheadOfTimeline,
   isTimelineAtEnd,
   resolveTimelineIndex,
   timelineIndexForClick,
@@ -232,6 +234,29 @@ describe('タイムラインのつまみ(FR-507、FR-506)', () => {
     expect(timelineStopTooltipKey('ahead', false)).toBe('timeline.stopTooltip');
     expect(timelineStopTooltipKey('current', false)).toBe('timeline.stopCurrent');
     expect(timelineStopTooltipKey('current', true)).toBe('timeline.stopEnd');
+  });
+
+  it('つまみより前の段だけで消費関係を導く(統合済みの札、P4b タスク22a-(3))', () => {
+    const part = fixture();
+    // 末尾(すべて作られている): 穴1 が押し出し1 を、R面取り1 が穴1 を消費する。
+    expect(consumedIdsUpToTimeline(part, null)).toEqual(new Set(['extrude-1', 'hole-1']));
+    // 押し出し1 まで戻すと、穴1 がまだ無いので何も消費されていない。
+    expect(consumedIdsUpToTimeline(part, 1)).toEqual(new Set());
+    // 穴1 まで戻すと、押し出し1 だけが消費されている(R面取り1 はまだ無い)。
+    expect(consumedIdsUpToTimeline(part, 2)).toEqual(new Set(['extrude-1']));
+  });
+
+  it('つまみより後ろの段は「まだ作られていない」(プロパティの言い回し、P4b タスク22a-(2))', () => {
+    const part = fixture();
+    // 押し出し1 まで戻すと、穴1・R面取り1 は後ろ。押し出し1 自身と基準面は後ろではない。
+    expect(isFeatureAheadOfTimeline(part, 1, 'hole-1')).toBe(true);
+    expect(isFeatureAheadOfTimeline(part, 1, 'fillet-1')).toBe(true);
+    expect(isFeatureAheadOfTimeline(part, 1, 'extrude-1')).toBe(false);
+    expect(isFeatureAheadOfTimeline(part, 1, 'referencePlane-1')).toBe(false);
+    // 末尾(null)なら後ろの段は無い。
+    expect(isFeatureAheadOfTimeline(part, null, 'extrude-2')).toBe(false);
+    // 帯に無い id(スケッチの要素など)は後ろとはみなさない。
+    expect(isFeatureAheadOfTimeline(part, 0, 'point-1')).toBe(false);
   });
 
   it('履歴が伸びたかどうかを、基準ジオメトリと立体の両方で見る', () => {

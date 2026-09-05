@@ -10,6 +10,7 @@ import {
   nextFeatureId,
   nextFeatureName,
 } from '../sketch/createSketchDocument.js';
+import type { AxisSpec } from '../geometry/planeSpec.js';
 import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
 import type { SketchDocument, SketchFaceFeature, SketchLineFeature } from '../sketch/types.js';
 import { DEFAULT_THREAD_DESIGNATION, threadMinorDiameter } from '../thread/metricThread.js';
@@ -20,20 +21,33 @@ import {
   consumedBodyIds,
   consumedTargetsOf,
   createEmptyPartDocument,
+  createPrimitiveFeature,
   createSketchFor,
+  DEFAULT_BOX_SIZE_MM,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
   DEFAULT_CHAMFER_DISTANCE_MM,
   DEFAULT_CIRCULAR_PATTERN_COUNT,
+  DEFAULT_CONE_BOTTOM_RADIUS_MM,
+  DEFAULT_CONE_HEIGHT_MM,
+  DEFAULT_CONE_TOP_RADIUS_MM,
+  DEFAULT_CYLINDER_HEIGHT_MM,
+  DEFAULT_CYLINDER_RADIUS_MM,
   DEFAULT_FILLET_RADIUS_MM,
   DEFAULT_HOLE_DEPTH_MM,
   DEFAULT_HOLE_DIAMETER_MM,
   DEFAULT_PATTERN_COUNT,
   DEFAULT_PATTERN_SPACING_MM,
+  DEFAULT_PRIMITIVE_AXIS,
   DEFAULT_SEW_TOLERANCE_MM,
+  DEFAULT_SPHERE_RADIUS_MM,
   DEFAULT_SPRING_COIL_DIAMETER_MM,
   DEFAULT_SPRING_PITCH_MM,
   DEFAULT_SPRING_TURNS,
   DEFAULT_SPRING_WIRE_DIAMETER_MM,
+  DEFAULT_TORUS_MAJOR_RADIUS_MM,
+  DEFAULT_TORUS_MINOR_RADIUS_MM,
+  defaultPrimitiveOrigin,
+  defaultPrimitiveShape,
   findReference,
   findSketch,
   findSolid,
@@ -68,6 +82,7 @@ import type {
   HoleFeature,
   PartDocument,
   PatternFeature,
+  PrimitiveShapeKind,
   ReferenceFeature,
   RevolveFeature,
   SewFeature,
@@ -75,6 +90,8 @@ import type {
   SketchLineRef,
   SketchPointRef,
   SolidFeature,
+  SolidFeatureKind,
+  SolidOrigin,
   SpringFeature,
   SubShapeRef,
   ThreadHoleFeature,
@@ -563,6 +580,11 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       linearPattern: '直線パターン',
       circularPattern: '円形パターン',
       spring: 'ばね',
+      sphere: '球',
+      box: '箱',
+      cylinder: '円柱',
+      cone: '円錐',
+      torus: 'トーラス',
     });
     expect(findSolid(document, 'subtract-1')?.name).toBe('差1');
     expect(nextSolidName(document, 'subtract')).toBe('差2');
@@ -672,11 +694,14 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('種類ごとの既定名は13個(既存6 + 加工6 + ばね1)', () => {
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(13);
+  it('種類ごとの既定名は18個(既存6 + 加工6 + ばね1 + 基本形状5)', () => {
+    // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になった。
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(18);
     expect(SOLID_LABELS.hole).toBe('穴');
     expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
     expect(SOLID_LABELS.spring).toBe('ばね');
+    expect(SOLID_LABELS.sphere).toBe('球');
+    expect(SOLID_LABELS.torus).toBe('トーラス');
   });
 
   it('穴は同じ種類の最大連番+1で数え、1つ消しても番号は戻らない', () => {
@@ -1116,5 +1141,202 @@ describe('複数のスケッチ(P4 仕上げ (g)、FR-501、FR-503)', () => {
     const removed = removeSketch(two, 'sketch-2');
     expect(removed.activeSketchId).toBe('sketch-1');
     expect(removed.sketches).toHaveLength(1);
+  });
+});
+
+describe('基本形状(FR-429、P5 タスク15)', () => {
+  /** 5種すべてを1つずつ。並びは `PrimitiveShapeKind` の union と同じ。 */
+  const ALL_SHAPE_KINDS: readonly PrimitiveShapeKind[] = [
+    'sphere',
+    'box',
+    'cylinder',
+    'cone',
+    'torus',
+  ];
+
+  it('5種の既定の寸法が計画書 §2.7.1 の表と一致する', () => {
+    expect(defaultPrimitiveShape('sphere')).toEqual({
+      kind: 'sphere',
+      radius: expr(String(DEFAULT_SPHERE_RADIUS_MM)),
+    });
+    expect(defaultPrimitiveShape('box')).toEqual({
+      kind: 'box',
+      sizeX: expr(String(DEFAULT_BOX_SIZE_MM)),
+      sizeY: expr(String(DEFAULT_BOX_SIZE_MM)),
+      sizeZ: expr(String(DEFAULT_BOX_SIZE_MM)),
+    });
+    expect(defaultPrimitiveShape('cylinder')).toEqual({
+      kind: 'cylinder',
+      radius: expr(String(DEFAULT_CYLINDER_RADIUS_MM)),
+      height: expr(String(DEFAULT_CYLINDER_HEIGHT_MM)),
+    });
+    expect(defaultPrimitiveShape('cone')).toEqual({
+      kind: 'cone',
+      bottomRadius: expr(String(DEFAULT_CONE_BOTTOM_RADIUS_MM)),
+      topRadius: expr(String(DEFAULT_CONE_TOP_RADIUS_MM)),
+      height: expr(String(DEFAULT_CONE_HEIGHT_MM)),
+    });
+    expect(defaultPrimitiveShape('torus')).toEqual({
+      kind: 'torus',
+      majorRadius: expr(String(DEFAULT_TORUS_MAJOR_RADIUS_MM)),
+      minorRadius: expr(String(DEFAULT_TORUS_MINOR_RADIUS_MM)),
+    });
+  });
+
+  it('既定の数は 球10 / 箱20 / 円柱10・20 / 円錐10・0・20 / トーラス20・5(§0.a-0.16)', () => {
+    expect([
+      DEFAULT_SPHERE_RADIUS_MM,
+      DEFAULT_BOX_SIZE_MM,
+      DEFAULT_CYLINDER_RADIUS_MM,
+      DEFAULT_CYLINDER_HEIGHT_MM,
+      DEFAULT_CONE_BOTTOM_RADIUS_MM,
+      DEFAULT_CONE_TOP_RADIUS_MM,
+      DEFAULT_CONE_HEIGHT_MM,
+      DEFAULT_TORUS_MAJOR_RADIUS_MM,
+      DEFAULT_TORUS_MINOR_RADIUS_MM,
+    ]).toEqual([10, 20, 10, 20, 10, 0, 20, 20, 5]);
+    // 管の半径は主半径より小さい(同じ以上だと自己交差してカーネルが断る)。
+    expect(DEFAULT_TORUS_MINOR_RADIUS_MM).toBeLessThan(DEFAULT_TORUS_MAJOR_RADIUS_MM);
+  });
+
+  it('何も選ばずに置くと、原点の絶対座標と Z 軸になる(NFR-UX-4)', () => {
+    const origin = defaultPrimitiveOrigin();
+    expect(origin.kind).toBe('coordinate');
+    if (origin.kind !== 'coordinate') {
+      throw new Error('テストの前提が壊れている: 既定の基準点は座標の式');
+    }
+    expect(origin.value.mode).toBe('absolute');
+    const sphere = createPrimitiveFeature(createEmptyPartDocument(), 'sphere');
+    expect(sphere.axis).toEqual(DEFAULT_PRIMITIVE_AXIS);
+    expect(sphere.axis).toEqual({ kind: 'world', axis: 'z' });
+  });
+
+  it('id と名前は形ごとの連番になる(「球1」「箱1」…、§0.a-0.19)', () => {
+    const base = createEmptyPartDocument();
+    const sphere = createPrimitiveFeature(base, 'sphere');
+    expect(sphere.id).toBe('sphere-1');
+    expect(sphere.name).toBe('球1');
+
+    const withSphere = appendSolid(base, sphere);
+    // 別の形は別の連番。同じ形は続きの番号。
+    expect(createPrimitiveFeature(withSphere, 'box').id).toBe('box-1');
+    expect(createPrimitiveFeature(withSphere, 'box').name).toBe('箱1');
+    expect(createPrimitiveFeature(withSphere, 'sphere').id).toBe('sphere-2');
+    expect(createPrimitiveFeature(withSphere, 'sphere').name).toBe('球2');
+  });
+
+  it('5種とも kind は primitive で、何も消費せず、加工でもパターンのもとでもない', () => {
+    let document = createEmptyPartDocument();
+    for (const kind of ALL_SHAPE_KINDS) {
+      const feature = createPrimitiveFeature(document, kind);
+      expect(feature.kind).toBe('primitive');
+      expect(feature.shape.kind).toBe(kind);
+      expect(consumedTargetsOf(feature)).toEqual([]);
+      expect(isMachiningFeature(feature)).toBe(false);
+      expect(isPatternSource(feature)).toBe(false);
+      document = appendSolid(document, feature);
+    }
+    expect(document.solids).toHaveLength(5);
+    expect(liveBodyIds(document)).toEqual(['sphere-1', 'box-1', 'cylinder-1', 'cone-1', 'torus-1']);
+  });
+
+  it('基準点がスケッチの点でも立体の頂点でも、何も消費しない(§0.a-0.19)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const document = appendSolid(withFace, extrude);
+
+    const vertexRef: SubShapeRef = {
+      bodyFeatureId: extrude.id,
+      index: 0,
+      fingerprint: { kind: 'vertex', position: [0, 0, 0] },
+    };
+    const onVertex = createPrimitiveFeature(document, 'sphere', {
+      kind: 'vertex',
+      ref: vertexRef,
+    });
+    const onPoint = createPrimitiveFeature(document, 'box', {
+      kind: 'sketchPoint',
+      ref: { sketchId: document.activeSketchId, pointFeatureId: 'point-1' },
+    });
+    expect(consumedTargetsOf(onVertex)).toEqual([]);
+    expect(consumedTargetsOf(onPoint)).toEqual([]);
+
+    // 頂点を貸した押し出しは消費されないので、両方が画面に残る(結果は2ボディ)。
+    const both = appendSolid(appendSolid(document, onVertex), onPoint);
+    expect([...consumedBodyIds(both)]).toEqual([]);
+    expect(liveBodyIds(both)).toEqual([extrude.id, onVertex.id, onPoint.id]);
+  });
+
+  it('抑制した基本形状はボディを作らない(FR-503)', () => {
+    const base = createEmptyPartDocument();
+    const sphere = createPrimitiveFeature(base, 'sphere');
+    const document = appendSolid(base, { ...sphere, suppressed: true });
+    expect(liveBodyIds(document)).toEqual([]);
+  });
+});
+
+describe('基本形状を足したあとの立体フィーチャーの種類(FR-501)', () => {
+  it('種類は11種になり、数え漏れは型検査で落ちる', () => {
+    /*
+      `Record<SolidFeatureKind, true>` にしておくと、種類を足したのにこの表を直し忘れた
+      ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
+      数は P2 の4種 + P3 の加工5種・ばね + P5 の基本形状1種 = 11。
+    */
+    const kinds: Readonly<Record<SolidFeatureKind, true>> = {
+      extrude: true,
+      revolve: true,
+      sew: true,
+      boolean: true,
+      hole: true,
+      threadHole: true,
+      fillet: true,
+      chamfer: true,
+      pattern: true,
+      spring: true,
+      primitive: true,
+    };
+    expect(Object.keys(kinds)).toHaveLength(11);
+  });
+
+  it('基本形状に基準点と向きを渡すと、そのまま入る', () => {
+    const document = createEmptyPartDocument();
+    const origin: SolidOrigin = {
+      kind: 'coordinate',
+      value: absoluteCoordinate(5, 10, 15),
+    };
+    const axis: AxisSpec = { kind: 'world', axis: 'x' };
+    const cylinder = createPrimitiveFeature(document, 'cylinder', origin, axis);
+    expect(cylinder.origin).toEqual(origin);
+    expect(cylinder.axis).toEqual(axis);
+    expect(cylinder.shape).toEqual(defaultPrimitiveShape('cylinder'));
+  });
+
+  it('基本形状も履歴の足す・差し替える・取り除くがそのまま効く(FR-503)', () => {
+    const base = createEmptyPartDocument();
+    const torus = createPrimitiveFeature(base, 'torus');
+    const added = appendSolid(base, torus);
+    expect(findSolid(added, 'torus-1')?.name).toBe('トーラス1');
+
+    // 同じ id を2度足しても増えない(id はボディの識別子、§0.a-0.5)。
+    expect(appendSolid(added, torus)).toBe(added);
+
+    const renamed = replaceSolid(added, torus.id, { ...torus, name: '外周のトーラス' });
+    expect(findSolid(renamed, 'torus-1')?.name).toBe('外周のトーラス');
+
+    expect(removeSolid(renamed, 'torus-1').solids).toHaveLength(0);
+  });
+
+  it('基本形状はブーリアンの対象になり、消費されると画面から消える(§0.a-0.19)', () => {
+    const base = createEmptyPartDocument();
+    const sphere = createPrimitiveFeature(base, 'sphere');
+    const withSphere = appendSolid(base, sphere);
+    const box = createPrimitiveFeature(withSphere, 'box');
+    const withBox = appendSolid(withSphere, box);
+    const subtract = buildBoolean(withBox, 'subtract', sphere.id, box.id);
+    const document = appendSolid(withBox, subtract);
+
+    expect(consumedTargetsOf(subtract)).toEqual([sphere.id, box.id]);
+    expect([...consumedBodyIds(document)]).toEqual([sphere.id, box.id]);
+    expect(liveBodyIds(document)).toEqual([subtract.id]);
   });
 });

@@ -238,6 +238,41 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     }
   });
 
+  it('完全に決まった要素の色(FR-313)は 5 テーマとも地と 3:1 以上で、既定色と別の色(タスク22b)', () => {
+    for (const [theme, selector] of THEME_SELECTORS) {
+      const block = blockOf(selector);
+      const constrained = parseCssColor(tokenValue(block, '--pcad-sketch-constrained'));
+      expect(constrained, `${theme} の --pcad-sketch-constrained`).not.toBeNull();
+      if (constrained === null) {
+        continue;
+      }
+      // ビューポートの地は上下のグラデーションなので、両端に対して 3:1 以上を求める。
+      for (const groundToken of ['--pcad-viewport-top', '--pcad-viewport-bottom']) {
+        const ground = parseCssColor(tokenValue(block, groundToken));
+        expect(ground, `${theme} の ${groundToken}`).not.toBeNull();
+        if (ground === null) {
+          continue;
+        }
+        expect(
+          contrastRatio(constrained, ground),
+          `${theme} の --pcad-sketch-constrained / ${groundToken}`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+      // 未決定の要素(既定色)と、選択・ホバーの青とは必ず見分けが付く色にする。
+      for (const otherToken of [
+        '--pcad-sketch-curve',
+        '--pcad-sketch-point',
+        '--pcad-emphasis-hovered',
+        '--pcad-emphasis-selected',
+      ]) {
+        expect(
+          parseCssColor(tokenValue(block, otherToken)),
+          `${theme} の ${otherToken} と同じ色になっていない`,
+        ).not.toBe(constrained);
+      }
+    }
+  });
+
   it('拡大率の倍率はルート要素だけが持つ(見本カードの中で等倍へ戻らない)', () => {
     // `:root { --pcad-scale: 1; }` は単独の塊で、テーマの塊には入っていない。
     for (const [theme, selector] of THEME_SELECTORS) {

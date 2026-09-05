@@ -11,8 +11,11 @@
 
 import {
   absoluteCoordinate,
+  appearanceFromPreset,
+  appearanceOf,
   appendFeature,
   appendSolid,
+  assignBodyAppearance,
   createEmptyPartDocument,
   createEmptySketchDocument,
   createPointFeature,
@@ -23,6 +26,7 @@ import {
   sketchConstraints,
   resolveSketch,
   WORK_PLANES,
+  type AppearanceMatchEntry,
   type ExtrudeFeature,
   type HoleFeature,
   type PartDocument,
@@ -1806,5 +1810,278 @@ describe('拘束の控えと後始末(FR-313、P4b タスク13)', () => {
     expect(useAppStore.getState().constraintErrorMessage).not.toBeNull();
     useAppStore.getState().applyDocument(partWithPoint());
     expect(useAppStore.getState().constraintErrorMessage).toBeNull();
+  });
+});
+
+describe('引っぱりの一時状態(FR-313、P4b タスク14)', () => {
+  /** 引っぱっている点の見立て。中身は `dragSketch.ts` の検査が押さえている。 */
+  const drag = {
+    pointKey: 'line-1:end',
+    featureId: 'line-1',
+    field: 'to',
+    index: null,
+    startUv: [10, 0],
+    grabUv: [10, 0],
+  } as const;
+
+  it('掴んだだけでは形を変えない(押しただけで動かない)', () => {
+    useAppStore.getState().beginSketchDrag(drag);
+    expect(useAppStore.getState().sketchDrag).toEqual(drag);
+    expect(useAppStore.getState().dragResolved).toBeNull();
+  });
+
+  it('掴んだら前の断りは消える(押し直したら理由も出し直す)', () => {
+    useAppStore.getState().setDragRefusal('drag.error.fixed');
+    useAppStore.getState().beginSketchDrag(drag);
+    expect(useAppStore.getState().dragRefusalKey).toBeNull();
+  });
+
+  it('Esc(取り消し)は仮の形ごと捨てる', () => {
+    const sketch = documentWithPoint();
+    useAppStore.getState().beginSketchDrag(drag);
+    useAppStore.getState().setDragResolved(resolveSketch(sketch));
+    useAppStore.getState().endSketchDrag(false);
+    expect(useAppStore.getState().sketchDrag).toBeNull();
+    expect(useAppStore.getState().dragResolved).toBeNull();
+  });
+
+  it('離したときの形は次の計算まで残す(元の形へ戻ってちらつかない)', () => {
+    const sketch = documentWithPoint();
+    useAppStore.getState().beginSketchDrag(drag);
+    useAppStore.getState().setDragResolved(resolveSketch(sketch));
+    useAppStore.getState().endSketchDrag(true);
+    expect(useAppStore.getState().sketchDrag).toBeNull();
+    expect(useAppStore.getState().dragResolved).not.toBeNull();
+  });
+
+  it('計算した形が届いたら仮の形は用済み(applySketch)', () => {
+    const sketch = documentWithPoint();
+    useAppStore.getState().setDragResolved(resolveSketch(sketch));
+    useAppStore.getState().applySketch(sketch, sketchResultFor(sketch));
+    expect(useAppStore.getState().dragResolved).toBeNull();
+  });
+
+  it('部品まるごとの計算が届いても仮の形は用済み(applyRecompute)', () => {
+    const part = partWithPoint();
+    useAppStore.getState().setDragResolved(resolveSketch(documentWithPoint()));
+    useAppStore.getState().applyRecompute(part, resultFor(part));
+    expect(useAppStore.getState().dragResolved).toBeNull();
+  });
+
+  it('文書が変われば引っぱれなかった理由は用済み(FR-504)', () => {
+    useAppStore.getState().setDragRefusal('drag.error.derived');
+    expect(useAppStore.getState().dragRefusalKey).not.toBeNull();
+    useAppStore.getState().applyDocument(partWithPoint());
+    expect(useAppStore.getState().dragRefusalKey).toBeNull();
+  });
+});
+
+/**
+ * 作図面が消えた文書に留まらない(統括の指示、2026-09-05。P4b タスク22a-(5))。
+ *
+ * 再現した不具合: 3 点の作業平面を作って作図面をその参照面に切り替えた後「新規」を
+ * 押すと、空の新文書は `references` が空なのに `workPlaneId` が古い参照面の id の
+ * まま残り、以後の矩形・線分が存在しない作図面を指して作られる(面が張れず
+ * 「作図面が見つかりません」)。`documentPatch`(`resetDocument` / `applyDocument` の
+ * 開く・復元の枝 / `undo` / `redo` が共通で通る)で、`workPlaneId` がその文書の
+ * `references` に無ければ既定の XY へ戻すことで直した。
+ */
+describe('作図面が消えた文書に留まらない(P4b タスク22a-(5))', () => {
+  /** 基準の3面のオフセット 0(= XY そのもの)を作業平面にした、いちばん単純な参照面。 */
+  function documentWithReferencePlane(): PartDocument {
+    return {
+      ...createEmptyPartDocument(),
+      references: [
+        {
+          id: 'referencePlane-1',
+          name: '作業平面1',
+          visible: true,
+          kind: 'referencePlane',
+          plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(0) },
+        },
+      ],
+    };
+  }
+
+  it('作業平面へ切り替え → 新規 → workPlaneId が xy へ戻る(修正前は referencePlane-1 のまま残った)', () => {
+    useAppStore.getState().applyDocument(documentWithReferencePlane(), { replacesDocument: true });
+    useAppStore.getState().setWorkPlane('referencePlane-1');
+    expect(useAppStore.getState().workPlaneId).toBe('referencePlane-1');
+
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    expect(useAppStore.getState().workPlaneId).toBe('xy');
+  });
+
+  it('作業平面を持つ文書を開く → その id を保つ', () => {
+    useAppStore.getState().applyDocument(documentWithReferencePlane(), { replacesDocument: true });
+    useAppStore.getState().setWorkPlane('referencePlane-1');
+
+    // 開き直した先の文書にも同じ id の作業平面があれば、そのまま使う。
+    useAppStore.getState().applyDocument(documentWithReferencePlane(), { replacesDocument: true });
+    expect(useAppStore.getState().workPlaneId).toBe('referencePlane-1');
+  });
+
+  it('作業平面を持たない文書を開く → xy へ戻る', () => {
+    useAppStore.getState().applyDocument(documentWithReferencePlane(), { replacesDocument: true });
+    useAppStore.getState().setWorkPlane('referencePlane-1');
+
+    useAppStore.getState().applyDocument(createEmptyPartDocument(), { replacesDocument: true });
+    expect(useAppStore.getState().workPlaneId).toBe('xy');
+  });
+});
+
+/*
+ * 外観だけの変更で再計算を起こさない経路(P5 タスク10、要件§4.12、FR-1106〜1110)。
+ * 「色を変えるとカーネルが 100 フィーチャーぶん走り直す」ことを防ぐ、P5 で最も効く配線。
+ */
+describe('外観の変更(FR-1106、要件§4.12)', () => {
+  const steel = appearanceFromPreset('steel');
+
+  it('外観だけを変えても再計算を投げず、計算中の札も立てない', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle(resultFor(fake.calls[0].document));
+    await tick();
+    expect(fake.calls).toHaveLength(1);
+
+    const painted = assignBodyAppearance(useAppStore.getState().document, 'extrude-1', steel);
+    useAppStore.getState().applyDocument(painted);
+
+    // 文書は変わっている(割り当てが 1 つ増えた)が、形は変わっていない。
+    expect(appearanceOf(useAppStore.getState().document).entries).toHaveLength(1);
+    expect(fake.calls).toHaveLength(1);
+    expect(useAppStore.getState().isComputing).toBe(false);
+    detach();
+  });
+
+  it('形が変わる変更では、これまでどおり 1 回だけ投げる', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle(resultFor(fake.calls[0].document));
+    await tick();
+
+    useAppStore.getState().setSketch(documentWithPoint());
+    expect(fake.calls).toHaveLength(2);
+    expect(useAppStore.getState().isComputing).toBe(true);
+    detach();
+  });
+
+  it('外観だけの取り消し(FR-505、FR-1110)でも計算中の札を立てない', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle(resultFor(fake.calls[0].document));
+    await tick();
+
+    useAppStore
+      .getState()
+      .applyDocument(assignBodyAppearance(useAppStore.getState().document, 'extrude-1', steel));
+    useAppStore.getState().undo();
+
+    expect(appearanceOf(useAppStore.getState().document).entries).toHaveLength(0);
+    expect(fake.calls).toHaveLength(1);
+    expect(useAppStore.getState().isComputing).toBe(false);
+    detach();
+  });
+
+  it('再計算の結果の面の照合(appearanceMatches)をストアへ入れる', async () => {
+    const matches: AppearanceMatchEntry[] = [
+      { id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: 4 },
+      { id: 'appearance-2', bodyFeatureId: 'extrude-1', faceIndex: null },
+    ];
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle({ ...resultFor(fake.calls[0].document), appearanceMatches: matches });
+    await tick();
+
+    expect(useAppStore.getState().appearanceMatches).toEqual(matches);
+    detach();
+  });
+
+  it('打ち切られた結果では面の照合を差し替えない(ボディと同じ扱い)', async () => {
+    const matches: AppearanceMatchEntry[] = [
+      { id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: 4 },
+    ];
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle({ ...resultFor(fake.calls[0].document), appearanceMatches: matches });
+    await tick();
+
+    useAppStore.getState().setSketch(documentWithPoint());
+    fake.calls[1].settle({
+      ...resultFor(fake.calls[1].document),
+      cancelled: true,
+      appearanceMatches: [],
+    });
+    await tick();
+
+    expect(useAppStore.getState().appearanceMatches).toEqual(matches);
+    detach();
+  });
+});
+
+describe('3D スケッチのまま文書を差し替えたときの作図面(P4b タスク22b-(i))', () => {
+  beforeEach(() => {
+    useAppStore.setState(createInitialDocumentState());
+  });
+
+  it('3D スケッチのまま「新規」すると作図面は XY へ戻る', () => {
+    /*
+      Electron 台本の項目 10〜13 が落ちた不具合(統括の指示 2026-09-05)。3D スケッチのまま
+      新規にすると作図面が「3D」のまま残り、次に描く矩形が
+      「3D スケッチではこの形をかけません。」で必ず失敗していた。
+    */
+    useAppStore.getState().setWorkPlane(FREE_WORK_PLANE_ID);
+    expect(useAppStore.getState().workPlaneId).toBe(FREE_WORK_PLANE_ID);
+
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    expect(useAppStore.getState().workPlaneId).toBe('xy');
+  });
+
+  it('3D スケッチのまま取り消しても作図面は 3D のまま(同じ部品の中の移動なので降ろさない)', () => {
+    useAppStore.getState().setSketch(documentWithPoint());
+    useAppStore.getState().setWorkPlane(FREE_WORK_PLANE_ID);
+    expect(useAppStore.getState().workPlaneId).toBe(FREE_WORK_PLANE_ID);
+
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().workPlaneId).toBe(FREE_WORK_PLANE_ID);
+  });
+});
+
+describe('つまみの初回の案内(FR-507、利用者の決定①、P4b タスク22b-(a))', () => {
+  beforeEach(() => {
+    useAppStore.setState(createInitialDocumentState());
+    // 既読を「まだ見せていない」に戻す(端末に覚える欄なので検査ごとに初期化する)。
+    useAppStore.setState({
+      displaySettings: { ...useAppStore.getState().displaySettings, timelineHintSeen: false },
+    });
+  });
+
+  it('ソリッドが初めて 2 段になったとき 1 回だけ帯に案内を出し、既読を覚える', () => {
+    const one = appendSolid(partWithPoint(), extrudeFeature('extrude-1'));
+    const two = appendSolid(one, extrudeFeature('extrude-2'));
+
+    // 1 段目では出さない(戻す先が無い)。
+    useAppStore.getState().applyDocument(one);
+    expect(useAppStore.getState().timelineNoticeKey).toBeNull();
+    expect(useAppStore.getState().displaySettings.timelineHintSeen).toBe(false);
+
+    // 2 段目で出る。
+    useAppStore.getState().applyDocument(two);
+    expect(useAppStore.getState().timelineNoticeKey).toBe('timeline.hint');
+    expect(useAppStore.getState().displaySettings.timelineHintSeen).toBe(true);
+
+    // 3 段目では出さない(既読になっている)。
+    useAppStore.getState().applyDocument(appendSolid(two, extrudeFeature('extrude-3')));
+    expect(useAppStore.getState().timelineNoticeKey).toBeNull();
+  });
+
+  it('既読なら二度と出さない', () => {
+    useAppStore.setState({
+      displaySettings: { ...useAppStore.getState().displaySettings, timelineHintSeen: true },
+    });
+    const one = appendSolid(partWithPoint(), extrudeFeature('extrude-1'));
+    useAppStore.getState().applyDocument(one);
+    useAppStore.getState().applyDocument(appendSolid(one, extrudeFeature('extrude-2')));
+    expect(useAppStore.getState().timelineNoticeKey).toBeNull();
   });
 });

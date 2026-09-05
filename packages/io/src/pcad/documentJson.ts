@@ -173,7 +173,13 @@ const POINT_ARRAY_LAYOUT_KINDS: readonly PointArrayLayout['kind'][] = [
  * (P3 計画書 §2.10、タスク19)。知らない種類の `kind` は `readLiteral` が
  * 「その欄の型が違う」として断る(新しい欄の解釈を推測しないため)。
  */
-const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = [
+/*
+  基本形状(`'primitive'`、FR-429)は **P5 タスク17 で足す**。それまでは読める種類から
+  外しておく(型からも除く)ので、`readSolidFeature` の網羅 switch は10種類のままで足り、
+  版 6 のファイルにこの種類が書かれていれば「その欄の型が違う」として断る。
+  タスク15(型の追加)とタスク17(読み書き)の間に、読めない種類を読めるふりをさせない。
+*/
+const SOLID_FEATURE_KINDS: readonly Exclude<SolidFeatureKind, 'primitive'>[] = [
   'extrude',
   'revolve',
   'sew',
@@ -950,6 +956,14 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         wireDiameter: serializeExpression(feature.wireDiameter),
         handedness: feature.handedness,
       };
+    case 'primitive':
+      /*
+        基本形状(FR-429)の書き出しは **P5 タスク17 で本実装**する。ここはタスク15 で
+        `SolidFeature` の union が広がったときに、この網羅 switch を落とさないための
+        最小の枝である。読み手も `SOLID_FEATURE_KINDS` からこの種類を外してあるので、
+        いまはこの枝を通った文書を読み返せない(タスク17 で両方をそろえて入れる)。
+      */
+      return feature;
   }
 }
 

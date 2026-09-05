@@ -33,6 +33,7 @@ import type { Vec3 } from '../vec3.js';
 import { diagnoseConstraints, type ConstraintDiagnosis } from './diagnose.js';
 import { buildResiduals } from './residuals.js';
 import {
+  CONSTRAINT_TOLERANCE,
   solveLevenbergMarquardt,
   type LinearizedRow,
   type SolveOptions,
@@ -40,8 +41,10 @@ import {
 } from './solve.js';
 import { sketchConstraints, type SketchConstraint } from './types.js';
 import {
+  canonicalPointKey,
   collectVariables,
   MAX_CONSTRAINT_VARIABLES,
+  pointComponentKey,
   pointValueAt,
   radiusComponentKey,
   type VariableSet,
@@ -61,6 +64,109 @@ export const CONSTRAINT_UNSOLVED_MESSAGE =
 /** 解かなかったときに返す空の表(呼ぶたびに作らない)。 */
 const NO_POINTS: ReadonlyMap<string, Vec3> = new Map<string, Vec3>();
 const NO_RADII: ReadonlyMap<string, number> = new Map<string, number>();
+
+/**
+ * 引っぱりの残差に掛ける重み(§0.a 追記 3、2026-09-05 の統括の決定。P4b タスク14)。
+ *
+ * 利用者が要素を引っぱっている間だけ、「引っぱっている点を目標の (u, v) へ寄せる」式 2 本を
+ * 拘束の残差へ**継ぎ足す**。重みを小さくするのが要で、**拘束を先に満たしたうえで、残った
+ * 自由度のぶんだけ目標へ寄る**という順序になる(硬い一時固定は、水平拘束のように「両端の
+ * v が等しい」式を破れないぶん解なしを生むので採らない)。
+ *
+ * **1e-2 の根拠(2026-09-05 の実測)。** 計画書の「初期値 1e-3」からの調整で、決定の
+ * 「重みは手触りで調整する」に従う。
+ *
+ * 釣り合いの向き(引っぱりが拘束の届かないところを指しているとき)に残る拘束の誤差は
+ * およそ `重み² × 行き過ぎた距離`。反対に、目標へ寄る 1 歩の大きさは減衰 λ と `重み²` の比
+ * `重み²/(重み² + λ)` で決まり、λ は `CONSTRAINT_INITIAL_DAMPING`(1e-6)のあたりに
+ * 落ち着く。つまり重みは**大きいほど指に付いてきて、小さいほど拘束に忠実**という
+ * 一本の綱引きになる。実測(始点を固定し長さを 10 に決めた線分の端点を、真上の
+ * (0, 30) へ引く。正解は (0, 10)):
+ *
+ * | 重み | 反復 50 回で届いた先 | 長さの誤差 |
+ * |---|---|---|
+ * | 1e-3 | (8.36, 5.48) … **90° のうち 33° しか回らない**(指に付いてこない) | 5e-4mm |
+ * | 3e-3 | (1.70, 9.86) … 80° | 2e-3mm |
+ * | **1e-2** | **(0, 10.002)** … 届く | **2e-3mm** |
+ * | 3e-2 | (0, 10.018) … 届く | 1.8e-2mm |
+ *
+ * 1e-3 では λ(1e-6)と `重み²`(1e-6)が同じ大きさになり、1 歩ごとに歩幅が半分に
+ * 削られて反復の上限(50 回)を使い切っても目標へ届かない。1e-2 なら `重み²`(1e-4)が
+ * λ の 100 倍で、削られずに付いてくる。そのとき残る拘束の誤差 2e-3mm は
+ * `SKETCH_TOLERANCE_MM`(1e-6mm)より粗いが、**引っぱっている最中の見た目だけ**の話で、
+ * 離した瞬間に引っぱりの式を外して解き直す(タスク14 の確定)ので文書には残らない。
+ */
+export const DRAG_PIN_WEIGHT = 1e-2;
+
+/**
+ * 引っぱっている点 1 つ。u と v の列、目標の (u, v)、そして重み付きの勾配を持つ。
+ * 勾配は反復のあいだ変わらない(残差が列について線形)ので、1 度だけ作って使い回す。
+ */
+interface PinnedPoint {
+  readonly pointKey: string;
+  readonly uColumn: number;
+  readonly vColumn: number;
+  readonly target: readonly [number, number];
+  readonly weight: number;
+  readonly uGradient: ReadonlyMap<number, number>;
+  readonly vGradient: ReadonlyMap<number, number>;
+}
+
+/**
+ * 引っぱっている点の目標から、継ぎ足す残差のもとを作る。
+ *
+ * **動かせない点(式で書かれた座標・「固定」拘束・規則から導かれる点)は黙って落とす。**
+ * 変数でない数へ式を立てても解が動かないだけで、断りは画面の側(タスク14 の `draggableAt`)が
+ * 押した瞬間に出す。鍵は `ResolvedPoint.id` / `vertexKey` の規約で、別名は正本へ寄せる。
+ */
+function collectPinnedPoints(
+  variableSet: VariableSet,
+  pinned: ReadonlyMap<string, readonly [number, number]>,
+  weight: number,
+): readonly PinnedPoint[] {
+  const points: PinnedPoint[] = [];
+  for (const [pointKey, target] of pinned) {
+    const canonical = canonicalPointKey(variableSet, pointKey);
+    if (canonical === null) {
+      continue;
+    }
+    const uColumn = variableSet.index.get(pointComponentKey(canonical, 'u'));
+    const vColumn = variableSet.index.get(pointComponentKey(canonical, 'v'));
+    if (uColumn === undefined || vColumn === undefined) {
+      continue;
+    }
+    points.push({
+      pointKey: canonical,
+      uColumn,
+      vColumn,
+      target: [target[0], target[1]],
+      weight,
+      uGradient: new Map([[uColumn, weight]]),
+      vGradient: new Map([[vColumn, weight]]),
+    });
+  }
+  return points;
+}
+
+
+/**
+ * 反復の細かい設定と、**引っぱりの口**(P4b タスク14)。
+ *
+ * `SolveOptions`(反復の上限・許容量・減衰の初期値)をそのまま広げた形にしてあるので、
+ * 拘束だけを解く既存の呼び出しは何も変えずに通る。
+ */
+export interface ConstrainedSolveOptions extends SolveOptions {
+  /**
+   * 引っぱっている点の目標(点の鍵 → 作図面上の (u, v))。押している間だけ渡す。
+   * 鍵は `ResolvedPoint.id` / `vertexKey` の規約(`line-1:end` など)。
+   *
+   * **診断(足りない・足しすぎ・矛盾)はこの口を見ない。** 診断が見るのは文書に保存された
+   * 拘束だけなので、引っぱりが「矛盾する拘束」に数えられることはない(§0.a 追記 3)。
+   */
+  readonly pinned?: ReadonlyMap<string, readonly [number, number]>;
+  /** 引っぱりの残差に掛ける重み。既定は `DRAG_PIN_WEIGHT`(手触りの調整用に開けてある)。 */
+  readonly pinnedWeight?: number;
+}
 
 /** 3 段の解決の結果(§2.2、タスク8)。 */
 export interface ConstrainedSketch {
@@ -140,9 +246,27 @@ function buildOverrides(
       return;
     }
     const uv = pointValueAt(variableSet, x, variable.pointKey);
-    if (uv !== null) {
-      pointOverrides.set(variable.pointKey, planeToWorld(plane, uv[0], uv[1]));
+    if (uv === null) {
+      return;
     }
+    /*
+      **基準に追従する点(相対・極で書かれた点)は、動かなかったなら差し込まない**
+      (P4b タスク22b。`VariableSet.followsBase` の注釈)。差し込むと、基準が拘束で
+      動いたのに追従しない点ができてしまう(水平+長さ 10 で終点が (7,0,0) → (10,0,0) へ
+      動いても、その終点を基準にした点が元の位置に残る)。差し込まなければ ③ の解決が
+      「基準 + Δ」で計算し直すので、従来どおり追従する。動いた点(引っぱった点・拘束で
+      動いた点)はこれまでどおり差し込む。
+    */
+    const initial = pointValueAt(variableSet, variableSet.initial, variable.pointKey);
+    if (
+      variableSet.followsBase.has(variable.pointKey) &&
+      initial !== null &&
+      Math.abs(uv[0] - initial[0]) <= CONSTRAINT_TOLERANCE &&
+      Math.abs(uv[1] - initial[1]) <= CONSTRAINT_TOLERANCE
+    ) {
+      return;
+    }
+    pointOverrides.set(variable.pointKey, planeToWorld(plane, uv[0], uv[1]));
   });
   return { pointOverrides, radiusOverrides };
 }
@@ -170,7 +294,8 @@ function sketchError(
 function constraintErrors(
   documentId: string,
   diagnosis: ConstraintDiagnosis,
-  outcome: SolveOutcome | null,
+  /** 拘束の式だけで見た収束。解かなかったときは null(引っぱりの式は数えない)。 */
+  converged: boolean | null,
 ): readonly SketchError[] {
   if (diagnosis.tooMany) {
     return [sketchError(documentId, 'constraintTooMany', diagnosis.summary)];
@@ -189,7 +314,7 @@ function constraintErrors(
       code: 'constraintConflict',
       message: sentences.join(''),
     });
-  } else if (outcome !== null && !outcome.converged) {
+  } else if (converged === false) {
     errors.push(sketchError(documentId, 'constraintUnsolved', CONSTRAINT_UNSOLVED_MESSAGE));
   }
   for (const skipped of diagnosis.skipped) {
@@ -226,26 +351,33 @@ function unsolved(
  * `options` はそのまま①③の `resolveSketch` へ渡すので、作業平面・立体の部分形状・
  * オフセット・投影の受け渡しは拘束の有無で変わらない。
  * `solveOptions` は反復の上限と許容量の差し替え(既定は `constraints/solve.ts` の
- * `CONSTRAINT_*`)で、診断の許容量も同じ値に揃える。
+ * `CONSTRAINT_*`)で、診断の許容量も同じ値に揃える。**引っぱり**(P4b タスク14)も
+ * ここから入る(`pinned`)。
  */
 export function resolveConstrainedSketch(
   document: SketchDocument,
   options: SketchResolveOptions = {},
-  solveOptions?: SolveOptions,
+  solveOptions?: ConstrainedSolveOptions,
 ): ConstrainedSketch {
   // ① 拘束を無視した解決。ソルバーの初期値であり、解かないときの答えでもある。
   const base = resolveSketch(document, options);
   const constraints: readonly SketchConstraint[] = sketchConstraints(document);
-  if (constraints.length === 0) {
+  const pinned = solveOptions?.pinned;
+  const dragging = pinned !== undefined && pinned.size > 0;
+  if (constraints.length === 0 && !dragging) {
     return unsolved(base, [], null, null);
   }
 
   const lookup = options.workPlane ?? baseWorkPlane;
   const plane = sketchWorkPlane(document, lookup);
   if (plane === null) {
+    // 作図面が無いスケッチ(3D スケッチ、FR-330)。拘束が 1 つでもあれば断りを出し、
+    // 引っぱりだけなら黙って何もしない(引っぱれない理由は画面の側が押した瞬間に出す)。
     return unsolved(
       base,
-      [sketchError(document.id, 'constraintUnsolved', CONSTRAINT_FREE_SKETCH_MESSAGE)],
+      constraints.length === 0
+        ? []
+        : [sketchError(document.id, 'constraintUnsolved', CONSTRAINT_FREE_SKETCH_MESSAGE)],
       null,
       null,
     );
@@ -258,14 +390,76 @@ export function resolveConstrainedSketch(
     return unsolved(base, constraintErrors(document.id, diagnosis, null), diagnosis, variableSet);
   }
 
-  const evaluate = (x: readonly number[]): readonly LinearizedRow[] =>
-    buildResiduals(constraints, variableSet, x);
+  const pins = dragging
+    ? collectPinnedPoints(variableSet, pinned, solveOptions?.pinnedWeight ?? DRAG_PIN_WEIGHT)
+    : [];
+
+  if (constraints.length === 0) {
+    /*
+      拘束が 1 つも無いスケッチを引っぱっているとき(タスク14 の検証表「拘束が 0 個の
+      スケッチで点を引っぱる」)。連立を解いても、引っぱっている点以外には式が 1 本も
+      立たないので答えは「その点を目標へ置く」だけになる。**解かずにそのまま置く**ことで、
+      拘束を使わない文書の手触りを 1 ミリ秒も落とさない(§2.2「拘束が 0 個なら 1 段」)。
+    */
+    if (pins.length === 0) {
+      return unsolved(base, [], null, variableSet);
+    }
+    const pointOverrides = new Map<string, Vec3>();
+    for (const pin of pins) {
+      pointOverrides.set(pin.pointKey, planeToWorld(plane, pin.target[0], pin.target[1]));
+    }
+    return {
+      resolved: resolveSketch(document, { ...options, pointOverrides }),
+      diagnosis: null,
+      errors: [],
+      solution: pointOverrides,
+      radiusSolution: NO_RADII,
+      variableSet,
+      outcome: null,
+    };
+  }
+
+  const evaluate = (x: readonly number[]): readonly LinearizedRow[] => {
+    const rows = buildResiduals(constraints, variableSet, x);
+    if (pins.length === 0) {
+      return rows;
+    }
+    // 引っぱりの式は**拘束の後ろへ継ぎ足す**(拘束の行の並びを変えない。決定性)。
+    const withPins: LinearizedRow[] = [...rows];
+    for (const pin of pins) {
+      withPins.push({
+        value: pin.weight * (x[pin.uColumn] - pin.target[0]),
+        gradient: pin.uGradient,
+      });
+      withPins.push({
+        value: pin.weight * (x[pin.vColumn] - pin.target[1]),
+        gradient: pin.vGradient,
+      });
+    }
+    return withPins;
+  };
   const outcome = solveLevenbergMarquardt(variableSet.initial, evaluate, solveOptions);
-  // 診断には**解いた後の x** を渡す。初期値のままだと、解けば消える残差を
-  // 「矛盾」と読み違える(タスク7 の申し送り)。
-  const diagnosis = diagnoseConstraints(constraints, variableSet, outcome.x, {
-    tolerance: solveOptions?.tolerance,
-  });
+
+  /*
+    診断(足りない・足しすぎ・矛盾)と断りは、**引っぱっている間は出さない**。理由は 2 つ。
+
+    ①引っぱりは重み付きの釣り合いなので、目標が拘束の届かないところにあると拘束の式が
+      きっちり 0 にはならない(実測: 20mm 行き過ぎた引っぱりで長さの誤差 2e-3mm、
+      `DRAG_PIN_WEIGHT` の注釈)。これを「解けていない」と読むと、引っぱるたびに
+      帯が赤くなる。文書の拘束は 1 つも変わっていないのだから、正しい診断は**離した後の
+      再計算**(引っぱりの式が無い状態)で出せばよい。
+    ②ヤコビアンの階数を毎コマ数えると、ドラッグの 1 コマ(16.6ms)に収まらなくなる
+      (NFR-PF-1、§2.9)。
+
+    引っぱっていないときは従来どおり。診断には**解いた後の x** を渡す(初期値のままだと、
+    解けば消える残差を「矛盾」と読み違える。タスク7 の申し送り)。
+  */
+  const diagnosis =
+    pins.length > 0
+      ? null
+      : diagnoseConstraints(constraints, variableSet, outcome.x, {
+          tolerance: solveOptions?.tolerance,
+        });
 
   // ③ 解を差し込んで解決し直す。収束しなかったときも**最後に得られた x** で上書きし、
   // 形は最も近い状態で描く(FR-504「止めずに警告する」)。
@@ -278,7 +472,8 @@ export function resolveConstrainedSketch(
   return {
     resolved,
     diagnosis,
-    errors: constraintErrors(document.id, diagnosis, outcome),
+    errors:
+      diagnosis === null ? [] : constraintErrors(document.id, diagnosis, outcome.converged),
     solution: pointOverrides,
     radiusSolution: radiusOverrides,
     variableSet,

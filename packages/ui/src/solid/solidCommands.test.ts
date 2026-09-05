@@ -887,6 +887,40 @@ describe('commitSolidInput(その場入力の確定から作る)', () => {
     expect(feature.kind === 'spring' ? feature.length.value : null).toBe(20);
   });
 
+  it('ばねの導出式に変数表が届く(ピッチ「板厚」= 3・巻数 4 → 全長 12。タスク22b-(h))', () => {
+    /*
+      その場入力で作るばねの全長は「ピッチ × 巻数」から導く(`resolveSpringLengthFields`)。
+      変数表が届かないと、ピッチにパラメータ名を書いたときに全長が = 0 になっていた
+      (t11 の申し送り、`docs/報告記録.md` 2026-09-05 実時計 01:40)。
+    */
+    const document = documentWithPoint('point-1');
+    const outcome = commitSolidInput(
+      document,
+      ['point-1'],
+      {
+        kind: 'solid',
+        tool: 'spring',
+        step: 'springLength',
+        values: {
+          springPitch: { source: '板厚', value: 3, display: '3' },
+          springTurns: expressionValueFromNumber(4),
+        },
+        flags: {},
+        springDerived: 'length',
+      },
+      [],
+      new Map([['板厚', 3]]),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.solids[0];
+    expect(feature.kind === 'spring' ? feature.length.value : null).toBe(12);
+    // 式は文字列のまま残る(FR-202)。
+    expect(feature.kind === 'spring' ? feature.pitch.source : null).toBe('板厚');
+  });
+
   it('ばねは始点が選ばれていなければ noOriginPoint で断り、文書を変えない', () => {
     const document = documentWithPoint('point-1');
     const outcome = commitSolidInput(document, [], {
@@ -1011,6 +1045,49 @@ describe('commitSpring(FR-414、§0.a-0.29〜0.36)', () => {
     const feature = outcome.document.solids[0];
     expect(feature.kind === 'spring' ? feature.length.source : '').toBe('5*4');
     expect(feature.kind === 'spring' ? feature.length.value : null).toBe(20);
+  });
+
+  it(
+    'ピッチにパラメータ名を書いても variables を渡せば全長が正しく計算される' +
+      '(P4b タスク22a-(1)、板厚=3・巻数4 → 全長12)',
+    () => {
+      const document = documentWithPoint('point-1');
+      const variables = new Map([['板厚', 3]]);
+      const outcome = commitSpring(
+        document,
+        springParams({
+          derived: 'length',
+          pitch: { source: '板厚', value: 0, display: '0' },
+          turns: expressionValueFromNumber(4),
+        }),
+        variables,
+      );
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) {
+        return;
+      }
+      const feature = outcome.document.solids[0];
+      expect(feature.kind === 'spring' ? feature.length.source : '').toBe('板厚*4');
+      expect(feature.kind === 'spring' ? feature.length.value : null).toBe(12);
+    },
+  );
+
+  it('variables を渡さなければ、変数名のピッチは読めず全長は 0(止めずに警告する、FR-504)', () => {
+    const document = documentWithPoint('point-1');
+    const outcome = commitSpring(
+      document,
+      springParams({
+        derived: 'length',
+        pitch: { source: '板厚', value: 0, display: '0' },
+        turns: expressionValueFromNumber(4),
+      }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.solids[0];
+    expect(feature.kind === 'spring' ? feature.length.value : null).toBe(0);
   });
 
   it("derived: 'pitch' で全長20・巻数4 → pitch.source が '20/4'、value === 5", () => {

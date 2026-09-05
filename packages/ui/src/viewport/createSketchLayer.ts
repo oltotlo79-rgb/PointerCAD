@@ -57,6 +57,8 @@ const FACE_METALNESS = 0.02;
 /** 面の半透明。奥の線が透けて見える濃さにし、選ぶほど濃くする(FR-310)。 */
 const FACE_OPACITY: Readonly<Record<SketchEmphasis, number>> = {
   none: 0.35,
+  // 完全に決まった要素(FR-313)は状態を表すだけなので、濃さは既定と同じにする。
+  constrained: 0.35,
   hovered: 0.45,
   selected: 0.55,
 };
@@ -64,6 +66,8 @@ const FACE_OPACITY: Readonly<Record<SketchEmphasis, number>> = {
 /** 強調のときだけ面を発光させる。色そのもの(FR-310)は変えずに選択が分かるようにする。 */
 const FACE_EMISSIVE_INTENSITY: Readonly<Record<SketchEmphasis, number>> = {
   none: 0,
+  // 面は拘束の相手にならない(`constrainedElements.ts` が種類で外す)ので発光させない。
+  constrained: 0,
   hovered: 0.2,
   selected: 0.35,
 };
@@ -78,6 +82,7 @@ function emphasisColorOf(colors: ThemeColors, emphasis: SketchEmphasis): number 
       return colors.hovered;
     case 'selected':
       return colors.selected;
+    case 'constrained':
     case 'none':
       return NO_EMISSIVE_COLOR;
   }
@@ -87,7 +92,7 @@ function emphasisColorOf(colors: ThemeColors, emphasis: SketchEmphasis): number 
 const WORK_PLANE_FILL_OPACITY = 0.05;
 const WORK_PLANE_BORDER_OPACITY = 0.35;
 
-const EMPHASES: readonly SketchEmphasis[] = ['none', 'hovered', 'selected'];
+const EMPHASES: readonly SketchEmphasis[] = ['none', 'constrained', 'hovered', 'selected'];
 
 /**
  * 構築線(FR-320)の破線の刻み(mm)。実線と一目で見分く長さにしつつ、
@@ -227,10 +232,11 @@ function createPointSet(): DrawSet<PointsObject> {
   return {
     objects: {
       none: createPoints(DEFAULT_THEME_COLORS.sketchPoint),
+      constrained: createPoints(DEFAULT_THEME_COLORS.sketchConstrained),
       hovered: createPoints(DEFAULT_THEME_COLORS.hovered),
       selected: createPoints(DEFAULT_THEME_COLORS.selected),
     },
-    hasData: { none: false, hovered: false, selected: false },
+    hasData: { none: false, constrained: false, hovered: false, selected: false },
   };
 }
 
@@ -238,10 +244,11 @@ function createLineSet(baseColor: number, renderOrder: number): DrawSet<LinesObj
   return {
     objects: {
       none: createLines(baseColor, renderOrder),
+      constrained: createLines(DEFAULT_THEME_COLORS.sketchConstrained, renderOrder),
       hovered: createLines(DEFAULT_THEME_COLORS.hovered, renderOrder),
       selected: createLines(DEFAULT_THEME_COLORS.selected, renderOrder),
     },
-    hasData: { none: false, hovered: false, selected: false },
+    hasData: { none: false, constrained: false, hovered: false, selected: false },
   };
 }
 
@@ -249,10 +256,11 @@ function createDashedLineSet(baseColor: number): DrawSet<DashedLinesObject> {
   return {
     objects: {
       none: createDashedLines(baseColor),
+      constrained: createDashedLines(DEFAULT_THEME_COLORS.sketchConstrained),
       hovered: createDashedLines(DEFAULT_THEME_COLORS.hovered),
       selected: createDashedLines(DEFAULT_THEME_COLORS.selected),
     },
-    hasData: { none: false, hovered: false, selected: false },
+    hasData: { none: false, constrained: false, hovered: false, selected: false },
   };
 }
 
@@ -522,15 +530,20 @@ export function createSketchLayer(): SketchLayer {
     setThemeColors(next): void {
       colors = next;
       points.objects.none.material.color.setHex(colors.sketchPoint);
+      points.objects.constrained.material.color.setHex(colors.sketchConstrained);
       points.objects.hovered.material.color.setHex(colors.hovered);
       points.objects.selected.material.color.setHex(colors.selected);
       curves.objects.none.material.color.setHex(colors.sketchCurve);
+      curves.objects.constrained.material.color.setHex(colors.sketchConstrained);
       curves.objects.hovered.material.color.setHex(colors.hovered);
       curves.objects.selected.material.color.setHex(colors.selected);
       constructionCurves.objects.none.material.color.setHex(colors.sketchCurve);
+      constructionCurves.objects.constrained.material.color.setHex(colors.sketchConstrained);
       constructionCurves.objects.hovered.material.color.setHex(colors.hovered);
       constructionCurves.objects.selected.material.color.setHex(colors.selected);
       outlines.objects.none.material.color.setHex(colors.sketchOutline);
+      // 面の縁は要素そのものではないので、決まり具合の色は付けず既定色のままにする。
+      outlines.objects.constrained.material.color.setHex(colors.sketchOutline);
       outlines.objects.hovered.material.color.setHex(colors.hovered);
       outlines.objects.selected.material.color.setHex(colors.selected);
       workPlaneFill.material.color.setHex(colors.workPlane);

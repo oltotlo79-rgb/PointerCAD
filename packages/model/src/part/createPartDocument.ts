@@ -8,7 +8,10 @@
  * part/resolvePart.ts の担当にする。
  */
 
+import { expressionValueFromNumber } from '@pointercad/expression';
+
 import { emptyAppearanceTable } from '../appearance/appearanceTable.js';
+import type { AxisSpec } from '../geometry/planeSpec.js';
 import {
   createEmptySketchDocument,
   nextSerialId,
@@ -18,9 +21,13 @@ import type { SketchDocument } from '../sketch/types.js';
 import type {
   BooleanOperation,
   PartDocument,
+  PrimitiveFeature,
+  PrimitiveShape,
+  PrimitiveShapeKind,
   ReferenceFeature,
   ReferenceFeatureKind,
   SolidFeature,
+  SolidOrigin,
 } from './types.js';
 
 /**
@@ -90,6 +97,48 @@ export const DEFAULT_SPRING_TURNS = 4;
 /** ばねの巻数の上限(§0.a-0.35)。これを超える指定は解決のときに断る。 */
 export const MAX_SPRING_TURNS = 200;
 
+/*
+  基本形状5種の既定の寸法(mm。FR-429、P5 計画書 §2.7.1 の表と §0.a-0.16 の決定)。
+
+  何も選ばずに道具を押して決めただけで意味のある形ができる大きさにしてある
+  (NFR-UX-4「Enter 連打で意味のある結果」)。利用者は作ったあとに式で直せる(FR-202)。
+*/
+
+/** 球の半径の既定(mm)。 */
+export const DEFAULT_SPHERE_RADIUS_MM = 10;
+
+/** 箱の一辺の既定(mm)。X / Y / Z とも同じ。 */
+export const DEFAULT_BOX_SIZE_MM = 20;
+
+/** 円柱の半径の既定(mm)。 */
+export const DEFAULT_CYLINDER_RADIUS_MM = 10;
+
+/** 円柱の高さの既定(mm)。底面の中心から軸の向きへ伸びる(§0.a-0.17)。 */
+export const DEFAULT_CYLINDER_HEIGHT_MM = 20;
+
+/** 円錐の下半径の既定(mm)。 */
+export const DEFAULT_CONE_BOTTOM_RADIUS_MM = 10;
+
+/** 円錐の上半径の既定(mm)。0 なら尖った円錐、0 より大きければ円錐台(§0.a-0.16)。 */
+export const DEFAULT_CONE_TOP_RADIUS_MM = 0;
+
+/** 円錐の高さの既定(mm)。 */
+export const DEFAULT_CONE_HEIGHT_MM = 20;
+
+/** トーラスの主半径(中心から管の中心までの半径)の既定(mm)。 */
+export const DEFAULT_TORUS_MAJOR_RADIUS_MM = 20;
+
+/** トーラスの管の半径の既定(mm)。主半径より小さくする(同じ以上だと自己交差する)。 */
+export const DEFAULT_TORUS_MINOR_RADIUS_MM = 5;
+
+/**
+ * 基本形状の向きの既定(§0.a-0.16)。世界の Z 軸。
+ *
+ * 球・トーラスは向きを変えても形が変わらないが、欄を種類ごとに出し分けないほうが
+ * 作りが単純なので5種すべてが同じ欄を持つ(表示の出し分けは UI の仕事)。
+ */
+export const DEFAULT_PRIMITIVE_AXIS: AxisSpec = { kind: 'world', axis: 'z' };
+
 /**
  * 連番を分ける単位。ブーリアンは演算ごとに別の連番にするので、
  * フィーチャーの種類そのもの(`boolean`)ではなく演算名を鍵にする(§2.3)。
@@ -106,7 +155,13 @@ export type SolidLabelKey =
   | 'chamfer'
   | 'linearPattern'
   | 'circularPattern'
-  | 'spring';
+  | 'spring'
+  /*
+    基本形状(FR-429)は5種を別々の連番にする(「球1」「箱1」…)。
+    ブーリアンを演算ごとに分けているのと同じ理由で、利用者から見て別の道具だからである
+    (「基本形状1」「基本形状2」では、木を見ても何を置いたのか分からない)。
+  */
+  | PrimitiveShapeKind;
 
 /**
  * ソリッドの種類ごとの既定名。ドキュメントの既定データとしてここに置く
@@ -126,6 +181,11 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   linearPattern: '直線パターン',
   circularPattern: '円形パターン',
   spring: 'ばね',
+  sphere: '球',
+  box: '箱',
+  cylinder: '円柱',
+  cone: '円錐',
+  torus: 'トーラス',
 };
 
 /**
@@ -384,13 +444,94 @@ export function nextSolidId(document: PartDocument, key: SolidLabelKey): string 
 }
 
 /**
+ * 基本形状の基準点の既定(FR-429、NFR-UX-4)。何も選ばずに置いたときの原点。
+ *
+ * 座標の式(絶対座標の 0, 0, 0)にするのは、点も頂点も選ばずに道具を押しただけで
+ * 形ができ、あとからプロパティで式を書き直せるようにするためである(FR-202、FR-502)。
+ */
+export function defaultPrimitiveOrigin(): SolidOrigin {
+  return {
+    kind: 'coordinate',
+    value: {
+      mode: 'absolute',
+      x: expressionValueFromNumber(0),
+      y: expressionValueFromNumber(0),
+      z: expressionValueFromNumber(0),
+    },
+  };
+}
+
+/**
+ * 基本形状5種の既定の寸法(§2.7.1 の表)。式は既定値の数をそのまま書いた文字列になる
+ * (`expressionValueFromNumber`)ので、プロパティ欄に「10」と出て、そのまま直せる。
+ */
+export function defaultPrimitiveShape(kind: PrimitiveShapeKind): PrimitiveShape {
+  switch (kind) {
+    case 'sphere':
+      return { kind: 'sphere', radius: expressionValueFromNumber(DEFAULT_SPHERE_RADIUS_MM) };
+    case 'box':
+      return {
+        kind: 'box',
+        sizeX: expressionValueFromNumber(DEFAULT_BOX_SIZE_MM),
+        sizeY: expressionValueFromNumber(DEFAULT_BOX_SIZE_MM),
+        sizeZ: expressionValueFromNumber(DEFAULT_BOX_SIZE_MM),
+      };
+    case 'cylinder':
+      return {
+        kind: 'cylinder',
+        radius: expressionValueFromNumber(DEFAULT_CYLINDER_RADIUS_MM),
+        height: expressionValueFromNumber(DEFAULT_CYLINDER_HEIGHT_MM),
+      };
+    case 'cone':
+      return {
+        kind: 'cone',
+        bottomRadius: expressionValueFromNumber(DEFAULT_CONE_BOTTOM_RADIUS_MM),
+        topRadius: expressionValueFromNumber(DEFAULT_CONE_TOP_RADIUS_MM),
+        height: expressionValueFromNumber(DEFAULT_CONE_HEIGHT_MM),
+      };
+    case 'torus':
+      return {
+        kind: 'torus',
+        majorRadius: expressionValueFromNumber(DEFAULT_TORUS_MAJOR_RADIUS_MM),
+        minorRadius: expressionValueFromNumber(DEFAULT_TORUS_MINOR_RADIUS_MM),
+      };
+  }
+}
+
+/**
+ * 基本形状のフィーチャーを1つ作る(FR-429)。まだ履歴へは足していない(足すのは
+ * `appendSolid`)。id と名前は形ごとの連番で採る(「球1」「箱1」…、§0.a-0.19)。
+ *
+ * 基準点と向きを省くと、原点に既定の向き(Z 軸)で置く(NFR-UX-4)。
+ */
+export function createPrimitiveFeature(
+  document: PartDocument,
+  kind: PrimitiveShapeKind,
+  origin: SolidOrigin = defaultPrimitiveOrigin(),
+  axis: AxisSpec = DEFAULT_PRIMITIVE_AXIS,
+): PrimitiveFeature {
+  return {
+    id: nextSolidId(document, kind),
+    name: nextSolidName(document, kind),
+    suppressed: false,
+    kind: 'primitive',
+    origin,
+    axis,
+    shape: defaultPrimitiveShape(kind),
+  };
+}
+
+/**
  * そのフィーチャーが対象として消費するボディの id(§0.a-0.5、P3 §2.6 / §2.7 / §2.7b)。
  *
  * - ブーリアンは対象と相手の2つ。
  * - 加工(穴・ねじ穴・R 面取り・C 面取り)は対象のボディ1つを消費して新しいボディを1つ作る。
  * - パターンは繰り返しのもとにした加工フィーチャーのボディ1つを消費する(§0.a-0.20)。
  * - 押し出し・回転・縫合・**ばね**は何も消費しない(ばねは §0.a-0.36 で「作る」フィーチャー)。
+ * - **基本形状**も何も消費しない(P5 §0.a-0.19)。基準点に立体の頂点を指したときも
+ *   消費しない: 頂点の座標を読むだけなので、貸した立体はそのまま画面に残る。
  *
+
  * 順序は文書に書かれた順のまま返す(重複の除去はしない。同じ id を2度指すブーリアンは
  * 解決のときに `consumedTwice` で断る)。
  */
@@ -400,6 +541,7 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'revolve':
     case 'sew':
     case 'spring':
+    case 'primitive':
       return [];
     case 'boolean':
       return [feature.targetFeatureId, feature.toolFeatureId];
@@ -417,6 +559,7 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
  * そのフィーチャーが加工(対象のボディを1つだけ取る種類)か。
  * 穴・ねじ穴・R 面取り・C 面取り・パターンが該当する。
  * ブーリアンは対象を2つ取るので加工には数えない。ばねは対象を取らないので `false`(§0.a-0.36)。
+ * 基本形状も対象を取らないので `false`(P5 §0.a-0.19)。
  */
 export function isMachiningFeature(feature: SolidFeature): boolean {
   switch (feature.kind) {
@@ -431,6 +574,7 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'sew':
     case 'boolean':
     case 'spring':
+    case 'primitive':
       return false;
   }
 }
@@ -439,7 +583,8 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
  * パターン(FR-411、FR-412)の対象にできるか。穴・ねじ穴だけ(§0.a-0.20)。
  *
  * フィレット・面取りを外すのは「工具の形」が無く、変換した位置の辺を指紋で選び直す必要が
- * あって危ういため。ばねも対象にしない(§0.a-0.36)。
+ * あって危ういため。ばねも対象にしない(§0.a-0.36)。基本形状も同じく対象にしない
+ * (工具ではなく「作る」フィーチャーだから。P5 §0.a-0.19)。
  */
 export function isPatternSource(feature: SolidFeature): boolean {
   return feature.kind === 'hole' || feature.kind === 'threadHole';

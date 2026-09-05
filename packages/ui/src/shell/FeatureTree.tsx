@@ -14,6 +14,7 @@ import {
   replaceSketch,
   replaceSolid,
   setActiveSketch,
+  type PartDocument,
   type ReferenceFeatureKind,
   type SolidLabelKey,
 } from '@pointercad/model';
@@ -32,6 +33,7 @@ import {
   setSolidSuppressed,
   type SketchTreeGroup,
   type TreeRow,
+  type TreeSection,
   type TreeSectionKey,
 } from '../solid/solidSummary.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -90,6 +92,7 @@ import {
 } from './timelineMove.js';
 import {
   buildTimelineStops,
+  consumedIdsUpToTimeline,
   historySize,
   isTimelineAtEnd,
   timelineStopsById,
@@ -148,6 +151,13 @@ const KIND_ICONS: Readonly<
   linearPattern: LinearPatternIcon,
   circularPattern: CircularPatternIcon,
   spring: SpringIcon,
+  // 基本形状5種(FR-429、P5 タスク15)。専用の図柄は **タスク18** で足すので、それまでは
+  // 立体を表す `CubeIcon` を借りる(節の頭と同じ絵。行が空欄になるよりは形の別が付く)。
+  sphere: CubeIcon,
+  box: CubeIcon,
+  cylinder: CubeIcon,
+  cone: CubeIcon,
+  torus: CubeIcon,
 };
 
 /** 節の頭に出す絵。基準は軸と点、スケッチは作図面、ソリッドは立体の印。 */
@@ -232,6 +242,27 @@ function dropIndexAtPoint(x: number, y: number, total: number): number | null {
 }
 
 /**
+ * 「統合済み」の札を、つまみより前の段だけの消費関係に合わせ直す(P4b タスク22a-(3))。
+ *
+ * `buildTreeSections` の `consumed` は文書全体から導くため、途中まで戻しても後ろの段
+ * (穴・パターン等)の消費がそのまま残って見える(表示上の既知差、`docs/報告記録.md`
+ * 2026-09-05 実時計 01:05 の申し送り②)。ソリッド節の行だけ、`consumedIdsUpToTimeline`
+ * (`timelineRail.ts`)で作り直した消費の表へ差し替える。
+ */
+function withTimelineConsumed(
+  sections: readonly TreeSection[],
+  part: PartDocument,
+  timelineIndex: number | null,
+): readonly TreeSection[] {
+  const consumed = consumedIdsUpToTimeline(part, timelineIndex);
+  return sections.map((section) =>
+    section.key === 'solid'
+      ? { ...section, rows: section.rows.map((row) => ({ ...row, consumed: consumed.has(row.id) })) }
+      : section,
+  );
+}
+
+/**
  * 左のモデルブラウザ(要件§7.1、FR-501)。
  *
  * 「部品 → スケッチ / ソリッドの 2 節 → その中身」の親子で、作った順(履歴の順)に並べる。
@@ -289,7 +320,11 @@ export function FeatureTree(): React.JSX.Element {
   // 使うものなので、いちばん上に置く。中身は履歴順のまま。
   const sections = [
     buildReferenceSection(part, resolvedReferences.errors),
-    ...buildTreeSections(part, part.activeSketchId, sketchErrors, partErrors),
+    ...withTimelineConsumed(
+      buildTreeSections(part, part.activeSketchId, sketchErrors, partErrors),
+      part,
+      timelineIndex,
+    ),
   ];
   /*
    * スケッチが 2 本以上ある文書のときだけ、スケッチの節を「スケッチ1」「スケッチ2」…の

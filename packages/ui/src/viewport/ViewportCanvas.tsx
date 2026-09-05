@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { isFreeWorkPlaneId } from '@pointercad/model';
+import { appearanceOf, isFreeWorkPlaneId } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
+import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -10,6 +11,7 @@ import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
+import { buildAppearanceInput } from './createSolidLayer.js';
 import { createViewportScene } from './createViewportScene.js';
 import { readThemeColors } from './themeColors.js';
 
@@ -109,9 +111,16 @@ export function ViewportCanvas(): React.JSX.Element {
 
     scene.resize(canvas.clientWidth, canvas.clientHeight);
     const initial = useAppStore.getState();
-    scene.setSketch(initial.resolvedSketch, initial.sketchMesh);
+    // 引っぱっている最中(FR-313、P4b タスク14)は仮の形を描く。文書どおりの形
+    // (`resolvedSketch`)は当たり判定・プロパティ・吸着がそのまま読み続ける。
+    scene.setSketch(initial.dragResolved ?? initial.resolvedSketch, initial.sketchMesh);
     scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
     scene.setBodies(initial.bodies);
+    // 外観の割り当て(FR-1106〜1109)。文書の割り当てと、カーネルが選び直した面の対応から
+    // 組み立てる(P5 タスク10)。割り当てが 1 つも無ければ既定の外観 1 色になる。
+    scene.setAppearance(
+      buildAppearanceInput(appearanceOf(initial.document), initial.appearanceMatches),
+    );
     scene.setBodyHighlight(initial.hoveredElementId, initial.selection);
     scene.setSubShapeHighlight(initial.hoveredElementId, initial.selection);
     scene.setWorkPlane(initial.workPlane);
@@ -119,6 +128,8 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setWorkPlaneVisible(!isFreeWorkPlaneId(initial.workPlaneId));
     // 構築線(FR-320)は履歴を見ないと分からないので、文書から引いて渡す(P4 タスク33)。
     scene.setConstructionIds(constructionFeatureIds(initial.sketch));
+    // 完全に決まった要素(FR-313、利用者の決定②、P4b タスク22b)。判定は純関数 1 か所。
+    scene.setConstrainedFeatureIds(constrainedFeatureIdsOfStore(initial));
     scene.setReferences(initial.resolvedReferences);
     scene.setEditPreview(initial.editPreview);
     scene.setTracking(initial.trackIndicator);
@@ -131,13 +142,24 @@ export function ViewportCanvas(): React.JSX.Element {
       // スケッチの形と、カーネルが返した面(FR-105、FR-310)。
       if (
         next.resolvedSketch !== previous.resolvedSketch ||
-        next.sketchMesh !== previous.sketchMesh
+        next.sketchMesh !== previous.sketchMesh ||
+        // 引っぱっている最中の仮の形(FR-313、タスク14)。1 コマに 1 回だけ差し替わる。
+        next.dragResolved !== previous.dragResolved
       ) {
-        scene.setSketch(next.resolvedSketch, next.sketchMesh);
+        scene.setSketch(next.dragResolved ?? next.resolvedSketch, next.sketchMesh);
       }
       // 立体(FR-105)。カーネルが返した三角形と稜線をボディごとに描く。
       if (next.bodies !== previous.bodies) {
         scene.setBodies(next.bodies);
+      }
+      // 外観(FR-1106〜1109)。**割り当ての表そのものが変わったときだけ**組み立て直す。
+      // 文書が変わるたびに作り直すと、スケッチを 1 本引いただけで材質の入れ替えが起きる
+      // (`appearanceOf` は割り当てが変わらなければ同じ表を返す。P5 §2.3)。
+      if (
+        appearanceOf(next.document) !== appearanceOf(previous.document) ||
+        next.appearanceMatches !== previous.appearanceMatches
+      ) {
+        scene.setAppearance(buildAppearanceInput(appearanceOf(next.document), next.appearanceMatches));
       }
       // ホバー・選択の強調(FR-106)。スケッチの要素・ボディ・部分形状(面・辺・頂点)は
       // 同じ選択を共有していて、id の形でどれを強調するかが決まる(§0.a-0.8)。
@@ -163,6 +185,20 @@ export function ViewportCanvas(): React.JSX.Element {
       // 構築線(FR-320)の入り切りは履歴の変化にだけ表れる(解決済みの曲線には出ない)。
       if (next.sketch !== previous.sketch) {
         scene.setConstructionIds(constructionFeatureIds(next.sketch));
+      }
+      /*
+        完全に決まった要素の色分け(FR-313、利用者の決定②、P4b タスク22b)。
+        判定の材料は履歴・解決結果・拘束の診断・作図面の 4 つなので、そのどれかが
+        変わったときだけ数え直す(解決はし直さない、NFR-PF-1)。
+      */
+      if (
+        next.sketch !== previous.sketch ||
+        next.resolvedSketch !== previous.resolvedSketch ||
+        next.constraintDiagnosis !== previous.constraintDiagnosis ||
+        next.workPlaneId !== previous.workPlaneId ||
+        next.workPlane !== previous.workPlane
+      ) {
+        scene.setConstrainedFeatureIds(constrainedFeatureIdsOfStore(next));
       }
       // 基準ジオメトリ(FR-329)。文書から解いた控えが変わったときだけ出し直す。
       if (next.resolvedReferences !== previous.resolvedReferences) {

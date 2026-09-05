@@ -27,6 +27,8 @@ import {
   constraintMarkAt,
   constraintMarksOf,
   constraintTargetCount,
+  MARK_POINT_LIFT_PIXELS,
+  MARK_SPREAD_PIXELS,
   orderConstraintTargets,
   pickConstraintTarget,
   sameConstraintTarget,
@@ -35,7 +37,7 @@ import {
   vertexAt,
   type ConstraintMark,
 } from './constraintPicking.js';
-import type { ConstraintSummary } from './constraintSummary.js';
+import type { ConstraintAnchor, ConstraintSummary } from './constraintSummary.js';
 import type { ProjectToScreen } from './snapMath.js';
 
 /** 作図面(XY)の x, y をそのまま画素にする写し方。奥行きは捨てる。 */
@@ -213,7 +215,12 @@ describe('押した相手の積み方(NFR-UX-1)', () => {
 });
 
 describe('印の当たり判定(描画・当たり判定・選択の 3 つをそろえる)', () => {
-  function summaryWith(id: string, anchors: readonly Vec3[]): ConstraintSummary {
+  /** 印を置く場所。既定は「点ではない場所」(線分の中点)なので上へは逃げない。 */
+  function anchorAt(position: Vec3, onPoint = false): ConstraintAnchor {
+    return { position, onPoint };
+  }
+
+  function summaryWith(id: string, anchors: readonly ConstraintAnchor[]): ConstraintSummary {
     return {
       id,
       kind: 'perpendicular',
@@ -230,20 +237,46 @@ describe('印の当たり判定(描画・当たり判定・選択の 3 つをそ
 
   it('一覧の行を、指し先の数だけの印へ開く', () => {
     const marks = constraintMarksOf([
-      summaryWith('c1', [
-        [0, 0, 0],
-        [10, 0, 0],
-      ]),
+      summaryWith('c1', [anchorAt([0, 0, 0]), anchorAt([10, 0, 0])]),
       summaryWith('c2', []),
     ]);
     expect(marks.map((mark) => mark.constraintId)).toEqual(['c1', 'c1']);
     expect(marks[0].symbol).toBe('⊥');
+    // 別々の場所なのでずらさない。
+    expect(marks.map((mark) => mark.offset)).toEqual([
+      [0, 0],
+      [0, 0],
+    ]);
+  });
+
+  it('同じ場所に重なった印は横に 18px ずつ並ぶ(利用者の決定③、タスク22b)', () => {
+    const marks = constraintMarksOf([
+      summaryWith('c1', [anchorAt([5, 0, 0])]),
+      summaryWith('c2', [anchorAt([5, 0, 0])]),
+      summaryWith('c3', [anchorAt([5, 0, 0])]),
+    ]);
+    // 3 個なら中央ぞろえで −18 / 0 / +18。
+    expect(marks.map((mark) => mark.offset[0])).toEqual([-18, 0, 18]);
+    expect(MARK_SPREAD_PIXELS).toBe(18);
+  });
+
+  it('点に付く印は点から 14px 上へ逃げる(掴みと競合させない、t14 の申し送り)', () => {
+    const marks = constraintMarksOf([summaryWith('c1', [anchorAt([5, 0, 0], true)])]);
+    expect(marks[0].offset).toEqual([0, -14]);
+    expect(MARK_POINT_LIFT_PIXELS).toBe(14);
+  });
+
+  it('ずらした印は、ずらした先で当たり判定する(描画と当たり判定をそろえる)', () => {
+    const marks = constraintMarksOf([summaryWith('c1', [anchorAt([0, 0, 0], true)])]);
+    // 画面へ写した (0, 0) ではなく、14px 上の (0, −14) で当たる。
+    expect(constraintMarkAt(marks, project, [0, 0])).toBeNull();
+    expect(constraintMarkAt(marks, project, [0, -14])).toBe('c1');
   });
 
   it('押した場所にある印を返す。判定半径の外なら null', () => {
     const marks: readonly ConstraintMark[] = [
-      { constraintId: 'c1', symbol: '⊥', state: 'ok', position: [0, 0, 0] },
-      { constraintId: 'c2', symbol: '∥', state: 'ok', position: [40, 0, 0] },
+      { constraintId: 'c1', symbol: '⊥', state: 'ok', position: [0, 0, 0], offset: [0, 0] },
+      { constraintId: 'c2', symbol: '∥', state: 'ok', position: [40, 0, 0], offset: [0, 0] },
     ];
     expect(constraintMarkAt(marks, project, [3, 3])).toBe('c1');
     expect(constraintMarkAt(marks, project, [41, 0])).toBe('c2');
@@ -253,8 +286,8 @@ describe('印の当たり判定(描画・当たり判定・選択の 3 つをそ
 
   it('重なっているときは近いほうを選ぶ', () => {
     const marks: readonly ConstraintMark[] = [
-      { constraintId: 'far', symbol: '=', state: 'ok', position: [6, 0, 0] },
-      { constraintId: 'near', symbol: '=', state: 'ok', position: [1, 0, 0] },
+      { constraintId: 'far', symbol: '=', state: 'ok', position: [6, 0, 0], offset: [0, 0] },
+      { constraintId: 'near', symbol: '=', state: 'ok', position: [1, 0, 0], offset: [0, 0] },
     ];
     expect(constraintMarkAt(marks, project, [0, 0])).toBe('near');
   });

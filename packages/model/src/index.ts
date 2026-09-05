@@ -119,9 +119,12 @@ export {
   CONFLICT_REPORT_LIMIT, CONSTRAINT_TOO_MANY_MESSAGE, diagnoseConstraints, remainingMessage,
 } from './sketch/constraints/diagnose.js';
 /** 3 段の解決への差し込み(FR-313、FR-504、P4b タスク8)。拘束を解いてから解決し直す。 */
-export type { ConstrainedSketch } from './sketch/constraints/solveSketch.js';
+export type {
+  ConstrainedSketch, ConstrainedSolveOptions,
+} from './sketch/constraints/solveSketch.js';
 export {
-  CONSTRAINT_FREE_SKETCH_MESSAGE, CONSTRAINT_UNSOLVED_MESSAGE, resolveConstrainedSketch,
+  CONSTRAINT_FREE_SKETCH_MESSAGE, CONSTRAINT_UNSOLVED_MESSAGE, DRAG_PIN_WEIGHT,
+  resolveConstrainedSketch,
 } from './sketch/constraints/solveSketch.js';
 export {
   absoluteCoordinate, appendFeature, createEmptySketchDocument, createPointFeature,
@@ -280,10 +283,11 @@ export { recomputePart } from './part/recomputePart.js';
  * パラメータ表の値を 1 か所変えると、参照している全ての欄が追従する仕組みの入口。
  */
 export type {
-  AppliedParameters, PartReevaluation, ReevaluationFailure,
+  AppliedParameters, ExpressionOwner, PartReevaluation, ReevaluationFailure,
 } from './part/reevaluatePart.js';
 export {
-  applyParameters, collectExpressionSources, reevaluatePartDocument, renameVariableInPartDocument,
+  applyParameters, collectExpressionOwners, collectExpressionSources, reevaluatePartDocument,
+  renameVariableInPartDocument,
 } from './part/reevaluatePart.js';
 export type { PushUndoOptions, UndoStack } from './history/undoStack.js';
 export {
@@ -316,3 +320,17 @@ export {
 export type {
   AppearanceFaceRequest, AppearanceMatchEntry, SolidBodyKind,
 } from './kernelBridge.js';
+/** 基本形状(FR-429、P5 タスク15)。 */
+export type {
+  PrimitiveFeature, PrimitiveShape, PrimitiveShapeKind, SolidOrigin,
+} from './part/types.js';
+export type {
+  PrimitiveKeyMaterial, PrimitiveShapeKeyMaterial,
+} from './part/cacheKey.js';
+export {
+  createPrimitiveFeature, defaultPrimitiveOrigin, defaultPrimitiveShape,
+  DEFAULT_BOX_SIZE_MM, DEFAULT_CONE_BOTTOM_RADIUS_MM, DEFAULT_CONE_HEIGHT_MM,
+  DEFAULT_CONE_TOP_RADIUS_MM, DEFAULT_CYLINDER_HEIGHT_MM, DEFAULT_CYLINDER_RADIUS_MM,
+  DEFAULT_PRIMITIVE_AXIS, DEFAULT_SPHERE_RADIUS_MM, DEFAULT_TORUS_MAJOR_RADIUS_MM,
+  DEFAULT_TORUS_MINOR_RADIUS_MM,
+} from './part/createPartDocument.js';

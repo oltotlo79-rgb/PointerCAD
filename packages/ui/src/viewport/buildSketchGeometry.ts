@@ -19,12 +19,19 @@ import type {
 
 import { sampleCurve, toLineSegmentPositions } from '../sketch/sampleCurve.js';
 
-/** 強調の度合い。選択が最も強く、ホバーはその手前(FR-106)。 */
-export type SketchEmphasis = 'none' | 'hovered' | 'selected';
+/**
+ * 強調の度合い。選択が最も強く、ホバーはその手前(FR-106)。
+ *
+ * `constrained`(完全に決まった要素、FR-313、利用者の決定②(2026-09-05)、P4b タスク22b)
+ * だけは強調ではなく**状態を表す色**で、選択・ホバーより弱い。青(選択・ホバー)が
+ * 掛かっているあいだはそちらを優先し、何も掛かっていないときにだけこの色で描く。
+ */
+export type SketchEmphasis = 'none' | 'constrained' | 'hovered' | 'selected';
 
 /** 強調の度合いごとに分けた位置の並び。three.js では別の材質で描く。 */
 export interface EmphasisBuffers {
   readonly none: Float32Array;
+  readonly constrained: Float32Array;
   readonly hovered: Float32Array;
   readonly selected: Float32Array;
 }
@@ -87,6 +94,9 @@ export const NO_HIGHLIGHT: SketchHighlight = { hoveredElementId: null, selection
 /** 構築線が 1 つも無いとき(FR-320)。 */
 const EMPTY_CONSTRUCTION_IDS: ReadonlySet<string> = new Set<string>();
 
+/** 完全に決まった要素が 1 つも無いとき(FR-313、タスク22b)。 */
+const EMPTY_CONSTRAINED_IDS: ReadonlySet<string> = new Set<string>();
+
 /** 何も無いスケッチ。起動直後と、片付けたあとの初期値に使う。 */
 export const EMPTY_RESOLVED_SKETCH: ResolvedSketch = {
   points: [],
@@ -104,6 +114,7 @@ export const EMPTY_RESOLVED_SKETCH: ResolvedSketch = {
 /** 組み立て途中の並び。強調の度合いごとに 1 本ずつ持つ。 */
 interface Sink {
   readonly none: number[];
+  readonly constrained: number[];
   readonly hovered: number[];
   readonly selected: number[];
 }
@@ -114,7 +125,7 @@ interface Placement {
 }
 
 function createSink(): Sink {
-  return { none: [], hovered: [], selected: [] };
+  return { none: [], constrained: [], hovered: [], selected: [] };
 }
 
 /** 並びの末尾へ足し、どこへ入ったかを返す。値の数が多くなるので展開(...)では渡さない。 */
@@ -130,6 +141,7 @@ function pushInto(sink: Sink, emphasis: SketchEmphasis, values: readonly number[
 function toBuffers(sink: Sink): EmphasisBuffers {
   return {
     none: new Float32Array(sink.none),
+    constrained: new Float32Array(sink.constrained),
     hovered: new Float32Array(sink.hovered),
     selected: new Float32Array(sink.selected),
   };
@@ -139,12 +151,17 @@ function toBuffers(sink: Sink): EmphasisBuffers {
  * 要素 1 つの強調の度合いを決める。選択がホバーより強い。
  * 点列の 1 点(`pa1#0`)は、点列そのもの(`pa1`)が選ばれているときも強調する。
  * ツリーやプロパティからはフィーチャー単位で選ぶため(FR-501)。
+ *
+ * `constrainedIds`(完全に決まった要素、FR-313)は**いちばん弱い**。選択・ホバーの青が
+ * 掛かっているあいだはそちらを出し、何も掛かっていないときだけ落ち着いた別色にする
+ * (利用者の決定②(2026-09-05)「選択・ホバーの青は従来どおり優先」)。
  */
 export function emphasisOf(
   elementId: string,
   featureId: string,
   highlight: SketchHighlight,
   selection: ReadonlySet<string>,
+  constrainedIds: ReadonlySet<string> = EMPTY_CONSTRAINED_IDS,
 ): SketchEmphasis {
   if (selection.has(elementId) || selection.has(featureId)) {
     return 'selected';
@@ -153,7 +170,7 @@ export function emphasisOf(
   if (hovered !== null && (hovered === elementId || hovered === featureId)) {
     return 'hovered';
   }
-  return 'none';
+  return constrainedIds.has(featureId) ? 'constrained' : 'none';
 }
 
 /**
@@ -206,6 +223,11 @@ export function buildSketchGeometry(
    * (model の型も既存の期待値も変えない、P4 タスク33)。渡さなければ全部が実線。
    */
   constructionIds: ReadonlySet<string> = EMPTY_CONSTRUCTION_IDS,
+  /**
+   * 完全に決まった要素(FR-313、P4b タスク22b)のフィーチャー id
+   * (`constrainedElements.ts` の `fullyConstrainedFeatureIds`)。渡さなければ全部が既定色。
+   */
+  constrainedIds: ReadonlySet<string> = EMPTY_CONSTRAINED_IDS,
 ): SketchGeometryBundle {
   const selection = new Set(highlight.selection);
   const points = createSink();
@@ -215,7 +237,7 @@ export function buildSketchGeometry(
   const index = new Map<string, SketchDrawEntry>();
 
   for (const point of sketch.points) {
-    const emphasis = emphasisOf(point.id, point.featureId, highlight, selection);
+    const emphasis = emphasisOf(point.id, point.featureId, highlight, selection, constrainedIds);
     const placement = pushInto(points, emphasis, point.position);
     index.set(point.id, {
       elementId: point.id,
@@ -252,7 +274,7 @@ export function buildSketchGeometry(
     ...sketch.splines,
   ]) {
     const elementId = elementIdByCurve.get(curve) ?? curve.featureId;
-    const emphasis = emphasisOf(elementId, curve.featureId, highlight, selection);
+    const emphasis = emphasisOf(elementId, curve.featureId, highlight, selection, constrainedIds);
     const sink = constructionIds.has(curve.featureId) ? constructionCurves : curves;
     const placement = pushInto(sink, emphasis, toLineSegmentPositions(sampleCurve(curve)));
     drawnCurveFeatureIds.add(curve.featureId);
@@ -274,7 +296,7 @@ export function buildSketchGeometry(
 
   const faces: SketchFaceDraw[] = [];
   for (const face of sketch.faces) {
-    const emphasis = emphasisOf(face.featureId, face.featureId, highlight, selection);
+    const emphasis = emphasisOf(face.featureId, face.featureId, highlight, selection, constrainedIds);
     const faceMesh = meshByFeature.get(face.featureId);
     const placement = pushInto(
       faceOutlines,

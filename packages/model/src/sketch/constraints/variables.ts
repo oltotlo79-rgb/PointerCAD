@@ -151,20 +151,53 @@ export interface VariableSet {
   /** 形が決まった要素のフィーチャー id。拘束の材料が在るかの判定に使う(FR-504)。 */
   readonly elementFeatureIds: ReadonlySet<string>;
   /**
+   * **基準に追従する点**の鍵(座標が相対 `@dx,dy` か極 `@距離<角度` で書かれている点。
+   * P4b タスク22b)。
+   *
+   * これらの点も数で書かれていれば変数になる(引っぱって動かせる、統括の決定 2026-09-05)
+   * が、**動かさなかったときは基準と一緒に動かなければならない**。解いた座標をそのまま
+   * 差し込むと、基準が拘束で動いたのに追従しない点ができてしまう(実測: 水平+長さ 10 で
+   * 終点が (7,0,0) → (10,0,0) へ動いても、その終点を基準にした点が元の位置に残る)。
+   * 差し込む側(`solveSketch.ts` の `buildOverrides`)がこの集合を見て、
+   * **動かなかった点は差し込まず解決へ任せる**ことで追従を保つ。
+   */
+  readonly followsBase: ReadonlySet<string>;
+  /**
    * 円弧の端点が円周の上にあるという暗黙の式。**変数を 1 つも含まない式は入れない**
    * (すべて定数の円弧に式を数えると、動かせないのに「拘束が多すぎる」と出てしまう)。
    */
   readonly implicit: readonly ImplicitCircleEquation[];
 }
 
-/** 座標が「数値リテラルだけで書かれた絶対座標」か(§0.a-0.2)。 */
-function isLiteralCoordinate(input: CoordinateInput): boolean {
-  return (
-    input.mode === 'absolute' &&
-    isNumericLiteral(input.x.source) &&
-    isNumericLiteral(input.y.source) &&
-    isNumericLiteral(input.z.source)
-  );
+/**
+ * 座標の 3 つの欄がすべて数値リテラルで書かれているか(§0.a-0.2)。
+ *
+ * **指定方法(絶対・相対・極)は問わない**(統括の決定 2026-09-05、案 A。P4b タスク22b)。
+ * 相対 `@dx,dy` と極 `@距離<角度` も、数で書かれていれば引っぱって動かせる
+ * (書き戻しは Δ・距離・角度のまま行うので、指定方法は保たれる。`dragSketch.commitDrag`)。
+ * 式で書かれている欄が 1 つでもあれば、動かすと式を壊すので変数にしない(FR-202)。
+ */
+export function isLiteralCoordinate(input: CoordinateInput): boolean {
+  switch (input.mode) {
+    case 'absolute':
+      return (
+        isNumericLiteral(input.x.source) &&
+        isNumericLiteral(input.y.source) &&
+        isNumericLiteral(input.z.source)
+      );
+    case 'relative':
+      return (
+        isNumericLiteral(input.dx.source) &&
+        isNumericLiteral(input.dy.source) &&
+        isNumericLiteral(input.dz.source)
+      );
+    case 'polar':
+      return (
+        isNumericLiteral(input.distance.source) &&
+        isNumericLiteral(input.azimuth.source) &&
+        isNumericLiteral(input.elevation.source)
+      );
+  }
 }
 
 /** 組み立て中の 1 つの数(点の成分 2 つ、または半径 1 つ)。 */
@@ -183,6 +216,8 @@ interface Builder {
   readonly slots: Slot[];
   readonly aliases: Map<string, string>;
   readonly elementFeatureIds: Set<string>;
+  /** 基準に追従する点の鍵(`VariableSet.followsBase` の材料)。 */
+  readonly followsBase: Set<string>;
   /** フィーチャー id → そのフィーチャーが持つ点/半径の鍵(「固定」を要素ごと掛けるのに使う)。 */
   readonly keysByFeature: Map<string, string[]>;
 }
@@ -196,7 +231,19 @@ function onPlaneReason(plane: WorkPlane, onPlane: boolean, world: Vec3): FrozenR
   return !onPlane || distanceToPlane(plane, world) > SKETCH_TOLERANCE_MM ? 'derived' : null;
 }
 
-/** 保存された座標を変数にしてよいか。 */
+/**
+ * 保存された座標を変数にしてよいか。
+ *
+ * **指定方法では分けない**(統括の決定 2026-09-05、案 A。P4b タスク22b)。
+ * 以前は相対・極を「基準が動けば追従するから」と一律 `derived`(定数)にしていたが、
+ * 線分の道具の既定は「終点は直前の点からの相対」なので、**ふつうに引いた線分の終点が
+ * 掴めない**という不都合が実測で出た(`docs/報告記録.md` 2026-09-05 実時計 07:11)。
+ *
+ * 二重定義にならないのは、書き戻しを**相対のまま**行うため。解いた位置と基準の位置の差を
+ * 取り直して Δ(極なら距離と角度)へ書くので、基準との関係はそのまま保たれる
+ * (`dragSketch.commitDrag`)。基準が解けているかは、その点そのものが解決できている
+ * (この関数へ来る時点で解決結果に位置がある)ことで保証される。
+ */
 function coordinateReason(
   plane: WorkPlane,
   onPlane: boolean,
@@ -207,10 +254,6 @@ function coordinateReason(
     return 'derived';
   }
   if (onPlaneReason(plane, onPlane, world) !== null) {
-    return 'derived';
-  }
-  if (input.mode !== 'absolute') {
-    // 相対・極は基準が動けば追従する。独立した変数にすると二重定義になる(§2.2 の表)。
     return 'derived';
   }
   return isLiteralCoordinate(input) ? null : 'expression';
@@ -239,14 +282,22 @@ function rememberKey(builder: Builder, featureId: string, key: string): void {
   known.push(key);
 }
 
-/** 点を 1 つ積む(u, v の 2 つの数になる)。`reason` が null なら変数の候補。 */
+/**
+ * 点を 1 つ積む(u, v の 2 つの数になる)。`reason` が null なら変数の候補。
+ * `input` を渡すと、相対・極で書かれた点を「基準に追従する点」として覚える
+ * (`VariableSet.followsBase` の注釈)。
+ */
 function addPoint(
   builder: Builder,
   featureId: string,
   pointKey: string,
   world: Vec3,
   reason: FrozenReason | null,
+  input: CoordinateInput | null = null,
 ): void {
+  if (input !== null && input.mode !== 'absolute') {
+    builder.followsBase.add(pointKey);
+  }
   const [u, v] = worldToPlane(builder.plane, world);
   builder.slots.push({
     variable: { kind: 'u', pointKey },
@@ -336,6 +387,7 @@ export function collectVariables(
     slots: [],
     aliases: new Map<string, string>(),
     elementFeatureIds: new Set<string>(),
+    followsBase: new Set<string>(),
     keysByFeature: new Map<string, string[]>(),
   };
 
@@ -384,6 +436,7 @@ export function collectVariables(
           id,
           point.position,
           coordinateReason(plane, onPlane, point.position, feature.at),
+          feature.at,
         );
         // 解決は点フィーチャーの端点も登録する(`resolveSketch.ts`)。同じ点なので別名にする。
         addAlias(builder, vertexKey(id, 'start'), id);
@@ -401,6 +454,7 @@ export function collectVariables(
           vertexKey(id, 'start'),
           segment.from,
           coordinateReason(plane, onPlane, segment.from, feature.from),
+          feature.from,
         );
         addPoint(
           builder,
@@ -408,6 +462,7 @@ export function collectVariables(
           vertexKey(id, 'end'),
           segment.to,
           coordinateReason(plane, onPlane, segment.to, feature.to),
+          feature.to,
         );
         break;
       }
@@ -424,6 +479,7 @@ export function collectVariables(
           vertexKey(id, 'center'),
           arc.center,
           coordinateReason(plane, onPlane, arc.center, feature.center),
+          feature.center,
         );
         addRadius(builder, id, 'radius', arc.radius, feature.radius, onPlane);
         // **円弧の端点は変数にする**(統括の決定 2026-09-04。§0.a-0.6「角度は座標から導く」の
@@ -455,6 +511,7 @@ export function collectVariables(
           vertexKey(id, 'center'),
           ellipse.center,
           coordinateReason(plane, onPlane, ellipse.center, feature.center),
+          feature.center,
         );
         addRadius(builder, id, 'major', ellipse.majorRadius, feature.majorRadius, onPlane);
         addRadius(builder, id, 'minor', ellipse.minorRadius, feature.minorRadius, onPlane);
@@ -477,6 +534,7 @@ export function collectVariables(
             `${id}#${n}`,
             position,
             coordinateReason(plane, onPlane, position, feature.points[n] ?? null),
+            feature.points[n] ?? null,
           );
         });
         addAlias(builder, vertexKey(id, 'start'), `${id}#0`);
@@ -554,6 +612,7 @@ export function collectVariables(
     constants,
     aliases: builder.aliases,
     elementFeatureIds: builder.elementFeatureIds,
+    followsBase: builder.followsBase,
     implicit: effectiveImplicit,
   };
 }

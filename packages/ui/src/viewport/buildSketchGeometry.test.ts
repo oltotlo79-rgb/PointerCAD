@@ -253,6 +253,27 @@ describe('スケッチの描画データ', () => {
     expect(emphasisOf('p1', 'p1', NO_HIGHLIGHT, new Set())).toBe('none');
   });
 
+  it('完全に決まった要素は別の並びへ入るが、選択・ホバーの青が優先(FR-313、タスク22b)', () => {
+    const constrained = new Set(['l1']);
+    // 何も選んでいなければ「決まった」色の並びへ入る。
+    expect(emphasisOf('l1', 'l1', NO_HIGHLIGHT, new Set(), constrained)).toBe('constrained');
+    // 選択・ホバーは従来どおり優先(利用者の決定②)。
+    expect(
+      emphasisOf('l1', 'l1', { hoveredElementId: null, selection: ['l1'] }, new Set(['l1']), constrained),
+    ).toBe('selected');
+    expect(
+      emphasisOf('l1', 'l1', { hoveredElementId: 'l1', selection: [] }, new Set(), constrained),
+    ).toBe('hovered');
+    // 決まっていない要素は既定色のまま。
+    expect(emphasisOf('a1', 'a1', NO_HIGHLIGHT, new Set(), constrained)).toBe('none');
+
+    const bundle = buildSketchGeometry(SKETCH, null, NO_HIGHLIGHT, new Set(), constrained);
+    // 線分 1 本ぶん(両端 2 点 × 3)が「決まった」並びへ移り、既定の並びからは消える。
+    expect(bundle.curves.constrained).toHaveLength(6);
+    expect(bundle.index.get('l1')?.emphasis).toBe('constrained');
+    expect(bundle.index.get('a1')?.emphasis).toBe('none');
+  });
+
   it('対応表は 点 → 線・円弧 → 面 の順に並ぶ', () => {
     const bundle = buildSketchGeometry(SKETCH, null);
     expect(Array.from(bundle.index.keys())).toEqual(['p1', 'pa1#0', 'pa1#1', 'l1', 'a1', 'f1']);

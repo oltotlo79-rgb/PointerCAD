@@ -1,5 +1,6 @@
 import type { AutoSaver } from '@pointercad/io';
 import {
+  affectsShape,
   analyzeParameters,
   canRedo as stackCanRedo,
   baseWorkPlane,
@@ -12,6 +13,7 @@ import {
   dotVec3,
   findFeature,
   findSketch,
+  isFreeWorkPlaneId,
   moveHistoryItem,
   pushUndo,
   redo as redoStep,
@@ -24,6 +26,7 @@ import {
   undo as undoStep,
   WORK_PLANE_IDS,
   WORK_PLANES,
+  type AppearanceMatchEntry,
   type ConstraintDiagnosis,
   type ConstraintTarget,
   type CoordinateInput,
@@ -56,6 +59,7 @@ import { loadSettings, saveSettings, type DisplaySettings } from '../settings/se
 // タイムラインのつまみ(FR-507、P4b タスク19・20)の判断は shell の純関数 1 か所に置く。
 // 描く側(Timeline.tsx / FeatureTree.tsx)と同じ規則をここでも使い、2 か所に書かない。
 import { placeNewFeatures, type TimelineRefusal } from '../shell/timelineMove.js';
+import { shouldShowTimelineHint } from '../shell/timelineHint.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
 import {
@@ -76,6 +80,7 @@ import type { TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
 import { selectionKindForTool, type SelectionKind } from '../solid/subShapeSelection.js';
 import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
+import type { SketchDrag } from '../viewport/dragSketch.js';
 
 /** 透視投影 / 平行投影(FR-102)。 */
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -348,9 +353,37 @@ export interface AppState {
    * 印を押すとここへ入り(当たり判定)、一覧の行を押しても同じところへ入る。
    */
   readonly selectedConstraintId: string | null;
+  /**
+   * いま引っぱっている点(FR-313、P4b タスク14)。引っぱっていなければ null。
+   *
+   * **表示だけの一時状態**で、文書は 1 か所も変わらない(`pointermove` のたびに文書を
+   * 作り直すと取り消しの段が増える)。文書へ書き戻すのは離した 1 回だけ。
+   */
+  readonly sketchDrag: SketchDrag | null;
+  /**
+   * 引っぱっている最中の形(FR-313、P4b タスク14)。引っぱっていなければ null。
+   *
+   * `resolvedSketch`(文書どおりの形)はそのままにして、**描くときだけこちらを優先する**
+   * (`ViewportCanvas.tsx`)。当たり判定・プロパティ・吸着は文書どおりの形を読み続けるので、
+   * 引っぱっている間に狙いがずれない。離した後は次の再計算(`applySketch` /
+   * `applyRecompute`)が落とすので、確定した形へ切り替わるまで画面がちらつかない。
+   */
+  readonly dragResolved: ResolvedSketch | null;
+  /**
+   * 引っぱれなかった理由(FR-313、NFR-UX-5)。押した瞬間に帯へ出す。引っぱれたら null。
+   */
+  readonly dragRefusalKey: MessageKey | null;
 
   /** ソリッドのボディ(§0.a-0.5)。カーネルが返した三角形と稜線。 */
   readonly bodies: readonly SolidBody[];
+  /**
+   * 外観を割り当てた面が、いまの形のどの面に当たるか(FR-1106、P5 §2.2.3、タスク10)。
+   *
+   * 再計算のたびにカーネルが指紋で選び直した結果がそのまま入る。`faceIndex` が `null` の
+   * ものは選び直せなかった割り当てで、その面は既定の外観で描き、警告を出す(タスク11・12)。
+   * **割り当て自体は文書から消さない。**
+   */
+  readonly appearanceMatches: readonly AppearanceMatchEntry[];
   /** 部品の再計算で集めた失敗。スケッチ側もソリッド側も並ぶ(FR-504)。 */
   readonly partErrors: readonly PartRecomputeError[];
   /** 作り直さずに済んだ段の数(NFR-PF-3 の効き目)。 */
@@ -596,6 +629,21 @@ export interface AppState {
   readonly setConstraintPrompt: (prompt: ConstraintValuePrompt | null) => void;
   /** 一覧・印で選んでいる拘束を差し替える(FR-313)。 */
   readonly setSelectedConstraint: (constraintId: string | null) => void;
+  /**
+   * 引っぱりを始める(FR-313、P4b タスク14)。掴んだ点を覚えるだけで、文書は変えない。
+   * 前の断りはここで消える(押し直したら理由も出し直す)。
+   */
+  readonly beginSketchDrag: (drag: SketchDrag) => void;
+  /** 引っぱっている最中の形を差し替える(表示だけ。1 コマに 1 回呼ぶ)。 */
+  readonly setDragResolved: (resolved: ResolvedSketch) => void;
+  /**
+   * 引っぱりを終える。`keepShape` が真なら、離した形を**次の再計算まで**残す
+   * (確定した文書の計算が終わるまでの間に元の形へ戻ってちらつくのを防ぐ)。
+   * Esc・掴み損ねのときは偽にして、その場で元の形へ戻す。
+   */
+  readonly endSketchDrag: (keepShape: boolean) => void;
+  /** 引っぱれない理由を出す・消す(NFR-UX-5)。 */
+  readonly setDragRefusal: (key: MessageKey | null) => void;
   readonly setSelection: (ids: readonly string[]) => void;
   readonly toggleSelection: (id: string) => void;
   readonly setHovered: (id: string | null) => void;
@@ -771,10 +819,69 @@ type DocumentPatch = Pick<
   | 'featureNames'
   | 'selection'
   | 'hoveredElementId'
+  | 'workPlaneId'
   | 'workPlane'
   | 'resolvedReferences'
   | 'parameterAnalysis'
 >;
+
+/**
+ * 作図面 id が、その文書でまだ有効か(統括の指示、2026-09-05。P4b タスク22a-(5)・22b-(i))。
+ *
+ * 基準の3面(xy / xz / yz)は常に有効。任意の作業平面は、文書の `references` にその id の
+ * 作業平面フィーチャーがあるときだけ有効とする。
+ *
+ * **3D スケッチ(`free`)の扱いは経路で分ける**(P4b タスク22b-(i)、統括の指示 2026-09-05)。
+ * ・`replacesDocument`(新規・開く・復元)… 無効とし、基準の XY へ戻す。**新しい部品を
+ *   3D スケッチのまま始めると、次に描く矩形が「3D スケッチではこの形をかけません」で
+ *   必ず失敗する**(Electron 台本の項目 10〜13 がすべてこれで落ちた実測)。前の部品の
+ *   作図面を持ち越さないのは、作業平面のときと同じ扱いにそろえる。
+ * ・Undo / Redo … 有効のまま保つ。同じ部品の中の時をまたぐ移動でしかなく、利用者が
+ *   選んだ 3D スケッチを勝手に降ろすと操作が飛ぶ。
+ *
+ * 文書を丸ごと差し替える経路で `workPlaneId` だけが古いまま残ると、次に置く矩形・線分が
+ * その存在しない作図面を指して作られ、面が張れず「作図面が見つかりません」になる
+ * (再現: 作業平面を作図面に切り替える → 新規 → 矩形 → 面を張る)。
+ */
+function isWorkPlaneIdValidFor(
+  document: PartDocument,
+  planeId: WorkPlaneId,
+  replacesDocument = false,
+): boolean {
+  if (baseWorkPlane(planeId) !== null) {
+    return true;
+  }
+  if (isFreeWorkPlaneId(planeId)) {
+    return !replacesDocument;
+  }
+  return document.references.some(
+    (reference) => reference.kind === 'referencePlane' && reference.id === planeId,
+  );
+}
+
+/**
+ * つまみの知らせ(FR-507)を選ぶ(P4b タスク19・22b-(a))。
+ *
+ * ①途中まで戻したまま作ったときは「差し込みました」(タスク19)。
+ * ②そうでなく、**ソリッドが初めて 2 段以上になった**ときは、つまみの初回の案内を 1 度だけ
+ *   出す(利用者の決定①(2026-09-05))。既読は端末に覚えるので同じ人に二度は出ない。
+ * ③どちらでもなければ何も言わない。
+ */
+function timelineNoticeFor(
+  state: AppState,
+  next: PartDocument,
+  inserted: boolean,
+): MessageKey | null {
+  if (inserted) {
+    return 'timeline.inserted';
+  }
+  const show = shouldShowTimelineHint(
+    state.document.solids.length,
+    next.solids.length,
+    state.displaySettings.timelineHintSeen,
+  );
+  return show ? 'timeline.hint' : null;
+}
 
 /**
  * 文書を差し替え、派生の控えを作り直す。**`document` を書き換えるのはここだけ。**
@@ -789,11 +896,21 @@ type DocumentPatch = Pick<
  * 再計算で範囲外になった」場合はここでは掃除されない**(ボディの id はまだ `liveIds`
  * にあるため)。この限界は表示側(タスク22 の `buildSubShapeGeometry`)が範囲外の
  * 参照を黙って描かないことで見た目の破綻を防ぐ想定(§2.11)。
+ *
+ * **作図面 `workPlaneId` もここで一緒に確かめる**(P4b タスク22a-(5))。`resetDocument` /
+ * `applyDocument`(開く・復元)/ `undo` / `redo` はすべてここを通るので、経路ごとに同じ
+ * 判定を書かずに済む。新しい文書にその作業平面が無ければ既定の XY へ戻す
+ * (`referencePatch` が作り直す `workPlane` の解決先も、このあとの XY に揃う)。
  */
 function documentPatch(
   state: AppState,
   next: PartDocument,
   stack: UndoStack<PartDocument>,
+  /**
+   * 文書を丸ごと差し替える経路(新規・開く・復元)か。3D スケッチの扱いだけが変わる
+   * (`isWorkPlaneIdValidFor` の注釈)。Undo / Redo と、形を変えただけの差し替えは false。
+   */
+  replacesDocument = false,
 ): DocumentPatch {
   const sketch = activeSketchOf(next);
   const liveIds = new Set<string>(sketch.features.map((feature) => feature.id));
@@ -801,6 +918,10 @@ function documentPatch(
     liveIds.add(solid.id);
   }
   const hovered = state.hoveredElementId;
+  // 作図面が指す作業平面が新しい文書に無ければ既定の XY へ戻す(P4b タスク22a-(5))。
+  const workPlaneId = isWorkPlaneIdValidFor(next, state.workPlaneId, replacesDocument)
+    ? state.workPlaneId
+    : DEFAULT_WORK_PLANE_ID;
   return {
     document: next,
     undoStack: stack,
@@ -811,8 +932,9 @@ function documentPatch(
     featureNames: sketch.features.map((feature) => feature.name),
     selection: state.selection.filter((id) => liveIds.has(featureIdOf(id))),
     hoveredElementId: hovered !== null && !liveIds.has(featureIdOf(hovered)) ? null : hovered,
+    workPlaneId,
     // 基準ジオメトリ(FR-328、FR-329)は文書から導ける控えなので、ここで作り直す。
-    ...referencePatch(next, state.workPlaneId),
+    ...referencePatch(next, workPlaneId),
     // パラメータ表(FR-207)も同じく文書から導ける控え。
     ...parameterPatch(next),
   };
@@ -970,7 +1092,11 @@ export function createInitialDocumentState(): Pick<
   | 'constraintErrorMessage'
   | 'constraintPrompt'
   | 'selectedConstraintId'
+  | 'sketchDrag'
+  | 'dragResolved'
+  | 'dragRefusalKey'
   | 'bodies'
+  | 'appearanceMatches'
   | 'partErrors'
   | 'cacheHits'
   | 'recomputeProgress'
@@ -1045,7 +1171,13 @@ export function createInitialDocumentState(): Pick<
     constraintErrorMessage: null,
     constraintPrompt: null,
     selectedConstraintId: null,
+    // 引っぱり(FR-313、P4b タスク14)。起動直後は何も掴んでいない。
+    sketchDrag: null,
+    dragResolved: null,
+    dragRefusalKey: null,
     bodies: [],
+    // 起動直後の部品には外観の割り当てが 1 つも無い(FR-1106、P5 タスク10)。
+    appearanceMatches: [],
     partErrors: [],
     cacheHits: 0,
     recomputeProgress: null,
@@ -1246,19 +1378,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
             { ...state.undoStack, present: next }
           : pushUndo(state.undoStack, next, { coalesceKey });
       return {
-        ...documentPatch(state, next, stack),
+        // 丸ごとの差し替え(開く・復元)では 3D スケッチも降ろす(タスク22b-(i))。
+        ...documentPatch(state, next, stack, options?.replacesDocument === true),
         // 文書をまるごと差し替える呼び出し(開く等)のときだけ進める(§0.a-0.1〜)。
         documentVersion:
           options?.replacesDocument === true ? state.documentVersion + 1 : state.documentVersion,
         timelineIndex: placement.timelineIndex,
-        // 知らせを出すのは②のときだけ。開いた直後や末尾で作ったときは何も言わない。
-        timelineNoticeKey: placement.inserted ? 'timeline.inserted' : null,
+        // 知らせは「差し込みました」か、つまみの初回の案内(タスク22b-(a))か、無しの 3 通り。
+        timelineNoticeKey: timelineNoticeFor(state, next, placement.inserted),
         // 順序の入れ替えの断りは、形が変われば用済み(FR-504)。
         timelineRefusal: null,
         // 束ねる変更(プロパティ欄の 1 文字ごと)では計算中の札を立てない。立てると
         // 打つたびに札が点滅する。再計算は attachPartRecompute が拾い、終わり次第
         // そのまま形が動く(NFR-PF-1)。
-        isComputing: coalesceKey === undefined ? true : state.isComputing,
+        //
+        // **形に影響しない変更(外観の割り当てだけ、FR-1106〜1110)でも立てない**
+        // (P5 §2.3.2)。下の `attachPartRecompute` の購読も `affectsShape` を見て
+        // 再計算を投げないので、ここで立てると誰も下ろせない札が残る。要件§4.12の
+        // 「外観を変えても再計算は起きず、描画だけが変わる」はこの 2 か所で守られる。
+        isComputing:
+          coalesceKey === undefined && affectsShape(state.document, next)
+            ? true
+            : state.isComputing,
         // 形が変わったら「保存しました」等の知らせは用済み(FR-806)。
         fileMessage: null,
         // 中止の知らせも、次の計算が始まる時点で用済み(NFR-PF-4)。
@@ -1272,6 +1413,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         referenceErrorMessage: null,
         // 拘束の断りも文書が変われば用済み(FR-504、タスク13)。
         constraintErrorMessage: null,
+        // 引っぱれなかった理由も、形が変われば用済み(タスク14)。
+        dragRefusalKey: null,
         // 原点を移した知らせも、次に形が変われば用済み(FR-331、タスク35b)。
         // 原点の再設定そのものは applyDocument のあとで setOriginNotice を呼んで立て直す。
         originNoticeMessage: null,
@@ -1280,6 +1423,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
         editPreview: null,
       };
     });
+    /*
+      つまみの初回の案内を出したら、二度と出さないよう端末に覚える(P4b タスク22b-(a)、
+      利用者の決定①)。`set` の中は副作用を持たない純粋な差分にしたいので、
+      `localStorage` への書き込みはここで 1 回だけ行う。
+    */
+    const after = get();
+    if (after.timelineNoticeKey === 'timeline.hint' && !after.displaySettings.timelineHintSeen) {
+      after.setDisplaySettings({ ...after.displaySettings, timelineHintSeen: true });
+    }
   },
   setActiveSketch: (sketchId) => {
     const state = get();
@@ -1321,6 +1473,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // 拘束の診断(FR-313、タスク13)。拘束が無ければ model が null を返す。
         constraintDiagnosis: result.diagnosis,
         ...constraintSummaryPatch(sketch, result.resolved, result.diagnosis),
+        // 確定した形が届いたので、引っぱっている間の仮の形は用済み(タスク14)。
+        dragResolved: null,
         isComputing: false,
         recomputeProgress: null,
       };
@@ -1342,9 +1496,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...(active === undefined
           ? { constraintSummaries: state.constraintSummaries }
           : constraintSummaryPatch(sketch, active.resolved, active.diagnosis)),
+        // 確定した形が届いたので、引っぱっている間の仮の形は用済み(タスク14)。
+        dragResolved: active === undefined ? state.dragResolved : null,
         // 途中で打ち切られた結果は「作れたところまで」でしかないので、前のボディを
         // 半分だけの形へ置き換えない(NFR-PF-4、§2.6 の限界)。
         bodies: result.cancelled ? state.bodies : result.bodies,
+        // 外観の面の照合(FR-1106)はボディと対で意味を持つので、ボディを差し替えたときだけ
+        // 一緒に差し替える(打ち切られた結果の照合は「作れたところまで」でしかない)。
+        appearanceMatches: result.cancelled
+          ? state.appearanceMatches
+          : (result.appearanceMatches ?? []),
         partErrors: result.errors,
         cacheHits: result.cacheHits,
         documentName: sketch.name,
@@ -1369,7 +1530,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...documentPatch(state, stack.present, stack),
         // 時をまたぐ差し替えなので、プロパティ欄の打ちかけの下書きは捨てる(§0.a-0.1〜)。
         documentVersion: state.documentVersion + 1,
-        isComputing: true,
+        // 外観だけの取り消し(FR-1110、FR-505)では再計算が投げられないので札も立てない
+        // (立てると下ろす者がいない。上の applyDocument と同じ理由、P5 §2.3.2)。
+        isComputing: affectsShape(state.document, stack.present) ? true : state.isComputing,
         fileMessage: null,
         recomputeCancelled: false,
         // 「原点を移しました」は取り消した後には嘘になるので落とす(FR-331、タスク35b)。
@@ -1392,7 +1555,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return {
         ...documentPatch(state, stack.present, stack),
         documentVersion: state.documentVersion + 1,
-        isComputing: true,
+        // 取り消し(`undo`)と同じ理由で、形に影響しない差し替えでは札を立てない。
+        isComputing: affectsShape(state.document, stack.present) ? true : state.isComputing,
         fileMessage: null,
         recomputeCancelled: false,
         // やり直しでも同じ(取り消しの `undo` と揃える。FR-331、タスク35b)。
@@ -1497,6 +1661,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setSelectedConstraint: (selectedConstraintId) => {
     set({ selectedConstraintId });
+  },
+  beginSketchDrag: (sketchDrag) => {
+    // まだ 1 度も動かしていないので形はそのまま(押しただけで形が動かないように)。
+    set({ sketchDrag, dragResolved: null, dragRefusalKey: null });
+  },
+  setDragResolved: (dragResolved) => {
+    set({ dragResolved });
+  },
+  endSketchDrag: (keepShape) => {
+    set((state) => ({
+      sketchDrag: null,
+      dragResolved: keepShape ? state.dragResolved : null,
+    }));
+  },
+  setDragRefusal: (dragRefusalKey) => {
+    set({ dragRefusalKey });
   },
   setSelection: (selection) => {
     // 選び直したら、直前に断られた面・立体・オフセットの理由は用済みなので消す(NFR-UX-5)。
@@ -1625,7 +1805,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   resetDocument: (next) => {
     set((state) => ({
-      ...documentPatch(state, next, createUndoStack(next)),
+      // 新規・復元は丸ごとの差し替え(タスク22b-(i))。3D スケッチのままなら XY へ戻す。
+      ...documentPatch(state, next, createUndoStack(next), true),
       // 新規・復元も文書の丸ごとの差し替え(§0.a-0.1〜)。
       documentVersion: state.documentVersion + 1,
       // 新しい部品のつまみは常に末尾から(§0.a-0.19、FR-507)。
@@ -1657,6 +1838,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
       constraintErrorMessage: null,
       constraintPrompt: null,
       selectedConstraintId: null,
+      // 引っぱりの途中で新しい部品に切り替わっても、掴んだ点を持ち越さない(タスク14)。
+      sketchDrag: null,
+      dragResolved: null,
+      dragRefusalKey: null,
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,
@@ -1777,7 +1962,13 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
   const unsubscribe = useAppStore.subscribe((next, previous) => {
     // つまみを動かしたときも計算し直す(FR-507)。切った文書のフィーチャーは複製されない
     // ので段の鍵は変わらず、前半の段は全部キャッシュに当たる(§2.7)。
-    if (next.document !== previous.document || next.timelineIndex !== previous.timelineIndex) {
+    // **外観の割り当てだけが変わったときは投げない**(FR-1106〜1110、要件§4.12、
+    // P5 §2.3.2)。色を変えるたびに 100 フィーチャーの解決と Worker の往復が起きるのを
+    // 避けるための、P5 で最も効く 1 行。形の変化の判定は `model` の `affectsShape` が正本。
+    if (
+      affectsShape(previous.document, next.document) ||
+      next.timelineIndex !== previous.timelineIndex
+    ) {
       request(shownDocument(next));
     }
   });

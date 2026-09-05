@@ -1563,6 +1563,14 @@ function planSolid(
       return planChamfer(feature, bodyKeys, consumed);
     case 'pattern':
       return planPattern(feature, solids, sketches, bodyKeys, consumed, axisFrames);
+    case 'primitive':
+      /*
+        基本形状(FR-429)の段の組み立ては **P5 タスク16 で本実装**する。ここはタスク15 で
+        `SolidFeature` の union を広げたときに、この網羅 switch を落とさないための最小の枝で、
+        いまは必ず理由つきで断る(FR-504。止めずに警告する)。UI から基本形状を作れるように
+        なるのはタスク18 なので、この断りが利用者の画面に出る経路は今のところ無い。
+      */
+      return fail(feature.id, 'invalidValue', '基本形状はまだ作れません。');
   }
 }
 
@@ -1873,6 +1881,13 @@ export function referencedSketchIds(feature: SolidFeature): readonly string[] {
         : axisSketchIds(feature.placement.axis);
     case 'spring':
       return [feature.origin.sketchId, ...axisSketchIds(feature.axis)];
+    case 'primitive':
+      // 基本形状(FR-429、タスク15)。スケッチを見るのは中心にスケッチの点を指したときだけで、
+      // 座標の式・立体の頂点はスケッチを使わない。向きの軸は他の種類と同じ扱い。
+      return [
+        ...(feature.origin.kind === 'sketchPoint' ? [feature.origin.ref.sketchId] : []),
+        ...axisSketchIds(feature.axis),
+      ];
   }
 }
 

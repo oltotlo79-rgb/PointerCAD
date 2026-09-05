@@ -2,10 +2,12 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import {
+  baseWorkPlane,
   findReference,
   findSolid,
   replaceReference,
   replaceSolid,
+  resolveSketch,
   type ReferenceFeature,
   type SketchFeature,
   type SolidFeature,
@@ -17,6 +19,7 @@ import { ConstraintList } from '../sketch/ConstraintList.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { initialDraftVersionState, reconcileDraftVersion } from './fieldDraft.js';
 import { ChevronRightIcon } from './icons.js';
+import { isFeatureAheadOfTimeline } from './timelineRail.js';
 import {
   addSplinePoint,
   faceBoundaryEntries,
@@ -31,6 +34,7 @@ import {
   setFeatureField,
   setFeatureToggle,
   summarizeFeature,
+  withSolvedCoordinates,
   type FeatureCoordinateSummary,
   type FeatureFieldSummary,
   type RectangleView,
@@ -141,6 +145,10 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   // パラメータ表の変数表(FR-207、FR-201)。`板厚 * 2` のような式をここでも読めるようにする。
   // その場入力・コマンドラインの欄と**同じ表**を渡す(タスク18 の申し送り)。
   const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  // 拘束の診断(FR-313)。null なら拘束を 1 つも持たないスケッチ(タスク22b-(g))。
+  const constraintDiagnosis = useAppStore((state) => state.constraintDiagnosis);
+  const workPlaneId = useAppStore((state) => state.workPlaneId);
+  const workPlane = useAppStore((state) => state.workPlane);
   // 矩形の見せ方(対角 2 点 / 中心+幅+高さ)は履歴に残らない画面だけの状態
   // (rules/04-設計の規律.md「表示専用の一時状態だけ useState に置く」)。
   const [rectangleView, setRectangleView] = useState<RectangleView>('corners');
@@ -155,12 +163,32 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   }
   const draft = reconciled.draft;
 
-  const summary = summarizeFeature(feature, sketchErrors, {
+  const baseSummary = summarizeFeature(feature, sketchErrors, {
     document: sketch,
     // 立体の名前は部品文書にしかないので、ここで引いて渡す(頂点参照の「押し出し1 / 立体の頂点」)。
     bodyName: (featureId) => findSolid(part, featureId)?.name ?? null,
     rectangleView,
   });
+  /*
+    拘束で決まった、いまの位置を欄の下へ添える(FR-313、P4b タスク22b-(g))。
+    解いた座標は文書に書かない(rules/04「導出できるものは保存しない」)ので、上の欄には
+    保存された式しか出ない。形が動いたのに数字が変わらないと読めてしまうため、
+    **保存された式だけで解いた形**と**いま描いている形**を突き合わせ、動いた欄にだけ
+    1 行を足す(NFR-UX-7)。突き合わせのための解決は**拘束を持つスケッチのときだけ**
+    行う(拘束を使わない文書では 1 回も増やさない。NFR-PF-1)。
+  */
+  const summary =
+    constraintDiagnosis === null
+      ? baseSummary
+      : withSolvedCoordinates(
+          baseSummary,
+          feature,
+          resolveSketch(sketch, {
+            // 作図面の解き方はストアの控えと同じにそろえる(同じ規則を 2 か所に書かない)。
+            workPlane: (planeId) => (planeId === workPlaneId ? workPlane : baseWorkPlane(planeId)),
+          }),
+          resolved,
+        );
   const computed = resolvedFields(feature, resolved, sketchMesh);
 
   /** 履歴を差し替える。中身が変わらないときは何もしない(無駄な再計算を起こさない)。 */
@@ -311,6 +339,12 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
               </div>
               <CoordinateBaseRow group={group} />
               <div className="pcad-coordinate__fields">{group.fields.map(renderField)}</div>
+              {/* 拘束で決まった、いまの位置(FR-313、タスク22b-(g))。動いた欄だけ出る。 */}
+              {group.solvedText === null ? null : (
+                <p className="pcad-coordinate__solved" title={t('propertyPanel.solvedTooltip')}>
+                  {group.solvedText}
+                </p>
+              )}
             </div>
           ))}
           {summary.scalars.length === 0 ? null : (
@@ -628,6 +662,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   const documentVersion = useAppStore((state) => state.documentVersion);
   // パラメータ表の変数表(FR-207)。押し出しの距離に `板厚 * 2` と書けるようにする。
   const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  // タイムラインのつまみ(FR-507)。つまみより後ろの段はまだ作られていないだけで、
+  // 失敗ではない(P4b タスク22a-(2)、docs/報告記録.md 2026-09-05 実時計 01:05 の申し送り①)。
+  const timelineIndex = useAppStore((state) => state.timelineIndex);
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<SolidFieldDraft>(documentVersion),
   );
@@ -640,7 +677,10 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   const summary = summarizeSolid(part, feature, partErrors);
   const errorMessage = partErrorMessage(partErrors, feature.id);
   const body = bodies.find((candidate) => candidate.featureId === feature.id);
-  const missing = t(missingValueKey(summary));
+  const isAhead = isFeatureAheadOfTimeline(part, timelineIndex, feature.id);
+  // つまみより後ろの段は、失敗(赤)と見た目を分けて「まだ作られていません」にする
+  // (rules/04-設計の規律.md「止めずに警告する」。赤は使わない)。
+  const missing = isAhead ? t('propertyPanel.notYetCreated') : t(missingValueKey(summary));
 
   /** 履歴を差し替える。中身が変わらないときは何もしない(無駄な再計算を起こさない)。 */
   const apply = (next: SolidFeature, coalesceKey?: string): void => {
@@ -679,7 +719,10 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           if (!parsed.ok) {
             return;
           }
-          apply(setSolidField(feature, item.key, parsed.value), `field:${feature.id}:${item.key}`);
+          apply(
+            setSolidField(feature, item.key, parsed.value, variables),
+            `field:${feature.id}:${item.key}`,
+          );
         }}
       />
     );
@@ -770,7 +813,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
               key={choice.key}
               choice={choice}
               onChoose={(value) => {
-                apply(setSolidChoice(feature, choice.key, value));
+                apply(setSolidChoice(feature, choice.key, value, variables));
               }}
             />
           ))}

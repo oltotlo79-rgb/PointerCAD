@@ -14,7 +14,14 @@
  * 開き直したときは必ず末尾から始まる。
  */
 
-import { buildTimeline, type PartDocument, type TimelineEntry } from '@pointercad/model';
+import {
+  buildTimeline,
+  consumedBodyIds,
+  documentUpTo,
+  timelineIndexOf,
+  type PartDocument,
+  type TimelineEntry,
+} from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 
@@ -157,6 +164,41 @@ export function timelineStopTooltipKey(state: TimelineStopState, atEnd: boolean)
     return 'timeline.stopTooltip';
   }
   return atEnd ? 'timeline.stopEnd' : 'timeline.stopCurrent';
+}
+
+/**
+ * つまみより前(past/current)の段だけで消費関係を導く(P4b タスク22a-(3))。
+ *
+ * `solidSummary.ts` の「統合済み」の札は文書全体から `consumedBodyIds` を導くため、
+ * 途中まで戻しても後ろの段(穴・パターン等)の消費がそのまま残って見える(表示上の
+ * 既知差、`docs/報告記録.md` 2026-09-05 実時計 01:05 の申し送り②)。
+ * `documentUpTo` で切った文書をそのまま model の `consumedBodyIds` へ渡すだけで、
+ * 消費の判定そのものを 2 か所に書かずに済む。
+ */
+export function consumedIdsUpToTimeline(
+  part: PartDocument,
+  index: number | null,
+): ReadonlySet<string> {
+  return consumedBodyIds(documentUpTo(part, index));
+}
+
+/**
+ * その id の段がつまみより後ろ(まだ作られていない)か(P4b タスク22a-(2))。
+ *
+ * プロパティ欄で、つまみより後ろの段を「計算できていません」(失敗のような言い回し)と
+ * 出さないための判定に使う。帯に無い id(スケッチの要素など)は後ろとはみなさない。
+ */
+export function isFeatureAheadOfTimeline(
+  part: PartDocument,
+  index: number | null,
+  featureId: string,
+): boolean {
+  const current = resolveTimelineIndex(part, index);
+  if (current === null) {
+    return false;
+  }
+  const position = timelineIndexOf(part, featureId);
+  return position !== null && position > current;
 }
 
 /**

@@ -252,6 +252,51 @@ export interface SpringKeyMaterial {
 }
 
 /**
+ * 基本形状(FR-429)の寸法の材料。欄名は kernel の `PrimitiveShapeSpec`・model の
+ * `PrimitiveShape` と同じにしてあるので、解決済みの数値をそのまま詰め替えられる。
+ */
+export type PrimitiveShapeKeyMaterial =
+  | { readonly kind: 'sphere'; readonly radius: number }
+  | { readonly kind: 'box'; readonly sizeX: number; readonly sizeY: number; readonly sizeZ: number }
+  | { readonly kind: 'cylinder'; readonly radius: number; readonly height: number }
+  | {
+      readonly kind: 'cone';
+      readonly bottomRadius: number;
+      readonly topRadius: number;
+      readonly height: number;
+    }
+  | { readonly kind: 'torus'; readonly majorRadius: number; readonly minorRadius: number };
+
+/**
+ * 基本形状(FR-429、P5 §2.7)の鍵の材料。形の種類と寸法・基準点・向き。
+ *
+ * 対象のボディを消費しない「作る」フィーチャーなので、ばねと同じく普段は上流を持たない
+ * (§0.a-0.19)。ただし**基準点に立体の頂点を指したときだけ** `originQuery`(頂点の指紋)と
+ * `targetKey`(その頂点を持つ立体の段の鍵)が入る。
+ *
+ * **この2つを材料へ必ず含める**(P5 タスク14b の申し送り)。含めないと、上流の押し出しを
+ * 伸ばして頂点が動いても段の鍵が変わらず、**古い位置の形がキャッシュから返る**。
+ * 鍵の連鎖(NFR-PF-3)は「材料が変われば鍵が変わる」ことに全面的に頼っているので、
+ * 位置を決める材料が鍵の外にあってはならない。消費しないことと鍵に混ぜることは別の話で、
+ * `targetKey` を持つからといって対象を食べるわけではない。
+ *
+ * `origin` は、`originQuery` があるときは**頂点からのオフセット**、無いときは世界座標
+ * (kernel の `PrimitiveStepSpec.origin` と同じ約束)。どちらでも形を決める値なので混ぜる。
+ */
+export interface PrimitiveKeyMaterial {
+  readonly kind: 'primitive';
+  /** 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心(§0.a-0.17)。 */
+  readonly origin: KeyVec3;
+  /** 向き(単位ベクトル)。`gp_Ax2` の Z 方向になる。 */
+  readonly axis: KeyVec3;
+  readonly shape: PrimitiveShapeKeyMaterial;
+  /** 基準点にする頂点の指紋(`fingerprintKeyText` の出力)。座標・スケッチの点なら null。 */
+  readonly originQuery: KeySubShape | null;
+  /** その頂点を持つ立体の段の鍵。`originQuery` が null なら null。 */
+  readonly targetKey: string | null;
+}
+
+/**
  * 1段ぶんの鍵の材料。段の種類ごとに要る値だけを持つ。
  * パターン(FR-411 / FR-412)の材料はここに無い。パターンはもとの穴・ねじ穴の材料の
  * `targetKey` と `transforms` を差し替えたものとして表すため(§0.a-0.20)。
@@ -265,7 +310,8 @@ export type SolidStepKeyMaterial =
   | ThreadKeyMaterial
   | FilletKeyMaterial
   | ChamferKeyMaterial
-  | SpringKeyMaterial;
+  | SpringKeyMaterial
+  | PrimitiveKeyMaterial;
 
 /** 座標を鍵へ混ぜるときの丸め桁数。double の下位の揺れで鍵が変わらないようにする。 */
 export const KEY_DECIMALS = 9;
@@ -397,6 +443,36 @@ function keySubShapeList(subShapes: readonly KeySubShape[]): string {
 }
 
 /**
+ * 無い(null)ことがある文字列(頂点の指紋・上流の鍵)。
+ * `'none'` は指紋(`vertex{…}`)とも鍵(16桁の16進)とも重ならないので、
+ * 「指していない」と「指している」は必ず別の文字列になる。
+ */
+function keyOptionalText(value: string | null): string {
+  return value === null ? 'none' : value;
+}
+
+/** 基本形状の寸法(FR-429)。形の種類を先頭に置くので、種類が違えば必ず別の文字列になる。 */
+function keyPrimitiveShape(shape: PrimitiveShapeKeyMaterial): string {
+  switch (shape.kind) {
+    case 'sphere':
+      return `sphere(${keyNumber(shape.radius)})`;
+    case 'box':
+      return (
+        `box(${keyNumber(shape.sizeX)},${keyNumber(shape.sizeY)},${keyNumber(shape.sizeZ)})`
+      );
+    case 'cylinder':
+      return `cylinder(${keyNumber(shape.radius)},${keyNumber(shape.height)})`;
+    case 'cone':
+      return (
+        `cone(${keyNumber(shape.bottomRadius)},${keyNumber(shape.topRadius)}` +
+        `,${keyNumber(shape.height)})`
+      );
+    case 'torus':
+      return `torus(${keyNumber(shape.majorRadius)},${keyNumber(shape.minorRadius)})`;
+  }
+}
+
+/**
  * 鍵の材料を、`hash64` に渡す前の1本の文字列にする。
  * 段の種類(先頭のキーワード)と各配列の長さを混ぜてあるので、
  * 違う種類・違う個数の入力が同じ文字列になることはない。
@@ -481,6 +557,15 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;turns=${keyNumber(material.turns)}` +
         `;handedness=${material.handedness}}`
       );
+    case 'primitive':
+      // originQuery と targetKey を必ず混ぜる(PrimitiveKeyMaterial の注釈を参照)。
+      return (
+        `primitive{shape=${keyPrimitiveShape(material.shape)}` +
+        `;origin=${keyVec3(material.origin)}` +
+        `;axis=${keyVec3(material.axis)}` +
+        `;originQuery=${keyOptionalText(material.originQuery)}` +
+        `;targetKey=${keyOptionalText(material.targetKey)}}`
+      );
   }
 }
 
@@ -489,7 +574,8 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
  * ブーリアンの材料は上流の鍵(`targetKey` / `toolKey`)を含むので、上流が変われば
  * この鍵も必ず変わる(鍵の連鎖、NFR-PF-3)。加工フィーチャー(穴・ねじ穴・R 面取り・
  * C 面取り)も同じく `targetKey` を含むので、連鎖は同じように効く。ばねは上流を取らない
- * ので `targetKey` を持たない(§0.a-0.36)。
+ * ので `targetKey` を持たない(§0.a-0.36)。基本形状は普段は上流を取らないが、基準点に
+ * 立体の頂点を指したときだけ `targetKey` を持つ(消費はしない。P5 §0.a-0.18 / §0.a-0.19)。
  */
 export function cacheKeyFor(step: SolidStepKeyMaterial): string {
   return hash64(keyMaterialText(step));

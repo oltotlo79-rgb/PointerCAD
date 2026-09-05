@@ -37,12 +37,22 @@ export interface DisplaySettings {
    * (`localStorage` の鍵を増やさない)。
    */
   readonly trackAngleStep: number;
+  /**
+   * タイムラインのつまみ(FR-507)の初回の案内を、もう見せたか
+   * (利用者の決定①(2026-09-05)「つまみは控えめのまま+初回だけ帯に案内」、P4b タスク22b)。
+   *
+   * ソリッドが初めて 2 段以上になったときに 1 度だけ帯へ「左端のつまみを引くと途中まで
+   * 戻せます」を出し、その時に true にする。**端末に覚える**ので、同じ人に二度は出ない。
+   * テーマや刻み角度と同じ性質の値なので、`localStorage` の鍵を増やさず同じ 1 つへ入れる。
+   */
+  readonly timelineHintSeen: boolean;
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   theme: 'dark',
   uiScale: 100,
   trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
+  timelineHintSeen: false,
 };
 export const MIN_UI_SCALE = 90;
 export const MAX_UI_SCALE = 150;
@@ -109,6 +119,19 @@ function readTrackAngleStep(value: object): number {
     return DEFAULT_DISPLAY_SETTINGS.trackAngleStep;
   }
   return value.trackAngleStep;
+}
+
+/**
+ * 保存されている値からつまみの案内の既読を読む(P4b タスク22b)。
+ * **この欄も欄ごとに既定へ後退させる**(`readTrackAngleStep` と同じ前方互換の理由。
+ * P4b より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
+ * 既定へ戻してはいけない)。既読でない側(false)へ倒すので、壊れていても案内は出る。
+ */
+function readTimelineHintSeen(value: object): boolean {
+  if (!('timelineHintSeen' in value) || typeof value.timelineHintSeen !== 'boolean') {
+    return DEFAULT_DISPLAY_SETTINGS.timelineHintSeen;
+  }
+  return value.timelineHintSeen;
 }
 
 /** 拡大率を 90〜150 の範囲内へ丸める(スライダー等、利用者の入力をその場で丸める用途)。 */
@@ -247,6 +270,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       theme: parsed.theme,
       uiScale: parsed.uiScale,
       trackAngleStep: readTrackAngleStep(parsed),
+      timelineHintSeen: readTimelineHintSeen(parsed),
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;

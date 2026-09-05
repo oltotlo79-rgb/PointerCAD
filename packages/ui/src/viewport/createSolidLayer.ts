@@ -13,23 +13,54 @@
  * `themeColors.ts` が読み取って渡す(three.js は CSS 変数を直接読めないため)。
  * テーマを変えたときは `setThemeColors` で材質の色だけを塗り替え、**部品は作り直さない**
  * (FR-908 の即時反映、NFR-PF-1)。
+ *
+ * P5 タスク10(計画書 docs/plans/P5-高度なソリッド・外観と測定.md §2.5、§2.6)で
+ * **面ごと・立体ごとの外観(FR-1106〜1109)** を足した。要点は 3 つ。
+ *
+ * 1. 面の材質は**ボディごとの配列**になった。まとまり(`geometry.addGroup`)を作るのは
+ *    純関数 `appearance/buildFaceGroups.ts`(タスク7)で、ここはその結果を流し込むだけ。
+ *    **外観を 1 つも割り当てていない立体は長さ 1 の配列・まとまり 1 つ**なので、
+ *    ドローコールも絵も P2〜P4 と変わらない(§0.a-0.12)。
+ * 2. 材質は見え方が同じなら使い回し、使われなくなったら捨てる
+ *    (`appearance/createAppearanceMaterial.ts`、タスク9)。**毎コマは作り直さない。**
+ * 3. 映り込み(鏡・ガラス、FR-1107)の環境マップは外から渡される。作る・捨てるの判断は
+ *    レンダラとシーンを持つ `createViewportScene.ts` が行う(§0.a-0.9)。
  */
 
-import { addVec3, crossVec3, normalizeVec3, scaleVec3, type Vec3 } from '@pointercad/model';
+import {
+  addVec3,
+  crossVec3,
+  DEFAULT_APPEARANCE,
+  normalizeVec3,
+  scaleVec3,
+  type AppearanceMatchEntry,
+  type AppearanceSpec,
+  type AppearanceTable,
+  type Vec3,
+} from '@pointercad/model';
 import * as THREE from 'three';
 
+import { appearanceKeyText, type FaceGroup } from '../appearance/buildFaceGroups.js';
+import {
+  createAppearanceMaterialStore,
+  type PatternTextureSource,
+} from '../appearance/createAppearanceMaterial.js';
 import type { DisplayStyle } from '../store/useAppStore.js';
-import type { SolidDrawEntry, SolidEmphasis, SolidGeometryBundle } from './buildSolidGeometry.js';
+import type {
+  AppearanceInput,
+  BodyAppearanceInput,
+  SolidDrawEntry,
+  SolidEmphasis,
+  SolidGeometryBundle,
+} from './buildSolidGeometry.js';
 import type { SubShapeEmphasis, SubShapeHighlight, SubShapeHighlightBundle } from './buildSubShapeGeometry.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
-/**
- * 立体の艶。艶を抑えた樹脂のように見せて、面の向きの差を読み取りやすくする。
- * 色そのもの(--pcad-solid)はテーマが決める。P2 のボディは既定の 1 色(§0.a-0.21)で、
- * 面ごと・ボディごとの色指定は P5 の「外観」で足す。
+/*
+ * 立体の艶(艶を抑えた樹脂のように見せて、面の向きの差を読み取りやすくする)は、P5 から
+ * 外観の既定値(`model` の `DEFAULT_APPEARANCE`: 光沢 5・粗さ 55)が正本になった。
+ * 色そのもの(--pcad-solid)は引き続きテーマが決める(下の `themedAppearance`)。
  */
-const SOLID_ROUGHNESS = 0.55;
-const SOLID_METALNESS = 0.05;
 
 /*
  * 稜線は、面の上に重ねるときは暗く、稜線だけのときは地から浮くよう明るくする(FR-105)。
@@ -50,6 +81,19 @@ const SOLID_METALNESS = 0.05;
  * 読み取れるようにスケッチと同じ数直線の上へ置いておく。
  */
 const SOLID_RENDER_ORDER = 1;
+
+/**
+ * 稜線は**面より後に**描く(FR-105)。
+ *
+ * 面は `polygonOffset` で少しだけ奥へ押してあり、稜線はその上に重なる。重なる画素の色は
+ * 描いた順で決まる(縁のなめらか化が後から描いたほうを勝たせる)ので、順序を材質の
+ * 作られた順に任せてはいけない。three.js の不透明の並べ替えは renderOrder → 材質の通し番号
+ * (作った順)の順に見るため、P2〜P4 は「面の材質を稜線より先に作っていた」ことで
+ * たまたま面が先に描かれていた。P5 で面の材質を外観から**後から**作るようにしたので、
+ * このままでは順序が逆転して縁の画素の色が変わる(2026-09-05 実測: 800×600 の絵で 122 画素、
+ * 最大の階調差 41)。**順序をここで明示して、P4 と同じ絵を保つ**(§0.a-0.12)。
+ */
+const SOLID_EDGE_RENDER_ORDER = SOLID_RENDER_ORDER + 0.25;
 
 /** 部分形状の強調(重ね描き)の面の不透明度(§0.a-0.7)。 */
 const SUB_SHAPE_FACE_OPACITY = 0.35;
@@ -152,7 +196,127 @@ export function buildThreadMarkPositions(marks: readonly ThreadMarkInfo[]): Floa
   return Float32Array.from(positions);
 }
 
-type SolidMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
+/**
+ * 外観の割り当て(文書の表)と、カーネルが選び直した面の対応から、組み立てへ渡す一式を作る
+ * (FR-1106、計画書 P5 タスク10 ②)。three.js にも DOM にも触れない純関数。
+ *
+ * ```
+ * 立体の割り当て → byBody(featureId).bodyAppearance
+ * 面の割り当て   → byBody(featureId).faceAppearances(面の通し番号)
+ * ```
+ *
+ * **面の通し番号の決め方(3 段):**
+ *
+ * 1. 再計算のたびにカーネルが指紋で選び直した結果(`matches`)に同じ id があれば、その番号。
+ * 2. 番号が `null`(選び直せなかった)なら**その割り当ては描かない**。既定の外観で描き、
+ *    警告を出すのは呼び出し側(FR-1106「選び直せなかった割り当ては警告し既定へ戻す」)。
+ * 3. `matches` に同じ id が 1 つも無いときは、**割り当てを作ったときの通し番号**
+ *    (`SubShapeRef.index`)を使う。外観だけを変えても再計算は起きない(§2.3)ので、
+ *    割り当てた直後は照合の結果がまだ無い。形はその瞬間から変わっていないため、
+ *    保存された通し番号がそのまま正しい。これが無いと「色を付けたのに次に形を変えるまで
+ *    色が出ない」ことになる。
+ */
+export function buildAppearanceInput(
+  table: AppearanceTable,
+  matches: readonly AppearanceMatchEntry[],
+): AppearanceInput {
+  const matchById = new Map<string, AppearanceMatchEntry>();
+  for (const match of matches) {
+    matchById.set(match.id, match);
+  }
+
+  const byBody = new Map<string, BodyAppearanceInput>();
+  const faceMaps = new Map<string, Map<number, AppearanceSpec>>();
+  function slotFor(featureId: string): { faces: Map<number, AppearanceSpec> } {
+    let faces = faceMaps.get(featureId);
+    if (faces === undefined) {
+      faces = new Map<number, AppearanceSpec>();
+      faceMaps.set(featureId, faces);
+      byBody.set(featureId, { bodyAppearance: null, faceAppearances: faces });
+    }
+    return { faces };
+  }
+
+  for (const entry of table.entries) {
+    if (entry.target.kind === 'body') {
+      const { bodyFeatureId } = entry.target;
+      slotFor(bodyFeatureId);
+      byBody.set(bodyFeatureId, {
+        bodyAppearance: entry.appearance,
+        faceAppearances: faceMaps.get(bodyFeatureId) ?? new Map<number, AppearanceSpec>(),
+      });
+      continue;
+    }
+    const { ref } = entry.target;
+    const match = matchById.get(entry.id);
+    const faceIndex = match === undefined ? ref.index : match.faceIndex;
+    if (faceIndex === null) {
+      continue;
+    }
+    const bodyFeatureId = match === undefined ? ref.bodyFeatureId : match.bodyFeatureId;
+    slotFor(bodyFeatureId).faces.set(faceIndex, entry.appearance);
+  }
+
+  return { defaultAppearance: DEFAULT_APPEARANCE, byBody };
+}
+
+/** 既定の外観の鍵。テーマの色を当てる相手かどうかの判定に使う(下の `themedAppearance`)。 */
+const DEFAULT_APPEARANCE_KEY = appearanceKeyText(DEFAULT_APPEARANCE);
+
+/** 0xrrggbb を `#rrggbb` の文字にする(外観の色は文字で持つため)。 */
+function hexColorText(value: number): string {
+  return `#${value.toString(16).padStart(6, '0')}`;
+}
+
+/**
+ * 既定の外観の色だけを、いまのテーマの立体の色(`--pcad-solid`)へ差し替える(FR-908)。
+ *
+ * 外観を割り当てていない立体の色はテーマが決める(P2 からの決まり)ので、材質を作る前に
+ * ここで色を差し替える。**割り当てのある外観は 1 つも触らない**(利用者が選んだ色を
+ * テーマで塗り替えない)。判定は鍵(見え方)で行うので、プリセット「既定」を明示的に
+ * 割り当てた面も同じ扱いになる(見え方が同じものを 2 通りに描かない)。
+ */
+function themedAppearance(spec: AppearanceSpec, solidColor: number): AppearanceSpec {
+  if (appearanceKeyText(spec) !== DEFAULT_APPEARANCE_KEY) {
+    return spec;
+  }
+  const color = hexColorText(solidColor);
+  return color === spec.color ? spec : { ...spec, color };
+}
+
+/** まとまりが前回と同じか(中身で比べる。組み立てのたびに新しい配列が来るため)。 */
+function sameGroups(previous: readonly FaceGroup[] | null, next: readonly FaceGroup[]): boolean {
+  if (previous === null || previous.length !== next.length) {
+    return false;
+  }
+  return previous.every(
+    (group, position) =>
+      group.start === next[position].start &&
+      group.count === next[position].count &&
+      group.materialIndex === next[position].materialIndex,
+  );
+}
+
+/**
+ * 使う外観の一覧が前回と同じか。**外観そのものは文書の値をそのまま指している**ので、
+ * 参照で比べれば足りる(中身の比較は材質の鍵づくりで行う)。
+ */
+function sameAppearances(
+  previous: readonly AppearanceSpec[] | null,
+  next: readonly AppearanceSpec[],
+): boolean {
+  if (previous === null || previous.length !== next.length) {
+    return false;
+  }
+  return previous.every((spec, position) => spec === next[position]);
+}
+
+/**
+ * 面の材質は**ボディごとの配列**(FR-1106)。まとまり(`geometry.addGroup`)の
+ * `materialIndex` がこの配列を指す。外観を 1 つも割り当てていない立体は長さ 1 の配列に
+ * なり、P2 と同じ 1 ドローコールで描かれる(§0.a-0.12)。
+ */
+type SolidMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]>;
 type SolidEdges = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
 /** ボディ 1 つぶんの部品。並びは前回と同じかどうかを参照で見分けられるよう控えておく。 */
@@ -161,6 +325,10 @@ interface BodyDraw {
   positions: Float32Array | null;
   indices: Uint32Array | null;
   edgePositions: Float32Array | null;
+  /** 前回反映したまとまり(中身で比べる)。 */
+  groups: readonly FaceGroup[] | null;
+  /** 前回反映した外観の一覧(参照で比べる)。 */
+  appearances: readonly AppearanceSpec[] | null;
   readonly mesh: SolidMesh;
   readonly edges: SolidEdges;
 }
@@ -171,8 +339,16 @@ export interface SolidLayer {
   /**
    * 描画データと表示スタイルを反映する。
    * 同じ組み立て結果(同一オブジェクト)を渡し直したときは並びを触らない。
+   *
+   * `environment` は映り込み用の環境マップ(FR-1107)。鏡・ガラスが 1 つも無ければ `null`
+   * で、そのときは材質にも入れない(§0.a-0.9)。作る・捨てるの判断は
+   * `createViewportScene.ts` が行う(レンダラとシーンを持っているのがそちらのため)。
    */
-  update(bundle: SolidGeometryBundle, displayStyle: DisplayStyle): void;
+  update(
+    bundle: SolidGeometryBundle,
+    displayStyle: DisplayStyle,
+    environment?: THREE.Texture | null,
+  ): void;
   /**
    * 部分形状(面・辺・頂点)のホバー・選択の強調を差し替える(§0.a-0.7)。
    * `update` と同じく、同じ組み立て結果を渡し直したときは並びを触らない。
@@ -207,6 +383,7 @@ function setVectorAttribute(
   geometry: THREE.BufferGeometry,
   name: string,
   values: Float32Array,
+  itemSize = 3,
 ): void {
   const existing = geometry.getAttribute(name);
   if (existing instanceof THREE.BufferAttribute && existing.array instanceof Float32Array) {
@@ -219,7 +396,7 @@ function setVectorAttribute(
       return;
     }
   }
-  geometry.setAttribute(name, new THREE.BufferAttribute(values, 3));
+  geometry.setAttribute(name, new THREE.BufferAttribute(values, itemSize));
 }
 
 /** 三角形の頂点番号を差し替える。考え方は `setVectorAttribute` と同じ。 */
@@ -330,7 +507,14 @@ function disposeSubShapeOverlay(overlay: SubShapeOverlay): void {
   overlay.vertices.material.dispose();
 }
 
-export function createSolidLayer(): SolidLayer {
+/**
+ * 立体の層を作る。
+ *
+ * `patterns` は柄のテクスチャの出どころ(FR-1108)。既定は実物
+ * (`appearance/patternTexture.ts`)で、canvas の無い Node の検査からは偽物を渡せる
+ * (`createAppearanceMaterial.ts` の `PatternTextureSource`)。
+ */
+export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   const group = new THREE.Group();
 
   /** いま効いているテーマの色。`setThemeColors` が来るまでは既定(ダーク)。 */
@@ -340,23 +524,27 @@ export function createSolidLayer(): SolidLayer {
   let lastDisplayStyle: DisplayStyle = 'shadedWithEdges';
 
   /**
-   * 面の材質は全ボディで 1 つを共有する(P2 のボディは同じ色、§0.a-0.21)。
-   * 面と稜線を同時に出すとき、稜線が面に埋もれてちらつくのを防ぐ(FR-105)。
+   * 面の材質の入れ物(FR-1106〜1109、P5 タスク9・10)。**ビューポートに 1 つだけ**持ち、
+   * 見え方(`appearanceKeyText`)が同じ外観には同じ材質を返す。使われなくなった材質と
+   * 柄のテクスチャは `collect` / `dispose` が捨てる(WebGL の資源は GC で戻らない)。
    *
-   * **外観(FR-1106〜1110、P5)への準備(§7)。** 面ごとに色・柄を分けるときは、ここを
-   * `material` の配列にし、`BufferGeometry.addGroup(start, count, materialIndex)` を
-   * `SolidFaceEntry.triangleOffset` / `triangleCount` から作る形に差し替える(実装はしない)。
+   * P2〜P4 はここが `faceMaterial` 1 つで、全ボディの `THREE.Mesh` が共有していた。
+   * P5 でボディごとの材質配列(`geometry.addGroup` + `mesh.material = [...]`)へ移したが、
+   * **外観を 1 つも割り当てていない立体は長さ 1 の配列・まとまり 1 つ**になるので、
+   * ドローコールも絵も P2 と変わらない(§0.a-0.12)。既定の外観の値
+   * (色 `#b8bfcc`・光沢 5・粗さ 55)は、そのころの `SOLID_ROUGHNESS` / `SOLID_METALNESS` と
+   * `--pcad-solid` をそのまま写したものである(`model` の `DEFAULT_APPEARANCE`)。
    */
-  const faceMaterial = new THREE.MeshStandardMaterial({
-    color: DEFAULT_THEME_COLORS.solid,
-    roughness: SOLID_ROUGHNESS,
-    metalness: SOLID_METALNESS,
-    // 閉じた立体なので裏面は見えない。両面を描くと稜線の裏側が透けて見えて重くなる。
-    side: THREE.FrontSide,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1,
-  });
+  const materialStore = createAppearanceMaterialStore(patterns);
+
+  /** いま材質へ入れている環境マップ(FR-1107)。鏡・ガラスが無ければ null。 */
+  let environment: THREE.Texture | null = null;
+
+  /**
+   * 材質を作り直す必要があるか(テーマの色が変わった・環境マップが入れ替わった)。
+   * **毎コマは触らない**(docs/報告記録.md 2026-09-02 15:42「常時の描画ループを作らない」)。
+   */
+  let appearanceDirty = true;
 
   /**
    * 稜線の材質は強調の度合いごとに 1 つずつ。ボディごとには作らず、
@@ -416,13 +604,14 @@ export function createSolidLayer(): SolidLayer {
   let lastBundle: SolidGeometryBundle | null = null;
 
   function createDraw(): BodyDraw {
-    const mesh: SolidMesh = new THREE.Mesh(new THREE.BufferGeometry(), faceMaterial);
+    // 材質はまだ決まっていない(最初の update で外観から作る)。空の配列で始める。
+    const mesh: SolidMesh = new THREE.Mesh(new THREE.BufferGeometry(), []);
     mesh.renderOrder = SOLID_RENDER_ORDER;
     const edges: SolidEdges = new THREE.LineSegments(
       new THREE.BufferGeometry(),
       edgeMaterials.none,
     );
-    edges.renderOrder = SOLID_RENDER_ORDER;
+    edges.renderOrder = SOLID_EDGE_RENDER_ORDER;
     group.add(mesh);
     group.add(edges);
     return {
@@ -430,6 +619,8 @@ export function createSolidLayer(): SolidLayer {
       positions: null,
       indices: null,
       edgePositions: null,
+      groups: null,
+      appearances: null,
       mesh,
       edges,
     };
@@ -454,6 +645,9 @@ export function createSolidLayer(): SolidLayer {
     }
     setVectorAttribute(draw.mesh.geometry, 'position', entry.positions);
     setVectorAttribute(draw.mesh.geometry, 'normal', entry.normals);
+    // 柄(FR-1108)を貼るための箱投影 UV。**同じ並び(同一参照)なら触らない**
+    // ので、ホバーや選択が変わっただけの組み立て直しでは GPU へ送り直さない。
+    setVectorAttribute(draw.mesh.geometry, 'uv', entry.uv, 2);
     setIndices(draw.mesh.geometry, entry.indices);
     // 位置が変われば包む球も変わるので、視錐台の外と誤判定されないよう作り直す。
     // 当たり判定(Raycaster)もこの球で粗く絞るため、必ず取り直す。
@@ -466,7 +660,50 @@ export function createSolidLayer(): SolidLayer {
     draw.edgePositions = entry.edgePositions;
   }
 
-  /** 部品の数をボディの数に合わせ、形を流し込む。 */
+  /**
+   * ボディ 1 つぶんの外観(まとまりと材質の配列)を反映する(FR-1106)。
+   *
+   * **前回と同じまとまり・同じ外観で、材質を作り直す理由も無いときは何もしない。**
+   * `clearGroups` / `addGroup` と `mesh.material` の入れ替えは、three.js に材質の
+   * 束ね直しをさせるので、ホバーが動くたびに行うと 60fps(NFR-PF-1)を脅かす。
+   */
+  function applyAppearance(draw: BodyDraw, entry: SolidDrawEntry): void {
+    if (
+      !appearanceDirty &&
+      sameGroups(draw.groups, entry.groups) &&
+      sameAppearances(draw.appearances, entry.appearances)
+    ) {
+      return;
+    }
+    const materials = entry.appearances.map((spec) =>
+      materialStore.materialFor(themedAppearance(spec, colors.solid), environment),
+    );
+    const geometry = draw.mesh.geometry;
+    geometry.clearGroups();
+    for (const faceGroup of entry.groups) {
+      geometry.addGroup(faceGroup.start, faceGroup.count, faceGroup.materialIndex);
+    }
+    draw.mesh.material = materials;
+    draw.groups = entry.groups;
+    draw.appearances = entry.appearances;
+  }
+
+  /**
+   * いま画面に出ている外観で使っていない材質を捨てる(§2.5.3)。
+   * テーマの色を当てた後の外観で数えないと、テーマを切り替えた直後に**使っている材質を
+   * 捨ててしまう**ので、`applyAppearance` と同じ `themedAppearance` を通す。
+   */
+  function collectMaterials(entries: readonly SolidDrawEntry[]): void {
+    const used: AppearanceSpec[] = [];
+    for (const entry of entries) {
+      for (const spec of entry.appearances) {
+        used.push(themedAppearance(spec, colors.solid));
+      }
+    }
+    materialStore.collect(used);
+  }
+
+  /** 部品の数をボディの数に合わせ、形と外観を流し込む。 */
   function syncDraws(entries: readonly SolidDrawEntry[]): void {
     while (draws.length > entries.length) {
       const draw = draws.pop();
@@ -483,9 +720,12 @@ export function createSolidLayer(): SolidLayer {
       const draw = draws[position];
       const entry = entries[position];
       applyGeometry(draw, entry);
+      applyAppearance(draw, entry);
       pickTargets.push(draw.mesh);
       idByObject.set(draw.mesh, entry.featureId);
     }
+    collectMaterials(entries);
+    appearanceDirty = false;
   }
 
   /**
@@ -516,8 +756,13 @@ export function createSolidLayer(): SolidLayer {
   return {
     group,
 
-    update(bundle, displayStyle): void {
-      if (bundle !== lastBundle) {
+    update(bundle, displayStyle, nextEnvironment = null): void {
+      if (nextEnvironment !== environment) {
+        environment = nextEnvironment;
+        appearanceDirty = true;
+      }
+      // 並びも外観も前回のままなら、表示スタイルの入切だけで済ませる(毎コマの作り直しをしない)。
+      if (bundle !== lastBundle || appearanceDirty) {
         lastBundle = bundle;
         syncDraws(bundle.entries);
       }
@@ -546,7 +791,9 @@ export function createSolidLayer(): SolidLayer {
 
     setThemeColors(next): void {
       colors = next;
-      faceMaterial.color.setHex(colors.solid);
+      // 既定の外観の色はテーマが決める(FR-908)。材質そのものは次の `update` で作り直す
+      // (材質の入れ物が鍵で使い回すので、色を直に書き換えると鍵と中身が食い違う)。
+      appearanceDirty = true;
       edgeMaterials.none.color.setHex(
         lastDisplayStyle === 'wireframe' ? colors.solidEdgeWireframe : colors.solidEdgeOverSolid,
       );
@@ -595,7 +842,8 @@ export function createSolidLayer(): SolidLayer {
       draws.length = 0;
       pickTargets.length = 0;
       idByObject.clear();
-      faceMaterial.dispose();
+      // 材質の入れ物は、貯めた材質と柄のテクスチャの表をまとめて捨てる(§2.5.3)。
+      materialStore.dispose();
       edgeMaterials.none.dispose();
       edgeMaterials.hovered.dispose();
       edgeMaterials.selected.dispose();
@@ -607,6 +855,8 @@ export function createSolidLayer(): SolidLayer {
       lastBundle = null;
       lastSubShapeBundle = null;
       lastThreadMarks = null;
+      environment = null;
+      appearanceDirty = true;
     },
   };
 }

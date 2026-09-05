@@ -10,6 +10,7 @@ import type { CoordinateInput, SketchDocument, SketchFeature } from '../sketch/t
 import { createEmptyPartDocument } from './createPartDocument.js';
 import {
   applyParameters,
+  collectExpressionOwners,
   collectExpressionSources,
   reevaluatePartDocument,
   renameVariableInPartDocument,
@@ -200,6 +201,35 @@ describe('collectExpressionSources', () => {
       solids: [extrude('extrude-1', expr('10'))],
     });
     expect(collectExpressionSources(document)).toEqual(['1', '2', '3', '10']);
+  });
+
+  it('持ち主の id と表示名つきでも集められる(FR-207 の削除の断り、タスク22b)', () => {
+    const base = buildDocument({
+      features: [point('point-1', coordinate('1', '2', '3'))],
+      solids: [extrude('extrude-1', pending('板厚'))],
+    });
+    // 表示名は id と別のものにしておく(名前を引けていることを確かめるため)。
+    const document: PartDocument = {
+      ...base,
+      sketches: [
+        {
+          ...base.sketches[0],
+          features: base.sketches[0].features.map((feature) => ({ ...feature, name: '点1' })),
+        },
+      ],
+      solids: base.solids.map((feature) => ({ ...feature, name: '押し出し1' })),
+    };
+    const owners = collectExpressionOwners(document);
+    // 並びと本数は `collectExpressionSources` と同じ(同じ歩き方を通す)。
+    expect(owners.map((owner) => owner.source)).toEqual(collectExpressionSources(document));
+    expect(owners.map((owner) => owner.ownerId)).toEqual([
+      'point-1',
+      'point-1',
+      'point-1',
+      'extrude-1',
+    ]);
+    expect(owners[0].ownerName).toBe('点1');
+    expect(owners[3].ownerName).toBe('押し出し1');
   });
 
   it('拘束の目標値も集める(FR-207 の「使われていない名前」の判定に要る)', () => {

@@ -277,7 +277,21 @@ export function constraintContextOf(
   document: SketchDocument,
   options: SketchResolveOptions = {},
 ): ConstraintContext {
-  const resolved = resolveSketch(document, options);
+  return constraintContextFrom(document, resolveSketch(document, options), options);
+}
+
+/**
+ * 同じ材料を、**すでに解決してある結果から**作る(P4b タスク22b)。
+ *
+ * いま描いている形(ストアの `resolvedSketch`)をそのまま使えるので、解決をもう一度
+ * 走らせずに済む(NFR-PF-1)。要素の決まり具合の色分け(FR-313、利用者の決定②)は
+ * 文書が変わるたびに要るので、そこだけのために解決を 2 回走らせない。
+ */
+export function constraintContextFrom(
+  document: SketchDocument,
+  resolved: ResolvedSketch,
+  options: SketchResolveOptions = {},
+): ConstraintContext {
   const plane = sketchWorkPlane(document, options);
   return {
     resolved,

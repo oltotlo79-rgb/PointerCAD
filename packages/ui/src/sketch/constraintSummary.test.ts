@@ -212,17 +212,22 @@ describe('constraintSummary(一覧の 1 行。FR-501 と同じ流儀)', () => {
 /* --- 印の位置 ------------------------------------------------------------ */
 
 describe('印を置く場所(anchors)', () => {
-  it('水平拘束の印は線分の中点 1 つ', () => {
+  /*
+    P4b タスク22b で `anchors` の要素は「位置 + そこに点があるか」の組になった
+    (点に付く印は掴みと競合するので画面上で上へ逃がす。`constraintPicking.ts`)。
+    位置の期待値は変えず、`onPoint` の欄が増えたぶんだけ書き方を追随させる。
+  */
+  it('水平拘束の印は線分の中点 1 つ(点ではないので逃がさない)', () => {
     const document = added(twoLines(), 'horizontal', ['line-1']);
     const summary = constraintSummary(sketchConstraints(document)[0], document);
-    expect(summary.anchors).toEqual([[5, 0, 0]]);
+    expect(summary.anchors).toEqual([{ position: [5, 0, 0], onPoint: false }]);
   });
 
   it('平行拘束の印は 2 本の線分の中点', () => {
     const document = added(twoLines(), 'parallel', ['line-1', 'line-2']);
     expect(constraintSummary(sketchConstraints(document)[0], document).anchors).toEqual([
-      [5, 0, 0],
-      [0, 5, 0],
+      { position: [5, 0, 0], onPoint: false },
+      { position: [0, 5, 0], onPoint: false },
     ]);
   });
 
@@ -233,8 +238,9 @@ describe('印を置く場所(anchors)', () => {
 
   it('半径拘束の印は円の中心', () => {
     const document = added(oneCircle(), 'radius', ['arc-1']);
+    // 中心はスケッチの点なので `onPoint` が立つ(印は点の 14px 上へ逃げる)。
     expect(constraintSummary(sketchConstraints(document)[0], document).anchors).toEqual([
-      [4, 5, 0],
+      { position: [4, 5, 0], onPoint: true },
     ]);
   });
 

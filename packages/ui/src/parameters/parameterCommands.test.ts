@@ -10,6 +10,8 @@ import {
   commitReplaceParameter,
   parameterDraftFor,
   parameterRowsOf,
+  REFERENCED_NAME_LIMIT,
+  referencingFeatureNames,
   type ParameterCommandOutcome,
 } from './parameterCommands.js';
 
@@ -53,6 +55,16 @@ function extrude(id: string, distance: ExpressionValue): SolidFeature {
 
 function documentWith(parameters: readonly Parameter[], solids: readonly SolidFeature[] = []): PartDocument {
   return { ...createEmptyPartDocument(), parameters, solids };
+}
+
+/** 表示名を差し替えた立体(断りの文に出る名前を確かめるため)。 */
+function named(feature: SolidFeature, name: string): SolidFeature {
+  return { ...feature, name };
+}
+
+/** 変数を含む式(そのままでは評価できないので値は 0 で置く)。 */
+function pending(source: string): ExpressionValue {
+  return { source, value: 0, display: '0' };
 }
 
 function extrudeDistance(document: PartDocument): number {
@@ -240,18 +252,43 @@ describe('commitRemoveParameter', () => {
     });
   });
 
-  it('文書の側(押し出しの距離)から参照されていても断る', () => {
+  it('文書の側から参照されていたら、参照元のフィーチャー名を並べて断る(タスク22b)', () => {
     const document = documentWith(
       [param('板厚', '3')],
-      [extrude('extrude-1', { source: '板厚 * 2', value: 6, display: '6' })],
+      [
+        named(extrude('extrude-1', pending('板厚 * 2')), '押し出し1'),
+        named(extrude('extrude-2', pending('板厚')), '穴1'),
+      ],
+    );
+    const outcome = commitRemoveParameter(document, '板厚');
+    expect(outcome).toEqual({
+      ok: false,
+      reason: 'referenced',
+      message: 'この名前は 押し出し1、穴1 から使われています。先にそちらを直してください。',
+    });
+  });
+
+  it('参照元が 3 件を超えたら「ほか N 件」でまとめる(帯の 1 行に収める)', () => {
+    const document = documentWith(
+      [param('板厚', '3')],
+      ['押し出し1', '穴1', '面取り1', 'フィレット1', 'ばね1'].map((name, index) =>
+        named(extrude(`extrude-${String(index + 1)}`, pending('板厚')), name),
+      ),
     );
     const outcome = commitRemoveParameter(document, '板厚');
     expect(outcome.ok).toBe(false);
     if (outcome.ok) {
       throw new Error('断られるはず');
     }
-    expect(outcome.reason).toBe('referenced');
-    expect(outcome.message).toContain('1');
+    expect(outcome.message).toBe(
+      'この名前は 押し出し1、穴1、面取り1、ほか 2 件 から使われています。先にそちらを直してください。',
+    );
+    expect(REFERENCED_NAME_LIMIT).toBe(3);
+  });
+
+  it('参照元がパラメータ表の中だけなら、従来どおり件数で断る', () => {
+    const document = documentWith([param('板厚', '3'), param('穴径', '板厚 * 2')]);
+    expect(referencingFeatureNames(document, '板厚')).toEqual([]);
   });
 
   it('誰からも参照されていなければ消せる', () => {

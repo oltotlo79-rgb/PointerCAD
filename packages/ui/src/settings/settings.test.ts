@@ -141,6 +141,38 @@ describe('表示設定の永続化(FR-908, FR-909)', () => {
     expect(loadSettings(broken).trackAngleStep).toBe(15);
   });
 
+  it('つまみの案内の既読は既定で「まだ見せていない」(FR-507、利用者の決定①、タスク22b)', () => {
+    expect(DEFAULT_DISPLAY_SETTINGS.timelineHintSeen).toBe(false);
+  });
+
+  it('つまみの案内の既読を覚え、読み直しても保たれる(端末に保存)', () => {
+    const storage = createFakeStorage();
+    saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, timelineHintSeen: true }, storage);
+    expect(loadSettings(storage).timelineHintSeen).toBe(true);
+  });
+
+  it('既読の欄が無い・真偽でないときはこの欄だけ既定へ戻し、他の欄は捨てない', () => {
+    // 欄が無いのは P4b タスク22b より前に保存された値の形(前方互換、settings.ts の注釈)。
+    const old = createFakeStorage({
+      'pointercad.settings': JSON.stringify({ theme: 'light', uiScale: 120, trackAngleStep: 30 }),
+    });
+    const loaded = loadSettings(old);
+    expect(loaded.timelineHintSeen).toBe(false);
+    expect(loaded.theme).toBe('light');
+    expect(loaded.trackAngleStep).toBe(30);
+
+    const broken = createFakeStorage({
+      'pointercad.settings': JSON.stringify({
+        theme: 'light',
+        uiScale: 120,
+        timelineHintSeen: 'yes',
+      }),
+    });
+    const brokenLoaded = loadSettings(broken);
+    expect(brokenLoaded.timelineHintSeen).toBe(false);
+    expect(brokenLoaded.theme).toBe('light');
+  });
+
   it('getItem が例外を投げる環境では既定値を返す', () => {
     const storage: SettingsStorage = {
       getItem: () => {

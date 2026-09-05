@@ -297,9 +297,16 @@ export function selectedSpringOrigin(
  * `pitch.source` と `turns.source` はどちらもすでに妥当な式(欄の検査を通っている)なので
  * `*` / `/` でつないだ式もほぼ必ず評価できるが、万一失敗しても例外を投げず(FR-504
  * 「止めずに警告する」)、少なくとも source は残して値 0 で作る。
+ *
+ * `variables` はパラメータ表(FR-207)の変数表。渡さなければ空として扱う(§0.a-9 の申し送り①、
+ * P4b タスク22a。ピッチ・巻数にパラメータ名を書いても、ここへ通さないと自動生成した式
+ * `板厚*4` の `板厚` が読めず読み取り専用の全長欄だけ `= 0` になっていた)。
  */
-function evaluatedExpressionValue(source: string): ExpressionValue {
-  const result = evaluateExpression(source);
+function evaluatedExpressionValue(
+  source: string,
+  variables?: ReadonlyMap<string, number>,
+): ExpressionValue {
+  const result = evaluateExpression(source, { variables });
   if (result.ok) {
     return result.value;
   }
@@ -315,20 +322,35 @@ function evaluatedExpressionValue(source: string): ExpressionValue {
  * - `derived: 'length'` → `` `${pitch.source}*${turns.source}` ``
  * - `derived: 'pitch'` → `` `${length.source}/${turns.source}` ``
  * - `derived: 'turns'` → `` `${length.source}/${pitch.source}` ``
+ *
+ * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
  */
 function resolveSpringLengthFields(
   derived: SpringDerived,
   length: ExpressionValue,
   pitch: ExpressionValue,
   turns: ExpressionValue,
+  variables?: ReadonlyMap<string, number>,
 ): { readonly length: ExpressionValue; readonly pitch: ExpressionValue; readonly turns: ExpressionValue } {
   switch (derived) {
     case 'length':
-      return { length: evaluatedExpressionValue(`${pitch.source}*${turns.source}`), pitch, turns };
+      return {
+        length: evaluatedExpressionValue(`${pitch.source}*${turns.source}`, variables),
+        pitch,
+        turns,
+      };
     case 'pitch':
-      return { length, pitch: evaluatedExpressionValue(`${length.source}/${turns.source}`), turns };
+      return {
+        length,
+        pitch: evaluatedExpressionValue(`${length.source}/${turns.source}`, variables),
+        turns,
+      };
     case 'turns':
-      return { length, pitch, turns: evaluatedExpressionValue(`${length.source}/${pitch.source}`) };
+      return {
+        length,
+        pitch,
+        turns: evaluatedExpressionValue(`${length.source}/${pitch.source}`, variables),
+      };
   }
 }
 
@@ -338,6 +360,9 @@ function resolveSpringLengthFields(
  *
  * `params.length` / `pitch` / `turns` は 3 つとも渡すが、`derived` が指す 1 つは
  * `resolveSpringLengthFields` が他の 2 つから自動生成した式で必ず上書きする。
+ *
+ * `variables` はパラメータ表(FR-207)の変数表(任意引数、P4b タスク22a で追加。呼び出し側の
+ * `commitToStore.ts` を今回は変えないため、渡さなければ従来どおり空として扱う)。
  */
 export function commitSpring(
   document: PartDocument,
@@ -354,6 +379,7 @@ export function commitSpring(
     readonly wireDiameter: ExpressionValue;
     readonly handedness: SpringHandedness;
   },
+  variables?: ReadonlyMap<string, number>,
 ): SolidCommandOutcome {
   if (!pointRefExists(document, params.origin)) {
     return { ok: false, reasonKey: 'springError.noOriginPoint' };
@@ -363,6 +389,7 @@ export function commitSpring(
     params.length,
     params.pitch,
     params.turns,
+    variables,
   );
   const id = nextSolidId(document, 'spring');
   const feature: SpringFeature = {
@@ -569,12 +596,18 @@ export function solidToolReadiness(
  * `bodies` の扱いは `solidToolReadiness` の注釈のとおり(タスク26 まで既定は空配列)。
  * ばねは対象を消費しない「作る」フィーチャーなので、ここで直に `commitSpring` を呼ぶ
  * (§0.a-0.36)。
+ *
+ * `variables` はパラメータ表(FR-207)の変数表で、**ばねの導出式**(ピッチ × 巻数 = 全長)を
+ * 評価するのに要る(P4b タスク22b-(h))。渡さないと、ピッチにパラメータ名を書いたときに
+ * 全長の読み取り専用の欄が `= 0` になる(形は正しい)。他の道具は式をそのまま持つだけなので
+ * 使わない。任意引数にしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
  */
 export function commitSolidInput(
   document: PartDocument,
   selection: readonly string[],
   commit: SolidInputCommit,
   bodies: readonly SubShapeBody[] = [],
+  variables?: ReadonlyMap<string, number>,
 ): SolidCommandOutcome {
   switch (commit.tool) {
     case 'extrude': {
@@ -641,7 +674,7 @@ export function commitSolidInput(
         coilDiameter: commit.values.coilDiameter ?? DEFAULT_SPRING_COIL_DIAMETER,
         wireDiameter: commit.values.wireDiameter ?? DEFAULT_SPRING_WIRE_DIAMETER,
         handedness: commit.springHandedness ?? DEFAULT_SPRING_HANDEDNESS,
-      });
+      }, variables);
     }
   }
 }

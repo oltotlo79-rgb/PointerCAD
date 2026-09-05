@@ -32,6 +32,15 @@ export interface ThemeColors {
   readonly sketchPoint: number;
   readonly sketchCurve: number;
   readonly sketchOutline: number;
+  /**
+   * 完全に決まったスケッチ要素の色(FR-313、利用者の決定②(2026-09-05)、P4b タスク22b)。
+   * 動かせる数が 1 つも残っていない要素だけをこの色で描き、まだ決まっていない要素は
+   * 既定色(`sketchCurve` / `sketchPoint`)のままにする。判定は `constrainedElements.ts`。
+   * 選択・ホバーの青が優先なので、この色と青が同時に出ることはない。
+   * 5 テーマすべてで、ビューポートの地(`--pcad-viewport-top` / `--pcad-viewport-bottom`)
+   * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
+   */
+  readonly sketchConstrained: number;
   /** ホバー・選択の強調(FR-106)。スケッチと立体で同じ色にそろえる。 */
   readonly hovered: number;
   readonly selected: number;
@@ -101,6 +110,8 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   sketchPoint: 0xe8eaf0,
   sketchCurve: 0x9aa3b2,
   sketchOutline: 0x6b7380,
+  // 完全に決まった要素(P4b タスク22b)。ダークの値は appShell.css の :root と同じ。
+  sketchConstrained: 0x7ee08a,
   hovered: 0x8ec5ff,
   selected: 0x4f8cff,
   solid: 0xb8bfcc,
@@ -129,7 +140,7 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
 };
 
 /**
- * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 30 個がそろっていること
+ * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 31 個がそろっていること
  * (どのテーマでも 1 つも欠けないこと)は `themeColors.test.ts` が固定する。
  */
 export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
@@ -141,6 +152,7 @@ export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
   sketchPoint: '--pcad-sketch-point',
   sketchCurve: '--pcad-sketch-curve',
   sketchOutline: '--pcad-sketch-outline',
+  sketchConstrained: '--pcad-sketch-constrained',
   hovered: '--pcad-emphasis-hovered',
   selected: '--pcad-emphasis-selected',
   solid: '--pcad-solid',
@@ -237,6 +249,7 @@ export function themeColorsFrom(read: (token: string) => string): ThemeColors {
     sketchPoint: colors.sketchPoint,
     sketchCurve: colors.sketchCurve,
     sketchOutline: colors.sketchOutline,
+    sketchConstrained: colors.sketchConstrained,
     hovered: colors.hovered,
     selected: colors.selected,
     solid: colors.solid,

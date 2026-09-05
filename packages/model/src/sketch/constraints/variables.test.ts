@@ -230,7 +230,14 @@ describe('変数の切り出し(§2.2)', () => {
     expect(set.frozen.get('arc-1.r')).toBe('fixed');
   });
 
-  it('相対座標の点は変数にしない(基準が動けば追従するため。frozen に derived)', () => {
+  it('数で書いた相対座標の点も変数にする(統括の決定 2026-09-05、案 A。タスク22b)', () => {
+    /*
+      **仕様変更**: 以前は相対・極を一律 `derived`(定数)にしていたが、線分の道具の既定は
+      「終点は直前の点からの相対」なので、ふつうに引いた線分の終点が掴めなかった
+      (`docs/報告記録.md` 2026-09-05 実時計 07:11 の統括の決定)。数で書かれていれば
+      変数にし、書き戻しは Δ のまま行う(`dragSketch.commitDrag`)。基準との関係が
+      壊れないよう、動かなかった点は解を差し込まない(`followsBase`)。
+    */
     const document = documentOf([
       lineOf('line-1', absoluteCoordinate(0, 0, 0), {
         mode: 'relative',
@@ -241,11 +248,57 @@ describe('変数の切り出し(§2.2)', () => {
       }),
     ]);
     const set = variablesOf(document);
-    expect(set.variables).toHaveLength(2);
+    expect(set.variables).toHaveLength(4);
+    expect(keysOf(set)).toEqual([
+      'line-1:start.u',
+      'line-1:start.v',
+      'line-1:end.u',
+      'line-1:end.v',
+    ]);
+    expect(set.frozen.has('line-1:end')).toBe(false);
+    // 初期値は解決した位置(基準 + Δ)そのもの。
+    expect(set.initial.slice(2)).toEqual([7, 4]);
+    // 基準に追従する点として覚えられている(動かなければ解を差し込まない印)。
+    expect(set.followsBase.has('line-1:end')).toBe(true);
+    expect(set.followsBase.has('line-1:start')).toBe(false);
+  });
+
+  it('式で書いた相対座標の点は変数にしない(frozen に expression)', () => {
+    const document = documentOf([
+      lineOf('line-1', absoluteCoordinate(0, 0, 0), {
+        mode: 'relative',
+        base: { kind: 'previous' },
+        dx: expression('3 + 4', 7),
+        dy: num(4),
+        dz: num(0),
+      }),
+    ]);
+    const set = variablesOf(document);
     expect(keysOf(set)).toEqual(['line-1:start.u', 'line-1:start.v']);
-    expect(set.frozen.get('line-1:end')).toBe('derived');
-    expect(set.constants.get('line-1:end.u')).toBe(7);
-    expect(set.constants.get('line-1:end.v')).toBe(4);
+    expect(set.frozen.get('line-1:end')).toBe('expression');
+  });
+
+  it('数で書いた極座標の点も変数にする(距離・角度が数のとき)', () => {
+    const document = documentOf([
+      lineOf('line-1', absoluteCoordinate(0, 0, 0), {
+        mode: 'polar',
+        base: { kind: 'previous' },
+        distance: num(10),
+        azimuth: num(90),
+        elevation: num(0),
+      }),
+    ]);
+    const set = variablesOf(document);
+    expect(keysOf(set)).toEqual([
+      'line-1:start.u',
+      'line-1:start.v',
+      'line-1:end.u',
+      'line-1:end.v',
+    ]);
+    expect(set.followsBase.has('line-1:end')).toBe(true);
+    // 10mm を 90° へ = (0, 10)。
+    expect(set.initial[2]).toBeCloseTo(0, 9);
+    expect(set.initial[3]).toBeCloseTo(10, 9);
   });
 
   it('円弧は中心 2 +半径+端点 4 の 7 個で、端点が円周の上にある暗黙の式が 2 本立つ', () => {

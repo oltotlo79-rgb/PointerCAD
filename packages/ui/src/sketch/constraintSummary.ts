@@ -40,6 +40,18 @@ import { UNIT_KEYS } from './numericInput.js';
 /** 一覧・印に出す状態。診断(model、タスク7)の結果をそのまま写す。 */
 export type ConstraintState = 'ok' | 'conflicting' | 'redundant' | 'dangling';
 
+/**
+ * 印を置く場所 1 つ(P4b タスク22b)。位置だけでなく**そこにスケッチの点があるか**を
+ * 持つ。点の真上に印を出すと掴み(ドラッグ、タスク14)と競合するので、点に付く印
+ * (一致・固定・距離の端など)は画面上で少し上へずらして描くため
+ * (`constraintPicking.ts` の `MARK_POINT_LIFT_PIXELS`)。
+ */
+export interface ConstraintAnchor {
+  readonly position: Vec3;
+  /** その場所にスケッチの点(端点・中心・点フィーチャー)があるか。 */
+  readonly onPoint: boolean;
+}
+
 /** 一覧の 1 行(FR-501 と同じ流儀。種類名・対象の名前・値)。 */
 export interface ConstraintSummary {
   readonly id: string;
@@ -54,8 +66,8 @@ export interface ConstraintSummary {
   readonly value: ExpressionValue | null;
   /** 値を単位つきで読める形にしたもの(「10 mm」「90°」)。 */
   readonly valueText: string | null;
-  /** 印を置く場所(ワールド座標)。要素が消えていれば空。 */
-  readonly anchors: readonly Vec3[];
+  /** 印を置く場所。要素が消えていれば空。 */
+  readonly anchors: readonly ConstraintAnchor[];
   readonly state: ConstraintState;
   /** `state` が `ok` でないときに一覧へ添える一言。 */
   readonly stateMessage: string | null;
@@ -180,21 +192,38 @@ function describeValue(
   return unit === 'degree' ? `${value.source}${label}` : `${value.source} ${label}`;
 }
 
-/** 印を置く場所 1 つ。曲線を指しているときは線分の中点、円・円弧なら中心。 */
-function anchorOfTarget(context: ConstraintContext, target: ConstraintTarget): Vec3 | null {
+/**
+ * 印を置く場所 1 つ。曲線を指しているときは線分の中点、円・円弧なら中心。
+ *
+ * 点・端点を指しているとき(`targetPositionOf` が答えるとき)と、円・円弧の中心へ落ちた
+ * ときは `onPoint` を立てる。どちらもそこにスケッチの点があり、印を真上に出すと掴みと
+ * 競合するため(タスク22b)。線分の中点だけは点が無いのでそのまま置く。
+ */
+function anchorOfTarget(context: ConstraintContext, target: ConstraintTarget): ConstraintAnchor | null {
   const direct = targetPositionOf(context.resolved, target);
   if (direct !== null) {
-    return direct;
+    return { position: direct, onPoint: true };
   }
   const featureId = featureIdOfTarget(target);
-  return lineMidpointOf(context.resolved, featureId) ?? circleCenterOf(context.resolved, featureId);
+  const midpoint = lineMidpointOf(context.resolved, featureId);
+  if (midpoint !== null) {
+    return { position: midpoint, onPoint: false };
+  }
+  const centre = circleCenterOf(context.resolved, featureId);
+  return centre === null ? null : { position: centre, onPoint: true };
 }
 
 /** 同じ位置に印を 2 つ重ねない。 */
-function withoutDuplicates(anchors: readonly Vec3[]): readonly Vec3[] {
-  const kept: Vec3[] = [];
+function withoutDuplicates(anchors: readonly ConstraintAnchor[]): readonly ConstraintAnchor[] {
+  const kept: ConstraintAnchor[] = [];
   for (const anchor of anchors) {
-    if (!kept.some((other) => other[0] === anchor[0] && other[1] === anchor[1] && other[2] === anchor[2])) {
+    const same = kept.some(
+      (other) =>
+        other.position[0] === anchor.position[0] &&
+        other.position[1] === anchor.position[1] &&
+        other.position[2] === anchor.position[2],
+    );
+    if (!same) {
       kept.push(anchor);
     }
   }
@@ -210,8 +239,8 @@ function anchorsOf(
   context: ConstraintContext,
   constraint: SketchConstraint,
   targets: readonly ConstraintTarget[],
-): readonly Vec3[] {
-  const found: Vec3[] = [];
+): readonly ConstraintAnchor[] {
+  const found: ConstraintAnchor[] = [];
   for (const target of targets) {
     const anchor = anchorOfTarget(context, target);
     if (anchor !== null) {

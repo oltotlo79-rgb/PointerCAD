@@ -316,6 +316,17 @@ export interface StatusInput {
    */
   readonly constraintErrorMessage?: string | null;
   /**
+   * 引っぱれなかった理由(FR-313、P4b タスク14)。押した瞬間の返事なので、他の断りと
+   * 同じ高さの優先順位に置く(NFR-UX-5)。省略できるようにしてあるのは、この欄を
+   * 持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly dragRefusalKey?: MessageKey | null;
+  /**
+   * いま引っぱっている最中か(FR-313、P4b タスク14)。案内を「離すと決まります」に
+   * 差し替えるためだけに使う(NFR-UX-7)。
+   */
+  readonly dragging?: boolean;
+  /**
    * 拘束の道具で「次に何を押せばよいか」(FR-313、NFR-UX-7、P4b タスク13)。
    * 道具を選んでいなければ null。道具ごとの案内(`guideKeyFor`)を押しのけて出す。
    */
@@ -657,6 +668,11 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // 他の断りと同じ高さに置く。理由の文は t12 / model が組み立てたものをそのまま出す。
     return failureLine('statusBar.constraintError', input.constraintErrorMessage);
   }
+  if (input.dragRefusalKey !== undefined && input.dragRefusalKey !== null) {
+    // 引っぱれなかった断り(FR-313、タスク14)。いま押した点への返事なので、
+    // 他の断りと同じ高さに置く。
+    return failureLine('statusBar.dragError', t(input.dragRefusalKey));
+  }
   if (input.timelineRefusalMessage !== undefined && input.timelineRefusalMessage !== null) {
     // 順序の入れ替えの断り(FR-507、タスク20)。いま離したドラッグへの返事なので、
     // 他の断りと同じ高さに置く。理由の文は model が相手の名前つきで組み立てたものをそのまま出す。
@@ -749,9 +765,15 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     input.constraintSummaryText !== undefined && input.constraintSummaryText !== null
       ? input.constraintSummaryText
       : null;
+  /*
+    引っぱっている最中(FR-313、タスク14)は「離すと決まります」を最優先で出す。
+    いま手を動かしている操作の案内なので、拘束の決まり具合より先に立つ(NFR-UX-7)。
+  */
+  const draggingText = input.dragging === true ? t('statusBar.guide.dragging') : null;
   return {
     kind: 'guide',
     text:
+      draggingText ??
       constraintText ??
       machiningText ??
       summaryText ??

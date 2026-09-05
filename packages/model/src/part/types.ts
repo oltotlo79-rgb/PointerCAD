@@ -79,7 +79,12 @@ export type SolidFeatureKind =
   | 'chamfer'
   | 'pattern'
   /** ばね(FR-414、P3 計画書 §2.7b)。対象を取らず、新しいボディを作る。 */
-  | 'spring';
+  | 'spring'
+  /**
+   * 基本形状(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7)。
+   * ばねと同じく対象を取らず、新しいボディを1つ作る(P5 §0.a-0.19)。
+   */
+  | 'primitive';
 
 interface SolidFeatureBase {
   /**
@@ -330,6 +335,84 @@ export interface SpringFeature extends SolidFeatureBase {
   readonly handedness: SpringHandedness;
 }
 
+/**
+ * 基本形状の基準点の指定(FR-429、P5 計画書 §0.a-0.18)。3通り。
+ *
+ * 要件 FR-429 が「スケッチの点フィーチャー・立体の頂点(部分形状の参照)・座標の式の
+ * いずれか」と3通りを明記しているので、入れ物を1つだけ作って既存の3つの型を束ねる
+ * (ばねの始点はスケッチの点1通りだけ、P3 §0.a-0.29。基本形状は要件が広いので広げる)。
+ *
+ * **`vertex` は「消費しない参照」である。** 頂点を貸した立体はそのまま画面に残るので、
+ * `consumedTargetsOf` は `vertex` を指していても空を返す(P5 §0.a-0.19)。
+ * 頂点の指紋は通し番号が変わると採点が最高 0.5 でしきい値 0.6 に届かないため、上流を
+ * 大きく作り替えると「見つからない」になりやすい(断りは解決とカーネルが出す、FR-504)。
+ */
+export type SolidOrigin =
+  | { readonly kind: 'coordinate'; readonly value: CoordinateInput }
+  | { readonly kind: 'sketchPoint'; readonly ref: SketchPointRef }
+  | { readonly kind: 'vertex'; readonly ref: SubShapeRef };
+
+/**
+ * 基本形状の5種(FR-429)。既定名と id の連番もこの語で分ける
+ * (`createPartDocument.ts` の `SolidLabelKey`)。
+ */
+export type PrimitiveShapeKind = 'sphere' | 'box' | 'cylinder' | 'cone' | 'torus';
+
+/**
+ * 基本形状の寸法(FR-429、P5 計画書 §2.7.1)。すべて式のまま持つ(FR-202)。
+ *
+ * 欄名は `packages/kernel/src/types.ts` の `PrimitiveShapeSpec` と揃えてあるので、
+ * 解決した数値をそのまま詰め替えられる(タスク16)。
+ * 円錐だけが半径を2つ持つ。上半径 0 で尖った円錐、0 より大きい値で円錐台になるので、
+ * **円錐台を別の種類にしないで済む**(§0.a-0.16)。部分角度(何度ぶん作るか)は
+ * 持たない(§0.a-0.20。必要になれば P6 以降で足す)。
+ */
+export type PrimitiveShape =
+  | { readonly kind: 'sphere'; readonly radius: ExpressionValue }
+  | {
+      readonly kind: 'box';
+      readonly sizeX: ExpressionValue;
+      readonly sizeY: ExpressionValue;
+      readonly sizeZ: ExpressionValue;
+    }
+  | {
+      readonly kind: 'cylinder';
+      readonly radius: ExpressionValue;
+      readonly height: ExpressionValue;
+    }
+  | {
+      readonly kind: 'cone';
+      readonly bottomRadius: ExpressionValue;
+      readonly topRadius: ExpressionValue;
+      readonly height: ExpressionValue;
+    }
+  | {
+      readonly kind: 'torus';
+      readonly majorRadius: ExpressionValue;
+      readonly minorRadius: ExpressionValue;
+    };
+
+/**
+ * 基本形状(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7.1)。
+ *
+ * 押し出し・回転・縫合・ばねと同じ「新しいボディを1つ作る」フィーチャーで、対象を
+ * 消費しない(§0.a-0.19)。ブーリアン・パターン・加工の**対象にはなる**。
+ *
+ * **基準点の意味は形で変わる**(§0.a-0.17): 球・箱・トーラスは中心、円柱・円錐は
+ * 底面の中心。円柱の高さを変えたときに底面が動かないほうが、押し出しの「面から距離ぶん
+ * 伸びる」と操作の一貫性が取れるためである(NFR-UX-1)。
+ */
+export interface PrimitiveFeature extends SolidFeatureBase {
+  readonly kind: 'primitive';
+  readonly origin: SolidOrigin;
+  /**
+   * 向き(軸)。カーネルでは `gp_Ax2` の Z 方向になる。回転軸(`RevolveAxis`)と同じ
+   * `AxisSpec` を流用する(同じものを2つ作らない。§0.a-0.16)。既定は世界の Z 軸。
+   */
+  readonly axis: AxisSpec;
+  readonly shape: PrimitiveShape;
+}
+
 export type SolidFeature =
   | ExtrudeFeature
   | RevolveFeature
@@ -340,7 +423,8 @@ export type SolidFeature =
   | FilletFeature
   | ChamferFeature
   | PatternFeature
-  | SpringFeature;
+  | SpringFeature
+  | PrimitiveFeature;
 
 // ---------------------------------------------------------------------------
 // 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329。P4 タスク9)

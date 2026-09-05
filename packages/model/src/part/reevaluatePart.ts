@@ -37,8 +37,10 @@ import type {
   HoleDepth,
   PartDocument,
   PatternPlacement,
+  PrimitiveShape,
   ReferenceFeature,
   SolidFeature,
+  SolidOrigin,
 } from './types.js';
 
 /** 評価し直せなかった式1つ(FR-504)。画面はこれを見て欄を赤く出す。 */
@@ -111,7 +113,51 @@ function rebuildPatternPlacement(placement: PatternPlacement, map: ValueMapper):
   }
 }
 
-/** 立体フィーチャー10種の式の欄を写す。 */
+/** 基本形状5種の寸法(FR-429、P5 タスク15)。種類ごとに欄が違う。 */
+function rebuildPrimitiveShape(shape: PrimitiveShape, map: ValueMapper): PrimitiveShape {
+  switch (shape.kind) {
+    case 'sphere':
+      return { kind: 'sphere', radius: map(shape.radius) };
+    case 'box':
+      return {
+        kind: 'box',
+        sizeX: map(shape.sizeX),
+        sizeY: map(shape.sizeY),
+        sizeZ: map(shape.sizeZ),
+      };
+    case 'cylinder':
+      return { kind: 'cylinder', radius: map(shape.radius), height: map(shape.height) };
+    case 'cone':
+      return {
+        kind: 'cone',
+        bottomRadius: map(shape.bottomRadius),
+        topRadius: map(shape.topRadius),
+        height: map(shape.height),
+      };
+    case 'torus':
+      return {
+        kind: 'torus',
+        majorRadius: map(shape.majorRadius),
+        minorRadius: map(shape.minorRadius),
+      };
+  }
+}
+
+/**
+ * 基本形状の基準点(FR-429、P5 タスク15)。式を持つのは座標の指定のときだけで、
+ * スケッチの点・立体の頂点は参照だけ(位置は解決のときに引く)。
+ */
+function rebuildSolidOrigin(origin: SolidOrigin, map: ValueMapper): SolidOrigin {
+  switch (origin.kind) {
+    case 'coordinate':
+      return { kind: 'coordinate', value: mapCoordinateExpressions(origin.value, map) };
+    case 'sketchPoint':
+    case 'vertex':
+      return origin;
+  }
+}
+
+/** 立体フィーチャー11種の式の欄を写す。 */
 function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeature {
   switch (feature.kind) {
     case 'extrude':
@@ -157,6 +203,12 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         turns: map(feature.turns),
         coilDiameter: map(feature.coilDiameter),
         wireDiameter: map(feature.wireDiameter),
+      };
+    case 'primitive':
+      return {
+        ...feature,
+        origin: rebuildSolidOrigin(feature.origin, map),
+        shape: rebuildPrimitiveShape(feature.shape, map),
       };
   }
 }
@@ -283,6 +335,65 @@ export function collectExpressionSources(document: PartDocument): readonly strin
     return value;
   });
   return sources;
+}
+
+/** 式1つと、それを持っているものの id・表示名(FR-207、P4b タスク22b)。 */
+export interface ExpressionOwner {
+  /** 利用者が書いた式の文字列。 */
+  readonly source: string;
+  /** その式を持っているもの の id(フィーチャー・拘束)。`ReevaluationFailure.ownerId` と同じ。 */
+  readonly ownerId: string;
+  /** フィーチャーツリーに出る表示名(FR-501)。名前を引けなければ id をそのまま。 */
+  readonly ownerName: string;
+}
+
+/**
+ * 部品文書の中の id → 表示名の対応表。スケッチの要素・拘束・基準ジオメトリ・立体を
+ * すべて入れる(どれも `name` を持つ)。
+ *
+ * `switch` を使わず `name` の欄をそのまま読むので、フィーチャーの種類が増えても
+ * ここを直さなくてよい(種類ごとの分岐は `mapDocumentExpressions` の側が受け持つ)。
+ */
+function displayNames(document: PartDocument): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const sketch of document.sketches) {
+    names.set(sketch.id, sketch.name);
+    for (const feature of sketch.features) {
+      names.set(feature.id, feature.name);
+    }
+    for (const constraint of sketch.constraints ?? []) {
+      names.set(constraint.id, constraint.name);
+    }
+  }
+  for (const feature of document.references) {
+    names.set(feature.id, feature.name);
+  }
+  for (const feature of document.solids) {
+    names.set(feature.id, feature.name);
+  }
+  return names;
+}
+
+/**
+ * 文書の中の全ての式を、**持ち主の名前つき**で集める(FR-207、P4b タスク22b)。
+ *
+ * `collectExpressionSources` は式の文字列しか返さないので、パラメータの削除を断るときに
+ * 「3 か所から使われています」としか言えなかった(`docs/報告記録.md` 2026-09-05 実時計
+ * 01:05・01:40 の申し送り)。利用者が直しに行けるよう、**どのフィーチャーから使われて
+ * いるか**を名前で言えるようにする(NFR-UX-5「なぜできないか、どうすればできるか」)。
+ *
+ * 歩き方も並びも `collectExpressionSources` と同じ(同じ `mapDocumentExpressions` を通す)。
+ * **既存の関数は変えない**ので、件数だけが要る呼び出しはそのままでよい。
+ * パラメータ表自身の式は含まない(`mapDocumentExpressions` の注釈)。
+ */
+export function collectExpressionOwners(document: PartDocument): readonly ExpressionOwner[] {
+  const names = displayNames(document);
+  const owners: ExpressionOwner[] = [];
+  mapDocumentExpressions(document, (value, ownerId) => {
+    owners.push({ source: value.source, ownerId, ownerName: names.get(ownerId) ?? ownerId });
+    return value;
+  });
+  return owners;
 }
 
 /**

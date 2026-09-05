@@ -188,6 +188,43 @@ describe('向きの吸着(FR-110、トラッキング)', () => {
       expect(result?.candidates[0]?.kind).toBe('polar');
     });
 
+    it('ほぼ平行な2本の交点が判定半径(12px)の外なら、近い方の1本に落とす(タスク22b (e))', () => {
+      /*
+        t16 の懸念(`docs/報告記録.md` 2026-09-05 実時計 01:10)の再現。1 本ずつの候補は
+        「ポインタに最も近い点」で決まるので必ず判定半径の中に入るが、**ほぼ平行な 2 本の
+        交点はポインタから遠くに決まる**(実測で最大 51.57px)。ここでは 330° の極と、
+        それと 5° だけ違う向きの延長線を作り、交点が 28px 余り離れることを固定する。
+      */
+      const origin: Vec3 = [0, 0, 0];
+      // 極は 330°(= −30°)。ポインタはその線上に置く(極の候補との距離は 0)。
+      const pointOnPlane: Vec3 = [8 * Math.cos(degToRad(-30)), 8 * Math.sin(degToRad(-30)), 0];
+      // 延長線は −25°、原点から 2mm ずらした線。ポインタからは 2.5mm ほどしか離れない。
+      const segment: ResolvedSegment = {
+        kind: 'segment',
+        featureId: 'l4',
+        from: [0, 2, 0],
+        to: [10 * Math.cos(degToRad(-25)), 2 + 10 * Math.sin(degToRad(-25)), 0],
+      };
+      const candidates = collectTrackCandidates(
+        emptySketch([segment]), XY, origin, pointOnPlane, 15,
+        new Set<TrackKind>(['polar', 'extension']),
+      );
+      // 2 本とも判定半径(12px)の中にある(この前提が崩れると検査の意味が無くなる)。
+      const inside = candidates.filter((candidate) => {
+        const kind = candidate.kind;
+        return kind === 'polar' || kind === 'extension';
+      });
+      expect(inside.length).toBeGreaterThanOrEqual(2);
+
+      const result = chooseTrack(candidates, project, pointerOf(pointOnPlane), 12, pointOnPlane);
+      expect(result).not.toBeNull();
+      // 交点(実測 28.8px 先)は採らず、極の 1 本だけに落ちる。
+      expect(result?.candidates).toHaveLength(1);
+      expect(result?.candidates[0]?.kind).toBe('polar');
+      const [x, y] = result!.position;
+      expect(Math.hypot(x - pointOnPlane[0], y - pointOnPlane[1])).toBeLessThanOrEqual(12);
+    });
+
     it('平行な2本(極0°と水平な延長線)は1本目だけを採り、交点を作らない', () => {
       const segment: ResolvedSegment = { kind: 'segment', featureId: 'l3', from: [0, 0.4, 0], to: [10, 0.4, 0] };
       const origin: Vec3 = [0, 0, 0];

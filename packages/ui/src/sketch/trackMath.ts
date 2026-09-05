@@ -349,6 +349,13 @@ function intersectTrackLines(a: TrackCandidate, b: TrackCandidate): Vec3 | null 
  * 2本目が1本目と別の種類で、かつ平行でなければ、その交点を吸着点にする
  * (AutoCADのオブジェクトスナップトラッキングと同じ挙動、§2.4)。
  *
+ * **交点も判定半径の中にあるときだけ採る**(P4b タスク22b の (e)、t16 の懸念)。
+ * 1 本ずつの候補は「ポインタに最も近い点」で決まるので必ず判定半径の中に入るが、
+ * **2 本の交点はその限りではない**。ほぼ平行な 2 本(例: 330° の極と延長線)の交点は
+ * 遠くに決まり、実測でポインタから最大 51.57px 離れた(`docs/報告記録.md` 2026-09-05
+ * 実時計 01:10)。そのまま採ると「案内線には合っているのに、点は指から遠い所へ飛ぶ」
+ * ことになるので、交点が判定半径の外なら**近い方の 1 本へ落とす**(NFR-UX-5)。
+ *
  * `ray`(ポインタの光線、P4b 仕上げ (a))は**省略可**にしてある。既存の呼び出し(t15・t16)は
  * 渡さないので、そのときは従来どおり `pointOnPlane` への垂直射影で候補の位置を決める
  * (`positionAlongCandidate` を参照)。呼び出し側(`attachSketchInteraction.ts`)が
@@ -374,10 +381,27 @@ export function chooseTrack(
   );
   if (second !== null) {
     const intersection = intersectTrackLines(first.candidate, second.candidate);
-    if (intersection !== null) {
+    if (intersection !== null && withinRadius(intersection, project, pointer, radiusPixels)) {
       return { position: intersection, candidates: [first.candidate, second.candidate] };
     }
   }
 
   return { position: first.position, candidates: [first.candidate] };
+}
+
+/**
+ * その点が、画面上でポインタから判定半径の中にあるか(上の注釈のとおり)。
+ * 画面へ写せない(視野の外・背後)ときは採らない。
+ */
+function withinRadius(
+  position: Vec3,
+  project: ProjectToScreen,
+  pointer: readonly [number, number],
+  radiusPixels: number,
+): boolean {
+  const screen = project(position);
+  if (screen === null) {
+    return false;
+  }
+  return Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]) <= radiusPixels;
 }

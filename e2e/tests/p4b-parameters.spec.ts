@@ -347,11 +347,15 @@ test.describe('P4b パラメータ表(FR-207・FR-201・FR-502)', () => {
     await treeRow(page, '押し出し1').click();
     await expectVolume(page, 10 * 10 * 3);
 
-    // 4) 使われている「板厚」を消そうとすると、件数つきで断られる。
+    /*
+      4) 使われている「板厚」を消そうとすると断られる。**参照元のフィーチャー名が入る**
+      (P4b タスク22b-(f)。件数だけでは利用者がどこを直せばよいか分からなかった、
+      `docs/報告記録.md` 2026-09-05 実時計 01:05・01:40 の申し送り)。
+    */
     await openParametersTab(page);
     await removeParameterRow(first);
     await expect(parameterFieldMessage(first, 'name')).toHaveText(
-      'この名前は 1 か所から使われています。先にそちらを直してください。',
+      'この名前は 押し出し1 から使われています。先にそちらを直してください。',
     );
     // 断られたので行は消えていない。
     await expect(propertyPanel(page).locator('.pcad-parameter')).toHaveCount(2);

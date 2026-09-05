@@ -289,8 +289,31 @@ export interface ConstraintMark {
   readonly constraintId: string;
   readonly symbol: string;
   readonly state: 'ok' | 'conflicting' | 'redundant' | 'dangling';
+  /** 印が指している場所(ワールド座標)。 */
   readonly position: Vec3;
+  /**
+   * 指している場所からの**画面上のずらし量**(画素。x は右、y は下が正。P4b タスク22b)。
+   *
+   * 描く側(`createConstraintLayer.ts`)は記号の絵の中で位置をずらして描き、当たり判定
+   * (`constraintMarkAt`)は写した画面座標へこれを足す。**描画・当たり判定・選択の 3 つが
+   * 同じ値を見る**ようにするため、ずらし量は印そのものが持つ(P4 タスク12 の失敗の再発防止)。
+   */
+  readonly offset: readonly [number, number];
 }
+
+/**
+ * 重なった印を横へ並べる間隔(画素。利用者の決定③(2026-09-05)「横に 18px ずつずらす」)。
+ * 印の大きさ(`createConstraintLayer.ts` の `MARK_SIZE_PIXELS` = 16)より少し広く取り、
+ * 隣り合った記号がくっついて 1 文字に見えないようにする。
+ */
+export const MARK_SPREAD_PIXELS = 18;
+
+/**
+ * 点に付く印を上へ逃がす量(画素。t14 の申し送り)。一致・固定・距離の端のように
+ * **点そのものを指す印**は、そのまま描くと点の真上に出て掴み(ドラッグ)と競合する。
+ * 印の大きさ(16px)の半分 + 点の当たり判定(6px)ぶんだけ上げれば重ならない。
+ */
+export const MARK_POINT_LIFT_PIXELS = 14;
 
 /**
  * 印の当たり判定の半径(画素)。印そのものの大きさ(`createConstraintLayer.ts` の
@@ -312,11 +335,61 @@ export function constraintMarksOf(
         constraintId: summary.id,
         symbol: summary.symbol,
         state: summary.state,
-        position: anchor,
+        position: anchor.position,
+        offset: anchor.onPoint ? [0, -MARK_POINT_LIFT_PIXELS] : [0, 0],
       });
     }
   }
-  return marks;
+  return spreadOverlappingMarks(marks);
+}
+
+/** 同じ場所に置かれた印をまとめる鍵(ワールド座標をそのまま文字列にする)。 */
+function positionKey(position: Vec3): string {
+  return `${String(position[0])}|${String(position[1])}|${String(position[2])}`;
+}
+
+/**
+ * 同じ場所に重なった印を、横に `MARK_SPREAD_PIXELS` ずつ並べる
+ * (利用者の決定③(2026-09-05)。平行と直角を同じ線に付けると印が同じ中点に重なり、
+ * 読めなくなる実測がある。`docs/報告記録.md` 2026-09-05 実時計 02:50)。
+ *
+ * **まとめる単位はワールド座標が同じ印**にする。指示は「画面で 1px 以内」だが、画面座標は
+ * カメラが決めるので、印を組み立てる時点(文書が変わったとき)に画面で数えると視点を
+ * 回した後に古いずらし量が残る。**同じ場所に置かれた印はどの視点でも必ず重なる**ので、
+ * ワールド座標でまとめれば視点に依らず正しく、毎コマ数え直す費用も要らない
+ * (別々の場所の印がたまたま 1px 以内に重なる場合は残るが、視点を少し動かせば解ける)。
+ *
+ * 並べ方は**左右に振り分ける**(0 番目が中央、以降は左右へ交互ではなく、
+ * まとめて中央ぞろえ)。1 つだけのときはずれないので、ふだんの見え方は変わらない。
+ */
+export function spreadOverlappingMarks(
+  marks: readonly ConstraintMark[],
+): readonly ConstraintMark[] {
+  /** 同じ場所の印が何個あるか(鍵ごとの合計)。 */
+  const counts = new Map<string, number>();
+  for (const mark of marks) {
+    const key = positionKey(mark.position);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  /** その鍵で何個目か(0 起点)。 */
+  const seen = new Map<string, number>();
+  // **元の並びは変えない**(印の並びは一覧の並びから決まっていて、当たり判定の
+  // 同点のときの選び方もそれに従う)。ずらし量だけを足す。
+  return marks.map((mark) => {
+    const key = positionKey(mark.position);
+    const total = counts.get(key) ?? 1;
+    if (total === 1) {
+      return mark;
+    }
+    const index = seen.get(key) ?? 0;
+    seen.set(key, index + 1);
+    // 中央ぞろえ。n 個なら −(n−1)/2 …… +(n−1)/2 の位置へ 18px 刻みで置く。
+    const half = (total - 1) / 2;
+    return {
+      ...mark,
+      offset: [mark.offset[0] + (index - half) * MARK_SPREAD_PIXELS, mark.offset[1]] as const,
+    };
+  });
 }
 
 /**
@@ -336,7 +409,11 @@ export function constraintMarkAt(
     if (screen === null) {
       continue;
     }
-    const distance = screenDistance(screen, pointer);
+    // 描く側と同じずらし量を足してから測る(印は指している場所から離れて描かれる)。
+    const distance = screenDistance(
+      [screen[0] + mark.offset[0], screen[1] + mark.offset[1]],
+      pointer,
+    );
     if (distance < bestDistance) {
       bestDistance = distance;
       best = mark.constraintId;

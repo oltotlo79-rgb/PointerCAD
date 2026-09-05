@@ -8,21 +8,33 @@ import { createAllocations } from '../occt/allocations.js';
 import { booleanOp, type BooleanResult } from '../occt/booleanOp.js';
 import type { OcctShapeHandle } from '../occt/makeBox.js';
 import { makeChamfer } from '../occt/makeChamfer.js';
+import { makeCut } from '../occt/makeCut.js';
+import { makeDraft } from '../occt/makeDraft.js';
+import { makeEmboss } from '../occt/makeEmboss.js';
 import { makeFillet } from '../occt/makeFillet.js';
 import { makeHole } from '../occt/makeHole.js';
 import { makePrimitive, resolvePrimitiveOrigin } from '../occt/makePrimitive.js';
+import { makeRib } from '../occt/makeRib.js';
+import { makeShell } from '../occt/makeShell.js';
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
-import { makeThreadHole } from '../occt/makeThread.js';
+import { makeSurface } from '../occt/makeSurface.js';
+import { makeSweep } from '../occt/makeSweep.js';
+import { makeThinExtrude } from '../occt/makeThinExtrude.js';
+import { makeThreadHole, makeThreadShaft } from '../occt/makeThread.js';
 import { makeThruSections, sectionWireFromFace } from '../occt/makeThruSections.js';
+import { makeVariableFillet } from '../occt/makeVariableFillet.js';
 import { matchFace } from '../occt/matchSubShape.js';
 import { sewSolid } from '../occt/sewSolid.js';
+import { mirrorShape, scaleShape, transformShape } from '../occt/transformShape.js';
 import { buildSolidBodyMesh, measureArea } from '../occt/solidMesh.js';
 import { boundingDiagonal } from '../occt/subShapes.js';
 import type {
   AppearanceMatch,
   AppearanceQuery,
   BooleanStepSpec,
+  ExtrudeStepSpec,
+  FilletStepSpec,
   PrimitiveStepSpec,
   SolidBodyMesh,
   SolidFaceInfo,
@@ -33,6 +45,7 @@ import type {
   SolidStepRequest,
   SolidStepSpec,
   SubShapeQuery,
+  SurfaceStepSpec,
   TessellationOptions,
   ThreadMarkInfo,
   ThruSectionsStepSpec,
@@ -112,10 +125,23 @@ const SWEEP_TESSELLATION_OPTIONS: TessellationOptions = {
  * 大きな球(r=100 で 10108 枚・272ms)は既定でも重いが、NFR-PF-2 の上限 500ms には
  * 収まっている。必要になれば段ごとの指定(`SolidStepRequest.tessellation`)で
  * 寸法に応じて緩められるので、ここに寸法の分岐を作らない。
+ *
+ * **P5 タスク42a で 2 種を足した。** どちらも上の表の「掃引体」そのもので、
+ * B スプライン曲面が出る作り方だから同じ扱いにする:
+ * - **スイープ(FR-409)** は `BRepOffsetAPI_MakePipeShell`(ばねと同じ道具)。
+ * - **外ねじ(FR-423)** は**実らせんを切ったとき**(`modeled`)だけ。簡略表示は
+ *   B-rep に触れず対象の形をそのまま返すので、対象の粗さを変えてはいけない
+ *   (ねじ穴の `thread === null` と同じ理由)。
+ *
+ * **曲面(FR-428)・切断・抜き勾配などは対象にしない。** 平面と円柱面が主で、
+ * 穴と同じ理由(24 分割の下限に近い)で緩める余地が無い。
  */
 function isRelaxableSweepStep(step: SolidStepSpec): boolean {
-  if (step.kind === 'spring') {
+  if (step.kind === 'spring' || step.kind === 'sweep') {
     return true;
+  }
+  if (step.kind === 'threadShaft') {
+    return step.modeled;
   }
   return step.kind === 'thread' && step.thread !== null;
 }
@@ -387,6 +413,128 @@ function createThruSectionsSolid(
 }
 
 /**
+ * 「次の面まで」の押し出し(FR-415)なのに、相手の立体の鍵が入っていないとき(FR-504)。
+ * `end.kind === 'toNext'` と `targetKey` は必ず組で来る約束(`ExtrudeStepSpec` の注釈)なので、
+ * ここへ来るのは組み立て側の取りこぼしだが、画面を止めずに理由を出す(NFR-RE-1)。
+ */
+const MISSING_EXTRUDE_TARGET_MESSAGE =
+  '「次の面まで」の相手になる立体が見つかりません。相手の立体を選び直してください。';
+
+/**
+ * 薄板押し出し(FR-416)に、終端の指定やテーパ角が一緒に来たとき(FR-504)。
+ *
+ * 薄板は輪郭をオフセットして帯を押し出す別の作り方(`occt/makeThinExtrude.ts`)で、
+ * 終端(両側・次の面まで)とテーパは受け取れない。**黙って無視すると、利用者が
+ * 指定したはずの終端が効かない形が黙ってできる**ので、理由をつけて断る。
+ */
+const THIN_EXTRUDE_SHAPING_MESSAGE =
+  '薄い板の押し出しでは、終端の指定と側面の傾きは使えません。厚みを外すか、指定を外してください。';
+
+/**
+ * 押し出しの段(FR-401、FR-415、FR-416)。P2 からの「距離ぶん片側へ」に、
+ * P5 で終端・テーパ・薄板が乗った(`ExtrudeStepSpec` の注釈)。
+ *
+ * 3 通りに分かれる:
+ * - **薄板**(`thin`)は `makeThinExtrude`。輪郭をオフセットした帯を押し出す別の作り方。
+ * - **「次の面まで」**(`end.kind === 'toNext'`)は相手の形が要るので、`targetKey` の段を
+ *   キャッシュから引いて渡す。**相手は消費しない**(材料の位置を読むだけ)。
+ * - それ以外は `makeExtrudeSolid` へそのまま渡す。欄をすべて省いた依頼は
+ *   P2 からの押し出しと 1 ドットも変わらない。
+ */
+function createExtrudeSolid(
+  oc: OpenCascadeInstance,
+  spec: ExtrudeStepSpec,
+  options: TessellationOptions,
+  cache: ShapeCache<CachedSolid>,
+  failedLabels: ReadonlyMap<string, string>,
+): OcctShapeHandle {
+  if (spec.thin !== undefined) {
+    if (spec.end !== undefined || spec.taperAngle !== undefined) {
+      throw new Error(THIN_EXTRUDE_SHAPING_MESSAGE);
+    }
+    return makeThinExtrude(
+      oc,
+      {
+        profile: spec.profile,
+        direction: spec.direction,
+        distance: spec.distance,
+        thickness: spec.thin.thickness,
+        side: spec.thin.side,
+      },
+      options,
+    );
+  }
+
+  let target: TopoDS_Shape | null = null;
+  if (spec.end?.kind === 'toNext') {
+    if (spec.targetKey === undefined || spec.targetKey === null) {
+      throw new Error(MISSING_EXTRUDE_TARGET_MESSAGE);
+    }
+    target = findStepInput(cache, failedLabels, spec.targetKey).shape;
+  }
+
+  return makeExtrudeSolid(oc, spec, options, {
+    end: spec.end,
+    taperAngle: spec.taperAngle,
+    taperOutward: spec.taperOutward,
+    target,
+  });
+}
+
+/**
+ * R 面取りの段(FR-407、FR-426)。半径が数 1 つなら一定半径、始点と終点の 2 つなら可変半径。
+ *
+ * **振り分けはここ 1 か所だけ**にして、作り手(`makeFillet.ts` / `makeVariableFillet.ts`)は
+ * それぞれ 1 種類の半径だけを見る(§0.a-0.48。ファイルは別のまま)。
+ * 可変半径は段の中のすべての辺に同じ 2 値を当てる(`FilletRadiusSpec` の注釈)。
+ */
+function createFilletSolid(
+  oc: OpenCascadeInstance,
+  spec: FilletStepSpec,
+  target: CachedSolid,
+): OcctShapeHandle {
+  const radius = spec.radius;
+  if (typeof radius === 'number') {
+    return makeFillet(oc, { ...spec, radius }, target.shape, target.mesh);
+  }
+  return makeVariableFillet(oc, target.shape, target.mesh, {
+    targets: spec.targets.map((subShape) => ({
+      target: subShape,
+      startRadius: radius.start,
+      endRadius: radius.end,
+    })),
+  });
+}
+
+/**
+ * 曲面の段(FR-428、§0.a-0.45)。**閉じた立体ではなく面のボディ**を作る。
+ *
+ * 作り方が「すでにある立体の面を取り出す」(`shape.kind === 'face'`)ときだけ、
+ * `targetKey` の形と部分形状の一覧をキャッシュから引いて渡す。引き方は穴・面取り・
+ * 罫線面とまったく同じ `findStepInput` で、**同じ手順を 2 か所に書かない**。
+ * **対象は消費しない**(面を貸した立体はそのまま画面に残る)。
+ *
+ * `makeSurface` は「面ができたか」の判定のために面積を必ず 1 回測っており、その値を
+ * `SurfaceResult.area` に添えて返す。ここでは受け取らない——`SolidBodyMesh.area` は
+ * 依頼が `measureAreas` で求めたときだけ入る欄で(統括の決定 2026-09-05)、その配線は
+ * `buildSolidBodyMesh` の中にあるためである。添えた面積を渡せるようにするのは
+ * `solidMesh.ts` の引数が増える整理(タスク42b)の仕事。
+ */
+function createSurfaceSolid(
+  oc: OpenCascadeInstance,
+  spec: SurfaceStepSpec,
+  options: TessellationOptions,
+  cache: ShapeCache<CachedSolid>,
+  failedLabels: ReadonlyMap<string, string>,
+): OcctShapeHandle {
+  if (spec.targetKey === null) {
+    return makeSurface(oc, spec.shape, null, null, options);
+  }
+  const target = findStepInput(cache, failedLabels, spec.targetKey);
+  return makeSurface(oc, spec.shape, target.shape, target.mesh, options);
+}
+
+/**
  * 1 段ぶんの作り手の結果。ねじ穴(FR-406)だけが画面へ返すねじの印(§0.a-0.15)を持つので、
  * それ以外の段は空配列で揃える(createStepSolid が返す形を 1 つに揃えるための入れ物)。
  */
@@ -422,6 +570,17 @@ function noMarks(handle: OcctShapeHandle, volume?: number): StepSolidResult {
  * **基本形状(FR-429)も同じ「作る」段だが、基準点を立体の頂点にしたときだけ
  * `targetKey` の形から頂点を引く**(§0.a-0.18、タスク14b)。それでも対象は消費しない
  * (`createPrimitiveSolid` の注釈)。
+ *
+ * **P5 の Should 群・Could 群(タスク42a)も同じ 3 通りに分かれる:**
+ * - **対象を取らない「作る」段**: スイープ(FR-409)、曲面(FR-428。ただし面を取り出す
+ *   作り方だけは対象の形を借りる)。
+ * - **対象を借りるが消費しない段**: ミラー(FR-419、§0.a-0.36)、
+ *   押し出しの「次の面まで」(FR-415)、曲面の「面を取り出す」(FR-428)。
+ * - **対象を消費する段**: 抜き勾配・移動/回転・拡大縮小・リブ・エンボス・外ねじ・
+ *   切断・くり抜き。
+ *
+ * 消費するかどうかを決めているのは段の `visible`(model が組み立てる)で、
+ * この関数はそれに一切触れない。ここに書いてあるのは model が取り違えないための覚え書き。
  */
 function createStepSolid(
   oc: OpenCascadeInstance,
@@ -432,7 +591,9 @@ function createStepSolid(
 ): StepSolidResult {
   switch (spec.kind) {
     case 'extrude':
-      return noMarks(makeExtrudeSolid(oc, spec, options));
+      // 終端(FR-415)・テーパ(FR-401)・薄板(FR-416)の振り分けは createExtrudeSolid に
+      // 集めてある。欄をすべて省いた依頼は P2 からの押し出しと同じ道を通る。
+      return noMarks(createExtrudeSolid(oc, spec, options, cache, failedLabels));
     case 'revolve':
       return noMarks(makeRevolveSolid(oc, spec, options));
     case 'sew':
@@ -443,7 +604,8 @@ function createStepSolid(
     }
     case 'hole': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      const drilled = makeHole(oc, spec, target.shape, target.mesh.faces);
+      // 入口の形(ざぐり・皿もみ、FR-422)。省かれていれば makeHole が真っ直ぐな穴にする。
+      const drilled = makeHole(oc, spec, target.shape, target.mesh.faces, spec.entry);
       return noMarks(drilled, drilled.volume);
     }
     case 'thread': {
@@ -453,7 +615,8 @@ function createStepSolid(
     }
     case 'fillet': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      return noMarks(makeFillet(oc, spec, target.shape, target.mesh));
+      // 一定半径と可変半径(FR-426)の振り分けは createFilletSolid の 1 か所だけ。
+      return noMarks(createFilletSolid(oc, spec, target));
     }
     case 'chamfer': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
@@ -470,6 +633,63 @@ function createStepSolid(
       // 上流の形を見て輪郭を取り出す(タスク24b)。それでも材料にした立体は
       // 消費しない(§0.a-0.27。要るなら利用者が和を取る)。
       return noMarks(createThruSectionsSolid(oc, spec, options, cache, failedLabels));
+
+    // ここから下は P5 の Should 群・Could 群(タスク42a)。
+    // 段の型は作り手の依頼(`*Input`)の上位互換なので、詰め替えずにそのまま渡す。
+
+    case 'draft': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      return noMarks(makeDraft(oc, target.shape, target.mesh, spec));
+    }
+    case 'mirror': {
+      // ミラー(FR-419)は対象を消費しない(§0.a-0.36)。鏡像を 1 つ作るだけで、
+      // 元と鏡像を 1 つにまとめたければ利用者が和(FR-404)を取る。
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      return noMarks(mirrorShape(oc, target.shape, spec));
+    }
+    case 'transform': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      return noMarks(transformShape(oc, target.shape, spec));
+    }
+    case 'scale': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      return noMarks(scaleShape(oc, target.shape, spec));
+    }
+    case 'sweep':
+      // スイープ(FR-409)は対象を取らない「作る」段(ばね・基本形状と同じ)。
+      return noMarks(makeSweep(oc, spec));
+    case 'rib': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      const ribbed = makeRib(oc, target.shape, spec);
+      return noMarks(ribbed, ribbed.volume);
+    }
+    case 'emboss': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      const embossed = makeEmboss(oc, target.shape, target.mesh, spec);
+      return noMarks(embossed, embossed.volume);
+    }
+    case 'threadShaft': {
+      // 外ねじ(FR-423)。ねじ穴と違って**面の一覧だけでなく `SubShapeTables` を丸ごと**渡す
+      // (円柱面の軸を読むのに辺・頂点も要る)。印は画面の簡略表示に載る(§0.a-0.15)。
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      const { handle, mark } = makeThreadShaft(oc, target.shape, target.mesh, spec);
+      return { handle, threadMarks: [mark] };
+    }
+    case 'surface':
+      // 曲面(FR-428)。ここだけが `bodyKind: 'shell'` のボディを作る。
+      // 判定そのものは buildSolidBodyMesh の hasSolid が行うので、ここに分岐は要らない。
+      return noMarks(createSurfaceSolid(oc, spec, options, cache, failedLabels));
+    case 'cut': {
+      // 平面による切断(FR-432)。`makeCut` は積(intersect)を通るので体積を測り済みだが、
+      // 平面が対象と交わらない道(複製して返す)では測っていないため、戻りは
+      // `OcctShapeHandle` のままにしてある。体積は buildSolidBodyMesh が 1 回測る。
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      return noMarks(makeCut(oc, target.shape, spec));
+    }
+    case 'shell': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      return noMarks(makeShell(oc, target.shape, target.mesh, spec));
+    }
   }
 }
 

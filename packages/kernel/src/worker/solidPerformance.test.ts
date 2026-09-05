@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { extractEdges } from '../occt/extractEdges.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
+import { makePrimitive } from '../occt/makePrimitive.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
@@ -14,6 +15,7 @@ import type {
   SolidFaceInfo,
   SolidRecomputeResult,
   SolidStepRequest,
+  SolidStepSpec,
   SphereSegmentCount,
   SpringStepSpec,
   SubShapeQuery,
@@ -244,6 +246,15 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
         ],
         generation: 0,
       },
+    );
+    // P5 の Should 群・Could 群(タスク42a)も、押し出し・ばね・罫線面とは別の OCCT クラスを
+    // 初めて呼ぶ(`BRepOffsetAPI_DraftAngle` / `MakeThickSolid` / `MakeOffsetShape` /
+    // `BRepPrimAPI_MakeHalfSpace` / `BRepBuilderAPI_GTransform` / 可変半径の `Add_3` 等)。
+    // このファイル冒頭の注釈と同じ理由(WASM の初回呼び出しの遅延を計測から外す)で、
+    // 測る前に 1 度ずつ流しておく。**ここで作った形は測定に使わない。**
+    await recomputeSolids(
+      { oc, cache: warmUp },
+      { steps: warmUpStepsForP5(), generation: 0 },
     );
     warmUp.clear();
   });
@@ -675,6 +686,588 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
     } finally {
       cache.clear();
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // P5 の Should 群・Could 群の段(タスク42a、計画書 §2.11・§2.12)。
+  //
+  // どれも **1 段だけ**を測る(NFR-PF-2 の「単一フィーチャーの適用」)。上流の対象は
+  // `visible: false` の押し出しで前に置き、その 1 段ぶんの費用も所要に含める
+  // (穴・R 面取りの既存の検査とまったく同じ測り方)。**上限は 500ms のまま緩めない。**
+  //
+  // **外ねじの実らせんだけは上限を判定しない。** 1 本で数秒かかることが分かっており
+  // (2026-09-05 実測 中央値 4184ms)、ねじ穴の実らせん・ばねと同じ扱いにする
+  // (利用者が選んだときだけ通る重い段。上限は緩めず所要を記録する)。
+  // ---------------------------------------------------------------------------
+
+  /** 高さ z に置いた長方形の閉ループ。「次の面まで」の相手の板を作るのに使う。 */
+  function rectangleAtZ(width: number, depth: number, z: number): readonly CurveSpec[] {
+    const corners: readonly [number, number, number][] = [
+      [0, 0, z],
+      [width, 0, z],
+      [width, depth, z],
+      [0, depth, z],
+    ];
+    return corners.map((from, index) => ({
+      kind: 'segment',
+      from,
+      to: corners[(index + 1) % corners.length],
+    }));
+  }
+
+  /** 中心 centre のまわりの一辺 size の正方形(XY 面に平行)。エンボスの輪郭。 */
+  function squareAt(centre: readonly [number, number, number], size: number): readonly CurveSpec[] {
+    const half = size / 2;
+    const corners: readonly [number, number, number][] = [
+      [centre[0] - half, centre[1] - half, centre[2]],
+      [centre[0] + half, centre[1] - half, centre[2]],
+      [centre[0] + half, centre[1] + half, centre[2]],
+      [centre[0] - half, centre[1] + half, centre[2]],
+    ];
+    return corners.map((from, index) => ({
+      kind: 'segment',
+      from,
+      to: corners[(index + 1) % corners.length],
+    }));
+  }
+
+  /** 段 1 つを依頼の形にする(種類を選ばない汎用の包み)。 */
+  function stepRequest(id: string, key: string, spec: SolidStepSpec, visible = true): SolidStepRequest {
+    return { key, id, label: id, visible, step: spec };
+  }
+
+  /** 40×30×10 の板(体積 12000)を作る段。加工の相手なので画面には出さない。 */
+  const PLATE_STEP = extrudeStep('plate', 'key-plate', rectangleAt(0, 40, 30), 10, false);
+
+  /** 20×20×20 の箱(体積 8000)を作る段。くり抜き・可変半径の相手。 */
+  const BOX_STEP = extrudeStep('box', 'key-box', rectangleAt(0, 20, 20), 20, false);
+
+  /** 板(40×30×10)の上面と 4 側面の指紋を、同じ形を実際に作って読み取る。 */
+  function plateFaceQueries(): {
+    readonly top: Extract<SubShapeQuery, { kind: 'face' }>;
+    readonly sides: readonly SubShapeQuery[];
+  } {
+    const handle = makeExtrudeSolid(
+      oc,
+      { kind: 'extrude', profile: rectangleAt(0, 40, 30), direction: [0, 0, 1], distance: 10 },
+      {},
+    );
+    try {
+      const faces = subShapesOf(handle.shape, oc).faces;
+      return {
+        top: faceQuery(planeFacing(faces, [0, 0, 1])),
+        sides: [
+          faceQuery(planeFacing(faces, [1, 0, 0])),
+          faceQuery(planeFacing(faces, [-1, 0, 0])),
+          faceQuery(planeFacing(faces, [0, 1, 0])),
+          faceQuery(planeFacing(faces, [0, -1, 0])),
+        ],
+      };
+    } finally {
+      handle.delete();
+    }
+  }
+
+  /** 箱(20³)の上面の指紋。くり抜きの開口。 */
+  function boxTopFace(): Extract<SubShapeQuery, { kind: 'face' }> {
+    const handle = makeExtrudeSolid(
+      oc,
+      { kind: 'extrude', profile: rectangleAt(0, 20, 20), direction: [0, 0, 1], distance: 20 },
+      {},
+    );
+    try {
+      return faceQuery(planeFacing(subShapesOf(handle.shape, oc).faces, [0, 0, 1]));
+    } finally {
+      handle.delete();
+    }
+  }
+
+  /** 箱(20³)の縦の辺 1 本の指紋。可変半径フィレットの相手。 */
+  function boxVerticalEdge(): Extract<SubShapeQuery, { kind: 'edge' }> {
+    const handle = makeExtrudeSolid(
+      oc,
+      { kind: 'extrude', profile: rectangleAt(0, 20, 20), direction: [0, 0, 1], distance: 20 },
+      {},
+    );
+    try {
+      return edgeQuery(verticalEdges(subShapesOf(handle.shape, oc).edges, 20)[0]);
+    } finally {
+      handle.delete();
+    }
+  }
+
+  /** 半径 5・高さ 20 の円柱の側面の指紋。外ねじの相手。 */
+  function shaftSideFace(): Extract<SubShapeQuery, { kind: 'face' }> {
+    const handle = makePrimitive(oc, {
+      kind: 'primitive',
+      origin: [0, 0, 0],
+      axis: [0, 0, 1],
+      shape: { kind: 'cylinder', radius: 5, height: 20 },
+      originQuery: null,
+      targetKey: null,
+    });
+    try {
+      const found = subShapesOf(handle.shape, oc).faces.find(
+        (face) => face.surfaceKind === 'cylinder',
+      );
+      if (found === undefined) {
+        throw new Error('軸の円柱面が見つかりませんでした');
+      }
+      return faceQuery(found);
+    } finally {
+      handle.delete();
+    }
+  }
+
+  /** 軸(半径 5・高さ 20)を作る段。外ねじの相手。 */
+  const SHAFT_STEP: SolidStepRequest = stepRequest(
+    'shaft',
+    'key-shaft',
+    {
+      kind: 'primitive',
+      origin: [0, 0, 0],
+      axis: [0, 0, 1],
+      shape: { kind: 'cylinder', radius: 5, height: 20 },
+      originQuery: null,
+      targetKey: null,
+    },
+    false,
+  );
+
+  /** 5 度(ラジアン)。抜き勾配で使う。 */
+  const FIVE_DEGREES = (5 * Math.PI) / 180;
+
+  /** 円 r=2 を長さ 50 の直線に沿って掃くスイープ(計画書 §2.11 の検証表)。 */
+  const SWEEP_STEP: SolidStepSpec = {
+    kind: 'sweep',
+    profile: [
+      {
+        kind: 'arc',
+        center: [0, 0, 0],
+        normal: [0, 0, 1],
+        xAxis: [1, 0, 0],
+        radius: 2,
+        startAngle: 0,
+        endAngle: 2 * Math.PI,
+      },
+    ],
+    path: [{ kind: 'segment', from: [0, 0, 0], to: [0, 0, 50] }],
+    frenet: true,
+  };
+
+  /**
+   * P5 の段の捨て計算の依頼(`beforeAll` から呼ぶ)。
+   *
+   * 測るときと**同じ作り手を通る**ように、各段を 1 つずつ並べる(形は小さくてよい)。
+   * 鍵は測定用と別にしてあるが、捨て計算のキャッシュは `beforeAll` の最後に空にするので
+   * どちらにしても混ざらない。失敗しても止めない(捨て計算なので何も断定しない)。
+   */
+  function warmUpStepsForP5(): readonly SolidStepRequest[] {
+    const { top, sides } = plateFaceQueries();
+    const plate = extrudeStep('warm-plate', 'key-warm-plate', rectangleAt(0, 40, 30), 10, false);
+    const box = extrudeStep('warm-box', 'key-warm-box', rectangleAt(0, 20, 20), 20, false);
+    return [
+      plate,
+      box,
+      SHAFT_STEP,
+      stepRequest('warm-thin', 'key-warm-thin', {
+        kind: 'extrude',
+        profile: rectangleAt(0, 40, 30),
+        direction: [0, 0, 1],
+        distance: 10,
+        thin: { thickness: 2, side: 'inner' },
+      }),
+      stepRequest(
+        'warm-above',
+        'key-warm-above',
+        { kind: 'extrude', profile: rectangleAtZ(60, 50, 10), direction: [0, 0, 1], distance: 10 },
+        false,
+      ),
+      stepRequest('warm-to-next', 'key-warm-to-next', {
+        kind: 'extrude',
+        profile: rectangleAt(0, 40, 30),
+        direction: [0, 0, 1],
+        distance: 10,
+        end: { kind: 'toNext' },
+        targetKey: 'key-warm-above',
+      }),
+      stepRequest('warm-draft', 'key-warm-draft', {
+        kind: 'draft',
+        targetKey: 'key-warm-plate',
+        faces: sides,
+        neutralFace: top,
+        angle: FIVE_DEGREES,
+        reversed: false,
+      }),
+      stepRequest('warm-mirror', 'key-warm-mirror', {
+        kind: 'mirror',
+        targetKey: 'key-warm-plate',
+        origin: [0, 0, 0],
+        normal: [1, 0, 0],
+      }),
+      stepRequest('warm-transform', 'key-warm-transform', {
+        kind: 'transform',
+        targetKey: 'key-warm-plate',
+        translation: [100, 0, 0],
+        rotationOrigin: [0, 0, 0],
+        rotationAxis: [0, 0, 1],
+        rotationAngle: 0,
+      }),
+      stepRequest('warm-scale', 'key-warm-scale', {
+        kind: 'scale',
+        targetKey: 'key-warm-plate',
+        origin: [0, 0, 0],
+        uniform: 2,
+        perAxis: null,
+      }),
+      stepRequest('warm-sweep', 'key-warm-sweep', SWEEP_STEP),
+      stepRequest('warm-rib', 'key-warm-rib', {
+        kind: 'rib',
+        targetKey: 'key-warm-plate',
+        profile: [{ kind: 'segment', from: [0, 15, 30], to: [40, 15, 30] }],
+        normal: [0, 1, 0],
+        thickness: 2,
+        symmetric: true,
+        direction: [0, 0, -1],
+      }),
+      stepRequest('warm-emboss', 'key-warm-emboss', {
+        kind: 'emboss',
+        targetKey: 'key-warm-plate',
+        face: top,
+        profiles: [squareAt([20, 15, 10], 10)],
+        depth: 2,
+        raised: false,
+      }),
+      stepRequest('warm-counterbore', 'key-warm-counterbore', {
+        kind: 'hole',
+        targetKey: 'key-warm-plate',
+        face: top,
+        centers: [[20, 15, 10]],
+        diameter: 6,
+        depth: null,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+        entry: { kind: 'counterbore', diameter: 11, depth: 4 },
+      }),
+      stepRequest('warm-thread-shaft', 'key-warm-thread-shaft', {
+        kind: 'threadShaft',
+        targetKey: 'key-shaft',
+        face: shaftSideFace(),
+        majorDiameter: 10,
+        pitch: 1.5,
+        length: 10,
+        fromEnd: 'first',
+        modeled: false,
+      }),
+      stepRequest('warm-surface', 'key-warm-surface', {
+        kind: 'surface',
+        shape: {
+          kind: 'extrude',
+          profile: [{ kind: 'segment', from: [0, 0, 0], to: [0, 40, 0] }],
+          direction: [0, 0, 1],
+          distance: 10,
+        },
+        targetKey: null,
+      }),
+      stepRequest('warm-cut', 'key-warm-cut', {
+        kind: 'cut',
+        targetKey: 'key-warm-plate',
+        origin: [20, 15, 5],
+        normal: [1, 0, 0],
+        keepPositive: true,
+      }),
+      stepRequest('warm-shell', 'key-warm-shell', {
+        kind: 'shell',
+        targetKey: 'key-warm-box',
+        openFaces: [boxTopFace()],
+        thickness: 2,
+        outward: false,
+      }),
+      stepRequest('warm-variable-fillet', 'key-warm-variable-fillet', {
+        kind: 'fillet',
+        targetKey: 'key-warm-box',
+        targets: [boxVerticalEdge()],
+        radius: { start: 2, end: 5 },
+      }),
+    ];
+  }
+
+  /**
+   * 1 段だけの依頼を流して、所要を上限と突き合わせる(P5 の段の共通の測り方)。
+   * 上限の判定は既存の `expectWithinBudget` を通す(`POINTERCAD_PERF_STRICT` の仕組みは変えない)。
+   */
+  async function measureSingleStep(
+    label: string,
+    steps: readonly SolidStepRequest[],
+  ): Promise<SolidRecomputeResult> {
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const { result, elapsedMs } = await measure(oc, cache, steps);
+      console.log(`${label}: ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+      expect(result.failures).toEqual([]);
+      expect(result.cacheHits).toBe(0);
+      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, label);
+      return result;
+    } finally {
+      cache.clear();
+    }
+  }
+
+  it(`押し出し 1 段(終端「次の面まで」)が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-415)`, async () => {
+    const result = await measureSingleStep('押し出し(次の面まで)', [
+      stepRequest(
+        'above',
+        'key-above',
+        { kind: 'extrude', profile: rectangleAtZ(60, 50, 10), direction: [0, 0, 1], distance: 10 },
+        false,
+      ),
+      stepRequest('to-next', 'key-to-next', {
+        kind: 'extrude',
+        profile: rectangleAt(0, 40, 30),
+        direction: [0, 0, 1],
+        distance: 10,
+        end: { kind: 'toNext' },
+        targetKey: 'key-above',
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`薄板押し出し 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-416)`, async () => {
+    const result = await measureSingleStep('薄板押し出し(40×30 の輪郭・厚み 2)', [
+      stepRequest('thin', 'key-thin', {
+        kind: 'extrude',
+        profile: rectangleAt(0, 40, 30),
+        direction: [0, 0, 1],
+        distance: 10,
+        thin: { thickness: 2, side: 'inner' },
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`抜き勾配 1 段(4 面)が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-417)`, async () => {
+    const { top, sides } = plateFaceQueries();
+    const result = await measureSingleStep('抜き勾配(板の 4 側面・5 度)', [
+      PLATE_STEP,
+      stepRequest('draft', 'key-draft', {
+        kind: 'draft',
+        targetKey: 'key-plate',
+        faces: sides,
+        neutralFace: top,
+        angle: FIVE_DEGREES,
+        reversed: false,
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`ミラー 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-419)`, async () => {
+    const result = await measureSingleStep('ミラー(板を YZ 面で)', [
+      PLATE_STEP,
+      stepRequest('mirror', 'key-mirror', {
+        kind: 'mirror',
+        targetKey: 'key-plate',
+        origin: [0, 0, 0],
+        normal: [1, 0, 0],
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`移動 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-424)`, async () => {
+    const result = await measureSingleStep('移動(板を 100 mm)', [
+      PLATE_STEP,
+      stepRequest('transform', 'key-transform', {
+        kind: 'transform',
+        targetKey: 'key-plate',
+        translation: [100, 0, 0],
+        rotationOrigin: [0, 0, 0],
+        rotationAxis: [0, 0, 1],
+        rotationAngle: 0,
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`拡大縮小 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-424)`, async () => {
+    const result = await measureSingleStep('拡大縮小(板を 2 倍)', [
+      PLATE_STEP,
+      stepRequest('scale', 'key-scale', {
+        kind: 'scale',
+        targetKey: 'key-plate',
+        origin: [0, 0, 0],
+        uniform: 2,
+        perAxis: null,
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`スイープ 1 段(円 r=2 を長さ 50)が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-409)`, async () => {
+    const result = await measureSingleStep('スイープ(円 r=2・長さ 50)', [
+      stepRequest('sweep', 'key-sweep', SWEEP_STEP),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`リブ 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-420)`, async () => {
+    const result = await measureSingleStep('リブ(長さ 40・厚み 2)', [
+      PLATE_STEP,
+      stepRequest('rib', 'key-rib', {
+        kind: 'rib',
+        targetKey: 'key-plate',
+        profile: [{ kind: 'segment', from: [0, 15, 30], to: [40, 15, 30] }],
+        normal: [0, 1, 0],
+        thickness: 2,
+        symmetric: true,
+        direction: [0, 0, -1],
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`エンボス 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-421)`, async () => {
+    const { top } = plateFaceQueries();
+    const result = await measureSingleStep('エンボス(10×10 を深さ 2 彫る)', [
+      PLATE_STEP,
+      stepRequest('emboss', 'key-emboss', {
+        kind: 'emboss',
+        targetKey: 'key-plate',
+        face: top,
+        profiles: [squareAt([20, 15, 10], 10)],
+        depth: 2,
+        raised: false,
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`ざぐり穴 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-422)`, async () => {
+    const { top } = plateFaceQueries();
+    const result = await measureSingleStep('ざぐり穴(φ6 貫通 + φ11 深さ 4)', [
+      PLATE_STEP,
+      stepRequest('counterbore', 'key-counterbore', {
+        kind: 'hole',
+        targetKey: 'key-plate',
+        face: top,
+        centers: [[20, 15, 10]],
+        diameter: 6,
+        depth: null,
+        tiltAngle: 0,
+        tiltAzimuth: 0,
+        transforms: [],
+        entry: { kind: 'counterbore', diameter: 11, depth: 4 },
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`外ねじ 1 段(簡略表示)が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-423)`, async () => {
+    const result = await measureSingleStep('外ねじ(M10・簡略表示)', [
+      SHAFT_STEP,
+      stepRequest('thread-shaft', 'key-thread-shaft', {
+        kind: 'threadShaft',
+        targetKey: 'key-shaft',
+        face: shaftSideFace(),
+        majorDiameter: 10,
+        pitch: 1.5,
+        length: 10,
+        fromEnd: 'first',
+        modeled: false,
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0].threadMarks).toHaveLength(1);
+  });
+
+  it('外ねじ 1 段(実らせん)は上限を判定せず、所要を記録する(FR-423)', async () => {
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const { result, elapsedMs } = await measure(oc, cache, [
+        SHAFT_STEP,
+        stepRequest('thread-shaft-modeled', 'key-thread-shaft-modeled', {
+          kind: 'threadShaft',
+          targetKey: 'key-shaft',
+          face: shaftSideFace(),
+          majorDiameter: 10,
+          pitch: 1.5,
+          length: 10,
+          fromEnd: 'first',
+          modeled: true,
+        }),
+      ]);
+
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      // **上限は緩めない。** ねじ穴の実らせん・ばねと同じで、利用者が「実形状」を選んだ
+      // ときだけ通る重い段なので、ここでは所要を記録するにとどめ、しきい値を置かない
+      // (2026-09-05 タスク40 の実測: 負荷下で 1 本 中央値 4184ms)。
+      console.log(
+        `外ねじ 1 段(M10×1.5・長さ 10・実らせん): ${elapsedMs.toFixed(1)} ms(参考上限 ${SINGLE_FEATURE_LIMIT_MS} ms)`,
+      );
+    } finally {
+      cache.clear();
+    }
+  });
+
+  it(`曲面 1 段(押し出し面)が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-428)`, async () => {
+    const result = await measureSingleStep('曲面(長さ 40 の線を 10 掃く)', [
+      stepRequest('surface', 'key-surface', {
+        kind: 'surface',
+        shape: {
+          kind: 'extrude',
+          profile: [{ kind: 'segment', from: [0, 0, 0], to: [0, 40, 0] }],
+          direction: [0, 0, 1],
+          distance: 10,
+        },
+        targetKey: null,
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0].bodyKind).toBe('shell');
+  });
+
+  it(`切断 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-432)`, async () => {
+    const result = await measureSingleStep('切断(板を真ん中で)', [
+      PLATE_STEP,
+      stepRequest('cut', 'key-cut', {
+        kind: 'cut',
+        targetKey: 'key-plate',
+        origin: [20, 15, 5],
+        normal: [1, 0, 0],
+        keepPositive: true,
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`くり抜き 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-418)`, async () => {
+    const result = await measureSingleStep('くり抜き(箱 20³・厚さ 2・上面開口)', [
+      BOX_STEP,
+      stepRequest('shell', 'key-shell', {
+        kind: 'shell',
+        targetKey: 'key-box',
+        openFaces: [boxTopFace()],
+        thickness: 2,
+        outward: false,
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
+  });
+
+  it(`可変半径フィレット 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-426)`, async () => {
+    const result = await measureSingleStep('可変半径フィレット(箱 20³ の縦 1 本を R2→R5)', [
+      BOX_STEP,
+      stepRequest('variable-fillet', 'key-variable-fillet', {
+        kind: 'fillet',
+        targetKey: 'key-box',
+        targets: [boxVerticalEdge()],
+        radius: { start: 2, end: 5 },
+      }),
+    ]);
+    expect(result.bodies).toHaveLength(1);
   });
 
   it('罫線面 1 段: 分割 48 / 72 は上限を判定せず、所要と三角形の数を記録する(§0.a-0.74)', async () => {

@@ -4,7 +4,7 @@ import type {
   TopoDS_Shape,
 } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { FilletStepSpec, SubShapeQuery } from '../types.js';
+import type { ConstantFilletStepSpec, SubShapeQuery } from '../types.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { matchEdge, matchVertex } from './matchSubShape.js';
@@ -69,8 +69,15 @@ function faultyContourMessage(count: number): string {
  * 意味が読める列挙値のほうを採る)。
  *
  * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、この書き方を写す前に統括へ諮る。
+ *
+ * **輸出している理由(P5 タスク53、2026-09-05):** 可変半径の R 面取り(FR-426)は
+ * 同じ `BRepFilletAPI_MakeFillet` を `Add_3(R1, R2, E)` で使うが、統括の指示により
+ * `makeVariableFillet.ts` という別ファイルに置く。そこで同じガードを書き直すと
+ * 「同じ書き方を 2 か所に置く」ことになり、計画書 §4 が P5 に許した新しいガードは
+ * `makeShell.ts` の 1 か所だけである。**新しいガードを増やさずに済ませるため、
+ * ここにある 1 つを輸出して使い回す**(判定の中身は 1 文字も変えていない)。
  */
-function isFilletShape(value: unknown): value is ChFi3d_FilletShape {
+export function isFilletShape(value: unknown): value is ChFi3d_FilletShape {
   return typeof value === 'object' && value !== null;
 }
 
@@ -189,7 +196,9 @@ function toJapaneseFailure(error: unknown, message: string): Error {
  */
 export function makeFillet(
   oc: OpenCascadeInstance,
-  spec: FilletStepSpec,
+  // 半径は**一定**のものだけを受け取る(可変半径は makeVariableFillet.ts、FR-426)。
+  // どちらの半径かを振り分けるのは recomputeSolids の 1 か所だけにしてある(§0.a-0.48)。
+  spec: ConstantFilletStepSpec,
   target: TopoDS_Shape,
   tables: SubShapeTables,
 ): OcctShapeHandle {

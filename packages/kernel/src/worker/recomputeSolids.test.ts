@@ -14,15 +14,18 @@ import type {
   HoleStepSpec,
   PrimitiveShapeSpec,
   PrimitiveStepSpec,
+  SolidBodyMesh,
   SolidEdgeInfo,
   SolidFaceInfo,
   SolidProgress,
   SolidRecomputeRequest,
   SolidStepRequest,
+  SolidStepSpec,
   SolidVertexInfo,
   SpringStepSpec,
   SubShapeQuery,
   ThruSectionsStepSpec,
+  Vec3Tuple,
 } from '../types.js';
 import { recomputeSolids, type CachedSolid } from './recomputeSolids.js';
 import { createShapeCache, type ShapeCache } from './shapeCache.js';
@@ -1855,6 +1858,722 @@ describe('履歴の再計算(recomputeSolids)', () => {
         { id: '罫線面1', message: 'もとになる立体が見つかりませんでした。' },
       ]);
       expect(result.bodies).toEqual([]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // P5 の Should 群・Could 群の段(FR-401、FR-409、FR-415〜FR-428、FR-432。タスク42a)。
+  //
+  // ここで確かめるのは**段の配線**である——依頼の欄がそのまま作り手へ渡り、上流の形と
+  // 部分形状の一覧をキャッシュから引き、消費の有無どおりにボディが残り、同じ依頼の
+  // 2 回目が命中すること。**形そのものの期待値**(細かい体積・境界箱・断りの文言)は
+  // 各 `occt/make*.test.ts` が固定済みなので、ここで同じ数値を書き写さない
+  // (同じ期待値を 2 か所に置くと、片方だけ直したときに食い違う)。
+  // ---------------------------------------------------------------------------
+  describe('P5 の Should 群・Could 群の段(タスク42a)', () => {
+    /** 高さ z に置いた長方形の閉ループ(XY 面に平行)。 */
+    function rectangleAtZ(width: number, depth: number, z: number): readonly CurveSpec[] {
+      const corners: readonly Vec3Tuple[] = [
+        [0, 0, z],
+        [width, 0, z],
+        [width, depth, z],
+        [0, depth, z],
+      ];
+      return corners.map((from, index) => ({
+        kind: 'segment',
+        from,
+        to: corners[(index + 1) % corners.length],
+      }));
+    }
+
+    /** 中心 centre のまわりの一辺 size の正方形(XY 面に平行)。 */
+    function squareAt(centre: Vec3Tuple, size: number): readonly CurveSpec[] {
+      const half = size / 2;
+      const corners: readonly Vec3Tuple[] = [
+        [centre[0] - half, centre[1] - half, centre[2]],
+        [centre[0] + half, centre[1] - half, centre[2]],
+        [centre[0] + half, centre[1] + half, centre[2]],
+        [centre[0] - half, centre[1] + half, centre[2]],
+      ];
+      return corners.map((from, index) => ({
+        kind: 'segment',
+        from,
+        to: corners[(index + 1) % corners.length],
+      }));
+    }
+
+    /** 段 1 つを依頼の形にする(種類を選ばない汎用の包み)。 */
+    function step(
+      id: string,
+      key: string,
+      spec: SolidStepSpec,
+      visible = true,
+    ): SolidStepRequest {
+      return { key, id, label: id, visible, step: spec };
+    }
+
+    /** 40 × 30 × 10 の板(体積 12000)を作る段。加工の相手なので既定では画面に出さない。 */
+    function plateStep(visible = false): SolidStepRequest {
+      return extrudeStep('板', 'key-plate', 40, 30, 10, visible);
+    }
+
+    /** 20 × 20 × 20 の箱(体積 8000)を作る段。 */
+    function boxStep(visible = false): SolidStepRequest {
+      return extrudeStep('箱', 'key-box', 20, 20, 20, visible);
+    }
+
+    /** 板の上面(z = 10)と 4 つの側面の指紋。抜き勾配・エンボス・くり抜きが使う。 */
+    function plateFaces(width: number, depth: number, height: number): {
+      readonly top: Extract<SubShapeQuery, { kind: 'face' }>;
+      readonly sides: readonly SubShapeQuery[];
+    } {
+      const handle = makeExtrudeSolid(
+        oc,
+        { kind: 'extrude', profile: rectangle(width, depth), direction: [0, 0, 1], distance: height },
+        {},
+      );
+      try {
+        const faces = subShapesOf(handle.shape).faces;
+        return {
+          top: faceQuery(planeFacing(faces, [0, 0, 1])),
+          sides: [
+            faceQuery(planeFacing(faces, [1, 0, 0])),
+            faceQuery(planeFacing(faces, [-1, 0, 0])),
+            faceQuery(planeFacing(faces, [0, 1, 0])),
+            faceQuery(planeFacing(faces, [0, -1, 0])),
+          ],
+        };
+      } finally {
+        handle.delete();
+      }
+    }
+
+    /** 箱の縦の辺(長さ 20)を 1 本選んだ指紋。可変半径フィレットが使う。 */
+    function boxVerticalEdge(): Extract<SubShapeQuery, { kind: 'edge' }> {
+      const handle = makeExtrudeSolid(
+        oc,
+        { kind: 'extrude', profile: rectangle(20, 20), direction: [0, 0, 1], distance: 20 },
+        {},
+      );
+      try {
+        const edges = subShapesOf(handle.shape).edges;
+        const found = edges.find(
+          (edge) =>
+            edge.curveKind === 'line' &&
+            Math.abs(edge.length - 20) < 1e-6 &&
+            edge.axis !== null &&
+            Math.abs(Math.abs(edge.axis[2]) - 1) < 1e-9,
+        );
+        if (found === undefined) {
+          throw new Error('箱の縦の辺が見つかりませんでした');
+        }
+        return edgeQuery(found);
+      } finally {
+        handle.delete();
+      }
+    }
+
+    /** 半径 5・高さ 20 の円柱(体積 π·25·20)の側面の指紋。外ねじが使う。 */
+    function shaftSideFace(): Extract<SubShapeQuery, { kind: 'face' }> {
+      const handle = makePrimitive(oc, {
+        kind: 'primitive',
+        origin: [0, 0, 0],
+        axis: [0, 0, 1],
+        shape: { kind: 'cylinder', radius: 5, height: 20 },
+        originQuery: null,
+        targetKey: null,
+      });
+      try {
+        const found = subShapesOf(handle.shape).faces.find(
+          (face) => face.surfaceKind === 'cylinder',
+        );
+        if (found === undefined) {
+          throw new Error('軸の円柱面が見つかりませんでした');
+        }
+        return faceQuery(found);
+      } finally {
+        handle.delete();
+      }
+    }
+
+    /** 5 度(ラジアン)。抜き勾配とテーパで使う。 */
+    const FIVE_DEGREES = (5 * Math.PI) / 180;
+
+    /** 円柱の軸(半径 5・高さ 20)の体積 π·25·20 = 1570.796…(手計算)。 */
+    const SHAFT_VOLUME = Math.PI * 25 * 20;
+
+    /** φ6 の貫通穴 1 つが板から削る体積 π·3²·10(makeHole.test.ts と同じ)。 */
+    const PLAIN_HOLE_VOLUME = Math.PI * 9 * 10;
+
+    /** 1 段だけの依頼と、その結果の確かめ方。 */
+    interface StepCase {
+      /** 依頼(上流の対象は visible: false で前に置く)。 */
+      readonly steps: readonly SolidStepRequest[];
+      /** 画面に残るボディの数。ミラーは対象を消費しないので 2 になる。 */
+      readonly bodyCount: number;
+      /** 作り直す段の数(= キャッシュに預ける件数)。 */
+      readonly built: number;
+      /** 表面積を測らせるか(曲面だけ true)。 */
+      readonly measureAreas?: boolean;
+      readonly check: (bodies: readonly SolidBodyMesh[]) => void;
+    }
+
+    /**
+     * 検査する段の名前。`it` の登録は describe の時点で行うが、指紋を読むには
+     * OCCT(`beforeAll` で読む)が要るので、依頼そのものは `caseFor` が実行時に作る。
+     */
+    const CASE_NAMES = [
+      '押し出しの終端(次の面まで)',
+      '押し出しのテーパ',
+      '薄板押し出し',
+      '抜き勾配',
+      'ミラー',
+      '移動/回転',
+      '拡大縮小',
+      'スイープ',
+      'リブ',
+      'エンボス',
+      'ざぐり穴',
+      '外ねじ(簡略)',
+      '曲面(押し出し面)',
+      '切断',
+      'くり抜き',
+      '可変半径フィレット',
+    ] as const;
+
+    type StepCaseName = (typeof CASE_NAMES)[number];
+
+    function caseFor(name: StepCaseName): StepCase {
+      switch (name) {
+        case '押し出しの終端(次の面まで)': {
+          // 40×30 の断面をすっかり覆う板を z = 10 〜 20 に置き、下から「次の面まで」押す。
+          // 板の中の 40·30·10 = 12000 mm³ だけが残る(makeSolidSweep.test.ts と同じ配置)。
+          return {
+            steps: [
+              step(
+                '上の板',
+                'key-above',
+                { kind: 'extrude', profile: rectangleAtZ(60, 50, 10), direction: [0, 0, 1], distance: 10 },
+                false,
+              ),
+              step('押し出し1', 'key-to-next', {
+                kind: 'extrude',
+                profile: rectangle(40, 30),
+                direction: [0, 0, 1],
+                distance: 10,
+                end: { kind: 'toNext' },
+                targetKey: 'key-above',
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
+            },
+          };
+        }
+        case '押し出しのテーパ':
+          return {
+            steps: [
+              step('押し出し1', 'key-taper', {
+                kind: 'extrude',
+                profile: rectangle(40, 30),
+                direction: [0, 0, 1],
+                distance: 10,
+                taperAngle: FIVE_DEGREES,
+                taperOutward: false,
+              }),
+            ],
+            bodyCount: 1,
+            built: 1,
+            check: (bodies) => {
+              // 内へ絞るので、傾けない押し出し(12000)より必ず小さくなる。
+              expect(bodies[0].volume).toBeGreaterThan(0);
+              expect(bodies[0].volume).toBeLessThan(EXTRUDE_VOLUME);
+            },
+          };
+        case '薄板押し出し':
+          return {
+            steps: [
+              step('押し出し1', 'key-thin', {
+                kind: 'extrude',
+                profile: rectangle(40, 30),
+                direction: [0, 0, 1],
+                distance: 10,
+                thin: { thickness: 2, side: 'inner' },
+              }),
+            ],
+            bodyCount: 1,
+            built: 1,
+            check: (bodies) => {
+              // (40·30 − 36·26) · 10 = 2640 mm³(計画書 §2.12 の検証表)。
+              expect(bodies[0].volume).toBeCloseTo(2640, 6);
+            },
+          };
+        case '抜き勾配': {
+          const { top, sides } = plateFaces(40, 30, 10);
+          return {
+            steps: [
+              plateStep(),
+              step('抜き勾配1', 'key-draft', {
+                kind: 'draft',
+                targetKey: 'key-plate',
+                faces: sides,
+                neutralFace: top,
+                angle: FIVE_DEGREES,
+                reversed: false,
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 外向き(reversed = false)なので下へ広がり、板より大きくなる。
+              expect(bodies[0].volume).toBeGreaterThan(EXTRUDE_VOLUME);
+            },
+          };
+        }
+        case 'ミラー':
+          return {
+            // 対象を消費しない(§0.a-0.36)ので、板と鏡像の 2 ボディが残る。
+            steps: [
+              plateStep(true),
+              step('ミラー1', 'key-mirror', {
+                kind: 'mirror',
+                targetKey: 'key-plate',
+                origin: [0, 0, 0],
+                normal: [1, 0, 0],
+              }),
+            ],
+            bodyCount: 2,
+            built: 2,
+            check: (bodies) => {
+              expect(bodies.map((body) => body.id)).toEqual(['板', 'ミラー1']);
+              for (const body of bodies) {
+                expect(body.volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
+              }
+              // 鏡像は x < 0 の側へ移る(もとの板は 0 ≦ x ≦ 40)。
+              const mirrored = bodies[1].vertices.map((vertex) => vertex.position[0]);
+              expect(Math.max(...mirrored)).toBeLessThanOrEqual(1e-9);
+            },
+          };
+        case '移動/回転':
+          return {
+            steps: [
+              plateStep(),
+              step('移動1', 'key-transform', {
+                kind: 'transform',
+                targetKey: 'key-plate',
+                translation: [100, 0, 0],
+                rotationOrigin: [0, 0, 0],
+                rotationAxis: [0, 0, 1],
+                rotationAngle: 0,
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
+              const xs = bodies[0].vertices.map((vertex) => vertex.position[0]);
+              expect(Math.min(...xs)).toBeCloseTo(100, 6);
+            },
+          };
+        case '拡大縮小':
+          return {
+            steps: [
+              plateStep(),
+              step('拡大1', 'key-scale', {
+                kind: 'scale',
+                targetKey: 'key-plate',
+                origin: [0, 0, 0],
+                uniform: 2,
+                perAxis: null,
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 一様 2 倍なら体積は 2³ 倍(12000 → 96000)。
+              expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME * 8, 6);
+            },
+          };
+        case 'スイープ':
+          return {
+            // 対象を取らない「作る」段。円 r=2 を長さ 50 の直線に沿って掃く。
+            steps: [
+              step('スイープ1', 'key-sweep', {
+                kind: 'sweep',
+                profile: [
+                  {
+                    kind: 'arc',
+                    center: [0, 0, 0],
+                    normal: [0, 0, 1],
+                    xAxis: [1, 0, 0],
+                    radius: 2,
+                    startAngle: 0,
+                    endAngle: 2 * Math.PI,
+                  },
+                ],
+                path: [{ kind: 'segment', from: [0, 0, 0], to: [0, 0, 50] }],
+                frenet: true,
+              }),
+            ],
+            bodyCount: 1,
+            built: 1,
+            check: (bodies) => {
+              // π·2²·50 = 628.3185307179587(計画書 §2.11 の検証表)。円は分割で近似されるので
+              // 許容は makeSweep.test.ts と同じ相対 0.5%。
+              const expected = Math.PI * 4 * 50;
+              expect(Math.abs(bodies[0].volume - expected) / expected).toBeLessThan(0.005);
+            },
+          };
+        case 'リブ':
+          return {
+            steps: [
+              plateStep(),
+              step('リブ1', 'key-rib', {
+                kind: 'rib',
+                targetKey: 'key-plate',
+                // 板の 20 mm 上(z = 30)を横切る長さ 40 の線。下向きに伸ばして板へ当てる。
+                profile: [{ kind: 'segment', from: [0, 15, 30], to: [40, 15, 30] }],
+                normal: [0, 1, 0],
+                thickness: 2,
+                symmetric: true,
+                direction: [0, 0, -1],
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 板 12000 + 壁(長さ 40 × 厚み 2 × 高さ 20 = 1600)= 13600(makeRib.test.ts と同じ)。
+              expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME + 1600, 6);
+            },
+          };
+        case 'エンボス': {
+          const { top } = plateFaces(40, 30, 10);
+          return {
+            steps: [
+              plateStep(),
+              step('エンボス1', 'key-emboss', {
+                kind: 'emboss',
+                targetKey: 'key-plate',
+                face: top,
+                profiles: [squareAt([20, 15, 10], 10)],
+                depth: 2,
+                raised: false,
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 12000 − 10·10·2 = 11800(計画書 §2.11 の検証表)。
+              expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME - 200, 6);
+            },
+          };
+        }
+        case 'ざぐり穴': {
+          const { top } = plateFaces(40, 30, 10);
+          return {
+            steps: [
+              plateStep(),
+              step('穴1', 'key-counterbore', {
+                kind: 'hole',
+                targetKey: 'key-plate',
+                face: top,
+                centers: [[20, 15, 10]],
+                diameter: 6,
+                depth: null,
+                tiltAngle: 0,
+                tiltAzimuth: 0,
+                transforms: [],
+                entry: { kind: 'counterbore', diameter: 11, depth: 4 },
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 入口の指定が makeHole まで届いていれば、真っ直ぐな穴より必ず多く削れる。
+              // ざぐりぶんの正確な値は makeHole.test.ts が固定している。
+              expect(bodies[0].volume).toBeLessThan(EXTRUDE_VOLUME - PLAIN_HOLE_VOLUME);
+              expect(bodies[0].volume).toBeGreaterThan(0);
+            },
+          };
+        }
+        case '外ねじ(簡略)':
+          return {
+            steps: [
+              step(
+                '軸',
+                'key-shaft',
+                {
+                  kind: 'primitive',
+                  origin: [0, 0, 0],
+                  axis: [0, 0, 1],
+                  shape: { kind: 'cylinder', radius: 5, height: 20 },
+                  originQuery: null,
+                  targetKey: null,
+                },
+                false,
+              ),
+              step('外ねじ1', 'key-thread-shaft', {
+                kind: 'threadShaft',
+                targetKey: 'key-shaft',
+                face: shaftSideFace(),
+                majorDiameter: 10,
+                pitch: 1.5,
+                length: 10,
+                fromEnd: 'first',
+                modeled: false,
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 簡略表示は B-rep に触れないので体積はそのまま。印だけが 1 本増える(§0.a-0.15)。
+              expect(bodies[0].volume).toBeCloseTo(SHAFT_VOLUME, 6);
+              expect(bodies[0].threadMarks).toHaveLength(1);
+              expect(bodies[0].threadMarks[0].majorDiameter).toBe(10);
+              expect(bodies[0].threadMarks[0].length).toBe(10);
+            },
+          };
+        case '曲面(押し出し面)':
+          return {
+            steps: [
+              step('曲面1', 'key-surface', {
+                kind: 'surface',
+                shape: {
+                  kind: 'extrude',
+                  profile: [{ kind: 'segment', from: [0, 0, 0], to: [0, 40, 0] }],
+                  direction: [0, 0, 1],
+                  distance: 10,
+                },
+                targetKey: null,
+              }),
+            ],
+            bodyCount: 1,
+            built: 1,
+            measureAreas: true,
+            check: (bodies) => {
+              // 長さ 40 の線を 10 掃いた面。面積 400 mm²・立体ではない(FR-428、§0.a-0.45)。
+              expect(bodies[0].bodyKind).toBe('shell');
+              expect(bodies[0].area).toBeCloseTo(400, 6);
+            },
+          };
+        case '切断':
+          return {
+            steps: [
+              plateStep(),
+              step('切断1', 'key-cut', {
+                kind: 'cut',
+                targetKey: 'key-plate',
+                origin: [20, 15, 5],
+                normal: [1, 0, 0],
+                keepPositive: true,
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 40 の板を真ん中で切って法線の側(x ≧ 20)を残すので半分の 6000。
+              expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME / 2, 6);
+            },
+          };
+        case 'くり抜き': {
+          const { top } = plateFaces(20, 20, 20);
+          return {
+            steps: [
+              boxStep(),
+              step('くり抜き1', 'key-shell', {
+                kind: 'shell',
+                targetKey: 'key-box',
+                openFaces: [top],
+                thickness: 2,
+                outward: false,
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 20³ − 16·16·18 = 3392(計画書 §2.12 の検証表)。
+              expect(bodies[0].volume).toBeCloseTo(BIG_VOLUME - 16 * 16 * 18, 6);
+            },
+          };
+        }
+        case '可変半径フィレット':
+          return {
+            steps: [
+              boxStep(),
+              step('丸め1', 'key-variable-fillet', {
+                kind: 'fillet',
+                targetKey: 'key-box',
+                targets: [boxVerticalEdge()],
+                radius: { start: 2, end: 5 },
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 一定 R2(8000 − 17.168… = 7982.83)と一定 R5(8000 − 107.30… = 7892.70)の
+              // 間に入る。この 2 つの外側なら、半径の振り分け(FilletRadiusSpec)が
+              // 効いていないことになる。正確な値は makeVariableFillet.test.ts が固定済み。
+              const removedR2 = (1 - Math.PI / 4) * 20 * 2 * 2;
+              const removedR5 = (1 - Math.PI / 4) * 20 * 5 * 5;
+              expect(bodies[0].volume).toBeLessThan(BIG_VOLUME - removedR2);
+              expect(bodies[0].volume).toBeGreaterThan(BIG_VOLUME - removedR5);
+            },
+          };
+      }
+    }
+
+    for (const name of CASE_NAMES) {
+      it(`${name} の 1 段だけの依頼が動く`, async () => {
+        const { cache, built } = newCache();
+        const testCase = caseFor(name);
+        const result = await recomputeSolids(
+          { oc, cache },
+          testCase.measureAreas === true
+            ? requestWithAreas(testCase.steps)
+            : request(testCase.steps),
+        );
+
+        expect(result.failures).toEqual([]);
+        expect(result.cancelled).toBe(false);
+        expect(result.cacheHits).toBe(0);
+        expect(result.bodies).toHaveLength(testCase.bodyCount);
+        expect(built()).toBe(testCase.built);
+        testCase.check(result.bodies);
+      });
+    }
+
+    it('同じ依頼の 2 回目は、どの段も全件命中して作り直さない(NFR-PF-3)', async () => {
+      for (const name of CASE_NAMES) {
+        const { cache, built } = newCache();
+        const testCase = caseFor(name);
+        const payload =
+          testCase.measureAreas === true
+            ? requestWithAreas(testCase.steps)
+            : request(testCase.steps);
+
+        const first = await recomputeSolids({ oc, cache }, payload);
+        const second = await recomputeSolids({ oc, cache }, payload);
+
+        expect(first.failures).toEqual([]);
+        expect(second.failures, name).toEqual([]);
+        // 2 回目は 1 段も作り直さない(預けた件数が増えない)。
+        expect(second.cacheHits, name).toBe(testCase.steps.length);
+        expect(built(), name).toBe(testCase.built);
+        expect(second.bodies, name).toHaveLength(testCase.bodyCount);
+      }
+    });
+
+    it('「次の面まで」なのに相手の鍵が無ければ、理由を添えて断る(FR-504)', async () => {
+      const { cache } = newCache();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          step('押し出し1', 'key-no-target', {
+            kind: 'extrude',
+            profile: rectangle(40, 30),
+            direction: [0, 0, 1],
+            distance: 10,
+            end: { kind: 'toNext' },
+            targetKey: null,
+          }),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        {
+          id: '押し出し1',
+          message: '「次の面まで」の相手になる立体が見つかりません。相手の立体を選び直してください。',
+        },
+      ]);
+      expect(result.bodies).toEqual([]);
+    });
+
+    it('薄板押し出しに終端やテーパを一緒に頼まれたら、黙って無視せずに断る(FR-504)', async () => {
+      const { cache } = newCache();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          step('押し出し1', 'key-thin-end', {
+            kind: 'extrude',
+            profile: rectangle(40, 30),
+            direction: [0, 0, 1],
+            distance: 10,
+            thin: { thickness: 2, side: 'inner' },
+            end: { kind: 'symmetric', forward: 5, backward: 5 },
+          }),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        {
+          id: '押し出し1',
+          message:
+            '薄い板の押し出しでは、終端の指定と側面の傾きは使えません。厚みを外すか、指定を外してください。',
+        },
+      ]);
+      expect(result.bodies).toEqual([]);
+    });
+
+    it('作れない段があっても後の段は続く(P5 の段も FR-504 の扱いは同じ)', async () => {
+      const { cache } = newCache();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          // 対象がどこにも無い切断。ブーリアン・加工と同じ文言で断る。
+          step('切断1', 'key-cut-missing', {
+            kind: 'cut',
+            targetKey: 'key-missing',
+            origin: [0, 0, 0],
+            normal: [1, 0, 0],
+            keepPositive: true,
+          }),
+          extrudeStep('押し出し1', 'key-after', 40, 30, 10),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        { id: '切断1', message: 'もとになる立体が見つかりませんでした。' },
+      ]);
+      expect(result.bodies).toHaveLength(1);
+      expect(result.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
+    });
+
+    it('スイープと実らせんの外ねじは掃引体向けの粗いテッセレーションを使う(§2.13)', async () => {
+      const { cache } = newCache();
+      const sweep: SolidStepSpec = {
+        kind: 'sweep',
+        profile: [
+          {
+            kind: 'arc',
+            center: [0, 0, 0],
+            normal: [0, 0, 1],
+            xAxis: [1, 0, 0],
+            radius: 2,
+            startAngle: 0,
+            endAngle: 2 * Math.PI,
+          },
+        ],
+        path: [{ kind: 'segment', from: [0, 0, 0], to: [0, 0, 50] }],
+        frenet: true,
+      };
+
+      const relaxed = await recomputeSolids({ oc, cache }, request([step('掃引1', 'key-sweep-a', sweep)]));
+      // 段ごとの指定(P5 §2.13)は種類ごとの既定より優先されるので、細かい値を添えると増える。
+      const fine = await recomputeSolids(
+        { oc, cache },
+        request([
+          {
+            ...step('掃引2', 'key-sweep-b', sweep),
+            tessellation: { linearDeflection: 0.1, angularDeflection: 0.5 },
+          },
+        ]),
+      );
+
+      expect(relaxed.failures).toEqual([]);
+      expect(fine.failures).toEqual([]);
+      expect(fine.bodies[0].triangleCount).toBeGreaterThan(relaxed.bodies[0].triangleCount);
     });
   });
 

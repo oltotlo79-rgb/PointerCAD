@@ -1,7 +1,7 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { BoxParameters, FilletStepSpec, SubShapeQuery, Vec3Tuple } from '../types.js';
+import type { BoxParameters, ConstantFilletStepSpec, SubShapeQuery, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { extractEdges } from './extractEdges.js';
@@ -133,14 +133,14 @@ describe('R 面取り(FR-407、FR-504、NFR-RE-1)', () => {
     return found.index;
   }
 
-  function fillet(targets: readonly SubShapeQuery[], radius: number): FilletStepSpec {
+  function fillet(targets: readonly SubShapeQuery[], radius: number): ConstantFilletStepSpec {
     return { kind: 'fillet', targetKey: 'target', targets, radius };
   }
 
   /** 丸めた結果の体積と面の数を測って、必ず解放する。 */
   function measureFillet(
     prepared: Prepared,
-    spec: FilletStepSpec,
+    spec: ConstantFilletStepSpec,
   ): { volume: number; faceCount: number; solid: boolean; valid: boolean } {
     const result = makeFillet(oc, spec, prepared.shape, prepared.tables);
     try {

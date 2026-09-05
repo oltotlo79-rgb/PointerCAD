@@ -285,12 +285,19 @@ describe('外観の面の照合(matchAppearances、FR-1106)', () => {
 });
 
 /*
- * 段の種類の数(P5 タスク14 の検証表「`SolidStepSpec` の union の数 = 10」)。
+ * 段の種類の数(P5 タスク14 の検証表「`SolidStepSpec` の union の数」)。
  *
  * 型そのものは実行時に無いので、`SolidStepSpec['kind']` を鍵とする表を作って数える。
  * **表を `Record` にしてあるので、union に種類を足したのにここを直し忘れると型検査が落ちる**
  * (数え漏れを機械で防ぐ)。P5 は基本形状(`primitive`)を足して 9 → 10 に、
- * 罫線面とロフト(`thruSections`、タスク24)を足して 10 → 11 になった。
+ * 罫線面とロフト(`thruSections`、タスク24)を足して 10 → 11 に、
+ * Should 群・Could 群の 11 種(タスク42a)を足して 11 → 22 になった。
+ *
+ * **計画書 §2.13 の見込みは 23 だった。** 差の 1 は、計画が `RuledStepSpec` と
+ * `LoftStepSpec` を別々に数えていたのに対し、タスク24 で「直線で結ぶか(`ruled`)の
+ * 真偽が違うだけ」として 1 種(`thruSections`)にまとめた(§0.a-0.25)ためである。
+ * 薄板押し出し(FR-416)・ざぐり(FR-422)・可変半径(FR-426)・点集合パターン(FR-425)は
+ * 計画のとおり既存の段の欄を広げたので、種類は増えていない。
  */
 describe('段の種類(SolidStepSpec の union)', () => {
   const STEP_KINDS: Readonly<Record<SolidStepSpec['kind'], true>> = {
@@ -305,12 +312,55 @@ describe('段の種類(SolidStepSpec の union)', () => {
     spring: true,
     primitive: true,
     thruSections: true,
+    // P5 タスク42a で足した 11 種。
+    draft: true,
+    mirror: true,
+    transform: true,
+    scale: true,
+    sweep: true,
+    rib: true,
+    emboss: true,
+    threadShaft: true,
+    surface: true,
+    cut: true,
+    shell: true,
   };
 
-  it('段の種類は 11 種で、基本形状(primitive)と罫線面・ロフト(thruSections)を含む', () => {
-    expect(Object.keys(STEP_KINDS)).toHaveLength(11);
+  it('段の種類は 22 種で、基本形状(primitive)と罫線面・ロフト(thruSections)を含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(22);
     expect(Object.keys(STEP_KINDS)).toContain('primitive');
     expect(Object.keys(STEP_KINDS)).toContain('thruSections');
+  });
+
+  it('P5 の Should 群・Could 群の 11 種がすべて入っている(タスク42a)', () => {
+    const added = [
+      'draft',
+      'mirror',
+      'transform',
+      'scale',
+      'sweep',
+      'rib',
+      'emboss',
+      'threadShaft',
+      'surface',
+      'cut',
+      'shell',
+    ];
+    expect(added).toHaveLength(11);
+    for (const kind of added) {
+      expect(Object.keys(STEP_KINDS)).toContain(kind);
+    }
+  });
+
+  /*
+   * 薄板押し出し・ざぐり・可変半径は「新しい段」ではなく既存の段の欄を広げたもの
+   * (§0.a-0.39、§0.a-0.46、§0.a-0.48)。種類を増やしていないことを、
+   * 名前が入っていないことで固定しておく(後から段を作り足さないための歯止め)。
+   */
+  it('薄板押し出し・ざぐり・可変半径は段の種類を増やしていない', () => {
+    for (const kind of ['thinExtrude', 'counterbore', 'variableFillet', 'pattern']) {
+      expect(Object.keys(STEP_KINDS)).not.toContain(kind);
+    }
   });
 });
 

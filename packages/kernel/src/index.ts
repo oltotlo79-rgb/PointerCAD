@@ -91,6 +91,56 @@ export {
   tangentPointOnSphere,
   type TangentCone,
 } from './occt/sphereTangent.js';
+// P5 の Should 群・Could 群(FR-401、FR-409、FR-415〜FR-428、FR-432。タスク42a)。
+//
+// 段の依頼の型と、その作り手。model 側(`kernelBridge.ts` の `toSolidStepSpec`、
+// タスク45・46)がこれらを組み立てて段に乗せる。**依頼の型は作り手の依頼(`*Input`)の
+// 上位互換**にしてあるので、欄の名前と意味は作り手のファイルの注釈が正本である。
+//
+// `ExtrudeEndSpec` / `ThinExtrudeSide` / `HoleEntrySpec` / `SurfaceInput` は
+// `types.ts` が作り手から取り込んで輸出し直しているものを、ここでも中継する
+// (`OffsetJoinType` と同じ流儀。同じ約束を 2 か所に書かない)。
+export type {
+  ConstantFilletStepSpec,
+  CutStepSpec,
+  DraftStepSpec,
+  EmbossStepSpec,
+  ExtrudeEndSpec,
+  FilletRadiusSpec,
+  HoleEntrySpec,
+  MirrorStepSpec,
+  RibStepSpec,
+  ScaleStepSpec,
+  ShellStepSpec,
+  SurfaceInput,
+  SurfaceStepSpec,
+  SweepStepSpec,
+  ThinExtrudeSide,
+  ThinExtrudeSpec,
+  ThreadShaftStepSpec,
+  TransformStepSpec,
+} from './types.js';
+export { makeCut, type CutInput } from './occt/makeCut.js';
+export { makeDraft, draftStatusName, type DraftInput } from './occt/makeDraft.js';
+export { makeEmboss, type EmbossInput } from './occt/makeEmboss.js';
+export { makeRib, type RibInput } from './occt/makeRib.js';
+export { makeShell, type ShellInput } from './occt/makeShell.js';
+export { makeSurface, isShellShape, type SurfaceResult } from './occt/makeSurface.js';
+export { makeSweep, type SweepInput } from './occt/makeSweep.js';
+export { makeThinExtrude, type ThinExtrudeInput } from './occt/makeThinExtrude.js';
+export { makeThreadShaft, type ThreadShaftInput } from './occt/makeThread.js';
+export {
+  makeVariableFillet,
+  type VariableFilletInput,
+  type VariableFilletTarget,
+} from './occt/makeVariableFillet.js';
+export {
+  makeMirrorTransform,
+  mirrorShape,
+  scaleShape,
+  type MirrorPlaneSpec,
+  type ScaleSpec,
+} from './occt/transformShape.js';
 // 加工フィーチャー(FR-405〜408、FR-411、FR-412、FR-414)の型(計画書 §2.8)。
 // 段の依頼(*StepSpec)と、部分形状の一覧・指紋(SolidFaceInfo 等・SubShapeQuery)を輸出する。
 // model 側(kernelBridge.ts、タスク17)がこれらを取り込んで詰め替える。

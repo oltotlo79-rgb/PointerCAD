@@ -1,7 +1,14 @@
 // 輪郭のオフセット(FR-321)の角の種類と結果の形は `occt/makeOffsetWire.ts` が正本。
 // 同じ約束を2か所に書かないため、ここでは取り込んで輸出し直すだけにする
 // (型だけの取り込みなので、実行時の読み込みは起きない)。
+import type { HoleEntrySpec } from './occt/makeHole.js';
 import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
+// 押し出しの終端(FR-415)・薄板の厚みの向き(FR-416)・曲面の作り方(FR-428)も
+// オフセットと同じ理由で、作り手のファイルの定義を取り込んで輸出し直すだけにする
+// (段の依頼が持つ値の意味は、その値を読む作り手の側が正本)。
+import type { ExtrudeEndSpec } from './occt/makeSolidSweep.js';
+import type { SurfaceInput } from './occt/makeSurface.js';
+import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
 // 投影・交差(FR-325、P4 タスク26)の作図面と、作図面の上の 2 次元の曲線も
 // `occt/makeProjection.ts` が正本。オフセットと同じ理由で取り込んで輸出し直す。
 import type {
@@ -264,7 +271,39 @@ export interface SketchProjectionOutcome {
 // Comlink 越しに渡せる素の値(数値・文字列・真偽・配列・TypedArray)だけで書く。
 // OCCT の形そのものは Worker の中に置いたままにする(NFR-MA-1)。
 
-/** ソリッドを作る 1 手順。向き・両側・反転の計算は model 側で済ませて渡す。 */
+/**
+ * 段の依頼が持つ値のうち、意味を決めているのが作り手のファイルのもの(P5 タスク42a)。
+ *
+ * オフセットの角の種類(`OffsetJoinType`)と同じ理由で、**定義はその値を読む作り手の側に
+ * 1 つだけ置き**、ここでは取り込んで輸出し直す。押し出しの終端(FR-415)は
+ * `occt/makeSolidSweep.ts`、薄板の厚みの向き(FR-416)は `occt/makeThinExtrude.ts`、
+ * 穴の入口(FR-422)は `occt/makeHole.ts`、曲面の作り方(FR-428)は
+ * `occt/makeSurface.ts` がそれぞれ正本である。
+ */
+export type { ExtrudeEndSpec, HoleEntrySpec, SurfaceInput, ThinExtrudeSide };
+
+/**
+ * 薄板押し出し(FR-416、P5 §2.12)の厚みの指定。
+ *
+ * 厚みと向きは**必ず組**で決まる(厚みだけ・向きだけでは形が決まらない)ので、
+ * `ExtrudeStepSpec` に 2 つの欄をばらばらに足さず 1 つの入れ物にまとめる
+ * (`ChamferSizeSpec` / `HoleEntrySpec` と同じ流儀)。向きの意味は
+ * `occt/makeThinExtrude.ts` の `ThinExtrudeSide` が正本。
+ */
+export interface ThinExtrudeSpec {
+  /** 壁の厚み(mm)。0 より大きい数。 */
+  readonly thickness: number;
+  /** 厚みをどちら側へ付けるか(輪郭が外側 / 内側 / 中心)。 */
+  readonly side: ThinExtrudeSide;
+}
+
+/**
+ * ソリッドを作る 1 手順。向き・両側・反転の計算は model 側で済ませて渡す。
+ *
+ * **P5 で欄が増えた**(FR-415 の終端、FR-401 のテーパ、FR-416 の薄板)。増えた欄は
+ * **すべて省略でき、省略したときは P2 からの押し出しと 1 ドットも変わらない**
+ * (版 4 以前の文書と、まだ欄を渡していない model の経路がそのまま動く。計画書 §2.13)。
+ */
 export interface ExtrudeStepSpec {
   readonly kind: 'extrude';
   /** 断面の閉ループ。makePlanarFace と同じ並び。 */
@@ -273,6 +312,33 @@ export interface ExtrudeStepSpec {
   readonly direction: Vec3Tuple;
   /** 押し出す長さ(mm)。正の数。 */
   readonly distance: number;
+  /**
+   * 終端の指定(FR-415)。省略すると `{ kind: 'distance', distance }` と同じ。
+   *
+   * `toFace`(指定の面まで)は model が距離を計算して渡す約束なので、カーネルから見ると
+   * `distance` と同じ扱いになる(`occt/makeSolidSweep.ts` の `ExtrudeEndSpec` の注釈)。
+   * `toNext`(次の面まで)だけは相手の形が要るので `targetKey` も一緒に渡す。
+   */
+  readonly end?: ExtrudeEndSpec;
+  /**
+   * 側面の傾き(ラジアン、FR-401)。**大きさだけ**を持ち、0 以上 90 度未満。
+   * 向きは `taperOutward` で指定する(抜き勾配の `angle` + `reversed` と同じ持ち方)。
+   */
+  readonly taperAngle?: number;
+  /** true で押し出すほど外へ広がり、false(既定)で内へ絞る。 */
+  readonly taperOutward?: boolean;
+  /** 薄板押し出し(FR-416)。省略すると中身の詰まった押し出しになる。 */
+  readonly thin?: ThinExtrudeSpec;
+  /**
+   * 「次の面まで」(`end.kind === 'toNext'`)の相手の立体を指すキャッシュの鍵。
+   * それ以外の終端では省く(渡されても見ない)。
+   *
+   * **この鍵の段は消費しない**(材料の位置を読むだけで、相手の立体は画面に残る。
+   * `PrimitiveStepSpec.targetKey` と同じ扱い)。**呼び出し側は、この段の鍵の材料に
+   * `targetKey` を必ず含める**——含めないと、相手の立体を動かしても押し出しの鍵が
+   * 変わらず、古い長さの形がキャッシュから返る(NFR-PF-3 の鍵の連鎖)。
+   */
+  readonly targetKey?: string | null;
 }
 
 /** 断面を軸まわりに回して立体にする 1 手順(FR-402)。 */
@@ -323,7 +389,30 @@ export type SolidStepSpec =
   /** 基本形状(FR-429、P5 §2.7)。ばねと同じく対象を取らない「作る」段(§0.a-0.19)。 */
   | PrimitiveStepSpec
   /** 罫線面(FR-430)とロフト(FR-410、P5 §2.9)。これも対象を取らない「作る」段(§0.a-0.27)。 */
-  | ThruSectionsStepSpec;
+  | ThruSectionsStepSpec
+  // ここから下は P5 の Should 群・Could 群(タスク42a)。定義は下の「加工の段」の節にある。
+  /** 抜き勾配(FR-417)。 */
+  | DraftStepSpec
+  /** ミラー(FR-419)。対象を消費しない(§0.a-0.36)。 */
+  | MirrorStepSpec
+  /** 移動/回転(FR-424)。 */
+  | TransformStepSpec
+  /** 拡大縮小(FR-424)。 */
+  | ScaleStepSpec
+  /** スイープ(FR-409)。対象を取らない「作る」段。 */
+  | SweepStepSpec
+  /** リブ(FR-420)。 */
+  | RibStepSpec
+  /** エンボス(FR-421)。 */
+  | EmbossStepSpec
+  /** 外ねじ(FR-423)。 */
+  | ThreadShaftStepSpec
+  /** 曲面(FR-428)。`bodyKind: 'shell'` のボディを作る。 */
+  | SurfaceStepSpec
+  /** 平面による切断(FR-432)。分割(FR-424)もこれで満たす(§0.a-0.60)。 */
+  | CutStepSpec
+  /** くり抜き(FR-418)。 */
+  | ShellStepSpec;
 
 /** 履歴 1 段ぶんの依頼。 */
 export interface SolidStepRequest {
@@ -646,6 +735,17 @@ export interface HoleStepSpec {
   /** 傾ける向き(面内の方位角、ラジアン)。基準は gp_Pln.XAxis()(§0.a-0.10)。 */
   readonly tiltAzimuth: number;
   readonly transforms: readonly RigidTransformSpec[];
+  /**
+   * 入口の形(ざぐり・皿もみ、FR-422、§0.a-0.39)。形の定義は `occt/makeHole.ts` の
+   * `HoleEntrySpec` が正本(皿もみの角度は**ラジアン**。深さは kernel が角度と径から出すので、
+   * model は計算しない)。
+   *
+   * **省くと今までどおりの真っ直ぐな穴**(`{ kind: 'plain' }`)になる。
+   * 任意の欄にしてあるのは、この欄を組み立てる model 側(`kernelBridge.ts`)を直せるのが
+   * P5 タスク46 だからで、**タスク46 が既定 `{ kind: 'plain' }` を必ず入れるようにしたら
+   * 必須へ引き上げてよい**(`SolidBodyMesh.bodyKind` と同じ経過措置)。
+   */
+  readonly entry?: HoleEntrySpec;
 }
 
 /** ねじの実らせん(FR-406)。簡略表示のときは ThreadStepSpec.thread を null にする。 */
@@ -682,6 +782,16 @@ export interface ThreadStepSpec {
 }
 
 /**
+ * 丸める半径(FR-407、FR-426、§0.a-0.48)。
+ *
+ * 数 1 つなら一定半径(`occt/makeFillet.ts`)、始点と終点の 2 つなら可変半径
+ * (`occt/makeVariableFillet.ts`)。**辺の始点側が `start`、終点側が `end`** で、
+ * どちらが始点かは B-rep の辺の向きで決まる(`Add_3(R1, R2, E)` の R1 が始点側)。
+ * 可変半径は段の中のすべての辺に同じ 2 値を当てる(辺ごとに変えたいときは段を分ける)。
+ */
+export type FilletRadiusSpec = number | { readonly start: number; readonly end: number };
+
+/**
  * 角を丸める 1 手順(FR-407)。
  * targets には辺と頂点の指紋が混ざる。頂点はカーネルが「その頂点に集まる辺」へ
  * 展開する(§0.a-0.17。頂点を球状に丸める API は OCCT に無い)。
@@ -692,9 +802,18 @@ export interface FilletStepSpec {
   readonly targetKey: string;
   /** 丸める辺・頂点の指紋。並びは文書の並びのまま保つ。 */
   readonly targets: readonly SubShapeQuery[];
-  /** 丸める半径(mm)。0 より大きい数。 */
-  readonly radius: number;
+  /** 丸める半径(mm)。0 より大きい数、または可変半径の 2 値(FR-426)。 */
+  readonly radius: FilletRadiusSpec;
 }
+
+/**
+ * 一定半径に絞った R 面取りの依頼(`occt/makeFillet.ts` が受け取る形)。
+ *
+ * `FilletStepSpec` の半径が可変にも広がった(FR-426)ので、**一定半径しか扱わない
+ * `makeFillet` には絞った型で渡す**。振り分けるのは `recomputeSolids` の 1 か所だけで、
+ * 作り手の側に「どちらの半径か」の分岐を持ち込まない(ファイルは別のまま。§0.a-0.48)。
+ */
+export type ConstantFilletStepSpec = FilletStepSpec & { readonly radius: number };
 
 /**
  * C 面取りの大きさの指定(FR-408 の①②③)。
@@ -882,6 +1001,233 @@ export interface ThruSectionsStepSpec {
    * 点に割らないので、この値には依らない。
    */
   readonly sphereSegments: SphereSegmentCount;
+}
+
+// ---------------------------------------------------------------------------
+// P5 の Should 群・Could 群の段(FR-401、FR-409、FR-415〜FR-428、FR-432。タスク42a)。
+//
+// 形を作るのは `occt/make*.ts` で、**段の型はその作り手の依頼(`*Input`)の上位互換**
+// (判別のための `kind` と、対象を指す `targetKey` を足しただけ)にしてある。
+// こうしておくと `recomputeSolids` が欄を詰め替えずにそのまま渡せる(構造的部分型)ので、
+// 同じ欄の名前と意味を 2 か所に書かずに済む(`EllipseCurveSpec` と同じ流儀)。
+//
+// **消費するかどうか**(対象の立体が画面に残るか)は段ごとに違う。決めるのは
+// `SolidStepRequest.visible` を組み立てる model 側で、カーネルはそれに触れないが、
+// model が取り違えないよう各型の注釈に「消費する / しない」を明記する。
+// ---------------------------------------------------------------------------
+
+/**
+ * 抜き勾配(FR-417、P5 §2.11)。中立面を基準に、選んだ面を型が抜ける向きへ傾ける。
+ *
+ * **対象を消費する**(傾けた立体 1 つだけが残る)。
+ * 角度の上限は 60 度(§0.a-0.72)。判定と断りの文言は `occt/makeDraft.ts` が持つ。
+ */
+export interface DraftStepSpec {
+  readonly kind: 'draft';
+  /** 傾ける立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /** 傾ける面の指紋。1 枚以上。曲面(円柱の側面など)でもよい。 */
+  readonly faces: readonly SubShapeQuery[];
+  /** 基準にする平らな面(中立面)の指紋。この面は動かない。 */
+  readonly neutralFace: SubShapeQuery;
+  /** 角度(ラジアン)。0 より大きく 60 度以下。 */
+  readonly angle: number;
+  /** 抜き方向を反転する(内側へ狭める)。 */
+  readonly reversed: boolean;
+}
+
+/**
+ * ミラー(FR-419、§0.a-0.36)。平面に対する鏡像を 1 つ作る。
+ *
+ * **対象を消費しない。** 鏡像を作ったあと元と鏡像を「和」でつなぐのが普通の使い方で、
+ * 元を消すと和が取れない(基本形状・罫線面と同じ「作る」段)。結果は 2 ボディになる。
+ */
+export interface MirrorStepSpec {
+  readonly kind: 'mirror';
+  /** 鏡に映す立体を指すキャッシュの鍵。**この段は消費しない。** */
+  readonly targetKey: string;
+  /** 鏡の平面が通る点(mm)。 */
+  readonly origin: Vec3Tuple;
+  /** 鏡の平面の法線。長さは 1 でなくてよい(カーネルが揃える)。 */
+  readonly normal: Vec3Tuple;
+}
+
+/**
+ * 移動/回転(FR-424、§0.a-0.41)。対象を剛体変換した立体を 1 つ作る。
+ *
+ * **対象を消費する**(元の位置に残すと二重になる)。
+ * 欄の意味は `RigidTransformSpec` と同じで、回転角は必ずラジアン。
+ */
+export interface TransformStepSpec {
+  readonly kind: 'transform';
+  /** 動かす立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  readonly translation: Vec3Tuple;
+  readonly rotationOrigin: Vec3Tuple;
+  readonly rotationAxis: Vec3Tuple;
+  /** 回転角(ラジアン)。0 なら平行移動だけ。 */
+  readonly rotationAngle: number;
+}
+
+/**
+ * 拡大縮小(FR-424、§0.a-0.41)。**対象を消費する。**
+ *
+ * `uniform`(全体の倍率)と `perAxis`(軸ごとの倍率)は**どちらか一方だけ**を入れる
+ * (両方 null・両方非 null はどちらも組み立ての誤りとして断る。`occt/transformShape.ts`)。
+ * 軸ごとに倍率が違うと円柱面が楕円柱面に変わり、下流の指紋が外れうる(タスク35 の実測)。
+ */
+export interface ScaleStepSpec {
+  readonly kind: 'scale';
+  /** 拡大縮小する立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /** 拡大縮小の中心。この点は動かない。 */
+  readonly origin: Vec3Tuple;
+  /** 全体の倍率(0 より大きい)。軸ごとに変えるときは null。 */
+  readonly uniform: number | null;
+  /** 軸ごとの倍率(X, Y, Z の順、いずれも 0 より大きい)。全体の倍率のときは null。 */
+  readonly perAxis: readonly [number, number, number] | null;
+}
+
+/**
+ * スイープ(FR-409、§0.a-0.43、§0.a-0.76)。断面を経路に沿って掃く。
+ *
+ * **対象を取らない「作る」段**(押し出し・回転・縫合・ばね・基本形状と同じ)。
+ * 断面の重心は経路の始点へ移され、断面の法線は経路の接線へ最小回転で合わせられる。
+ */
+export interface SweepStepSpec {
+  readonly kind: 'sweep';
+  /** 掃く断面の閉ループ。 */
+  readonly profile: readonly CurveSpec[];
+  /** 経路。並んだ順につながっていること。閉じた経路でもよい。 */
+  readonly path: readonly CurveSpec[];
+  /** true で Frenet(既定)、false で「ねじれを抑える」向きの決め方。 */
+  readonly frenet: boolean;
+}
+
+/**
+ * リブ(FR-420、§0.a-0.37、§0.a-0.75)。開いた輪郭に厚みを付けた壁を立体へ足す。
+ *
+ * **対象を消費する**(リブが付いた立体 1 つだけが残る)。
+ */
+export interface RibStepSpec {
+  readonly kind: 'rib';
+  /** リブを足す立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /** 輪郭(閉じていなくてよい)。並んだ順につながっていること。 */
+  readonly profile: readonly CurveSpec[];
+  /** 輪郭の平面の法線。厚みはこの向きへ付ける。 */
+  readonly normal: Vec3Tuple;
+  /** 壁の厚み(mm)。 */
+  readonly thickness: number;
+  /** 両側へ付けるか(false なら法線の側だけ)。 */
+  readonly symmetric: boolean;
+  /** 伸ばす向き(材料へ向かう向き)。 */
+  readonly direction: Vec3Tuple;
+}
+
+/**
+ * エンボス(FR-421、§0.a-0.38)。平らな面へ輪郭を彫る / 浮き出す。
+ *
+ * **対象を消費する。** 面は平面だけ(曲面へのラップは P6 以降)。
+ */
+export interface EmbossStepSpec {
+  readonly kind: 'emboss';
+  /** 彫る(浮き出す)立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /** 相手の面の指紋。平らな面だけ。 */
+  readonly face: SubShapeQuery;
+  /** 面の上に置いた閉じた輪郭。複数可。 */
+  readonly profiles: readonly (readonly CurveSpec[])[];
+  /** 面から測った深さ(mm)。0 より大きいこと。 */
+  readonly depth: number;
+  /** true なら浮き出す(和)、false なら彫る(差)。 */
+  readonly raised: boolean;
+}
+
+/**
+ * 外ねじ(FR-423、§0.a-0.40)。円柱面にねじを切る。
+ *
+ * **対象を消費する。** 選ぶのは**円柱面 1 つ**で、深さ・貫通の概念は無い
+ * (ねじ穴は平らな面と点を選ぶ。だから別の段にしてある)。
+ * **軸の径は面から測る**ので利用者に入れさせない(NFR-UX-4)。`majorDiameter` は
+ * 画面に出す印(`ThreadMarkInfo`)に載せる呼び径で、削る深さはピッチから決まる。
+ *
+ * **簡略表示(`modeled: false`)では B-rep に触れない**(§0.a-0.15)。印だけを返し、
+ * 形はもとのまま渡すので費用はほぼ 0。実らせん(`modeled: true`)は 1 本で数秒かかる
+ * (2026-09-05 実測 中央値 4184ms、負荷あり)ので、既定は簡略にする。
+ */
+export interface ThreadShaftStepSpec {
+  readonly kind: 'threadShaft';
+  /** ねじを切る立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /** ねじを切る円柱面の指紋。平面など円柱でない面は断る。 */
+  readonly face: SubShapeQuery;
+  /** 呼び径 d(mm)。**印に載せる値**で、削る深さは軸の実寸とピッチから決める。 */
+  readonly majorDiameter: number;
+  readonly pitch: number;
+  /** ねじ部の長さ(mm)。 */
+  readonly length: number;
+  /** 軸のどちらの端から切り始めるか。`first` は円柱面の軸のパラメータが小さいほうの端。 */
+  readonly fromEnd: 'first' | 'last';
+  /** 実らせんを切るなら true。false(既定の簡略表示)なら B-rep に触れない。 */
+  readonly modeled: boolean;
+}
+
+/**
+ * 曲面(FR-428、§0.a-0.45)。**閉じた立体ではなく面のボディ**(`bodyKind: 'shell'`)を作る。
+ *
+ * **対象を取らない「作る」段。** ただし作り方が「すでにある立体の面を取り出す」
+ * (`shape.kind === 'face'`)ときだけ `targetKey` の形から面を選び直すので、そのときは
+ * 鍵を添える。**それでも対象は消費しない**(面を貸した立体はそのまま画面に残る。
+ * `PrimitiveStepSpec` の頂点・`ThruSectionSpec` の `faceQuery` と同じ扱い)。
+ *
+ * **呼び出し側は、`targetKey` を使う段の鍵の材料に `targetKey` と面の指紋を必ず含める**
+ * (含めないと上流を編集しても鍵が変わらず、古い面の形が返る。NFR-PF-3 の鍵の連鎖)。
+ */
+export interface SurfaceStepSpec {
+  readonly kind: 'surface';
+  /** 作り方。5 種の定義は `occt/makeSurface.ts` の `SurfaceInput` が正本。 */
+  readonly shape: SurfaceInput;
+  /** 面を取り出す立体の段の鍵。`shape.kind !== 'face'` なら null。**消費しない。** */
+  readonly targetKey: string | null;
+}
+
+/**
+ * 平面による切断(FR-432、P5 §2.9b。分割(FR-424)もこれで満たす。§0.a-0.60)。
+ *
+ * **対象を消費する。** 両側が要るなら切断の段を 2 つ置く
+ * (「1 フィーチャー = 最大 1 ボディ」の規則を曲げない。§0.a-0.41)。
+ */
+export interface CutStepSpec {
+  readonly kind: 'cut';
+  /** 切る立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /** 切断面が通る点(mm)。平面上ならどこでもよい。 */
+  readonly origin: Vec3Tuple;
+  /** 単位法線(model が解決済み)。長さは念のためカーネルでも揃える。 */
+  readonly normal: Vec3Tuple;
+  /** 法線の側を残すなら true。 */
+  readonly keepPositive: boolean;
+}
+
+/**
+ * くり抜き(FR-418、§0.a-0.47)。壁の厚さを残して中身を抜く。
+ *
+ * **対象を消費する。**
+ */
+export interface ShellStepSpec {
+  readonly kind: 'shell';
+  /** くり抜く立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /**
+   * 開ける面の指紋。**0 枚でもよい**(そのときは外から見た形が変わらず、中だけが空になる)。
+   * 同じ面を 2 度指しても 1 度だけ数える。
+   */
+  readonly openFaces: readonly SubShapeQuery[];
+  /** 壁の厚さ(mm)。0 より大きいこと。 */
+  readonly thickness: number;
+  /** true で外向きに肉を付ける。false(既定の使い方)で内向き(外側の大きさが変わらない)。 */
+  readonly outward: boolean;
 }
 
 /**

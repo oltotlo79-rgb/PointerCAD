@@ -31,4 +31,12 @@ describe('ヘルプの目録', () => {
   it('面と面をつなぐ・ロフトの説明を id で引ける(FR-430、FR-410、P5 タスク27)', () => {
     expect(findHelpTopic('ruled-loft')?.path).toBe('docs/ja/ruled-loft.md');
   });
+
+  it('測定の説明を id で引ける(FR-1102、P5 タスク32)', () => {
+    expect(findHelpTopic('measure')?.path).toBe('docs/ja/measure.md');
+  });
+
+  it('質量特性の説明を id で引ける(FR-1101、P5 タスク32)', () => {
+    expect(findHelpTopic('mass-properties')?.path).toBe('docs/ja/mass-properties.md');
+  });
 });

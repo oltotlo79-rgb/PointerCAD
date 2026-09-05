@@ -22,6 +22,7 @@ import type { MessageKey } from '../i18n/t.js';
 import type {
   AppearanceToolId,
   EditMenuToolId,
+  MeasureToolId,
   ShapeToolId,
   SolidToolId,
 } from '../sketch/numericInput.js';
@@ -55,6 +56,7 @@ import {
   LinearArrayToolIcon,
   LinearPatternIcon,
   LoftIcon,
+  MeasureIcon,
   MirrorToolIcon,
   OffsetToolIcon,
   OrthographicIcon,
@@ -531,18 +533,33 @@ export const PROJECTION_MENU_ITEMS: readonly ToolMenuItem<ProjectionMode>[] = [
 ];
 
 /**
- * 「見た目」の一覧(FR-1106〜1110。P5 タスク51、§0.a-0.51)。
+ * 「見た目」の一覧に並ぶ道具の id(P5 タスク51・32)。
  *
- * いまは外観 1 つだけだが、**タスク32 の「測る」がここへ 2 行目として入る**(§0.a-0.29 が
- * 「測る」をボタン 1 つと決めているため、区画を増やさずにこの一覧へ足せる。要件§7.1 の
- * 「固定の区画は増やさない」)。
+ * 外観(FR-1106〜1110)と測る(FR-1101、FR-1102)は、どちらも**立体を作らず**
+ * 「選んでいるものについて何かをする」道具なので、同じ一覧に入る。
  */
-export const LOOK_MENU_ITEMS: readonly ToolMenuItem<AppearanceToolId>[] = [
+export type LookToolId = AppearanceToolId | MeasureToolId;
+
+/**
+ * 「見た目」の一覧(FR-1106〜1110、FR-1101、FR-1102。P5 タスク51、タスク32)。
+ *
+ * **「測る」は 2 行目**(§0.a-0.29 が「測る」をボタン 1 つと決めているので、区画を増やさずに
+ * この一覧へ足せる。要件§7.1 の「固定の区画は増やさない」)。この 1 行を足しても
+ * ツールバーの幅は 1 画素も増えない(`segmentedWidthPixels` は溝に並ぶボタンの個数しか
+ * 見ない。§0.a-0.80)。
+ */
+export const LOOK_MENU_ITEMS: readonly ToolMenuItem<LookToolId>[] = [
   {
     id: 'appearance',
     labelKey: 'toolbar.appearance.assign',
     tooltipKey: 'toolbar.appearance.assignTooltip',
     Icon: AppearanceIcon,
+  },
+  {
+    id: 'measure',
+    labelKey: 'toolbar.measure.title',
+    tooltipKey: 'toolbar.measure.tooltip',
+    Icon: MeasureIcon,
   },
 ];
 

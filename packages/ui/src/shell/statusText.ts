@@ -121,6 +121,11 @@ const GUIDE_KEYS = {
   // 上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで案内も足す。
   ruled: 'statusBar.guide.ruled',
   loft: 'statusBar.guide.loft',
+  // P5 タスク32 が `MeasureToolId` へ足した測る(FR-1101、FR-1102)。**選んでいるものから
+  // 測る種類が決まる**道具なので、案内は「何をいくつ選ぶか」と「もう一度押すと測り直せる」
+  // ことを伝える(NFR-UX-1、NFR-UX-7)。上と同じ理由(この表は網羅が要る)で、道具を
+  // 足した同じタスクで案内も足す。
+  measure: 'statusBar.guide.measure',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**
@@ -307,6 +312,13 @@ export interface StatusInput {
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly appearanceErrorKey?: MessageKey | null;
+  /**
+   * 測れなかった理由(FR-1102、NFR-UX-5。P5 タスク32)。いま押した「測る」への返事なので、
+   * 他の断りと同じ高さの優先順位に置く。理由の文はそれだけで通じる 1 文
+   * (「測りたいものを 1 つか 2 つ選んでください。」)なので頭の言葉は付けない。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly measureErrorKey?: MessageKey | null;
   /**
    * 選び直せなかった外観の割り当ての数(FR-1106、P5 §2.2.3。タスク11)。
    * 形が変わって指紋が合わなくなった面の件数で、0 なら何も出さない。数えるのは
@@ -693,6 +705,10 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // 返事なので、他の断りと同じ高さに置く。理由の文はそれだけで通じる 1 文
     // (「この立体には 8 種類までしか…」)なので、頭の言葉は付けない。
     return failureLine(null, t(input.appearanceErrorKey));
+  }
+  if (input.measureErrorKey !== undefined && input.measureErrorKey !== null) {
+    // 測れなかった断り(FR-1102、P5 タスク32)。外観と同じ扱いで、理由の文をそのまま出す。
+    return failureLine(null, t(input.measureErrorKey));
   }
   if (input.shapeErrorMessage !== undefined && input.shapeErrorMessage !== null) {
     return failureLine('statusBar.shapeError', input.shapeErrorMessage);

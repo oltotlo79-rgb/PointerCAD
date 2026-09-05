@@ -92,6 +92,11 @@ import {
   type SelectionKind,
 } from '../solid/subShapeSelection.js';
 import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
+import {
+  runMeasure,
+  type MassPropertiesResult,
+  type PartMeasurer,
+} from '../solid/measureCommands.js';
 import type { MeasurementState } from '../viewport/createMeasureLayer.js';
 import type { SketchDrag } from '../viewport/dragSketch.js';
 
@@ -532,6 +537,31 @@ export interface AppState {
    */
   readonly measurement: MeasurementState | null;
   /**
+   * いま出している質量特性(FR-1101、P5 タスク32)。無ければ null。
+   *
+   * 体積・重心・慣性モーメントはカーネルが測った**密度を掛けていない**値で、
+   * 材料と密度はプロパティ欄が持つ(材料を切り替えるたびに測り直さないため)。
+   * 消える条件は `measurement` とまったく同じ(形の変更と Esc)。
+   */
+  readonly massProperties: MassPropertiesResult | null;
+  /**
+   * 測れなかった理由の文言キー(FR-1102、NFR-UX-5。P5 タスク32)。
+   *
+   * `appearanceErrorKey` と同じ扱いで、いま押した「測る」への返事。理由の文はそれだけで
+   * 通じる 1 文(「測りたいものを 1 つか 2 つ選んでください。」)なので、帯は頭の言葉を
+   * 付けずにそのまま出す。文書が変われば用済みなので `applyDocument` が落とす。
+   */
+  readonly measureErrorKey: MessageKey | null;
+  /**
+   * 覚えてある形を測る手立て(FR-1101、FR-1102。P5 タスク32)。
+   *
+   * カーネル(Worker)を持っているのは `PointerCadApp` だけなので、`PartRecomputer` と
+   * 同じ流儀で外から差し出してもらう(`attachPartMeasure`)。差し出されていなければ
+   * **一覧から出せる測定だけ**が効き、往復の要る測定(辺どうし・立体どうしの最短距離、
+   * 質量特性)は理由つきで断られる(NFR-UX-5)。
+   */
+  readonly partMeasurer: PartMeasurer | null;
+  /**
    * 最後にビューポートで何かを選んだ場所(canvas の左上を原点とした画素)。
    * ソリッドの道具のその場入力を、選んだものの近くへ出すのに使う(NFR-UX-2)。
    * まだ何も選んでいなければ null で、そのときはビューポートの中央に出す。
@@ -729,6 +759,35 @@ export interface AppState {
   readonly removeAppearance: (id: string) => void;
   /** すべての割り当てを外して既定の外観に戻す(FR-1110)。 */
   readonly clearAppearance: () => void;
+  /**
+   * 測った結果を出す・消す(FR-1102、タスク32)。`null` を渡せば画面からも消える。
+   * 質量特性(立体を選んだときだけ付く)も一緒に差し替えるので、
+   * 「値は消えたのに重さだけ残る」状態にならない。
+   */
+  readonly setMeasurement: (
+    measurement: MeasurementState | null,
+    massProperties?: MassPropertiesResult | null,
+  ) => void;
+  /**
+   * 測った結果を消す(FR-1102、§0.a-0.68 の Esc)。**何も測っていなければ何もしない**
+   * ので、Esc の他の働き(道具の取り消し)を横取りするかどうかを呼ぶ側が
+   * `measurement` の有無で決められる。
+   */
+  readonly clearMeasurement: () => void;
+  /** 測れなかった理由を出す・消す(FR-1102、NFR-UX-5)。 */
+  readonly setMeasureError: (key: MessageKey | null) => void;
+  /**
+   * いま選んでいるものを測る(FR-1101、FR-1102。ツールバーの「測る」とプロパティ欄の
+   * 「測り直す」の**共通の入口**)。
+   *
+   * 判断と組み立ては `solid/measureCommands.ts` の `runMeasure` 1 か所に置き、ここは
+   * 「ストアの値を渡す」「結果か理由を置く」だけにする。**文書は 1 バイトも変えない**ので
+   * 取り消しの段も積まず、再計算も起きない(§0.a-0.30 の読み取り)。
+   * 一覧から出せる測定はその場で終わり、往復の要るものだけカーネルを待つ(NFR-PF-4)。
+   */
+  readonly measureSelection: () => void;
+  /** 形を測る手立てを差し出す・取り下げる(`attachPartMeasure` が呼ぶ)。 */
+  readonly setPartMeasurer: (measurer: PartMeasurer | null) => void;
   /** 整形系の道具が成功したときの案内を出す・消す(FR-323、タスク23)。 */
   readonly setEditNotice: (key: MessageKey | null) => void;
   /** 原点を移したときの一言を出す・消す(FR-331、タスク35b)。 */
@@ -1179,6 +1238,9 @@ export function createInitialDocumentState(): Pick<
   | 'editNoticeKey'
   | 'originNoticeMessage'
   | 'measurement'
+  | 'massProperties'
+  | 'measureErrorKey'
+  | 'partMeasurer'
   | 'pickAnchor'
   | 'fileGateway'
   | 'fileName'
@@ -1261,8 +1323,12 @@ export function createInitialDocumentState(): Pick<
     appearanceErrorKey: null,
     editNoticeKey: null,
     originNoticeMessage: null,
-    // 起動直後は何も測っていない(FR-1102、P5 タスク31)。
+    // 起動直後は何も測っていない(FR-1102、P5 タスク31・32)。
     measurement: null,
+    massProperties: null,
+    measureErrorKey: null,
+    // 形を測る手立てはカーネルを持つ側が起動時に差し出す(P5 タスク32)。
+    partMeasurer: null,
     pickAnchor: null,
     // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める(§2.10)。
     fileGateway: createBrowserFileGateway(),
@@ -1492,6 +1558,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         solidErrorKey: null,
         editErrorKey: null,
         appearanceErrorKey: null,
+        // 「測れませんでした」の断りも、文書が変われば用済み(FR-1102、タスク32)。
+        measureErrorKey: null,
         editNoticeKey: null,
         shapeErrorMessage: null,
         referenceErrorMessage: null,
@@ -1508,6 +1576,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // 測定は**形が変わったときだけ**消す(FR-1102「モデルを変更するまで残る」、
         // §0.a-0.29。外観だけの変更では形が 1 ミリも動かないので測った値は正しいまま)。
         measurement: affectsShape(state.document, next) ? null : state.measurement,
+        // 質量特性も測定と同じ条件で消す(体積・重心は形そのものの値なので、
+        // 形が変われば測り直し。外観だけの変更では材料が変わっても残る)。
+        massProperties: affectsShape(state.document, next) ? null : state.massProperties,
       };
     });
     /*
@@ -1626,6 +1697,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         originNoticeMessage: null,
         // 測定も、形が戻ったのなら測り直し(FR-1102。外観だけの取り消しでは残す)。
         measurement: affectsShape(state.document, stack.present) ? null : state.measurement,
+        massProperties: affectsShape(state.document, stack.present) ? null : state.massProperties,
         // つまみは末尾へ戻す(FR-507、タスク19)。取り消し・やり直しで履歴の件数が
         // 変わりうるので、同じ通し番号が前と同じ段を指すとは限らない。
         timelineIndex: null,
@@ -1651,6 +1723,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // やり直しでも同じ(取り消しの `undo` と揃える。FR-331、タスク35b)。
         originNoticeMessage: null,
         measurement: affectsShape(state.document, stack.present) ? null : state.measurement,
+        massProperties: affectsShape(state.document, stack.present) ? null : state.massProperties,
         timelineIndex: null,
         timelineNoticeKey: null,
         // 順序の入れ替えの断りも、時をまたぐ差し替えの後には合わないので落とす(FR-504)。
@@ -1890,6 +1963,42 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     state.applyDocument(clearAllAppearance(state.document));
   },
+  setMeasurement: (measurement, massProperties = null) => {
+    // 測った値を出したら、前の断りは用済み(NFR-UX-5「押したら必ず何かが起きる」)。
+    set({ measurement, massProperties, measureErrorKey: null });
+  },
+  clearMeasurement: () => {
+    const state = get();
+    if (state.measurement === null && state.massProperties === null) {
+      // 何も出していない。Esc の他の働き(道具の取り消し)へそのまま譲る(§0.a-0.68)。
+      return;
+    }
+    set({ measurement: null, massProperties: null });
+  },
+  setMeasureError: (measureErrorKey) => {
+    set({ measureErrorKey });
+  },
+  measureSelection: () => {
+    const state = get();
+    void runMeasure({
+      document: state.document,
+      selection: state.selection,
+      // カーネルが返したボディはそのまま `MeasureBody`(体積つき)を満たす。
+      bodies: state.bodies,
+      measurer: state.partMeasurer,
+    }).then((outcome) => {
+      // 待っているあいだに文書が変わっていることがあるので、置く先は取り直す。
+      const after = get();
+      if (outcome.ok) {
+        after.setMeasurement(outcome.measurement, outcome.massProperties);
+        return;
+      }
+      after.setMeasureError(outcome.reasonKey);
+    });
+  },
+  setPartMeasurer: (partMeasurer) => {
+    set({ partMeasurer });
+  },
   setEditNotice: (editNoticeKey) => {
     set({ editNoticeKey });
   },
@@ -1971,14 +2080,36 @@ export const useAppStore = create<AppState>()((set, get) => ({
       appearanceErrorKey: null,
       editNoticeKey: null,
       originNoticeMessage: null,
-      // 前の部品で測った値は、別の部品には当てはまらない(FR-1102、タスク31)。
+      // 前の部品で測った値は、別の部品には当てはまらない(FR-1102、タスク31・32)。
       measurement: null,
+      massProperties: null,
+      measureErrorKey: null,
       errorMessage: null,
       fileMessage: null,
       recomputeCancelled: false,
     }));
   },
 }));
+
+/**
+ * 形を測る手立てを差し出す(FR-1101、FR-1102。P5 タスク32)。
+ *
+ * カーネル(Worker)を持っているのは入口(`PointerCadApp`)だけなので、`attachPartRecompute`
+ * と同じ流儀で外から差し込む。**測定は再計算を起こさない読み取り**(§0.a-0.30)なので、
+ * 文書の変化は見張らない(差し出して、片付けで取り下げるだけ)。
+ *
+ * 戻り値を呼ぶと取り下げる。
+ */
+export function attachPartMeasure(measurer: PartMeasurer): () => void {
+  useAppStore.getState().setPartMeasurer(measurer);
+  return () => {
+    // 自分が差し出したものが今も立っているときだけ下ろす(別の入口が差し替えた後に
+    // 片付けが走っても、新しい手立てを消さない)。
+    if (useAppStore.getState().partMeasurer === measurer) {
+      useAppStore.getState().setPartMeasurer(null);
+    }
+  };
+}
 
 /**
  * 部品を 1 回計算するもの。実物は `recomputePart(document, bridge, options)`。

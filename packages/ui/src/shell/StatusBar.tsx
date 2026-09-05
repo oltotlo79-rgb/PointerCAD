@@ -100,6 +100,8 @@ export function StatusBar(): React.JSX.Element {
   const editNoticeKey = useAppStore((state) => state.editNoticeKey);
   // 外観を割り当てられなかった理由(FR-1106〜1110、P5 タスク11)。
   const appearanceErrorKey = useAppStore((state) => state.appearanceErrorKey);
+  // 測れなかった理由(FR-1101、FR-1102、P5 タスク32)。
+  const measureErrorKey = useAppStore((state) => state.measureErrorKey);
   /*
    * 選び直せなかった外観の割り当て(FR-1106)。件数だけを取り出すのは、取り出す式が
    * 毎回新しい物を返すと変わっていなくても描き直しになるため(つまみの札と同じ事情)。
@@ -240,6 +242,7 @@ export function StatusBar(): React.JSX.Element {
     solidErrorKey,
     editErrorKey,
     appearanceErrorKey,
+    measureErrorKey,
     appearanceMissingCount: appearanceMissing,
     editNoticeKey,
     shapeErrorMessage,

@@ -61,6 +61,16 @@ function activatedBySpace(target: EventTarget | null): boolean {
 }
 
 /**
+ * 畳んだ一覧(ツールバー・プロパティ欄)の中に焦点があるか(P5 タスク32)。
+ *
+ * 一覧が開いているあいだの Esc は「一覧を閉じる」ための押下(`ToolMenu` / `PlaneMenu` が
+ * 自分で受ける)なので、測定の結果を消す Esc はそれを横取りしない。
+ */
+function isInsideMenu(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('.pcad-menu') !== null;
+}
+
+/**
  * 選択の種類の手動切替(§0.a-0.6、タスク26)。`1` = 頂点、`2` = 辺、`3` = 面、`4` = 立体。
  * 数字キーそのものを使うので、修飾キー付き(Ctrl+1 等、将来ブラウザやOSの割当と衝突し得る)
  * とは区別する。
@@ -215,6 +225,38 @@ export function AppShell(): React.JSX.Element {
     globalThis.addEventListener('keydown', onKeyDown);
     return () => {
       globalThis.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    /*
+     * Esc で測定の結果を消す(FR-1102、§0.a-0.68、P5 タスク32)。
+     *
+     * **捕捉の段(capture)で受ける。** Esc はビューポート(`attachSketchInteraction`)でも
+     * 「選択と取りかけの取り消し」に使われていて、そちらは canvas に付いているので普通に
+     * 待つと先に走ってしまう。測定の結果が出ているときは**先にそれを消す**(統括の決定
+     * 2026-09-05 13:19)ので、捕捉の段で受けて `stopPropagation` でその 1 回を止める。
+     * 何も測っていなければ `clearMeasurement` は何もせず、`cleared` が偽になるので、
+     * これまでどおり道具の取り消しへそのまま流れる。
+     *
+     * 畳んだ一覧が開いているとき(`.pcad-menu` の中に焦点がある)は横取りしない。
+     * その Esc は「一覧を閉じる」ための押下で、測定とは関係がないため。
+     */
+    const onEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || isTextEntry(event.target) || isInsideMenu(event.target)) {
+        return;
+      }
+      const store = useAppStore.getState();
+      if (store.measurement === null && store.massProperties === null) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      store.clearMeasurement();
+    };
+    globalThis.addEventListener('keydown', onEscape, true);
+    return () => {
+      globalThis.removeEventListener('keydown', onEscape, true);
     };
   }, []);
 

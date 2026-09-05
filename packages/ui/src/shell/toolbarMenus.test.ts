@@ -254,8 +254,17 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
 
   it('「投影」「見た目」の一覧の中身', () => {
     expect(PROJECTION_MENU_ITEMS.map((item) => item.id)).toEqual(['perspective', 'orthographic']);
-    // タスク32 の「測る」がここへ 2 行目として入る(§0.a-0.29)。
-    expect(LOOK_MENU_ITEMS.map((item) => item.id)).toEqual(['appearance']);
+    // タスク32 の「測る」が 2 行目に入った(§0.a-0.29。区画は増やさない、要件§7.1)。
+    expect(LOOK_MENU_ITEMS.map((item) => item.id)).toEqual(['appearance', 'measure']);
+  });
+
+  it('「測る」を足しても「見た目」の溝の幅は 37 画素のまま(§0.a-0.80)', () => {
+    /*
+      畳んだ一覧の中に項目をいくつ足しても溝の幅は変わらない、という約束の実例。
+      平置きにしていたら図柄 2 個で 60 画素になり、1440 画素の窓の余裕が削れていた。
+    */
+    expect(LOOK_MENU_ITEMS).toHaveLength(2);
+    expect(segmentedWidthPixels(0, SINGLE_MENU_COUNT)).toBe(37);
   });
 
   it('どの項目も図柄・名前・説明を持ち、名前が説明に重ならない(FR-904)', () => {

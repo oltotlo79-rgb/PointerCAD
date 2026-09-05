@@ -146,6 +146,16 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: 'ガラス・鏡と映り込み',
     path: 'docs/ja/appearance-glass.md',
   },
+  {
+    id: 'measure',
+    title: '長さ・角度・面積を測る',
+    path: 'docs/ja/measure.md',
+  },
+  {
+    id: 'mass-properties',
+    title: '材料と重さを調べる',
+    path: 'docs/ja/mass-properties.md',
+  },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

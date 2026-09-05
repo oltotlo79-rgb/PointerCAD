@@ -908,3 +908,38 @@ describe('面をつなぐ・ロフトの案内(FR-430、FR-410、FR-905、P5 タ
     }
   });
 });
+
+describe('測る道具の案内と断り(FR-1101、FR-1102、P5 タスク32)', () => {
+  it('測る道具を選んでいるときは「1 つか 2 つ選んで押す」を案内する(FR-905)', () => {
+    expect(guideKeyFor('measure', 0)).toBe('statusBar.guide.measure');
+    const line = describeStatus({ ...quiet(), activeTool: 'measure' });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe(t('statusBar.guide.measure'));
+  });
+
+  it('立体を選んでいても道具の案内が優先する(ブーリアンの案内に押しのけられない)', () => {
+    expect(guideKeyFor('measure', 2)).toBe('statusBar.guide.measure');
+  });
+
+  it('測れなかった理由を、頭の言葉を付けずにそのまま出す(NFR-UX-5)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      measureErrorKey: 'measureError.nothingSelected',
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe('測りたいものを 1 つか 2 つ選んでください。');
+  });
+
+  it('外観の断りが同時にあれば外観を先に出す(押した順に近いほうを見せる)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      appearanceErrorKey: 'appearanceError.noTarget',
+      measureErrorKey: 'measureError.tooMany',
+    });
+    expect(line.text).toBe(t('appearanceError.noTarget'));
+  });
+
+  it('測る欄を渡さない呼び出しは今までどおり動く(欄は省略できる)', () => {
+    expect(describeStatus(quiet()).text).toBe(t('statusBar.ready'));
+  });
+});

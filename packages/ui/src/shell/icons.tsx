@@ -1353,3 +1353,16 @@ export function AppearanceIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+/**
+ * 測る(FR-1101、FR-1102、P5 タスク32)。斜めに寝かせた物差しと、目盛りの短い線 3 本。
+ * 世の中の CAD の「測定」と同じ見立てで、何をする道具かが図柄だけで読める(NFR-UX-7)。
+ */
+export function MeasureIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.2 10.4 10.4 2.2l3.4 3.4-8.2 8.2z" />
+      <path d="M5 5.4 6.6 7M7.1 3.3 8.7 4.9M7.9 8.5 9.5 10.1M10 6.4l1.6 1.6" />
+    </SvgIcon>
+  );
+}

@@ -324,14 +324,40 @@ describe('測れないときは理由を出す(NFR-UX-5)', () => {
     );
   });
 
-  it('規則に無い組み合わせ(点と辺・面と辺・立体どうし)', () => {
+  it('規則に無い組み合わせ(点と辺・面と辺・立体と部分形状)', () => {
     expect(measureReadiness(['extrude-1#vertex:0', 'extrude-1#edge:0'], BODIES).reason).toBe(
       'unsupportedPair',
     );
     expect(measureReadiness(['extrude-1#face:1', 'extrude-1#edge:0'], BODIES).reason).toBe(
       'unsupportedPair',
     );
-    expect(measureReadiness(['extrude-1', 'hole-1'], BODIES).reason).toBe('unsupportedPair');
+    // 立体と面のように種類がまたがる組み合わせは、いまも規則が無い。
+    expect(measureReadiness(['extrude-1', 'hole-1#face:0'], BODIES).reason).toBe(
+      'unsupportedPair',
+    );
+  });
+
+  /*
+    立体 2 つの最短距離(§0.a-0.69、統括の決定 2026-09-05 12:42)。タスク30 の時点では
+    「立体どうし」も測れない組み合わせだったが、カーネルの最短距離は形どうし全般で
+    測れるため、種類を 1 つ足して測れるようにした(タスク32)。
+  */
+  it('立体 2 つは最短距離(§0.a-0.69)', () => {
+    const readiness = measureReadiness(['extrude-1', 'hole-1'], BODIES);
+    expect(readiness.ready).toBe(true);
+    expect(readiness.kinds).toEqual(['bodyDistance']);
+    expect(readiness.targets.map((target) => target.bodyFeatureId)).toEqual([
+      'extrude-1',
+      'hole-1',
+    ]);
+    // 立体そのものなので、部分形状の参照は持たない(model の橋渡しが null を受ける)。
+    expect(readiness.targets.every((target) => target.ref === null)).toBe(true);
+  });
+
+  it('立体 2 つの最短距離は一覧から出せない(カーネルの役目)', () => {
+    const readiness = measureReadiness(['extrude-1', 'hole-1'], BODIES);
+    expect(measureLocally('bodyDistance', readiness.targets, BODIES)).toBeNull();
+    expect(needsKernel('bodyDistance')).toBe(true);
   });
 
   it('断りの理由はすべて日本語の文言を持つ(NFR-MA-5)', () => {
@@ -471,9 +497,9 @@ describe('カーネルを呼ばずに測る(§2.10.2)', () => {
 });
 
 describe('カーネルが要る種類の切り分け(§0.a-0.30)', () => {
-  it('最短距離と質量特性だけがカーネルを要る', () => {
+  it('最短距離(辺どうし・立体どうし)と質量特性だけがカーネルを要る', () => {
     const withKernel = MEASURE_KIND_ORDER.filter((kind) => needsKernel(kind));
-    expect(withKernel).toEqual(['edgeDistance', 'massProperties']);
+    expect(withKernel).toEqual(['edgeDistance', 'bodyDistance', 'massProperties']);
   });
 
   it('一覧から出せる種類はカーネルを呼ばずに値が出る', () => {

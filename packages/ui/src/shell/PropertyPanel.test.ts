@@ -9,6 +9,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   appearanceSectionKey,
+  massSectionKey,
+  measureSectionKey,
   primitiveSectionKey,
   roundSolvedCoordinateText,
   ruledSectionKey,
@@ -114,5 +116,40 @@ describe('ruledSectionKey', () => {
 
   it('同じ立体なら同じ文字列になる(選び直していないのに作り直さない)', () => {
     expect(ruledSectionKey('loft-3')).toBe(ruledSectionKey('loft-3'));
+  });
+});
+
+/**
+ * 測定・質量特性の節の `key`(P5 タスク32、rules/06 10.9)。
+ *
+ * この 2 つも `SolidProperties`(`key={solid.id}`)・基本形状の節・つなぎ方の節・外観の節と
+ * **同じ親**(`.pcad-panel__body`)に並ぶ。6 つの鍵が絶対に重ならないことをここで固定する
+ * (重なると React が古い節を消し損ね、選び直すたびに節が積み上がる。10.9 の再発防止)。
+ */
+describe('measureSectionKey / massSectionKey', () => {
+  it('立体の id・部分形状の id と同じ文字列にならない', () => {
+    expect(measureSectionKey(['extrude-1'])).not.toBe('extrude-1');
+    expect(measureSectionKey(['extrude-1#face:3'])).not.toBe('extrude-1#face:3');
+    expect(massSectionKey('extrude-1')).not.toBe('extrude-1');
+  });
+
+  it('他の 4 つの節の鍵とも重ならない', () => {
+    expect(measureSectionKey(['extrude-1'])).not.toBe(appearanceSectionKey(['extrude-1']));
+    expect(measureSectionKey(['extrude-1'])).not.toBe(primitiveSectionKey('extrude-1'));
+    expect(measureSectionKey(['extrude-1'])).not.toBe(ruledSectionKey('extrude-1'));
+    expect(massSectionKey('extrude-1')).not.toBe(measureSectionKey(['extrude-1']));
+    expect(massSectionKey('extrude-1')).not.toBe(appearanceSectionKey(['extrude-1']));
+  });
+
+  it('選び直すと別の文字列になる(材料と密度をその立体の外観から選び直すため)', () => {
+    expect(measureSectionKey(['extrude-1'])).not.toBe(measureSectionKey(['extrude-2']));
+    expect(massSectionKey('extrude-1')).not.toBe(massSectionKey('extrude-2'));
+  });
+
+  it('同じ選択なら同じ文字列になる(選び直していないのに作り直さない)', () => {
+    expect(measureSectionKey(['extrude-1', 'extrude-2'])).toBe(
+      measureSectionKey(['extrude-1', 'extrude-2']),
+    );
+    expect(massSectionKey('box-3')).toBe(massSectionKey('box-3'));
   });
 });

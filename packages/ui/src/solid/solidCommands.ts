@@ -46,8 +46,9 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
-import type { SolidInputCommit, SolidToolId } from '../sketch/numericInput.js';
+import type { MeasureToolId, SolidInputCommit, SolidToolId } from '../sketch/numericInput.js';
 
+import { measureToolReadiness } from './measureCommands.js';
 import {
   commitMachiningInput,
   DEFAULT_TILT_ANGLE,
@@ -129,8 +130,12 @@ export type SolidCommandOutcome =
  * 前の 3 つは数値を聞いてから作るので `SolidToolId`(numericInput.ts が正本)と同じ id を使い、
  * 後の 3 つは選んで押すだけなので `BooleanOperation` の id をそのまま使う。同じものを
  * 2 か所で数え直さないよう、どちらも既存の型から組み立てる。
+ *
+ * **P5 タスク32 で「測る」(`MeasureToolId`)も入った。** 立体を作る操作ではないが、
+ * 「選んでから押す/押せない理由を持つ」点はまったく同じで、ツールバーのボタンが
+ * 押せる条件を引く口(`solidToolReadiness`)を 1 つにしておきたいため。
  */
-export type SolidActionId = SolidToolId | BooleanOperation;
+export type SolidActionId = SolidToolId | BooleanOperation | MeasureToolId;
 
 /** その操作がいま押せるか。押せないときは理由を添える(NFR-UX-5)。 */
 export interface SolidToolReadiness {
@@ -619,6 +624,14 @@ export function solidToolReadiness(
       const context: RuledContext = { document, bodies, selection };
       return loftToolReadiness(context);
     }
+    /*
+      測る(FR-1101、FR-1102。タスク32、§2.10)。押せる条件は「選んでいるものから測れる
+      種類が決まること」だけで、文書は 1 ミリも変えない。判断は `measure.ts` の
+      `measureReadiness` 1 か所にあり、`measureCommands.ts` がツールバーの読む形へ
+      詰め替えている(ここで 2 重に判定しない)。
+    */
+    case 'measure':
+      return measureToolReadiness(selection, bodies);
   }
 }
 

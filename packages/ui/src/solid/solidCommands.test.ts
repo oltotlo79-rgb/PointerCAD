@@ -1354,3 +1354,53 @@ describe('基本形状 5 種の振り分け(FR-429、P5 タスク18)', () => {
     expect(outcome).toEqual({ ok: false, reasonKey: 'primitiveError.sphereRadius' });
   });
 });
+
+/*
+  測る(FR-1101、FR-1102。P5 タスク32、§2.10)。ツールバーのボタンが押せる条件を、
+  他の道具とまったく同じ口(`solidToolReadiness`)から引けることを固定する。
+  判断そのものは `measure.ts` の `measureReadiness` にあり、ここは委譲の配線だけを見る。
+*/
+describe('solidToolReadiness の「測る」(P5 タスク32)', () => {
+  it('何も選んでいなければ押せず、理由は「1 つか 2 つ選んでください」', () => {
+    const document = documentWithFaces(['face-1']);
+    expect(solidToolReadiness(document, [], 'measure')).toEqual({
+      ready: false,
+      reasonKey: 'measureError.nothingSelected',
+    });
+  });
+
+  it('面を 1 枚選んでいれば押せる(面積が測れる)', () => {
+    const document = documentWithFaces(['face-1']);
+    const bodies: readonly SubShapeBody[] = [makeHoleTargetBody('extrude-1')];
+    const selection = [subShapeElementId('extrude-1', 'face', 0)];
+    expect(solidToolReadiness(document, selection, 'measure', bodies)).toEqual({
+      ready: true,
+      reasonKey: null,
+    });
+  });
+
+  it('立体を 2 つ選んでいれば押せる(隙間が測れる、§0.a-0.69)', () => {
+    const document = documentWithFaces(['face-1']);
+    const bodies: readonly SubShapeBody[] = [
+      makeHoleTargetBody('extrude-1'),
+      makeHoleTargetBody('extrude-2'),
+    ];
+    expect(
+      solidToolReadiness(document, ['extrude-1', 'extrude-2'], 'measure', bodies),
+    ).toEqual({ ready: true, reasonKey: null });
+  });
+
+  it('体積を持たない一覧(SubShapeBody)でも判定できる(ツールバーが渡せる形)', () => {
+    const document = documentWithFaces(['face-1']);
+    const bodies: readonly SubShapeBody[] = [makeHoleTargetBody('extrude-1')];
+    expect(solidToolReadiness(document, ['extrude-1'], 'measure', bodies).ready).toBe(true);
+  });
+
+  it('スケッチの要素を選んでいるときは測れないと断る(NFR-UX-5)', () => {
+    const document = documentWithFaces(['face-1']);
+    expect(solidToolReadiness(document, ['face-1'], 'measure')).toEqual({
+      ready: false,
+      reasonKey: 'measureError.unsupportedElement',
+    });
+  });
+});

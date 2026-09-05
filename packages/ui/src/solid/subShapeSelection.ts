@@ -408,7 +408,13 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
  * 材料が消えてしまう。§2.15 の表が「測る」を『切り替えない(いま選んでいる種類のまま測る)』と
  * している(P5 タスク32)のと同じ扱いをここに置く。
  *
- * **面をつなぐ・ロフト**(FR-430、FR-410、タスク27)がこれに当たる。輪郭にできるのは
+ * **測る**(FR-1101、FR-1102、タスク32)もこれに当たる。測れる種類は「いま選んでいるものが
+ * 何か」で決まる(頂点 2 つなら距離、面 2 枚なら距離と角度、立体 2 つなら隙間)ので、
+ * 決め打ちで種類を切り替えると押した瞬間に材料が消え、必ず「測りたいものを 1 つか 2 つ
+ * 選んでください。」になる。§2.15 の表が『切り替えない(いま選んでいる種類のまま測る)』と
+ * している道具そのもの。
+ *
+ * **面をつなぐ・ロフト**(FR-430、FR-410、タスク27)もこれに当たる。輪郭にできるのは
  * ①スケッチの面(種類に関わらず選べる)、②立体の面(種類が `face` のときだけ選べる)、
  * ③球(立体そのものなら `body`、球の表面なら `face`)の 3 通りで、**どの種類でも
  * 何かしら選べる**。決め打ちで切り替えると、たとえば球(立体)とスケッチの面を選んでから
@@ -419,5 +425,5 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
  * **この表もここ 1 か所だけに置く**(`selectionKindForTool` と同じ理由)。
  */
 export function keepsSelectionKind(tool: NumericInputToolId): boolean {
-  return tool === 'ruled' || tool === 'loft';
+  return tool === 'ruled' || tool === 'loft' || tool === 'measure';
 }

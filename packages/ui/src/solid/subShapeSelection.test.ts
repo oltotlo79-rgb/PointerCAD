@@ -292,6 +292,15 @@ describe('道具ごとの選択の種類(§0.a-0.6、§2.3.2)', () => {
     expect(keepsSelectionKind('loft')).toBe(true);
   });
 
+  it('「測る」も切り替えない(§2.15 の表、P5 タスク32)', () => {
+    /*
+      測れる種類は「いま選んでいるものが何か」で決まる(頂点 2 つなら距離、面 2 枚なら
+      距離と角度、立体 2 つなら隙間)。決め打ちで種類を切り替えると押した瞬間に材料が
+      消え、必ず「測りたいものを 1 つか 2 つ選んでください。」になってしまう。
+    */
+    expect(keepsSelectionKind('measure')).toBe(true);
+  });
+
   it('それ以外の道具は今までどおり切り替える(既存の振る舞いを狭めない)', () => {
     for (const tool of ['hole', 'fillet', 'appearance', 'select', 'extrude'] as const) {
       expect(keepsSelectionKind(tool), tool).toBe(false);

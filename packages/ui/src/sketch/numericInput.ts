@@ -270,6 +270,16 @@ export type ReferenceToolId =
  */
 export type AppearanceToolId = 'appearance';
 
+/**
+ * 測る道具(FR-1101、FR-1102、P5 タスク32)。
+ *
+ * 外観と同じく数値を 1 つも聞かない(測る種類は選んでいるものから決まる)ので段の表には
+ * 入れず、別の型にする。**選ぶ種類を切り替えない**唯一の道具でもある(§2.15 の表、
+ * `solid/subShapeSelection.ts` の `keepsSelectionKind`)。いま選んでいるものをそのまま
+ * 測るので、押した瞬間に選択が消えては何も測れないため。
+ */
+export type MeasureToolId = 'measure';
+
 /** ポップアップを開ける道具。スケッチの道具より広い。 */
 export type NumericInputToolId =
   | SketchToolId
@@ -279,7 +289,8 @@ export type NumericInputToolId =
   | EditToolId
   | ClickEditToolId
   | PickEditToolId
-  | AppearanceToolId;
+  | AppearanceToolId
+  | MeasureToolId;
 
 /** 座標の指定方法(FR-301〜303)。 */
 export type CoordinateMode = 'absolute' | 'relative' | 'polar';

@@ -56,6 +56,7 @@ import {
 } from '../sketch/referenceCommands.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import { TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
+import { measureToolReadiness } from '../solid/measureCommands.js';
 import { ruledSelectionHasSphere } from '../solid/ruledCommands.js';
 import {
   commitBooleanFromSelection,
@@ -130,6 +131,7 @@ import {
   nextHighlightIndex,
   rememberRecentTool,
   triggerItemOf,
+  type LookToolId,
   type ToolMenuItem,
 } from './toolbarMenus.js';
 
@@ -732,6 +734,29 @@ function runCombineTool(operation: BooleanOperation, readiness: SolidToolReadine
   commitBooleanAction(operation);
 }
 
+/**
+ * 「測る」を押したときの処理(FR-1101、FR-1102。タスク32、§2.10)。
+ *
+ * **押したら必ず何かが起きる**(NFR-UX-5)。測れるなら測り、測れないなら帯に理由を出す。
+ * どちらの場合も道具は「測る」にする(`keepsSelectionKind` が真なので、いま選んでいる
+ * ものも選ぶ種類もそのまま残る、§2.15)。
+ *
+ * **同じ道具をもう一度押したら「測り直す」。** 他の一覧は「もう一度押したら解除」だが、
+ * 測るは取りかけの状態を持たない道具で、解除しても画面から何も減らない(結果が消える
+ * のは形の変更と Esc、§0.a-0.68)。選び直して押すたびに測れるほうが、この道具では
+ * 利用者の期待に合う(プロパティ欄の「測り直す」と同じ 1 手になる)。
+ */
+function runMeasureTool(readiness: SolidToolReadiness): void {
+  const store = useAppStore.getState();
+  store.setActiveTool('measure');
+  store.requestViewportFocus();
+  if (!readiness.ready) {
+    store.setMeasureError(readiness.reasonKey);
+    return;
+  }
+  store.measureSelection();
+}
+
 /** 押せないときのツールチップ。「名前: 理由」で、なぜ押せないのかを読めるようにする。 */
 function unavailableTooltip(labelKey: MessageKey, reasonKey: MessageKey | null): string {
   return reasonKey === null ? t(labelKey) : `${t(labelKey)}${LABEL_SEPARATOR}${t(reasonKey)}`;
@@ -1067,6 +1092,17 @@ interface ToolMenuProps<Id extends string> {
    * タスク22〜24 が道具ごとに違う条件を足すときは、ここを id で振り分ける。
    */
   readonly readinessOf?: (id: Id) => EditToolReadiness;
+  /**
+   * 畳んだボタンに「押されている」見た目(`aria-pressed`)を出すか。既定は出す(§0.a-0.80)。
+   *
+   * **「投影」の一覧だけは出さない。** 透視投影か平行投影かは**必ずどちらかが効いている**
+   * ので、押下表示が常に点いたままになり「押しっぱなしのボタン」に見える(2026-09-05 の
+   * 実装で分かった件)。いま効いているほうは畳んだボタンの図柄(`triggerItemOf`)が
+   * 示しているので、押下表示が無くても今の見え方は読み取れる。
+   * 一覧の中の項目の `aria-pressed` は**この props に関わらず出す**(どちらが選ばれて
+   * いるかは一覧を開いた人が知りたいことなので、NFR-UX-7)。
+   */
+  readonly showPressed?: boolean;
   /** 項目を選んだときの処理。`pressed` は「同じ道具をもう一度押した」かどうか。 */
   readonly onChoose: (id: Id, pressed: boolean) => void;
 }
@@ -1093,6 +1129,7 @@ function ToolMenu<Id extends string>({
   GroupIcon,
   activeTool,
   readinessOf,
+  showPressed = true,
   onChoose,
 }: ToolMenuProps<Id>): React.JSX.Element {
   const [open, setOpen] = useState(false);
@@ -1185,7 +1222,7 @@ function ToolMenu<Id extends string>({
         }
         aria-haspopup="true"
         aria-expanded={open}
-        aria-pressed={activeHere}
+        aria-pressed={showPressed ? activeHere : undefined}
         onClick={() => {
           if (open) {
             setOpen(false);
@@ -1269,6 +1306,14 @@ function LookGroup({
   activeTool,
 }: LookGroupProps): React.JSX.Element {
   const readiness = appearanceReadiness({ document, bodies, selection, selectionKind, matches });
+  /*
+    項目ごとの押せる条件。外観は `appearanceReadiness`(タスク11)、測るは
+    `measureToolReadiness`(タスク32)で、どちらも判断の正本はそれぞれ 1 か所にある。
+  */
+  const readinessOf = (id: LookToolId): SolidToolReadiness =>
+    id === 'measure'
+      ? measureToolReadiness(selection, bodies)
+      : { ready: readiness.ok, reasonKey: readiness.reasonKey };
   return (
     <div className="pcad-toolbar__group">
       <span className="pcad-toolbar__group-label" title={t('toolbar.look.tooltip')}>
@@ -1281,8 +1326,12 @@ function LookGroup({
           groupTooltipKey="toolbar.look.tooltip"
           GroupIcon={AppearanceIcon}
           activeTool={activeTool}
-          readinessOf={() => ({ ready: readiness.ok, reasonKey: readiness.reasonKey })}
+          readinessOf={readinessOf}
           onChoose={(id, pressed) => {
+            if (id === 'measure') {
+              runMeasureTool(readinessOf(id));
+              return;
+            }
             const store = useAppStore.getState();
             // 同じ道具をもう一度選んだら解除して選択へ戻す(他の一覧と同じ約束、NFR-UX-3)。
             store.setActiveTool(pressed ? 'select' : id);
@@ -1669,6 +1718,12 @@ export function Toolbar(): React.JSX.Element {
             groupTooltipKey="toolbar.projection.tooltip"
             GroupIcon={PerspectiveIcon}
             activeTool={projection}
+            /*
+              投影は必ずどちらかが効いているので、畳んだボタンの押下表示は出さない
+              (常に点いたままだと「押しっぱなし」に見える。§0.a-0.80、タスク32)。
+              いま効いているほうは図柄が示す。
+            */
+            showPressed={false}
             onChoose={(mode) => {
               useAppStore.getState().setProjection(mode);
             }}

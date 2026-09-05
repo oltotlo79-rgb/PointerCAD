@@ -10,7 +10,8 @@ import { useEffect } from 'react';
 import { startAutoSave } from '../file/attachAutoSave.js';
 import { attachDisplaySettings } from '../shell/applyDisplaySettings.js';
 import { AppShell } from '../shell/AppShell.js';
-import { attachPartRecompute } from '../store/useAppStore.js';
+import { createPartMeasurer } from '../solid/measureCommands.js';
+import { attachPartMeasure, attachPartRecompute } from '../store/useAppStore.js';
 
 /**
  * アプリの入口。Web 版とデスクトップ版で同じものを使う(要件§1.5、機能差を作らない)。
@@ -35,8 +36,23 @@ export function PointerCadApp(): React.JSX.Element {
     const detach = attachPartRecompute((document, options) =>
       recomputePart(document, bridge, { ...options, offsets, projections, subShapes }),
     );
+    /*
+     * 測定・質量特性(FR-1101、FR-1102、P5 タスク32)。**再計算とは別の口**で、覚えてある形を
+     * 読むだけ(§0.a-0.30)。組み立ては `solid/measureCommands.ts` にあり、ここは
+     * カーネルの口と覚え書き(上の 3 つ)を渡すだけにする。同じ覚え書きを渡さないと、
+     * 段の鍵が食い違って「測れませんでした」になる。
+     */
+    const detachMeasure = attachPartMeasure(
+      createPartMeasurer({
+        measure: (steps, targets, kind) => bridge.measure(steps, targets, kind),
+        offsets,
+        projections,
+        subShapes,
+      }),
+    );
 
     return () => {
+      detachMeasure();
       detach();
       bridge.dispose();
     };

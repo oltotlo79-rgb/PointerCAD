@@ -55,6 +55,8 @@ export type MeasureKind =
   | 'faceDistance'
   /** 辺と辺の最短距離(カーネルが要る)。 */
   | 'edgeDistance'
+  /** 立体 2 つの最短距離(隙間。カーネルが要る)。§0.a-0.69、タスク32。 */
+  | 'bodyDistance'
   /** 面と面のなす角。 */
   | 'faceAngle'
   /** 辺と辺のなす角。 */
@@ -81,6 +83,7 @@ export const MEASURE_KIND_ORDER: readonly MeasureKind[] = [
   'pointFaceDistance',
   'faceDistance',
   'edgeDistance',
+  'bodyDistance',
   'faceAngle',
   'edgeAngle',
   'edgeLength',
@@ -98,6 +101,7 @@ export const MEASURE_KIND_LABEL_KEYS: Readonly<Record<MeasureKind, MessageKey>> 
   pointFaceDistance: 'measure.kind.pointFaceDistance',
   faceDistance: 'measure.kind.faceDistance',
   edgeDistance: 'measure.kind.edgeDistance',
+  bodyDistance: 'measure.kind.bodyDistance',
   faceAngle: 'measure.kind.faceAngle',
   edgeAngle: 'measure.kind.edgeAngle',
   edgeLength: 'measure.kind.edgeLength',
@@ -125,6 +129,7 @@ const MEASURE_KIND_UNITS: Readonly<Record<MeasureKind, MeasureUnit>> = {
   pointFaceDistance: 'mm',
   faceDistance: 'mm',
   edgeDistance: 'mm',
+  bodyDistance: 'mm',
   faceAngle: 'degree',
   edgeAngle: 'degree',
   edgeLength: 'mm',
@@ -156,6 +161,7 @@ const MEASURE_UNIT_LABEL_KEYS: Readonly<Record<MeasureUnit, MessageKey>> = {
  * その種類を測るのにカーネル(Worker)が要るか(§0.a-0.30)。
  *
  * - 辺と辺の最短距離: 線分どうしの最短距離は端点の扱いが要るのでカーネルに任せる。
+ * - 立体 2 つの最短距離(§0.a-0.69): 面と面の総当たりになるので形そのものへ聞く。
  * - 質量特性: 重心と慣性モーメントは一覧に入っていない。
  *
  * **偽でも `measureLocally` が null を返すことがある。** 平面でない面の距離(円筒面など)は
@@ -163,7 +169,7 @@ const MEASURE_UNIT_LABEL_KEYS: Readonly<Record<MeasureUnit, MessageKey>> = {
  * を判定の正とする。この関数は「そもそも一覧から出せない種類」を先に分けるためのもの。
  */
 export function needsKernel(kind: MeasureKind): boolean {
-  return kind === 'edgeDistance' || kind === 'massProperties';
+  return kind === 'edgeDistance' || kind === 'bodyDistance' || kind === 'massProperties';
 }
 
 /* ---------------------------------------------------------------------------
@@ -288,9 +294,16 @@ function ready(
  * 選択の読み取り
  * ------------------------------------------------------------------------- */
 
-/** 選んだもの 1 つを、種類ごとの素性つきで持つ(この場の中だけで使う)。 */
-type ResolvedTarget =
-  | { readonly kind: 'body'; readonly target: MeasureTarget; readonly body: MeasureBody }
+/**
+ * 選んだもの 1 つを、種類ごとの素性つきで持つ(この場の中だけで使う)。
+ *
+ * ボディの型を型変数にしてあるのは、**「何を測れるか」の判定には体積が要らない**ため
+ * (タスク32)。ツールバーのボタンの入り切り(`solidToolReadiness`)が渡してくるのは
+ * 体積を持たない `SubShapeBody` の一覧なので、判定だけはそれで通るようにする。
+ * 値を出す側(`measureLocally`)は体積を使うので `MeasureBody` のままにする。
+ */
+type ResolvedTarget<B extends SubShapeBody = MeasureBody> =
+  | { readonly kind: 'body'; readonly target: MeasureTarget; readonly body: B }
   | { readonly kind: 'face'; readonly target: MeasureTarget; readonly face: SolidFaceEntry }
   | { readonly kind: 'edge'; readonly target: MeasureTarget; readonly edge: SolidEdgeEntry }
   | { readonly kind: 'vertex'; readonly target: MeasureTarget; readonly vertex: SolidVertexEntry };
@@ -318,10 +331,10 @@ function entryAt<T extends { readonly index: number }>(
  * 立体そのものの id は `bodies` に載っているかで判定する(id の接頭辞では判定しない。
  * `docs/報告記録.md` 2026-09-03 13:05 の②)。
  */
-function resolveTarget(
-  bodies: readonly MeasureBody[],
+function resolveTarget<B extends SubShapeBody>(
+  bodies: readonly B[],
   elementId: string,
-): ResolvedTarget | ResolveFailure {
+): ResolvedTarget<B> | ResolveFailure {
   const parsed = parseSubShapeId(elementId);
   if (parsed === null) {
     const body = bodies.find((candidate) => candidate.featureId === elementId);
@@ -449,7 +462,17 @@ function lineDirectionOf(edge: SolidEdgeEntry): Vec3 | null {
  * ------------------------------------------------------------------------- */
 
 /** 2 つ選んだときの規則。選んだ順は見ない(どちらを先に選んでも同じ結果)。 */
-function kindsForPair(first: ResolvedTarget, second: ResolvedTarget): readonly MeasureKind[] {
+function kindsForPair(
+  first: ResolvedTarget<SubShapeBody>,
+  second: ResolvedTarget<SubShapeBody>,
+): readonly MeasureKind[] {
+  if (first.kind === 'body' && second.kind === 'body') {
+    /*
+      立体 2 つの隙間(§0.a-0.69)。カーネルの最短距離は形どうし全般で測れるので、
+      面や辺と同じ 1 本の道でそのまま測れる(`measureLocally` は null を返す)。
+    */
+    return ['bodyDistance'];
+  }
   if (first.kind === 'vertex' && second.kind === 'vertex') {
     return ['pointDistance'];
   }
@@ -483,7 +506,7 @@ function kindsForPair(first: ResolvedTarget, second: ResolvedTarget): readonly M
   ) {
     return ['pointFaceDistance'];
   }
-  // 点と辺、面と辺、立体と何か。§0.a-0.29 に規則が無いので測らない。
+  // 点と辺、面と辺、立体と部分形状。§0.a-0.29 に規則が無いので測らない。
   return NO_KINDS;
 }
 
@@ -491,13 +514,17 @@ function kindsForPair(first: ResolvedTarget, second: ResolvedTarget): readonly M
  * 選んでいるものから、何を測れるかを決める(§0.a-0.29、NFR-UX-1)。
  *
  * 規則: 頂点2=距離 / 面2=距離と角度 / 辺2=角度と最短距離 / 頂点+面=点と面の距離 /
- * 面1=面積 / 辺1=長さ / 立体1=体積と質量特性。**選択の順序は見ない**(2 つ選ばれていれば十分)。
+ * 立体2=最短距離(§0.a-0.69) / 面1=面積 / 辺1=長さ / 立体1=体積と質量特性。
+ * **選択の順序は見ない**(2 つ選ばれていれば十分)。
  *
  * 測れないときは `ready: false` と日本語の理由を返す。呼ぶ側は帯へそのまま出せる(NFR-UX-5)。
+ *
+ * **体積を持たない一覧(`SubShapeBody`)でも判定できる。** ツールバーのボタンの入り切りは
+ * `solidToolReadiness` 経由でこの関数を呼び、そこに届く一覧に体積が無いため(タスク32)。
  */
 export function measureReadiness(
   selection: readonly string[],
-  bodies: readonly MeasureBody[],
+  bodies: readonly SubShapeBody[],
 ): MeasureReadiness {
   if (selection.length === 0) {
     return notReady('nothingSelected');
@@ -505,7 +532,7 @@ export function measureReadiness(
   if (selection.length > 2) {
     return notReady('tooMany');
   }
-  const resolved: ResolvedTarget[] = [];
+  const resolved: ResolvedTarget<SubShapeBody>[] = [];
   for (const elementId of selection) {
     const outcome = resolveTarget(bodies, elementId);
     if (outcome === 'unsupportedElement' || outcome === 'missingTarget') {
@@ -539,7 +566,7 @@ export function measureReadiness(
  */
 export function measurableKinds(
   selection: readonly string[],
-  bodies: readonly MeasureBody[],
+  bodies: readonly SubShapeBody[],
 ): readonly MeasureKind[] {
   return measureReadiness(selection, bodies).kinds;
 }
@@ -776,8 +803,9 @@ export function measureLocally(
     case 'bodyVolume':
       return bodyVolume(resolved);
     case 'edgeDistance':
+    case 'bodyDistance':
     case 'massProperties':
-      // 最短距離と質量特性はカーネルの役目(§0.a-0.30)。
+      // 最短距離(辺どうし・立体どうし)と質量特性はカーネルの役目(§0.a-0.30、§0.a-0.69)。
       return null;
   }
 }

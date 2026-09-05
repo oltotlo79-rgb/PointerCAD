@@ -6,6 +6,7 @@ import type {
   gp_Trsf,
 } from 'opencascade.js/dist/opencascade.full.js';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { RigidTransformSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { loadOcctForNode } from './loadOcct.node.js';
@@ -630,9 +631,9 @@ describe('ミラー・移動/回転・拡大縮小(FR-419、FR-424)', () => {
         `ミラー 1 段: ${mirrorMs.toFixed(1)}ms / 全体倍率 1 段: ${uniformMs.toFixed(1)}ms / ` +
           `軸ごと倍率 1 段: ${perAxisMs.toFixed(1)}ms(いずれも上限 500ms)`,
       );
-      expect(mirrorMs).toBeLessThan(500);
-      expect(uniformMs).toBeLessThan(500);
-      expect(perAxisMs).toBeLessThan(500);
+      expectWithinBudget(mirrorMs, 500, 'ミラー 1 段');
+      expectWithinBudget(uniformMs, 500, '全体倍率 1 段');
+      expectWithinBudget(perAxisMs, 500, '軸ごと倍率 1 段');
     } finally {
       handle.delete();
     }

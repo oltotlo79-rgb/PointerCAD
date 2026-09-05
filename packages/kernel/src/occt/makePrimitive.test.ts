@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type {
   PrimitiveShapeSpec,
   PrimitiveStepSpec,
@@ -485,7 +486,7 @@ describe('基本形状 5 種(FR-429、計画書 §2.7、タスク13)', () => {
       const elapsedMs = performance.now() - started;
       handle.delete();
       console.log(`${testCase.label} の所要: ${elapsedMs.toFixed(1)} ms / 上限 500 ms`);
-      expect(elapsedMs).toBeLessThan(500);
+      expectWithinBudget(elapsedMs, 500, testCase.label);
     }
   });
 

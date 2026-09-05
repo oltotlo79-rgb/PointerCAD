@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeSweep, type SweepInput } from './makeSweep.js';
@@ -384,7 +385,7 @@ describe('スイープ(経路に沿った押し出し、FR-409、計画書 P5 �
       const elapsedMs = performance.now() - started;
       handle.delete();
       console.log(`${testCase.label} の所要: ${elapsedMs.toFixed(1)} ms / 上限 500 ms`);
-      expect(elapsedMs).toBeLessThan(500);
+      expectWithinBudget(elapsedMs, 500, testCase.label);
     }
   });
 

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { SpringStepSpec } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeSpring } from './makeSpring.js';
@@ -169,7 +170,7 @@ describe('ばね(コイルばね、FR-414、計画書 §2.7b.4、タスク9b)', 
     const elapsedMs = performance.now() - started;
     handle.delete();
     console.log(`巻数 4(D20/d2/p5)の所要: ${elapsedMs.toFixed(1)} ms / 上限 500 ms`);
-    expect(elapsedMs).toBeLessThan(500);
+    expectWithinBudget(elapsedMs, 500, '巻数 4');
   });
 
   it('巻数 20 / 100 の所要を実測する(§0.35。上限は無く実測を報告するだけ)', () => {

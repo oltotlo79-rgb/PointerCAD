@@ -7,6 +7,7 @@ import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type {
   AppearanceQuery,
   CurveSpec,
@@ -1402,7 +1403,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       console.log(
         `${entry.label} の 1 段の所要: ${elapsed.toFixed(1)} ms / 三角形 ${result.bodies[0].triangleCount} 枚 / 上限 500 ms`,
       );
-      expect(elapsed).toBeLessThan(500);
+      expectWithinBudget(elapsed, 500, entry.label);
     }
   });
 

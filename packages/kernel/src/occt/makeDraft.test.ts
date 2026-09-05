@@ -5,6 +5,7 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { BoxParameters, SolidFaceInfo, SubShapeQuery } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { extractEdges } from './extractEdges.js';
@@ -615,7 +616,7 @@ describe('抜き勾配(FR-417、FR-504、NFR-RE-1)', () => {
 
       // 実測を必ず記録に残す(rules/03-品質ゲート.md の性能検査と同じ流儀)。
       console.log(`抜き勾配 1 段(40×30×10 の 4 側面、5 度): ${elapsed.toFixed(1)}ms`);
-      expect(elapsed).toBeLessThan(500);
+      expectWithinBudget(elapsed, 500, '抜き勾配 1 段');
     } finally {
       prepared.delete();
     }

@@ -619,6 +619,8 @@ function createStepSolid(
     }
     case 'thread': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
+      // 入口の形(ざぐり・皿もみ、FR-422、タスク42c)は段の欄のまま `makeThreadHole` が読む
+      // (段の型が作り手の依頼の上位互換なので詰め替えない)。省かれていれば真っ直ぐな下穴。
       const { handle, marks } = makeThreadHole(oc, spec, target.shape, target.mesh.faces);
       return { handle, threadMarks: marks };
     }
@@ -669,6 +671,8 @@ function createStepSolid(
       return noMarks(makeSweep(oc, spec));
     case 'rib': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
+      // 「材料まで伸ばすか」(`extendToBody`、タスク42c)も段の欄のまま `makeRib` が読む。
+      // 省かれていれば今までどおり材料に当たるまで伸ばす。
       const ribbed = makeRib(oc, target.shape, spec);
       return noMarks(ribbed, ribbed.volume);
     }

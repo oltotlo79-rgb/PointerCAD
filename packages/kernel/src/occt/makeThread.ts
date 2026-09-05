@@ -47,7 +47,8 @@ import type { BooleanResult } from './booleanOp.js';
 import { booleanOp } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { helixAxisFrame, makeHelixWire } from './makeHelix.js';
-import { makeHoleTools, resolveHoleFrame } from './makeHole.js';
+import type { HoleFrame } from './makeHole.js';
+import { holeEntryDepth, makeHoleTools, resolveHoleFrame } from './makeHole.js';
 import { matchFace } from './matchSubShape.js';
 import { measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
@@ -394,6 +395,31 @@ function buildThreadCuts(
 }
 
 /**
+ * ねじの切り始め。入口(ざぐり・皿もみ、FR-422)があれば、**その底からねじ山が始まる**
+ * ように、面へ投影した中心を掘り進む向きへ入口の深さだけ下げる(タスク42c)。
+ *
+ * **削れる量は「入口が無いときと同じ量 + 入口の削れ量」になる。** 切り始めより上へ
+ * はみ出す溝の断面(ピッチの 3/8 ぶん)は、入口が無ければ材料の外(面より上)に、
+ * 入口があれば入口が削り取った空所の中に入るので、どちらでも材料を削らないためである
+ * (入口の径・頭径は必ず下穴の径より大きい = 溝の山の頂より外にある)。
+ * `makeThread.test.ts` が実らせんの体積でこの等式を固定している。
+ *
+ * 入口の深さの式(皿もみ)は `makeHole.ts` の `holeEntryDepth` 1 か所だけに置く。
+ */
+function threadOrigins(frame: HoleFrame, spec: ThreadStepSpec): readonly Vec3Tuple[] {
+  const depth = holeEntryDepth(spec.entry, spec.drillDiameter);
+  if (depth === 0) {
+    return frame.origins;
+  }
+  const { direction } = frame;
+  return frame.origins.map((origin) => [
+    origin[0] + direction[0] * depth,
+    origin[1] + direction[1] * depth,
+    origin[2] + direction[2] * depth,
+  ]);
+}
+
+/**
  * ねじ穴をあける(FR-406)。対象は消費せず、新しい形と、画面へ返すねじの印を返す。
  *
  * 引数の `target` は解放しない(形状キャッシュの持ち物。`booleanOp` と同じ約束)。
@@ -402,6 +428,10 @@ function buildThreadCuts(
  *
  * **実らせんを切るかどうかは `spec.representation` ではなく `spec.thread !== null` で決める**
  * (計画書 タスク9 手順5)。表示の選択を model が形の依頼へ畳んで渡すためである。
+ *
+ * **入口の形(`spec.entry`、FR-422)は穴とまったく同じ道を通る**(タスク42c)。
+ * ざぐりの円柱・皿もみの円錐を下穴と和でまとめるのは `makeHoleTools` の仕事なので、
+ * ここは受け取った欄をそのまま渡すだけで、同じ規則を 2 か所に書かない。
  */
 export function makeThreadHole(
   oc: OpenCascadeInstance,
@@ -420,8 +450,9 @@ export function makeThreadHole(
   const result = ((): OcctShapeHandle => {
     const { keep, release } = createAllocations();
     try {
+      // 入口の形(ざぐり・皿もみ)の値の検査も makeHoleTools が済ませる(穴と同じ文言で断る)。
       const drills = keep(
-        makeHoleTools(oc, frame, spec.drillDiameter, spec.depth, spec.transforms),
+        makeHoleTools(oc, frame, spec.drillDiameter, spec.depth, spec.transforms, spec.entry),
       );
 
       let tool: TopoDS_Shape = drills.shape;
@@ -430,7 +461,8 @@ export function makeThreadHole(
           oc,
           spec,
           thread,
-          frame.origins,
+          // 入口があれば、その底からねじ山を始める(`threadOrigins` の注釈)。
+          threadOrigins(frame, spec),
           frame.direction,
           placements,
           keep,
@@ -463,6 +495,8 @@ export function makeThreadHole(
     if (!(removed >= MIN_REMOVED_VOLUME_MM3)) {
       throw new Error(NOTHING_REMOVED_MESSAGE);
     }
+    // 印は入口があっても変わらない(簡略表示の印は面の口から測る。§0.a-0.15)ので、
+    // 下げる前の `frame.origins` を渡す。
     return { handle: result, marks: buildMarks(spec, frame.origins, frame.direction, placements) };
   } catch (error) {
     result.delete();

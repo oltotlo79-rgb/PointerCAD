@@ -2032,8 +2032,10 @@ describe('履歴の再計算(recomputeSolids)', () => {
       '拡大縮小',
       'スイープ',
       'リブ',
+      'リブ(材料まで伸ばさない)',
       'エンボス',
       'ざぐり穴',
+      'ざぐりのねじ穴',
       '外ねじ(簡略)',
       '曲面(押し出し面)',
       '曲面(面のオフセット)',
@@ -2249,6 +2251,30 @@ describe('履歴の再計算(recomputeSolids)', () => {
               expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME + 1600, 6);
             },
           };
+        case 'リブ(材料まで伸ばさない)':
+          return {
+            steps: [
+              plateStep(),
+              step('リブ2', 'key-rib-short', {
+                kind: 'rib',
+                targetKey: 'key-plate',
+                profile: [{ kind: 'segment', from: [0, 15, 30], to: [40, 15, 30] }],
+                normal: [0, 1, 0],
+                thickness: 2,
+                symmetric: true,
+                direction: [0, 0, -1],
+                // 輪郭の長さ(40)ぶんだけ伸ばす。板(z = 0〜10)を突き抜けるので壁は立つ。
+                extendToBody: false,
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 伸ばす長さが変わっても、採る塊は「帯に接している塊」で同じなので 13600
+              // (makeRib.test.ts が同じ配置で固定している)。
+              expect(bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME + 1600, 6);
+            },
+          };
         case 'エンボス': {
           const { top } = plateFaces(40, 30, 10);
           return {
@@ -2296,6 +2322,40 @@ describe('履歴の再計算(recomputeSolids)', () => {
               // ざぐりぶんの正確な値は makeHole.test.ts が固定している。
               expect(bodies[0].volume).toBeLessThan(EXTRUDE_VOLUME - PLAIN_HOLE_VOLUME);
               expect(bodies[0].volume).toBeGreaterThan(0);
+            },
+          };
+        }
+        case 'ざぐりのねじ穴': {
+          const { top } = plateFaces(40, 30, 10);
+          return {
+            steps: [
+              plateStep(),
+              step('ねじ穴1', 'key-thread-counterbore', {
+                kind: 'thread',
+                targetKey: 'key-plate',
+                face: top,
+                centers: [[20, 15, 10]],
+                // 下穴 φ6 で入口を φ11 深さ 4 に広げる(簡略表示なので実らせんは切らない)。
+                drillDiameter: 6,
+                depth: null,
+                tiltAngle: 0,
+                tiltAzimuth: 0,
+                transforms: [],
+                thread: null,
+                mark: { majorDiameter: 8, length: 10 },
+                entry: { kind: 'counterbore', diameter: 11, depth: 4 },
+              }),
+            ],
+            bodyCount: 1,
+            built: 2,
+            check: (bodies) => {
+              // 入口の指定が makeThreadHole まで届いていれば、真っ直ぐな下穴より多く削れる。
+              // ざぐりぶんの正確な値は makeThread.test.ts が固定している。
+              expect(bodies[0].volume).toBeLessThan(EXTRUDE_VOLUME - PLAIN_HOLE_VOLUME);
+              expect(bodies[0].volume).toBeGreaterThan(0);
+              // 印は入口があっても変わらない(§0.a-0.15)。
+              expect(bodies[0].threadMarks).toHaveLength(1);
+              expect(bodies[0].threadMarks[0].origin).toEqual([20, 15, 10]);
             },
           };
         }

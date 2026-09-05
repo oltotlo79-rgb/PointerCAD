@@ -384,6 +384,69 @@ describe('リブ(FR-420)', () => {
     });
   });
 
+  describe('材料まで伸ばさないリブ(extendToBody: false、タスク42c)', () => {
+    /**
+     * 板の 20 mm 上に置いた長さ 5 の短い線(x = 10 → 15、z = 30)。
+     * 輪郭の長さぶん(5 mm)しか伸ばさないと z = 25 までしか下りず、板に届かない。
+     */
+    const LINE_TOO_SHORT: readonly CurveSpec[] = [
+      { kind: 'segment', from: [10, 15, PROFILE_Z], to: [15, 15, PROFILE_Z] },
+    ];
+
+    /** 短い輪郭を材料まで伸ばしたときの壁: 長さ 5 × 厚み 2 × 高さ 20 = 200 mm³。 */
+    const SHORT_REACHED_VOLUME = 200;
+
+    it('省略と true は同じ(今までどおり材料まで伸ばす。体積 13600)', () => {
+      withPlate((plate) => {
+        const result = makeRib(oc, plate.shape, withInput(RIB_ACROSS, { extendToBody: true }));
+        try {
+          expect(result.volume).toBeCloseTo(PLATE_VOLUME + WALL_VOLUME, 6);
+        } finally {
+          result.delete();
+        }
+      });
+    });
+
+    it('輪郭の長さ(40)で板を突き抜ける置き方なら、伸ばさなくてもリブになる', () => {
+      withPlate((plate) => {
+        const result = makeRib(oc, plate.shape, withInput(RIB_ACROSS, { extendToBody: false }));
+        try {
+          // 壁は z = 30 から輪郭の長さ 40 ぶん下りて z = −10 まで届く。板の下へ抜けた塊は
+          // 帯に接していないので採らない(採る決まりは伸ばすときと同じ)。
+          expect(result.volume).toBeCloseTo(PLATE_VOLUME + WALL_VOLUME, 6);
+          expect(result.volume).toBeGreaterThan(PLATE_VOLUME);
+          expect(hasSolid(oc, result.shape)).toBe(true);
+          expect(isValidShape(oc, result.shape)).toBe(true);
+        } finally {
+          result.delete();
+        }
+      });
+    });
+
+    it('輪郭が短くて板に届かない置き方は断る(伸ばせば作れる同じ輪郭)', () => {
+      withPlate((plate) => {
+        // 材料まで伸ばす指定なら、同じ輪郭でも壁が立つ(12000 + 5 × 2 × 20 = 12200)。
+        const reached = makeRib(
+          oc,
+          plate.shape,
+          withInput(RIB_ACROSS, { profile: LINE_TOO_SHORT, extendToBody: true }),
+        );
+        try {
+          expect(reached.volume).toBeCloseTo(PLATE_VOLUME + SHORT_REACHED_VOLUME, 6);
+        } finally {
+          reached.delete();
+        }
+        expect(() =>
+          makeRib(
+            oc,
+            plate.shape,
+            withInput(RIB_ACROSS, { profile: LINE_TOO_SHORT, extendToBody: false }),
+          ),
+        ).toThrow('リブが材料に届きません。');
+      });
+    });
+  });
+
   it('1 段の所要が 500ms 未満', () => {
     withPlate((plate) => {
       const startedAt = performance.now();

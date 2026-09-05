@@ -21,7 +21,8 @@ import { makeCompound } from './transformShape.js';
  *   ① 輪郭(開いた線)から 1 本のワイヤを組み、法線の向きへ `thickness` ぶん押し出して
  *      薄い帯(シェル)にする。`symmetric` なら先に法線の逆へ `thickness / 2` ずらす。
  *   ② その帯を `direction` へ、対象と帯の両方を包む境界箱の対角ぶん(+ 余裕)押し出して
- *      長い壁にする。
+ *      長い壁にする。**`extendToBody: false` のときだけ、長さを輪郭の長さにする**
+ *      (タスク42c。材料に届かなければ断る)。
  *   ③ 壁から対象を**引く**(`Cut`)。残った塊のうち**帯に接している塊だけ**を採る。
  *      これが「輪郭から材料に当たるまで」の部分、すなわちリブの本体になる。
  *   ④ 対象と `Fuse` して 1 つの立体にする。
@@ -76,6 +77,15 @@ const NO_THICKNESS_MESSAGE = 'リブに厚みが出ませんでした。厚み�
 /** 伸ばした先に材料が無かったとき(計画書 タスク38 の検証表の文言、NFR-UX-5)。 */
 const NOT_REACHED_MESSAGE = 'リブが立体に届いていません。位置を見直してください。';
 
+/**
+ * 「材料まで伸ばさない」リブ(`extendToBody: false`)の壁が材料へ届かないとき。
+ *
+ * 届かないまま和を取ると**離れた 2 つの塊**になり、1 つのボディという約束が崩れる
+ * (§0.a-0.5)。伸ばす長さを利用者が輪郭で決めている以上、勝手に伸ばして
+ * つなぐこともできないので、理由をつけて断る(FR-504)。
+ */
+const NOT_TOUCHING_MESSAGE = 'リブが材料に届きません。';
+
 /** 輪郭がすでに材料の中(または面の上)にあり、足すものが無いとき。 */
 const INSIDE_MESSAGE = 'リブの輪郭が立体の中にあります。輪郭を立体の外へ置いてください。';
 
@@ -94,6 +104,15 @@ export interface RibInput {
   readonly symmetric: boolean;
   /** 伸ばす向き(材料へ向かう向き)。 */
   readonly direction: Vec3Tuple;
+  /**
+   * 材料に届くまで壁を伸ばすか(**省くと true = タスク38 からの振る舞いのまま**)。
+   *
+   * `false` のときは伸ばす長さを**輪郭の長さ**(稜線の長さの合計)にする。
+   * 段の欄に長さが無いので、利用者が引いた輪郭そのものを物差しにするしかなく、
+   * model 側の型(`RibFeature.extendToBody`)も「輪郭の長さぶんだけの壁を立てる」と
+   * 決めてある(タスク46)。届かない置き方は `NOT_TOUCHING_MESSAGE` で断る。
+   */
+  readonly extendToBody?: boolean;
 }
 
 /**
@@ -110,6 +129,24 @@ function normalizeDirection(vector: Vec3Tuple): Vec3Tuple | null {
     return null;
   }
   return [x / length, y / length, z / length];
+}
+
+/**
+ * ワイヤの長さ(mm)。`BRepGProp.LinearProperties` は稜線の長さの合計を返す。
+ *
+ * `makeSweep.ts` に同じ 5 行の関数があるが、あちらは輸出していない
+ * (このタスクでは `makeSweep.ts` を変えない決め)。`normalizeDirection` と同じく、
+ * 輸出の整理をするときに共通の置き場へ寄せることを統括へ提案する。
+ */
+function wireLength(
+  oc: OpenCascadeInstance,
+  wire: TopoDS_Shape,
+  keep: Allocations['keep'],
+): number {
+  const properties = keep(new oc.GProp_GProps_1());
+  // 第 3・第 4 引数は SkipShared と UseTriangulation(solidMesh.ts の測り方と同じ指定)。
+  oc.BRepGProp.LinearProperties(wire, properties, false, false);
+  return properties.Mass();
 }
 
 /** 形を向きへ平行移動した複製を作る(もとの形は変えない)。 */
@@ -310,6 +347,8 @@ export function makeRib(
   if (normal === null || direction === null) {
     throw new Error(NO_DIRECTION_MESSAGE);
   }
+  // 省略は「材料まで伸ばす」(タスク38 からの振る舞い)。
+  const extendToBody = input.extendToBody ?? true;
 
   const { keep, release } = createAllocations();
 
@@ -339,12 +378,23 @@ export function makeRib(
     }
     // 壁を伸ばす長さの余裕(§0.a-0.12、makeSolidSweep.ts の `toNext` と同じ決め)。
     // 対象の面とちょうど接する形はブーリアンが最も苦手なので、必ず突き抜けさせる。
-    const wallLength = diagonal + 2 * booleanMargin(diagonal);
+    //
+    // **「材料まで伸ばさない」(`extendToBody: false`)ときだけ、長さを輪郭の長さにする。**
+    // 分岐はこの 1 行だけで、③④(壁 − 対象 → 帯に接する塊 → 和)はどちらでも同じ道を通る。
+    const wallLength = extendToBody
+      ? diagonal + 2 * booleanMargin(diagonal)
+      : wireLength(oc, wire, keep);
     const wall = extrude(oc, keep, strip, direction, wallLength);
 
     // 法線と伸ばす向きが平行だと、帯を自分の面の中で掃くことになり体積が出ない。
     if (Math.abs(measureVolume(oc, wall)) < MIN_SOLID_VOLUME) {
       throw new Error(NO_THICKNESS_MESSAGE);
+    }
+
+    // 伸ばさないときは、壁が材料に当たっているかを先に見る(当たっていなければ和が
+    // 離れた 2 つの塊になる)。ブーリアンより手前で断るほうが速く、理由も正しく出せる。
+    if (!extendToBody && shortestDistance(oc, wall, target) > TOUCH_TOLERANCE_MM) {
+      throw new Error(NOT_TOUCHING_MESSAGE);
     }
 
     // ③ 壁から対象を引き、帯に接している塊(= 輪郭から材料までの空間)だけを残す。
@@ -372,7 +422,9 @@ export function makeRib(
     );
 
     // 壁の端まで届いた = 途中で材料に当たらなかった。どこまで伸ばすかが決まらないので断る。
-    if (reachedFarEnd) {
+    // **伸ばさないときは端まで残るのが当たり前**(長さを輪郭が決めている)なので見ない。
+    // 材料に当たっているかは、壁を作った直後に距離で確かめてある。
+    if (extendToBody && reachedFarEnd) {
       throw new Error(NOT_REACHED_MESSAGE);
     }
     // 帯から始まる塊が 1 つも無い = 輪郭がすでに材料の中か面の上にある(足すものが無い)。

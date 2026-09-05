@@ -782,6 +782,19 @@ export interface ThreadStepSpec {
   readonly thread: ThreadCutSpec | null;
   /** 画面へ返すねじの印(簡略表示、§0.a-0.15)。実形状のときも返してよい。 */
   readonly mark: ThreadMarkSpec | null;
+  /**
+   * 下穴の入口の形(ざぐり・皿もみ、FR-422、§0.a-0.39)。**穴(`HoleStepSpec.entry`)と
+   * まったく同じ扱い**で、形の定義は `occt/makeHole.ts` の `HoleEntrySpec` が正本
+   * (皿もみの角度は**ラジアン**。深さは kernel が角度と径から出す)。
+   *
+   * **省くと今までどおりの真っ直ぐな下穴**(`{ kind: 'plain' }`)になる。
+   * ねじ山は入口の底から始まる(`occt/makeThread.ts` の `threadOrigins`)ので、
+   * 削れる量は「入口が無いときの削れ量 + 入口の削れ量」になる。
+   *
+   * 任意の欄にしてあるのは穴と同じ理由(欄を組み立てる model 側を直すのが別のタスク)で、
+   * model が既定 `{ kind: 'plain' }` を必ず入れるようになったら必須へ引き上げてよい。
+   */
+  readonly entry?: HoleEntrySpec;
 }
 
 /**
@@ -1126,6 +1139,13 @@ export interface RibStepSpec {
   readonly symmetric: boolean;
   /** 伸ばす向き(材料へ向かう向き)。 */
   readonly direction: Vec3Tuple;
+  /**
+   * 材料に届くまで壁を伸ばすか(**省くと true = 今までどおり**)。
+   *
+   * `false` のときは伸ばす長さを**輪郭の長さ**にする(`occt/makeRib.ts`)。
+   * 短すぎて材料に届かない置き方は 2 つに分かれたボディになるので断る(FR-504)。
+   */
+  readonly extendToBody?: boolean;
 }
 
 /**

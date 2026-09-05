@@ -124,6 +124,30 @@ export type HoleEntrySpec =
 /** 入口を広げない指定。引数を省いた呼び出しと、古い文書の既定値がこれになる。 */
 const PLAIN_ENTRY: HoleEntrySpec = { kind: 'plain' };
 
+/**
+ * 入口の形が材料へ食い込む深さ(mm)。広げない指定(と省略)は 0。
+ *
+ * **皿もみの深さの式 `(頭径 − 穴の径) / 2 / tan(角度/2)` はここ 1 か所だけに置く。**
+ * 工具を作る `makeEntryTool` と、**ねじの山を入口の底から始める `makeThread.ts`**
+ * が同じ値を要るので、同じ規則を 2 か所に書かないための輸出である(タスク42c)。
+ * 値の正しさ(角度が 0 度より大きく 180 度未満、頭径が穴の径より大きい)は
+ * `checkHoleEntry` が先に確かめる約束で、ここは式だけを持つ。
+ */
+export function holeEntryDepth(entry: HoleEntrySpec | undefined, diameter: number): number {
+  if (entry === undefined) {
+    return 0;
+  }
+  switch (entry.kind) {
+    case 'plain':
+      return 0;
+    case 'counterbore':
+      return entry.depth;
+    case 'countersink':
+      // 半角の正接。90 度皿なら tan(45°) = 1 で、深さは (頭径 − 穴の径)/2 になる。
+      return (entry.diameter - diameter) / 2 / Math.tan(entry.angle / 2);
+  }
+}
+
 /** 面の向きから求めた、穴をあけるための座標系(§2.4.2)。 */
 export interface HoleFrame {
   /** 掘り進む向き(単位ベクトル)。傾きを適用した後。 */
@@ -425,9 +449,10 @@ function makeEntryTool(
       return keep(maker.Shape());
     }
     case 'countersink': {
-      // 半角の正接。90 度皿なら tan(45°) = 1 で、深さは (頭径 − 穴の径)/2 になる。
+      // 半角の正接。口の外側へ伸ばしたぶんだけ半径を広げるのに要る(深さの式は
+      // `holeEntryDepth` に 1 つだけ置いてあるので、ここでは呼ぶだけにする)。
       const tangent = Math.tan(entry.angle / 2);
-      const depth = (entry.diameter - diameter) / 2 / tangent;
+      const depth = holeEntryDepth(entry, diameter);
       const maker = keep(
         new oc.BRepPrimAPI_MakeCone_3(
           axes,

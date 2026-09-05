@@ -4,6 +4,7 @@ import type {
   RigidTransformSpec,
   SolidFaceInfo,
   SubShapeQuery,
+  ThreadMarkInfo,
   ThreadStepSpec,
   Vec3Tuple,
 } from '../types.js';
@@ -11,6 +12,7 @@ import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeBox } from './makeBox.js';
+import type { HoleEntrySpec } from './makeHole.js';
 import { makePrimitive } from './makePrimitive.js';
 import type { ThreadShaftInput } from './makeThread.js';
 import {
@@ -385,6 +387,130 @@ describe('ねじ穴(FR-406、FR-504)', () => {
     } finally {
       handle.delete();
     }
+  });
+
+  describe('下穴の入口(ざぐり・皿もみ、FR-422、計画書 P5 タスク42c)', () => {
+    /** ざぐり φ11 深さ 4(makeHole.test.ts の入口の検査と同じ寸法)。 */
+    const COUNTERBORE: HoleEntrySpec = { kind: 'counterbore', diameter: 11, depth: 4 };
+
+    /** 90 度皿・頭径 12(同上。角度はラジアン)。 */
+    const COUNTERSINK: HoleEntrySpec = { kind: 'countersink', diameter: 12, angle: Math.PI / 2 };
+
+    /**
+     * φ11 深さ 4 のざぐりが、M6 の下穴(D1)に足して削る量。
+     * (π·5.5² − π·(D1/2)²)·4 = 304.1607…
+     */
+    const COUNTERBORE_EXTRA =
+      (Math.PI * 5.5 * 5.5 - Math.PI * (M6_MINOR_DIAMETER / 2) ** 2) * 4;
+
+    /**
+     * 90 度皿・頭径 12・**下穴 φ6** の円錐が余分に削る量 π·36。
+     * makeHole.test.ts の `COUNTERSINK_EXTRA` と同じ導出
+     * (π·3/3·(36+18+9) − π·9·3 = π·36)で、下穴の径を 6 に揃えて比べる。
+     */
+    const COUNTERSINK_EXTRA = Math.PI * 36;
+
+    /** ねじ穴 1 つをあけて体積を測る(形は必ず解放する)。 */
+    function threadVolume(overrides: Partial<ThreadStepSpec>): number {
+      const { handle, faces, top } = plateWithTopFace();
+      try {
+        const { handle: result } = makeThreadHole(
+          oc,
+          threadSpec({ face: faceQuery(top), ...overrides }),
+          handle.shape,
+          faces,
+        );
+        try {
+          expect(hasSolid(oc, result.shape)).toBe(true);
+          expect(isValidShape(oc, result.shape)).toBe(true);
+          return measureVolume(oc, result.shape);
+        } finally {
+          result.delete();
+        }
+      } finally {
+        handle.delete();
+      }
+    }
+
+    it('簡略表示の M6 に φ11 深さ 4 のざぐりが付く(下穴だけの値 − ざぐりの増分)', () => {
+      expectVolume(threadVolume({ entry: COUNTERBORE }), M6_DRILLED_VOLUME - COUNTERBORE_EXTRA);
+    });
+
+    it('皿もみが余分に削る量は π·36(下穴 φ6 で穴と同じ導出)', () => {
+      const plain = threadVolume({ drillDiameter: 6 });
+      const sunk = threadVolume({ drillDiameter: 6, entry: COUNTERSINK });
+      expectVolume(plain - sunk, COUNTERSINK_EXTRA, 1e-6);
+      expect(COUNTERSINK_EXTRA).toBeCloseTo(113.09733552923255, 9);
+    });
+
+    it('入口を省くと今までどおりの真っ直ぐな下穴になる(既定は plain)', () => {
+      expectVolume(threadVolume({}), M6_DRILLED_VOLUME);
+      expectVolume(threadVolume({ entry: { kind: 'plain' } }), M6_DRILLED_VOLUME);
+    });
+
+    it('入口の値が使えないときは、穴とまったく同じ文言で断る', () => {
+      const { handle, faces, top } = plateWithTopFace();
+      try {
+        const attempt = (entry: HoleEntrySpec): (() => void) => {
+          return () => {
+            makeThreadHole(
+              oc,
+              threadSpec({ face: faceQuery(top), entry }),
+              handle.shape,
+              faces,
+            );
+          };
+        };
+        expect(attempt({ kind: 'counterbore', diameter: 4, depth: 4 })).toThrow(
+          /ざぐりの径は穴の径より大きくしてください。/,
+        );
+        expect(attempt({ kind: 'counterbore', diameter: 11, depth: 0 })).toThrow(
+          /ざぐりの深さは 0 より大きい数にしてください。/,
+        );
+        expect(attempt({ kind: 'countersink', diameter: 12, angle: 0 })).toThrow(
+          /皿もみの角度は 0 度より大きく 180 度未満にしてください。/,
+        );
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('印は入口があっても変わらない(入口は形にだけ効く、§0.a-0.15)', () => {
+      const { handle, faces, top } = plateWithTopFace();
+      try {
+        const marksOf = (entry: HoleEntrySpec | undefined): readonly ThreadMarkInfo[] => {
+          const { handle: result, marks } = makeThreadHole(
+            oc,
+            threadSpec({ face: faceQuery(top), ...(entry === undefined ? {} : { entry }) }),
+            handle.shape,
+            faces,
+          );
+          result.delete();
+          return marks;
+        };
+        expect(marksOf(COUNTERBORE)).toEqual(marksOf(undefined));
+        expect(marksOf(COUNTERBORE)[0].origin).toEqual([20, 15, 10]);
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('実らせんの削れ量は「入口が無いときの削れ量 + 入口の増分」になる', () => {
+      // ねじ部は 5 mm。ざぐりの底(深さ 4)から始めても板(厚み 10)の中に収まるので、
+      // 溝の削る量は入口の有無で変わらない(`threadOrigins` の注釈)。
+      const thread = { majorDiameter: 6, pitch: 1, length: 5 } as const;
+      const plain = threadVolume({ thread });
+      const bored = threadVolume({ thread, entry: COUNTERBORE });
+      // 溝は下穴より外を削るので、実らせんは必ず下穴だけより体積が小さい。
+      expect(plain).toBeLessThan(M6_DRILLED_VOLUME);
+      // 掃引面は B スプラインで近似されるので厳密には一致しない。2026-09-05 に Node で
+      // 実測した差は 1.966e-4 mm³(板の体積 12000 に対する相対 1.64e-8)だったので、
+      // **板の体積に対する相対 1e-7(= 1.2e-3 mm³)**で固定する(実測の 6 倍の余裕)。
+      console.log(
+        `実らせん + ざぐりの増分: 実測 ${(plain - bored).toFixed(9)} / 期待 ${COUNTERBORE_EXTRA.toFixed(9)} mm³`,
+      );
+      expect(Math.abs(plain - bored - COUNTERBORE_EXTRA)).toBeLessThan(12000 * 1e-7);
+    });
   });
 
   describe('おねじ(FR-423、計画書 P5 タスク40)', () => {

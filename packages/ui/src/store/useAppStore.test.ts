@@ -49,6 +49,7 @@ import { createNumericInput } from '../sketch/numericInput.js';
 import { commitConstraintFromSelection } from '../sketch/constraintCommands.js';
 import { EMPTY_SHAPE_DRAFT } from '../sketch/shapeCommands.js';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
+import type { MeasurementState } from '../viewport/createMeasureLayer.js';
 import {
   attachPartRecompute,
   createInitialDocumentState,
@@ -2206,5 +2207,92 @@ describe('つまみの初回の案内(FR-507、利用者の決定①、P4b タ�
     useAppStore.getState().applyDocument(one);
     useAppStore.getState().applyDocument(appendSolid(one, extrudeFeature('extrude-2')));
     expect(useAppStore.getState().timelineNoticeKey).toBeNull();
+  });
+});
+
+/*
+ * 測定の欄(FR-1102、P5 タスク31)。**測る・消すの操作はタスク32** で、ここが決めるのは
+ * 「結果を持つ欄」と「いつ消えるか」だけ。要件の「モデルを変更するまで残る」を、
+ * `affectsShape` の真偽そのままで固定する(§0.a-0.29)。
+ */
+describe('測定の結果の消え方(FR-1102、P5 タスク31)', () => {
+  /** 40×30×10 の板の向かい合う面の距離(タスク30 の計算そのまま)。 */
+  const MEASUREMENT: MeasurementState = {
+    result: {
+      kind: 'faceDistance',
+      value: 10,
+      unit: 'mm',
+      segment: [
+        [20, 15, 0],
+        [20, 15, 10],
+      ],
+    },
+    text: '10.000 mm',
+    angle: null,
+    anchor: null,
+  };
+
+  beforeEach(() => {
+    useAppStore.setState(createInitialDocumentState());
+  });
+
+  it('起動直後は何も測っていない', () => {
+    expect(useAppStore.getState().measurement).toBeNull();
+  });
+
+  it('形が変わると消える', () => {
+    useAppStore.setState({ measurement: MEASUREMENT });
+    useAppStore.getState().applyDocument(appendSolid(partWithPoint(), extrudeFeature('extrude-1')));
+    expect(useAppStore.getState().measurement).toBeNull();
+  });
+
+  it('外観だけを変えても残る(形は 1 ミリも動いていない)', () => {
+    useAppStore.getState().applyDocument(appendSolid(partWithPoint(), extrudeFeature('extrude-1')));
+    useAppStore.setState({ measurement: MEASUREMENT });
+
+    const painted = assignBodyAppearance(
+      useAppStore.getState().document,
+      'extrude-1',
+      appearanceFromPreset('steel'),
+    );
+    useAppStore.getState().applyDocument(painted);
+
+    expect(appearanceOf(useAppStore.getState().document).entries).toHaveLength(1);
+    expect(useAppStore.getState().measurement).toBe(MEASUREMENT);
+  });
+
+  it('取り消しで形が戻ると消える', () => {
+    useAppStore.getState().applyDocument(appendSolid(partWithPoint(), extrudeFeature('extrude-1')));
+    useAppStore.setState({ measurement: MEASUREMENT });
+
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().measurement).toBeNull();
+  });
+
+  it('外観だけの取り消し・やり直しでは残る(FR-505、FR-1110)', () => {
+    useAppStore.getState().applyDocument(appendSolid(partWithPoint(), extrudeFeature('extrude-1')));
+    useAppStore
+      .getState()
+      .applyDocument(
+        assignBodyAppearance(
+          useAppStore.getState().document,
+          'extrude-1',
+          appearanceFromPreset('steel'),
+        ),
+      );
+    useAppStore.setState({ measurement: MEASUREMENT });
+
+    useAppStore.getState().undo();
+    expect(appearanceOf(useAppStore.getState().document).entries).toHaveLength(0);
+    expect(useAppStore.getState().measurement).toBe(MEASUREMENT);
+
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().measurement).toBe(MEASUREMENT);
+  });
+
+  it('新しい部品にすると消える(前の部品の値は当てはまらない)', () => {
+    useAppStore.setState({ measurement: MEASUREMENT });
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    expect(useAppStore.getState().measurement).toBeNull();
   });
 });

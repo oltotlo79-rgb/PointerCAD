@@ -79,6 +79,13 @@ export interface ThemeColors {
   readonly constraintConflict: number;
   /** 「固定」の印。動かない点であることを、他の拘束と別の色で見分ける。 */
   readonly constraintFixed: number;
+  /**
+   * 測定の線・端の丸・弧・値の札(FR-1102、P5 タスク31)。選択(青)・ホバー(淡い青)・
+   * トリムで消える区間(赤)と混ざらない橙系にして、「いま測った値」だと一目で分かるようにする。
+   * 5 テーマすべてで、ビューポートの地(`--pcad-viewport-top` / `--pcad-viewport-bottom`)
+   * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
+   */
+  readonly measure: number;
   /** 半球光の地面側の色。明るいテーマでは立体の下面が沈みすぎないよう明るくする。 */
   readonly sceneGround: number;
   /**
@@ -127,6 +134,8 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   constraintRedundant: 0xc8a04a,
   constraintConflict: 0xff6b6b,
   constraintFixed: 0xc08cff,
+  // 測定(P5 タスク31)。ダークの値は appShell.css の :root と同じ。
+  measure: 0xffa64d,
   sceneGround: 0x3a3f4a,
   // ビューキューブ(P0〜P3 で faceTexture.ts / createViewCubeScene.ts が直接持っていた定数)。
   viewCubeFaceTop: 0xeef1f6,
@@ -166,6 +175,7 @@ export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
   constraintRedundant: '--pcad-constraint-redundant',
   constraintConflict: '--pcad-constraint-conflict',
   constraintFixed: '--pcad-constraint-fixed',
+  measure: '--pcad-measure',
   sceneGround: '--pcad-scene-ground',
   viewCubeFaceTop: '--pcad-viewcube-face-top',
   viewCubeFaceFront: '--pcad-viewcube-face-front',
@@ -263,6 +273,7 @@ export function themeColorsFrom(read: (token: string) => string): ThemeColors {
     constraintRedundant: colors.constraintRedundant,
     constraintConflict: colors.constraintConflict,
     constraintFixed: colors.constraintFixed,
+    measure: colors.measure,
     sceneGround: colors.sceneGround,
     viewCubeFaceTop: colors.viewCubeFaceTop,
     viewCubeFaceFront: colors.viewCubeFaceFront,

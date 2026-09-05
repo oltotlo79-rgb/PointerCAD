@@ -40,6 +40,7 @@ import {
 import type { ConstraintMark } from '../sketch/constraintPicking.js';
 import { constraintKindSymbol } from '../sketch/constraintSummary.js';
 import { createConstraintLayer } from './createConstraintLayer.js';
+import { createMeasureLayer, type MeasurementState } from './createMeasureLayer.js';
 import { createReferenceLayer } from './createReferenceLayer.js';
 import { createSketchLayer } from './createSketchLayer.js';
 import { createTrackingLayer } from './createTrackingLayer.js';
@@ -164,6 +165,11 @@ export interface ViewportScene {
   setSelectedConstraint(constraintId: string | null): void;
   /** 基準ジオメトリ(基準軸・基準点・座標系、FR-329)を出す。 */
   setReferences(references: ResolvedReferences): void;
+  /**
+   * 測定の結果(FR-1102、P5 タスク31)。測った 2 点を結ぶ線と端の丸、角度の 2 本の線と弧、
+   * 値の札を出す。`null` で消す。**同じものを渡し直したときは並びを触らない**(NFR-PF-1)。
+   */
+  setMeasurement(measurement: MeasurementState | null): void;
   /** ワールド座標を canvas 上の画素座標へ。まだ一度も描いていない・画面の外なら null。 */
   worldToScreen(point: Vec3): readonly [number, number] | null;
   /** canvas 上の画素座標から、作図面の上の点を求める。平面と視線が平行なら null。 */
@@ -427,6 +433,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   // (`constraintSummary.ts`)から値として受け取る(同じ表を 2 か所に書かない)。
   const constraintLayer = createConstraintLayer(constraintKindSymbol('fix'));
   scene.add(constraintLayer.group);
+  // 測定の結果(FR-1102、P5 タスク31)。線・弧・端の丸・値の札を、他の重ね描きより手前に出す。
+  const measureLayer = createMeasureLayer();
+  scene.add(measureLayer.group);
 
   let currentSpacing = 0;
 
@@ -546,6 +555,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す(P4 仕上げ (f))。
     // ズームでカメラ距離が変わるたびに効くよう、描画のたびに計算し直す。
     referenceLayer.updateScreenScale(orbit.distance, height, uiScale);
+    // 測定の値の札も同じ大きさ(約 13px)にそろえる(P5 タスク31)。
+    measureLayer.updateScreenScale(orbit.distance, height, uiScale);
 
     updateKeyLight(orbit);
 
@@ -698,6 +709,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       referenceLayer.setThemeColors(colors);
       trackingLayer.setThemeColors(colors);
       constraintLayer.setThemeColors(colors);
+      measureLayer.setThemeColors(colors);
     },
 
     setWorkPlaneVisible(visible): void {
@@ -726,6 +738,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     setReferences(references): void {
       referenceLayer.update(references);
+    },
+
+    setMeasurement(measurement): void {
+      measureLayer.update(measurement);
     },
 
     worldToScreen(point): readonly [number, number] | null {
@@ -786,6 +802,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       referenceLayer.dispose();
       trackingLayer.dispose();
       constraintLayer.dispose();
+      measureLayer.dispose();
       grid.geometry.dispose();
       axisLines.geometry.dispose();
       lineMaterial.dispose();

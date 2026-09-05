@@ -91,6 +91,7 @@ import {
   type SelectionKind,
 } from '../solid/subShapeSelection.js';
 import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
+import type { MeasurementState } from '../viewport/createMeasureLayer.js';
 import type { SketchDrag } from '../viewport/dragSketch.js';
 
 /** 透視投影 / 平行投影(FR-102)。 */
@@ -516,6 +517,19 @@ export interface AppState {
    * (`shapeErrorMessage` と同じ事情)。文書が変われば用済みなので `applyDocument` が落とす。
    */
   readonly originNoticeMessage: string | null;
+  /**
+   * いま画面に出している測定の結果(FR-1102、P5 タスク31)。無ければ null。
+   *
+   * ビューポートの層(`createMeasureLayer.ts`)が線・弧・端の丸・値の札を出し、
+   * プロパティ欄(タスク32)が同じものを数字で出す。**測る・消すの操作はタスク32** で、
+   * ここは「結果を持つ欄」と「いつ消えるか」だけを決める。
+   *
+   * **形が変わったら消す**(FR-1102「モデルを変更するまで残る」、§0.a-0.29)。判定は
+   * `affectsShape` で、`applyDocument` / `undo` / `redo` の 3 か所が落とす。**外観だけの
+   * 変更(FR-1106〜1110)では消えない**(形は 1 ミリも動いていないので、測った値は
+   * そのまま正しい)。
+   */
+  readonly measurement: MeasurementState | null;
   /**
    * 最後にビューポートで何かを選んだ場所(canvas の左上を原点とした画素)。
    * ソリッドの道具のその場入力を、選んだものの近くへ出すのに使う(NFR-UX-2)。
@@ -1163,6 +1177,7 @@ export function createInitialDocumentState(): Pick<
   | 'appearanceErrorKey'
   | 'editNoticeKey'
   | 'originNoticeMessage'
+  | 'measurement'
   | 'pickAnchor'
   | 'fileGateway'
   | 'fileName'
@@ -1245,6 +1260,8 @@ export function createInitialDocumentState(): Pick<
     appearanceErrorKey: null,
     editNoticeKey: null,
     originNoticeMessage: null,
+    // 起動直後は何も測っていない(FR-1102、P5 タスク31)。
+    measurement: null,
     pickAnchor: null,
     // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める(§2.10)。
     fileGateway: createBrowserFileGateway(),
@@ -1480,6 +1497,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // トリム・延長の予告は「いまの形」の上の区間なので、形が変われば描き直し
         // (次にマウスが動いたときに出し直す。タスク22)。
         editPreview: null,
+        // 測定は**形が変わったときだけ**消す(FR-1102「モデルを変更するまで残る」、
+        // §0.a-0.29。外観だけの変更では形が 1 ミリも動かないので測った値は正しいまま)。
+        measurement: affectsShape(state.document, next) ? null : state.measurement,
       };
     });
     /*
@@ -1596,6 +1616,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         recomputeCancelled: false,
         // 「原点を移しました」は取り消した後には嘘になるので落とす(FR-331、タスク35b)。
         originNoticeMessage: null,
+        // 測定も、形が戻ったのなら測り直し(FR-1102。外観だけの取り消しでは残す)。
+        measurement: affectsShape(state.document, stack.present) ? null : state.measurement,
         // つまみは末尾へ戻す(FR-507、タスク19)。取り消し・やり直しで履歴の件数が
         // 変わりうるので、同じ通し番号が前と同じ段を指すとは限らない。
         timelineIndex: null,
@@ -1620,6 +1642,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         recomputeCancelled: false,
         // やり直しでも同じ(取り消しの `undo` と揃える。FR-331、タスク35b)。
         originNoticeMessage: null,
+        measurement: affectsShape(state.document, stack.present) ? null : state.measurement,
         timelineIndex: null,
         timelineNoticeKey: null,
         // 順序の入れ替えの断りも、時をまたぐ差し替えの後には合わないので落とす(FR-504)。
@@ -1940,6 +1963,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       appearanceErrorKey: null,
       editNoticeKey: null,
       originNoticeMessage: null,
+      // 前の部品で測った値は、別の部品には当てはまらない(FR-1102、タスク31)。
+      measurement: null,
       errorMessage: null,
       fileMessage: null,
       recomputeCancelled: false,

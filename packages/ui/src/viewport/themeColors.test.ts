@@ -273,6 +273,43 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     }
   });
 
+  it('測定(FR-1102)は 5 テーマとも地と 3:1 以上で、選択・トリムと別の色(P5 タスク31)', () => {
+    for (const [theme, selector] of THEME_SELECTORS) {
+      const block = blockOf(selector);
+      const measure = parseCssColor(tokenValue(block, '--pcad-measure'));
+      expect(measure, `${theme} の --pcad-measure`).not.toBeNull();
+      if (measure === null) {
+        continue;
+      }
+      // ビューポートの地は上下のグラデーションなので、両端に対して 3:1 以上を求める
+      // (線・端の丸・弧・値の札をすべてこの 1 色で描く)。
+      for (const groundToken of ['--pcad-viewport-top', '--pcad-viewport-bottom']) {
+        const ground = parseCssColor(tokenValue(block, groundToken));
+        expect(ground, `${theme} の ${groundToken}`).not.toBeNull();
+        if (ground === null) {
+          continue;
+        }
+        expect(
+          contrastRatio(measure, ground),
+          `${theme} の --pcad-measure / ${groundToken}`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+      // 「測った値」を、選んでいるもの・消える区間・案内線・拘束の印と取り違えない。
+      for (const otherToken of [
+        '--pcad-emphasis-selected',
+        '--pcad-emphasis-hovered',
+        '--pcad-trim-remove',
+        '--pcad-track',
+        '--pcad-constraint-redundant',
+      ]) {
+        expect(
+          parseCssColor(tokenValue(block, otherToken)),
+          `${theme} の ${otherToken} と同じ色になっていない`,
+        ).not.toBe(measure);
+      }
+    }
+  });
+
   it('拡大率の倍率はルート要素だけが持つ(見本カードの中で等倍へ戻らない)', () => {
     // `:root { --pcad-scale: 1; }` は単独の塊で、テーマの塊には入っていない。
     for (const [theme, selector] of THEME_SELECTORS) {

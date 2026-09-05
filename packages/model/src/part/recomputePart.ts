@@ -118,6 +118,16 @@ export interface PartRecomputeOptions {
    * 覚えておく入れ物。持ち回ると、上流が変わっていない再計算では 2 巡目が起きない。
    */
   readonly subShapes?: SubShapeCache;
+  /**
+   * ボディの表面積(`SolidBody.area`)を測るか(FR-1102、P5 仕上げ (i)、
+   * 統括の決定 2026-09-05 07:28。`kernelBridge.ts` の `SolidRecomputeOptions.measureAreas`
+   * と同じ約束)。
+   *
+   * **既定は測らない(false)。** 穴 20 個の性能の余裕を削らないため(§0.a-0.67)、
+   * 毎回の再計算では測定の費用を払わない。測定・質量特性(タスク29 以降)が表面積を
+   * 求めたときだけ、呼び出し側(ui)がここを true にして呼ぶ。
+   */
+  readonly measureAreas?: boolean;
 }
 
 /** 面を作れなかったとき(P1 の recomputeSketch と同じ文言に揃える)。 */
@@ -251,6 +261,8 @@ async function callSolids(
         onProgress: options.onProgress,
         shouldCancel: options.shouldCancel,
         appearance,
+        // 既定は測らない(NFR-PF-2〜3。§0.a-0.67「穴 20 個の性能の余裕を削らない」)。
+        measureAreas: options.measureAreas ?? false,
       }),
     };
   } catch (error) {
@@ -394,6 +406,13 @@ async function fillProjections(
  * `part/documentChange.ts` の `affectsShape` が持ち、画面側(ストアの購読)が使う。
  * 段の鍵(`cacheKeyFor`)も外観を見ないので、仮に呼んでも全段がキャッシュに当たる
  * (§2.2.3「鍵に混ぜない」との二重の保証)。
+ *
+ * ## 表面積の測定(FR-1102、P5 仕上げ (i))
+ *
+ * `options.measureAreas` を素通しでカーネルへ渡す(`SolidRecomputeOptions.measureAreas` と
+ * 同じ約束)。**既定は false のまま**(§0.a-0.67「穴 20 個の性能の余裕を削らない」)なので、
+ * 呼び出し側が明示的に true を渡さない限り `SolidBody.area` は今までどおり埋まらない。
+ * 測定・質量特性(タスク29 以降)が表面積を使うかどうかは呼び出し側(ui)の判断。
  *
  * ## パラメータ表(FR-207、P4b タスク3)
  *

@@ -36,6 +36,7 @@ import type {
   RibSide,
   RuledSphereSegments,
   SolidFeature,
+  SolidFeatureKind,
   SolidOrigin,
   ThicknessSide,
   ThreadHoleFeature,
@@ -312,6 +313,28 @@ export const DEFAULT_FILLET_RADIUS_END_MM = 5;
  */
 export const DEFAULT_CUT_KEEP: CutFeature['keep'] = 'positive';
 
+/*
+ * 省略できる欄の約束(P5 仕上げ (h)、`docs/報告記録.md` 2026-09-05 23:08 の t47 指摘②)。
+ *
+ * この下にある3つの口(`extrudeShapingOf` / `holeEntryOf` / `filletRadiusOf`)が
+ * 「省略できる欄」を埋める場所を1か所に揃えている。約束は次のとおり:
+ *
+ * - **欄が無い(`undefined`)= 既定。** 既定値は各既定定数(`DEFAULT_EXTRUDE_END` 等)が
+ *   持ち、読む側は必ずこの3つの口を通す。`feature.end ?? ...` を呼び出し側ごとに
+ *   書き直さない(書けば既定値の写しが増え、片方だけ直したときに黙って食い違う)。
+ * - **`null` は、その欄が「無い」こと自体に意味があるときだけ使う。** 例:
+ *   押し出しの `thickness: null` = 中実(壁を作らない、という積極的な指定。
+ *   `undefined` の「値を決めていない」とは別の意味)。
+ * - **それ以外の省略できる欄は `undefined` だけを使う。** `radiusEnd`(可変半径の終点側)
+ *   は `undefined` も `null` も同じ「一定半径」を表す(`thickness` ほど強い意味を
+ *   `null` に持たせていない)ので、読み手(`packages/io` の `readFilletFeature`)は
+ *   `null` を「欄ごと省略」として読み、書き手と対称にする。`entry`(穴の入口)・`end`
+ *   (押し出しの終端)は `undefined` だけを使い、`null` を書かない(書いても
+ *   意味を割り当てていないので、読み手は型違いとして断ってよい)。
+ * - **io はこの既定値を書き出さない。** 欄が既定と同じなら省く(古い版と同じ字面のまま
+ *   保存する、`serializeSolidFeature` の各 `kind` の分岐を参照)。
+ */
+
 /**
  * 押し出しの「終端・傾き・薄板」の欄をすべて埋めた形(FR-415、FR-401、FR-416)。
  *
@@ -433,6 +456,66 @@ export type SolidLabelKey =
   | 'shell'
   /** 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。 */
   | 'cut';
+
+/**
+ * `Record<K, true>` の鍵をそのまま `K[]` として返す小さな道具(h-③)。
+ *
+ * `Object.keys` はいつも `string[]` を返す(TypeScript の仕様)。`as` で無理やり型を
+ * 付け直すのではなく、型ガード(`key is K`)で絞り込む。`record` の鍵がちょうど `K` の
+ * 全体と一致することは、呼び出し側の `satisfies Record<K, true>` が型検査で保証する。
+ */
+function keysOf<K extends string>(record: Readonly<Record<K, true>>): readonly K[] {
+  const isKeyOfRecord = (key: string): key is K => key in record;
+  return Object.keys(record).filter(isKeyOfRecord);
+}
+
+/**
+ * `SolidFeatureKind`(24 種)を漏れなく1つずつ持つ表。**この表に種類を1つ足し忘れると
+ * `satisfies Record<SolidFeatureKind, true>` が型検査で落ちる**(余分な鍵を書いても同様)。
+ * `SOLID_FEATURE_KINDS` はこの表の鍵をそのまま並べたもの。
+ */
+const SOLID_FEATURE_KIND_TABLE = {
+  extrude: true,
+  revolve: true,
+  sew: true,
+  boolean: true,
+  hole: true,
+  threadHole: true,
+  fillet: true,
+  chamfer: true,
+  pattern: true,
+  spring: true,
+  primitive: true,
+  ruled: true,
+  loft: true,
+  draft: true,
+  mirror: true,
+  transform: true,
+  scale: true,
+  sweep: true,
+  rib: true,
+  emboss: true,
+  threadShaft: true,
+  surface: true,
+  shell: true,
+  cut: true,
+} satisfies Record<SolidFeatureKind, true>;
+
+/**
+ * 実行時に持てる `SolidFeatureKind` の一覧(24 種、P5 仕上げ (h)、
+ * `docs/報告記録.md` 2026-09-05 23:08 の t47 指摘③)。
+ *
+ * これまで `packages/io`(妥当性検査の選択肢)と `packages/ui`(自前の一覧)が
+ * それぞれ種類の一覧を手書きで持っていて、`SolidFeatureKind` に種類を1つ足しても
+ * 揃えて直す仕組みが無かった。ここを唯一の実行時の一覧にし、`io` はこれを輸入する
+ * (このタスクで置き換え済み)。`ui` の自前の一覧の置き換えは後続タスクの担当。
+ *
+ * `SOLID_LABELS`(`SolidLabelKey` の表、32 種)とは鍵の粒度が違うので**同じ配列にはならない**
+ * (ブーリアン・パターン・基本形状は複数の連番の単位に分かれる。上の `SolidLabelKey` の
+ * 定義を参照)。網羅は `SOLID_FEATURE_KIND_TABLE` の `satisfies` が型検査で保証していて、
+ * こちらの一覧は実行時にその鍵を並べただけである。
+ */
+export const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = keysOf(SOLID_FEATURE_KIND_TABLE);
 
 /**
  * ソリッドの種類ごとの既定名。ドキュメントの既定データとしてここに置く

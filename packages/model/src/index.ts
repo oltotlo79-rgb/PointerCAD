@@ -447,3 +447,9 @@ export { sketchIdOfPointReference } from './part/resolvePart.js';
  */
 export type { CutFeature } from './part/types.js';
 export { DEFAULT_CUT_KEEP } from './part/createPartDocument.js';
+/**
+ * `SolidFeatureKind` の実行時の一覧(P5 仕上げ (h)、`docs/報告記録.md` 2026-09-05 23:08 の
+ * t47 指摘③)。`packages/io` の妥当性検査はこれを輸入する(このタスクで置き換え済み)。
+ * `packages/ui` の自前の一覧の置き換えは後続タスクの担当。
+ */
+export { SOLID_FEATURE_KINDS } from './part/createPartDocument.js';

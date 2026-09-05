@@ -4228,6 +4228,40 @@ describe('くり抜き・可変半径・面のオフセットの読み書き(FR-
     expect(filletRadiusOf(parsed)).toEqual({ kind: 'constant', radius: ev('2', 2) });
   });
 
+  it(
+    'radiusEnd に null が書かれた R 面取りも、欄が無いのと同じ一定半径として読める' +
+      '(書き手が undefined も null も欄ごと落とすのと対称にする。' +
+      'docs/報告記録.md 2026-09-05 23:08 の t47 指摘①)',
+    () => {
+      const document = expectOk(
+        parseDocument(
+          rawFile({
+            document: rawDocument({
+              solids: [
+                {
+                  id: 'fillet-1',
+                  kind: 'fillet',
+                  name: 'R面取り1',
+                  suppressed: false,
+                  targetFeatureId: 'extrude-1',
+                  targets: [edgeRef('extrude-1', 0)],
+                  radius: ev('2', 2),
+                  radiusEnd: null,
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const fillet = document.solids[0];
+      if (fillet.kind !== 'fillet') {
+        throw new Error('テストの前提が壊れている: R面取りでない');
+      }
+      expect(fillet.radiusEnd).toBeUndefined();
+      expect(filletRadiusOf(fillet)).toEqual({ kind: 'constant', radius: ev('2', 2) });
+    },
+  );
+
   it('一定半径の R 面取りは書き出しにも `radiusEnd` を出さない(版 5 前半と同じ字面)', () => {
     const document = documentWithSolid({
       id: 'fillet-1',

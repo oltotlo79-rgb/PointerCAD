@@ -653,6 +653,26 @@ describe('部品の再計算(要件§6.3)', () => {
 
     expect(result.generation).toBe(0);
   });
+
+  it(
+    'measureAreas を省くと橋へは false を渡す' +
+      '(P5 仕上げ (i)、§0.a-0.67「穴 20 個の性能の余裕を削らない」)',
+    async () => {
+      const recomputeSolids = recordSolids();
+      const { document } = oneExtrude();
+      await recomputePart(document, fakeBridge({ recomputeSolids }));
+
+      expect(recomputeSolids.mock.calls[0][1]?.measureAreas).toBe(false);
+    },
+  );
+
+  it('measureAreas: true を渡すと、そのまま橋へ渡る', async () => {
+    const recomputeSolids = recordSolids();
+    const { document } = oneExtrude();
+    await recomputePart(document, fakeBridge({ recomputeSolids }), { measureAreas: true });
+
+    expect(recomputeSolids.mock.calls[0][1]?.measureAreas).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

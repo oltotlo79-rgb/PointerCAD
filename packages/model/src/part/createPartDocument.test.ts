@@ -110,6 +110,7 @@ import {
   replaceSolid,
   RULED_SPHERE_SEGMENT_CHOICES,
   setActiveSketch,
+  SOLID_FEATURE_KINDS,
   SOLID_LABELS,
 } from './createPartDocument.js';
 import type {
@@ -1393,6 +1394,42 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
     };
     expect(Object.keys(kinds)).toHaveLength(24);
   });
+
+  it(
+    'SOLID_FEATURE_KINDS(実行時の一覧、P5 仕上げ (h)、t47 指摘③)は24種を重複なく持ち、' +
+      '上のテストで手で数え上げた表(SolidFeatureKind そのものの網羅の確かめ)と同じ集合になる',
+    () => {
+      expect(SOLID_FEATURE_KINDS).toHaveLength(24);
+      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(24);
+      const kinds: Readonly<Record<SolidFeatureKind, true>> = {
+        extrude: true,
+        revolve: true,
+        sew: true,
+        boolean: true,
+        hole: true,
+        threadHole: true,
+        fillet: true,
+        chamfer: true,
+        pattern: true,
+        spring: true,
+        primitive: true,
+        ruled: true,
+        loft: true,
+        draft: true,
+        mirror: true,
+        transform: true,
+        scale: true,
+        sweep: true,
+        rib: true,
+        emboss: true,
+        threadShaft: true,
+        surface: true,
+        shell: true,
+        cut: true,
+      };
+      expect(new Set(SOLID_FEATURE_KINDS)).toEqual(new Set(Object.keys(kinds)));
+    },
+  );
 
   it('基本形状に基準点と向きを渡すと、そのまま入る', () => {
     const document = createEmptyPartDocument();

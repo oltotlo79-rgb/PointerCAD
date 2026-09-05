@@ -11,6 +11,7 @@ import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeBox } from './makeBox.js';
+import type { HoleEntrySpec } from './makeHole.js';
 import { makeHole, makeHoleTools, resolveHoleFrame } from './makeHole.js';
 import { makeExtrudeSolid } from './makeSolidSweep.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
@@ -33,6 +34,14 @@ const THROUGH_HOLE_VOLUME = Math.PI * 3 * 3 * PLATE.dz;
  */
 function expectVolume(actual: number, expected: number): void {
   expect(Math.abs(actual - expected) / Math.abs(expected)).toBeLessThan(1e-9);
+}
+
+/**
+ * 計画書 タスク40 の検証表は**絶対 ±1e-6** で期待値を書いているので、そのまま固定する
+ * (体積 11450 では相対 8.7e-11 にあたり、上の `expectVolume` より 100 倍以上厳しい)。
+ */
+function expectVolumeExact(actual: number, expected: number): void {
+  expect(Math.abs(actual - expected)).toBeLessThan(1e-6);
 }
 
 describe('穴あけ(FR-405、FR-504)', () => {
@@ -586,6 +595,189 @@ describe('穴あけ(FR-405、FR-504)', () => {
     } finally {
       handle.delete();
     }
+  });
+
+  describe('入口の形(ざぐり・皿もみ、FR-422、計画書 P5 タスク40)', () => {
+    const COUNTERBORE: HoleEntrySpec = { kind: 'counterbore', diameter: 11, depth: 4 };
+    /** 90 度皿(開き角)。角度はラジアンで渡す(度からの換算は model の責務)。 */
+    const COUNTERSINK: HoleEntrySpec = { kind: 'countersink', diameter: 12, angle: Math.PI / 2 };
+    /** 90 度皿・頭径 12・下穴 φ6 の円錐が余分に削る量。π·3/3·(36+18+9) − π·9·3 = π·36。 */
+    const COUNTERSINK_EXTRA = Math.PI * 36;
+
+    function drill(entry: HoleEntrySpec, overrides: Partial<HoleStepSpec> = {}): number {
+      const { handle, faces, top } = plateWithTopFace();
+      try {
+        const result = makeHole(
+          oc,
+          holeSpec({ face: faceQuery(top), ...overrides }),
+          handle.shape,
+          faces,
+          entry,
+        );
+        try {
+          expect(hasSolid(oc, result.shape)).toBe(true);
+          expect(isValidShape(oc, result.shape)).toBe(true);
+          return measureVolume(oc, result.shape);
+        } finally {
+          result.delete();
+        }
+      } finally {
+        handle.delete();
+      }
+    }
+
+    /** 入口の形が使えないときの断り。OCCT を呼ぶ前に落ちるので、板は作らなくてよい。 */
+    function expectRejected(entry: HoleEntrySpec, pattern: RegExp): void {
+      const { handle, faces, top } = plateWithTopFace();
+      try {
+        expect(() =>
+          makeHole(oc, holeSpec({ face: faceQuery(top) }), handle.shape, faces, entry),
+        ).toThrow(pattern);
+      } finally {
+        handle.delete();
+      }
+    }
+
+    it('φ6 の貫通穴 + φ11 深さ 4 のざぐり', () => {
+      // 12000 − π·9·10 − (π·5.5² − π·9)·4。計画書 タスク40 の期待値は 11450.221285621786 で、
+      // この式を倍精度で評価した値(…785)との差は 1e-12 と、固定した ±1e-6 の中に入る
+      // (期待値をそのまま数字で書くと丸めで別の値になるため、導出の式で置く)。
+      expectVolumeExact(drill(COUNTERBORE), 12000 - Math.PI * 9 * 10 - (Math.PI * 5.5 * 5.5 - Math.PI * 9) * 4);
+    });
+
+    it('φ6 の貫通穴 + 90 度・頭径 12 の皿もみ', () => {
+      // 12000 − π·9·10 − π·36。計画書 タスク40 の期待値をそのまま置く。
+      expectVolumeExact(drill(COUNTERSINK), 11604.159325647686);
+      expectVolumeExact(12000 - Math.PI * 9 * 10 - COUNTERSINK_EXTRA, 11604.159325647686);
+    });
+
+    it('皿もみが余分に削る量は π·36(貫通穴だけとの差)', () => {
+      expectVolumeExact(drill({ kind: 'plain' }) - drill(COUNTERSINK), COUNTERSINK_EXTRA);
+      expect(COUNTERSINK_EXTRA).toBeCloseTo(113.09733552923255, 9);
+    });
+
+    it('止まり穴にも皿もみが付く(深さ 5 + 90 度・頭径 12)', () => {
+      // 12000 − π·9·5 − π·36。皿もみの円錐と下穴が重なっていても二重に引かれない
+      // (和で 1 つにまとめてから差し引くため)。
+      expectVolumeExact(
+        drill(COUNTERSINK, { depth: 5 }),
+        12000 - Math.PI * 9 * 5 - COUNTERSINK_EXTRA,
+      );
+    });
+
+    it('ざぐりの径が穴の径以下なら断る', () => {
+      expectRejected(
+        { kind: 'counterbore', diameter: 6, depth: 4 },
+        /ざぐりの径は穴の径より大きくしてください。/,
+      );
+      expectRejected(
+        { kind: 'counterbore', diameter: Number.NaN, depth: 4 },
+        /ざぐりの径は穴の径より大きくしてください。/,
+      );
+    });
+
+    it('ざぐりの深さが 0 以下・数でなければ断る', () => {
+      expectRejected(
+        { kind: 'counterbore', diameter: 11, depth: 0 },
+        /ざぐりの深さは 0 より大きい数にしてください。/,
+      );
+      expectRejected(
+        { kind: 'counterbore', diameter: 11, depth: Number.POSITIVE_INFINITY },
+        /ざぐりの深さは 0 より大きい数にしてください。/,
+      );
+    });
+
+    it('皿もみの角度が 0 以下・180 度以上・数でなければ断る', () => {
+      const message = /皿もみの角度は 0 度より大きく 180 度未満にしてください。/;
+      expectRejected({ kind: 'countersink', diameter: 12, angle: 0 }, message);
+      expectRejected({ kind: 'countersink', diameter: 12, angle: Math.PI }, message);
+      expectRejected({ kind: 'countersink', diameter: 12, angle: Number.NaN }, message);
+    });
+
+    it('皿もみの頭の径が穴の径以下なら断る', () => {
+      expectRejected(
+        { kind: 'countersink', diameter: 6, angle: Math.PI / 2 },
+        /皿もみの頭の径は穴の径より大きくしてください。/,
+      );
+    });
+
+    it('ざぐりつきの工具は下穴と 1 つに融けている(体積が和で説明できる)', () => {
+      const { handle, faces, top } = plateWithTopFace();
+      try {
+        const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
+        const tools = makeHoleTools(oc, frame, 6, null, [], COUNTERBORE);
+        try {
+          const diagonal = Math.hypot(PLATE.dx, PLATE.dy, PLATE.dz);
+          const margin = diagonal * 0.01 + 1;
+          // 貫通の円柱 + ざぐりの円柱 − 重なり(ざぐりの中にある下穴のぶん)。
+          // 重なったままコンパウンドへ入れていたら、この和より大きい値になる。
+          expectVolume(
+            measureVolume(oc, tools.shape),
+            Math.PI * 9 * (diagonal + 2 * margin) +
+              Math.PI * 5.5 * 5.5 * (4 + margin) -
+              Math.PI * 9 * (4 + margin),
+          );
+        } finally {
+          tools.delete();
+        }
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('ざぐりつきでも変換(パターン)の数だけ工具が作られる', () => {
+      const { handle, faces, top } = plateWithTopFace();
+      try {
+        const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
+        const single = makeHoleTools(oc, frame, 6, null, [], COUNTERBORE);
+        const doubled = makeHoleTools(
+          oc,
+          frame,
+          6,
+          null,
+          [
+            {
+              translation: [0, 0, 0],
+              rotationOrigin: [0, 0, 0],
+              rotationAxis: [0, 0, 1],
+              rotationAngle: 0,
+            },
+            {
+              translation: [15, 0, 0],
+              rotationOrigin: [0, 0, 0],
+              rotationAxis: [0, 0, 1],
+              rotationAngle: 0,
+            },
+          ],
+          COUNTERBORE,
+        );
+        try {
+          expectVolume(measureVolume(oc, doubled.shape), measureVolume(oc, single.shape) * 2);
+        } finally {
+          doubled.delete();
+          single.delete();
+        }
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('入口の形を省くと今までどおりの真っ直ぐな穴になる', () => {
+      const { handle, faces, top } = plateWithTopFace();
+      try {
+        const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
+        const omitted = makeHoleTools(oc, frame, 6, 4, []);
+        const plain = makeHoleTools(oc, frame, 6, 4, [], { kind: 'plain' });
+        try {
+          expectVolume(measureVolume(oc, omitted.shape), measureVolume(oc, plain.shape));
+        } finally {
+          plain.delete();
+          omitted.delete();
+        }
+      } finally {
+        handle.delete();
+      }
+    });
   });
 
   it('makeHoleTools は貫通で 1 本、止まり穴でも 1 本の円柱を作る(長さが違う)', () => {

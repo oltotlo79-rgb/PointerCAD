@@ -11,8 +11,16 @@ import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeBox } from './makeBox.js';
-import { makeThreadCut, makeThreadHole, threadSweepRadius } from './makeThread.js';
+import { makePrimitive } from './makePrimitive.js';
+import type { ThreadShaftInput } from './makeThread.js';
+import {
+  makeThreadCut,
+  makeThreadHole,
+  makeThreadShaft,
+  threadSweepRadius,
+} from './makeThread.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
+import type { SubShapeTables } from './subShapes.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 
@@ -42,10 +50,14 @@ describe('ねじ穴(FR-406、FR-504)', () => {
     oc = await loadOcctForNode();
   });
 
-  function facesOf(shape: Parameters<typeof collectSubShapes>[1]): readonly SolidFaceInfo[] {
+  function tablesOf(shape: Parameters<typeof collectSubShapes>[1]): SubShapeTables {
     const mesh = tessellate(oc, shape);
     const lines = extractEdges(oc, shape);
-    return collectSubShapes(oc, shape, mesh.faceRanges, lines.edgeRanges).faces;
+    return collectSubShapes(oc, shape, mesh.faceRanges, lines.edgeRanges);
+  }
+
+  function facesOf(shape: Parameters<typeof collectSubShapes>[1]): readonly SolidFaceInfo[] {
+    return tablesOf(shape).faces;
   }
 
   function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
@@ -373,5 +385,202 @@ describe('ねじ穴(FR-406、FR-504)', () => {
     } finally {
       handle.delete();
     }
+  });
+
+  describe('おねじ(FR-423、計画書 P5 タスク40)', () => {
+    /** φ10×20 の軸。底面の中心を原点にして +Z へ立てる。体積 π·5²·20。 */
+    const SHAFT_VOLUME = Math.PI * 25 * 20;
+
+    function shaftWithSideFace(): {
+      handle: OcctShapeHandle;
+      tables: SubShapeTables;
+      side: SolidFaceInfo;
+      bottom: SolidFaceInfo;
+    } {
+      const handle = makePrimitive(oc, {
+        kind: 'primitive',
+        origin: [0, 0, 0],
+        axis: [0, 0, 1],
+        shape: { kind: 'cylinder', radius: 5, height: 20 },
+        originQuery: null,
+        targetKey: null,
+      });
+      const tables = tablesOf(handle.shape);
+      const side = tables.faces.find((face) => face.surfaceKind === 'cylinder');
+      const bottom = tables.faces.find((face) => face.surfaceKind === 'plane');
+      if (side === undefined || bottom === undefined) {
+        handle.delete();
+        throw new Error('軸の円柱面・平面が見つかりませんでした');
+      }
+      return { handle, tables, side, bottom };
+    }
+
+    function shaftInput(
+      overrides: Partial<ThreadShaftInput> & { face: SubShapeQuery },
+    ): ThreadShaftInput {
+      return {
+        majorDiameter: 10,
+        pitch: 1.5,
+        length: 10,
+        fromEnd: 'first',
+        modeled: false,
+        ...overrides,
+      };
+    }
+
+    it('簡略表示(M10)は形を変えず、印だけを返す', () => {
+      const { handle, tables, side } = shaftWithSideFace();
+      try {
+        const { handle: result, mark } = makeThreadShaft(
+          oc,
+          handle.shape,
+          tables,
+          shaftInput({ face: faceQuery(side) }),
+        );
+        try {
+          // 体積 π·25·20 = 1570.7963267948967 のまま(B-rep に触れない、§0.a-0.15)。
+          expectVolume(measureVolume(oc, result.shape), SHAFT_VOLUME);
+          expect(hasSolid(oc, result.shape)).toBe(true);
+          expect(mark.majorDiameter).toBe(10);
+          expect(mark.length).toBe(10);
+          // 切り始めは軸の下端、向きは上端へ。
+          expect(mark.origin[2]).toBeCloseTo(0, 9);
+          expect(mark.direction[2]).toBeCloseTo(1, 9);
+        } finally {
+          result.delete();
+        }
+        // 簡略表示の戻りを解放しても、もとの軸はそのまま使える(同じ実体を指す複製)。
+        expectVolume(measureVolume(oc, handle.shape), SHAFT_VOLUME);
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it("fromEnd が 'last' なら反対の端から切り始める", () => {
+      const { handle, tables, side } = shaftWithSideFace();
+      try {
+        const { handle: result, mark } = makeThreadShaft(
+          oc,
+          handle.shape,
+          tables,
+          shaftInput({ face: faceQuery(side), fromEnd: 'last' }),
+        );
+        try {
+          expect(mark.origin[2]).toBeCloseTo(20, 9);
+          expect(mark.direction[2]).toBeCloseTo(-1, 9);
+        } finally {
+          result.delete();
+        }
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('実らせん(M10×1.5、長さ 10)は軸の外周を削る', () => {
+      const { handle, tables, side } = shaftWithSideFace();
+      try {
+        const elapsed: number[] = [];
+        let volume = 0;
+        // 所要のばらつきが大きい(P3 のねじ穴で 1.5〜3.9 秒)ので 3 回測る。
+        for (let round = 0; round < 3; round += 1) {
+          const started = Date.now();
+          const { handle: result } = makeThreadShaft(
+            oc,
+            handle.shape,
+            tables,
+            shaftInput({ face: faceQuery(side), modeled: true }),
+          );
+          elapsed.push(Date.now() - started);
+          try {
+            volume = measureVolume(oc, result.shape);
+            expect(hasSolid(oc, result.shape)).toBe(true);
+            expect(isValidShape(oc, result.shape)).toBe(true);
+          } finally {
+            result.delete();
+          }
+        }
+        // 溝の体積は解析的に出せないので範囲で固定する(計画書 タスク40 の検証表)。
+        expect(volume).toBeLessThan(SHAFT_VOLUME);
+        expect(volume).toBeGreaterThan(SHAFT_VOLUME * 0.8);
+        // **所要は NFR-PF-2(500ms)を超える**(ねじ穴の実らせんと同じ扱い、§0.a-0.16)。
+        // 上限を緩めないため、ここでは上限の検査を置かず実測値を記録に残す。
+        const sorted = [...elapsed].sort((left, right) => left - right);
+        console.log(
+          `M10×1.5 長さ10 のおねじ(実らせん)1 本の所要: ${sorted.join(' / ')} ms(中央値 ${sorted[1]} ms)`,
+        );
+        expect(elapsed).toHaveLength(3);
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('平面を指したら「円柱の面だけ」と断る', () => {
+      const { handle, tables, bottom } = shaftWithSideFace();
+      try {
+        expect(() =>
+          makeThreadShaft(oc, handle.shape, tables, shaftInput({ face: faceQuery(bottom) })),
+        ).toThrow(/おねじを作れるのは円柱の面だけです。/);
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('指紋が合わない・面以外の指紋なら、面が見つからないと断る', () => {
+      const { handle, tables, side } = shaftWithSideFace();
+      try {
+        const stale: SubShapeQuery = { ...faceQuery(side), area: side.area * 100, index: 99 };
+        expect(() => makeThreadShaft(oc, handle.shape, tables, shaftInput({ face: stale }))).toThrow(
+          /おねじを作るもとの面が見つかりません/,
+        );
+        const edge: SubShapeQuery = {
+          kind: 'edge',
+          index: 0,
+          curveKind: 'circle',
+          length: 2 * Math.PI * 5,
+          position: [0, 0, 0],
+          axis: [0, 0, 1],
+          radius: 5,
+        };
+        expect(() => makeThreadShaft(oc, handle.shape, tables, shaftInput({ face: edge }))).toThrow(
+          /おねじを作るもとの面が見つかりません/,
+        );
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('ピッチ・長さ・呼び径が 0 以下なら、掃引を始める前に断る', () => {
+      const { handle, tables, side } = shaftWithSideFace();
+      try {
+        const face = faceQuery(side);
+        expect(() =>
+          makeThreadShaft(oc, handle.shape, tables, shaftInput({ face, pitch: 0 })),
+        ).toThrow(/ねじのピッチは 0 より大きい/);
+        expect(() =>
+          makeThreadShaft(oc, handle.shape, tables, shaftInput({ face, length: 0 })),
+        ).toThrow(/ねじ部の長さは 0 より大きい/);
+        expect(() =>
+          makeThreadShaft(oc, handle.shape, tables, shaftInput({ face, majorDiameter: 0 })),
+        ).toThrow(/おねじの呼び径は 0 より大きい/);
+      } finally {
+        handle.delete();
+      }
+    });
+
+    it('ピッチが軸の太さに対して大きすぎるなら断る(谷の径が残らない)', () => {
+      const { handle, tables, side } = shaftWithSideFace();
+      try {
+        expect(() =>
+          makeThreadShaft(
+            oc,
+            handle.shape,
+            tables,
+            shaftInput({ face: faceQuery(side), pitch: 20, modeled: true }),
+          ),
+        ).toThrow(/ねじのピッチが軸の太さに対して大きすぎます/);
+      } finally {
+        handle.delete();
+      }
+    });
   });
 });

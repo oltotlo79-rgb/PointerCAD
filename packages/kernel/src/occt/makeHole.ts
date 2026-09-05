@@ -1,5 +1,6 @@
 /**
- * 穴あけ(FR-405、計画書 P3 §2.4、タスク6)。
+ * 穴あけ(FR-405、計画書 P3 §2.4、タスク6)と、入口の形(ざぐり・皿もみ。FR-422、
+ * 計画書 P5 §0.a-0.39、タスク40)。
  *
  * 面を指紋で選び直し、その平面へ中心の点を投影し、面の法線の逆向き(必要なら傾けた向き)へ
  * 円柱を伸ばして対象から差し引く。円柱は 1 つのコンパウンドへまとめ、**ブーリアンは 1 回**で行う。
@@ -20,6 +21,7 @@ import type {
   OpenCascadeInstance,
   TopoDS_Face,
   TopoDS_Shape,
+  gp_Ax2,
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type {
@@ -54,6 +56,24 @@ const CENTER_NOT_FINITE_MESSAGE = '穴の中心の位置が数になっていま
 const DIAMETER_MESSAGE = '穴の直径は 0 より大きい数にしてください。';
 
 const DEPTH_MESSAGE = '穴の深さは 0 より大きい数にしてください。';
+
+/** ざぐりの径が下穴の径以下のとき(広げる場所が無い)。 */
+const COUNTERBORE_DIAMETER_MESSAGE = 'ざぐりの径は穴の径より大きくしてください。';
+
+/** ざぐりの深さが 0 以下・非数のとき。 */
+const COUNTERBORE_DEPTH_MESSAGE = 'ざぐりの深さは 0 より大きい数にしてください。';
+
+/**
+ * 皿もみの角度が範囲の外のとき。角度は**円錐の開き角**(90 度皿なら半角 45 度)で、
+ * ラジアンで受け取る(度からの換算は model の責務。makeHole の傾き角と同じ約束)。
+ */
+const COUNTERSINK_ANGLE_MESSAGE = '皿もみの角度は 0 度より大きく 180 度未満にしてください。';
+
+/** 皿もみの頭径が下穴の径以下のとき(円錐が作れない)。 */
+const COUNTERSINK_DIAMETER_MESSAGE = '皿もみの頭の径は穴の径より大きくしてください。';
+
+/** 入口の形を下穴と 1 つにまとめられなかったとき。 */
+const ENTRY_FAILED_MESSAGE = '穴の入口の形を作れませんでした。ざぐり・皿もみの寸法を見直してください。';
 
 /** 傾き角は面に垂直(0 度)から、面と平行になる手前(90 度)まで。 */
 const TILT_ANGLE_MESSAGE = '穴の傾きは 0 度以上 90 度未満にしてください。';
@@ -95,6 +115,25 @@ const MIN_REMOVED_VOLUME_MM3 = 1e-9;
  */
 const MARGIN_RATIO = 0.01;
 const MARGIN_MIN_MM = 1;
+
+/**
+ * 穴の入口の形(FR-422、計画書 P5 §0.a-0.39)。
+ *
+ * 穴の種類を増やすのではなく**同じ穴の入口だけを広げる**指定にしてある(§0.a-0.39 の承認)。
+ * 既定は `plain`(広げない)で、読み手が古い文書へ補う値もこれになる。
+ *
+ * - `counterbore`(ざぐり): 径 `diameter`・深さ `depth` の円柱で入口を広げる。
+ * - `countersink`(皿もみ): 頭径 `diameter`・開き角 `angle`(**ラジアン**)の円錐で広げる。
+ *   円錐の深さは `(頭径 − 穴の径) / 2 / tan(angle / 2)` で**カーネルが決める**
+ *   (model には計算させない。計画書 タスク46 手順4)。
+ */
+export type HoleEntrySpec =
+  | { readonly kind: 'plain' }
+  | { readonly kind: 'counterbore'; readonly diameter: number; readonly depth: number }
+  | { readonly kind: 'countersink'; readonly diameter: number; readonly angle: number };
+
+/** 入口を広げない指定。引数を省いた呼び出しと、古い文書の既定値がこれになる。 */
+const PLAIN_ENTRY: HoleEntrySpec = { kind: 'plain' };
 
 /** 面の向きから求めた、穴をあけるための座標系(§2.4.2)。 */
 export interface HoleFrame {
@@ -341,6 +380,107 @@ export function resolveHoleFrame(
 }
 
 /**
+ * 入口の形の値を確かめる(FR-504)。**OCCT を呼ぶ前に済ませる**(NaN・∞ を C++ へ渡さない)。
+ * 各節は return で閉じる(no-fallthrough)。
+ */
+function checkHoleEntry(entry: HoleEntrySpec, diameter: number): void {
+  switch (entry.kind) {
+    case 'plain':
+      return;
+    case 'counterbore':
+      if (!Number.isFinite(entry.diameter) || entry.diameter <= diameter) {
+        throw new Error(COUNTERBORE_DIAMETER_MESSAGE);
+      }
+      if (!Number.isFinite(entry.depth) || entry.depth <= 0) {
+        throw new Error(COUNTERBORE_DEPTH_MESSAGE);
+      }
+      return;
+    case 'countersink':
+      // 角度を先に見るのは、深さの式 `(頭径 − 穴の径)/2 / tan(角度/2)` が
+      // 角度の正しさに乗っているためである(0 度なら 0 除算、180 度なら深さ 0)。
+      if (!Number.isFinite(entry.angle) || entry.angle <= 0 || entry.angle >= Math.PI) {
+        throw new Error(COUNTERSINK_ANGLE_MESSAGE);
+      }
+      if (!Number.isFinite(entry.diameter) || entry.diameter <= diameter) {
+        throw new Error(COUNTERSINK_DIAMETER_MESSAGE);
+      }
+      return;
+  }
+}
+
+/**
+ * 入口の形(ざぐりの円柱・皿もみの円錐)を 1 つ作る。広げない指定なら null。
+ *
+ * 下穴と同じ `axes`(口の外側へ margin だけ戻った点と、掘り進む向き)を使うので、
+ * 軸は必ず下穴と一致する。**口の外側へも margin だけ伸ばす**のは下穴と同じ理由で、
+ * 材料の面とちょうど接する平らな面(ざぐりの底の側ではなく口の側)を作らないためである。
+ *
+ * 皿もみの円錐は、**同じ開き角のまま口の外側へ伸ばす**(伸ばしたぶん半径が
+ * `margin × tan(角度/2)` だけ大きくなる)。材料の外の部分なので削れる量は変わらない。
+ */
+function makeEntryTool(
+  oc: OpenCascadeInstance,
+  entry: HoleEntrySpec,
+  axes: gp_Ax2,
+  diameter: number,
+  margin: number,
+  keep: Allocations['keep'],
+): TopoDS_Shape | null {
+  switch (entry.kind) {
+    case 'plain':
+      return null;
+    case 'counterbore': {
+      const maker = keep(
+        new oc.BRepPrimAPI_MakeCylinder_3(axes, entry.diameter / 2, entry.depth + margin),
+      );
+      return keep(maker.Shape());
+    }
+    case 'countersink': {
+      // 半角の正接。90 度皿なら tan(45°) = 1 で、深さは (頭径 − 穴の径)/2 になる。
+      const tangent = Math.tan(entry.angle / 2);
+      const depth = (entry.diameter - diameter) / 2 / tangent;
+      const maker = keep(
+        new oc.BRepPrimAPI_MakeCone_3(
+          axes,
+          entry.diameter / 2 + margin * tangent,
+          diameter / 2,
+          depth + margin,
+        ),
+      );
+      return keep(maker.Shape());
+    }
+  }
+}
+
+/**
+ * 下穴の円柱と入口の形を**和で 1 つの立体にまとめる**。広げない指定なら円柱をそのまま返す。
+ *
+ * **重なり合う形をコンパウンドのままブーリアンの工具に渡してはいけない**(makeThread.ts の
+ * 冒頭の注釈と同じ制限)。2026-09-05 に Node で実測したところ、下穴の円柱とざぐりの円柱を
+ * 1 つのコンパウンドへ入れて差し引くと、例外も出さずに**下穴だけが削れた結果**が返った
+ * (板 12000 に φ6 貫通 + φ11 深さ 4 ざぐりで 11717.256… = 下穴だけの値)。
+ * 先に和で 1 つにまとめると期待どおり 11450.221285621785 になる。
+ *
+ * 中心が離れた穴どうしは重ならないので、**まとめるのは 1 つの中心の中だけ**で足りる。
+ * コンパウンドと Cut は今までどおり 1 回のままである(§1.4-⑧ の実測を壊さない)。
+ */
+function fuseEntryTool(
+  oc: OpenCascadeInstance,
+  drill: TopoDS_Shape,
+  entryTool: TopoDS_Shape | null,
+  keep: Allocations['keep'],
+): TopoDS_Shape {
+  if (entryTool === null) {
+    return drill;
+  }
+  try {
+    return keep(booleanOp(oc, 'union', drill, entryTool)).shape;
+  } catch (error) {
+    throw new Error(ENTRY_FAILED_MESSAGE, { cause: error });
+  }
+}
+
+/**
  * 穴の工具(円柱の集まり)を作る。変換(パターン)もここで適用する。
  *
  * 貫通(`depth === null`)は対象の境界箱の対角長から長さを決める(§0.a-0.12)。
@@ -354,6 +494,10 @@ export function resolveHoleFrame(
  * (§2.7 の畳み方の手順 4)。恒等の変換は複製を作らずにもとの円柱をそのまま使う
  * (要らない複製を作らないため。結果は同じ)。
  *
+ * **入口の形(`entry`、FR-422):** ざぐりの円柱・皿もみの円錐は、中心ごとに下穴の円柱と
+ * 和でまとめてから複合へ足す(`fuseEntryTool` の注釈)。既定は `plain` で、
+ * そのときの作りは今までと 1 命令も変わらない(穴 20 個の板の費用を増やさない)。
+ *
  * 返した handle の delete() で、円柱・軸・複製・コンパウンドをまとめて解放する。
  * もとの立体そのものは要らない(`frame.diagonal` にその境界箱の対角長が入っている)。
  */
@@ -363,6 +507,7 @@ export function makeHoleTools(
   diameter: number,
   depth: number | null,
   transforms: readonly RigidTransformSpec[],
+  entry: HoleEntrySpec = PLAIN_ENTRY,
 ): OcctShapeHandle {
   if (!Number.isFinite(diameter) || diameter <= 0) {
     throw new Error(DIAMETER_MESSAGE);
@@ -370,6 +515,7 @@ export function makeHoleTools(
   if (depth !== null && (!Number.isFinite(depth) || depth <= 0)) {
     throw new Error(DEPTH_MESSAGE);
   }
+  checkHoleEntry(entry, diameter);
   if (frame.origins.length === 0) {
     throw new Error(NO_CENTER_MESSAGE);
   }
@@ -405,13 +551,14 @@ export function makeHoleTools(
       const maker = keep(new oc.BRepPrimAPI_MakeCylinder_3(axes, diameter / 2, length));
       // Shape() は maker の中の実体を指すので、控えへ maker の後に積む(解放は逆順)。
       const cylinder = keep(maker.Shape());
+      const tool = fuseEntryTool(oc, cylinder, makeEntryTool(oc, entry, axes, diameter, margin, keep), keep);
 
       for (const placement of placements) {
         if (isIdentityTransform(placement)) {
-          builder.Add(compound, cylinder);
+          builder.Add(compound, tool);
           continue;
         }
-        const moved = transformShape(oc, cylinder, placement);
+        const moved = transformShape(oc, tool, placement);
         // handle は「複製した形 → maker → 変換」をまとめて解放する。控えへ積んで
         // 円柱より後に置くと、解放が逆順(複製 → 円柱)になり順序が保たれる。
         keep(moved);
@@ -462,15 +609,19 @@ function cutHoles(
  *
  * 返す値は `booleanOp` の結果そのもので、**測り済みの体積を持ったまま**返る
  * (`BooleanResult` の注釈。呼び出し側の `buildSolidBodyMesh` が測り直さずに使う)。
+ *
+ * `entry` は入口の形(FR-422)。**省くと今までどおりの真っ直ぐな穴**になるので、
+ * 段の型(`HoleStepSpec`)へ欄が増えるまで(タスク42)は呼び出し側を変えずに済む。
  */
 export function makeHole(
   oc: OpenCascadeInstance,
   spec: HoleStepSpec,
   target: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
+  entry: HoleEntrySpec = PLAIN_ENTRY,
 ): BooleanResult {
   const frame = resolveHoleFrame(oc, target, faces, spec);
-  const tools = makeHoleTools(oc, frame, spec.diameter, spec.depth, spec.transforms);
+  const tools = makeHoleTools(oc, frame, spec.diameter, spec.depth, spec.transforms, entry);
 
   let result: BooleanResult;
   try {

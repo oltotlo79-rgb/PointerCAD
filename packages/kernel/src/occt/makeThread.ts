@@ -1,5 +1,10 @@
 /**
- * ねじ穴(FR-406、計画書 P3 §2.4、タスク9)。
+ * ねじ穴(FR-406、計画書 P3 §2.4、タスク9)と、おねじ(FR-423、計画書 P5 §0.a-0.40、
+ * タスク40)。
+ *
+ * **めねじとおねじが共用するのは、らせんと三角形の断面から溝を作る `makeThreadGroove`**
+ * である(同じ規則を 2 か所に書かない)。違いは「材料の表面より外へ削るか内へ削るか」
+ * だけで、それは `ThreadGrooveSpec` の `wallRadius` と `apexRadius` の大小で表す。
  *
  * 下穴(めねじ内径 D1)は穴(タスク6)とまったく同じ手順で掘り、
  * `spec.thread` が入っているときだけ**実らせんの溝**を切る(§0.a-0.16)。
@@ -30,6 +35,7 @@ import type {
 import type {
   RigidTransformSpec,
   SolidFaceInfo,
+  SubShapeQuery,
   ThreadCutSpec,
   ThreadMarkInfo,
   ThreadStepSpec,
@@ -37,11 +43,15 @@ import type {
 } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import type { BooleanResult } from './booleanOp.js';
 import { booleanOp } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { helixAxisFrame, makeHelixWire } from './makeHelix.js';
 import { makeHoleTools, resolveHoleFrame } from './makeHole.js';
+import { matchFace } from './matchSubShape.js';
 import { measureVolume } from './solidMesh.js';
+import type { SubShapeTables } from './subShapes.js';
+import { boundingDiagonal, faceAt } from './subShapes.js';
 import {
   applyTransformToDirection,
   applyTransformToPoint,
@@ -77,6 +87,41 @@ const NOTHING_REMOVED_MESSAGE =
 /** これ未満(mm³)しか削れていなければ「何も削れなかった」とみなす(makeHole.ts と同じ)。 */
 const MIN_REMOVED_VOLUME_MM3 = 1e-9;
 
+/** おねじの面が選び直せなかったとき(FR-504、§2.2.5)。 */
+const MISSING_SHAFT_FACE_MESSAGE =
+  'おねじを作るもとの面が見つかりません。形が大きく変わったため、選び直してください。';
+
+/** おねじを平面などに掛けようとしたとき(FR-423 は円柱状の軸部だけを対象にする)。 */
+const CYLINDER_ONLY_MESSAGE = 'おねじを作れるのは円柱の面だけです。';
+
+/** おねじの呼び径が 0 以下・非数のとき(印に載せる値なので数であることを確かめる)。 */
+const SHAFT_MAJOR_DIAMETER_MESSAGE = 'おねじの呼び径は 0 より大きい数にしてください。';
+
+/** ピッチに対して軸が細すぎ、谷の径が 0 以下になるとき。 */
+const SHAFT_TOO_THIN_MESSAGE = 'ねじのピッチが軸の太さに対して大きすぎます。呼び径を見直してください。';
+
+/** おねじのブーリアンそのものが成立しなかったとき。 */
+const SHAFT_FAILED_MESSAGE = 'おねじを作れませんでした。ねじ部の長さや向きを見直してください。';
+
+/** おねじで軸が丸ごと削れてしまったとき。 */
+const SHAFT_NOTHING_LEFT_MESSAGE = 'おねじを切ったら立体が残りませんでした。呼び径を見直してください。';
+
+/** おねじの溝が材料に当たらなかったとき(makeHole.ts と同じ考え)。 */
+const SHAFT_NOTHING_REMOVED_MESSAGE =
+  'おねじの溝が軸に当たりませんでした。ねじ部の長さや向きを見直してください。';
+
+/**
+ * おねじの山の高さ h3 が、ピッチの何倍か。**`h3 = (17/24)·H`、`H = (√3/2)·P`**
+ * (基本山形、ISO 68-1。§0.a-0.13 がめねじで使っている表と同じ出どころ)。
+ * 谷の径は `d3 = d − 2·h3 = d − 1.2268693…·P` になる。
+ *
+ * **ピッチから出すのは、`ThreadShaftInput` が谷の径を持たないためである**
+ * (計画書 タスク40 の実装内容)。呼び径と系列から谷の径を引くのは model の表の役目だが、
+ * おねじでは「軸の実寸(円柱面の指紋から測った半径)から山の高さぶんだけ削る」ほうが
+ * 形として正しい(呼び径と軸の実寸が少しずれていても、山の頂が必ず軸の外周に乗る)。
+ */
+const EXTERNAL_CREST_RATIO = (17 / 24) * (Math.sqrt(3) / 2);
+
 /**
  * 溝の断面(二等辺三角形)の底辺の幅を、ピッチの何倍にするか。
  *
@@ -99,9 +144,39 @@ const PROFILE_BASE_RATIO = 0.75;
  */
 const PROFILE_INSET_RATIO = 0.25;
 
-/** 掃引路(らせん)の半径。山と谷の中間(§2.4.2 の手順 12)。 */
+/**
+ * 溝(ねじ山を削り取る形)1 本の指定。**めねじとおねじが同じ形で使う**(§0.a-0.40)。
+ *
+ * めねじ(ねじ穴)は「下穴の壁より外側(材料の奥)へ」、おねじ(軸)は
+ * 「軸の外周より内側(材料の奥)へ」削るという違いだけなので、
+ * **材料の表面の半径 `wallRadius` と山の頂点の半径 `apexRadius` の 2 つ**で言い表す。
+ * `apexRadius > wallRadius` ならめねじ、`apexRadius < wallRadius` ならおねじになる。
+ */
+interface ThreadGrooveSpec {
+  /** ねじの切り始め(めねじは下穴の口、おねじは軸の端)。 */
+  readonly origin: Vec3Tuple;
+  /** 切り進む向き(単位ベクトル)。 */
+  readonly direction: Vec3Tuple;
+  readonly pitch: number;
+  /** ねじ部の長さ(mm)。 */
+  readonly length: number;
+  /** 材料の表面の半径(めねじ = 下穴の壁、おねじ = 軸の外周)。 */
+  readonly wallRadius: number;
+  /** 山の頂点の半径(材料の奥にある側)。 */
+  readonly apexRadius: number;
+}
+
+/** 掃引路(らせん)の半径。材料の表面と山の頂点の中間(§2.4.2 の手順 12)。 */
+function grooveSweepRadius(wallRadius: number, apexRadius: number): number {
+  return (wallRadius + apexRadius) / 2;
+}
+
+/**
+ * 掃引路(らせん)の半径を径で受ける版(めねじ。§2.4.2 の手順 12)。
+ * 規則そのものは `grooveSweepRadius` に 1 つだけ置く。
+ */
 export function threadSweepRadius(majorDiameter: number, drillDiameter: number): number {
-  return (majorDiameter + drillDiameter) / 4;
+  return grooveSweepRadius(drillDiameter / 2, majorDiameter / 2);
 }
 
 /** ねじの値を確かめる。断るときは日本語の Error(FR-504)。 */
@@ -124,28 +199,32 @@ function checkThreadSpec(spec: ThreadCutSpec, drillDiameter: number): void {
 /**
  * 溝の断面(二等辺三角形)のワイヤを作る。
  *
- * **軸を含む平面の上**に置く。山の頂点は外径 d の位置(材料の奥)、底辺は下穴の壁より
- * すこし内側で、軸方向にピッチの 3/4 の幅を持つ。掃引の始点(らせんの u = 0 の点)を
- * 基準にするので、`makeHelixWire` が作る掃引路とぴったり噛み合う。
+ * **軸を含む平面の上**に置く。山の頂点は `apexRadius` の位置(材料の奥)、底辺は
+ * 材料の表面よりすこし外側(空所の側)で、軸方向にピッチの 3/4 の幅を持つ。
+ * 掃引の始点(らせんの u = 0 の点)を基準にするので、`makeHelixWire` が作る
+ * 掃引路とぴったり噛み合う。
+ *
+ * **符号つきの山の高さ(`crest`)で、めねじとおねじを 1 つの式に収めてある。**
+ * めねじでは `crest > 0` で底辺が壁より内側(下穴の空所の側)へ、おねじでは
+ * `crest < 0` で底辺が外周より外側(軸の外)へ寄る。どちらも「材料の外へ
+ * 食い込ませる」という同じ意味で、出来上がる形は変わらない(`PROFILE_INSET_RATIO`)。
  */
 function makeThreadProfile(
   oc: OpenCascadeInstance,
-  origin: Vec3Tuple,
-  direction: Vec3Tuple,
-  spec: ThreadCutSpec,
-  drillDiameter: number,
+  spec: ThreadGrooveSpec,
   keep: Allocations['keep'],
 ): TopoDS_Wire {
-  const frame = helixAxisFrame(direction);
+  const frame = helixAxisFrame(spec.direction);
   if (frame === null) {
     throw new Error(SWEEP_FAILED_MESSAGE);
   }
   const { xAxis, zAxis } = frame;
-  const sweepRadius = threadSweepRadius(spec.majorDiameter, drillDiameter);
-  const crestHeight = (spec.majorDiameter - drillDiameter) / 2;
+  const { origin, wallRadius, apexRadius } = spec;
+  const sweepRadius = grooveSweepRadius(wallRadius, apexRadius);
+  const crest = apexRadius - wallRadius;
   // 掃引路の上の点(らせんの始点)からの、半径方向・軸方向のずれで断面を書く。
-  const outward = spec.majorDiameter / 2 - sweepRadius;
-  const inward = drillDiameter / 2 - crestHeight * PROFILE_INSET_RATIO - sweepRadius;
+  const towardApex = apexRadius - sweepRadius;
+  const towardVoid = wallRadius - crest * PROFILE_INSET_RATIO - sweepRadius;
   const half = (spec.pitch * PROFILE_BASE_RATIO) / 2;
 
   const at = (radial: number, along: number): Vec3Tuple => [
@@ -153,7 +232,11 @@ function makeThreadProfile(
     origin[1] + (sweepRadius + radial) * xAxis[1] + along * zAxis[1],
     origin[2] + (sweepRadius + radial) * xAxis[2] + along * zAxis[2],
   ];
-  const corners: readonly Vec3Tuple[] = [at(outward, 0), at(inward, -half), at(inward, half)];
+  const corners: readonly Vec3Tuple[] = [
+    at(towardApex, 0),
+    at(towardVoid, -half),
+    at(towardVoid, half),
+  ];
 
   const points = corners.map((corner) => keep(new oc.gp_Pnt_3(corner[0], corner[1], corner[2])));
   const maker = keep(new oc.BRepBuilderAPI_MakeWire_1());
@@ -173,22 +256,17 @@ function makeThreadProfile(
 }
 
 /**
- * ねじ 1 本ぶんの実らせん(掃引した溝)。簡略表示のときは呼ばない。
+ * ねじ 1 本ぶんの実らせん(掃引した溝)。**めねじ・おねじが共用する本体**で、
+ * 値の門番はそれぞれの入口(`makeThreadCut` / `makeThreadShaft`)が済ませてある。
  *
- * `origin` は下穴の口(ねじの切り始め)、`direction` は掘り進む向き。
  * **巻き方向は常に右**である(JIS のメートルねじは右ねじ。左ねじは P5 以降)。
+ * 軸の向きを反転して同じ「右」で作ると、同じ 1 本のらせんを逆の端からたどった形になる
+ * ので、おねじの `fromEnd: 'last'` でも右ねじのままになる。
  *
  * 返した handle の delete() で、掃引路・断面・掃引の maker と結果の形をまとめて解放する。
  */
-export function makeThreadCut(
-  oc: OpenCascadeInstance,
-  origin: Vec3Tuple,
-  direction: Vec3Tuple,
-  spec: ThreadCutSpec,
-  drillDiameter: number,
-): OcctShapeHandle {
-  checkThreadSpec(spec, drillDiameter);
-
+function makeThreadGroove(oc: OpenCascadeInstance, spec: ThreadGrooveSpec): OcctShapeHandle {
+  const { origin, direction } = spec;
   const { keep, release } = createAllocations();
   try {
     const spine = makeHelixWire(
@@ -196,14 +274,14 @@ export function makeThreadCut(
       {
         origin,
         direction,
-        radius: threadSweepRadius(spec.majorDiameter, drillDiameter),
+        radius: grooveSweepRadius(spec.wallRadius, spec.apexRadius),
         pitch: spec.pitch,
         turns: spec.length / spec.pitch,
         handedness: 'right',
       },
       keep,
     );
-    const profile = makeThreadProfile(oc, origin, direction, spec, drillDiameter, keep);
+    const profile = makeThreadProfile(oc, spec, keep);
 
     const pipe = keep(new oc.BRepOffsetAPI_MakePipeShell(spine));
     // 掃引の向きは「軸を副法線に固定」(§2.4.2 の手順 15)。断面はすでに軸を含む面の上に
@@ -236,6 +314,30 @@ export function makeThreadCut(
     // OCCT の C++ 例外は数値で飛んでくる(makeFillet.ts と同じ)。日本語の理由へ直す。
     throw error instanceof Error ? error : new Error(SWEEP_FAILED_MESSAGE);
   }
+}
+
+/**
+ * めねじ 1 本ぶんの実らせん(掃引した溝)。簡略表示のときは呼ばない。
+ *
+ * `origin` は下穴の口(ねじの切り始め)、`direction` は掘り進む向き。
+ * 山の頂点は外径 d(材料の奥)、底辺は下穴の壁のすこし内側になる。
+ */
+export function makeThreadCut(
+  oc: OpenCascadeInstance,
+  origin: Vec3Tuple,
+  direction: Vec3Tuple,
+  spec: ThreadCutSpec,
+  drillDiameter: number,
+): OcctShapeHandle {
+  checkThreadSpec(spec, drillDiameter);
+  return makeThreadGroove(oc, {
+    origin,
+    direction,
+    pitch: spec.pitch,
+    length: spec.length,
+    wallRadius: drillDiameter / 2,
+    apexRadius: spec.majorDiameter / 2,
+  });
 }
 
 /** ねじの印(簡略表示、§0.a-0.15)。B-rep には触らず、描くための情報だけを返す。 */
@@ -369,17 +471,259 @@ export function makeThreadHole(
 }
 
 /**
- * `booleanOp` の断りを、ねじ穴の言葉へ言い換える(makeHole.ts の `cutHoles` と同じ考え)。
- * 「立体が残らなかった」だけは直し方が違う(呼び径か深さを小さくする)ので言い回しで見分ける。
+ * `booleanOp` の断りを、ねじの言葉へ言い換える(makeHole.ts の `cutHoles` と同じ考え)。
+ * 「立体が残らなかった」だけは直し方が違うので言い回しで見分け、`nothingLeft` を出す。
  * それ以外は、どの段でつまずいたかに合った案内(`fallback`)を出す。
+ *
+ * 戻り値の型をそのまま通すのは、`booleanOp` が測り済みの体積を持って返す
+ * (`BooleanResult`)ぶんを、呼び出し側が測り直さずに使えるようにするためである。
  */
-function toJapaneseFailure(run: () => OcctShapeHandle, fallback: string): OcctShapeHandle {
+function toJapaneseFailure<T extends OcctShapeHandle>(
+  run: () => T,
+  fallback: string,
+  nothingLeft: string = NOTHING_LEFT_MESSAGE,
+): T {
   try {
     return run();
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(reason.includes('立体が残りませんでした') ? NOTHING_LEFT_MESSAGE : fallback, {
+    throw new Error(reason.includes('立体が残りませんでした') ? nothingLeft : fallback, {
       cause: error,
     });
+  }
+}
+
+/**
+ * おねじ 1 段の依頼(FR-423、計画書 タスク40 の実装内容)。
+ *
+ * 深さ・貫通の概念は無く、**円柱面の指紋 1 つ**と「軸のどちらの端から」「長さ」で決まる
+ * (§0.a-0.40)。呼び径とピッチは model が規格データ(`metricThread.ts`)から引いて渡す。
+ */
+export interface ThreadShaftInput {
+  /** ねじを切る円柱面の指紋。平面など円柱でない面は断る。 */
+  readonly face: SubShapeQuery;
+  /** 呼び径 d(mm)。**印に載せる値**で、削る深さは軸の実寸とピッチから決める。 */
+  readonly majorDiameter: number;
+  readonly pitch: number;
+  /** ねじ部の長さ(mm)。 */
+  readonly length: number;
+  /** 軸のどちらの端から切り始めるか。`first` は円柱面の軸のパラメータが小さいほうの端。 */
+  readonly fromEnd: 'first' | 'last';
+  /** 実らせんを切るなら true。false(既定の簡略表示)なら B-rep に触れない。 */
+  readonly modeled: boolean;
+}
+
+/** 円柱面から読んだ、おねじを切るための座標系。 */
+interface ShaftAxis {
+  /** ねじの切り始め(選んだ端の、軸の上の点)。 */
+  readonly start: Vec3Tuple;
+  /** 切り進む向き(単位ベクトル)。もう一方の端へ向かう。 */
+  readonly direction: Vec3Tuple;
+  /** 軸の半径(mm)。**利用者に入れさせず、面から測る**(§0.a-0.40、NFR-UX-4)。 */
+  readonly radius: number;
+}
+
+/** -0 を +0 へ揃える(subShapes.ts と同じ理由)。 */
+function normalizeZero(value: number): number {
+  return value === 0 ? 0 : value;
+}
+
+/** おねじの値を確かめる。断るときは日本語の Error(FR-504)。OCCT を呼ぶ前に済ませる。 */
+function checkShaftInput(input: ThreadShaftInput): void {
+  if (!Number.isFinite(input.pitch) || input.pitch <= 0) {
+    throw new Error(PITCH_MESSAGE);
+  }
+  if (!Number.isFinite(input.length) || input.length <= 0) {
+    throw new Error(THREAD_LENGTH_MESSAGE);
+  }
+  if (!Number.isFinite(input.majorDiameter) || input.majorDiameter <= 0) {
+    throw new Error(SHAFT_MAJOR_DIAMETER_MESSAGE);
+  }
+}
+
+/**
+ * 円柱面を指紋で選び直し、軸・半径・端を読む(計画書 タスク40 の手順 4)。
+ *
+ * 半径と軸は `BRepAdaptor_Surface_2(face).Cylinder()` から取る。**面の向き
+ * (Orientation)による符号の反転はしない。** 指紋の `axis`(`subShapes.ts` が
+ * 反転を掛けた値)は面を選び直すための目印で、ここで要るのは幾何そのものの軸だからである。
+ * 端は円柱面の v の範囲(**軸に沿った距離そのもの**)で決める。2026-09-05 に Node で
+ * 実測したところ、φ10×20 の軸では v が 0〜20、原点を (3,4,7) へ動かした軸でも
+ * 軸の位置が (3,4,7)・v が 0〜20 になり、`位置 + v·向き` で端の点が求まった。
+ */
+function readShaftAxis(
+  oc: OpenCascadeInstance,
+  target: TopoDS_Shape,
+  tables: SubShapeTables,
+  input: ThreadShaftInput,
+): ShaftAxis {
+  const query = input.face;
+  if (query.kind !== 'face') {
+    // 面以外(辺・頂点)の指紋が来るのは model 側の取り違えだが、
+    // 利用者に見せるのは「面が見つからない」で足りる(直し方は同じ = 面を選び直す)。
+    throw new Error(MISSING_SHAFT_FACE_MESSAGE);
+  }
+  // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する(§2.2.3)。
+  const match = matchFace(tables.faces, query, boundingDiagonal(oc, target) * 0.5);
+  if (match === null) {
+    throw new Error(MISSING_SHAFT_FACE_MESSAGE);
+  }
+  const info = tables.faces.find((candidate) => candidate.index === match.index);
+  if (info === undefined) {
+    throw new Error(MISSING_SHAFT_FACE_MESSAGE);
+  }
+  if (info.surfaceKind !== 'cylinder') {
+    throw new Error(CYLINDER_ONLY_MESSAGE);
+  }
+  const face = faceAt(oc, target, match.index);
+  if (face === null) {
+    // 一覧と形が食い違っている(別の形から作った一覧を渡している)合図。
+    throw new Error(MISSING_SHAFT_FACE_MESSAGE);
+  }
+
+  const { keep, release } = createAllocations();
+  try {
+    keep(face);
+    // 第 2 引数 true は「面の境界(トリム)も読み込む」指定。端の位置に v の範囲が要るので、
+    // 種類と軸だけを読む subShapes.ts(false)と違ってここでは省けない。
+    const adaptor = keep(new oc.BRepAdaptor_Surface_2(face, true));
+    if (adaptor.GetType() !== oc.GeomAbs_SurfaceType.GeomAbs_Cylinder) {
+      // 指紋の種類と下地の曲面が食い違うのは、別の形から作った一覧を渡したときだけ。
+      throw new Error(CYLINDER_ONLY_MESSAGE);
+    }
+    const cylinder = keep(adaptor.Cylinder());
+    const axis = keep(cylinder.Axis());
+    const location = keep(axis.Location());
+    const axisDirection = keep(axis.Direction());
+    const radius = cylinder.Radius();
+    const first = adaptor.FirstVParameter();
+    const last = adaptor.LastVParameter();
+    if (
+      !Number.isFinite(radius) ||
+      radius <= 0 ||
+      !Number.isFinite(first) ||
+      !Number.isFinite(last)
+    ) {
+      // 無限に伸びた円柱面(トリムされていない面)などはここで止める。
+      throw new Error(SHAFT_FAILED_MESSAGE);
+    }
+
+    // gp_Dir は長さ 1 に揃っている。`last` の端から切るときは向きを反転する。
+    const sign = input.fromEnd === 'first' ? 1 : -1;
+    const along: Vec3Tuple = [
+      normalizeZero(axisDirection.X()),
+      normalizeZero(axisDirection.Y()),
+      normalizeZero(axisDirection.Z()),
+    ];
+    const at = input.fromEnd === 'first' ? first : last;
+    return {
+      start: [
+        normalizeZero(location.X() + along[0] * at),
+        normalizeZero(location.Y() + along[1] * at),
+        normalizeZero(location.Z() + along[2] * at),
+      ],
+      direction: [
+        normalizeZero(along[0] * sign),
+        normalizeZero(along[1] * sign),
+        normalizeZero(along[2] * sign),
+      ],
+      radius,
+    };
+  } finally {
+    release();
+  }
+}
+
+/**
+ * 形を作り変えずに handle だけを新しくする(簡略表示のとき、§0.a-0.15)。
+ *
+ * 恒等の配置で「同じ実体を指す別の `TopoDS_Shape`」を作る。**B-rep は 1 つも作り直さない。**
+ * 2026-09-05 に Node で実測したところ、面と辺と頂点が 34 個の板で 0ms、`IsSame()` が真、
+ * 部分形状の数も同じで、複製を delete() したあとももとの形の体積が測れた
+ * (実体は参照が数えられており、複製の解放では消えない)。
+ * 第 2 引数 false は「動かせない形でも例外を投げない」指定。
+ */
+function copyShapeHandle(oc: OpenCascadeInstance, shape: TopoDS_Shape): OcctShapeHandle {
+  const { keep, release } = createAllocations();
+  try {
+    const location = keep(new oc.TopLoc_Location_1());
+    return { shape: keep(shape.Moved(location, false)), delete: release };
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
+/**
+ * おねじを切る(FR-423)。**対象は消費せず、新しい形と、画面へ返すねじの印を返す。**
+ *
+ * 引数の `target` は解放しない(形状キャッシュの持ち物。`booleanOp` と同じ約束)。
+ * `tables` は `target` から作った一覧で、別の形から作った一覧を渡すと
+ * 「面が見つからない」で断る。
+ *
+ * **簡略表示(`modeled: false`)では B-rep に触れない**(§0.a-0.15)。印だけを返し、
+ * 形はもとのまま渡すので、再計算の費用はほぼ 0 になる。
+ *
+ * **実らせん(`modeled: true`)は、軸の外周から山ぶんを削り取る**(§0.a-0.40)。
+ * めねじとの違いは山の頂点が軸の内側にあることだけで、掃引そのものは
+ * `makeThreadGroove` を共用する。山の高さはピッチから出す(`EXTERNAL_CREST_RATIO`)。
+ */
+export function makeThreadShaft(
+  oc: OpenCascadeInstance,
+  target: TopoDS_Shape,
+  tables: SubShapeTables,
+  input: ThreadShaftInput,
+): { readonly handle: OcctShapeHandle; readonly mark: ThreadMarkInfo } {
+  checkShaftInput(input);
+  const axis = readShaftAxis(oc, target, tables, input);
+  const mark: ThreadMarkInfo = {
+    origin: axis.start,
+    direction: axis.direction,
+    majorDiameter: input.majorDiameter,
+    length: input.length,
+  };
+  if (!input.modeled) {
+    return { handle: copyShapeHandle(oc, target), mark };
+  }
+
+  const apexRadius = axis.radius - input.pitch * EXTERNAL_CREST_RATIO;
+  if (!(apexRadius > 0)) {
+    throw new Error(SHAFT_TOO_THIN_MESSAGE);
+  }
+
+  const result = ((): BooleanResult => {
+    const { keep, release } = createAllocations();
+    try {
+      const groove = keep(
+        makeThreadGroove(oc, {
+          origin: axis.start,
+          direction: axis.direction,
+          pitch: input.pitch,
+          length: input.length,
+          wallRadius: axis.radius,
+          apexRadius,
+        }),
+      );
+      return toJapaneseFailure(
+        () => booleanOp(oc, 'subtract', target, groove.shape),
+        SHAFT_FAILED_MESSAGE,
+        SHAFT_NOTHING_LEFT_MESSAGE,
+      );
+    } finally {
+      // 工具は差し引いた直後に解放してよい(makeHole.ts の実測と同じ)。
+      release();
+    }
+  })();
+
+  try {
+    // 結果の体積は booleanOp がすでに測ってあるので測り直さない(`BooleanResult`)。
+    const removed = measureVolume(oc, target) - result.volume;
+    if (!(removed >= MIN_REMOVED_VOLUME_MM3)) {
+      throw new Error(SHAFT_NOTHING_REMOVED_MESSAGE);
+    }
+    return { handle: result, mark };
+  } catch (error) {
+    result.delete();
+    throw error;
   }
 }

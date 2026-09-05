@@ -455,7 +455,14 @@ export type SolidLabelKey =
   /** くり抜き(FR-418、§2.12)。P5 の Could 群のうちタスク46 が前倒しした 1 種。 */
   | 'shell'
   /** 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。 */
-  | 'cut';
+  | 'cut'
+  /*
+    読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。B-rep(STEP)と
+    三角形(STL / OBJ / 3MF / glTF)は利用者から見て別のもの——**三角形の形は加工できない**
+    (§0.a-0.23)——なので、ブーリアンの演算・基本形状の 5 種と同じ理由で連番も分ける。
+  */
+  | 'importedSolid'
+  | 'importedMesh';
 
 /**
  * `Record<K, true>` の鍵をそのまま `K[]` として返す小さな道具(h-③)。
@@ -470,7 +477,7 @@ function keysOf<K extends string>(record: Readonly<Record<K, true>>): readonly K
 }
 
 /**
- * `SolidFeatureKind`(24 種)を漏れなく1つずつ持つ表。**この表に種類を1つ足し忘れると
+ * `SolidFeatureKind`(26 種)を漏れなく1つずつ持つ表。**この表に種類を1つ足し忘れると
  * `satisfies Record<SolidFeatureKind, true>` が型検査で落ちる**(余分な鍵を書いても同様)。
  * `SOLID_FEATURE_KINDS` はこの表の鍵をそのまま並べたもの。
  */
@@ -499,10 +506,13 @@ const SOLID_FEATURE_KIND_TABLE = {
   surface: true,
   shell: true,
   cut: true,
+  importedSolid: true,
+  importedMesh: true,
 } satisfies Record<SolidFeatureKind, true>;
 
 /**
- * 実行時に持てる `SolidFeatureKind` の一覧(24 種、P5 仕上げ (h)、
+ * 実行時に持てる `SolidFeatureKind` の一覧(26 種。P5 仕上げ (h) で 24 種、P6 タスク20 で
+ * 読み込んだ形の 2 種を足した。
  * `docs/報告記録.md` 2026-09-05 23:08 の t47 指摘③)。
  *
  * これまで `packages/io`(妥当性検査の選択肢)と `packages/ui`(自前の一覧)が
@@ -510,7 +520,7 @@ const SOLID_FEATURE_KIND_TABLE = {
  * 揃えて直す仕組みが無かった。ここを唯一の実行時の一覧にし、`io` はこれを輸入する
  * (このタスクで置き換え済み)。`ui` の自前の一覧の置き換えは後続タスクの担当。
  *
- * `SOLID_LABELS`(`SolidLabelKey` の表、32 種)とは鍵の粒度が違うので**同じ配列にはならない**
+ * `SOLID_LABELS`(`SolidLabelKey` の表、34 種)とは鍵の粒度が違うので**同じ配列にはならない**
  * (ブーリアン・パターン・基本形状は複数の連番の単位に分かれる。上の `SolidLabelKey` の
  * 定義を参照)。網羅は `SOLID_FEATURE_KIND_TABLE` の `satisfies` が型検査で保証していて、
  * こちらの一覧は実行時にその鍵を並べただけである。
@@ -559,6 +569,10 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   // 平面による切断(FR-432、§2.9b、タスク27c)。「反対側も残す」で 2 つ積んだときは
   // 「切断1」「切断2」と連番が並ぶ(同じ種類なので分けない)。
   cut: '切断',
+  // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8)。利用者の言葉で「読み込んだ形」と
+  // 「読み込んだ三角形の形」に分ける(断りの文言(§2.8 の表)と同じ言い回しにそろえる)。
+  importedSolid: '読み込んだ形',
+  importedMesh: '読み込んだ三角形の形',
 };
 
 /**
@@ -932,7 +946,11 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'loft':
     case 'mirror':
     case 'sweep':
+    case 'importedSolid':
+    case 'importedMesh':
       // ミラー(§0.a-0.36)は対象を指すが消費しない。スイープは対象を取らない。
+      // 読み込んだ形の 2 種(FR-802、P6 §2.8)も対象を取らない「作る」フィーチャーで、
+      // 基本形状(P5 §0.a-0.19)とまったく同じ扱いになる。
       return [];
     case 'boolean':
       return [feature.targetFeatureId, feature.toolFeatureId];
@@ -1007,6 +1025,11 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'scale':
     case 'sweep':
     case 'surface':
+    case 'importedSolid':
+    case 'importedMesh':
+      // 読み込んだ形の 2 種(FR-802、P6 §2.8)は対象を取らないので加工ではない。
+      // **加工の「される側」にはなる**——`importedSolid` の上には穴も面取りも積める
+      // (FR-802)。`importedMesh` だけは対象にできず、断りは `resolvePart.ts` が出す。
       return false;
   }
 }

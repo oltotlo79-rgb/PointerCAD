@@ -4509,7 +4509,7 @@ function allPointReferences(): readonly PointReference[] {
 }
 
 /**
- * 24 種すべてを、**省略できる欄も含めて全部埋めた**見本。参照(部分形状の指紋・
+ * 26 種すべてを、**省略できる欄も含めて全部埋めた**見本。参照(部分形状の指紋・
  * スケッチの面/点/曲線)と式は種類をまたいで一通り出てくるようにしてある。
  */
 function allSolidFeatures(): SolidFeatureByKind {
@@ -4799,6 +4799,39 @@ function allSolidFeatures(): SolidFeatureByKind {
       keep: 'negative',
       pairedWith: 'cut-2',
     },
+    // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
+    // 形そのもの(B-rep / 三角形)は ZIP の別エントリなので、ここには名前と素性だけが入る。
+    importedSolid: {
+      id: 'importedSolid-1',
+      kind: 'importedSolid',
+      name: '読み込んだ形1',
+      suppressed: false,
+      shapeRef: 'shape-1',
+      source: {
+        format: 'step',
+        fileName: 'bracket.step',
+        unit: 'inch',
+        byteLength: 20480,
+        importedAt: '2026-09-06T00:00:00.000Z',
+      },
+      bodyKind: 'shell',
+    },
+    importedMesh: {
+      id: 'importedMesh-1',
+      kind: 'importedMesh',
+      name: '読み込んだ三角形の形1',
+      suppressed: true,
+      meshRef: 'mesh-1',
+      source: {
+        format: 'stl',
+        fileName: 'cover.stl',
+        unit: 'mm',
+        byteLength: 1284,
+        importedAt: '2026-09-06T01:02:03.000Z',
+      },
+      triangleCount: 12,
+      volume: 8000,
+    },
   };
 }
 
@@ -4807,26 +4840,26 @@ function documentWithSolids(features: readonly SolidFeature[]): PartDocument {
   return { ...createEmptyPartDocument(), solids: features };
 }
 
-/** 24 種を並べた部品文書(順序は `allSolidFeatures` の欄の順)。 */
+/** 26 種を並べた部品文書(順序は `allSolidFeatures` の欄の順)。 */
 function documentWithAllSolids(): PartDocument {
   return documentWithSolids(Object.values(allSolidFeatures()));
 }
 
-describe('24 種すべての読み書き(P5 タスク47、FR-801、FR-202)', () => {
-  it('24 種のソリッドフィーチャーが 1 つの文書で往復しても一致する', () => {
+describe('26 種すべての読み書き(P5 タスク47・P6 タスク20、FR-801、FR-202)', () => {
+  it('26 種のソリッドフィーチャーが 1 つの文書で往復しても一致する', () => {
     const document = documentWithAllSolids();
-    expect(document.solids).toHaveLength(24);
+    expect(document.solids).toHaveLength(26);
     expect(roundTrip(document)).toEqual(document);
   });
 
-  it('24 種すべての kind が書き出しに現れる(種類を取りこぼしていない)', () => {
+  it('26 種すべての kind が書き出しに現れる(種類を取りこぼしていない)', () => {
     const text = serializeDocument(documentWithAllSolids(), { savedAt: SAVED_AT });
     for (const kind of Object.keys(allSolidFeatures())) {
       expect(text).toContain(`"kind": "${kind}"`);
     }
   });
 
-  it('24 種の文書は何度書き出しても同じ文字列になる(欄の順が決まっている)', () => {
+  it('26 種の文書は何度書き出しても同じ文字列になる(欄の順が決まっている)', () => {
     const document = documentWithAllSolids();
     const first = serializeDocument(document, { savedAt: SAVED_AT });
     const second = serializeDocument(document, { savedAt: SAVED_AT });
@@ -5440,5 +5473,95 @@ describe('断りの網羅(P5 タスク47、FR-504、NFR-UX-5)', () => {
       },
     ]);
     expect(roundTrip(document)).toEqual(document);
+  });
+});
+
+describe('読み込んだ形のベースボディ 2 種の読み書き(FR-802、P6 §2.8、タスク20)', () => {
+  it('読み込んだ形は入れ物の名前と素性だけを書き、形そのものは書かない(§0.a-0.9)', () => {
+    const document = documentWithSolid(allSolidFeatures().importedSolid);
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    expect(text).toContain('"shapeRef": "shape-1"');
+    expect(text).toContain('"fileName": "bracket.step"');
+    expect(text).toContain('"unit": "inch"');
+    expect(text).toContain('"bodyKind": "shell"');
+    // B-rep のバイト列は ZIP の別エントリ(shapes/<shapeRef>.brep)なので JSON に出ない。
+    expect(text).not.toContain('brep');
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('読み込んだ三角形の形は三角形の数と体積を持ち、三角形そのものは書かない(§0.a-0.24)', () => {
+    const document = documentWithSolid(allSolidFeatures().importedMesh);
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    expect(text).toContain('"meshRef": "mesh-1"');
+    expect(text).toContain('"triangleCount": 12');
+    expect(text).toContain('"volume": 8000');
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('省略できる欄(importedAt / volume)は省いたまま往復する', () => {
+    const document = documentWithSolids([
+      {
+        id: 'importedSolid-1',
+        kind: 'importedSolid',
+        name: '読み込んだ形1',
+        suppressed: false,
+        shapeRef: 'shape-9',
+        source: { format: 'obj', fileName: 'part.obj', unit: 'mm', byteLength: 10 },
+        bodyKind: 'solid',
+      },
+      {
+        id: 'importedMesh-1',
+        kind: 'importedMesh',
+        name: '読み込んだ三角形の形1',
+        suppressed: false,
+        meshRef: 'mesh-9',
+        source: { format: 'gltf', fileName: 'part.glb', unit: 'mm', byteLength: 20 },
+        triangleCount: 4,
+      },
+    ]);
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    expect(text).not.toContain('importedAt');
+    expect(text).not.toContain('volume');
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('知らない形式・単位は既存の invalidField で断る(エラーコードを増やさない)', () => {
+    /** 素性の欄を 1 つだけ壊した読み込んだ形を持つファイル。 */
+    function brokenSource(overrides: Record<string, unknown>): string {
+      return rawFile({
+        document: rawDocument({
+          solids: [
+            {
+              id: 'importedSolid-1',
+              kind: 'importedSolid',
+              name: '読み込んだ形1',
+              suppressed: false,
+              shapeRef: 'shape-1',
+              source: {
+                format: 'step',
+                fileName: 'bracket.step',
+                unit: 'mm',
+                byteLength: 10,
+                ...overrides,
+              },
+              bodyKind: 'solid',
+            },
+          ],
+        }),
+      });
+    }
+    const badFormat = expectError(parseDocument(brokenSource({ format: 'iges' })));
+    expect(badFormat.code).toBe('invalidField');
+    expect(badFormat.message).toContain('format');
+    const badUnit = expectError(parseDocument(brokenSource({ unit: 'cm' })));
+    expect(badUnit.code).toBe('invalidField');
+    expect(badUnit.message).toContain('unit');
+  });
+
+  it('三角形の形に bodyKind の欄は無い(mesh は別のフィーチャー。§0.a-0.24)', () => {
+    const text = serializeDocument(documentWithSolid(allSolidFeatures().importedMesh), {
+      savedAt: SAVED_AT,
+    });
+    expect(text).not.toContain('bodyKind');
   });
 });

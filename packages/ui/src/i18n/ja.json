@@ -1369,5 +1369,12 @@
   "propertyPanel.sphereGridStepRange": "線の間隔は 1 度以上 90 度以下にしてください。",
   "propertyPanel.latitude": "緯度",
   "propertyPanel.longitude": "経度",
-  "propertyPanel.sectionSphereGridPoint": "球の上の位置"
+  "propertyPanel.sectionSphereGridPoint": "球の上の位置",
+  "toolbar.solid.importedSolid": "読み込んだ形",
+  "toolbar.solid.importedMesh": "読み込んだ三角形の形",
+  "propertyPanel.importedFileName": "ファイル名",
+  "propertyPanel.importedFormat": "形式",
+  "propertyPanel.importedUnit": "単位",
+  "propertyPanel.importedSize": "大きさ",
+  "propertyPanel.importedBodyKind": "種類"
 }

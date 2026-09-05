@@ -1530,3 +1530,31 @@ export function CutIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+/**
+ * 読み込んだ形(FR-802)。箱(受け皿)へ、上から矢印が入っていく——
+ * ファイルから B-rep を取り込んだことを表す(統括の指示、P6 タスク20 の帰結)。
+ */
+export function ImportedSolidIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.8 7.6h10.4v6h-10.4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M8 1.6v5.2" />
+      <path d="M5.6 4.4 8 6.8l2.4-2.4" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 読み込んだ三角形の形(FR-802)。1 枚の三角形を 4 枚へ分けた網の目——
+ * B-rep にしない、三角形のままの形であることを表す(統括の指示、P6 タスク20 の帰結)。
+ */
+export function ImportedMeshIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 2 13.6 12H2.4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M8 2 13.6 12H2.4z" />
+      <path d="M10.8 7 8 12 5.2 7z" />
+    </SvgIcon>
+  );
+}

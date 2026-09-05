@@ -454,6 +454,24 @@ export { DEFAULT_CUT_KEEP } from './part/createPartDocument.js';
  */
 export { SOLID_FEATURE_KINDS } from './part/createPartDocument.js';
 /**
+ * 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
+ *
+ * 文書の型(`ImportedSolidFeature` / `ImportedMeshFeature` / `ImportedSource`)は
+ * `packages/io` が `.pcad` へ読み書きし(タスク21)、`packages/ui` がツリーとプロパティへ
+ * 出す(タスク32)。**形そのもの(B-rep / 三角形)は ZIP の別エントリ**にあり、
+ * ここから出る型には 1 バイトも入らない(§0.a-0.9)。
+ *
+ * `ImportedShapeBytes` は再計算へバイト列を渡す口、`ResolvedMeshBody` は
+ * 「段にならないボディ」の解決結果、`IMPORTED_MESH_TARGET_MESSAGE` は
+ * 「三角形の形は加工できない」の断りの文言(§0.a-0.23。model が正本)である。
+ */
+export type {
+  ImportedMeshFeature, ImportedSolidFeature, ImportedSource, ImportedSourceFormat,
+} from './part/types.js';
+export type { ImportedShapeBytes, ResolvedMeshBody } from './part/resolvePart.js';
+export { IMPORTED_MESH_TARGET_MESSAGE } from './part/resolvePart.js';
+export type { ImportedSolidKeyMaterial } from './part/cacheKey.js';
+/**
  * 表示と入力の長さの単位(FR-811、FR-814、P6 タスク1)。**内部は mm 固定**(NFR-RE-3)で、
  * ここにあるのは表示と入力の境目で使う純関数だけ。文書には単位を保存しない。
  *

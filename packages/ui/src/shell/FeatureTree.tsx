@@ -59,6 +59,8 @@ import {
   FaceToolIcon,
   FilletIcon,
   HoleIcon,
+  ImportedMeshIcon,
+  ImportedSolidIcon,
   IntersectIcon,
   LayersIcon,
   LineToolIcon,
@@ -201,6 +203,9 @@ const KIND_ICONS: Readonly<
   shell: ShellIcon,
   // 平面による切断(FR-432、P5 タスク27c)。タスク27f で道具と同じ図柄へ差し替えた。
   cut: CutIcon,
+  // 読み込んだ形のベースボディ 2 種(FR-802、P6 タスク20)。木の行がそのまま道具の絵になる。
+  importedSolid: ImportedSolidIcon,
+  importedMesh: ImportedMeshIcon,
 };
 
 /** 節の頭に出す絵。基準は軸と点、スケッチは作図面、ソリッドは立体の印。 */

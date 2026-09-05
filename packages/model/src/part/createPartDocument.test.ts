@@ -653,6 +653,9 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       shell: 'くり抜き',
       // 平面による切断(FR-432、§2.9b、タスク27c)。
       cut: '切断',
+      // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
+      importedSolid: '読み込んだ形',
+      importedMesh: '読み込んだ三角形の形',
     });
     expect(findSolid(document, 'subtract-1')?.name).toBe('差1');
     expect(nextSolidName(document, 'subtract')).toBe('差2');
@@ -762,13 +765,14 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('種類ごとの既定名は32個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2 + Should 群10 + くり抜き1 + 切断1)', () => {
+  it('種類ごとの既定名は34個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2 + Should 群10 + くり抜き1 + 切断1 + 読み込んだ形2)', () => {
     // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になり、
     // タスク25 で面をつなぐ(FR-430)・ロフト(FR-410)が増えて 18 → 20 になった。
     // タスク43 で Should 群 9 種と点パターン(FR-425)が増えて 20 → 30 になり、
     // タスク46 でくり抜き(FR-418、§2.12)が増えて 30 → 31 になり、
-    // タスク27c で平面による切断(FR-432、§2.9b)が増えて 31 → 32 になった。
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(32);
+    // タスク27c で平面による切断(FR-432、§2.9b)が増えて 31 → 32 になり、
+    // P6 タスク20 で読み込んだ形のベースボディ 2 種(FR-802、§2.8)が増えて 32 → 34 になった。
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(34);
     expect(SOLID_LABELS.hole).toBe('穴');
     expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
     expect(SOLID_LABELS.spring).toBe('ばね');
@@ -781,6 +785,8 @@ describe('加工フィーチャーとばねの名前・id の採番(P3 タスク
     expect(SOLID_LABELS.pointPattern).toBe('点パターン');
     expect(SOLID_LABELS.shell).toBe('くり抜き');
     expect(SOLID_LABELS.cut).toBe('切断');
+    expect(SOLID_LABELS.importedSolid).toBe('読み込んだ形');
+    expect(SOLID_LABELS.importedMesh).toBe('読み込んだ三角形の形');
   });
 
   it('穴は同じ種類の最大連番+1で数え、1つ消しても番号は戻らない', () => {
@@ -1355,14 +1361,15 @@ describe('基本形状(FR-429、P5 タスク15)', () => {
 });
 
 describe('基本形状を足したあとの立体フィーチャーの種類(FR-501)', () => {
-  it('種類は23種になり、数え漏れは型検査で落ちる', () => {
+  it('種類は26種になり、数え漏れは型検査で落ちる', () => {
     /*
       `Record<SolidFeatureKind, true>` にしておくと、種類を足したのにこの表を直し忘れた
       ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
       数は P2 の4種 + P3 の加工5種・ばね + P5 の基本形状1種 + P5 の面をつなぐ・ロフト = 13 に、
       P5 の Should 群 9 種(§2.11、タスク43)を足して 22、さらに Could 群のうち
       タスク46 が前倒しした くり抜き(FR-418、§2.12)を足して 23、
-      平面による切断(FR-432、§2.9b、タスク27c)を足して 24。
+      平面による切断(FR-432、§2.9b、タスク27c)を足して 24、
+      読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)を足して 26。
       **この検査は「数え漏れを型で止める」仕掛けなので、種類が増えたら数も一緒に増やす**
       (期待値を緩めているのではなく、仕掛けが働いた結果を写し取っている)。
     */
@@ -1391,16 +1398,18 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       surface: true,
       shell: true,
       cut: true,
+      importedSolid: true,
+      importedMesh: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(24);
+    expect(Object.keys(kinds)).toHaveLength(26);
   });
 
   it(
-    'SOLID_FEATURE_KINDS(実行時の一覧、P5 仕上げ (h)、t47 指摘③)は24種を重複なく持ち、' +
+    'SOLID_FEATURE_KINDS(実行時の一覧、P5 仕上げ (h)、t47 指摘③)は26種を重複なく持ち、' +
       '上のテストで手で数え上げた表(SolidFeatureKind そのものの網羅の確かめ)と同じ集合になる',
     () => {
-      expect(SOLID_FEATURE_KINDS).toHaveLength(24);
-      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(24);
+      expect(SOLID_FEATURE_KINDS).toHaveLength(26);
+      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(26);
       const kinds: Readonly<Record<SolidFeatureKind, true>> = {
         extrude: true,
         revolve: true,
@@ -1426,6 +1435,8 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
         surface: true,
         shell: true,
         cut: true,
+        importedSolid: true,
+        importedMesh: true,
       };
       expect(new Set(SOLID_FEATURE_KINDS)).toEqual(new Set(Object.keys(kinds)));
     },

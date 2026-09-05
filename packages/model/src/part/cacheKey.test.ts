@@ -26,6 +26,7 @@ import {
   type RibKeyMaterial,
   type ScaleKeyMaterial,
   type SewKeyMaterial,
+  type ImportedSolidKeyMaterial,
   type ShellKeyMaterial,
   type SolidStepKeyMaterial,
   type SpringKeyMaterial,
@@ -404,7 +405,14 @@ function shell(overrides: Partial<Omit<ShellKeyMaterial, 'kind'>> = {}): ShellKe
   };
 }
 
-/** 22種類ぶんの材料を1つずつ。順序は SolidStepKeyMaterial の union の並びに合わせる。 */
+/**
+ * 読み込んだ形(FR-802、P6 §2.8、タスク20)。**混ぜられる材料は入れ物の名前 1 つだけ。**
+ */
+function importedSolid(shapeRef = 'shape-1'): ImportedSolidKeyMaterial {
+  return { kind: 'importedSolid', shapeRef };
+}
+
+/** 23種類ぶんの材料を1つずつ。順序は SolidStepKeyMaterial の union の並びに合わせる。 */
 const ALL_KINDS: readonly SolidStepKeyMaterial[] = [
   extrude(10),
   revolve(90),
@@ -429,6 +437,8 @@ const ALL_KINDS: readonly SolidStepKeyMaterial[] = [
   surface(),
   cut(),
   shell(),
+  // 読み込んだ形(FR-802、P6 §2.8、タスク20)。
+  importedSolid(),
 ];
 
 describe('KEY_DECIMALS', () => {
@@ -1726,7 +1736,7 @@ describe('cacheKeyFor: P5 の11種の決定性と -0 の正規化', () => {
   });
 });
 
-/** 22種類の材料を index で少しずつ変えて作る(衝突検査用)。 */
+/** 23種類の材料を index で少しずつ変えて作る(衝突検査用)。 */
 function variantValue(index: number): number {
   return 1 + index * 0.001;
 }
@@ -1756,11 +1766,13 @@ const VARIANT_BUILDERS: readonly ((index: number) => SolidStepKeyMaterial)[] = [
   (index) => surface(surfaceExtrude(variantValue(index))),
   (index) => cut({ origin: [0, 0, variantValue(index)] }),
   (index) => shell({ thickness: variantValue(index) }),
+  // 読み込んだ形は数の欄を持たないので、入れ物の名前そのものを変えて散らす。
+  (index) => importedSolid(`shape-${index}`),
 ];
 
-describe('cacheKeyFor: 22種類が互いに衝突しない', () => {
-  it('22種類すべての鍵が長さ16の16進文字列になる', () => {
-    expect(ALL_KINDS).toHaveLength(22);
+describe('cacheKeyFor: 23種類が互いに衝突しない', () => {
+  it('23種類すべての鍵が長さ16の16進文字列になる', () => {
+    expect(ALL_KINDS).toHaveLength(23);
     for (const material of ALL_KINDS) {
       const key = cacheKeyFor(material);
       expect(key).toHaveLength(16);
@@ -1768,7 +1780,7 @@ describe('cacheKeyFor: 22種類が互いに衝突しない', () => {
     }
   });
 
-  it('22種類の鍵が互いに違う(種類が違えば必ず別の鍵)', () => {
+  it('23種類の鍵が互いに違う(種類が違えば必ず別の鍵)', () => {
     const keys = new Set(ALL_KINDS.map(cacheKeyFor));
     expect(keys.size).toBe(ALL_KINDS.length);
   });
@@ -1779,11 +1791,22 @@ describe('cacheKeyFor: 22種類が互いに衝突しない', () => {
     expect(new Set(ALL_KINDS.map((material) => material.kind)).size).toBe(ALL_KINDS.length);
   });
 
-  it('22種類の材料を1つずつ少しずつ変えた1000通りで、鍵の重複が0件', () => {
+  it('23種類の材料を1つずつ少しずつ変えた1000通りで、鍵の重複が0件', () => {
     const keys = new Set<string>();
     for (let index = 0; index < 1000; index += 1) {
       keys.add(cacheKeyFor(VARIANT_BUILDERS[index % VARIANT_BUILDERS.length](index)));
     }
     expect(keys.size).toBe(1000);
+  });
+});
+
+describe('読み込んだ形の鍵の材料(importedSolid、FR-802、P6 §2.8、タスク20)', () => {
+  it('鍵の文字列は入れ物の名前だけを持つ', () => {
+    expect(keyMaterialText(importedSolid('shape-1'))).toBe('importedSolid{shapeRef=shape-1}');
+  });
+
+  it('入れ物の名前が同じなら同じ鍵、違えば違う鍵(中身は変わらないので毎回当たる)', () => {
+    expect(cacheKeyFor(importedSolid('shape-1'))).toBe(cacheKeyFor(importedSolid('shape-1')));
+    expect(cacheKeyFor(importedSolid('shape-1'))).not.toBe(cacheKeyFor(importedSolid('shape-2')));
   });
 });

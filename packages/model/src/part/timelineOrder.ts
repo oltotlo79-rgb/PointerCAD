@@ -534,6 +534,14 @@ function solidDependencies(
       */
       found.push(...planeSpecDependencies(context, feature.plane));
       break;
+    case 'importedSolid':
+    case 'importedMesh':
+      /*
+        読み込んだ形の 2 種(FR-802、P6 §2.8、タスク20)。**依存は 1 つも無い。**
+        スケッチも立体の面も基準ジオメトリも指さず、ファイルから入った形そのものを
+        持っているだけなので、履歴のどこへでも動かせる(FR-507)。
+      */
+      break;
   }
   return found;
 }

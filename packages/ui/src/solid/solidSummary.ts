@@ -61,6 +61,9 @@ import {
   type HoleDepth,
   type HoleEntry,
   type HoleFeature,
+  type ImportedSource,
+  type ImportedSourceFormat,
+  type LengthUnit,
   type MetricThreadSize,
   type MirrorFeature,
   type PartDocument,
@@ -396,6 +399,11 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   // 平面による切断(FR-432、§2.9b。P5 タスク27c)。「加工」の畳んだ一覧に入る
   // (§0.a-0.64)ので `toolbar.machining.*`。道具のボタン・案内・説明は **タスク27f**。
   cut: 'toolbar.machining.cut',
+  // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。対象を取らず新しい
+  // ボディを作る「作る」の仲間(基本形状・ばねと同じ)なので `toolbar.solid.*`。
+  // 道具のボタン(File > 読み込み)はこのタスクの範囲外。
+  importedSolid: 'toolbar.solid.importedSolid',
+  importedMesh: 'toolbar.solid.importedMesh',
 };
 
 /** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
@@ -853,6 +861,56 @@ function bodyReference(
   return found === undefined
     ? { labelKey, name: featureId, elementId: null }
     : { labelKey, name: found.name, elementId: found.id };
+}
+
+/**
+ * 読み込んだ形式の表示名(FR-802)。ねじの呼び('M6')と同じく、利用者の言語によらない
+ * 技術的な記号なので ja.json を通さずそのまま出す(`threadDesignationChoice` と同じ扱い)。
+ */
+const IMPORTED_SOURCE_FORMAT_NAMES: Readonly<Record<ImportedSourceFormat, string>> = {
+  step: 'STEP',
+  stl: 'STL',
+  obj: 'OBJ',
+  '3mf': '3MF',
+  gltf: 'glTF',
+};
+
+/** 読み込んだときの長さの単位の表示名(FR-811)。 */
+const IMPORTED_SOURCE_UNIT_NAMES: Readonly<Record<LengthUnit, string>> = {
+  mm: 'mm',
+  inch: 'inch',
+};
+
+/**
+ * 読み込んだ形の素性(ファイル名・形式・単位・バイト数、FR-802、P6 §2.8)を
+ * 読み取り専用の参照へ直す(importedSolid / importedMesh が共有する)。
+ *
+ * **式の欄を1つも持たない**(履歴が無いので直せる寸法が無い、§0.a-0.9)ので、選び直しの
+ * 操作もない。`elementId` はこのフィーチャー自身の id にして、押すと立体を選べるだけの
+ * 行にする(`bodyReference` が対象の立体を指すのと同じ扱い。選び直しではなく確認のため)。
+ */
+function importedSourceReferences(
+  featureId: string,
+  source: ImportedSource,
+): SolidReferenceSummary[] {
+  return [
+    { labelKey: 'propertyPanel.importedFileName', name: source.fileName, elementId: featureId },
+    {
+      labelKey: 'propertyPanel.importedFormat',
+      name: IMPORTED_SOURCE_FORMAT_NAMES[source.format],
+      elementId: featureId,
+    },
+    {
+      labelKey: 'propertyPanel.importedUnit',
+      name: IMPORTED_SOURCE_UNIT_NAMES[source.unit],
+      elementId: featureId,
+    },
+    {
+      labelKey: 'propertyPanel.importedSize',
+      name: String(source.byteLength),
+      elementId: featureId,
+    },
+  ];
 }
 
 /** スケッチの線分の名前。見つからなければ id をそのまま返す(FR-504)。 */
@@ -1902,6 +1960,53 @@ export function summarizeSolid(
         subShapeCounts: parts.subShapeCounts,
       };
     }
+    case 'importedSolid':
+      /*
+        読み込んだ形(FR-802、P6 §2.8、タスク20)。履歴を持たないので式の欄は1つも無い
+        (model の同コメントのとおり)。素性(ファイル名・形式・単位・バイト数)に加え、
+        形の種類(solid / shell)も読み取り専用の参照として出す。
+      */
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [
+          ...importedSourceReferences(feature.id, feature.source),
+          {
+            labelKey: 'propertyPanel.importedBodyKind',
+            name: feature.bodyKind === 'solid' ? 'Solid' : 'Shell',
+            elementId: feature.id,
+          },
+        ],
+        subShapeCounts: [],
+      };
+    case 'importedMesh':
+      /*
+        読み込んだ三角形の形(FR-802、P6 §2.8、タスク20)。B-rep にしないので式の欄も
+        加工の対象にもならない。三角形の数は必ずあり、体積は閉じていない形では測れず
+        省略できる(model の `ImportedMeshFeature.volume` の注釈のとおり)ので「—」を出す。
+      */
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [
+          ...importedSourceReferences(feature.id, feature.source),
+          {
+            labelKey: 'propertyPanel.triangleCount',
+            name: String(feature.triangleCount),
+            elementId: feature.id,
+          },
+          {
+            labelKey: 'propertyPanel.volume',
+            name: feature.volume === undefined ? '—' : formatVolume(feature.volume),
+            elementId: feature.id,
+          },
+        ],
+        subShapeCounts: [],
+      };
   }
 }
 
@@ -1983,6 +2088,11 @@ export function setSolidField(
     case 'sweep':
       // ミラー(FR-419)とスイープ(FR-409)は式の欄を 1 つも持たない
       // (鏡にする面は選択肢、経路と断面は画面で指すもの)。
+      return feature;
+    case 'importedSolid':
+    case 'importedMesh':
+      // 読み込んだ形 2 種(FR-802)は履歴を持たず、式の欄が1つも無い(model の
+      // `rebuildSolidFeature` と同じ判断)。そのまま返す。
       return feature;
   }
 }

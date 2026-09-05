@@ -31,6 +31,7 @@ import { fillOffsets } from '../sketch/recomputeSketch.js';
 import type { ResolvedCurve, ResolvedSketch, SketchError, SketchMesh } from '../sketch/types.js';
 import {
   resolvePart,
+  type ImportedShapeBytes,
   type PartError,
   type PartErrorCode,
   type ResolvedPart,
@@ -128,6 +129,15 @@ export interface PartRecomputeOptions {
    * 求めたときだけ、呼び出し側(ui)がここを true にして呼ぶ。
    */
   readonly measureAreas?: boolean;
+  /**
+   * 読み込んだ形(FR-802、P6 §2.8、タスク20)の B-rep のバイト列の置き場。
+   *
+   * `.pcad` の ZIP の `shapes/<shapeRef>.brep` をそのまま読んだ表で、**開いた文書 1 つに
+   * つき 1 つ**を作って持ち回る(オフセット・投影の覚え書きと同じ約束)。渡さないと
+   * `importedSolid` の段は「読み込んだ形が見つかりません」で失敗する(FR-504)。
+   * 表を組み立てるのは `packages/io`(タスク21)、ここはそのまま `resolvePart` へ渡すだけ。
+   */
+  readonly importedShapes?: ImportedShapeBytes;
 }
 
 /** 面を作れなかったとき(P1 の recomputeSketch と同じ文言に揃える)。 */
@@ -438,6 +448,8 @@ export async function recomputePart(
     offsetCurves: (key) => offsets.get(key),
     projectedCurves: (featureId) => projectedByFeature.get(featureId) ?? null,
     subShape: (reference) => subShapes.resolve(reference),
+    // 読み込んだ形のバイト列(FR-802、P6 §2.8)。渡されなければ resolvePart が空として扱う。
+    importedShapes: options.importedShapes,
   };
 
   const offsetErrors: SketchError[] = [];

@@ -33,6 +33,9 @@ import {
   type ExtrudeFeature,
   type FilletFeature,
   type HoleFeature,
+  // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
+  type ImportedMeshFeature,
+  type ImportedSolidFeature,
   type LoftFeature,
   type MirrorFeature,
   type PartDocument,
@@ -1856,13 +1859,16 @@ describe('Should 群の要約(P5 §2.11、タスク43)', () => {
   });
 
   it('種類の名前の表は SolidLabelKey を 1 つ残らず持つ(数え漏れを型で止める)', () => {
-    // model の `SOLID_LABELS` と同じ 32 個(P2〜P5 タスク43 の 30 個 +
-    // タスク46 が前倒ししたくり抜き 1 個 + タスク27c の切断 1 個)。
-    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(32);
+    // model の `SOLID_LABELS` と同じ 34 個(P2〜P5 タスク43 の 30 個 +
+    // タスク46 が前倒ししたくり抜き 1 個 + タスク27c の切断 1 個 +
+    // P6 タスク20 の読み込んだ形 2 個)。
+    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(34);
     expect(SOLID_KIND_LABEL_KEYS.draft).toBe('toolbar.machining.draft');
     expect(SOLID_KIND_LABEL_KEYS.pointPattern).toBe('toolbar.machining.pointPattern');
     expect(SOLID_KIND_LABEL_KEYS.shell).toBe('toolbar.machining.shell');
     expect(SOLID_KIND_LABEL_KEYS.cut).toBe('toolbar.machining.cut');
+    expect(SOLID_KIND_LABEL_KEYS.importedSolid).toBe('toolbar.solid.importedSolid');
+    expect(SOLID_KIND_LABEL_KEYS.importedMesh).toBe('toolbar.solid.importedMesh');
   });
 });
 
@@ -2573,6 +2579,100 @@ describe('切断のプロパティ(FR-432。タスク27f)', () => {
       name: '切断1',
       elementId: 'cut-1',
     });
+  });
+});
+
+describe('読み込んだ形の要約(FR-802、P6 §2.8、タスク20)', () => {
+  const IMPORTED_SOLID: ImportedSolidFeature = {
+    id: 'imported-solid-1',
+    name: '読み込んだ形1',
+    suppressed: false,
+    kind: 'importedSolid',
+    shapeRef: 'shape-1',
+    source: {
+      format: 'step',
+      fileName: 'bracket.step',
+      unit: 'mm',
+      byteLength: 20480,
+    },
+    bodyKind: 'solid',
+  };
+
+  const IMPORTED_MESH: ImportedMeshFeature = {
+    id: 'imported-mesh-1',
+    name: '読み込んだ三角形の形1',
+    suppressed: false,
+    kind: 'importedMesh',
+    meshRef: 'mesh-1',
+    source: {
+      format: 'stl',
+      fileName: 'scan.stl',
+      unit: 'inch',
+      byteLength: 102400,
+    },
+    triangleCount: 4820,
+    volume: 12345,
+  };
+
+  it('読み込んだ形(B-rep)は、素性と種類(solid/shell)を読み取り専用の参照で出し、式の欄は1つも無い', () => {
+    const document = appendSolid(documentWith(EXTRUDE), IMPORTED_SOLID);
+    const summary = summarizeSolid(document, IMPORTED_SOLID);
+    expect(summary.kind).toBe('importedSolid');
+    expect(summary.kindLabelKey).toBe('toolbar.solid.importedSolid');
+    expect(summary.fields).toEqual([]);
+    expect(summary.toggles).toEqual([]);
+    expect(summary.choices).toEqual([]);
+    expect(summary.references).toEqual([
+      {
+        labelKey: 'propertyPanel.importedFileName',
+        name: 'bracket.step',
+        elementId: 'imported-solid-1',
+      },
+      { labelKey: 'propertyPanel.importedFormat', name: 'STEP', elementId: 'imported-solid-1' },
+      { labelKey: 'propertyPanel.importedUnit', name: 'mm', elementId: 'imported-solid-1' },
+      { labelKey: 'propertyPanel.importedSize', name: '20480', elementId: 'imported-solid-1' },
+      { labelKey: 'propertyPanel.importedBodyKind', name: 'Solid', elementId: 'imported-solid-1' },
+    ]);
+  });
+
+  it('読み込んだ三角形の形は、素性に加えて三角形の数と体積を出す', () => {
+    const document = appendSolid(documentWith(EXTRUDE), IMPORTED_MESH);
+    const summary = summarizeSolid(document, IMPORTED_MESH);
+    expect(summary.kind).toBe('importedMesh');
+    expect(summary.kindLabelKey).toBe('toolbar.solid.importedMesh');
+    expect(summary.fields).toEqual([]);
+    expect(summary.references.slice(4)).toEqual([
+      { labelKey: 'propertyPanel.triangleCount', name: '4820', elementId: 'imported-mesh-1' },
+      { labelKey: 'propertyPanel.volume', name: '12345', elementId: 'imported-mesh-1' },
+    ]);
+    // 形式・単位は STL と inch(この見本は STEP/mm の見本と違う組み合わせにしてある)。
+    expect(summary.references[1]).toEqual({
+      labelKey: 'propertyPanel.importedFormat',
+      name: 'STL',
+      elementId: 'imported-mesh-1',
+    });
+    expect(summary.references[2]).toEqual({
+      labelKey: 'propertyPanel.importedUnit',
+      name: 'inch',
+      elementId: 'imported-mesh-1',
+    });
+  });
+
+  it('体積を測っていない(閉じていない)三角形の形は「—」を出す', () => {
+    const noVolume: ImportedMeshFeature = { ...IMPORTED_MESH, id: 'imported-mesh-2', volume: undefined };
+    const document = appendSolid(documentWith(EXTRUDE), noVolume);
+    const summary = summarizeSolid(document, noVolume);
+    expect(summary.references.at(-1)).toEqual({
+      labelKey: 'propertyPanel.volume',
+      name: '—',
+      elementId: 'imported-mesh-2',
+    });
+  });
+
+  it('式の欄が1つも無いので、書き戻しはそのまま返す(model の rebuildSolidFeature と同じ判断)', () => {
+    const value = expressionValueFromNumber(9);
+    expect(setSolidField(IMPORTED_SOLID, 'distance', value)).toBe(IMPORTED_SOLID);
+    expect(setSolidField(IMPORTED_MESH, 'count', value)).toBe(IMPORTED_MESH);
   });
 });
 

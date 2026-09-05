@@ -316,6 +316,12 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       // 平面による切断(FR-432、§2.9b、タスク27c)。式は切断面の中(`pointAndAxis` の
       // 傾き角・方位角、`face` / `workPlane` のオフセット、点の座標)にある。
       return { ...feature, plane: rebuildPlaneSpec(feature.plane, map) };
+    case 'importedSolid':
+    case 'importedMesh':
+      // 読み込んだ形の 2 種(FR-802、P6 §2.8、タスク20)。**式の欄を 1 つも持たない**
+      // (履歴を持たない形なので、寸法を式で書き直す余地が無い)。素性(`source`)の
+      // 単位・バイト数は読み込んだときの記録で、パラメータの値が変わっても動かない。
+      return feature;
   }
 }
 

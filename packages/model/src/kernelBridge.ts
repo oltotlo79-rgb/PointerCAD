@@ -1249,6 +1249,13 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         normal: plan.normal,
         keepPositive: plan.keepPositive,
       };
+    case 'importedSolid':
+      /*
+        読み込んだ形(FR-802、P6 §2.8、タスク20)。カーネルの `ImportedSolidStepSpec` は
+        **バイト列 1 つだけ**を受け取る(`shapeRef` は `.pcad` の中の入れ物の名前で、
+        カーネルは `.pcad` を知らないので運ばない。鍵は resolvePart が済ませてある)。
+      */
+      return { kind: 'importedSolid', bytes: plan.bytes };
   }
 }
 

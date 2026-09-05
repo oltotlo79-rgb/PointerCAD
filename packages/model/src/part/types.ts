@@ -34,6 +34,9 @@ import type { Parameter } from '../parameters/types.js';
 import type { WorkPlaneId } from '../sketch/planeMath.js';
 import type { CoordinateInput, PointReference, SketchDocument } from '../sketch/types.js';
 import type { ThreadSeries } from '../thread/metricThread.js';
+// 読み込んだ形の素性(`ImportedSource.unit`、FR-811)が使う長さの単位。正本は
+// `units/length.ts`(P6 タスク1)で、ここは型だけを借りる。
+import type { LengthUnit } from '../units/length.js';
 
 /** スケッチの面フィーチャー1枚への参照。断面に使う(§0.a-0.7、§0.a-0.8)。 */
 export interface SketchFaceRef {
@@ -152,7 +155,20 @@ export type SolidFeatureKind =
    * コマンドが 2 つ目の切断を積むことで満たす(§0.a-0.58)ので、1 つの切断が
    * 2 つのボディを作る形にはしない。
    */
-  | 'cut';
+  | 'cut'
+  /**
+   * 読み込んだ形(ベースボディ。FR-802、P6 計画書 §2.8、§0.a-0.9)。STEP から入った
+   * B-rep をそのまま持つ。履歴を持たず、対象も取らない「作る」フィーチャーで、
+   * **その上へ穴・面取り・ブーリアンを積める**(要件 FR-802 の「その上へのフィーチャー
+   * 追加は可能」)。
+   */
+  | 'importedSolid'
+  /**
+   * 読み込んだ三角形の形(ベースボディ。FR-802、P6 計画書 §2.8、§0.a-0.24)。
+   * STL / OBJ / 3MF / glTF から入った三角形をそのまま持つ。
+   * **B-rep にしない**(§0.a-0.23)ので幾何カーネルの段にならず、加工もできない。
+   */
+  | 'importedMesh';
 
 interface SolidFeatureBase {
   /**
@@ -1025,6 +1041,119 @@ export interface CutFeature extends SolidFeatureBase {
   readonly pairedWith: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// 読み込んだ形(ベースボディ 2 種。FR-802、P6 計画書 §2.8、§0.a-0.9 / §0.a-0.24)
+//
+// ⚠️ **ここは `rules/04-設計の規律.md` の「導出できるものは保存しない」への唯一の例外**
+// である(P6 §0.a-0.9 / §0.a-0.24 で利用者が承認した例外①②)。読み込んだ形は
+// **再計算で導出できない**——元のファイルは手元から消えるかもしれず、消えたら部品が
+// 開けなくなる。だから形そのもの(B-rep / 三角形)を `.pcad` の ZIP へ抱き込む。
+// 「導出できるものは保存しない」の趣旨(同じものを 2 か所に持って食い違わせない)には
+// 反しない——読み込んだ形はどこからも導出できない一次情報だからである。
+//
+// **`document.json` に入るのは下の 2 つの型だけ**で、バイト列は ZIP の別エントリ
+// (`shapes/<shapeRef>.brep` / `meshes/<meshRef>.bin`)に置く(§2.8。`document.json` を
+// 巨大にしないため)。読み書きは `packages/io`(タスク21)の担当。
+// ---------------------------------------------------------------------------
+
+/**
+ * 読み込んだファイルの形式(P6 計画書 §2.8)。
+ *
+ * **`exchange/types.ts` の `ImportFormat`(= Must の 3 つ)とはわざと別の型にしてある。**
+ * あちらは「いま読み込みの口を開けている形式」で、こちらは「文書に記録された、その形が
+ * どの形式から入ったか」である。3MF / glTF の読み込みは Could(FR-809、§0.a-0.26)なので
+ * 口が開くのは後になるが、開いた後に文書の型を広げると版が上がってしまう。
+ */
+export type ImportedSourceFormat = 'step' | 'stl' | 'obj' | '3mf' | 'gltf';
+
+/**
+ * 読み込んだ形の素性(P6 計画書 §2.8)。**形そのものではなく、由来の記録**である。
+ *
+ * 画面(フィーチャーツリーとプロパティ)が「何を、いつ、どの単位で読んだか」を出すために
+ * 持つ。中身(バイト列)は ZIP の別エントリにあるので、ここには 1 バイトも入らない。
+ */
+export interface ImportedSource {
+  /** どの形式から入ったか。 */
+  readonly format: ImportedSourceFormat;
+  /** 読み込んだファイルの名前(表示用。パスは持たない。NFR-SE-1)。 */
+  readonly fileName: string;
+  /**
+   * 取り込んだときにファイルが使っていた長さの単位(FR-811、§0.a-0.6)。
+   *
+   * **中身はすでに mm へ換算済み**(NFR-RE-3、内部は mm 固定)。ここに残すのは
+   * 「元は inch だった」を画面に出すためだけで、この欄で形が変わることはない。
+   */
+  readonly unit: LengthUnit;
+  /** 読み込んだファイルのバイト数(表示用)。 */
+  readonly byteLength: number;
+  /**
+   * 取り込んだ時刻(ISO 8601)。**省略できる**(= 記録なし)。
+   *
+   * 省略を許すのは、①時刻は形にも鍵にも効かない、②検査の見本が時刻を書かずに済む、
+   * ③時計を持たない経路(移行・ひな形)から作った文書でも成り立つ、の 3 つによる
+   * (押し出しの `end`・穴の `entry` と同じ「省略できる欄」の流儀)。
+   */
+  readonly importedAt?: string;
+}
+
+/**
+ * 読み込んだ形(ベースボディ。FR-802、§2.8、§0.a-0.9)。**STEP から入った B-rep。**
+ *
+ * 対象を取らず、何も消費しない「作る」フィーチャー(基本形状・ばねと同じ)。
+ * **その上へ穴・面取り・ブーリアンを積める**(FR-802「その上へのフィーチャー追加は可能」)。
+ * 履歴を持たないので、寸法を編集する欄は 1 つも無い(式の欄が無い唯一のソリッド 2 種)。
+ */
+export interface ImportedSolidFeature extends SolidFeatureBase {
+  readonly kind: 'importedSolid';
+  /**
+   * `.pcad` の ZIP の `shapes/<shapeRef>.brep` の名前の素(§2.8)。
+   *
+   * **形状キャッシュの鍵はこの文字列だけで足りる**(`part/cacheKey.ts`)。読み込んだ形は
+   * 再計算で変わりようがないので、同じ `shapeRef` なら必ず同じ形になり、2 回目以降の
+   * 再計算はキャッシュに当たる(NFR-PF-3)。
+   */
+  readonly shapeRef: string;
+  readonly source: ImportedSource;
+  /**
+   * 形の種類。**`'solid'` か `'shell'` だけ**(三角形の形は `ImportedMeshFeature`)。
+   *
+   * カーネルの `ShapeImportBody.bodyKind`(タスク10)が返した値をそのまま写す。
+   * B-rep のバイト列から導けはするが、**導くにはカーネルを呼ぶしかない**——文書を開いた
+   * だけの時点(書き出しの可否の案内、STL への断り「面だけの立体は STL に書き出せません。」)で
+   * 要るので、読み込んだ素性の一部として保存する(この節の冒頭の例外の内側)。
+   */
+  readonly bodyKind: 'solid' | 'shell';
+}
+
+/**
+ * 読み込んだ三角形の形(ベースボディ。FR-802、§2.8、§0.a-0.24)。
+ * **STL / OBJ / 3MF / glTF から入った三角形。**
+ *
+ * **B-rep にしない**(§0.a-0.23)。したがって幾何カーネルの段にならず、
+ * **穴・面取り・ブーリアンの対象にできない**(断りは `part/resolvePart.ts` の 1 か所)。
+ * 表示・測定・書き出しはできる。
+ */
+export interface ImportedMeshFeature extends SolidFeatureBase {
+  readonly kind: 'importedMesh';
+  /** `.pcad` の ZIP の `meshes/<meshRef>.bin` の名前の素(§2.8)。鍵もこれだけ。 */
+  readonly meshRef: string;
+  readonly source: ImportedSource;
+  /**
+   * 三角形の数。`meshes/<meshRef>.bin` の見出しにも入っているが、**バイト列を読まずに**
+   * ツリーとプロパティへ出すためにここにも持つ(§2.8 の「大きすぎる形」の案内も同じ数を使う)。
+   * 中身と食い違わないのは、両方とも読み込みの 1 回で決まり、以後どちらも変わらないため。
+   */
+  readonly triangleCount: number;
+  /**
+   * 体積(mm³)。**省略できる**(= 測っていない / 閉じていないので測れない)。
+   *
+   * 三角形の集まりが閉じているとは限らず、閉じていない形の体積は意味を持たない
+   * (曲面のボディで体積が 0 とは限らないのと同じ事情。P5 タスク41 の実測)。
+   * `null` ではなく省略にしてあるのは、「測ったら 0 だった」を将来 `0` で表せるようにするため。
+   */
+  readonly volume?: number;
+}
+
 export type SolidFeature =
   | ExtrudeFeature
   | RevolveFeature
@@ -1052,7 +1181,10 @@ export type SolidFeature =
   // P5 の Could 群のうち、型・解決・読み書きをタスク46 が前倒しした 1 種(FR-418)。
   | ShellFeature
   // 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。
-  | CutFeature;
+  | CutFeature
+  // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
+  | ImportedSolidFeature
+  | ImportedMeshFeature;
 
 // ---------------------------------------------------------------------------
 // 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329。P4 タスク9)

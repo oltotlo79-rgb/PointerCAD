@@ -39,6 +39,8 @@ import {
   threadMinorDiameter,
   type ThreadSeries,
 } from '../thread/metricThread.js';
+// Undo / Redo(FR-505)は履歴の仕組みがそのまま効くことだけを確かめる(P6 タスク20)。
+import { createUndoStack, pushUndo, redo, undo } from '../history/undoStack.js';
 import { cacheKeyFor, type KeyCurve } from './cacheKey.js';
 import {
   addSketch,
@@ -51,11 +53,14 @@ import {
   DEFAULT_PRIMITIVE_AXIS,
   DEFAULT_RULED_SPHERE_SEGMENTS,
   defaultPrimitiveOrigin,
+  isMachiningFeature,
   liveBodyIds,
   removeSolid,
   replaceSketch,
 } from './createPartDocument.js';
+import { affectsShape } from './documentChange.js';
 import {
+  IMPORTED_MESH_TARGET_MESSAGE,
   referencedSketchIds,
   resolveHoleCenters,
   resolveMachiningTarget,
@@ -68,6 +73,7 @@ import {
   translateCurve,
 } from './resolvePart.js';
 import type {
+  ImportedShapeBytes,
   RevolveAxisFrame,
   ResolvedPart,
   ResolvedPartSketch,
@@ -88,6 +94,9 @@ import type {
   HoleDepth,
   HoleEntry,
   HoleFeature,
+  ImportedMeshFeature,
+  ImportedSolidFeature,
+  ImportedSource,
   LoftFeature,
   MirrorFeature,
   MirrorPlane,
@@ -7039,5 +7048,351 @@ describe('平面による切断(FR-432、P5 タスク27c)', () => {
   it('作業平面だけの切断面はスケッチを使わない', () => {
     const feature = cutFeature('cut-1', { kind: 'workPlane', planeId: 'xy', offset: expr('0') });
     expect(referencedSketchIds(feature, cutFixture().document.sketches)).toEqual([]);
+  });
+});
+
+/* ===========================================================================
+   読み込んだ形のベースボディ 2 種(FR-802、P6 計画書 §2.8、§0.a-0.9 / §0.a-0.23、タスク20)
+   =========================================================================== */
+
+/** 読み込んだ形の素性。既定は STEP・mm で、検査ごとに要るものだけ変える。 */
+function importedSource(overrides: Partial<ImportedSource> = {}): ImportedSource {
+  return {
+    format: 'step',
+    fileName: 'bracket.step',
+    unit: 'mm',
+    byteLength: 2048,
+    importedAt: '2026-09-06T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function importedSolidFeature(
+  id: string,
+  shapeRef: string,
+  options: { readonly suppressed?: boolean; readonly bodyKind?: 'solid' | 'shell' } = {},
+): ImportedSolidFeature {
+  return {
+    id,
+    name: id,
+    suppressed: options.suppressed ?? false,
+    kind: 'importedSolid',
+    shapeRef,
+    source: importedSource(),
+    bodyKind: options.bodyKind ?? 'solid',
+  };
+}
+
+function importedMeshFeature(
+  id: string,
+  meshRef: string,
+  options: {
+    readonly suppressed?: boolean;
+    readonly triangleCount?: number;
+    readonly volume?: number;
+  } = {},
+): ImportedMeshFeature {
+  return {
+    id,
+    name: id,
+    suppressed: options.suppressed ?? false,
+    kind: 'importedMesh',
+    meshRef,
+    source: importedSource({ format: 'stl', fileName: 'cover.stl' }),
+    triangleCount: options.triangleCount ?? 12,
+    ...(options.volume === undefined ? {} : { volume: options.volume }),
+  };
+}
+
+/** 抱き込んだバイト列の置き場。中身は「戻せるものが入っている」ことだけを表す見本。 */
+function shapeBytes(entries: Readonly<Record<string, readonly number[]>>): ImportedShapeBytes {
+  return new Map(
+    Object.entries(entries).map(([shapeRef, bytes]) => [shapeRef, Uint8Array.from(bytes)]),
+  );
+}
+
+/** 段の種類を狭める(前提が壊れていればテストの誤りとして落とす)。 */
+function importedSolidPlan(
+  step: ResolvedSolidStep,
+): Extract<ResolvedSolidStep['plan'], { kind: 'importedSolid' }> {
+  if (step.plan.kind !== 'importedSolid') {
+    throw new Error(`テストの前提が壊れている: 読み込んだ形でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+describe('読み込んだ形(importedSolid、FR-802、§2.8)', () => {
+  it('履歴の先頭に置くと段が 1 つできて、抱き込んだバイト列が段に乗る', () => {
+    const document = withSolids(
+      createEmptyPartDocument(),
+      importedSolidFeature('importedSolid-1', 'shape-1'),
+    );
+    const resolved = resolvePart(document, {
+      importedShapes: shapeBytes({ 'shape-1': [1, 2, 3, 4] }),
+    });
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.steps).toHaveLength(1);
+    const plan = importedSolidPlan(resolved.steps[0]);
+    expect(plan.shapeRef).toBe('shape-1');
+    expect(plan.bytes).toEqual(Uint8Array.from([1, 2, 3, 4]));
+    expect(resolved.liveBodyIds).toEqual(['importedSolid-1']);
+    // 三角形の形ではないので、メッシュのボディの一覧には出ない。
+    expect(resolved.meshBodies).toEqual([]);
+  });
+
+  it('抱き込んだバイト列が無いと段ができず、理由を持ち回る(FR-504)', () => {
+    const document = withSolids(
+      createEmptyPartDocument(),
+      importedSolidFeature('importedSolid-1', 'shape-1'),
+    );
+    // 置き場そのものを渡さない(`.pcad` の shapes/ が欠けているのと同じ状態)。
+    const resolved = resolvePart(document);
+    expect(resolved.steps).toEqual([]);
+    expect(resolved.errors).toEqual([
+      {
+        featureId: 'importedSolid-1',
+        code: 'missingProfile',
+        message: '読み込んだ形が見つかりません。ファイルを読み込み直してください。',
+      },
+    ]);
+  });
+
+  it('その上に穴をあけられる(STEP はソリッドなので加工できる。FR-802)', () => {
+    const base = createEmptyPartDocument();
+    const added = addPoints(base.sketches[0], [[5, 5, 0]]);
+    const document = withSolids(
+      replaceSketch(base, added.sketch),
+      importedSolidFeature('importedSolid-1', 'shape-1'),
+      holeFeature('hole-1', 'importedSolid-1', [
+        { sketchId: added.sketch.id, pointFeatureId: added.pointIds[0] },
+      ]),
+    );
+    const resolved = resolvePart(document, {
+      importedShapes: shapeBytes({ 'shape-1': [1, 2, 3, 4] }),
+    });
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.steps.map((step) => step.plan.kind)).toEqual(['importedSolid', 'hole']);
+    // 穴は読み込んだ形を消費するので、生きたボディは穴の 1 つだけになる(§0.a-0.5)。
+    expect(resolved.liveBodyIds).toEqual(['hole-1']);
+    const hole = resolved.steps[1];
+    if (hole.plan.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(hole.plan.targetKey).toBe(resolved.steps[0].key);
+  });
+
+  it('鍵は shapeRef だけで決まる(バイト列が違っても同じ鍵、shapeRef が違えば違う鍵)', () => {
+    function keyFor(shapeRef: string, bytes: readonly number[]): string {
+      const document = withSolids(
+        createEmptyPartDocument(),
+        importedSolidFeature('importedSolid-1', shapeRef),
+      );
+      return resolvePart(document, { importedShapes: shapeBytes({ [shapeRef]: bytes }) }).steps[0]
+        .key;
+    }
+    // 中身は読み込んだあと変わらないので、鍵に混ぜない(毎回キャッシュに当たるため)。
+    expect(keyFor('shape-1', [1, 2, 3])).toBe(keyFor('shape-1', [9, 9, 9, 9]));
+    expect(keyFor('shape-1', [1, 2, 3])).not.toBe(keyFor('shape-2', [1, 2, 3]));
+  });
+
+  it('名前を変えても鍵は変わらない(名前は形に効かない。§0.a-0.20)', () => {
+    function keyForName(name: string): string {
+      const document = withSolids(createEmptyPartDocument(), {
+        ...importedSolidFeature('importedSolid-1', 'shape-1'),
+        name,
+      });
+      return resolvePart(document, { importedShapes: shapeBytes({ 'shape-1': [1] }) }).steps[0].key;
+    }
+    expect(keyForName('読み込んだ形1')).toBe(keyForName('ブラケット'));
+  });
+
+  it('抑制すると段が消える(FR-503)', () => {
+    const document = withSolids(
+      createEmptyPartDocument(),
+      importedSolidFeature('importedSolid-1', 'shape-1', { suppressed: true }),
+    );
+    const resolved = resolvePart(document, {
+      importedShapes: shapeBytes({ 'shape-1': [1, 2, 3] }),
+    });
+    expect(resolved.steps).toEqual([]);
+    // 抑制は失敗ではないので、断りも出ない(FR-503)。
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.liveBodyIds).toEqual([]);
+  });
+
+  it('対象を取らないので何も消費せず、加工でもない', () => {
+    const feature = importedSolidFeature('importedSolid-1', 'shape-1');
+    expect(consumedTargetsOf(feature)).toEqual([]);
+    expect(isMachiningFeature(feature)).toBe(false);
+  });
+
+  it('スケッチを 1 本も使わない(FR-325 の順序の制約に関わらない)', () => {
+    expect(referencedSketchIds(importedSolidFeature('importedSolid-1', 'shape-1'))).toEqual([]);
+  });
+});
+
+describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0.23)', () => {
+  it('カーネルの段にはならず、三角形の形のボディとして 1 行になる', () => {
+    const document = withSolids(
+      createEmptyPartDocument(),
+      importedMeshFeature('importedMesh-1', 'mesh-1', { triangleCount: 120, volume: 8000 }),
+    );
+    const resolved = resolvePart(document);
+    expect(resolved.steps).toEqual([]);
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.meshBodies).toEqual([
+      {
+        featureId: 'importedMesh-1',
+        name: 'importedMesh-1',
+        meshRef: 'mesh-1',
+        triangleCount: 120,
+        volume: 8000,
+        visible: true,
+      },
+    ]);
+    expect(resolved.liveBodyIds).toEqual(['importedMesh-1']);
+  });
+
+  it('体積を省いた三角形の形は volume が null になる(測っていない)', () => {
+    const document = withSolids(
+      createEmptyPartDocument(),
+      importedMeshFeature('importedMesh-1', 'mesh-1'),
+    );
+    expect(resolvePart(document).meshBodies[0].volume).toBeNull();
+  });
+
+  it('穴をあけようとすると理由つきで断る(§2.8 の表)', () => {
+    const base = createEmptyPartDocument();
+    const added = addPoints(base.sketches[0], [[5, 5, 0]]);
+    const document = withSolids(
+      replaceSketch(base, added.sketch),
+      importedMeshFeature('importedMesh-1', 'mesh-1'),
+      holeFeature('hole-1', 'importedMesh-1', [
+        { sketchId: added.sketch.id, pointFeatureId: added.pointIds[0] },
+      ]),
+    );
+    const resolved = resolvePart(document);
+    expect(resolved.steps).toEqual([]);
+    expect(resolved.errors).toEqual([
+      {
+        featureId: 'hole-1',
+        code: 'invalidValue',
+        message: '読み込んだ三角形の形には、穴あけや面取りはできません。',
+      },
+    ]);
+    expect(IMPORTED_MESH_TARGET_MESSAGE).toBe(
+      '読み込んだ三角形の形には、穴あけや面取りはできません。',
+    );
+  });
+
+  it('R 面取り・くり抜きの対象にしても同じ理由で断る', () => {
+    const shell: ShellFeature = {
+      id: 'shell-1',
+      name: 'shell-1',
+      suppressed: false,
+      kind: 'shell',
+      targetFeatureId: 'importedMesh-1',
+      openFaces: [],
+      thickness: expr('2'),
+      outward: false,
+    };
+    const document = withSolids(
+      createEmptyPartDocument(),
+      importedMeshFeature('importedMesh-1', 'mesh-1'),
+      filletFeature('fillet-1', 'importedMesh-1', [edgeRefAt('importedMesh-1', 1)]),
+      shell,
+    );
+    const resolved = resolvePart(document);
+    expect(resolved.errors.map((error) => error.message)).toEqual([
+      IMPORTED_MESH_TARGET_MESSAGE,
+      IMPORTED_MESH_TARGET_MESSAGE,
+    ]);
+    expect(resolved.errors.map((error) => error.code)).toEqual(['invalidValue', 'invalidValue']);
+  });
+
+  it('ブーリアンの対象にしても相手にしても同じ理由で断る(§0.a-0.23)', () => {
+    const fixture = createFixture();
+    const asTarget = resolvePart(
+      withSolids(
+        fixture.document,
+        importedMeshFeature('importedMesh-1', 'mesh-1'),
+        extrudeFeature('extrude-1', fixture.faceA),
+        booleanFeature('boolean-1', 'union', 'importedMesh-1', 'extrude-1'),
+      ),
+    );
+    expect(asTarget.errors).toEqual([
+      { featureId: 'boolean-1', code: 'invalidValue', message: IMPORTED_MESH_TARGET_MESSAGE },
+    ]);
+    const asTool = resolvePart(
+      withSolids(
+        fixture.document,
+        importedMeshFeature('importedMesh-1', 'mesh-1'),
+        extrudeFeature('extrude-1', fixture.faceA),
+        booleanFeature('boolean-1', 'union', 'extrude-1', 'importedMesh-1'),
+      ),
+    );
+    expect(asTool.errors).toEqual([
+      { featureId: 'boolean-1', code: 'invalidValue', message: IMPORTED_MESH_TARGET_MESSAGE },
+    ]);
+  });
+
+  it('抑制した三角形の形を指した加工は「見つかりません」になる(断りを取り違えない)', () => {
+    const base = createEmptyPartDocument();
+    const added = addPoints(base.sketches[0], [[5, 5, 0]]);
+    const document = withSolids(
+      replaceSketch(base, added.sketch),
+      importedMeshFeature('importedMesh-1', 'mesh-1', { suppressed: true }),
+      holeFeature('hole-1', 'importedMesh-1', [
+        { sketchId: added.sketch.id, pointFeatureId: added.pointIds[0] },
+      ]),
+    );
+    const resolved = resolvePart(document);
+    expect(resolved.meshBodies).toEqual([]);
+    expect(resolved.errors).toEqual([
+      { featureId: 'hole-1', code: 'missingBody', message: '加工するもとの立体が見つかりません。' },
+    ]);
+  });
+
+  it('対象を取らないので何も消費せず、加工でもない', () => {
+    const feature = importedMeshFeature('importedMesh-1', 'mesh-1');
+    expect(consumedTargetsOf(feature)).toEqual([]);
+    expect(isMachiningFeature(feature)).toBe(false);
+    expect(referencedSketchIds(feature)).toEqual([]);
+  });
+
+  it('読み込んだ形と三角形の形が混ざっても、生きたボディは履歴の順に並ぶ(FR-502)', () => {
+    const document = withSolids(
+      createEmptyPartDocument(),
+      importedMeshFeature('importedMesh-1', 'mesh-1'),
+      importedSolidFeature('importedSolid-1', 'shape-1'),
+      importedMeshFeature('importedMesh-2', 'mesh-2'),
+    );
+    const resolved = resolvePart(document, {
+      importedShapes: shapeBytes({ 'shape-1': [1, 2] }),
+    });
+    expect(resolved.liveBodyIds).toEqual(['importedMesh-1', 'importedSolid-1', 'importedMesh-2']);
+  });
+});
+
+describe('読み込んだ形の Undo / Redo(FR-505、履歴の仕組みがそのまま効く)', () => {
+  it('読み込んだ形を足した文書を Undo すると消え、Redo で戻る', () => {
+    const empty = createEmptyPartDocument();
+    const added = withSolids(empty, importedSolidFeature('importedSolid-1', 'shape-1'));
+    const stack = pushUndo(createUndoStack(empty), added);
+    expect(stack.present.solids).toHaveLength(1);
+    const undone = undo(stack);
+    expect(undone.present.solids).toEqual([]);
+    const redone = redo(undone);
+    expect(redone.present.solids).toEqual(added.solids);
+    // 形の履歴が変わったので、再計算を起こす差である(P5 §2.3.2)。
+    expect(affectsShape(empty, added)).toBe(true);
+  });
+
+  it('三角形の形も同じ仕組みで Undo / Redo できる(段を作らない種類でも履歴は同じ)', () => {
+    const empty = createEmptyPartDocument();
+    const added = withSolids(empty, importedMeshFeature('importedMesh-1', 'mesh-1'));
+    const stack = pushUndo(createUndoStack(empty), added);
+    expect(resolvePart(undo(stack).present).meshBodies).toEqual([]);
+    expect(resolvePart(redo(undo(stack)).present).meshBodies).toHaveLength(1);
   });
 });

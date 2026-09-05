@@ -138,6 +138,7 @@ import type {
   HoleDepth,
   HoleEntry,
   HoleFeature,
+  ImportedSolidFeature,
   LoftFeature,
   MirrorFeature,
   MirrorPlane,
@@ -707,6 +708,26 @@ export type SolidStepPlan =
       readonly normal: Vec3;
       /** 法線の側を残すなら true(文書の `keep === 'positive'`)。 */
       readonly keepPositive: boolean;
+    }
+  | {
+      /**
+       * 読み込んだ形(ベースボディ。FR-802、P6 §2.8、タスク20)。**対象を取らない「作る」段。**
+       *
+       * 段がすることは「抱き込んであるバイト列から B-rep を戻す」ことだけである
+       * (カーネルの `ImportedSolidStepSpec`、タスク10)。
+       *
+       * **鍵に混ぜるのは `shapeRef` だけ**(`bytes` は混ぜない)。中身は読み込んだあと
+       * 二度と変わらないので、同じ `shapeRef` なら必ず同じ形になり、大きなバイト列を
+       * 毎回ハッシュに掛けずに済む(NFR-PF-3)。
+       */
+      readonly kind: 'importedSolid';
+      /** `.pcad` の `shapes/<shapeRef>.brep` の名前の素。鍵の材料はこれだけ。 */
+      readonly shapeRef: string;
+      /**
+       * 抱き込んだ B-rep のバイト列。Worker が作り直された(タブの再読み込み、キャッシュの
+       * 追い出し)ときに形を戻せる材料はここにしか無いので、段に載せて毎回渡す。
+       */
+      readonly bytes: Uint8Array;
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -797,6 +818,36 @@ export interface ResolvedProjection {
   readonly plane: WorkPlane;
 }
 
+/**
+ * 読み込んだ三角形の形のボディ 1 つ(FR-802、P6 §2.8、タスク20)。
+ *
+ * **段(`ResolvedSolidStep`)にはならない。** 三角形は B-rep にしない(§0.a-0.23)ので
+ * 幾何カーネルへ渡す形が無く、`SolidStepPlan` にも `bodyKeys` にも現れない。そのかわり
+ * ここへ 1 行ずつ並べ、画面が `.pcad` の `meshes/<meshRef>.bin` から三角形を読んで描く。
+ *
+ * **形状キャッシュも要らない。** 読み込んだ三角形は再計算で変わりようがなく、
+ * 作り直す計算そのものが無いためである(だから鍵の欄も持たない)。
+ */
+export interface ResolvedMeshBody {
+  /** このボディを作ったフィーチャーの id(= ボディの id、§0.a-0.5)。 */
+  readonly featureId: string;
+  /** フィーチャーツリーに出す名前(FR-501)。 */
+  readonly name: string;
+  /** `.pcad` の `meshes/<meshRef>.bin` の名前の素。画面はこれで三角形を引く。 */
+  readonly meshRef: string;
+  /** 三角形の数(文書に記録された値をそのまま持つ)。 */
+  readonly triangleCount: number;
+  /** 体積(mm³)。測っていない / 閉じていないので測れないときは null。 */
+  readonly volume: number | null;
+  /**
+   * 画面に出すか。**いまは必ず true。** 三角形の形は加工にもブーリアンにも使えない
+   * (`IMPORTED_MESH_TARGET_MESSAGE` で断る)ので、消費されようがないためである。
+   * 欄を置いてあるのは段(`ResolvedSolidStep.visible`)と読み方をそろえるためで、
+   * 画面はどちらのボディも同じ規則(`visible`)だけを見ればよい。
+   */
+  readonly visible: boolean;
+}
+
 export interface ResolvedPart {
   /**
    * スケッチ id ごとの解決結果(P1 の resolveSketch をそのまま呼ぶ)。文書の順を保つ。
@@ -814,6 +865,14 @@ export interface ResolvedPart {
   /** カーネルへ渡す段の一覧。順序が意味を持つ。失敗した段と抑制された段は入らない。 */
   readonly steps: readonly ResolvedSolidStep[];
   /**
+   * 読み込んだ三角形の形のボディ(FR-802、P6 §2.8、タスク20)。無ければ空。
+   *
+   * **`steps` とは別の一覧にしてある。** カーネルへ渡す段が 1 つも増えないので `steps` へ
+   * 混ぜると「段の数」「キャッシュに当たった数」の意味が狂い、性能の検査(NFR-PF-2)が
+   * 数えているものが変わってしまう。並びは文書の履歴の順。
+   */
+  readonly meshBodies: readonly ResolvedMeshBody[];
+  /**
    * まだ形の無い投影・交差(FR-325、タスク25)。無ければ空。
    * `recomputePart` がカーネルへ頼み、覚え書きへ入れてから解決し直す
    * (`ResolvedSketch.pendingOffsets` と同じ 2 段の流れ)。
@@ -825,6 +884,10 @@ export interface ResolvedPart {
    * いま画面に出るボディの id(§0.a-0.5)。steps のうち visible なものを履歴順に並べたもの。
    * createPartDocument.ts の liveBodyIds は文書だけを見る近似で、こちらは
    * 「作成に成功したか」まで見た確定版(FR-502 の表示・選択はこちらを使う)。
+   *
+   * **読み込んだ三角形の形(`meshBodies`)もここへ並ぶ**(FR-802、P6 §2.8)。画面に出て
+   * 選べて色を付けられる(§0.a-0.28)ものは、段になるかどうかに関わらず「生きたボディ」
+   * だからである。並びは履歴の順で、段とメッシュが混ざっても文書の並びのままになる。
    */
   readonly liveBodyIds: readonly string[];
 }
@@ -3961,6 +4024,68 @@ function planCut(
   };
 }
 
+/**
+ * 読み込んだ三角形の形を加工・組み合わせの対象に指したときの断り(P6 §2.8 の表、§0.a-0.23)。
+ *
+ * **この文言の正本は model のこの 1 行**である。カーネル(`worker/recomputeSolids.ts` の
+ * `MESH_NOT_MACHINABLE_MESSAGE`、タスク10)にも 1 字違わぬ同じ文言の断りがあるが、
+ * あちらは二重の網(段まで届いてしまった場合の最後の砦)で、
+ * **参照へ変えるのは P6 タスク16 の担当**である(model → kernel の依存を作らずに、
+ * kernel が model の文言を輸入する形にはできないため、当面は同じ文字列が 2 か所にある)。
+ */
+export const IMPORTED_MESH_TARGET_MESSAGE =
+  '読み込んだ三角形の形には、穴あけや面取りはできません。';
+
+/**
+ * 読み込んだ形(ベースボディ。FR-802、P6 §2.8、タスク20)の段。
+ *
+ * 対象も式も取らないので、することは**抱き込んだバイト列を置き場から引く**ことだけ。
+ * 引けなかった(= `.pcad` の `shapes/<shapeRef>.brep` が無い)ときは、形が作れない理由を
+ * FR-504 のとおり持ち回る。**断りのコードは増やさず** `missingProfile`(もとになる形が
+ * 見つからない)を使う。
+ */
+function planImportedSolid(
+  feature: ImportedSolidFeature,
+  importedShapes: ImportedShapeBytes,
+): PlanOutcome {
+  const bytes = importedShapes.get(feature.shapeRef);
+  if (bytes === undefined) {
+    return fail(
+      feature.id,
+      'missingProfile',
+      '読み込んだ形が見つかりません。ファイルを読み込み直してください。',
+    );
+  }
+  return { ok: true, plan: { kind: 'importedSolid', shapeRef: feature.shapeRef, bytes } };
+}
+
+/**
+ * 「読み込んだ三角形の形は加工・組み合わせの対象にできない」の断り(§0.a-0.23)を、
+ * **model で 1 か所だけ**判定する。
+ *
+ * 判定に `consumedTargetsOf`(`createPartDocument.ts`)をそのまま使うのは、**形を変える
+ * ために相手のボディを取る種類の一覧がちょうどそれだから**である(ブーリアンの対象と
+ * 相手、穴・ねじ穴・面取り・抜き勾配・移動/回転・拡大縮小・リブ・エンボス・外ねじ・
+ * くり抜き・切断の対象、パターンのもと)。種類ごとの欄名をここへ書き写すと、同じ規則が
+ * 2 か所になる(`resolvePart` の消費の記録がこの表を正本にしているのと同じ理由)。
+ *
+ * 面を借りるだけの種類(ミラー・曲面の `face`)はこの一覧に無いので、三角形の形を指すと
+ * 「もとの立体が見つかりません」になる。段を作れない点は同じで、断りの言葉だけが違う。
+ */
+function importedMeshTargetError(
+  feature: SolidFeature,
+  solids: readonly SolidFeature[],
+): PartError | null {
+  for (const targetId of consumedTargetsOf(feature)) {
+    const target = solids.find((candidate) => candidate.id === targetId);
+    // 抑制された形はボディを作らないので「見つからない」が正しい断りになる(FR-503)。
+    if (target !== undefined && target.kind === 'importedMesh' && !target.suppressed) {
+      return partError(feature.id, 'invalidValue', IMPORTED_MESH_TARGET_MESSAGE);
+    }
+  }
+  return null;
+}
+
 function planSolid(
   feature: SolidFeature,
   solids: readonly SolidFeature[],
@@ -3968,8 +4093,13 @@ function planSolid(
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
   context: SolidPlanContext,
+  importedShapes: ImportedShapeBytes,
 ): PlanOutcome {
   const axisFrames = context.axisFrames;
+  const meshError = importedMeshTargetError(feature, solids);
+  if (meshError !== null) {
+    return { ok: false, error: meshError };
+  }
   switch (feature.kind) {
     case 'extrude':
       return planExtrude(feature, sketches, bodyKeys, consumed, context);
@@ -4021,6 +4151,18 @@ function planSolid(
     // 平面による切断(FR-432、§2.9b、タスク27c)。
     case 'cut':
       return planCut(feature, solids, sketches, bodyKeys, consumed, context);
+    // 読み込んだ形(FR-802、P6 §2.8、タスク20)。
+    case 'importedSolid':
+      return planImportedSolid(feature, importedShapes);
+    case 'importedMesh':
+      /*
+        読み込んだ三角形の形は**幾何カーネルの段にならない**(§0.a-0.23)。
+        呼び出し側(`resolvePart`)が `importedMesh` をこの関数へ渡す前に `meshBodies` へ
+        振り分けているので、ここへは来ない。到達しない節に断りを書くのではなく
+        `degenerate` の失敗で返してあるのは、`default` を作らずに網羅の switch を保ちつつ、
+        万一の呼び違いを黙って通さないためである(FR-504、NFR-RE-1)。
+      */
+      return fail(feature.id, 'degenerate', IMPORTED_MESH_TARGET_MESSAGE);
   }
 }
 
@@ -4451,6 +4593,11 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         normal: toKeyVec3(plan.normal),
         keepPositive: plan.keepPositive,
       };
+    case 'importedSolid':
+      // 読み込んだ形(FR-802、P6 §2.8)。**混ぜるのは `shapeRef` だけ**で、バイト列は
+      // 混ぜない(`ImportedSolidKeyMaterial` の注釈)。中身は二度と変わらないので、
+      // 同じ `shapeRef` なら 2 回目以降は必ず形状キャッシュに当たる(NFR-PF-3)。
+      return { kind: 'importedSolid', shapeRef: plan.shapeRef };
   }
 }
 
@@ -4461,6 +4608,9 @@ interface StepDraft {
   readonly key: string;
   readonly plan: SolidStepPlan;
 }
+
+/** visible を決める前の三角形の形のボディ(段と同じ流儀。FR-802、§2.8)。 */
+type MeshBodyDraft = Omit<ResolvedMeshBody, 'visible'>;
 
 /**
  * 基準ジオメトリの断り(`ReferenceErrorCode`)を、ツリーが読む `PartErrorCode` へ写す。
@@ -4749,6 +4899,11 @@ export function referencedSketchIds(
       // 切断(FR-432、タスク27c)。切断面の点がスケッチの点でありうるので、拡大縮小の
       // 中心とまったく同じ扱いで id から探す(スケッチの一覧を渡されたときだけ数える)。
       return planeSketchIds(feature.plane, sketches);
+    case 'importedSolid':
+    case 'importedMesh':
+      // 読み込んだ形(FR-802、P6 §2.8)。**スケッチを 1 本も見ない**(ファイルから入った
+      // 形そのものなので、参照の欄が 1 つも無い)。
+      return [];
   }
 }
 
@@ -4878,7 +5033,27 @@ export interface ResolvePartOptions {
    * この関数を作るのは `recomputePart`(`kernelBridge.ts` の `selectSubShape`)である。
    */
   readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
+  /**
+   * 読み込んだ形(FR-802、P6 §2.8、タスク20)の B-rep のバイト列の置き場。
+   * **渡されなければ空**で、`importedSolid` の段は「読み込んだ形が見つかりません」で失敗する。
+   *
+   * 中身は `.pcad` の ZIP の `shapes/<shapeRef>.brep` をそのまま読んだバイト列で、
+   * 表を組み立てるのは `packages/io`(タスク21)、ここまで運ぶのは `recomputePart` である。
+   * 曲線の覚え書き(`offsetCurves` / `projectedCurves`)を関数で受けているのと違って表
+   * (`ReadonlyMap`)で受けるのは、①中身が読み込んだ時点で全部そろっていて後から埋まる
+   * ことがない、②`.pcad` の添付をそのまま持ち回れる、の 2 つによる。
+   */
+  readonly importedShapes?: ImportedShapeBytes;
 }
+
+/**
+ * 読み込んだ形のバイト列の置き場(FR-802、P6 §2.8、§0.a-0.9)。
+ * 鍵は `ImportedSolidFeature.shapeRef`、値は `shapes/<shapeRef>.brep` の中身。
+ */
+export type ImportedShapeBytes = ReadonlyMap<string, Uint8Array>;
+
+/** 読み込んだ形が 1 つも無い文書のための、空の置き場(毎回作らずに使い回す)。 */
+const NO_IMPORTED_SHAPES: ImportedShapeBytes = new Map<string, Uint8Array>();
 
 /** まだ計算していないオフセットが無いときに使う、常に null を返す関数。 */
 function noOffsetCurves(): null {
@@ -4910,7 +5085,11 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     sketchDocuments: document.sketches,
   };
 
+  const importedShapes = options.importedShapes ?? NO_IMPORTED_SHAPES;
+
   const drafts: StepDraft[] = [];
+  /** 読み込んだ三角形の形(FR-802、§2.8)。段にならないので別の一覧へ積む。 */
+  const meshDrafts: MeshBodyDraft[] = [];
   // 基準ジオメトリの失敗もツリーの行として出すので、同じ一覧へ写す(FR-504)。
   const errors: PartError[] = references.errors.map(toPartError);
   /** 作成に成功したボディの鍵。ここに無い id は下流から参照できない。 */
@@ -4923,7 +5102,31 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     if (feature.suppressed) {
       continue;
     }
-    const outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed, context);
+    if (feature.kind === 'importedMesh') {
+      /*
+        読み込んだ三角形の形(FR-802、§2.8、§0.a-0.23)。**カーネルの段を作らない**ので
+        `bodyKeys` にも入れない——入れると下流の穴・ブーリアンが「あるはずの形」を指して
+        しまい、断りがカーネルまで届いてから出ることになる。ここで入れずにおけば、
+        対象に指した加工は `importedMeshTargetError` が文書だけを見て理由つきで断る。
+      */
+      meshDrafts.push({
+        featureId: feature.id,
+        name: feature.name,
+        meshRef: feature.meshRef,
+        triangleCount: feature.triangleCount,
+        volume: feature.volume ?? null,
+      });
+      continue;
+    }
+    const outcome = planSolid(
+      feature,
+      document.solids,
+      sketches,
+      bodyKeys,
+      consumed,
+      context,
+      importedShapes,
+    );
     if (!outcome.ok) {
       errors.push(outcome.error);
       continue;
@@ -4947,19 +5150,38 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     visible: !consumed.has(draft.featureId),
   }));
 
+  // 三角形の形も段と同じ規則で `visible` を決める(いまは必ず true。`ResolvedMeshBody` の注釈)。
+  const meshBodies: ResolvedMeshBody[] = meshDrafts.map((draft) => ({
+    ...draft,
+    visible: !consumed.has(draft.featureId),
+  }));
+
   // まだ形の無い投影・交差(FR-325)を、段の鍵がそろったここで組み立てる。
   // 段のループの中ではなくループの後で行うのは、①鍵はループが作るもの、
   // ②順序の制約は「そのスケッチを使う立体より前か」で決まり、履歴全体を見ないと
   // 判定できない、の 2 つによる(§0.a-0.11)。
   const projections = collectProjections(document, sketches, bodyKeys, errors);
 
+  /*
+    生きたボディの id を**文書の履歴の順**で並べる(FR-502)。段と三角形の形が混ざるので、
+    2 つの一覧を継ぎ足すのではなく文書の並びで拾い直す。三角形の形が 1 つも無い文書では
+    段の並び = 文書の並びなので、P2 からの結果と 1 つも変わらない。
+  */
+  const liveIds = new Set<string>([
+    ...steps.filter((step) => step.visible).map((step) => step.featureId),
+    ...meshBodies.filter((body) => body.visible).map((body) => body.featureId),
+  ]);
+
   return {
     sketches,
     references,
     steps,
+    meshBodies,
     projections,
     errors,
-    liveBodyIds: steps.filter((step) => step.visible).map((step) => step.featureId),
+    liveBodyIds: document.solids
+      .filter((feature) => liveIds.has(feature.id))
+      .map((feature) => feature.id),
   };
 }
 

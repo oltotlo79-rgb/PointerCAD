@@ -34,9 +34,14 @@ const EDGE_MARGIN_PIXELS = 8;
 const POPOVER_WIDTH_PIXELS = 260;
 /**
  * 高さの見込み(画素)。実際の高さは欄の数と誤り文の折り返しで変わるため、
- * 3 欄+誤り文 1 行のときより少し大きい値を採って下端からはみ出しにくくする。
+ * いちばん背の高い段より少し大きい値を採って下端からはみ出しにくくする。
+ *
+ * P5 タスク49 で段が増え、いちばん背が高いのは外ねじ(欄 2 つ+選択肢 3 つ+つまみ 1 つ)に
+ * なった。選択肢 1 つぶんが見出しと横並びのボタンで約 46px なので、以前の見込み(3 欄+
+ * 誤り文 1 行 = 280px)に選択肢 2 つぶんを足して 372px にする。
+ * **見込みが小さいと下端で切れる**だけで、大きすぎても上へ寄るだけなので安全側へ倒す。
  */
-const POPOVER_HEIGHT_PIXELS = 280;
+const POPOVER_HEIGHT_PIXELS = 372;
 
 /**
  * 選択肢の一覧をこの個数を超えて持つときは、横並びのボタンではなく畳んだ一覧にする
@@ -401,7 +406,7 @@ export function NumericInputPopover({
           }}
           onSelect={(value) => {
             // 選んだ後の欄の数で焦点位置を数える。C面取りは「等距離」で欄が1つに
-            // 減る(numericInput.ts の chamferFieldDefinitions)ため、選ぶ前の
+            // 減る(numericInput.ts の `visibleWhen`)ため、選ぶ前の
             // state.fields.length を使うと輪の位置がずれる。
             const next = chooseNumericInput(state, choice.key, value);
             updateAndFocus(next, next.fields.length + choiceIndex);
@@ -422,10 +427,14 @@ export function NumericInputPopover({
               className="pcad-switch"
               aria-checked={toggle.value}
               onClick={() => {
-                updateAndFocus(
-                  toggleNumericInput(state, toggle.key),
-                  state.fields.length + state.choices.length + index,
-                );
+                /*
+                  切り替えた後の欄の数で焦点位置を数える(P5 タスク49)。拡大縮小の
+                  「軸ごと」のように**つまみで欄が 1 つから 3 つへ増える**段があるので、
+                  切り替える前の state.fields.length を使うと輪の位置がずれる
+                  (選択肢の onSelect が next.fields.length を使うのと同じ理由)。
+                */
+                const next = toggleNumericInput(state, toggle.key);
+                updateAndFocus(next, next.fields.length + next.choices.length + index);
               }}
             >
               <span className="pcad-switch__track" aria-hidden="true">

@@ -2,11 +2,31 @@ import { describe, expect, it } from 'vitest';
 
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
+  DEFAULT_DRAFT_ANGLE_DEGREES,
+  DEFAULT_EMBOSS_HEIGHT_MM,
+  DEFAULT_EXTRUDE_END,
+  DEFAULT_EXTRUDE_THICKNESS_MM,
+  DEFAULT_HOLE_ENTRY,
+  DEFAULT_MIRROR_PLANE_ID,
+  DEFAULT_RIB_SIDE,
+  DEFAULT_RIB_THICKNESS_MM,
+  DEFAULT_SCALE_FACTOR,
+  DEFAULT_SHELL_THICKNESS_MM,
+  DEFAULT_SURFACE_DISTANCE_MM,
+  DEFAULT_TAPER_ANGLE_DEGREES,
+  DEFAULT_THICKNESS_SIDE,
+  DEFAULT_THREAD_SHAFT_FROM_END,
+  DEFAULT_THREAD_SHAFT_LENGTH_MM,
+  DEFAULT_TRANSLATION_MM,
+  MAX_DRAFT_ANGLE_DEGREES,
   MAX_PATTERN_COUNT,
   MAX_POINT_ARRAY_COUNT,
+  MAX_SCALE,
   MAX_SPLINE_POINTS,
   MAX_SPRING_TURNS,
+  MAX_TAPER_ANGLE_DEGREES,
   METRIC_THREAD_DESIGNATIONS,
+  MIN_SCALE,
   type CoordinateInput,
 } from '@pointercad/model';
 
@@ -68,6 +88,8 @@ import {
   valueByFieldKey,
   type NumericInputCommit,
   type NumericInputState,
+  type SolidNumericInputStep,
+  type SolidToolId,
   type NumericInputTransition,
   type SplineDraft,
   type SplineDraftOutcome,
@@ -432,6 +454,26 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
       // 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク27)。どちらもねじれの 1 段だけ。
       ruled: 'ruledTwist',
       loft: 'loftTwist',
+      /*
+        P5 の Should / Could 群 16 種(FR-401、FR-409、FR-415〜428、FR-432。タスク49)。
+        移動/回転だけが 2 段(動かす量 → 回す角度)で、ここには 1 段目を書く。
+      */
+      extrudeEnd: 'extrudeEnd',
+      extrudeThin: 'extrudeThickness',
+      draft: 'draftAngle',
+      mirrorSolid: 'mirrorPlane',
+      transform: 'transformTranslation',
+      scale: 'scaleAmount',
+      sweep: 'sweepOptions',
+      rib: 'ribThickness',
+      emboss: 'embossHeight',
+      counterbore: 'holeEntry',
+      threadShaft: 'threadShaftSize',
+      pointPattern: 'pointPattern',
+      surface: 'surfaceShape',
+      shell: 'shellThickness',
+      variableFillet: 'variableFilletRadius',
+      cut: 'cutPlane',
     });
     for (const step of Object.values(SOLID_TOOL_STEPS)) {
       expect(isSolidStep(step), step).toBe(true);
@@ -686,11 +728,14 @@ describe('ソリッドの確定結果(FR-201、FR-202、§0.a-0.8 / 0.9 / 0.7)',
     }
   });
 
-  it('ソリッドは 1 段で終わるので、「続けてかく」が入でも閉じる(例外: ばねの1段目は2段目へ進む)', () => {
+  it('ソリッドは 1 段で終わるので、「続けてかく」が入でも閉じる(例外: 2 段の道具の1段目)', () => {
+    /*
+      2 段構えの道具の 1 段目はここでは見ない(それぞれの検査で 2 段目へ進むことを確かめる)。
+      ばね(§2.11)に加えて、P5 タスク49 の移動/回転(動かす量 → 回す角度)が入った。
+    */
+    const twoStageFirst: readonly string[] = ['springShape', 'transformTranslation'];
     for (const step of Object.values(SOLID_TOOL_STEPS)) {
-      // ばねの1段目(springShape)だけは2段構えの前半なので、続けてかくに関わらず
-      // springLength へ進む(§2.11)。これは下の「ばねの2段」でまとめて検証する。
-      if (step === 'springShape') {
+      if (twoStageFirst.includes(step)) {
         continue;
       }
       for (const chaining of [false, true]) {
@@ -2917,5 +2962,791 @@ describe('面をつなぐ・ロフトの段(FR-430、FR-410、§2.15 の段の�
         }
       }
     }
+  });
+});
+
+/* ===== P5 タスク49: Should / Could 群の段(§2.15 の段の表、FR-401・409・415〜428・432) ===== */
+
+/** 段の表の 1 行(道具・段・欄・既定・つまみ・選択肢)。検査の期待値をここ 1 か所に持つ。 */
+interface ShapeStepExpectation {
+  readonly tool: SolidToolId;
+  readonly step: SolidNumericInputStep;
+  readonly fieldKeys: readonly string[];
+  readonly defaults: readonly string[];
+  readonly toggleKeys: readonly string[];
+  readonly choiceKeys: readonly string[];
+}
+
+const SHAPE_STEPS: readonly ShapeStepExpectation[] = [
+  {
+    tool: 'extrudeEnd',
+    step: 'extrudeEnd',
+    fieldKeys: ['distance', 'taperAngle'],
+    defaults: ['10', '0'],
+    toggleKeys: ['symmetric', 'taperOutward'],
+    choiceKeys: ['extrudeEnd'],
+  },
+  {
+    tool: 'extrudeThin',
+    step: 'extrudeThickness',
+    fieldKeys: ['thickness'],
+    defaults: ['2'],
+    toggleKeys: [],
+    choiceKeys: ['thicknessSide'],
+  },
+  {
+    tool: 'draft',
+    step: 'draftAngle',
+    fieldKeys: ['draftAngle'],
+    defaults: ['1'],
+    toggleKeys: ['reversed'],
+    choiceKeys: [],
+  },
+  {
+    tool: 'mirrorSolid',
+    step: 'mirrorPlane',
+    fieldKeys: [],
+    defaults: [],
+    toggleKeys: [],
+    choiceKeys: ['mirrorPlane'],
+  },
+  {
+    tool: 'transform',
+    step: 'transformTranslation',
+    fieldKeys: ['translationX', 'translationY', 'translationZ'],
+    defaults: ['0', '0', '0'],
+    toggleKeys: [],
+    choiceKeys: [],
+  },
+  {
+    tool: 'scale',
+    step: 'scaleAmount',
+    fieldKeys: ['scaleFactor'],
+    defaults: ['2'],
+    toggleKeys: ['scalePerAxis'],
+    choiceKeys: [],
+  },
+  {
+    tool: 'sweep',
+    step: 'sweepOptions',
+    fieldKeys: [],
+    defaults: [],
+    toggleKeys: ['sweepFrenet'],
+    choiceKeys: [],
+  },
+  {
+    tool: 'rib',
+    step: 'ribThickness',
+    fieldKeys: ['ribThickness'],
+    defaults: ['3'],
+    toggleKeys: [],
+    choiceKeys: ['ribSide'],
+  },
+  {
+    tool: 'emboss',
+    step: 'embossHeight',
+    fieldKeys: ['embossHeight'],
+    defaults: ['1'],
+    toggleKeys: ['raised'],
+    choiceKeys: [],
+  },
+  {
+    tool: 'counterbore',
+    step: 'holeEntry',
+    fieldKeys: [],
+    defaults: [],
+    toggleKeys: [],
+    choiceKeys: ['holeEntry'],
+  },
+  {
+    tool: 'threadShaft',
+    step: 'threadShaftSize',
+    fieldKeys: ['threadShaftPitch', 'threadShaftLength'],
+    defaults: ['1', '20'],
+    toggleKeys: ['modeledThread'],
+    choiceKeys: ['threadDesignation', 'threadSeries', 'threadShaftEnd'],
+  },
+  {
+    tool: 'pointPattern',
+    step: 'pointPattern',
+    fieldKeys: [],
+    defaults: [],
+    toggleKeys: [],
+    choiceKeys: [],
+  },
+  {
+    tool: 'surface',
+    step: 'surfaceShape',
+    fieldKeys: ['surfaceDistance'],
+    defaults: ['20'],
+    toggleKeys: ['reversed'],
+    choiceKeys: ['surfaceOperation'],
+  },
+  {
+    tool: 'shell',
+    step: 'shellThickness',
+    fieldKeys: ['shellThickness'],
+    defaults: ['2'],
+    toggleKeys: ['shellOutward'],
+    choiceKeys: [],
+  },
+  {
+    tool: 'variableFillet',
+    step: 'variableFilletRadius',
+    fieldKeys: ['radius'],
+    defaults: ['2'],
+    toggleKeys: ['variableRadius'],
+    choiceKeys: [],
+  },
+  {
+    tool: 'cut',
+    step: 'cutPlane',
+    fieldKeys: [],
+    defaults: [],
+    toggleKeys: ['cutKeepOpposite', 'cutKeepBoth'],
+    choiceKeys: ['cutPlaneKind'],
+  },
+];
+
+describe('P5 Should / Could 群の段(タスク49、§2.15 の段の表)', () => {
+  it('16 の道具それぞれに段がある。段はソリッドの段で、座標を聞かない', () => {
+    expect(SHAPE_STEPS).toHaveLength(16);
+    for (const expectation of SHAPE_STEPS) {
+      expect(SOLID_TOOL_STEPS[expectation.tool], expectation.tool).toBe(expectation.step);
+      expect(isSolidStep(expectation.step), expectation.step).toBe(true);
+      expect(isCoordinateStep(expectation.step), expectation.step).toBe(false);
+      expect(NUMERIC_INPUT_STEPS, expectation.step).toContain(expectation.step);
+    }
+  });
+
+  it('開いた直後の欄・既定値・つまみ・選択肢が段の表のとおり', () => {
+    for (const expectation of SHAPE_STEPS) {
+      const state = createNumericInput(expectation.tool, expectation.step);
+      expect(
+        state.fields.map((field) => field.key),
+        expectation.step,
+      ).toEqual(expectation.fieldKeys);
+      expect(
+        state.fields.map((field) => field.source),
+        expectation.step,
+      ).toEqual(expectation.defaults);
+      expect(
+        state.toggles.map((toggle) => toggle.key),
+        expectation.step,
+      ).toEqual(expectation.toggleKeys);
+      expect(
+        state.choices.map((choice) => choice.key),
+        expectation.step,
+      ).toEqual(expectation.choiceKeys);
+    }
+  });
+
+  it('つまみの既定はすべて切(model の既定と同じ)', () => {
+    for (const expectation of SHAPE_STEPS) {
+      const state = createNumericInput(expectation.tool, expectation.step);
+      expect(
+        state.toggles.map((toggle) => toggle.value),
+        expectation.step,
+      ).toEqual(expectation.toggleKeys.map(() => false));
+    }
+  });
+
+  it('選択肢の既定は model の既定と同じ(同じ値を 2 か所に持たない)', () => {
+    const opened = (tool: SolidToolId, step: SolidNumericInputStep): NumericInputState =>
+      createNumericInput(tool, step);
+    expect(choiceValueOf(opened('extrudeEnd', 'extrudeEnd'), 'extrudeEnd')).toBe(
+      DEFAULT_EXTRUDE_END.kind,
+    );
+    expect(choiceValueOf(opened('extrudeThin', 'extrudeThickness'), 'thicknessSide')).toBe(
+      DEFAULT_THICKNESS_SIDE,
+    );
+    expect(choiceValueOf(opened('mirrorSolid', 'mirrorPlane'), 'mirrorPlane')).toBe(
+      DEFAULT_MIRROR_PLANE_ID,
+    );
+    expect(choiceValueOf(opened('rib', 'ribThickness'), 'ribSide')).toBe(DEFAULT_RIB_SIDE);
+    expect(choiceValueOf(opened('counterbore', 'holeEntry'), 'holeEntry')).toBe(
+      DEFAULT_HOLE_ENTRY.kind,
+    );
+    expect(choiceValueOf(opened('threadShaft', 'threadShaftSize'), 'threadShaftEnd')).toBe(
+      DEFAULT_THREAD_SHAFT_FROM_END,
+    );
+  });
+
+  it('欄の既定値も model の定数と同じ(§2.15 の「既定」列)', () => {
+    const sourceOf = (
+      tool: SolidToolId,
+      step: SolidNumericInputStep,
+      key: string,
+    ): string | undefined =>
+      createNumericInput(tool, step).fields.find((field) => field.key === key)?.source;
+    expect(sourceOf('extrudeEnd', 'extrudeEnd', 'taperAngle')).toBe(
+      String(DEFAULT_TAPER_ANGLE_DEGREES),
+    );
+    expect(sourceOf('extrudeThin', 'extrudeThickness', 'thickness')).toBe(
+      String(DEFAULT_EXTRUDE_THICKNESS_MM),
+    );
+    expect(sourceOf('draft', 'draftAngle', 'draftAngle')).toBe(
+      String(DEFAULT_DRAFT_ANGLE_DEGREES),
+    );
+    expect(sourceOf('transform', 'transformTranslation', 'translationX')).toBe(
+      String(DEFAULT_TRANSLATION_MM),
+    );
+    expect(sourceOf('scale', 'scaleAmount', 'scaleFactor')).toBe(String(DEFAULT_SCALE_FACTOR));
+    expect(sourceOf('rib', 'ribThickness', 'ribThickness')).toBe(String(DEFAULT_RIB_THICKNESS_MM));
+    expect(sourceOf('emboss', 'embossHeight', 'embossHeight')).toBe(
+      String(DEFAULT_EMBOSS_HEIGHT_MM),
+    );
+    expect(sourceOf('threadShaft', 'threadShaftSize', 'threadShaftLength')).toBe(
+      String(DEFAULT_THREAD_SHAFT_LENGTH_MM),
+    );
+    expect(sourceOf('shell', 'shellThickness', 'shellThickness')).toBe(
+      String(DEFAULT_SHELL_THICKNESS_MM),
+    );
+    expect(sourceOf('surface', 'surfaceShape', 'surfaceDistance')).toBe(
+      String(DEFAULT_SURFACE_DISTANCE_MM),
+    );
+  });
+
+  it('移動/回転は 3 欄を 1 段に収める(§2.15「3 つまでは 1 行に収まる」)', () => {
+    const state = createNumericInput('transform', 'transformTranslation');
+    expect(state.fields).toHaveLength(3);
+    expect(state.fields.map((field) => field.unit)).toEqual(['mm', 'mm', 'mm']);
+    // 輪も 3 つだけ(選択肢もつまみも持たない段)。
+    expect(numericFocusTargets(state)).toHaveLength(3);
+  });
+
+  it('移動/回転は 2 段。1 段目の確定で閉じず、動かす量が 2 段目へ持ち越される', () => {
+    let first = createNumericInput('transform', 'transformTranslation');
+    first = edited(first, '5', 0);
+    first = edited(first, '-3', 1);
+
+    expect(nextNumericInput(first, false)?.step).toBe('transformRotation');
+    const opened = expectOpen(applyNumericInputKey(first, 'Enter'));
+    expect(opened.state.step).toBe('transformRotation');
+    expect(opened.state.toolId).toBe('transform');
+
+    const second = edited(opened.state, '90', 0);
+    const { commit } = expectSolidCommitted(commitNumericInput(second));
+    expect(commit.tool).toBe('transform');
+    expect(commit.step).toBe('transformRotation');
+    expect(commit.values.translationX?.value).toBe(5);
+    expect(commit.values.translationY?.value).toBe(-3);
+    expect(commit.values.translationZ?.value).toBe(0);
+    expect(commit.values.rotationAngle?.value).toBe(90);
+    expect(commit.axis).toEqual({ kind: 'world', axis: 'z' });
+  });
+
+  it('Should 群の段は移動/回転の 1 段目以外すべて 1 段で閉じる', () => {
+    for (const expectation of SHAPE_STEPS) {
+      if (expectation.step === 'transformTranslation') {
+        continue;
+      }
+      const state = createNumericInput(expectation.tool, expectation.step);
+      for (const chaining of [false, true]) {
+        expect(nextNumericInput(state, chaining), expectation.step).toBeNull();
+      }
+    }
+  });
+
+  it('確定は道具と段をそのまま返し、取消は作りかけを返さない(NFR-UX-3)', () => {
+    for (const expectation of SHAPE_STEPS) {
+      if (expectation.step === 'transformTranslation') {
+        continue;
+      }
+      const state = createNumericInput(expectation.tool, expectation.step);
+      const { commit } = expectSolidCommitted(commitNumericInput(state));
+      expect(commit.kind, expectation.step).toBe('solid');
+      expect(commit.tool, expectation.step).toBe(expectation.tool);
+      expect(commit.step, expectation.step).toBe(expectation.step);
+      expect(applyNumericInputKey(state, 'Escape'), expectation.step).toEqual({
+        kind: 'cancelled',
+      });
+    }
+  });
+
+  it('見出し・欄の名前・説明・選択肢はすべて ja.json のキーで返す(NFR-MA-5)', () => {
+    for (const expectation of SHAPE_STEPS) {
+      const state = createNumericInput(expectation.tool, expectation.step);
+      expect(MESSAGE_KEYS, expectation.step).toContain(STEP_TITLE_KEYS[expectation.step]);
+      for (const field of state.fields) {
+        expect(MESSAGE_KEYS, field.key).toContain(field.labelKey);
+        expect(MESSAGE_KEYS, field.key).toContain(field.tooltipKey);
+      }
+      for (const toggle of state.toggles) {
+        expect(MESSAGE_KEYS, toggle.key).toContain(toggle.labelKey);
+      }
+      for (const choice of state.choices) {
+        expect(MESSAGE_KEYS, choice.key).toContain(choice.labelKey);
+        for (const option of choice.options) {
+          expect(numericChoiceOptionLabel(option).length, option.value).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  it('外ねじの呼びの一覧はねじ穴とまったく同じ表を使う(規格表を 2 か所に持たない)', () => {
+    const state = createNumericInput('threadShaft', 'threadShaftSize');
+    const designation = state.choices.find((choice) => choice.key === 'threadDesignation');
+    expect(designation?.options.map((option) => option.value)).toEqual([
+      ...METRIC_THREAD_DESIGNATIONS,
+    ]);
+    // ピッチの既定は規格表から引いた M6 並目の値(同じ数を 2 か所に書かない)。
+    expect(state.fields.find((field) => field.key === 'threadShaftPitch')?.source).toBe('1');
+  });
+
+  it('切断は 7 通りの決め方を並べ、残す側のつまみを 2 つ持つ(§0.a-0.57・0.58)', () => {
+    const state = createNumericInput('cut', 'cutPlane');
+    const kind = state.choices.find((choice) => choice.key === 'cutPlaneKind');
+    expect(kind?.options.map((option) => option.value)).toEqual([
+      'xy',
+      'xz',
+      'yz',
+      'face',
+      'threePoints',
+      'pointAndEdge',
+      'pointAndAxis',
+    ]);
+    expect(kind?.value).toBe('xy');
+    expect(state.toggles.map((toggle) => toggle.key)).toEqual(['cutKeepOpposite', 'cutKeepBoth']);
+  });
+
+  it('曲面は 6 通りの作り方を並べる(model の SurfaceOperation と同じ言葉)', () => {
+    const state = createNumericInput('surface', 'surfaceShape');
+    expect(
+      state.choices
+        .find((choice) => choice.key === 'surfaceOperation')
+        ?.options.map((option) => option.value),
+    ).toEqual(['extrude', 'revolve', 'planar', 'loft', 'face', 'offset']);
+  });
+
+  it('選択肢の値は文字列のまま確定結果へ渡る(読み替えはタスク50 の担当)', () => {
+    const state = chooseNumericInput(
+      createNumericInput('mirrorSolid', 'mirrorPlane'),
+      'mirrorPlane',
+      'yz',
+    );
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.shapeChoices?.mirrorPlane).toBe('yz');
+    expect(commit.shapeChoices?.cutPlaneKind).toBeUndefined();
+  });
+
+  it('つまみの入切は確定結果の真偽になる', () => {
+    const raised = toggleNumericInput(createNumericInput('emboss', 'embossHeight'), 'raised');
+    expect(expectSolidCommitted(commitNumericInput(raised)).commit.flags.raised).toBe(true);
+    const outward = toggleNumericInput(
+      createNumericInput('shell', 'shellThickness'),
+      'shellOutward',
+    );
+    expect(expectSolidCommitted(commitNumericInput(outward)).commit.flags.shellOutward).toBe(true);
+    const both = toggleNumericInput(createNumericInput('cut', 'cutPlane'), 'cutKeepBoth');
+    const bothCommit = expectSolidCommitted(commitNumericInput(both)).commit;
+    expect(bothCommit.flags.cutKeepBoth).toBe(true);
+    expect(bothCommit.flags.cutKeepOpposite).toBe(false);
+  });
+
+  it('範囲は model の上限と同じ(傾き 60 度・抜き勾配 60 度・倍率 0.001〜1000)', () => {
+    const taper = createNumericInput('extrudeEnd', 'extrudeEnd').fields[1];
+    expect(taper.range).toEqual({
+      min: 0,
+      minInclusive: true,
+      max: MAX_TAPER_ANGLE_DEGREES,
+      maxInclusive: true,
+    });
+    const draft = createNumericInput('draft', 'draftAngle').fields[0];
+    expect(draft.range).toEqual({
+      min: 0,
+      minInclusive: false,
+      max: MAX_DRAFT_ANGLE_DEGREES,
+      maxInclusive: true,
+    });
+    const scale = createNumericInput('scale', 'scaleAmount').fields[0];
+    expect(scale.range).toEqual({
+      min: MIN_SCALE,
+      minInclusive: true,
+      max: MAX_SCALE,
+      maxInclusive: true,
+    });
+  });
+
+  it('上限を超えた値は確定できない(NFR-UX-5)', () => {
+    const over = edited(
+      createNumericInput('draft', 'draftAngle'),
+      String(MAX_DRAFT_ANGLE_DEGREES + 1),
+    );
+    expect(
+      expectBlocked(applyNumericInputKey(over, 'Enter')).evaluation.results[0].error?.code,
+    ).toBe('outOfRange');
+    const atMax = edited(
+      createNumericInput('draft', 'draftAngle'),
+      String(MAX_DRAFT_ANGLE_DEGREES),
+    );
+    expect(
+      expectSolidCommitted(applyNumericInputKey(atMax, 'Enter')).commit.values.draftAngle?.value,
+    ).toBe(MAX_DRAFT_ANGLE_DEGREES);
+  });
+});
+
+describe('P5 タスク49: つまみ・選択肢で欄を出し分ける(visibleWhen)', () => {
+  it('C 面取りの「等距離」では距離 2 の欄が出ない(P3 の残件の解消)', () => {
+    const equal = createNumericInput('chamfer', 'chamferSize');
+    expect(choiceValueOf(equal, 'chamferMode')).toBe('equal');
+    expect(equal.fields.map((field) => field.key)).toEqual(['chamferDistance']);
+
+    const two = chooseNumericInput(equal, 'chamferMode', 'twoDistances');
+    expect(two.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferDistance2']);
+
+    const angle = chooseNumericInput(equal, 'chamferMode', 'distanceAngle');
+    expect(angle.fields.map((field) => field.key)).toEqual(['chamferDistance', 'chamferAngle']);
+
+    // 等距離へ戻すとまた 1 欄になる。
+    expect(chooseNumericInput(two, 'chamferMode', 'equal').fields.map((field) => field.key)).toEqual(
+      ['chamferDistance'],
+    );
+  });
+
+  it('スケッチの角の面取りも「等距離」で 1 欄、「2つの距離」で 2 欄', () => {
+    const equal = createNumericInput('sketchChamfer', 'sketchChamferSize');
+    expect(equal.fields.map((field) => field.key)).toEqual(['cornerDistance1']);
+    expect(
+      chooseNumericInput(equal, 'chamferMode', 'twoDistances').fields.map((field) => field.key),
+    ).toEqual(['cornerDistance1', 'cornerDistance2']);
+  });
+
+  it('拡大縮小の「軸ごと」を入にすると欄が 1 つから 3 つに増える', () => {
+    const uniform = createNumericInput('scale', 'scaleAmount');
+    expect(uniform.fields.map((field) => field.key)).toEqual(['scaleFactor']);
+
+    const perAxis = toggleNumericInput(uniform, 'scalePerAxis');
+    expect(perAxis.fields.map((field) => field.key)).toEqual(['scaleX', 'scaleY', 'scaleZ']);
+    expect(perAxis.fields.map((field) => field.source)).toEqual(['2', '2', '2']);
+
+    // もう一度押すと元の 1 欄へ戻る。
+    expect(toggleNumericInput(perAxis, 'scalePerAxis').fields.map((field) => field.key)).toEqual([
+      'scaleFactor',
+    ]);
+  });
+
+  it('軸ごとの倍率は 3 つとも確定結果に入り、全体倍率は入らない', () => {
+    let state = toggleNumericInput(createNumericInput('scale', 'scaleAmount'), 'scalePerAxis');
+    state = edited(state, '3', 0);
+    state = edited(state, '4', 1);
+    state = edited(state, '5', 2);
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.values.scaleX?.value).toBe(3);
+    expect(commit.values.scaleY?.value).toBe(4);
+    expect(commit.values.scaleZ?.value).toBe(5);
+    expect(commit.values.scaleFactor).toBeUndefined();
+    expect(commit.flags.scalePerAxis).toBe(true);
+  });
+
+  it('可変半径の R 面取りは「終わりを別の半径に」で終わりの半径が出る', () => {
+    const constant = createNumericInput('variableFillet', 'variableFilletRadius');
+    expect(constant.fields.map((field) => field.key)).toEqual(['radius']);
+
+    const variable = toggleNumericInput(constant, 'variableRadius');
+    expect(variable.fields.map((field) => field.key)).toEqual(['radius', 'filletRadiusEnd']);
+    expect(variable.fields[1].source).toBe('5');
+
+    const { commit } = expectSolidCommitted(commitNumericInput(variable));
+    expect(commit.values.filletRadiusEnd?.value).toBe(5);
+    expect(commit.flags.variableRadius).toBe(true);
+    // つまみが切のままなら終わりの半径は確定結果へ入らない。
+    expect(
+      expectSolidCommitted(commitNumericInput(constant)).commit.values.filletRadiusEnd,
+    ).toBeUndefined();
+  });
+
+  it('穴の入口は「広げない」で 0 欄、ざぐり・皿もみでそれぞれ 2 欄になる', () => {
+    const plain = createNumericInput('counterbore', 'holeEntry');
+    expect(plain.fields).toHaveLength(0);
+
+    const counterbore = chooseNumericInput(plain, 'holeEntry', 'counterbore');
+    expect(counterbore.fields.map((field) => field.key)).toEqual([
+      'counterboreDiameter',
+      'counterboreDepth',
+    ]);
+    expect(counterbore.fields.map((field) => field.source)).toEqual(['11', '4']);
+
+    const countersink = chooseNumericInput(plain, 'holeEntry', 'countersink');
+    expect(countersink.fields.map((field) => field.key)).toEqual([
+      'countersinkDiameter',
+      'countersinkAngle',
+    ]);
+    expect(countersink.fields.map((field) => field.source)).toEqual(['12', '90']);
+  });
+
+  it('押し出しの終わり方が「距離」以外のときは距離の欄を出さない', () => {
+    const distance = createNumericInput('extrudeEnd', 'extrudeEnd');
+    expect(distance.fields.map((field) => field.key)).toEqual(['distance', 'taperAngle']);
+    expect(
+      chooseNumericInput(distance, 'extrudeEnd', 'toFace').fields.map((field) => field.key),
+    ).toEqual(['taperAngle']);
+    expect(
+      chooseNumericInput(distance, 'extrudeEnd', 'toNext').fields.map((field) => field.key),
+    ).toEqual(['taperAngle']);
+  });
+
+  it('曲面は作り方で欄が入れ替わる(掛ける=距離、回す=角度、離す=離す距離、ほかは 0 欄)', () => {
+    const base = createNumericInput('surface', 'surfaceShape');
+    const keysFor = (operation: string): readonly string[] =>
+      chooseNumericInput(base, 'surfaceOperation', operation).fields.map((field) => field.key);
+    expect(keysFor('extrude')).toEqual(['surfaceDistance']);
+    expect(keysFor('revolve')).toEqual(['surfaceAngle']);
+    expect(keysFor('offset')).toEqual(['surfaceOffset']);
+    expect(keysFor('planar')).toEqual([]);
+    expect(keysFor('loft')).toEqual([]);
+    expect(keysFor('face')).toEqual([]);
+  });
+
+  it('切断の傾きの欄は「点と軸」のときだけ出る', () => {
+    const base = createNumericInput('cut', 'cutPlane');
+    expect(base.fields).toHaveLength(0);
+    const pointAndAxis = chooseNumericInput(base, 'cutPlaneKind', 'pointAndAxis');
+    expect(pointAndAxis.fields.map((field) => field.key)).toEqual(['cutTilt']);
+    expect(pointAndAxis.fields[0].source).toBe('0');
+    // ほかの決め方へ移すとまた消える。
+    expect(chooseNumericInput(pointAndAxis, 'cutPlaneKind', 'threePoints').fields).toHaveLength(0);
+  });
+
+  it('隠れた欄は輪(Tab の巡り)からも外れる。並びは欄 → 選択肢 → つまみのまま', () => {
+    const uniform = createNumericInput('scale', 'scaleAmount');
+    expect(numericFocusTargets(uniform)).toEqual([
+      { kind: 'field', index: 0 },
+      { kind: 'toggle', index: 0 },
+    ]);
+    const perAxis = toggleNumericInput(uniform, 'scalePerAxis');
+    expect(numericFocusTargets(perAxis)).toEqual([
+      { kind: 'field', index: 0 },
+      { kind: 'field', index: 1 },
+      { kind: 'field', index: 2 },
+      { kind: 'toggle', index: 0 },
+    ]);
+
+    const entry = chooseNumericInput(
+      createNumericInput('counterbore', 'holeEntry'),
+      'holeEntry',
+      'counterbore',
+    );
+    expect(numericFocusTargets(entry)).toEqual([
+      { kind: 'field', index: 0 },
+      { kind: 'field', index: 1 },
+      { kind: 'choice', index: 0 },
+    ]);
+  });
+
+  it('欄が増減しても、輪の中の焦点は同じつまみ・選択肢を指し続ける', () => {
+    // つまみに焦点を置いてから切り替える(輪は 欄1 + つまみ1 → 欄3 + つまみ1)。
+    const uniform = reduceNumericInput(createNumericInput('scale', 'scaleAmount'), {
+      type: 'focus',
+      index: 1,
+    });
+    expect(focusedTarget(uniform)).toEqual({ kind: 'toggle', index: 0 });
+    const perAxis = toggleNumericInput(uniform, 'scalePerAxis');
+    expect(focusedTarget(perAxis)).toEqual({ kind: 'toggle', index: 0 });
+    expect(perAxis.focusedIndex).toBe(3);
+
+    // 選択肢に焦点があるときも同じ選択肢を指し続ける(欄0 + 選択肢1 → 欄2 + 選択肢1)。
+    const plain = reduceNumericInput(createNumericInput('counterbore', 'holeEntry'), {
+      type: 'focus',
+      index: 0,
+    });
+    expect(focusedTarget(plain)).toEqual({ kind: 'choice', index: 0 });
+    const widened = chooseNumericInput(plain, 'holeEntry', 'counterbore');
+    expect(focusedTarget(widened)).toEqual({ kind: 'choice', index: 0 });
+  });
+
+  it('欄が消えて戻っても、消えていない欄に打った値は残る', () => {
+    let state = createNumericInput('extrudeEnd', 'extrudeEnd');
+    state = edited(state, '25', 0);
+    state = edited(state, '7', 1);
+    const hidden = chooseNumericInput(state, 'extrudeEnd', 'toNext');
+    expect(hidden.fields.map((field) => field.source)).toEqual(['7']);
+    const shown = chooseNumericInput(hidden, 'extrudeEnd', 'distance');
+    // 消えていた距離は既定値へ戻り、残っていた傾きは打った値のまま。
+    expect(shown.fields.map((field) => field.source)).toEqual(['10', '7']);
+  });
+
+  it('P1〜P4 の段は visibleWhen を持たず、欄の数も変わらない', () => {
+    const unchanged = [
+      { tool: 'extrude', step: 'extrudeDistance', count: 1 },
+      { tool: 'revolve', step: 'revolveAngle', count: 1 },
+      { tool: 'sew', step: 'sewTolerance', count: 1 },
+      { tool: 'hole', step: 'holeSize', count: 2 },
+      { tool: 'threadHole', step: 'threadSize', count: 2 },
+      { tool: 'fillet', step: 'filletRadius', count: 1 },
+      { tool: 'linearPattern', step: 'linearPattern', count: 2 },
+      { tool: 'circularPattern', step: 'circularPattern', count: 2 },
+      { tool: 'sphere', step: 'sphereSize', count: 1 },
+      { tool: 'box', step: 'boxSize', count: 3 },
+      { tool: 'cone', step: 'coneSize', count: 3 },
+      { tool: 'ruled', step: 'ruledTwist', count: 1 },
+    ] as const;
+    for (const { tool, step, count } of unchanged) {
+      const state = createNumericInput(tool, step);
+      expect(state.fields, step).toHaveLength(count);
+      for (const field of state.fields) {
+        expect(field.visibleWhen, `${step}.${field.key}`).toBeUndefined();
+      }
+    }
+  });
+});
+
+describe('P5 タスク49: 新しい道具の id と段の一意性、確定結果への写し', () => {
+  it('新しい 16 種はスケッチ・図形・基準・整形の道具と id がぶつからない', () => {
+    for (const expectation of SHAPE_STEPS) {
+      expect(isShapeTool(expectation.tool), expectation.tool).toBe(false);
+      expect(isReferenceTool(expectation.tool), expectation.tool).toBe(false);
+      expect(isEditTool(expectation.tool), expectation.tool).toBe(false);
+      expect(isCornerEditTool(expectation.tool), expectation.tool).toBe(false);
+    }
+    // 立体のミラーは整形系のミラーとは別の道具(同じ id にすると入れ替わる)。
+    expect(isEditTool('mirror')).toBe(true);
+    expect(isEditTool('mirrorSolid')).toBe(false);
+  });
+
+  it('道具と段は 1 対 1(同じ段を 2 つの道具が使わない)', () => {
+    const steps = Object.values(SOLID_TOOL_STEPS);
+    expect(new Set(steps).size).toBe(steps.length);
+  });
+
+  it('段の一覧に重複が無く、すべての段に見出しがある(NFR-MA-5)', () => {
+    expect(new Set(NUMERIC_INPUT_STEPS).size).toBe(NUMERIC_INPUT_STEPS.length);
+    for (const step of NUMERIC_INPUT_STEPS) {
+      expect(MESSAGE_KEYS, step).toContain(STEP_TITLE_KEYS[step]);
+    }
+  });
+
+  it('isSolidStep はスケッチ・基準・整形の段には false を返す(表引きへ変えても同じ)', () => {
+    for (const step of ['point', 'lineEnd', 'splineShape'] as const) {
+      expect(isSolidStep(step), step).toBe(false);
+    }
+    for (const step of Object.values(REFERENCE_TOOL_STEPS)) {
+      expect(isSolidStep(step), step).toBe(false);
+    }
+    for (const step of Object.values(EDIT_TOOL_STEPS)) {
+      expect(isSolidStep(step), step).toBe(false);
+    }
+  });
+
+  it('薄板押し出しは厚みと厚みの側を確定結果へ渡す(FR-416)', () => {
+    const state = chooseNumericInput(
+      edited(createNumericInput('extrudeThin', 'extrudeThickness'), '1.6'),
+      'thicknessSide',
+      'both',
+    );
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.values.thickness?.value).toBe(1.6);
+    expect(commit.shapeChoices?.thicknessSide).toBe('both');
+  });
+
+  it('抜き勾配は角度と「向きを反転」を確定結果へ渡す(FR-417)', () => {
+    const state = toggleNumericInput(
+      edited(createNumericInput('draft', 'draftAngle'), '3'),
+      'reversed',
+    );
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.values.draftAngle?.value).toBe(3);
+    expect(commit.flags.reversed).toBe(true);
+  });
+
+  it('スイープは「曲がりに合わせて回す」だけを確定結果へ渡す(FR-409)', () => {
+    const off = createNumericInput('sweep', 'sweepOptions');
+    expect(expectSolidCommitted(commitNumericInput(off)).commit.flags.sweepFrenet).toBe(false);
+    const on = toggleNumericInput(off, 'sweepFrenet');
+    expect(expectSolidCommitted(commitNumericInput(on)).commit.flags.sweepFrenet).toBe(true);
+  });
+
+  it('リブは厚みと厚みを付ける側を確定結果へ渡す(FR-420)', () => {
+    const state = chooseNumericInput(
+      edited(createNumericInput('rib', 'ribThickness'), '4'),
+      'ribSide',
+      'positive',
+    );
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.values.ribThickness?.value).toBe(4);
+    expect(commit.shapeChoices?.ribSide).toBe('positive');
+  });
+
+  it('ざぐりは径と深さを確定結果へ渡し、皿もみの欄は入らない(FR-422)', () => {
+    const state = chooseNumericInput(
+      createNumericInput('counterbore', 'holeEntry'),
+      'holeEntry',
+      'counterbore',
+    );
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.shapeChoices?.holeEntry).toBe('counterbore');
+    expect(commit.values.counterboreDiameter?.value).toBe(11);
+    expect(commit.values.counterboreDepth?.value).toBe(4);
+    expect(commit.values.countersinkDiameter).toBeUndefined();
+    expect(commit.values.countersinkAngle).toBeUndefined();
+  });
+
+  it('外ねじは呼び・系列・端・実らせんを確定結果へ渡す(FR-423)', () => {
+    let state = createNumericInput('threadShaft', 'threadShaftSize');
+    state = chooseNumericInput(state, 'threadDesignation', 'M10');
+    state = chooseNumericInput(state, 'threadSeries', 'fine');
+    state = chooseNumericInput(state, 'threadShaftEnd', 'last');
+    state = toggleNumericInput(state, 'modeledThread');
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.threadDesignation).toBe('M10');
+    expect(commit.threadSeries).toBe('fine');
+    expect(commit.shapeChoices?.threadShaftEnd).toBe('last');
+    expect(commit.flags.modeledThread).toBe(true);
+    expect(commit.values.threadShaftLength?.value).toBe(20);
+  });
+
+  it('押し出しの終わり方を「選んだ面まで」にすると距離は確定結果へ入らない(FR-415)', () => {
+    const state = chooseNumericInput(
+      createNumericInput('extrudeEnd', 'extrudeEnd'),
+      'extrudeEnd',
+      'toFace',
+    );
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.shapeChoices?.extrudeEnd).toBe('toFace');
+    expect(commit.values.distance).toBeUndefined();
+    expect(commit.values.taperAngle?.value).toBe(0);
+  });
+
+  it('曲面は作り方に合う欄だけを確定結果へ渡す(FR-428)', () => {
+    const revolve = chooseNumericInput(
+      createNumericInput('surface', 'surfaceShape'),
+      'surfaceOperation',
+      'revolve',
+    );
+    const { commit } = expectSolidCommitted(commitNumericInput(revolve));
+    expect(commit.shapeChoices?.surfaceOperation).toBe('revolve');
+    expect(commit.values.surfaceAngle?.value).toBe(360);
+    expect(commit.values.surfaceDistance).toBeUndefined();
+    expect(commit.values.surfaceOffset).toBeUndefined();
+  });
+
+  it('切断は決め方と傾きを確定結果へ渡す(FR-432、§0.a-0.57)', () => {
+    const state = edited(
+      chooseNumericInput(createNumericInput('cut', 'cutPlane'), 'cutPlaneKind', 'pointAndAxis'),
+      '30',
+    );
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.shapeChoices?.cutPlaneKind).toBe('pointAndAxis');
+    expect(commit.values.cutTilt?.value).toBe(30);
+    expect(commit.flags.cutKeepOpposite).toBe(false);
+    expect(commit.flags.cutKeepBoth).toBe(false);
+  });
+
+  it('点集合パターンは欄もつまみも選択肢も持たず、確定だけができる(FR-425)', () => {
+    const state = createNumericInput('pointPattern', 'pointPattern');
+    expect(state.fields).toEqual([]);
+    expect(state.toggles).toEqual([]);
+    expect(state.choices).toEqual([]);
+    expect(numericFocusTargets(state)).toEqual([]);
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.values).toEqual({});
+    expect(commit.flags).toEqual({});
+  });
+
+  it('くり抜きは壁の厚さを確定結果へ渡す(FR-418)', () => {
+    const state = edited(createNumericInput('shell', 'shellThickness'), '1.2');
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.values.shellThickness?.value).toBe(1.2);
+    expect(commit.flags.shellOutward).toBe(false);
   });
 });

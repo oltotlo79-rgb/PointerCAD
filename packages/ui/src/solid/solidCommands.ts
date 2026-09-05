@@ -632,6 +632,30 @@ export function solidToolReadiness(
     */
     case 'measure':
       return measureToolReadiness(selection, bodies);
+    /*
+      P5 タスク49 が `SolidToolId` へ足した Should / Could 群 16 種(FR-401、FR-409、
+      FR-415〜428、FR-432)。段(その場入力)と案内はタスク49 で揃っているが、
+      **押せる条件と作る処理はタスク50**(切断はタスク27e の `cutCommands.ts`)なので、
+      いまはどれも押せない。ここで暫定の判定を書かないのは、判定を 2 か所に置くと
+      「押せるのに断られる」が起きるため(`machiningToolReadiness` へ委譲するのと同じ理由)。
+    */
+    case 'extrudeEnd':
+    case 'extrudeThin':
+    case 'draft':
+    case 'mirrorSolid':
+    case 'transform':
+    case 'scale':
+    case 'sweep':
+    case 'rib':
+    case 'emboss':
+    case 'counterbore':
+    case 'threadShaft':
+    case 'pointPattern':
+    case 'surface':
+    case 'shell':
+    case 'variableFillet':
+    case 'cut':
+      return { ready: false, reasonKey: 'shapeError.notYetAvailable' };
   }
 }
 
@@ -742,6 +766,29 @@ export function commitSolidInput(
       const context: RuledContext = { document, bodies, selection };
       return commitRuledInput(context, commit);
     }
+    /*
+      P5 タスク49 が足した Should / Could 群 16 種。**コマンドの本体はタスク50**
+      (切断はタスク27e)。ここは switch を網羅するための枝で、押せる条件
+      (`solidToolReadiness`)と同じ理由を返す——押せない道具の確定が別の理由で断られると、
+      利用者は「押せない理由」と「作れない理由」を 2 通り読むことになる(NFR-UX-5)。
+    */
+    case 'extrudeEnd':
+    case 'extrudeThin':
+    case 'draft':
+    case 'mirrorSolid':
+    case 'transform':
+    case 'scale':
+    case 'sweep':
+    case 'rib':
+    case 'emboss':
+    case 'counterbore':
+    case 'threadShaft':
+    case 'pointPattern':
+    case 'surface':
+    case 'shell':
+    case 'variableFillet':
+    case 'cut':
+      return { ok: false, reasonKey: 'shapeError.notYetAvailable' };
   }
 }
 

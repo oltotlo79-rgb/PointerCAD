@@ -126,6 +126,32 @@ const GUIDE_KEYS = {
   // ことを伝える(NFR-UX-1、NFR-UX-7)。上と同じ理由(この表は網羅が要る)で、道具を
   // 足した同じタスクで案内も足す。
   measure: 'statusBar.guide.measure',
+  /*
+    P5 タスク49 が `SolidToolId` へ足した Should / Could 群 16 種(FR-401、FR-409、
+    FR-415〜428、FR-432)。**道具を足したら案内も同じタスクで足す**という約束どおり
+    (docs/報告記録.md 2026-09-04 03:20 の③。この表は網羅が要るので足し忘れると型検査が
+    落ちる)。どれも「先に選んでから押す」道具なので、案内は**何をいくつ選ぶか**を伝える
+    (NFR-UX-1、NFR-UX-7)。コマンドの本体はタスク50(切断はタスク27e)。
+
+    立体のミラーの鍵が `mirrorSolid` なのは、スケッチの鏡像複写(FR-324)がすでに
+    `mirror` を使っているため(`numericInput.ts` の `SolidToolId` の注釈)。
+  */
+  extrudeEnd: 'statusBar.guide.extrudeEnd',
+  extrudeThin: 'statusBar.guide.extrudeThin',
+  draft: 'statusBar.guide.draft',
+  mirrorSolid: 'statusBar.guide.mirrorSolid',
+  transform: 'statusBar.guide.transform',
+  scale: 'statusBar.guide.scale',
+  sweep: 'statusBar.guide.sweep',
+  rib: 'statusBar.guide.rib',
+  emboss: 'statusBar.guide.emboss',
+  counterbore: 'statusBar.guide.counterbore',
+  threadShaft: 'statusBar.guide.threadShaft',
+  pointPattern: 'statusBar.guide.pointPattern',
+  surface: 'statusBar.guide.surface',
+  shell: 'statusBar.guide.shell',
+  variableFillet: 'statusBar.guide.variableFillet',
+  cut: 'statusBar.guide.cut',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**

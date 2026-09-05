@@ -943,3 +943,61 @@ describe('測る道具の案内と断り(FR-1101、FR-1102、P5 タスク32)', (
     expect(describeStatus(quiet()).text).toBe(t('statusBar.ready'));
   });
 });
+
+describe('P5 Should / Could 群 16 種の案内(FR-905、タスク48・49)', () => {
+  /** タスク49 が `SolidToolId` へ足した道具。案内は道具ごとに 1 本ずつある。 */
+  const SHAPE_TOOLS = [
+    'extrudeEnd',
+    'extrudeThin',
+    'draft',
+    'mirrorSolid',
+    'transform',
+    'scale',
+    'sweep',
+    'rib',
+    'emboss',
+    'counterbore',
+    'threadShaft',
+    'pointPattern',
+    'surface',
+    'shell',
+    'variableFillet',
+    'cut',
+  ] as const;
+
+  it('16 種とも自分の案内キーを返す(`Record<NumericInputToolId>` の網羅)', () => {
+    expect(SHAPE_TOOLS).toHaveLength(16);
+    for (const tool of SHAPE_TOOLS) {
+      expect(guideKeyFor(tool, 0), tool).toBe(`statusBar.guide.${tool}`);
+    }
+  });
+
+  it('案内の文はどれも空でなく、道具ごとに違う(FR-905)', () => {
+    const texts = SHAPE_TOOLS.map((tool) => t(guideKeyFor(tool, 0)));
+    for (const [index, text] of texts.entries()) {
+      expect(text.length, SHAPE_TOOLS[index]).toBeGreaterThan(0);
+    }
+    expect(new Set(texts).size).toBe(SHAPE_TOOLS.length);
+  });
+
+  it('立体を選んでいても、これらの道具ならブーリアンの案内に化けない', () => {
+    // ブーリアンの案内は「選択」の道具のときだけ(guideKeyFor の約束)。
+    for (const tool of SHAPE_TOOLS) {
+      expect(guideKeyFor(tool, 2), tool).toBe(`statusBar.guide.${tool}`);
+    }
+  });
+
+  it('立体のミラーはスケッチのミラーと別の案内を出す(id がぶつからない)', () => {
+    expect(guideKeyFor('mirrorSolid', 0)).toBe('statusBar.guide.mirrorSolid');
+    expect(guideKeyFor('mirror', 0)).toBe('statusBar.guide.mirror');
+    expect(t('statusBar.guide.mirrorSolid')).not.toBe(t('statusBar.guide.mirror'));
+  });
+
+  it('帯の 1 文にも道具の案内が出る(選択も進み具合も無いとき)', () => {
+    for (const tool of SHAPE_TOOLS) {
+      expect(describeStatus({ ...quiet(), activeTool: tool }).text, tool).toBe(
+        t(`statusBar.guide.${tool}`),
+      );
+    }
+  });
+});

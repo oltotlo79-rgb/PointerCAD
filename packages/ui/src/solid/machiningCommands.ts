@@ -629,6 +629,22 @@ export function commitMachiningInput(
     case 'torus':
     case 'ruled':
     case 'loft':
+    case 'extrudeEnd':
+    case 'extrudeThin':
+    case 'draft':
+    case 'mirrorSolid':
+    case 'transform':
+    case 'scale':
+    case 'sweep':
+    case 'rib':
+    case 'emboss':
+    case 'counterbore':
+    case 'threadShaft':
+    case 'pointPattern':
+    case 'surface':
+    case 'shell':
+    case 'variableFillet':
+    case 'cut':
       /*
         加工でない道具(押し出し・回転・縫合)とばねはここでは作らない
         (それぞれ solidCommands.ts / タスク25b の担当)。**基本形状5種**(FR-429、
@@ -636,6 +652,10 @@ export function commitMachiningInput(
         (どちらも対象を消費しない「作る」フィーチャー、§0.a-0.19 / 0.27)ので
         `primitiveCommands.ts` / `ruledCommands.ts` の担当で、振り分けは
         `solidCommands.ts` の `commitSolidInput` が行う。ここは switch を網羅するための枝。
+
+        P5 タスク49 が足した Should / Could 群 16 種(FR-401、FR-409、FR-415〜428、FR-432)も
+        同じ枝に入る。**コマンドの本体はタスク50**(切断はタスク27e の `cutCommands.ts`)で、
+        `solidCommands.ts` の `commitSolidInput` も同じ「まだ使えません」を返す。
       */
       return { ok: false, reasonKey: 'solidError.notYetAvailable' };
   }

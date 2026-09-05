@@ -18,7 +18,7 @@
  * | 立体 → 立体(部分形状) | `SubShapeRef.bodyFeatureId`(穴・ねじ穴の面、フィレット・面取りの辺) |
  * | 立体 → 基準ジオメトリ | `AxisSpec` の `reference`(回転軸・パターンの向き・ばねの軸) |
  * | 基準ジオメトリ → 何でも | `PlaneSpec` / `ReferenceAxisDefinition` / `ReferencePointDefinition` / `AxisSpec` / `PointReference` |
- * | スケッチ → 立体 | 投影(`SketchProjectedCurveFeature.source`)・交差(`planeSection.targetFeatureId`)・3D スケッチの頂点参照(`PointReference` の `subShape`) |
+ * | スケッチ → 立体 | 投影(`SketchProjectedCurveFeature.source`)・交差(`planeSection.targetFeatureId`)・3D スケッチの頂点参照(`PointReference` の `subShape`)・球面上の点(同 `sphereGrid`、FR-431) |
  * | スケッチ → 基準ジオメトリ | 各要素の作図面 `planeId`(任意の作業平面 FR-328)、鏡像の平面 |
  *
  * **順序の規則は 1 つだけ**: 「どのフィーチャーも、自分が指す先より後ろにいる」。
@@ -236,6 +236,10 @@ function pointReferenceDependencies(
     }
     case 'subShape':
       return subShapeDependencies(context, reference.ref);
+    case 'sphereGrid':
+      // 球面上の点(FR-431、P5 タスク19)は球そのものに乗っているので、球のフィーチャーへ
+      // 依存する。球の半径・中心を変えると点が動く(要件 FR-431)ことを、依存の向きでも表す。
+      return solidDependency(context, reference.sphereFeatureId);
   }
 }
 

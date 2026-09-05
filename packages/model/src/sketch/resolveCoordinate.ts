@@ -11,13 +11,60 @@
  * P4 タスク10(FR-330、3D スケッチ)で 2 つ広げた。①作図面は無いことがある
  * (`ResolveContext.plane` が null。絶対・相対はそのまま解け、極座標だけ断る)。
  * ②基準に立体の部分形状(頂点・辺・面)を選べる(`PointReference` の `subShape`)。
+ *
+ * P5 タスク19(FR-431、球面グリッド)でもう 1 つ広げた。③基準に球面上の点を選べる
+ * (`PointReference` の `sphereGrid`)。球は立体の側にしか無いので、`subShape` と同じく
+ * 「引く口」(`ResolveContext.sphere`)を外から渡してもらう。
  */
 
 import { subShapeFromFingerprint, type ResolvedSubShape } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
-import { polarOffset, type WorkPlane } from './planeMath.js';
+import { degreesToRadians, polarOffset, type WorkPlane } from './planeMath.js';
 import type { CoordinateInput, PointReference, ResolvedPoint, SketchError } from './types.js';
 import { addVec3, ORIGIN, type Vec3 } from './vec3.js';
+
+/**
+ * 球面上の点(FR-431)の土台になる球。**中心と半径だけ**を見る。
+ *
+ * 基本形状の向き(`PrimitiveFeature.axis`)を持たないのは、緯度・経度の基準を世界の軸に
+ * 固定すると決めたため(`PointReference` の `sphereGrid` の注釈、計画書 §2.8.1)。
+ */
+export interface ResolvedSphere {
+  readonly center: Vec3;
+  readonly radius: number;
+}
+
+/**
+ * 球面上の点の断り(FR-431、計画書 §2.8.1)。球が消えた・球でない・まだ作られていない
+ * (前方参照)のどれも、利用者から見れば「選び直す」で直るので 1 つの文言にまとめる。
+ */
+export const MISSING_SPHERE_MESSAGE = '球が見つかりません。球を選び直してください。';
+
+/** 緯度が範囲外のときの断り(FR-431、計画書 タスク19 の断り方の表)。 */
+export const LATITUDE_RANGE_MESSAGE = '緯度は −90 度から 90 度の間で指定してください。';
+
+/**
+ * 球面上の点の位置(FR-431、計画書 §2.8.1)。
+ *
+ *   点 = C + r(cos φ cos λ, cos φ sin λ, sin φ)   φ = 緯度、λ = 経度(どちらも度)
+ *
+ * 中心 C と半径 r を掛け合わせるだけなので、**球を動かす・大きさを変えると点も追従する**
+ * (要件 FR-431)。経度は剰余を取らずそのまま三角関数へ渡す(450 度は 90 度と同じ点になる)。
+ */
+export function sphereGridPosition(
+  sphere: ResolvedSphere,
+  latitudeDegrees: number,
+  longitudeDegrees: number,
+): Vec3 {
+  const latitude = degreesToRadians(latitudeDegrees);
+  const longitude = degreesToRadians(longitudeDegrees);
+  const ring = sphere.radius * Math.cos(latitude);
+  return addVec3(sphere.center, [
+    ring * Math.cos(longitude),
+    ring * Math.sin(longitude),
+    sphere.radius * Math.sin(latitude),
+  ]);
+}
 
 /** 端点の手掛かりを引く鍵。ResolveContext.vertices を組み立てる側もこれを使う。 */
 export function vertexKey(featureId: string, vertex: 'start' | 'end' | 'center'): string {
@@ -52,6 +99,18 @@ export interface ResolveContext {
    * 部品文書側は同じ関数を両方へそのまま渡せる。
    */
   readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
+  /**
+   * 球の基本形状(FR-429)を id から引く(球面上の点 FR-431、P5 タスク19)。
+   *
+   * `subShape` と同じ理由でここを口にしてある。**スケッチ 1 本は立体を知らない**ので、
+   * 球の中心・半径を解けるのは部品文書の側(`part/resolveReferences.ts`・`part/resolvePart.ts`)
+   * だけである。渡されなければ球を 1 つも知らない扱いになり、球面上の点は
+   * `MISSING_SPHERE_MESSAGE` で断る(黙って原点へ落とさない、FR-504)。
+   *
+   * **前方参照を断るのは渡す側の役目**。まだ作られていない球を口が返さなければ、
+   * ここは「球が見つかりません」になる(履歴の順序を知っているのは部品文書の側だから)。
+   */
+  readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
 }
 
 export type ResolveOutcome<T> =
@@ -112,6 +171,30 @@ export function resolvePointReference(
         );
       }
       return { ok: true, value: found.position };
+    }
+    case 'sphereGrid': {
+      // 球が無いことは値の不備より先に伝える(他の基準と同じ順。土台が決まらなければ
+      // 緯度・経度の良し悪しを言っても直しようがないため)。
+      const sphere = context.sphere?.(reference.sphereFeatureId) ?? null;
+      if (sphere === null) {
+        return failure(featureId, 'missingBase', MISSING_SPHERE_MESSAGE);
+      }
+      const invalid = checkFinite(featureId, [
+        ['緯度', reference.latitude.value],
+        ['経度', reference.longitude.value],
+      ]);
+      if (invalid !== null) {
+        return { ok: false, error: invalid };
+      }
+      // 緯度は極を越えると裏側へ回り込んでしまい、利用者の意図と一致しない。
+      // 経度は 1 周回れば同じ点なので範囲を制限しない(計画書 タスク19 の手順 4)。
+      if (reference.latitude.value < -90 || reference.latitude.value > 90) {
+        return failure(featureId, 'invalidValue', LATITUDE_RANGE_MESSAGE);
+      }
+      return {
+        ok: true,
+        value: sphereGridPosition(sphere, reference.latitude.value, reference.longitude.value),
+      };
     }
   }
 }

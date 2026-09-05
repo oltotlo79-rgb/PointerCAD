@@ -8,7 +8,12 @@ import type { SketchDocument, SketchFeature } from '../sketch/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
 import { createEmptyPartDocument } from './createPartDocument.js';
 import { createReferenceResolver } from './resolveReferences.js';
-import type { PartDocument, ReferenceFeature } from './types.js';
+import type {
+  PartDocument,
+  PrimitiveFeature,
+  ReferenceFeature,
+  SolidFeature,
+} from './types.js';
 
 const ev = expressionValueFromNumber;
 
@@ -429,5 +434,173 @@ describe('基準ジオメトリの解決(FR-328、FR-329)', () => {
     expect(custom?.id).toBe('referencePlane-1');
     expectVec3(custom?.origin ?? [0, 0, 0], [0, 0, 10]);
     expect(resolver.workPlane('referencePlane-9')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 球面上の点(FR-431、P5 計画書 §2.8、タスク19)
+// ---------------------------------------------------------------------------
+
+describe('球面上の点(FR-431)', () => {
+  /** 球の基本形状 1 つ。基準点は座標の式で指定する(FR-429 の 3 通りのうち 1 つ目)。 */
+  function sphere(
+    center: Vec3,
+    radius: number,
+    options: { readonly id?: string; readonly suppressed?: boolean } = {},
+  ): PrimitiveFeature {
+    return {
+      id: options.id ?? 'primitive-1',
+      name: '球1',
+      suppressed: options.suppressed ?? false,
+      kind: 'primitive',
+      origin: {
+        kind: 'coordinate',
+        value: { mode: 'absolute', x: ev(center[0]), y: ev(center[1]), z: ev(center[2]) },
+      },
+      axis: { kind: 'world', axis: 'z' },
+      shape: { kind: 'sphere', radius: ev(radius) },
+    };
+  }
+
+  /** 球面上の点を原点にした基準点 1 つを持つ部品文書。 */
+  function documentWithSphere(
+    solids: readonly SolidFeature[],
+    latitude: number,
+    longitude: number,
+    sphereFeatureId = 'primitive-1',
+  ): PartDocument {
+    return {
+      ...documentWith([
+        {
+          id: 'referencePoint-1',
+          kind: 'referencePoint',
+          name: '基準点1',
+          visible: true,
+          definition: {
+            kind: 'coordinate',
+            at: {
+              mode: 'relative',
+              base: {
+                kind: 'sphereGrid',
+                sphereFeatureId,
+                latitude: ev(latitude),
+                longitude: ev(longitude),
+              },
+              dx: ev(0),
+              dy: ev(0),
+              dz: ev(0),
+            },
+          },
+        },
+      ]),
+      solids,
+    };
+  }
+
+  it('球の中心と半径から緯度・経度の位置を出す(r=10、30°、45°)', () => {
+    const document = documentWithSphere([sphere([0, 0, 0], 10)], 30, 45);
+    const resolved = resolverFor(document).resolveAll();
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.points).toHaveLength(1);
+    expectVec3(resolved.points[0].position, [6.123724356957945, 6.123724356957945, 5]);
+  });
+
+  it('球の半径を 10 → 20 にすると点も外へ動く(追従、FR-431)', () => {
+    const before = resolverFor(documentWithSphere([sphere([0, 0, 0], 10)], 30, 45)).resolveAll();
+    const after = resolverFor(documentWithSphere([sphere([0, 0, 0], 20)], 30, 45)).resolveAll();
+    expectVec3(before.points[0].position, [6.123724356957945, 6.123724356957945, 5]);
+    expectVec3(after.points[0].position, [12.24744871391589, 12.24744871391589, 10]);
+  });
+
+  it('球の中心を [5,5,5] へ動かすと点も同じだけ動く(追従、FR-431)', () => {
+    const resolved = resolverFor(documentWithSphere([sphere([5, 5, 5], 10)], 30, 45)).resolveAll();
+    expectVec3(resolved.points[0].position, [11.123724356957945, 11.123724356957945, 10]);
+  });
+
+  it('球を消すと基準点が解けなくなる(日本語で断る)', () => {
+    const resolved = resolverFor(documentWithSphere([], 30, 45)).resolveAll();
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].code).toBe('missingPoint');
+    expect(resolved.errors[0].message).toContain('見つかりません');
+  });
+
+  it('球でない基本形状(箱)を指しても断る', () => {
+    const box: SolidFeature = {
+      id: 'primitive-1',
+      name: '箱1',
+      suppressed: false,
+      kind: 'primitive',
+      origin: {
+        kind: 'coordinate',
+        value: { mode: 'absolute', x: ev(0), y: ev(0), z: ev(0) },
+      },
+      axis: { kind: 'world', axis: 'z' },
+      shape: { kind: 'box', sizeX: ev(10), sizeY: ev(10), sizeZ: ev(10) },
+    };
+    const resolved = resolverFor(documentWithSphere([box], 30, 45)).resolveAll();
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingPoint');
+  });
+
+  it('抑制した球は画面に無いので、その球面上の点も置けない(FR-503)', () => {
+    const document = documentWithSphere([sphere([0, 0, 0], 10, { suppressed: true })], 30, 45);
+    const resolved = resolverFor(document).resolveAll();
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingPoint');
+  });
+
+  it('緯度が範囲外なら点を置かない(緯度 95)', () => {
+    const resolved = resolverFor(documentWithSphere([sphere([0, 0, 0], 10)], 95, 0)).resolveAll();
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingPoint');
+  });
+
+  it('球の中心をスケッチの点で指定しても解ける(FR-429 の 3 通りのうち 2 つ目)', () => {
+    // sketchWithPoints の point-1 は (0,0,10)。
+    const bySketchPoint: PrimitiveFeature = {
+      ...sphere([0, 0, 0], 10),
+      origin: { kind: 'sketchPoint', ref: { sketchId: 'sketch-1', pointFeatureId: 'point-1' } },
+    };
+    const base = documentWithSphere([bySketchPoint], 0, 0);
+    const document: PartDocument = {
+      ...base,
+      solids: [
+        {
+          ...bySketchPoint,
+          origin: {
+            kind: 'sketchPoint',
+            ref: { sketchId: base.sketches[0].id, pointFeatureId: 'point-1' },
+          },
+        },
+      ],
+    };
+    const resolved = resolverFor(document).resolveAll();
+    expect(resolved.errors).toEqual([]);
+    expectVec3(resolved.points[0].position, [10, 0, 10]);
+  });
+
+  it('球の中心が自分の球面上の点を指していたら、たどり続けずに断る(循環)', () => {
+    const circular: PrimitiveFeature = {
+      ...sphere([0, 0, 0], 10),
+      origin: {
+        kind: 'coordinate',
+        value: {
+          mode: 'relative',
+          base: {
+            kind: 'sphereGrid',
+            sphereFeatureId: 'primitive-1',
+            latitude: ev(0),
+            longitude: ev(0),
+          },
+          dx: ev(1),
+          dy: ev(0),
+          dz: ev(0),
+        },
+      },
+    };
+    const resolved = resolverFor(documentWithSphere([circular], 30, 45)).resolveAll();
+    expect(resolved.points).toEqual([]);
+    expect(resolved.errors[0].code).toBe('missingPoint');
   });
 });

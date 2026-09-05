@@ -344,6 +344,11 @@ function baseWorldPosition(
       return vertexPositionOf(resolved, base.featureId, base.vertex);
     case 'subShape':
       return subShapeFromFingerprint(base.ref)?.position ?? null;
+    case 'sphereGrid':
+      // 球面上の点(FR-431、P5 タスク19)。球の中心・半径は部品文書の側にしか無く、
+      // ここ(スケッチ 1 本の引っぱり)からは引けないので分からない扱いにする。
+      // 呼び出し側は絶対座標へ切り替えて書き戻す(`previous` が決まらないときと同じ後始末)。
+      return null;
     case 'previous': {
       if (drag.field === 'to') {
         // 線分の終点の「直前の点」は、その線分の始点(`resolveSketch.ts` の line の段)。

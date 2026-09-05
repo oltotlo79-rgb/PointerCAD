@@ -113,6 +113,8 @@ const POINT_REFERENCE_KINDS: readonly PointReference['kind'][] = [
   'vertex',
   // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
   'subShape',
+  // 球面上の点(FR-431。P5 タスク19)。種類が 1 つ増えるだけなのでスキーマ版は変えない。
+  'sphereGrid',
 ];
 type VertexReference = Extract<PointReference, { readonly kind: 'vertex' }>;
 const VERTEX_NAMES: readonly VertexReference['vertex'][] = ['start', 'end', 'center'];
@@ -333,6 +335,15 @@ function serializePointReference(reference: PointReference): PointReference {
       return { kind: 'vertex', featureId: reference.featureId, vertex: reference.vertex };
     case 'subShape':
       return { kind: 'subShape', ref: serializeSubShapeRef(reference.ref) };
+    case 'sphereGrid':
+      // 球面上の点(FR-431)。座標は保存せず、球の id と緯度・経度の式だけを書く
+      // (導出できるものは保存しない。要件§8)。
+      return {
+        kind: 'sphereGrid',
+        sphereFeatureId: reference.sphereFeatureId,
+        latitude: serializeExpression(reference.latitude),
+        longitude: serializeExpression(reference.longitude),
+      };
   }
 }
 
@@ -1350,6 +1361,30 @@ function readPointReference(
         return ref;
       }
       return { ok: true, value: { kind: 'subShape', ref: ref.value } };
+    }
+    case 'sphereGrid': {
+      // 球面上の点(FR-431。P5 タスク19)。球の id と緯度・経度の式だけを読む。
+      const sphereFeatureId = readString(record.value, 'sphereFeatureId', path);
+      if (!sphereFeatureId.ok) {
+        return sphereFeatureId;
+      }
+      const latitude = readExpression(record.value, 'latitude', path);
+      if (!latitude.ok) {
+        return latitude;
+      }
+      const longitude = readExpression(record.value, 'longitude', path);
+      if (!longitude.ok) {
+        return longitude;
+      }
+      return {
+        ok: true,
+        value: {
+          kind: 'sphereGrid',
+          sphereFeatureId: sphereFeatureId.value,
+          latitude: latitude.value,
+          longitude: longitude.value,
+        },
+      };
     }
   }
 }

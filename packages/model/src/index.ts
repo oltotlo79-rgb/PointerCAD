@@ -134,6 +134,11 @@ export type { ResolveContext, ResolveOutcome } from './sketch/resolveCoordinate.
 export {
   resolveCoordinate, resolvePointReference, vertexKey,
 } from './sketch/resolveCoordinate.js';
+/** 球面上の点(FR-431、P5 タスク19)。 */
+export type { ResolvedSphere } from './sketch/resolveCoordinate.js';
+export {
+  LATITUDE_RANGE_MESSAGE, MISSING_SPHERE_MESSAGE, sphereGridPosition,
+} from './sketch/resolveCoordinate.js';
 export type { SketchResolveOptions } from './sketch/resolveSketch.js';
 export {
   arcPointAt, azimuthToEllipseParameter, curveEnd, curveStart, ellipsePointAt, fitPlaneNormal,

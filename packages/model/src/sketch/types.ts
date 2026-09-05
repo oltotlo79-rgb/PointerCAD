@@ -25,10 +25,8 @@ import type { Vec3 } from './vec3.js';
  * `geometry/planeSpec.ts` の `pointReferenceKeyText` に 1 case、
  * `io` の `POINT_REFERENCE_KINDS` / `serializePointReference` / `readPointReference` に
  * 1 か所ずつ足すだけで済む形を保つ。**P5 の球面上の点(FR-431)はこの形で
- * `{ readonly kind: 'sphereGrid'; readonly sphereFeatureId: string;
- *    readonly latitude: ExpressionValue; readonly longitude: ExpressionValue }`
- * を足す予定**(球というフィーチャーが P5 まで無いので、P4 では型に入れない。
- * 解決できない種類を先に型へ持ち込むと、意味を持たない分岐が残るため)。
+ * `sphereGrid` を足した**(P5 タスク19。P4 では球というフィーチャーがまだ無かったので
+ * 型に入れなかった。解決できない種類を先に型へ持ち込むと、意味を持たない分岐が残るため)。
  */
 export type PointReference =
   | { readonly kind: 'origin' }
@@ -45,7 +43,28 @@ export type PointReference =
    * 位置は頂点ならその点、辺なら中点、面なら重心(`SubShapeFingerprint.position` の約束)。
    * 上流の立体が変われば指紋で選び直す(`SketchResolveOptions.subShape`)。
    */
-  | { readonly kind: 'subShape'; readonly ref: SubShapeRef };
+  | { readonly kind: 'subShape'; readonly ref: SubShapeRef }
+  /**
+   * 球面上の点(FR-431、P5 計画書 §2.8.1、タスク19)。3D スケッチの点を球の表面に置く。
+   *
+   * **座標を保存せず「どの球の緯度・経度か」だけを保存する。** 球の半径・中心を変えれば
+   * 点も球面に留まったまま動き、そこから引いた線・面も一緒に動く(要件 FR-431 の太字部分)。
+   * 導出できるものを保存しない約束(要件§8)とも一致する。
+   *
+   * **軸の規約**: 北極は世界の +Z、経度 0 は世界の +X で、+X から +Y へ回る向きが正。
+   * 位置は `C + r(cos φ cos λ, cos φ sin λ, sin φ)`(計画書 §2.8.1 の式そのまま)で、
+   * 基本形状の向き(`PrimitiveFeature.axis`)は見ない。グリッドを描く側(タスク21)と
+   * 同じ規約でないと、画面の交点と保存した緯度・経度がずれるため。
+   */
+  | {
+      readonly kind: 'sphereGrid';
+      /** 球の基本形状フィーチャー(`PrimitiveFeature` で `shape.kind === 'sphere'`)の id。 */
+      readonly sphereFeatureId: string;
+      /** 緯度(度、−90〜90)。範囲外は解決のときに断る。 */
+      readonly latitude: ExpressionValue;
+      /** 経度(度)。360 を超えても 1 周回った同じ点になるので範囲は制限しない。 */
+      readonly longitude: ExpressionValue;
+    };
 
 /** 1 点の指定方法(FR-301〜303)。x/y/z はワールド座標、角度は度。 */
 export type CoordinateInput =

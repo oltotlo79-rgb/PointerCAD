@@ -34,7 +34,12 @@ import {
   type WorkPlane,
   type WorkPlaneId,
 } from '../sketch/planeMath.js';
-import { resolveCoordinate, type ResolveContext } from '../sketch/resolveCoordinate.js';
+import {
+  resolveCoordinate,
+  resolvePointReference,
+  type ResolveContext,
+  type ResolvedSphere,
+} from '../sketch/resolveCoordinate.js';
 import { curveEnd, curveStart } from '../sketch/resolveSketch.js';
 import type {
   CoordinateInput,
@@ -62,6 +67,7 @@ import type {
   ReferencePlaneFeature,
   ReferencePointDefinition,
   ReferencePointFeature,
+  SolidOrigin,
 } from './types.js';
 
 /** 基準ジオメトリが解決できなかった理由。平面の理由(`PlaneErrorKey`)に循環を足したもの。 */
@@ -226,6 +232,8 @@ export function createReferenceResolver(
 
   const cache = new Map<string, ReferenceOutcome>();
   const active = new Set<string>();
+  /** いま中心を解いている途中の球(球面上の点 FR-431 の循環を止める印)。 */
+  const activeSpheres = new Set<string>();
   /** いま解いている途中で循環に当たったか(`resolveReference` が拾い直すための印)。 */
   let cycleSeen = false;
   /** いま解いている途中で「後から作られたもの」を参照したか。その名前を覚える。 */
@@ -255,6 +263,93 @@ export function createReferenceResolver(
     }
     laterReference = byId.get(featureId)?.name ?? featureId;
     return false;
+  }
+
+  /**
+   * 基本形状の基準点(`SolidOrigin`)を世界座標にする(球面上の点 FR-431 が球の中心を
+   * 知るために要る)。解けなければ null。
+   *
+   * 立体の頂点は保存された指紋の位置をそのまま使う(`pointAt` の `subShape` と同じ約束)。
+   * `resolvePart` は頂点をカーネルへ選び直させるが、ここはカーネルを呼ばない解決なので、
+   * 指紋の位置で近似する(このファイル冒頭の注釈と同じ判断)。
+   */
+  function solidOriginAt(featureId: string, origin: SolidOrigin, limit: number): Vec3 | null {
+    switch (origin.kind) {
+      case 'coordinate': {
+        // 部品文書には作図面が無いので極座標の基準は XY 平面(`pointFromDefinition` と同じ)。
+        const at = origin.value;
+        const context: ResolveContext = {
+          plane: WORK_PLANES.xy,
+          points: [],
+          previous: null,
+          vertices: new Map<string, Vec3>(),
+        };
+        if (at.mode === 'absolute') {
+          const resolved = resolveCoordinate(at, context, featureId);
+          return resolved.ok ? resolved.value : null;
+        }
+        const base = pointAt(at.base, limit);
+        if (base === null) {
+          return null;
+        }
+        const rebased: CoordinateInput =
+          at.mode === 'relative'
+            ? { mode: 'relative', base: { kind: 'previous' }, dx: at.dx, dy: at.dy, dz: at.dz }
+            : {
+                mode: 'polar',
+                base: { kind: 'previous' },
+                distance: at.distance,
+                azimuth: at.azimuth,
+                elevation: at.elevation,
+              };
+        const resolved = resolveCoordinate(rebased, { ...context, previous: base }, featureId);
+        return resolved.ok ? resolved.value : null;
+      }
+      case 'sketchPoint': {
+        const resolved = deps.sketch(origin.ref.sketchId);
+        if (resolved === null) {
+          return null;
+        }
+        // 点列を指していれば先頭の 1 点(`resolvePart.ts` の `resolveSpringOrigin` と同じ規約)。
+        const point = resolved.points.find(
+          (candidate) => candidate.featureId === origin.ref.pointFeatureId,
+        );
+        return point === undefined ? null : point.position;
+      }
+      case 'vertex': {
+        const found = resolveSubShape(origin.ref);
+        return found === null ? null : found.position;
+      }
+    }
+  }
+
+  /**
+   * 球の基本形状(FR-429)を id で引き、中心と半径にする(球面上の点 FR-431、P5 タスク19)。
+   *
+   * 見つからない・球でない・抑制されている・半径が正の数でない・中心が解けない、のどれでも
+   * null を返す。呼び出し側はそれを 1 つの断り(`MISSING_SPHERE_MESSAGE`)にまとめる。
+   */
+  function sphereAt(sphereFeatureId: string, limit: number): ResolvedSphere | null {
+    if (activeSpheres.has(sphereFeatureId)) {
+      // 球の中心が自分の球面上の点を指している(循環)。解こうとすると戻ってこないので断る。
+      return null;
+    }
+    const feature = document.solids.find((candidate) => candidate.id === sphereFeatureId);
+    if (feature === undefined || feature.kind !== 'primitive' || feature.shape.kind !== 'sphere') {
+      return null;
+    }
+    if (feature.suppressed) {
+      // 抑制した球は画面に無いので、その球面上の点も置けない(計画書 §2.8.1 の断り)。
+      return null;
+    }
+    const radius = feature.shape.radius.value;
+    if (!Number.isFinite(radius) || radius <= 0) {
+      return null;
+    }
+    activeSpheres.add(sphereFeatureId);
+    const center = solidOriginAt(feature.id, feature.origin, limit);
+    activeSpheres.delete(sphereFeatureId);
+    return center === null ? null : { center, radius };
   }
 
   function pointAt(reference: PointReference, limit: number): Vec3 | null {
@@ -305,6 +400,21 @@ export function createReferenceResolver(
         // 頂点はその位置、辺は中点、面は重心(`subShapeFromFingerprint` と同じ約束)。
         const found = resolveSubShape(reference.ref);
         return found === null ? null : found.position;
+      }
+      case 'sphereGrid': {
+        // 球面上の点(FR-431、P5 タスク19)。**位置と緯度の範囲の規則は
+        // `sketch/resolveCoordinate.ts` に 1 つだけ置く**ので、ここは球を引く口を渡して
+        // そちらへ任せる(同じ規則を 2 か所に書かない)。断りの文言は使わず、他の基準と
+        // 同じく null にして呼び出し側の「見つかりません」に合わせる。
+        const context: ResolveContext = {
+          plane: null,
+          points: [],
+          previous: null,
+          vertices: new Map<string, Vec3>(),
+          sphere: (sphereFeatureId) => sphereAt(sphereFeatureId, limit),
+        };
+        const outcome = resolvePointReference(reference, context, reference.sphereFeatureId);
+        return outcome.ok ? outcome.value : null;
       }
     }
   }

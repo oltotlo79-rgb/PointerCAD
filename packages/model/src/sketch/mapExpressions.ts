@@ -22,6 +22,7 @@ import type {
   CopyPlacement,
   FreeArcOrientation,
   PointArrayLayout,
+  PointReference,
   SketchDocument,
   SketchFeature,
 } from './types.js';
@@ -54,7 +55,34 @@ export function mapKeepingIdentity<T>(items: readonly T[], map: (item: T) => T):
   return changed ? next : items;
 }
 
-/** 座標の指定(絶対・相対・極)の式を写す。 */
+/**
+ * 座標の基準(`PointReference`)の式を写す(網羅。`default` を書かない)。
+ *
+ * 基準が式を持つのは**球面上の点(FR-431、P5 タスク19)だけ**で、緯度・経度が
+ * パラメータ表に追従する対象になる(`resolveCoordinate.ts` の `sphereGrid`)。
+ * 他の 5 種は指し先の id しか持たないので、そのまま返す。
+ */
+export function mapPointReferenceExpressions(
+  reference: PointReference,
+  map: ValueMapper,
+): PointReference {
+  switch (reference.kind) {
+    case 'origin':
+    case 'previous':
+    case 'point':
+    case 'vertex':
+    case 'subShape':
+      return reference;
+    case 'sphereGrid':
+      return {
+        ...reference,
+        latitude: map(reference.latitude),
+        longitude: map(reference.longitude),
+      };
+  }
+}
+
+/** 座標の指定(絶対・相対・極)の式を写す。基準の側の式(球面上の点)も忘れずに写す。 */
 export function mapCoordinateExpressions(input: CoordinateInput, map: ValueMapper): CoordinateInput {
   if (input.mode === 'absolute') {
     return { mode: 'absolute', x: map(input.x), y: map(input.y), z: map(input.z) };
@@ -62,7 +90,7 @@ export function mapCoordinateExpressions(input: CoordinateInput, map: ValueMappe
   if (input.mode === 'relative') {
     return {
       mode: 'relative',
-      base: input.base,
+      base: mapPointReferenceExpressions(input.base, map),
       dx: map(input.dx),
       dy: map(input.dy),
       dz: map(input.dz),
@@ -70,7 +98,7 @@ export function mapCoordinateExpressions(input: CoordinateInput, map: ValueMappe
   }
   return {
     mode: 'polar',
-    base: input.base,
+    base: mapPointReferenceExpressions(input.base, map),
     distance: map(input.distance),
     azimuth: map(input.azimuth),
     elevation: map(input.elevation),

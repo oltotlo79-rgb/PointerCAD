@@ -3509,3 +3509,51 @@ describe('拘束の往復(FR-313、P4b タスク21)', () => {
     expect(error.message).toContain('dup-1');
   });
 });
+
+describe('球面上の点の読み書き(FR-431、P5 タスク19)', () => {
+  /** 球面上の点を基準にした 3D スケッチの点。座標は保存されない(要件§8)。 */
+  const gridPoint: SketchFeature = {
+    id: 'point-1',
+    kind: 'point',
+    name: '点1',
+    planeId: 'free',
+    at: {
+      mode: 'relative',
+      base: {
+        kind: 'sphereGrid',
+        sphereFeatureId: 'primitive-1',
+        latitude: ev('30*2', 60),
+        longitude: ev('45', 45),
+      },
+      dx: ev('0', 0),
+      dy: ev('0', 0),
+      dz: ev('0', 0),
+    },
+  };
+
+  it('球の id と緯度・経度の式が往復で一致する', () => {
+    const document = documentWithSketchFeature(gridPoint);
+    expect(roundTrip(document).sketches[0].features[0]).toEqual(gridPoint);
+  });
+
+  it('式の文字列がそのまま残る(FR-202)', () => {
+    const text = serializeDocument(documentWithSketchFeature(gridPoint), { savedAt: SAVED_AT });
+    expect(text).toContain('"sphereGrid"');
+    expect(text).toContain('"30*2"');
+    // 解決した座標は書かない(導出できるものは保存しない。要件§8)。
+    expect(text).not.toContain('6.123724356957945');
+  });
+
+  it('種類が 1 つ増えただけなのでスキーマ版は変えない', () => {
+    const text = serializeDocument(documentWithSketchFeature(gridPoint), { savedAt: SAVED_AT });
+    expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
+    expect(PCAD_SCHEMA_VERSION).toBe(6);
+  });
+
+  it('緯度の欄が欠けていれば場所つきで断る', () => {
+    const text = serializeDocument(documentWithSketchFeature(gridPoint), { savedAt: SAVED_AT });
+    const broken = text.replace('"latitude"', '"latitudo"');
+    const error = expectError(parseDocument(broken));
+    expect(error.message).toContain('latitude');
+  });
+});

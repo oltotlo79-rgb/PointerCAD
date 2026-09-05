@@ -28,6 +28,7 @@ import type { Parameter, ParameterAnalysis } from '../parameters/types.js';
 import {
   mapCoordinateExpressions,
   mapKeepingIdentity,
+  mapPointReferenceExpressions,
   mapSketchExpressions,
   type ExpressionMapper,
   type ValueMapper,
@@ -214,17 +215,31 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
 }
 
 /**
- * 平面の決め方7種(FR-328)の式の欄を写す。3点・点+辺・点+平行な面は、点・辺・面の
- * 参照だけで位置が決まるので式を持たない。
+ * 平面の決め方7種(FR-328)の式の欄を写す。
+ *
+ * 点そのものが式を持つようになった(球面上の点の緯度・経度。FR-431、P5 タスク19)ので、
+ * 「点・辺・面の参照だけだから式は無い」とは言えなくなった。点を持つ 4 種は
+ * `mapPointReferenceExpressions` を通す。
  */
 function rebuildPlaneSpec(spec: PlaneSpec, map: ValueMapper): PlaneSpec {
   switch (spec.kind) {
     case 'threePoints':
+      return {
+        ...spec,
+        p1: mapPointReferenceExpressions(spec.p1, map),
+        p2: mapPointReferenceExpressions(spec.p2, map),
+        p3: mapPointReferenceExpressions(spec.p3, map),
+      };
     case 'pointAndEdge':
     case 'pointAndParallelFace':
-      return spec;
+      return { ...spec, point: mapPointReferenceExpressions(spec.point, map) };
     case 'pointAndAxis':
-      return { ...spec, tilt: map(spec.tilt), azimuth: map(spec.azimuth) };
+      return {
+        ...spec,
+        point: mapPointReferenceExpressions(spec.point, map),
+        tilt: map(spec.tilt),
+        azimuth: map(spec.azimuth),
+      };
     case 'face':
       return { ...spec, offset: map(spec.offset) };
     case 'workPlane':
@@ -251,9 +266,21 @@ function rebuildReferenceFeature(feature: ReferenceFeature, map: ValueMapper): R
           }
         : feature;
     case 'referenceAxis':
+      // 軸そのものは式を持たないが、2 点で決める軸の**点の側**が式を持ちうる
+      // (球面上の点の緯度・経度。FR-431、P5 タスク19)。
+      return feature.definition.kind === 'twoPoints'
+        ? {
+            ...feature,
+            definition: {
+              kind: 'twoPoints',
+              from: mapPointReferenceExpressions(feature.definition.from, map),
+              to: mapPointReferenceExpressions(feature.definition.to, map),
+            },
+          }
+        : feature;
     case 'referenceCoordinateSystem':
-      // 軸も座標系も点・軸の参照だけで決まる(式を直接持たない)。
-      return feature;
+      // 軸は参照だけ。原点は点なので、球面上の点なら緯度・経度の式を持つ。
+      return { ...feature, origin: mapPointReferenceExpressions(feature.origin, map) };
   }
 }
 

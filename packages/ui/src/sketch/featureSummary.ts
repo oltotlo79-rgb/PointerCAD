@@ -337,6 +337,7 @@ const BASE_LABEL_KEYS = {
   solidVertex: 'propertyPanel.base.solidVertex',
   solidEdge: 'propertyPanel.base.solidEdge',
   solidFace: 'propertyPanel.base.solidFace',
+  sphereGrid: 'propertyPanel.base.sphereGrid',
 } as const satisfies Record<string, MessageKey>;
 
 /** スケッチの中の要素の名前。見つからなければ null(FR-504 は名前でなく印で伝える)。 */
@@ -413,6 +414,12 @@ export function baseSummary(
       // 立体の名前は部品文書にしかないので、呼び出し側(プロパティ欄)が引いて渡す。
       const name = options.bodyName?.(bodyFeatureId) ?? null;
       return namedBase(solidSubShapeLabelKey(fingerprint.kind), name, null);
+    }
+    case 'sphereGrid': {
+      // 球面上の点(FR-431、P5 タスク19)。球の名前も部品文書にしかないので同じ口で引く。
+      // 緯度・経度そのものの欄はタスク22 が足す(ここは基準の 1 行だけ)。
+      const name = options.bodyName?.(reference.sphereFeatureId) ?? null;
+      return namedBase(BASE_LABEL_KEYS.sphereGrid, name, null);
     }
   }
 }

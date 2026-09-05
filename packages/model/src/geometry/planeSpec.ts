@@ -578,6 +578,13 @@ function pointReferenceKeyText(
       return `vertex:${reference.featureId}:${reference.vertex}`;
     case 'subShape':
       return `subShape:${fingerprintText(reference.ref)}`;
+    case 'sphereGrid':
+      // 球面上の点(FR-431、P5 タスク19)。球の id と緯度・経度で決まる。
+      // 球そのものの中心・半径は球の段の鍵に入るので、ここでは指しているものだけを材料にする。
+      return (
+        `sphereGrid:${reference.sphereFeatureId}` +
+        `:${keyNumber(reference.latitude.value)}:${keyNumber(reference.longitude.value)}`
+      );
   }
 }
 

@@ -6,7 +6,12 @@ import type { Parameter } from '../parameters/types.js';
 import type { SketchConstraint } from '../sketch/constraints/types.js';
 import { DEFAULT_FACE_COLOR } from '../sketch/createSketchDocument.js';
 import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
-import type { CoordinateInput, SketchDocument, SketchFeature } from '../sketch/types.js';
+import type {
+  CoordinateInput,
+  PointReference,
+  SketchDocument,
+  SketchFeature,
+} from '../sketch/types.js';
 import { createEmptyPartDocument } from './createPartDocument.js';
 import {
   applyParameters,
@@ -646,5 +651,100 @@ describe('applyParameters', () => {
     });
     const applied = applyParameters(document);
     expect(applied.analysis.unused).toEqual(['未使用']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 球面上の点の緯度・経度(FR-431、P5 タスク19)
+// ---------------------------------------------------------------------------
+
+describe('球面上の点の緯度・経度がパラメータ表に追従する(FR-431)', () => {
+  /** 球面上の点。緯度・経度は変数入りの式で、評価し直すまで 0 のまま。 */
+  function gridPoint(latitude: string, longitude: string): PointReference {
+    return {
+      kind: 'sphereGrid',
+      sphereFeatureId: 'primitive-1',
+      latitude: pending(latitude),
+      longitude: pending(longitude),
+    };
+  }
+
+  /** 球面上の点を基準にした相対座標(ずれはすべて 0)。 */
+  function relativeTo(base: PointReference): CoordinateInput {
+    return { mode: 'relative', base, dx: expr('0'), dy: expr('0'), dz: expr('0') };
+  }
+
+  it('スケッチの点の基準に使った緯度・経度も集める(欄の数え上げ)', () => {
+    const document = buildDocument({
+      features: [point('point-1', relativeTo(gridPoint('緯度', '緯度 * 2')))],
+    });
+    // 緯度・経度の 2 欄 + ずれの 3 欄。
+    expect(collectExpressionSources(document)).toEqual(['緯度', '緯度 * 2', '0', '0', '0']);
+  });
+
+  it('パラメータを変えると緯度・経度が入れ替わる(配線もれの検出)', () => {
+    const document = buildDocument({
+      features: [point('point-1', relativeTo(gridPoint('緯度', '緯度 * 2')))],
+      parameters: [parameter('緯度', '30')],
+    });
+    const applied = applyParameters(document);
+    expect(applied.failures).toEqual([]);
+    const feature = applied.document.sketches[0].features[0];
+    if (feature.kind !== 'point' || feature.at.mode !== 'relative') {
+      throw new Error('テストの土台が壊れています');
+    }
+    const base = feature.at.base;
+    if (base.kind !== 'sphereGrid') {
+      throw new Error('テストの土台が壊れています');
+    }
+    expect(base.latitude.value).toBe(30);
+    expect(base.longitude.value).toBe(60);
+    // 式の文字列はそのまま(FR-202)。
+    expect(base.latitude.source).toBe('緯度');
+  });
+
+  it('基準ジオメトリ(座標系の原点・2 点の軸・3 点の平面)の点の式も追従する', () => {
+    const document = buildDocument({
+      references: [
+        {
+          id: 'referenceCoordinateSystem-1',
+          kind: 'referenceCoordinateSystem',
+          name: '座標系1',
+          visible: true,
+          origin: gridPoint('緯度', '0'),
+          xAxis: { kind: 'world', axis: 'x' },
+          yAxis: { kind: 'world', axis: 'y' },
+        },
+        {
+          id: 'referenceAxis-1',
+          kind: 'referenceAxis',
+          name: '軸1',
+          visible: true,
+          definition: { kind: 'twoPoints', from: gridPoint('緯度', '0'), to: { kind: 'origin' } },
+        },
+        {
+          id: 'referencePlane-1',
+          kind: 'referencePlane',
+          name: '平面1',
+          visible: true,
+          plane: {
+            kind: 'threePoints',
+            p1: gridPoint('緯度', '0'),
+            p2: { kind: 'origin' },
+            p3: { kind: 'previous' },
+          },
+        },
+      ],
+      parameters: [parameter('緯度', '30')],
+    });
+    // 3 つの基準ジオメトリが緯度・経度を 2 欄ずつ持つ。
+    expect(collectExpressionSources(document)).toHaveLength(6);
+    const applied = applyParameters(document);
+    expect(applied.failures).toEqual([]);
+    expect(
+      collectExpressionOwners(applied.document)
+        .filter((owner) => owner.source === '緯度')
+        .map((owner) => owner.ownerId),
+    ).toEqual(['referenceCoordinateSystem-1', 'referenceAxis-1', 'referencePlane-1']);
   });
 });

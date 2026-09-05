@@ -4,13 +4,17 @@ import { describe, expect, it } from 'vitest';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { WORK_PLANES } from './planeMath.js';
 import {
+  LATITUDE_RANGE_MESSAGE,
+  MISSING_SPHERE_MESSAGE,
   resolveCoordinate,
   resolvePointReference,
+  sphereGridPosition,
   vertexKey,
   type ResolveContext,
+  type ResolvedSphere,
   type ResolveOutcome,
 } from './resolveCoordinate.js';
-import type { CoordinateInput } from './types.js';
+import type { CoordinateInput, PointReference } from './types.js';
 import type { Vec3 } from './vec3.js';
 
 /**
@@ -494,5 +498,184 @@ describe('3D スケッチの座標(FR-330、タスク10)', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('missingBase');
     expect(outcome.ok ? '' : outcome.error.message).toContain('3D スケッチ');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 球面上の点(FR-431、P5 計画書 §2.8、タスク19)
+// ---------------------------------------------------------------------------
+
+describe('球面上の点(FR-431)', () => {
+  /** 球を 1 つだけ知っている手掛かり。他の球の id を訊かれたら「知らない」を返す。 */
+  function contextWithSphere(sphere: ResolvedSphere, sphereFeatureId = 'primitive-1'): ResolveContext {
+    return {
+      ...CONTEXT,
+      sphere: (id) => (id === sphereFeatureId ? sphere : null),
+    };
+  }
+
+  /** 球面上の点の参照。緯度・経度は度。 */
+  function gridPoint(latitude: number, longitude: number): PointReference {
+    return {
+      kind: 'sphereGrid',
+      sphereFeatureId: 'primitive-1',
+      latitude: num(latitude),
+      longitude: num(longitude),
+    };
+  }
+
+  it('緯度 0・経度 0 は +X 側の赤道上(軸の規約: 北極 +Z、経度 0 は +X)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    expectCloseTo(expectOk(resolvePointReference(gridPoint(0, 0), context, 'point-9')), [10, 0, 0]);
+  });
+
+  it('緯度 90 は北極、緯度 −90 は南極', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    expectCloseTo(expectOk(resolvePointReference(gridPoint(90, 0), context, 'point-9')), [0, 0, 10]);
+    expectCloseTo(
+      expectOk(resolvePointReference(gridPoint(-90, 123), context, 'point-9')),
+      [0, 0, -10],
+    );
+  });
+
+  it('r=10、緯度 30・経度 45 は [6.123724356957945, 6.123724356957945, 5](§2.8.3)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    expectCloseTo(expectOk(resolvePointReference(gridPoint(30, 45), context, 'point-9')), [
+      6.123724356957945,
+      6.123724356957945,
+      5,
+    ]);
+  });
+
+  it('r=10、緯度 60・経度 120 は [-2.5, 4.330127018922194, 8.660254037844387](§2.8.3)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    expectCloseTo(expectOk(resolvePointReference(gridPoint(60, 120), context, 'point-9')), [
+      -2.5,
+      4.330127018922194,
+      8.660254037844387,
+    ]);
+  });
+
+  it('r=25、緯度 0・経度 90 は [0, 25, 0](赤道上、§2.8.3)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 25 });
+    expectCloseTo(expectOk(resolvePointReference(gridPoint(0, 90), context, 'point-9')), [0, 25, 0]);
+  });
+
+  it('同じ緯度・経度の 2 点の距離は 9.538504747461981(§2.8.3)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    const a = expectOk(resolvePointReference(gridPoint(30, 45), context, 'point-9'));
+    const b = expectOk(resolvePointReference(gridPoint(60, 120), context, 'point-9'));
+    const distance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    // 計画書 §2.8.3 は 9.538504747461981 と書いているが、それを double へ直すと
+    // 同じ数(最短表記は 9.538504747461982)になる。桁を落とさない書き方にしてある。
+    expect(distance).toBeCloseTo(9.538504747461982, 12);
+  });
+
+  it('球の半径を 10 → 20 にすると点も外へ動く(追従、FR-431 の太字部分)', () => {
+    const before = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    const after = contextWithSphere({ center: [0, 0, 0], radius: 20 });
+    // 点そのもの(緯度・経度)は 1 文字も変えない。動くのは球のほうだけ。
+    const reference = gridPoint(30, 45);
+    expectCloseTo(expectOk(resolvePointReference(reference, before, 'point-9')), [
+      6.123724356957945,
+      6.123724356957945,
+      5,
+    ]);
+    expectCloseTo(expectOk(resolvePointReference(reference, after, 'point-9')), [
+      12.24744871391589,
+      12.24744871391589,
+      10,
+    ]);
+  });
+
+  it('球の中心を [5,5,5] へ動かすと点も同じだけ動く(追従)', () => {
+    const context = contextWithSphere({ center: [5, 5, 5], radius: 10 });
+    expectCloseTo(expectOk(resolvePointReference(gridPoint(30, 45), context, 'point-9')), [
+      11.123724356957945,
+      11.123724356957945,
+      10,
+    ]);
+  });
+
+  it('経度 450 は 90 と同じ点になる(360 で 1 周回る)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    const wrapped = expectOk(resolvePointReference(gridPoint(0, 450), context, 'point-9'));
+    const plain = expectOk(resolvePointReference(gridPoint(0, 90), context, 'point-9'));
+    expectCloseTo(wrapped, plain);
+    expectCloseTo(wrapped, [0, 10, 0]);
+  });
+
+  it('緯度が範囲外なら断る(緯度 95)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    const outcome = resolvePointReference(gridPoint(95, 0), context, 'point-9');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? '' : outcome.error.code).toBe('invalidValue');
+    expect(outcome.ok ? '' : outcome.error.message).toContain('−90 度から 90 度');
+    expect(outcome.ok ? '' : outcome.error.featureId).toBe('point-9');
+
+    const below = resolvePointReference(gridPoint(-95, 0), context, 'point-9');
+    expect(below.ok ? '' : below.error.message).toBe(LATITUDE_RANGE_MESSAGE);
+  });
+
+  it('球が消えた・球でない・別の id なら「球が見つかりません」で断る', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 }, 'primitive-2');
+    const outcome = resolvePointReference(gridPoint(0, 0), context, 'point-9');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? '' : outcome.error.code).toBe('missingBase');
+    expect(outcome.ok ? '' : outcome.error.message).toBe(MISSING_SPHERE_MESSAGE);
+  });
+
+  it('球を引く口が渡されていなければ、黙って原点へ落とさず断る', () => {
+    const outcome = resolvePointReference(gridPoint(0, 0), CONTEXT, 'point-9');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? '' : outcome.error.message).toBe(MISSING_SPHERE_MESSAGE);
+  });
+
+  it('緯度・経度は式のまま保たれ、評価値だけを使う(FR-202)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    const reference: PointReference = {
+      kind: 'sphereGrid',
+      sphereFeatureId: 'primitive-1',
+      latitude: { source: '30*2', value: 60, display: '60' },
+      longitude: { source: '60*2', value: 120, display: '120' },
+    };
+    expect(reference.latitude.source).toBe('30*2');
+    expectCloseTo(expectOk(resolvePointReference(reference, context, 'point-9')), [
+      -2.5,
+      4.330127018922194,
+      8.660254037844387,
+    ]);
+  });
+
+  it('緯度が数になっていなければ断る(0/0 の式)', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    const reference: PointReference = {
+      kind: 'sphereGrid',
+      sphereFeatureId: 'primitive-1',
+      latitude: { source: '0/0', value: Number.NaN, display: 'NaN' },
+      longitude: num(0),
+    };
+    const outcome = resolvePointReference(reference, context, 'point-9');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? '' : outcome.error.code).toBe('invalidValue');
+    expect(outcome.ok ? '' : outcome.error.message).toContain('緯度');
+  });
+
+  it('球面上の点は相対座標・極座標の基準にも使える', () => {
+    const context = contextWithSphere({ center: [0, 0, 0], radius: 10 });
+    const input: CoordinateInput = {
+      mode: 'relative',
+      base: gridPoint(0, 0),
+      dx: num(0),
+      dy: num(0),
+      dz: num(3),
+    };
+    expectCloseTo(expectOk(resolveCoordinate(input, context, 'point-9')), [10, 0, 3]);
+  });
+
+  it('sphereGridPosition は中心と半径だけで決まる純関数', () => {
+    expectCloseTo(sphereGridPosition({ center: [1, 2, 3], radius: 0 }, 45, 45), [1, 2, 3]);
+    expectCloseTo(sphereGridPosition({ center: [0, 0, 0], radius: 10 }, 0, 180), [-10, 0, 0]);
+    expectCloseTo(sphereGridPosition({ center: [0, 0, 0], radius: 10 }, 0, 270), [0, -10, 0]);
   });
 });

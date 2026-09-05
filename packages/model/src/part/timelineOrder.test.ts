@@ -786,3 +786,56 @@ describe('途中への差し込み位置(FR-507)', () => {
     expect(insertPositionAt(document, -1, 'reference')).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 球面上の点(FR-431、P5 タスク19)
+// ---------------------------------------------------------------------------
+
+describe('球面上の点の依存(FR-431)', () => {
+  /** 球1 と、その球面上の点を原点にした基準点1 を持つ部品文書。 */
+  function sphereGridDocument(): PartDocument {
+    const sphere: SolidFeature = {
+      id: 'primitive-1',
+      name: '球1',
+      suppressed: false,
+      kind: 'primitive',
+      origin: {
+        kind: 'coordinate',
+        value: { mode: 'absolute', x: ev(0), y: ev(0), z: ev(0) },
+      },
+      axis: { kind: 'world', axis: 'z' },
+      shape: { kind: 'sphere', radius: ev(10) },
+    };
+    const point: ReferenceFeature = {
+      id: 'referencePoint-1',
+      kind: 'referencePoint',
+      name: '基準点1',
+      visible: true,
+      definition: {
+        kind: 'coordinate',
+        at: {
+          mode: 'relative',
+          base: {
+            kind: 'sphereGrid',
+            sphereFeatureId: 'primitive-1',
+            latitude: ev(30),
+            longitude: ev(45),
+          },
+          dx: ev(0),
+          dy: ev(0),
+          dz: ev(0),
+        },
+      },
+    };
+    return { ...createEmptyPartDocument(), references: [point], solids: [sphere] };
+  }
+
+  it('球面上の点は球のフィーチャーに依存する(球を変えれば点も作り直す)', () => {
+    expect(dependenciesOf(sphereGridDocument(), 'referencePoint-1')).toEqual(['primitive-1']);
+  });
+
+  it('球が履歴に無ければ依存は増えない(消えた球は依存の材料にしない)', () => {
+    const document: PartDocument = { ...sphereGridDocument(), solids: [] };
+    expect(dependenciesOf(document, 'referencePoint-1')).toEqual([]);
+  });
+});

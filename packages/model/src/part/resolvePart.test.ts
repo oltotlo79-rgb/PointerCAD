@@ -5787,6 +5787,15 @@ describe('リブ(FR-420、P5 タスク46)', () => {
     expect(plan.normal).toEqual([0, 0, 1]);
     expect(plan.symmetric).toBe(true);
     expect(plan.direction).toEqual([0, 1, 0]);
+    expect(plan.extendToBody).toBe(true);
+  });
+
+  it('「材料まで伸ばす」を省略すると既定で true が段に乗る(42c でカーネルの段に欄が増えた)', () => {
+    const fixture = curveFixture();
+    const feature = ribFeature('rib-1', 'extrude-1', fixture.flat);
+    expect(feature.extendToBody).toBe(true);
+    const plan = ribPlan(resolvePart(ribDocument(fixture.flat)).steps[1]);
+    expect(plan.extendToBody).toBe(true);
   });
 
   it('片側(positive)は両側にしない', () => {
@@ -5826,11 +5835,11 @@ describe('リブ(FR-420、P5 タスク46)', () => {
     expect(result.errors[0].message).toContain('リブの輪郭');
   });
 
-  it('「材料まで伸ばす」を切ったリブは、いまは理由をつけて断る', () => {
+  it('「材料まで伸ばす」を切ったリブは、段の extendToBody === false で作れる(42c でカーネルの段に欄が増えた)', () => {
     const fixture = curveFixture();
     const result = resolvePart(ribDocument(fixture.flat, { extendToBody: false }));
-    expect(result.errors[0].code).toBe('degenerate');
-    expect(result.errors[0].message).toContain('材料に届くまで');
+    expect(result.errors).toEqual([]);
+    expect(ribPlan(result.steps[1]).extendToBody).toBe(false);
   });
 
   it('リブは対象を消費するので、残るのはリブを足した立体だけ', () => {
@@ -6015,7 +6024,17 @@ describe('ざぐり・皿もみ(FR-422、P5 タスク46)', () => {
     expect(bored).not.toBe(plain);
   });
 
-  it('ねじ穴のざぐりは、段が受け取れないので理由をつけて断る', () => {
+  it('入口を省いたねじ穴は、段に entry 欄を持たない(穴と同じ約束)', () => {
+    const fixture = createFixture();
+    const thread = threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA]);
+    const result = resolvePart(
+      withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), thread),
+    );
+    expect(result.errors).toEqual([]);
+    expect(threadPlan(result.steps[1])).not.toHaveProperty('entry');
+  });
+
+  it('ねじ穴のざぐり付きの段に entry が乗る(42c でカーネルの段 ThreadStepSpec に欄が増えた)', () => {
     const fixture = createFixture();
     const thread = threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA]);
     const result = resolvePart(
@@ -6024,8 +6043,26 @@ describe('ざぐり・皿もみ(FR-422、P5 タスク46)', () => {
         entry: { kind: 'counterbore', diameter: expr('11'), depth: expr('4') },
       }),
     );
-    expect(result.errors[0].code).toBe('degenerate');
-    expect(result.errors[0].message).toContain('ねじ穴のざぐり');
+    expect(result.errors).toEqual([]);
+    expect(threadPlan(result.steps[1]).entry).toEqual({
+      kind: 'counterbore',
+      diameter: 11,
+      depth: 4,
+    });
+  });
+
+  it('ねじ穴も、入口を足すと鍵が変わる(NFR-PF-3)', () => {
+    const fixture = createFixture();
+    const thread = threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA]);
+    const document = withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), thread);
+    const plain = resolvePart(document).steps[1].key;
+    const bored = resolvePart(
+      withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), {
+        ...thread,
+        entry: { kind: 'counterbore', diameter: expr('11'), depth: expr('4') },
+      }),
+    ).steps[1].key;
+    expect(bored).not.toBe(plain);
   });
 });
 

@@ -429,14 +429,12 @@ export type SolidStepPlan =
        * kernel 側は `ThreadMarkSpec | null` だが、**model は簡略表示でも実らせんでも必ず作る**
        * ので null を取らない(印は実形状のときも出す、§2.4.2)。
        */
-      /**
-       * 3D の簡略表示に使うねじの印。
-       *
-       * **入口の形(ざぐり・皿もみ、FR-422)の欄はここに無い。** カーネルの
-       * `ThreadStepSpec` がまだ受け取れないためで、非 `plain` の指定は解決が断る
-       * (`planThreadHole` の注釈。段に欄が増えたら穴と同じ形で足す)。
-       */
       readonly mark: { readonly majorDiameter: number; readonly length: number };
+      /**
+       * 入口の形(ざぐり・皿もみ。FR-422、タスク46)。**広げないときは省く**
+       * (`HoleEntryPlan` の注釈と同じ約束。穴の枝と1文字も違わない扱い)。
+       */
+      readonly entry?: HoleEntryPlan;
     }
   | {
       readonly kind: 'spring';
@@ -626,6 +624,12 @@ export type SolidStepPlan =
       readonly symmetric: boolean;
       /** 伸ばす向き(材料へ向かう向き、単位ベクトル)。輪郭の平面の中にある。 */
       readonly direction: Vec3;
+      /**
+       * 材料に届くまで伸ばすか(FR-420、タスク46)。false は伸ばさず輪郭の厚みぶんだけの壁。
+       * カーネルの段(`RibStepSpec.extendToBody`)と同じ欄名で、鍵にも必ず混ぜる
+       * (`cacheKey.ts` の `RibKeyMaterial.extendToBody` の注釈)。
+       */
+      readonly extendToBody: boolean;
     }
   | {
       /**
@@ -1533,13 +1537,6 @@ const COUNTERSINK_DIAMETER_MESSAGE = '皿もみの頭の径は穴の径より大
 /** 皿もみの開き角の上限(度、含まない)。180 度では円錐が平らになり深さ 0 になる。 */
 const MAX_COUNTERSINK_DEGREES = 180;
 
-/**
- * ねじ穴のざぐり・皿もみ(FR-422)。カーネルの段(`ThreadStepSpec`)に `entry` の欄が
- * まだ無いので、黙って真っ直ぐな下穴にせず理由をつけて断る(`planThreadHole` の注釈)。
- */
-const THREAD_HOLE_ENTRY_MESSAGE =
-  'ねじ穴のざぐり・皿もみはこの版ではまだ作れません。入口の形を「広げない」にしてください。';
-
 type HoleEntryOutcome =
   | { readonly ok: true; readonly entry: HoleEntryPlan | null }
   | { readonly ok: false; readonly error: PartError };
@@ -1784,23 +1781,12 @@ function planThreadHole(
   if (base.depth !== null && threadLength > base.depth) {
     return fail(feature.id, 'invalidValue', 'ねじ部の長さは、穴の深さ以下にしてください。');
   }
-  /*
-    入口の形(FR-422)。比べる相手は**下穴の径**(ざぐり・皿もみは下穴を広げるため)で、
-    値の検査は穴とまったく同じ口を通す。
-
-    **ただしカーネルのねじ穴の段(`ThreadStepSpec`)にはまだ `entry` の欄が無い**
-    (`makeThreadHole` は `makeHoleTools` を既定の `plain` で呼ぶ。タスク40・42a の範囲は
-    穴の入口までだった)。段へ載せずに黙って真っ直ぐな下穴を掘ると、画面の指定と形が
-    食い違ってしまうので、**値を確かめたうえで理由をつけて断る**(FR-504)。
-    段に欄が増えたら、ここを穴と同じ `...(entry === null ? {} : { entry })` へ変えるだけでよい
-    (**タスク47・55、およびカーネル側への申し送り**)。
-  */
+  // 入口の形(FR-422)。比べる相手は**下穴の径**(ざぐり・皿もみは下穴を広げるため)で、
+  // 値の検査は穴とまったく同じ口を通す。カーネルの段(`ThreadStepSpec`)が `entry` を
+  // 受け取れるようになった(42c)ので、穴とまったく同じ形で段へ載せる。
   const entry = resolveHoleEntry(feature.id, holeEntryOf(feature), drillDiameter);
   if (!entry.ok) {
     return entry;
-  }
-  if (entry.entry !== null) {
-    return fail(feature.id, 'degenerate', THREAD_HOLE_ENTRY_MESSAGE);
   }
   const modeled = feature.representation === 'modeled';
   return {
@@ -1820,6 +1806,8 @@ function planThreadHole(
       thread: modeled ? { majorDiameter: size.diameter, pitch, length: threadLength } : null,
       // 印は簡略表示でも実らせんでも作る(§2.4.2「実形状のときも返してよい」)。
       mark: { majorDiameter: size.diameter, length: threadLength },
+      // 広げないときは欄そのものを載せない(省略と「広げない」を同じ段・同じ鍵にするため)。
+      ...(entry.entry === null ? {} : { entry: entry.entry }),
     },
   };
 }
@@ -3367,14 +3355,6 @@ const RIB_THICKNESS_MESSAGE = '厚みは 0 より大きい数にしてくださ�
 const RIB_NO_DIRECTION_MESSAGE =
   'リブの向きが決まりません。輪郭の面と伸ばす向きを確かめてください。';
 /**
- * 「材料に届くまで伸ばさない」リブ(`extendToBody: false`)は、いまのカーネルの段
- * (`RibStepSpec`、タスク38)に対応する欄が無い。黙って伸ばしてしまうと利用者の
- * つまみが効かないので、理由をつけて断る(FR-504。段の欄が増えたらここを外す)。
- */
-const RIB_EXTEND_REQUIRED_MESSAGE =
-  'いまは材料に届くまで伸ばすリブだけが作れます。「材料まで伸ばす」を入にしてください。';
-
-/**
  * リブ(FR-420、§0.a-0.37、§0.a-0.75)。開いた輪郭に厚みを付けた壁を立体へ足す。
  *
  * **厚みの向き(`side`)と伸ばす向き(`direction`)は別物である。**
@@ -3400,9 +3380,6 @@ function planRib(
   const profile = findResolvedCurves(sketches, feature.profile);
   if (profile === null) {
     return fail(feature.id, 'missingProfile', RIB_MISSING_PROFILE_MESSAGE);
-  }
-  if (!feature.extendToBody) {
-    return fail(feature.id, 'degenerate', RIB_EXTEND_REQUIRED_MESSAGE);
   }
   const thickness = feature.thickness.value;
   if (!isPositiveFinite(thickness)) {
@@ -3435,6 +3412,7 @@ function planRib(
       thickness,
       symmetric: feature.side === 'both',
       direction: ribExtendDirection(extend),
+      extendToBody: feature.extendToBody,
     },
   };
 }
@@ -4299,9 +4277,9 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         modeled: plan.thread !== null,
         tiltAngle: plan.tiltAngle,
         tiltAzimuth: plan.tiltAzimuth,
-        // 入口の形は段が受け取れないので鍵にも混ぜない(`ThreadKeyMaterial.entry` は
-        // 省略でき、省略と `plain` は同じ鍵になる。cacheKey.ts の決め 3)。
         transforms: plan.transforms.map(toKeyTransform),
+        // 入口の形(FR-422)。穴とまったく同じ扱いで、省略と「広げない」は同じ鍵になる。
+        entry: toKeyHoleEntry(plan.entry),
       };
     case 'spring':
       // 全長(length)と derived は混ぜない(cacheKey.ts の SpringKeyMaterial の注釈、§0.a-0.30)。
@@ -4419,6 +4397,8 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         thickness: plan.thickness,
         symmetric: plan.symmetric,
         direction: toKeyVec3(plan.direction),
+        // 伸ばす/伸ばさないで形が変わるので鍵にも混ぜる(cacheKey.ts の RibKeyMaterial の注釈)。
+        extendToBody: plan.extendToBody,
       };
     case 'emboss':
       return {

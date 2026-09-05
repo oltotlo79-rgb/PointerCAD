@@ -331,6 +331,7 @@ function rib(overrides: Partial<Omit<RibKeyMaterial, 'kind'>> = {}): RibKeyMater
     thickness: 2,
     symmetric: true,
     direction: [0, 0, -1],
+    extendToBody: true,
     ...overrides,
   };
 }
@@ -1570,6 +1571,10 @@ describe('cacheKeyFor: リブ(FR-420)・エンボス(FR-421)', () => {
     expect(cacheKeyFor(rib({ thickness: 3 }))).not.toBe(base);
     expect(cacheKeyFor(rib({ symmetric: false }))).not.toBe(base);
     expect(cacheKeyFor(rib({ direction: [0, 0, 1] }))).not.toBe(base);
+  });
+
+  it('材料に届くまで伸ばすか(extendToBody)も鍵に効く(タスク46。忘れると同じ鍵になる)', () => {
+    expect(cacheKeyFor(rib({ extendToBody: false }))).not.toBe(cacheKeyFor(rib({ extendToBody: true })));
   });
 
   it('エンボスの面・輪郭・深さ・彫るか浮き出すかが鍵に効く', () => {

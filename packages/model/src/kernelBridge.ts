@@ -1075,6 +1075,8 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         transforms: plan.transforms,
         thread: plan.thread,
         mark: plan.mark,
+        // 入口の形(ざぐり・皿もみ、FR-422、42c/46c)。穴とまったく同じ扱い(上の 'hole' 節)。
+        ...(plan.entry === undefined ? {} : { entry: plan.entry }),
       };
     case 'fillet':
       return {
@@ -1195,6 +1197,8 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         thickness: plan.thickness,
         symmetric: plan.symmetric,
         direction: plan.direction,
+        // 材料に届くまで伸ばすか(FR-420、42c/46c)。RibStepSpec.extendToBody と同じ欄名。
+        extendToBody: plan.extendToBody,
       };
     case 'emboss':
       return {

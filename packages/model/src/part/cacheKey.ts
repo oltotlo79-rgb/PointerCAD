@@ -561,6 +561,11 @@ export interface RibKeyMaterial {
   readonly symmetric: boolean;
   /** 伸ばす向き。 */
   readonly direction: KeyVec3;
+  /**
+   * 材料に届くまで伸ばすか(FR-420、タスク46)。**忘れると伸ばす/伸ばさないが同じ鍵になる**
+   * ので必ず混ぜる(伸ばし方が違えば形が変わるため、NFR-PF-3)。
+   */
+  readonly extendToBody: boolean;
 }
 
 /**
@@ -1178,7 +1183,8 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;normal=${keyVec3(material.normal)}` +
         `;thickness=${keyNumber(material.thickness)}` +
         `;symmetric=${keyBoolean(material.symmetric)}` +
-        `;direction=${keyVec3(material.direction)}}`
+        `;direction=${keyVec3(material.direction)}` +
+        `;extendToBody=${keyBoolean(material.extendToBody)}}`
       );
     case 'emboss':
       return (

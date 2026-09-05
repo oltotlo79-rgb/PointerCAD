@@ -6,6 +6,7 @@ import { E, evaluateNode, EXPRESSION_PRECISION, ExpressionDecimal, PI } from './
 import { evaluateExpression } from './evaluateExpression.js';
 import { MM_PER_INCH_TEXT } from './lengthUnits.js';
 import { parse } from './parse.js';
+import { expectWithinBudget } from './testUtils/perfBudget.js';
 
 /**
  * 期待値の出どころ:
@@ -224,7 +225,8 @@ describe('任意精度の評価(FR-203、NFR-RE-4)', () => {
     const startedAt = performance.now();
     expect(codeAt('2^100000')).toBe('exponentTooLarge@1');
     // 判定は比較1回なので、遅い計算機でも 50ms を超えない。
-    expect(performance.now() - startedAt).toBeLessThan(50);
+    const elapsedMs = performance.now() - startedAt;
+    expectWithinBudget(elapsedMs, 50, '累乗の指数が大きすぎる式の判定');
     expect(failureOf('2^100000').message).toBe('累乗の指数が大きすぎます(±1000 まで)。');
     expect(codeAt('2^-100000')).toBe('exponentTooLarge@1');
     // 上限ちょうどは通る。2^1000 は2の冪なので double でも厳密に表せる。

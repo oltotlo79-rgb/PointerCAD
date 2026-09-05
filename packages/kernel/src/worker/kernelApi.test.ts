@@ -5,6 +5,7 @@ import type {
   CurveSpec,
   HoleStepSpec,
   PlaneCurve,
+  ShapeExportItem,
   SketchPlaneFrame,
   SolidBodyMesh,
   SolidProgress,
@@ -725,5 +726,339 @@ describe('KernelApi', () => {
     // 12000 − 20 × π × 1.5² × 10 = 12000 − 1413.7166941154069(手計算)。
     expect(measured.volume).toBeCloseTo(10586.283305884594, 4);
     expect(elapsedMs).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 書き出しと読み込み(FR-802、FR-803。P6 §2.3・§2.4・§2.8、タスク10)。
+  //
+  // **口は書き出し 1 本・読み込み 1 本しか無い**(§0.a-0.2)ので、形式ごとの検査も
+  // 同じ 2 本を `format` を変えて呼ぶ形になる。「未知の形式で断る」検査は書かない
+  // ——未知の形式は依頼の型(判別共用体)に存在せず**型検査で落ちる**からで、
+  // 実行時の分岐に `default` を作らないことがその唯一の歯止めである。
+  // ---------------------------------------------------------------------------
+
+  /** 書き出しの材料。40×30 を 10 押し出した板(体積 12000)を 1 段だけ作る。 */
+  async function buildPlate(key: string): Promise<void> {
+    const built = await api.recomputeSolids({
+      steps: [extrudeStep(`板-${key}`, key, 10)],
+      generation: 1,
+    });
+    expect(built.failures).toEqual([]);
+    expect(built.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+  }
+
+  /** 書き出しの依頼に載せる立体 1 つ(名前も色も要らない形式のため)。 */
+  function exportItem(bodyKey: string): ShapeExportItem {
+    return { bodyKey, name: null, color: null };
+  }
+
+  /** 半径 10・高さ 20 の円柱の段。偏差で三角形の数が変わる形として使う。 */
+  function cylinderStep(key: string): SolidStepRequest {
+    return {
+      key,
+      id: '円柱',
+      label: '円柱',
+      visible: true,
+      step: {
+        kind: 'primitive',
+        origin: [0, 0, 0],
+        axis: [0, 0, 1],
+        shape: { kind: 'cylinder', radius: 10, height: 20 },
+        originQuery: null,
+        targetKey: null,
+      },
+    };
+  }
+
+  it('exportShapes({ format: "step" }) は AP214 の STEP のバイト列を返す(タスク7)', async () => {
+    await buildPlate('api-export-step');
+    const written = await api.exportShapes({
+      format: 'step',
+      bodies: [{ bodyKey: 'api-export-step', name: '本体', color: [1, 0.5, 0.25] }],
+    });
+
+    expect(written.format).toBe('step');
+    if (written.format !== 'step') {
+      return;
+    }
+    const text = new TextDecoder().decode(written.bytes);
+    // 先頭と末尾は STEP(ISO 10303-21)の決まり。書式は AP214(AUTOMOTIVE_DESIGN)。
+    expect(text.startsWith('ISO-10303-21;')).toBe(true);
+    expect(text).toContain('AUTOMOTIVE_DESIGN');
+    expect(text).toContain('END-ISO-10303-21;');
+    // 名前は PRODUCT の行に日本語のまま入る(タスク7 の実測)。
+    expect(text).toContain('本体');
+    expect(written.colorWritten).toBe(true);
+    expect(text).toContain('COLOUR_RGB');
+  });
+
+  it('色を書かない指定では colorWritten が false になり、色の行が入らない(§0.a-0.22)', async () => {
+    await buildPlate('api-export-step-nocolor');
+    const written = await api.exportShapes({
+      format: 'step',
+      bodies: [{ bodyKey: 'api-export-step-nocolor', name: '本体', color: [1, 0.5, 0.25] }],
+      withColors: false,
+    });
+
+    expect(written.format).toBe('step');
+    if (written.format !== 'step') {
+      return;
+    }
+    expect(written.colorWritten).toBe(false);
+    expect(new TextDecoder().decode(written.bytes)).not.toContain('COLOUR_RGB');
+  });
+
+  it('exportShapes({ format: "mesh" }) は立体ごとの三角形を返す(板は 12 枚)', async () => {
+    await buildPlate('api-export-mesh');
+    const exported = await api.exportShapes({
+      format: 'mesh',
+      bodies: [exportItem('api-export-mesh')],
+      deviationMm: 0.1,
+    });
+
+    expect(exported.format).toBe('mesh');
+    if (exported.format !== 'mesh') {
+      return;
+    }
+    expect(exported.bodies).toHaveLength(1);
+    // 依頼の鍵をそのまま返す(並びも依頼のまま)。
+    expect(exported.bodies[0].bodyKey).toBe('api-export-mesh');
+    // 直方体は面 6 枚 × 三角形 2 枚 = 12 枚。平面だけなので偏差に依らない。
+    expect(exported.bodies[0].triangles.triangleCount).toBe(12);
+    expect(exported.bodies[0].triangles.indices).toHaveLength(36);
+    expect(exported.bodies[0].triangles.positions.length % 3).toBe(0);
+  });
+
+  it('偏差を細かくすると円柱の三角形が増え、画面用のキャッシュは汚れない(§0.a-0.13)', async () => {
+    const key = 'api-export-mesh-cylinder';
+    const built = await api.recomputeSolids({ steps: [cylinderStep(key)], generation: 1 });
+    expect(built.failures).toEqual([]);
+    const screenTriangles = built.bodies[0].triangleCount;
+
+    const coarse = await api.exportShapes({
+      format: 'mesh',
+      bodies: [exportItem(key)],
+      deviationMm: 0.5,
+    });
+    const fine = await api.exportShapes({
+      format: 'mesh',
+      bodies: [exportItem(key)],
+      deviationMm: 0.02,
+    });
+    expect(coarse.format).toBe('mesh');
+    expect(fine.format).toBe('mesh');
+    if (coarse.format !== 'mesh' || fine.format !== 'mesh') {
+      return;
+    }
+    expect(fine.bodies[0].triangles.triangleCount).toBeGreaterThan(
+      coarse.bodies[0].triangles.triangleCount,
+    );
+
+    // 同じ鍵で計算し直すとキャッシュに当たる。**書き出しで作った細かい三角形が
+    // 画面用の形へ書き込まれていたら、ここの枚数が変わってしまう。**
+    const again = await api.recomputeSolids({ steps: [cylinderStep(key)], generation: 2 });
+    expect(again.cacheHits).toBe(1);
+    expect(again.bodies[0].triangleCount).toBe(screenTriangles);
+  });
+
+  it('exportShapes({ format: "brep" }) は立体ごとのバイト列を返す(タスク9)', async () => {
+    await buildPlate('api-export-brep');
+    const exported = await api.exportShapes({
+      format: 'brep',
+      bodies: [exportItem('api-export-brep')],
+    });
+
+    expect(exported.format).toBe('brep');
+    if (exported.format !== 'brep') {
+      return;
+    }
+    expect(exported.bodies).toHaveLength(1);
+    expect(exported.bodies[0].bodyKey).toBe('api-export-brep');
+    expect(exported.bodies[0].bytes.length).toBeGreaterThan(0);
+
+    // 書いたバイト列は、そのまま読み込みの口へ渡して形に戻せる(`.pcad` の往復)。
+    const read = await api.importShape({ format: 'brep', bytes: exported.bodies[0].bytes });
+    expect(read.bodies).toHaveLength(1);
+    expect(read.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+    expect(read.bodies[0].bodyKind).toBe('solid');
+    expect(read.bodies[0].triangles.triangleCount).toBe(12);
+    // B-rep のバイト列にはファイルの単位が無い(内部単位そのもの)。
+    expect(read.unit).toBe('mm');
+    expect(read.unitNames).toEqual([]);
+  });
+
+  it('鍵の見つからない立体を書き出そうとすると、日本語の理由で断る', async () => {
+    await expect(
+      api.exportShapes({ format: 'brep', bodies: [exportItem('api-export-missing')] }),
+    ).rejects.toThrow('もとになる立体が見つかりませんでした。もう一度計算し直してください。');
+  });
+
+  it('importShape({ format: "step" }) は形・体積・単位を返す(タスク8)', async () => {
+    await buildPlate('api-import-step');
+    const written = await api.exportShapes({
+      format: 'step',
+      bodies: [{ bodyKey: 'api-import-step', name: '本体', color: [1, 0.5, 0.25] }],
+    });
+    expect(written.format).toBe('step');
+    if (written.format !== 'step') {
+      return;
+    }
+
+    const read = await api.importShape({ format: 'step', bytes: written.bytes });
+    expect(read.bodies).toHaveLength(1);
+    expect(read.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+    expect(read.bodies[0].bodyKind).toBe('solid');
+    expect(read.bodies[0].triangles.triangleCount).toBe(12);
+    // 内部は mm 固定(NFR-RE-3)。mm で書いた STEP は `millimetre` として読める。
+    expect(read.unit).toBe('mm');
+    expect(read.unitNames).toEqual(['millimetre']);
+  });
+
+  it('STEP の名前と色は往復して戻り、B-rep のバイト列も一緒に返る(FR-802)', async () => {
+    await buildPlate('api-import-step-name');
+    const written = await api.exportShapes({
+      format: 'step',
+      bodies: [{ bodyKey: 'api-import-step-name', name: '取っ手', color: [1, 0.5, 0.25] }],
+    });
+    expect(written.format).toBe('step');
+    if (written.format !== 'step') {
+      return;
+    }
+
+    const read = await api.importShape({ format: 'step', bytes: written.bytes });
+    expect(read.bodies[0].name).toBe('取っ手');
+    expect(read.bodies[0].color?.[0]).toBeCloseTo(1, 6);
+    expect(read.bodies[0].color?.[1]).toBeCloseTo(0.5, 6);
+    expect(read.bodies[0].color?.[2]).toBeCloseTo(0.25, 6);
+
+    // 読み込んだ形は `.pcad` へ抱き込む(§0.a-0.9)。そのバイト列だけで形に戻せる。
+    const restored = await api.importShape({ format: 'brep', bytes: read.bodies[0].brepBytes });
+    expect(restored.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+    // 抱き込むバイト列に三角形分割は入らない(画面用の三角形より先に作るため。
+    // 逆順にすると `BinTools.Write_3` が三角形も一緒に書いて 1.5 倍に膨らむ)。
+    expect(read.bodies[0].brepBytes.length).toBeLessThan(6000);
+  });
+
+  it('色を読まない指定では色が入らず、形と体積はそのまま返る', async () => {
+    await buildPlate('api-import-step-nocolor');
+    const written = await api.exportShapes({
+      format: 'step',
+      bodies: [{ bodyKey: 'api-import-step-nocolor', name: '本体', color: [1, 0.5, 0.25] }],
+    });
+    expect(written.format).toBe('step');
+    if (written.format !== 'step') {
+      return;
+    }
+
+    const read = await api.importShape({
+      format: 'step',
+      bytes: written.bytes,
+      fileName: 'sample.step',
+      withColors: false,
+    });
+    expect(read.bodies[0].color).toBeNull();
+    expect(read.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+  });
+
+  it('壊れたバイト列は、STEP でも B-rep でも日本語の理由で断る(NFR-RE-1)', async () => {
+    const broken = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    await expect(api.importShape({ format: 'step', bytes: broken })).rejects.toThrow(
+      'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。',
+    );
+    await expect(api.importShape({ format: 'brep', bytes: broken })).rejects.toThrow(
+      '保存されていた形を読めませんでした。データが壊れているおそれがあります。',
+    );
+  });
+
+  it('読み込んだ形の段(importedSolid)は形を戻し、2 回目はキャッシュに当たる(§2.8)', async () => {
+    await buildPlate('api-imported-source');
+    const exported = await api.exportShapes({
+      format: 'brep',
+      bodies: [exportItem('api-imported-source')],
+    });
+    expect(exported.format).toBe('brep');
+    if (exported.format !== 'brep') {
+      return;
+    }
+
+    const step: SolidStepRequest = {
+      key: 'api-imported-solid',
+      id: '読み込んだ形',
+      label: '読み込んだ形',
+      visible: true,
+      step: { kind: 'importedSolid', bytes: exported.bodies[0].bytes },
+    };
+
+    const first = await api.recomputeSolids({ steps: [step], generation: 1 });
+    expect(first.failures).toEqual([]);
+    expect(first.bodies).toHaveLength(1);
+    expect(first.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+    expect(first.bodies[0].bodyKind).toBe('solid');
+    expect(first.bodies[0].faceCount).toBe(6);
+    expect(first.cacheHits).toBe(0);
+
+    // 鍵(`.pcad` の中の入れ物の名前)が同じなら、読み込んだ形は必ずキャッシュに当たる。
+    const second = await api.recomputeSolids({ steps: [step], generation: 2 });
+    expect(second.cacheHits).toBe(1);
+    expect(second.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+  });
+
+  it('読み込んだ形の段の上に穴をあけられる(STEP はソリッドなので加工できる。FR-802)', async () => {
+    await buildPlate('api-imported-drill-source');
+    const exported = await api.exportShapes({
+      format: 'brep',
+      bodies: [exportItem('api-imported-drill-source')],
+    });
+    expect(exported.format).toBe('brep');
+    if (exported.format !== 'brep') {
+      return;
+    }
+
+    const base: SolidStepRequest = {
+      key: 'api-imported-drill-base',
+      id: '読み込んだ形',
+      label: '読み込んだ形',
+      visible: false,
+      step: { kind: 'importedSolid', bytes: exported.bodies[0].bytes },
+    };
+    // 面の指紋は「実際に作った形から読み取る」(手で番号を作らない)ので、
+    // 1 回目だけ画面に出す指定で計算して一覧を受け取る。
+    const built = await api.recomputeSolids({
+      steps: [{ ...base, visible: true }],
+      generation: 1,
+    });
+    expect(built.failures).toEqual([]);
+
+    const drilled = await api.recomputeSolids({
+      steps: [
+        base,
+        {
+          key: 'api-imported-drill-hole',
+          id: '穴',
+          label: '穴',
+          visible: true,
+          step: {
+            kind: 'hole',
+            targetKey: base.key,
+            face: planeFaceQuery(built.bodies[0], 10),
+            centers: [[20, 15, 10]],
+            diameter: 6,
+            depth: null,
+            tiltAngle: 0,
+            tiltAzimuth: 0,
+            transforms: [],
+          },
+        },
+      ],
+      generation: 2,
+    });
+
+    expect(drilled.failures).toEqual([]);
+    // 12000 − π × 3² × 10 = 12000 − 282.7433388230814 = 11717.256661176919(手計算)。
+    // 桁を落とさないよう式のまま書く(literal では倍精度に収まらない)。
+    expect(drilled.bodies[0].volume).toBeCloseTo(
+      RECTANGLE_EXTRUDE_VOLUME - Math.PI * 3 * 3 * 10,
+      4,
+    );
   });
 });

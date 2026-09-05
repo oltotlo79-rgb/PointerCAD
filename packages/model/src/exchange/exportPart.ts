@@ -22,17 +22,6 @@ import {
 } from './types.js';
 
 /**
- * 書き出しの可否を決めるときの立体の種類。
- *
- * いまの `SolidBodyKind` は `'solid' | 'shell'` だけだが、**読み込んだ三角形の形
- * (`'mesh'`)がタスク20 で `SolidBodyKind` に加わる**(§0.a-0.24)。可否の表はいま書ける
- * ので、その 1 つを見込んだ別名をここに置く。**タスク20 で `SolidBodyKind` に `'mesh'` が
- * 入ったら、この別名は消して `SolidBodyKind` をそのまま使う**(下の `switch` は
- * `default` を書いていないので、種類が増えれば型検査が落ちて気づける)。
- */
-export type ExportBodyKind = SolidBodyKind | 'mesh';
-
-/**
  * その形式が**面だけの立体**(閉じていない形)を持てるか(§0.a-0.12)。
  *
  * STEP は B-rep なので開いた殻をそのまま持てる。OBJ・glTF は見せるための三角形の集まりで、
@@ -77,7 +66,7 @@ export function acceptsMeshBody(format: ExportFormat): boolean {
  */
 export function checkExportBodyKind(
   format: ExportFormat,
-  kind: ExportBodyKind,
+  kind: SolidBodyKind,
 ): ExportNoticeKey | null {
   switch (kind) {
     case 'solid':
@@ -142,7 +131,7 @@ export function exportDeviationMm(kind: FileKind, quality: ExportQuality): numbe
  * ときは閉じた立体とみなす。0 と偽るような既定ではなく、カーネルが返す実際の値
  * (§0.a-0.77 で必須の欄になった)と一致する。
  */
-function bodyKindOf(body: SolidBody): ExportBodyKind {
+function bodyKindOf(body: SolidBody): SolidBodyKind {
   return body.bodyKind ?? 'solid';
 }
 

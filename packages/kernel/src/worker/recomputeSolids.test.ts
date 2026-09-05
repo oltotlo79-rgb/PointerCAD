@@ -5,6 +5,7 @@ import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import { makePrimitive } from '../occt/makePrimitive.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
+import { buildSolidBodyMesh } from '../occt/solidMesh.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
 import { expectWithinBudget } from '../testUtils/perfBudget.js';
@@ -2664,6 +2665,76 @@ describe('履歴の再計算(recomputeSolids)', () => {
       expect(relaxed.failures).toEqual([]);
       expect(fine.failures).toEqual([]);
       expect(fine.bodies[0].triangleCount).toBeGreaterThan(relaxed.bodies[0].triangleCount);
+    });
+  });
+
+  /*
+   * 読み込んだ形(FR-802、P6 §2.8、タスク10)。
+   *
+   * 三角形の形(`bodyKind: 'mesh'`)は B-rep へ変換しない(§0.a-0.23)ので、
+   * **段の材料にできない**。断りは `findStepInput` の 1 か所だけにあり、上流の形を
+   * 触る段は例外なくそこを通る——だから「削る段」と「借りるだけの段」の両方が
+   * 同じ文言で断ることを、この 1 つの検査で確かめる。
+   *
+   * `bodyKind: 'mesh'` のボディを作るのは model 側(`importedMesh`、タスク20)で
+   * kernel の段には無いため、キャッシュへ直に預けて作る(検査がキャッシュを
+   * 注入できるようにしてあるのはこのためでもある。`SolidRecomputeDeps` の注釈)。
+   */
+  describe('読み込んだ三角形の形(bodyKind: mesh)は段の材料にできない(P6 §0.a-0.23)', () => {
+    /** 段 1 つを組み立てる(上の入れ子の describe の `step` と同じ形)。 */
+    function meshStep(id: string, key: string, spec: SolidStepSpec): SolidStepRequest {
+      return { key, id, label: id, visible: true, step: spec };
+    }
+
+    /** 40×30×10 の板を、`bodyKind` だけ `'mesh'` に差し替えてキャッシュへ預ける。 */
+    function putMeshBody(cache: ShapeCache<CachedSolid>, key: string): void {
+      const handle = makeExtrudeSolid(
+        oc,
+        { kind: 'extrude', profile: rectangle(40, 30), direction: [0, 0, 1], distance: 10 },
+        {},
+      );
+      const mesh = buildSolidBodyMesh(oc, '読み込んだ三角形の形', handle.shape);
+      cache.set(key, {
+        shape: handle.shape,
+        mesh: { ...mesh, bodyKind: 'mesh' },
+        delete(): void {
+          handle.delete();
+        },
+      });
+    }
+
+    it('削る段(切断)も借りるだけの段(ミラー)も、同じ 1 つの文言で断る', async () => {
+      const { cache } = newCache();
+      putMeshBody(cache, 'key-mesh-body');
+
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          meshStep('切断1', 'key-mesh-cut', {
+            kind: 'cut',
+            targetKey: 'key-mesh-body',
+            origin: [20, 15, 5],
+            normal: [0, 0, 1],
+            keepPositive: false,
+          }),
+          meshStep('ミラー1', 'key-mesh-mirror', {
+            kind: 'mirror',
+            targetKey: 'key-mesh-body',
+            origin: [0, 0, 0],
+            normal: [1, 0, 0],
+          }),
+          // 断りが下流を巻き込まないことも一緒に確かめる(FR-504)。
+          extrudeStep('押し出し1', 'key-mesh-after', 40, 30, 10),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        { id: '切断1', message: '読み込んだ三角形の形には、穴あけや面取りはできません。' },
+        { id: 'ミラー1', message: '読み込んだ三角形の形には、穴あけや面取りはできません。' },
+      ]);
+      expect(result.bodies).toHaveLength(1);
+      expect(result.bodies[0].id).toBe('押し出し1');
+      expect(result.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
     });
   });
 

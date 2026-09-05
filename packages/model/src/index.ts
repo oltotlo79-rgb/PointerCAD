@@ -503,7 +503,6 @@ export {
   DEFAULT_EXPORT_WITH_COLORS, EXPORT_DEVIATION_MM, EXPORT_FORMATS, EXPORT_QUALITIES,
   FILE_KINDS, IMPORT_FORMATS,
 } from './exchange/types.js';
-export type { ExportBodyKind } from './exchange/exportPart.js';
 export {
   acceptsMeshBody, acceptsShellBody, canRoundTrip, carriesColor, checkExportBodyKind,
   exportDeviationMm, selectExportBodies, usesTriangles,

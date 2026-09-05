@@ -9,6 +9,14 @@ import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
 import type { ExtrudeEndSpec } from './occt/makeSolidSweep.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
 import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
+// 書き出し・読み込み(FR-802、FR-803、P6 タスク10)が使う 3 つも同じ理由で取り込む。
+// 三角形の網(`ExportMesh`)は `occt/exportMesh.ts`、色(`RgbTuple`)は
+// `occt/xcafDocument.ts`、ファイルの単位(`StepFileLengthUnit`)は `occt/readStep.ts` が正本。
+// **ここでは輸出し直さない**(輸出の口は `index.ts` が作り手のファイルから 1 度だけ開く。
+// 同じ名前が 2 経路から出ると、取り込む側がどちらを指しているのか読めなくなるため)。
+import type { ExportMesh } from './occt/exportMesh.js';
+import type { StepFileLengthUnit } from './occt/readStep.js';
+import type { RgbTuple } from './occt/xcafDocument.js';
 // 投影・交差(FR-325、P4 タスク26)の作図面と、作図面の上の 2 次元の曲線も
 // `occt/makeProjection.ts` が正本。オフセットと同じ理由で取り込んで輸出し直す。
 import type {
@@ -412,7 +420,9 @@ export type SolidStepSpec =
   /** 平面による切断(FR-432)。分割(FR-424)もこれで満たす(§0.a-0.60)。 */
   | CutStepSpec
   /** くり抜き(FR-418)。 */
-  | ShellStepSpec;
+  | ShellStepSpec
+  /** 読み込んだ形のベースボディ(FR-802、P6 §2.8、タスク10)。定義は下の節にある。 */
+  | ImportedSolidStepSpec;
 
 /** 履歴 1 段ぶんの依頼。 */
 export interface SolidStepRequest {
@@ -470,14 +480,22 @@ export interface SolidRecomputeRequest {
 }
 
 /**
- * 形の種類(FR-428、P5 §0.a-0.45)。
+ * 形の種類(FR-428、P5 §0.a-0.45。P6 §0.a-0.24 で `'mesh'` が加わった)。
  *
- * 閉じた立体を含む形は `'solid'`、面だけのボディ(押し出し面・回転面など)は `'shell'`。
- * **P5 タスク3 の時点では、どの段も閉じた立体しか作らないので必ず `'solid'` になる。**
- * `'shell'` が実際に来るのは曲面の段を足すタスク41 からで、
- * 判定そのもの(`hasSolid`)は今から入れてあるので、そのときに分岐を足さなくてよい。
+ * - `'solid'`: 閉じた立体を含む形。
+ * - `'shell'`: 面だけのボディ(押し出し面・回転面など)。曲面の段(`makeSurface.ts`)が作る。
+ * - `'mesh'`: **読み込んだ三角形の形**(STL / OBJ / glTF / 3MF のベースボディ、FR-802)。
+ *
+ * `'solid'` と `'shell'` の判定は `solidMesh.ts` の `hasSolid` そのままで、**体積では決めない**
+ * (ふたの無い開いた殻は体積が 0 とは限らない。P5 タスク41 の実測)。
+ *
+ * **`'mesh'` を作るのは kernel ではなく model 側**(`importedMesh` のフィーチャー。
+ * P6 §2.8、タスク20)。三角形の網は B-rep へ変換しない(§0.a-0.23)ので、この種類の
+ * ボディは幾何カーネルの中に形を持たない。kernel から見ると **`'mesh'` は
+ * 「段の材料にできない印」** で、加工の段が対象に取ろうとしたら
+ * `worker/recomputeSolids.ts` の `findStepInput` が 1 か所で断る(§2.8 の断りの表)。
  */
-export type SolidBodyKind = 'solid' | 'shell';
+export type SolidBodyKind = 'solid' | 'shell' | 'mesh';
 
 /** ボディ 1 つ分の表示用データ。MeshData と同じ並び方をする。 */
 export interface SolidBodyMesh {
@@ -1258,6 +1276,33 @@ export interface ShellStepSpec {
 }
 
 /**
+ * 読み込んだ形のベースボディ(FR-802、P6 §2.8、§0.a-0.9、タスク10)。
+ *
+ * **対象を取らない「作る」段**(押し出し・基本形状と同じ)。履歴を持たない形なので、
+ * 段がすることは「抱き込んであるバイト列から B-rep を戻す」ことだけである。
+ *
+ * **鍵は `.pcad` の中の入れ物の名前(`shapeRef`)だけで足りる**(model の `part/cacheKey.ts`、
+ * タスク20)。読み込んだ形は再計算で変わりようがないので、**同じ部品を開いている間は
+ * 2 回目以降が必ず形状キャッシュに当たる**(`SolidRecomputeResult.cacheHits` が増える)。
+ *
+ * バイト列を段に載せて毎回渡すのは、Worker が作り直されたとき(タブの再読み込み、
+ * キャッシュの追い出し)に戻せる材料がここにしか無いためである。**読み込んだ B-rep を
+ * `.pcad` へ抱き込むこと自体が `rules/04` の「導出できるものは保存しない」への例外**で、
+ * 利用者の承認(§0.a-0.9)を得ている——読み込んだものは再計算で導出できないので趣旨に反しない。
+ *
+ * **三角形の形(`importedMesh`、`bodyKind: 'mesh'`)はここへ来ない**(§0.a-0.23。
+ * メッシュは B-rep にしないので、幾何カーネルの段にならない。model が直接ボディにする)。
+ */
+export interface ImportedSolidStepSpec {
+  readonly kind: 'importedSolid';
+  /**
+   * `.pcad` の `shapes/<shapeRef>.brep` に入っている B-rep のバイト列。
+   * 中身の作り手と読み手は `occt/brepBytes.ts` の `writeBrepBytes` / `readBrepBytes`。
+   */
+  readonly bytes: Uint8Array;
+}
+
+/**
  * 測る対象 1 つ(FR-1101、FR-1102、P5 §2.10.1、タスク28)。
  *
  * 形そのものは Comlink 越しに渡せないので、**段のキャッシュの鍵**(`SolidStepRequest.key`)で
@@ -1323,3 +1368,172 @@ export type MeasureResult =
     }
   /** 測れなかった。`message` はそのまま画面に出す日本語(FR-504)。 */
   | { readonly kind: 'failed'; readonly message: string };
+
+// ---------------------------------------------------------------------------
+// 書き出しと読み込み(FR-802、FR-803。P6 §2.3・§2.4・§2.8、タスク10)。
+//
+// **口(`KernelApi` のメソッド)は書き出し 1 本・読み込み 1 本しか作らない**(§0.a-0.2)。
+// STEP / 三角形 / B-rep の切り替えは**依頼の中の `format` で判別**し、実装は網羅 `switch`
+// (`default` を作らない)で受ける。形式が増えたときに口を増やすと、UI と Worker の
+// 両側に同じ数の配線が要るうえ、どこまで実装したのかが型から読めなくなるためである。
+// ---------------------------------------------------------------------------
+
+/**
+ * 書き出す立体 1 つの指定。
+ *
+ * **形そのものは渡さない**(B-rep は Comlink を越えられない)。段のキャッシュの鍵
+ * (`SolidStepRequest.key`)で「覚えてある形」を指す——投影・交差の `shapeKey` や
+ * 測定の `bodyKey` と同じ流儀である。
+ *
+ * 名前と色は**ファイルへ書き込む値**で、model 側(外観の割り当てと履歴の名前)が持っている。
+ * 色は sRGB の 0〜1(`#rrggbb` を 255 で割った値)。`null` なら書かない。
+ */
+export interface ShapeExportItem {
+  /** 書き出す形を持つ段のキャッシュの鍵。 */
+  readonly bodyKey: string;
+  /** 立体の名前。`null` なら OCCT の既定(`SOLID`)になる。 */
+  readonly name: string | null;
+  /** 立体の色(sRGB の 0〜1)。`null` なら色を付けない。 */
+  readonly color: RgbTuple | null;
+}
+
+/**
+ * 書き出しの依頼(FR-803)。**形式は依頼の中の `format` で判別する**(§0.a-0.2)。
+ *
+ * ここでいう「形式」はファイルの形式そのものではなく、**カーネルが作れる 3 種類の中身**
+ * である。ファイルの形式(STEP / STL / OBJ / glTF / 3MF)との対応は次のとおり:
+ *
+ * | `format` | 何が返るか | 使うファイル形式 |
+ * |---|---|---|
+ * | `'step'` | STEP AP214 のバイト列 1 つ(名前と色つき) | STEP |
+ * | `'mesh'` | 立体ごとの三角形の網 | STL / OBJ / glTF / 3MF |
+ * | `'brep'` | 立体ごとの B-rep のバイト列 | `.pcad` の `shapes/<id>.brep` |
+ *
+ * **三角形を作るかどうかは呼び出し側が決める。** model の `selectExportBodies` が返す
+ * `ExportSelection.deviationMm` が `null`(= 三角形を使わない形式)なら `'step'` を、
+ * 数なら `'mesh'` をその数のまま渡す(品質の 3 択 → mm の表は model が正本で、
+ * kernel は写しを持たない)。
+ */
+export type ShapeExportRequest =
+  | {
+      readonly format: 'step';
+      readonly bodies: readonly ShapeExportItem[];
+      /** 色を書くか(§0.a-0.22)。省くと書く。列挙が取れない環境では形だけになる。 */
+      readonly withColors?: boolean;
+    }
+  | {
+      readonly format: 'mesh';
+      readonly bodies: readonly ShapeExportItem[];
+      /**
+       * 弦の最大ずれ(mm)。小さいほど細かい。`ExportSelection.deviationMm` をそのまま渡す。
+       * **画面用の三角形は汚さない**(`occt/exportMesh.ts` が複製に掛ける)。
+       */
+      readonly deviationMm: number;
+    }
+  | {
+      readonly format: 'brep';
+      readonly bodies: readonly ShapeExportItem[];
+    };
+
+/** 書き出した立体 1 つぶんの三角形(`format: 'mesh'`)。 */
+export interface ShapeExportMeshBody {
+  /** 依頼の `bodyKey` をそのまま返す。並びも依頼のまま。 */
+  readonly bodyKey: string;
+  /** 三角形の網。並びは `occt/exportMesh.ts` の `ExportMesh` が正本。 */
+  readonly triangles: ExportMesh;
+}
+
+/** 書き出した立体 1 つぶんの B-rep のバイト列(`format: 'brep'`)。 */
+export interface ShapeExportBrepBody {
+  /** 依頼の `bodyKey` をそのまま返す。並びも依頼のまま。 */
+  readonly bodyKey: string;
+  /** `.pcad` の `shapes/<id>.brep` へそのまま入れられるバイト列。 */
+  readonly bytes: Uint8Array;
+}
+
+/**
+ * 書き出しの結果(FR-803)。依頼と同じ `format` を返すので、受け取る側も網羅 `switch` で
+ * 分けられる(依頼と結果が食い違うことは無い)。
+ *
+ * **名前と色は返さない。** どちらも呼び出し側が依頼へ入れた値そのままで、
+ * 持ち帰っても新しく分かることが無いためである(読み込みは逆に、ファイルから
+ * 取り出した名前と色を返す)。
+ */
+export type ShapeExportResult =
+  | {
+      readonly format: 'step';
+      /** STEP ファイルの中身(AP214)。 */
+      readonly bytes: Uint8Array;
+      /** 色を 1 つでも載せられたか。列挙が取れない環境では false(形は書けている)。 */
+      readonly colorWritten: boolean;
+    }
+  | { readonly format: 'mesh'; readonly bodies: readonly ShapeExportMeshBody[] }
+  | { readonly format: 'brep'; readonly bodies: readonly ShapeExportBrepBody[] };
+
+/**
+ * 読み込みの依頼(FR-802)。書き出しと同じく**依頼の中の `format` で判別する**。
+ *
+ * **いまは 2 種類だけ**(タスク10 の範囲)。`'step'` はファイルから読む口、`'brep'` は
+ * `.pcad` に抱き込んだバイト列を戻す口である。STL / OBJ の読み込み(FR-802 の残り)は
+ * タスク16・18 がこの union へ 1 つずつ足す——**足したぶんだけ実装側の網羅 `switch` が
+ * 型検査で落ちる**ので、配線し忘れが起きない(`default` を作らない理由)。
+ */
+export type ShapeImportRequest =
+  | {
+      readonly format: 'step';
+      /** STEP ファイルの中身。 */
+      readonly bytes: Uint8Array;
+      /** 仮想ファイルに付ける名前(省くと `import.step`)。中身の判別には使わない。 */
+      readonly fileName?: string;
+      /** 色を読むか(省くと読む)。false なら `color` は必ず `null` になる。 */
+      readonly withColors?: boolean;
+    }
+  | {
+      /** `.pcad` の `shapes/<id>.brep` に抱き込んだバイト列(§0.a-0.9)。 */
+      readonly format: 'brep';
+      readonly bytes: Uint8Array;
+    };
+
+/**
+ * 読み込んだ立体 1 つぶん(FR-802、P6 §2.8)。
+ *
+ * **形(`TopoDS_Shape`)は入らない。** B-rep は Comlink を越えられないので、代わりに
+ * ①**そのまま `.pcad` へ入れられるバイト列**(`brepBytes`)と、②**画面へ出せる三角形**
+ * (`triangles`)の 2 つを返す。model はこの 2 つで `importedSolid` のフィーチャーを組み立て、
+ * 次の再計算では①を段(`ImportedSolidStepSpec`)へ載せて形を戻す(タスク20)。
+ *
+ * 色はファイルに入っていた値をそのまま返すが、**model は当面これを使わず既定の外観にする**
+ * (§0.a-0.28)。捨てずに返しておくのは、P7 以降で取り込むときに読み直さずに済ませるため。
+ */
+export interface ShapeImportBody {
+  /** ファイルに入っていた名前。無ければ `null`。 */
+  readonly name: string | null;
+  /** ファイルに入っていた色(sRGB の 0〜1)。無ければ `null`。 */
+  readonly color: RgbTuple | null;
+  /**
+   * 形の種類。**読み込みが返すのは `'solid'` か `'shell'` だけ**
+   * (`'mesh'` になるのは三角形の形を読む口(タスク16・18)で、そちらは B-rep を持たない)。
+   */
+  readonly bodyKind: SolidBodyKind;
+  /** 体積(mm³)。面だけの形では 0 とは限らない(`SolidBodyMesh.volume` と同じ約束)。 */
+  readonly volume: number;
+  /** `.pcad` の `shapes/<id>.brep` へそのまま入れるバイト列。 */
+  readonly brepBytes: Uint8Array;
+  /** 画面用の三角形。粗さは画面の既定(`DEFAULT_LINEAR_DEFLECTION`)。 */
+  readonly triangles: ExportMesh;
+}
+
+/**
+ * 読み込みの結果(FR-802、FR-811)。
+ *
+ * **中身はすでに mm へ換算してある**(NFR-RE-3。内部は mm 固定)。`unit` は
+ * 「ファイルが何で書かれていたか」の記録で、`ImportedSource.unit`(P6 §2.8)へそのまま乗る。
+ */
+export interface ShapeImportResult {
+  /** 立体の一覧。並びはファイルの中の並び。 */
+  readonly bodies: readonly ShapeImportBody[];
+  /** ファイルが使っていた長さの単位。 */
+  readonly unit: StepFileLengthUnit;
+  /** OCCT が読み取った単位の名前そのまま(`['millimetre']` / `['INCH']` など)。 */
+  readonly unitNames: readonly string[];
+}

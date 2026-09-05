@@ -6,6 +6,7 @@ import type {
 
 import { createAllocations } from '../occt/allocations.js';
 import { booleanOp, type BooleanResult } from '../occt/booleanOp.js';
+import { readBrepBytes } from '../occt/brepBytes.js';
 import type { OcctShapeHandle } from '../occt/makeBox.js';
 import { makeChamfer } from '../occt/makeChamfer.js';
 import { makeCut } from '../occt/makeCut.js';
@@ -36,6 +37,7 @@ import type {
   BooleanStepSpec,
   ExtrudeStepSpec,
   FilletStepSpec,
+  ImportedSolidStepSpec,
   PrimitiveStepSpec,
   SolidBodyMesh,
   SolidFaceInfo,
@@ -240,6 +242,16 @@ export type SolidCancelToken = () => boolean | Promise<boolean>;
 /** ブーリアンの相手がキャッシュにも失敗の記録にも無いとき(FR-504、NFR-RE-1)。 */
 const MISSING_INPUT_MESSAGE = 'もとになる立体が見つかりませんでした。';
 
+/**
+ * 読み込んだ三角形の形(`bodyKind: 'mesh'`)を段の材料にしようとしたとき
+ * (FR-802、P6 §0.a-0.23、§2.8 の断りの表)。
+ *
+ * **メッシュは B-rep へ変換しない**と決めてある(§0.a-0.23。三角形の数だけ面ができて
+ * フィレット・穴あけが実用にならないため)。だから三角形の形には**削る形も、材料も、
+ * 頂点を借りることも**できない。文言は §2.8 の表のまま。
+ */
+const MESH_NOT_MACHINABLE_MESSAGE = '読み込んだ三角形の形には、穴あけや面取りはできません。';
+
 /** ブーリアンの相手が、同じ再計算の中で作れなかった段だったとき(FR-504)。 */
 function upstreamFailedMessage(label: string): string {
   return `もとになる立体「${label}」を作れなかったため、この立体も作れませんでした。`;
@@ -284,6 +296,11 @@ function yieldToMessages(): Promise<void> {
  * ブーリアン(タスク7 以前)と加工(穴・ねじ穴・R 面取り・C 面取り、タスク10)の両方が使うので、
  * どちらも同じ「もとになる立体が見つかりませんでした。」の文言で断る
  * (計画書 タスク10 の手順2。もとは findBooleanInput という名前だった)。
+ *
+ * **「読み込んだ三角形の形(`bodyKind: 'mesh'`)は材料にできない」の断りもここ 1 か所**
+ * (P6 §0.a-0.23、タスク10)。上流の形を触る段は**例外なくこの関数を通る**ので、
+ * 段の種類ごとに同じ判定を書き足さずに済む(削る段も、借りるだけの段も、
+ * 三角形の形からは面も頂点も取り出せないことに変わりは無い)。
  */
 function findStepInput(
   cache: ShapeCache<CachedSolid>,
@@ -292,6 +309,9 @@ function findStepInput(
 ): CachedSolid {
   const found = cache.get(key);
   if (found !== undefined) {
+    if (found.mesh.bodyKind === 'mesh') {
+      throw new Error(MESH_NOT_MACHINABLE_MESSAGE);
+    }
     return found;
   }
   const failedLabel = failedLabels.get(key);
@@ -535,6 +555,31 @@ function createSurfaceSolid(
 }
 
 /**
+ * 読み込んだ形のベースボディの段(FR-802、P6 §2.8、タスク10)。
+ *
+ * **抱き込んであるバイト列から B-rep を戻すだけ**で、形を作り替えない。読み込んだ形は
+ * 再計算で変わりようがないので、**2 回目以降は段の鍵(`shapeRef`)が形状キャッシュに当たり、
+ * この関数は呼ばれない**(`SolidRecomputeResult.cacheHits` が増える。§2.8 の
+ * 「キャッシュの形をそのまま返す」)。ここが走るのは初回と、Worker が作り直された後だけである。
+ *
+ * 戻した形の持ち主はこの段で、`OcctShapeHandle` の約束どおり `delete()` で手放す
+ * (`readBrepBytes` は形 1 つしか確保しないので、一緒に解放する道具が無い)。
+ * 読めなかったときは `readBrepBytes` が日本語の理由で断り、段 1 つの失敗になる(FR-504)。
+ */
+function createImportedSolid(
+  oc: OpenCascadeInstance,
+  spec: ImportedSolidStepSpec,
+): OcctShapeHandle {
+  const shape = readBrepBytes(oc, spec.bytes);
+  return {
+    shape,
+    delete(): void {
+      shape.delete();
+    },
+  };
+}
+
+/**
  * 1 段ぶんの作り手の結果。ねじ穴(FR-406)だけが画面へ返すねじの印(§0.a-0.15)を持つので、
  * それ以外の段は空配列で揃える(createStepSolid が返す形を 1 つに揃えるための入れ物)。
  */
@@ -706,6 +751,10 @@ function createStepSolid(
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       return noMarks(makeShell(oc, target.shape, target.mesh, spec));
     }
+    case 'importedSolid':
+      // 読み込んだ形のベースボディ(FR-802、P6 タスク10)。対象を取らない「作る」段で、
+      // 抱き込んだバイト列から形を戻すだけ(`createImportedSolid` の注釈)。
+      return noMarks(createImportedSolid(oc, spec));
   }
 }
 

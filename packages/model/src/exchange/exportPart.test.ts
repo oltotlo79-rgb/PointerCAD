@@ -11,7 +11,6 @@ import {
   exportDeviationMm,
   selectExportBodies,
   usesTriangles,
-  type ExportBodyKind,
 } from './exportPart.js';
 import {
   createExportRequest,
@@ -33,9 +32,9 @@ import {
  * 立体 1 つの見本。書き出す対象の選び分けが見るのは `featureId` と `bodyKind` だけなので、
  * 形の中身(三角形・面・辺)は最小限にしてある。
  *
- * **`bodyKind` は `SolidBodyKind`(`'solid' | 'shell'`)でしか渡せない。** 読み込んだ
- * 三角形の形(`'mesh'`)はタスク20 で `SolidBody` に入るので、種類ごとの可否は
- * `checkExportBodyKind` の表(下の「形式 × 立体の種類」)で固定する。
+ * **読み込んだ三角形の形(`'mesh'`)のボディは `importedMesh` フィーチャー(P6 タスク20)
+ * でしか作れず、ここでは見本を作れない**ので、種類ごとの可否は `checkExportBodyKind`
+ * の表(下の「形式 × 立体の種類」)で固定する。
  */
 function makeBody(featureId: string, bodyKind: SolidBodyKind): SolidBody {
   return {
@@ -220,9 +219,9 @@ describe('書き出す対象の決め方(FR-427、FR-803、計画書 P6 タス�
 });
 
 describe('形式 × 立体の種類の可否(§0.a-0.12、§0.a-0.23、§2.8)', () => {
-  // 表のとおりに書く。`'mesh'` は タスク20 で `SolidBody` に入る種類で、可否の判断は
-  // いまここで固定できる(立体の見本は作れないので、純関数の表として固定する)。
-  const TABLE: readonly (readonly [ExportFormat, ExportBodyKind, boolean])[] = [
+  // 表のとおりに書く。`'mesh'` は `importedMesh` フィーチャー(P6 タスク20)が作る種類で、
+  // 可否の判断はいまここで固定できる(立体の見本は作れないので、純関数の表として固定する)。
+  const TABLE: readonly (readonly [ExportFormat, SolidBodyKind, boolean])[] = [
     ['step', 'solid', true], ['step', 'shell', true], ['step', 'mesh', false],
     ['stl', 'solid', true], ['stl', 'shell', false], ['stl', 'mesh', true],
     ['3mf', 'solid', true], ['3mf', 'shell', false], ['3mf', 'mesh', true],

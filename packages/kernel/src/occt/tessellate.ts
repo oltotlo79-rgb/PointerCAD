@@ -1,9 +1,12 @@
 import type {
   Handle_Poly_Triangulation,
   OpenCascadeInstance,
+  Poly_Triangulation,
+  TColgp_Array1OfDir,
   TopLoc_Location,
   TopoDS_Face,
   TopoDS_Shape,
+  gp_Trsf,
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import {
@@ -11,6 +14,7 @@ import {
   DEFAULT_LINEAR_DEFLECTION,
   type TessellationOptions,
 } from '../types.js';
+import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 
 /**
@@ -41,6 +45,237 @@ export interface SurfaceMesh {
 }
 
 /**
+ * 面に付いた位置(`TopLoc_Location`)を、節点と法線へどう掛けるか。
+ *
+ * ## なぜ位置ごとに 1 回だけ決めるのか(P6 タスク11b、2026-09-06 実測)
+ *
+ * 元の走査は節点 1 個につき `Node(i)` → `Transformed(transformation)` → `X()/Y()/Z()`
+ * → `delete()` × 2 と、embind をまたぐ呼び出しを 7 回していた。`Transformed` は
+ * OCCT 側に `gp_Pnt` をもう 1 つ確保して JS の包みを作るので、**節点あたり 2 つの
+ * 確保と 2 つの解放**が要る。法線(`gp_Dir`)も同じだった。10 万三角形(球 103 個・
+ * 偏差 0.1)の走査は 3 回測って 454 / 410 / 411 ms、内訳は節点 108 / 法線 176 /
+ * 添字 118 ms。**確保と解放が走査の主費用**である。
+ *
+ * そこで位置の中身(`gp_Trsf` の 12 成分)を**面 1 枚につき 1 回だけ**読み出し、
+ * 節点ごとの掛け算は JS の double で行う。同じ形の走査は 335 / 322 / 318 ms になり、
+ * **走査が 4 分の 3 以下に縮む**(前後の実測は `tessellate.test.ts` が毎回記録する)。
+ * 添字の分も縮むのは、確保が減って回収の負担が下がるためで、添字の処理は変えていない。
+ *
+ * 採らなかった手も残しておく。①`Poly_Triangulation.MapNodeArray()` と
+ * `InternalNodes()` で節点をまとめて取り出す道は、opencascade.js が中身の型
+ * (`TColgp_HArray1OfPnt` / `NCollection_AliasedArray`)を結んでいないため
+ * **呼ぶと例外**になる(2026-09-06 実測)。②出力を `number[]` ではなく先に数えた
+ * 長さの `Float32Array` へ直接書く道は、同じ形で 297 / 285 / 291 ms と 2〜5% しか
+ * 変わらず、面を 2 度走査する複雑さに見合わないので採らない。
+ *
+ * ## 出力を 1 ビットも変えないための場合分け
+ *
+ * `gp_Pnt::Transform` と `gp_Dir::Transform` は `gp_Trsf` の種別(`Form()`)で
+ * 計算の道を変える。ここでも**同じ種別ごとに同じ順序の演算**を書く。
+ *
+ * - `keep` … 位置が恒等。OCCT も何もしないので、節点の値をそのまま読む。
+ * - `translate` … 平行移動だけ。OCCT は座標に移動量を足すだけで、法線は動かさない。
+ * - `rigid` … 回転を含む剛体移動。OCCT は「行列を掛ける → 拡大率が 1 なら飛ばす →
+ *   移動量を足す」の順に計算する(`gp_Trsf::Transforms`)。法線は行列を掛けてから
+ *   長さ `sqrt(x²+y²+z²)` で割り直す(`gp_Dir::Transform` の既定の道)。
+ * - `occt` … 上のどれでもないとき。`Transformed` をそのまま呼ぶ。
+ *   `TopLoc_Datum3D` は拡大・反転した変換を受け付けないので実際には起きないが、
+ *   起きたときに数値がずれるより OCCT に任せるほうが安全である。
+ *
+ * 12 成分を `gp_Trsf.Value(row, col)` から読むのは、`Value` が列 1〜3 で
+ * `拡大率 × 行列` を、列 4 で移動量を返すためで、**拡大率が 1 のときだけ**
+ * この読み方が行列そのものと一致する(`rigid` に入る条件に拡大率 1 を入れてある)。
+ */
+type NodePlacement =
+  | { readonly kind: 'keep' }
+  | { readonly kind: 'translate'; readonly tx: number; readonly ty: number; readonly tz: number }
+  | {
+      readonly kind: 'rigid';
+      readonly a11: number;
+      readonly a12: number;
+      readonly a13: number;
+      readonly a14: number;
+      readonly a21: number;
+      readonly a22: number;
+      readonly a23: number;
+      readonly a24: number;
+      readonly a31: number;
+      readonly a32: number;
+      readonly a33: number;
+      readonly a34: number;
+    }
+  | { readonly kind: 'occt'; readonly transformation: gp_Trsf };
+
+/** 位置が恒等のときの手。作り直す必要が無いので 1 つを使い回す。 */
+const KEEP_PLACEMENT: NodePlacement = { kind: 'keep' };
+
+/**
+ * 面に付いた位置から、節点と法線を動かす手を 1 つ決める。
+ *
+ * `location.Transformation()` は OCCT 側に `gp_Trsf` を確保するので、恒等でないときだけ
+ * 呼んで控え(`keep`)へ積む。`occt` の手を返したときは、その `gp_Trsf` を節点ごとに
+ * 使い続けるので、面の走査が終わるまで解放してはならない(控えが面の最後に解放する)。
+ */
+function readNodePlacement(
+  oc: OpenCascadeInstance,
+  location: TopLoc_Location,
+  keep: Allocations['keep'],
+): NodePlacement {
+  if (location.IsIdentity()) {
+    return KEEP_PLACEMENT;
+  }
+
+  const transformation = keep(location.Transformation());
+  const form = transformation.Form();
+  const forms = oc.gp_TrsfForm;
+  if (form === forms.gp_Identity) {
+    return KEEP_PLACEMENT;
+  }
+  // 拡大率が 1 でないと、gp_Pnt も gp_Dir も別の道(拡大・反転)を通るうえ、
+  // Value(row, col) が行列そのものを返さなくなる。まとめて OCCT に任せる。
+  if (transformation.ScaleFactor() !== 1) {
+    return { kind: 'occt', transformation };
+  }
+  if (form === forms.gp_Translation) {
+    return {
+      kind: 'translate',
+      tx: transformation.Value(1, 4),
+      ty: transformation.Value(2, 4),
+      tz: transformation.Value(3, 4),
+    };
+  }
+  return {
+    kind: 'rigid',
+    a11: transformation.Value(1, 1),
+    a12: transformation.Value(1, 2),
+    a13: transformation.Value(1, 3),
+    a14: transformation.Value(1, 4),
+    a21: transformation.Value(2, 1),
+    a22: transformation.Value(2, 2),
+    a23: transformation.Value(2, 3),
+    a24: transformation.Value(2, 4),
+    a31: transformation.Value(3, 1),
+    a32: transformation.Value(3, 2),
+    a33: transformation.Value(3, 3),
+    a34: transformation.Value(3, 4),
+  };
+}
+
+/**
+ * 面 1 枚ぶんの節点を動かして位置のバッファへ積む(`gp_Pnt::Transform` と同じ順序の演算)。
+ *
+ * **場合分けは繰り返しの外に 1 回だけ置き、手ごとに専用の繰り返しを書く。**
+ * 節点ごとに `placement` の中身を読むと、面によって形の違う 4 種類の入れ物を
+ * 同じ場所から読むことになり、JavaScript の実行時が読み出しを最適化できない。
+ * 10 万三角形では読み出しが 30 万回を超えるので、ここは短さより速さを採る。
+ */
+function appendPlacedNodes(
+  placement: NodePlacement,
+  triangulation: Poly_Triangulation,
+  nodeCount: number,
+  positions: number[],
+): void {
+  switch (placement.kind) {
+    case 'keep':
+      for (let i = 1; i <= nodeCount; i += 1) {
+        const node = triangulation.Node(i);
+        positions.push(node.X(), node.Y(), node.Z());
+        node.delete();
+      }
+      return;
+    case 'translate': {
+      const { tx, ty, tz } = placement;
+      for (let i = 1; i <= nodeCount; i += 1) {
+        const node = triangulation.Node(i);
+        positions.push(node.X() + tx, node.Y() + ty, node.Z() + tz);
+        node.delete();
+      }
+      return;
+    }
+    case 'rigid': {
+      const { a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34 } = placement;
+      for (let i = 1; i <= nodeCount; i += 1) {
+        const node = triangulation.Node(i);
+        const x = node.X();
+        const y = node.Y();
+        const z = node.Z();
+        node.delete();
+        positions.push(
+          a11 * x + a12 * y + a13 * z + a14,
+          a21 * x + a22 * y + a23 * z + a24,
+          a31 * x + a32 * y + a33 * z + a34,
+        );
+      }
+      return;
+    }
+    case 'occt': {
+      const { transformation } = placement;
+      for (let i = 1; i <= nodeCount; i += 1) {
+        const node = triangulation.Node(i);
+        const moved = node.Transformed(transformation);
+        positions.push(moved.X(), moved.Y(), moved.Z());
+        node.delete();
+        moved.delete();
+      }
+      return;
+    }
+  }
+}
+
+/**
+ * 面 1 枚ぶんの法線を動かして法線のバッファへ積む(`gp_Dir::Transform` と同じ順序の演算)。
+ *
+ * 平行移動は向きを変えないので `keep` と同じ扱いにする。回転では行列を掛けたあと
+ * 長さ `sqrt(x²+y²+z²)` で割り直す——単位ベクトルに回転行列を掛ければ長さは 1 の
+ * はずだが、OCCT が割っているので**同じ丸めを踏むために同じ割り算をする**。
+ */
+function appendPlacedNormals(
+  placement: NodePlacement,
+  nodeNormals: TColgp_Array1OfDir,
+  normals: number[],
+): void {
+  const lower = nodeNormals.Lower();
+  const upper = nodeNormals.Upper();
+  switch (placement.kind) {
+    case 'keep':
+    case 'translate':
+      for (let i = lower; i <= upper; i += 1) {
+        const direction = nodeNormals.Value(i);
+        normals.push(direction.X(), direction.Y(), direction.Z());
+        direction.delete();
+      }
+      return;
+    case 'rigid': {
+      const { a11, a12, a13, a21, a22, a23, a31, a32, a33 } = placement;
+      for (let i = lower; i <= upper; i += 1) {
+        const direction = nodeNormals.Value(i);
+        const x = direction.X();
+        const y = direction.Y();
+        const z = direction.Z();
+        direction.delete();
+        const nx = a11 * x + a12 * y + a13 * z;
+        const ny = a21 * x + a22 * y + a23 * z;
+        const nz = a31 * x + a32 * y + a33 * z;
+        const modulus = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        normals.push(nx / modulus, ny / modulus, nz / modulus);
+      }
+      return;
+    }
+    case 'occt': {
+      const { transformation } = placement;
+      for (let i = lower; i <= upper; i += 1) {
+        const direction = nodeNormals.Value(i);
+        const moved = direction.Transformed(transformation);
+        normals.push(moved.X(), moved.Y(), moved.Z());
+        direction.delete();
+        moved.delete();
+      }
+      return;
+    }
+  }
+}
+
+/**
  * 三角形分割が付いている面 1 枚を、共有のバッファへ積む。
  *
  * 確保したものはこの関数の中で作った順の逆に解放する。呼び出し側が持っている
@@ -65,26 +300,14 @@ function appendFaceMesh(
     // 実体である整数へ明示的に直してから使う(強制変換ではなく実行時の変換)。
     const nodeCount = Number(triangulation.NbNodes());
     const nodeOffset = positions.length / 3;
-    const transformation = keep(location.Transformation());
+    const placement = readNodePlacement(oc, location, keep);
 
-    for (let i = 1; i <= nodeCount; i += 1) {
-      const node = triangulation.Node(i);
-      const moved = node.Transformed(transformation);
-      positions.push(moved.X(), moved.Y(), moved.Z());
-      node.delete();
-      moved.delete();
-    }
+    appendPlacedNodes(placement, triangulation, nodeCount, positions);
 
     const polyConnect = keep(new oc.Poly_Connect_2(triangulationHandle));
     const nodeNormals = keep(new oc.TColgp_Array1OfDir_2(1, nodeCount));
     oc.StdPrs_ToolTriangulatedShape.Normal(face, polyConnect, nodeNormals);
-    for (let i = nodeNormals.Lower(); i <= nodeNormals.Upper(); i += 1) {
-      const direction = nodeNormals.Value(i);
-      const moved = direction.Transformed(transformation);
-      normals.push(moved.X(), moved.Y(), moved.Z());
-      direction.delete();
-      moved.delete();
-    }
+    appendPlacedNormals(placement, nodeNormals, normals);
 
     // 面の向きが反転している場合は、三角形の頂点順を入れ替えて表を外向きに揃える。
     const reversed = face.Orientation_1() !== oc.TopAbs_Orientation.TopAbs_FORWARD;

@@ -30,6 +30,10 @@ function createFakeKernelApi(measureImpl: (request: MeasureRequest) => Promise<M
     projectSketchCurves: () => unimplemented('projectSketchCurves'),
     sectionSketchCurves: () => unimplemented('sectionSketchCurves'),
     measure: measureImpl,
+    // P6 タスク10 で KernelApi に加わった 2 本(FR-802、FR-803)。この検査は測定の橋渡ししか
+    // 確かめないので、他のメソッドと同じく呼ばれない前提にする。
+    exportShapes: () => unimplemented('exportShapes'),
+    importShape: () => unimplemented('importShape'),
   };
 }
 

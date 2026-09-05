@@ -304,3 +304,73 @@ export {
 } from './worker/recomputeSolids.js';
 export { createKernelApi, type KernelApi } from './worker/kernelApi.js';
 export { createKernelWorker } from './client/createKernelWorker.js';
+// ---------------------------------------------------------------------------
+// 入出力(FR-802、FR-803、FR-804。P6 タスク6〜11、タスク10 でまとめて輸出した)。
+//
+// **`packages/io` はここから取り込まない**(依存方向は io → kernel を持たない。§0.a-0.2)。
+// 取り込むのは `packages/model` の橋(`kernelBridge.ts`、タスク20)と、Worker を持たない
+// 検査である。断りの文言をすべて輸出してあるのは、**画面が同じ文言を書き写さずに
+// 引き当てられるようにする**ため(NFR-MA-5)。
+// ---------------------------------------------------------------------------
+// 仮想ファイルの出し入れ(§2.2、タスク6)。OCCT の読み書きは名前しか取らないので、
+// WASM の中のファイル置き場を経由してバイト列にする。
+export {
+  withVirtualFile,
+  withVirtualFileInput,
+  type VirtualFileOutput,
+} from './occt/virtualFile.js';
+// XCAF の文書(§2.5、タスク7)。STEP / OBJ / glTF が共用する、名前と色を持てる入れ物。
+export {
+  buildXcafDocument,
+  type RgbTuple,
+  type XcafDocument,
+  type XcafDocumentOptions,
+  type XcafShapeEntry,
+} from './occt/xcafDocument.js';
+// STEP の書き出し(§2.3、タスク7)と読み込み(§2.3・§2.9、タスク8)。
+export {
+  writeStep,
+  type StepWriteEntry,
+  type StepWriteOptions,
+  type StepWriteResult,
+} from './occt/writeStep.js';
+export {
+  readStep,
+  STEP_NO_SHAPE_MESSAGE,
+  STEP_NO_SOLID_MESSAGE,
+  STEP_READ_FAILED_MESSAGE,
+  type StepFileLengthUnit,
+  type StepReadBody,
+  type StepReadOptions,
+  type StepReadResult,
+} from './occt/readStep.js';
+// B-rep ↔ バイト列(§0.a-0.9・§0.a-0.10、タスク9)。読み込んだ形を `.pcad` へ抱き込む。
+export {
+  readBrepBytes,
+  writeBrepBytes,
+  BREP_EMPTY_SHAPE_MESSAGE,
+  BREP_READ_FAILED_MESSAGE,
+  BREP_WRITE_FAILED_MESSAGE,
+} from './occt/brepBytes.js';
+// 書き出し用の三角形の作り直し(§0.a-0.13、タスク11)。画面用のキャッシュを汚さない。
+export {
+  buildExportMesh,
+  EXPORT_COPY_FAILED_MESSAGE,
+  EXPORT_DEFLECTION_MESSAGE,
+  type ExportMesh,
+} from './occt/exportMesh.js';
+// Worker 越しの書き出し・読み込みの依頼と結果(タスク10)。**口は 1 本ずつ**で、
+// 形式は依頼の中の `format` で判別する(§0.a-0.2)。
+export type {
+  ShapeExportBrepBody,
+  ShapeExportItem,
+  ShapeExportMeshBody,
+  ShapeExportRequest,
+  ShapeExportResult,
+  ShapeImportBody,
+  ShapeImportRequest,
+  ShapeImportResult,
+} from './types.js';
+// 読み込んだ形のベースボディの段(FR-802、§2.8、タスク10)。model 側(タスク20)が
+// `shapeRef` を鍵にしてこの段を組み立てる。
+export type { ImportedSolidStepSpec } from './types.js';

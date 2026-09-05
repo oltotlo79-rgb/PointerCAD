@@ -1,5 +1,7 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
+import { readBrepBytes, writeBrepBytes } from '../occt/brepBytes.js';
+import { buildExportMesh } from '../occt/exportMesh.js';
 import { makeOffsetWire } from '../occt/makeOffsetWire.js';
 import { distanceBetween, measureMassProperties } from '../occt/measureShape.js';
 import { makePlanarFace } from '../occt/makePlanarFace.js';
@@ -7,11 +9,23 @@ import { makeProjection } from '../occt/makeProjection.js';
 import { makeSection } from '../occt/makeSection.js';
 import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from '../occt/pickSubShape.js';
+import { readStep } from '../occt/readStep.js';
+import { hasSolid, measureVolume } from '../occt/solidMesh.js';
 import { tessellate } from '../occt/tessellate.js';
+import { writeStep } from '../occt/writeStep.js';
+import type { RgbTuple } from '../occt/xcafDocument.js';
 import type {
   FaceMeshData,
   MeasureRequest,
   MeasureResult,
+  ShapeExportBrepBody,
+  ShapeExportItem,
+  ShapeExportMeshBody,
+  ShapeExportRequest,
+  ShapeExportResult,
+  ShapeImportBody,
+  ShapeImportRequest,
+  ShapeImportResult,
   SketchOffsetFailure,
   SketchOffsetOutcome,
   SketchOffsetRequest,
@@ -24,6 +38,7 @@ import type {
   SketchTessellation,
   SketchTessellationFailure,
   SketchTessellationRequest,
+  SolidBodyKind,
   SolidRecomputeRequest,
   SolidRecomputeResult,
   TessellationOptions,
@@ -35,7 +50,7 @@ import {
   type SolidCancelToken,
   type SolidProgressCallback,
 } from './recomputeSolids.js';
-import { createShapeCache } from './shapeCache.js';
+import { createShapeCache, type ShapeCache } from './shapeCache.js';
 
 /**
  * 投影・交差(FR-325)のもとになる立体が形状キャッシュに無いとき。
@@ -62,6 +77,75 @@ const MEASURE_NEEDS_TWO_MESSAGE = '距離を測るには 2 つ選んでくださ
 
 /** 質量特性を測るのに対象が 1 つでないとき。 */
 const MEASURE_NEEDS_ONE_MESSAGE = '体積と重心を測るには立体を 1 つ選んでください。';
+
+/**
+ * 読み込んだ形へ付ける、画面用の三角形の粗さ(FR-802、P6 §2.8)。
+ *
+ * **省略と同じ意味の空の指定**にしてある。`tessellate` の既定(線形 0.1mm・角度 0.5rad)は
+ * 画面表示の既定そのもので、読み込んだ形も画面に出るところは他のボディと変わらないため、
+ * ここで別の粗さを決める理由が無い。書き出しの偏差(FR-803)とは別物で、そちらは
+ * 依頼が数で指定する(`ShapeExportRequest` の `deviationMm`)。
+ */
+const IMPORT_TESSELLATION: TessellationOptions = {};
+
+/**
+ * 書き出す立体を鍵から引く(FR-803)。
+ *
+ * **1 つでも見つからなければ書き出しごと断る。** 一部だけ入ったファイルを渡すと、
+ * 利用者は欠けに気づかないまま他の CAD へ持っていくことになる(NFR-UX-5 は
+ * 「実行してから失敗させない」)。文言は投影・交差と同じ `MISSING_BODY_MESSAGE` で、
+ * 直し方(もう一度計算し直す)も同じである。
+ *
+ * **形はキャッシュの持ち物**なので、この関数も呼び出し側も解放しない。
+ */
+function resolveExportShapes(
+  cache: ShapeCache<CachedSolid>,
+  bodies: readonly ShapeExportItem[],
+): readonly TopoDS_Shape[] {
+  return bodies.map((item) => {
+    const cached = cache.get(item.bodyKey);
+    if (cached === undefined) {
+      throw new Error(MISSING_BODY_MESSAGE);
+    }
+    return cached.shape;
+  });
+}
+
+/**
+ * 読み込んだ形 1 つを、Comlink 越しに渡せる形へ畳む(FR-802、P6 §2.8)。
+ *
+ * **バイト列を三角形より先に作る。** `tessellate` は `BRepMesh_IncrementalMesh` を通して
+ * **形そのものへ三角形を書き込む**ので、順序を逆にすると三角形分割の付いた形が保存され、
+ * `.pcad` に入るバイト列が無駄に大きくなる(`occt/brepBytes.ts` の実測: 20³ の箱で
+ * 4,494 → 6,931 バイト。`BinTools.Write_3` は三角形分割も一緒に書く)。
+ *
+ * 渡された形は呼び出し側が解放する(STEP なら `StepReadResult.delete()`、
+ * B-rep なら `readBrepBytes` が返した形)。この関数は持ち主にならない。
+ */
+function toImportBody(
+  oc: OpenCascadeInstance,
+  shape: TopoDS_Shape,
+  name: string | null,
+  color: RgbTuple | null,
+  bodyKind: SolidBodyKind,
+): ShapeImportBody {
+  const brepBytes = writeBrepBytes(oc, shape);
+  const volume = measureVolume(oc, shape);
+  const surface = tessellate(oc, shape, IMPORT_TESSELLATION);
+  return {
+    name,
+    color,
+    bodyKind,
+    volume,
+    brepBytes,
+    triangles: {
+      positions: surface.positions,
+      normals: surface.normals,
+      indices: surface.indices,
+      triangleCount: surface.triangleCount,
+    },
+  };
+}
 
 /** UI 側から Comlink 越しに呼べる幾何カーネルの窓口。 */
 export interface KernelApi {
@@ -116,6 +200,32 @@ export interface KernelApi {
    * `{ kind: 'failed' }` を返す(アプリを落とさない。FR-504、NFR-RE-1)。
    */
   measure(request: MeasureRequest): Promise<MeasureResult>;
+  /**
+   * 覚えてある形をファイルの中身へ書き出す(FR-803、P6 §2.3・§2.4、タスク10)。
+   *
+   * **形式ごとに口を増やさない**(§0.a-0.2)。STEP のバイト列・三角形の網・B-rep の
+   * バイト列の切り替えは依頼の `format` で判別し、実装は網羅 `switch` で受ける
+   * (`ShapeExportRequest` の表)。対象は投影・測定と同じく**段のキャッシュの鍵**で指す。
+   *
+   * **測定と同じく、これは読み取りだけ**で再計算も鍵の作り直しも起こさない。三角形は
+   * 形の複製に掛けるので、画面用のキャッシュは 1 枚も汚れない(`occt/exportMesh.ts`)。
+   *
+   * 鍵が見つからないとき・OCCT が書けなかったときは**日本語の理由で投げる**
+   * (測定と違って結果に「失敗」の枝を作らないのは、書き出しが 1 回 1 ファイルの操作で、
+   * 一部だけ書けても利用者には渡せないためである。断りは画面がそのまま見せられる)。
+   */
+  exportShapes(request: ShapeExportRequest): Promise<ShapeExportResult>;
+  /**
+   * ファイルの中身から形を読み込む(FR-802、FR-811、P6 §2.3・§2.8、タスク10)。
+   *
+   * 書き出しと同じく**口は 1 本**で、依頼の `format` で判別する。返すのは
+   * **`.pcad` へ抱き込むバイト列と画面用の三角形**で、形そのものは Worker の中に残さない
+   * (`ShapeImportBody` の注釈)。読み込んだ形の単位は mm へ換算済み(NFR-RE-3)。
+   *
+   * 読めなかったとき・立体が入っていなかったときは**日本語の理由で投げる**
+   * (§2.8 の断りの表。画面はその文言をそのまま見せる)。
+   */
+  importShape(request: ShapeImportRequest): Promise<ShapeImportResult>;
 }
 
 /**
@@ -337,6 +447,91 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
       } finally {
         for (const shape of picked) {
           shape.delete();
+        }
+      }
+    },
+
+    async exportShapes(request): Promise<ShapeExportResult> {
+      const oc = await loadOcct();
+      const shapes = resolveExportShapes(cache, request.bodies);
+
+      // 網羅 `switch`(`default` を作らない)。形式が増えたら、ここが型検査で落ちる
+      // ことで配線し忘れが分かる(`ShapeExportRequest` の注釈)。
+      switch (request.format) {
+        case 'step': {
+          // 立体が 1 つも無いときの断り(「書き出せる立体がありません。」)は
+          // `buildXcafDocument` が持っている。ここで先回りして数えないのは、
+          // 同じ文言を 2 か所に置かないため(model の `selectExportBodies` も
+          // `nothingToExport` で先に断る)。
+          const written = writeStep(
+            oc,
+            request.bodies.map((item, index) => ({
+              shape: shapes[index],
+              name: item.name,
+              color: item.color,
+            })),
+            { withColors: request.withColors ?? true },
+          );
+          return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
+        }
+        case 'mesh': {
+          const bodies: ShapeExportMeshBody[] = request.bodies.map((item, index) => ({
+            bodyKey: item.bodyKey,
+            // 形の複製に掛けるので、画面用キャッシュの三角形は 1 枚も変わらない(§0.a-0.13)。
+            triangles: buildExportMesh(oc, shapes[index], request.deviationMm),
+          }));
+          return { format: 'mesh', bodies };
+        }
+        case 'brep': {
+          const bodies: ShapeExportBrepBody[] = request.bodies.map((item, index) => ({
+            bodyKey: item.bodyKey,
+            bytes: writeBrepBytes(oc, shapes[index]),
+          }));
+          return { format: 'brep', bodies };
+        }
+      }
+    },
+
+    async importShape(request): Promise<ShapeImportResult> {
+      const oc = await loadOcct();
+
+      // 網羅 `switch`。STL / OBJ の読み込み(タスク16・18)は依頼の union へ 1 つ足すと、
+      // ここが型検査で落ちて配線を促す(`ShapeImportRequest` の注釈)。
+      switch (request.format) {
+        case 'step': {
+          // `readStep` が返した形は読み手の持ち物。**必ず `delete()` する**
+          // (`rules/06` 10.13 の解放の見分け。忘れると次の読み込みが数倍遅くなる)。
+          const read = readStep(oc, request.bytes, {
+            fileName: request.fileName,
+            withColors: request.withColors,
+          });
+          try {
+            return {
+              bodies: read.bodies.map((body) =>
+                toImportBody(oc, body.shape, body.name, body.color, body.kind),
+              ),
+              unit: read.unit,
+              unitNames: read.unitNames,
+            };
+          } finally {
+            read.delete();
+          }
+        }
+        case 'brep': {
+          // `.pcad` へ抱き込んだバイト列(§0.a-0.9)。名前も色も文書の側が持っているので、
+          // ここでは形だけを戻す。単位は内部単位そのもの(mm)で、ファイルの単位は無い。
+          const shape = readBrepBytes(oc, request.bytes);
+          try {
+            return {
+              bodies: [
+                toImportBody(oc, shape, null, null, hasSolid(oc, shape) ? 'solid' : 'shell'),
+              ],
+              unit: 'mm',
+              unitNames: [],
+            };
+          } finally {
+            shape.delete();
+          }
         }
       }
     },

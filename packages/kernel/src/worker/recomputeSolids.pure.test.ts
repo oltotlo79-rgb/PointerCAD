@@ -298,6 +298,10 @@ describe('外観の面の照合(matchAppearances、FR-1106)', () => {
  * 真偽が違うだけ」として 1 種(`thruSections`)にまとめた(§0.a-0.25)ためである。
  * 薄板押し出し(FR-416)・ざぐり(FR-422)・可変半径(FR-426)・点集合パターン(FR-425)は
  * 計画のとおり既存の段の欄を広げたので、種類は増えていない。
+ *
+ * **P6 タスク10 で読み込んだ形のベースボディ(`importedSolid`、FR-802)を足して 22 → 23 に
+ * なった。** 三角形の形(`importedMesh`)は B-rep にしない(P6 §0.a-0.23)ので**段にならず**、
+ * 種類は 1 つしか増えない(model 側だけが 2 種を持つ。P6 §2.8)。
  */
 describe('段の種類(SolidStepSpec の union)', () => {
   const STEP_KINDS: Readonly<Record<SolidStepSpec['kind'], true>> = {
@@ -324,12 +328,24 @@ describe('段の種類(SolidStepSpec の union)', () => {
     surface: true,
     cut: true,
     shell: true,
+    // P6 タスク10 で足した 1 種(読み込んだ形のベースボディ、FR-802)。
+    importedSolid: true,
   };
 
-  it('段の種類は 22 種で、基本形状(primitive)と罫線面・ロフト(thruSections)を含む', () => {
-    expect(Object.keys(STEP_KINDS)).toHaveLength(22);
+  it('段の種類は 23 種で、基本形状(primitive)と罫線面・ロフト(thruSections)を含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(23);
     expect(Object.keys(STEP_KINDS)).toContain('primitive');
     expect(Object.keys(STEP_KINDS)).toContain('thruSections');
+  });
+
+  /*
+   * 読み込んだ形(FR-802、P6 §2.8)。**B-rep の形だけが段になる**ことを固定する。
+   * 三角形の形(`importedMesh`)を段にしてしまうと、メッシュ → B-rep の変換が要る
+   * (§0.a-0.23 で「しない」と決めた)ので、名前が入っていないことを歯止めにする。
+   */
+  it('読み込んだ形は B-rep の 1 種だけが段になり、三角形の形は段にならない(P6 §0.a-0.23)', () => {
+    expect(Object.keys(STEP_KINDS)).toContain('importedSolid');
+    expect(Object.keys(STEP_KINDS)).not.toContain('importedMesh');
   });
 
   it('P5 の Should 群・Could 群の 11 種がすべて入っている(タスク42a)', () => {

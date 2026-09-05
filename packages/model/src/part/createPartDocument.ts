@@ -61,8 +61,15 @@ import type {
  * P5 タスク5(§0.a-0.15、P4b が版 5 を使ったための読み替えで版 6)で `packages/io` が
  * 読み書きと移行(`SCHEMA_MIGRATIONS[5]`)を実装したので版 6 から必須の欄にした。
  * 版 5 以前のファイルは `SCHEMA_MIGRATIONS[5]` が `appearance` の省略を空の表で補って読み込む。
+ *
+ * P6 タスク20 で足した読み込んだ形のベースボディ 2 種(`importedSolid` / `importedMesh`、
+ * FR-802)と、P6 タスク21 が `.pcad` の ZIP へ足した添付のエントリ
+ * (`shapes/*.brep` / `meshes/*.bin` / `canvases/*.png`)で版 7 になった(§0.a-0.55)。
+ * **版は 1 回しか上げない**ので、まだ欄になっていない選択セット(`selectionSets`、FR-112)と
+ * 下絵(`canvases`、FR-332)も版 7 に含め、版 6 以前のファイルは
+ * `SCHEMA_MIGRATIONS[6]` がこの 2 欄の省略を空配列で補って読み込む。
  */
-export const PART_SCHEMA_VERSION = 6;
+export const PART_SCHEMA_VERSION = 7;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;

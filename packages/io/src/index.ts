@@ -7,8 +7,11 @@
 export {
   PCAD_APP_NAME,
   PCAD_DOCUMENT_KIND,
+  PCAD_DOCUMENT_KINDS,
   PCAD_SCHEMA_VERSION,
+  PCAD_TEMPLATE_KIND,
   SCHEMA_MIGRATIONS,
+  type PcadDocumentKind,
   type PcadEnvelope,
   type SchemaMigration,
 } from './pcad/schema.js';
@@ -23,10 +26,21 @@ export {
 } from './pcad/documentJson.js';
 // .pcad(ZIP コンテナ)の読み書き(FR-801、要件§8)。
 export {
+  decodeImportedMeshBytes,
+  emptyPcadAttachments,
+  encodeImportedMeshBytes,
+  PCAD_CANVAS_ENTRY_PREFIX,
+  PCAD_CANVAS_ENTRY_SUFFIX,
   PCAD_DOCUMENT_ENTRY,
+  PCAD_MESH_ENTRY_PREFIX,
+  PCAD_MESH_ENTRY_SUFFIX,
+  PCAD_SHAPE_ENTRY_PREFIX,
+  PCAD_SHAPE_ENTRY_SUFFIX,
   PCAD_THUMBNAIL_ENTRY,
   readPcadFile,
   writePcadFile,
+  type ImportedMeshBytes,
+  type PcadAttachments,
   type ReadPcadFileError,
   type ReadPcadFileErrorCode,
   type ReadPcadFileResult,

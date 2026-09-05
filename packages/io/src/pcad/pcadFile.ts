@@ -1,9 +1,19 @@
 /**
  * `.pcad` の ZIP コンテナの読み書き(計画書 docs/plans/P2-ソリッド基礎.md タスク15、要件§8、FR-801)。
  *
- * `.pcad` は ZIP で、中に次の 2 つだけを入れる。
+ * `.pcad` は ZIP で、中に次のものを入れる。
  *  - `document.json` … 部品文書の封筒(documentJson.ts が作る文字列を UTF-8 にしたもの)。圧縮する。
  *  - `thumbnail.png` … 画面の縮小画像。作れなければ入れない(§0.a-0.18)。PNG は既に圧縮済みなので無圧縮で入れる。
+ *  - **添付**(P6 タスク21、§0.a-0.9・0.24・0.45・0.55。版 7 から)
+ *    - `shapes/<shapeRef>.brep` … 読み込んだ B-rep(`importedSolid` が指す。OCCT の `BinTools` のバイト列)。
+ *    - `meshes/<meshRef>.bin` … 読み込んだ三角形(`importedMesh` が指す。下の `PCM1` の並び)。
+ *    - `canvases/<id>.png` … 下絵の画像(FR-332)。
+ *
+ * **添付は `rules/04`「導出できるものは保存しない」の承認済みの例外**である(§0.a-0.9 の例外①、
+ * §0.a-0.24 の例外②、§0.a-0.55 の例外③)。読み込んだ形も下絵も**再計算では導出できない**
+ * ——元のファイルが手元から消えたら二度と作れない——ので、`.pcad` へ抱き込む。
+ * `document.json` には id と素性だけを書き、バイト列は 1 バイトも入れない
+ * (10 万三角形を JSON にすると 10MB を超える。§2.8)。
  *
  * **決定的にする。** 同じ部品文書と同じ保存時刻からは、いつ・どの計算機で書き出しても
  * 同じバイト列ができる。ZIP のヘッダには「ファイルの最終更新日時」を書く欄があり、
@@ -25,11 +35,24 @@ import type { PartDocument } from '@pointercad/model';
 import { strFromU8, strToU8, unzipSync, zipSync, type Unzipped, type Zippable } from 'fflate';
 
 import { parseDocument, serializeDocument, type ParseErrorCode } from './documentJson.js';
+import type { PcadDocumentKind } from './schema.js';
 
 /** 部品文書を入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
 /** サムネイルを入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_THUMBNAIL_ENTRY = 'thumbnail.png';
+
+/**
+ * 添付のエントリ名の前後(§0.a-0.55)。名前は `<前>` + 参照の文字列 + `<後>` でできている。
+ * 参照の文字列に `/` は入らない前提で、入っているものは添付として扱わない
+ * (知らないエントリと同じく黙って読み飛ばす。ZIP の中の入れ子の階層を作らせない)。
+ */
+export const PCAD_SHAPE_ENTRY_PREFIX = 'shapes/';
+export const PCAD_SHAPE_ENTRY_SUFFIX = '.brep';
+export const PCAD_MESH_ENTRY_PREFIX = 'meshes/';
+export const PCAD_MESH_ENTRY_SUFFIX = '.bin';
+export const PCAD_CANVAS_ENTRY_PREFIX = 'canvases/';
+export const PCAD_CANVAS_ENTRY_SUFFIX = '.png';
 
 /**
  * ZIP のヘッダへ書く固定の日時。年・月・日・時・分・秒がそのまま書かれるので、
@@ -44,36 +67,256 @@ export const FIXED_ENTRY_MTIME = new Date(1980, 0, 2, 12, 0, 0, 0);
 const DOCUMENT_LEVEL = 6;
 /** `thumbnail.png` の圧縮の強さ。PNG は既に圧縮済みなので、掛け直さない。 */
 const THUMBNAIL_LEVEL = 0;
+/**
+ * 添付の圧縮の強さ(§0.a-0.55 の手順 5。**担当が実測して決めた**)。
+ *
+ * `.brep` と `.bin` は素の数値の並びなので deflate が良く効く
+ * (実測: 20³ の箱の `BinTools` は 4,494 → 694 バイト(§0.a-0.10)。
+ * 10 万三角形の `.bin` は 2,400,012 → 実測値を `pcadFile.test.ts` に記録)。
+ * `.png` は既に圧縮済みなので `thumbnail.png` と同じく掛け直さない。
+ */
+const ATTACHMENT_BINARY_LEVEL = 6;
+const ATTACHMENT_IMAGE_LEVEL = 0;
+
+/**
+ * 読み込んだ三角形の中身(`meshes/<meshRef>.bin` の中身。§2.8)。
+ *
+ * 位置・法線は頂点 1 つにつき 3 つ、添字は三角形 1 つにつき 3 つ。
+ * **B-rep にはしない**(§0.a-0.23)ので、この 3 本の配列がそのまま形の正本になる。
+ */
+export interface ImportedMeshBytes {
+  /** 位置(mm)。長さは頂点数 × 3。 */
+  readonly positions: Float32Array;
+  /** 法線(単位ベクトル)。長さは頂点数 × 3。 */
+  readonly normals: Float32Array;
+  /** 三角形の頂点の添字。長さは三角形数 × 3。 */
+  readonly indices: Uint32Array;
+}
+
+/**
+ * `.pcad` に入っている添付の表(§0.a-0.55)。鍵は**エントリ名ではなく参照の文字列**
+ * (`ImportedSolidFeature.shapeRef` / `ImportedMeshFeature.meshRef` / 下絵の id)なので、
+ * `shapes` は**そのまま `PartRecomputeOptions.importedShapes` へ渡せる**(タスク20 の形)。
+ *
+ * 3 つとも「空の表」を持つ(欄ごと無くさない)。読み手が毎回 `undefined` を確かめずに
+ * 済み、添付を持たない `.pcad`(版 6 までのファイル)も同じ形で扱えるため。
+ */
+export interface PcadAttachments {
+  /** 読み込んだ B-rep。バイト列はカーネルへそのまま渡すので、中身を解釈しない。 */
+  readonly shapes: ReadonlyMap<string, Uint8Array>;
+  /** 読み込んだ三角形。`PCM1` の並びを解いた形で持つ。 */
+  readonly meshes: ReadonlyMap<string, ImportedMeshBytes>;
+  /** 下絵の画像(PNG)。バイト列のまま持つ(FR-332)。 */
+  readonly canvases: ReadonlyMap<string, Uint8Array>;
+}
+
+/** 添付を 1 つも持たない表。版 6 までのファイルを読んだときの値でもある。 */
+export function emptyPcadAttachments(): PcadAttachments {
+  return { shapes: new Map(), meshes: new Map(), canvases: new Map() };
+}
+
+// ---------------------------------------------------------------------------
+// `meshes/<id>.bin` の並び(§2.8)
+// ---------------------------------------------------------------------------
+
+/**
+ * 頭(ヘッダ)の形。**12 バイト固定**で、内訳は次のとおり(すべてリトルエンディアン)。
+ *
+ * ```
+ *  0〜 3  マジック 'PCM1'(0x50 0x43 0x4d 0x31。'PointerCAD Mesh 1')
+ *  4〜 7  頂点の数 n(uint32)
+ *  8〜11  三角形の数 m(uint32)
+ * 12〜    位置(float32 × 3n) → 法線(float32 × 3n) → 添字(uint32 × 3m)
+ * ```
+ *
+ * **なぜマジックを置くか:** ZIP のエントリ名は他のアプリでも書き換えられるので、
+ * 名前だけを信じない。**なぜ 2 つの数を頭に置くか:** 位置と法線の境目が n から、
+ * 添字の始まりが 2n から決まり、**残りの長さを数えなくても切り出せる**ため。
+ * **なぜ位置 → 法線 → 添字の順か:** 計画書 §2.8 の並びをそのまま守る(表示は
+ * 位置と法線を先に要り、添字は最後にあれば足りる)。
+ *
+ * 全体の長さは `12 + 12n + 12n + 12m` バイトになる(float32 も uint32 も 4 バイト × 3)。
+ * 10 万三角形・頂点 5 万なら 2,400,012 バイト(§2.8 の見積もりと同じ)。
+ */
+const MESH_HEADER_BYTES = 12;
+/** マジックの 4 バイト。'PCM1' を UTF-8(= ASCII)にしたもの。 */
+const MESH_MAGIC: readonly number[] = [0x50, 0x43, 0x4d, 0x31];
+/** リトルエンディアンで読み書きする(`DataView` の `littleEndian` 引数)。 */
+const MESH_LITTLE_ENDIAN = true;
+
+/**
+ * 三角形を `meshes/<id>.bin` のバイト列にする。
+ *
+ * **`DataView` で 1 つずつ書く**のは、TypedArray をそのままバイト列にすると
+ * 走らせた計算機のバイト順(エンディアン)に左右され、**同じ形から同じファイルが
+ * できる保証が消える**ため(決定性は `.pcad` の約束。このファイル冒頭)。
+ * 長さの食い違い(位置と法線の要素数が違う等)は呼び出し側の作りの誤りなので、
+ * ここでは**位置の長さを正**として法線を同じ長さとして扱い、足りない分は 0 で埋める
+ * ——のではなく、**そろっていないものは受け取らない**(`null` を返す)。
+ */
+export function encodeImportedMeshBytes(mesh: ImportedMeshBytes): Uint8Array | null {
+  const vertexCount = mesh.positions.length / 3;
+  const triangleCount = mesh.indices.length / 3;
+  if (!Number.isInteger(vertexCount) || !Number.isInteger(triangleCount)) {
+    return null;
+  }
+  if (mesh.normals.length !== mesh.positions.length) {
+    return null;
+  }
+  const bytes = new Uint8Array(
+    MESH_HEADER_BYTES + mesh.positions.byteLength + mesh.normals.byteLength + mesh.indices.byteLength,
+  );
+  bytes.set(MESH_MAGIC, 0);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(4, vertexCount, MESH_LITTLE_ENDIAN);
+  view.setUint32(8, triangleCount, MESH_LITTLE_ENDIAN);
+  let offset = MESH_HEADER_BYTES;
+  for (const value of mesh.positions) {
+    view.setFloat32(offset, value, MESH_LITTLE_ENDIAN);
+    offset += 4;
+  }
+  for (const value of mesh.normals) {
+    view.setFloat32(offset, value, MESH_LITTLE_ENDIAN);
+    offset += 4;
+  }
+  for (const value of mesh.indices) {
+    view.setUint32(offset, value, MESH_LITTLE_ENDIAN);
+    offset += 4;
+  }
+  return bytes;
+}
+
+/**
+ * `meshes/<id>.bin` のバイト列から三角形を取り出す。読めなければ `null`
+ * (**例外を投げない**。NFR-RE-1)。
+ *
+ * 確かめるのは**並びの整合だけ**(マジック・長さ)で、添字が頂点数の範囲に収まるか等の
+ * 中身の妥当性は見ない。範囲外の添字は「壊れた形」ではあるが、そこで**ファイルごと
+ * 開けなくする**のは FR-504(読み込みでファイルを失わせない)に反するので、
+ * 表示・書き出しの段(タスク12・32)に任せる。
+ */
+export function decodeImportedMeshBytes(bytes: Uint8Array): ImportedMeshBytes | null {
+  if (bytes.length < MESH_HEADER_BYTES) {
+    return null;
+  }
+  for (let index = 0; index < MESH_MAGIC.length; index += 1) {
+    if (bytes[index] !== MESH_MAGIC[index]) {
+      return null;
+    }
+  }
+  // ZIP から取り出したバイト列は 4 の倍数の位置から始まるとは限らないので、
+  // TypedArray を直接かぶせず、`byteOffset` を足した `DataView` で読む。
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const vertexCount = view.getUint32(4, MESH_LITTLE_ENDIAN);
+  const triangleCount = view.getUint32(8, MESH_LITTLE_ENDIAN);
+  const expected = MESH_HEADER_BYTES + vertexCount * 24 + triangleCount * 12;
+  if (bytes.byteLength !== expected) {
+    return null;
+  }
+  const positions = new Float32Array(vertexCount * 3);
+  const normals = new Float32Array(vertexCount * 3);
+  const indices = new Uint32Array(triangleCount * 3);
+  let offset = MESH_HEADER_BYTES;
+  for (let index = 0; index < positions.length; index += 1) {
+    positions[index] = view.getFloat32(offset, MESH_LITTLE_ENDIAN);
+    offset += 4;
+  }
+  for (let index = 0; index < normals.length; index += 1) {
+    normals[index] = view.getFloat32(offset, MESH_LITTLE_ENDIAN);
+    offset += 4;
+  }
+  for (let index = 0; index < indices.length; index += 1) {
+    indices[index] = view.getUint32(offset, MESH_LITTLE_ENDIAN);
+    offset += 4;
+  }
+  return { positions, normals, indices };
+}
 
 export interface WritePcadFileOptions {
   /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
   readonly savedAt?: string;
   /** サムネイルの PNG。作れなかったときは渡さない(そのときは ZIP へ入れない)。 */
   readonly thumbnailPng?: Uint8Array;
+  /**
+   * 封筒に書く種別(§0.a-0.35)。既定は部品、ひな形(`.pcadt`)のときだけ
+   * `PCAD_TEMPLATE_KIND` を渡す。ZIP の作りは種別で 1 文字も変わらない。
+   */
+  readonly kind?: PcadDocumentKind;
+  /**
+   * 添付(§0.a-0.55)。渡さなければ添付のエントリは 1 つも入らない。
+   *
+   * **文書が参照しているものだけを渡す責任は呼び出し側にある。** ここで文書と突き合わせて
+   * 落とさないのは、①書き出しは断れない(戻り値がバイト列だけ)、②未参照の添付を捨てると
+   * 「まだ欄になっていない下絵」(タスク38)を往復で失う、の 2 つによる。
+   * 欠けているほうは読み手が `missingField` で断る。
+   */
+  readonly attachments?: PcadAttachments;
 }
 
 /**
- * 部品文書(と、あればサムネイル)を `.pcad` のバイト列にする。
+ * 添付を ZIP のエントリへ並べる。**名前の順に並べる**(表の並び順は作った側の都合で
+ * 変わるので、同じ中身から同じバイト列ができる約束を守るために毎回そろえる)。
+ * 中身を組み立てられなかった三角形は**黙って落とす**(書き出しは断れないため。
+ * 呼び出し側が壊れた配列を渡さない限り起きない)。
+ */
+function appendAttachments(entries: Zippable, attachments: PcadAttachments): void {
+  for (const [ref, bytes] of sortedEntries(attachments.shapes)) {
+    entries[`${PCAD_SHAPE_ENTRY_PREFIX}${ref}${PCAD_SHAPE_ENTRY_SUFFIX}`] = [
+      bytes,
+      { level: ATTACHMENT_BINARY_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+  }
+  for (const [ref, mesh] of sortedEntries(attachments.meshes)) {
+    const bytes = encodeImportedMeshBytes(mesh);
+    if (bytes === null) {
+      continue;
+    }
+    entries[`${PCAD_MESH_ENTRY_PREFIX}${ref}${PCAD_MESH_ENTRY_SUFFIX}`] = [
+      bytes,
+      { level: ATTACHMENT_BINARY_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+  }
+  for (const [ref, bytes] of sortedEntries(attachments.canvases)) {
+    entries[`${PCAD_CANVAS_ENTRY_PREFIX}${ref}${PCAD_CANVAS_ENTRY_SUFFIX}`] = [
+      bytes,
+      { level: ATTACHMENT_IMAGE_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+  }
+}
+
+/** 表を鍵の順(コード単位の昇順)に並べ替えた組の配列にする。 */
+function sortedEntries<T>(table: ReadonlyMap<string, T>): readonly (readonly [string, T])[] {
+  const pairs: (readonly [string, T])[] = [];
+  for (const pair of table) {
+    pairs.push(pair);
+  }
+  return pairs.sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
+}
+
+/**
+ * 部品文書(と、あればサムネイル・添付)を `.pcad` のバイト列にする。
  * 例外を投げない。TypedArray と純データしか扱わない。
+ *
+ * エントリの並びは `document.json` → `thumbnail.png` → 添付(`shapes` → `meshes` →
+ * `canvases`、それぞれ名前順)で固定する(決定性)。
  */
 export function writePcadFile(
   document: PartDocument,
   options: WritePcadFileOptions = {},
 ): Uint8Array {
-  const text = serializeDocument(document, { savedAt: options.savedAt });
-  const documentEntry = strToU8(text);
-  const entries: Zippable =
-    options.thumbnailPng === undefined
-      ? {
-          [PCAD_DOCUMENT_ENTRY]: [documentEntry, { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME }],
-        }
-      : {
-          [PCAD_DOCUMENT_ENTRY]: [documentEntry, { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME }],
-          [PCAD_THUMBNAIL_ENTRY]: [
-            options.thumbnailPng,
-            { level: THUMBNAIL_LEVEL, mtime: FIXED_ENTRY_MTIME },
-          ],
-        };
+  const text = serializeDocument(document, { savedAt: options.savedAt, kind: options.kind });
+  const entries: Zippable = {
+    [PCAD_DOCUMENT_ENTRY]: [strToU8(text), { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME }],
+  };
+  if (options.thumbnailPng !== undefined) {
+    entries[PCAD_THUMBNAIL_ENTRY] = [
+      options.thumbnailPng,
+      { level: THUMBNAIL_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+  }
+  if (options.attachments !== undefined) {
+    appendAttachments(entries, options.attachments);
+  }
   return zipSync(entries);
 }
 
@@ -94,6 +337,14 @@ export type ReadPcadFileResult =
       readonly ok: true;
       readonly document: PartDocument;
       readonly savedAt: string;
+      /** 封筒の種別(部品かひな形か、§0.a-0.35)。判断は上の層(タスク27)がする。 */
+      readonly kind: PcadDocumentKind;
+      /**
+       * ZIP に入っていた添付(§0.a-0.55)。**未参照のものも捨てずに返す。**
+       * 版 7 のファイルに、この版の読み手がまだ知らない参照(下絵、タスク38)が
+       * 入っていることがあり、捨てると往復でその添付を失うため。
+       */
+      readonly attachments: PcadAttachments;
       /** サムネイルが入っていたときだけ付く。 */
       readonly thumbnailPng?: Uint8Array;
     }
@@ -134,7 +385,83 @@ function decodeUtf8(bytes: Uint8Array): string | null {
 }
 
 /**
- * `.pcad` のバイト列から部品文書を取り出す。
+ * エントリ名が添付のものなら、その参照の文字列を返す(違えば null)。
+ * 参照に `/` が入る名前(`shapes/a/b.brep`)は添付として扱わない(このファイル冒頭)。
+ */
+function attachmentRef(name: string, prefix: string, suffix: string): string | null {
+  if (!name.startsWith(prefix) || !name.endsWith(suffix)) {
+    return null;
+  }
+  const ref = name.slice(prefix.length, name.length - suffix.length);
+  if (ref.length === 0 || ref.includes('/')) {
+    return null;
+  }
+  return ref;
+}
+
+/**
+ * ZIP のエントリから添付の表を組み立てる。三角形の並びが壊れていたエントリ名を
+ * 一緒に返し、呼び出し側に `invalidField` で断らせる(**エラーコードを増やさない**)。
+ */
+function collectAttachments(entries: Unzipped): {
+  readonly attachments: PcadAttachments;
+  readonly brokenMeshEntry: string | null;
+} {
+  const shapes = new Map<string, Uint8Array>();
+  const meshes = new Map<string, ImportedMeshBytes>();
+  const canvases = new Map<string, Uint8Array>();
+  let brokenMeshEntry: string | null = null;
+  for (const name of Object.keys(entries)) {
+    const shapeRef = attachmentRef(name, PCAD_SHAPE_ENTRY_PREFIX, PCAD_SHAPE_ENTRY_SUFFIX);
+    if (shapeRef !== null) {
+      shapes.set(shapeRef, entries[name]);
+      continue;
+    }
+    const meshRef = attachmentRef(name, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX);
+    if (meshRef !== null) {
+      const mesh = decodeImportedMeshBytes(entries[name]);
+      if (mesh === null) {
+        brokenMeshEntry ??= name;
+        continue;
+      }
+      meshes.set(meshRef, mesh);
+      continue;
+    }
+    const canvasRef = attachmentRef(name, PCAD_CANVAS_ENTRY_PREFIX, PCAD_CANVAS_ENTRY_SUFFIX);
+    if (canvasRef !== null) {
+      canvases.set(canvasRef, entries[name]);
+    }
+    // どれでもない名前は知らないエントリとして読み飛ばす(P2 からの決めごと)。
+  }
+  return { attachments: { shapes, meshes, canvases }, brokenMeshEntry };
+}
+
+/**
+ * 文書が指している添付が全部そろっているかを確かめ、欠けている 1 つ目のエントリ名を返す
+ * (そろっていれば null)。
+ *
+ * 欠けたまま開くと、履歴の先頭のベースボディが**形の無い段**になって再計算が通らない
+ * (FR-802)。読み込みの時点で断ったほうが、何が起きたかを利用者へ伝えられる。
+ * 断りは既存の `missingField`(**エラーコードを増やさない**。
+ * `docs/報告記録.md` 2026-09-04 01:40 の③)。
+ */
+function findMissingAttachment(
+  document: PartDocument,
+  attachments: PcadAttachments,
+): string | null {
+  for (const feature of document.solids) {
+    if (feature.kind === 'importedSolid' && !attachments.shapes.has(feature.shapeRef)) {
+      return `${PCAD_SHAPE_ENTRY_PREFIX}${feature.shapeRef}${PCAD_SHAPE_ENTRY_SUFFIX}`;
+    }
+    if (feature.kind === 'importedMesh' && !attachments.meshes.has(feature.meshRef)) {
+      return `${PCAD_MESH_ENTRY_PREFIX}${feature.meshRef}${PCAD_MESH_ENTRY_SUFFIX}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * `.pcad` のバイト列から部品文書と添付を取り出す。
  * 壊れていても例外を投げず、日本語の理由を返す(FR-504、NFR-RE-1)。
  */
 export function readPcadFile(bytes: Uint8Array): ReadPcadFileResult {
@@ -155,14 +482,33 @@ export function readPcadFile(bytes: Uint8Array): ReadPcadFileResult {
     // 中身の理由(版が古い・種別が違う・欄が壊れている等)はそのまま通す。
     return { ok: false, error: parsed.error };
   }
+  const collected = collectAttachments(entries);
+  if (collected.brokenMeshEntry !== null) {
+    return fail(
+      'invalidField',
+      `ファイルの中身が壊れています(${collected.brokenMeshEntry} の形が違います)。`,
+    );
+  }
+  const missing = findMissingAttachment(parsed.document, collected.attachments);
+  if (missing !== null) {
+    return fail('missingField', `ファイルの中身が壊れています(${missing} が見つかりません)。`);
+  }
   const thumbnail = findEntry(entries, PCAD_THUMBNAIL_ENTRY);
   if (thumbnail === null) {
-    return { ok: true, document: parsed.document, savedAt: parsed.savedAt };
+    return {
+      ok: true,
+      document: parsed.document,
+      savedAt: parsed.savedAt,
+      kind: parsed.kind,
+      attachments: collected.attachments,
+    };
   }
   return {
     ok: true,
     document: parsed.document,
     savedAt: parsed.savedAt,
+    kind: parsed.kind,
+    attachments: collected.attachments,
     thumbnailPng: thumbnail,
   };
 }

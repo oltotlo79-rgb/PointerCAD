@@ -45,8 +45,21 @@ import { isRecord } from './guards.js';
  * P4b タスク21が先に版 5 を使ったため、統括の決定により P5 のこの節はすべて版 6 に
  * 読み替える。`appearance` は部品文書の必須の欄になるので、版5以前のファイル(この欄を
  * 持たない)は `SCHEMA_MIGRATIONS[5]` が空の表で補う(`parameters` と同じ扱い)。
+ *
+ * **版 6 → 版 7(P6 タスク21、§0.a-0.55):** P6 が足したのは
+ * ①読み込んだ形のベースボディ 2 種(`importedSolid` / `importedMesh`、FR-802、タスク20)、
+ * ②選択セット(`selectionSets`、FR-112、§0.a-0.44)、③下絵の画像(`canvases`、FR-332、
+ * §0.a-0.45)、④**ZIP の中の新しいエントリ**(`shapes/*.brep` / `meshes/*.bin` /
+ * `canvases/*.png`、`pcadFile.ts`)である。**版は 1 回しか上げない**(統括の承認、§0.a-0.55)
+ * ので、②③がまだ部品文書の欄になっていない段階でも、版 7 の移行にまとめて含める。
+ *
+ * ①はフィーチャーの種類が増えるだけ(版 2 → 版 3 と同じ)なので移行では何もしない。
+ * ②③は部品文書の必須の欄になる予定なので、版6以前のファイル(この欄を持たない)は
+ * `SCHEMA_MIGRATIONS[6]` が空配列で補う(`parameters`(版 5)・`appearance`(版 6)と
+ * まったく同じ形)。④は `document.json` の中身ではないので移行の対象にならない
+ * (添付が 1 つも無い版7のファイルは、版6のファイルと同じく `document.json` だけを持つ)。
  */
-export const PCAD_SCHEMA_VERSION = 6;
+export const PCAD_SCHEMA_VERSION = 7;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -61,12 +74,36 @@ export const PCAD_APP_NAME = 'PointerCAD';
  */
 export const PCAD_DOCUMENT_KIND = 'part';
 
+/**
+ * ひな形(テンプレート)の封筒に書く種別(FR-814、§0.a-0.35。P6 タスク21 で足した)。
+ *
+ * ひな形は「中身の入っていない部品」で、**形も欄も部品とまったく同じ**なので、
+ * 読み書きの実装は 1 行も分けず、封筒のこの欄と拡張子(`.pcadt`)だけで分ける。
+ * 「そのひな形に履歴が入っていたらどうするか」の判断はここではせず、
+ * 読み手(`parseDocument` が返す `kind`)を見た上の層(タスク27)が決める。
+ */
+export const PCAD_TEMPLATE_KIND = 'partTemplate';
+
+/**
+ * 読み手が受け入れる封筒の種別(§0.a-0.35)。**この一覧に無い種別**(`assembly` /
+ * `drawing`)は、既存の `unsupportedKind` で断る(**エラーコードを増やさない**。
+ * `docs/報告記録.md` 2026-09-04 01:40 の③)。将来アセンブリや図面を足すときは、
+ * 種別の定数ではなくこの一覧を広げる。
+ */
+export type PcadDocumentKind = typeof PCAD_DOCUMENT_KIND | typeof PCAD_TEMPLATE_KIND;
+
+/** 同上の実体。`readLiteral` に渡して封筒の `kind` を絞るために配列で持つ。 */
+export const PCAD_DOCUMENT_KINDS: readonly PcadDocumentKind[] = [
+  PCAD_DOCUMENT_KIND,
+  PCAD_TEMPLATE_KIND,
+];
+
 /** `document.json` の中身(封筒)。ここに書いたものだけを保存し、それ以外は保存しない。 */
 export interface PcadEnvelope {
   /** 書式の版。部品文書の `schemaVersion` と同じ値。 */
   readonly schema: number;
-  /** 中身の種別。部品ファイルは常に `PCAD_DOCUMENT_KIND`。 */
-  readonly kind: typeof PCAD_DOCUMENT_KIND;
+  /** 中身の種別。部品ファイルは `PCAD_DOCUMENT_KIND`、ひな形は `PCAD_TEMPLATE_KIND`。 */
+  readonly kind: PcadDocumentKind;
   /** 常に `PCAD_APP_NAME`。 */
   readonly app: string;
   /** 保存した時刻(ISO 8601、UTC)。 */
@@ -197,6 +234,30 @@ function migrateDocumentToV6(document: Record<string, unknown>): Record<string, 
   return { ...migrated, appearance: { entries: [] } };
 }
 
+/**
+ * 版6以前の部品文書を版7の形へ補う(P6 タスク21、§0.a-0.55)。`schemaVersion` の書き換えと、
+ * `selectionSets`(選択セット、FR-112、§0.a-0.44)・`canvases`(下絵の画像、FR-332、
+ * §0.a-0.45)が無ければ空配列で補う(`migrateDocumentToV5` の `parameters`・
+ * `migrateDocumentToV6` の `appearance` と同じ扱い)。
+ *
+ * **この 2 欄はまだ `PartDocument` の欄になっていない**(タスク37・38 で足す)。
+ * それでもここで補うのは、版を 2 回上げない(統括の承認、§0.a-0.55)と決めたためで、
+ * 補った欄は読み手が知らないうちは黙って捨てられる(欄が増えたときに移行を書き足さずに済む)。
+ *
+ * 読み込んだ形のベースボディ 2 種(`importedSolid` / `importedMesh`、タスク20)は
+ * **フィーチャーの種類が増えただけ**なので、ここでは何もしない(版 2 → 版 3 と同じ)。
+ */
+function migrateDocumentToV7(document: Record<string, unknown>): Record<string, unknown> {
+  let migrated: Record<string, unknown> = { ...document, schemaVersion: 7 };
+  if (!('selectionSets' in migrated)) {
+    migrated = { ...migrated, selectionSets: [] };
+  }
+  if (!('canvases' in migrated)) {
+    migrated = { ...migrated, canvases: [] };
+  }
+  return migrated;
+}
+
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
   2: (raw) => {
     if (!isRecord(raw)) {
@@ -253,5 +314,21 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
       return raw;
     }
     return { ...raw, schema: 6, document: migrateDocumentToV6(document) };
+  },
+  /**
+   * 版6 → 版7(P6 タスク21、§0.a-0.55): 選択セット(`selectionSets`、FR-112)と
+   * 下絵の画像(`canvases`、FR-332)が無ければ空配列で補う。ZIP の新しいエントリ
+   * (`shapes/*.brep` / `meshes/*.bin` / `canvases/*.png`)は `document.json` の外なので
+   * ここでは触らない(添付を 1 つも持たない版7のファイルは版6と同じ中身になる)。
+   */
+  6: (raw) => {
+    if (!isRecord(raw)) {
+      return raw;
+    }
+    const document = raw['document'];
+    if (!isRecord(document)) {
+      return raw;
+    }
+    return { ...raw, schema: 7, document: migrateDocumentToV7(document) };
   },
 };

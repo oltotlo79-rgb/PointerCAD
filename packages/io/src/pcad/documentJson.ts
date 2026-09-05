@@ -120,8 +120,10 @@ import {
 import {
   PCAD_APP_NAME,
   PCAD_DOCUMENT_KIND,
+  PCAD_DOCUMENT_KINDS,
   PCAD_SCHEMA_VERSION,
   SCHEMA_MIGRATIONS,
+  type PcadDocumentKind,
   type PcadEnvelope,
 } from './schema.js';
 
@@ -1688,6 +1690,12 @@ function serializePartDocument(document: PartDocument): PartDocument {
 export interface SerializeOptions {
   /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
   readonly savedAt?: string;
+  /**
+   * 封筒に書く種別(§0.a-0.35)。既定は部品(`PCAD_DOCUMENT_KIND`)で、
+   * ひな形(`.pcadt`)として書き出すときだけ `PCAD_TEMPLATE_KIND` を渡す。
+   * 中身(部品文書)の作りは種別で 1 文字も変わらない(履歴を空にするのは上の層の仕事)。
+   */
+  readonly kind?: PcadDocumentKind;
 }
 
 /**
@@ -1698,8 +1706,8 @@ export function serializeDocument(document: PartDocument, options: SerializeOpti
   const envelope: PcadEnvelope = {
     // 封筒の版は文書の版と同じ値を書く(統括の決定④)。
     schema: document.schemaVersion,
-    // このアプリが書き出すのは部品だけなので、種別は常に part(要件§8)。
-    kind: PCAD_DOCUMENT_KIND,
+    // 既定は部品(要件§8)。ひな形のときだけ呼び出し側が種別を渡す(§0.a-0.35)。
+    kind: options.kind ?? PCAD_DOCUMENT_KIND,
     app: PCAD_APP_NAME,
     savedAt: options.savedAt ?? new Date().toISOString(),
     document: serializePartDocument(document),
@@ -6135,7 +6143,17 @@ export interface ParseError {
 }
 
 export type ParseDocumentResult =
-  | { readonly ok: true; readonly document: PartDocument; readonly savedAt: string }
+  | {
+      readonly ok: true;
+      readonly document: PartDocument;
+      readonly savedAt: string;
+      /**
+       * 封筒に書かれていた種別(§0.a-0.35)。部品なら `'part'`、ひな形なら `'partTemplate'`。
+       * **中身の読み方は種別で変わらない**ので、ここで返して上の層(タスク27 の
+       * 「このファイルはひな形ではありません。」の断り)に判断させる。
+       */
+      readonly kind: PcadDocumentKind;
+    }
   | { readonly ok: false; readonly error: ParseError };
 
 const NOT_PCAD_MESSAGE = 'PointerCAD の部品ファイルではないようです。';
@@ -6198,12 +6216,13 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
   }
   // 種別は封筒の欄なので、中身を読む前に見る(統括の決定、要件§8)。
   // 欄そのものが無い・文字列でないものは PointerCAD の封筒になっていないので notPcad、
-  // 文字列だが part でないものは「PointerCAD のファイルだが、この種類はまだ読めない」と分けて断る。
+  // 文字列だが受け入れる一覧(部品とひな形。§0.a-0.35)に無いものは
+  // 「PointerCAD のファイルだが、この種類はまだ読めない」と分けて断る。
   const kind = readString(raw, 'kind', '');
   if (!kind.ok) {
     return fail('notPcad', NOT_PCAD_MESSAGE);
   }
-  if (kind.value !== PCAD_DOCUMENT_KIND) {
+  if (!isPcadDocumentKind(kind.value)) {
     return fail(
       'unsupportedKind',
       `この形式の種類(${kind.value})にはまだ対応していません。`,
@@ -6241,7 +6260,21 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
       `外観の割り当ての id が重なっています(${duplicateAppearanceId})。ファイルが壊れている可能性があります。`,
     );
   }
-  return { ok: true, document: decoded.value, savedAt: savedAt.value };
+  return { ok: true, document: decoded.value, savedAt: savedAt.value, kind: kind.value };
+}
+
+/**
+ * 封筒の `kind` が受け入れる種別のどれかかを確かめる(§0.a-0.35)。
+ * `Array.includes` は引数の型を一覧の型に狭めてしまい `as` が要るので、
+ * 自前の型ガードで書く(**`as` / `any` を使わない**)。
+ */
+function isPcadDocumentKind(value: string): value is PcadDocumentKind {
+  for (const candidate of PCAD_DOCUMENT_KINDS) {
+    if (candidate === value) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

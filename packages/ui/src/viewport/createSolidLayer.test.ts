@@ -8,10 +8,8 @@
  * `buildThreadMarkPositions` だけを検査する。
  */
 import {
-  appearanceFromPreset,
   DEFAULT_APPEARANCE,
   type AppearanceEntry,
-  type AppearanceMatchEntry,
   type AppearanceSpec,
   type AppearanceTable,
   type SubShapeRef,
@@ -19,10 +17,10 @@ import {
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
+import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
 import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
 import { buildSolidGeometry, type SolidBodyWithSubShapes } from './buildSolidGeometry.js';
 import {
-  buildAppearanceInput,
   buildThreadMarkPositions,
   createSolidLayer,
   type ThreadMarkInfo,
@@ -176,82 +174,11 @@ function bodyMeshesOf(group: THREE.Object3D): THREE.Mesh<THREE.BufferGeometry, T
   return group.children.filter(isBodyMesh);
 }
 
-describe('buildAppearanceInput(文書の割り当て → 組み立てへ渡す一式)', () => {
-  it('割り当てが 1 つも無ければ、ボディの表は空で既定の外観だけになる', () => {
-    const input = buildAppearanceInput(tableOf([]), []);
-    expect(input.byBody.size).toBe(0);
-    expect(input.defaultAppearance).toBe(DEFAULT_APPEARANCE);
-  });
-
-  it('立体への割り当ては bodyAppearance に入る', () => {
-    const steel = appearanceFromPreset('steel');
-    const input = buildAppearanceInput(
-      tableOf([
-        { id: 'appearance-1', target: { kind: 'body', bodyFeatureId: 'extrude-1' }, appearance: steel },
-      ]),
-      [],
-    );
-    expect(input.byBody.get('extrude-1')?.bodyAppearance).toBe(steel);
-    expect(input.byBody.get('extrude-1')?.faceAppearances.size).toBe(0);
-  });
-
-  it('面への割り当ては、カーネルが選び直した面の通し番号に入る', () => {
-    const glass = appearanceFromPreset('glass');
-    const matches: AppearanceMatchEntry[] = [
-      { id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: 4 },
-    ];
-    const input = buildAppearanceInput(
-      tableOf([
-        { id: 'appearance-1', target: { kind: 'face', ref: faceRef('extrude-1', 2) }, appearance: glass },
-      ]),
-      matches,
-    );
-    // 保存されている通し番号(2)ではなく、選び直した番号(4)を使う。
-    expect(input.byBody.get('extrude-1')?.faceAppearances.get(4)).toBe(glass);
-    expect(input.byBody.get('extrude-1')?.faceAppearances.has(2)).toBe(false);
-  });
-
-  it('選び直せなかった(faceIndex が null)割り当ては描かない', () => {
-    const input = buildAppearanceInput(
-      tableOf([
-        {
-          id: 'appearance-1',
-          target: { kind: 'face', ref: faceRef('extrude-1', 2) },
-          appearance: appearanceFromPreset('steel'),
-        },
-      ]),
-      [{ id: 'appearance-1', bodyFeatureId: 'extrude-1', faceIndex: null }],
-    );
-    // 描くものが 1 つも無いので、そのボディの入れ物そのものを作らない。
-    expect(input.byBody.has('extrude-1')).toBe(false);
-  });
-
-  it('照合の結果がまだ無い割り当ては、割り当てたときの通し番号を使う(色を付けた直後)', () => {
-    const steel = appearanceFromPreset('steel');
-    const input = buildAppearanceInput(
-      tableOf([
-        { id: 'appearance-1', target: { kind: 'face', ref: faceRef('extrude-1', 3) }, appearance: steel },
-      ]),
-      [],
-    );
-    expect(input.byBody.get('extrude-1')?.faceAppearances.get(3)).toBe(steel);
-  });
-
-  it('立体と面の両方の割り当てが 1 つの入れ物にまとまる', () => {
-    const steel = appearanceFromPreset('steel');
-    const glass = appearanceFromPreset('glass');
-    const input = buildAppearanceInput(
-      tableOf([
-        { id: 'appearance-1', target: { kind: 'face', ref: faceRef('extrude-1', 1) }, appearance: glass },
-        { id: 'appearance-2', target: { kind: 'body', bodyFeatureId: 'extrude-1' }, appearance: steel },
-      ]),
-      [],
-    );
-    const assignment = input.byBody.get('extrude-1');
-    expect(assignment?.bodyAppearance).toBe(steel);
-    expect(assignment?.faceAppearances.get(1)).toBe(glass);
-  });
-});
+/*
+ * `buildAppearanceInput`(文書の割り当て → 組み立てへ渡す一式)そのものの検査は、
+ * 関数の移設(P5 タスク11)に合わせて `appearance/appearanceCommands.test.ts` へ移した。
+ * ここでは、その結果を流し込んだ層の見え方(材質の配列・まとまり・資源の解放)を確かめる。
+ */
 
 describe('createSolidLayer(材質の配列とまとまり、FR-1106)', () => {
   it('外観を 1 つも割り当てていないときは、材質 1 つ・まとまり 1 つ・P2 と同じ色になる', () => {

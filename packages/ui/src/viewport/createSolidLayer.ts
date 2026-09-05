@@ -33,9 +33,7 @@ import {
   DEFAULT_APPEARANCE,
   normalizeVec3,
   scaleVec3,
-  type AppearanceMatchEntry,
   type AppearanceSpec,
-  type AppearanceTable,
   type Vec3,
 } from '@pointercad/model';
 import * as THREE from 'three';
@@ -47,8 +45,6 @@ import {
 } from '../appearance/createAppearanceMaterial.js';
 import type { DisplayStyle } from '../store/useAppStore.js';
 import type {
-  AppearanceInput,
-  BodyAppearanceInput,
   SolidDrawEntry,
   SolidEmphasis,
   SolidGeometryBundle,
@@ -196,69 +192,12 @@ export function buildThreadMarkPositions(marks: readonly ThreadMarkInfo[]): Floa
   return Float32Array.from(positions);
 }
 
-/**
- * 外観の割り当て(文書の表)と、カーネルが選び直した面の対応から、組み立てへ渡す一式を作る
- * (FR-1106、計画書 P5 タスク10 ②)。three.js にも DOM にも触れない純関数。
- *
- * ```
- * 立体の割り当て → byBody(featureId).bodyAppearance
- * 面の割り当て   → byBody(featureId).faceAppearances(面の通し番号)
- * ```
- *
- * **面の通し番号の決め方(3 段):**
- *
- * 1. 再計算のたびにカーネルが指紋で選び直した結果(`matches`)に同じ id があれば、その番号。
- * 2. 番号が `null`(選び直せなかった)なら**その割り当ては描かない**。既定の外観で描き、
- *    警告を出すのは呼び出し側(FR-1106「選び直せなかった割り当ては警告し既定へ戻す」)。
- * 3. `matches` に同じ id が 1 つも無いときは、**割り当てを作ったときの通し番号**
- *    (`SubShapeRef.index`)を使う。外観だけを変えても再計算は起きない(§2.3)ので、
- *    割り当てた直後は照合の結果がまだ無い。形はその瞬間から変わっていないため、
- *    保存された通し番号がそのまま正しい。これが無いと「色を付けたのに次に形を変えるまで
- *    色が出ない」ことになる。
+/*
+ * 外観の割り当て(文書の表)から組み立てへ渡す一式を作る `buildAppearanceInput` は、
+ * three.js に触れない純関数であり、上限の先出し検査(コマンド側)からも同じものを使うため、
+ * P5 タスク11 で `appearance/appearanceCommands.ts` へ移した。ここは import して使うだけにする
+ * (同じ組み立てを 2 か所に持たない)。
  */
-export function buildAppearanceInput(
-  table: AppearanceTable,
-  matches: readonly AppearanceMatchEntry[],
-): AppearanceInput {
-  const matchById = new Map<string, AppearanceMatchEntry>();
-  for (const match of matches) {
-    matchById.set(match.id, match);
-  }
-
-  const byBody = new Map<string, BodyAppearanceInput>();
-  const faceMaps = new Map<string, Map<number, AppearanceSpec>>();
-  function slotFor(featureId: string): { faces: Map<number, AppearanceSpec> } {
-    let faces = faceMaps.get(featureId);
-    if (faces === undefined) {
-      faces = new Map<number, AppearanceSpec>();
-      faceMaps.set(featureId, faces);
-      byBody.set(featureId, { bodyAppearance: null, faceAppearances: faces });
-    }
-    return { faces };
-  }
-
-  for (const entry of table.entries) {
-    if (entry.target.kind === 'body') {
-      const { bodyFeatureId } = entry.target;
-      slotFor(bodyFeatureId);
-      byBody.set(bodyFeatureId, {
-        bodyAppearance: entry.appearance,
-        faceAppearances: faceMaps.get(bodyFeatureId) ?? new Map<number, AppearanceSpec>(),
-      });
-      continue;
-    }
-    const { ref } = entry.target;
-    const match = matchById.get(entry.id);
-    const faceIndex = match === undefined ? ref.index : match.faceIndex;
-    if (faceIndex === null) {
-      continue;
-    }
-    const bodyFeatureId = match === undefined ? ref.bodyFeatureId : match.bodyFeatureId;
-    slotFor(bodyFeatureId).faces.set(faceIndex, entry.appearance);
-  }
-
-  return { defaultAppearance: DEFAULT_APPEARANCE, byBody };
-}
 
 /** 既定の外観の鍵。テーマの色を当てる相手かどうかの判定に使う(下の `themedAppearance`)。 */
 const DEFAULT_APPEARANCE_KEY = appearanceKeyText(DEFAULT_APPEARANCE);

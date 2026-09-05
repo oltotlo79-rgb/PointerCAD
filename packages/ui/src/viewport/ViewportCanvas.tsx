@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { appearanceOf, isFreeWorkPlaneId } from '@pointercad/model';
 
+import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
 import { t } from '../i18n/t.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
@@ -11,7 +12,6 @@ import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
-import { buildAppearanceInput } from './createSolidLayer.js';
 import { createViewportScene } from './createViewportScene.js';
 import { readThemeColors } from './themeColors.js';
 

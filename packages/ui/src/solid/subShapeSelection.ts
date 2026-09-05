@@ -385,6 +385,15 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
     */
     case 'projectedCurve':
       return 'face';
+    /*
+      外観(FR-1106、P5 タスク11)。立体ごとにも面ごとにも色を付けられるが、**面を既定**に
+      する。立体そのものは道具を選ぶ前から押して選べる(選択の道具のまま押せば `body` の
+      選択に入る)のに対し、面は選ぶ種類が `face` でないと押せないためで、道具を選んだ
+      その場でどちらもできる状態になるのは面を既定にしたときだけになる(NFR-UX-1)。
+      立体へ付けたいときは `4` キーか帯の札で「立体」へ切り替える。
+    */
+    case 'appearance':
+      return 'face';
     default:
       return 'body';
   }

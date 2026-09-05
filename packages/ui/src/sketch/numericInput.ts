@@ -229,6 +229,16 @@ export type ReferenceToolId =
   | 'referencePoint'
   | 'referenceCoordinateSystem';
 
+/**
+ * 外観の道具(FR-1106〜1110、P5 タスク11)。
+ *
+ * 数値を 1 つも聞かない(色・材質はプロパティの「外観」節で選ぶ)ので段の表には入れず、
+ * トリム・延長(`ClickEditToolId`)や投影・断面(`PickEditToolId`)と同じく別の型にする。
+ * 立体か面を選んでから色を付ける道具なので、選ぶ種類は面になる
+ * (`solid/subShapeSelection.ts` の `selectionKindForTool`)。
+ */
+export type AppearanceToolId = 'appearance';
+
 /** ポップアップを開ける道具。スケッチの道具より広い。 */
 export type NumericInputToolId =
   | SketchToolId
@@ -237,7 +247,8 @@ export type NumericInputToolId =
   | ReferenceToolId
   | EditToolId
   | ClickEditToolId
-  | PickEditToolId;
+  | PickEditToolId
+  | AppearanceToolId;
 
 /** 座標の指定方法(FR-301〜303)。 */
 export type CoordinateMode = 'absolute' | 'relative' | 'polar';

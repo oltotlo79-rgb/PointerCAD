@@ -798,3 +798,46 @@ describe('引っぱりの帯(FR-313、P4b タスク14)', () => {
     expect(describeStatus({ ...quiet(), dragging: false }).text).toBe(t('statusBar.ready'));
   });
 });
+
+describe('外観の案内と警告(FR-1106〜1110、P5 タスク11)', () => {
+  it('外観の道具を選ぶと「面か立体を選んでください」の案内を出す', () => {
+    expect(guideKeyFor('appearance', 0)).toBe('statusBar.guide.appearance');
+    const line = describeStatus({ ...quiet(), activeTool: 'appearance', selectionKind: 'face' });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe(t('statusBar.guide.appearance'));
+  });
+
+  it('外観を割り当てられなかった理由を、頭の言葉を付けずにそのまま出す', () => {
+    const line = describeStatus({
+      ...quiet(),
+      appearanceErrorKey: 'appearanceError.tooManyMaterials',
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(t('appearanceError.tooManyMaterials'));
+  });
+
+  it('選び直せなかった割り当てがあれば件数を入れて警告する(FR-1106)', () => {
+    const line = describeStatus({ ...quiet(), appearanceMissingCount: 3 });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe('色を付けた面が 3 か所見つかりません。形が変わったため、選び直してください。');
+  });
+
+  it('見つからない割り当てが 0 件なら何も出さない(道具の案内へ戻る)', () => {
+    expect(describeStatus({ ...quiet(), appearanceMissingCount: 0 }).text).toBe(
+      t('statusBar.ready'),
+    );
+  });
+
+  it('いま押したボタンへの断りは、見つからない割り当ての警告より先に出る(NFR-UX-5)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      appearanceErrorKey: 'appearanceError.noTarget',
+      appearanceMissingCount: 2,
+    });
+    expect(line.text).toBe(t('appearanceError.noTarget'));
+  });
+
+  it('外観の欄を渡さない呼び出しは今までどおり動く(欄は省略できる)', () => {
+    expect(describeStatus(quiet()).text).toBe(t('statusBar.ready'));
+  });
+});

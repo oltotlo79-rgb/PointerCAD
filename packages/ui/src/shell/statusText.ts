@@ -102,6 +102,10 @@ const GUIDE_KEYS = {
   // (このスケッチを使う立体より前の立体だけ)を伝える文にしてある(§0.a-0.11、NFR-UX-7)。
   projectedCurve: 'statusBar.guide.projectedCurve',
   planeSection: 'statusBar.guide.planeSection',
+  // P5 タスク11 が `AppearanceToolId` へ足した外観(FR-1106〜1110)。数値を聞かず、
+  // 立体か面を選んでから色・材質を選ぶ道具なので、案内は「何を選ぶか」を伝える文にする。
+  // 上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで案内も足す。
+  appearance: 'statusBar.guide.appearance',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**
@@ -282,6 +286,18 @@ export interface StatusInput {
    * そのまま通すため。
    */
   readonly editErrorKey?: MessageKey | null;
+  /**
+   * 外観を割り当てられなかった理由(FR-1106〜1110、NFR-UX-5。P5 タスク11)。
+   * いま押したボタンへの返事なので、他の断りと同じ高さの優先順位に置く。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly appearanceErrorKey?: MessageKey | null;
+  /**
+   * 選び直せなかった外観の割り当ての数(FR-1106、P5 §2.2.3。タスク11)。
+   * 形が変わって指紋が合わなくなった面の件数で、0 なら何も出さない。数えるのは
+   * `appearance/appearanceCommands.ts` の `missingAppearanceCount` 1 か所だけにする。
+   */
+  readonly appearanceMissingCount?: number;
   /**
    * 整形系の道具が**うまくいったときに添える案内**(FR-323、P4 タスク23)。断りではないので
    * 帯を赤くせず、「保存しました」等と同じ短い知らせとして出す。いまの使い道は 1 つで、
@@ -657,6 +673,12 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   if (input.editErrorKey !== undefined && input.editErrorKey !== null) {
     return failureLine('statusBar.editError', t(input.editErrorKey));
   }
+  if (input.appearanceErrorKey !== undefined && input.appearanceErrorKey !== null) {
+    // 外観を割り当てられなかった断り(FR-1106〜1110、P5 タスク11)。いま押したボタンへの
+    // 返事なので、他の断りと同じ高さに置く。理由の文はそれだけで通じる 1 文
+    // (「この立体には 8 種類までしか…」)なので、頭の言葉は付けない。
+    return failureLine(null, t(input.appearanceErrorKey));
+  }
   if (input.shapeErrorMessage !== undefined && input.shapeErrorMessage !== null) {
     return failureLine('statusBar.shapeError', input.shapeErrorMessage);
   }
@@ -716,6 +738,19 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   }
   if (input.fileMessage !== null) {
     return { kind: 'saved', text: t(input.fileMessage.key), hint: null, progress: null };
+  }
+  /*
+    選び直せなかった外観の割り当て(FR-1106「選び直せなかった割り当ては警告し、既定の外観に
+    戻す」、P5 §2.2.3)。形が変わって色が外れたままなので、直すまで出し続ける。
+    押した操作への返事ではないので断りの列より後ろに置くが、道具の案内よりは先に出す
+    (放っておくと色が戻らないため、NFR-UX-7)。**割り当て自体は文書から消さない。**
+  */
+  const missingAppearances = input.appearanceMissingCount ?? 0;
+  if (missingAppearances > 0) {
+    return failureLine(
+      null,
+      fill(t('statusBar.appearanceMissing'), { count: String(missingAppearances) }),
+    );
   }
   if (input.isComputing) {
     // 初回の計算だけ、幾何カーネル(約 50MB)の読み込みを含む旨に文言を分ける

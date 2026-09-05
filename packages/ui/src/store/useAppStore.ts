@@ -26,7 +26,9 @@ import {
   undo as undoStep,
   WORK_PLANE_IDS,
   WORK_PLANES,
+  pruneDocumentAppearance,
   type AppearanceMatchEntry,
+  type AppearanceSpec,
   type ConstraintDiagnosis,
   type ConstraintTarget,
   type CoordinateInput,
@@ -53,6 +55,11 @@ import {
 } from '@pointercad/model';
 import { create } from 'zustand';
 
+import {
+  assignAppearanceToSelection,
+  clearAllAppearance,
+  removeAppearanceAt,
+} from '../appearance/appearanceCommands.js';
 import { createBrowserFileGateway, type FileGateway } from '../file/fileGateway.js';
 import type { MessageKey } from '../i18n/t.js';
 import { loadSettings, saveSettings, type DisplaySettings } from '../settings/settings.js';
@@ -78,7 +85,11 @@ import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import type { TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
-import { selectionKindForTool, type SelectionKind } from '../solid/subShapeSelection.js';
+import {
+  selectionKindForTool,
+  subShapeBodiesOf,
+  type SelectionKind,
+} from '../solid/subShapeSelection.js';
 import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
 import type { SketchDrag } from '../viewport/dragSketch.js';
 
@@ -479,6 +490,16 @@ export interface AppState {
    */
   readonly editErrorKey: MessageKey | null;
   /**
+   * 外観を割り当てられなかった理由の文言キー(FR-1106〜1110、NFR-UX-5。P5 タスク11)。
+   *
+   * 断りは 4 通りで、いずれも**割り当てを作る前**に決まる(`appearanceCommands.ts`):
+   * 選んでいるものが無い / 値が 0〜100 の外 / そのボディの材質が 9 種以上 /
+   * まとまりが 33 個以上。`faceErrorKey` / `solidErrorKey` と同じ扱いで、
+   * ステータスバーが理由の文をそのまま出す(それだけで通じる 1 文なので頭の言葉は付けない)。
+   * 文書が変われば用済みなので `applyDocument` が落とす。
+   */
+  readonly appearanceErrorKey: MessageKey | null;
+  /**
    * 整形系の道具が**成功したときに添える案内**の文言キー(FR-323、タスク23)。
    *
    * 断り(`editErrorKey`)と分けてあるのは、赤い帯で「できませんでした」と出すのが
@@ -678,6 +699,21 @@ export interface AppState {
   readonly setSolidError: (key: MessageKey | null) => void;
   /** 整形系の道具(オフセット等)を作れなかった理由を出す・消す(FR-321、NFR-UX-5)。 */
   readonly setEditError: (key: MessageKey | null) => void;
+  /** 外観を割り当てられなかった理由を出す・消す(FR-1106〜1110、NFR-UX-5)。 */
+  readonly setAppearanceError: (key: MessageKey | null) => void;
+  /**
+   * いま選んでいる立体・面へ外観を割り当てる(FR-1106、FR-1107、FR-1109)。
+   *
+   * 判断は `appearance/appearanceCommands.ts` の純関数 1 か所に置き、ここは
+   * 「文書を渡す」「断りを置く」だけにする。確定は `applyDocument` を通すので、
+   * **取り消し(FR-505)と保存は 1 行も足さずに効く**。形は変わらないので
+   * `affectsShape` が偽になり、再計算も計算中の札も起きない(§2.3)。
+   */
+  readonly assignAppearance: (spec: AppearanceSpec) => void;
+  /** 割り当てを 1 つ外す(FR-1110)。 */
+  readonly removeAppearance: (id: string) => void;
+  /** すべての割り当てを外して既定の外観に戻す(FR-1110)。 */
+  readonly clearAppearance: () => void;
   /** 整形系の道具が成功したときの案内を出す・消す(FR-323、タスク23)。 */
   readonly setEditNotice: (key: MessageKey | null) => void;
   /** 原点を移したときの一言を出す・消す(FR-331、タスク35b)。 */
@@ -1124,6 +1160,7 @@ export function createInitialDocumentState(): Pick<
   | 'faceErrorKey'
   | 'solidErrorKey'
   | 'editErrorKey'
+  | 'appearanceErrorKey'
   | 'editNoticeKey'
   | 'originNoticeMessage'
   | 'pickAnchor'
@@ -1205,6 +1242,7 @@ export function createInitialDocumentState(): Pick<
     faceErrorKey: null,
     solidErrorKey: null,
     editErrorKey: null,
+    appearanceErrorKey: null,
     editNoticeKey: null,
     originNoticeMessage: null,
     pickAnchor: null,
@@ -1310,6 +1348,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         faceErrorKey: null,
         solidErrorKey: null,
         editErrorKey: null,
+        appearanceErrorKey: null,
         editNoticeKey: null,
         originNoticeMessage: null,
         // 種類が変わったら、違う種類の選択が加工の対象に紛れ込まないよう選択を空にする
@@ -1370,7 +1409,26 @@ export const useAppStore = create<AppState>()((set, get) => ({
         options?.replacesDocument === true
           ? { document: incoming, timelineIndex: null, inserted: false }
           : placeNewFeatures(state.document, incoming, state.timelineIndex);
-      const next = placement.document;
+      /*
+       * フィーチャーが消えたときは、そのボディを指す外観の割り当ても一緒に落とす
+       * (FR-1106、model の `pruneDocumentAppearance`)。押し出しを消したのに色の割り当て
+       * だけが文書に残ると、保存したファイルに行き先の無い割り当てが溜まっていく。
+       *
+       * **履歴が短くなったときだけ掃除する。** 掃除の判定材料は「いま画面に出るボディ」
+       * なので、抑制(一時的に外す)やブーリアンで消費された立体もそのままでは対象に
+       * 入ってしまう。どちらも元へ戻せる操作で、そこで割り当てを捨てると戻したときに
+       * 色が失われる。消えたことが確かなとき(段の数が減ったとき)だけに限る。
+       * 文書を丸ごと差し替える経路(新規・開く・復元)も対象外にする(読み込んだ文書の
+       * 割り当てを、まだ計算していない段階で削らない)。
+       *
+       * 掃除は取り消しに積む前に行うので、**取り消し 1 回で立体も色も一緒に戻る**
+       * (NFR-UX-3)。
+       */
+      const placed = placement.document;
+      const next =
+        options?.replacesDocument !== true && placed.solids.length < state.document.solids.length
+          ? pruneDocumentAppearance(placed)
+          : placed;
       const coalesceKey = options?.coalesceKey;
       const stack =
         options?.undoable === false
@@ -1408,6 +1466,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         faceErrorKey: null,
         solidErrorKey: null,
         editErrorKey: null,
+        appearanceErrorKey: null,
         editNoticeKey: null,
         shapeErrorMessage: null,
         referenceErrorMessage: null,
@@ -1685,6 +1744,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,
+      appearanceErrorKey: null,
       editNoticeKey: null,
     });
   },
@@ -1696,6 +1756,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,
+      appearanceErrorKey: null,
       editNoticeKey: null,
     }));
   },
@@ -1766,6 +1827,37 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setEditError: (editErrorKey) => {
     set({ editErrorKey });
+  },
+  setAppearanceError: (appearanceErrorKey) => {
+    set({ appearanceErrorKey });
+  },
+  assignAppearance: (spec) => {
+    const state = get();
+    const outcome = assignAppearanceToSelection(
+      {
+        document: state.document,
+        bodies: subShapeBodiesOf(state.bodies),
+        selection: state.selection,
+        selectionKind: state.selectionKind,
+        matches: state.appearanceMatches,
+      },
+      spec,
+    );
+    if (!outcome.ok) {
+      // 断ったときは文書を 1 バイトも変えない(NFR-UX-5)。理由だけを帯へ置く。
+      state.setAppearanceError(outcome.reasonKey);
+      return;
+    }
+    // `applyDocument` は前の断りを落とすので、消す処理をここに書く必要はない。
+    state.applyDocument(outcome.document);
+  },
+  removeAppearance: (id) => {
+    const state = get();
+    state.applyDocument(removeAppearanceAt(state.document, id));
+  },
+  clearAppearance: () => {
+    const state = get();
+    state.applyDocument(clearAllAppearance(state.document));
   },
   setEditNotice: (editNoticeKey) => {
     set({ editNoticeKey });
@@ -1845,6 +1937,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,
+      appearanceErrorKey: null,
       editNoticeKey: null,
       originNoticeMessage: null,
       errorMessage: null,

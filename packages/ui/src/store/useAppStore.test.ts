@@ -2019,6 +2019,129 @@ describe('外観の変更(FR-1106、要件§4.12)', () => {
   });
 });
 
+/*
+ * 外観の口(P5 タスク11、FR-1106〜1110、FR-505)。断りの判断そのものは純関数
+ * `appearance/appearanceCommands.ts` の検査で固定してあるので、ここでは
+ * 「ストアが確定を `applyDocument` に通しているか」「断りを帯へ置くか」だけを見る。
+ */
+describe('外観の口(FR-1106〜1110、P5 タスク11)', () => {
+  const steel = appearanceFromPreset('steel');
+  const glass = appearanceFromPreset('glass');
+
+  /** 押し出し 1 段とそのボディが画面に出ている状態にする。 */
+  function withSolidBody(): void {
+    useAppStore.setState({
+      ...createInitialDocumentState(),
+      document: appendSolid(partWithPoint(), extrudeFeature('extrude-1')),
+      bodies: [bodyFor('extrude-1')],
+    });
+  }
+
+  it('立体を選んで割り当てると、割り当てが 1 件できる', () => {
+    withSolidBody();
+    useAppStore.getState().setSelection(['extrude-1']);
+    useAppStore.getState().assignAppearance(steel);
+
+    const entries = appearanceOf(useAppStore.getState().document).entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].target).toEqual({ kind: 'body', bodyFeatureId: 'extrude-1' });
+    expect(useAppStore.getState().appearanceErrorKey).toBeNull();
+  });
+
+  it('外観の割り当ては再計算も計算中の札も起こさない(§2.3 の要)', async () => {
+    withSolidBody();
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle(resultFor(fake.calls[0].document));
+    await tick();
+    expect(fake.calls).toHaveLength(1);
+
+    useAppStore.getState().setSelection(['extrude-1']);
+    useAppStore.getState().assignAppearance(steel);
+
+    expect(fake.calls).toHaveLength(1);
+    expect(useAppStore.getState().isComputing).toBe(false);
+    detach();
+  });
+
+  it('取り消し 1 回で外観が消える(FR-505)', () => {
+    withSolidBody();
+    useAppStore.getState().setSelection(['extrude-1']);
+    useAppStore.getState().assignAppearance(steel);
+    useAppStore.getState().undo();
+
+    expect(appearanceOf(useAppStore.getState().document).entries).toEqual([]);
+  });
+
+  it('何も選ばずに割り当てると断り、文書は 1 バイトも変わらない(NFR-UX-5)', () => {
+    withSolidBody();
+    const before = useAppStore.getState().document;
+    useAppStore.getState().assignAppearance(steel);
+
+    expect(useAppStore.getState().appearanceErrorKey).toBe('appearanceError.noTarget');
+    expect(useAppStore.getState().document).toBe(before);
+  });
+
+  it('選び直すと外観の断りは消える', () => {
+    withSolidBody();
+    useAppStore.getState().assignAppearance(steel);
+    expect(useAppStore.getState().appearanceErrorKey).not.toBeNull();
+
+    useAppStore.getState().setSelection(['extrude-1']);
+    expect(useAppStore.getState().appearanceErrorKey).toBeNull();
+  });
+
+  it('割り当てを 1 つ外す(FR-1110)', () => {
+    withSolidBody();
+    useAppStore.getState().setSelection(['extrude-1']);
+    useAppStore.getState().assignAppearance(steel);
+    const id = appearanceOf(useAppStore.getState().document).entries[0].id;
+
+    useAppStore.getState().removeAppearance(id);
+    expect(appearanceOf(useAppStore.getState().document).entries).toEqual([]);
+  });
+
+  it('すべて既定に戻す(FR-1110)', () => {
+    withSolidBody();
+    useAppStore.getState().setSelection(['extrude-1']);
+    useAppStore.getState().assignAppearance(steel);
+    useAppStore.getState().setSelection([]);
+    useAppStore.getState().clearAppearance();
+
+    expect(appearanceOf(useAppStore.getState().document).entries).toEqual([]);
+  });
+
+  it('上流のフィーチャーを消すと、その立体を指す割り当ても消える', () => {
+    withSolidBody();
+    useAppStore.getState().setSelection(['extrude-1']);
+    useAppStore.getState().assignAppearance(glass);
+    expect(appearanceOf(useAppStore.getState().document).entries).toHaveLength(1);
+
+    useAppStore
+      .getState()
+      .applyDocument(removeSolid(useAppStore.getState().document, 'extrude-1'));
+
+    expect(appearanceOf(useAppStore.getState().document).entries).toEqual([]);
+  });
+
+  it('抑制(一時的に外す)では割り当てを消さない(戻したときに色が失われないため)', () => {
+    withSolidBody();
+    useAppStore.getState().setSelection(['extrude-1']);
+    useAppStore.getState().assignAppearance(glass);
+
+    const document = useAppStore.getState().document;
+    const suppressed = {
+      ...document,
+      solids: document.solids.map((solid) =>
+        solid.id === 'extrude-1' ? { ...solid, suppressed: true } : solid,
+      ),
+    };
+    useAppStore.getState().applyDocument(suppressed);
+
+    expect(appearanceOf(useAppStore.getState().document).entries).toHaveLength(1);
+  });
+});
+
 describe('3D スケッチのまま文書を差し替えたときの作図面(P4b タスク22b-(i))', () => {
   beforeEach(() => {
     useAppStore.setState(createInitialDocumentState());

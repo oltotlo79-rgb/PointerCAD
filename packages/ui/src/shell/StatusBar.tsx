@@ -6,6 +6,7 @@ import {
 } from '@pointercad/model';
 import { useEffect, useState } from 'react';
 
+import { missingAppearanceCount } from '../appearance/appearanceCommands.js';
 import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { constraintPickGuide } from '../sketch/constraintActions.js';
@@ -97,6 +98,16 @@ export function StatusBar(): React.JSX.Element {
   const editErrorKey = useAppStore((state) => state.editErrorKey);
   // 整形系の道具がうまくいったときの案内(FR-323、P4 タスク23)。断りではないので赤くしない。
   const editNoticeKey = useAppStore((state) => state.editNoticeKey);
+  // 外観を割り当てられなかった理由(FR-1106〜1110、P5 タスク11)。
+  const appearanceErrorKey = useAppStore((state) => state.appearanceErrorKey);
+  /*
+   * 選び直せなかった外観の割り当て(FR-1106)。件数だけを取り出すのは、取り出す式が
+   * 毎回新しい物を返すと変わっていなくても描き直しになるため(つまみの札と同じ事情)。
+   * 数えるのは `appearanceCommands.ts` の 1 か所だけ(同じ判定を画面側に書かない)。
+   */
+  const appearanceMissing = useAppStore((state) =>
+    missingAppearanceCount(state.document, state.appearanceMatches),
+  );
   // 新しい図形を作れなかった理由(P4 タスク12)。文言キーではなく組み立て済みの文。
   const shapeErrorMessage = useAppStore((state) => state.shapeErrorMessage);
   // 基準ジオメトリを作れなかった理由(P4 タスク13)。こちらも組み立て済みの文。
@@ -228,6 +239,8 @@ export function StatusBar(): React.JSX.Element {
     faceErrorKey,
     solidErrorKey,
     editErrorKey,
+    appearanceErrorKey,
+    appearanceMissingCount: appearanceMissing,
     editNoticeKey,
     shapeErrorMessage,
     referenceErrorMessage,

@@ -6,18 +6,29 @@
  * サムネイルの検査をここへ同居させているのは、タスク20 で作ってよいファイルが
  * 6 つに限られているため(統括の指示書 §1)。canvas を触る `captureThumbnailPng` は
  * 実ブラウザでしか動かないので、E2E と統括の目視に任せる。
+ *
+ * P5 タスク7(計画書 docs/plans/P5-高度なソリッド・外観と測定.md)で、箱投影 UV
+ * (`buildBoxProjectedUv`、FR-1108)と面のまとまり(FR-1106)の検査を足した。
  */
 
-import type { SolidBody } from '@pointercad/model';
+import {
+  appearanceFromPreset,
+  DEFAULT_APPEARANCE,
+  type AppearanceSpec,
+  type SolidBody,
+} from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import { dataUrlToBytes, THUMBNAIL_SIZE, thumbnailFitRect } from '../file/thumbnail.js';
 import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
 
 import {
+  buildBoxProjectedUv,
   buildSolidGeometry,
   EMPTY_SOLID_GEOMETRY,
   solidEmphasisOf,
+  type AppearanceInput,
+  type BodyAppearanceInput,
   type SolidBodyWithSubShapes,
   type SolidGeometryBundle,
 } from './buildSolidGeometry.js';
@@ -302,5 +313,395 @@ describe('サムネイルのバイト列(§0.a-0.18)', () => {
 
   it('base64 が壊れていたら例外を投げずに null を返す', () => {
     expect(dataUrlToBytes('data:image/png;base64,!!!!')).toBeNull();
+  });
+});
+
+/** 箱の面 1 枚(頂点 4・三角形 2)。角が原点の w×d×h の箱を面 6 枚で作るための材料。 */
+interface BoxFace {
+  readonly corners: readonly (readonly [number, number, number])[];
+  readonly normal: readonly [number, number, number];
+}
+
+/**
+ * 角が原点の w×d×h の箱。面の並びは 上(+Z)・下(-Z)・前(-Y)・後(+Y)・左(-X)・右(+X)。
+ * 面ごとに頂点 4・三角形 2 で、面の範囲表(`SolidFaceEntry`)も同じ並びで作る。
+ */
+function makeBoxBody(
+  featureId: string,
+  width: number,
+  depth: number,
+  height: number,
+): SolidBodyWithSubShapes {
+  const w = width;
+  const d = depth;
+  const h = height;
+  const boxFaces: readonly BoxFace[] = [
+    { corners: [[0, 0, h], [w, 0, h], [w, d, h], [0, d, h]], normal: [0, 0, 1] },
+    { corners: [[0, 0, 0], [w, 0, 0], [w, d, 0], [0, d, 0]], normal: [0, 0, -1] },
+    { corners: [[0, 0, 0], [w, 0, 0], [w, 0, h], [0, 0, h]], normal: [0, -1, 0] },
+    { corners: [[0, d, 0], [w, d, 0], [w, d, h], [0, d, h]], normal: [0, 1, 0] },
+    { corners: [[0, 0, 0], [0, d, 0], [0, d, h], [0, 0, h]], normal: [-1, 0, 0] },
+    { corners: [[w, 0, 0], [w, d, 0], [w, d, h], [w, 0, h]], normal: [1, 0, 0] },
+  ];
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  const faces: SolidFaceEntry[] = [];
+  boxFaces.forEach((face, faceIndex) => {
+    const base = faceIndex * 4;
+    for (const corner of face.corners) {
+      positions.push(corner[0], corner[1], corner[2]);
+      normals.push(face.normal[0], face.normal[1], face.normal[2]);
+    }
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    faces.push({
+      index: faceIndex,
+      surfaceKind: 'plane',
+      area: 1,
+      centroid: [0, 0, 0],
+      axis: [face.normal[0], face.normal[1], face.normal[2]],
+      radius: null,
+      triangleOffset: faceIndex * 2,
+      triangleCount: 2,
+    });
+  });
+
+  return {
+    featureId,
+    mesh: {
+      positions: Float32Array.from(positions),
+      normals: Float32Array.from(normals),
+      indices: Uint32Array.from(indices),
+      edgePositions: new Float32Array(12 * 6),
+      triangleCount: 12,
+    },
+    volume: w * d * h,
+    isValid: true,
+    faces,
+    edges: [],
+    vertices: [],
+    threadMarks: [],
+  };
+}
+
+/** 面 1 枚だけに外観を割り当てた入力を作る。 */
+function appearanceInputFor(
+  featureId: string,
+  faceAppearances: ReadonlyMap<number, AppearanceSpec>,
+  bodyAppearance: AppearanceSpec | null = null,
+): AppearanceInput {
+  const entry: BodyAppearanceInput = { bodyAppearance, faceAppearances };
+  return {
+    defaultAppearance: DEFAULT_APPEARANCE,
+    byBody: new Map([[featureId, entry]]),
+  };
+}
+
+/** 頂点 1 つぶんの UV を読み出す。 */
+function uvAt(uv: Float32Array, vertex: number): readonly [number, number] {
+  return [uv[vertex * 2], uv[vertex * 2 + 1]];
+}
+
+describe('buildBoxProjectedUv(FR-1108、§0.a-0.7)', () => {
+  it('法線 [0,0,1] の頂点は (x, y) を UV にする', () => {
+    const uv = buildBoxProjectedUv(Float32Array.from([3, 4, 5]), Float32Array.from([0, 0, 1]));
+    expect([...uv]).toEqual([3, 4]);
+  });
+
+  it('法線 [0,-1,0] の頂点は (x, z) を UV にする(符号では規則を変えない)', () => {
+    const uv = buildBoxProjectedUv(Float32Array.from([3, 4, 5]), Float32Array.from([0, -1, 0]));
+    expect([...uv]).toEqual([3, 5]);
+  });
+
+  it('法線 [1,0,0] の頂点は (y, z) を UV にする', () => {
+    const uv = buildBoxProjectedUv(Float32Array.from([3, 4, 5]), Float32Array.from([1, 0, 0]));
+    expect([...uv]).toEqual([4, 5]);
+  });
+
+  it('法線 [0,0,-1] は [0,0,1] と同じ UV になる(継ぎ目で柄が反転しない)', () => {
+    const front = buildBoxProjectedUv(Float32Array.from([3, 4, 5]), Float32Array.from([0, 0, 1]));
+    const back = buildBoxProjectedUv(Float32Array.from([3, 4, 5]), Float32Array.from([0, 0, -1]));
+    expect([...back]).toEqual([...front]);
+  });
+
+  it('法線 [0,0,0] の頂点は [0, 0] にする(投影面を選べない)', () => {
+    const uv = buildBoxProjectedUv(Float32Array.from([3, 4, 5]), Float32Array.from([0, 0, 0]));
+    expect([...uv]).toEqual([0, 0]);
+  });
+
+  it('法線が数でない頂点も [0, 0] にする(落ちない)', () => {
+    const uv = buildBoxProjectedUv(
+      Float32Array.from([3, 4, 5]),
+      Float32Array.from([Number.NaN, Number.NaN, Number.NaN]),
+    );
+    expect([...uv]).toEqual([0, 0]);
+  });
+
+  it('法線の並びが足りなくても落ちず、足りない頂点は [0, 0] になる', () => {
+    const uv = buildBoxProjectedUv(Float32Array.from([3, 4, 5, 6, 7, 8]), Float32Array.from([0, 0, 1]));
+    expect([...uv]).toEqual([3, 4, 0, 0]);
+  });
+
+  it('45°の面(絶対値が並ぶ)は z → y → x の順で投影面を選ぶ', () => {
+    const diagonal = Math.SQRT1_2;
+    const xy = buildBoxProjectedUv(
+      Float32Array.from([3, 4, 5]),
+      Float32Array.from([diagonal, diagonal, 0]),
+    );
+    expect([...xy]).toEqual([3, 5]);
+    const yz = buildBoxProjectedUv(
+      Float32Array.from([3, 4, 5]),
+      Float32Array.from([0, diagonal, diagonal]),
+    );
+    expect([...yz]).toEqual([3, 4]);
+  });
+
+  it('UV の長さは頂点数 × 2 になる', () => {
+    const body = makeBoxBody('box-1', 40, 30, 10);
+    const uv = buildBoxProjectedUv(body.mesh.positions, body.mesh.normals);
+    expect(uv.length).toBe((body.mesh.positions.length / 3) * 2);
+    expect(uv.length).toBe(48);
+  });
+
+  it('40×30×10 の箱は、上面が (x, y)・前面が (x, z) の mm 値になる', () => {
+    const body = makeBoxBody('box-1', 40, 30, 10);
+    const uv = buildBoxProjectedUv(body.mesh.positions, body.mesh.normals);
+    // 上面(面 0)の頂点 0〜3 = (0,0,10) (40,0,10) (40,30,10) (0,30,10)。
+    expect(uvAt(uv, 0)).toEqual([0, 0]);
+    expect(uvAt(uv, 1)).toEqual([40, 0]);
+    expect(uvAt(uv, 2)).toEqual([40, 30]);
+    expect(uvAt(uv, 3)).toEqual([0, 30]);
+    // 前面(面 2、頂点 8〜11)= (0,0,0) (40,0,0) (40,0,10) (0,0,10)。
+    expect(uvAt(uv, 8)).toEqual([0, 0]);
+    expect(uvAt(uv, 9)).toEqual([40, 0]);
+    expect(uvAt(uv, 10)).toEqual([40, 10]);
+    // 右面(面 5、頂点 20〜23)= (40,0,0) …。(y, z) を使う。
+    expect(uvAt(uv, 20)).toEqual([0, 0]);
+    expect(uvAt(uv, 21)).toEqual([30, 0]);
+    expect(uvAt(uv, 22)).toEqual([30, 10]);
+  });
+
+  it('20³ の箱の UV はすべて [0, 20] の中に入る(mm 単位)', () => {
+    const body = makeBoxBody('box-1', 20, 20, 20);
+    const uv = buildBoxProjectedUv(body.mesh.positions, body.mesh.normals);
+    for (const value of uv) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it('頂点 10 万の UV を 16ms 未満で作れる(NFR-PF-1)', () => {
+    const vertexCount = 100_000;
+    const positions = new Float32Array(vertexCount * 3);
+    const normals = new Float32Array(vertexCount * 3);
+    for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+      const base = vertex * 3;
+      positions[base] = vertex % 97;
+      positions[base + 1] = vertex % 89;
+      positions[base + 2] = vertex % 83;
+      normals[base + (vertex % 3)] = vertex % 2 === 0 ? 1 : -1;
+    }
+    const startedAt = performance.now();
+    const uv = buildBoxProjectedUv(positions, normals);
+    const elapsed = performance.now() - startedAt;
+    // 2 回目(実行時最適化が済んだ後)も測る。実際の呼び出しは文書を開くたびに何度も起きる。
+    const warmStartedAt = performance.now();
+    buildBoxProjectedUv(positions, normals);
+    const warmElapsed = performance.now() - warmStartedAt;
+    // 実測値を報告できるよう出力に残す(`pickSolidSubShapePerformance.test.ts` と同じ流儀)。
+    console.log(
+      `buildBoxProjectedUv: 頂点 ${vertexCount} で 初回 ${elapsed.toFixed(3)}ms / 2回目 ${warmElapsed.toFixed(3)}ms`,
+    );
+    expect(uv.length).toBe(vertexCount * 2);
+    expect(elapsed).toBeLessThan(16);
+    expect(warmElapsed).toBeLessThan(16);
+  });
+});
+
+describe('buildSolidGeometry の外観(FR-1106、計画書 P5 タスク7)', () => {
+  it('外観を渡さないと、まとまりも材質も 1 つで既定の外観になる(§0.a-0.12)', () => {
+    const body = makeBoxBody('box-1', 40, 30, 10);
+    const entry = buildSolidGeometry([body], null, []).entries[0];
+    expect(entry.appearances).toEqual([DEFAULT_APPEARANCE]);
+    expect(entry.groups).toEqual([{ start: 0, count: 36, materialIndex: 0 }]);
+    expect(entry.appearanceLimitExceeded).toBe(false);
+  });
+
+  it('割り当ての無いボディも既定の外観 1 つになる', () => {
+    const body = makeBoxBody('box-1', 20, 20, 20);
+    const other = makeBoxBody('box-2', 10, 10, 10);
+    const red = appearanceFromPreset('custom', '#ff0000');
+    const bundle = buildSolidGeometry(
+      [body, other],
+      null,
+      [],
+      appearanceInputFor('box-1', new Map([[0, red]])),
+    );
+    expect(bundle.entries[1].appearances).toEqual([DEFAULT_APPEARANCE]);
+    expect(bundle.entries[1].groups.length).toBe(1);
+  });
+
+  it('上面(面 0)だけに別の色を割り当てるとまとまりが 2 つになる', () => {
+    const body = makeBoxBody('box-1', 40, 30, 10);
+    const red = appearanceFromPreset('custom', '#ff0000');
+    const entry = buildSolidGeometry(
+      [body],
+      null,
+      [],
+      appearanceInputFor('box-1', new Map([[0, red]])),
+    ).entries[0];
+    expect(entry.appearances.length).toBe(2);
+    expect(entry.appearances[0]).toBe(DEFAULT_APPEARANCE);
+    expect(entry.appearances[1]).toBe(red);
+    expect(entry.groups).toEqual([
+      { start: 0, count: 6, materialIndex: 1 },
+      { start: 6, count: 30, materialIndex: 0 },
+    ]);
+  });
+
+  it('まとまりが索引の全体をちょうど覆う(three の addGroup の約束)', () => {
+    const body = makeBoxBody('box-1', 40, 30, 10);
+    const red = appearanceFromPreset('custom', '#ff0000');
+    const entry = buildSolidGeometry(
+      [body],
+      null,
+      [],
+      appearanceInputFor('box-1', new Map([[2, red]])),
+    ).entries[0];
+    let cursor = 0;
+    for (const group of entry.groups) {
+      expect(group.start).toBe(cursor);
+      cursor += group.count;
+    }
+    expect(cursor).toBe(body.mesh.indices.length);
+  });
+
+  it('面の範囲表に隙間があっても、覆われない索引が残らない(描かれない三角形を作らない)', () => {
+    const body = makeBoxBody('box-1', 40, 30, 10);
+    const red = appearanceFromPreset('custom', '#ff0000');
+    // 面 3〜5 を落とした範囲表(索引 18 以降が範囲表から外れる)。
+    const gapped: SolidBodyWithSubShapes = { ...body, faces: body.faces.slice(0, 3) };
+    const entry = buildSolidGeometry(
+      [gapped],
+      null,
+      [],
+      appearanceInputFor('box-1', new Map([[1, red]])),
+    ).entries[0];
+    const total = entry.groups.reduce((sum, group) => sum + group.count, 0);
+    expect(total).toBe(36);
+    expect(entry.groups[entry.groups.length - 1].materialIndex).toBe(0);
+  });
+
+  it('立体全体の割り当てがあると、材質 1 つのまま色だけ変わる', () => {
+    const body = makeBoxBody('box-1', 20, 20, 20);
+    const green = appearanceFromPreset('custom', '#00ff00');
+    const entry = buildSolidGeometry(
+      [body],
+      null,
+      [],
+      appearanceInputFor('box-1', new Map(), green),
+    ).entries[0];
+    expect(entry.appearances).toEqual([green]);
+    expect(entry.groups).toEqual([{ start: 0, count: 36, materialIndex: 0 }]);
+  });
+
+  it('箱の 6 面に別々の色(既定 + 6 = 7 種類)は上限の中で作れる(§0.a-0.11)', () => {
+    const body = makeBoxBody('box-1', 20, 20, 20);
+    const faceAppearances = new Map<number, AppearanceSpec>();
+    for (let faceIndex = 0; faceIndex < 6; faceIndex += 1) {
+      faceAppearances.set(faceIndex, appearanceFromPreset('custom', `#00000${faceIndex + 1}`));
+    }
+    const entry = buildSolidGeometry(
+      [body],
+      null,
+      [],
+      appearanceInputFor('box-1', faceAppearances),
+    ).entries[0];
+    expect(entry.appearanceLimitExceeded).toBe(false);
+    expect(entry.appearances.length).toBe(7);
+    expect(entry.groups.length).toBe(6);
+  });
+
+  it('材質 9 種になる割り当ては断り(appearanceLimitExceeded)、既定 1 色 1 まとまりに落とす', () => {
+    const body = makeBoxBody('box-1', 20, 20, 20);
+    const faces: SolidFaceEntry[] = [];
+    const faceAppearances = new Map<number, AppearanceSpec>();
+    for (let faceIndex = 0; faceIndex < 8; faceIndex += 1) {
+      faces.push({ ...body.faces[0], index: faceIndex, triangleOffset: faceIndex, triangleCount: 1 });
+      faceAppearances.set(faceIndex, appearanceFromPreset('custom', `#00000${faceIndex + 1}`));
+    }
+    const manyMaterials: SolidBodyWithSubShapes = { ...body, faces };
+    const entry = buildSolidGeometry(
+      [manyMaterials],
+      null,
+      [],
+      appearanceInputFor('box-1', faceAppearances),
+    ).entries[0];
+    expect(entry.appearanceLimitExceeded).toBe(true);
+    expect(entry.appearances).toEqual([DEFAULT_APPEARANCE]);
+    expect(entry.groups).toEqual([{ start: 0, count: 36, materialIndex: 0 }]);
+  });
+
+  it('ホバーが変わっただけの組み立て直しでは UV を作り直さない(同一参照、NFR-PF-1)', () => {
+    const body = makeBoxBody('box-1', 40, 30, 10);
+    const first = buildSolidGeometry([body], null, []).entries[0];
+    const second = buildSolidGeometry([body], 'box-1', []).entries[0];
+    expect(second.emphasis).toBe('hovered');
+    expect(second.uv).toBe(first.uv);
+  });
+
+  it('穴 20 個の板(面 26)のまとまりと UV を 1 コマ(16ms)の中で作れる', () => {
+    const body = makeBoxBody('plate-1', 200, 100, 6);
+    // 板の 6 面 + 穴 20 個の円筒面(1 面あたり三角形 32 枚)= 面 26。
+    const faces: SolidFaceEntry[] = [...body.faces];
+    let triangleOffset = 12;
+    for (let hole = 0; hole < 20; hole += 1) {
+      faces.push({
+        index: 6 + hole,
+        surfaceKind: 'cylinder',
+        area: 50,
+        centroid: [0, 0, 0],
+        axis: [0, 0, 1],
+        radius: 3,
+        triangleOffset,
+        triangleCount: 32,
+      });
+      triangleOffset += 32;
+    }
+    const triangleCount = triangleOffset;
+    const plate: SolidBodyWithSubShapes = {
+      ...body,
+      mesh: {
+        positions: new Float32Array(triangleCount * 9),
+        normals: new Float32Array(triangleCount * 9),
+        indices: new Uint32Array(triangleCount * 3),
+        edgePositions: body.mesh.edgePositions,
+        triangleCount,
+      },
+      faces,
+    };
+    const red = appearanceFromPreset('custom', '#ff0000');
+    const faceAppearances = new Map<number, AppearanceSpec>();
+    for (let hole = 0; hole < 20; hole += 1) {
+      faceAppearances.set(6 + hole, red);
+    }
+    const startedAt = performance.now();
+    const entry = buildSolidGeometry(
+      [plate],
+      null,
+      [],
+      appearanceInputFor('plate-1', faceAppearances),
+    ).entries[0];
+    const elapsed = performance.now() - startedAt;
+    console.log(
+      `buildSolidGeometry(面 ${faces.length}・三角形 ${triangleCount}): ${elapsed.toFixed(3)}ms`,
+    );
+    expect(entry.appearances.length).toBe(2);
+    // 板の 6 面(既定)+ 穴 20 面(赤)が索引の上で続いているので、まとまりは 2 つに畳まれる。
+    expect(entry.groups.length).toBe(2);
+    expect(entry.groups.reduce((sum, group) => sum + group.count, 0)).toBe(triangleCount * 3);
+    expect(entry.uv.length).toBe(triangleCount * 6);
+    expect(elapsed).toBeLessThan(16);
   });
 });

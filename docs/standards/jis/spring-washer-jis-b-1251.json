@@ -1,0 +1,178 @@
+{
+  "standard": "JIS B 1251",
+  "edition": "2018",
+  "title": "ばね座金",
+  "scope": "2号(一般用)",
+  "sourceUrls": [
+    "https://www.yura-sansyo.co.jp/handbook/handbookV8-5-20.pdf",
+    "https://hayamihyou.net/washer/",
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1251:2018"
+  ],
+  "verified": true,
+  "unit": "mm",
+  "columns": {
+    "size": "呼び",
+    "thread": "適合するねじの呼び",
+    "d": "内径 基準寸法",
+    "D": "外径 最大",
+    "b": "幅 b",
+    "t": "厚さ t"
+  },
+  "notes": [
+    "内径 d・幅 b・厚さ t は 2 件の資料が完全に一致した(確認済み)。",
+    "外径 D(最大)は由良産商の抜粋 1 件のみ。要確認。ばね座金は切れ目があって開くので D は d+2b にはならない。",
+    "2号のばね座金の断面は b×t の長方形で、切れ目を開いた自由高さ Ho は別に規定される(この表には入れていない)。"
+  ],
+  "rows": [
+    {
+      "size": "2",
+      "thread": "M2",
+      "d": 2.1,
+      "D": 4.4,
+      "b": 0.9,
+      "t": 0.5,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "2.5",
+      "thread": "M2.5",
+      "d": 2.6,
+      "D": 5.2,
+      "b": 1.0,
+      "t": 0.6,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "3",
+      "thread": "M3",
+      "d": 3.1,
+      "D": 5.9,
+      "b": 1.1,
+      "t": 0.7,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "4",
+      "thread": "M4",
+      "d": 4.1,
+      "D": 7.6,
+      "b": 1.4,
+      "t": 1.0,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "5",
+      "thread": "M5",
+      "d": 5.1,
+      "D": 9.2,
+      "b": 1.7,
+      "t": 1.3,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "6",
+      "thread": "M6",
+      "d": 6.1,
+      "D": 12.2,
+      "b": 2.7,
+      "t": 1.5,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "8",
+      "thread": "M8",
+      "d": 8.2,
+      "D": 15.4,
+      "b": 3.2,
+      "t": 2.0,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "10",
+      "thread": "M10",
+      "d": 10.2,
+      "D": 18.4,
+      "b": 3.7,
+      "t": 2.5,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "12",
+      "thread": "M12",
+      "d": 12.2,
+      "D": 21.5,
+      "b": 4.2,
+      "t": 3.0,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "14",
+      "thread": "M14",
+      "d": 14.2,
+      "D": 24.5,
+      "b": 4.7,
+      "t": 3.5,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "16",
+      "thread": "M16",
+      "d": 16.2,
+      "D": 28.0,
+      "b": 5.2,
+      "t": 4.0,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "18",
+      "thread": "M18",
+      "d": 18.2,
+      "D": 31.0,
+      "b": 5.7,
+      "t": 4.6,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "20",
+      "thread": "M20",
+      "d": 20.2,
+      "D": 33.8,
+      "b": 6.1,
+      "t": 5.1,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "22",
+      "thread": "M22",
+      "d": 22.5,
+      "D": 37.7,
+      "b": 6.8,
+      "t": 5.6,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    },
+    {
+      "size": "24",
+      "thread": "M24",
+      "d": 24.5,
+      "D": 40.3,
+      "b": 7.1,
+      "t": 5.9,
+      "verified": true,
+      "note": "外径 D は 1 件のみ"
+    }
+  ]
+}

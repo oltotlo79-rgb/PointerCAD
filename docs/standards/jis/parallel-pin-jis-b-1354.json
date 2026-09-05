@@ -1,0 +1,114 @@
+{
+  "standard": "JIS B 1354",
+  "edition": "2012",
+  "title": "平行ピン",
+  "scope": "呼び径 2 〜 12 の 9 種。規格の呼び径は 0.6 〜 50",
+  "sourceUrls": [
+    "https://www.yura-sansyo.co.jp/handbook/handbookV8-8-07.pdf",
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1354:2012"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "d": "呼び径 d",
+    "c": "面取り c(約)",
+    "toleranceClasses": "d の公差域クラス"
+  },
+  "notes": [
+    "由良産商の抜粋 1 件のみを根拠にしている。全行 要確認。",
+    "2012年版(現行規格)は d の公差域を m6 と h8 の 2 つに整理している。1988年版(流通呼称「新JIS」)は A種 m6 / B種 h8 / C種 h11 の 3 種類で、形も違う。市場では 1988年版の品物も流通している。",
+    "呼び長さの一覧は得られなかった。"
+  ],
+  "rows": [
+    {
+      "d": 2,
+      "c": 0.35,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    },
+    {
+      "d": 2.5,
+      "c": 0.4,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    },
+    {
+      "d": 3,
+      "c": 0.5,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    },
+    {
+      "d": 4,
+      "c": 0.63,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    },
+    {
+      "d": 5,
+      "c": 0.8,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    },
+    {
+      "d": 6,
+      "c": 1.2,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    },
+    {
+      "d": 8,
+      "c": 1.6,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    },
+    {
+      "d": 10,
+      "c": 2,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    },
+    {
+      "d": 12,
+      "c": 2.5,
+      "toleranceClasses": [
+        "m6",
+        "h8"
+      ],
+      "verified": false,
+      "note": "由良産商の抜粋 1 件のみ"
+    }
+  ]
+}

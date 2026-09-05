@@ -1,0 +1,159 @@
+{
+  "standard": "JIS B 1181",
+  "edition": "2014",
+  "title": "六角ナット",
+  "scope": "六角ナット スタイル1・並目ねじ・部品等級A(d<=16)及びB(d>=18)(本体規格)。附属書JA(旧JIS)ではない",
+  "sourceUrls": [
+    "https://www.yura-sansyo.co.jp/handbook/handbookV8-3-42.pdf",
+    "https://jp.misumi-ec.com/tech-info/categories/machine_design/md05/a0042.html",
+    "https://www.khkgears.co.jp/gear_technology/gear_reference/KHK494_2.html",
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1181:2014"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "size": "ねじの呼び D",
+    "P": "ピッチ(並目)",
+    "s": "二面幅 基準寸法=最大",
+    "mMax": "高さ m 最大",
+    "mMin": "高さ m 最小",
+    "e": "対角距離 最小"
+  },
+  "notes": [
+    "JIS は m に基準寸法を与えず最大・最小だけを規定する。形を作るときは mMax を使うか、統括が決める。",
+    "本体規格(ISO 4032 対応)の値。附属書JA(旧JIS)の1種ナットとは高さ・二面幅が違う(M10=17 など)。",
+    "M18・M22・M24 は由良産商の抜粋 1 件だけを根拠にしている。要確認。"
+  ],
+  "rows": [
+    {
+      "size": "M3",
+      "P": 0.5,
+      "s": 5.5,
+      "mMax": 2.4,
+      "mMin": 2.15,
+      "e": 6.01,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M4",
+      "P": 0.7,
+      "s": 7.0,
+      "mMax": 3.2,
+      "mMin": 2.9,
+      "e": 7.66,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M5",
+      "P": 0.8,
+      "s": 8.0,
+      "mMax": 4.7,
+      "mMin": 4.4,
+      "e": 8.79,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M6",
+      "P": 1,
+      "s": 10.0,
+      "mMax": 5.2,
+      "mMin": 4.9,
+      "e": 11.05,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M8",
+      "P": 1.25,
+      "s": 13.0,
+      "mMax": 6.8,
+      "mMin": 6.44,
+      "e": 14.38,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M10",
+      "P": 1.5,
+      "s": 16.0,
+      "mMax": 8.4,
+      "mMin": 8.04,
+      "e": 17.77,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M12",
+      "P": 1.75,
+      "s": 18.0,
+      "mMax": 10.8,
+      "mMin": 10.37,
+      "e": 20.03,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M14",
+      "P": 2,
+      "s": 21.0,
+      "mMax": 12.8,
+      "mMin": 12.1,
+      "e": 23.36,
+      "verified": true,
+      "note": "第2選択。e はミスミのスタイル2の表から"
+    },
+    {
+      "size": "M16",
+      "P": 2,
+      "s": 24.0,
+      "mMax": 14.8,
+      "mMin": 14.1,
+      "e": 26.75,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M18",
+      "P": 2.5,
+      "s": 27.0,
+      "mMax": 15.8,
+      "mMin": 15.1,
+      "e": null,
+      "verified": false,
+      "note": "第2選択。由良産商 1 件のみ。e は得られず"
+    },
+    {
+      "size": "M20",
+      "P": 2.5,
+      "s": 30.0,
+      "mMax": 18.0,
+      "mMin": 16.9,
+      "e": 32.95,
+      "verified": true,
+      "note": ""
+    },
+    {
+      "size": "M22",
+      "P": 2.5,
+      "s": 34.0,
+      "mMax": 19.4,
+      "mMin": 18.1,
+      "e": null,
+      "verified": false,
+      "note": "第2選択。由良産商 1 件のみ。e は得られず"
+    },
+    {
+      "size": "M24",
+      "P": 3,
+      "s": 36.0,
+      "mMax": 21.5,
+      "mMin": 20.2,
+      "e": null,
+      "verified": false,
+      "note": "由良産商 1 件のみ。e は得られず"
+    }
+  ]
+}

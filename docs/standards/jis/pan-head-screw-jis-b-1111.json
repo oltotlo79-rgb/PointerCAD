@@ -1,0 +1,100 @@
+{
+  "standard": "JIS B 1111",
+  "edition": "2017",
+  "title": "十字穴付き小ねじ — なべ小ねじ",
+  "scope": "附属書(いわゆる旧JIS・附属書品)のなべ小ねじ。本体規格(ISO 7045 対応)ではない",
+  "sourceUrls": [
+    "https://www.yura-sansyo.co.jp/handbook/handbookV8-6.pdf",
+    "https://www.onoue1950.co.jp/products/koneji/jujikoneji/1667/",
+    "https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1111:2017"
+  ],
+  "verified": false,
+  "unit": "mm",
+  "columns": {
+    "size": "ねじの呼び d",
+    "P": "ピッチ(並目)",
+    "dk": "頭の径 基準寸法",
+    "k": "頭の高さ 基準寸法",
+    "recessNo": "十字穴の番号"
+  },
+  "notes": [
+    "dk・k は由良産商とオノウエの 2 件が完全に一致した。",
+    "ただしこれは JIS B 1111 の附属書(市販の「なべ小ねじ」)の値で、本体規格(ISO 7045 対応)の値とは違う。本体規格の値は照合できていない。どちらを採るかは統括が決める。要確認。",
+    "十字穴の番号はオノウエの表の記載による(M3 のトラス小ねじだけ 1 番と注記がある)。",
+    "呼び長さの一覧は得られなかった。"
+  ],
+  "rows": [
+    {
+      "size": "M2",
+      "P": 0.4,
+      "dk": 3.5,
+      "k": 1.3,
+      "recessNo": 1,
+      "verified": false,
+      "note": "附属書(旧JIS)の値。本体規格の値と食い違う可能性がある"
+    },
+    {
+      "size": "M2.5",
+      "P": 0.45,
+      "dk": 4.5,
+      "k": 1.7,
+      "recessNo": 1,
+      "verified": false,
+      "note": "附属書(旧JIS)の値。本体規格の値と食い違う可能性がある"
+    },
+    {
+      "size": "M3",
+      "P": 0.5,
+      "dk": 5.5,
+      "k": 2,
+      "recessNo": 2,
+      "verified": false,
+      "note": "附属書(旧JIS)の値。本体規格の値と食い違う可能性がある"
+    },
+    {
+      "size": "M3.5",
+      "P": 0.6,
+      "dk": 6,
+      "k": 2.3,
+      "recessNo": 2,
+      "verified": false,
+      "note": "附属書(旧JIS)の値。本体規格の値と食い違う可能性がある"
+    },
+    {
+      "size": "M4",
+      "P": 0.7,
+      "dk": 7,
+      "k": 2.6,
+      "recessNo": 2,
+      "verified": false,
+      "note": "附属書(旧JIS)の値。本体規格の値と食い違う可能性がある"
+    },
+    {
+      "size": "M5",
+      "P": 0.8,
+      "dk": 9,
+      "k": 3.3,
+      "recessNo": 2,
+      "verified": false,
+      "note": "附属書(旧JIS)の値。本体規格の値と食い違う可能性がある"
+    },
+    {
+      "size": "M6",
+      "P": 1,
+      "dk": 10.5,
+      "k": 3.9,
+      "recessNo": 3,
+      "verified": false,
+      "note": "附属書(旧JIS)の値。本体規格の値と食い違う可能性がある"
+    },
+    {
+      "size": "M8",
+      "P": 1.25,
+      "dk": 14,
+      "k": 5.2,
+      "recessNo": 3,
+      "verified": false,
+      "note": "附属書(旧JIS)の値。本体規格の値と食い違う可能性がある"
+    }
+  ]
+}

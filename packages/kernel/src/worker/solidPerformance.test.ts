@@ -14,8 +14,10 @@ import type {
   SolidFaceInfo,
   SolidRecomputeResult,
   SolidStepRequest,
+  SphereSegmentCount,
   SpringStepSpec,
   SubShapeQuery,
+  ThruSectionsStepSpec,
 } from '../types.js';
 import { recomputeSolids, type CachedSolid } from './recomputeSolids.js';
 import { SHAPE_CACHE_CAPACITY, createShapeCache, type ShapeCache } from './shapeCache.js';
@@ -114,6 +116,40 @@ function buildSteps(count: number): SolidStepRequest[] {
   );
 }
 
+/**
+ * 球 r=10 と、軸から外れた円 r=8 @ (5,0,−20) をつなぐ罫線面の段(P5 §2.9.3-(b))。
+ *
+ * タスク24 の実測と同じ配置で、輪郭を `segments` 点に割って球へ接する直線で結ぶ。
+ * **上限を判定するのは既定の 24 点だけ**で、48 / 72 は「なめらかさを優先して
+ * 利用者が選ぶ重い段」(§0.a-0.74)なので所要を記録するにとどめる。上限は変えない。
+ */
+function ruledToSphere(segments: SphereSegmentCount): ThruSectionsStepSpec {
+  return {
+    kind: 'thruSections',
+    sections: [
+      { kind: 'sphere', center: [0, 0, 0], radius: 10 },
+      {
+        kind: 'curves',
+        curves: [
+          {
+            kind: 'arc',
+            center: [5, 0, -20],
+            normal: [0, 0, 1],
+            xAxis: [1, 0, 0],
+            radius: 8,
+            startAngle: 0,
+            endAngle: 2 * Math.PI,
+          },
+        ],
+      },
+    ],
+    ruled: true,
+    closed: true,
+    twist: 0,
+    sphereSegments: segments,
+  };
+}
+
 /** 再計算 1 回の所要時間(ms)と結果。 */
 interface Measured {
   readonly result: SolidRecomputeResult;
@@ -189,6 +225,23 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       { oc, cache: warmUp },
       {
         steps: [{ key: 'key-warm-up-spring', id: 'warm-up-spring', label: 'warm-up-spring', visible: false, step: springWarmUp }],
+        generation: 0,
+      },
+    );
+    // 罫線面(BRepOffsetAPI_ThruSections・BRepBuilderAPI_Sewing・GCPnts_QuasiUniformAbscissa)も
+    // 押し出し・ばねと別の OCCT クラスなので、同じ理由で捨て計算を分けて流す。
+    await recomputeSolids(
+      { oc, cache: warmUp },
+      {
+        steps: [
+          {
+            key: 'key-warm-up-ruled',
+            id: 'warm-up-ruled',
+            label: 'warm-up-ruled',
+            visible: false,
+            step: ruledToSphere(24),
+          },
+        ],
         generation: 0,
       },
     );
@@ -601,6 +654,55 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       );
     } finally {
       cache.clear();
+    }
+  });
+
+  it(`罫線面 1 段: 球 r10 + 円 r8 @ (5,0,−20) を 24 点で結ぶと ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-430)`, async () => {
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const { result, elapsedMs } = await measure(oc, cache, [
+        { key: 'key-ruled-24', id: 'ruled-24', label: 'ruled-24', visible: true, step: ruledToSphere(24) },
+      ]);
+      console.log(
+        `罫線面 1 段(球 r10 + 円 r8、分割 24): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`,
+      );
+
+      expect(result.failures).toEqual([]);
+      expect(result.cacheHits).toBe(0);
+      expect(result.bodies).toHaveLength(1);
+      expect(result.bodies[0].volume).toBeGreaterThan(1e-9);
+      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, '罫線面 1 段(分割 24)');
+    } finally {
+      cache.clear();
+    }
+  });
+
+  it('罫線面 1 段: 分割 48 / 72 は上限を判定せず、所要と三角形の数を記録する(§0.a-0.74)', async () => {
+    for (const segments of [48, 72] as const) {
+      const cache = createShapeCache<CachedSolid>();
+      try {
+        const { result, elapsedMs } = await measure(oc, cache, [
+          {
+            key: `key-ruled-${segments}`,
+            id: `ruled-${segments}`,
+            label: `ruled-${segments}`,
+            visible: true,
+            step: ruledToSphere(segments),
+          },
+        ]);
+
+        expect(result.failures).toEqual([]);
+        expect(result.bodies).toHaveLength(1);
+        const body = result.bodies[0];
+        // **上限は緩めない。** 48 / 72 は利用者がなめらかさを選んだときだけ通る重い段なので、
+        // ここでは所要を記録するにとどめ、しきい値を置かない(ばねの段と同じ扱い)。
+        console.log(
+          `罫線面 1 段(分割 ${segments}): ${elapsedMs.toFixed(1)} ms / 三角形 ${body.indices.length / 3} 枚 / 体積 ${body.volume.toFixed(6)} mm³(参考上限 ${SINGLE_FEATURE_LIMIT_MS} ms)`,
+        );
+        expect(body.volume).toBeGreaterThan(1e-9);
+      } finally {
+        cache.clear();
+      }
     }
   });
 });

@@ -2,11 +2,21 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { CurveSpec, ThruSectionSpec, ThruSectionsStepSpec, Vec3Tuple } from '../types.js';
+import type {
+  CurveSpec,
+  SphereSegmentCount,
+  SubShapeQuery,
+  ThruSectionSpec,
+  ThruSectionsStepSpec,
+  Vec3Tuple,
+} from '../types.js';
+import { createAllocations } from './allocations.js';
 import { loadOcctForNode } from './loadOcct.node.js';
-import { makeThruSections } from './makeThruSections.js';
+import { makePlanarFace } from './makePlanarFace.js';
+import { checkSphereSegments, makeThruSections } from './makeThruSections.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { tangentPointOnSphere } from './sphereTangent.js';
+import { tessellate } from './tessellate.js';
 
 let oc: OpenCascadeInstance;
 
@@ -107,7 +117,36 @@ function spec(
   sections: readonly ThruSectionSpec[],
   overrides: Partial<Omit<ThruSectionsStepSpec, 'kind' | 'sections'>> = {},
 ): ThruSectionsStepSpec {
-  return { kind: 'thruSections', sections, ruled: true, closed: true, twist: 0, ...overrides };
+  return {
+    kind: 'thruSections',
+    sections,
+    ruled: true,
+    closed: true,
+    twist: 0,
+    // 既定は model 側と同じ 24(§0.a-0.74)。細かさを見る検査だけが上書きする。
+    sphereSegments: 24,
+    ...overrides,
+  };
+}
+
+/**
+ * 立体の面を輪郭にする断面(§0.a-0.73、タスク24b)。
+ *
+ * このファイルの検査は輪郭のワイヤを `makeThruSections` へ直に渡すので、
+ * `targetKey` と指紋は使われない(選び直しは `worker/recomputeSolids.ts` の役目で、
+ * その筋道は `recomputeSolids.test.ts` が端から端まで確かめる)。
+ */
+function faceSection(): ThruSectionSpec {
+  const query: Extract<SubShapeQuery, { kind: 'face' }> = {
+    kind: 'face',
+    index: 0,
+    surfaceKind: 'plane',
+    area: 1200,
+    position: [0, 0, 10],
+    axis: [0, 0, 1],
+    radius: null,
+  };
+  return { kind: 'faceQuery', targetKey: 'key-plate', query };
 }
 
 /** 面の枚数。三角形分割を要らないので `collectSubShapes` ではなく直に数える。 */
@@ -415,5 +454,125 @@ describe('makeThruSections(球へ・断り。§2.9.3 の表)', () => {
         spec([sphereSection([0, 0, 0], 0), curvesSection(circle([0, 0, -30], 20))]),
       ),
     ).toThrow(/球の半径は/);
+  });
+});
+
+describe('makeThruSections(立体の面を輪郭にする。§0.a-0.73、タスク24b)', () => {
+  it('面の外周を取り出す API が束縛されている(loadOcct.node.test.ts と同じ確かめ方)', () => {
+    // 静的メソッドは呼ばずに参照すると @typescript-eslint/unbound-method が働くため、
+    // 同じ判定を typeof で書く(loadOcct.node.test.ts の書き方に合わせる)。
+    console.log(
+      `BRepTools.OuterWire: ${typeof oc.BRepTools.OuterWire} / ` +
+        `ShapeAnalysis.OuterWire: ${typeof oc.ShapeAnalysis.OuterWire} / ` +
+        `BRepTools.IsReallyClosed: ${typeof oc.BRepTools.IsReallyClosed} / ` +
+        `BRep_Tool.Degenerated: ${typeof oc.BRep_Tool.Degenerated}`,
+    );
+    expect(typeof oc.BRepTools.OuterWire).toBe('function');
+    expect(typeof oc.BRepTools.IsReallyClosed).toBe('function');
+    expect(typeof oc.BRep_Tool.Degenerated).toBe('function');
+  });
+
+  it('平らな面の外周と矩形をつなぐと、ロフトの台形則どおり 14000 mm³ になる', () => {
+    const { keep, release } = createAllocations();
+    try {
+      // 箱 40×30×10 の上面(z = 10)と同じ平面の面を作り、その外周を輪郭にする。
+      const face = keep(makePlanarFace(oc, rectangle(40, 30, 10))).face;
+      const wire = keep(oc.BRepTools.OuterWire(face));
+      const handle = makeThruSections(
+        oc,
+        spec([faceSection(), curvesSection(rectangle(20, 15, 30))]),
+        {},
+        new Map([[0, wire]]),
+      );
+      try {
+        expect(hasSolid(oc, handle.shape)).toBe(true);
+        expect(isValidShape(oc, handle.shape)).toBe(true);
+        const volume = measureVolume(oc, handle.shape);
+        // h/3 ×(A1 + A2 + √(A1·A2))= 20/3 ×(1200 + 300 + 600)= 14000。
+        console.log(`面の外周 → 矩形の体積 ${volume}(手計算 14000)`);
+        expect(Math.abs(volume - 14000) / 14000).toBeLessThan(1e-6);
+      } finally {
+        handle.delete();
+      }
+    } finally {
+      release();
+    }
+  });
+
+  it('面の輪郭が渡されていなければ、選び直しを促して断る', () => {
+    expect(() =>
+      makeThruSections(oc, spec([faceSection(), curvesSection(rectangle(20, 15, 30))])),
+    ).toThrow(/つなぐ面が見つかりません/);
+  });
+});
+
+describe('makeThruSections(球へつなぐ分割数 sphereSegments。§0.a-0.74)', () => {
+  const CHOICES: readonly SphereSegmentCount[] = [24, 48, 72];
+
+  it('24 / 48 / 72 以外の分割数は断る', () => {
+    expect(() => {
+      checkSphereSegments(36);
+    }).toThrow(/24・48・72/);
+    expect(() => {
+      checkSphereSegments(0);
+    }).toThrow(/24・48・72/);
+    // 3 択の値はどれも通る(段の既定 24 を含む)。
+    for (const segments of CHOICES) {
+      expect(() => {
+        checkSphereSegments(segments);
+      }).not.toThrow();
+    }
+  });
+
+  it('分割を細かくするほど、軸対称の検算 24741.124688560023 へ近づく', () => {
+    /** 分割数ごとの体積(同じ円を 4 本の円弧で描いて (b) の経路へ入れる)。 */
+    const volumes = CHOICES.map((segments) => {
+      const volume = withSolid(
+        spec([sphereSection([0, 0, 0], 10), curvesSection(quarteredCircle([0, 0, -30], 20))], {
+          sphereSegments: segments,
+        }),
+        (shape) => {
+          expect(hasSolid(oc, shape)).toBe(true);
+          expect(isValidShape(oc, shape)).toBe(true);
+          return measureVolume(oc, shape);
+        },
+      );
+      const ratio = (volume - AXIAL_SPHERE_VOLUME) / AXIAL_SPHERE_VOLUME;
+      console.log(
+        `分割 ${segments}: 体積 ${volume.toFixed(6)} 相対差 ${(ratio * 100).toFixed(4)}%`,
+      );
+      return volume;
+    });
+
+    // 輪郭を内接多角形で近似するので必ず少なめに出て、細かくするほど厳密値へ近づく。
+    for (const volume of volumes) {
+      expect(volume).toBeLessThan(AXIAL_SPHERE_VOLUME);
+    }
+    expect(volumes[0]).toBeLessThan(volumes[1]);
+    expect(volumes[1]).toBeLessThan(volumes[2]);
+  });
+
+  it('t24 と同じ配置(球 r10 + 円 r8 @ (5,0,−20))で 3 通りの所要・三角形の数を実測する', () => {
+    for (const segments of CHOICES) {
+      const started = performance.now();
+      const handle = makeThruSections(
+        oc,
+        spec([sphereSection([0, 0, 0], 10), curvesSection(circle([5, 0, -20], 8))], {
+          sphereSegments: segments,
+        }),
+      );
+      try {
+        const elapsed = performance.now() - started;
+        const volume = measureVolume(oc, handle.shape);
+        const triangles = tessellate(oc, handle.shape).indices.length / 3;
+        console.log(
+          `分割 ${segments}: 所要 ${elapsed.toFixed(1)}ms 三角形 ${triangles} 枚 体積 ${volume.toFixed(6)}`,
+        );
+        expect(hasSolid(oc, handle.shape)).toBe(true);
+        expect(volume).toBeGreaterThan(1e-9);
+      } finally {
+        handle.delete();
+      }
+    }
   });
 });

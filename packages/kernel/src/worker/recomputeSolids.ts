@@ -1,5 +1,10 @@
-import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
+import type {
+  OpenCascadeInstance,
+  TopoDS_Shape,
+  TopoDS_Wire,
+} from 'opencascade.js/dist/opencascade.full.js';
 
+import { createAllocations } from '../occt/allocations.js';
 import { booleanOp, type BooleanResult } from '../occt/booleanOp.js';
 import type { OcctShapeHandle } from '../occt/makeBox.js';
 import { makeChamfer } from '../occt/makeChamfer.js';
@@ -9,7 +14,7 @@ import { makePrimitive, resolvePrimitiveOrigin } from '../occt/makePrimitive.js'
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { makeThreadHole } from '../occt/makeThread.js';
-import { makeThruSections } from '../occt/makeThruSections.js';
+import { makeThruSections, sectionWireFromFace } from '../occt/makeThruSections.js';
 import { matchFace } from '../occt/matchSubShape.js';
 import { sewSolid } from '../occt/sewSolid.js';
 import { buildSolidBodyMesh, measureArea } from '../occt/solidMesh.js';
@@ -30,6 +35,7 @@ import type {
   SubShapeQuery,
   TessellationOptions,
   ThreadMarkInfo,
+  ThruSectionsStepSpec,
 } from '../types.js';
 import type { ShapeCache } from './shapeCache.js';
 
@@ -328,6 +334,59 @@ function createPrimitiveSolid(
 }
 
 /**
+ * 罫線面(FR-430)・ロフト(FR-410)の段(P5 §2.9、タスク24・24b)。
+ *
+ * 断面が**立体の面(`faceQuery`)のときだけ**、`targetKey` の形と部分形状の一覧を
+ * キャッシュから引いて面を選び直し、その外周を輪郭として取り出す(`sectionWireFromFace`)。
+ * 引き方は穴・ねじ穴・面取りとまったく同じ `findStepInput` で、**同じ手順を 2 か所に書かない**。
+ * 一覧(`CachedSolid.mesh`)は上流の段が作ったものをそのまま使うので作り直さない(§2.8)。
+ *
+ * **対象は消費しない**(§0.a-0.27)。輪郭を貸した立体はそのまま画面に残るので、
+ * 1 つにまとめたければ利用者が和(FR-404)を取る。消費の有無を決めているのは段の
+ * `visible` で、この関数はそれに一切触れない。
+ *
+ * 取り出した輪郭は出来上がった形と寿命を揃える(結果を手放すときに一緒に手放す)。
+ * `makeThruSections` の中で確保したものと同じ扱いにして、解放の責任を 1 か所にまとめる。
+ */
+function createThruSectionsSolid(
+  oc: OpenCascadeInstance,
+  spec: ThruSectionsStepSpec,
+  options: TessellationOptions,
+  cache: ShapeCache<CachedSolid>,
+  failedLabels: ReadonlyMap<string, string>,
+): OcctShapeHandle {
+  const { keep, release } = createAllocations();
+  try {
+    const faceWires = new Map<number, TopoDS_Wire>();
+    for (let index = 0; index < spec.sections.length; index += 1) {
+      const section = spec.sections[index];
+      if (section.kind !== 'faceQuery') {
+        continue;
+      }
+      const target = findStepInput(cache, failedLabels, section.targetKey);
+      faceWires.set(
+        index,
+        sectionWireFromFace(oc, target.shape, target.mesh, section.query, keep),
+      );
+    }
+    const handle = makeThruSections(oc, spec, options, faceWires);
+    return {
+      shape: handle.shape,
+      delete(): void {
+        try {
+          handle.delete();
+        } finally {
+          release();
+        }
+      },
+    };
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
+/**
  * 1 段ぶんの作り手の結果。ねじ穴(FR-406)だけが画面へ返すねじの印(§0.a-0.15)を持つので、
  * それ以外の段は空配列で揃える(createStepSolid が返す形を 1 つに揃えるための入れ物)。
  */
@@ -407,9 +466,10 @@ function createStepSolid(
       // したときだけ対象の形から頂点を引く(消費はしない。タスク14b)。
       return noMarks(createPrimitiveSolid(oc, spec, cache, failedLabels));
     case 'thruSections':
-      // 罫線面(FR-430)とロフト(FR-410)。輪郭(と球)だけで決まるので上流の形を見ない。
-      // 材料にした立体は消費しない(§0.a-0.27。要るなら利用者が和を取る)。
-      return noMarks(makeThruSections(oc, spec, options));
+      // 罫線面(FR-430)とロフト(FR-410)。断面が立体の面(faceQuery)のときだけ
+      // 上流の形を見て輪郭を取り出す(タスク24b)。それでも材料にした立体は
+      // 消費しない(§0.a-0.27。要るなら利用者が和を取る)。
+      return noMarks(createThruSectionsSolid(oc, spec, options, cache, failedLabels));
   }
 }
 

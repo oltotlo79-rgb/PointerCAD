@@ -6,7 +6,9 @@ import type {
   SolidBodyMesh,
   SolidFaceInfo,
   SolidStepSpec,
+  SphereSegmentCount,
   SubShapeQuery,
+  ThruSectionSpec,
 } from '../types.js';
 import { matchAppearances } from './recomputeSolids.js';
 
@@ -309,5 +311,34 @@ describe('段の種類(SolidStepSpec の union)', () => {
     expect(Object.keys(STEP_KINDS)).toHaveLength(11);
     expect(Object.keys(STEP_KINDS)).toContain('primitive');
     expect(Object.keys(STEP_KINDS)).toContain('thruSections');
+  });
+});
+
+/*
+ * 罫線面・ロフトの断面の種類(P5 タスク24b)。
+ *
+ * 上の段の種類と同じ理屈で、`ThruSectionSpec` の union に種類を足したのに
+ * ここを直し忘れると型検査が落ちるようにしてある。曲線の並び・球に、
+ * 立体の面(`faceQuery`、§0.a-0.73)を足して 2 → 3 になった。
+ */
+describe('罫線面・ロフトの断面の種類(ThruSectionSpec の union)', () => {
+  const SECTION_KINDS: Readonly<Record<ThruSectionSpec['kind'], true>> = {
+    curves: true,
+    sphere: true,
+    faceQuery: true,
+  };
+
+  it('断面の種類は 3 種で、立体の面(faceQuery)を含む', () => {
+    expect(Object.keys(SECTION_KINDS)).toHaveLength(3);
+    expect(Object.keys(SECTION_KINDS)).toContain('faceQuery');
+  });
+
+  /*
+   * 球へつなぐ分割数の 3 択(§0.a-0.74)。model の欄・ui の「なめらかさ」・
+   * kernel の断りが同じ 3 つを見るように、型から数え上げて固定しておく。
+   */
+  it('球へつなぐ分割数は 24 / 48 / 72 の 3 択', () => {
+    const choices: Readonly<Record<SphereSegmentCount, true>> = { 24: true, 48: true, 72: true };
+    expect(Object.keys(choices).map(Number)).toEqual([24, 48, 72]);
   });
 });

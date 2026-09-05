@@ -48,8 +48,9 @@
  *
  * NFR-PF-2(単一フィーチャー 500ms)を満たせるのは縫合だけである。
  *
- * **点の数(`SPHERE_SECTION_POINTS = 24`)の選び方(2026-09-05 実測、3 回ずつ)。**
- * 計画書 §2.9.3 の既定は 72 点だが、72 点では NFR-PF-2 を超えるため 24 点を採る。
+ * **点の数(`spec.sphereSegments`)の選び方(2026-09-05 実測、3 回ずつ)。**
+ * 計画書 §2.9.3 の既定は 72 点だが、72 点では NFR-PF-2 を超えるため**既定は 24 点**で、
+ * 24 / 48 / 72 の 3 択を段ごとに選べるようにしてある(§0.a-0.74、タスク24b)。
  * (a) の経路が使える軸対称の入力を、あえて (b) の経路で作って解析値 24741.124688560 と
  * 比べた表(輪の数は 1 本):
  *
@@ -72,6 +73,21 @@
  * **限界(統括へ報告済み)。** 球冠が半球より広くなる配置(接点の列が球の大円に近づくとき)では、
  * なめらかな面が球の外へ最大 0.9mm ほど膨らむ(球 r=10・円 r=8 @ (5,0,−20) で境界箱の上端が
  * 10.935)。球に外接する直線そのもの(接点の位置)は厳密なので、膨らむのは球冠の側だけである。
+ *
+ * ---
+ *
+ * ## 立体の面を輪郭にする(`faceQuery`、§0.a-0.73、タスク24b)
+ *
+ * 断面が `faceQuery` のときは、**選び直しをこのファイルの外(`worker/recomputeSolids.ts`)で
+ * 済ませてから**、取り出した外周のワイヤを添字つきで受け取る(`makeThruSections` の第 4 引数)。
+ * 面を選び直すには「対象の段の形」と「面・辺・頂点の一覧」が要り、どちらもキャッシュの
+ * 持ち物だからである(穴・面取りが `recomputeSolids` で対象を引くのと同じ筋道)。
+ * 選び直しと外周の取り出しそのものは `sectionWireFromFace`(このファイル)に 1 か所だけ置く。
+ *
+ * **面から取り出した断面は (a) の厳密な経路へ入らない。** (a) は「全周の円 1 本」という
+ * 曲線の並びを見て円錐を解くが、面の外周はワイヤであって曲線の並びではないためである。
+ * 球と面をつなぐときは必ず (b)(点に割る経路)になり、`sphereSegments` の細かさで
+ * 精度が決まる。
  */
 
 import type {
@@ -84,6 +100,7 @@ import type {
 
 import type {
   CurveSpec,
+  SubShapeQuery,
   TessellationOptions,
   ThruSectionSpec,
   ThruSectionsStepSpec,
@@ -94,8 +111,10 @@ import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
+import { pickSubShape } from './pickSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { tangentConeThroughCircle, tangentPointOnSphere } from './sphereTangent.js';
+import type { SubShapeTables } from './subShapes.js';
 
 /** つなぐには断面が 2 つ要る。 */
 const MINIMUM_SECTION_COUNT = 2;
@@ -114,10 +133,29 @@ const FULL_TURN = 2 * Math.PI;
 const FULL_TURN_EPSILON = 1e-9;
 
 /**
- * (b) で輪郭を割る点の数。ファイル冒頭の実測表のとおり、NFR-PF-2(500ms)に収まる
- * いちばん細かい値として 24 を採る(計画書 §2.9.3 の既定 72 では 5〜6 秒かかる)。
+ * (b) で輪郭を割る点の数として選べる値(§0.a-0.74)。
+ *
+ * ファイル冒頭の実測表のとおり、NFR-PF-2(500ms)に収まるいちばん細かい値は 24 で、
+ * model 側の既定もこれになる。48 / 72 は所要が上限を超えるが、なめらかさを優先して
+ * 利用者が段ごとに選べる(上限そのものは緩めない)。**型は `SphereSegmentCount` で
+ * 3 択に絞ってあるが、io から来た文書の値が型どおりとは限らない**ので、
+ * ここでも実際の値を確かめる。
  */
-const SPHERE_SECTION_POINTS = 24;
+const SPHERE_SEGMENT_CHOICES: readonly number[] = [24, 48, 72];
+
+/**
+ * 分割数が 24 / 48 / 72 のどれかを確かめる。違えば理由をつけて断る(FR-504)。
+ *
+ * 型(`SphereSegmentCount`)では 3 択に絞ってあるが、**保存済みの文書から読み込んだ値が
+ * 型どおりとは限らない**(`io` は JSON の数値をそのまま渡す)。型の外から来る値を
+ * ここで止める。検査から直に呼べるよう外へ出してあるのは、型が 3 択なので
+ * `makeThruSections` 越しには不正な値を渡しようが無く、断りの筋道を確かめられないためである。
+ */
+export function checkSphereSegments(value: number): void {
+  if (!SPHERE_SEGMENT_CHOICES.includes(value)) {
+    throw new Error(SEGMENT_COUNT_MESSAGE);
+  }
+}
 
 /** (b) で球冠を張るときに間へ挟む輪の数。ファイル冒頭の実測表のとおり 1 本が最良。 */
 const SPHERE_CAP_RINGS = 1;
@@ -138,6 +176,26 @@ const BUILD_FAILED_MESSAGE = '面と面をつなげませんでした。輪郭�
 const NOT_SOLID_MESSAGE = '立体になりませんでした。輪郭の位置を見直してください。';
 const TWIST_MESSAGE = 'ひねりの数は整数にしてください。';
 const SPHERE_SIZE_MESSAGE = '球の半径は 0 より大きい数にしてください。';
+const SEGMENT_COUNT_MESSAGE = '断面の分割数は 24・48・72 のいずれかにしてください。';
+
+/**
+ * 輪郭にする面が選び直せなかったとき(FR-504、NFR-RE-1)。
+ * 語尾は `makeHole.ts` / `pickSubShape.ts` と揃えてあり、model 側が
+ * この語尾で「選び直してください」の案内に詰め替える。
+ */
+export const MISSING_SECTION_FACE_MESSAGE =
+  'つなぐ面が見つかりません。形が変わったため、選び直してください。';
+
+/**
+ * 選び直せたが、輪郭として使えない面だったとき。
+ *
+ * 円柱の側面・球面のように「継ぎ目(seam)の稜線で自分自身へ戻ってくる」面は、
+ * 外周が 1 本のワイヤに見えても同じ稜線を 2 度通るため、点に割ると輪郭が
+ * 自分と交わる。穴のあいた面(縁が 2 本以上)も、外周だけを取ると穴が黙って
+ * 消えるので受け取らない。どちらも実行する前に断る(NFR-UX-5)。
+ */
+export const UNUSABLE_SECTION_FACE_MESSAGE =
+  'つなぐ面は平らな面か、縁が 1 本につながる面にしてください。';
 
 function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -217,6 +275,147 @@ function makePolygonWire(
     throw new Error(BUILD_FAILED_MESSAGE);
   }
   return keep(polygon.Wire());
+}
+
+/**
+ * 形の中の、ある種類の部分形状を数える。並びは `TopExp.MapShapes_2` の順。
+ *
+ * 取り出した部分形状はその場で手放す(数えるだけで持ち帰らないため)。
+ * `TopExp_Explorer` を使わないのは `subShapes.ts` と同じ理由(列挙を引数に取る API を避ける)。
+ */
+function countSubShapes(
+  oc: OpenCascadeInstance,
+  shape: TopoDS_Shape,
+  isWanted: (candidate: TopoDS_Shape) => boolean,
+): number {
+  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
+  try {
+    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+    let count = 0;
+    const size = Number(subShapes.Size());
+    for (let index = 1; index <= size; index += 1) {
+      const subShape = subShapes.FindKey(index);
+      try {
+        if (isWanted(subShape)) {
+          count += 1;
+        }
+      } finally {
+        subShape.delete();
+      }
+    }
+    return count;
+  } finally {
+    subShapes.delete();
+  }
+}
+
+/**
+ * 輪郭として使える面か。使えないなら日本語の理由を投げる。
+ *
+ * 見るのは 2 つだけ。①**縁が 1 本**であること(穴のあいた面を受け取ると、外周だけを
+ * 取り出したときに穴が黙って消える)。②**継ぎ目(seam)と潰れた稜線を持たない**こと。
+ * 円柱の側面や球面は縁が 1 本に見えても、同じ稜線を向きを変えて 2 度通る「継ぎ目」を
+ * 含むので、点に割ると輪郭が自分自身と交わる(`BRepTools.IsReallyClosed` が継ぎ目、
+ * `BRep_Tool.Degenerated` が極の潰れた稜線を見分ける)。
+ */
+function checkSectionFace(oc: OpenCascadeInstance, face: TopoDS_Face, wire: TopoDS_Wire): void {
+  const wireType = oc.TopAbs_ShapeEnum.TopAbs_WIRE;
+  if (countSubShapes(oc, face, (candidate) => candidate.ShapeType() === wireType) !== 1) {
+    throw new Error(UNUSABLE_SECTION_FACE_MESSAGE);
+  }
+  const edgeType = oc.TopAbs_ShapeEnum.TopAbs_EDGE;
+  const badEdges = countSubShapes(oc, wire, (candidate) => {
+    if (candidate.ShapeType() !== edgeType) {
+      return false;
+    }
+    const edge = oc.TopoDS.Edge_1(candidate);
+    try {
+      return oc.BRep_Tool.Degenerated(edge) || oc.BRepTools.IsReallyClosed(edge, face);
+    } finally {
+      edge.delete();
+    }
+  });
+  if (badEdges !== 0) {
+    throw new Error(UNUSABLE_SECTION_FACE_MESSAGE);
+  }
+  if (!wire.Closed_1()) {
+    throw new Error(UNUSABLE_SECTION_FACE_MESSAGE);
+  }
+}
+
+/**
+ * 立体の面を指紋で選び直し、その外周を輪郭のワイヤとして取り出す(§0.a-0.73、タスク24b)。
+ *
+ * **選び直しは `pickSubShape` に任せる**(P3 §2.2.4)。重みもしきい値も穴・面取り・
+ * 投影とまったく同じで、罫線面のための別の規約は作らない。
+ *
+ * 外周の取り出しは `BRepTools.OuterWire`(`loadOcct.node.test.ts` と同じ書き方で
+ * 束縛を確かめてある。`ShapeAnalysis.OuterWire` も同じものを返すが、面の縁を
+ * そのまま返す `BRepTools` のほうが直接で、余分な解析を挟まない)。
+ *
+ * 呼び出し側(`worker/recomputeSolids.ts`)が対象の形と一覧をキャッシュから引いて渡す。
+ * 確保したものは `keep` に積むので、解放は呼び出し側の `release()` に任せる。
+ */
+export function sectionWireFromFace(
+  oc: OpenCascadeInstance,
+  shape: TopoDS_Shape,
+  tables: SubShapeTables,
+  query: SubShapeQuery,
+  keep: Allocations['keep'],
+): TopoDS_Wire {
+  // 面以外の指紋(辺・頂点)は輪郭にならない。選び直す前に断る。
+  if (query.kind !== 'face') {
+    throw new Error(MISSING_SECTION_FACE_MESSAGE);
+  }
+  const picked = pickSubShape(oc, shape, tables, query);
+  if (picked === null) {
+    throw new Error(MISSING_SECTION_FACE_MESSAGE);
+  }
+  keep(picked);
+  if (picked.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_FACE) {
+    throw new Error(MISSING_SECTION_FACE_MESSAGE);
+  }
+  const face = keep(oc.TopoDS.Face_1(picked));
+  const wire = keep(oc.BRepTools.OuterWire(face));
+  checkSectionFace(oc, face, wire);
+  return wire;
+}
+
+/**
+ * `faceQuery` の断面を解決した輪郭。鍵は `ThruSectionsStepSpec.sections` の添字。
+ *
+ * 面の選び直しには対象の段の形と部分形状の一覧が要り、どちらもキャッシュの持ち物なので、
+ * `worker/recomputeSolids.ts` が先に解決してこの形で渡す(ファイル冒頭の説明)。
+ */
+export type ResolvedSectionWires = ReadonlyMap<number, TopoDS_Wire>;
+
+/**
+ * この段の中で断面を扱う形。曲線の並びで来たものと、面から取り出した外周を 1 つにまとめる。
+ *
+ * 曲線の並びを残してあるのは、(a) の厳密な経路(全周の円 → 接する円錐)が
+ * 「円 1 本かどうか」を曲線から判断し、輪郭の平らな面もその曲線から張るためである。
+ */
+type SectionSource =
+  | { readonly kind: 'curves'; readonly curves: readonly CurveSpec[] }
+  | { readonly kind: 'wire'; readonly wire: TopoDS_Wire };
+
+/**
+ * 断面 1 つを、この段で扱う形へ直す。球はここへ来ない(先に振り分けてある)。
+ * `faceQuery` の輪郭が渡されていなければ、選び直せなかったときと同じ理由で断る。
+ */
+function toSectionSource(
+  section: Exclude<ThruSectionSpec, { kind: 'sphere' }>,
+  index: number,
+  faceWires: ResolvedSectionWires,
+): SectionSource {
+  if (section.kind === 'curves') {
+    return { kind: 'curves', curves: section.curves };
+  }
+  const wire = faceWires.get(index);
+  if (wire === undefined) {
+    throw new Error(MISSING_SECTION_FACE_MESSAGE);
+  }
+  return { kind: 'wire', wire };
 }
 
 /**
@@ -474,9 +673,10 @@ function makeGeneralSphereSolid(
   sphereCenter: Vec3Tuple,
   sphereRadius: number,
   contourWire: TopoDS_Wire,
+  segments: number,
   keep: Allocations['keep'],
 ): TopoDS_Shape | null {
-  const contour = samplePoints(oc, contourWire, SPHERE_SECTION_POINTS, keep);
+  const contour = samplePoints(oc, contourWire, segments, keep);
   const normal = contourNormal(contour, sphereCenter);
   if (normal === null) {
     return null;
@@ -578,14 +778,21 @@ function makeGeneralSphereSolid(
   );
 }
 
-/** 球の断面と、相手の輪郭の断面に分ける。球が 2 つ以上あれば断る。 */
-function splitSphereSection(sections: readonly ThruSectionSpec[]): {
+/**
+ * 球の断面と、相手の輪郭の断面に分ける。球が 2 つ以上あれば断る。
+ * 球でない断面はここで `SectionSource`(曲線の並び / 面の外周)へ直す。
+ */
+function splitSphereSection(
+  sections: readonly ThruSectionSpec[],
+  faceWires: ResolvedSectionWires,
+): {
   readonly sphere: Extract<ThruSectionSpec, { kind: 'sphere' }> | null;
-  readonly curves: readonly CurveSpec[];
+  readonly profiles: readonly SectionSource[];
 } {
   let sphere: Extract<ThruSectionSpec, { kind: 'sphere' }> | null = null;
-  const profiles: (readonly CurveSpec[])[] = [];
-  for (const section of sections) {
+  const profiles: SectionSource[] = [];
+  for (let index = 0; index < sections.length; index += 1) {
+    const section = sections[index];
     if (section.kind === 'sphere') {
       if (sphere !== null) {
         throw new Error(TWO_SPHERES_MESSAGE);
@@ -593,12 +800,32 @@ function splitSphereSection(sections: readonly ThruSectionSpec[]): {
       sphere = section;
       continue;
     }
-    profiles.push(section.curves);
+    profiles.push(toSectionSource(section, index, faceWires));
   }
   if (sphere !== null && profiles.length !== 1) {
     throw new Error(SPHERE_NEEDS_ONE_PROFILE_MESSAGE);
   }
-  return { sphere, curves: sphere === null ? [] : profiles[0] };
+  return { sphere, profiles };
+}
+
+/**
+ * 断面から輪郭のワイヤを 1 本作る。
+ *
+ * 曲線の並びのときは `twist` のぶんだけ並びを回してから組む(§0.a-0.28)。
+ * **面の外周にはひねりが効かない。** 始点をずらすには稜線を並べ替える元の曲線が要るが、
+ * 面から取り出したワイヤにはそれが無いためである。ひねりを指定しても断らず、
+ * その断面だけ元の並びのまま結ぶ(形は作れるので、止める理由が無い。NFR-RE-1)。
+ */
+function wireOfSource(
+  oc: OpenCascadeInstance,
+  source: SectionSource,
+  twist: number,
+  keep: Allocations['keep'],
+): TopoDS_Wire {
+  if (source.kind === 'wire') {
+    return source.wire;
+  }
+  return makeSectionWire(oc, rotateCurves(source.curves, twist), keep);
 }
 
 /**
@@ -608,26 +835,33 @@ function splitSphereSection(sections: readonly ThruSectionSpec[]): {
 function makeSphereRuledSolid(
   oc: OpenCascadeInstance,
   sphere: Extract<ThruSectionSpec, { kind: 'sphere' }>,
-  curves: readonly CurveSpec[],
+  profile: SectionSource,
+  segments: number,
   options: TessellationOptions,
   keep: Allocations['keep'],
 ): TopoDS_Shape {
   if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) {
     throw new Error(SPHERE_SIZE_MESSAGE);
   }
-  const wire = makeSectionWire(oc, curves, keep);
+  // 球とつなぐ輪郭にひねりは効かない(始点をずらしても同じ球へ接するだけ)ので 0 で組む。
+  const wire = wireOfSource(oc, profile, 0, keep);
 
-  const circle = circleOfSection(curves);
-  if (circle !== null) {
-    // (a) は罫線の面が厳密な円錐なので、輪郭の面も元の曲線から厳密に張る。
-    // 閉じていない・自己交差・非平面は makePlanarFace が理由つきで断る。
-    const bottom = keep(makePlanarFace(oc, curves, options)).face;
-    const axial = makeAxialSphereSolid(oc, sphere.center, sphere.radius, circle, bottom, keep);
-    if (axial !== null) {
-      return axial;
+  // (a) の厳密な経路は「全周の円 1 本」という曲線の並びから円錐を解く。
+  // 面から取り出した外周(kind: 'wire')は曲線の並びを持たないので (b) へ進む
+  // (ファイル冒頭「立体の面を輪郭にする」の説明)。
+  if (profile.kind === 'curves') {
+    const circle = circleOfSection(profile.curves);
+    if (circle !== null) {
+      // (a) は罫線の面が厳密な円錐なので、輪郭の面も元の曲線から厳密に張る。
+      // 閉じていない・自己交差・非平面は makePlanarFace が理由つきで断る。
+      const bottom = keep(makePlanarFace(oc, profile.curves, options)).face;
+      const axial = makeAxialSphereSolid(oc, sphere.center, sphere.radius, circle, bottom, keep);
+      if (axial !== null) {
+        return axial;
+      }
     }
   }
-  const general = makeGeneralSphereSolid(oc, sphere.center, sphere.radius, wire, keep);
+  const general = makeGeneralSphereSolid(oc, sphere.center, sphere.radius, wire, segments, keep);
   if (general === null) {
     throw new Error(NO_TANGENT_MESSAGE);
   }
@@ -638,6 +872,7 @@ function makeSphereRuledSolid(
 function makePlainThruSections(
   oc: OpenCascadeInstance,
   spec: ThruSectionsStepSpec,
+  profiles: readonly SectionSource[],
   keep: Allocations['keep'],
 ): TopoDS_Shape {
   const maker = keep(new oc.BRepOffsetAPI_ThruSections(spec.closed, spec.ruled, SEWING_TOLERANCE));
@@ -648,12 +883,9 @@ function makePlainThruSections(
   // 元へ戻してしまい、体積が 1e-3 の桁まで同じになった(ひねりが効かない)。
   // ずらすときは並び順どおりの対応に任せる(§0.a-0.28。ねじれは目で見て直す)。
   maker.CheckCompatibility(spec.twist === 0);
-  for (let index = 0; index < spec.sections.length; index += 1) {
-    const section = spec.sections[index];
-    // 球はこの経路へ来ない(makeThruSections が先に振り分ける)。
-    const curves = section.kind === 'sphere' ? [] : section.curves;
+  for (let index = 0; index < profiles.length; index += 1) {
     // ひねりは 2 つ目以降の輪郭にだけ効かせる(片方の始点だけをずらす。§0.a-0.28)。
-    maker.AddWire(makeSectionWire(oc, index === 0 ? curves : rotateCurves(curves, spec.twist), keep));
+    maker.AddWire(wireOfSource(oc, profiles[index], index === 0 ? 0 : spec.twist, keep));
   }
   maker.Build(keep(new oc.Message_ProgressRange_1()));
   // IsDone() を見る前に Shape() を呼ばない(makeSpring.ts と同じ扱い)。
@@ -671,11 +903,15 @@ function makePlainThruSections(
  *
  * 断るときは利用者へそのまま見せられる日本語の Error を投げ、呼び出し側
  * (`recomputeSolids`)が理由として拾う(FR-504、NFR-RE-1。止めずに理由を出す)。
+ *
+ * `faceWires` は `faceQuery` の断面を解決した輪郭(`ResolvedSectionWires`)。
+ * 呼び出し側が確保したものなので、この関数は解放しない(戻り値の `delete()` も触らない)。
  */
 export function makeThruSections(
   oc: OpenCascadeInstance,
   spec: ThruSectionsStepSpec,
   options: TessellationOptions = {},
+  faceWires: ResolvedSectionWires = new Map<number, TopoDS_Wire>(),
 ): OcctShapeHandle {
   if (spec.sections.length < MINIMUM_SECTION_COUNT) {
     throw new Error(TOO_FEW_SECTIONS_MESSAGE);
@@ -683,14 +919,17 @@ export function makeThruSections(
   if (!Number.isInteger(spec.twist)) {
     throw new Error(TWIST_MESSAGE);
   }
-  const { sphere, curves } = splitSphereSection(spec.sections);
+  // 球を含まない段でも確かめる。段ごとの値なので、球を足したときに初めて
+  // 断られるのでは、利用者にとって理由と操作の間が遠すぎる(NFR-UX-5)。
+  checkSphereSegments(spec.sphereSegments);
+  const { sphere, profiles } = splitSphereSection(spec.sections, faceWires);
 
   const { keep, release } = createAllocations();
   try {
     const shape =
       sphere === null
-        ? makePlainThruSections(oc, spec, keep)
-        : makeSphereRuledSolid(oc, sphere, curves, options, keep);
+        ? makePlainThruSections(oc, spec, profiles, keep)
+        : makeSphereRuledSolid(oc, sphere, profiles[0], spec.sphereSegments, options, keep);
     checkSolid(oc, shape);
     return { shape, delete: release };
   } catch (error) {

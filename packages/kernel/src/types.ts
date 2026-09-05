@@ -815,10 +815,40 @@ export interface PrimitiveStepSpec {
  * ふつうは閉じた輪郭(`curves`)だが、**球だけは縁を持たない**ので中心と半径で渡す。
  * 球が入っているときは `ThruSections` にそのまま渡さず、球に外接する直線
  * (接する円錐面)で結ぶ経路へ入る(`occt/makeThruSections.ts` の冒頭)。
+ *
+ * **立体の面を輪郭にするときは `faceQuery`**(§0.a-0.73、P5 タスク24b)。model 側で
+ * 輪郭の曲線に直さないのは、面を指す手がかりが指紋(`SubShapeQuery`)しか無く、
+ * **選び直しはカーネルの中で行う**と決めてあるためである(P3 §2.2.4。穴・面取りと同じ)。
  */
 export type ThruSectionSpec =
   | { readonly kind: 'curves'; readonly curves: readonly CurveSpec[] }
-  | { readonly kind: 'sphere'; readonly center: Vec3Tuple; readonly radius: number };
+  | { readonly kind: 'sphere'; readonly center: Vec3Tuple; readonly radius: number }
+  | {
+      readonly kind: 'faceQuery';
+      /**
+       * 面を持つ立体の段のキャッシュの鍵。
+       *
+       * **この鍵の段は消費しない**(§0.a-0.27)。輪郭を貸した立体はそのまま画面に残る。
+       *
+       * **呼び出し側(model の `part/cacheKey.ts`)は、この段の鍵の材料に `targetKey` と
+       * `query` を必ず含める。** 含めないと、上流の押し出しを伸ばして面が動いても
+       * 段の鍵が変わらず、古い輪郭の形がキャッシュから返る(NFR-PF-3 の鍵の連鎖は
+       * 「材料が変われば鍵が変わる」ことに全面的に頼っている。`PrimitiveStepSpec`
+       * の `targetKey` と同じ理由)。
+       */
+      readonly targetKey: string;
+      /** 輪郭にする面の指紋。**必ず `kind: 'face'`**(辺・頂点を渡されたら断る)。 */
+      readonly query: SubShapeQuery;
+    };
+
+/**
+ * 球へつなぐ一般の輪郭(§2.9.3-(b))を割る点の数(§0.a-0.74、利用者の決定 2026-09-05)。
+ *
+ * 多いほど球への接し方が滑らかになり、そのぶん遅くなる。既定の 24 は
+ * NFR-PF-2(500ms)に収まるいちばん細かい値で、48 / 72 は「なめらかさ」を優先して
+ * 利用者が選ぶ重い段である(実測は `occt/makeThruSections.ts` の冒頭の表)。
+ */
+export type SphereSegmentCount = 24 | 48 | 72;
 
 /**
  * 輪郭をつないで立体にする 1 手順(罫線面 FR-430・ロフト FR-410、計画書 P5 §2.9)。
@@ -840,6 +870,18 @@ export interface ThruSectionsStepSpec {
   readonly closed: boolean;
   /** 輪郭のねじれを直すための、2 つ目以降の輪郭の稜線のずらし数(整数。§0.a-0.28)。 */
   readonly twist: number;
+  /**
+   * 球へつなぐ一般の輪郭を割る点の数(§0.a-0.74)。**段ごとに必須**。
+   *
+   * 省略できる欄にしていないのは、文書に書かれていない段が「既定の 24」で
+   * 黙って作られると、後で既定を変えたときに保存済みの文書の形が一斉に変わるためである
+   * (既定を入れるのは model 側。`docs/plans/P5-高度なソリッド・外観と測定.md` §0.a-0.74)。
+   * 24 / 48 / 72 以外の値(古い文書・壊れた文書から来た値)は理由をつけて断る。
+   *
+   * **球を含まない段では形に効かない。** 全周の円と球の厳密な経路(§2.9.3-(a))も
+   * 点に割らないので、この値には依らない。
+   */
+  readonly sphereSegments: SphereSegmentCount;
 }
 
 /**

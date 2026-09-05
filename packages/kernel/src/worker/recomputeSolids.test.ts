@@ -22,6 +22,7 @@ import type {
   SolidVertexInfo,
   SpringStepSpec,
   SubShapeQuery,
+  ThruSectionsStepSpec,
 } from '../types.js';
 import { recomputeSolids, type CachedSolid } from './recomputeSolids.js';
 import { createShapeCache, type ShapeCache } from './shapeCache.js';
@@ -1648,4 +1649,213 @@ describe('履歴の再計算(recomputeSolids)', () => {
       expect(center[2]).toBeCloseTo(3, 6);
     });
   });
+
+  /*
+   * 罫線面・ロフトの輪郭に立体の面を使う(FR-430、§0.a-0.73、P5 タスク24b)。
+   *
+   * 指紋は「同じ形を実際に作って読み取る」ことで用意し(頂点の追補と同じ流儀)、
+   * 段の側は `faceQuery`(`targetKey` + 指紋)を受け取って**対象を消費しない**。
+   * 体積はロフトの台形則 h/3 ×(A1 + A2 + √(A1·A2))で担当が導出する。
+   */
+  describe('立体の面を輪郭にする罫線面(FR-430、§0.a-0.73、タスク24b)', () => {
+    /** 板 40×30×10 の上面(z = 10、面積 1200)と、その上の矩形 20×15(z = 30)をつないだ体積。 */
+    const RULED_VOLUME = (20 / 3) * (1200 + 300 + Math.sqrt(1200 * 300));
+
+    /** 板の上面(z = 20)と矩形 20×15(z = 30)をつないだ体積(高さが 10 になった場合)。 */
+    const RULED_VOLUME_SHORT = (10 / 3) * (1200 + 300 + Math.sqrt(1200 * 300));
+
+    /** 板の中心(20, 15)に合わせた長方形の閉ループ。罫線面の相手の輪郭に使う。 */
+    function centeredRectangle(width: number, depth: number, z: number): readonly CurveSpec[] {
+      const corners: readonly [number, number, number][] = [
+        [20 - width / 2, 15 - depth / 2, z],
+        [20 + width / 2, 15 - depth / 2, z],
+        [20 + width / 2, 15 + depth / 2, z],
+        [20 - width / 2, 15 + depth / 2, z],
+      ];
+      return corners.map((from, index) => ({
+        kind: 'segment',
+        from,
+        to: corners[(index + 1) % corners.length],
+      }));
+    }
+
+    /** 面の輪郭と矩形をつなぐ段を 1 つ作る。 */
+    function ruledStep(
+      id: string,
+      key: string,
+      targetKey: string,
+      face: SubShapeQuery,
+      topZ: number,
+    ): SolidStepRequest {
+      const step: ThruSectionsStepSpec = {
+        kind: 'thruSections',
+        sections: [
+          { kind: 'faceQuery', targetKey, query: face },
+          { kind: 'curves', curves: centeredRectangle(20, 15, topZ) },
+        ],
+        ruled: true,
+        closed: true,
+        twist: 0,
+        sphereSegments: 24,
+      };
+      return { key, id, label: id, visible: true, step };
+    }
+
+    /** 円柱 r=10 h=20 を実際に作り、側面(円柱面)の指紋を読み取る。 */
+    function cylinderSideQuery(): Extract<SubShapeQuery, { kind: 'face' }> {
+      const handle = makePrimitive(oc, {
+        kind: 'primitive',
+        origin: [0, 0, 0],
+        axis: [0, 0, 1],
+        shape: { kind: 'cylinder', radius: 10, height: 20 },
+        originQuery: null,
+        targetKey: null,
+      });
+      try {
+        const found = subShapesOf(handle.shape).faces.find(
+          (face) => face.surfaceKind === 'cylinder',
+        );
+        if (found === undefined) {
+          throw new Error('円柱の側面が見つかりませんでした');
+        }
+        return faceQuery(found);
+      } finally {
+        handle.delete();
+      }
+    }
+
+    it('板の上面と矩形をつなぐと 14000 mm³ になり、板も残って 2 ボディになる', async () => {
+      const { cache } = newCache();
+      const { topFace } = plateFingerprints();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          extrudeStep('板1', 'key-plate', 40, 30, 10),
+          ruledStep('罫線面1', 'key-ruled', 'key-plate', topFace, 30),
+        ]),
+      );
+
+      expect(result.failures).toEqual([]);
+      // 輪郭を貸した立体は消費されない(§0.a-0.27)ので 2 ボディ。
+      expect(result.bodies.map((body) => body.id)).toEqual(['板1', '罫線面1']);
+      expect(result.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
+      console.log(
+        `板の上面 → 矩形 20×15 の罫線面: ${result.bodies[1].volume} mm³(手計算 ${RULED_VOLUME})`,
+      );
+      expect(Math.abs(result.bodies[1].volume - RULED_VOLUME) / RULED_VOLUME).toBeLessThan(1e-6);
+    });
+
+    it('同じ依頼の 2 回目は 2 段とも命中して作り直さない(NFR-PF-3)', async () => {
+      const { cache, built } = newCache();
+      const { topFace } = plateFingerprints();
+      const steps = [
+        extrudeStep('板1', 'key-plate', 40, 30, 10),
+        ruledStep('罫線面1', 'key-ruled', 'key-plate', topFace, 30),
+      ];
+
+      const first = await recomputeSolids({ oc, cache }, request(steps));
+      expect(first.failures).toEqual([]);
+      expect(built()).toBe(2);
+
+      const second = await recomputeSolids({ oc, cache }, request(steps));
+      expect(second.failures).toEqual([]);
+      expect(second.cacheHits).toBe(2);
+      expect(built()).toBe(2);
+      expect(second.bodies[1].volume).toBeCloseTo(first.bodies[1].volume, 9);
+    });
+
+    it('板を 10 → 20 に伸ばすと、上面が動いて罫線面も追従する(鍵の連鎖)', async () => {
+      const { cache } = newCache();
+      const { topFace } = plateFingerprints();
+
+      const first = await recomputeSolids(
+        { oc, cache },
+        request([
+          extrudeStep('板1', 'key-plate-10', 40, 30, 10),
+          ruledStep('罫線面1', 'key-ruled-10', 'key-plate-10', topFace, 30),
+        ]),
+      );
+      expect(first.failures).toEqual([]);
+
+      const second = await recomputeSolids(
+        { oc, cache },
+        request([
+          extrudeStep('板1', 'key-plate-20', 40, 30, 20),
+          ruledStep('罫線面1', 'key-ruled-20', 'key-plate-20', topFace, 30),
+        ]),
+      );
+
+      expect(second.failures).toEqual([]);
+      console.log(
+        `押し出し 10 → 20: 罫線面の体積が ${first.bodies[1].volume} → ${second.bodies[1].volume}(手計算 ${RULED_VOLUME_SHORT})`,
+      );
+      expect(
+        Math.abs(second.bodies[1].volume - RULED_VOLUME_SHORT) / RULED_VOLUME_SHORT,
+      ).toBeLessThan(1e-6);
+    });
+
+    it('面の指紋が当たらないときは選び直しを促して断り、対象の立体は残る(FR-504)', async () => {
+      const { cache } = newCache();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          extrudeStep('板1', 'key-plate', 40, 30, 10),
+          ruledStep(
+            '罫線面1',
+            'key-ruled',
+            'key-plate',
+            {
+              kind: 'face',
+              index: 99,
+              surfaceKind: 'plane',
+              area: 999999,
+              position: [1000, 1000, 1000],
+              axis: [0, 0, 1],
+              radius: null,
+            },
+            30,
+          ),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        { id: '罫線面1', message: 'つなぐ面が見つかりません。形が変わったため、選び直してください。' },
+      ]);
+      expect(result.bodies.map((body) => body.id)).toEqual(['板1']);
+    });
+
+    it('円柱の側面のように縁が 1 本につながらない面は、理由を添えて断る', async () => {
+      const { cache } = newCache();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          primitiveStep('円柱1', 'key-cylinder', { kind: 'cylinder', radius: 10, height: 20 }),
+          ruledStep('罫線面1', 'key-ruled', 'key-cylinder', cylinderSideQuery(), 40),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        {
+          id: '罫線面1',
+          message: 'つなぐ面は平らな面か、縁が 1 本につながる面にしてください。',
+        },
+      ]);
+      expect(result.bodies.map((body) => body.id)).toEqual(['円柱1']);
+    });
+
+    it('輪郭を借りる相手の段が無ければ、ブーリアンと同じ理由で断る', async () => {
+      const { cache } = newCache();
+      const { topFace } = plateFingerprints();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([ruledStep('罫線面1', 'key-ruled', 'key-missing', topFace, 30)]),
+      );
+
+      expect(result.failures).toEqual([
+        { id: '罫線面1', message: 'もとになる立体が見つかりませんでした。' },
+      ]);
+      expect(result.bodies).toEqual([]);
+    });
+  });
+
 });

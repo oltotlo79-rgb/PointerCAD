@@ -82,7 +82,9 @@ export {
 // 罫線面(FR-430)とロフト(FR-410、P5 §2.9、タスク23・24)。段の依頼の型と作り手、
 // 球への外接直線の純関数(OCCT を使わないので model / 検査からそのまま呼べる)。
 // model 側(resolvePart.ts、タスク25)が ThruSectionsStepSpec を組み立てて段に乗せる。
-export type { ThruSectionSpec, ThruSectionsStepSpec } from './types.js';
+// `SphereSegmentCount`(24 / 48 / 72)は ui の「なめらかさ」の 3 択(タスク27)と
+// model の欄(タスク25)が同じ型を使うために輸出する(3 か所で数を書き写さない)。
+export type { SphereSegmentCount, ThruSectionSpec, ThruSectionsStepSpec } from './types.js';
 export { makeThruSections } from './occt/makeThruSections.js';
 export {
   tangentConeThroughCircle,

@@ -42,8 +42,10 @@ import {
   addSketch,
   appendReference,
   appendSolid,
+  consumedTargetsOf,
   createEmptyPartDocument,
   DEFAULT_PRIMITIVE_AXIS,
+  DEFAULT_RULED_SPHERE_SEGMENTS,
   defaultPrimitiveOrigin,
   replaceSketch,
 } from './createPartDocument.js';
@@ -75,6 +77,7 @@ import type {
   FilletFeature,
   HoleDepth,
   HoleFeature,
+  LoftFeature,
   PartDocument,
   PatternDirection,
   PatternFeature,
@@ -83,6 +86,9 @@ import type {
   PrimitiveShape,
   RevolveAxis,
   RevolveFeature,
+  RuledFeature,
+  RuledSection,
+  RuledSphereSegments,
   SewFeature,
   SketchFaceRef,
   SketchLineRef,
@@ -4356,5 +4362,443 @@ describe('スケッチの球面上の点(FR-431、P5 タスク19b: resolvePart �
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('missingBase');
     expect(resolved.errors[0].message).toBe('球が見つかりません。球を選び直してください。');
+  });
+});
+
+describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)', () => {
+  function sketchSection(ref: SketchFaceRef): RuledSection {
+    return { kind: 'sketchFace', ref };
+  }
+
+  function solidFaceSection(ref: SubShapeRef): RuledSection {
+    return { kind: 'solidFace', ref };
+  }
+
+  function sphereSection(sphereFeatureId: string): RuledSection {
+    return { kind: 'sphere', sphereFeatureId };
+  }
+
+  interface RuledOptions {
+    readonly twist?: string | ExpressionValue;
+    readonly sphereSegments?: RuledSphereSegments;
+    readonly suppressed?: boolean;
+    readonly name?: string;
+  }
+
+  function ruledFeature(
+    id: string,
+    first: RuledSection,
+    second: RuledSection,
+    options: RuledOptions = {},
+  ): RuledFeature {
+    return {
+      id,
+      name: options.name ?? id,
+      suppressed: options.suppressed ?? false,
+      kind: 'ruled',
+      first,
+      second,
+      twist: toExpr(options.twist ?? '0'),
+      sphereSegments: options.sphereSegments ?? DEFAULT_RULED_SPHERE_SEGMENTS,
+    };
+  }
+
+  function loftFeature(
+    id: string,
+    sections: readonly RuledSection[],
+    options: RuledOptions = {},
+  ): LoftFeature {
+    return {
+      id,
+      name: options.name ?? id,
+      suppressed: options.suppressed ?? false,
+      kind: 'loft',
+      sections,
+      twist: toExpr(options.twist ?? '0'),
+    };
+  }
+
+  function thruSectionsPlan(
+    step: ResolvedSolidStep,
+  ): Extract<ResolvedSolidStep['plan'], { kind: 'thruSections' }> {
+    if (step.plan.kind !== 'thruSections') {
+      throw new Error(`テストの前提が壊れている: つなぐ段でない ${step.plan.kind}`);
+    }
+    return step.plan;
+  }
+
+  /**
+   * 長方形の面 2 枚だけを持つ部品。上の面の高さを引数で変えられるので、
+   * 「輪郭が変われば鍵が変わる」(NFR-PF-3)を独立に確かめられる。
+   */
+  function twoFaceDocument(topZ: number): {
+    readonly document: PartDocument;
+    readonly bottom: SketchFaceRef;
+    readonly top: SketchFaceRef;
+  } {
+    const base = createEmptyPartDocument();
+    const lower = addPoints(base.sketches[0], [
+      [0, 0, 0],
+      [40, 0, 0],
+      [40, 30, 0],
+      [0, 30, 0],
+    ]);
+    const bottom = addFace(lower.sketch, lower.pointIds);
+    const upper = addPoints(bottom.sketch, [
+      [0, 0, topZ],
+      [20, 0, topZ],
+      [20, 15, topZ],
+      [0, 15, topZ],
+    ]);
+    const top = addFace(upper.sketch, upper.pointIds);
+    const sketch = top.sketch;
+    return {
+      document: replaceSketch(base, sketch),
+      bottom: { sketchId: sketch.id, faceFeatureId: bottom.faceId },
+      top: { sketchId: sketch.id, faceFeatureId: top.faceId },
+    };
+  }
+
+  it('スケッチの面 2 つを結ぶと段が 1 つでき、断面は 2 つ・直線で結ぶ', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      ruledFeature('ruled-1', sketchSection(fixture.faceA), sketchSection(fixture.faceB)),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(1);
+    const plan = thruSectionsPlan(result.steps[0]);
+    expect(plan.sections).toHaveLength(2);
+    expect(plan.ruled).toBe(true);
+    expect(plan.closed).toBe(true);
+    expect(plan.twist).toBe(0);
+    expect(plan.sphereSegments).toBe(24);
+  });
+
+  it('スケッチの面の断面には、解決済みの輪郭がそのまま乗る', () => {
+    const fixture = createFixture();
+    const result = resolvePart(
+      withSolids(
+        fixture.document,
+        ruledFeature('ruled-1', sketchSection(fixture.faceA), sketchSection(fixture.faceB)),
+      ),
+    );
+    const first = thruSectionsPlan(result.steps[0]).sections[0];
+    if (first.kind !== 'curves') {
+      throw new Error('スケッチの面は輪郭になるはず');
+    }
+    // 面A は (0,0,0) (40,0,0) (40,30,0) (0,30,0) の 40×30 の長方形(4 本の線分)。
+    expect(segmentEnds(first.curves)).toEqual([
+      [
+        [0, 0, 0],
+        [40, 0, 0],
+      ],
+      [
+        [40, 0, 0],
+        [40, 30, 0],
+      ],
+      [
+        [40, 30, 0],
+        [0, 30, 0],
+      ],
+      [
+        [0, 30, 0],
+        [0, 0, 0],
+      ],
+    ]);
+  });
+
+  it('片方に球を置くと、中心と半径の断面になる(球面上の点と同じ数値)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape('10'), {
+        origin: coordinateOrigin('0', '0', '30'),
+      }),
+      ruledFeature('ruled-1', sphereSection('sphere-1'), sketchSection(fixture.faceA)),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = thruSectionsPlan(result.steps[1]);
+    expect(plan.sections[0]).toEqual({ kind: 'sphere', center: [0, 0, 30], radius: 10 });
+    expect(plan.sections[1].kind).toBe('curves');
+  });
+
+  it('球どうしはつなげない(§2.9.3)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape('10')),
+      primitiveFeature('sphere-2', sphereShape('5'), { origin: coordinateOrigin('0', '0', '40') }),
+      ruledFeature('ruled-1', sphereSection('sphere-1'), sphereSection('sphere-2')),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toHaveLength(2);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].code).toBe('degenerate');
+    expect(result.errors[0].message).toContain('球どうしを');
+  });
+
+  it('抑制した球はつなぐ相手にできない(画面に無いため)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape('10'), { suppressed: true }),
+      ruledFeature('ruled-1', sphereSection('sphere-1'), sketchSection(fixture.faceA)),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('missingProfile');
+    expect(result.errors[0].message).toContain('球');
+  });
+
+  it('立体の面 2 つを結ぶと faceQuery が 2 つ乗り、targetKey が対象の段の鍵になる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      extrudeFeature('extrude-2', fixture.faceB, { distance: '4' }),
+      ruledFeature(
+        'ruled-1',
+        solidFaceSection(topFaceRef('extrude-1')),
+        solidFaceSection(topFaceRef('extrude-2')),
+      ),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = thruSectionsPlan(result.steps[2]);
+    expect(plan.sections.map((section) => section.kind)).toEqual(['faceQuery', 'faceQuery']);
+    const first = plan.sections[0];
+    const second = plan.sections[1];
+    if (first.kind !== 'faceQuery' || second.kind !== 'faceQuery') {
+      throw new Error('立体の面は faceQuery になるはず');
+    }
+    expect(first.targetKey).toBe(result.steps[0].key);
+    expect(second.targetKey).toBe(result.steps[1].key);
+    expect(first.query).toEqual(topFaceRef('extrude-1'));
+  });
+
+  it('輪郭に面でないもの(辺)を指すと断る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      ruledFeature('ruled-1', solidFaceSection(edgeRef('extrude-1')), sketchSection(fixture.faceB)),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('立体の面だけ');
+  });
+
+  it('輪郭にした立体が無ければ断る(FR-504)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      ruledFeature(
+        'ruled-1',
+        solidFaceSection(topFaceRef('extrude-404')),
+        sketchSection(fixture.faceB),
+      ),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('missingBody');
+  });
+
+  it('元の立体を消費しない(§0.a-0.27)', () => {
+    const fixture = createFixture();
+    const ruled = ruledFeature(
+      'ruled-1',
+      solidFaceSection(topFaceRef('extrude-1')),
+      sphereSection('sphere-1'),
+    );
+    expect(consumedTargetsOf(ruled)).toEqual([]);
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      primitiveFeature('sphere-1', sphereShape('10'), {
+        origin: coordinateOrigin('20', '15', '40'),
+      }),
+      ruled,
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    // 押し出しと球はそのまま画面に残り、つないだ立体が 3 つ目として増える。
+    expect(result.liveBodyIds).toEqual(['extrude-1', 'sphere-1', 'ruled-1']);
+  });
+
+  it('ロフトは 3 断面をなめらかに結ぶ(ruled が false)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      loftFeature('loft-1', [
+        sketchSection(fixture.faceA),
+        sketchSection(fixture.faceB),
+        solidFaceSection(topFaceRef('extrude-1')),
+      ]),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = thruSectionsPlan(result.steps[1]);
+    expect(plan.ruled).toBe(false);
+    expect(plan.sections).toHaveLength(3);
+  });
+
+  it('断面が 1 つだけのロフトは断る(つなぐ面を 2 つ)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      loftFeature('loft-1', [sketchSection(fixture.faceA)]),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('missingProfile');
+    expect(result.errors[0].message).toContain('つなぐ面を 2 つ');
+  });
+
+  it('ロフトには球を置けない(§2.9.3)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape('10')),
+      loftFeature('loft-1', [sketchSection(fixture.faceA), sphereSection('sphere-1')]),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].code).toBe('degenerate');
+    expect(result.errors[0].message).toContain('ロフトには球を使えません');
+  });
+
+  it('ねじれの補正が小数(1.5)なら、切り捨てずに断る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      ruledFeature('ruled-1', sketchSection(fixture.faceA), sketchSection(fixture.faceB), {
+        twist: '1.5',
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('整数');
+  });
+
+  it('ねじれの補正は負の整数でも通る(向きを逆へずらせる)', () => {
+    const fixture = createFixture();
+    const result = resolvePart(
+      withSolids(
+        fixture.document,
+        ruledFeature('ruled-1', sketchSection(fixture.faceA), sketchSection(fixture.faceB), {
+          twist: '0-2',
+        }),
+      ),
+    );
+    expect(result.errors).toEqual([]);
+    expect(thruSectionsPlan(result.steps[0]).twist).toBe(-2);
+  });
+
+  it('つなぐもとのスケッチの面が無ければ断る(FR-504)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      ruledFeature('ruled-1', sketchSection(fixture.faceA), sketchSection(fixture.brokenFace)),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors[0].code).toBe('missingProfile');
+  });
+
+  it('輪郭が変わると鍵が変わる(NFR-PF-3)', () => {
+    const build = (topZ: number): string => {
+      const faces = twoFaceDocument(topZ);
+      const document = withSolids(
+        faces.document,
+        ruledFeature('ruled-1', sketchSection(faces.bottom), sketchSection(faces.top)),
+      );
+      return resolvePart(document).steps[0].key;
+    };
+    expect(build(20)).not.toBe(build(10));
+  });
+
+  it('球の半径が変わると鍵が変わる', () => {
+    const fixture = createFixture();
+    const build = (radius: string): string =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          primitiveFeature('sphere-1', sphereShape(radius), {
+            origin: coordinateOrigin('20', '15', '40'),
+          }),
+          ruledFeature('ruled-1', sphereSection('sphere-1'), sketchSection(fixture.faceA)),
+        ),
+      ).steps[1].key;
+    expect(build('5')).not.toBe(build('10'));
+  });
+
+  it('ねじれの補正・球の点の数・罫線面/ロフトの別で鍵が変わる', () => {
+    const fixture = createFixture();
+    const ruledKey = (options: RuledOptions): string =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          ruledFeature(
+            'ruled-1',
+            sketchSection(fixture.faceA),
+            sketchSection(fixture.faceB),
+            options,
+          ),
+        ),
+      ).steps[0].key;
+    const loftKey = resolvePart(
+      withSolids(
+        fixture.document,
+        loftFeature('loft-1', [sketchSection(fixture.faceA), sketchSection(fixture.faceB)]),
+      ),
+    ).steps[0].key;
+    expect(ruledKey({ twist: '1' })).not.toBe(ruledKey({}));
+    expect(ruledKey({ sphereSegments: 72 })).not.toBe(ruledKey({}));
+    // 同じ断面・同じねじれでも、直線で結ぶかなめらかに結ぶかで形が違う(§0.a-0.25)。
+    expect(loftKey).not.toBe(ruledKey({}));
+  });
+
+  it('輪郭に借りた立体を伸ばすと、つないだ段の鍵も変わる(鍵の連鎖)', () => {
+    const fixture = createFixture();
+    const build = (distance: string): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA, { distance }),
+          ruledFeature(
+            'ruled-1',
+            solidFaceSection(topFaceRef('extrude-1')),
+            sketchSection(fixture.faceB),
+          ),
+        ),
+      );
+    const shorter = build('10');
+    const taller = build('20');
+    expect(taller.steps[0].key).not.toBe(shorter.steps[0].key);
+    expect(taller.steps[1].key).not.toBe(shorter.steps[1].key);
+  });
+
+  it('referencedSketchIds はスケッチの面を指した断面だけを数える', () => {
+    const fixture = createFixture();
+    expect(
+      referencedSketchIds(
+        ruledFeature('ruled-1', sketchSection(fixture.faceA), sphereSection('sphere-1')),
+      ),
+    ).toEqual([fixture.faceA.sketchId]);
+    expect(
+      referencedSketchIds(
+        loftFeature('loft-1', [
+          solidFaceSection(topFaceRef('extrude-1')),
+          sketchSection(fixture.faceA),
+          sketchSection(fixture.faceB),
+        ]),
+      ),
+    ).toEqual([fixture.faceA.sketchId, fixture.faceB.sketchId]);
   });
 });

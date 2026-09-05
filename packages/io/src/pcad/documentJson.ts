@@ -50,6 +50,10 @@ import {
   type ReferenceFeatureKind,
   type ReferencePointDefinition,
   type RevolveAxis,
+  DEFAULT_RULED_SPHERE_SEGMENTS,
+  RULED_SPHERE_SEGMENT_CHOICES,
+  type RuledSection,
+  type RuledSphereSegments,
   SKETCH_CONSTRAINT_KINDS,
   type SketchArcFeature,
   type SketchConstraint,
@@ -190,7 +194,12 @@ const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = [
   'pattern',
   'spring',
   'primitive',
+  // 面をつなぐ(FR-430)とロフト(FR-410)。P5 計画書 §2.9、タスク25。
+  'ruled',
+  'loft',
 ];
+/** 罫線面・ロフトの断面の 3 通り(P5 §2.9.1)。知らない `kind` は `readLiteral` が断る。 */
+const RULED_SECTION_KINDS: readonly RuledSection['kind'][] = ['sketchFace', 'solidFace', 'sphere'];
 const REVOLVE_AXIS_KINDS: readonly RevolveAxis['kind'][] = ['world', 'line', 'reference'];
 type WorldRevolveAxis = Extract<RevolveAxis, { readonly kind: 'world' }>;
 const WORLD_AXES: readonly WorldRevolveAxis['axis'][] = ['x', 'y', 'z'];
@@ -908,6 +917,21 @@ function serializePrimitiveShape(shape: PrimitiveShape): PrimitiveShape {
   }
 }
 
+/**
+ * 罫線面・ロフトの断面 1 つ(FR-430、FR-410、P5 計画書 §2.9.1、タスク25)。
+ * 参照は id と指紋のまま保存し、輪郭の座標は保存しない(導出物、rules/04)。
+ */
+function serializeRuledSection(section: RuledSection): RuledSection {
+  switch (section.kind) {
+    case 'sketchFace':
+      return { kind: 'sketchFace', ref: serializeFaceRef(section.ref) };
+    case 'solidFace':
+      return { kind: 'solidFace', ref: serializeSubShapeRef(section.ref) };
+    case 'sphere':
+      return { kind: 'sphere', sphereFeatureId: section.sphereFeatureId };
+  }
+}
+
 function serializeSolidFeature(feature: SolidFeature): SolidFeature {
   switch (feature.kind) {
     case 'extrude':
@@ -1043,6 +1067,28 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         origin: serializeSolidOrigin(feature.origin),
         axis: serializeRevolveAxis(feature.axis),
         shape: serializePrimitiveShape(feature.shape),
+      };
+    case 'ruled':
+      // 面をつなぐ(FR-430、P5 §2.9.1、タスク25)。断面 2 つ+ねじれ+球の点の数。
+      return {
+        id: feature.id,
+        kind: 'ruled',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        first: serializeRuledSection(feature.first),
+        second: serializeRuledSection(feature.second),
+        twist: serializeExpression(feature.twist),
+        sphereSegments: feature.sphereSegments,
+      };
+    case 'loft':
+      // ロフト(FR-410)。断面は 2 つ以上で、球を置けないので点の数の欄は持たない。
+      return {
+        id: feature.id,
+        kind: 'loft',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        sections: feature.sections.map(serializeRuledSection),
+        twist: serializeExpression(feature.twist),
       };
   }
 }
@@ -3161,6 +3207,10 @@ function readSolidFeature(value: unknown, path: string): Checked<SolidFeature> {
       return readSpringFeature(record.value, path, base.value);
     case 'primitive':
       return readPrimitiveFeature(record.value, path, base.value);
+    case 'ruled':
+      return readRuledFeature(record.value, path, base.value);
+    case 'loft':
+      return readLoftFeature(record.value, path, base.value);
   }
 }
 
@@ -3741,6 +3791,132 @@ function readPrimitiveFeature(
       axis: axis.value,
       shape: shape.value,
     },
+  };
+}
+
+/** 罫線面・ロフトの断面 1 つ(P5 §2.9.1、タスク25)。 */
+function readRuledSectionItem(value: unknown, path: string): Checked<RuledSection> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const kind = readLiteral(record.value, 'kind', path, RULED_SECTION_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'sketchFace': {
+      const ref = readFaceRef(record.value, 'ref', path);
+      if (!ref.ok) {
+        return ref;
+      }
+      return { ok: true, value: { kind: 'sketchFace', ref: ref.value } };
+    }
+    case 'solidFace': {
+      const ref = readSubShapeRefField(record.value, 'ref', path);
+      if (!ref.ok) {
+        return ref;
+      }
+      return { ok: true, value: { kind: 'solidFace', ref: ref.value } };
+    }
+    case 'sphere': {
+      const sphereFeatureId = readString(record.value, 'sphereFeatureId', path);
+      if (!sphereFeatureId.ok) {
+        return sphereFeatureId;
+      }
+      return { ok: true, value: { kind: 'sphere', sphereFeatureId: sphereFeatureId.value } };
+    }
+  }
+}
+
+function readRuledSectionField(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<RuledSection> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readRuledSectionItem(found.value, joinPath(parentPath, key));
+}
+
+/**
+ * 球へつなぐときの近似の点の数(§0.a-0.74)。
+ *
+ * **欄が無い古いファイルは既定の 24 として読む**(この欄は P5 の途中で足したもので、
+ * 無いことが「壊れている」を意味しないため)。24 / 48 / 72 以外の数は
+ * その欄の型が違うとして断る(新しい値の意味を推測しない)。
+ */
+function readRuledSphereSegments(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<RuledSphereSegments> {
+  if (!('sphereSegments' in record)) {
+    return { ok: true, value: DEFAULT_RULED_SPHERE_SEGMENTS };
+  }
+  const found = readNumber(record, 'sphereSegments', path);
+  if (!found.ok) {
+    return found;
+  }
+  for (const candidate of RULED_SPHERE_SEGMENT_CHOICES) {
+    if (candidate === found.value) {
+      return { ok: true, value: candidate };
+    }
+  }
+  return fieldProblem(joinPath(path, 'sphereSegments'), 'type');
+}
+
+function readRuledFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const first = readRuledSectionField(record, 'first', path);
+  if (!first.ok) {
+    return first;
+  }
+  const second = readRuledSectionField(record, 'second', path);
+  if (!second.ok) {
+    return second;
+  }
+  const twist = readExpression(record, 'twist', path);
+  if (!twist.ok) {
+    return twist;
+  }
+  const sphereSegments = readRuledSphereSegments(record, path);
+  if (!sphereSegments.ok) {
+    return sphereSegments;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'ruled',
+      first: first.value,
+      second: second.value,
+      twist: twist.value,
+      sphereSegments: sphereSegments.value,
+    },
+  };
+}
+
+function readLoftFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const sections = readList(record, 'sections', path, readRuledSectionItem);
+  if (!sections.ok) {
+    return sections;
+  }
+  const twist = readExpression(record, 'twist', path);
+  if (!twist.ok) {
+    return twist;
+  }
+  return {
+    ok: true,
+    value: { ...base, kind: 'loft', sections: sections.value, twist: twist.value },
   };
 }
 

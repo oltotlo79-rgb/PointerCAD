@@ -46,6 +46,7 @@ import {
   type ReferenceFeature,
   type ReferenceFeatureKind,
   type ReferencePointDefinition,
+  type RuledSection,
   type SketchDocument,
   type SketchError,
   type SketchFaceRef,
@@ -241,6 +242,9 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   cylinder: 'toolbar.solid.cylinder',
   cone: 'toolbar.solid.cone',
   torus: 'toolbar.solid.torus',
+  // 面をつなぐ(FR-430)とロフト(FR-410)。P5 タスク25。道具のボタンと案内は **タスク27**。
+  ruled: 'toolbar.solid.ruled',
+  loft: 'toolbar.solid.loft',
 };
 
 /** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
@@ -433,6 +437,27 @@ function profileReference(document: PartDocument, ref: SketchFaceRef): SolidRefe
     name: `${sketch.name} / ${face.name}`,
     elementId: face.id,
   };
+}
+
+/**
+ * 罫線面・ロフトの断面 1 つを、プロパティに出す参照へ直す(FR-430、FR-410、P5 タスク25)。
+ *
+ * スケッチの面は既存の `profileReference`(「スケッチ名 / 面の名前」)をそのまま使い、
+ * 立体の面と球は名前しか出せないので `bodyReference` を使う(面の通し番号はプロパティに
+ * 出す約束が無く、指紋の中身を利用者に見せても意味がないため)。
+ */
+function ruledSectionReference(
+  document: PartDocument,
+  section: RuledSection,
+): SolidReferenceSummary {
+  switch (section.kind) {
+    case 'sketchFace':
+      return profileReference(document, section.ref);
+    case 'solidFace':
+      return bodyReference(document, 'propertyPanel.profile', section.ref.bodyFeatureId);
+    case 'sphere':
+      return bodyReference(document, 'propertyPanel.target', section.sphereFeatureId);
+  }
 }
 
 /** 立体の参照を名前へ直す。見つからなければ id をそのまま出す(FR-504)。 */
@@ -886,6 +911,34 @@ export function summarizeSolid(
         references: [],
         subShapeCounts: [],
       };
+    case 'ruled':
+      /*
+        面をつなぐ(FR-430、P5 タスク25)。ねじれの式の欄と球のなめらかさの選択肢を
+        プロパティへ出すのは **タスク27** で、ここは `SolidFeature` の union が広がった
+        ときにこの網羅 switch を落とさないための最小の枝である。いまは 2 つの断面を
+        参照として出すだけにする(木とプロパティで「何と何をつないだか」が読める)。
+      */
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [
+          ruledSectionReference(document, feature.first),
+          ruledSectionReference(document, feature.second),
+        ],
+        subShapeCounts: [],
+      };
+    case 'loft':
+      // ロフト(FR-410)。断面は 2 つ以上なので、並びのまま参照として出す。
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: feature.sections.map((section) => ruledSectionReference(document, section)),
+        subShapeCounts: [],
+      };
   }
 }
 
@@ -926,6 +979,10 @@ export function setSolidField(
     case 'primitive':
       // 基本形状の寸法の書き戻しは **タスク18**(プロパティに欄を出すのと同じ段)。
       // いまは欄が1つも無いので、そのまま返す。
+      return feature;
+    case 'ruled':
+    case 'loft':
+      // 面をつなぐ・ロフトの「ねじれ」の書き戻しは **タスク27**(欄を出すのと同じ段)。
       return feature;
   }
 }

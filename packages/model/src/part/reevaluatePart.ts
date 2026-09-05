@@ -211,6 +211,11 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         origin: rebuildSolidOrigin(feature.origin, map),
         shape: rebuildPrimitiveShape(feature.shape, map),
       };
+    case 'ruled':
+    case 'loft':
+      // 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)。断面は参照だけで式を持たず、
+      // 式の欄は「ねじれの補正」1 つだけ(§0.a-0.28)。
+      return { ...feature, twist: map(feature.twist) };
   }
 }
 

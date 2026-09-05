@@ -339,3 +339,22 @@ export {
   DEFAULT_PRIMITIVE_AXIS, DEFAULT_SPHERE_RADIUS_MM, DEFAULT_TORUS_MAJOR_RADIUS_MM,
   DEFAULT_TORUS_MINOR_RADIUS_MM,
 } from './part/createPartDocument.js';
+/** 測定(FR-1101、FR-1102、P5 タスク29)。 */
+export type { MeasureOutcome, MeasureTarget } from './kernelBridge.js';
+export {
+  formatLength, formatMass, GRAM_PER_CM3_TO_GRAM_PER_MM3, inertiaWithDensity, massFromVolume,
+} from './measure/massProperties.js';
+/**
+ * 面をつなぐ(罫線面 FR-430)・ロフト(FR-410)。P5 タスク25。
+ * 段は 1 種類(`thruSections`)で、フィーチャーだけが 2 種類に分かれる(§0.a-0.25)。
+ */
+export type {
+  LoftFeature, RuledFeature, RuledSection, RuledSphereSegments,
+} from './part/types.js';
+export type {
+  ThruSectionKeyMaterial, ThruSectionsKeyMaterial,
+} from './part/cacheKey.js';
+export type { ThruSectionPlan } from './part/resolvePart.js';
+export {
+  DEFAULT_RULED_SPHERE_SEGMENTS, DEFAULT_RULED_TWIST, RULED_SPHERE_SEGMENT_CHOICES,
+} from './part/createPartDocument.js';

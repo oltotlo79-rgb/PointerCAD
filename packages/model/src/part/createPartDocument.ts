@@ -26,6 +26,7 @@ import type {
   PrimitiveShapeKind,
   ReferenceFeature,
   ReferenceFeatureKind,
+  RuledSphereSegments,
   SolidFeature,
   SolidOrigin,
 } from './types.js';
@@ -140,6 +141,21 @@ export const DEFAULT_TORUS_MINOR_RADIUS_MM = 5;
 export const DEFAULT_PRIMITIVE_AXIS: AxisSpec = { kind: 'world', axis: 'z' };
 
 /**
+ * ねじれの補正の既定(§0.a-0.28)。0 なら `ThruSections` に任せたそのままの対応になる。
+ * 整数の式で持ち、小数を書かれたら解決のときに断る(切り捨てない)。
+ */
+export const DEFAULT_RULED_TWIST = 0;
+
+/**
+ * 球へつなぐときの近似の点の数の既定(§0.a-0.74)。
+ * 24 / 48 / 72 から選べるうちのいちばん軽いもの(タスク24 の実測で 72 点は 5〜6 秒)。
+ */
+export const DEFAULT_RULED_SPHERE_SEGMENTS: RuledSphereSegments = 24;
+
+/** 段ごとに選べる球の近似の点の数(§0.a-0.74)。UI の選択肢と io の妥当性検査が共有する。 */
+export const RULED_SPHERE_SEGMENT_CHOICES: readonly RuledSphereSegments[] = [24, 48, 72];
+
+/**
  * 連番を分ける単位。ブーリアンは演算ごとに別の連番にするので、
  * フィーチャーの種類そのもの(`boolean`)ではなく演算名を鍵にする(§2.3)。
  * パターンも同じ理由で配置ごと(直線 / 円形)に分ける。
@@ -161,7 +177,13 @@ export type SolidLabelKey =
     ブーリアンを演算ごとに分けているのと同じ理由で、利用者から見て別の道具だからである
     (「基本形状1」「基本形状2」では、木を見ても何を置いたのか分からない)。
   */
-  | PrimitiveShapeKind;
+  | PrimitiveShapeKind
+  /*
+    面をつなぐ(FR-430)とロフト(FR-410)も別々の連番にする。カーネルの段は 1 種類だが、
+    利用者から見て別の道具なので(§0.a-0.25)、木に「面をつなぐ1」「ロフト1」と出す。
+  */
+  | 'ruled'
+  | 'loft';
 
 /**
  * ソリッドの種類ごとの既定名。ドキュメントの既定データとしてここに置く
@@ -186,6 +208,8 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   cylinder: '円柱',
   cone: '円錐',
   torus: 'トーラス',
+  ruled: '面をつなぐ',
+  loft: 'ロフト',
 };
 
 /**
@@ -530,6 +554,9 @@ export function createPrimitiveFeature(
  * - 押し出し・回転・縫合・**ばね**は何も消費しない(ばねは §0.a-0.36 で「作る」フィーチャー)。
  * - **基本形状**も何も消費しない(P5 §0.a-0.19)。基準点に立体の頂点を指したときも
  *   消費しない: 頂点の座標を読むだけなので、貸した立体はそのまま画面に残る。
+ * - **面をつなぐ(罫線面)・ロフト**も何も消費しない(P5 §0.a-0.27)。立体の面や球を
+ *   輪郭に借りても、輪郭を読むだけなので元の立体はそのまま画面に残る。残しておかないと
+ *   「球と柱を罫線でつないだあと和でまとめる」ができなくなる。
  *
 
  * 順序は文書に書かれた順のまま返す(重複の除去はしない。同じ id を2度指すブーリアンは
@@ -542,6 +569,8 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'sew':
     case 'spring':
     case 'primitive':
+    case 'ruled':
+    case 'loft':
       return [];
     case 'boolean':
       return [feature.targetFeatureId, feature.toolFeatureId];
@@ -560,6 +589,7 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
  * 穴・ねじ穴・R 面取り・C 面取り・パターンが該当する。
  * ブーリアンは対象を2つ取るので加工には数えない。ばねは対象を取らないので `false`(§0.a-0.36)。
  * 基本形状も対象を取らないので `false`(P5 §0.a-0.19)。
+ * 面をつなぐ・ロフトも対象を取らない「作る」フィーチャーなので `false`(P5 §0.a-0.27)。
  */
 export function isMachiningFeature(feature: SolidFeature): boolean {
   switch (feature.kind) {
@@ -575,6 +605,8 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'boolean':
     case 'spring':
     case 'primitive':
+    case 'ruled':
+    case 'loft':
       return false;
   }
 }
@@ -585,6 +617,9 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
  * フィレット・面取りを外すのは「工具の形」が無く、変換した位置の辺を指紋で選び直す必要が
  * あって危ういため。ばねも対象にしない(§0.a-0.36)。基本形状も同じく対象にしない
  * (工具ではなく「作る」フィーチャーだから。P5 §0.a-0.19)。
+ *
+ * **面をつなぐ・ロフトも対象にしない**(P5 §0.a-0.27)。押し出し・回転・縫合・ばね・
+ * 基本形状と同じ「作る」フィーチャーで、差し引く工具の形を持たないためである。
  */
 export function isPatternSource(feature: SolidFeature): boolean {
   return feature.kind === 'hole' || feature.kind === 'threadHole';

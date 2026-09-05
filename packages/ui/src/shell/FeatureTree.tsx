@@ -158,6 +158,10 @@ const KIND_ICONS: Readonly<
   cylinder: CubeIcon,
   cone: CubeIcon,
   torus: CubeIcon,
+  // 面をつなぐ(FR-430)とロフト(FR-410)。P5 タスク25。専用の図柄は **タスク27** で足すので、
+  // それまでは基本形状と同じく `CubeIcon` を借りる。
+  ruled: CubeIcon,
+  loft: CubeIcon,
 };
 
 /** 節の頭に出す絵。基準は軸と点、スケッチは作図面、ソリッドは立体の印。 */

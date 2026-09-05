@@ -38,6 +38,8 @@ import {
   DEFAULT_PATTERN_COUNT,
   DEFAULT_PATTERN_SPACING_MM,
   DEFAULT_PRIMITIVE_AXIS,
+  DEFAULT_RULED_SPHERE_SEGMENTS,
+  DEFAULT_RULED_TWIST,
   DEFAULT_SEW_TOLERANCE_MM,
   DEFAULT_SPHERE_RADIUS_MM,
   DEFAULT_SPRING_COIL_DIAMETER_MM,
@@ -70,6 +72,7 @@ import {
   replaceReference,
   replaceSketch,
   replaceSolid,
+  RULED_SPHERE_SEGMENT_CHOICES,
   setActiveSketch,
   SOLID_LABELS,
 } from './createPartDocument.js';
@@ -585,6 +588,8 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       cylinder: '円柱',
       cone: '円錐',
       torus: 'トーラス',
+      ruled: '面をつなぐ',
+      loft: 'ロフト',
     });
     expect(findSolid(document, 'subtract-1')?.name).toBe('差1');
     expect(nextSolidName(document, 'subtract')).toBe('差2');
@@ -694,14 +699,17 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('種類ごとの既定名は18個(既存6 + 加工6 + ばね1 + 基本形状5)', () => {
-    // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になった。
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(18);
+  it('種類ごとの既定名は20個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2)', () => {
+    // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になり、
+    // タスク25 で面をつなぐ(FR-430)・ロフト(FR-410)が増えて 18 → 20 になった。
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(20);
     expect(SOLID_LABELS.hole).toBe('穴');
     expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
     expect(SOLID_LABELS.spring).toBe('ばね');
     expect(SOLID_LABELS.sphere).toBe('球');
     expect(SOLID_LABELS.torus).toBe('トーラス');
+    expect(SOLID_LABELS.ruled).toBe('面をつなぐ');
+    expect(SOLID_LABELS.loft).toBe('ロフト');
   });
 
   it('穴は同じ種類の最大連番+1で数え、1つ消しても番号は戻らない', () => {
@@ -1276,11 +1284,13 @@ describe('基本形状(FR-429、P5 タスク15)', () => {
 });
 
 describe('基本形状を足したあとの立体フィーチャーの種類(FR-501)', () => {
-  it('種類は11種になり、数え漏れは型検査で落ちる', () => {
+  it('種類は13種になり、数え漏れは型検査で落ちる', () => {
     /*
       `Record<SolidFeatureKind, true>` にしておくと、種類を足したのにこの表を直し忘れた
       ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
-      数は P2 の4種 + P3 の加工5種・ばね + P5 の基本形状1種 = 11。
+      数は P2 の4種 + P3 の加工5種・ばね + P5 の基本形状1種 + P5 の面をつなぐ・ロフト = 13。
+      **この検査は「数え漏れを型で止める」仕掛けなので、種類が増えたら数も一緒に増やす**
+      (期待値を緩めているのではなく、仕掛けが働いた結果を写し取っている)。
     */
     const kinds: Readonly<Record<SolidFeatureKind, true>> = {
       extrude: true,
@@ -1294,8 +1304,10 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       pattern: true,
       spring: true,
       primitive: true,
+      ruled: true,
+      loft: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(11);
+    expect(Object.keys(kinds)).toHaveLength(13);
   });
 
   it('基本形状に基準点と向きを渡すと、そのまま入る', () => {
@@ -1338,5 +1350,19 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
     expect(consumedTargetsOf(subtract)).toEqual([sphere.id, box.id]);
     expect([...consumedBodyIds(document)]).toEqual([sphere.id, box.id]);
     expect(liveBodyIds(document)).toEqual([subtract.id]);
+  });
+});
+
+describe('面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)の既定', () => {
+  it('ねじれの補正の既定は 0(§0.a-0.28)', () => {
+    // 0 なら ThruSections に任せたそのままの対応になる(稜線をずらさない)。
+    expect(DEFAULT_RULED_TWIST).toBe(0);
+  });
+
+  it('球の点の数は 24 / 48 / 72 の 3 択で、既定はいちばん軽い 24(§0.a-0.74)', () => {
+    expect(RULED_SPHERE_SEGMENT_CHOICES).toEqual([24, 48, 72]);
+    expect(DEFAULT_RULED_SPHERE_SEGMENTS).toBe(24);
+    // 既定は必ず選択肢の中にある(io の妥当性検査と UI の選択肢が同じ表を見るため)。
+    expect(RULED_SPHERE_SEGMENT_CHOICES).toContain(DEFAULT_RULED_SPHERE_SEGMENTS);
   });
 });

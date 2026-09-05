@@ -16,11 +16,14 @@ import {
   type ExtrudeFeature,
   type FilletFeature,
   type HoleFeature,
+  type LoftFeature,
   type PartDocument,
   type PartRecomputeError,
   type PatternFeature,
+  type PrimitiveFeature,
   type ReferenceFeature,
   type RevolveFeature,
+  type RuledFeature,
   type SewFeature,
   type SketchFaceFeature,
   type SketchLineFeature,
@@ -1452,5 +1455,73 @@ describe('renameSketch(FR-503)', () => {
     const sketch = createEmptyPartDocument().sketches[0];
     expect(renameSketch(sketch, '   ')).toBe(sketch);
     expect(renameSketch(sketch, 'スケッチ1')).toBe(sketch);
+  });
+});
+
+describe('面をつなぐ・ロフトの要約(FR-430、FR-410、P5 タスク25 の最小の枝)', () => {
+  /** つなぐ相手にする球(FR-429)。名前は「球1」。 */
+  const SPHERE: PrimitiveFeature = {
+    id: 'sphere-1',
+    name: '球1',
+    suppressed: false,
+    kind: 'primitive',
+    origin: {
+      kind: 'coordinate',
+      value: {
+        mode: 'absolute',
+        x: expressionValueFromNumber(0),
+        y: expressionValueFromNumber(0),
+        z: expressionValueFromNumber(30),
+      },
+    },
+    axis: { kind: 'world', axis: 'z' },
+    shape: { kind: 'sphere', radius: expressionValueFromNumber(10) },
+  };
+
+  const RULED: RuledFeature = {
+    id: 'ruled-1',
+    name: '面をつなぐ1',
+    suppressed: false,
+    kind: 'ruled',
+    first: { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+    second: { kind: 'sphere', sphereFeatureId: 'sphere-1' },
+    twist: expressionValueFromNumber(0),
+    sphereSegments: 24,
+  };
+
+  const LOFT: LoftFeature = {
+    id: 'loft-1',
+    name: 'ロフト1',
+    suppressed: false,
+    kind: 'loft',
+    sections: [
+      { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+      { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-2' } },
+      { kind: 'solidFace', ref: faceRef(0) },
+    ],
+    twist: expressionValueFromNumber(0),
+  };
+
+  it('面をつなぐは「スケッチ1の面 → 球1」を参照として返す', () => {
+    const summary = summarizeSolid(documentWith(SPHERE, RULED), RULED);
+    expect(summary.name).toBe('面をつなぐ1');
+    expect(summary.kindLabelKey).toBe('toolbar.solid.ruled');
+    expect(summary.fields).toEqual([]);
+    expect(summary.references.map((reference) => reference.name)).toEqual([
+      'スケッチ1 / 面1',
+      '球1',
+    ]);
+    // 元の球は消費されない(§0.a-0.27)ので、ツリーでも薄く出ない。
+    expect(summarizeSolid(documentWith(SPHERE, RULED), SPHERE).consumed).toBe(false);
+  });
+
+  it('ロフトは断面の数だけ参照を返し、立体の面はその立体の名前になる', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, LOFT), LOFT);
+    expect(summary.kindLabelKey).toBe('toolbar.solid.loft');
+    expect(summary.references.map((reference) => reference.name)).toEqual([
+      'スケッチ1 / 面1',
+      'スケッチ1 / 面2',
+      '押し出し1',
+    ]);
   });
 });

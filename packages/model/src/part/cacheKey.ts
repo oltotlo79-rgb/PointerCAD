@@ -297,6 +297,46 @@ export interface PrimitiveKeyMaterial {
 }
 
 /**
+ * 罫線面・ロフト(FR-430、FR-410、P5 §2.9)の断面 1 つぶんの鍵の材料。
+ *
+ * 種類は kernel の `ThruSectionSpec` と同じ 3 通りにしてある。輪郭は解決済みの数値
+ * (`KeyCurve`)を、球は中心と半径を、立体の面は**指紋の文字列と対象の段の鍵**を混ぜる。
+ * 立体の面で指紋と鍵の両方を混ぜるのは、基本形状の頂点(`PrimitiveKeyMaterial`)と同じ理由で、
+ * **上流の立体が変われば必ず鍵が変わるようにする**ため(NFR-PF-3 の鍵の連鎖)。
+ */
+export type ThruSectionKeyMaterial =
+  | { readonly kind: 'curves'; readonly curves: readonly KeyCurve[] }
+  | { readonly kind: 'sphere'; readonly center: KeyVec3; readonly radius: number }
+  | {
+      readonly kind: 'faceQuery';
+      /** 面を持つ立体の段の鍵。**消費はしない**(§0.a-0.27)が鍵には必ず混ぜる。 */
+      readonly targetKey: string;
+      /** 面の指紋(`fingerprintKeyText` の出力)。 */
+      readonly query: KeySubShape;
+    };
+
+/**
+ * 罫線面・ロフト(FR-430、FR-410、P5 §2.9)の鍵の材料。
+ *
+ * 対象のボディを消費しない「作る」段なので、ばね・基本形状と同じく上流の `targetKey` を
+ * 段そのものは持たない(輪郭に立体の面を使ったときだけ、その断面の中に鍵が入る)。
+ *
+ * **断面の数値をすべて混ぜる。** スケッチの面を動かすと輪郭の座標が変わるので、輪郭を
+ * 混ぜておけば上流の変化がそのまま鍵に伝わる(押し出しの `profile` と同じ考え方)。
+ * `ruled` は直線で結ぶ(罫線面)かなめらかに結ぶ(ロフト)かで**形が変わる**ので混ぜ、
+ * `twist` と `sphereSegments` も形を変えるので混ぜる(§0.a-0.28、§0.a-0.74)。
+ */
+export interface ThruSectionsKeyMaterial {
+  readonly kind: 'thruSections';
+  readonly sections: readonly ThruSectionKeyMaterial[];
+  readonly ruled: boolean;
+  readonly closed: boolean;
+  readonly twist: number;
+  /** 球の近似の点の数(24 / 48 / 72)。球を使わない段でも段の欄として常に混ぜる。 */
+  readonly sphereSegments: number;
+}
+
+/**
  * 1段ぶんの鍵の材料。段の種類ごとに要る値だけを持つ。
  * パターン(FR-411 / FR-412)の材料はここに無い。パターンはもとの穴・ねじ穴の材料の
  * `targetKey` と `transforms` を差し替えたものとして表すため(§0.a-0.20)。
@@ -311,7 +351,8 @@ export type SolidStepKeyMaterial =
   | FilletKeyMaterial
   | ChamferKeyMaterial
   | SpringKeyMaterial
-  | PrimitiveKeyMaterial;
+  | PrimitiveKeyMaterial
+  | ThruSectionsKeyMaterial;
 
 /** 座標を鍵へ混ぜるときの丸め桁数。double の下位の揺れで鍵が変わらないようにする。 */
 export const KEY_DECIMALS = 9;
@@ -473,6 +514,26 @@ function keyPrimitiveShape(shape: PrimitiveShapeKeyMaterial): string {
 }
 
 /**
+ * 罫線面・ロフトの断面 1 つ(FR-430、FR-410)。種類を先頭に置くので、
+ * 種類が違えば必ず別の文字列になる(`keyPrimitiveShape` と同じ作り)。
+ */
+function keyThruSection(section: ThruSectionKeyMaterial): string {
+  switch (section.kind) {
+    case 'curves':
+      return `curves(${keyCurveList(section.curves)})`;
+    case 'sphere':
+      return `sphere(${keyVec3(section.center)}|${keyNumber(section.radius)})`;
+    case 'faceQuery':
+      return `faceQuery(${section.targetKey}|${section.query})`;
+  }
+}
+
+/** 断面の並び。順序が意味を持つので、長さも混ぜる(`keyCurveList` と同じ理由)。 */
+function keyThruSectionList(sections: readonly ThruSectionKeyMaterial[]): string {
+  return `${sections.length}:[${sections.map(keyThruSection).join(',')}]`;
+}
+
+/**
  * 鍵の材料を、`hash64` に渡す前の1本の文字列にする。
  * 段の種類(先頭のキーワード)と各配列の長さを混ぜてあるので、
  * 違う種類・違う個数の入力が同じ文字列になることはない。
@@ -565,6 +626,16 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;axis=${keyVec3(material.axis)}` +
         `;originQuery=${keyOptionalText(material.originQuery)}` +
         `;targetKey=${keyOptionalText(material.targetKey)}}`
+      );
+    case 'thruSections':
+      // 断面の輪郭の数値・球の中心と半径・立体の面の鍵と指紋をすべて混ぜる
+      // (ThruSectionsKeyMaterial の注釈、NFR-PF-3)。
+      return (
+        `thruSections{sections=${keyThruSectionList(material.sections)}` +
+        `;ruled=${keyBoolean(material.ruled)}` +
+        `;closed=${keyBoolean(material.closed)}` +
+        `;twist=${keyNumber(material.twist)}` +
+        `;sphereSegments=${keyNumber(material.sphereSegments)}}`
       );
   }
 }

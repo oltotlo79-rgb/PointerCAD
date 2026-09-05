@@ -18,6 +18,9 @@ import {
   type CurveSpec,
   type FaceMeshData,
   type KernelApi,
+  type MeasureRequest,
+  type MeasureResult,
+  type MeasureTargetSpec,
   type OffsetJoinType,
   type PlanarFaceRequest,
   type PlaneCurve,
@@ -35,13 +38,19 @@ import {
   type SolidStepRequest,
   type SolidStepSpec,
   type SubShapeQuery,
+  type ThruSectionSpec,
   type Vec2Tuple,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
 
 import type { ResolvedSubShape } from './geometry/planeSpec.js';
 import type { SubShapeRef } from './geometry/subShapeRef.js';
-import type { ResolvedSolidStep, SolidStepPlan, SubShapeQueryPlan } from './part/resolvePart.js';
+import type {
+  ResolvedSolidStep,
+  SolidStepPlan,
+  SubShapeQueryPlan,
+  ThruSectionPlan,
+} from './part/resolvePart.js';
 import type { EdgeCurveKind, FaceSurfaceKind } from './part/types.js';
 import type { WorkPlane } from './sketch/planeMath.js';
 import { isFullEllipse } from './sketch/resolveSketch.js';
@@ -468,6 +477,124 @@ export interface SolidRecomputeOptions {
   readonly measureAreas?: boolean;
 }
 
+/* ------------------------------------------------------------------ *
+ * 測定(FR-1101、FR-1102、P5 タスク29)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 測る対象 1 つ(model の言葉)。
+ *
+ * 立体は「それを作ったフィーチャーの id」で指す(§0.a-0.5「段の id = ボディの id」)。
+ * kernel は形状キャッシュの鍵(`ResolvedSolidStep.key`)でしか形を引けないので、
+ * `KernelBridge.measure` がこの id を鍵へ引き直してからカーネルへ渡す(外観の面の照合
+ * `toAppearanceQueries` と同じ流儀、§2.2.3)。
+ */
+export interface MeasureTarget {
+  readonly bodyFeatureId: string;
+  /** 面・辺・頂点の指紋。ボディ全体を測るなら null。 */
+  readonly subShape: SubShapeRef | null;
+}
+
+/**
+ * 測定の結果(FR-1101、FR-1102)。kernel の `MeasureResult` を model の言葉へ詰め替えたもの
+ * (kind ごとの欄はそのまま持ち回る)。
+ *
+ * **距離・重心はワールド座標の mm。慣性モーメント(`principalMoments`)は重心を通る主軸
+ * まわりの体積の 2 次モーメントで、密度を掛けていない mm⁵のまま**(§0.a-0.32)。
+ * 密度(g/cm³)を掛けた質量(g)・慣性モーメント(g·mm²)は、密度表を持つ model 側の
+ * `measure/massProperties.ts`(`massFromVolume` / `inertiaWithDensity`)が別途計算する
+ * (統括の決定: 密度の掛け算は model のこの 1 か所だけで行う)。
+ */
+export type MeasureOutcome =
+  | {
+      readonly kind: 'distance';
+      /** 最短距離(mm)。交わっているときは 0。 */
+      readonly distance: number;
+      /** 1 つ目の対象の上の最近点(mm)。 */
+      readonly pointA: Vec3;
+      /** 2 つ目の対象の上の最近点(mm)。 */
+      readonly pointB: Vec3;
+      /** 一方が他方の内側にある(交わっている)か。 */
+      readonly inner: boolean;
+    }
+  | {
+      readonly kind: 'massProperties';
+      /** 体積(mm³)。 */
+      readonly volume: number;
+      /** 表面積(mm²)。 */
+      readonly area: number;
+      /** 重心(mm)。 */
+      readonly centreOfMass: Vec3;
+      /** 重心を通る主軸まわりの体積の 2 次モーメント(mm⁵、密度を掛けていない)。 */
+      readonly principalMoments: readonly [number, number, number];
+      /** 主軸の向き(長さ 1)。第 1・第 2・第 3 の順。 */
+      readonly principalAxes: readonly [Vec3, Vec3, Vec3];
+    }
+  /** 測れなかった。message はそのまま画面に出す日本語(FR-504。kernel の文言を持ち回る)。 */
+  | { readonly kind: 'failed'; readonly message: string };
+
+/**
+ * 対象の立体を作ったフィーチャーの id が、いま渡された `steps` の中に見つからなかったとき
+ * (§0.a-0.30)。
+ *
+ * kernel(`worker/kernelApi.ts` の `MEASURE_MISSING_SHAPE_MESSAGE`)が形状キャッシュに
+ * 鍵が無かったときに返すのと**同じ日本語**。kernel はこの文字列を輸出していない
+ * (`KernelApi` の実装の中だけの定数)ので、断りの文言を 1 つに揃えるためここへ複製する。
+ * **測定は再計算を起こさない読み取り**(§0.a-0.30)なので、鍵が引けない対象があるときは
+ * カーネルを呼ばずにここで断る(古い・存在しない鍵で問い合わせて紛らわしい失敗を返させない)。
+ */
+const MEASURE_MISSING_SHAPE_MESSAGE = '測れませんでした。もう一度お試しください。';
+
+/**
+ * 測定の依頼を kernel の言葉へ詰め替える。対象の立体を「段の鍵」へ引き直す
+ * (`toAppearanceQueries` と同じ流儀)。**1 つでも鍵が引けなければ null を返し**、
+ * 呼び出し側はカーネルを呼ばずに断る(§0.a-0.30)。
+ */
+function toMeasureRequest(
+  steps: readonly ResolvedSolidStep[],
+  targets: readonly MeasureTarget[],
+  kind: 'distance' | 'massProperties',
+): MeasureRequest | null {
+  const keyByFeatureId = new Map(steps.map((step) => [step.featureId, step.key]));
+  const specs: MeasureTargetSpec[] = [];
+  for (const target of targets) {
+    const bodyKey = keyByFeatureId.get(target.bodyFeatureId);
+    if (bodyKey === undefined) {
+      return null;
+    }
+    specs.push({
+      bodyKey,
+      subShape: target.subShape === null ? null : toSubShapeQuery(target.subShape),
+    });
+  }
+  return { targets: specs, kind };
+}
+
+/** 測定の結果を model の言葉へ詰め替える(kernel の型を外へ出さない、NFR-MA-1)。 */
+function toMeasureOutcome(result: MeasureResult): MeasureOutcome {
+  switch (result.kind) {
+    case 'distance':
+      return {
+        kind: 'distance',
+        distance: result.distance,
+        pointA: result.pointA,
+        pointB: result.pointB,
+        inner: result.inner,
+      };
+    case 'massProperties':
+      return {
+        kind: 'massProperties',
+        volume: result.volume,
+        area: result.area,
+        centreOfMass: result.centreOfMass,
+        principalMoments: result.principalMoments,
+        principalAxes: result.principalAxes,
+      };
+    case 'failed':
+      return { kind: 'failed', message: result.message };
+  }
+}
+
 /** model から幾何カーネルへの唯一の接点。ここ以外から kernel を呼ばない。 */
 export interface KernelBridge {
   /** 面の一覧をカーネルへ渡し、表示用の三角形を受け取る(FR-309)。 */
@@ -506,6 +633,19 @@ export interface KernelBridge {
   sectionSketchCurves(
     requests: readonly SketchProjectionRequestItem[],
   ): Promise<SketchProjectionResult>;
+  /**
+   * 覚えてある形を測る(FR-1101、FR-1102、P5 タスク29)。**再計算を起こさない読み取り**
+   * (§0.a-0.30)。対象は立体を作ったフィーチャーの id で指し、`steps` から段の鍵
+   * (`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す(外観の面の照合と同じ流儀)。
+   *
+   * **`steps` の中に鍵が引けない対象が 1 つでもあれば、カーネルを呼ばずに断る**
+   * (測定は読み取りだけなので、ここから再計算を起こさない、§0.a-0.30)。
+   */
+  measure(
+    steps: readonly ResolvedSolidStep[],
+    targets: readonly MeasureTarget[],
+    kind: 'distance' | 'massProperties',
+  ): Promise<MeasureOutcome>;
   dispose(): void;
 }
 
@@ -831,6 +971,27 @@ function toSubShapeQuery(reference: SubShapeQueryPlan): SubShapeQuery {
 }
 
 /**
+ * 罫線面・ロフトの断面 1 つをカーネルの言葉へ直す(FR-430、FR-410、P5 §2.9)。
+ * 曲線の並びは `toCurveSpec` を使い回し、球は中心と半径をそのまま渡す。
+ */
+function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
+  switch (section.kind) {
+    case 'curves':
+      return { kind: 'curves', curves: section.curves.map((curve) => toCurveSpec(curve)) };
+    case 'sphere':
+      return { kind: 'sphere', center: section.center, radius: section.radius };
+    case 'faceQuery':
+      // 立体の面(§0.a-0.73)。輪郭の取り出しはカーネルの中で行うので、指紋と
+      // 対象の段の鍵だけを渡す(穴・面取りの面と同じ扱い)。対象は消費しない(§0.a-0.27)。
+      return {
+        kind: 'faceQuery',
+        targetKey: section.targetKey,
+        query: toSubShapeQuery(section.query),
+      };
+  }
+}
+
+/**
  * 解決済みの 1 段の作り方をカーネルの言葉へ直す。
  * 向き・反転・両側の平行移動・角度の度→ラジアンは resolvePart が済ませてあるので、
  * ここでやるのは欄の名前を合わせることと、曲線・指紋を kernel の形へ直すことだけ。
@@ -938,6 +1099,22 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         shape: plan.shape,
         originQuery: plan.originQuery === null ? null : toSubShapeQuery(plan.originQuery),
         targetKey: plan.targetKey,
+      };
+    case 'thruSections':
+      /*
+        罫線面(FR-430)とロフト(FR-410)は、model のフィーチャーが 2 種類でも
+        カーネルの段は 1 種類で `ruled` の真偽しか違わない(P5 §0.a-0.25)。
+        断面は輪郭(曲線の並び)・球(中心と半径)・立体の面(指紋と上流の鍵)の 3 通りで、
+        詰め替えは `toThruSectionSpec`。球の近似の点の数(`sphereSegments`、§0.a-0.74)は
+        カーネル側が必須の欄にしてある(既定を入れるのは model の役目)ので必ず渡す。
+      */
+      return {
+        kind: 'thruSections',
+        sections: plan.sections.map((section) => toThruSectionSpec(section)),
+        ruled: plan.ruled,
+        closed: plan.closed,
+        twist: plan.twist,
+        sphereSegments: plan.sphereSegments,
       };
   }
 }
@@ -1487,6 +1664,20 @@ export function createKernelBridge(): KernelBridge {
       return toProjectionResult(requests, outcome);
     },
 
+    async measure(steps, targets, kind): Promise<MeasureOutcome> {
+      const request = toMeasureRequest(steps, targets, kind);
+      if (request === null) {
+        // 鍵が引けない対象があるので、Worker を起こさずここで断る(§0.a-0.30)。
+        return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      if (health.broken) {
+        restart();
+      }
+      const result = await connection.remote.measure(request);
+      return toMeasureOutcome(result);
+    },
+
     dispose(): void {
       closeKernelConnection(connection);
     },
@@ -1568,6 +1759,16 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge {
         items: requests.map((request) => toSectionItem(request)),
       });
       return toProjectionResult(requests, outcome);
+    },
+
+    async measure(steps, targets, kind): Promise<MeasureOutcome> {
+      const request = toMeasureRequest(steps, targets, kind);
+      if (request === null) {
+        // 鍵が引けない対象があるので、カーネルを呼ばずここで断る(§0.a-0.30)。
+        return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
+      }
+      const result = await api.measure(request);
+      return toMeasureOutcome(result);
     },
 
     dispose(): void {

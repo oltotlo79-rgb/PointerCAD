@@ -10,6 +10,7 @@ import {
   toSolidStepRequest,
   type AppearanceFaceRequest,
   type KernelBridge,
+  type MeasureOutcome,
   type PartProgress,
   type SketchOffsetContour,
   type SketchOffsetResult,
@@ -90,6 +91,15 @@ const EMPTY_OFFSET_RESULT: SketchOffsetResult = { results: [], failures: [] };
 const EMPTY_PROJECTION_RESULT: SketchProjectionResult = { results: [], failures: [] };
 
 /**
+ * 測定(FR-1101、FR-1102、P5 タスク29)を頼まないときの戻り値。
+ * このテストは `measure` を検査しないので、呼ばれたら分かるよう失敗にしておく。
+ */
+const UNCALLED_MEASURE_OUTCOME: MeasureOutcome = {
+  kind: 'failed',
+  message: 'このテストの偽のカーネルは measure を検査しません。',
+};
+
+/**
  * 偽のカーネル。OCCT は読み込まない(実物は kernel 側の Node テストで確かめてある)。
  * async を使わないのは、await の無い async 関数を書かないため(計画書 §4)。
  */
@@ -100,6 +110,7 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
     offsetSketchCurves: () => Promise.resolve(EMPTY_OFFSET_RESULT),
     projectSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
     sectionSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
+    measure: () => Promise.resolve(UNCALLED_MEASURE_OUTCOME),
     dispose: () => undefined,
     ...overrides,
   };

@@ -23,6 +23,8 @@ import {
   type SolidStepKeyMaterial,
   type SpringKeyMaterial,
   type ThreadKeyMaterial,
+  type ThruSectionKeyMaterial,
+  type ThruSectionsKeyMaterial,
 } from './cacheKey.js';
 // 指紋の文字列化は subShapeRef.ts の1本だけを使う(丸めの規則を2か所に書かない、タスク14)。
 import { fingerprintKeyText } from './subShapeRef.js';
@@ -203,7 +205,44 @@ function primitive(overrides: Partial<Omit<PrimitiveKeyMaterial, 'kind'>> = {}):
   };
 }
 
-/** 10種類ぶんの材料を1つずつ。順序は SolidStepKeyMaterial の union の並びに合わせる。 */
+/**
+ * 罫線面・ロフト(FR-430、FR-410、P5 タスク25)の断面。
+ * 3 通り(輪郭・球・立体の面)を短く書くための道具。
+ */
+function curvesSection(curves: readonly KeyCurve[] = ONE_SEGMENT): ThruSectionKeyMaterial {
+  return { kind: 'curves', curves };
+}
+
+function sphereSection(radius = 10, center: KeyVec3 = [0, 0, 40]): ThruSectionKeyMaterial {
+  return { kind: 'sphere', center, radius };
+}
+
+function faceQuerySection(
+  targetKey = 'aaaa1111bbbb2222',
+  query: KeySubShape = faceFingerprint(),
+): ThruSectionKeyMaterial {
+  return { kind: 'faceQuery', targetKey, query };
+}
+
+/**
+ * 既定の「面をつなぐ」の材料(輪郭 1 つ + 球 1 つを直線で結ぶ)。
+ * ロフトは `ruled: false` にしただけの同じ段(§0.a-0.25)。
+ */
+function thruSections(
+  overrides: Partial<Omit<ThruSectionsKeyMaterial, 'kind'>> = {},
+): ThruSectionsKeyMaterial {
+  return {
+    kind: 'thruSections',
+    sections: [curvesSection(), sphereSection()],
+    ruled: true,
+    closed: true,
+    twist: 0,
+    sphereSegments: 24,
+    ...overrides,
+  };
+}
+
+/** 11種類ぶんの材料を1つずつ。順序は SolidStepKeyMaterial の union の並びに合わせる。 */
 const ALL_KINDS: readonly SolidStepKeyMaterial[] = [
   extrude(10),
   revolve(90),
@@ -215,6 +254,7 @@ const ALL_KINDS: readonly SolidStepKeyMaterial[] = [
   chamfer(),
   spring(),
   primitive(),
+  thruSections(),
 ];
 
 describe('KEY_DECIMALS', () => {
@@ -963,7 +1003,95 @@ describe('基本形状(FR-429、P5 タスク15)の鍵の材料', () => {
   });
 });
 
-/** 10種類の材料を index で少しずつ変えて作る(衝突検査用)。 */
+describe('面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)の鍵の材料', () => {
+  it('輪郭 1 つと球 1 つを直線で結ぶ材料の文字列が、欄の並びのまま固定される', () => {
+    expect(keyMaterialText(thruSections())).toBe(
+      'thruSections{sections=2:[' +
+        'curves(1:[segment(0.000000000,0.000000000,0.000000000|1.000000000,0.000000000,0.000000000)])' +
+        ',sphere(0.000000000,0.000000000,40.000000000|10.000000000)' +
+        '];ruled=true;closed=true;twist=0.000000000;sphereSegments=24.000000000}',
+    );
+  });
+
+  it('同じ内容なら同じ鍵になる(決定性)', () => {
+    expect(cacheKeyFor(thruSections())).toBe(cacheKeyFor(thruSections()));
+  });
+
+  it('断面の輪郭が動くと鍵が変わる(スケッチを直せば形が変わる、NFR-PF-3)', () => {
+    const moved: readonly KeyCurve[] = [{ kind: 'segment', from: [0, 0, 0], to: [2, 0, 0] }];
+    expect(cacheKeyFor(thruSections({ sections: [curvesSection(moved), sphereSection()] }))).not.toBe(
+      cacheKeyFor(thruSections()),
+    );
+  });
+
+  it('球の中心と半径のどちらが変わっても鍵が変わる', () => {
+    const base = cacheKeyFor(thruSections());
+    expect(cacheKeyFor(thruSections({ sections: [curvesSection(), sphereSection(10.5)] }))).not.toBe(
+      base,
+    );
+    expect(
+      cacheKeyFor(thruSections({ sections: [curvesSection(), sphereSection(10, [0, 0, 41])] })),
+    ).not.toBe(base);
+  });
+
+  it('ねじれの補正・球の点の数・罫線面かロフトかで鍵が変わる', () => {
+    const base = cacheKeyFor(thruSections());
+    expect(cacheKeyFor(thruSections({ twist: 1 }))).not.toBe(base);
+    expect(cacheKeyFor(thruSections({ sphereSegments: 48 }))).not.toBe(base);
+    // 同じ断面でも、直線で結ぶかなめらかに結ぶかで形が違う(§0.a-0.25)。
+    expect(cacheKeyFor(thruSections({ ruled: false }))).not.toBe(base);
+    expect(cacheKeyFor(thruSections({ closed: false }))).not.toBe(base);
+  });
+
+  it('断面の並びと数が鍵に効く(順序が意味を持つ、長さも混ぜる)', () => {
+    const forward = thruSections({ sections: [curvesSection(), sphereSection()] });
+    const reversed = thruSections({ sections: [sphereSection(), curvesSection()] });
+    expect(cacheKeyFor(reversed)).not.toBe(cacheKeyFor(forward));
+    const three = thruSections({
+      sections: [curvesSection(), curvesSection(), sphereSection()],
+    });
+    expect(cacheKeyFor(three)).not.toBe(cacheKeyFor(forward));
+  });
+
+  it('立体の面の断面には、上流の段の鍵と面の指紋の両方が混ざる', () => {
+    const text = keyMaterialText(
+      thruSections({ sections: [faceQuerySection(), curvesSection()] }),
+    );
+    expect(text).toContain('aaaa1111bbbb2222');
+    expect(text).toContain(faceFingerprint());
+  });
+
+  it('面を貸した立体の鍵が変われば、つないだ段の鍵も必ず変わる(鍵の連鎖、NFR-PF-3)', () => {
+    /*
+      これが `targetKey` を材料へ混ぜる理由(基本形状の頂点とまったく同じ)。上流の押し出しを
+      伸ばすと面は動くが、**指紋の中身は選び直しの結果でしか変わらない**ので、材料が指紋だけだと
+      鍵が同じままになり、古い輪郭の形がキャッシュから返る。
+    */
+    const before = thruSections({ sections: [faceQuerySection('aaaa1111bbbb2222'), curvesSection()] });
+    const after = thruSections({ sections: [faceQuerySection('cccc3333dddd4444'), curvesSection()] });
+    expect(cacheKeyFor(after)).not.toBe(cacheKeyFor(before));
+  });
+
+  it('上流の鍵が同じでも、選び直した面が別なら鍵が変わる(指紋も混ざる)', () => {
+    const before = thruSections({
+      sections: [faceQuerySection('aaaa1111bbbb2222', faceFingerprint(0, 1200)), curvesSection()],
+    });
+    const after = thruSections({
+      sections: [faceQuerySection('aaaa1111bbbb2222', faceFingerprint(2, 800)), curvesSection()],
+    });
+    expect(cacheKeyFor(after)).not.toBe(cacheKeyFor(before));
+  });
+
+  it('断面の種類が違えば必ず別の文字列になる(種類を先頭に置く)', () => {
+    const only = (section: ThruSectionKeyMaterial): string =>
+      keyMaterialText(thruSections({ sections: [section] }));
+    expect(only(curvesSection())).toContain('curves(');
+    expect(only(sphereSection())).toContain('sphere(');
+    expect(only(faceQuerySection())).toContain('faceQuery(');
+  });
+});
+
+/** 11種類の材料を index で少しずつ変えて作る(衝突検査用)。 */
 function variantValue(index: number): number {
   return 1 + index * 0.001;
 }
@@ -979,11 +1107,13 @@ const VARIANT_BUILDERS: readonly ((index: number) => SolidStepKeyMaterial)[] = [
   (index) => chamfer({ distance1: variantValue(index) }),
   (index) => spring({ pitch: variantValue(index) }),
   (index) => primitive({ shape: { kind: 'sphere', radius: variantValue(index) } }),
+  // 罫線面・ロフト(P5 タスク25)。球の半径だけを少しずつ変える。
+  (index) => thruSections({ sections: [curvesSection(), sphereSection(variantValue(index))] }),
 ];
 
-describe('cacheKeyFor: 10種類が互いに衝突しない', () => {
-  it('10種類すべての鍵が長さ16の16進文字列になる', () => {
-    expect(ALL_KINDS).toHaveLength(10);
+describe('cacheKeyFor: 11種類が互いに衝突しない', () => {
+  it('11種類すべての鍵が長さ16の16進文字列になる', () => {
+    expect(ALL_KINDS).toHaveLength(11);
     for (const material of ALL_KINDS) {
       const key = cacheKeyFor(material);
       expect(key).toHaveLength(16);
@@ -991,12 +1121,12 @@ describe('cacheKeyFor: 10種類が互いに衝突しない', () => {
     }
   });
 
-  it('10種類の鍵が互いに違う(種類が違えば必ず別の鍵)', () => {
+  it('11種類の鍵が互いに違う(種類が違えば必ず別の鍵)', () => {
     const keys = new Set(ALL_KINDS.map(cacheKeyFor));
     expect(keys.size).toBe(ALL_KINDS.length);
   });
 
-  it('10種類の材料を1つずつ少しずつ変えた1000通りで、鍵の重複が0件', () => {
+  it('11種類の材料を1つずつ少しずつ変えた1000通りで、鍵の重複が0件', () => {
     const keys = new Set<string>();
     for (let index = 0; index < 1000; index += 1) {
       keys.add(cacheKeyFor(VARIANT_BUILDERS[index % VARIANT_BUILDERS.length](index)));

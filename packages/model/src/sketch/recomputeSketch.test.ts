@@ -5,6 +5,7 @@ import {
   toCurveSpec,
   toFaceRequest,
   type KernelBridge,
+  type MeasureOutcome,
   type SketchOffsetContour,
   type SketchOffsetResult,
   type SketchProjectionResult,
@@ -42,6 +43,15 @@ const EMPTY_OFFSET_RESULT: SketchOffsetResult = { results: [], failures: [] };
 const EMPTY_PROJECTION_RESULT: SketchProjectionResult = { results: [], failures: [] };
 
 /**
+ * 測定(FR-1101、FR-1102、P5 タスク29)はスケッチ単体では起きない(立体が要る)。
+ * このテストは `measure` を検査しないので、呼ばれたら分かるよう失敗にしておく。
+ */
+const UNCALLED_MEASURE_OUTCOME: MeasureOutcome = {
+  kind: 'failed',
+  message: 'このテストの偽のカーネルは measure を検査しません。',
+};
+
+/**
  * 偽のカーネル。OCCT は読み込まない(実物はタスク13・14 の Node テストで確かめる)。
  * async を使わないのは、await の無い async 関数を書かないため(計画書 §4)。
  */
@@ -53,6 +63,7 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
     // 投影・交差(FR-325、P4 タスク25)はスケッチ単体では起きない(立体が要る)。
     projectSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
     sectionSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
+    measure: () => Promise.resolve(UNCALLED_MEASURE_OUTCOME),
     dispose: () => undefined,
     ...overrides,
   };

@@ -15,6 +15,9 @@
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
+// 球へつなぐときの点の数(24 / 48 / 72)は kernel の `SphereSegmentCount` が正本
+// (§0.a-0.74、統括の指示 2026-09-05)。型だけの取り込みなので実行時の読み込みは起きない。
+import type { SphereSegmentCount } from '@pointercad/kernel';
 
 import type { AppearanceTable } from '../appearance/types.js';
 import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
@@ -84,7 +87,17 @@ export type SolidFeatureKind =
    * 基本形状(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7)。
    * ばねと同じく対象を取らず、新しいボディを1つ作る(P5 §0.a-0.19)。
    */
-  | 'primitive';
+  | 'primitive'
+  /**
+   * 面をつなぐ(罫線面。FR-430、P5 計画書 §2.9)。2 つの断面を直線で結ぶ。
+   * 材料にした立体を**消費しない**(P5 §0.a-0.27)。
+   */
+  | 'ruled'
+  /**
+   * ロフト(FR-410、P5 計画書 §2.9)。2 つ以上の断面をなめらかに結ぶ。
+   * 罫線面と道具が別なので種類も分ける(P5 §0.a-0.25)が、カーネルの段は同じ 1 種類。
+   */
+  | 'loft';
 
 interface SolidFeatureBase {
   /**
@@ -413,6 +426,81 @@ export interface PrimitiveFeature extends SolidFeatureBase {
   readonly shape: PrimitiveShape;
 }
 
+/**
+ * 罫線面・ロフトの断面 1 つ(FR-430、FR-410、P5 計画書 §2.9.1)。
+ *
+ * 断面は「スケッチの面」「立体の面」「球」の 3 通り。前の 2 つは閉じた輪郭を持つが、
+ * **球だけは縁を持たない**ので輪郭ではなくフィーチャーの id で指し、解決のときに
+ * 中心と半径へ直す(球に外接する直線で結ぶ、§2.9.3)。
+ *
+ * 立体の面(`solidFace`)は座標ではなく**指紋**(`SubShapeRef`)で持つ。輪郭を取り出すのは
+ * カーネルで、model は指紋と対象の段の鍵を渡すだけである(穴の面とまったく同じ扱い、§2.2)。
+ * **どの種類でも元の立体は消費しない**(§0.a-0.27)。
+ */
+export type RuledSection =
+  /** スケッチの面フィーチャー1枚。その境界が輪郭になる。 */
+  | { readonly kind: 'sketchFace'; readonly ref: SketchFaceRef }
+  /** 立体の面1枚。カーネルが指紋で選び直し、外周を輪郭に取り出す。 */
+  | { readonly kind: 'solidFace'; readonly ref: SubShapeRef }
+  /**
+   * 球1つ。**`kind: 'primitive'` の球**(FR-429)のフィーチャー id を指す。
+   * ばね等の丸い形ではなく、球の基本形状だけを指せる(中心と半径が一意に決まるため)。
+   */
+  | { readonly kind: 'sphere'; readonly sphereFeatureId: string };
+
+/**
+ * 球へつなぐときの近似の点の数(§0.a-0.74、利用者の決定 2026-09-05)。
+ *
+ * 球は縁を持たないので、相手の輪郭を N 点に離散化して接点の列を作る(§2.9.3-(b))。
+ * 点が多いほど滑らかになるが重くなる(タスク24 の実測: 72 点で 5〜6 秒)ので、
+ * 段ごとに 24 / 48 / 72 から選べるようにし、既定は 24 にする。
+ *
+ * **3 択の実体はカーネルの `SphereSegmentCount` をそのまま使う**(統括の指示 2026-09-05)。
+ * 同じ選択肢を 2 か所に書くと、片方だけ増やしたときに黙って食い違うためである。
+ * ここで名前を付け直しているのは、model・io・ui が「罫線面の欄」として読む名前を
+ * カーネルの語彙から独立させておくため(呼び名だけの別名で、値は 1 か所)。
+ */
+export type RuledSphereSegments = SphereSegmentCount;
+
+/**
+ * 面をつなぐ(罫線面。FR-430、P5 計画書 §2.9.1)。2 つの断面を直線で結ぶ。
+ *
+ * **対象を消費しない「作る」フィーチャー**(押し出し・ばね・基本形状と同じ、§0.a-0.27)。
+ * 輪郭を貸した立体・球はそのまま画面に残るので、要るなら和(FR-404)でまとめられる。
+ *
+ * 球を置けるのは `first` / `second` の**片方だけ**(球どうしは直線で結べない、§2.9.3)。
+ * ロフト(`LoftFeature`)には球を置けない。
+ */
+export interface RuledFeature extends SolidFeatureBase {
+  readonly kind: 'ruled';
+  readonly first: RuledSection;
+  readonly second: RuledSection;
+  /**
+   * 輪郭のねじれを直すための、2 つ目の輪郭の稜線のずらし数(§0.a-0.28)。整数の式。既定 0。
+   *
+   * **立体の面(`solidFace`)の断面には効かない。** カーネルは面から取り出した外周を
+   * 元の並びのまま結び、ずらしを断りもしない(タスク24b の実装)。プロパティ(タスク27)は
+   * この欄を出すときに、断面が立体の面だけのときは効かないことを添える。
+   */
+  readonly twist: ExpressionValue;
+  /** 球へつなぐときの近似の点の数(§0.a-0.74)。球を使わない罫線面では形に効かない。 */
+  readonly sphereSegments: RuledSphereSegments;
+}
+
+/**
+ * ロフト(FR-410、P5 計画書 §2.9.1)。2 つ以上の断面をなめらかに結ぶ。
+ *
+ * 罫線面と同じくカーネルの段は `thruSections` 1 種類で、`ruled: false` になるだけの違い
+ * (§0.a-0.25)。**球は置けない**ので `sphereSegments` の欄も持たない。
+ */
+export interface LoftFeature extends SolidFeatureBase {
+  readonly kind: 'loft';
+  /** つなぐ断面。並びが意味を持つ。2 つ以上ないと解決のときに断る。 */
+  readonly sections: readonly RuledSection[];
+  /** ねじれの補正(罫線面と同じ意味、§0.a-0.28)。整数の式。既定 0。 */
+  readonly twist: ExpressionValue;
+}
+
 export type SolidFeature =
   | ExtrudeFeature
   | RevolveFeature
@@ -424,7 +512,9 @@ export type SolidFeature =
   | ChamferFeature
   | PatternFeature
   | SpringFeature
-  | PrimitiveFeature;
+  | PrimitiveFeature
+  | RuledFeature
+  | LoftFeature;
 
 // ---------------------------------------------------------------------------
 // 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329。P4 タスク9)

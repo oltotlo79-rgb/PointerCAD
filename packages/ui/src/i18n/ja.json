@@ -105,6 +105,8 @@
   "toolbar.solid.cylinder": "円柱",
   "toolbar.solid.cone": "円錐",
   "toolbar.solid.torus": "トーラス",
+  "toolbar.solid.ruled": "面をつなぐ",
+  "toolbar.solid.loft": "ロフト",
   "toolbar.solid.spring": "ばね",
   "toolbar.solid.springTooltip": "点を選んでコイルばねを作ります",
   "toolbar.machining.title": "加工",

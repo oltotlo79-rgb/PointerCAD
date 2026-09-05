@@ -6,11 +6,13 @@ import {
   resolveSketch,
   sketchConstraints,
   type AppearanceTable,
+  type LoftFeature,
   type PartDocument,
   type Parameter,
   type PrimitiveFeature,
   type PrimitiveShape,
   type ReferenceFeature,
+  type RuledFeature,
   type SketchConstraint,
   type SketchDocument,
   type SketchFeature,
@@ -2706,8 +2708,10 @@ describe('読み込みの断り方(FR-504、NFR-UX-5)', () => {
   });
 
   it('知らない種類のフィーチャーは断る', () => {
+    // 例に使う `kind` は**将来も実装しない名前**にする(P5 タスク25 で `loft` が実在の
+    // 種類になり、この検査が「欄が足りない」で落ちたため。docs/報告記録.md 2026-09-05)。
     const document = rawDocument({
-      solids: [{ id: 'loft-1', kind: 'loft', name: 'ロフト1', suppressed: false }],
+      solids: [{ id: 'unknown-1', kind: 'unknownKind', name: '謎1', suppressed: false }],
     });
     const error = expectError(parseDocument(rawFile({ document })));
     expect(error.code).toBe('invalidField');
@@ -3555,5 +3559,116 @@ describe('球面上の点の読み書き(FR-431、P5 タスク19)', () => {
     const broken = text.replace('"latitude"', '"latitudo"');
     const error = expectError(parseDocument(broken));
     expect(error.message).toContain('latitude');
+  });
+});
+
+describe('面をつなぐ・ロフトの読み書き(FR-430、FR-410、FR-801、P5 タスク25 の最小の枝)', () => {
+  /** 立体の面を輪郭にするときの指紋(§0.a-0.73)。面であることまで読み書きされる。 */
+  const SOLID_FACE_REF: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 0,
+    fingerprint: {
+      kind: 'face',
+      surfaceKind: 'plane',
+      area: 1200,
+      position: [20, 15, 10],
+      axis: [0, 0, 1],
+      radius: null,
+    },
+  };
+
+  it('面をつなぐ(スケッチの面 × 球)が往復で一致する', () => {
+    const feature: RuledFeature = {
+      id: 'ruled-1',
+      kind: 'ruled',
+      name: '面をつなぐ1',
+      suppressed: false,
+      first: { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+      second: { kind: 'sphere', sphereFeatureId: 'sphere-1' },
+      twist: ev('1+1', 2),
+      sphereSegments: 48,
+    };
+    const parsed = roundTrip(documentWithSolid(feature));
+    expect(parsed.solids[0]).toEqual(feature);
+  });
+
+  it('ロフト(3 断面、立体の面を含む)が往復で一致する', () => {
+    const feature: LoftFeature = {
+      id: 'loft-1',
+      kind: 'loft',
+      name: 'ロフト1',
+      suppressed: false,
+      sections: [
+        { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+        { kind: 'solidFace', ref: SOLID_FACE_REF },
+        { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-2' } },
+      ],
+      twist: ev('0', 0),
+    };
+    const parsed = roundTrip(documentWithSolid(feature));
+    expect(parsed.solids[0]).toEqual(feature);
+  });
+
+  it('sphereSegments の欄が無い古い文書は既定の 24 として読む(§0.a-0.74)', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'ruled-1',
+          kind: 'ruled',
+          name: '面をつなぐ1',
+          suppressed: false,
+          first: { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+          second: { kind: 'sphere', sphereFeatureId: 'sphere-1' },
+          twist: ev('0', 0),
+        },
+      ],
+    });
+    const parsed = expectOk(parseDocument(rawFile({ document })));
+    const ruled = parsed.solids[0];
+    if (ruled.kind !== 'ruled') {
+      throw new Error('面をつなぐのはず');
+    }
+    expect(ruled.sphereSegments).toBe(24);
+  });
+
+  it('sphereSegments に 24 / 48 / 72 以外(36)があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'ruled-1',
+          kind: 'ruled',
+          name: '面をつなぐ1',
+          suppressed: false,
+          first: { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+          second: { kind: 'sphere', sphereFeatureId: 'sphere-1' },
+          twist: ev('0', 0),
+          sphereSegments: 36,
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].sphereSegments');
+  });
+
+  it('断面に知らない kind があれば断る', () => {
+    const document = rawDocument({
+      solids: [
+        {
+          id: 'loft-1',
+          kind: 'loft',
+          name: 'ロフト1',
+          suppressed: false,
+          sections: [
+            { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
+            { kind: 'edgeLoop', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-2' } },
+          ],
+          twist: ev('0', 0),
+        },
+      ],
+    });
+    const error = expectError(parseDocument(rawFile({ document })));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.solids[0].sections[1].kind');
   });
 });

@@ -81,8 +81,15 @@ import {
   type KeyVec3,
   type PrimitiveShapeKeyMaterial,
   type SolidStepKeyMaterial,
+  type ThruSectionKeyMaterial,
 } from './cacheKey.js';
-import { consumedTargetsOf, isPatternSource, MAX_PATTERN_COUNT, MAX_SPRING_TURNS } from './createPartDocument.js';
+import {
+  consumedTargetsOf,
+  DEFAULT_RULED_SPHERE_SEGMENTS,
+  isPatternSource,
+  MAX_PATTERN_COUNT,
+  MAX_SPRING_TURNS,
+} from './createPartDocument.js';
 import {
   createReferenceResolver,
   type ReferenceError,
@@ -99,6 +106,7 @@ import type {
   FilletFeature,
   HoleDepth,
   HoleFeature,
+  LoftFeature,
   PartDocument,
   PatternFeature,
   PatternPlacement,
@@ -106,6 +114,9 @@ import type {
   PrimitiveShape,
   RevolveAxis,
   RevolveFeature,
+  RuledFeature,
+  RuledSection,
+  RuledSphereSegments,
   SewFeature,
   SketchFaceRef,
   SketchPointRef,
@@ -145,6 +156,29 @@ export interface RigidTransform {
  * 平らな `SubShapeQuery` へ崩すのは kernelBridge(タスク17)の1か所だけにする。
  */
 export type SubShapeQueryPlan = SubShapeRef;
+
+/**
+ * 罫線面・ロフト(FR-430、FR-410、P5 §2.9)の断面 1 つの解決結果。
+ *
+ * 種類は kernel の `ThruSectionSpec` と同じ意味で並べる(詰め替えは `kernelBridge.ts`)。
+ * スケッチの面は輪郭の座標まで解けるが、**立体の面は指紋のまま段へ乗せる**
+ * (輪郭を取り出せるのはカーネルだけ。穴の面とまったく同じ扱い、§2.2)。
+ * 球は縁を持たないので中心と半径で渡す(§2.9.3)。
+ */
+export type ThruSectionPlan =
+  | { readonly kind: 'curves'; readonly curves: readonly ResolvedCurve[] }
+  | { readonly kind: 'sphere'; readonly center: Vec3; readonly radius: number }
+  | {
+      readonly kind: 'faceQuery';
+      /**
+       * 面を持つ立体の段の鍵。**この段はその立体を消費しない**(§0.a-0.27)ので、
+       * 加工フィーチャーの `targetKey` と違い `consumedTargetsOf` には現れない。
+       * 鍵に混ぜるのは、上流が変われば輪郭も変わるようにするためだけである(NFR-PF-3)。
+       */
+      readonly targetKey: string;
+      /** 輪郭にする面の指紋。必ず面(`kind: 'face'`)で、選び直しはカーネルが行う。 */
+      readonly query: SubShapeQueryPlan;
+    };
 
 /**
  * model 側の「1段の作り方」。kernel の SolidStepSpec とは別の型にして、
@@ -308,6 +342,29 @@ export type SolidStepPlan =
        * 加工フィーチャーの `targetKey` と違い `consumedTargetsOf` には現れない。
        */
       readonly targetKey: string | null;
+    }
+  | {
+      /**
+       * 輪郭をつないで立体にする段(罫線面 FR-430・ロフト FR-410、P5 §2.9)。
+       *
+       * **model のフィーチャーは 2 種類(`ruled` / `loft`)だが、段は 1 種類**にまとめる
+       * (§0.a-0.25。カーネルでは `ruled` の真偽しか違わないので、同じものを 2 つ作らない)。
+       * 対象を取らない「作る」段で、輪郭を貸した立体は消費しない(§0.a-0.27)。
+       */
+      readonly kind: 'thruSections';
+      /** つなぐ断面。2 つ以上。並びが意味を持つ。 */
+      readonly sections: readonly ThruSectionPlan[];
+      /** true なら直線で結ぶ(罫線面)、false ならなめらかに結ぶ(ロフト)。 */
+      readonly ruled: boolean;
+      /** 両端に面を張って閉じた立体にするか。いまは常に true(§0.a-0.25)。 */
+      readonly closed: boolean;
+      /** ねじれの補正(整数、§0.a-0.28)。小数は解決のときに断ってあるのでここへは来ない。 */
+      readonly twist: number;
+      /**
+       * 球へつなぐときの近似の点の数(§0.a-0.74)。球を含まない段でも
+       * 既定(`DEFAULT_RULED_SPHERE_SEGMENTS`)が入る(段の欄を種類で出し分けないため)。
+       */
+      readonly sphereSegments: RuledSphereSegments;
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -1856,6 +1913,267 @@ function planPrimitive(
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * 面をつなぐ(罫線面 FR-430)・ロフト(FR-410)。P5 §2.9、タスク25
+ * ------------------------------------------------------------------ */
+
+/** つなぐには断面が 2 つ要る(§2.9.1)。ロフトも下限は同じ。 */
+const MIN_THRU_SECTIONS = 2;
+
+/**
+ * 断りの文言(FR-504、NFR-UX-5)。カーネル(`makeThruSections.ts`)にも同じ状況の断りが
+ * あるものは**文言をそろえてある**(基本形状の断りと同じ扱い。片方だけ直すと理由が食い違う)。
+ */
+const THRU_SECTIONS_TOO_FEW_MESSAGE = 'つなぐ面を 2 つ選んでください。';
+const THRU_SECTIONS_MISSING_FACE_MESSAGE =
+  'つなぐもとの面が見つかりません。スケッチで面を張ってからやり直してください。';
+const THRU_SECTIONS_MISSING_SPHERE_MESSAGE =
+  'つなぐもとの球が見つかりません。球を選び直してください。';
+/** 球は縁を持たないので、球どうしを結ぶ直線が決まらない(§2.9.3)。 */
+const THRU_SECTIONS_TWO_SPHERES_MESSAGE = '球どうしを直線でつなぐことはできません。';
+/** ロフトは球を扱わない(§2.9.3。球へつなぐのは罫線面だけ)。 */
+const LOFT_SPHERE_MESSAGE = 'ロフトには球を使えません。「面をつなぐ」を使ってください。';
+/** ねじれの補正は稜線を何本ずらすかなので、整数でないと意味が決まらない(§0.a-0.28)。 */
+const THRU_SECTIONS_TWIST_MESSAGE = 'ねじれの補正は整数にしてください。';
+/**
+ * 中心を立体の頂点で決めた球(FR-429 の 3 通りのうちの 1 つ)は、まだ相手にできない。
+ * 段へ渡せるのは中心の座標そのもの(`ThruSectionPlan.sphere.center`)で、頂点の選び直しは
+ * カーネルの中でしか行えないため、model にはその時点の中心が無い。
+ */
+const THRU_SECTIONS_SPHERE_ORIGIN_MESSAGE =
+  '中心を立体の頂点で決めた球は、まだ面をつなぐ相手にできません。球の中心を座標かスケッチの点で決めてください。';
+/** 輪郭にできるのは面だけ(辺・頂点には外周が無い)。穴の「面だけ」と同じ守り。 */
+const THRU_SECTIONS_NOT_FACE_MESSAGE = '輪郭にできるのは立体の面だけです。面を選び直してください。';
+/** 面を持つ立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。 */
+const THRU_SECTIONS_MISSING_BODY_MESSAGE =
+  'つなぐもとの立体が見つかりません。立体を選び直してください。';
+
+type ThruSectionOutcome =
+  | { readonly ok: true; readonly section: ThruSectionPlan }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 断面に指した球(`kind: 'primitive'` の球、FR-429)を中心と半径に直す(§2.9.3)。
+ *
+ * 引き方は球面上の点(FR-431、タスク19b の `sphereAt`)とまったく同じにしてある
+ * (同じ規則を 2 通りに書かない)。中心は `resolveSolidOrigin`、半径は `shape.radius.value`。
+ */
+function resolveSphereSection(
+  featureId: string,
+  sphereFeatureId: string,
+  solids: readonly SolidFeature[],
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+): ThruSectionOutcome {
+  const sphere = solids.find((candidate) => candidate.id === sphereFeatureId);
+  if (
+    sphere === undefined ||
+    sphere.kind !== 'primitive' ||
+    sphere.shape.kind !== 'sphere' ||
+    // 抑制した球は画面に無いので、つなぐ相手にもできない(タスク19b の球面上の点と同じ)。
+    sphere.suppressed
+  ) {
+    return {
+      ok: false,
+      error: partError(featureId, 'missingProfile', THRU_SECTIONS_MISSING_SPHERE_MESSAGE),
+    };
+  }
+  const radius = sphere.shape.radius.value;
+  if (!isPositiveFinite(radius)) {
+    return {
+      ok: false,
+      error: partError(featureId, 'invalidValue', positiveFieldMessage('半径')),
+    };
+  }
+  const origin = resolveSolidOrigin(featureId, sphere.origin, sketches, bodyKeys);
+  if (!origin.ok) {
+    return origin;
+  }
+  if (origin.value.query !== null) {
+    return {
+      ok: false,
+      error: partError(featureId, 'invalidValue', THRU_SECTIONS_SPHERE_ORIGIN_MESSAGE),
+    };
+  }
+  return { ok: true, section: { kind: 'sphere', center: origin.value.origin, radius } };
+}
+
+/**
+ * 断面 1 つを解決する(§2.9.1)。
+ *
+ * - スケッチの面 … 解決済みの輪郭(`ResolvedCurve`)をそのまま段へ乗せる。
+ * - 球 … 中心と半径へ直す(上の `resolveSphereSection`)。
+ * - 立体の面 … **カーネルが選び直してから輪郭を取り出す**(§0.a-0.73、タスク24b)。
+ */
+function resolveRuledSection(
+  featureId: string,
+  section: RuledSection,
+  solids: readonly SolidFeature[],
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+): ThruSectionOutcome {
+  switch (section.kind) {
+    case 'sketchFace': {
+      const face = findResolvedFace(sketches, section.ref);
+      if (face === undefined) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingProfile', THRU_SECTIONS_MISSING_FACE_MESSAGE),
+        };
+      }
+      return { ok: true, section: { kind: 'curves', curves: face.curves } };
+    }
+    case 'sphere':
+      return resolveSphereSection(featureId, section.sphereFeatureId, solids, sketches, bodyKeys);
+    case 'solidFace': {
+      /*
+        立体の面(§0.a-0.73、タスク24b)。**輪郭へは直さず、指紋のまま段へ乗せる。**
+        面を選び直せるのはカーネルだけ(model は面の位置も外周も持たない)で、穴・面取りの
+        面とまったく同じ扱いである(§2.2.4)。参照の型は辺・頂点も表せるので、面であることを
+        ここで先に確かめる(カーネルも断るが、OCCT を呼ぶ前に赤くする。NFR-UX-5)。
+      */
+      if (subShapeKindOf(section.ref) !== 'face') {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', THRU_SECTIONS_NOT_FACE_MESSAGE),
+        };
+      }
+      const targetKey = bodyKeys.get(section.ref.bodyFeatureId);
+      if (targetKey === undefined) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingBody', THRU_SECTIONS_MISSING_BODY_MESSAGE),
+        };
+      }
+      // **消費しない**(§0.a-0.27)ので `consumed` は見ない。鍵に混ぜるのは鍵の連鎖のため。
+      return { ok: true, section: { kind: 'faceQuery', targetKey, query: section.ref } };
+    }
+  }
+}
+
+/** ねじれの補正(§0.a-0.28)。小数は切り捨てずに断る(統括の決定)。 */
+function resolveThruSectionsTwist(
+  featureId: string,
+  twist: ExpressionValue,
+): { readonly ok: true; readonly twist: number } | { readonly ok: false; readonly error: PartError } {
+  const value = twist.value;
+  if (!Number.isInteger(value)) {
+    return {
+      ok: false,
+      error: partError(featureId, 'invalidValue', THRU_SECTIONS_TWIST_MESSAGE),
+    };
+  }
+  return { ok: true, twist: value };
+}
+
+/** 断面の並びをまとめて解決する。1 つでも解けなければその理由で断る(FR-504)。 */
+function resolveRuledSections(
+  featureId: string,
+  sections: readonly RuledSection[],
+  solids: readonly SolidFeature[],
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+):
+  | { readonly ok: true; readonly sections: readonly ThruSectionPlan[] }
+  | { readonly ok: false; readonly error: PartError } {
+  const resolved: ThruSectionPlan[] = [];
+  for (const section of sections) {
+    const outcome = resolveRuledSection(featureId, section, solids, sketches, bodyKeys);
+    if (!outcome.ok) {
+      return outcome;
+    }
+    resolved.push(outcome.section);
+  }
+  return { ok: true, sections: resolved };
+}
+
+/**
+ * 面をつなぐ(罫線面、FR-430、§2.9)。2 つの断面を直線で結ぶ。
+ *
+ * **対象を消費しない**(§0.a-0.27)ので `consumed` を見ない。輪郭を貸した立体・球は
+ * そのまま画面に残り、要るなら和(FR-404)でまとめられる。
+ */
+function planRuled(
+  feature: RuledFeature,
+  solids: readonly SolidFeature[],
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+): PlanOutcome {
+  if (feature.first.kind === 'sphere' && feature.second.kind === 'sphere') {
+    return fail(feature.id, 'degenerate', THRU_SECTIONS_TWO_SPHERES_MESSAGE);
+  }
+  const sections = resolveRuledSections(
+    feature.id,
+    [feature.first, feature.second],
+    solids,
+    sketches,
+    bodyKeys,
+  );
+  if (!sections.ok) {
+    return sections;
+  }
+  const twist = resolveThruSectionsTwist(feature.id, feature.twist);
+  if (!twist.ok) {
+    return twist;
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'thruSections',
+      sections: sections.sections,
+      // 直線で結ぶ(罫線面)。ロフトとの違いはこの 1 つだけ(§0.a-0.25)。
+      ruled: true,
+      closed: true,
+      twist: twist.twist,
+      sphereSegments: feature.sphereSegments,
+    },
+  };
+}
+
+/**
+ * ロフト(FR-410、§2.9)。2 つ以上の断面をなめらかに結ぶ。
+ * 球は置けない(§2.9.3)ので、指されていたら理由を出して断る。
+ */
+function planLoft(
+  feature: LoftFeature,
+  solids: readonly SolidFeature[],
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+): PlanOutcome {
+  if (feature.sections.length < MIN_THRU_SECTIONS) {
+    return fail(feature.id, 'missingProfile', THRU_SECTIONS_TOO_FEW_MESSAGE);
+  }
+  if (feature.sections.some((section) => section.kind === 'sphere')) {
+    return fail(feature.id, 'degenerate', LOFT_SPHERE_MESSAGE);
+  }
+  const sections = resolveRuledSections(
+    feature.id,
+    feature.sections,
+    solids,
+    sketches,
+    bodyKeys,
+  );
+  if (!sections.ok) {
+    return sections;
+  }
+  const twist = resolveThruSectionsTwist(feature.id, feature.twist);
+  if (!twist.ok) {
+    return twist;
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'thruSections',
+      sections: sections.sections,
+      ruled: false,
+      closed: true,
+      twist: twist.twist,
+      // ロフトには球を置けないので形には効かないが、段の欄は種類で出し分けずに既定を入れる。
+      sphereSegments: DEFAULT_RULED_SPHERE_SEGMENTS,
+    },
+  };
+}
+
 function planSolid(
   feature: SolidFeature,
   solids: readonly SolidFeature[],
@@ -1887,6 +2205,10 @@ function planSolid(
       return planPattern(feature, solids, sketches, bodyKeys, consumed, axisFrames);
     case 'primitive':
       return planPrimitive(feature, sketches, bodyKeys, axisFrames);
+    case 'ruled':
+      return planRuled(feature, solids, sketches, bodyKeys);
+    case 'loft':
+      return planLoft(feature, solids, sketches, bodyKeys);
   }
 }
 
@@ -1965,6 +2287,27 @@ function toKeyPrimitiveShape(shape: PrimitiveShapePlan): PrimitiveShapeKeyMateri
       };
     case 'torus':
       return { kind: 'torus', majorRadius: shape.majorRadius, minorRadius: shape.minorRadius };
+  }
+}
+
+/**
+ * 罫線面・ロフトの断面を鍵の材料へ詰め替える(cacheKey.ts の `ThruSectionKeyMaterial`)。
+ * `toKeyCurve` と同じ理由で、欄が同じでも種類ごとに写す(偶然の構造の一致に頼らない)。
+ */
+function toKeyThruSection(section: ThruSectionPlan): ThruSectionKeyMaterial {
+  switch (section.kind) {
+    case 'curves':
+      return { kind: 'curves', curves: section.curves.map(toKeyCurve) };
+    case 'sphere':
+      return { kind: 'sphere', center: toKeyVec3(section.center), radius: section.radius };
+    case 'faceQuery':
+      // 上流の鍵と面の指紋を必ず混ぜる(混ぜないと、上流を伸ばして面が動いても
+      // 段の鍵が変わらず古い輪郭の形がキャッシュから返る。NFR-PF-3)。
+      return {
+        kind: 'faceQuery',
+        targetKey: section.targetKey,
+        query: fingerprintKeyText(section.query),
+      };
   }
 }
 
@@ -2081,6 +2424,17 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         shape: toKeyPrimitiveShape(plan.shape),
         originQuery: plan.originQuery === null ? null : fingerprintKeyText(plan.originQuery),
         targetKey: plan.targetKey,
+      };
+    case 'thruSections':
+      // 断面の輪郭・球の中心と半径をすべて混ぜる(cacheKey.ts の `ThruSectionsKeyMaterial`)。
+      // 混ぜないと、スケッチの面を動かしても段の鍵が変わらず古い形が返る(NFR-PF-3)。
+      return {
+        kind: 'thruSections',
+        sections: plan.sections.map(toKeyThruSection),
+        ruled: plan.ruled,
+        closed: plan.closed,
+        twist: plan.twist,
+        sphereSegments: plan.sphereSegments,
       };
   }
 }
@@ -2290,7 +2644,20 @@ export function referencedSketchIds(feature: SolidFeature): readonly string[] {
         ...(feature.origin.kind === 'sketchPoint' ? [feature.origin.ref.sketchId] : []),
         ...axisSketchIds(feature.axis),
       ];
+    case 'ruled':
+      // 面をつなぐ(FR-430、タスク25)。スケッチを見るのは断面が「スケッチの面」のときだけで、
+      // 立体の面・球はスケッチを使わない。
+      return sectionSketchIds([feature.first, feature.second]);
+    case 'loft':
+      return sectionSketchIds(feature.sections);
   }
+}
+
+/** 罫線面・ロフトの断面が使うスケッチの id(スケッチの面を指したものだけ)。 */
+function sectionSketchIds(sections: readonly RuledSection[]): readonly string[] {
+  return sections.flatMap((section) =>
+    section.kind === 'sketchFace' ? [section.ref.sketchId] : [],
+  );
 }
 
 /**

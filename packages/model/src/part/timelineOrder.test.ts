@@ -30,6 +30,7 @@ import {
 } from './timelineOrder.js';
 import type {
   BooleanFeature,
+  CutFeature,
   ExtrudeFeature,
   FilletFeature,
   HoleFeature,
@@ -991,5 +992,50 @@ describe('消費しないが上流を指す種類の依存(P5 タスク45)', () 
     expect(dependenciesOf(withUpstream(draft), 'draft-1')).toEqual(['extrude-1']);
     expect(dependenciesOf(withUpstream(transform), 'transform-1')).toEqual(['extrude-1']);
     expect(dependenciesOf(withUpstream(scale), 'scale-1')).toEqual(['extrude-1']);
+  });
+
+  /** 平面による切断(FR-432、P5 タスク27c)。 */
+  function cutOn(plane: CutFeature['plane']): SolidFeature {
+    return {
+      id: 'cut-1',
+      name: '切断1',
+      suppressed: false,
+      kind: 'cut',
+      targetFeatureId: 'extrude-1',
+      plane,
+      keep: 'positive',
+      pairedWith: null,
+    };
+  }
+
+  it('切断は対象 1 つに依存する(消費するので二重にはしない)', () => {
+    const cut = cutOn({ kind: 'workPlane', planeId: 'xy', offset: ev(5) });
+    expect(dependenciesOf(withUpstream(cut), 'cut-1')).toEqual(['extrude-1']);
+  });
+
+  it('切断面が立体の面を指せば、その立体にも依存する(§2.9b)', () => {
+    const cut = cutOn({
+      kind: 'pointAndParallelFace',
+      point: { kind: 'origin' },
+      face: topFaceRef('extrude-1'),
+    });
+    expect(dependenciesOf(withUpstream(cut), 'cut-1')).toEqual(['extrude-1']);
+  });
+
+  it('切断面が基準の作業平面を指せば、その作業平面にも依存する(FR-328)', () => {
+    const cut = cutOn({
+      kind: 'workPlane',
+      planeId: 'referencePlane-1',
+      offset: ev(0),
+    });
+    expect(dependenciesOf(withUpstream(cut), 'cut-1')).toEqual([
+      'extrude-1',
+      'referencePlane-1',
+    ]);
+  });
+
+  it('切断は対象より前へ動かせない(並べ替えの判定、FR-507)', () => {
+    const cut = cutOn({ kind: 'workPlane', planeId: 'xy', offset: ev(5) });
+    expect(canMoveHistoryItem(withUpstream(cut), 'cut-1', 1).ok).toBe(false);
   });
 });

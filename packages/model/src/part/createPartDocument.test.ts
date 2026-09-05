@@ -1,4 +1,8 @@
-import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import {
+  evaluateExpression,
+  expressionValueFromNumber,
+  type ExpressionValue,
+} from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,7 +14,7 @@ import {
   nextFeatureId,
   nextFeatureName,
 } from '../sketch/createSketchDocument.js';
-import type { AxisSpec } from '../geometry/planeSpec.js';
+import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
 import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
 import type { SketchDocument, SketchFaceFeature, SketchLineFeature } from '../sketch/types.js';
 import { DEFAULT_THREAD_DESIGNATION, threadMinorDiameter } from '../thread/metricThread.js';
@@ -28,6 +32,7 @@ import {
   DEFAULT_COUNTERBORE_DIAMETER_MM,
   DEFAULT_COUNTERSINK_ANGLE_DEGREES,
   DEFAULT_COUNTERSINK_DIAMETER_MM,
+  DEFAULT_CUT_KEEP,
   DEFAULT_DRAFT_ANGLE_DEGREES,
   DEFAULT_EMBOSS_HEIGHT_MM,
   DEFAULT_EMBOSS_RAISED,
@@ -111,6 +116,7 @@ import type {
   BooleanFeature,
   BooleanOperation,
   ChamferFeature,
+  CutFeature,
   DraftFeature,
   EmbossFeature,
   MirrorFeature,
@@ -644,6 +650,8 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       pointPattern: '点パターン',
       // P5 の Could 群のうちタスク46 が前倒しした 1 種(FR-418、§2.12)。
       shell: 'くり抜き',
+      // 平面による切断(FR-432、§2.9b、タスク27c)。
+      cut: '切断',
     });
     expect(findSolid(document, 'subtract-1')?.name).toBe('差1');
     expect(nextSolidName(document, 'subtract')).toBe('差2');
@@ -753,12 +761,13 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('種類ごとの既定名は31個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2 + Should 群10 + くり抜き1)', () => {
+  it('種類ごとの既定名は32個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2 + Should 群10 + くり抜き1 + 切断1)', () => {
     // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になり、
     // タスク25 で面をつなぐ(FR-430)・ロフト(FR-410)が増えて 18 → 20 になった。
     // タスク43 で Should 群 9 種と点パターン(FR-425)が増えて 20 → 30 になり、
-    // タスク46 でくり抜き(FR-418、§2.12)が増えて 30 → 31 になった。
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(31);
+    // タスク46 でくり抜き(FR-418、§2.12)が増えて 30 → 31 になり、
+    // タスク27c で平面による切断(FR-432、§2.9b)が増えて 31 → 32 になった。
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(32);
     expect(SOLID_LABELS.hole).toBe('穴');
     expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
     expect(SOLID_LABELS.spring).toBe('ばね');
@@ -770,6 +779,7 @@ describe('加工フィーチャーとばねの名前・id の採番(P3 タスク
     expect(SOLID_LABELS.threadShaft).toBe('外ねじ');
     expect(SOLID_LABELS.pointPattern).toBe('点パターン');
     expect(SOLID_LABELS.shell).toBe('くり抜き');
+    expect(SOLID_LABELS.cut).toBe('切断');
   });
 
   it('穴は同じ種類の最大連番+1で数え、1つ消しても番号は戻らない', () => {
@@ -1350,7 +1360,8 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
       数は P2 の4種 + P3 の加工5種・ばね + P5 の基本形状1種 + P5 の面をつなぐ・ロフト = 13 に、
       P5 の Should 群 9 種(§2.11、タスク43)を足して 22、さらに Could 群のうち
-      タスク46 が前倒しした くり抜き(FR-418、§2.12)を足して 23。
+      タスク46 が前倒しした くり抜き(FR-418、§2.12)を足して 23、
+      平面による切断(FR-432、§2.9b、タスク27c)を足して 24。
       **この検査は「数え漏れを型で止める」仕掛けなので、種類が増えたら数も一緒に増やす**
       (期待値を緩めているのではなく、仕掛けが働いた結果を写し取っている)。
     */
@@ -1378,8 +1389,9 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       threadShaft: true,
       surface: true,
       shell: true,
+      cut: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(23);
+    expect(Object.keys(kinds)).toHaveLength(24);
   });
 
   it('基本形状に基準点と向きを渡すと、そのまま入る', () => {
@@ -1811,5 +1823,75 @@ describe('点の集まりへ複製(FR-425、§0.a-0.42、タスク43)', () => {
     expect(isPatternSource(pattern)).toBe(false);
     expect(isMachiningFeature(pattern)).toBe(true);
     expect(liveBodyIds(appendSolid(document, pattern))).toEqual([pattern.id]);
+  });
+});
+
+describe('平面による切断の消費と名前(FR-432、§0.a-0.58、P5 タスク27c)', () => {
+  const PLANE: PlaneSpec = {
+    kind: 'workPlane',
+    planeId: 'xy',
+    offset: expressionValueFromNumber(5),
+  };
+
+  function cut(id: string, targetFeatureId: string, pairedWith: string | null = null): CutFeature {
+    return {
+      id,
+      name: id,
+      suppressed: false,
+      kind: 'cut',
+      targetFeatureId,
+      plane: PLANE,
+      keep: pairedWith === null ? DEFAULT_CUT_KEEP : 'negative',
+      pairedWith,
+    };
+  }
+
+  it('切断は対象1つを消費する加工で、パターンの対象にはできない', () => {
+    const feature = cut('cut-1', 'extrude-1');
+    expect(consumedTargetsOf(feature)).toEqual(['extrude-1']);
+    expect(isMachiningFeature(feature)).toBe(true);
+    expect(isPatternSource(feature)).toBe(false);
+  });
+
+  it('残す側の既定は法線の側(§0.a-0.57)', () => {
+    expect(DEFAULT_CUT_KEEP).toBe('positive');
+  });
+
+  it('対になった 2 つの切断は対象を 1 度だけ数え、2 つとも画面に残る(§0.a-0.58)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const afterExtrude = appendSolid(withFace, extrude);
+    const first = appendSolid(afterExtrude, cut('cut-1', extrude.id));
+    const document = appendSolid(first, cut('cut-2', extrude.id, 'cut-1'));
+    expect([...consumedBodyIds(document)]).toEqual([extrude.id]);
+    expect(liveBodyIds(document)).toEqual(['cut-1', 'cut-2']);
+  });
+
+  it('対の片方を抑制すると、残ったほうだけが対象を消費する(FR-503)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const afterExtrude = appendSolid(withFace, extrude);
+    const first = appendSolid(afterExtrude, cut('cut-1', extrude.id));
+    const both = appendSolid(first, cut('cut-2', extrude.id, 'cut-1'));
+    const document = replaceSolid(both, 'cut-2', {
+      ...cut('cut-2', extrude.id, 'cut-1'),
+      suppressed: true,
+    });
+    expect([...consumedBodyIds(document)]).toEqual([extrude.id]);
+    expect(liveBodyIds(document)).toEqual(['cut-1']);
+  });
+
+  it('切断の名前と id は種類ごとの連番になる(「切断1」「切断2」)', () => {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    const afterExtrude = appendSolid(withFace, extrude);
+    expect(nextSolidName(afterExtrude, 'cut')).toBe('切断1');
+    expect(nextSolidId(afterExtrude, 'cut')).toBe('cut-1');
+    const document = appendSolid(afterExtrude, {
+      ...cut('cut-1', extrude.id),
+      name: '切断1',
+    });
+    expect(nextSolidName(document, 'cut')).toBe('切断2');
+    expect(nextSolidId(document, 'cut')).toBe('cut-2');
   });
 });

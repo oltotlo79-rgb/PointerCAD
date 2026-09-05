@@ -13,6 +13,7 @@ import {
   nextFeatureId,
   nextFeatureName,
 } from '../sketch/createSketchDocument.js';
+import type { PlaneSpec } from '../geometry/planeSpec.js';
 import {
   DEFAULT_WORK_PLANE_ID,
   FREE_WORK_PLANE_ID,
@@ -31,7 +32,7 @@ import type {
   SketchLineFeature,
   SketchPointArrayFeature,
 } from '../sketch/types.js';
-import type { Vec3 } from '../sketch/vec3.js';
+import { dotVec3, lengthVec3, type Vec3 } from '../sketch/vec3.js';
 import {
   findMetricThread,
   metricThreadPitch,
@@ -43,11 +44,15 @@ import {
   addSketch,
   appendReference,
   appendSolid,
+  consumedBodyIds,
   consumedTargetsOf,
   createEmptyPartDocument,
+  DEFAULT_CUT_KEEP,
   DEFAULT_PRIMITIVE_AXIS,
   DEFAULT_RULED_SPHERE_SEGMENTS,
   defaultPrimitiveOrigin,
+  liveBodyIds,
+  removeSolid,
   replaceSketch,
 } from './createPartDocument.js';
 import {
@@ -74,6 +79,7 @@ import type {
   BooleanOperation,
   ChamferFeature,
   ChamferSize,
+  CutFeature,
   DraftFeature,
   EmbossFeature,
   ExtrudeEnd,
@@ -5604,6 +5610,20 @@ function surfacePlan(
   return step.plan;
 }
 
+function cutPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'cut' }> {
+  if (step.plan.kind !== 'cut') {
+    throw new Error(`テストの前提が壊れている: 切断でない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+/** 座標を成分ごとに照合する(小数の下位の揺れを許す)。 */
+function expectVec3(actual: Vec3, expected: Vec3): void {
+  actual.forEach((value, index) => {
+    expect(value).toBeCloseTo(expected[index], 9);
+  });
+}
+
 function shellPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'shell' }> {
   if (step.plan.kind !== 'shell') {
     throw new Error(`テストの前提が壊れている: くり抜きでない段 ${step.plan.kind}`);
@@ -6570,5 +6590,417 @@ describe('可変半径フィレット(FR-426、P5 タスク46)', () => {
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
     expect(result.errors[0].message).toContain('0 より大きい');
+  });
+});
+
+describe('平面による切断(FR-432、P5 タスク27c)', () => {
+  interface CutOptions {
+    readonly keep?: CutFeature['keep'];
+    readonly pairedWith?: string | null;
+    readonly targetFeatureId?: string;
+    readonly suppressed?: boolean;
+  }
+
+  function cutFeature(id: string, plane: PlaneSpec, options: CutOptions = {}): CutFeature {
+    return {
+      id,
+      name: id,
+      suppressed: options.suppressed ?? false,
+      kind: 'cut',
+      targetFeatureId: options.targetFeatureId ?? 'extrude-1',
+      plane,
+      keep: options.keep ?? DEFAULT_CUT_KEEP,
+      pairedWith: options.pairedWith ?? null,
+    };
+  }
+
+  /**
+   * 切断の検査の土台。z = 5 の平面を決められる 3 点(と、一直線にするための 4 点目)を
+   * スケッチへ足し、40×30 を Z へ 10 押し出した箱を切る。
+   */
+  function cutFixture(): {
+    readonly document: PartDocument;
+    readonly points: readonly string[];
+  } {
+    const fixture = createFixture();
+    const added = addPoints(fixture.document.sketches[0], [
+      [0, 0, 5],
+      [40, 0, 5],
+      [0, 30, 5],
+      [10, 0, 5],
+    ]);
+    const document = withSolids(
+      replaceSketch(fixture.document, added.sketch),
+      extrudeFeature('extrude-1', fixture.faceA),
+    );
+    return { document, points: added.pointIds };
+  }
+
+  function cutPointRef(pointId: string): PointReference {
+    return { kind: 'point', pointId };
+  }
+
+  /** X 方向のまっすぐな辺(中点 (20,0,0))。切断面の基準にする。 */
+  function cutXEdgeRef(bodyFeatureId: string): SubShapeRef {
+    return {
+      bodyFeatureId,
+      index: 5,
+      fingerprint: {
+        kind: 'edge',
+        curveKind: 'line',
+        length: 40,
+        position: [20, 0, 0],
+        axis: [1, 0, 0],
+        radius: null,
+      },
+    };
+  }
+
+  /** 円の辺。まっすぐでない辺を断ることの検査に使う。 */
+  function cutCircleEdgeRef(bodyFeatureId: string): SubShapeRef {
+    return {
+      bodyFeatureId,
+      index: 6,
+      fingerprint: {
+        kind: 'edge',
+        curveKind: 'circle',
+        length: 18.84,
+        position: [20, 15, 10],
+        axis: [0, 0, 1],
+        radius: 3,
+      },
+    };
+  }
+
+  /** 切断 1 つを積んだ文書を解決する。 */
+  function cutStep(plane: PlaneSpec, options: CutOptions = {}): ResolvedPart {
+    const fixture = cutFixture();
+    return resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane, options)));
+  }
+
+  it('3 点を通る切断面は、法線が [0,0,1] で原点が z = 5 の点になる', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'threePoints',
+      p1: cutPointRef(fixture.points[0]),
+      p2: cutPointRef(fixture.points[1]),
+      p3: cutPointRef(fixture.points[2]),
+    };
+    const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
+    expect(result.errors).toEqual([]);
+    const plan = cutPlan(result.steps[1]);
+    expectVec3(plan.normal, [0, 0, 1]);
+    expectVec3(plan.origin, [0, 0, 5]);
+    expect(plan.keepPositive).toBe(true);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+  });
+
+  it('3 点が一直線なら切断面が決まらないと断る(FR-504)', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'threePoints',
+      p1: cutPointRef(fixture.points[0]),
+      p2: cutPointRef(fixture.points[1]),
+      p3: cutPointRef(fixture.points[3]),
+    };
+    const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('notPlanar');
+    expect(result.errors[0].message).toContain('一直線');
+  });
+
+  it('点+辺(垂直)は辺の向きが法線になる', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'pointAndEdge',
+      point: cutPointRef(fixture.points[0]),
+      edge: cutXEdgeRef('extrude-1'),
+      mode: 'perpendicular',
+    };
+    const plan = cutPlan(
+      resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane))).steps[1],
+    );
+    expectVec3(plan.normal, [1, 0, 0]);
+  });
+
+  it('点+辺(辺を含む)は、法線が辺の向きにも「中点→点」にも垂直になる', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'pointAndEdge',
+      point: cutPointRef(fixture.points[2]),
+      edge: cutXEdgeRef('extrude-1'),
+      mode: 'containing',
+    };
+    const plan = cutPlan(
+      resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane))).steps[1],
+    );
+    // 辺は (20,0,0) を中点に X 方向、点は (0,30,5)。
+    expect(dotVec3(plan.normal, [1, 0, 0])).toBeCloseTo(0, 9);
+    expect(dotVec3(plan.normal, [-20, 30, 5])).toBeCloseTo(0, 9);
+    expect(lengthVec3(plan.normal)).toBeCloseTo(1, 9);
+  });
+
+  it('まっすぐでない辺(円)は断る', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'pointAndEdge',
+      point: cutPointRef(fixture.points[0]),
+      edge: cutCircleEdgeRef('extrude-1'),
+      mode: 'perpendicular',
+    };
+    const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].message).toContain('まっすぐな辺');
+  });
+
+  it('点+軸(Z 軸・傾き 0)は軸そのものが法線になる', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'pointAndAxis',
+      point: cutPointRef(fixture.points[0]),
+      axis: { kind: 'world', axis: 'z' },
+      tilt: expr('0'),
+      azimuth: expr('0'),
+    };
+    const plan = cutPlan(
+      resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane))).steps[1],
+    );
+    expectVec3(plan.normal, [0, 0, 1]);
+  });
+
+  it('点+軸(Z 軸・傾き 30)は穴・ばねと同じ規約で倒れる', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'pointAndAxis',
+      point: cutPointRef(fixture.points[0]),
+      axis: { kind: 'world', axis: 'z' },
+      tilt: expr('30'),
+      azimuth: expr('0'),
+    };
+    const plan = cutPlan(
+      resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane))).steps[1],
+    );
+    expectVec3(plan.normal, [0, -0.5, 0.8660254037844387]);
+  });
+
+  it('傾き 180 度は断る(裏返るだけで新しい平面にならない)', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'pointAndAxis',
+      point: cutPointRef(fixture.points[0]),
+      axis: { kind: 'world', axis: 'z' },
+      tilt: expr('180'),
+      azimuth: expr('0'),
+    };
+    const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
+    expect(result.errors[0].code).toBe('invalidValue');
+    expect(result.errors[0].message).toContain('0 度以上 180 度未満');
+  });
+
+  it('点を通り既存の平らな面に平行な切断面は、面の法線と指した点になる', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'pointAndParallelFace',
+      point: cutPointRef(fixture.points[0]),
+      face: topFaceRef('extrude-1'),
+    };
+    const plan = cutPlan(
+      resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane))).steps[1],
+    );
+    expectVec3(plan.normal, [0, 0, 1]);
+    expectVec3(plan.origin, [0, 0, 5]);
+  });
+
+  it('平らでない面(円柱面)に平行な切断面は断る', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'pointAndParallelFace',
+      point: cutPointRef(fixture.points[0]),
+      face: cylinderFaceRef('extrude-1'),
+    };
+    const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].message).toContain('平らな面');
+  });
+
+  it('作業平面(XY)を切断面にできる', () => {
+    const result = cutStep({ kind: 'workPlane', planeId: 'xy', offset: expr('0') });
+    expect(result.errors).toEqual([]);
+    const plan = cutPlan(result.steps[1]);
+    expectVec3(plan.normal, [0, 0, 1]);
+    expectVec3(plan.origin, [0, 0, 0]);
+  });
+
+  it('存在しない平面 id は断る', () => {
+    const result = cutStep({ kind: 'workPlane', planeId: 'plane-404', offset: expr('0') });
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].message).toContain('平面が見つかりません');
+  });
+
+  it('残す側を反対にすると段の keepPositive が false になる', () => {
+    const result = cutStep(
+      { kind: 'workPlane', planeId: 'xy', offset: expr('5') },
+      { keep: 'negative' },
+    );
+    expect(cutPlan(result.steps[1]).keepPositive).toBe(false);
+    expectVec3(cutPlan(result.steps[1]).origin, [0, 0, 5]);
+  });
+
+  it('切断は対象を消費するので、残るのは切断だけ', () => {
+    const result = cutStep({ kind: 'workPlane', planeId: 'xy', offset: expr('5') });
+    expect(result.liveBodyIds).toEqual(['cut-1']);
+    expect(
+      consumedTargetsOf(
+        cutFeature('cut-1', { kind: 'workPlane', planeId: 'xy', offset: expr('0') }),
+      ),
+    ).toEqual(['extrude-1']);
+  });
+
+  it('切るもとの立体が無ければ断る', () => {
+    const result = cutStep(
+      { kind: 'workPlane', planeId: 'xy', offset: expr('5') },
+      { targetFeatureId: 'extrude-404' },
+    );
+    expect(result.steps).toHaveLength(1);
+    expect(result.errors[0].code).toBe('missingBody');
+  });
+
+  /* -- 「反対側も残す」の対(§0.a-0.58) -- */
+
+  /** 同じ立体を表と裏から切る 2 つ(2 つ目が 1 つ目を `pairedWith` で指す)。 */
+  function pairedDocument(options: { readonly suppressSecond?: boolean } = {}): PartDocument {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = { kind: 'workPlane', planeId: 'xy', offset: expr('5') };
+    return withSolids(
+      fixture.document,
+      cutFeature('cut-1', plane),
+      cutFeature('cut-2', plane, {
+        keep: 'negative',
+        pairedWith: 'cut-1',
+        suppressed: options.suppressSecond ?? false,
+      }),
+    );
+  }
+
+  it('対になった 2 つの切断は、対象を 1 度だけ消費して 2 つとも残る', () => {
+    const document = pairedDocument();
+    expect(Array.from(consumedBodyIds(document))).toEqual(['extrude-1']);
+    expect(liveBodyIds(document)).toEqual(['cut-1', 'cut-2']);
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(3);
+    expect(result.liveBodyIds).toEqual(['cut-1', 'cut-2']);
+    expect(cutPlan(result.steps[1]).keepPositive).toBe(true);
+    expect(cutPlan(result.steps[2]).keepPositive).toBe(false);
+  });
+
+  it('対の相手を消すと、残ったほうが単独の切断になる(段は 1 つ)', () => {
+    const result = resolvePart(removeSolid(pairedDocument(), 'cut-1'));
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(2);
+    expect(result.liveBodyIds).toEqual(['cut-2']);
+  });
+
+  it('対の片方を抑制すると、残ったほうが単独の切断になる(FR-503)', () => {
+    const result = resolvePart(pairedDocument({ suppressSecond: true }));
+    expect(result.errors).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['cut-1']);
+  });
+
+  it('対でない 2 つ目は、すでに使われた立体を切ろうとして断られる', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = { kind: 'workPlane', planeId: 'xy', offset: expr('5') };
+    const result = resolvePart(
+      withSolids(
+        fixture.document,
+        cutFeature('cut-1', plane),
+        cutFeature('cut-2', plane, { keep: 'negative' }),
+      ),
+    );
+    expect(result.errors[0].code).toBe('consumedTwice');
+    expect(result.liveBodyIds).toEqual(['cut-1']);
+  });
+
+  it('相手が文書に無い pairedWith は単独の切断として扱う(文書は書き換えない)', () => {
+    const result = cutStep(
+      { kind: 'workPlane', planeId: 'xy', offset: expr('5') },
+      { pairedWith: 'cut-404' },
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['cut-1']);
+  });
+
+  /* -- 鍵(§0.a-0.20、NFR-PF-3) -- */
+
+  it('残す側を変えると鍵が変わり、pairedWith を変えても鍵は変わらない', () => {
+    const plane: PlaneSpec = { kind: 'workPlane', planeId: 'xy', offset: expr('5') };
+    const positive = cutStep(plane).steps[1].key;
+    expect(cutStep(plane).steps[1].key).toBe(positive);
+    expect(cutStep(plane, { keep: 'negative' }).steps[1].key).not.toBe(positive);
+    expect(cutStep(plane, { pairedWith: 'cut-404' }).steps[1].key).toBe(positive);
+  });
+
+  it('切断面の点の座標を変えると鍵が変わる', () => {
+    function keyForZ(z: number): string {
+      const fixture = createFixture();
+      const added = addPoints(fixture.document.sketches[0], [
+        [0, 0, z],
+        [40, 0, z],
+        [0, 30, z],
+      ]);
+      const plane: PlaneSpec = {
+        kind: 'threePoints',
+        p1: cutPointRef(added.pointIds[0]),
+        p2: cutPointRef(added.pointIds[1]),
+        p3: cutPointRef(added.pointIds[2]),
+      };
+      return resolvePart(
+        withSolids(
+          replaceSketch(fixture.document, added.sketch),
+          extrudeFeature('extrude-1', fixture.faceA),
+          cutFeature('cut-1', plane),
+        ),
+      ).steps[1].key;
+    }
+    expect(keyForZ(5)).not.toBe(keyForZ(6));
+  });
+
+  it('上流の押し出しを伸ばすと切断の鍵も変わる(鍵の連鎖)', () => {
+    function keyForDistance(distance: string): string {
+      const fixture = createFixture();
+      return resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA, { distance }),
+          cutFeature('cut-1', { kind: 'workPlane', planeId: 'xy', offset: expr('5') }),
+        ),
+      ).steps[1].key;
+    }
+    expect(keyForDistance('10')).not.toBe(keyForDistance('20'));
+  });
+
+  /* -- 順序の制約(FR-325、§0.a-0.11) -- */
+
+  it('切断面の点が指すスケッチを referencedSketchIds が数える', () => {
+    const fixture = cutFixture();
+    const plane: PlaneSpec = {
+      kind: 'threePoints',
+      p1: cutPointRef(fixture.points[0]),
+      p2: cutPointRef(fixture.points[1]),
+      p3: cutPointRef(fixture.points[2]),
+    };
+    const sketchId = fixture.document.sketches[0].id;
+    expect(referencedSketchIds(cutFeature('cut-1', plane), fixture.document.sketches)).toEqual([
+      sketchId,
+      sketchId,
+      sketchId,
+    ]);
+    // スケッチの一覧を渡さなければ数えない(既存の呼び出しのふるまいを変えない)。
+    expect(referencedSketchIds(cutFeature('cut-1', plane))).toEqual([]);
+  });
+
+  it('作業平面だけの切断面はスケッチを使わない', () => {
+    const feature = cutFeature('cut-1', { kind: 'workPlane', planeId: 'xy', offset: expr('0') });
+    expect(referencedSketchIds(feature, cutFixture().document.sketches)).toEqual([]);
   });
 });

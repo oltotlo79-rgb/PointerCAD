@@ -13,6 +13,8 @@ import {
   replaceSketch,
   type BooleanFeature,
   type ChamferFeature,
+  // 平面による切断(FR-432、P5 タスク27c)。
+  type CutFeature,
   type DraftFeature,
   type EmbossFeature,
   type ExtrudeFeature,
@@ -1816,12 +1818,13 @@ describe('Should 群の要約(P5 §2.11、タスク43)', () => {
   });
 
   it('種類の名前の表は SolidLabelKey を 1 つ残らず持つ(数え漏れを型で止める)', () => {
-    // model の `SOLID_LABELS` と同じ 31 個(P2〜P5 タスク43 の 30 個 +
-    // タスク46 が前倒ししたくり抜き 1 個)。
-    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(31);
+    // model の `SOLID_LABELS` と同じ 32 個(P2〜P5 タスク43 の 30 個 +
+    // タスク46 が前倒ししたくり抜き 1 個 + タスク27c の切断 1 個)。
+    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(32);
     expect(SOLID_KIND_LABEL_KEYS.draft).toBe('toolbar.machining.draft');
     expect(SOLID_KIND_LABEL_KEYS.pointPattern).toBe('toolbar.machining.pointPattern');
     expect(SOLID_KIND_LABEL_KEYS.shell).toBe('toolbar.machining.shell');
+    expect(SOLID_KIND_LABEL_KEYS.cut).toBe('toolbar.machining.cut');
   });
 });
 
@@ -1868,5 +1871,62 @@ describe('くり抜きの要約(FR-418、§2.12、P5 タスク46)', () => {
     const document = appendSolid(documentWith(EXTRUDE), SHELL);
     expect(summarizeSolid(document, EXTRUDE).consumed).toBe(true);
     expect(summarizeSolid(document, SHELL).consumed).toBe(false);
+  });
+});
+
+describe('切断の要約(FR-432、§2.9b、P5 タスク27c)', () => {
+  const CUT: CutFeature = {
+    id: 'cut-1',
+    name: '切断1',
+    suppressed: false,
+    kind: 'cut',
+    targetFeatureId: 'extrude-1',
+    plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(5) },
+    keep: 'positive',
+    pairedWith: null,
+  };
+
+  it('木に出す種類の名前は道具の名前と同じ「切断」になる(FR-501)', () => {
+    const document = appendSolid(documentWith(EXTRUDE), CUT);
+    const summary = summarizeSolid(document, CUT);
+    expect(solidKindOf(CUT)).toBe('cut');
+    expect(summary.kind).toBe('cut');
+    expect(summary.kindLabelKey).toBe('toolbar.machining.cut');
+    expect(summary.name).toBe('切断1');
+  });
+
+  it('切った相手の立体を出す(平面の欄と残す側のつまみは タスク27f)', () => {
+    const document = appendSolid(documentWith(EXTRUDE), CUT);
+    const summary = summarizeSolid(document, CUT);
+    expect(summary.references).toEqual([
+      { labelKey: 'propertyPanel.targetBody', name: '押し出し1', elementId: 'extrude-1' },
+    ]);
+    expect(summary.fields).toEqual([]);
+    expect(summary.toggles).toEqual([]);
+    expect(summary.subShapeCounts).toEqual([]);
+  });
+
+  it('切断は対象を消費するので、木で元が「使われた」印になる', () => {
+    const document = appendSolid(documentWith(EXTRUDE), CUT);
+    expect(summarizeSolid(document, EXTRUDE).consumed).toBe(true);
+    expect(summarizeSolid(document, CUT).consumed).toBe(false);
+  });
+
+  it('対になった 2 つの切断は、どちらも画面に残る(§0.a-0.58)', () => {
+    const paired: CutFeature = {
+      ...CUT,
+      id: 'cut-2',
+      name: '切断2',
+      keep: 'negative',
+      pairedWith: 'cut-1',
+    };
+    const document = appendSolid(appendSolid(documentWith(EXTRUDE), CUT), paired);
+    expect(summarizeSolid(document, CUT).consumed).toBe(false);
+    expect(summarizeSolid(document, paired).consumed).toBe(false);
+    expect(summarizeSolid(document, EXTRUDE).consumed).toBe(true);
+  });
+
+  it('欄をまだ持たないので、式の書き戻しは同じものを返す(欄を出すのは タスク27f)', () => {
+    expect(setSolidField(CUT, 'distance', expressionValueFromNumber(9))).toBe(CUT);
   });
 });

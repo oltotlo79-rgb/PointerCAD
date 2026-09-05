@@ -1232,6 +1232,16 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         thickness: plan.thickness,
         outward: plan.outward,
       };
+    case 'cut':
+      // 平面による切断(FR-432、§2.9b)。平面は resolvePart が「通る点+単位法線」まで
+      // 解いてあるので、欄名を合わせるだけ(指紋は段へ運ばない)。
+      return {
+        kind: 'cut',
+        targetKey: plan.targetKey,
+        origin: plan.origin,
+        normal: plan.normal,
+        keepPositive: plan.keepPositive,
+      };
   }
 }
 

@@ -312,6 +312,10 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       // くり抜き(FR-418、§2.12、タスク46)。式の欄は壁の厚さ 1 つだけで、
       // 開ける面の指紋・向きのつまみは式ではない。
       return { ...feature, thickness: map(feature.thickness) };
+    case 'cut':
+      // 平面による切断(FR-432、§2.9b、タスク27c)。式は切断面の中(`pointAndAxis` の
+      // 傾き角・方位角、`face` / `workPlane` のオフセット、点の座標)にある。
+      return { ...feature, plane: rebuildPlaneSpec(feature.plane, map) };
   }
 }
 

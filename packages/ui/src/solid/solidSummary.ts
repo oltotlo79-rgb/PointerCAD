@@ -277,6 +277,9 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   // くり抜き(FR-418、§2.12。P5 タスク46 で型・解決・読み書きを前倒しした)。
   // 道具のボタン・案内・説明の文言は **タスク55**。
   shell: 'toolbar.machining.shell',
+  // 平面による切断(FR-432、§2.9b。P5 タスク27c)。「加工」の畳んだ一覧に入る
+  // (§0.a-0.64)ので `toolbar.machining.*`。道具のボタン・案内・説明は **タスク27f**。
+  cut: 'toolbar.machining.cut',
 };
 
 /** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
@@ -1113,6 +1116,18 @@ export function summarizeSolid(
           { labelKey: 'propertyPanel.selectedFaces', count: feature.openFaces.length },
         ],
       };
+    case 'cut':
+      // 平面による切断(FR-432、P5 タスク27c)。**平面の決め方・残す側のつまみ・対の案内は
+      // タスク27f**(プロパティに欄を出すのと同じ段)。ここは union が広がったときにこの
+      // 網羅 switch を落とさないための最小の枝で、いま出すのは「何を切ったか」だけ。
+      return {
+        ...base,
+        fields: [],
+        toggles: [],
+        choices: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [],
+      };
     case 'emboss':
       return {
         ...base,
@@ -1195,9 +1210,11 @@ export function setSolidField(
     case 'threadShaft':
     case 'surface':
     case 'shell':
+    case 'cut':
       // P5 の Should 群(§2.11、タスク43)の書き戻しは **タスク52**(欄を出すのと同じ段)、
-      // くり抜き(FR-418、タスク46)は **タスク55**。
-      // いまは欄を 1 つも出していないので、そのまま返す。
+      // くり抜き(FR-418、タスク46)は **タスク55**、切断(FR-432、タスク27c)は
+      // **タスク27f**。いまは欄を 1 つも出していないので、そのまま返す。
+      // (切断が持つ式は切断面の中にあり、`SolidFieldKey` の欄ではない。)
       return feature;
   }
 }

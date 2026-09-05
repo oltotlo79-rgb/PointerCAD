@@ -17,6 +17,8 @@ import {
   type LoftFeature,
   type PartDocument,
   type Parameter,
+  // 平面による切断(FR-432、P5 タスク27c)。切断面は作業平面と同じ型を共有する。
+  type PlaneSpec,
   type PrimitiveFeature,
   type PrimitiveShape,
   type ReferenceFeature,
@@ -4265,5 +4267,169 @@ describe('くり抜き・可変半径・面のオフセットの読み書き(FR-
       }),
     });
     expect(expectError(parseDocument(missing)).message).toContain('thickness');
+  });
+});
+
+describe('平面による切断の読み書き(FR-432、§2.9b。P5 タスク27c)', () => {
+  it('単独の切断(pairedWith が null)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'cut-1',
+      kind: 'cut',
+      name: '切断1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      plane: { kind: 'workPlane', planeId: 'xy', offset: ev('5', 5) },
+      keep: 'positive',
+      pairedWith: null,
+    });
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('対になった切断(pairedWith が相手の id、残す側が反対)が往復で一致する', () => {
+    const document = documentWithSolid({
+      id: 'cut-2',
+      kind: 'cut',
+      name: '切断2',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      plane: { kind: 'workPlane', planeId: 'xy', offset: ev('5', 5) },
+      keep: 'negative',
+      pairedWith: 'cut-1',
+    });
+    expect(roundTrip(document)).toEqual(document);
+  });
+
+  it('切断面は 7 種のどれでも往復する(作業平面と同じ読み書きを共有する)', () => {
+    const planes: readonly PlaneSpec[] = [
+      {
+        kind: 'threePoints',
+        p1: { kind: 'point', pointId: 'point-1' },
+        p2: { kind: 'point', pointId: 'point-2' },
+        p3: { kind: 'vertex', featureId: 'line-1', vertex: 'end' },
+      },
+      {
+        kind: 'pointAndEdge',
+        point: { kind: 'origin' },
+        edge: shouldFaceRef('extrude-1', 4),
+        mode: 'containing',
+      },
+      {
+        kind: 'pointAndAxis',
+        point: { kind: 'origin' },
+        axis: { kind: 'world', axis: 'z' },
+        tilt: ev('30', 30),
+        azimuth: ev('0', 0),
+      },
+      {
+        kind: 'pointAndParallelFace',
+        point: { kind: 'origin' },
+        face: shouldFaceRef(),
+      },
+      { kind: 'face', face: shouldFaceRef(), offset: ev('0', 0) },
+      { kind: 'workPlane', planeId: 'referencePlane-1', offset: ev('2', 2) },
+      {
+        kind: 'tilted',
+        base: 'xy',
+        axis: { kind: 'reference', referenceFeatureId: 'referenceAxis-1' },
+        angle: ev('15', 15),
+      },
+    ];
+    for (const plane of planes) {
+      const document = documentWithSolid({
+        id: 'cut-1',
+        kind: 'cut',
+        name: '切断1',
+        suppressed: false,
+        targetFeatureId: 'extrude-1',
+        plane,
+        keep: 'positive',
+        pairedWith: null,
+      });
+      expect(roundTrip(document)).toEqual(document);
+    }
+  });
+
+  it('切断面の中の式は式のまま往復する(FR-202)', () => {
+    const document = documentWithSolid({
+      id: 'cut-1',
+      kind: 'cut',
+      name: '切断1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      plane: {
+        kind: 'workPlane',
+        planeId: 'xy',
+        offset: { source: '板厚 * 2', value: 6, display: '6' },
+      },
+      keep: 'positive',
+      pairedWith: null,
+    });
+    const parsed = roundTrip(document).solids[0];
+    if (parsed.kind !== 'cut') {
+      throw new Error('テストの前提が壊れている: 切断でない');
+    }
+    if (parsed.plane.kind !== 'workPlane') {
+      throw new Error('テストの前提が壊れている: 作業平面でない');
+    }
+    expect(parsed.plane.offset.source).toBe('板厚 * 2');
+  });
+
+  it('知らない残す側の値は断る(エラーコードは増やさない)', () => {
+    const file = rawFile({
+      document: rawDocument({
+        solids: [
+          {
+            id: 'cut-1',
+            kind: 'cut',
+            name: '切断1',
+            suppressed: false,
+            targetFeatureId: 'extrude-1',
+            plane: { kind: 'workPlane', planeId: 'xy', offset: ev('5', 5) },
+            keep: 'both',
+            pairedWith: null,
+          },
+        ],
+      }),
+    });
+    expect(expectError(parseDocument(file)).code).toBe('invalidField');
+  });
+
+  it('pairedWith が文字列でも null でもなければ断る', () => {
+    const file = rawFile({
+      document: rawDocument({
+        solids: [
+          {
+            id: 'cut-1',
+            kind: 'cut',
+            name: '切断1',
+            suppressed: false,
+            targetFeatureId: 'extrude-1',
+            plane: { kind: 'workPlane', planeId: 'xy', offset: ev('5', 5) },
+            keep: 'positive',
+            pairedWith: 3,
+          },
+        ],
+      }),
+    });
+    expect(expectError(parseDocument(file)).message).toContain('pairedWith');
+  });
+
+  it('切断面が欠けていれば断る(欄の意味を推測しない)', () => {
+    const file = rawFile({
+      document: rawDocument({
+        solids: [
+          {
+            id: 'cut-1',
+            kind: 'cut',
+            name: '切断1',
+            suppressed: false,
+            targetFeatureId: 'extrude-1',
+            keep: 'positive',
+            pairedWith: null,
+          },
+        ],
+      }),
+    });
+    expect(expectError(parseDocument(file)).message).toContain('plane');
   });
 });

@@ -21,6 +21,7 @@ import type { BaseWorkPlaneId } from '../sketch/planeMath.js';
 import type { SketchDocument } from '../sketch/types.js';
 import type {
   BooleanOperation,
+  CutFeature,
   ExtrudeEnd,
   ExtrudeFeature,
   FilletFeature,
@@ -301,6 +302,16 @@ export const DEFAULT_SHELL_OUTWARD = false;
  */
 export const DEFAULT_FILLET_RADIUS_END_MM = 5;
 
+/* -- 平面による切断(FR-432、§2.9b、タスク27c)-- */
+
+/**
+ * 切断で残す側の既定(§0.a-0.57、§2.9b.2)。法線の側を残す。
+ *
+ * 既定値は 1 か所だけに置く(`extrudeShapingOf` / `filletRadiusOf` と同じ約束)。
+ * コマンド(タスク27e)とプロパティ(タスク27f)はこの値を写さずにここから読む。
+ */
+export const DEFAULT_CUT_KEEP: CutFeature['keep'] = 'positive';
+
 /**
  * 押し出しの「終端・傾き・薄板」の欄をすべて埋めた形(FR-415、FR-401、FR-416)。
  *
@@ -419,7 +430,9 @@ export type SolidLabelKey =
   */
   | 'pointPattern'
   /** くり抜き(FR-418、§2.12)。P5 の Could 群のうちタスク46 が前倒しした 1 種。 */
-  | 'shell';
+  | 'shell'
+  /** 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。 */
+  | 'cut';
 
 /**
  * ソリッドの種類ごとの既定名。ドキュメントの既定データとしてここに置く
@@ -460,6 +473,9 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   pointPattern: '点パターン',
   // くり抜き(FR-418、§2.12。P5 の Could 群、タスク46 で前倒し)。
   shell: 'くり抜き',
+  // 平面による切断(FR-432、§2.9b、タスク27c)。「反対側も残す」で 2 つ積んだときは
+  // 「切断1」「切断2」と連番が並ぶ(同じ種類なので分けない)。
+  cut: '切断',
 };
 
 /**
@@ -848,8 +864,13 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'emboss':
     case 'threadShaft':
     case 'shell':
+    case 'cut':
       // 加工4種、P5 の Should 群のうち対象1つを消費するもの(§2.11 の表)、そして
-      // くり抜き(FR-418、§2.12。中身を抜いた立体 1 つだけが残る)。
+      // くり抜き(FR-418、§2.12。中身を抜いた立体 1 つだけが残る)と
+      // 平面による切断(FR-432、§2.9b。残す側 1 つだけが残る)。
+      //
+      // **切断は「対」でも 1 つずつ対象を返す**(§0.a-0.58)。対を 1 度だけ数えるのは
+      // 消費する側の役目で(`consumedBodyIds` の注釈)、ここは種類ごとの規則だけを持つ。
       return [feature.targetFeatureId];
     case 'pattern':
       return [feature.sourceFeatureId];
@@ -886,7 +907,9 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'emboss':
     case 'threadShaft':
     case 'shell':
-      // くり抜き(FR-418、§2.12)も対象 1 つを取って形を変えるので加工に数える。
+    case 'cut':
+      // くり抜き(FR-418、§2.12)と切断(FR-432、§2.9b)も対象 1 つを取って形を変えるので
+      // 加工に数える(ツールバーでも「加工」の畳んだ一覧に入る。§0.a-0.64)。
       return true;
     case 'extrude':
     case 'revolve':
@@ -930,6 +953,12 @@ export function isPatternSource(feature: SolidFeature): boolean {
  * 抑制されたフィーチャーは再計算で飛ばされるので何も消費せず、ボディも作らない。
  * 参照先が消えている場合(FR-504 で失敗させる場合)は消費に数えない。
  * ここは文書だけを見る判定で、実際に形が作れたかどうかは resolvePart が決める。
+ *
+ * **「反対側も残す」で対になった 2 つの切断(FR-432、§0.a-0.58)も、対象を 1 度だけ
+ * 数える。** 消費の記録が集合(`Set`)なので、同じ id を 2 度足しても 1 つのままになり、
+ * 「対の片方だけが消費した」と数える特別扱いは要らない。結果として対象は画面から消え、
+ * 切断 2 つが `liveBodyIds` に並ぶ(これが §0.a-0.58 の求める形である)。
+ * 対の片方だけを抑制すれば、残ったほうが単独の切断として対象を消費する。
  */
 export function consumedBodyIds(document: PartDocument): ReadonlySet<string> {
   const consumed = new Set<string>();

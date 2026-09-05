@@ -432,3 +432,18 @@ export type {
  * 全スケッチを id で探すこの口を通す(`referencedSketchIds` の第 2 引数も同じ材料)。
  */
 export { sketchIdOfPointReference } from './part/resolvePart.js';
+/**
+ * 平面による切断(FR-432、P5 計画書 §2.9b、タスク27c)。分割(FR-424)もこれで満たす
+ * (§0.a-0.60)。
+ *
+ * **`CutFeature` は新しい保存形**なので型を出す(`ShellFeature` と同じ扱い)。
+ * 切断面の型 `PlaneSpec` と解決 `resolvePlaneSpec` は**任意の作業平面(FR-328)と
+ * 共有するもの**で、P4 タスク9 の時点からここで輸出済みである(§0.a-0.56。切断のために
+ * 新しく足す平面の型は無い)。残す側の既定はコマンド(タスク27e)とプロパティ
+ * (タスク27f)が写さずに読めるよう、既定値の正本をここから出す。
+ *
+ * 鍵の材料 `CutKeyMaterial` はタスク44 が作り、タスク45 が輸出済み。段の型
+ * (`SolidStepPlan`)は P2 から輸出していないので、切断でも出さない。
+ */
+export type { CutFeature } from './part/types.js';
+export { DEFAULT_CUT_KEEP } from './part/createPartDocument.js';

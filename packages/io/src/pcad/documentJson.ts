@@ -28,6 +28,8 @@ import {
   type ConstraintTarget,
   type CoordinateInput,
   type CopyPlacement,
+  // 平面による切断(FR-432、§2.9b、タスク27c)。
+  type CutFeature,
   type EdgeCurveKind,
   // P5 の Should 群(§2.11、タスク43)が足した型。
   type ExtrudeEnd,
@@ -218,6 +220,8 @@ const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = [
   'surface',
   // P5 の Could 群のうちタスク46 が前倒しした 1 種(FR-418)。
   'shell',
+  // 平面による切断(FR-432、P5 計画書 §2.9b、タスク27c)。分割(FR-424)もこれで満たす。
+  'cut',
 ];
 /** 押し出しの終端の4通り(FR-415、P5 タスク43)。 */
 const EXTRUDE_END_KINDS: readonly ExtrudeEnd['kind'][] = [
@@ -303,6 +307,8 @@ const PLANE_SPEC_KINDS: readonly PlaneSpec['kind'][] = [
   'workPlane',
   'tilted',
 ];
+/** 切断で残す側(FR-432、§0.a-0.57)。法線の側か、その反対。 */
+const CUT_KEEP_SIDES: readonly CutFeature['keep'][] = ['positive', 'negative'];
 type PointAndEdgeSpec = Extract<PlaneSpec, { readonly kind: 'pointAndEdge' }>;
 const POINT_AND_EDGE_MODES: readonly PointAndEdgeSpec['mode'][] = ['perpendicular', 'containing'];
 /** 基準ジオメトリの種類(FR-328、FR-329)。 */
@@ -1400,6 +1406,21 @@ function serializeSolidFeature(feature: SolidFeature): SolidFeature {
         openFaces: feature.openFaces.map(serializeSubShapeRef),
         thickness: serializeExpression(feature.thickness),
         outward: feature.outward,
+      };
+    case 'cut':
+      // 平面による切断(FR-432、§2.9b、タスク27c)。切断面は任意の作業平面(FR-328)と
+      // 同じ `serializePlaneSpec` を通す(読み書きを 2 か所に書かない)。
+      // `pairedWith` は単独なら null をそのまま書き出す(欄ごと省略しない。
+      // 「対の相手がいない」ことを読む側が判定に使うため)。
+      return {
+        id: feature.id,
+        kind: 'cut',
+        name: feature.name,
+        suppressed: feature.suppressed,
+        targetFeatureId: feature.targetFeatureId,
+        plane: serializePlaneSpec(feature.plane),
+        keep: feature.keep,
+        pairedWith: feature.pairedWith,
       };
   }
 }
@@ -3766,6 +3787,9 @@ function readSolidFeature(value: unknown, path: string): Checked<SolidFeature> {
     // P5 の Could 群のうちタスク46 が前倒しした 1 種(FR-418)。
     case 'shell':
       return readShellFeature(record.value, path, base.value);
+    // 平面による切断(FR-432、§2.9b、タスク27c)。
+    case 'cut':
+      return readCutFeature(record.value, path, base.value);
   }
 }
 
@@ -5122,6 +5146,64 @@ function readShellFeature(
       outward: outward.value,
     },
   };
+}
+
+/**
+ * 平面による切断(FR-432、§2.9b、タスク27c)を読む。
+ *
+ * 切断面は任意の作業平面(FR-328)と同じ `readPlaneSpec` を通す(読み書きを 2 か所に
+ * 書かない)。`pairedWith` は**文字列か null** で、欄が無ければ型が違うとして断る
+ * (「対の相手がいない」は null であって、欄の省略ではない)。
+ * 知らない値は既存の `invalidField` になる(エラーコードは増やさない)。
+ */
+function readCutFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const plane = readPlaneSpec(record, 'plane', path);
+  if (!plane.ok) {
+    return plane;
+  }
+  const keep = readLiteral(record, 'keep', path, CUT_KEEP_SIDES);
+  if (!keep.ok) {
+    return keep;
+  }
+  const pairedWith = readNullableString(record, 'pairedWith', path);
+  if (!pairedWith.ok) {
+    return pairedWith;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'cut',
+      targetFeatureId: targetFeatureId.value,
+      plane: plane.value,
+      keep: keep.value,
+      pairedWith: pairedWith.value,
+    },
+  };
+}
+
+/** 文字列か `null`(切断の `pairedWith`)。欄が無い・別の型なら断る。 */
+function readNullableString(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<string | null> {
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  if (found.value === null) {
+    return { ok: true, value: null };
+  }
+  return readString(source, key, parentPath);
 }
 
 // ---------------------------------------------------------------------------

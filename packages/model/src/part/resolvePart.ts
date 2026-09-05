@@ -33,8 +33,14 @@
 
 import type { ExpressionValue } from '@pointercad/expression';
 
-import type { AxisFrame, AxisSpec, ResolvedSubShape } from '../geometry/planeSpec.js';
-import { subShapeFromFingerprint } from '../geometry/planeSpec.js';
+import type {
+  AxisFrame,
+  AxisSpec,
+  PlaneResolveContext,
+  PlaneSpec,
+  ResolvedSubShape,
+} from '../geometry/planeSpec.js';
+import { resolvePlaneSpec, subShapeFromFingerprint } from '../geometry/planeSpec.js';
 import { projectionCacheKey } from '../sketch/projectionMath.js';
 import {
   degreesToRadians,
@@ -123,6 +129,7 @@ import type {
   BooleanOperation,
   ChamferFeature,
   ChamferSize,
+  CutFeature,
   DraftFeature,
   EmbossFeature,
   ExtrudeEnd,
@@ -679,6 +686,23 @@ export type SolidStepPlan =
       readonly thickness: number;
       /** true で外向きに肉を付ける。false(既定)で内向き。 */
       readonly outward: boolean;
+    }
+  | {
+      /**
+       * 平面による切断(FR-432、§2.9b、タスク27c)。**対象を消費し、残す側 1 つ**を作る。
+       *
+       * 平面(`PlaneSpec` の 7 種)は解決が「通る点+単位法線」の数値まで解いてから
+       * 載せる。カーネルは平面 1 枚しか要らないので、指紋を段へ運ばない
+       * (§2.9b の「カーネルへの往復を増やさない」)。
+       */
+      readonly kind: 'cut';
+      readonly targetKey: string;
+      /** 切断面が通る点(mm)。 */
+      readonly origin: Vec3;
+      /** 切断面の単位法線。この向きの側を残すかどうかが `keepPositive`。 */
+      readonly normal: Vec3;
+      /** 法線の側を残すなら true(文書の `keep === 'positive'`)。 */
+      readonly keepPositive: boolean;
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -3842,6 +3866,123 @@ function planShell(
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * 平面による切断(FR-432、§2.9b、タスク27c)
+ * ------------------------------------------------------------------ */
+
+/** 切るもとの立体が引けない(未作成・抑制中・上流が失敗・前方参照)。 */
+const CUT_MISSING_BODY_MESSAGE = '切るもとの立体が見つかりません。';
+/** 対でないのに、すでに使われた立体をもう一度切ろうとした。 */
+const CUT_CONSUMED_TWICE_MESSAGE = 'その立体はすでに別のところで使われています。';
+
+/**
+ * 対になっている切断(§0.a-0.58)を文書から引く。
+ *
+ * 結びは 2 つ目が `pairedWith` に 1 つ目の id を持つ形で保存されるので、**どちら向きにも
+ * 探す**(履歴の並べ替え FR-507 で 2 つの順序が入れ替わっても対のままにするため)。
+ *
+ * **相手が文書に無い・抑制されている・切断でない・別の立体を切っているときは null**
+ * (= 単独の切断として扱う)。文書は書き換えない(§2.9b.2)。
+ */
+function pairedCutOf(feature: CutFeature, solids: readonly SolidFeature[]): CutFeature | null {
+  const partner = solids.find(
+    (candidate) =>
+      candidate.kind === 'cut' &&
+      candidate.id !== feature.id &&
+      (candidate.id === feature.pairedWith || candidate.pairedWith === feature.id),
+  );
+  if (partner === undefined || partner.kind !== 'cut' || partner.suppressed) {
+    return null;
+  }
+  return partner.targetFeatureId === feature.targetFeatureId ? partner : null;
+}
+
+/**
+ * 切断の対象になるボディの鍵を引く(§0.a-0.5、§0.a-0.58)。
+ *
+ * 加工の `resolveMachiningTarget` と同じ判定に、**対の切断だけの例外**を足したもの。
+ * 「反対側も残す」で積まれた 2 つ目は、対象が 1 つ目に消費された後で解決される。
+ * このときだけ `consumedTwice` を出さず、対象を **1 度だけ**消費したものとして扱う。
+ *
+ * 例外を許すのは「対の相手が段を作れた」(= `bodyKeys` にいる)ときだけである。相手が
+ * 段を作れていないなら、対象を消費したのは相手ではない別のフィーチャーなので、
+ * 通常どおり断る(対を口実に二重消費を通さない)。
+ */
+function resolveCutTarget(
+  feature: CutFeature,
+  solids: readonly SolidFeature[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): MachiningTargetOutcome {
+  const targetKey = bodyKeys.get(feature.targetFeatureId);
+  if (targetKey === undefined) {
+    return { ok: false, error: partError(feature.id, 'missingBody', CUT_MISSING_BODY_MESSAGE) };
+  }
+  if (!consumed.has(feature.targetFeatureId)) {
+    return { ok: true, targetKey };
+  }
+  const partner = pairedCutOf(feature, solids);
+  if (partner !== null && bodyKeys.has(partner.id)) {
+    return { ok: true, targetKey };
+  }
+  return { ok: false, error: partError(feature.id, 'consumedTwice', CUT_CONSUMED_TWICE_MESSAGE) };
+}
+
+/**
+ * 切断面(`PlaneSpec`)を解く。**平面の解決の正本は `geometry/planeSpec.ts`** で、
+ * ここは手掛かり(点・部分形状・軸・作図面)を束ねて渡すだけである(同じ規則を 2 か所に
+ * 書かない。§0.a-0.56)。軸は回転・パターンと同じ `resolveRevolveAxis` を再利用する。
+ */
+function cutPlaneContext(
+  sketches: readonly ResolvedPartSketch[],
+  context: SolidPlanContext,
+): PlaneResolveContext {
+  return {
+    point: context.point,
+    subShape: context.subShape,
+    axis: (spec: AxisSpec) => resolveRevolveAxis(spec, sketches, context.axisFrames),
+    workPlane: context.workPlane,
+  };
+}
+
+/**
+ * 平面による切断(FR-432、§2.9b)。対象を消費し、残す側 1 つのボディを作る。
+ *
+ * 残す側の意味は解決した**法線の向き**で決まる(§0.a-0.57)ので、断りの文言も含めて
+ * 平面の解決は `resolvePlaneSpec` に任せる(同じ指定からは必ず同じ法線が出る)。
+ * 平面が決まらなかった理由(`PlaneErrorKey`)は基準ジオメトリと同じ表でツリーの
+ * 断りへ写す(`REFERENCE_ERROR_CODES`。断りのコードを増やさない)。
+ */
+function planCut(
+  feature: CutFeature,
+  solids: readonly SolidFeature[],
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const target = resolveCutTarget(feature, solids, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const outcome = resolvePlaneSpec(feature.plane, cutPlaneContext(sketches, context));
+  if (!outcome.ok) {
+    return fail(feature.id, REFERENCE_ERROR_CODES[outcome.reason], outcome.message);
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'cut',
+      targetKey: target.targetKey,
+      origin: outcome.plane.origin,
+      // 法線は `resolvePlaneSpec` が単位化済み。-0 を 0 に揃えるのはミラーと同じ理由
+      // (同じ平面から必ず同じ鍵を出すため)。
+      normal: cleanZeroVec3(outcome.plane.normal),
+      keepPositive: feature.keep === 'positive',
+    },
+  };
+}
+
 function planSolid(
   feature: SolidFeature,
   solids: readonly SolidFeature[],
@@ -3899,6 +4040,9 @@ function planSolid(
       return planSurface(feature, sketches, bodyKeys, context);
     case 'shell':
       return planShell(feature, bodyKeys, consumed);
+    // 平面による切断(FR-432、§2.9b、タスク27c)。
+    case 'cut':
+      return planCut(feature, solids, sketches, bodyKeys, consumed, context);
   }
 }
 
@@ -4313,6 +4457,20 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         thickness: plan.thickness,
         outward: plan.outward,
       };
+    case 'cut':
+      /*
+        切断(FR-432)。**平面は解決済みの点と法線を混ぜる**(`planeSpecKeyText` は混ぜない)。
+        指定の書き方が違っても同じ平面になるなら同じ形なので、鍵も同じにするためである。
+        点の座標を変えれば解決した `origin` が動いて鍵も変わる(検証表の行)。
+        **`pairedWith` は混ぜない**(形に影響しない。`CutKeyMaterial` の注釈)。
+      */
+      return {
+        kind: 'cut',
+        targetKey: plan.targetKey,
+        origin: toKeyVec3(plan.origin),
+        normal: toKeyVec3(plan.normal),
+        keepPositive: plan.keepPositive,
+      };
   }
 }
 
@@ -4607,6 +4765,38 @@ export function referencedSketchIds(
       return [feature.profile.sketchId];
     case 'surface':
       return surfaceSketchIds(feature.operation);
+    case 'cut':
+      // 切断(FR-432、タスク27c)。切断面の点がスケッチの点でありうるので、拡大縮小の
+      // 中心とまったく同じ扱いで id から探す(スケッチの一覧を渡されたときだけ数える)。
+      return planeSketchIds(feature.plane, sketches);
+  }
+}
+
+/**
+ * 平面の指定(`PlaneSpec`)が使うスケッチの id(FR-325 の順序の制約、タスク27c)。
+ *
+ * 点は `PointReference` で「どのスケッチか」を持たないので、`scale` の中心・点集合
+ * パターンと同じく **id で全スケッチから探す**(`pointSketchIds`)。面・辺は指紋なので
+ * スケッチを見ない。基準にする作業平面(`workPlane` / `tilted`)が使うスケッチは
+ * 基準ジオメトリ側の依存で、ここでは数えない(`referenceDependencies` の役目)。
+ */
+function planeSketchIds(
+  spec: PlaneSpec,
+  sketches: readonly SketchDocument[],
+): readonly string[] {
+  switch (spec.kind) {
+    case 'threePoints':
+      return pointSketchIds([spec.p1, spec.p2, spec.p3], sketches);
+    case 'pointAndEdge':
+    case 'pointAndParallelFace':
+      return pointSketchIds([spec.point], sketches);
+    case 'pointAndAxis':
+      return [...pointSketchIds([spec.point], sketches), ...axisSketchIds(spec.axis)];
+    case 'face':
+    case 'workPlane':
+      return [];
+    case 'tilted':
+      return axisSketchIds(spec.axis);
   }
 }
 

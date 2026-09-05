@@ -176,6 +176,20 @@ function offsetPlane(id: string, offset: ExpressionValue): ReferenceFeature {
   };
 }
 
+/** 平面による切断(FR-432、P5 タスク27c)。切断面のオフセットに式を持つ。 */
+function cut(id: string, offset: ExpressionValue): SolidFeature {
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    kind: 'cut',
+    targetFeatureId: 'extrude-1',
+    plane: { kind: 'workPlane', planeId: DEFAULT_WORK_PLANE_ID, offset },
+    keep: 'positive',
+    pairedWith: null,
+  };
+}
+
 function coordinatePoint(id: string, at: CoordinateInput): ReferenceFeature {
   return { id, name: id, visible: true, kind: 'referencePoint', definition: { kind: 'coordinate', at } };
 }
@@ -337,6 +351,23 @@ describe('reevaluatePartDocument', () => {
     }
     expect(solid.distance.value).toBe(10);
     expect(solid.distance.source).toBe('板厚 * 2');
+  });
+
+  it('切断面の中の式も追従する(板厚 3 → 5 で 6 → 10、FR-432)', () => {
+    const document = buildDocument({ solids: [cut('cut-1', pending('板厚 * 2'))] });
+    const three = reevaluatePartDocument(document, variables({ 板厚: 3 })).document;
+    const five = reevaluatePartDocument(three, variables({ 板厚: 5 })).document;
+    const before = three.solids[0];
+    const after = five.solids[0];
+    if (before.kind !== 'cut' || after.kind !== 'cut') {
+      throw new Error('切断のはず');
+    }
+    if (before.plane.kind !== 'workPlane' || after.plane.kind !== 'workPlane') {
+      throw new Error('作業平面のはず');
+    }
+    expect(before.plane.offset.value).toBe(6);
+    expect(after.plane.offset.value).toBe(10);
+    expect(after.plane.offset.source).toBe('板厚 * 2');
   });
 
   it('穴の径が追従する(板厚 3 → 5 で 6 → 10)', () => {

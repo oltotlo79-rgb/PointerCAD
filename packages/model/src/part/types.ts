@@ -145,7 +145,14 @@ export type SolidFeatureKind =
    * 対象を消費する。Could 群だが、型・解決・読み書きはタスク46 で前倒しした
    * (カーネルの段(タスク53)と鍵の材料(タスク44)が先にそろっていたため)。
    */
-  | 'shell';
+  | 'shell'
+  /**
+   * 平面による切断(FR-432、P5 計画書 §2.9b、タスク27c)。分割(FR-424)もこれで満たす
+   * (§0.a-0.60)。対象を消費して**残す側 1 つ**のボディを作る。「反対側も残す」は
+   * コマンドが 2 つ目の切断を積むことで満たす(§0.a-0.58)ので、1 つの切断が
+   * 2 つのボディを作る形にはしない。
+   */
+  | 'cut';
 
 interface SolidFeatureBase {
   /**
@@ -988,6 +995,36 @@ export interface ShellFeature extends SolidFeatureBase {
   readonly outward: boolean;
 }
 
+/**
+ * 平面による切断(FR-432、§0.a-0.56〜0.60、P5 計画書 §2.9b.2)。
+ *
+ * 切断面は**任意の作業平面(FR-328)と同じ `PlaneSpec`** で持つ(§0.a-0.56)。
+ * 「面を確定できる要素の組み合わせ」を 2 か所に書かないためで、切断専用の平面の型は
+ * 作らない。将来の断面表示(FR-111)も同じ型を指せる。
+ *
+ * **対象を消費し、残る側 1 つのボディを作る。** 残す側は解決した平面の**法線の向き**で
+ * 決まる(§0.a-0.57)ので、`resolvePlaneSpec` が同じ指定から必ず同じ法線を返すこと
+ * (決定性)がこの欄の意味を支えている。
+ */
+export interface CutFeature extends SolidFeatureBase {
+  readonly kind: 'cut';
+  /** 切る対象のボディ(フィーチャー id)。消費する。 */
+  readonly targetFeatureId: string;
+  /** 切断面の決め方(FR-328 と共有する 7 種)。 */
+  readonly plane: PlaneSpec;
+  /** 法線の側を残すか、その反対か(§0.a-0.57)。既定 `'positive'`。 */
+  readonly keep: 'positive' | 'negative';
+  /**
+   * 「反対側も残す」で自動追加された 2 つ目のとき、1 つ目の切断フィーチャーの id。
+   * null なら単独の切断(§0.a-0.58)。
+   *
+   * **形には影響しない**(鍵に混ぜない。`CutKeyMaterial` の注釈)。効くのは消費の数え方
+   * だけで、対で結ばれた 2 つは対象を **1 度だけ**消費したものとして扱う。相手が文書から
+   * 消えた・抑制されたときは、残ったほうが単独の切断として振る舞う(**文書は書き換えない**)。
+   */
+  readonly pairedWith: string | null;
+}
+
 export type SolidFeature =
   | ExtrudeFeature
   | RevolveFeature
@@ -1013,7 +1050,9 @@ export type SolidFeature =
   | ThreadShaftFeature
   | SurfaceFeature
   // P5 の Could 群のうち、型・解決・読み書きをタスク46 が前倒しした 1 種(FR-418)。
-  | ShellFeature;
+  | ShellFeature
+  // 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。
+  | CutFeature;
 
 // ---------------------------------------------------------------------------
 // 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329。P4 タスク9)

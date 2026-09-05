@@ -524,6 +524,16 @@ function solidDependencies(
         found.push(...subShapeDependencies(context, face));
       }
       break;
+    case 'cut':
+      /*
+        平面による切断(FR-432、§2.9b、タスク27c)。対象は消費するので上で数え終えているが、
+        **切断面が指すもの**(点・辺・面・軸・作業平面)は別のボディや基準ジオメトリを
+        指しうる。基準ジオメトリの平面とまったく同じものを指せるので、
+        `planeSpecDependencies` をそのまま使う(規則を 2 か所に書かない)。
+        `pairedWith` は依存ではない(対の相手は同じ対象を切るだけで、互いを材料にしない)。
+      */
+      found.push(...planeSpecDependencies(context, feature.plane));
+      break;
   }
   return found;
 }

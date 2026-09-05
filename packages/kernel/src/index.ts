@@ -66,11 +66,17 @@ export type { AppearanceMatch, AppearanceQuery } from './types.js';
 // 基本形状(FR-429、P5 §2.7、タスク13・14)。段の依頼の型と 5 種の作り手。
 // model 側(resolvePart.ts、タスク16)が PrimitiveStepSpec を組み立てて段に乗せる。
 export type { PrimitiveShapeSpec, PrimitiveStepSpec } from './types.js';
+// 基準点を「立体の頂点」にする追補(FR-429、§0.a-0.18、タスク14b)。頂点の選び直しは
+// P3 の指紋の採点(matchVertex)をそのまま使い、対象は消費しない。
 export {
   boxCornerOrigin,
   makePrimitive,
+  offsetFromVertex,
   primitiveAxes,
   readAxesFrame,
+  resolvePrimitiveOrigin,
+  MISSING_PRIMITIVE_VERTEX_MESSAGE,
+  PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE,
   type AxesFrame,
 } from './occt/makePrimitive.js';
 // 加工フィーチャー(FR-405〜408、FR-411、FR-412、FR-414)の型(計画書 §2.8)。

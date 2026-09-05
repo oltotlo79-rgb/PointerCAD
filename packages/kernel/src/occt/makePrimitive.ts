@@ -23,6 +23,11 @@
  * あるが、FR-429 は角度に触れておらず、部分円柱は円弧の回転(FR-402)で作れる。
  * 必要になれば P6 以降で足す。
  *
+ * **基準点を「立体の頂点」にできる**(FR-429、§0.a-0.18、タスク14b)。そのときは
+ * `PrimitiveStepSpec.originQuery` に頂点の指紋が入り、`resolvePrimitiveOrigin` が
+ * 対象の形から頂点を引いて座標にする。`origin` はその頂点からのオフセットになる。
+ * **対象は消費しない**(頂点を借りるだけなので、対象のボディはそのまま残る)。
+ *
  * **`PrimitiveStepSpec` / `PrimitiveShapeSpec` は `packages/kernel/src/types.ts` にある**
  * (タスク13 ではこのファイルで仮に宣言し、タスク14 で移した)。段の依頼の型を
  * `SolidStepSpec` の union へ足すのと、`recomputeSolids.ts` の `switch` に節を足すのは
@@ -36,11 +41,19 @@ import type {
   gp_Ax2,
 } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { PrimitiveShapeSpec, PrimitiveStepSpec, Vec3Tuple } from '../types.js';
+import type {
+  PrimitiveShapeSpec,
+  PrimitiveStepSpec,
+  SolidVertexInfo,
+  SubShapeQuery,
+  Vec3Tuple,
+} from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
+import { matchVertex } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
+import { boundingDiagonal } from './subShapes.js';
 
 /** これ未満の体積(mm³)は「立体にならなかった」とみなす(他の make*.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
@@ -60,6 +73,29 @@ const CONE_RADIUS_SAME_MESSAGE = '円錐の上下の半径が同じです。円�
 const TORUS_MINOR_TOO_LARGE_MESSAGE =
   'トーラスの管の半径は、中心までの半径より小さくしてください。';
 const ORIGIN_MESSAGE = '位置または向きの値が正しくありません。';
+
+/**
+ * 基準点にする頂点が見つからなかったときの断り(FR-429、FR-504、タスク14b)。
+ *
+ * 語尾は `makeHole.ts` / `makeFillet.ts` / `makeChamfer.ts` / `pickSubShape.ts` と
+ * 揃えてある(model 側の `part/recomputePart.ts` がこの語尾で `missingSubShape` へ
+ * 詰め替えるため、揃えないと理由の種類が変わってしまう)。
+ *
+ * **頂点は当たりにくい.** 頂点の指紋は軸も大きさも持たないので、通し番号が変わると
+ * 位置がぴったり同じでも 0.5 にしか届かず、しきい値 0.6 を割る
+ * (`matchSubShape.ts` の `MATCH_WEIGHT_VERTEX_INDEX` の説明)。上流を大きく作り替えると
+ * この断りが出るのは決めどおりの動きで、利用者には選び直してもらう(§0.a-0.18)。
+ */
+export const MISSING_PRIMITIVE_VERTEX_MESSAGE =
+  '中心にする頂点が見つかりません。形が大きく変わったため、選び直してください。';
+
+/**
+ * 面・辺の指紋を基準点に使おうとしたときの断り。
+ * FR-429 が基準点に選べるとしているのは「立体の頂点」だけなので、
+ * 面や辺に当てはめる意味が無い(外観が面以外を断るのと同じ考え方)。
+ */
+export const PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE =
+  '中心にできるのは立体の頂点だけです。頂点を選び直してください。';
 const AXIS_LENGTH_MESSAGE = '向きの長さが 0 です。別の向きを選んでください。';
 const NOT_SOLID_MESSAGE = '立体になりませんでした。寸法を見直してください。';
 
@@ -241,6 +277,57 @@ export function boxCornerOrigin(
 }
 
 /**
+ * 頂点の座標に基準点のオフセットを足す(統括の決定 2026-09-05、タスク14b)。
+ *
+ * **OCCT を呼ばない純関数。** `origin` を「頂点からのずれ」と決めてあるので、
+ * 頂点そのものを基準にしたいときは `[0, 0, 0]` が渡る。ずらせるようにしてあるのは、
+ * 「角から 5mm 内側に円柱を立てる」のような指定を、頂点を選び直さずに式で書けるようにするため。
+ */
+export function offsetFromVertex(vertex: Vec3Tuple, offset: Vec3Tuple): Vec3Tuple {
+  return [vertex[0] + offset[0], vertex[1] + offset[1], vertex[2] + offset[2]];
+}
+
+/**
+ * 立体の頂点を基準にする基本形状の基準点を、対象の形から引く(FR-429、§0.a-0.18、タスク14b)。
+ *
+ * 採点は P3 の部分形状の参照とまったく同じ `matchVertex`(重み 0.5 / 0.5、しきい値 0.6)で、
+ * **基本形状のための別の規約は作らない**。位置を正規化する物差し(`scale`)も加工フィーチャーと
+ * 同じ「対象の境界箱の対角長の半分」にするので、同じ指紋からは穴・面取り・投影と必ず同じ
+ * 頂点が選ばれる(`pickSubShape.ts` と同じ決め方)。
+ *
+ * **対象の形には触れない。** 形は形状キャッシュの持ち物なので、ここでは頂点の座標を読むだけで、
+ * 解放も変形もしない。対象を消費しないこと(結果に両方のボディが残ること)は
+ * 呼び出し側(`recomputeSolids.ts`)の `visible` の扱いがそのまま保つ。
+ *
+ * @param query 頂点の指紋。頂点以外(面・辺)なら断る。
+ * @param offset 頂点からのずれ(mm)。
+ * @param shape 頂点を持つ対象の形(物差しを測るためだけに使う)。
+ * @param vertices 対象の頂点の一覧(`CachedSolid.mesh.vertices`。作り直さない)。
+ */
+export function resolvePrimitiveOrigin(
+  oc: OpenCascadeInstance,
+  query: SubShapeQuery,
+  offset: Vec3Tuple,
+  shape: TopoDS_Shape,
+  vertices: readonly SolidVertexInfo[],
+): Vec3Tuple {
+  if (query.kind !== 'vertex') {
+    throw new Error(PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE);
+  }
+  const match = matchVertex(vertices, query, boundingDiagonal(oc, shape) * 0.5);
+  if (match === null) {
+    throw new Error(MISSING_PRIMITIVE_VERTEX_MESSAGE);
+  }
+  // 一覧は通し番号の順に並ぶ約束だが、並びに頼らず番号で引き当てる
+  // (matchSubShape.ts の selectBest が「並びが変わっても答えを変えない」のと同じ理由)。
+  const found = vertices.find((vertex) => vertex.index === match.index);
+  if (found === undefined) {
+    throw new Error(MISSING_PRIMITIVE_VERTEX_MESSAGE);
+  }
+  return offsetFromVertex(found.position, offset);
+}
+
+/**
  * maker を組み立てて形を取り出す。
  *
  * `Build(range)` → `IsDone()` → `Shape()` の順に呼ぶ。**`IsDone()` を見る前に `Shape()` を
@@ -319,6 +406,11 @@ function buildPrimitiveShape(
 
 /**
  * 基本形状を 1 つ作る(FR-429)。対象を取らず、新しい形を作る(§0.a-0.19)。
+ *
+ * **`spec.origin` は解決済みの世界座標として扱う。** 基準点が立体の頂点のときは、
+ * 呼び出し側(`worker/recomputeSolids.ts`)が先に `resolvePrimitiveOrigin` で座標へ直し、
+ * `originQuery` / `targetKey` を落とした依頼を渡す(この関数は対象の形を受け取らないので、
+ * ここで頂点を引くことはできない)。
  *
  * 断るときは必ず日本語の `Error`(FR-504)。OCCT の C++ 例外は数値で飛んでくるので、
  * `Error` でないものは形ごとの理由へ言い換えてから投げ直す(`makeSpring.ts` と同じ)。

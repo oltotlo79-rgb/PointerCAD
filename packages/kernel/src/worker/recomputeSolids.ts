@@ -5,7 +5,7 @@ import type { OcctShapeHandle } from '../occt/makeBox.js';
 import { makeChamfer } from '../occt/makeChamfer.js';
 import { makeFillet } from '../occt/makeFillet.js';
 import { makeHole } from '../occt/makeHole.js';
-import { makePrimitive } from '../occt/makePrimitive.js';
+import { makePrimitive, resolvePrimitiveOrigin } from '../occt/makePrimitive.js';
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { makeThreadHole } from '../occt/makeThread.js';
@@ -17,6 +17,7 @@ import type {
   AppearanceMatch,
   AppearanceQuery,
   BooleanStepSpec,
+  PrimitiveStepSpec,
   SolidBodyMesh,
   SolidFaceInfo,
   SolidProgress,
@@ -279,6 +280,53 @@ function createBooleanSolid(
 }
 
 /**
+ * 頂点を基準にする基本形状なのに、頂点を持つ立体の段が指定されていないとき(FR-504)。
+ * `originQuery` と `targetKey` は必ず組で来る約束(`PrimitiveStepSpec` の注釈)なので、
+ * ここへ来るのは組み立て側の取りこぼしだが、画面を止めずに理由を出す(NFR-RE-1)。
+ */
+const MISSING_PRIMITIVE_TARGET_MESSAGE =
+  '中心にする頂点を持つ立体が見つかりません。頂点を選び直してください。';
+
+/**
+ * 基本形状の段(FR-429)。ふつうは中心・向き・寸法だけで決まるので上流の形を見ない。
+ *
+ * **`originQuery` があるときだけ、`targetKey` の形から頂点を引いて基準点にする**
+ * (§0.a-0.18、P5 タスク14b)。そのとき `origin` は「頂点からのオフセット」になるので、
+ * 頂点の座標へ足してから `makePrimitive` へ渡す。
+ *
+ * **対象は消費しない。** 穴・ねじ穴・面取り・ブーリアンの `targetKey` は対象を食べるが、
+ * ここは頂点の座標を読むだけなので、対象のボディはそのまま画面に残る(結果は 2 ボディ)。
+ * 消費の有無を決めているのは段の `visible` で、この関数はそれに一切触れない。
+ *
+ * 頂点の一覧は `CachedSolid.mesh.vertices`(上流の段が作ったときの一覧)をそのまま使うので、
+ * 一覧を作り直さない(NFR-PF-2、§2.8 の「一覧を作り直さない」)。
+ */
+function createPrimitiveSolid(
+  oc: OpenCascadeInstance,
+  spec: PrimitiveStepSpec,
+  cache: ShapeCache<CachedSolid>,
+  failedLabels: ReadonlyMap<string, string>,
+): OcctShapeHandle {
+  if (spec.originQuery === null) {
+    return makePrimitive(oc, spec);
+  }
+  if (spec.targetKey === null) {
+    throw new Error(MISSING_PRIMITIVE_TARGET_MESSAGE);
+  }
+  const target = findStepInput(cache, failedLabels, spec.targetKey);
+  const origin = resolvePrimitiveOrigin(
+    oc,
+    spec.originQuery,
+    spec.origin,
+    target.shape,
+    target.mesh.vertices,
+  );
+  // 解決し終えた指紋と鍵は落として渡す。makePrimitive は世界座標だけを見る約束なので、
+  // 解決済みであることを型ではなく値で示しておく(二重に解決する余地を残さない)。
+  return makePrimitive(oc, { ...spec, origin, originQuery: null, targetKey: null });
+}
+
+/**
  * 1 段ぶんの作り手の結果。ねじ穴(FR-406)だけが画面へ返すねじの印(§0.a-0.15)を持つので、
  * それ以外の段は空配列で揃える(createStepSolid が返す形を 1 つに揃えるための入れ物)。
  */
@@ -301,8 +349,11 @@ function noMarks(handle: OcctShapeHandle): StepSolidResult {
  * `faces` / `edges` / `vertices` が入っているので、一覧を作り直さない(NFR-PF-2、§2.8)。
  * `mesh` は `SubShapeTables`(`{ faces, edges, vertices }`)の上位互換の形なので、
  * R 面取り・C 面取りへはそのまま渡せる(構造的部分型)。
- * **ばね(FR-414)と基本形状(FR-429)は `targetKey` を持たないので、この取り出しを行わない**
- * (§0.36、§0.a-0.19。押し出し・回転・縫合と同じ「新しいボディを作る」段)。
+ * **ばね(FR-414)は `targetKey` を持たないので、この取り出しを行わない**
+ * (§0.36。押し出し・回転・縫合と同じ「新しいボディを作る」段)。
+ * **基本形状(FR-429)も同じ「作る」段だが、基準点を立体の頂点にしたときだけ
+ * `targetKey` の形から頂点を引く**(§0.a-0.18、タスク14b)。それでも対象は消費しない
+ * (`createPrimitiveSolid` の注釈)。
  */
 function createStepSolid(
   oc: OpenCascadeInstance,
@@ -340,8 +391,9 @@ function createStepSolid(
     case 'spring':
       return noMarks(makeSpring(oc, spec));
     case 'primitive':
-      // 基本形状(FR-429)。中心・向き・寸法だけで決まるので、上流の形を見ない。
-      return noMarks(makePrimitive(oc, spec));
+      // 基本形状(FR-429)。中心・向き・寸法だけで決まるが、基準点を立体の頂点に
+      // したときだけ対象の形から頂点を引く(消費はしない。タスク14b)。
+      return noMarks(createPrimitiveSolid(oc, spec, cache, failedLabels));
   }
 }
 

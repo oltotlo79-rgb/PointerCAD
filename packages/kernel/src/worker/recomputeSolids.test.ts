@@ -19,6 +19,7 @@ import type {
   SolidProgress,
   SolidRecomputeRequest,
   SolidStepRequest,
+  SolidVertexInfo,
   SpringStepSpec,
   SubShapeQuery,
 } from '../types.js';
@@ -321,9 +322,34 @@ describe('履歴の再計算(recomputeSolids)', () => {
       origin: [0, 0, 0],
       axis: [0, 0, 1],
       shape,
+      originQuery: null,
+      targetKey: null,
       ...overrides,
     };
     return { key, id, label: id, visible, step };
+  }
+
+  function vertexQuery(info: SolidVertexInfo): Extract<SubShapeQuery, { kind: 'vertex' }> {
+    return { kind: 'vertex', index: info.index, position: info.position };
+  }
+
+  /** 一覧の中から、その座標にある頂点を 1 つ選ぶ。 */
+  function vertexAtPoint(
+    vertices: readonly SolidVertexInfo[],
+    point: readonly [number, number, number],
+  ): SolidVertexInfo {
+    const found = vertices.find(
+      (vertex) =>
+        Math.hypot(
+          vertex.position[0] - point[0],
+          vertex.position[1] - point[1],
+          vertex.position[2] - point[2],
+        ) < 1e-6,
+    );
+    if (found === undefined) {
+      throw new Error(`[${point.join(',')}] の頂点が見つかりませんでした`);
+    }
+    return found;
   }
 
   it('1 段の押し出しから体積 12000 mm³ のボディを 1 つ返す', async () => {
@@ -1270,6 +1296,8 @@ describe('履歴の再計算(recomputeSolids)', () => {
         origin: [0, 0, 0],
         axis: [0, 0, 1],
         shape: entry.shape,
+        originQuery: null,
+        targetKey: null,
       });
       try {
         const defaultMesh = tessellate(oc, reference.shape);
@@ -1301,6 +1329,8 @@ describe('履歴の再計算(recomputeSolids)', () => {
       origin: [0, 0, 0],
       axis: [0, 0, 1],
       shape,
+      originQuery: null,
+      targetKey: null,
     });
     try {
       const defaultMesh = tessellate(oc, reference.shape);
@@ -1370,5 +1400,252 @@ describe('履歴の再計算(recomputeSolids)', () => {
       );
       expect(elapsed).toBeLessThan(500);
     }
+  });
+
+  /*
+   * 基準点を「立体の頂点」にする追補(FR-429、§0.a-0.18、P5 タスク14b)。
+   *
+   * 指紋は必ず「同じ形を実際に作って読み取る」ことで用意する(番号も座標も
+   * 手でこしらえない)。段の側は `originQuery` と `targetKey` を組で受け取り、
+   * **対象を消費しない**ので、結果には対象と基本形状の両方のボディが残る。
+   */
+  describe('基準点を立体の頂点にする(FR-429、§0.a-0.18、タスク14b)', () => {
+    /** 箱 20³(中心 原点)の体積。20³ = 8000 mm³(手計算)。 */
+    const CENTERED_BOX_VOLUME = 8000;
+    /** 球 r=5 の体積。4/3·π·125 = 500π/3 ≒ 523.598775598299 mm³(手計算)。 */
+    const SPHERE5_VOLUME = (4 / 3) * Math.PI * 125;
+
+    /** 中心が原点の箱 20³ を実際に作り、[10,10,10] の頂点の指紋を読み取る。 */
+    function centeredBoxCornerQuery(): Extract<SubShapeQuery, { kind: 'vertex' }> {
+      const handle = makePrimitive(oc, {
+        kind: 'primitive',
+        origin: [0, 0, 0],
+        axis: [0, 0, 1],
+        shape: { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 },
+        originQuery: null,
+        targetKey: null,
+      });
+      try {
+        return vertexQuery(vertexAtPoint(subShapesOf(handle.shape).vertices, [10, 10, 10]));
+      } finally {
+        handle.delete();
+      }
+    }
+
+    /** 20 × 20 を distance だけ押し出した板を作り、[20,20,distance] の頂点の指紋を読み取る。 */
+    function plateCornerQuery(distance: number): Extract<SubShapeQuery, { kind: 'vertex' }> {
+      const handle = makeExtrudeSolid(
+        oc,
+        { kind: 'extrude', profile: rectangle(20, 20), direction: [0, 0, 1], distance },
+        {},
+      );
+      try {
+        return vertexQuery(vertexAtPoint(subShapesOf(handle.shape).vertices, [20, 20, distance]));
+      } finally {
+        handle.delete();
+      }
+    }
+
+    /** 中心が原点の箱 20³ の段(頂点を貸すだけで消費されないので visible のまま)。 */
+    function centeredBoxStep(id: string, key: string): SolidStepRequest {
+      return primitiveStep(id, key, { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    }
+
+    it('箱 20³ の頂点を基準にした球 r=5 は、その頂点が中心になり、両方のボディが残る', async () => {
+      const { cache } = newCache();
+      const corner = centeredBoxCornerQuery();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          centeredBoxStep('箱1', 'key-box'),
+          primitiveStep(
+            '球1',
+            'key-sphere',
+            { kind: 'sphere', radius: 5 },
+            { originQuery: corner, targetKey: 'key-box' },
+          ),
+        ]),
+      );
+
+      expect(result.failures).toEqual([]);
+      // 対象は消費しないので 2 ボディ(ばね・穴と違い、頂点を貸した立体はそのまま残る)。
+      expect(result.bodies.map((body) => body.id)).toEqual(['箱1', '球1']);
+      expect(result.bodies[0].volume).toBeCloseTo(CENTERED_BOX_VOLUME, 6);
+      expect(result.bodies[1].volume).toBeCloseTo(SPHERE5_VOLUME, 6);
+      // 球は面 1 枚で、その面の重心が球の中心になる(subShapes.ts の CentreOfMass)。
+      const center = result.bodies[1].faces[0].centroid;
+      console.log(
+        `箱の頂点 [10,10,10] を基準にした球 r=5 の中心: [${center.map((value) => value.toFixed(9)).join(', ')}] / ` +
+          `箱 ${result.bodies[0].volume.toFixed(6)} mm³・球 ${result.bodies[1].volume.toFixed(6)} mm³`,
+      );
+      expect(center[0]).toBeCloseTo(10, 6);
+      expect(center[1]).toBeCloseTo(10, 6);
+      expect(center[2]).toBeCloseTo(10, 6);
+    });
+
+    it('オフセットを添えると、頂点からその分だけ動いた位置が中心になる', async () => {
+      const { cache } = newCache();
+      const corner = centeredBoxCornerQuery();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          centeredBoxStep('箱1', 'key-box'),
+          primitiveStep(
+            '球1',
+            'key-sphere',
+            { kind: 'sphere', radius: 5 },
+            { origin: [0, 0, 5], originQuery: corner, targetKey: 'key-box' },
+          ),
+        ]),
+      );
+
+      expect(result.failures).toEqual([]);
+      const center = result.bodies[1].faces[0].centroid;
+      expect(center[0]).toBeCloseTo(10, 6);
+      expect(center[1]).toBeCloseTo(10, 6);
+      expect(center[2]).toBeCloseTo(15, 6);
+    });
+
+    /*
+     * 上流の押し出しを 10 → 20 に伸ばすと、指紋が指していた角の頂点は
+     * [20,20,10] から [20,20,20] へ動く。通し番号は変わらないので採点は
+     * 0.5(番号)+ 0.5 ×(1 − 10 / 17.32)= 0.711 でしきい値 0.6 を超え、
+     * 球はその新しい頂点へ追従する(数値は検査の中で実測して記録する)。
+     */
+    it('押し出しを 10 → 20 に伸ばすと、頂点が動いて球も追従する', async () => {
+      const { cache } = newCache();
+      const corner = plateCornerQuery(10);
+      const sphereAtCorner = (key: string, targetKey: string): SolidStepRequest =>
+        primitiveStep(
+          '球1',
+          key,
+          { kind: 'sphere', radius: 5 },
+          { originQuery: corner, targetKey },
+        );
+
+      const first = await recomputeSolids(
+        { oc, cache },
+        request([
+          extrudeStep('板1', 'key-plate-10', 20, 20, 10),
+          sphereAtCorner('key-sphere-10', 'key-plate-10'),
+        ]),
+      );
+      expect(first.failures).toEqual([]);
+      expect(first.bodies[1].faces[0].centroid[2]).toBeCloseTo(10, 6);
+
+      // 押し出しの段の鍵と、頂点を参照する段の鍵の両方が変わる
+      // (model は `targetKey` を鍵の材料に含めるので、対象が変われば必ずこうなる)。
+      const second = await recomputeSolids(
+        { oc, cache },
+        request([
+          extrudeStep('板1', 'key-plate-20', 20, 20, 20),
+          sphereAtCorner('key-sphere-20', 'key-plate-20'),
+        ]),
+      );
+
+      expect(second.failures).toEqual([]);
+      const center = second.bodies[1].faces[0].centroid;
+      console.log(
+        `押し出し 10 → 20: 球の中心が [${center.map((value) => value.toFixed(6)).join(', ')}] へ追従`,
+      );
+      expect(center[0]).toBeCloseTo(20, 6);
+      expect(center[1]).toBeCloseTo(20, 6);
+      expect(center[2]).toBeCloseTo(20, 6);
+    });
+
+    it('頂点の指紋が当たらないときは理由を添えて断り、対象の立体は残る(FR-504)', async () => {
+      const { cache } = newCache();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          centeredBoxStep('箱1', 'key-box'),
+          primitiveStep(
+            '球1',
+            'key-sphere',
+            { kind: 'sphere', radius: 5 },
+            {
+              originQuery: { kind: 'vertex', index: 99, position: [1000, 1000, 1000] },
+              targetKey: 'key-box',
+            },
+          ),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        {
+          id: '球1',
+          message: '中心にする頂点が見つかりません。形が大きく変わったため、選び直してください。',
+        },
+      ]);
+      // 断られても対象は消費されないので、箱はそのまま画面に残る。
+      expect(result.bodies.map((body) => body.id)).toEqual(['箱1']);
+    });
+
+    it('頂点の指紋があるのに対象の鍵が無いときは、頂点を選び直すよう促して断る', async () => {
+      const { cache } = newCache();
+      const corner = centeredBoxCornerQuery();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          centeredBoxStep('箱1', 'key-box'),
+          primitiveStep(
+            '球1',
+            'key-sphere',
+            { kind: 'sphere', radius: 5 },
+            { originQuery: corner, targetKey: null },
+          ),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        { id: '球1', message: '中心にする頂点を持つ立体が見つかりません。頂点を選び直してください。' },
+      ]);
+      expect(result.bodies.map((body) => body.id)).toEqual(['箱1']);
+    });
+
+    it('頂点を借りる相手の段が作れなかったときは、その段の名前を添えて断る(FR-504)', async () => {
+      const { cache } = newCache();
+      const corner = centeredBoxCornerQuery();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          primitiveStep('箱1', 'key-bad-box', { kind: 'box', sizeX: 0, sizeY: 20, sizeZ: 20 }),
+          primitiveStep(
+            '球1',
+            'key-sphere',
+            { kind: 'sphere', radius: 5 },
+            { originQuery: corner, targetKey: 'key-bad-box' },
+          ),
+        ]),
+      );
+
+      expect(result.failures).toEqual([
+        { id: '箱1', message: 'X の長さは 0 より大きい数にしてください。' },
+        { id: '球1', message: 'もとになる立体「箱1」を作れなかったため、この立体も作れませんでした。' },
+      ]);
+      expect(result.bodies).toEqual([]);
+    });
+
+    it('指紋が無ければ対象の鍵があっても見に行かず、基準点は世界座標のまま', async () => {
+      const { cache } = newCache();
+      const result = await recomputeSolids(
+        { oc, cache },
+        request([
+          centeredBoxStep('箱1', 'key-box'),
+          primitiveStep(
+            '球1',
+            'key-sphere',
+            { kind: 'sphere', radius: 5 },
+            { origin: [1, 2, 3], originQuery: null, targetKey: 'key-box' },
+          ),
+        ]),
+      );
+
+      expect(result.failures).toEqual([]);
+      const center = result.bodies[1].faces[0].centroid;
+      expect(center[0]).toBeCloseTo(1, 6);
+      expect(center[1]).toBeCloseTo(2, 6);
+      expect(center[2]).toBeCloseTo(3, 6);
+    });
   });
 });

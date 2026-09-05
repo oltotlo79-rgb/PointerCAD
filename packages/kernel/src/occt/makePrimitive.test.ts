@@ -2,19 +2,44 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { PrimitiveShapeSpec, PrimitiveStepSpec, Vec3Tuple } from '../types.js';
+import type {
+  PrimitiveShapeSpec,
+  PrimitiveStepSpec,
+  SolidVertexInfo,
+  SubShapeQuery,
+  Vec3Tuple,
+} from '../types.js';
+import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
-import { boxCornerOrigin, makePrimitive, type AxesFrame } from './makePrimitive.js';
+import {
+  boxCornerOrigin,
+  makePrimitive,
+  offsetFromVertex,
+  resolvePrimitiveOrigin,
+  MISSING_PRIMITIVE_VERTEX_MESSAGE,
+  PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE,
+  type AxesFrame,
+} from './makePrimitive.js';
 import { hasSolid, isValidShape, measureArea, measureVolume } from './solidMesh.js';
+import { collectSubShapes, type SubShapeTables } from './subShapes.js';
+import { tessellate } from './tessellate.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
 
-/** 既定は原点・Z 軸。形だけを差し替えて使う。 */
+/** 既定は原点・Z 軸で、頂点は参照しない。形だけを差し替えて使う。 */
 function primitiveSpec(
   shape: PrimitiveShapeSpec,
   overrides: Partial<Omit<PrimitiveStepSpec, 'shape'>> = {},
 ): PrimitiveStepSpec {
-  return { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1], shape, ...overrides };
+  return {
+    kind: 'primitive',
+    origin: [0, 0, 0],
+    axis: [0, 0, 1],
+    shape,
+    originQuery: null,
+    targetKey: null,
+    ...overrides,
+  };
 }
 
 /**
@@ -621,6 +646,122 @@ describe('基本形状 5 種(FR-429、計画書 §2.7、タスク13)', () => {
         zDirection: [0, 0, 1],
       };
       expect(boxCornerOrigin([0, 0, 0], rotated, 10, 20, 30)).toEqual([10, -5, -15]);
+    });
+  });
+
+  /*
+   * 基準点を「立体の頂点」にする追補(FR-429、§0.a-0.18、タスク14b)。
+   * 頂点の指紋は実際に箱を作って読み取る(手で番号や座標をでっち上げない。
+   * makeHole.test.ts / recomputeSolids.test.ts と同じ考え方)。
+   */
+  describe('基準点を立体の頂点にする(FR-429、§0.a-0.18、タスク14b)', () => {
+    /** 中心が原点の箱 20³ を作り、その形と面・辺・頂点の一覧を渡す。 */
+    function withCenteredBox(run: (shape: TopoDS_Shape, tables: SubShapeTables) => void): void {
+      const handle = makePrimitive(
+        oc,
+        primitiveSpec({ kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }),
+      );
+      try {
+        const mesh = tessellate(oc, handle.shape);
+        const lines = extractEdges(oc, handle.shape);
+        run(handle.shape, collectSubShapes(oc, handle.shape, mesh.faceRanges, lines.edgeRanges));
+      } finally {
+        handle.delete();
+      }
+    }
+
+    /** 一覧の中から、その座標にある頂点を 1 つ選ぶ。 */
+    function vertexAtPoint(vertices: readonly SolidVertexInfo[], point: Vec3Tuple): SolidVertexInfo {
+      const found = vertices.find(
+        (vertex) =>
+          Math.hypot(
+            vertex.position[0] - point[0],
+            vertex.position[1] - point[1],
+            vertex.position[2] - point[2],
+          ) < 1e-6,
+      );
+      if (found === undefined) {
+        throw new Error(`[${point.join(',')}] の頂点が見つかりませんでした`);
+      }
+      return found;
+    }
+
+    function vertexQuery(info: SolidVertexInfo): Extract<SubShapeQuery, { kind: 'vertex' }> {
+      return { kind: 'vertex', index: info.index, position: info.position };
+    }
+
+    it('offsetFromVertex は頂点の座標にオフセットを足す(純関数)', () => {
+      expect(offsetFromVertex([10, 10, 10], [0, 0, 0])).toEqual([10, 10, 10]);
+      expect(offsetFromVertex([10, 10, 10], [0, 0, 5])).toEqual([10, 10, 15]);
+      expect(offsetFromVertex([-3, 4, -5], [3, -4, 5])).toEqual([0, 0, 0]);
+    });
+
+    it('箱 20³ の頂点 [10,10,10] の指紋から、その頂点の座標が引ける', () => {
+      withCenteredBox((shape, tables) => {
+        const corner = vertexAtPoint(tables.vertices, [10, 10, 10]);
+        console.log(
+          `箱 20³ の頂点は ${tables.vertices.length} 個。[10,10,10] は通し番号 ${corner.index}`,
+        );
+        const origin = resolvePrimitiveOrigin(
+          oc,
+          vertexQuery(corner),
+          [0, 0, 0],
+          shape,
+          tables.vertices,
+        );
+        expectPointNear(origin, [10, 10, 10]);
+      });
+    });
+
+    it('オフセットを足すと、頂点からその分だけ動いた点になる', () => {
+      withCenteredBox((shape, tables) => {
+        const corner = vertexAtPoint(tables.vertices, [10, 10, 10]);
+        const origin = resolvePrimitiveOrigin(
+          oc,
+          vertexQuery(corner),
+          [0, 0, 5],
+          shape,
+          tables.vertices,
+        );
+        expectPointNear(origin, [10, 10, 15]);
+      });
+    });
+
+    it('番号も位置も外れた頂点の指紋は、選び直しを促して断る(FR-504)', () => {
+      withCenteredBox((shape, tables) => {
+        expect(() =>
+          resolvePrimitiveOrigin(
+            oc,
+            { kind: 'vertex', index: 99, position: [1000, 1000, 1000] },
+            [0, 0, 0],
+            shape,
+            tables.vertices,
+          ),
+        ).toThrow(MISSING_PRIMITIVE_VERTEX_MESSAGE);
+      });
+    });
+
+    it('面の指紋を基準点にしようとすると、頂点を選ぶよう促して断る', () => {
+      withCenteredBox((shape, tables) => {
+        const face = tables.faces[0];
+        expect(() =>
+          resolvePrimitiveOrigin(
+            oc,
+            {
+              kind: 'face',
+              index: face.index,
+              surfaceKind: face.surfaceKind,
+              area: face.area,
+              position: face.centroid,
+              axis: face.axis,
+              radius: face.radius,
+            },
+            [0, 0, 0],
+            shape,
+            tables.vertices,
+          ),
+        ).toThrow(PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE);
+      });
     });
   });
 });

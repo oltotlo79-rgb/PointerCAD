@@ -924,6 +924,21 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         turns: plan.turns,
         handedness: plan.handedness,
       };
+    case 'primitive':
+      // 基本形状(FR-429、P5 §2.7)。中心・向き・寸法だけで決まる「作る」段だが、
+      // 中心を立体の頂点にしたときだけ頂点の指紋(`originQuery`)と、その頂点を持つ
+      // 立体の段の鍵(`targetKey`)を添え、カーネルが頂点を引いて位置を決める
+      // (§0.a-0.18)。**それでも対象は消費しない**(§0.a-0.19)ので、加工フィーチャーの
+      // `targetKey` と違い結果には両方のボディが残る。寸法(`shape`)は model と kernel で
+      // 欄の名前・形をそろえてあるので、指紋だけ詰め替えて残りはそのまま渡す。
+      return {
+        kind: 'primitive',
+        origin: plan.origin,
+        axis: plan.axis,
+        shape: plan.shape,
+        originQuery: plan.originQuery === null ? null : toSubShapeQuery(plan.originQuery),
+        targetKey: plan.targetKey,
+      };
   }
 }
 

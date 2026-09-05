@@ -19,6 +19,7 @@ import {
   type WorkPlaneId,
 } from '../sketch/planeMath.js';
 import type {
+  CoordinateInput,
   ResolvedArc,
   ResolvedCurve,
   ResolvedSegment,
@@ -42,6 +43,8 @@ import {
   appendReference,
   appendSolid,
   createEmptyPartDocument,
+  DEFAULT_PRIMITIVE_AXIS,
+  defaultPrimitiveOrigin,
   replaceSketch,
 } from './createPartDocument.js';
 import {
@@ -76,6 +79,8 @@ import type {
   PatternDirection,
   PatternFeature,
   PatternPlacement,
+  PrimitiveFeature,
+  PrimitiveShape,
   RevolveAxis,
   RevolveFeature,
   SewFeature,
@@ -83,6 +88,7 @@ import type {
   SketchLineRef,
   SketchPointRef,
   SolidFeature,
+  SolidOrigin,
   SpringDerived,
   SpringFeature,
   SpringHandedness,
@@ -334,6 +340,14 @@ function topFaceRef(bodyFeatureId: string): SubShapeRef {
   };
 }
 
+/**
+ * 40×30 の面を Z へ 10 押し出した箱の「上面の角 (40,30,10)」の頂点の指紋。
+ * 基本形状の中心に立体の頂点を指す検査(FR-429、§0.a-0.18)に使う。
+ */
+function vertexRef(bodyFeatureId: string, position: Vec3 = [40, 30, 10]): SubShapeRef {
+  return { bodyFeatureId, index: 2, fingerprint: { kind: 'vertex', position } };
+}
+
 /** 箱の縦の辺1本の指紋。「面でないものを指した」検査に使う。 */
 function edgeRef(bodyFeatureId: string): SubShapeRef {
   return {
@@ -472,6 +486,79 @@ function springFeature(
     wireDiameter: toExpr(options.wireDiameter ?? '2'),
     handedness: options.handedness ?? 'right',
   };
+}
+
+interface PrimitiveOptions {
+  readonly origin?: SolidOrigin;
+  readonly axis?: RevolveAxis;
+  readonly suppressed?: boolean;
+  readonly name?: string;
+}
+
+/**
+ * 基本形状(FR-429)。既定は中心が原点の絶対座標・向きがワールド Z(`createPartDocument.ts`
+ * の既定と同じ)で、寸法だけを検査ごとに渡す。
+ */
+function primitiveFeature(
+  id: string,
+  shape: PrimitiveShape,
+  options: PrimitiveOptions = {},
+): PrimitiveFeature {
+  return {
+    id,
+    name: options.name ?? id,
+    suppressed: options.suppressed ?? false,
+    kind: 'primitive',
+    origin: options.origin ?? defaultPrimitiveOrigin(),
+    axis: options.axis ?? DEFAULT_PRIMITIVE_AXIS,
+    shape,
+  };
+}
+
+/** 基本形状5種の寸法。既定値は §2.7.1 の表(球 10 / 箱 20³ / 円柱 10・20 / 円錐 10・0・20 / トーラス 20・5)。 */
+function sphereShape(radius: string | ExpressionValue = '10'): PrimitiveShape {
+  return { kind: 'sphere', radius: toExpr(radius) };
+}
+
+function boxShape(
+  sizeX: string | ExpressionValue = '20',
+  sizeY: string | ExpressionValue = '20',
+  sizeZ: string | ExpressionValue = '20',
+): PrimitiveShape {
+  return { kind: 'box', sizeX: toExpr(sizeX), sizeY: toExpr(sizeY), sizeZ: toExpr(sizeZ) };
+}
+
+function cylinderShape(
+  radius: string | ExpressionValue = '10',
+  height: string | ExpressionValue = '20',
+): PrimitiveShape {
+  return { kind: 'cylinder', radius: toExpr(radius), height: toExpr(height) };
+}
+
+function coneShape(
+  bottomRadius: string | ExpressionValue = '10',
+  topRadius: string | ExpressionValue = '0',
+  height: string | ExpressionValue = '20',
+): PrimitiveShape {
+  return {
+    kind: 'cone',
+    bottomRadius: toExpr(bottomRadius),
+    topRadius: toExpr(topRadius),
+    height: toExpr(height),
+  };
+}
+
+function torusShape(
+  majorRadius: string | ExpressionValue = '20',
+  minorRadius: string | ExpressionValue = '5',
+): PrimitiveShape {
+  return { kind: 'torus', majorRadius: toExpr(majorRadius), minorRadius: toExpr(minorRadius) };
+}
+
+/** 中心を絶対座標の式で指す(式の文字列をそのまま保つ。FR-202)。 */
+function coordinateOrigin(x: string, y: string, z: string): SolidOrigin {
+  const value: CoordinateInput = { mode: 'absolute', x: expr(x), y: expr(y), z: expr(z) };
+  return { kind: 'coordinate', value };
 }
 
 interface FilletOptions {
@@ -631,6 +718,15 @@ function threadPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'],
 function springPlan(step: ResolvedSolidStep): Extract<ResolvedSolidStep['plan'], { kind: 'spring' }> {
   if (step.plan.kind !== 'spring') {
     throw new Error(`テストの前提が壊れている: ばねでない段 ${step.plan.kind}`);
+  }
+  return step.plan;
+}
+
+function primitivePlan(
+  step: ResolvedSolidStep,
+): Extract<ResolvedSolidStep['plan'], { kind: 'primitive' }> {
+  if (step.plan.kind !== 'primitive') {
+    throw new Error(`テストの前提が壊れている: 基本形状でない段 ${step.plan.kind}`);
   }
   return step.plan;
 }
@@ -3816,5 +3912,385 @@ describe('resolvePart の拘束(FR-313、タスク8)', () => {
     expect(entry.constraintErrors).toHaveLength(1);
     expect(entry.constraintErrors[0].code).toBe('constraintUnsolved');
     expect(entry.resolved.segments[0].to).toEqual([38, 1, 0]);
+  });
+});
+
+describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
+  it('既定の球を1段作り、中心・向き・半径をそのまま渡す', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, primitiveFeature('sphere-1', sphereShape()));
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(1);
+    const plan = primitivePlan(result.steps[0]);
+    expect(plan.origin).toEqual([0, 0, 0]);
+    expect(plan.axis).toEqual([0, 0, 1]);
+    expect(plan.shape).toEqual({ kind: 'sphere', radius: 10 });
+    expect(plan.originQuery).toBeNull();
+    expect(plan.targetKey).toBeNull();
+    expect(result.liveBodyIds).toEqual(['sphere-1']);
+  });
+
+  it('中心の座標の式 [5, 5*2, 15] は [5, 10, 15] に解ける', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('box-1', boxShape(), { origin: coordinateOrigin('5', '5*2', '15') }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(primitivePlan(result.steps[0]).origin).toEqual([5, 10, 15]);
+  });
+
+  it('中心にスケッチの点を指すと、その点の座標になる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('cylinder-1', cylinderShape(), {
+        origin: { kind: 'sketchPoint', ref: fixture.pointA },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = primitivePlan(result.steps[0]);
+    expect(plan.origin[0]).toBeCloseTo(10, 9);
+    expect(plan.origin[1]).toBeCloseTo(10, 9);
+    expect(plan.origin[2]).toBeCloseTo(0, 9);
+    expect(plan.originQuery).toBeNull();
+  });
+
+  it('中心に立体の頂点を指すと、指紋と上流の鍵が段に乗り、位置は頂点からのずれ 0 になる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      primitiveFeature('sphere-1', sphereShape('5'), {
+        origin: { kind: 'vertex', ref: vertexRef('extrude-1') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = primitivePlan(result.steps[1]);
+    expect(plan.origin).toEqual([0, 0, 0]);
+    expect(plan.originQuery).toEqual(vertexRef('extrude-1'));
+    expect(plan.targetKey).toBe(result.steps[0].key);
+  });
+
+  it('頂点を借りても対象は消費しない(押し出しと球の2つが画面に残る)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      primitiveFeature('sphere-1', sphereShape('5'), {
+        origin: { kind: 'vertex', ref: vertexRef('extrude-1') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(result.liveBodyIds).toEqual(['extrude-1', 'sphere-1']);
+    expect(result.steps.every((step) => step.visible)).toBe(true);
+  });
+
+  it('上流の押し出しを伸ばすと、頂点を借りた球の鍵も変わる(鍵の連鎖)', () => {
+    const fixture = createFixture();
+    const build = (distance: string): ResolvedPart =>
+      resolvePart(
+        withSolids(
+          fixture.document,
+          extrudeFeature('extrude-1', fixture.faceA, { distance }),
+          primitiveFeature('sphere-1', sphereShape('5'), {
+            origin: { kind: 'vertex', ref: vertexRef('extrude-1') },
+          }),
+        ),
+      );
+    const shorter = build('10');
+    const taller = build('20');
+    expect(taller.steps[0].key).not.toBe(shorter.steps[0].key);
+    expect(taller.steps[1].key).not.toBe(shorter.steps[1].key);
+  });
+
+  it('中心にしたスケッチの点が見つからなければ missingProfile(例外にならない)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape(), {
+        origin: {
+          kind: 'sketchPoint',
+          ref: { sketchId: fixture.pointA.sketchId, pointFeatureId: 'point-404' },
+        },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingProfile']);
+    expect(result.errors[0].message).toContain('中心にする点');
+    expect(result.steps).toEqual([]);
+  });
+
+  it('中心にした頂点の立体が引けなければ missingSubShape', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape(), {
+        origin: { kind: 'vertex', ref: vertexRef('extrude-404') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingSubShape']);
+    expect(result.errors[0].message).toContain('中心にする頂点');
+    expect(result.steps).toEqual([]);
+  });
+
+  it('中心に面の指紋を指すと invalidValue(中心にできるのは頂点だけ)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      primitiveFeature('sphere-1', sphereShape(), {
+        origin: { kind: 'vertex', ref: topFaceRef('extrude-1') },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('立体の頂点だけ');
+  });
+
+  it('中心の式が評価できなければ invalidValue(式のエラーをそのまま見せる)', () => {
+    const fixture = createFixture();
+    const brokenValue: CoordinateInput = {
+      mode: 'absolute',
+      x: expr('0'),
+      y: notANumber('1/0'),
+      z: expr('0'),
+    };
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape(), {
+        origin: { kind: 'coordinate', value: brokenValue },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('数になっていません');
+  });
+
+  it('球の半径が -1 なら invalidValue(0 より大きい)', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, primitiveFeature('sphere-1', sphereShape('-1')));
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('0 より大きい');
+    expect(result.steps).toEqual([]);
+  });
+
+  it('箱の Y の長さが 0 なら、どの欄が悪いか分かる断りになる', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('box-1', boxShape('20', '0', '20')),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toBe('Y の長さは 0 より大きい数にしてください。');
+  });
+
+  it('円柱の高さが数でなければ invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('cylinder-1', cylinderShape('10', notANumber('0/0'))),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toBe('高さは 0 より大きい数にしてください。');
+  });
+
+  it('円錐の上半径 0(既定)は尖った円錐として通る', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, primitiveFeature('cone-1', coneShape()));
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(primitivePlan(result.steps[0]).shape).toEqual({
+      kind: 'cone',
+      bottomRadius: 10,
+      topRadius: 0,
+      height: 20,
+    });
+  });
+
+  it('円錐の両半径が 0 なら invalidValue', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('cone-1', coneShape('0', '0', '20')),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('どちらか一方を 0 より大きく');
+  });
+
+  it('円錐の半径が負なら「0 以上」で断る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('cone-1', coneShape('10', '-1', '20')),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toBe('円錐の半径は 0 以上にしてください。');
+  });
+
+  it('円錐の上下の半径が同じなら、円柱を使うよう促して断る', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('cone-1', coneShape('10', '10', '20')),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toBe('円錐の上下の半径が同じです。円柱を使ってください。');
+  });
+
+  it('トーラスの管の半径が主半径以上なら invalidValue(自己交差)', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('torus-1', torusShape('20', '20')),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['invalidValue']);
+    expect(result.errors[0].message).toContain('中心までの半径より小さく');
+  });
+
+  it('トーラスの既定は主半径 20・管の半径 5', () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, primitiveFeature('torus-1', torusShape()));
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(primitivePlan(result.steps[0]).shape).toEqual({
+      kind: 'torus',
+      majorRadius: 20,
+      minorRadius: 5,
+    });
+  });
+
+  it('向きにワールド X を選ぶと軸は [1, 0, 0]', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('cylinder-1', cylinderShape(), { axis: { kind: 'world', axis: 'x' } }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(primitivePlan(result.steps[0]).axis).toEqual([1, 0, 0]);
+  });
+
+  it('向きにスケッチの線分を指すと、その線分の向き(単位)になる', () => {
+    const fixture = createFixture();
+    const axis: RevolveAxis = { kind: 'line', line: fixture.axisLine };
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('cylinder-1', cylinderShape(), { axis }),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const expected = resolveRevolveAxis(axis, result.sketches);
+    if (expected === null) {
+      throw new Error('テストの前提が壊れている: 軸の線分が解決できない');
+    }
+    const plan = primitivePlan(result.steps[0]);
+    for (const index of [0, 1, 2]) {
+      expect(plan.axis[index]).toBeCloseTo(expected.direction[index], 9);
+    }
+  });
+
+  it('向きの線分が見つからなければ missingProfile', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('cylinder-1', cylinderShape(), {
+        axis: {
+          kind: 'line',
+          line: { sketchId: fixture.axisLine.sketchId, lineFeatureId: 'line-404' },
+        },
+      }),
+    );
+    const result = resolvePart(document);
+    expect(codesOf(result)).toEqual(['missingProfile']);
+    expect(result.errors[0].message).toContain('向きにする線分');
+  });
+
+  it('抑制した球は段にも liveBodyIds にも出ず、失敗としても数えない', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape(), { suppressed: true }),
+    );
+    const result = resolvePart(document);
+    expect(result.steps).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(result.liveBodyIds).toEqual([]);
+  });
+
+  it('球 → 箱 → 差 の3段になり、消費された2つは画面から消える', () => {
+    const fixture = createFixture();
+    const document = withSolids(
+      fixture.document,
+      primitiveFeature('sphere-1', sphereShape()),
+      primitiveFeature('box-1', boxShape()),
+      booleanFeature('boolean-1', 'subtract', 'sphere-1', 'box-1'),
+    );
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps).toHaveLength(3);
+    expect(result.liveBodyIds).toEqual(['boolean-1']);
+    const plan = booleanPlan(result.steps[2]);
+    expect(plan.targetKey).toBe(result.steps[0].key);
+    expect(plan.toolKey).toBe(result.steps[1].key);
+  });
+
+  it('寸法を変えると鍵が変わり、名前だけ変えても鍵は変わらない', () => {
+    const fixture = createFixture();
+    const build = (radius: string, name: string): ResolvedPart =>
+      resolvePart(
+        withSolids(fixture.document, primitiveFeature('sphere-1', sphereShape(radius), { name })),
+      );
+    const base = build('10', '球1');
+    expect(build('10', '球A').steps[0].key).toBe(base.steps[0].key);
+    expect(build('12', '球1').steps[0].key).not.toBe(base.steps[0].key);
+  });
+
+  it('中心を動かすと鍵が変わり、同じ座標に解ける別の指し方なら同じ鍵になる', () => {
+    const fixture = createFixture();
+    const build = (origin: SolidOrigin): ResolvedPart =>
+      resolvePart(withSolids(fixture.document, primitiveFeature('sphere-1', sphereShape(), { origin })));
+    const atCoordinate = build(coordinateOrigin('10', '10', '0'));
+    // 中心の指し方(座標の式・スケッチの点)は世界座標へ解いてから段に乗るので、
+    // 同じ (10,10,0) を指すなら鍵も同じになる(形が同じなら作り直さない、NFR-PF-3)。
+    expect(build({ kind: 'sketchPoint', ref: fixture.pointA }).steps[0].key).toBe(
+      atCoordinate.steps[0].key,
+    );
+    expect(build(coordinateOrigin('11', '10', '0')).steps[0].key).not.toBe(
+      atCoordinate.steps[0].key,
+    );
+  });
+
+  it('referencedSketchIds は中心がスケッチの点のときだけそのスケッチを数える', () => {
+    const fixture = createFixture();
+    const axis: RevolveAxis = { kind: 'line', line: fixture.axisLine };
+    expect(referencedSketchIds(primitiveFeature('sphere-1', sphereShape()))).toEqual([]);
+    expect(
+      referencedSketchIds(
+        primitiveFeature('sphere-1', sphereShape(), {
+          origin: { kind: 'vertex', ref: vertexRef('extrude-1') },
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      referencedSketchIds(
+        primitiveFeature('sphere-1', sphereShape(), {
+          origin: { kind: 'sketchPoint', ref: fixture.pointA },
+          axis,
+        }),
+      ),
+    ).toEqual([fixture.pointA.sketchId, fixture.axisLine.sketchId]);
   });
 });

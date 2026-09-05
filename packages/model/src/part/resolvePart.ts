@@ -38,6 +38,7 @@ import { projectionCacheKey } from '../sketch/projectionMath.js';
 import {
   degreesToRadians,
   tiltedDirection,
+  WORK_PLANES,
   WORLD_AXIS_DIRECTIONS,
   type WorkPlane,
   type WorkPlaneId,
@@ -47,6 +48,7 @@ import {
   resolveConstrainedSketch,
   type ConstrainedSketch,
 } from '../sketch/constraints/solveSketch.js';
+import { resolveCoordinate, type ResolveContext } from '../sketch/resolveCoordinate.js';
 import { arcPointAt, ellipsePointAt, fitPlaneNormal } from '../sketch/resolveSketch.js';
 import { projectionBodyFeatureId } from '../sketch/types.js';
 import type {
@@ -73,6 +75,7 @@ import {
   type KeyCurve,
   type KeyTransform,
   type KeyVec3,
+  type PrimitiveShapeKeyMaterial,
   type SolidStepKeyMaterial,
 } from './cacheKey.js';
 import { consumedTargetsOf, isPatternSource, MAX_PATTERN_COUNT, MAX_SPRING_TURNS } from './createPartDocument.js';
@@ -95,12 +98,15 @@ import type {
   PartDocument,
   PatternFeature,
   PatternPlacement,
+  PrimitiveFeature,
+  PrimitiveShape,
   RevolveAxis,
   RevolveFeature,
   SewFeature,
   SketchFaceRef,
   SketchPointRef,
   SolidFeature,
+  SolidOrigin,
   SpringDerived,
   SpringFeature,
   SubShapeRef,
@@ -258,6 +264,46 @@ export type SolidStepPlan =
         | { readonly kind: 'distanceAngle'; readonly distance: number; readonly angle: number };
       /** 2距離・距離角度のときの基準面を、辺に接する2面のうち後の方にするか(§0.a-0.18)。 */
       readonly swapReferenceFace: boolean;
+    }
+  | {
+      readonly kind: 'primitive';
+      /**
+       * 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心(P5 §0.a-0.17)。
+       *
+       * **`originQuery` が入っているときは、その頂点からのずれ**(kernel の
+       * `PrimitiveStepSpec.origin` と同じ約束)。いまの UI にはずれの欄が無いので、
+       * 頂点を指したときは必ず原点 `[0, 0, 0]` になる。
+       */
+      readonly origin: Vec3;
+      /** 向き(単位ベクトル)。カーネルでは `gp_Ax2` の Z 方向になる。 */
+      readonly axis: Vec3;
+      readonly shape:
+        | { readonly kind: 'sphere'; readonly radius: number }
+        | {
+            readonly kind: 'box';
+            readonly sizeX: number;
+            readonly sizeY: number;
+            readonly sizeZ: number;
+          }
+        | { readonly kind: 'cylinder'; readonly radius: number; readonly height: number }
+        | {
+            readonly kind: 'cone';
+            readonly bottomRadius: number;
+            readonly topRadius: number;
+            readonly height: number;
+          }
+        | { readonly kind: 'torus'; readonly majorRadius: number; readonly minorRadius: number };
+      /**
+       * 基準点にする「立体の頂点」の指紋(FR-429、§0.a-0.18)。座標の式・スケッチの点なら null。
+       * **選び直しはカーネルが行う**(model は面・辺・頂点の位置を持たないため、穴の面と同じ扱い)。
+       */
+      readonly originQuery: SubShapeQueryPlan | null;
+      /**
+       * `originQuery` の頂点を持つ立体の段の鍵。`originQuery` が null なら null。
+       * **この段はその立体を消費しない**(頂点の座標を読むだけ、§0.a-0.19)ので、
+       * 加工フィーチャーの `targetKey` と違い `consumedTargetsOf` には現れない。
+       */
+      readonly targetKey: string | null;
     };
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
@@ -1213,6 +1259,10 @@ export function resolveSpringLength(
  * `resolveSketch` の `points` は点フィーチャーと点列フィーチャーの全点を平らに並べた配列
  * (`resolveHoleCenters` の注釈を参照)なので、点列を指していても先頭の1点を返す。
  * 見つからなければ null(呼び出し側が missingProfile として断る)。
+ *
+ * P5(FR-429、タスク16)で基本形状の基準点(`SolidOrigin.sketchPoint`)からも呼ぶ。
+ * 「スケッチの点フィーチャーを1つ引く」という同じ仕事なので、同じものを2つ作らない
+ * (断りの文言だけが呼び出し側で違う)。
  */
 export function resolveSpringOrigin(
   reference: SketchPointRef,
@@ -1534,6 +1584,274 @@ function planPattern(
   return fail(feature.id, 'invalidValue', notPatternSourceMessage);
 }
 
+/* ------------------------------------------------------------------ *
+ * 基本形状(FR-429、P5 §2.7、タスク16)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 部品文書の側で座標の式を解くときの手掛かり。
+ *
+ * 部品文書には作図面もスケッチの履歴も無いので、極座標の基準は XY 平面と決め(決定性)、
+ * 点・端点の表は空にする(P4 の `resolveReferences.ts` の `pointFromDefinition` と
+ * まったく同じ決め方。同じ規約を2通りに分けない)。この結果、
+ *   - 絶対座標(`mode: 'absolute'`)は常に解ける
+ *   - ずれ・極座標は基準が「原点」か「立体の部分形状」のときに解ける
+ *   - 基準が「直前の点」「スケッチの点」「要素の端点」のときは断る(部品には無い概念)
+ * となる。基本形状の中心を UI が作るときは絶対座標なので(`defaultPrimitiveOrigin`)、
+ * ふだんは 1 つ目の道だけを通る。
+ *
+ * **`subShape`(いまの形での選び直し)は渡さない。** 渡さないと `resolveCoordinate` は
+ * 保存された指紋の位置をそのまま使う。上流の立体に追従させたい基準点は
+ * `SolidOrigin.vertex`(`originQuery` でカーネルが選び直す)で表すのが正しい道で、
+ * 座標の式の基準を二重の追従の口にしない。
+ */
+const PART_COORDINATE_CONTEXT: ResolveContext = {
+  plane: WORK_PLANES.xy,
+  points: [],
+  previous: null,
+  vertices: new Map<string, Vec3>(),
+};
+
+/**
+ * 基本形状の断りの文言(FR-429、FR-504、§2.7.1 の「断りの条件」)。
+ *
+ * **同じ検査がカーネル(`packages/kernel/src/occt/makePrimitive.ts`)にもある。**
+ * model が先に断るので利用者が見るのはここの文言だけだが、片方だけ直すと理由が食い違うため
+ * **文言は 1 字も違えずに揃える**(ばねの「ピッチは線径より…」が model と kernel の
+ * 2 か所にあるのと同じ扱い。統括の決定 2026-09-05「model の文言を採る」)。
+ * model 側で先に断るのは、重い OCCT の呼び出しの前にツリーへ理由を出すため(NFR-UX-5)。
+ */
+const PRIMITIVE_CONE_RADIUS_NEGATIVE_MESSAGE = '円錐の半径は 0 以上にしてください。';
+const PRIMITIVE_CONE_RADIUS_BOTH_ZERO_MESSAGE =
+  '円錐の半径は、どちらか一方を 0 より大きくしてください。';
+/** 上下の半径が同じ円錐は OCCT が作れない(実測。makePrimitive.ts の注釈)ので円柱を促す。 */
+const PRIMITIVE_CONE_RADIUS_SAME_MESSAGE = '円錐の上下の半径が同じです。円柱を使ってください。';
+/** 管が中心の穴を食いつぶして自己交差する。 */
+const PRIMITIVE_TORUS_MINOR_TOO_LARGE_MESSAGE =
+  'トーラスの管の半径は、中心までの半径より小さくしてください。';
+/** 中心にしたスケッチの点が消えた・見つからない(§2.7.1 の断り方の表)。 */
+const MISSING_PRIMITIVE_POINT_MESSAGE = '中心にする点が見つかりません。点を選び直してください。';
+/**
+ * 中心にした頂点を持つ立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。
+ * 語尾はカーネルの `MISSING_PRIMITIVE_VERTEX_MESSAGE` と揃えてある(利用者から見れば
+ * 「頂点が見つからない」という同じ出来事で、model と kernel のどちらが先に気づいたかは
+ * 見せる理由に関係しないため)。
+ */
+const MISSING_PRIMITIVE_VERTEX_MESSAGE =
+  '中心にする頂点が見つかりません。形が大きく変わったため、選び直してください。';
+/** 面・辺を中心に選ぼうとした。FR-429 が中心にできるとしているのは頂点だけ。 */
+const PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE = '中心にできるのは立体の頂点だけです。頂点を選び直してください。';
+/** 向き(軸)が解決できない。ばね・パターンの言い回しに揃える。 */
+const MISSING_PRIMITIVE_AXIS_MESSAGE =
+  '向きにする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
+
+/** 「〜は 0 より大きい数にしてください。」(欄の名前を差し込む。kernel の positiveMessage と同文)。 */
+function positiveFieldMessage(fieldName: string): string {
+  return `${fieldName}は 0 より大きい数にしてください。`;
+}
+
+/** 解決済みの基本形状の寸法(mm)。段の型からそのまま借りる(ChamferSizePlan と同じ書き方)。 */
+export type PrimitiveShapePlan = Extract<SolidStepPlan, { kind: 'primitive' }>['shape'];
+
+type PrimitiveShapeOutcome =
+  | { readonly ok: true; readonly shape: PrimitiveShapePlan }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * 基本形状の寸法を式から解決し、範囲を確かめる(§2.7.1 の表)。
+ *
+ * 見る順は `makePrimitive.ts` の `checkShapeSpec` と同じにしてある(同じ入力からは
+ * 必ず同じ理由が出るようにするため)。円錐だけは半径 0 を許す(上半径 0 で尖るため、
+ * §0.a-0.16)ので「0 以上」で見て、両方 0・上下同径を別の理由で断る。
+ */
+function resolvePrimitiveShape(shape: PrimitiveShape): PrimitiveShapeOutcome {
+  switch (shape.kind) {
+    case 'sphere': {
+      const radius = shape.radius.value;
+      if (!isPositiveFinite(radius)) {
+        return { ok: false, message: positiveFieldMessage('半径') };
+      }
+      return { ok: true, shape: { kind: 'sphere', radius } };
+    }
+    case 'box': {
+      const sizeX = shape.sizeX.value;
+      const sizeY = shape.sizeY.value;
+      const sizeZ = shape.sizeZ.value;
+      if (!isPositiveFinite(sizeX)) {
+        return { ok: false, message: positiveFieldMessage('X の長さ') };
+      }
+      if (!isPositiveFinite(sizeY)) {
+        return { ok: false, message: positiveFieldMessage('Y の長さ') };
+      }
+      if (!isPositiveFinite(sizeZ)) {
+        return { ok: false, message: positiveFieldMessage('Z の長さ') };
+      }
+      return { ok: true, shape: { kind: 'box', sizeX, sizeY, sizeZ } };
+    }
+    case 'cylinder': {
+      const radius = shape.radius.value;
+      const height = shape.height.value;
+      if (!isPositiveFinite(radius)) {
+        return { ok: false, message: positiveFieldMessage('半径') };
+      }
+      if (!isPositiveFinite(height)) {
+        return { ok: false, message: positiveFieldMessage('高さ') };
+      }
+      return { ok: true, shape: { kind: 'cylinder', radius, height } };
+    }
+    case 'cone': {
+      const bottomRadius = shape.bottomRadius.value;
+      const topRadius = shape.topRadius.value;
+      const height = shape.height.value;
+      if (!isPositiveFinite(height)) {
+        return { ok: false, message: positiveFieldMessage('高さ') };
+      }
+      // 非数は「0 以上か」を判定できないので、負と同じ理由で断る(kernel と同じ順)。
+      if (!Number.isFinite(bottomRadius) || bottomRadius < 0) {
+        return { ok: false, message: PRIMITIVE_CONE_RADIUS_NEGATIVE_MESSAGE };
+      }
+      if (!Number.isFinite(topRadius) || topRadius < 0) {
+        return { ok: false, message: PRIMITIVE_CONE_RADIUS_NEGATIVE_MESSAGE };
+      }
+      if (bottomRadius <= 0 && topRadius <= 0) {
+        return { ok: false, message: PRIMITIVE_CONE_RADIUS_BOTH_ZERO_MESSAGE };
+      }
+      if (bottomRadius === topRadius) {
+        return { ok: false, message: PRIMITIVE_CONE_RADIUS_SAME_MESSAGE };
+      }
+      return { ok: true, shape: { kind: 'cone', bottomRadius, topRadius, height } };
+    }
+    case 'torus': {
+      const majorRadius = shape.majorRadius.value;
+      const minorRadius = shape.minorRadius.value;
+      if (!isPositiveFinite(majorRadius)) {
+        return { ok: false, message: positiveFieldMessage('主半径') };
+      }
+      if (!isPositiveFinite(minorRadius)) {
+        return { ok: false, message: positiveFieldMessage('管の半径') };
+      }
+      if (minorRadius >= majorRadius) {
+        return { ok: false, message: PRIMITIVE_TORUS_MINOR_TOO_LARGE_MESSAGE };
+      }
+      return { ok: true, shape: { kind: 'torus', majorRadius, minorRadius } };
+    }
+  }
+}
+
+/** 基準点の解決結果。段へ乗せる3つの欄(位置・頂点の指紋・上流の鍵)をそのまま持つ。 */
+interface SolidOriginPlan {
+  /** 基準点(mm)。`query` があるときは頂点からのずれなので `[0,0,0]`。 */
+  readonly origin: Vec3;
+  readonly query: SubShapeQueryPlan | null;
+  readonly targetKey: string | null;
+}
+
+export type SolidOriginOutcome =
+  | { readonly ok: true; readonly value: SolidOriginPlan }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 立体の基準点を解決する(FR-429 の3通り、§2.7.1、§0.a-0.18)。
+ *
+ * - 座標の式 … `resolveCoordinate`(スケッチ側の正本)を再利用して世界座標にする。
+ * - スケッチの点 … 解決済みのスケッチから点を引いて世界座標にする。
+ * - 立体の頂点 … **ここでは解決しない。** 指紋(`query`)と、その頂点を持つ立体の段の鍵
+ *   (`targetKey`)を段へ乗せ、頂点の選び直しはカーネルが行う(穴の面と同じ扱い、§2.2)。
+ *   model は面・辺・頂点の位置を持たないので、ここで解こうとしても解けない。
+ *
+ * **頂点を借りても対象は消費しない**(§0.a-0.19)。`targetKey` を持つのは鍵を連鎖させる
+ * ためだけで、消費の記録(`consumedTargetsOf`)には現れない。鍵に混ぜないと、上流を
+ * 伸ばして頂点が動いても鍵が変わらず古い形がキャッシュから返る(cacheKey.ts の注釈)。
+ */
+export function resolveSolidOrigin(
+  featureId: string,
+  origin: SolidOrigin,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+): SolidOriginOutcome {
+  switch (origin.kind) {
+    case 'coordinate': {
+      const resolved = resolveCoordinate(origin.value, PART_COORDINATE_CONTEXT, featureId);
+      if (!resolved.ok) {
+        // 式のエラー(値が数でない・基準が無い)をそのまま見せる(§2.7.1 の断り方の表)。
+        return { ok: false, error: partError(featureId, 'invalidValue', resolved.error.message) };
+      }
+      return { ok: true, value: { origin: resolved.value, query: null, targetKey: null } };
+    }
+    case 'sketchPoint': {
+      // 点の引き方はばねの始点とまったく同じ(点列を指していれば先頭の1点)。
+      const point = resolveSpringOrigin(origin.ref, sketches);
+      if (point === null) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingProfile', MISSING_PRIMITIVE_POINT_MESSAGE),
+        };
+      }
+      return { ok: true, value: { origin: point, query: null, targetKey: null } };
+    }
+    case 'vertex': {
+      // 参照の型(SubShapeRef)は面・辺も表せるので、頂点であることをここで確かめる
+      // (カーネルも断るが、OCCT を呼ぶ前に赤くする。穴の「面だけ」と同じ守り)。
+      if (subShapeKindOf(origin.ref) !== 'vertex') {
+        return {
+          ok: false,
+          error: partError(featureId, 'invalidValue', PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE),
+        };
+      }
+      const targetKey = bodyKeys.get(origin.ref.bodyFeatureId);
+      if (targetKey === undefined) {
+        return {
+          ok: false,
+          error: partError(featureId, 'missingSubShape', MISSING_PRIMITIVE_VERTEX_MESSAGE),
+        };
+      }
+      // ずれの欄はまだ無いので、頂点そのものを指す `[0,0,0]` を渡す(段の型の注釈)。
+      return { ok: true, value: { origin: ORIGIN, query: origin.ref, targetKey } };
+    }
+  }
+}
+
+/**
+ * 基本形状(FR-429、§2.7)。対象を取らず、新しいボディを1つ作る(§0.a-0.19)。
+ *
+ * 解決の順は 基準点 → 向き(軸)→ 寸法。どの段階で断っても、それより後ろは見ない
+ * (ばね `planSpring` と同じ組み立て方)。**寸法の範囲はここで先に断る**ので、
+ * 画面は実行前に赤くできる(NFR-UX-5)。
+ */
+function planPrimitive(
+  feature: PrimitiveFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  axisFrames: ReadonlyMap<string, AxisFrame>,
+): PlanOutcome {
+  const origin = resolveSolidOrigin(feature.id, feature.origin, sketches, bodyKeys);
+  if (!origin.ok) {
+    return origin;
+  }
+  // 向きは回転軸(FR-402)と同じ `AxisSpec` を流用する(§0.a-0.16。同じものを2つ作らない)。
+  const axisFrame = resolveRevolveAxis(feature.axis, sketches, axisFrames);
+  if (axisFrame === null) {
+    return fail(feature.id, 'missingProfile', MISSING_PRIMITIVE_AXIS_MESSAGE);
+  }
+  const shape = resolvePrimitiveShape(feature.shape);
+  if (!shape.ok) {
+    return fail(feature.id, 'invalidValue', shape.message);
+  }
+  return {
+    ok: true,
+    plan: {
+      kind: 'primitive',
+      origin: origin.value.origin,
+      // 軸の原点は使わない(基準点は上で決めた)。向きだけを取り、-0 を +0 へ揃える
+      // (ばねの向きと同じ後始末。negateVec3 の注釈を参照)。
+      axis: cleanZeroVec3(axisFrame.direction),
+      shape: shape.shape,
+      originQuery: origin.value.query,
+      targetKey: origin.value.targetKey,
+    },
+  };
+}
+
 function planSolid(
   feature: SolidFeature,
   solids: readonly SolidFeature[],
@@ -1564,13 +1882,7 @@ function planSolid(
     case 'pattern':
       return planPattern(feature, solids, sketches, bodyKeys, consumed, axisFrames);
     case 'primitive':
-      /*
-        基本形状(FR-429)の段の組み立ては **P5 タスク16 で本実装**する。ここはタスク15 で
-        `SolidFeature` の union を広げたときに、この網羅 switch を落とさないための最小の枝で、
-        いまは必ず理由つきで断る(FR-504。止めずに警告する)。UI から基本形状を作れるように
-        なるのはタスク18 なので、この断りが利用者の画面に出る経路は今のところ無い。
-      */
-      return fail(feature.id, 'invalidValue', '基本形状はまだ作れません。');
+      return planPrimitive(feature, sketches, bodyKeys, axisFrames);
   }
 }
 
@@ -1625,6 +1937,30 @@ function toKeyCurve(curve: ResolvedCurve): KeyCurve {
         points: curve.points.map((point) => toKeyVec3(point)),
         closed: curve.closed,
       };
+  }
+}
+
+/**
+ * 基本形状の寸法を鍵の材料へ詰め替える(cacheKey.ts の `PrimitiveShapeKeyMaterial`)。
+ * 欄名も形も同じだが、`toKeyCurve` と同じ理由で偶然の構造の一致に頼らず種類ごとに写す。
+ */
+function toKeyPrimitiveShape(shape: PrimitiveShapePlan): PrimitiveShapeKeyMaterial {
+  switch (shape.kind) {
+    case 'sphere':
+      return { kind: 'sphere', radius: shape.radius };
+    case 'box':
+      return { kind: 'box', sizeX: shape.sizeX, sizeY: shape.sizeY, sizeZ: shape.sizeZ };
+    case 'cylinder':
+      return { kind: 'cylinder', radius: shape.radius, height: shape.height };
+    case 'cone':
+      return {
+        kind: 'cone',
+        bottomRadius: shape.bottomRadius,
+        topRadius: shape.topRadius,
+        height: shape.height,
+      };
+    case 'torus':
+      return { kind: 'torus', majorRadius: shape.majorRadius, minorRadius: shape.minorRadius };
   }
 }
 
@@ -1730,6 +2066,18 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         swapReferenceFace: plan.swapReferenceFace,
       };
     }
+    case 'primitive':
+      // 頂点の指紋(originQuery)と上流の鍵(targetKey)を**必ず**混ぜる。混ぜないと、
+      // 上流の押し出しを伸ばして頂点が動いても鍵が変わらず、古い位置の形が
+      // キャッシュから返る(cacheKey.ts の `PrimitiveKeyMaterial` の注釈、NFR-PF-3)。
+      return {
+        kind: 'primitive',
+        origin: toKeyVec3(plan.origin),
+        axis: toKeyVec3(plan.axis),
+        shape: toKeyPrimitiveShape(plan.shape),
+        originQuery: plan.originQuery === null ? null : fingerprintKeyText(plan.originQuery),
+        targetKey: plan.targetKey,
+      };
   }
 }
 

@@ -34,6 +34,7 @@ import {
   normalizeVec3,
   scaleVec3,
   type AppearanceSpec,
+  type ResolvedPlane,
   type Vec3,
 } from '@pointercad/model';
 import * as THREE from 'three';
@@ -49,6 +50,7 @@ import type {
   SolidEmphasis,
   SolidGeometryBundle,
 } from './buildSolidGeometry.js';
+import { buildCutPreviewPositions } from './buildCutPreview.js';
 import type { SubShapeEmphasis, SubShapeHighlight, SubShapeHighlightBundle } from './buildSubShapeGeometry.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
@@ -258,6 +260,27 @@ function sameAppearances(
 type SolidMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]>;
 type SolidEdges = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
+/**
+ * 切断面の予告表示に渡すもの(FR-432、P5 タスク27e)。
+ * 平面と、対象のボディの境界箱の対角長と、残る側の 3 つだけ。
+ */
+export interface CutPreview {
+  readonly plane: ResolvedPlane;
+  /** 四角の対角の長さ(= 対象の境界箱の対角長、§0.a-0.61)。 */
+  readonly diagonal: number;
+  readonly keep: 'positive' | 'negative';
+}
+
+/**
+ * 切断面の予告の色(§0.a-0.61)。選択・ホバーと別の**警告系の黄**にして、
+ * 「これから切る場所」だと読み取れるようにする。テーマの表(`themeColors.ts`)へは
+ * 足さない——予告は道具を使っている間だけ出る一時的な表示で、明暗どちらのテーマでも
+ * 同じ黄が読めるため(部分形状の重ね描きの色がテーマに従うのとは役割が違う)。
+ */
+const CUT_PREVIEW_COLOR = 0xf0b429;
+/** 予告の四角の不透明度(§0.a-0.61)。向こう側の形が透けて見える濃さ。 */
+const CUT_PREVIEW_FACE_OPACITY = 0.2;
+
 /** ボディ 1 つぶんの部品。並びは前回と同じかどうかを参照で見分けられるよう控えておく。 */
 interface BodyDraw {
   featureId: string;
@@ -299,6 +322,14 @@ export interface SolidLayer {
    * 並びを触らない。
    */
   updateThreadMarks(marks: readonly ThreadMarkInfo[]): void;
+  /**
+   * 切断面の予告表示を差し替える(FR-432、P5 タスク27e、§0.a-0.61)。
+   *
+   * **四角は 1 枚だけ**で、ボディごとには作らない。`null` を渡すと消える(確定・取消の
+   * どちらでも呼び出し側が `null` を渡す)。**同じ内容(同一参照)を渡し直したときは
+   * 並びを触らない**(NFR-PF-1。ねじの印・部分形状の重ね描きと同じ約束)。
+   */
+  updateCutPreview(preview: CutPreview | null): void;
   /**
    * 表示テーマの色を反映する(FR-908)。材質の色を塗り替えるだけで、
    * 部品も並びも作り直さない(NFR-PF-1)。
@@ -534,6 +565,39 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   group.add(threadMarkLines);
   let lastThreadMarks: readonly ThreadMarkInfo[] | null = null;
 
+  /*
+    切断面の予告(FR-432、§0.a-0.61)。**四角 1 枚と矢印 1 本だけ**を作り、ボディごとには
+    増やさない。四角は両面描き・奥行きを書かない半透明で、部分形状の重ね描きと同じ
+    `renderOrder` に載せる。矢印は面に隠れても見えるよう `depthTest: false`。
+  */
+  const cutPreviewFace = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.MeshBasicMaterial({
+      color: CUT_PREVIEW_COLOR,
+      transparent: true,
+      opacity: CUT_PREVIEW_FACE_OPACITY,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  cutPreviewFace.renderOrder = SUB_SHAPE_FACE_RENDER_ORDER;
+  cutPreviewFace.visible = false;
+  group.add(cutPreviewFace);
+
+  const cutPreviewArrow = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      color: CUT_PREVIEW_COLOR,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  cutPreviewArrow.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
+  cutPreviewArrow.visible = false;
+  group.add(cutPreviewArrow);
+  let lastCutPreview: CutPreview | null = null;
+
   const draws: BodyDraw[] = [];
   /** 当たり判定にかける面。`draws` と同じ順に並ぶ。 */
   const pickTargets: THREE.Object3D[] = [];
@@ -728,6 +792,27 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       threadMarkLines.visible = positions.length > 0;
     },
 
+    updateCutPreview(preview): void {
+      if (preview === lastCutPreview) {
+        // 同じ平面を渡し直したときは並びを 1 つも触らない(NFR-PF-1)。
+        return;
+      }
+      lastCutPreview = preview;
+      if (preview === null) {
+        cutPreviewFace.visible = false;
+        cutPreviewArrow.visible = false;
+        return;
+      }
+      const positions = buildCutPreviewPositions(preview.plane, preview.diagonal, preview.keep);
+      setVectorAttribute(cutPreviewFace.geometry, 'position', positions.facePositions);
+      cutPreviewFace.geometry.computeVertexNormals();
+      cutPreviewFace.geometry.computeBoundingSphere();
+      cutPreviewFace.visible = positions.facePositions.length > 0;
+      setVectorAttribute(cutPreviewArrow.geometry, 'position', positions.arrowPositions);
+      cutPreviewArrow.geometry.computeBoundingSphere();
+      cutPreviewArrow.visible = positions.arrowPositions.length > 0;
+    },
+
     setThemeColors(next): void {
       colors = next;
       // 既定の外観の色はテーマが決める(FR-908)。材質そのものは次の `update` で作り直す
@@ -791,6 +876,11 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       }
       threadMarkLines.geometry.dispose();
       threadMarkLines.material.dispose();
+      cutPreviewFace.geometry.dispose();
+      cutPreviewFace.material.dispose();
+      cutPreviewArrow.geometry.dispose();
+      cutPreviewArrow.material.dispose();
+      lastCutPreview = null;
       lastBundle = null;
       lastSubShapeBundle = null;
       lastThreadMarks = null;

@@ -40,14 +40,20 @@ import { useAppStore } from '../store/useAppStore.js';
 import {
   AlertIcon,
   ArcToolIcon,
+  BoxIcon,
   ChamferIcon,
   ChevronRightIcon,
   CircularArrayToolIcon,
   CircularPatternIcon,
+  ConeIcon,
   CoordinateSystemIcon,
   CopyToolIcon,
   CubeIcon,
+  CutIcon,
+  CylinderIcon,
+  DraftIcon,
   EllipseToolIcon,
+  EmbossIcon,
   EmptyBoxIcon,
   ExtrudeIcon,
   FaceToolIcon,
@@ -55,16 +61,18 @@ import {
   HoleIcon,
   IntersectIcon,
   LayersIcon,
+  LineToolIcon,
   LinearArrayToolIcon,
   LinearPatternIcon,
-  LineToolIcon,
   LoftIcon,
+  MirrorSolidIcon,
   MirrorToolIcon,
   OffsetToolIcon,
   PlaneIcon,
   PlaneSectionIcon,
   PlotPointIcon,
   PointArrayToolIcon,
+  PointPatternIcon,
   PolygonToolIcon,
   ProjectCurveIcon,
   RectangleToolIcon,
@@ -72,13 +80,22 @@ import {
   ReferenceGroupIcon,
   ReferencePointIcon,
   RevolveIcon,
+  RibIcon,
   RuledIcon,
+  ScaleIcon,
   SewIcon,
+  ShellIcon,
   SlotToolIcon,
+  SphereIcon,
   SplineToolIcon,
   SpringIcon,
   SubtractIcon,
+  SurfaceIcon,
+  SweepIcon,
   ThreadHoleIcon,
+  ThreadShaftIcon,
+  TorusIcon,
+  TransformIcon,
   UnionIcon,
   type IconProps,
 } from './icons.js';
@@ -153,42 +170,37 @@ const KIND_ICONS: Readonly<
   linearPattern: LinearPatternIcon,
   circularPattern: CircularPatternIcon,
   spring: SpringIcon,
-  // 基本形状5種(FR-429、P5 タスク15)。専用の図柄は **タスク18** で足すので、それまでは
-  // 立体を表す `CubeIcon` を借りる(節の頭と同じ絵。行が空欄になるよりは形の別が付く)。
-  sphere: CubeIcon,
-  box: CubeIcon,
-  cylinder: CubeIcon,
-  cone: CubeIcon,
-  torus: CubeIcon,
+  // 基本形状5種(FR-429、P5 タスク15)。タスク51 が用意した道具の図柄へ差し替えた
+  // (タスク52。木の行と「作る」の一覧のボタンが同じ絵になる)。
+  sphere: SphereIcon,
+  box: BoxIcon,
+  cylinder: CylinderIcon,
+  cone: ConeIcon,
+  torus: TorusIcon,
   // 面をつなぐ(FR-430)とロフト(FR-410)。P5 タスク27 で専用の図柄を入れた
   // (直線で結ぶ / なめらかに結ぶの違いが絵でも分かる。`icons.tsx` の注釈)。
   ruled: RuledIcon,
   loft: LoftIcon,
   /*
-    P5 の Should 群(§2.11、P5 タスク43)。専用の図柄は **タスク50・51**(道具のボタンを
-    足す段)で入れるので、それまでは基本形状・罫線面と同じく借り物にする。
-    ミラーだけはスケッチの鏡(FR-324)の図柄がすでにあるので、それを使い回す
-    (同じ「鏡に映す」操作なので、利用者から見た絵の意味も変わらない)。
+    P5 の Should 群(§2.11、P5 タスク43)。タスク50・51 が道具の図柄を用意したので、
+    タスク52 で借り物(`CubeIcon` ほか)から専用の図柄へ差し替えた。木の行と
+    「作る」「加工」の一覧のボタンが同じ絵になり、作ったものと道具が結び付く。
   */
-  mirror: MirrorToolIcon,
-  draft: CubeIcon,
-  transform: CubeIcon,
-  scale: CubeIcon,
-  sweep: CubeIcon,
-  rib: CubeIcon,
-  emboss: CubeIcon,
-  threadShaft: ThreadHoleIcon,
-  surface: CubeIcon,
-  // 点パターン(FR-425)。直線・円形パターンと同じ絵では見分けが付かないので、
-  // 「点を並べる」という意味がいちばん近い点列(FR-308)の図柄を借りる。
-  pointPattern: PointArrayToolIcon,
-  // くり抜き(FR-418、P5 タスク46)。専用の図柄は **タスク55**(道具のボタンを足す段)で
-  // 入れるので、それまでは Should 群と同じく立体の絵を借りる。
-  shell: CubeIcon,
-  // 平面による切断(FR-432、P5 タスク27c)。専用の図柄は **タスク27f**(道具のボタンを
-  // 足す段)で入れる。それまでは「平面で切った断面」の意味がいちばん近い交差(FR-325)の
-  // 図柄を借りる(立体の絵よりも、平面が立体を横切る様子が伝わる)。
-  cut: PlaneSectionIcon,
+  mirror: MirrorSolidIcon,
+  draft: DraftIcon,
+  transform: TransformIcon,
+  scale: ScaleIcon,
+  sweep: SweepIcon,
+  rib: RibIcon,
+  emboss: EmbossIcon,
+  threadShaft: ThreadShaftIcon,
+  surface: SurfaceIcon,
+  // 点パターン(FR-425)。直線・円形パターンと同じ絵では見分けが付かない。
+  pointPattern: PointPatternIcon,
+  // くり抜き(FR-418、P5 タスク46)。タスク55 で道具と同じ図柄へ差し替えた。
+  shell: ShellIcon,
+  // 平面による切断(FR-432、P5 タスク27c)。タスク27f で道具と同じ図柄へ差し替えた。
+  cut: CutIcon,
 };
 
 /** 節の頭に出す絵。基準は軸と点、スケッチは作図面、ソリッドは立体の印。 */

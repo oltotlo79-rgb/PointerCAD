@@ -21,7 +21,13 @@
  * 「消えたフィーチャーを選択から外す」掃除は 1 行も変えずにそのまま効く。
  */
 
-import type { SolidBody, SubShapeKind, SubShapeRef, Vec3 } from '@pointercad/model';
+import type {
+  PrimitiveShapeKind,
+  SolidBody,
+  SubShapeKind,
+  SubShapeRef,
+  Vec3,
+} from '@pointercad/model';
 
 import type { NumericInputToolId } from '../sketch/numericInput.js';
 
@@ -394,10 +400,45 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
     */
     case 'appearance':
       return 'face';
+    /*
+      P5 の Should 群(FR-417〜428。タスク50、§2.15 の表)。**面を選ぶ 4 つだけ**を
+      ここに書き、残りは既定の `body` に落ちる。
+
+      | 道具 | 選ぶもの | 理由 |
+      |---|---|---|
+      | 抜き勾配 | 面 | 基準の面と傾ける面を選ぶ |
+      | くり抜き | 面 | 開ける面を選ぶ(0 枚でもよいが、選ぶなら面) |
+      | エンボス | 面 | 彫る相手の平らな面を選ぶ |
+      | 外ねじ | 面 | ねじを切る円柱の面を選ぶ |
+      | ミラー・移動/回転・拡大縮小・切断 | 立体(既定) | 立体そのものを選ぶ |
+      | スイープ・リブ・曲面・点パターン | 立体(既定) | スケッチの輪郭・点を選ぶので切り替えない |
+      | 可変半径の R 面取り | 辺 | R 面取り(`fillet`)へ畳んだので上の行がそのまま効く |
+    */
+    case 'draft':
+    case 'shell':
+    case 'emboss':
+    case 'threadShaft':
+      return 'face';
     default:
       return 'body';
   }
 }
+
+/**
+ * 基本形状 5 種の道具の一覧(FR-429、§2.15)。道具の id は model の `PrimitiveShapeKind` と
+ * まったく同じ語なので(`solid/primitiveCommands.ts` の `PrimitiveToolId`)、**網羅の
+ * `Record`** にしておけば、形の種類が増えたときにここが型検査で落ちる。
+ *
+ * `primitiveCommands.ts` から `PrimitiveToolId` を借りずに型だけを model から取るのは、
+ * そちらがこのファイルを import しているため(輪になる)。
+ */
+const PRIMITIVE_TOOLS: Readonly<Record<PrimitiveShapeKind, true>> = {
+  sphere: true,
+  box: true,
+  cylinder: true,
+  cone: true,
+  torus: true,
+};
 
 /**
  * 道具を選んでも**選ぶ種類を切り替えない**道具かどうか(§2.15 の表、NFR-UX-1)。
@@ -422,8 +463,31 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
  * 立体の面を輪郭にしたいときは `3` キーか帯の札で先に「面」へ切り替えてから選ぶ
  * (ヘルプ `ruled-loft.md` にそう書いてある)。
  *
+ * **基本形状 5 種**(FR-429、タスク18)もこれに当たる(P5 仕上げ (j)、タスク18 の申し送り)。
+ * 中心にできるのは①立体の頂点(選ぶ種類が `vertex` のときだけ押せる)と②スケッチの点
+ * (種類が `body` のときに押せる)の 2 通りで、面をつなぐ・ロフトと同じく**どの種類でも
+ * 何かしら選べる**。計画書 §2.15 の表は「基本形状 5 種 → `vertex`」と書いているが、
+ * そのとおりに決め打ちで切り替えると**選んでおいたスケッチの点が押した瞬間に消える**
+ * (`kindChanged` で選択が空になり、FR-429 の 3 通りのうち「点を中心にする」が
+ * 「選んでから道具」の順で成立しなくなる)。逆に切り替えないままにしていた実装では、
+ * 頂点を選んでから道具を押すと選択が空になっていた(タスク18 の申し送り、2026-09-06 実測)。
+ * 切り替えないことで**頂点も点もそのまま中心になる**(NFR-UX-1「どちらの順でも成立する」)。
+ * 道具を先に押したときは、`1` キーで「頂点」へ切り替えてから頂点を押せばよい。
+ *
+ * **切断**(FR-432、タスク27e・50)もこれに当たる。切るのは立体そのものなので種類は
+ * `body` から始まるが、切る面を決める材料(点・辺・面)は `1`〜`3` キーで種類を切り替えて
+ * 選ぶ(§2.15 の表)。ここで `body` へ決め打ちで切り替えると、頂点を 3 つ選んでから
+ * 道具を押した瞬間にその 3 点が消え、「点を作って切る」(NFR-UX-4)が
+ * 「選んでから道具」の順で成立しなくなる。
+ *
  * **この表もここ 1 か所だけに置く**(`selectionKindForTool` と同じ理由)。
  */
 export function keepsSelectionKind(tool: NumericInputToolId): boolean {
-  return tool === 'ruled' || tool === 'loft' || tool === 'measure';
+  return (
+    tool === 'ruled' ||
+    tool === 'loft' ||
+    tool === 'measure' ||
+    tool === 'cut' ||
+    tool in PRIMITIVE_TOOLS
+  );
 }

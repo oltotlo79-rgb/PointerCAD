@@ -39,4 +39,22 @@ describe('ヘルプの目録', () => {
   it('質量特性の説明を id で引ける(FR-1101、P5 タスク32)', () => {
     expect(findHelpTopic('mass-properties')?.path).toBe('docs/ja/mass-properties.md');
   });
+
+  it('立体の形を変える道具の説明を id で引ける(FR-409、FR-417〜428、P5 タスク52)', () => {
+    expect(findHelpTopic('shape-edit')?.path).toBe('docs/ja/shape-edit.md');
+  });
+
+  it('平面で切る説明を id で引ける(FR-432、P5 タスク27f)', () => {
+    expect(findHelpTopic('cut')?.path).toBe('docs/ja/cut.md');
+  });
+
+  /**
+   * 目録の件数(P5 タスク52・27f)。**新しい機能はヘルプを必ず伴う**(NFR-MA-4)ので、
+   * 道具を足したのに目録が増えていない取りこぼしをここで止める。
+   * P4 完了時 27 + P5 で足した 15(外観 3・画面の見た目・基本形状・面をつなぐ/ロフト・
+   * 測定 2・立体の形を変える・平面で切る ほか)= 42。
+   */
+  it('目録の件数が数えたとおりになる(NFR-MA-4)', () => {
+    expect(HELP_TOPICS).toHaveLength(42);
+  });
 });

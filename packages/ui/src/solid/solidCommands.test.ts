@@ -1404,3 +1404,164 @@ describe('solidToolReadiness の「測る」(P5 タスク32)', () => {
     });
   });
 });
+
+/* ===== P5 タスク50: 押し出し・穴・R 面取りへ畳んだ欄(統括の決定 2026-09-06) ===== */
+
+describe('畳み先の 3 段は、既定のままなら従来と同じ文書になる(P5 タスク50)', () => {
+  /** 押し出しの段の確定結果。つまみ・選択肢を渡さなければ P2 のときと同じ。 */
+  function extrudeCommit(overrides: Partial<SolidInputCommit> = {}): SolidInputCommit {
+    return {
+      kind: 'solid',
+      tool: 'extrude',
+      step: 'extrudeDistance',
+      values: { distance: DISTANCE_10 },
+      flags: {},
+      ...overrides,
+    };
+  }
+
+  it('押し出し: 足した 5 欄はどれも作られない(FR-415、FR-416、FR-401)', () => {
+    const document = documentWithFaces(['face-1']);
+    const outcome = commitSolidInput(document, ['face-1'], extrudeCommit());
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.solids[0];
+    expect(feature?.kind).toBe('extrude');
+    if (feature?.kind !== 'extrude') {
+      return;
+    }
+    // P2 からの 4 欄と id・名前・抑制だけ。足した欄は 1 つも生えない。
+    expect(Object.keys(feature).sort()).toEqual(
+      ['distance', 'id', 'kind', 'name', 'profile', 'reversed', 'suppressed', 'symmetric'].sort(),
+    );
+  });
+
+  it('押し出し: 選択肢を「距離」のまま渡しても欄は生えない(既定と同じ形)', () => {
+    const document = documentWithFaces(['face-1']);
+    const plain = commitSolidInput(document, ['face-1'], extrudeCommit());
+    const chosen = commitSolidInput(
+      document,
+      ['face-1'],
+      extrudeCommit({ shapeChoices: { extrudeEnd: 'distance', thicknessSide: 'inner' } }),
+    );
+    expect(plain.ok && chosen.ok).toBe(true);
+    if (!plain.ok || !chosen.ok) {
+      return;
+    }
+    expect(chosen.document.solids[0]).toEqual(plain.document.solids[0]);
+  });
+
+  it('押し出し: 「次の面まで」で終わり方の欄が入る(FR-415)', () => {
+    const document = documentWithFaces(['face-1']);
+    const outcome = commitSolidInput(
+      document,
+      ['face-1'],
+      extrudeCommit({ shapeChoices: { extrudeEnd: 'toNext' } }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.solids[0];
+    expect(feature?.kind === 'extrude' ? feature.end : null).toEqual({ kind: 'toNext' });
+  });
+
+  it('押し出し: 「選んだ面まで」は止める面が要る(NFR-UX-5)', () => {
+    const document = documentWithFaces(['face-1']);
+    expect(
+      commitSolidInput(document, ['face-1'], extrudeCommit({ shapeChoices: { extrudeEnd: 'toFace' } })),
+    ).toEqual({ ok: false, reasonKey: 'shapeError.noFlatFace' });
+
+    const bodies = [makeHoleTargetBody('extrude-9')];
+    const withFace = commitSolidInput(
+      document,
+      ['face-1', subShapeElementId('extrude-9', 'face', 0)],
+      extrudeCommit({ shapeChoices: { extrudeEnd: 'toFace' } }),
+      bodies,
+    );
+    expect(withFace.ok).toBe(true);
+    if (!withFace.ok) {
+      return;
+    }
+    const feature = withFace.document.solids[0];
+    expect(feature?.kind === 'extrude' ? feature.end?.kind : null).toBe('toFace');
+  });
+
+  it('押し出し: 「側面を傾ける」で傾きの欄が入る(FR-401)', () => {
+    const document = documentWithFaces(['face-1']);
+    const outcome = commitSolidInput(
+      document,
+      ['face-1'],
+      extrudeCommit({
+        flags: { tapered: true, taperOutward: true },
+        values: { distance: DISTANCE_10, taperAngle: expressionValueFromNumber(5) },
+      }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.solids[0];
+    expect(feature?.kind === 'extrude' ? feature.taperAngle?.value : null).toBe(5);
+    expect(feature?.kind === 'extrude' ? feature.taperOutward : null).toBe(true);
+    expect(feature?.kind === 'extrude' ? feature.thickness : 'x').toBeUndefined();
+  });
+
+  it('押し出し: 「薄板にする」で厚みと側が入る(FR-416)', () => {
+    const document = documentWithFaces(['face-1']);
+    const outcome = commitSolidInput(
+      document,
+      ['face-1'],
+      extrudeCommit({
+        flags: { thinWalled: true },
+        values: { distance: DISTANCE_10, thickness: expressionValueFromNumber(1.6) },
+        shapeChoices: { thicknessSide: 'both' },
+      }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.solids[0];
+    expect(feature?.kind === 'extrude' ? feature.thickness?.value : null).toBe(1.6);
+    expect(feature?.kind === 'extrude' ? feature.thicknessSide : null).toBe('both');
+  });
+
+  it('押し出し: 知らない選択肢の値は断る', () => {
+    const document = documentWithFaces(['face-1']);
+    expect(
+      commitSolidInput(
+        document,
+        ['face-1'],
+        extrudeCommit({ shapeChoices: { extrudeEnd: 'ずっと' } }),
+      ),
+    ).toEqual({ ok: false, reasonKey: 'shapeError.unknownChoice' });
+    expect(
+      commitSolidInput(
+        document,
+        ['face-1'],
+        extrudeCommit({ shapeChoices: { thicknessSide: 'ななめ' } }),
+      ),
+    ).toEqual({ ok: false, reasonKey: 'shapeError.unknownChoice' });
+  });
+
+  it('`commitExtrude` を直に呼んでも、足した欄を渡さなければ従来と同じ', () => {
+    const document = documentWithFaces(['face-1']);
+    const outcome = commitExtrude(document, {
+      profile: faceRef('face-1'),
+      distance: DISTANCE_10,
+      reversed: false,
+      symmetric: false,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = outcome.document.solids[0];
+    expect(feature?.kind === 'extrude' ? feature.end : 'x').toBeUndefined();
+    expect(feature?.kind === 'extrude' ? feature.taperAngle : 'x').toBeUndefined();
+    expect(feature?.kind === 'extrude' ? feature.thickness : 'x').toBeUndefined();
+  });
+});

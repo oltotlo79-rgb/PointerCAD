@@ -301,8 +301,65 @@ describe('道具ごとの選択の種類(§0.a-0.6、§2.3.2)', () => {
     expect(keepsSelectionKind('measure')).toBe(true);
   });
 
+  it('基本形状 5 種も切り替えない(頂点もスケッチの点もそのまま中心になる、P5 仕上げ (j))', () => {
+    /*
+      中心にできるのは①立体の頂点(種類が `vertex` のときだけ押せる)と②スケッチの点
+      (種類が `body` のときに押せる)の 2 通り。決め打ちで `vertex` へ切り替えると②が、
+      `body` のままだと①が、押した瞬間に消える(`kindChanged` で選択が空になる)。
+    */
+    for (const tool of ['sphere', 'box', 'cylinder', 'cone', 'torus'] as const) {
+      expect(keepsSelectionKind(tool), tool).toBe(true);
+    }
+  });
+
   it('それ以外の道具は今までどおり切り替える(既存の振る舞いを狭めない)', () => {
     for (const tool of ['hole', 'fillet', 'appearance', 'select', 'extrude'] as const) {
+      expect(keepsSelectionKind(tool), tool).toBe(false);
+    }
+  });
+});
+
+/* ===== P5 タスク50・27e: Should 群 12 種の選ぶ種類(§2.15 の表) ===== */
+
+describe('Should 群の道具が選ぶ種類(P5 タスク50・27e、§2.15)', () => {
+  it('面を選ぶのは 抜き勾配・くり抜き・エンボス・外ねじ の 4 つ', () => {
+    for (const tool of ['draft', 'shell', 'emboss', 'threadShaft'] as const) {
+      expect(selectionKindForTool(tool), tool).toBe('face');
+    }
+  });
+
+  it('立体のまま始めるのは ミラー・移動/回転・拡大縮小・切断・スイープ・リブ・曲面・点パターン', () => {
+    for (const tool of [
+      'mirrorSolid',
+      'transform',
+      'scale',
+      'cut',
+      'sweep',
+      'rib',
+      'surface',
+      'pointPattern',
+    ] as const) {
+      expect(selectionKindForTool(tool), tool).toBe('body');
+    }
+  });
+
+  it('可変半径の R 面取りは R 面取りへ畳んだので、辺のまま(タスク50)', () => {
+    expect(selectionKindForTool('fillet')).toBe('edge');
+  });
+
+  it('押し出し・穴も畳み先の種類が変わらない(P2/P3 のまま)', () => {
+    expect(selectionKindForTool('extrude')).toBe('body');
+    expect(selectionKindForTool('hole')).toBe('face');
+  });
+
+  it('切断は選ぶ種類を切り替えない(平面の材料を 1〜3 キーで選ぶ、§2.15)', () => {
+    expect(keepsSelectionKind('cut')).toBe(true);
+    // 面を選ぶ 4 つは切り替える(対象を選び直してもらう道具)。
+    for (const tool of ['draft', 'shell', 'emboss', 'threadShaft'] as const) {
+      expect(keepsSelectionKind(tool), tool).toBe(false);
+    }
+    // 立体のまま始める道具も、切り替えないのは切断だけ(ほかは既定の body へ切り替わる)。
+    for (const tool of ['mirrorSolid', 'transform', 'scale'] as const) {
       expect(keepsSelectionKind(tool), tool).toBe(false);
     }
   });

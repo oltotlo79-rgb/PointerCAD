@@ -21,6 +21,7 @@ import {
   type AppearancePattern,
   type AppearancePresetId,
   type AppearanceSpec,
+  type CutFeature,
   type ReferenceFeature,
   type LoftFeature,
   type PrimitiveFeature,
@@ -95,6 +96,11 @@ import {
   formatMoments,
   massPropertiesView,
 } from '../solid/measureCommands.js';
+import {
+  cutPlaneRejection,
+  inferPlaneSpec,
+  type CutContext,
+} from '../solid/cutCommands.js';
 import { ruledTwistNoteKey } from '../solid/ruledCommands.js';
 import {
   COORDINATE_MODES,
@@ -110,6 +116,7 @@ import {
   formatVolume,
   missingValueKey,
   partErrorMessage,
+  PLANE_SPEC_LABEL_KEYS,
   selectionKindLabelKeys,
   setReferenceCoordinate,
   setReferenceField,
@@ -813,24 +820,34 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
     store.applyDocument(replaceSolid(store.document, feature.id, next), { coalesceKey });
   };
 
+  /**
+   * 式の 1 欄。範囲(`SolidFieldSummary.range`、P5 タスク52)を持つ欄は、**範囲の外の値では
+   * 履歴を差し替えず**に赤と理由だけを出す(NFR-UX-5「実行してから失敗させない」)。
+   * 範囲を持たない P1〜P4 からの欄のふるまいは 1 つも変わらない。
+   */
   const renderField = (item: SolidFieldSummary): React.JSX.Element => {
     const source = draft !== null && draft.key === item.key ? draft.source : item.value.source;
     const evaluated = evaluateExpression(source, { variables });
+    const numericField: NumericField = {
+      key: item.key,
+      labelKey: item.labelKey,
+      tooltipKey: item.tooltipKey,
+      unit: item.unit,
+      defaultSource: item.value.source,
+      source,
+      ...(item.range === undefined ? {} : { range: item.range }),
+    };
+    const rangeError = evaluated.ok ? rangeErrorFor(numericField, evaluated.value) : null;
     return (
       <ExpressionField
         key={item.key}
-        field={{
-          key: item.key,
-          labelKey: item.labelKey,
-          tooltipKey: item.tooltipKey,
-          unit: item.unit,
-          defaultSource: item.value.source,
-          source,
-        }}
+        field={numericField}
         result={
-          evaluated.ok
-            ? { key: item.key, value: evaluated.value, error: null }
-            : { key: item.key, value: null, error: evaluated.error }
+          !evaluated.ok
+            ? { key: item.key, value: null, error: evaluated.error }
+            : rangeError !== null
+              ? { key: item.key, value: null, error: rangeError }
+              : { key: item.key, value: evaluated.value, error: null }
         }
         /* 焦点の正本は利用者のクリックとタブ移動。こちらからは動かさない。 */
         focused={false}
@@ -838,7 +855,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         onChange={(next) => {
           setDraftState({ draft: { key: item.key, source: next }, seenVersion: documentVersion });
           const parsed = evaluateExpression(next, { variables });
-          if (!parsed.ok) {
+          if (!parsed.ok || rangeErrorFor({ ...numericField, source: next }, parsed.value) !== null) {
             return;
           }
           apply(
@@ -1226,6 +1243,91 @@ function RuledNoteSection({
     <div className="pcad-section">
       <h3 className="pcad-section__title">{t('propertyPanel.sectionRuled')}</h3>
       <p className="pcad-panel__note">{t(noteKey)}</p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * 平面による切断(FR-432、§2.9b、P5 タスク27f)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 切断の「切る面」の節(FR-432、§0.a-0.56〜0.58)。
+ *
+ * 傾き角・方位角・ずらす距離の欄と「反対側を残す」のつまみは `solidSummary.ts` の
+ * `fields` / `toggles` に載せてあるので、すぐ上の `SolidProperties` がそのまま描く。
+ * **この節が持つのは、欄にできない 3 つ**である:
+ *
+ * 1. 切る面の決め方(3 点を通る・点と辺…)の読み取り専用の表示。
+ * 2. 残る側が面のどちら側かの読み取り専用の表示(つまみの結果を言葉で確かめられる)。
+ * 3. **「選び直す」のボタン**。切る面のもとになる点・辺・面は画面で指すものなので、
+ *    いま選んでいるものから決め方を組み立て直す(道具と同じ推測 `inferPlaneSpec` を使う。
+ *    同じ規則を 2 か所に書かない)。押せないときは理由を添える(NFR-UX-5)。
+ *
+ * 対で作られた切断(§0.a-0.58)は 2 つが同じ面で切っているので、選び直したときは
+ * **相手の面も一緒に**差し替える(片方だけ動くと 2 つのボディが噛み合わなくなる)。
+ */
+function CutSection({ feature }: { readonly feature: CutFeature }): React.JSX.Element {
+  const part = useAppStore((state) => state.document);
+  const bodies = useAppStore((state) => state.bodies);
+  const selection = useAppStore((state) => state.selection);
+  const context: CutContext = {
+    document: part,
+    bodies: subShapeBodiesOf(bodies),
+    selection,
+  };
+  const inferred = inferPlaneSpec(context);
+  const rejection = inferred === null ? null : cutPlaneRejection(inferred);
+  const canRepick = inferred !== null && rejection === null;
+
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionCut')}</h3>
+      <dl className="pcad-properties">
+        <dt className="pcad-properties__key">{t('propertyPanel.cutPlaneKind')}</dt>
+        <dd className="pcad-properties__value">{t(PLANE_SPEC_LABEL_KEYS[feature.plane.kind])}</dd>
+        <dt className="pcad-properties__key">{t('propertyPanel.cutKeep')}</dt>
+        <dd className="pcad-properties__value">
+          {t(
+            feature.keep === 'positive'
+              ? 'propertyPanel.cutKeepPositive'
+              : 'propertyPanel.cutKeepNegative',
+          )}
+        </dd>
+      </dl>
+      <button
+        type="button"
+        className="pcad-button pcad-button--action"
+        title={t('propertyPanel.cutRepickTooltip')}
+        disabled={!canRepick}
+        onClick={() => {
+          if (inferred === null) {
+            return;
+          }
+          const store = useAppStore.getState();
+          let next = store.document;
+          for (const solid of store.document.solids) {
+            if (solid.kind !== 'cut') {
+              continue;
+            }
+            const isPartner =
+              solid.id === feature.id ||
+              solid.id === feature.pairedWith ||
+              solid.pairedWith === feature.id;
+            if (isPartner) {
+              next = replaceSolid(next, solid.id, { ...solid, plane: inferred });
+            }
+          }
+          store.applyDocument(next);
+        }}
+      >
+        {t('propertyPanel.cutRepick')}
+      </button>
+      {canRepick ? null : (
+        <p className="pcad-panel__note">
+          {rejection === null ? t('propertyPanel.cutRepickHint') : t(rejection)}
+        </p>
+      )}
     </div>
   );
 }
@@ -2225,6 +2327,21 @@ export function ruledSectionKey(featureId: string): string {
 }
 
 /**
+ * 切断の「切る面」の節の `key` に付ける接頭辞(P5 タスク27f、rules/06 10.9)。
+ * 外観・基本形状・つなぎ方の節とまったく同じ理由で付ける。
+ */
+const CUT_KEY_PREFIX = 'cut:';
+
+/**
+ * 切断の節の `key`。**同じ親に並ぶ他の節の `key` と絶対に重ならないこと**が満たすべき
+ * 性質で、それを `PropertyPanel.test.ts` が固定する。フィーチャーの id は model の
+ * `nextSolidId` が作る `cut-1` の形で `cut:` から始まることは無い(`-` と `:` の違い)。
+ */
+export function cutSectionKey(featureId: string): string {
+  return `${CUT_KEY_PREFIX}${featureId}`;
+}
+
+/**
  * 測定の節・質量特性の節の `key` に付ける接頭辞(P5 タスク32、rules/06 10.9)。
  *
  * 外観・基本形状・つなぎ方の節とまったく同じ理由で付ける。接頭辞が無いと、立体を 1 つだけ
@@ -2386,6 +2503,14 @@ export function PropertyPanel(): React.JSX.Element {
         */}
         {solid === null || (solid.kind !== 'ruled' && solid.kind !== 'loft') ? null : (
           <RuledNoteSection key={ruledSectionKey(solid.id)} feature={solid} />
+        )}
+        {/*
+          切断の「切る面」(FR-432、タスク27f)。決め方・残る側・選び直しは欄にできないので
+          ここへ出す(欄とつまみは `SolidProperties` が描く)。**`key` には必ず
+          `CUT_KEY_PREFIX` を付ける**(基本形状・つなぎ方の節と同じ理由。rules/06 10.9)。
+        */}
+        {solid === null || solid.kind !== 'cut' ? null : (
+          <CutSection key={cutSectionKey(solid.id)} feature={solid} />
         )}
         {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331、タスク35b)。 */}
         {origin === null ? null : <OriginSection origin={origin} />}

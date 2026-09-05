@@ -4,6 +4,15 @@ import { appearanceOf, isFreeWorkPlaneId } from '@pointercad/model';
 
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
 import { t } from '../i18n/t.js';
+import {
+  cutPlaneSpecFor,
+  cutPreviewDiagonal,
+  cutTargetOf,
+  DEFAULT_CUT_TILT,
+  resolveCutPlane,
+  type CutContext,
+} from '../solid/cutCommands.js';
+import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
@@ -13,7 +22,62 @@ import { attachCameraControls, type CameraControls } from './attachCameraControl
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import { createViewportScene } from './createViewportScene.js';
+import type { CutPreview } from './createSolidLayer.js';
 import { readThemeColors } from './themeColors.js';
+
+/** 切断の予告を組み立てる材料。ストアから読むものだけを並べる。 */
+interface CutPreviewSource {
+  readonly numericInput: ReturnType<typeof useAppStore.getState>['numericInput'];
+  readonly document: ReturnType<typeof useAppStore.getState>['document'];
+  readonly bodies: ReturnType<typeof useAppStore.getState>['bodies'];
+  readonly selection: readonly string[];
+}
+
+/**
+ * 切断面の予告(FR-432、P5 タスク27e、§0.a-0.61)をストアの状態から組み立てる。
+ *
+ * **出す条件**は「切断の道具の段が開いていて、切る立体が決まっていること」。段を閉じれば
+ * (確定でも取消でも)`numericInput` が null になるので、そのまま消える。
+ * 平面が解けない(スケッチの点を材料にした等)ときと、対象の大きさが測れないときも null。
+ */
+function cutPreviewOf(source: CutPreviewSource): CutPreview | null {
+  const input = source.numericInput;
+  if (input === null || input.toolId !== 'cut') {
+    return null;
+  }
+  const context: CutContext = {
+    document: source.document,
+    bodies: subShapeBodiesOf(source.bodies),
+    selection: source.selection,
+  };
+  const target = cutTargetOf(context);
+  if (target === null) {
+    return null;
+  }
+  const planeKind = input.choices.find((choice) => choice.key === 'cutPlaneKind')?.value;
+  const tiltField = input.fields.find((field) => field.key === 'cutTilt');
+  const tilt =
+    tiltField === undefined
+      ? DEFAULT_CUT_TILT
+      : { source: tiltField.source, value: Number(tiltField.source), display: tiltField.source };
+  const spec = cutPlaneSpecFor(
+    context,
+    planeKind,
+    Number.isFinite(tilt.value) ? tilt : DEFAULT_CUT_TILT,
+  );
+  if (spec === null) {
+    return null;
+  }
+  const plane = resolveCutPlane(spec);
+  const diagonal = cutPreviewDiagonal(context, target);
+  if (plane === null || diagonal <= 0) {
+    return null;
+  }
+  // 残す側は「反対側を残す」のつまみで決まる(§0.a-0.57)。
+  const keepOpposite =
+    input.toggles.find((toggle) => toggle.key === 'cutKeepOpposite')?.value === true;
+  return { plane, diagonal, keep: keepOpposite ? 'negative' : 'positive' };
+}
 
 /**
  * 3D ビューポート(FR-101、FR-102、FR-104、FR-105、FR-106、FR-108、FR-310)。
@@ -138,6 +202,8 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setSelectedConstraint(initial.selectedConstraintId);
     // 測定の結果(FR-1102、P5 タスク31)。線・弧・端の丸・値の札を出す。
     scene.setMeasurement(initial.measurement);
+    // 切断面の予告(FR-432、P5 タスク27e)。切断の段が開いている間だけ出る。
+    scene.setCutPreview(cutPreviewOf(initial));
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
@@ -175,6 +241,19 @@ export function ViewportCanvas(): React.JSX.Element {
         scene.setSketchHighlight(next.hoveredElementId, next.selection);
         scene.setBodyHighlight(next.hoveredElementId, next.selection);
         scene.setSubShapeHighlight(next.hoveredElementId, next.selection);
+      }
+      /*
+        切断面の予告(FR-432、タスク27e)。**材料が変わったときだけ**組み立て直す
+        (NFR-PF-1。同じ内容を渡し直すと層は並びを触らないが、ここで毎回作り直すと
+        参照が変わってしまい、その約束が効かなくなる)。
+      */
+      if (
+        next.numericInput !== previous.numericInput ||
+        next.selection !== previous.selection ||
+        next.bodies !== previous.bodies ||
+        next.document !== previous.document
+      ) {
+        scene.setCutPreview(cutPreviewOf(next));
       }
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。任意の作業平面(FR-328)は
       // 文書が変わっても面の位置が動くので、解いた面そのものの変化を見る(タスク13)。

@@ -1366,3 +1366,152 @@ export function MeasureIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+/*
+ * P5 の Should 群 12 種の図柄(FR-409、FR-417〜428、FR-432。タスク50、§2.15)。
+ *
+ * 約束は既存の図柄と同じで、枡は 16 × 16、線は共通の 1.5、塗りは半透明(0.35)。
+ * 「作る」の一覧へ 3 つ(ミラー・スイープ・曲面)、「加工」の一覧へ 9 つ
+ * (抜き勾配・くり抜き・リブ・エンボス・外ねじ・移動/回転・拡大縮小・点パターン・切断)。
+ * **一覧の中に並ぶだけなのでツールバーの幅は 1 画素も増えない**(§0.a-0.80)。
+ */
+
+/** ミラー(FR-419)。鏡の線をはさんで、同じ形が向かい合う。 */
+export function MirrorSolidIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 1.6v12.8" strokeDasharray="2 1.6" />
+      <path d="M6.4 4.2H2.2l2.1 3.8-2.1 3.8h4.2z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M9.6 4.2h4.2l-2.1 3.8 2.1 3.8H9.6z" />
+    </SvgIcon>
+  );
+}
+
+/** スイープ(FR-409)。曲がった経路と、その先頭に立てた断面の輪。 */
+export function SweepIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.4 12.8C3.4 7.6 7 4.6 12.8 4.6" />
+      <ellipse cx="3.4" cy="12.8" rx="2.2" ry="1" />
+      <ellipse cx="12.8" cy="4.6" rx="1" ry="2.2" fill="currentColor" fillOpacity={0.35} />
+    </SvgIcon>
+  );
+}
+
+/** 曲面(FR-428)。厚みの無い、たわんだ 1 枚の面。 */
+export function SurfaceIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path
+        d="M2 10.4c2.4-3.2 4.4-3.2 6-1.2s3.6 2 6-1.2v3.2c-2.4 3.2-4.4 3.2-6 1.2s-3.6-2-6 1.2z"
+        fill="currentColor"
+        fillOpacity={0.35}
+      />
+      <path d="M2 4.4c2.4-3.2 4.4-3.2 6-1.2s3.6 2 6-1.2" />
+    </SvgIcon>
+  );
+}
+
+/** 抜き勾配(FR-417)。上の面はそのままで、側面だけが内へ倒れる。 */
+export function DraftIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.6 13.4 5.8 2.6h4.4l2.2 10.8z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M5.8 2.6h4.4" />
+      <path d="M2 2.6h2.4M2 13.4h2.4" strokeDasharray="1.6 1.2" />
+    </SvgIcon>
+  );
+}
+
+/** くり抜き(FR-418)。外の四角の内側に、壁の厚みぶん小さい四角。 */
+export function ShellIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path
+        d="M2.4 2.4h11.2v11.2H2.4zM4.8 4.8v6.4h6.4V4.8z"
+        fill="currentColor"
+        fillOpacity={0.35}
+        fillRule="evenodd"
+      />
+      <path d="M2.4 2.4h11.2v11.2H2.4z" />
+      <path d="M4.8 4.8h6.4v6.4H4.8z" />
+    </SvgIcon>
+  );
+}
+
+/** リブ(FR-420)。土台の上に立てた、薄い補強の壁。 */
+export function RibIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 11.2h12v2.4H2z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M6.8 3.2h2.4v8H6.8z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M2 11.2h12" />
+    </SvgIcon>
+  );
+}
+
+/** エンボス(FR-421)。平らな面の上に、輪郭が浮き出している。 */
+export function EmbossIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 9.6h12v4H2z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M6 9.6V5.6h4v4" />
+      <path d="M6 5.6h4" />
+    </SvgIcon>
+  );
+}
+
+/** 外ねじ(FR-423)。丸い軸の外側に、ねじ山の斜めの線。 */
+export function ThreadShaftIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4.4 3.2h7.2v9.6H4.4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M4.4 4.8h7.2M4.4 7.2h7.2M4.4 9.6h7.2M4.4 12h7.2" />
+    </SvgIcon>
+  );
+}
+
+/** 移動/回転(FR-424)。もとの位置から、矢印の向きへ動く。 */
+export function TransformIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.2 8.4h5.2v5.2H2.2z" strokeDasharray="1.6 1.2" />
+      <path d="M8.6 2.4h5.2v5.2H8.6z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M5.6 7.2 8.4 4.4M8.4 4.4H6.6M8.4 4.4v1.8" />
+    </SvgIcon>
+  );
+}
+
+/** 拡大縮小(FR-424)。小さい四角が、同じ形のまま大きくなる。 */
+export function ScaleIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.4 2.4h11.2v11.2H2.4z" strokeDasharray="1.6 1.2" />
+      <path d="M2.4 2.4h6v6h-6z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M9.6 9.6l3.4 3.4M13 13h-2.4M13 13v-2.4" />
+    </SvgIcon>
+  );
+}
+
+/** 点パターン(FR-425)。散らばった点それぞれの場所へ、同じ加工を置く。 */
+export function PointPatternIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="4" cy="4.4" r="1.4" fill="currentColor" fillOpacity={0.35} />
+      <circle cx="12" cy="3.6" r="1.4" />
+      <circle cx="4.8" cy="11.6" r="1.4" />
+      <circle cx="11.4" cy="10.8" r="1.4" />
+    </SvgIcon>
+  );
+}
+
+/** 切断(FR-432)。立体を斜めの平面で切り分け、片側だけが残る。 */
+export function CutIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.2 12.8V6.4l9.6-3.2v6.4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M3.2 12.8h9.6V3.2" strokeDasharray="1.6 1.2" />
+      <path d="M1.6 9.6 14.4 4.8" />
+    </SvgIcon>
+  );
+}

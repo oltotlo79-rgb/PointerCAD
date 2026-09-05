@@ -903,3 +903,152 @@ describe('スケッチをまたぐ id の取り違え(P4 仕上げ (g)、穴の�
     expect(hole.centers).toEqual([{ sketchId: 'sketch-2', pointFeatureId: base.pointId }]);
   });
 });
+
+/* ===== P5 タスク50: 穴と R 面取りへ畳んだ欄(統括の決定 2026-09-06) ===== */
+
+describe('穴と R 面取りへ畳んだ欄(P5 タスク50)', () => {
+  const FACE_0 = subShapeElementId('extrude-1', 'face', 0);
+
+  function holeContext(): MachiningContext {
+    return {
+      document: withPoint(documentWithBodies(['extrude-1'])).document,
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0)] })],
+      selection: [FACE_0, 'point-1'],
+    };
+  }
+
+  function filletContext(): MachiningContext {
+    return {
+      document: documentWithBodies(['extrude-1']),
+      bodies: [
+        makeBody('extrude-1', { edges: [makeEdge(0, [0, 0, 0], [10, 0, 0])] }),
+      ],
+      selection: [subShapeElementId('extrude-1', 'edge', 0)],
+    };
+  }
+
+  function holeCommit(overrides: Partial<SolidInputCommit> = {}): SolidInputCommit {
+    return {
+      kind: 'solid',
+      tool: 'hole',
+      step: 'holeSize',
+      values: { diameter: DIAMETER_6, depth: DEPTH_10 },
+      flags: {},
+      ...overrides,
+    };
+  }
+
+  function filletCommit(overrides: Partial<SolidInputCommit> = {}): SolidInputCommit {
+    return {
+      kind: 'solid',
+      tool: 'fillet',
+      step: 'filletRadius',
+      values: { radius: RADIUS_2 },
+      flags: {},
+      ...overrides,
+    };
+  }
+
+  it('穴: 入口を「広げない」のままなら `entry` の欄が生えない(P3 と同じ文書)', () => {
+    const context = holeContext();
+    const plain = commitMachiningInput(context, holeCommit());
+    const chosen = commitMachiningInput(
+      context,
+      holeCommit({ shapeChoices: { holeEntry: 'plain' } }),
+    );
+    expect(plain.ok && chosen.ok).toBe(true);
+    if (!plain.ok || !chosen.ok) {
+      return;
+    }
+    const feature = requireFeature(plain.document, plain.featureId);
+    expect(feature.kind === 'hole' ? feature.entry : 'x').toBeUndefined();
+    expect(chosen.document.solids).toEqual(plain.document.solids);
+  });
+
+  it('穴: ざぐりを選ぶと径と深さが入る(FR-422)', () => {
+    const outcome = commitMachiningInput(
+      holeContext(),
+      holeCommit({
+        shapeChoices: { holeEntry: 'counterbore' },
+        values: {
+          diameter: DIAMETER_6,
+          depth: DEPTH_10,
+          counterboreDiameter: expressionValueFromNumber(11),
+          counterboreDepth: expressionValueFromNumber(4),
+        },
+      }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = requireFeature(outcome.document, outcome.featureId);
+    expect(feature.kind === 'hole' ? feature.entry : null).toEqual({
+      kind: 'counterbore',
+      diameter: expressionValueFromNumber(11),
+      depth: expressionValueFromNumber(4),
+    });
+  });
+
+  it('穴: 皿もみを選ぶと頭径と開き角が入り、欄を空にすると既定(12 / 90)になる', () => {
+    const outcome = commitMachiningInput(
+      holeContext(),
+      holeCommit({ shapeChoices: { holeEntry: 'countersink' } }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = requireFeature(outcome.document, outcome.featureId);
+    expect(feature.kind === 'hole' && feature.entry?.kind === 'countersink'
+      ? [feature.entry.diameter.value, feature.entry.angle.value]
+      : null,
+    ).toEqual([12, 90]);
+  });
+
+  it('穴: 知らない入口の値は断る', () => {
+    expect(
+      commitMachiningInput(holeContext(), holeCommit({ shapeChoices: { holeEntry: 'ざぐり風' } })),
+    ).toEqual({ ok: false, reasonKey: 'shapeError.unknownChoice' });
+  });
+
+  it('R 面取り: つまみが切なら `radiusEnd` の欄が生えない(P3 と同じ文書)', () => {
+    const outcome = commitMachiningInput(filletContext(), filletCommit());
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = requireFeature(outcome.document, outcome.featureId);
+    expect(feature.kind === 'fillet' ? feature.radiusEnd : 'x').toBeUndefined();
+    expect(feature.kind === 'fillet' ? feature.radius.value : null).toBe(2);
+  });
+
+  it('R 面取り: 「終わりを別の半径に」で終わりの半径が入る(FR-426)', () => {
+    const outcome = commitMachiningInput(
+      filletContext(),
+      filletCommit({
+        flags: { variableRadius: true },
+        values: { radius: RADIUS_2, filletRadiusEnd: expressionValueFromNumber(5) },
+      }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = requireFeature(outcome.document, outcome.featureId);
+    expect(feature.kind === 'fillet' ? feature.radiusEnd?.value : null).toBe(5);
+  });
+
+  it('R 面取り: つまみを入れて欄を空にすると既定の 5mm になる', () => {
+    const outcome = commitMachiningInput(
+      filletContext(),
+      filletCommit({ flags: { variableRadius: true } }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = requireFeature(outcome.document, outcome.featureId);
+    expect(feature.kind === 'fillet' ? feature.radiusEnd?.value : null).toBe(5);
+  });
+});

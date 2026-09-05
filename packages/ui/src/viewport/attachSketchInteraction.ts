@@ -73,8 +73,10 @@ import {
   reduceNumericInput,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
+  type AppearanceToolId,
   type ClickEditToolId,
   type CornerEditToolId,
+  type MeasureToolId,
   type NumericInputState,
   type NumericInputStep,
   type NumericInputToolId,
@@ -163,6 +165,28 @@ export function isSolidTool(tool: NumericInputToolId): tool is SolidToolId {
 }
 
 /**
+ * ツールバーの「見た目」の一覧に並ぶ道具(FR-1101、FR-1102、FR-1106。P5 タスク11・32)。
+ *
+ * 外観と測るは、どちらも**立体を作らず「いま選んでいるものについて何かをする」**道具で、
+ * 押し出しのような `SolidToolId` でも、トリムのような自前のクリックの意味を持つ道具でもない。
+ * 一覧をここへ書き出さずに済ませたいが、`numericInput.ts` はこの 2 つを 1 メンバーの型
+ * (`AppearanceToolId` / `MeasureToolId`)としてしか持っていないので、**網羅の `Record`** で
+ * 表を作る。型が増えたらこの表が型検査で落ちるので、追随の漏れが機械で見つかる
+ * (`numericInput.ts` の `CLICK_EDIT_TOOLS` / `PICK_EDIT_TOOLS` と同じ流儀)。
+ */
+const LOOK_TOOLS: Readonly<Record<AppearanceToolId | MeasureToolId, true>> = {
+  appearance: true,
+  measure: true,
+};
+
+/** 「見た目」の一覧の道具(外観・測る)かどうか。一覧は `LOOK_TOOLS` の 1 か所だけ。 */
+export function isLookTool(
+  tool: NumericInputToolId,
+): tool is AppearanceToolId | MeasureToolId {
+  return tool in LOOK_TOOLS;
+}
+
+/**
  * 立体そのものをクリックで選べる道具かどうか(FR-106、§0.a-0.6)。
  *
  * 選択のときと、立体の道具(押し出し・回転・縫合、ブーリアンの相手選び、パターン・ばねの
@@ -171,9 +195,17 @@ export function isSolidTool(tool: NumericInputToolId): tool is SolidToolId {
  *
  * 断面(FR-325、タスク27)も立体そのものを押して決める道具なので、ここへ入れる
  * (`isPickEditTool` の 2 つのうち、投影は面・辺を押すので `picksSubShapes` 側を通る)。
+ *
+ * **外観と測る(`isLookTool`)もここへ入れる(P5 仕上げ (j))。** どちらも立体そのものを
+ * 選ぶ場面を持つ道具で、外観は「立体ごとに色を付ける」道(`subShapeSelection.ts` の
+ * `selectionKindForTool` の注釈が『立体へ付けたいときは `4` キーで切り替える』と案内している)、
+ * 測るは体積・質量特性・立体 2 つの隙間(FR-1101、§0.a-0.69)がどれも立体を選ぶ。
+ * P5 タスク11・32 でこの 2 つが増えたときにここへ足し忘れていたため、**その 2 つの道具の
+ * あいだは立体をクリックしても選べず、ホバーの強調も出なかった**(2026-09-06 ヘッドレスで実測。
+ * 「外観 → `4` → 箱を押す」で選択が空のまま)。
  */
-function picksBodies(tool: NumericInputToolId): boolean {
-  return tool === 'select' || isSolidTool(tool) || isPickEditTool(tool);
+export function picksBodies(tool: NumericInputToolId): boolean {
+  return tool === 'select' || isSolidTool(tool) || isPickEditTool(tool) || isLookTool(tool);
 }
 
 /** 位置を数値で決める、かき込む道具かどうか(FIRST_STEP のキーと同じ集合)。 */
@@ -1428,11 +1460,16 @@ export function attachSketchInteraction(
       return;
     }
 
-    if (isSolidTool(tool) || picksSubShapes(state.selectionKind, tool)) {
+    if (picksBodies(tool) || picksSubShapes(state.selectionKind, tool)) {
       // 立体の道具(押し出し・回転・縫合、パターン・ばねの対象選び)と、部分形状(面・辺・頂点)を
       // 選ぶ加工の道具(穴・ねじ穴・R 面取り・C 面取り)では、入力欄を開いたまま対象を選び直せる。
       // 焦点は欄に残してそのまま Enter で決められるようにする(NFR-UX-2)。Shift で相手を足す
       // (§0.a-0.6)。
+      //
+      // 見るのを `isSolidTool` から `picksBodies` へ広げてある(P5 仕上げ (j))。外観・測るは
+      // `SolidToolId` ではないので、選ぶものが「立体」のときこの枝に入れず、**押しても何も
+      // 起きなかった**(下の「押した場所が座標にならない道具」で黙って返っていた)。
+      // 選択・投影・断面は上の枝で先に返るので、条件を広げてもそれらの振る舞いは変わらない。
       event.preventDefault();
       pickInto(pointer, event.shiftKey);
       return;

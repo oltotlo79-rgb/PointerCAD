@@ -19,17 +19,20 @@
 import { evaluateExpression, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   appendSolid,
+  DEFAULT_EXTRUDE_THICKNESS_MM,
   DEFAULT_SEW_TOLERANCE_MM,
   DEFAULT_SPRING_COIL_DIAMETER_MM,
   DEFAULT_SPRING_PITCH_MM,
   DEFAULT_SPRING_TURNS as DEFAULT_SPRING_TURNS_COUNT,
   DEFAULT_SPRING_WIRE_DIAMETER_MM,
+  DEFAULT_TAPER_ANGLE_DEGREES,
   findFeature,
   findSketch,
   liveBodyIds,
   nextSolidId,
   nextSolidName,
   type BooleanOperation,
+  type ExtrudeEnd,
   type ExtrudeFeature,
   type PartDocument,
   type RevolveAxis,
@@ -42,6 +45,8 @@ import {
   type SpringDerived,
   type SpringFeature,
   type SpringHandedness,
+  type SubShapeRef,
+  type ThicknessSide,
   type BooleanFeature,
 } from '@pointercad/model';
 
@@ -62,13 +67,23 @@ import {
   type PrimitiveContext,
 } from './primitiveCommands.js';
 import {
+  commitCutInput,
+  cutToolReadiness,
+  type CutContext,
+} from './cutCommands.js';
+import {
+  commitShapeEdit,
+  shapeEditReadiness,
+  shapeEditToolOf,
+} from './shapeEditCommands.js';
+import {
   commitRuledInput,
   loftToolReadiness,
   ruledToolReadiness,
   type RuledContext,
 } from './ruledCommands.js';
 import { findSketchFeatureAt } from './sketchRefs.js';
-import type { SubShapeBody } from './subShapeSelection.js';
+import { selectedSubShapeRefs, type SubShapeBody } from './subShapeSelection.js';
 
 /** 縫合に要る面の最小枚数(§0.a-0.7)。 */
 const MIN_SEW_FACES = 2;
@@ -81,6 +96,17 @@ export const DEFAULT_EXTRUDE_DISTANCE: ExpressionValue = expressionValueFromNumb
 export const DEFAULT_REVOLVE_ANGLE: ExpressionValue = expressionValueFromNumber(360);
 /** 回転軸の既定値。world の Z 軸(§0.a-0.9)。 */
 export const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
+/**
+ * 押し出しの側面の傾き・薄板の厚みの既定値(FR-401、FR-416。P5 タスク50 で押し出しの段へ
+ * 畳んだぶん)。model の定数を式へ直したもので、同じ数を 2 か所に書かない。
+ */
+export const DEFAULT_TAPER_ANGLE: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_TAPER_ANGLE_DEGREES,
+);
+export const DEFAULT_EXTRUDE_THICKNESS: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_EXTRUDE_THICKNESS_MM,
+);
+
 /** 縫合の許容量の既定値。model の DEFAULT_SEW_TOLERANCE_MM を式へ直したもの(§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SEW_TOLERANCE_MM,
@@ -428,7 +454,14 @@ export function commitSpring(
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
 
-/** 押し出しを 1 つ作る(FR-401)。面の参照先が無ければ noFace で断る。 */
+/**
+ * 押し出しを 1 つ作る(FR-401、FR-415、FR-416)。面の参照先が無ければ noFace で断る。
+ *
+ * **足した 5 欄(終わり方・傾き・厚み)はすべて省略できる**(P5 タスク50 で
+ * 押し出しの段へ畳んだぶん)。省略したときは P2 からの押し出しと**1 ドットも違わない
+ * 文書**になる——欄そのものを持たせないので、鍵も読み書きも従来のままである
+ * (model の `ExtrudeFeature` が 5 欄を省略可能にしているのと同じ決め)。
+ */
 export function commitExtrude(
   document: PartDocument,
   params: {
@@ -436,6 +469,14 @@ export function commitExtrude(
     readonly distance: ExpressionValue;
     readonly reversed: boolean;
     readonly symmetric: boolean;
+    /** どこまで押し出すか(FR-415)。省略すると `symmetric` から決まる。 */
+    readonly end?: ExtrudeEnd;
+    /** 側面の傾き(度、FR-401)。省略すると傾けない。 */
+    readonly taperAngle?: ExpressionValue;
+    readonly taperOutward?: boolean;
+    /** 薄板の厚み(mm、FR-416)。省略すると中身の詰まった押し出し。 */
+    readonly thickness?: ExpressionValue;
+    readonly thicknessSide?: ThicknessSide;
   },
 ): SolidCommandOutcome {
   if (!faceRefExists(document, params.profile)) {
@@ -451,8 +492,57 @@ export function commitExtrude(
     distance: params.distance,
     reversed: params.reversed,
     symmetric: params.symmetric,
+    ...(params.end === undefined ? {} : { end: params.end }),
+    ...(params.taperAngle === undefined ? {} : { taperAngle: params.taperAngle }),
+    ...(params.taperOutward === undefined ? {} : { taperOutward: params.taperOutward }),
+    ...(params.thickness === undefined ? {} : { thickness: params.thickness }),
+    ...(params.thicknessSide === undefined ? {} : { thicknessSide: params.thicknessSide }),
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
+}
+
+/**
+ * 押し出しの終わり方を段の選択肢から組み立てる(FR-415、タスク50)。
+ *
+ * **「距離」と省略では欄そのものを作らない**(`symmetric` から決まるので、同じ形に
+ * 2 通りの書き方ができないようにする)。「選んだ面まで」は止める面が要るので、
+ * 面が選ばれていなければ理由を出して断る(NFR-UX-5)。
+ */
+function extrudeEndOf(
+  value: string | undefined,
+  faces: readonly SubShapeRef[],
+): { readonly ok: true; readonly end?: ExtrudeEnd } | { readonly ok: false; readonly reasonKey: MessageKey } {
+  switch (value) {
+    case undefined:
+    case 'distance':
+      return { ok: true };
+    case 'toNext':
+      return { ok: true, end: { kind: 'toNext' } };
+    case 'toFace': {
+      const face = faces[0];
+      return face === undefined
+        ? { ok: false, reasonKey: 'shapeError.noFlatFace' }
+        : { ok: true, end: { kind: 'toFace', face } };
+    }
+    default:
+      return { ok: false, reasonKey: 'shapeError.unknownChoice' };
+  }
+}
+
+/** 薄板の厚みを付ける側(FR-416、タスク50)。知らない値は断る。 */
+function thicknessSideOf(
+  value: string | undefined,
+): { readonly ok: true; readonly side: ThicknessSide } | { readonly ok: false; readonly reasonKey: MessageKey } {
+  switch (value) {
+    case undefined:
+    case 'inner':
+      return { ok: true, side: 'inner' };
+    case 'outer':
+    case 'both':
+      return { ok: true, side: value };
+    default:
+      return { ok: false, reasonKey: 'shapeError.unknownChoice' };
+  }
 }
 
 /** 回転を 1 つ作る(FR-402)。面の参照先が無ければ noFace で断る。 */
@@ -633,14 +723,11 @@ export function solidToolReadiness(
     case 'measure':
       return measureToolReadiness(selection, bodies);
     /*
-      P5 タスク49 が `SolidToolId` へ足した Should / Could 群 16 種(FR-401、FR-409、
-      FR-415〜428、FR-432)。段(その場入力)と案内はタスク49 で揃っているが、
-      **押せる条件と作る処理はタスク50**(切断はタスク27e の `cutCommands.ts`)なので、
-      いまはどれも押せない。ここで暫定の判定を書かないのは、判定を 2 か所に置くと
-      「押せるのに断られる」が起きるため(`machiningToolReadiness` へ委譲するのと同じ理由)。
+      P5 の Should 群 11 種(FR-409、FR-417〜425、FR-428。タスク50)。押せる条件は
+      `shapeEditCommands.ts` の `shapeEditReadiness` 1 か所だけに置き、ここは委譲する
+      (`machiningToolReadiness` へ委譲するのと同じ理由。判定を 2 か所に置くと
+      「押せるのに断られる」が起きる)。
     */
-    case 'extrudeEnd':
-    case 'extrudeThin':
     case 'draft':
     case 'mirrorSolid':
     case 'transform':
@@ -648,14 +735,21 @@ export function solidToolReadiness(
     case 'sweep':
     case 'rib':
     case 'emboss':
-    case 'counterbore':
     case 'threadShaft':
     case 'pointPattern':
     case 'surface':
-    case 'shell':
-    case 'variableFillet':
-    case 'cut':
-      return { ready: false, reasonKey: 'shapeError.notYetAvailable' };
+    case 'shell': {
+      const context: MachiningContext = { document, selection, bodies };
+      return shapeEditReadiness(context, tool);
+    }
+    /*
+      平面による切断(FR-432、タスク27e)。平面の決め方と「反対側も残す」を持つので、
+      判定も確定も `cutCommands.ts` にある。
+    */
+    case 'cut': {
+      const context: CutContext = { document, selection, bodies };
+      return cutToolReadiness(context);
+    }
   }
 }
 
@@ -684,16 +778,45 @@ export function commitSolidInput(
   variables?: ReadonlyMap<string, number>,
 ): SolidCommandOutcome {
   switch (commit.tool) {
+    /*
+      押し出し(FR-401、FR-415、FR-416)。タスク50 で終わり方・側面の傾き・薄板を
+      この段へ畳んだので、確定もここで組み立てる。**つまみを 1 つも入れずに決めたときは
+      P2 からの押し出しとまったく同じ文書**になる(足した欄を作らない)。
+    */
     case 'extrude': {
       const face = selectedFaceRef(document, selection);
       if (!face.ok) {
         return { ok: false, reasonKey: face.reasonKey };
       }
+      const solidFaces = selectedSubShapeRefs(bodies, selection, 'face');
+      const end = extrudeEndOf(commit.shapeChoices?.extrudeEnd, solidFaces);
+      if (!end.ok) {
+        return { ok: false, reasonKey: end.reasonKey };
+      }
+      const thin = thicknessSideOf(commit.shapeChoices?.thicknessSide);
+      if (!thin.ok) {
+        return { ok: false, reasonKey: thin.reasonKey };
+      }
+      const tapered = commit.flags.tapered === true;
+      const thinWalled = commit.flags.thinWalled === true;
       return commitExtrude(document, {
         profile: face.ref,
         distance: commit.values.distance ?? DEFAULT_EXTRUDE_DISTANCE,
         reversed: commit.flags.reversed ?? false,
         symmetric: commit.flags.symmetric ?? false,
+        ...(end.end === undefined ? {} : { end: end.end }),
+        ...(tapered
+          ? {
+              taperAngle: commit.values.taperAngle ?? DEFAULT_TAPER_ANGLE,
+              taperOutward: commit.flags.taperOutward ?? false,
+            }
+          : {}),
+        ...(thinWalled
+          ? {
+              thickness: commit.values.thickness ?? DEFAULT_EXTRUDE_THICKNESS,
+              thicknessSide: thin.side,
+            }
+          : {}),
       });
     }
     case 'revolve': {
@@ -767,13 +890,10 @@ export function commitSolidInput(
       return commitRuledInput(context, commit);
     }
     /*
-      P5 タスク49 が足した Should / Could 群 16 種。**コマンドの本体はタスク50**
-      (切断はタスク27e)。ここは switch を網羅するための枝で、押せる条件
-      (`solidToolReadiness`)と同じ理由を返す——押せない道具の確定が別の理由で断られると、
-      利用者は「押せない理由」と「作れない理由」を 2 通り読むことになる(NFR-UX-5)。
+      P5 の Should 群 11 種(タスク50)。押せる条件と同じく `shapeEditCommands.ts` へ
+      委譲する。道具 id の絞り込みは `shapeEditToolOf` の 1 か所だけで行う
+      (`as` を使わずに `ShapeEditToolId` へ絞る)。
     */
-    case 'extrudeEnd':
-    case 'extrudeThin':
     case 'draft':
     case 'mirrorSolid':
     case 'transform':
@@ -781,14 +901,23 @@ export function commitSolidInput(
     case 'sweep':
     case 'rib':
     case 'emboss':
-    case 'counterbore':
     case 'threadShaft':
     case 'pointPattern':
     case 'surface':
-    case 'shell':
-    case 'variableFillet':
-    case 'cut':
-      return { ok: false, reasonKey: 'shapeError.notYetAvailable' };
+    case 'shell': {
+      const context: MachiningContext = { document, selection, bodies };
+      const shapeTool = shapeEditToolOf(commit.tool);
+      if (shapeTool === null) {
+        // 上の case で絞り込んだ後なので通らないが、型の絞り込みに要る。
+        return { ok: false, reasonKey: 'shapeError.notYetAvailable' };
+      }
+      return commitShapeEdit(context, commit, shapeTool);
+    }
+    // 平面による切断(FR-432、タスク27e)。「反対側も残す」では履歴を 2 段積む。
+    case 'cut': {
+      const context: CutContext = { document, selection, bodies };
+      return commitCutInput(context, commit);
+    }
   }
 }
 

@@ -20,35 +20,64 @@ import {
   consumedBodyIds,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
   DEFAULT_CHAMFER_DISTANCE_MM,
+  DEFAULT_COUNTERBORE_DEPTH_MM,
+  DEFAULT_COUNTERBORE_DIAMETER_MM,
+  DEFAULT_COUNTERSINK_ANGLE_DEGREES,
+  DEFAULT_COUNTERSINK_DIAMETER_MM,
+  DEFAULT_EXTRUDE_THICKNESS_MM,
+  DEFAULT_FILLET_RADIUS_END_MM,
   DEFAULT_HOLE_DEPTH_MM,
+  DEFAULT_SCALE_FACTOR,
+  DEFAULT_SURFACE_ANGLE_DEGREES,
+  DEFAULT_SURFACE_DISTANCE_MM,
+  DEFAULT_SURFACE_OFFSET_MM,
+  DEFAULT_THICKNESS_SIDE,
+  DEFAULT_TRANSFORM_ROTATION_DEGREES,
+  extrudeShapingOf,
+  filletRadiusOf,
   findFeature,
   findReference,
   findMetricThread,
   findSketch,
   findSolid,
+  holeEntryOf,
+  MAX_DRAFT_ANGLE_DEGREES,
+  MAX_SCALE,
+  MAX_TAPER_ANGLE_DEGREES,
   METRIC_THREAD_DESIGNATIONS,
   metricThreadPitch,
+  MIN_SCALE,
   referencedSketchIds,
   RULED_SPHERE_SEGMENT_CHOICES,
   threadMinorDiameter,
+  type AxisSpec,
   type ChamferFeature,
   type ChamferSize,
   type CoordinateInput,
+  type CutFeature,
+  type ExtrudeEnd,
+  type ExtrudeFeature,
   type PlaneSpec,
   type HoleDepth,
+  type HoleEntry,
   type HoleFeature,
   type MetricThreadSize,
+  type MirrorFeature,
   type PartDocument,
   type PartRecomputeError,
   type PatternDirection,
   type PatternFeature,
+  type PointReference,
   type ReferenceAxisDefinition,
   type ReferenceError,
   type ReferenceFeature,
   type ReferenceFeatureKind,
   type ReferencePointDefinition,
+  type RibSide,
   type RuledSection,
   type RuledSphereSegments,
+  type ScaleFeature,
+  type SketchCurveRef,
   type SketchDocument,
   type SketchError,
   type SketchFaceRef,
@@ -60,20 +89,31 @@ import {
   type SpringDerived,
   type SpringFeature,
   type SpringHandedness,
+  type SurfaceFeature,
+  type SurfaceOperation,
+  type ThicknessSide,
   type ThreadHoleFeature,
   type ThreadRepresentation,
   type ThreadSeries,
+  type ThreadShaftFeature,
+  type TransformFeature,
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 import {
+  baseSummary,
   coordinateSummaryFor,
   FEATURE_KIND_LABEL_KEYS,
   sketchTreeKindOf,
   type FeatureCoordinateSummary,
   type SketchTreeKind,
 } from '../sketch/featureSummary.js';
-import { TOGGLE_LABEL_KEYS, type FieldUnit, type NumericToggleKey } from '../sketch/numericInput.js';
+import {
+  TOGGLE_LABEL_KEYS,
+  type FieldUnit,
+  type NumericFieldRange,
+  type NumericToggleKey,
+} from '../sketch/numericInput.js';
 
 import { findSketchFeatureAt } from './sketchRefs.js';
 
@@ -112,7 +152,44 @@ export type SolidFieldKey =
    * 2 つの道具で意味も単位も同じなので欄の名前も 1 つにする(その場入力の
    * `SolidCommitValues.ruledTwist` と同じ名前)。
    */
-  | 'ruledTwist';
+  | 'ruledTwist'
+  /* ---- P5 の Should / Could 群と切断(タスク52・27f・55、§2.11・§2.12・§2.9b) ---- */
+  /** 押し出しの側面の傾き(度、FR-401)。向きは `taperOutward` のつまみが持つ。 */
+  | 'taperAngle'
+  /** 薄板押し出しの壁の厚み(mm、FR-416)。中実のときは欄ごと出さない。 */
+  | 'extrudeThickness'
+  /* 穴・ねじ穴の入口(FR-422)。入口の種類で出る欄が入れ替わる(§0.a-0.39)。 */
+  | 'counterboreDiameter'
+  | 'counterboreDepth'
+  | 'countersinkDiameter'
+  | 'countersinkAngle'
+  /** 可変半径フィレットの終点側の半径(mm、FR-426)。一定半径のときは出さない。 */
+  | 'radiusEnd'
+  /** 抜き勾配の角度(度、FR-417)。 */
+  | 'draftAngle'
+  /* 移動/回転(FR-424)。平行移動 3 欄と回す角度。 */
+  | 'translationX'
+  | 'translationY'
+  | 'translationZ'
+  | 'rotationAngle'
+  /* 拡大縮小(FR-424)。全体の倍率 1 欄と軸ごとの 3 欄を切り替える。 */
+  | 'scaleFactor'
+  | 'scaleX'
+  | 'scaleY'
+  | 'scaleZ'
+  /** リブの壁の厚み(mm、FR-420)。 */
+  | 'ribThickness'
+  /** エンボスの高さ(mm、FR-421)。彫るときはその深さになる。 */
+  | 'embossHeight'
+  /* 曲面(FR-428)。作り方ごとに出る欄が違う。 */
+  | 'surfaceDistance'
+  | 'surfaceAngle'
+  | 'surfaceOffset'
+  /** くり抜きの壁の厚さ(mm、FR-418)。 */
+  | 'shellThickness'
+  /* 切断の切る面(FR-432)。面・作図面からずらす距離と、作図面を傾ける角度。 */
+  | 'planeOffset'
+  | 'planeAngle';
 
 /**
  * プロパティ欄の1行。式は source をそのまま出す(FR-202)。
@@ -132,6 +209,15 @@ export interface SolidFieldSummary {
    * true のときプロパティは `ExpressionField` を無効化して値だけを見せる(タスク29b)。
    */
   readonly readOnly: boolean;
+  /**
+   * 受け付ける値の範囲(NFR-UX-5、P5 タスク52)。**上限・下限の数は model の定数が正本**で、
+   * ここはその定数から組み立てるだけにする(同じ数を 2 か所に書かない)。
+   *
+   * P5 で足した欄にだけ付ける。P1〜P4 からある欄に後から付けると、いままで通っていた
+   * 値が黙って弾かれる(その場入力の側で既に範囲を見ているので、二重に狭める理由も無い)。
+   * 範囲を持たない欄では欄そのものを持たない(省略)。
+   */
+  readonly range?: NumericFieldRange;
 }
 
 /**
@@ -139,7 +225,18 @@ export interface SolidFieldSummary {
  * その場入力の `NumericToggleKey`(numericInput.ts)には無い。numericInput.ts は
  * P1・P2 の振る舞いを1つも変えない約束(計画書 §4)なので、ここだけで型を広げる。
  */
-export type SolidToggleKey = NumericToggleKey | 'swapReferenceFace';
+export type SolidToggleKey =
+  | NumericToggleKey
+  | 'swapReferenceFace'
+  /**
+   * リブの「材料に届くまで伸ばす」(FR-420、P5 タスク52)。その場入力の段では既定のまま
+   * 作らせる(欄を増やさない)ので `NumericToggleKey` に無く、プロパティでだけ切り替える。
+   */
+  | 'ribExtendToBody'
+  /**
+   * 曲面のロフトを「直線でつなぐ」か(FR-428、P5 タスク52)。同上でプロパティ専用。
+   */
+  | 'surfaceRuled';
 
 /** 入切のつまみ(向きを反転・両側へ等)。式ではないので値は真偽。 */
 export interface SolidToggleSummary {
@@ -170,7 +267,26 @@ export interface SolidChoiceSummary {
      * 面をつなぐの「なめらかさ」(球へつなぐときの接点の数、§0.a-0.74。P5 タスク27)。
      * **球を含まない断面では形に効かない**ので、そのときは欄ごと出さない(§0.a-0.87)。
      */
-    | 'ruledSphereSegments';
+    | 'ruledSphereSegments'
+    /* ---- P5 の Should / Could 群と切断(タスク52・27f・55) ---- */
+    /** 押し出しの終わり方(FR-415)。距離 / 両側へ / 選んだ面まで / 次の面まで。 */
+    | 'extrudeEnd'
+    /** 薄板押し出しの厚みの側(FR-416)。内側 / 外側 / 両側。 */
+    | 'thicknessSide'
+    /** 穴・ねじ穴の入口(FR-422)。広げない / ざぐり / 皿もみ。 */
+    | 'holeEntry'
+    /** ミラーの鏡にする面(FR-419)。XY / XZ / YZ、選んだ面のときはその 1 つだけ。 */
+    | 'mirrorPlane'
+    /** 移動/回転の回す軸(FR-424)。回さない / X / Y / Z。 */
+    | 'transformAxis'
+    /** リブの厚みを付ける側(FR-420)。 */
+    | 'ribSide'
+    /* 外ねじ(FR-423)。呼び・系列・切り始める端。 */
+    | 'threadShaftNominal'
+    | 'threadShaftSeries'
+    | 'threadShaftFromEnd'
+    /** 曲面の作り方(FR-428)。同じ材料で作り直せる範囲だけを選択肢に出す。 */
+    | 'surfaceOperation';
   readonly labelKey: MessageKey;
   readonly value: string;
   readonly options: readonly {
@@ -299,10 +415,71 @@ export const WORLD_AXIS_CHOICES: readonly {
  * プロパティでだけ編集」、下穴径はねじの呼びから自動で決まる)ので専用の tooltip キーが
  * 無い。ラベルと同じキーを tooltip にも使う(ja.json を増やさない、計画書 §4)。
  */
+/** 0 より大きい数だけ(厚み・半径・長さ)。その場入力の `POSITIVE` と同じ形。 */
+const POSITIVE_RANGE: NumericFieldRange = {
+  min: 0,
+  minInclusive: false,
+  max: null,
+  maxInclusive: false,
+};
+
+/** 0 以上(押し出しの側面の傾きは 0 = まっすぐ)。上限は model の定数が正本。 */
+const TAPER_ANGLE_RANGE: NumericFieldRange = {
+  min: 0,
+  minInclusive: true,
+  max: MAX_TAPER_ANGLE_DEGREES,
+  maxInclusive: true,
+};
+
+/** 抜き勾配は 0 度では意味が無いので 0 を含めない(model の `MAX_DRAFT_ANGLE_DEGREES` まで)。 */
+const DRAFT_ANGLE_RANGE: NumericFieldRange = {
+  min: 0,
+  minInclusive: false,
+  max: MAX_DRAFT_ANGLE_DEGREES,
+  maxInclusive: true,
+};
+
+/** 皿もみの開き角(度)。0 度と 180 度は円錐にならない。 */
+const COUNTERSINK_ANGLE_RANGE: NumericFieldRange = {
+  min: 0,
+  minInclusive: false,
+  max: 180,
+  maxInclusive: false,
+};
+
+/** 拡大縮小の倍率。上下限は model の `MIN_SCALE` / `MAX_SCALE` が正本。 */
+const SCALE_RANGE: NumericFieldRange = {
+  min: MIN_SCALE,
+  minInclusive: true,
+  max: MAX_SCALE,
+  maxInclusive: true,
+};
+
+/** 曲面を回す角度(度)。0 度では面にならず、360 度で全周。 */
+const SURFACE_ANGLE_RANGE: NumericFieldRange = {
+  min: 0,
+  minInclusive: false,
+  max: 360,
+  maxInclusive: true,
+};
+
+/** 切る面の傾き(度)。§2.9b の断りと同じ 0 以上 180 度未満。 */
+const PLANE_TILT_RANGE: NumericFieldRange = {
+  min: 0,
+  minInclusive: true,
+  max: 180,
+  maxInclusive: false,
+};
+
 const FIELD_DEFINITIONS: Readonly<
   Record<
     SolidFieldKey,
-    { readonly labelKey: MessageKey; readonly tooltipKey: MessageKey; readonly unit: FieldUnit }
+    {
+      readonly labelKey: MessageKey;
+      readonly tooltipKey: MessageKey;
+      readonly unit: FieldUnit;
+      readonly range?: NumericFieldRange;
+    }
   >
 > = {
   distance: {
@@ -418,16 +595,163 @@ const FIELD_DEFINITIONS: Readonly<
     tooltipKey: 'numericInput.tooltip.ruledTwist',
     unit: 'count',
   },
+  /*
+    P5 の Should / Could 群と切断(タスク52・27f・55)。見出し・説明・単位・範囲は
+    **その場入力(numericInput.ts、タスク49・50・27e)とまったく同じ文言キー**にする。
+    同じ数を 2 通りの名前で呼ばないための決めで、ばね・面をつなぐと同じ流儀。
+  */
+  taperAngle: {
+    labelKey: 'propertyPanel.taperAngle',
+    tooltipKey: 'numericInput.tooltip.taperAngle',
+    unit: 'degree',
+    range: TAPER_ANGLE_RANGE,
+  },
+  extrudeThickness: {
+    labelKey: 'propertyPanel.extrudeThickness',
+    tooltipKey: 'numericInput.tooltip.extrudeThickness',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  counterboreDiameter: {
+    labelKey: 'numericInput.field.counterboreDiameter',
+    tooltipKey: 'numericInput.tooltip.counterboreDiameter',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  counterboreDepth: {
+    labelKey: 'numericInput.field.counterboreDepth',
+    tooltipKey: 'numericInput.tooltip.counterboreDepth',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  countersinkDiameter: {
+    labelKey: 'numericInput.field.countersinkDiameter',
+    tooltipKey: 'numericInput.tooltip.countersinkDiameter',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  countersinkAngle: {
+    labelKey: 'numericInput.field.countersinkAngle',
+    tooltipKey: 'numericInput.tooltip.countersinkAngle',
+    unit: 'degree',
+    range: COUNTERSINK_ANGLE_RANGE,
+  },
+  radiusEnd: {
+    labelKey: 'propertyPanel.filletRadiusEnd',
+    tooltipKey: 'numericInput.tooltip.filletRadiusEnd',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  draftAngle: {
+    labelKey: 'propertyPanel.draftAngle',
+    tooltipKey: 'numericInput.tooltip.draftAngle',
+    unit: 'degree',
+    range: DRAFT_ANGLE_RANGE,
+  },
+  translationX: {
+    labelKey: 'numericInput.field.x',
+    tooltipKey: 'numericInput.tooltip.translationX',
+    unit: 'mm',
+  },
+  translationY: {
+    labelKey: 'numericInput.field.y',
+    tooltipKey: 'numericInput.tooltip.translationY',
+    unit: 'mm',
+  },
+  translationZ: {
+    labelKey: 'numericInput.field.z',
+    tooltipKey: 'numericInput.tooltip.translationZ',
+    unit: 'mm',
+  },
+  rotationAngle: {
+    labelKey: 'propertyPanel.transformRotationAngle',
+    tooltipKey: 'numericInput.tooltip.transformRotation',
+    unit: 'degree',
+  },
+  scaleFactor: {
+    labelKey: 'numericInput.field.scaleFactor',
+    tooltipKey: 'numericInput.tooltip.scaleFactor',
+    unit: 'count',
+    range: SCALE_RANGE,
+  },
+  scaleX: {
+    labelKey: 'numericInput.field.scaleX',
+    tooltipKey: 'numericInput.tooltip.scaleX',
+    unit: 'count',
+    range: SCALE_RANGE,
+  },
+  scaleY: {
+    labelKey: 'numericInput.field.scaleY',
+    tooltipKey: 'numericInput.tooltip.scaleY',
+    unit: 'count',
+    range: SCALE_RANGE,
+  },
+  scaleZ: {
+    labelKey: 'numericInput.field.scaleZ',
+    tooltipKey: 'numericInput.tooltip.scaleZ',
+    unit: 'count',
+    range: SCALE_RANGE,
+  },
+  ribThickness: {
+    labelKey: 'numericInput.field.wallThickness',
+    tooltipKey: 'numericInput.tooltip.ribThickness',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  embossHeight: {
+    labelKey: 'numericInput.field.height',
+    tooltipKey: 'numericInput.tooltip.embossHeight',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  surfaceDistance: {
+    labelKey: 'numericInput.field.distance',
+    tooltipKey: 'numericInput.tooltip.surfaceDistance',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  surfaceAngle: {
+    labelKey: 'numericInput.field.angle',
+    tooltipKey: 'numericInput.tooltip.surfaceAngle',
+    unit: 'degree',
+    range: SURFACE_ANGLE_RANGE,
+  },
+  surfaceOffset: {
+    labelKey: 'numericInput.field.surfaceOffset',
+    tooltipKey: 'numericInput.tooltip.surfaceOffset',
+    unit: 'mm',
+  },
+  shellThickness: {
+    labelKey: 'numericInput.field.wallThickness',
+    tooltipKey: 'numericInput.tooltip.wallThickness',
+    unit: 'mm',
+    range: POSITIVE_RANGE,
+  },
+  planeOffset: {
+    labelKey: 'numericInput.field.planeOffset',
+    tooltipKey: 'numericInput.tooltip.planeOffset',
+    unit: 'mm',
+  },
+  planeAngle: {
+    labelKey: 'numericInput.field.planeAngle',
+    tooltipKey: 'numericInput.tooltip.planeAngle',
+    unit: 'degree',
+  },
 };
 
-/** readOnly は既定 false。既存の呼び出し(加工6種・パターン)は1つも変えない(タスク29b)。 */
+/**
+ * readOnly は既定 false。既存の呼び出し(加工6種・パターン)は1つも変えない(タスク29b)。
+ *
+ * `range` は**持っている欄にだけ**足す(持たない欄の要約に `range: undefined` の欄を
+ * 生やさない)。P1〜P4 からある欄は範囲を持たないので、要約の形もそのまま変わらない。
+ */
 function fieldSummary(
   key: SolidFieldKey,
   value: ExpressionValue,
   readOnly = false,
 ): SolidFieldSummary {
   const definition = FIELD_DEFINITIONS[key];
-  return {
+  const base = {
     key,
     labelKey: definition.labelKey,
     tooltipKey: definition.tooltipKey,
@@ -435,6 +759,7 @@ function fieldSummary(
     value,
     readOnly,
   };
+  return definition.range === undefined ? base : { ...base, range: definition.range };
 }
 
 function toggleSummary(key: NumericToggleKey, value: boolean): SolidToggleSummary {
@@ -836,6 +1161,344 @@ const RULED_SPHERE_SEGMENT_LABEL_KEYS: Readonly<Record<RuledSphereSegments, Mess
   72: 'numericInput.choice.ruledSphereSegments72',
 };
 
+/* ------------------------------------------------------------------ *
+ * P5 の Should / Could 群と切断の欄・つまみ・選択肢
+ * (タスク52・27f・55。§2.11・§2.12・§2.9b)
+ * ------------------------------------------------------------------ */
+
+/** つまみ 1 つ。`NumericToggleKey` に無い、プロパティ専用のつまみもここで作れる。 */
+function solidToggle(key: SolidToggleKey, labelKey: MessageKey, value: boolean): SolidToggleSummary {
+  return { key, labelKey, value };
+}
+
+/**
+ * 点の参照(拡大縮小の「動かさない点」・点集合パターンの点)を読める 1 行にする。
+ *
+ * スケッチの欄と**同じ言葉**(`baseSummary`)を使う。原点なら「原点」、かいた点なら
+ * 「点1 / 点」、立体の頂点なら「押し出し1 / 立体の頂点」のように出る。
+ *
+ * **座標の式は出さない。** `PointReference` は座標を持たず「どこを指しているか」だけを
+ * 持つ型なので(FR-330 の決め。上流が動けば指し先も動く)、ここで式の欄にできる中身が
+ * そもそも無い。位置を数で決めたいときは、その点そのもの(スケッチの点・基準点)を
+ * 選んで直す(押すとその要素が選ばれる)。
+ */
+function pointReferenceSummary(
+  document: PartDocument,
+  reference: PointReference,
+  labelKey: MessageKey,
+): SolidReferenceSummary {
+  const base = baseSummary(reference, {
+    document: findSketch(document, document.activeSketchId) ?? document.sketches[0],
+    bodyName: (featureId) => findSolid(document, featureId)?.name ?? null,
+  });
+  return { labelKey, name: base.text, elementId: base.elementId };
+}
+
+/**
+ * 押し出しの終わり方(FR-415)。
+ *
+ * **「選んだ面まで」はプロパティからは選べない**(面を指す操作が要る)ので、いまそれで
+ * 作られているときだけ選択肢に出す。回転の線分の軸・穴の面と同じ切り分け。
+ */
+function extrudeEndChoice(end: ExtrudeEnd): SolidChoiceSummary {
+  const options: SolidChoiceSummary['options'] = [
+    { value: 'distance', labelKey: 'numericInput.extrudeEnd.distance' },
+    { value: 'symmetric', labelKey: 'numericInput.toggle.symmetric' },
+    ...(end.kind === 'toFace'
+      ? [{ value: 'toFace', labelKey: 'numericInput.extrudeEnd.toFace' } as const]
+      : []),
+    { value: 'toNext', labelKey: 'numericInput.extrudeEnd.toNext' },
+  ];
+  return { key: 'extrudeEnd', labelKey: 'propertyPanel.extrudeEnd', value: end.kind, options };
+}
+
+/** 薄板の厚みをどちら側へ付けるか(FR-416)。 */
+function thicknessSideChoice(side: ThicknessSide): SolidChoiceSummary {
+  return {
+    key: 'thicknessSide',
+    labelKey: 'propertyPanel.thicknessSide',
+    value: side,
+    options: [
+      { value: 'inner', labelKey: 'numericInput.thicknessSide.inner' },
+      { value: 'outer', labelKey: 'numericInput.thicknessSide.outer' },
+      { value: 'both', labelKey: 'numericInput.thicknessSide.both' },
+    ],
+  };
+}
+
+/** 穴・ねじ穴の入口の形(FR-422、§0.a-0.39)。 */
+function holeEntryChoice(entry: HoleEntry): SolidChoiceSummary {
+  return {
+    key: 'holeEntry',
+    labelKey: 'propertyPanel.holeEntry',
+    value: entry.kind,
+    options: [
+      { value: 'plain', labelKey: 'numericInput.holeEntry.plain' },
+      { value: 'counterbore', labelKey: 'numericInput.holeEntry.counterbore' },
+      { value: 'countersink', labelKey: 'numericInput.holeEntry.countersink' },
+    ],
+  };
+}
+
+/** 入口の形ごとの欄(広げないときは 0 欄)。 */
+function holeEntryFields(entry: HoleEntry): SolidFieldSummary[] {
+  switch (entry.kind) {
+    case 'plain':
+      return [];
+    case 'counterbore':
+      return [
+        fieldSummary('counterboreDiameter', entry.diameter),
+        fieldSummary('counterboreDepth', entry.depth),
+      ];
+    case 'countersink':
+      return [
+        fieldSummary('countersinkDiameter', entry.diameter),
+        fieldSummary('countersinkAngle', entry.angle),
+      ];
+  }
+}
+
+/** ミラーの鏡にする面(FR-419)。立体の面を鏡にしているときはその 1 つだけを出す。 */
+function mirrorPlaneChoice(feature: MirrorFeature): SolidChoiceSummary {
+  const { plane } = feature;
+  const options: SolidChoiceSummary['options'] =
+    plane.kind === 'face'
+      ? [{ value: 'face', labelKey: 'numericInput.mirrorPlane.face' }]
+      : [
+          { value: 'xy', labelKey: 'numericInput.mirrorPlane.xy' },
+          { value: 'xz', labelKey: 'numericInput.mirrorPlane.xz' },
+          { value: 'yz', labelKey: 'numericInput.mirrorPlane.yz' },
+        ];
+  return {
+    key: 'mirrorPlane',
+    labelKey: 'propertyPanel.mirrorPlane',
+    value: plane.kind === 'face' ? 'face' : plane.planeId,
+    options,
+  };
+}
+
+/** 移動/回転の回す軸(FR-424)。null は「回さない」。 */
+function transformAxisChoice(axis: AxisSpec | null): SolidChoiceSummary {
+  const value = axis === null ? 'none' : axis.kind === 'world' ? axis.axis : 'line';
+  const options: SolidChoiceSummary['options'] = [
+    { value: 'none', labelKey: 'propertyPanel.transformRotationNone' },
+    ...patternDirectionOptions(),
+    ...(value === 'line' ? [{ value: 'line', labelKey: 'numericInput.axis.line' } as const] : []),
+  ];
+  return {
+    key: 'transformAxis',
+    labelKey: 'propertyPanel.transformRotationAxis',
+    value,
+    options,
+  };
+}
+
+/** 移動/回転の欄(FR-424)。回す軸を選んでいるときだけ角度の欄が出る(効かない欄を出さない)。 */
+function transformFields(feature: TransformFeature): SolidFieldSummary[] {
+  const [x, y, z] = feature.translation;
+  const fields = [
+    fieldSummary('translationX', x),
+    fieldSummary('translationY', y),
+    fieldSummary('translationZ', z),
+  ];
+  if (feature.rotationAxis !== null) {
+    fields.push(fieldSummary('rotationAngle', feature.rotationAngle));
+  }
+  return fields;
+}
+
+/** 拡大縮小の欄(FR-424)。全体の倍率 1 欄か、軸ごとの 3 欄か。 */
+function scaleFields(feature: ScaleFeature): SolidFieldSummary[] {
+  const { factor } = feature;
+  return factor.kind === 'uniform'
+    ? [fieldSummary('scaleFactor', factor.value)]
+    : [
+        fieldSummary('scaleX', factor.x),
+        fieldSummary('scaleY', factor.y),
+        fieldSummary('scaleZ', factor.z),
+      ];
+}
+
+/** リブの厚みを付ける側(FR-420)。 */
+function ribSideChoice(side: RibSide): SolidChoiceSummary {
+  return {
+    key: 'ribSide',
+    labelKey: 'propertyPanel.ribSide',
+    value: side,
+    options: [
+      { value: 'both', labelKey: 'numericInput.ribSide.both' },
+      { value: 'positive', labelKey: 'numericInput.ribSide.positive' },
+      { value: 'negative', labelKey: 'numericInput.ribSide.negative' },
+    ],
+  };
+}
+
+/** 外ねじの選択肢 3 つ(FR-423)。呼びの一覧はねじ穴とまったく同じ規格表から作る。 */
+function threadShaftChoices(feature: ThreadShaftFeature): SolidChoiceSummary[] {
+  return [
+    {
+      key: 'threadShaftNominal',
+      labelKey: 'propertyPanel.threadShaftNominal',
+      value: feature.nominal,
+      options: METRIC_THREAD_DESIGNATIONS.map((value) => ({ value, label: value })),
+    },
+    {
+      key: 'threadShaftSeries',
+      labelKey: 'propertyPanel.threadShaftSeries',
+      value: feature.series,
+      options: [
+        { value: 'coarse', labelKey: 'numericInput.threadSeries.coarse' },
+        { value: 'fine', labelKey: 'numericInput.threadSeries.fine' },
+      ],
+    },
+    {
+      key: 'threadShaftFromEnd',
+      labelKey: 'propertyPanel.threadShaftFromEnd',
+      value: feature.fromEnd,
+      options: [
+        { value: 'first', labelKey: 'numericInput.threadShaftEnd.first' },
+        { value: 'last', labelKey: 'numericInput.threadShaftEnd.last' },
+      ],
+    },
+  ];
+}
+
+/**
+ * 曲面の作り方(FR-428)。
+ *
+ * **選び直せるのは「同じ材料で作り直せる」範囲だけ**にする。輪郭から作る 3 つ
+ * (掛ける・回す・平らに張る)は輪郭 1 本をそのまま持ち越せるが、つなぐ(輪郭が複数)と
+ * 立体の面から作る 2 つ(写す・離す)は材料そのものが違うので、その群の中だけで選べる。
+ * 群をまたぐ切り替えは「選び直し」ではなく作り直しなので、道具から作る。
+ */
+const SURFACE_PROFILE_KINDS: readonly SurfaceOperation['kind'][] = ['extrude', 'revolve', 'planar'];
+const SURFACE_FACE_KINDS: readonly SurfaceOperation['kind'][] = ['face', 'offset'];
+
+const SURFACE_OPERATION_LABEL_KEYS: Readonly<Record<SurfaceOperation['kind'], MessageKey>> = {
+  extrude: 'numericInput.surfaceOperation.extrude',
+  revolve: 'numericInput.surfaceOperation.revolve',
+  planar: 'numericInput.surfaceOperation.planar',
+  loft: 'numericInput.surfaceOperation.loft',
+  face: 'numericInput.surfaceOperation.face',
+  offset: 'numericInput.surfaceOperation.offset',
+};
+
+function surfaceOperationChoice(operation: SurfaceOperation): SolidChoiceSummary {
+  const kinds = SURFACE_PROFILE_KINDS.includes(operation.kind)
+    ? SURFACE_PROFILE_KINDS
+    : SURFACE_FACE_KINDS.includes(operation.kind)
+      ? SURFACE_FACE_KINDS
+      : [operation.kind];
+  return {
+    key: 'surfaceOperation',
+    labelKey: 'propertyPanel.surfaceOperation',
+    value: operation.kind,
+    options: kinds.map((kind) => ({ value: kind, labelKey: SURFACE_OPERATION_LABEL_KEYS[kind] })),
+  };
+}
+
+/** 曲面の作り方ごとの欄・つまみ・参照(FR-428)。 */
+function surfaceSummaryParts(
+  document: PartDocument,
+  feature: SurfaceFeature,
+): {
+  readonly fields: readonly SolidFieldSummary[];
+  readonly toggles: readonly SolidToggleSummary[];
+  readonly references: readonly SolidReferenceSummary[];
+  readonly subShapeCounts: readonly SolidSubShapeCountSummary[];
+} {
+  const { operation } = feature;
+  switch (operation.kind) {
+    case 'extrude':
+      return {
+        fields: [fieldSummary('surfaceDistance', operation.distance)],
+        toggles: [toggleSummary('reversed', operation.reversed)],
+        references: [],
+        subShapeCounts: [
+          { labelKey: 'propertyPanel.curveCount', count: operation.profile.curveIds.length },
+        ],
+      };
+    case 'revolve':
+      return {
+        fields: [fieldSummary('surfaceAngle', operation.angle)],
+        toggles: [toggleSummary('reversed', operation.reversed)],
+        references: [],
+        subShapeCounts: [
+          { labelKey: 'propertyPanel.curveCount', count: operation.profile.curveIds.length },
+        ],
+      };
+    case 'planar':
+      return {
+        fields: [],
+        toggles: [],
+        references: [],
+        subShapeCounts: [
+          { labelKey: 'propertyPanel.curveCount', count: operation.profile.curveIds.length },
+        ],
+      };
+    case 'loft':
+      return {
+        fields: [],
+        toggles: [solidToggle('surfaceRuled', 'propertyPanel.surfaceRuled', operation.ruled)],
+        references: [],
+        subShapeCounts: [
+          {
+            labelKey: 'propertyPanel.curveCount',
+            count: operation.sections.reduce((total, section) => total + section.curveIds.length, 0),
+          },
+        ],
+      };
+    case 'face':
+      return {
+        fields: [],
+        toggles: [],
+        references: [
+          bodyReference(document, 'propertyPanel.targetBody', operation.targetFeatureId),
+        ],
+        subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
+      };
+    case 'offset':
+      return {
+        fields: [fieldSummary('surfaceOffset', operation.distance)],
+        toggles: [],
+        references: [
+          bodyReference(document, 'propertyPanel.targetBody', operation.targetFeatureId),
+        ],
+        subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
+      };
+  }
+}
+
+/**
+ * 切る面の欄(FR-432)。決め方ごとに、式で直せるものだけを出す。
+ *
+ * 3 点・点と辺・点に平行な面は式を 1 つも持たない(位置と向きは指し先の要素が決める)。
+ */
+function cutPlaneFields(plane: PlaneSpec): SolidFieldSummary[] {
+  switch (plane.kind) {
+    case 'pointAndAxis':
+      return [fieldSummary('tiltAngle', plane.tilt), fieldSummary('tiltAzimuth', plane.azimuth)];
+    case 'face':
+    case 'workPlane':
+      return [fieldSummary('planeOffset', plane.offset)];
+    case 'tilted':
+      return [fieldSummary('planeAngle', plane.angle)];
+    case 'threePoints':
+    case 'pointAndEdge':
+    case 'pointAndParallelFace':
+      return [];
+  }
+}
+
+/**
+ * 切る面の傾きの欄だけは範囲を持たせる(§2.9b の断り「0 度以上 180 度未満」を
+ * 押す前に出すため)。`FIELD_DEFINITIONS` の `tiltAngle` は穴と共用で、穴の傾きは
+ * P3 からの範囲(その場入力側)に従うので、ここで切断のときだけ差し替える。
+ */
+function withPlaneTiltRange(field: SolidFieldSummary): SolidFieldSummary {
+  return field.key === 'tiltAngle' ? { ...field, range: PLANE_TILT_RANGE } : field;
+}
+
 /** 立体1つの見え方をまとめる。ツリーの行とプロパティ欄の両方がこれを読む。 */
 export function summarizeSolid(
   document: PartDocument,
@@ -854,18 +1517,41 @@ export function summarizeSolid(
   };
 
   switch (feature.kind) {
-    case 'extrude':
+    case 'extrude': {
+      /*
+        押し出し(FR-401、FR-415、FR-416。タスク52・55)。**省略できる 5 欄は必ず
+        `extrudeShapingOf` を通して読む**(既定値をここへ写さない。model の約束)。
+
+        「両側へ」は P2 の `symmetric` つまみではなく**終わり方の選択肢**で選ぶ
+        (同じことを 2 つの操作でできるようにしない。NFR-UX-1)。書き戻す側
+        (`setSolidChoice`)が `end` と `symmetric` の両方を必ず揃えるので、
+        古い文書(`end` を持たない)でも見え方と保存の中身が食い違わない。
+
+        薄板の厚みと側は、**薄板にしているときだけ**出す(中実の押し出しで厚みの欄を
+        出しても効かない。NFR-UX-2)。切り替えは「薄板にする」のつまみ。
+      */
+      const shaping = extrudeShapingOf(feature);
+      const thin = shaping.thickness !== null;
       return {
         ...base,
-        fields: [fieldSummary('distance', feature.distance)],
+        fields: [
+          fieldSummary('distance', feature.distance),
+          fieldSummary('taperAngle', shaping.taperAngle),
+          ...(shaping.thickness === null ? [] : [fieldSummary('extrudeThickness', shaping.thickness)]),
+        ],
         toggles: [
           toggleSummary('reversed', feature.reversed),
-          toggleSummary('symmetric', feature.symmetric),
+          toggleSummary('taperOutward', shaping.taperOutward),
+          toggleSummary('thinWalled', thin),
         ],
-        choices: [],
+        choices: [
+          extrudeEndChoice(shaping.end),
+          ...(thin ? [thicknessSideChoice(shaping.thicknessSide)] : []),
+        ],
         references: [profileReference(document, feature.profile)],
         subShapeCounts: [],
       };
+    }
     case 'revolve':
       return {
         ...base,
@@ -897,11 +1583,12 @@ export function summarizeSolid(
         subShapeCounts: [],
       };
     case 'hole':
+      // 入口(ざぐり・皿もみ、FR-422)は **`holeEntryOf` を通して**読む(既定は「広げない」)。
       return {
         ...base,
-        fields: holeFields(feature),
+        fields: [...holeFields(feature), ...holeEntryFields(holeEntryOf(feature))],
         toggles: [],
-        choices: [depthKindChoice(feature.depth.kind)],
+        choices: [depthKindChoice(feature.depth.kind), holeEntryChoice(holeEntryOf(feature))],
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: holeSubShapeCounts(feature),
       };
@@ -910,10 +1597,11 @@ export function summarizeSolid(
       // (§0.a-0.13、0.14。タスク28で深さ・傾きの欄と選択肢を仕上げた)。
       return {
         ...base,
-        fields: threadHoleFields(feature),
+        fields: [...threadHoleFields(feature), ...holeEntryFields(holeEntryOf(feature))],
         toggles: [],
         choices: [
           depthKindChoice(feature.depth.kind),
+          holeEntryChoice(holeEntryOf(feature)),
           threadDesignationChoice(feature.designation),
           threadSeriesChoice(feature.series),
           threadRepresentationChoice(feature.representation),
@@ -921,15 +1609,25 @@ export function summarizeSolid(
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: holeSubShapeCounts(feature),
       };
-    case 'fillet':
+    case 'fillet': {
+      /*
+        R 面取り(FR-407)と可変半径(FR-426、タスク55)。**半径は `filletRadiusOf` を
+        通して読む**(終点側の半径は省略できる欄で、既定は「一定半径」)。
+        「終わりを別の半径に」を入にしたときだけ 2 欄になる(NFR-UX-2)。
+      */
+      const radius = filletRadiusOf(feature);
+      const variable = radius.kind === 'variable';
       return {
         ...base,
-        fields: [fieldSummary('radius', feature.radius)],
-        toggles: [],
+        fields: variable
+          ? [fieldSummary('radius', radius.start), fieldSummary('radiusEnd', radius.end)]
+          : [fieldSummary('radius', radius.radius)],
+        toggles: [toggleSummary('variableRadius', variable)],
         choices: [],
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: [{ labelKey: 'propertyPanel.selectedEdges', count: feature.targets.length }],
       };
+    }
     case 'chamfer':
       return {
         ...base,
@@ -1055,101 +1753,155 @@ export function summarizeSolid(
         subShapeCounts: [],
       };
     /*
-      P5 の Should 群 9 種(§2.11、P5 タスク43)。**式の欄・つまみ・選択肢をプロパティへ
-      出すのは タスク52** で、ここは `SolidFeature` の union が広がったときにこの網羅
-      switch を落とさないための最小の枝である。いまは「何にかけた加工か」が木と
-      プロパティで読めるよう、対象の立体と選んだ面の数だけを出す。
+      P5 の Should 群 9 種(§2.11、P5 タスク43)+ くり抜き(FR-418)+ 切断(FR-432)。
+      式の欄・つまみ・選択肢はタスク52・27f・55 でここへ入れた。**選び直しに画面での
+      指し示しが要るもの(面・辺・輪郭・経路)は欄にせず、数か名前だけを出す**
+      (回転の線分の軸・穴の面と同じ切り分け。P2 からの流儀)。
     */
     case 'draft':
       return {
         ...base,
-        fields: [],
-        toggles: [],
+        fields: [fieldSummary('draftAngle', feature.angle)],
+        toggles: [toggleSummary('reversed', feature.reversed)],
         choices: [],
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: [
-          { labelKey: 'propertyPanel.selectedFaces', count: feature.faces.length },
+          { labelKey: 'propertyPanel.draftNeutralFace', count: 1 },
+          { labelKey: 'propertyPanel.draftFaces', count: feature.faces.length },
         ],
       };
     case 'mirror':
-    case 'transform':
-    case 'scale':
-      // 対象の立体だけを出す(鏡の平面・移動量・倍率の欄は タスク52)。
       return {
         ...base,
         fields: [],
         toggles: [],
-        choices: [],
+        choices: [mirrorPlaneChoice(feature)],
+        references: [bodyReference(document, 'propertyPanel.mirrorTarget', feature.targetFeatureId)],
+        subShapeCounts:
+          feature.plane.kind === 'face'
+            ? [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }]
+            : [],
+      };
+    case 'transform':
+      return {
+        ...base,
+        fields: transformFields(feature),
+        toggles: [],
+        choices: [transformAxisChoice(feature.rotationAxis)],
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [],
+      };
+    case 'scale':
+      return {
+        ...base,
+        fields: scaleFields(feature),
+        toggles: [toggleSummary('scalePerAxis', feature.factor.kind === 'perAxis')],
+        choices: [],
+        references: [
+          bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId),
+          pointReferenceSummary(document, feature.origin, 'propertyPanel.scaleOrigin'),
+        ],
         subShapeCounts: [],
       };
     case 'sweep':
-      // スイープ(FR-409)。対象を取らないので断面だけを出す(経路は タスク52)。
+      // スイープ(FR-409)。対象を取らないので断面と経路だけを出す。
       return {
         ...base,
         fields: [],
-        toggles: [],
+        toggles: [toggleSummary('sweepFrenet', feature.frenet)],
         choices: [],
         references: [profileReference(document, feature.profile)],
-        subShapeCounts: [],
+        subShapeCounts: [
+          { labelKey: 'propertyPanel.sweepPath', count: feature.path.curveIds.length },
+        ],
       };
     case 'rib':
+      return {
+        ...base,
+        fields: [fieldSummary('ribThickness', feature.thickness)],
+        toggles: [
+          solidToggle('ribExtendToBody', 'propertyPanel.ribExtendToBody', feature.extendToBody),
+        ],
+        choices: [ribSideChoice(feature.side)],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [
+          { labelKey: 'propertyPanel.curveCount', count: feature.profile.curveIds.length },
+        ],
+      };
     case 'threadShaft':
       return {
         ...base,
-        fields: [],
-        toggles: [],
-        choices: [],
+        fields: [fieldSummary('pitch', feature.pitch), fieldSummary('threadLength', feature.length)],
+        toggles: [toggleSummary('modeledThread', feature.modeled)],
+        choices: threadShaftChoices(feature),
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
-        subShapeCounts: [],
+        subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
       };
     case 'shell':
-      // くり抜き(FR-418、P5 タスク46)。厚さ・向きの欄は **タスク55**。開ける面は
-      // 0 枚でもよいので、枚数だけを抜き勾配と同じ形で出す。
+      // くり抜き(FR-418、タスク55)。開ける面は 0 枚でもよいので枚数だけを出す。
       return {
         ...base,
-        fields: [],
-        toggles: [],
+        fields: [fieldSummary('shellThickness', feature.thickness)],
+        toggles: [toggleSummary('shellOutward', feature.outward)],
         choices: [],
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: [
-          { labelKey: 'propertyPanel.selectedFaces', count: feature.openFaces.length },
+          { labelKey: 'propertyPanel.shellOpenFaces', count: feature.openFaces.length },
         ],
       };
     case 'cut':
-      // 平面による切断(FR-432、P5 タスク27c)。**平面の決め方・残す側のつまみ・対の案内は
-      // タスク27f**(プロパティに欄を出すのと同じ段)。ここは union が広がったときにこの
-      // 網羅 switch を落とさないための最小の枝で、いま出すのは「何を切ったか」だけ。
+      /*
+        平面による切断(FR-432、タスク27f)。**切断が持つ式は切る面の中にある**ので、
+        決め方ごとに出る欄が変わる(§2.9b.1)。決め方そのものは読み取り専用で出し、
+        選び直しはプロパティの「選び直す」ボタン(`PropertyPanel.tsx`)から行う——
+        平面の材料(点・辺・面)は画面で指すものなので、欄では選べない。
+
+        残す側は「反対側を残す」のつまみ 1 つで裏返す(§0.a-0.57)。対で作られた
+        2 つ目(`pairedWith`)は、相手への案内を参照へ足す。
+      */
       return {
         ...base,
-        fields: [],
-        toggles: [],
+        fields: cutPlaneFields(feature.plane).map(withPlaneTiltRange),
+        toggles: [
+          solidToggle(
+            'cutKeepOpposite',
+            'numericInput.toggle.cutKeepOpposite',
+            feature.keep === 'negative',
+          ),
+        ],
         choices: [],
-        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        references: [
+          bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId),
+          ...(feature.pairedWith === null
+            ? []
+            : [bodyReference(document, 'propertyPanel.cutPaired', feature.pairedWith)]),
+        ],
         subShapeCounts: [],
       };
     case 'emboss':
       return {
         ...base,
-        fields: [],
-        toggles: [],
+        fields: [fieldSummary('embossHeight', feature.height)],
+        toggles: [toggleSummary('raised', feature.raised)],
         choices: [],
         references: [
           bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId),
           profileReference(document, feature.profile),
         ],
-        subShapeCounts: [],
+        subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
       };
-    case 'surface':
-      // 曲面(FR-428)。作り方 5 種で欄が違うので、出し分けは タスク52 に任せる。
+    case 'surface': {
+      // 曲面(FR-428)。作り方 6 種で欄が違うので、1 か所(`surfaceSummaryParts`)で出し分ける。
+      const parts = surfaceSummaryParts(document, feature);
       return {
         ...base,
-        fields: [],
-        toggles: [],
-        choices: [],
-        references: [],
-        subShapeCounts: [],
+        fields: parts.fields,
+        toggles: parts.toggles,
+        choices: [surfaceOperationChoice(feature.operation)],
+        references: parts.references,
+        subShapeCounts: parts.subShapeCounts,
       };
+    }
   }
 }
 
@@ -1168,7 +1920,7 @@ export function setSolidField(
 ): SolidFeature {
   switch (feature.kind) {
     case 'extrude':
-      return key === 'distance' ? { ...feature, distance: value } : feature;
+      return setExtrudeField(feature, key, value);
     case 'revolve':
       return key === 'angle' ? { ...feature, angle: value } : feature;
     case 'sew':
@@ -1178,7 +1930,13 @@ export function setSolidField(
     case 'threadHole':
       return setThreadHoleField(feature, key, value);
     case 'fillet':
-      return key === 'radius' ? { ...feature, radius: value } : feature;
+      if (key === 'radius') {
+        return { ...feature, radius: value };
+      }
+      // 終点側の半径は、可変半径にしているときだけ書き戻す(一定半径のときは欄も無い)。
+      return key === 'radiusEnd' && filletRadiusOf(feature).kind === 'variable'
+        ? { ...feature, radiusEnd: value }
+        : feature;
     case 'chamfer':
       return setChamferField(feature, key, value);
     case 'pattern':
@@ -1201,22 +1959,144 @@ export function setSolidField(
       */
       return key === 'ruledTwist' ? { ...feature, twist: value } : feature;
     case 'draft':
-    case 'mirror':
+      return key === 'draftAngle' ? { ...feature, angle: value } : feature;
     case 'transform':
+      return setTransformField(feature, key, value);
     case 'scale':
-    case 'sweep':
+      return setScaleField(feature, key, value);
     case 'rib':
+      return key === 'ribThickness' ? { ...feature, thickness: value } : feature;
     case 'emboss':
+      return key === 'embossHeight' ? { ...feature, height: value } : feature;
     case 'threadShaft':
+      if (key === 'pitch') {
+        return { ...feature, pitch: value };
+      }
+      return key === 'threadLength' ? { ...feature, length: value } : feature;
     case 'surface':
+      return setSurfaceField(feature, key, value);
     case 'shell':
+      return key === 'shellThickness' ? { ...feature, thickness: value } : feature;
     case 'cut':
-      // P5 の Should 群(§2.11、タスク43)の書き戻しは **タスク52**(欄を出すのと同じ段)、
-      // くり抜き(FR-418、タスク46)は **タスク55**、切断(FR-432、タスク27c)は
-      // **タスク27f**。いまは欄を 1 つも出していないので、そのまま返す。
-      // (切断が持つ式は切断面の中にあり、`SolidFieldKey` の欄ではない。)
+      return setCutField(feature, key, value);
+    case 'mirror':
+    case 'sweep':
+      // ミラー(FR-419)とスイープ(FR-409)は式の欄を 1 つも持たない
+      // (鏡にする面は選択肢、経路と断面は画面で指すもの)。
       return feature;
   }
+}
+
+/**
+ * 押し出しの欄を書き戻す(FR-401、FR-415、FR-416)。
+ *
+ * 傾きと厚みは**省略できる欄**なので、書き戻すと欄が生える。省略のままにしておく理由が
+ * 無い(利用者が値を入れた)ため、既定と同じ値でも欄として保存してよい。
+ */
+function setExtrudeField(
+  feature: ExtrudeFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  switch (key) {
+    case 'distance':
+      return { ...feature, distance: value };
+    case 'taperAngle':
+      return { ...feature, taperAngle: value };
+    case 'extrudeThickness':
+      // 中実の押し出しには厚みの欄が出ていないので、書き戻しも受け付けない
+      // (「薄板にする」のつまみを入にしてから直す)。
+      return extrudeShapingOf(feature).thickness === null ? feature : { ...feature, thickness: value };
+    default:
+      return feature;
+  }
+}
+
+/** 移動/回転の欄を書き戻す(FR-424)。角度は回す軸を選んでいるときだけ効く。 */
+function setTransformField(
+  feature: TransformFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  const [x, y, z] = feature.translation;
+  switch (key) {
+    case 'translationX':
+      return { ...feature, translation: [value, y, z] };
+    case 'translationY':
+      return { ...feature, translation: [x, value, z] };
+    case 'translationZ':
+      return { ...feature, translation: [x, y, value] };
+    case 'rotationAngle':
+      return feature.rotationAxis === null ? feature : { ...feature, rotationAngle: value };
+    default:
+      return feature;
+  }
+}
+
+/** 拡大縮小の欄を書き戻す(FR-424)。いまの倍率の持ち方に合う欄だけを受け付ける。 */
+function setScaleField(
+  feature: ScaleFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  const { factor } = feature;
+  if (factor.kind === 'uniform') {
+    return key === 'scaleFactor' ? { ...feature, factor: { kind: 'uniform', value } } : feature;
+  }
+  switch (key) {
+    case 'scaleX':
+      return { ...feature, factor: { ...factor, x: value } };
+    case 'scaleY':
+      return { ...feature, factor: { ...factor, y: value } };
+    case 'scaleZ':
+      return { ...feature, factor: { ...factor, z: value } };
+    default:
+      return feature;
+  }
+}
+
+/** 曲面の欄を書き戻す(FR-428)。作り方ごとに持っている欄が違う。 */
+function setSurfaceField(
+  feature: SurfaceFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  const { operation } = feature;
+  if (operation.kind === 'extrude' && key === 'surfaceDistance') {
+    return { ...feature, operation: { ...operation, distance: value } };
+  }
+  if (operation.kind === 'revolve' && key === 'surfaceAngle') {
+    return { ...feature, operation: { ...operation, angle: value } };
+  }
+  if (operation.kind === 'offset' && key === 'surfaceOffset') {
+    return { ...feature, operation: { ...operation, distance: value } };
+  }
+  return feature;
+}
+
+/**
+ * 切断の欄を書き戻す(FR-432)。**式は切る面(`PlaneSpec`)の中にある**ので、
+ * 決め方ごとに受け付ける欄が変わる。合わない欄が来たら同じものを返す。
+ */
+function setCutField(
+  feature: CutFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): SolidFeature {
+  const { plane } = feature;
+  if (plane.kind === 'pointAndAxis' && key === 'tiltAngle') {
+    return { ...feature, plane: { ...plane, tilt: value } };
+  }
+  if (plane.kind === 'pointAndAxis' && key === 'tiltAzimuth') {
+    return { ...feature, plane: { ...plane, azimuth: value } };
+  }
+  if ((plane.kind === 'face' || plane.kind === 'workPlane') && key === 'planeOffset') {
+    return { ...feature, plane: { ...plane, offset: value } };
+  }
+  if (plane.kind === 'tilted' && key === 'planeAngle') {
+    return { ...feature, plane: { ...plane, angle: value } };
+  }
+  return feature;
 }
 
 /**
@@ -1331,6 +2211,30 @@ function setSpringField(
   }
 }
 
+/**
+ * 入口(ざぐり・皿もみ、FR-422)の欄を書き戻す。いまの入口の形に合わない欄が来たら null を
+ * 返し、呼び出し側は同じフィーチャーをそのまま返す。穴とねじ穴で同じ処理を 2 度書かない。
+ */
+function setHoleEntryField(
+  entry: HoleEntry,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+): HoleEntry | null {
+  if (entry.kind === 'counterbore' && key === 'counterboreDiameter') {
+    return { ...entry, diameter: value };
+  }
+  if (entry.kind === 'counterbore' && key === 'counterboreDepth') {
+    return { ...entry, depth: value };
+  }
+  if (entry.kind === 'countersink' && key === 'countersinkDiameter') {
+    return { ...entry, diameter: value };
+  }
+  if (entry.kind === 'countersink' && key === 'countersinkAngle') {
+    return { ...entry, angle: value };
+  }
+  return null;
+}
+
 function setHoleField(feature: HoleFeature, key: SolidFieldKey, value: ExpressionValue): SolidFeature {
   switch (key) {
     case 'diameter':
@@ -1343,8 +2247,10 @@ function setHoleField(feature: HoleFeature, key: SolidFieldKey, value: Expressio
       return { ...feature, tiltAngle: value };
     case 'tiltAzimuth':
       return { ...feature, tiltAzimuth: value };
-    default:
-      return feature;
+    default: {
+      const entry = setHoleEntryField(holeEntryOf(feature), key, value);
+      return entry === null ? feature : { ...feature, entry };
+    }
   }
 }
 
@@ -1368,8 +2274,10 @@ function setThreadHoleField(
       return { ...feature, tiltAngle: value };
     case 'tiltAzimuth':
       return { ...feature, tiltAzimuth: value };
-    default:
-      return feature;
+    default: {
+      const entry = setHoleEntryField(holeEntryOf(feature), key, value);
+      return entry === null ? feature : { ...feature, entry };
+    }
   }
 }
 
@@ -1618,7 +2526,249 @@ export function setSolidChoice(
     case 'ruledSphereSegments':
       // 面をつなぐの「なめらかさ」(§0.a-0.74)。3 択の外の値は黙って捨てる(他の選択肢と同じ)。
       return setRuledSphereSegments(feature, value);
+    case 'extrudeEnd':
+      return setExtrudeEnd(feature, value);
+    case 'thicknessSide':
+      return value === 'inner' || value === 'outer' || value === 'both'
+        ? setThicknessSide(feature, value)
+        : feature;
+    case 'holeEntry':
+      return value === 'plain' || value === 'counterbore' || value === 'countersink'
+        ? setHoleEntryKind(feature, value)
+        : feature;
+    case 'mirrorPlane':
+      return setMirrorPlane(feature, value);
+    case 'transformAxis':
+      return setTransformAxis(feature, value);
+    case 'ribSide':
+      return value === 'both' || value === 'positive' || value === 'negative'
+        ? setRibSide(feature, value)
+        : feature;
+    case 'threadShaftNominal':
+      return setThreadShaftNominal(feature, value);
+    case 'threadShaftSeries':
+      return value === 'coarse' || value === 'fine'
+        ? setThreadShaftSeries(feature, value)
+        : feature;
+    case 'threadShaftFromEnd':
+      return value === 'first' || value === 'last'
+        ? setThreadShaftFromEnd(feature, value)
+        : feature;
+    case 'surfaceOperation':
+      return setSurfaceOperationKind(feature, value);
   }
+}
+
+/**
+ * 押し出しの終わり方を切り替える(FR-415)。
+ *
+ * **`end` と P2 からの `symmetric` を必ず同時に揃える。** `symmetric` は解決・その場入力・
+ * 読み書きがまだ読んでいる欄で、片方だけ変えると同じ文書が 2 通りの意味を持ってしまう
+ * (`extrudeShapingOf` は `end` が無いときにだけ `symmetric` を見る)。
+ *
+ * 「選んだ面まで」はここでは選べない(面を指す操作が要る)ので、来ても何もしない。
+ */
+function setExtrudeEnd(feature: SolidFeature, value: string): SolidFeature {
+  if (feature.kind !== 'extrude') {
+    return feature;
+  }
+  const end: ExtrudeEnd | null =
+    value === 'distance'
+      ? { kind: 'distance' }
+      : value === 'symmetric'
+        ? { kind: 'symmetric' }
+        : value === 'toNext'
+          ? { kind: 'toNext' }
+          : null;
+  if (end === null) {
+    return feature;
+  }
+  return { ...feature, end, symmetric: end.kind === 'symmetric' };
+}
+
+/** 薄板の厚みの側を切り替える(FR-416)。中実の押し出しには効かない。 */
+function setThicknessSide(feature: SolidFeature, side: ThicknessSide): SolidFeature {
+  if (feature.kind !== 'extrude' || extrudeShapingOf(feature).thickness === null) {
+    return feature;
+  }
+  return { ...feature, thicknessSide: side };
+}
+
+/**
+ * 穴・ねじ穴の入口の形を切り替える(FR-422)。切り替えたときの欄は**既定へ戻す**
+ * (前に入れていた値は引き継がない。深さの種類の切り替えとまったく同じ決め)。
+ */
+function setHoleEntryKind(feature: SolidFeature, kind: HoleEntry['kind']): SolidFeature {
+  if (feature.kind !== 'hole' && feature.kind !== 'threadHole') {
+    return feature;
+  }
+  if (holeEntryOf(feature).kind === kind) {
+    return feature;
+  }
+  const entry: HoleEntry =
+    kind === 'plain'
+      ? { kind: 'plain' }
+      : kind === 'counterbore'
+        ? {
+            kind: 'counterbore',
+            diameter: expressionValueFromNumber(DEFAULT_COUNTERBORE_DIAMETER_MM),
+            depth: expressionValueFromNumber(DEFAULT_COUNTERBORE_DEPTH_MM),
+          }
+        : {
+            kind: 'countersink',
+            diameter: expressionValueFromNumber(DEFAULT_COUNTERSINK_DIAMETER_MM),
+            angle: expressionValueFromNumber(DEFAULT_COUNTERSINK_ANGLE_DEGREES),
+          };
+  return { ...feature, entry };
+}
+
+/** ミラーの鏡にする面を基準の 3 面へ切り替える(FR-419)。立体の面は画面で選び直す。 */
+function setMirrorPlane(feature: SolidFeature, value: string): SolidFeature {
+  if (feature.kind !== 'mirror') {
+    return feature;
+  }
+  if (value !== 'xy' && value !== 'xz' && value !== 'yz') {
+    return feature;
+  }
+  return { ...feature, plane: { kind: 'workPlane', planeId: value } };
+}
+
+/**
+ * 移動/回転の回す軸を切り替える(FR-424)。`none` は「回さない」で、そのとき角度の欄も
+ * 消える。線分の軸(`line`)はプロパティからは選べない(線分を指す操作が要る)。
+ */
+function setTransformAxis(feature: SolidFeature, value: string): SolidFeature {
+  if (feature.kind !== 'transform') {
+    return feature;
+  }
+  if (value === 'none') {
+    return feature.rotationAxis === null ? feature : { ...feature, rotationAxis: null };
+  }
+  if (value !== 'x' && value !== 'y' && value !== 'z') {
+    return feature;
+  }
+  const rotationAxis: AxisSpec = { kind: 'world', axis: value };
+  // 回さない状態から軸を選んだときは、角度が 0 のままだと形が変わらないので既定へ戻す。
+  const rotationAngle =
+    feature.rotationAxis === null
+      ? expressionValueFromNumber(DEFAULT_TRANSFORM_ROTATION_DEGREES)
+      : feature.rotationAngle;
+  return { ...feature, rotationAxis, rotationAngle };
+}
+
+/** リブの厚みを付ける側(FR-420)。 */
+function setRibSide(feature: SolidFeature, side: RibSide): SolidFeature {
+  return feature.kind === 'rib' ? { ...feature, side } : feature;
+}
+
+/** 外ねじの呼びを変える(FR-423)。ピッチも規格表から一緒に変わる(ねじ穴と同じ決め)。 */
+function setThreadShaftNominal(feature: SolidFeature, nominal: string): SolidFeature {
+  if (feature.kind !== 'threadShaft') {
+    return feature;
+  }
+  const size = findMetricThread(nominal);
+  return size === undefined ? feature : applyThreadShaftSize(feature, size, feature.series);
+}
+
+/** 外ねじの系列(並目/細目)を変える。ピッチも一緒に変わる。 */
+function setThreadShaftSeries(feature: SolidFeature, series: ThreadSeries): SolidFeature {
+  if (feature.kind !== 'threadShaft') {
+    return feature;
+  }
+  const size = findMetricThread(feature.nominal);
+  return size === undefined ? feature : applyThreadShaftSize(feature, size, series);
+}
+
+/**
+ * 外ねじの呼び・系列からピッチを入れ直す(FR-406 と同じ規格表)。
+ * 下穴径はめねじだけのものなので、外ねじでは触らない。
+ */
+function applyThreadShaftSize(
+  feature: ThreadShaftFeature,
+  size: MetricThreadSize,
+  series: ThreadSeries,
+): ThreadShaftFeature {
+  return {
+    ...feature,
+    nominal: size.designation,
+    series,
+    pitch: expressionValueFromNumber(metricThreadPitch(size, series)),
+  };
+}
+
+/** 外ねじを切り始める端(FR-423)。 */
+function setThreadShaftFromEnd(feature: SolidFeature, fromEnd: 'first' | 'last'): SolidFeature {
+  return feature.kind === 'threadShaft' ? { ...feature, fromEnd } : feature;
+}
+
+/**
+ * 曲面の作り方を切り替える(FR-428)。**同じ材料で作り直せる範囲だけ**(輪郭から作る 3 つ、
+ * 立体の面から作る 2 つ)。群をまたぐ値が来たら何もしない。
+ */
+function setSurfaceOperationKind(feature: SolidFeature, value: string): SolidFeature {
+  if (feature.kind !== 'surface') {
+    return feature;
+  }
+  const { operation } = feature;
+  if (operation.kind === 'extrude' || operation.kind === 'revolve' || operation.kind === 'planar') {
+    const profile = surfaceProfileOf(operation);
+    switch (value) {
+      case 'extrude':
+        return {
+          ...feature,
+          operation: {
+            kind: 'extrude',
+            profile,
+            distance: expressionValueFromNumber(DEFAULT_SURFACE_DISTANCE_MM),
+            reversed: false,
+          },
+        };
+      case 'revolve':
+        return {
+          ...feature,
+          operation: {
+            kind: 'revolve',
+            profile,
+            axis: { kind: 'world', axis: 'z' },
+            angle: expressionValueFromNumber(DEFAULT_SURFACE_ANGLE_DEGREES),
+            reversed: false,
+          },
+        };
+      case 'planar':
+        return { ...feature, operation: { kind: 'planar', profile } };
+      default:
+        return feature;
+    }
+  }
+  if (operation.kind === 'face' && value === 'offset') {
+    return {
+      ...feature,
+      operation: {
+        kind: 'offset',
+        targetFeatureId: operation.targetFeatureId,
+        face: operation.face,
+        distance: expressionValueFromNumber(DEFAULT_SURFACE_OFFSET_MM),
+      },
+    };
+  }
+  if (operation.kind === 'offset' && value === 'face') {
+    return {
+      ...feature,
+      operation: {
+        kind: 'face',
+        targetFeatureId: operation.targetFeatureId,
+        face: operation.face,
+      },
+    };
+  }
+  return feature;
+}
+
+/** 輪郭から作る 3 つの作り方が共通して持つ輪郭。 */
+function surfaceProfileOf(
+  operation: Extract<SurfaceOperation, { kind: 'extrude' | 'revolve' | 'planar' }>,
+): SketchCurveRef {
+  return operation.profile;
 }
 
 /**
@@ -1640,10 +2790,7 @@ export function setSolidToggle(
   value: boolean,
 ): SolidFeature {
   if (feature.kind === 'extrude') {
-    if (key === 'reversed') {
-      return { ...feature, reversed: value };
-    }
-    return key === 'symmetric' ? { ...feature, symmetric: value } : feature;
+    return setExtrudeToggle(feature, key, value);
   }
   if (feature.kind === 'revolve') {
     return key === 'reversed' ? { ...feature, reversed: value } : feature;
@@ -1660,7 +2807,104 @@ export function setSolidToggle(
     }
     return feature;
   }
+  if (feature.kind === 'fillet') {
+    /*
+      可変半径(FR-426、タスク55)。入にすると終点側の半径の欄が出て、切ると省略へ戻す。
+      **切ったときは `undefined` へ戻す**(model の約束: `radiusEnd` は「一定半径」を
+      `undefined` で表し、`null` に別の意味を持たせていない)。
+    */
+    if (key !== 'variableRadius') {
+      return feature;
+    }
+    if (value === (filletRadiusOf(feature).kind === 'variable')) {
+      return feature;
+    }
+    return value
+      ? { ...feature, radiusEnd: expressionValueFromNumber(DEFAULT_FILLET_RADIUS_END_MM) }
+      : { ...feature, radiusEnd: undefined };
+  }
+  if (feature.kind === 'draft') {
+    return key === 'reversed' ? { ...feature, reversed: value } : feature;
+  }
+  if (feature.kind === 'sweep') {
+    return key === 'sweepFrenet' ? { ...feature, frenet: value } : feature;
+  }
+  if (feature.kind === 'rib') {
+    return key === 'ribExtendToBody' ? { ...feature, extendToBody: value } : feature;
+  }
+  if (feature.kind === 'emboss') {
+    return key === 'raised' ? { ...feature, raised: value } : feature;
+  }
+  if (feature.kind === 'threadShaft') {
+    return key === 'modeledThread' ? { ...feature, modeled: value } : feature;
+  }
+  if (feature.kind === 'shell') {
+    return key === 'shellOutward' ? { ...feature, outward: value } : feature;
+  }
+  if (feature.kind === 'scale') {
+    // 軸ごと ⇔ 全体。切り替えたときは、いまの倍率(全体なら 1 つ、軸ごとなら X)を引き継ぐ。
+    if (key !== 'scalePerAxis' || value === (feature.factor.kind === 'perAxis')) {
+      return feature;
+    }
+    const kept =
+      feature.factor.kind === 'uniform'
+        ? feature.factor.value
+        : (feature.factor.x ?? expressionValueFromNumber(DEFAULT_SCALE_FACTOR));
+    return {
+      ...feature,
+      factor: value
+        ? { kind: 'perAxis', x: kept, y: kept, z: kept }
+        : { kind: 'uniform', value: kept },
+    };
+  }
+  if (feature.kind === 'surface') {
+    const { operation } = feature;
+    return key === 'surfaceRuled' && operation.kind === 'loft'
+      ? { ...feature, operation: { ...operation, ruled: value } }
+      : feature;
+  }
+  if (feature.kind === 'cut') {
+    // 反対側を残す(§0.a-0.57)。法線の向きは変えず、残す側だけを裏返す。
+    return key === 'cutKeepOpposite'
+      ? { ...feature, keep: value ? 'negative' : 'positive' }
+      : feature;
+  }
   return feature;
+}
+
+/**
+ * 押し出しのつまみ(FR-401、FR-416)。
+ *
+ * 「薄板にする」は**厚みの欄そのものを出す/出さない**ためのつまみなので、入にしたときに
+ * 既定の厚みを入れ、切ったときは `null`(= 中実)へ戻す。`null` は model が「壁を作らない」の
+ * 積極的な指定として使う値で、`undefined`(値を決めていない)とは意味が違う。
+ */
+function setExtrudeToggle(
+  feature: ExtrudeFeature,
+  key: SolidToggleKey,
+  value: boolean,
+): SolidFeature {
+  switch (key) {
+    case 'reversed':
+      return { ...feature, reversed: value };
+    case 'taperOutward':
+      return { ...feature, taperOutward: value };
+    case 'thinWalled': {
+      const shaping = extrudeShapingOf(feature);
+      if (value === (shaping.thickness !== null)) {
+        return feature;
+      }
+      return value
+        ? {
+            ...feature,
+            thickness: expressionValueFromNumber(DEFAULT_EXTRUDE_THICKNESS_MM),
+            thicknessSide: feature.thicknessSide ?? DEFAULT_THICKNESS_SIDE,
+          }
+        : { ...feature, thickness: null };
+    }
+    default:
+      return feature;
+  }
 }
 
 /** 回転軸をワールドの X / Y / Z へ変えた新しいフィーチャーを作る。回転以外は同じものを返す。 */
@@ -1952,8 +3196,14 @@ export function buildReferenceSection(
   return { key: 'reference', titleKey: 'featureTree.referenceGroup', rows };
 }
 
-/** 基準ジオメトリの決め方の名前(FR-328、FR-329)。その場入力の言葉と同じものを使う。 */
-const PLANE_SPEC_LABEL_KEYS: Readonly<Record<PlaneSpec['kind'], MessageKey>> = {
+/**
+ * 平面の決め方の名前(FR-328、FR-329、切断は FR-432)。その場入力の言葉と同じものを使う。
+ *
+ * 基準ジオメトリ(作業平面)と切断の切る面は**同じ `PlaneSpec`** なので、名前の表も
+ * 1 つだけにする(同じものを 2 通りの名前で呼ばない)。切断のプロパティ(タスク27f)が
+ * 「切る面の決め方」を読み取り専用で出すのに使う。
+ */
+export const PLANE_SPEC_LABEL_KEYS: Readonly<Record<PlaneSpec['kind'], MessageKey>> = {
   threePoints: 'propertyPanel.planeSpec.threePoints',
   pointAndEdge: 'propertyPanel.planeSpec.pointAndEdge',
   pointAndAxis: 'propertyPanel.planeSpec.pointAndAxis',

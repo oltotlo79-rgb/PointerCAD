@@ -217,7 +217,7 @@ describe('区画の幅の見積もり(1440 画素の窓で 1 段、§0.a-0.14)',
 });
 
 describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () => {
-  it('「作る」には数値を聞いて立体を作る 11 つが並ぶ', () => {
+  it('「作る」には数値を聞いて立体を作る 14 つが並ぶ', () => {
     expect(CREATE_MENU_ITEMS.map((item) => item.id)).toEqual([
       'extrude',
       'revolve',
@@ -234,6 +234,10 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       // 「作る」フィーチャーと決まっているので、基本形状と同じ理由でここへ入る。
       'ruled',
       'loft',
+      // P5 タスク50。スイープは対象を取らず、ミラーと曲面は対象を消費しない(§0.a-0.36・0.45)。
+      'sweep',
+      'mirrorSolid',
+      'surface',
     ]);
   });
 
@@ -241,7 +245,7 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
     expect(COMBINE_MENU_ITEMS.map((item) => item.id)).toEqual(['union', 'subtract', 'intersect']);
   });
 
-  it('「加工」には立体へ手を入れる 6 つが並ぶ', () => {
+  it('「加工」には立体へ手を入れる 15 つが並ぶ(P5 タスク50・27e で 9 つ増えた)', () => {
     expect(MACHINING_MENU_ITEMS.map((item) => item.id)).toEqual([
       'hole',
       'threadHole',
@@ -249,6 +253,16 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       'chamfer',
       'linearPattern',
       'circularPattern',
+      // P5 タスク50・27e。どれも「できあがった立体へ手を入れる」道具(§2.15、§0.a-0.64)。
+      'draft',
+      'shell',
+      'rib',
+      'emboss',
+      'threadShaft',
+      'transform',
+      'scale',
+      'pointPattern',
+      'cut',
     ]);
   });
 
@@ -309,17 +323,18 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
     expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(103);
     /*
       平置きにしたときの幅。タスク51 の時点(図柄 13 個)は 368 画素、タスク18 が
-      基本形状 5 種を足して図柄 18 個・508 画素になり、タスク27 が面をつなぐ・ロフトを
-      足したいまは図柄 20 個・564 画素になる。**畳んだ一覧のほうは 103 画素のまま
-      1 画素も増えていない**(上の行)ことがこの検査の眼目で、平置きの数はその対比として
-      置いてある(§0.a-0.80)。
+      基本形状 5 種を足して図柄 18 個・508 画素、タスク27 が面をつなぐ・ロフトを足して
+      図柄 20 個・564 画素になり、タスク50・27e が Should 群 12 種を足したいまは
+      図柄 32 個・900 画素になる。**畳んだ一覧のほうは 103 画素のまま 1 画素も
+      増えていない**(上の行)ことがこの検査の眼目で、平置きの数はその対比として
+      置いてある(§0.a-0.80、§0.a-0.64)。
     */
     expect(
       segmentedWidthPixels(
         CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length,
         0,
       ),
-    ).toBe(564);
+    ).toBe(900);
   });
 
   it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
@@ -391,10 +406,13 @@ describe('基本形状 5 種を「作る」の一覧へ足す(FR-429、P5 タス
 describe('面をつなぐ・ロフトを「作る」の一覧へ足す(FR-430、FR-410、P5 タスク27、§0.a-0.80)', () => {
   const RULED_IDS = ['ruled', 'loft'] as const;
 
-  it('2 つとも一覧の末尾に、面をつなぐ → ロフトの順で並ぶ', () => {
-    expect(CREATE_MENU_ITEMS.slice(-RULED_IDS.length).map((item) => item.id)).toEqual([
-      ...RULED_IDS,
-    ]);
+  it('2 つは基本形状の後ろに、面をつなぐ → ロフトの順で並ぶ', () => {
+    // P5 タスク50 でスイープ・ミラー・曲面が後ろへ足されたので、末尾ではなくなった。
+    const start = CREATE_MENU_ITEMS.findIndex((item) => item.id === RULED_IDS[0]);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(
+      CREATE_MENU_ITEMS.slice(start, start + RULED_IDS.length).map((item) => item.id),
+    ).toEqual([...RULED_IDS]);
   });
 
   it('2 つとも図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
@@ -435,5 +453,80 @@ describe('面をつなぐ・ロフトを「作る」の一覧へ足す(FR-430、
   it('畳んだボタンの図柄は、いま選んでいる道具のものになる(triggerItemOf)', () => {
     expect(triggerItemOf(CREATE_MENU_ITEMS, 'ruled', null)?.id).toBe('ruled');
     expect(triggerItemOf(CREATE_MENU_ITEMS, 'loft', null)?.id).toBe('loft');
+  });
+});
+
+/* ===== P5 タスク50・27e: Should 群 12 種をツールバーへ足す(§2.15、§0.a-0.64) ===== */
+
+describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50・27e)', () => {
+  /** 「作る」へ足した 3 つ(対象を取らない/消費しないもの)。 */
+  const CREATE_IDS = ['sweep', 'mirrorSolid', 'surface'] as const;
+  /** 「加工」へ足した 9 つ(できあがった立体へ手を入れるもの)。 */
+  const MACHINING_IDS = [
+    'draft',
+    'shell',
+    'rib',
+    'emboss',
+    'threadShaft',
+    'transform',
+    'scale',
+    'pointPattern',
+    'cut',
+  ] as const;
+
+  it('「作る」の末尾に 3 つ、「加工」の末尾に 9 つが並ぶ', () => {
+    expect(CREATE_MENU_ITEMS.slice(-CREATE_IDS.length).map((item) => item.id)).toEqual([
+      ...CREATE_IDS,
+    ]);
+    expect(MACHINING_MENU_ITEMS.slice(-MACHINING_IDS.length).map((item) => item.id)).toEqual([
+      ...MACHINING_IDS,
+    ]);
+  });
+
+  it('12 個とも図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
+    const items = [
+      ...CREATE_MENU_ITEMS.filter((item) => CREATE_IDS.some((id) => id === item.id)),
+      ...MACHINING_MENU_ITEMS.filter((item) => MACHINING_IDS.some((id) => id === item.id)),
+    ];
+    expect(items).toHaveLength(CREATE_IDS.length + MACHINING_IDS.length);
+    for (const item of items) {
+      expect(typeof item.Icon, item.id).toBe('function');
+      expect(t(item.labelKey).length, item.id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).length, item.id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).startsWith(`${t(item.labelKey)}: `), item.id).toBe(false);
+    }
+  });
+
+  it('12 個の図柄はすべて別のもの(借り物の使い回しをしない)', () => {
+    const icons = [
+      ...CREATE_MENU_ITEMS.filter((item) => CREATE_IDS.some((id) => id === item.id)),
+      ...MACHINING_MENU_ITEMS.filter((item) => MACHINING_IDS.some((id) => id === item.id)),
+    ].map((item) => item.Icon);
+    expect(new Set(icons).size).toBe(icons.length);
+  });
+
+  /**
+   * **幅は 1 画素も増えない**(§0.a-0.64「幅の追加は 0px」)。溝の幅は
+   * `segmentedWidthPixels` が「溝に並ぶボタンの個数」だけから決めるので、畳んだ一覧の
+   * 中に項目をいくつ足しても変わらない。1440 画素の窓での実測もこの検査と一致する
+   * (報告に記載)。
+   */
+  it('12 個足してもソリッド区画の溝は 103 画素のまま(§0.a-0.64、§0.a-0.80)', () => {
+    expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(103);
+    // もし平置きにしていたら、図柄 12 個ぶん(26 + 隙間 2)× 12 = 336 画素増えていた。
+    const flatCost =
+      segmentedWidthPixels(CREATE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length, 0) -
+      segmentedWidthPixels(
+        CREATE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length - 12,
+        0,
+      );
+    expect(flatCost).toBe(12 * (ICON_BUTTON_WIDTH_PIXELS + 2));
+  });
+
+  it('畳んだボタンの図柄は、いま選んでいる Should 群の道具のものになる', () => {
+    expect(triggerItemOf(MACHINING_MENU_ITEMS, 'cut', null)?.id).toBe('cut');
+    expect(triggerItemOf(CREATE_MENU_ITEMS, 'mirrorSolid', null)?.id).toBe('mirrorSolid');
+    // 一覧に無い道具のときは「最後に使った道具」へ後退する。
+    expect(triggerItemOf(MACHINING_MENU_ITEMS, 'extrude', 'draft')?.id).toBe('draft');
   });
 });

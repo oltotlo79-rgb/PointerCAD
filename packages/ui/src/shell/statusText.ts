@@ -136,8 +136,6 @@ const GUIDE_KEYS = {
     立体のミラーの鍵が `mirrorSolid` なのは、スケッチの鏡像複写(FR-324)がすでに
     `mirror` を使っているため(`numericInput.ts` の `SolidToolId` の注釈)。
   */
-  extrudeEnd: 'statusBar.guide.extrudeEnd',
-  extrudeThin: 'statusBar.guide.extrudeThin',
   draft: 'statusBar.guide.draft',
   mirrorSolid: 'statusBar.guide.mirrorSolid',
   transform: 'statusBar.guide.transform',
@@ -145,12 +143,10 @@ const GUIDE_KEYS = {
   sweep: 'statusBar.guide.sweep',
   rib: 'statusBar.guide.rib',
   emboss: 'statusBar.guide.emboss',
-  counterbore: 'statusBar.guide.counterbore',
   threadShaft: 'statusBar.guide.threadShaft',
   pointPattern: 'statusBar.guide.pointPattern',
   surface: 'statusBar.guide.surface',
   shell: 'statusBar.guide.shell',
-  variableFillet: 'statusBar.guide.variableFillet',
   cut: 'statusBar.guide.cut',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 

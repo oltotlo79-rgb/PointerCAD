@@ -157,17 +157,15 @@ export type SolidToolId =
     どれも「押すと段が 1 つ開き、確定で立体を 1 つ作る/変える」道具なのでここへ足す。
     コマンドの本体はタスク50(切断はタスク27e)で、いまは段と案内だけがある。
 
-    **計画書との違い(統括へ報告する 1 点)**: 計画書 §2.15 は「押し出しの終端・傾き」
-    「薄板押し出し」「ざぐり/皿もみ」「可変半径の R 面取り」を**既存の段**(押し出し・穴・
-    R 面取り)へ欄とつまみを足す形で書いていた。しかし統括の指示は「P1〜P4 の段の振る舞いを
-    1 つも変えない(既存の検査を 1 件も消さない)」であり、既存の段へつまみ・選択肢を足すと
-    その 3 段の初期状態が変わって既存の検査と食い違う。そこで**独立した道具・段**にした。
-    欄・つまみ・選択肢・鍵はそのままなので、統括が計画書どおりを望むなら既存の段へ畳み直せる。
+    **タスク50 で既存の段へ畳み直した(統括の決定 2026-09-06)**: タスク49 は
+    「押し出しの終端・傾き」「薄板押し出し」「ざぐり/皿もみ」「可変半径の R 面取り」を
+    独立した道具(`extrudeEnd` / `extrudeThin` / `counterbore` / `variableFillet`)に
+    していたが、利用者から見て「押し出し」の 1 つの道具で終わり方・傾き・薄板を選べるのが
+    自然なので、計画書 §2.15 の本来の形どおり**既存の押し出し・穴・R 面取りの段へ**
+    選択肢・つまみ・欄として足した。足した欄は `visibleWhen` で伏せてあるので、**段を開いた
+    ときの欄と値は P1〜P4 のときと 1 つも変わらない**(既存の検査は選択肢・つまみが増えた
+    ぶんの追記だけで通る)。
   */
-  /** 押し出しの終わり方と側面の傾き(FR-415、FR-401)。 */
-  | 'extrudeEnd'
-  /** 薄板押し出し(FR-416)。 */
-  | 'extrudeThin'
   /** 抜き勾配(FR-417)。 */
   | 'draft'
   /**
@@ -186,8 +184,6 @@ export type SolidToolId =
   | 'rib'
   /** エンボス(FR-421)。 */
   | 'emboss'
-  /** ざぐり・皿もみ(FR-422)。 */
-  | 'counterbore'
   /** 外ねじ(FR-423)。 */
   | 'threadShaft'
   /** 点集合パターン(FR-425)。数値を 1 つも聞かないが、確定の合図として段を持つ。 */
@@ -196,8 +192,6 @@ export type SolidToolId =
   | 'surface'
   /** くり抜き(シェル、FR-418)。 */
   | 'shell'
-  /** 可変半径の R 面取り(FR-426)。 */
-  | 'variableFillet'
   /** 平面による切断(FR-432)。 */
   | 'cut';
 
@@ -474,11 +468,11 @@ export type SolidNumericInputStep =
     P5 の Should / Could 群の段(タスク49、§2.15 の段の表)。**欄は 1 段 3 つまで**で、
     4 つ以上が要るものは段を分ける(移動/回転だけが 2 段。ばね・配列複写の前例)。
     出したり隠したりする欄は `NumericFieldDefinition.visibleWhen` で切り替える。
+
+    **押し出しの終わり方・傾き・薄板、穴の入口、可変半径の R 面取りは段を持たない**
+    (タスク50 で既存の `extrudeDistance` / `holeSize` / `filletRadius` へ畳んだ。
+    統括の決定 2026-09-06)。
   */
-  /** 押し出しの終わり方(距離 / 選んだ面まで / 次の面まで)と側面の傾き。 */
-  | 'extrudeEnd'
-  /** 薄板押し出しの厚みと厚みを付ける側。 */
-  | 'extrudeThickness'
   /** 抜き勾配の角度。 */
   | 'draftAngle'
   /** ミラーの鏡にする面。欄は持たない。 */
@@ -495,8 +489,6 @@ export type SolidNumericInputStep =
   | 'ribThickness'
   /** エンボスの高さ(彫るときは深さ)。 */
   | 'embossHeight'
-  /** 穴の入口の広げ方(広げない / ざぐり / 皿もみ)。選んだ種類で欄が入れ替わる。 */
-  | 'holeEntry'
   /** 外ねじのピッチと長さ。 */
   | 'threadShaftSize'
   /** 点集合パターン。欄もつまみも選択肢も持たない(確定の合図だけ)。 */
@@ -505,8 +497,6 @@ export type SolidNumericInputStep =
   | 'surfaceShape'
   /** くり抜きの壁の厚さ。 */
   | 'shellThickness'
-  /** 可変半径の R 面取り。つまみ「終わりを別の半径に」で終わりの半径の欄が出る。 */
-  | 'variableFilletRadius'
   /** 切断面の決め方。「点と軸」のときだけ傾きの欄が出る。 */
   | 'cutPlane';
 
@@ -659,8 +649,19 @@ export type NumericToggleKey =
   /** スプラインの最後の点から最初の点へ戻してつなぐか(FR-317)。既定は切。 */
   | 'splineClosed'
   /* ---- P5 タスク49: Should / Could 群のつまみ(§2.15 の段の表) ---- */
+  /**
+   * 押し出しの側面を傾けるか(FR-401、タスク50 で押し出しの段へ畳んだときに足した)。
+   * 切(既定)なら傾き 0 のまっすぐな押し出しで、**傾きの欄そのものを出さない**。
+   * 入にすると傾きの欄が出て、向きは `taperOutward` で決める。
+   */
+  | 'tapered'
   /** 押し出しの側面の傾きを外へ広げるか(FR-401)。既定は切=内へすぼめる。 */
   | 'taperOutward'
+  /**
+   * 押し出しを薄板にするか(FR-416、タスク50 で押し出しの段へ畳んだときに足した)。
+   * 切(既定)なら中身の詰まった押し出しで、**厚みの欄そのものを出さない**。
+   */
+  | 'thinWalled'
   /** スイープで断面を曲がりに合わせて回すか(FR-409)。既定は切=ねじれを抑える。 */
   | 'sweepFrenet'
   /** エンボスを浮き出すか(FR-421)。既定は切=彫る。 */
@@ -1047,8 +1048,45 @@ function whenToggleOff(
   return (visibility) => visibility.toggles.find((toggle) => toggle.key === key)?.value !== true;
 }
 
+/**
+ * 押し出しの欄(FR-401、FR-415、FR-416)。
+ *
+ * **タスク50 で終わり方・側面の傾き・薄板の厚みをここへ畳んだ**(統括の決定 2026-09-06)。
+ * 利用者から見て「押し出し」は 1 つの道具で、終わり方や板にするかは同じ操作の中の選び方
+ * だからである(計画書 §2.15 の本来の形)。
+ *
+ * **段を開いた直後に出る欄は距離 1 つだけ**で、P2 からの押し出しと 1 つも変わらない。
+ * 傾きは「側面を傾ける」、厚みは「薄板にする」を入にしたときだけ出て、距離は終わり方が
+ * 「距離」のときだけ出る(「選んだ面まで」「次の面まで」では長さを決めるのが面だから)。
+ */
 const EXTRUDE_DISTANCE_FIELDS: readonly NumericFieldDefinition[] = [
-  { key: 'distance', labelKey: 'numericInput.field.distance', tooltipKey: 'numericInput.tooltip.extrudeDistance', unit: 'mm', defaultSource: '10', range: POSITIVE },
+  {
+    key: 'distance',
+    labelKey: 'numericInput.field.distance',
+    tooltipKey: 'numericInput.tooltip.extrudeDistance',
+    unit: 'mm',
+    defaultSource: '10',
+    range: POSITIVE,
+    visibleWhen: whenChoiceIs('extrudeEnd', 'distance'),
+  },
+  {
+    key: 'taperAngle',
+    labelKey: 'numericInput.field.taperAngle',
+    tooltipKey: 'numericInput.tooltip.taperAngle',
+    unit: 'degree',
+    defaultSource: String(DEFAULT_TAPER_ANGLE_DEGREES),
+    range: TAPER_ANGLE_RANGE,
+    visibleWhen: whenToggleOn('tapered'),
+  },
+  {
+    key: 'thickness',
+    labelKey: 'numericInput.field.thickness',
+    tooltipKey: 'numericInput.tooltip.extrudeThickness',
+    unit: 'mm',
+    defaultSource: String(DEFAULT_EXTRUDE_THICKNESS_MM),
+    range: POSITIVE,
+    visibleWhen: whenToggleOn('thinWalled'),
+  },
 ];
 
 const REVOLVE_ANGLE_FIELDS: readonly NumericFieldDefinition[] = [
@@ -1060,9 +1098,22 @@ const SEW_TOLERANCE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'tolerance', labelKey: 'numericInput.field.tolerance', tooltipKey: 'numericInput.tooltip.tolerance', unit: 'mm', defaultSource: '0.01', range: POSITIVE },
 ];
 
+/**
+ * 穴の欄(FR-405、FR-422)。
+ *
+ * **タスク50 で入口の広げ方(ざぐり・皿もみ)をここへ畳んだ**(統括の決定 2026-09-06)。
+ * 利用者から見て「穴の形が違うだけ」で、選ぶもの(面と点)も向きも同じだからである
+ * (model が `HoleFeature.entry` の 1 欄で持っているのと同じ理屈、§0.a-0.39)。
+ *
+ * **段を開いた直後に出る欄は直径と深さの 2 つだけ**(入口の既定は「広げない」)。
+ */
 const HOLE_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'diameter', labelKey: 'numericInput.field.diameter', tooltipKey: 'numericInput.tooltip.diameter', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DIAMETER_MM), range: POSITIVE },
   { key: 'depth', labelKey: 'numericInput.field.depth', tooltipKey: 'numericInput.tooltip.depth', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DEPTH_MM), range: POSITIVE },
+  { key: 'counterboreDiameter', labelKey: 'numericInput.field.counterboreDiameter', tooltipKey: 'numericInput.tooltip.counterboreDiameter', unit: 'mm', defaultSource: String(DEFAULT_COUNTERBORE_DIAMETER_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'counterbore') },
+  { key: 'counterboreDepth', labelKey: 'numericInput.field.counterboreDepth', tooltipKey: 'numericInput.tooltip.counterboreDepth', unit: 'mm', defaultSource: String(DEFAULT_COUNTERBORE_DEPTH_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'counterbore') },
+  { key: 'countersinkDiameter', labelKey: 'numericInput.field.countersinkDiameter', tooltipKey: 'numericInput.tooltip.countersinkDiameter', unit: 'mm', defaultSource: String(DEFAULT_COUNTERSINK_DIAMETER_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'countersink') },
+  { key: 'countersinkAngle', labelKey: 'numericInput.field.countersinkAngle', tooltipKey: 'numericInput.tooltip.countersinkAngle', unit: 'degree', defaultSource: String(DEFAULT_COUNTERSINK_ANGLE_DEGREES), range: COUNTERSINK_ANGLE_RANGE, visibleWhen: whenChoiceIs('holeEntry', 'countersink') },
 ];
 
 const THREAD_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
@@ -1072,8 +1123,26 @@ const THREAD_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'threadLength', labelKey: 'numericInput.field.threadLength', tooltipKey: 'numericInput.tooltip.threadLength', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DEPTH_MM), range: POSITIVE },
 ];
 
+/**
+ * R 面取りの欄(FR-407、FR-426)。
+ *
+ * **タスク50 で可変半径をここへ畳んだ**(統括の決定 2026-09-06)。model が
+ * `FilletFeature.radiusEnd` の省略できる 1 欄で持っている(§0.a-0.48)のと同じ理屈で、
+ * 利用者から見ても「角を丸める」道具は 1 つである。
+ *
+ * **段を開いた直後に出る欄は半径 1 つだけ**(つまみ「終わりを別の半径に」は既定で切)。
+ */
 const FILLET_RADIUS_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'radius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.filletRadius', unit: 'mm', defaultSource: String(DEFAULT_FILLET_RADIUS_MM), range: POSITIVE },
+  {
+    key: 'filletRadiusEnd',
+    labelKey: 'numericInput.field.radiusEnd',
+    tooltipKey: 'numericInput.tooltip.filletRadiusEnd',
+    unit: 'mm',
+    defaultSource: String(DEFAULT_FILLET_RADIUS_END_MM),
+    range: POSITIVE,
+    visibleWhen: whenToggleOn('variableRadius'),
+  },
 ];
 
 const CHAMFER_DISTANCE_FIELD: NumericFieldDefinition = {
@@ -1290,44 +1359,6 @@ function ruledSphereSegmentsChoice(): NumericChoice {
   「欄 1 つで言えること」だけをここに置く(欄をまたぐ条件は確定側の断り)。
 */
 
-/**
- * 押し出しの終わり方(FR-415)と側面の傾き(FR-401)。
- *
- * 距離の欄は終わり方が「距離」のときだけ出す。「選んだ面まで」「次の面まで」では
- * 長さを決めるのは選んだ面なので、入れても効かない欄になる(NFR-UX-5 の裏返し)。
- */
-const EXTRUDE_END_FIELDS: readonly NumericFieldDefinition[] = [
-  {
-    key: 'distance',
-    labelKey: 'numericInput.field.distance',
-    tooltipKey: 'numericInput.tooltip.extrudeDistance',
-    unit: 'mm',
-    defaultSource: '10',
-    range: POSITIVE,
-    visibleWhen: whenChoiceIs('extrudeEnd', 'distance'),
-  },
-  {
-    key: 'taperAngle',
-    labelKey: 'numericInput.field.taperAngle',
-    tooltipKey: 'numericInput.tooltip.taperAngle',
-    unit: 'degree',
-    defaultSource: String(DEFAULT_TAPER_ANGLE_DEGREES),
-    range: TAPER_ANGLE_RANGE,
-  },
-];
-
-/** 薄板押し出しの厚み(FR-416)。付ける側は選択肢(`thicknessSide`)で決める。 */
-const EXTRUDE_THICKNESS_FIELDS: readonly NumericFieldDefinition[] = [
-  {
-    key: 'thickness',
-    labelKey: 'numericInput.field.thickness',
-    tooltipKey: 'numericInput.tooltip.extrudeThickness',
-    unit: 'mm',
-    defaultSource: String(DEFAULT_EXTRUDE_THICKNESS_MM),
-    range: POSITIVE,
-  },
-];
-
 /** 抜き勾配の角度(FR-417)。抜く向きはつまみ「向きを反転」で直す(§2.15 の段の表)。 */
 const DRAFT_ANGLE_FIELDS: readonly NumericFieldDefinition[] = [
   {
@@ -1407,18 +1438,6 @@ const EMBOSS_HEIGHT_FIELDS: readonly NumericFieldDefinition[] = [
 ];
 
 /**
- * 穴の入口の広げ方(FR-422)。選んだ種類で欄が入れ替わる。
- * 「広げない」では欄が 0 個になり、選択肢だけの段になる(ミラーと同じ形)。
- * ざぐりと皿もみで径の既定が違う(11 と 12)ので、欄の名前も分けてある。
- */
-const HOLE_ENTRY_FIELDS: readonly NumericFieldDefinition[] = [
-  { key: 'counterboreDiameter', labelKey: 'numericInput.field.counterboreDiameter', tooltipKey: 'numericInput.tooltip.counterboreDiameter', unit: 'mm', defaultSource: String(DEFAULT_COUNTERBORE_DIAMETER_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'counterbore') },
-  { key: 'counterboreDepth', labelKey: 'numericInput.field.counterboreDepth', tooltipKey: 'numericInput.tooltip.counterboreDepth', unit: 'mm', defaultSource: String(DEFAULT_COUNTERBORE_DEPTH_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'counterbore') },
-  { key: 'countersinkDiameter', labelKey: 'numericInput.field.countersinkDiameter', tooltipKey: 'numericInput.tooltip.countersinkDiameter', unit: 'mm', defaultSource: String(DEFAULT_COUNTERSINK_DIAMETER_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'countersink') },
-  { key: 'countersinkAngle', labelKey: 'numericInput.field.countersinkAngle', tooltipKey: 'numericInput.tooltip.countersinkAngle', unit: 'degree', defaultSource: String(DEFAULT_COUNTERSINK_ANGLE_DEGREES), range: COUNTERSINK_ANGLE_RANGE, visibleWhen: whenChoiceIs('holeEntry', 'countersink') },
-];
-
-/**
  * 外ねじのピッチと長さ(FR-423)。**軸の径は面から測る**ので欄に出さない(NFR-UX-4)。
  * ピッチの既定は規格表(model の `metricThreadPitch`)から引く。同じ数を 2 か所に書かない。
  */
@@ -1456,30 +1475,6 @@ const SHELL_THICKNESS_FIELDS: readonly NumericFieldDefinition[] = [
     unit: 'mm',
     defaultSource: String(DEFAULT_SHELL_THICKNESS_MM),
     range: POSITIVE,
-  },
-];
-
-/**
- * 可変半径の R 面取り(FR-426)。始めの半径はいつでも出し、終わりの半径は
- * つまみ「終わりを別の半径に」を入れたときだけ出す(P3 の C 面取りと同じ考え方)。
- */
-const VARIABLE_FILLET_FIELDS: readonly NumericFieldDefinition[] = [
-  {
-    key: 'radius',
-    labelKey: 'numericInput.field.radius',
-    tooltipKey: 'numericInput.tooltip.filletRadius',
-    unit: 'mm',
-    defaultSource: String(DEFAULT_FILLET_RADIUS_MM),
-    range: POSITIVE,
-  },
-  {
-    key: 'filletRadiusEnd',
-    labelKey: 'numericInput.field.radiusEnd',
-    tooltipKey: 'numericInput.tooltip.filletRadiusEnd',
-    unit: 'mm',
-    defaultSource: String(DEFAULT_FILLET_RADIUS_END_MM),
-    range: POSITIVE,
-    visibleWhen: whenToggleOn('variableRadius'),
   },
 ];
 
@@ -1895,10 +1890,6 @@ function solidFieldDefinitionsFor(
       ここでは段ごとに「持ちうる欄の全部」を並びの順に返すだけでよい(C 面取り・ばねの
       長さのように段ごとの専用関数を増やさない)。
     */
-    case 'extrudeEnd':
-      return EXTRUDE_END_FIELDS;
-    case 'extrudeThickness':
-      return EXTRUDE_THICKNESS_FIELDS;
     case 'draftAngle':
       return DRAFT_ANGLE_FIELDS;
     case 'transformTranslation':
@@ -1911,16 +1902,12 @@ function solidFieldDefinitionsFor(
       return RIB_THICKNESS_FIELDS;
     case 'embossHeight':
       return EMBOSS_HEIGHT_FIELDS;
-    case 'holeEntry':
-      return HOLE_ENTRY_FIELDS;
     case 'threadShaftSize':
       return THREAD_SHAFT_SIZE_FIELDS;
     case 'surfaceShape':
       return SURFACE_SHAPE_FIELDS;
     case 'shellThickness':
       return SHELL_THICKNESS_FIELDS;
-    case 'variableFilletRadius':
-      return VARIABLE_FILLET_FIELDS;
     case 'cutPlane':
       return CUT_PLANE_FIELDS;
     /*
@@ -1984,8 +1971,6 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   ruledTwist: 'numericInput.title.ruled',
   loftTwist: 'numericInput.title.loft',
   // P5 の Should / Could 群(タスク48 が ja.json へ足した見出し、タスク49 の段)。
-  extrudeEnd: 'numericInput.title.extrudeEnd',
-  extrudeThickness: 'numericInput.title.extrudeThickness',
   draftAngle: 'numericInput.title.draftAngle',
   mirrorPlane: 'numericInput.title.mirrorPlane',
   transformTranslation: 'numericInput.title.transformTranslation',
@@ -1994,12 +1979,10 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   sweepOptions: 'numericInput.title.sweepOptions',
   ribThickness: 'numericInput.title.ribThickness',
   embossHeight: 'numericInput.title.embossHeight',
-  holeEntry: 'numericInput.title.holeEntry',
   threadShaftSize: 'numericInput.title.threadShaftSize',
   pointPattern: 'numericInput.title.pointPattern',
   surfaceShape: 'numericInput.title.surfaceShape',
   shellThickness: 'numericInput.title.shellThickness',
-  variableFilletRadius: 'numericInput.title.variableFilletRadius',
   cutPlane: 'numericInput.title.cutPlane',
   referencePlanePoint1: 'numericInput.title.referencePlanePoint1',
   referencePlanePoint2: 'numericInput.title.referencePlanePoint2',
@@ -2077,8 +2060,6 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'torusSize',
   'ruledTwist',
   'loftTwist',
-  'extrudeEnd',
-  'extrudeThickness',
   'draftAngle',
   'mirrorPlane',
   'transformTranslation',
@@ -2087,12 +2068,10 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'sweepOptions',
   'ribThickness',
   'embossHeight',
-  'holeEntry',
   'threadShaftSize',
   'pointPattern',
   'surfaceShape',
   'shellThickness',
-  'variableFilletRadius',
   'cutPlane',
   'referencePlanePoint1',
   'referencePlanePoint2',
@@ -2144,8 +2123,6 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
     P5 の Should / Could 群(タスク49)。移動/回転だけが 2 段で、ここには 1 段目を書く
     (ばね・配列複写と同じ約束)。
   */
-  extrudeEnd: 'extrudeEnd',
-  extrudeThin: 'extrudeThickness',
   draft: 'draftAngle',
   mirrorSolid: 'mirrorPlane',
   transform: 'transformTranslation',
@@ -2153,12 +2130,10 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
   sweep: 'sweepOptions',
   rib: 'ribThickness',
   emboss: 'embossHeight',
-  counterbore: 'holeEntry',
   threadShaft: 'threadShaftSize',
   pointPattern: 'pointPattern',
   surface: 'surfaceShape',
   shell: 'shellThickness',
-  variableFillet: 'variableFilletRadius',
   cut: 'cutPlane',
 };
 
@@ -2334,8 +2309,6 @@ const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
   ruledTwist: 'ruled',
   loftTwist: 'loft',
   // P5 の Should / Could 群(タスク49)。移動/回転は 2 段とも同じ道具を指す(ばねと同じ)。
-  extrudeEnd: 'extrudeEnd',
-  extrudeThickness: 'extrudeThin',
   draftAngle: 'draft',
   mirrorPlane: 'mirrorSolid',
   transformTranslation: 'transform',
@@ -2344,23 +2317,24 @@ const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
   sweepOptions: 'sweep',
   ribThickness: 'rib',
   embossHeight: 'emboss',
-  holeEntry: 'counterbore',
   threadShaftSize: 'threadShaft',
   pointPattern: 'pointPattern',
   surfaceShape: 'surface',
   shellThickness: 'shell',
-  variableFilletRadius: 'variableFillet',
   cutPlane: 'cut',
 };
 
 /** 段階ごとのつまみ。縫合・R面取り・C面取り・ばねは向きも両側も持たない(§2.11 の表)。 */
 const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericToggleKey[]>> = {
-  extrudeDistance: ['reversed', 'symmetric'],
+  // 押し出しは終わり方・傾き・薄板をここへ畳んだ(タスク50)。傾きと厚みの欄は
+  // 「側面を傾ける」「薄板にする」を入にしたときだけ出るので、開いた直後は距離 1 欄のまま。
+  extrudeDistance: ['reversed', 'symmetric', 'tapered', 'taperOutward', 'thinWalled'],
   revolveAngle: ['reversed'],
   sewTolerance: [],
   holeSize: ['through'],
   threadSize: ['through', 'modeledThread'],
-  filletRadius: [],
+  // R 面取りは可変半径をここへ畳んだ(タスク50)。終わりの半径の欄はつまみが入のときだけ。
+  filletRadius: ['variableRadius'],
   chamferSize: [],
   linearPattern: ['patternSymmetric'],
   circularPattern: ['fullCircle'],
@@ -2381,8 +2355,6 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
     リブは**向きのつまみを持たない**(輪郭の平面と対象の位置で向きが決まる規約。タスク46)。
     切断は「反対側を残す」と「反対側も残す(2 つに分ける)」の 2 つを持つ(§0.a-0.57・0.58)。
   */
-  extrudeEnd: ['symmetric', 'taperOutward'],
-  extrudeThickness: [],
   draftAngle: ['reversed'],
   mirrorPlane: [],
   transformTranslation: [],
@@ -2391,12 +2363,10 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   sweepOptions: ['sweepFrenet'],
   ribThickness: [],
   embossHeight: ['raised'],
-  holeEntry: [],
   threadShaftSize: ['modeledThread'],
   pointPattern: [],
   surfaceShape: ['reversed'],
   shellThickness: ['shellOutward'],
-  variableFilletRadius: ['variableRadius'],
   cutPlane: ['cutKeepOpposite', 'cutKeepBoth'],
 };
 
@@ -2484,7 +2454,9 @@ export const TOGGLE_LABEL_KEYS: Readonly<Record<NumericToggleKey, MessageKey>> =
   ellipseArc: 'numericInput.toggle.ellipseArc',
   splineClosed: 'numericInput.toggle.splineClosed',
   // P5 の Should / Could 群(タスク48 が ja.json へ足した見出し)。
+  tapered: 'numericInput.toggle.tapered',
   taperOutward: 'numericInput.toggle.taperOutward',
+  thinWalled: 'numericInput.toggle.thinWalled',
   sweepFrenet: 'numericInput.toggle.sweepFrenet',
   raised: 'numericInput.toggle.raised',
   scalePerAxis: 'numericInput.toggle.scalePerAxis',
@@ -2515,7 +2487,9 @@ const TOGGLE_DEFAULT_VALUES: Readonly<Record<NumericToggleKey, boolean>> = {
     定数の無い 3 つ(側面を外へ広げる・軸ごとの倍率・終わりを別の半径に)は、いずれも
     「ふつうはしないこと」なので既定を切にする(構築線・楕円弧と同じ考え方)。
   */
+  tapered: false,
   taperOutward: false,
+  thinWalled: false,
   sweepFrenet: DEFAULT_SWEEP_FRENET,
   raised: DEFAULT_EMBOSS_RAISED,
   scalePerAxis: false,
@@ -3124,10 +3098,13 @@ function choicesFor(step: NumericInputStep, options: NumericInputOptions): reado
     case 'ruledTwist':
       return options.ruledHasSphere === true ? [ruledSphereSegmentsChoice()] : [];
     /* ---- P5 タスク49: Should / Could 群(§2.15 の段の表) ---- */
-    case 'extrudeEnd':
-      return [extrudeEndChoice()];
-    case 'extrudeThickness':
-      return [thicknessSideChoice()];
+    /*
+      押し出し(FR-401、FR-415、FR-416)。タスク50 で終わり方と厚みの側をここへ畳んだ。
+      どちらも選択肢なので**段を開いた直後から出る**が、欄は既定(終わり方＝距離、
+      薄板にする＝切)では距離 1 つのままである。
+    */
+    case 'extrudeDistance':
+      return [extrudeEndChoice(), thicknessSideChoice()];
     case 'mirrorPlane':
       return [mirrorPlaneChoice()];
     // 回す軸は回転・円形パターン・ばねと同じ選択肢を使い回す(§0.a-0.16)。既定も同じ Z。
@@ -3135,7 +3112,8 @@ function choicesFor(step: NumericInputStep, options: NumericInputOptions): reado
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
     case 'ribThickness':
       return [ribSideChoice()];
-    case 'holeEntry':
+    // 穴(FR-405、FR-422)。タスク50 で入口の広げ方をここへ畳んだ。
+    case 'holeSize':
       return [holeEntryChoice()];
     // 呼びと系列はねじ穴とまったく同じ表を使う(規格表を 2 か所に持たない、FR-406)。
     case 'threadShaftSize':
@@ -3566,8 +3544,8 @@ const CHOICE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> 
     (3D スケッチか・オフセットの元が開いているか)にも依るためで、`options` を持たない
     ここで組み直すと複写の 3 つ目の欄が消えてしまう。
   */
-  extrudeEnd: true,
-  holeEntry: true,
+  extrudeDistance: true,
+  holeSize: true,
   surfaceShape: true,
   cutPlane: true,
 };
@@ -3579,8 +3557,10 @@ const CHOICE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> 
 const TOGGLE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> = {
   // 「軸ごと」で倍率の欄が 1 つ ↔ 3 つに入れ替わる(§2.15)。
   scaleAmount: true,
-  // 「終わりを別の半径に」で終わりの半径の欄が出る(FR-426)。
-  variableFilletRadius: true,
+  // 「終わりを別の半径に」で終わりの半径の欄が出る(FR-426。タスク50 で R 面取りへ畳んだ)。
+  filletRadius: true,
+  // 「側面を傾ける」で傾きの欄、「薄板にする」で厚みの欄が出る(タスク50)。
+  extrudeDistance: true,
 };
 
 /**
@@ -4201,8 +4181,12 @@ export interface SolidCommitFlags {
   /** 全周へ等間隔で並べるか(円形パターン)。 */
   readonly fullCircle?: boolean;
   /* ---- P5 の Should / Could 群(タスク49、§2.15 の段の表) ---- */
+  /** 押し出しの側面を傾けるか(FR-401)。切なら傾き 0 の押し出し。 */
+  readonly tapered?: boolean;
   /** 押し出しの側面の傾きを外へ広げるか(FR-401)。 */
   readonly taperOutward?: boolean;
+  /** 押し出しを薄板にするか(FR-416)。切なら中身の詰まった押し出し。 */
+  readonly thinWalled?: boolean;
   /** スイープで断面を曲がりに合わせて回すか(FR-409)。 */
   readonly sweepFrenet?: boolean;
   /** エンボスを浮き出すか(FR-421)。切なら彫る。 */
@@ -4503,18 +4487,33 @@ function solidValuesFor(
   const own = fieldValueMap(fields, values);
   const get = (key: string): ExpressionValue | undefined => own.get(key) ?? carried.get(key);
   switch (step) {
+    // 押し出しは終わり方・傾き・薄板をここへ畳んだ(タスク50)。隠れている欄は
+    // 状態の fields に無いので get が undefined を返し、確定側は model の既定を使う。
     case 'extrudeDistance':
-      return { distance: get('distance') };
+      return {
+        distance: get('distance'),
+        taperAngle: get('taperAngle'),
+        thickness: get('thickness'),
+      };
     case 'revolveAngle':
       return { angle: get('angle') };
     case 'sewTolerance':
       return { tolerance: get('tolerance') };
+    // 穴は入口の広げ方をここへ畳んだ(タスク50)。広げないときは 4 欄とも入らない。
     case 'holeSize':
-      return { diameter: get('diameter'), depth: get('depth') };
+      return {
+        diameter: get('diameter'),
+        depth: get('depth'),
+        counterboreDiameter: get('counterboreDiameter'),
+        counterboreDepth: get('counterboreDepth'),
+        countersinkDiameter: get('countersinkDiameter'),
+        countersinkAngle: get('countersinkAngle'),
+      };
     case 'threadSize':
       return { depth: get('depth'), threadLength: get('threadLength') };
+    // R 面取りは可変半径をここへ畳んだ(タスク50)。一定半径なら終わりの半径は入らない。
     case 'filletRadius':
-      return { radius: get('radius') };
+      return { radius: get('radius'), filletRadiusEnd: get('filletRadiusEnd') };
     case 'chamferSize':
       return {
         chamferDistance: get('chamferDistance'),
@@ -4561,10 +4560,6 @@ function solidValuesFor(
       P5 の Should / Could 群(タスク49)。隠れている欄は状態の `fields` に無いので
       `get` が undefined を返し、確定側は model の既定を使う(NFR-UX-4)。
     */
-    case 'extrudeEnd':
-      return { distance: get('distance'), taperAngle: get('taperAngle') };
-    case 'extrudeThickness':
-      return { thickness: get('thickness') };
     case 'draftAngle':
       return { draftAngle: get('draftAngle') };
     case 'transformTranslation':
@@ -4592,13 +4587,6 @@ function solidValuesFor(
       return { ribThickness: get('ribThickness') };
     case 'embossHeight':
       return { embossHeight: get('embossHeight') };
-    case 'holeEntry':
-      return {
-        counterboreDiameter: get('counterboreDiameter'),
-        counterboreDepth: get('counterboreDepth'),
-        countersinkDiameter: get('countersinkDiameter'),
-        countersinkAngle: get('countersinkAngle'),
-      };
     case 'threadShaftSize':
       return {
         threadShaftPitch: get('threadShaftPitch'),
@@ -4612,8 +4600,6 @@ function solidValuesFor(
       };
     case 'shellThickness':
       return { shellThickness: get('shellThickness') };
-    case 'variableFilletRadius':
-      return { radius: get('radius'), filletRadiusEnd: get('filletRadiusEnd') };
     case 'cutPlane':
       return { cutTilt: get('cutTilt') };
     // 欄を 1 つも持たない段(ミラー・スイープ・点集合パターン)。
@@ -4637,7 +4623,9 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
     modeledThread?: boolean;
     patternSymmetric?: boolean;
     fullCircle?: boolean;
+    tapered?: boolean;
     taperOutward?: boolean;
+    thinWalled?: boolean;
     sweepFrenet?: boolean;
     raised?: boolean;
     scalePerAxis?: boolean;
@@ -4667,8 +4655,14 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
         flags.fullCircle = toggle.value;
         break;
       /* ---- P5 の Should / Could 群(タスク49) ---- */
+      case 'tapered':
+        flags.tapered = toggle.value;
+        break;
       case 'taperOutward':
         flags.taperOutward = toggle.value;
+        break;
+      case 'thinWalled':
+        flags.thinWalled = toggle.value;
         break;
       case 'sweepFrenet':
         flags.sweepFrenet = toggle.value;
@@ -5293,8 +5287,6 @@ export function nextNumericInput(
     case 'torusSize':
     case 'ruledTwist':
     case 'loftTwist':
-    case 'extrudeEnd':
-    case 'extrudeThickness':
     case 'draftAngle':
     case 'mirrorPlane':
     case 'transformRotation':
@@ -5302,12 +5294,10 @@ export function nextNumericInput(
     case 'sweepOptions':
     case 'ribThickness':
     case 'embossHeight':
-    case 'holeEntry':
     case 'threadShaftSize':
     case 'pointPattern':
     case 'surfaceShape':
     case 'shellThickness':
-    case 'variableFilletRadius':
     case 'cutPlane':
       /*
         基本形状5種(FR-429、タスク18)も、面をつなぐ・ロフト(FR-430、FR-410、タスク27)も

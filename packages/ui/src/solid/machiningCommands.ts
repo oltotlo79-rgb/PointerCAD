@@ -21,6 +21,11 @@ import {
   DEFAULT_CHAMFER_ANGLE_DEGREES,
   DEFAULT_CHAMFER_DISTANCE_MM,
   DEFAULT_CIRCULAR_PATTERN_COUNT,
+  DEFAULT_COUNTERBORE_DEPTH_MM,
+  DEFAULT_COUNTERBORE_DIAMETER_MM,
+  DEFAULT_COUNTERSINK_ANGLE_DEGREES,
+  DEFAULT_COUNTERSINK_DIAMETER_MM,
+  DEFAULT_FILLET_RADIUS_END_MM,
   DEFAULT_FILLET_RADIUS_MM,
   DEFAULT_HOLE_DEPTH_MM,
   DEFAULT_HOLE_DIAMETER_MM,
@@ -42,6 +47,7 @@ import {
   type ChamferSize,
   type FilletFeature,
   type HoleDepth,
+  type HoleEntry,
   type HoleFeature,
   type PartDocument,
   type PatternDirection,
@@ -151,6 +157,25 @@ export const DEFAULT_CIRCULAR_PATTERN_AXIS: PatternDirection = { kind: 'world', 
  */
 export const DEFAULT_TILT_ANGLE: ExpressionValue = expressionValueFromNumber(0);
 export const DEFAULT_TILT_AZIMUTH: ExpressionValue = expressionValueFromNumber(0);
+/**
+ * 可変半径の R 面取り(FR-426)の終わり側の半径の既定値(P5 タスク50 で R 面取りの段へ畳んだ)。
+ */
+export const DEFAULT_FILLET_RADIUS_END: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_FILLET_RADIUS_END_MM,
+);
+/** ざぐりの径・深さ、皿もみの頭径・開き角の既定値(FR-422。同じくタスク50 で穴の段へ)。 */
+export const DEFAULT_COUNTERBORE_DIAMETER: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_COUNTERBORE_DIAMETER_MM,
+);
+export const DEFAULT_COUNTERBORE_DEPTH: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_COUNTERBORE_DEPTH_MM,
+);
+export const DEFAULT_COUNTERSINK_DIAMETER: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_COUNTERSINK_DIAMETER_MM,
+);
+export const DEFAULT_COUNTERSINK_ANGLE: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_COUNTERSINK_ANGLE_DEGREES,
+);
 
 /**
  * 加工の対象になる立体の id を決める(§0.a-0.6)。
@@ -323,6 +348,11 @@ export function commitHole(
     readonly depth: HoleDepth;
     readonly tiltAngle: ExpressionValue;
     readonly tiltAzimuth: ExpressionValue;
+    /**
+     * 入口の形(ざぐり・皿もみ。FR-422、P5 タスク50 で穴の段へ畳んだ)。
+     * **省略すると欄そのものを作らない**ので、P3 からの穴と 1 ドットも違わない文書になる。
+     */
+    readonly entry?: HoleEntry;
   },
 ): SolidCommandOutcome {
   const face = resolveMachiningFace(context);
@@ -344,10 +374,47 @@ export function commitHole(
     centers,
     diameter: params.diameter,
     depth: params.depth,
+    ...(params.entry === undefined ? {} : { entry: params.entry }),
     tiltAngle: params.tiltAngle,
     tiltAzimuth: params.tiltAzimuth,
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
+}
+
+/**
+ * 穴の入口の広げ方を段の選択肢から組み立てる(FR-422、タスク50)。
+ *
+ * **「広げない」と省略では欄そのものを作らない**(model の `holeEntryOf` が `plain` を
+ * 補うので、同じ形に 2 通りの書き方ができないようにする)。知らない値は断る(NFR-UX-5)。
+ */
+function holeEntryFromCommit(
+  commit: SolidInputCommit,
+): { readonly ok: true; readonly entry?: HoleEntry } | { readonly ok: false; readonly reasonKey: MessageKey } {
+  switch (commit.shapeChoices?.holeEntry) {
+    case undefined:
+    case 'plain':
+      return { ok: true };
+    case 'counterbore':
+      return {
+        ok: true,
+        entry: {
+          kind: 'counterbore',
+          diameter: commit.values.counterboreDiameter ?? DEFAULT_COUNTERBORE_DIAMETER,
+          depth: commit.values.counterboreDepth ?? DEFAULT_COUNTERBORE_DEPTH,
+        },
+      };
+    case 'countersink':
+      return {
+        ok: true,
+        entry: {
+          kind: 'countersink',
+          diameter: commit.values.countersinkDiameter ?? DEFAULT_COUNTERSINK_DIAMETER,
+          angle: commit.values.countersinkAngle ?? DEFAULT_COUNTERSINK_ANGLE,
+        },
+      };
+    default:
+      return { ok: false, reasonKey: 'shapeError.unknownChoice' };
+  }
 }
 
 /**
@@ -414,7 +481,14 @@ export function commitThreadHole(
  */
 export function commitFillet(
   context: MachiningContext,
-  params: { readonly radius: ExpressionValue },
+  params: {
+    readonly radius: ExpressionValue;
+    /**
+     * 可変半径(FR-426、P5 タスク50 で R 面取りの段へ畳んだ)の終わり側の半径。
+     * **省略すると欄そのものを作らない**ので、P3 からの R 面取りと同じ文書になる。
+     */
+    readonly radiusEnd?: ExpressionValue;
+  },
 ): SolidCommandOutcome {
   const targets = gatherFilletTargets(context);
   if (targets.length === 0) {
@@ -433,6 +507,7 @@ export function commitFillet(
     targetFeatureId: target,
     targets,
     radius: params.radius,
+    ...(params.radiusEnd === undefined ? {} : { radiusEnd: params.radiusEnd }),
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -543,9 +618,14 @@ export function commitMachiningInput(
         commit.flags.through === true
           ? { kind: 'through' }
           : { kind: 'blind', depth: commit.values.depth ?? DEFAULT_HOLE_DEPTH };
+      const entry = holeEntryFromCommit(commit);
+      if (!entry.ok) {
+        return { ok: false, reasonKey: entry.reasonKey };
+      }
       return commitHole(context, {
         diameter: commit.values.diameter ?? DEFAULT_HOLE_DIAMETER,
         depth,
+        ...(entry.entry === undefined ? {} : { entry: entry.entry }),
         tiltAngle: DEFAULT_TILT_ANGLE,
         tiltAzimuth: DEFAULT_TILT_AZIMUTH,
       });
@@ -566,7 +646,13 @@ export function commitMachiningInput(
       });
     }
     case 'fillet':
-      return commitFillet(context, { radius: commit.values.radius ?? DEFAULT_FILLET_RADIUS });
+      return commitFillet(context, {
+        radius: commit.values.radius ?? DEFAULT_FILLET_RADIUS,
+        // 「終わりを別の半径に」を入れたときだけ終わりの半径を持たせる(タスク50)。
+        ...(commit.flags.variableRadius === true
+          ? { radiusEnd: commit.values.filletRadiusEnd ?? DEFAULT_FILLET_RADIUS_END }
+          : {}),
+      });
     case 'chamfer': {
       const mode = commit.chamferMode ?? 'equal';
       let size: ChamferSize;
@@ -629,8 +715,6 @@ export function commitMachiningInput(
     case 'torus':
     case 'ruled':
     case 'loft':
-    case 'extrudeEnd':
-    case 'extrudeThin':
     case 'draft':
     case 'mirrorSolid':
     case 'transform':
@@ -638,12 +722,10 @@ export function commitMachiningInput(
     case 'sweep':
     case 'rib':
     case 'emboss':
-    case 'counterbore':
     case 'threadShaft':
     case 'pointPattern':
     case 'surface':
     case 'shell':
-    case 'variableFillet':
     case 'cut':
       /*
         加工でない道具(押し出し・回転・縫合)とばねはここでは作らない

@@ -12,7 +12,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isDrawingTool,
+  isLookTool,
   isSolidTool,
+  picksBodies,
   picksSubShapes,
   skipsSketchElements,
   toSubShapeBodies,
@@ -59,6 +61,40 @@ describe('isDrawingTool', () => {
     expect(isDrawingTool('face')).toBe(false);
     expect(isDrawingTool('extrude')).toBe(false);
     expect(isDrawingTool('hole')).toBe(false);
+  });
+});
+
+describe('isLookTool', () => {
+  it('外観と測るだけを拾う', () => {
+    expect(isLookTool('appearance')).toBe(true);
+    expect(isLookTool('measure')).toBe(true);
+  });
+
+  it('立体の道具・選択・かき込む道具は拾わない', () => {
+    expect(isLookTool('select')).toBe(false);
+    expect(isLookTool('extrude')).toBe(false);
+    expect(isLookTool('point')).toBe(false);
+  });
+});
+
+describe('picksBodies(P5 仕上げ (j): 外観・測るのあいだ立体を押しても選べなかった)', () => {
+  it('選択・立体の道具・断面は今までどおり立体を拾う', () => {
+    expect(picksBodies('select')).toBe(true);
+    expect(picksBodies('extrude')).toBe(true);
+    expect(picksBodies('linearPattern')).toBe(true);
+    expect(picksBodies('planeSection')).toBe(true);
+  });
+
+  it('外観と測るも立体を拾う(外観は `4` キーで立体ごとに色を付ける道、測るは体積・質量特性・立体 2 つの隙間)', () => {
+    expect(picksBodies('appearance')).toBe(true);
+    expect(picksBodies('measure')).toBe(true);
+  });
+
+  it('かき込む道具と面の道具は拾わない(押した場所が座標そのもの / 面の境界の順が壊れる)', () => {
+    expect(picksBodies('point')).toBe(false);
+    expect(picksBodies('line')).toBe(false);
+    expect(picksBodies('rectangle')).toBe(false);
+    expect(picksBodies('face')).toBe(false);
   });
 });
 

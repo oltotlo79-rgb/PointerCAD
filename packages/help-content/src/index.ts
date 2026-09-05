@@ -127,6 +127,16 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/ruled-loft.md',
   },
   {
+    id: 'shape-edit',
+    title: '立体の形を変える・並べる',
+    path: 'docs/ja/shape-edit.md',
+  },
+  {
+    id: 'cut',
+    title: '平面で切る',
+    path: 'docs/ja/cut.md',
+  },
+  {
     id: 'display-settings',
     title: '画面の見た目を変える',
     path: 'docs/ja/display-settings.md',

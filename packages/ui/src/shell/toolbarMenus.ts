@@ -26,7 +26,6 @@ import type {
   ShapeToolId,
   SolidToolId,
 } from '../sketch/numericInput.js';
-import type { MachiningToolId } from '../solid/machiningCommands.js';
 import type { ProjectionMode } from '../store/useAppStore.js';
 
 import {
@@ -41,10 +40,13 @@ import {
   ConcentricConstraintIcon,
   ConeIcon,
   CopyToolIcon,
+  CutIcon,
   CylinderIcon,
   DiameterConstraintIcon,
   DistanceConstraintIcon,
+  DraftIcon,
   EllipseToolIcon,
+  EmbossIcon,
   EqualConstraintIcon,
   ExtendToolIcon,
   ExtrudeIcon,
@@ -57,20 +59,25 @@ import {
   LinearPatternIcon,
   LoftIcon,
   MeasureIcon,
+  MirrorSolidIcon,
   MirrorToolIcon,
   OffsetToolIcon,
   OrthographicIcon,
   ParallelConstraintIcon,
   PerpendicularConstraintIcon,
   PerspectiveIcon,
+  PointPatternIcon,
   PolygonToolIcon,
   ProjectToolIcon,
   RadiusConstraintIcon,
   RectangleToolIcon,
   RevolveIcon,
+  RibIcon,
   RuledIcon,
+  ScaleIcon,
   SectionToolIcon,
   SewIcon,
+  ShellIcon,
   SketchChamferToolIcon,
   SketchFilletToolIcon,
   SlotToolIcon,
@@ -78,11 +85,15 @@ import {
   SplineToolIcon,
   SpringIcon,
   SubtractIcon,
+  SurfaceIcon,
+  SweepIcon,
   SymmetricConstraintIcon,
   TangentConstraintIcon,
   ThreadHoleIcon,
+  ThreadShaftIcon,
   ThreePointArcToolIcon,
   TorusIcon,
+  TransformIcon,
   TrimToolIcon,
   TwoPointArcToolIcon,
   UnionIcon,
@@ -434,6 +445,31 @@ export const CREATE_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
     tooltipKey: 'toolbar.solid.loftTooltip',
     Icon: LoftIcon,
   },
+  /*
+    P5 の Should 群のうち「作る」フィーチャー 3 つ(タスク50、§2.15)。
+    スイープ(FR-409)は対象を取らず、ミラー(FR-419)と曲面(FR-428)は**対象を消費しない**
+    (§0.a-0.36、§0.a-0.45)ので、加工ではなくこの一覧に入る。**この 3 行を足しても
+    ツールバーの幅は 1 画素も増えない**(`segmentedWidthPixels` は溝に並ぶボタンの個数しか
+    見ない。§0.a-0.80)。
+  */
+  {
+    id: 'sweep',
+    labelKey: 'toolbar.solid.sweep',
+    tooltipKey: 'toolbar.solid.sweepTooltip',
+    Icon: SweepIcon,
+  },
+  {
+    id: 'mirrorSolid',
+    labelKey: 'toolbar.solid.mirror',
+    tooltipKey: 'toolbar.solid.mirrorTooltip',
+    Icon: MirrorSolidIcon,
+  },
+  {
+    id: 'surface',
+    labelKey: 'toolbar.solid.surface',
+    tooltipKey: 'toolbar.solid.surfaceTooltip',
+    Icon: SurfaceIcon,
+  },
 ];
 
 /**
@@ -471,7 +507,7 @@ export const COMBINE_MENU_ITEMS: readonly ToolMenuItem<BooleanOperation>[] = [
  * リブ・エンボス・外ねじ・移動/回転・拡大縮小・点パターン)は、この表へ 1 行足すだけ**で
  * 一覧に並び、ツールバーの幅は変わらない。
  */
-export const MACHINING_MENU_ITEMS: readonly ToolMenuItem<MachiningToolId>[] = [
+export const MACHINING_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
   {
     id: 'hole',
     labelKey: 'toolbar.machining.hole',
@@ -507,6 +543,67 @@ export const MACHINING_MENU_ITEMS: readonly ToolMenuItem<MachiningToolId>[] = [
     labelKey: 'toolbar.machining.circularPattern',
     tooltipKey: 'toolbar.machining.circularPatternTooltip',
     Icon: CircularPatternIcon,
+  },
+  /*
+    P5 の Should 群のうち「できあがった立体へ手を入れる」9 つ(タスク50・27e、§2.15)。
+    抜き勾配(FR-417)・くり抜き(FR-418)・リブ(FR-420)・エンボス(FR-421)・
+    外ねじ(FR-423)・移動/回転(FR-424)・拡大縮小(FR-424)・点パターン(FR-425)・
+    切断(FR-432)。**この 9 行を足してもツールバーの幅は 1 画素も増えない**(§0.a-0.64)。
+    並びは「形を変える → 位置と大きさを変える → 並べる → 切る」の順。
+  */
+  {
+    id: 'draft',
+    labelKey: 'toolbar.machining.draft',
+    tooltipKey: 'toolbar.machining.draftTooltip',
+    Icon: DraftIcon,
+  },
+  {
+    id: 'shell',
+    labelKey: 'toolbar.machining.shell',
+    tooltipKey: 'toolbar.machining.shellTooltip',
+    Icon: ShellIcon,
+  },
+  {
+    id: 'rib',
+    labelKey: 'toolbar.machining.rib',
+    tooltipKey: 'toolbar.machining.ribTooltip',
+    Icon: RibIcon,
+  },
+  {
+    id: 'emboss',
+    labelKey: 'toolbar.machining.emboss',
+    tooltipKey: 'toolbar.machining.embossTooltip',
+    Icon: EmbossIcon,
+  },
+  {
+    id: 'threadShaft',
+    labelKey: 'toolbar.machining.threadShaft',
+    tooltipKey: 'toolbar.machining.threadShaftTooltip',
+    Icon: ThreadShaftIcon,
+  },
+  {
+    id: 'transform',
+    labelKey: 'toolbar.machining.transform',
+    tooltipKey: 'toolbar.machining.transformTooltip',
+    Icon: TransformIcon,
+  },
+  {
+    id: 'scale',
+    labelKey: 'toolbar.machining.scale',
+    tooltipKey: 'toolbar.machining.scaleTooltip',
+    Icon: ScaleIcon,
+  },
+  {
+    id: 'pointPattern',
+    labelKey: 'toolbar.machining.pointPattern',
+    tooltipKey: 'toolbar.machining.pointPatternTooltip',
+    Icon: PointPatternIcon,
+  },
+  {
+    id: 'cut',
+    labelKey: 'toolbar.machining.cut',
+    tooltipKey: 'toolbar.machining.cutTooltip',
+    Icon: CutIcon,
   },
 ];
 

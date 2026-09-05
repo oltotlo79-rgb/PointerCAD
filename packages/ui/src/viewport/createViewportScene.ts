@@ -44,7 +44,7 @@ import { createMeasureLayer, type MeasurementState } from './createMeasureLayer.
 import { createReferenceLayer } from './createReferenceLayer.js';
 import { createSketchLayer } from './createSketchLayer.js';
 import { createTrackingLayer } from './createTrackingLayer.js';
-import { createSolidLayer, type ThreadMarkInfo } from './createSolidLayer.js';
+import { createSolidLayer, type CutPreview, type ThreadMarkInfo } from './createSolidLayer.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
@@ -112,6 +112,12 @@ export interface ViewportScene {
    * (スケッチの要素 id・ボディの id が混ざっていても部分形状の id だけを拾う)。
    */
   setSubShapeHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
+  /**
+   * 切断面の予告表示を差し替える(FR-432、P5 タスク27e、§0.a-0.61)。
+   * `null` で消える。**同じ内容(同一参照)を渡し直すと並びを触らない**(NFR-PF-1)ので、
+   * 呼び出し側は予告の値を毎回作り直さず、変わったときだけ新しい値を渡す。
+   */
+  setCutPreview(preview: CutPreview | null): void;
   /**
    * 画面座標(canvas の左上を原点とした画素)にあるボディの featureId。無ければ null
    * (FR-106)。透視投影でも平行投影でも、最後に描いたカメラで判定する。
@@ -526,6 +532,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   /** ねじの簡略表示の印(§0.a-0.15)。ボディの一覧から導くだけで、別の入力は持たない。 */
   let threadMarks: readonly ThreadMarkInfo[] = [];
 
+  /** 切断面の予告(FR-432、タスク27e)。道具を使っている間だけ入り、確定・取消で null に戻る。 */
+  let cutPreview: CutPreview | null = null;
+
   /** 最後に描いたときのカメラ。画面座標との行き来はこれが決まってからでないとできない。 */
   let lastCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
   /** 最後に描いたときの見せ方。サムネイルを撮るときに同じ絵を描き直すのに使う。 */
@@ -551,6 +560,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     solidLayer.update(solidBundle, displayStyle, environments.texture);
     solidLayer.updateSubShapes(subShapeBundle);
     solidLayer.updateThreadMarks(threadMarks);
+    solidLayer.updateCutPreview(cutPreview);
     sketchLayer.update(sketchBundle, displayStyle);
     // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す(P4 仕上げ (f))。
     // ズームでカメラ距離が変わるたびに効くよう、描画のたびに計算し直す。
@@ -655,6 +665,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       subShapeHoveredElementId = hoveredElementId;
       subShapeSelection = selection;
       subShapeBundle = buildSubShapeGeometry(bodies, subShapeHoveredElementId, subShapeSelection);
+    },
+
+    setCutPreview(preview): void {
+      cutPreview = preview;
     },
 
     pickBody(screenX, screenY): string | null {

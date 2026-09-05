@@ -10,6 +10,19 @@ import {
   appendFeature,
   appendSolid,
   createEmptyPartDocument,
+  DEFAULT_COUNTERBORE_DEPTH_MM,
+  DEFAULT_COUNTERBORE_DIAMETER_MM,
+  DEFAULT_COUNTERSINK_ANGLE_DEGREES,
+  DEFAULT_COUNTERSINK_DIAMETER_MM,
+  DEFAULT_EXTRUDE_THICKNESS_MM,
+  DEFAULT_FILLET_RADIUS_END_MM,
+  extrudeShapingOf,
+  filletRadiusOf,
+  holeEntryOf,
+  MAX_DRAFT_ANGLE_DEGREES,
+  MAX_SCALE,
+  MAX_TAPER_ANGLE_DEGREES,
+  MIN_SCALE,
   replaceSketch,
   type BooleanFeature,
   type ChamferFeature,
@@ -57,6 +70,7 @@ import {
   formatVolume,
   missingValueKey,
   partErrorMessage,
+  PLANE_SPEC_LABEL_KEYS,
   renameReference,
   renameSketch,
   renameSolid,
@@ -364,14 +378,22 @@ const SPRING: SpringFeature = {
 };
 
 describe('summarizeSolid(FR-501、FR-502)', () => {
-  it('押し出しは距離 1 欄・つまみ 2 つ・もとの面の名前を返す', () => {
+  it('押し出しは距離・側面の傾きの欄、つまみ 3 つ、終わり方の選択肢、もとの面の名前を返す', () => {
     const summary = summarizeSolid(documentWith(EXTRUDE), EXTRUDE);
     expect(summary.featureId).toBe('extrude-1');
     expect(summary.name).toBe('押し出し1');
     expect(summary.kindLabelKey).toBe('toolbar.solid.extrude');
-    expect(summary.fields.map((field) => field.key)).toEqual(['distance']);
+    // 薄板にしていないので厚みの欄は出ない(効かない欄を出さない。NFR-UX-2)。
+    expect(summary.fields.map((field) => field.key)).toEqual(['distance', 'taperAngle']);
     expect(summary.fields[0].value.display).toBe('10');
-    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['reversed', 'symmetric']);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual([
+      'reversed',
+      'taperOutward',
+      'thinWalled',
+    ]);
+    // 「両側へ」は P2 のつまみではなく終わり方の選択肢で選ぶ(タスク52、NFR-UX-1)。
+    expect(summary.choices.map((choice) => choice.key)).toEqual(['extrudeEnd']);
+    expect(summary.choices[0].value).toBe('distance');
     expect(summary.references).toEqual([
       { labelKey: 'propertyPanel.profile', name: 'スケッチ1 / 面1', elementId: 'face-1' },
     ]);
@@ -477,11 +499,11 @@ describe('書き戻し(FR-311、元のフィーチャーを変えない)', () =>
   });
 
   it('setSolidToggle を 2 回で元へ戻る', () => {
-    const once = setSolidToggle(EXTRUDE, 'symmetric', true);
-    const twice = setSolidToggle(once, 'symmetric', false);
-    expect(once.kind === 'extrude' ? once.symmetric : null).toBe(true);
+    const once = setSolidToggle(EXTRUDE, 'reversed', true);
+    const twice = setSolidToggle(once, 'reversed', false);
+    expect(once.kind === 'extrude' ? once.reversed : null).toBe(true);
     expect(twice).toEqual(EXTRUDE);
-    expect(EXTRUDE.symmetric).toBe(false);
+    expect(EXTRUDE.reversed).toBe(false);
   });
 
   it('setSolidToggle は持たないつまみなら同じものを返す', () => {
@@ -689,6 +711,17 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
           { value: 'blind', labelKey: 'propertyPanel.blind' },
         ],
       },
+      // 入口(ざぐり・皿もみ、FR-422。タスク52)。省略は「広げない」。
+      {
+        key: 'holeEntry',
+        labelKey: 'propertyPanel.holeEntry',
+        value: 'plain',
+        options: [
+          { value: 'plain', labelKey: 'numericInput.holeEntry.plain' },
+          { value: 'counterbore', labelKey: 'numericInput.holeEntry.counterbore' },
+          { value: 'countersink', labelKey: 'numericInput.holeEntry.countersink' },
+        ],
+      },
     ]);
     expect(summary.subShapeCounts).toEqual([
       { labelKey: 'propertyPanel.selectedFaces', count: 1 },
@@ -716,14 +749,16 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
     ]);
     expect(summary.choices.map((choice) => choice.key)).toEqual([
       'depthKind',
+      'holeEntry',
       'threadDesignation',
       'threadSeries',
       'threadRepresentation',
     ]);
     expect(summary.choices[0].value).toBe('through');
-    expect(summary.choices[1].value).toBe('M6');
-    expect(summary.choices[2].value).toBe('coarse');
-    expect(summary.choices[3].value).toBe('simplified');
+    expect(summary.choices[1].value).toBe('plain');
+    expect(summary.choices[2].value).toBe('M6');
+    expect(summary.choices[3].value).toBe('coarse');
+    expect(summary.choices[4].value).toBe('simplified');
     expect(summary.subShapeCounts).toEqual([
       { labelKey: 'propertyPanel.selectedFaces', count: 1 },
       { labelKey: 'propertyPanel.centerPoints', count: 1 },
@@ -749,10 +784,12 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
     expect(summary.choices[0].value).toBe('blind');
   });
 
-  it('R面取りは半径の欄と、選んだ辺の数を返す', () => {
+  it('R面取りは半径の欄と、選んだ辺の数、可変半径のつまみを返す', () => {
     const summary = summarizeSolid(documentWith(EXTRUDE, FILLET), FILLET);
     expect(summary.fields.map((field) => field.key)).toEqual(['radius']);
-    expect(summary.toggles).toEqual([]);
+    // 一定半径なので「終わりを別の半径に」は切(FR-426、タスク55)。
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['variableRadius']);
+    expect(summary.toggles[0].value).toBe(false);
     expect(summary.subShapeCounts).toEqual([{ labelKey: 'propertyPanel.selectedEdges', count: 4 }]);
   });
 
@@ -1765,7 +1802,8 @@ describe('Should 群の要約(P5 §2.11、タスク43)', () => {
       { labelKey: 'propertyPanel.targetBody', name: '押し出し1', elementId: 'extrude-1' },
     ]);
     expect(summary.subShapeCounts).toEqual([
-      { labelKey: 'propertyPanel.selectedFaces', count: 2 },
+      { labelKey: 'propertyPanel.draftNeutralFace', count: 1 },
+      { labelKey: 'propertyPanel.draftFaces', count: 2 },
     ]);
   });
 
@@ -1855,7 +1893,7 @@ describe('くり抜きの要約(FR-418、§2.12、P5 タスク46)', () => {
       { labelKey: 'propertyPanel.targetBody', name: '押し出し1', elementId: 'extrude-1' },
     ]);
     expect(summary.subShapeCounts).toEqual([
-      { labelKey: 'propertyPanel.selectedFaces', count: 1 },
+      { labelKey: 'propertyPanel.shellOpenFaces', count: 1 },
     ]);
   });
 
@@ -1863,7 +1901,7 @@ describe('くり抜きの要約(FR-418、§2.12、P5 タスク46)', () => {
     const closed: ShellFeature = { ...SHELL, openFaces: [] };
     const document = appendSolid(documentWith(EXTRUDE), closed);
     expect(summarizeSolid(document, closed).subShapeCounts).toEqual([
-      { labelKey: 'propertyPanel.selectedFaces', count: 0 },
+      { labelKey: 'propertyPanel.shellOpenFaces', count: 0 },
     ]);
   });
 
@@ -1895,14 +1933,16 @@ describe('切断の要約(FR-432、§2.9b、P5 タスク27c)', () => {
     expect(summary.name).toBe('切断1');
   });
 
-  it('切った相手の立体を出す(平面の欄と残す側のつまみは タスク27f)', () => {
+  it('切った相手の立体と、作図面からずらす距離の欄・残す側のつまみを出す(タスク27f)', () => {
     const document = appendSolid(documentWith(EXTRUDE), CUT);
     const summary = summarizeSolid(document, CUT);
     expect(summary.references).toEqual([
       { labelKey: 'propertyPanel.targetBody', name: '押し出し1', elementId: 'extrude-1' },
     ]);
-    expect(summary.fields).toEqual([]);
-    expect(summary.toggles).toEqual([]);
+    expect(summary.fields.map((field) => field.key)).toEqual(['planeOffset']);
+    expect(summary.fields[0].value.display).toBe('5');
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['cutKeepOpposite']);
+    expect(summary.toggles[0].value).toBe(false);
     expect(summary.subShapeCounts).toEqual([]);
   });
 
@@ -1928,5 +1968,690 @@ describe('切断の要約(FR-432、§2.9b、P5 タスク27c)', () => {
 
   it('欄をまだ持たないので、式の書き戻しは同じものを返す(欄を出すのは タスク27f)', () => {
     expect(setSolidField(CUT, 'distance', expressionValueFromNumber(9))).toBe(CUT);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P5 タスク52・27f・55: Should / Could 群と切断のプロパティ(欄・つまみ・選択肢)。
+//
+// 「木に種類の名前が出る」までだった枝へ、式の欄・つまみ・選択肢と書き戻しを入れた。
+// **効かない欄を出さない**(NFR-UX-2)ことと、**省略できる欄は必ず model の口
+// (`extrudeShapingOf` / `holeEntryOf` / `filletRadiusOf`)を通す**ことをここで固定する。
+// ---------------------------------------------------------------------------
+
+describe('押し出しの終わり方・傾き・薄板(FR-415、FR-401、FR-416。タスク52・55)', () => {
+  it('終わり方を「両側へ」にすると、end と P2 からの symmetric が必ず揃う', () => {
+    const next = setSolidChoice(EXTRUDE, 'extrudeEnd', 'symmetric');
+    expect(next.kind === 'extrude' ? next.end : null).toEqual({ kind: 'symmetric' });
+    expect(next.kind === 'extrude' ? next.symmetric : null).toBe(true);
+    // 省略できる欄の読み口も同じ答えを返す(既定値をどこにも写していない)。
+    expect(next.kind === 'extrude' ? extrudeShapingOf(next).end : null).toEqual({
+      kind: 'symmetric',
+    });
+  });
+
+  it('終わり方を「距離」へ戻すと symmetric も切へ戻る', () => {
+    const both = setSolidChoice(EXTRUDE, 'extrudeEnd', 'symmetric');
+    const back = setSolidChoice(both, 'extrudeEnd', 'distance');
+    expect(back.kind === 'extrude' ? back.symmetric : null).toBe(false);
+    expect(back.kind === 'extrude' ? back.end : null).toEqual({ kind: 'distance' });
+  });
+
+  it('終わり方に「次の面まで」を選べる', () => {
+    const next = setSolidChoice(EXTRUDE, 'extrudeEnd', 'toNext');
+    expect(next.kind === 'extrude' ? next.end : null).toEqual({ kind: 'toNext' });
+  });
+
+  it('「選んだ面まで」はプロパティからは選べない(面を指す操作が要る)', () => {
+    expect(setSolidChoice(EXTRUDE, 'extrudeEnd', 'toFace')).toBe(EXTRUDE);
+  });
+
+  it('いま「選んだ面まで」で作られているときだけ、その選択肢が一覧に出る', () => {
+    const toFace: ExtrudeFeature = { ...EXTRUDE, end: { kind: 'toFace', face: faceRef(0) } };
+    const summary = summarizeSolid(documentWith(toFace), toFace);
+    const choice = summary.choices.find((candidate) => candidate.key === 'extrudeEnd');
+    expect(choice?.options.map((option) => option.value)).toEqual([
+      'distance',
+      'symmetric',
+      'toFace',
+      'toNext',
+    ]);
+    expect(choice?.value).toBe('toFace');
+  });
+
+  it('「薄板にする」を入にすると厚みの欄と厚みの側の選択肢が出る(FR-416)', () => {
+    const thin = setSolidToggle(EXTRUDE, 'thinWalled', true);
+    expect(thin.kind === 'extrude' ? thin.thickness?.value : null).toBe(
+      DEFAULT_EXTRUDE_THICKNESS_MM,
+    );
+    const summary = summarizeSolid(documentWith(thin), thin);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'distance',
+      'taperAngle',
+      'extrudeThickness',
+    ]);
+    expect(summary.choices.map((choice) => choice.key)).toEqual(['extrudeEnd', 'thicknessSide']);
+  });
+
+  it('「薄板にする」を切ると厚みは null(中実)へ戻り、欄も消える', () => {
+    const thin = setSolidToggle(EXTRUDE, 'thinWalled', true);
+    const solid = setSolidToggle(thin, 'thinWalled', false);
+    expect(solid.kind === 'extrude' ? solid.thickness : undefined).toBeNull();
+    expect(summarizeSolid(documentWith(solid), solid).fields.map((field) => field.key)).toEqual([
+      'distance',
+      'taperAngle',
+    ]);
+  });
+
+  it('中実のままでは厚みの欄も厚みの側も書き戻せない(効かない値を保存しない)', () => {
+    expect(setSolidField(EXTRUDE, 'extrudeThickness', expressionValueFromNumber(2))).toBe(EXTRUDE);
+    expect(setSolidChoice(EXTRUDE, 'thicknessSide', 'outer')).toBe(EXTRUDE);
+  });
+
+  it('薄板にしていれば厚みの側を選び直せる', () => {
+    const thin = setSolidToggle(EXTRUDE, 'thinWalled', true);
+    const outer = setSolidChoice(thin, 'thicknessSide', 'outer');
+    expect(outer.kind === 'extrude' ? outer.thicknessSide : null).toBe('outer');
+  });
+
+  it('側面の傾きは式のまま書き戻せ、向きはつまみで決まる(FR-401)', () => {
+    const angled = setSolidField(EXTRUDE, 'taperAngle', {
+      source: '2+3',
+      value: 5,
+      display: '5',
+    });
+    expect(angled.kind === 'extrude' ? angled.taperAngle?.source : null).toBe('2+3');
+    const outward = setSolidToggle(angled, 'taperOutward', true);
+    expect(outward.kind === 'extrude' ? outward.taperOutward : null).toBe(true);
+  });
+
+  it('側面の傾きの欄は model の上限(60 度)を範囲として持つ(NFR-UX-5)', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE), EXTRUDE);
+    const taper = summary.fields.find((field) => field.key === 'taperAngle');
+    expect(taper?.range).toEqual({
+      min: 0,
+      minInclusive: true,
+      max: MAX_TAPER_ANGLE_DEGREES,
+      maxInclusive: true,
+    });
+  });
+});
+
+describe('穴の入口(ざぐり・皿もみ、FR-422。タスク52)', () => {
+  it('ざぐりを選ぶと径と深さの欄が既定で出る(§0.a-0.39)', () => {
+    const bored = setSolidChoice(HOLE_THROUGH, 'holeEntry', 'counterbore');
+    expect(holeEntryOf(bored.kind === 'hole' ? bored : HOLE_THROUGH)).toEqual({
+      kind: 'counterbore',
+      diameter: expressionValueFromNumber(DEFAULT_COUNTERBORE_DIAMETER_MM),
+      depth: expressionValueFromNumber(DEFAULT_COUNTERBORE_DEPTH_MM),
+    });
+    const summary = summarizeSolid(documentWith(EXTRUDE, bored), bored);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'diameter',
+      'tiltAngle',
+      'tiltAzimuth',
+      'counterboreDiameter',
+      'counterboreDepth',
+    ]);
+  });
+
+  it('皿もみを選ぶと頭径と開き角の欄が既定で出る', () => {
+    const sunk = setSolidChoice(HOLE_THROUGH, 'holeEntry', 'countersink');
+    expect(holeEntryOf(sunk.kind === 'hole' ? sunk : HOLE_THROUGH)).toEqual({
+      kind: 'countersink',
+      diameter: expressionValueFromNumber(DEFAULT_COUNTERSINK_DIAMETER_MM),
+      angle: expressionValueFromNumber(DEFAULT_COUNTERSINK_ANGLE_DEGREES),
+    });
+    const summary = summarizeSolid(documentWith(EXTRUDE, sunk), sunk);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'diameter',
+      'tiltAngle',
+      'tiltAzimuth',
+      'countersinkDiameter',
+      'countersinkAngle',
+    ]);
+  });
+
+  it('入口の欄は式のまま書き戻せる(FR-202)', () => {
+    const bored = setSolidChoice(HOLE_THROUGH, 'holeEntry', 'counterbore');
+    const wide = setSolidField(bored, 'counterboreDiameter', {
+      source: '5*2',
+      value: 10,
+      display: '10',
+    });
+    expect(wide.kind === 'hole' ? holeEntryOf(wide) : null).toEqual({
+      kind: 'counterbore',
+      diameter: { source: '5*2', value: 10, display: '10' },
+      depth: expressionValueFromNumber(DEFAULT_COUNTERBORE_DEPTH_MM),
+    });
+  });
+
+  it('いまの入口の形に合わない欄は書き戻さない', () => {
+    const bored = setSolidChoice(HOLE_THROUGH, 'holeEntry', 'counterbore');
+    expect(setSolidField(bored, 'countersinkAngle', expressionValueFromNumber(60))).toBe(bored);
+  });
+
+  it('同じ入口を選び直しても何も変えない(既定へ戻して打った値を消さない)', () => {
+    expect(setSolidChoice(HOLE_THROUGH, 'holeEntry', 'plain')).toBe(HOLE_THROUGH);
+  });
+
+  it('ねじ穴も同じ入口の欄と選択肢を持つ', () => {
+    const bored = setSolidChoice(THREAD_HOLE, 'holeEntry', 'counterbore');
+    const summary = summarizeSolid(documentWith(EXTRUDE, bored), bored);
+    expect(summary.fields.map((field) => field.key)).toContain('counterboreDepth');
+    expect(summary.choices.map((choice) => choice.key)).toContain('holeEntry');
+  });
+});
+
+describe('可変半径フィレット(FR-426。タスク55)', () => {
+  it('「終わりを別の半径に」を入にすると始点・終点の 2 欄になる', () => {
+    const variable = setSolidToggle(FILLET, 'variableRadius', true);
+    expect(variable.kind === 'fillet' ? filletRadiusOf(variable) : null).toEqual({
+      kind: 'variable',
+      start: expressionValueFromNumber(2),
+      end: expressionValueFromNumber(DEFAULT_FILLET_RADIUS_END_MM),
+    });
+    const summary = summarizeSolid(documentWith(EXTRUDE, variable), variable);
+    expect(summary.fields.map((field) => field.key)).toEqual(['radius', 'radiusEnd']);
+  });
+
+  it('切ると一定半径へ戻り、欄も 1 つへ戻る', () => {
+    const variable = setSolidToggle(FILLET, 'variableRadius', true);
+    const constant = setSolidToggle(variable, 'variableRadius', false);
+    expect(constant.kind === 'fillet' ? filletRadiusOf(constant).kind : null).toBe('constant');
+    expect(
+      summarizeSolid(documentWith(EXTRUDE, constant), constant).fields.map((field) => field.key),
+    ).toEqual(['radius']);
+  });
+
+  it('一定半径のままでは終点側の半径を書き戻せない', () => {
+    expect(setSolidField(FILLET, 'radiusEnd', expressionValueFromNumber(5))).toBe(FILLET);
+  });
+
+  it('可変半径にしていれば終点側の半径を式のまま書き戻せる', () => {
+    const variable = setSolidToggle(FILLET, 'variableRadius', true);
+    const next = setSolidField(variable, 'radiusEnd', { source: '2*4', value: 8, display: '8' });
+    expect(next.kind === 'fillet' ? next.radiusEnd?.source : null).toBe('2*4');
+  });
+});
+
+describe('抜き勾配・ミラー・移動/回転・拡大縮小のプロパティ(FR-417、FR-419、FR-424。タスク52)', () => {
+  it('抜き勾配は角度の欄と向きのつまみを持ち、上限は model の 60 度', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), DRAFT), DRAFT);
+    expect(summary.fields.map((field) => field.key)).toEqual(['draftAngle']);
+    expect(summary.fields[0].range).toEqual({
+      min: 0,
+      minInclusive: false,
+      max: MAX_DRAFT_ANGLE_DEGREES,
+      maxInclusive: true,
+    });
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['reversed']);
+  });
+
+  it('抜き勾配の角度と向きを書き戻せる', () => {
+    const angled = setSolidField(DRAFT, 'draftAngle', { source: '1+2', value: 3, display: '3' });
+    expect(angled.kind === 'draft' ? angled.angle.source : null).toBe('1+2');
+    const flipped = setSolidToggle(DRAFT, 'reversed', true);
+    expect(flipped.kind === 'draft' ? flipped.reversed : null).toBe(true);
+  });
+
+  it('ミラーは鏡にする面の 3 択を持ち、選び直せる(FR-419)', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), MIRROR), MIRROR);
+    const choice = summary.choices[0];
+    expect(choice?.key).toBe('mirrorPlane');
+    expect(choice?.value).toBe('xy');
+    expect(choice?.options.map((option) => option.value)).toEqual(['xy', 'xz', 'yz']);
+    const yz = setSolidChoice(MIRROR, 'mirrorPlane', 'yz');
+    expect(yz.kind === 'mirror' ? yz.plane : null).toEqual({ kind: 'workPlane', planeId: 'yz' });
+  });
+
+  it('立体の面を鏡にしているときは、その 1 つだけを出す(画面で選び直すもの)', () => {
+    const onFace: MirrorFeature = { ...MIRROR, plane: { kind: 'face', face: faceRef(0) } };
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), onFace), onFace);
+    expect(summary.choices[0]?.options.map((option) => option.value)).toEqual(['face']);
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.selectedFaces', count: 1 },
+    ]);
+    // 基準の 3 面は一覧に出ないので、プロパティから面の鏡を外すことはできない
+    // (外したいときは道具から作り直す。回転の線分の軸・穴の面と同じ切り分け)。
+    expect(summary.choices[0]?.value).toBe('face');
+  });
+
+  it('移動/回転は X・Y・Z の 3 欄を持ち、回さないときは角度の欄が出ない', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), TRANSFORM), TRANSFORM);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'translationX',
+      'translationY',
+      'translationZ',
+    ]);
+    expect(summary.choices[0]?.key).toBe('transformAxis');
+    expect(summary.choices[0]?.value).toBe('none');
+  });
+
+  it('回す軸を選ぶと角度の欄が出て、書き戻せる', () => {
+    const spun = setSolidChoice(TRANSFORM, 'transformAxis', 'z');
+    expect(spun.kind === 'transform' ? spun.rotationAxis : null).toEqual({
+      kind: 'world',
+      axis: 'z',
+    });
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), spun), spun);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'translationX',
+      'translationY',
+      'translationZ',
+      'rotationAngle',
+    ]);
+    const angled = setSolidField(spun, 'rotationAngle', { source: '45*2', value: 90, display: '90' });
+    expect(angled.kind === 'transform' ? angled.rotationAngle.source : null).toBe('45*2');
+  });
+
+  it('「回さない」へ戻すと軸が null になり、角度の欄も消える', () => {
+    const spun = setSolidChoice(TRANSFORM, 'transformAxis', 'z');
+    const still = setSolidChoice(spun, 'transformAxis', 'none');
+    expect(still.kind === 'transform' ? still.rotationAxis : undefined).toBeNull();
+  });
+
+  it('移動量は 3 欄それぞれを式のまま書き戻せる', () => {
+    const moved = setSolidField(TRANSFORM, 'translationY', {
+      source: '3*3',
+      value: 9,
+      display: '9',
+    });
+    expect(moved.kind === 'transform' ? moved.translation[1].source : null).toBe('3*3');
+    expect(moved.kind === 'transform' ? moved.translation[0].display : null).toBe('10');
+  });
+
+  it('拡大縮小は「軸ごと」で欄が 1 つから 3 つへ増える(FR-424)', () => {
+    const perAxis = setSolidToggle(SCALE, 'scalePerAxis', true);
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), perAxis), perAxis);
+    expect(summary.fields.map((field) => field.key)).toEqual(['scaleX', 'scaleY', 'scaleZ']);
+    // 切り替えたときは、いまの倍率をそのまま 3 つへ引き継ぐ(形が急に変わらない)。
+    expect(summary.fields.every((field) => field.value.display === '2')).toBe(true);
+  });
+
+  it('倍率の欄は model の上下限を範囲として持つ', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), SCALE), SCALE);
+    expect(summary.fields[0].range).toEqual({
+      min: MIN_SCALE,
+      minInclusive: true,
+      max: MAX_SCALE,
+      maxInclusive: true,
+    });
+  });
+
+  it('拡大縮小は「動かさない点」を読める 1 行として出す', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), SCALE), SCALE);
+    expect(summary.references.map((reference) => reference.labelKey)).toEqual([
+      'propertyPanel.targetBody',
+      'propertyPanel.scaleOrigin',
+    ]);
+    expect(summary.references[1].name).toBe('原点');
+  });
+
+  it('軸ごとの倍率をそれぞれ書き戻せる', () => {
+    const perAxis = setSolidToggle(SCALE, 'scalePerAxis', true);
+    const next = setSolidField(perAxis, 'scaleZ', { source: '1/2', value: 0.5, display: '0.5' });
+    expect(next.kind === 'scale' && next.factor.kind === 'perAxis' ? next.factor.z.source : null).toBe(
+      '1/2',
+    );
+    // 全体の倍率の欄は「軸ごと」では受け付けない(効かない欄を保存しない)。
+    expect(setSolidField(perAxis, 'scaleFactor', expressionValueFromNumber(3))).toBe(perAxis);
+  });
+});
+
+describe('スイープ・リブ・エンボス・外ねじのプロパティ(FR-409、FR-420、FR-421、FR-423。タスク52)', () => {
+  it('スイープは経路の線の数と「曲がりに合わせて回す」のつまみを出す', () => {
+    const document = appendSolid(documentWith(), SWEEP);
+    const summary = summarizeSolid(document, SWEEP);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['sweepFrenet']);
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.sweepPath', count: 1 },
+    ]);
+    const frenet = setSolidToggle(SWEEP, 'sweepFrenet', true);
+    expect(frenet.kind === 'sweep' ? frenet.frenet : null).toBe(true);
+  });
+
+  it('リブは厚みの欄・付ける側の 3 択・伸ばすつまみを出す', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), RIB), RIB);
+    expect(summary.fields.map((field) => field.key)).toEqual(['ribThickness']);
+    expect(summary.choices[0]?.key).toBe('ribSide');
+    expect(summary.choices[0]?.options.map((option) => option.value)).toEqual([
+      'both',
+      'positive',
+      'negative',
+    ]);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['ribExtendToBody']);
+  });
+
+  it('リブの厚み・側・伸ばすかを書き戻せる', () => {
+    const thick = setSolidField(RIB, 'ribThickness', { source: '1+1', value: 2, display: '2' });
+    expect(thick.kind === 'rib' ? thick.thickness.source : null).toBe('1+1');
+    expect(setSolidChoice(RIB, 'ribSide', 'positive')).toEqual({ ...RIB, side: 'positive' });
+    expect(setSolidToggle(RIB, 'ribExtendToBody', false)).toEqual({ ...RIB, extendToBody: false });
+  });
+
+  it('エンボスは高さの欄と「浮き出す」のつまみを出す', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), EMBOSS), EMBOSS);
+    expect(summary.fields.map((field) => field.key)).toEqual(['embossHeight']);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['raised']);
+    expect(setSolidToggle(EMBOSS, 'raised', true)).toEqual({ ...EMBOSS, raised: true });
+  });
+
+  it('外ねじはピッチ・長さの欄と、呼び・系列・端の 3 択を出す', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), THREAD_SHAFT), THREAD_SHAFT);
+    expect(summary.fields.map((field) => field.key)).toEqual(['pitch', 'threadLength']);
+    expect(summary.choices.map((choice) => choice.key)).toEqual([
+      'threadShaftNominal',
+      'threadShaftSeries',
+      'threadShaftFromEnd',
+    ]);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['modeledThread']);
+  });
+
+  it('外ねじの呼びを変えるとピッチも規格表から入り直す(FR-406 と同じ表)', () => {
+    const m10 = setSolidChoice(THREAD_SHAFT, 'threadShaftNominal', 'M10');
+    expect(m10.kind === 'threadShaft' ? m10.nominal : null).toBe('M10');
+    expect(m10.kind === 'threadShaft' ? m10.pitch.value : null).toBe(1.5);
+  });
+
+  it('外ねじの系列を細目にするとピッチだけが変わる', () => {
+    const fine = setSolidChoice(THREAD_SHAFT, 'threadShaftSeries', 'fine');
+    expect(fine.kind === 'threadShaft' ? fine.series : null).toBe('fine');
+    expect(fine.kind === 'threadShaft' ? fine.pitch.value : null).toBe(0.75);
+  });
+
+  it('外ねじの切り始める端と実らせんを切り替えられる', () => {
+    expect(setSolidChoice(THREAD_SHAFT, 'threadShaftFromEnd', 'last')).toEqual({
+      ...THREAD_SHAFT,
+      fromEnd: 'last',
+    });
+    expect(setSolidToggle(THREAD_SHAFT, 'modeledThread', true)).toEqual({
+      ...THREAD_SHAFT,
+      modeled: true,
+    });
+  });
+});
+
+describe('曲面のプロパティ(FR-428。タスク52)', () => {
+  it('掛ける曲面は距離の欄・向きのつまみ・作り方の 3 択を出す', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(), SURFACE), SURFACE);
+    expect(summary.fields.map((field) => field.key)).toEqual(['surfaceDistance']);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['reversed']);
+    expect(summary.choices[0]?.options.map((option) => option.value)).toEqual([
+      'extrude',
+      'revolve',
+      'planar',
+    ]);
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.curveCount', count: 1 },
+    ]);
+  });
+
+  it('同じ輪郭のまま「回す」へ作り直せる(角度の欄に入れ替わる)', () => {
+    const revolved = setSolidChoice(SURFACE, 'surfaceOperation', 'revolve');
+    expect(revolved.kind === 'surface' ? revolved.operation.kind : null).toBe('revolve');
+    const summary = summarizeSolid(appendSolid(documentWith(), revolved), revolved);
+    expect(summary.fields.map((field) => field.key)).toEqual(['surfaceAngle']);
+  });
+
+  it('「平らに張る」には式の欄が無い', () => {
+    const planar = setSolidChoice(SURFACE, 'surfaceOperation', 'planar');
+    const summary = summarizeSolid(appendSolid(documentWith(), planar), planar);
+    expect(summary.fields).toEqual([]);
+  });
+
+  it('輪郭から作る曲面を、立体の面から作る曲面へは作り直さない(材料が違う)', () => {
+    expect(setSolidChoice(SURFACE, 'surfaceOperation', 'offset')).toBe(SURFACE);
+  });
+
+  it('立体の面を写した曲面は「離す」へ作り直せ、離す距離の欄が出る', () => {
+    const fromFace: SurfaceFeature = {
+      ...SURFACE,
+      operation: { kind: 'face', targetFeatureId: 'extrude-1', face: faceRef(0) },
+    };
+    const offset = setSolidChoice(fromFace, 'surfaceOperation', 'offset');
+    expect(offset.kind === 'surface' ? offset.operation.kind : null).toBe('offset');
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), offset), offset);
+    expect(summary.fields.map((field) => field.key)).toEqual(['surfaceOffset']);
+    expect(summary.references.map((reference) => reference.labelKey)).toEqual([
+      'propertyPanel.targetBody',
+    ]);
+  });
+
+  it('つないだ曲面は「直線でつなぐ」のつまみを持つ', () => {
+    const loft: SurfaceFeature = {
+      ...SURFACE,
+      operation: {
+        kind: 'loft',
+        sections: [
+          { sketchId: 'sketch-1', curveIds: ['line-1'] },
+          { sketchId: 'sketch-1', curveIds: ['line-2'] },
+        ],
+        ruled: false,
+      },
+    };
+    const summary = summarizeSolid(appendSolid(documentWith(), loft), loft);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['surfaceRuled']);
+    expect(summary.subShapeCounts).toEqual([
+      { labelKey: 'propertyPanel.curveCount', count: 2 },
+    ]);
+    const ruled = setSolidToggle(loft, 'surfaceRuled', true);
+    expect(ruled.kind === 'surface' && ruled.operation.kind === 'loft' ? ruled.operation.ruled : null).toBe(
+      true,
+    );
+  });
+});
+
+describe('くり抜きのプロパティ(FR-418。タスク55)', () => {
+  const SHELL_FEATURE: ShellFeature = {
+    id: 'shell-1',
+    name: 'くり抜き1',
+    suppressed: false,
+    kind: 'shell',
+    targetFeatureId: 'extrude-1',
+    openFaces: [faceRef(1)],
+    thickness: expressionValueFromNumber(2),
+    outward: false,
+  };
+
+  it('壁の厚さの欄と「外向き」のつまみを出す', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), SHELL_FEATURE), SHELL_FEATURE);
+    expect(summary.fields.map((field) => field.key)).toEqual(['shellThickness']);
+    expect(summary.toggles.map((toggle) => toggle.key)).toEqual(['shellOutward']);
+  });
+
+  it('厚さは 0 より大きい数だけを受け付ける範囲を持つ(NFR-UX-5)', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), SHELL_FEATURE), SHELL_FEATURE);
+    expect(summary.fields[0].range).toEqual({
+      min: 0,
+      minInclusive: false,
+      max: null,
+      maxInclusive: false,
+    });
+  });
+
+  it('厚さと向きを書き戻せる', () => {
+    const thick = setSolidField(SHELL_FEATURE, 'shellThickness', {
+      source: '1+2',
+      value: 3,
+      display: '3',
+    });
+    expect(thick.kind === 'shell' ? thick.thickness.source : null).toBe('1+2');
+    expect(setSolidToggle(SHELL_FEATURE, 'shellOutward', true)).toEqual({
+      ...SHELL_FEATURE,
+      outward: true,
+    });
+  });
+});
+
+describe('切断のプロパティ(FR-432。タスク27f)', () => {
+  const CUT_AXIS: CutFeature = {
+    id: 'cut-1',
+    name: '切断1',
+    suppressed: false,
+    kind: 'cut',
+    targetFeatureId: 'extrude-1',
+    plane: {
+      kind: 'pointAndAxis',
+      point: { kind: 'point', pointId: 'point-1' },
+      axis: { kind: 'world', axis: 'z' },
+      tilt: expressionValueFromNumber(0),
+      azimuth: expressionValueFromNumber(0),
+    },
+    keep: 'positive',
+    pairedWith: null,
+  };
+
+  it('点と軸で切るときは傾き角と方位角の欄が出る(§2.9b.1)', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), CUT_AXIS), CUT_AXIS);
+    expect(summary.fields.map((field) => field.key)).toEqual(['tiltAngle', 'tiltAzimuth']);
+  });
+
+  it('傾き角の欄は 0 度以上 180 度未満の範囲を持つ(断りと同じ値)', () => {
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), CUT_AXIS), CUT_AXIS);
+    expect(summary.fields[0].range).toEqual({
+      min: 0,
+      minInclusive: true,
+      max: 180,
+      maxInclusive: false,
+    });
+  });
+
+  it('傾き角を式のまま書き戻すと、切る面の中の式が変わる(FR-502)', () => {
+    const tilted = setSolidField(CUT_AXIS, 'tiltAngle', {
+      source: '15*2',
+      value: 30,
+      display: '30',
+    });
+    expect(tilted.kind === 'cut' && tilted.plane.kind === 'pointAndAxis' ? tilted.plane.tilt : null).toEqual(
+      { source: '15*2', value: 30, display: '30' },
+    );
+    expect(CUT_AXIS.plane.kind === 'pointAndAxis' ? CUT_AXIS.plane.tilt.value : null).toBe(0);
+  });
+
+  it('3 点を通る切り方には式の欄が無い(位置は点が決める)', () => {
+    const threePoints: CutFeature = {
+      ...CUT_AXIS,
+      plane: {
+        kind: 'threePoints',
+        p1: { kind: 'point', pointId: 'point-1' },
+        p2: { kind: 'point', pointId: 'point-2' },
+        p3: { kind: 'point', pointId: 'point-3' },
+      },
+    };
+    const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), threePoints), threePoints);
+    expect(summary.fields).toEqual([]);
+  });
+
+  it('決め方に合わない欄は書き戻さない', () => {
+    expect(setSolidField(CUT_AXIS, 'planeOffset', expressionValueFromNumber(3))).toBe(CUT_AXIS);
+  });
+
+  it('「反対側を残す」で残す側が裏返る(§0.a-0.57)', () => {
+    const flipped = setSolidToggle(CUT_AXIS, 'cutKeepOpposite', true);
+    expect(flipped.kind === 'cut' ? flipped.keep : null).toBe('negative');
+    const back = setSolidToggle(flipped, 'cutKeepOpposite', false);
+    expect(back.kind === 'cut' ? back.keep : null).toBe('positive');
+  });
+
+  it('対で作られた 2 つ目は、相手への案内を参照に出す(§0.a-0.58)', () => {
+    const paired: CutFeature = {
+      ...CUT_AXIS,
+      id: 'cut-2',
+      name: '切断2',
+      keep: 'negative',
+      pairedWith: 'cut-1',
+    };
+    const document = appendSolid(appendSolid(documentWith(EXTRUDE), CUT_AXIS), paired);
+    const summary = summarizeSolid(document, paired);
+    expect(summary.references.map((reference) => reference.labelKey)).toEqual([
+      'propertyPanel.targetBody',
+      'propertyPanel.cutPaired',
+    ]);
+    expect(summary.references[1]).toEqual({
+      labelKey: 'propertyPanel.cutPaired',
+      name: '切断1',
+      elementId: 'cut-1',
+    });
+  });
+});
+
+describe('プロパティの節の鍵(タスク52・27f・55)', () => {
+  /** 検査に出す 15 種を 1 か所に並べる(数え漏れをここで止める)。 */
+  const FEATURES: readonly SolidFeature[] = [
+    EXTRUDE,
+    HOLE_THROUGH,
+    THREAD_HOLE,
+    FILLET,
+    DRAFT,
+    MIRROR,
+    TRANSFORM,
+    SCALE,
+    SWEEP,
+    RIB,
+    EMBOSS,
+    THREAD_SHAFT,
+    SURFACE,
+    POINT_PATTERN,
+  ];
+
+  it('種類ごとに欄の鍵が重ならない(同じ欄を 2 度出さない)', () => {
+    for (const feature of FEATURES) {
+      const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), feature), feature);
+      const keys = summary.fields.map((field) => field.key);
+      expect(new Set(keys).size, feature.kind).toBe(keys.length);
+    }
+  });
+
+  it('種類ごとに選択肢の鍵・つまみの鍵も重ならない', () => {
+    for (const feature of FEATURES) {
+      const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), feature), feature);
+      const choiceKeys = summary.choices.map((choice) => choice.key);
+      const toggleKeys = summary.toggles.map((toggle) => toggle.key);
+      expect(new Set(choiceKeys).size, feature.kind).toBe(choiceKeys.length);
+      expect(new Set(toggleKeys).size, feature.kind).toBe(toggleKeys.length);
+    }
+  });
+
+  it('欄・つまみ・選択肢の見出しはすべて ja.json にある鍵で返す(NFR-MA-5)', () => {
+    for (const feature of FEATURES) {
+      const summary = summarizeSolid(appendSolid(documentWith(EXTRUDE), feature), feature);
+      for (const field of summary.fields) {
+        expect(MESSAGE_KEYS).toContain(field.labelKey);
+        expect(MESSAGE_KEYS).toContain(field.tooltipKey);
+      }
+      for (const toggle of summary.toggles) {
+        expect(MESSAGE_KEYS).toContain(toggle.labelKey);
+      }
+      for (const choice of summary.choices) {
+        expect(MESSAGE_KEYS).toContain(choice.labelKey);
+        for (const option of choice.options) {
+          if (option.labelKey !== undefined) {
+            expect(MESSAGE_KEYS).toContain(option.labelKey);
+          }
+        }
+      }
+      for (const entry of summary.subShapeCounts) {
+        expect(MESSAGE_KEYS).toContain(entry.labelKey);
+      }
+    }
+  });
+
+  it('省略できる欄を持つ文書でも、既定の欄が最初から表示される(読み口を通している)', () => {
+    // `end` / `taperAngle` / `thickness` / `entry` / `radiusEnd` を 1 つも持たない見本。
+    expect(summarizeSolid(documentWith(EXTRUDE), EXTRUDE).choices[0]?.value).toBe('distance');
+    expect(
+      summarizeSolid(documentWith(EXTRUDE, HOLE_THROUGH), HOLE_THROUGH).choices[1]?.value,
+    ).toBe('plain');
+    expect(
+      summarizeSolid(documentWith(EXTRUDE, FILLET), FILLET).toggles[0]?.value,
+    ).toBe(false);
+  });
+
+  it('切る面の決め方の名前の表は PlaneSpec を 1 つ残らず持つ(7 種)', () => {
+    expect(Object.keys(PLANE_SPEC_LABEL_KEYS)).toHaveLength(7);
+    for (const key of Object.values(PLANE_SPEC_LABEL_KEYS)) {
+      expect(MESSAGE_KEYS).toContain(key);
+    }
   });
 });

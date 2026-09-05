@@ -944,11 +944,15 @@ describe('測る道具の案内と断り(FR-1101、FR-1102、P5 タスク32)', (
   });
 });
 
-describe('P5 Should / Could 群 16 種の案内(FR-905、タスク48・49)', () => {
-  /** タスク49 が `SolidToolId` へ足した道具。案内は道具ごとに 1 本ずつある。 */
+describe('P5 Should / Could 群 12 種の案内(FR-905、タスク48・49・50)', () => {
+  /**
+   * タスク49 が `SolidToolId` へ足した道具。案内は道具ごとに 1 本ずつある。
+   *
+   * **タスク50 で 16 → 12 になった。** 押し出しの終わり方・薄板・ざぐり/皿もみ・
+   * 可変半径の R 面取りは独立した道具をやめ、押し出し・穴・R 面取りの段の中の
+   * 選択肢とつまみにした(統括の決定 2026-09-06)。案内もそれぞれの道具のものを使う。
+   */
   const SHAPE_TOOLS = [
-    'extrudeEnd',
-    'extrudeThin',
     'draft',
     'mirrorSolid',
     'transform',
@@ -956,17 +960,15 @@ describe('P5 Should / Could 群 16 種の案内(FR-905、タスク48・49)', () 
     'sweep',
     'rib',
     'emboss',
-    'counterbore',
     'threadShaft',
     'pointPattern',
     'surface',
     'shell',
-    'variableFillet',
     'cut',
   ] as const;
 
-  it('16 種とも自分の案内キーを返す(`Record<NumericInputToolId>` の網羅)', () => {
-    expect(SHAPE_TOOLS).toHaveLength(16);
+  it('12 種とも自分の案内キーを返す(`Record<NumericInputToolId>` の網羅)', () => {
+    expect(SHAPE_TOOLS).toHaveLength(12);
     for (const tool of SHAPE_TOOLS) {
       expect(guideKeyFor(tool, 0), tool).toBe(`statusBar.guide.${tool}`);
     }

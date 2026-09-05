@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   appearanceSectionKey,
+  cutSectionKey,
   massSectionKey,
   measureSectionKey,
   primitiveSectionKey,
@@ -151,5 +152,36 @@ describe('measureSectionKey / massSectionKey', () => {
       measureSectionKey(['extrude-1', 'extrude-2']),
     );
     expect(massSectionKey('box-3')).toBe(massSectionKey('box-3'));
+  });
+});
+
+/**
+ * 切断の「切る面」の節の `key`(P5 タスク27f、rules/06 10.9)。
+ *
+ * この節も `SolidProperties`(`key={solid.id}`)・基本形状の節・つなぎ方の節・外観の節・
+ * 測定と質量特性の節と**同じ親**(`.pcad-panel__body`)に並ぶ。7 つの鍵が絶対に
+ * 重ならないことをここで固定する(重なると React が古い節を消し損ね、選び直すたびに
+ * 節が積み上がる。10.9 の再発防止)。
+ */
+describe('cutSectionKey', () => {
+  it('立体の id と同じ文字列にならない(兄弟の鍵が重ならない)', () => {
+    expect(cutSectionKey('cut-1')).not.toBe('cut-1');
+    expect(cutSectionKey('cut-12')).not.toBe('cut-12');
+  });
+
+  it('他の 5 つの節の鍵とも重ならない', () => {
+    expect(cutSectionKey('cut-1')).not.toBe(appearanceSectionKey(['cut-1']));
+    expect(cutSectionKey('cut-1')).not.toBe(primitiveSectionKey('cut-1'));
+    expect(cutSectionKey('cut-1')).not.toBe(ruledSectionKey('cut-1'));
+    expect(cutSectionKey('cut-1')).not.toBe(measureSectionKey(['cut-1']));
+    expect(cutSectionKey('cut-1')).not.toBe(massSectionKey('cut-1'));
+  });
+
+  it('別の切断なら別の文字列になる(選び直したら作り直す)', () => {
+    expect(cutSectionKey('cut-1')).not.toBe(cutSectionKey('cut-2'));
+  });
+
+  it('同じ切断なら同じ文字列になる(選び直していないのに作り直さない)', () => {
+    expect(cutSectionKey('cut-3')).toBe(cutSectionKey('cut-3'));
   });
 });

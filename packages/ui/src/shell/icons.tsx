@@ -1010,6 +1010,72 @@ export function SpringIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/*
+ * 基本形状5種(FR-429、P5 タスク18)。「作る」の一覧に並ぶ。
+ *
+ * 5 つとも**その形そのもの**を正面から見た輪郭で描く(押し出し・回転のように操作を表す
+ * 図柄ではなく、置かれる形が一目で分かるほうがよいため。NFR-UX-7)。塗りは他の立体の図柄と
+ * 同じ半透明(fillOpacity 0.35)、線は共通の 1.5、枡は 16 × 16。
+ */
+
+/** 球。丸1つと、丸みを示す経線1本。 */
+export function SphereIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <circle cx="8" cy="8" r="5.8" fill="currentColor" fillOpacity={0.35} />
+      <path d="M8 2.2c1.9 1.6 1.9 10 0 11.6" />
+    </SvgIcon>
+  );
+}
+
+/** 箱。立方体を斜めから見た形(製品の印の立方体と同じ描き方で、面を塗る)。 */
+export function BoxIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path
+        d="M8 1.9 13.8 5.2v5.6L8 14.1 2.2 10.8V5.2z"
+        fill="currentColor"
+        fillOpacity={0.35}
+      />
+      <path d="M2.2 5.2 8 8.5l5.8-3.3" />
+      <path d="M8 8.5v5.6" />
+    </SvgIcon>
+  );
+}
+
+/** 円柱。上面の楕円と横の 2 本、底の弧。 */
+export function CylinderIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.4 3.6h9.2v8.8H3.4z" fill="currentColor" fillOpacity={0.35} />
+      <ellipse cx="8" cy="3.6" rx="4.6" ry="1.9" />
+      <path d="M3.4 3.6v8.8M12.6 3.6v8.8" />
+      <path d="M3.4 12.4c0 1.05 2.06 1.9 4.6 1.9s4.6-.85 4.6-1.9" />
+    </SvgIcon>
+  );
+}
+
+/** 円錐。頂点から底の楕円へ下りる 2 本と、底の弧。 */
+export function ConeIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 2 12.6 12.2H3.4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M8 2 3.4 12.2M8 2l4.6 10.2" />
+      <ellipse cx="8" cy="12.2" rx="4.6" ry="1.9" />
+    </SvgIcon>
+  );
+}
+
+/** トーラス。外の輪と、中心の穴。 */
+export function TorusIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <ellipse cx="8" cy="8" rx="6.2" ry="4" fill="currentColor" fillOpacity={0.35} />
+      <ellipse cx="8" cy="8" rx="2.4" ry="1.3" />
+    </SvgIcon>
+  );
+}
+
 /**
  * 設定(FR-908、FR-909)。世の中の道具と同じ歯車で、表示設定の入口を表す。
  * 歯は 8 枚を 45 度ごとに置き、中心に軸の丸を 1 つ。

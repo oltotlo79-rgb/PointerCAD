@@ -106,6 +106,15 @@ const GUIDE_KEYS = {
   // 立体か面を選んでから色・材質を選ぶ道具なので、案内は「何を選ぶか」を伝える文にする。
   // 上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで案内も足す。
   appearance: 'statusBar.guide.appearance',
+  // P5 タスク18 が `SolidToolId` へ足した基本形状5種(FR-429)。何も選ばなくても置ける道具
+  // なので、案内は「何を選ぶと中心になるか」と「そのまま Enter で置ける」ことを伝える
+  // (NFR-UX-4、NFR-UX-7)。上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで
+  // 案内も足す(docs/報告記録.md 2026-09-04 03:20 ③)。
+  sphere: 'statusBar.guide.sphere',
+  box: 'statusBar.guide.box',
+  cylinder: 'statusBar.guide.cylinder',
+  cone: 'statusBar.guide.cone',
+  torus: 'statusBar.guide.torus',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /**

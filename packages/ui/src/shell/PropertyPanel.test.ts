@@ -7,7 +7,11 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { appearanceSectionKey, roundSolvedCoordinateText } from './PropertyPanel.js';
+import {
+  appearanceSectionKey,
+  primitiveSectionKey,
+  roundSolvedCoordinateText,
+} from './PropertyPanel.js';
 
 describe('roundSolvedCoordinateText', () => {
   it('残差でずれた値を有効数字 9 桁へ丸める(末尾の 0 は落ちる)', () => {
@@ -54,5 +58,32 @@ describe('appearanceSectionKey', () => {
     expect(appearanceSectionKey(['extrude-1', 'extrude-2'])).toBe(
       appearanceSectionKey(['extrude-1', 'extrude-2']),
     );
+  });
+});
+
+/**
+ * 基本形状の節の `key`(P5 タスク18、rules/06 10.9)。
+ *
+ * 基本形状の節は `SolidProperties`(`key={solid.id}`)・外観の節
+ * (`appearanceSectionKey(selection)`)と**同じ親**(`.pcad-panel__body`)に並ぶ。
+ * 3 つの鍵が絶対に重ならないことをここで固定する(重なると React が古い節を消し損ね、
+ * 選び直すたびに節が積み上がる。10.9 の再発防止)。
+ */
+describe('primitiveSectionKey', () => {
+  it('立体の id と同じ文字列にならない(兄弟の鍵が重ならない)', () => {
+    expect(primitiveSectionKey('sphere-1')).not.toBe('sphere-1');
+    expect(primitiveSectionKey('box-12')).not.toBe('box-12');
+  });
+
+  it('立体を 1 つだけ選んでいるときの外観の節の鍵とも重ならない', () => {
+    expect(primitiveSectionKey('sphere-1')).not.toBe(appearanceSectionKey(['sphere-1']));
+  });
+
+  it('別の立体なら別の文字列になる(選び直したら打ちかけの下書きを捨てる)', () => {
+    expect(primitiveSectionKey('sphere-1')).not.toBe(primitiveSectionKey('sphere-2'));
+  });
+
+  it('同じ立体なら同じ文字列になる(選び直していないのに作り直さない)', () => {
+    expect(primitiveSectionKey('torus-3')).toBe(primitiveSectionKey('torus-3'));
   });
 });

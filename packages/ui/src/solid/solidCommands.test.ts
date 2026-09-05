@@ -1310,3 +1310,47 @@ describe('スケッチをまたぐ id の取り違え(P4 仕上げ (g))', () => 
     });
   });
 });
+
+describe('基本形状 5 種の振り分け(FR-429、P5 タスク18)', () => {
+  const PRIMITIVE_TOOLS = ['sphere', 'box', 'cylinder', 'cone', 'torus'] as const;
+
+  it('5 種とも常に押せる(何も選ばなくても置ける、NFR-UX-4)', () => {
+    const empty = createEmptyPartDocument();
+    for (const tool of PRIMITIVE_TOOLS) {
+      expect(solidToolReadiness(empty, [], tool), tool).toEqual({ ready: true, reasonKey: null });
+    }
+  });
+
+  it('確定は primitiveCommands へ流れ、履歴が 1 段だけ増える', () => {
+    const document = createEmptyPartDocument();
+    for (const tool of PRIMITIVE_TOOLS) {
+      const commit: SolidInputCommit = {
+        kind: 'solid',
+        tool,
+        step: 'sphereSize',
+        values: {},
+        flags: {},
+      };
+      const outcome = commitSolidInput(document, [], commit);
+      expect(outcome.ok, tool).toBe(true);
+      if (!outcome.ok) {
+        continue;
+      }
+      expect(outcome.document.solids.length, tool).toBe(document.solids.length + 1);
+      const created = outcome.document.solids[outcome.document.solids.length - 1];
+      expect(created.kind, tool).toBe('primitive');
+    }
+  });
+
+  it('範囲の外の寸法は履歴を変えずに断る(NFR-UX-5)', () => {
+    const document = createEmptyPartDocument();
+    const outcome = commitSolidInput(document, [], {
+      kind: 'solid',
+      tool: 'sphere',
+      step: 'sphereSize',
+      values: { sphereRadius: expressionValueFromNumber(0) },
+      flags: {},
+    });
+    expect(outcome).toEqual({ ok: false, reasonKey: 'primitiveError.sphereRadius' });
+  });
+});

@@ -20,6 +20,7 @@ import {
   type AppearancePresetId,
   type AppearanceSpec,
   type ReferenceFeature,
+  type PrimitiveFeature,
   type SketchFeature,
   type SolidFeature,
   type WoodSpecies,
@@ -66,6 +67,15 @@ import {
   type RectangleView,
 } from '../sketch/featureSummary.js';
 import { originChangeFor, originPickFor, type OriginPick } from '../sketch/originCommands.js';
+import {
+  primitiveFieldSummaries,
+  primitiveOriginSummary,
+  setPrimitiveAxis,
+  setPrimitiveField,
+  setPrimitiveOriginCoordinate,
+  type PrimitiveFieldKey,
+  type PrimitiveOriginAxis,
+} from '../solid/primitiveCommands.js';
 import {
   COORDINATE_MODES,
   MODE_LABEL_KEYS,
@@ -980,6 +990,184 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * 基本形状(FR-429、P5 タスク18)
+ * ------------------------------------------------------------------ */
+
+/** 打っている途中の基本形状の欄。寸法の欄と中心の座標の欄で名前空間を分ける。 */
+interface PrimitiveFieldDraft {
+  /** 寸法の欄の名前、または中心の座標の欄(`origin:x` の形)。 */
+  readonly key: string;
+  readonly source: string;
+}
+
+/** 中心の座標の欄の下書きの名前。寸法の欄の名前と混ざらないように接頭辞を付ける。 */
+const PRIMITIVE_ORIGIN_DRAFT_PREFIX = 'origin:';
+
+/**
+ * 選ばれている基本形状 1 つの寸法・中心・向き(FR-429、FR-201、FR-502)。
+ *
+ * `SolidProperties` の「立体」「かたち」「結果」の節の**下に続けて**出す独立した節にしてある。
+ * 寸法の欄を `solidSummary.ts` の `SolidFieldSummary` へ載せる案もあるが、
+ * **`solidSummary.ts` はタスク43 の変更がコミット検査待ち**で触れないため、
+ * 基本形状の欄だけをこの節に閉じた(統括の指示。タスク43 が載ったあと `solidSummary.ts` へ
+ * 寄せ直すかは統括の判断。**そのときも中心の 3 通りと向きはここの作りをそのまま使える**)。
+ *
+ * 打っている途中の値は表示専用の下書きに置き、式として読めたときだけ履歴を差し替える
+ * (`SolidProperties` とまったく同じ作り)。続けざまの書き換えは `coalesceKey` で Undo の
+ * 1 段にまとめる(§0.a-0.13)。
+ */
+function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): React.JSX.Element {
+  const documentVersion = useAppStore((state) => state.documentVersion);
+  const part = useAppStore((state) => state.document);
+  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const [draftState, setDraftState] = useState(() =>
+    initialDraftVersionState<PrimitiveFieldDraft>(documentVersion),
+  );
+  const reconciled = reconcileDraftVersion(draftState, documentVersion);
+  if (reconciled !== draftState) {
+    setDraftState(reconciled);
+  }
+  const draft = reconciled.draft;
+
+  const apply = (next: PrimitiveFeature, coalesceKey: string): void => {
+    if (next === feature) {
+      return;
+    }
+    const store = useAppStore.getState();
+    store.applyDocument(replaceSolid(store.document, feature.id, next), { coalesceKey });
+  };
+
+  /** 式を 1 つ入れる欄。読めたときだけ履歴を差し替える(読めない間は下書きに残す)。 */
+  const renderExpression = (
+    draftKey: string,
+    field: NumericField,
+    onCommit: (value: ExpressionValue) => void,
+  ): React.JSX.Element => {
+    const source = draft !== null && draft.key === draftKey ? draft.source : field.source;
+    const evaluated = evaluateExpression(source, { variables });
+    return (
+      <ExpressionField
+        key={draftKey}
+        field={{ ...field, source }}
+        result={
+          evaluated.ok
+            ? { key: field.key, value: evaluated.value, error: null }
+            : { key: field.key, value: null, error: evaluated.error }
+        }
+        /* 焦点の正本は利用者のクリックとタブ移動。こちらからは動かさない。 */
+        focused={false}
+        onFocus={() => undefined}
+        onChange={(next) => {
+          setDraftState({ draft: { key: draftKey, source: next }, seenVersion: documentVersion });
+          const parsed = evaluateExpression(next, { variables });
+          if (parsed.ok) {
+            onCommit(parsed.value);
+          }
+        }}
+      />
+    );
+  };
+
+  const origin = primitiveOriginSummary(part, feature);
+
+  return (
+    <>
+      <div className="pcad-section">
+        <h3 className="pcad-section__title">{t('propertyPanel.sectionPrimitive')}</h3>
+        <div className="pcad-coordinate__fields">
+          {primitiveFieldSummaries(feature).map((item) =>
+            renderExpression(
+              item.key,
+              {
+                key: item.key,
+                labelKey: item.labelKey,
+                tooltipKey: item.tooltipKey,
+                unit: item.unit,
+                defaultSource: item.value.source,
+                source: item.value.source,
+              },
+              (value: ExpressionValue) => {
+                const key: PrimitiveFieldKey = item.key;
+                apply(setPrimitiveField(feature, key, value), `primitive:${feature.id}:${key}`);
+              },
+            ),
+          )}
+        </div>
+        <div className="pcad-choice">
+          <span className="pcad-choice__label">{t('propertyPanel.primitiveAxis')}</span>
+          <div
+            className="pcad-segmented pcad-choice__options"
+            role="group"
+            aria-label={t('propertyPanel.primitiveAxis')}
+          >
+            {WORLD_AXIS_CHOICES.map((choice) => (
+              <button
+                key={choice.axis}
+                type="button"
+                className="pcad-button"
+                aria-pressed={feature.axis.kind === 'world' && feature.axis.axis === choice.axis}
+                onClick={() => {
+                  apply(setPrimitiveAxis(feature, choice.axis), `primitive:${feature.id}:axis`);
+                }}
+              >
+                {t(choice.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="pcad-section">
+        <h3 className="pcad-section__title">{t('propertyPanel.primitiveCenter')}</h3>
+        {origin.kind === 'coordinate' ? (
+          <div className="pcad-coordinate__fields">
+            {origin.fields.map((item) =>
+              renderExpression(
+                `${PRIMITIVE_ORIGIN_DRAFT_PREFIX}${item.axis}`,
+                {
+                  key: item.axis,
+                  labelKey: item.labelKey,
+                  tooltipKey: item.labelKey,
+                  unit: 'mm',
+                  defaultSource: item.value.source,
+                  source: item.value.source,
+                },
+                (value: ExpressionValue) => {
+                  const axis: PrimitiveOriginAxis = item.axis;
+                  apply(
+                    setPrimitiveOriginCoordinate(feature, axis, value),
+                    `primitive:${feature.id}:origin:${axis}`,
+                  );
+                },
+              ),
+            )}
+          </div>
+        ) : (
+          <dl className="pcad-properties">
+            <dt className="pcad-properties__key">
+              {t(
+                origin.kind === 'sketchPoint'
+                  ? 'propertyPanel.primitiveCenterSketchPoint'
+                  : 'propertyPanel.primitiveCenterVertex',
+              )}
+            </dt>
+            <dd className="pcad-properties__value">
+              {origin.name === null ? (
+                <span className="pcad-properties__missing">
+                  {t('propertyPanel.referenceMissing')}
+                </span>
+              ) : (
+                origin.name
+              )}
+            </dd>
+          </dl>
+        )}
+      </div>
+    </>
+  );
+}
+
 /** 打っている途中の基準ジオメトリの欄。 */
 interface ReferenceFieldDraft {
   readonly key: string;
@@ -1743,6 +1931,26 @@ export function appearanceSectionKey(selection: readonly string[]): string {
   return `${APPEARANCE_KEY_PREFIX}${selection.join('|')}`;
 }
 
+/**
+ * 基本形状の節の `key` に付ける接頭辞(P5 タスク18、rules/06 10.9)。
+ *
+ * 基本形状の節は `SolidProperties`(`key={solid.id}`)と**同じ親**に並ぶので、
+ * 接頭辞を付けずにフィーチャーの id をそのまま `key` にすると兄弟の鍵が必ず重なる
+ * (10.9 で外観の節が起こしたのとまったく同じ事故で、古い節が消えずに積み上がる)。
+ * `feature.id` は model の `nextSolidId` が作る `sphere-1` の形で `primitive:` から
+ * 始まることは無いので、この接頭辞を付ければ兄弟の鍵は必ず食い違う。
+ */
+const PRIMITIVE_KEY_PREFIX = 'primitive:';
+
+/**
+ * 基本形状の節の `key`。**同じ親に並ぶ他の節の `key`(`solid.id` / `feature.id` /
+ * `reference.id` / `appearanceSectionKey(...)`)と絶対に重ならないこと**が満たすべき性質で、
+ * それを `PropertyPanel.test.ts` が固定する。
+ */
+export function primitiveSectionKey(featureId: string): string {
+  return `${PRIMITIVE_KEY_PREFIX}${featureId}`;
+}
+
 /** 右の区画のタブ(§0.a-0.15)。区画は 5 つのままで、この 2 枚だけを切り替える。 */
 type PanelTab = 'properties' | 'parameters';
 
@@ -1849,6 +2057,15 @@ export function PropertyPanel(): React.JSX.Element {
           <div className="pcad-panel__empty">
             <p className="pcad-panel__empty-text">{t('propertyPanel.empty')}</p>
           </div>
+        )}
+        {/*
+          基本形状の寸法・中心・向き(FR-429、FR-502、タスク18)。「立体」の節の下に続けて
+          出す。**`key` には必ず `PRIMITIVE_KEY_PREFIX` を付ける**(すぐ上の
+          `SolidProperties` の `key={solid.id}` と同じ文字列になると兄弟の鍵が重なり、
+          古い節が消えずに残る。rules/06 10.9 の再発を防ぐ)。
+        */}
+        {solid === null || solid.kind !== 'primitive' ? null : (
+          <PrimitiveSection key={primitiveSectionKey(solid.id)} feature={solid} />
         )}
         {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331、タスク35b)。 */}
         {origin === null ? null : <OriginSection origin={origin} />}

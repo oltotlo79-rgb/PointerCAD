@@ -31,13 +31,16 @@ import type { ProjectionMode } from '../store/useAppStore.js';
 import {
   AngleConstraintIcon,
   AppearanceIcon,
+  BoxIcon,
   ChamferIcon,
   CircleToolIcon,
   CircularArrayToolIcon,
   CircularPatternIcon,
   CoincidentConstraintIcon,
   ConcentricConstraintIcon,
+  ConeIcon,
   CopyToolIcon,
+  CylinderIcon,
   DiameterConstraintIcon,
   DistanceConstraintIcon,
   EllipseToolIcon,
@@ -67,6 +70,7 @@ import {
   SketchChamferToolIcon,
   SketchFilletToolIcon,
   SlotToolIcon,
+  SphereIcon,
   SplineToolIcon,
   SpringIcon,
   SubtractIcon,
@@ -74,6 +78,7 @@ import {
   TangentConstraintIcon,
   ThreadHoleIcon,
   ThreePointArcToolIcon,
+  TorusIcon,
   TrimToolIcon,
   TwoPointArcToolIcon,
   UnionIcon,
@@ -369,6 +374,42 @@ export const CREATE_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
     labelKey: 'toolbar.solid.spring',
     tooltipKey: 'toolbar.solid.springTooltip',
     Icon: SpringIcon,
+  },
+  /*
+    基本形状5種(FR-429、タスク18)。対象を消費しない「作る」フィーチャー(§0.a-0.19)なので
+    ばねと同じくこの一覧に入る。**この 5 行を足してもツールバーの幅は 1 画素も増えない**
+    (`segmentedWidthPixels` は溝に並ぶボタンの個数しか見ない。§0.a-0.80)。
+    並びは §2.15 の段の表と同じ「球・箱・円柱・円錐・トーラス」。
+  */
+  {
+    id: 'sphere',
+    labelKey: 'toolbar.solid.sphere',
+    tooltipKey: 'toolbar.solid.sphereTooltip',
+    Icon: SphereIcon,
+  },
+  {
+    id: 'box',
+    labelKey: 'toolbar.solid.box',
+    tooltipKey: 'toolbar.solid.boxTooltip',
+    Icon: BoxIcon,
+  },
+  {
+    id: 'cylinder',
+    labelKey: 'toolbar.solid.cylinder',
+    tooltipKey: 'toolbar.solid.cylinderTooltip',
+    Icon: CylinderIcon,
+  },
+  {
+    id: 'cone',
+    labelKey: 'toolbar.solid.cone',
+    tooltipKey: 'toolbar.solid.coneTooltip',
+    Icon: ConeIcon,
+  },
+  {
+    id: 'torus',
+    labelKey: 'toolbar.solid.torus',
+    tooltipKey: 'toolbar.solid.torusTooltip',
+    Icon: TorusIcon,
   },
 ];
 

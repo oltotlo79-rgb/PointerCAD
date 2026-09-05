@@ -34,19 +34,28 @@ import {
   type ExpressionValue,
 } from '@pointercad/expression';
 import {
+  DEFAULT_BOX_SIZE_MM,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
   DEFAULT_CHAMFER_DISTANCE_MM,
   DEFAULT_CIRCULAR_PATTERN_COUNT,
+  DEFAULT_CONE_BOTTOM_RADIUS_MM,
+  DEFAULT_CONE_HEIGHT_MM,
+  DEFAULT_CONE_TOP_RADIUS_MM,
+  DEFAULT_CYLINDER_HEIGHT_MM,
+  DEFAULT_CYLINDER_RADIUS_MM,
   DEFAULT_FILLET_RADIUS_MM,
   DEFAULT_HOLE_DEPTH_MM,
   DEFAULT_HOLE_DIAMETER_MM,
   DEFAULT_PATTERN_COUNT,
   DEFAULT_PATTERN_SPACING_MM,
+  DEFAULT_SPHERE_RADIUS_MM,
   DEFAULT_SPRING_COIL_DIAMETER_MM,
   DEFAULT_SPRING_PITCH_MM,
   DEFAULT_SPRING_TURNS,
   DEFAULT_SPRING_WIRE_DIAMETER_MM,
   DEFAULT_THREAD_DESIGNATION,
+  DEFAULT_TORUS_MAJOR_RADIUS_MM,
+  DEFAULT_TORUS_MINOR_RADIUS_MM,
   MAX_COPY_COUNT,
   MAX_PATTERN_COUNT,
   MAX_POINT_ARRAY_COUNT,
@@ -86,7 +95,17 @@ export type SolidToolId =
   | 'linearPattern'
   | 'circularPattern'
   /** ばね(FR-414)。2段で聞く(§2.11)。 */
-  | 'spring';
+  | 'spring'
+  /*
+    基本形状5種(FR-429、P5 タスク18、§2.15 の段の表)。押し出し・回転・縫合・ばねと同じ
+    「新しいボディを1つ作る」道具で、対象を消費しない(§0.a-0.19)ので加工には入れない。
+    **何も選ばなくても置ける**(中心の既定は原点、NFR-UX-4)ので押せない条件を持たない。
+  */
+  | 'sphere'
+  | 'box'
+  | 'cylinder'
+  | 'cone'
+  | 'torus';
 
 /**
  * P4 で足す新しい図形の道具(FR-314〜318、FR-326)。
@@ -322,7 +341,18 @@ export type SolidNumericInputStep =
   /** ばねの1段目(形)。確定すると springLength へ進む(§2.11)。 */
   | 'springShape'
   /** ばねの2段目(長さ)。確定でようやく閉じる。 */
-  | 'springLength';
+  | 'springLength'
+  /*
+    基本形状5種の寸法の段(FR-429、§2.15 の段の表)。どれも1段で終わる。
+    **箱(3欄)と円錐(3欄)だけが欄3つ**で、P4 の「1段2欄まで」の目安を広げてある
+    (§2.15「3 つまでは 1 行に収まる」。座標の段が X / Y / Z の3欄で成立しているのと同じ)。
+    4欄が要る道具は従来どおり段を分ける(ばねの前例)。
+  */
+  | 'sphereSize'
+  | 'boxSize'
+  | 'cylinderSize'
+  | 'coneSize'
+  | 'torusSize';
 
 /**
  * 基準ジオメトリで座標を 1 点聞く段(P4 タスク13、FR-328・FR-329)。
@@ -639,6 +669,20 @@ const SHAPE_FIELDS: Readonly<
  */
 const POSITIVE: NumericFieldRange = { min: 0, minInclusive: false, max: null, maxInclusive: false };
 
+/**
+ * 0 以上、上限なし(円錐の上半径だけがこの範囲、§2.7.1 の表)。
+ *
+ * 円錐は上半径 0 で尖った円錐、0 より大きい値で円錐台になる(§0.a-0.16。円錐台を別の種類に
+ * しないで済ませるための決め)。**両方 0** と **上下同径** は欄 1 つでは表せない断りなので、
+ * ここではなく確定のとき(`primitiveCommands.ts` の `primitiveShapeRejection`)に見る。
+ */
+const NON_NEGATIVE: NumericFieldRange = {
+  min: 0,
+  minInclusive: true,
+  max: null,
+  maxInclusive: false,
+};
+
 /** 0 より大きく 360 以下(回転角・円形パターンの角度、§2.1、§0.a-0.21)。 */
 const ANGLE_UP_TO_360: NumericFieldRange = {
   min: 0,
@@ -845,6 +889,52 @@ function springLengthFieldDefinitions(derived: string | undefined): readonly Num
   const excludedKey = derived === 'pitch' ? 'springPitch' : derived === 'turns' ? 'springTurns' : 'springLength';
   return SPRING_LENGTH_FIELD_DEFS.filter((definition) => definition.key !== excludedKey);
 }
+
+/* ---- P5 タスク18: 基本形状5種の欄(FR-429、§2.7.1・§2.15) ---- */
+
+/*
+  既定値はすべて model の定数(`createPartDocument.ts`)から引く。**同じ数を2か所に書かない**
+  ため(段の既定と `defaultPrimitiveShape` がずれると、その場入力で作った形とプロパティの
+  既定が食い違う)。範囲も model の `resolvePrimitiveShape` / kernel の `checkShapeSpec` と
+  同じ向きで見る(欄1つで言える「0 より大きい」だけをここに置き、欄をまたぐ条件は確定側)。
+*/
+
+/** 球の半径(mm)。中心は選んでいるものから決まるので欄に出さない(§0.a-0.18)。 */
+const SPHERE_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'sphereRadius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.sphereRadius', unit: 'mm', defaultSource: String(DEFAULT_SPHERE_RADIUS_MM), range: POSITIVE },
+];
+
+/** 箱の X / Y / Z の長さ(mm)。**欄3つの段**(§2.15)。基準点は中心(§0.a-0.17)。 */
+const BOX_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'boxSizeX', labelKey: 'numericInput.field.boxSizeX', tooltipKey: 'numericInput.tooltip.boxSizeX', unit: 'mm', defaultSource: String(DEFAULT_BOX_SIZE_MM), range: POSITIVE },
+  { key: 'boxSizeY', labelKey: 'numericInput.field.boxSizeY', tooltipKey: 'numericInput.tooltip.boxSizeY', unit: 'mm', defaultSource: String(DEFAULT_BOX_SIZE_MM), range: POSITIVE },
+  { key: 'boxSizeZ', labelKey: 'numericInput.field.boxSizeZ', tooltipKey: 'numericInput.tooltip.boxSizeZ', unit: 'mm', defaultSource: String(DEFAULT_BOX_SIZE_MM), range: POSITIVE },
+];
+
+/** 円柱の半径と高さ(mm)。基準点は**底面の中心**(§0.a-0.17)。 */
+const CYLINDER_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'cylinderRadius', labelKey: 'numericInput.field.radius', tooltipKey: 'numericInput.tooltip.cylinderRadius', unit: 'mm', defaultSource: String(DEFAULT_CYLINDER_RADIUS_MM), range: POSITIVE },
+  { key: 'cylinderHeight', labelKey: 'numericInput.field.height', tooltipKey: 'numericInput.tooltip.cylinderHeight', unit: 'mm', defaultSource: String(DEFAULT_CYLINDER_HEIGHT_MM), range: POSITIVE },
+];
+
+/**
+ * 円錐の下半径・上半径・高さ(mm)。**欄3つの段**(§2.15)。
+ * 上半径だけ 0 を許す(0 なら尖った円錐、0 より大きければ円錐台。§0.a-0.16)。
+ */
+const CONE_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'coneBottomRadius', labelKey: 'numericInput.field.bottomRadius', tooltipKey: 'numericInput.tooltip.coneBottomRadius', unit: 'mm', defaultSource: String(DEFAULT_CONE_BOTTOM_RADIUS_MM), range: NON_NEGATIVE },
+  { key: 'coneTopRadius', labelKey: 'numericInput.field.topRadius', tooltipKey: 'numericInput.tooltip.coneTopRadius', unit: 'mm', defaultSource: String(DEFAULT_CONE_TOP_RADIUS_MM), range: NON_NEGATIVE },
+  { key: 'coneHeight', labelKey: 'numericInput.field.height', tooltipKey: 'numericInput.tooltip.coneHeight', unit: 'mm', defaultSource: String(DEFAULT_CONE_HEIGHT_MM), range: POSITIVE },
+];
+
+/**
+ * トーラスの主半径と管の半径(mm)。「管の半径 < 主半径」は欄をまたぐ条件なので
+ * `NumericFieldRange` では表せない。確定のとき(`primitiveShapeRejection`)に断る。
+ */
+const TORUS_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'torusMajorRadius', labelKey: 'numericInput.field.torusMajorRadius', tooltipKey: 'numericInput.tooltip.torusMajorRadius', unit: 'mm', defaultSource: String(DEFAULT_TORUS_MAJOR_RADIUS_MM), range: POSITIVE },
+  { key: 'torusMinorRadius', labelKey: 'numericInput.field.torusMinorRadius', tooltipKey: 'numericInput.tooltip.torusMinorRadius', unit: 'mm', defaultSource: String(DEFAULT_TORUS_MINOR_RADIUS_MM), range: POSITIVE },
+];
 
 /* ---- P4 タスク11: 新しい図形の欄(FR-314〜318、FR-326、FR-327) ---- */
 
@@ -1214,6 +1304,17 @@ function solidFieldDefinitionsFor(
       return SPRING_SHAPE_FIELDS;
     case 'springLength':
       return springLengthFieldDefinitions(choiceValueFrom(choices, 'springDerived'));
+    // 基本形状5種(FR-429、タスク18)。どれも選択肢(軸)で欄が変わらない静的な並び。
+    case 'sphereSize':
+      return SPHERE_SIZE_FIELDS;
+    case 'boxSize':
+      return BOX_SIZE_FIELDS;
+    case 'cylinderSize':
+      return CYLINDER_SIZE_FIELDS;
+    case 'coneSize':
+      return CONE_SIZE_FIELDS;
+    case 'torusSize':
+      return TORUS_SIZE_FIELDS;
   }
 }
 
@@ -1259,6 +1360,11 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   circularPattern: 'numericInput.title.circularPattern',
   springShape: 'numericInput.title.springShape',
   springLength: 'numericInput.title.springLength',
+  sphereSize: 'numericInput.title.sphere',
+  boxSize: 'numericInput.title.box',
+  cylinderSize: 'numericInput.title.cylinder',
+  coneSize: 'numericInput.title.cone',
+  torusSize: 'numericInput.title.torus',
   referencePlanePoint1: 'numericInput.title.referencePlanePoint1',
   referencePlanePoint2: 'numericInput.title.referencePlanePoint2',
   referencePlanePoint3: 'numericInput.title.referencePlanePoint3',
@@ -1328,6 +1434,11 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'circularPattern',
   'springShape',
   'springLength',
+  'sphereSize',
+  'boxSize',
+  'cylinderSize',
+  'coneSize',
+  'torusSize',
   'referencePlanePoint1',
   'referencePlanePoint2',
   'referencePlanePoint3',
@@ -1365,6 +1476,12 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
   linearPattern: 'linearPattern',
   circularPattern: 'circularPattern',
   spring: 'springShape',
+  // 基本形状5種(FR-429、タスク18)。どれも寸法の1段だけで終わる。
+  sphere: 'sphereSize',
+  box: 'boxSize',
+  cylinder: 'cylinderSize',
+  cone: 'coneSize',
+  torus: 'torusSize',
 };
 
 /**
@@ -1531,6 +1648,11 @@ const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
   circularPattern: 'circularPattern',
   springShape: 'spring',
   springLength: 'spring',
+  sphereSize: 'sphere',
+  boxSize: 'box',
+  cylinderSize: 'cylinder',
+  coneSize: 'cone',
+  torusSize: 'torus',
 };
 
 /** 段階ごとのつまみ。縫合・R面取り・C面取り・ばねは向きも両側も持たない(§2.11 の表)。 */
@@ -1546,6 +1668,12 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   circularPattern: ['fullCircle'],
   springShape: [],
   springLength: [],
+  // 基本形状5種はつまみを持たない(§2.15 の段の表。向きは選択肢の「軸」で決める)。
+  sphereSize: [],
+  boxSize: [],
+  cylinderSize: [],
+  coneSize: [],
+  torusSize: [],
 };
 
 /**
@@ -2088,6 +2216,19 @@ function choicesFor(step: NumericInputStep, options: NumericInputOptions): reado
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS), springHandednessChoice()];
     case 'springLength':
       return [springDerivedChoice()];
+    /*
+      基本形状5種の向き(§2.15 の「つまみ」列)。回転軸(FR-402)と同じ `RevolveAxis` を
+      流用するので選択肢も同じもの(X / Y / Z、線分が選ばれていれば「選んだ線分」)を使う
+      (§0.a-0.16「同じものを2つ作らない」)。既定は Z(model の `DEFAULT_PRIMITIVE_AXIS`)。
+      球とトーラスは向きを変えても見た目が変わらないが、種類ごとに出し分けない
+      (5 種で同じ欄立てにしたほうが操作の勘が働く。model 側の型も5種で共通)。
+    */
+    case 'sphereSize':
+    case 'boxSize':
+    case 'cylinderSize':
+    case 'coneSize':
+    case 'torusSize':
+      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
     default:
       return [];
   }
@@ -2174,7 +2315,13 @@ export function isSolidStep(step: NumericInputStep): step is SolidNumericInputSt
     step === 'linearPattern' ||
     step === 'circularPattern' ||
     step === 'springShape' ||
-    step === 'springLength'
+    step === 'springLength' ||
+    // 基本形状5種(FR-429、タスク18)。
+    step === 'sphereSize' ||
+    step === 'boxSize' ||
+    step === 'cylinderSize' ||
+    step === 'coneSize' ||
+    step === 'torusSize'
   );
 }
 
@@ -2953,6 +3100,27 @@ export interface SolidCommitValues {
   readonly springTurns?: ExpressionValue;
   /** ばねの全長(mm)。求める値が「全長」のときは入らない。 */
   readonly springLength?: ExpressionValue;
+  /*
+    基本形状5種の寸法(FR-429、タスク18)。**欄の名前を形ごとに分けてある**のは、
+    `radius` / `height` を共用すると `solidValuesFor` が「どの形の半径か」を型で示せず、
+    `commitPrimitive` の組み立てで取り違えが起きうるため(C 面取りの距離と同じ考え方)。
+  */
+  /** 球の半径(mm)。 */
+  readonly sphereRadius?: ExpressionValue;
+  /** 箱の X / Y / Z の長さ(mm)。 */
+  readonly boxSizeX?: ExpressionValue;
+  readonly boxSizeY?: ExpressionValue;
+  readonly boxSizeZ?: ExpressionValue;
+  /** 円柱の半径・高さ(mm)。 */
+  readonly cylinderRadius?: ExpressionValue;
+  readonly cylinderHeight?: ExpressionValue;
+  /** 円錐の下半径・上半径・高さ(mm)。上半径は 0 でよい(尖った円錐)。 */
+  readonly coneBottomRadius?: ExpressionValue;
+  readonly coneTopRadius?: ExpressionValue;
+  readonly coneHeight?: ExpressionValue;
+  /** トーラスの主半径・管の半径(mm)。 */
+  readonly torusMajorRadius?: ExpressionValue;
+  readonly torusMinorRadius?: ExpressionValue;
 }
 
 /** ソリッドのつまみ。持たない道具では欄ごと現れない。 */
@@ -3250,6 +3418,24 @@ function solidValuesFor(
         springPitch: get('springPitch'),
         springTurns: get('springTurns'),
         springLength: get('springLength'),
+      };
+    // 基本形状5種(FR-429、タスク18)。欄の名前がそのまま形の欄の名前になる。
+    case 'sphereSize':
+      return { sphereRadius: get('sphereRadius') };
+    case 'boxSize':
+      return { boxSizeX: get('boxSizeX'), boxSizeY: get('boxSizeY'), boxSizeZ: get('boxSizeZ') };
+    case 'cylinderSize':
+      return { cylinderRadius: get('cylinderRadius'), cylinderHeight: get('cylinderHeight') };
+    case 'coneSize':
+      return {
+        coneBottomRadius: get('coneBottomRadius'),
+        coneTopRadius: get('coneTopRadius'),
+        coneHeight: get('coneHeight'),
+      };
+    case 'torusSize':
+      return {
+        torusMajorRadius: get('torusMajorRadius'),
+        torusMinorRadius: get('torusMinorRadius'),
       };
   }
 }
@@ -3840,6 +4026,15 @@ export function nextNumericInput(
     case 'linearPattern':
     case 'circularPattern':
     case 'springLength':
+    case 'sphereSize':
+    case 'boxSize':
+    case 'cylinderSize':
+    case 'coneSize':
+    case 'torusSize':
+      /*
+        基本形状5種(FR-429、タスク18)も1段で終わる。「続けてかく」はスケッチの要素のための
+        入切なので、立体を作る道具には効かせない(押し出し・回転と同じ扱い)。
+      */
       return null;
     /*
       整形系(P4 タスク21・24)。対象を選び直さないと続けられないので、ソリッドの段と

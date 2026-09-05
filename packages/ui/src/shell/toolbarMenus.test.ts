@@ -217,13 +217,19 @@ describe('区画の幅の見積もり(1440 画素の窓で 1 段、§0.a-0.14)',
 });
 
 describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () => {
-  it('「作る」には数値を聞いて立体を作る 4 つが並ぶ', () => {
+  it('「作る」には数値を聞いて立体を作る 9 つが並ぶ', () => {
     expect(CREATE_MENU_ITEMS.map((item) => item.id)).toEqual([
       'extrude',
       'revolve',
       'sew',
       // ばねは対象を消費しない「作る」フィーチャーなので加工ではない(§0.a-0.36)。
       'spring',
+      // 基本形状5種(FR-429、P5 タスク18)。ばねと同じ理由でここへ入る(§0.a-0.19)。
+      'sphere',
+      'box',
+      'cylinder',
+      'cone',
+      'torus',
     ]);
   });
 
@@ -288,13 +294,18 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
    */
   it('「作る」「合わせる」「加工」の 3 つで 103 画素', () => {
     expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(103);
-    // 平置きのまま(図柄 13 個)を 1 つの溝へ入れても 368 画素、区画 2 つに分けると 378 画素。
+    /*
+      平置きにしたときの幅。タスク51 の時点(図柄 13 個)は 368 画素で、タスク18 が
+      基本形状 5 種を足したいまは図柄 18 個・508 画素になる。**畳んだ一覧のほうは
+      103 画素のまま 1 画素も増えていない**(上の行)ことがこの検査の眼目で、
+      平置きの数はその対比として置いてある(§0.a-0.80)。
+    */
     expect(
       segmentedWidthPixels(
         CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length,
         0,
       ),
-    ).toBe(368);
+    ).toBe(508);
   });
 
   it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
@@ -312,5 +323,46 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
     expect(segmentedWidthPixels(0, SINGLE_MENU_COUNT)).toBe(37);
     // 「投影」は図柄 2 個で 60 画素だったので 23 画素減る。
     expect(segmentedWidthPixels(PROJECTION_MENU_ITEMS.length, 0)).toBe(60);
+  });
+});
+
+describe('基本形状 5 種を「作る」の一覧へ足す(FR-429、P5 タスク18、§0.a-0.80)', () => {
+  const PRIMITIVE_IDS = ['sphere', 'box', 'cylinder', 'cone', 'torus'] as const;
+
+  it('5 つとも一覧の末尾に、球・箱・円柱・円錐・トーラスの順で並ぶ(§2.15)', () => {
+    expect(CREATE_MENU_ITEMS.slice(-PRIMITIVE_IDS.length).map((item) => item.id)).toEqual([
+      ...PRIMITIVE_IDS,
+    ]);
+  });
+
+  it('5 つとも図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
+    for (const id of PRIMITIVE_IDS) {
+      const item = CREATE_MENU_ITEMS.find((candidate) => candidate.id === id);
+      expect(item, id).toBeDefined();
+      if (item === undefined) {
+        continue;
+      }
+      expect(typeof item.Icon, id).toBe('function');
+      expect(t(item.labelKey).length, id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).length, id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).startsWith(`${t(item.labelKey)}: `), id).toBe(false);
+    }
+  });
+
+  it('5 つ足してもツールバーの幅は 1 画素も増えない(畳んだ一覧に入れる理由)', () => {
+    /*
+      溝の幅は「溝に並ぶボタンの個数」だけで決まる(`segmentedWidthPixels`)。ソリッドの
+      区画は「作る」「合わせる」「加工」の 3 つの畳んだボタンのままなので、一覧の中身が
+      4 → 9 に増えても 103 画素で変わらない。平置きにしていたら 5 × 28 = 140 画素増える。
+    */
+    expect(segmentedWidthPixels(0, SOLID_MENU_COUNT)).toBe(103);
+    const flatBefore = segmentedWidthPixels(CREATE_MENU_ITEMS.length - PRIMITIVE_IDS.length, 0);
+    const flatAfter = segmentedWidthPixels(CREATE_MENU_ITEMS.length, 0);
+    expect(flatAfter - flatBefore).toBe(140);
+  });
+
+  it('畳んだボタンの図柄は、いま選んでいる基本形状のものになる(triggerItemOf)', () => {
+    const trigger = triggerItemOf(CREATE_MENU_ITEMS, 'torus', null);
+    expect(trigger?.id).toBe('torus');
   });
 });

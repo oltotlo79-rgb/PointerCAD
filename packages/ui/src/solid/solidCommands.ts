@@ -55,6 +55,11 @@ import {
   machiningToolReadiness,
   type MachiningContext,
 } from './machiningCommands.js';
+import {
+  commitPrimitive,
+  primitiveToolReadiness,
+  type PrimitiveContext,
+} from './primitiveCommands.js';
 import { findSketchFeatureAt } from './sketchRefs.js';
 import type { SubShapeBody } from './subShapeSelection.js';
 
@@ -582,6 +587,19 @@ export function solidToolReadiness(
       const origin = selectedSpringOrigin(document, selection);
       return origin.ok ? READY : { ready: false, reasonKey: origin.reasonKey };
     }
+    /*
+      基本形状5種(タスク18、FR-429)。押せる条件は `primitiveToolReadiness` の1か所だけに
+      置く(2026-09-05 16:35 の申し送り)。中心も向きも選ばずに置けるので常に押せる
+      (NFR-UX-4)。
+    */
+    case 'sphere':
+    case 'box':
+    case 'cylinder':
+    case 'cone':
+    case 'torus': {
+      const context: PrimitiveContext = { document, bodies, selection };
+      return primitiveToolReadiness(context, tool);
+    }
   }
 }
 
@@ -675,6 +693,15 @@ export function commitSolidInput(
         wireDiameter: commit.values.wireDiameter ?? DEFAULT_SPRING_WIRE_DIAMETER,
         handedness: commit.springHandedness ?? DEFAULT_SPRING_HANDEDNESS,
       }, variables);
+    }
+    // 基本形状5種(タスク18、FR-429)。対象を消費しない「作る」フィーチャー(§0.a-0.19)。
+    case 'sphere':
+    case 'box':
+    case 'cylinder':
+    case 'cone':
+    case 'torus': {
+      const context: PrimitiveContext = { document, bodies, selection };
+      return commitPrimitive(context, commit);
     }
   }
 }

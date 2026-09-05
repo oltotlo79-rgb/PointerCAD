@@ -622,8 +622,18 @@ export function commitMachiningInput(
     case 'revolve':
     case 'sew':
     case 'spring':
-      // 加工でない道具(押し出し・回転・縫合)とばねはここでは作らない
-      // (それぞれ solidCommands.ts / タスク25b の担当)。switch を網羅するための枝。
+    case 'sphere':
+    case 'box':
+    case 'cylinder':
+    case 'cone':
+    case 'torus':
+      /*
+        加工でない道具(押し出し・回転・縫合)とばねはここでは作らない
+        (それぞれ solidCommands.ts / タスク25b の担当)。**基本形状5種**(FR-429、
+        P5 タスク18)も加工ではない(対象を消費しない「作る」フィーチャー、§0.a-0.19)ので
+        `primitiveCommands.ts` の `commitPrimitive` の担当で、振り分けは
+        `solidCommands.ts` の `commitSolidInput` が行う。ここは switch を網羅するための枝。
+      */
       return { ok: false, reasonKey: 'solidError.notYetAvailable' };
   }
 }

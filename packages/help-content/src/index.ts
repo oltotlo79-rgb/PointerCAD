@@ -117,6 +117,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
   { id: 'pattern', title: '同じ加工を並べる', path: 'docs/ja/pattern.md' },
   { id: 'spring', title: 'ばねを作る', path: 'docs/ja/spring.md' },
   {
+    id: 'primitive',
+    title: '球・箱・円柱・円錐・トーラスを置く',
+    path: 'docs/ja/primitive.md',
+  },
+  {
     id: 'display-settings',
     title: '画面の見た目を変える',
     path: 'docs/ja/display-settings.md',

@@ -841,3 +841,34 @@ describe('外観の案内と警告(FR-1106〜1110、P5 タスク11)', () => {
     expect(describeStatus(quiet()).text).toBe(t('statusBar.ready'));
   });
 });
+
+describe('基本形状 5 種の案内(FR-429、FR-905、P5 タスク18)', () => {
+  const PRIMITIVE_TOOLS = ['sphere', 'box', 'cylinder', 'cone', 'torus'] as const;
+
+  it('5 種とも自分の案内キーを返す(`Record<NumericInputToolId>` の網羅)', () => {
+    for (const tool of PRIMITIVE_TOOLS) {
+      expect(guideKeyFor(tool, 0), tool).toBe(`statusBar.guide.${tool}`);
+    }
+  });
+
+  it('立体を選んでいても、基本形状の道具ならブーリアンの案内に化けない', () => {
+    // ブーリアンの案内は「選択」の道具のときだけ(guideKeyFor の約束)。
+    for (const tool of PRIMITIVE_TOOLS) {
+      expect(guideKeyFor(tool, 2), tool).toBe(`statusBar.guide.${tool}`);
+    }
+  });
+
+  it('帯には案内として出て、赤くならない(断りではない)', () => {
+    for (const tool of PRIMITIVE_TOOLS) {
+      const line = describeStatus({ ...quiet(), activeTool: tool });
+      expect(line.kind, tool).toBe('guide');
+      expect(line.text, tool).toBe(t(`statusBar.guide.${tool}`));
+    }
+  });
+
+  it('加工の段階的な案内は持たない(選択が進んでも基本案内のまま)', () => {
+    for (const tool of PRIMITIVE_TOOLS) {
+      expect(machiningGuideText(tool, 3, 2), tool).toBeNull();
+    }
+  });
+});

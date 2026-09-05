@@ -423,6 +423,12 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
       linearPattern: 'linearPattern',
       circularPattern: 'circularPattern',
       spring: 'springShape',
+      // 基本形状5種(FR-429、P5 タスク18)。どれも寸法の 1 段だけ。
+      sphere: 'sphereSize',
+      box: 'boxSize',
+      cylinder: 'cylinderSize',
+      cone: 'coneSize',
+      torus: 'torusSize',
     });
     for (const step of Object.values(SOLID_TOOL_STEPS)) {
       expect(isSolidStep(step), step).toBe(true);
@@ -2623,6 +2629,180 @@ describe('スケッチの角の丸め・面取りの段(FR-323、計画書 タ�
         for (const option of choice.options) {
           expect(numericChoiceOptionLabel(option).length).toBeGreaterThan(0);
         }
+      }
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 基本形状 5 種の段(FR-429、P5 タスク18、§2.7.1・§2.15)
+ * ------------------------------------------------------------------ */
+
+/** 基本形状の道具と段の対(§2.15 の段の表)。 */
+const PRIMITIVE_STEPS = [
+  { tool: 'sphere', step: 'sphereSize' },
+  { tool: 'box', step: 'boxSize' },
+  { tool: 'cylinder', step: 'cylinderSize' },
+  { tool: 'cone', step: 'coneSize' },
+  { tool: 'torus', step: 'torusSize' },
+] as const;
+
+describe('基本形状 5 種の段(FR-429、§2.15 の段の表)', () => {
+  it('道具から段が引け、5 つともソリッドの段で座標を聞かない', () => {
+    for (const { tool, step } of PRIMITIVE_STEPS) {
+      expect(SOLID_TOOL_STEPS[tool], tool).toBe(step);
+      expect(isSolidStep(step), step).toBe(true);
+      expect(asksCoordinate(step), step).toBe(false);
+      expect(NUMERIC_INPUT_STEPS, step).toContain(step);
+    }
+  });
+
+  it('欄の名前と既定値が §2.7.1 の表のとおり(球 1 欄)', () => {
+    const state = createNumericInput('sphere', 'sphereSize');
+    expect(state.fields.map((field) => field.key)).toEqual(['sphereRadius']);
+    expect(state.fields.map((field) => field.source)).toEqual(['10']);
+  });
+
+  it('箱は X / Y / Z の 3 欄で既定は 20 / 20 / 20(欄 3 つの段、§2.15)', () => {
+    const state = createNumericInput('box', 'boxSize');
+    expect(state.fields.map((field) => field.key)).toEqual(['boxSizeX', 'boxSizeY', 'boxSizeZ']);
+    expect(state.fields.map((field) => field.source)).toEqual(['20', '20', '20']);
+  });
+
+  it('円柱は半径・高さの 2 欄で既定は 10 / 20', () => {
+    const state = createNumericInput('cylinder', 'cylinderSize');
+    expect(state.fields.map((field) => field.key)).toEqual(['cylinderRadius', 'cylinderHeight']);
+    expect(state.fields.map((field) => field.source)).toEqual(['10', '20']);
+  });
+
+  it('円錐は下半径・上半径・高さの 3 欄で既定は 10 / 0 / 20(欄 3 つの段)', () => {
+    const state = createNumericInput('cone', 'coneSize');
+    expect(state.fields.map((field) => field.key)).toEqual([
+      'coneBottomRadius',
+      'coneTopRadius',
+      'coneHeight',
+    ]);
+    expect(state.fields.map((field) => field.source)).toEqual(['10', '0', '20']);
+  });
+
+  it('トーラスは主半径・管の半径の 2 欄で既定は 20 / 5', () => {
+    const state = createNumericInput('torus', 'torusSize');
+    expect(state.fields.map((field) => field.key)).toEqual([
+      'torusMajorRadius',
+      'torusMinorRadius',
+    ]);
+    expect(state.fields.map((field) => field.source)).toEqual(['20', '5']);
+  });
+
+  it('5 種とも「軸」の選択肢を 1 つだけ持ち、既定は Z(§0.a-0.16)。つまみは持たない', () => {
+    for (const { tool, step } of PRIMITIVE_STEPS) {
+      const state = createNumericInput(tool, step);
+      expect(state.choices.map((choice) => choice.key), tool).toEqual(['axis']);
+      expect(state.choices[0].value, tool).toBe('z');
+      expect(state.choices[0].options.map((option) => option.value), tool).toEqual(['x', 'y', 'z']);
+      expect(state.toggles, tool).toEqual([]);
+    }
+  });
+
+  it('欄 3 つの段でも Tab は欄 → 選択肢 の輪を回り、外へ出ない(NFR-UX-2)', () => {
+    const state = createNumericInput('box', 'boxSize');
+    // 欄 3 つ + 選択肢 1 つ = 4 か所。
+    expect(numericFocusTargets(state)).toHaveLength(4);
+    let moved = state;
+    for (let index = 0; index < 4; index += 1) {
+      moved = reduceNumericInput(moved, { type: 'tab', backwards: false });
+    }
+    expect(moved.focusedIndex).toBe(0);
+  });
+
+  it('Enter を打つだけで既定の形が確定し、そこで閉じる(NFR-UX-4)', () => {
+    for (const { tool, step } of PRIMITIVE_STEPS) {
+      const committed = expectSolidCommitted(
+        commitNumericInput(createNumericInput(tool, step)),
+      );
+      expect(committed.commit.tool, tool).toBe(tool);
+      expect(committed.commit.step, tool).toBe(step);
+      expect(committed.commit.axis, tool).toEqual({ kind: 'world', axis: 'z' });
+      // 1 段で終わるので、続けてかくの入切に関わらず次の段は無い。
+      expect(nextNumericInput(committed.state, true), tool).toBeNull();
+      expect(nextNumericInput(committed.state, false), tool).toBeNull();
+    }
+  });
+
+  it('欄 3 つの段(箱)の Enter は 3 つの値をまとめて渡す', () => {
+    const committed = expectSolidCommitted(
+      commitNumericInput(createNumericInput('box', 'boxSize')),
+    );
+    expect(committed.commit.values.boxSizeX?.value).toBe(20);
+    expect(committed.commit.values.boxSizeY?.value).toBe(20);
+    expect(committed.commit.values.boxSizeZ?.value).toBe(20);
+  });
+
+  it('円錐の上半径 0 はそのまま通る(尖った円錐、§0.a-0.16)', () => {
+    const committed = expectSolidCommitted(
+      commitNumericInput(createNumericInput('cone', 'coneSize')),
+    );
+    expect(committed.commit.values.coneTopRadius?.value).toBe(0);
+    expect(committed.commit.values.coneBottomRadius?.value).toBe(10);
+    expect(committed.commit.values.coneHeight?.value).toBe(20);
+  });
+
+  it('半径に式を書くと、式そのものと評価値の両方が渡る(FR-202)', () => {
+    const edited = reduceNumericInput(createNumericInput('sphere', 'sphereSize'), {
+      type: 'edit',
+      index: 0,
+      source: '5*2',
+    });
+    const committed = expectSolidCommitted(commitNumericInput(edited));
+    expect(committed.commit.values.sphereRadius?.source).toBe('5*2');
+    expect(committed.commit.values.sphereRadius?.value).toBe(10);
+  });
+
+  it('半径 -1 は決めさせず、最初の誤りへ焦点を戻す(NFR-UX-5、FR-204)', () => {
+    const edited = reduceNumericInput(createNumericInput('sphere', 'sphereSize'), {
+      type: 'edit',
+      index: 0,
+      source: '-1',
+    });
+    const blocked = expectBlocked(commitNumericInput(edited));
+    expect(blocked.state.focusedIndex).toBe(0);
+    expect(blocked.evaluation.results[0].error).not.toBeNull();
+  });
+
+  it('箱の Y の長さ 0 も決めさせない(欄 3 つの段でも誤りの欄へ戻る)', () => {
+    const edited = reduceNumericInput(createNumericInput('box', 'boxSize'), {
+      type: 'edit',
+      index: 1,
+      source: '0',
+    });
+    const blocked = expectBlocked(commitNumericInput(edited));
+    expect(blocked.state.focusedIndex).toBe(1);
+  });
+
+  it('円錐の上半径だけは 0 を受け付ける(他の欄の範囲は狭めていない)', () => {
+    const state = createNumericInput('cone', 'coneSize');
+    const topRadius = state.fields[1];
+    expect(topRadius.key).toBe('coneTopRadius');
+    expect(topRadius.range).toEqual({
+      min: 0,
+      minInclusive: true,
+      max: null,
+      maxInclusive: false,
+    });
+    expect(rangeErrorFor(topRadius, expressionValueFromNumber(0))).toBeNull();
+    // 高さと球の半径は従来どおり「0 より大きい」のまま(既存の段の不変条件を狭めない)。
+    expect(state.fields[2].range?.minInclusive).toBe(false);
+    expect(createNumericInput('sphere', 'sphereSize').fields[0].range?.minInclusive).toBe(false);
+  });
+
+  it('見出し・欄の名前・説明はすべて ja.json のキーで返す(NFR-MA-5)', () => {
+    for (const { tool, step } of PRIMITIVE_STEPS) {
+      const state = createNumericInput(tool, step);
+      expect(MESSAGE_KEYS, step).toContain(STEP_TITLE_KEYS[step]);
+      for (const field of state.fields) {
+        expect(MESSAGE_KEYS, field.key).toContain(field.labelKey);
+        expect(MESSAGE_KEYS, field.key).toContain(field.tooltipKey);
+        expect(t(field.labelKey).length, field.key).toBeGreaterThan(0);
       }
     }
   });

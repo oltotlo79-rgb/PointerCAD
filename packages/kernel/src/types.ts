@@ -806,3 +806,70 @@ export interface PrimitiveStepSpec {
    */
   readonly targetKey: string | null;
 }
+
+/**
+ * 測る対象 1 つ(FR-1101、FR-1102、P5 §2.10.1、タスク28)。
+ *
+ * 形そのものは Comlink 越しに渡せないので、**段のキャッシュの鍵**(`SolidStepRequest.key`)で
+ * 「覚えてある形」を指す(投影・交差の `SketchProjectionItem.shapeKey` と同じ流儀)。
+ * 面・辺・頂点を測るときは指紋を添える。`null` ならボディ全体を測る。
+ */
+export interface MeasureTargetSpec {
+  /** 測る形を持つ段のキャッシュの鍵。 */
+  readonly bodyKey: string;
+  /** 測る部分形状の指紋。ボディ全体を測るなら `null`。 */
+  readonly subShape: SubShapeQuery | null;
+}
+
+/**
+ * 測定の依頼(FR-1101、FR-1102)。**形は作り直さない読み取りだけ**で、
+ * 履歴の再計算も鍵の作り直しも起こさない(§0.a-0.30)。
+ *
+ * 件数は測るものごとに決まっている。`distance` は 2 つ、`massProperties` は 1 つで、
+ * 合わない件数で頼まれたら理由をつけて断る(投げない。NFR-RE-1)。
+ *
+ * **カーネルへ頼むのはこの 2 つだけ**(§0.a-0.30)。点間の距離・辺の長さ・面の面積・
+ * 面どうしのなす角は、再計算がすでに返している一覧(`SolidVertexInfo.position` /
+ * `SolidEdgeInfo.length` / `SolidFaceInfo.area` / `SolidFaceInfo.axis`)から
+ * model 側が計算するので、Worker を往復しない(NFR-PF-4)。
+ */
+export interface MeasureRequest {
+  readonly targets: readonly MeasureTargetSpec[];
+  readonly kind: 'distance' | 'massProperties';
+}
+
+/**
+ * 測定の結果(FR-1101、FR-1102)。
+ *
+ * 測れなかったときも投げずに `failed` を返す(FR-504、NFR-RE-1)。
+ * 単位は距離・重心が mm、体積が mm³、表面積が mm²、慣性モーメントが mm⁵
+ * (密度を掛けない体積の 2 次モーメント)。**質量(g)と g·mm² の慣性モーメントは、
+ * 密度(g/cm³)を持っている model 側が掛ける**(§0.a-0.32、タスク29)。
+ */
+export type MeasureResult =
+  | {
+      readonly kind: 'distance';
+      /** 最短距離(mm)。交わっているときは 0。 */
+      readonly distance: number;
+      /** 1 つ目の対象の上の最近点(mm)。 */
+      readonly pointA: Vec3Tuple;
+      /** 2 つ目の対象の上の最近点(mm)。 */
+      readonly pointB: Vec3Tuple;
+      /** 一方が他方の内側にある(交わっている)か。 */
+      readonly inner: boolean;
+    }
+  | {
+      readonly kind: 'massProperties';
+      /** 体積(mm³)。 */
+      readonly volume: number;
+      /** 表面積(mm²)。 */
+      readonly area: number;
+      /** 重心(mm)。 */
+      readonly centreOfMass: Vec3Tuple;
+      /** 重心を通る主軸まわりの体積の 2 次モーメント(mm⁵)。並びは主軸と同じ。 */
+      readonly principalMoments: readonly [number, number, number];
+      /** 主軸の向き(長さ 1)。第 1・第 2・第 3 の順。 */
+      readonly principalAxes: readonly [Vec3Tuple, Vec3Tuple, Vec3Tuple];
+    }
+  /** 測れなかった。`message` はそのまま画面に出す日本語(FR-504)。 */
+  | { readonly kind: 'failed'; readonly message: string };

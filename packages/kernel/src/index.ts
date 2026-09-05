@@ -142,6 +142,22 @@ export {
   measureArea,
   measureVolume,
 } from './occt/solidMesh.js';
+// 測定と質量特性(FR-1101、FR-1102、P5 §2.10、タスク28)。Worker 越しの依頼と結果は
+// `measure`(kernelApi)が受け、純関数は model 側の橋(タスク29)からも使える。
+export type { MeasureRequest, MeasureResult, MeasureTargetSpec } from './types.js';
+export {
+  angleBetween,
+  distanceBetween,
+  edgeLength,
+  massProperties,
+  measureMassProperties,
+  DISTANCE_FAILED_MESSAGE,
+  GRAM_PER_CM3_TO_GRAM_PER_MM3,
+  MASS_PROPERTIES_FAILED_MESSAGE,
+  type ShapeDistance,
+  type ShapeMassProperties,
+  type ShapeVolumeProperties,
+} from './occt/measureShape.js';
 export { makeExtrudeSolid, makeRevolveSolid } from './occt/makeSolidSweep.js';
 export { sewSolid } from './occt/sewSolid.js';
 export { booleanOp } from './occt/booleanOp.js';

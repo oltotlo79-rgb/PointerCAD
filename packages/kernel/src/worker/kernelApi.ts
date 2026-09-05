@@ -1,6 +1,7 @@
-import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
+import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import { makeOffsetWire } from '../occt/makeOffsetWire.js';
+import { distanceBetween, measureMassProperties } from '../occt/measureShape.js';
 import { makePlanarFace } from '../occt/makePlanarFace.js';
 import { makeProjection } from '../occt/makeProjection.js';
 import { makeSection } from '../occt/makeSection.js';
@@ -9,6 +10,8 @@ import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from '../occt/pickSubShape.js
 import { tessellate } from '../occt/tessellate.js';
 import type {
   FaceMeshData,
+  MeasureRequest,
+  MeasureResult,
   SketchOffsetFailure,
   SketchOffsetOutcome,
   SketchOffsetRequest,
@@ -44,6 +47,21 @@ import { createShapeCache } from './shapeCache.js';
  */
 const MISSING_BODY_MESSAGE =
   'もとになる立体が見つかりませんでした。もう一度計算し直してください。';
+
+/**
+ * 測る形が形状キャッシュに無いとき(FR-1101、FR-1102、§0.a-0.30)。
+ *
+ * 測定は再計算を起こさない読み取りなので、ここで自分から作り直すことはしない。
+ * 呼び出し側(UI)は、再計算の完了を待って**自動で 1 回だけ測り直し**、
+ * それでも無ければこの文言をそのまま見せる(§0.a-0.30 の条件)。
+ */
+const MEASURE_MISSING_SHAPE_MESSAGE = '測れませんでした。もう一度お試しください。';
+
+/** 距離を測るのに対象が 2 つでないとき。 */
+const MEASURE_NEEDS_TWO_MESSAGE = '距離を測るには 2 つ選んでください。';
+
+/** 質量特性を測るのに対象が 1 つでないとき。 */
+const MEASURE_NEEDS_ONE_MESSAGE = '体積と重心を測るには立体を 1 つ選んでください。';
 
 /** UI 側から Comlink 越しに呼べる幾何カーネルの窓口。 */
 export interface KernelApi {
@@ -86,6 +104,18 @@ export interface KernelApi {
    * 交わらないときは**失敗ではなく空の結果**を返す(`makeSection.ts` の決め)。
    */
   sectionSketchCurves(request: SketchSectionRequest): Promise<SketchProjectionOutcome>;
+  /**
+   * 覚えてある形を測る(FR-1101、FR-1102、P5 タスク28)。
+   *
+   * **測定は再計算を起こさない読み取り**(§0.a-0.30)。対象は投影・交差と同じく
+   * **形状キャッシュの鍵**(段の `key`)で指し、面・辺・頂点は指紋で選び直す。
+   * 選び直しは P3 の部分形状の参照(`occt/pickSubShape.ts` → `matchSubShape.ts`)
+   * そのままで、測定のための別の規約は作らない。
+   *
+   * 鍵が見つからない・指紋に合う面が無い・件数が合わないときは、**投げずに**
+   * `{ kind: 'failed' }` を返す(アプリを落とさない。FR-504、NFR-RE-1)。
+   */
+  measure(request: MeasureRequest): Promise<MeasureResult>;
 }
 
 /**
@@ -242,6 +272,73 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
       }
 
       return { results, failures };
+    },
+
+    async measure(request): Promise<MeasureResult> {
+      const oc = await loadOcct();
+      // 選び直した面・辺・頂点は「新しく作られた形」なので、測り終えたら手放す。
+      // ボディそのもの(subShape が null)はキャッシュの持ち物なので手放さない。
+      const picked: TopoDS_Shape[] = [];
+      const shapes: TopoDS_Shape[] = [];
+
+      try {
+        for (const target of request.targets) {
+          const cached = cache.get(target.bodyKey);
+          if (cached === undefined) {
+            return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
+          }
+          if (target.subShape === null) {
+            shapes.push(cached.shape);
+            continue;
+          }
+          const subShape = pickSubShape(oc, cached.shape, cached.mesh, target.subShape);
+          if (subShape === null) {
+            return { kind: 'failed', message: MISSING_SUB_SHAPE_MESSAGE };
+          }
+          picked.push(subShape);
+          shapes.push(subShape);
+        }
+
+        try {
+          if (request.kind === 'distance') {
+            const [first, second] = shapes;
+            if (shapes.length !== 2 || first === undefined || second === undefined) {
+              return { kind: 'failed', message: MEASURE_NEEDS_TWO_MESSAGE };
+            }
+            const found = distanceBetween(oc, first, second);
+            return {
+              kind: 'distance',
+              distance: found.distance,
+              pointA: found.pointA,
+              pointB: found.pointB,
+              inner: found.inner,
+            };
+          }
+          const [only] = shapes;
+          if (shapes.length !== 1 || only === undefined) {
+            return { kind: 'failed', message: MEASURE_NEEDS_ONE_MESSAGE };
+          }
+          const properties = measureMassProperties(oc, only);
+          return {
+            kind: 'massProperties',
+            volume: properties.volume,
+            area: properties.area,
+            centreOfMass: properties.centreOfMass,
+            principalMoments: properties.principalMoments,
+            principalAxes: properties.principalAxes,
+          };
+        } catch (error) {
+          // OCCT が測れなかった理由はそのまま画面に出せる日本語にしてある(FR-504)。
+          return {
+            kind: 'failed',
+            message: error instanceof Error ? error.message : String(error),
+          };
+        }
+      } finally {
+        for (const shape of picked) {
+          shape.delete();
+        }
+      }
     },
   };
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import type {
   CurveSpec,
+  HoleStepSpec,
   PlaneCurve,
   SketchPlaneFrame,
   SolidBodyMesh,
@@ -428,5 +429,301 @@ describe('KernelApi', () => {
     expect(result.failures.map((failure) => failure.id)).toEqual(['ng']);
     expect(result.results.map((entry) => entry.id)).toEqual(['ok']);
     expect(planeAreaOf(result.results[0].curves)).toBeCloseTo(1200, 6);
+  });
+
+  // ------------------------------------------------------------------
+  // 測定と質量特性(FR-1101、FR-1102、P5 タスク28)。
+  // 投影と同じく形状キャッシュの鍵で覚えてある形を引き、再計算は起こさない。
+  // ------------------------------------------------------------------
+
+  /** 40×30 の長方形を X 方向へ offsetX だけずらした輪郭。 */
+  function rectangleAt(offsetX: number): readonly CurveSpec[] {
+    return [
+      { kind: 'segment', from: [offsetX, 0, 0], to: [offsetX + 40, 0, 0] },
+      { kind: 'segment', from: [offsetX + 40, 0, 0], to: [offsetX + 40, 30, 0] },
+      { kind: 'segment', from: [offsetX + 40, 30, 0], to: [offsetX, 30, 0] },
+      { kind: 'segment', from: [offsetX, 30, 0], to: [offsetX, 0, 0] },
+    ];
+  }
+
+  /** ずらした長方形を Z へ 10 押し出す 1 段。 */
+  function offsetPlateStep(id: string, key: string, offsetX: number): SolidStepRequest {
+    return {
+      key,
+      id,
+      label: id,
+      visible: true,
+      step: { kind: 'extrude', profile: rectangleAt(offsetX), direction: [0, 0, 1], distance: 10 },
+    };
+  }
+
+  /** 頂点の指紋。位置がそのまま照合の材料になる(matchVertex)。 */
+  function vertexQueryAt(body: SolidBodyMesh, position: readonly number[]): SubShapeQuery {
+    const found = body.vertices.find(
+      (vertex) =>
+        Math.abs(vertex.position[0] - position[0]) < 1e-9 &&
+        Math.abs(vertex.position[1] - position[1]) < 1e-9 &&
+        Math.abs(vertex.position[2] - position[2]) < 1e-9,
+    );
+    if (found === undefined) {
+      throw new Error(`頂点 (${position.join(', ')}) が見つかりません`);
+    }
+    return { kind: 'vertex', index: found.index, position: found.position };
+  }
+
+  it('覚えてある立体の体積・表面積・重心・主慣性を測る(FR-1101)', async () => {
+    await makePlate('api-measure-mass');
+    const result = await api.measure({
+      targets: [{ bodyKey: 'api-measure-mass', subShape: null }],
+      kind: 'massProperties',
+    });
+
+    expect(result.kind).toBe('massProperties');
+    if (result.kind !== 'massProperties') {
+      return;
+    }
+    // 40×30×10 の板: 体積 12000 mm³、表面積 2(1200+400+300) = 3800 mm²、重心 (20,15,5)。
+    expect(result.volume).toBeCloseTo(12000, 6);
+    expect(result.area).toBeCloseTo(3800, 6);
+    expect(result.centreOfMass[0]).toBeCloseTo(20, 9);
+    expect(result.centreOfMass[1]).toBeCloseTo(15, 9);
+    expect(result.centreOfMass[2]).toBeCloseTo(5, 9);
+    // V(b²+c²)/12 の 3 通り(手計算)。主軸の並びは形しだいなので順不同で比べる。
+    const sorted = [...result.principalMoments].sort((a, b) => a - b);
+    expect(sorted[0]).toBeCloseTo(1000000, 3);
+    expect(sorted[1]).toBeCloseTo(1700000, 3);
+    expect(sorted[2]).toBeCloseTo(2500000, 3);
+    expect(result.principalAxes).toHaveLength(3);
+  });
+
+  it('5 mm 離れた 2 つの立体の最短距離は 5 mm(FR-1102)', async () => {
+    const result = await api.recomputeSolids({
+      steps: [
+        offsetPlateStep('plate-near', 'api-measure-near', 0),
+        offsetPlateStep('plate-far', 'api-measure-far', 45),
+      ],
+      generation: 1,
+    });
+    expect(result.failures).toEqual([]);
+
+    const measured = await api.measure({
+      targets: [
+        { bodyKey: 'api-measure-near', subShape: null },
+        { bodyKey: 'api-measure-far', subShape: null },
+      ],
+      kind: 'distance',
+    });
+
+    expect(measured.kind).toBe('distance');
+    if (measured.kind !== 'distance') {
+      return;
+    }
+    // 板は x=0〜40 と x=45〜85 なので隙間は 5 mm(手計算)。
+    expect(measured.distance).toBeCloseTo(5, 6);
+    expect(measured.inner).toBe(false);
+    expect(measured.pointA[0]).toBeCloseTo(40, 6);
+    expect(measured.pointB[0]).toBeCloseTo(45, 6);
+  });
+
+  it('指紋で選び直した面どうしの距離を測る(FR-1102)', async () => {
+    const result = await api.recomputeSolids({
+      steps: [
+        offsetPlateStep('plate-near', 'api-measure-face-near', 0),
+        offsetPlateStep('plate-far', 'api-measure-face-far', 45),
+      ],
+      generation: 1,
+    });
+    expect(result.failures).toEqual([]);
+
+    const measured = await api.measure({
+      targets: [
+        { bodyKey: 'api-measure-face-near', subShape: planeFaceQuery(result.bodies[0], 10) },
+        { bodyKey: 'api-measure-face-far', subShape: planeFaceQuery(result.bodies[1], 10) },
+      ],
+      kind: 'distance',
+    });
+
+    expect(measured.kind).toBe('distance');
+    if (measured.kind !== 'distance') {
+      return;
+    }
+    // 同じ高さ(z=10)にある 2 枚の上面は、x の隙間ぶんだけ離れている。
+    expect(measured.distance).toBeCloseTo(5, 6);
+  });
+
+  it('頂点の指紋どうしの距離は対角線の長さになる(FR-1102)', async () => {
+    const body = await makePlate('api-measure-vertex');
+    const measured = await api.measure({
+      targets: [
+        { bodyKey: 'api-measure-vertex', subShape: vertexQueryAt(body, [0, 0, 0]) },
+        { bodyKey: 'api-measure-vertex', subShape: vertexQueryAt(body, [40, 30, 10]) },
+      ],
+      kind: 'distance',
+    });
+
+    expect(measured.kind).toBe('distance');
+    if (measured.kind !== 'distance') {
+      return;
+    }
+    // √(40² + 30² + 10²) = √2600 = 50.99019513592785(手計算)。
+    expect(measured.distance).toBeCloseTo(50.99019513592785, 6);
+  });
+
+  it('鍵が形状キャッシュに無いときは、投げずに「もう一度お試しください。」で断る(NFR-RE-1)', async () => {
+    const measured = await api.measure({
+      targets: [{ bodyKey: 'api-measure-no-such-key', subShape: null }],
+      kind: 'massProperties',
+    });
+
+    expect(measured.kind).toBe('failed');
+    if (measured.kind !== 'failed') {
+      return;
+    }
+    expect(measured.message).toContain('もう一度お試しください。');
+  });
+
+  it('指紋に合う面が無いときも、投げずに理由つきで断る(FR-504)', async () => {
+    await makePlate('api-measure-missing-face');
+    const measured = await api.measure({
+      targets: [
+        {
+          bodyKey: 'api-measure-missing-face',
+          // 球面は板に 1 枚も無いので、種類の一致条件で候補が 0 になる。
+          subShape: {
+            kind: 'face',
+            index: 99,
+            surfaceKind: 'sphere',
+            area: 1,
+            position: [0, 0, 0],
+            axis: null,
+            radius: 1,
+          },
+        },
+      ],
+      kind: 'massProperties',
+    });
+
+    expect(measured.kind).toBe('failed');
+    if (measured.kind !== 'failed') {
+      return;
+    }
+    expect(measured.message).toContain('形が大きく変わったため、選び直してください。');
+  });
+
+  it('対象の件数が合わないときは、測るものごとの断りを返す', async () => {
+    await makePlate('api-measure-count');
+    const one = await api.measure({
+      targets: [{ bodyKey: 'api-measure-count', subShape: null }],
+      kind: 'distance',
+    });
+    expect(one).toEqual({ kind: 'failed', message: '距離を測るには 2 つ選んでください。' });
+
+    const two = await api.measure({
+      targets: [
+        { bodyKey: 'api-measure-count', subShape: null },
+        { bodyKey: 'api-measure-count', subShape: null },
+      ],
+      kind: 'massProperties',
+    });
+    expect(two).toEqual({
+      kind: 'failed',
+      message: '体積と重心を測るには立体を 1 つ選んでください。',
+    });
+  });
+
+  it('測定は再計算を起こさない(次の再計算でも段はすべてキャッシュに当たる)', async () => {
+    const request = {
+      steps: [extrudeStep('plate', 'api-measure-no-recompute', 10)],
+      generation: 1,
+    };
+    const first = await api.recomputeSolids(request);
+    expect(first.failures).toEqual([]);
+
+    const measured = await api.measure({
+      targets: [{ bodyKey: 'api-measure-no-recompute', subShape: null }],
+      kind: 'massProperties',
+    });
+    expect(measured.kind).toBe('massProperties');
+
+    const second = await api.recomputeSolids(request);
+    // 測ったせいで形が捨てられていれば 0 になる。1 なら形はそのまま残っている。
+    expect(second.cacheHits).toBe(1);
+  });
+
+  it('穴 20 個の板の質量特性 1 回の所要を実測して記録する(NFR-PF-4)', async () => {
+    const plate = await api.recomputeSolids({
+      steps: [
+        {
+          key: 'api-measure-holes-plate',
+          id: 'plate',
+          label: 'plate',
+          visible: true,
+          step: {
+            kind: 'extrude',
+            profile: rectangleAt(0),
+            direction: [0, 0, 1],
+            distance: 10,
+          },
+        },
+      ],
+      generation: 1,
+    });
+    expect(plate.failures).toEqual([]);
+
+    // 40×30 の板に φ6 の貫通穴を 20 個(5 列 × 4 行)。
+    const centers: [number, number, number][] = [];
+    for (let column = 0; column < 5; column += 1) {
+      for (let row = 0; row < 4; row += 1) {
+        centers.push([6 + column * 7, 5 + row * 6.5, 10]);
+      }
+    }
+    expect(centers).toHaveLength(20);
+
+    const hole: HoleStepSpec = {
+      kind: 'hole',
+      targetKey: 'api-measure-holes-plate',
+      face: planeFaceQuery(plate.bodies[0], 10),
+      centers,
+      diameter: 3,
+      depth: null,
+      tiltAngle: 0,
+      tiltAzimuth: 0,
+      transforms: [],
+    };
+    const drilled = await api.recomputeSolids({
+      steps: [
+        {
+          key: 'api-measure-holes-plate',
+          id: 'plate',
+          label: 'plate',
+          visible: false,
+          step: {
+            kind: 'extrude',
+            profile: rectangleAt(0),
+            direction: [0, 0, 1],
+            distance: 10,
+          },
+        },
+        { key: 'api-measure-holes', id: 'holes', label: 'holes', visible: true, step: hole },
+      ],
+      generation: 2,
+    });
+    expect(drilled.failures).toEqual([]);
+
+    const startedAt = performance.now();
+    const measured = await api.measure({
+      targets: [{ bodyKey: 'api-measure-holes', subShape: null }],
+      kind: 'massProperties',
+    });
+    const elapsedMs = performance.now() - startedAt;
+    console.log(`穴 20 個の板(40×30×10・φ3)の質量特性 1 回: ${elapsedMs.toFixed(1)} ms`);
+
+    expect(measured.kind).toBe('massProperties');
+    if (measured.kind !== 'massProperties') {
+      return;
+    }
+    // 12000 − 20 × π × 1.5² × 10 = 12000 − 1413.7166941154069(手計算)。
+    expect(measured.volume).toBeCloseTo(10586.283305884594, 4);
+    expect(elapsedMs).toBeGreaterThan(0);
   });
 });

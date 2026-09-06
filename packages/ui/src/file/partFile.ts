@@ -24,7 +24,7 @@ import {
 import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
-import { useAppStore } from '../store/useAppStore.js';
+import { currentPcadAttachments, useAppStore } from '../store/useAppStore.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 
@@ -108,6 +108,17 @@ const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
   missingField: 'file.error.corrupted',
   invalidField: 'file.error.corrupted',
 };
+
+/**
+ * 読めなかった理由を利用者へ見せる文言のキーへ直す(P6 タスク33)。
+ *
+ * ひな形(`.pcadt`)も同じ封筒を読む(`file/templateFile.ts`)ので、上の表を**写さずに**
+ * 使えるようにここへ 1 つだけ口を開けてある。表そのものは外へ出さない(理由と文言の
+ * 対応を書き換える場所を 1 か所に閉じるため)。
+ */
+export function openErrorMessageKey(code: ReadPcadFileErrorCode): MessageKey {
+  return OPEN_ERROR_KEYS[code];
+}
 
 // ---------------------------------------------------------------------------
 // .pcad のバイト列から部品を起こす
@@ -244,11 +255,25 @@ function captureThumbnailFromViewport(): Uint8Array | null {
   }
 }
 
+/**
+ * 開いたファイルの添付をストアへ入れ直す(P6 タスク32・39)。
+ *
+ * **3 つまとめて差し替える。** 開くのは文書ごとの操作なので、前の文書の読み込んだ形も
+ * 下絵も残さない(残すと、新しい文書が指していない添付を書き戻し続けることになる)。
+ */
+function storeAttachments(attachments: PcadAttachments): void {
+  const store = useAppStore.getState();
+  store.setImportedAttachments(attachments.shapes, attachments.meshes);
+  store.setCanvasImages(attachments.canvases);
+}
+
 /** 画面から呼ぶときの既定の口。 */
 export function createDefaultPartFileDeps(): PartFileDeps {
   return {
     captureThumbnail: captureThumbnailFromViewport,
     confirmDiscard: confirmWithBrowser,
+    attachmentsOf: currentPcadAttachments,
+    onAttachmentsLoaded: storeAttachments,
   };
 }
 

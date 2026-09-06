@@ -34,6 +34,7 @@ import {
   normalizeVec3,
   scaleVec3,
   type AppearanceSpec,
+  type PrintabilityReport,
   type ResolvedPlane,
   type Vec3,
 } from '@pointercad/model';
@@ -44,6 +45,11 @@ import {
   createAppearanceMaterialStore,
   type PatternTextureSource,
 } from '../appearance/createAppearanceMaterial.js';
+import {
+  buildPrintabilityGroups,
+  buildPrintabilityOpenEdgePositions,
+  printabilityAppearances,
+} from '../solid/printabilityColors.js';
 import type { DisplayStyle } from '../store/useAppStore.js';
 import type {
   SolidDrawEntry,
@@ -52,7 +58,7 @@ import type {
 } from './buildSolidGeometry.js';
 import { buildCutPreviewPositions } from './buildCutPreview.js';
 import type { SubShapeEmphasis, SubShapeHighlight, SubShapeHighlightBundle } from './buildSubShapeGeometry.js';
-import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
+import { cssColor, DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
 /*
  * 立体の艶(艶を抑えた樹脂のように見せて、面の向きの差を読み取りやすくする)は、P5 から
@@ -321,6 +327,38 @@ export interface SectionHandle {
   readonly keep: 'positive' | 'negative';
 }
 
+/**
+ * 3D プリントの点検の色表示(FR-815、P6 §0.53、タスク46)。
+ *
+ * **外観を上書きせず、割り当てを一時的に差し替えるだけ**にする。`null` を渡せば
+ * 元の外観に戻る(材質そのものは `materialStore` が鍵で持っているので、作り直しも起きない)。
+ */
+export interface PrintabilityHighlight {
+  /** 点検の結果(三角形ごとの真偽と要約)。 */
+  readonly report: PrintabilityReport;
+  /**
+   * 立体ごとの「結果の中での先頭の三角形の番号」(`solid/printabilityColors.ts` の
+   * `printabilityTriangleOffsets` が作る)。**この表に無い立体には色を塗らない**
+   * ——点検を頼まなかった立体は、点検の間も元の外観のままにする。
+   */
+  readonly triangleOffsets: ReadonlyMap<string, number>;
+}
+
+/**
+ * 開いた辺の線の色の濃さ。**面より手前に出す**(`depthTest: false`)ので、そのままだと
+ * 形の中の辺まで全部見えて絵が潰れる。薄くして「向こう側にもある」と読めるようにする。
+ */
+const PRINT_OPEN_EDGE_OPACITY = 0.85;
+
+/** 点検の色を出しているあいだの、立体 1 つぶんのまとまりと材質(§0.53)。 */
+interface PrintabilityPlan {
+  /** 作ったときの三角形の枚数。形が作り直されたら組み直す目印。 */
+  readonly triangleCount: number;
+  readonly groups: readonly FaceGroup[];
+  /** 既定 + 赤 + 橙 の 3 つ。ボディをまたいで同じ配列を使い回す(参照で比べられる)。 */
+  readonly appearances: readonly AppearanceSpec[];
+}
+
 /** ボディ 1 つぶんの部品。並びは前回と同じかどうかを参照で見分けられるよう控えておく。 */
 interface BodyDraw {
   featureId: string;
@@ -391,6 +429,14 @@ export interface SolidLayer {
    * 新しい材質は外観を反映するとき(`update`)にしか作られないので、そこでも配り直す。
    */
   setSectionPlanes(planes: readonly THREE.Plane[]): void;
+  /**
+   * 3D プリントの点検の色を出す / 消す(FR-815、§0.53)。
+   *
+   * 出しているあいだ、点検を頼んだ立体は**外観の割り当てを無視して 3 材質**
+   * (既定 + 赤 + 橙)で描かれ、開いた辺を持つ三角形の輪郭が紫の線で重なる。
+   * `null` を渡すと**元の外観に戻る**(形も体積も一切変わらない。再計算は起きない)。
+   */
+  setPrintabilityHighlight(highlight: PrintabilityHighlight | null): void;
   /**
    * 断面表示のつまみ(§0.42)を差し替える。`null` で消える。
    *
@@ -735,6 +781,94 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
    */
   const sectionPlanes: THREE.Plane[] = [];
 
+  /*
+    3D プリントの点検の色(FR-815、§0.53)。開いた辺は**全ボディぶんを 1 本の
+    `LineSegments`** にまとめる(ねじの印・球面の案内線と同じ考え方)。
+    面に隠れた辺も見えるよう `depthTest: false` にする——開いているところは形の裏側に
+    あることが多く、隠したのでは「どこが閉じていないか」を探せない(NFR-UX-7)。
+
+    **線の太さは指定しない。** WebGL の線幅はほとんどの環境で 1 画素に固定されており、
+    `LineBasicMaterial.linewidth` は効かない(three.js の既知の制限)。§0.53 の「太い
+    紫の線」は、太さの代わりに**三角形の輪郭 3 辺すべてを引く**ことで面として目立たせる
+    (`buildPrintabilityOpenEdgePositions` の注釈)。
+  */
+  const printOpenEdgeLines = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      color: DEFAULT_THEME_COLORS.printOpenEdge,
+      transparent: true,
+      opacity: PRINT_OPEN_EDGE_OPACITY,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  printOpenEdgeLines.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
+  printOpenEdgeLines.visible = false;
+  group.add(printOpenEdgeLines);
+
+  /** いま出している点検の色。`null` なら外観のまま(点検を閉じた状態)。 */
+  let printability: PrintabilityHighlight | null = null;
+
+  /**
+   * 点検の間の 3 つの外観。**テーマの色が変わるまで作り直さない**——毎回作ると
+   * `sameAppearances`(参照で比べる)が必ず食い違い、ホバーのたびに材質を組み直す
+   * ことになる(NFR-PF-1)。
+   */
+  let printabilityAppearanceSet: readonly AppearanceSpec[] | null = null;
+
+  /** 立体ごとのまとまりの控え。三角形の枚数ぶん走る計算なので、毎コマは繰り返さない。 */
+  const printabilityPlans = new Map<string, PrintabilityPlan>();
+
+  /** 点検の色の控えを捨てる(点検の出し入れ・テーマの切替のとき)。 */
+  function clearPrintabilityCache(): void {
+    printabilityAppearanceSet = null;
+    printabilityPlans.clear();
+  }
+
+  /** 点検の間の 3 つの外観(既定 + 赤 + 橙)。控えがあればそれを返す。 */
+  function printabilitySpecs(): readonly AppearanceSpec[] {
+    if (printabilityAppearanceSet === null) {
+      // 既定は `DEFAULT_APPEARANCE` のまま渡す。テーマの立体の色は、材質を作る直前の
+      // `themedAppearance` が当てる(外観を割り当てていない立体とまったく同じ道)。
+      printabilityAppearanceSet = printabilityAppearances(
+        DEFAULT_APPEARANCE,
+        cssColor(colors.printThin),
+        cssColor(colors.printOverhang),
+      );
+    }
+    return printabilityAppearanceSet;
+  }
+
+  /**
+   * 立体 1 つの点検の色の割り当て。点検を出していない・その立体を点検していない・
+   * 三角形の並びが結果と噛み合わないときは `null`(元の外観のまま描く)。
+   */
+  function printabilityPlanFor(entry: SolidDrawEntry): PrintabilityPlan | null {
+    if (printability === null) {
+      return null;
+    }
+    const triangleOffset = printability.triangleOffsets.get(entry.featureId);
+    if (triangleOffset === undefined) {
+      return null;
+    }
+    const cached = printabilityPlans.get(entry.featureId);
+    if (cached !== undefined && cached.triangleCount === entry.triangleCount) {
+      return cached;
+    }
+    const groups = buildPrintabilityGroups(printability.report, triangleOffset, entry.triangleCount);
+    if (groups.length === 0) {
+      // 数が噛み合わなかった(点検の後に形が変わった等)。関係の無い面を赤くしない。
+      return null;
+    }
+    const plan: PrintabilityPlan = {
+      triangleCount: entry.triangleCount,
+      groups,
+      appearances: printabilitySpecs(),
+    };
+    printabilityPlans.set(entry.featureId, plan);
+    return plan;
+  }
+
   const draws: BodyDraw[] = [];
   /** 当たり判定にかける面。`draws` と同じ順に並ぶ。 */
   const pickTargets: THREE.Object3D[] = [];
@@ -808,24 +942,29 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
    * 束ね直しをさせるので、ホバーが動くたびに行うと 60fps(NFR-PF-1)を脅かす。
    */
   function applyAppearance(draw: BodyDraw, entry: SolidDrawEntry): void {
+    // 点検を出しているあいだは、外観の割り当てを一時的に**差し替える**(§0.53)。
+    // 上書きではないので、`setPrintabilityHighlight(null)` で元の外観がそのまま戻る。
+    const plan = printabilityPlanFor(entry);
+    const groups = plan === null ? entry.groups : plan.groups;
+    const appearances = plan === null ? entry.appearances : plan.appearances;
     if (
       !appearanceDirty &&
-      sameGroups(draw.groups, entry.groups) &&
-      sameAppearances(draw.appearances, entry.appearances)
+      sameGroups(draw.groups, groups) &&
+      sameAppearances(draw.appearances, appearances)
     ) {
       return;
     }
-    const materials = entry.appearances.map((spec) =>
+    const materials = appearances.map((spec) =>
       materialStore.materialFor(themedAppearance(spec, colors.solid), environment),
     );
     const geometry = draw.mesh.geometry;
     geometry.clearGroups();
-    for (const faceGroup of entry.groups) {
+    for (const faceGroup of groups) {
       geometry.addGroup(faceGroup.start, faceGroup.count, faceGroup.materialIndex);
     }
     draw.mesh.material = materials;
-    draw.groups = entry.groups;
-    draw.appearances = entry.appearances;
+    draw.groups = groups;
+    draw.appearances = appearances;
   }
 
   /**
@@ -836,7 +975,10 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   function collectMaterials(entries: readonly SolidDrawEntry[]): void {
     const used: AppearanceSpec[] = [];
     for (const entry of entries) {
-      for (const spec of entry.appearances) {
+      // 点検の間は赤と橙が「使っている材質」なので、同じ選び方(`applyAppearance`)で数える。
+      // 外観のほうだけを数えると、いま画面に出ている赤・橙をその場で捨ててしまう。
+      const plan = printabilityPlanFor(entry);
+      for (const spec of plan === null ? entry.appearances : plan.appearances) {
         used.push(themedAppearance(spec, colors.solid));
       }
     }
@@ -871,6 +1013,8 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     }
     collected.add(threadMarkLines.material);
     collected.add(sphereGridLines.material);
+    // 点検の紫の線も立体の上に重なる印なので、断面表示で一緒に切る(空中に残さない)。
+    collected.add(printOpenEdgeLines.material);
     return [...collected];
   }
 
@@ -922,6 +1066,46 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     sectionHandleArrow.visible = positions.arrowPositions.length > 0;
   }
 
+  /**
+   * 開いた辺の紫の線を組み立て直す(§0.53)。点検を出していなければ消すだけ。
+   *
+   * **全ボディぶんを 1 本にまとめる**ので、立体が何個あってもドローコールは 1 回で済む。
+   */
+  function rebuildPrintOpenEdges(entries: readonly SolidDrawEntry[]): void {
+    if (printability === null) {
+      printOpenEdgeLines.visible = false;
+      return;
+    }
+    const chunks: Float32Array[] = [];
+    let total = 0;
+    for (const entry of entries) {
+      const triangleOffset = printability.triangleOffsets.get(entry.featureId);
+      if (triangleOffset === undefined) {
+        continue;
+      }
+      const positions = buildPrintabilityOpenEdgePositions(
+        entry.positions,
+        entry.indices,
+        printability.report,
+        triangleOffset,
+        entry.triangleCount,
+      );
+      if (positions.length > 0) {
+        chunks.push(positions);
+        total += positions.length;
+      }
+    }
+    const joined = new Float32Array(total);
+    let at = 0;
+    for (const chunk of chunks) {
+      joined.set(chunk, at);
+      at += chunk.length;
+    }
+    setVectorAttribute(printOpenEdgeLines.geometry, 'position', joined);
+    printOpenEdgeLines.geometry.computeBoundingSphere();
+    printOpenEdgeLines.visible = joined.length > 0;
+  }
+
   /** 部品の数をボディの数に合わせ、形と外観を流し込む。 */
   function syncDraws(entries: readonly SolidDrawEntry[]): void {
     while (draws.length > entries.length) {
@@ -949,6 +1133,8 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     applySectionPlanes();
     // 形が変われば覆うべき広さも変わるので、つまみを出しているあいだは組み立て直す。
     rebuildSectionHandle();
+    // 形が変われば開いた辺の位置も変わるので、点検を出しているあいだは引き直す。
+    rebuildPrintOpenEdges(entries);
   }
 
   /**
@@ -1062,6 +1248,22 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       rebuildSectionHandle();
     },
 
+    setPrintabilityHighlight(highlight): void {
+      if (highlight === printability) {
+        return;
+      }
+      printability = highlight;
+      clearPrintabilityCache();
+      // 材質の割り当てが変わるので、次の `update` を待たずにここで反映する
+      // (点検は押した瞬間に色が変わってほしい。NFR-UX-7)。
+      appearanceDirty = true;
+      if (lastBundle !== null) {
+        syncDraws(lastBundle.entries);
+      } else {
+        rebuildPrintOpenEdges([]);
+      }
+    },
+
     setThemeColors(next): void {
       colors = next;
       // 既定の外観の色はテーマが決める(FR-908)。材質そのものは次の `update` で作り直す
@@ -1082,6 +1284,10 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       threadMarkLines.material.color.setHex(colors.threadMark);
       // 案内線もテーマの薄い灰へ塗り替える(部品は作り直さない、FR-908)。
       sphereGridLines.material.color.setHex(colors.gridMajor);
+      printOpenEdgeLines.material.color.setHex(colors.printOpenEdge);
+      // 点検の赤・橙は材質の鍵に色が入っているので、控えを捨てて次の `update` で作り直す
+      // (稜線のように色だけ書き換えると、鍵と中身が食い違う)。
+      clearPrintabilityCache();
     },
 
     pickFace(raycaster): { readonly featureId: string; readonly triangleIndex: number } | null {
@@ -1137,8 +1343,12 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       sectionHandleFace.material.dispose();
       sectionHandleArrow.geometry.dispose();
       sectionHandleArrow.material.dispose();
+      printOpenEdgeLines.geometry.dispose();
+      printOpenEdgeLines.material.dispose();
       // 平面は材質が捨てられた後には誰も読まない。入れ物だけ空にしておく。
       sectionPlanes.length = 0;
+      printability = null;
+      clearPrintabilityCache();
       lastSectionHandle = null;
       lastCutPreview = null;
       lastBundle = null;

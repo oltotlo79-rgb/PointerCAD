@@ -9,6 +9,7 @@
  * pointerdown の配線は E2E(タスク30)で確かめる。
  */
 import type { Vec3 } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -23,7 +24,6 @@ import {
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
 import { snapToSphereGrid, type SphereGridSpec } from './buildSphereGrid.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 describe('isSolidTool', () => {
   it('P2 の3道具(押し出し・回転・縫合)を拾う', () => {

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef } from 'react';
 
 import { discardAutoSave, formatSavedAt, restoreAutoSave } from '../file/attachAutoSave.js';
+import { ImportUnitPanel } from '../file/ImportUnitPanel.js';
 import {
   createDefaultPartFileDeps,
   hasUnsavedChanges,
@@ -114,6 +115,8 @@ export function AppShell(): React.JSX.Element {
   // 2 つが揃っているときだけカードを出す。
   const restorePrompt = useAppStore((state) => state.restorePrompt);
   const autoSaver = useAppStore((state) => state.autoSaver);
+  // 読み込んだファイルの単位を訊いている最中か(FR-811、§0.a-0.6、P6 タスク32b)。
+  const importUnitAsked = useAppStore((state) => state.importUnitAsked);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -283,7 +286,16 @@ export function AppShell(): React.JSX.Element {
           >
             <ViewportCanvas />
           </Suspense>
-          {restorePrompt !== null && autoSaver !== null ? (
+          {importUnitAsked ? (
+            /*
+              読み込んだファイルの単位を訊く小窓(§0.a-0.6、タスク32b)。**この問いは
+              読み込みを止めて待っている**ので、控えの案内や計算中の札より先に出す
+              (答えるまで読み込みが進まないため、隠れていると操作が止まって見える)。
+            */
+            <div className="pcad-viewport__overlay">
+              <ImportUnitPanel />
+            </div>
+          ) : restorePrompt !== null && autoSaver !== null ? (
             /*
               前回の作業の控えがあるときの案内(FR-805、§0.a-0.12)。中央に置くが
               モーダルにしない。背後の操作は止めず、Esc でも閉じない(誤って控えを

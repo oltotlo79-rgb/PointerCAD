@@ -17,11 +17,11 @@ import {
   type AppearanceSpec,
   type SolidBody,
 } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import { dataUrlToBytes, THUMBNAIL_SIZE, thumbnailFitRect } from '../file/thumbnail.js';
 import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 import {
   buildBoxProjectedUv,

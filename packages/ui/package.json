@@ -27,6 +27,7 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
+    "@pointercad/test-utils": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/three": "catalog:",

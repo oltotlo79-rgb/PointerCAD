@@ -4,11 +4,23 @@ import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
+/**
+ * 検査専用のパッケージだけは層の外側に置く。
+ *
+ * `@pointercad/test-utils` は性能上限の判定の切替(`expectWithinBudget`)だけを持ち、
+ * 製品の実行時コードを 1 行も含まない。層(apps → ui → model → kernel / expression)の
+ * どこからも devDependencies として参照してよいので、`@pointercad/*` を丸ごと禁じる
+ * 最下層(expression / help-content / kernel)でも、これだけは除外する。
+ * `!` で始まる項目は除外を表す(no-restricted-imports の group は gitignore と同じ書き方)。
+ * 決定の記録は docs/plans/P6-入出力.md §0.a-0.68(利用者の承認)。
+ */
+const TEST_ONLY_PACKAGE_EXCEPTION = '!@pointercad/test-utils';
+
 /** 依存方向 apps → ui → model → kernel / expression を機械的に守らせる(rules/04-設計の規律.md)。 */
 const layerRules = [
-  { files: ['packages/expression/**/*.ts'], forbidden: ['@pointercad/*'] },
-  { files: ['packages/help-content/**/*.ts'], forbidden: ['@pointercad/*'] },
-  { files: ['packages/kernel/**/*.ts'], forbidden: ['@pointercad/*'] },
+  { files: ['packages/expression/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
+  { files: ['packages/help-content/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
+  { files: ['packages/kernel/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
   {
     files: ['packages/model/**/*.ts'],
     forbidden: ['@pointercad/ui', '@pointercad/drawing', '@pointercad/io', '@pointercad/help-content'],

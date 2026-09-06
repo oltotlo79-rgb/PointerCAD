@@ -12,7 +12,9 @@ import type { SolidBody, SolidBodyKind } from '../kernelBridge.js';
 import {
   EXPORT_DEVIATION_MM,
   EXPORT_FORMATS,
+  EXPORT_MESH_QUALITY,
   type ExportFormat,
+  type ExportMeshQuality,
   type ExportNoticeKey,
   type ExportOutcome,
   type ExportQuality,
@@ -126,6 +128,20 @@ export function exportDeviationMm(kind: FileKind, quality: ExportQuality): numbe
 }
 
 /**
+ * 書き出しに使う三角形分割の細かさの対(§0.a-0.64)。三角形を使わない形式では `null`。
+ *
+ * **カーネルへ渡すのはこちら。** 長さだけを渡すと角度の既定(0.5 ラジアン)が先に効いて
+ * 丸い面が粗いままになり、FR-803 の精度(球で 1% 以内)が成り立たない
+ * (`EXPORT_MESH_QUALITY` の注釈にある実測)。
+ */
+export function exportMeshQuality(
+  kind: FileKind,
+  quality: ExportQuality,
+): ExportMeshQuality | null {
+  return usesTriangles(kind) ? EXPORT_MESH_QUALITY[quality] : null;
+}
+
+/**
  * ボディの種類。**詰め替え(`toSolidBody`)は必ず値を入れる**が、`SolidBody.bodyKind` は
  * 型のうえでは任意の欄(P5 の見本を直せるのが ui のタスクだったため)なので、欄が無い
  * ときは閉じた立体とみなす。0 と偽るような既定ではなく、カーネルが返す実際の値
@@ -198,6 +214,7 @@ export function selectExportBodies(
     selection: {
       featureIds,
       deviationMm: exportDeviationMm(request.format, request.quality),
+      meshQuality: exportMeshQuality(request.format, request.quality),
       warnings,
     },
   };

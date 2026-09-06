@@ -29,6 +29,9 @@ export {
   decodeImportedMeshBytes,
   emptyPcadAttachments,
   encodeImportedMeshBytes,
+  // 読んだファイルがひな形か(FR-814、P6 §0.a-0.35、タスク27)。**画面(タスク33)が
+  // 種別の文字列を写さずに判断できるよう、述語のまま出す。**
+  isTemplateKind,
   PCAD_CANVAS_ENTRY_PREFIX,
   PCAD_CANVAS_ENTRY_SUFFIX,
   PCAD_DOCUMENT_ENTRY,

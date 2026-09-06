@@ -1,3 +1,4 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import type {
   OpenCascadeInstance,
   TopoDS_Face,
@@ -5,7 +6,6 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { BoxParameters, SolidFaceInfo, SubShapeQuery } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { extractEdges } from './extractEdges.js';

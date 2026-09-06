@@ -19,6 +19,7 @@
 import { evaluateExpression, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   appendSolid,
+  DEFAULT_EXTRUDE_DISTANCE_MM,
   DEFAULT_EXTRUDE_THICKNESS_MM,
   DEFAULT_SEW_TOLERANCE_MM,
   DEFAULT_SPRING_COIL_DIAMETER_MM,
@@ -96,8 +97,15 @@ const MIN_SEW_FACES = 2;
 /** ブーリアンに要るボディの選択数(§0.a-0.6)。 */
 const REQUIRED_BODY_COUNT = 2;
 
-/** 押し出し距離の既定値(§0.a-0.8)。 */
-export const DEFAULT_EXTRUDE_DISTANCE: ExpressionValue = expressionValueFromNumber(10);
+/**
+ * 押し出し距離の既定値(§0.a-0.8)。
+ *
+ * **数の正本は model の `DEFAULT_EXTRUDE_DISTANCE_MM`**(P6 タスク27 の申し送り)。
+ * ひな形が道具の既定値として持ち運ぶ値(FR-814)と同じものなので、同じ数を 2 か所に置かない。
+ */
+export const DEFAULT_EXTRUDE_DISTANCE: ExpressionValue = expressionValueFromNumber(
+  DEFAULT_EXTRUDE_DISTANCE_MM,
+);
 /** 回転角度の既定値(§0.a-0.9)。 */
 export const DEFAULT_REVOLVE_ANGLE: ExpressionValue = expressionValueFromNumber(360);
 /** 回転軸の既定値。world の Z 軸(§0.a-0.9)。 */

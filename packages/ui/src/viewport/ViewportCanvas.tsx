@@ -4,11 +4,13 @@ import { evaluateExpression } from '@pointercad/expression';
 import {
   addVec3,
   appearanceOf,
+  checkCanvasImage,
   formatDisplayLength,
   isFreeWorkPlaneId,
   parseDisplayInput,
   scaleVec3,
   toDisplayLength,
+  worldToPlane,
   type LengthUnit,
 } from '@pointercad/model';
 
@@ -26,7 +28,10 @@ import { LENGTH_UNIT_LABEL_KEYS } from '../settings/settings.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
+import { decodeCanvasImage, type DecodedCanvasImage } from '../file/canvasFile.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
+import { resolveWorkPlaneOf } from '../sketch/referenceCommands.js';
+import { canvasPlacementOf, type CanvasDraw } from './canvasLayer.js';
 import { sphereGridSphereOf, sphereGridTargetSphere } from '../sketch/sketchCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
@@ -34,7 +39,7 @@ import { attachCameraControls, type CameraControls } from './attachCameraControl
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import { createViewportScene, type SectionViewRender } from './createViewportScene.js';
-import type { CutPreview } from './createSolidLayer.js';
+import type { CutPreview, PrintabilityHighlight } from './createSolidLayer.js';
 import type { SphereGridSpec } from './buildSphereGrid.js';
 import { toThreePlane } from './sectionView.js';
 import { readThemeColors } from './themeColors.js';
@@ -127,6 +132,21 @@ function sectionViewRenderOf(
       keep: section.flipped ? 'negative' : 'positive',
     },
   };
+}
+
+/**
+ * 3D プリントの点検の色(FR-815、P6 §0.53、タスク46)。点検していなければ `null`。
+ *
+ * **結果と塗る相手はストアで必ず一緒に入れ替わる**ので、ここでは片方が欠けている状態を
+ * 「点検していない」として扱う(欠けたまま塗ると、色の行き先が決まらない)。
+ */
+function printabilityHighlightOf(
+  state: ReturnType<typeof useAppStore.getState>,
+): PrintabilityHighlight | null {
+  if (state.printability === null || state.printabilityOffsets === null) {
+    return null;
+  }
+  return { report: state.printability, triangleOffsets: state.printabilityOffsets };
 }
 
 /**
@@ -255,6 +275,157 @@ function SectionOffsetField(): React.JSX.Element | null {
   );
 }
 
+/**
+ * 下絵(FR-332、P6 タスク39)の描く材料を、文書と復号した画像から組み立てる。
+ *
+ * **出さないもの**を 3 つここで外す: ①入切で切ってあるもの(`visible` が偽)、
+ * ②画像をまだ復号できていないもの(読み込んだ直後の一瞬と、壊れた画像)、
+ * ③文書にバイト列が無いもの。層(`canvasLayer.ts`)は渡された分だけを描く。
+ */
+function canvasDrawsOf(
+  document: ReturnType<typeof useAppStore.getState>['document'],
+  decoded: ReadonlyMap<string, DecodedCanvasImage>,
+): readonly CanvasDraw[] {
+  return document.canvases.flatMap((canvas) => {
+    const image = decoded.get(canvas.imageId);
+    if (!canvas.visible || image === undefined) {
+      return [];
+    }
+    return [
+      {
+        id: canvas.id,
+        image,
+        // 任意の作業平面(FR-328)にも貼れる。解けない id は既定の XY へ落ちる。
+        plane: resolveWorkPlaneOf(document, canvas.plane),
+        placement: canvasPlacementOf(canvas),
+        opacity: canvas.opacity.value,
+      },
+    ];
+  });
+}
+
+/**
+ * 下絵の 2 点の寸法合わせのその場入力(FR-332、NFR-UX-2、§0.a-0.46、§2.14)。
+ *
+ * 断面表示のつまみ(`SectionOffsetField`)とまったく同じ流儀で、ビューポートの上に浮かべる
+ * (**区画は増やさない**、要件§7.1)。指す 2 点はビューポートを押して決め、ここでは
+ * **欄 1 つ(2 点の実寸)**だけを受ける。**式が打てる**(FR-201)ので `10/3` や `√2*5` も通り、
+ * 表示が inch のときは打った式を `(…)in` で包む(規則の正本は model の `parseDisplayInput`)。
+ */
+function CanvasScaleField(): React.JSX.Element | null {
+  const canvasScale = useAppStore((state) => state.canvasScale);
+  const canvasMessage = useAppStore((state) => state.canvasMessage);
+  const document = useAppStore((state) => state.document);
+  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
+  const applyCanvasScale = useAppStore((state) => state.applyCanvasScale);
+  const cancelCanvasScale = useAppStore((state) => state.cancelCanvasScale);
+  const setCanvasMessage = useAppStore((state) => state.setCanvasMessage);
+  /** 打ちかけの文字(rules/04: `useState` は表示専用の一時状態だけ)。 */
+  const [draft, setDraft] = useState('');
+
+  if (canvasScale === null && canvasMessage === null) {
+    return null;
+  }
+  const canvas =
+    canvasScale === null
+      ? undefined
+      : document.canvases.find((item) => item.id === canvasScale.canvasId);
+  const evaluated = evaluateExpression(parseDisplayInput(draft, lengthUnit));
+  const points = canvasScale?.points ?? [];
+  const ready = points.length >= 2;
+  const typing = draft.trim() !== '';
+  /**
+   * 欄の下の 1 行。断り → 指す案内 → 打った式の下ごたえ、の順に出す。
+   * 打ち始める前は空(空の式の断りを出しても読み手には何の役にも立たない)。
+   */
+  const messageText = ((): string => {
+    if (canvasMessage !== null) {
+      return canvasMessage;
+    }
+    if (!ready) {
+      return points.length === 0 ? t('canvas.pickFirst') : t('canvas.pickSecond');
+    }
+    if (!typing) {
+      return '';
+    }
+    return evaluated.ok
+      ? `= ${formatDisplayLength(evaluated.value.value, lengthUnit)}`
+      : evaluated.error.message;
+  })();
+  return (
+    <div className="pcad-popover pcad-canvas-scale">
+      {/* 受け付けられない画像を断るだけのときは、寸法合わせの見出しにしない。 */}
+      <span className="pcad-popover__title">
+        {canvasScale === null ? t('toolbar.canvas.label') : t('canvas.title')}
+      </span>
+      {ready ? (
+        <label className="pcad-field">
+          <span className="pcad-field__label">{t('canvas.realLength')}</span>
+          <input
+            className="pcad-field__input"
+            type="text"
+            inputMode="text"
+            value={draft}
+            aria-label={t('canvas.realLength')}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setCanvasMessage(null);
+            }}
+          />
+          <span className="pcad-field__unit">{t(LENGTH_UNIT_LABEL_KEYS[lengthUnit])}</span>
+        </label>
+      ) : null}
+      <span
+        className={
+          canvasMessage === null
+            ? 'pcad-field__message'
+            : 'pcad-field__message pcad-field__message--error'
+        }
+      >
+        {/*
+          断りの文言(2 点が同じ・実寸が 0 以下・受け付けない画像)は model が組み立てたものを
+          そのまま出す(`ja.json` に同じ文を二重に書かない)。
+        */}
+        {messageText}
+      </span>
+      <div className="pcad-popover__actions">
+        <button
+          type="button"
+          className="pcad-button"
+          title={t('canvas.applyTooltip')}
+          disabled={!ready || !typing || !evaluated.ok || canvas === undefined}
+          onClick={() => {
+            if (!evaluated.ok || canvas === undefined) {
+              return;
+            }
+            // 画素の大きさは復号した画像が答える(文書には保存しない、rules/04)。
+            const pixelSize = useAppStore.getState().canvasPixelSizes.get(canvas.imageId);
+            if (pixelSize === undefined) {
+              return;
+            }
+            if (applyCanvasScale(evaluated.value.value, pixelSize)) {
+              setDraft('');
+            }
+          }}
+        >
+          {t('canvas.apply')}
+        </button>
+        <button
+          type="button"
+          className="pcad-button"
+          title={t('canvas.cancelTooltip')}
+          onClick={() => {
+            setDraft('');
+            cancelCanvasScale();
+          }}
+        >
+          {t('canvas.cancel')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 球面の案内線を組み立てる材料。ストアから読むものだけを並べる。 */
 interface SphereGridSource {
   readonly document: ReturnType<typeof useAppStore.getState>['document'];
@@ -368,9 +539,123 @@ export function ViewportCanvas(): React.JSX.Element {
       }
     }
 
+    /*
+      下絵の画像(FR-332、P6 タスク39)。**復号した画像を覚えているのはここ**で、
+      three.js のテクスチャは層(`canvasLayer.ts`)が作って捨てる(持ち主を分ける)。
+      文書ではなく**画面**の寿命で持つが、文書から消えた画像はその場で閉じ、画面を
+      閉じるときに残りを全部閉じるので、rules/06 10.17 のような溜め込みは起きない。
+    */
+    const decodedCanvases = new Map<string, DecodedCanvasImage>();
+    /** いま復号を頼んでいる画像。同じ画像を二重に復号しない。 */
+    const decodingCanvases = new Set<string>();
+    /** 画面を閉じた後に復号が返ってきたら、画像を閉じて捨てるための札。 */
+    let detached = false;
+
+    /** いまの文書と復号済みの画像から、下絵を描き直す。 */
+    function pushCanvases(): void {
+      scene.setCanvases(canvasDrawsOf(useAppStore.getState().document, decodedCanvases));
+      requestDraw();
+    }
+
+    /**
+     * 下絵の画像を必要なだけ復号し、描き直す。**再計算は起こさない**(§2.14)。
+     * 復号は非同期なので、済んだものから順に画面へ出る(読み込み中でも操作は止まらない)。
+     */
+    function syncCanvases(): void {
+      const state = useAppStore.getState();
+      const alive = new Set(state.document.canvases.map((canvas) => canvas.imageId));
+      for (const [imageId, image] of decodedCanvases) {
+        if (!alive.has(imageId)) {
+          // 消した下絵の画像は記憶を返す(`ImageBitmap` は閉じないと残る)。
+          image.close?.();
+          decodedCanvases.delete(imageId);
+        }
+      }
+      for (const canvas of state.document.canvases) {
+        const bytes = state.canvases.get(canvas.imageId);
+        if (
+          bytes === undefined ||
+          decodedCanvases.has(canvas.imageId) ||
+          decodingCanvases.has(canvas.imageId)
+        ) {
+          continue;
+        }
+        // 受け付けの判定(PNG / JPEG・8MB)と断りの文言は model が持つ(§2.8)。
+        const checked = checkCanvasImage(bytes);
+        if (!checked.ok) {
+          useAppStore.getState().setCanvasMessage(checked.message);
+          continue;
+        }
+        const imageId = canvas.imageId;
+        decodingCanvases.add(imageId);
+        decodeCanvasImage(bytes, checked.format).then(
+          (image) => {
+            decodingCanvases.delete(imageId);
+            if (detached) {
+              image.close?.();
+              return;
+            }
+            decodedCanvases.set(imageId, image);
+            // 画素の大きさは 2 点の寸法合わせ(§2.14)が使うのでストアへ控える。
+            useAppStore.getState().setCanvasPixelSize(imageId, {
+              width: image.width,
+              height: image.height,
+            });
+            pushCanvases();
+          },
+          () => {
+            // 壊れた画像。**止めずに**その 1 枚だけ出さない(FR-504、NFR-RE-1)。
+            decodingCanvases.delete(imageId);
+          },
+        );
+      }
+      pushCanvases();
+    }
+
+    /**
+     * 2 点の寸法合わせ(§2.14)のあいだだけ、押した場所を作図面の点として拾う。
+     *
+     * **スケッチの操作より先に登録する**(下の `attachSketchInteraction` より前)。同じ
+     * canvas の同じ段階では登録した順に呼ばれるので、先に登録して
+     * `stopImmediatePropagation()` を呼べば、寸法合わせの最中に線を引き始めてしまうことがない。
+     */
+    const onCanvasScalePointerDown = (event: PointerEvent): void => {
+      const state = useAppStore.getState();
+      const scaling = state.canvasScale;
+      if (scaling === null) {
+        return;
+      }
+      const target = state.document.canvases.find((item) => item.id === scaling.canvasId);
+      if (target === undefined) {
+        return;
+      }
+      if (event.button !== 0) {
+        // 中ボタン・右ボタンは視点操作へそのまま通す(合わせている間も回せる)。
+        return;
+      }
+      event.stopImmediatePropagation();
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const plane = resolveWorkPlaneOf(state.document, target.plane);
+      const world = scene.screenToPlanePoint(
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+        plane,
+      );
+      if (world === null) {
+        // 作図面を真横から見ている(視線と平行)。点は決まらないので何もしない。
+        return;
+      }
+      state.addCanvasScalePoint(worldToPlane(plane, world));
+    };
+    canvas.addEventListener('pointerdown', onCanvasScalePointerDown);
+
     // 保存のときに呼ばれるサムネイルの作り手を差し出す(§0.a-0.18、FR-801)。
     // 3D 表示部は後から読み込まれるので、それまでは口が空でサムネイルなしになる。
     useAppStore.getState().setCaptureThumbnail(() => scene.captureThumbnail());
+    // 印刷のときに呼ばれる 1 コマの作り手も同じように差し出す(FR-810、P6 タスク33)。
+    // 用意できるまでは口が空で、印刷は「印刷する絵を作れませんでした。」で断られる。
+    useAppStore.getState().setCapturePrintFrame(() => scene.capturePrintFrame());
 
     const controls = attachCameraControls(canvas, requestDraw);
     controlsRef.current = controls;
@@ -423,6 +708,10 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setSphereGrid(sphereGridSpecOf(initial));
     // ビューの断面表示(FR-111、P6 タスク35)。入れているあいだだけ平面を配る。
     scene.setSectionView(sectionViewRenderOf(initial.sectionView));
+    // 3D プリントの点検の色(FR-815、P6 タスク46)。点検を出しているあいだだけ塗る。
+    scene.setPrintability(printabilityHighlightOf(initial));
+    // 下絵(FR-332、P6 タスク39)。復号が済んだものから順に貼られる。
+    syncCanvases();
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
@@ -496,6 +785,22 @@ export function ViewportCanvas(): React.JSX.Element {
       */
       if (next.sectionView !== previous.sectionView) {
         scene.setSectionView(sectionViewRenderOf(next.sectionView));
+      }
+      /*
+        3D プリントの点検の色(FR-815、タスク46)。**結果が入れ替わったときだけ**渡し直す。
+        塗る相手(`printabilityOffsets`)は結果と必ず一緒に入れ替わる(ストアの決め)ので、
+        結果の入れ替わりだけを見ればよい。**再計算は 1 回も走らない**(§0.53)。
+      */
+      if (next.printability !== previous.printability) {
+        scene.setPrintability(printabilityHighlightOf(next));
+      }
+      /*
+        下絵(FR-332、タスク39)。**文書か画像の表が変わったときだけ**貼り直す。
+        入切・移動・不透明度は文書の変化として届くが、**再計算は 1 回も走らない**
+        (`affectsShape` が下絵を見ないので `isComputing` も立たない。§2.14)。
+      */
+      if (next.document !== previous.document || next.canvases !== previous.canvases) {
+        syncCanvases();
       }
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。任意の作業平面(FR-328)は
       // 文書が変わっても面の位置が動くので、解いた面そのものの変化を見る(タスク13)。
@@ -580,8 +885,16 @@ export function ViewportCanvas(): React.JSX.Element {
       }
       unsubscribe();
       observer.disconnect();
-      // 片付けた場面をもう使えないので、サムネイルの作り手も取り下げる。
+      canvas.removeEventListener('pointerdown', onCanvasScalePointerDown);
+      // 下絵の画像の記憶を返す(テクスチャは `scene.dispose()` が捨てる。P5 §4)。
+      detached = true;
+      for (const image of decodedCanvases.values()) {
+        image.close?.();
+      }
+      decodedCanvases.clear();
+      // 片付けた場面をもう使えないので、サムネイルと印刷の作り手も取り下げる。
       useAppStore.getState().setCaptureThumbnail(null);
+      useAppStore.getState().setCapturePrintFrame(null);
       interaction.detach();
       controls.detach();
       scene.dispose();
@@ -603,6 +916,11 @@ export function ViewportCanvas(): React.JSX.Element {
         ビューポートの中に浮かべ、断面表示を入れているあいだだけ出す。
       */}
       <SectionOffsetField />
+      {/*
+        下絵の 2 点の寸法合わせ(FR-332、NFR-UX-2)。合わせている間だけ出る。
+        断面表示の欄と同じく**区画は増やさない**。
+      */}
+      <CanvasScaleField />
       {controlsReady ? (
         <ViewCube getOrbit={getOrbit} setOrbit={setOrbit} subscribeDraw={subscribeDraw} />
       ) : null}

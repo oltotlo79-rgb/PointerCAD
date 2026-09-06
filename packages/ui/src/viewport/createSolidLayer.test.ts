@@ -12,13 +12,16 @@ import {
   type AppearanceEntry,
   type AppearanceSpec,
   type AppearanceTable,
+  type PrintabilityReport,
   type ResolvedPlane,
   type SubShapeRef,
 } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
+import { printabilityTriangleOffsets } from '../solid/printabilityColors.js';
 import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
 import { buildSolidGeometry, type SolidBodyWithSubShapes } from './buildSolidGeometry.js';
 import {
@@ -28,7 +31,6 @@ import {
 } from './createSolidLayer.js';
 import { DEFAULT_THEME_COLORS } from './themeColors.js';
 import { buildSphereGridPositions, type SphereGridSpec } from './buildSphereGrid.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 /** 実測に使う球面の案内線(既定の 5°、半径 10 の球)。 */
 const SPHERE_GRID_SPEC: SphereGridSpec = { center: [0, 0, 0], radius: 10, stepDegrees: 5 };
@@ -748,6 +750,227 @@ describe('createSolidLayer(断面表示のつまみ、§0.42)', () => {
     const layer = createSolidLayer();
     layer.update(buildSolidGeometry([makeBody('extrude-1', 2)], null, []), 'shadedWithEdges');
     layer.updateSectionHandle({ plane: SECTION_HANDLE_PLANE, keep: 'positive' });
+    let disposed = 0;
+    const materials = allMaterialsOf(layer.group);
+    for (const material of materials) {
+      material.addEventListener('dispose', () => {
+        disposed += 1;
+      });
+    }
+    layer.dispose();
+    expect(disposed).toBe(materials.length);
+  });
+});
+/** 三角形の番号の一覧を、カーネルと同じ「下位ビットから」の詰め方でビット列にする。 */
+function printBitsOf(triangleCount: number, marked: readonly number[]): Uint8Array {
+  const bits = new Uint8Array(Math.ceil(triangleCount / 8));
+  for (const triangle of marked) {
+    bits[triangle >> 3] |= 1 << (triangle & 7);
+  }
+  return bits;
+}
+
+/** 検査用の点検の結果。層は要約を 1 つも読まないので、要約は型を満たすだけの値。 */
+function printReportOf(
+  triangleCount: number,
+  marked: {
+    readonly thin?: readonly number[];
+    readonly overhang?: readonly number[];
+    readonly openEdge?: readonly number[];
+  } = {},
+): PrintabilityReport {
+  return {
+    triangleCount,
+    thinTriangles: printBitsOf(triangleCount, marked.thin ?? []),
+    overhangTriangles: printBitsOf(triangleCount, marked.overhang ?? []),
+    openEdgeTriangles: printBitsOf(triangleCount, marked.openEdge ?? []),
+    summary: {
+      triangleCount,
+      degenerateCount: 0,
+      inspectedTriangleCount: triangleCount,
+      thinCount: marked.thin?.length ?? 0,
+      overhangCount: marked.overhang?.length ?? 0,
+      openEdgeCount: marked.openEdge?.length ?? 0,
+      openEdgeTriangleCount: marked.openEdge?.length ?? 0,
+      watertight: (marked.openEdge?.length ?? 0) === 0,
+      minThicknessFoundMm: 20,
+      minThicknessMm: 0.8,
+      overhangAngleDeg: 45,
+      cellSizeMm: 1.6,
+    },
+    cancelled: false,
+  };
+}
+
+/** 立体 1 つを点検したときの、層へ渡す一式。 */
+function printHighlightOf(
+  featureId: string,
+  triangleCount: number,
+  report: PrintabilityReport,
+): { readonly report: PrintabilityReport; readonly triangleOffsets: ReadonlyMap<string, number> } {
+  return {
+    report,
+    triangleOffsets: printabilityTriangleOffsets([{ featureId, triangleCount }]),
+  };
+}
+
+/** 層の中の「開いた辺の紫の線」の本数(見えているものだけ)。 */
+function openEdgeLineCount(group: THREE.Object3D): number {
+  let count = 0;
+  for (const object of group.children) {
+    if (!(object instanceof THREE.LineSegments) || !object.visible) {
+      continue;
+    }
+    const material: unknown = object.material;
+    const geometry: unknown = object.geometry;
+    if (
+      material instanceof THREE.LineBasicMaterial &&
+      geometry instanceof THREE.BufferGeometry &&
+      material.color.getHex() === DEFAULT_THEME_COLORS.printOpenEdge
+    ) {
+      const position: unknown = geometry.getAttribute('position');
+      count += position instanceof THREE.BufferAttribute ? position.count / 2 : 0;
+    }
+  }
+  return count;
+}
+
+describe('createSolidLayer(3D プリントの点検の色、FR-815、§0.53)', () => {
+  it('点検を出すと 1 ボディ 3 材質(既定・赤・橙)になり、P5 の上限 8 に触れない', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 6)], null, []), 'shadedWithEdges');
+    expect(bodyMeshesOf(layer.group)[0].material).toHaveLength(1);
+
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 6, printReportOf(6, { thin: [1], overhang: [3] })),
+    );
+
+    const materials = bodyMeshesOf(layer.group)[0].material;
+    expect(materials).toHaveLength(3);
+    const colored = materials.map((material) =>
+      material instanceof THREE.MeshStandardMaterial ? material.color.getHex() : null,
+    );
+    expect(colored[0]).toBe(DEFAULT_THEME_COLORS.solid);
+    expect(colored[1]).toBe(DEFAULT_THEME_COLORS.printThin);
+    expect(colored[2]).toBe(DEFAULT_THEME_COLORS.printOverhang);
+    layer.dispose();
+  });
+
+  it('薄い三角形とせり出しの三角形が、それぞれの材質のまとまりになる', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 4)], null, []), 'shadedWithEdges');
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 4, printReportOf(4, { thin: [1], overhang: [2] })),
+    );
+
+    // 索引の単位(三角形 × 3)。0 = 既定、1 = 赤、2 = 橙、3 = 既定 の 4 つに割れる。
+    const groups = bodyMeshesOf(layer.group)[0].geometry.groups;
+    expect(groups.map((group) => [group.start, group.count, group.materialIndex])).toEqual([
+      [0, 3, 0],
+      [3, 3, 1],
+      [6, 3, 2],
+      [9, 3, 0],
+    ]);
+    layer.dispose();
+  });
+
+  it('閉じると元の外観に戻る(材質もまとまりも点検の前と同じ数)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 6)], null, []), 'shadedWithEdges');
+    const before = bodyMeshesOf(layer.group)[0].geometry.groups.length;
+
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 6, printReportOf(6, { thin: [2] })),
+    );
+    expect(bodyMeshesOf(layer.group)[0].material).toHaveLength(3);
+
+    layer.setPrintabilityHighlight(null);
+    const mesh = bodyMeshesOf(layer.group)[0];
+    expect(mesh.material).toHaveLength(1);
+    expect(mesh.geometry.groups).toHaveLength(before);
+    const material = mesh.material[0];
+    expect(material instanceof THREE.MeshStandardMaterial ? material.color.getHex() : null).toBe(
+      DEFAULT_THEME_COLORS.solid,
+    );
+    layer.dispose();
+  });
+
+  it('点検を頼まなかった立体は、点検の間も元の外観のまま', () => {
+    const layer = createSolidLayer();
+    layer.update(
+      buildSolidGeometry([makeBody('extrude-1', 3), makeBody('extrude-2', 3)], null, []),
+      'shadedWithEdges',
+    );
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 3, printReportOf(3, { thin: [0] })),
+    );
+
+    const meshes = bodyMeshesOf(layer.group);
+    expect(meshes[0].material).toHaveLength(3);
+    expect(meshes[1].material).toHaveLength(1);
+    layer.dispose();
+  });
+
+  it('三角形の数が点検の結果と噛み合わない立体には色を塗らない', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 6)], null, []), 'shadedWithEdges');
+    // 点検は 4 枚ぶんしか持っていないのに、画面には 6 枚ある(点検の後に形が変わった)。
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 6, printReportOf(4, { thin: [0] })),
+    );
+
+    expect(bodyMeshesOf(layer.group)[0].material).toHaveLength(1);
+    layer.dispose();
+  });
+
+  it('開いた辺を持つ三角形の輪郭(3 辺)を紫の線で引き、閉じると消える', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 4)], null, []), 'shadedWithEdges');
+    expect(openEdgeLineCount(layer.group)).toBe(0);
+
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 4, printReportOf(4, { openEdge: [1, 2] })),
+    );
+    // 三角形 2 枚 × 3 辺 = 線分 6 本。
+    expect(openEdgeLineCount(layer.group)).toBe(6);
+
+    layer.setPrintabilityHighlight(null);
+    expect(openEdgeLineCount(layer.group)).toBe(0);
+    layer.dispose();
+  });
+
+  it('閉じた形では紫の線を 1 本も引かない', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 4)], null, []), 'shadedWithEdges');
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 4, printReportOf(4, { thin: [0] })),
+    );
+
+    expect(openEdgeLineCount(layer.group)).toBe(0);
+    layer.dispose();
+  });
+
+  it('点検の色にも断面表示の平面が配られる(切ったのに線だけ空中に残らない)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 4)], null, []), 'shadedWithEdges');
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 4, printReportOf(4, { thin: [0], openEdge: [1] })),
+    );
+    layer.setSectionPlanes([new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)]);
+
+    const untouched = allMaterialsOf(layer.group).filter(
+      (material) => material.clippingPlanes === null,
+    );
+    expect(untouched).toHaveLength(UNCLIPPED_MATERIAL_COUNT);
+    layer.dispose();
+  });
+
+  it('dispose() で点検の材質もすべて捨てる(WebGL の資源は GC で戻らない)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 4)], null, []), 'shadedWithEdges');
+    layer.setPrintabilityHighlight(
+      printHighlightOf('extrude-1', 4, printReportOf(4, { thin: [0], overhang: [1], openEdge: [2] })),
+    );
     let disposed = 0;
     const materials = allMaterialsOf(layer.group);
     for (const material of materials) {

@@ -69,15 +69,48 @@ export type ExportQuality = 'coarse' | 'normal' | 'fine';
 export const EXPORT_QUALITIES: readonly ExportQuality[] = ['coarse', 'normal', 'fine'];
 
 /**
- * 品質 → 三角形分割の逸脱(mm)の表(§0.a-0.20)。**この表はここ 1 か所だけ**にある。
+ * 三角形の細かさの指定(§0.a-0.64)。**長さと角度の「対」**で持つ。
+ *
+ * カーネルの `ShapeExportMeshQuality`(`packages/kernel/src/types.ts`)と欄が 1 対 1 に
+ * 同じで、そのまま渡せる形にしてある(**model は kernel の型を輸入しない**——依存の向きは
+ * `model → kernel` だが、書き出しの依頼を組み立てるのは `packages/ui` で、あちらは
+ * kernel を輸入できないため、渡す形の正本をここに置く)。
+ */
+export interface ExportMeshQuality {
+  /** 弦の最大ずれ(mm)。小さいほど細かい。 */
+  readonly deviationMm: number;
+  /** 法線の向きの最大ずれ(ラジアン)。小さいほど丸い面が細かくなる。 */
+  readonly angularDeflectionRad: number;
+}
+
+/**
+ * 品質 → 三角形分割の細かさの対の表(§0.a-0.64)。**この表はここ 1 か所だけ**にある。
+ *
+ * **長さだけでは足りない**(2026-09-06 の実測、タスク11・17)。角度の偏差には既定の
+ * 0.5 ラジアンがあり、丸い面ではそちらが先に効くので、長さを 0.1mm に絞っても
+ * 半径 10 の球は 978 枚・体積の不足 1.43% にとどまる(§2.4 の「偏差 0.1 で 1% 以内」が
+ * 成り立たない)。角度も一緒に 0.2 ラジアンへ絞って初めて 2,022 枚・0.72% になり、
+ * FR-803 の精度が成り立つ。だから 3 択の裏は数 1 つではなく**対**で持つ。
  *
  * `0.1` は画面表示の既定と同じ細かさで、`0.02` は 3D プリントの積層(0.1〜0.2mm)より
  * 十分細かい。`0.5` は大きな形の下見用。
  */
+export const EXPORT_MESH_QUALITY: Readonly<Record<ExportQuality, ExportMeshQuality>> = {
+  coarse: { deviationMm: 0.5, angularDeflectionRad: 0.5 },
+  normal: { deviationMm: 0.1, angularDeflectionRad: 0.2 },
+  fine: { deviationMm: 0.02, angularDeflectionRad: 0.1 },
+};
+
+/**
+ * 品質 → 三角形分割の逸脱(mm)の表(§0.a-0.20)。
+ *
+ * **数を書き写さず、対の表(`EXPORT_MESH_QUALITY`)から長さの欄だけを取り出す。**
+ * 同じ 3 つの数を 2 か所に書くと、片方だけ直したときに気づけない。
+ */
 export const EXPORT_DEVIATION_MM: Readonly<Record<ExportQuality, number>> = {
-  coarse: 0.5,
-  normal: 0.1,
-  fine: 0.02,
+  coarse: EXPORT_MESH_QUALITY.coarse.deviationMm,
+  normal: EXPORT_MESH_QUALITY.normal.deviationMm,
+  fine: EXPORT_MESH_QUALITY.fine.deviationMm,
 };
 
 /**
@@ -130,6 +163,14 @@ export interface ExportSelection {
    * カーネルはこの値をそのまま `BRepMesh_IncrementalMesh` の線形逸脱に渡す。
    */
   readonly deviationMm: number | null;
+  /**
+   * 三角形分割の細かさの対(§0.a-0.64)。三角形を使わない形式では `null`。
+   *
+   * **`deviationMm` を残したまま欄を足してある。** あちらは長さだけを見る古い呼び出し
+   * (P6 の途中で書かれた配線)がそのまま動くようにするための同じ値の写しで、
+   * カーネルへ渡すのはこちらの対のほう(角度を落とすと丸い面が粗いままになる)。
+   */
+  readonly meshQuality: ExportMeshQuality | null;
   /** 弾いた立体・効かない指定の知らせ。**同じキーは 1 度だけ**入る。 */
   readonly warnings: readonly ExportNoticeKey[];
 }

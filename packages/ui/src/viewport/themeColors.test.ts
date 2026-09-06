@@ -115,7 +115,10 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     expect(themeColorsFrom(readerFor('[data-theme="dark"]'))).toEqual(DEFAULT_THEME_COLORS);
   });
 
-  it('5 テーマとも 26 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
+  it('5 テーマとも 35 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
+    // 表題の数が実際の欄の数と食い違わないよう、件数もここで固定する
+    // (26 と書いたまま 31 個になっていた。P6 タスク46 で点検の 3 色を足した)。
+    expect(COLOR_FIELDS).toHaveLength(35);
     for (const [theme, selector] of THEME_SELECTORS) {
       const block = blockOf(selector);
       for (const field of COLOR_FIELDS) {
@@ -307,6 +310,35 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
           `${theme} の ${otherToken} と同じ色になっていない`,
         ).not.toBe(measure);
       }
+    }
+  });
+
+  it('点検の 3 色(FR-815)は 5 テーマとも地と 3:1 以上で、互いに違う色(P6 タスク46)', () => {
+    const printTokens = ['--pcad-print-thin', '--pcad-print-overhang', '--pcad-print-open-edge'];
+    for (const [theme, selector] of THEME_SELECTORS) {
+      const block = blockOf(selector);
+      const values = printTokens.map((token) => parseCssColor(tokenValue(block, token)));
+      for (let index = 0; index < printTokens.length; index += 1) {
+        const value = values[index];
+        expect(value, `${theme} の ${printTokens[index]}`).not.toBeNull();
+        if (value === null) {
+          continue;
+        }
+        // 問題のある三角形をこの色で塗るので、地に埋もれては役に立たない(NFR-UX-7)。
+        for (const groundToken of ['--pcad-viewport-top', '--pcad-viewport-bottom']) {
+          const ground = parseCssColor(tokenValue(block, groundToken));
+          expect(ground, `${theme} の ${groundToken}`).not.toBeNull();
+          if (ground === null) {
+            continue;
+          }
+          expect(
+            contrastRatio(value, ground),
+            `${theme} の ${printTokens[index]} / ${groundToken}`,
+          ).toBeGreaterThanOrEqual(3);
+        }
+      }
+      // 3 つの意味(薄い・せり出し・開いた辺)を見分けられること。
+      expect(new Set(values).size, `${theme} の点検の 3 色`).toBe(printTokens.length);
     }
   });
 

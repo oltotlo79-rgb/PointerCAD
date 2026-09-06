@@ -197,4 +197,57 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
     });
     bridge.dispose();
   });
+
+  it('exportShapes は「書き出せなかった」(kind: failed)で解決する', async () => {
+    const bridge = createKernelBridge();
+    const pending = bridge.exportShapes([fakeStep('body-1', 'key-1')], {
+      format: 'step',
+      bodies: [{ featureId: 'body-1', name: '球1', color: null }],
+      meshQuality: null,
+      withColors: true,
+      ascii: false,
+      baseName: 'model',
+    });
+    silentWorkers.breakCurrent();
+
+    // 書き出しにも「壊れた」の種類は無いので、測定と同じ `kind: 'failed'` で断る。
+    // ここで拒否(throw)にすると、書き出しのパネルが理由の出ないまま固まる。
+    await expect(pending).resolves.toEqual({
+      kind: 'failed',
+      message: KERNEL_BROKEN_MESSAGE,
+    });
+    bridge.dispose();
+  });
+
+  it('inspectPrintability は「点検できなかった」(kind: failed)で解決する', async () => {
+    const bridge = createKernelBridge();
+    const pending = bridge.inspectPrintability([fakeStep('body-1', 'key-1')], {
+      bodies: ['body-1'],
+    });
+    silentWorkers.breakCurrent();
+
+    // 点検にも「壊れた」の種類は無いので、測定・書き出しと同じ `kind: 'failed'` で断る。
+    // ここで拒否(throw)にすると、点検を押した画面が理由の出ないまま固まる(§0.a-0.19)。
+    await expect(pending).resolves.toEqual({
+      kind: 'failed',
+      message: KERNEL_BROKEN_MESSAGE,
+    });
+    bridge.dispose();
+  });
+
+  it('importShape は「読み込めなかった」(kind: failed)で解決する', async () => {
+    const bridge = createKernelBridge();
+    const pending = bridge.importShape({
+      format: 'step',
+      fileName: 'box.step',
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+    silentWorkers.breakCurrent();
+
+    await expect(pending).resolves.toEqual({
+      kind: 'failed',
+      message: KERNEL_BROKEN_MESSAGE,
+    });
+    bridge.dispose();
+  });
 });

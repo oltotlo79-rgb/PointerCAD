@@ -18,6 +18,7 @@
     "decimal.js": "catalog:"
   },
   "devDependencies": {
+    "@pointercad/test-utils": "workspace:*",
     "vitest": "catalog:"
   }
 }

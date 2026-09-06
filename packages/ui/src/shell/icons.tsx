@@ -1416,6 +1416,21 @@ export function MeasureIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/**
+ * 3D プリントの点検(FR-815、P6 タスク46)。積み上がった層の線 3 本と、調べる虫めがね。
+ * 「積んで作るものを調べる」が図柄だけで読める(NFR-UX-7)。外観(枡)・測る(物差し)・
+ * 下絵(作図面)と重ならない図柄にして、一覧の 4 行を見分けられるようにする。
+ */
+export function PrintCheckIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.2 13.6h11.6M2.2 11.2h11.6M2.2 8.8h7.4" />
+      <circle cx="10.4" cy="4.6" r="2.9" />
+      <path d="M12.5 6.7 14.2 8.4" />
+    </SvgIcon>
+  );
+}
+
 /*
  * P5 の Should 群 12 種の図柄(FR-409、FR-417〜428、FR-432。タスク50、§2.15)。
  *
@@ -1589,6 +1604,95 @@ export function ImportedMeshIcon(props: IconProps): React.JSX.Element {
       <path d="M8 2 13.6 12H2.4z" fill="currentColor" fillOpacity={0.35} />
       <path d="M8 2 13.6 12H2.4z" />
       <path d="M10.8 7 8 12 5.2 7z" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 書き出す(FR-803、P6 タスク32)。箱から矢印が**外へ出ていく**——
+ * いまの立体をファイルへ渡すことを表す。読み込む図柄と矢印の向きだけが違う。
+ */
+export function ExportIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.8 9.2h10.4v4.8h-10.4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M8 7.6v-5.6" />
+      <path d="M5.6 4.4 8 2l2.4 2.4" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 読み込む(FR-802、FR-813、P6 タスク32)。箱へ矢印が**入っていく**——
+ * ほかのソフトのファイルを取り込むことを表す。履歴の段の図柄
+ * (`ImportedSolidIcon`)と同じ向きにそろえてある。
+ */
+export function ImportIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.8 9.2h10.4v4.8h-10.4z" fill="currentColor" fillOpacity={0.35} />
+      <path d="M8 2v5.6" />
+      <path d="M5.6 5.2 8 7.6l2.4-2.4" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * ひな形として保存(FR-814、P6 タスク33)。角を折った白紙に星を添えて
+ * 「これからの部品のもとになる 1 枚」を表す。中身の入っていない部品なので、
+ * 白紙(`NewFileIcon`)を土台にしてある。
+ */
+export function TemplateSaveIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.6 2h5.2l3 3v6.2H3.6z" />
+      <path d="M8.8 2v3h3" />
+      <path d="M11.4 10.6l.8 1.7 1.8.3-1.3 1.3.3 1.8-1.6-.9-1.6.9.3-1.8-1.3-1.3 1.8-.3z" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * ひな形から新規(FR-814、P6 タスク33)。ひな形の白紙から**もう 1 枚**が起きる形。
+ * 「ひな形として保存」(`TemplateSaveIcon`)と土台の白紙をそろえてあるので、
+ * 一覧の中で 2 つが対になって読める。
+ */
+export function TemplateNewIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.2 1.9h4.4l2.6 2.6v5.6H2.2z" strokeDasharray="1.6 1.2" />
+      <path d="M7.2 5.6h4.4l2.6 2.6v5.9H7.2z" />
+      <path d="M11.6 5.6v2.6h2.6" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 印刷(FR-810、P6 タスク33)。世の中の道具と同じ、紙の出るプリンタの形。
+ * 上が送り込む紙、真ん中が本体、下が刷り上がった紙。
+ */
+export function PrintIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4.6 1.9h6.8v3.4H4.6z" />
+      <path d="M2.2 5.3h11.6v5.1H2.2z" />
+      <path d="M4.6 8.6h6.8v5.5H4.6z" fill="currentColor" fillOpacity={0.35} />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 最近使ったファイル(FR-807、P6 タスク33)。書類に時計の針を添えて
+ * 「いつ触ったか」を覚えているだけであることを表す(場所は覚えない、NFR-SE-1)。
+ */
+export function RecentFileIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.2 1.9h4.6l2.6 2.6v3.1" />
+      <path d="M3.2 1.9v12.2h3.4" />
+      <path d="M7.8 1.9v2.6h2.6" />
+      <circle cx="10.9" cy="10.9" r="3.2" />
+      <path d="M10.9 9v2h1.6" />
     </SvgIcon>
   );
 }

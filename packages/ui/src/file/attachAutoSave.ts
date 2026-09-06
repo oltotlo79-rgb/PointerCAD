@@ -25,7 +25,7 @@ import {
   type AutoSaveStorage,
 } from '@pointercad/io';
 
-import { useAppStore } from '../store/useAppStore.js';
+import { currentPcadAttachments, useAppStore } from '../store/useAppStore.js';
 import { hasUnsavedChanges, readPartDocument } from './partFile.js';
 
 // ---------------------------------------------------------------------------
@@ -250,6 +250,13 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   }
   const store = useAppStore.getState();
   store.resetDocument(outcome.document);
+  /*
+   * 形そのもの(読み込んだ B-rep・三角形・下絵)は文書の外にあるので、**文書を作り直した
+   * 後に**入れ直す(`resetDocument` が前の部品の表を空にするので、先に入れると消える。
+   * ストアの `resetDocument` の注釈と同じ順序。P6 タスク32・39)。
+   */
+  store.setImportedAttachments(outcome.attachments.shapes, outcome.attachments.meshes);
+  store.setCanvasImages(outcome.attachments.canvases);
   store.setFileState(null, null);
   store.setRestorePrompt(null);
 }
@@ -279,7 +286,16 @@ export interface StartAutoSaveOptions {
 export function startAutoSave(options: StartAutoSaveOptions = {}): () => void {
   const saver =
     options.saver ??
-    createAutoSaver({ storage: createUnsavedOnlyStorage(createAutoSaveStorageForBrowser()) });
+    createAutoSaver({
+      storage: createUnsavedOnlyStorage(createAutoSaveStorageForBrowser()),
+      /*
+       * 控えにも添付(読み込んだ形・下絵)を一緒に入れる(P6 タスク32、タスク21 の申し送り)。
+       * **渡さないと、読み込んだ形を含む文書の控えが復元できない**——`.pcad` の読み手は
+       * 文書が指している添付が欠けていると断るので、添付なしで書いた控えは
+       * 「開けない控え」になる(`packages/io` の `findMissingAttachment`)。
+       */
+      attachmentsOf: () => currentPcadAttachments(),
+    });
   let detached = false;
 
   useAppStore.getState().setAutoSaver(saver);

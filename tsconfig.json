@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./tsconfig.tools.json" },
+    { "path": "./packages/test-utils" },
     { "path": "./packages/expression" },
     { "path": "./packages/help-content" },
     { "path": "./packages/kernel" },

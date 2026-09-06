@@ -7,10 +7,10 @@
  * (絞り込みを常に通しても配列を作らない = 費用が増えない、NFR-PF-1)。
  */
 
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   ALL_SELECTABLE,
   filterPickCandidates,

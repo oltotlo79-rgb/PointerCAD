@@ -165,4 +165,123 @@ describe('読み込んだ形のベースボディ(FR-802、P6 §2.8)を実カー
     },
     OCCT_TIMEOUT_MS,
   );
+
+  /**
+   * 上の検査は `KernelApi` を直に呼んでいる(タスク20 の時点では橋に口が無かった)。
+   * ここでは**橋の口**(`KernelBridge.exportShapes` / `importShape`、P6 タスク32b)を通す。
+   *
+   * 橋を通すと、段の鍵への引き直し(`featureId` → `ResolvedSolidStep.key`)と、
+   * STEP のファイル名の組み立て、結果の詰め替えという**ui が頼る 3 つの配線**が一緒に通る。
+   * 偽の `KernelApi` ではこの 3 つが揃っていても形になるかは分からない(t21 の教訓)。
+   */
+  it(
+    '橋の口で箱を STEP へ書き出し、同じ橋で読み戻すと体積が変わらない',
+    async () => {
+      const source = appendSolid(createEmptyPartDocument(), boxFeature());
+      const built = await recomputePart(source, bridge, caches());
+      expect(built.errors).toEqual([]);
+      expect(built.bodies[0].volume).toBeCloseTo(BOX_VOLUME_MM3, 6);
+
+      // 書き出しは段の鍵で形を指すが、**呼び出し側はフィーチャーの id しか渡さない**。
+      const exported = await bridge.exportShapes(resolvePart(source).steps, {
+        format: 'step',
+        bodies: [{ featureId: 'box-1', name: '箱1', color: [1, 0, 0] }],
+        meshQuality: null,
+        withColors: true,
+        ascii: false,
+        baseName: 'box',
+      });
+      expect(exported.kind).toBe('files');
+      if (exported.kind !== 'files') {
+        return;
+      }
+      // 名前は橋が組む(`.obj` と `.mtl` の対と同じ約束で、呼び出し側は数えずに保存する)。
+      expect(exported.files).toHaveLength(1);
+      expect(exported.files[0].fileName).toBe('box.step');
+      // STEP(ISO 10303-21)の先頭の合図。中身が本当に STEP であることの裏取り。
+      expect(new TextDecoder().decode(exported.files[0].bytes.slice(0, 12))).toBe('ISO-10303-21');
+
+      const imported = await bridge.importShape({
+        format: 'step',
+        fileName: 'box.step',
+        bytes: exported.files[0].bytes,
+      });
+      expect(imported.kind).toBe('imported');
+      if (imported.kind !== 'imported') {
+        return;
+      }
+      // STEP は単位を持つので、利用者へ訊かずに mm と分かる(§0.a-0.6)。
+      expect(imported.unit).toBe('mm');
+      expect(imported.bodies).toHaveLength(1);
+      const body = imported.bodies[0];
+      expect(body.bodyKind).toBe('solid');
+      expect(body.volume).toBeCloseTo(BOX_VOLUME_MM3, 6);
+      if (body.bodyKind === 'mesh') {
+        return;
+      }
+      // 読み戻した B-rep はそのまま `.pcad` の `shapes/<id>.brep` へ入る(タスク20 の経路)。
+      expect(body.brepBytes.byteLength).toBeGreaterThan(0);
+    },
+    OCCT_TIMEOUT_MS,
+  );
+
+  /**
+   * 3D プリントの点検(FR-815、P6 タスク46)の橋の口(`KernelBridge.inspectPrintability`)を
+   * 実カーネルで 1 往復させる。**偽の `KernelApi` では確かめられない 3 つ**——
+   * ①フィーチャーの id から段の鍵への引き直し、②細かさの対の詰め替え、③三角形ごとの
+   * 真偽と要約の詰め替え——が一緒に通る(書き出しの往復と同じ理由、t21 の教訓)。
+   *
+   * 期待値は §2.16 の表の 1 行目(20³ の箱)を、この検査の箱(20 × 30 × 20)に読み替えたもの。
+   * 最小肉厚は最も短い辺(20)、開いた辺は 0 本、せり出しは 0 枚(底面は造形台に接するので除く)。
+   */
+  it(
+    '橋の口で箱を点検すると、閉じていて・せり出し 0 枚・最小肉厚が最も短い辺になる',
+    async () => {
+      const source = appendSolid(createEmptyPartDocument(), boxFeature());
+      const built = await recomputePart(source, bridge, caches());
+      expect(built.errors).toEqual([]);
+
+      const outcome = await bridge.inspectPrintability(resolvePart(source).steps, {
+        bodies: ['box-1'],
+      });
+      expect(outcome.kind).toBe('inspected');
+      if (outcome.kind !== 'inspected') {
+        return;
+      }
+      const { summary } = outcome.report;
+      // 箱は面 6 枚 × 三角形 2 枚。細かさを変えても平面は割れないので 12 枚で決まる。
+      expect(outcome.report.triangleCount).toBe(12);
+      expect(summary.watertight).toBe(true);
+      expect(summary.openEdgeCount).toBe(0);
+      // 底面は造形台に接するので支持が要らない。側面は水平から 90° 立っている。
+      expect(summary.overhangCount).toBe(0);
+      // 20mm の壁は既定のしきい値(0.8mm)よりずっと厚い。
+      expect(summary.thinCount).toBe(0);
+      expect(summary.minThicknessFoundMm).toBeCloseTo(20, 6);
+      // しきい値は省いたのでカーネルの既定がそのまま返る(画面はこの値を表示する)。
+      expect(summary.minThicknessMm).toBe(0.8);
+      expect(summary.overhangAngleDeg).toBe(45);
+      expect(outcome.report.cancelled).toBe(false);
+    },
+    OCCT_TIMEOUT_MS,
+  );
+
+  it(
+    '段の鍵が引けない立体を頼むと、カーネルを呼ばずに断る',
+    async () => {
+      const source = appendSolid(createEmptyPartDocument(), boxFeature());
+      await recomputePart(source, bridge, caches());
+
+      // 文書に無い id。鍵へ引き直せないので、点検そのものを行わずに断る(§0.a-0.30)。
+      const outcome = await bridge.inspectPrintability(resolvePart(source).steps, {
+        bodies: ['box-1', 'box-2'],
+      });
+      expect(outcome.kind).toBe('failed');
+
+      // 立体を 1 つも指さないときも Worker を起こさない。
+      const empty = await bridge.inspectPrintability(resolvePart(source).steps, { bodies: [] });
+      expect(empty.kind).toBe('failed');
+    },
+    OCCT_TIMEOUT_MS,
+  );
 });

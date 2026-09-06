@@ -12,6 +12,7 @@
     { "path": "../expression" },
     { "path": "../help-content" },
     { "path": "../io" },
-    { "path": "../model" }
+    { "path": "../model" },
+    { "path": "../test-utils" }
   ]
 }

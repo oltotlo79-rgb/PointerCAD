@@ -1,3 +1,4 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { extractEdges } from '../occt/extractEdges.js';
@@ -6,7 +7,6 @@ import { makePrimitive } from '../occt/makePrimitive.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type {
   ChamferStepSpec,
   CurveSpec,

@@ -34,6 +34,8 @@ function createFakeKernelApi(measureImpl: (request: MeasureRequest) => Promise<M
     // 確かめないので、他のメソッドと同じく呼ばれない前提にする。
     exportShapes: () => unimplemented('exportShapes'),
     importShape: () => unimplemented('importShape'),
+    // P6 タスク42 で加わり、タスク46 で必須になった 3D プリントの点検(FR-815)。同上。
+    inspectPrintability: () => unimplemented('inspectPrintability'),
   };
 }
 

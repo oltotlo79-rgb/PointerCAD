@@ -1,7 +1,7 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { CurveSpec, ExtrudeStepSpec, RevolveStepSpec } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makePlanarFace } from './makePlanarFace.js';

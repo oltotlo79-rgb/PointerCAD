@@ -1,3 +1,4 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { extractEdges } from '../occt/extractEdges.js';
@@ -8,7 +9,6 @@ import { makeSpring } from '../occt/makeSpring.js';
 import { buildSolidBodyMesh } from '../occt/solidMesh.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type {
   AppearanceQuery,
   CurveSpec,

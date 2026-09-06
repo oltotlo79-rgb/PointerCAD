@@ -8,10 +8,18 @@ import {
 import { useEffect } from 'react';
 
 import { startAutoSave } from '../file/attachAutoSave.js';
+import { createPartExchanger } from '../file/partExchanger.js';
 import { attachDisplaySettings } from '../shell/applyDisplaySettings.js';
 import { AppShell } from '../shell/AppShell.js';
 import { createPartMeasurer } from '../solid/measureCommands.js';
-import { attachPartMeasure, attachPartRecompute, useAppStore } from '../store/useAppStore.js';
+import { createPartInspector } from '../solid/printCheckCommands.js';
+import {
+  attachExchangeKernel,
+  attachPartInspector,
+  attachPartMeasure,
+  attachPartRecompute,
+  useAppStore,
+} from '../store/useAppStore.js';
 
 /** 検査だけが使う読み取り口の 1 件ぶんの形(下の `useEffect` の注釈が理由)。 */
 interface RecomputeStats {
@@ -94,10 +102,51 @@ export function PointerCadApp(): React.JSX.Element {
         offsets,
         projections,
         subShapes,
+        // 読み込んだ形(FR-802)は文書の外にあるので、解くたびにストアの表を渡す。
+        // 渡さないと読み込んだ立体だけ段が作れず、測れも書き出せもしなくなる。
+        importedShapes: () => useAppStore.getState().importedShapes,
+      }),
+    );
+    /*
+     * 書き出しと読み込み(FR-802、FR-803、P6 タスク32b)。**測定とまったく同じ形の配線**で、
+     * 覚えてある形を読むだけ(再計算は起こさない)。同じ覚え書きを渡さないと、段の鍵が
+     * 食い違って「もとになる立体が見つかりませんでした」になる。
+     *
+     * 今の文書と外観の照合はストアから読む。**書き出しのたびに読む**(押した時点の
+     * 文書で書き出すため。ここで 1 度だけ読むと、開き直した後も古い文書を書き出す)。
+     */
+    const detachExchange = attachExchangeKernel(
+      createPartExchanger({
+        snapshot: () => {
+          const state = useAppStore.getState();
+          return { document: state.document, appearanceMatches: state.appearanceMatches };
+        },
+        exportShapes: (steps, options) => bridge.exportShapes(steps, options),
+        importShape: (options) => bridge.importShape(options),
+        offsets,
+        projections,
+        subShapes,
+        importedShapes: () => useAppStore.getState().importedShapes,
+      }),
+    );
+    /*
+     * 3D プリントの点検(FR-815、P6 タスク46)。**測定・書き出しとまったく同じ形の配線**で、
+     * 覚えてある形を読むだけ(再計算は起こさない、§0.a-0.30)。同じ覚え書きを渡さないと
+     * 段の鍵が食い違って「もとになる立体が見つかりませんでした」になる。
+     */
+    const detachInspect = attachPartInspector(
+      createPartInspector({
+        inspectPrintability: (steps, options) => bridge.inspectPrintability(steps, options),
+        offsets,
+        projections,
+        subShapes,
+        importedShapes: () => useAppStore.getState().importedShapes,
       }),
     );
 
     return () => {
+      detachInspect();
+      detachExchange();
       detachMeasure();
       detach();
       unwatchDocument();

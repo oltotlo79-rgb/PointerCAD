@@ -1,7 +1,7 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PrimitiveShapeSpec, PrimitiveStepSpec } from '../types.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { ExportMesh } from './exportMesh.js';
 import { buildExportMesh } from './exportMesh.js';
 import { loadOcctForNode } from './loadOcct.node.js';

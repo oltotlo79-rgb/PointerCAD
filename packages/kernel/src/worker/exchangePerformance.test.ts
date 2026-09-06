@@ -1,8 +1,8 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import { writeStl } from '../occt/writeStl.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { CurveSpec, ShapeExportItem, ShapeInspectRequest, SolidStepRequest } from '../types.js';
 import { createKernelApi, type KernelApi } from './kernelApi.js';
 
@@ -34,7 +34,7 @@ async function runInspectPrintability(
  * 上限値は計画書 §2.17 の表の数値そのままで、**緩めない**
  * (`rules/02-禁止事項.md`「性能テストの上限値を緩めることも禁止する」)。上限に届かない
  * 実測が出たときは、上限を書き換えるのではなく原因を統括へ報告する。判定の切替
- * (`POINTERCAD_PERF_STRICT`)は `testUtils/perfBudget.ts` の `expectWithinBudget` に任せ、
+ * (`POINTERCAD_PERF_STRICT`)は `@pointercad/test-utils` の `expectWithinBudget` に任せ、
  * **検査の段は増やさない**(§0.a-0.61。`pnpm run test` の中に入る)。
  *
  * ## ここで測るのは「配線ごと」の所要である

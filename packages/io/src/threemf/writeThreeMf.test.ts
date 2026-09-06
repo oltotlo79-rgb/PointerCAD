@@ -1,8 +1,8 @@
 import { DEFAULT_APPEARANCE } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   DEFAULT_THREE_MF_COLOR,
   THREE_MF_CONTENT_TYPES_ENTRY,

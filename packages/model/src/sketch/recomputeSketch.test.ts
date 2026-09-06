@@ -10,6 +10,9 @@ import {
   type SketchOffsetResult,
   type SketchProjectionResult,
   type SketchTessellationOutcome,
+  type ShapeExportOutcome,
+  type ShapeImportOutcome,
+  type PrintabilityOutcome,
   type SolidRecomputeOutcome,
 } from '../kernelBridge.js';
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.js';
@@ -52,6 +55,31 @@ const UNCALLED_MEASURE_OUTCOME: MeasureOutcome = {
 };
 
 /**
+ * 書き出し・読み込み(FR-802、FR-803、P6 タスク32b)もスケッチの計算では起きない。
+ * 呼ばれたら分かるよう失敗にしておく。
+ */
+const UNCALLED_EXCHANGE_MESSAGE = 'このテストの偽のカーネルは書き出しと読み込みを検査しません。';
+
+const UNCALLED_EXPORT_OUTCOME: ShapeExportOutcome = {
+  kind: 'failed',
+  message: UNCALLED_EXCHANGE_MESSAGE,
+};
+
+const UNCALLED_IMPORT_OUTCOME: ShapeImportOutcome = {
+  kind: 'failed',
+  message: UNCALLED_EXCHANGE_MESSAGE,
+};
+
+/**
+ * 3D プリントの点検(FR-815、P6 タスク46)も再計算からは頼まない。
+ * 呼ばれたら分かるよう失敗にしておく(書き出し・読み込みと同じ扱い)。
+ */
+const UNCALLED_PRINTABILITY_OUTCOME: PrintabilityOutcome = {
+  kind: 'failed',
+  message: 'このテストの偽のカーネルは 3D プリントの点検を検査しません。',
+};
+
+/**
  * 偽のカーネル。OCCT は読み込まない(実物はタスク13・14 の Node テストで確かめる)。
  * async を使わないのは、await の無い async 関数を書かないため(計画書 §4)。
  */
@@ -64,6 +92,9 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
     projectSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
     sectionSketchCurves: () => Promise.resolve(EMPTY_PROJECTION_RESULT),
     measure: () => Promise.resolve(UNCALLED_MEASURE_OUTCOME),
+    exportShapes: () => Promise.resolve(UNCALLED_EXPORT_OUTCOME),
+    importShape: () => Promise.resolve(UNCALLED_IMPORT_OUTCOME),
+    inspectPrintability: () => Promise.resolve(UNCALLED_PRINTABILITY_OUTCOME),
     dispose: () => undefined,
     ...overrides,
   };

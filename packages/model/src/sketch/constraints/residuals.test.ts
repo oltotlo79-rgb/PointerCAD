@@ -1,4 +1,5 @@
 import { expressionValueFromNumber as num } from '@pointercad/expression';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import { absoluteCoordinate } from '../createSketchDocument.js';
@@ -18,7 +19,6 @@ import {
   type ResidualRow,
 } from './residuals.js';
 import type { ConstraintTarget, SketchConstraint } from './types.js';
-import { expectWithinBudget } from '../../testUtils/perfBudget.js';
 import { collectVariables, type VariableSet } from './variables.js';
 
 // --- 文書の組み立て -------------------------------------------------------

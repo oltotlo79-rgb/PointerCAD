@@ -1,8 +1,8 @@
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   addParameter,
   analyzeParameters,

@@ -355,13 +355,14 @@ export interface KernelApi {
    * 鍵が形状キャッシュに見つからないときは、書き出し・投影と同じ `MISSING_BODY_MESSAGE`
    * で断る(投げる。書き出しと同じく「一部だけ点検できた」を返さない)。
    *
-   * **この欄はいま任意にしてある。** 必須にすると、`KernelApi` を丸ごと実装する偽物
-   * (`packages/model/src/measure/measureBridge.test.ts` の `createFakeKernelApi` など、
-   * 今回は「他は触らない」範囲の外)がすべて型検査で落ちる。`HoleStepSpec.entry` と同じ
-   * 経過措置(P5 タスク42a、2026-09-05 統括判断)で、**呼び出し側(ui のタスク43、
-   * model のタスク26 相当)がこのメソッドへの依存を組み終えたら必須へ引き上げてよい**。
+   * **タスク42 では任意(`?`)にしてあったが、タスク46(43a)で必須へ引き上げた。**
+   * 任意のままだと、この口を呼ぶ `KernelBridge.inspectPrintability`(model)が毎回
+   * 「実装されているか」を実行時に確かめる分岐を持つことになり、偽の `KernelApi` が
+   * 実装を忘れても型検査が黙って通ってしまう(呼び出し側が組み終わるまでの経過措置
+   * だった、P5 タスク42a の `HoleStepSpec.entry` と同じ扱い)。**呼び出し側が
+   * 組み終わったので、実装漏れを型検査で捕まえる側へ戻す。**
    */
-  inspectPrintability?(
+  inspectPrintability(
     request: ShapeInspectRequest,
     onProgress?: PrintabilityProgressCallback,
     shouldCancel?: PrintabilityCancelToken,

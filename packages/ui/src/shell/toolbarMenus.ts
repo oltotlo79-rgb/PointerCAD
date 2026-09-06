@@ -48,12 +48,14 @@ import {
   EllipseToolIcon,
   EmbossIcon,
   EqualConstraintIcon,
+  ExportIcon,
   ExtendToolIcon,
   ExtrudeIcon,
   FilletIcon,
   FixConstraintIcon,
   HoleIcon,
   HorizontalConstraintIcon,
+  ImportIcon,
   IntersectIcon,
   LinearArrayToolIcon,
   LinearPatternIcon,
@@ -66,10 +68,14 @@ import {
   ParallelConstraintIcon,
   PerpendicularConstraintIcon,
   PerspectiveIcon,
+  PlaneIcon,
+  PrintCheckIcon,
   PointPatternIcon,
   PolygonToolIcon,
+  PrintIcon,
   ProjectToolIcon,
   RadiusConstraintIcon,
+  RecentFileIcon,
   RectangleToolIcon,
   RevolveIcon,
   RibIcon,
@@ -91,6 +97,8 @@ import {
   SweepIcon,
   SymmetricConstraintIcon,
   TangentConstraintIcon,
+  TemplateNewIcon,
+  TemplateSaveIcon,
   ThreadHoleIcon,
   ThreadShaftIcon,
   ThreePointArcToolIcon,
@@ -112,6 +120,18 @@ export interface ToolMenuItem<Id extends string> {
   readonly labelKey: MessageKey;
   readonly tooltipKey: MessageKey;
   readonly Icon: IconComponent;
+  /**
+   * 決まった文言ではなく**利用者が付けた名前**を出す行だけが持つ(P6 タスク33)。
+   *
+   * 保存したひな形の名前と、最近使ったファイルの名前がこれにあたる。あれば `labelKey` の
+   * 代わりに出る。NFR-MA-5(文言は `ja.json` へ分ける)は決まった文言の話で、利用者が
+   * 自分で付けた名前はその対象ではない——それでも `labelKey` を必須のままにしてあるのは、
+   * 名前が空のときに出す言葉と、読み上げの手掛かりを必ず持たせるためである。
+   *
+   * ツールチップに同じ欄を作らないのは、`Toolbar.tsx` が「名前: 説明」と組み立てており、
+   * 名前がここで差し替われば説明(`tooltipKey`)は決まった文言のままでよいからである。
+   */
+  readonly label?: string;
 }
 
 /**
@@ -126,16 +146,22 @@ export interface ToolMenuItem<Id extends string> {
  * あるのは**別名保存だけ**なので、まずそれだけを載せる。残りは中身を作るタスクが
  * この型と下の表へ 1 行ずつ足す(溝の幅は 1 画素も増えない。`segmentedWidthPixels`)。
  *
- * - 書き出す・読み込む … タスク32(`file/exchangeFile.ts` とパネル)
- * - ひな形から新規・ひな形として保存・印刷・最近使ったファイル … タスク33
- *   (ひな形は `file/templateFile.ts`、最近使ったファイルは端末の覚え書き、
- *    印刷は `file/printView.ts` の `printViewport` に渡す
- *    `capture: () => string | null` = **ビューポートの 1 コマを白い下地で PNG にする口**が
- *    まだ無い。いまストアにある `captureThumbnail` は 256 画素の正方形で下地も画面と同じ
- *    暗い色なので、紙に出すと FR-908「印刷の見た目はテーマの影響を受けない」に反する。
- *    `viewport/createViewportScene.ts` へ `capturePrintFrame()` を足す必要がある)
+ * - 書き出す・読み込む … **タスク32 で載せた**(`file/exchangeFile.ts` と `file/ExchangePanel.tsx`)
+ * - ひな形として保存・ひな形から新規・印刷 … **タスク33 で載せた**
+ *   (ひな形は `file/templateFile.ts`、印刷は `file/printView.ts` の `printViewport` に、
+ *    ストアの `capturePrintFrame`(白い下地で 1 コマを PNG にする口。`createViewportScene`
+ *    が差し出す)を渡す。**`captureThumbnail` は流用しない**——256 画素の正方形で下地も
+ *    画面と同じ暗い色なので、紙に出すと FR-908「印刷の見た目はテーマの影響を受けない」に反する)
+ * - 保存したひな形と最近使ったファイルは**数が決まらない**ので、この型ではなく下の
+ *   `fileMenuItems` が接頭辞つきの id で組み立てる。
  */
-export type FileMenuActionId = 'saveAs';
+export type FileMenuActionId =
+  | 'saveAs'
+  | 'exportShape'
+  | 'importShape'
+  | 'saveAsTemplate'
+  | 'newFromTemplate'
+  | 'print';
 
 /**
  * 「ファイル」の畳んだ一覧(FR-812、P6 §0.57、タスク31)。
@@ -155,7 +181,148 @@ export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
     tooltipKey: 'toolbar.file.saveAsMenuTooltip',
     Icon: SaveAsIcon,
   },
+  /*
+   * 書き出す・読み込む(FR-802、FR-803、FR-813、タスク32)。**別名保存の下に置く。**
+   * 上から「いまの部品を別の名前で残す」→「いまの部品をほかのソフトへ渡す」→
+   * 「ほかのソフトの形を取り込む」と、外へ出す操作から中へ入れる操作の順に並ぶ。
+   */
+  {
+    id: 'exportShape',
+    labelKey: 'toolbar.file.exportShape',
+    tooltipKey: 'toolbar.file.exportShapeTooltip',
+    Icon: ExportIcon,
+  },
+  {
+    id: 'importShape',
+    labelKey: 'toolbar.file.importShape',
+    tooltipKey: 'toolbar.file.importShapeTooltip',
+    Icon: ImportIcon,
+  },
+  /*
+   * ひな形(FR-814、タスク33)。**残す → 始める**の順に 2 行。書き出す・読み込むの下に
+   * 置くのは、どちらも「ファイルを 1 つ作る / ファイルから始める」操作で、上の 3 行
+   * (いまの部品をどう保存するか)とは目的が違うためである。
+   */
+  {
+    id: 'saveAsTemplate',
+    labelKey: 'toolbar.file.saveAsTemplate',
+    tooltipKey: 'toolbar.file.saveAsTemplateTooltip',
+    Icon: TemplateSaveIcon,
+  },
+  {
+    id: 'newFromTemplate',
+    labelKey: 'toolbar.file.newFromTemplate',
+    tooltipKey: 'toolbar.file.newFromTemplateTooltip',
+    Icon: TemplateNewIcon,
+  },
+  /*
+   * 印刷(FR-810、タスク33)。いまの部品を紙へ出す操作なので、ファイルを作る操作の後ろ、
+   * 動く行(保存したひな形・最近使ったファイル)の前に置く。
+   */
+  {
+    id: 'print',
+    labelKey: 'toolbar.file.print',
+    tooltipKey: 'toolbar.file.printTooltip',
+    Icon: PrintIcon,
+  },
 ];
+
+// ---------------------------------------------------------------------------
+// 数の決まらない行(保存したひな形・最近使ったファイル。P6 §0.a-0.36・0.38、タスク33)
+// ---------------------------------------------------------------------------
+
+/**
+ * 保存したひな形の行の id の接頭辞(FR-814)。
+ *
+ * 決まった操作の id(`FileMenuActionId`)と混ざらないよう、**接頭辞で種類を分ける。**
+ * 兄弟の `key` に種類の接頭辞を付けるのは `rules/06` 10.9 の対策でもある——ひな形の名前が
+ * たまたま `'print'` でも、行の id は `'template:print'` になって決まった操作と食い違う。
+ */
+export const STORED_TEMPLATE_MENU_PREFIX = 'template:';
+
+/** 最近使ったファイルの行の id の接頭辞(FR-807)。理由は上と同じ。 */
+export const RECENT_FILE_MENU_PREFIX = 'recentFile:';
+
+/** 保存したひな形の行の id。 */
+export type StoredTemplateMenuId = `${typeof STORED_TEMPLATE_MENU_PREFIX}${string}`;
+/** 最近使ったファイルの行の id。 */
+export type RecentFileMenuId = `${typeof RECENT_FILE_MENU_PREFIX}${string}`;
+
+/** 「ファイル」の一覧に並ぶ行の id(決まった操作 + 数の決まらない 2 種)。 */
+export type FileMenuItemId = FileMenuActionId | StoredTemplateMenuId | RecentFileMenuId;
+
+/**
+ * その行が保存したひな形か。**型を絞る述語**にしてあるので、`Toolbar.tsx` は 2 種類を
+ * より分けたあと、残りが決まった操作(`FileMenuActionId`)だけであることを型で確かめられる
+ * ——網羅 `switch` の効き目(配線を書かずに行を足せない)を保つための形である。
+ */
+export function isStoredTemplateMenuId(id: FileMenuItemId): id is StoredTemplateMenuId {
+  return id.startsWith(STORED_TEMPLATE_MENU_PREFIX);
+}
+
+/** その行が最近使ったファイルか(理由は上と同じ)。 */
+export function isRecentFileMenuId(id: FileMenuItemId): id is RecentFileMenuId {
+  return id.startsWith(RECENT_FILE_MENU_PREFIX);
+}
+
+/** 保存したひな形の行の id から、置き場の鍵を取り出す(接頭辞を外すだけ)。 */
+export function storedTemplateIdOf(id: StoredTemplateMenuId): string {
+  return id.slice(STORED_TEMPLATE_MENU_PREFIX.length);
+}
+
+/*
+ * 最近使ったファイルの行には**名前を取り出す口を付けない。** 選んだあとにできるのは
+ * 「開く」の窓を出すことだけ(場所を覚えていないため。§0.a-0.38、NFR-SE-1)で、
+ * 窓へ名前を初期値として渡す口が `FileGateway` に無いので、名前を読み戻す相手がいない。
+ * 使わない口を置くと「名前で開けるのでは」と読み違える。
+ */
+
+/** 一覧に名前だけを出す行のもと(ひな形の見出しとファイルの履歴に共通の 2 欄)。 */
+export interface NamedMenuEntry {
+  /** 置き場の鍵(ひな形)またはファイル名(最近使ったファイル)。 */
+  readonly id: string;
+  /** 一覧に出す名前。 */
+  readonly name: string;
+}
+
+/**
+ * 「ファイル」の一覧の中身(P6 §0.57、タスク33)。決まった 6 行のうしろへ、
+ * 保存したひな形と最近使ったファイルを名前のまま並べる。
+ *
+ * **0 件のものは 1 行も出さない。** 押しても何も起きない行を画面に出さないためで、
+ * ひな形を 1 つも残していない人・一度もファイルを開いていない人の一覧は、
+ * タスク33 の前と同じ 6 行だけになる。
+ *
+ * **一覧の中の行数はツールバーの幅に効かない**(`segmentedWidthPixels` は溝に並ぶ
+ * ボタンの個数しか見ない)ので、ひな形が 10 個並んでも溝は 121 画素のままである。
+ */
+export function fileMenuItems(
+  templates: readonly NamedMenuEntry[],
+  recentFiles: readonly NamedMenuEntry[],
+): readonly ToolMenuItem<FileMenuItemId>[] {
+  const rows: ToolMenuItem<FileMenuItemId>[] = [...FILE_MENU_ITEMS];
+  for (const template of templates) {
+    rows.push({
+      id: `${STORED_TEMPLATE_MENU_PREFIX}${template.id}`,
+      // 名前の無いひな形は作れない(`templateFile.ts` が部品の名前へ落とす)が、
+      // 空の行を画面に出さない保険として決まった文言を土台に置く。
+      labelKey: 'toolbar.file.newFromTemplate',
+      tooltipKey: 'toolbar.file.storedTemplateTooltip',
+      Icon: TemplateNewIcon,
+      label: template.name,
+    });
+  }
+  for (const recent of recentFiles) {
+    rows.push({
+      id: `${RECENT_FILE_MENU_PREFIX}${recent.id}`,
+      labelKey: 'toolbar.file.recentFile',
+      tooltipKey: 'toolbar.file.recentFileTooltip',
+      Icon: RecentFileIcon,
+      label: recent.name,
+    });
+  }
+  return rows;
+}
 
 /**
  * 「作図」の一覧(FR-313〜318、FR-326)。よく使う基本の 6 道具(選択・点・線分・円弧・
@@ -692,7 +859,30 @@ export const PROJECTION_MENU_ITEMS: readonly ToolMenuItem<ProjectionMode>[] = [
  * 外観(FR-1106〜1110)と測る(FR-1101、FR-1102)は、どちらも**立体を作らず**
  * 「選んでいるものについて何かをする」道具なので、同じ一覧に入る。
  */
-export type LookToolId = AppearanceToolId | MeasureToolId;
+export type LookToolId = AppearanceToolId | MeasureToolId | CanvasActionId | PrintCheckActionId;
+
+/**
+ * 下絵(FR-332、P6 タスク39)の入口の id。
+ *
+ * **道具ではなく操作**(押すと画像を選ぶ窓が出て、選んだ画像がその場で作図面に貼られる)なので
+ * `activeTool` にはならない。「測る」(`measure`)と同じ扱いで、`Toolbar.tsx` の
+ * `onChoose` が最初に分岐して受け止める。
+ */
+export type CanvasActionId = 'canvas';
+
+/**
+ * 3D プリントの点検(FR-815、P6 §0.53、タスク46)の入口の id。
+ *
+ * **道具ではなく操作**(押すとその場で点検が走り、問題のある三角形が色で塗られる)なので
+ * `activeTool` にはならない。下絵(`canvas`)・測る(`measure`)と同じ扱いで、
+ * `Toolbar.tsx` の `onChoose` が分岐して受け止める。
+ *
+ * **同じ行をもう一度押すと点検を閉じる**(色が消えて元の外観に戻る)。「同じ道具を
+ * もう一度選んだら解除」という他の一覧と同じ約束(NFR-UX-3)を、道具ではないこの行にも
+ * そのまま当てはめた——閉じる口を別の場所にだけ置くと、出した本人が消し方を探すことになる
+ * (プロパティの節にも「点検を閉じる」を置いてあるので、閉じ方は 2 通りある)。
+ */
+export type PrintCheckActionId = 'printCheck';
 
 /**
  * 「見た目」の一覧(FR-1106〜1110、FR-1101、FR-1102。P5 タスク51、タスク32)。
@@ -714,6 +904,29 @@ export const LOOK_MENU_ITEMS: readonly ToolMenuItem<LookToolId>[] = [
     labelKey: 'toolbar.measure.title',
     tooltipKey: 'toolbar.measure.tooltip',
     Icon: MeasureIcon,
+  },
+  /*
+    下絵(FR-332、P6 タスク39)。**3 行目**。外観・測ると同じく「立体を作らず、選んで
+    いるものや見え方について何かをする」ものなので同じ一覧に入り、区画は増えない
+    (要件§7.1)。図柄は作図面(`PlaneIcon`)を借りる——下絵は作図面に貼る紙なので。
+  */
+  {
+    id: 'canvas',
+    labelKey: 'toolbar.canvas.label',
+    tooltipKey: 'toolbar.canvas.tooltip',
+    Icon: PlaneIcon,
+  },
+  /*
+    3D プリントの点検(FR-815、P6 タスク46)。**4 行目**。形を 1 つも変えず「いま在る
+    立体について何かを調べる」ものなので、測る(2 行目)と同じ性質でこの一覧に入り、
+    区画は増えない(要件§7.1)。この 1 行を足してもツールバーの幅は 1 画素も増えない
+    (`segmentedWidthPixels` は溝に並ぶボタンの個数しか見ない。§0.a-0.80)。
+  */
+  {
+    id: 'printCheck',
+    labelKey: 'toolbar.look.printCheck',
+    tooltipKey: 'toolbar.look.printCheckTooltip',
+    Icon: PrintCheckIcon,
   },
 ];
 

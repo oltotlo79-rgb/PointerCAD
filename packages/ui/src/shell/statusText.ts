@@ -422,6 +422,28 @@ export interface StatusInput {
    */
   readonly timelineNoticeKey?: MessageKey | null;
   /**
+   * 書き出しの添え物(P6 タスク45 の指摘、43b の申し送り)。「弾いた立体が 1 つあります」
+   * 「面積 0 の三角形を 3 枚除きました」のような、**うまくいったときに添える案内**。
+   *
+   * **失敗の口(`errorMessage`)へ入れない。** あちらは頭に「計算に失敗しました:」を付けて
+   * 赤くするので、書き出せたのに失敗したように見えていた(タスク45 が見つけた不具合)。
+   * 断りではないので赤くせず、「保存しました」と同じ調子で出す。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)を通すため。
+   */
+  readonly exchangeNotice?: string | null;
+  /**
+   * 3D プリントの点検を断った理由(FR-815、NFR-UX-5。P6 タスク46)。いま押した
+   * 「3D プリントの点検」への返事なので、他の断りと同じ高さの優先順位に置く。
+   * 理由の文はそれだけで通じる 1 文(「点検できる形がありません。」)なので頭の言葉は
+   * 付けない(測定・外観の断りと同じ扱い)。
+   */
+  readonly printCheckErrorMessage?: string | null;
+  /**
+   * 3D プリントの点検を走らせている最中か(NFR-PF-4、NFR-UX-7)。**再計算とは別の札**で、
+   * 立てても履歴の操作は塞がない(点検は文書を 1 バイトも変えない読み取り)。
+   */
+  readonly inspectingPrint?: boolean;
+  /**
    * 順序の入れ替えを断った理由(FR-507、FR-504。P4b タスク20)。断らなかったときは null。
    * 相手のフィーチャーの名前が入る文なので、文言キーではなく組み立て済みの文で受け取る
    * (`shapeErrorMessage` と同じ扱い。省略できるのも同じ理由)。
@@ -732,6 +754,10 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // 測れなかった断り(FR-1102、P5 タスク32)。外観と同じ扱いで、理由の文をそのまま出す。
     return failureLine(null, t(input.measureErrorKey));
   }
+  if (input.printCheckErrorMessage !== undefined && input.printCheckErrorMessage !== null) {
+    // 点検できなかった断り(FR-815、P6 タスク46)。測定と同じ扱いで、理由の文をそのまま出す。
+    return failureLine(null, input.printCheckErrorMessage);
+  }
   if (input.shapeErrorMessage !== undefined && input.shapeErrorMessage !== null) {
     return failureLine('statusBar.shapeError', input.shapeErrorMessage);
   }
@@ -789,8 +815,20 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // つまみを末尾へ戻したことの知らせ(FR-507、タスク19)。断りではないので赤くしない。
     return { kind: 'saved', text: t(input.timelineNoticeKey), hint: null, progress: null };
   }
+  if (input.exchangeNotice !== undefined && input.exchangeNotice !== null) {
+    // 書き出しの添え物(タスク45・46)。**赤くしない**——うまくいったときの知らせだから。
+    return { kind: 'saved', text: input.exchangeNotice, hint: null, progress: null };
+  }
   if (input.fileMessage !== null) {
     return { kind: 'saved', text: t(input.fileMessage.key), hint: null, progress: null };
+  }
+  if (input.inspectingPrint === true) {
+    /*
+      点検の最中(FR-815、NFR-PF-4)。**再計算の帯(`progress`)とは別の 1 文**にする——
+      点検は段を持たないので「n 段目」を出せず、進み具合の細い帯も出さない。
+      道具の案内より先に出して、押したことが伝わるようにする(NFR-UX-7)。
+    */
+    return { kind: 'computing', text: t('printCheck.running'), hint: null, progress: null };
   }
   /*
     選び直せなかった外観の割り当て(FR-1106「選び直せなかった割り当ては警告し、既定の外観に

@@ -176,6 +176,9 @@ importers:
         specifier: 'catalog:'
         version: 10.6.0
     devDependencies:
+      '@pointercad/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
       vitest:
         specifier: 'catalog:'
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1))
@@ -195,6 +198,9 @@ importers:
         specifier: 'catalog:'
         version: 0.8.3
     devDependencies:
+      '@pointercad/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
       vitest:
         specifier: 'catalog:'
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1))
@@ -208,6 +214,9 @@ importers:
         specifier: 'catalog:'
         version: 2.0.0-beta.b5ff984(ws@8.21.3)
     devDependencies:
+      '@pointercad/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
       vite:
         specifier: 'catalog:'
         version: 8.2.2(@types/node@22.20.1)
@@ -226,6 +235,15 @@ importers:
       comlink:
         specifier: 'catalog:'
         version: 4.4.2
+    devDependencies:
+      '@pointercad/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1))
+
+  packages/test-utils:
     devDependencies:
       vitest:
         specifier: 'catalog:'
@@ -261,6 +279,9 @@ importers:
         specifier: 'catalog:'
         version: 5.0.15(@types/react@19.2.18)(react@19.2.8)
     devDependencies:
+      '@pointercad/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.18

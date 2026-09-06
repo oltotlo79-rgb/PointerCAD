@@ -1,4 +1,5 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
@@ -17,7 +18,6 @@ import type {
 } from '../sketch/types.js';
 import { createEmptyPartDocument } from './createPartDocument.js';
 import { resolvePart } from './resolvePart.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   buildTimeline,
   canMoveHistoryItem,

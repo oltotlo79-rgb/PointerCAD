@@ -22,9 +22,9 @@ import {
   type SketchDocument,
   type Vec3,
 } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import { constraintKindSymbol } from './constraintSummary.js';
 import {
   applyInferredConstraints,

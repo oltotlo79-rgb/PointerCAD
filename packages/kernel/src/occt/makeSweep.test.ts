@@ -1,8 +1,8 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeSweep, type SweepInput } from './makeSweep.js';

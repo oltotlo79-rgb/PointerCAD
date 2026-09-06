@@ -1,3 +1,4 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 import {
   WORK_PLANES, type ResolvedSegment, type ResolvedSketch, type Vec3,
@@ -8,7 +9,6 @@ import {
   polarCandidate, TRACK_ANGLE_STEPS, type PointerRay, type TrackKind,
 } from './trackMath.js';
 import type { ProjectToScreen } from './snapMath.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 /** ワールドの (x, y) をそのまま画面座標にする、テスト用の写し方(snapMath.test.ts と同じ)。 */
 const project: ProjectToScreen = (point: Vec3): readonly [number, number] => [point[0], point[1]];

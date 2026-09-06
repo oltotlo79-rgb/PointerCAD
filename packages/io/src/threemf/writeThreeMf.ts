@@ -60,7 +60,7 @@ export const THREE_MF_INVALID_INDICES_MESSAGE = '書き出す三角形の添字�
  * 色の値が 0〜1 の数でないときの断り。
  *
  * `packages/kernel` の `writeCafMesh.ts` / `xcafDocument.ts` の同じ断りと 1 字も違わないが、
- * io は kernel へ依存できないので写しを置くほかない(`testUtils/perfBudget.ts` と同じ事情)。
+ * io は kernel へ依存できないので写しを置くほかない(依存方向は一方向、rules/04-設計の規律.md)。
  */
 export const THREE_MF_INVALID_COLOR_MESSAGE = '書き出しの色の値が正しくありません。';
 

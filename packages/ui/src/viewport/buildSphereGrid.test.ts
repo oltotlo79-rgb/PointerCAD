@@ -6,10 +6,10 @@
  * `rules/06` の「計画書の検算に誤りがあった」の教訓)。導出は各検査の注釈に書く。
  */
 import type { Vec3 } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import type { PointerRay } from '../sketch/trackMath.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import {
   buildSphereGrid, buildSphereGridPositions, nearestSphereGridPoint, sphereGridLatitudes,
   sphereGridLatLonOf, sphereGridLongitudes, sphereGridPointAt, sphereGridPoints,

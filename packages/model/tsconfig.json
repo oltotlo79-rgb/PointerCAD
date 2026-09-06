@@ -9,6 +9,7 @@
   "include": ["src"],
   "references": [
     { "path": "../expression" },
-    { "path": "../kernel" }
+    { "path": "../kernel" },
+    { "path": "../test-utils" }
   ]
 }

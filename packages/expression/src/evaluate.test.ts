@@ -1,3 +1,4 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import Decimal from 'decimal.js';
 import { describe, expect, it } from 'vitest';
 
@@ -6,7 +7,6 @@ import { E, evaluateNode, EXPRESSION_PRECISION, ExpressionDecimal, PI } from './
 import { evaluateExpression } from './evaluateExpression.js';
 import { MM_PER_INCH_TEXT } from './lengthUnits.js';
 import { parse } from './parse.js';
-import { expectWithinBudget } from './testUtils/perfBudget.js';
 
 /**
  * 期待値の出どころ:

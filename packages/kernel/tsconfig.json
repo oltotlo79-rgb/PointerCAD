@@ -6,5 +6,8 @@
     "lib": ["ES2022", "DOM", "WebWorker"],
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [
+    { "path": "../test-utils" }
+  ]
 }

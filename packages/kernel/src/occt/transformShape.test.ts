@@ -1,3 +1,4 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type {
@@ -6,7 +7,6 @@ import type {
   gp_Trsf,
 } from 'opencascade.js/dist/opencascade.full.js';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { RigidTransformSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { loadOcctForNode } from './loadOcct.node.js';

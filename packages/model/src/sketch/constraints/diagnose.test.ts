@@ -1,4 +1,5 @@
 import { expressionValueFromNumber as num, type ExpressionValue } from '@pointercad/expression';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import { absoluteCoordinate } from '../createSketchDocument.js';
@@ -16,7 +17,6 @@ import { buildResiduals, type ResidualRow } from './residuals.js';
 import { matrixRank, solveLevenbergMarquardt } from './solve.js';
 import { sketchConstraints, type ConstraintTarget, type SketchConstraint } from './types.js';
 import { collectVariables, MAX_CONSTRAINT_VARIABLES, type VariableSet } from './variables.js';
-import { expectWithinBudget } from '../../testUtils/perfBudget.js';
 
 /**
  * タスク7 の検査。**期待値はすべて手で導ける形にしてある。**

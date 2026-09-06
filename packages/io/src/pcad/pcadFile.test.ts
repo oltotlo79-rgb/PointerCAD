@@ -4,10 +4,10 @@ import {
   PART_SCHEMA_VERSION,
   type PartDocument,
 } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import { serializeDocument } from './documentJson.js';
 import {
   decodeImportedMeshBytes,

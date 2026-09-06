@@ -8,6 +8,8 @@
 
 import {
   createKernelWorker,
+  DEFAULT_ANGULAR_DEFLECTION,
+  DEFAULT_LINEAR_DEFLECTION,
   makeSketchChamfer,
   makeSketchFillet,
   matchEdge,
@@ -24,6 +26,15 @@ import {
   type OffsetJoinType,
   type PlanarFaceRequest,
   type PlaneCurve,
+  type PrintabilityProgress,
+  type PrintabilityResult,
+  type ShapeExportItem,
+  type ShapeInspectRequest,
+  type ShapeExportRequest,
+  type ShapeExportResult,
+  type ShapeImportBody,
+  type ShapeImportRequest,
+  type ShapeImportResult,
   type SketchOffsetItem,
   type SketchOffsetOutcome,
   type SketchPlaneFrame,
@@ -44,6 +55,7 @@ import {
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
 
+import { EXPORT_MESH_QUALITY, type ExportMeshQuality } from './exchange/types.js';
 import type { ResolvedSubShape } from './geometry/planeSpec.js';
 import type { SubShapeRef } from './geometry/subShapeRef.js';
 import type {
@@ -602,6 +614,582 @@ function toMeasureOutcome(result: MeasureResult): MeasureOutcome {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 書き出しと読み込み(FR-802〜804、FR-811、P6 タスク32b)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 色 1 つ(sRGB の 0〜1)。`exchange/exportColors.ts` の `rgbTupleOf` が返す並びそのままで、
+ * kernel の `RgbTuple` と欄が同じ。
+ *
+ * **model にも名前を置くのは、`packages/ui` が kernel の型を輸入できないから**である
+ * (依存の向きは `ui → model → kernel`、rules/04)。書き出しの依頼を組み立てるのは ui なので、
+ * ui が読める言葉で受ける口をここに置く(`exchange/types.ts` の `ExportMeshQuality` と同じ理由)。
+ */
+export type ExportColor = readonly [number, number, number];
+
+/**
+ * 書き出す立体 1 つ(model の言葉)。
+ *
+ * **形も段の鍵も渡さない。** 立体は「それを作ったフィーチャーの id」で指し、鍵
+ * (`ResolvedSolidStep.key`)への引き直しは `KernelBridge.exportShapes` が行う
+ * (測定の `MeasureTarget` とまったく同じ流儀、§0.a-0.5)。
+ *
+ * 名前と色は**ファイルへ書き込む値**で、履歴の名前と外観の割り当て(`bodyColorsFor` /
+ * `faceColorsFor`)から呼び出し側が組む。**色を書かない指定のときは `null` と省略で渡す**
+ * ——形式ごとに「色を書くか」の欄を持つのは STEP だけなので、ほかの形式では
+ * 値そのものを空にするのが色を落とす唯一の手立てである(§0.a-0.22)。
+ */
+export interface ShapeExportBody {
+  /** 書き出す立体を作ったフィーチャーの id(= ボディの id)。 */
+  readonly featureId: string;
+  /** 立体の名前。`null` なら幾何カーネルの既定になる。 */
+  readonly name: string | null;
+  /** 立体の色。`null` なら色を付けない。 */
+  readonly color: ExportColor | null;
+  /**
+   * 面ごとの色(面の通し番号 → 色。§2.5.1)。**面の割り当ては立体の色より優先する。**
+   * 色を付けた面が 1 枚も無い立体では省く(空の表を作らない)。
+   */
+  readonly faceColors?: ReadonlyMap<number, ExportColor>;
+}
+
+/**
+ * 書き出しの形式(幾何カーネルの言葉)。**3MF だけ `'mesh'`** で、三角形までを受け取って
+ * ZIP と XML は `packages/io` が組む(§0.a-0.19。io は幾何カーネルを呼べない)。
+ */
+export type ShapeExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
+
+/** 書き出しの依頼(model の言葉)。 */
+export interface ShapeExportOptions {
+  readonly format: ShapeExportFormat;
+  /** 書き出す立体。並びがそのままファイルの中の並びになる。 */
+  readonly bodies: readonly ShapeExportBody[];
+  /** 三角形の細かさの対(§0.a-0.64)。三角形を使わない形式(STEP)では `null`。 */
+  readonly meshQuality: ExportMeshQuality | null;
+  /** 色を書くか(§0.a-0.22)。**効くのは STEP だけ**(ほかは `color` を空にして落とす)。 */
+  readonly withColors: boolean;
+  /** STL を文字で書くか(§0.a-0.14)。STL 以外では見ない。 */
+  readonly ascii: boolean;
+  /** ファイル名の基(拡張子なし)。`.obj` と `.mtl` は同じ基を使う(§0.a-0.16)。 */
+  readonly baseName: string;
+}
+
+/**
+ * 書き出したファイル 1 つ。**名前を変えずにそのまま保存する。**
+ * `.obj` の材質の行が `.mtl` を名前で指しているので、変えると色が付かない(§2.4)。
+ */
+export interface ExportedFile {
+  readonly fileName: string;
+  readonly bytes: Uint8Array;
+}
+
+/** 書き出した立体 1 つぶんの三角形(3MF のときだけ返る。§0.a-0.19)。 */
+export interface ExportedMeshBody {
+  /** 依頼に入れた名前をそのまま返す(io が 3MF の物体の名前に使う)。 */
+  readonly name: string | null;
+  /** 依頼に入れた色をそのまま返す。 */
+  readonly color: ExportColor | null;
+  readonly positions: Float32Array;
+  readonly indices: Uint32Array;
+}
+
+/**
+ * 書き出しの結果。**断りは投げずに `kind: 'failed'` で返す**(測定と同じ流儀)。
+ * 理由の日本語は幾何カーネルが持っているものをそのまま持ち回る(FR-504、NFR-RE-1)。
+ */
+export type ShapeExportOutcome =
+  | {
+      readonly kind: 'files';
+      /** 保存するファイル。STEP は `[.step]`、OBJ は `[.obj, .mtl]`、glTF は `[.glb]`。 */
+      readonly files: readonly ExportedFile[];
+      /** 面積 0 で落とした三角形の枚数。三角形を使わない形式では 0。 */
+      readonly droppedTriangleCount: number;
+    }
+  | { readonly kind: 'meshes'; readonly bodies: readonly ExportedMeshBody[] }
+  | { readonly kind: 'failed'; readonly message: string };
+
+/** 読み込みの依頼(model の言葉)。3MF は `packages/io` が読むのでここには入らない。 */
+export interface ShapeImportOptions {
+  readonly format: 'step' | 'stl' | 'obj' | 'gltf';
+  /** 仮想ファイルに付ける名前。中身の判別には使われない。 */
+  readonly fileName: string;
+  readonly bytes: Uint8Array;
+  /** 色を読むか(効くのは STEP だけ。省くと読む)。 */
+  readonly withColors?: boolean;
+}
+
+/** 読み込んだ三角形の形の中身(`.pcad` の `meshes/<id>.bin` へそのまま入る並び)。 */
+export interface ImportedTriangles {
+  readonly positions: Float32Array;
+  readonly normals: Float32Array;
+  readonly indices: Uint32Array;
+}
+
+/** 読み込んだ立体 1 つに共通する欄。 */
+interface ImportedBodyCommon {
+  /** ファイルに入っていた名前。無ければ `null`。 */
+  readonly name: string | null;
+  /** ファイルに入っていた色。無ければ `null`(当面は使わない。§0.a-0.28)。 */
+  readonly color: ExportColor | null;
+  /** 体積(mm³)。 */
+  readonly volume: number;
+  /** 画面用の三角形の枚数。 */
+  readonly triangleCount: number;
+}
+
+/**
+ * 読み込んだ立体 1 つ(FR-802、§2.8)。**B-rep を持つ枝と三角形だけの枝を型で分ける。**
+ * 「無い値に `null` を入れる」形にすると、受け取る側が確かめ忘れても型検査が助けない
+ * (kernel の `ShapeImportBody` と同じ分け方)。
+ */
+export type ImportedBody =
+  | (ImportedBodyCommon & {
+      readonly bodyKind: 'solid' | 'shell';
+      /** `.pcad` の `shapes/<id>.brep` へそのまま入れるバイト列。 */
+      readonly brepBytes: Uint8Array;
+    })
+  | (ImportedBodyCommon & {
+      readonly bodyKind: 'mesh';
+      /** `.pcad` の `meshes/<id>.bin` へ入れる三角形。 */
+      readonly mesh: ImportedTriangles;
+    });
+
+/**
+ * 読み込みの結果(FR-802、FR-811)。**座標はすでに mm へ換算済み**(NFR-RE-3)で、
+ * `unit` は「ファイルが何で書かれていたか」の記録である。`'other'`(STL / OBJ)のときは
+ * 呼び出し側が利用者へ訊く(§0.a-0.6)。
+ */
+export type ShapeImportOutcome =
+  | {
+      readonly kind: 'imported';
+      readonly bodies: readonly ImportedBody[];
+      readonly unit: 'mm' | 'inch' | 'other';
+    }
+  | { readonly kind: 'failed'; readonly message: string };
+
+/**
+ * 書き出す立体の段の鍵が引けなかったとき。
+ *
+ * kernel(`worker/kernelApi.ts` の `MISSING_BODY_MESSAGE`)が形状キャッシュに鍵が無かった
+ * ときに返すのと**同じ日本語**。kernel はこの文字列を輸出していないので、断りの文言を
+ * 1 つに揃えるためここへ複製する(測定の `MEASURE_MISSING_SHAPE_MESSAGE` と同じ扱い)。
+ * **1 つでも引けなければ書き出しごと断る**——一部だけ入ったファイルを渡すと、利用者は
+ * 欠けに気づかないまま他の CAD へ持っていくことになる(NFR-UX-5)。
+ */
+const EXPORT_MISSING_SHAPE_MESSAGE = 'もとになる立体が見つかりませんでした。もう一度計算し直してください。';
+
+/**
+ * 頼んでいない形式が返ったとき。**この橋は `'brep'` を頼まない**(`.pcad` へ抱き込む
+ * バイト列は読み込みの経路で得る)ので起こらないが、網羅 `switch` の枝を黙って落とさない
+ * ために断りを 1 つ置く。エラーコードは増やしていない(日本語の 1 行だけ)。
+ */
+const EXPORT_UNEXPECTED_FORMAT_MESSAGE = '書き出せませんでした。もう一度お試しください。';
+
+/** STEP のファイル名に付ける拡張子。ほかの 3 形式の名前は幾何カーネルが組んで返す。 */
+const STEP_FILE_EXTENSION = '.step';
+
+/** カーネルが投げた理由を、そのまま画面へ出せる 1 行にする(文言の正本はカーネル側)。 */
+function toFailureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 書き出す立体を kernel の言葉へ詰め替える。**1 つでも段の鍵が引けなければ `null`** を返し、
+ * 呼び出し側はカーネルを呼ばずに断る(`toMeasureRequest` と同じ流儀)。
+ */
+function toShapeExportItems(
+  steps: readonly ResolvedSolidStep[],
+  bodies: readonly ShapeExportBody[],
+): readonly ShapeExportItem[] | null {
+  const keyByFeatureId = new Map(steps.map((step) => [step.featureId, step.key]));
+  const items: ShapeExportItem[] = [];
+  for (const body of bodies) {
+    const bodyKey = keyByFeatureId.get(body.featureId);
+    if (bodyKey === undefined) {
+      return null;
+    }
+    items.push({
+      bodyKey,
+      name: body.name,
+      color: body.color,
+      faceColors: body.faceColors,
+    });
+  }
+  return items;
+}
+
+/**
+ * 三角形の細かさの対。三角形を使う形式なのに対が無いのは呼び出し側の取り違えだが、
+ * **断らずに標準の細かさで書く**(NFR-RE-1「止めずに警告する」)。表の正本は
+ * `exchange/types.ts` の 1 か所だけ(同じ 3 つの数を写さない)。
+ */
+function meshQualityOf(options: ShapeExportOptions): ExportMeshQuality {
+  return options.meshQuality ?? EXPORT_MESH_QUALITY.normal;
+}
+
+/** 書き出しの依頼を kernel の言葉へ詰め替える(網羅 `switch`。形式が増えたら落ちる)。 */
+function toShapeExportRequest(
+  items: readonly ShapeExportItem[],
+  options: ShapeExportOptions,
+): ShapeExportRequest {
+  switch (options.format) {
+    case 'step':
+      return { format: 'step', bodies: items, withColors: options.withColors };
+    case 'stl':
+      return {
+        format: 'stl',
+        bodies: items,
+        ascii: options.ascii,
+        baseName: options.baseName,
+        ...meshQualityOf(options),
+      };
+    case 'obj':
+    case 'gltf':
+      return {
+        format: options.format,
+        bodies: items,
+        baseName: options.baseName,
+        ...meshQualityOf(options),
+      };
+    case 'mesh':
+      return { format: 'mesh', bodies: items, ...meshQualityOf(options) };
+  }
+}
+
+/**
+ * 書き出しの結果を model の言葉へ詰め替える(kernel の型を外へ出さない、NFR-MA-1)。
+ *
+ * **STEP のファイル名だけはここで組む。** ほかの 3 形式は名前まで幾何カーネルが返す
+ * (`.obj` が `.mtl` を名前で指すため)ので、呼び出し側から見た約束——「返ったファイルを
+ * 名前のまま全部保存する」——を STEP でも同じにしておく。
+ */
+function toShapeExportOutcome(
+  result: ShapeExportResult,
+  options: ShapeExportOptions,
+): ShapeExportOutcome {
+  switch (result.format) {
+    case 'step':
+      return {
+        kind: 'files',
+        files: [
+          { fileName: `${options.baseName}${STEP_FILE_EXTENSION}`, bytes: result.bytes },
+        ],
+        // STEP は三角形を通らないので、落とした三角形は 1 枚も無い。
+        droppedTriangleCount: 0,
+      };
+    case 'stl':
+    case 'obj':
+    case 'gltf':
+      return {
+        kind: 'files',
+        files: result.files,
+        droppedTriangleCount: result.droppedTriangleCount,
+      };
+    case 'mesh':
+      // 並びは依頼のままなので、名前と色は同じ位置の依頼から取れる(kernel の約束)。
+      return {
+        kind: 'meshes',
+        bodies: result.bodies.map((body, index) => ({
+          name: options.bodies[index]?.name ?? null,
+          color: options.bodies[index]?.color ?? null,
+          positions: body.triangles.positions,
+          indices: body.triangles.indices,
+        })),
+      };
+    case 'brep':
+      return { kind: 'failed', message: EXPORT_UNEXPECTED_FORMAT_MESSAGE };
+  }
+}
+
+/** 読み込みの依頼を kernel の言葉へ詰め替える(網羅 `switch`)。 */
+function toShapeImportRequest(options: ShapeImportOptions): ShapeImportRequest {
+  switch (options.format) {
+    case 'step':
+      return {
+        format: 'step',
+        bytes: options.bytes,
+        fileName: options.fileName,
+        withColors: options.withColors,
+      };
+    case 'stl':
+      return { format: 'stl', bytes: options.bytes, fileName: options.fileName };
+    case 'obj':
+      return { format: 'obj', bytes: options.bytes, fileName: options.fileName };
+    case 'gltf':
+      return { format: 'gltf', bytes: options.bytes, fileName: options.fileName };
+  }
+}
+
+/** 読み込んだ立体 1 つを model の言葉へ詰め替える(B-rep の枝と三角形の枝を保つ)。 */
+function toImportedBody(body: ShapeImportBody): ImportedBody {
+  const common: ImportedBodyCommon = {
+    name: body.name,
+    color: body.color,
+    volume: body.volume,
+    triangleCount: body.triangles.triangleCount,
+  };
+  if (body.bodyKind === 'mesh') {
+    return {
+      ...common,
+      bodyKind: 'mesh',
+      mesh: {
+        positions: body.triangles.positions,
+        normals: body.triangles.normals,
+        indices: body.triangles.indices,
+      },
+    };
+  }
+  return { ...common, bodyKind: body.bodyKind, brepBytes: body.brepBytes };
+}
+
+/** 読み込みの結果を model の言葉へ詰め替える。 */
+function toShapeImportOutcome(result: ShapeImportResult): ShapeImportOutcome {
+  return {
+    kind: 'imported',
+    bodies: result.bodies.map((body) => toImportedBody(body)),
+    unit: result.unit,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * 3D プリント向けの点検(FR-815、P6 §0.51・§0.53・§2.16、タスク46 = 43a)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 画面に出ている三角形と**同じ細かさ**の対(§0.53 の色表示のための決め)。
+ *
+ * 点検の結果は**三角形ごとの真偽**で返り、ui はそれを画面の三角形へそのまま塗る
+ * (`solid/printabilityColors.ts`)。塗る相手と測った相手の三角形の並びが違うと、
+ * 赤や橙がまったく別の場所に付く。書き出し用の三角形は `buildExportMesh` が形の複製へ
+ * 掛け直して作るが、**面の走査も向きの規則も画面用(`tessellate.ts`)とまったく同じ**
+ * なので、細かさの対を画面と同じにすれば並びもそろう(`occt/exportMesh.ts` の注釈)。
+ *
+ * **数はカーネルの既定(`DEFAULT_LINEAR_DEFLECTION` / `DEFAULT_ANGULAR_DEFLECTION`)を
+ * そのまま引く**——書き写すと、画面側の既定を変えたときにここだけ古くなる。
+ * 書き出しの 3 択(`EXPORT_MESH_QUALITY`)にこの対は無い(`normal` は角度が 0.2 で、
+ * 書き出しの精度のために画面より細かい)ので、別に 1 つ置いてある。
+ */
+export const DISPLAY_MESH_QUALITY: ExportMeshQuality = {
+  deviationMm: DEFAULT_LINEAR_DEFLECTION,
+  angularDeflectionRad: DEFAULT_ANGULAR_DEFLECTION,
+};
+
+/**
+ * 点検の三角形ごとの真偽の読み出しと、しきい値の既定を**カーネルからそのまま出し直す**。
+ *
+ * このファイルの決まりは「kernel の**型**を外へ出さない」(冒頭の注釈)で、値の写しを
+ * 禁じてはいない。ここで出し直すのは次の 3 つだけである。
+ *
+ * - `readPrintabilityFlag`: 詰めたビットの並べ方(下位ビットから)を知る唯一の関数。
+ *   ui が同じ式を書き写すと、並べ方を変えたときに片方だけ古くなる
+ *   (`sketchFilletGeometry` を model が写さずカーネルの式を使うのと同じ判断)。
+ * - `DEFAULT_MIN_THICKNESS_MM` / `DEFAULT_OVERHANG_ANGLE_DEG`: 判定のしきい値の既定。
+ *   プロパティ欄の初期値に要るが、数を写すと**画面に出る値と実際に使う値が食い違う**。
+ *
+ * どれも素の数と純関数で、`TopoDS_Shape` のようなカーネル固有の型は 1 つも通らない。
+ */
+export {
+  DEFAULT_MIN_THICKNESS_MM,
+  DEFAULT_OVERHANG_ANGLE_DEG,
+  readPrintabilityFlag,
+} from '@pointercad/kernel';
+
+/** 点検のどの段を計算しているか(NFR-PF-4 の進み具合)。重いのは肉厚の段だけ。 */
+export type PrintabilityPhase = 'watertight' | 'overhang' | 'thickness';
+
+/** 点検の進み具合(NFR-PF-4)。kernel の `PrintabilityProgress` を model の言葉へ写したもの。 */
+export interface PrintabilityProgressView {
+  readonly phase: PrintabilityPhase;
+  /** その段で見終わった三角形の枚数。 */
+  readonly processed: number;
+  /** 三角形の総数。 */
+  readonly total: number;
+  /** 全体でどこまで進んだか(0〜1)。 */
+  readonly ratio: number;
+}
+
+/** 点検の進み具合を受け取る口(`PartProgressCallback` と同じ流儀)。 */
+export type PrintabilityProgressCallback = (progress: PrintabilityProgressView) => void;
+
+/**
+ * 点検の要約(数と真偽だけ。画面の文言は ui が作る)。
+ *
+ * **欄の名前も型もカーネルの `PrintabilitySummary` にそろえてある**ので、詰め替えは
+ * 欄を写すだけで済む(`toPrintabilityOutcome`)。名前をそろえるのは、点検の意味を決めて
+ * いるのがカーネル側の 1 か所(`occt/inspectPrintability.ts`)だからで、model が別の
+ * 言い換えを作ると、しきい値の意味が 2 通りに割れる。
+ */
+export interface PrintabilitySummary {
+  /** 点検した三角形の総数(面積 0 のものを含む)。 */
+  readonly triangleCount: number;
+  /** 面積 0(または座標が `NaN`)で点検から外した三角形の枚数。 */
+  readonly degenerateCount: number;
+  /** 肉厚の段で見終わった三角形の枚数。途中でやめると総数より少なくなる。 */
+  readonly inspectedTriangleCount: number;
+  /** しきい値より薄かった三角形の枚数。 */
+  readonly thinCount: number;
+  /** 支持が要る(せり出している)三角形の枚数。 */
+  readonly overhangCount: number;
+  /** ちょうど 2 枚に共有されていない辺の本数。 */
+  readonly openEdgeCount: number;
+  /** そういう辺を 1 本でも持つ三角形の枚数。 */
+  readonly openEdgeTriangleCount: number;
+  /** 閉じた形か(開いた辺が 1 本も無いか)。 */
+  readonly watertight: boolean;
+  /** 測れた肉厚のうち最も薄い値(mm)。1 本も反対側に当たらなければ `null`。 */
+  readonly minThicknessFoundMm: number | null;
+  /** 判定に使った最小肉厚のしきい値(mm)。 */
+  readonly minThicknessMm: number;
+  /** 判定に使ったせり出しの角度(度)。 */
+  readonly overhangAngleDeg: number;
+  /** 肉厚の判定に使った升目の大きさ(mm)。形が大きいと既定より粗くなる。 */
+  readonly cellSizeMm: number;
+}
+
+/**
+ * 点検の結果(FR-815)。
+ *
+ * 三角形ごとの真偽は**1 ビットずつ詰めてある**(5 万三角形で 1 本 6,250 バイト、
+ * 3 本で 18.3KiB。§2.17-9)。読み出しは `readPrintabilityFlag`——**同じビットの並べ方を
+ * 2 か所に書かない**ため、model はカーネルの純関数をそのまま輸出し直す
+ * (`sketchFilletGeometry` と同じ扱い)。
+ */
+export interface PrintabilityReport {
+  /** 三角形の総数(ビット列の長さの根拠)。 */
+  readonly triangleCount: number;
+  /** しきい値より薄い三角形。 */
+  readonly thinTriangles: Uint8Array;
+  /** 支持が要る三角形。 */
+  readonly overhangTriangles: Uint8Array;
+  /** 開いた辺を持つ三角形。 */
+  readonly openEdgeTriangles: Uint8Array;
+  readonly summary: PrintabilitySummary;
+  /** 途中でやめたか。**やめても結果は返る**(肉厚だけが測ったところまでになる)。 */
+  readonly cancelled: boolean;
+}
+
+/**
+ * 点検の結果。**断りは投げずに `kind: 'failed'` で返す**(測定・書き出しと同じ流儀、
+ * FR-504、NFR-RE-1)。理由の日本語はカーネルが持っているものをそのまま持ち回る。
+ */
+export type PrintabilityOutcome =
+  | { readonly kind: 'inspected'; readonly report: PrintabilityReport }
+  | { readonly kind: 'failed'; readonly message: string };
+
+/** 点検の依頼(model の言葉)。 */
+export interface PrintabilityOptions {
+  /**
+   * 点検する立体を作ったフィーチャーの id。**並びがそのまま結果の三角形の並びになる**
+   * (2 つ以上を指すと、カーネルは三角形を 1 つに連ねてから測る)。空なら断る。
+   */
+  readonly bodies: readonly string[];
+  /**
+   * 三角形の細かさの対。**省くと画面と同じ細かさ**(`DISPLAY_MESH_QUALITY`)になり、
+   * 三角形の並びが画面と一致して色をそのまま塗れる(§0.53)。細かさを変えると
+   * 判定は精しくなるが、並びが画面と食い違うので色は塗れなくなる。
+   */
+  readonly meshQuality?: ExportMeshQuality | null;
+  /** 最小肉厚のしきい値(mm)。省くとカーネルの既定(0.8mm)。 */
+  readonly minThicknessMm?: number;
+  /** せり出しの角度のしきい値(度)。省くとカーネルの既定(45°)。 */
+  readonly overhangAngleDeg?: number;
+  readonly onProgress?: PrintabilityProgressCallback;
+  readonly shouldCancel?: PartCancelToken;
+}
+
+/**
+ * 点検する立体が 1 つも指定されていないとき。
+ *
+ * カーネルは三角形が 0 枚のときに `PRINTABILITY_NO_TRIANGLE_MESSAGE`(「点検できる形が
+ * ありません。」)で断るが、**立体を 1 つも渡さないなら Worker を起こす意味が無い**ので
+ * 同じ日本語をここで返す(測定の `MEASURE_MISSING_SHAPE_MESSAGE` と同じ扱いで、
+ * 文言をそろえるために複製する)。
+ */
+const PRINTABILITY_NO_BODY_MESSAGE = '点検できる形がありません。';
+
+/** 点検の依頼をカーネルの言葉へ詰め替える。 */
+function toShapeInspectRequest(
+  items: readonly ShapeExportItem[],
+  options: PrintabilityOptions,
+): ShapeInspectRequest {
+  const quality = options.meshQuality ?? DISPLAY_MESH_QUALITY;
+  return {
+    bodies: items,
+    deviationMm: quality.deviationMm,
+    angularDeflectionRad: quality.angularDeflectionRad,
+    minThicknessMm: options.minThicknessMm,
+    overhangAngleDeg: options.overhangAngleDeg,
+  };
+}
+
+/**
+ * 点検する立体を、書き出しと同じ「段の鍵の一覧」へ引き直す。
+ *
+ * **名前も色も点検では使わない**(`ShapeInspectRequest` の注釈)ので `null` を入れる。
+ * 引き直しそのものは書き出しと同じ関数(`toShapeExportItems`)に任せる——鍵が引けない
+ * ときの判断を 2 か所に書かないため。
+ */
+function toShapeInspectItems(
+  steps: readonly ResolvedSolidStep[],
+  bodies: readonly string[],
+): readonly ShapeExportItem[] | null {
+  return toShapeExportItems(
+    steps,
+    bodies.map((featureId) => ({ featureId, name: null, color: null })),
+  );
+}
+
+/**
+ * 点検の進捗を model の言葉へ写す(Comlink を通らない直結の橋のぶん)。
+ *
+ * Worker 版は `toPrintabilityProgressProxy` が同じ写しを Comlink.proxy で包んで行う。
+ * 写しそのものを 2 か所に書かないよう、包まない版をここに置いてあちらから使う。
+ */
+function printabilityProgressOf(
+  onProgress: PrintabilityProgressCallback | undefined,
+): ((progress: PrintabilityProgress) => void) | undefined {
+  if (onProgress === undefined) {
+    return undefined;
+  }
+  return (progress: PrintabilityProgress) => {
+    onProgress({
+      phase: progress.phase,
+      processed: progress.processed,
+      total: progress.total,
+      ratio: progress.ratio,
+    });
+  };
+}
+
+/** 点検の結果を model の言葉へ詰め替える(kernel の型を外へ出さない、NFR-MA-1)。 */
+function toPrintabilityOutcome(result: PrintabilityResult): PrintabilityOutcome {
+  return {
+    kind: 'inspected',
+    report: {
+      triangleCount: result.triangleCount,
+      thinTriangles: result.thinTriangles,
+      overhangTriangles: result.overhangTriangles,
+      openEdgeTriangles: result.openEdgeTriangles,
+      summary: {
+        triangleCount: result.summary.triangleCount,
+        degenerateCount: result.summary.degenerateCount,
+        inspectedTriangleCount: result.summary.inspectedTriangleCount,
+        thinCount: result.summary.thinCount,
+        overhangCount: result.summary.overhangCount,
+        openEdgeCount: result.summary.openEdgeCount,
+        openEdgeTriangleCount: result.summary.openEdgeTriangleCount,
+        watertight: result.summary.watertight,
+        minThicknessFoundMm: result.summary.minThicknessFoundMm,
+        minThicknessMm: result.summary.minThicknessMm,
+        overhangAngleDeg: result.summary.overhangAngleDeg,
+        cellSizeMm: result.summary.cellSizeMm,
+      },
+      cancelled: result.cancelled,
+    },
+  };
+}
+
 /** model から幾何カーネルへの唯一の接点。ここ以外から kernel を呼ばない。 */
 export interface KernelBridge {
   /** 面の一覧をカーネルへ渡し、表示用の三角形を受け取る(FR-309)。 */
@@ -653,6 +1241,40 @@ export interface KernelBridge {
     targets: readonly MeasureTarget[],
     kind: 'distance' | 'massProperties',
   ): Promise<MeasureOutcome>;
+  /**
+   * 覚えてある形をファイルへ書き出す(FR-803、FR-804、P6 タスク32b)。**測定と同じく
+   * 再計算を起こさない読み取り**で、対象は立体を作ったフィーチャーの id で指し、`steps` から
+   * 段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
+   *
+   * **1 つでも鍵が引けなければ、カーネルを呼ばずに `kind: 'failed'` で断る**(一部だけ
+   * 入ったファイルを渡さない、NFR-UX-5)。書けなかった理由も投げずに返す(NFR-RE-1)。
+   */
+  exportShapes(
+    steps: readonly ResolvedSolidStep[],
+    options: ShapeExportOptions,
+  ): Promise<ShapeExportOutcome>;
+  /**
+   * ファイルから立体を読み込む(FR-802、FR-811、P6 タスク32b)。**今の文書には触れない**
+   * ——読めた形を返すだけで、履歴へ積むかどうかは呼び出し側が決める(NFR-RE-1)。
+   *
+   * 読めなかった理由は投げずに `kind: 'failed'` で返す(文言の正本は幾何カーネル)。
+   */
+  importShape(options: ShapeImportOptions): Promise<ShapeImportOutcome>;
+  /**
+   * 3D プリント向けの点検(FR-815、P6 タスク46)。**測定・書き出しと同じく再計算を
+   * 起こさない読み取り**で、対象は立体を作ったフィーチャーの id で指し、`steps` から
+   * 段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
+   *
+   * **1 つでも鍵が引けなければ、カーネルを呼ばずに `kind: 'failed'` で断る**(測定と同じ、
+   * §0.a-0.30)。点検できなかった理由も投げずに返す(NFR-RE-1)。
+   *
+   * 進み具合と中止は `options` に渡す(`recomputeSolids` と同じ形)。**中止しても結果は
+   * 返る**(`PrintabilityReport.cancelled` が真になり、肉厚だけが測ったところまでになる)。
+   */
+  inspectPrintability(
+    steps: readonly ResolvedSolidStep[],
+    options: PrintabilityOptions,
+  ): Promise<PrintabilityOutcome>;
   dispose(): void;
 }
 
@@ -1587,6 +2209,20 @@ function toProgressProxy(
   });
 }
 
+/**
+ * 点検の進捗を受け取る関数を Comlink.proxy で包む(`toProgressProxy` と同じ理由)。
+ *
+ * 写しそのもの(kernel の値 → model の 4 欄)は `printabilityProgressOf` が持つ。
+ * **写さずにそのまま渡すことはしない**——kernel の値をそのまま外へ出すと、あとで
+ * カーネル側に欄が増えたときに model の型に無い欄が混ざる(`toSolidBody` と同じ扱い)。
+ */
+function toPrintabilityProgressProxy(
+  onProgress: PrintabilityProgressCallback | undefined,
+): ((progress: PrintabilityProgress) => void) | undefined {
+  const copy = printabilityProgressOf(onProgress);
+  return copy === undefined ? undefined : Comlink.proxy(copy);
+}
+
 declare global {
   interface Window {
     /**
@@ -1966,6 +2602,82 @@ export function createKernelBridge(): KernelBridge {
       );
     },
 
+    async exportShapes(steps, options): Promise<ShapeExportOutcome> {
+      const items = toShapeExportItems(steps, options.bodies);
+      if (items === null) {
+        // 鍵が引けない立体があるので、Worker を起こさずここで断る(NFR-UX-5)。
+        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      if (health.broken) {
+        restart();
+      }
+      const active = connection;
+      return raceWithBroken(
+        active,
+        active.remote.exportShapes(toShapeExportRequest(items, options)).then(
+          (result) => toShapeExportOutcome(result, options),
+          // カーネルが断ったとき(鍵が消えていた・書けなかった)は理由をそのまま持ち回る。
+          // **拒否のまま競わせない**——拒否は `raceWithBroken` を素通りしてしまうため。
+          (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
+        ),
+        // 書き出しの結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
+        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+      );
+    },
+
+    async importShape(options): Promise<ShapeImportOutcome> {
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      if (health.broken) {
+        restart();
+      }
+      const active = connection;
+      return raceWithBroken(
+        active,
+        active.remote.importShape(toShapeImportRequest(options)).then(
+          (result) => toShapeImportOutcome(result),
+          (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
+        ),
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+      );
+    },
+
+    async inspectPrintability(steps, options): Promise<PrintabilityOutcome> {
+      if (options.bodies.length === 0) {
+        // 点検する形が 1 つも無いので Worker を起こさない(§0.a-0.30)。
+        return { kind: 'failed', message: PRINTABILITY_NO_BODY_MESSAGE };
+      }
+      const items = toShapeInspectItems(steps, options.bodies);
+      if (items === null) {
+        // 鍵が引けない立体があるので、Worker を起こさずここで断る(測定と同じ)。
+        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+      }
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      if (health.broken) {
+        restart();
+      }
+      const active = connection;
+      return raceWithBroken(
+        active,
+        active.remote
+          .inspectPrintability(
+            toShapeInspectRequest(items, options),
+            toPrintabilityProgressProxy(options.onProgress),
+            toCancelProxy(options.shouldCancel),
+          )
+          .then(
+            (result) => toPrintabilityOutcome(result),
+            // カーネルが断ったとき(鍵が消えていた・三角形が 0 枚)は理由をそのまま持ち回る。
+            // **拒否のまま競わせない**——拒否は `raceWithBroken` を素通りしてしまうため。
+            (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
+          ),
+        // 点検の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
+        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+      );
+    },
+
     dispose(): void {
       closeKernelConnection(connection);
     },
@@ -2057,6 +2769,55 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge {
       }
       const result = await api.measure(request);
       return toMeasureOutcome(result);
+    },
+
+    async exportShapes(steps, options): Promise<ShapeExportOutcome> {
+      const items = toShapeExportItems(steps, options.bodies);
+      if (items === null) {
+        // 鍵が引けない立体があるので、カーネルを呼ばずここで断る(NFR-UX-5)。
+        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+      }
+      try {
+        return toShapeExportOutcome(
+          await api.exportShapes(toShapeExportRequest(items, options)),
+          options,
+        );
+      } catch (error) {
+        // Worker 版と同じく、断りは投げずに理由つきの失敗で返す(NFR-RE-1)。
+        return { kind: 'failed', message: toFailureMessage(error) };
+      }
+    },
+
+    async importShape(options): Promise<ShapeImportOutcome> {
+      try {
+        return toShapeImportOutcome(await api.importShape(toShapeImportRequest(options)));
+      } catch (error) {
+        return { kind: 'failed', message: toFailureMessage(error) };
+      }
+    },
+
+    async inspectPrintability(steps, options): Promise<PrintabilityOutcome> {
+      if (options.bodies.length === 0) {
+        return { kind: 'failed', message: PRINTABILITY_NO_BODY_MESSAGE };
+      }
+      const items = toShapeInspectItems(steps, options.bodies);
+      if (items === null) {
+        // 鍵が引けない立体があるので、カーネルを呼ばずここで断る(§0.a-0.30)。
+        return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
+      }
+      try {
+        // Comlink を通らないので、進捗・中止の関数は proxy で包まずそのまま渡せる。
+        return toPrintabilityOutcome(
+          await api.inspectPrintability(
+            toShapeInspectRequest(items, options),
+            printabilityProgressOf(options.onProgress),
+            options.shouldCancel,
+          ),
+        );
+      } catch (error) {
+        // Worker 版と同じく、断りは投げずに理由つきの失敗で返す(NFR-RE-1)。
+        return { kind: 'failed', message: toFailureMessage(error) };
+      }
     },
 
     dispose(): void {

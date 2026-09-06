@@ -16,9 +16,8 @@
  *   タスク9・10・56)で確かめる。この限界は報告に明記する。
  */
 
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
-
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 import {
   createPatternTexture,

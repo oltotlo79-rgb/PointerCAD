@@ -33,7 +33,7 @@
  * `MESH_READ_FAILED_MESSAGE` / `MESH_NO_FACE_MESSAGE` / `meshTooLargeMessage` と
  * 上限 500 万の**正本は `packages/kernel/src/occt/exchangeShared.ts`** で、STL(タスク17)と
  * OBJ / glTF(タスク18)がそこから引いている。io は kernel を輸入できないので、
- * ここには**同じ文字列を写して**置く(`testUtils/perfBudget.ts` と同じ事情)。
+ * ここには**同じ文字列を写して**置く(依存方向が一方向なので写すほかない)。
  * 読み込んだ形式によって断り方が変わっては利用者が困るので、**写しがずれていないことは
  * 検査で固定する**(`readThreeMf.test.ts` に正本の文字列を書き写した検査がある)。
  */

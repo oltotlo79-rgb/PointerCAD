@@ -9,6 +9,13 @@ export {
   // 式の正本は kernel 側の 1 か所だけなので、写して 2 か所に持つことはしない。
   sketchChamferGeometry,
   sketchFilletGeometry,
+  // 書き出し・読み込みの口(FR-802〜804、P6 タスク32b)。**ui は kernel を輸入できない**
+  // (依存の向きは ui → model → kernel)ので、依頼と結果の言葉をここで受け渡す。
+  type ExportColor,
+  type ExportedFile,
+  type ExportedMeshBody,
+  type ImportedBody,
+  type ImportedTriangles,
   type KernelBridge,
   type KernelHealth,
   type PartCancelToken,
@@ -29,6 +36,12 @@ export {
   type SketchProjectionRequestItem,
   type SketchProjectionResult,
   type SketchTessellationOutcome,
+  type ShapeExportBody,
+  type ShapeExportFormat,
+  type ShapeExportOptions,
+  type ShapeExportOutcome,
+  type ShapeImportOptions,
+  type ShapeImportOutcome,
   type SolidBody,
   type SolidBodyFailure,
   type SolidBodyMeshData,
@@ -242,6 +255,19 @@ export {
   replaceSolid,
   setActiveSketch, SKETCH_LABEL, SOLID_LABELS,
 } from './part/createPartDocument.js';
+/*
+ * ひな形(FR-814、P6 §2.10、タスク27)。**画面(`packages/ui` のタスク33)から呼ぶので
+ * ここへ並べる。** 中身は文書だけを見る純関数で、ファイルの読み書きにも画面にも触れない。
+ */
+export type {
+  DocumentFromTemplateOptions, OpenTemplateResult, PartTemplate, TemplateFileContents,
+  TemplateFromDocumentOptions, TemplateNotice, TemplateRefusal, ToolDefaults,
+} from './part/templates.js';
+export {
+  createEmptyPartTemplate, DEFAULT_CIRCLE_RADIUS_MM, DEFAULT_EXTRUDE_DISTANCE_MM,
+  DEFAULT_TEMPLATE_LENGTH_UNIT, DEFAULT_TOOL_DEFAULTS, documentFromTemplate, openTemplate,
+  templateFromDocument, TOOL_DEFAULT_KEYS,
+} from './part/templates.js';
 export type {
   ReferenceError, ReferenceErrorCode, ReferenceResolveDeps, ReferenceResolver,
   ResolvedReferenceAxis, ResolvedReferenceCoordinateSystem, ResolvedReferencePlane,
@@ -341,6 +367,23 @@ export {
 } from './part/createPartDocument.js';
 /** 測定(FR-1101、FR-1102、P5 タスク29)。 */
 export type { MeasureOutcome, MeasureTarget } from './kernelBridge.js';
+/**
+ * 3D プリント向けの点検(FR-815、計画書 P6 §0.51・§0.53・§2.16、タスク42・46)。
+ *
+ * **ui は kernel を輸入できない**(依存の向きは `ui → model → kernel`)ので、点検の依頼と
+ * 結果の言葉をここで受け渡す。三角形ごとの真偽は 1 ビットずつ詰まっており、読み出しの
+ * `readPrintabilityFlag` は**カーネルの純関数をそのまま輸出し直す**(同じビットの並べ方を
+ * 2 か所に持たない。`sketchFilletGeometry` と同じ扱い)。しきい値の既定も同じ理由で
+ * カーネルの値をそのまま出す。
+ */
+export type {
+  PrintabilityOptions, PrintabilityOutcome, PrintabilityPhase, PrintabilityProgressCallback,
+  PrintabilityProgressView, PrintabilityReport, PrintabilitySummary,
+} from './kernelBridge.js';
+export {
+  DEFAULT_MIN_THICKNESS_MM, DEFAULT_OVERHANG_ANGLE_DEG, DISPLAY_MESH_QUALITY,
+  readPrintabilityFlag,
+} from './kernelBridge.js';
 export {
   formatLength, formatMass, GRAM_PER_CM3_TO_GRAM_PER_MM3, inertiaWithDensity, massFromVolume,
 } from './measure/massProperties.js';
@@ -513,17 +556,17 @@ export {
  * 形式の性質なので、`usesTriangles` / `exportDeviationMm` は `FileKind` で受けて DXF も答える。
  */
 export type {
-  ExportFormat, ExportNoticeKey, ExportOutcome, ExportQuality, ExportRequest,
+  ExportFormat, ExportMeshQuality, ExportNoticeKey, ExportOutcome, ExportQuality, ExportRequest,
   ExportRequestOptions, ExportScope, ExportSelection, FileKind, ImportFormat,
 } from './exchange/types.js';
 export {
   createExportRequest, DEFAULT_EXPORT_ASCII, DEFAULT_EXPORT_QUALITY, DEFAULT_EXPORT_SCOPE,
-  DEFAULT_EXPORT_WITH_COLORS, EXPORT_DEVIATION_MM, EXPORT_FORMATS, EXPORT_QUALITIES,
-  FILE_KINDS, IMPORT_FORMATS,
+  DEFAULT_EXPORT_WITH_COLORS, EXPORT_DEVIATION_MM, EXPORT_FORMATS, EXPORT_MESH_QUALITY,
+  EXPORT_QUALITIES, FILE_KINDS, IMPORT_FORMATS,
 } from './exchange/types.js';
 export {
   acceptsMeshBody, acceptsShellBody, canRoundTrip, carriesColor, checkExportBodyKind,
-  exportDeviationMm, selectExportBodies, usesTriangles,
+  exportDeviationMm, exportMeshQuality, selectExportBodies, usesTriangles,
 } from './exchange/exportPart.js';
 
 /**
@@ -585,8 +628,9 @@ export {
  * 選択セット(FR-112、計画書 P6 §0.a-0.44・§2.13、タスク37)。
  *
  * `PartDocument.selectionSets` に持つ「名前を付けた選んだ組」で、要素の型
- * `SelectionMember` は **P5 の `AppearanceTarget` そのもの**である(同じ形の型を 2 つ
- * 作らない。判定 `isSameSelectionMember` も外観のものの別名で、実体は 1 つ)。
+ * `SelectionMember` は**立体・面・辺・頂点の独自の型**である(外観の `AppearanceTarget`
+ * とは別。2026-09-06 の利用者の決定でセットに面以外も入れられるようにした、タスク50)。
+ * 判定 `isSameSelectionMember` も独自。
  *
  * **形に影響しない**(`affectsShape` が偽)ので、セットを足しても消しても再計算は走らない。
  */

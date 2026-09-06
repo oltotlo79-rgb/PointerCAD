@@ -1,8 +1,13 @@
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
-import type { AutoSaver } from '@pointercad/io';
+import type { AutoSaver, ImportedMeshBytes, PcadAttachments } from '@pointercad/io';
 import {
+  addSelectionSetMembers,
   affectsShape,
   analyzeParameters,
+  createSelectionSet,
+  findSelectionSet,
+  removeSelectionSet as removeSelectionSetFrom,
+  renameSelectionSet as renameSelectionSetIn,
   canRedo as stackCanRedo,
   baseWorkPlane,
   canUndo as stackCanUndo,
@@ -20,11 +25,13 @@ import {
   nonLengthVariables,
   pushUndo,
   redo as redoStep,
+  removeCanvas as removeCanvasFrom,
   removeFeature,
   replaceFeature,
   replaceSketch,
   resolveSketch,
   setActiveSketch as activateSketch,
+  setCanvasVisible as setCanvasVisibleIn,
   sketchConstraints,
   undo as undoStep,
   WORK_PLANE_IDS,
@@ -40,11 +47,13 @@ import {
   type PartRecomputeError,
   type PartRecomputeOptions,
   type PlaneSpec,
+  type PrintabilityReport,
   type ParameterAnalysis,
   type PartRecomputeResult,
   type PartSketchResult,
   type ResolvedReferences,
   type ResolvedSketch,
+  type SelectionSetRefusal,
   type SketchDocument,
   type SketchError,
   type SketchFeature,
@@ -52,6 +61,7 @@ import {
   type SketchMesh,
   type SketchRecomputeResult,
   type SketchConstraintKind,
+  type SketchCanvas,
   type SolidBody,
   type UndoStack,
   type WorkPlane,
@@ -64,6 +74,7 @@ import {
   clearAllAppearance,
   removeAppearanceAt,
 } from '../appearance/appearanceCommands.js';
+import type { ExchangeKernel } from '../file/exchangeFile.js';
 import { createBrowserFileGateway, type FileGateway } from '../file/fileGateway.js';
 import type { MessageKey } from '../i18n/t.js';
 import { loadSettings, saveSettings, type DisplaySettings } from '../settings/settings.js';
@@ -90,6 +101,12 @@ import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import type { TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
+// 選択セット(FR-112、タスク43)。画面と文書のあいだの写し取りは solid の純関数 1 か所。
+import {
+  selectionKindForSet,
+  selectionMembersOf,
+  selectionSetElementIds,
+} from '../solid/selectionSetCommands.js';
 import {
   keepsSelectionKind,
   selectionKindForTool,
@@ -97,12 +114,19 @@ import {
   type SelectionKind,
 } from '../solid/subShapeSelection.js';
 import { DEFAULT_SPHERE_GRID_STEP_DEGREES } from '../viewport/buildSphereGrid.js';
+// 下絵の寸法合わせ(FR-332、タスク39)の式は viewport の純関数 1 か所にある(three に触れない)。
+import {
+  canvasPlacementOf,
+  canvasSizeForTwoPoints,
+  type CanvasPixelSize,
+} from '../viewport/canvasLayer.js';
 import { viewDirection, type OrbitState } from '../viewport/cameraMath.js';
 import {
   runMeasure,
   type MassPropertiesResult,
   type PartMeasurer,
 } from '../solid/measureCommands.js';
+import { runPrintCheck, type PartInspector } from '../solid/printCheckCommands.js';
 import type { MeasurementState } from '../viewport/createMeasureLayer.js';
 import type { SketchDrag } from '../viewport/dragSketch.js';
 
@@ -174,6 +198,32 @@ export interface SectionViewState {
   readonly flipped: boolean;
 }
 
+/**
+ * 下絵の 2 点の寸法合わせ(FR-332。P6 タスク39、計画書 §0.a-0.46、§2.14)の途中の状態。
+ *
+ * **形は変わらない。** 画像の上で 2 点を指し、その実寸(mm、式)を打つと、下絵の幅・高さ
+ * だけが変わる(§2.14 の式)。**縮尺は保存しない**(幅 ÷ 画素の幅でいつでも出せる、rules/04)。
+ */
+export interface CanvasScaleState {
+  /** 合わせる下絵の id(`SketchCanvas.id`)。 */
+  readonly canvasId: string;
+  /**
+   * 指した点(作図面の上の (u, v))。0 個・1 個・2 個のいずれか。3 点目を指したら
+   * 1 点目を捨てて詰める(打ち直しのために毎回やめさせない、NFR-UX-3)。
+   */
+  readonly points: readonly (readonly [number, number])[];
+}
+
+/**
+ * 3D プリント向けの点検の要約と結果(FR-815、P6 §0.51・§0.53・§2.16、タスク42・43・46)。
+ *
+ * **43b が ui 側へ仮に写して置いていた型を、タスク46 で model が輸出する型へ差し替えた。**
+ * 欄の名前も型も最初からそろえてあったので、詰め替えは 1 か所も要らなかった
+ * (`packages/ui` は `@pointercad/kernel` に依存しない——依存は model 経由だけ、rules/04)。
+ * **画面に出る欄の意味の正本は `model` の `PrintabilitySummary`** で、ここには写さない。
+ */
+export type { PrintabilityReport, PrintabilitySummary } from '@pointercad/model';
+
 /** 文書を差し替えるときの添え物(§0.a-0.4、§0.a-0.13)。 */
 export interface ApplyDocumentOptions {
   /**
@@ -223,6 +273,55 @@ export interface AppState {
    * `createInitialDocumentState` の側に置いてある。
    */
   readonly sectionView: SectionViewState | null;
+  /**
+   * 3D プリントの点検の結果(FR-815、P6 §0.53、タスク42・43)。まだ点検していなければ `null`。
+   *
+   * **再計算を起こさない。** 文書に触らないので `affectsShape` の経路を通らず、点検を
+   * 閉じれば元の色に戻る(§0.53)。文書を作り直したら消える(古い形の三角形の並びを
+   * 新しい形が指すことは無い)ので、`sectionView` と同じく
+   * `createInitialDocumentState` の側に置いてある。
+   *
+   * 欄と型を 43b が置き、タスク46 が中身(`KernelBridge.inspectPrintability` の配線と
+   * 色の層)を入れた。`null` のあいだ、プロパティの節は「まだ点検していません。」と
+   * 説明だけを出す。
+   */
+  readonly printability: PrintabilityReport | null;
+  /**
+   * 点検の色を塗る相手(立体を作ったフィーチャーの id → 結果の中での先頭の三角形の番号)。
+   * `printability` と必ず同時に入れ替わる(片方だけ残ると、色をどこへ塗るか分からない)。
+   *
+   * ここに**無い立体には色を塗らない**(点検を頼まなかった立体は元の外観のまま)。
+   * 作るのは `solid/printabilityColors.ts` の `printabilityTriangleOffsets` 1 か所だけ。
+   */
+  readonly printabilityOffsets: ReadonlyMap<string, number> | null;
+  /**
+   * いま点検を走らせている最中か(FR-815、NFR-PF-4)。
+   *
+   * **再計算の `isComputing` とは別の札**にする。点検は文書を 1 バイトも変えない読み取り
+   * (§0.a-0.30)なので、再計算の札を立てると「形を計算しています…」と出て、
+   * 履歴の操作まで塞いでしまう(`isComputing` を見て止まる場所が幾つもある)。
+   */
+  readonly isInspectingPrint: boolean;
+  /**
+   * 点検の中止を頼んだか(NFR-PF-4)。走っている最中に入口をもう一度押すと立つ。
+   *
+   * **やめても、そこまでに分かったことは結果として返る**(水密性とせり出しは先に終えて
+   * あり、肉厚だけが測ったところまでになる)。点検が終われば必ず下ろす。
+   */
+  readonly printCheckCancelRequested: boolean;
+  /**
+   * 点検を断った理由(NFR-UX-5)。そのまま帯へ出せる日本語 1 行で、点検できたら `null`。
+   * 文言の正本は断りを出した層(`solid/printCheckCommands.ts` かカーネル)に置く。
+   */
+  readonly printCheckErrorMessage: string | null;
+  /**
+   * 書き出しの添え物(FR-803、P6 タスク45 の指摘・43b の申し送り)。「弾いた立体が
+   * 1 つあります」のような**うまくいったときの知らせ**で、無ければ `null`。
+   *
+   * **失敗の口(`errorMessage`)へ入れない。** あちらはステータスバーで頭に
+   * 「計算に失敗しました:」を付けて赤くするので、書き出せたのに失敗したように見えていた。
+   */
+  readonly exchangeNotice: string | null;
   /**
    * 表示テーマと拡大率(FR-908、FR-909、§0.a-0.1〜0.3)。端末(`localStorage`)へ保存され、
    * 部品文書とは無関係な利用者・端末の好みなので `resetDocument`(新規)では戻さない。
@@ -324,6 +423,63 @@ export interface AppState {
    * 差し替える口は `applyDocument` の 1 つだけにし、下の控えはそこで作り直す。
    */
   readonly document: PartDocument;
+  /**
+   * 下絵の画像そのもののバイト列(FR-332、P6 §0.a-0.45、タスク39)。鍵は
+   * `SketchCanvas.imageId` で、`.pcad` の ZIP のエントリ `canvases/<imageId>.png` と 1 対 1。
+   *
+   * **文書(`document.canvases`)には id と寸法しか入らない**ので、数 MB のバイト列は
+   * ここで持つ(§0.9 と同じ流儀。JSON へ入れると読み書きが桁違いに遅くなる)。
+   * 保存するときは `packages/io` の添付として書き出し、開くときは `setCanvasImages` で
+   * 入れ直す。**不変**にしてあるので、足す・消すたびに新しい `Map` を作る(rules/04)。
+   *
+   * 文書を作り直したら消える(古い文書の画像を新しい文書が指すことは無い)ので、
+   * `createInitialDocumentState` の側に置いてある(rules/06 10.17 と同じ理屈)。
+   */
+  readonly canvases: ReadonlyMap<string, Uint8Array>;
+  /**
+   * 読み込んだ形の B-rep のバイト列(FR-802、P6 §0.a-0.9、タスク32)。鍵は
+   * `ImportedSolidFeature.shapeRef` で、`.pcad` の ZIP のエントリ `shapes/<shapeRef>.brep` と
+   * 1 対 1。**上の `canvases` と同じ「添付の表」の 3 つ目**である。
+   *
+   * **再計算のたびにそのまま `PartRecomputeOptions.importedShapes` へ渡す。** 渡さないと
+   * `importedSolid` の段は「読み込んだ形が見つかりません」で失敗する(FR-504)。
+   * 保存・自動保存でも一緒に書く。書かないと、開き直したときに読み手が
+   * `missingField` で断る(`packages/io` の `findMissingAttachment`。タスク21 の申し送り)。
+   */
+  readonly importedShapes: ReadonlyMap<string, Uint8Array>;
+  /**
+   * 読み込んだ三角形(FR-802、P6 §0.a-0.24、タスク32)。鍵は `ImportedMeshFeature.meshRef` で、
+   * `.pcad` の ZIP のエントリ `meshes/<meshRef>.bin` と 1 対 1。
+   *
+   * **再計算には渡さない**(三角形の形は幾何カーネルの段にならない、§0.a-0.23)。
+   * 持つのは保存と画面表示のためだけである。
+   */
+  readonly importedMeshes: ReadonlyMap<string, ImportedMeshBytes>;
+  /**
+   * 2 点の寸法合わせ(FR-332、§2.14)の途中の状態。`null` のあいだは浮かぶ欄も出ない。
+   *
+   * 点は**作図面の上の (u, v)**(押した場所を作図面へ落としたもの)で持ち、2 つそろったら
+   * 実寸を打つ欄が出る。**再計算を起こさない**(文書に触らないので `affectsShape` の
+   * 経路を通らない)。
+   */
+  readonly canvasScale: CanvasScaleState | null;
+  /**
+   * 下絵についての断り(FR-504、NFR-UX-5)。受け付けられない画像(PNG / JPEG でない、
+   * 8MB 超)と、寸法合わせの断り(2 点が同じ・実寸が 0 以下)の日本語をそのまま持つ。
+   *
+   * **文言の正本は `@pointercad/model` の `sketch/canvas.ts`**(上限の数を知っているのが
+   * あの層だけなので、`ja.json` へ写すと数字が 2 か所で食い違う)。**出す場所は下絵の
+   * 浮かぶ欄**で、ステータスバーの言い回し(「図形を作れませんでした:」等)には乗せない。
+   */
+  readonly canvasMessage: string | null;
+  /**
+   * 下絵の画像の**画素の大きさ**(鍵は `SketchCanvas.imageId`)。復号できた画像だけが載る。
+   *
+   * 文書には保存しない(`rules/04`。復号した画像がいつでも答える)が、2 点の寸法合わせ
+   * (§2.14 の `幅 = 縮尺 × 画素の幅`)とプロパティの表示に要るので、復号したときに
+   * ビューポートがここへ控える。**画像 1 枚につき数 2 つだけ**なので記憶は増えない。
+   */
+  readonly canvasPixelSizes: ReadonlyMap<string, CanvasPixelSize>;
   /**
    * 文書がまるごと差し替わった回数(開く・新規・復元・Undo/Redo)。プロパティ欄の
    * 打ちかけの下書きを、この数の変化で捨てる判定に使う(`shell/fieldDraft.ts`、
@@ -639,6 +795,34 @@ export interface AppState {
    */
   readonly partMeasurer: PartMeasurer | null;
   /**
+   * 3D プリントの点検の口(FR-815。P6 タスク46)。
+   *
+   * `partMeasurer` とまったく同じ理由で外から差し出してもらう(幾何カーネル(Worker)を
+   * 持っているのは `PointerCadApp` だけで、`packages/ui` は幾何カーネルへ直接依存できない)。
+   * 差し出されていなければ、点検は日本語の理由で断る(NFR-UX-5)。
+   */
+  readonly partInspector: PartInspector | null;
+  /**
+   * 書き出し・読み込みの口(FR-802、FR-803。P6 タスク32)。
+   *
+   * `partMeasurer` とまったく同じ理由で外から差し出してもらう(幾何カーネル(Worker)を
+   * 持っているのは `PointerCadApp` だけで、`packages/ui` は幾何カーネルへ直接依存できない)。
+   * 差し出されていなければ、書き出しも読み込みも日本語の理由で断る
+   * (`file/exchangeActions.ts` の `EXCHANGE_KERNEL_MISSING_MESSAGE`)。
+   */
+  readonly exchangeKernel: ExchangeKernel | null;
+  /**
+   * 読み込んだファイルの単位を利用者へ訊いている最中か(FR-811、§0.a-0.6。P6 タスク32b)。
+   *
+   * **単位を書かない形式(STL / OBJ・単位の無い DXF)を読み込んだときだけ**立つ。
+   * 答え(ミリメートル / インチ / やめる)は `file/exchangeActions.ts` の
+   * `answerImportUnit` が受け取り、待っている読み込みへ返す。
+   *
+   * **確認の窓(`confirm`)にしないのは、2 択を「OK / キャンセル」で訊くと誤操作を招く**
+   * ため(NFR-UX-5)。3 つ目の答え(やめる)も窓の × と区別できない。
+   */
+  readonly importUnitAsked: boolean;
+  /**
    * 最後にビューポートで何かを選んだ場所(canvas の左上を原点とした画素)。
    * ソリッドの道具のその場入力を、選んだものの近くへ出すのに使う(NFR-UX-2)。
    * まだ何も選んでいなければ null で、そのときはビューポートの中央に出す。
@@ -662,6 +846,16 @@ export interface AppState {
    * 差し出し、片付けで null へ戻す。用意できていなければサムネイルなしで保存する。
    */
   readonly captureThumbnail: (() => Uint8Array | null) | null;
+  /**
+   * いまの絵を**印刷用の 1 コマ**(PNG の data URL)にする手立て(FR-810、FR-908、
+   * P6 §2.11、タスク33)。`captureThumbnail` と同じくビューポートが差し出し、
+   * 片付けで null へ戻す。用意できていなければ印刷を断る(NFR-UX-5)。
+   *
+   * **サムネイルの口とは別にする。** サムネイルは 256 画素の正方形で下地も画面と同じ
+   * 暗い色だが、印刷は長辺 2000 画素・**白い下地**でなければならない(FR-908
+   * 「印刷の見た目は表示テーマの影響を受けない」)。
+   */
+  readonly capturePrintFrame: (() => string | null) | null;
   /** ファイル操作の結果の知らせ。出すものが無ければ null。 */
   readonly fileMessage: FileMessage | null;
   /**
@@ -705,6 +899,98 @@ export interface AppState {
   readonly setSectionOffset: (offsetMm: number) => void;
   /** 断面表示の残す側を反対にする(§0.42)。 */
   readonly flipSectionView: () => void;
+  /**
+   * 下絵を 1 枚足す(FR-332、タスク39)。id は `nextCanvasId`、画像の鍵は `imageId` で、
+   * バイト列は添付の表(`canvases`)へ入れる。**再計算は走らない**(`affectsShape` が偽)。
+   */
+  readonly addCanvas: (canvas: SketchCanvas, bytes: Uint8Array) => void;
+  /** 下絵の入切(FR-332)。**再計算は走らない**(§2.14 の表)。 */
+  readonly setCanvasVisible: (id: string, visible: boolean) => void;
+  /** 下絵の不透明度(0〜1)。同じく再計算は走らない。 */
+  readonly setCanvasOpacity: (id: string, opacity: number) => void;
+  /** 下絵を 1 枚消す。画像のバイト列も一緒に落とす(使わない記憶を残さない)。 */
+  readonly removeCanvas: (id: string) => void;
+  /** 開いた `.pcad` の添付から画像のバイト列を入れ直す(`packages/io` の読み手が呼ぶ)。 */
+  readonly setCanvasImages: (images: ReadonlyMap<string, Uint8Array>) => void;
+  /**
+   * 開いた `.pcad` の添付から、読み込んだ形と三角形を入れ直す(FR-802、タスク32)。
+   * **丸ごと差し替える**(開くのは文書ごとの操作なので、前の文書の添付は残さない)。
+   */
+  /** 書き出し・読み込みの口を差し出す・取り下げる(`attachExchangeKernel` が呼ぶ)。 */
+  readonly setExchangeKernel: (kernel: ExchangeKernel | null) => void;
+  /** 単位を訊く小窓を出す・しまう(`file/exchangeActions.ts` だけが呼ぶ)。 */
+  readonly setImportUnitAsked: (asked: boolean) => void;
+  readonly setImportedAttachments: (
+    shapes: ReadonlyMap<string, Uint8Array>,
+    meshes: ReadonlyMap<string, ImportedMeshBytes>,
+  ) => void;
+  /**
+   * 読み込んだ形を**足す**(FR-802、タスク32)。いま開いている部品へ 1 ファイルぶんを
+   * 取り込むときに使うので、前からある添付は残す(差し替えない)。
+   */
+  readonly addImportedAttachments: (
+    shapes: ReadonlyMap<string, Uint8Array>,
+    meshes: ReadonlyMap<string, ImportedMeshBytes>,
+  ) => void;
+  /** 2 点の寸法合わせを始める(§2.14)。もう一度呼ぶと点を捨ててやり直す。 */
+  readonly startCanvasScale: (canvasId: string) => void;
+  /** 寸法合わせの点を 1 つ足す(作図面の上の (u, v))。3 点目は 1 点目を捨てて詰める。 */
+  readonly addCanvasScalePoint: (point: readonly [number, number]) => void;
+  /** 寸法合わせをやめる。 */
+  readonly cancelCanvasScale: () => void;
+  /** 下絵についての断り(model が組み立てた日本語)を出す・消す。 */
+  readonly setCanvasMessage: (message: string | null) => void;
+  /** 復号できた下絵の画素の大きさを控える(ビューポートが復号したときに呼ぶ)。 */
+  readonly setCanvasPixelSize: (imageId: string, size: CanvasPixelSize) => void;
+  /**
+   * 指した 2 点が `realLengthMm` になるよう下絵の幅・高さを合わせる(§2.14)。
+   * 合わせられたら `true`。断ったときは `false` を返し、理由の日本語を帯へ出す
+   * (文言の正本は `@pointercad/model` の `sketch/canvas.ts`)。
+   */
+  readonly applyCanvasScale: (
+    realLengthMm: number,
+    pixelSize: { readonly width: number; readonly height: number },
+  ) => boolean;
+  /**
+   * 3D プリントの点検の結果を置く・消す(FR-815、タスク42・43・46)。
+   *
+   * `offsets` は色を塗る相手(省くと空 = どの立体にも塗らない)。`null` を渡すと
+   * **点検を閉じる**——色が消えて元の外観に戻り、形も体積も 1 つも変わらない(§0.53)。
+   */
+  readonly setPrintability: (
+    report: PrintabilityReport | null,
+    offsets?: ReadonlyMap<string, number> | null,
+  ) => void;
+  /**
+   * いまの文書を 3D プリント向けに点検する(FR-815。ツールバーの「表示」の入口)。
+   *
+   * 判断と組み立ては `solid/printCheckCommands.ts` の `runPrintCheck` 1 か所に置き、
+   * ここは「ストアの値を渡す」「結果か理由を置く」だけにする(`measureSelection` と同じ)。
+   * **文書は 1 バイトも変えない**ので取り消しの段も積まず、再計算も起きない(§0.a-0.30)。
+   * 走っているあいだは `isInspectingPrint` が立つ(`isComputing` は立てない)。
+   */
+  readonly inspectPrintability: () => void;
+  /** 点検を走らせる手立てを差し出す・取り下げる(`attachPartInspector` が呼ぶ)。 */
+  readonly setPartInspector: (inspector: PartInspector | null) => void;
+  /** 書き出しの添え物を出す・消す(FR-803、タスク45・46)。断りではないので赤くしない。 */
+  readonly setExchangeNotice: (notice: string | null) => void;
+  /**
+   * いま選んでいるものに名前を付けて覚える(FR-112)。作れたら `null`、断ったときは
+   * 理由(いまは「名前が空」だけ)を返す。**断るときは文書を 1 バイトも変えない**
+   * (NFR-UX-5。取り消しの段も積まない)。**再計算は走らない**(`affectsShape` が偽)。
+   */
+  readonly createSelectionSetFromSelection: (name: string) => SelectionSetRefusal | null;
+  /** 組の名前を変える(FR-112)。断ったときは理由を返す。同じ名前は許す(§2.13)。 */
+  readonly renameSelectionSet: (id: string, name: string) => SelectionSetRefusal | null;
+  /** 組を 1 つ消す(FR-112)。取り消し(Ctrl+Z)1 回で戻る。 */
+  readonly removeSelectionSet: (id: string) => void;
+  /** いま選んでいるものを、既にある組へ足す(FR-112「後から足せる」)。 */
+  readonly addSelectionToSet: (id: string) => void;
+  /**
+   * 組の中身を選択にする(FR-112「呼び出す」)。**引けなかった件数を返し**、画面が
+   * 「n 件は見つかりませんでした」と知らせる(FR-504、§2.13。組そのものは残す)。
+   */
+  readonly selectSelectionSet: (id: string) => number;
   /** 表示テーマ・拡大率を差し替え、`localStorage` へ保存する(FR-908、FR-909)。 */
   readonly setDisplaySettings: (settings: DisplaySettings) => void;
   readonly requestHomeView: () => void;
@@ -899,6 +1185,8 @@ export interface AppState {
   readonly setFileState: (fileName: string | null, savedDocument: PartDocument | null) => void;
   /** サムネイルの作り手を差し出す・取り下げる(ビューポートが呼ぶ)。 */
   readonly setCaptureThumbnail: (capture: (() => Uint8Array | null) | null) => void;
+  /** 印刷用の 1 コマの作り手を差し出す・取り下げる(FR-810。ビューポートが呼ぶ)。 */
+  readonly setCapturePrintFrame: (capture: (() => string | null) | null) => void;
   /** ファイル操作の結果を帯へ出す・消す。 */
   readonly setFileMessage: (message: FileMessage | null) => void;
   /** 自動保存の控えを書く人を差し出す・取り下げる(`startAutoSave` が呼ぶ)。 */
@@ -1301,6 +1589,14 @@ export function createInitialDocumentState(): Pick<
   | 'workPlaneId'
   | 'workPlane'
   | 'sectionView'
+  | 'printability'
+  | 'printabilityOffsets'
+  | 'canvases'
+  | 'importedShapes'
+  | 'importedMeshes'
+  | 'canvasScale'
+  | 'canvasMessage'
+  | 'canvasPixelSizes'
   | 'freeSketchPlane'
   | 'resolvedReferences'
   | 'parameterAnalysis'
@@ -1366,11 +1662,19 @@ export function createInitialDocumentState(): Pick<
   | 'massProperties'
   | 'measureErrorKey'
   | 'partMeasurer'
+  | 'partInspector'
+  | 'isInspectingPrint'
+  | 'printCheckCancelRequested'
+  | 'printCheckErrorMessage'
+  | 'exchangeNotice'
+  | 'exchangeKernel'
+  | 'importUnitAsked'
   | 'pickAnchor'
   | 'fileGateway'
   | 'fileName'
   | 'savedDocument'
   | 'captureThumbnail'
+  | 'capturePrintFrame'
   | 'fileMessage'
   | 'autoSaver'
   | 'restorePrompt'
@@ -1387,6 +1691,17 @@ export function createInitialDocumentState(): Pick<
     workPlane: WORK_PLANES[DEFAULT_WORK_PLANE_ID],
     // 断面表示(FR-111、P6 タスク35)は切った状態から始める(費用ゼロ)。
     sectionView: null,
+    // 3D プリントの点検(FR-815、P6 タスク42・43・46)。新しい部品はまだ点検していない。
+    printability: null,
+    printabilityOffsets: null,
+    // 下絵(FR-332、P6 タスク39)。新しい部品は画像を 1 枚も持たない。
+    canvases: new Map<string, Uint8Array>(),
+    canvasMessage: null,
+    canvasPixelSizes: new Map<string, CanvasPixelSize>(),
+    // 起動時の部品は読み込んだ形を 1 つも持たない(FR-802、P6 タスク32)。
+    importedShapes: new Map<string, Uint8Array>(),
+    importedMeshes: new Map<string, ImportedMeshBytes>(),
+    canvasScale: null,
     // 3D スケッチで押した場所の面(FR-330、タスク14)。まだ一度も押していない。
     freeSketchPlane: null,
     resolvedReferences: EMPTY_RESOLVED_REFERENCES,
@@ -1460,12 +1775,23 @@ export function createInitialDocumentState(): Pick<
     measureErrorKey: null,
     // 形を測る手立てはカーネルを持つ側が起動時に差し出す(P5 タスク32)。
     partMeasurer: null,
+    // 3D プリントの点検の口(FR-815、P6 タスク46)。カーネルを積むまでは差し出されない。
+    partInspector: null,
+    isInspectingPrint: false,
+    printCheckCancelRequested: false,
+    printCheckErrorMessage: null,
+    exchangeNotice: null,
+    // 書き出し・読み込みの口も同じ(P6 タスク32)。差し出されるまでは理由つきで断る。
+    exchangeKernel: null,
+    // 起動直後は何も読み込んでいないので、単位を訊く小窓も出ていない(P6 タスク32b)。
+    importUnitAsked: false,
     pickAnchor: null,
     // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める(§2.10)。
     fileGateway: createBrowserFileGateway(),
     fileName: null,
     savedDocument: null,
     captureThumbnail: null,
+    capturePrintFrame: null,
     fileMessage: null,
     autoSaver: null,
     restorePrompt: null,
@@ -1549,6 +1875,174 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ? {}
         : { sectionView: { ...state.sectionView, flipped: !state.sectionView.flipped } },
     );
+  },
+  addCanvas: (canvas, bytes) => {
+    const state = get();
+    set({ canvases: new Map([...state.canvases, [canvas.imageId, bytes]]), canvasMessage: null });
+    // 文書へは id と寸法だけを入れる(バイト列は上の表。§0.a-0.45)。
+    state.applyDocument({ ...state.document, canvases: [...state.document.canvases, canvas] });
+  },
+  setCanvasVisible: (id, visible) => {
+    const state = get();
+    const canvases = setCanvasVisibleIn(state.document.canvases, id, visible);
+    if (canvases === state.document.canvases) {
+      // 値が変わらないときは文書を作り直さない(NFR-PF-1。描き直しも呼ばない)。
+      return;
+    }
+    state.applyDocument({ ...state.document, canvases });
+  },
+  setCanvasOpacity: (id, opacity) => {
+    const state = get();
+    if (!Number.isFinite(opacity)) {
+      // 数にならない値は据え置く(断りは打ち込んだ欄が出す。NFR-RE-1)。
+      return;
+    }
+    const clamped = Math.min(Math.max(opacity, 0), 1);
+    const canvases = state.document.canvases.map((canvas) =>
+      canvas.id === id ? { ...canvas, opacity: expressionValueFromNumber(clamped) } : canvas,
+    );
+    // 打っている途中(欄の 1 文字ごと)は Undo の 1 段にまとめる(§0.a-0.13)。
+    state.applyDocument({ ...state.document, canvases }, { coalesceKey: `canvasOpacity:${id}` });
+  },
+  removeCanvas: (id) => {
+    const state = get();
+    const canvases = removeCanvasFrom(state.document.canvases, id);
+    if (canvases === state.document.canvases) {
+      return;
+    }
+    /*
+      **画像のバイト列は落とさない。** 消した下絵は取り消し(Ctrl+Z)で戻せる(FR-505)ので、
+      ここで捨てると戻した下絵が二度と映らなくなる。文書を作り直す(新規・開く)ときに
+      `createInitialDocumentState` が表ごと空にするので、溜まり続けることはない。
+      保存のときに書き出すのは文書が指している画像だけ(`packages/io` の添付)。
+    */
+    set({ canvasScale: null, canvasMessage: null });
+    state.applyDocument({ ...state.document, canvases });
+  },
+  setCanvasImages: (images) => {
+    set({ canvases: new Map(images) });
+  },
+  startCanvasScale: (canvasId) => {
+    set({ canvasScale: { canvasId, points: [] }, canvasMessage: null });
+  },
+  addCanvasScalePoint: (point) => {
+    set((state) => {
+      if (state.canvasScale === null) {
+        return {};
+      }
+      // 3 点目は 1 点目を捨てて詰める(打ち直しのために毎回やめさせない、NFR-UX-3)。
+      const previous = state.canvasScale.points;
+      const points = [...(previous.length >= 2 ? previous.slice(1) : previous), point];
+      return { canvasScale: { ...state.canvasScale, points }, canvasMessage: null };
+    });
+  },
+  cancelCanvasScale: () => {
+    set({ canvasScale: null, canvasMessage: null });
+  },
+  setCanvasMessage: (canvasMessage) => {
+    set({ canvasMessage });
+  },
+  setCanvasPixelSize: (imageId, size) => {
+    set((state) => {
+      const known = state.canvasPixelSizes.get(imageId);
+      if (known !== undefined && known.width === size.width && known.height === size.height) {
+        // 同じ大きさを入れ直さない(新しい `Map` を作ると購読側が無駄に反応する。NFR-PF-1)。
+        return {};
+      }
+      return { canvasPixelSizes: new Map([...state.canvasPixelSizes, [imageId, size]]) };
+    });
+  },
+  applyCanvasScale: (realLengthMm, pixelSize) => {
+    const state = get();
+    const scale = state.canvasScale;
+    if (scale === null || scale.points.length < 2) {
+      return false;
+    }
+    const canvas = state.document.canvases.find((item) => item.id === scale.canvasId);
+    if (canvas === undefined) {
+      return false;
+    }
+    const outcome = canvasSizeForTwoPoints(
+      canvasPlacementOf(canvas),
+      pixelSize,
+      scale.points[0],
+      scale.points[1],
+      realLengthMm,
+    );
+    if (!outcome.ok) {
+      // 断りの日本語は model が組み立てたものをそのまま出す(文言を写さない)。
+      set({ canvasMessage: outcome.message });
+      return false;
+    }
+    const canvases = state.document.canvases.map((item) =>
+      item.id === scale.canvasId
+        ? {
+            ...item,
+            width: expressionValueFromNumber(outcome.widthMm),
+            height: expressionValueFromNumber(outcome.heightMm),
+          }
+        : item,
+    );
+    // 合わせ終わったら欄を畳む。取り消し 1 回で元の大きさへ戻る(NFR-UX-3)。
+    set({ canvasScale: null, canvasMessage: null });
+    state.applyDocument({ ...state.document, canvases });
+    return true;
+  },
+  createSelectionSetFromSelection: (name) => {
+    const state = get();
+    const members = selectionMembersOf(subShapeBodiesOf(state.bodies), state.selection);
+    const outcome = createSelectionSet(state.document.selectionSets, name, members);
+    if (!outcome.ok) {
+      // 断るときは文書を 1 バイトも変えない(NFR-UX-5。取り消しの段も積まない)。
+      return outcome.reason;
+    }
+    state.applyDocument({ ...state.document, selectionSets: outcome.sets });
+    return null;
+  },
+  renameSelectionSet: (id, name) => {
+    const state = get();
+    const outcome = renameSelectionSetIn(state.document.selectionSets, id, name);
+    if (!outcome.ok) {
+      return outcome.reason;
+    }
+    if (outcome.sets !== state.document.selectionSets) {
+      // 名前が変わらないときは文書を作り直さない(NFR-PF-1。購読側も動かさない)。
+      state.applyDocument({ ...state.document, selectionSets: outcome.sets });
+    }
+    return null;
+  },
+  removeSelectionSet: (id) => {
+    const state = get();
+    const selectionSets = removeSelectionSetFrom(state.document.selectionSets, id);
+    if (selectionSets === state.document.selectionSets) {
+      return;
+    }
+    state.applyDocument({ ...state.document, selectionSets });
+  },
+  addSelectionToSet: (id) => {
+    const state = get();
+    const members = selectionMembersOf(subShapeBodiesOf(state.bodies), state.selection);
+    const selectionSets = addSelectionSetMembers(state.document.selectionSets, id, members);
+    if (selectionSets === state.document.selectionSets) {
+      // 1 件も増えないとき(同じ面をもう一度足した)は文書を作り直さない。
+      return;
+    }
+    state.applyDocument({ ...state.document, selectionSets });
+  },
+  selectSelectionSet: (id) => {
+    const state = get();
+    const found = findSelectionSet(state.document.selectionSets, id);
+    if (found === undefined) {
+      return 0;
+    }
+    const outcome = selectionSetElementIds(subShapeBodiesOf(state.bodies), found);
+    /*
+      選ぶ種類を**先に**合わせる。`setSelectionKind` は種類が変わると選択を空にするので、
+      順序を逆にすると選んだそばから消える(§0.a-0.6)。
+    */
+    state.setSelectionKind(selectionKindForSet(found));
+    state.setSelection(outcome.elementIds);
+    return outcome.missingCount;
   },
   setDisplaySettings: (displaySettings) => {
     saveSettings(displaySettings);
@@ -2198,6 +2692,60 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setPartMeasurer: (partMeasurer) => {
     set({ partMeasurer });
   },
+  setPrintability: (printability, offsets = null) => {
+    // 結果と塗る相手は必ず一緒に入れ替える(片方だけ残ると色の行き先が食い違う)。
+    // 出せたら前の断りは用済み(NFR-UX-5「押したら必ず何かが起きる」)。
+    set({
+      printability,
+      printabilityOffsets: printability === null ? null : offsets,
+      printCheckErrorMessage: null,
+    });
+  },
+  setPartInspector: (partInspector) => {
+    set({ partInspector });
+  },
+  setExchangeNotice: (exchangeNotice) => {
+    set({ exchangeNotice });
+  },
+  inspectPrintability: () => {
+    const state = get();
+    if (state.isInspectingPrint) {
+      /*
+        すでに 1 本走っている。二重に頼むと結果がどちらの順で返るか決まらないので、
+        **2 回目の押しは「やめる」にする**(ヘルプ `print-check.md` の「途中でやめたく
+        なったら、もう一度押せば止まります」。やめてもそこまでの結果は返る、NFR-PF-4)。
+      */
+      set({ printCheckCancelRequested: true });
+      return;
+    }
+    set({
+      isInspectingPrint: true,
+      printCheckCancelRequested: false,
+      printCheckErrorMessage: null,
+    });
+    void runPrintCheck({
+      document: state.document,
+      // カーネルが返したボディはそのまま `PrintCheckBody`(三角形の枚数つき)を満たす。
+      bodies: state.bodies,
+      selection: state.selection,
+      inspector: state.partInspector,
+      // 中止の答えは**その場のストア**から読む(押した瞬間の値を閉じ込めない)。
+      shouldCancel: () => get().printCheckCancelRequested,
+    }).then((outcome) => {
+      // 待っているあいだに文書が変わっていることがあるので、置く先は取り直す。
+      const after = get();
+      if (outcome.ok) {
+        after.setPrintability(outcome.report, outcome.offsets);
+        set({ isInspectingPrint: false, printCheckCancelRequested: false });
+        return;
+      }
+      set({
+        isInspectingPrint: false,
+        printCheckCancelRequested: false,
+        printCheckErrorMessage: outcome.message,
+      });
+    });
+  },
   setEditNotice: (editNoticeKey) => {
     set({ editNoticeKey });
   },
@@ -2216,6 +2764,25 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setCaptureThumbnail: (capture) => {
     set({ captureThumbnail: capture });
+  },
+  setCapturePrintFrame: (capture) => {
+    set({ capturePrintFrame: capture });
+  },
+  setExchangeKernel: (exchangeKernel) => {
+    set({ exchangeKernel });
+  },
+  setImportUnitAsked: (importUnitAsked) => {
+    set({ importUnitAsked });
+  },
+  setImportedAttachments: (shapes, meshes) => {
+    set({ importedShapes: shapes, importedMeshes: meshes });
+  },
+  addImportedAttachments: (shapes, meshes) => {
+    set((state) => ({
+      // 表は不変なので、足すたびに新しい `Map` を作る(rules/04。前の表は触らない)。
+      importedShapes: new Map([...state.importedShapes, ...shapes]),
+      importedMeshes: new Map([...state.importedMeshes, ...meshes]),
+    }));
   },
   setFileMessage: (fileMessage) => {
     set((state) => ({
@@ -2270,6 +2837,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
       // 断面表示も持ち越さない(FR-111、P6 タスク35)。切る面の指定が前の部品の面を
       // 指したままになり、新しい部品では解けない面で切ろうとすることになるため。
       sectionView: null,
+      // 点検の結果も持ち越さない(FR-815、P6 タスク42・43・46)。三角形の並びは形ごとに
+      // 変わるので、前の部品の結果を新しい部品の三角形に当てると別の場所が色づく。
+      printability: null,
+      printabilityOffsets: null,
+      /*
+        下絵も持ち越さない(FR-332、P6 タスク39)。画像の鍵(`imageId`)は文書ごとに
+        `canvas-1` から振り直されるので、前の部品の画像が新しい部品の別物の同じ鍵に
+        当たってしまう(rules/06 10.17 と同じ形の取り違え)。
+        **開いた部品の画像は、この後に `setCanvasImages` で入れ直す**(順序が逆だと消える)。
+      */
+      canvases: new Map<string, Uint8Array>(),
+      canvasPixelSizes: new Map<string, CanvasPixelSize>(),
+      /*
+        読み込んだ形も持ち越さない(FR-802、P6 タスク32)。理由は下絵とまったく同じで、
+        参照(`shapeRef` / `meshRef`)は文書ごとにフィーチャーの id から振り直されるため、
+        前の部品の形が新しい部品の別物の同じ参照に当たってしまう(rules/06 10.17)。
+        **開いた部品の形は、この後に `setImportedAttachments` で入れ直す**(順序が逆だと消える)。
+      */
+      importedShapes: new Map<string, Uint8Array>(),
+      importedMeshes: new Map<string, ImportedMeshBytes>(),
+      canvasScale: null,
+      canvasMessage: null,
       snapIndicator: null,
       trackIndicator: null,
       inferredConstraints: null,
@@ -2304,6 +2893,40 @@ export const useAppStore = create<AppState>()((set, get) => ({
 }));
 
 /**
+ * 書き出し・読み込みの口を差し出す(FR-802、FR-803。P6 タスク32)。
+ *
+ * `attachPartMeasure` とまったく同じ形にしてある。**書き出しも読み込みも再計算を
+ * 起こさない読み取り**なので、文書の変化は見張らない(差し出して、片付けで取り下げるだけ)。
+ *
+ * 戻り値を呼ぶと取り下げる。
+ */
+export function attachExchangeKernel(kernel: ExchangeKernel): () => void {
+  useAppStore.getState().setExchangeKernel(kernel);
+  return () => {
+    // 自分が差し出したものが今も立っているときだけ下ろす(`attachPartMeasure` と同じ)。
+    if (useAppStore.getState().exchangeKernel === kernel) {
+      useAppStore.getState().setExchangeKernel(null);
+    }
+  };
+}
+
+/**
+ * いまの添付の表(`.pcad` へ一緒に書くもの。P6 §0.a-0.55、タスク32)。
+ *
+ * **保存・自動保存はここ 1 か所から取る。** 3 つを別々に読み集めると、片方だけ渡し忘れた
+ * ときに「開き直せないファイル」ができる(`packages/io` の `findMissingAttachment` が
+ * `missingField` で断る)。下絵(`canvases`、タスク39)も同じ表に載る。
+ */
+export function currentPcadAttachments(): PcadAttachments {
+  const state = useAppStore.getState();
+  return {
+    shapes: state.importedShapes,
+    meshes: state.importedMeshes,
+    canvases: state.canvases,
+  };
+}
+
+/**
  * 形を測る手立てを差し出す(FR-1101、FR-1102。P5 タスク32)。
  *
  * カーネル(Worker)を持っているのは入口(`PointerCadApp`)だけなので、`attachPartRecompute`
@@ -2319,6 +2942,23 @@ export function attachPartMeasure(measurer: PartMeasurer): () => void {
     // 片付けが走っても、新しい手立てを消さない)。
     if (useAppStore.getState().partMeasurer === measurer) {
       useAppStore.getState().setPartMeasurer(null);
+    }
+  };
+}
+
+/**
+ * 3D プリントの点検の手立てを差し出す(FR-815。P6 タスク46)。
+ *
+ * `attachPartMeasure` とまったく同じ形。**点検も再計算を起こさない読み取り**
+ * (§0.a-0.30)なので、文書の変化は見張らない(差し出して、片付けで取り下げるだけ)。
+ *
+ * 戻り値を呼ぶと取り下げる。
+ */
+export function attachPartInspector(inspector: PartInspector): () => void {
+  useAppStore.getState().setPartInspector(inspector);
+  return () => {
+    if (useAppStore.getState().partInspector === inspector) {
+      useAppStore.getState().setPartInspector(null);
     }
   };
 }
@@ -2381,6 +3021,12 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
         useAppStore.getState().setRecomputeProgress(progress);
       },
       shouldCancel: () => useAppStore.getState().cancelRequestCount > cancelBaseline,
+      /*
+       * 読み込んだ形の B-rep(FR-802、P6 §0.a-0.9)。**渡さないと `importedSolid` の段が
+       * 「読み込んだ形が見つかりません」で失敗する。** 表は文書と一緒に差し替わるので、
+       * 依頼を出すそのときの表を読む(`PointerCadApp` の覚え書きと同じ約束)。
+       */
+      importedShapes: useAppStore.getState().importedShapes,
     }).then(
       (result) => {
         if (detached) {

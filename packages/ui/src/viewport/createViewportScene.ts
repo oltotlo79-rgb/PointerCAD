@@ -10,6 +10,7 @@ import {
 } from '@pointercad/model';
 import * as THREE from 'three';
 
+import { capturePrintPng } from '../file/printView.js';
 import { captureThumbnailPng, THUMBNAIL_SIZE } from '../file/thumbnail.js';
 import type { PointerRay, TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
@@ -44,6 +45,7 @@ import {
 } from './cameraMath.js';
 import type { ConstraintMark } from '../sketch/constraintPicking.js';
 import { constraintKindSymbol } from '../sketch/constraintSummary.js';
+import { createCanvasLayer, type CanvasDraw } from './canvasLayer.js';
 import { createConstraintLayer } from './createConstraintLayer.js';
 import { createMeasureLayer, type MeasurementState } from './createMeasureLayer.js';
 import { createReferenceLayer } from './createReferenceLayer.js';
@@ -52,6 +54,7 @@ import { createTrackingLayer } from './createTrackingLayer.js';
 import {
   createSolidLayer,
   type CutPreview,
+  type PrintabilityHighlight,
   type SectionHandle,
   type ThreadMarkInfo,
 } from './createSolidLayer.js';
@@ -152,6 +155,22 @@ export interface ViewportScene {
    */
   setSectionView(view: SectionViewRender | null): void;
   /**
+   * 3D プリントの点検の色(FR-815、P6 §0.53、タスク46)を出す / 消す。`null` で閉じる。
+   *
+   * **形は 1 つも変わらない。** 材質の割り当てを一時的に差し替えるだけなので、体積も
+   * 三角形も変わらず、再計算(`isComputing`)も走らない。閉じれば元の外観に戻る。
+   */
+  setPrintability(highlight: PrintabilityHighlight | null): void;
+  /**
+   * 下絵の画像(FR-332、P6 タスク39)を差し替える。空の並びで消える。
+   *
+   * **形は 1 つも変わらない。** 下絵は押し出しの材料にも当たり判定にもならないので、
+   * 入切・移動・不透明度の変更で再計算(`isComputing`)は走らない(§2.14)。
+   * 入切で外したもの・作図面を解けないもの・画像をまだ復号できていないものは、
+   * 呼び出し側が並びから外して渡す(この層は渡された分だけを描く)。
+   */
+  setCanvases(draws: readonly CanvasDraw[]): void;
+  /**
    * 球面の案内線(球面グリッド、FR-431、P5 タスク21)を差し替える。`null` で消える。
    *
    * **中身が同じなら組み立て直さない。** 呼び出し側(`ViewportCanvas.tsx`)は文書が
@@ -182,6 +201,17 @@ export interface ViewportScene {
    * **描いた直後の同じ同期処理の中**で読む。まだ一度も描いていなければ null。
    */
   captureThumbnail(size?: number): Uint8Array | null;
+  /**
+   * いまの絵をもう 1 回描いて、**印刷用の 1 コマ**(PNG の data URL)にする
+   * (FR-810、FR-908、P6 §2.11、タスク33)。読む時機は `captureThumbnail` と同じ理由で
+   * 「描いた直後の同じ同期処理の中」。まだ一度も描いていなければ null。
+   *
+   * **サムネイルを流用しない。** サムネイルは 256 画素の正方形で下地も画面と同じ暗い色だが、
+   * 紙は白く、縦横比も画面のままでなければならない(FR-908)。大きさと下地を決めるのは
+   * `printView.ts` の `capturePrintPng`(長辺 `PRINT_IMAGE_MAX`・`PRINT_BACKGROUND`)で、
+   * ここはそれを最後の見せ方で描き直してから呼ぶだけにしてある。
+   */
+  capturePrintFrame(): string | null;
   /**
    * 表示テーマの色を反映する(FR-908)。方眼と軸は色を頂点へ焼き込んでいるので作り直し、
    * 立体・スケッチの各層は材質の色を塗り替えるだけ。**テーマを変えたときにだけ呼ぶ。**
@@ -507,6 +537,17 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   const solidLayer = createSolidLayer();
   scene.add(solidLayer.group);
 
+  /*
+    下絵の画像(FR-332、P6 タスク39)。**スケッチの線より必ず後ろ**に描く(§0.a-0.46)ので、
+    読む順も層の前後にそろえてスケッチの層より前に足す(実際の前後は足した順ではなく
+    `canvasLayer.ts` の `CANVAS_RENDER_ORDER`(-2)が決める)。
+    **断面表示のクリッピング平面は配らない**(`solidLayer.setSectionPlanes` の相手にしない)。
+    中を見るために断面表示を入れた瞬間に下絵まで切れて消えると、なぞるための紙として
+    用を成さないため(タスク39 の判断)。下絵は形ではないので、切っても体積も三角形も変わらない。
+  */
+  const canvasLayer = createCanvasLayer();
+  scene.add(canvasLayer.group);
+
   const sketchLayer = createSketchLayer();
   sketchLayer.setWorkPlane(WORK_PLANES[DEFAULT_WORK_PLANE_ID]);
   scene.add(sketchLayer.group);
@@ -799,6 +840,14 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       solidLayer.updateSectionHandle(view.handle);
     },
 
+    setPrintability(highlight): void {
+      solidLayer.setPrintabilityHighlight(highlight);
+    },
+
+    setCanvases(draws): void {
+      canvasLayer.update(draws);
+    },
+
     setSphereGrid(spec): void {
       if (sameSphereGridSpec(sphereGridSpec, spec)) {
         return;
@@ -850,6 +899,16 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       // **同じ同期処理の中で**読む。間に非同期の待ちを挟んではいけない。
       drawScene(lastRender);
       return captureThumbnailPng(canvas, size);
+    },
+
+    capturePrintFrame(): string | null {
+      if (lastRender === null) {
+        // まだ一度も描いていない(3D 表示部の読み込み中)。印刷は断る(NFR-UX-5)。
+        return null;
+      }
+      // サムネイルと同じ理由で、最後と同じ見せ方で描き直して**同じ同期処理の中で**読む。
+      drawScene(lastRender);
+      return capturePrintPng(canvas);
     },
 
     setThemeColors(next): void {
@@ -956,6 +1015,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       // 環境マップはレンダーターゲット 1 枚ぶんの資源なので、画面ごと閉じるときに捨てる。
       environments.dispose();
       solidLayer.dispose();
+      // 下絵はテクスチャを持つ(P5 §4)ので、画面ごと閉じるときに必ず捨てる。
+      canvasLayer.dispose();
       sketchLayer.dispose();
       referenceLayer.dispose();
       trackingLayer.dispose();

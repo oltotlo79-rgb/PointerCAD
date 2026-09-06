@@ -1,7 +1,7 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { BoxParameters, SubShapeQuery, Vec3Tuple } from '../types.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';

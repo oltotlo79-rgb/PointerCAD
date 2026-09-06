@@ -19,6 +19,7 @@
     "opencascade.js": "catalog:"
   },
   "devDependencies": {
+    "@pointercad/test-utils": "workspace:*",
     "vite": "catalog:",
     "vitest": "catalog:"
   }

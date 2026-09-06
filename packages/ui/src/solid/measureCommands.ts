@@ -20,25 +20,18 @@
 
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
-  applyParameters,
   DEFAULT_DENSITY_MATERIAL_ID,
   densityMaterialFor,
   findDensityMaterial,
   formatLength,
   inertiaWithDensity,
   massFromVolume,
-  resolvePart,
   type AppearancePresetId,
   type LengthUnit,
   type MeasureOutcome,
   type MeasureTarget as ModelMeasureTarget,
-  type OffsetCache,
   type PartDocument,
-  type ProjectionCache,
-  type ResolvedCurve,
   type ResolvedSolidStep,
-  type ResolvePartOptions,
-  type SubShapeCache,
   type Vec3,
   type WoodSpecies,
 } from '@pointercad/model';
@@ -59,6 +52,7 @@ import {
   type MeasureReadiness,
   type MeasureTarget,
 } from './measure.js';
+import { resolveCachedSteps, type CachedResolveDeps } from './resolveCachedSteps.js';
 import type { SolidToolReadiness } from './solidCommands.js';
 import {
   parseSubShapeId,
@@ -519,60 +513,32 @@ export type PartMeasurer = (
   kind: 'distance' | 'massProperties',
 ) => Promise<MeasureOutcome>;
 
-/** `createPartMeasurer` に渡すもの。覚え書きは再計算と同じものを持ち回る(NFR-PF-2)。 */
-export interface PartMeasurerDeps {
+/**
+ * `createPartMeasurer` に渡すもの。覚え書きは再計算と同じものを持ち回る(NFR-PF-2)。
+ * 解くのに要るもの(覚え書き 3 つと読み込んだ形のバイト列)は書き出しと共通なので
+ * `CachedResolveDeps` を継ぐ(同じ並びを 2 か所に書かない)。
+ */
+export interface PartMeasurerDeps extends CachedResolveDeps {
   /** 形を測る口(`KernelBridge.measure`)。 */
   readonly measure: (
     steps: readonly ResolvedSolidStep[],
     targets: readonly ModelMeasureTarget[],
     kind: 'distance' | 'massProperties',
   ) => Promise<MeasureOutcome>;
-  readonly offsets: OffsetCache;
-  readonly projections: ProjectionCache;
-  readonly subShapes: SubShapeCache;
 }
 
 /**
  * 測る手立てを組み立てる(タスク32)。
  *
  * カーネルは**段の鍵**(`ResolvedSolidStep.key`)でしか形を引けないので、測る前に
- * 文書を解き直して段の一覧を作る。**カーネルは呼ばない解決だけ**を行い、形の材料
- * (オフセット・投影・部分形状の選び直し)は再計算が貯めた覚え書きから引く
- * (`recomputePart` が `resolveOptions` を組み立てるのとまったく同じ引き方)。
+ * 文書を解き直して段の一覧を作る。その解き方は `resolveCachedSteps`(書き出しと共有。
+ * P6 タスク32b)にあり、ここは覚え書きを渡して測る相手を添えるだけにする。
  * 覚え書きに無いものがあれば鍵が食い違い、カーネルが「測れませんでした。もう一度
  * お試しください。」を返す(§0.a-0.30 の断りと同じ文言。落とさない)。
- *
- * パラメータ表(FR-207)を式へ配ってから解くのも `recomputePart` と同じで、ここを
- * 通さないと名前を付けた数値を使った部品で段の鍵が変わってしまう。
  */
 export function createPartMeasurer(deps: PartMeasurerDeps): PartMeasurer {
-  return async (document, targets, kind) => {
-    const evaluated = applyParameters(document).document;
-    /** この解決の中で埋まった投影・交差の曲線(`recomputePart` の同名の表と同じ役目)。 */
-    const projected = new Map<string, readonly ResolvedCurve[]>();
-    const options: ResolvePartOptions = {
-      offsetCurves: (key) => deps.offsets.get(key),
-      projectedCurves: (featureId) => projected.get(featureId) ?? null,
-      subShape: (reference) => deps.subShapes.resolve(reference),
-    };
-    const first = resolvePart(evaluated, options);
-    let resolved = first;
-    if (first.projections.length > 0) {
-      let filled = false;
-      for (const request of first.projections) {
-        const remembered = deps.projections.get(request.key);
-        if (remembered !== null) {
-          projected.set(request.featureId, remembered);
-          filled = true;
-        }
-      }
-      if (filled) {
-        // 投影の曲線が入ったので解き直す(`resolveWithOffsets` の 2 巡目と同じ)。
-        resolved = resolvePart(evaluated, options);
-      }
-    }
-    return deps.measure(resolved.steps, targets, kind);
-  };
+  return (document, targets, kind) =>
+    deps.measure(resolveCachedSteps(document, deps), targets, kind);
 }
 
 /* ---------------------------------------------------------------------------

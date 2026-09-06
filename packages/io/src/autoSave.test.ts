@@ -10,7 +10,7 @@ import {
   type AutoSaveStorage,
   type AutoSaveTimerHandle,
 } from './autoSave.js';
-import { readPcadFile } from './pcad/pcadFile.js';
+import { readPcadFile, type ImportedMeshBytes, type PcadAttachments } from './pcad/pcadFile.js';
 
 /** 検査で保存時刻を固定する。 */
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
@@ -380,5 +380,173 @@ describe('createAutoSaver', () => {
     saver.stop();
 
     expect(errors).toEqual([failure]);
+  });
+});
+
+/*
+ * 添付つきの控え(P6 タスク32、タスク21 の申し送り)。
+ *
+ * 読み込んだ形(`importedSolid` / `importedMesh`)を含む文書は、`shapes/*.brep` /
+ * `meshes/*.bin` が一緒に入っていないと `readPcadFile` が `missingField` で断る。
+ * 添付を渡さずに控えを取ると「開けない控え」になるので、渡す口があることと、
+ * 渡したときに復元できることを両方固定する。
+ */
+
+/** 検査用の B-rep のバイト列(中身は解釈されないので、見分けの付く並びにする)。 */
+function fakeBrepBytes(seed: number): Uint8Array {
+  return Uint8Array.from([seed, seed + 1, seed + 2, seed + 3]);
+}
+
+/** 三角形 1 枚ぶんの網(頂点 3・三角形 1)。 */
+function oneTriangleMesh(): ImportedMeshBytes {
+  return {
+    positions: Float32Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+    normals: Float32Array.from([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+    indices: Uint32Array.from([0, 1, 2]),
+  };
+}
+
+/** 読み込んだ形 1 つと読み込んだ三角形 1 つを履歴に持つ部品文書。 */
+function importedDocument(): PartDocument {
+  return {
+    ...createEmptyPartDocument(),
+    solids: [
+      {
+        id: 'importedSolid-1',
+        kind: 'importedSolid',
+        name: '読み込んだ形1',
+        suppressed: false,
+        shapeRef: 'shape-1',
+        source: { format: 'step', fileName: 'bracket.step', unit: 'mm', byteLength: 4494 },
+        bodyKind: 'solid',
+      },
+      {
+        id: 'importedMesh-1',
+        kind: 'importedMesh',
+        name: '読み込んだ三角形の形1',
+        suppressed: false,
+        meshRef: 'mesh-1',
+        source: { format: 'stl', fileName: 'cover.stl', unit: 'mm', byteLength: 684 },
+        triangleCount: 1,
+      },
+    ],
+  };
+}
+
+/** 上の文書がそろえておくべき添付。 */
+function importedAttachments(): PcadAttachments {
+  return {
+    shapes: new Map([['shape-1', fakeBrepBytes(7)]]),
+    meshes: new Map([['mesh-1', oneTriangleMesh()]]),
+    canvases: new Map(),
+  };
+}
+
+describe('createAutoSaver の添付(P6 §0.a-0.9・0.24)', () => {
+  it('添付を渡さないと、読み込んだ形を含む文書の控えは復元できない(申し送りの再現)', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const timer = createManualTimer();
+    const saver = createAutoSaver({
+      storage,
+      now: () => 0,
+      setTimeout: timer.schedule,
+      clearTimeout: timer.cancel,
+    });
+    await saver.saveNow(importedDocument());
+    saver.stop();
+
+    const record = await storage.read();
+    if (record === null) {
+      throw new Error('unreachable');
+    }
+    const parsed = readPcadFile(record.bytes);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error.code).toBe('missingField');
+    }
+  });
+
+  it('attachmentsOf を渡すと、読み込んだ形を含む文書の控えが復元できる', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const timer = createManualTimer();
+    const document = importedDocument();
+    const seen: PartDocument[] = [];
+    const saver = createAutoSaver({
+      storage,
+      now: () => 0,
+      setTimeout: timer.schedule,
+      clearTimeout: timer.cancel,
+      attachmentsOf: (target) => {
+        seen.push(target);
+        return importedAttachments();
+      },
+    });
+    await saver.saveNow(document);
+    saver.stop();
+
+    // 書く直前に、いま書く文書そのものを渡して呼ばれる。
+    expect(seen).toEqual([document]);
+
+    const record = await storage.read();
+    if (record === null) {
+      throw new Error('unreachable');
+    }
+    const parsed = readPcadFile(record.bytes);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.document).toEqual(document);
+      expect(parsed.attachments.shapes.get('shape-1')).toEqual(fakeBrepBytes(7));
+      expect(parsed.attachments.meshes.get('mesh-1')?.indices).toEqual(Uint32Array.from([0, 1, 2]));
+    }
+  });
+
+  it('attachmentsOf が undefined を返したときは、添付なしで書く(版 6 までと同じ)', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const timer = createManualTimer();
+    const saver = createAutoSaver({
+      storage,
+      now: () => 0,
+      setTimeout: timer.schedule,
+      clearTimeout: timer.cancel,
+      attachmentsOf: () => undefined,
+    });
+    await saver.saveNow(createEmptyPartDocument());
+    saver.stop();
+
+    const record = await storage.read();
+    if (record === null) {
+      throw new Error('unreachable');
+    }
+    const parsed = readPcadFile(record.bytes);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.attachments.shapes.size).toBe(0);
+      expect(parsed.attachments.meshes.size).toBe(0);
+      expect(parsed.attachments.canvases.size).toBe(0);
+    }
+  });
+
+  it('間隔ごとの書き込みでも添付を渡す(saveNow だけの配線にしない)', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const timer = createManualTimer();
+    const saver = createAutoSaver({
+      storage,
+      intervalMs: 1000,
+      now: () => 0,
+      setTimeout: timer.schedule,
+      clearTimeout: timer.cancel,
+      attachmentsOf: () => importedAttachments(),
+    });
+    saver.markDirty(importedDocument());
+    timer.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    saver.stop();
+
+    const record = await storage.read();
+    if (record === null) {
+      throw new Error('unreachable');
+    }
+    expect(readPcadFile(record.bytes).ok).toBe(true);
   });
 });

@@ -20,6 +20,7 @@
     "comlink": "catalog:"
   },
   "devDependencies": {
+    "@pointercad/test-utils": "workspace:*",
     "vitest": "catalog:"
   }
 }

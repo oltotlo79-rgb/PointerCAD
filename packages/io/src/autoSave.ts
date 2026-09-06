@@ -20,7 +20,7 @@
 import type { PartDocument } from '@pointercad/model';
 
 import { isRecord } from './pcad/guards.js';
-import { writePcadFile } from './pcad/pcadFile.js';
+import { writePcadFile, type PcadAttachments } from './pcad/pcadFile.js';
 
 /** 自動保存の間隔(FR-805 の既定 5 分)。 */
 export const AUTO_SAVE_INTERVAL_MS = 300_000;
@@ -289,6 +289,19 @@ export interface AutoSaverOptions {
   readonly clearTimeout?: CancelFn;
   /** 書き込みに失敗したときの通知。例外は外へ出さない(NFR-RE-1)。 */
   readonly onError?: (error: unknown) => void;
+  /**
+   * 控えへ一緒に入れる添付(読み込んだ形・下絵。§0.a-0.9・0.24・0.45、P6 タスク32)。
+   *
+   * **渡さないと、読み込んだ形を含む文書の控えが復元できない。** `.pcad` の読み手は
+   * 文書が指している `shapes/*.brep` / `meshes/*.bin` / `canvases/*.png` が欠けていると
+   * `missingField` で断る(`pcad/pcadFile.ts` の `findMissingAttachment`)ので、
+   * 添付を渡さずに書いた控えは「開けない控え」になる(P6 タスク21 の申し送り)。
+   *
+   * **書く直前に呼ぶ**(控えを取る瞬間の表を使う)。表そのものではなく関数で受けるのは、
+   * 添付が増減しても自動保存の側を作り直さずに済ませるためで、`now` / `setTimeout` と
+   * 同じ「外の世界へ触れる口」の並びに置く。返さなければ添付なしで書く(版 6 までと同じ)。
+   */
+  readonly attachmentsOf?: (document: PartDocument) => PcadAttachments | undefined;
 }
 
 export interface AutoSaver {
@@ -338,7 +351,13 @@ export function createAutoSaver(options: AutoSaverOptions): AutoSaver {
       return writeInFlight;
     }
     const savedAt = new Date(now()).toISOString();
-    const bytes = writePcadFile(document, { savedAt });
+    // 添付を渡さない(欄ごと省く)のと、空の表を渡すのとでは ZIP のエントリが同じになるが、
+    // 呼び出し側が「表を持っていない」ことを表せるように渡し分ける。
+    const attachments = options.attachmentsOf?.(document);
+    const bytes =
+      attachments === undefined
+        ? writePcadFile(document, { savedAt })
+        : writePcadFile(document, { savedAt, attachments });
     const attempt = storage
       .write({ savedAt, bytes, documentName: document.name })
       .then(() => {

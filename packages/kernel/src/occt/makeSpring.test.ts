@@ -1,6 +1,6 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { SpringStepSpec } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeSpring } from './makeSpring.js';

@@ -12,7 +12,9 @@ import {
   DENSITY_MATERIALS,
   findReference,
   findSolid,
+  formatLength,
   formatMass,
+  isBaseWorkPlaneId,
   isSameAppearanceTarget,
   MATERIAL_PRESETS,
   replaceReference,
@@ -22,6 +24,7 @@ import {
   type AppearancePattern,
   type AppearancePresetId,
   type AppearanceSpec,
+  type BaseWorkPlaneId,
   type CutFeature,
   type LengthUnit,
   type ReferenceFeature,
@@ -104,7 +107,11 @@ import {
   type CutContext,
 } from '../solid/cutCommands.js';
 import { ruledTwistNoteKey } from '../solid/ruledCommands.js';
+// 選択セット(FR-112、タスク43)。断りの文言の鍵は solid の純関数 1 か所から引く。
+import { selectionSetRefusalMessageKey } from '../solid/selectionSetCommands.js';
 import { isValidSphereGridStep } from '../viewport/buildSphereGrid.js';
+// 下絵(FR-332、タスク39・43)。式から置き方を取り出すのは viewport の純関数 1 か所。
+import { canvasPlacementOf } from '../viewport/canvasLayer.js';
 import {
   applyDisplayUnit,
   COORDINATE_MODES,
@@ -1096,6 +1103,20 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           <dd className="pcad-properties__value">
             {body === undefined ? missing : String(body.mesh.triangleCount)}
           </dd>
+          {/*
+            読み込んだ形(FR-802、P6 §2.18、タスク32)だけに出す面の数。
+            **素性の節ではなくここに出す**のは、面の数が文書には入っておらず、
+            計算した形からしか分からないため(体積・三角形の数と同じ出どころ)。
+            読み込んだ形は「その上へ穴や面取りを積めるか」の目安になるので出す。
+          */}
+          {feature.kind === 'importedSolid' ? (
+            <>
+              <dt className="pcad-properties__key">{t('propertyPanel.importedFaceCount')}</dt>
+              <dd className="pcad-properties__value">
+                {body === undefined ? missing : String(body.faces.length)}
+              </dd>
+            </>
+          ) : null}
         </dl>
       </div>
     </>
@@ -2564,6 +2585,456 @@ function MassPropertiesSection({
  */
 const APPEARANCE_KEY_PREFIX = 'appearance:';
 
+/* ---------------------------------------------------------------------------
+ * P6 の 5 つの節(FR-111、FR-112、FR-332、FR-333、FR-815。計画書 §2.18、タスク43)
+ *
+ * **区画は増やさない**(rules/04)。5 つともプロパティの中の節で、選んでいるものが
+ * 何であっても、外観・測定の節と同じくその下に続けて出す。
+ * ------------------------------------------------------------------------- */
+
+/**
+ * 下絵を貼ってある作図面の札。基準の 3 面は `ja.json` から、任意の作業平面はその id を出す。
+ *
+ * **同じ対応表が `StatusBar.tsx`(`planeLabel`)にもある。** あちらは作業平面の名前まで
+ * 引くので入力が違い(文書の一覧が要る)、ここは下絵の行に短く出すだけなので分けてある。
+ * 1 か所へまとめるならタスク45(図柄と札の整理)でまとめて行う。
+ */
+const CANVAS_PLANE_LABEL_KEYS = {
+  xy: 'toolbar.plane.xy',
+  xz: 'toolbar.plane.xz',
+  yz: 'toolbar.plane.yz',
+} as const satisfies Record<BaseWorkPlaneId, MessageKey>;
+
+function canvasPlaneLabel(planeId: string): string {
+  return isBaseWorkPlaneId(planeId) ? t(CANVAS_PLANE_LABEL_KEYS[planeId]) : planeId;
+}
+
+/** 「{count}」を数で埋める(`t()` は置換をしない。`sketch/constraintActions.ts` と同じ書き方)。 */
+function withCount(key: MessageKey, count: number): string {
+  return t(key).replace('{count}', String(count));
+}
+
+/**
+ * 「断面表示」の節(FR-111、§2.18)。
+ *
+ * **状態の表示と入切だけに絞る。** 切る位置のつまみとその場の数値入力はビューポートの
+ * 浮かぶ欄(タスク35)が持っている。同じ値の入口を 2 か所に作ると、打っている途中の
+ * 下書きが 2 つに分かれてどちらが本物か分からなくなる(P4b の「同じ値の入口を 2 つ
+ * 作らない」)。ここは**いまどの面で・どれだけずらして・どちら側を残しているか**を読み、
+ * 浮かぶ欄には無い「切る位置を 0 へ戻す」だけを足す。
+ *
+ * **再計算は走らない**(文書に触らない。§2.17-7)。
+ */
+function SectionViewSection(): React.JSX.Element {
+  const sectionView = useAppStore((state) => state.sectionView);
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('sectionView.title')}</h3>
+      {sectionView === null ? (
+        <p className="pcad-panel__note">{t('propertyPanel.sectionViewOff')}</p>
+      ) : (
+        <dl className="pcad-properties">
+          <dt className="pcad-properties__key">{t('propertyPanel.sectionViewPlane')}</dt>
+          <dd className="pcad-properties__value">
+            {t(PLANE_SPEC_LABEL_KEYS[sectionView.plane.kind])}
+          </dd>
+          <dt className="pcad-properties__key">{t('propertyPanel.sectionViewOffset')}</dt>
+          <dd className="pcad-properties__value">{formatLength(sectionView.offsetMm)}</dd>
+          <dt className="pcad-properties__key">{t('propertyPanel.sectionViewSide')}</dt>
+          <dd className="pcad-properties__value">
+            {t(
+              sectionView.flipped
+                ? 'propertyPanel.sectionViewSideBack'
+                : 'propertyPanel.sectionViewSideFront',
+            )}
+          </dd>
+        </dl>
+      )}
+      <div className="pcad-appearance__actions">
+        <button
+          type="button"
+          className="pcad-button"
+          aria-pressed={sectionView !== null}
+          title={t(
+            sectionView === null
+              ? 'propertyPanel.sectionViewOnTooltip'
+              : 'propertyPanel.sectionViewOffTooltip',
+          )}
+          onClick={() => {
+            useAppStore.getState().toggleSectionView();
+          }}
+        >
+          {t(sectionView === null ? 'propertyPanel.sectionViewOn' : 'sectionView.close')}
+        </button>
+        <button
+          type="button"
+          className="pcad-button"
+          title={t('propertyPanel.sectionViewResetTooltip')}
+          disabled={sectionView === null || sectionView.offsetMm === 0}
+          onClick={() => {
+            useAppStore.getState().setSectionOffset(0);
+          }}
+        >
+          {t('propertyPanel.sectionViewReset')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 「選択セット」の節(FR-112、§2.13、§0.a-0.44)。
+ *
+ * 一覧(名前と員数)・新しく作る・名前を変える・消す・選ぶ・足すを 1 か所に置く。
+ * 判断は `solid/selectionSetCommands.ts` と model の `part/selectionSets.ts` にあり、
+ * ここは画面だけを描く。**組を触っても再計算は走らない**(`affectsShape` が偽、§0.a-0.44)。
+ *
+ * 覚えられるのは**立体・面・辺・頂点の 4 種すべて**(利用者の決定、2026-09-06)。
+ */
+function SelectionSetSection(): React.JSX.Element {
+  const sets = useAppStore((state) => state.document.selectionSets);
+  const selection = useAppStore((state) => state.selection);
+  const [name, setName] = useState('');
+  /** 断り・知らせの 1 行(NFR-UX-5)。押すたびに入れ替わる、画面だけの状態。 */
+  const [notice, setNotice] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ readonly id: string; readonly text: string } | null>(
+    null,
+  );
+
+  const create = (): void => {
+    const refusal = useAppStore.getState().createSelectionSetFromSelection(name);
+    if (refusal !== null) {
+      setNotice(t(selectionSetRefusalMessageKey(refusal)));
+      return;
+    }
+    setName('');
+    setNotice(null);
+  };
+
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionSelectionSets')}</h3>
+      {sets.length === 0 ? (
+        <p className="pcad-panel__note">{t('propertyPanel.selectionSetEmpty')}</p>
+      ) : (
+        <ul className="pcad-constraint-list">
+          {sets.map((set) => (
+            <li key={`selectionSet:${set.id}`} className="pcad-constraint-row">
+              {renaming !== null && renaming.id === set.id ? (
+                <input
+                  className="pcad-field__input"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label={t('propertyPanel.selectionSetName')}
+                  value={renaming.text}
+                  onChange={(event) => {
+                    setRenaming({ id: set.id, text: event.target.value });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') {
+                      return;
+                    }
+                    const refusal = useAppStore
+                      .getState()
+                      .renameSelectionSet(set.id, renaming.text);
+                    setNotice(refusal === null ? null : t(selectionSetRefusalMessageKey(refusal)));
+                    if (refusal === null) {
+                      setRenaming(null);
+                    }
+                  }}
+                  onBlur={() => {
+                    setRenaming(null);
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="pcad-constraint-row__pick"
+                  title={t('propertyPanel.selectionSetSelectTooltip')}
+                  onClick={() => {
+                    const missing = useAppStore.getState().selectSelectionSet(set.id);
+                    setNotice(
+                      missing === 0
+                        ? null
+                        : withCount('propertyPanel.selectionSetMissing', missing),
+                    );
+                  }}
+                  onDoubleClick={() => {
+                    setRenaming({ id: set.id, text: set.name });
+                  }}
+                >
+                  <span className="pcad-constraint-row__label">{set.name}</span>
+                  <span className="pcad-constraint-row__detail">
+                    {withCount('propertyPanel.selectionSetCount', set.members.length)}
+                  </span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="pcad-button"
+                title={t('propertyPanel.selectionSetAddTooltip')}
+                disabled={selection.length === 0}
+                onClick={() => {
+                  useAppStore.getState().addSelectionToSet(set.id);
+                  setNotice(null);
+                }}
+              >
+                {t('propertyPanel.selectionSetAdd')}
+              </button>
+              <button
+                type="button"
+                className="pcad-button pcad-constraint-row__remove"
+                title={t('propertyPanel.selectionSetRemoveTooltip')}
+                onClick={() => {
+                  useAppStore.getState().removeSelectionSet(set.id);
+                  setNotice(null);
+                }}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="pcad-field">
+        <span className="pcad-field__label">{t('propertyPanel.selectionSetName')}</span>
+        <input
+          className="pcad-field__input"
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={t('propertyPanel.selectionSetNamePlaceholder')}
+          aria-label={t('propertyPanel.selectionSetName')}
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              // Enter だけで作れる(NFR-UX-4)。
+              event.preventDefault();
+              create();
+            }
+          }}
+        />
+      </div>
+      <div className="pcad-appearance__actions">
+        <button
+          type="button"
+          className="pcad-button"
+          title={t('propertyPanel.selectionSetCreateTooltip')}
+          onClick={create}
+        >
+          {t('propertyPanel.selectionSetCreate')}
+        </button>
+      </div>
+      {notice === null ? null : <p className="pcad-panel__note">{notice}</p>}
+    </div>
+  );
+}
+
+/**
+ * 「下絵」の節(FR-332、§2.14、タスク39・43)。
+ *
+ * 敷いてある下絵を並べ、**濃さ・入切・削除・寸法合わせ**を持つ。幅・高さ・中心・向きは
+ * 読むだけにしてある——これらを直す口はストアに無く(2 点の寸法合わせ `applyCanvasScale`
+ * がまとめて決める)、ここで文書を直に書き換えると同じ判断が 2 か所に分かれるため。
+ * **どの操作でも再計算は走らない**(§2.14 の表)。
+ */
+function CanvasSection(): React.JSX.Element {
+  const canvases = useAppStore((state) => state.document.canvases);
+  const scaling = useAppStore((state) => state.canvasScale);
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionCanvas')}</h3>
+      {canvases.length === 0 ? (
+        <p className="pcad-panel__note">{t('propertyPanel.canvasEmpty')}</p>
+      ) : (
+        canvases.map((canvas) => {
+          const placement = canvasPlacementOf(canvas);
+          return (
+            <div key={`canvas:${canvas.id}`} className="pcad-boundary">
+              <dl className="pcad-properties">
+                <dt className="pcad-properties__key">{t('propertyPanel.selectionSetName')}</dt>
+                <dd className="pcad-properties__value">{canvas.name}</dd>
+                <dt className="pcad-properties__key">{t('propertyPanel.canvasPlane')}</dt>
+                <dd className="pcad-properties__value">{canvasPlaneLabel(canvas.plane)}</dd>
+                <dt className="pcad-properties__key">{t('propertyPanel.canvasSize')}</dt>
+                <dd className="pcad-properties__value">
+                  {`${formatLength(placement.widthMm)} × ${formatLength(placement.heightMm)}`}
+                </dd>
+                <dt className="pcad-properties__key">{t('propertyPanel.canvasCenter')}</dt>
+                <dd className="pcad-properties__value">
+                  {`(${formatLength(placement.centerU)}, ${formatLength(placement.centerV)})`}
+                </dd>
+                <dt className="pcad-properties__key">{t('propertyPanel.canvasRotation')}</dt>
+                <dd className="pcad-properties__value">{`${String(placement.rotationDegrees)}°`}</dd>
+              </dl>
+              <div className="pcad-field">
+                <span className="pcad-field__label">{t('propertyPanel.canvasOpacity')}</span>
+                <input
+                  className="pcad-field__input"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label={`${t('propertyPanel.canvasOpacity')} ${canvas.name}`}
+                  value={canvas.opacity.source}
+                  onChange={(event) => {
+                    // 数にならない値はストアが据え置く(NFR-RE-1。打っている途中で消さない)。
+                    useAppStore.getState().setCanvasOpacity(canvas.id, Number(event.target.value));
+                  }}
+                />
+              </div>
+              <div className="pcad-appearance__actions">
+                <button
+                  type="button"
+                  className="pcad-button"
+                  aria-pressed={canvas.visible}
+                  title={t('propertyPanel.canvasVisibleTooltip')}
+                  onClick={() => {
+                    useAppStore.getState().setCanvasVisible(canvas.id, !canvas.visible);
+                  }}
+                >
+                  {t('propertyPanel.canvasVisible')}
+                </button>
+                <button
+                  type="button"
+                  className="pcad-button"
+                  aria-pressed={scaling !== null && scaling.canvasId === canvas.id}
+                  title={t('propertyPanel.canvasScaleTooltip')}
+                  onClick={() => {
+                    useAppStore.getState().startCanvasScale(canvas.id);
+                  }}
+                >
+                  {t('propertyPanel.canvasScale')}
+                </button>
+                <button
+                  type="button"
+                  className="pcad-button"
+                  title={t('propertyPanel.canvasRemoveTooltip')}
+                  onClick={() => {
+                    useAppStore.getState().removeCanvas(canvas.id);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+/**
+ * 「3D プリントの点検」の節(FR-815、§0.53、§2.16)。
+ *
+ * 43b が結果の入れ物を描き、タスク46 が点検を走らせる入口(ツールバーの「表示」)と
+ * 色の層をつないだ。点検をまだ 1 度もしていなければ `printability` は `null` で、
+ * 「まだ点検していません。」と説明だけが出る。
+ * 数の意味は model の `PrintabilitySummary` の注釈のとおり。
+ */
+function PrintCheckSection(): React.JSX.Element {
+  const report = useAppStore((state) => state.printability);
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionPrintCheck')}</h3>
+      {report === null ? (
+        <p className="pcad-panel__note">{t('propertyPanel.printCheckNotYet')}</p>
+      ) : (
+        <dl className="pcad-properties">
+          <dt className="pcad-properties__key">{t('propertyPanel.printCheckWatertight')}</dt>
+          <dd className="pcad-properties__value">
+            {t(
+              report.summary.watertight
+                ? 'propertyPanel.printCheckWatertightYes'
+                : 'propertyPanel.printCheckWatertightNo',
+            )}
+          </dd>
+          <dt className="pcad-properties__key">{t('propertyPanel.printCheckThin')}</dt>
+          <dd className="pcad-properties__value">
+            {withCount('propertyPanel.printCheckPlaceCount', report.summary.thinCount)}
+          </dd>
+          <dt className="pcad-properties__key">{t('propertyPanel.printCheckOverhang')}</dt>
+          <dd className="pcad-properties__value">
+            {withCount('propertyPanel.printCheckPlaceCount', report.summary.overhangCount)}
+          </dd>
+          <dt className="pcad-properties__key">{t('propertyPanel.printCheckOpenEdges')}</dt>
+          <dd className="pcad-properties__value">
+            {withCount('propertyPanel.printCheckPlaceCount', report.summary.openEdgeCount)}
+          </dd>
+          <dt className="pcad-properties__key">{t('propertyPanel.printCheckMinThickness')}</dt>
+          <dd className="pcad-properties__value">
+            {report.summary.minThicknessFoundMm === null
+              ? t('propertyPanel.printCheckUnknown')
+              : formatLength(report.summary.minThicknessFoundMm)}
+          </dd>
+        </dl>
+      )}
+      {report !== null && (
+        <>
+          {/* 色と意味の対応(§0.53)。ヘルプ(`print-check.md`)と同じ言い方にそろえる。 */}
+          <p className="pcad-panel__note">{t('propertyPanel.printCheckColors')}</p>
+          <div className="pcad-appearance__actions">
+            <button
+              type="button"
+              className="pcad-button"
+              title={t('propertyPanel.printCheckCloseTooltip')}
+              onClick={() => {
+                // 閉じると色が消えて元の外観に戻る(形も体積も 1 つも変わらない、§0.53)。
+                useAppStore.getState().setPrintability(null);
+              }}
+            >
+              {t('propertyPanel.printCheckClose')}
+            </button>
+          </div>
+        </>
+      )}
+      <p className="pcad-panel__note">
+        {report !== null && report.cancelled
+          ? t('propertyPanel.printCheckCancelled')
+          : t('propertyPanel.printCheckHint')}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * 「拘束の推定」の節(FR-333、§0.a-0.49、タスク41・43)。
+ *
+ * **値はステータスバーの入切とまったく同じ 1 つ**(`displaySettings.inferConstraints`)で、
+ * 同じ setter を通す。2 か所で別々に持つと、片方を押したときにもう片方が古い値のまま
+ * 残る(rules/04「同じ状態を 2 か所に持たない」)。しきい値の数は出さない(§0.a-0.48)。
+ */
+function InferConstraintsSection(): React.JSX.Element {
+  const displaySettings = useAppStore((state) => state.displaySettings);
+  return (
+    <div className="pcad-section">
+      <h3 className="pcad-section__title">{t('propertyPanel.sectionInferConstraints')}</h3>
+      <div className="pcad-appearance__actions">
+        <button
+          type="button"
+          className="pcad-button"
+          aria-pressed={displaySettings.inferConstraints}
+          title={t('statusBar.inferConstraintsHint')}
+          onClick={() => {
+            useAppStore.getState().setDisplaySettings({
+              ...displaySettings,
+              inferConstraints: !displaySettings.inferConstraints,
+            });
+          }}
+        >
+          {t('propertyPanel.inferConstraintsOn')}
+        </button>
+      </div>
+      <p className="pcad-panel__note">{t('propertyPanel.inferConstraintsShift')}</p>
+    </div>
+  );
+}
+
 /**
  * 外観の節の `key`(上の接頭辞 + いまの選択)。**同じ親に並ぶ他の節の `key`
  * (`feature.id` / `solid.id` / `reference.id`)と絶対に重ならないこと**が満たすべき性質で、
@@ -2864,6 +3335,18 @@ export function PropertyPanel(): React.JSX.Element {
           いま編集しているスケッチの拘束をここへ並べ、行を押すと 3D の印が光り、
           寸法拘束は値をその場で書き換えられる。拘束が 1 つも無ければ何も出ない。
         */}
+        {/*
+          P6 の 5 つの節(FR-111、FR-112、FR-332、FR-333、FR-815。§2.18、タスク43)。
+          **区画もタブも増やさない**(rules/04)。選んでいるものが何であっても、
+          外観・測定の節と同じくその下に続けて出す。**`key` は付けない**——条件で
+          出し分ける兄弟ではなく常に同じ位置に 1 つずつ並ぶので、鍵が重なりようがない
+          (rules/06 10.9 の事故は「同じ親に id を `key` にした節が並ぶ」形でだけ起きる)。
+        */}
+        <SectionViewSection />
+        <SelectionSetSection />
+        <CanvasSection />
+        <PrintCheckSection />
+        <InferConstraintsSection />
         <ConstraintList />
       </div>
       )}

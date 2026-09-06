@@ -1017,3 +1017,60 @@ describe('球面上の点の案内(FR-431、P5 タスク22)', () => {
     expect(describeStatus({ ...quiet(), activeTool: 'sphereGridPoint' }).text).toContain('交点');
   });
 });
+/**
+ * 書き出しの添え物と 3D プリントの点検(FR-803、FR-815。P6 タスク45・46)。
+ *
+ * 書き出しの添え物が**失敗の口へ入っていた**のがタスク45 の指摘で、そのとき帯は
+ * 「計算に失敗しました: 面積 0 の三角形を 3 枚除きました」と赤く出ていた。
+ */
+describe('書き出しの添え物と点検の 1 文(P6 タスク45・46)', () => {
+  it('書き出しの添え物は赤くならず、「計算に失敗しました:」も付かない', () => {
+    const line = describeStatus({
+      ...quiet(),
+      exchangeNotice: '面積 0 の三角形を 3 枚除きました。',
+    });
+
+    expect(line.kind).toBe('saved');
+    expect(line.text).toBe('面積 0 の三角形を 3 枚除きました。');
+    expect(line.text.startsWith(t('statusBar.error'))).toBe(false);
+  });
+
+  it('同じ文を失敗の口(errorMessage)へ入れると赤くなる(直した前の姿)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      errorMessage: '面積 0 の三角形を 3 枚除きました。',
+    });
+
+    expect(line.kind).toBe('failure');
+    expect(line.text.startsWith(t('statusBar.error'))).toBe(true);
+  });
+
+  it('点検の断りは赤く、理由の文をそのまま出す(頭の言葉は付けない)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      printCheckErrorMessage: t('printCheck.noBody'),
+    });
+
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(t('printCheck.noBody'));
+  });
+
+  it('点検の最中は「点検しています…」を出す(進み具合の細い帯は出さない)', () => {
+    const line = describeStatus({ ...quiet(), inspectingPrint: true });
+
+    expect(line.kind).toBe('computing');
+    expect(line.text).toBe(t('printCheck.running'));
+    expect(line.progress).toBeNull();
+  });
+
+  it('点検の最中でも、断りのほうが先に出る(押した操作への返事を優先する)', () => {
+    const line = describeStatus({
+      ...quiet(),
+      inspectingPrint: true,
+      printCheckErrorMessage: t('printCheck.unavailable'),
+    });
+
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(t('printCheck.unavailable'));
+  });
+});

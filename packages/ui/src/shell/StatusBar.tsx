@@ -134,6 +134,11 @@ export function StatusBar(): React.JSX.Element {
     (state) => state.document.references.length + state.document.solids.length,
   );
   const timelineNoticeKey = useAppStore((state) => state.timelineNoticeKey);
+  // 書き出しの添え物(P6 タスク45・46)。うまくいったときの知らせなので赤くしない。
+  const exchangeNotice = useAppStore((state) => state.exchangeNotice);
+  // 3D プリントの点検(FR-815、P6 タスク46)。断りと「点検しています…」の 2 つ。
+  const printCheckErrorMessage = useAppStore((state) => state.printCheckErrorMessage);
+  const inspectingPrint = useAppStore((state) => state.isInspectingPrint);
   /*
    * 順序の入れ替えの断り(FR-507、FR-504。P4b タスク20)。文だけを取り出す。
    * 断りの向け先(壊れる側の行)の印は `FeatureTree.tsx` が同じ値から出す。
@@ -272,6 +277,9 @@ export function StatusBar(): React.JSX.Element {
     // つまみが末尾でないことの札と、末尾へ戻したことの知らせ(FR-507、タスク19)。
     rollback: rollbackOf(historyCount, timelineIndex),
     timelineNoticeKey,
+    exchangeNotice,
+    printCheckErrorMessage,
+    inspectingPrint,
     timelineRefusalMessage,
     constraintErrorMessage,
     constraintPickMessage,

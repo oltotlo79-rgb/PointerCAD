@@ -9,6 +9,7 @@ import {
   carriesColor,
   checkExportBodyKind,
   exportDeviationMm,
+  exportMeshQuality,
   selectExportBodies,
   usesTriangles,
 } from './exportPart.js';
@@ -20,6 +21,7 @@ import {
   DEFAULT_EXPORT_WITH_COLORS,
   EXPORT_DEVIATION_MM,
   EXPORT_FORMATS,
+  EXPORT_MESH_QUALITY,
   EXPORT_QUALITIES,
   FILE_KINDS,
   IMPORT_FORMATS,
@@ -339,5 +341,65 @@ describe('書き出しの依頼の既定値(§0.a-0.12、§0.a-0.14、§0.a-0.22
     expect(request.quality).toBe('coarse');
     expect(request.scope).toBe('all');
     expect(request.withColors).toBe(true);
+  });
+});
+
+describe('三角形の細かさの対(§0.a-0.64、FR-803)', () => {
+  it('3 択の裏は長さと角度の対で、粗い 0.5/0.5・標準 0.1/0.2・細かい 0.02/0.1', () => {
+    expect(EXPORT_MESH_QUALITY).toEqual({
+      coarse: { deviationMm: 0.5, angularDeflectionRad: 0.5 },
+      normal: { deviationMm: 0.1, angularDeflectionRad: 0.2 },
+      fine: { deviationMm: 0.02, angularDeflectionRad: 0.1 },
+    });
+  });
+
+  it('長さだけの表は対の表から取り出したもので、数を写していない', () => {
+    for (const quality of EXPORT_QUALITIES) {
+      expect(EXPORT_DEVIATION_MM[quality], quality).toBe(EXPORT_MESH_QUALITY[quality].deviationMm);
+    }
+  });
+
+  it('細かくするほど、長さも角度も小さくなる(順序が入れ替わらない)', () => {
+    expect(EXPORT_MESH_QUALITY.coarse.deviationMm)
+      .toBeGreaterThan(EXPORT_MESH_QUALITY.normal.deviationMm);
+    expect(EXPORT_MESH_QUALITY.normal.deviationMm)
+      .toBeGreaterThan(EXPORT_MESH_QUALITY.fine.deviationMm);
+    expect(EXPORT_MESH_QUALITY.coarse.angularDeflectionRad)
+      .toBeGreaterThan(EXPORT_MESH_QUALITY.normal.angularDeflectionRad);
+    expect(EXPORT_MESH_QUALITY.normal.angularDeflectionRad)
+      .toBeGreaterThan(EXPORT_MESH_QUALITY.fine.angularDeflectionRad);
+  });
+
+  it('三角形を使う形式では対がそのまま返り、使わない形式では null', () => {
+    const triangleKinds: readonly FileKind[] = ['stl', '3mf', 'obj', 'glb'];
+    for (const kind of triangleKinds) {
+      for (const quality of EXPORT_QUALITIES) {
+        expect(exportMeshQuality(kind, quality), `${kind}/${quality}`)
+          .toEqual(EXPORT_MESH_QUALITY[quality]);
+      }
+    }
+    expect(exportMeshQuality('step', 'fine')).toBeNull();
+    expect(exportMeshQuality('dxf', 'fine')).toBeNull();
+  });
+
+  it('書き出す立体を選んだ結果にも対が入り、長さの欄と食い違わない', () => {
+    const outcome = selectExportBodies([makeBody('f1', 'solid')], createExportRequest('stl'));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(outcome.selection.meshQuality)
+      .toEqual(EXPORT_MESH_QUALITY[DEFAULT_EXPORT_QUALITY]);
+    expect(outcome.selection.meshQuality?.deviationMm).toBe(outcome.selection.deviationMm);
+  });
+
+  it('STEP を選んだ結果は対も長さも null(品質は効かない)', () => {
+    const outcome = selectExportBodies([makeBody('f1', 'solid')], createExportRequest('step'));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(outcome.selection.meshQuality).toBeNull();
+    expect(outcome.selection.deviationMm).toBeNull();
   });
 });

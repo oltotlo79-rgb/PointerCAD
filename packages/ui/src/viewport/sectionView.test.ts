@@ -15,9 +15,8 @@
  */
 
 import type { ResolvedPlane } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
-
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 import {
   toThreePlane,

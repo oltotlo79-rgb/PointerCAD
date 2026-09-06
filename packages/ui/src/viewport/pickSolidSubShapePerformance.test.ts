@@ -13,11 +13,11 @@
  * ここに置いても対象の関数を変更するわけではない)。
  */
 import type { Vec3 } from '@pointercad/model';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, it } from 'vitest';
 
 import { pickSolidSubShape } from '../solid/pickSubShape.js';
 import type { SolidEdgeEntry, SolidVertexEntry, SubShapeBody } from '../solid/subShapeSelection.js';
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 
 const EDGE_COUNT = 200;
 const SEGMENTS_PER_EDGE = 4;

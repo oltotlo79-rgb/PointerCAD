@@ -171,6 +171,56 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '材料と重さを調べる',
     path: 'docs/ja/mass-properties.md',
   },
+  {
+    id: 'export',
+    title: '書き出す(ほかのソフトへ渡す)',
+    path: 'docs/ja/export.md',
+  },
+  {
+    id: 'import',
+    title: '読み込む(ほかのソフトの形を取り込む)',
+    path: 'docs/ja/import.md',
+  },
+  {
+    id: 'dxf',
+    title: 'DXF を読み書きする',
+    path: 'docs/ja/dxf.md',
+  },
+  {
+    id: 'units',
+    title: '単位を変える(ミリメートルとインチ)',
+    path: 'docs/ja/units.md',
+  },
+  {
+    id: 'section-view',
+    title: '切って中を見る',
+    path: 'docs/ja/section-view.md',
+  },
+  {
+    id: 'selection',
+    title: '選ぶものを絞る・選んだ組に名前を付ける',
+    path: 'docs/ja/selection.md',
+  },
+  {
+    id: 'canvas',
+    title: '下絵を敷く',
+    path: 'docs/ja/canvas.md',
+  },
+  {
+    id: 'print-check',
+    title: '3D プリントの前に点検する',
+    path: 'docs/ja/print-check.md',
+  },
+  {
+    id: 'template',
+    title: 'ひな形を使う',
+    path: 'docs/ja/template.md',
+  },
+  {
+    id: 'print-save-as',
+    title: '印刷する・別名で保存する',
+    path: 'docs/ja/print-save-as.md',
+  },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

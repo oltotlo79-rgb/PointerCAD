@@ -26,11 +26,17 @@ import {
   MACHINING_MENU_ITEMS,
   MENU_TRIGGER_WIDTH_PIXELS,
   PROJECTION_MENU_ITEMS,
+  RECENT_FILE_MENU_PREFIX,
   SHAPE_MENU_ITEMS,
   SINGLE_MENU_COUNT,
   SKETCH_MENU_COUNT,
   SOLID_MENU_COUNT,
+  STORED_TEMPLATE_MENU_PREFIX,
+  fileMenuItems,
+  isRecentFileMenuId,
+  isStoredTemplateMenuId,
   nextHighlightIndex,
+  storedTemplateIdOf,
   rememberRecentTool,
   segmentedWidthPixels,
   triggerItemOf,
@@ -275,15 +281,22 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
   it('「投影」「見た目」の一覧の中身', () => {
     expect(PROJECTION_MENU_ITEMS.map((item) => item.id)).toEqual(['perspective', 'orthographic']);
     // タスク32 の「測る」が 2 行目に入った(§0.a-0.29。区画は増やさない、要件§7.1)。
-    expect(LOOK_MENU_ITEMS.map((item) => item.id)).toEqual(['appearance', 'measure']);
+    // P6 タスク39 の「下絵」(FR-332)が 3 行目に入った(同じ理由で区画は増えない)。
+    // P6 タスク46 の「3D プリントの点検」(FR-815)が 4 行目に入った(同じ理由)。
+    expect(LOOK_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'appearance',
+      'measure',
+      'canvas',
+      'printCheck',
+    ]);
   });
 
-  it('「測る」を足しても「見た目」の溝の幅は 37 画素のまま(§0.a-0.80)', () => {
+  it('「測る」「下絵」「点検」を足しても「見た目」の溝の幅は 37 画素のまま(§0.a-0.80)', () => {
     /*
       畳んだ一覧の中に項目をいくつ足しても溝の幅は変わらない、という約束の実例。
-      平置きにしていたら図柄 2 個で 60 画素になり、1440 画素の窓の余裕が削れていた。
+      平置きにしていたら図柄 4 個で 120 画素になり、1440 画素の窓の余裕が削れていた。
     */
-    expect(LOOK_MENU_ITEMS).toHaveLength(2);
+    expect(LOOK_MENU_ITEMS).toHaveLength(4);
     expect(segmentedWidthPixels(0, SINGLE_MENU_COUNT)).toBe(37);
   });
 
@@ -541,13 +554,29 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
 /* ===== P6 タスク31: 「ファイル」の畳んだ一覧(§0.57、FR-812、FR-904、要件§7.1) ===== */
 
 describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => {
-  it('いまは別名保存の 1 行だけが並ぶ(配線先のある操作しか出さない)', () => {
+  it('決まった 6 行が並ぶ(配線先のある操作しか出さない)', () => {
     /*
       §0.57 の最終形は 7 項目だが、行を足すのは**その操作を作るタスク**の仕事にした。
       押しても何も起きない行を画面に出さないため(NFR-UX-5)。タスク32 が書き出す・
-      読み込む、タスク33 がひな形 2 つ・印刷・最近使ったファイルを足して 7 になる。
+      読み込むを足して 3、タスク33 がひな形 2 つと印刷を足して 6 になった。
+      7 つ目の「最近使ったファイル」は**数が決まらない**ので、この表ではなく
+      `fileMenuItems` が名前のまま並べる(下の検査)。
+      **期待値を緩めたのではなく、行が増えた事実を写している。**
     */
-    expect(FILE_MENU_ITEMS.map((item) => item.id)).toEqual(['saveAs']);
+    expect(FILE_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'saveAs',
+      'exportShape',
+      'importShape',
+      'saveAsTemplate',
+      'newFromTemplate',
+      'print',
+    ]);
+  });
+
+  it('書き出す・読み込むの説明には、扱える形式が書いてある(NFR-UX-7)', () => {
+    // 一覧を開いた時点で「何が渡せるのか」が読めるようにする(FR-904)。
+    expect(t('toolbar.file.exportShapeTooltip')).toContain('STEP');
+    expect(t('toolbar.file.importShapeTooltip')).toContain('DXF');
   });
 
   it('新規・開く・保存の 3 つは一覧に入れない(図柄のまま残す、§0.57)', () => {
@@ -597,6 +626,8 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
     /*
       §0.57 の残り 6 項目(タスク32・33)は幅に 1 画素も効かない。平置きにしていたら
       図柄 1 個につき 28 画素(26+隙間 2)、6 個で 168 画素増えていた。
+      **タスク32 で 2 行足した後もこの式は同じ**(下の `FILE_MENU_COUNT` は一覧の
+      畳んだボタン 1 つの数で、中の行数では変わらない)。
     */
     const folded = segmentedWidthPixels(FILE_ACTION_ICON_COUNT, FILE_MENU_COUNT);
     expect(folded).toBe(121);
@@ -621,6 +652,76 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
     for (const icon of icons) {
       expect(others).not.toContain(icon);
     }
+  });
+});
+
+/* ===== P6 タスク33: 数の決まらない行(FR-807、FR-814、§0.a-0.36・0.38) ===== */
+
+describe('「ファイル」の一覧の、数の決まらない行(P6 タスク33)', () => {
+  const TEMPLATES = [
+    { id: '受け皿', name: '受け皿' },
+    { id: '取付板', name: '取付板' },
+  ];
+  const RECENT = [
+    { id: '歯車.pcad', name: '歯車.pcad' },
+    { id: '台座.pcad', name: '台座.pcad' },
+    { id: '蓋.pcad', name: '蓋.pcad' },
+  ];
+
+  it('ひな形も履歴も 0 件なら、決まった 6 行だけになる(押して何も起きない行を作らない)', () => {
+    expect(fileMenuItems([], []).map((item) => item.id)).toEqual(
+      FILE_MENU_ITEMS.map((item) => item.id),
+    );
+  });
+
+  it('ひな形 2 件・履歴 3 件で 6 + 5 行になり、名前がそのまま出る', () => {
+    const rows = fileMenuItems(TEMPLATES, RECENT);
+    expect(rows).toHaveLength(FILE_MENU_ITEMS.length + 5);
+    expect(rows.slice(FILE_MENU_ITEMS.length).map((row) => row.label)).toEqual([
+      '受け皿',
+      '取付板',
+      '歯車.pcad',
+      '台座.pcad',
+      '蓋.pcad',
+    ]);
+  });
+
+  it('動く行の id には種類の接頭辞が付き、決まった操作と重ならない(rules/06 10.9)', () => {
+    const rows = fileMenuItems(TEMPLATES, RECENT);
+    const ids = rows.map((row) => row.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain(`${STORED_TEMPLATE_MENU_PREFIX}受け皿`);
+    expect(ids).toContain(`${RECENT_FILE_MENU_PREFIX}歯車.pcad`);
+  });
+
+  it('ひな形の名前が決まった操作の id と同じでも、行は食い違う(接頭辞の効き目)', () => {
+    // 「print」という名前のひな形を残しても、印刷の行と取り違えない。
+    const rows = fileMenuItems([{ id: 'print', name: 'print' }], []);
+    const templateRow = rows[rows.length - 1];
+    expect(templateRow.id).not.toBe('print');
+    expect(isStoredTemplateMenuId(templateRow.id)).toBe(true);
+    expect(storedTemplateIdOf(`${STORED_TEMPLATE_MENU_PREFIX}print`)).toBe('print');
+  });
+
+  it('決まった操作の id は、どちらの接頭辞にも当たらない', () => {
+    for (const item of FILE_MENU_ITEMS) {
+      expect(isStoredTemplateMenuId(item.id), item.id).toBe(false);
+      expect(isRecentFileMenuId(item.id), item.id).toBe(false);
+    }
+  });
+
+  it('動く行も図柄・名前・説明を持つ(FR-904)', () => {
+    for (const row of fileMenuItems(TEMPLATES, RECENT)) {
+      expect(typeof row.Icon, row.id).toBe('function');
+      expect((row.label ?? t(row.labelKey)).length, row.id).toBeGreaterThan(0);
+      expect(t(row.tooltipKey).length, row.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('行がいくつ増えても溝は 121 画素のまま(§0.57 の幅の予算)', () => {
+    // 一覧の中の行数は溝の幅に効かない。ひな形 10 個 + 履歴 10 件でも同じ。
+    expect(fileMenuItems(TEMPLATES, RECENT).length).toBeGreaterThan(FILE_MENU_ITEMS.length);
+    expect(segmentedWidthPixels(FILE_ACTION_ICON_COUNT, FILE_MENU_COUNT)).toBe(121);
   });
 });
 

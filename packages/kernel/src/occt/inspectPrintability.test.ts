@@ -1,6 +1,6 @@
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import type { PrimitiveShapeSpec, PrimitiveStepSpec, Vec3Tuple } from '../types.js';
 import { booleanOp } from './booleanOp.js';
 import type { ExportMesh } from './exportMesh.js';

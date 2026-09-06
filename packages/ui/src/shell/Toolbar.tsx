@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 import {
+  checkCanvasImage,
+  DEFAULT_TOOL_DEFAULTS,
+  DEFAULT_WORK_PLANE_ID,
   FREE_WORK_PLANE_ID,
   isFreeWorkPlaneId,
   type AppearanceMatchEntry,
@@ -11,8 +14,40 @@ import {
 
 import { appearanceReadiness } from '../appearance/appearanceCommands.js';
 
-import { hasFileSystemAccess } from '../file/fileGateway.js';
-import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/partFile.js';
+import { createExchangeDeps, importFile } from '../file/exchangeActions.js';
+import { ExchangePanel } from '../file/ExchangePanel.js';
+import {
+  decodeCanvasImage,
+  newSketchCanvas,
+  pickCanvasImage,
+  type PickedCanvasImage,
+} from '../file/canvasFile.js';
+import { hasFileSystemAccess, PCAD_EXTENSION } from '../file/fileGateway.js';
+import { exportBaseNameOf } from '../file/exchangeFile.js';
+import {
+  createDefaultPartFileDeps,
+  displayFileName,
+  hasUnsavedChanges,
+  newPart,
+  openPart,
+  savePart,
+} from '../file/partFile.js';
+import {
+  browserPrintOf,
+  desktopPrintOf,
+  formatPrintedAt,
+  mountPrintSheetIn,
+  printViewport,
+} from '../file/printView.js';
+import { loadRecentFiles } from '../file/recentFiles.js';
+import {
+  createIndexedDbTemplateStorage,
+  newFromTemplate,
+  saveTemplate,
+  sortTemplates,
+  type TemplateDeps,
+  type TemplateSource,
+} from '../file/templateFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
 import {
@@ -57,6 +92,7 @@ import {
 import type { SnapKind } from '../sketch/snapMath.js';
 import { TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import { measureToolReadiness } from '../solid/measureCommands.js';
+import { PRINT_CHECK_NO_BODY_KEY } from '../solid/printCheckCommands.js';
 import { ruledSelectionHasSphere } from '../solid/ruledCommands.js';
 import {
   commitBooleanFromSelection,
@@ -126,16 +162,21 @@ import {
   CONSTRAINT_MENU_ITEMS,
   CREATE_MENU_ITEMS,
   EDIT_MENU_ITEMS,
-  FILE_MENU_ITEMS,
   LOOK_MENU_ITEMS,
   MACHINING_MENU_ITEMS,
   PROJECTION_MENU_ITEMS,
   SHAPE_MENU_ITEMS,
+  fileMenuItems,
+  isRecentFileMenuId,
+  isStoredTemplateMenuId,
   nextHighlightIndex,
   rememberRecentTool,
+  storedTemplateIdOf,
   triggerItemOf,
   type FileMenuActionId,
+  type FileMenuItemId,
   type LookToolId,
+  type NamedMenuEntry,
   type ToolMenuItem,
 } from './toolbarMenus.js';
 
@@ -214,21 +255,253 @@ function runFileAction(id: FileActionId, saveAs: boolean): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// ひな形・印刷・最近使ったファイル(FR-807、FR-810、FR-814。P6 タスク33)
+// ---------------------------------------------------------------------------
+
 /**
- * 「ファイル」の畳んだ一覧から選んだときの処理(FR-812、P6 §0.57、タスク31)。
+ * ひな形の手続きが要る口一式(`createExchangeDeps` と同じ役目)。
  *
- * `FileMenuActionId` を網羅する `switch` にしてあるのが要点で、**配線を書かずに一覧へ
- * 行を足すと型検査が落ちる**(押しても何も起きない行を画面に出さないための仕掛け)。
- * タスク32・33 が書き出す・読み込む・ひな形・印刷・最近使ったファイルを足すときは、
- * ここへ 1 つずつ case を書く。
+ * 置き場は**ブラウザの中**にする(§0.a-0.36 の承認)。デスクトップ版も同じ口を使うので、
+ * 「ひな形として保存」「ひな形から新規」の操作は Web 版とまったく同じになる(要件§1.5)。
+ * ファイル(`.pcadt`)にも書けるので、環境をまたいで持ち運べる。
  */
-function runFileMenuAction(id: FileMenuActionId): void {
+function createTemplateDeps(): TemplateDeps {
+  return {
+    gateway: useAppStore.getState().fileGateway,
+    storage: createIndexedDbTemplateStorage(),
+  };
+}
+
+/** 置き場に残っているひな形を、一覧に出す形(新しい順)で読む。 */
+async function loadTemplateEntries(): Promise<readonly NamedMenuEntry[]> {
+  const stored = await createTemplateDeps().storage.list();
+  return sortTemplates(stored).map((entry) => ({ id: entry.id, name: entry.name }));
+}
+
+/**
+ * ひな形に付ける名前。ファイルの名前から `.pcad` を落としたもの。
+ *
+ * 拡張子を残すと一覧に「歯車.pcad」と並び、部品のファイルなのかひな形なのかが
+ * 読み取れなくなる。まだ一度も保存していないときは空を返し、`saveTemplate` が
+ * 部品の名前(「部品1」)へ落とす——名前を決める規則を 2 か所に書かないため。
+ */
+function templateNameOf(fileName: string | null): string {
+  const trimmed = (fileName ?? '').trim();
+  return trimmed.toLowerCase().endsWith(PCAD_EXTENSION)
+    ? trimmed.slice(0, trimmed.length - PCAD_EXTENSION.length)
+    : trimmed;
+}
+
+/**
+ * いまの部品をひな形として保存する(FR-814)。
+ *
+ * 名前は開いているファイルの名前(まだ保存していなければ部品の名前)を使う。
+ * **道具の既定値は今のところ既定のまま**で持ち運ぶ——利用者が既定値を変えられるように
+ * するのは P12 の環境設定(FR-1104)で、それまでは変わりようがないためである。
+ */
+async function runSaveAsTemplate(): Promise<void> {
+  const state = useAppStore.getState();
+  const outcome = await saveTemplate(createTemplateDeps(), {
+    document: state.document,
+    lengthUnit: state.displaySettings.lengthUnit,
+    toolDefaults: DEFAULT_TOOL_DEFAULTS,
+    name: templateNameOf(state.fileName),
+  });
+  useAppStore
+    .getState()
+    .setFileMessage(
+      outcome.ok
+        ? { key: 'template.saved', failed: false }
+        : { key: outcome.messageKey, failed: true },
+    );
+}
+
+/**
+ * ひな形から新しい部品を始める(FR-814、§2.10)。
+ *
+ * **失うものがあれば先に確認する**(NFR-UX-3。「新規」と同じ確認)。読み切れたときだけ
+ * 差し替えるので、断られた場合はいまの部品を触らない(NFR-RE-1)。
+ *
+ * 差し替えの順は「単位 → 文書 → ファイルの名前」。単位は文書の欄ではない(§0.a-0.1)ので
+ * 先に配り、**再計算が走るのは `resetDocument` の 1 回だけ**にする。
+ */
+async function runNewFromTemplate(source: TemplateSource): Promise<void> {
+  const before = useAppStore.getState();
+  if (
+    hasUnsavedChanges(before.document, before.savedDocument) &&
+    !(await createDefaultPartFileDeps().confirmDiscard('file.discardConfirm'))
+  ) {
+    return;
+  }
+  const outcome = await newFromTemplate(createTemplateDeps(), source);
+  const store = useAppStore.getState();
+  if (!outcome.ok) {
+    if ('cancelled' in outcome) {
+      // 窓を取り消した。何も起きなかったので断りも出さない。
+      return;
+    }
+    store.setFileMessage({
+      key: 'missing' in outcome ? 'template.missing' : outcome.messageKey,
+      failed: true,
+    });
+    return;
+  }
+  store.setDisplaySettings({ ...store.displaySettings, lengthUnit: outcome.lengthUnit });
+  // 履歴のスタックごと作り直す(ひな形から始めた前へは戻れない。「新規」と同じ)。
+  store.resetDocument(outcome.document);
+  store.setFileState(null, null);
+  if (outcome.notice !== null) {
+    // 形の入ったひな形だった。断りではないので、そのまま開いたうえで 1 行知らせる(§2.10)。
+    useAppStore.getState().setFileMessage({ key: 'template.hasHistory', failed: false });
+  }
+}
+
+/**
+ * いま見えている 1 コマを印刷する(FR-810、FR-908、§2.11)。
+ *
+ * デスクトップ版は口(`FileGateway.print`)へ渡し、Web 版は紙面を足して `window.print()`。
+ * **絵を作る口はビューポートが差し出した `capturePrintFrame`**(白い下地・長辺 2000)で、
+ * サムネイルの口は使わない(FR-908)。
+ */
+async function runPrint(): Promise<void> {
+  const state = useAppStore.getState();
+  const capture = state.capturePrintFrame;
+  const outcome = await printViewport(
+    {
+      title: displayFileName(state.fileName),
+      printedAt: formatPrintedAt(new Date()),
+    },
+    {
+      // まだ 3D 表示部が読み込まれていないときは口が空。断りの文言は `printViewport` が持つ。
+      capture: capture === null ? (): null => null : capture,
+      printOnDesktop: desktopPrintOf(state.fileGateway),
+      mount: mountPrintSheetIn(),
+      print: browserPrintOf(),
+    },
+  );
+  if (outcome.status === 'refused') {
+    // 断りだけは伝える。取り消し(利用者がやめた)と成功は何も出さない(NFR-UX-3)。
+    useAppStore.getState().setError(outcome.message);
+  }
+}
+
+/**
+ * 「ファイル」の畳んだ一覧から選んだときの処理(FR-812、P6 §0.57、タスク31・32・33)。
+ *
+ * 決まった操作は `FileMenuActionId` を網羅する `switch` にしてあるのが要点で、
+ * **配線を書かずに一覧へ行を足すと型検査が落ちる**(押しても何も起きない行を画面に
+ * 出さないための仕掛け)。数の決まらない行(保存したひな形・最近使ったファイル)は
+ * 接頭辞で見分けてから、同じ 1 か所で配る。
+ *
+ * **書き出しだけがパネルを開く**(形式・対象・なめらかさを訊くため。§0.a-0.20)ので、
+ * 開く手立てを引数で受ける。読み込みは訊くことが無い(窓でファイルを選ぶだけ)ので、
+ * ここから直に走らせる。
+ */
+function runFileMenuAction(
+  id: FileMenuItemId,
+  openExportPanel: () => void,
+  onTemplatesChanged: () => void,
+): void {
+  if (isStoredTemplateMenuId(id)) {
+    void runNewFromTemplate({ from: 'stored', id: storedTemplateIdOf(id) });
+    return;
+  }
+  if (isRecentFileMenuId(id)) {
+    /*
+     * 最近使ったファイル(FR-807、§0.a-0.38)。**その場では開かない。**
+     * 覚えているのは名前だけで場所は持たない(NFR-SE-1)ので、できるのは「開く」の窓を
+     * 出すところまでである。窓へ名前を初期値として渡す口は今の `openPcad` に無いので、
+     * 「開く」をそのまま呼ぶ(口を広げるとデスクトップ版の窓にも手が要る)。
+     */
+    void openPart(createDefaultPartFileDeps());
+    return;
+  }
+  runFileMenuActionId(id, openExportPanel, onTemplatesChanged);
+}
+
+/** 決まった操作の配り先(網羅 `switch`。行を足すと型検査がここを落とす)。 */
+function runFileMenuActionId(
+  id: FileMenuActionId,
+  openExportPanel: () => void,
+  onTemplatesChanged: () => void,
+): void {
   switch (id) {
     case 'saveAs':
       // 保存ボタンを Shift を押しながら押したときと同じ道筋(判断を 2 か所に書かない)。
       void savePart(createDefaultPartFileDeps(), true);
       return;
+    case 'exportShape':
+      openExportPanel();
+      return;
+    case 'importShape':
+      void importFile();
+      return;
+    case 'saveAsTemplate':
+      // 置き場へ入り終えてから一覧を読み直す(先に読むと、いま残したひな形が並ばない)。
+      void runSaveAsTemplate().then(onTemplatesChanged);
+      return;
+    case 'newFromTemplate':
+      void runNewFromTemplate({ from: 'file' });
+      return;
+    case 'print':
+      void runPrint();
+      return;
   }
+}
+
+/**
+ * 書き出しのパネルの入れ物(P6 §0.a-0.20、タスク32)。
+ *
+ * 中身は `file/ExchangePanel.tsx`。ここがするのは**置き場所と閉じ方**だけで、
+ * `SettingsPanel` とまったく同じ作り(覆いを作らないので、開いている間も背後の
+ * 視点操作はそのまま効く。NFR-UX-2)。
+ */
+function ExportPanelHost({
+  onClose,
+}: {
+  readonly onClose: () => void;
+}): React.JSX.Element {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fileName = useAppStore((state) => state.fileName);
+
+  useEffect(() => {
+    // 外を押したら閉じる。覆いを作らないので、押した先の操作はそのまま通る。
+    const onPointerDown = (event: PointerEvent): void => {
+      const container = containerRef.current;
+      if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
+        onClose();
+      }
+    };
+    globalThis.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      globalThis.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="pcad-menu pcad-menu--exchange" ref={containerRef}>
+      <ExchangePanel
+        onClose={onClose}
+        deps={createExchangeDeps(exportBaseNameOf(fileName))}
+        onFinished={(notices) => {
+          /*
+            **書き出せたときの案内を失敗の口へ入れない**(タスク45 の指摘、43b の申し送り)。
+            `setError` はステータスバーで「計算に失敗しました:」を頭に付けて赤くするので、
+            うまくいったのに失敗したように見えていた。成功の 1 行そのものは
+            `ExchangePanel` が `setFileMessage`(`failed: false`)で立てている。
+            弾いた立体・落とした三角形の案内は、その成功の 1 行と同じ調子で添える。
+          */
+          if (notices.length > 0) {
+            useAppStore.getState().setExchangeNotice(notices.join(' '));
+          }
+        }}
+        onFailed={(message) => {
+          useAppStore.getState().setError(message);
+        }}
+      />
+    </div>
+  );
 }
 
 /** スケッチの道具(FR-301〜309)。並びがそのまま画面の左からの順になる。 */
@@ -778,6 +1051,56 @@ function runMeasureTool(readiness: SolidToolReadiness): void {
   store.measureSelection();
 }
 
+/**
+ * 下絵を 1 枚読み込んで作図面に貼る(FR-332、P6 タスク39、計画書 §0.a-0.45)。
+ *
+ * 画像を選ぶ → 受け付けられるか確かめる(PNG / JPEG・8MB。判定と断りの文言は
+ * `@pointercad/model` の `sketch/canvas.ts` が正本)→ 画素の大きさを測る → いまの作図面へ
+ * 幅 100mm で貼る → **そのまま 2 点の寸法合わせへ誘う**(§2.14。貼ったままの大きさは
+ * 出発点にすぎないので、続けて実寸を合わせられるようにする)。
+ *
+ * ここで復号した画像は**画素の大きさを測るためだけ**に使い、すぐ閉じる。画面に貼る
+ * テクスチャ用の画像はビューポート(`ViewportCanvas.tsx`)が自分で復号して持ち主になる
+ * (1 枚の画像を 2 か所が閉じる形にしない)。
+ *
+ * **断りは下絵の欄に出す**(ステータスバーの「図形を作れませんでした:」等の言い回しに
+ * 混ぜない)。取り消し(窓を閉じた)は断りではないので何も出さない。
+ */
+async function addCanvasFromFile(): Promise<void> {
+  const store = useAppStore.getState();
+  let picked: PickedCanvasImage | null;
+  try {
+    picked = await pickCanvasImage();
+  } catch {
+    store.setCanvasMessage(t('file.openFailed'));
+    return;
+  }
+  if (picked === null) {
+    return;
+  }
+  const checked = checkCanvasImage(picked.bytes);
+  if (!checked.ok) {
+    store.setCanvasMessage(checked.message);
+    return;
+  }
+  let image;
+  try {
+    image = await decodeCanvasImage(picked.bytes, checked.format);
+  } catch {
+    store.setCanvasMessage(t('file.openFailed'));
+    return;
+  }
+  // 待っている間に文書が変わっているかもしれないので、いまの状態を読み直してから足す。
+  const latest = useAppStore.getState();
+  // 3D スケッチ(作図面なし、FR-330)のときは基準の XY へ貼る(貼る面が要るため)。
+  const plane = isFreeWorkPlaneId(latest.workPlaneId) ? DEFAULT_WORK_PLANE_ID : latest.workPlaneId;
+  const canvas = newSketchCanvas(latest.document.canvases, plane, picked.fileName, image);
+  latest.setCanvasPixelSize(canvas.imageId, { width: image.width, height: image.height });
+  image.close?.();
+  latest.addCanvas(canvas, picked.bytes);
+  latest.startCanvasScale(canvas.id);
+}
+
 /** 押せないときのツールチップ。「名前: 理由」で、なぜ押せないのかを読めるようにする。 */
 function unavailableTooltip(labelKey: MessageKey, reasonKey: MessageKey | null): string {
   return reasonKey === null ? t(labelKey) : `${t(labelKey)}${LABEL_SEPARATOR}${t(reasonKey)}`;
@@ -1188,6 +1511,13 @@ function ToolMenu<Id extends string>({
 
   const groupLabel = t(groupLabelKey);
   const shown = triggerItemOf(items, activeTool, recentId);
+  /*
+   * 行に出す名前。**利用者が付けた名前を持つ行だけ**が `label` を持ち(保存したひな形と
+   * 最近使ったファイル。P6 タスク33)、持たない行は今までどおり `ja.json` から引く
+   * (NFR-MA-5)。読み替えをここ 1 か所に閉じておくと、ツールチップ・読み上げ名・行の
+   * 見出しの 3 か所が必ず同じ名前になる。
+   */
+  const nameOf = (item: ToolMenuItem<Id>): string => item.label ?? t(item.labelKey);
   const activeHere = items.some((item) => item.id === activeTool);
 
   function openMenu(): void {
@@ -1200,7 +1530,7 @@ function ToolMenu<Id extends string>({
   // 一覧の開き方・選び方をここだけで読み切れるようにする(NFR-UX-7)。
   const tooltip = [
     `${groupLabel}${LABEL_SEPARATOR}${t(groupTooltipKey)}`,
-    shown === null ? null : `${t(shown.labelKey)}${LABEL_SEPARATOR}${t(shown.tooltipKey)}`,
+    shown === null ? null : `${nameOf(shown)}${LABEL_SEPARATOR}${t(shown.tooltipKey)}`,
     t('toolbar.menu.keyboardHint'),
   ]
     .filter((line) => line !== null)
@@ -1239,7 +1569,7 @@ function ToolMenu<Id extends string>({
         className="pcad-button pcad-menu__trigger pcad-menu__trigger--icon"
         title={tooltip}
         aria-label={
-          shown === null ? groupLabel : `${groupLabel}${LABEL_SEPARATOR}${t(shown.labelKey)}`
+          shown === null ? groupLabel : `${groupLabel}${LABEL_SEPARATOR}${nameOf(shown)}`
         }
         aria-haspopup="true"
         aria-expanded={open}
@@ -1270,7 +1600,7 @@ function ToolMenu<Id extends string>({
                 className="pcad-button pcad-menu__item"
                 title={
                   ready
-                    ? `${t(item.labelKey)}${LABEL_SEPARATOR}${t(item.tooltipKey)}`
+                    ? `${nameOf(item)}${LABEL_SEPARATOR}${t(item.tooltipKey)}`
                     : unavailableTooltip(item.labelKey, readiness?.reasonKey ?? null)
                 }
                 aria-pressed={activeTool === item.id}
@@ -1285,7 +1615,7 @@ function ToolMenu<Id extends string>({
                 }}
               >
                 <item.Icon />
-                {t(item.labelKey)}
+                {nameOf(item)}
               </button>
             );
           })}
@@ -1331,10 +1661,26 @@ function LookGroup({
     項目ごとの押せる条件。外観は `appearanceReadiness`(タスク11)、測るは
     `measureToolReadiness`(タスク32)で、どちらも判断の正本はそれぞれ 1 か所にある。
   */
-  const readinessOf = (id: LookToolId): SolidToolReadiness =>
-    id === 'measure'
-      ? measureToolReadiness(selection, bodies)
-      : { ready: readiness.ok, reasonKey: readiness.reasonKey };
+  const readinessOf = (id: LookToolId): SolidToolReadiness => {
+    if (id === 'measure') {
+      return measureToolReadiness(selection, bodies);
+    }
+    if (id === 'canvas') {
+      // 下絵(FR-332)はいつでも押せる。立体もスケッチも要らない(空の部品にも貼れる)。
+      return { ready: true, reasonKey: null };
+    }
+    if (id === 'printCheck') {
+      /*
+        3D プリントの点検(FR-815、タスク46)。**立体が 1 つでもあれば押せる**
+        (選んでいなければ全部を点検する、`printCheckTargets`)。1 つも無いときだけ
+        理由つきで断る(NFR-UX-5)。
+      */
+      return bodies.length > 0
+        ? { ready: true, reasonKey: null }
+        : { ready: false, reasonKey: PRINT_CHECK_NO_BODY_KEY };
+    }
+    return { ready: readiness.ok, reasonKey: readiness.reasonKey };
+  };
   return (
     <div className="pcad-toolbar__group">
       <span className="pcad-toolbar__group-label" title={t('toolbar.look.tooltip')}>
@@ -1351,6 +1697,25 @@ function LookGroup({
           onChoose={(id, pressed) => {
             if (id === 'measure') {
               runMeasureTool(readinessOf(id));
+              return;
+            }
+            if (id === 'canvas') {
+              // 下絵(FR-332、タスク39)。画像を選ぶ窓を出し、選ばれたらその場で貼る。
+              void addCanvasFromFile();
+              return;
+            }
+            if (id === 'printCheck') {
+              /*
+                3D プリントの点検(FR-815、タスク46)。**もう一度押すと閉じる**
+                (色が消えて元の外観に戻る。他の一覧の「同じ道具をもう一度選んだら解除」と
+                同じ約束、NFR-UX-3)。走らせるのも閉じるのも文書を 1 バイトも変えない。
+              */
+              const printStore = useAppStore.getState();
+              if (printStore.printability !== null) {
+                printStore.setPrintability(null);
+                return;
+              }
+              printStore.inspectPrintability();
               return;
             }
             const store = useAppStore.getState();
@@ -1519,6 +1884,39 @@ export function Toolbar(): React.JSX.Element {
    * 上で `sketch` と `selection` を購読しているので、どちらかが変われば描き直される。
    */
   const constraintReadinessOf = constraintToolReadinessOf();
+  /*
+   * 書き出しのパネルが開いているか(P6 タスク32)。**見た目だけの一時状態**なので
+   * ここで持つ(`SettingsPanel` の開閉と同じ扱い。rules/04 の「状態はストア 1 本」は
+   * 部品文書と端末の好みが対象)。
+   */
+  const [exportOpen, setExportOpen] = useState(false);
+  /*
+   * 「ファイル」の一覧に並べる、数の決まらない行の材料(P6 タスク33)。
+   *  - 保存したひな形(FR-814): ブラウザの中の置き場から**非同期**で読む。
+   *  - 最近使ったファイル(FR-807): 端末の覚え書きから同期で読む。
+   * どちらも**見た目だけの一時状態**なのでここで持つ(部品文書ではないので、rules/04 の
+   * 「状態はストア 1 本」の対象ではない。書き出しのパネルの開閉と同じ扱い)。
+   *
+   * 読み直しの切っ掛けはファイルの名前(開く・保存でこの 2 つが変わる)と、ひな形を
+   * 保存した回数。一覧を開くたびに読み直すより、変わった時だけで足りる(NFR-PF-1)。
+   */
+  const fileName = useAppStore((state) => state.fileName);
+  const [templateEntries, setTemplateEntries] = useState<readonly NamedMenuEntry[]>([]);
+  const [templateSaveCount, setTemplateSaveCount] = useState(0);
+  const [recentEntries, setRecentEntries] = useState<readonly NamedMenuEntry[]>([]);
+  useEffect(() => {
+    setRecentEntries(loadRecentFiles().map((entry) => ({ id: entry.name, name: entry.name })));
+    let alive = true;
+    void loadTemplateEntries().then((entries) => {
+      // 読み終える前にこの区画が消えていたら、状態を触らない(片付け後の書き込みを避ける)。
+      if (alive) {
+        setTemplateEntries(entries);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [fileName, templateSaveCount]);
 
   return (
     <header className="pcad-toolbar">
@@ -1557,7 +1955,12 @@ export function Toolbar(): React.JSX.Element {
             「いまこの道具を使っている」状態にならないため(「投影」と同じ理由、§0.a-0.80)。
           */}
           <ToolMenu
-            items={FILE_MENU_ITEMS}
+            /*
+              決まった 6 行のうしろへ、保存したひな形と最近使ったファイルが名前のまま並ぶ
+              (P6 タスク33)。**0 件のものは 1 行も出ない**ので、押しても何も起きない行が
+              画面に出ることはない。行がいくつ増えても溝の幅は変わらない。
+            */
+            items={fileMenuItems(templateEntries, recentEntries)}
             groupLabelKey="toolbar.fileMenu.groupLabel"
             groupTooltipKey="toolbar.fileMenu.tooltip"
             GroupIcon={FileMenuIcon}
@@ -1567,8 +1970,30 @@ export function Toolbar(): React.JSX.Element {
             */
             activeTool=""
             showPressed={false}
-            onChoose={runFileMenuAction}
+            onChoose={(id) => {
+              runFileMenuAction(
+                id,
+                () => {
+                  setExportOpen(true);
+                },
+                () => {
+                  // 保存し終えたひな形が一覧へすぐ並ぶよう、読み直しの切っ掛けを立てる。
+                  setTemplateSaveCount((count) => count + 1);
+                },
+              );
+            }}
           />
+          {/*
+            書き出しのパネル(FR-803、§0.a-0.20)。一覧の「書き出す」を選んだときだけ出す。
+            **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
+          */}
+          {exportOpen ? (
+            <ExportPanelHost
+              onClose={() => {
+                setExportOpen(false);
+              }}
+            />
+          ) : null}
         </div>
         <div className="pcad-segmented" role="group" aria-label={t('toolbar.history.groupLabel')}>
           <button

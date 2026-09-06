@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,6 +59,68 @@ describe('ヘルプの目録', () => {
    * 面をつなぐ/ロフト・測定 2・立体の形を変える・平面で切る ほか)= 43。
    */
   it('目録の件数が数えたとおりになる(NFR-MA-4)', () => {
-    expect(HELP_TOPICS).toHaveLength(43);
+    // P6 タスク32 で 4 本(書き出す・読み込む・DXF・単位)足して 43 + 4 = 47。
+    // P6 タスク43 で 4 本(切って中を見る・選ぶものを絞る・下絵・3D プリントの点検)足して 51。
+    // P6 タスク33 で 2 本(ひな形・印刷と別名で保存)足して 53。
+    expect(HELP_TOPICS).toHaveLength(53);
+  });
+
+  it('書き出し・読み込み・DXF・単位の説明を id で引ける(FR-802・803・811・813・814)', () => {
+    expect(findHelpTopic('export')?.path).toBe('docs/ja/export.md');
+    expect(findHelpTopic('import')?.path).toBe('docs/ja/import.md');
+    expect(findHelpTopic('dxf')?.path).toBe('docs/ja/dxf.md');
+    expect(findHelpTopic('units')?.path).toBe('docs/ja/units.md');
+  });
+
+  it('ひな形・印刷と別名で保存の説明を id で引ける(FR-807・810・812・814、P6 タスク33)', () => {
+    expect(findHelpTopic('template')?.path).toBe('docs/ja/template.md');
+    expect(findHelpTopic('print-save-as')?.path).toBe('docs/ja/print-save-as.md');
+  });
+
+  it('断面表示・選択・下絵・3D プリントの点検の説明を id で引ける(FR-111・112・332・815)', () => {
+    expect(findHelpTopic('section-view')?.path).toBe('docs/ja/section-view.md');
+    expect(findHelpTopic('selection')?.path).toBe('docs/ja/selection.md');
+    expect(findHelpTopic('canvas')?.path).toBe('docs/ja/canvas.md');
+    expect(findHelpTopic('print-check')?.path).toBe('docs/ja/print-check.md');
+  });
+});
+
+/**
+ * 利用者向けの文章に出してはいけない言葉(`rules/05-リリース.md` §11.3)。
+ *
+ * ヘルプは操作の手引きであって設計の文書ではない。内部の作り(データの持ち方・
+ * 計算の方式・ファイルの入れ物の仕組み)の名前が 1 語でも混ざると、利用者は
+ * 「これは自分が知っておくべきことなのか」を判断できなくなる。
+ *
+ * **「面」「立体」「三角形」「式」「単位」は利用者が画面で見る言葉なので入れない。**
+ * ここに並べるのは、画面に一度も出ない内部の呼び名だけである。
+ */
+const FORBIDDEN_TERMS: readonly string[] = [
+  'B-rep',
+  'BRep',
+  '指紋',
+  'テッセレーション',
+  'Worker',
+  'ワーカー',
+  'XCAF',
+  'ZIP',
+  'XML',
+  'グループコード',
+  'ソルバー',
+  'OCCT',
+  'OpenCascade',
+  'JSON',
+  'IndexedDB',
+  'キャッシュ',
+];
+
+describe('ヘルプの言葉づかい(rules/05 §11.3)', () => {
+  it('内部用語が 1 語も出てこない', () => {
+    for (const topic of HELP_TOPICS) {
+      const text = readFileSync(resolve(packageRoot, topic.path), 'utf-8');
+      for (const term of FORBIDDEN_TERMS) {
+        expect(text.includes(term), `${topic.path} に「${term}」がある`).toBe(false);
+      }
+    }
   });
 });

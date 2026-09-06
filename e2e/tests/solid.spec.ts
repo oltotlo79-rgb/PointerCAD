@@ -57,11 +57,17 @@ const AUTO_SAVE_SAVED_AT_LABEL = new Intl.DateTimeFormat('ja-JP', {
  *
  * 1 段消して(Ctrl+Z)全段を計算し直させるので、そのときの総数は 1 つ少ない。
  * 進み具合は届いてから 300ms 経つまで出さない決まりなので(`PROGRESS_DELAY_MS`)、
- * 計算がそれより十分長くかかる段数が要る。実測(2026-09-03、この環境)では
- * CPU を絞ったとき 1 段あたり 46ms(空いているとき)〜240ms(混んでいるとき)で、
- * 23 段なら少なくとも 1.1 秒。300ms の 3 倍以上あるので、速い計算機でも出る。
+ * 計算がそれより十分長くかかる段数が要る。
+ *
+ * **固定の待ち(`STEP_DELAY_MS`)で長い計算を作るので、段数は帯が出る最小で足りる**
+ * (2026-09-06、CI windows の余裕のため 24 段から 8 段へ)。8 段のうち 1 段を消すと
+ * 総数は 7 段、段と段の間の待ちは 6 回で 1.2 秒。300ms の 4 倍あり、しかも段数を
+ * 増やしても減らしても**待ちの長さは機械の速さに依らない**。段数を減らしたぶん
+ * 押し出しを積む操作が短くなり、共有の遅いランナーでも 3 分の上限に余裕ができる。
+ * この定数はこの検査だけのもので、他の検査(P3 の加工など)の段数には関わらない。
+ * 期待値(`aria-valuemax` の 7 / 8、文言の n/総数、体積)はすべてここから計算する。
  */
-const PROGRESS_STEP_COUNT = 24;
+const PROGRESS_STEP_COUNT = 8;
 
 /**
  * 進み具合を出すまでの待ち(`packages/ui/src/shell/statusText.ts` の `PROGRESS_DELAY_MS`)。
@@ -70,15 +76,20 @@ const PROGRESS_STEP_COUNT = 24;
 const PROGRESS_DELAY_MS = 300;
 
 /**
- * 進み具合を出すために CPU を絞る倍率(遅い計算機の再現)。
+ * 長い計算を作るために、段と段の間へ挟む待ち(ms)。検査専用の口
+ * `window.pcadDebugStepDelayMs`(`packages/model/src/kernelBridge.ts` の `toCancelProxy`)へ入れる。
  *
- * 絞らないと、変えていない段の計算し直しは 1 段 5ms ほどで終わり、
- * 26 段積んでも 300ms の待ちにやっと届く程度で、出たり出なかったりする
- * (2026-09-03 実測)。20 分の 1 に絞ると 1 段あたり 46ms 以上になり、
- * 数十段で確実に 300ms を超える。これは待ち時間の緩和ではなく、
- * 遅い計算機を再現して長い計算を作るためのもの。
+ * 挟まないと、変えていない段の計算し直しは 1 段 5ms ほどで終わり、26 段積んでも
+ * 300ms の待ちにやっと届く程度で、出たり出なかったりする(2026-09-03 実測)。
+ * 以前は CDP の `Emulation.setCPUThrottlingRate` で計算機ごと遅くしていたが、
+ * 共有の 2 コアの CI ランナー(GitHub Actions の windows-latest)では 20 分の 1 に
+ * 絞った計算が 3 分の上限に収まらず、この検査だけが時間切れで落ちた
+ * (2026-09-06 の run 33998506476。rules/06 10.14)。**待ちの長さを機械の速さから
+ * 切り離す**ため、絞るのをやめて段の間の待ちを固定した。1 段 200ms なら 6 回で 1.2 秒、
+ * どんな機械でも 300ms の待ちを超え、3 分の上限には遠く届かない。
+ * これは待ち時間の緩和ではなく、長い計算を作るためのもの。
  */
-const CPU_THROTTLING_RATE = 20;
+const STEP_DELAY_MS = 200;
 
 /** 進み具合の帯が出ていた瞬間の記録。「出た / 出ていない」を後からまとめて確かめる。 */
 interface ProgressSighting {
@@ -107,6 +118,12 @@ declare global {
      * 幾何カーネルの Worker をわざと止めて、作り直しが効くかを確かめるのに使う(§0.a-0.19)。
      */
     pcadWorkers?: Worker[];
+    /**
+     * 検査だけが使う遅延の口(アプリは読み書きしない)。`packages/model/src/kernelBridge.ts` の
+     * `toCancelProxy` が段と段の間で読み、正の数ならその ms だけ待ってから中止を答える。
+     * 入れっぱなしにすると以後の計算が全部遅くなるので、使い終わったら必ず消す。
+     */
+    pcadDebugStepDelayMs?: number;
   }
 }
 
@@ -289,8 +306,8 @@ function restoreValue(page: Page, key: string): Locator {
  * 長い計算のあいだだけ出る細い進捗の帯(NFR-PF-4)。
  *
  * 役割(`role="progressbar"`)で引くが、`getByRole` ではなく属性で引く。`getByRole` は
- * 頁全体の読み上げ木を組み立て直すため、CPU を絞った場面(この検査の後半)では 1 回に
- * 1 秒近くかかり、帯が出ている間に「中止」へたどり着けなくなる(実測)。
+ * 頁全体の読み上げ木を組み立て直すため、遅い計算機では 1 回に 1 秒近くかかり、帯が
+ * 出ている間に「中止」へたどり着けなくなる(CPU を 20 分の 1 に絞って実測、2026-09-03)。
  */
 function progressBar(page: Page): Locator {
   return page.locator('[role="progressbar"]');
@@ -307,10 +324,11 @@ function progressTextPattern(total: string): RegExp {
 /**
  * 進捗の帯に「中止」が出た瞬間に押し、押したボタンの見出しを返す(NFR-PF-4)。
  *
- * 頁の外から押しに行くと間に合わない。実測(2026-09-03、この環境)では、帯が出ている
- * 時間は 23 段でおよそ 1 秒しかなく、Playwright の `click` は往復が何度もあって
- * 0.5〜1 秒かかる。空いている計算機ほど計算も速くなるため、待ちを短くしても
- * 追いつかない(最後の段まで押せず、打ち切りが起きなかった実測がある)。
+ * 頁の外から押しに行くと間に合わないことがある。実測(2026-09-03、この環境)では、
+ * 帯が出ている時間は 23 段でおよそ 1 秒しかなく、Playwright の `click` は往復が何度も
+ * あって 0.5〜1 秒かかった。段の間の待ち(`STEP_DELAY_MS`)を固定した今は帯の出ている
+ * 時間も決まるが、**押した瞬間から止まるまでを測る**この作りのほうが、計算の速い機械でも
+ * 遅い機械でも同じように「出た瞬間に押す」ことになるので、そのまま使う。
  *
  * そこで「出るのを待つ」ところから「押す」までを**頁の中でひとつづき**に行う。
  * 押すのは実物の `click()` なので、React の `onClick` を通る経路は変わらない。
@@ -566,6 +584,22 @@ async function watchProgress(page: Page): Promise<void> {
       attributes: true,
     });
   });
+}
+
+/**
+ * 段と段の間の待ちを入れる/外す(NFR-PF-4 の長い計算を作るための検査専用の口)。
+ *
+ * `null` を渡すと外す。外し忘れると以後の計算が全部遅くなるので、入れた側は必ず
+ * `finally` で外す。頁を開き直すと消えるが、この検査は開き直さない。
+ */
+async function setStepDelay(page: Page, delayMs: number | null): Promise<void> {
+  await page.evaluate((value) => {
+    if (value === null) {
+      delete window.pcadDebugStepDelayMs;
+      return;
+    }
+    window.pcadDebugStepDelayMs = value;
+  }, delayMs);
 }
 
 /** 見張りが控えた記録を取り出して空にする(次の場面と混ざらないように)。 */
@@ -925,19 +959,18 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
   await takeProgressSightings(page);
 
   /*
-   * 3) CPU を絞って(遅い計算機の再現)全段を計算し直させる。Ctrl+Z で最後の 1 段を
-   *    消すと、残りの段が先頭から計算し直される。1 段あたりが 300ms の待ちより
-   *    長くかかるようになるので、進み具合と「中止」が出る。
+   * 3) 段と段の間へ待ちを挟んで(検査専用の口)全段を計算し直させる。Ctrl+Z で最後の
+   *    1 段を消すと、残りの段が先頭から計算し直される。1 段あたりが 300ms の待ちより
+   *    長くかかるようになるので、進み具合と「中止」が出る。**計算の中身は変えない**。
    */
-  const session = await page.context().newCDPSession(page);
-  await session.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLING_RATE });
+  await setStepDelay(page, STEP_DELAY_MS);
   try {
     await page.keyboard.press('Control+z');
     // 計算が終わるまで待つ。終われば帯は道具の案内(ja.json の statusBar.ready)へ戻る。
     // 消した段を選んでいたので、選ばれている立体は 0 個になっている。
     await expect(statusText(page)).toHaveText(READY_GUIDE);
   } finally {
-    await session.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    await setStepDelay(page, null);
   }
 
   /*
@@ -957,13 +990,13 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
    * 5) もう一度計算し直させ、今度は出ている間に「中止」を押す。
    *    やり直す(Ctrl+Y)と消した段が戻るので、段の総数は 1 つ増える。
    */
-  await session.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLING_RATE });
+  await setStepDelay(page, STEP_DELAY_MS);
   let pressedLabel: string;
   try {
     await page.keyboard.press('Control+y');
     pressedLabel = await pressCancelWhenShown(page);
   } finally {
-    await session.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    await setStepDelay(page, null);
   }
   expect(pressedLabel).toBe('中止');
 
@@ -976,6 +1009,15 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
   expect([...new Set(cancelled.map((sighting) => sighting.valueMax))]).toEqual([
     String(PROGRESS_STEP_COUNT),
   ]);
+
+  /*
+   *    「中止」が本当に計算を止めたことを、進んだ段の数で確かめる(押しただけで
+   *    知らせが出るのではなく、残りの段が計算されていないこと)。段と段の間に
+   *    200ms の待ちが入るので、最後まで走れば 7 回ぶんの待ちが要る。押したのは帯が
+   *    出た直後(300ms 過ぎ)なので、そこで止まっていれば進んだ段は総数に遠く届かない。
+   */
+  const reachedStep = Math.max(...cancelled.map((sight) => Number(sight.valueNow ?? '0')));
+  expect(reachedStep).toBeLessThan(PROGRESS_STEP_COUNT);
 
   // 6) 中止の知らせは時間では消えない。選び直しても(文書を変えない操作では)残る。
   //    途中で打ち切った形には差し替えないので、前の計算で作れていた立体はそのまま見える。
@@ -1054,7 +1096,8 @@ type WorldPoint = readonly [number, number, number];
  * 拾われるため、押す場所をワールド座標で決められると、立体のどこを選んだのかが
  * 検査の側でも確かめられる。
  */
-const HOME_AZIMUTH = Math.PI / 4;
+// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
+const HOME_AZIMUTH = -Math.PI / 4;
 const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
 const HOME_DISTANCE = 200;
 const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
@@ -1441,7 +1484,8 @@ test.describe('P3 加工フィーチャー', () => {
       timeout: KERNEL_TIMEOUT_MS,
     });
 
-    // 1) `2` で選ぶものを「辺」にし、上面の奥の長辺(長さ 40)の中点を押す。
+    // 1) `2` で選ぶものを「辺」にし、上面の手前(y = 0)の長辺(長さ 40)の中点を押す。
+    //    2026-09-06 に既定の視点を「前・上・右が見える向き」へ変えたので、y = 0 の辺は手前に見える。
     await sketchTool(page, '選択').click();
     await page.keyboard.press('2');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
@@ -1473,7 +1517,7 @@ test.describe('P3 加工フィーチャー', () => {
     await solidRow(page, '押し出し1').click();
     await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`);
 
-    // 4) 奥の縦の辺(長さ 10)を押して R 面取り。半径の既定は 2。
+    // 4) 手前の左(x = 0, y = 0)の縦の辺(長さ 10)を押して R 面取り。半径の既定は 2。
     //    取れる量は (R² − πR²/4)·10 = 10·(4 − π)。
     await page.keyboard.press('2');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');

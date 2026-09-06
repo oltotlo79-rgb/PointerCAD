@@ -1587,12 +1587,63 @@ function toProgressProxy(
   });
 }
 
-/** 中止を尋ねる関数も同じ理由で Comlink.proxy で包む(§1.2-5)。 */
-function toCancelProxy(shouldCancel: PartCancelToken | undefined): (() => boolean) | undefined {
+declare global {
+  interface Window {
+    /**
+     * **検査専用の口**(P5、NFR-PF-4 の E2E)。アプリはこの値を 1 か所も書かない。
+     *
+     * 正の数を入れておくと、立体の**段と段の間**(カーネルが中止を尋ねてくるところ)で
+     * 毎回この ms だけ待ってから答える。頁の外(Playwright)から入れるためだけにあり、
+     * 入っていなければ(通常の道では `undefined`)待ちは 1 ミリ秒も挟まらない。
+     */
+    pcadDebugStepDelayMs?: number;
+  }
+}
+
+/**
+ * 段と段の間に挟む検査専用の待ち(ms)。入っていなければ 0(= 待たない)。
+ *
+ * Node の検査や Worker の中には `window` が無いので、まず有無を見る。
+ */
+function debugStepDelayMs(): number {
+  if (typeof window === 'undefined') {
+    return 0;
+  }
+  const value = window.pcadDebugStepDelayMs;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  return value;
+}
+
+/**
+ * 中止を尋ねる関数も同じ理由で Comlink.proxy で包む(§1.2-5)。
+ *
+ * ここに**検査専用の遅延の口**(`window.pcadDebugStepDelayMs`)を 1 つだけ挟んである。
+ * カーネルは段と段の間でこの関数を `await` して答えを待つ(`recomputeSolids` の
+ * 「中止の口が渡されているときだけ制御を譲る」)ので、ここで待つと**計算そのものが
+ * その ms だけ延びる**。長い計算(NFR-PF-4 の帯と「中止」)を機械の速さに頼らず作れる。
+ * CPU を絞って長い計算を作る手は、共有の遅いランナーでは検査が時間切れになった
+ * (rules/06 10.14)。値が入っていない通常の道では `shouldCancel()` をそのまま返し、
+ * 約束(Promise)すら作らない。
+ */
+function toCancelProxy(
+  shouldCancel: PartCancelToken | undefined,
+): (() => boolean | Promise<boolean>) | undefined {
   if (shouldCancel === undefined) {
     return undefined;
   }
-  return Comlink.proxy(() => shouldCancel());
+  return Comlink.proxy(() => {
+    const delayMs = debugStepDelayMs();
+    if (delayMs === 0) {
+      return shouldCancel();
+    }
+    return new Promise<boolean>((resolve) => {
+      setTimeout(() => {
+        resolve(shouldCancel());
+      }, delayMs);
+    });
+  });
 }
 
 /** 面が消えたとき(カーネルが id を返さなかったとき)に付ける理由。 */

@@ -221,7 +221,8 @@ type WorldPoint = readonly [number, number, number];
  * `VERTICAL_FIELD_OF_VIEW` そのままで、写し方は `createViewportScene.ts` の `worldToScreen`
  * と同じ。**この検査では視点を一度も動かさない。**
  */
-const HOME_AZIMUTH = Math.PI / 4;
+// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
+const HOME_AZIMUTH = -Math.PI / 4;
 const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
 const HOME_DISTANCE = 200;
 const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
@@ -283,17 +284,19 @@ async function clickWorldPoint(page: Page, world: WorldPoint, shift = false): Pr
 }
 
 /**
- * 箱の上面の、左右の角(y が +10 と −10)。この 2 つを測る。
+ * 箱の上面の、画面の左右へ離れて見える 2 つの角。この 2 つを測る。
  *
- * **手前(カメラ側)の角 `(10, 10, 10)` は使わない。** ホーム視点のカメラは
- * (1,1,1) の向きに置かれているので、手前の角と**向こう側の一番奥の角 `(−10, −10, −10)`
- * が画面のまったく同じ場所に重なる**(どちらも視線の軸の上にある)。そこを押すと
- * どちらが選ばれるかは押した場所では決まらない(2026-09-06 の実測では奥の角が選ばれ、
- * 距離が 20mm ではなく 28.28mm になった)。左右の角は視線の軸から外れているので、
- * 画面の同じ場所に来る頂点は 1 つしかない。
+ * **手前(カメラ側)の角 `(10, −10, 10)` は使わない。** 既定のホーム視点のカメラは
+ * `(1, −1, 1)` の向きに置かれている(2026-09-06 に「前・上・右が見える向き」へ変えた。
+ * `packages/ui/src/viewport/cameraMath.ts` の `HOME_ORBIT`)ので、手前の角と
+ * **向こう側の一番奥の角 `(−10, 10, −10)` が画面のまったく同じ場所に重なる**
+ * (どちらも視線の軸の上にある)。そこを押すとどちらが選ばれるかは押した場所では決まらない
+ * (2026-09-06 の実測では奥の角が選ばれ、距離が 20mm ではなく 28.28mm になった)。
+ * ここで使う 2 つは視線の軸から外れていて、1440×900 の窓では画面上でいちばん近い別の頂点まで
+ * 79px 離れている(頂点の当たり判定は 6px)。
  */
-const BOX_TOP_LEFT_CORNER: WorldPoint = [-BOX_SIZE_MM / 2, BOX_SIZE_MM / 2, BOX_SIZE_MM / 2];
-const BOX_TOP_RIGHT_CORNER: WorldPoint = [BOX_SIZE_MM / 2, -BOX_SIZE_MM / 2, BOX_SIZE_MM / 2];
+const BOX_TOP_LEFT_CORNER: WorldPoint = [-BOX_SIZE_MM / 2, -BOX_SIZE_MM / 2, BOX_SIZE_MM / 2];
+const BOX_TOP_RIGHT_CORNER: WorldPoint = [BOX_SIZE_MM / 2, BOX_SIZE_MM / 2, BOX_SIZE_MM / 2];
 /** その 2 点の距離(mm)= 上面の対角線 20√2。表示は有効数字 12 桁(`formatLength`)。 */
 const CORNER_DISTANCE = '28.2842712475 mm';
 

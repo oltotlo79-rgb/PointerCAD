@@ -163,7 +163,8 @@ function constraintList(page: Page): Locator {
 /** ワールド座標(mm)。 */
 type WorldPoint = readonly [number, number, number];
 
-const HOME_AZIMUTH = Math.PI / 4;
+// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
+const HOME_AZIMUTH = -Math.PI / 4;
 const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
 const HOME_DISTANCE = 200;
 const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;

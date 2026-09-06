@@ -22,13 +22,41 @@ export const ZOOM_FACTOR_PER_NOTCH = 1.1;
 /** 透視投影の垂直画角(ラジアン)。 */
 export const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
 
-/** ホーム視点は等角(斜め上)から見る(FR-108)。 */
+/**
+ * ホーム視点は等角(斜め上)から見る(FR-108)。**前・上・右の 3 面が見える向き**にする。
+ *
+ * 利用者の指示 2026-09-06「最初の表示状態で上、右、後が見えた方向に待っているが
+ * 初期状態は前と上と左右どちらかが見えた状態がいい」。左右は右を採る(多くの CAD の既定)。
+ *
+ * PointerCAD は Z が上で、面の向きはビューキューブの割り当て(`viewcube/viewCubeMath.ts` の
+ * `FACE_REGIONS`)どおり **前 = −Y、右 = +X、上 = +Z**。方位角 +45°(2026-09-06 以前の既定)は
+ * カメラを (+X, +Y, +Z) へ置くので、見えるのは右・**後ろ**・上の 3 面だった。方位角を −45° に
+ * すると (+X, −Y, +Z) から見ることになり、前・右・上の 3 面が見える。
+ * **仰角と距離は変えていない**——見える面の組み合わせだけを変えている。
+ *
+ * この 1 つの定数が、起動直後(`attachCameraControls` の初期値)・「視点を戻す」(Home キーと
+ * `goHome`)・ビューポートの格子の初期の刻み(`createViewportScene`)の全部を決める。
+ * P6 の名前付きビューと 4 分割表示(FR-113)もここを参照する。
+ */
 export const HOME_ORBIT: OrbitState = {
-  azimuth: Math.PI / 4,
+  azimuth: -Math.PI / 4,
   elevation: Math.atan(Math.SQRT1_2),
   distance: 200,
   target: [0, 0, 0],
 };
+
+/**
+ * ホーム視点で見えている 3 面の法線(前・上・右)。既定の視点が「利用者へ向く面 = 前」を
+ * 見せていることを検査から確かめるために置く(利用者の指示 2026-09-06)。
+ *
+ * `viewcube/viewCubeMath.ts` の `FACE_REGIONS` の front / top / right と同じ向き。
+ * ある面が見えているかどうかは「面の法線と視線の内積が負」(法線がカメラを向いている)で決まる。
+ */
+export const HOME_VISIBLE_FACE_NORMALS = {
+  front: [0, -1, 0],
+  top: [0, 0, 1],
+  right: [1, 0, 0],
+} as const satisfies Record<string, readonly [number, number, number]>;
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);

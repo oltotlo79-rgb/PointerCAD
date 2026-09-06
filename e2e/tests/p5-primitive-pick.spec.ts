@@ -168,7 +168,8 @@ type WorldPoint = readonly [number, number, number];
  * `VERTICAL_FIELD_OF_VIEW` そのままで、写し方は `createViewportScene.ts` の `worldToScreen`
  * (three.js の PerspectiveCamera + lookAt)と同じ。**この検査では視点を一度も動かさない。**
  */
-const HOME_AZIMUTH = Math.PI / 4;
+// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
+const HOME_AZIMUTH = -Math.PI / 4;
 const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
 const HOME_DISTANCE = 200;
 const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
@@ -236,10 +237,18 @@ async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
 
 /** 箱の上面の中心(0, 0, +10)。 */
 const BOX_TOP_CENTER: WorldPoint = [0, 0, BOX_SIZE_MM / 2];
-/** 箱の上面の、手前(カメラ側)の角。 */
-const BOX_TOP_NEAR_CORNER: WorldPoint = [BOX_SIZE_MM / 2, BOX_SIZE_MM / 2, BOX_SIZE_MM / 2];
-/** 箱の上面の、右手前の角(2 点目に選ぶ頂点)。 */
-const BOX_TOP_RIGHT_CORNER: WorldPoint = [BOX_SIZE_MM / 2, -BOX_SIZE_MM / 2, BOX_SIZE_MM / 2];
+/**
+ * 箱の上面の、画面の左右へ離れて見える 2 つの角。
+ *
+ * **視線の軸の上にある手前の角 `(10, −10, 10)` は使わない。** 既定のホーム視点のカメラは
+ * `(1, −1, 1)` の向きにあり(2026-09-06 に「前・上・右が見える向き」へ変えた)、その角は
+ * 向こう側の一番奥の角 `(−10, 10, −10)` と画面のまったく同じ場所に重なる
+ * (2026-09-06 05:5x のタスク56 の発見)。頂点の当たり判定は深度を見ない 6px なので、
+ * 重なった 2 つのどちらが選ばれるかは押した場所では決まらない。ここで使う 2 つは軸から
+ * 外れていて、1440×900 の窓では画面上でいちばん近い別の頂点まで 79px 離れている。
+ */
+const BOX_TOP_LEFT_CORNER: WorldPoint = [-BOX_SIZE_MM / 2, -BOX_SIZE_MM / 2, BOX_SIZE_MM / 2];
+const BOX_TOP_RIGHT_CORNER: WorldPoint = [BOX_SIZE_MM / 2, BOX_SIZE_MM / 2, BOX_SIZE_MM / 2];
 
 /** 箱の外(何も無いところ)。選択を解くのに押す。 */
 const EMPTY_SPOT: WorldPoint = [-60, -60, 0];
@@ -301,7 +310,7 @@ test.describe('P5 基本形状の当たり判定', () => {
     // 3) `1` で頂点にして角を 2 つ押す(頂点 1 つでは測れるものが無いので節が出ない)。
     await page.keyboard.press('1');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 頂点');
-    await clickWorldPoint(page, BOX_TOP_NEAR_CORNER);
+    await clickWorldPoint(page, BOX_TOP_LEFT_CORNER);
     await page.keyboard.down('Shift');
     await clickWorldPoint(page, BOX_TOP_RIGHT_CORNER);
     await page.keyboard.up('Shift');
@@ -367,10 +376,10 @@ test.describe('P5 基本形状の当たり判定', () => {
 
     await placeBox(page);
 
-    // `1` で頂点にして、置いた箱の手前の上の角を選ぶ。
+    // `1` で頂点にして、置いた箱の上面の右の角を選ぶ。
     await page.keyboard.press('1');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 頂点');
-    await clickWorldPoint(page, BOX_TOP_NEAR_CORNER);
+    await clickWorldPoint(page, BOX_TOP_RIGHT_CORNER);
 
     /*
      * その状態で「箱」を押す。基本形状は選ぶ種類を切り替えない(`keepsSelectionKind`)ので、

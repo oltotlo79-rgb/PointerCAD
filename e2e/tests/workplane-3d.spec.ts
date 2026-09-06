@@ -293,7 +293,8 @@ async function expectVolume(page: Page, expected: number, toleranceMm3 = 0.01): 
 
 type WorldPoint = readonly [number, number, number];
 
-const HOME_AZIMUTH = Math.PI / 4;
+// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
+const HOME_AZIMUTH = -Math.PI / 4;
 const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
 const HOME_DISTANCE = 200;
 const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
@@ -534,7 +535,7 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
     await page.goto('/');
     await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
 
-    // 1) 10 角の立方体を作り、頂点 (10,0,0)(0,10,0)(0,0,10) を通る円弧を 3D スケッチでかく。
+    // 1) 10 角の立方体を作り、頂点 (0,0,0)(10,10,0)(0,10,10) を通る円弧を 3D スケッチでかく。
     await drawRectangle(page, ['0', '0', '0'], ['10', '10', '0']);
     await makeFace(page, ['矩形1']);
     await expect(treeRow(page, '面1')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
@@ -547,16 +548,29 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
     await treeRow(page, '押し出し1').click();
     await expectVolume(page, 1000);
 
+    /*
+     * 使う 3 頂点は「視線の軸の上にある角の隣り 3 つ」= 一番奥の角 (0,10,0) を囲む
+     * 正三角形。既定の視点(カメラは (1,−1,1) の向き、2026-09-06 に前・上・右が見える向きへ
+     * 変えた)ではこの 3 つが画面上で 59px 以上離れて見える(頂点の当たり判定は深度を見ない
+     * 6px なので、離れていないと隣の角と取り違える。タスク56 の発見)。
+     * 変える前の (10,0,0)(0,10,0)(0,0,10) は、新しい視点では (0,10,0) が奥へ回って
+     * (10,0,10) と 5.5px しか離れず、押した場所で決まらなくなる。
+     */
     await chooseShapeTool(page, '3点の円弧');
-    await clickWorldPoint(page, [10, 0, 0]);
-    await clickWorldPoint(page, [0, 10, 0]);
-    await clickWorldPoint(page, [0, 0, 10]);
+    await clickWorldPoint(page, [0, 0, 0]);
+    await clickWorldPoint(page, [10, 10, 0]);
+    await clickWorldPoint(page, [0, 10, 10]);
 
     await expect(treeRow(page, '円弧1')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
     await treeRow(page, '円弧1').click();
-    // 中心 (10/3, 10/3, 10/3)・半径 10√(2/3)・法線 (1,1,1)/√3(計画書タスク36 の検算表)。
+    /*
+     * 中心 (10/3, 20/3, 10/3)・半径 10√(2/3)・法線 ±(1,−1,1)/√3。
+     * 3 点は 1 辺 10√2 の正三角形なので、外接円の半径は 10√2/√3 = 10√(2/3) で
+     * 変える前と同じ値になる(計画書タスク36 の検算表)。
+     */
     const arcText = await propertyPanel(page).innerText();
     expect(arcText).toContain('3.33333333333');
+    expect(arcText).toContain('6.66666666667');
     expect(arcText).toContain('8.16496580928');
     expect(arcText).toContain('0.57735026919');
 

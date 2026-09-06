@@ -6,7 +6,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * 実際のブラウザで通しで確かめる(統括の指示書「P4b タスク23 の前半(23a)」)。
  *
  * 期待値の出どころ: `docs/plans/P4b-スケッチの仕上げ.md` 「### タスク15」「### タスク16」の
- * 検証表(20∠17° → 15° への丸め、延長線の判定)と「### タスク23」の (e)、
+ * 検証表(20∠17° → 15° への丸め、延長線の判定。**画面の左側で確かめるため 180° を挟んだ
+ * 反対側の 20∠163° → 165° に置き換えてある**。下の注釈)と「### タスク23」の (e)、
  * `packages/ui/src/shell/statusText.ts` の `TRACK_GUIDE_KEYS` / `ja.json` の
  * `statusBar.track.*`(帯の文言はここが正本)。
  *
@@ -122,7 +123,8 @@ async function setSnapEnabled(page: Page, enabled: boolean): Promise<void> {
 
 type WorldPoint = readonly [number, number, number];
 
-const HOME_AZIMUTH = Math.PI / 4;
+// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
+const HOME_AZIMUTH = -Math.PI / 4;
 const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
 const HOME_DISTANCE = 200;
 const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
@@ -177,6 +179,18 @@ async function moveToWorldPoint(page: Page, world: WorldPoint): Promise<void> {
   await page.mouse.move(box.x + x, box.y + y, { steps: 4 });
 }
 
+/*
+ * ポインタを動かす先は**画面の中心より左**に来る向きを使う(下の 163°・178°、および
+ * 延長線の (−14, 0.3, 0))。その場入力のポップアップは道具をツールバーから選ぶと
+ * ビューポートの中心を基準に開き(`NumericInputPopover.tsx` の `viewportCenterAnchor` と
+ * `clampAnchor`、右下へ 14px ずらした 260×372px)、原点はホーム視点でちょうど canvas の
+ * 中心に写るので、**中心より右下の点はポップアップに隠れて canvas に届かない**。
+ * 2026-09-06 に既定の視点を「前・上・右が見える向き」へ変えたことで画面右方向が
+ * (+X+Y) になり、変える前の 17°・2°・(14, 0.3, 0) はいずれも右側へ回った(実測: 帯が
+ * 動かず 3 件が落ちた)。**吸着の判定そのものは変えない**ように、角度は 180° を挟んだ
+ * 反対側の同じずれ(17°→163°、2°→178°)を使い、延長線は線分1 ごと −X 側へ鏡に映す。
+ */
+
 /** 20∠θ° を作図面 XY の (x, y, 0) へ直す(planeToWorld(XY, ...) と同じ)。 */
 function polarPoint(distance: number, angleDegrees: number): WorldPoint {
   const radians = (angleDegrees * Math.PI) / 180;
@@ -190,7 +204,7 @@ function polarPoint(distance: number, angleDegrees: number): WorldPoint {
 test.describe('P4b 直交・極トラッキング(FR-110)', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('起点から17°の向きへ動かすと、既定の15°刻みで吸着し帯に出る', async ({ page }) => {
+  test('起点から163°の向きへ動かすと、既定の15°刻みで吸着し帯に出る', async ({ page }) => {
     const errors = collectErrors(page);
 
     await page.goto('/');
@@ -203,15 +217,15 @@ test.describe('P4b 直交・極トラッキング(FR-110)', () => {
     await commitPopover(page);
     await expect(popoverTitle(page)).toHaveText('線分の終点');
 
-    // ポインタを 20∠17°(≈(19.126, 5.848, 0))へ動かす。7.5° 以上ずれているので 15° へ丸まる。
-    await moveToWorldPoint(page, polarPoint(20, 17));
-    await expect(statusText(page)).toContainText('15° に合わせています');
+    // ポインタを 20∠163°(≈(−19.126, 5.848, 0))へ動かす。7.5° 以上ずれているので 165° へ丸まる。
+    await moveToWorldPoint(page, polarPoint(20, 163));
+    await expect(statusText(page)).toContainText('165° に合わせています');
 
     await cancelPopover(page);
     expect(errors).toEqual([]);
   });
 
-  test('刻みを90°に変えると、同じ向きが0°へ丸まる(15°は出ない)', async ({ page }) => {
+  test('刻みを90°に変えると、同じ向きが180°へ丸まる(165°は出ない)', async ({ page }) => {
     const errors = collectErrors(page);
 
     await page.goto('/');
@@ -231,12 +245,12 @@ test.describe('P4b 直交・極トラッキング(FR-110)', () => {
     /*
      * 判定は画面座標(近ければ吸着)なので、刻みが粗いと候補の向きと実際のポインタの
      * 向きの差が大きくなり、判定半径の外へ出て吸着そのものが起きなくなる
-     * (§2.9、ヘッドレスでの実測)。17° では 15° 刻みの候補(15°、差2°)には乗るが
-     * 90° 刻みの候補(0°、差17°)には乗らないため、ここでは 0° に近い 2° で確かめる。
+     * (§2.9、ヘッドレスでの実測)。163° では 15° 刻みの候補(165°、差2°)には乗るが
+     * 90° 刻みの候補(180°、差17°)には乗らないため、ここでは 180° に近い 178° で確かめる。
      */
-    await moveToWorldPoint(page, polarPoint(20, 2));
-    await expect(statusText(page)).toContainText('0° に合わせています');
-    await expect(statusText(page)).not.toContainText('15° に合わせています');
+    await moveToWorldPoint(page, polarPoint(20, 178));
+    await expect(statusText(page)).toContainText('180° に合わせています');
+    await expect(statusText(page)).not.toContainText('165° に合わせています');
 
     await cancelPopover(page);
     expect(errors).toEqual([]);
@@ -254,7 +268,7 @@ test.describe('P4b 直交・極トラッキング(FR-110)', () => {
     await expect(popoverTitle(page)).toHaveText('線分の終点');
 
     await setSnapEnabled(page, false);
-    await moveToWorldPoint(page, polarPoint(20, 17));
+    await moveToWorldPoint(page, polarPoint(20, 163));
     await expect(statusText(page)).not.toContainText('に合わせています');
 
     await setSnapEnabled(page, true);
@@ -268,12 +282,12 @@ test.describe('P4b 直交・極トラッキング(FR-110)', () => {
     await page.goto('/');
     await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
 
-    // 線分1: (0,0,0)-(10,0,0)。
+    // 線分1: (0,0,0)-(−10,0,0)。
     await chooseSketchTool(page, '線分');
     await fillFields(page, ['0', '0', '0']);
     await commitPopover(page);
     await popover(page).getByRole('button', { name: '絶対', exact: true }).first().click();
-    await fillFields(page, ['10', '0', '0']);
+    await fillFields(page, ['-10', '0', '0']);
     await commitPopover(page);
     await cancelPopover(page);
 
@@ -282,7 +296,7 @@ test.describe('P4b 直交・極トラッキング(FR-110)', () => {
     await fillFields(page, ['0', '20', '0']);
     await commitPopover(page);
     await popover(page).getByRole('button', { name: '絶対', exact: true }).first().click();
-    await moveToWorldPoint(page, [14, 0.3, 0]);
+    await moveToWorldPoint(page, [-14, 0.3, 0]);
     await expect(statusText(page)).toContainText('線分1 の延長線');
 
     await cancelPopover(page);

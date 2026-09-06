@@ -27,7 +27,8 @@ import {
   evaluateNumericInput,
   reduceNumericInput,
 } from '../sketch/numericInput.js';
-import { createInitialDocumentState, useAppStore } from '../store/useAppStore.js';
+import { createInitialDocumentState } from '../store/initialDocumentState.js';
+import { useAppStore } from '../store/useAppStore.js';
 import {
   commitAddParameter,
   commitRemoveParameter,

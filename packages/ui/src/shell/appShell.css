@@ -1264,7 +1264,7 @@
   color: var(--pcad-text-muted);
 }
 
-/* 選択肢の並び。数が形式ごとに変わる(2〜5 個)ので、入りきらなければ折り返す。 */
+/* 選択肢の並び。数が形式ごとに変わる(2〜6 個)ので、入りきらなければ折り返す。 */
 .pcad-exchange__choices {
   display: flex;
   flex-wrap: wrap;
@@ -1295,6 +1295,12 @@
 
 .pcad-exchange__choice[aria-checked="true"]:hover {
   background: var(--pcad-accent-soft-hover);
+}
+
+/* 選べない「対象」(DXF はいま編集しているスケッチに決まっている)。押せる見た目にしない。 */
+.pcad-exchange__value {
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text);
 }
 
 .pcad-exchange__toggle {

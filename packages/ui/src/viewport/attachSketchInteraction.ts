@@ -132,7 +132,8 @@ import {
   type SelectionKind,
   type SubShapeBody,
 } from '../solid/subShapeSelection.js';
-import { useAppStore, type SnapIndicator } from '../store/useAppStore.js';
+import type { SnapIndicator } from '../store/sketchSlice.js';
+import { useAppStore } from '../store/useAppStore.js';
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
 import { viewDirection, type OrbitState } from './cameraMath.js';
 import {

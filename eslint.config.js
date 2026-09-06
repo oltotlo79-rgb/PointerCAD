@@ -41,6 +41,10 @@ export default tseslint.config(
       '**/node_modules/**',
       'playwright-report/**',
       'test-results/**',
+      // 担当が置く一時のもの(組み立ての出力・撮った画面)。製品のコードではないので見ない。
+      // `eslint .` が生成物で落ちるのを防ぐ(docs/報告記録.md 2026-09-06 14:2x・15:5x)。
+      'scratchpad/**',
+      'shots/**',
     ],
   },
   js.configs.recommended,

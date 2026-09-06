@@ -19,7 +19,7 @@ import * as THREE from 'three';
 
 import { toLineSegmentPositions } from '../sketch/sampleCurve.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
-import type { DisplayStyle } from '../store/useAppStore.js';
+import type { DisplayStyle } from '../store/viewSlice.js';
 import type { SketchEmphasis, SketchFaceDraw, SketchGeometryBundle } from './buildSketchGeometry.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 

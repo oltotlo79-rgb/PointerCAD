@@ -45,8 +45,10 @@ function manualChunks(id: string): string | undefined {
     return undefined;
   }
 
-  // 文言の表(ja.json)。何も読み込まない葉なので、単独の塊にしても順番の心配がない。
-  if (path.endsWith('/packages/ui/src/i18n/ja.json')) {
+  // 文言の表(`i18n/ja/*.json` と、それを 1 つに合わせる `i18n/ja.ts`。P6 タスク52 で
+  // 機能ごとに分けた)。何も読み込まない葉なので、単独の塊にしても順番の心配がない。
+  // **合わせる側もここへ入れる**(理由は apps/web/vite.config.ts と同じ)。
+  if (path.includes('/packages/ui/src/i18n/ja/') || path.endsWith('/packages/ui/src/i18n/ja.ts')) {
     return 'messages';
   }
   // アイコンはインライン SVG の塊で、これも何も読み込まない葉(icons.tsx の冒頭の注釈)。

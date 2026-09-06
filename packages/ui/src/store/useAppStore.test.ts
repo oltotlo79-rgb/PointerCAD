@@ -60,14 +60,13 @@ import {
   attachExchangeKernel,
   attachPartMeasure,
   attachPartRecompute,
-  createInitialDocumentState,
   currentPcadAttachments,
-  useAppStore,
-  workPlaneForOrbit,
-  workPlaneOfSketch,
   type PartRecomputer,
-  type PrintabilityReport,
-} from './useAppStore.js';
+} from './attachKernel.js';
+import { workPlaneForOrbit, workPlaneOfSketch } from './documentDerived.js';
+import type { PrintabilityReport } from './exchangeSlice.js';
+import { createInitialDocumentState } from './initialDocumentState.js';
+import { useAppStore } from './useAppStore.js';
 
 interface PendingRecompute {
   readonly document: PartDocument;

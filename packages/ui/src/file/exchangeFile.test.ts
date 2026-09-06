@@ -1,10 +1,17 @@
+import { dxfFlattenedCurveMessage, DXF_WRITE_ACAD_VERSION } from '@pointercad/io';
 import {
   createEmptyPartDocument,
   createEmptySketchDocument,
   createExportRequest,
+  dxfToSketch,
+  DXF_NOT_PLANAR_MESSAGE,
+  resolveSketch,
   WORK_PLANES,
   type ExportFormat,
   type PartDocument,
+  type SketchDocument,
+  type SketchDxfEntity,
+  type SketchToDxfInput,
   type SolidBody,
   type SolidBodyKind,
   type WorkPlane,
@@ -14,19 +21,23 @@ import { describe, expect, it } from 'vitest';
 import type { PickedFile, PickedTypedFile, FileGateway } from './fileGateway.js';
 import {
   appendImportedBodies,
+  DEFAULT_EXPORT_BASE_NAME,
   DXF_IS_NOT_A_BODY_MESSAGE,
   droppedTriangleNotice,
+  dxfExportRefusal,
   exportBaseNameOf,
   exportNoticeMessageKey,
   exportPanelShape,
   exportRefusalKey,
   exportWarningKeys,
   EXPORT_FORMAT_ORDER,
+  EXPORT_PANEL_FORMAT_ORDER,
   IMPORT_FILE_KINDS,
   importedSourceFormatOf,
   kernelExportFormatOf,
   NO_SHAPE_MESSAGE,
   runExport,
+  runExportDxf,
   runImport,
   runImportBody,
   runImportDxf,
@@ -883,5 +894,182 @@ describe('出していない欄の警告を落とす(§0.a-0.20、タスク43b)'
       '部品.pcad',
     );
     expect(result).toEqual({ ok: true, notices: ['[exchangeError.shellNotSupported]'] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DXF の書き出し(FR-813、§0.a-0.34、タスク53)
+// ---------------------------------------------------------------------------
+
+/**
+ * DXF の実体からスケッチを起こし、そのまま書き出しの入力にする。
+ *
+ * **わざわざ DXF から起こすのは、履歴の作り方をここへ書き写さないため。** スケッチの
+ * フィーチャーは式の値を持つので手で組むと長くなるうえ、同じ組み立て方が model 側の
+ * 検査(`sketchToDxf.test.ts`)と 2 か所に住む。読み込みの段(`dxfToSketch`)を通せば、
+ * この検査が見たいもの(**ui が io へ橋渡しできているか**)だけが残る。
+ */
+function dxfInputOf(
+  entities: readonly SketchDxfEntity[],
+  plane: WorkPlane | null = WORK_PLANES.xy,
+): SketchToDxfInput {
+  const { features } = dxfToSketch(entities, WORK_PLANES.xy, { unit: 'mm' });
+  const document: SketchDocument = { ...createEmptySketchDocument(), features };
+  return { document, resolved: resolveSketch(document), plane };
+}
+
+const DXF_BASE = { layer: '0', color: null } as const;
+
+/** (−10, 0) から (10, 0) への線分。 */
+const DXF_LINE: SketchDxfEntity = {
+  ...DXF_BASE,
+  kind: 'line',
+  start: { x: -10, y: 0 },
+  end: { x: 10, y: 0 },
+};
+
+/** 中心 (0, 0)、半径 10、0 度 → 180 度の円弧(上の線分と合わせて半円が閉じる)。 */
+const DXF_ARC: SketchDxfEntity = {
+  ...DXF_BASE,
+  kind: 'arc',
+  center: { x: 0, y: 0 },
+  radius: 10,
+  startAngle: 0,
+  endAngle: 180,
+};
+
+/** 全周の楕円。R12 に `ELLIPSE` が無いので、書き出すと折れ線へ落ちる。 */
+const DXF_ELLIPSE: SketchDxfEntity = {
+  ...DXF_BASE,
+  kind: 'ellipse',
+  center: { x: 0, y: 0 },
+  majorRadius: 10,
+  minorRadius: 5,
+  rotation: 0,
+  startAngle: 0,
+  endAngle: 360,
+};
+
+/** DXF は幾何カーネルを通らないので、頼まれたら必ず落ちる偽物を渡して確かめる。 */
+function createForbiddenKernel(): ExchangeKernel {
+  return {
+    exportShapes: () => Promise.reject(new Error('DXF でカーネルを呼んではいけません')),
+    importShape: () => Promise.reject(new Error('DXF でカーネルを呼んではいけません')),
+  };
+}
+
+describe('DXF の書き出しのパネルの見せ方(§0.a-0.34、タスク53)', () => {
+  it('書き出しの一覧は 6 形式で、6 つ目が DXF', () => {
+    expect([...EXPORT_PANEL_FORMAT_ORDER]).toEqual(['step', 'stl', '3mf', 'obj', 'glb', 'dxf']);
+  });
+
+  it('DXF ではなめらかさ・文字で書く・色の欄をどれも出さない', () => {
+    const shape = exportPanelShape('dxf');
+    expect([shape.showsQuality, shape.showsAscii, shape.showsColor]).toEqual([false, false, false]);
+  });
+
+  it('DXF では「STL には色が付きません」の 1 行も出さない(色の話をそもそもしない)', () => {
+    expect(exportPanelShape('dxf').showsNoColorNotice).toBe(false);
+  });
+
+  it('DXF の単位の案内はミリメートル(§0.a-0.7)', () => {
+    expect(unitNoticeKeyOf('dxf')).toBe('exchange.unitNoticeMillimeter');
+    expect(exportPanelShape('dxf').unitNoticeKey).toBe('exchange.unitNoticeMillimeter');
+  });
+
+  it('「対象」は立体の 2 択とスケッチの 1 行が入れ替わりに出る(欄そのものは必ず 1 つ)', () => {
+    for (const format of EXPORT_PANEL_FORMAT_ORDER) {
+      const shape = exportPanelShape(format);
+      expect(shape.showsBodyScope === shape.showsSketchTarget, format).toBe(false);
+      expect(shape.showsSketchTarget, format).toBe(format === 'dxf');
+    }
+  });
+});
+
+describe('DXF を書き出す前の断り(NFR-UX-5)', () => {
+  it('書き出す図形が 1 つも無いスケッチは、押す前に断る', () => {
+    expect(dxfExportRefusal(dxfInputOf([]), messageOf)).toBe('[exchange.dxfNothingToExport]');
+  });
+
+  it('平らでないスケッチ(作図面が決まらない)は、model の断りをそのまま出す', () => {
+    expect(dxfExportRefusal(dxfInputOf([DXF_LINE], null), messageOf)).toBe(DXF_NOT_PLANAR_MESSAGE);
+  });
+
+  it('線と円弧のあるスケッチは断らない', () => {
+    expect(dxfExportRefusal(dxfInputOf([DXF_LINE, DXF_ARC]), messageOf)).toBeNull();
+  });
+});
+
+describe('DXF を書き出す(FR-813、§2.7)', () => {
+  it('`.dxf` の 1 ファイルだけを、部品の名前の基で保存する', async () => {
+    const fake = createFakeGateway();
+    const deps = createDeps(fake, createForbiddenKernel());
+    const result = await runExportDxf(deps, dxfInputOf([DXF_LINE, DXF_ARC]), '取っ手.pcad');
+
+    expect(result).toEqual({ ok: true, notices: [] });
+    expect(fake.saved).toHaveLength(1);
+    expect(fake.saved[0].fileName).toBe('取っ手.dxf');
+    expect(fake.saved[0].kind).toBe('dxf');
+  });
+
+  it('名前がまだ無い部品は `model.dxf` になる(立体の書き出しと同じ基)', async () => {
+    const fake = createFakeGateway();
+    const deps = createDeps(fake, createForbiddenKernel());
+    await runExportDxf(deps, dxfInputOf([DXF_LINE]), null);
+    expect(fake.saved[0].fileName).toBe(`${DEFAULT_EXPORT_BASE_NAME}.dxf`);
+  });
+
+  it('中身は R12 のテキストで、線分と円弧がそのまま入っている', async () => {
+    const fake = createFakeGateway();
+    const deps = createDeps(fake, createForbiddenKernel());
+    await runExportDxf(deps, dxfInputOf([DXF_LINE, DXF_ARC]), '部品.pcad');
+
+    const text = new TextDecoder().decode(fake.saved[0].bytes);
+    expect(text).toContain(DXF_WRITE_ACAD_VERSION);
+    expect(text).toContain('LINE');
+    expect(text).toContain('ARC');
+  });
+
+  it('楕円は折れ線へ落ち、形が変わったことを案内として返す(赤い断りにしない)', async () => {
+    const fake = createFakeGateway();
+    const deps = createDeps(fake, createForbiddenKernel());
+    const result = await runExportDxf(deps, dxfInputOf([DXF_ELLIPSE]), '部品.pcad');
+
+    expect(result).toEqual({ ok: true, notices: [dxfFlattenedCurveMessage(1)] });
+    expect(fake.saved).toHaveLength(1);
+  });
+
+  it('書き出す図形が無ければ保存の窓すら開かない', async () => {
+    const fake = createFakeGateway();
+    const deps = createDeps(fake, createForbiddenKernel());
+    const result = await runExportDxf(deps, dxfInputOf([]), '部品.pcad');
+
+    expect(result).toEqual({ ok: false, message: '[exchange.dxfNothingToExport]' });
+    expect(fake.saved).toHaveLength(0);
+  });
+
+  it('平らでないスケッチは書けない理由をそのまま返す', async () => {
+    const fake = createFakeGateway();
+    const deps = createDeps(fake, createForbiddenKernel());
+    const result = await runExportDxf(deps, dxfInputOf([DXF_LINE], null), '部品.pcad');
+
+    expect(result).toEqual({ ok: false, message: DXF_NOT_PLANAR_MESSAGE });
+    expect(fake.saved).toHaveLength(0);
+  });
+
+  it('保存を取り消しても失敗にはならない(断りを出さない)', async () => {
+    const fake = createFakeGateway({ saveCancels: true });
+    const deps = createDeps(fake, createForbiddenKernel());
+    const result = await runExportDxf(deps, dxfInputOf([DXF_LINE]), '部品.pcad');
+
+    expect(result).toEqual({ ok: false, cancelled: true });
+  });
+
+  it('保存の口が投げた理由は、そのまま利用者へ見せる', async () => {
+    const fake = createFakeGateway({ saveThrows: true });
+    const deps = createDeps(fake, createForbiddenKernel());
+    const result = await runExportDxf(deps, dxfInputOf([DXF_LINE]), '部品.pcad');
+
+    expect(result).toEqual({ ok: false, message: '保存できませんでした' });
   });
 });

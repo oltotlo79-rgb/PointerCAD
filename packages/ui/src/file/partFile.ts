@@ -24,7 +24,8 @@ import {
 import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
-import { currentPcadAttachments, useAppStore } from '../store/useAppStore.js';
+import { currentPcadAttachments } from '../store/attachKernel.js';
+import { useAppStore } from '../store/useAppStore.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 

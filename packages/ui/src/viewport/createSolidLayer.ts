@@ -50,7 +50,7 @@ import {
   buildPrintabilityOpenEdgePositions,
   printabilityAppearances,
 } from '../solid/printabilityColors.js';
-import type { DisplayStyle } from '../store/useAppStore.js';
+import type { DisplayStyle } from '../store/viewSlice.js';
 import type {
   SolidDrawEntry,
   SolidEmphasis,

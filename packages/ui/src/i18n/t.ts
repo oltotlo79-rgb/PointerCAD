@@ -1,6 +1,6 @@
-import ja from './ja.json';
+import { ja } from './ja.js';
 
-/** ja.json に実在するキーだけを受け付ける。打ち間違いは型検査で落ちる。 */
+/** ja の表に実在するキーだけを受け付ける。打ち間違いは型検査で落ちる。 */
 export type MessageKey = keyof typeof ja;
 
 const messages: Readonly<Record<MessageKey, string>> = ja;

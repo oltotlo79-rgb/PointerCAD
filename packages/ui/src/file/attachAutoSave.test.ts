@@ -29,7 +29,8 @@ import {
 } from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { createInitialDocumentState, useAppStore } from '../store/useAppStore.js';
+import { createInitialDocumentState } from '../store/initialDocumentState.js';
+import { useAppStore } from '../store/useAppStore.js';
 import {
   attachAutoSave,
   createAutoSaveStorageForBrowser,

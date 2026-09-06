@@ -18,8 +18,8 @@ import {
   attachPartInspector,
   attachPartMeasure,
   attachPartRecompute,
-  useAppStore,
-} from '../store/useAppStore.js';
+} from '../store/attachKernel.js';
+import { useAppStore } from '../store/useAppStore.js';
 
 /** 検査だけが使う読み取り口の 1 件ぶんの形(下の `useEffect` の注釈が理由)。 */
 interface RecomputeStats {

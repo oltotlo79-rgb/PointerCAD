@@ -23,7 +23,7 @@ import type { SnapKind } from '../sketch/snapMath.js';
 import type { TrackKind } from '../sketch/trackMath.js';
 import { SELECTION_KIND_LABEL_KEYS } from '../solid/selectionFilter.js';
 import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
-import type { FileMessage } from '../store/useAppStore.js';
+import type { FileMessage } from '../store/fileSlice.js';
 import type { TimelineRollback } from './timelineRail.js';
 
 /**

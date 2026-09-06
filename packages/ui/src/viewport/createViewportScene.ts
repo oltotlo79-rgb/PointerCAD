@@ -15,7 +15,7 @@ import { captureThumbnailPng, THUMBNAIL_SIZE } from '../file/thumbnail.js';
 import type { PointerRay, TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
 import { faceIndexOfTriangle } from '../solid/pickSubShape.js';
-import type { DisplayStyle, ProjectionMode } from '../store/useAppStore.js';
+import type { DisplayStyle, ProjectionMode } from '../store/viewSlice.js';
 import {
   buildSketchGeometry,
   EMPTY_RESOLVED_SKETCH,

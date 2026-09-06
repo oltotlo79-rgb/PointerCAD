@@ -1,6 +1,6 @@
 /**
  * 書き出しと読み込みの手続き(計画書 docs/plans/P6-入出力.md §2.2・§2.4・§2.8・§2.9、
- * §0.a-0.6・0.7・0.12・0.15・0.20・0.22・0.28、タスク32)。
+ * §0.a-0.6・0.7・0.12・0.15・0.20・0.22・0.28・0.34、タスク32・53)。
  *
  * 対応要件: FR-802(読み込み)、FR-803(書き出し)、FR-804(名前と色)、FR-811(単位)、
  * FR-813(DXF)、FR-427(選んだ立体だけ)、NFR-UX-4(Enter 連打で意味のある結果)、
@@ -16,10 +16,13 @@
  */
 
 import {
+  dxfFlattenedCurveMessage,
   parseDxfTags,
   readThreeMf,
   readDxf,
+  writeDxfDocument,
   type DxfEntity,
+  type DxfWriteResult,
   type ImportedMeshBytes,
 } from '@pointercad/io';
 import {
@@ -30,6 +33,7 @@ import {
   nextSolidId,
   nextSolidName,
   selectExportBodies,
+  sketchToDxf,
   usesTriangles,
   type ExportFormat,
   type ExportNoticeKey,
@@ -43,6 +47,7 @@ import {
   type LengthUnit,
   type PartDocument,
   type SketchDocument,
+  type SketchToDxfInput,
   type SolidBody,
   type WorkPlane,
 } from '@pointercad/model';
@@ -67,10 +72,30 @@ import {
 export const EXPORT_FORMAT_ORDER: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
 
 /**
+ * 書き出しのパネルで選べる形式(FR-803、FR-813、§0.a-0.34、タスク53)。
+ *
+ * **立体の 5 形式と DXF は同じ一覧の中にあるが、書き出すものが違う。** 前の 5 つは
+ * 文書の中の立体を書き出し、`dxf` は**いま編集しているスケッチの平らな線**を書き出す
+ * (立体は 1 つも見ない)。だから依頼の形も流れも別で、model の `ExportFormat` には
+ * `dxf` を入れない(あちらは「立体を書き出せる形式」の正本)。
+ *
+ * 一覧を 1 つにしたのは利用者から見た操作を割らないため(NFR-UX-1)。「書き出す」は
+ * 1 つの入口で、そこで何を渡したいかを形式として選ぶ。
+ */
+export type ExportPanelFormat = ExportFormat | 'dxf';
+
+/** 書き出しの画面に並べる 6 形式。**並びは画面に出る順**で、DXF が 6 つ目。 */
+export const EXPORT_PANEL_FORMAT_ORDER: readonly ExportPanelFormat[] = [
+  ...EXPORT_FORMAT_ORDER,
+  'dxf',
+];
+
+/**
  * 読み込みの画面で選べる 6 形式(FR-802、FR-809、FR-813、§0.a-0.26)。
  *
- * **DXF が入っているのは読み込みだけ**である。DXF から入るのは平らなスケッチの線であって
- * 立体ではない(§0.a-0.34)ので、書き出しの 5 形式(`EXPORT_FORMAT_ORDER`)とは別の一覧になる。
+ * **並びが書き出しと違う**のは、読み込みが「よく使う順」で、書き出しが `EXPORT_FORMATS`
+ * の順をそのまま使っているため。DXF はどちらも一覧の最後で、読み書きとも平らな
+ * スケッチの線として出入りする(立体にはならない。§0.a-0.34)。
  */
 export const IMPORT_FILE_KINDS: readonly FileKind[] = ['step', 'stl', 'obj', '3mf', 'glb', 'dxf'];
 
@@ -144,17 +169,45 @@ export interface ExportPanelShape {
   readonly showsColor: boolean;
   /** 「STL には色が付きません」の 1 行を出すか(§0.a-0.15)。 */
   readonly showsNoColorNotice: boolean;
+  /**
+   * 立体の「対象」の 2 択(すべての立体 / 選んだ立体)を出すか(FR-427)。
+   * **DXF では出さない**——書き出すのは立体ではなくスケッチの線なので、選びようがない。
+   */
+  readonly showsBodyScope: boolean;
+  /**
+   * 「対象」に「いま編集しているスケッチ」の 1 行を出すか(§0.a-0.34、タスク53)。
+   * 上の 2 択とは**いつも入れ替わり**に出る(「対象」の欄そのものは必ず 1 つある)。
+   */
+  readonly showsSketchTarget: boolean;
   /** 単位の案内の文言(§0.a-0.7。glTF だけメートル)。 */
   readonly unitNoticeKey: MessageKey;
 }
 
 /** その形式を書き出すときの単位の案内(§0.a-0.7)。**glTF だけメートル**で書く。 */
-export function unitNoticeKeyOf(format: ExportFormat): MessageKey {
+export function unitNoticeKeyOf(format: ExportPanelFormat): MessageKey {
   return format === 'glb' ? 'exchange.unitNoticeMeter' : 'exchange.unitNoticeMillimeter';
 }
 
-/** 形式を選んだときのパネルの見せ方(§0.a-0.20)。 */
-export function exportPanelShape(format: ExportFormat): ExportPanelShape {
+/**
+ * 形式を選んだときのパネルの見せ方(§0.a-0.20、§0.a-0.34)。
+ *
+ * **DXF は立体の欄をどれも出さない。** なめらかさ(三角形の細かさ)も、文字で書くかも、
+ * 色も、DXF に書き出す平らな線には関わらない。「STL には色が付きません」の 1 行も
+ * 出さない——あれは**立体の色を渡せない形式**への断りなので、線しか書かない DXF で
+ * 出すと、色が付くはずだったものが落ちたように読めてしまう。
+ */
+export function exportPanelShape(format: ExportPanelFormat): ExportPanelShape {
+  if (format === 'dxf') {
+    return {
+      showsQuality: false,
+      showsAscii: false,
+      showsColor: false,
+      showsNoColorNotice: false,
+      showsBodyScope: false,
+      showsSketchTarget: true,
+      unitNoticeKey: unitNoticeKeyOf(format),
+    };
+  }
   const triangles = usesTriangles(format);
   const colors = carriesColor(format);
   return {
@@ -163,6 +216,8 @@ export function exportPanelShape(format: ExportFormat): ExportPanelShape {
     showsColor: colors,
     // 色を持てない形式は STL だけなので、この 1 行と上の切替はいつも入れ替わりに出る。
     showsNoColorNotice: !colors,
+    showsBodyScope: true,
+    showsSketchTarget: false,
     unitNoticeKey: unitNoticeKeyOf(format),
   };
 }
@@ -486,6 +541,100 @@ export async function runExport(
   const dropped = droppedTriangleNotice(deps.droppedTriangleTemplate, outcome.droppedTriangleCount);
   return { ok: true, notices: dropped === null ? notices : [...notices, dropped] };
 }
+
+// ---------------------------------------------------------------------------
+// DXF の書き出し(FR-813、§2.7、§0.a-0.34、タスク53)
+// ---------------------------------------------------------------------------
+
+/**
+ * 書き出す図形が 1 つも無いとき(NFR-UX-5「できないことは押す前に断る」)。
+ *
+ * **空のスケッチは model も io も断らない**(`sketchToDxf` は空の実体の列を返し、
+ * `writeDxfDocument` は骨だけの正しい DXF を書く)。形式としては正しくても、
+ * 利用者にとっては「何も入っていないファイルができた」だけなので、ここで止める。
+ */
+export const DXF_EXPORT_EMPTY_KEY: MessageKey = 'exchange.dxfNothingToExport';
+
+/**
+ * **押す前の断り**(NFR-UX-5)。DXF に書き出せないときだけ**日本語の 1 文**を返す。
+ *
+ * 立体の側(`exportRefusalKey`)が文言のキーを返すのに対してこちらが文を返すのは、
+ * 断りの理由の一方(「この形は平らではないので DXF に書き出せません。」)を
+ * **model が文として持っている**ため(§2.8「文言の正本の層」)。キーへ直す表を
+ * ここに作ると、同じ文が 2 か所に住むことになる。
+ */
+export function dxfExportRefusal(
+  input: SketchToDxfInput,
+  messageOf: (key: MessageKey) => string,
+): string | null {
+  const converted = sketchToDxf(input);
+  if (!converted.ok) {
+    return converted.reason;
+  }
+  return converted.entities.length === 0 ? messageOf(DXF_EXPORT_EMPTY_KEY) : null;
+}
+
+/**
+ * DXF に書き出す(FR-813、§2.7)。流れは 3 段:
+ *
+ * 1. スケッチの解決済みの形を DXF の実体へ写す(model の `sketchToDxf`)。断るならここ。
+ * 2. R12 のテキストへ書く(io の `writeDxfDocument`)。
+ * 3. UTF-8 のバイト列にして `.dxf` を **1 ファイル**保存する。
+ *
+ * **幾何カーネルを通らない。** DXF に出るのはスケッチの線であって立体ではないので、
+ * `ExchangeKernel` は 1 度も呼ばない(`runExport` との一番大きな違い)。
+ *
+ * R12 に `ELLIPSE` / `SPLINE` が無いため、楕円となめらかな曲線は折れ線へ落ちる。
+ * **形がわずかに変わったことは案内として返す**(赤い断りではない。NFR-RE-1)。
+ */
+export async function runExportDxf(
+  deps: ExchangeDeps,
+  input: SketchToDxfInput,
+  fileName: string | null,
+): Promise<ExchangeOutcome> {
+  const converted = sketchToDxf(input);
+  if (!converted.ok) {
+    return { ok: false, message: converted.reason };
+  }
+  if (converted.entities.length === 0) {
+    return { ok: false, message: deps.messageOf(DXF_EXPORT_EMPTY_KEY) };
+  }
+
+  let written: DxfWriteResult;
+  try {
+    written = writeDxfDocument(converted.entities);
+  } catch (error) {
+    // 書けない値(有限でない座標など)は io が日本語の理由で断る。そのまま見せる。
+    return { ok: false, message: messageOfError(error) };
+  }
+
+  const bytes = new TextEncoder().encode(written.text);
+  let saved: boolean;
+  try {
+    saved = await saveFileAsThrough(
+      deps.gateway,
+      `${exportBaseNameOf(fileName)}${DXF_EXTENSION}`,
+      'dxf',
+      bytes,
+    );
+  } catch (error) {
+    return { ok: false, message: messageOfError(error) };
+  }
+  if (!saved) {
+    return { ok: false, cancelled: true };
+  }
+
+  return {
+    ok: true,
+    notices:
+      written.flattenedCurveCount > 0
+        ? [dxfFlattenedCurveMessage(written.flattenedCurveCount)]
+        : [],
+  };
+}
+
+/** 書き出す DXF の拡張子。名前の基は立体の書き出しと同じ `exportBaseNameOf` から取る。 */
+const DXF_EXTENSION = '.dxf';
 
 // ---------------------------------------------------------------------------
 // 読み込みの流れ(§2.8)

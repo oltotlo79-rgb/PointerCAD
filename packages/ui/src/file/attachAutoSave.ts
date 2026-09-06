@@ -25,7 +25,8 @@ import {
   type AutoSaveStorage,
 } from '@pointercad/io';
 
-import { currentPcadAttachments, useAppStore } from '../store/useAppStore.js';
+import { currentPcadAttachments } from '../store/attachKernel.js';
+import { useAppStore } from '../store/useAppStore.js';
 import { hasUnsavedChanges, readPartDocument } from './partFile.js';
 
 // ---------------------------------------------------------------------------

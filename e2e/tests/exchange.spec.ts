@@ -9,17 +9,15 @@ import { KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
  * P6(入出力)の完了条件のうち、**ファイルの往復**を実際のブラウザで通しで確かめる
  * (要件 `docs/requirements.md` §9 P6、計画書 `docs/plans/P6-入出力.md` §0.59、タスク44)。
  *
- * ここで固定するのは §0.59 の (a)〜(d):
+ * ここで固定するのは §0.59 の (a)〜(e):
  *  - (a) 箱 → STEP で書き出す → 読み込む → **体積が一致する**
  *  - (b) 箱 → STL(バイナリ)で書き出す → 読み込む → **三角形 12 枚・体積 8000**
  *  - (c) inch の STEP を読み込む → **寸法が 25.4 倍**(体積は 25.4³ 倍)で入る
  *  - (d) DXF(線と円弧)を読み込む → スケッチに線分と円弧ができる → **押し出せる**
+ *  - (e) スケッチ → DXF で書き出す → 新規 → 読み直す → **同じ形**(線分 1・円弧 1)
  *
- * **(e)「スケッチ → DXF 書き出し → 読み直すと同じ形」はここに無い。** 2026-09-06 の実測で、
- * DXF を**書き出す入口が画面に 1 つも無い**(`model` の `sketchToDxf` と `io` の `writeDxf` は
- * 在るが、`packages/ui` からそれを呼ぶ配線が無く、書き出しのパネルの形式も STEP / STL /
- * 3MF / OBJ / glTF の 5 つだけ)。**この検査からは直せない**(担当の範囲外)ので、
- * 統括へ報告して配線が入ってから足す。
+ * (e) は 2026-09-06 の時点で書けなかった(DXF を**書き出す入口が画面に 1 つも無かった**)。
+ * P6 タスク53 が書き出しのパネルの形式に DXF を足したので、ここへ足した。
  *
  * **ファイルのバイト列はすべてこの検査の中で組む**(見本のファイルを追跡対象に増やさない。
  * `rules/03-品質ゲート.md` §7.1 #0)。書き出したものは Playwright の作業用の場所
@@ -71,6 +69,13 @@ async function disableFilePickers(page: Page): Promise<void> {
         value: undefined,
       });
     }
+  });
+}
+
+/** 確認の窓(`window.confirm`)に「はい」で答える(「新規」で出る)。 */
+function acceptConfirms(page: Page): void {
+  page.on('dialog', (dialog) => {
+    void dialog.accept();
   });
 }
 
@@ -169,6 +174,22 @@ async function openSolidSection(page: Page): Promise<void> {
     await header.click();
   }
   await expect(header).toHaveAttribute('aria-expanded', 'true');
+}
+
+/** ツールバーの「ファイル」区画のボタン(新規・開く・保存)。 */
+function fileAction(page: Page, label: string): Locator {
+  return page
+    .getByRole('group', { name: 'ファイル' })
+    .getByRole('button', { name: label, exact: true });
+}
+
+/**
+ * 「新規」を押して空の部品からやり直す(FR-806)。**頁は読み込み直さない**ので、
+ * 幾何カーネルもそのまま残る(`p5-cut-mirror.spec.ts` の `newDocument` と同じ作り)。
+ */
+async function newDocument(page: Page): Promise<void> {
+  await fileAction(page, '新規').click();
+  await expect(featureTree(page)).toContainText('まだ何もありません。');
 }
 
 function propertyPanel(page: Page): Locator {
@@ -545,6 +566,70 @@ await expect(panel.getByRole('checkbox')).not.toBeChecked();
     await expectVolumeNear(page, expected, 1e-9);
     console.log(
       `[実測] (d) DXF から押し出した体積: ${String(await volumeNumber(page))} mm³(厳密 ${String(expected)})`,
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  test('(e) スケッチを DXF で書き出して読み直すと、同じ形で戻る(FR-813、§0.a-0.34)', async ({
+    page,
+  }, testInfo) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+    acceptConfirms(page);
+
+    await page.goto('/');
+
+    /*
+      1) 線分 1 本と円弧 1 つのスケッチを用意する。**(d) と同じ DXF を読み込むのが最短**で、
+      画面を何度も押して描くより、この検査が見たいもの(書き出し → 読み直し)だけが残る。
+    */
+    const sourcePath = testInfo.outputPath('exchange-e-source.dxf');
+    writeFileSync(sourcePath, halfDiscDxf(), 'utf8');
+    await importFile(page, sourcePath);
+    await expect(treeRow(page, '線分1')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+    await expect(treeRow(page, '円弧1')).toBeVisible();
+
+    // 2) 書き出しのパネルの 6 つ目(DXF)で書き出す。
+    const exportedPath = testInfo.outputPath('exchange-e.dxf');
+    const bytes = await exportShape(page, 'DXF', exportedPath);
+    const text = new TextDecoder().decode(bytes);
+    // R12 の名乗り(`$ACADVER = AC1009`)と、線分・円弧がそのまま入っている。
+    expect(text).toContain('AC1009');
+    expect(text).toContain('LINE');
+    expect(text).toContain('ARC');
+    console.log(`[実測] (e) 書き出した DXF のバイト数: ${String(bytes.byteLength)}`);
+
+    // 3) 新規で空にしてから読み直す。線分 1・円弧 1 に戻る(折れ線に化けない)。
+    await newDocument(page);
+    await importFile(page, exportedPath);
+    await expect(treeRow(page, '線分1')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+    await expect(treeRow(page, '円弧1')).toBeVisible();
+
+    /*
+      4) **形が同じことは寸法で確かめる。** 名前だけでは半径や端点のずれを拾えないので、
+      (d) と同じように面を張って 10 押し出し、半円柱の体積になることを見る。
+    */
+    await treeRow(page, '線分1').click();
+    await treeRow(page, '円弧1').click({ modifiers: ['Shift'] });
+    await sketchTool(page, '面').click();
+    await page.locator('canvas.pcad-viewport__canvas').press('Enter');
+    await expect(treeRow(page, '面1')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+
+    await treeRow(page, '面1').click();
+    await openToolMenu(page, '作る');
+    await menuTool(page, '作る', '押し出し').click();
+    await expect(popoverTitle(page)).toHaveText('押し出す');
+    await fillFields(page, ['10']);
+    await commitPopover(page);
+    await expect(popover(page)).toHaveCount(0);
+
+    await treeRow(page, '押し出し1').click();
+    await waitForRecompute(page);
+    const expected = ((Math.PI * DXF_RADIUS_MM ** 2) / 2) * 10;
+    await expectVolumeNear(page, expected, 1e-9);
+    console.log(
+      `[実測] (e) 読み直した DXF から押し出した体積: ${String(await volumeNumber(page))} mm³(厳密 ${String(expected)})`,
     );
 
     expect(errors).toEqual([]);

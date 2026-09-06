@@ -7,28 +7,38 @@ import {
   DEFAULT_EXPORT_QUALITY,
   DEFAULT_EXPORT_SCOPE,
   DEFAULT_EXPORT_WITH_COLORS,
-  type ExportFormat,
   type ExportQuality,
+  type ExportRequest,
   type ExportScope,
+  type SketchToDxfInput,
 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
+import { resolveWorkPlaneOf } from '../sketch/referenceCommands.js';
+import { workPlaneOfSketch } from '../store/documentDerived.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
-  EXPORT_FORMAT_ORDER,
+  dxfExportRefusal,
+  EXPORT_PANEL_FORMAT_ORDER,
   exportPanelShape,
   exportRefusalKey,
   runExport,
+  runExportDxf,
   type ExchangeDeps,
+  type ExportPanelFormat,
 } from './exchangeFile.js';
 
 /**
- * 書き出しのパネル(計画書 docs/plans/P6-入出力.md §0.a-0.20、タスク32)。
+ * 書き出しのパネル(計画書 docs/plans/P6-入出力.md §0.a-0.20・§0.a-0.34、タスク32・53)。
  *
- * 対応要件: FR-803(形式と品質)、FR-427(すべて / 選んだ立体)、FR-811(単位の案内)、
- * NFR-UX-2(モーダルにしない)、NFR-UX-4(Enter 連打で意味のある結果)、
+ * 対応要件: FR-803(形式と品質)、FR-813(DXF)、FR-427(すべて / 選んだ立体)、
+ * FR-811(単位の案内)、NFR-UX-2(モーダルにしない)、NFR-UX-4(Enter 連打で意味のある結果)、
  * NFR-UX-5(できないことは押す前に断る)。
+ *
+ * **形式は 6 つで、6 つ目の DXF だけ書き出すものが違う**(§0.a-0.34)。前の 5 つは立体を、
+ * DXF は**いま編集しているスケッチの平らな線**を書き出す。入口を 2 つに割らないのは、
+ * 利用者にとって「書き出す」は 1 つの操作だからである(NFR-UX-1)。
  *
  * **その場に浮かぶパネル 1 枚**で、固定の区画は増やさない(要件§7.1、rules/04)。
  * 覆いを作らないので、開いている間も背後の視点操作はそのまま効く(`SettingsPanel` と同じ作り)。
@@ -46,12 +56,13 @@ import {
  * (`fileGateway.ts` の `FileKindSpec.label`、`solidSummary.ts` の
  * `IMPORTED_SOURCE_FORMAT_NAMES` と同じ扱い)。
  */
-const FORMAT_LABELS: Readonly<Record<ExportFormat, string>> = {
+const FORMAT_LABELS: Readonly<Record<ExportPanelFormat, string>> = {
   step: 'STEP',
   stl: 'STL',
   '3mf': '3MF',
   obj: 'OBJ',
   glb: 'glTF',
+  dxf: 'DXF',
 };
 
 /** なめらかさの 3 択の名前(§0.a-0.20。裏の数は見せない)。 */
@@ -68,6 +79,15 @@ const SCOPE_LABEL_KEYS: Readonly<Record<ExportScope, MessageKey>> = {
 };
 
 const SCOPES: readonly ExportScope[] = ['all', 'selected'];
+
+/**
+ * 立体の断りの文言のキーを、画面へ出す 1 文へ直す(出さないときは `null` のまま)。
+ * DXF の断りは model が文そのものを持っている(`dxfExportRefusal`)ので、
+ * **両方を「文か null か」の同じ形へそろえてから**画面へ渡す。
+ */
+function refusalTextOf(key: MessageKey | null): string | null {
+  return key === null ? null : t(key);
+}
 
 export interface ExchangePanelProps {
   /** 閉じる(「やめる」を押した / 書き出せた)。 */
@@ -108,8 +128,13 @@ export function ExchangePanel({
   const fileName = useAppStore((state) => state.fileName);
   // 3D プリントの点検の結果(FR-815、タスク42・43)。点検済みなら促す 1 行を出さない。
   const printability = useAppStore((state) => state.printability);
+  // DXF の書き出しが見るもの(§0.a-0.34)。**いま編集しているスケッチだけ**を書き出す。
+  const document = useAppStore((state) => state.document);
+  const sketch = useAppStore((state) => state.sketch);
+  const resolvedSketch = useAppStore((state) => state.resolvedSketch);
+  const workPlane = useAppStore((state) => state.workPlane);
 
-  const [format, setFormat] = useState<ExportFormat>('step');
+  const [format, setFormat] = useState<ExportPanelFormat>('step');
   const [scope, setScope] = useState<ExportScope>(DEFAULT_EXPORT_SCOPE);
   const [quality, setQuality] = useState<ExportQuality>(DEFAULT_EXPORT_QUALITY);
   const [withColors, setWithColors] = useState(DEFAULT_EXPORT_WITH_COLORS);
@@ -118,22 +143,50 @@ export function ExchangePanel({
   const [running, setRunning] = useState(false);
 
   const shape = exportPanelShape(format);
-  const request = createExportRequest(format, {
-    scope,
-    selectedFeatureIds: selectedBodyFeatureIds(selection),
-    quality,
-    /*
-      **出していない欄の指定は渡さない**(タスク45 の指摘、2026-09-06)。色の切替を
-      出していない形式(STL)へ既定の `true` を渡すと、カーネルへ「色を付けて」と
-      頼んだうえで「この形式に色はありません」と警告が返る——利用者は色の欄を
-      見ていないので直しようがない。ここで偽にしておけば、頼み事そのものが消える。
-      なめらかさ(`quality`)は依頼の欄が必須で、渡さなくても既定が入り model の
-      判定も変わらないので、そちらは `visibleExportWarnings` が警告の側を落とす。
-    */
-    withColors: shape.showsColor ? withColors : false,
-    ascii,
-  });
-  const refusalKey = exportRefusalKey(bodies, request);
+  /**
+   * 立体を書き出す形式のときだけ依頼を組む。DXF は立体を 1 つも見ない(§0.a-0.34)ので
+   * `null` にして、下の断りも実行も別の枝へ分ける。
+   */
+  const request: ExportRequest | null =
+    format === 'dxf'
+      ? null
+      : createExportRequest(format, {
+          scope,
+          selectedFeatureIds: selectedBodyFeatureIds(selection),
+          quality,
+          /*
+            **出していない欄の指定は渡さない**(タスク45 の指摘、2026-09-06)。色の切替を
+            出していない形式(STL)へ既定の `true` を渡すと、カーネルへ「色を付けて」と
+            頼んだうえで「この形式に色はありません」と警告が返る——利用者は色の欄を
+            見ていないので直しようがない。ここで偽にしておけば、頼み事そのものが消える。
+            なめらかさ(`quality`)は依頼の欄が必須で、渡さなくても既定が入り model の
+            判定も変わらないので、そちらは `visibleExportWarnings` が警告の側を落とす。
+          */
+          withColors: shape.showsColor ? withColors : false,
+          ascii,
+        });
+
+  /*
+    DXF を書き出す先の作図面(§0.a-0.34「作図面の上の 2 次元へ落とす」)。
+    **スケッチが最後に使った作図面**を使う——いまの作図面(`workPlane`)は「次に描く面」で、
+    描き終わったスケッチの面とは限らない。まだ 1 つも要素が無いスケッチだけは面を決め
+    ようがないので、いまの作図面へ落とす(そのときは書き出す図形も 0 個で断りが出る)。
+  */
+  const sketchPlaneId = workPlaneOfSketch(sketch);
+  const dxfInput: SketchToDxfInput = {
+    document: sketch,
+    resolved: resolvedSketch,
+    plane: sketchPlaneId === null ? workPlane : resolveWorkPlaneOf(document, sketchPlaneId),
+  };
+
+  /**
+   * 押す前の断り(NFR-UX-5)。立体の側は文言のキー、DXF の側は日本語の文で返るので、
+   * **画面へ出す直前に文へそろえる**(判定そのものはどちらも `exchangeFile.ts` にある)。
+   */
+  const refusal: string | null =
+    request === null
+      ? dxfExportRefusal(dxfInput, t)
+      : refusalTextOf(exportRefusalKey(bodies, request));
   /*
     3D プリント向けの形式(STL / 3MF)で、まだ一度も点検していないときの 1 行
     (FR-815、§0.53)。**判定はここ 1 か所**で、形式ごとの `if` を画面へ散らさない。
@@ -142,11 +195,15 @@ export function ExchangePanel({
   const showsPrintCheckHint = (format === 'stl' || format === '3mf') && printability === null;
 
   const submit = (): void => {
-    if (refusalKey !== null || running) {
+    if (refusal !== null || running) {
       return;
     }
     setRunning(true);
-    void runExport(deps, bodies, request, fileName).then(
+    const started =
+      request === null
+        ? runExportDxf(deps, dxfInput, fileName)
+        : runExport(deps, bodies, request, fileName);
+    void started.then(
       (outcome) => {
         setRunning(false);
         if (outcome.ok) {
@@ -198,7 +255,7 @@ export function ExchangePanel({
       <div className="pcad-exchange__group">
         <span className="pcad-exchange__label">{t('exchange.format')}</span>
         <div className="pcad-exchange__choices" role="radiogroup" aria-label={t('exchange.format')}>
-          {EXPORT_FORMAT_ORDER.map((candidate) => (
+          {EXPORT_PANEL_FORMAT_ORDER.map((candidate) => (
             <button
               key={`format-${candidate}`}
               type="button"
@@ -216,26 +273,44 @@ export function ExchangePanel({
         </div>
       </div>
 
+      {/*
+        「対象」の欄は必ず 1 つ出る。立体の形式では 2 択、DXF では「いま編集している
+        スケッチ」の 1 行になる(§0.a-0.34。選びようが無いものを選ばせない)。
+      */}
       <div className="pcad-exchange__group">
         <span className="pcad-exchange__label">{t('exchange.target')}</span>
-        <div className="pcad-exchange__choices" role="radiogroup" aria-label={t('exchange.target')}>
-          {SCOPES.map((candidate) => (
-            <button
-              key={`scope-${candidate}`}
-              type="button"
-              className="pcad-exchange__choice"
-              role="radio"
-              aria-checked={candidate === scope}
-              tabIndex={candidate === scope ? 0 : -1}
-              onClick={() => {
-                setScope(candidate);
-              }}
-            >
-              {t(SCOPE_LABEL_KEYS[candidate])}
-            </button>
-          ))}
-        </div>
+        {shape.showsBodyScope ? (
+          <div
+            className="pcad-exchange__choices"
+            role="radiogroup"
+            aria-label={t('exchange.target')}
+          >
+            {SCOPES.map((candidate) => (
+              <button
+                key={`scope-${candidate}`}
+                type="button"
+                className="pcad-exchange__choice"
+                role="radio"
+                aria-checked={candidate === scope}
+                tabIndex={candidate === scope ? 0 : -1}
+                onClick={() => {
+                  setScope(candidate);
+                }}
+              >
+                {t(SCOPE_LABEL_KEYS[candidate])}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {shape.showsSketchTarget ? (
+          <span className="pcad-exchange__value">{t('exchange.targetActiveSketch')}</span>
+        ) : null}
       </div>
+
+      {/* DXF は曲線をそのまま持てないので、押す前に知らせる(NFR-UX-5)。 */}
+      {shape.showsSketchTarget ? (
+        <p className="pcad-exchange__notice">{t('exchange.dxfCurveNotice')}</p>
+      ) : null}
 
       {/* なめらかさは三角形を使う形式のときだけ(§0.a-0.20)。 */}
       {shape.showsQuality ? (
@@ -311,14 +386,14 @@ export function ExchangePanel({
       <p className="pcad-exchange__notice">{t(shape.unitNoticeKey)}</p>
 
       {/* できないことは押す前に赤で断る(NFR-UX-5)。 */}
-      {refusalKey === null ? null : (
+      {refusal === null ? null : (
         <p className="pcad-exchange__refusal" role="alert">
-          {t(refusalKey)}
+          {refusal}
         </p>
       )}
 
       <div className="pcad-exchange__actions">
-        <button type="submit" className="pcad-button" disabled={refusalKey !== null || running}>
+        <button type="submit" className="pcad-button" disabled={refusal !== null || running}>
           {t('exchange.export')}
         </button>
         <button type="button" className="pcad-button" onClick={onClose}>

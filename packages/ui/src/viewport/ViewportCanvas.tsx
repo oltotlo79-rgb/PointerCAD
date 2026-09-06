@@ -8,10 +8,12 @@ import {
   formatDisplayLength,
   isFreeWorkPlaneId,
   parseDisplayInput,
+  resolveAssembly,
   scaleVec3,
   toDisplayLength,
   worldToPlane,
   type LengthUnit,
+  type SolidBody,
 } from '@pointercad/model';
 
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
@@ -32,7 +34,13 @@ import { decodeCanvasImage, type DecodedCanvasImage } from '../file/canvasFile.j
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
 import { resolveWorkPlaneOf } from '../sketch/referenceCommands.js';
 import { canvasPlacementOf, type CanvasDraw } from './canvasLayer.js';
+import {
+  buildAssemblyGeometry,
+  EMPTY_ASSEMBLY_GEOMETRY,
+  type AssemblyGeometryBundle,
+} from './createAssemblyLayer.js';
 import { sphereGridSphereOf, sphereGridTargetSphere } from '../sketch/sketchCommands.js';
+import { activeAssemblyDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
@@ -464,6 +472,53 @@ function sphereGridSpecOf(source: SphereGridSource): SphereGridSpec | null {
 }
 
 /**
+ * 部品の鍵 → その部品を 1 回だけ再計算した形。**まだストアに置き場が無い。**
+ *
+ * 部品ごとの再計算(鍵ごとに 1 回の `recomputePart`)はカーネル(Worker)への往復なので、
+ * 見張りの置き場はストア側(`store/attachKernel.ts` の `attachPartRecompute` と同じ形)で、
+ * それを足すのは**アセンブリへ部品を置く操作を作るタスク11**である(このタスクが触るのは
+ * 計画書のタスク10 の欄にある viewport の 3 ファイルだけ)。ここではその表を**空**のまま
+ * 渡し、形が入った時点で絵が出るようにしてある。
+ *
+ * **抱き込んだ部品の一式(`PartLibrary`)も同じ事情**で、まだストアに欄が無い。下の
+ * `resolveAssembly` はそれを渡さずに呼ぶので、配置は正しく解けるが「どの部品か」
+ * (`partKeys`)は空になり、結局まだ 1 つも描かれない。**2 つはタスク11 で一緒に入る。**
+ */
+const NO_ASSEMBLY_BODIES: ReadonlyMap<string, readonly SolidBody[]> = new Map<
+  string,
+  readonly SolidBody[]
+>();
+
+/**
+ * 配置した部品(FR-605、FR-606、P7 タスク10)をストアの状態から組み立てる。
+ *
+ * **アセンブリを開いていないあいだは空**(部品の画面では入れ物も形も 1 つも作らない)。
+ * 開いているあいだは `resolveAssembly`(model の純関数)が返す**インスタンスごとの配置**と
+ * **部品の鍵**をそのまま使う——鍵の作り方も配置の合成も model の 1 か所が正本で、
+ * 画面側で作り直さない(§0.a-0.4、§2.4)。
+ *
+ * ホバー・選択は部品の立体と同じ欄(`hoveredElementId` / `selection`)に乗る。部品の id は
+ * `component-<n>` でフィーチャーの id とは形が違うので、取り違えは起きない(§0.a-0.8)。
+ */
+function assemblyBundleOf(
+  state: ReturnType<typeof useAppStore.getState>,
+): AssemblyGeometryBundle {
+  const assembly = activeAssemblyDocument(state);
+  if (assembly === null) {
+    return EMPTY_ASSEMBLY_GEOMETRY;
+  }
+  const resolved = resolveAssembly(assembly);
+  return buildAssemblyGeometry({
+    components: assembly.components,
+    placements: resolved.placements,
+    partKeys: resolved.partKeys,
+    bodies: NO_ASSEMBLY_BODIES,
+    hoveredComponentId: state.hoveredElementId,
+    selectedComponentIds: state.selection,
+  });
+}
+
+/**
  * 3D ビューポート(FR-101、FR-102、FR-104、FR-105、FR-106、FR-108、FR-310)。
  *
  * 視点の正本は `attachCameraControls` が持ち、画面状態(投影・表示スタイル・方眼・
@@ -678,6 +733,8 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setSketch(initial.dragResolved ?? initial.resolvedSketch, initial.sketchMesh);
     scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
     scene.setBodies(initial.bodies);
+    // 配置した部品(FR-605、P7 タスク10)。アセンブリを開いていないあいだは空のまま。
+    scene.setAssembly(assemblyBundleOf(initial));
     // 外観の割り当て(FR-1106〜1109)。文書の割り当てと、カーネルが選び直した面の対応から
     // 組み立てる(P5 タスク10)。割り当てが 1 つも無ければ既定の外観 1 色になる。
     scene.setAppearance(
@@ -749,6 +806,18 @@ export function ViewportCanvas(): React.JSX.Element {
         scene.setSketchHighlight(next.hoveredElementId, next.selection);
         scene.setBodyHighlight(next.hoveredElementId, next.selection);
         scene.setSubShapeHighlight(next.hoveredElementId, next.selection);
+      }
+      /*
+        配置した部品(FR-605、タスク10)。**アセンブリ文書か強調が変わったときだけ**
+        仕分け直す(NFR-PF-1。同じ一式を渡し直すと層は並びを触らないが、ここで毎回
+        作り直すと参照が変わってその約束が効かなくなる)。
+      */
+      if (
+        next.assembly !== previous.assembly ||
+        next.hoveredElementId !== previous.hoveredElementId ||
+        next.selection !== previous.selection
+      ) {
+        scene.setAssembly(assemblyBundleOf(next));
       }
       /*
         切断面の予告(FR-432、タスク27e)。**材料が変わったときだけ**組み立て直す

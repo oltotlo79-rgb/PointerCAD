@@ -46,6 +46,11 @@ import {
 import type { ConstraintMark } from '../sketch/constraintPicking.js';
 import { constraintKindSymbol } from '../sketch/constraintSummary.js';
 import { createCanvasLayer, type CanvasDraw } from './canvasLayer.js';
+import {
+  createAssemblyLayer,
+  EMPTY_ASSEMBLY_GEOMETRY,
+  type AssemblyGeometryBundle,
+} from './createAssemblyLayer.js';
 import { createConstraintLayer } from './createConstraintLayer.js';
 import { createMeasureLayer, type MeasurementState } from './createMeasureLayer.js';
 import { createReferenceLayer } from './createReferenceLayer.js';
@@ -120,6 +125,15 @@ export interface ViewportScene {
   /** ソリッドの表示を差し替える(FR-105)。ボディの id はフィーチャーの id(§0.a-0.5)。 */
   setBodies(bodies: readonly SolidBody[]): void;
   /**
+   * 配置した部品の表示を差し替える(FR-605、P7 タスク10)。
+   *
+   * 渡すのは `createAssemblyLayer.ts` の `buildAssemblyGeometry` が仕分けた一式で、
+   * **形は部品の鍵ごとに 1 つ**・配置は置いた数だけ入っている(§0.a-0.4)。
+   * `EMPTY_ASSEMBLY_GEOMETRY` を渡すと消える(アセンブリを開いていないあいだの値)。
+   * **同じ一式(同一参照)を渡し直したときは並びを触らない**(NFR-PF-1)。
+   */
+  setAssembly(bundle: AssemblyGeometryBundle): void;
+  /**
    * 外観の割り当てを差し替える(FR-1106〜1109、P5 タスク10)。文書の割り当てと、
    * カーネルが選び直した面の対応から `createSolidLayer.ts` の `buildAppearanceInput` が
    * 組み立てたものを渡す。`null` で「割り当て無し」(既定の外観 1 色)に戻る。
@@ -186,6 +200,11 @@ export interface ViewportScene {
    * (FR-106)。透視投影でも平行投影でも、最後に描いたカメラで判定する。
    */
   pickBody(screenX: number, screenY: number): string | null;
+  /**
+   * 画面座標にある部品(アセンブリのインスタンス)の id。無ければ null(FR-106)。
+   * **非表示にした部品には当たらない**(`createAssemblyLayer.ts` の `pickComponent`)。
+   */
+  pickComponent(screenX: number, screenY: number): string | null;
   /**
    * 画面座標のところにある面。当たった三角形の番号を、そのボディの面ごとの範囲表で
    * 面の通し番号へ直して返す(`pickSubShape.ts` の `faceIndexOfTriangle`)。当たらなければ
@@ -538,6 +557,17 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   scene.add(solidLayer.group);
 
   /*
+    配置した部品(FR-605、P7 タスク10)。**部品の立体とは別の層**にする——1 つの窓で開く
+    文書は 1 つだけ(§0.a-0.10)なので同時には出ないが、形の持ち方が違う(立体は
+    フィーチャーごとに 1 つ、アセンブリは**部品の鍵ごとに 1 つを全インスタンスで共有**)
+    ため、同じ入れ物に混ぜると共有の判断が 2 通りに割れる。
+    **断面表示のクリッピング平面(FR-111)は配らない**——部品を開いているあいだの機能で、
+    アセンブリの断面表示は P7 の以後の段が要るときに配る。
+  */
+  const assemblyLayer = createAssemblyLayer();
+  scene.add(assemblyLayer.group);
+
+  /*
     下絵の画像(FR-332、P6 タスク39)。**スケッチの線より必ず後ろ**に描く(§0.a-0.46)ので、
     読む順も層の前後にそろえてスケッチの層より前に足す(実際の前後は足した順ではなく
     `canvasLayer.ts` の `CANVAS_RENDER_ORDER`(-2)が決める)。
@@ -626,6 +656,12 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let solidBundle = EMPTY_SOLID_GEOMETRY;
 
   /**
+   * 配置した部品(FR-605、タスク10)。アセンブリを開いていないあいだは空のまま
+   * (形も入れ物も 1 つも作らないので費用はゼロ)。
+   */
+  let assemblyBundle: AssemblyGeometryBundle = EMPTY_ASSEMBLY_GEOMETRY;
+
+  /**
    * 映り込み用の環境マップ(FR-1107、§0.a-0.9)。**鏡・ガラスを 1 つでも使っているときだけ
    * 作り、使わなくなったら捨てる**(NFR-PF-5)。レンダラを持っているのはここだけなので、
    * 作る・捨てるの判断もここで行い、`createSolidLayer` へはできあがったものを渡す。
@@ -706,6 +742,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     solidLayer.updateThreadMarks(threadMarks);
     solidLayer.updateCutPreview(cutPreview);
     solidLayer.updateSphereGrid(sphereGridPositions);
+    // 配置した部品(FR-605)。同じ一式を渡し直したときは並びを触らない(NFR-PF-1)。
+    assemblyLayer.update(assemblyBundle, displayStyle);
     sketchLayer.update(sketchBundle, displayStyle);
     // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す(P4 仕上げ (f))。
     // ズームでカメラ距離が変わるたびに効くよう、描画のたびに計算し直す。
@@ -795,6 +833,12 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       threadMarks = collectThreadMarks(bodies);
     },
 
+    setAssembly(bundle): void {
+      // 仕分け(どの形をいくつ置くか)は純関数が済ませてある。ここは覚えるだけで、
+      // 入れ物への流し込みは次に描くとき(`drawScene`)に 1 回だけ行う。
+      assemblyBundle = bundle;
+    },
+
     setBodyHighlight(nextHovered, nextSelected): void {
       hoveredBodyId = nextHovered;
       selectedBodyIds = nextSelected;
@@ -870,6 +914,15 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       return solidLayer.pickBody(raycaster);
     },
 
+    pickComponent(screenX, screenY): string | null {
+      if (lastCamera === null) {
+        return null;
+      }
+      pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
+      raycaster.setFromCamera(pointerNdc, lastCamera);
+      return assemblyLayer.pickComponent(raycaster);
+    },
+
     pickFaceAt(screenX, screenY): { readonly featureId: string; readonly faceIndex: number } | null {
       if (lastCamera === null) {
         return null;
@@ -917,6 +970,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       rebuildGrid(currentSpacing);
       skyLight.groundColor.setHex(colors.sceneGround);
       solidLayer.setThemeColors(colors);
+      assemblyLayer.setThemeColors(colors);
       sketchLayer.setThemeColors(colors);
       referenceLayer.setThemeColors(colors);
       trackingLayer.setThemeColors(colors);
@@ -1015,6 +1069,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       // 環境マップはレンダーターゲット 1 枚ぶんの資源なので、画面ごと閉じるときに捨てる。
       environments.dispose();
       solidLayer.dispose();
+      // 配置した部品の共有の形と材質も、画面ごと閉じるときに必ず捨てる(P5 §7.3)。
+      assemblyLayer.dispose();
       // 下絵はテクスチャを持つ(P5 §4)ので、画面ごと閉じるときに必ず捨てる。
       canvasLayer.dispose();
       sketchLayer.dispose();

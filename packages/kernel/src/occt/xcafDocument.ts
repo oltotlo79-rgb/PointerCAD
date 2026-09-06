@@ -9,7 +9,8 @@ import type {
 
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
-import { INVALID_EXPORT_COLOR_MESSAGE } from './exchangeShared.js';
+import type { FaceColorMap } from './xcafFaceColors.js';
+import { applyFaceColors, checkExportColor, checkFaceColors } from './xcafFaceColors.js';
 
 /**
  * 書き出し用の文書(XCAF)の組み立て(計画書 P6 §2.5、タスク7。FR-803 / FR-804 / FR-1106)。
@@ -20,7 +21,9 @@ import { INVALID_EXPORT_COLOR_MESSAGE } from './exchangeShared.js';
  * **構造は平ら**にする(§0.a-0.11)。「部品 1 つ = ラベル 1 つ」を並べるだけで、
  * 入れ子の組み立て(アセンブリ)は P7 へ送る。`AddShape` の `makeAssembly` は false。
  *
- * **色は立体ごと**(§0.a-0.22)。面ごとの色はタスク7b で足す。
+ * **色は立体ごとと面ごとの両方**(§0.a-0.22)。面ごとの色は `xcafFaceColors.ts` が受け持ち、
+ * ここは `XcafShapeEntry.faceColors` を渡すだけ(タスク7b)。**面の割り当てが立体より優先**する
+ * ——立体の色を先に載せ、そのあとで面の色を上書きする順に呼ぶ(§2.5.1)。
  *
  * ---
  *
@@ -54,13 +57,28 @@ export interface XcafShapeEntry {
   readonly name: string | null;
   /** 立体の色。`null` なら色を付けない。 */
   readonly color: RgbTuple | null;
+  /**
+   * 面ごとの色(**面の通し番号 → 色**。§2.5.1、タスク7b)。**省略できる。**
+   *
+   * 省略したときと空の表を渡したときは、面の色を足す前とまったく同じ文書になる
+   * (タスク7 と同じバイト列。回帰を出さないことを検査で固定してある)。
+   * 選び直せなかった面(`faceIndex: null`)は**表に載せない**約束で、
+   * 載っていない面は立体の色(または既定の色)のままになる。
+   */
+  readonly faceColors?: FaceColorMap;
 }
 
 /** 組み立てた文書。使い終わったら必ず `delete()` する。 */
 export interface XcafDocument {
   /** 書き手(`STEPCAFControl_Writer` など)へ渡す文書の取っ手。 */
   readonly handle: Handle_TDocStd_Document;
-  /** 立体ごとのラベル。並びは渡した一覧と同じ(タスク7b の面ごとの色が使う)。 */
+  /**
+   * 立体ごとのラベル。並びは渡した一覧と同じ。
+   *
+   * 面ごとの色(タスク7b)は**これを使わない**——`SetColor_5` に面そのものを渡せば
+   * 色が付くことを実測で確かめたため(`xcafFaceColors.ts` の冒頭 ①)。
+   * 名前・可視性など「ラベルに載る属性」を足すときのためにそのまま返している。
+   */
   readonly labels: readonly TDF_Label[];
   /** 色を 1 つでも実際に載せられたか。列挙が取れない環境では false になる。 */
   readonly colorWritten: boolean;
@@ -125,8 +143,14 @@ function isColorType(value: unknown): value is XCAFDoc_ColorType {
   return typeof value === 'object' && value !== null;
 }
 
-/** 色を載せるのに要る 2 つの列挙値。 */
-interface ColorEnums {
+/**
+ * 色を載せるのに要る 2 つの列挙値。
+ *
+ * **輸出しているのは `xcafFaceColors.ts`(面ごとの色)へ渡すため。** 述語ガードは
+ * このファイルの 1 か所だけに置く決まり(§0.a-0.17)なので、絞り込んだ**値のほう**を
+ * 手渡す。面ごとの色の側では列挙を作らない(ガードを増やさない)。
+ */
+export interface ColorEnums {
   /** 渡す 3 つの値を「sRGB のまま」と解釈させる指定。 */
   readonly typeOfColor: Quantity_TypeOfColor;
   /** 面の色として載せる指定。 */
@@ -157,15 +181,6 @@ function resolveColorEnums(oc: OpenCascadeInstance): ColorEnums | null {
   return { typeOfColor, colorType };
 }
 
-/** 色の 3 つの値が 0〜1 の有限の数であることを確かめる。違えば日本語の理由で断る。 */
-function checkColor(color: RgbTuple): void {
-  for (const value of color) {
-    if (!Number.isFinite(value) || value < 0 || value > 1) {
-      throw new Error(INVALID_EXPORT_COLOR_MESSAGE);
-    }
-  }
-}
-
 /**
  * 立体の一覧から XCAF の文書を 1 つ組み立てる(§2.5)。
  *
@@ -189,9 +204,13 @@ export function buildXcafDocument(
   if (entries.length === 0) {
     throw new Error(NO_SHAPE_MESSAGE);
   }
+  // 形へ 1 つも触れないうちに色の値を全部確かめる(途中まで組んでから断らない)。
   for (const entry of entries) {
     if (entry.color !== null) {
-      checkColor(entry.color);
+      checkExportColor(entry.color);
+    }
+    if (entry.faceColors !== undefined) {
+      checkFaceColors(entry.faceColors);
     }
   }
 
@@ -234,6 +253,22 @@ export function buildXcafDocument(
           ),
         );
         if (colorTool.SetColor_5(entry.shape, color, palette.colorType)) {
+          colorWritten = true;
+        }
+      }
+
+      // 面の色は立体の色より**あと**に載せる(面の割り当てが立体より優先する。§2.5.1)。
+      // 表が無い/空のときは 1 度も呼ばないので、面の色を足す前と同じ文書になる。
+      if (palette !== null && entry.faceColors !== undefined && entry.faceColors.size > 0) {
+        const applied = applyFaceColors(
+          oc,
+          colorTool,
+          entry.shape,
+          entry.faceColors,
+          palette,
+          keep,
+        );
+        if (applied > 0) {
           colorWritten = true;
         }
       }

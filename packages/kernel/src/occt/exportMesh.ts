@@ -46,6 +46,7 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import { createAllocations } from './allocations.js';
+import type { FaceTriangleRange } from './tessellate.js';
 import { tessellate } from './tessellate.js';
 
 /** 偏差(mm)が正の有限な数でないときの断り(FR-504、NFR-UX-5)。 */
@@ -81,15 +82,26 @@ export interface ExportMeshOptions {
  * `SurfaceMesh` に合わせたためで、STL / glTF / 3MF がどれも 32 ビットの浮動小数で
  * 座標を持つので、ここで 64 ビットにしても書き出す段で落ちる。
  *
- * 面ごとの範囲表(`SurfaceMesh.faceRanges`)は入れていない。タスク11 の受け渡しの
- * 約束が「位置・法線・添字・三角形の数」の 4 つだからで、面ごとの色(タスク13b・14b)が
- * 要るようになったら `tessellate` が既に返している範囲表をここへ足すだけで済む。
+ * 面ごとの範囲表(`SurfaceMesh.faceRanges`)は**タスク13b で足した**。面ごとの色
+ * (`writeCafMesh.ts` / `packages/io` の 3MF)が「どの三角形がどの面のものか」を要るためで、
+ * `tessellate` が既に返しているものをそのまま持ち上げただけである。
  */
 export interface ExportMesh {
   readonly positions: Float32Array;
   readonly normals: Float32Array;
   readonly indices: Uint32Array;
   readonly triangleCount: number;
+  /**
+   * `TopExp.MapShapes_2` の順に並ぶ、面ごとの三角形の範囲(タスク13b。§0.a-0.22)。
+   * 通し番号は `subShapes.ts` の `faceAt` と同じで、`buildExportMesh` は必ず入れる。
+   *
+   * **省略できる形にしてあるのは、B-rep の面を持たない三角形の束があるため。**
+   * 読み込んだファイル(`readStl` / `readCafMesh`)や、複数の立体を 1 本に連ねた網
+   * (`worker/kernelApi.ts` の `mergeExportMeshes`)には面の区切りが無い。
+   * **省略されているのに面ごとの色を頼まれたら、書き手は日本語の理由で断る**
+   * (黙って立体ごとの色にすると、利用者からは色が消えたように見える)。
+   */
+  readonly faceRanges?: readonly FaceTriangleRange[];
 }
 
 /**
@@ -153,6 +165,7 @@ export function buildExportMesh(
       normals: surface.normals,
       indices: surface.indices,
       triangleCount: surface.triangleCount,
+      faceRanges: surface.faceRanges,
     };
   } finally {
     // 複製・copier は必ずここで捨てる。成功しても失敗しても持ち帰らない

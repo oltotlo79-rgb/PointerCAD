@@ -4,8 +4,11 @@ import { expectWithinBudget } from '../testUtils/perfBudget.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import type { OcctShapeHandle } from './makeBox.js';
+import { readStep } from './readStep.js';
+import { measureVolume } from './solidMesh.js';
 import type { StepWriteEntry } from './writeStep.js';
 import { writeStep } from './writeStep.js';
+import type { RgbTuple } from './xcafDocument.js';
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -276,6 +279,206 @@ describe('STEP の書き出し(P6 タスク7)', () => {
       for (const handle of handles) {
         handle.delete();
       }
+    }
+  });
+});
+
+describe('STEP の面ごとの色(P6 タスク7b、§2.5.1・§1.5-29)', () => {
+  /** 面の色の表を組み立てる。 */
+  function faceColors(entries: readonly (readonly [number, RgbTuple])[]): ReadonlyMap<number, RgbTuple> {
+    return new Map<number, RgbTuple>(entries);
+  }
+
+  /** `#cc4444` を 255 で割った値(計画書の検証表の色)。純色ではないので COLOUR_RGB で書かれる。 */
+  const CC4444: RgbTuple = [204 / 255, 68 / 255, 68 / 255];
+
+  /** 6 面すべて別の色。 */
+  const SIX_DISTINCT = faceColors([
+    [0, [0.1, 0.2, 0.3]],
+    [1, [0.2, 0.3, 0.4]],
+    [2, [0.3, 0.4, 0.5]],
+    [3, [0.4, 0.5, 0.6]],
+    [4, [0.5, 0.6, 0.7]],
+    [5, [0.6, 0.7, 0.8]],
+  ]);
+
+  /** 6 面のうち先頭 3 面が同じ色(色の種類は 4)。 */
+  const THREE_SHARED = faceColors([
+    [0, [0.1, 0.2, 0.3]],
+    [1, [0.1, 0.2, 0.3]],
+    [2, [0.1, 0.2, 0.3]],
+    [3, [0.4, 0.5, 0.6]],
+    [4, [0.5, 0.6, 0.7]],
+    [5, [0.6, 0.7, 0.8]],
+  ]);
+
+  it('1 面だけを赤にすると STYLED_ITEM が 2 行になる(立体の色 + 面 1 枚。§1.5-29 の実測)', () => {
+    const handle = box(20);
+    try {
+      const { bytes, colorWritten } = writeStep(oc, [
+        {
+          shape: handle.shape,
+          name: '本体',
+          color: [0.72, 0.75, 0.8],
+          faceColors: faceColors([[0, CC4444]]),
+        },
+      ]);
+      const text = decode(bytes);
+      // STYLED_ITEM は「色を割り当てた相手の数」= 立体 1 + 色を付けた面 1。
+      expect(countOf(text, 'STYLED_ITEM')).toBe(2);
+      // COLOUR_RGB は「色の種類の数」= 立体の色 + 面の色。
+      expect(countOf(text, 'COLOUR_RGB')).toBe(2);
+      // #cc4444 は純色ではないので、名前つきの色(赤など)には置き換わらない。
+      expect(countOf(text, 'DRAUGHTING_PRE_DEFINED_COLOUR')).toBe(0);
+      expect(text).toContain('0.800000');
+      expect(colorWritten).toBe(true);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('立体の色を渡さずに 1 面だけ色を付けると STYLED_ITEM も COLOUR_RGB も 1 行', () => {
+    const handle = box(20);
+    try {
+      const { bytes } = writeStep(oc, [
+        { shape: handle.shape, name: null, color: null, faceColors: faceColors([[0, CC4444]]) },
+      ]);
+      const text = decode(bytes);
+      expect(countOf(text, 'STYLED_ITEM')).toBe(1);
+      expect(countOf(text, 'COLOUR_RGB')).toBe(1);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('6 面すべてを別の色にすると STYLED_ITEM も COLOUR_RGB も 6 行', () => {
+    const handle = box(20);
+    try {
+      const { bytes } = writeStep(oc, [
+        { shape: handle.shape, name: null, color: null, faceColors: SIX_DISTINCT },
+      ]);
+      const text = decode(bytes);
+      expect(countOf(text, 'STYLED_ITEM')).toBe(6);
+      expect(countOf(text, 'COLOUR_RGB')).toBe(6);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('6 面のうち 3 面が同じ色なら STYLED_ITEM は 6・COLOUR_RGB は 4(同じ色は 1 つに束ねられる)', () => {
+    const handle = box(20);
+    try {
+      const { bytes } = writeStep(oc, [
+        { shape: handle.shape, name: null, color: null, faceColors: THREE_SHARED },
+      ]);
+      const text = decode(bytes);
+      expect(countOf(text, 'STYLED_ITEM')).toBe(6);
+      expect(countOf(text, 'COLOUR_RGB')).toBe(4);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('面の色を渡さなければタスク7 と同じバイト列になる(時刻の行を除く。回帰を出さない)', () => {
+    const handle = box(20);
+    try {
+      const base: StepWriteEntry = { shape: handle.shape, name: '本体', color: [0.72, 0.75, 0.8] };
+      const withEmpty: StepWriteEntry = { ...base, faceColors: new Map<number, RgbTuple>() };
+      const first = decode(writeStep(oc, [base]).bytes).split(/\r?\n/);
+      const second = decode(writeStep(oc, [withEmpty]).bytes).split(/\r?\n/);
+      expect(second).toHaveLength(first.length);
+      const differing: number[] = [];
+      for (let index = 0; index < first.length; index += 1) {
+        if (first[index] !== second[index]) {
+          differing.push(index + 1);
+        }
+      }
+      expect(differing.filter((line) => line !== 4)).toEqual([]);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('面の色の並べ方を変えてもバイト列が変わらない(面の通し番号の昇順にたどる)', () => {
+    const handle = box(20);
+    try {
+      const ascending: StepWriteEntry = {
+        shape: handle.shape,
+        name: '本体',
+        color: null,
+        faceColors: SIX_DISTINCT,
+      };
+      const shuffled: StepWriteEntry = {
+        shape: handle.shape,
+        name: '本体',
+        color: null,
+        faceColors: new Map([...SIX_DISTINCT].reverse()),
+      };
+      const first = decode(writeStep(oc, [ascending]).bytes).split(/\r?\n/);
+      const second = decode(writeStep(oc, [shuffled]).bytes).split(/\r?\n/);
+      expect(second).toHaveLength(first.length);
+      const differing: number[] = [];
+      for (let index = 0; index < first.length; index += 1) {
+        if (first[index] !== second[index]) {
+          differing.push(index + 1);
+        }
+      }
+      expect(differing.filter((line) => line !== 4)).toEqual([]);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('色を書かない指定なら面の色も出ない(§0.a-0.22 の「画面から外せる」)', () => {
+    const handle = box(20);
+    try {
+      const { bytes, colorWritten } = writeStep(
+        oc,
+        [{ shape: handle.shape, name: null, color: null, faceColors: SIX_DISTINCT }],
+        { withColors: false },
+      );
+      const text = decode(bytes);
+      expect(countOf(text, 'STYLED_ITEM')).toBe(0);
+      expect(countOf(text, 'COLOUR_RGB')).toBe(0);
+      expect(colorWritten).toBe(false);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('面の通し番号が範囲の外なら日本語の理由で断る(NFR-RE-1)', () => {
+    const handle = box(20);
+    try {
+      expect(() =>
+        writeStep(oc, [
+          { shape: handle.shape, name: null, color: null, faceColors: faceColors([[6, CC4444]]) },
+        ]),
+      ).toThrow('色を付ける面が見つかりません(面の番号 6)。');
+      // 断ったあとも同じ形をふつうに書き出せる(仮想ファイルも控えも残っていない)。
+      expect(writeStep(oc, [{ shape: handle.shape, name: null, color: null }]).bytes.length).toBeGreaterThan(1000);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('面ごとに色を付けた STEP を読み直すと形が保たれる(体積 8000)', () => {
+    const handle = box(20);
+    try {
+      const { bytes } = writeStep(oc, [
+        { shape: handle.shape, name: '本体', color: [0.72, 0.75, 0.8], faceColors: SIX_DISTINCT },
+      ]);
+      const read = readStep(oc, bytes);
+      try {
+        expect(read.bodies).toHaveLength(1);
+        expect(measureVolume(oc, read.bodies[0].shape)).toBeCloseTo(8000, 3);
+        // **`readStep` が返すのは立体ごとの色だけ**(面ごとの色の取り込みは §0.a-0.28 で
+        // P7 以降へ送った)。面の色はファイルに残っているが、この口からは戻らない。
+        expect(read.bodies[0].color).not.toBeNull();
+      } finally {
+        read.delete();
+      }
+    } finally {
+      handle.delete();
     }
   });
 });

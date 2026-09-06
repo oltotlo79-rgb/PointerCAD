@@ -11,7 +11,7 @@ import { CAF_MESH_NO_SHAPE_MESSAGE, readCafMesh } from './readCafMesh.js';
 import { faceAt } from './subShapes.js';
 import { makeCompound } from './transformShape.js';
 import type { CafMeshBody } from './writeCafMesh.js';
-import { DEFAULT_BODY_COLOR, writeCafMesh } from './writeCafMesh.js';
+import { DEFAULT_BODY_COLOR, MESH_NO_FACE_RANGES_MESSAGE, writeCafMesh } from './writeCafMesh.js';
 import { forEachExportTriangle, writeStl } from './writeStl.js';
 import type { RgbTuple } from './xcafDocument.js';
 
@@ -559,5 +559,244 @@ describe('OBJ / glTF の書き出し(FR-803 / FR-1106、P6 タスク13)', () => 
         part.delete();
       }
     }
+  });
+});
+
+describe('OBJ / glTF の面ごとの色(P6 タスク13b、§0.a-0.22)', () => {
+  /** 面の色の表を組み立てる。 */
+  function faceColorsOf(
+    entries: readonly (readonly [number, RgbTuple])[],
+  ): ReadonlyMap<number, RgbTuple> {
+    return new Map<number, RgbTuple>(entries);
+  }
+
+  /** 6 面すべて別の色。 */
+  const SIX_DISTINCT = faceColorsOf([
+    [0, [0.1, 0.2, 0.3]],
+    [1, [0.2, 0.3, 0.4]],
+    [2, [0.3, 0.4, 0.5]],
+    [3, [0.4, 0.5, 0.6]],
+    [4, [0.5, 0.6, 0.7]],
+    [5, [0.6, 0.7, 0.8]],
+  ]);
+
+  /** 6 面のうち先頭 3 面が同じ色(色の種類は 4)。 */
+  const THREE_SHARED = faceColorsOf([
+    [0, [0.1, 0.2, 0.3]],
+    [1, [0.1, 0.2, 0.3]],
+    [2, [0.1, 0.2, 0.3]],
+    [3, [0.4, 0.5, 0.6]],
+    [4, [0.5, 0.6, 0.7]],
+    [5, [0.6, 0.7, 0.8]],
+  ]);
+
+  /** glb の JSON の中の材質の数(材質が必ず 1 つずつ持つ欄で数える)。 */
+  function materialCount(json: string): number {
+    return countOccurrences(json, '"pbrMetallicRoughness"');
+  }
+
+  /** glb の JSON の中の描き単位(primitive)の数。 */
+  function primitiveCount(json: string): number {
+    return countOccurrences(json, '"mode":4');
+  }
+
+  it('6 面を別の色にすると glb の materials が 6・primitives が 6 になる(三角形は 12 のまま)', () => {
+    const mesh = boxMesh();
+    const { files, triangleCount, droppedTriangleCount } = writeCafMesh(
+      [{ mesh, name: '本体', color: null, faceColors: SIX_DISTINCT }],
+      { format: 'gltf' },
+    );
+    const glb = splitGlb(files[0].bytes);
+    // 材質は「実際に使った色」だけ。6 面すべてに色を付けたので立体の色の材質は作らない。
+    expect(materialCount(glb.json)).toBe(6);
+    expect(primitiveCount(glb.json)).toBe(6);
+    // 面ごとに切っても三角形は増えない(箱は 12 枚のまま)。
+    expect(triangleCount).toBe(12);
+    expect(droppedTriangleCount).toBe(0);
+    console.log(
+      `[実測] 箱の 6 面別色 .glb: materials ${String(materialCount(glb.json))} / primitives ${String(primitiveCount(glb.json))} / 三角形 ${String(triangleCount)} 枚 / ${String(files[0].bytes.length)} バイト`,
+    );
+  });
+
+  it('同じ表を .obj へ書くと usemtl が 6 回・newmtl が 6 つ', () => {
+    const mesh = boxMesh();
+    const { files, triangleCount } = writeCafMesh(
+      [{ mesh, name: '本体', color: null, faceColors: SIX_DISTINCT }],
+      { format: 'obj' },
+    );
+    const objText = decode(files[0].bytes);
+    const mtlText = decode(files[1].bytes);
+    expect(countLinesStartingWith(objText, 'usemtl')).toBe(6);
+    expect(countLinesStartingWith(mtlText, 'newmtl')).toBe(6);
+    // `f` の行は面ごとに 2 枚ずつ、合わせて 12 行のまま。
+    expect(countLinesStartingWith(objText, 'f')).toBe(12);
+    expect(triangleCount).toBe(12);
+    // MTL の `Kd` は sRGB のまま(面の色も立体の色と同じ扱い)。
+    expect(mtlText).toContain('Kd 0.100000 0.200000 0.300000');
+    expect(mtlText).toContain('Kd 0.600000 0.700000 0.800000');
+    console.log(`[実測] 箱の 6 面別色 .mtl:\n${mtlText.trimEnd()}`);
+  });
+
+  it('6 面のうち 3 面が同じ色なら材質は 4 つ(同じ色を 1 つの区間へまとめる)', () => {
+    const mesh = boxMesh();
+    const glb = writeCafMesh([{ mesh, name: null, color: null, faceColors: THREE_SHARED }], {
+      format: 'gltf',
+    });
+    const json = splitGlb(glb.files[0].bytes).json;
+    expect(materialCount(json)).toBe(4);
+    expect(primitiveCount(json)).toBe(4);
+
+    const obj = writeCafMesh([{ mesh, name: null, color: null, faceColors: THREE_SHARED }], {
+      format: 'obj',
+    });
+    expect(countLinesStartingWith(decode(obj.files[1].bytes), 'newmtl')).toBe(4);
+    expect(countLinesStartingWith(decode(obj.files[0].bytes), 'usemtl')).toBe(4);
+    // 同じ色にした 3 面の三角形は 1 つの区間へまとまる。合計の枚数は変わらない。
+    expect(obj.triangleCount).toBe(12);
+  });
+
+  it('色を付けなかった面は立体の色になる(面の割り当てが立体より優先する)', () => {
+    const mesh = boxMesh();
+    const partial = faceColorsOf([
+      [0, [0.1, 0.2, 0.3]],
+      [1, [0.1, 0.2, 0.3]],
+      [2, [0.1, 0.2, 0.3]],
+    ]);
+    const glb = writeCafMesh([{ mesh, name: null, color: [0.9, 0.9, 0.9], faceColors: partial }], {
+      format: 'gltf',
+    });
+    const json = splitGlb(glb.files[0].bytes).json;
+    // 面の色 1 種 + 色を付けなかった 3 面ぶんの立体の色 = 材質 2。
+    expect(materialCount(json)).toBe(2);
+    expect(primitiveCount(json)).toBe(2);
+    const obj = writeCafMesh([{ mesh, name: null, color: [0.9, 0.9, 0.9], faceColors: partial }], {
+      format: 'obj',
+    });
+    const mtlText = decode(obj.files[1].bytes);
+    expect(mtlText).toContain('Kd 0.100000 0.200000 0.300000');
+    expect(mtlText).toContain('Kd 0.900000 0.900000 0.900000');
+  });
+
+  it('面が 1 枚しかない球へ面の色を渡すと材質は 1 つ', () => {
+    const handle = makePrimitive(oc, primitiveAt({ kind: 'sphere', radius: 10 }));
+    try {
+      const mesh = buildExportMesh(oc, handle.shape, 0.1);
+      expect(mesh.faceRanges).toHaveLength(1);
+      const glb = writeCafMesh(
+        [{ mesh, name: null, color: null, faceColors: faceColorsOf([[0, [0.2, 0.4, 0.6]]]) }],
+        { format: 'gltf' },
+      );
+      const json = splitGlb(glb.files[0].bytes).json;
+      expect(materialCount(json)).toBe(1);
+      expect(primitiveCount(json)).toBe(1);
+      const factor = numbersOf(json, 'baseColorFactor');
+      expect(factor[0]).toBeCloseTo(expectedLinear(0.2), 12);
+      expect(factor[1]).toBeCloseTo(expectedLinear(0.4), 12);
+      expect(factor[2]).toBeCloseTo(expectedLinear(0.6), 12);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('面の色を渡さない/空の表を渡すとタスク13 と同じバイト列になる(回帰を出さない)', () => {
+    const mesh = boxMesh();
+    for (const format of ['obj', 'gltf'] as const) {
+      const base = writeCafMesh([{ mesh, name: '本体', color: [0.2, 0.4, 0.6] }], { format });
+      const empty = writeCafMesh(
+        [{ mesh, name: '本体', color: [0.2, 0.4, 0.6], faceColors: new Map<number, RgbTuple>() }],
+        { format },
+      );
+      expect(empty.files).toHaveLength(base.files.length);
+      for (let index = 0; index < base.files.length; index += 1) {
+        expect(empty.files[index].fileName).toBe(base.files[index].fileName);
+        expect(Array.from(empty.files[index].bytes)).toEqual(Array.from(base.files[index].bytes));
+      }
+      expect(empty.triangleCount).toBe(base.triangleCount);
+      expect(empty.droppedTriangleCount).toBe(base.droppedTriangleCount);
+    }
+  });
+
+  it('面の色の並べ方を変えてもバイト列が変わらない(面の通し番号の昇順にたどる)', () => {
+    const mesh = boxMesh();
+    const reversed = new Map([...SIX_DISTINCT].reverse());
+    for (const format of ['obj', 'gltf'] as const) {
+      const ascending = writeCafMesh(
+        [{ mesh, name: '本体', color: null, faceColors: SIX_DISTINCT }],
+        { format },
+      );
+      const shuffled = writeCafMesh([{ mesh, name: '本体', color: null, faceColors: reversed }], {
+        format,
+      });
+      for (let index = 0; index < ascending.files.length; index += 1) {
+        expect(Array.from(shuffled.files[index].bytes)).toEqual(
+          Array.from(ascending.files[index].bytes),
+        );
+      }
+    }
+  });
+
+  it('面ごとに色を付けた OBJ / glb を読み直すと三角形 12 枚・体積 8000 に戻る(往復)', () => {
+    const mesh = boxMesh();
+    const bodies: readonly CafMeshBody[] = [
+      { mesh, name: '本体', color: null, faceColors: SIX_DISTINCT },
+    ];
+    const obj = writeCafMesh(bodies, { format: 'obj' });
+    const readObj = readCafMesh(oc, obj.files[0].bytes, { format: 'obj' });
+    expect(readObj.triangleCount).toBe(12);
+    expect(Math.abs(readObj.volume - 8000)).toBeLessThan(1e-3);
+
+    const glb = writeCafMesh(bodies, { format: 'gltf' });
+    const readGlb = readCafMesh(oc, glb.files[0].bytes, { format: 'gltf' });
+    expect(readGlb.triangleCount).toBe(12);
+    expect(Math.abs(readGlb.volume - 8000)).toBeLessThan(1e-3);
+  });
+
+  it('面の区切りを持たない網へ面の色を渡すと日本語の理由で断る', () => {
+    const source = boxMesh();
+    // 読み込んだファイルの網や、複数の立体を連ねた網には B-rep の面の区切りが無い。
+    const withoutRanges: ExportMesh = {
+      positions: source.positions,
+      normals: source.normals,
+      indices: source.indices,
+      triangleCount: source.triangleCount,
+    };
+    expect(() =>
+      writeCafMesh([{ mesh: withoutRanges, name: null, color: null, faceColors: SIX_DISTINCT }], {
+        format: 'obj',
+      }),
+    ).toThrow(MESH_NO_FACE_RANGES_MESSAGE);
+    expect(MESH_NO_FACE_RANGES_MESSAGE).toBe(
+      'この形には面の区切りが無いので、面ごとの色を書き出せません。',
+    );
+    // 面の色を渡さなければ、面の区切りが無くてもこれまでどおり書ける。
+    expect(
+      writeCafMesh([{ mesh: withoutRanges, name: null, color: null }], { format: 'obj' })
+        .triangleCount,
+    ).toBe(12);
+  });
+
+  it('面の通し番号が範囲の外・負なら日本語の理由で断る', () => {
+    const mesh = boxMesh();
+    expect(() =>
+      writeCafMesh([{ mesh, name: null, color: null, faceColors: faceColorsOf([[6, [0, 0, 0]]]) }], {
+        format: 'gltf',
+      }),
+    ).toThrow('色を付ける面が見つかりません(面の番号 6)。');
+    expect(() =>
+      writeCafMesh(
+        [{ mesh, name: null, color: null, faceColors: faceColorsOf([[-1, [0, 0, 0]]]) }],
+        { format: 'gltf' },
+      ),
+    ).toThrow('色を付ける面が見つかりません(面の番号 -1)。');
+  });
+
+  it('面の色の値が 0〜1 の外なら断る(立体の色と同じ判定)', () => {
+    const mesh = boxMesh();
+    expect(() =>
+      writeCafMesh(
+        [{ mesh, name: null, color: null, faceColors: faceColorsOf([[0, [1.5, 0, 0]]]) }],
+        { format: 'obj' },
+      ),
+    ).toThrow('書き出しの色の値が正しくありません。');
   });
 });

@@ -48,7 +48,23 @@ import { buildXcafDocument } from './xcafDocument.js';
  * - 所要は 20³ の箱 1 つで約 100ms、箱 10 個で **494ms**(§2.17-1 の上限 5 秒に対して十分速い)。
  */
 
-/** STEP へ書き出す立体 1 つぶん(組み立ての依頼と同じ形)。 */
+/**
+ * STEP へ書き出す立体 1 つぶん(組み立ての依頼と同じ形)。
+ *
+ * **面ごとの色(タスク7b)もここを通る。** `XcafShapeEntry` に省略できる `faceColors`
+ * (面の通し番号 → 色)が入っており、この別名がそのまま同じ形なので、
+ * `writeStep` の側には 1 行の分岐も要らない(`buildXcafDocument` が
+ * `xcafFaceColors.ts` の `applyFaceColors` を呼ぶ)。
+ *
+ * ```ts
+ * writeStep(oc, [{ shape, name: '本体', color: null, faceColors: new Map([[0, [0.8, 0.27, 0.27]]]) }]);
+ * ```
+ *
+ * **実測(2026-09-06、タスク7b):** 20³ の箱の 1 面だけを `#cc4444` にすると
+ * `STYLED_ITEM` が 1 行・`COLOUR_RGB` が 1 行(立体の色も付ければどちらも 2)。
+ * `STYLED_ITEM` は**色を割り当てた相手の数**、`COLOUR_RGB` は**色の種類の数**で、
+ * 同じ色を何面へ付けても色は 1 つに束ねられる(`xcafFaceColors.ts` の実測の表)。
+ */
 export type StepWriteEntry = XcafShapeEntry;
 
 /** 書き出しの細かい指定。 */

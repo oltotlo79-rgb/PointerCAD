@@ -174,6 +174,38 @@ describe('書き出し用の三角形の作り直し(FR-803、タスク11)', () 
     }
   });
 
+  it('面ごとの三角形の範囲(faceRanges)を返す(タスク13b。面ごとの色が使う)', () => {
+    const handle = makeBox(oc, { dx: BOX_SIZE, dy: BOX_SIZE, dz: BOX_SIZE });
+    try {
+      const mesh = buildExportMesh(oc, handle.shape, 0.1);
+      const faceRanges = mesh.faceRanges ?? [];
+      // 箱の面は 6 枚。並びは `TopExp.MapShapes_2`(= `subShapes.ts` の `faceAt`)と同じ。
+      expect(faceRanges).toHaveLength(6);
+      // 範囲は隙間なく前から並び、合計が三角形の枚数になる(面 1 枚あたり 2 枚)。
+      let expectedOffset = 0;
+      for (const range of faceRanges) {
+        expect(range.triangleOffset).toBe(expectedOffset);
+        expect(range.triangleCount).toBe(2);
+        expectedOffset += range.triangleCount;
+      }
+      expect(expectedOffset).toBe(mesh.triangleCount);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('faceRanges は tessellate の返す範囲とそのまま同じ(写しを作っていない)', () => {
+    const handle = makePrimitive(oc, primitiveAt({ kind: 'sphere', radius: 10 }));
+    try {
+      const mesh = buildExportMesh(oc, handle.shape, 0.1, { angularDeflectionRad: 0.2 });
+      // 球の B-rep の面は 1 枚(継ぎ目は辺であって面ではない)。
+      expect(mesh.faceRanges).toHaveLength(1);
+      expect(mesh.faceRanges?.[0]).toEqual({ triangleOffset: 0, triangleCount: mesh.triangleCount });
+    } finally {
+      handle.delete();
+    }
+  });
+
   it('20³ の箱の三角形からの体積が 8000 と一致する(平面だけなので厳密)', () => {
     const handle = makeBox(oc, { dx: BOX_SIZE, dy: BOX_SIZE, dz: BOX_SIZE });
     try {

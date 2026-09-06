@@ -1,8 +1,14 @@
-import { INVALID_EXPORT_COLOR_MESSAGE } from './exchangeShared.js';
 import type { ExportMesh } from './exportMesh.js';
 import type { CafMeshFormat } from './readCafMesh.js';
 import { DEGENERATE_CROSS_LENGTH_MM2 } from './writeStl.js';
 import type { RgbTuple } from './xcafDocument.js';
+import type { FaceColorMap } from './xcafFaceColors.js';
+import {
+  checkExportColor,
+  checkFaceColors,
+  exportColorKey,
+  faceColorNotFoundMessage,
+} from './xcafFaceColors.js';
 
 /**
  * OBJ / glTF(.glb)の書き出し(計画書 P6 §2.4・§2.5、タスク13。FR-803 / FR-1106)。
@@ -55,13 +61,27 @@ import type { RgbTuple } from './xcafDocument.js';
  * `NaN`** になって、どの道具でも開けないファイルになる(`writeStl.ts` が `NaN` の法線を
  * 書かないのと同じ理由)。振り直しは 1 回の走査で済み、ファイルも小さくなる。
  *
- * ## 面ごとの色(タスク13b)への備え
+ * ## 面ごとの色(タスク13b、§0.a-0.22)
  *
  * 立体 1 つは「材質の添字 + 添字配列の範囲」の**区間の並び**(`MeshSection`)として
- * 書き出す。いまは立体ごとに区間 1 つだが、`tessellate` が既に返している面ごとの範囲
- * (`SurfaceMesh.faceRanges`)を `ExportMesh` に足せば、**区間を面ごとに切って材質を
- * 変えるだけ**で面ごとの色になる(OBJ は `usemtl` が区間ごとに増え、glTF は
- * `primitives` が区間ごとに分かれる)。書き出しの本体はそのままで済む。
+ * 書き出す。`CafMeshBody.faceColors`(面の通し番号 → 色)を渡すと、`ExportMesh.faceRanges`
+ * (タスク13b で足した、`tessellate` が元から返している面ごとの範囲)で添字を切り分け、
+ * **同じ色の面を 1 つの区間へまとめる。** OBJ は `usemtl` が区間ごとに増え、glTF は
+ * `primitives` が区間ごとに分かれる。書き出しの本体(`writeObjText` / `writeGlbBytes`)は
+ * 1 行も変えていない——区間の並びを作る `prepareScene` だけが広がった。
+ *
+ * **決まりごと(2026-09-06 実測で確定):**
+ *
+ * - **区間の並びは面の通し番号の昇順**(同じ色が初めて出た面の番号の順)。同じ表からは
+ *   必ず同じバイト列になる(§0.a-0.62)。
+ * - **材質は「実際に使った色」だけ作る。** 6 面すべてに色を付ければ材質は 6 つで、
+ *   立体の色ぶんの材質は作らない(誰も指していない材質をファイルへ書かない、という
+ *   もとからの決まり——`prepareScene` の注釈)。色を付けなかった面が 1 枚でもあれば、
+ *   その面のぶんとして立体の色の材質が 1 つできる。
+ * - **面の色は立体の色より優先する**(§2.5.1)。
+ * - **面の色を渡さない/空の表を渡したときは、タスク13 とまったく同じバイト列。**
+ * - 面積 0 の三角形の落とし方と未参照頂点の振り直しは**面ごとに切っても変わらない**
+ *   (`compactIndices` を面の範囲ごとに呼び、`compactVertices` は元から複数区間を前提)。
  */
 
 /** 書き出す立体 1 つぶん。 */
@@ -72,6 +92,14 @@ export interface CafMeshBody {
   readonly name: string | null;
   /** 立体の色(sRGB の 0〜1)。`null` なら既定の色(`DEFAULT_BODY_COLOR`)。 */
   readonly color: RgbTuple | null;
+  /**
+   * 面ごとの色(**面の通し番号 → 色**。§2.5.1、タスク13b)。**省略できる。**
+   *
+   * 通し番号は `mesh.faceRanges`(= `subShapes.ts` の `faceAt`)と同じ並び。
+   * 載っていない面は立体の色になる。**`mesh.faceRanges` が無い網へ渡すと日本語の
+   * 理由で断る**(`MESH_NO_FACE_RANGES_MESSAGE`)。
+   */
+  readonly faceColors?: FaceColorMap;
 }
 
 /** 書き出しの細かい指定。 */
@@ -172,8 +200,7 @@ const GLTF_MODE_TRIANGLES = 4;
 /**
  * 立体 1 つの中の「材質 1 つぶんの区間」。
  *
- * いまは立体ごとに 1 つだけ作る。面ごとの色(タスク13b)は、ここを面の範囲で
- * 切り分けるだけで済む(冒頭の注釈)。
+ * 面の色が無ければ立体ごとに 1 つ。面の色があれば**使った色の数だけ**並ぶ(冒頭の注釈)。
  */
 interface MeshSection {
   /** 材質の並びの中の位置。 */
@@ -196,7 +223,7 @@ interface PreparedBody {
   readonly triangleCount: number;
 }
 
-/** 材質 1 つ(いまは立体ごとに 1 つ)。 */
+/** 材質 1 つ(立体ごとに 1 つ。面の色があれば、その立体で使った色の数だけ)。 */
 interface PreparedMaterial {
   /** 材質の名前(OBJ の `newmtl` / `usemtl` に出る)。 */
   readonly name: string;
@@ -212,14 +239,15 @@ interface PreparedScene {
   readonly droppedTriangleCount: number;
 }
 
-/** 色の 3 つの値が 0〜1 の有限の数であることを確かめる(`xcafDocument.ts` と同じ判定)。 */
-function checkColor(color: RgbTuple): void {
-  for (const value of color) {
-    if (!Number.isFinite(value) || value < 0 || value > 1) {
-      throw new Error(INVALID_EXPORT_COLOR_MESSAGE);
-    }
-  }
-}
+/**
+ * 面ごとの色を頼まれたのに、三角形の網が面の区切り(`ExportMesh.faceRanges`)を
+ * 持っていないときの断り(NFR-RE-1、FR-504)。
+ *
+ * 読み込んだファイルの網や、複数の立体を 1 本に連ねた網には B-rep の面の区切りが無い。
+ * **黙って立体ごとの色へ落とすと、利用者からは「面の色が消えた」ように見える**ので断る。
+ */
+export const MESH_NO_FACE_RANGES_MESSAGE =
+  'この形には面の区切りが無いので、面ごとの色を書き出せません。';
 
 /**
  * sRGB(0〜1)を線形の値へ直す(計画書 §2.5 の検証表)。
@@ -359,12 +387,114 @@ function compactVertices(
   };
 }
 
+/** 材質を割り当てる前の区間(色そのものを持つ)。 */
+interface RawSection {
+  /** この区間の色(sRGB の 0〜1)。 */
+  readonly color: RgbTuple;
+  /** 面積 0 の三角形を落としたあとの添字(3 個ずつ、元の頂点番号のまま)。 */
+  readonly indices: Uint32Array;
+}
+
+/**
+ * 添字の切れ端を 1 本に連ねる。1 本しか無ければ写さずそのまま返す
+ * (面の色を渡さない道で余計な写しを作らない = タスク13 と同じバイト列)。
+ */
+function concatIndices(parts: readonly Uint32Array[]): Uint32Array {
+  if (parts.length === 1) {
+    return parts[0];
+  }
+  let total = 0;
+  for (const part of parts) {
+    total += part.length;
+  }
+  const joined = new Uint32Array(total);
+  let cursor = 0;
+  for (const part of parts) {
+    joined.set(part, cursor);
+    cursor += part.length;
+  }
+  return joined;
+}
+
+/**
+ * 立体 1 つを、色ごとの区間へ切り分ける(タスク13b)。
+ *
+ * 面の色が無ければ**立体まるごとで 1 区間**——タスク13 とまったく同じ道を通る。
+ * 面の色があれば `mesh.faceRanges` で面ごとに切り、**同じ色の面を 1 つの区間へまとめる**
+ * (区間の並びは、その色が初めて出た面の通し番号の昇順)。
+ */
+function splitBody(body: CafMeshBody): {
+  readonly sections: readonly RawSection[];
+  readonly dropped: number;
+} {
+  const bodyColor = body.color ?? DEFAULT_BODY_COLOR;
+  checkExportColor(bodyColor);
+
+  const faceColors = body.faceColors;
+  if (faceColors === undefined || faceColors.size === 0) {
+    const { kept, dropped } = compactIndices(
+      body.mesh.positions,
+      body.mesh.indices,
+      0,
+      body.mesh.indices.length,
+    );
+    return { sections: kept.length === 0 ? [] : [{ color: bodyColor, indices: kept }], dropped };
+  }
+
+  checkFaceColors(faceColors);
+  const faceRanges = body.mesh.faceRanges;
+  if (faceRanges === undefined) {
+    throw new Error(MESH_NO_FACE_RANGES_MESSAGE);
+  }
+  for (const faceIndex of faceColors.keys()) {
+    if (faceIndex >= faceRanges.length) {
+      throw new Error(faceColorNotFoundMessage(faceIndex));
+    }
+  }
+
+  // 色の値を鍵にした表。`Map` は入れた順を覚えるので、面の通し番号の昇順にたどれば
+  // 区間の並びも決まる(§0.a-0.62 の決定性)。
+  const groups = new Map<string, { readonly color: RgbTuple; readonly parts: Uint32Array[] }>();
+  let dropped = 0;
+  for (const [faceIndex, range] of faceRanges.entries()) {
+    // 表に載っていない面は立体の色(面の割り当てが立体より優先する。§2.5.1)。
+    const color = faceColors.get(faceIndex) ?? bodyColor;
+    const start = range.triangleOffset * 3;
+    const compacted = compactIndices(
+      body.mesh.positions,
+      body.mesh.indices,
+      start,
+      start + range.triangleCount * 3,
+    );
+    dropped += compacted.dropped;
+    if (compacted.kept.length === 0) {
+      continue;
+    }
+    const key = exportColorKey(color);
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, { color, parts: [compacted.kept] });
+    } else {
+      group.parts.push(compacted.kept);
+    }
+  }
+
+  return {
+    sections: [...groups.values()].map((group) => ({
+      color: group.color,
+      indices: concatIndices(group.parts),
+    })),
+    dropped,
+  };
+}
+
 /**
  * 立体の一覧を、書き出せる形へ整える(OBJ と glTF が共用する 1 か所)。
  *
  * **三角形が 1 枚も残らない立体は落とす。** glTF は添字が 0 個の accessor を許さず、
  * OBJ も面の無い `o` の塊に意味が無い。落とした立体のぶんは材質も作らないので、
- * `usemtl` / `newmtl` / `materials` の数は**実際に書いた立体の数**と必ず一致する。
+ * `usemtl` / `newmtl` / `materials` の数は**実際に書いた区間の数**と必ず一致する
+ * (面の色が無ければ立体の数と同じ。誰も指していない材質は 1 つも書かない)。
  */
 function prepareScene(bodies: readonly CafMeshBody[]): PreparedScene {
   const prepared: PreparedBody[] = [];
@@ -373,33 +503,29 @@ function prepareScene(bodies: readonly CafMeshBody[]): PreparedScene {
   let droppedTriangleCount = 0;
 
   for (const [index, body] of bodies.entries()) {
-    const color = body.color ?? DEFAULT_BODY_COLOR;
-    checkColor(color);
-
-    const materialIndex = materials.length;
-    // 面ごとの色(タスク13b)は、ここを面の範囲ごとの繰り返しへ広げる(冒頭の注釈)。
-    const { kept, dropped } = compactIndices(
-      body.mesh.positions,
-      body.mesh.indices,
-      0,
-      body.mesh.indices.length,
-    );
-    droppedTriangleCount += dropped;
-    if (kept.length === 0) {
+    const split = splitBody(body);
+    droppedTriangleCount += split.dropped;
+    if (split.sections.length === 0) {
       continue;
     }
 
     // 材質の名前は通し番号で作る。立体の名前をそのまま使うと、日本語や空白を含む名前が
     // OBJ の `usemtl`(空白で区切る 1 語)を壊す。名前は `o` の行のほうへ出す。
-    materials.push({ name: `material_${String(materialIndex + 1)}`, color });
+    const rawSections: readonly MeshSection[] = split.sections.map((section) => {
+      const materialIndex = materials.length;
+      materials.push({ name: `material_${String(materialIndex + 1)}`, color: section.color });
+      return { materialIndex, indices: section.indices };
+    });
+
     const name =
       body.name !== null && body.name.trim() !== ''
         ? body.name.replace(/\s+/gu, ' ').trim()
         : `body_${String(index + 1)}`;
-    const bodyTriangles = kept.length / 3;
+    let bodyTriangles = 0;
+    for (const section of rawSections) {
+      bodyTriangles += section.indices.length / 3;
+    }
     triangleCount += bodyTriangles;
-    // いまは立体ごとに区間 1 つ。面ごとの色(タスク13b)はここへ区間を並べるだけで済む。
-    const rawSections: readonly MeshSection[] = [{ materialIndex, indices: kept }];
     const compacted = compactVertices(
       body.mesh,
       rawSections.map((section) => section.indices),

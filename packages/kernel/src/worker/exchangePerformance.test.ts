@@ -3,8 +3,30 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import { writeStl } from '../occt/writeStl.js';
 import { expectWithinBudget } from '../testUtils/perfBudget.js';
-import type { CurveSpec, ShapeExportItem, SolidStepRequest } from '../types.js';
+import type { CurveSpec, ShapeExportItem, ShapeInspectRequest, SolidStepRequest } from '../types.js';
 import { createKernelApi, type KernelApi } from './kernelApi.js';
+
+/**
+ * `KernelApi.inspectPrintability` を呼ぶ薄い橋渡し。
+ *
+ * **メソッドを変数へ取り出さず、`target.inspectPrintability(...)` の形で直に呼ぶ**
+ * (`const { inspectPrintability } = target` のように切り出すと `this` の束縛が外れる形に
+ * なり `@typescript-eslint/unbound-method` に引っかかる。既存の呼び出しがすべて
+ * `api.recomputeSolids(...)` のようにメンバ式のまま呼んでいるのと同じ流儀)。
+ *
+ * `inspectPrintability` はいま任意の欄(`kernelApi.ts` の注釈。model の偽物との互換の
+ * ための経過措置)。`createKernelApi` は必ず実装するので、無ければ検査の前提が崩れている
+ * ——`!` で握りつぶさず、理由が分かる例外にして落とす。
+ */
+async function runInspectPrintability(
+  target: KernelApi,
+  request: ShapeInspectRequest,
+): Promise<ReturnType<NonNullable<KernelApi['inspectPrintability']>>> {
+  if (target.inspectPrintability === undefined) {
+    throw new Error('createKernelApi は inspectPrintability を必ず実装するはず');
+  }
+  return target.inspectPrintability(request);
+}
 
 /*
  * 書き出し・読み込みの性能(NFR-PF、計画書 P6 §2.17 の #1〜#5)の検査。
@@ -29,7 +51,7 @@ import { createKernelApi, type KernelApi } from './kernelApi.js';
  * | 2.17-3 | 10 万三角形の STL 書き出し | 2 秒 | `occt/writeStl.test.ts`(作り直し + バイト列) |
  * | 2.17-4 | 10 万三角形の STL 読み込み | 2 秒 | `occt/readStl.test.ts` |
  * | 2.17-5 | 10 万三角形の 3MF 書き出し | 3 秒 | **`packages/io` の `threemf/writeThreeMf.test.ts` が丸ごと測る。** kernel の受け持ちは三角形の取り出しまでなので、そのぶんだけを同じ 3 秒の枠で測る |
- * | 2.17-9 | 面 200 枚・三角形 5 万の 3D プリント点検 | 5 秒 | **タスク42 が未着手なので書かない**(測る相手がまだ無い) |
+ * | 2.17-9 | 面 200 枚・三角形 5 万の 3D プリント点検 | 5 秒 | タスク42 後半で実装。`KernelApi.inspectPrintability` 1 回の所要(球 200 個・偏差 0.6mm → 61,200 枚。§2.16 の見積もりでは 100ms 未満、実測 114〜128ms。タスク42 前半の `occt/inspectPrintability.test.ts` の見本を流用) |
  *
  * ## §2.17-3 の導出の訂正(統括へ)
  *
@@ -52,6 +74,9 @@ const STL_IMPORT_LIMIT_MS = 2000;
 
 /** §2.17-5「10 万三角形の 3MF 書き出しは 3 秒以内」。**この数値は緩めない。** */
 const THREE_MF_LIMIT_MS = 3000;
+
+/** §2.17-9「面 200 枚・三角形 5 万の 3D プリント点検は 5 秒以内」。**この数値は緩めない。** */
+const PRINTABILITY_INSPECT_LIMIT_MS = 5000;
 
 /** §2.17-1 が言う「100 フィーチャー部品」の段数。 */
 const FEATURE_COUNT = 100;
@@ -129,6 +154,42 @@ function buildSphereSteps(): SolidStepRequest[] {
 /** 段の並びを、書き出しの依頼に載せる立体の並びへ写す(名前も色も要らない形式のため)。 */
 function toExportItems(steps: readonly SolidStepRequest[]): ShapeExportItem[] {
   return steps.map((step) => ({ bodyKey: step.key, name: null, color: null }));
+}
+
+/**
+ * 点検の性能検査(§2.17-9)で使う球の数・偏差・格子の並べ方。
+ *
+ * タスク42 前半の `occt/inspectPrintability.test.ts` の性能検査と同じ見本(球 200 個・
+ * 偏差 0.6mm → 1 個 306 枚 × 200 = 61,200 枚)を流用するが、**ここで測るのは
+ * 「配線ごと」の所要**(このファイルの冒頭の注釈のとおり)なので、球は `recomputeSolids`
+ * で 200 段として作り、`KernelApi.inspectPrintability` に段のキャッシュの鍵で渡す。
+ */
+const INSPECT_SPHERE_COUNT = 200;
+const INSPECT_SPHERE_RADIUS_MM = 10;
+const INSPECT_SPHERE_PITCH_MM = 25;
+const INSPECT_SPHERE_COLUMNS = 20;
+const INSPECT_DEVIATION_MM = 0.6;
+
+/** 200 個ぶんの球を 20 × 10 の格子に並べる(半径 10・間隔 25 で隙間 5mm、重ならない)。 */
+function buildInspectSphereSteps(): SolidStepRequest[] {
+  return Array.from({ length: INSPECT_SPHERE_COUNT }, (_unused, index) => ({
+    key: `perf-inspect-sphere-${String(index + 1)}`,
+    id: `球${String(index + 1)}`,
+    label: `球${String(index + 1)}`,
+    visible: true,
+    step: {
+      kind: 'primitive',
+      origin: [
+        (index % INSPECT_SPHERE_COLUMNS) * INSPECT_SPHERE_PITCH_MM,
+        Math.floor(index / INSPECT_SPHERE_COLUMNS) * INSPECT_SPHERE_PITCH_MM,
+        0,
+      ],
+      axis: [0, 0, 1],
+      shape: { kind: 'sphere', radius: INSPECT_SPHERE_RADIUS_MM },
+      originQuery: null,
+      targetKey: null,
+    },
+  }));
 }
 
 describe('書き出し・読み込みの性能(NFR-PF、計画書 §2.17)', () => {
@@ -288,6 +349,58 @@ describe('書き出し・読み込みの性能(NFR-PF、計画書 §2.17)', () =
         meshMs,
         THREE_MF_LIMIT_MS,
         '10 万三角形の 3MF 用の三角形の取り出し(§2.17-5 の kernel 側)',
+      );
+    });
+  });
+
+  describe('面 200 枚・三角形 5 万の 3D プリント点検(§2.17-9)', () => {
+    const api: KernelApi = createKernelApi(loadOcctForNode);
+    const steps = buildInspectSphereSteps();
+    const items = toExportItems(steps);
+
+    let elapsedMs = 0;
+    let triangleCount = 0;
+    let watertight = false;
+    let thinCount = 0;
+
+    beforeAll(async () => {
+      await loadOcctForNode();
+      // 捨て計算・捨て点検(初回呼び出しの遅延を計測から外す。上の describe と同じ理由)。
+      const warmUp = steps.slice(0, 1);
+      await api.recomputeSolids({ steps: warmUp, generation: 0 });
+      await runInspectPrintability(api, {
+        bodies: toExportItems(warmUp),
+        deviationMm: INSPECT_DEVIATION_MM,
+      });
+
+      // 200 段を作って形状キャッシュへ預ける。**この時間は測らない**——測るのは
+      // 「もう出来上がっている 200 個の球を 1 回の呼び出しで連ねて点検する」ぶんだけ。
+      const built = await api.recomputeSolids({ steps, generation: 1 });
+      expect(built.failures).toEqual([]);
+
+      const request: ShapeInspectRequest = { bodies: items, deviationMm: INSPECT_DEVIATION_MM };
+      const startedAt = performance.now();
+      const result = await runInspectPrintability(api, request);
+      elapsedMs = performance.now() - startedAt;
+      triangleCount = result.triangleCount;
+      watertight = result.summary.watertight;
+      thinCount = result.summary.thinCount;
+
+      console.log(
+        `[実測] 球 ${String(INSPECT_SPHERE_COUNT)} 個(面 ${String(INSPECT_SPHERE_COUNT)} 枚)偏差 ${String(INSPECT_DEVIATION_MM)}mm の 3D プリント点検: 三角形 ${String(triangleCount)} 枚を ${elapsedMs.toFixed(1)} ms(上限 ${String(PRINTABILITY_INSPECT_LIMIT_MS)} ms)、閉じている: ${String(watertight)}`,
+      );
+    });
+
+    it(`面 200 枚・三角形 5 万の 3D プリント点検が ${PRINTABILITY_INSPECT_LIMIT_MS} ms 以内(§2.17-9)`, () => {
+      // 5 万枚に届いていること(枚数が足りないまま速い、を防ぐ)。
+      expect(triangleCount).toBeGreaterThanOrEqual(50_000);
+      // 200 個の球はそれぞれ閉じており、互いに 5mm の隙間があって触れていない。
+      expect(watertight).toBe(true);
+      expect(thinCount).toBe(0);
+      expectWithinBudget(
+        elapsedMs,
+        PRINTABILITY_INSPECT_LIMIT_MS,
+        '面 200 枚・三角形 5 万の 3D プリント点検(§2.17-9)',
       );
     });
   });

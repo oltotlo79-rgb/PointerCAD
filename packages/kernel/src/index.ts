@@ -431,3 +431,31 @@ export type {
 // 読み込んだ形のベースボディの段(FR-802、§2.8、タスク10)。model 側(タスク20)が
 // `shapeRef` を鍵にしてこの段を組み立てる。
 export type { ImportedSolidStepSpec } from './types.js';
+// 3D プリント向けの点検(FR-815、NFR-PF-4、P6 §0.51・§2.16、タスク42)。
+//
+// 依頼の型(`ShapeInspectRequest`)は書き出しと同じ鍵の一覧を使い回すので `types.ts` から、
+// 点検そのものの型と純関数は `occt/inspectPrintability.ts` が正本なのでそこから輸出する。
+// **`inspectPrintability` という名前は `KernelApi` のメソッド名とも同じだが、衝突しない。**
+// メソッドは `KernelApi` インターフェース経由(`api.inspectPrintability(...)`)でしか
+// 呼ばれず、トップレベルの輸出には現れない(`KernelApi` 型そのものしか輸出しない)ため、
+// ここで輸出するのは occt 側の純関数そのままでよい。
+export type { ShapeInspectRequest } from './types.js';
+export {
+  inspectPrintability,
+  printabilityFlagByteLength,
+  readPrintabilityFlag,
+  BUILD_PLATE_TOLERANCE_MM,
+  DEFAULT_MIN_THICKNESS_MM,
+  DEFAULT_OVERHANG_ANGLE_DEG,
+  PRINTABILITY_MIN_THICKNESS_MESSAGE,
+  PRINTABILITY_NO_TRIANGLE_MESSAGE,
+  PRINTABILITY_OVERHANG_ANGLE_MESSAGE,
+  type PrintabilityCancelToken,
+  type PrintabilityHooks,
+  type PrintabilityOptions,
+  type PrintabilityPhase,
+  type PrintabilityProgress,
+  type PrintabilityProgressCallback,
+  type PrintabilityResult,
+  type PrintabilitySummary,
+} from './occt/inspectPrintability.js';

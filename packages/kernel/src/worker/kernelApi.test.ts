@@ -1,18 +1,49 @@
 import { describe, expect, it } from 'vitest';
 
+import type {
+  PrintabilityCancelToken,
+  PrintabilityProgressCallback,
+  PrintabilityResult,
+} from '../occt/inspectPrintability.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import type {
   CurveSpec,
   HoleStepSpec,
   PlaneCurve,
   ShapeExportItem,
+  ShapeInspectRequest,
   SketchPlaneFrame,
   SolidBodyMesh,
   SolidProgress,
   SolidStepRequest,
   SubShapeQuery,
 } from '../types.js';
-import { createKernelApi } from './kernelApi.js';
+import { createKernelApi, type KernelApi } from './kernelApi.js';
+
+/**
+ * `KernelApi.inspectPrintability` を呼ぶ薄い橋渡し。
+ *
+ * **メソッドを変数へ取り出さず、`target.inspectPrintability(...)` の形で直に呼ぶ**
+ * (`const { inspectPrintability } = target` のように切り出すと、`this` の束縛が
+ * 外れる形になり `@typescript-eslint/unbound-method` に引っかかる。既存の呼び出しが
+ * すべて `api.recomputeSolids(...)` のようにメンバ式のまま呼んでいるのと同じ流儀)。
+ *
+ * `inspectPrintability` はいま任意の欄(`kernelApi.ts` の注釈。model の
+ * `measureBridge.test.ts` の偽物との互換のための経過措置)。`createKernelApi` は
+ * 必ず実装するので、無ければテストの前提そのものが崩れている——`!` で握りつぶさず、
+ * 理由が分かる例外にして落とす。
+ */
+async function runInspectPrintability(
+  target: KernelApi,
+  request: ShapeInspectRequest,
+  onProgress?: PrintabilityProgressCallback,
+  shouldCancel?: PrintabilityCancelToken,
+): Promise<PrintabilityResult> {
+  if (target.inspectPrintability === undefined) {
+    throw new Error('createKernelApi は inspectPrintability を必ず実装するはず');
+  }
+  return target.inspectPrintability(request, onProgress, shouldCancel);
+}
 
 /** XY 平面の 10×10 の正方形を、隣り合う頂点をつなぐ 4 本の線分で表す。 */
 const SQUARE_CURVES: readonly CurveSpec[] = [
@@ -1390,5 +1421,73 @@ describe('KernelApi', () => {
     await expect(api.importShape({ format: 'stl', bytes: empty })).rejects.toThrow(
       'この形には面がありません。',
     );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 3D プリント向けの点検(FR-815、NFR-PF-4、P6 §0.51・§2.16、タスク42)。
+  //
+  // ここは**配線だけ**を確かめる(段のキャッシュの鍵から立体を引けること、進捗・中止の
+  // 口が Comlink 越しと同じ形で効くこと)。判定そのもの(最小肉厚・オーバーハング・
+  // 水密性の中身)は `occt/inspectPrintability.test.ts` が実 OCCT でくわしく確かめ済み。
+  // ---------------------------------------------------------------------------
+
+  it('板 1 つの点検は水密・薄い三角形 0 で返る(FR-815)', async () => {
+    await buildPlate('api-inspect-box');
+    const result = await runInspectPrintability(api, {
+      bodies: [exportItem('api-inspect-box')],
+      deviationMm: 0.1,
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.summary.watertight).toBe(true);
+    expect(result.summary.thinCount).toBe(0);
+    // 板は 40×30×10。最小肉厚のしきい値の既定(0.8mm)よりずっと厚い。
+    expect(result.summary.minThicknessFoundMm).not.toBeNull();
+    expect(result.summary.minThicknessFoundMm ?? 0).toBeGreaterThan(0.8);
+  });
+
+  it('shouldCancel が true を返すと、途中で打ち切って cancelled: true を返す(NFR-PF-4)', async () => {
+    await buildPlate('api-inspect-cancel');
+    const result = await runInspectPrintability(
+      api,
+      { bodies: [exportItem('api-inspect-cancel')], deviationMm: 0.1 },
+      undefined,
+      () => true,
+    );
+
+    expect(result.cancelled).toBe(true);
+  });
+
+  it('鍵が形状キャッシュに無い立体を点検しようとすると、日本語の理由で断る', async () => {
+    await expect(
+      runInspectPrintability(api, {
+        bodies: [exportItem('api-inspect-missing')],
+        deviationMm: 0.1,
+      }),
+    ).rejects.toThrow('もとになる立体が見つかりませんでした。もう一度計算し直してください。');
+  });
+
+  it('進捗の ratio は段が進むにつれて単調に増える(NFR-PF-4)', async () => {
+    await buildPlate('api-inspect-progress');
+    const progress: number[] = [];
+    const result = await runInspectPrintability(
+      api,
+      { bodies: [exportItem('api-inspect-progress')], deviationMm: 0.1 },
+      (value) => {
+        progress.push(value.ratio);
+      },
+    );
+
+    expect(result.cancelled).toBe(false);
+    expect(progress.length).toBeGreaterThan(0);
+    // 段の境目(例: watertight の終わり 0.1 と overhang の始まり 0.1)は、
+    // `PHASE_WEIGHTS` の式を通る側と定数のまま返る側とで浮動小数の丸めが 1 ビットだけ
+    // 食い違うことがある(実測: 0.1 と 0.10000000000000002)。「単調に増える」の主張は
+    // 段の中の傾向であって最終ビットの一致ではないので、極小の許容を入れて比べる。
+    const MONOTONIC_EPSILON = 1e-9;
+    for (let index = 1; index < progress.length; index += 1) {
+      expect(progress[index]).toBeGreaterThanOrEqual(progress[index - 1] - MONOTONIC_EPSILON);
+    }
+    expect(progress[progress.length - 1]).toBeCloseTo(1, 6);
   });
 });

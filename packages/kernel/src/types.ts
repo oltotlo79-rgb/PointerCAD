@@ -1555,6 +1555,32 @@ export type ShapeExportResult =
   | { readonly format: 'brep'; readonly bodies: readonly ShapeExportBrepBody[] };
 
 /**
+ * 3D プリント向けの点検の依頼(FR-815、NFR-PF-4、P6 §0.51・§2.16、タスク42)。
+ *
+ * **対象は書き出しと同じ `ShapeExportItem[]`。** 点検も「段のキャッシュの鍵から立体を引き、
+ * `buildExportMesh` で三角形を作り直す」という書き出しの `'mesh'` とまったく同じ道を通る
+ * (`occt/inspectPrintability.ts` の冒頭「書き出す形と同じものを点検できる」)ので、名前も
+ * 色も使わないが**別の型を作らず** `ShapeExportItem` をそのまま使い回す
+ * (`resolveExportShapes` / `buildExportMeshes` を書き出しと共有できる。同じ約束を
+ * 2 か所に書かない、§0.a-0.2 の流儀)。
+ *
+ * **品質(偏差)の対は `ShapeExportMeshQuality` を継承する。** `'mesh'` 形式の書き出しの依頼
+ * (`ShapeExportRequest` の `'mesh'` の枝)と同じ 2 欄(`deviationMm` / `angularDeflectionRad`)
+ * を持ち、意味も既定もまったく同じにする。
+ *
+ * **複数ボディを指定すると、三角形を 1 つに連ねてから点検する**(水密性・肉厚とも
+ * 「ボディをまたいだ 1 つの形」として測る。`worker/kernelApi.ts` の実装)。
+ */
+export interface ShapeInspectRequest extends ShapeExportMeshQuality {
+  /** 点検する立体。書き出しと同じ鍵の一覧(名前・色は使わない)。 */
+  readonly bodies: readonly ShapeExportItem[];
+  /** 最小肉厚のしきい値(mm)。省略すると `DEFAULT_MIN_THICKNESS_MM`(occt 側の既定)。 */
+  readonly minThicknessMm?: number;
+  /** オーバーハングの角度のしきい値(度)。省略すると `DEFAULT_OVERHANG_ANGLE_DEG`。 */
+  readonly overhangAngleDeg?: number;
+}
+
+/**
  * 読み込みの依頼(FR-802)。書き出しと同じく**依頼の中の `format` で判別する**。
  *
  * `'step'` / `'stl'` / `'obj'` / `'gltf'` はファイルから読む口、`'brep'` は `.pcad` に

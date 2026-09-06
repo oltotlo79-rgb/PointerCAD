@@ -4,6 +4,14 @@ import { readBrepBytes, writeBrepBytes } from '../occt/brepBytes.js';
 import type { ImportedMeshData } from '../occt/exchangeShared.js';
 import type { ExportMesh } from '../occt/exportMesh.js';
 import { buildExportMesh } from '../occt/exportMesh.js';
+// 窓口の名前(KernelApi.inspectPrintability)と実体の名前が同じなので、実体は別名で取り込む
+// (recomputeSolids と同じ流儀)。
+import {
+  inspectPrintability as runInspectPrintability,
+  type PrintabilityCancelToken,
+  type PrintabilityProgressCallback,
+  type PrintabilityResult,
+} from '../occt/inspectPrintability.js';
 import { makeOffsetWire } from '../occt/makeOffsetWire.js';
 import { distanceBetween, measureMassProperties } from '../occt/measureShape.js';
 import { makePlanarFace } from '../occt/makePlanarFace.js';
@@ -33,6 +41,7 @@ import type {
   ShapeImportBody,
   ShapeImportRequest,
   ShapeImportResult,
+  ShapeInspectRequest,
   SketchOffsetFailure,
   SketchOffsetOutcome,
   SketchOffsetRequest,
@@ -201,6 +210,45 @@ function buildExportMeshes(
   );
 }
 
+/**
+ * 書き出し用の三角形を 1 つの網に連ねる(3D プリント点検、FR-815、タスク42)。
+ *
+ * **`inspectPrintability`(`occt/inspectPrintability.ts`)は `ExportMesh` を 1 つしか
+ * 受け取らない。** 複数ボディを指定したときは、水密性・肉厚とも「ボディをまたいだ
+ * 1 つの形」として測ってよい(§0.51 の点検はボディの区別を持たない)ので、ここで
+ * 添字をずらしながら連結する(STL の `writeStl.ts` が複数の網を 1 ファイルへ書くのと
+ * 同じ考え方だが、あちらはバイト列を直接書くのに対し、ここは 1 本の `ExportMesh` を
+ * 組み立てて `inspectPrintability` へそのまま渡す点が違う)。
+ */
+function mergeExportMeshes(meshes: readonly ExportMesh[]): ExportMesh {
+  const [only] = meshes;
+  // 1 個だけなら連結の手間もコピーも要らない。
+  if (meshes.length === 1 && only !== undefined) {
+    return only;
+  }
+  let vertexTotal = 0;
+  let triangleCount = 0;
+  for (const mesh of meshes) {
+    vertexTotal += mesh.positions.length / 3;
+    triangleCount += mesh.triangleCount;
+  }
+  const positions = new Float32Array(vertexTotal * 3);
+  const normals = new Float32Array(vertexTotal * 3);
+  const indices = new Uint32Array(triangleCount * 3);
+  let vertexOffset = 0;
+  let indexOffset = 0;
+  for (const mesh of meshes) {
+    positions.set(mesh.positions, vertexOffset * 3);
+    normals.set(mesh.normals, vertexOffset * 3);
+    for (let index = 0; index < mesh.indices.length; index += 1) {
+      indices[indexOffset + index] = mesh.indices[index] + vertexOffset;
+    }
+    indexOffset += mesh.indices.length;
+    vertexOffset += mesh.positions.length / 3;
+  }
+  return { positions, normals, indices, triangleCount };
+}
+
 /** UI 側から Comlink 越しに呼べる幾何カーネルの窓口。 */
 export interface KernelApi {
   /** スケッチの曲線を折れ線に、閉ループを面にする(FR-309)。 */
@@ -288,6 +336,36 @@ export interface KernelApi {
    * (§2.8 の断りの表。画面はその文言をそのまま見せる)。
    */
   importShape(request: ShapeImportRequest): Promise<ShapeImportResult>;
+  /**
+   * 3D プリント向けの点検(FR-815、NFR-PF-4、P6 §0.51・§2.16、タスク42)。
+   *
+   * **最小肉厚・オーバーハングの角度・水密性の 3 つを 1 回の呼び出しでまとめて返す**
+   * (§0.a-0.30「カーネルを呼ぶ回数を最小にする」)。対象は書き出し・投影と同じく
+   * **段のキャッシュの鍵**(`ShapeInspectRequest.bodies` の `bodyKey`)で指し、三角形は
+   * `exportShapes({ format: 'mesh' })` とまったく同じ道(`buildExportMesh`)で作り直す
+   * ので、「点検は通ったのに書き出したファイルは別の形だった」が起こらない
+   * (`occt/inspectPrintability.ts` 冒頭の理由 2)。複数ボディを指定したときは、
+   * 三角形を 1 つに連ねてから点検する(`mergeExportMeshes`)。
+   *
+   * onProgress と shouldCancel は Comlink.proxy で包んだ関数を渡す
+   * (`recomputeSolids` と同じ形)。中止が効くのは肉厚の段だけ
+   * (`inspectPrintability` 本体の注釈。水密性とオーバーハングは 5 万三角形でも
+   * 実測 10ms 台で終わるため)。
+   *
+   * 鍵が形状キャッシュに見つからないときは、書き出し・投影と同じ `MISSING_BODY_MESSAGE`
+   * で断る(投げる。書き出しと同じく「一部だけ点検できた」を返さない)。
+   *
+   * **この欄はいま任意にしてある。** 必須にすると、`KernelApi` を丸ごと実装する偽物
+   * (`packages/model/src/measure/measureBridge.test.ts` の `createFakeKernelApi` など、
+   * 今回は「他は触らない」範囲の外)がすべて型検査で落ちる。`HoleStepSpec.entry` と同じ
+   * 経過措置(P5 タスク42a、2026-09-05 統括判断)で、**呼び出し側(ui のタスク43、
+   * model のタスク26 相当)がこのメソッドへの依存を組み終えたら必須へ引き上げてよい**。
+   */
+  inspectPrintability?(
+    request: ShapeInspectRequest,
+    onProgress?: PrintabilityProgressCallback,
+    shouldCancel?: PrintabilityCancelToken,
+  ): Promise<PrintabilityResult>;
 }
 
 /**
@@ -667,6 +745,20 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
           return { bodies: [toImportMeshBody(mesh)], unit: 'mm', unitNames: [] };
         }
       }
+    },
+
+    async inspectPrintability(request, onProgress, shouldCancel): Promise<PrintabilityResult> {
+      const oc = await loadOcct();
+      // 鍵の引き当ては書き出しと同じ関数(`resolveExportShapes`)を使い回す。
+      // 見つからなければ書き出しと同じ `MISSING_BODY_MESSAGE` で投げる。
+      const shapes = resolveExportShapes(cache, request.bodies);
+      const meshes = buildExportMeshes(oc, shapes, request);
+      const mesh = mergeExportMeshes(meshes);
+      return runInspectPrintability(
+        mesh,
+        { minThicknessMm: request.minThicknessMm, overhangAngleDeg: request.overhangAngleDeg },
+        { onProgress, shouldCancel },
+      );
     },
   };
 }

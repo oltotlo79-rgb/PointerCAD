@@ -525,3 +525,19 @@ export {
   acceptsMeshBody, acceptsShellBody, canRoundTrip, carriesColor, checkExportBodyKind,
   exportDeviationMm, selectExportBodies, usesTriangles,
 } from './exchange/exportPart.js';
+
+/**
+ * 外観 → 書き出しの色の写し(FR-1106、要件§12、計画書 P6 §2.5・§2.5.1、タスク15)。
+ *
+ * **色だけ**を写す(柄・透過率・光沢・粗さは書き出さない。§0.a-0.22)。色は **sRGB の
+ * 0〜1** で出し、glTF の `baseColorFactor` が要る線形への変換は kernel が持つ。
+ *
+ * 立体ごと(`bodyColorsFor`)と面ごと(`faceColorsFor`)を**別々の表**で返す。XCAF は
+ * 形そのものと面のラベルへ別々に色を付ける(§2.5.1)ためで、**面の割り当てが立体より
+ * 優先する**という P5 の順は、配線が「面の表を先に見て、無ければ立体の表」と読むことで
+ * 成り立つ。面の通し番号は P5 の `appearanceMatches` から取り、照合をやり直さない。
+ */
+export type { RgbColor } from './exchange/exportColors.js';
+export {
+  bodyColorsFor, DEFAULT_EXPORT_COLOR, faceColorsFor, parseHexColor, rgbTupleOf,
+} from './exchange/exportColors.js';

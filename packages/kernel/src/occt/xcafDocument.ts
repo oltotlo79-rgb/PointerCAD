@@ -9,6 +9,7 @@ import type {
 
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { INVALID_EXPORT_COLOR_MESSAGE } from './exchangeShared.js';
 
 /**
  * 書き出し用の文書(XCAF)の組み立て(計画書 P6 §2.5、タスク7。FR-803 / FR-804 / FR-1106)。
@@ -85,8 +86,6 @@ const STORAGE_FORMAT = 'BinXCAF';
 /** 書き出す立体が 1 つも無いとき(NFR-UX-5、計画書 §2.3 の検証表)。 */
 const NO_SHAPE_MESSAGE = '書き出せる立体がありません。';
 
-/** 色の値が 0〜1 の数でないとき。呼び出し側の取り違えを黙って通さない。 */
-const INVALID_COLOR_MESSAGE = '書き出しの色の値が正しくありません。';
 
 /**
  * 列挙(`Quantity_TypeOfColor`)を引数に取る API のための述語ガード。
@@ -162,7 +161,7 @@ function resolveColorEnums(oc: OpenCascadeInstance): ColorEnums | null {
 function checkColor(color: RgbTuple): void {
   for (const value of color) {
     if (!Number.isFinite(value) || value < 0 || value > 1) {
-      throw new Error(INVALID_COLOR_MESSAGE);
+      throw new Error(INVALID_EXPORT_COLOR_MESSAGE);
     }
   }
 }

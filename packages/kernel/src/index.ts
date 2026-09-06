@@ -355,16 +355,73 @@ export {
 // 書き出し用の三角形の作り直し(§0.a-0.13、タスク11)。画面用のキャッシュを汚さない。
 export {
   buildExportMesh,
+  EXPORT_ANGULAR_DEFLECTION_MESSAGE,
   EXPORT_COPY_FAILED_MESSAGE,
   EXPORT_DEFLECTION_MESSAGE,
   type ExportMesh,
+  type ExportMeshOptions,
 } from './occt/exportMesh.js';
-// Worker 越しの書き出し・読み込みの依頼と結果(タスク10)。**口は 1 本ずつ**で、
+// 入出力で 2 つ以上のファイルが共用するもの(タスク16 で 1 か所へ寄せた)。
+// 断りの文言・三角形の束の型・法線と体積の計算は**ここが正本**で、`readStl.ts` /
+// `readCafMesh.ts` は形式ごとの名前で中継しているだけ(同じ文言を 2 か所に置かない)。
+export {
+  INVALID_EXPORT_COLOR_MESSAGE,
+  MESH_MAX_TRIANGLE_COUNT,
+  MESH_NO_FACE_MESSAGE,
+  MESH_NO_SHAPE_MESSAGE,
+  MESH_READ_FAILED_MESSAGE,
+  computeVertexNormals,
+  computeVolume,
+  meshTooLargeMessage,
+  type ImportedMeshData,
+} from './occt/exchangeShared.js';
+// STL の書き出し(§2.4、タスク12)。三角形の網を受け取り、バイト列を JS で組む純関数。
+// `forEachExportTriangle` は STL / OBJ / glTF / 3MF が共用する三角形のたどり方で、
+// 面積 0 の三角形を落とす判定(`DEGENERATE_CROSS_LENGTH_MM2`)もここが 1 か所の正本。
+export {
+  DEGENERATE_CROSS_LENGTH_MM2,
+  forEachExportTriangle,
+  writeStl,
+  type ExportTriangle,
+  type StlWriteOptions,
+  type StlWriteResult,
+} from './occt/writeStl.js';
+// OBJ / glTF(.glb)の書き出し(§2.4・§2.5、タスク13)。立体ごとの色つき、これも純関数。
+export {
+  writeCafMesh,
+  DEFAULT_BODY_COLOR,
+  type CafMeshBody,
+  type CafMeshFile,
+  type CafMeshWriteOptions,
+  type CafMeshWriteResult,
+} from './occt/writeCafMesh.js';
+// STL の読み込み(§2.8、タスク17)。断りの文言は共有の置き場の中継(上の注釈)。
+export {
+  readStl,
+  STL_MAX_TRIANGLE_COUNT,
+  STL_NO_FACE_MESSAGE,
+  STL_READ_FAILED_MESSAGE,
+  stlTooLargeMessage,
+  type StlReadOptions,
+} from './occt/readStl.js';
+// OBJ / glTF の読み込み(§2.8、タスク18)。glTF は m から mm へ直して返す。
+export {
+  readCafMesh,
+  CAF_MESH_MAX_TRIANGLE_COUNT,
+  CAF_MESH_NO_SHAPE_MESSAGE,
+  CAF_MESH_READ_FAILED_MESSAGE,
+  cafMeshTooLargeMessage,
+  type CafMeshFormat,
+  type CafMeshReadOptions,
+} from './occt/readCafMesh.js';
+// Worker 越しの書き出し・読み込みの依頼と結果(タスク10・16)。**口は 1 本ずつ**で、
 // 形式は依頼の中の `format` で判別する(§0.a-0.2)。
 export type {
   ShapeExportBrepBody,
+  ShapeExportFile,
   ShapeExportItem,
   ShapeExportMeshBody,
+  ShapeExportMeshQuality,
   ShapeExportRequest,
   ShapeExportResult,
   ShapeImportBody,

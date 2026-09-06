@@ -130,11 +130,18 @@ describe('読み込んだ形のベースボディ(FR-802、P6 §2.8)を実カー
       const read = await api.importShape({ format: 'step', bytes: exported.bytes });
       expect(read.bodies).toHaveLength(1);
       expect(read.unit).toBe('mm');
-      expect(read.bodies[0].volume).toBeCloseTo(BOX_VOLUME_MM3, 6);
-      expect(read.bodies[0].brepBytes.byteLength).toBeGreaterThan(0);
+      const readBody = read.bodies[0];
+      expect(readBody.volume).toBeCloseTo(BOX_VOLUME_MM3, 6);
+      // STEP は B-rep で入るので、`ShapeImportBody` の「B-rep を持つ枝」になる(P6 タスク16
+      // で、三角形しか持たない STL / OBJ / glTF 用の枝と型で分けた)。
+      expect(readBody.bodyKind).toBe('solid');
+      if (readBody.bodyKind === 'mesh') {
+        return;
+      }
+      expect(readBody.brepBytes.byteLength).toBeGreaterThan(0);
 
       // ④ 抱き込んだバイト列の置き場を作り、読み込んだ形だけの部品文書を再計算する。
-      const importedShapes: ImportedShapeBytes = new Map([['shape-1', read.bodies[0].brepBytes]]);
+      const importedShapes: ImportedShapeBytes = new Map([['shape-1', readBody.brepBytes]]);
       const document = documentWithImportedSolid('shape-1');
       const restored = await recomputePart(document, bridge, {
         ...caches(),

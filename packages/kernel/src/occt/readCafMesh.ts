@@ -8,7 +8,15 @@ import type {
 
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
-import type { ImportedMeshData } from './readStl.js';
+import type { ImportedMeshData } from './exchangeShared.js';
+import {
+  MESH_MAX_TRIANGLE_COUNT,
+  MESH_NO_SHAPE_MESSAGE,
+  MESH_READ_FAILED_MESSAGE,
+  computeVertexNormals,
+  computeVolume,
+  meshTooLargeMessage,
+} from './exchangeShared.js';
 import { withVirtualFileInput } from './virtualFile.js';
 
 /**
@@ -84,34 +92,19 @@ import { withVirtualFileInput } from './virtualFile.js';
 export type CafMeshFormat = 'obj' | 'gltf';
 
 /**
- * 読めなかったとき(壊れている・その形式でない)の断り(計画書 §2.8 の表)。
+ * 断りの文言・上限は `exchangeShared.ts` が正本(タスク16 で寄せた)。
  *
- * **タスク17 の `STL_READ_FAILED_MESSAGE` と 1 字も違わない。** 同じ文言を 2 か所に
- * 置いているのは、17 のファイル(`readStl.ts`)がコミット待ちで触れないためで、
- * **タスク16 が輸出と型を整理するときに共有の置き場へ寄せる**(§2.8 の断りの表は
- * ひとまとまりの正本になる)。
+ * **OBJ / glTF だけの名前でも引けるように、ここから名前を変えて中継する。** 値の持ち主を
+ * 1 つにしつつ、画面や検査が引いている名前を残すためで、`readStl.ts` も同じ流儀。
+ * **`CAF_MESH_READ_FAILED_MESSAGE` は STL・STEP の「読めませんでした」と 1 字も違わない**
+ * (§2.8 の断りの表が形式をまたいで 1 つの文言と決めている)。
  */
-export const CAF_MESH_READ_FAILED_MESSAGE =
-  'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。';
-
-/**
- * 読めたが形が 1 つも入っていなかったときの断り(計画書 §2.8 の表)。
- *
- * `readStep.ts` の `STEP_NO_SHAPE_MESSAGE` と同じ文言。**寄せ先はタスク16**(上と同じ理由)。
- */
-export const CAF_MESH_NO_SHAPE_MESSAGE = 'このファイルには形が入っていません。';
-
-/**
- * 開ける三角形の上限(計画書 §2.8 の断りの表。タスク17 の `STL_MAX_TRIANGLE_COUNT` と同値)。
- *
- * 10 万三角形で約 2.4MB(§2.8 の見積もり)なので、500 万なら約 120MB。
- */
-export const CAF_MESH_MAX_TRIANGLE_COUNT = 5_000_000;
-
-/** 三角形が多すぎて開けないときの断り(計画書 §2.8 の表。個数を文言に入れる)。 */
-export function cafMeshTooLargeMessage(triangleCount: number): string {
-  return `この形は大きすぎて開けません(三角形が ${String(triangleCount)} 個)。`;
-}
+export {
+  MESH_MAX_TRIANGLE_COUNT as CAF_MESH_MAX_TRIANGLE_COUNT,
+  MESH_NO_SHAPE_MESSAGE as CAF_MESH_NO_SHAPE_MESSAGE,
+  MESH_READ_FAILED_MESSAGE as CAF_MESH_READ_FAILED_MESSAGE,
+  meshTooLargeMessage as cafMeshTooLargeMessage,
+} from './exchangeShared.js';
 
 /** 読み込みの細かい指定。 */
 export interface CafMeshReadOptions {
@@ -293,80 +286,6 @@ function writeFaceMesh(
 }
 
 /**
- * 三角形から頂点の法線を作る(ファイルに法線が書いていない面のため。冒頭の実測)。
- *
- * **これはタスク17 の `readStl.ts` にある同名の関数の写しである。** 向こうが
- * export していないうえ、あちらのファイルはコミット待ちで触れないため、同じ計算を
- * こちらへ置いた。**タスク16 で共有の場所へ寄せる**(2 か所に置いたままにしない)。
- *
- * 各三角形の 2 辺の外積を、その 3 頂点へ足し込んでから正規化する。外積の長さは
- * 三角形の面積の 2 倍なので、**正規化せずに足すと自然に面積の重みが付く**。
- * 長さが 0 になるのは、その頂点に付く三角形が全部つぶれている(面積 0)ときだけ。
- * `NaN` を画面へ流すと three.js の描画が黙って壊れるので、そのときは Z の向きを置く。
- */
-function computeVertexNormals(positions: Float32Array, indices: Uint32Array): Float32Array {
-  const normals = new Float32Array(positions.length);
-  for (let offset = 0; offset < indices.length; offset += 3) {
-    const ia = indices[offset] * 3;
-    const ib = indices[offset + 1] * 3;
-    const ic = indices[offset + 2] * 3;
-    const ux = positions[ib] - positions[ia];
-    const uy = positions[ib + 1] - positions[ia + 1];
-    const uz = positions[ib + 2] - positions[ia + 2];
-    const vx = positions[ic] - positions[ia];
-    const vy = positions[ic + 1] - positions[ia + 1];
-    const vz = positions[ic + 2] - positions[ia + 2];
-    const nx = uy * vz - uz * vy;
-    const ny = uz * vx - ux * vz;
-    const nz = ux * vy - uy * vx;
-    for (const base of [ia, ib, ic]) {
-      normals[base] += nx;
-      normals[base + 1] += ny;
-      normals[base + 2] += nz;
-    }
-  }
-  for (let base = 0; base < normals.length; base += 3) {
-    const length = Math.hypot(normals[base], normals[base + 1], normals[base + 2]);
-    if (length === 0) {
-      normals[base + 2] = 1;
-      continue;
-    }
-    normals[base] /= length;
-    normals[base + 1] /= length;
-    normals[base + 2] /= length;
-  }
-  return normals;
-}
-
-/**
- * 三角形の束から体積を求める(発散定理。符号付き四面体の和)。
- *
- * **これもタスク17 の `readStl.ts` からの写し**で、**タスク16 で寄せる**(上と同じ理由)。
- * 原点と三角形が作る四面体の符号付き体積 `(v₁ × v₂)·v₃ / 6` を全部足すと、
- * 閉じた形なら中身の体積になる。表裏が揃っていないファイルがあるので**絶対値を取る**。
- * 開いた形では意味を持たないが、「読んだ形の目安」としてプロパティパネルへ出す(§2.18)。
- */
-function computeVolume(positions: Float32Array, indices: Uint32Array): number {
-  let sum = 0;
-  for (let offset = 0; offset < indices.length; offset += 3) {
-    const ia = indices[offset] * 3;
-    const ib = indices[offset + 1] * 3;
-    const ic = indices[offset + 2] * 3;
-    const ax = positions[ia];
-    const ay = positions[ia + 1];
-    const az = positions[ia + 2];
-    const bx = positions[ib];
-    const by = positions[ib + 1];
-    const bz = positions[ib + 2];
-    const cx = positions[ic];
-    const cy = positions[ic + 1];
-    const cz = positions[ic + 2];
-    sum += (ay * bz - az * by) * cx + (az * bx - ax * bz) * cy + (ax * by - ay * bx) * cz;
-  }
-  return Math.abs(sum) / 6;
-}
-
-/**
  * OBJ / glTF のバイト列を読んで、三角形の束を返す(§2.8、FR-802 / FR-809)。
  *
  * ```ts
@@ -412,13 +331,13 @@ export function readCafMesh(
       // `SetDocument` は呼ばない(§1.5-12 の実測。文書なしで読める)。
       if (!reader.Perform(fileArgument, range)) {
         // 壊れたファイルでも例外は飛ばず false が返る(冒頭の実測)。
-        throw new Error(CAF_MESH_READ_FAILED_MESSAGE);
+        throw new Error(MESH_READ_FAILED_MESSAGE);
       }
 
       const shape = keep(reader.SingleShape());
       if (shape.IsNull()) {
         // 面の無い OBJ は Perform が true を返して空の形になる(冒頭の実測)。
-        throw new Error(CAF_MESH_NO_SHAPE_MESSAGE);
+        throw new Error(MESH_NO_SHAPE_MESSAGE);
       }
 
       const sources = collectFaceMeshes(oc, shape, keep);
@@ -429,14 +348,14 @@ export function readCafMesh(
         totalTriangles += source.triangleCount;
       }
       if (totalTriangles === 0) {
-        throw new Error(CAF_MESH_NO_SHAPE_MESSAGE);
+        throw new Error(MESH_NO_SHAPE_MESSAGE);
       }
-      if (totalTriangles > CAF_MESH_MAX_TRIANGLE_COUNT) {
+      if (totalTriangles > MESH_MAX_TRIANGLE_COUNT) {
         // **数え方:** OBJ にも glTF にも「三角形の数」を安く読める頭が無い(STL の
         // ような固定長の頭が無く、OBJ は面の行を、glTF は accessor を全部見ないと
         // 数えられない)。だから**読んでから、JS の配列を確保する前に**数える。
         // ここまでで確保されているのは OCCT 側の三角形分割だけで、控えが必ず返す。
-        throw new Error(cafMeshTooLargeMessage(totalTriangles));
+        throw new Error(meshTooLargeMessage(totalTriangles));
       }
 
       const positions = new Float32Array(totalNodes * 3);

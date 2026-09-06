@@ -1,3 +1,4 @@
+import { INVALID_EXPORT_COLOR_MESSAGE } from './exchangeShared.js';
 import type { ExportMesh } from './exportMesh.js';
 import type { CafMeshFormat } from './readCafMesh.js';
 import { DEGENERATE_CROSS_LENGTH_MM2 } from './writeStl.js';
@@ -129,16 +130,6 @@ export const DEFAULT_BODY_COLOR: RgbTuple = [184 / 255, 191 / 255, 204 / 255];
 /** ファイル名の基の既定。 */
 const DEFAULT_BASE_NAME = 'model';
 
-/**
- * 色の値が 0〜1 の数でないときの断り。
- *
- * **`xcafDocument.ts` の `INVALID_COLOR_MESSAGE` と 1 字も違わない。** 向こうは輸出して
- * おらず、あちらのファイルは別タスクの持ち物なので、同じ文言をここへ置いた。
- * **タスク16 が輸出と型を整理するときに共有の置き場へ寄せる**(`readCafMesh.ts` の
- * 断りの文言と同じ扱い)。
- */
-const INVALID_COLOR_MESSAGE = '書き出しの色の値が正しくありません。';
-
 /** OBJ の座標・法線の小数点以下の桁数(`writeStl.ts` の ASCII と同じ固定桁。決定性)。 */
 const OBJ_FRACTION_DIGITS = 6;
 
@@ -225,7 +216,7 @@ interface PreparedScene {
 function checkColor(color: RgbTuple): void {
   for (const value of color) {
     if (!Number.isFinite(value) || value < 0 || value > 1) {
-      throw new Error(INVALID_COLOR_MESSAGE);
+      throw new Error(INVALID_EXPORT_COLOR_MESSAGE);
     }
   }
 }
@@ -253,8 +244,13 @@ function srgbToLinear(value: number): number {
  * 空白は `_` へ寄せる。**OBJ の `mtllib` の行は空白で区切るので、名前に空白があると
  * 途中で切れて `.mtl` を見つけられなくなる**(色が付かない)。パスの区切りも落とす
  * (仮想ファイルの外を指させない)。
+ *
+ * **輸出しているのは、STL の配線(`worker/kernelApi.ts` のタスク16)が同じ規則で
+ * `<基>.stl` を組むため。** 書き出しの結果は形式によらず `files: { fileName, bytes }[]`
+ * で返す約束にしたので、ファイル名の作り方が形式ごとに食い違うと利用者から見て
+ * 「OBJ だけ名前が変わる」ことになる。規則は 1 か所だけに置く。
  */
-function normalizeBaseName(baseName: string | undefined): string {
+export function normalizeBaseName(baseName: string | undefined): string {
   if (baseName === undefined) {
     return DEFAULT_BASE_NAME;
   }

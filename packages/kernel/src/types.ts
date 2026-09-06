@@ -1398,21 +1398,66 @@ export interface ShapeExportItem {
 }
 
 /**
+ * 三角形を作る形式が共通で受ける品質の指定(FR-803)。
+ *
+ * **長さと角度の「対」で受ける。** 弦のずれだけを細かくしても、角度の偏差の既定
+ * (0.5 ラジアン)が先に効いて丸い面はそれ以上細かくならない(`occt/exportMesh.ts` の
+ * 実測: 球 r=10 を長さ 0.1mm で切ると、角度 0.5rad で 976 枚・体積の不足 1.43%、
+ * 0.2rad で 2,020 枚・0.72%、0.1rad で 8,000 枚・0.18%)。
+ *
+ * **品質の 3 択(粗い / 標準 / 細かい)からこの 2 つの数への読み替えは `packages/model` の
+ * 表が正本**で、kernel は写しを持たず数で受け取る(同じ表が 2 か所にあると片方が古くなる)。
+ */
+export interface ShapeExportMeshQuality {
+  /**
+   * 弦の最大ずれ(mm)。小さいほど細かい。`ExportSelection.deviationMm` をそのまま渡す。
+   * **画面用の三角形は汚さない**(`occt/exportMesh.ts` が複製に掛ける)。
+   */
+  readonly deviationMm: number;
+  /**
+   * 法線の向きの最大ずれ(ラジアン)。省くと画面用と同じ既定(0.5)になり、
+   * 省いたときの三角形は角度を足す前とまったく同じになる。
+   */
+  readonly angularDeflectionRad?: number;
+}
+
+/**
+ * 書き出したファイル 1 つ(FR-803)。
+ *
+ * **1 回の書き出しで 2 つ以上のファイルが出ることがある。** OBJ は `.obj` と `.mtl` の
+ * 2 つで、`.obj` の `mtllib` の行が `.mtl` の名前を指しているため**名前を勝手に変えると
+ * 色が付かない**。だから名前は kernel が組んで返し、呼び出し側は数えずにそのまま全部
+ * 保存する(§0.a-0.20 の書き出しのパネル、タスク32)。
+ */
+export interface ShapeExportFile {
+  /** 保存するときのファイル名(拡張子つき)。 */
+  readonly fileName: string;
+  /** ファイルの中身。 */
+  readonly bytes: Uint8Array;
+}
+
+/**
  * 書き出しの依頼(FR-803)。**形式は依頼の中の `format` で判別する**(§0.a-0.2)。
  *
- * ここでいう「形式」はファイルの形式そのものではなく、**カーネルが作れる 3 種類の中身**
- * である。ファイルの形式(STEP / STL / OBJ / glTF / 3MF)との対応は次のとおり:
+ * **口(`KernelApi.exportShapes`)は 1 本しか作らない。** 形式が増えるたびに口を増やすと、
+ * UI と Worker の両側へ同じ数の配線が要るうえ、どこまで実装したのかが型から読めなくなる。
+ * 実装は網羅 `switch`(`default` を作らない)で受けるので、ここへ 1 つ足すと**足したぶんだけ
+ * 実装が型検査で落ちて**配線し忘れが起きない。
  *
- * | `format` | 何が返るか | 使うファイル形式 |
+ * ファイルの形式との対応:
+ *
+ * | `format` | 何が返るか | 使い道 |
  * |---|---|---|
  * | `'step'` | STEP AP214 のバイト列 1 つ(名前と色つき) | STEP |
- * | `'mesh'` | 立体ごとの三角形の網 | STL / OBJ / glTF / 3MF |
+ * | `'stl'` | `.stl` 1 ファイル(バイナリ / ASCII) | STL |
+ * | `'obj'` | `.obj` と `.mtl` の 2 ファイル(立体ごとの色つき) | OBJ |
+ * | `'gltf'` | `.glb` 1 ファイル(立体ごとの色つき、単位は m) | glTF |
+ * | `'mesh'` | 立体ごとの三角形の網(ファイルは組まない) | 3MF(`packages/io` が組む) |
  * | `'brep'` | 立体ごとの B-rep のバイト列 | `.pcad` の `shapes/<id>.brep` |
  *
- * **三角形を作るかどうかは呼び出し側が決める。** model の `selectExportBodies` が返す
- * `ExportSelection.deviationMm` が `null`(= 三角形を使わない形式)なら `'step'` を、
- * 数なら `'mesh'` をその数のまま渡す(品質の 3 択 → mm の表は model が正本で、
- * kernel は写しを持たない)。
+ * **`'mesh'` だけファイルを返さないのは、3MF を書くのが `packages/io` だから**(§0.a-0.19)。
+ * io は OCCT を呼べず(§0.a-0.2)、偏差を指定した三角形は kernel でしか作れないので、
+ * kernel は三角形までを返して ZIP と XML の組み立ては io に任せる。
  */
 export type ShapeExportRequest =
   | {
@@ -1421,15 +1466,35 @@ export type ShapeExportRequest =
       /** 色を書くか(§0.a-0.22)。省くと書く。列挙が取れない環境では形だけになる。 */
       readonly withColors?: boolean;
     }
-  | {
-      readonly format: 'mesh';
+  | ({
+      readonly format: 'stl';
       readonly bodies: readonly ShapeExportItem[];
       /**
-       * 弦の最大ずれ(mm)。小さいほど細かい。`ExportSelection.deviationMm` をそのまま渡す。
-       * **画面用の三角形は汚さない**(`occt/exportMesh.ts` が複製に掛ける)。
+       * `true` なら ASCII、省くとバイナリ(§2.4)。
+       *
+       * **STL に色は書かない**(§0.a-0.15。仕様に色が無い)ので、依頼の `name` / `color` は
+       * 使わない。「STL には色が付きません」の案内は書き出しの画面が出す(タスク32)。
        */
-      readonly deviationMm: number;
-    }
+      readonly ascii?: boolean;
+      /** ファイル名の基(拡張子なし。省くと `model`)。 */
+      readonly baseName?: string;
+    } & ShapeExportMeshQuality)
+  | ({
+      readonly format: 'obj';
+      readonly bodies: readonly ShapeExportItem[];
+      /** ファイル名の基(拡張子なし。省くと `model`)。`.obj` と `.mtl` で同じ基を使う。 */
+      readonly baseName?: string;
+    } & ShapeExportMeshQuality)
+  | ({
+      readonly format: 'gltf';
+      readonly bodies: readonly ShapeExportItem[];
+      /** ファイル名の基(拡張子なし。省くと `model`)。 */
+      readonly baseName?: string;
+    } & ShapeExportMeshQuality)
+  | ({
+      readonly format: 'mesh';
+      readonly bodies: readonly ShapeExportItem[];
+    } & ShapeExportMeshQuality)
   | {
       readonly format: 'brep';
       readonly bodies: readonly ShapeExportItem[];
@@ -1455,6 +1520,9 @@ export interface ShapeExportBrepBody {
  * 書き出しの結果(FR-803)。依頼と同じ `format` を返すので、受け取る側も網羅 `switch` で
  * 分けられる(依頼と結果が食い違うことは無い)。
  *
+ * **ファイルを組む 3 形式(STL / OBJ / glTF)は結果の形を 1 つに揃えてある。** 呼び出し側は
+ * `files` をそのまま全部保存すればよく、「OBJ のときだけ 2 ファイル」を知らずに済む。
+ *
  * **名前と色は返さない。** どちらも呼び出し側が依頼へ入れた値そのままで、
  * 持ち帰っても新しく分かることが無いためである(読み込みは逆に、ファイルから
  * 取り出した名前と色を返す)。
@@ -1467,16 +1535,31 @@ export type ShapeExportResult =
       /** 色を 1 つでも載せられたか。列挙が取れない環境では false(形は書けている)。 */
       readonly colorWritten: boolean;
     }
+  | {
+      readonly format: 'stl' | 'obj' | 'gltf';
+      /** 保存するファイル。STL は `[.stl]`、OBJ は `[.obj, .mtl]`、glTF は `[.glb]`。 */
+      readonly files: readonly ShapeExportFile[];
+      /** 実際に書いた三角形の枚数(落としたぶんを除く)。 */
+      readonly triangleCount: number;
+      /**
+       * 面積 0(または `NaN`)で落とした三角形の枚数。
+       *
+       * OCCT は球の極や回転面の継ぎ目で同じ節点を 2 度含む三角形を作ることがあり
+       * (`occt/writeStl.ts` の `DEGENERATE_CROSS_LENGTH_MM2`)、そのままでは法線が
+       * `NaN` になってどの道具でも開けないファイルになる。**落とした枚数を返すのは、
+       * 「三角形を n 枚除きました」の 1 行を画面が出せるようにするため**(タスク32)。
+       */
+      readonly droppedTriangleCount: number;
+    }
   | { readonly format: 'mesh'; readonly bodies: readonly ShapeExportMeshBody[] }
   | { readonly format: 'brep'; readonly bodies: readonly ShapeExportBrepBody[] };
 
 /**
  * 読み込みの依頼(FR-802)。書き出しと同じく**依頼の中の `format` で判別する**。
  *
- * **いまは 2 種類だけ**(タスク10 の範囲)。`'step'` はファイルから読む口、`'brep'` は
- * `.pcad` に抱き込んだバイト列を戻す口である。STL / OBJ の読み込み(FR-802 の残り)は
- * タスク16・18 がこの union へ 1 つずつ足す——**足したぶんだけ実装側の網羅 `switch` が
- * 型検査で落ちる**ので、配線し忘れが起きない(`default` を作らない理由)。
+ * `'step'` / `'stl'` / `'obj'` / `'gltf'` はファイルから読む口、`'brep'` は `.pcad` に
+ * 抱き込んだバイト列を戻す口である。3MF の読み込み(FR-809)は `packages/io` が
+ * 自前の ZIP / XML の読み手で行うので、この union には入らない(§0.a-0.26)。
  */
 export type ShapeImportRequest =
   | {
@@ -1492,48 +1575,105 @@ export type ShapeImportRequest =
       /** `.pcad` の `shapes/<id>.brep` に抱き込んだバイト列(§0.a-0.9)。 */
       readonly format: 'brep';
       readonly bytes: Uint8Array;
+    }
+  | {
+      /** STL ファイルの中身(バイナリ・ASCII のどちらでもよい。読み手が見分ける)。 */
+      readonly format: 'stl';
+      readonly bytes: Uint8Array;
+      /** 仮想ファイルに付ける名前(省くと `import.stl`)。 */
+      readonly fileName?: string;
+    }
+  | {
+      /** OBJ ファイルの中身。 */
+      readonly format: 'obj';
+      readonly bytes: Uint8Array;
+      /** 仮想ファイルに付ける名前(省くと `import.obj`)。 */
+      readonly fileName?: string;
+    }
+  | {
+      /** glTF(`.glb` / `.gltf`)ファイルの中身。 */
+      readonly format: 'gltf';
+      readonly bytes: Uint8Array;
+      /** 仮想ファイルに付ける名前(省くと `import.glb`)。 */
+      readonly fileName?: string;
     };
+
+/**
+ * 読み込んだ立体 1 つぶんに共通する欄(FR-802、P6 §2.8)。
+ *
+ * 色はファイルに入っていた値をそのまま返すが、**model は当面これを使わず既定の外観にする**
+ * (§0.a-0.28)。捨てずに返しておくのは、P7 以降で取り込むときに読み直さずに済ませるため。
+ */
+interface ShapeImportBodyCommon {
+  /** ファイルに入っていた名前。無ければ `null`。 */
+  readonly name: string | null;
+  /** ファイルに入っていた色(sRGB の 0〜1)。無ければ `null`。 */
+  readonly color: RgbTuple | null;
+  /** 体積(mm³)。面だけの形では 0 とは限らない(`SolidBodyMesh.volume` と同じ約束)。 */
+  readonly volume: number;
+  /** 画面用の三角形。粗さは画面の既定(`DEFAULT_LINEAR_DEFLECTION`)。 */
+  readonly triangles: ExportMesh;
+}
 
 /**
  * 読み込んだ立体 1 つぶん(FR-802、P6 §2.8)。
  *
  * **形(`TopoDS_Shape`)は入らない。** B-rep は Comlink を越えられないので、代わりに
  * ①**そのまま `.pcad` へ入れられるバイト列**(`brepBytes`)と、②**画面へ出せる三角形**
- * (`triangles`)の 2 つを返す。model はこの 2 つで `importedSolid` のフィーチャーを組み立て、
+ * (`triangles`)を返す。model はこの 2 つで `importedSolid` のフィーチャーを組み立て、
  * 次の再計算では①を段(`ImportedSolidStepSpec`)へ載せて形を戻す(タスク20)。
  *
- * 色はファイルに入っていた値をそのまま返すが、**model は当面これを使わず既定の外観にする**
- * (§0.a-0.28)。捨てずに返しておくのは、P7 以降で取り込むときに読み直さずに済ませるため。
+ * **`bodyKind` で 2 つに割ってある。** STL / OBJ / glTF は三角形しか持たないファイルで、
+ * そこから B-rep を作ることはしない(§0.a-0.23。面が三角形の数だけできて、その上の
+ * フィレットも穴あけも実用にならない)。だから**メッシュの枝には `brepBytes` が無い**——
+ * 「無い値に `null` を入れて渡す」形にすると、受け取る側が `null` の検査を忘れても
+ * 型検査が助けてくれない。model は `bodyKind` で分けて `importedSolid`(B-rep を
+ * `shapes/<id>.brep` へ)と `importedMesh`(三角形を `meshes/<id>.bin` へ)を作り分ける
+ * (§0.a-0.24、タスク20)。
  */
-export interface ShapeImportBody {
-  /** ファイルに入っていた名前。無ければ `null`。 */
-  readonly name: string | null;
-  /** ファイルに入っていた色(sRGB の 0〜1)。無ければ `null`。 */
-  readonly color: RgbTuple | null;
-  /**
-   * 形の種類。**読み込みが返すのは `'solid'` か `'shell'` だけ**
-   * (`'mesh'` になるのは三角形の形を読む口(タスク16・18)で、そちらは B-rep を持たない)。
-   */
-  readonly bodyKind: SolidBodyKind;
-  /** 体積(mm³)。面だけの形では 0 とは限らない(`SolidBodyMesh.volume` と同じ約束)。 */
-  readonly volume: number;
-  /** `.pcad` の `shapes/<id>.brep` へそのまま入れるバイト列。 */
-  readonly brepBytes: Uint8Array;
-  /** 画面用の三角形。粗さは画面の既定(`DEFAULT_LINEAR_DEFLECTION`)。 */
-  readonly triangles: ExportMesh;
-}
+export type ShapeImportBody =
+  | (ShapeImportBodyCommon & {
+      /** 閉じた立体か、面だけの殻か。どちらも B-rep を持つ。 */
+      readonly bodyKind: 'solid' | 'shell';
+      /** `.pcad` の `shapes/<id>.brep` へそのまま入れるバイト列。 */
+      readonly brepBytes: Uint8Array;
+    })
+  | (ShapeImportBodyCommon & {
+      /**
+       * 読み込んだ三角形の形(§0.a-0.23)。**B-rep を持たない**ので、加工フィーチャーの
+       * 対象にできない(`worker/recomputeSolids.ts` の 1 か所で断る)。
+       */
+      readonly bodyKind: 'mesh';
+    });
 
 /**
  * 読み込みの結果(FR-802、FR-811)。
  *
  * **中身はすでに mm へ換算してある**(NFR-RE-3。内部は mm 固定)。`unit` は
  * 「ファイルが何で書かれていたか」の記録で、`ImportedSource.unit`(P6 §2.8)へそのまま乗る。
+ *
+ * **形式ごとの `unit`(§0.a-0.6):**
+ *
+ * | 形式 | `unit` | 理由 |
+ * |---|---|---|
+ * | STEP | `'mm'` / `'inch'` / `'other'` | ファイルが単位を持つ(`SystemLengthUnit`)ので読み取る |
+ * | glTF | `'mm'` | 仕様が長さを m と定めており、OCCT が読む前に mm へ直す(取り違えようがない) |
+ * | STL / OBJ | `'other'` | **どちらの仕様にも単位が無い。** 数をそのまま mm として取り込むので、違ったら利用者に訊く(訊くのは ui。タスク32) |
+ * | B-rep | `'mm'` | `.pcad` に抱き込んだ内部単位そのもの |
  */
 export interface ShapeImportResult {
   /** 立体の一覧。並びはファイルの中の並び。 */
   readonly bodies: readonly ShapeImportBody[];
-  /** ファイルが使っていた長さの単位。 */
+  /**
+   * ファイルが使っていた長さの単位(上の表)。
+   *
+   * 型の名前は STEP 由来(`occt/readStep.ts`)だが、**`'mm' | 'inch' | 'other'` という
+   * 3 択そのものは形式に依らない**ので、形式ごとに別の型を作らずこれを使い回す。
+   */
   readonly unit: StepFileLengthUnit;
-  /** OCCT が読み取った単位の名前そのまま(`['millimetre']` / `['INCH']` など)。 */
+  /**
+   * OCCT が読み取った単位の名前そのまま(`['millimetre']` / `['INCH']` など)。
+   * **名前を持つのは STEP だけ**で、ほかの形式では必ず空になる。
+   */
   readonly unitNames: readonly string[];
 }

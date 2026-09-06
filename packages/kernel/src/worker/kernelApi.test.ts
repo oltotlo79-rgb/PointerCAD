@@ -926,17 +926,24 @@ describe('KernelApi', () => {
     }
 
     const read = await api.importShape({ format: 'step', bytes: written.bytes });
-    expect(read.bodies[0].name).toBe('取っ手');
-    expect(read.bodies[0].color?.[0]).toBeCloseTo(1, 6);
-    expect(read.bodies[0].color?.[1]).toBeCloseTo(0.5, 6);
-    expect(read.bodies[0].color?.[2]).toBeCloseTo(0.25, 6);
+    const body = read.bodies[0];
+    expect(body.name).toBe('取っ手');
+    expect(body.color?.[0]).toBeCloseTo(1, 6);
+    expect(body.color?.[1]).toBeCloseTo(0.5, 6);
+    expect(body.color?.[2]).toBeCloseTo(0.25, 6);
 
+    // STEP は B-rep で入るので、必ず `'solid'` か `'shell'` の枝(= `brepBytes` を持つ)。
+    // 三角形しか持たない形(`bodyKind: 'mesh'`)は STL / OBJ / glTF の読み込みだけに出る。
+    expect(body.bodyKind).toBe('solid');
+    if (body.bodyKind === 'mesh') {
+      return;
+    }
     // 読み込んだ形は `.pcad` へ抱き込む(§0.a-0.9)。そのバイト列だけで形に戻せる。
-    const restored = await api.importShape({ format: 'brep', bytes: read.bodies[0].brepBytes });
+    const restored = await api.importShape({ format: 'brep', bytes: body.brepBytes });
     expect(restored.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
     // 抱き込むバイト列に三角形分割は入らない(画面用の三角形より先に作るため。
     // 逆順にすると `BinTools.Write_3` が三角形も一緒に書いて 1.5 倍に膨らむ)。
-    expect(read.bodies[0].brepBytes.length).toBeLessThan(6000);
+    expect(body.brepBytes.length).toBeLessThan(6000);
   });
 
   it('色を読まない指定では色が入らず、形と体積はそのまま返る', async () => {
@@ -1059,6 +1066,329 @@ describe('KernelApi', () => {
     expect(drilled.bodies[0].volume).toBeCloseTo(
       RECTANGLE_EXTRUDE_VOLUME - Math.PI * 3 * 3 * 10,
       4,
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 書き出し・読み込みの段の配線(P6 タスク16、FR-802 / FR-803)。
+  //
+  // **要件が挙げる 5 形式(STEP / STL / OBJ / glTF / 3MF)がすべて `exportShapes` の
+  // 1 本から出ること**と、**読み込みの 5 形式(STEP / B-rep / STL / OBJ / glTF)が
+  // `importShape` の 1 本から入ること**をここで固定する(§0.a-0.2「口を増やさない」)。
+  // 3MF だけは `packages/io` が ZIP と XML を組むので、kernel は三角形までを返す。
+  // -------------------------------------------------------------------------
+
+  /** 半径 10 の球の段。丸い面なので、品質の指定で三角形の数が変わる。 */
+  function sphereStep(key: string): SolidStepRequest {
+    return {
+      key,
+      id: '球',
+      label: '球',
+      visible: true,
+      step: {
+        kind: 'primitive',
+        origin: [0, 0, 0],
+        axis: [0, 0, 1],
+        shape: { kind: 'sphere', radius: 10 },
+        originQuery: null,
+        targetKey: null,
+      },
+    };
+  }
+
+  it('exportShapes({ format: "stl" }) はバイナリ STL を 1 ファイル返す(FR-803)', async () => {
+    await buildPlate('api-export-stl');
+    const written = await api.exportShapes({
+      format: 'stl',
+      bodies: [exportItem('api-export-stl')],
+      deviationMm: 0.1,
+    });
+
+    expect(written.format).toBe('stl');
+    if (written.format !== 'stl') {
+      return;
+    }
+    expect(written.files).toHaveLength(1);
+    expect(written.files[0].fileName).toBe('model.stl');
+    // 直方体は面 6 枚 × 三角形 2 枚 = 12 枚。バイナリ STL は 84 + 50 × 12 = 684 バイト(§2.4)。
+    expect(written.triangleCount).toBe(12);
+    expect(written.droppedTriangleCount).toBe(0);
+    expect(written.files[0].bytes.length).toBe(684);
+    // 見出し 80 バイトの直後に三角形の数が uint32 リトルエンディアンで入る。
+    const view = new DataView(
+      written.files[0].bytes.buffer,
+      written.files[0].bytes.byteOffset,
+      written.files[0].bytes.byteLength,
+    );
+    expect(view.getUint32(80, true)).toBe(12);
+  });
+
+  it('exportShapes({ format: "stl", ascii: true }) は ASCII STL を返す(FR-803)', async () => {
+    await buildPlate('api-export-stl-ascii');
+    const written = await api.exportShapes({
+      format: 'stl',
+      bodies: [exportItem('api-export-stl-ascii')],
+      deviationMm: 0.1,
+      ascii: true,
+      baseName: '取っ手 A',
+    });
+
+    expect(written.format).toBe('stl');
+    if (written.format !== 'stl') {
+      return;
+    }
+    // 名前の空白は `_` へ寄せる(`writeCafMesh.ts` の `normalizeBaseName` が 1 か所の正本。
+    // OBJ の `mtllib` の行が空白で切れるのを防ぐ規則を、STL の名前にも同じく掛ける)。
+    expect(written.files[0].fileName).toBe('取っ手_A.stl');
+    const text = new TextDecoder().decode(written.files[0].bytes);
+    expect(text.startsWith('solid ')).toBe(true);
+    expect(text.trimEnd().endsWith('endsolid PointerCAD')).toBe(true);
+    expect(text.match(/facet normal/gu)).toHaveLength(12);
+  });
+
+  it('exportShapes({ format: "obj" }) は .obj と .mtl の 2 ファイルを返す(FR-803)', async () => {
+    await buildPlate('api-export-obj');
+    const written = await api.exportShapes({
+      format: 'obj',
+      bodies: [{ bodyKey: 'api-export-obj', name: '本体', color: [1, 0.5, 0.25] }],
+      deviationMm: 0.1,
+    });
+
+    expect(written.format).toBe('obj');
+    if (written.format !== 'obj') {
+      return;
+    }
+    expect(written.files.map((file) => file.fileName)).toEqual(['model.obj', 'model.mtl']);
+    const objText = new TextDecoder().decode(written.files[0].bytes);
+    // `mtllib` の行が 2 つ目のファイル名を指していないと、色が付かない。
+    expect(objText).toContain(`mtllib ${written.files[1].fileName}`);
+    expect(objText).toContain('o 本体');
+    expect(objText.match(/^f /gmu)).toHaveLength(12);
+    const mtlText = new TextDecoder().decode(written.files[1].bytes);
+    expect(mtlText.match(/^newmtl /gmu)).toHaveLength(1);
+    expect(mtlText).toContain('Kd 1.000000 0.500000 0.250000');
+    expect(written.triangleCount).toBe(12);
+  });
+
+  it('exportShapes({ format: "gltf" }) は .glb を 1 ファイル返す(FR-803)', async () => {
+    await buildPlate('api-export-gltf');
+    const written = await api.exportShapes({
+      format: 'gltf',
+      bodies: [{ bodyKey: 'api-export-gltf', name: '本体', color: null }],
+      deviationMm: 0.1,
+      baseName: 'plate',
+    });
+
+    expect(written.format).toBe('gltf');
+    if (written.format !== 'gltf') {
+      return;
+    }
+    expect(written.files).toHaveLength(1);
+    expect(written.files[0].fileName).toBe('plate.glb');
+    // 先頭 4 バイトが `glTF`、次の 4 バイトが版 2(glTF の仕様)。
+    expect([...written.files[0].bytes.slice(0, 4)]).toEqual([0x67, 0x6c, 0x54, 0x46]);
+    const view = new DataView(
+      written.files[0].bytes.buffer,
+      written.files[0].bytes.byteOffset,
+      written.files[0].bytes.byteLength,
+    );
+    expect(view.getUint32(4, true)).toBe(2);
+    expect(written.triangleCount).toBe(12);
+  });
+
+  it('要件の 5 形式(STEP / STL / OBJ / glTF / 3MF 用の三角形)がすべて 1 本の口から出る', async () => {
+    const key = 'api-export-all-formats';
+    await buildPlate(key);
+    const step = await api.exportShapes({ format: 'step', bodies: [exportItem(key)] });
+    const stl = await api.exportShapes({
+      format: 'stl',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+    });
+    const obj = await api.exportShapes({
+      format: 'obj',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+    });
+    const gltf = await api.exportShapes({
+      format: 'gltf',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+    });
+    // 3MF は `packages/io` が組むので、kernel が返すのは三角形まで(§0.a-0.19)。
+    const threeMf = await api.exportShapes({
+      format: 'mesh',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+    });
+    const brep = await api.exportShapes({ format: 'brep', bodies: [exportItem(key)] });
+
+    expect([
+      step.format,
+      stl.format,
+      obj.format,
+      gltf.format,
+      threeMf.format,
+      brep.format,
+    ]).toEqual(['step', 'stl', 'obj', 'gltf', 'mesh', 'brep']);
+    // どの形式も中身が空でない(「出た」と言えることを 1 件ずつ確かめる)。
+    if (
+      step.format !== 'step' ||
+      stl.format !== 'stl' ||
+      obj.format !== 'obj' ||
+      gltf.format !== 'gltf' ||
+      threeMf.format !== 'mesh' ||
+      brep.format !== 'brep'
+    ) {
+      return;
+    }
+    expect(step.bytes.length).toBeGreaterThan(0);
+    expect(stl.files[0].bytes.length).toBeGreaterThan(0);
+    expect(obj.files).toHaveLength(2);
+    expect(gltf.files[0].bytes.length).toBeGreaterThan(0);
+    expect(threeMf.bodies[0].triangles.triangleCount).toBe(12);
+    expect(brep.bodies[0].bytes.length).toBeGreaterThan(0);
+  });
+
+  it('同じ品質なら STL・OBJ・glTF の三角形の枚数が 1 枚も違わない(§0.a-0.13)', async () => {
+    const key = 'api-export-same-count';
+    const built = await api.recomputeSolids({ steps: [cylinderStep(key)], generation: 1 });
+    expect(built.failures).toEqual([]);
+
+    const quality = { deviationMm: 0.1, angularDeflectionRad: 0.2 } as const;
+    const stl = await api.exportShapes({ format: 'stl', bodies: [exportItem(key)], ...quality });
+    const obj = await api.exportShapes({ format: 'obj', bodies: [exportItem(key)], ...quality });
+    const gltf = await api.exportShapes({ format: 'gltf', bodies: [exportItem(key)], ...quality });
+
+    if (stl.format !== 'stl' || obj.format !== 'obj' || gltf.format !== 'gltf') {
+      return;
+    }
+    expect(stl.triangleCount).toBeGreaterThan(0);
+    expect(obj.triangleCount).toBe(stl.triangleCount);
+    expect(gltf.triangleCount).toBe(stl.triangleCount);
+    expect(obj.droppedTriangleCount).toBe(stl.droppedTriangleCount);
+    expect(gltf.droppedTriangleCount).toBe(stl.droppedTriangleCount);
+  });
+
+  it('角度の偏差を細かくすると丸い面の三角形が増える(品質は長さと角度の対)', async () => {
+    const key = 'api-export-angular';
+    const built = await api.recomputeSolids({ steps: [sphereStep(key)], generation: 1 });
+    expect(built.failures).toEqual([]);
+
+    // 長さの偏差は同じ 0.1mm のまま、角度だけを 0.5rad(画面と同じ既定)から 0.1rad へ。
+    const coarse = await api.exportShapes({
+      format: 'stl',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+    });
+    const fine = await api.exportShapes({
+      format: 'stl',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+      angularDeflectionRad: 0.1,
+    });
+    if (coarse.format !== 'stl' || fine.format !== 'stl') {
+      return;
+    }
+    expect(fine.triangleCount).toBeGreaterThan(coarse.triangleCount);
+    // 球の極には同じ節点を 2 度含む三角形ができる。落とした枚数を画面へ知らせられる。
+    expect(coarse.droppedTriangleCount).toBeGreaterThan(0);
+  });
+
+  it('importShape({ format: "stl" }) は三角形の形として読み、単位は訊く扱いにする', async () => {
+    const key = 'api-import-stl';
+    await buildPlate(key);
+    const written = await api.exportShapes({
+      format: 'stl',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+    });
+    if (written.format !== 'stl') {
+      return;
+    }
+
+    const read = await api.importShape({ format: 'stl', bytes: written.files[0].bytes });
+    expect(read.bodies).toHaveLength(1);
+    const body = read.bodies[0];
+    // 三角形しか持たない形なので B-rep は作らない(§0.a-0.23)。型の枝も分かれている。
+    expect(body.bodyKind).toBe('mesh');
+    expect('brepBytes' in body).toBe(false);
+    expect(body.triangles.triangleCount).toBe(12);
+    expect(body.volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+    // **STL に単位は無い**ので `'other'`(取り込みの単位を訊くのは ui。§0.a-0.6)。
+    expect(read.unit).toBe('other');
+    expect(read.unitNames).toEqual([]);
+  });
+
+  it('importShape({ format: "obj" }) は OBJ を三角形の形として読む(単位は無い)', async () => {
+    const key = 'api-import-obj';
+    await buildPlate(key);
+    const written = await api.exportShapes({
+      format: 'obj',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+    });
+    if (written.format !== 'obj') {
+      return;
+    }
+
+    const read = await api.importShape({ format: 'obj', bytes: written.files[0].bytes });
+    const body = read.bodies[0];
+    expect(body.bodyKind).toBe('mesh');
+    expect(body.triangles.triangleCount).toBe(12);
+    expect(body.volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 4);
+    expect(read.unit).toBe('other');
+  });
+
+  it('importShape({ format: "gltf" }) は m で書いた .glb を mm へ戻す(FR-811)', async () => {
+    const key = 'api-import-gltf';
+    await buildPlate(key);
+    const written = await api.exportShapes({
+      format: 'gltf',
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+    });
+    if (written.format !== 'gltf') {
+      return;
+    }
+
+    const read = await api.importShape({ format: 'gltf', bytes: written.files[0].bytes });
+    const body = read.bodies[0];
+    expect(body.bodyKind).toBe('mesh');
+    expect(body.triangles.triangleCount).toBe(12);
+    // 書き出しは mm ÷ 1000(m)、読み込みは OCCT に 1000 倍させる。往復で mm に戻る。
+    expect(body.volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 3);
+    // 単位を取り違えようが無いので、利用者に訊かない(§0.a-0.6)。
+    expect(read.unit).toBe('mm');
+  });
+
+  it('壊れたバイト列は STL / OBJ / glTF でも日本語の理由で断る(NFR-RE-1)', async () => {
+    // STEP / B-rep の検査と同じ 8 バイト。STL の頭(84 バイト)にすら足りない。
+    const broken = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    const message =
+      'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。';
+    await expect(api.importShape({ format: 'stl', bytes: broken })).rejects.toThrow(message);
+    await expect(api.importShape({ format: 'gltf', bytes: broken })).rejects.toThrow(message);
+    // OBJ は文字の並びとして読めてしまうので、形が入っていないほうの文言で断る。
+    await expect(api.importShape({ format: 'obj', bytes: broken })).rejects.toThrow(
+      'このファイルには形が入っていません。',
+    );
+  });
+
+  it('頭の三角形の数が異常に大きい STL は「大きすぎます」で断る(§2.8 の断りの表)', async () => {
+    // 中身が STL でない 200 バイト。頭の 4 バイトを uint32 として読むと 1 億を超えるので、
+    // **500 万枚ぶんのバイト列を OCCT へ渡す前に**断れる(`readStl.ts` の門)。
+    const garbage = new Uint8Array(200).fill(7);
+    await expect(api.importShape({ format: 'stl', bytes: garbage })).rejects.toThrow(
+      'この形は大きすぎて開けません(三角形が 117901063 個)。',
+    );
+  });
+
+  it('三角形が 1 枚も無い STL は「面がありません」で断る(§2.8 の断りの表)', async () => {
+    // 84 バイトちょうど(見出し 80 + 個数 0)の、仕様どおり正しい空の STL。
+    const empty = new Uint8Array(84);
+    await expect(api.importShape({ format: 'stl', bytes: empty })).rejects.toThrow(
+      'この形には面がありません。',
     );
   });
 });

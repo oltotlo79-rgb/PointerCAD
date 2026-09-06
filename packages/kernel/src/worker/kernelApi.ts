@@ -1,6 +1,8 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import { readBrepBytes, writeBrepBytes } from '../occt/brepBytes.js';
+import type { ImportedMeshData } from '../occt/exchangeShared.js';
+import type { ExportMesh } from '../occt/exportMesh.js';
 import { buildExportMesh } from '../occt/exportMesh.js';
 import { makeOffsetWire } from '../occt/makeOffsetWire.js';
 import { distanceBetween, measureMassProperties } from '../occt/measureShape.js';
@@ -9,10 +11,14 @@ import { makeProjection } from '../occt/makeProjection.js';
 import { makeSection } from '../occt/makeSection.js';
 import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from '../occt/pickSubShape.js';
+import { readCafMesh } from '../occt/readCafMesh.js';
 import { readStep } from '../occt/readStep.js';
+import { readStl } from '../occt/readStl.js';
 import { hasSolid, measureVolume } from '../occt/solidMesh.js';
 import { tessellate } from '../occt/tessellate.js';
+import { normalizeBaseName, writeCafMesh } from '../occt/writeCafMesh.js';
 import { writeStep } from '../occt/writeStep.js';
+import { writeStl } from '../occt/writeStl.js';
 import type { RgbTuple } from '../occt/xcafDocument.js';
 import type {
   FaceMeshData,
@@ -21,6 +27,7 @@ import type {
   ShapeExportBrepBody,
   ShapeExportItem,
   ShapeExportMeshBody,
+  ShapeExportMeshQuality,
   ShapeExportRequest,
   ShapeExportResult,
   ShapeImportBody,
@@ -38,7 +45,6 @@ import type {
   SketchTessellation,
   SketchTessellationFailure,
   SketchTessellationRequest,
-  SolidBodyKind,
   SolidRecomputeRequest,
   SolidRecomputeResult,
   TessellationOptions,
@@ -127,7 +133,7 @@ function toImportBody(
   shape: TopoDS_Shape,
   name: string | null,
   color: RgbTuple | null,
-  bodyKind: SolidBodyKind,
+  bodyKind: 'solid' | 'shell',
 ): ShapeImportBody {
   const brepBytes = writeBrepBytes(oc, shape);
   const volume = measureVolume(oc, shape);
@@ -145,6 +151,54 @@ function toImportBody(
       triangleCount: surface.triangleCount,
     },
   };
+}
+
+/**
+ * 読み込んだ三角形の形 1 つを、Comlink 越しに渡せる形へ畳む(FR-802、P6 §2.8、§0.a-0.23)。
+ *
+ * **B-rep は作らない。** 三角形から面を張り直すと面が三角形の数だけでき、その上の
+ * フィレットも穴あけも実用にならない(§0.a-0.23)。だから `bodyKind` は `'mesh'` で、
+ * この枝には `brepBytes` の欄そのものが無い(`ShapeImportBody` の注釈)。
+ *
+ * **名前と色は `null` にする。** STL には名前も色も無く、OBJ / glTF は持てるが
+ * `readCafMesh` が形だけを取り出す作りである(読み込んだ色は当面使わない決定
+ * §0.a-0.28 の下では、読む手間に見合わない)。取り込むなら P7 以降。
+ *
+ * 体積は読み手が三角形から数えた値(発散定理。`occt/exchangeShared.ts` の `computeVolume`)。
+ */
+function toImportMeshBody(mesh: ImportedMeshData): ShapeImportBody {
+  return {
+    name: null,
+    color: null,
+    bodyKind: 'mesh',
+    volume: mesh.volume,
+    triangles: {
+      positions: mesh.positions,
+      normals: mesh.normals,
+      indices: mesh.indices,
+      triangleCount: mesh.triangleCount,
+    },
+  };
+}
+
+/**
+ * 書き出す立体ぶんの三角形を、依頼の品質でまとめて作り直す(FR-803、§0.a-0.13)。
+ *
+ * **形の複製に掛けるので、画面用のキャッシュは 1 枚も汚れない**(`occt/exportMesh.ts`)。
+ * 品質の対(長さと角度)は依頼のまま渡す——角度を省いた依頼では
+ * `angularDeflectionRad` が `undefined` のまま渡り、`buildExportMesh` の既定
+ * (画面用と同じ 0.5rad)に落ちる。
+ */
+function buildExportMeshes(
+  oc: OpenCascadeInstance,
+  shapes: readonly TopoDS_Shape[],
+  quality: ShapeExportMeshQuality,
+): ExportMesh[] {
+  return shapes.map((shape) =>
+    buildExportMesh(oc, shape, quality.deviationMm, {
+      angularDeflectionRad: quality.angularDeflectionRad,
+    }),
+  );
 }
 
 /** UI 側から Comlink 越しに呼べる幾何カーネルの窓口。 */
@@ -201,11 +255,16 @@ export interface KernelApi {
    */
   measure(request: MeasureRequest): Promise<MeasureResult>;
   /**
-   * 覚えてある形をファイルの中身へ書き出す(FR-803、P6 §2.3・§2.4、タスク10)。
+   * 覚えてある形をファイルの中身へ書き出す(FR-803、P6 §2.3〜§2.6、タスク10・16)。
    *
-   * **形式ごとに口を増やさない**(§0.a-0.2)。STEP のバイト列・三角形の網・B-rep の
-   * バイト列の切り替えは依頼の `format` で判別し、実装は網羅 `switch` で受ける
+   * **形式ごとに口を増やさない**(§0.a-0.2)。STEP / STL / OBJ / glTF / 3MF 用の三角形 /
+   * B-rep の切り替えは依頼の `format` で判別し、実装は網羅 `switch` で受ける
    * (`ShapeExportRequest` の表)。対象は投影・測定と同じく**段のキャッシュの鍵**で指す。
+   *
+   * **要件 FR-803 の 5 形式はすべてこの 1 本から出る。** STEP は `'step'`、STL は `'stl'`
+   * (バイナリ / ASCII は `ascii` で切り替え)、OBJ は `'obj'`(`.obj` と `.mtl` の 2 ファイル)、
+   * glTF は `'gltf'`(`.glb`)、3MF は `'mesh'` で三角形だけを受け取って `packages/io` が
+   * ZIP と XML を組む(§0.a-0.19。io は OCCT を呼べない)。
    *
    * **測定と同じく、これは読み取りだけ**で再計算も鍵の作り直しも起こさない。三角形は
    * 形の複製に掛けるので、画面用のキャッシュは 1 枚も汚れない(`occt/exportMesh.ts`)。
@@ -216,11 +275,14 @@ export interface KernelApi {
    */
   exportShapes(request: ShapeExportRequest): Promise<ShapeExportResult>;
   /**
-   * ファイルの中身から形を読み込む(FR-802、FR-811、P6 §2.3・§2.8、タスク10)。
+   * ファイルの中身から形を読み込む(FR-802、FR-811、P6 §2.3・§2.8、タスク10・16)。
    *
-   * 書き出しと同じく**口は 1 本**で、依頼の `format` で判別する。返すのは
-   * **`.pcad` へ抱き込むバイト列と画面用の三角形**で、形そのものは Worker の中に残さない
-   * (`ShapeImportBody` の注釈)。読み込んだ形の単位は mm へ換算済み(NFR-RE-3)。
+   * 書き出しと同じく**口は 1 本**で、依頼の `format`(STEP / STL / OBJ / glTF / B-rep)で
+   * 判別する。返すのは**`.pcad` へ抱き込むバイト列と画面用の三角形**で、形そのものは
+   * Worker の中に残さない(`ShapeImportBody` の注釈)。**三角形しか持たない形式
+   * (STL / OBJ / glTF)は `bodyKind: 'mesh'` で返り、B-rep のバイト列を持たない**
+   * (§0.a-0.23。メッシュ → B-rep の変換はしない)。
+   * 読み込んだ形の単位は mm へ換算済み(NFR-RE-3。`ShapeImportResult.unit` の表)。
    *
    * 読めなかったとき・立体が入っていなかったときは**日本語の理由で投げる**
    * (§2.8 の断りの表。画面はその文言をそのまま見せる)。
@@ -474,11 +536,47 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
           );
           return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
         }
+        case 'stl': {
+          // STL は三角形の網を 1 つしか持てないので、立体をそのまま順につなぐ(§2.4)。
+          // 色は書かない(§0.a-0.15。仕様に無い)ので、依頼の名前と色は使わない。
+          const written = writeStl(buildExportMeshes(oc, shapes, request), {
+            ascii: request.ascii ?? false,
+          });
+          return {
+            format: 'stl',
+            files: [
+              { fileName: `${normalizeBaseName(request.baseName)}.stl`, bytes: written.bytes },
+            ],
+            triangleCount: written.triangleCount,
+            droppedTriangleCount: written.droppedTriangleCount,
+          };
+        }
+        // OBJ と glTF は書き手が同じ(`writeCafMesh`)で、違うのは組み立てるファイルだけ。
+        // 依頼の `format` がそのまま書き手の `CafMeshFormat` になるので、2 つを 1 つの枝で受ける。
+        case 'obj':
+        case 'gltf': {
+          const meshes = buildExportMeshes(oc, shapes, request);
+          const written = writeCafMesh(
+            request.bodies.map((item, index) => ({
+              mesh: meshes[index],
+              name: item.name,
+              color: item.color,
+            })),
+            { format: request.format, baseName: request.baseName },
+          );
+          return {
+            format: request.format,
+            files: written.files,
+            triangleCount: written.triangleCount,
+            droppedTriangleCount: written.droppedTriangleCount,
+          };
+        }
         case 'mesh': {
+          const meshes = buildExportMeshes(oc, shapes, request);
           const bodies: ShapeExportMeshBody[] = request.bodies.map((item, index) => ({
             bodyKey: item.bodyKey,
             // 形の複製に掛けるので、画面用キャッシュの三角形は 1 枚も変わらない(§0.a-0.13)。
-            triangles: buildExportMesh(oc, shapes[index], request.deviationMm),
+            triangles: meshes[index],
           }));
           return { format: 'mesh', bodies };
         }
@@ -508,7 +606,18 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
           try {
             return {
               bodies: read.bodies.map((body) =>
-                toImportBody(oc, body.shape, body.name, body.color, body.kind),
+                // `StepReadBody.kind` の型は `SolidBodyKind`(3 種)だが、`readStep.ts` は
+                // **閉じた立体かどうかだけ**で `'solid' | 'shell'` を決めている
+                // (`kind: solid ? 'solid' : 'shell'`)ので `'mesh'` にはならない。
+                // B-rep を持つ 2 種へここで絞るのは、読み込んだ三角形の形
+                // (`bodyKind: 'mesh'`)が B-rep のバイト列を持たない別の枝だから。
+                toImportBody(
+                  oc,
+                  body.shape,
+                  body.name,
+                  body.color,
+                  body.kind === 'solid' ? 'solid' : 'shell',
+                ),
               ),
               unit: read.unit,
               unitNames: read.unitNames,
@@ -532,6 +641,30 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
           } finally {
             shape.delete();
           }
+        }
+        case 'stl': {
+          // **STL に単位は無い**(§0.a-0.6)。数をそのまま mm として取り込み、違ったら
+          // 利用者に訊く——訊くのは ui(タスク32)なので、ここは `'other'` と記録するだけ。
+          const mesh = readStl(oc, request.bytes, { fileName: request.fileName });
+          return { bodies: [toImportMeshBody(mesh)], unit: 'other', unitNames: [] };
+        }
+        case 'obj': {
+          // OBJ も単位を持たない(`FileLengthUnit()` が `-1`。`readCafMesh.ts` の実測)。
+          const mesh = readCafMesh(oc, request.bytes, {
+            format: 'obj',
+            fileName: request.fileName,
+          });
+          return { bodies: [toImportMeshBody(mesh)], unit: 'other', unitNames: [] };
+        }
+        case 'gltf': {
+          // **glTF は仕様が m と定めている**ので、`readCafMesh` が OCCT に 1000 倍させて
+          // mm で受け取っている(`SetSystemLengthUnit(0.001)`。§0.a-0.6)。取り違えようが
+          // ないので、利用者に単位を訊く必要が無い(`'mm'` を返す)。
+          const mesh = readCafMesh(oc, request.bytes, {
+            format: 'gltf',
+            fileName: request.fileName,
+          });
+          return { bodies: [toImportMeshBody(mesh)], unit: 'mm', unitNames: [] };
         }
       }
     },

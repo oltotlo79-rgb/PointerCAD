@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
 import { TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
+import { ALL_SELECTABLE } from '../solid/selectionFilter.js';
 import {
   clampUiScale,
   DEFAULT_DISPLAY_SETTINGS,
@@ -370,6 +371,78 @@ describe('表示の長さの単位(FR-811、P6 タスク3)', () => {
     const after = encoder.encode(serializeDocument(document, { savedAt }));
 
     expect(after.length).toBe(before.length);
+    expect([...after]).toEqual([...before]);
+  });
+});
+
+describe('選択フィルタ(FR-112、P6 タスク36)', () => {
+  it('既定は全部入(P4b までと同じ振る舞い)', () => {
+    expect(DEFAULT_DISPLAY_SETTINGS.selectionFilter).toEqual(ALL_SELECTABLE);
+    expect(loadSettings(createFakeStorage()).selectionFilter).toEqual(ALL_SELECTABLE);
+    expect(loadSettings(null).selectionFilter).toEqual(ALL_SELECTABLE);
+  });
+
+  it('端末に保存され、読み直すと同じ入切が戻る(往復)', () => {
+    const storage = createFakeStorage();
+    const filter = { vertex: false, edge: true, face: true, body: false };
+    saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, selectionFilter: filter }, storage);
+    expect(loadSettings(storage).selectionFilter).toEqual(filter);
+  });
+
+  it('P6 より前に保存された値(欄が無い)でも、テーマと拡大率は生き残る(前方互換)', () => {
+    const storage = createFakeStorage({
+      'pointercad.settings': JSON.stringify({ theme: 'light', uiScale: 120 }),
+    });
+    const loaded = loadSettings(storage);
+    expect(loaded.theme).toBe('light');
+    expect(loaded.uiScale).toBe(120);
+    expect(loaded.selectionFilter).toEqual(ALL_SELECTABLE);
+  });
+
+  it('壊れている値はこの欄だけ全部入へ戻す(何も選べないまま起動しない)', () => {
+    const broken = createFakeStorage({
+      'pointercad.settings': JSON.stringify({
+        theme: 'light',
+        uiScale: 120,
+        selectionFilter: { vertex: false, edge: 'no' },
+      }),
+    });
+    const loaded = loadSettings(broken);
+    expect(loaded.theme).toBe('light');
+    expect(loaded.selectionFilter).toEqual(ALL_SELECTABLE);
+  });
+
+  it('余計な欄が混ざっていても 4 欄だけを写す', () => {
+    const storage = createFakeStorage({
+      'pointercad.settings': JSON.stringify({
+        theme: 'dark',
+        uiScale: 100,
+        selectionFilter: { vertex: true, edge: false, face: true, body: true, sketch: true },
+      }),
+    });
+    expect(Object.keys(loadSettings(storage).selectionFilter).sort()).toEqual([
+      'body',
+      'edge',
+      'face',
+      'vertex',
+    ]);
+  });
+
+  it('入切を変えても .pcad のバイト列は 1 バイトも変わらない(形を変えない、FR-112)', () => {
+    const document = createEmptyPartDocument();
+    const savedAt = '2026-09-06T00:00:00.000Z';
+    const storage = createFakeStorage();
+    const encoder = new TextEncoder();
+
+    saveSettings(DEFAULT_DISPLAY_SETTINGS, storage);
+    const before = encoder.encode(serializeDocument(document, { savedAt }));
+
+    saveSettings(
+      { ...loadSettings(storage), selectionFilter: { vertex: false, edge: false, face: true, body: false } },
+      storage,
+    );
+    const after = encoder.encode(serializeDocument(document, { savedAt }));
+
     expect([...after]).toEqual([...before]);
   });
 });

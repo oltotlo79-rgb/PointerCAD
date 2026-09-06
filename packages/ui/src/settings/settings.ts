@@ -15,6 +15,11 @@ import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
+import {
+  ALL_SELECTABLE,
+  isSelectionFilter,
+  type SelectionFilter,
+} from '../solid/selectionFilter.js';
 
 /** 表示テーマ 5 種(FR-908)。既定は `dark`(現状の配色をそのまま複製)。 */
 export type ThemeId = 'dark' | 'light' | 'darkModern' | 'lightModern' | 'modern';
@@ -60,6 +65,14 @@ export interface DisplaySettings {
    * 増やさず同じ 1 つの `DisplaySettings` へ入れる。
    */
   readonly lengthUnit: LengthUnit;
+  /**
+   * 選択フィルタ(FR-112。P6 タスク36)。**既定は全部入**で、P4b までの操作を 1 つも変えない。
+   *
+   * **端末の設定であって文書の属性ではない**(§0.43。切っても形は変わらず `.pcad` にも
+   * 書かない)。テーマ・拡大率・刻み角度・単位と同じ性質なので、`localStorage` の鍵を
+   * 増やさず同じ 1 つの `DisplaySettings` へ入れる。
+   */
+  readonly selectionFilter: SelectionFilter;
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
@@ -68,6 +81,7 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
   timelineHintSeen: false,
   lengthUnit: 'mm',
+  selectionFilter: ALL_SELECTABLE,
 };
 export const MIN_UI_SCALE = 90;
 export const MAX_UI_SCALE = 150;
@@ -165,6 +179,22 @@ function readLengthUnit(value: object): LengthUnit {
   const stored: unknown = value.lengthUnit;
   const found = LENGTH_UNITS.find((unit) => unit === stored);
   return found ?? DEFAULT_DISPLAY_SETTINGS.lengthUnit;
+}
+
+/**
+ * 保存されている値から選択フィルタを読む(FR-112、P6 タスク36)。
+ * **この欄も欄ごとに既定へ後退させる**(`readTrackAngleStep` と同じ前方互換の理由。
+ * P6 より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
+ * 既定へ戻してはいけない)。**戻り先は全部入**なので、壊れていても選べなくならない
+ * (NFR-UX-4。「何も選べない」状態のまま起動するのがいちばん困る)。
+ */
+function readSelectionFilter(value: object): SelectionFilter {
+  if (!('selectionFilter' in value) || !isSelectionFilter(value.selectionFilter)) {
+    return DEFAULT_DISPLAY_SETTINGS.selectionFilter;
+  }
+  // 余計な欄が混ざっていても 4 欄だけを写す(保存された形をそのまま持ち回らない)。
+  const { vertex, edge, face, body } = value.selectionFilter;
+  return { vertex, edge, face, body };
 }
 
 /**
@@ -326,6 +356,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       trackAngleStep: readTrackAngleStep(parsed),
       timelineHintSeen: readTimelineHintSeen(parsed),
       lengthUnit: readLengthUnit(parsed),
+      selectionFilter: readSelectionFilter(parsed),
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;

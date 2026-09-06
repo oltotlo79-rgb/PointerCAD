@@ -11,6 +11,7 @@
 
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
+  addVec3,
   baseWorkPlane,
   curveEnd,
   curveStart,
@@ -23,6 +24,7 @@ import {
   radiansToDegrees,
   resolveCoordinate,
   resolvePointReference,
+  scaleVec3,
   subVec3,
   vertexKey,
   WORK_PLANES,
@@ -111,11 +113,14 @@ import {
 } from '../sketch/snapMath.js';
 import {
   chooseTrack,
+  closestParameterToRay,
   collectTrackCandidates,
   type TrackCandidate,
   type TrackResult,
 } from '../sketch/trackMath.js';
+import { resolveCutPlane } from '../solid/cutCommands.js';
 import { pickSolidSubShape } from '../solid/pickSubShape.js';
+import { filterPickCandidates, type SelectionFilter } from '../solid/selectionFilter.js';
 import {
   subShapeElementId,
   subShapeRefOf,
@@ -138,6 +143,16 @@ import { gridSpacing } from './gridMath.js';
 import { snapToSphereGrid, type SphereGridPoint, type SphereGridSpec } from './buildSphereGrid.js';
 
 const LEFT_BUTTON = 0;
+
+/**
+ * 断面表示のつまみ(FR-111、P6 タスク35、§0.42)を掴める画面上の半径(px)。
+ *
+ * 狙うのは**矢印の根もと**(= 切る平面の中心)。矢印の長さは四角の大きさから決まる
+ * (`createSolidLayer.ts` が測る)ので画面側からは分からず、根もとの 1 点だけが
+ * 呼び出し側と描画側で必ず一致する。部分形状の 6px より広くしてあるのは、つまみが
+ * 立体の面に重なって出るぶん狙いにくいため(NFR-UX-7)。
+ */
+const SECTION_HANDLE_PICK_RADIUS_PIXELS = 18;
 
 /**
  * 数値入力で位置を決める道具。選択と面はクリックだけで進む。
@@ -517,13 +532,42 @@ export function attachSketchInteraction(
   }
 
   /**
+   * 拾った 1 件を選択フィルタ(FR-112、P6 タスク36)に通す。切ってある種類なら null。
+   *
+   * **押して選ぶのも、乗せて強調するのも同じこの道を通る**(`pickInto` と `onPointerMove` の
+   * どちらも下の `pickBodyAt` / `pickSubShapeAt` を呼ぶ)ので、「押せば選べるのに色は
+   * 出ない」という食い違いは起きない。絞り込みそのものは Node で検査できる純関数
+   * (`solid/selectionFilter.ts` の `filterPickCandidates`)に置いてある。
+   *
+   * **限界(申し送り)**: 選択の種類が `edge` のときは頂点が辺に勝つ(§0.a-0.27)ので、
+   * 頂点だけを切ってあると「頂点の上に乗った瞬間だけ辺も拾えない」。頂点を外して辺を
+   * 拾い直すには `pickSolidSubShape` に辺だけの道が要る(タスク37・44 へ申し送り)。
+   */
+  function throughSelectionFilter(
+    picked: { readonly elementId: string; readonly kind: SelectionKind } | null,
+    filter: SelectionFilter,
+  ): string | null {
+    if (picked === null) {
+      return null;
+    }
+    const [kept] = filterPickCandidates([picked], filter);
+    return kept === undefined ? null : kept.elementId;
+  }
+
+  /**
    * 押した場所にある立体の id(FR-106)。立体が 1 つも無いときは光線を飛ばさない。
    * スケッチの要素のほうが細くて狙いにくいので、**必ず要素を先に**当ててから呼ぶ
    * (小さいものを先に取る、P1 §2.8)。
+   *
+   * 選択フィルタ(FR-112)で「立体」を切ってあるときは光線そのものを飛ばさない。
    */
   function pickBodyAt(pointer: readonly [number, number]): string | null {
     const state = useAppStore.getState();
-    if (state.bodies.length === 0 || !picksBodies(state.activeTool)) {
+    if (
+      state.bodies.length === 0 ||
+      !picksBodies(state.activeTool) ||
+      !state.displaySettings.selectionFilter.body
+    ) {
       return null;
     }
     return scene.pickBody(pointer[0], pointer[1]);
@@ -543,13 +587,101 @@ export function attachSketchInteraction(
     if (selectionKind === 'body' || bodies.length === 0 || !picksSubShapes(selectionKind, activeTool)) {
       return null;
     }
+    const filter = state.displaySettings.selectionFilter;
     if (selectionKind === 'face') {
+      // 面を切ってあるときは光線そのものを飛ばさない(FR-112)。
+      if (!filter.face) {
+        return null;
+      }
       const hit = scene.pickFaceAt(pointer[0], pointer[1]);
       return hit === null ? null : subShapeElementId(hit.featureId, 'face', hit.faceIndex);
     }
     // ここまで来たら edge か vertex(pickSolidSubShape が要る SubShapeKind、頂点 > 辺の順)。
     const picked = pickSolidSubShape(toSubShapeBodies(bodies), project, pointer, selectionKind);
-    return picked === null ? null : picked.elementId;
+    return throughSelectionFilter(picked, filter);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * 断面表示のつまみ(FR-111、P6 タスク35、§0.42)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * つまみを引いている最中の控え。掴んでいなければ null。
+   *
+   * 平面は**掴んだ瞬間のもの**を覚える(引いている間に文書が変わっても、掴んだ軸の上を
+   * まっすぐ動く)。`delta` は掴んだ瞬間のずれで、これを足すことでつまみが指の下へ
+   * 飛ばない(スケッチの引っぱりと同じ考え方)。
+   */
+  let sectionDrag: {
+    /** オフセット 0 のときの平面の原点(ここを起点に法線方向へ測る)。 */
+    readonly origin: Vec3;
+    /** 単位法線。オフセットが増える向き。 */
+    readonly normal: Vec3;
+    /** 掴んだ瞬間の「今のオフセット − 光線から求めた値」。 */
+    readonly delta: number;
+  } | null = null;
+
+  /**
+   * つまみを掴めたか(FR-111)。断面表示を出していない・平面が解けない・矢印の根もとから
+   * 遠いときは掴まず、押下は従来どおり下の枝(選択など)へ流れる。
+   */
+  function beginSectionDragAt(pointer: readonly [number, number]): boolean {
+    const state = useAppStore.getState();
+    const section = state.sectionView;
+    if (section === null) {
+      return false;
+    }
+    const plane = resolveCutPlane(section.plane);
+    if (plane === null) {
+      return false;
+    }
+    // つまみは「オフセットを載せた後」の位置に出ている(ViewportCanvas と同じ式)。
+    const handleOrigin = addVec3(plane.origin, scaleVec3(plane.normal, section.offsetMm));
+    const screen = project(handleOrigin);
+    if (screen === null) {
+      return false;
+    }
+    const distance = Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]);
+    if (distance > SECTION_HANDLE_PICK_RADIUS_PIXELS) {
+      return false;
+    }
+    const ray = scene.pointerRay(pointer[0], pointer[1]);
+    const grabbed =
+      ray === null
+        ? null
+        : closestParameterToRay({ origin: plane.origin, direction: plane.normal }, ray);
+    sectionDrag = {
+      origin: plane.origin,
+      normal: plane.normal,
+      // 光線が取れない(まだ一度も描いていない)ときはずれ 0 で始める。
+      delta: grabbed === null ? 0 : section.offsetMm - grabbed,
+    };
+    return true;
+  }
+
+  /**
+   * 引いている間、法線の軸の上でポインタにいちばん近い位置をオフセットにする(§0.42)。
+   *
+   * 軸への写し方は案内線と同じ `closestParameterToRay`(P4b 仕上げ (a))。法線が単位なので
+   * 求まる係数がそのまま mm になる。視線と法線がほぼ平行(真上から見て真下へ切っている)
+   * ときは係数が定まらないので、**その間は動かさない**(暴れさせない、NFR-UX-7)。
+   */
+  function updateSectionDrag(pointer: readonly [number, number]): void {
+    if (sectionDrag === null) {
+      return;
+    }
+    const ray = scene.pointerRay(pointer[0], pointer[1]);
+    if (ray === null) {
+      return;
+    }
+    const parameter = closestParameterToRay(
+      { origin: sectionDrag.origin, direction: sectionDrag.normal },
+      ray,
+    );
+    if (parameter === null) {
+      return;
+    }
+    useAppStore.getState().setSectionOffset(parameter + sectionDrag.delta);
   }
 
   /**
@@ -566,8 +698,9 @@ export function attachSketchInteraction(
     if (!picksSolidVertices(state.workPlaneId, state.activeTool) || state.bodies.length === 0) {
       return null;
     }
+    // 選択フィルタ(FR-112)で頂点を切ってあるときは、3D スケッチでも頂点を拾わない。
     const picked = pickSolidSubShape(toSubShapeBodies(state.bodies), project, pointer, 'vertex');
-    return picked === null ? null : picked.elementId;
+    return throughSelectionFilter(picked, state.displaySettings.selectionFilter);
   }
 
   /** 押した頂点から、文書へ保存する参照(選んだ瞬間の指紋つき)を作る。 */
@@ -913,6 +1046,13 @@ export function attachSketchInteraction(
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
 
+    if (sectionDrag !== null) {
+      // 断面表示のつまみを引いている最中(FR-111)。掴む相手はもう決まっているので、
+      // ホバーも当たり判定も吸着も通さず、切る位置だけを動かす。
+      updateSectionDrag(pointer);
+      return;
+    }
+
     if (state.sketchDrag !== null) {
       /*
         引っぱっている最中(FR-313、タスク14)。ホバーも当たり判定も要らない
@@ -1013,6 +1153,15 @@ export function attachSketchInteraction(
 
   /** 離したら引っぱりを確定する(FR-313、タスク14)。掴んでいなければ何もしない。 */
   function onPointerUp(event: PointerEvent): void {
+    if (sectionDrag !== null) {
+      // 断面表示のつまみを離した(FR-111)。切る位置はもうストアに入っているので、
+      // 掴んでいた控えを落とすだけ。文書は 1 バイトも変わっていない。
+      sectionDrag = null;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      return;
+    }
     if (useAppStore.getState().sketchDrag === null) {
       return;
     }
@@ -1024,6 +1173,10 @@ export function attachSketchInteraction(
 
   function onPointerLeave(): void {
     const state = useAppStore.getState();
+    if (sectionDrag !== null) {
+      // つまみを引いている最中はポインタを捕まえてあるので、画面の外へ出ても続ける。
+      return;
+    }
     if (state.sketchDrag !== null) {
       // 引っぱっている最中は、ポインタを捕まえてあるので画面の外へ出ても続ける。
       return;
@@ -1509,6 +1662,19 @@ export function attachSketchInteraction(
       */
       event.preventDefault();
       pickConstraintAt(pointer);
+      return;
+    }
+
+    if (beginSectionDragAt(pointer)) {
+      /*
+        断面表示のつまみ(FR-111、§0.42)。**道具に関わらず掴める**——断面表示は「いま何を
+        しているか」と無関係に中を見るための表示で、切る位置を直すのに道具を選び直させる
+        のは筋が悪い(NFR-UX-1)。掴めるのは矢印の根もとの 18px だけなので、ほかの操作を
+        奪わない(掴めなければそのまま下の枝へ落ちる)。
+
+        ポインタを捕まえて、canvas の外へ出ても離すまで追い続ける(引っぱりと同じ)。
+      */
+      canvas.setPointerCapture(event.pointerId);
       return;
     }
 

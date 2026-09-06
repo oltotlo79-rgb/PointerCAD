@@ -34,6 +34,11 @@ export const PCAD_SAVE_CHANNEL = 'pcad:save';
 export const PCAD_HAS_TARGET_CHANNEL = 'pcad:hasTarget';
 export const PCAD_OPEN_ANY_CHANNEL = 'pcad:openAny';
 export const PCAD_SAVE_AS_CHANNEL = 'pcad:saveAs';
+/**
+ * 印刷(FR-810。P6 計画書 §2.11、タスク29)。**受け口は `main.ts` が登録する。**
+ * ここはファイルの読み書きの場所で、印刷はダイアログではなく窓の仕事だから。
+ */
+export const PCAD_PRINT_CHANNEL = 'pcad:print';
 
 /** 部品ファイルの拡張子(要件§8)。 */
 const PCAD_EXTENSION = 'pcad';

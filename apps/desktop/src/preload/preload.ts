@@ -35,4 +35,9 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
    */
   saveFileAs: (fileName: string, kind: string, bytes: Uint8Array): Promise<unknown> =>
     ipcRenderer.invoke('pcad:saveAs', fileName, kind, bytes),
+  /**
+   * 印刷する(P6 計画書 タスク29)。渡すのは PNG のバイト列だけで、
+   * 答えは印刷できたかどうかの真偽(取り消しは false)。**名前もパスも渡さない**(NFR-SE-1)。
+   */
+  print: (png: Uint8Array): Promise<unknown> => ipcRenderer.invoke('pcad:print', png),
 });

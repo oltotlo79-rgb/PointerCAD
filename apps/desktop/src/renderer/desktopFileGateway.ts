@@ -32,6 +32,14 @@ interface DesktopExchangeApi {
   saveFileAs(fileName: string, kind: string, bytes: Uint8Array): Promise<unknown>;
 }
 
+/**
+ * 印刷の口(P6 計画書 タスク29)。**別の型にしてある**理由は `DesktopExchangeApi` と同じで、
+ * この口を出さない古い preload でも他の口は動かすため(§1.5 の保険)。
+ */
+interface DesktopPrintApi {
+  print(png: Uint8Array): Promise<unknown>;
+}
+
 function isObject(value: unknown): value is object {
   return typeof value === 'object' && value !== null;
 }
@@ -46,6 +54,18 @@ function isDesktopFileApi(value: unknown): value is DesktopFileApi {
     'hasSaveTarget' in value &&
     typeof value.hasSaveTarget === 'function'
   );
+}
+
+function isDesktopPrintApi(value: object): value is DesktopPrintApi {
+  return 'print' in value && typeof value.print === 'function';
+}
+
+/**
+ * 印刷の口を包む。**答えが true のときだけ「印刷した」**とみなし、
+ * 取り消し(false)も答えの形が違うときも false にする(取り消しを例外にしない。NFR-RE-1)。
+ */
+function wrapPrint(api: DesktopPrintApi): (png: Uint8Array) => Promise<boolean> {
+  return async (png: Uint8Array): Promise<boolean> => (await api.print(png)) === true;
 }
 
 function isDesktopExchangeApi(value: object): value is DesktopExchangeApi {
@@ -188,14 +208,18 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
     },
   };
 
+  // 印刷の口(P6 計画書 タスク29)。古い preload は持たないので、あるときだけ足す。
+  // 口が無ければ画面は Web と同じ道筋(`window.print()`)で印刷する(§1.5)。
+  const printable: FileGateway = isDesktopPrintApi(api) ? { ...base, print: wrapPrint(api) } : base;
+
   if (!isDesktopExchangeApi(api)) {
     // 古い preload。部品の読み書きだけを渡す(画面は種類つきの口が無い口として扱い、
     // `openFileThrough` / `saveFileAsThrough` がブラウザ用の実装で答える)。
-    return base;
+    return printable;
   }
 
   return {
-    ...base,
+    ...printable,
 
     // 返り値の形(`PickedTypedFile`)は `@pointercad/ui` の公開口に名前が出ていないので、
     // ここには書かずに `FileGateway` から受け取る(引数の種類の型も同じ経路で決まる)。

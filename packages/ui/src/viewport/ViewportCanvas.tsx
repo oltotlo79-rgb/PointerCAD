@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { appearanceOf, isFreeWorkPlaneId } from '@pointercad/model';
+import { evaluateExpression } from '@pointercad/expression';
+import {
+  addVec3,
+  appearanceOf,
+  formatDisplayLength,
+  isFreeWorkPlaneId,
+  parseDisplayInput,
+  scaleVec3,
+  toDisplayLength,
+  type LengthUnit,
+} from '@pointercad/model';
 
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
 import { t } from '../i18n/t.js';
@@ -12,6 +22,7 @@ import {
   resolveCutPlane,
   type CutContext,
 } from '../solid/cutCommands.js';
+import { LENGTH_UNIT_LABEL_KEYS } from '../settings/settings.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
@@ -22,9 +33,10 @@ import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
-import { createViewportScene } from './createViewportScene.js';
+import { createViewportScene, type SectionViewRender } from './createViewportScene.js';
 import type { CutPreview } from './createSolidLayer.js';
 import type { SphereGridSpec } from './buildSphereGrid.js';
+import { toThreePlane } from './sectionView.js';
 import { readThemeColors } from './themeColors.js';
 
 /** 切断の予告を組み立てる材料。ストアから読むものだけを並べる。 */
@@ -79,6 +91,168 @@ function cutPreviewOf(source: CutPreviewSource): CutPreview | null {
   const keepOpposite =
     input.toggles.find((toggle) => toggle.key === 'cutKeepOpposite')?.value === true;
   return { plane, diagonal, keep: keepOpposite ? 'negative' : 'positive' };
+}
+
+/**
+ * ビューの断面表示(FR-111、P6 タスク35、§2.12)を、ストアの札から描く材料へ開く。
+ *
+ * **カーネルへは行かない。** 切断の予告(`resolveCutPlane`)と同じく指紋だけで平面を解き、
+ * `toThreePlane`(タスク34)で three.js に渡す素の数へ写す。**形は 1 つも変えない。**
+ *
+ * つまみの四角は**オフセットを載せた後の位置**へ置く(平面そのものを動かして見せる)。
+ * 平面が解けない・オフセットが数でないときは `null` を返し、断りの文は
+ * `sectionRefusalOf` が同じ道筋でもう一度求める(断りを 2 通りに分けない)。
+ */
+function sectionViewRenderOf(
+  section: ReturnType<typeof useAppStore.getState>['sectionView'],
+): SectionViewRender | null {
+  if (section === null) {
+    return null;
+  }
+  const plane = resolveCutPlane(section.plane);
+  if (plane === null) {
+    return null;
+  }
+  const outcome = toThreePlane(plane, section.offsetMm, section.flipped);
+  if (!outcome.ok) {
+    return null;
+  }
+  return {
+    plane: outcome.plane,
+    handle: {
+      plane: {
+        ...plane,
+        origin: addVec3(plane.origin, scaleVec3(plane.normal, section.offsetMm)),
+      },
+      keep: section.flipped ? 'negative' : 'positive',
+    },
+  };
+}
+
+/**
+ * 断面表示を出せないときの理由(NFR-UX-5、タスク34 の申し送り「断られたら `message` を
+ * 案内に」)。出せているときは `null`。文言は `sectionView.ts` と `planeSpec.ts` が持つ
+ * 日本語をそのまま使い、ja.json に同じ文を二重に書かない。
+ */
+function sectionRefusalOf(
+  section: ReturnType<typeof useAppStore.getState>['sectionView'],
+): string | null {
+  if (section === null) {
+    return null;
+  }
+  const plane = resolveCutPlane(section.plane);
+  if (plane === null) {
+    return t('sectionView.planeUnavailable');
+  }
+  const outcome = toThreePlane(plane, section.offsetMm, section.flipped);
+  return outcome.ok ? null : outcome.message;
+}
+
+/**
+ * つまみの位置を欄に出すときの丸め(桁)。引いている最中は端数がいくらでも長くなるので、
+ * 打ち直すときの出発点として読める長さに切る(内部の値は丸めない)。
+ */
+const SECTION_OFFSET_DIGITS = 3;
+
+/** 断面表示のオフセット(内部は mm)を、表示の単位の読める文字にする(FR-811)。 */
+function offsetFieldText(offsetMm: number, unit: LengthUnit): string {
+  return String(Number(toDisplayLength(offsetMm, unit).toFixed(SECTION_OFFSET_DIGITS)));
+}
+
+/**
+ * 断面表示のその場の数値入力(NFR-UX-2、§0.42「ドラッグで動かし、その場の数値入力でも打てる」)。
+ *
+ * ビューポートの上に浮かべる小さな欄で、つまみを引くのと同じ 1 つの値(法線方向の
+ * オフセット、mm)を打ち込む。**式が打てる**(FR-201)ので、`10/3` や `√2*5` もそのまま
+ * 通る。打っている途中の文字はここが持つ(rules/04: `useState` は表示専用の一時状態だけ)。
+ */
+function SectionOffsetField(): React.JSX.Element | null {
+  const sectionView = useAppStore((state) => state.sectionView);
+  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
+  const setSectionOffset = useAppStore((state) => state.setSectionOffset);
+  const flipSectionView = useAppStore((state) => state.flipSectionView);
+  const toggleSectionView = useAppStore((state) => state.toggleSectionView);
+  /** 打ちかけの文字。null のあいだはストアの値(つまみで動いたぶんも)をそのまま出す。 */
+  const [draft, setDraft] = useState<string | null>(null);
+
+  if (sectionView === null) {
+    return null;
+  }
+  const source = draft ?? offsetFieldText(sectionView.offsetMm, lengthUnit);
+  // 表示が inch のときは打った式を `(…)in` で包む(規則の正本は model の `parseDisplayInput`)。
+  const evaluated = evaluateExpression(parseDisplayInput(source, lengthUnit));
+  const refusal = sectionRefusalOf(sectionView);
+  return (
+    /*
+      その場に浮かぶ欄の見た目は**既存のその場入力(ポップアップ)と同じ作法**にそろえる。
+      `.pcad-popover` は `position: absolute` と `z-index: 2` を持つのでビューポートの
+      左上へ浮かび、canvas の上に出る。ステータスバーの入切と同じく、この機能のために
+      appShell.css を 1 行も増やさない(区画も増やさない、rules/04)。
+      `pcad-section-view` は**見た目を持たない目印**で、E2E がその場入力のポップアップと
+      この欄を取り違えないようにするために添えてある(タスク44)。
+    */
+    <div className="pcad-popover pcad-section-view">
+      <span className="pcad-popover__title">{t('sectionView.title')}</span>
+      <label className="pcad-field">
+        <span className="pcad-field__label">{t('sectionView.offset')}</span>
+        <input
+          className="pcad-field__input"
+          type="text"
+          inputMode="text"
+          value={source}
+          aria-label={t('sectionView.offset')}
+          onChange={(event) => {
+            const next = event.target.value;
+            setDraft(next);
+            const parsed = evaluateExpression(parseDisplayInput(next, lengthUnit));
+            if (parsed.ok) {
+              // 評価した値は必ず mm(単位の換算は式の側で済んでいる)。
+              setSectionOffset(parsed.value.value);
+            }
+          }}
+          onBlur={() => {
+            // 欄を離れたら打ちかけを畳み、ストアの値(引いて動いたぶんも含む)へ戻す。
+            setDraft(null);
+          }}
+        />
+        <span className="pcad-field__unit">{t(LENGTH_UNIT_LABEL_KEYS[lengthUnit])}</span>
+      </label>
+      <span
+        className={
+          evaluated.ok && refusal === null
+            ? 'pcad-field__message'
+            : 'pcad-field__message pcad-field__message--error'
+        }
+      >
+        {evaluated.ok
+          ? (refusal ?? `= ${formatDisplayLength(evaluated.value.value, lengthUnit)}`)
+          : evaluated.error.message}
+      </span>
+      <div className="pcad-popover__actions">
+        <button
+          type="button"
+          className="pcad-button"
+          title={t('sectionView.flipTooltip')}
+          onClick={() => {
+            flipSectionView();
+          }}
+        >
+          {t('sectionView.flip')}
+        </button>
+        <button
+          type="button"
+          className="pcad-button"
+          title={t('sectionView.closeTooltip')}
+          onClick={() => {
+            setDraft(null);
+            toggleSectionView();
+          }}
+        >
+          {t('sectionView.close')}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /** 球面の案内線を組み立てる材料。ストアから読むものだけを並べる。 */
@@ -245,6 +419,8 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setCutPreview(cutPreviewOf(initial));
     // 球面の案内線(FR-431、P5 タスク21)。球を選んでいる間(または「いつも出す」)だけ出る。
     scene.setSphereGrid(sphereGridSpecOf(initial));
+    // ビューの断面表示(FR-111、P6 タスク35)。入れているあいだだけ平面を配る。
+    scene.setSectionView(sectionViewRenderOf(initial.sectionView));
     requestDraw();
 
     const unsubscribe = useAppStore.subscribe((next, previous) => {
@@ -310,6 +486,14 @@ export function ViewportCanvas(): React.JSX.Element {
         next.sphereGridAlwaysVisible !== previous.sphereGridAlwaysVisible
       ) {
         scene.setSphereGrid(sphereGridSpecOf(next));
+      }
+      /*
+        ビューの断面表示(FR-111、タスク35)。**札が変わったときだけ**平面を作り直す。
+        つまみの四角の広さはボディから測るが、その測り直しは層の側(`syncDraws`)が
+        形の差し替えと同じ機会に行うので、ここではボディの変化を見る必要が無い。
+      */
+      if (next.sectionView !== previous.sectionView) {
+        scene.setSectionView(sectionViewRenderOf(next.sectionView));
       }
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。任意の作業平面(FR-328)は
       // 文書が変わっても面の位置が動くので、解いた面そのものの変化を見る(タスク13)。
@@ -404,6 +588,11 @@ export function ViewportCanvas(): React.JSX.Element {
         tabIndex={0}
         aria-label={t('viewport.label')}
       />
+      {/*
+        断面表示のその場の数値入力(FR-111、NFR-UX-2)。**区画は増やさない**——
+        ビューポートの中に浮かべ、断面表示を入れているあいだだけ出す。
+      */}
+      <SectionOffsetField />
       {controlsReady ? (
         <ViewCube getOrbit={getOrbit} setOrbit={setOrbit} subscribeDraw={subscribeDraw} />
       ) : null}

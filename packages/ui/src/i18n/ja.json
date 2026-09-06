@@ -155,6 +155,8 @@
   "toolbar.displayStyle.shaded": "面のみ",
   "toolbar.displayStyle.shadedWithEdges": "面と稜線",
   "toolbar.displayStyle.wireframe": "稜線のみ",
+  "toolbar.sectionView.label": "断面表示",
+  "toolbar.sectionView.tooltip": "断面表示: 形を切らずに、見た目だけを平面で切って中を見ます",
   "toolbar.displayStyle.tooltip": "立体の見せ方を切り替えます",
   "toolbar.support.groupLabel": "補助",
   "toolbar.support.tooltip": "作図を助ける表示の入り切りです",
@@ -1379,6 +1381,15 @@
   "propertyPanel.importedBodyKind": "種類",
   "statusBar.unitMillimeter": "単位: mm",
   "statusBar.unitInch": "単位: inch",
+  "statusBar.selectionFilterHint": "選べる種類の入切です。切ると、その種類は選べず色も出ません。",
+  "statusBar.selectionFilterNone": "選べるものがありません",
+  "sectionView.title": "断面表示",
+  "sectionView.offset": "切る位置",
+  "sectionView.flip": "裏返す",
+  "sectionView.flipTooltip": "残す側を反対にします",
+  "sectionView.close": "やめる",
+  "sectionView.closeTooltip": "断面表示をやめて、元の見た目に戻します",
+  "sectionView.planeUnavailable": "断面の平面を求められません。作図面を選び直してください。",
   "statusBar.unitHint": "押すと mm と inch を切り替えます",
   "settings.lengthUnit": "表示の単位",
   "settings.lengthUnitMillimeter": "ミリメートル(mm)",
@@ -1420,5 +1431,7 @@
   "exchangeError.shellNotSupported": "面だけの立体は STL に書き出せません。",
   "exchangeError.meshNotSupported": "読み込んだ三角形の形は STEP に書き出せません。STL・3MF・OBJ・glTF なら書き出せます。",
   "exchangeError.colorNotSupported": "この環境では色を書き出せません。形だけを書き出します。",
-  "exchangeError.qualityIgnored": "この形式では品質の指定は効きません。"
+  "exchangeError.qualityIgnored": "この形式では品質の指定は効きません。",
+  "print.unavailable": "この環境では印刷できません。",
+  "print.noImage": "印刷する絵を作れませんでした。"
 }

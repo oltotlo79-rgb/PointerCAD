@@ -14,6 +14,7 @@ import {
   dotVec3,
   findFeature,
   findSketch,
+  isBaseWorkPlaneId,
   isFreeWorkPlaneId,
   moveHistoryItem,
   nonLengthVariables,
@@ -38,6 +39,7 @@ import {
   type PartProgress,
   type PartRecomputeError,
   type PartRecomputeOptions,
+  type PlaneSpec,
   type ParameterAnalysis,
   type PartRecomputeResult,
   type PartSketchResult,
@@ -153,6 +155,24 @@ export interface RestorePrompt {
   readonly documentName: string;
 }
 
+/**
+ * ビューの断面表示(FR-111。P6 タスク34・35、計画書 §2.12、§0.40〜0.42)。
+ *
+ * **形は切らない。** ここにあるのは「どの面で、どれだけずらして、どちら側を残して
+ * **見た目だけ**クリップするか」という表示の札で、`affectsShape` の経路には乗らない
+ * (再計算を起こさない)。導出できる表示の状態なので `.pcad` にも書かない(rules/04)。
+ *
+ * 切断面の指定は P5 の切断(FR-432)と同じ `PlaneSpec` を共有する(要件 FR-111 の明記)。
+ */
+export interface SectionViewState {
+  /** 切る面の決め方(FR-432 と共有)。既定は今の作図面(基準の 3 面)。 */
+  readonly plane: PlaneSpec;
+  /** 平面の法線方向へずらす量(mm、§0.42)。既定は 0。つまみのドラッグで変わる。 */
+  readonly offsetMm: number;
+  /** 残す側を反対にするか(§0.42 の裏返しのつまみ 1 つ)。 */
+  readonly flipped: boolean;
+}
+
 /** 文書を差し替えるときの添え物(§0.a-0.4、§0.a-0.13)。 */
 export interface ApplyDocumentOptions {
   /**
@@ -193,6 +213,15 @@ export interface AppState {
   readonly projection: ProjectionMode;
   readonly displayStyle: DisplayStyle;
   readonly showGrid: boolean;
+  /**
+   * ビューの断面表示(FR-111。P6 タスク35)。出していないときは `null` で、そのとき
+   * 材質のクリッピング平面は空になる(費用ゼロ、NFR-PF-1)。
+   *
+   * **再計算を起こさない。** 入切しても体積も形も変わらず、`isComputing` も立たない。
+   * 文書を作り直したら消える(平面の指定が古い文書の面を指したままになるため)ので、
+   * `createInitialDocumentState` の側に置いてある。
+   */
+  readonly sectionView: SectionViewState | null;
   /**
    * 表示テーマと拡大率(FR-908、FR-909、§0.a-0.1〜0.3)。端末(`localStorage`)へ保存され、
    * 部品文書とは無関係な利用者・端末の好みなので `resetDocument`(新規)では戻さない。
@@ -650,6 +679,21 @@ export interface AppState {
   readonly setProjection: (projection: ProjectionMode) => void;
   readonly setDisplayStyle: (displayStyle: DisplayStyle) => void;
   readonly setShowGrid: (showGrid: boolean) => void;
+  /**
+   * 断面表示(FR-111)の入切をひっくり返す。入れるときは**今の作図面**を切る面にし、
+   * オフセット 0・表向きから始める(§0.42 の既定)。基準の 3 面でない作図面(任意の
+   * 作業平面・3D スケッチ)のときは XY から始める——予告の解決(`resolveCutPlane`)が
+   * 基準の 3 面しか引けないので、解けない面で始めて何も起きないのを避ける。
+   *
+   * **再計算を起こさない**(文書に触らない、`affectsShape` の経路を通らない)。
+   */
+  readonly toggleSectionView: () => void;
+  /** 断面表示の状態を丸ごと差し替える(`null` で切る)。 */
+  readonly setSectionView: (sectionView: SectionViewState | null) => void;
+  /** 断面表示のオフセット(mm)だけを差し替える(つまみのドラッグ・その場の数値入力)。 */
+  readonly setSectionOffset: (offsetMm: number) => void;
+  /** 断面表示の残す側を反対にする(§0.42)。 */
+  readonly flipSectionView: () => void;
   /** 表示テーマ・拡大率を差し替え、`localStorage` へ保存する(FR-908、FR-909)。 */
   readonly setDisplaySettings: (settings: DisplaySettings) => void;
   readonly requestHomeView: () => void;
@@ -1233,6 +1277,7 @@ export function createInitialDocumentState(): Pick<
   | 'selectionKind'
   | 'workPlaneId'
   | 'workPlane'
+  | 'sectionView'
   | 'freeSketchPlane'
   | 'resolvedReferences'
   | 'parameterAnalysis'
@@ -1316,6 +1361,8 @@ export function createInitialDocumentState(): Pick<
     workPlaneId: DEFAULT_WORK_PLANE_ID,
     // 起動時の部品には基準ジオメトリが 1 つも無いので、作図面は基準の XY そのもの。
     workPlane: WORK_PLANES[DEFAULT_WORK_PLANE_ID],
+    // 断面表示(FR-111、P6 タスク35)は切った状態から始める(費用ゼロ)。
+    sectionView: null,
     // 3D スケッチで押した場所の面(FR-330、タスク14)。まだ一度も押していない。
     freeSketchPlane: null,
     resolvedReferences: EMPTY_RESOLVED_REFERENCES,
@@ -1434,6 +1481,49 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setShowGrid: (showGrid) => {
     set({ showGrid });
+  },
+  toggleSectionView: () => {
+    set((state) => ({
+      sectionView:
+        state.sectionView === null
+          ? {
+              plane: {
+                kind: 'workPlane',
+                // 基準の 3 面でない作図面は予告の解決が引けないので XY から始める。
+                planeId: isBaseWorkPlaneId(state.workPlaneId)
+                  ? state.workPlaneId
+                  : DEFAULT_WORK_PLANE_ID,
+                offset: expressionValueFromNumber(0),
+              },
+              offsetMm: 0,
+              flipped: false,
+            }
+          : null,
+    }));
+  },
+  setSectionView: (sectionView) => {
+    set({ sectionView });
+  },
+  setSectionOffset: (offsetMm) => {
+    /*
+      数にならない値(式が解けなかった)は**据え置く**。断りは打ち込んだ欄の側が出すので、
+      ここで NaN を覚えると次に描くたびに断りの経路へ落ちてしまう(操作は止めない、
+      NFR-RE-1)。値が変わらないときも新しい物を作らない(NFR-PF-1。描き直しを呼ばない)。
+    */
+    set((state) =>
+      state.sectionView === null ||
+      !Number.isFinite(offsetMm) ||
+      state.sectionView.offsetMm === offsetMm
+        ? {}
+        : { sectionView: { ...state.sectionView, offsetMm } },
+    );
+  },
+  flipSectionView: () => {
+    set((state) =>
+      state.sectionView === null
+        ? {}
+        : { sectionView: { ...state.sectionView, flipped: !state.sectionView.flipped } },
+    );
   },
   setDisplaySettings: (displaySettings) => {
     saveSettings(displaySettings);
@@ -2126,6 +2216,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       referenceDraft: EMPTY_REFERENCE_DRAFT,
       referenceErrorMessage: null,
       freeSketchPlane: null,
+      // 断面表示も持ち越さない(FR-111、P6 タスク35)。切る面の指定が前の部品の面を
+      // 指したままになり、新しい部品では解けない面で切ろうとすることになるため。
+      sectionView: null,
       snapIndicator: null,
       trackIndicator: null,
       editPreview: null,

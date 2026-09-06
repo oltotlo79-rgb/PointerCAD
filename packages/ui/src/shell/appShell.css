@@ -3057,3 +3057,63 @@ button.pcad-tree__row:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ===== 印刷(FR-810、FR-908。計画書 docs/plans/P6-入出力.md §2.11、タスク29) ===== */
+
+/*
+ * 印刷用の紙面。**画面には出さない。** 印刷のあいだだけ body の末尾へ足し、
+ * 印刷の窓が閉じたら取り除く(packages/ui/src/file/printView.ts の mountPrintSheetIn)。
+ */
+.pcad-print-sheet {
+  display: none;
+}
+
+@media print {
+  /*
+   * 固定 5 区画(ツールバー / モデルブラウザ / ビューポート / プロパティ / ステータスバー、
+   * 要件§7.1)のうち **4 つを名指しで隠す。** 枠(.pcad-shell)ごと畳めば同じことだが、
+   * 枠の作りが変わっても紙にツールバーや区画が写り込まないよう、区画そのものにも書く。
+   */
+  .pcad-toolbar,
+  .pcad-panel--left,
+  .pcad-panel--right,
+  .pcad-statusbar {
+    display: none;
+  }
+
+  /* 残る 1 区画(ビューポート)は、代わりに紙面を出すので枠ごと畳む。 */
+  .pcad-viewport,
+  .pcad-shell {
+    display: none;
+  }
+
+  /*
+   * 紙は白、文字は黒。**テーマの色トークン(--pcad-*)を 1 つも使わない**
+   * (FR-908「図面の印刷・出力の見た目はテーマの影響を受けない」)。
+   */
+  .pcad-print-sheet {
+    display: block;
+    padding: 0;
+    margin: 0;
+    color: #000;
+    background: #fff;
+  }
+
+  .pcad-print-sheet__title {
+    margin: 0 0 2mm;
+    font-size: 14pt;
+    font-weight: 600;
+  }
+
+  .pcad-print-sheet__date {
+    margin: 0 0 3mm;
+    font-size: 9pt;
+  }
+
+  /* 絵は紙の幅いっぱい。用紙サイズ・向きは OS の印刷ダイアログに任せる(§0.a-0.39)。 */
+  .pcad-print-sheet__image {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+}

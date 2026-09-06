@@ -287,6 +287,40 @@ const CUT_PREVIEW_COLOR = 0xf0b429;
 /** 予告の四角の不透明度(§0.a-0.61)。向こう側の形が透けて見える濃さ。 */
 const CUT_PREVIEW_FACE_OPACITY = 0.2;
 
+/**
+ * 断面表示のつまみ(FR-111、P6 タスク35、§0.41・§0.42)。
+ *
+ * **P5 の切断の予告表示をそのまま使い回し、色だけ変える**(§0.41)。切断(FR-432、形が
+ * 変わる)と断面表示(見た目だけ)は結果がまったく違うので、同じ黄で出すと取り違える。
+ * 予告の警告系の黄に対して、こちらは**落ち着いた青**にする(「いま見ているだけ」の合図)。
+ * 予告と同じく、明暗どちらのテーマでも読める色を直に持ち、テーマの表へは足さない。
+ */
+const SECTION_HANDLE_COLOR = 0x38bdf8;
+
+/**
+ * つまみの四角の対角長が測れないとき(ボディが 1 つも無い)の代わりの大きさ(mm)。
+ * 何も無い画面で断面表示を入れても、つまみが 1 画素も出ないと動かしようがないため
+ * (NFR-UX-7)。方眼の刻みと同じ桁にしてある。
+ */
+const SECTION_HANDLE_MIN_DIAGONAL = 40;
+
+/**
+ * つまみの四角を、いま描いているボディより少しだけ広く出す倍率。
+ * ぴったりだと切り口の縁で四角が終わってしまい、平面がどこにあるか読み取りにくい。
+ */
+const SECTION_HANDLE_MARGIN = 1.15;
+
+/**
+ * 断面表示のつまみ(FR-111)。**平面と残す側だけ**を受け取り、四角の大きさ(対角長)は
+ * 層がいま描いているボディから測る(呼び出し側が境界箱を測り直さなくてよい)。
+ */
+export interface SectionHandle {
+  /** つまみを出す平面。オフセットを載せた後の位置で渡す(四角はこの原点を中心にする)。 */
+  readonly plane: ResolvedPlane;
+  /** 残る側。矢印がこちらを向く(`positive` は法線の向き)。 */
+  readonly keep: 'positive' | 'negative';
+}
+
 /** ボディ 1 つぶんの部品。並びは前回と同じかどうかを参照で見分けられるよう控えておく。 */
 interface BodyDraw {
   featureId: string;
@@ -344,6 +378,28 @@ export interface SolidLayer {
    * 並びを触らない**(NFR-PF-1。ねじの印・部分形状の重ね描きと同じ約束)。
    */
   updateCutPreview(preview: CutPreview | null): void;
+  /**
+   * ビューの断面表示(FR-111、P6 タスク35、§2.12)のクリッピング平面を配る。
+   *
+   * **立体を描くすべての材質へ、同じ 1 本の配列をそのまま渡す**(面の材質はボディごとに
+   * 配列になっている、P5 タスク10)。`material.clippingPlanes` は材質ごとの欄なので、
+   * 1 つでも配り漏らすとその立体・その面だけ切れない(§1.5-20)。
+   *
+   * **切っていないときは空**にする。three.js は `clippingPlanes` が空(または `null`)の
+   * 材質を従来どおりに描くので、断面表示を使わない限り費用はゼロ(NFR-PF-1)。
+   *
+   * 新しい材質は外観を反映するとき(`update`)にしか作られないので、そこでも配り直す。
+   */
+  setSectionPlanes(planes: readonly THREE.Plane[]): void;
+  /**
+   * 断面表示のつまみ(§0.42)を差し替える。`null` で消える。
+   *
+   * P5 の切断の予告(`updateCutPreview`)と同じ四角と矢印を、色だけ変えて出す(§0.41)。
+   * **四角の大きさはいま描いているボディから測る**ので、呼び出し側は平面と残す側だけを
+   * 渡せばよい。予告と違って**毎回組み立て直す**(つまみは引いている最中に動くので、
+   * 同じ値を渡し直す場面がほとんど無い)。
+   */
+  updateSectionHandle(handle: SectionHandle | null): void;
   /**
    * 表示テーマの色を反映する(FR-908)。材質の色を塗り替えるだけで、
    * 部品も並びも作り直さない(NFR-PF-1)。
@@ -639,6 +695,46 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   group.add(cutPreviewArrow);
   let lastCutPreview: CutPreview | null = null;
 
+  /*
+    断面表示のつまみ(FR-111、§0.42)。切断の予告と同じ 2 本(四角と矢印)を色だけ変えて
+    作る。**つまみ自身はクリップしない**(下の `clippedMaterials` に入れない)——平面の
+    真上にあるので、自分の切る面で消えてしまっては掴めなくなるため。
+  */
+  const sectionHandleFace = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.MeshBasicMaterial({
+      color: SECTION_HANDLE_COLOR,
+      transparent: true,
+      opacity: CUT_PREVIEW_FACE_OPACITY,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  sectionHandleFace.renderOrder = SUB_SHAPE_FACE_RENDER_ORDER;
+  sectionHandleFace.visible = false;
+  group.add(sectionHandleFace);
+
+  const sectionHandleArrow = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      color: SECTION_HANDLE_COLOR,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  sectionHandleArrow.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
+  sectionHandleArrow.visible = false;
+  group.add(sectionHandleArrow);
+  let lastSectionHandle: SectionHandle | null = null;
+
+  /**
+   * いま配っているクリッピング平面(FR-111)。**入れ物は 1 つのまま**で中身だけ入れ替える
+   * ので、材質へ配り直さなくても切る位置の変化がそのまま効く(three.js は毎コマこの配列を
+   * 読み、枚数が変わったときだけシェーダを組み直す)。空のあいだは費用ゼロ。
+   */
+  const sectionPlanes: THREE.Plane[] = [];
+
   const draws: BodyDraw[] = [];
   /** 当たり判定にかける面。`draws` と同じ順に並ぶ。 */
   const pickTargets: THREE.Object3D[] = [];
@@ -747,6 +843,85 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     materialStore.collect(used);
   }
 
+  /**
+   * 断面表示のクリッピングを配る相手(FR-111、§1.5-20)。
+   *
+   * **立体そのものと、その上に重ねる印**を全部入れる。面の材質(ボディごとの配列。
+   * 見え方が同じなら使い回されるので同じ材質が 2 度出うる)、稜線の 3 本、部分形状の
+   * 重ね描き 6 本、ねじの印、球面の案内線。切ったのに強調や印だけ空中に残るのを防ぐ。
+   *
+   * **入れないもの**: 切断の予告とこのつまみ(平面の上にあるので自分で消えてしまう)。
+   * 方眼・軸・スケッチはこの層の外にあり、そもそも配る相手にならない。
+   */
+  function clippedMaterials(): readonly THREE.Material[] {
+    const collected = new Set<THREE.Material>();
+    for (const draw of draws) {
+      for (const material of draw.mesh.material) {
+        collected.add(material);
+      }
+    }
+    collected.add(edgeMaterials.none);
+    collected.add(edgeMaterials.hovered);
+    collected.add(edgeMaterials.selected);
+    for (const emphasis of SUB_SHAPE_EMPHASES) {
+      const overlay = subShapeOverlays[emphasis];
+      collected.add(overlay.faces.material);
+      collected.add(overlay.edges.material);
+      collected.add(overlay.vertices.material);
+    }
+    collected.add(threadMarkLines.material);
+    collected.add(sphereGridLines.material);
+    return [...collected];
+  }
+
+  /** いまの平面の入れ物を、配る相手すべてへ差し込む(中身の入れ替えは別に効く)。 */
+  function applySectionPlanes(): void {
+    for (const material of clippedMaterials()) {
+      material.clippingPlanes = sectionPlanes;
+    }
+  }
+
+  /**
+   * つまみの四角の対角長を、いま描いているボディから測る(§0.a-0.61 と同じ考え方)。
+   *
+   * 包む球(`computeBoundingSphere` で取り直してある)の「原点からいちばん遠い点までの
+   * 距離」の 2 倍を対角長にすると、どこを中心に切っても四角が対象を覆う。ボディが 1 つも
+   * 無いときは最小の大きさにする。
+   */
+  function sectionHandleDiagonal(): number {
+    let reach = 0;
+    for (const draw of draws) {
+      const sphere = draw.mesh.geometry.boundingSphere;
+      if (sphere !== null) {
+        reach = Math.max(reach, sphere.center.length() + sphere.radius);
+      }
+    }
+    return reach > 0
+      ? reach * 2 * SECTION_HANDLE_MARGIN
+      : SECTION_HANDLE_MIN_DIAGONAL;
+  }
+
+  /** つまみの四角と矢印を組み立て直す。`lastSectionHandle` が null なら消すだけ。 */
+  function rebuildSectionHandle(): void {
+    if (lastSectionHandle === null) {
+      sectionHandleFace.visible = false;
+      sectionHandleArrow.visible = false;
+      return;
+    }
+    const positions = buildCutPreviewPositions(
+      lastSectionHandle.plane,
+      sectionHandleDiagonal(),
+      lastSectionHandle.keep,
+    );
+    setVectorAttribute(sectionHandleFace.geometry, 'position', positions.facePositions);
+    sectionHandleFace.geometry.computeVertexNormals();
+    sectionHandleFace.geometry.computeBoundingSphere();
+    sectionHandleFace.visible = positions.facePositions.length > 0;
+    setVectorAttribute(sectionHandleArrow.geometry, 'position', positions.arrowPositions);
+    sectionHandleArrow.geometry.computeBoundingSphere();
+    sectionHandleArrow.visible = positions.arrowPositions.length > 0;
+  }
+
   /** 部品の数をボディの数に合わせ、形と外観を流し込む。 */
   function syncDraws(entries: readonly SolidDrawEntry[]): void {
     while (draws.length > entries.length) {
@@ -770,6 +945,10 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     }
     collectMaterials(entries);
     appearanceDirty = false;
+    // 新しく作られた面の材質にも断面表示の平面を配る(配り漏らすとその立体だけ切れない)。
+    applySectionPlanes();
+    // 形が変われば覆うべき広さも変わるので、つまみを出しているあいだは組み立て直す。
+    rebuildSectionHandle();
   }
 
   /**
@@ -869,6 +1048,20 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       cutPreviewArrow.visible = positions.arrowPositions.length > 0;
     },
 
+    setSectionPlanes(planes): void {
+      // 入れ物は作り直さない(材質が持っている参照をそのまま生かす)。中身だけ入れ替える。
+      sectionPlanes.length = 0;
+      for (const plane of planes) {
+        sectionPlanes.push(plane);
+      }
+      applySectionPlanes();
+    },
+
+    updateSectionHandle(handle): void {
+      lastSectionHandle = handle;
+      rebuildSectionHandle();
+    },
+
     setThemeColors(next): void {
       colors = next;
       // 既定の外観の色はテーマが決める(FR-908)。材質そのものは次の `update` で作り直す
@@ -940,6 +1133,13 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       cutPreviewFace.material.dispose();
       cutPreviewArrow.geometry.dispose();
       cutPreviewArrow.material.dispose();
+      sectionHandleFace.geometry.dispose();
+      sectionHandleFace.material.dispose();
+      sectionHandleArrow.geometry.dispose();
+      sectionHandleArrow.material.dispose();
+      // 平面は材質が捨てられた後には誰も読まない。入れ物だけ空にしておく。
+      sectionPlanes.length = 0;
+      lastSectionHandle = null;
       lastCutPreview = null;
       lastBundle = null;
       lastSubShapeBundle = null;

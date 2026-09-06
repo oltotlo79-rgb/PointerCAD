@@ -97,6 +97,7 @@ import {
   NewFileIcon,
   OpenFileIcon,
   PerspectiveIcon,
+  PlaneSectionIcon,
   PlotPointIcon,
   PointArrayToolIcon,
   RedoIcon,
@@ -1464,6 +1465,9 @@ export function Toolbar(): React.JSX.Element {
   const projection = useAppStore((state) => state.projection);
   const displayStyle = useAppStore((state) => state.displayStyle);
   const showGrid = useAppStore((state) => state.showGrid);
+  // 断面表示(FR-111、P6 タスク35)。**入切だけ**を取り出して、切る位置が動いただけでは
+  // ツールバーを描き直さない(NFR-PF-1。他の札と同じ取り出し方)。
+  const sectionViewOn = useAppStore((state) => state.sectionView !== null);
   const activeTool = useAppStore((state) => state.activeTool);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   const snapEnabled = useAppStore((state) => state.snapEnabled);
@@ -1779,6 +1783,24 @@ export function Toolbar(): React.JSX.Element {
             }}
           >
             <WireframeIcon />
+          </button>
+          {/*
+            ビューの断面表示(FR-111、P6 タスク35、§0.57)。**「表示」の区画に入口 1 つだけ**を
+            足す(区画は増やさない、rules/04)。押すと今の作図面で切り、切る位置はビューポートの
+            つまみとその場の数値入力で動かす。**形は切らない**(見た目だけのクリップ)。
+            図柄は交差の印を当面そのまま使う(専用の図柄はタスク45 でまとめて作る)。
+          */}
+          <button
+            type="button"
+            className="pcad-button pcad-button--icon"
+            title={t('toolbar.sectionView.tooltip')}
+            aria-label={t('toolbar.sectionView.label')}
+            aria-pressed={sectionViewOn}
+            onClick={() => {
+              useAppStore.getState().toggleSectionView();
+            }}
+          >
+            <PlaneSectionIcon />
           </button>
         </div>
       </div>

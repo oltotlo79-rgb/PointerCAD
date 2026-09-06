@@ -12,6 +12,12 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { LENGTH_UNIT_LABEL_KEYS, nextLengthUnit } from '../settings/settings.js';
 import { constraintPickGuide } from '../sketch/constraintActions.js';
 import { workPlaneEntries, type WorkPlaneEntry } from '../sketch/referenceCommands.js';
+import {
+  isNoneSelectable,
+  SELECTION_FILTER_KINDS,
+  SELECTION_KIND_LABEL_KEYS,
+  toggleSelectionFilter,
+} from '../solid/selectionFilter.js';
 import { solidToolReadiness } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CommandLine } from './CommandLine.js';
@@ -159,6 +165,11 @@ export function StatusBar(): React.JSX.Element {
    */
   const displaySettings = useAppStore((state) => state.displaySettings);
   const setDisplaySettings = useAppStore((state) => state.setDisplaySettings);
+  /*
+   * 選択フィルタ(FR-112、P6 タスク36)。**端末に覚える設定**なので単位と同じ
+   * `displaySettings` の中にある(`localStorage` の鍵を増やさない、§0.43)。
+   */
+  const selectionFilter = displaySettings.selectionFilter;
   const snapIndicator = useAppStore((state) => state.snapIndicator);
   // 向きの吸着の案内線(FR-110、P4b タスク16)。帯の一言に角度と要素の名前を出す。
   const trackIndicator = useAppStore((state) => state.trackIndicator);
@@ -362,6 +373,39 @@ export function StatusBar(): React.JSX.Element {
       {/* 選択の種類の札(§0.a-0.6)。`1`〜`4` キーで切り替えられることをツールチップで添える。 */}
       <span className="pcad-statusbar__state" title={t('selection.kindHint')}>
         {line.selectionKindLabel}
+      </span>
+      {/*
+        選択フィルタ(FR-112、P6 タスク36、§0.43)。**区画も並びも増やさない**——
+        「選ぶもの」の札のとなりに、4 つの入切を 1 かたまり(1 項目)として置く。
+        切ってある種類は当たり判定の候補から外れ、ホバーの強調も出ない。
+        4 つとも切ってあるときだけ、その場に理由を添える(NFR-UX-5)。
+      */}
+      <span className="pcad-statusbar__state" title={t('statusBar.selectionFilterHint')}>
+        {SELECTION_FILTER_KINDS.map((kind) => (
+          <button
+            key={`selectionFilter:${kind}`}
+            type="button"
+            /*
+              入切の見た目は**ツールバーの入切ボタンと同じ作法**(`aria-pressed` と
+              `.pcad-button[aria-pressed="true"]`)にそろえる。ステータスバーのために
+              新しい見た目を足さないので、appShell.css は 1 行も増えない。
+            */
+            className="pcad-button"
+            aria-pressed={selectionFilter[kind]}
+            title={t('statusBar.selectionFilterHint')}
+            onClick={() => {
+              setDisplaySettings({
+                ...displaySettings,
+                selectionFilter: toggleSelectionFilter(selectionFilter, kind),
+              });
+            }}
+          >
+            {t(SELECTION_KIND_LABEL_KEYS[kind])}
+          </button>
+        ))}
+        {isNoneSelectable(selectionFilter) ? (
+          <span className="pcad-statusbar__hint">{t('statusBar.selectionFilterNone')}</span>
+        ) : null}
       </span>
       <span className="pcad-statusbar__state">
         <PlaneIcon size={12} />

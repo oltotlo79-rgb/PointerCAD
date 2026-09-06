@@ -1,8 +1,9 @@
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 import { join } from 'node:path';
 
 import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './appProtocol.js';
-import { registerPcadIpc } from './pcadDialogs.js';
+import { PCAD_PRINT_CHANNEL, registerPcadIpc } from './pcadDialogs.js';
 
 /**
  * このファイルの出力先 dist/main。
@@ -48,12 +49,67 @@ function createMainWindow(): void {
   void window.loadURL(devServerUrl ?? APP_ENTRY_URL);
 }
 
+/**
+ * 印刷(FR-810。P6 計画書 §2.11、タスク29)。
+ *
+ * 画面から PNG のバイト列を受け取り、**隠しの窓**へ data URL として読み込ませてから
+ * `webContents.print()` を呼ぶ。画面の窓をそのまま印刷しないのは、ツールバーや区画まで
+ * 紙に出てしまうため。紙に出すのは、画面側が背景を白にして描いた 1 コマだけ(FR-908)。
+ *
+ * 用紙サイズ・向き・部数は OS の印刷ダイアログに任せる(`silent: false`。§0.a-0.39)。
+ * 取り消しは `success` が false で返る。**例外にしない**(NFR-RE-1)。
+ *
+ * **隠しの窓は `finally` で必ず閉じる。** 閉じ忘れると見えない窓が残り、
+ * 画面の窓を全部閉じてもアプリが終わらなくなる。
+ */
+async function printPngInHiddenWindow(png: Uint8Array): Promise<boolean> {
+  const printWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      // 絵を 1 枚出すだけなので、画面の口(preload)は渡さない。
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  try {
+    const dataUrl = `data:image/png;base64,${Buffer.from(png).toString('base64')}`;
+    await printWindow.loadURL(dataUrl);
+    return await new Promise<boolean>((resolve) => {
+      printWindow.webContents.print({ silent: false, printBackground: true }, (success) => {
+        resolve(success);
+      });
+    });
+  } finally {
+    printWindow.destroy();
+  }
+}
+
+/**
+ * 印刷の受け口を登録する。`app.whenReady()` の中から1回だけ呼ぶ
+ * (`registerPcadIpc` と同じ理由。2回呼ぶと Electron が二重登録で失敗する)。
+ */
+function registerPrintIpc(): void {
+  ipcMain.handle(
+    PCAD_PRINT_CHANNEL,
+    async (_event: IpcMainInvokeEvent, ...args: unknown[]): Promise<boolean> => {
+      const [png] = args;
+      if (!(png instanceof Uint8Array)) {
+        throw new Error('印刷の依頼の形が正しくありません。');
+      }
+      return printPngInHiddenWindow(png);
+    },
+  );
+}
+
 void app.whenReady().then(() => {
   // 既定のメニューバー(File / Edit / View / Window)は使わないので消す。
   Menu.setApplicationMenu(null);
   handleAppScheme(rendererRoot);
   // 「開く」「保存」の受け口。窓を作る前に用意しておく(FR-806、計画書 タスク26)。
   registerPcadIpc();
+  // 「印刷」の受け口(FR-810、P6 計画書 タスク29)。
+  registerPrintIpc();
   createMainWindow();
 
   app.on('activate', () => {

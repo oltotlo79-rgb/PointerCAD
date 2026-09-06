@@ -21,6 +21,7 @@ import { picksSolidVertices } from '../sketch/freeSketch.js';
 import type { NumericInputToolId } from '../sketch/numericInput.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import type { TrackKind } from '../sketch/trackMath.js';
+import { SELECTION_KIND_LABEL_KEYS } from '../solid/selectionFilter.js';
 import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
 import type { FileMessage } from '../store/useAppStore.js';
 import type { TimelineRollback } from './timelineRail.js';
@@ -155,17 +156,11 @@ const GUIDE_KEYS = {
   cut: 'statusBar.guide.cut',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
-/**
- * 選択の種類の札(§0.a-0.6)。頂点/辺/面/立体のどれを選ぶ状態かを常にステータスバーへ出す。
- * `1`〜`4` キーで切り替えられること(`selection.kindHint`)は `StatusBar.tsx` がツールチップで
- * 添える。
+/*
+ * 選択の種類の札(§0.a-0.6)の表は `solid/selectionFilter.ts` にある。
+ * P6 タスク36 の選択フィルタ(FR-112)が**同じ 4 つを同じ札で**ステータスバーに並べるので、
+ * 表を 2 か所に置かず、種類の並び(`SELECTION_FILTER_KINDS`)と一緒の 1 か所から引く。
  */
-const SELECTION_KIND_LABEL_KEYS = {
-  vertex: 'selection.kind.vertex',
-  edge: 'selection.kind.edge',
-  face: 'selection.kind.face',
-  body: 'selection.kind.body',
-} as const satisfies Record<SelectionKind, MessageKey>;
 
 /** いま何に吸い付いているかの案内(FR-107、NFR-UX-7)。 */
 const SNAP_GUIDE_KEYS = {

@@ -49,7 +49,13 @@ import { createMeasureLayer, type MeasurementState } from './createMeasureLayer.
 import { createReferenceLayer } from './createReferenceLayer.js';
 import { createSketchLayer } from './createSketchLayer.js';
 import { createTrackingLayer } from './createTrackingLayer.js';
-import { createSolidLayer, type CutPreview, type ThreadMarkInfo } from './createSolidLayer.js';
+import {
+  createSolidLayer,
+  type CutPreview,
+  type SectionHandle,
+  type ThreadMarkInfo,
+} from './createSolidLayer.js';
+import type { SectionPlaneNumbers } from './sectionView.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
@@ -68,6 +74,20 @@ interface RenderSettings {
    * 画面上の大きさをそろえるのに使う(P4 仕上げ (f)、`createReferenceLayer.ts`)。
    */
   readonly uiScale: number;
+}
+
+/**
+ * ビューの断面表示(FR-111、P6 タスク35、§2.12)を描くのに要るもの。
+ *
+ * 平面の**数**は `sectionView.ts` の `toThreePlane`(タスク34、three.js に触れない純関数)が
+ * 作る。`THREE.Plane` に組み直すのはここだけで、つまみ(四角と矢印)の四角の大きさは
+ * `createSolidLayer` がいま描いているボディから測る。
+ */
+export interface SectionViewRender {
+  /** クリッピング平面の素の数(`normal · x + constant = 0`。残るのは正の側)。 */
+  readonly plane: SectionPlaneNumbers;
+  /** つまみ(オフセットを載せた後の平面と、残す側)。 */
+  readonly handle: SectionHandle;
 }
 
 /** ビューポートの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
@@ -123,6 +143,14 @@ export interface ViewportScene {
    * 呼び出し側は予告の値を毎回作り直さず、変わったときだけ新しい値を渡す。
    */
   setCutPreview(preview: CutPreview | null): void;
+  /**
+   * ビューの断面表示(FR-111、P6 タスク35)を差し替える。`null` で切る(元に戻る)。
+   *
+   * **形は変えない。** 材質のクリッピング平面を差し替えるだけなので、体積も三角形も
+   * 1 つも変わらず、再計算(`isComputing`)も走らない。切っていないあいだは平面が
+   * 1 枚も無く、費用はゼロ(NFR-PF-1)。
+   */
+  setSectionView(view: SectionViewRender | null): void;
   /**
    * 球面の案内線(球面グリッド、FR-431、P5 タスク21)を差し替える。`null` で消える。
    *
@@ -392,6 +420,15 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio, MAX_PIXEL_RATIO));
   renderer.setClearColor(0x000000, 0);
+  /*
+    ビューの断面表示(FR-111、P6 タスク35、§2.12)。**材質ごとの**クリッピング平面を
+    使うので、レンダラ側でその機能を開けておく。開けるだけでは何も変わらない——
+    three.js は `material.clippingPlanes` が空(または null)の材質を従来どおりに描く
+    (`WebGLClipping.setState` の先頭で抜ける)ので、断面表示を使わない限り費用はゼロ
+    (NFR-PF-1)。レンダラ全体の `renderer.clippingPlanes` は使わない(方眼・軸・
+    スケッチ・つまみまで切れてしまうため)。
+  */
+  renderer.localClippingEnabled = true;
 
   const scene = new THREE.Scene();
 
@@ -575,6 +612,14 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   /** 切断面の予告(FR-432、タスク27e)。道具を使っている間だけ入り、確定・取消で null に戻る。 */
   let cutPreview: CutPreview | null = null;
 
+  /**
+   * ビューの断面表示(FR-111、タスク35)のクリッピング平面。**1 枚を使い回す**
+   * (引いている最中は中身だけ書き換える)。切っているあいだは材質へ配らない。
+   */
+  const sectionPlane = new THREE.Plane();
+  /** いま平面を配ってあるか。枚数(0 ↔ 1)が変わったときだけ材質へ配り直す。 */
+  let sectionActive = false;
+
   /** 球面の案内線(FR-431、タスク21)。出していないときは null。 */
   let sphereGridSpec: SphereGridSpec | null = null;
   let sphereGridPositions: Float32Array | null = null;
@@ -714,6 +759,30 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     setCutPreview(preview): void {
       cutPreview = preview;
+    },
+
+    setSectionView(view): void {
+      if (view === null) {
+        if (sectionActive) {
+          // 平面の枚数が 0 に戻ったことを材質へ知らせる(空なら three.js は素通りする)。
+          solidLayer.setSectionPlanes([]);
+          sectionActive = false;
+        }
+        solidLayer.updateSectionHandle(null);
+        return;
+      }
+      /*
+        引いている最中は**同じ `THREE.Plane` の中身だけ**を書き換える(タスク34 の申し送り)。
+        材質が持っているのは入れ物への参照なので、枚数が変わらないかぎり配り直さなくてよく、
+        three.js もシェーダを組み直さない(1 コマの中で終わる、NFR-PF-1)。
+      */
+      sectionPlane.normal.set(view.plane.normal[0], view.plane.normal[1], view.plane.normal[2]);
+      sectionPlane.constant = view.plane.constant;
+      if (!sectionActive) {
+        solidLayer.setSectionPlanes([sectionPlane]);
+        sectionActive = true;
+      }
+      solidLayer.updateSectionHandle(view.handle);
     },
 
     setSphereGrid(spec): void {

@@ -25,6 +25,64 @@ export const THUMBNAIL_SIZE = 256;
 export const THUMBNAIL_BACKGROUND_TOP = '#2a2e37';
 export const THUMBNAIL_BACKGROUND_BOTTOM = '#1b1e24';
 
+/** 下地の塗り方。上から下への 2 色で、**同じ色を 2 つ渡せば単色**になる。 */
+export interface CanvasBackground {
+  readonly top: string;
+  readonly bottom: string;
+}
+
+/** サムネイルの下地(画面と同じ縦のグラデーション)。 */
+export const THUMBNAIL_BACKGROUND: CanvasBackground = {
+  top: THUMBNAIL_BACKGROUND_TOP,
+  bottom: THUMBNAIL_BACKGROUND_BOTTOM,
+};
+
+/**
+ * 印刷の下地(P6 計画書 §2.11、タスク29)。**白の単色**で、表示テーマを一切見ない。
+ *
+ * 要件 FR-908 の注記「図面の印刷・出力の見た目はテーマの影響を受けない」に従う。
+ * 画面がダークでも紙は白い。テーマの色トークン(`--pcad-viewport-top` ほか)は
+ * どのテーマでも白ではないので、ここへその値が混ざれば検査が落ちる。
+ */
+export const PRINT_BACKGROUND: CanvasBackground = { top: '#ffffff', bottom: '#ffffff' };
+
+/**
+ * 下地を塗るのに使う部分だけを書き写した 2D の下地。
+ *
+ * 本物の `CanvasRenderingContext2D` はそのまま渡せる。型を書き写してあるのは、
+ * **検査から偽物を渡して塗られた色を確かめられるようにする**ため
+ * (`packages/ui/src/file/fileGateway.ts` が偽の `globalThis` を受けるのと同じ考え方)。
+ */
+export interface BackgroundFillTarget {
+  fillStyle: string | CanvasGradient | CanvasPattern;
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient;
+  fillRect(x: number, y: number, width: number, height: number): void;
+}
+
+/**
+ * 下地を全面に塗る。
+ *
+ * 上下の色が同じときは**グラデーションを作らず単色で塗る**。印刷の下地(白)は
+ * 上端も下端も同じ色なので、こうしておけば左上の画素が下地の色そのものになる
+ * (グラデーションは実装によって端の画素が丸められうる)。
+ */
+export function fillCanvasBackground(
+  context: BackgroundFillTarget,
+  width: number,
+  height: number,
+  background: CanvasBackground = THUMBNAIL_BACKGROUND,
+): void {
+  if (background.top === background.bottom) {
+    context.fillStyle = background.top;
+  } else {
+    const gradient = context.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, background.top);
+    gradient.addColorStop(1, background.bottom);
+    context.fillStyle = gradient;
+  }
+  context.fillRect(0, 0, width, height);
+}
+
 /** PNG の data URL の前置き。これ以外の形は受け取らない。 */
 const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
 
@@ -115,11 +173,7 @@ export function captureThumbnailPng(
     if (context === null) {
       return null;
     }
-    const background = context.createLinearGradient(0, 0, 0, size);
-    background.addColorStop(0, THUMBNAIL_BACKGROUND_TOP);
-    background.addColorStop(1, THUMBNAIL_BACKGROUND_BOTTOM);
-    context.fillStyle = background;
-    context.fillRect(0, 0, size, size);
+    fillCanvasBackground(context, size, size, THUMBNAIL_BACKGROUND);
     context.drawImage(source, rect.x, rect.y, rect.width, rect.height);
     return dataUrlToBytes(target.toDataURL('image/png'));
   } catch {

@@ -73,6 +73,15 @@ export interface FileGateway {
    * 省略できる理由は `openFile` と同じ。
    */
   saveFileAs?(fileName: string, kind: FileKind, bytes: Uint8Array): Promise<boolean>;
+  /**
+   * 印刷する(FR-810。P6 計画書 §2.11、タスク29)。PNG のバイト列を渡すと、
+   * 印刷できたら true、取り消されたら false を返す(**取り消しは例外にしない**)。
+   *
+   * **この口を持つのはデスクトップ版だけ。** ブラウザは `window.print()` で印刷できるので、
+   * ここへ実装を置かない(口があるかどうかが「デスクトップ版か」の判断になる。
+   * 使い分けは `printView.ts` の `desktopPrintOf`)。
+   */
+  print?(png: Uint8Array): Promise<boolean>;
 }
 
 /** 部品ファイルの拡張子(要件§8)。 */

@@ -12,6 +12,7 @@ import {
   type AppearanceEntry,
   type AppearanceSpec,
   type AppearanceTable,
+  type ResolvedPlane,
   type SubShapeRef,
 } from '@pointercad/model';
 import * as THREE from 'three';
@@ -537,5 +538,224 @@ describe('createSolidLayer の球面の案内線(FR-431、タスク21)', () => {
     );
     expectWithinBudget(elapsed, FRAME_BUDGET_MS, '球面の案内線の更新');
     layer.dispose();
+  });
+});
+
+/*
+ * ここから下は P6 タスク35(ビューの断面表示の配線とつまみ、FR-111、§2.12)。
+ *
+ * `THREE.Plane` を材質へ配るところまでは WebGL に触れないので Node で確かめられる。
+ * **実際に画素が切り取られるか**(ガラス `transmission > 0` の別パスを含む)は
+ * 目視と E2E に回す(§1.5-20、タスク44)。
+ */
+
+/**
+ * 材質か(型を偽らずに絞り込むための番人。`isBodyMesh` と同じ流儀で、
+ * 述語の戻り型に既定の型引数を書いて `any` を持ち込まない)。
+ */
+function isMaterial(value: unknown): value is THREE.Material {
+  return value instanceof THREE.Material;
+}
+
+/** 層の中にあるすべての材質(同じ材質は 1 回だけ)。 */
+function allMaterialsOf(group: THREE.Object3D): THREE.Material[] {
+  const collected = new Set<THREE.Material>();
+  group.traverse((object) => {
+    const material: unknown = Reflect.get(object, 'material');
+    if (Array.isArray(material)) {
+      for (const entry of material) {
+        if (isMaterial(entry)) {
+          collected.add(entry);
+        }
+      }
+    } else if (isMaterial(material)) {
+      collected.add(material);
+    }
+  });
+  return [...collected];
+}
+
+/** メッシュの頂点の数(メッシュでなければ null)。つまみの四角(6 頂点)を見分けるのに使う。 */
+function meshVertexCount(object: THREE.Object3D): number | null {
+  if (!(object instanceof THREE.Mesh)) {
+    return null;
+  }
+  const geometry: unknown = object.geometry;
+  if (!(geometry instanceof THREE.BufferGeometry)) {
+    return null;
+  }
+  const position: unknown = geometry.getAttribute('position');
+  return position instanceof THREE.BufferAttribute ? position.count : null;
+}
+
+/**
+ * 断面表示を配らない材質の数。切断の予告(四角と矢印)と断面表示のつまみ(四角と矢印)の
+ * **4 つだけ**が対象外(どちらも平面の上に出るので、自分の切る面で消えてはいけない)。
+ */
+const UNCLIPPED_MATERIAL_COUNT = 4;
+
+/** つまみを出す平面(XY 面、原点)。`sectionView.ts` の検証表と同じ面。 */
+const SECTION_HANDLE_PLANE: ResolvedPlane = {
+  origin: [0, 0, 0],
+  axisU: [1, 0, 0],
+  axisV: [0, 1, 0],
+  normal: [0, 0, 1],
+};
+
+describe('createSolidLayer(断面表示のクリッピング、FR-111)', () => {
+  it('切っているあいだは平面が 1 枚も無い(費用ゼロ、NFR-PF-1)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 2)], null, []), 'shadedWithEdges');
+    for (const mesh of bodyMeshesOf(layer.group)) {
+      for (const material of mesh.material) {
+        expect(material.clippingPlanes).toEqual([]);
+      }
+    }
+    layer.dispose();
+  });
+
+  it('入れると、立体を描く全材質へ同じ 1 枚が配られる(数を数える)', () => {
+    const layer = createSolidLayer();
+    const bodies = [makeBody('extrude-1', 2), makeBody('extrude-2', 3)];
+    layer.update(buildSolidGeometry(bodies, null, []), 'shadedWithEdges');
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    layer.setSectionPlanes([plane]);
+
+    const materials = allMaterialsOf(layer.group);
+    const clipped = materials.filter(
+      (material) => material.clippingPlanes !== null && material.clippingPlanes.length === 1,
+    );
+    const untouched = materials.filter((material) => material.clippingPlanes === null);
+    // 予告とつまみの 4 つ以外は、1 つ残らず配られている。
+    expect(untouched).toHaveLength(UNCLIPPED_MATERIAL_COUNT);
+    expect(clipped).toHaveLength(materials.length - UNCLIPPED_MATERIAL_COUNT);
+    // 配られたのは**同じ 1 枚**(平面を動かすと全材質へ一度に効く)。
+    for (const material of clipped) {
+      expect(material.clippingPlanes?.[0]).toBe(plane);
+    }
+    layer.dispose();
+  });
+
+  it('ボディが増えても、新しく作られた材質へ配り直す(配り漏らさない)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 2)], null, []), 'shadedWithEdges');
+    const plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), -5);
+    layer.setSectionPlanes([plane]);
+    // 外観を割り当てて材質を新しく作らせる(P5 の材質の Map を通る道)。
+    const appearance = buildAppearanceInput(
+      tableOf([
+        {
+          id: 'appearance-1',
+          target: { kind: 'face', ref: faceRef('extrude-2', 0) },
+          appearance: coloredAppearance('#ff0000'),
+        },
+      ]),
+      [],
+    );
+    layer.update(
+      buildSolidGeometry([makeBody('extrude-1', 2), makeBody('extrude-2', 3)], null, [], appearance),
+      'shadedWithEdges',
+    );
+    for (const mesh of bodyMeshesOf(layer.group)) {
+      for (const material of mesh.material) {
+        expect(material.clippingPlanes?.[0]).toBe(plane);
+      }
+    }
+    layer.dispose();
+  });
+
+  it('切ると空へ戻る(元の見た目に戻り、費用もゼロへ戻る)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 2)], null, []), 'shadedWithEdges');
+    layer.setSectionPlanes([new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)]);
+    layer.setSectionPlanes([]);
+    for (const mesh of bodyMeshesOf(layer.group)) {
+      for (const material of mesh.material) {
+        expect(material.clippingPlanes).toEqual([]);
+      }
+    }
+    layer.dispose();
+  });
+
+  it('入れても三角形も稜線も 1 つも変わらない(形を切らない、FR-111)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 3)], null, []), 'shadedWithEdges');
+    const [mesh] = bodyMeshesOf(layer.group);
+    const before = mesh.geometry.getAttribute('position');
+    const beforeIndex = mesh.geometry.getIndex();
+    layer.setSectionPlanes([new THREE.Plane(new THREE.Vector3(0, 0, 1), -1)]);
+    layer.updateSectionHandle({ plane: SECTION_HANDLE_PLANE, keep: 'positive' });
+    expect(mesh.geometry.getAttribute('position')).toBe(before);
+    expect(mesh.geometry.getIndex()).toBe(beforeIndex);
+    layer.dispose();
+  });
+
+  it('入切の所要は 1 コマ(16ms)に収まる(§2.17-7。ボディ 20 個)', () => {
+    const layer = createSolidLayer();
+    const bodies: SolidBodyWithSubShapes[] = [];
+    for (let index = 0; index < 20; index += 1) {
+      bodies.push(makeBody(`extrude-${String(index)}`, 6));
+    }
+    layer.update(buildSolidGeometry(bodies, null, []), 'shadedWithEdges');
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+
+    const started = performance.now();
+    layer.setSectionPlanes([plane]);
+    layer.updateSectionHandle({ plane: SECTION_HANDLE_PLANE, keep: 'positive' });
+    layer.setSectionPlanes([]);
+    layer.updateSectionHandle(null);
+    const elapsed = performance.now() - started;
+    console.log(`断面表示の入切(ボディ 20 個): ${elapsed.toFixed(3)} ms`);
+    expectWithinBudget(elapsed, FRAME_BUDGET_MS, '断面表示の入切');
+    layer.dispose();
+  });
+});
+
+describe('createSolidLayer(断面表示のつまみ、§0.42)', () => {
+  it('つまみは四角(三角形 2 枚 = 6 頂点)で出る(切断の予告と同じ形)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 2)], null, []), 'shadedWithEdges');
+    layer.updateSectionHandle({ plane: SECTION_HANDLE_PLANE, keep: 'positive' });
+    const handleFace = layer.group.children.find(
+      (object) => object.visible && !isBodyMesh(object) && meshVertexCount(object) === 6,
+    );
+    expect(handleFace).toBeDefined();
+    layer.dispose();
+  });
+
+  it('null を渡すと消える', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 2)], null, []), 'shadedWithEdges');
+    layer.updateSectionHandle({ plane: SECTION_HANDLE_PLANE, keep: 'positive' });
+    const shown = layer.group.children.filter((object) => object.visible).length;
+    layer.updateSectionHandle(null);
+    expect(layer.group.children.filter((object) => object.visible).length).toBeLessThan(shown);
+    layer.dispose();
+  });
+
+  it('ボディが 1 つも無くてもつまみは出る(掴めなくならない、NFR-UX-7)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([], null, []), 'shadedWithEdges');
+    layer.updateSectionHandle({ plane: SECTION_HANDLE_PLANE, keep: 'negative' });
+    const shown = layer.group.children.filter(
+      (object) => object instanceof THREE.Mesh && object.visible,
+    );
+    expect(shown.length).toBeGreaterThan(0);
+    layer.dispose();
+  });
+
+  it('dispose() でつまみの材質も捨てる(WebGL の資源は GC で戻らない)', () => {
+    const layer = createSolidLayer();
+    layer.update(buildSolidGeometry([makeBody('extrude-1', 2)], null, []), 'shadedWithEdges');
+    layer.updateSectionHandle({ plane: SECTION_HANDLE_PLANE, keep: 'positive' });
+    let disposed = 0;
+    const materials = allMaterialsOf(layer.group);
+    for (const material of materials) {
+      material.addEventListener('dispose', () => {
+        disposed += 1;
+      });
+    }
+    layer.dispose();
+    expect(disposed).toBe(materials.length);
   });
 });

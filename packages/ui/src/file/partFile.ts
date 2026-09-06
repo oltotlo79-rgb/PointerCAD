@@ -18,6 +18,7 @@ import {
   readPcadFile,
   serializeDocument,
   writePcadFile,
+  type PcadAttachments,
   type ReadPcadFileErrorCode,
 } from '@pointercad/io';
 import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
@@ -25,6 +26,7 @@ import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
+import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 
 /**
  * 手続きが外の世界へ触れる口(検査では偽物を差し込む)。
@@ -38,6 +40,34 @@ export interface PartFileDeps {
   readonly captureThumbnail: () => Uint8Array | null;
   /** 失うものがある操作の前に確認する。「はい」なら true(NFR-UX-3)。 */
   readonly confirmDiscard: (messageKey: MessageKey) => Promise<boolean>;
+  /**
+   * 最近使ったファイルの履歴の置き場(FR-807、P6 §0.a-0.38、タスク28)。
+   *
+   * **省略すると端末の `localStorage`**(使えない環境では履歴を残さない)。`null` を渡すと
+   * どこにも残さない。検査から記憶上の偽の置き場を渡せるように、ここも他の 2 つと同じ
+   * 「外の世界へ触れる口」として並べる。
+   */
+  readonly recentFilesStorage?: RecentFilesStorage | null;
+  /**
+   * 保存に一緒に入れる添付(読み込んだ形・下絵。§0.a-0.9・0.24・0.45、P6 タスク32)。
+   *
+   * **渡さないと、読み込んだ形を含む部品が開き直せなくなる。** `.pcad` の読み手は
+   * 文書が指している `shapes/*.brep` / `meshes/*.bin` / `canvases/*.png` が欠けていると
+   * 断る(`packages/io` の `findMissingAttachment`)ためで、これは自動保存の控えでも
+   * 同じことが起きる(`io` の `AutoSaverOptions.attachmentsOf`)。
+   *
+   * 表そのものではなく関数で受けるのは、**書く直前の表**を使うためである。
+   * 返さなければ添付なしで書く(読み込んだ形を 1 つも持たない部品では同じ結果になる)。
+   */
+  readonly attachmentsOf?: () => PcadAttachments | undefined;
+  /**
+   * 開いたファイルに入っていた添付を受け取る口(P6 タスク32)。
+   *
+   * **`.pcad` を開いた瞬間にしか手に入らない。** 読み込んだ形の B-rep は再計算で
+   * 作り直せない(§0.a-0.9 の「導出できるものは保存しない」の例外)ので、ここで
+   * 受け取って持ち回らないと、次の再計算で形が消え、次の保存でファイルからも消える。
+   */
+  readonly onAttachmentsLoaded?: (attachments: PcadAttachments) => void;
 }
 
 /**
@@ -85,7 +115,15 @@ const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
 
 /** `.pcad` を読んだ結果。読めなければ利用者へ見せる文言のキーだけを返す。 */
 export type ReadPartDocumentOutcome =
-  | { readonly ok: true; readonly document: PartDocument }
+  | {
+      readonly ok: true;
+      readonly document: PartDocument;
+      /**
+       * ファイルに入っていた添付(P6 §0.a-0.55、タスク21・32)。**未参照のものも入る。**
+       * 呼び出し側はこれを持ち回り、次の保存でそのまま書き戻す。
+       */
+      readonly attachments: PcadAttachments;
+    }
   | { readonly ok: false; readonly messageKey: MessageKey };
 
 /**
@@ -100,7 +138,7 @@ export function readPartDocument(bytes: Uint8Array): ReadPartDocumentOutcome {
   if (!result.ok) {
     return { ok: false, messageKey: OPEN_ERROR_KEYS[result.error.code] };
   }
-  return { ok: true, document: result.document };
+  return { ok: true, document: result.document, attachments: result.attachments };
 }
 
 // ---------------------------------------------------------------------------
@@ -267,8 +305,13 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   // 文書まるごとの差し替えなので、プロパティ欄の打ちかけの下書きは捨てる
   // (§0.a-0.1〜、docs/報告記録.md 2026-09-04 14:05 の 9b)。
   const store = useAppStore.getState();
+  // 形そのもの(読み込んだ B-rep・三角形・下絵)は文書の外にあるので、
+  // 文書を差し替える前に渡す(差し替えの直後に再計算が走るため)。
+  deps.onAttachmentsLoaded?.(result.attachments);
   store.applyDocument(result.document, { replacesDocument: true });
   store.setFileState(picked.name, result.document);
+  // 開けたものだけを履歴へ残す(FR-807)。断ったファイルを勧め直さないため。
+  recordRecentFile(picked.name, { storage: deps.recentFilesStorage });
 }
 
 /**
@@ -281,10 +324,15 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   // 「保存した文書」と実際に書いたものを食い違わせない。
   const document = store.document;
   const thumbnailPng = deps.captureThumbnail();
-  const bytes = writePcadFile(
-    document,
-    thumbnailPng === null ? {} : { thumbnailPng },
-  );
+  /*
+   * サムネイルと添付はどちらも「あれば入れる」欄なので、渡す組を 1 か所で組み立てる。
+   * 添付を落とすと、読み込んだ形を含む部品が開き直せなくなる(`PartFileDeps.attachmentsOf`)。
+   */
+  const attachments = deps.attachmentsOf?.();
+  const bytes = writePcadFile(document, {
+    ...(thumbnailPng === null ? {} : { thumbnailPng }),
+    ...(attachments === undefined ? {} : { attachments }),
+  });
   const suggestedName = withPcadExtension(displayFileName(store.fileName));
 
   let savedName: string | null;
@@ -303,8 +351,15 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
     return;
   }
   const after = useAppStore.getState();
-  after.setFileState(withPcadExtension(savedName), document);
+  const savedFileName = withPcadExtension(savedName);
+  after.setFileState(savedFileName, document);
   after.setFileMessage({ key: 'file.saved', failed: false });
+  /*
+   * 保存できたものも履歴へ残す(FR-807)。別名保存で名前が変わったときは、**新しい名前**が
+   * 先頭へ来る(`savedName` は口が実際に書いた先の名前で、候補名ではない)。
+   * 元の名前も履歴に残ったままなので、後から元のファイルを選び直せる。
+   */
+  recordRecentFile(savedFileName, { storage: deps.recentFilesStorage });
 
   /*
    * 手で保存できたら自動保存の控えは用済みなので消す(§0.a-0.12)。

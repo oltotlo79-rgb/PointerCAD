@@ -446,3 +446,56 @@ describe('選択フィルタ(FR-112、P6 タスク36)', () => {
     expect([...after]).toEqual([...before]);
   });
 });
+
+describe('拘束の自動推定の入切(FR-333、P6 タスク41)', () => {
+  it('既定は入(§0.a-0.49 の利用者の決定)', () => {
+    expect(DEFAULT_DISPLAY_SETTINGS.inferConstraints).toBe(true);
+    expect(loadSettings(createFakeStorage()).inferConstraints).toBe(true);
+    expect(loadSettings(null).inferConstraints).toBe(true);
+  });
+
+  it('端末に保存され、読み直すと切ったままになる(往復)', () => {
+    const storage = createFakeStorage();
+    saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, inferConstraints: false }, storage);
+    expect(loadSettings(storage).inferConstraints).toBe(false);
+  });
+
+  it('この欄より前に保存された値(欄が無い)でも、テーマと拡大率は生き残る(前方互換)', () => {
+    const storage = createFakeStorage({
+      'pointercad.settings': JSON.stringify({ theme: 'light', uiScale: 120 }),
+    });
+    const loaded = loadSettings(storage);
+    expect(loaded.theme).toBe('light');
+    expect(loaded.uiScale).toBe(120);
+    // 無いときは既定(入)へ戻る。無いことを理由にテーマまで既定へ戻さない。
+    expect(loaded.inferConstraints).toBe(true);
+  });
+
+  it('真偽でない値が入っていても、その欄だけを既定(入)へ戻す', () => {
+    const storage = createFakeStorage({
+      'pointercad.settings': JSON.stringify({
+        theme: 'light',
+        uiScale: 120,
+        inferConstraints: 'no',
+      }),
+    });
+    const loaded = loadSettings(storage);
+    expect(loaded.theme).toBe('light');
+    expect(loaded.inferConstraints).toBe(true);
+  });
+
+  it('入切を変えても .pcad のバイト列は 1 バイトも変わらない(形を変えない、FR-333)', () => {
+    const document = createEmptyPartDocument();
+    const savedAt = '2026-09-06T00:00:00.000Z';
+    const storage = createFakeStorage();
+    const encoder = new TextEncoder();
+
+    saveSettings(DEFAULT_DISPLAY_SETTINGS, storage);
+    const before = encoder.encode(serializeDocument(document, { savedAt }));
+
+    saveSettings({ ...loadSettings(storage), inferConstraints: false }, storage);
+    const after = encoder.encode(serializeDocument(document, { savedAt }));
+
+    expect([...after]).toEqual([...before]);
+  });
+});

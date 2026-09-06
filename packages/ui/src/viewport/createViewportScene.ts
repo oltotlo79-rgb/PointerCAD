@@ -213,6 +213,12 @@ export interface ViewportScene {
   setConstraintMarks(marks: readonly ConstraintMark[] | null): void;
   /** 一覧・印で選んでいる拘束(FR-313)。その印だけ大きく出す。`null` で解除。 */
   setSelectedConstraint(constraintId: string | null): void;
+  /**
+   * 線を引いている最中に推定した拘束の**予告**の印(FR-333、P6 タスク41)。
+   * 図柄は確定後の拘束の印とまったく同じ(§0.a-0.50)で、`null` か空で消す。
+   * 実在の拘束ではないので当たり判定には出ない(押しても選ばれない)。
+   */
+  setInferredConstraintMarks(marks: readonly ConstraintMark[] | null): void;
   /** 基準ジオメトリ(基準軸・基準点・座標系、FR-329)を出す。 */
   setReferences(references: ResolvedReferences): void;
   /**
@@ -516,6 +522,14 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   // (`constraintSummary.ts`)から値として受け取る(同じ表を 2 か所に書かない)。
   const constraintLayer = createConstraintLayer(constraintKindSymbol('fix'));
   scene.add(constraintLayer.group);
+  /*
+    拘束の自動推定の予告(FR-333、P6 タスク41)。**印の層をもう 1 つ持つ**のは、確定した
+    拘束の印(`constraintSummaries` から作る)と予告を別々に差し替えるため。1 つの層に
+    混ぜると、再計算で拘束の印が入れ替わるたびに予告が消えてしまう。図柄・大きさ・色は
+    同じ層の実装をそのまま使う(§0.a-0.50「P4b の図柄をそのまま出す」)。
+  */
+  const inferenceLayer = createConstraintLayer(constraintKindSymbol('fix'));
+  scene.add(inferenceLayer.group);
   // 測定の結果(FR-1102、P5 タスク31)。線・弧・端の丸・値の札を、他の重ね描きより手前に出す。
   const measureLayer = createMeasureLayer();
   scene.add(measureLayer.group);
@@ -848,6 +862,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       referenceLayer.setThemeColors(colors);
       trackingLayer.setThemeColors(colors);
       constraintLayer.setThemeColors(colors);
+      inferenceLayer.setThemeColors(colors);
       measureLayer.setThemeColors(colors);
     },
 
@@ -873,6 +888,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     setSelectedConstraint(constraintId): void {
       constraintLayer.setSelected(constraintId);
+    },
+
+    setInferredConstraintMarks(marks): void {
+      inferenceLayer.setMarks(marks);
     },
 
     setReferences(references): void {
@@ -941,6 +960,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       referenceLayer.dispose();
       trackingLayer.dispose();
       constraintLayer.dispose();
+      inferenceLayer.dispose();
       measureLayer.dispose();
       grid.geometry.dispose();
       axisLines.geometry.dispose();

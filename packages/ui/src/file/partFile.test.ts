@@ -15,6 +15,8 @@ import {
   readPcadFile,
   writePcadFile,
   type AutoSaver,
+  type ImportedMeshBytes,
+  type PcadAttachments,
 } from '@pointercad/io';
 import {
   absoluteCoordinate,
@@ -39,6 +41,7 @@ import {
   windowTitle,
   type PartFileDeps,
 } from './partFile.js';
+import { loadRecentFiles, type RecentFilesStorage } from './recentFiles.js';
 
 interface SaveCall {
   readonly suggestedName: string;
@@ -117,7 +120,15 @@ interface FakeDeps {
   readonly confirmed: readonly string[];
 }
 
-function createFakeDeps(answer: boolean, thumbnail: Uint8Array | null = null): FakeDeps {
+/**
+ * 偽の口。**履歴の置き場は既定で `null`**(どこにも残さない)にしてあるので、
+ * 履歴を見ない検査は端末の `localStorage` を一切触らない(検査どうしが漏れ合わない)。
+ */
+function createFakeDeps(
+  answer: boolean,
+  thumbnail: Uint8Array | null = null,
+  recentFilesStorage: RecentFilesStorage | null = null,
+): FakeDeps {
   const confirmed: string[] = [];
   return {
     confirmed,
@@ -127,7 +138,74 @@ function createFakeDeps(answer: boolean, thumbnail: Uint8Array | null = null): F
         confirmed.push(messageKey);
         return Promise.resolve(answer);
       },
+      recentFilesStorage,
     },
+  };
+}
+
+/** 記憶上だけの履歴の置き場(ブラウザには触れない)。 */
+function createMemoryStorage(): RecentFilesStorage {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+  };
+}
+
+/**
+ * 名前ごとに中身を覚える偽の口(別名保存の検査に使う)。本物と同じく
+ * **上書き先を覚え、`saveAs` が true のときだけ名前を訊き直す。**
+ * 訊かれたときに答える名前は `setNextName` で決め、`null` を渡すと取り消しになる。
+ */
+interface NamedFakeGateway {
+  readonly gateway: FileGateway;
+  /** 記憶上のファイル(名前 → 中身)。 */
+  readonly files: () => ReadonlyMap<string, Uint8Array>;
+  readonly setNextName: (name: string | null) => void;
+  /** 名前を訊かれた回数。 */
+  readonly asked: () => number;
+}
+
+function createNamedGateway(): NamedFakeGateway {
+  const files = new Map<string, Uint8Array>();
+  let target: string | null = null;
+  let answer: string | null = null;
+  let asked = 0;
+
+  const gateway: FileGateway = {
+    openPcad(): Promise<PickedFile | null> {
+      // この口は保存の検査にだけ使う(開くのは `createFakeGateway` が受け持つ)。
+      return Promise.resolve(null);
+    },
+    savePcad(_suggestedName, bytes, saveAs): Promise<string | null> {
+      // 別名保存(saveAs)と、まだ保存先を知らないときは名前を訊く。
+      let name = saveAs ? null : target;
+      if (name === null) {
+        asked += 1;
+        if (answer === null) {
+          return Promise.resolve(null);
+        }
+        name = answer;
+      }
+      files.set(name, bytes);
+      // 書けた先が次からの上書き先になる(本物の口もそう振る舞う、§0.a-0.37)。
+      target = name;
+      return Promise.resolve(name);
+    },
+    hasSaveTarget(): boolean {
+      return target !== null;
+    },
+  };
+
+  return {
+    gateway,
+    files: () => files,
+    setNextName: (name) => {
+      answer = name;
+    },
+    asked: () => asked,
   };
 }
 
@@ -156,8 +234,12 @@ function partWithPoint(): PartDocument {
   return replaceSketch(createEmptyPartDocument(), drawn);
 }
 
+function useGateway(gateway: FileGateway): void {
+  useAppStore.setState({ fileGateway: gateway });
+}
+
 function useFake(fake: FakeGateway): void {
-  useAppStore.setState({ fileGateway: fake.gateway });
+  useGateway(fake.gateway);
 }
 
 /** 保存されたバイト列に入っていたサムネイル。入っていなければ undefined。 */
@@ -633,5 +715,316 @@ describe('新規(FR-806、NFR-UX-3)', () => {
     await newPart(createFakeDeps(true).deps);
 
     expect(useAppStore.getState().documentVersion).toBe(before + 1);
+  });
+});
+
+describe('最近使ったファイル(FR-807、P6 タスク28)', () => {
+  it('開けたファイルの名前が履歴に入る', async () => {
+    useFake(
+      createFakeGateway({
+        openBytes: pcadWithSchema(PCAD_SCHEMA_VERSION),
+        openName: '読んだ.pcad',
+      }),
+    );
+    const storage = createMemoryStorage();
+
+    await openPart(createFakeDeps(true, null, storage).deps);
+
+    const list = loadRecentFiles(storage);
+    expect(list.map((entry) => entry.name)).toEqual(['読んだ.pcad']);
+    // 時刻も一緒に残る(名前と時刻の 2 欄だけ、§0.a-0.38)。
+    expect(Number.isFinite(Date.parse(list[0].at))).toBe(true);
+  });
+
+  it('開けなかったファイルは履歴に入らない(勧め直さない)', async () => {
+    useFake(
+      createFakeGateway({
+        openBytes: pcadWithDocumentText('壊れています'),
+        openName: 'こわれた.pcad',
+      }),
+    );
+    const storage = createMemoryStorage();
+
+    await openPart(createFakeDeps(true, null, storage).deps);
+
+    expect(loadRecentFiles(storage)).toEqual([]);
+  });
+
+  it('取り消したときも履歴に入らない', async () => {
+    useFake(createFakeGateway({ openCancels: true }));
+    const storage = createMemoryStorage();
+
+    await openPart(createFakeDeps(true, null, storage).deps);
+
+    expect(loadRecentFiles(storage)).toEqual([]);
+  });
+
+  it('保存した名前も履歴に入り、別名保存の後は新しい名前が先頭・元の名前も残る', async () => {
+    const fake = createNamedGateway();
+    useGateway(fake.gateway);
+    const storage = createMemoryStorage();
+    useAppStore.getState().applyDocument(partWithPoint());
+
+    fake.setNextName('部品1.pcad');
+    await savePart(createFakeDeps(true, null, storage).deps, false);
+    fake.setNextName('部品2.pcad');
+    await savePart(createFakeDeps(true, null, storage).deps, true);
+
+    expect(loadRecentFiles(storage).map((entry) => entry.name)).toEqual([
+      '部品2.pcad',
+      '部品1.pcad',
+    ]);
+  });
+
+  it('保存が取り消されたら履歴に入らない', async () => {
+    const fake = createNamedGateway();
+    useGateway(fake.gateway);
+    const storage = createMemoryStorage();
+    fake.setNextName(null);
+
+    await savePart(createFakeDeps(true, null, storage).deps, false);
+
+    expect(loadRecentFiles(storage)).toEqual([]);
+  });
+});
+
+describe('別名保存(FR-812、P6 §0.a-0.37)', () => {
+  it('元のファイルは変わらず、以後の保存先が新しい名前になる', async () => {
+    const fake = createNamedGateway();
+    useGateway(fake.gateway);
+    useAppStore.getState().applyDocument(partWithPoint());
+    fake.setNextName('部品1.pcad');
+    await savePart(createFakeDeps(true).deps, false);
+    // 後で比べるために写しを取る(記憶上の入れ物ごと差し替えられても気づけるように)。
+    const original = new Uint8Array(fake.files().get('部品1.pcad') ?? []);
+    expect(original.byteLength).toBeGreaterThan(0);
+
+    // 中身を変えてから別名保存する。
+    useAppStore.getState().applyDocument(createEmptyPartDocument());
+    fake.setNextName('部品2.pcad');
+    await savePart(createFakeDeps(true).deps, true);
+
+    expect(useAppStore.getState().fileName).toBe('部品2.pcad');
+    expect(fake.files().get('部品2.pcad')).toBeDefined();
+    // 元のファイルは 1 バイトも変わっていない(FR-812「元のファイルを変更せずに」)。
+    expect(fake.files().get('部品1.pcad')).toEqual(original);
+  });
+
+  it('別名保存の後の「保存」は、名前を訊かずに新しい名前へ書く', async () => {
+    const fake = createNamedGateway();
+    useGateway(fake.gateway);
+    fake.setNextName('部品1.pcad');
+    await savePart(createFakeDeps(true).deps, false);
+    fake.setNextName('部品2.pcad');
+    await savePart(createFakeDeps(true).deps, true);
+    const askedBefore = fake.asked();
+
+    useAppStore.getState().applyDocument(partWithPoint());
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(fake.asked()).toBe(askedBefore);
+    expect([...fake.files().keys()]).toEqual(['部品1.pcad', '部品2.pcad']);
+    expect(useAppStore.getState().fileName).toBe('部品2.pcad');
+  });
+
+  it('別名保存を取り消すと、保存先も名前も変わらない', async () => {
+    const fake = createNamedGateway();
+    useGateway(fake.gateway);
+    fake.setNextName('部品1.pcad');
+    await savePart(createFakeDeps(true).deps, false);
+
+    fake.setNextName(null);
+    await savePart(createFakeDeps(true).deps, true);
+
+    expect(useAppStore.getState().fileName).toBe('部品1.pcad');
+    expect([...fake.files().keys()]).toEqual(['部品1.pcad']);
+  });
+
+  it('ストアの入口(saveDocumentAs)は saveAs を立てて保存する(入口の配線はタスク33)', async () => {
+    const fake = createFakeGateway({ savedName: '別名.pcad' });
+    useFake(fake);
+    useAppStore.getState().applyDocument(partWithPoint());
+
+    await useAppStore.getState().saveDocumentAs();
+
+    expect(fake.saveCalls.map((call) => call.saveAs)).toEqual([true]);
+    expect(useAppStore.getState().fileName).toBe('別名.pcad');
+  });
+});
+
+/*
+ * 添付(読み込んだ形・下絵)の受け渡し(P6 タスク32、タスク21 の申し送り)。
+ *
+ * 読み込んだ形の B-rep は再計算で作り直せない(§0.a-0.9 の例外)ので、保存のたびに
+ * 一緒に書き、開いたときに受け取って持ち回らないと**開き直せない部品**ができる。
+ */
+
+/** 検査用の三角形 1 枚ぶんの網。 */
+function oneTriangleMesh(): ImportedMeshBytes {
+  return {
+    positions: Float32Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+    normals: Float32Array.from([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+    indices: Uint32Array.from([0, 1, 2]),
+  };
+}
+
+/** 読み込んだ形 1 つと読み込んだ三角形 1 つを履歴に持つ部品文書。 */
+function importedDocument(): PartDocument {
+  return {
+    ...createEmptyPartDocument(),
+    solids: [
+      {
+        id: 'importedSolid-1',
+        kind: 'importedSolid',
+        name: '読み込んだ形1',
+        suppressed: false,
+        shapeRef: 'importedSolid-1',
+        source: { format: 'step', fileName: 'bracket.step', unit: 'mm', byteLength: 100 },
+        bodyKind: 'solid',
+      },
+      {
+        id: 'importedMesh-1',
+        kind: 'importedMesh',
+        name: '読み込んだ三角形の形1',
+        suppressed: false,
+        meshRef: 'importedMesh-1',
+        source: { format: 'stl', fileName: 'cover.stl', unit: 'mm', byteLength: 684 },
+        triangleCount: 1,
+      },
+    ],
+  };
+}
+
+function importedAttachments(): PcadAttachments {
+  return {
+    shapes: new Map([['importedSolid-1', Uint8Array.from([1, 2, 3])]]),
+    meshes: new Map([['importedMesh-1', oneTriangleMesh()]]),
+    canvases: new Map(),
+  };
+}
+
+describe('保存と読み込みの添付(P6 §0.a-0.9・0.24)', () => {
+  it('添付を渡さないと、読み込んだ形を含む部品は開き直せない(申し送りの再現)', async () => {
+    const fake = createFakeGateway();
+    const fakeDeps = createFakeDeps(true);
+    useAppStore.setState({ fileGateway: fake.gateway });
+    useAppStore.getState().resetDocument(importedDocument());
+
+    await savePart(fakeDeps.deps, false);
+    const stored = fake.stored();
+    if (stored === null) {
+      throw new Error('unreachable');
+    }
+    const parsed = readPcadFile(stored.bytes);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error.code).toBe('missingField');
+    }
+  });
+
+  it('attachmentsOf を渡すと、読み込んだ形を含む部品が開き直せる', async () => {
+    const fake = createFakeGateway();
+    const fakeDeps = createFakeDeps(true);
+    const deps: PartFileDeps = { ...fakeDeps.deps, attachmentsOf: () => importedAttachments() };
+    useAppStore.setState({ fileGateway: fake.gateway });
+    const document = importedDocument();
+    useAppStore.getState().resetDocument(document);
+
+    await savePart(deps, false);
+    const stored = fake.stored();
+    if (stored === null) {
+      throw new Error('unreachable');
+    }
+    const parsed = readPcadFile(stored.bytes);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.document).toEqual(document);
+      expect(parsed.attachments.shapes.get('importedSolid-1')).toEqual(Uint8Array.from([1, 2, 3]));
+      expect(parsed.attachments.meshes.get('importedMesh-1')?.indices)
+        .toEqual(Uint32Array.from([0, 1, 2]));
+    }
+  });
+
+  it('サムネイルと添付は両方入る(片方が片方を落とさない)', async () => {
+    const fake = createFakeGateway();
+    const thumbnail = Uint8Array.from([137, 80, 78, 71]);
+    const fakeDeps = createFakeDeps(true, thumbnail);
+    const deps: PartFileDeps = { ...fakeDeps.deps, attachmentsOf: () => importedAttachments() };
+    useAppStore.setState({ fileGateway: fake.gateway });
+    useAppStore.getState().resetDocument(importedDocument());
+
+    await savePart(deps, false);
+    const stored = fake.stored();
+    if (stored === null) {
+      throw new Error('unreachable');
+    }
+    const parsed = readPcadFile(stored.bytes);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.thumbnailPng).toEqual(thumbnail);
+      expect(parsed.attachments.shapes.size).toBe(1);
+    }
+  });
+
+  it('開くと、ファイルに入っていた添付を受け取れる', async () => {
+    const document = importedDocument();
+    const bytes = writePcadFile(document, { attachments: importedAttachments() });
+    const fake = createFakeGateway({ openBytes: bytes, openName: '読み込んだ部品.pcad' });
+    const fakeDeps = createFakeDeps(true);
+    const received: PcadAttachments[] = [];
+    const deps: PartFileDeps = {
+      ...fakeDeps.deps,
+      onAttachmentsLoaded: (attachments) => {
+        received.push(attachments);
+      },
+    };
+    useAppStore.setState({ fileGateway: fake.gateway });
+
+    await openPart(deps);
+
+    expect(useAppStore.getState().document).toEqual(document);
+    expect(received).toHaveLength(1);
+    expect(received[0].shapes.get('importedSolid-1')).toEqual(Uint8Array.from([1, 2, 3]));
+    expect(received[0].meshes.size).toBe(1);
+  });
+
+  it('開けなかったときは添付を渡さない(今の文書も変えない)', async () => {
+    const fake = createFakeGateway({ openBytes: Uint8Array.from([1, 2, 3]) });
+    const fakeDeps = createFakeDeps(true);
+    const received: PcadAttachments[] = [];
+    const deps: PartFileDeps = {
+      ...fakeDeps.deps,
+      onAttachmentsLoaded: (attachments) => {
+        received.push(attachments);
+      },
+    };
+    useAppStore.setState({ fileGateway: fake.gateway });
+    const before = useAppStore.getState().document;
+
+    await openPart(deps);
+
+    expect(received).toHaveLength(0);
+    expect(useAppStore.getState().document).toBe(before);
+  });
+
+  it('添付を 1 つも持たないファイルを開いても、空の表が渡る(版 6 までのファイル)', async () => {
+    const bytes = writePcadFile(createEmptyPartDocument(), {});
+    const fake = createFakeGateway({ openBytes: bytes, openName: '古い部品.pcad' });
+    const fakeDeps = createFakeDeps(true);
+    const received: PcadAttachments[] = [];
+    const deps: PartFileDeps = {
+      ...fakeDeps.deps,
+      onAttachmentsLoaded: (attachments) => {
+        received.push(attachments);
+      },
+    };
+    useAppStore.setState({ fileGateway: fake.gateway });
+
+    await openPart(deps);
+
+    expect(received).toHaveLength(1);
+    expect(received[0].shapes.size).toBe(0);
+    expect(received[0].meshes.size).toBe(0);
+    expect(received[0].canvases.size).toBe(0);
   });
 });

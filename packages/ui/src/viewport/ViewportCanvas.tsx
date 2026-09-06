@@ -413,6 +413,8 @@ export function ViewportCanvas(): React.JSX.Element {
     // 拘束の印(FR-313、P4b タスク13)。一覧の行(`constraintSummaries`)を印へ開く。
     scene.setConstraintMarks(constraintMarksOf(initial.constraintSummaries));
     scene.setSelectedConstraint(initial.selectedConstraintId);
+    // 推定した拘束の予告(FR-333、P6 タスク41)。線を引いている最中だけ出る。
+    scene.setInferredConstraintMarks(initial.inferredConstraints?.marks ?? null);
     // 測定の結果(FR-1102、P5 タスク31)。線・弧・端の丸・値の札を出す。
     scene.setMeasurement(initial.measurement);
     // 切断面の予告(FR-432、P5 タスク27e)。切断の段が開いている間だけ出る。
@@ -542,6 +544,14 @@ export function ViewportCanvas(): React.JSX.Element {
       }
       if (next.selectedConstraintId !== previous.selectedConstraintId) {
         scene.setSelectedConstraint(next.selectedConstraintId);
+      }
+      /*
+        推定した拘束の予告(FR-333、タスク41)。控えが差し替わったときだけ出し直す。
+        `attachSketchInteraction.ts` は中身が変わらないコマでは書き直さない
+        (`sameInferredPreview`)ので、ここが毎コマ動くことはない(NFR-PF-1)。
+      */
+      if (next.inferredConstraints !== previous.inferredConstraints) {
+        scene.setInferredConstraintMarks(next.inferredConstraints?.marks ?? null);
       }
       // 測定の結果(FR-1102、タスク31)。控えが差し替わったときだけ出し直す。測るのも
       // 消すのもストア側の仕事なので、ここは変化を見て渡すだけ(NFR-PF-1)。

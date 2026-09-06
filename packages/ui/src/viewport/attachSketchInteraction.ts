@@ -20,6 +20,7 @@ import {
   dotVec3,
   isFreeWorkPlaneId,
   lengthVec3,
+  nextFeatureId,
   ORIGIN,
   radiansToDegrees,
   resolveCoordinate,
@@ -89,6 +90,10 @@ import {
   type SketchToolId,
   type SolidToolId,
 } from '../sketch/numericInput.js';
+import {
+  inferredConstraintPreview,
+  sameInferredPreview,
+} from '../sketch/inferredConstraints.js';
 import { pickSketchElement } from '../sketch/pickMath.js';
 import {
   projectionSourceOf,
@@ -427,6 +432,17 @@ export function attachSketchInteraction(
     }
     if (state.trackIndicator !== null) {
       state.setTrackIndicator(null);
+    }
+    // 拘束の推定の予告も一緒に消す(FR-333、P6 タスク41)。線を引いていない道具では
+    // 予告する相手がいないので、印だけが残るのを防ぐ。
+    clearInferredConstraints();
+  }
+
+  /** 推定した拘束の予告を消す(FR-333)。既に無ければ書き込まない(NFR-PF-1)。 */
+  function clearInferredConstraints(): void {
+    const state = useAppStore.getState();
+    if (state.inferredConstraints !== null) {
+      state.setInferredConstraints(null);
     }
   }
 
@@ -1042,6 +1058,55 @@ export function attachSketchInteraction(
     state.openNumericInput(createNumericInput(tool, EDIT_TOOL_STEPS[tool]), pointer);
   }
 
+  /**
+   * 線を引いている最中の拘束の自動推定(FR-333、P6 タスク41、§0.a-0.50)。
+   * `pointermove` ごとに 1 回だけ呼ぶ。
+   *
+   * 予告するのは**始点を置いて終点を探している線**だけ(確定は「線を引き終えた瞬間」なので、
+   * その 1 つ手前の段がここに当たる)。他の道具・他の段では相手が決まらないので予告しない。
+   *
+   * 終点は**押したときとまったく同じ決め方**(吸着 → 向きの吸着 → 作図面の上の点)にする
+   * ため、`onPointerMove` が既に求めた候補をそのまま受け取る(同じ計算を 2 度しない、
+   * NFR-PF-1)。近くの要素の絞り込みと判定は `inferredConstraints.ts` / model の純関数。
+   *
+   * `suspended` は Shift(§0.a-0.50「押している間は推定を止める」)。
+   */
+  function updateInferredConstraints(
+    pointer: readonly [number, number],
+    suspended: boolean,
+    snap: SnapCandidate | null,
+    track: TrackResult | null,
+  ): void {
+    const state = useAppStore.getState();
+    const opened = state.numericInput;
+    if (opened === null || opened.step !== 'lineEnd' || state.pendingStart === null) {
+      clearInferredConstraints();
+      return;
+    }
+    const fromWorld = baseWorldPoint('lineEnd');
+    const toWorld = snap?.position ?? track?.position ?? pointAt(pointer, null);
+    if (fromWorld === null || toWorld === null) {
+      clearInferredConstraints();
+      return;
+    }
+    const next = inferredConstraintPreview({
+      resolved: state.resolvedSketch,
+      document: state.sketch,
+      plane: interactionPlane(state.workPlaneId),
+      // 確定したときに付く id を先に読む(`commitSketchInput` の `lineEnd` と同じ関数)。
+      // 予告と確定で同じ id を使うので、印が指した線と拘束が付く線が食い違わない。
+      draftFeatureId: nextFeatureId(state.sketch, 'line'),
+      fromWorld,
+      toWorld,
+      project,
+      enabled: state.displaySettings.inferConstraints,
+      suspended,
+    });
+    if (!sameInferredPreview(state.inferredConstraints, next)) {
+      state.setInferredConstraints(next);
+    }
+  }
+
   function onPointerMove(event: PointerEvent): void {
     const state = useAppStore.getState();
     const pointer = pointerPosition(event);
@@ -1149,6 +1214,9 @@ export function attachSketchInteraction(
     if (!sameTrack(state.trackIndicator, nextTrack)) {
       state.setTrackIndicator(nextTrack);
     }
+
+    // 拘束の自動推定の予告(FR-333、タスク41)。Shift を押している間は止める(§0.a-0.50)。
+    updateInferredConstraints(pointer, event.shiftKey, snap, track);
   }
 
   /** 離したら引っぱりを確定する(FR-313、タスク14)。掴んでいなければ何もしない。 */
@@ -1852,6 +1920,16 @@ export function attachSketchInteraction(
    */
   function onKeyDown(event: KeyboardEvent): void {
     const state = useAppStore.getState();
+    if (event.key === 'Shift') {
+      /*
+        拘束の自動推定の一時停止(FR-333、§0.a-0.50)。押した瞬間に予告を消す
+        (マウスを動かすまで印が残っていると「止まっていない」と見える)。離したときは
+        次にマウスを動かした時点で戻る——予告はもともとマウスの動きに付く表示なので、
+        キーを離しただけで印が湧いて出るほうが不自然だから。**他のキーの処理は続ける**
+        ので、ここでは返さない(Shift 併用の操作を横取りしない)。
+      */
+      clearInferredConstraints();
+    }
     if (event.key === 'Escape') {
       event.preventDefault();
       if (state.sketchDrag !== null) {

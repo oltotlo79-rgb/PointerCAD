@@ -485,6 +485,36 @@ describe('画面の状態(rules/04: ストア1本)', () => {
     expect(useAppStore.getState().numericInputAnchor).toBeNull();
   });
 
+  it('推定した拘束の予告を持ち、道具を変えると落とす(FR-333、P6 タスク41)', () => {
+    const preview = {
+      featureId: 'line-1',
+      constraints: [],
+      marks: [],
+    } as const;
+    useAppStore.getState().setInferredConstraints(preview);
+    expect(useAppStore.getState().inferredConstraints).toBe(preview);
+
+    useAppStore.getState().setActiveTool('point');
+    expect(useAppStore.getState().inferredConstraints).toBeNull();
+  });
+
+  it('欄を打ち直すと予告を落とす(打った線に合わない拘束を付けない、FR-333)', () => {
+    const opened = createNumericInput('line', 'lineEnd');
+    useAppStore.getState().openNumericInput(opened, [10, 20]);
+    useAppStore.getState().setInferredConstraints({
+      featureId: 'line-1',
+      constraints: [],
+      marks: [],
+    });
+    // 押した場所を欄へ入れる道(openNumericInput)では予告は残る。
+    useAppStore.getState().openNumericInput({ ...opened, focusedIndex: 1 }, [10, 20]);
+    expect(useAppStore.getState().inferredConstraints).not.toBeNull();
+
+    // 打ち直す道(updateNumericInput)では落ちる。
+    useAppStore.getState().updateNumericInput({ ...opened, focusedIndex: 2 });
+    expect(useAppStore.getState().inferredConstraints).toBeNull();
+  });
+
   it('連続してかくかどうかを切り替えられる(FR-307)', () => {
     useAppStore.getState().setChaining(false);
     expect(useAppStore.getState().chaining).toBe(false);

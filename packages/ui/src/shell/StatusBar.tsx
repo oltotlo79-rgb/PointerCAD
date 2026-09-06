@@ -416,6 +416,29 @@ export function StatusBar(): React.JSX.Element {
         {snapEnabled ? t('statusBar.snapOn') : t('statusBar.snapOff')}
       </span>
       {/*
+        拘束の自動推定の入切(FR-333、P6 タスク41、§0.a-0.49)。**区画は増やさない**——
+        吸着の札のとなりに入切を 1 つだけ足す。見た目は選択フィルタ・ツールバーの入切と
+        同じ作法(`aria-pressed` と `.pcad-button[aria-pressed="true"]`)にそろえるので、
+        appShell.css は 1 行も増えない。**既定は入**で、端末に覚える(`displaySettings`)。
+        しきい値の数値は出さない(§0.a-0.48「ヘルプにも画面にも数値を書かない」)。
+      */}
+      <span className="pcad-statusbar__state">
+        <button
+          type="button"
+          className="pcad-button"
+          aria-pressed={displaySettings.inferConstraints}
+          title={t('statusBar.inferConstraintsHint')}
+          onClick={() => {
+            setDisplaySettings({
+              ...displaySettings,
+              inferConstraints: !displaySettings.inferConstraints,
+            });
+          }}
+        >
+          {t('statusBar.inferConstraints')}
+        </button>
+      </span>
+      {/*
         表示の単位(FR-811)。押すたびに mm ↔ inch を入れ替える。**内部の値は変わらない**
         ので、切り替えても `.pcad` のバイト列は 1 バイトも変わらない(NFR-RE-3)。
         札の見た目と位置はいままでと同じで、押せることをツールチップで添える(NFR-UX-7)。

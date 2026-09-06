@@ -1433,5 +1433,10 @@
   "exchangeError.colorNotSupported": "この環境では色を書き出せません。形だけを書き出します。",
   "exchangeError.qualityIgnored": "この形式では品質の指定は効きません。",
   "print.unavailable": "この環境では印刷できません。",
-  "print.noImage": "印刷する絵を作れませんでした。"
+  "print.noImage": "印刷する絵を作れませんでした。",
+  "toolbar.fileMenu.groupLabel": "ファイルのほかの操作",
+  "toolbar.fileMenu.tooltip": "新規・開く・保存のほかのファイル操作をまとめてあります",
+  "toolbar.file.saveAsMenuTooltip": "いまの部品に別の名前を付けて保存します (Ctrl+Shift+S)",
+  "statusBar.inferConstraints": "拘束の推定",
+  "statusBar.inferConstraintsHint": "線を引くときに、水平・垂直・一致・接線・平行を推定して小さな印で予告し、引き終わると拘束を付けます。Shift を押している間は止まります。"
 }

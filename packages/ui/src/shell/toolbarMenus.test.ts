@@ -18,6 +18,9 @@ import {
   CONSTRAINT_MENU_ITEMS,
   CREATE_MENU_ITEMS,
   EDIT_MENU_ITEMS,
+  FILE_ACTION_ICON_COUNT,
+  FILE_MENU_COUNT,
+  FILE_MENU_ITEMS,
   ICON_BUTTON_WIDTH_PIXELS,
   LOOK_MENU_ITEMS,
   MACHINING_MENU_ITEMS,
@@ -532,6 +535,92 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
     expect(triggerItemOf(CREATE_MENU_ITEMS, 'mirrorSolid', null)?.id).toBe('mirrorSolid');
     // 一覧に無い道具のときは「最後に使った道具」へ後退する。
     expect(triggerItemOf(MACHINING_MENU_ITEMS, 'extrude', 'draft')?.id).toBe('draft');
+  });
+});
+
+/* ===== P6 タスク31: 「ファイル」の畳んだ一覧(§0.57、FR-812、FR-904、要件§7.1) ===== */
+
+describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => {
+  it('いまは別名保存の 1 行だけが並ぶ(配線先のある操作しか出さない)', () => {
+    /*
+      §0.57 の最終形は 7 項目だが、行を足すのは**その操作を作るタスク**の仕事にした。
+      押しても何も起きない行を画面に出さないため(NFR-UX-5)。タスク32 が書き出す・
+      読み込む、タスク33 がひな形 2 つ・印刷・最近使ったファイルを足して 7 になる。
+    */
+    expect(FILE_MENU_ITEMS.map((item) => item.id)).toEqual(['saveAs']);
+  });
+
+  it('新規・開く・保存の 3 つは一覧に入れない(図柄のまま残す、§0.57)', () => {
+    const ids: readonly string[] = FILE_MENU_ITEMS.map((item) => item.id);
+    for (const kept of ['new', 'open', 'save']) {
+      expect(ids, kept).not.toContain(kept);
+    }
+    expect(FILE_ACTION_ICON_COUNT).toBe(3);
+  });
+
+  it('どの項目も図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
+    for (const item of FILE_MENU_ITEMS) {
+      expect(typeof item.Icon, item.id).toBe('function');
+      expect(t(item.labelKey).length, item.id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).length, item.id).toBeGreaterThan(0);
+      expect(t(item.tooltipKey).startsWith(`${t(item.labelKey)}: `), item.id).toBe(false);
+    }
+  });
+
+  it('畳んだボタンの名前と説明が引ける(FR-904、NFR-UX-7)', () => {
+    // 溝そのものの読み上げ名(「ファイル」)と別の名前にしてある。同じ名前の group を
+    // 入れ子にすると、読み上げでも検査でもどちらを指しているか取り違えるため。
+    expect(t('toolbar.fileMenu.groupLabel')).not.toBe(t('toolbar.file.title'));
+    expect(t('toolbar.fileMenu.tooltip').length).toBeGreaterThan(0);
+  });
+
+  it('別名保存の説明には出し方(Ctrl+Shift+S)が書いてある(NFR-UX-7)', () => {
+    // ボタンの Shift 押しと同じことができる、という手掛かりを一覧の中でも読めるようにする。
+    expect(t('toolbar.file.saveAsMenuTooltip')).toContain('Ctrl+Shift+S');
+  });
+
+  it('項目の id が「ファイル」の一覧の中で重複しない', () => {
+    const ids = FILE_MENU_ITEMS.map((item) => item.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('溝は 88 → 121 画素の 33 画素だけ広がる(§0.57 の幅の予算)', () => {
+    /*
+      畳んだボタン 1 つ(31)+隙間(2)。実測(1440×900、ダーク、拡大率 100%)も
+      ファイルの溝 88 → 121 画素で一致する(報告に記載)。
+    */
+    expect(segmentedWidthPixels(FILE_ACTION_ICON_COUNT, 0)).toBe(88);
+    expect(segmentedWidthPixels(FILE_ACTION_ICON_COUNT, FILE_MENU_COUNT)).toBe(121);
+  });
+
+  it('一覧へ 6 項目足しても溝は 121 画素のまま(畳んだ一覧に入れる理由)', () => {
+    /*
+      §0.57 の残り 6 項目(タスク32・33)は幅に 1 画素も効かない。平置きにしていたら
+      図柄 1 個につき 28 画素(26+隙間 2)、6 個で 168 画素増えていた。
+    */
+    const folded = segmentedWidthPixels(FILE_ACTION_ICON_COUNT, FILE_MENU_COUNT);
+    expect(folded).toBe(121);
+    const flatCost =
+      segmentedWidthPixels(FILE_ACTION_ICON_COUNT + 6, 0) -
+      segmentedWidthPixels(FILE_ACTION_ICON_COUNT, 0);
+    expect(flatCost).toBe(6 * (ICON_BUTTON_WIDTH_PIXELS + 2));
+  });
+
+  it('畳んだボタンの図柄は、最後に選んだ操作のものになる(triggerItemOf)', () => {
+    // ファイル操作は道具として選ばれた状態にならないので、いまの道具では決まらない。
+    expect(triggerItemOf(FILE_MENU_ITEMS, 'line', null)).toBeNull();
+    expect(triggerItemOf(FILE_MENU_ITEMS, 'line', 'saveAs')?.id).toBe('saveAs');
+    expect(rememberRecentTool(FILE_MENU_ITEMS, null, 'saveAs')).toBe('saveAs');
+  });
+
+  it('図柄はファイルの 3 つのボタンと別のもの(見分けられる)', () => {
+    const icons = FILE_MENU_ITEMS.map((item) => item.Icon);
+    expect(new Set(icons).size).toBe(icons.length);
+    // 一覧の中の図柄が、ほかの一覧の図柄と取り違えられていないことも見ておく。
+    const others = [...CREATE_MENU_ITEMS, ...LOOK_MENU_ITEMS].map((item) => item.Icon);
+    for (const icon of icons) {
+      expect(others).not.toContain(icon);
+    }
   });
 });
 

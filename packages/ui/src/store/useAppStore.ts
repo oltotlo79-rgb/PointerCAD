@@ -85,6 +85,7 @@ import {
 } from '../sketch/constraintCommands.js';
 import type { ConstraintValuePrompt } from '../sketch/constraintPicking.js';
 import { summarizeConstraints, type ConstraintSummary } from '../sketch/constraintSummary.js';
+import type { InferredConstraintPreview } from '../sketch/inferredConstraints.js';
 import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import { DEFAULT_SNAP_KINDS, type SnapKind } from '../sketch/snapMath.js';
 import type { TrackCandidate } from '../sketch/trackMath.js';
@@ -536,6 +537,16 @@ export interface AppState {
    */
   readonly trackIndicator: readonly TrackCandidate[] | null;
   /**
+   * 線を引いている最中に推定した拘束の予告(FR-333、P6 タスク41)。無ければ null。
+   *
+   * **形にも保存にも影響しない一時状態**で、`.pcad` には書かない(`affectsShape` を
+   * 通らない)。線を引き終えた瞬間に `commitToStore.ts` がこれを読んで拘束を足し、
+   * すぐ null へ戻す。`snapIndicator` / `trackIndicator` と同じく、作るのは React の外
+   * (`attachSketchInteraction.ts`)なのでここに置く(rules/04「フロントの状態は
+   * Zustand 1 本」)。
+   */
+  readonly inferredConstraints: InferredConstraintPreview | null;
+  /**
    * トリム・延長の道具でマウスを乗せているときの予告(FR-322、タスク22)。
    * 消える区間・伸びる区間の折れ線で、ビューポートがもとの線の上へ重ねて描く。
    *
@@ -821,6 +832,8 @@ export interface AppState {
   readonly setSnapIndicator: (indicator: SnapIndicator | null) => void;
   /** 向きの吸着の案内線を出す・消す(FR-110、タスク16)。 */
   readonly setTrackIndicator: (lines: readonly TrackCandidate[] | null) => void;
+  /** 推定した拘束の予告を出す・消す(FR-333、P6 タスク41)。 */
+  readonly setInferredConstraints: (preview: InferredConstraintPreview | null) => void;
   /** トリム・延長の予告を出す・消す(FR-322、タスク22)。 */
   readonly setEditPreview: (preview: EditPreview | null) => void;
   /** 面を張れなかった理由を出す・消す。 */
@@ -892,6 +905,16 @@ export interface AppState {
   readonly setAutoSaver: (saver: AutoSaver | null) => void;
   /** 復元の案内を出す・閉じる。 */
   readonly setRestorePrompt: (prompt: RestorePrompt | null) => void;
+  /**
+   * 別名保存(FR-812、P6 §0.a-0.37、タスク28)。**いま開いている部品を新しい名前で保存し、
+   * 以後の保存先をその新しい名前へ切り替える。元のファイルには何も書かない。**
+   *
+   * 中身は既存の「保存」に `saveAs = true` を渡すだけで、新しい書き込みの筋道は作らない
+   * (口が `savePcad(..., saveAs: true)` で必ず場所を訊き、書けた先を次の上書き先として
+   * 覚え直す。Web 版・デスクトップ版とも既にそう振る舞う)。取り消されたときは
+   * 保存先も名前も変わらない。ツールバーへ出す入口はタスク33。
+   */
+  readonly saveDocumentAs: () => Promise<void>;
   /**
    * 部品文書を新しくやり直す(FR-806 の「新規」)。`applyDocument` と違い
    * **履歴のスタックを作り直す**ので、新規の前へは戻れない。取りかけの操作・選択・
@@ -1331,6 +1354,7 @@ export function createInitialDocumentState(): Pick<
   | 'referenceErrorMessage'
   | 'snapIndicator'
   | 'trackIndicator'
+  | 'inferredConstraints'
   | 'editPreview'
   | 'faceErrorKey'
   | 'solidErrorKey'
@@ -1422,6 +1446,7 @@ export function createInitialDocumentState(): Pick<
     referenceErrorMessage: null,
     snapIndicator: null,
     trackIndicator: null,
+    inferredConstraints: null,
     editPreview: null,
     faceErrorKey: null,
     solidErrorKey: null,
@@ -1579,6 +1604,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         snapIndicator: null,
         // 案内線も持ち越さない(道具が変われば向きを合わせる相手も変わる、FR-110)。
         trackIndicator: null,
+        // 推定した拘束の予告も持ち越さない(線の道具をやめたら予告する相手がいない、FR-333)。
+        inferredConstraints: null,
         // 拘束の道具も持ち越さない(別の道具を押したらやめる、NFR-UX-3。P4b タスク13)。
         activeConstraintKind: null,
         constraintTargets: NO_CONSTRAINT_TARGETS,
@@ -2039,7 +2066,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set({ numericInput, numericInputAnchor });
   },
   updateNumericInput: (numericInput) => {
-    set({ numericInput });
+    /*
+      欄を打ち直したら、推定した拘束の予告(FR-333、P6 タスク41)を捨てる。
+
+      **予告はポインタが指している終点から作る**ので、そのあと利用者が欄へ別の座標を
+      打ち込むと、予告した拘束(「水平」など)が打ち込んだ線に当てはまらなくなる。
+      間違った線に拘束を付けるくらいなら付けないほうがよい。ポインタで置き直せば
+      次の `pointermove` で予告は入り直す。
+
+      **ポインタで置く道は `openNumericInput`(欄を開き直す)を通る**ので、こちらは
+      通らない——押した場所を欄へ入れる `openInputAt` は開き直す側だから、
+      「クリックで置く → Enter で確定」の道筋では予告はそのまま残る。
+    */
+    set({ numericInput, inferredConstraints: null });
   },
   closeNumericInput: () => {
     // 取りかけの図形(置いた点・前の段の値)も一緒に捨てる。ポップアップが閉じたあとに
@@ -2074,6 +2113,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setTrackIndicator: (trackIndicator) => {
     set({ trackIndicator });
+  },
+  setInferredConstraints: (inferredConstraints) => {
+    set({ inferredConstraints });
   },
   setEditPreview: (editPreview) => {
     set({ editPreview });
@@ -2192,6 +2234,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setRestorePrompt: (restorePrompt) => {
     set({ restorePrompt });
   },
+  saveDocumentAs: async () => {
+    /*
+     * 保存の手続き(`partFile.ts`)は逆にこのストアを読むので、上で静的に読むと
+     * ストア → 手続き → ストアの輪になる。呼ばれたときに読めば輪にならない
+     * (`AppShell.tsx` がビューポートを遅れて読むのと同じ書き方)。
+     */
+    const { createDefaultPartFileDeps, savePart } = await import('../file/partFile.js');
+    await savePart(createDefaultPartFileDeps(), true);
+  },
   resetDocument: (next) => {
     set((state) => ({
       // 新規・復元は丸ごとの差し替え(タスク22b-(i))。3D スケッチのままなら XY へ戻す。
@@ -2221,6 +2272,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       sectionView: null,
       snapIndicator: null,
       trackIndicator: null,
+      inferredConstraints: null,
       editPreview: null,
       // 拘束まわりの一時状態も持ち越さない(FR-313、タスク13)。診断は次の計算で入り直す。
       constraintDiagnosis: null,

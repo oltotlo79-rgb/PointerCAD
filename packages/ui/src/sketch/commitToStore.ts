@@ -14,8 +14,10 @@ import {
   baseWorkPlane,
   FREE_WORK_PLANE_ID,
   isFreeWorkPlaneId,
+  nextFeatureId,
   WORK_PLANES,
   type ProjectionSource,
+  type SketchDocument,
   type SketchResolveOptions,
   type WorkPlane,
 } from '@pointercad/model';
@@ -32,6 +34,7 @@ import {
   type CopyCommitOutcome,
 } from './copyCommands.js';
 import { commitOffset, type OffsetCommitOutcome } from './editCommands.js';
+import { applyInferredConstraints } from './inferredConstraints.js';
 import { nextNumericInput } from './numericInput.js';
 import type {
   EditInputCommit,
@@ -90,12 +93,46 @@ export function applySketchCommit(
     input: input ?? undefined,
   });
   store.setShapeError(outcome.rejection);
-  if (outcome.document !== store.sketch) {
-    store.setSketch(outcome.document);
+  // 予告していた拘束(FR-333)を同じ文書へ足してから 1 回だけ差し替える。
+  const document = withInferredConstraints(store, commit, outcome.document);
+  if (document !== store.sketch) {
+    store.setSketch(document);
   }
   store.setPendingStart(outcome.pendingStart);
   store.setShapeDraft(outcome.shapeDraft);
   return outcome.rejection === null;
+}
+
+/**
+ * 線を引き終えた瞬間に、予告していた拘束を足す(FR-333、P6 タスク41、§0.a-0.50
+ * 「確定は線を引き終えた瞬間」)。足すものが無ければ渡された文書をそのまま返す。
+ *
+ * **足すのは「予告したときに読んだ id」と「いま作られる線の id」が同じときだけ。**
+ * 予告してから確定するまでに別のフィーチャーが増えていれば、印が指していた線と拘束が
+ * 付く線が食い違うので、黙って捨てる(間違った線に拘束を付けるより出さないほうがよい)。
+ *
+ * 予告そのものは**足せても足せなくても必ず落とす**(1 回きりの表示で、次の線へ持ち越さない)。
+ * 文書の差し替えは呼び出し側で 1 回なので、**線 1 本と拘束はまとめて 1 回の取り消しで戻る**
+ * (NFR-UX-3)。
+ */
+function withInferredConstraints(
+  store: ReturnType<typeof useAppStore.getState>,
+  commit: NumericInputCommit,
+  document: SketchDocument,
+): SketchDocument {
+  const preview = store.inferredConstraints;
+  if (preview === null) {
+    return document;
+  }
+  store.setInferredConstraints(null);
+  // 段が違う(線の終点ではない)・断られて履歴が変わっていないときは足さない。
+  if (commit.step !== 'lineEnd' || document === store.sketch) {
+    return document;
+  }
+  if (preview.featureId !== nextFeatureId(store.sketch, 'line')) {
+    return document;
+  }
+  return applyInferredConstraints(document, preview.constraints).document;
 }
 
 /**

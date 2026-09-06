@@ -821,6 +821,40 @@ export function SaveIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/**
+ * 名前を付けて保存(FR-812、P6 タスク31)。保存の板の右下に鉛筆を重ねて
+ * 「保存するときに名前を書く」を表す。保存(`SaveIcon`)と見分けが付くよう、
+ * 板そのものは右下を開けてある。
+ */
+export function SaveAsIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M11.8 8.2V5.4L9.2 2.6H2.6v10.8h4.2" />
+      <path d="M5.2 2.6h3.4v2.8H5.2z" />
+      <path d="M13.9 8.4 9.4 12.9l-2.2.6.6-2.2z" />
+    </SvgIcon>
+  );
+}
+
+/**
+ * 「ファイル」の畳んだ一覧のボタンに出す図柄(P6 §0.57、タスク31)。
+ *
+ * 新規・開く・保存の 3 つと同じ溝に並ぶので、書類に「ほかにもある」の 3 点を添えて
+ * 「ファイルまわりのそのほかの操作」を表す。1 つの操作を指す図柄ではないため、
+ * どれか 1 つの道具の絵にはしない(一覧から選んだ後は選んだ道具の図柄に変わる)。
+ */
+export function FileMenuIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.4 1.9h5.2l3 3v5.1H3.4z" />
+      <path d="M8.6 1.9v3h3" />
+      <circle cx="4.6" cy="13.4" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="7.5" cy="13.4" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="10.4" cy="13.4" r="0.9" fill="currentColor" stroke="none" />
+    </SvgIcon>
+  );
+}
+
 /** 元に戻す。左へ曲がって戻る矢印。 */
 export function UndoIcon(props: IconProps): React.JSX.Element {
   return (

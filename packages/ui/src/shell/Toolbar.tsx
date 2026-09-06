@@ -89,6 +89,7 @@ import {
   CursorIcon,
   EditGroupIcon,
   FaceToolIcon,
+  FileMenuIcon,
   GridIcon,
   HomeIcon,
   LineToolIcon,
@@ -125,6 +126,7 @@ import {
   CONSTRAINT_MENU_ITEMS,
   CREATE_MENU_ITEMS,
   EDIT_MENU_ITEMS,
+  FILE_MENU_ITEMS,
   LOOK_MENU_ITEMS,
   MACHINING_MENU_ITEMS,
   PROJECTION_MENU_ITEMS,
@@ -132,6 +134,7 @@ import {
   nextHighlightIndex,
   rememberRecentTool,
   triggerItemOf,
+  type FileMenuActionId,
   type LookToolId,
   type ToolMenuItem,
 } from './toolbarMenus.js';
@@ -207,6 +210,23 @@ function runFileAction(id: FileActionId, saveAs: boolean): void {
       return;
     case 'save':
       void savePart(deps, saveAs);
+      return;
+  }
+}
+
+/**
+ * 「ファイル」の畳んだ一覧から選んだときの処理(FR-812、P6 §0.57、タスク31)。
+ *
+ * `FileMenuActionId` を網羅する `switch` にしてあるのが要点で、**配線を書かずに一覧へ
+ * 行を足すと型検査が落ちる**(押しても何も起きない行を画面に出さないための仕掛け)。
+ * タスク32・33 が書き出す・読み込む・ひな形・印刷・最近使ったファイルを足すときは、
+ * ここへ 1 つずつ case を書く。
+ */
+function runFileMenuAction(id: FileMenuActionId): void {
+  switch (id) {
+    case 'saveAs':
+      // 保存ボタンを Shift を押しながら押したときと同じ道筋(判断を 2 か所に書かない)。
+      void savePart(createDefaultPartFileDeps(), true);
       return;
   }
 }
@@ -1527,6 +1547,28 @@ export function Toolbar(): React.JSX.Element {
               <action.Icon />
             </button>
           ))}
+          {/*
+            たまにしか使わないファイル操作(P6 §0.57、タスク31)。**新規・開く・保存と
+            同じ溝の中**へ畳んだボタンを 1 つだけ足す。区画は増やさない(要件§7.1、rules/04)。
+            溝は 88 → 121 画素の 33 画素だけ広がり、一覧の中へ項目をいくつ足しても
+            そこから先は増えない(`toolbarMenus.ts` の `segmentedWidthPixels`)。
+
+            押下表示を出さないのは、ファイル操作は**押した瞬間に終わる**もので、
+            「いまこの道具を使っている」状態にならないため(「投影」と同じ理由、§0.a-0.80)。
+          */}
+          <ToolMenu
+            items={FILE_MENU_ITEMS}
+            groupLabelKey="toolbar.fileMenu.groupLabel"
+            groupTooltipKey="toolbar.fileMenu.tooltip"
+            GroupIcon={FileMenuIcon}
+            /*
+              ファイル操作は道具として選ばれた状態にならないので、畳んだボタンの図柄は
+              `ToolMenu` が覚える「最後に使った操作」だけで決まる(「合わせる」と同じ)。
+            */
+            activeTool=""
+            showPressed={false}
+            onChoose={runFileMenuAction}
+          />
         </div>
         <div className="pcad-segmented" role="group" aria-label={t('toolbar.history.groupLabel')}>
           <button

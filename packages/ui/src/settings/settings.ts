@@ -73,6 +73,16 @@ export interface DisplaySettings {
    * 増やさず同じ 1 つの `DisplaySettings` へ入れる。
    */
   readonly selectionFilter: SelectionFilter;
+  /**
+   * 拘束の自動推定(FR-333。P6 タスク41)の入切。**既定は入**(§0.a-0.49 の利用者の決定
+   * 2026-09-05 22:05)。切ると線を引いている最中の予告の印が 1 つも出ず、確定しても
+   * 拘束は足されない。
+   *
+   * **端末の設定であって文書の属性ではない**(切っても既にある拘束は消えず、`.pcad` にも
+   * 書かない)。テーマ・拡大率・刻み角度・単位・選択フィルタと同じ性質なので、
+   * `localStorage` の鍵を増やさず同じ 1 つの `DisplaySettings` へ入れる。
+   */
+  readonly inferConstraints: boolean;
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
@@ -82,6 +92,7 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   timelineHintSeen: false,
   lengthUnit: 'mm',
   selectionFilter: ALL_SELECTABLE,
+  inferConstraints: true,
 };
 export const MIN_UI_SCALE = 90;
 export const MAX_UI_SCALE = 150;
@@ -195,6 +206,20 @@ function readSelectionFilter(value: object): SelectionFilter {
   // 余計な欄が混ざっていても 4 欄だけを写す(保存された形をそのまま持ち回らない)。
   const { vertex, edge, face, body } = value.selectionFilter;
   return { vertex, edge, face, body };
+}
+
+/**
+ * 保存されている値から拘束の自動推定の入切を読む(FR-333、P6 タスク41)。
+ * **この欄も欄ごとに既定へ後退させる**(`readTrackAngleStep` と同じ前方互換の理由。
+ * この欄より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
+ * 既定へ戻してはいけない)。**戻り先は入**(§0.a-0.49 の既定)なので、壊れていても
+ * 推定は効いたままになる。
+ */
+function readInferConstraints(value: object): boolean {
+  if (!('inferConstraints' in value) || typeof value.inferConstraints !== 'boolean') {
+    return DEFAULT_DISPLAY_SETTINGS.inferConstraints;
+  }
+  return value.inferConstraints;
 }
 
 /**
@@ -357,6 +382,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       timelineHintSeen: readTimelineHintSeen(parsed),
       lengthUnit: readLengthUnit(parsed),
       selectionFilter: readSelectionFilter(parsed),
+      inferConstraints: readInferConstraints(parsed),
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;

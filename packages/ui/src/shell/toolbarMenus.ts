@@ -74,6 +74,7 @@ import {
   RevolveIcon,
   RibIcon,
   RuledIcon,
+  SaveAsIcon,
   ScaleIcon,
   SectionToolIcon,
   SewIcon,
@@ -112,6 +113,49 @@ export interface ToolMenuItem<Id extends string> {
   readonly tooltipKey: MessageKey;
   readonly Icon: IconComponent;
 }
+
+/**
+ * 「ファイル」の畳んだ一覧に並ぶ操作の id(P6 §0.57、タスク31)。
+ *
+ * **配線先のある操作だけを並べる。** 一覧に出ている行を押したら必ず正しいことが起きる、
+ * という約束をこの型で守る(`Toolbar.tsx` の `runFileMenuAction` はこの型を網羅する
+ * `switch` なので、**配線を書かずに id を足すと型検査が落ちる**)。
+ *
+ * §0.57 は最終的に 7 項目(書き出す・読み込む・ひな形から新規・ひな形として保存・
+ * 別名保存・印刷・最近使ったファイル)と決めているが、P6 タスク31 の時点で配線先が
+ * あるのは**別名保存だけ**なので、まずそれだけを載せる。残りは中身を作るタスクが
+ * この型と下の表へ 1 行ずつ足す(溝の幅は 1 画素も増えない。`segmentedWidthPixels`)。
+ *
+ * - 書き出す・読み込む … タスク32(`file/exchangeFile.ts` とパネル)
+ * - ひな形から新規・ひな形として保存・印刷・最近使ったファイル … タスク33
+ *   (ひな形は `file/templateFile.ts`、最近使ったファイルは端末の覚え書き、
+ *    印刷は `file/printView.ts` の `printViewport` に渡す
+ *    `capture: () => string | null` = **ビューポートの 1 コマを白い下地で PNG にする口**が
+ *    まだ無い。いまストアにある `captureThumbnail` は 256 画素の正方形で下地も画面と同じ
+ *    暗い色なので、紙に出すと FR-908「印刷の見た目はテーマの影響を受けない」に反する。
+ *    `viewport/createViewportScene.ts` へ `capturePrintFrame()` を足す必要がある)
+ */
+export type FileMenuActionId = 'saveAs';
+
+/**
+ * 「ファイル」の畳んだ一覧(FR-812、P6 §0.57、タスク31)。
+ *
+ * 新規・開く・保存の 3 つは**図柄のまま残す**(最もよく使うので 1 クリックで届かせる、
+ * §0.57)。その右に畳んだボタンを 1 つだけ足し、たまにしか使わないファイル操作を
+ * すべてこの中へ入れる。区画は増やさない(要件§7.1、rules/04)。
+ *
+ * 別名保存は P2 から「保存ボタンを Shift を押しながら押す」か Ctrl+Shift+S でできたが、
+ * **押し方を知らないと辿り着けなかった**(FR-812 は入口を求めている)。ここへ 1 行置くと、
+ * 画面を見るだけで見つかる(NFR-UX-7)。Shift 押しと Ctrl+Shift+S はそのまま残す。
+ */
+export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
+  {
+    id: 'saveAs',
+    labelKey: 'toolbar.file.saveAs',
+    tooltipKey: 'toolbar.file.saveAsMenuTooltip',
+    Icon: SaveAsIcon,
+  },
+];
 
 /**
  * 「作図」の一覧(FR-313〜318、FR-326)。よく使う基本の 6 道具(選択・点・線分・円弧・
@@ -792,3 +836,19 @@ export const SOLID_MENU_COUNT = 3;
 
 /** 「投影」「見た目」の区画に置く畳んだ一覧の数(どちらも 1 つ、P5 タスク51)。 */
 export const SINGLE_MENU_COUNT = 1;
+
+/**
+ * 「ファイル」の溝に平置きする図柄のボタンの数(新規・開く・保存、§0.a-0.15、§0.57)。
+ * **この 3 つは畳まない**(最もよく使うので 1 クリックで届かせる)。
+ */
+export const FILE_ACTION_ICON_COUNT = 3;
+
+/**
+ * 「ファイル」の溝に置く畳んだ一覧の数(P6 §0.57、タスク31)。
+ *
+ * 溝は `segmentedWidthPixels(3, 0)` = 88 画素から `segmentedWidthPixels(3, 1)` = 121 画素へ
+ * 33 画素だけ広がる(畳んだボタン 31 + 隙間 2)。**一覧の中へ項目をいくつ足しても
+ * ここから先は 1 画素も増えない**ので、§0.57 の残り 6 項目(タスク32・33)も幅に効かない。
+ * 実測は 1440×900 で必要幅 1172.3 → 1205.3 画素、余裕 267.7 → 234.7 画素(報告に記載)。
+ */
+export const FILE_MENU_COUNT = 1;

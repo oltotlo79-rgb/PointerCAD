@@ -104,3 +104,38 @@ export {
   type DxfReadResult,
   type DxfSplineEntity,
 } from './dxf/readDxf.js';
+
+// 3MF の読み書き(FR-803、FR-809、計画書 §2.6)。3MF は ZIP の中の XML なので、OCCT を
+// 使わずに `packages/io` が自前で組み立て・読み取りをする(§0.a-0.18、§0.a-0.26)。
+// **kernel の型を輸入しない**(依存方向。`rules/04-設計の規律.md`)ので、書き出しは平らな
+// 配列を受け(`ThreeMfMeshInput`)、読み込みは kernel の `ImportedMeshData` と同じ並びを返す。
+export {
+  escapeXmlAttribute,
+  escapeXmlText,
+  formatXmlNumber,
+  XML_INVALID_NUMBER_MESSAGE,
+} from './threemf/xmlText.js';
+export {
+  DEFAULT_THREE_MF_COLOR,
+  THREE_MF_CONTENT_TYPES_ENTRY,
+  THREE_MF_INVALID_COLOR_MESSAGE,
+  THREE_MF_INVALID_INDICES_MESSAGE,
+  THREE_MF_INVALID_POSITIONS_MESSAGE,
+  THREE_MF_MODEL_ENTRY,
+  THREE_MF_RELS_ENTRY,
+  writeThreeMf,
+  type ThreeMfColor,
+  type ThreeMfMeshInput,
+  type WriteThreeMfOptions,
+} from './threemf/writeThreeMf.js';
+export {
+  readAttributes,
+  readThreeMf,
+  THREE_MF_MAX_TRIANGLE_COUNT,
+  THREE_MF_NO_FACE_MESSAGE,
+  THREE_MF_READ_FAILED_MESSAGE,
+  threeMfTooLargeMessage,
+  type ThreeMfLengthUnit,
+  type ThreeMfMesh,
+  type ThreeMfReadResult,
+} from './threemf/readThreeMf.js';

@@ -125,6 +125,7 @@ import {
   SCHEMA_MIGRATIONS,
   type PcadDocumentKind,
   type PcadEnvelope,
+  type PcadToolDefaults,
 } from './schema.js';
 
 /** 判別に使う文字列の一覧。`as` を使わずに型から取り出す。 */
@@ -1696,6 +1697,32 @@ export interface SerializeOptions {
    * 中身(部品文書)の作りは種別で 1 文字も変わらない(履歴を空にするのは上の層の仕事)。
    */
   readonly kind?: PcadDocumentKind;
+  /**
+   * 表示の長さの単位(FR-814、§2.10)。**ひな形のときだけ渡す。**
+   * 渡さなければ封筒にこの欄そのものが出ない(部品の `.pcad` のバイト列は
+   * タスク27 の前後で 1 バイトも変わらない)。
+   */
+  readonly lengthUnit?: LengthUnit;
+  /** 各道具の既定値(FR-814、§2.10)。`lengthUnit` と同じく、ひな形のときだけ渡す。 */
+  readonly toolDefaults?: PcadToolDefaults;
+}
+
+/**
+ * 道具の既定値を封筒へ書く形にする(FR-814、§2.10)。
+ *
+ * 他の `serialize*` と同じく**欄を 1 つずつ決まった順で書き写す**。渡された
+ * オブジェクトをそのまま入れないのは、①欄の順が呼び出し側の作り方に左右されると
+ * 同じ中身から同じバイト列ができなくなる(`pcadFile.ts` 冒頭の約束)、
+ * ②知らない欄が紛れ込んでも保存されない、の 2 つによる。
+ */
+function serializeToolDefaults(toolDefaults: PcadToolDefaults): PcadToolDefaults {
+  return {
+    extrudeDistance: toolDefaults.extrudeDistance,
+    holeDiameter: toolDefaults.holeDiameter,
+    filletRadius: toolDefaults.filletRadius,
+    chamferDistance: toolDefaults.chamferDistance,
+    circleRadius: toolDefaults.circleRadius,
+  };
 }
 
 /**
@@ -1710,6 +1737,16 @@ export function serializeDocument(document: PartDocument, options: SerializeOpti
     kind: options.kind ?? PCAD_DOCUMENT_KIND,
     app: PCAD_APP_NAME,
     savedAt: options.savedAt ?? new Date().toISOString(),
+    /*
+      ひな形の 2 欄(FR-814、§2.10)。**渡されなければ `undefined` のままにする。**
+      `JSON.stringify` は値が `undefined` の欄を書かないので、部品の `.pcad` の
+      バイト列はタスク27 の前後で 1 バイトも変わらない(既存の検査がそれを固定している)。
+      場所を `savedAt` と `document` の間にしてあるのは、封筒の欄(小さい設定)を
+      先に、中身(大きい文書)を最後に置く並びを崩さないためである。
+    */
+    lengthUnit: options.lengthUnit,
+    toolDefaults:
+      options.toolDefaults === undefined ? undefined : serializeToolDefaults(options.toolDefaults),
     document: serializePartDocument(document),
   };
   return `${JSON.stringify(envelope, null, 2)}\n`;
@@ -6153,6 +6190,14 @@ export type ParseDocumentResult =
        * 「このファイルはひな形ではありません。」の断り)に判断させる。
        */
       readonly kind: PcadDocumentKind;
+      /**
+       * 封筒に書かれていた表示の長さの単位(FR-814、§2.10)。**欄が無ければ `undefined`**
+       * ——ここではファイルに書いてあったとおりを返し、既定(`'mm'`)で埋めるのは上の層
+       * (model の `openTemplate`)の仕事にする。既定値を io と model の両方に置かないため。
+       */
+      readonly lengthUnit?: LengthUnit;
+      /** 封筒に書かれていた道具の既定値(FR-814)。`lengthUnit` と同じく、無ければ `undefined`。 */
+      readonly toolDefaults?: PcadToolDefaults;
     }
   | { readonly ok: false; readonly error: ParseError };
 
@@ -6208,6 +6253,70 @@ function migrateToCurrentSchema(
   return version === PCAD_SCHEMA_VERSION ? current : null;
 }
 
+/**
+ * 封筒の任意の欄「表示の長さの単位」を読む(FR-814、§2.10。P6 タスク27)。
+ *
+ * **欄が無いのは不備ではない**(版 7 でも持たないファイルがある)ので `undefined` を返す。
+ * 欄があるのに知らない値だったときだけ、他の欄と同じ厳しさで断る(`invalidField`)。
+ */
+function readEnvelopeLengthUnit(raw: Record<string, unknown>): Checked<LengthUnit | undefined> {
+  if (!('lengthUnit' in raw)) {
+    return { ok: true, value: undefined };
+  }
+  return readLiteral<LengthUnit>(raw, 'lengthUnit', '', LENGTH_UNITS);
+}
+
+/**
+ * 封筒の任意の欄「道具の既定値」を読む(FR-814、§2.10)。`lengthUnit` と同じく、
+ * **欄が無ければ `undefined`、あれば 5 欄すべてを厳密に検査する。**
+ *
+ * 途中まで書かれた `toolDefaults` を「ある分だけ読む」ようにはしない。半端な設定を
+ * 黙って受け入れると、どの値が利用者の指定でどれが既定なのかが後から分からなくなる。
+ * 知らない欄は読み飛ばす(P12 で欄が増えたひな形を、この版のアプリでも開けるように)。
+ */
+function readEnvelopeToolDefaults(
+  raw: Record<string, unknown>,
+): Checked<PcadToolDefaults | undefined> {
+  if (!('toolDefaults' in raw)) {
+    return { ok: true, value: undefined };
+  }
+  const record = readRecord(raw, 'toolDefaults', '');
+  if (!record.ok) {
+    return record;
+  }
+  const path = 'toolDefaults';
+  const extrudeDistance = readString(record.value, 'extrudeDistance', path);
+  if (!extrudeDistance.ok) {
+    return extrudeDistance;
+  }
+  const holeDiameter = readString(record.value, 'holeDiameter', path);
+  if (!holeDiameter.ok) {
+    return holeDiameter;
+  }
+  const filletRadius = readString(record.value, 'filletRadius', path);
+  if (!filletRadius.ok) {
+    return filletRadius;
+  }
+  const chamferDistance = readString(record.value, 'chamferDistance', path);
+  if (!chamferDistance.ok) {
+    return chamferDistance;
+  }
+  const circleRadius = readString(record.value, 'circleRadius', path);
+  if (!circleRadius.ok) {
+    return circleRadius;
+  }
+  return {
+    ok: true,
+    value: {
+      extrudeDistance: extrudeDistance.value,
+      holeDiameter: holeDiameter.value,
+      filletRadius: filletRadius.value,
+      chamferDistance: chamferDistance.value,
+      circleRadius: circleRadius.value,
+    },
+  };
+}
+
 /** 版の判定が済んだ封筒を読む。 */
 function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocumentResult {
   const app = readString(raw, 'app', '');
@@ -6231,6 +6340,15 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
   const savedAt = readString(raw, 'savedAt', '');
   if (!savedAt.ok) {
     return failField(savedAt.problem);
+  }
+  // ひな形の 2 欄(FR-814、§2.10)。どちらも任意なので、無いこと自体は断りにならない。
+  const lengthUnit = readEnvelopeLengthUnit(raw);
+  if (!lengthUnit.ok) {
+    return failField(lengthUnit.problem);
+  }
+  const toolDefaults = readEnvelopeToolDefaults(raw);
+  if (!toolDefaults.ok) {
+    return failField(toolDefaults.problem);
   }
   const document = readValue(raw, 'document', '');
   if (!document.ok) {
@@ -6260,7 +6378,14 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
       `外観の割り当ての id が重なっています(${duplicateAppearanceId})。ファイルが壊れている可能性があります。`,
     );
   }
-  return { ok: true, document: decoded.value, savedAt: savedAt.value, kind: kind.value };
+  return {
+    ok: true,
+    document: decoded.value,
+    savedAt: savedAt.value,
+    kind: kind.value,
+    lengthUnit: lengthUnit.value,
+    toolDefaults: toolDefaults.value,
+  };
 }
 
 /**

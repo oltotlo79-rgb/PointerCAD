@@ -7,7 +7,7 @@
  * (中身の形は版によって変わり得るため、版の判定を中身の解釈より先に済ませる)。
  */
 
-import type { PartDocument } from '@pointercad/model';
+import type { LengthUnit, PartDocument } from '@pointercad/model';
 
 import { isRecord } from './guards.js';
 
@@ -58,6 +58,12 @@ import { isRecord } from './guards.js';
  * `SCHEMA_MIGRATIONS[6]` が空配列で補う(`parameters`(版 5)・`appearance`(版 6)と
  * まったく同じ形)。④は `document.json` の中身ではないので移行の対象にならない
  * (添付が 1 つも無い版7のファイルは、版6のファイルと同じく `document.json` だけを持つ)。
+ *
+ * **版 7 のまま足した欄(P6 タスク27、FR-814、§0.a-0.35):** ひな形の封筒の
+ * `lengthUnit` / `toolDefaults` は**任意の欄**にしたので版は上げない。欄を持たない
+ * 版 7 のファイル(部品の `.pcad` は今までどおり書かない)はそのまま読め、読み手が
+ * 既定で埋める。**任意の欄を足すたびに版を上げると、古いアプリで開けないファイルが
+ * 増えるだけで得るものが無い**(要件§8 の前方互換)。
  */
 export const PCAD_SCHEMA_VERSION = 7;
 
@@ -98,6 +104,46 @@ export const PCAD_DOCUMENT_KINDS: readonly PcadDocumentKind[] = [
   PCAD_TEMPLATE_KIND,
 ];
 
+/**
+ * ひな形が持ち運ぶ道具の既定値(FR-814、§2.10、P6 タスク27)。**P6 ではこの 5 つに絞る**
+ * (増やすのは P12 の環境設定、FR-1104)。値は**式の文字列**で持つ(FR-202。
+ * 評価は使う側が `evaluateExpression` で行う)。
+ *
+ * **正本は `@pointercad/model` の `part/templates.ts` の `ToolDefaults`** で、ここに同じ形を
+ * 置いているのは、`packages/model` の輸出の入口(`src/index.ts`)がタスク27 の時点で
+ * 別の作業のコミット待ちに入っており触れないためである。**タスク33 でこの 2 つ
+ * (`PcadToolDefaults` / `PCAD_TOOL_DEFAULT_KEYS`)を model からの輸入へ置き換える。**
+ * 2 つは構造が同じなので、置き換えるまでの間も値はそのまま行き来できる。
+ */
+export interface PcadToolDefaults {
+  /** 押し出しの距離(mm、FR-415)。 */
+  readonly extrudeDistance: string;
+  /** 穴の径(mm、FR-403)。 */
+  readonly holeDiameter: string;
+  /** R 面取りの半径(mm、FR-407)。 */
+  readonly filletRadius: string;
+  /** C 面取りの距離(mm、FR-406)。 */
+  readonly chamferDistance: string;
+  /** スケッチの円の半径(mm、FR-302)。 */
+  readonly circleRadius: string;
+}
+
+/**
+ * 道具の既定値の欄の名前(5 つ)。読み手はこの一覧の欄だけを読み、書き手はこの順に書く
+ * (**同じ中身から同じバイト列**の約束。`pcadFile.ts` 冒頭)。
+ *
+ * `keyof PcadToolDefaults` を要素の型にしてあるので、**欄を足して一覧に書き忘れると
+ * 読み手が黙って落とす**のではなく、この一覧を使う側(`documentJson.ts`)が全欄を
+ * 読めなくなる形で気づける。上の注記のとおり、正本は model 側にある。
+ */
+export const PCAD_TOOL_DEFAULT_KEYS: readonly (keyof PcadToolDefaults)[] = [
+  'extrudeDistance',
+  'holeDiameter',
+  'filletRadius',
+  'chamferDistance',
+  'circleRadius',
+];
+
 /** `document.json` の中身(封筒)。ここに書いたものだけを保存し、それ以外は保存しない。 */
 export interface PcadEnvelope {
   /** 書式の版。部品文書の `schemaVersion` と同じ値。 */
@@ -108,6 +154,22 @@ export interface PcadEnvelope {
   readonly app: string;
   /** 保存した時刻(ISO 8601、UTC)。 */
   readonly savedAt: string;
+  /**
+   * 表示の長さの単位(FR-811、FR-814、§2.10。P6 タスク27 で足した**任意の欄**)。
+   *
+   * **版は上げない。** 版 7 のファイルでも持たないものがある(部品の `.pcad` は書かない)
+   * ので、欄そのものを省略できる形にした。読み手は無ければ `'mm'` とみなす
+   * (既定値の正本は model の `DEFAULT_TEMPLATE_LENGTH_UNIT`)。
+   *
+   * **文書ではなく封筒に持つ**のは、単位が利用者の設定であって部品の形の一部ではない
+   * ためである(§0.a-0.1。内部の計算は mm 固定、NFR-RE-3)。
+   */
+  readonly lengthUnit?: LengthUnit;
+  /**
+   * 各道具の既定値(FR-814、§2.10。`lengthUnit` と同じく任意の欄)。
+   * 読み手は無ければ既定(model の `DEFAULT_TOOL_DEFAULTS`)を使う。
+   */
+  readonly toolDefaults?: PcadToolDefaults;
   /** 部品文書そのもの。導出できるもの(解決済みの座標・メッシュ・鍵)は入れない。 */
   readonly document: PartDocument;
 }

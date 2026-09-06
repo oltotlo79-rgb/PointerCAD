@@ -52,7 +52,9 @@ import {
   PCAD_DOCUMENT_KIND,
   PCAD_SCHEMA_VERSION,
   PCAD_TEMPLATE_KIND,
+  PCAD_TOOL_DEFAULT_KEYS,
   SCHEMA_MIGRATIONS,
+  type PcadToolDefaults,
 } from './schema.js';
 
 /** 検査で時刻を固定する(保存時刻が違っても文字列が同じであることを確かめるため)。 */
@@ -5685,5 +5687,141 @@ describe('版 6 → 版 7 の移行と封筒の種別(P6 タスク21、§0.a-0.5
       expect(error.code).toBe('unsupportedKind');
       expect(error.message).toContain(kind);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ひな形の封筒の 2 欄(FR-814、§2.10、P6 タスク27)
+// ---------------------------------------------------------------------------
+
+describe('ひな形の封筒の任意の欄(FR-814、§2.10)', () => {
+  /** 検査で使う道具の既定値(既定からずらして、持ち運ばれたことを見分ける)。 */
+  const TOOL_DEFAULTS: PcadToolDefaults = {
+    extrudeDistance: '25',
+    holeDiameter: '8.5',
+    filletRadius: '板厚',
+    chamferDistance: '0.5',
+    circleRadius: '12',
+  };
+
+  it('道具の既定値の欄はちょうど 5 つ(§2.10)', () => {
+    expect(PCAD_TOOL_DEFAULT_KEYS).toEqual([
+      'extrudeDistance',
+      'holeDiameter',
+      'filletRadius',
+      'chamferDistance',
+      'circleRadius',
+    ]);
+    expect(PCAD_TOOL_DEFAULT_KEYS).toHaveLength(5);
+  });
+
+  it('渡さなければ封筒に欄が出ない(部品の .pcad は 1 バイトも変わらない)', () => {
+    const text = serializeDocument(createEmptyPartDocument(), { savedAt: SAVED_AT });
+    expect(text).not.toContain('lengthUnit');
+    expect(text).not.toContain('toolDefaults');
+  });
+
+  it('ひな形として書き出すと 2 欄が封筒に出て、往復で戻る', () => {
+    const text = serializeDocument(createEmptyPartDocument(), {
+      savedAt: SAVED_AT,
+      kind: PCAD_TEMPLATE_KIND,
+      lengthUnit: 'inch',
+      toolDefaults: TOOL_DEFAULTS,
+    });
+    expect(text).toContain('"lengthUnit": "inch"');
+    const result = parseDocument(text);
+    if (!result.ok) {
+      throw new Error(`ひな形は読めるはず: ${result.error.code}`);
+    }
+    expect(result.kind).toBe(PCAD_TEMPLATE_KIND);
+    expect(result.lengthUnit).toBe('inch');
+    expect(result.toolDefaults).toEqual(TOOL_DEFAULTS);
+  });
+
+  it('道具の欄の並びは呼び出し側の順に左右されない(決定性)', () => {
+    // 欄を逆の順で組み立てても、書き出される字面は同じになる。
+    const reversed: PcadToolDefaults = {
+      circleRadius: TOOL_DEFAULTS.circleRadius,
+      chamferDistance: TOOL_DEFAULTS.chamferDistance,
+      filletRadius: TOOL_DEFAULTS.filletRadius,
+      holeDiameter: TOOL_DEFAULTS.holeDiameter,
+      extrudeDistance: TOOL_DEFAULTS.extrudeDistance,
+    };
+    const options = { savedAt: SAVED_AT, kind: PCAD_TEMPLATE_KIND, lengthUnit: 'mm' } as const;
+    expect(
+      serializeDocument(createEmptyPartDocument(), { ...options, toolDefaults: reversed }),
+    ).toBe(serializeDocument(createEmptyPartDocument(), { ...options, toolDefaults: TOOL_DEFAULTS }));
+  });
+
+  it('lengthUnit が無いひな形は欄が無いまま読める(既定は上の層が埋める)', () => {
+    const result = parseDocument(rawFile({ kind: PCAD_TEMPLATE_KIND }));
+    if (!result.ok) {
+      throw new Error('欄が無くても読めるはず');
+    }
+    expect(result.lengthUnit).toBeUndefined();
+    expect(result.toolDefaults).toBeUndefined();
+  });
+
+  it('知らない単位は invalidField で断る(コードを増やさない)', () => {
+    const error = expectError(
+      parseDocument(rawFile({ kind: PCAD_TEMPLATE_KIND, lengthUnit: 'shaku' })),
+    );
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('lengthUnit');
+  });
+
+  it('道具の既定値の欄が足りなければ missingField で断る(場所つき)', () => {
+    const partial: Record<string, string> = { ...TOOL_DEFAULTS };
+    delete partial['holeDiameter'];
+    const error = expectError(
+      parseDocument(rawFile({ kind: PCAD_TEMPLATE_KIND, toolDefaults: partial })),
+    );
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('toolDefaults.holeDiameter');
+  });
+
+  it('道具の既定値が数値で書かれていれば invalidField で断る(式の文字列で持つ)', () => {
+    const error = expectError(
+      parseDocument(
+        rawFile({
+          kind: PCAD_TEMPLATE_KIND,
+          toolDefaults: { ...TOOL_DEFAULTS, extrudeDistance: 25 },
+        }),
+      ),
+    );
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('toolDefaults.extrudeDistance');
+  });
+
+  it('道具の既定値が表でなければ invalidField で断る', () => {
+    const error = expectError(
+      parseDocument(rawFile({ kind: PCAD_TEMPLATE_KIND, toolDefaults: '25' })),
+    );
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('toolDefaults');
+  });
+
+  it('知らない欄が混ざっていても読め、保存し直すと落ちる(前方互換)', () => {
+    const result = parseDocument(
+      rawFile({
+        kind: PCAD_TEMPLATE_KIND,
+        toolDefaults: { ...TOOL_DEFAULTS, 未知の道具: '99' },
+      }),
+    );
+    if (!result.ok) {
+      throw new Error('知らない欄で断らないはず');
+    }
+    expect(result.toolDefaults).toEqual(TOOL_DEFAULTS);
+  });
+
+  it('欄を足しても書式の版は上げない(版 7 のまま)', () => {
+    const text = serializeDocument(createEmptyPartDocument(), {
+      savedAt: SAVED_AT,
+      kind: PCAD_TEMPLATE_KIND,
+      lengthUnit: 'inch',
+      toolDefaults: TOOL_DEFAULTS,
+    });
+    expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
+    expect(PCAD_SCHEMA_VERSION).toBe(7);
   });
 });

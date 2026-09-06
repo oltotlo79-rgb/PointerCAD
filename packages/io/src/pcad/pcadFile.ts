@@ -31,11 +31,15 @@
  * 他のアプリが作った圧縮済みの ZIP も読める(fflate が deflate を解ける)。
  */
 
-import type { PartDocument } from '@pointercad/model';
+import type { LengthUnit, PartDocument } from '@pointercad/model';
 import { strFromU8, strToU8, unzipSync, zipSync, type Unzipped, type Zippable } from 'fflate';
 
 import { parseDocument, serializeDocument, type ParseErrorCode } from './documentJson.js';
-import type { PcadDocumentKind } from './schema.js';
+import {
+  PCAD_TEMPLATE_KIND,
+  type PcadDocumentKind,
+  type PcadToolDefaults,
+} from './schema.js';
 
 /** 部品文書を入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
@@ -243,6 +247,14 @@ export interface WritePcadFileOptions {
    */
   readonly kind?: PcadDocumentKind;
   /**
+   * ひな形が持ち運ぶ表示の長さの単位(FR-814、§2.10。P6 タスク27)。
+   * **ひな形として書き出すときだけ渡す。** 渡さなければ封筒にこの欄は出ない
+   * (部品の `.pcad` のバイト列はタスク27 の前後で 1 バイトも変わらない)。
+   */
+  readonly lengthUnit?: LengthUnit;
+  /** ひな形が持ち運ぶ道具の既定値(FR-814)。`lengthUnit` と同じ扱い。 */
+  readonly toolDefaults?: PcadToolDefaults;
+  /**
    * 添付(§0.a-0.55)。渡さなければ添付のエントリは 1 つも入らない。
    *
    * **文書が参照しているものだけを渡す責任は呼び出し側にある。** ここで文書と突き合わせて
@@ -304,7 +316,12 @@ export function writePcadFile(
   document: PartDocument,
   options: WritePcadFileOptions = {},
 ): Uint8Array {
-  const text = serializeDocument(document, { savedAt: options.savedAt, kind: options.kind });
+  const text = serializeDocument(document, {
+    savedAt: options.savedAt,
+    kind: options.kind,
+    lengthUnit: options.lengthUnit,
+    toolDefaults: options.toolDefaults,
+  });
   const entries: Zippable = {
     [PCAD_DOCUMENT_ENTRY]: [strToU8(text), { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME }],
   };
@@ -339,6 +356,13 @@ export type ReadPcadFileResult =
       readonly savedAt: string;
       /** 封筒の種別(部品かひな形か、§0.a-0.35)。判断は上の層(タスク27)がする。 */
       readonly kind: PcadDocumentKind;
+      /**
+       * ひな形が持ち運んでいた表示の長さの単位(FR-814、§2.10)。**欄が無ければ `undefined`。**
+       * 既定(`'mm'`)で埋めるのは model の `openTemplate` の仕事(`documentJson.ts` の注記)。
+       */
+      readonly lengthUnit?: LengthUnit;
+      /** ひな形が持ち運んでいた道具の既定値(FR-814)。`lengthUnit` と同じく、無ければ `undefined`。 */
+      readonly toolDefaults?: PcadToolDefaults;
       /**
        * ZIP に入っていた添付(§0.a-0.55)。**未参照のものも捨てずに返す。**
        * 版 7 のファイルに、この版の読み手がまだ知らない参照(下絵、タスク38)が
@@ -500,6 +524,8 @@ export function readPcadFile(bytes: Uint8Array): ReadPcadFileResult {
       document: parsed.document,
       savedAt: parsed.savedAt,
       kind: parsed.kind,
+      lengthUnit: parsed.lengthUnit,
+      toolDefaults: parsed.toolDefaults,
       attachments: collected.attachments,
     };
   }
@@ -508,7 +534,25 @@ export function readPcadFile(bytes: Uint8Array): ReadPcadFileResult {
     document: parsed.document,
     savedAt: parsed.savedAt,
     kind: parsed.kind,
+    lengthUnit: parsed.lengthUnit,
+    toolDefaults: parsed.toolDefaults,
     attachments: collected.attachments,
     thumbnailPng: thumbnail,
   };
+}
+
+/**
+ * 読んだファイルがひな形(`.pcadt`)か(FR-814、§0.a-0.35)。
+ *
+ * **拡張子ではなく封筒の種別で判断する**(名前はいくらでも変えられる)。ここに
+ * 述語を置いておくと、「どの種別がひな形か」を知っているのが `schema.ts` と
+ * この 1 行だけで済み、呼び出し側(ui のタスク33、model の `openTemplate` へ渡す真偽)が
+ * 種別の文字列を写さずに書ける。
+ *
+ * ひな形でないファイルを断るのは呼び出し側で、**断りのコードは増やさない**
+ * ——`.pcad` の種別違いと同じ `file.error.wrongKind` の文言に寄せる
+ * (`docs/報告記録.md` 2026-09-04 01:40 の③、統括の決定 2026-09-06 09:0x)。
+ */
+export function isTemplateKind(kind: PcadDocumentKind): boolean {
+  return kind === PCAD_TEMPLATE_KIND;
 }

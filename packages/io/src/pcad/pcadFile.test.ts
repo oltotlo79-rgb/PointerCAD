@@ -4,7 +4,7 @@ import {
   PART_SCHEMA_VERSION,
   type PartDocument,
 } from '@pointercad/model';
-import { strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 
 import { expectWithinBudget } from '../testUtils/perfBudget.js';
@@ -13,6 +13,7 @@ import {
   decodeImportedMeshBytes,
   emptyPcadAttachments,
   encodeImportedMeshBytes,
+  isTemplateKind,
   PCAD_CANVAS_ENTRY_PREFIX,
   PCAD_CANVAS_ENTRY_SUFFIX,
   PCAD_DOCUMENT_ENTRY,
@@ -33,6 +34,7 @@ import {
   PCAD_DOCUMENT_KIND,
   PCAD_SCHEMA_VERSION,
   PCAD_TEMPLATE_KIND,
+  type PcadToolDefaults,
 } from './schema.js';
 
 /** 検査で保存時刻を固定する(時刻が違ってもバイト列が同じであることを確かめるため)。 */
@@ -846,5 +848,70 @@ describe('10 万三角形の添付を含む .pcad の大きさと所要(§1.5-18
     expect(result.attachments.meshes.get('mesh-1')?.indices.length).toBe(TRIANGLE_COUNT * 3);
     expectWithinBudget(writeMs, WRITE_LIMIT_MS, '10 万三角形の .pcad の書き出し');
     expectWithinBudget(readMs, READ_LIMIT_MS, '10 万三角形の .pcad の読み込み');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ひな形(.pcadt)の往復(FR-814、§2.10、P6 タスク27)
+// ---------------------------------------------------------------------------
+
+describe('ひな形の .pcadt の読み書き(FR-814、§2.10)', () => {
+  /** 検査で使う道具の既定値(既定からずらして、持ち運ばれたことを見分ける)。 */
+  const TOOL_DEFAULTS: PcadToolDefaults = {
+    extrudeDistance: '25',
+    holeDiameter: '8.5',
+    filletRadius: '板厚',
+    chamferDistance: '0.5',
+    circleRadius: '12',
+  };
+
+  /** ひな形として書き出すときの口(ZIP の作りは部品とまったく同じ)。 */
+  function writeTemplate(): Uint8Array {
+    return writePcadFile(createEmptyPartDocument(), {
+      savedAt: SAVED_AT,
+      kind: PCAD_TEMPLATE_KIND,
+      lengthUnit: 'inch',
+      toolDefaults: TOOL_DEFAULTS,
+    });
+  }
+
+  it('種別・単位・道具の既定値が往復で戻る', () => {
+    const result = expectOk(readPcadFile(writeTemplate()));
+    expect(result.kind).toBe(PCAD_TEMPLATE_KIND);
+    expect(result.lengthUnit).toBe('inch');
+    expect(result.toolDefaults).toEqual(TOOL_DEFAULTS);
+  });
+
+  it('同じひな形から 2 回書くとバイト列が完全に一致する(決定性)', () => {
+    expect(writeTemplate()).toEqual(writeTemplate());
+  });
+
+  it('部品の .pcad は 2 欄を書かないので、今までどおりのバイト列になる', () => {
+    const part = writePcadFile(createEmptyPartDocument(), { savedAt: SAVED_AT });
+    const entries = unzipSync(part);
+    const text = strFromU8(entries[PCAD_DOCUMENT_ENTRY]);
+    expect(text).not.toContain('lengthUnit');
+    expect(text).not.toContain('toolDefaults');
+    const result = expectOk(readPcadFile(part));
+    expect(result.lengthUnit).toBeUndefined();
+    expect(result.toolDefaults).toBeUndefined();
+  });
+
+  it('ひな形かどうかは封筒の種別で判断する(isTemplateKind)', () => {
+    expect(isTemplateKind(expectOk(readPcadFile(writeTemplate())).kind)).toBe(true);
+    // 部品の .pcad をひな形として開こうとした場合。断りの文言は ui が持つ
+    // (`file.error.wrongKind`。**エラーコードは増やさない**)。
+    const part = expectOk(readPcadFile(writePcadFile(createEmptyPartDocument())));
+    expect(isTemplateKind(part.kind)).toBe(false);
+  });
+
+  it('ひな形の 2 欄を渡さずにひな形として書いても読める(任意の欄)', () => {
+    const bytes = writePcadFile(createEmptyPartDocument(), {
+      savedAt: SAVED_AT,
+      kind: PCAD_TEMPLATE_KIND,
+    });
+    const result = expectOk(readPcadFile(bytes));
+    expect(result.kind).toBe(PCAD_TEMPLATE_KIND);
+    expect(result.lengthUnit).toBeUndefined();
   });
 });

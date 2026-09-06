@@ -1714,3 +1714,30 @@ export interface ShapeImportResult {
    */
   readonly unitNames: readonly string[];
 }
+
+/**
+ * 向きを表す四元数 `(x, y, z, w)`(P7 §2.4、タスク8)。
+ *
+ * `w = cos(θ/2)`、`(x, y, z) = 軸 × sin(θ/2)`。**長さ 1 に揃っていなくてもよい**
+ * (`occt/placeBodies.ts` の `makePlacementTransform` が形にする前に長さで割る)。
+ * `q` と `−q` は同じ回転なので、符号を `w >= 0` へ揃えるかどうかは形に影響しない。
+ * 揃えるのは保存の決定性のための決めごと(§0.54)で、model 側の 1 か所だけで行う。
+ */
+export type QuaternionTuple = readonly [number, number, number, number];
+
+/**
+ * アセンブリに置いた部品 1 つの配置(P7 §0.5、§2.4、タスク8)。点は `p' = R(q)·p + t` で写る。
+ *
+ * **4×4 行列で持たない。** 反復のたびに正規化 1 回で回転へ戻せて、行列を直に入れたときの
+ * ような「回転でなくなる」丸め誤差の漏れが起きないためである(§0.5)。
+ *
+ * 既存の `RigidTransformSpec`(パターンの「平行移動 + 回転軸 + 回転角」)とは**別の型**で、
+ * どちらへ渡すかで回転の表し方が違う。橋渡し(四元数 ⇄ 軸と角)は model 側の
+ * `assembly/placementMath.ts` が持つ(§1.4-8)。
+ */
+export interface PlacementSpec {
+  /** 位置(mm)。回転のあとに足される。 */
+  readonly position: Vec3Tuple;
+  /** 向き。原点まわりの回転で、部品の中の座標に掛かる。 */
+  readonly rotation: QuaternionTuple;
+}

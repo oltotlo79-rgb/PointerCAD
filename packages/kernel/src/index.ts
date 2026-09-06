@@ -468,3 +468,20 @@ export {
   type PrintabilityResult,
   type PrintabilitySummary,
 } from './occt/inspectPrintability.js';
+// 配置つきの立体の組み立てと境界箱(FR-601、FR-615、P7 §2.4、タスク8)。
+//
+// 配置の型(`PlacementSpec` / `QuaternionTuple`)は段の依頼と同じく `types.ts` が正本で、
+// 形を置く手続きと境界箱は `occt/placeBodies.ts` が正本。**四元数 → gp_Trsf の橋は
+// `makePlacementTransform` 1 か所だけ**なので、輸出もそこからの 1 経路だけにする。
+export type { PlacementSpec, QuaternionTuple } from './types.js';
+export {
+  IDENTITY_PLACEMENT,
+  boundingBoxOf,
+  boundingBoxRange,
+  boundingBoxesOverlap,
+  makePlacementTransform,
+  placeShape,
+  transformedBoundingBox,
+  type BoundingBoxRange,
+  type OcctBoxHandle,
+} from './occt/placeBodies.js';

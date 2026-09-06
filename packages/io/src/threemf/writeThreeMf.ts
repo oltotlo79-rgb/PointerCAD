@@ -29,7 +29,19 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 
 import { FIXED_ENTRY_MTIME } from '../pcad/pcadFile.js';
+import {
+  buildBaseMaterials,
+  type ThreeMfBaseMaterials,
+  type ThreeMfColor,
+  type ThreeMfFaceRange,
+} from './baseMaterials.js';
 import { escapeXmlAttribute, formatXmlNumber } from './xmlText.js';
+
+/**
+ * 色と面ごとの三角形の範囲の型は `baseMaterials.ts` に置いてあるが、**取り込み口はここのまま**
+ * にする(タスク14 から `writeThreeMf.js` を指している呼び手と `index.ts` を動かさないため)。
+ */
+export type { ThreeMfColor, ThreeMfFaceRange } from './baseMaterials.js';
 
 /** ZIP のエントリ名(§2.6。3MF Core の最小構成の 3 つ)。 */
 export const THREE_MF_CONTENT_TYPES_ENTRY = '[Content_Types].xml';
@@ -53,14 +65,6 @@ export const THREE_MF_INVALID_INDICES_MESSAGE = '書き出す三角形の添字�
 export const THREE_MF_INVALID_COLOR_MESSAGE = '書き出しの色の値が正しくありません。';
 
 /**
- * 色(sRGB の 0〜1 の r / g / b)。`#rrggbb` を 255 で割った値を受ける。
- *
- * kernel の `RgbTuple`(`occt/xcafDocument.ts`)と同じ形だが、io は kernel へ依存できない
- * ので同じ形をこちらにも置く。タスク16 の配線は `ShapeExportItem.color` をそのまま渡せる。
- */
-export type ThreeMfColor = readonly [number, number, number];
-
-/**
  * 色を指定しなかった立体の色。
  *
  * **正本は `packages/model/src/appearance/materialPresets.ts` の `DEFAULT_APPEARANCE.color`
@@ -82,6 +86,17 @@ export interface ThreeMfMeshInput {
   readonly positions: ArrayLike<number>;
   /** 三角形の添字。3 個 1 組で頂点を指す。長さは 3 の倍数。 */
   readonly indices: ArrayLike<number>;
+  /**
+   * 面ごとの色(FR-1106、§2.5.1、タスク14b)。面の通し番号 → 色。**面の色が立体の色より
+   * 優先する。** model の `faceColorsFor` が返す内側の表をそのまま渡せる。
+   * 省くと(または `faceRanges` を省くと)立体の色だけになる。
+   */
+  readonly faceColors?: ReadonlyMap<number, ThreeMfColor>;
+  /**
+   * 面ごとの三角形の範囲(kernel の `buildExportMesh` が返す `faceRanges`)。
+   * 面の通し番号は配列の位置。`faceColors` を渡すときだけ要る。
+   */
+  readonly faceRanges?: readonly ThreeMfFaceRange[];
 }
 
 /** `writeThreeMf` の任意の指定。 */
@@ -177,8 +192,21 @@ function checkIndex(value: number, vertexCount: number): number {
   return value;
 }
 
-/** 三角形の行を書き出す。 */
-function pushTriangles(lines: string[], indices: ArrayLike<number>, vertexCount: number): void {
+/**
+ * 三角形の行を書き出す。
+ *
+ * 面ごとの色(タスク14b)は `p1` として 1 三角形ずつ付く。**立体の色と同じ三角形には
+ * 付けない**(`<object pindex>` を継ぐので同じ色になり、書いても増えるのは XML の大きさだけ)。
+ * `triangleColors` が `null` のときは `p1` を一切見ない——面の色を渡さない書き出しが
+ * タスク14 と 1 バイトも変わらないようにするため、行を組む式を分けている。
+ */
+function pushTriangles(
+  lines: string[],
+  indices: ArrayLike<number>,
+  vertexCount: number,
+  triangleColors: ReadonlyMap<number, number> | null,
+  materialIndices: readonly number[],
+): void {
   if (indices.length % 3 !== 0) {
     throw new Error(THREE_MF_INVALID_INDICES_MESSAGE);
   }
@@ -187,10 +215,49 @@ function pushTriangles(lines: string[], indices: ArrayLike<number>, vertexCount:
     const v1 = checkIndex(indices[index * 3], vertexCount);
     const v2 = checkIndex(indices[index * 3 + 1], vertexCount);
     const v3 = checkIndex(indices[index * 3 + 2], vertexCount);
-    lines.push(
-      `<triangle v1="${String(v1)}" v2="${String(v2)}" v3="${String(v3)}"/>`,
-    );
+    const corners = `v1="${String(v1)}" v2="${String(v2)}" v3="${String(v3)}"`;
+    const slot = triangleColors === null ? undefined : triangleColors.get(index);
+    if (slot === undefined) {
+      lines.push(`<triangle ${corners}/>`);
+    } else {
+      lines.push(`<triangle ${corners} p1="${String(materialIndices[slot])}"/>`);
+    }
   }
+}
+
+/** 立体 1 つぶんの色の組と、その色が `<basematerials>` の何番に載るか。 */
+interface PartMaterials {
+  /** 立体の色(先頭)と面の色の一覧、三角形ごとの局所の添字。 */
+  readonly materials: ThreeMfBaseMaterials;
+  /** 局所の添字(`materials.colors` の添字)→ `<basematerials>` の中の添字。 */
+  readonly materialIndices: readonly number[];
+}
+
+/**
+ * 立体ごとの色の組を作り、`<basematerials>` の中の添字を割り当てる。
+ *
+ * **立体の色を先に全部並べ、面の色はその後ろへ足す。** こうすると立体の `pindex` は
+ * タスク14 と同じ「立体の添字」のままで、面の色が増えても `<object>` の行が動かない
+ * (複数の立体でも `<basematerials>` は 1 つ、という §2.6 の形も崩さない)。
+ */
+function assignMaterials(parts: readonly ThreeMfMeshInput[]): PartMaterials[] {
+  const assigned: PartMaterials[] = [];
+  // 面の色は立体の色(parts.length 行)の後ろから始まる。
+  let nextFaceIndex = parts.length;
+  for (const part of parts) {
+    const materials = buildBaseMaterials(
+      part.color ?? DEFAULT_THREE_MF_COLOR,
+      part.faceColors,
+      part.faceRanges,
+    );
+    const materialIndices: number[] = [assigned.length];
+    for (let slot = 1; slot < materials.colors.length; slot += 1) {
+      materialIndices.push(nextFaceIndex);
+      nextFaceIndex += 1;
+    }
+    assigned.push({ materials, materialIndices });
+  }
+  return assigned;
 }
 
 /**
@@ -199,30 +266,43 @@ function pushTriangles(lines: string[], indices: ArrayLike<number>, vertexCount:
  * 立体ごとに `<object>` を 1 つ作り、`<build>` に `<item>` を 1 つずつ並べる(§2.6)。
  * 色は立体ごとに `<basematerials>` の 1 行(`<base>`)として並べ、`<object>` の
  * `pid` / `pindex` で指す。**面ごとの色(タスク14b)はこの並びの後ろへ `<base>` を足し、
- * `<triangle>` に `p1` を付ける**だけで済むので、いまの並び(立体の順 = 添字の順)を崩さない。
+ * `<triangle>` に `p1` を付ける**(組み替えは `baseMaterials.ts`)。立体の色の並び
+ * (立体の順 = 添字の順)は崩さないので、面の色があってもなくても `<object>` の行は同じになる。
  */
 function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean): string {
+  // 色を書かないときは面の色も見ない(形だけの 3MF に `p1` を混ぜない)。
+  const assigned = withColors ? assignMaterials(parts) : null;
   const lines: string[] = [];
   lines.push('<?xml version="1.0" encoding="UTF-8"?>');
   lines.push(`<model unit="${MODEL_UNIT}" xml:lang="en-US" xmlns="${MODEL_NAMESPACE}">`);
   lines.push('  <resources>');
 
   // 中身の無い `<basematerials>` は仕様が許さないので、立体が 1 つも無いときは作らない。
-  if (withColors && parts.length > 0) {
+  if (assigned !== null && parts.length > 0) {
     lines.push(`    <basematerials id="${String(BASE_MATERIALS_ID)}">`);
     parts.forEach((part, index) => {
       const name = escapeXmlAttribute(resolveName(part.name, index));
       const color = formatDisplayColor(part.color ?? DEFAULT_THREE_MF_COLOR);
       lines.push(`      <base name="${name}" displaycolor="${color}"/>`);
     });
+    // 面の色は立体の色を全部書いた後ろへ足す(立体の `pindex` を動かさないため)。
+    parts.forEach((part, index) => {
+      const colors = assigned[index].materials.colors;
+      const bodyName = resolveName(part.name, index);
+      for (let slot = 1; slot < colors.length; slot += 1) {
+        // `<base name>` は省けない属性なので、どの立体の何番目の面の色かが分かる名前を付ける。
+        const name = escapeXmlAttribute(`${bodyName}_face_${String(slot)}`);
+        lines.push(`      <base name="${name}" displaycolor="${formatDisplayColor(colors[slot])}"/>`);
+      }
+    });
     lines.push('    </basematerials>');
   }
 
   parts.forEach((part, index) => {
     const objectId = FIRST_OBJECT_ID + index;
-    const material = withColors
-      ? ` pid="${String(BASE_MATERIALS_ID)}" pindex="${String(index)}"`
-      : '';
+    const material = assigned === null
+      ? ''
+      : ` pid="${String(BASE_MATERIALS_ID)}" pindex="${String(index)}"`;
     // 名前は色を書かないときにも残したいので、`<base>` とは別に `<object>` にも書く。
     const name = part.name === null || part.name === '' ? '' : ` name="${escapeXmlAttribute(part.name)}"`;
     lines.push(`    <object id="${String(objectId)}" type="model"${material}${name}>`);
@@ -231,7 +311,14 @@ function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean):
     const vertexCount = pushVertices(lines, part.positions);
     lines.push('        </vertices>');
     lines.push('        <triangles>');
-    pushTriangles(lines, part.indices, vertexCount);
+    const partMaterials = assigned === null ? null : assigned[index];
+    pushTriangles(
+      lines,
+      part.indices,
+      vertexCount,
+      partMaterials === null ? null : partMaterials.materials.triangleColors,
+      partMaterials === null ? [] : partMaterials.materialIndices,
+    );
     lines.push('        </triangles>');
     lines.push('      </mesh>');
     lines.push('    </object>');

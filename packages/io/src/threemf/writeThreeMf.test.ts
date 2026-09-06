@@ -12,6 +12,8 @@ import {
   THREE_MF_MODEL_ENTRY,
   THREE_MF_RELS_ENTRY,
   writeThreeMf,
+  type ThreeMfColor,
+  type ThreeMfFaceRange,
   type ThreeMfMeshInput,
 } from './writeThreeMf.js';
 
@@ -198,6 +200,200 @@ describe('3MF の色(§2.6、§0.a-0.22)', () => {
     expect(() => writeThreeMf([boxPart({ color: [0, 0, Number.NaN] })])).toThrow(
       THREE_MF_INVALID_COLOR_MESSAGE,
     );
+  });
+});
+
+/** 箱の 6 面を面ごとの三角形の範囲にする(面 1 枚 = 三角形 2 枚。kernel の faceRanges と同じ形)。 */
+function boxFaceRanges(): ThreeMfFaceRange[] {
+  return Array.from({ length: 6 }, (_unused, faceIndex) => ({
+    triangleOffset: faceIndex * 2,
+    triangleCount: 2,
+  }));
+}
+
+/** 6 面ぶんの別々の色。既定の色(立体の色)とはどれも違う。 */
+function sixFaceColors(): Map<number, ThreeMfColor> {
+  return new Map<number, ThreeMfColor>([
+    [0, [0.8, 0.2667, 0.2667]],
+    [1, [0.2, 0.7, 0.3]],
+    [2, [0.1, 0.2, 0.9]],
+    [3, [1, 1, 0]],
+    [4, [0, 0, 0]],
+    [5, [1, 1, 1]],
+  ]);
+}
+
+describe('3MF の面ごとの色(§2.6、§0.a-0.22、タスク14b)', () => {
+  it('6 面を別の色にすると <base> が 7 つ(既定 + 6)、p1 を持つ三角形が 12 枚', () => {
+    const model = modelXmlOf(
+      writeThreeMf([boxPart({ faceColors: sixFaceColors(), faceRanges: boxFaceRanges() })]),
+    );
+    expect(countOf(model, '<base ')).toBe(7);
+    expect(countOf(model, ' p1="')).toBe(12);
+    expect(countOf(model, '<triangle ')).toBe(12);
+    // 立体の色は先頭のまま。面の色はその後ろ(添字 1〜6)へ足す。
+    expect(model).toContain('<object id="2" type="model" pid="1" pindex="0">');
+    expect(model).toContain('<triangle v1="0" v2="2" v3="1" p1="1"/>');
+    expect(model).toContain('p1="6"/>');
+  });
+
+  it('立体の色と同じ色の面には p1 を書かない(<base> は 6 つ、p1 は 10 枚)', () => {
+    const faceColors = sixFaceColors();
+    // 面 0 だけを立体の色と同じにする(計画書の検証表の 12 − 2 枚)。
+    faceColors.set(0, DEFAULT_THREE_MF_COLOR);
+    const model = modelXmlOf(
+      writeThreeMf([boxPart({ faceColors, faceRanges: boxFaceRanges() })]),
+    );
+    expect(countOf(model, '<base ')).toBe(6);
+    expect(countOf(model, ' p1="')).toBe(10);
+    expect(model).toContain('<triangle v1="0" v2="2" v3="1"/>');
+  });
+
+  it('3 面が同じ色なら <base> は 4 つ(既定 + 3 色)', () => {
+    const faceColors = new Map<number, ThreeMfColor>([
+      [0, [0.8, 0.2667, 0.2667]],
+      [1, [0.8, 0.2667, 0.2667]],
+      [2, [0.8, 0.2667, 0.2667]],
+      [3, [0.2, 0.7, 0.3]],
+      [4, [0.1, 0.2, 0.9]],
+    ]);
+    const model = modelXmlOf(
+      writeThreeMf([boxPart({ faceColors, faceRanges: boxFaceRanges() })]),
+    );
+    expect(countOf(model, '<base ')).toBe(4);
+    // 同じ色の 3 面(三角形 6 枚)は同じ添字を指す。
+    expect(countOf(model, 'p1="1"')).toBe(6);
+    expect(countOf(model, ' p1="')).toBe(10);
+  });
+
+  it('面の色も displaycolor が 8 桁の小文字で出て、<base> に名前が付く', () => {
+    const model = modelXmlOf(
+      writeThreeMf([
+        boxPart({
+          name: '本体',
+          faceColors: new Map<number, ThreeMfColor>([[2, [0.8, 0.2667, 0.2667]]]),
+          faceRanges: boxFaceRanges(),
+        }),
+      ]),
+    );
+    expect(model).toContain('<base name="本体" displaycolor="#b8bfccff"/>');
+    expect(model).toContain('<base name="本体_face_1" displaycolor="#cc4444ff"/>');
+  });
+
+  it('色の並びは最初に現れた面の通し番号の昇順(表の作り順に左右されない)', () => {
+    const ranges = boxFaceRanges();
+    const ascending = new Map<number, ThreeMfColor>([
+      [1, [1, 0, 0]],
+      [4, [0, 1, 0]],
+    ]);
+    const descending = new Map<number, ThreeMfColor>([
+      [4, [0, 1, 0]],
+      [1, [1, 0, 0]],
+    ]);
+    const first = writeThreeMf([boxPart({ faceColors: ascending, faceRanges: ranges })]);
+    const second = writeThreeMf([boxPart({ faceColors: descending, faceRanges: ranges })]);
+    expect(Array.from(first)).toEqual(Array.from(second));
+    const model = modelXmlOf(first);
+    expect(model.indexOf('#ff0000ff')).toBeLessThan(model.indexOf('#00ff00ff'));
+  });
+
+  it('同じ入力から 2 回書くとバイト列が完全に一致する(§0.a-0.62)', () => {
+    const write = (): Uint8Array =>
+      writeThreeMf([boxPart({ faceColors: sixFaceColors(), faceRanges: boxFaceRanges() })]);
+    expect(Array.from(write())).toEqual(Array.from(write()));
+  });
+
+  it('面の色を渡さなければタスク14 と同じバイト列になる', () => {
+    const plain = writeThreeMf([boxPart({ name: '本体', color: [0.1, 0.2, 0.3] })]);
+    // 範囲だけ・空の表だけを渡しても、色が 1 つも効かないので同じ形に戻る。
+    const withRanges = writeThreeMf([
+      boxPart({ name: '本体', color: [0.1, 0.2, 0.3], faceRanges: boxFaceRanges() }),
+    ]);
+    const withEmpty = writeThreeMf([
+      boxPart({
+        name: '本体',
+        color: [0.1, 0.2, 0.3],
+        faceColors: new Map(),
+        faceRanges: boxFaceRanges(),
+      }),
+    ]);
+    expect(Array.from(withRanges)).toEqual(Array.from(plain));
+    expect(Array.from(withEmpty)).toEqual(Array.from(plain));
+  });
+
+  it('faceRanges に無い面の色は無視する(断らず、バイト列も変わらない)', () => {
+    const plain = writeThreeMf([boxPart()]);
+    const ignored = writeThreeMf([
+      boxPart({
+        faceColors: new Map<number, ThreeMfColor>([[99, [1, 0, 0]]]),
+        faceRanges: boxFaceRanges(),
+      }),
+    ]);
+    expect(Array.from(ignored)).toEqual(Array.from(plain));
+  });
+
+  it('立体が 2 つでも <basematerials> は 1 つで、面の色は立体の色の後ろに並ぶ', () => {
+    const model = modelXmlOf(
+      writeThreeMf([
+        boxPart({
+          name: '一',
+          faceColors: new Map<number, ThreeMfColor>([[0, [1, 0, 0]]]),
+          faceRanges: boxFaceRanges(),
+        }),
+        boxPart({
+          name: '二',
+          faceColors: new Map<number, ThreeMfColor>([[1, [0, 0, 1]]]),
+          faceRanges: boxFaceRanges(),
+        }),
+      ]),
+    );
+    expect(countOf(model, '<basematerials ')).toBe(1);
+    // 立体の色が添字 0・1、面の色がその後ろの 2・3。
+    expect(model).toContain('<object id="2" type="model" pid="1" pindex="0"');
+    expect(model).toContain('<object id="3" type="model" pid="1" pindex="1"');
+    expect(countOf(model, '<base ')).toBe(4);
+    expect(countOf(model, 'p1="2"')).toBe(2);
+    expect(countOf(model, 'p1="3"')).toBe(2);
+  });
+
+  it('色を書かない指定なら面の色も p1 も出ない', () => {
+    const model = modelXmlOf(
+      writeThreeMf(
+        [boxPart({ faceColors: sixFaceColors(), faceRanges: boxFaceRanges() })],
+        { withColors: false },
+      ),
+    );
+    expect(model).not.toContain('<basematerials');
+    expect(model).not.toContain('p1=');
+  });
+
+  it('面の色の値が 0〜1 でなければ断る(立体の色と同じ断り)', () => {
+    expect(() =>
+      writeThreeMf([
+        boxPart({
+          faceColors: new Map<number, ThreeMfColor>([[0, [1.5, 0, 0]]]),
+          faceRanges: boxFaceRanges(),
+        }),
+      ]),
+    ).toThrow(THREE_MF_INVALID_COLOR_MESSAGE);
+  });
+
+  it('kernel の並び(Uint32Array の添字)と面の色を一緒に渡せる', () => {
+    const mesh = boxMesh(20);
+    const model = modelXmlOf(
+      writeThreeMf([
+        {
+          name: null,
+          color: null,
+          positions: new Float32Array(mesh.positions),
+          indices: new Uint32Array(mesh.indices),
+          faceColors: new Map<number, ThreeMfColor>([[5, [1, 0, 0]]]),
+          faceRanges: boxFaceRanges(),
+        },
+      ]),
+    );
+    expect(countOf(model, '<base ')).toBe(2);
+    expect(countOf(model, ' p1="1"')).toBe(2);
   });
 });
 

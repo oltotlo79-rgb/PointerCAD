@@ -609,6 +609,9 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
               shape: shapes[index],
               name: item.name,
               color: item.color,
+              // 面ごとの色(P6 タスク7b+13b)。`StepWriteEntry`(= `XcafShapeEntry`)が
+              // 元から持つ欄なので、依頼の欄をそのまま渡すだけでよい。
+              faceColors: item.faceColors,
             })),
             { withColors: request.withColors ?? true },
           );
@@ -639,6 +642,9 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
               mesh: meshes[index],
               name: item.name,
               color: item.color,
+              // 面ごとの色(P6 タスク7b+13b)。`meshes[index]` は `buildExportMesh` の
+              // 戻りなので `faceRanges` を必ず持ち、`CafMeshBody.faceColors` へそのまま渡せる。
+              faceColors: item.faceColors,
             })),
             { format: request.format, baseName: request.baseName },
           );

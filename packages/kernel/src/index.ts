@@ -327,6 +327,14 @@ export {
   type XcafDocumentOptions,
   type XcafShapeEntry,
 } from './occt/xcafDocument.js';
+// 面ごとの色(§2.5.1、タスク7b+13b)。STEP(`writeStep.ts`)と OBJ / glTF(`writeCafMesh.ts`)
+// の両方が使う表と、その検査・断りの文言。
+export {
+  applyFaceColors,
+  checkExportColor,
+  faceColorNotFoundMessage,
+  type FaceColorMap,
+} from './occt/xcafFaceColors.js';
 // STEP の書き出し(§2.3、タスク7)と読み込み(§2.3・§2.9、タスク8)。
 export {
   writeStep,
@@ -390,6 +398,7 @@ export {
 export {
   writeCafMesh,
   DEFAULT_BODY_COLOR,
+  MESH_NO_FACE_RANGES_MESSAGE,
   type CafMeshBody,
   type CafMeshFile,
   type CafMeshWriteOptions,

@@ -6,6 +6,8 @@ import type {
   PrintabilityResult,
 } from '../occt/inspectPrintability.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
+import type { RgbTuple } from '../occt/xcafDocument.js';
+import type { FaceColorMap } from '../occt/xcafFaceColors.js';
 import type {
   CurveSpec,
   HoleStepSpec,
@@ -783,6 +785,24 @@ describe('KernelApi', () => {
     return { bodyKey, name: null, color: null };
   }
 
+  /** 面の色の表を組み立てる(`xcafFaceColors.test.ts` の `faceColorMap` と同じ組み立て方)。 */
+  function faceColorMap(entries: readonly (readonly [number, RgbTuple])[]): FaceColorMap {
+    return new Map<number, RgbTuple>(entries);
+  }
+
+  /**
+   * GLB(バイナリ glTF)の JSON チャンクを文字列のまま取り出す。
+   *
+   * `JSON.parse` の戻りは `any` なので、そこから欄をたどると型検査を素通りする
+   * (`writeCafMesh.test.ts` の `splitGlb` と同じ理由)。ここでは配線が通っているかだけを
+   * 見たいので、文字列に含まれる語の数を数える。
+   */
+  function glbJsonText(bytes: Uint8Array): string {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const jsonLength = view.getUint32(12, true);
+    return new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength));
+  }
+
   /** 半径 10・高さ 20 の円柱の段。偏差で三角形の数が変わる形として使う。 */
   function cylinderStep(key: string): SolidStepRequest {
     return {
@@ -1225,6 +1245,143 @@ describe('KernelApi', () => {
     );
     expect(view.getUint32(4, true)).toBe(2);
     expect(written.triangleCount).toBe(12);
+  });
+
+  // ここから下は面ごとの色(P6 タスク7b+13b)を KernelApi.exportShapes の依頼から
+  // 使えるようにする配線の検査(§2.5.1)。表そのものの振る舞い(色の優先順位・
+  // 選び直せない面の断りなど)は `occt/xcafFaceColors.test.ts` /
+  // `occt/xcafDocument.test.ts` / `occt/writeCafMesh.test.ts` が固定済みなので、
+  // ここでは「依頼の `faceColors` が書き手まで届くか」だけを見る。
+
+  it('exportShapes({ format: "step" }) に面の色を渡すと STYLED_ITEM が 1 行増える(タスク7b+13b の配線)', async () => {
+    await buildPlate('api-export-step-facecolor');
+    const bodyKey = 'api-export-step-facecolor';
+    const plain = await api.exportShapes({
+      format: 'step',
+      bodies: [{ bodyKey, name: '本体', color: [1, 0.5, 0.25] }],
+    });
+    const withFaceColor = await api.exportShapes({
+      format: 'step',
+      bodies: [
+        {
+          bodyKey,
+          name: '本体',
+          color: [1, 0.5, 0.25],
+          faceColors: faceColorMap([[0, [0.2, 0.6, 0.9]]]),
+        },
+      ],
+    });
+
+    expect(plain.format).toBe('step');
+    expect(withFaceColor.format).toBe('step');
+    if (plain.format !== 'step' || withFaceColor.format !== 'step') {
+      return;
+    }
+    const countStyledItem = (bytes: Uint8Array): number =>
+      new TextDecoder().decode(bytes).split('STYLED_ITEM').length - 1;
+    // 立体の色(1 行)+ 面の色(1 行)= 2 行(`xcafFaceColors.ts` 冒頭の実測表と同じ)。
+    expect(countStyledItem(withFaceColor.bytes)).toBe(countStyledItem(plain.bytes) + 1);
+  });
+
+  it('exportShapes({ format: "gltf" }) に面の色を渡すと materials が増える(タスク7b+13b の配線)', async () => {
+    await buildPlate('api-export-gltf-facecolor');
+    const bodyKey = 'api-export-gltf-facecolor';
+    const plain = await api.exportShapes({
+      format: 'gltf',
+      bodies: [{ bodyKey, name: '本体', color: [1, 0.5, 0.25] }],
+      deviationMm: 0.1,
+    });
+    const withFaceColor = await api.exportShapes({
+      format: 'gltf',
+      bodies: [
+        {
+          bodyKey,
+          name: '本体',
+          color: [1, 0.5, 0.25],
+          faceColors: faceColorMap([[0, [0.2, 0.6, 0.9]]]),
+        },
+      ],
+      deviationMm: 0.1,
+    });
+
+    expect(plain.format).toBe('gltf');
+    expect(withFaceColor.format).toBe('gltf');
+    if (plain.format !== 'gltf' || withFaceColor.format !== 'gltf') {
+      return;
+    }
+    // 材質は `baseColorFactor` を持つ要素の数として数える(`JSON.parse` は使わない。
+    // 戻りが `any` になり `no-unsafe-member-access` に触れるため)。
+    const materialCount = (bytes: Uint8Array): number =>
+      glbJsonText(bytes).split('"baseColorFactor"').length - 1;
+    expect(materialCount(withFaceColor.files[0].bytes)).toBe(
+      materialCount(plain.files[0].bytes) + 1,
+    );
+  });
+
+  it('exportShapes({ format: "obj" }) に面の色を渡すと .mtl の newmtl が増える(タスク7b+13b の配線)', async () => {
+    await buildPlate('api-export-obj-facecolor');
+    const bodyKey = 'api-export-obj-facecolor';
+    const plain = await api.exportShapes({
+      format: 'obj',
+      bodies: [{ bodyKey, name: '本体', color: [1, 0.5, 0.25] }],
+      deviationMm: 0.1,
+    });
+    const withFaceColor = await api.exportShapes({
+      format: 'obj',
+      bodies: [
+        {
+          bodyKey,
+          name: '本体',
+          color: [1, 0.5, 0.25],
+          faceColors: faceColorMap([[0, [0.2, 0.6, 0.9]]]),
+        },
+      ],
+      deviationMm: 0.1,
+    });
+
+    expect(plain.format).toBe('obj');
+    expect(withFaceColor.format).toBe('obj');
+    if (plain.format !== 'obj' || withFaceColor.format !== 'obj') {
+      return;
+    }
+    const countNewmtl = (bytes: Uint8Array): number =>
+      new TextDecoder().decode(bytes).match(/^newmtl /gmu)?.length ?? 0;
+    expect(countNewmtl(withFaceColor.files[1].bytes)).toBe(countNewmtl(plain.files[1].bytes) + 1);
+  });
+
+  it('面の色を渡さない依頼は、STEP でも glb でも配線を足す前とバイト列が変わらない(回帰なし)', async () => {
+    await buildPlate('api-export-facecolor-noop');
+    const bodyKey = 'api-export-facecolor-noop';
+
+    const stepWithout = await api.exportShapes({
+      format: 'step',
+      bodies: [{ bodyKey, name: '本体', color: [1, 0.5, 0.25] }],
+    });
+    const stepWithEmpty = await api.exportShapes({
+      format: 'step',
+      bodies: [{ bodyKey, name: '本体', color: [1, 0.5, 0.25], faceColors: faceColorMap([]) }],
+    });
+    expect(stepWithout.format).toBe('step');
+    expect(stepWithEmpty.format).toBe('step');
+    if (stepWithout.format === 'step' && stepWithEmpty.format === 'step') {
+      expect(stepWithEmpty.bytes).toEqual(stepWithout.bytes);
+    }
+
+    const gltfWithout = await api.exportShapes({
+      format: 'gltf',
+      bodies: [{ bodyKey, name: '本体', color: [1, 0.5, 0.25] }],
+      deviationMm: 0.1,
+    });
+    const gltfWithEmpty = await api.exportShapes({
+      format: 'gltf',
+      bodies: [{ bodyKey, name: '本体', color: [1, 0.5, 0.25], faceColors: faceColorMap([]) }],
+      deviationMm: 0.1,
+    });
+    expect(gltfWithout.format).toBe('gltf');
+    expect(gltfWithEmpty.format).toBe('gltf');
+    if (gltfWithout.format === 'gltf' && gltfWithEmpty.format === 'gltf') {
+      expect(gltfWithEmpty.files[0].bytes).toEqual(gltfWithout.files[0].bytes);
+    }
   });
 
   it('要件の 5 形式(STEP / STL / OBJ / glTF / 3MF 用の三角形)がすべて 1 本の口から出る', async () => {

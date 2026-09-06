@@ -9,14 +9,16 @@ import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
 import type { ExtrudeEndSpec } from './occt/makeSolidSweep.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
 import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
-// 書き出し・読み込み(FR-802、FR-803、P6 タスク10)が使う 3 つも同じ理由で取り込む。
+// 書き出し・読み込み(FR-802、FR-803、P6 タスク10)が使う 4 つも同じ理由で取り込む。
 // 三角形の網(`ExportMesh`)は `occt/exportMesh.ts`、色(`RgbTuple`)は
-// `occt/xcafDocument.ts`、ファイルの単位(`StepFileLengthUnit`)は `occt/readStep.ts` が正本。
+// `occt/xcafDocument.ts`、ファイルの単位(`StepFileLengthUnit`)は `occt/readStep.ts`、
+// 面ごとの色の表(`FaceColorMap`)は `occt/xcafFaceColors.ts` が正本。
 // **ここでは輸出し直さない**(輸出の口は `index.ts` が作り手のファイルから 1 度だけ開く。
 // 同じ名前が 2 経路から出ると、取り込む側がどちらを指しているのか読めなくなるため)。
 import type { ExportMesh } from './occt/exportMesh.js';
 import type { StepFileLengthUnit } from './occt/readStep.js';
 import type { RgbTuple } from './occt/xcafDocument.js';
+import type { FaceColorMap } from './occt/xcafFaceColors.js';
 // 投影・交差(FR-325、P4 タスク26)の作図面と、作図面の上の 2 次元の曲線も
 // `occt/makeProjection.ts` が正本。オフセットと同じ理由で取り込んで輸出し直す。
 import type {
@@ -1395,6 +1397,15 @@ export interface ShapeExportItem {
   readonly name: string | null;
   /** 立体の色(sRGB の 0〜1)。`null` なら色を付けない。 */
   readonly color: RgbTuple | null;
+  /**
+   * 面ごとの色(**面の通し番号 → 色**。§2.5.1、P6 タスク7b+13b)。**省略できる。**
+   *
+   * 面の割り当ては立体の色より優先する(`xcafFaceColors.ts` / `writeCafMesh.ts` の注釈)。
+   * 色を持てない形式(STL / `'mesh'` / `'brep'`)は**この欄を見ない**——
+   * `worker/kernelApi.ts` の `exportShapes` が形式ごとに配線を絞るのが正本で、
+   * ここでは持てる形式(STEP / OBJ / glTF)を制限しない(依頼の型を形式で分けていないため)。
+   */
+  readonly faceColors?: FaceColorMap;
 }
 
 /**

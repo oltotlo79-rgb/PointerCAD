@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { MESSAGE_KEYS, t } from './t.js';
+import { MESSAGE_KEYS, type MessageKey, t } from './t.js';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -122,6 +122,83 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
     ];
     expect(descriptions.length).toBe(8);
     expect(new Set(descriptions).size).toBe(8);
+  });
+
+  it('アセンブリの断りの文言が 21 件そろっている(P7 §2.12、NFR-MA-5)', () => {
+    /*
+     * 計画書 P7 §2.12 の表(21 行)を**1 字も変えずに**写したもの。順番も表のとおり。
+     *
+     * 表が数を含む 3 件だけは `{min}` / `{max}` / `{value}` / `{total}` / `{count}` の
+     * 差し込みにしてある(数は場面ごとに変わるため)。**差し込んだ結果が表の文と
+     * 1 字も違わない**ことをここで固定するので、表と食い違えば落ちる
+     * (差し込みの書き方は `sketch/constraintActions.ts` と同じ `replace`)。
+     */
+    const table: readonly (readonly [MessageKey, string])[] = [
+      ['assemblyError.sameComponent', '同じ部品には合致を付けられません。'],
+      [
+        'assemblyError.curvedFace',
+        'この面は合致に使えません。平らな面か円筒の面を選んでください。',
+      ],
+      ['assemblyError.noAxis', 'この形からは軸が決まりません。'],
+      [
+        'assemblyError.nearParallelAngle',
+        'この角度では合致を付けられません。『平行』を使ってください。',
+      ],
+      [
+        'assemblyError.negativeDistance',
+        '距離は 0 以上にしてください。向きは『裏返す』で変えられます。',
+      ],
+      ['assemblyError.conflictingMates', 'この合致は同時には成り立ちません。'],
+      ['assemblyError.redundantMates', '同じ条件が重なっています。'],
+      ['assemblyError.fixedComponentDrag', 'この部品は固定されています。固定を外すと動かせます。'],
+      [
+        'assemblyError.tooManyComponents',
+        '組める部品が多すぎます(上限 100 個)。組を入れ子にして分けてください。',
+      ],
+      [
+        'assemblyError.noFixedComponent',
+        '動かない部品がありません。1 つを固定すると位置が決まります。',
+      ],
+      ['assemblyError.jointRangeEnd', '可動範囲の端です({min}〜{max})。'],
+      ['assemblyError.jointOutOfRange', '可動範囲の外です({min}〜{max}、いま {value})。'],
+      ['assemblyError.selfContained', 'このアセンブリは自分自身を含んでいます。'],
+      ['assemblyError.tooDeep', '組の入れ子が深すぎます(8 段まで)。'],
+      [
+        'assemblyError.partFileMissing',
+        '元のファイルが見つかりません。取り込んだ形で開いています。',
+      ],
+      ['assemblyError.partFileUpdated', '部品が更新されています。取り込み直しますか。'],
+      [
+        'assemblyError.replaceUnmatchedMates',
+        '合致 {total} 本のうち {count} 本が選び直せませんでした。そのまま差し替えますか。',
+      ],
+      ['assemblyError.interferenceFailed', 'この組の食い込みを測れませんでした。'],
+      ['assemblyError.unknownStandardSize', 'この呼び寸法は用意されていません。'],
+      ['assemblyError.noComponentsToCheck', '調べる部品がありません。'],
+      ['assemblyError.editPartInAssembly', '部品の形はその部品を開いて直してください。'],
+    ];
+    expect(table.length).toBe(21);
+    for (const [key, text] of table) {
+      expect(t(key), key).toBe(text);
+    }
+    // 数を差し込むと、表に載っている例の文とちょうど同じになる。
+    expect(
+      t('assemblyError.jointRangeEnd').replace('{min}', '30°').replace('{max}', '120°'),
+    ).toBe('可動範囲の端です(30°〜120°)。');
+    expect(
+      t('assemblyError.jointOutOfRange')
+        .replace('{min}', '30°')
+        .replace('{max}', '120°')
+        .replace('{value}', '145°'),
+    ).toBe('可動範囲の外です(30°〜120°、いま 145°)。');
+    expect(
+      t('assemblyError.replaceUnmatchedMates').replace('{total}', 'N').replace('{count}', 'M'),
+    ).toBe('合致 N 本のうち M 本が選び直せませんでした。そのまま差し替えますか。');
+    // 表の 21 件のほかに ui が持つのは、部品として開けなかったときの言い換え 1 件だけ
+    // (io の「この形式の種類(assembly)にはまだ対応していません」は P7 では正しくない)。
+    const keys = MESSAGE_KEYS.filter((key) => key.startsWith('assemblyError.'));
+    expect(keys.length).toBe(22);
+    expect(t('assemblyError.isAssemblyFile')).toBe('このファイルはアセンブリです。');
   });
 
   it('コンポーネント(.tsx)へ日本語を直書きしていない', () => {

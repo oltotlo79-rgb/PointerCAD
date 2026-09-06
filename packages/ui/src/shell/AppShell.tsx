@@ -14,6 +14,7 @@ import { t } from '../i18n/t.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
+import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
@@ -86,8 +87,18 @@ const SELECTION_KIND_SHORTCUTS: Readonly<Record<string, SelectionKind>> = {
 /**
  * 画面の5区画(ツールバー / ツリー / ビューポート+ビューキューブ / プロパティ / ステータスバー)。
  * 区画は増やさない(rules/04-設計の規律.md、要件§7.1)。
+ *
+ * **アセンブリを開くと、区画の数はそのままで中身だけが入れ替わる**(P7 §0.a-0.10。
+ * タブを増やさない)。どちらを開いているかの判定は `store/documentKind.ts` の
+ * `activeDocumentKind` 1 か所にあり、ここはその答えで分けるだけにする。
  */
 export function AppShell(): React.JSX.Element {
+  /*
+   * いま開いている文書の種類(P7 §0.a-0.10、タスク5)。文字列で取り出すので、
+   * 部品を編集しているあいだは何度文書が変わっても値が変わらず、描き直しも起きない
+   * (NFR-PF-1)。木・ツールバー・プロパティの中身の入れ替えは以後の段が足す。
+   */
+  const documentKind = useAppStore(activeDocumentKind);
   const isComputing = useAppStore((state) => state.isComputing);
   // 幾何カーネルをまだ読み込み終えていないか(§0.a-0.23 ⑨)。初回の計算中だけ帯と札の
   // 文言を分け、固まったように見えないようにする。
@@ -101,9 +112,18 @@ export function AppShell(): React.JSX.Element {
    */
   const isEmptyPart = useAppStore(
     (state) =>
+      // アセンブリを開いているあいだは部品の案内を出さない(P7 タスク5)。
+      activeDocumentKind(state) === 'part' &&
       state.document.solids.length === 0 &&
       state.document.references.length === 0 &&
       state.document.sketches.every((sketch) => sketch.features.length === 0),
+  );
+  /*
+   * アセンブリ版の最初の一歩の案内(NFR-UX-6、P7 タスク5)。部品を 1 つも置いていない
+   * アセンブリを開いているときだけ出す。部品側とまったく同じ作りで、区画は増やさない。
+   */
+  const isEmptyAssembly = useAppStore(
+    (state) => state.assembly !== null && state.assembly.components.length === 0,
   );
   const viewportSize = useAppStore((state) => state.viewportSize);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
@@ -269,7 +289,12 @@ export function AppShell(): React.JSX.Element {
   }, [fileName, unsaved]);
 
   return (
-    <div className="pcad-shell">
+    /*
+      いま開いている文書の種類を根の要素へ書く(P7 §0.a-0.10、タスク5)。区画は 5 つの
+      ままで、種類ごとの見た目の違いはこの 1 つの札から CSS で決める(区画を増やさない、
+      rules/04-設計の規律.md)。E2E もここを見れば、どちらの画面が出ているかを判定できる。
+    */
+    <div className="pcad-shell" data-document-kind={documentKind}>
       <Toolbar />
       <div className="pcad-shell__body">
         <FeatureTree />
@@ -357,6 +382,12 @@ export function AppShell(): React.JSX.Element {
             <div className="pcad-viewport__empty-state">
               <PlotPointIcon size={18} />
               <p className="pcad-viewport__empty-text">{t('emptyState.firstStep')}</p>
+            </div>
+          ) : isEmptyAssembly ? (
+            /* まだ部品を 1 つも置いていないアセンブリ(P7 タスク5)。案内の作りは部品側と同じ。 */
+            <div className="pcad-viewport__empty-state">
+              <PlotPointIcon size={18} />
+              <p className="pcad-viewport__empty-text">{t('assembly.emptyState')}</p>
             </div>
           ) : null}
           {/*

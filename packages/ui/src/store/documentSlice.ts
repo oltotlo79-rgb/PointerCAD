@@ -527,6 +527,12 @@ export const createDocumentSlice: StateCreator<
       errorMessage: null,
       fileMessage: null,
       recomputeCancelled: false,
+      /*
+        新しい部品を作ったら、開いていたアセンブリは閉じる(P7 §0.a-0.10、タスク5)。
+        1 つの窓で開く文書は 1 つだけなので、ここを残したままにすると
+        `activeDocumentKind` がアセンブリのままになり、作ったばかりの部品が画面に出ない。
+      */
+      assembly: null,
     }));
   },
 });

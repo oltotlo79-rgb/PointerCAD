@@ -16,6 +16,7 @@ import type { ConstraintSlice } from './constraintSlice.js';
 import type { SelectionSlice } from './selectionSlice.js';
 import type { MeasureSlice } from './measureSlice.js';
 import type { FileSlice } from './fileSlice.js';
+import type { AssemblySlice } from './assemblySlice.js';
 
 export interface AppState
   extends ViewSlice,
@@ -28,4 +29,5 @@ export interface AppState
     ConstraintSlice,
     SelectionSlice,
     MeasureSlice,
-    FileSlice {}
+    FileSlice,
+    AssemblySlice {}

@@ -26,6 +26,7 @@ import {
   NO_CONSTRAINT_SUMMARIES,
   NO_CONSTRAINT_TARGETS,
 } from './documentDerived.js';
+import type { AssemblyInitialState } from './assemblySlice.js';
 import type { CanvasInitialState } from './canvasSlice.js';
 import type { ConstraintInitialState } from './constraintSlice.js';
 import type { DocumentInitialState } from './documentSlice.js';
@@ -49,7 +50,8 @@ export type InitialDocumentState = ViewInitialState &
   ConstraintInitialState &
   SelectionInitialState &
   MeasureInitialState &
-  FileInitialState;
+  FileInitialState &
+  AssemblyInitialState;
 
 /**
  * 球面の案内線の間隔の既定(度。FR-431、§0.a-0.21)。**数そのものは
@@ -177,5 +179,11 @@ export function createInitialDocumentState(): InitialDocumentState {
     fileMessage: null,
     autoSaver: null,
     restorePrompt: null,
+    /*
+      起動直後はアセンブリを開いていない(P7 §0.a-0.10、タスク5)。1 つの窓で開く文書は
+      1 つだけなので、ここが null のあいだは上の `document`(部品)が画面に出る。
+      新規の部品を作ったときも null へ戻す(`documentSlice.ts` の `resetDocument`)。
+    */
+    assembly: null,
   };
 }

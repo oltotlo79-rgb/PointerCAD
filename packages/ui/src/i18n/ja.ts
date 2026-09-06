@@ -17,6 +17,7 @@ import solid from './ja/solid.json';
 import file from './ja/file.json';
 import view from './ja/view.json';
 import parameters from './ja/parameters.json';
+import assembly from './ja/assembly.json';
 
 /** 機能ごとの表を 1 つに合わせたもの。鍵の型(`MessageKey`)はここから導く。 */
 export const ja = {
@@ -38,6 +39,12 @@ export const ja = {
   ...view,
   // パラメータ(FR-207)
   ...parameters,
+  /*
+   * アセンブリ(P7)。**鍵の先頭語は `assembly` と `assemblyError` の 2 つだけ**にしてある
+   * (`solid` の `solidError`・`file` の `exchangeError` と同じ付け方)。組む・合わせる・
+   * ジョイント・干渉・分解・部品表の道具名と、断りの文言(計画書 P7 §2.12)がここに入る。
+   */
+  ...assembly,
 };
 
 /** 分けた表そのもの(重なりの検査が読む)。並びは `ja` を合わせる順と同じ。 */
@@ -51,4 +58,5 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['file', file],
   ['view', view],
   ['parameters', parameters],
+  ['assembly', assembly],
 ];

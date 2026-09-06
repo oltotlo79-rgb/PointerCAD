@@ -1,7 +1,7 @@
 /**
  * 機能ごとに分けたストア(P6 タスク52)が、分ける前と同じ 1 本のままであることの検査。
  *
- * `create()` は `createInitialDocumentState()` と 11 本のスライスを `...` で重ねる。
+ * `create()` は `createInitialDocumentState()` と 12 本のスライスを `...` で重ねる。
  * **重ねる順に後ろが勝つ**ので、2 か所が同じ欄を作ると片方が黙って消える(型の上では
  * `Omit` で防いであるが、`Omit` の相手(`*InitialState`)を書き忘れたときは通ってしまう)。
  * ここで実際に作らせて、欄が重なっていないこと・合わせるとちょうど全部になることを見る。
@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { createAssemblySlice } from './assemblySlice.js';
 import { createCanvasSlice } from './canvasSlice.js';
 import { createConstraintSlice } from './constraintSlice.js';
 import { createDocumentSlice } from './documentSlice.js';
@@ -41,6 +42,7 @@ const SLICES = [
   ['selectionSlice', createSelectionSlice],
   ['measureSlice', createMeasureSlice],
   ['fileSlice', createFileSlice],
+  ['assemblySlice', createAssemblySlice],
 ] as const;
 
 /**

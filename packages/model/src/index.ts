@@ -541,3 +541,42 @@ export type { RgbColor } from './exchange/exportColors.js';
 export {
   bodyColorsFor, DEFAULT_EXPORT_COLOR, faceColorsFor, parseHexColor, rgbTupleOf,
 } from './exchange/exportColors.js';
+
+/**
+ * DXF ↔ スケッチの写し(FR-813、FR-301〜318、FR-202、計画書 P6 §2.7・§0.a-0.32〜0.34、
+ * タスク26)。
+ *
+ * **新しい `SketchFeature` の種類を 1 つも作らない。** DXF の 5 種は既にある
+ * `point` / `line` / `arc` / `ellipse` / `spline` へ写る(円は「開始 0 度・終了 360 度の
+ * 円弧」、多角形と `INSERT` は `packages/io` の段で線分・円弧へ開かれている)。
+ *
+ * `SketchDxfEntity` は **`packages/io` の `DxfEntity` と欄が 1 対 1 に同じ**型で、
+ * 構造的部分型でそのまま受け渡せる。**`model` は `io` へ依存できない**(依存の向きは
+ * `model → kernel / expression` の一方向。`io` のほうが `model` に依存している)ので、
+ * 同じ形の型をこちらにも置いてある(`exchange/dxfTypes.ts` の注釈)。**両者がずれて
+ * いないことの検査は `io` 側**(あちらは両方の型を輸入できる)。
+ *
+ * 座標の式は既存の `expressionValueFromNumber`(有効数字 12 桁)で作り、吸い付いた座標を
+ * 保存するときと同じ書式にそろえてある(統括の決定 2026-09-06)。案内の文言
+ * (平面から外れた・取り込めなかった件数・次数の高い曲線)の**正本はこの層**で、
+ * `ja.json` には持たない(計画書 §2.8「文言の正本の層」)。
+ *
+ * `dxfToSketch` は単位の換算(inch は 25.4 倍)と案内の組み立てまでを行い、`sketchToDxf` は
+ * **構築線を書き出さず、平らでない形を `DXF_NOT_PLANAR_MESSAGE` で断る。** どちらも
+ * 画面を持たない純関数で、作図面の選ばせ方・単位の訊き方・案内の出し方は
+ * `packages/ui`(タスク32)の仕事。
+ */
+export type {
+  SketchDxfArcEntity, SketchDxfEllipseEntity, SketchDxfEntity, SketchDxfEntityBase,
+  SketchDxfLengthUnit, SketchDxfLineEntity, SketchDxfPoint2d, SketchDxfPointEntity,
+  SketchDxfSplineEntity,
+} from './exchange/dxfTypes.js';
+export type { DxfToSketchOptions, DxfToSketchResult } from './exchange/dxfToSketch.js';
+export {
+  DXF_SPLINE_DEGREE_REDUCED_MESSAGE, dxfDroppedEntitiesMessage, dxfOffPlaneMessage, dxfToSketch,
+  MAX_SUPPORTED_SPLINE_DEGREE,
+} from './exchange/dxfToSketch.js';
+export type { SketchToDxfInput, SketchToDxfResult } from './exchange/sketchToDxf.js';
+export {
+  DXF_NOT_PLANAR_MESSAGE, ellipseParameterToAzimuth, sketchToDxf,
+} from './exchange/sketchToDxf.js';

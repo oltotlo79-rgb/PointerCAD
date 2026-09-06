@@ -75,6 +75,9 @@ export {
   type DxfTag,
 } from './dxf/dxfTags.js';
 export {
+  // `arcToBulge` は `bulgeToArc` の逆(円弧 → 多角形のふくらみ)。書き出し(タスク25)が
+  // 折れ線の区間へ円弧を戻すのに使う。
+  arcToBulge,
   bulgeToArc,
   DXF_SPLINE_WEIGHT_IGNORED_MESSAGE,
   ellipseFromDxf,
@@ -104,6 +107,19 @@ export {
   type DxfReadResult,
   type DxfSplineEntity,
 } from './dxf/readDxf.js';
+// DXF の書き出し(タスク25)。**R12(AC1009)・`$INSUNITS = 4`(mm)固定**で、R12 に無い
+// `ELLIPSE` / `SPLINE` は折れ線へ落とす(落とした本数は `DxfWriteResult.flattenedCurveCount`)。
+// `writeDxf` はテキストだけ、`writeDxfDocument` は案内の材料つきの結果を返す。
+export {
+  DXF_WRITE_ACAD_VERSION,
+  DXF_WRITE_INSUNITS,
+  DXF_WRITE_INVALID_VALUE_MESSAGE,
+  dxfFlattenedCurveMessage,
+  formatDxfNumber,
+  writeDxf,
+  writeDxfDocument,
+  type DxfWriteResult,
+} from './dxf/writeDxf.js';
 
 // 3MF の読み書き(FR-803、FR-809、計画書 §2.6)。3MF は ZIP の中の XML なので、OCCT を
 // 使わずに `packages/io` が自前で組み立て・読み取りをする(§0.a-0.18、§0.a-0.26)。

@@ -759,3 +759,36 @@ export {
   assemblyVariables, INVALID_PLACEMENT_MESSAGE, MISSING_PART_MESSAGE,
   MISSING_STANDARD_SIZE_MESSAGE, partKeyOf, resolveAssembly,
 } from './assembly/resolveAssembly.js';
+
+/**
+ * 部品を置く・消す・固定・表示の履歴操作(FR-601、FR-602、FR-505、FR-605、FR-606。
+ * 計画書 P7 タスク7)。
+ *
+ * **すべて新しい文書を返す純関数**なので、Undo / Redo は `history/undoStack.ts` が
+ * そのまま効く(1 回の操作 = 1 段)。**最初に置いた部品は自動で固定**(§0.a-0.7)、
+ * 名前の既定は `<部品名>:<n>`(§0.a-0.8)。**部品を消すと、その部品を指していた合致・
+ * ジョイント・分解のステップも一緒に消える**(指し先の無い合致を残さないため)。
+ */
+export type { CreateComponentOptions } from './assembly/assemblyEdit.js';
+export {
+  addComponent, COMPONENT_NAME_SEPARATOR, createComponentFor, DEFAULT_COMPONENT_LABEL,
+  findComponent, moveComponent, nextComponentName, removeComponent, renameComponent,
+  replaceComponent, setComponentAppearance, setFixed, setVisible,
+} from './assembly/assemblyEdit.js';
+
+/**
+ * 合致の対象の解決(FR-603、FR-609、FR-329。計画書 P7 タスク12、§2.5.2)。
+ *
+ * 合致とジョイントが指している「どのインスタンスの、どの部分形状か」を、残差が要る
+ * **世界座標の点と向き**(と円筒の半径)へ直す**カーネルを呼ばない純関数**。位置・軸・半径は
+ * 保存された指紋(`SubShapeRef`)から取り、部品の配置を掛けて世界座標へ直す。
+ * **曲面(球面など)・軸の取れない形・見つからない部品は、対象を消さずに理由を返す**
+ * (投げない。FR-504。文言は計画書 §2.12 のまま)。
+ */
+export type {
+  MateTargetErrorCode, MateTargetKind, MateTargetOutcome, ResolveMateTargetOptions,
+  ResolvedMateTarget,
+} from './assembly/constraints/mateTargets.js';
+export {
+  MISSING_AXIS_MESSAGE, MISSING_MATE_TARGET_MESSAGE, resolveMateTarget, UNUSABLE_FACE_MESSAGE,
+} from './assembly/constraints/mateTargets.js';

@@ -258,6 +258,33 @@ export function setVisible(
 }
 
 /**
+ * 抑制を付け外しする(FR-503 と同じ流儀。統括の決定 2026-09-06、木の行の切替から呼ぶ)。
+ *
+ * **非表示(`setVisible`)とは別物。** 非表示は「描かないだけ」で組み立ての一部として
+ * 残る(合致の変数を持ち続ける)が、抑制は**置かなかったことにする**——`resolveAssembly` が
+ * その部品を丸ごと飛ばすので、形も配置も作られない(`resolveAssembly.ts` の注釈。
+ * 抑制は失敗ではないので `errors` にも入らない)。
+ *
+ * 抑制した部品を指している合致・ジョイント・分解のステップは**消さない**
+ * (`removeComponent` の巻き添え削除とはここが違う)。抑制はいつでも戻せる一時的な指定で、
+ * 戻したときに合致が消えていては元へ戻らないためである。指し先が一時的に置かれていない
+ * 合致をどう扱うかは、合致を解く側(P7 タスク15)が決める。
+ *
+ * すでに同じ値なら元の文書をそのまま返す(Undo に空の段を作らない)。
+ */
+export function setComponentSuppressed(
+  document: AssemblyDocument,
+  componentId: string,
+  suppressed: boolean,
+): AssemblyDocument {
+  const component = findComponent(document, componentId);
+  if (component === undefined || component.suppressed === suppressed) {
+    return document;
+  }
+  return replaceComponent(document, componentId, { ...component, suppressed });
+}
+
+/**
  * 木と部品表に出す名前を変える(FR-601)。
  *
  * **空の名前は受け付けない**(木の行が読めなくなるため。元の文書をそのまま返す)。

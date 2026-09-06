@@ -16,6 +16,7 @@ import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { AssemblyTree } from './AssemblyTree.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
 import { PropertyPanel } from './PropertyPanel.js';
@@ -297,7 +298,12 @@ export function AppShell(): React.JSX.Element {
     <div className="pcad-shell" data-document-kind={documentKind}>
       <Toolbar />
       <div className="pcad-shell__body">
-        <FeatureTree />
+        {/*
+          左のモデルブラウザ。**区画は増やさず、開いている文書の種類で中身だけを入れ替える**
+          (P7 §0.a-0.10、タスク9)。部品なら履歴の木、アセンブリなら部品・合致・
+          ジョイント・分解ステップの 4 つの束が同じ場所に出る。
+        */}
+        {documentKind === 'assembly' ? <AssemblyTree /> : <FeatureTree />}
         <div className="pcad-viewport" ref={viewportRef}>
           <Suspense
             fallback={

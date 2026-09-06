@@ -15,6 +15,7 @@ import {
   renameComponent,
   replaceComponent,
   setComponentAppearance,
+  setComponentSuppressed,
   setFixed,
   setVisible,
 } from './assemblyEdit.js';
@@ -359,6 +360,30 @@ describe('setFixed / setVisible', () => {
     expect(hidden.components[0].visible).toBe(false);
     expect(hidden.components[0].fixed).toBe(true);
     expect(hidden.components[0].placement).toEqual(one.components[0].placement);
+  });
+});
+
+describe('setComponentSuppressed', () => {
+  it('抑制を付け外しでき、表示・固定・配置は変わらない(FR-503)', () => {
+    const one = assemblyWith(1);
+    const suppressed = setComponentSuppressed(one, 'component-1', true);
+    const again = setComponentSuppressed(suppressed, 'component-1', false);
+
+    expect(suppressed.components[0].suppressed).toBe(true);
+    // 抑制は「置かなかったことにする」だけで、非表示(描かない)とは別の欄。
+    expect(suppressed.components[0].visible).toBe(true);
+    expect(suppressed.components[0].fixed).toBe(true);
+    expect(suppressed.components[0].placement).toEqual(one.components[0].placement);
+    expect(again.components[0].suppressed).toBe(false);
+    // 元の文書は 1 バイトも変わらない(すべて新しい文書を返す純関数)。
+    expect(one.components[0].suppressed).toBe(false);
+  });
+
+  it('同じ値・知らない id では元の文書をそのまま返す(Undo に空の段を作らない)', () => {
+    const one = assemblyWith(1);
+
+    expect(setComponentSuppressed(one, 'component-1', false)).toBe(one);
+    expect(setComponentSuppressed(one, 'component-9', true)).toBe(one);
   });
 });
 

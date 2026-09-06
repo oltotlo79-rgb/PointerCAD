@@ -773,7 +773,7 @@ export type { CreateComponentOptions } from './assembly/assemblyEdit.js';
 export {
   addComponent, COMPONENT_NAME_SEPARATOR, createComponentFor, DEFAULT_COMPONENT_LABEL,
   findComponent, moveComponent, nextComponentName, removeComponent, renameComponent,
-  replaceComponent, setComponentAppearance, setFixed, setVisible,
+  replaceComponent, setComponentAppearance, setComponentSuppressed, setFixed, setVisible,
 } from './assembly/assemblyEdit.js';
 
 /**
@@ -792,3 +792,23 @@ export type {
 export {
   MISSING_AXIS_MESSAGE, MISSING_MATE_TARGET_MESSAGE, resolveMateTarget, UNUSABLE_FACE_MESSAGE,
 } from './assembly/constraints/mateTargets.js';
+
+/**
+ * 合致の変数と自由度・連結成分(FR-603、FR-602、FR-604。計画書 P7 タスク13、§2.5.1・§2.5.3)。
+ *
+ * ソルバーが動かしてよい数を、**動かせる部品 1 つにつき 6 つ**(平行移動の増分 3 + いまの
+ * 向きからの小さな回転 3)、`components` の順で並べる**純関数**。固定(FR-602)と抑制は
+ * 変数を持たず、非表示は持つ(見えなくても組み立ての一部)。変数が上限 600(動かせる部品
+ * 100 個)を超えたら印を立て、解く側が断る。合致とジョイントでつながった部品を
+ * **連結成分ごとに分ける**(固定へつながる辺は無視する)ので、塊ごとに別々の連立を解ける。
+ * 合致の距離・角度は**アセンブリのパラメータ表**(`assemblyVariables`)で数にする。
+ */
+export type {
+  CountMateDegreesOfFreedomOptions, FrozenComponentReason, MateComponentGroup,
+  MateDegreesOfFreedom, MateVariable, MateVariableAxis, MateVariableSet, SkippedMate,
+} from './assembly/constraints/mateVariables.js';
+export {
+  coincidentEquationCount, collectMateVariables, countMateDegreesOfFreedom, jointEquationCount,
+  MATE_VARIABLE_AXES, MATE_VARIABLES_PER_COMPONENT, mateComponentGroups, mateEquationCount,
+  mateValueOf, MAX_ASSEMBLY_VARIABLES, MAX_MOVABLE_COMPONENTS, TOO_MANY_COMPONENTS_MESSAGE,
+} from './assembly/constraints/mateVariables.js';

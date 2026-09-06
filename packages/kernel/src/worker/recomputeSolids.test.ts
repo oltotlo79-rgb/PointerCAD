@@ -1861,6 +1861,155 @@ describe('履歴の再計算(recomputeSolids)', () => {
       ]);
       expect(result.bodies).toEqual([]);
     });
+
+    /*
+     * 輪郭を貸した立体を、あとの段が使えなくなっていないこと(2026-09-06 の実測の再現)。
+     *
+     * Web で「長いセッションで切断・くり抜きが失敗し、頁を読み直すと直る」が実測された。
+     * 切り分けると**失敗したロフトを挟んだあと、輪郭を貸したのと同じ立体を切る段が必ず失敗**し、
+     * 別の寸法の箱(キャッシュの鍵が別物)なら成功した。原因は借りた面をそのまま
+     * `BRepOffsetAPI_ThruSections` へ渡していたことで、組む途中の書き込みが下地の TShape を
+     * 通じてキャッシュ上の立体へ届いていた(`makeThruSections.ts` の `sectionWireFromFace`)。
+     * 頁を読み直すと直るのはキャッシュが空になるためである。
+     *
+     * ここで確かめるのは**貸したあとの立体が無事なこと**なので、体積は
+     * 「切る前の箱の半分」という手計算だけを見る(ロフトそのものの形は上の検査群が固定済み)。
+     */
+    describe('輪郭を貸した立体はあとの段でも無事(2026-09-06 の実測)', () => {
+      /** 20 × 20 を 20 押し出した箱。体積 8000、上面は z = 20、+X の側面は x = 20。 */
+      function boxStep(): SolidStepRequest {
+        return extrudeStep('箱1', 'key-box', 20, 20, 20);
+      }
+
+      /** その箱を z = 10 で切って下側だけ残す段。半分の 4000 になるはず(手計算)。 */
+      function cutStep(): SolidStepRequest {
+        return {
+          key: 'key-cut',
+          id: '切断1',
+          label: '切断1',
+          visible: true,
+          step: {
+            kind: 'cut',
+            targetKey: 'key-box',
+            origin: [10, 10, 10],
+            normal: [0, 0, 1],
+            keepPositive: false,
+          },
+        };
+      }
+
+      /** 箱の中心(10, 10)に合わせた正方形の閉ループ。成功する罫線面の相手の輪郭に使う。 */
+      function boxTopRectangle(size: number, z: number): readonly CurveSpec[] {
+        const half = size / 2;
+        const corners: readonly Vec3Tuple[] = [
+          [10 - half, 10 - half, z],
+          [10 + half, 10 - half, z],
+          [10 + half, 10 + half, z],
+          [10 - half, 10 + half, z],
+        ];
+        return corners.map((from, index) => ({
+          kind: 'segment',
+          from,
+          to: corners[(index + 1) % corners.length],
+        }));
+      }
+
+      /** 箱 20³ を実際に作り、上面(+Z)と +X の側面の指紋を読み取る。 */
+      function boxFaceQueries(): {
+        readonly top: Extract<SubShapeQuery, { kind: 'face' }>;
+        readonly side: Extract<SubShapeQuery, { kind: 'face' }>;
+      } {
+        const handle = makeExtrudeSolid(
+          oc,
+          { kind: 'extrude', profile: rectangle(20, 20), direction: [0, 0, 1], distance: 20 },
+          {},
+        );
+        try {
+          const faces = subShapesOf(handle.shape).faces;
+          return {
+            top: faceQuery(planeFacing(faces, [0, 0, 1])),
+            side: faceQuery(planeFacing(faces, [1, 0, 0])),
+          };
+        } finally {
+          handle.delete();
+        }
+      }
+
+      /** 箱の上面と +X の側面(直交する 2 枚)をつなぐ段。この組み合わせは必ず失敗する。 */
+      function failingLoftStep(
+        top: SubShapeQuery,
+        side: SubShapeQuery,
+      ): SolidStepRequest {
+        const spec: ThruSectionsStepSpec = {
+          kind: 'thruSections',
+          sections: [
+            { kind: 'faceQuery', targetKey: 'key-box', query: top },
+            { kind: 'faceQuery', targetKey: 'key-box', query: side },
+          ],
+          ruled: false,
+          closed: false,
+          twist: 0,
+          sphereSegments: 24,
+        };
+        return { key: 'key-loft', id: 'ロフト1', label: 'ロフト1', visible: true, step: spec };
+      }
+
+      it('ロフトを挟まなければ、箱を z = 10 で切って 4000 になる(足場の確認)', async () => {
+        const { cache } = newCache();
+        const result = await recomputeSolids({ oc, cache }, request([boxStep(), cutStep()]));
+
+        expect(result.failures).toEqual([]);
+        expect(result.bodies.map((body) => body.id)).toEqual(['箱1', '切断1']);
+        expect(result.bodies[1].volume).toBeCloseTo(BIG_VOLUME / 2, 6);
+      });
+
+      it('失敗したロフトを挟んでも、同じ箱を切る段は 4000 のまま通る', async () => {
+        const { cache } = newCache();
+        const { top, side } = boxFaceQueries();
+        const result = await recomputeSolids(
+          { oc, cache },
+          request([boxStep(), failingLoftStep(top, side), cutStep()]),
+        );
+
+        // 失敗するのはロフトの段だけ。切断は巻き添えにならない。
+        expect(result.failures).toEqual([
+          {
+            id: 'ロフト1',
+            message: '面と面をつなげませんでした。輪郭の形を見直してください。',
+          },
+        ]);
+        expect(result.bodies.map((body) => body.id)).toEqual(['箱1', '切断1']);
+        expect(result.bodies[1].volume).toBeCloseTo(BIG_VOLUME / 2, 6);
+      });
+
+      it('成功した罫線面を挟んでも、同じ箱を切る段は 4000 のまま通る', async () => {
+        const { cache } = newCache();
+        const { top } = boxFaceQueries();
+        const spec: ThruSectionsStepSpec = {
+          kind: 'thruSections',
+          sections: [
+            { kind: 'faceQuery', targetKey: 'key-box', query: top },
+            { kind: 'curves', curves: boxTopRectangle(10, 40) },
+          ],
+          ruled: true,
+          closed: true,
+          twist: 0,
+          sphereSegments: 24,
+        };
+        const result = await recomputeSolids(
+          { oc, cache },
+          request([
+            boxStep(),
+            { key: 'key-ruled', id: '罫線面1', label: '罫線面1', visible: true, step: spec },
+            cutStep(),
+          ]),
+        );
+
+        expect(result.failures).toEqual([]);
+        expect(result.bodies.map((body) => body.id)).toEqual(['箱1', '罫線面1', '切断1']);
+        expect(result.bodies[2].volume).toBeCloseTo(BIG_VOLUME / 2, 6);
+      });
+    });
   });
 
   // ---------------------------------------------------------------------------

@@ -375,7 +375,16 @@ export function sectionWireFromFace(
   if (picked.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_FACE) {
     throw new Error(MISSING_SECTION_FACE_MESSAGE);
   }
-  const face = keep(oc.TopoDS.Face_1(picked));
+  // **借りた面は必ず複製してから使う。** 選び直した面は形状キャッシュが持つ立体の
+  // 部分形状そのもの(下地の TShape を共有する)で、`BRepOffsetAPI_ThruSections` は
+  // 組む途中で断面のワイヤの稜線に pcurve を足し、許容誤差を広げる。共有したまま渡すと
+  // その書き込みがキャッシュ上の立体へそのまま届き、**同じ鍵の立体をあとから切る・
+  // くり抜く段が失敗する**(2026-09-06 実測。箱 20³ の上面と側面をロフトに失敗させると、
+  // 直後の同じ箱への切断が「立体を切れませんでした」になる。頁を読み直すと直るのは
+  // キャッシュが空になるため)。第 2 引数 true は下地の幾何も複製する指定、
+  // 第 3 引数 false は三角形分割を複製しない指定(`makeCut.ts` の `copyTarget` と同じ)。
+  const copier = keep(new oc.BRepBuilderAPI_Copy_2(picked, true, false));
+  const face = keep(oc.TopoDS.Face_1(keep(copier.Shape())));
   const wire = keep(oc.BRepTools.OuterWire(face));
   checkSectionFace(oc, face, wire);
   return wire;

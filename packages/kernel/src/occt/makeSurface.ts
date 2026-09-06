@@ -341,6 +341,16 @@ function loftProfiles(
  * 選び直しは `pickSubShape.ts` へ任せる。**加工フィーチャー(穴・フィレット・面取り)と
  * 同じ採点・同じしきい値**なので、同じ指紋からは必ず同じ面が選ばれる(§0.a-0.4)。
  * 取り出した面は新しく作られた形なので、この関数の控えへ積んで解放を引き受ける。
+ *
+ * **選び直した面は、そのまま返さずに必ず複製する(名前のとおり「複製」する)。**
+ * `pickSubShape` が返す面は形状キャッシュが持つ立体の部分形状そのもので、下地の
+ * `TopoDS_TShape` を共有している。共有したまま OCCT の builder(この段では
+ * `offsetExistingFace` の `BRepOffsetAPI_MakeOffsetShape`)へ渡すと、組む途中の
+ * 書き込み(稜線への pcurve の追加、許容誤差の広げ直し)がキャッシュ上の立体へ届き、
+ * **面を貸した立体をあとから切る・くり抜く段が壊れる**。同じ事故を
+ * `makeThruSections.ts` の `sectionWireFromFace` で実測した(2026-09-06、rules/06 10.16)。
+ * 第 2 引数 true は下地の幾何も複製する指定、第 3 引数 false は三角形分割を
+ * 複製しない指定(`makeCut.ts` の `copyTarget` と同じ)。
  */
 function copyExistingFace(
   oc: OpenCascadeInstance,
@@ -359,7 +369,9 @@ function copyExistingFace(
   if (picked === null) {
     throw new Error(MISSING_SUB_SHAPE_MESSAGE);
   }
-  return keep(picked);
+  keep(picked);
+  const copier = keep(new oc.BRepBuilderAPI_Copy_2(picked, true, false));
+  return keep(copier.Shape());
 }
 
 /**

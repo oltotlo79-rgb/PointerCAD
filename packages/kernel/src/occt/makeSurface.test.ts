@@ -6,6 +6,7 @@ import type { CurveSpec, SolidBodyKind, SolidFaceInfo, SubShapeQuery, Vec3Tuple 
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
+import { makeCut } from './makeCut.js';
 import { makeExtrudeSolid } from './makeSolidSweep.js';
 import type { SurfaceInput } from './makeSurface.js';
 import { isShellShape, makeSurface, SHELL_NOT_SUPPORTED_MESSAGE } from './makeSurface.js';
@@ -543,6 +544,52 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
         expect(() =>
           makeSurface(oc, { kind: 'offset', face: faceQuery(top), distance: 5 }),
         ).toThrow('面を取り出す立体が選ばれていません。');
+      } finally {
+        box.delete();
+      }
+    });
+
+    /*
+     * 面を貸した立体が、あとの段でも壊れていないこと(rules/06 10.16 の網)。
+     *
+     * `pickSubShape` が返す面は立体の部分形状そのもので、下地の `TopoDS_TShape` を共有する。
+     * 共有したまま OCCT の builder へ渡すと、組む途中の書き込みが貸した立体へ届き、
+     * **あとからその立体を切る段が失敗する**——`makeThruSections.ts` の
+     * `sectionWireFromFace` で実測した事故(2026-09-06)がこれである。この段は
+     * `copyExistingFace` で複製してから使うので起きないが、将来 builder を変えたときに
+     * 黙って壊れないよう、貸したあとに実際に切ってみる網をここへ置く。
+     *
+     * 「体積が 12000 のまま」だけでは足りない(壊れた形でも体積は測れる)ので、
+     * **同じ立体を実際に切って半分になること**まで見る。
+     */
+    it('面を貸した立体は、そのあと切っても半分の 6000 になる(rules/06 10.16 の網)', () => {
+      const box = prepareBox();
+      try {
+        const top = topFaceOf(box.tables);
+        expect(top).toBeDefined();
+        if (top === undefined) {
+          return;
+        }
+        const surface = makeSurface(
+          oc,
+          { kind: 'offset', face: faceQuery(top), distance: 5 },
+          box.shape,
+          box.tables,
+        );
+        surface.delete();
+
+        // 40 × 30 × 10 の板を x = 20 で切って法線の側(x ≧ 20)を残すので半分の 6000。
+        const cut = makeCut(oc, box.shape, {
+          origin: [20, 15, 5],
+          normal: [1, 0, 0],
+          keepPositive: true,
+        });
+        try {
+          expect(hasSolid(oc, cut.shape)).toBe(true);
+          expect(measureVolume(oc, cut.shape)).toBeCloseTo(6000, 6);
+        } finally {
+          cut.delete();
+        }
       } finally {
         box.delete();
       }

@@ -688,3 +688,43 @@ export {
   constraintFromInference, INFER_ANGLE_TOLERANCE_DEGREES, INFER_COINCIDENT_RADIUS_PIXELS,
   inferConstraints, INFERENCE_PRIORITY, inferredConstraintTargets, MAX_INFERRED_CONSTRAINTS,
 } from './sketch/inferConstraints.js';
+
+/**
+ * アセンブリの配置の数学(FR-601、計画書 P7 §2.4、タスク2)。
+ *
+ * 置いた部品 1 つの「どこに・どちら向きに」を位置 3 数 + 四元数 4 数で持ち、点・向きへ
+ * 掛ける・入れ子で合成する・既存の `RigidTransform`(軸+角)へ写す、までの純関数。
+ * **符号を `w >= 0` へ揃える正規化は `normalizeQuaternion` の 1 か所だけ**(§0.54 の
+ * 決定性)。OCCT にも three にも触れないので、Node の Vitest だけで検査できる。
+ */
+export type { AxisAngle, Quaternion, RigidPlacement } from './assembly/placementMath.js';
+export {
+  applyPlacementToDirection, applyPlacementToPoint, composePlacement, exponentialMap,
+  IDENTITY_PLACEMENT, IDENTITY_QUATERNION, multiplyQuaternion, normalizeQuaternion,
+  placementToRigidTransform, QUATERNION_TOLERANCE, quaternionFromAxisAngle, quaternionToAxisAngle,
+  rotateVector,
+} from './assembly/placementMath.js';
+
+/**
+ * アセンブリ文書(FR-601、FR-602、FR-605、FR-606、FR-611、FR-613。
+ * 計画書 P7 §2.2、タスク1)。
+ *
+ * 部品文書(`PartDocument`)と並ぶもう 1 つの保存の単位で、**部品を参照して置いたもの**
+ * (`AssemblyComponent`)・合致(`Mate`)・ジョイント(`Joint`)・分解のステップ
+ * (`PresentationStep`)・パラメータ・部品表の設定を持つ。**部品の形も合致の解も保存しない**
+ * (§0.a-0.4、§0.a-0.6)ので、開くたびに部品ごとに 1 回だけ作り、解き直す。
+ *
+ * 版は部品と同じ系列にする(`ASSEMBLY_SCHEMA_VERSION` = `PART_SCHEMA_VERSION`。§0.a-0.2)。
+ * 置く・消す・固定・表示の履歴操作は `assembly/assemblyEdit.ts`(タスク7)が足す。
+ */
+export type {
+  AssemblyComponent, AssemblyDocument, BomColumnId, BomSettings, BomSortKey, ComponentSource,
+  Joint, JointKind, Mate, MateKind, MateTarget, OriginElement, Placement, PresentationStep,
+  StandardCatalogId,
+} from './assembly/types.js';
+export {
+  ASSEMBLY_SCHEMA_VERSION, BOM_COLUMN_IDS, BOM_SORT_KEYS, createAssemblyDocument,
+  DEFAULT_ASSEMBLY_NAME, DEFAULT_BOM_SETTINGS, DEFAULT_COMPONENT_PLACEMENT, JOINT_KINDS,
+  MATE_KINDS, nextComponentId, nextJointId, nextMateId, nextPresentationStepId,
+  STANDARD_CATALOG_IDS,
+} from './assembly/createAssemblyDocument.js';

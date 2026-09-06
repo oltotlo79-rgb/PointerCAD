@@ -728,3 +728,34 @@ export {
   MATE_KINDS, nextComponentId, nextJointId, nextMateId, nextPresentationStepId,
   STANDARD_CATALOG_IDS,
 } from './assembly/createAssemblyDocument.js';
+
+/**
+ * 抱き込んだ部品文書の出し入れと内容ハッシュ(FR-601、要件§8。計画書 P7 §2.3、タスク4)。
+ *
+ * アセンブリ文書と**対で持ち回る**入れ物(`PartLibrary`)で、「どのファイルから・いつ・
+ * どの中身を取り込んだか」だけを持つ。部品の形は 1 バイトも持たない(§0.a-0.4)。
+ * 内容ハッシュは**文書だけ**を決定的に文字列にして SHA-256 を取るので、保存し直しただけでは
+ * 変わらない(封筒の `savedAt` を含まない)。**同じ中身を 2 回抱き込まない**(`embedPart` が
+ * 既存の `partRef` を返す)。元のファイルを追いかけた結果の文言は上の層が持つ(§2.12)。
+ */
+export type { EmbeddedPartFile, EmbedPartOptions, EmbedPartResult, PartLibrary } from './assembly/partLibrary.js';
+export {
+  canonicalPartDocumentText, CONTENT_HASH_ALGORITHM, contentHashOf, embedPart, EMPTY_PART_LIBRARY,
+  nextPartRef, PART_REF_PREFIX, partFileOf, partOf, replacePartDocument, staleParts,
+} from './assembly/partLibrary.js';
+
+/**
+ * アセンブリの解決(FR-601、FR-606、NFR-PF-3。計画書 P7 §2.3、タスク6)。
+ *
+ * アセンブリ文書を「部品ごとの再計算の依頼(`ResolvedPart`)」と「インスタンスごとの配置
+ * (数に直した `RigidPlacement`)」へ直す**カーネルを呼ばない純関数**。**同じ部品は 1 回だけ**
+ * 解決し、全インスタンスで形を使い回す(§0.a-0.4。インスタンスごとに作り直すと §2.13-6 の
+ * 上限 5 秒を割る)。部品が引けない・位置が数にならないは投げずに `errors` へ積む(FR-504)。
+ */
+export type {
+  AssemblyError, AssemblyErrorCode, ResolveAssemblyOptions, ResolvedAssembly, StandardPartSource,
+} from './assembly/resolveAssembly.js';
+export {
+  assemblyVariables, INVALID_PLACEMENT_MESSAGE, MISSING_PART_MESSAGE,
+  MISSING_STANDARD_SIZE_MESSAGE, partKeyOf, resolveAssembly,
+} from './assembly/resolveAssembly.js';

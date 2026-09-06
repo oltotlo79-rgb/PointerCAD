@@ -48,7 +48,7 @@ async function runInspectPrintability(
  * |---|---|---|---|
  * | 2.17-1 | 100 フィーチャーの部品の STEP 書き出し | 5 秒 | `occt/writeStep.test.ts`(箱 10 個) |
  * | 2.17-2 | 面 500 枚の STEP 読み込み | 5 秒 | **`occt/readStep.test.ts`(面 504 枚)。重複させないので、ここでは測らない** |
- * | 2.17-3 | 10 万三角形の STL 書き出し | 2 秒 | `occt/writeStl.test.ts`(作り直し + バイト列) |
+ * | 2.17-3 | 10 万三角形の STL 書き出し | 2 秒(内訳も測る。下記) | `occt/writeStl.test.ts`(作り直し + バイト列) |
  * | 2.17-4 | 10 万三角形の STL 読み込み | 2 秒 | `occt/readStl.test.ts` |
  * | 2.17-5 | 10 万三角形の 3MF 書き出し | 3 秒 | **`packages/io` の `threemf/writeThreeMf.test.ts` が丸ごと測る。** kernel の受け持ちは三角形の取り出しまでなので、そのぶんだけを同じ 3 秒の枠で測る |
  * | 2.17-9 | 面 200 枚・三角形 5 万の 3D プリント点検 | 5 秒 | タスク42 後半で実装。`KernelApi.inspectPrintability` 1 回の所要(球 200 個・偏差 0.6mm → 61,200 枚。§2.16 の見積もりでは 100ms 未満、実測 114〜128ms。タスク42 前半の `occt/inspectPrintability.test.ts` の見本を流用) |
@@ -61,6 +61,15 @@ async function runInspectPrintability(
  * 1.5 秒前後を占め、全体の大半になる。**上限 2 秒は据え置く**(緩めも締めもしない)ので
  * 直すのは導出の説明だけだが、内訳が分からないと「どちらが遅いのか」が読めないため、
  * この検査は**作り直しとバイト列の内訳を必ずログへ出す**。
+ *
+ * ## なぜ §2.17-3 を 2 本に分けて測るのか(利用者の決定、2026-09-06)
+ *
+ * ①当初の導出が「バイト列を組む時間」だけを数えており、実際の大半を占める三角形化
+ * (`BRepMesh_IncrementalMesh`)が抜けていた。②通しの 1 本だけだと、赤くなったとき
+ * どちらが遅れたのかが判定からは読めない(push #13 では待ち行列の検査と重なって 2,376ms
+ * で赤。静かな機械では 2 秒以内に収まっていた)。そこで**三角形化とバイト列を別々に判定する**。
+ * ③**数値は緩めていない**——内訳の 2 本の上限の合計は通しの上限 2,000ms とちょうど同じで
+ * (1,900 + 100)、通しの 1 本もそのまま残す。判定は増えるだけで、1 つも減らない。
  */
 
 /** §2.17-1「100 フィーチャーの部品の STEP 書き出しは 5 秒以内」。**この数値は緩めない。** */
@@ -68,6 +77,28 @@ const STEP_EXPORT_LIMIT_MS = 5000;
 
 /** §2.17-3「10 万三角形の STL 書き出しは 2 秒以内」。**この数値は緩めない。** */
 const STL_EXPORT_LIMIT_MS = 2000;
+
+/**
+ * §2.17-3 の内訳 (a)「三角形化(テッセレーション)」の上限。**この数値は緩めない。**
+ *
+ * 静かな機械で 5 回測った実測(2026-09-06、球 103 個・偏差 0.1mm・10 万 528 枚)は
+ * 1421.8 / 1592.4 / 1620.1 / 1692.2 / 1752.6 ms(中央値 1620.1、最大 1752.6)。
+ * 実測の 2 倍は 3.5 秒で通しの上限 2 秒を超えてしまうため、**2 倍は取れない。**
+ * 通しの 2,000ms から (b) のバイト列ぶん 100ms を引いた残り全部を切りのよい形で
+ * 置く(最大の 1.08 倍、中央値の 1.17 倍)。三角形化が全体の 9 割以上を占めるので、
+ * 枠の配分もその比率に合わせる。
+ */
+const STL_TESSELLATE_LIMIT_MS = 1900;
+
+/**
+ * §2.17-3 の内訳 (b)「三角形化済みの形から STL のバイト列を書く」の上限。
+ * **この数値は緩めない。**
+ *
+ * 同じ 5 回の実測は 18.8 / 19.1 / 23.8 / 26.1 / 30.1 ms(中央値 23.8、最大 30.1)。
+ * `DataView.setFloat32` の繰り返しだけで OCCT を呼ばないため揺れが小さく、最大の
+ * **3 倍を超える余裕**を見ても 100ms で足りる。(a) と足して 2,000ms ちょうどに収める。
+ */
+const STL_BYTES_LIMIT_MS = 100;
 
 /** §2.17-4「10 万三角形の STL 読み込みは 2 秒以内」。**この数値は緩めない。** */
 const STL_IMPORT_LIMIT_MS = 2000;
@@ -241,8 +272,11 @@ describe('書き出し・読み込みの性能(NFR-PF、計画書 §2.17)', () =
 
     /** 三角形の作り直しだけ(`format: 'mesh'`。3MF は io がこの続きを組む)。 */
     let meshMs = 0;
-    /** 作り直した三角形から STL のバイト列を組むだけ(内訳の記録用)。 */
+    /** 作り直した三角形から STL のバイト列を組むだけ(§2.17-3 の内訳 (b) の判定に使う)。 */
     let bytesMs = 0;
+    /** 上のバイト列の長さと枚数(速いだけで何も書けていない、を防ぐため両方を持つ)。 */
+    let bytesOnlyLength = 0;
+    let bytesOnlyTriangleCount = 0;
     /** 作り直し + STL のバイト列(`format: 'stl'`)。§2.17-3 が判定するのはこれ。 */
     let stlMs = 0;
     /** 書いた STL を読み直すのに掛かった時間。 */
@@ -286,11 +320,14 @@ describe('書き出し・読み込みの性能(NFR-PF、計画書 §2.17)', () =
         // ①' バイト列を組むぶんだけを直に測る(内訳の記録。**引き算で出さない**——
         //     2 回の呼び出しの差は揺れのほうが大きく、負の値にすらなる実測があった)。
         const bytesStartedAt = performance.now();
-        writeStl(
+        const bytesOnly = writeStl(
           meshed.bodies.map((body) => body.triangles),
           { ascii: false },
         );
         bytesMs = performance.now() - bytesStartedAt;
+        // 時計を止めてから中身を控える(控える手間を計測へ混ぜない)。
+        bytesOnlyLength = bytesOnly.bytes.length;
+        bytesOnlyTriangleCount = bytesOnly.triangleCount;
       }
 
       // ② 作り直し + バイト列。§2.17-3 が測るのはこちら。
@@ -317,7 +354,7 @@ describe('書き出し・読み込みの性能(NFR-PF、計画書 §2.17)', () =
       console.log(
         [
           `[実測] 球 ${String(SPHERE_COUNT)} 個 偏差 ${String(MEDIUM_DEVIATION_MM)}mm: 三角形 ${String(triangleCount)} 枚、${String(byteLength)} バイト`,
-          `内訳 作り直し ${meshMs.toFixed(1)} ms + バイト列 ${bytesMs.toFixed(1)} ms(それぞれ直に実測)、通しの STL 書き出し ${stlMs.toFixed(1)} ms(上限 ${String(STL_EXPORT_LIMIT_MS)} ms)`,
+          `内訳 作り直し ${meshMs.toFixed(1)} ms(上限 ${String(STL_TESSELLATE_LIMIT_MS)} ms)+ バイト列 ${bytesMs.toFixed(1)} ms(上限 ${String(STL_BYTES_LIMIT_MS)} ms)(それぞれ直に実測)、通しの STL 書き出し ${stlMs.toFixed(1)} ms(上限 ${String(STL_EXPORT_LIMIT_MS)} ms)`,
           `STL 読み込み ${importMs.toFixed(1)} ms(上限 ${String(STL_IMPORT_LIMIT_MS)} ms)`,
           `3MF の kernel 側(作り直しのみ)${meshMs.toFixed(1)} ms(§2.17-5 の枠 ${String(THREE_MF_LIMIT_MS)} ms。ZIP と XML は io)`,
         ].join(' | '),
@@ -330,6 +367,32 @@ describe('書き出し・読み込みの性能(NFR-PF、計画書 §2.17)', () =
       // バイナリ STL は 84 + 50 × 三角形の数(§2.4)。バイト列が枚数と食い違っていない。
       expect(byteLength).toBe(84 + 50 * triangleCount);
       expectWithinBudget(stlMs, STL_EXPORT_LIMIT_MS, '10 万三角形の STL 書き出し(§2.17-3)');
+    });
+
+    it(`10 万三角形の三角形化が ${STL_TESSELLATE_LIMIT_MS} ms 以内(§2.17-3 の内訳 (a))`, () => {
+      // 内訳の 2 本を足しても通しの上限を超えないこと。**分けたことで枠が広がっていない**
+      // (数値を緩めていない)ことを、注釈だけでなく検査そのものが確かめる。
+      expect(STL_TESSELLATE_LIMIT_MS + STL_BYTES_LIMIT_MS).toBeLessThanOrEqual(STL_EXPORT_LIMIT_MS);
+      // 10 万枚に届いていること(枚数が足りないまま速い、を防ぐ)。落とす前の枚数なので
+      // 通しの書き出しが書いた枚数以上になる。
+      expect(meshTriangleCount).toBeGreaterThanOrEqual(HUNDRED_THOUSAND);
+      expectWithinBudget(
+        meshMs,
+        STL_TESSELLATE_LIMIT_MS,
+        '10 万三角形の三角形化(§2.17-3 の内訳 (a))',
+      );
+    });
+
+    it(`三角形化済みの 10 万三角形から STL のバイト列を書くのが ${STL_BYTES_LIMIT_MS} ms 以内(§2.17-3 の内訳 (b))`, () => {
+      // 10 万枚を実際に書いていること(枚数が足りないまま速い、を防ぐ)。
+      expect(bytesOnlyTriangleCount).toBeGreaterThanOrEqual(HUNDRED_THOUSAND);
+      // バイナリ STL は 84 + 50 × 三角形の数(§2.4)。バイト列が枚数と食い違っていない。
+      expect(bytesOnlyLength).toBe(84 + 50 * bytesOnlyTriangleCount);
+      expectWithinBudget(
+        bytesMs,
+        STL_BYTES_LIMIT_MS,
+        '10 万三角形の STL のバイト列(§2.17-3 の内訳 (b))',
+      );
     });
 
     it(`10 万三角形の STL 読み込みが ${STL_IMPORT_LIMIT_MS} ms 以内(§2.17-4)`, () => {

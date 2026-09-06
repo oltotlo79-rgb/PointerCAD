@@ -182,11 +182,23 @@ export function readExpression(
   key: string,
   parentPath: string,
 ): Checked<ExpressionValueJson> {
-  const record = readRecord(source, key, parentPath);
+  const found = readValue(source, key, parentPath);
+  if (!found.ok) {
+    return found;
+  }
+  return readExpressionItem(found.value, joinPath(parentPath, key));
+}
+
+/**
+ * 式文字列と評価値の組を**値そのものから**読む(`readVec3Item` / `readVec3` と同じ、
+ * 値用と欄用の組)。配列の要素が式のとき(アセンブリの配置の位置 3 数、P7 §2.2)に使う。
+ * 読み方の決めごとは 1 か所だけにしたいので、欄用の `readExpression` はこれを呼ぶ。
+ */
+export function readExpressionItem(item: unknown, path: string): Checked<ExpressionValueJson> {
+  const record = checkRecord(item, path);
   if (!record.ok) {
     return record;
   }
-  const path = joinPath(parentPath, key);
   const text = readString(record.value, 'source', path);
   if (!text.ok) {
     return text;

@@ -403,12 +403,24 @@ const WOOD_SPECIES_VALUES: readonly WoodSpecies[] = [
 // 書き出し
 // ---------------------------------------------------------------------------
 
+/*
+  以下、`export` が付いている小さな変換は**アセンブリの読み書き**(`assemblyJson.ts`、
+  P7 タスク3)からも呼ぶ(式・パラメータ・部分形状の参照・軸・外観・一覧の読み方・
+  版の持ち上げ)。
+
+  アセンブリ文書は部品文書とはまったく別の型だが、**その中に入っている部品と共通の値**
+  (`ExpressionValue`・`Parameter`・`SubShapeRef`・`AxisSpec`・`AppearanceSpec`)は
+  同じ書式で保存する。**同じ変換を 2 か所に書かない**ため、ここを正本にして輸出する
+  (書き写すと、片方だけ直したときに同じファイルの中で書式が食い違う)。
+  輸出にあたって足したのは `export` の 1 語だけで、中身は 1 行も変えていない。
+*/
+
 /**
  * 式は必ず式文字列と一緒に保存する(FR-202)。評価値と表示も保存するのは、変数表が
  * 未定義でもツリーに数値を出せるようにするため。評価値が NaN のときは JSON に NaN を
  * 書けないので `null` になり、読み戻すとまた NaN になる。
  */
-function serializeExpression(value: ExpressionValueJson): ExpressionValueJson {
+export function serializeExpression(value: ExpressionValueJson): ExpressionValueJson {
   return { source: value.source, value: value.value, display: value.display };
 }
 
@@ -822,7 +834,7 @@ function serializeLineRef(reference: SketchLineRef): SketchLineRef {
   return { sketchId: reference.sketchId, lineFeatureId: reference.lineFeatureId };
 }
 
-function serializeRevolveAxis(axis: RevolveAxis): RevolveAxis {
+export function serializeRevolveAxis(axis: RevolveAxis): RevolveAxis {
   switch (axis.kind) {
     case 'world':
       return { kind: 'world', axis: axis.axis };
@@ -876,7 +888,7 @@ function serializeSubShapeFingerprint(fingerprint: SubShapeFingerprint): SubShap
   }
 }
 
-function serializeSubShapeRef(reference: SubShapeRef): SubShapeRef {
+export function serializeSubShapeRef(reference: SubShapeRef): SubShapeRef {
   return {
     bodyFeatureId: reference.bodyFeatureId,
     index: reference.index,
@@ -1632,7 +1644,7 @@ function serializeReferenceFeature(feature: ReferenceFeature): ReferenceFeature 
  * 並び順(利用者が並べ替えた順)は呼び出し側の `document.parameters.map` がそのまま保つ
  * (§2.6「表の並び順を評価順で上書きしない」)。
  */
-function serializeParameter(parameter: Parameter): Parameter {
+export function serializeParameter(parameter: Parameter): Parameter {
   return {
     name: parameter.name,
     value: serializeExpression(parameter.value),
@@ -1660,7 +1672,7 @@ function serializeAppearancePattern(pattern: AppearancePattern): AppearancePatte
 }
 
 /** 見た目そのもの(FR-1107、FR-1109)。透過率・光沢・粗さは式のまま保存する(FR-202)。 */
-function serializeAppearanceSpec(spec: AppearanceSpec): AppearanceSpec {
+export function serializeAppearanceSpec(spec: AppearanceSpec): AppearanceSpec {
   return {
     preset: spec.preset,
     color: spec.color,
@@ -1830,7 +1842,7 @@ export function serializeDocument(document: PartDocument, options: SerializeOpti
 // ---------------------------------------------------------------------------
 
 /** 配列の要素を1つずつ読む。1つでも読めなければ、その場所を添えて全体を断る。 */
-function readList<T>(
+export function readList<T>(
   source: Record<string, unknown>,
   key: string,
   parentPath: string,
@@ -3185,7 +3197,7 @@ function readFaceRefItem(value: unknown, path: string): Checked<SketchFaceRef> {
   return { ok: true, value: { sketchId: sketchId.value, faceFeatureId: faceFeatureId.value } };
 }
 
-function readRevolveAxis(
+export function readRevolveAxis(
   source: Record<string, unknown>,
   key: string,
   parentPath: string,
@@ -3370,7 +3382,7 @@ function readSubShapeFingerprint(value: unknown, path: string): Checked<SubShape
 }
 
 /** 部分形状への参照を読む(面・辺・頂点、5種類のフィーチャーが共有する)。 */
-function readSubShapeRef(value: unknown, path: string): Checked<SubShapeRef> {
+export function readSubShapeRef(value: unknown, path: string): Checked<SubShapeRef> {
   const record = checkRecord(value, path);
   if (!record.ok) {
     return record;
@@ -5863,7 +5875,7 @@ function readReferences(
 }
 
 /** パラメータ表の1行(FR-207、P4b タスク21)を読む。単位は `PARAMETER_UNITS` を網羅表にする。 */
-function readParameter(value: unknown, path: string): Checked<Parameter> {
+export function readParameter(value: unknown, path: string): Checked<Parameter> {
   const record = checkRecord(value, path);
   if (!record.ok) {
     return record;
@@ -6016,7 +6028,7 @@ function readAppearancePattern(
  * 見た目そのもの(FR-1107、FR-1109)を読む。**未知のプリセット id・未知の柄・未知の樹種は
  * `null` を返し**、呼び出し側(`readAppearanceEntry`)がその割り当てごと落とす(前方互換)。
  */
-function readAppearanceSpec(
+export function readAppearanceSpec(
   source: Record<string, unknown>,
   key: string,
   parentPath: string,
@@ -6523,7 +6535,7 @@ function parseJsonText(text: string): Checked<unknown> {
  * 古い版を今の版まで順に持ち上げる(要件§8 の前方互換)。持ち上げられなければ null。
  * P2 では `SCHEMA_MIGRATIONS` が空なので、版 1 はここで必ず null になる。
  */
-function migrateToCurrentSchema(
+export function migrateToCurrentSchema(
   raw: Record<string, unknown>,
   schema: number,
 ): Record<string, unknown> | null {

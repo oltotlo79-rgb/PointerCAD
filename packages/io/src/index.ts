@@ -3,18 +3,30 @@
  * STEP / STL / 3MF / OBJ / glTF は P4 以降。
  */
 
-// .pcad の書式の版と封筒(要件§8、§0.a-0.3)。
+// .pcad / .pcada の書式の版と封筒(要件§8、§0.a-0.3、P7 §0.a-0.1)。
 export {
   PCAD_APP_NAME,
+  PCAD_ASSEMBLY_KIND,
+  PCAD_ASSEMBLY_KINDS,
   PCAD_DOCUMENT_KIND,
   PCAD_DOCUMENT_KINDS,
   PCAD_SCHEMA_VERSION,
   PCAD_TEMPLATE_KIND,
   SCHEMA_MIGRATIONS,
+  type PcadAssemblyEnvelope,
+  type PcadAssemblyKind,
   type PcadDocumentKind,
   type PcadEnvelope,
+  type PcadPartFile,
   type SchemaMigration,
 } from './pcad/schema.js';
+// アセンブリ文書と document.json の相互変換(FR-601、FR-801、P7 §2.2、タスク3)。
+export {
+  readAssemblyDocument,
+  writeAssemblyDocument,
+  type ReadAssemblyDocumentResult,
+  type WriteAssemblyDocumentOptions,
+} from './pcad/assemblyJson.js';
 // 部品文書と document.json の相互変換(FR-801、FR-202)。
 export {
   parseDocument,
@@ -37,16 +49,23 @@ export {
   PCAD_DOCUMENT_ENTRY,
   PCAD_MESH_ENTRY_PREFIX,
   PCAD_MESH_ENTRY_SUFFIX,
+  // アセンブリが抱き込む部品文書のエントリ(`parts/<ref>.json`。P7 タスク3)。
+  PCAD_PART_ENTRY_PREFIX,
+  PCAD_PART_ENTRY_SUFFIX,
   PCAD_SHAPE_ENTRY_PREFIX,
   PCAD_SHAPE_ENTRY_SUFFIX,
   PCAD_THUMBNAIL_ENTRY,
+  readPcadaFile,
   readPcadFile,
+  writePcadaFile,
   writePcadFile,
   type ImportedMeshBytes,
   type PcadAttachments,
+  type ReadPcadaFileResult,
   type ReadPcadFileError,
   type ReadPcadFileErrorCode,
   type ReadPcadFileResult,
+  type WritePcadaFileOptions,
   type WritePcadFileOptions,
 } from './pcad/pcadFile.js';
 // 自動保存の保管庫と制御(FR-805、NFR-RE-2)。

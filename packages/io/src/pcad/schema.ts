@@ -7,7 +7,7 @@
  * (中身の形は版によって変わり得るため、版の判定を中身の解釈より先に済ませる)。
  */
 
-import type { LengthUnit, PartDocument } from '@pointercad/model';
+import { DEFAULT_BOM_SETTINGS, type AssemblyDocument, type LengthUnit, type PartDocument } from '@pointercad/model';
 
 import { isRecord } from './guards.js';
 
@@ -64,8 +64,19 @@ import { isRecord } from './guards.js';
  * 版 7 のファイル(部品の `.pcad` は今までどおり書かない)はそのまま読め、読み手が
  * 既定で埋める。**任意の欄を足すたびに版を上げると、古いアプリで開けないファイルが
  * 増えるだけで得るものが無い**(要件§8 の前方互換)。
+ *
+ * **版 7 → 版 8(P7 タスク3、P7 §0.a-0.2):** P7 が足したのは**封筒の新しい種別**
+ * `assembly`(アセンブリ文書、FR-601、FR-801)と、その ZIP の `parts/<ref>.json` の
+ * エントリである(`assemblyJson.ts` / `pcadFile.ts`)。**部品文書の欄は 1 つも増えていない**
+ * ので、`SCHEMA_MIGRATIONS[7]` は部品文書のためには `schemaVersion` を書き換えるだけで
+ * 何もしない(版 2 → 版 3 と同じ)。
+ *
+ * **それでも版を上げるのは、部品とアセンブリで版の系列を分けないためである**(P7 §0.a-0.2)。
+ * 封筒の `schema` は 1 本で、種別によらず同じ数を書く。こうしておくと「このファイルは
+ * 新しすぎる/古すぎる」の判定が種別ごとに分かれず 1 か所で済む。版 7 以前の
+ * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
-export const PCAD_SCHEMA_VERSION = 7;
+export const PCAD_SCHEMA_VERSION = 8;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -91,10 +102,16 @@ export const PCAD_DOCUMENT_KIND = 'part';
 export const PCAD_TEMPLATE_KIND = 'partTemplate';
 
 /**
- * 読み手が受け入れる封筒の種別(§0.a-0.35)。**この一覧に無い種別**(`assembly` /
- * `drawing`)は、既存の `unsupportedKind` で断る(**エラーコードを増やさない**。
- * `docs/報告記録.md` 2026-09-04 01:40 の③)。将来アセンブリや図面を足すときは、
- * 種別の定数ではなくこの一覧を広げる。
+ * **部品の**読み手(`documentJson.ts` の `parseDocument`)が受け入れる封筒の種別
+ * (§0.a-0.35)。**この一覧に無い種別**(`drawing`)は、既存の `unsupportedKind` で断る
+ * (**エラーコードを増やさない**。`docs/報告記録.md` 2026-09-04 01:40 の③)。
+ *
+ * **アセンブリ(P7 タスク3、`PCAD_ASSEMBLY_KIND`)はここに入れない。** 中身が
+ * `PartDocument` とはまったく別の型(`AssemblyDocument`)で、読み手も別
+ * (`assemblyJson.ts` の `readAssemblyDocument`)だからである。ここへ足してしまうと、
+ * 部品の読み手がアセンブリの封筒を受け取って中身を部品として読み始め、
+ * 「document.sketches が見つかりません」という**取り違えた理由**で断ることになる。
+ * 種別ごとに「その読み手が受け入れる一覧」を持ち、一覧に無い種別は入口で断る。
  */
 export type PcadDocumentKind = typeof PCAD_DOCUMENT_KIND | typeof PCAD_TEMPLATE_KIND;
 
@@ -103,6 +120,26 @@ export const PCAD_DOCUMENT_KINDS: readonly PcadDocumentKind[] = [
   PCAD_DOCUMENT_KIND,
   PCAD_TEMPLATE_KIND,
 ];
+
+/**
+ * 封筒に書くアセンブリの種別(要件§8 の「種別(part / assembly / drawing)」、
+ * P7 §0.a-0.1、タスク3)。拡張子は `.pcada`。
+ *
+ * **中身は部品(`PartDocument`)とはまったく別の型**(`AssemblyDocument`)で、
+ * ZIP の作り(`document.json` / `thumbnail.png`)と決定性の約束だけを部品と共有する。
+ * 拡張子と種別を分けるのは、部品を開くつもりでアセンブリを開く取り違えを防ぐため
+ * (§0.a-0.1。P6 のひな形 `.pcadt` と同じ判断)。
+ */
+export const PCAD_ASSEMBLY_KIND = 'assembly';
+
+/** 同上の型。アセンブリの封筒はこの 1 値しか取らない。 */
+export type PcadAssemblyKind = typeof PCAD_ASSEMBLY_KIND;
+
+/**
+ * **アセンブリの**読み手(`assemblyJson.ts` の `readAssemblyDocument`)が受け入れる種別。
+ * 部品・ひな形・図面はこの一覧に無いので `unsupportedKind` で断る。
+ */
+export const PCAD_ASSEMBLY_KINDS: readonly PcadAssemblyKind[] = [PCAD_ASSEMBLY_KIND];
 
 /**
  * ひな形が持ち運ぶ道具の既定値(FR-814、§2.10、P6 タスク27)。**P6 ではこの 5 つに絞る**
@@ -172,6 +209,52 @@ export interface PcadEnvelope {
   readonly toolDefaults?: PcadToolDefaults;
   /** 部品文書そのもの。導出できるもの(解決済みの座標・メッシュ・鍵)は入れない。 */
   readonly document: PartDocument;
+}
+
+/**
+ * アセンブリが抱き込んだ部品 1 つの素性(要件§8「参照部品はアセンブリファイルに
+ * 相対パス+内容ハッシュで記録(欠損時は警告)」、P7 §2.2、§0.a-0.3)。
+ *
+ * **文書そのものは ZIP の別エントリ**(`parts/<ref>.json`)にあり、ここに入るのは
+ * 「どのファイルから、いつ、どの中身を取り込んだか」だけである。元のファイルを
+ * 追いかける判断(更新されている/見つからない)は上の層(P7 タスク4)がこの 3 欄
+ * (`path` / `contentHash` / `importedAt`)を見て決める。**読み込みは止めない**
+ * ——抱き込んだ文書だけで開けるのがこの設計の要点(§2.3)。
+ */
+export interface PcadPartFile {
+  /** ZIP の中の名前。`parts/<ref>.json` の `<ref>` で、`ComponentSource` が指す。 */
+  readonly ref: string;
+  /** 取り込んだときのファイル名(利用者へ見せる)。 */
+  readonly fileName: string;
+  /** アセンブリのファイルから見た相対パス(要件§8)。 */
+  readonly path: string;
+  /** 抱き込んだ文書の内容ハッシュ(P7 タスク4 が作り方を決める)。 */
+  readonly contentHash: string;
+  /** 取り込んだ時刻(ISO 8601、UTC)。 */
+  readonly importedAt: string;
+}
+
+/**
+ * アセンブリの `document.json` の中身(封筒。P7 §2.2、タスク3)。
+ *
+ * 部品の封筒(`PcadEnvelope`)と**欄の並びをそろえてある**(`schema` → `kind` → `app` →
+ * `savedAt` → `document`)。違うのは中身の型(`AssemblyDocument`)と、抱き込んだ部品の
+ * 素性 `partFiles` を最後に持つことだけ。ひな形の 2 欄(`lengthUnit` / `toolDefaults`)は
+ * 持たない——ひな形は部品の話であり、アセンブリのひな形は要件に無いため。
+ */
+export interface PcadAssemblyEnvelope {
+  /** 書式の版。アセンブリ文書の `schemaVersion` と同じ値(部品と同じ系列。§0.a-0.2)。 */
+  readonly schema: number;
+  /** 中身の種別。常に `PCAD_ASSEMBLY_KIND`。 */
+  readonly kind: PcadAssemblyKind;
+  /** 常に `PCAD_APP_NAME`。 */
+  readonly app: string;
+  /** 保存した時刻(ISO 8601、UTC)。 */
+  readonly savedAt: string;
+  /** アセンブリ文書そのもの。部品の形も合致の解も入れない(§0.a-0.4、§0.a-0.6)。 */
+  readonly document: AssemblyDocument;
+  /** 抱き込んだ部品の素性。**空でも欄ごと書く**(読み手が毎回 `undefined` を見ずに済む)。 */
+  readonly partFiles: readonly PcadPartFile[];
 }
 
 /**
@@ -320,6 +403,27 @@ function migrateDocumentToV7(document: Record<string, unknown>): Record<string, 
   return migrated;
 }
 
+/**
+ * 版7以前のアセンブリ文書を版8の形へ補う(P7 タスク3、§0.a-0.2)。`schemaVersion` の
+ * 書き換えと、`bom`(部品表の並びと列、FR-611)が無ければ既定で補う
+ * (`migrateDocumentToV5` の `parameters`・`migrateDocumentToV6` の `appearance` と同じ扱い)。
+ *
+ * **版 7 以前のアセンブリファイルはこの世に 1 つも存在しない**(種別 `assembly` そのものが
+ * 版 8 で生まれた)が、補う側を書いておく。`bom` は必須の欄で、読み手は欠けたら
+ * `missingField` で断るため、**版を持ち上げてきた文書がこの欄を持たないときに
+ * 既定で埋める口**をここに 1 か所だけ置いておく(既定の正本は model 側の
+ * `DEFAULT_BOM_SETTINGS`。同じ既定を io にも書かない)。
+ */
+function migrateAssemblyDocumentToV8(
+  document: Record<string, unknown>,
+): Record<string, unknown> {
+  const migrated: Record<string, unknown> = { ...document, schemaVersion: 8 };
+  if ('bom' in migrated) {
+    return migrated;
+  }
+  return { ...migrated, bom: DEFAULT_BOM_SETTINGS };
+}
+
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
   2: (raw) => {
     if (!isRecord(raw)) {
@@ -392,5 +496,32 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
       return raw;
     }
     return { ...raw, schema: 7, document: migrateDocumentToV7(document) };
+  },
+  /**
+   * 版7 → 版8(P7 タスク3、§0.a-0.2): 足したのは**封筒の新しい種別 `assembly`** だけで、
+   * 部品文書の欄は 1 つも増えていない。したがって部品(とひな形)の文書に対しては
+   * `schemaVersion` を書き換えるだけで何もしない(版 2 → 版 3 と同じ)。
+   * アセンブリの文書だけは `bom` の省略を既定で補う(`migrateAssemblyDocumentToV8`)。
+   *
+   * 種別で分けるのは、**同じ版の中に中身の型が 2 つある**からである(`document` が
+   * `PartDocument` か `AssemblyDocument` か)。封筒の `kind` は移行の前から読める欄なので、
+   * ここで見て分けられる。
+   */
+  7: (raw) => {
+    if (!isRecord(raw)) {
+      return raw;
+    }
+    const document = raw['document'];
+    if (!isRecord(document)) {
+      return raw;
+    }
+    return {
+      ...raw,
+      schema: 8,
+      document:
+        raw['kind'] === PCAD_ASSEMBLY_KIND
+          ? migrateAssemblyDocumentToV8(document)
+          : { ...document, schemaVersion: 8 },
+    };
   },
 };

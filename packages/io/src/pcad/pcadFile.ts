@@ -1,5 +1,6 @@
 /**
- * `.pcad` の ZIP コンテナの読み書き(計画書 docs/plans/P2-ソリッド基礎.md タスク15、要件§8、FR-801)。
+ * `.pcad` / `.pcada` の ZIP コンテナの読み書き
+ * (計画書 docs/plans/P2-ソリッド基礎.md タスク15、P7 §2.2 タスク3、要件§8、FR-801)。
  *
  * `.pcad` は ZIP で、中に次のものを入れる。
  *  - `document.json` … 部品文書の封筒(documentJson.ts が作る文字列を UTF-8 にしたもの)。圧縮する。
@@ -26,18 +27,30 @@
  * 2107 年までしか表せず、fflate は範囲外だと例外を投げる。1980-01-01 だと時間帯によっては
  * 1979 年になってしまうため 1 日ずらし、夏時間の切り替えを避けるため正午にしている。
  *
+ * **アセンブリ(`.pcada`、P7 タスク3)も同じ ZIP の作りにする**(§0.a-0.1)。違うのは
+ * `document.json` の中身(`AssemblyDocument`、`assemblyJson.ts`)と、抱き込んだ部品文書の
+ * エントリ `parts/<ref>.json` が増えることだけで、日時の固定も圧縮の指定も並びの決めごとも
+ * そのまま共有する。**部品の形(B-rep・三角形)は抱き込まない**(§0.a-0.4。開くたびに
+ * 部品ごとに 1 回だけ再計算する)。
+ *
  * 読み込みは**例外を外へ出さない**(NFR-RE-1)。ZIP でない・`document.json` が無い・
  * 中身が壊れている、のいずれも日本語の理由を添えて返す(FR-504)。
  * 他のアプリが作った圧縮済みの ZIP も読める(fflate が deflate を解ける)。
  */
 
-import type { LengthUnit, PartDocument } from '@pointercad/model';
+import type { AssemblyDocument, LengthUnit, PartDocument } from '@pointercad/model';
 import { strFromU8, strToU8, unzipSync, zipSync, type Unzipped, type Zippable } from 'fflate';
 
+import {
+  readAssemblyDocument,
+  writeAssemblyDocument,
+  type ReadAssemblyDocumentResult,
+} from './assemblyJson.js';
 import { parseDocument, serializeDocument, type ParseErrorCode } from './documentJson.js';
 import {
   PCAD_TEMPLATE_KIND,
   type PcadDocumentKind,
+  type PcadPartFile,
   type PcadToolDefaults,
 } from './schema.js';
 
@@ -57,6 +70,15 @@ export const PCAD_MESH_ENTRY_PREFIX = 'meshes/';
 export const PCAD_MESH_ENTRY_SUFFIX = '.bin';
 export const PCAD_CANVAS_ENTRY_PREFIX = 'canvases/';
 export const PCAD_CANVAS_ENTRY_SUFFIX = '.png';
+
+/**
+ * アセンブリ(`.pcada`)が抱き込む部品文書のエントリ名の前後(P7 §2.2、タスク3)。
+ * 中身は**部品の `document.json` とまったく同じ文字列**(封筒つき)なので、
+ * 読み書きは `serializeDocument` / `parseDocument` をそのまま使う(§2.3)。
+ * 名前の決まりは添付と同じで、参照に `/` が入るものは部品として扱わない。
+ */
+export const PCAD_PART_ENTRY_PREFIX = 'parts/';
+export const PCAD_PART_ENTRY_SUFFIX = '.json';
 
 /**
  * ZIP のヘッダへ書く固定の日時。年・月・日・時・分・秒がそのまま書かれるので、
@@ -564,4 +586,214 @@ export function readPcadFile(bytes: Uint8Array): ReadPcadFileResult {
  */
 export function isTemplateKind(kind: PcadDocumentKind): boolean {
   return kind === PCAD_TEMPLATE_KIND;
+}
+
+// ---------------------------------------------------------------------------
+// アセンブリ(`.pcada`)の ZIP コンテナ(P7 §2.2、タスク3)
+// ---------------------------------------------------------------------------
+
+export interface WritePcadaFileOptions {
+  /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
+  readonly savedAt?: string;
+  /** サムネイルの PNG。作れなかったときは渡さない(そのときは ZIP へ入れない)。 */
+  readonly thumbnailPng?: Uint8Array;
+  /** 抱き込んだ部品の素性(要件§8)。`parts` と揃えて渡すのは呼び出し側の責任。 */
+  readonly partFiles?: readonly PcadPartFile[];
+  /**
+   * 抱き込んだ部品文書。鍵は `parts/<ref>.json` の `<ref>`(= `ComponentSource.partRef`)。
+   *
+   * **文書が指しているものを渡す責任は呼び出し側にある**(`writePcadFile` の添付と同じ)。
+   * 書き出しは断れない(戻り値がバイト列だけ)ので、ここで文書と突き合わせて落とさない。
+   * 欠けているほうは読み手が「部品が見つかりません」で断る。
+   */
+  readonly parts?: ReadonlyMap<string, PartDocument>;
+}
+
+/**
+ * 抱き込んだ部品文書を ZIP のエントリへ並べる。**名前の順に並べる**(表の並び順は作った側の
+ * 都合で変わるので、同じ中身から同じバイト列ができる約束を守るために毎回そろえる)。
+ *
+ * 1 つ 1 つの中身は**部品の `document.json` とまったく同じ文字列**にする
+ * (`serializeDocument`)。こうしておくと読み手が既存の `parseDocument` をそのまま使え、
+ * 部品文書の読み書きを 2 か所に持たずに済む(§2.3)。**保存時刻はアセンブリの封筒と
+ * 同じ値**を書く——抱き込んだ部品ごとに違う時刻を入れると、同じアセンブリから
+ * 書き出したバイト列が呼ぶたびに変わってしまうため(決定性。このファイル冒頭)。
+ */
+function appendParts(
+  entries: Zippable,
+  parts: ReadonlyMap<string, PartDocument>,
+  savedAt: string,
+): void {
+  for (const [ref, document] of sortedEntries(parts)) {
+    const text = serializeDocument(document, { savedAt });
+    entries[`${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`] = [
+      strToU8(text),
+      { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+  }
+}
+
+/**
+ * アセンブリ文書(と、あればサムネイル・抱き込んだ部品)を `.pcada` のバイト列にする。
+ * 例外を投げない。
+ *
+ * エントリの並びは `document.json` → `thumbnail.png` → `parts/*.json`(名前順)で固定する
+ * (決定性。`writePcadFile` の添付と同じ決め)。
+ */
+export function writePcadaFile(
+  document: AssemblyDocument,
+  options: WritePcadaFileOptions = {},
+): Uint8Array {
+  // 封筒と抱き込んだ部品で**同じ保存時刻**を使うため、既定値をここで 1 回だけ決める。
+  const savedAt = options.savedAt ?? new Date().toISOString();
+  const text = writeAssemblyDocument(document, { savedAt, partFiles: options.partFiles });
+  const entries: Zippable = {
+    [PCAD_DOCUMENT_ENTRY]: [strToU8(text), { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME }],
+  };
+  if (options.thumbnailPng !== undefined) {
+    entries[PCAD_THUMBNAIL_ENTRY] = [
+      options.thumbnailPng,
+      { level: THUMBNAIL_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+  }
+  if (options.parts !== undefined) {
+    appendParts(entries, options.parts, savedAt);
+  }
+  return zipSync(entries);
+}
+
+export type ReadPcadaFileResult =
+  | {
+      readonly ok: true;
+      readonly document: AssemblyDocument;
+      readonly savedAt: string;
+      /** 抱き込んだ部品の素性(要件§8)。元のファイルを追いかける判断は上の層がする。 */
+      readonly partFiles: readonly PcadPartFile[];
+      /**
+       * 抱き込んだ部品文書。鍵は `parts/<ref>.json` の `<ref>`。
+       * **`partFiles` に素性が無いものも捨てずに返す**(`writePcadFile` の添付と同じ理由。
+       * この版の読み手がまだ知らない参照を往復で失わないため)。
+       */
+      readonly parts: ReadonlyMap<string, PartDocument>;
+      /** サムネイルが入っていたときだけ付く。 */
+      readonly thumbnailPng?: Uint8Array;
+    }
+  | { readonly ok: false; readonly error: ReadPcadFileError };
+
+function failPcada(code: ReadPcadFileErrorCode, message: string): ReadPcadaFileResult {
+  return { ok: false, error: { code, message } };
+}
+
+/**
+ * ZIP のエントリから抱き込んだ部品文書を取り出す。1 つでも読めなければ、そのエントリ名と
+ * 中身の理由を添えて断る(**読めない欄が 1 つでもあればファイル全体を断る**。
+ * `documentJson.ts` 冒頭の決めごと)。**エラーコードは中身の理由をそのまま通す**
+ * (増やさない。`docs/報告記録.md` 2026-09-04 01:40 の③)。
+ */
+type CollectPartsResult =
+  | { readonly ok: true; readonly parts: ReadonlyMap<string, PartDocument> }
+  | { readonly ok: false; readonly error: ReadPcadFileError };
+
+function collectParts(entries: Unzipped): CollectPartsResult {
+  const parts = new Map<string, PartDocument>();
+  for (const name of Object.keys(entries)) {
+    const ref = attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX);
+    if (ref === null) {
+      // どれでもない名前は知らないエントリとして読み飛ばす(P2 からの決めごと)。
+      continue;
+    }
+    const text = decodeUtf8(entries[name]);
+    if (text === null) {
+      return { ok: false, error: { code: 'notZip', message: NOT_ZIP_MESSAGE } };
+    }
+    const parsed = parseDocument(text);
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        error: {
+          code: parsed.error.code,
+          message: `抱き込んだ部品を読めませんでした(${name})。${parsed.error.message}`,
+        },
+      };
+    }
+    parts.set(ref, parsed.document);
+  }
+  return { ok: true, parts };
+}
+
+/**
+ * 文書が指している部品がそろっているかを確かめ、欠けている 1 つ目の `partRef` を返す
+ * (そろっていれば null)。
+ *
+ * 欠けたまま開くと、その部品だけ形の無いインスタンスになって組み立てが通らない。
+ * 読み込みの時点で断ったほうが、何が起きたかを利用者へ伝えられる(FR-504。
+ * `.pcad` の添付が欠けたときとまったく同じ判断)。
+ *
+ * **サブアセンブリ(`assemblyRef`)と規格部品はここでは見ない。** 前者の中身は
+ * アセンブリ文書で、読み手が別(P7 タスク36・37 の担当)。後者は寸法表から組み立てるので
+ * 抱き込む文書がそもそも無い(§0.a-0.35)。
+ */
+function findMissingPart(
+  document: AssemblyDocument,
+  parts: ReadonlyMap<string, PartDocument>,
+): string | null {
+  for (const component of document.components) {
+    if (component.source.kind === 'part' && !parts.has(component.source.partRef)) {
+      return component.source.partRef;
+    }
+  }
+  return null;
+}
+
+/**
+ * `.pcada` のバイト列からアセンブリ文書と抱き込んだ部品を取り出す。
+ * 壊れていても例外を投げず、日本語の理由を返す(FR-504、NFR-RE-1)。
+ */
+export function readPcadaFile(bytes: Uint8Array): ReadPcadaFileResult {
+  const entries = unzip(bytes);
+  if (entries === null) {
+    return failPcada('notZip', NOT_ZIP_MESSAGE);
+  }
+  const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
+  if (documentEntry === null) {
+    return failPcada('missingDocument', MISSING_DOCUMENT_MESSAGE);
+  }
+  const text = decodeUtf8(documentEntry);
+  if (text === null) {
+    return failPcada('notZip', NOT_ZIP_MESSAGE);
+  }
+  const parsed: ReadAssemblyDocumentResult = readAssemblyDocument(text);
+  if (!parsed.ok) {
+    // 中身の理由(版が古い・種別が違う・欄が壊れている等)はそのまま通す。
+    return { ok: false, error: parsed.error };
+  }
+  const collected = collectParts(entries);
+  if (!collected.ok) {
+    return { ok: false, error: collected.error };
+  }
+  const missing = findMissingPart(parsed.document, collected.parts);
+  if (missing !== null) {
+    return failPcada(
+      'missingField',
+      `部品が見つかりません(${PCAD_PART_ENTRY_PREFIX}${missing}${PCAD_PART_ENTRY_SUFFIX})。`,
+    );
+  }
+  const thumbnail = findEntry(entries, PCAD_THUMBNAIL_ENTRY);
+  if (thumbnail === null) {
+    return {
+      ok: true,
+      document: parsed.document,
+      savedAt: parsed.savedAt,
+      partFiles: parsed.partFiles,
+      parts: collected.parts,
+    };
+  }
+  return {
+    ok: true,
+    document: parsed.document,
+    savedAt: parsed.savedAt,
+    partFiles: parsed.partFiles,
+    parts: collected.parts,
+    thumbnailPng: thumbnail,
+  };
 }

@@ -1,7 +1,9 @@
 import {
+  createAssemblyDocument,
   createEmptyPartDocument,
   emptyAppearanceTable,
   PART_SCHEMA_VERSION,
+  type AssemblyDocument,
   type PartDocument,
 } from '@pointercad/model';
 import { expectWithinBudget } from '@pointercad/test-utils';
@@ -19,13 +21,18 @@ import {
   PCAD_DOCUMENT_ENTRY,
   PCAD_MESH_ENTRY_PREFIX,
   PCAD_MESH_ENTRY_SUFFIX,
+  PCAD_PART_ENTRY_PREFIX,
+  PCAD_PART_ENTRY_SUFFIX,
   PCAD_SHAPE_ENTRY_PREFIX,
   PCAD_SHAPE_ENTRY_SUFFIX,
   PCAD_THUMBNAIL_ENTRY,
+  readPcadaFile,
   readPcadFile,
+  writePcadaFile,
   writePcadFile,
   type ImportedMeshBytes,
   type PcadAttachments,
+  type ReadPcadaFileResult,
   type ReadPcadFileError,
   type ReadPcadFileResult,
 } from './pcadFile.js';
@@ -34,6 +41,7 @@ import {
   PCAD_DOCUMENT_KIND,
   PCAD_SCHEMA_VERSION,
   PCAD_TEMPLATE_KIND,
+  type PcadPartFile,
   type PcadToolDefaults,
 } from './schema.js';
 
@@ -972,5 +980,213 @@ describe('ひな形の .pcadt の読み書き(FR-814、§2.10)', () => {
     const result = expectOk(readPcadFile(bytes));
     expect(result.kind).toBe(PCAD_TEMPLATE_KIND);
     expect(result.lengthUnit).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// アセンブリ(`.pcada`)の ZIP コンテナ(P7 §2.2、タスク3)
+// ---------------------------------------------------------------------------
+
+describe('.pcada の読み書き(P7 タスク3、FR-601、FR-801、要件§8)', () => {
+  /** 抱き込む部品の素性 1 件。 */
+  function partFile(ref: string, fileName: string): PcadPartFile {
+    return {
+      ref,
+      fileName,
+      path: `../parts/${fileName}`,
+      contentHash: `hash-${ref}`,
+      importedAt: SAVED_AT,
+    };
+  }
+
+  /** 式文字列と評価値の組(FR-202)。 */
+  function ev(source: string, value: number): PartDocument['parameters'][number]['value'] {
+    return { source, value, display: String(value) };
+  }
+
+  /** 部品 2 つを別々の出どころから置いたアセンブリ。 */
+  function assembly(): AssemblyDocument {
+    return {
+      ...createAssemblyDocument('組立1'),
+      components: [
+        {
+          id: 'component-1',
+          name: '部品1:1',
+          source: { kind: 'part', partRef: 'part-1' },
+          placement: { position: [ev('0', 0), ev('0', 0), ev('0', 0)], rotation: [0, 0, 0, 1] },
+          fixed: true,
+          visible: true,
+          suppressed: false,
+        },
+        {
+          id: 'component-2',
+          name: '部品2:1',
+          source: { kind: 'part', partRef: 'part-2' },
+          placement: { position: [ev('40', 40), ev('0', 0), ev('0', 0)], rotation: [0, 0, 0, 1] },
+          fixed: false,
+          visible: true,
+          suppressed: false,
+        },
+      ],
+    };
+  }
+
+  /** 抱き込む部品文書 2 つ(計画書 §2.8 の例の箱と、空の部品)。 */
+  function parts(): ReadonlyMap<string, PartDocument> {
+    return new Map<string, PartDocument>([
+      ['part-1', exampleDocument()],
+      ['part-2', createEmptyPartDocument()],
+    ]);
+  }
+
+  /** 部品 2 つを抱き込んだ `.pcada` のバイト列。 */
+  function writeExample(): Uint8Array {
+    return writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      partFiles: [partFile('part-1', 'ブラケット.pcad'), partFile('part-2', '台座.pcad')],
+      parts: parts(),
+    });
+  }
+
+  function expectPcadaOk(
+    result: ReadPcadaFileResult,
+  ): Extract<ReadPcadaFileResult, { readonly ok: true }> {
+    if (!result.ok) {
+      throw new Error(`読み込みに失敗しました: ${result.error.code} / ${result.error.message}`);
+    }
+    return result;
+  }
+
+  function expectPcadaError(result: ReadPcadaFileResult): ReadPcadFileError {
+    if (result.ok) {
+      throw new Error('断るはずの入力を読み込んでしまいました');
+    }
+    return result.error;
+  }
+
+  it('ZIP の署名 PK で始まる', () => {
+    const bytes = writePcadaFile(createAssemblyDocument('組立1'), { savedAt: SAVED_AT });
+    expect(bytes[0]).toBe(0x50);
+    expect(bytes[1]).toBe(0x4b);
+  });
+
+  it('部品もサムネイルも渡さなければ document.json だけが入る', () => {
+    const bytes = writePcadaFile(createAssemblyDocument('組立1'), { savedAt: SAVED_AT });
+    expect(Object.keys(unzipSync(bytes))).toEqual([PCAD_DOCUMENT_ENTRY]);
+  });
+
+  it('エントリの並びは document.json → thumbnail.png → parts/*.json(名前順)', () => {
+    const bytes = writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      thumbnailPng: fakePng(),
+      // 表へ入れた順(part-2 が先)と ZIP の並び(名前順)が違うことを確かめる。
+      parts: new Map<string, PartDocument>([
+        ['part-2', createEmptyPartDocument()],
+        ['part-1', exampleDocument()],
+      ]),
+    });
+    expect(Object.keys(unzipSync(bytes))).toEqual([
+      PCAD_DOCUMENT_ENTRY,
+      PCAD_THUMBNAIL_ENTRY,
+      `${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`,
+      `${PCAD_PART_ENTRY_PREFIX}part-2${PCAD_PART_ENTRY_SUFFIX}`,
+    ]);
+  });
+
+  it('同じ文書から 2 回書くとバイト列が完全に一致する(決定性、FIXED_ENTRY_MTIME)', () => {
+    expect(writeExample()).toEqual(writeExample());
+  });
+
+  it('保存時刻を渡さなくても、封筒と抱き込んだ部品の savedAt は同じ値になる', () => {
+    const entries = unzipSync(writePcadaFile(assembly(), { parts: parts() }));
+    const savedAtOf = (bytes: Uint8Array): unknown => {
+      const value: unknown = JSON.parse(strFromU8(bytes));
+      return typeof value === 'object' && value !== null ? Reflect.get(value, 'savedAt') : null;
+    };
+    const envelope = savedAtOf(entries[PCAD_DOCUMENT_ENTRY]);
+    expect(typeof envelope).toBe('string');
+    expect(savedAtOf(entries[`${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`])).toBe(
+      envelope,
+    );
+  });
+
+  it('抱き込んだ部品は部品の document.json と同じ文字列(既存の読み手をそのまま使える)', () => {
+    const entries = unzipSync(writeExample());
+    const text = strFromU8(entries[`${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`]);
+    expect(text).toBe(serializeDocument(exampleDocument(), { savedAt: SAVED_AT }));
+  });
+
+  it('部品 2 つ・素性・サムネイルを往復しても変わらない', () => {
+    const bytes = writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      thumbnailPng: fakePng(),
+      partFiles: [partFile('part-1', 'ブラケット.pcad'), partFile('part-2', '台座.pcad')],
+      parts: parts(),
+    });
+    const result = expectPcadaOk(readPcadaFile(bytes));
+    expect(result.document).toEqual(assembly());
+    expect(result.savedAt).toBe(SAVED_AT);
+    expect(result.partFiles).toEqual([
+      partFile('part-1', 'ブラケット.pcad'),
+      partFile('part-2', '台座.pcad'),
+    ]);
+    expect(result.parts.get('part-1')).toEqual(exampleDocument());
+    expect(result.parts.get('part-2')).toEqual(createEmptyPartDocument());
+    expect(result.thumbnailPng).toEqual(fakePng());
+  });
+
+  it('サムネイルを入れなければ thumbnailPng は付かない', () => {
+    expect(expectPcadaOk(readPcadaFile(writeExample())).thumbnailPng).toBeUndefined();
+  });
+
+  it('parts/ が空でインスタンスが partRef を指していれば「部品が見つかりません」で断る', () => {
+    const error = expectPcadaError(readPcadaFile(writePcadaFile(assembly(), { savedAt: SAVED_AT })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('部品が見つかりません');
+    expect(error.message).toContain(`${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`);
+  });
+
+  it('抱き込んだ部品文書が壊れていれば、エントリ名を添えて断る(コードは中身の理由のまま)', () => {
+    const entries = unzipSync(writeExample());
+    const broken: Record<string, Uint8Array> = {};
+    for (const [name, content] of Object.entries(entries)) {
+      broken[name] =
+        name === `${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`
+          ? strToU8(strFromU8(content).replace('"sketches"', '"sketchez"'))
+          : content;
+    }
+    const error = expectPcadaError(readPcadaFile(makeZip(broken, 1)));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain(`${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`);
+    expect(error.message).toContain('document.sketches');
+  });
+
+  it('知らないエントリは読み飛ばす(parts/ の入れ子は部品として扱わない)', () => {
+    const withExtra: Record<string, Uint8Array> = { ...unzipSync(writeExample()) };
+    withExtra['notes.txt'] = strToU8('メモ');
+    withExtra[`${PCAD_PART_ENTRY_PREFIX}nested/part-3${PCAD_PART_ENTRY_SUFFIX}`] = strToU8('{}');
+    const result = expectPcadaOk(readPcadaFile(makeZip(withExtra, 1)));
+    expect([...result.parts.keys()].sort()).toEqual(['part-1', 'part-2']);
+  });
+
+  it('ZIP でなければ notZip、document.json が無ければ missingDocument', () => {
+    expect(expectPcadaError(readPcadaFile(strToU8('これは ZIP ではない'))).code).toBe('notZip');
+    expect(expectPcadaError(readPcadaFile(makeZip({ 'a.txt': strToU8('x') }, 0))).code).toBe(
+      'missingDocument',
+    );
+  });
+
+  it('部品の .pcad を .pcada として読むと種別で断る(取り違えない)', () => {
+    const error = expectPcadaError(
+      readPcadaFile(writePcadFile(createEmptyPartDocument(), { savedAt: SAVED_AT })),
+    );
+    expect(error.code).toBe('unsupportedKind');
+    expect(error.message).toContain('アセンブリではありません');
+  });
+
+  it('アセンブリの .pcada を .pcad として読むと種別で断る(取り違えない)', () => {
+    const error = expectError(readPcadFile(writeExample()));
+    expect(error.code).toBe('unsupportedKind');
+    expect(error.message).toContain('assembly');
   });
 });

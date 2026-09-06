@@ -39,6 +39,45 @@ const BOX_VOLUME = BOX_SIZE_MM ** 3;
 /** ja.json の propertyPanel.unitCubicMillimeter。 */
 const VOLUME_UNIT = 'mm³';
 
+declare global {
+  interface Window {
+    /**
+     * **検査専用**。再計算の様子を読む(`packages/ui/src/app/PointerCadApp.tsx` が
+     * 差し出す口。アプリ自身はこれを 1 か所も呼ばない)。頁が載る前は `undefined`。
+     */
+    pcadRecomputeStats?: () => { readonly cacheHits: number; readonly isComputing: boolean };
+  }
+}
+
+/**
+ * 再計算が終わるのを待つ。**体積を確かめる前に必ずこれを通す。**
+ *
+ * 分ける理由は、落ちたときに原因が読めるようにするため(push #14 の赤 3 本、
+ * docs/報告記録.md 2026-09-06 12:04)。体積だけを待つと「50MB の WASM の読み込みが
+ * 間に合わなかった」のか「計算そのものが壊れて違う値になった」のかがログで区別できない。
+ * ここで落ちれば前者、ここを通ってから体積で落ちれば後者と言い切れる。
+ *
+ * **待ちの上限(KERNEL_TIMEOUT_MS)は体積の待ちと同じで、緩めていない。**
+ */
+async function waitForRecompute(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const read = window.pcadRecomputeStats;
+          if (read === undefined) {
+            return '頁がまだ載っていません';
+          }
+          return read().isComputing ? '計算中' : '計算は終わっています';
+        }),
+      {
+        timeout: KERNEL_TIMEOUT_MS,
+        message: '幾何カーネルの再計算が終わること(初回は 50MB の WASM の読み込みを含む)',
+      },
+    )
+    .toBe('計算は終わっています');
+}
+
 /** コンソールのエラーとページの例外を集める。最後に 0 件であることを確かめる。 */
 function collectErrors(page: Page): readonly string[] {
   const errors: string[] = [];
@@ -268,6 +307,7 @@ async function placeBox(page: Page): Promise<void> {
   await expect(popover(page)).toHaveCount(0);
   // 幾何カーネルが箱を作り終えるまで待つ(体積が出れば当たり判定の的も揃っている)。
   await solidRow(page, '箱1').click();
+  await waitForRecompute(page);
   await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
@@ -394,6 +434,7 @@ test.describe('P5 基本形状の当たり判定', () => {
 
     await expect(solidRow(page, '箱2')).toBeVisible();
     await solidRow(page, '箱2').click();
+    await waitForRecompute(page);
     await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });

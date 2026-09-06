@@ -684,6 +684,34 @@ export type FaceCommitOutcome =
 const MIN_FACE_POINTS = 3;
 
 /**
+ * `boundaryElementKind` が `'unknown'` と答えた要素を、文書には在るのに `resolved` に
+ * まだ出ていないだけの `'pending'` と、本当に対応していない `'unknown'` とに分け直す
+ * (2026-09-06 push #14 の p4b-timeline:447 の赤)。`resolvedSketch` はカーネルの Worker
+ * 往復が終わってから `useAppStore.applyRecompute` で入る一方、木と `document` は先に
+ * 更新されるので、矩形などを描いた直後に「面」を押すとこの隙間に落ちる。ここで
+ * 「面そのものは面の境界に使えません」と断ると、事実と違う理由を出すことになる。
+ *
+ * ただし面フィーチャー自身(`kind: 'face'`)は、`resolved` がどれだけ進んでも
+ * points/segments/arcs/ellipses/splines のどれにも現れない(面は面の境界の構成要素に
+ * なれない、§0.a-0.13)。文書に在っても `kind` が `'face'` なら待っても解決されないので、
+ * 待てば選べる `'pending'` にはせず `'unknown'` のままにする。
+ */
+function resolvedOrPendingKind(
+  document: SketchDocument,
+  resolved: ResolvedSketch,
+  elementId: string,
+): BoundaryElementKind {
+  const kind = boundaryElementKind(resolved, elementId);
+  if (kind !== 'unknown') {
+    return kind;
+  }
+  const feature = document.features.find(
+    (candidate) => candidate.id === featureIdOfElement(elementId),
+  );
+  return feature !== undefined && feature.kind !== 'face' ? 'pending' : 'unknown';
+}
+
+/**
  * 選んだ要素から面を作る(FR-309、FR-310)。選んだ順がそのまま境界の順になる。
  *
  * 点だけ、または線・円弧だけを並べる(§0.a-0.13)。混ざっていたら履歴を変えずに
@@ -701,7 +729,7 @@ export function commitFace(
     return { ok: false, reasonKey: 'face.error.emptySelection' };
   }
 
-  const kinds = selection.map((elementId) => boundaryElementKind(resolved, elementId));
+  const kinds = selection.map((elementId) => resolvedOrPendingKind(document, resolved, elementId));
   if (kinds.includes('pending')) {
     // カーネルとの往復(オフセット・投影・交差)がまだ終わっていない。「未対応」ではなく
     // 「少し待てば選べる」ことを伝える(2026-09-04 E2E タスク34 で発見)。

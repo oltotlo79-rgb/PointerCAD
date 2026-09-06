@@ -463,6 +463,50 @@ describe('カーネル往復前の要素(オフセット・投影・交差)を�
   });
 });
 
+describe('resolved が document より遅れているとき(2026-09-06 push #14 の p4b-timeline:447 の赤)', () => {
+  it('文書には在るが resolved にまだ出ていない矩形を境界に選ぶと pendingElement(unsupportedElement ではない)', () => {
+    // resolvedSketch はカーネルの Worker 往復が終わってから入る一方、木と document は先に
+    // 更新される(useAppStore.applyRecompute)。ここでは矩形を描いた直後、resolved がまだ
+    // 追いついていない瞬間を、描く前の document から作った resolved を渡して再現する。
+    const before = createEmptySketchDocument();
+    const staleResolved = resolveSketch(before);
+    const corner1 = {
+      mode: 'absolute' as const,
+      x: expressionValueFromNumber(0),
+      y: expressionValueFromNumber(0),
+      z: expressionValueFromNumber(0),
+    };
+    const corner2 = {
+      mode: 'absolute' as const,
+      x: expressionValueFromNumber(10),
+      y: expressionValueFromNumber(10),
+      z: expressionValueFromNumber(0),
+    };
+    const withRectangle = appendFeature(before, {
+      id: 'rectangle-1',
+      name: '矩形1',
+      planeId: 'xy',
+      kind: 'rectangle',
+      corner1,
+      corner2,
+      construction: false,
+    });
+    expect(boundaryElementKind(staleResolved, 'rectangle-1')).toBe('unknown');
+
+    const outcome = commitFace(withRectangle, staleResolved, 'xy', ['rectangle-1']);
+    expect(outcome).toEqual({ ok: false, reasonKey: 'face.error.pendingElement' });
+    // 断ったときは履歴を変えない。
+    expect(withRectangle.features).toHaveLength(1);
+  });
+
+  it('文書にも無い id を境界に選ぶと unsupportedElement のまま(pendingElement にはならない)', () => {
+    const context = step(contextOf(), 'point', 'point', 'absolute', ['0', '0', '0']);
+    const resolved = resolveSketch(context.document);
+    const outcome = commitFace(context.document, resolved, 'xy', ['このidはない']);
+    expect(outcome).toEqual({ ok: false, reasonKey: 'face.error.unsupportedElement' });
+  });
+});
+
 describe('新しい図形の段は shapeCommands.ts へ渡す(P4 タスク12)', () => {
   /** 新しい図形は欄の値を名前で引くので、確定した段の状態も一緒に渡す。 */
   function shapeStep(

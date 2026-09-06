@@ -20,9 +20,48 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const KERNEL_TIMEOUT_MS = 60_000;
 
+declare global {
+  interface Window {
+    /**
+     * **検査専用**。再計算の様子を読む(`packages/ui/src/app/PointerCadApp.tsx` が
+     * 差し出す口。アプリ自身はこれを 1 か所も呼ばない)。頁が載る前は `undefined`。
+     */
+    pcadRecomputeStats?: () => { readonly cacheHits: number; readonly isComputing: boolean };
+  }
+}
+
 /* ========================================================================== *
  * 補助関数(solid.spec.ts と同じ作り)
  * ========================================================================== */
+
+/**
+ * 再計算が終わるのを待つ。**体積を確かめる前に必ずこれを通す。**
+ *
+ * 分ける理由は、落ちたときに原因が読めるようにするため(push #14 の赤 3 本、
+ * docs/報告記録.md 2026-09-06 12:04)。体積だけを待つと「50MB の WASM の読み込みが
+ * 間に合わなかった」のか「計算そのものが壊れて違う値になった」のかがログで区別できない。
+ * ここで落ちれば前者、ここを通ってから体積で落ちれば後者と言い切れる。
+ *
+ * **待ちの上限(KERNEL_TIMEOUT_MS)は体積の待ちと同じで、緩めていない。**
+ */
+async function waitForRecompute(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const read = window.pcadRecomputeStats;
+          if (read === undefined) {
+            return '頁がまだ載っていません';
+          }
+          return read().isComputing ? '計算中' : '計算は終わっています';
+        }),
+      {
+        timeout: KERNEL_TIMEOUT_MS,
+        message: '幾何カーネルの再計算が終わること(初回は 50MB の WASM の読み込みを含む)',
+      },
+    )
+    .toBe('計算は終わっています');
+}
 
 function collectErrors(page: Page): readonly string[] {
   const errors: string[] = [];
@@ -152,6 +191,13 @@ async function drawRectangle(
 }
 
 async function makeFace(page: Page, elementNames: readonly string[]): Promise<void> {
+  /*
+   * 図形の行が木に出る(= 文書に入った)時点と、その図形を面の境界に使える(= 再計算が
+   * 終わって `resolved` に入った)時点は別である。矩形を描いた直後にここへ来ると、
+   * Worker の往復がまだ終わっておらず「面」がその図形を知らない。落ちる場所を
+   * 分けるためにも、行が見えることだけでなく**計算が終わったこと**を先に待つ。
+   */
+  await waitForRecompute(page);
   await treeRow(page, elementNames[0]).click();
   for (const name of elementNames.slice(1)) {
     await treeRow(page, name).click({ modifiers: ['Shift'] });
@@ -211,6 +257,7 @@ async function volumeNumber(page: Page): Promise<number> {
 }
 
 async function expectVolume(page: Page, expected: number, toleranceMm3 = 0.01): Promise<void> {
+  await waitForRecompute(page);
   await expect
     .poll(async () => Math.abs((await volumeNumber(page)) - expected), {
       timeout: KERNEL_TIMEOUT_MS,

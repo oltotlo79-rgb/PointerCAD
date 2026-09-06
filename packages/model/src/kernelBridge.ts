@@ -1726,10 +1726,8 @@ export function createKernelHealth(): KernelHealth {
   };
 }
 
-/** `recomputeSolids` が Worker の破損に割り込まれたかどうかの内部結果。 */
-type SolidRecomputeRace =
-  | { readonly broken: false; readonly result: SolidRecomputeResult }
-  | { readonly broken: true };
+/** Worker への 1 回の依頼が、応答で終わったか破損に割り込まれたかの内部結果。 */
+type BrokenRace<T> = { readonly broken: false; readonly result: T } | { readonly broken: true };
 
 /**
  * Worker への接続 1 本ぶん(worker 本体・Comlink の代理・壊れた合図)。
@@ -1764,6 +1762,44 @@ function createKernelConnection(onBroken: () => void): KernelConnection {
   worker.addEventListener('error', handleBroken);
   worker.addEventListener('messageerror', handleBroken);
   return { worker, remote, brokenSignal, handleBroken };
+}
+
+/**
+ * Worker への 1 回の依頼を、その接続の「壊れた合図」と競わせる(§2.9、§0.a-0.19)。
+ *
+ * **なぜ要るか**: Comlink の応答待ちの Promise は、Worker が `abort()` で止まると
+ * 永遠に解決も拒否もしない。合図と競わせないと、待っている呼び出しがそのまま残り、
+ * 画面は理由も出ないまま固まる(利用者からは「押しても何も起きない」に見える)。
+ *
+ * **1 か所にまとめる理由**: 以前は `recomputeSolids` だけがこの形を持っており、
+ * 面の三角形分割・オフセット・投影・断面・測定の 5 つは合図と競っていなかった
+ * (docs/報告記録.md 2026-09-06 12:04 の③)。同じ形を 5 か所へ写すと、次に手続きが
+ * 増えたときにまた写し忘れる。だから競わせ方はこの関数だけが知っている。
+ *
+ * `refuse` は「壊れたときに返す値」を作る。**拒否(throw)はしない**——呼び手が
+ * 既に扱っている断りの形(失敗の一覧、または `kind: 'failed'`)で解決する。
+ */
+async function raceWithBroken<T>(
+  connection: KernelConnection,
+  request: Promise<T>,
+  refuse: () => T,
+): Promise<T> {
+  const race = await Promise.race<BrokenRace<T>>([
+    request.then((result) => ({ broken: false, result })),
+    connection.brokenSignal.then(() => ({ broken: true })),
+  ]);
+  return race.broken ? refuse() : race.result;
+}
+
+/**
+ * 壊れたときの断りの一覧。**依頼した 1 件ごとに 1 つ**、理由は `KERNEL_BROKEN_MESSAGE`。
+ * 面・オフセット・投影・断面はどれも「1 件失敗しても残りは返す」形(FR-504)なので、
+ * 全件をこの理由の失敗にすれば、呼び手は普段の失敗と同じ道で画面へ出せる。
+ */
+function brokenFailures(
+  items: readonly { readonly featureId: string }[],
+): readonly { readonly featureId: string; readonly message: string }[] {
+  return items.map((item) => ({ featureId: item.featureId, message: KERNEL_BROKEN_MESSAGE }));
 }
 
 /** 接続を締める。壊れた Worker への解放要求が失敗しても、後始末は続ける(NFR-RE-1)。 */
@@ -1804,13 +1840,20 @@ export function createKernelBridge(): KernelBridge {
       if (health.broken) {
         restart();
       }
+      const active = connection;
       // 線・円弧の折れ線は UI が自前で作るので、カーネルへは面だけを頼む
       // (マウス操作のたびに Worker を往復させないため、NFR-PF-1、計画書 §2.7)。
-      const result = await connection.remote.tessellateSketch({
-        curves: [],
-        faces: faces.map((face) => toFaceRequest(face)),
-      });
-      return toOutcome(faces, result.faces, result.failures);
+      return raceWithBroken(
+        active,
+        active.remote
+          .tessellateSketch({
+            curves: [],
+            faces: faces.map((face) => toFaceRequest(face)),
+          })
+          .then((result) => toOutcome(faces, result.faces, result.failures)),
+        // 面は 1 枚も作れていないので、頼んだ全部を壊れた理由の失敗にする(FR-504)。
+        () => ({ mesh: { faces: [] }, failures: brokenFailures(faces) }),
+      );
     },
 
     async recomputeSolids(steps, options = {}): Promise<SolidRecomputeOutcome> {
@@ -1825,7 +1868,8 @@ export function createKernelBridge(): KernelBridge {
       const request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
       // 第 2 引数は全体のテッセレーションの粗さ。段の種類ごとの既定はカーネルが持っており
       // (toSolidRecomputeRequest の注釈)、ここで値を渡すとその既定が負けるので undefined。
-      const race = await Promise.race<SolidRecomputeRace>([
+      return raceWithBroken(
+        active,
         active.remote
           .recomputeSolids(
             request,
@@ -1833,27 +1877,21 @@ export function createKernelBridge(): KernelBridge {
             toProgressProxy(options.onProgress),
             toCancelProxy(options.shouldCancel),
           )
-          .then((result) => ({ broken: false, result })),
-        active.brokenSignal.then(() => ({ broken: true })),
-      ]);
-      if (race.broken) {
+          .then((result) => toSolidOutcome(steps, result, options.appearance ?? [])),
         // Worker がこの依頼の途中で壊れた。拒否せずに理由つきの失敗として解決する
         // (recomputePart.ts が kernelFailed として拾う。§0.a-0.19「拒否しない」)。
         // 消費されて画面に出ないはずの段(visible: false)は、成功しても失敗しても
         // 利用者には見えないので失敗に数えない(toSolidOutcome の扱いと揃える)。
-        return {
+        () => ({
           bodies: [],
-          failures: steps
-            .filter((step) => step.visible)
-            .map((step) => ({ featureId: step.featureId, message: KERNEL_BROKEN_MESSAGE })),
+          failures: brokenFailures(steps.filter((step) => step.visible)),
           cacheHits: 0,
           cancelled: false,
           // 照合そのものを行えていないので空で返す。ここで全件を「見つからない」にすると、
           // 段の失敗の警告に「色を付けた面が見つかりません」を重ねてしまう(FR-504)。
           appearanceMatches: [],
-        };
-      }
-      return toSolidOutcome(steps, race.result, options.appearance ?? []);
+        }),
+      );
     },
 
     async offsetSketchCurves(requests): Promise<SketchOffsetResult> {
@@ -1864,10 +1902,14 @@ export function createKernelBridge(): KernelBridge {
       if (health.broken) {
         restart();
       }
-      const outcome = await connection.remote.offsetSketchCurves({
-        items: requests.map((request) => toOffsetItem(request)),
-      });
-      return toOffsetResult(requests, outcome);
+      const active = connection;
+      return raceWithBroken(
+        active,
+        active.remote
+          .offsetSketchCurves({ items: requests.map((request) => toOffsetItem(request)) })
+          .then((outcome) => toOffsetResult(requests, outcome)),
+        () => ({ results: [], failures: brokenFailures(requests) }),
+      );
     },
 
     async projectSketchCurves(requests): Promise<SketchProjectionResult> {
@@ -1877,10 +1919,14 @@ export function createKernelBridge(): KernelBridge {
       if (health.broken) {
         restart();
       }
-      const outcome = await connection.remote.projectSketchCurves({
-        items: requests.map((request) => toProjectionItem(request)),
-      });
-      return toProjectionResult(requests, outcome);
+      const active = connection;
+      return raceWithBroken(
+        active,
+        active.remote
+          .projectSketchCurves({ items: requests.map((request) => toProjectionItem(request)) })
+          .then((outcome) => toProjectionResult(requests, outcome)),
+        () => ({ results: [], failures: brokenFailures(requests) }),
+      );
     },
 
     async sectionSketchCurves(requests): Promise<SketchProjectionResult> {
@@ -1890,10 +1936,14 @@ export function createKernelBridge(): KernelBridge {
       if (health.broken) {
         restart();
       }
-      const outcome = await connection.remote.sectionSketchCurves({
-        items: requests.map((request) => toSectionItem(request)),
-      });
-      return toProjectionResult(requests, outcome);
+      const active = connection;
+      return raceWithBroken(
+        active,
+        active.remote
+          .sectionSketchCurves({ items: requests.map((request) => toSectionItem(request)) })
+          .then((outcome) => toProjectionResult(requests, outcome)),
+        () => ({ results: [], failures: brokenFailures(requests) }),
+      );
     },
 
     async measure(steps, targets, kind): Promise<MeasureOutcome> {
@@ -1906,8 +1956,14 @@ export function createKernelBridge(): KernelBridge {
       if (health.broken) {
         restart();
       }
-      const result = await connection.remote.measure(request);
-      return toMeasureOutcome(result);
+      const active = connection;
+      return raceWithBroken(
+        active,
+        active.remote.measure(request).then((result) => toMeasureOutcome(result)),
+        // 測定の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
+        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+      );
     },
 
     dispose(): void {

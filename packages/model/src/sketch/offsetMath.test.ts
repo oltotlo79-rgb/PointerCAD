@@ -144,6 +144,17 @@ describe('オフセットの覚え書き(NFR-PF-2)', () => {
     expect(cache.get('b')).toBeNull();
   });
 
+  it('clear() で全部忘れる(文書を丸ごと差し替えるときに呼ぶ)', () => {
+    const cache = createOffsetCache();
+    cache.set('a', CURVES);
+    cache.set('b', CURVES);
+
+    cache.clear();
+
+    expect(cache.size).toBe(0);
+    expect(cache.get('a')).toBeNull();
+  });
+
   it('同じ鍵へ入れ直しても件数は増えない', () => {
     const cache = createOffsetCache();
     cache.set('a', CURVES);

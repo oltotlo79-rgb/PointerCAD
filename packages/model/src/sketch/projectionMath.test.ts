@@ -100,6 +100,16 @@ describe('投影・交差の覚え書き(LRU)', () => {
     expect(cache.get('c')).toEqual(ONE_CURVE);
   });
 
+  it('clear() で全部忘れる(文書を丸ごと差し替えるときに呼ぶ)', () => {
+    const cache = createProjectionCache();
+    cache.set('k1', ONE_CURVE);
+
+    cache.clear();
+
+    expect(cache.size).toBe(0);
+    expect(cache.get('k1')).toBeNull();
+  });
+
   it('既定の容量はオフセットと同じ 64 件', () => {
     expect(PROJECTION_CACHE_CAPACITY).toBe(64);
     expect(createProjectionCache().size).toBe(0);

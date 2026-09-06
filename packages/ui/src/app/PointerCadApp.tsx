@@ -51,6 +51,34 @@ export function PointerCadApp(): React.JSX.Element {
     // 毎回カーネルへ頼み直し、解決も 2 巡することになる(NFR-PF-2、NFR-PF-3)。
     const projections = createProjectionCache();
     const subShapes = createSubShapeCache();
+    /*
+     * **文書が丸ごと差し替わったら、3 つの覚え書きを空にする**(新規・開く・復元、
+     * および Undo / Redo。ストアの `documentVersion` が進むのがこの 5 つ)。
+     *
+     * 覚え書きは頁を開いている間ずっと生き続けるので、これをしないと**前の文書の参照が
+     * 次の文書に残る**。フィーチャーの id は文書ごとに `solid-1` から振り直される
+     * (`createPartDocument.ts` の `nextSolidId`)ため、前の文書の面・辺・頂点の参照が
+     * 新しい文書の**別物の同じ id のボディ**へ照合し直され、`refresh` が毎回「変わった」と
+     * 言い続けて `recomputePart` が毎回 2 巡目に入り、覚えている参照も増え続ける
+     * (NFR-PF-3。`subShapeCache.ts` の `clear` の注釈)。2026-09-06 の目視で
+     * 「頁を読み込み直すと直る」状態が残っていた 2 か所のうちの 1 つ。
+     *
+     * **`attachPartRecompute` より先に見張りを始める**(購読の通知は登録順に届く)。
+     * 後にすると、差し替え直後の 1 回だけ古い覚え書きで解決してしまう。
+     *
+     * 判定に文書の id を使わないのは、`createEmptyPartDocument()` の id が常に `part-1` で
+     * 「新規」の前後で変わらないため。**Undo / Redo でも空にする**のは、`documentVersion`
+     * がその 2 つでも進むからで、id が振り直されない分だけ捨てすぎではあるが、覚え書きは
+     * 次の再計算で入り直る(費用は往復 1 回ぶん)。
+     */
+    const unwatchDocument = useAppStore.subscribe((next, previous) => {
+      if (next.documentVersion === previous.documentVersion) {
+        return;
+      }
+      offsets.clear();
+      projections.clear();
+      subShapes.clear();
+    });
     const detach = attachPartRecompute((document, options) =>
       recomputePart(document, bridge, { ...options, offsets, projections, subShapes }),
     );
@@ -72,6 +100,7 @@ export function PointerCadApp(): React.JSX.Element {
     return () => {
       detachMeasure();
       detach();
+      unwatchDocument();
       bridge.dispose();
     };
   }, []);

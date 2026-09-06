@@ -83,6 +83,13 @@ export interface OffsetCache {
   /** 覚えていなければ null。 */
   get(key: string): readonly ResolvedCurve[] | null;
   set(key: string, curves: readonly ResolvedCurve[]): void;
+  /**
+   * 覚えていることを全部忘れる。**文書を丸ごと差し替えるとき(新規・開く・復元)に呼ぶ。**
+   * 鍵は元の曲線の形から作るので前の文書の値が誤って当たることは無いが、
+   * 前の部品の分を新しい部品のあいだ抱え続ける理由も無い(`SubShapeCache.clear` と
+   * 同じ口でまとめて呼べるように、3 つの覚え書きで形をそろえる)。
+   */
+  clear(): void;
   readonly size: number;
 }
 
@@ -109,6 +116,9 @@ export function createOffsetCache(capacity: number = OFFSET_CACHE_CAPACITY): Off
         }
         entries.delete(oldest.value);
       }
+    },
+    clear(): void {
+      entries.clear();
     },
     get size(): number {
       return entries.size;

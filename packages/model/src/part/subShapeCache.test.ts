@@ -97,6 +97,44 @@ describe('部分形状の選び直しの覚え書き(FR-330 の上流追従、�
     expect(cache.resolve(CORNER)?.position).toEqual([40, 30, 10]);
   });
 
+  /*
+   * 文書をまたいだ持ち越し(2026-09-06 の目視の不具合。docs/報告記録.md)。
+   * フィーチャーの id は文書ごとに 1 から振り直されるので、前の文書の参照を抱えたまま
+   * 次の文書のボディで `refresh` すると、**別物の同じ id のボディ**へ照合してしまう。
+   */
+  it('文書を替えても覚えたままだと、別物の同じ id のボディへ照合し直してしまう', () => {
+    const cache = createSubShapeCache();
+    // 文書 1 の `extrude-1`(高さ 10)の角を聞かれ、その形で覚える。
+    cache.resolve(CORNER);
+    cache.refresh([boxBody('extrude-1', 10)]);
+
+    // 文書 2 にも `extrude-1` があるが、これは別物(高さ 20)。前の文書の参照が残って
+    // いるので照合し直され、値が**別物のボディの位置**へ書き換わる。
+    expect(cache.refresh([boxBody('extrude-1', 20)])).toBe(true);
+    expect(cache.resolve(CORNER)?.position).toEqual([40, 30, 20]);
+    expect(cache.size).toBe(1);
+
+    // 形が遠ければ「指紋に合う形が無い」(null)になる。切断・くり抜きはこの null を
+    // 受け取ると面を決められず、断ることになる(FR-504)。
+    expect(cache.refresh([boxBody('extrude-1', 400)])).toBe(true);
+    expect(cache.resolve(CORNER)).toBeNull();
+  });
+
+  it('clear() の後は何も覚えていない(文書の差し替えで前の文書の参照を捨てる)', () => {
+    const cache = createSubShapeCache();
+    cache.resolve(CORNER);
+    cache.refresh([boxBody('extrude-1', 40)]);
+
+    cache.clear();
+
+    expect(cache.size).toBe(0);
+    // 覚えていないので、次に聞かれたら保存された指紋の位置へ戻る。
+    expect(cache.resolve(CORNER)?.position).toEqual([40, 30, 10]);
+    // 別物のボディで選び直しても、捨てた参照は照合の対象に入らない
+    // (`resolve` で聞かれた 1 件だけが対象。上の `resolve` の後なので 1 件ある)。
+    expect(cache.size).toBe(1);
+  });
+
   it('指紋に合う形が無くなったら null を返す(呼び出し側が missingSubShape で断る)', () => {
     const cache = createSubShapeCache();
     const faraway: SubShapeRef = {

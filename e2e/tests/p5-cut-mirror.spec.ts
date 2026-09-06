@@ -62,6 +62,13 @@ async function disableFilePickers(page: Page): Promise<void> {
   });
 }
 
+/** 確認の窓(`window.confirm`)に「はい」で答える(「新規」で出る)。 */
+function acceptConfirms(page: Page): void {
+  page.on('dialog', (dialog) => {
+    void dialog.accept();
+  });
+}
+
 /** ツールバーの畳んだ一覧(「作る」「合わせる」「加工」)の引き金。 */
 function toolMenuTrigger(page: Page, menu: string): Locator {
   return page
@@ -127,9 +134,36 @@ function solidRow(page: Page, name: string): Locator {
   return treeSection(page, 'ソリッド').getByRole('button', { name, exact: true });
 }
 
+/** ツールバーの「ファイル」区画のボタン(新規・開く・保存)。 */
+function fileAction(page: Page, label: string): Locator {
+  return page
+    .getByRole('group', { name: 'ファイル' })
+    .getByRole('button', { name: label, exact: true });
+}
+
 /** 右のプロパティ。 */
 function propertyPanel(page: Page): Locator {
   return page.locator('.pcad-panel--right');
+}
+
+/** 外観の節の選択肢(材質など)の枠。見出しの語で 1 つに絞る。 */
+function appearanceChoice(page: Page, label: string): Locator {
+  return propertyPanel(page)
+    .locator('.pcad-choice')
+    .filter({ has: page.locator('.pcad-choice__label', { hasText: new RegExp(`^${label}$`) }) });
+}
+
+/** いま選ばれている選択肢の読み(引き金に出ている語)。 */
+function appearanceChoiceValue(page: Page, label: string): Locator {
+  return appearanceChoice(page, label).locator('.pcad-menu__count');
+}
+
+/** 選択肢を開いて 1 つ選ぶ。 */
+async function chooseAppearance(page: Page, label: string, option: string): Promise<void> {
+  const choice = appearanceChoice(page, label);
+  await choice.locator('.pcad-menu__trigger').click();
+  await choice.getByRole('menuitem', { name: option, exact: true }).click();
+  await expect(appearanceChoiceValue(page, label)).toHaveText(option);
 }
 
 /** プロパティの「鍵と値」の値の側。 */
@@ -173,6 +207,25 @@ async function placeBox(page: Page): Promise<void> {
   await expect(solidRow(page, '箱1')).toBeVisible();
   // 幾何カーネルが箱を作り終えるまで待つ。
   await expectVolume(page, '箱1', BOX_VOLUME);
+}
+
+/** 「作る」の一覧から基本形状を既定のまま置く(箱以外にも使う)。 */
+async function placePrimitive(page: Page, label: string, title: string): Promise<void> {
+  await openToolMenu(page, '作る');
+  await menuTool(page, '作る', label).click();
+  await expect(popoverTitle(page)).toHaveText(title);
+  await popoverInputs(page).first().press('Enter');
+  await expect(popover(page)).toHaveCount(0);
+}
+
+/**
+ * 「新規」を押して空の部品からやり直す(FR-806)。**頁は読み込み直さない**ので、
+ * カーネルの Worker も、入口(`PointerCadApp`)が持っている覚え書きもそのまま残る。
+ * この検査が見張っているのはまさにそこ(下の回帰の注釈)。
+ */
+async function newDocument(page: Page): Promise<void> {
+  await fileAction(page, '新規').click();
+  await expect(featureTree(page)).toContainText('まだ何もありません。');
 }
 
 test.describe('P5 平面による切断とミラー', () => {
@@ -265,6 +318,67 @@ test.describe('P5 平面による切断とミラー', () => {
       { timeout: KERNEL_TIMEOUT_MS },
     );
     await expect(propertyValue(page, '残す側')).toHaveText('面の裏側');
+
+    expect(errors).toEqual([]);
+  });
+
+  test('操作を重ねて「新規」を 3 回挟んだ後でも、箱の切断が成功する(§5.2 の目視の回帰)', async ({
+    page,
+  }) => {
+    /*
+     * 2026-09-06 の目視で「多くの操作を重ねた**同じ頁**で『新規』の後に切断が
+     * 『立体を切れませんでした』で失敗し、頁を読み込み直すと回復する」が実測された
+     * (docs/報告記録.md、scratchpad/shots/p5-visual/00-notes.txt)。
+     *
+     * 頁を読み込み直さない限り消えない状態が、入口(`PointerCadApp`)が 1 度だけ作る
+     * 3 つの覚え書き(オフセット・投影・部分形状の選び直し)だった。フィーチャーの id は
+     * 文書ごとに 1 から振り直されるので、前の文書の参照を抱えたままだと**別物の同じ id の
+     * ボディ**へ照合し直してしまう(`subShapeCache.ts` の `clear` の注釈)。
+     *
+     * ここでは目視の操作列(外観 → 新規 → 基本形状 → 新規 → 測定 → 新規 → 箱 → 切断)を
+     * 短くたどり、**最後の切断が半分の体積になる**ことだけを見る。頁は 1 度しか開かない。
+     */
+    const errors = collectErrors(page);
+    acceptConfirms(page);
+    await disableFilePickers(page);
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    // 1) 外観。立体を選んだまま材質を変える(形は変わらない、FR-1106)。
+    await placeBox(page);
+    await chooseAppearance(page, '材質', 'アルミ');
+
+    // 2) 新規 #1 → 基本形状を 2 種。
+    await newDocument(page);
+    await placePrimitive(page, '球', '球を置く');
+    await expect(solidRow(page, '球1')).toBeVisible();
+    await placePrimitive(page, '円柱', '円柱を置く');
+    await expect(solidRow(page, '円柱1')).toBeVisible();
+    // 体積が出るまで待って、カーネルが 2 つとも作り終えたことを確かめる。
+    await expect(propertyValue(page, '体積')).toHaveText(new RegExp(`${VOLUME_UNIT}$`), {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+
+    // 3) 新規 #2 → 測定(FR-1101、FR-1102)。立体を選んで「測る」を押すと体積と重さが出る。
+    await newDocument(page);
+    await placeBox(page);
+    await openToolMenu(page, '見た目');
+    await menuTool(page, '見た目', '測る').click();
+    await expect(propertyValue(page, '結果')).not.toHaveText('まだ測っていません', {
+      timeout: KERNEL_TIMEOUT_MS,
+    });
+
+    // 4) 新規 #3 → 箱を置いて、切る面を 1 つも選ばずに既定(作図面・距離 0)のまま切断する。
+    await newDocument(page);
+    await placeBox(page);
+    await openToolMenu(page, '加工');
+    await menuTool(page, '加工', '切断').click();
+    await expect(popoverTitle(page)).toHaveText('切る面');
+    await commitPopover(page);
+
+    // ここが本題。失敗する版では「立体を切れませんでした。」が出て体積が出なかった。
+    await expect(solidRow(page, '切断1')).toBeVisible();
+    await expectVolume(page, '切断1', HALF_VOLUME);
 
     expect(errors).toEqual([]);
   });

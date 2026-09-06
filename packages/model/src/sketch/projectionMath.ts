@@ -85,6 +85,12 @@ export interface ProjectionCache {
   /** 覚えていなければ null。 */
   get(key: string): readonly ResolvedCurve[] | null;
   set(key: string, curves: readonly ResolvedCurve[]): void;
+  /**
+   * 覚えていることを全部忘れる。**文書を丸ごと差し替えるとき(新規・開く・復元)に呼ぶ。**
+   * 鍵にはもとの立体の段の鍵(形から作る)が入るので前の文書の値が誤って当たることは
+   * 無いが、`OffsetCache` / `SubShapeCache` と同じ口でまとめて空にできるように形をそろえる。
+   */
+  clear(): void;
   readonly size: number;
 }
 
@@ -113,6 +119,9 @@ export function createProjectionCache(
         }
         entries.delete(oldest.value);
       }
+    },
+    clear(): void {
+      entries.clear();
     },
     get size(): number {
       return entries.size;

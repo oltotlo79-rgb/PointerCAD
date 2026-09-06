@@ -46,6 +46,18 @@ export interface SubShapeCache {
    * 選び直せないだけで、保存された指紋を使う従来の振る舞いは残る(FR-504)。
    */
   refresh(bodies: readonly SolidBody[]): boolean;
+  /**
+   * 覚えていることを全部忘れる。**文書を丸ごと差し替えるとき(新規・開く・復元)に呼ぶ。**
+   *
+   * フィーチャーの id は文書ごとに 1 から振り直される(`createPartDocument.ts` の
+   * `nextSolidId`)ので、前の文書の参照を残すと**別物の同じ id のボディ**へ照合し直して
+   * しまう。前の文書の面の指紋を新しい文書の `solid-1` に当てるので、
+   * ①合う形が無ければ古い値か null が返って切断・くり抜きの面が対象と交わらなくなり、
+   * ②`refresh` が毎回「変わった」と言うので `recomputePart` が毎回 2 巡目に入り、
+   * ③`asked` が文書を替えるたびに増え続ける(NFR-PF-3)。
+   * 差し替えの口で空にすれば、どれも起きない。
+   */
+  clear(): void;
   /** いま覚えている参照の数(検査と実測のため)。 */
   readonly size: number;
 }
@@ -112,6 +124,11 @@ export function createSubShapeCache(): SubShapeCache {
         }
       }
       return changed;
+    },
+
+    clear(): void {
+      asked.clear();
+      values.clear();
     },
 
     get size(): number {

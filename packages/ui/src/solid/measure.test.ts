@@ -15,6 +15,7 @@ import {
   MEASURE_FAILED_MESSAGE_KEY,
   MEASURE_KIND_LABEL_KEYS,
   MEASURE_KIND_ORDER,
+  type LocalMeasureResult,
   type MeasureBody,
   type MeasureKind,
   type MeasureRejectionReason,
@@ -562,5 +563,53 @@ describe('測定の表示(小数 3 桁)', () => {
   it('測った結果をそのまま表示できる', () => {
     const result = measure(['extrude-1#face:0', 'extrude-1#face:1']);
     expect(result === null ? '' : formatMeasure(result)).toBe('10.000 mm');
+  });
+
+  it('mm を渡しても既存の文言と 1 文字も変わらない(FR-811、P6 タスク3)', () => {
+    const distance: LocalMeasureResult = {
+      kind: 'pointDistance',
+      value: 37.416573867739416,
+      unit: 'mm',
+      segment: null,
+    };
+    expect(formatMeasure(distance, 'mm')).toBe(formatMeasure(distance));
+    expect(formatMeasure(distance, 'mm')).toBe('37.417 mm');
+  });
+
+  it('inch では長さ・面積・体積が次数どおりに換算され、角度は変わらない(P6 §2.9)', () => {
+    /*
+     * 換算の次数は測る種類で違う(長さは 25.4、面積は 25.4²、体積は 25.4³)。
+     * 37.416573867739416 / 25.4 = 1.4730146…→ 1.473、1200 / 645.16 = 1.8600…→ 1.860、
+     * 12000 / 16387.064 = 0.73228…→ 0.732。桁は model の `INCH_DISPLAY_DIGITS`(3)。
+     */
+    expect(
+      formatMeasure(
+        { kind: 'pointDistance', value: 37.416573867739416, unit: 'mm', segment: null },
+        'inch',
+      ),
+    ).toBe('1.473 in');
+    expect(
+      formatMeasure({ kind: 'faceArea', value: 1200, unit: 'mm2', segment: null }, 'inch'),
+    ).toBe('1.860 in²');
+    expect(
+      formatMeasure({ kind: 'bodyVolume', value: 12000, unit: 'mm3', segment: null }, 'inch'),
+    ).toBe('0.732 in³');
+    // 角度は長さの単位に依らない(§2.9 の表)。数も単位の言葉もそのまま。
+    expect(
+      formatMeasure({ kind: 'faceAngle', value: 90, unit: 'degree', segment: null }, 'inch'),
+    ).toBe('90.000 度');
+    // 1 inch ちょうどの長さは 1.000 in になる(定義値 25.4 の確認)。
+    expect(
+      formatMeasure({ kind: 'edgeLength', value: 25.4, unit: 'mm', segment: null }, 'inch'),
+    ).toBe('1.000 in');
+  });
+
+  it('inch でも 0 に丸まる値を「-0.000」と出さない', () => {
+    expect(
+      formatMeasure({ kind: 'pointDistance', value: -1e-9, unit: 'mm', segment: null }, 'inch'),
+    ).toBe('0.000 in');
+    expect(
+      formatMeasure({ kind: 'faceAngle', value: -0, unit: 'degree', segment: null }, 'inch'),
+    ).toBe('0.000 度');
   });
 });

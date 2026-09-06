@@ -5,17 +5,22 @@
  * 既定・検証(範囲外は個別に丸めず既定へ戻す)・往復・`localStorage` 無しでも動くことを確かめる。
  */
 
+import { serializeDocument } from '@pointercad/io';
+import { createEmptyPartDocument, LENGTH_UNITS } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
+import { t } from '../i18n/t.js';
 import { TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
   clampUiScale,
   DEFAULT_DISPLAY_SETTINGS,
   hasLocalStorage,
+  LENGTH_UNIT_LABEL_KEYS,
   loadSettings,
   MAX_UI_SCALE,
   MIN_UI_SCALE,
   nearestUiScaleStep,
+  nextLengthUnit,
   nextThemeIndex,
   saveSettings,
   THEME_IDS,
@@ -266,5 +271,105 @@ describe('設定パネルの刻みとキー操作(タスク2)', () => {
   it('いまのテーマが分からない(-1)ときは先頭から動き始める', () => {
     expect(nextThemeIndex(-1, 'ArrowRight')).toBe(1);
     expect(nextThemeIndex(-1, 'ArrowLeft')).toBe(THEME_IDS.length - 1);
+  });
+});
+
+/**
+ * 表示の長さの単位(FR-811。計画書 docs/plans/P6-入出力.md タスク3 の検証表)。
+ *
+ * **内部は mm 固定**(NFR-RE-3)なので、ここで切り替わるのは表示だけである。
+ * 検証表の 7 項目(既定 / 壊れた JSON / `localStorage` 無し / 往復 / 知らない単位 /
+ * 欄そのものが無い / `.pcad` のバイト列が変わらない)をこの節で固定する。
+ */
+describe('表示の長さの単位(FR-811、P6 タスク3)', () => {
+  it('既定は mm(既存の見た目を変えない)', () => {
+    expect(DEFAULT_DISPLAY_SETTINGS.lengthUnit).toBe('mm');
+    expect(loadSettings(createFakeStorage()).lengthUnit).toBe('mm');
+  });
+
+  it('壊れた JSON では既定の mm になる', () => {
+    const storage = createFakeStorage({ 'pointercad.settings': '{not json' });
+    expect(loadSettings(storage).lengthUnit).toBe('mm');
+  });
+
+  it('localStorage が無い環境でも既定の mm で動く(P4 タスク1 の失敗の再発防止)', () => {
+    expect(loadSettings(null).lengthUnit).toBe('mm');
+    // 保存できない環境でも例外を外へ出さない(表示は既に切り替わっているので操作は止めない)。
+    expect(() => {
+      saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, lengthUnit: 'inch' }, null);
+    }).not.toThrow();
+  });
+
+  it('inch を保存して読み直すと inch のまま(往復、端末に保存)', () => {
+    const storage = createFakeStorage();
+    saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, lengthUnit: 'inch' }, storage);
+    expect(loadSettings(storage).lengthUnit).toBe('inch');
+  });
+
+  it('知らない単位・欄そのものが無いときはこの欄だけ既定へ戻し、他の欄は捨てない', () => {
+    // 欄が無いのは P6 より前に保存された値の形(前方互換、settings.ts の注釈)。
+    const old = createFakeStorage({
+      'pointercad.settings': JSON.stringify({ theme: 'light', uiScale: 120, trackAngleStep: 30 }),
+    });
+    const loaded = loadSettings(old);
+    expect(loaded.lengthUnit).toBe('mm');
+    expect(loaded.theme).toBe('light');
+    expect(loaded.trackAngleStep).toBe(30);
+
+    const broken = createFakeStorage({
+      'pointercad.settings': JSON.stringify({ theme: 'light', uiScale: 120, lengthUnit: 'cm' }),
+    });
+    const brokenLoaded = loadSettings(broken);
+    expect(brokenLoaded.lengthUnit).toBe('mm');
+    expect(brokenLoaded.theme).toBe('light');
+
+    const notString = createFakeStorage({
+      'pointercad.settings': JSON.stringify({ theme: 'light', uiScale: 120, lengthUnit: 25.4 }),
+    });
+    expect(loadSettings(notString).lengthUnit).toBe('mm');
+  });
+
+  it('札を押すと mm と inch が入れ替わり、一覧の単位をすべて通る', () => {
+    expect(nextLengthUnit('mm')).toBe('inch');
+    expect(nextLengthUnit('inch')).toBe('mm');
+    // 何度押しても一覧の外へ出ない(単位が増えても順ぐりに回る)。
+    let unit = DEFAULT_DISPLAY_SETTINGS.lengthUnit;
+    const seen = new Set<string>();
+    for (let step = 0; step < LENGTH_UNITS.length; step += 1) {
+      seen.add(unit);
+      unit = nextLengthUnit(unit);
+    }
+    expect(seen.size).toBe(LENGTH_UNITS.length);
+    expect(unit).toBe(DEFAULT_DISPLAY_SETTINGS.lengthUnit);
+  });
+
+  it('札の文言は単位ごとに ja.json から引ける(NFR-MA-5)', () => {
+    for (const unit of LENGTH_UNITS) {
+      expect(t(LENGTH_UNIT_LABEL_KEYS[unit]).length).toBeGreaterThan(0);
+    }
+    // 既存の固定の札とまったく同じ文字を mm 側に置いてある(見た目を変えない)。
+    expect(t(LENGTH_UNIT_LABEL_KEYS.mm)).toBe(t('statusBar.unit'));
+  });
+
+  it('単位を切り替えても .pcad のバイト列が 1 バイトも変わらない(NFR-RE-3)', () => {
+    /*
+     * 表示の単位は**端末の設定**であって文書の属性ではない(§0.a-0.1)。
+     * 保存時刻だけは呼ぶたびに変わるので、同じ値を渡して時刻の違いを除く
+     * (`partFile.ts` の `COMPARISON_SAVED_AT` と同じ手)。
+     */
+    const document = createEmptyPartDocument();
+    const savedAt = '2026-09-06T00:00:00.000Z';
+    const storage = createFakeStorage();
+    const encoder = new TextEncoder();
+
+    saveSettings({ ...DEFAULT_DISPLAY_SETTINGS, lengthUnit: 'mm' }, storage);
+    const before = encoder.encode(serializeDocument(document, { savedAt }));
+
+    saveSettings({ ...loadSettings(storage), lengthUnit: 'inch' }, storage);
+    expect(loadSettings(storage).lengthUnit).toBe('inch');
+    const after = encoder.encode(serializeDocument(document, { savedAt }));
+
+    expect(after.length).toBe(before.length);
+    expect([...after]).toEqual([...before]);
   });
 });

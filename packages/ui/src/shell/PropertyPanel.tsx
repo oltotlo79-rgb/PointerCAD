@@ -114,6 +114,8 @@ import {
   type NumericFieldRange,
 } from '../sketch/numericInput.js';
 import {
+  AREA_UNIT_KEYS,
+  formatArea,
   formatVolume,
   missingValueKey,
   partErrorMessage,
@@ -129,6 +131,7 @@ import {
   solidForSelection,
   summarizeReference,
   summarizeSolid,
+  VOLUME_UNIT_KEYS,
   WORLD_AXIS_CHOICES,
   type SolidChoiceSummary,
   type SolidFieldKey,
@@ -795,6 +798,8 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   // タイムラインのつまみ(FR-507)。つまみより後ろの段はまだ作られていないだけで、
   // 失敗ではない(P4b タスク22a-(2)、docs/報告記録.md 2026-09-05 実時計 01:05 の申し送り①)。
   const timelineIndex = useAppStore((state) => state.timelineIndex);
+  // 表示の長さの単位(FR-811、P6 タスク3)。体積の欄だけに効く(式の欄はタスク3b)。
+  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<SolidFieldDraft>(documentVersion),
   );
@@ -1024,7 +1029,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           <dd className="pcad-properties__value">
             {body === undefined
               ? missing
-              : `${formatVolume(body.volume)} ${t('propertyPanel.unitCubicMillimeter')}`}
+              : `${formatVolume(body.volume, lengthUnit)} ${t(VOLUME_UNIT_KEYS[lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.triangleCount')}</dt>
           <dd className="pcad-properties__value">
@@ -2381,6 +2386,12 @@ function MassPropertiesSection({
 }): React.JSX.Element {
   const massProperties = useAppStore((state) => state.massProperties);
   const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  /*
+   * 表示の長さの単位(FR-811、P6 タスク3)。体積と表面積だけに効く。
+   * **質量(g / kg)と密度はここでは換算しない**(§2.9 の表。質量は長さの単位に依らず、
+   * 密度の lb/in³ への読み替えは別の決めごとなのでタスク30 の第 2 弾へ送る)。
+   */
+  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
   const [materialId, setMaterialId] = useState(() =>
     defaultDensityMaterialId(spec.preset, spec.pattern.kind === 'woodGrain' ? spec.pattern.species : null),
   );
@@ -2443,11 +2454,11 @@ function MassPropertiesSection({
         <dl className="pcad-properties">
           <dt className="pcad-properties__key">{t('propertyPanel.massVolume')}</dt>
           <dd className="pcad-properties__value">
-            {`${formatVolume(massProperties.volume)} ${t('propertyPanel.unitCubicMillimeter')}`}
+            {`${formatVolume(massProperties.volume, lengthUnit)} ${t(VOLUME_UNIT_KEYS[lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massArea')}</dt>
           <dd className="pcad-properties__value">
-            {`${formatVolume(massProperties.area)} ${t('propertyPanel.unitSquareMillimeter')}`}
+            {`${formatArea(massProperties.area, lengthUnit)} ${t(AREA_UNIT_KEYS[lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massMass')}</dt>
           <dd className="pcad-properties__value">{formatMass(view.mass)}</dd>

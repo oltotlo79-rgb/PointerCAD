@@ -64,12 +64,14 @@ import {
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
-import { MESSAGE_KEYS } from '../i18n/t.js';
+import { MESSAGE_KEYS, t } from '../i18n/t.js';
 
 import {
+  AREA_UNIT_KEYS,
   buildReferenceSection,
   buildSketchGroups,
   buildTreeSections,
+  formatArea,
   formatVolume,
   missingValueKey,
   partErrorMessage,
@@ -91,6 +93,7 @@ import {
   solidKindOf,
   summarizeReference,
   summarizeSolid,
+  VOLUME_UNIT_KEYS,
   WORLD_AXIS_CHOICES,
 } from './solidSummary.js';
 
@@ -580,6 +583,31 @@ describe('選択とプロパティの橋渡し', () => {
   it('formatVolume は指数表記にしない', () => {
     expect(formatVolume(6000)).toBe('6000');
     expect(formatVolume(0.5)).toBe('0.5');
+  });
+
+  it('mm を渡しても既存の文言と 1 文字も変わらない(FR-811、P6 タスク3)', () => {
+    expect(formatVolume(6000, 'mm')).toBe(formatVolume(6000));
+    expect(formatVolume(8000, 'mm')).toBe('8000');
+    expect(formatArea(1200, 'mm')).toBe('1200');
+    expect(t(VOLUME_UNIT_KEYS.mm)).toBe('mm³');
+    expect(t(AREA_UNIT_KEYS.mm)).toBe('mm²');
+  });
+
+  it('inch では in³ / in² へ換算して小数 3 桁で出す(FR-811、P6 §2.9)', () => {
+    /*
+     * 20mm の立方体の体積 8000mm³ を inch で読むと `(20/25.4)³` in³。
+     * `20/25.4 = 0.7874015748031497`、その 3 乗は `0.48818995275785837` なので、
+     * 小数 3 桁(model の `INCH_DISPLAY_DIGITS`。0.001in ≒ 0.0254mm)で `0.488`。
+     * 計画書 §2.9 の表にある `0.48828125` は誤りで、担当が計算し直した値がこれである。
+     */
+    expect(formatVolume(8000, 'inch')).toBe('0.488');
+    // 1 inch の立方体(25.4³ = 16387.064 mm³)はちょうど 1 in³。
+    expect(formatVolume(16387.064, 'inch')).toBe('1.000');
+    // 面積は 2 乗で換算する(1 in² = 25.4² = 645.16 mm²)。体積の 3 乗と取り違えない。
+    expect(formatArea(645.16, 'inch')).toBe('1.000');
+    expect(formatArea(1200, 'inch')).toBe('1.860');
+    expect(t(VOLUME_UNIT_KEYS.inch)).toBe('in³');
+    expect(t(AREA_UNIT_KEYS.inch)).toBe('in²');
   });
 
   it('回転軸の選択肢は X / Y / Z の 3 つ', () => {

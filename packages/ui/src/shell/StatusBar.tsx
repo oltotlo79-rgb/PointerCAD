@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { missingAppearanceCount } from '../appearance/appearanceCommands.js';
 import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { LENGTH_UNIT_LABEL_KEYS, nextLengthUnit } from '../settings/settings.js';
 import { constraintPickGuide } from '../sketch/constraintActions.js';
 import { workPlaneEntries, type WorkPlaneEntry } from '../sketch/referenceCommands.js';
 import { solidToolReadiness } from '../solid/solidCommands.js';
@@ -78,7 +79,8 @@ function widthPercent(ratio: number): string {
  *
  * 左は今の状況を 1 文で伝える(失敗 / 中止 / 計算の進み具合 / 吸着中の案内 / 道具ごとの
  * 操作ガイド)。どれを出すかの順番と文の組み立ては `statusText.ts` の純関数が決める。
- * 右は「作図面」「吸着」「単位」を小さな札で常に見せる。
+ * 右は「作図面」「吸着」「単位」を小さな札で常に見せる。**単位の札だけは押せる**
+ * (mm ↔ inch、FR-811。P6 タスク3)。札の数も区画も P5 までと同じで、増やしていない。
  * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
  *
  * 長い計算のあいだは細い進捗の帯と「中止」を出す(NFR-PF-4)。**進み具合が届いてすぐには
@@ -150,6 +152,13 @@ export function StatusBar(): React.JSX.Element {
   // 任意の作業平面(FR-328)の名前を札に出すための一覧(タスク13)。
   const customPlanes = workPlaneEntries(useAppStore((state) => state.document));
   const snapEnabled = useAppStore((state) => state.snapEnabled);
+  /*
+   * 表示の長さの単位(FR-811、P6 タスク3)。**区画も札の数も増やさない。**
+   * いままで固定の文字だった右端の「単位: mm」の札を、そのまま押せる 2 択にする。
+   * 端末に覚える設定なので、テーマや拡大率と同じ `displaySettings` に入っている。
+   */
+  const displaySettings = useAppStore((state) => state.displaySettings);
+  const setDisplaySettings = useAppStore((state) => state.setDisplaySettings);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
   // 向きの吸着の案内線(FR-110、P4b タスク16)。帯の一言に角度と要素の名前を出す。
   const trackIndicator = useAppStore((state) => state.trackIndicator);
@@ -362,7 +371,24 @@ export function StatusBar(): React.JSX.Element {
         <SnapIcon size={12} />
         {snapEnabled ? t('statusBar.snapOn') : t('statusBar.snapOff')}
       </span>
-      <span className="pcad-statusbar__unit">{t('statusBar.unit')}</span>
+      {/*
+        表示の単位(FR-811)。押すたびに mm ↔ inch を入れ替える。**内部の値は変わらない**
+        ので、切り替えても `.pcad` のバイト列は 1 バイトも変わらない(NFR-RE-3)。
+        札の見た目と位置はいままでと同じで、押せることをツールチップで添える(NFR-UX-7)。
+      */}
+      <button
+        type="button"
+        className="pcad-statusbar__unit"
+        title={t('statusBar.unitHint')}
+        onClick={() => {
+          setDisplaySettings({
+            ...displaySettings,
+            lengthUnit: nextLengthUnit(displaySettings.lengthUnit),
+          });
+        }}
+      >
+        {t(LENGTH_UNIT_LABEL_KEYS[displaySettings.lengthUnit])}
+      </button>
     </footer>
   );
 }

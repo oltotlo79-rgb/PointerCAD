@@ -20,7 +20,13 @@
  * プロパティ欄・ツールバー・カーネルへの問い合わせはタスク32 の役目。
  */
 
-import type { SubShapeRef, Vec3 } from '@pointercad/model';
+import {
+  INCH_DISPLAY_DIGITS,
+  MM_PER_INCH,
+  type LengthUnit,
+  type SubShapeRef,
+  type Vec3,
+} from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 
@@ -150,12 +156,51 @@ export function measureKindUnit(kind: MeasureKind): MeasureUnit {
  * 測定の表示だけを直したいときに、その場入力やプロパティ欄の単位まで一緒に変わってしまうのを
  * 避けるため(鍵の持ち主を混ぜない)。
  */
-const MEASURE_UNIT_LABEL_KEYS: Readonly<Record<MeasureUnit, MessageKey>> = {
-  mm: 'measure.unit.millimeter',
-  degree: 'measure.unit.degree',
-  mm2: 'measure.unit.squareMillimeter',
-  mm3: 'measure.unit.cubicMillimeter',
+const MEASURE_UNIT_LABEL_KEYS: Readonly<
+  Record<LengthUnit, Readonly<Record<MeasureUnit, MessageKey>>>
+> = {
+  mm: {
+    mm: 'measure.unit.millimeter',
+    degree: 'measure.unit.degree',
+    mm2: 'measure.unit.squareMillimeter',
+    mm3: 'measure.unit.cubicMillimeter',
+  },
+  /*
+   * 表示が inch のとき(FR-811、P6 タスク3)。**角度だけは長さの単位に依らない**ので、
+   * mm 側とまったく同じ鍵を指す(度は度のまま)。
+   */
+  inch: {
+    mm: 'measure.unit.inch',
+    degree: 'measure.unit.degree',
+    mm2: 'measure.unit.squareInch',
+    mm3: 'measure.unit.cubicInch',
+  },
 };
+
+/**
+ * 測った値(内部は必ず mm 系)を、表示の単位の数へ直す(FR-811、P6 §2.9)。
+ *
+ * **換算の次数は測る種類で違う**(長さは 25.4、面積は 2 乗、体積は 3 乗)。角度は
+ * 長さの単位に依らないのでそのまま返す。`switch` に `default` を書かないので、
+ * 単位が増えたら型検査がここを落とす。
+ */
+function displayMeasureValue(value: number, measured: MeasureUnit, unit: LengthUnit): number {
+  switch (unit) {
+    case 'mm':
+      return value;
+    case 'inch':
+      switch (measured) {
+        case 'degree':
+          return value;
+        case 'mm':
+          return value / MM_PER_INCH;
+        case 'mm2':
+          return value / (MM_PER_INCH * MM_PER_INCH);
+        case 'mm3':
+          return value / (MM_PER_INCH * MM_PER_INCH * MM_PER_INCH);
+      }
+  }
+}
 
 /**
  * その種類を測るのにカーネル(Worker)が要るか(§0.a-0.30)。
@@ -818,16 +863,36 @@ export function measureLocally(
 const MEASURE_FRACTION_DIGITS = 3;
 
 /**
- * 測定の結果の表示(例: `37.417 mm`、`90.000 度`)。
+ * 表示の単位ごとの小数の桁数(FR-811、P6 §2.9)。
+ *
+ * inch 側は model の `INCH_DISPLAY_DIGITS`(`formatDisplayLength` が使う桁)をそのまま
+ * 見る。同じ「inch の桁」を 2 か所に書くと、片方だけ直したときに欄ごとに見え方が変わる。
+ * いまはどちらも 3 桁だが、**根拠が違う**ので定数は分けたままにする(mm は 1μm まで
+ * 読めれば足りる、inch は 0.001in ≒ 0.0254mm で機械加工の読みに足りる)。
+ */
+const MEASURE_FRACTION_DIGITS_BY_UNIT: Readonly<Record<LengthUnit, number>> = {
+  mm: MEASURE_FRACTION_DIGITS,
+  inch: INCH_DISPLAY_DIGITS,
+};
+
+/**
+ * 測定の結果の表示(例: `37.417 mm`、`90.000 度`、表示が inch なら `1.473 in`)。
  *
  * **`formatVolume`(`solidSummary.ts`)とは丸め方が違う。** あちらはプロパティ欄の体積を
  * 式エンジンの表示規則(有効数字 12 桁)で出すが、測定は「読み取る数字」なので小数 3 桁に
  * そろえる(計画書タスク30 の手順4)。1μm 単位まで読めれば十分で、桁が揺れると
  * 画面の札(タスク31)の幅が測るたびに変わる。
+ *
+ * `unit` は**表示の単位**(FR-811。端末の設定で、内部の値は mm のまま)。省くと mm に
+ * なるので、P5 までの呼び出しは 1 文字も見た目が変わらない。
  */
-export function formatMeasure(result: LocalMeasureResult): string {
+export function formatMeasure(result: LocalMeasureResult, unit: LengthUnit = 'mm'): string {
+  const value = displayMeasureValue(result.value, result.unit, unit);
   // −0 は「0」と書く(0.0004mm の距離を「-0.000」と出さない)。
-  const rounded = result.value === 0 ? 0 : result.value;
-  const digits = rounded.toFixed(MEASURE_FRACTION_DIGITS);
-  return `${digits === '-0.000' ? '0.000' : digits} ${t(MEASURE_UNIT_LABEL_KEYS[result.unit])}`;
+  const rounded = value === 0 ? 0 : value;
+  const fractionDigits = MEASURE_FRACTION_DIGITS_BY_UNIT[unit];
+  const digits = rounded.toFixed(fractionDigits);
+  // 丸めた結果が −0 になる場合も「0」に寄せる(桁数は単位で変わるので文字で比べない)。
+  const text = Number(digits) === 0 ? (0).toFixed(fractionDigits) : digits;
+  return `${text} ${t(MEASURE_UNIT_LABEL_KEYS[unit][result.unit])}`;
 }

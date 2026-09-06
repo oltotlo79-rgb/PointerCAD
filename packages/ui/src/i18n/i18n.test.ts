@@ -78,6 +78,52 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
     ]).toEqual(['前', '後', '右', '左', '上', '下']);
   });
 
+  it('表示の単位の札が mm / inch の 2 つそろっている(FR-811、P6 タスク3)', () => {
+    // mm 側は P5 までの固定の札とまったく同じ文字にしてある(見た目を変えない)。
+    expect(t('statusBar.unitMillimeter')).toBe('単位: mm');
+    expect(t('statusBar.unitInch')).toBe('単位: inch');
+    expect(t('statusBar.unitHint').length).toBeGreaterThan(0);
+  });
+
+  it('入出力の断りの文言は ui が組み立てる 5 つだけ(P6 タスク5、統括の決定 2026-09-06)', () => {
+    /*
+     * §2.8 の断りの表のうち、**kernel / io が日本語の文そのものを組み立てて返すもの**
+     * (`DXF_UNSUPPORTED_FORMAT_MESSAGE` など、読み込みの失敗・壊れたファイル・大きすぎる形)は
+     * ここに置かない。同じ文が 2 か所にあると片方だけ直したときに食い違うため(統括の決定)。
+     *
+     * 残すのは **`@pointercad/model` の `ExportNoticeKey` が返す 5 つ**だけで、model は
+     * キーを返し文言は持たない(`exchange/types.ts` の注釈)。**名前は `ExportNoticeKey` と
+     * 1 対 1 にそろえてある**ので、パネル(タスク32)は対応表を 1 つ書くだけで済む。
+     */
+    const keys = MESSAGE_KEYS.filter((key) => key.startsWith('exchangeError.'));
+    expect(keys).toEqual([
+      'exchangeError.nothingToExport',
+      'exchangeError.shellNotSupported',
+      'exchangeError.meshNotSupported',
+      'exchangeError.colorNotSupported',
+      'exchangeError.qualityIgnored',
+    ]);
+    for (const key of keys) {
+      expect(t(key).length, key).toBeGreaterThan(0);
+    }
+  });
+
+  it('ファイルの種別の説明が 8 種そろっている(P6 タスク4・5)', () => {
+    // `.pcad` だけは P2 からある `file.typeDescription` をそのまま使う(鍵を増やさない)。
+    const descriptions = [
+      t('file.typeDescription'),
+      t('file.type.template'),
+      t('file.type.step'),
+      t('file.type.stl'),
+      t('file.type.obj'),
+      t('file.type.gltf'),
+      t('file.type.threeMf'),
+      t('file.type.dxf'),
+    ];
+    expect(descriptions.length).toBe(8);
+    expect(new Set(descriptions).size).toBe(8);
+  });
+
   it('コンポーネント(.tsx)へ日本語を直書きしていない', () => {
     const offenders: string[] = [];
     for (const file of listFiles(sourceRoot, '.tsx')) {

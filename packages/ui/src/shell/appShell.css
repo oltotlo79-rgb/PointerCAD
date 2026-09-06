@@ -2612,15 +2612,29 @@ button.pcad-tree__row:focus-visible {
   color: var(--pcad-text-muted);
 }
 
+/*
+ * 表示の単位の札(FR-811。P6 タスク3 で押せる 2 択になった)。
+ * **見た目はいままでの札のまま**にして、区画も並びも変わっていないように見せる。
+ * ボタンの既定の字体・字の大きさだけを打ち消し、押せることは指の形と縁の色で示す。
+ */
 .pcad-statusbar__unit {
   flex: none;
+  height: 20px;
   padding: 0 var(--pcad-space-2);
+  font-family: inherit;
   font-size: var(--pcad-font-size-small);
   font-variant-numeric: tabular-nums;
   color: var(--pcad-text-muted);
+  cursor: pointer;
   background: var(--pcad-bg);
   border: 1px solid var(--pcad-border);
   border-radius: 999px;
+  transition: color var(--pcad-transition), border-color var(--pcad-transition);
+}
+
+.pcad-statusbar__unit:hover {
+  color: var(--pcad-text);
+  border-color: var(--pcad-border-strong);
 }
 
 /*

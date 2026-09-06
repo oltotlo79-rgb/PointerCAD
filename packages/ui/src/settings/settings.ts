@@ -11,6 +11,9 @@
  * (`displaySettings` / `setDisplaySettings`)は `packages/ui/src/store/useAppStore.ts`。
  */
 
+import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
+
+import type { MessageKey } from '../i18n/t.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 
 /** 表示テーマ 5 種(FR-908)。既定は `dark`(現状の配色をそのまま複製)。 */
@@ -46,6 +49,17 @@ export interface DisplaySettings {
    * テーマや刻み角度と同じ性質の値なので、`localStorage` の鍵を増やさず同じ 1 つへ入れる。
    */
   readonly timelineHintSeen: boolean;
+  /**
+   * 画面に出す長さの単位(FR-811。P6 タスク3)。既定は `'mm'`。
+   *
+   * **端末の設定であって文書の属性ではない**(P6 §0.a-0.1)。内部の値は常に mm 固定で、
+   * 換算するのは表示と入力の境目だけなので、ここを切り替えても `.pcad` のバイト列は
+   * 1 バイトも変わらない(NFR-RE-3。`settings.test.ts` で固定する)。
+   *
+   * テーマ・拡大率・刻み角度と同じ「端末に覚える設定」なので、`localStorage` の鍵を
+   * 増やさず同じ 1 つの `DisplaySettings` へ入れる。
+   */
+  readonly lengthUnit: LengthUnit;
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
@@ -53,6 +67,7 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   uiScale: 100,
   trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
   timelineHintSeen: false,
+  lengthUnit: 'mm',
 };
 export const MIN_UI_SCALE = 90;
 export const MAX_UI_SCALE = 150;
@@ -132,6 +147,45 @@ function readTimelineHintSeen(value: object): boolean {
     return DEFAULT_DISPLAY_SETTINGS.timelineHintSeen;
   }
   return value.timelineHintSeen;
+}
+
+/**
+ * 保存されている値から表示の長さの単位を読む(FR-811、P6 タスク3)。
+ * **この欄も欄ごとに既定へ後退させる**(`readTrackAngleStep` と同じ前方互換の理由。
+ * P6 より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
+ * 既定へ戻してはいけない)。知らない綴り(`'cm'` など)も同じく `'mm'` へ戻す。
+ *
+ * 選べる単位の正本は model の `LENGTH_UNITS` 1 か所だけで、ここは写しを作らない
+ * (`isValidTrackAngleStep` が `TRACK_ANGLE_STEPS` を見るのと同じ流儀)。
+ */
+function readLengthUnit(value: object): LengthUnit {
+  if (!('lengthUnit' in value)) {
+    return DEFAULT_DISPLAY_SETTINGS.lengthUnit;
+  }
+  const stored: unknown = value.lengthUnit;
+  const found = LENGTH_UNITS.find((unit) => unit === stored);
+  return found ?? DEFAULT_DISPLAY_SETTINGS.lengthUnit;
+}
+
+/**
+ * ステータスバーの札に出す文言のキー(FR-811、P6 タスク3)。**文言は ja.json**(NFR-MA-5)。
+ * 単位が増えたら型検査がここを落とすので、札の文言を足し忘れない。
+ */
+export const LENGTH_UNIT_LABEL_KEYS: Readonly<Record<LengthUnit, MessageKey>> = {
+  mm: 'statusBar.unitMillimeter',
+  inch: 'statusBar.unitInch',
+};
+
+/**
+ * 札を押したときに次に選ばれる単位(FR-811)。選択肢が 2 つなので入れ替えるだけにする。
+ *
+ * 一覧(`LENGTH_UNITS`)を順に送る書き方にしてあるので、単位が 3 つ目に増えても
+ * 押すたびに順ぐりに回る(テーマの見本カードの `nextThemeIndex` と同じ考え方)。
+ */
+export function nextLengthUnit(unit: LengthUnit): LengthUnit {
+  // 一覧に無い値(-1)のときは先頭から送り始める(`nextThemeIndex` と同じ受け方)。
+  const index = LENGTH_UNITS.indexOf(unit);
+  return LENGTH_UNITS[index < 0 ? 0 : (index + 1) % LENGTH_UNITS.length];
 }
 
 /** 拡大率を 90〜150 の範囲内へ丸める(スライダー等、利用者の入力をその場で丸める用途)。 */
@@ -271,6 +325,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       uiScale: parsed.uiScale,
       trackAngleStep: readTrackAngleStep(parsed),
       timelineHintSeen: readTimelineHintSeen(parsed),
+      lengthUnit: readLengthUnit(parsed),
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;

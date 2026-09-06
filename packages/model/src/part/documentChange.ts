@@ -37,6 +37,12 @@ import type { PartDocument } from './types.js';
  *   `resolvedSketch` / `sketchMesh` を差し替える必要がある(§2.3.2)。
  * - `id` / `name` / `schemaVersion`: 呼び名と版だけ。形は変わらない。
  * - `appearance`: **本題**。外観の割り当ては形を変えない(要件§4.12)。
+ * - `selectionSets`: 選んだ組に名前を付けただけの札(FR-112、P6 §0.a-0.44)。指している
+ *   面・辺・頂点は指紋(`SubShapeRef`)で持つので、セットを足しても消しても立体の形は
+ *   1 ドットも変わらない。**外観とまったく同じ理由で `null`。**
+ * - `canvases`: 下絵の画像(FR-332、P6 §0.a-0.45)。作図面に貼るだけで材料にならず、
+ *   線への吸着も持たない(§0.a-0.47)ので形に影響しない。入切・不透明度・寸法合わせを
+ *   変えても再計算を起こさない(§2.14 の表)。
  */
 const SHAPE_FIELDS: Readonly<
   Record<keyof PartDocument, ((document: PartDocument) => unknown) | null>
@@ -50,6 +56,8 @@ const SHAPE_FIELDS: Readonly<
   solids: (document) => document.solids,
   parameters: (document) => document.parameters,
   appearance: null,
+  selectionSets: null,
+  canvases: null,
 };
 
 /**

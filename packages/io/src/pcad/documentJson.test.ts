@@ -27,6 +27,9 @@ import {
   type PrimitiveShape,
   type ReferenceFeature,
   type RuledFeature,
+  // 選択セット(FR-112)と下絵(FR-332)の往復(P6 タスク37・38)。
+  type SelectionSet,
+  type SketchCanvas,
   type SketchConstraint,
   type SketchDocument,
   type SketchFeature,
@@ -658,7 +661,74 @@ function richDocument(): PartDocument {
     // 外観の割り当て(FR-1106〜1110、P5 タスク5)。立体1つと面1枚、プリセットと個別調整を
     // 両方含む。
     appearance: richAppearance(),
+    // 選択セット(FR-112、P6 タスク37)。立体と部分形状の両方、空のセット、同じ名前の
+    // 2 つを含む(§2.13 の表)。
+    selectionSets: richSelectionSets(),
+    // 下絵(FR-332、P6 タスク38)。式のままの寸法・向き・不透明度と、非表示の 1 枚。
+    canvases: richCanvases(),
   };
+}
+
+/**
+ * 選択セット3件(FR-112、P6 タスク37)。①立体と面を混ぜたセット、②同じ名前の別のセット
+ * (§2.13「同じ名前を 2 つ ── 許す」)、③空のセット(同「空のセット ── 作れる」)。
+ */
+function richSelectionSets(): readonly SelectionSet[] {
+  return [
+    {
+      id: 'selectionSet-1',
+      name: '上面',
+      members: [
+        { kind: 'body', bodyFeatureId: 'extrude-1' },
+        { kind: 'face', ref: richAppearanceFaceRef() },
+      ],
+    },
+    {
+      id: 'selectionSet-2',
+      name: '上面',
+      members: [{ kind: 'face', ref: richAppearanceFaceRef() }],
+    },
+    { id: 'selectionSet-3', name: '後で足す', members: [] },
+  ];
+}
+
+/**
+ * 下絵2枚(FR-332、P6 タスク38)。1 枚目は基準の作図面に式のままの寸法で貼ったもの、
+ * 2 枚目は任意の作業平面に貼った非表示の下絵(§2.14 の表の「入切」)。
+ */
+function richCanvases(): readonly SketchCanvas[] {
+  return [
+    {
+      id: 'canvas-1',
+      name: '下絵1',
+      plane: 'xy',
+      imageId: 'canvas-1',
+      width: ev('800*0.5', 400),
+      height: ev('600*0.5', 300),
+      origin: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      rotation: ev('30', 30),
+      opacity: ev('0.5', 0.5),
+      visible: true,
+    },
+    {
+      id: 'canvas-2',
+      name: '下絵2',
+      plane: 'referencePlane-1',
+      imageId: 'canvas-2',
+      width: ev('100', 100),
+      height: ev('50', 50),
+      origin: {
+        mode: 'polar',
+        base: { kind: 'point', pointId: 'point-1' },
+        distance: ev('10', 10),
+        azimuth: ev('45', 45),
+        elevation: ev('0', 0),
+      },
+      rotation: ev('0', 0),
+      opacity: ev('1', 1),
+      visible: false,
+    },
+  ];
 }
 
 /** パラメータ3件(FR-207)。日本語の名前と、他のパラメータを参照する式を含む。 */
@@ -739,6 +809,10 @@ function rawDocument(overrides: Record<string, unknown> = {}): Record<string, un
     solids: [],
     parameters: [],
     appearance: { entries: [] },
+    // 版7(P6 タスク37・38)で必須になった 2 欄。`references` / `parameters` / `appearance`
+    // と同じく既定では妥当な空配列にし、欠けた版を模すときだけ下の関数で外す。
+    selectionSets: [],
+    canvases: [],
     ...overrides,
   };
 }
@@ -761,6 +835,20 @@ function withoutParameters(document: Record<string, unknown>): Record<string, un
 function withoutAppearance(document: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...document };
   delete copy['appearance'];
+  return copy;
+}
+
+/** `rawDocument` の既定に入っている `selectionSets` を取り除く(欄が無い版6を模す)。 */
+function withoutSelectionSets(document: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...document };
+  delete copy['selectionSets'];
+  return copy;
+}
+
+/** `rawDocument` の既定に入っている `canvases` を取り除く(欄が無い版6を模す)。 */
+function withoutCanvases(document: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...document };
+  delete copy['canvases'];
   return copy;
 }
 
@@ -877,6 +965,8 @@ describe('部品文書の書き出し(serializeDocument)', () => {
       ],
       parameters: [],
       appearance: emptyAppearanceTable(),
+      selectionSets: [],
+      canvases: [],
     };
     expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(
       `{
@@ -919,7 +1009,9 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     "parameters": [],
     "appearance": {
       "entries": []
-    }
+    },
+    "selectionSets": [],
+    "canvases": []
   }
 }
 `,
@@ -936,6 +1028,8 @@ describe('部品文書の書き出し(serializeDocument)', () => {
   it('欄を書いた順が違っても同じ文字列ができる(決定的)', () => {
     const document = richDocument();
     const shuffled: PartDocument = {
+      canvases: document.canvases,
+      selectionSets: document.selectionSets,
       parameters: document.parameters,
       appearance: document.appearance,
       solids: document.solids,
@@ -2198,7 +2292,10 @@ describe('基本形状(PrimitiveFeature)の読み書き(FR-429、FR-801、P5 タ
     const sphere = createPrimitiveFeature(empty, 'sphere');
     const document: PartDocument = { ...empty, solids: [sphere] };
     const text = serializeDocument(document, { savedAt: SAVED_AT });
-    expect(Buffer.byteLength(text, 'utf8')).toBe(1313);
+    // P6 タスク37・38 で `selectionSets` / `canvases` の 2 欄が増え、空の配列 2 つぶんの
+    // 45 バイト(`,\n    "selectionSets": [],\n    "canvases": []`)だけ長くなった
+    // (1313 → 1358)。中身のある文書ではこの 2 欄が増えるだけで他は 1 バイトも変わらない。
+    expect(Buffer.byteLength(text, 'utf8')).toBe(1358);
   });
 });
 
@@ -2316,6 +2413,10 @@ describe('版2から版3への移行(§0.a-0.22、SCHEMA_MIGRATIONS[2])', () => 
       solids: v2Solids,
       parameters: [],
       appearance: emptyAppearanceTable(),
+      // 版7 で足した 2 欄(P6 タスク37・38)。版2 のファイルは本来持たないが、`parameters` /
+      // `appearance` と同じくここでは空で書いておく(移行が保つことを併せて確かめる)。
+      selectionSets: [],
+      canvases: [],
     };
     const v2File = JSON.stringify({
       schema: 2,
@@ -2776,12 +2877,16 @@ describe('読み方の規則(計画書 タスク14)', () => {
       'activeSketchId',
       // 外観の割り当て(FR-1106〜1110、P5 タスク5)。読み手は常に空の表で補う(§0.a-0.15)。
       'appearance',
+      // 下絵の画像(FR-332、P6 タスク38)。読み手は常に配列で補う(版6以前は移行が空にする)。
+      'canvases',
       'id',
       'name',
       // パラメータ表(FR-207、P4b タスク2)。読み手は常に空の配列で補う(中身は版5から)。
       'parameters',
       'references',
       'schemaVersion',
+      // 選択セット(FR-112、P6 タスク37)。`canvases` と同じ道筋で必須の欄になった。
+      'selectionSets',
       'sketches',
       'solids',
     ]);
@@ -5579,7 +5684,7 @@ describe('読み込んだ形のベースボディ 2 種の読み書き(FR-802、
 describe('版 6 → 版 7 の移行と封筒の種別(P6 タスク21、§0.a-0.55・§0.a-0.35)', () => {
   /** 版 6 として妥当な生の文書(選択セットも下絵も持たない)。 */
   function v6Document(): Record<string, unknown> {
-    return { ...rawDocument(), schemaVersion: 6 };
+    return withoutCanvases(withoutSelectionSets({ ...rawDocument(), schemaVersion: 6 }));
   }
 
   /** 版 6 の生のファイル。 */
@@ -5625,26 +5730,36 @@ describe('版 6 → 版 7 の移行と封筒の種別(P6 タスク21、§0.a-0.5
 
   it('版 2・3・4・5・6 のファイルがすべて開ける(移行を順に通す)', () => {
     // それぞれの版が「その版として妥当な最小の文書」になるよう、後から必須になった欄を外す。
+    /** 版6 以前は選択セットも下絵も持たない(P6 タスク37・38 で足した欄)。 */
+    function withoutV7Fields(document: Record<string, unknown>): Record<string, unknown> {
+      return withoutCanvases(withoutSelectionSets(document));
+    }
     const files: readonly string[] = [
       rawFile({
         schema: 2,
-        document: withoutAppearance(
-          withoutParameters(withoutReferences({ ...rawDocument(), schemaVersion: 2 })),
+        document: withoutV7Fields(
+          withoutAppearance(
+            withoutParameters(withoutReferences({ ...rawDocument(), schemaVersion: 2 })),
+          ),
         ),
       }),
       rawFile({
         schema: 3,
-        document: withoutAppearance(
-          withoutParameters(withoutReferences({ ...rawDocument(), schemaVersion: 3 })),
+        document: withoutV7Fields(
+          withoutAppearance(
+            withoutParameters(withoutReferences({ ...rawDocument(), schemaVersion: 3 })),
+          ),
         ),
       }),
       rawFile({
         schema: 4,
-        document: withoutAppearance(withoutParameters({ ...rawDocument(), schemaVersion: 4 })),
+        document: withoutV7Fields(
+          withoutAppearance(withoutParameters({ ...rawDocument(), schemaVersion: 4 })),
+        ),
       }),
       rawFile({
         schema: 5,
-        document: withoutAppearance({ ...rawDocument(), schemaVersion: 5 }),
+        document: withoutV7Fields(withoutAppearance({ ...rawDocument(), schemaVersion: 5 })),
       }),
       v6File(),
     ];
@@ -5823,5 +5938,231 @@ describe('ひな形の封筒の任意の欄(FR-814、§2.10)', () => {
     });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
     expect(PCAD_SCHEMA_VERSION).toBe(7);
+  });
+});
+
+describe('選択セットの読み書き(FR-112、P6 §0.a-0.44・§2.13、タスク37)', () => {
+  it('立体・部分形状・空のセット・同じ名前の 2 つが往復しても変わらない', () => {
+    const document = richDocument();
+    const parsed = roundTrip(document);
+    expect(parsed.selectionSets).toEqual(document.selectionSets);
+    expect(parsed.selectionSets).toHaveLength(3);
+    // 空のセット(§2.13「空のセット ── 作れる」)がそのまま残る。
+    expect(parsed.selectionSets[2].members).toEqual([]);
+    // 同じ名前の 2 つ(§2.13「同じ名前を 2 つ ── 許す」)が id で区別されたまま残る。
+    expect(parsed.selectionSets[0].name).toBe(parsed.selectionSets[1].name);
+    expect(parsed.selectionSets[0].id).not.toBe(parsed.selectionSets[1].id);
+  });
+
+  it('要素は外観の割り当て先とまったく同じ形で書かれる(型を 2 つ作っていない)', () => {
+    const text = serializeDocument(richDocument(), { savedAt: SAVED_AT });
+    const file: unknown = JSON.parse(text);
+    if (
+      typeof file !== 'object' ||
+      file === null ||
+      !('document' in file) ||
+      typeof file.document !== 'object' ||
+      file.document === null ||
+      !('selectionSets' in file.document)
+    ) {
+      throw new Error('選択セットが書き出されているはず');
+    }
+    expect(file.document.selectionSets).toEqual([
+      {
+        id: 'selectionSet-1',
+        name: '上面',
+        members: [
+          { kind: 'body', bodyFeatureId: 'extrude-1' },
+          { kind: 'face', ref: richAppearanceFaceRef() },
+        ],
+      },
+      {
+        id: 'selectionSet-2',
+        name: '上面',
+        members: [{ kind: 'face', ref: richAppearanceFaceRef() }],
+      },
+      { id: 'selectionSet-3', name: '後で足す', members: [] },
+    ]);
+  });
+
+  it('版 6 のファイルを開くと selectionSets が空配列で補われる(SCHEMA_MIGRATIONS[6])', () => {
+    const v6 = withoutCanvases(withoutSelectionSets({ ...rawDocument(), schemaVersion: 6 }));
+    const document = expectOk(parseDocument(rawFile({ schema: 6, document: v6 })));
+    expect(document.selectionSets).toEqual([]);
+  });
+
+  it('版 7 なのに selectionSets の欄が無ければ missingField で断る', () => {
+    const error = expectError(
+      parseDocument(rawFile({ document: withoutSelectionSets(rawDocument()) })),
+    );
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.selectionSets');
+  });
+
+  it('セットの id が重なっていれば invalidField で断る(コードは増やさない)', () => {
+    const error = expectError(
+      parseDocument(
+        rawFile({
+          document: rawDocument({
+            selectionSets: [
+              { id: 'selectionSet-1', name: 'A', members: [] },
+              { id: 'selectionSet-1', name: 'B', members: [] },
+            ],
+          }),
+        }),
+      ),
+    );
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('selectionSet-1');
+  });
+
+  it('知らない要素の種類・欠けた欄は場所を添えて断る', () => {
+    const badKind = expectError(
+      parseDocument(
+        rawFile({
+          document: rawDocument({
+            selectionSets: [{ id: 'selectionSet-1', name: 'A', members: [{ kind: 'edgeLoop' }] }],
+          }),
+        }),
+      ),
+    );
+    expect(badKind.code).toBe('invalidField');
+    expect(badKind.message).toContain('document.selectionSets[0].members[0]');
+    const missingName = expectError(
+      parseDocument(
+        rawFile({
+          document: rawDocument({ selectionSets: [{ id: 'selectionSet-1', members: [] }] }),
+        }),
+      ),
+    );
+    expect(missingName.code).toBe('missingField');
+    expect(missingName.message).toContain('name');
+  });
+
+  it('名前が空のセットは読める(壊れたファイルではない。断るのは model の作る口)', () => {
+    const document = expectOk(
+      parseDocument(
+        rawFile({
+          document: rawDocument({ selectionSets: [{ id: 'selectionSet-1', name: '', members: [] }] }),
+        }),
+      ),
+    );
+    expect(document.selectionSets[0].name).toBe('');
+  });
+});
+
+describe('下絵の読み書き(FR-332、P6 §0.a-0.45・§2.14、タスク38)', () => {
+  /** 生の下絵 1 枚(欄を自由に壊せる形)。 */
+  function rawCanvas(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: 'canvas-1',
+      name: '下絵1',
+      plane: 'xy',
+      imageId: 'canvas-1',
+      width: ev('400', 400),
+      height: ev('300', 300),
+      origin: { mode: 'absolute', x: ev('0', 0), y: ev('0', 0), z: ev('0', 0) },
+      rotation: ev('0', 0),
+      opacity: ev('0.5', 0.5),
+      visible: true,
+      ...overrides,
+    };
+  }
+
+  it('画像・寸法・不透明度・向き・入切が往復しても変わらない(§2.14 の表)', () => {
+    const document = richDocument();
+    const parsed = roundTrip(document);
+    expect(parsed.canvases).toEqual(document.canvases);
+    expect(parsed.canvases).toHaveLength(2);
+    expect(parsed.canvases[0].width.source).toBe('800*0.5');
+    expect(parsed.canvases[0].rotation.value).toBe(30);
+    expect(parsed.canvases[0].opacity.value).toBe(0.5);
+    expect(parsed.canvases[1].visible).toBe(false);
+    expect(parsed.canvases[1].plane).toBe('referencePlane-1');
+  });
+
+  it('document.json には id と寸法だけが入り、画像のバイト列は 1 バイトも入らない(§2.8)', () => {
+    const text = serializeDocument(richDocument(), { savedAt: SAVED_AT });
+    expect(text).toContain('"imageId": "canvas-1"');
+    // 画像そのものを表す欄(バイト列・データ URL)は書き出さない。
+    expect(text).not.toContain('bytes');
+    expect(text).not.toContain('data:image');
+  });
+
+  it('版 6 のファイルを開くと canvases が空配列で補われる(SCHEMA_MIGRATIONS[6])', () => {
+    const v6 = withoutCanvases(withoutSelectionSets({ ...rawDocument(), schemaVersion: 6 }));
+    const document = expectOk(parseDocument(rawFile({ schema: 6, document: v6 })));
+    expect(document.canvases).toEqual([]);
+  });
+
+  it('版 7 なのに canvases の欄が無ければ missingField で断る', () => {
+    const error = expectError(parseDocument(rawFile({ document: withoutCanvases(rawDocument()) })));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('document.canvases');
+  });
+
+  it('不透明度は 0 と 1 を含む 0〜1 で読める', () => {
+    for (const value of [0, 0.25, 1]) {
+      const document = expectOk(
+        parseDocument(
+          rawFile({
+            document: rawDocument({
+              canvases: [rawCanvas({ opacity: ev(String(value), value) })],
+            }),
+          }),
+        ),
+      );
+      expect(document.canvases[0].opacity.value).toBe(value);
+    }
+  });
+
+  it('不透明度が 0〜1 の外なら invalidField で断る(外観の 0〜100% とは尺度が違う)', () => {
+    for (const value of [-0.1, 1.5, 50]) {
+      const error = expectError(
+        parseDocument(
+          rawFile({
+            document: rawDocument({
+              canvases: [rawCanvas({ opacity: ev(String(value), value) })],
+            }),
+          }),
+        ),
+      );
+      expect(error.code).toBe('invalidField');
+      expect(error.message).toContain('document.canvases[0].opacity');
+    }
+  });
+
+  it('下絵の id が重なっていれば invalidField で断る(コードは増やさない)', () => {
+    const error = expectError(
+      parseDocument(
+        rawFile({ document: rawDocument({ canvases: [rawCanvas(), rawCanvas({ name: '下絵2' })] }) }),
+      ),
+    );
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('canvas-1');
+  });
+
+  it('欄が欠けている・型が違う下絵は場所を添えて断る', () => {
+    const withoutImageId = { ...rawCanvas() };
+    delete withoutImageId['imageId'];
+    const missing = expectError(
+      parseDocument(rawFile({ document: rawDocument({ canvases: [withoutImageId] }) })),
+    );
+    expect(missing.code).toBe('missingField');
+    expect(missing.message).toContain('document.canvases[0].imageId');
+    const wrongType = expectError(
+      parseDocument(
+        rawFile({ document: rawDocument({ canvases: [rawCanvas({ visible: 'yes' })] }) }),
+      ),
+    );
+    expect(wrongType.code).toBe('invalidField');
+    expect(wrongType.message).toContain('document.canvases[0].visible');
+  });
+
+  it('知らない欄を足した下絵は読めて、保存し直すと落ちる(前方互換)', () => {
+    const document = expectOk(
+      parseDocument(rawFile({ document: rawDocument({ canvases: [rawCanvas({ 未知: 1 })] }) })),
+    );
+    expect(serializeDocument(document, { savedAt: SAVED_AT })).not.toContain('未知');
   });
 });

@@ -68,8 +68,14 @@ import {
   type RuledSection,
   type RuledSphereSegments,
   type ScaleFactor,
+  // 選択セット(FR-112、P6 §0.a-0.44、タスク37)。`SelectionMember` は
+  // `AppearanceTarget` そのものなので、読み書きも外観のものを使い回す。
+  type SelectionMember,
+  type SelectionSet,
   SKETCH_CONSTRAINT_KINDS,
   type SketchArcFeature,
+  // 下絵の画像(FR-332、P6 §0.a-0.45、タスク38)。画像そのものは ZIP の別エントリ。
+  type SketchCanvas,
   type SketchConstraint,
   type SketchCurveRef,
   type SketchDocument,
@@ -1674,6 +1680,43 @@ function serializeAppearanceTable(table: AppearanceTable): AppearanceTable {
   return { entries: table.entries.map(serializeAppearanceEntry) };
 }
 
+/**
+ * 選択セット 1 つ(FR-112、版7、P6 タスク37)。
+ *
+ * 要素(`SelectionMember`)は **`AppearanceTarget` そのもの**(model の §0.a-0.44)なので、
+ * 書き出しも外観の `serializeAppearanceTarget` をそのまま使う(同じ形に 2 通りの
+ * 書き方を作らない)。
+ */
+function serializeSelectionSet(set: SelectionSet): SelectionSet {
+  return {
+    id: set.id,
+    name: set.name,
+    members: set.members.map(serializeAppearanceTarget),
+  };
+}
+
+/**
+ * 下絵 1 枚(FR-332、版7、P6 タスク38)。
+ *
+ * **画像のバイト列はここに 1 バイトも書かない。** `imageId` が `.pcad` の ZIP のエントリ
+ * (`canvases/<imageId>.png`、`pcadFile.ts`)を指すだけで、`document.json` には id と
+ * 寸法しか入れない(読み込んだ B-rep・三角形と同じ流儀。§2.8)。
+ */
+function serializeSketchCanvas(canvas: SketchCanvas): SketchCanvas {
+  return {
+    id: canvas.id,
+    name: canvas.name,
+    plane: canvas.plane,
+    imageId: canvas.imageId,
+    width: serializeExpression(canvas.width),
+    height: serializeExpression(canvas.height),
+    origin: serializeCoordinate(canvas.origin),
+    rotation: serializeExpression(canvas.rotation),
+    opacity: serializeExpression(canvas.opacity),
+    visible: canvas.visible,
+  };
+}
+
 function serializePartDocument(document: PartDocument): PartDocument {
   return {
     id: document.id,
@@ -1685,6 +1728,10 @@ function serializePartDocument(document: PartDocument): PartDocument {
     solids: document.solids.map(serializeSolidFeature),
     parameters: document.parameters.map(serializeParameter),
     appearance: serializeAppearanceTable(document.appearance),
+    // 版7 で足した 2 欄(P6 §0.a-0.44・0.45)。**外観の後ろに置く**ことで、版6 までの
+    // ファイルの並び(id → … → appearance)が 1 行も動かない。
+    selectionSets: document.selectionSets.map(serializeSelectionSet),
+    canvases: document.canvases.map(serializeSketchCanvas),
   };
 }
 
@@ -5996,7 +6043,42 @@ function readAppearanceSpec(
   };
 }
 
-/** 外観の割り当て先(FR-1106)。面は部分形状の参照(P3 の `readSubShapeRefField` を使い回す)。 */
+/**
+ * 外観の割り当て先(FR-1106)を、値そのもの(record)から読む。面は部分形状の参照
+ * (P3 の `readSubShapeRefField` を使い回す)。
+ *
+ * **選択セットの要素(`SelectionMember`、FR-112、P6 タスク37)も同じ形なので、この関数を
+ * そのまま使う**(型を 2 つ作らないので、読み手も 1 つ)。欄から読む口(`readAppearanceTarget`)と
+ * 値から読む口を分けてあるのは `readCoordinateRecord` / `readCoordinate` と同じ都合で、
+ * 配列の要素として読むときに「欄の名前」を場所へ足さないためである。
+ */
+function readAppearanceTargetRecord(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<AppearanceTarget> {
+  const kind = readLiteral(record, 'kind', path, APPEARANCE_TARGET_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  switch (kind.value) {
+    case 'body': {
+      const bodyFeatureId = readString(record, 'bodyFeatureId', path);
+      if (!bodyFeatureId.ok) {
+        return bodyFeatureId;
+      }
+      return { ok: true, value: { kind: 'body', bodyFeatureId: bodyFeatureId.value } };
+    }
+    case 'face': {
+      const ref = readSubShapeRefField(record, 'ref', path);
+      if (!ref.ok) {
+        return ref;
+      }
+      return { ok: true, value: { kind: 'face', ref: ref.value } };
+    }
+  }
+}
+
+/** 同じものを「親の record の欄」として読む(外観の割り当ての `target`)。 */
 function readAppearanceTarget(
   source: Record<string, unknown>,
   key: string,
@@ -6006,27 +6088,7 @@ function readAppearanceTarget(
   if (!record.ok) {
     return record;
   }
-  const path = joinPath(parentPath, key);
-  const kind = readLiteral(record.value, 'kind', path, APPEARANCE_TARGET_KINDS);
-  if (!kind.ok) {
-    return kind;
-  }
-  switch (kind.value) {
-    case 'body': {
-      const bodyFeatureId = readString(record.value, 'bodyFeatureId', path);
-      if (!bodyFeatureId.ok) {
-        return bodyFeatureId;
-      }
-      return { ok: true, value: { kind: 'body', bodyFeatureId: bodyFeatureId.value } };
-    }
-    case 'face': {
-      const ref = readSubShapeRefField(record.value, 'ref', path);
-      if (!ref.ok) {
-        return ref;
-      }
-      return { ok: true, value: { kind: 'face', ref: ref.value } };
-    }
-  }
+  return readAppearanceTargetRecord(record.value, joinPath(parentPath, key));
 }
 
 /**
@@ -6094,6 +6156,164 @@ function readAppearanceTable(
   return { ok: true, value: { entries } };
 }
 
+/**
+ * 選択セット 1 つ(FR-112、版7、P6 タスク37)を読む。
+ *
+ * 要素は外観の `readAppearanceTarget` をそのまま使い回す(型が同じなので読み手も 1 つ)。
+ * **名前が空かどうかはここでは見ない。** 空にできないのは利用者の操作の話(model の
+ * `createSelectionSet` が断る)で、壊れたファイルの判定ではないため、ここで断ると
+ * 「開けないファイル」を作ってしまう(FR-504「読み込みでファイルを失わせない」)。
+ * **同じ名前が 2 つあっても読む**(§2.13。区別は id が付ける)。
+ */
+function readSelectionSetItem(value: unknown, path: string): Checked<SelectionSet> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) {
+    return id;
+  }
+  const name = readString(record.value, 'name', path);
+  if (!name.ok) {
+    return name;
+  }
+  const array = readArray(record.value, 'members', path);
+  if (!array.ok) {
+    return array;
+  }
+  const membersPath = joinPath(path, 'members');
+  const members: SelectionMember[] = [];
+  for (let index = 0; index < array.value.length; index += 1) {
+    const itemPath = indexPath(membersPath, index);
+    const item = checkRecord(array.value[index], itemPath);
+    if (!item.ok) {
+      return item;
+    }
+    // 外観の割り当て先の読み手をそのまま使う(型が同じなので読み手も 1 つ)。
+    const member = readAppearanceTargetRecord(item.value, itemPath);
+    if (!member.ok) {
+      return member;
+    }
+    members.push(member.value);
+  }
+  return { ok: true, value: { id: id.value, name: name.value, members } };
+}
+
+/**
+ * 選択セット(FR-112)を読む。**版7からは必須**(欠けていれば `missingField`)。
+ * 版6以前のこの欄が無いファイルは `schema.ts` の `SCHEMA_MIGRATIONS[6]`(欄が無ければ
+ * 空配列で補う)へ移す。書き手は常にこの欄を書く。
+ */
+function readSelectionSets(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<readonly SelectionSet[]> {
+  return readList(record, 'selectionSets', path, readSelectionSetItem);
+}
+
+/**
+ * 下絵の不透明度(FR-332)。**0〜1** の式を読む(外観の透過率が 0〜100% なのと
+ * 尺度が違う。理由は model の `SketchCanvas.opacity` の注記)。式が壊れて評価値が
+ * NaN のときは `readExpression` が既に許容しているので対象にせず、有限の数で
+ * 範囲外なら壊れたファイルとして断る(`readAppearancePercent` と同じ形)。
+ */
+function readCanvasOpacity(
+  source: Record<string, unknown>,
+  key: string,
+  parentPath: string,
+): Checked<ExpressionValueJson> {
+  const value = readExpression(source, key, parentPath);
+  if (!value.ok) {
+    return value;
+  }
+  const evaluated = value.value.value;
+  if (!Number.isNaN(evaluated) && (evaluated < 0 || evaluated > 1)) {
+    return fieldProblem(joinPath(parentPath, key), 'type');
+  }
+  return value;
+}
+
+/**
+ * 下絵 1 枚(FR-332、版7、P6 タスク38)を読む。
+ *
+ * `imageId` は ZIP のエントリを指す名前で、**指す先が入っているかはここでは見ない**
+ * (`pcadFile.ts` の `findMissingAttachment` が `missingField` で断る。`document.json`
+ * だけを読むこの層は ZIP の中身を知らない)。`plane` は作業平面の id なので、
+ * ミラーの `MirrorPlane` と同じくただの文字列として読む(実在するかは解決が見る)。
+ */
+function readSketchCanvasItem(value: unknown, path: string): Checked<SketchCanvas> {
+  const record = checkRecord(value, path);
+  if (!record.ok) {
+    return record;
+  }
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) {
+    return id;
+  }
+  const name = readString(record.value, 'name', path);
+  if (!name.ok) {
+    return name;
+  }
+  const plane: Checked<WorkPlaneId> = readString(record.value, 'plane', path);
+  if (!plane.ok) {
+    return plane;
+  }
+  const imageId = readString(record.value, 'imageId', path);
+  if (!imageId.ok) {
+    return imageId;
+  }
+  const width = readExpression(record.value, 'width', path);
+  if (!width.ok) {
+    return width;
+  }
+  const height = readExpression(record.value, 'height', path);
+  if (!height.ok) {
+    return height;
+  }
+  const origin = readCoordinate(record.value, 'origin', path);
+  if (!origin.ok) {
+    return origin;
+  }
+  const rotation = readExpression(record.value, 'rotation', path);
+  if (!rotation.ok) {
+    return rotation;
+  }
+  const opacity = readCanvasOpacity(record.value, 'opacity', path);
+  if (!opacity.ok) {
+    return opacity;
+  }
+  const visible = readBoolean(record.value, 'visible', path);
+  if (!visible.ok) {
+    return visible;
+  }
+  return {
+    ok: true,
+    value: {
+      id: id.value,
+      name: name.value,
+      plane: plane.value,
+      imageId: imageId.value,
+      width: width.value,
+      height: height.value,
+      origin: origin.value,
+      rotation: rotation.value,
+      opacity: opacity.value,
+      visible: visible.value,
+    },
+  };
+}
+
+/**
+ * 下絵(FR-332)を読む。**版7からは必須**(`selectionSets` とまったく同じ道筋)。
+ */
+function readCanvases(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<readonly SketchCanvas[]> {
+  return readList(record, 'canvases', path, readSketchCanvasItem);
+}
+
 function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -6135,6 +6355,14 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!appearance.ok) {
     return appearance;
   }
+  const selectionSets = readSelectionSets(record.value, path);
+  if (!selectionSets.ok) {
+    return selectionSets;
+  }
+  const canvases = readCanvases(record.value, path);
+  if (!canvases.ok) {
+    return canvases;
+  }
   return {
     ok: true,
     value: {
@@ -6147,6 +6375,8 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
       solids: solids.value,
       parameters: parameters.value,
       appearance: appearance.value,
+      selectionSets: selectionSets.value,
+      canvases: canvases.value,
     },
   };
 }
@@ -6378,6 +6608,22 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
       `外観の割り当ての id が重なっています(${duplicateAppearanceId})。ファイルが壊れている可能性があります。`,
     );
   }
+  const duplicateSelectionSetId = findDuplicateId(
+    decoded.value.selectionSets.map((set) => set.id),
+  );
+  if (duplicateSelectionSetId !== null) {
+    return fail(
+      'invalidField',
+      `選択セットの id が重なっています(${duplicateSelectionSetId})。ファイルが壊れている可能性があります。`,
+    );
+  }
+  const duplicateCanvasId = findDuplicateId(decoded.value.canvases.map((canvas) => canvas.id));
+  if (duplicateCanvasId !== null) {
+    return fail(
+      'invalidField',
+      `下絵の id が重なっています(${duplicateCanvasId})。ファイルが壊れている可能性があります。`,
+    );
+  }
   return {
     ok: true,
     document: decoded.value,
@@ -6431,6 +6677,22 @@ function findDuplicateAppearanceId(table: AppearanceTable): string | null {
       return entry.id;
     }
     seen.add(entry.id);
+  }
+  return null;
+}
+
+/**
+ * 選択セット・下絵の `id` が重なっていないことを確かめる(FR-112、FR-332、P6 タスク37・38)。
+ * `findDuplicateAppearanceId` とまったく同じ理由(重なると「1 つずつ消す」「名前を変える」が
+ * どちらを指すか決まらない)で、**エラーコードは増やさず** `invalidField` で断る。
+ */
+function findDuplicateId(ids: readonly string[]): string | null {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) {
+      return id;
+    }
+    seen.add(id);
   }
   return null;
 }

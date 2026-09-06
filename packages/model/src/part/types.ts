@@ -19,7 +19,7 @@ import type { ExpressionValue } from '@pointercad/expression';
 // (§0.a-0.74、統括の指示 2026-09-05)。型だけの取り込みなので実行時の読み込みは起きない。
 import type { SphereSegmentCount } from '@pointercad/kernel';
 
-import type { AppearanceTable } from '../appearance/types.js';
+import type { AppearanceTable, AppearanceTarget } from '../appearance/types.js';
 import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
 import type {
   EdgeCurveKind,
@@ -1286,6 +1286,107 @@ export type ReferenceFeature =
   | ReferencePointFeature
   | ReferenceCoordinateSystemFeature;
 
+// ---------------------------------------------------------------------------
+// 選択セット(FR-112。P6 計画書 §0.a-0.44、§2.13、タスク37)
+// ---------------------------------------------------------------------------
+
+/**
+ * 選択セットに入れられるもの 1 つ(FR-112「選んだ組に名前を付けて保存・呼び出し」)。
+ *
+ * **P5 の `AppearanceTarget` をそのまま共有する**(§0.a-0.44「`AppearanceTarget` と
+ * 同じ形」、統括の指示「型を 2 つ作らない」)。同じ形の型を 2 つ置くと、`packages/io` の
+ * 読み書き・`isSameAppearanceTarget` の同一判定・部分形状の指紋の選び直しが
+ * 2 通りずつ要ることになり、片方だけ直したときに黙って食い違う。
+ *
+ * **`kind: 'face'` は「部分形状 1 つ」の意味で読む。** 外観は面 1 枚にしか付けられない
+ * ので P5 はこの名前にしたが、`SubShapeRef` 自身が `fingerprint.kind` に
+ * 面・辺・頂点のどれかを持っている(`geometry/subShapeRef.ts`)ので、選択セットが
+ * 辺や頂点を持っても型は 1 ドットも変える必要がない。§0.a-0.44 の草案の名前
+ * (`{ kind: 'subShape' }`)へ改名しなかったのは、改名すると版 7 の `.pcad` の
+ * 外観の欄まで書き換わり、P5 で保存されたファイルが開けなくなるためである。
+ */
+export type SelectionMember = AppearanceTarget;
+
+/**
+ * 選択セット 1 つ(FR-112、§0.a-0.44)。
+ *
+ * **履歴ではない。** 形を作らない「札」なので `solids` には入れず、文書の別の欄として
+ * 持つ(外観 `appearance` とまったく同じ扱い)。セットを足しても消しても再計算は
+ * 起こらない(`part/documentChange.ts` の `affectsShape` が偽を返す)。
+ *
+ * - **同じ名前を 2 つ作れる**(§2.13 の表)。区別は `id` で付ける。名前で引く仕組みを
+ *   持たないので、重複してもどのセットを指しているかが曖昧にならない。
+ * - **空のセットを作れる**(同上)。先に名前だけ決めて後から要素を足す使い方を許す。
+ * - 要素は座標ではなく**指紋**(`SubShapeRef`)で持つので、再計算の後も選び直せる
+ *   (P3 からの仕組み)。選び直せなかった要素は警告して外す(§2.13、`pruneSelectionSets`)。
+ */
+export interface SelectionSet {
+  /** セットの id(採番は `selectionSet-<n>`、`part/selectionSets.ts` の `nextSelectionSetId`)。 */
+  readonly id: string;
+  /** 利用者が付けた名前(FR-112)。空にはできない。同じ名前が 2 つあってもよい。 */
+  readonly name: string;
+  /** セットに入っているもの。0 個でもよい。 */
+  readonly members: readonly SelectionMember[];
+}
+
+// ---------------------------------------------------------------------------
+// 下絵の画像(FR-332。P6 計画書 §0.a-0.45、§2.14、タスク38)
+// ---------------------------------------------------------------------------
+
+/**
+ * 下絵の画像 1 枚(FR-332「読み込んだ画像を作図面に置き、2 点で寸法を合わせてなぞる」)。
+ * P6 計画書 §0.a-0.45 の形に従う。
+ *
+ * **画像そのものはこの欄に入れない。** `imageId` で `.pcad` の ZIP のエントリ
+ * (`canvases/<imageId>.png`、`packages/io` の `PCAD_CANVAS_ENTRY_PREFIX`)を指すだけで、
+ * `document.json` には id と寸法しか書かない(§0.9 と同じ流儀。数 MB の画像を JSON へ
+ * 入れると読み書きが桁違いに遅くなる)。
+ *
+ * **画像を `.pcad` へ保存するのは `rules/04`「導出できるものは保存しない」の
+ * 承認済みの例外**(§0.a-0.45 の例外③、統括の承認 2026-09-05)である。読み込んだ画像は
+ * **再計算では導出できない**——元のファイルが手元から消えたら二度と作れない——ので、
+ * 読み込んだ B-rep(§0.a-0.9)・読み込んだ三角形(§0.a-0.24)と同じ理屈で抱き込む。
+ *
+ * **下絵は形にならない。** 押し出しの材料にも当たり判定にもならず、変更しても再計算を
+ * 起こさない(§2.14、`affectsShape` が偽)。線には吸着しない(§0.a-0.47)。
+ */
+export interface SketchCanvas {
+  /** 下絵の id(採番は `canvas-<n>`、`sketch/canvas.ts` の `nextCanvasId`)。 */
+  readonly id: string;
+  /** フィーチャーツリー・一覧に出す名前(FR-501 と同じ扱い)。 */
+  readonly name: string;
+  /**
+   * 貼り付ける作図面(FR-332「作図面に置く」)。基準の 3 面と任意の作業平面(FR-328)の
+   * どちらも入る文字列(`sketch/planeMath.ts` の `WorkPlaneId`。ミラーの `MirrorPlane` が
+   * 同じ理由で同じ型を使っている)。
+   */
+  readonly plane: WorkPlaneId;
+  /**
+   * ZIP の中の画像を指す名前。エントリ名は `canvases/<imageId>.png` になる。
+   * **拡張子は形式に関わらず `.png` 固定**(§0.a-0.45 の決め)で、PNG か JPEG かは
+   * 読み出したバイト列の先頭から判る(`sketch/canvas.ts` の `detectImageFormat`)。
+   * 導出できるものを二重に持たないため、形式そのものは欄にしない(`rules/04`)。
+   */
+  readonly imageId: string;
+  /** 作図面の上での幅(mm、FR-202 の式)。2 点の寸法合わせ(§2.14)が決める。 */
+  readonly width: ExpressionValue;
+  /** 同じく高さ(mm)。縦横比は利用者が崩せる(画像が歪んでいることがあるため)。 */
+  readonly height: ExpressionValue;
+  /** 画像の中心を置く位置(作図面の座標。FR-202 の式のまま持つ)。 */
+  readonly origin: CoordinateInput;
+  /** 作図面の中での回り(度)。0 なら画像の横が作図面の第 1 軸に沿う。 */
+  readonly rotation: ExpressionValue;
+  /**
+   * 不透明度 **0〜1**(0 で透明、1 で不透明)。**外観の透過率(0〜100%)とは尺度が違う。**
+   * three.js の `Material.opacity` がそのまま 0〜1 で、下絵は「なぞるための薄い紙」で
+   * あって材質ではないので、描く側(ui タスク39)が換算せずに使える尺度にしてある
+   * (§2.14 とタスク39 の検証表「不透明度 0.5 → 材質の `opacity` が 0.5」)。
+   */
+  readonly opacity: ExpressionValue;
+  /** 画面に出すか(FR-332 の「入切」)。false でも文書からは消えない。 */
+  readonly visible: boolean;
+}
+
 /**
  * 部品(パート)文書。Undo のスナップショットの単位で、.pcad に保存される唯一のもの
  * (FR-505、FR-801)。変更のたびに新しい配列を作る(不変)。
@@ -1329,4 +1430,21 @@ export interface PartDocument {
    * の `appearanceOf` を通しておけば、この欄が将来また整理されても呼び出し側は変わらない。
    */
   readonly appearance: AppearanceTable;
+  /**
+   * 選択セット(FR-112、§0.a-0.44。P6 タスク37)。**版 7 で足した必須の欄**で、
+   * 版 6 以前のファイルは `packages/io` の `SCHEMA_MIGRATIONS[6]` が空配列で補う
+   * (`parameters`(版 5)・`appearance`(版 6)とまったく同じ道筋)。
+   *
+   * 外観と同じく**履歴ではない**ので、変更しても再計算も段の鍵の作り直しも起こさない
+   * (`part/documentChange.ts` の `affectsShape` が偽を返す)。
+   */
+  readonly selectionSets: readonly SelectionSet[];
+  /**
+   * 下絵の画像(FR-332、§0.a-0.45。P6 タスク38)。`selectionSets` と同じく版 7 で足した
+   * 必須の欄で、版 6 以前のファイルは移行が空配列で補う。
+   *
+   * 画像のバイト列はここに入らない(`SketchCanvas.imageId` が ZIP のエントリを指す)。
+   * 下絵は材料にならないので、変更しても再計算を起こさない(§2.14)。
+   */
+  readonly canvases: readonly SketchCanvas[];
 }

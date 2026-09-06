@@ -468,6 +468,10 @@ function collectAttachments(entries: Unzipped): {
  * (FR-802)。読み込みの時点で断ったほうが、何が起きたかを利用者へ伝えられる。
  * 断りは既存の `missingField`(**エラーコードを増やさない**。
  * `docs/報告記録.md` 2026-09-04 01:40 の③)。
+ *
+ * **下絵(`canvases`、FR-332、タスク38)も同じ扱いにする。** 画像が欠けた下絵は
+ * 何も描けない枠だけになり、そのまま保存し直すと欄だけが残って**画像を永久に失う**。
+ * 読み込みの時点で断れば、利用者は元の `.pcad` を残したまま作り直せる(FR-504)。
  */
 function findMissingAttachment(
   document: PartDocument,
@@ -479,6 +483,11 @@ function findMissingAttachment(
     }
     if (feature.kind === 'importedMesh' && !attachments.meshes.has(feature.meshRef)) {
       return `${PCAD_MESH_ENTRY_PREFIX}${feature.meshRef}${PCAD_MESH_ENTRY_SUFFIX}`;
+    }
+  }
+  for (const canvas of document.canvases) {
+    if (!attachments.canvases.has(canvas.imageId)) {
+      return `${PCAD_CANVAS_ENTRY_PREFIX}${canvas.imageId}${PCAD_CANVAS_ENTRY_SUFFIX}`;
     }
   }
   return null;

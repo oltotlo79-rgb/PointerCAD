@@ -616,6 +616,11 @@ export function createEmptyPartDocument(): PartDocument {
     // 外観の割り当て(FR-1106〜1110)の既定は空の表。割り当てが1つも無い文書は
     // P2 からの単色(`DEFAULT_APPEARANCE`)で描かれ、見た目は変わらない(P5 §0.a-0.4)。
     appearance: emptyAppearanceTable(),
+    // 選択セット(FR-112、P6 §0.a-0.44)の既定は空。名前を付けた組は利用者が作る
+    // (タスク37)。外観と同じく形に影響しない札なので、起動時の見た目は変わらない。
+    selectionSets: [],
+    // 下絵の画像(FR-332、P6 §0.a-0.45)の既定も空。読み込んだときだけ増える(タスク38)。
+    canvases: [],
   };
 }
 

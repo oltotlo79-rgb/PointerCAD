@@ -130,15 +130,30 @@ export interface PartTemplate {
   readonly toolDefaults: ToolDefaults;
 }
 
-/** 空の履歴(スケッチ 1 本・基準ジオメトリ無し・ソリッド無し)を作る。 */
+/**
+ * 空の履歴(スケッチ 1 本・基準ジオメトリ無し・ソリッド無し)と、履歴に結び付いた札を作る。
+ *
+ * **選択セット(FR-112)と下絵(FR-332)もここで空にする**(P6 タスク37・38)。どちらも
+ * パラメータ表・外観と違って**履歴を指している**ためである。選択セットの要素は立体の
+ * ボディ id と部分形状の指紋で、下絵の `imageId` は `.pcad` の ZIP のエントリを指すので、
+ * 履歴を空にしたひな形へ持ち越すと、どちらも指す先の無い参照になる(下絵は画像の添付ごと
+ * 失われ、読み込みが `missingField` で断る)。
+ */
 function emptyHistory(): Pick<
   PartDocument,
-  'sketches' | 'activeSketchId' | 'references' | 'solids'
+  'sketches' | 'activeSketchId' | 'references' | 'solids' | 'selectionSets' | 'canvases'
 > {
   // スケッチは 0 本にできない(`activeSketchId` が `sketches` のいずれかを指す約束、
   // §0.a-0.4)。起動直後の部品と同じく、空のスケッチを 1 本だけ持たせる。
   const sketch = createEmptySketchDocument();
-  return { sketches: [sketch], activeSketchId: sketch.id, references: [], solids: [] };
+  return {
+    sketches: [sketch],
+    activeSketchId: sketch.id,
+    references: [],
+    solids: [],
+    selectionSets: [],
+    canvases: [],
+  };
 }
 
 export interface DocumentFromTemplateOptions {

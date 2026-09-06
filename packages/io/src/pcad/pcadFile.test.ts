@@ -100,6 +100,39 @@ function exampleDocument(): PartDocument {
     parameters: [],
     // 外観の割り当て(FR-1106〜1110、P5 タスク5)。この例は割り当てを持たない。
     appearance: emptyAppearanceTable(),
+    // 選択セット(FR-112)と下絵(FR-332)(P6 タスク37・38)。この例はどちらも持たない
+    // (下絵を持つ例は「下絵の画像の添付」の検査が別に作る)。
+    selectionSets: [],
+    canvases: [],
+  };
+}
+
+/**
+ * 下絵を 1 枚だけ持つ部品文書(FR-332、P6 タスク38)。`imageId` が ZIP の
+ * `canvases/canvas-1.png` を指す。
+ */
+function canvasDocument(): PartDocument {
+  return {
+    ...createEmptyPartDocument(),
+    canvases: [
+      {
+        id: 'canvas-1',
+        name: '下絵1',
+        plane: 'xy',
+        imageId: 'canvas-1',
+        width: { source: '400', value: 400, display: '400' },
+        height: { source: '300', value: 300, display: '300' },
+        origin: {
+          mode: 'absolute',
+          x: { source: '0', value: 0, display: '0' },
+          y: { source: '0', value: 0, display: '0' },
+          z: { source: '0', value: 0, display: '0' },
+        },
+        rotation: { source: '0', value: 0, display: '0' },
+        opacity: { source: '0.5', value: 0.5, display: '0.5' },
+        visible: true,
+      },
+    ],
   };
 }
 
@@ -744,6 +777,32 @@ describe('.pcad の添付(§0.a-0.55)', () => {
     const error = expectError(readPcadFile(bytes));
     expect(error.code).toBe('missingField');
     expect(error.message).toContain(`${PCAD_MESH_ENTRY_PREFIX}mesh-1${PCAD_MESH_ENTRY_SUFFIX}`);
+  });
+
+  it('下絵の画像は往復してもバイト列が 1 バイトも変わらない(FR-332、タスク38)', () => {
+    const png = fakePng();
+    const document = canvasDocument();
+    const bytes = writePcadFile(document, {
+      savedAt: SAVED_AT,
+      attachments: { ...emptyPcadAttachments(), canvases: new Map([['canvas-1', png]]) },
+    });
+    const result = expectOk(readPcadFile(bytes));
+    expect(result.document).toEqual(document);
+    expect(result.attachments.canvases.get('canvas-1')).toEqual(png);
+    // 画像は圧縮済みなので掛け直さない(`ATTACHMENT_IMAGE_LEVEL` は 0)。長さも変わらない。
+    expect(result.attachments.canvases.get('canvas-1')?.length).toBe(png.length);
+  });
+
+  it('文書が指す下絵の画像が欠けていれば missingField で断る(コードを増やさない)', () => {
+    const bytes = writePcadFile(canvasDocument(), {
+      savedAt: SAVED_AT,
+      attachments: emptyPcadAttachments(),
+    });
+    const error = expectError(readPcadFile(bytes));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain(
+      `${PCAD_CANVAS_ENTRY_PREFIX}canvas-1${PCAD_CANVAS_ENTRY_SUFFIX}`,
+    );
   });
 
   it('三角形の添付の並びが壊れていれば invalidField で断る', () => {

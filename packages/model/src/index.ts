@@ -580,3 +580,67 @@ export type { SketchToDxfInput, SketchToDxfResult } from './exchange/sketchToDxf
 export {
   DXF_NOT_PLANAR_MESSAGE, ellipseParameterToAzimuth, sketchToDxf,
 } from './exchange/sketchToDxf.js';
+
+/**
+ * 選択セット(FR-112、計画書 P6 §0.a-0.44・§2.13、タスク37)。
+ *
+ * `PartDocument.selectionSets` に持つ「名前を付けた選んだ組」で、要素の型
+ * `SelectionMember` は **P5 の `AppearanceTarget` そのもの**である(同じ形の型を 2 つ
+ * 作らない。判定 `isSameSelectionMember` も外観のものの別名で、実体は 1 つ)。
+ *
+ * **形に影響しない**(`affectsShape` が偽)ので、セットを足しても消しても再計算は走らない。
+ */
+export type { SelectionMember, SelectionSet } from './part/types.js';
+export type {
+  CreateSelectionSetResult, PruneSelectionSetsResult, RenameSelectionSetResult,
+  SelectionSetRefusal,
+} from './part/selectionSets.js';
+export {
+  addSelectionSetMembers, createSelectionSet, findSelectionSet, isSameSelectionMember,
+  nextSelectionSetId, pruneSelectionSets, removeSelectionSet, removeSelectionSetMembers,
+  renameSelectionSet,
+} from './part/selectionSets.js';
+
+/**
+ * 下絵の画像(FR-332、計画書 P6 §0.a-0.45・§0.a-0.46・§2.14、タスク38)。
+ *
+ * `PartDocument.canvases` に持つ「作図面に貼った画像」で、バイト列は `.pcad` の ZIP の
+ * 別エントリ(`canvases/<imageId>.png`)へ入る。**画像を保存するのは `rules/04` の
+ * 承認済みの例外**(導出できないため。§0.a-0.45 の例外③)。
+ *
+ * 受け付けは PNG / JPEG だけ・1 枚 8MB まで(`checkCanvasImage`)で、断りの日本語は
+ * この層が持つ(上限の数を知っているのがこの層だけのため。§2.8「文言の正本の層」)。
+ * 寸法合わせ(`scaleFromTwoPoints`)は 2 点の画素の距離と実寸から mm/画素を出す純関数。
+ */
+export type { SketchCanvas } from './part/types.js';
+export type {
+  CanvasImageFormat, CanvasImageRefusal, CanvasPixelPoint, CanvasScaleRefusal, CanvasSizeMm,
+  CheckCanvasImageResult, ScaleFromTwoPointsResult,
+} from './sketch/canvas.js';
+export {
+  CANVAS_INVALID_LENGTH_MESSAGE, CANVAS_SAME_POINT_MESSAGE, CANVAS_TOO_LARGE_MESSAGE,
+  CANVAS_UNSUPPORTED_FORMAT_MESSAGE, canvasSizeFromScale, checkCanvasImage, detectImageFormat,
+  MAX_CANVAS_IMAGE_BYTES, nextCanvasId, removeCanvas, scaleFromTwoPoints, setCanvasVisible,
+} from './sketch/canvas.js';
+
+/**
+ * 拘束の自動推定(FR-333、FR-313、計画書 P6 §0.a-0.48〜0.50・§2.15、タスク40)。
+ *
+ * 線を引いている最中に「水平・垂直・一致・接線・平行」を推定して予告するための純関数で、
+ * 画面の縮尺は引数(`pixelsPerMillimetre`)で受け取るので DOM にも three.js にも触れない。
+ *
+ * **しきい値の正本はここ**(`inferConstraints.ts` の 2 つの定数)。とくに
+ * `INFER_COINCIDENT_RADIUS_PIXELS` は ui の `PICK_RADIUS_PIXELS`(= 6)と同じ値だが、
+ * 依存方向(`apps → ui → model`)の都合で ui から借りられないため model 側を正本にし、
+ * **ui はこの輸出を読む**(同じ数を 2 か所に書かない。`rules/04-設計の規律.md`)。
+ *
+ * 印を描くのと、確定して拘束を足す配線は ui の役目(タスク41)。
+ */
+export type {
+  DraftSegment, InferConstraintsOptions, InferenceElements, InferredConstraint,
+  InferredConstraintKind, PlanePoint,
+} from './sketch/inferConstraints.js';
+export {
+  constraintFromInference, INFER_ANGLE_TOLERANCE_DEGREES, INFER_COINCIDENT_RADIUS_PIXELS,
+  inferConstraints, INFERENCE_PRIORITY, inferredConstraintTargets, MAX_INFERRED_CONSTRAINTS,
+} from './sketch/inferConstraints.js';

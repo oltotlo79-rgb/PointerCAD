@@ -16,6 +16,7 @@ import {
   findSketch,
   isFreeWorkPlaneId,
   moveHistoryItem,
+  nonLengthVariables,
   pushUndo,
   redo as redoStep,
   removeFeature,
@@ -276,6 +277,17 @@ export interface AppState {
    * 通ったり通らなかったりする(タスク18 の申し送り)。ここを唯一の出どころにする。
    */
   readonly parameterAnalysis: ParameterAnalysis;
+  /**
+   * 長さでないパラメータ(角度・無次元)の名前(P6 タスク3b、§0.a-0.63)。
+   *
+   * 表示が inch のとき、式は inch の空間で評価される(`(w+10)in`)。そのとき**長さの
+   * パラメータだけ**を倍率で割る必要があり、個数や角度まで割ると `n+10`(n = 5 個)が
+   * 意味の無い値になる。`parameterAnalysis.variables` と同じく**式を受け付ける 3 つの
+   * 入口が共通で読む唯一の出どころ**にする(片方だけに渡すと打つ場所で値が変わる)。
+   *
+   * 文書から導けるので保存しない(`parameterAnalysis` と同じ扱い、rules/04)。
+   */
+  readonly nonLengthVariables: ReadonlySet<string>;
 
   /**
    * 部品文書。**これが唯一の正本**で、`.pcad` に保存されるのもこれだけ(要件§8、§0.a-0.4)。
@@ -962,6 +974,7 @@ type DocumentPatch = Pick<
   | 'workPlane'
   | 'resolvedReferences'
   | 'parameterAnalysis'
+  | 'nonLengthVariables'
 >;
 
 /**
@@ -1087,17 +1100,28 @@ function documentPatch(
  * 文書を歩くことになる。名前を 1 つも付けていない部品(いまの既定)では要らない費用なので
  * 空の解析を使い回す(NFR-PF-1)。
  */
-function parameterPatch(document: PartDocument): Pick<AppState, 'parameterAnalysis'> {
+function parameterPatch(
+  document: PartDocument,
+): Pick<AppState, 'parameterAnalysis' | 'nonLengthVariables'> {
   if (document.parameters.length === 0) {
-    return { parameterAnalysis: EMPTY_PARAMETER_ANALYSIS };
+    return {
+      parameterAnalysis: EMPTY_PARAMETER_ANALYSIS,
+      nonLengthVariables: EMPTY_NON_LENGTH_VARIABLES,
+    };
   }
   return {
     parameterAnalysis: analyzeParameters(
       document.parameters,
       collectExpressionSources(document),
     ),
+    // 長さでない名前だけを集める(タスク3b)。作るのは文書が変わったこの 1 回だけで、
+    // 欄で 1 文字打つたびに作り直さない(NFR-PF-1。参照の同一性も保つ)。
+    nonLengthVariables: nonLengthVariables(document.parameters),
   };
 }
+
+/** 長さでないパラメータが 1 つも無いときの集合。作り直さずに使い回す(参照の同一性)。 */
+const EMPTY_NON_LENGTH_VARIABLES: ReadonlySet<string> = new Set<string>();
 
 /** パラメータが 1 つも無いときの控え。作り直さずに使い回す(参照の同一性を保つ)。 */
 const EMPTY_PARAMETER_ANALYSIS: ParameterAnalysis = {
@@ -1212,6 +1236,7 @@ export function createInitialDocumentState(): Pick<
   | 'freeSketchPlane'
   | 'resolvedReferences'
   | 'parameterAnalysis'
+  | 'nonLengthVariables'
   | 'document'
   | 'documentVersion'
   | 'timelineIndex'
@@ -1296,6 +1321,7 @@ export function createInitialDocumentState(): Pick<
     resolvedReferences: EMPTY_RESOLVED_REFERENCES,
     // 起動時の部品はパラメータを 1 つも持たない(FR-207、タスク11)。
     parameterAnalysis: EMPTY_PARAMETER_ANALYSIS,
+    nonLengthVariables: EMPTY_NON_LENGTH_VARIABLES,
     document,
     documentVersion: 0,
     // つまみは常に末尾から始まる(§0.a-0.19。保存しないので開き直しても同じ)。
@@ -2025,6 +2051,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       // カーネルが返したボディはそのまま `MeasureBody`(体積つき)を満たす。
       bodies: state.bodies,
       measurer: state.partMeasurer,
+      // 測定の帯は表示の単位で出す(FR-811、P6 タスク3 の残り。値は mm のまま)。
+      lengthUnit: state.displaySettings.lengthUnit,
     }).then((outcome) => {
       // 待っているあいだに文書が変わっていることがあるので、置く先は取り直す。
       const after = get();

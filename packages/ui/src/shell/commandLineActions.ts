@@ -338,14 +338,21 @@ function activateCommandTool(tool: NumericInputToolId): CommandLineSubmission {
 function commitStep(filled: NumericInputState): CommandLineSubmission {
   // 確定にも変数表を渡す(FR-207、タスク11)。渡さないと `板厚 * 2` を打ち込めても
   // Enter で断られ、欄と決定で食い違う。
-  const variables = useAppStore.getState().parameterAnalysis.variables;
-  const transition = applyNumericInputKey(filled, 'Enter', { variables });
+  const store = useAppStore.getState();
+  const variables = store.parameterAnalysis.variables;
+  // 表示の単位も一緒に渡す(FR-811、P6 タスク3b)。渡さないと、その場入力では inch で
+  // 受けた `10*2` が、コマンドラインからの Enter では mm になって値が食い違う。
+  const display = {
+    lengthUnit: store.displaySettings.lengthUnit,
+    nonLengthVariables: store.nonLengthVariables,
+  };
+  const transition = applyNumericInputKey(filled, 'Enter', { variables, ...display });
   applyNumericTransition(transition);
   if (transition.kind !== 'blocked') {
     return { kind: 'committed' };
   }
   // 値そのものが読めない・範囲外(NFR-UX-5)。最初に間違っている欄の理由をそのまま返す。
-  const evaluation = evaluateNumericInput(filled, variables);
+  const evaluation = evaluateNumericInput(filled, variables, display);
   const first = evaluation.results[evaluation.firstErrorIndex];
   return failed(first?.error?.message ?? t('commandLine.error.tooFewValues'));
 }

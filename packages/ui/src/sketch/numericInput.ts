@@ -101,9 +101,12 @@ import {
   MIN_COPY_COUNT,
   MIN_SCALE,
   MIN_SPLINE_POINTS,
+  parseDisplayInput,
   RULED_SPHERE_SEGMENT_CHOICES,
+  toDisplayLength,
   type ChamferSize,
   type CoordinateInput,
+  type LengthUnit,
   type PointReference,
   type RevolveAxis,
   type RuledSphereSegments,
@@ -589,6 +592,43 @@ export type NumericInputStep =
 export type FieldUnit = 'mm' | 'degree' | 'count';
 
 /**
+ * **どの欄が長さかを決める唯一の表**(P6 タスク3b、FR-811・FR-814・FR-205)。
+ *
+ * 欄ごとに「これは長さ」と書き分けず、欄の定義がすでに持っている `unit` 1 本で決める。
+ * 角度(`degree`)・回数や個数(`count`)は長さではないので、表示の単位(mm / inch)の
+ * 影響を 1 つも受けない(FR-205)。`switch` に `default` を書かないので、欄の単位が
+ * 増えたら型検査で落ちて、この表を直し忘れられない。
+ *
+ * model 側にも同じ形の判定(`isLengthParameterUnit`、パラメータの単位 `mm|degree|none`)が
+ * あるが、あちらが見るのは**パラメータ表の単位**、こちらは**ポップアップの欄の単位**で、
+ * 型そのものが違う(`count` はパラメータには無い)。同じ規則の重複ではない。
+ */
+export function isLengthFieldUnit(unit: FieldUnit): boolean {
+  switch (unit) {
+    case 'mm':
+      return true;
+    case 'degree':
+    case 'count':
+      return false;
+  }
+}
+
+/**
+ * 打たれた文字列を、**保存する式の文字列**へ直す(§0.a-0.63、§2.9.1 ②)。
+ *
+ * 長さの欄のときだけ model の `parseDisplayInput` へ回す(表示が inch で単位が 1 つも
+ * 書かれていなければ `(<打った式>)in` で包む。mm のときは包まない)。**規則そのものは
+ * model の 1 か所にしかない**——ここへ写すと「どの綴りが単位か」の判定が ui と model で
+ * 食い違うため、この関数は「長さの欄かどうか」を足すだけの薄い層にしてある。
+ *
+ * 長さでない欄(角度・個数)は打った文字をそのまま返す。引用符の正規化(`3/8”` → `3/8"`)も
+ * かけない——角度の欄に inch の記号が入る余地を作らないため。
+ */
+export function applyDisplayUnit(source: string, fieldUnit: FieldUnit, unit: LengthUnit): string {
+  return isLengthFieldUnit(fieldUnit) ? parseDisplayInput(source, unit) : source;
+}
+
+/**
  * 欄が受け付ける値の範囲(NFR-UX-5)。
  * 範囲を持たない欄(P1 の座標・円弧・点列)は range を持たない。
  */
@@ -639,6 +679,19 @@ export interface NumericFieldDefinition {
 
 export interface NumericField extends NumericFieldDefinition {
   readonly source: string;
+  /**
+   * `source` を**利用者がこの欄へ打ち込んだ**か(P6 タスク3b、§0.a-0.63)。
+   *
+   * 表示が inch のとき `(<式>)in` で包むのは**打った文字だけ**にする。同じ欄の `source` には
+   * 3 通りの出どころがあり、打った文字以外は**すでに内部の mm** だからである。
+   *
+   * - 既定値(`defaultSource`。`DEFAULT_*_MM` から来た mm の数)→ 包まない
+   * - ビューポートで吸い付いた座標(`setValues`。カーネル/画面が出した mm)→ 包まない
+   * - 利用者が打った文字 → 表示が inch なら包む
+   *
+   * 省略は「打っていない」。既存の呼び出し・検査は 1 つも書き換えずに mm のままになる。
+   */
+  readonly typed?: boolean;
 }
 
 /**
@@ -3195,6 +3248,82 @@ export const UNIT_KEYS: Readonly<Record<FieldUnit, MessageKey>> = {
   count: 'numericInput.unit.count',
 };
 
+/**
+ * 表示が inch のときに長さの欄へ出す札(P6 タスク3b、FR-811)。
+ * 測定の帯と同じ文言(`measure.unit.inch` = `in`)を引く——同じ語を 2 か所に書かない。
+ */
+const INCH_FIELD_UNIT_KEY: MessageKey = 'measure.unit.inch';
+
+/**
+ * 欄の単位札のキー(P6 タスク3b)。**長さの欄だけ**が表示の単位で変わり、角度・個数は
+ * `UNIT_KEYS` のまま(FR-205)。`unit` を省くと mm なので、P1〜P5 の呼び出しは変わらない。
+ */
+export function fieldUnitLabelKey(unit: FieldUnit, lengthUnit: LengthUnit = 'mm'): MessageKey {
+  return isLengthFieldUnit(unit) && lengthUnit === 'inch' ? INCH_FIELD_UNIT_KEY : UNIT_KEYS[unit];
+}
+
+/**
+ * 欄の下へ添える値の桁数(有効数字。P6 タスク3b)。
+ *
+ * 利用者の決定「解の表示は 9 桁で丸める」(docs/報告記録.md 2026-09-05)と同じ桁にする。
+ * mm を inch へ割ると `10 / 25.4 = 0.3937007874015748` のように末尾が伸びるので、
+ * **表示だけ**をここで丸める。**保存する式には 1 文字も書き戻さない**(丸めた値を式へ
+ * 入れると、単位を切り替えるたびに文書が変わってしまう)。
+ */
+export const FIELD_VALUE_DISPLAY_DIGITS = 9;
+
+/**
+ * 数値 1 つを有効数字 `digits` 桁へ丸める(末尾の 0 は落ちる。`String()` の癖どおり)。
+ * `0` と有限でない値はそのまま返す(`log10(0)` が `-Infinity` になるのを避ける)。
+ *
+ * P4b タスク23b-1 で `shell/PropertyPanel.tsx` に置いた同名の関数をここへ移した
+ * (タスク3b)。**丸め方を 2 通り持たない**ため、あちらはこれを輸入して使う。
+ */
+export function roundToSignificantDigits(value: number, digits: number): number {
+  if (value === 0 || !Number.isFinite(value)) {
+    return value;
+  }
+  const magnitude = Math.floor(Math.log10(Math.abs(value)));
+  const factor = Math.pow(10, digits - 1 - magnitude);
+  return Math.round(value * factor) / factor;
+}
+
+/**
+ * 欄の下へ添える「= 値」の右辺(P6 タスク3b)。
+ *
+ * 長さの欄で表示が inch のときだけ、**評価した値だけ**を inch へ直して単位を添える
+ * (例: 内部 `10`mm → `0.393700787 in`)。式そのものは書き換えない(FR-202)。
+ * それ以外(mm・角度・個数)は式エンジンの表示文字列をそのまま出す(P1 からの見え方)。
+ */
+export function fieldValueText(
+  unit: FieldUnit,
+  /* `ExpressionValue` をそのまま渡せる形。パラメータ表のように式を持たない値も渡せる。 */
+  value: { readonly value: number; readonly display: string },
+  lengthUnit: LengthUnit = 'mm',
+): string {
+  const text = fieldValueNumberText(unit, value, lengthUnit);
+  return isLengthFieldUnit(unit) && lengthUnit === 'inch'
+    ? `${text} ${t(INCH_FIELD_UNIT_KEY)}`
+    : text;
+}
+
+/**
+ * 同じ値の**数だけ**(単位の札を添えない)。単位を別の場所へ出す欄——読み取り専用の
+ * 欄(derived、§0.a-0.30)のように、札が横に並んでいる場所で使う。
+ */
+export function fieldValueNumberText(
+  unit: FieldUnit,
+  value: { readonly value: number; readonly display: string },
+  lengthUnit: LengthUnit = 'mm',
+): string {
+  if (!isLengthFieldUnit(unit) || lengthUnit !== 'inch') {
+    return value.display;
+  }
+  return String(
+    roundToSignificantDigits(toDisplayLength(value.value, 'inch'), FIELD_VALUE_DISPLAY_DIGITS),
+  );
+}
+
 /** ポップアップ共通の文字列キー。文言そのものは持たない(NFR-MA-5)。 */
 export const NUMERIC_INPUT_KEYS: Readonly<
   Record<'commit' | 'commitTooltip' | 'cancel' | 'cancelTooltip', MessageKey>
@@ -3538,7 +3667,7 @@ function mergeFieldValues(
     const existing = previous.find((field) => field.key === definition.key);
     return existing === undefined
       ? { ...definition, source: definition.defaultSource }
-      : { ...definition, source: existing.source };
+      : { ...definition, source: existing.source, typed: existing.typed };
   });
 }
 
@@ -3671,7 +3800,8 @@ export function reduceNumericInput(
         return state;
       }
       const fields = state.fields.map((field, index) =>
-        index === event.index ? { ...field, source: event.source } : field,
+        // 打った欄だけ `typed` が立つ(表示が inch のときここだけが `(…)in` で包まれる)。
+        index === event.index ? { ...field, source: event.source, typed: true } : field,
       );
       return { ...state, fields, focusedIndex: event.index };
     }
@@ -3704,9 +3834,11 @@ export function reduceNumericInput(
     case 'setValues': {
       const fields = state.fields.map((field, index) => {
         const value = event.values[index];
+        // 吸い付いた座標は**内部の mm**なので、打った文字の印(`typed`)を必ず落とす。
+        // 落とさないと、直前に打った欄へ吸い付いた値が入ったときに inch として包まれる。
         return value === undefined
           ? field
-          : { ...field, source: expressionValueFromNumber(value).source };
+          : { ...field, source: expressionValueFromNumber(value).source, typed: false };
       });
       return { ...state, fields };
     }
@@ -3954,6 +4086,22 @@ export function effectiveSource(field: NumericField): string {
 }
 
 /**
+ * その欄を評価する式の文字列(P6 タスク3b、§0.a-0.63)。**保存されるのもこの文字列**で、
+ * 評価した値ではない(FR-202)。
+ *
+ * 打った文字が残っている長さの欄だけを、表示の単位で包む(`applyDisplayUnit`)。
+ * 空欄(= 既定値で埋まる)と、吸い付きで入った座標は**すでに内部の mm** なので包まない
+ * (`NumericField.typed` の注釈を見よ)。表示が mm のときは何を通しても包まれないので、
+ * P1〜P5 の振る舞いは 1 文字も変わらない。
+ */
+export function fieldExpression(field: NumericField, unit: LengthUnit = 'mm'): string {
+  if (field.typed !== true || field.source.trim() === '') {
+    return effectiveSource(field);
+  }
+  return applyDisplayUnit(field.source, field.unit, unit);
+}
+
+/**
  * 空欄を既定値の文字列で埋めた状態を返す(NFR-UX-4)。
  * 決定のときに一度だけ通し、利用者が実際に使われた値を目で確かめられるようにする。
  * 埋めるものが無ければ同じ状態をそのまま返す。
@@ -3964,17 +4112,42 @@ export function fillDefaults(state: NumericInputState): NumericInputState {
   }
   return {
     ...state,
-    fields: state.fields.map((field) => ({ ...field, source: effectiveSource(field) })),
+    // 埋めるのは既定値(内部の mm)なので、打った文字の印は落とす(タスク3b)。
+    fields: state.fields.map((field) => ({
+      ...field,
+      source: effectiveSource(field),
+      typed: field.source.trim() === '' ? false : field.typed,
+    })),
   };
+}
+
+/**
+ * 表示の単位に関わる選択肢(P6 タスク3b、§0.a-0.63)。
+ *
+ * どちらも省くと**表示が mm・パラメータはすべて長さ**になる。つまり P1〜P5 の呼び出しと
+ * 検査は 1 文字も書き換えずに同じ値を返す(安全側の既定)。
+ */
+export interface DisplayUnitOptions {
+  /** 画面に出している長さの単位(`DisplaySettings.lengthUnit`)。省くと mm。 */
+  readonly lengthUnit?: LengthUnit;
+  /**
+   * 長さでないパラメータの名前(model の `nonLengthVariables(document.parameters)`)。
+   * 単位の空間の中で「個数や角度まで倍率で割る」のを防ぐ(§0.a-0.63)。
+   */
+  readonly nonLengthVariables?: ReadonlySet<string>;
 }
 
 /** すべての欄を評価する。1 文字打つごとに呼んでよい軽さにする。 */
 export function evaluateNumericInput(
   state: NumericInputState,
   variables: ReadonlyMap<string, number> = new Map(),
+  display: DisplayUnitOptions = {},
 ): NumericInputEvaluation {
   const results: NumericFieldResult[] = state.fields.map((field) => {
-    const result = evaluateExpression(effectiveSource(field), { variables });
+    const result = evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
+      variables,
+      nonLengthVariables: display.nonLengthVariables,
+    });
     if (!result.ok) {
       return { key: field.key, value: null, error: result.error };
     }
@@ -4487,7 +4660,7 @@ export type NumericInputTransition =
     }
   | { readonly kind: 'cancelled' };
 
-export interface NumericInputContext {
+export interface NumericInputContext extends DisplayUnitOptions {
   /** 相対・極の基準点(FR-302、FR-303)。省略すると直前に作った点を指す。 */
   readonly base?: PointReference;
   /** 変数表(FR-206、§0.a-0.6)。P1 の UI は渡さない。 */
@@ -4515,13 +4688,18 @@ function fieldValueMap(
 function evaluateCarried(
   fields: readonly NumericField[] | undefined,
   variables: ReadonlyMap<string, number> | undefined,
+  display: DisplayUnitOptions = {},
 ): ReadonlyMap<string, ExpressionValue> {
   const map = new Map<string, ExpressionValue>();
   if (fields === undefined) {
     return map;
   }
   for (const field of fields) {
-    const result = evaluateExpression(effectiveSource(field), { variables });
+    // 1 段目で打った文字も、2 段目の確定のときに同じ規則で包む(タスク3b)。
+    const result = evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
+      variables,
+      nonLengthVariables: display.nonLengthVariables,
+    });
     if (result.ok) {
       map.set(field.key, result.value);
     }
@@ -4914,9 +5092,9 @@ function buildSolidCommit(
   step: SolidNumericInputStep,
   filled: NumericInputState,
   values: readonly ExpressionValue[],
-  variables: ReadonlyMap<string, number> | undefined,
+  context: NumericInputContext,
 ): SolidInputCommit {
-  const carried = evaluateCarried(filled.carriedStage1?.fields, variables);
+  const carried = evaluateCarried(filled.carriedStage1?.fields, context.variables, context);
   const combinedChoices = [...filled.choices, ...(filled.carriedStage1?.choices ?? [])];
   const axisValue =
     choiceValueFrom(combinedChoices, 'axis') ?? choiceValueFrom(combinedChoices, 'patternDirection');
@@ -5034,14 +5212,14 @@ function editFlagsFor(toggles: readonly NumericToggle[]): EditCommitFlags {
  */
 function carriedCoordinateOf(
   filled: NumericInputState,
-  variables: ReadonlyMap<string, number> | undefined,
+  context: NumericInputContext,
   base: PointReference,
 ): CoordinateInput | undefined {
   const carried = filled.carriedStage1;
   if (carried === undefined || carried.mode === undefined) {
     return undefined;
   }
-  const evaluated = evaluateCarried(carried.fields, variables);
+  const evaluated = evaluateCarried(carried.fields, context.variables, context);
   const ordered: ExpressionValue[] = [];
   for (const definition of COORDINATE_FIELDS[carried.mode]) {
     const value = evaluated.get(definition.key);
@@ -5063,7 +5241,7 @@ function buildEditCommit(
   values: readonly ExpressionValue[],
   context: NumericInputContext,
 ): EditInputCommit {
-  const carried = evaluateCarried(filled.carriedStage1?.fields, context.variables);
+  const carried = evaluateCarried(filled.carriedStage1?.fields, context.variables, context);
   return {
     kind: 'edit',
     tool: EDIT_STEP_TOOLS[step],
@@ -5076,11 +5254,7 @@ function buildEditCommit(
       mirrorBasis: choiceValueFrom(filled.choices, 'mirrorBasis'),
       chamferMode: choiceValueFrom(filled.choices, 'chamferMode'),
     },
-    coordinate: carriedCoordinateOf(
-      filled,
-      context.variables,
-      context.base ?? DEFAULT_COORDINATE_BASE,
-    ),
+    coordinate: carriedCoordinateOf(filled, context, context.base ?? DEFAULT_COORDINATE_BASE),
   };
 }
 
@@ -5098,7 +5272,7 @@ export function commitNumericInput(
   context: NumericInputContext = {},
 ): NumericInputTransition {
   const filled = fillDefaults(state);
-  const evaluation = evaluateNumericInput(filled, context.variables);
+  const evaluation = evaluateNumericInput(filled, context.variables, context);
   const values = commitValues(evaluation);
   if (values === null) {
     return {
@@ -5117,7 +5291,7 @@ export function commitNumericInput(
     return {
       kind: 'solidCommitted',
       state: filled,
-      commit: buildSolidCommit(step, filled, values, context.variables),
+      commit: buildSolidCommit(step, filled, values, context),
     };
   }
   if (isReferenceStep(step)) {

@@ -25,6 +25,7 @@ import { PARAMETER_UNITS, type ParameterUnit } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { initialDraftVersionState, reconcileDraftVersion } from '../shell/fieldDraft.js';
+import { applyDisplayUnit, fieldValueText } from '../sketch/numericInput.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   commitAddParameter,
@@ -71,6 +72,16 @@ export function ParameterPanel(): React.JSX.Element {
   const document = useAppStore((state) => state.document);
   const analysis = useAppStore((state) => state.parameterAnalysis);
   const documentVersion = useAppStore((state) => state.documentVersion);
+  /*
+   * 表示の単位と「長さでないパラメータの名前」(FR-811、P6 タスク3b、§0.a-0.63)。
+   *
+   * **この表の行が長さかどうかは、名前がこの集合にあるかで決める。** 行そのものは
+   * `unit`(mm / 度 / なし)を持っているが、その `unit` から「長さか」を決める規則は
+   * model の `nonLengthVariables` 1 か所にしかなく、ここで `row.unit === 'mm'` と
+   * 書き直すと同じ規則が 2 か所に分かれる。
+   */
+  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
+  const nonLengthVariables = useAppStore((state) => state.nonLengthVariables);
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<ParameterDraft>(documentVersion),
   );
@@ -112,6 +123,20 @@ export function ParameterPanel(): React.JSX.Element {
   const draftOf = (row: ParameterRow, field: ParameterFieldKind): ParameterDraft | null =>
     draft !== null && draft.name === row.name && draft.field === field ? draft : null;
 
+  /**
+   * その行が**長さ**のパラメータか(タスク3b)。長さの行だけが、表示が inch のときに
+   * 単位の無い入力を `(…)in` で包まれる。角度と無次元の行は影響を受けない(FR-205)。
+   */
+  const isLengthRow = (row: ParameterRow): boolean => !nonLengthVariables.has(row.name);
+
+  /**
+   * 打った文字を、**保存する式の文字列**へ直す(§0.a-0.63)。長さの行のときだけ
+   * 表示の単位を被せる。判定も綴りも `applyDisplayUnit`(model の `parseDisplayInput`)
+   * の 1 か所にある。
+   */
+  const parameterExpression = (row: ParameterRow, text: string): string =>
+    isLengthRow(row) ? applyDisplayUnit(text, 'mm', lengthUnit) : text;
+
   /** 打ちかけを確定する。打ちかけが無ければ何もしない(Enter の後の blur で二重に通さない)。 */
   const commitDraft = (row: ParameterRow, field: ParameterFieldKind): void => {
     const current = draftOf(row, field);
@@ -134,7 +159,12 @@ export function ParameterPanel(): React.JSX.Element {
          */
         run(
           commitReplaceParameter(document, row.name, {
-            value: { source: text, value: row.value, display: String(row.value) },
+            value: {
+              // 表示が inch なら、単位の無い入力を `(…)in` で包んで保存する(タスク3b)。
+              source: parameterExpression(row, text),
+              value: row.value,
+              display: String(row.value),
+            },
           }),
           rejected,
           key,
@@ -155,11 +185,21 @@ export function ParameterPanel(): React.JSX.Element {
     if (current !== null && current.message !== null) {
       return current.message;
     }
+    // 値だけを表示の単位で出す(タスク3b)。式そのものは書き換えない(FR-202)。
+    const unit = isLengthRow(row) ? 'mm' : 'degree';
     if (current === null) {
-      return row.failureMessage ?? `= ${String(row.value)}`;
+      return (
+        row.failureMessage ??
+        `= ${fieldValueText(unit, { value: row.value, display: String(row.value) }, lengthUnit)}`
+      );
     }
-    const result = evaluateExpression(current.text, { variables: analysis.variables });
-    return result.ok ? `= ${result.value.display}` : result.error.message;
+    const result = evaluateExpression(parameterExpression(row, current.text), {
+      variables: analysis.variables,
+      nonLengthVariables,
+    });
+    return result.ok
+      ? `= ${fieldValueText(unit, result.value, lengthUnit)}`
+      : result.error.message;
   };
 
   /** 名前・式・説明のどれか 1 欄。見出し・入力・下の 1 行の作りは `pcad-field` と同じ。 */

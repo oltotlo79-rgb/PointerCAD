@@ -29,6 +29,7 @@ import {
   massFromVolume,
   resolvePart,
   type AppearancePresetId,
+  type LengthUnit,
   type MeasureOutcome,
   type MeasureTarget as ModelMeasureTarget,
   type OffsetCache,
@@ -351,10 +352,12 @@ export function measurementOf(
   result: LocalMeasureResult,
   targets: readonly MeasureTarget[],
   bodies: readonly MeasureBody[],
+  unit: LengthUnit = 'mm',
 ): MeasurementState {
   return {
     result,
-    text: formatMeasure(result),
+    // 札の数だけを表示の単位で出す(FR-811、P6 タスク3)。省くと mm。
+    text: formatMeasure(result, unit),
     angle: angleSpecOf(result.kind, targets, bodies),
     anchor: anchorOf(result.kind, targets, bodies),
   };
@@ -406,6 +409,7 @@ export function measurementFromDistance(
   distance: number,
   pointA: Vec3,
   pointB: Vec3,
+  unit: LengthUnit = 'mm',
 ): MeasurementState {
   const result: LocalMeasureResult = {
     kind,
@@ -413,7 +417,7 @@ export function measurementFromDistance(
     unit: 'mm',
     segment: [pointA, pointB],
   };
-  return { result, text: formatMeasure(result), angle: null, anchor: null };
+  return { result, text: formatMeasure(result, unit), angle: null, anchor: null };
 }
 
 /* ---------------------------------------------------------------------------
@@ -594,6 +598,11 @@ export interface MeasureContext {
   readonly bodies: readonly MeasureBody[];
   /** カーネルへ聞く手立て。差し出されていなければ null(往復の要る測定だけが断られる)。 */
   readonly measurer: PartMeasurer | null;
+  /**
+   * 画面に出している長さの単位(FR-811、P6 タスク3)。**札の文字だけ**に効き、測る値
+   * そのものは mm のまま(NFR-RE-3)。省くと mm なので、P5 までの呼び出しは変わらない。
+   */
+  readonly lengthUnit?: LengthUnit;
 }
 
 /**
@@ -617,7 +626,7 @@ export async function runMeasure(context: MeasureContext): Promise<MeasureOutcom
   const measurement =
     local === null
       ? await measureThroughKernel(context, kind, readiness.targets)
-      : measurementOf(local, readiness.targets, context.bodies);
+      : measurementOf(local, readiness.targets, context.bodies, context.lengthUnit ?? 'mm');
   if (measurement === null) {
     return { ok: false, reasonKey: MEASURE_FAILED_MESSAGE_KEY };
   }
@@ -663,7 +672,13 @@ async function measureThroughKernel(
   if (outcome === null || outcome.kind !== 'distance') {
     return null;
   }
-  return measurementFromDistance(kind, outcome.distance, outcome.pointA, outcome.pointB);
+  return measurementFromDistance(
+    kind,
+    outcome.distance,
+    outcome.pointA,
+    outcome.pointB,
+    context.lengthUnit ?? 'mm',
+  );
 }
 
 /**

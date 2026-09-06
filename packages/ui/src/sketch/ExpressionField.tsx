@@ -1,11 +1,23 @@
 import { useEffect, useId, useRef } from 'react';
 
+import type { LengthUnit } from '@pointercad/model';
+
 import { t } from '../i18n/t.js';
-import { UNIT_KEYS, type NumericField, type NumericFieldResult } from './numericInput.js';
+import {
+  fieldUnitLabelKey,
+  fieldValueText,
+  type NumericField,
+  type NumericFieldResult,
+} from './numericInput.js';
 
 export interface ExpressionFieldProps {
   readonly field: NumericField;
   readonly result: NumericFieldResult;
+  /**
+   * 画面に出している長さの単位(FR-811、P6 タスク3b)。省くと mm。
+   * **長さの欄の札と、下に添える値だけ**に効く(打った式も保存する式も変えない)。
+   */
+  readonly lengthUnit?: LengthUnit;
   /**
    * 状態機械が決めた焦点(NumericInputState.focusedIndex)。true になったときだけ
    * 実際の焦点を移す。焦点の正本はストア側の状態で、DOM ではない。
@@ -19,11 +31,16 @@ export interface ExpressionFieldProps {
  * 欄の下に出す 1 行。妥当なら評価値(FR-202)、間違いなら理由をそのまま出す(FR-204)。
  * 文言は式エンジンが組み立てた日本語で、位置や文字を差し込んだ文になるため ja.json では持てない。
  */
-function fieldMessage(result: NumericFieldResult): string {
+function fieldMessage(
+  field: NumericField,
+  result: NumericFieldResult,
+  lengthUnit: LengthUnit,
+): string {
   if (result.error !== null) {
     return result.error.message;
   }
-  return result.value === null ? '' : `= ${result.value.display}`;
+  // 値だけを表示の単位で出す。**欄の中の式は 1 文字も書き換えない**(FR-202、タスク3b)。
+  return result.value === null ? '' : `= ${fieldValueText(field.unit, result.value, lengthUnit)}`;
 }
 
 /**
@@ -35,6 +52,7 @@ function fieldMessage(result: NumericFieldResult): string {
 export function ExpressionField({
   field,
   result,
+  lengthUnit = 'mm',
   focused,
   onChange,
   onFocus,
@@ -81,14 +99,14 @@ export function ExpressionField({
           onChange(event.target.value);
         }}
       />
-      <span className="pcad-field__unit">{t(UNIT_KEYS[field.unit])}</span>
+      <span className="pcad-field__unit">{t(fieldUnitLabelKey(field.unit, lengthUnit))}</span>
       <p
         id={messageId}
         className={
           hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'
         }
       >
-        {fieldMessage(result)}
+        {fieldMessage(field, result, lengthUnit)}
       </p>
     </div>
   );

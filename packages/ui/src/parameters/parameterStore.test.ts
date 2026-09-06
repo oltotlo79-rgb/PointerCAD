@@ -22,7 +22,11 @@ import {
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { commandLineContext } from '../shell/commandLineActions.js';
-import { createNumericInput, evaluateNumericInput } from '../sketch/numericInput.js';
+import {
+  createNumericInput,
+  evaluateNumericInput,
+  reduceNumericInput,
+} from '../sketch/numericInput.js';
 import { createInitialDocumentState, useAppStore } from '../store/useAppStore.js';
 import {
   commitAddParameter,
@@ -374,5 +378,75 @@ describe('表の行(パネルが並べるもの)', () => {
     expect(rows[0]?.circular).toBe(false);
     expect(rows[0]?.unused).toBe(true);
     expect(rows[0]?.failureMessage).not.toBeNull();
+  });
+});
+
+describe('長さでないパラメータの名前(P6 タスク3b、§0.a-0.63)', () => {
+  /** 名前と単位だけを決めてパラメータを 1 つ足す。 */
+  const addParameter = (name: string, unit: 'mm' | 'degree' | 'none'): void => {
+    const outcome = commitAddParameter(useAppStore.getState().document, {
+      name,
+      value: expressionValueFromNumber(5),
+      unit,
+      description: '',
+    });
+    if (!outcome.ok) {
+      throw new Error(outcome.message);
+    }
+    apply(outcome.document);
+  };
+
+  it('パラメータが 1 つも無ければ空(参照も使い回す)', () => {
+    expect(useAppStore.getState().nonLengthVariables.size).toBe(0);
+    expect(useAppStore.getState().nonLengthVariables).toBe(
+      useAppStore.getState().nonLengthVariables,
+    );
+  });
+
+  it('長さ(mm)は入らず、角度と無次元だけが入る', () => {
+    apply(partWithExtrude('板厚 * 2'));
+    addParameter('板厚', 'mm');
+    addParameter('傾き', 'degree');
+    addParameter('個数', 'none');
+    const names = useAppStore.getState().nonLengthVariables;
+    expect(names.has('板厚')).toBe(false);
+    expect(names.has('傾き')).toBe(true);
+    expect(names.has('個数')).toBe(true);
+  });
+
+  it('その場入力が inch の空間で長さのパラメータだけを換算する(`板厚 + 10` = 279.4mm)', () => {
+    apply(partWithExtrude('板厚 * 2'));
+    const outcome = commitAddParameter(useAppStore.getState().document, {
+      name: '板厚',
+      value: expressionValueFromNumber(25.4),
+      unit: 'mm',
+      description: '',
+    });
+    if (!outcome.ok) {
+      throw new Error(outcome.message);
+    }
+    apply(outcome.document);
+    const store = useAppStore.getState();
+    const base = createNumericInput('extrude', 'extrudeDistance');
+    const state = reduceNumericInput(base, { type: 'edit', index: 0, source: '板厚 + 10' });
+    const evaluation = evaluateNumericInput(state, store.parameterAnalysis.variables, {
+      lengthUnit: 'inch',
+      nonLengthVariables: store.nonLengthVariables,
+    });
+    expect(evaluation.results[0].value?.value).toBeCloseTo(279.4, 9);
+  });
+
+  it('長さでないパラメータは inch の空間でも割られない(`個数 + 10` = 15in)', () => {
+    apply(partWithExtrude('10'));
+    addParameter('個数', 'none');
+    const store = useAppStore.getState();
+    const base = createNumericInput('extrude', 'extrudeDistance');
+    const state = reduceNumericInput(base, { type: 'edit', index: 0, source: '個数 + 10' });
+    const evaluation = evaluateNumericInput(state, store.parameterAnalysis.variables, {
+      lengthUnit: 'inch',
+      nonLengthVariables: store.nonLengthVariables,
+    });
+    // 5 + 10 = 15 を inch として読むので 381mm。割ってしまうと 259.4mm になる。
+    expect(evaluation.results[0].value?.value).toBeCloseTo(381, 9);
   });
 });

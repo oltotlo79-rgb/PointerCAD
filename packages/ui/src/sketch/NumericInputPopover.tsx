@@ -271,6 +271,13 @@ export function NumericInputPopover({
    * 評価と確定の両方へ渡す。片方だけだと、欄では緑なのに決定で断られる。
    */
   const variables = useAppStore((store) => store.parameterAnalysis.variables);
+  /*
+   * 表示の単位(FR-811、P6 タスク3b)。単位を書かない入力を inch とみなすかどうかが
+   * これで決まるので、**評価・確定・札のすべてへ同じ値を渡す**(片方だけだと欄の
+   * 「= 値」と実際に作られる形が食い違う)。長さでない名前の集合も同じ理由で一緒に渡す。
+   */
+  const lengthUnit = useAppStore((store) => store.displaySettings.lengthUnit);
+  const nonLengthVariables = useAppStore((store) => store.nonLengthVariables);
 
   // つまみと選択肢は入力欄ではないので、焦点は状態機械の指示でこちらから移す。
   const toggleRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -297,7 +304,7 @@ export function NumericInputPopover({
     return null;
   }
 
-  const evaluation = evaluateNumericInput(state, variables);
+  const evaluation = evaluateNumericInput(state, variables, { lengthUnit, nonLengthVariables });
   const position = clampAnchor(anchor, viewportWidth, viewportHeight);
   const coordinateStep = asksCoordinate(state.step);
   // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
@@ -320,7 +327,9 @@ export function NumericInputPopover({
    * まったく同じ関数を通るので、どちらから打っても同じ道筋になる(NFR-UX-1)。
    */
   const handleKey = (key: NumericInputKey): void => {
-    applyNumericTransition(applyNumericInputKey(state, key, { variables }));
+    applyNumericTransition(
+      applyNumericInputKey(state, key, { variables, lengthUnit, nonLengthVariables }),
+    );
   };
 
   /** ボタンを押しても欄から焦点を奪わない(NFR-UX-2 の「焦点を外へ逃がさない」)。 */
@@ -384,6 +393,7 @@ export function NumericInputPopover({
               key={field.key}
               field={field}
               result={evaluation.results[index]}
+              lengthUnit={lengthUnit}
               focused={index === state.focusedIndex}
               onChange={(source) => {
                 update(reduceNumericInput(state, { type: 'edit', index, source }));

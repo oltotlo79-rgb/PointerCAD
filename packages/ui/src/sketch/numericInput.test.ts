@@ -52,7 +52,11 @@ import {
   defaultModeForStep,
   EDIT_TOOL_STEPS,
   EMPTY_SPLINE_DRAFT,
+  applyDisplayUnit,
   evaluateNumericInput,
+  fieldExpression,
+  fieldUnitLabelKey,
+  fieldValueText,
   fillDefaults,
   focusedTarget,
   isCoordinateStep,
@@ -84,8 +88,10 @@ import {
   toggleValueOf,
   twoPointArcCenterOffset,
   twoPointArcRadiusRejection,
+  isLengthFieldUnit,
   UNIT_KEYS,
   valueByFieldKey,
+  type NumericField,
   type NumericInputCommit,
   type NumericInputState,
   type SolidNumericInputStep,
@@ -3879,5 +3885,181 @@ describe('球面上の点の段(sphereGridPoint、FR-431)', () => {
 
   it('見出しが「球面上の点」になる(FR-905)', () => {
     expect(t(STEP_TITLE_KEYS.sphereGridPoint)).toBe('球面上の点');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * P6 タスク3b: 数値欄が inch で受ける(FR-811、FR-814、FR-202、FR-205)
+ * ------------------------------------------------------------------ */
+
+describe('表示が inch のときの数値欄(P6 タスク3b、§0.a-0.63)', () => {
+  /** 長さを 1 つ聞く段(押し出しの距離)へ 1 つ打ち込む。 */
+  const typeDistance = (source: string): NumericInputState =>
+    reduceNumericInput(createNumericInput('extrude', 'extrudeDistance'), {
+      type: 'edit',
+      index: 0,
+      source,
+    });
+
+  /** 打った欄の「保存する式」と「評価した値(mm)」を取り出す。 */
+  const distanceOf = (
+    source: string,
+    lengthUnit: 'mm' | 'inch',
+    variables: ReadonlyMap<string, number> = new Map(),
+  ): { readonly expression: string; readonly value: number | null } => {
+    const state = typeDistance(source);
+    const evaluation = evaluateNumericInput(state, variables, { lengthUnit });
+    return {
+      expression: fieldExpression(state.fields[0], lengthUnit),
+      value: evaluation.results[0].value?.value ?? null,
+    };
+  };
+
+  it('表示が mm なら包まない(`1.5` はそのまま)', () => {
+    expect(distanceOf('1.5', 'mm')).toEqual({ expression: '1.5', value: 1.5 });
+  });
+
+  it('表示が mm なら式もそのまま(`10*2` は 20mm)', () => {
+    expect(distanceOf('10*2', 'mm')).toEqual({ expression: '10*2', value: 20 });
+  });
+
+  it('表示が inch なら数を包む(`1.5` → `(1.5)in` = 38.1mm)', () => {
+    expect(distanceOf('1.5', 'inch')).toEqual({ expression: '(1.5)in', value: 38.1 });
+  });
+
+  it('表示が inch なら式も丸ごと包む(`10*2` → `(10*2)in` = 508mm)', () => {
+    expect(distanceOf('10*2', 'inch')).toEqual({ expression: '(10*2)in', value: 508 });
+  });
+
+  it('パラメータも inch の空間で読む(`w*2`、w = 25.4mm → 50.8mm)', () => {
+    const variables = new Map([['w', 25.4]]);
+    expect(distanceOf('w*2', 'inch', variables)).toEqual({ expression: '(w*2)in', value: 50.8 });
+  });
+
+  it('リテラルも inch(`w+10`、w = 25.4mm → 279.4mm)', () => {
+    const variables = new Map([['w', 25.4]]);
+    expect(distanceOf('w+10', 'inch', variables)).toEqual({ expression: '(w+10)in', value: 279.4 });
+  });
+
+  it('単位が書いてあれば包まない(`1.5mm` は 1.5mm のまま)', () => {
+    expect(distanceOf('1.5mm', 'inch')).toEqual({ expression: '1.5mm', value: 1.5 });
+  });
+
+  it('引用符の単位も包まない(`3/8"` = 9.525mm)', () => {
+    expect(distanceOf('3/8"', 'inch')).toEqual({ expression: '3/8"', value: 9.525 });
+  });
+
+  it('単位が 1 つでもあれば包まない(`2*1.5in` = 76.2mm)', () => {
+    expect(distanceOf('2*1.5in', 'inch')).toEqual({ expression: '2*1.5in', value: 76.2 });
+  });
+
+  it('同じ欄で数と式の振る舞いが分かれない(`10` と `10*1` が同じ 254mm)', () => {
+    expect(distanceOf('10', 'inch').value).toBe(254);
+    expect(distanceOf('10*1', 'inch').value).toBe(254);
+  });
+
+  it('保存されている式はそのまま出て、表示の単位で包み直さない', () => {
+    // 打った印(`typed`)の無い欄 = 保存されている式・既定値・吸い付いた座標。
+    const stored: NumericField = {
+      key: 'distance',
+      labelKey: 'numericInput.field.distance',
+      tooltipKey: 'numericInput.tooltip.distance',
+      unit: 'mm',
+      defaultSource: '10',
+      source: '(10*2)in',
+    };
+    expect(fieldExpression(stored, 'inch')).toBe('(10*2)in');
+    expect(fieldExpression(stored, 'mm')).toBe('(10*2)in');
+    expect(fieldExpression({ ...stored, source: '10' }, 'inch')).toBe('10');
+  });
+
+  it('単位を切り替えても欄の式は 1 文字も変わらない(§2.9.1)', () => {
+    const state = typeDistance('10*2');
+    expect(state.fields[0].source).toBe('10*2');
+    evaluateNumericInput(state, new Map(), { lengthUnit: 'inch' });
+    evaluateNumericInput(state, new Map(), { lengthUnit: 'mm' });
+    expect(state.fields[0].source).toBe('10*2');
+  });
+
+  it('添えの値は表示の単位で 9 桁に丸める(10mm → `0.393700787 in`)', () => {
+    expect(fieldValueText('mm', { value: 10, display: '10' }, 'inch')).toBe('0.393700787 in');
+    expect(fieldValueText('mm', { value: 10, display: '10' }, 'mm')).toBe('10');
+  });
+
+  it('角度と個数の欄は inch の影響を受けない(FR-205)', () => {
+    const angle = reduceNumericInput(createNumericInput('revolve', 'revolveAngle'), {
+      type: 'edit',
+      index: 0,
+      source: '45*2',
+    });
+    expect(fieldExpression(angle.fields[0], 'inch')).toBe('45*2');
+    expect(
+      evaluateNumericInput(angle, new Map(), { lengthUnit: 'inch' }).results[0].value?.value,
+    ).toBe(90);
+    expect(fieldValueText('degree', { value: 90, display: '90' }, 'inch')).toBe('90');
+    expect(fieldValueText('count', { value: 5, display: '5' }, 'inch')).toBe('5');
+  });
+
+  it('どの欄が長さかは 1 か所の表で決まる(欄ごとに書き分けない)', () => {
+    expect(isLengthFieldUnit('mm')).toBe(true);
+    expect(isLengthFieldUnit('degree')).toBe(false);
+    expect(isLengthFieldUnit('count')).toBe(false);
+    // 表を通す `applyDisplayUnit` も同じ判断をする。
+    expect(applyDisplayUnit('10', 'mm', 'inch')).toBe('(10)in');
+    expect(applyDisplayUnit('10', 'degree', 'inch')).toBe('10');
+    expect(applyDisplayUnit('10', 'count', 'inch')).toBe('10');
+    expect(applyDisplayUnit('10', 'mm', 'mm')).toBe('10');
+  });
+
+  it('知らない単位(`1.5ft`)は欄の上で断る(FR-204、NFR-UX-5)', () => {
+    const state = typeDistance('1.5ft');
+    const evaluation = evaluateNumericInput(state, new Map(), { lengthUnit: 'inch' });
+    expect(evaluation.canCommit).toBe(false);
+    expect(evaluation.results[0].error).not.toBeNull();
+    // mm の欄でも同じく断る(単位の綴りの正本は expression 1 か所)。
+    expect(evaluateNumericInput(state, new Map(), { lengthUnit: 'mm' }).canCommit).toBe(false);
+  });
+
+  it('吸い付いた座標(内部の mm)は inch でも包まない', () => {
+    const typed = reduceNumericInput(createNumericInput('point', 'point'), {
+      type: 'edit',
+      index: 0,
+      source: '10',
+    });
+    const snapped = reduceNumericInput(typed, { type: 'setValues', values: [10, 20, 0] });
+    expect(fieldExpression(snapped.fields[0], 'inch')).toBe('10');
+    expect(
+      evaluateNumericInput(snapped, new Map(), { lengthUnit: 'inch' }).results[0].value?.value,
+    ).toBe(10);
+  });
+
+  it('空欄の既定値(内部の mm)は inch でも包まない(NFR-UX-4)', () => {
+    const cleared = reduceNumericInput(createNumericInput('extrude', 'extrudeDistance'), {
+      type: 'edit',
+      index: 0,
+      source: '',
+    });
+    const filled = fillDefaults(cleared);
+    expect(fieldExpression(filled.fields[0], 'inch')).toBe(filled.fields[0].defaultSource);
+    expect(
+      evaluateNumericInput(filled, new Map(), { lengthUnit: 'inch' }).results[0].value?.value,
+    ).toBe(Number(filled.fields[0].defaultSource));
+  });
+
+  it('確定でも同じ式が保存される(値ではなく式。FR-202)', () => {
+    const transition = commitNumericInput(typeDistance('10*2'), { lengthUnit: 'inch' });
+    expect(transition.kind).toBe('solidCommitted');
+    if (transition.kind !== 'solidCommitted') {
+      throw new Error('確定していません。');
+    }
+    expect(transition.commit.values.distance?.source).toBe('(10*2)in');
+    expect(transition.commit.values.distance?.value).toBe(508);
+  });
+
+  it('長さの欄の札だけが inch で変わる(角度・個数は変わらない)', () => {
+    expect(t(fieldUnitLabelKey('mm', 'inch'))).toBe('in');
+    expect(t(fieldUnitLabelKey('mm', 'mm'))).toBe(t(UNIT_KEYS.mm));
+    expect(fieldUnitLabelKey('degree', 'inch')).toBe(UNIT_KEYS.degree);
+    expect(fieldUnitLabelKey('count', 'inch')).toBe(UNIT_KEYS.count);
   });
 });

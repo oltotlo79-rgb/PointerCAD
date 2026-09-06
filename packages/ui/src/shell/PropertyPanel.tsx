@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   evaluateExpression,
   expressionValueFromNumber,
+  type ExpressionResult,
   type ExpressionValue,
 } from '@pointercad/expression';
 import {
@@ -22,6 +23,7 @@ import {
   type AppearancePresetId,
   type AppearanceSpec,
   type CutFeature,
+  type LengthUnit,
   type ReferenceFeature,
   type LoftFeature,
   type PrimitiveFeature,
@@ -104,12 +106,18 @@ import {
 import { ruledTwistNoteKey } from '../solid/ruledCommands.js';
 import { isValidSphereGridStep } from '../viewport/buildSphereGrid.js';
 import {
+  applyDisplayUnit,
   COORDINATE_MODES,
+  fieldUnitLabelKey,
+  fieldValueNumberText,
+  fieldValueText,
+  isLengthFieldUnit,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
   numericChoiceOptionLabel,
   rangeErrorFor,
-  UNIT_KEYS,
+  roundToSignificantDigits,
+  type FieldUnit,
   type NumericField,
   type NumericFieldRange,
 } from '../sketch/numericInput.js';
@@ -163,24 +171,58 @@ interface FieldDraft {
 }
 
 /**
+ * 式の欄が要る材料(P6 タスク3b)。**式を受け付ける 3 つの入口へ同じ表を渡す**という
+ * 決まり(`useAppStore.ts` の `parameterAnalysis` の注釈)に、表示の単位と
+ * 「長さでないパラメータ」を足したもの。
+ */
+interface FieldUnits {
+  /** パラメータ表の変数表(FR-207)。押し出しの距離に `板厚 * 2` と書けるようにする。 */
+  readonly variables: ReadonlyMap<string, number>;
+  /** 長さでないパラメータの名前(§0.a-0.63)。inch の空間で倍率を掛けない名前。 */
+  readonly nonLengthVariables: ReadonlySet<string>;
+  /** 画面に出している長さの単位(FR-811)。 */
+  readonly lengthUnit: LengthUnit;
+}
+
+/** 式の欄が要る材料を 1 か所で取る。欄を持つ節がすべてこれを呼ぶ(タスク3b)。 */
+function useFieldUnits(): FieldUnits {
+  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const nonLengthVariables = useAppStore((state) => state.nonLengthVariables);
+  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
+  return { variables, nonLengthVariables, lengthUnit };
+}
+
+/**
+ * 欄 1 つを評価する(P6 タスク3b、§0.a-0.63)。
+ *
+ * `drafted` は「いま利用者が打っている文字か」。**打った文字だけ**を表示の単位で包み
+ * (`applyDisplayUnit`)、履歴に保存されている式はそのまま評価する。保存された `10` は
+ * 10mm であって、表示を inch へ切り替えたからといって 254mm に変わってはならない
+ * (FR-202「式は文字列のまま保存される」・§2.9.1「切り替えで式は 1 文字も変わらない」)。
+ */
+function evaluateFieldSource(
+  source: string,
+  unit: FieldUnit,
+  drafted: boolean,
+  units: FieldUnits,
+): ExpressionResult {
+  return evaluateExpression(drafted ? applyDisplayUnit(source, unit, units.lengthUnit) : source, {
+    variables: units.variables,
+    nonLengthVariables: units.nonLengthVariables,
+  });
+}
+
+/** 打ち込みを履歴へ書き戻すときの式(打った文字を表示の単位で包む。タスク3b)。 */
+function committedFieldSource(source: string, unit: FieldUnit, units: FieldUnits): string {
+  return applyDisplayUnit(source, unit, units.lengthUnit);
+}
+
+/**
  * 「拘束で決まった、いまの位置」の**表示だけ**を有効数字 9 桁へ丸める桁数
  * (利用者の決定、docs/報告記録.md 2026-09-05 10:43「保存値・入力欄・他の『= 値』の
  * 桁は変えない」。P4b タスク23b-1)。保存値(履歴)には一切使わない。
  */
 const SOLVED_COORDINATE_DISPLAY_DIGITS = 9;
-
-/**
- * 数値 1 つを有効数字 `digits` 桁へ丸める(末尾の 0 は落ちる。`String()` の癖どおり)。
- * `0` と有限でない値はそのまま返す(`log10(0)` が `-Infinity` になるのを避ける)。
- */
-function roundToSignificantDigits(value: number, digits: number): number {
-  if (value === 0 || !Number.isFinite(value)) {
-    return value;
-  }
-  const magnitude = Math.floor(Math.log10(Math.abs(value)));
-  const factor = Math.pow(10, digits - 1 - magnitude);
-  return Math.round(value * factor) / factor;
-}
 
 /**
  * `solvedCoordinateText`(`../sketch/featureSummary.js`)が作る
@@ -266,7 +308,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   const documentVersion = useAppStore((state) => state.documentVersion);
   // パラメータ表の変数表(FR-207、FR-201)。`板厚 * 2` のような式をここでも読めるようにする。
   // その場入力・コマンドラインの欄と**同じ表**を渡す(タスク18 の申し送り)。
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const units = useFieldUnits();
   // 拘束の診断(FR-313)。null なら拘束を 1 つも持たないスケッチ(タスク22b-(g))。
   const constraintDiagnosis = useAppStore((state) => state.constraintDiagnosis);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
@@ -321,11 +363,13 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   };
 
   const renderField = (item: FeatureFieldSummary): React.JSX.Element => {
-    const source = draft !== null && draft.path === item.path ? draft.source : item.value.source;
-    const evaluated = evaluateExpression(source, { variables });
+    const drafted = draft !== null && draft.path === item.path;
+    const source = drafted ? draft.source : item.value.source;
+    const evaluated = evaluateFieldSource(source, item.unit, drafted, units);
     return (
       <ExpressionField
         key={item.path}
+        lengthUnit={units.lengthUnit}
         field={{
           key: item.path,
           labelKey: item.labelKey,
@@ -344,7 +388,10 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { path: item.path, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next, { variables });
+          const parsed = evaluateExpression(committedFieldSource(next, item.unit, units), {
+            variables: units.variables,
+            nonLengthVariables: units.nonLengthVariables,
+          });
           if (!parsed.ok) {
             return;
           }
@@ -794,12 +841,10 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   const partErrors = useAppStore((state) => state.partErrors);
   const documentVersion = useAppStore((state) => state.documentVersion);
   // パラメータ表の変数表(FR-207)。押し出しの距離に `板厚 * 2` と書けるようにする。
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const units = useFieldUnits();
   // タイムラインのつまみ(FR-507)。つまみより後ろの段はまだ作られていないだけで、
   // 失敗ではない(P4b タスク22a-(2)、docs/報告記録.md 2026-09-05 実時計 01:05 の申し送り①)。
   const timelineIndex = useAppStore((state) => state.timelineIndex);
-  // 表示の長さの単位(FR-811、P6 タスク3)。体積の欄だけに効く(式の欄はタスク3b)。
-  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<SolidFieldDraft>(documentVersion),
   );
@@ -832,8 +877,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
    * 範囲を持たない P1〜P4 からの欄のふるまいは 1 つも変わらない。
    */
   const renderField = (item: SolidFieldSummary): React.JSX.Element => {
-    const source = draft !== null && draft.key === item.key ? draft.source : item.value.source;
-    const evaluated = evaluateExpression(source, { variables });
+    const drafted = draft !== null && draft.key === item.key;
+    const source = drafted ? draft.source : item.value.source;
+    const evaluated = evaluateFieldSource(source, item.unit, drafted, units);
     const numericField: NumericField = {
       key: item.key,
       labelKey: item.labelKey,
@@ -848,6 +894,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
       <ExpressionField
         key={item.key}
         field={numericField}
+        lengthUnit={units.lengthUnit}
         result={
           !evaluated.ok
             ? { key: item.key, value: null, error: evaluated.error }
@@ -860,12 +907,15 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: item.key, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next, { variables });
+          const parsed = evaluateExpression(committedFieldSource(next, item.unit, units), {
+            variables: units.variables,
+            nonLengthVariables: units.nonLengthVariables,
+          });
           if (!parsed.ok || rangeErrorFor({ ...numericField, source: next }, parsed.value) !== null) {
             return;
           }
           apply(
-            setSolidField(feature, item.key, parsed.value, variables),
+            setSolidField(feature, item.key, parsed.value, units.variables),
             `field:${feature.id}:${item.key}`,
           );
         }}
@@ -889,11 +939,22 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         readOnly
         tabIndex={-1}
         aria-readonly="true"
-        value={item.value.source}
+        /*
+          式を入れられない欄なので、**数そのもの**を表示の単位で出す(タスク3b)。
+          打ち込める欄と違って「保存されている式」を見せる意味が無く、横の札(in)と
+          中身の数の単位が食い違うほうが読み違いを生む。mm のときは 1 文字も変わらない。
+        */
+        value={
+          isLengthFieldUnit(item.unit) && units.lengthUnit === 'inch'
+            ? fieldValueNumberText(item.unit, item.value, units.lengthUnit)
+            : item.value.source
+        }
         title={t(item.tooltipKey)}
       />
-      <span className="pcad-field__unit">{t(UNIT_KEYS[item.unit])}</span>
-      <p className="pcad-field__message">{`= ${item.value.display}`}</p>
+      <span className="pcad-field__unit">{t(fieldUnitLabelKey(item.unit, units.lengthUnit))}</span>
+      <p className="pcad-field__message">
+        {`= ${fieldValueText(item.unit, item.value, units.lengthUnit)}`}
+      </p>
     </div>
   );
 
@@ -958,7 +1019,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
               key={choice.key}
               choice={choice}
               onChoose={(value) => {
-                apply(setSolidChoice(feature, choice.key, value, variables));
+                apply(setSolidChoice(feature, choice.key, value, units.variables));
               }}
             />
           ))}
@@ -1029,7 +1090,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           <dd className="pcad-properties__value">
             {body === undefined
               ? missing
-              : `${formatVolume(body.volume, lengthUnit)} ${t(VOLUME_UNIT_KEYS[lengthUnit])}`}
+              : `${formatVolume(body.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.triangleCount')}</dt>
           <dd className="pcad-properties__value">
@@ -1071,7 +1132,7 @@ const PRIMITIVE_ORIGIN_DRAFT_PREFIX = 'origin:';
 function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): React.JSX.Element {
   const documentVersion = useAppStore((state) => state.documentVersion);
   const part = useAppStore((state) => state.document);
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const units = useFieldUnits();
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<PrimitiveFieldDraft>(documentVersion),
   );
@@ -1095,12 +1156,14 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
     field: NumericField,
     onCommit: (value: ExpressionValue) => void,
   ): React.JSX.Element => {
-    const source = draft !== null && draft.key === draftKey ? draft.source : field.source;
-    const evaluated = evaluateExpression(source, { variables });
+    const drafted = draft !== null && draft.key === draftKey;
+    const source = drafted ? draft.source : field.source;
+    const evaluated = evaluateFieldSource(source, field.unit, drafted, units);
     return (
       <ExpressionField
         key={draftKey}
         field={{ ...field, source }}
+        lengthUnit={units.lengthUnit}
         result={
           evaluated.ok
             ? { key: field.key, value: evaluated.value, error: null }
@@ -1111,7 +1174,10 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: draftKey, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next, { variables });
+          const parsed = evaluateExpression(committedFieldSource(next, field.unit, units), {
+            variables: units.variables,
+            nonLengthVariables: units.nonLengthVariables,
+          });
           if (parsed.ok) {
             onCommit(parsed.value);
           }
@@ -1234,10 +1300,10 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
 function SphereGridSection(): React.JSX.Element {
   const step = useAppStore((state) => state.sphereGridStep);
   const alwaysVisible = useAppStore((state) => state.sphereGridAlwaysVisible);
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const units = useFieldUnits();
   const [draft, setDraft] = useState<string | null>(null);
   const source = draft ?? step.source;
-  const evaluated = evaluateExpression(source, { variables });
+  const evaluated = evaluateFieldSource(source, 'degree', draft !== null, units);
   const outOfRange = evaluated.ok && !isValidSphereGridStep(evaluated.value.value);
 
   return (
@@ -1262,7 +1328,10 @@ function SphereGridSection(): React.JSX.Element {
           onFocus={() => undefined}
           onChange={(next) => {
             setDraft(next);
-            const parsed = evaluateExpression(next, { variables });
+            const parsed = evaluateExpression(committedFieldSource(next, 'degree', units), {
+              variables: units.variables,
+              nonLengthVariables: units.nonLengthVariables,
+            });
             if (parsed.ok) {
               useAppStore.getState().setSphereGridStep(parsed.value);
             }
@@ -1351,7 +1420,7 @@ function SphereGridPointSection({
   readonly feature: SketchFeature;
 }): React.JSX.Element | null {
   const documentVersion = useAppStore((state) => state.documentVersion);
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const units = useFieldUnits();
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<FieldDraft>(documentVersion),
   );
@@ -1371,11 +1440,13 @@ function SphereGridPointSection({
     value: ExpressionValue,
   ): React.JSX.Element => {
     const path = `sphereGrid.${key}`;
-    const source = draft !== null && draft.path === path ? draft.source : value.source;
-    const evaluated = evaluateExpression(source, { variables });
+    const drafted = draft !== null && draft.path === path;
+    const source = drafted ? draft.source : value.source;
+    const evaluated = evaluateFieldSource(source, 'degree', drafted, units);
     return (
       <ExpressionField
         key={path}
+        lengthUnit={units.lengthUnit}
         field={{
           key: path,
           labelKey,
@@ -1393,7 +1464,10 @@ function SphereGridPointSection({
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { path, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next, { variables });
+          const parsed = evaluateExpression(committedFieldSource(next, 'degree', units), {
+            variables: units.variables,
+            nonLengthVariables: units.nonLengthVariables,
+          });
           if (!parsed.ok) {
             return;
           }
@@ -1557,7 +1631,7 @@ function ReferenceProperties({
   const resolvedReferences = useAppStore((state) => state.resolvedReferences);
   const documentVersion = useAppStore((state) => state.documentVersion);
   // パラメータ表の変数表(FR-207)。作業平面のオフセットにも名前で書けるようにする。
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const units = useFieldUnits();
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<ReferenceFieldDraft>(documentVersion),
   );
@@ -1585,11 +1659,13 @@ function ReferenceProperties({
     value: { readonly source: string },
     write: (parsed: ExpressionValue) => void,
   ): React.JSX.Element => {
-    const source = draft !== null && draft.key === key ? draft.source : value.source;
-    const evaluated = evaluateExpression(source, { variables });
+    const drafted = draft !== null && draft.key === key;
+    const source = drafted ? draft.source : value.source;
+    const evaluated = evaluateFieldSource(source, unit, drafted, units);
     return (
       <ExpressionField
         key={key}
+        lengthUnit={units.lengthUnit}
         field={{
           key,
           labelKey,
@@ -1607,7 +1683,10 @@ function ReferenceProperties({
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next, { variables });
+          const parsed = evaluateExpression(committedFieldSource(next, unit, units), {
+            variables: units.variables,
+            nonLengthVariables: units.nonLengthVariables,
+          });
           if (parsed.ok) {
             write(parsed.value);
           }
@@ -1992,7 +2071,7 @@ function AppearanceSection({
   readonly context: AppearanceContext;
 }): React.JSX.Element | null {
   const documentVersion = useAppStore((state) => state.documentVersion);
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const units = useFieldUnits();
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<AppearanceFieldDraft>(documentVersion),
   );
@@ -2058,7 +2137,7 @@ function AppearanceSection({
   const renderPercentField = (field: AppearanceNumberField): React.JSX.Element => {
     const value = spec[field];
     const source = draft !== null && draft.key === field ? draft.source : value.source;
-    const evaluated = evaluateExpression(source, { variables });
+    const evaluated = evaluateExpression(source, { variables: units.variables });
     const numericField: NumericField = {
       key: field,
       labelKey: PERCENT_FIELD_LABEL_KEYS[field],
@@ -2088,7 +2167,7 @@ function AppearanceSection({
           onChange={(event) => {
             const next = event.target.value;
             setDraftState({ draft: { key: field, source: next }, seenVersion: documentVersion });
-            const parsed = evaluateExpression(next, { variables });
+            const parsed = evaluateExpression(next, { variables: units.variables });
             if (!parsed.ok || rangeErrorFor(numericField, parsed.value) !== null) {
               return;
             }
@@ -2105,11 +2184,13 @@ function AppearanceSection({
 
   /** 柄の間隔(mm、FR-1108)。「なし」以外のときだけ呼ばれる。 */
   const renderSpacingField = (spacingValue: ExpressionValue): React.JSX.Element => {
-    const source = draft !== null && draft.key === 'spacing' ? draft.source : spacingValue.source;
-    const evaluated = evaluateExpression(source, { variables });
+    const drafted = draft !== null && draft.key === 'spacing';
+    const source = drafted ? draft.source : spacingValue.source;
+    const evaluated = evaluateFieldSource(source, 'mm', drafted, units);
     return (
       <ExpressionField
         key="spacing"
+        lengthUnit={units.lengthUnit}
         field={{
           key: 'spacing',
           labelKey: 'propertyPanel.appearanceSpacing',
@@ -2127,7 +2208,10 @@ function AppearanceSection({
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: 'spacing', source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(next, { variables });
+          const parsed = evaluateExpression(committedFieldSource(next, 'mm', units), {
+            variables: units.variables,
+            nonLengthVariables: units.nonLengthVariables,
+          });
           if (!parsed.ok) {
             return;
           }
@@ -2385,20 +2469,14 @@ function MassPropertiesSection({
   readonly spec: AppearanceSpec;
 }): React.JSX.Element {
   const massProperties = useAppStore((state) => state.massProperties);
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
-  /*
-   * 表示の長さの単位(FR-811、P6 タスク3)。体積と表面積だけに効く。
-   * **質量(g / kg)と密度はここでは換算しない**(§2.9 の表。質量は長さの単位に依らず、
-   * 密度の lb/in³ への読み替えは別の決めごとなのでタスク30 の第 2 弾へ送る)。
-   */
-  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
+  const units = useFieldUnits();
   const [materialId, setMaterialId] = useState(() =>
     defaultDensityMaterialId(spec.preset, spec.pattern.kind === 'woodGrain' ? spec.pattern.species : null),
   );
   /** 密度の欄の式。材料を選び直すとその材料の密度で置き換わる(式で上書きもできる)。 */
   const [densitySource, setDensitySource] = useState(() => String(densityOf(materialId)));
 
-  const evaluated = evaluateExpression(densitySource, { variables });
+  const evaluated = evaluateExpression(densitySource, { variables: units.variables });
   const density = evaluated.ok ? evaluated.value.value : densityOf(materialId);
   const view = massProperties === null ? null : massPropertiesView(massProperties, density);
 
@@ -2454,11 +2532,11 @@ function MassPropertiesSection({
         <dl className="pcad-properties">
           <dt className="pcad-properties__key">{t('propertyPanel.massVolume')}</dt>
           <dd className="pcad-properties__value">
-            {`${formatVolume(massProperties.volume, lengthUnit)} ${t(VOLUME_UNIT_KEYS[lengthUnit])}`}
+            {`${formatVolume(massProperties.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massArea')}</dt>
           <dd className="pcad-properties__value">
-            {`${formatArea(massProperties.area, lengthUnit)} ${t(AREA_UNIT_KEYS[lengthUnit])}`}
+            {`${formatArea(massProperties.area, units.lengthUnit)} ${t(AREA_UNIT_KEYS[units.lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massMass')}</dt>
           <dd className="pcad-properties__value">{formatMass(view.mass)}</dd>

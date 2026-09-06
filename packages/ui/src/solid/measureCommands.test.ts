@@ -504,3 +504,33 @@ describe('測る手立ての差し込み(タスク32 の配線)', () => {
     expect(!outcome.ok && outcome.reasonKey).toBe('measureError.failed');
   });
 });
+
+describe('測定の札が表示の単位で出る(P6 タスク3 の配線、FR-811)', () => {
+  it('一覧から出せた測定の札は inch で出る(値は mm のまま)', () => {
+    const targets = targetsOf(['extrude-1#vertex:0', 'extrude-1#vertex:6']);
+    const local = localOf('pointDistance', targets);
+    expect(measurementOf(local, targets, BODIES, 'inch').text).toBe('2.007 in');
+    // 単位を省いたとき・mm を渡したときは P5 までと 1 文字も変わらない。
+    expect(measurementOf(local, targets, BODIES).text).toBe('50.990 mm');
+    expect(measurementOf(local, targets, BODIES, 'mm').text).toBe('50.990 mm');
+    // 測った値そのものは mm のまま(NFR-RE-3)。
+    expect(measurementOf(local, targets, BODIES, 'inch').result.value).toBe(local.value);
+  });
+
+  it('カーネルの最短距離の札も inch で出る', () => {
+    expect(measurementFromDistance('bodyDistance', 50.8, [0, 0, 0], [50.8, 0, 0], 'inch').text).toBe(
+      '2.000 in',
+    );
+    expect(measurementFromDistance('bodyDistance', 50.8, [0, 0, 0], [50.8, 0, 0]).text).toBe(
+      '50.800 mm',
+    );
+  });
+
+  it('角度の札は表示の単位に影響されない(FR-205)', () => {
+    const targets = targetsOf(['extrude-1#face:1', 'extrude-1#face:5']);
+    const local = localOf('faceAngle', targets);
+    expect(measurementOf(local, targets, BODIES, 'inch').text).toBe(
+      measurementOf(local, targets, BODIES, 'mm').text,
+    );
+  });
+});

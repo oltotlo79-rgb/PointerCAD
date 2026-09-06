@@ -265,6 +265,44 @@ export function bulgeToArc(
 }
 
 /**
+ * 円弧を LWPOLYLINE / POLYLINE の bulge(グループ 42)へ戻す(`bulgeToArc` の逆)。
+ *
+ * ## 導出
+ *
+ * `bulgeToArc` の定義そのままで、中心角 `Δθ = endAngle − startAngle`(符号つき)から
+ * **`bulge = tan(Δθ/4)`**。反時計回り(`Δθ > 0`)が正で、`Δθ = 180°` がちょうど 1、
+ * 中心角が大きいほど絶対値が大きくなる。中心と半径は使わない(bulge は始点・終点と
+ * 合わせて円弧を決めるので、**弦の両端は呼び出し側が別に書く**)。
+ *
+ * ## 全周を返せない理由
+ *
+ * `tan(Δθ/4)` は `|Δθ| = 360°` で発散する。bulge は「弦の両端」と組でしか円弧を表せず、
+ * 始点と終点が重なる全周の円は**弦が決まらない**ので、そもそも 1 つの bulge で書けない。
+ * 全周は `CIRCLE` として書くか、半円 2 つに割る必要があるため、ここでは `null` を返して
+ * 呼び出し側に決めさせる(`bulgeToArc` が直線・長さ 0 で `null` を返すのと同じ流儀)。
+ *
+ * @param arc 円弧(角度は度、`endAngle − startAngle` が符号つきの中心角)。
+ * @returns グループ 42 に書く値。**中心角が 0 なら `0`**(bulge の定義どおり直線区間)。
+ *   **全周以上(`|Δθ| ≥ 360°`)なら `null`。**
+ * @throws {Error} `DXF_UNSUPPORTED_FORMAT_MESSAGE` を持つ例外。角度が有限の数でないとき。
+ */
+export function arcToBulge(arc: DxfArcGeometry): number | null {
+  if (!Number.isFinite(arc.startAngle) || !Number.isFinite(arc.endAngle)) {
+    throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+  }
+  const sweepDegrees = arc.endAngle - arc.startAngle;
+  if (Math.abs(sweepDegrees) >= FULL_TURN_DEGREES) {
+    return null;
+  }
+  return normalizeZero(Math.tan(toRadians(sweepDegrees) / 4));
+}
+
+/** 度をラジアンへ。`toDegrees` の逆で、`arcToBulge` だけが使う。 */
+function toRadians(degrees: number): number {
+  return (degrees * Math.PI) / HALF_TURN_DEGREES;
+}
+
+/**
  * ELLIPSE の媒介変数を、長軸から測った方位角(ラジアン)へ直す。
  *
  * ## 導出

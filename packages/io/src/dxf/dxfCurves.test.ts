@@ -2,6 +2,7 @@ import { azimuthToEllipseParameter } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import {
+  arcToBulge,
   bulgeToArc,
   DXF_SPLINE_WEIGHT_IGNORED_MESSAGE,
   ellipseFromDxf,
@@ -215,6 +216,61 @@ describe('bulgeToArc', () => {
       DXF_UNSUPPORTED_FORMAT_MESSAGE,
     );
     expect(() => bulgeToArc(ORIGIN, RIGHT_20, Number.NaN)).toThrow(DXF_UNSUPPORTED_FORMAT_MESSAGE);
+  });
+});
+
+describe('arcToBulge', () => {
+  /** `bulgeToArc` へ渡してから戻す往復。円弧が起こせない指定は検査で使わない。 */
+  const roundTrip = (bulge: number): number | null => {
+    const arc = bulgeToArc(ORIGIN, RIGHT_20, bulge);
+    expect(arc).not.toBeNull();
+    return arc === null ? null : arcToBulge(arc);
+  };
+
+  it('中心角 180 度(半円)の bulge は 1、90 度は tan(22.5°)', () => {
+    // `bulge = tan(Δθ/4)` の定義そのまま。180 度なら tan 45° = 1。
+    expect(arcToBulge({ center: ORIGIN, radius: 10, startAngle: 0, endAngle: 180 })).toBeCloseTo(
+      1,
+      15,
+    );
+    expect(arcToBulge({ center: ORIGIN, radius: 10, startAngle: 0, endAngle: 90 })).toBeCloseTo(
+      QUARTER_TURN_BULGE,
+      15,
+    );
+  });
+
+  it('時計回り(中心角が負)の bulge は負になる', () => {
+    // 向きは中心角の符号だけで決まる(半径も中心も見ない)。
+    expect(arcToBulge({ center: ORIGIN, radius: 10, startAngle: 90, endAngle: 0 })).toBeCloseTo(
+      -QUARTER_TURN_BULGE,
+      15,
+    );
+  });
+
+  it('`bulgeToArc` と往復しても 1e-9 の範囲で同じ値に戻る', () => {
+    for (const bulge of [0.1, QUARTER_TURN_BULGE, 0.5, 1, 3, -0.25, -1, -2]) {
+      const returned = roundTrip(bulge);
+      expect(returned).not.toBeNull();
+      expect(Math.abs((returned ?? 0) - bulge)).toBeLessThan(1e-9);
+    }
+  });
+
+  it('中心角 0 なら 0(直線の区間)、`-0` は作らない', () => {
+    const bulge = arcToBulge({ center: ORIGIN, radius: 10, startAngle: 45, endAngle: 45 });
+    expect(bulge).toBe(0);
+    expect(Object.is(bulge, 0)).toBe(true);
+  });
+
+  it('全周(中心角 360 度)は bulge で書けないので null', () => {
+    // 始点と終点が重なると弦が決まらない。`CIRCLE` として書くのは呼び出し側の判断。
+    expect(arcToBulge({ center: ORIGIN, radius: 10, startAngle: 0, endAngle: 360 })).toBeNull();
+    expect(arcToBulge({ center: ORIGIN, radius: 10, startAngle: 0, endAngle: -360 })).toBeNull();
+  });
+
+  it('角度が有限の数でなければ断る', () => {
+    expect(() =>
+      arcToBulge({ center: ORIGIN, radius: 10, startAngle: Number.NaN, endAngle: 90 }),
+    ).toThrow(DXF_UNSUPPORTED_FORMAT_MESSAGE);
   });
 });
 

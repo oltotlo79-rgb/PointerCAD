@@ -18,7 +18,7 @@
  * コードを返し、ui が文言を持っているのと同じ形にそろえてある)。
  */
 
-import { isSameAppearanceTarget } from '../appearance/appearanceTable.js';
+import { isSameSubShape } from '../geometry/subShapeRef.js';
 
 import type { SelectionMember, SelectionSet } from './types.js';
 
@@ -29,11 +29,26 @@ import type { SelectionMember, SelectionSet } from './types.js';
 const SELECTION_SET_ID_PREFIX = 'selectionSet-';
 
 /**
- * 同じものを指しているか。**外観の割り当て先の同一判定をそのまま使う**
- * (`SelectionMember` は `AppearanceTarget` そのものなので、判定を 2 つ作らない)。
- * 立体は id が一致するか、部分形状は指紋の同一判定(ボディ・種類・通し番号)で見る。
+ * 同じものを指しているか。
+ *
+ * **外観の割り当て先の判定(`isSameAppearanceTarget`)は借りない**(利用者の決定、
+ * 2026-09-06 で型を分けたため)。借りると、外観が扱わない辺・頂点を渡したときに
+ * 型の上では通るのに黙って `false` になり、同じ辺を 2 回入れられてしまう。
+ *
+ * 立体は id が一致するか、部分形状は指紋の同一判定(`isSameSubShape`。ボディ・種類・
+ * 通し番号が一致するか)で見る。**指紋の中身(大きさ・位置・軸)は見ない**のは
+ * `isSameSubShape` の注釈のとおりで、選び直しの後に値がわずかに変わっても
+ * 「同じものを指し続けている」と扱う。
  */
-export { isSameAppearanceTarget as isSameSelectionMember } from '../appearance/appearanceTable.js';
+export function isSameSelectionMember(a: SelectionMember, b: SelectionMember): boolean {
+  if (a.kind === 'body' || b.kind === 'body') {
+    return a.kind === 'body' && b.kind === 'body' && a.bodyFeatureId === b.bodyFeatureId;
+  }
+  // 種類の食い違い(面と辺)は `isSameSubShape` が指紋の種類で落とすが、判別子どうしも
+  // 突き合わせておく。指紋と判別子が食い違ったものは io が読むときに断るので、
+  // ここまで届くのは両方そろっている値だけである。
+  return a.kind === b.kind && isSameSubShape(a.ref, b.ref);
+}
 
 /** セットを作れなかった理由(§2.13 の表)。文言は `packages/ui` が持つ。 */
 export type SelectionSetRefusal =
@@ -92,7 +107,7 @@ export function findSelectionSet(
 function dedupeMembers(members: readonly SelectionMember[]): readonly SelectionMember[] {
   const kept: SelectionMember[] = [];
   for (const member of members) {
-    if (!kept.some((existing) => isSameAppearanceTarget(existing, member))) {
+    if (!kept.some((existing) => isSameSelectionMember(existing, member))) {
       kept.push(member);
     }
   }
@@ -169,7 +184,7 @@ export function addSelectionSetMembers(
     return sets;
   }
   const added = members.filter(
-    (member) => !existing.members.some((kept) => isSameAppearanceTarget(kept, member)),
+    (member) => !existing.members.some((kept) => isSameSelectionMember(kept, member)),
   );
   const unique = dedupeMembers(added);
   if (unique.length === 0) {
@@ -195,7 +210,7 @@ export function removeSelectionSetMembers(
     return sets;
   }
   const kept = existing.members.filter(
-    (member) => !members.some((target) => isSameAppearanceTarget(member, target)),
+    (member) => !members.some((target) => isSameSelectionMember(member, target)),
   );
   if (kept.length === existing.members.length) {
     return sets;
@@ -220,9 +235,12 @@ export interface PruneSelectionSetsResult {
  * 利用者が名前を付けた入れ物であり、中身が全部消えても名前と id は残しておいたほうが
  * 選び直して足せる(FR-112)。
  *
- * **面そのものが選び直せなかったとき**(ボディは生きているが指紋が外れたとき)は、
+ * **部分形状そのものが選び直せなかったとき**(ボディは生きているが指紋が外れたとき)は、
  * ここではなくカーネルとの照合(P5 の `appearanceMatches` と同じ仕組み)が判断する。
  * model は「ボディが消えた」だけを見る。
+ *
+ * **種類は問わない。** 立体・面・辺・頂点のどれであっても、指しているボディの id を
+ * 取り出して生死を見るだけなので、判定は 1 本で足りる(利用者の決定、2026-09-06)。
  */
 export function pruneSelectionSets(
   sets: readonly SelectionSet[],

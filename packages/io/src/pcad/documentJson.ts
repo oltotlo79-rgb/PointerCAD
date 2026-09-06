@@ -351,6 +351,20 @@ const SPRING_HANDEDNESS_VALUES: readonly SpringHandedness[] = ['right', 'left'];
 /** 外観の割り当て先(§2.2.1)。立体はフィーチャー id、面は部分形状の参照。 */
 const APPEARANCE_TARGET_KINDS: readonly AppearanceTarget['kind'][] = ['body', 'face'];
 /**
+ * 選択セットの要素(FR-112、P6 §0.a-0.44、タスク37)。**外観の割り当て先より 2 語多い。**
+ *
+ * 利用者の決定(2026-09-06)で選択セットは辺・頂点も覚えるようになった(選択フィルタの
+ * 4 つの入切と対になる。§0.a-0.43)。外観は色を塗る先が面なので `'edge'` / `'vertex'` を
+ * 受け付けてはならず、一覧を分けてある。**欄も書式の版も増えていない**(版7 のまま)ので、
+ * 立体・面だけの既存の版7 のファイルはそのまま読める。
+ */
+const SELECTION_MEMBER_KINDS: readonly SelectionMember['kind'][] = [
+  'body',
+  'face',
+  'edge',
+  'vertex',
+];
+/**
  * 材質プリセットの id(§2.4.1、11 種)。**未来のプリセットが増えたときの前方互換のため**、
  * ここに無い文字列は `readLiteral` のように断らず、その割り当てだけを落として読み進める
  * (`readAppearanceSpec` 参照)。
@@ -1681,17 +1695,29 @@ function serializeAppearanceTable(table: AppearanceTable): AppearanceTable {
 }
 
 /**
- * 選択セット 1 つ(FR-112、版7、P6 タスク37)。
+ * 選択セットの要素 1 つ(`SelectionMember`、FR-112、版7、P6 タスク37)。
  *
- * 要素(`SelectionMember`)は **`AppearanceTarget` そのもの**(model の §0.a-0.44)なので、
- * 書き出しも外観の `serializeAppearanceTarget` をそのまま使う(同じ形に 2 通りの
- * 書き方を作らない)。
+ * **外観の割り当て先(`AppearanceTarget`)とは別の型になった**(利用者の決定、2026-09-06)。
+ * 立体と面だけでなく**辺と頂点も覚える**ので書き手を分ける。`ref` の中身は P3 の
+ * `serializeSubShapeRef`(指紋つき)をそのまま使い回すため、増えるのは `kind` に入る語
+ * (`'edge'` / `'vertex'`)だけで、**欄は 1 つも増えず書式の版も上がらない**(版7 のまま)。
+ * 立体・面だけの既存の版7 のファイルは 1 バイトも変わらない。
  */
+function serializeSelectionMember(member: SelectionMember): SelectionMember {
+  if (member.kind === 'body') {
+    return { kind: 'body', bodyFeatureId: member.bodyFeatureId };
+  }
+  // 判別子は指紋の種類から採る。`ref` の中身と食い違った値を書き出さないため
+  // (読み手はこの 2 つが一致していることを確かめて、食い違えば断る)。
+  return { kind: member.ref.fingerprint.kind, ref: serializeSubShapeRef(member.ref) };
+}
+
+/** 選択セット 1 つ(FR-112、版7、P6 タスク37)。 */
 function serializeSelectionSet(set: SelectionSet): SelectionSet {
   return {
     id: set.id,
     name: set.name,
-    members: set.members.map(serializeAppearanceTarget),
+    members: set.members.map(serializeSelectionMember),
   };
 }
 
@@ -6047,10 +6073,14 @@ function readAppearanceSpec(
  * 外観の割り当て先(FR-1106)を、値そのもの(record)から読む。面は部分形状の参照
  * (P3 の `readSubShapeRefField` を使い回す)。
  *
- * **選択セットの要素(`SelectionMember`、FR-112、P6 タスク37)も同じ形なので、この関数を
- * そのまま使う**(型を 2 つ作らないので、読み手も 1 つ)。欄から読む口(`readAppearanceTarget`)と
- * 値から読む口を分けてあるのは `readCoordinateRecord` / `readCoordinate` と同じ都合で、
- * 配列の要素として読むときに「欄の名前」を場所へ足さないためである。
+ * **選択セットの要素(`SelectionMember`)はここでは読まない。** 利用者の決定(2026-09-06)で
+ * 選択セットは辺・頂点も覚えるようになり、型が分かれた(`readSelectionMemberRecord`)。
+ * この読み手が辺・頂点も受け付けるようにしてしまうと、外観の欄に `kind: 'edge'` が
+ * 書かれたファイルを読めてしまい、「辺に色を塗った」文書が型の上では成立してしまう。
+ *
+ * 欄から読む口(`readAppearanceTarget`)と値から読む口を分けてあるのは
+ * `readCoordinateRecord` / `readCoordinate` と同じ都合で、配列の要素として読むときに
+ * 「欄の名前」を場所へ足さないためである。
  */
 function readAppearanceTargetRecord(
   record: Record<string, unknown>,
@@ -6157,9 +6187,46 @@ function readAppearanceTable(
 }
 
 /**
+ * 選択セットの要素 1 つ(`SelectionMember`、FR-112、版7、P6 タスク37)を読む。
+ *
+ * 立体・面・辺・頂点の 4 種(利用者の決定、2026-09-06)。`ref` の中身は P3 の
+ * `readSubShapeRefField`(指紋つき)をそのまま使い回すので、外観の読み手との違いは
+ * **受け付ける `kind` の語が 2 つ多いことだけ**である。知らない語(`'edgeLoop'` 等)は
+ * `readLiteral` が場所を添えて断る(エラーコードは増やさず `invalidField` のまま)。
+ *
+ * **判別子と指紋の種類が食い違うファイルは断る。** `kind: 'edge'` なのに `ref.fingerprint`
+ * が面、という組み合わせは書き手が作らない(`serializeSelectionMember` は指紋から
+ * 判別子を採る)ので、届いたら壊れたファイルである。そのまま読むと画面が
+ * `extrude-1#edge:3` という要素 id を面に対して作ってしまい、選び直せない組が残る。
+ */
+function readSelectionMemberRecord(
+  record: Record<string, unknown>,
+  path: string,
+): Checked<SelectionMember> {
+  const kind = readLiteral(record, 'kind', path, SELECTION_MEMBER_KINDS);
+  if (!kind.ok) {
+    return kind;
+  }
+  if (kind.value === 'body') {
+    const bodyFeatureId = readString(record, 'bodyFeatureId', path);
+    if (!bodyFeatureId.ok) {
+      return bodyFeatureId;
+    }
+    return { ok: true, value: { kind: 'body', bodyFeatureId: bodyFeatureId.value } };
+  }
+  const ref = readSubShapeRefField(record, 'ref', path);
+  if (!ref.ok) {
+    return ref;
+  }
+  if (ref.value.fingerprint.kind !== kind.value) {
+    return fieldProblem(joinPath(path, 'kind'), 'type');
+  }
+  return { ok: true, value: { kind: kind.value, ref: ref.value } };
+}
+
+/**
  * 選択セット 1 つ(FR-112、版7、P6 タスク37)を読む。
  *
- * 要素は外観の `readAppearanceTarget` をそのまま使い回す(型が同じなので読み手も 1 つ)。
  * **名前が空かどうかはここでは見ない。** 空にできないのは利用者の操作の話(model の
  * `createSelectionSet` が断る)で、壊れたファイルの判定ではないため、ここで断ると
  * 「開けないファイル」を作ってしまう(FR-504「読み込みでファイルを失わせない」)。
@@ -6190,8 +6257,7 @@ function readSelectionSetItem(value: unknown, path: string): Checked<SelectionSe
     if (!item.ok) {
       return item;
     }
-    // 外観の割り当て先の読み手をそのまま使う(型が同じなので読み手も 1 つ)。
-    const member = readAppearanceTargetRecord(item.value, itemPath);
+    const member = readSelectionMemberRecord(item.value, itemPath);
     if (!member.ok) {
       return member;
     }

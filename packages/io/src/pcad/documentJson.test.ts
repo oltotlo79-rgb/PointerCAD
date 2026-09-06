@@ -6051,6 +6051,186 @@ describe('選択セットの読み書き(FR-112、P6 §0.a-0.44・§2.13、タ�
   });
 });
 
+/**
+ * 選択セットの員に辺・頂点が入る(利用者の決定 2026-09-06。FR-112 の選択フィルタは
+ * 頂点・辺・面・立体の 4 つを入切するので、覚えられるのも同じ 4 種でなければならない)。
+ *
+ * **欄も書式の版も増えていない。** 増えたのは `kind` に入る語(`'edge'` / `'vertex'`)
+ * だけなので、立体・面だけの既存の版7 のファイルはそのまま読める(下の検査で固定する)。
+ */
+describe('選択セットの員の 4 種類(FR-112、利用者の決定 2026-09-06)', () => {
+  /** 辺 1 本の参照(直線)。 */
+  function edgeRef(): SubShapeRef {
+    return {
+      bodyFeatureId: 'union-1',
+      index: 5,
+      fingerprint: {
+        kind: 'edge',
+        curveKind: 'line',
+        length: 40,
+        position: [20, 0, 5],
+        axis: [1, 0, 0],
+        radius: null,
+      },
+    };
+  }
+
+  /** 頂点 1 つの参照(指紋は位置だけ)。 */
+  function vertexRef(): SubShapeRef {
+    return {
+      bodyFeatureId: 'union-1',
+      index: 7,
+      fingerprint: { kind: 'vertex', position: [0, 0, 10] },
+    };
+  }
+
+  /** 4 種類の員をすべて含むセットを 1 つだけ持つ文書。 */
+  function fourKindsDocument(): PartDocument {
+    return {
+      ...richDocument(),
+      selectionSets: [
+        {
+          id: 'selectionSet-1',
+          name: '四種',
+          members: [
+            { kind: 'body', bodyFeatureId: 'extrude-1' },
+            { kind: 'face', ref: richAppearanceFaceRef() },
+            { kind: 'edge', ref: edgeRef() },
+            { kind: 'vertex', ref: vertexRef() },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('立体・面・辺・頂点の 4 種類が往復しても変わらない', () => {
+    const document = fourKindsDocument();
+    const parsed = roundTrip(document);
+    expect(parsed.selectionSets).toEqual(document.selectionSets);
+    expect(parsed.selectionSets[0].members.map((member) => member.kind)).toEqual([
+      'body',
+      'face',
+      'edge',
+      'vertex',
+    ]);
+  });
+
+  it('辺・頂点の指紋(長さ・中点・向き・半径 / 位置)がそのまま残る', () => {
+    const parsed = roundTrip(fourKindsDocument());
+    const [, , edge, vertex] = parsed.selectionSets[0].members;
+    if (edge.kind !== 'edge' || vertex.kind !== 'vertex') {
+      throw new Error('辺・頂点の員が読めていない');
+    }
+    expect(edge.ref).toEqual(edgeRef());
+    expect(vertex.ref).toEqual(vertexRef());
+  });
+
+  it('増えたのは kind の語だけで、欄も書式の版も増えていない(版 7 のまま)', () => {
+    const text = serializeDocument(fourKindsDocument(), { savedAt: SAVED_AT });
+    const file: unknown = JSON.parse(text);
+    if (
+      typeof file !== 'object' ||
+      file === null ||
+      !('document' in file) ||
+      typeof file.document !== 'object' ||
+      file.document === null ||
+      !('selectionSets' in file.document)
+    ) {
+      throw new Error('選択セットが書き出されているはず');
+    }
+    expect(file.document.selectionSets).toEqual([
+      {
+        id: 'selectionSet-1',
+        name: '四種',
+        members: [
+          { kind: 'body', bodyFeatureId: 'extrude-1' },
+          { kind: 'face', ref: richAppearanceFaceRef() },
+          { kind: 'edge', ref: edgeRef() },
+          { kind: 'vertex', ref: vertexRef() },
+        ],
+      },
+    ]);
+    expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
+    expect(PCAD_SCHEMA_VERSION).toBe(7);
+  });
+
+  it('立体・面だけの既存の版 7 のファイルはそのまま読める(語が増えても壊さない)', () => {
+    // タスク37 のときに書かれた版 7 のファイルそのまま(員は立体と面だけ、空のセットもある)。
+    const document = expectOk(
+      parseDocument(
+        rawFile({
+          document: rawDocument({
+            selectionSets: [
+              {
+                id: 'selectionSet-1',
+                name: '上面',
+                members: [
+                  { kind: 'body', bodyFeatureId: 'extrude-1' },
+                  { kind: 'face', ref: richAppearanceFaceRef() },
+                ],
+              },
+              { id: 'selectionSet-2', name: '後で足す', members: [] },
+            ],
+          }),
+        }),
+      ),
+    );
+    expect(document.selectionSets).toHaveLength(2);
+    expect(document.selectionSets[0].members.map((member) => member.kind)).toEqual(['body', 'face']);
+    expect(document.selectionSets[1].members).toEqual([]);
+  });
+
+  it('判別子と指紋の種類が食い違うファイルは invalidField で断る(コードは増やさない)', () => {
+    const error = expectError(
+      parseDocument(
+        rawFile({
+          document: rawDocument({
+            selectionSets: [
+              {
+                id: 'selectionSet-1',
+                name: 'A',
+                // `kind` は辺なのに指紋は面。書き手は作らない組み合わせなので壊れたファイル。
+                members: [{ kind: 'edge', ref: richAppearanceFaceRef() }],
+              },
+            ],
+          }),
+        }),
+      ),
+    );
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('document.selectionSets[0].members[0].kind');
+  });
+
+  it('外観の割り当て先には辺・頂点を書けない(型を分けたので読み手も分かれている)', () => {
+    const error = expectError(
+      parseDocument(
+        rawFile({
+          document: rawDocument({
+            appearance: {
+              entries: [
+                {
+                  id: 'appearance-1',
+                  target: { kind: 'edge', ref: edgeRef() },
+                  appearance: {
+                    preset: 'steel',
+                    color: '#8c9199',
+                    transmission: ev('0', 0),
+                    gloss: ev('100', 100),
+                    roughness: ev('42', 42),
+                    pattern: { kind: 'none' },
+                  },
+                },
+              ],
+            },
+          }),
+        }),
+      ),
+    );
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain('target');
+  });
+});
+
 describe('下絵の読み書き(FR-332、P6 §0.a-0.45・§2.14、タスク38)', () => {
   /** 生の下絵 1 枚(欄を自由に壊せる形)。 */
   function rawCanvas(overrides: Record<string, unknown> = {}): Record<string, unknown> {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { isSameAppearanceTarget } from '../appearance/appearanceTable.js';
+import type { AppearanceTarget } from '../appearance/types.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 
 import { createEmptyPartDocument } from './createPartDocument.js';
@@ -50,12 +51,29 @@ function edgeRef(bodyFeatureId: string, index: number): SubShapeRef {
   };
 }
 
+/** 頂点 1 つの参照。指紋は位置だけ(`geometry/subShapeRef.ts`)。 */
+function vertexRef(bodyFeatureId: string, index: number): SubShapeRef {
+  return {
+    bodyFeatureId,
+    index,
+    fingerprint: { kind: 'vertex', position: [10, 20, 30] },
+  };
+}
+
 function bodyMember(bodyFeatureId: string): SelectionMember {
   return { kind: 'body', bodyFeatureId };
 }
 
 function faceMember(bodyFeatureId: string, index: number): SelectionMember {
   return { kind: 'face', ref: faceRef(bodyFeatureId, index) };
+}
+
+function edgeMember(bodyFeatureId: string, index: number): SelectionMember {
+  return { kind: 'edge', ref: edgeRef(bodyFeatureId, index) };
+}
+
+function vertexMember(bodyFeatureId: string, index: number): SelectionMember {
+  return { kind: 'vertex', ref: vertexRef(bodyFeatureId, index) };
 }
 
 /** 「面 3 枚を選んで名前を付けた」セット(§2.13 の表)。 */
@@ -138,7 +156,7 @@ describe('選択セット(FR-112、P6 §0.a-0.44・§2.13、タスク37)', () =>
     const { sets, set } = expectCreated([], '上面');
     const added = addSelectionSetMembers(sets, set.id, [
       bodyMember('extrude-1'),
-      { kind: 'face', ref: edgeRef('extrude-1', 5) },
+      edgeMember('extrude-1', 5),
     ]);
     expect(findSelectionSet(added, set.id)?.members).toHaveLength(2);
     expect(addSelectionSetMembers(added, 'selectionSet-9', [bodyMember('extrude-2')])).toBe(added);
@@ -191,11 +209,115 @@ describe('選択セット(FR-112、P6 §0.a-0.44・§2.13、タスク37)', () =>
     expect(pruned.sets).toBe(sets);
   });
 
-  it('要素の同一判定は外観の割り当て先の判定そのもの(型も判定も 2 つ作らない)', () => {
-    // 別名で輸出しているだけで実体は 1 つ(§0.a-0.44「`AppearanceTarget` と同じ形」)。
-    expect(isSameSelectionMember).toBe(isSameAppearanceTarget);
+  it('要素の同一判定は外観の判定とは別物(利用者の決定 2026-09-06 で型を分けた)', () => {
+    // 借り物ではなく `selectionSets.ts` が持つ判定。外観の判定は辺・頂点を知らない。
+    expect(isSameSelectionMember).not.toBe(isSameAppearanceTarget);
     expect(isSameSelectionMember(faceMember('extrude-1', 2), faceMember('extrude-1', 2))).toBe(true);
     expect(isSameSelectionMember(faceMember('extrude-1', 2), bodyMember('extrude-1'))).toBe(false);
+  });
+
+  it('辺・頂点も立体・面と同じく同一判定できる(FR-112。外観の判定では偽になる)', () => {
+    expect(isSameSelectionMember(edgeMember('extrude-1', 5), edgeMember('extrude-1', 5))).toBe(true);
+    expect(isSameSelectionMember(edgeMember('extrude-1', 5), edgeMember('extrude-1', 6))).toBe(
+      false,
+    );
+    expect(isSameSelectionMember(vertexMember('extrude-1', 0), vertexMember('extrude-1', 0))).toBe(
+      true,
+    );
+    // 種類が違えば別物(同じボディ・同じ通し番号でも面と辺は別)。
+    expect(isSameSelectionMember(faceMember('extrude-1', 5), edgeMember('extrude-1', 5))).toBe(
+      false,
+    );
+    expect(isSameSelectionMember(edgeMember('extrude-1', 0), vertexMember('extrude-1', 0))).toBe(
+      false,
+    );
+    // 外観の判定を借りていたら、辺どうしが同じでも偽になっていた(型を分けた理由)。
+    const asAppearanceTargets: readonly AppearanceTarget[] = [
+      { kind: 'face', ref: faceRef('extrude-1', 5) },
+      { kind: 'face', ref: faceRef('extrude-1', 5) },
+    ];
+    expect(isSameAppearanceTarget(asAppearanceTargets[0], asAppearanceTargets[1])).toBe(true);
+  });
+
+  it('辺 3 本を選んで名前を付けられる(選択フィルタの 4 種と対になる。§0.a-0.43)', () => {
+    const { set } = expectCreated([], '上の縁', [
+      edgeMember('extrude-1', 0),
+      edgeMember('extrude-1', 1),
+      edgeMember('extrude-1', 2),
+    ]);
+    expect(set.members).toHaveLength(3);
+    expect(set.members.every((member) => member.kind === 'edge')).toBe(true);
+  });
+
+  it('4 種類(立体・面・辺・頂点)を 1 つのセットに混ぜられる', () => {
+    const { set } = expectCreated([], '混ぜた組', [
+      bodyMember('extrude-1'),
+      faceMember('extrude-1', 2),
+      edgeMember('extrude-1', 5),
+      vertexMember('extrude-1', 7),
+    ]);
+    expect(set.members.map((member) => member.kind)).toEqual(['body', 'face', 'edge', 'vertex']);
+  });
+
+  it('同じ辺・同じ頂点を 2 回入れても 1 件になる(重複除去が 4 種類に効く)', () => {
+    const { set } = expectCreated([], '縁', [
+      edgeMember('extrude-1', 5),
+      edgeMember('extrude-1', 5),
+      vertexMember('extrude-1', 7),
+      vertexMember('extrude-1', 7),
+    ]);
+    expect(set.members).toHaveLength(2);
+  });
+
+  it('辺・頂点も後から足せて、外せる(種類を問わない純関数)', () => {
+    const { sets, set } = expectCreated([], '縁', [faceMember('extrude-1', 2)]);
+    const added = addSelectionSetMembers(sets, set.id, [
+      edgeMember('extrude-1', 5),
+      vertexMember('extrude-1', 7),
+    ]);
+    expect(findSelectionSet(added, set.id)?.members).toHaveLength(3);
+    const removed = removeSelectionSetMembers(added, set.id, [vertexMember('extrude-1', 7)]);
+    expect(findSelectionSet(removed, set.id)?.members.map((member) => member.kind)).toEqual([
+      'face',
+      'edge',
+    ]);
+  });
+
+  it('消えたボディを指す辺・頂点も外れ、セットは残る(§2.13、FR-504)', () => {
+    const { sets } = expectCreated([], '混ぜた組', [
+      edgeMember('extrude-1', 5),
+      vertexMember('extrude-1', 7),
+      edgeMember('消えた立体', 0),
+      vertexMember('消えた立体', 1),
+      bodyMember('消えた立体'),
+    ]);
+    const pruned = pruneSelectionSets(sets, ['extrude-1']);
+    expect(pruned.removedCount).toBe(3);
+    expect(pruned.sets).toHaveLength(1);
+    expect(pruned.sets[0].members.map((member) => member.kind)).toEqual(['edge', 'vertex']);
+  });
+
+  it('部分形状の員は判別子と指紋の種類がそろう(io がこの前提で読み書きする)', () => {
+    const { set } = expectCreated([], '混ぜた組', [
+      faceMember('extrude-1', 2),
+      edgeMember('extrude-1', 5),
+      vertexMember('extrude-1', 7),
+    ]);
+    for (const member of set.members) {
+      if (member.kind === 'body') {
+        throw new Error('この組に立体は入れていない');
+      }
+      expect(member.ref.fingerprint.kind).toBe(member.kind);
+    }
+  });
+
+  it('辺・頂点だけのセットを変えても形に影響しない(affectsShape が偽)', () => {
+    const document = createEmptyPartDocument();
+    const { sets } = expectCreated(document.selectionSets, '縁と角', [
+      edgeMember('extrude-1', 5),
+      vertexMember('extrude-1', 7),
+    ]);
+    expect(affectsShape(document, { ...document, selectionSets: sets })).toBe(false);
   });
 
   it('起動時の部品は選択セットを 1 つも持たない', () => {

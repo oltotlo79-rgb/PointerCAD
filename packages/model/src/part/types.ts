@@ -19,7 +19,7 @@ import type { ExpressionValue } from '@pointercad/expression';
 // (§0.a-0.74、統括の指示 2026-09-05)。型だけの取り込みなので実行時の読み込みは起きない。
 import type { SphereSegmentCount } from '@pointercad/kernel';
 
-import type { AppearanceTable, AppearanceTarget } from '../appearance/types.js';
+import type { AppearanceTable } from '../appearance/types.js';
 import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
 import type {
   EdgeCurveKind,
@@ -1293,19 +1293,25 @@ export type ReferenceFeature =
 /**
  * 選択セットに入れられるもの 1 つ(FR-112「選んだ組に名前を付けて保存・呼び出し」)。
  *
- * **P5 の `AppearanceTarget` をそのまま共有する**(§0.a-0.44「`AppearanceTarget` と
- * 同じ形」、統括の指示「型を 2 つ作らない」)。同じ形の型を 2 つ置くと、`packages/io` の
- * 読み書き・`isSameAppearanceTarget` の同一判定・部分形状の指紋の選び直しが
- * 2 通りずつ要ることになり、片方だけ直したときに黙って食い違う。
+ * **外観の割り当て先(`AppearanceTarget`)とは別の型である**(利用者の決定、2026-09-06)。
+ * 当初は §0.a-0.44 の「`AppearanceTarget` と同じ形」に従って共有していたが、外観は
+ * 立体と面 1 枚にしか付けられない(色を塗る先が面だから)のに対し、選択セットは
+ * FR-112 の選択フィルタ(頂点・辺・面・立体の 4 つ、§0.a-0.43)と対になる仕組みで、
+ * **辺と頂点も名前を付けて覚えられなければ要件を満たさない。** 外観の型を広げると
+ * 「辺に色を塗る」が型の上で通ってしまうので、型を分けて片側だけを広げる。
  *
- * **`kind: 'face'` は「部分形状 1 つ」の意味で読む。** 外観は面 1 枚にしか付けられない
- * ので P5 はこの名前にしたが、`SubShapeRef` 自身が `fingerprint.kind` に
- * 面・辺・頂点のどれかを持っている(`geometry/subShapeRef.ts`)ので、選択セットが
- * 辺や頂点を持っても型は 1 ドットも変える必要がない。§0.a-0.44 の草案の名前
- * (`{ kind: 'subShape' }`)へ改名しなかったのは、改名すると版 7 の `.pcad` の
- * 外観の欄まで書き換わり、P5 で保存されたファイルが開けなくなるためである。
+ * 種類の語は `SubShapeKind`(`'face' | 'edge' | 'vertex'`、`geometry/subShapeRef.ts`)と
+ * **同じ綴りにそろえてある。** 画面の要素 id(`extrude-1#face:3` / `#edge:` / `#vertex:`、
+ * ui の `solid/subShapeSelection.ts`)も同じ語なので、写し取るときに対応表を作らずに済む。
+ *
+ * `ref.fingerprint.kind` にも同じ語が入っている(指紋は種類ごとに持つ欄が違うため)。
+ * 2 か所に同じ語があるのは `rules/04`「導出できるものは保存しない」に触れるように見えるが、
+ * **判別子(`kind`)を先に読まないと `ref` の中身の形が決まらない**ので消せない。
+ * 食い違ったファイル(`kind: 'edge'` なのに面の指紋)は `packages/io` が読むときに断る。
  */
-export type SelectionMember = AppearanceTarget;
+export type SelectionMember =
+  | { readonly kind: 'body'; readonly bodyFeatureId: string }
+  | { readonly kind: SubShapeKind; readonly ref: SubShapeRef };
 
 /**
  * 選択セット 1 つ(FR-112、§0.a-0.44)。
@@ -1319,6 +1325,10 @@ export type SelectionMember = AppearanceTarget;
  * - **空のセットを作れる**(同上)。先に名前だけ決めて後から要素を足す使い方を許す。
  * - 要素は座標ではなく**指紋**(`SubShapeRef`)で持つので、再計算の後も選び直せる
  *   (P3 からの仕組み)。選び直せなかった要素は警告して外す(§2.13、`pruneSelectionSets`)。
+ * - **立体・面・辺・頂点の 4 種を入れられる**(利用者の決定、2026-09-06)。選択フィルタ
+ *   (§0.a-0.43)の 4 つの入切と同じ 4 種で、辺・頂点の選び直しも kernel の
+ *   `occt/matchSubShape.ts` が面と同じ仕組みで受け持つ(頂点は通し番号が変わると
+ *   届かない限界があり、これは同ファイルに記録済み)。
  */
 export interface SelectionSet {
   /** セットの id(採番は `selectionSet-<n>`、`part/selectionSets.ts` の `nextSelectionSetId`)。 */

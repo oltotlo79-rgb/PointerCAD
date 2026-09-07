@@ -19,6 +19,8 @@ import { t, type FileGateway, type PickedFile } from '@pointercad/ui';
  */
 interface DesktopFileApi {
   openPcad(): Promise<unknown>;
+  confirmSaveTarget(token: string): Promise<unknown>;
+  clearSaveTarget(): Promise<unknown>;
   savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean): Promise<unknown>;
   hasSaveTarget(): Promise<unknown>;
 }
@@ -49,6 +51,10 @@ function isDesktopFileApi(value: unknown): value is DesktopFileApi {
     isObject(value) &&
     'openPcad' in value &&
     typeof value.openPcad === 'function' &&
+    'confirmSaveTarget' in value &&
+    typeof value.confirmSaveTarget === 'function' &&
+    'clearSaveTarget' in value &&
+    typeof value.clearSaveTarget === 'function' &&
     'savePcad' in value &&
     typeof value.savePcad === 'function' &&
     'hasSaveTarget' in value &&
@@ -115,10 +121,17 @@ function toBytes(value: unknown): Uint8Array | null {
 interface OpenedShape {
   readonly name: string;
   readonly bytes: unknown;
+  readonly saveTargetToken: unknown;
 }
 
 function isOpenedShape(value: unknown): value is OpenedShape {
-  return isObject(value) && 'name' in value && typeof value.name === 'string' && 'bytes' in value;
+  return (
+    isObject(value) &&
+    'name' in value &&
+    typeof value.name === 'string' &&
+    'bytes' in value &&
+    'saveTargetToken' in value
+  );
 }
 
 /** 種類つきの「開く」の答えの形。`kind` の綴りは `matchKind` で確かめる。 */
@@ -151,19 +164,22 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
    * `FileGateway.hasSaveTarget()` は**その場で**真偽を返す約束なのに、実体は本体プロセスに
    * あって IPC(`pcad:hasTarget`)でしか聞けない。そこで答えを画面側で控える。
    *  - 起動直後は「覚えていない」から始める。
-   *  - 「開く」「保存」が成功したら「覚えている」にする(本体プロセスもそこで覚える)。
+   *  - 「開く」はまだ変えず、文書の検証後に token の確定が成功したときだけ合わせる。
+   *  - 「保存」が成功したら「覚えている」にする(本体プロセスもそこで覚える)。
    *  - 作った直後に 1 度だけ本体プロセスへ聞き、覚えていれば控えも合わせる。画面を読み直しても
    *    本体プロセスの控えは残るため、これが無いと最初の Ctrl+S で余計に窓が出る。
    *
-   * 控えは「覚えていない → 覚えている」の向きにしか動かないので、遅れて返ってきた
-   * 問い合わせの答えが、その間に成功した保存の結果を打ち消すことはない。
+   * 問い合わせ中に確定・解除・保存が起きたときは版を進め、遅れて返った古い答えで
+   * 新しい状態を上書きしない。
    */
   let hasTarget = false;
+  let targetStateVersion = 0;
+  const initialTargetStateVersion = targetStateVersion;
 
   void api.hasSaveTarget().then(
     (value: unknown) => {
-      if (value === true) {
-        hasTarget = true;
+      if (targetStateVersion === initialTargetStateVersion && typeof value === 'boolean') {
+        hasTarget = value;
       }
     },
     () => {
@@ -185,9 +201,24 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
       if (bytes === null) {
         throw new Error(t('file.openFailed'));
       }
-      // 開いたファイルはそのまま上書き先になる(本体プロセスが覚えている)。
-      hasTarget = true;
-      return { name: result.name, bytes };
+      if (typeof result.saveTargetToken !== 'string') {
+        throw new Error(t('file.openFailed'));
+      }
+      return { name: result.name, bytes, saveTargetToken: result.saveTargetToken };
+    },
+
+    async confirmSaveTarget(token): Promise<void> {
+      const result: unknown = await api.confirmSaveTarget(token);
+      targetStateVersion += 1;
+      hasTarget = result === true;
+      // false なら本体側も古い保存先へ戻らないよう解除済みなので、画面側も false にする。
+    },
+
+    clearSaveTarget(): void {
+      targetStateVersion += 1;
+      hasTarget = false;
+      // 画面側は即座に「保存先なし」へ倒す。IPC の失敗時も古い先へは保存しない。
+      void api.clearSaveTarget().catch(() => undefined);
     },
 
     async savePcad(suggestedName, bytes, saveAs): Promise<string | null> {
@@ -199,6 +230,7 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
       if (typeof result !== 'string') {
         throw new Error(t('file.saveFailed'));
       }
+      targetStateVersion += 1;
       hasTarget = true;
       return result;
     },

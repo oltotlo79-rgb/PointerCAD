@@ -8,9 +8,9 @@
  * すべて `packages/io` の `createAutoSaver` が持っている。ここがするのは次の 4 つだけで、
  * 同じ判断を作り直さない。
  *  - 部品文書が変わったことを見張って `markDirty` へ伝える。
- *  - 起動時に控えを読み、開ける控えがあれば復元の案内を出す。
- *  - 案内の「復元する」「破棄する」を実行する。
- *  - ブラウザで使える保管庫(IndexedDB か、無ければ記憶上)を選ぶ。
+ *  - 起動時に控えを読み、復元できるかどうかに応じた案内を出す。
+ *  - 案内の「復元する」「控えを書き出す」「破棄する」を実行する。
+ *  - ブラウザで使う IndexedDB の保管庫を選び、無ければ失敗を通知する。
  *
  * 配線を `.tsx` へ直書きせず、ここへ切り出して検査できるようにする
  * (docs/報告記録.md 2026-09-02 22:10 の④)。`PointerCadApp.tsx` は `startAutoSave` を
@@ -20,13 +20,13 @@
 import {
   createAutoSaver,
   createIndexedDbAutoSaveStorage,
-  createMemoryAutoSaveStorage,
   type AutoSaver,
   type AutoSaveStorage,
 } from '@pointercad/io';
 
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { saveFileAsThrough, withPcadExtension } from './fileGateway.js';
 import { hasUnsavedChanges, readPartDocument } from './partFile.js';
 
 // ---------------------------------------------------------------------------
@@ -42,20 +42,36 @@ function hasIndexedDb(scope: object): scope is IndexedDbScope {
   return 'indexedDB' in scope && typeof scope.indexedDB === 'object' && scope.indexedDB !== null;
 }
 
+class IndexedDbUnavailableError extends Error {
+  readonly reason = 'unavailable' as const;
+
+  constructor() {
+    super('IndexedDB is unavailable');
+    this.name = 'IndexedDbUnavailableError';
+  }
+}
+
 /**
  * ブラウザで使える保管庫を選ぶ(§0.a-0.11)。
  *
- * IndexedDB があればそれを、無ければ記憶上のものに落とす。記憶上のものはタブを閉じると
- * 消えるので控えの役目は果たさないが、**自動保存が無いせいで操作が止まることはない**
- * (NFR-RE-1)。
+ * IndexedDB が無ければ、読み込みは候補なし、書き込みと削除は `unavailable` の理由つきで
+ * 失敗する。記憶上へ黙って落とすと、控えが残っていないのに成功したように見えるため。
+ * 失敗は `createAutoSaver` の `onError` が状態欄へ知らせ、操作そのものは止めない(NFR-RE-1)。
  *
  * 調べる相手を引数で受けるのは、検査で偽の `globalThis` を渡せるようにするため
  * (`fileGateway.ts` の `hasFileSystemAccess` と同じ流儀)。なお実際の読み書き先を決めるのは
  * `packages/io` 側で、そちらは本物の `globalThis.indexedDB` を見る。だから偽の欄を持つ
- * `scope` を渡すと「IndexedDB の保管庫を選んだが、読み書きは何も起きない」形になる。
+ * `scope` を渡すと「IndexedDB の保管庫を選んだが、実体が無ければ理由つきで失敗する」形になる。
  */
 export function createAutoSaveStorageForBrowser(scope: object = globalThis): AutoSaveStorage {
-  return hasIndexedDb(scope) ? createIndexedDbAutoSaveStorage() : createMemoryAutoSaveStorage();
+  if (hasIndexedDb(scope)) {
+    return createIndexedDbAutoSaveStorage();
+  }
+  return {
+    read: () => Promise.resolve(null),
+    write: () => Promise.reject(new IndexedDbUnavailableError()),
+    clear: () => Promise.reject(new IndexedDbUnavailableError()),
+  };
 }
 
 /**
@@ -195,11 +211,8 @@ export interface LoadAutoSavePromptOptions {
 }
 
 /**
- * 起動時に控えを読み、開ける控えがあれば復元の案内を出す(§2.9)。
- *
- * 控えが壊れていて開けないときは、**黙って捨てて案内を出さない**。開けないものを勧めても
- * 利用者にできることが無く、押した後で断るのは「操作を止めずに警告する」に反するため
- * (NFR-RE-1、NFR-UX-5)。例外は外へ出さない。
+ * 起動時に控えを読み、復元の案内を出す(§2.9)。この版で読めない控えも消さず、理由と
+ * `.pcad` のまま書き出す導線を出す。新しい版の控えと壊れた控えを黙って同じ扱いにしない。
  */
 export async function loadAutoSavePrompt(
   saver: AutoSaver,
@@ -214,10 +227,15 @@ export async function loadAutoSavePrompt(
     }
     return;
   }
-  if (!readPartDocument(record.bytes).ok) {
-    await saver.discard();
+  const outcome = readPartDocument(record.bytes);
+  if (!outcome.ok) {
     if (mayApply()) {
-      useAppStore.getState().setRestorePrompt(null);
+      useAppStore.getState().setRestorePrompt({
+        savedAt: record.savedAt,
+        documentName: record.documentName,
+        unrecoverable: true,
+        reasonKey: outcome.messageKey,
+      });
     }
     return;
   }
@@ -244,9 +262,13 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   }
   const outcome = readPartDocument(record.bytes);
   if (!outcome.ok) {
-    // 読めない控えは残しておいても使い道が無い。
-    await saver.discard();
-    useAppStore.getState().setRestorePrompt(null);
+    // 読めない控えは消さない。版を更新して復元するか、元のバイト列を書き出せるよう案内を保つ。
+    useAppStore.getState().setRestorePrompt({
+      savedAt: record.savedAt,
+      documentName: record.documentName,
+      unrecoverable: true,
+      reasonKey: outcome.messageKey,
+    });
     return;
   }
   const store = useAppStore.getState();
@@ -266,6 +288,42 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
 export async function discardAutoSave(saver: AutoSaver): Promise<void> {
   await saver.discard();
   useAppStore.getState().setRestorePrompt(null);
+}
+
+/** 読めない控えを、内容を変えず既存のファイル保存の口から `.pcad` として書き出す。 */
+export async function exportAutoSave(saver: AutoSaver): Promise<void> {
+  const record = await saver.readLatest();
+  if (record === null) {
+    useAppStore.getState().setRestorePrompt(null);
+    return;
+  }
+  const store = useAppStore.getState();
+  try {
+    const saved = await saveFileAsThrough(
+      store.fileGateway,
+      withPcadExtension(record.documentName),
+      'pcad',
+      record.bytes,
+    );
+    if (saved) {
+      useAppStore.getState().setFileMessage({ key: 'restore.exported', failed: false });
+    }
+  } catch {
+    useAppStore.getState().setFileMessage({ key: 'restore.exportFailed', failed: true });
+  }
+}
+
+/** 自動保存の失敗を、通常のファイル操作と同じ状態欄へ明示する。 */
+export function reportAutoSaveFailure(): void {
+  useAppStore.getState().setFileMessage({ key: 'autoSave.failed', failed: true });
+}
+
+/** 次の自動保存が成功したら、自動保存由来の古い失敗だけを状態欄から消す。 */
+export function clearAutoSaveFailure(): void {
+  const state = useAppStore.getState();
+  if (state.fileMessage?.key === 'autoSave.failed') {
+    state.setFileMessage(null);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +354,8 @@ export function startAutoSave(options: StartAutoSaveOptions = {}): () => void {
        * 「開けない控え」になる(`packages/io` の `findMissingAttachment`)。
        */
       attachmentsOf: () => currentPcadAttachments(),
+      onError: reportAutoSaveFailure,
+      onSuccess: clearAutoSaveFailure,
     });
   let detached = false;
 

@@ -78,6 +78,9 @@ interface FakeGateway {
 function createFakeGateway(options: FakeOptions = {}): FakeGateway {
   const saveCalls: SaveCall[] = [];
   let stored: PickedFile | null = null;
+  let hasTarget = false;
+  let hasPendingTarget = false;
+  const openTargetToken = 'fake-open-target';
 
   const gateway: FileGateway = {
     openPcad(): Promise<PickedFile | null> {
@@ -88,12 +91,18 @@ function createFakeGateway(options: FakeOptions = {}): FakeGateway {
         return Promise.resolve(null);
       }
       if (options.openBytes !== undefined) {
+        hasPendingTarget = true;
         return Promise.resolve({
           name: options.openName ?? 'こわれた部品.pcad',
           bytes: options.openBytes,
+          saveTargetToken: openTargetToken,
         });
       }
-      return Promise.resolve(stored);
+      if (stored === null) {
+        return Promise.resolve(null);
+      }
+      hasPendingTarget = true;
+      return Promise.resolve({ ...stored, saveTargetToken: openTargetToken });
     },
     savePcad(suggestedName, bytes, saveAs): Promise<string | null> {
       saveCalls.push({ suggestedName, bytes, saveAs });
@@ -104,11 +113,24 @@ function createFakeGateway(options: FakeOptions = {}): FakeGateway {
         return Promise.resolve(null);
       }
       const name = options.savedName ?? suggestedName;
-      stored = { name, bytes };
+      stored = { name, bytes, saveTargetToken: null };
+      hasTarget = true;
+      hasPendingTarget = false;
       return Promise.resolve(name);
     },
     hasSaveTarget(): boolean {
-      return stored !== null;
+      return hasTarget;
+    },
+    confirmSaveTarget(token): Promise<void> {
+      if (hasPendingTarget && token === openTargetToken) {
+        hasTarget = true;
+        hasPendingTarget = false;
+      }
+      return Promise.resolve();
+    },
+    clearSaveTarget(): void {
+      hasTarget = false;
+      hasPendingTarget = false;
     },
   };
 
@@ -198,6 +220,12 @@ function createNamedGateway(): NamedFakeGateway {
     hasSaveTarget(): boolean {
       return target !== null;
     },
+    confirmSaveTarget(): Promise<void> {
+      return Promise.resolve();
+    },
+    clearSaveTarget(): void {
+      target = null;
+    },
   };
 
   return {
@@ -208,6 +236,84 @@ function createNamedGateway(): NamedFakeGateway {
     },
     asked: () => asked,
   };
+}
+
+interface OpenSequenceItem {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
+interface SequencedTargetGateway {
+  readonly gateway: FileGateway;
+  readonly saveCalls: readonly SaveCall[];
+  readonly files: () => ReadonlyMap<string, Uint8Array>;
+  readonly asked: () => number;
+}
+
+/** 開いた先の候補と確定済みの保存先を分けて持つ、保存先の回帰検査専用の偽の口。 */
+function createSequencedTargetGateway(
+  sequence: readonly (OpenSequenceItem | null)[],
+): SequencedTargetGateway {
+  const remaining = [...sequence];
+  const files = new Map<string, Uint8Array>();
+  const saveCalls: SaveCall[] = [];
+  let target: string | null = null;
+  let pending: { readonly token: string; readonly name: string } | null = null;
+  let nextToken = 1;
+  let asked = 0;
+
+  for (const item of sequence) {
+    if (item !== null) {
+      files.set(item.name, new Uint8Array(item.bytes));
+    }
+  }
+
+  const gateway: FileGateway = {
+    openPcad(): Promise<PickedFile | null> {
+      // 本物と同じく、次の「開く」で前の未確定候補を捨てる。
+      pending = null;
+      const item = remaining.shift();
+      if (item === undefined || item === null) {
+        return Promise.resolve(null);
+      }
+      const token = `token-${String(nextToken)}`;
+      nextToken += 1;
+      pending = { token, name: item.name };
+      return Promise.resolve({
+        name: item.name,
+        bytes: new Uint8Array(item.bytes),
+        saveTargetToken: token,
+      });
+    },
+    savePcad(suggestedName, bytes, saveAs): Promise<string> {
+      let name = saveAs ? null : target;
+      if (name === null) {
+        asked += 1;
+        name = asked === 1 ? '新しい部品.pcad' : `新しい部品${String(asked)}.pcad`;
+      }
+      saveCalls.push({ suggestedName, bytes, saveAs });
+      files.set(name, new Uint8Array(bytes));
+      target = name;
+      pending = null;
+      return Promise.resolve(name);
+    },
+    hasSaveTarget(): boolean {
+      return target !== null;
+    },
+    confirmSaveTarget(token): Promise<void> {
+      if (pending?.token === token) {
+        target = pending.name;
+        pending = null;
+      }
+      return Promise.resolve();
+    },
+    clearSaveTarget(): void {
+      target = null;
+      pending = null;
+    },
+  };
+
+  return { gateway, saveCalls, files: () => files, asked: () => asked };
 }
 
 /** 控えを消した回数だけを数える偽の自動保存(タスク24)。 */
@@ -515,6 +621,80 @@ describe('保存する(FR-806、FR-801)', () => {
     const state = useAppStore.getState();
     expect(state.fileMessage).toEqual({ key: 'file.saveFailed', failed: true });
     expect(state.savedDocument).toBeNull();
+  });
+});
+
+describe('保存先を現在の文書と一緒に確定・解除する', () => {
+  it('A を開いてから新規にすると、保存は場所を訊き、A のバイト列を変えない', async () => {
+    const aBytes = writePcadFile(partWithPoint());
+    const fake = createSequencedTargetGateway([{ name: 'A.pcad', bytes: aBytes }]);
+    useGateway(fake.gateway);
+
+    await openPart(createFakeDeps(true).deps);
+    await newPart(createFakeDeps(true).deps);
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(fake.saveCalls[0]?.saveAs).toBe(true);
+    expect(fake.asked()).toBe(1);
+    expect(fake.files().get('A.pcad')).toEqual(aBytes);
+  });
+
+  it('A の表示中に読めない B を開いても、保存先は A のままで B を変えない', async () => {
+    const aBytes = writePcadFile(partWithPoint());
+    const bBytes = new Uint8Array([0, 1, 2, 3]);
+    const fake = createSequencedTargetGateway([
+      { name: 'A.pcad', bytes: aBytes },
+      { name: 'B.pcad', bytes: bBytes },
+    ]);
+    useGateway(fake.gateway);
+
+    await openPart(createFakeDeps(true).deps);
+    await openPart(createFakeDeps(true).deps);
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(fake.saveCalls[0]?.saveAs).toBe(false);
+    expect(fake.asked()).toBe(0);
+    expect(fake.files().get('B.pcad')).toEqual(bBytes);
+  });
+
+  it('A の表示中に開く窓を取り消しても、保存先は A のまま', async () => {
+    const fake = createSequencedTargetGateway([
+      { name: 'A.pcad', bytes: writePcadFile(partWithPoint()) },
+      null,
+    ]);
+    useGateway(fake.gateway);
+
+    await openPart(createFakeDeps(true).deps);
+    await openPart(createFakeDeps(true).deps);
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(fake.saveCalls[0]?.saveAs).toBe(false);
+    expect(fake.asked()).toBe(0);
+  });
+
+  it('A を開いて保存した後の2回目の保存も、名前を訊かず A へ上書きする', async () => {
+    const fake = createSequencedTargetGateway([
+      { name: 'A.pcad', bytes: writePcadFile(partWithPoint()) },
+    ]);
+    useGateway(fake.gateway);
+
+    await openPart(createFakeDeps(true).deps);
+    await savePart(createFakeDeps(true).deps, false);
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(fake.saveCalls.map((call) => call.saveAs)).toEqual([false, false]);
+    expect(fake.asked()).toBe(0);
+  });
+
+  it('新規の保存は、前の保存先が無いので名前を訊く', async () => {
+    const fake = createSequencedTargetGateway([]);
+    useGateway(fake.gateway);
+
+    await newPart(createFakeDeps(true).deps);
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(fake.saveCalls[0]?.saveAs).toBe(true);
+    expect(fake.asked()).toBe(1);
   });
 });
 

@@ -35,15 +35,21 @@ const NOW = '2026-09-06T12:00:00.000Z';
  */
 interface FakeGateway extends FileGateway {
   readonly written: { fileName: string; kind: string; bytes: Uint8Array }[];
+  readonly clearCalls: () => number;
 }
 
 function createFakeGateway(options: { readonly cancelSave?: boolean; readonly open?: Uint8Array | null } = {}): FakeGateway {
   const written: { fileName: string; kind: string; bytes: Uint8Array }[] = [];
+  let clearCalls = 0;
   return {
     written,
+    clearCalls: () => clearCalls,
     openPcad: () => Promise.resolve(null),
     savePcad: () => Promise.resolve(null),
     hasSaveTarget: () => false,
+    clearSaveTarget: () => {
+      clearCalls += 1;
+    },
     saveFileAs(fileName, kind, bytes) {
       if (options.cancelSave === true) {
         return Promise.resolve(false);
@@ -260,15 +266,16 @@ describe('ひな形として保存(FR-814)', () => {
 
 describe('ひな形から新規(FR-814、§2.10)', () => {
   /** 保存済みのひな形 1 つを持つ置き場と口。 */
-  async function withSavedTemplate(): Promise<TemplateDeps> {
-    const deps = createDeps();
+  async function withSavedTemplate(): Promise<TemplateDeps & { readonly gateway: FakeGateway }> {
+    const gateway = createFakeGateway();
+    const deps = createDeps(gateway);
     await saveTemplate(deps, {
       document: documentWithParametersAndHistory(),
       lengthUnit: 'inch',
       toolDefaults: { ...DEFAULT_TOOL_DEFAULTS, holeDiameter: '8' },
       name: '受け皿',
     });
-    return deps;
+    return { ...deps, gateway };
   }
 
   it('置き場の 1 件から、パラメータ表と単位と道具の既定値が入った新しい部品を起こす', async () => {
@@ -286,6 +293,7 @@ describe('ひな形から新規(FR-814、§2.10)', () => {
     expect(outcome.document.sketches[0].features).toEqual([]);
     // ひな形とは別の id を採る(取り違えを起こさない)。
     expect(outcome.document.id).not.toBe(createEmptyPartDocument().id);
+    expect(deps.gateway.clearCalls()).toBe(1);
   });
 
   it('形の入っていないひな形では知らせを出さない', async () => {
@@ -314,16 +322,28 @@ describe('ひな形から新規(FR-814、§2.10)', () => {
       toolDefaults: DEFAULT_TOOL_DEFAULTS,
       savedAt: NOW,
     });
-    const deps = createDeps(createFakeGateway({ open: bytes }));
+    const gateway = createFakeGateway({ open: bytes });
+    const deps = createDeps(gateway);
     const outcome = await newFromTemplate(deps, { from: 'file' });
     expect(outcome.ok && outcome.lengthUnit).toBe('inch');
+    expect(gateway.clearCalls()).toBe(1);
   });
 
   it('ファイルの窓を取り消したら断りを出さない', async () => {
-    const deps = createDeps(createFakeGateway({ open: null }));
+    const gateway = createFakeGateway({ open: null });
+    const deps = createDeps(gateway);
     const outcome = await newFromTemplate(deps, { from: 'file' });
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && 'cancelled' in outcome && outcome.cancelled).toBe(true);
+    expect(gateway.clearCalls()).toBe(0);
+  });
+
+  it('ファイルの中身を読めなかったときは、前の保存先を解除しない', async () => {
+    const gateway = createFakeGateway({ open: new Uint8Array([1, 2, 3]) });
+    const outcome = await newFromTemplate(createDeps(gateway), { from: 'file' });
+
+    expect(outcome.ok).toBe(false);
+    expect(gateway.clearCalls()).toBe(0);
   });
 
   it('形の入ったひな形は断らず、知らせを 1 つ返す(§2.10)', () => {

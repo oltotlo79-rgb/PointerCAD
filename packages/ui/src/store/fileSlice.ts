@@ -35,6 +35,10 @@ export interface RestorePrompt {
   readonly savedAt: string;
   /** 控えの部品の名前。 */
   readonly documentName: string;
+  /** この版では読めず、復元の代わりに控えを書き出せる状態。省略時は従来どおり復元できる。 */
+  readonly unrecoverable?: boolean;
+  /** 復元できない理由の文言キー。`unrecoverable` のときだけ案内へ出す。 */
+  readonly reasonKey?: MessageKey;
 }
 
 /** ファイルのスライスが持つ欄と操作。 */

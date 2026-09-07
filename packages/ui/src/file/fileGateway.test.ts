@@ -92,6 +92,69 @@ describe('ブラウザ用の口', () => {
   it('作り直すと別の口になる(保存先を引きずらない)', () => {
     expect(createBrowserFileGateway()).not.toBe(createBrowserFileGateway());
   });
+
+  it('開いただけでは保存先にならず、token を確定した後だけ保存先になる', async () => {
+    const fake = createSaveTargetOpenScope(['A.pcad']);
+    const gateway = createBrowserFileGateway(fake.scope);
+    const picked = await gateway.openPcad();
+
+    expect(gateway.hasSaveTarget()).toBe(false);
+    if (
+      picked === null ||
+      picked.saveTargetToken === null ||
+      gateway.confirmSaveTarget === undefined
+    ) {
+      throw new Error('保存先候補が返りませんでした');
+    }
+    await gateway.confirmSaveTarget(picked.saveTargetToken);
+    expect(gateway.hasSaveTarget()).toBe(true);
+  });
+
+  it('次の「開く」を始めると、前の未確定 token は使えなくなる', async () => {
+    const fake = createSaveTargetOpenScope(['A.pcad', 'B.pcad']);
+    const gateway = createBrowserFileGateway(fake.scope);
+    const a = await gateway.openPcad();
+    const b = await gateway.openPcad();
+    if (
+      a === null ||
+      a.saveTargetToken === null ||
+      b === null ||
+      b.saveTargetToken === null ||
+      gateway.confirmSaveTarget === undefined
+    ) {
+      throw new Error('保存先候補が返りませんでした');
+    }
+
+    await gateway.confirmSaveTarget(a.saveTargetToken);
+    expect(gateway.hasSaveTarget()).toBe(false);
+    await gateway.confirmSaveTarget(b.saveTargetToken);
+    expect(gateway.hasSaveTarget()).toBe(true);
+  });
+
+  it('解除すると、確定済みの保存先も未確定の候補も使えなくなる', async () => {
+    const fake = createSaveTargetOpenScope(['A.pcad', 'B.pcad']);
+    const gateway = createBrowserFileGateway(fake.scope);
+    const a = await gateway.openPcad();
+    if (
+      a === null ||
+      a.saveTargetToken === null ||
+      gateway.confirmSaveTarget === undefined ||
+      gateway.clearSaveTarget === undefined
+    ) {
+      throw new Error('保存先を操作する口がありませんでした');
+    }
+    await gateway.confirmSaveTarget(a.saveTargetToken);
+    gateway.clearSaveTarget();
+    expect(gateway.hasSaveTarget()).toBe(false);
+
+    const b = await gateway.openPcad();
+    if (b === null || b.saveTargetToken === null) {
+      throw new Error('保存先候補が返りませんでした');
+    }
+    gateway.clearSaveTarget();
+    await gateway.confirmSaveTarget(b.saveTargetToken);
+    expect(gateway.hasSaveTarget()).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -168,6 +231,32 @@ function createFakeOpenScope(
     },
   };
   return { scope, options };
+}
+
+/** `.pcad` の「開く」が返す書き込み可能な handle を順に作る偽の相手。 */
+function createSaveTargetOpenScope(fileNames: readonly string[]): { readonly scope: object } {
+  const remaining = [...fileNames];
+  const scope = {
+    showOpenFilePicker(): Promise<unknown> {
+      const name = remaining.shift();
+      if (name === undefined) {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([
+        {
+          name,
+          getFile: (): Promise<unknown> =>
+            Promise.resolve({ arrayBuffer: (): Promise<ArrayBuffer> => Promise.resolve(new ArrayBuffer(0)) }),
+          createWritable: (): Promise<unknown> =>
+            Promise.resolve({
+              write: (): Promise<void> => Promise.resolve(),
+              close: (): Promise<void> => Promise.resolve(),
+            }),
+        },
+      ]);
+    },
+  };
+  return { scope };
 }
 
 /** ダウンロードの出口だけを持つ偽の相手(File System Access API は無い)。 */

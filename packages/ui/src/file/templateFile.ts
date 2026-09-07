@@ -514,7 +514,12 @@ export async function newFromTemplate(
     if (stored === null) {
       return { ok: false, missing: true };
     }
-    return readTemplateBytes(stored.bytes);
+    const outcome = readTemplateBytes(stored.bytes);
+    if (outcome.ok) {
+      // ひな形は「開いた文書」ではなく新しい文書の出発点なので、前の保存先を持ち越さない。
+      deps.gateway.clearSaveTarget?.();
+    }
+    return outcome;
   }
   let picked;
   try {
@@ -526,5 +531,9 @@ export async function newFromTemplate(
     // 窓を取り消した。何も起きなかったので断りも出さない。
     return { ok: false, cancelled: true };
   }
-  return readTemplateBytes(picked.bytes);
+  const outcome = readTemplateBytes(picked.bytes);
+  if (outcome.ok) {
+    deps.gateway.clearSaveTarget?.();
+  }
+  return outcome;
 }

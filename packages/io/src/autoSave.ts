@@ -13,8 +13,8 @@
  *  - `createAutoSaver`: 「間隔ごとに、変更があるときだけ書く」制御(タイマー注入可能)。
  *
  * 文字列(UI に見せる文言)は持たない(ja.json 分離は ui 側、NFR-MA-5)。
- * 例外は外へ出さない(NFR-RE-1)。失敗は戻り値([`AutoSaveStorage`]の実装は静かに諦める)か
- * `createAutoSaver` の `onError` コールバックへ渡すだけで、`Promise` は常に解決する。
+ * 例外で操作を止めない(NFR-RE-1)。保管庫の失敗は理由つきの例外として制御へ返し、
+ * `createAutoSaver` が `onError` コールバックへ渡す。`saveNow` の `Promise` は常に解決する。
  */
 
 import type { PartDocument } from '@pointercad/model';
@@ -40,6 +40,20 @@ export interface AutoSaveStorage {
   read(): Promise<AutoSaveRecord | null>;
   write(record: AutoSaveRecord): Promise<void>;
   clear(): Promise<void>;
+}
+
+/** 自動保存の保管庫が失敗した理由。利用者向け文言ではなく、通知と検査で区別する識別子。 */
+export type AutoSaveStorageFailureReason = 'unavailable' | 'quota' | 'aborted' | 'error';
+
+/** IndexedDB の失敗を、握りつぶさず理由つきで呼び出し側へ返す。 */
+export class AutoSaveStorageError extends Error {
+  readonly reason: AutoSaveStorageFailureReason;
+
+  constructor(reason: AutoSaveStorageFailureReason) {
+    super(`Auto-save storage failed: ${reason}`);
+    this.name = 'AutoSaveStorageError';
+    this.reason = reason;
+  }
 }
 
 /**
@@ -74,6 +88,7 @@ export function createMemoryAutoSaveStorage(): AutoSaveStorage {
  */
 interface MinimalIDBRequest<T> {
   readonly result: T;
+  readonly error?: unknown;
   onsuccess: (() => void) | null;
   onerror: (() => void) | null;
 }
@@ -86,6 +101,10 @@ interface MinimalIDBObjectStore {
   delete(key: string): MinimalIDBRequest<undefined>;
 }
 interface MinimalIDBTransaction {
+  readonly error?: unknown;
+  oncomplete: (() => void) | null;
+  onabort: (() => void) | null;
+  onerror: (() => void) | null;
   objectStore(name: string): MinimalIDBObjectStore;
 }
 interface MinimalIDBObjectStoreNames {
@@ -122,21 +141,37 @@ function isAutoSaveRecord(value: unknown): value is AutoSaveRecord {
   );
 }
 
-/** データベースを開く。無ければ(初回)ストアを作る。開けなければ null(例外を外へ出さない)。 */
+function storageFailure(
+  error: unknown,
+  fallback: AutoSaveStorageFailureReason,
+): AutoSaveStorageError {
+  if (error instanceof AutoSaveStorageError) {
+    return error;
+  }
+  if (isRecord(error) && typeof error.name === 'string') {
+    const name = error.name.toLowerCase();
+    if (name.includes('quota')) {
+      return new AutoSaveStorageError('quota');
+    }
+    if (name.includes('abort')) {
+      return new AutoSaveStorageError('aborted');
+    }
+  }
+  return new AutoSaveStorageError(fallback);
+}
+
+/** データベースを開く。無ければ(初回)ストアを作る。開けなければ理由つきで失敗する。 */
 function openIndexedDb(
   factory: MinimalIDBFactory,
   dbName: string,
   storeName: string,
-): Promise<MinimalIDBDatabase | null> {
-  return new Promise((resolve) => {
-    let opened: MinimalIDBOpenDBRequest | null = null;
+): Promise<MinimalIDBDatabase> {
+  return new Promise((resolve, reject) => {
+    let opened: MinimalIDBOpenDBRequest;
     try {
       opened = factory.open(dbName, 1);
-    } catch {
-      // 開けなかった(不正な名前・保存領域が使えない等)。null のまま次の分岐へ渡す。
-    }
-    if (opened === null) {
-      resolve(null);
+    } catch (error: unknown) {
+      reject(storageFailure(error, 'unavailable'));
       return;
     }
     const request: MinimalIDBOpenDBRequest = opened;
@@ -150,44 +185,58 @@ function openIndexedDb(
       resolve(request.result);
     };
     request.onerror = () => {
-      resolve(null);
+      reject(storageFailure(request.error, 'unavailable'));
     };
   });
 }
 
-/** 1つの IDBRequest を Promise へ包む。失敗は null(例外を外へ出さない)。 */
-function runIdbRequest<T>(request: MinimalIDBRequest<T>): Promise<T | null> {
-  return new Promise((resolve) => {
+/** request 成功だけでは完了にせず、transaction が commit された `complete` だけを成功とする。 */
+function runIdbRequest<T>(
+  transaction: MinimalIDBTransaction,
+  request: MinimalIDBRequest<T>,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let requestSucceeded = false;
     request.onsuccess = () => {
-      resolve(request.result);
+      requestSucceeded = true;
     };
     request.onerror = () => {
-      resolve(null);
+      reject(storageFailure(request.error, 'error'));
+    };
+    transaction.oncomplete = () => {
+      if (!requestSucceeded) {
+        reject(new AutoSaveStorageError('error'));
+        return;
+      }
+      resolve(request.result);
+    };
+    transaction.onabort = () => {
+      reject(storageFailure(transaction.error, 'aborted'));
+    };
+    transaction.onerror = () => {
+      reject(storageFailure(transaction.error, 'error'));
     };
   });
 }
 
-/** データベースを開き、指定の1操作だけを行って閉じる。`indexedDB` が無ければ何もせず null。 */
+/** データベースを開き、指定の transaction が完了するまで待ってから閉じる。 */
 async function withObjectStore<T>(
   dbName: string,
   storeName: string,
   mode: 'readonly' | 'readwrite',
   run: (store: MinimalIDBObjectStore) => MinimalIDBRequest<T>,
-): Promise<T | null> {
+): Promise<T> {
   const factory = currentIndexedDbFactory();
   if (factory === null) {
-    return null;
+    throw new AutoSaveStorageError('unavailable');
   }
   const database = await openIndexedDb(factory, dbName, storeName);
-  if (database === null) {
-    return null;
-  }
   try {
     const transaction = database.transaction(storeName, mode);
     const store = transaction.objectStore(storeName);
-    return await runIdbRequest(run(store));
-  } catch {
-    return null;
+    return await runIdbRequest(transaction, run(store));
+  } catch (error: unknown) {
+    throw storageFailure(error, 'error');
   } finally {
     database.close();
   }
@@ -202,15 +251,9 @@ const RECORD_KEY = 'current';
  * ブラウザ用の IndexedDB 実装。データベース `pointercad`(既定)・オブジェクトストア
  * `autosave`(既定)・鍵 `current` の1件だけを扱う。
  *
- * **`indexedDB` が無い環境での挙動(統括への報告事項)**: `read` は常に `null`、
- * `write` / `clear` は何もしない(例外は投げない)。「理由つきで失敗する」案ではなく
- * 「静かに何もしない」を選んだ。自動保存は失敗しても操作を止めてはいけない機能
- * (NFR-RE-1「止めずに警告する」)であり、`AutoSaveStorage` の戻り値には失敗理由を運ぶ場所が
- * 無いため、`createAutoSaver` 側の `onError` を経由しない限りは黙って諦めるのが筋が良いと判断した。
- *
- * IndexedDB の実際の読み書きは Node のユニットテストでは検証できない
- * (`docs/報告記録.md` 2026-09-02 14:50 の④と同じ理由)。ここで検査するのは
- * 「`indexedDB` が無いときの分岐」だけで、実際の読み書きは E2E(タスク27)へ送る。
+ * `read` の失敗は復元候補なしの `null` とする一方、`write` / `clear` は理由つきで失敗する。
+ * とくに書き込みは request の成功ではなく transaction の `complete` だけを commit 済みの
+ * 成功とする。`abort` / `error` / 容量不足 / IndexedDB 不在は呼び出し側へ伝わる。
  */
 export function createIndexedDbAutoSaveStorage(
   dbName: string = DEFAULT_DB_NAME,
@@ -218,10 +261,14 @@ export function createIndexedDbAutoSaveStorage(
 ): AutoSaveStorage {
   return {
     async read() {
-      const value = await withObjectStore(dbName, storeName, 'readonly', (store) =>
-        store.get(RECORD_KEY),
-      );
-      return isAutoSaveRecord(value) ? value : null;
+      try {
+        const value = await withObjectStore(dbName, storeName, 'readonly', (store) =>
+          store.get(RECORD_KEY),
+        );
+        return isAutoSaveRecord(value) ? value : null;
+      } catch {
+        return null;
+      }
     },
     async write(record) {
       await withObjectStore(dbName, storeName, 'readwrite', (store) =>
@@ -289,6 +336,8 @@ export interface AutoSaverOptions {
   readonly clearTimeout?: CancelFn;
   /** 書き込みに失敗したときの通知。例外は外へ出さない(NFR-RE-1)。 */
   readonly onError?: (error: unknown) => void;
+  /** 書き込みが transaction の完了まで成功したときの通知。古い失敗表示を消すための口。 */
+  readonly onSuccess?: () => void;
   /**
    * 控えへ一緒に入れる添付(読み込んだ形・下絵。§0.a-0.9・0.24・0.45、P6 タスク32)。
    *
@@ -326,7 +375,7 @@ export interface AutoSaver {
  * `saveNow` の戻り値の `Promise` は常に解決する。
  */
 export function createAutoSaver(options: AutoSaverOptions): AutoSaver {
-  const { storage, onError } = options;
+  const { storage, onError, onSuccess } = options;
   const intervalMs = options.intervalMs ?? AUTO_SAVE_INTERVAL_MS;
   const now = options.now ?? Date.now;
   const scheduleFn = options.setTimeout ?? defaultScheduleFn;
@@ -350,18 +399,21 @@ export function createAutoSaver(options: AutoSaverOptions): AutoSaver {
       // 書き込み中の重複を避ける: 新しい依頼は今動いている書き込みへ相乗りする。
       return writeInFlight;
     }
-    const savedAt = new Date(now()).toISOString();
-    // 添付を渡さない(欄ごと省く)のと、空の表を渡すのとでは ZIP のエントリが同じになるが、
-    // 呼び出し側が「表を持っていない」ことを表せるように渡し分ける。
-    const attachments = options.attachmentsOf?.(document);
-    const bytes =
-      attachments === undefined
-        ? writePcadFile(document, { savedAt })
-        : writePcadFile(document, { savedAt, attachments });
-    const attempt = storage
-      .write({ savedAt, bytes, documentName: document.name })
+    const attempt = Promise.resolve()
+      .then(() => {
+        const savedAt = new Date(now()).toISOString();
+        // ZIP 化も書き込みと同じ失敗経路へ入れる。失敗時は成功済みの文書を更新せず、
+        // dirty のまま保つので次の周期で再試行される。
+        const attachments = options.attachmentsOf?.(document);
+        const bytes =
+          attachments === undefined
+            ? writePcadFile(document, { savedAt })
+            : writePcadFile(document, { savedAt, attachments });
+        return storage.write({ savedAt, bytes, documentName: document.name });
+      })
       .then(() => {
         lastSavedDocument = document;
+        onSuccess?.();
       })
       .catch((error: unknown) => {
         onError?.(error);

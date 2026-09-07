@@ -16,8 +16,9 @@
  *    この場合は保存のたびに新しいファイルができるので、上書き保存はできない。
  *
  * **口は 2 組ある。**
- *  - `openPcad` / `savePcad` / `hasSaveTarget`: 部品そのもの(`.pcad`)の開く・保存する。
- *    **上書き先を覚える**のはこの組だけで、P2 から振る舞いを変えていない。
+ *  - `openPcad` / `confirmSaveTarget` / `clearSaveTarget` / `savePcad` / `hasSaveTarget`:
+ *    部品そのもの(`.pcad`)の開く・保存する。開いた先は、呼び手が中身を確かめて
+ *    `confirmSaveTarget` した後にだけ上書き先になる。
  *  - `openFile` / `saveFileAs`: 他の形式との出し入れ(STEP・STL・OBJ・glTF・3MF・DXF・ひな形)。
  *    **上書き先を覚えない**(§0.a-0.4)。覚えてしまうと、書き出しの後の Ctrl+S が
  *    部品ではなく書き出した先を上書きしかねないため。`saveFileAs` は呼ぶたびに名前を訊く。
@@ -38,6 +39,8 @@ export interface PickedFile {
   /** 拡張子を含むファイル名。パスは含まない(ブラウザは渡してくれない)。 */
   readonly name: string;
   readonly bytes: Uint8Array;
+  /** 開いた先を上書き先として確定するための不透明な印。上書きできない環境では null。 */
+  readonly saveTargetToken: string | null;
 }
 
 /** 種類まで分かったファイル 1 つぶん(§2.2)。パスは含まない(NFR-SE-1)。 */
@@ -60,8 +63,19 @@ export interface FileGateway {
   /** 前に保存した先を覚えているか(「保存」を「名前を付けて保存」に落とすかの判断)。 */
   hasSaveTarget(): boolean;
   /**
+   * `openPcad` が返した候補を、現在の文書の上書き先として確定する。
+   * 古い差し替えを壊さないため省略できるが、実製品の Web / Electron の口は必ず持つ。
+   */
+  confirmSaveTarget?(token: string): Promise<void>;
+  /**
+   * 現在の文書の上書き先と、まだ確定していない候補を解除する。
+   * 省略できる理由は `confirmSaveTarget` と同じ。
+   */
+  clearSaveTarget?(): void;
+  /**
    * 種類を選んでファイルを開く(FR-802、FR-813、FR-807)。取り消されたら null。
-   * **上書き先は覚えない**(§0.a-0.4)ので、`hasSaveTarget()` の答えは変わらない。
+   * この種類つき読み込みは `.pcad` の上書き先候補を作らず、`hasSaveTarget()` も変えない
+   * (§0.a-0.4)。
    *
    * 省略できる欄にしてあるのは、差し込み側(検査の偽の口や古いデスクトップ版)を
    * 壊さないため。省略された口へは `openFileThrough` がブラウザ用の実装で答える。
@@ -533,7 +547,7 @@ function pickFileWithInput(accept: string, scope: object): Promise<PickedFile | 
       }
       file.arrayBuffer().then(
         (buffer) => {
-          finish({ name: file.name, bytes: new Uint8Array(buffer) });
+          finish({ name: file.name, bytes: new Uint8Array(buffer), saveTargetToken: null });
         },
         (error: unknown) => {
           input.remove();
@@ -678,7 +692,8 @@ export function saveFileAsThrough(
  * ブラウザ用の口(§2.10)。File System Access API があれば使い、無ければ
  * ダウンロード / ファイル選択へ落とす(§0.a-0.10)。
  *
- * 保存先を覚えるのはこの口 1 つの中だけ。作り直せば忘れる。
+ * 保存先と、開いてから中身を確かめ終えるまでの候補を覚えるのはこの口 1 つの中だけ。
+ * 作り直せばどちらも忘れる。
  * **覚えるのは `.pcad` の分だけ**で、`saveFileAs` / `openFile` は控えを触らない(§0.a-0.4)。
  *
  * 調べる相手を引数で受けるのは、検査で偽の `globalThis` を渡せるようにするため
@@ -686,11 +701,17 @@ export function saveFileAsThrough(
  * 引数なしで呼ぶ側(ストア・デスクトップ版の保険)から見た振る舞いは変わらない。
  */
 export function createBrowserFileGateway(scope: object = globalThis): FileGateway {
-  /** 直前に保存した先(または開いたファイル)。覚えられるのは File System Access API のときだけ。 */
+  /** 現在の文書について確定済みの保存先。File System Access API のときだけ持てる。 */
   let saveTarget: WritableFileHandle | null = null;
+  /** 開いたが、文書の検証をまだ通っていない保存先候補。 */
+  let pendingSaveTarget: { readonly token: string; readonly handle: WritableFileHandle } | null =
+    null;
+  let nextSaveTargetToken = 1;
 
   return {
     async openPcad(): Promise<PickedFile | null> {
+      // 前回の未確定候補は使えない。確定済みの保存先は、今回が失敗・取消なら保つ。
+      pendingSaveTarget = null;
       if (!hasOpenPicker(scope)) {
         return pickFileWithInput(PCAD_EXTENSION, scope);
       }
@@ -716,11 +737,13 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
         throw new Error(t('file.openFailed'));
       }
       const bytes = new Uint8Array(await file.arrayBuffer());
+      let saveTargetToken: string | null = null;
       if (isWritableFileHandle(handle)) {
-        // 開いたファイルはそのまま保存先にできる。次の Ctrl+S は同じファイルへ上書きする。
-        saveTarget = handle;
+        saveTargetToken = `save-target-${String(nextSaveTargetToken)}`;
+        nextSaveTargetToken += 1;
+        pendingSaveTarget = { token: saveTargetToken, handle };
       }
-      return { name: handle.name, bytes };
+      return { name: handle.name, bytes, saveTargetToken };
     },
 
     async savePcad(suggestedName, bytes, saveAs): Promise<string | null> {
@@ -752,11 +775,25 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       await writable.write(bytes);
       await writable.close();
       saveTarget = target;
+      pendingSaveTarget = null;
       return target.name;
     },
 
     hasSaveTarget(): boolean {
       return saveTarget !== null;
+    },
+
+    confirmSaveTarget(token): Promise<void> {
+      if (pendingSaveTarget?.token === token) {
+        saveTarget = pendingSaveTarget.handle;
+        pendingSaveTarget = null;
+      }
+      return Promise.resolve();
+    },
+
+    clearSaveTarget(): void {
+      saveTarget = null;
+      pendingSaveTarget = null;
     },
 
     openFile(kinds): Promise<PickedTypedFile | null> {

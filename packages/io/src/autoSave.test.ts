@@ -1,5 +1,5 @@
 import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   AUTO_SAVE_INTERVAL_MS,
@@ -14,6 +14,16 @@ import { readPcadFile, type ImportedMeshBytes, type PcadAttachments } from './pc
 
 /** 検査で保存時刻を固定する。 */
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
+
+const originalIndexedDb = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+
+afterEach(() => {
+  if (originalIndexedDb === undefined) {
+    Reflect.deleteProperty(globalThis, 'indexedDB');
+    return;
+  }
+  Object.defineProperty(globalThis, 'indexedDB', originalIndexedDb);
+});
 
 function withName(document: PartDocument, name: string): PartDocument {
   return { ...document, name };
@@ -68,6 +78,134 @@ function createDeferred(): { readonly promise: Promise<void>; readonly resolve: 
   return { promise, resolve };
 }
 
+function flush(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
+type FakeIdbOutcome = 'complete' | 'manual' | 'aborted' | 'error' | 'quota';
+
+interface FakeIdbRequest<T> {
+  result: T;
+  error: unknown;
+  onsuccess: (() => void) | null;
+  onerror: (() => void) | null;
+}
+
+interface FakeIdbTransaction {
+  error: unknown;
+  oncomplete: (() => void) | null;
+  onabort: (() => void) | null;
+  onerror: (() => void) | null;
+  objectStore(name: string): FakeIdbObjectStore;
+}
+
+interface FakeIdbObjectStore {
+  get(key: string): FakeIdbRequest<unknown>;
+  put(value: unknown, key: string): FakeIdbRequest<unknown>;
+  delete(key: string): FakeIdbRequest<undefined>;
+}
+
+interface FakeIndexedDb {
+  readonly putCount: () => number;
+  readonly closeCount: () => number;
+  readonly completeManualTransaction: () => void;
+}
+
+/** request と transaction の出来事を別々に起こせる、最小の IndexedDB 偽物。 */
+function installFakeIndexedDb(outcomes: readonly FakeIdbOutcome[]): FakeIndexedDb {
+  let nextOutcome = 0;
+  let puts = 0;
+  let closes = 0;
+  let manualTransaction: FakeIdbTransaction | null = null;
+
+  const eventRequest = <T>(
+    result: T,
+    transaction: FakeIdbTransaction,
+    outcome: FakeIdbOutcome,
+  ): FakeIdbRequest<T> => {
+    const request: FakeIdbRequest<T> = {
+      result,
+      error: null,
+      onsuccess: null,
+      onerror: null,
+    };
+    queueMicrotask(() => {
+      if (outcome === 'quota') {
+        request.error = { name: 'QuotaExceededError' };
+        request.onerror?.();
+        return;
+      }
+      request.onsuccess?.();
+      if (outcome === 'complete') {
+        transaction.oncomplete?.();
+      } else if (outcome === 'aborted') {
+        transaction.onabort?.();
+      } else if (outcome === 'error') {
+        transaction.onerror?.();
+      }
+    });
+    return request;
+  };
+
+  const database = {
+    objectStoreNames: { contains: () => true },
+    createObjectStore: () => undefined,
+    transaction: (): FakeIdbTransaction => {
+      const outcome = outcomes[nextOutcome] ?? 'complete';
+      nextOutcome += 1;
+      const transaction: FakeIdbTransaction = {
+        error: null,
+        oncomplete: null,
+        onabort: null,
+        onerror: null,
+        objectStore: () => ({
+          get: () => eventRequest(null, transaction, outcome),
+          put: () => {
+            puts += 1;
+            return eventRequest(undefined, transaction, outcome);
+          },
+          delete: () => eventRequest(undefined, transaction, outcome),
+        }),
+      };
+      if (outcome === 'manual') {
+        manualTransaction = transaction;
+      }
+      return transaction;
+    },
+    close: () => {
+      closes += 1;
+    },
+  };
+  const factory = {
+    open: () => {
+      const request: FakeIdbRequest<typeof database> & {
+        onupgradeneeded: (() => void) | null;
+      } = {
+        result: database,
+        error: null,
+        onsuccess: null,
+        onerror: null,
+        onupgradeneeded: null,
+      };
+      queueMicrotask(() => {
+        request.onsuccess?.();
+      });
+      return request;
+    },
+  };
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: factory });
+
+  return {
+    putCount: () => puts,
+    closeCount: () => closes,
+    completeManualTransaction: () => {
+      manualTransaction?.oncomplete?.();
+    },
+  };
+}
+
 describe('AUTO_SAVE_INTERVAL_MS', () => {
   it('既定は5分(FR-805)', () => {
     expect(AUTO_SAVE_INTERVAL_MS).toBe(300_000);
@@ -120,23 +258,103 @@ describe('createIndexedDbAutoSaveStorage(indexedDB が無い環境)', () => {
     expect(await storage.read()).toBeNull();
   });
 
-  it('write は例外を投げず、何もしないまま解決する', async () => {
+  it('write は unavailable の理由つきで失敗する', async () => {
     const storage = createIndexedDbAutoSaveStorage();
     await expect(
       storage.write({ savedAt: SAVED_AT, bytes: new Uint8Array([1]), documentName: '部品1' }),
-    ).resolves.toBeUndefined();
-    // 実際には書けていない(保管庫が無いため)。
+    ).rejects.toMatchObject({ reason: 'unavailable' });
     expect(await storage.read()).toBeNull();
   });
 
-  it('clear は例外を投げず、何もしないまま解決する', async () => {
+  it('clear も unavailable の理由つきで失敗する', async () => {
     const storage = createIndexedDbAutoSaveStorage();
-    await expect(storage.clear()).resolves.toBeUndefined();
+    await expect(storage.clear()).rejects.toMatchObject({ reason: 'unavailable' });
   });
 
   it('db 名・ストア名を渡しても(使われないだけで)同じ挙動', async () => {
     const storage = createIndexedDbAutoSaveStorage('別名', '別ストア');
     expect(await storage.read()).toBeNull();
+  });
+});
+
+describe('createIndexedDbAutoSaveStorage(transaction の完了)', () => {
+  const record: AutoSaveRecord = {
+    savedAt: SAVED_AT,
+    bytes: new Uint8Array([1]),
+    documentName: '部品1',
+  };
+
+  it('request が成功しても transaction の complete までは write を成功にしない', async () => {
+    const fake = installFakeIndexedDb(['manual']);
+    let settled = false;
+    const writing = createIndexedDbAutoSaveStorage()
+      .write(record)
+      .then(() => {
+        settled = true;
+      });
+
+    await flush();
+    expect(settled).toBe(false);
+    expect(fake.closeCount()).toBe(0);
+
+    fake.completeManualTransaction();
+    await writing;
+    expect(settled).toBe(true);
+    expect(fake.closeCount()).toBe(1);
+  });
+
+  it('request 成功後に transaction が abort したら aborted で失敗する', async () => {
+    installFakeIndexedDb(['aborted']);
+    await expect(createIndexedDbAutoSaveStorage().write(record)).rejects.toMatchObject({
+      reason: 'aborted',
+    });
+  });
+
+  it('transaction の error は error の理由で失敗する', async () => {
+    installFakeIndexedDb(['error']);
+    await expect(createIndexedDbAutoSaveStorage().write(record)).rejects.toMatchObject({
+      reason: 'error',
+    });
+  });
+
+  it('request の容量不足は quota の理由で失敗する', async () => {
+    installFakeIndexedDb(['quota']);
+    await expect(createIndexedDbAutoSaveStorage().write(record)).rejects.toMatchObject({
+      reason: 'quota',
+    });
+  });
+
+  it('abort 後は保存済み扱いにせず、次の周期で同じ dirty 文書を再試行する', async () => {
+    const fake = installFakeIndexedDb(['aborted', 'complete']);
+    const timer = createManualTimer();
+    const errors: unknown[] = [];
+    let successes = 0;
+    const saver = createAutoSaver({
+      storage: createIndexedDbAutoSaveStorage(),
+      intervalMs: 1000,
+      now: () => 0,
+      setTimeout: timer.schedule,
+      clearTimeout: timer.cancel,
+      onError: (error) => {
+        errors.push(error);
+      },
+      onSuccess: () => {
+        successes += 1;
+      },
+    });
+    const document = withName(createEmptyPartDocument(), '再試行');
+
+    await saver.saveNow(document);
+    expect(errors[0]).toMatchObject({ reason: 'aborted' });
+    expect(fake.putCount()).toBe(1);
+    expect(successes).toBe(0);
+
+    timer.fire();
+    await flush();
+    saver.stop();
+    expect(fake.putCount()).toBe(2);
+    expect(errors).toHaveLength(1);
+    expect(successes).toBe(1);
   });
 });
 
@@ -380,6 +598,49 @@ describe('createAutoSaver', () => {
     saver.stop();
 
     expect(errors).toEqual([failure]);
+  });
+
+  it('ZIP 化が投げても dirty を保ち、次の周期で再試行する', async () => {
+    const failure = new Error('ZIP 化できません');
+    const errors: unknown[] = [];
+    const writes: AutoSaveRecord[] = [];
+    const storage: AutoSaveStorage = {
+      read: () => Promise.resolve(null),
+      write: (record) => {
+        writes.push(record);
+        return Promise.resolve();
+      },
+      clear: () => Promise.resolve(),
+    };
+    const timer = createManualTimer();
+    const saver = createAutoSaver({
+      storage,
+      intervalMs: 1000,
+      now: () => 0,
+      setTimeout: timer.schedule,
+      clearTimeout: timer.cancel,
+      onError: (error) => {
+        errors.push(error);
+      },
+    });
+    const document = createEmptyPartDocument();
+    Object.defineProperty(document, 'name', {
+      get: () => {
+        throw failure;
+      },
+    });
+
+    saver.markDirty(document);
+    timer.fire();
+    await flush();
+    expect(errors).toEqual([failure]);
+    expect(writes).toEqual([]);
+
+    timer.fire();
+    await flush();
+    saver.stop();
+    expect(errors).toEqual([failure, failure]);
+    expect(writes).toEqual([]);
   });
 });
 

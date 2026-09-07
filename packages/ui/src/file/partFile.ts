@@ -300,6 +300,8 @@ export async function newPart(deps: PartFileDeps): Promise<void> {
     return;
   }
   const store = useAppStore.getState();
+  // 文書と上書き先の寿命をそろえる。前の文書の先を新しい空の部品へ持ち越さない。
+  store.fileGateway.clearSaveTarget?.();
   store.resetDocument(createEmptyPartDocument());
   store.setFileState(null, null);
 }
@@ -336,6 +338,17 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   deps.onAttachmentsLoaded?.(result.attachments);
   store.applyDocument(result.document, { replacesDocument: true });
   store.setFileState(picked.name, result.document);
+  // 中身を検証して文書へ適用し終えたものだけ、開いた先をこの文書の上書き先にする。
+  if (picked.saveTargetToken === null) {
+    store.fileGateway.clearSaveTarget?.();
+  } else if (store.fileGateway.confirmSaveTarget !== undefined) {
+    try {
+      await store.fileGateway.confirmSaveTarget(picked.saveTargetToken);
+    } catch {
+      // 確定に失敗したときは、前の文書の先へ誤って上書きするより名前を訊き直す。
+      store.fileGateway.clearSaveTarget?.();
+    }
+  }
   // 開けたものだけを履歴へ残す(FR-807)。断ったファイルを勧め直さないため。
   recordRecentFile(picked.name, { storage: deps.recentFilesStorage });
 }

@@ -15,7 +15,9 @@ import { basename, extname } from 'node:path';
  * 「名前」「バイト列」「名前を付けて保存かどうか」「ファイルの種類」だけで、
  * **パスは画面へ渡さない**(NFR-SE-1「外へ出す情報は最小にする」)。上書き先はここで覚える。
  *
- * **上書き先を覚えるのは `.pcad` の 3 本(`pcad:open` / `pcad:save` / `pcad:hasTarget`)だけ。**
+ * **上書き先を扱うのは `.pcad` の 5 本(`pcad:open` / `pcad:confirmTarget` /
+ * `pcad:clearTarget` / `pcad:save` / `pcad:hasTarget`)だけ。** `pcad:open` は実パスを
+ * 未確定の token に結び付け、画面が文書を検証した後の `pcad:confirmTarget` で初めて確定する。
  * 種類つきの 2 本(`pcad:openAny` / `pcad:saveAs`)は `lastPaths` を読みも書きもしない
  * (§0.a-0.4。書き出した先を覚えると、次の Ctrl+S が部品ではなく書き出した先を上書きしかねない)。
  *
@@ -32,6 +34,8 @@ import { basename, extname } from 'node:path';
 export const PCAD_OPEN_CHANNEL = 'pcad:open';
 export const PCAD_SAVE_CHANNEL = 'pcad:save';
 export const PCAD_HAS_TARGET_CHANNEL = 'pcad:hasTarget';
+export const PCAD_CONFIRM_TARGET_CHANNEL = 'pcad:confirmTarget';
+export const PCAD_CLEAR_TARGET_CHANNEL = 'pcad:clearTarget';
 export const PCAD_OPEN_ANY_CHANNEL = 'pcad:openAny';
 export const PCAD_SAVE_AS_CHANNEL = 'pcad:saveAs';
 /**
@@ -319,16 +323,51 @@ export async function saveAsDialog(
  */
 const lastPaths = new Map<number, string>();
 
-/** 上書き先を覚える。初めて覚える画面には、閉じたときに忘れる後始末を付ける。 */
-function rememberPath(event: IpcMainInvokeEvent, filePath: string): void {
+/** 検証を通るまでの上書き先候補。実パスは本体プロセスの外へ出さない。 */
+interface PendingSaveTarget {
+  readonly token: string;
+  readonly path: string;
+}
+
+const pendingPaths = new Map<number, PendingSaveTarget>();
+const watchedWindowIds = new Set<number>();
+let nextSaveTargetToken = 1;
+
+/** 画面が閉じたとき、確定済み・未確定のどちらの控えも捨てる後始末を1度だけ付ける。 */
+function watchWindow(event: IpcMainInvokeEvent): void {
   const contents = event.sender;
   const id = contents.id;
-  if (!lastPaths.has(id)) {
-    contents.once('destroyed', () => {
-      lastPaths.delete(id);
-    });
+  if (watchedWindowIds.has(id)) {
+    return;
   }
-  lastPaths.set(id, filePath);
+  watchedWindowIds.add(id);
+  contents.once('destroyed', () => {
+    lastPaths.delete(id);
+    pendingPaths.delete(id);
+    watchedWindowIds.delete(id);
+  });
+}
+
+/** 上書き先を確定し、同じ画面の未確定候補を消す。 */
+function rememberPath(event: IpcMainInvokeEvent, filePath: string): void {
+  watchWindow(event);
+  lastPaths.set(event.sender.id, filePath);
+  pendingPaths.delete(event.sender.id);
+}
+
+/** 開いた実パスを未確定の token に結び付ける。前の候補は呼び出し側で先に捨てる。 */
+function rememberPendingPath(event: IpcMainInvokeEvent, filePath: string): string {
+  watchWindow(event);
+  const token = `save-target-${String(nextSaveTargetToken)}`;
+  nextSaveTargetToken += 1;
+  pendingPaths.set(event.sender.id, { token, path: filePath });
+  return token;
+}
+
+/** 現在の文書の保存先と、未確定の候補を一緒に解除する。 */
+function clearSaveTargets(event: IpcMainInvokeEvent): void {
+  lastPaths.delete(event.sender.id);
+  pendingPaths.delete(event.sender.id);
 }
 
 /** 依頼を出してきた画面の窓。取れなければ null(窓なしでダイアログを出す)。 */
@@ -337,8 +376,9 @@ function windowOf(event: IpcMainInvokeEvent): BrowserWindow | null {
 }
 
 /**
- * IPC を登録する。チャンネルは `pcad:open` / `pcad:save` / `pcad:hasTarget` の3本と、
- * 種類つきの `pcad:openAny` / `pcad:saveAs` の2本(§0.a-0.5)。
+ * IPC を登録する。部品は `pcad:open` / `pcad:confirmTarget` / `pcad:clearTarget` /
+ * `pcad:save` / `pcad:hasTarget` の5本、種類つきは `pcad:openAny` / `pcad:saveAs` の2本
+ * (§0.a-0.5)。
  *
  * 往復する値は文字列・真偽・`Uint8Array`・文字列の並びに限る(構造化複製でそのまま往復できるもの)。
  * 画面から来た値は素性が分からないので、使う前に必ず形を確かめる。
@@ -348,16 +388,41 @@ function windowOf(event: IpcMainInvokeEvent): BrowserWindow | null {
 export function registerPcadIpc(): void {
   ipcMain.handle(
     PCAD_OPEN_CHANNEL,
-    async (event: IpcMainInvokeEvent): Promise<{ name: string; bytes: Uint8Array } | null> => {
+    async (
+      event: IpcMainInvokeEvent,
+    ): Promise<{ name: string; bytes: Uint8Array; saveTargetToken: string } | null> => {
+      // 未確定の候補は次の「開く」を始めた時点で失効する。確定済みの先はまだ保つ。
+      pendingPaths.delete(event.sender.id);
       const opened = await openPcadDialog(windowOf(event));
       if (opened === null) {
         return null;
       }
-      // 開いたファイルはそのまま上書き先にする(次の Ctrl+S は窓を出さずに同じ先へ書く)。
-      rememberPath(event, opened.path);
-      return { name: opened.name, bytes: opened.bytes };
+      const saveTargetToken = rememberPendingPath(event, opened.path);
+      return { name: opened.name, bytes: opened.bytes, saveTargetToken };
     },
   );
+
+  ipcMain.handle(
+    PCAD_CONFIRM_TARGET_CHANNEL,
+    (event: IpcMainInvokeEvent, ...args: unknown[]): boolean => {
+      const [token] = args;
+      if (typeof token !== 'string') {
+        throw new Error('保存先の確定依頼の形が正しくありません。');
+      }
+      const pending = pendingPaths.get(event.sender.id);
+      if (pending?.token !== token) {
+        // 文書と保存先の対応を証明できないので、古い確定先も含めて安全側へ倒す。
+        clearSaveTargets(event);
+        return false;
+      }
+      rememberPath(event, pending.path);
+      return true;
+    },
+  );
+
+  ipcMain.handle(PCAD_CLEAR_TARGET_CHANNEL, (event: IpcMainInvokeEvent): void => {
+    clearSaveTargets(event);
+  });
 
   ipcMain.handle(
     PCAD_SAVE_CHANNEL,

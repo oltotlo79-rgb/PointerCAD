@@ -10,8 +10,10 @@
 
 import {
   AUTO_SAVE_INTERVAL_MS,
+  PCAD_DOCUMENT_ENTRY,
   createAutoSaver,
   readPcadFile,
+  serializeDocument,
   writePcadFile,
   type AutoSaveRecord,
   type AutoSaver,
@@ -33,11 +35,14 @@ import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   attachAutoSave,
+  clearAutoSaveFailure,
   createAutoSaveStorageForBrowser,
   createUnsavedOnlyStorage,
   discardAutoSave,
+  exportAutoSave,
   formatSavedAt,
   loadAutoSavePrompt,
+  reportAutoSaveFailure,
   restoreAutoSave,
   startAutoSave,
   type VisibilityTarget,
@@ -195,26 +200,95 @@ function recordOf(document: PartDocument, documentName = document.name): AutoSav
   return { savedAt: SAVED_AT, bytes: writePcadFile(document, { savedAt: SAVED_AT }), documentName };
 }
 
+/** ZIP の CRC-32。未来版の `document.json` を無圧縮 ZIP へ包むための検査用実装。 */
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ ((crc & 1) === 0 ? 0 : 0xedb88320);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** 1 エントリだけの無圧縮 ZIP。pcad の書式を変えず、未来の schema を作る検査に使う。 */
+function storedZip(name: string, content: Uint8Array): Uint8Array {
+  const nameBytes = new TextEncoder().encode(name);
+  const localSize = 30 + nameBytes.length + content.length;
+  const centralSize = 46 + nameBytes.length;
+  const bytes = new Uint8Array(localSize + centralSize + 22);
+  const view = new DataView(bytes.buffer);
+  const checksum = crc32(content);
+
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 0x0800, true);
+  view.setUint16(8, 0, true);
+  view.setUint32(14, checksum, true);
+  view.setUint32(18, content.length, true);
+  view.setUint32(22, content.length, true);
+  view.setUint16(26, nameBytes.length, true);
+  bytes.set(nameBytes, 30);
+  bytes.set(content, 30 + nameBytes.length);
+
+  const central = localSize;
+  view.setUint32(central, 0x02014b50, true);
+  view.setUint16(central + 4, 20, true);
+  view.setUint16(central + 6, 20, true);
+  view.setUint16(central + 8, 0x0800, true);
+  view.setUint16(central + 10, 0, true);
+  view.setUint32(central + 16, checksum, true);
+  view.setUint32(central + 20, content.length, true);
+  view.setUint32(central + 24, content.length, true);
+  view.setUint16(central + 28, nameBytes.length, true);
+  bytes.set(nameBytes, central + 46);
+
+  const end = central + centralSize;
+  view.setUint32(end, 0x06054b50, true);
+  view.setUint16(end + 8, 1, true);
+  view.setUint16(end + 10, 1, true);
+  view.setUint32(end + 12, centralSize, true);
+  view.setUint32(end + 16, central, true);
+  return bytes;
+}
+
+/** このアプリより新しい schema の、正しい ZIP で包まれた `.pcad`。 */
+function futureRecord(document: PartDocument): AutoSaveRecord {
+  const current = serializeDocument(document, { savedAt: SAVED_AT });
+  const future = current.replace(/"schema"\s*:\s*\d+/, '"schema": 999');
+  if (future === current) {
+    throw new Error('schema was not found');
+  }
+  return {
+    savedAt: SAVED_AT,
+    bytes: storedZip(PCAD_DOCUMENT_ENTRY, new TextEncoder().encode(future)),
+    documentName: '未来版の部品',
+  };
+}
+
 beforeEach(() => {
   useAppStore.setState(createInitialDocumentState());
 });
 
 describe('保管庫を選ぶ(§0.a-0.11)', () => {
-  it('IndexedDB が無ければ記憶上の保管庫に落とす(書いたものが読み返せる)', async () => {
+  it('IndexedDB が無ければ unavailable の理由で失敗し、成功扱いにしない', async () => {
     const storage = createAutoSaveStorageForBrowser({});
     const record = recordOf(createEmptyPartDocument(), '部品1');
 
-    await storage.write(record);
+    await expect(storage.write(record)).rejects.toMatchObject({ reason: 'unavailable' });
 
-    expect(await storage.read()).toEqual(record);
+    expect(await storage.read()).toBeNull();
   });
 
-  it('IndexedDB があれば IndexedDB の保管庫を選ぶ(Node では読み書きが起きない)', async () => {
+  it('IndexedDB があると判定しても実体が無ければ、書き込み失敗を隠さない', async () => {
     // 選ばれた保管庫は本物の globalThis.indexedDB を見に行く。Node には無いので
-    // 「静かに何もしない」形になり、書いても読み返せない(例外は出ない)。
+    // 選択に使った scope と実際の保存先は別なので、unavailable の理由で失敗する。
     const storage = createAutoSaveStorageForBrowser({ indexedDB: {} });
 
-    await storage.write(recordOf(createEmptyPartDocument(), '部品1'));
+    await expect(storage.write(recordOf(createEmptyPartDocument(), '部品1'))).rejects.toMatchObject({
+      reason: 'unavailable',
+    });
 
     expect(await storage.read()).toBeNull();
   });
@@ -387,20 +461,21 @@ describe('起動時の案内(§2.9)', () => {
     expect(useAppStore.getState().restorePrompt).toBeNull();
   });
 
-  it('控えが壊れていたら、案内を出さずに黙って捨てる(例外にしない)', async () => {
-    const broken: AutoSaveRecord = {
-      savedAt: SAVED_AT,
-      bytes: new Uint8Array([0, 1, 2, 3]),
-      documentName: '部品1',
-    };
-    const recording = createRecordingStorage(broken);
+  it('未来の schema の控えは捨てず、復元不可の理由を案内へ入れる', async () => {
+    const future = futureRecord(partWithPoint());
+    const recording = createRecordingStorage(future);
     const timer = createManualTimer();
 
     await loadAutoSavePrompt(createTestSaver(recording.storage, timer));
 
-    expect(useAppStore.getState().restorePrompt).toBeNull();
-    expect(recording.clearCount()).toBe(1);
-    expect(recording.stored()).toBeNull();
+    expect(useAppStore.getState().restorePrompt).toEqual({
+      savedAt: SAVED_AT,
+      documentName: '未来版の部品',
+      unrecoverable: true,
+      reasonKey: 'file.error.tooNew',
+    });
+    expect(recording.clearCount()).toBe(0);
+    expect(recording.stored()).toBe(future);
   });
 
   it('片付けの後に読み終わった結果では案内を出さない(StrictMode の二重実行)', async () => {
@@ -448,6 +523,52 @@ describe('案内の返事', () => {
     expect(state.document).toEqual(createEmptyPartDocument());
   });
 
+  it('読めない控えに復元を試しても消さず、復元不可の案内を保つ', async () => {
+    const future = futureRecord(partWithPoint());
+    const recording = createRecordingStorage(future);
+    const timer = createManualTimer();
+    const saver = createTestSaver(recording.storage, timer);
+
+    await restoreAutoSave(saver);
+
+    expect(recording.clearCount()).toBe(0);
+    expect(recording.stored()).toBe(future);
+    expect(useAppStore.getState().restorePrompt).toMatchObject({
+      unrecoverable: true,
+      reasonKey: 'file.error.tooNew',
+    });
+  });
+
+  it('「控えを書き出す」は元のバイト列を既存の pcad 保存口へそのまま渡す', async () => {
+    const future = futureRecord(partWithPoint());
+    const recording = createRecordingStorage(future);
+    const timer = createManualTimer();
+    const saver = createTestSaver(recording.storage, timer);
+    const written: { readonly name: string; readonly kind: string; readonly bytes: Uint8Array }[] = [];
+    useAppStore.getState().setFileGateway({
+      openPcad: () => Promise.resolve(null),
+      savePcad: () => Promise.resolve(null),
+      hasSaveTarget: () => false,
+      saveFileAs: (name, kind, bytes) => {
+        written.push({ name, kind, bytes });
+        return Promise.resolve(true);
+      },
+    });
+
+    await exportAutoSave(saver);
+
+    expect(written).toEqual([
+      { name: '未来版の部品.pcad', kind: 'pcad', bytes: future.bytes },
+    ]);
+    expect(written[0]?.bytes).toBe(future.bytes);
+    expect(recording.clearCount()).toBe(0);
+    expect(recording.stored()).toBe(future);
+    expect(useAppStore.getState().fileMessage).toEqual({
+      key: 'restore.exported',
+      failed: false,
+    });
+  });
+
   it('「破棄する」で控えが消え、案内が閉じる', async () => {
     const recording = createRecordingStorage(recordOf(partWithPoint(), '部品1'));
     const timer = createManualTimer();
@@ -475,6 +596,18 @@ describe('起動時の配線', () => {
     detach();
     expect(useAppStore.getState().autoSaver).toBeNull();
     expect(timer.pendingCount()).toBe(0);
+  });
+
+  it('自動保存の失敗を帯へ入れ、次の成功で古い失敗だけを消す', () => {
+    reportAutoSaveFailure();
+
+    expect(useAppStore.getState().fileMessage).toEqual({
+      key: 'autoSave.failed',
+      failed: true,
+    });
+
+    clearAutoSaveFailure();
+    expect(useAppStore.getState().fileMessage).toBeNull();
   });
 });
 

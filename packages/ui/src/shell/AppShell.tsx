@@ -1,6 +1,11 @@
 import { lazy, Suspense, useEffect, useRef } from 'react';
 
-import { discardAutoSave, formatSavedAt, restoreAutoSave } from '../file/attachAutoSave.js';
+import {
+  discardAutoSave,
+  exportAutoSave,
+  formatSavedAt,
+  restoreAutoSave,
+} from '../file/attachAutoSave.js';
 import { ImportUnitPanel } from '../file/ImportUnitPanel.js';
 import {
   createDefaultPartFileDeps,
@@ -335,30 +340,56 @@ export function AppShell(): React.JSX.Element {
             */
             <div className="pcad-viewport__overlay">
               <div className="pcad-card pcad-restore">
-                <p className="pcad-restore__title">{t('restore.title')}</p>
+                <p className="pcad-restore__title">
+                  {t(restorePrompt.unrecoverable ? 'restore.unrecoverableTitle' : 'restore.title')}
+                </p>
                 {/*
                   カードが出ている間に何か描き始めた(= 未保存の変更がある)ら、
                   復元すると消えてしまう旨へ文言を切り替える(§0.a-0.23 ⑤、19:10 の残件(c))。
                 */}
                 <p className="pcad-restore__body">
-                  {t(unsaved ? 'restore.bodyDirty' : 'restore.body')}
+                  {t(
+                    restorePrompt.unrecoverable
+                      ? 'restore.unrecoverableBody'
+                      : unsaved
+                        ? 'restore.bodyDirty'
+                        : 'restore.body',
+                  )}
                 </p>
                 <dl className="pcad-restore__details">
                   <dt>{t('restore.savedAt')}</dt>
                   <dd>{formatSavedAt(restorePrompt.savedAt)}</dd>
                   <dt>{t('restore.documentName')}</dt>
                   <dd>{restorePrompt.documentName}</dd>
+                  {restorePrompt.unrecoverable && restorePrompt.reasonKey !== undefined ? (
+                    <>
+                      <dt>{t('restore.reason')}</dt>
+                      <dd>{t(restorePrompt.reasonKey)}</dd>
+                    </>
+                  ) : null}
                 </dl>
                 <div className="pcad-restore__actions">
-                  <button
-                    type="button"
-                    className="pcad-button pcad-button--action pcad-button--primary"
-                    onClick={() => {
-                      void restoreAutoSave(autoSaver);
-                    }}
-                  >
-                    {t('restore.restore')}
-                  </button>
+                  {restorePrompt.unrecoverable ? (
+                    <button
+                      type="button"
+                      className="pcad-button pcad-button--action pcad-button--primary"
+                      onClick={() => {
+                        void exportAutoSave(autoSaver);
+                      }}
+                    >
+                      {t('restore.export')}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pcad-button pcad-button--action pcad-button--primary"
+                      onClick={() => {
+                        void restoreAutoSave(autoSaver);
+                      }}
+                    >
+                      {t('restore.restore')}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="pcad-button pcad-button--action"

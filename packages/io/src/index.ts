@@ -58,6 +58,7 @@ export {
   PCAD_MESH_ENTRY_PREFIX,
   PCAD_MESH_ENTRY_SUFFIX,
   // アセンブリが抱き込む部品文書のエントリ(`parts/<ref>.json`。P7 タスク3)。
+  PCAD_PART_ATTACHMENTS_DIGEST_ENTRY,
   PCAD_PART_ENTRY_PREFIX,
   PCAD_PART_ENTRY_SUFFIX,
   PCAD_SHAPE_ENTRY_PREFIX,
@@ -70,6 +71,7 @@ export {
   type ImportedMeshBytes,
   type PcadAttachments,
   type ReadPcadaFileResult,
+  type ReadPcadaFileOptions,
   type ReadPcadFileError,
   type ReadPcadFileErrorCode,
   type ReadPcadFileResult,

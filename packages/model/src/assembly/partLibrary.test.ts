@@ -8,17 +8,20 @@ import {
 import type { PartDocument } from '../part/types.js';
 
 import {
+  attachmentsDigestOf,
   canonicalPartDocumentText,
   contentHashOf,
+  emptyEmbeddedPartAttachments,
   EMPTY_PART_LIBRARY,
   embedPart,
   nextPartRef,
+  partAttachmentsOf,
   partFileOf,
   partOf,
   replacePartDocument,
   staleParts,
 } from './partLibrary.js';
-import type { PartLibrary } from './partLibrary.js';
+import type { EmbeddedPartAttachments, PartLibrary } from './partLibrary.js';
 
 /** 立体を n 個持つ部品文書。基本形状(箱)を並べるだけで、形は作らない(ハッシュの材料だけ要る)。 */
 function partWithBoxes(name: string, count: number): PartDocument {
@@ -31,6 +34,23 @@ function partWithBoxes(name: string, count: number): PartDocument {
 
 /** 検査の中で時刻を固定する(取り込み時刻が毎回変わると結果が比べられない)。 */
 const IMPORTED_AT = '2026-09-06T00:00:00.000Z';
+
+function sampleAttachments(seed = 1): EmbeddedPartAttachments {
+  return {
+    shapes: new Map([['shape-1', new Uint8Array([seed, 2, 3])]]),
+    meshes: new Map([
+      [
+        'mesh-1',
+        {
+          positions: new Float32Array([seed, 0, 0]),
+          normals: new Float32Array([0, 0, 1]),
+          indices: new Uint32Array([0, 0, 0]),
+        },
+      ],
+    ]),
+    canvases: new Map([['canvas-1', new Uint8Array([0x89, 0x50, seed])]]),
+  };
+}
 
 describe('canonicalPartDocumentText', () => {
   it('読み直すと元の文書に戻る(欄を落とさない)', () => {
@@ -105,12 +125,45 @@ describe('contentHashOf', () => {
   });
 });
 
+describe('attachmentsDigestOf', () => {
+  it('SHA-256 の 16 進 64 文字で、同じ添付なら Map の挿入順によらず一致する', async () => {
+    const first = sampleAttachments();
+    const reordered: EmbeddedPartAttachments = {
+      shapes: new Map([
+        ['z', new Uint8Array([9])],
+        ...first.shapes,
+      ]),
+      meshes: first.meshes,
+      canvases: first.canvases,
+    };
+    const reorderedAgain: EmbeddedPartAttachments = {
+      shapes: new Map([
+        ...first.shapes,
+        ['z', new Uint8Array([9])],
+      ]),
+      meshes: first.meshes,
+      canvases: first.canvases,
+    };
+    expect(await attachmentsDigestOf(reordered)).toBe(await attachmentsDigestOf(reorderedAgain));
+    expect(await attachmentsDigestOf(first)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('文書ハッシュを変えず、添付のバイトだけが変わればダイジェストが変わる', async () => {
+    const document = partWithBoxes('ブラケット', 1);
+    expect(await contentHashOf(document)).toBe(await contentHashOf(document));
+    expect(await attachmentsDigestOf(sampleAttachments(1))).not.toBe(
+      await attachmentsDigestOf(sampleAttachments(2)),
+    );
+  });
+});
+
 describe('embedPart', () => {
   it('抱き込むと素性と文書が 1 組そろって増える', async () => {
     const document = partWithBoxes('ブラケット', 2);
     const embedded = await embedPart(EMPTY_PART_LIBRARY, document, 'ブラケット.pcad', '../ブラケット.pcad', {
       importedAt: IMPORTED_AT,
     });
+    const emptyDigest = await attachmentsDigestOf(emptyEmbeddedPartAttachments());
     expect(embedded.partRef).toBe('part-1');
     expect(embedded.reused).toBe(false);
     expect(embedded.library.partFiles).toEqual([
@@ -119,10 +172,12 @@ describe('embedPart', () => {
         fileName: 'ブラケット.pcad',
         path: '../ブラケット.pcad',
         contentHash: await contentHashOf(document),
+        attachmentsDigest: emptyDigest,
         importedAt: IMPORTED_AT,
       },
     ]);
     expect(embedded.library.parts.size).toBe(1);
+    expect(embedded.library.attachments.size).toBe(1);
   });
 
   it('元の一式を書き換えない', async () => {
@@ -136,6 +191,7 @@ describe('embedPart', () => {
     expect(embedded.library).not.toBe(EMPTY_PART_LIBRARY);
     expect(EMPTY_PART_LIBRARY.partFiles).toEqual([]);
     expect(EMPTY_PART_LIBRARY.parts.size).toBe(0);
+    expect(EMPTY_PART_LIBRARY.attachments.size).toBe(0);
   });
 
   it('抱き込んだ後の partOf は元と同じ文書を返す', async () => {
@@ -183,15 +239,52 @@ describe('embedPart', () => {
     expect(second.partRef).toBe('part-2');
     expect(second.library.partFiles.map((partFile) => partFile.ref)).toEqual(['part-1', 'part-2']);
   });
+
+  it('呼び手が渡した 3 種の添付と別ダイジェストを同じ partRef で保持する', async () => {
+    const attachments = sampleAttachments();
+    const embedded = await embedPart(
+      EMPTY_PART_LIBRARY,
+      partWithBoxes('読み込み部品', 1),
+      '読み込み部品.pcad',
+      '../読み込み部品.pcad',
+      { importedAt: IMPORTED_AT, attachments },
+    );
+    expect(partAttachmentsOf(embedded.library, embedded.partRef)).toEqual(attachments);
+    expect(partFileOf(embedded.library, embedded.partRef)?.attachmentsDigest).toBe(
+      await attachmentsDigestOf(attachments),
+    );
+  });
+
+  it('文書が同じでも添付ダイジェストが違えば別の partRef で抱き込む', async () => {
+    const document = partWithBoxes('読み込み部品', 1);
+    const first = await embedPart(EMPTY_PART_LIBRARY, document, 'a.pcad', '../a.pcad', {
+      importedAt: IMPORTED_AT,
+      attachments: sampleAttachments(1),
+    });
+    const second = await embedPart(first.library, document, 'b.pcad', '../b.pcad', {
+      importedAt: IMPORTED_AT,
+      attachments: sampleAttachments(2),
+    });
+    expect(second.reused).toBe(false);
+    expect(second.partRef).toBe('part-2');
+  });
 });
 
 describe('nextPartRef', () => {
   it('番号を再利用しない(途中を消しても最大連番の次)', () => {
     const library: PartLibrary = {
       partFiles: [
-        { ref: 'part-3', fileName: '板.pcad', path: '../板.pcad', contentHash: 'a', importedAt: IMPORTED_AT },
+        {
+          ref: 'part-3',
+          fileName: '板.pcad',
+          path: '../板.pcad',
+          contentHash: 'a',
+          attachmentsDigest: 'b',
+          importedAt: IMPORTED_AT,
+        },
       ],
       parts: new Map(),
+      attachments: new Map(),
     };
     expect(nextPartRef(library)).toBe('part-4');
     expect(nextPartRef(EMPTY_PART_LIBRARY)).toBe('part-1');
@@ -241,6 +334,27 @@ describe('replacePartDocument', () => {
     });
     expect(partFileOf(replaced, 'part-1')).toEqual(partFileOf(second.library, 'part-1'));
     expect(partOf(replaced, 'part-1')).toEqual(partOf(second.library, 'part-1'));
+  });
+
+  it('差し替えで渡した添付とダイジェストも同じ partRef のまま更新する', async () => {
+    const embedded = await embedPart(
+      EMPTY_PART_LIBRARY,
+      partWithBoxes('部品', 1),
+      '部品.pcad',
+      '../部品.pcad',
+      { importedAt: IMPORTED_AT, attachments: sampleAttachments(1) },
+    );
+    const nextAttachments = sampleAttachments(2);
+    const replaced = await replacePartDocument(
+      embedded.library,
+      embedded.partRef,
+      partWithBoxes('部品', 2),
+      { importedAt: IMPORTED_AT, attachments: nextAttachments },
+    );
+    expect(partAttachmentsOf(replaced, embedded.partRef)).toEqual(nextAttachments);
+    expect(partFileOf(replaced, embedded.partRef)?.attachmentsDigest).toBe(
+      await attachmentsDigestOf(nextAttachments),
+    );
   });
 });
 

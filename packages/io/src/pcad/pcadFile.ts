@@ -29,16 +29,23 @@
  *
  * **アセンブリ(`.pcada`、P7 タスク3)も同じ ZIP の作りにする**(§0.a-0.1)。違うのは
  * `document.json` の中身(`AssemblyDocument`、`assemblyJson.ts`)と、抱き込んだ部品文書の
- * エントリ `parts/<ref>.json` が増えることだけで、日時の固定も圧縮の指定も並びの決めごとも
- * そのまま共有する。**部品の形(B-rep・三角形)は抱き込まない**(§0.a-0.4。開くたびに
- * 部品ごとに 1 回だけ再計算する)。
+ * エントリ `parts/<ref>.json` と、再導出できない部品添付
+ * (`parts/<ref>/shapes/*.brep`・`meshes/*.bin`・`canvases/*.png`)が増える。添付の
+ * SHA-256 は `parts/<ref>/attachments.sha256` に分離し、部品文書の封筒は変えない。
  *
  * 読み込みは**例外を外へ出さない**(NFR-RE-1)。ZIP でない・`document.json` が無い・
  * 中身が壊れている、のいずれも日本語の理由を添えて返す(FR-504)。
  * 他のアプリが作った圧縮済みの ZIP も読める(fflate が deflate を解ける)。
  */
 
-import type { AssemblyDocument, LengthUnit, PartDocument } from '@pointercad/model';
+import {
+  attachmentsDigestOf,
+  type AssemblyDocument,
+  type EmbeddedPartAttachments,
+  type EmbeddedPartMesh,
+  type LengthUnit,
+  type PartDocument,
+} from '@pointercad/model';
 import { strFromU8, strToU8, zipSync, type Zippable } from 'fflate';
 
 import {
@@ -58,7 +65,11 @@ import {
   type PcadPartFile,
   type PcadToolDefaults,
 } from './schema.js';
-import { ARCHIVE_TOO_LARGE_MESSAGE, readArchive } from './readArchive.js';
+import {
+  ARCHIVE_TOO_LARGE_MESSAGE,
+  readArchive,
+  type ArchiveReadLimits,
+} from './readArchive.js';
 
 /** 部品文書を入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
@@ -85,6 +96,8 @@ export const PCAD_CANVAS_ENTRY_SUFFIX = '.png';
  */
 export const PCAD_PART_ENTRY_PREFIX = 'parts/';
 export const PCAD_PART_ENTRY_SUFFIX = '.json';
+/** 部品ごとの添付ダイジェストを、その部品の名前空間へ置く固定名。 */
+export const PCAD_PART_ATTACHMENTS_DIGEST_ENTRY = 'attachments.sha256';
 
 /**
  * ZIP のヘッダへ書く固定の日時。年・月・日・時・分・秒がそのまま書かれるので、
@@ -116,14 +129,7 @@ const ATTACHMENT_IMAGE_LEVEL = 0;
  * 位置・法線は頂点 1 つにつき 3 つ、添字は三角形 1 つにつき 3 つ。
  * **B-rep にはしない**(§0.a-0.23)ので、この 3 本の配列がそのまま形の正本になる。
  */
-export interface ImportedMeshBytes {
-  /** 位置(mm)。長さは頂点数 × 3。 */
-  readonly positions: Float32Array;
-  /** 法線(単位ベクトル)。長さは頂点数 × 3。 */
-  readonly normals: Float32Array;
-  /** 三角形の頂点の添字。長さは三角形数 × 3。 */
-  readonly indices: Uint32Array;
-}
+export type ImportedMeshBytes = EmbeddedPartMesh;
 
 /**
  * `.pcad` に入っている添付の表(§0.a-0.55)。鍵は**エントリ名ではなく参照の文字列**
@@ -133,14 +139,7 @@ export interface ImportedMeshBytes {
  * 3 つとも「空の表」を持つ(欄ごと無くさない)。読み手が毎回 `undefined` を確かめずに
  * 済み、添付を持たない `.pcad`(版 6 までのファイル)も同じ形で扱えるため。
  */
-export interface PcadAttachments {
-  /** 読み込んだ B-rep。バイト列はカーネルへそのまま渡すので、中身を解釈しない。 */
-  readonly shapes: ReadonlyMap<string, Uint8Array>;
-  /** 読み込んだ三角形。`PCM1` の並びを解いた形で持つ。 */
-  readonly meshes: ReadonlyMap<string, ImportedMeshBytes>;
-  /** 下絵の画像(PNG)。バイト列のまま持つ(FR-332)。 */
-  readonly canvases: ReadonlyMap<string, Uint8Array>;
-}
+export type PcadAttachments = EmbeddedPartAttachments;
 
 /** 添付を 1 つも持たない表。版 6 までのファイルを読んだときの値でもある。 */
 export function emptyPcadAttachments(): PcadAttachments {
@@ -329,9 +328,13 @@ export interface WritePcadFileOptions {
  * 中身を組み立てられなかった三角形は**黙って落とす**(書き出しは断れないため。
  * 呼び出し側が壊れた配列を渡さない限り起きない)。
  */
-function appendAttachments(entries: Zippable, attachments: PcadAttachments): void {
+function appendAttachments(
+  entries: Zippable,
+  attachments: PcadAttachments,
+  entryPrefix = '',
+): void {
   for (const [ref, bytes] of sortedEntries(attachments.shapes)) {
-    entries[`${PCAD_SHAPE_ENTRY_PREFIX}${ref}${PCAD_SHAPE_ENTRY_SUFFIX}`] = [
+    entries[`${entryPrefix}${PCAD_SHAPE_ENTRY_PREFIX}${ref}${PCAD_SHAPE_ENTRY_SUFFIX}`] = [
       bytes,
       { level: ATTACHMENT_BINARY_LEVEL, mtime: FIXED_ENTRY_MTIME },
     ];
@@ -341,13 +344,13 @@ function appendAttachments(entries: Zippable, attachments: PcadAttachments): voi
     if (bytes === null) {
       continue;
     }
-    entries[`${PCAD_MESH_ENTRY_PREFIX}${ref}${PCAD_MESH_ENTRY_SUFFIX}`] = [
+    entries[`${entryPrefix}${PCAD_MESH_ENTRY_PREFIX}${ref}${PCAD_MESH_ENTRY_SUFFIX}`] = [
       bytes,
       { level: ATTACHMENT_BINARY_LEVEL, mtime: FIXED_ENTRY_MTIME },
     ];
   }
   for (const [ref, bytes] of sortedEntries(attachments.canvases)) {
-    entries[`${PCAD_CANVAS_ENTRY_PREFIX}${ref}${PCAD_CANVAS_ENTRY_SUFFIX}`] = [
+    entries[`${entryPrefix}${PCAD_CANVAS_ENTRY_PREFIX}${ref}${PCAD_CANVAS_ENTRY_SUFFIX}`] = [
       bytes,
       { level: ATTACHMENT_IMAGE_LEVEL, mtime: FIXED_ENTRY_MTIME },
     ];
@@ -485,7 +488,7 @@ function isPcadaArchiveEntry(name: string): boolean {
   return (
     name === PCAD_DOCUMENT_ENTRY ||
     name === PCAD_THUMBNAIL_ENTRY ||
-    attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX) !== null
+    name.startsWith(PCAD_PART_ENTRY_PREFIX)
   );
 }
 
@@ -493,10 +496,14 @@ function isPcadaArchiveEntry(name: string): boolean {
  * ZIP のエントリから添付の表を組み立てる。三角形の並びが壊れていたエントリ名を
  * 一緒に返し、呼び出し側に `invalidField` で断らせる(**エラーコードを増やさない**)。
  */
-function collectAttachments(entries: ReadonlyMap<string, Uint8Array>): {
+function collectAttachments(
+  entries: ReadonlyMap<string, Uint8Array>,
+  meshAllocationLimit = IO_LIMITS.meshAllocationBytes,
+): {
   readonly attachments: PcadAttachments;
   readonly brokenMeshEntry: string | null;
   readonly tooLargeMeshEntry: string | null;
+  readonly allocatedMeshBytes: number;
 } {
   const shapes = new Map<string, Uint8Array>();
   const meshes = new Map<string, ImportedMeshBytes>();
@@ -520,7 +527,7 @@ function collectAttachments(entries: ReadonlyMap<string, Uint8Array>): {
       const meshBytes = meshAllocationByteLength(header.vertexCount, header.triangleCount);
       if (
         meshBytes === null ||
-        allocatedMeshBytes + meshBytes > IO_LIMITS.meshAllocationBytes
+        allocatedMeshBytes + meshBytes > meshAllocationLimit
       ) {
         tooLargeMeshEntry ??= name;
         break;
@@ -544,6 +551,7 @@ function collectAttachments(entries: ReadonlyMap<string, Uint8Array>): {
     attachments: { shapes, meshes, canvases },
     brokenMeshEntry,
     tooLargeMeshEntry,
+    allocatedMeshBytes,
   };
 }
 
@@ -683,6 +691,8 @@ export interface WritePcadaFileOptions {
    * 欠けているほうは読み手が「部品が見つかりません」で断る。
    */
   readonly parts?: ReadonlyMap<string, PartDocument>;
+  /** 部品ごとの再導出できない添付。鍵は `parts` と同じ `partRef`。 */
+  readonly partAttachments?: ReadonlyMap<string, PcadAttachments>;
 }
 
 /**
@@ -709,17 +719,40 @@ function appendParts(
   }
 }
 
+/** 部品添付を一時表へ集め、完全なエントリ名の順に本表へ足す。 */
+async function appendPartAttachments(
+  entries: Zippable,
+  partAttachments: ReadonlyMap<string, PcadAttachments>,
+): Promise<void> {
+  const staged: Zippable = {};
+  for (const [ref, attachments] of sortedEntries(partAttachments)) {
+    const prefix = `${PCAD_PART_ENTRY_PREFIX}${ref}/`;
+    const digest = await attachmentsDigestOf(attachments);
+    staged[`${prefix}${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY}`] = [
+      strToU8(digest),
+      { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+    appendAttachments(staged, attachments, prefix);
+  }
+  for (const name of Object.keys(staged).sort()) {
+    const entry = staged[name];
+    if (entry !== undefined) {
+      entries[name] = entry;
+    }
+  }
+}
+
 /**
  * アセンブリ文書(と、あればサムネイル・抱き込んだ部品)を `.pcada` のバイト列にする。
  * 例外を投げない。
  *
- * エントリの並びは `document.json` → `thumbnail.png` → `parts/*.json`(名前順)で固定する
- * (決定性。`writePcadFile` の添付と同じ決め)。
+ * エントリの並びは `document.json` → `thumbnail.png` → `parts/*.json`(名前順) →
+ * `parts/<ref>/...`(完全な名前順)で固定する(決定性)。
  */
-export function writePcadaFile(
+export async function writePcadaFile(
   document: AssemblyDocument,
   options: WritePcadaFileOptions = {},
-): Uint8Array {
+): Promise<Uint8Array> {
   // 封筒と抱き込んだ部品で**同じ保存時刻**を使うため、既定値をここで 1 回だけ決める。
   const savedAt = options.savedAt ?? new Date().toISOString();
   const text = writeAssemblyDocument(document, { savedAt, partFiles: options.partFiles });
@@ -734,6 +767,9 @@ export function writePcadaFile(
   }
   if (options.parts !== undefined) {
     appendParts(entries, options.parts, savedAt);
+  }
+  if (options.partAttachments !== undefined) {
+    await appendPartAttachments(entries, options.partAttachments);
   }
   return zipSync(entries);
 }
@@ -751,6 +787,10 @@ export type ReadPcadaFileResult =
        * この版の読み手がまだ知らない参照を往復で失わないため)。
        */
       readonly parts: ReadonlyMap<string, PartDocument>;
+      /** 抱き込んだ部品ごとの添付。鍵は `partRef`。 */
+      readonly partAttachments: ReadonlyMap<string, PcadAttachments>;
+      /** 読み込み時に照合済みの添付 SHA-256。古いファイルでは内容から補う。 */
+      readonly partAttachmentDigests: ReadonlyMap<string, string>;
       /** サムネイルが入っていたときだけ付く。 */
       readonly thumbnailPng?: Uint8Array;
     }
@@ -797,6 +837,105 @@ function collectParts(entries: ReadonlyMap<string, Uint8Array>): CollectPartsRes
   return { ok: true, parts };
 }
 
+interface PartAttachmentEntries {
+  readonly entries: ReadonlyMap<string, Uint8Array>;
+  readonly storedDigest?: string;
+}
+
+/** `parts/<ref>/...` を部品ごとの相対名へ戻す。未知の相対名は後段が読み飛ばす。 */
+function collectPartAttachmentEntries(
+  entries: ReadonlyMap<string, Uint8Array>,
+): ReadonlyMap<string, PartAttachmentEntries> {
+  const grouped = new Map<string, { entries: Map<string, Uint8Array>; storedDigest?: string }>();
+  for (const [name, bytes] of entries) {
+    if (!name.startsWith(PCAD_PART_ENTRY_PREFIX)) {
+      continue;
+    }
+    const relative = name.slice(PCAD_PART_ENTRY_PREFIX.length);
+    const separator = relative.indexOf('/');
+    if (separator <= 0) {
+      continue;
+    }
+    const ref = relative.slice(0, separator);
+    const attachmentName = relative.slice(separator + 1);
+    const isKnownAttachment =
+      attachmentRef(attachmentName, PCAD_SHAPE_ENTRY_PREFIX, PCAD_SHAPE_ENTRY_SUFFIX) !== null ||
+      attachmentRef(attachmentName, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX) !== null ||
+      attachmentRef(attachmentName, PCAD_CANVAS_ENTRY_PREFIX, PCAD_CANVAS_ENTRY_SUFFIX) !== null;
+    if (attachmentName !== PCAD_PART_ATTACHMENTS_DIGEST_ENTRY && !isKnownAttachment) {
+      continue;
+    }
+    const current = grouped.get(ref) ?? { entries: new Map<string, Uint8Array>() };
+    if (attachmentName === PCAD_PART_ATTACHMENTS_DIGEST_ENTRY) {
+      current.storedDigest = decodeUtf8(bytes) ?? '';
+    } else {
+      current.entries.set(attachmentName, bytes);
+    }
+    grouped.set(ref, current);
+  }
+  return grouped;
+}
+
+interface CollectedPartAttachments {
+  readonly attachments: ReadonlyMap<string, PcadAttachments>;
+  readonly digests: ReadonlyMap<string, string>;
+}
+
+async function collectPartAttachments(
+  entries: ReadonlyMap<string, Uint8Array>,
+  parts: ReadonlyMap<string, PartDocument>,
+): Promise<CollectedPartAttachments | ReadPcadFileError> {
+  const grouped = collectPartAttachmentEntries(entries);
+  const refs = new Set<string>([...parts.keys(), ...grouped.keys()]);
+  const attachments = new Map<string, PcadAttachments>();
+  const digests = new Map<string, string>();
+  let allocatedMeshBytes = 0;
+  for (const ref of [...refs].sort()) {
+    const group = grouped.get(ref);
+    const collected = collectAttachments(
+      group?.entries ?? new Map(),
+      IO_LIMITS.meshAllocationBytes - allocatedMeshBytes,
+    );
+    if (collected.tooLargeMeshEntry !== null) {
+      return { code: 'invalidField', message: ARCHIVE_TOO_LARGE_MESSAGE };
+    }
+    if (collected.brokenMeshEntry !== null) {
+      return {
+        code: 'invalidField',
+        message: `ファイルの中身が壊れています(${PCAD_PART_ENTRY_PREFIX}${ref}/${collected.brokenMeshEntry} の形が違います)。`,
+      };
+    }
+    allocatedMeshBytes += collected.allocatedMeshBytes;
+    const document = parts.get(ref);
+    if (document !== undefined) {
+      const missing = findMissingAttachment(document, collected.attachments);
+      if (missing !== null) {
+        return {
+          code: 'missingField',
+          message: `ファイルの中身が壊れています(${PCAD_PART_ENTRY_PREFIX}${ref}/${missing} が見つかりません)。`,
+        };
+      }
+    }
+    const digest = await attachmentsDigestOf(collected.attachments);
+    const hasAttachmentEntries = (group?.entries.size ?? 0) > 0;
+    if (group?.storedDigest === undefined && hasAttachmentEntries) {
+      return {
+        code: 'missingField',
+        message: `ファイルの中身が壊れています(${PCAD_PART_ENTRY_PREFIX}${ref}/${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY} が見つかりません)。`,
+      };
+    }
+    if (group?.storedDigest !== undefined && group.storedDigest !== digest) {
+      return {
+        code: 'missingField',
+        message: `ファイルの中身が壊れています(${PCAD_PART_ENTRY_PREFIX}${ref} の添付ダイジェストが一致しません)。`,
+      };
+    }
+    attachments.set(ref, collected.attachments);
+    digests.set(ref, digest);
+  }
+  return { attachments, digests };
+}
+
 /**
  * 文書が指している部品がそろっているかを確かめ、欠けている 1 つ目の `partRef` を返す
  * (そろっていれば null)。
@@ -825,8 +964,19 @@ function findMissingPart(
  * `.pcada` のバイト列からアセンブリ文書と抱き込んだ部品を取り出す。
  * 壊れていても例外を投げず、日本語の理由を返す(FR-504、NFR-RE-1)。
  */
-export function readPcadaFile(bytes: Uint8Array): ReadPcadaFileResult {
-  const archive = readArchive(bytes, { shouldExtract: isPcadaArchiveEntry });
+export interface ReadPcadaFileOptions {
+  /** 小さな上限を注入し、部品名前空間にも共通の展開量制限が効くことを検査する口。 */
+  readonly limits?: ArchiveReadLimits;
+}
+
+export async function readPcadaFile(
+  bytes: Uint8Array,
+  options: ReadPcadaFileOptions = {},
+): Promise<ReadPcadaFileResult> {
+  const archive = readArchive(bytes, {
+    shouldExtract: isPcadaArchiveEntry,
+    limits: options.limits,
+  });
   if (!archive.ok) {
     const message =
       archive.error.kind === 'compressedInput' ||
@@ -862,6 +1012,10 @@ export function readPcadaFile(bytes: Uint8Array): ReadPcadaFileResult {
       `部品が見つかりません(${PCAD_PART_ENTRY_PREFIX}${missing}${PCAD_PART_ENTRY_SUFFIX})。`,
     );
   }
+  const collectedAttachments = await collectPartAttachments(entries, collected.parts);
+  if ('code' in collectedAttachments) {
+    return { ok: false, error: collectedAttachments };
+  }
   const thumbnail = findEntry(entries, PCAD_THUMBNAIL_ENTRY);
   if (thumbnail === null) {
     return {
@@ -870,6 +1024,8 @@ export function readPcadaFile(bytes: Uint8Array): ReadPcadaFileResult {
       savedAt: parsed.savedAt,
       partFiles: parsed.partFiles,
       parts: collected.parts,
+      partAttachments: collectedAttachments.attachments,
+      partAttachmentDigests: collectedAttachments.digests,
     };
   }
   return {
@@ -878,6 +1034,8 @@ export function readPcadaFile(bytes: Uint8Array): ReadPcadaFileResult {
     savedAt: parsed.savedAt,
     partFiles: parsed.partFiles,
     parts: collected.parts,
+    partAttachments: collectedAttachments.attachments,
+    partAttachmentDigests: collectedAttachments.digests,
     thumbnailPng: thumbnail,
   };
 }

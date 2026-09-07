@@ -10,6 +10,7 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 
+import { IO_LIMITS } from '../limits.js';
 import { serializeDocument } from './documentJson.js';
 import {
   decodeImportedMeshBytes,
@@ -21,6 +22,7 @@ import {
   PCAD_DOCUMENT_ENTRY,
   PCAD_MESH_ENTRY_PREFIX,
   PCAD_MESH_ENTRY_SUFFIX,
+  PCAD_PART_ATTACHMENTS_DIGEST_ENTRY,
   PCAD_PART_ENTRY_PREFIX,
   PCAD_PART_ENTRY_SUFFIX,
   PCAD_SHAPE_ENTRY_PREFIX,
@@ -36,6 +38,7 @@ import {
   type ReadPcadFileError,
   type ReadPcadFileResult,
 } from './pcadFile.js';
+import { ARCHIVE_TOO_LARGE_MESSAGE } from './readArchive.js';
 import {
   PCAD_APP_NAME,
   PCAD_DOCUMENT_KIND,
@@ -475,7 +478,7 @@ describe('.pcad の断り方(FR-504、NFR-UX-5)', () => {
 // ---------------------------------------------------------------------------
 
 /** OCCT の `BinTools` が書いたバイト列を模したもの(中身は解釈しないので何でもよい)。 */
-function fakeBrep(seed: number): Uint8Array {
+function fakeBrep(seed: number): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(256);
   for (let index = 0; index < bytes.length; index += 1) {
     bytes[index] = (index * seed) % 256;
@@ -1094,8 +1097,31 @@ describe('.pcada の読み書き(P7 タスク3、FR-601、FR-801、要件§8)', 
     ]);
   }
 
+  function attachedPartDocument(): PartDocument {
+    return { ...importedDocument(), canvases: canvasDocument().canvases };
+  }
+
+  function attachedPartFiles(): ReadonlyMap<string, PartDocument> {
+    return new Map([
+      ['part-1', attachedPartDocument()],
+      ['part-2', createEmptyPartDocument()],
+    ]);
+  }
+
+  function attachedPartAttachments(): ReadonlyMap<string, PcadAttachments> {
+    return new Map([
+      [
+        'part-1',
+        {
+          ...importedAttachments(),
+          canvases: new Map([['canvas-1', fakePng()]]),
+        },
+      ],
+    ]);
+  }
+
   /** 部品 2 つを抱き込んだ `.pcada` のバイト列。 */
-  function writeExample(): Uint8Array {
+  function writeExample(): Promise<Uint8Array> {
     return writePcadaFile(assembly(), {
       savedAt: SAVED_AT,
       partFiles: [partFile('part-1', 'ブラケット.pcad'), partFile('part-2', '台座.pcad')],
@@ -1119,19 +1145,19 @@ describe('.pcada の読み書き(P7 タスク3、FR-601、FR-801、要件§8)', 
     return result.error;
   }
 
-  it('ZIP の署名 PK で始まる', () => {
-    const bytes = writePcadaFile(createAssemblyDocument('組立1'), { savedAt: SAVED_AT });
+  it('ZIP の署名 PK で始まる', async () => {
+    const bytes = await writePcadaFile(createAssemblyDocument('組立1'), { savedAt: SAVED_AT });
     expect(bytes[0]).toBe(0x50);
     expect(bytes[1]).toBe(0x4b);
   });
 
-  it('部品もサムネイルも渡さなければ document.json だけが入る', () => {
-    const bytes = writePcadaFile(createAssemblyDocument('組立1'), { savedAt: SAVED_AT });
+  it('部品もサムネイルも渡さなければ document.json だけが入る', async () => {
+    const bytes = await writePcadaFile(createAssemblyDocument('組立1'), { savedAt: SAVED_AT });
     expect(Object.keys(unzipSync(bytes))).toEqual([PCAD_DOCUMENT_ENTRY]);
   });
 
-  it('エントリの並びは document.json → thumbnail.png → parts/*.json(名前順)', () => {
-    const bytes = writePcadaFile(assembly(), {
+  it('エントリの並びは document.json → thumbnail.png → parts/*.json → 部品添付(各名前順)', async () => {
+    const bytes = await writePcadaFile(assembly(), {
       savedAt: SAVED_AT,
       thumbnailPng: fakePng(),
       // 表へ入れた順(part-2 が先)と ZIP の並び(名前順)が違うことを確かめる。
@@ -1139,21 +1165,26 @@ describe('.pcada の読み書き(P7 タスク3、FR-601、FR-801、要件§8)', 
         ['part-2', createEmptyPartDocument()],
         ['part-1', exampleDocument()],
       ]),
+      partAttachments: attachedPartAttachments(),
     });
     expect(Object.keys(unzipSync(bytes))).toEqual([
       PCAD_DOCUMENT_ENTRY,
       PCAD_THUMBNAIL_ENTRY,
       `${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`,
       `${PCAD_PART_ENTRY_PREFIX}part-2${PCAD_PART_ENTRY_SUFFIX}`,
+      `${PCAD_PART_ENTRY_PREFIX}part-1/${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY}`,
+      `${PCAD_PART_ENTRY_PREFIX}part-1/${PCAD_CANVAS_ENTRY_PREFIX}canvas-1${PCAD_CANVAS_ENTRY_SUFFIX}`,
+      `${PCAD_PART_ENTRY_PREFIX}part-1/${PCAD_MESH_ENTRY_PREFIX}mesh-1${PCAD_MESH_ENTRY_SUFFIX}`,
+      `${PCAD_PART_ENTRY_PREFIX}part-1/${PCAD_SHAPE_ENTRY_PREFIX}shape-1${PCAD_SHAPE_ENTRY_SUFFIX}`,
     ]);
   });
 
-  it('同じ文書から 2 回書くとバイト列が完全に一致する(決定性、FIXED_ENTRY_MTIME)', () => {
-    expect(writeExample()).toEqual(writeExample());
+  it('同じ文書から 2 回書くとバイト列が完全に一致する(決定性、FIXED_ENTRY_MTIME)', async () => {
+    expect(await writeExample()).toEqual(await writeExample());
   });
 
-  it('保存時刻を渡さなくても、封筒と抱き込んだ部品の savedAt は同じ値になる', () => {
-    const entries = unzipSync(writePcadaFile(assembly(), { parts: parts() }));
+  it('保存時刻を渡さなくても、封筒と抱き込んだ部品の savedAt は同じ値になる', async () => {
+    const entries = unzipSync(await writePcadaFile(assembly(), { parts: parts() }));
     const savedAtOf = (bytes: Uint8Array): unknown => {
       const value: unknown = JSON.parse(strFromU8(bytes));
       return typeof value === 'object' && value !== null ? Reflect.get(value, 'savedAt') : null;
@@ -1165,20 +1196,20 @@ describe('.pcada の読み書き(P7 タスク3、FR-601、FR-801、要件§8)', 
     );
   });
 
-  it('抱き込んだ部品は部品の document.json と同じ文字列(既存の読み手をそのまま使える)', () => {
-    const entries = unzipSync(writeExample());
+  it('抱き込んだ部品は部品の document.json と同じ文字列(既存の読み手をそのまま使える)', async () => {
+    const entries = unzipSync(await writeExample());
     const text = strFromU8(entries[`${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`]);
     expect(text).toBe(serializeDocument(exampleDocument(), { savedAt: SAVED_AT }));
   });
 
-  it('部品 2 つ・素性・サムネイルを往復しても変わらない', () => {
-    const bytes = writePcadaFile(assembly(), {
+  it('部品 2 つ・素性・サムネイルを往復しても変わらない', async () => {
+    const bytes = await writePcadaFile(assembly(), {
       savedAt: SAVED_AT,
       thumbnailPng: fakePng(),
       partFiles: [partFile('part-1', 'ブラケット.pcad'), partFile('part-2', '台座.pcad')],
       parts: parts(),
     });
-    const result = expectPcadaOk(readPcadaFile(bytes));
+    const result = expectPcadaOk(await readPcadaFile(bytes));
     expect(result.document).toEqual(assembly());
     expect(result.savedAt).toBe(SAVED_AT);
     expect(result.partFiles).toEqual([
@@ -1190,19 +1221,189 @@ describe('.pcada の読み書き(P7 タスク3、FR-601、FR-801、要件§8)', 
     expect(result.thumbnailPng).toEqual(fakePng());
   });
 
-  it('サムネイルを入れなければ thumbnailPng は付かない', () => {
-    expect(expectPcadaOk(readPcadaFile(writeExample())).thumbnailPng).toBeUndefined();
+  it('サムネイルを入れなければ thumbnailPng は付かない', async () => {
+    expect(expectPcadaOk(await readPcadaFile(await writeExample())).thumbnailPng).toBeUndefined();
   });
 
-  it('parts/ が空でインスタンスが partRef を指していれば「部品が見つかりません」で断る', () => {
-    const error = expectPcadaError(readPcadaFile(writePcadaFile(assembly(), { savedAt: SAVED_AT })));
+  it('部品の読み込んだ B-rep を名前空間へ抱き込み、同じバイト列で往復する', async () => {
+    const bytes = await writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      parts: attachedPartFiles(),
+      partAttachments: attachedPartAttachments(),
+    });
+    const result = expectPcadaOk(await readPcadaFile(bytes));
+    expect(result.partAttachments.get('part-1')?.shapes.get('shape-1')).toEqual(fakeBrep(7));
+  });
+
+  it('部品の下絵 PNG を名前空間へ抱き込み、同じバイト列で往復する', async () => {
+    const bytes = await writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      parts: attachedPartFiles(),
+      partAttachments: attachedPartAttachments(),
+    });
+    const result = expectPcadaOk(await readPcadaFile(bytes));
+    expect(result.partAttachments.get('part-1')?.canvases.get('canvas-1')).toEqual(fakePng());
+  });
+
+  it('部品の PCM1 メッシュを名前空間へ抱き込み、同じ配列で往復する', async () => {
+    const bytes = await writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      parts: attachedPartFiles(),
+      partAttachments: attachedPartAttachments(),
+    });
+    const result = expectPcadaOk(await readPcadaFile(bytes));
+    expect(result.partAttachments.get('part-1')?.meshes.get('mesh-1')).toEqual(makeMesh(12));
+  });
+
+  it('部品文書が指す添付の実体が無ければ missingField で断る', async () => {
+    const bytes = await writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      parts: new Map([
+        ['part-1', importedDocument()],
+        ['part-2', createEmptyPartDocument()],
+      ]),
+      partAttachments: new Map([['part-1', emptyPcadAttachments()]]),
+    });
+    const error = expectPcadaError(await readPcadaFile(bytes));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('parts/part-1/shapes/shape-1.brep');
+  });
+
+  it('部品添付のバイト列をダイジェスト作成後に変えると missingField で断る', async () => {
+    const entries = unzipSync(
+      await writePcadaFile(assembly(), {
+        savedAt: SAVED_AT,
+        parts: attachedPartFiles(),
+        partAttachments: attachedPartAttachments(),
+      }),
+    );
+    const shapeEntry = `${PCAD_PART_ENTRY_PREFIX}part-1/${PCAD_SHAPE_ENTRY_PREFIX}shape-1${PCAD_SHAPE_ENTRY_SUFFIX}`;
+    entries[shapeEntry] = fakeBrep(13);
+    const error = expectPcadaError(await readPcadaFile(makeZip(entries, 1)));
+    expect(error.code).toBe('missingField');
+    expect(error.message).toContain('添付ダイジェストが一致しません');
+  });
+
+  it('部品添付を含む同じ入力を 2 回書くとバイト列が完全に一致する', async () => {
+    const options = {
+      savedAt: SAVED_AT,
+      parts: attachedPartFiles(),
+      partAttachments: attachedPartAttachments(),
+    };
+    expect(await writePcadaFile(assembly(), options)).toEqual(
+      await writePcadaFile(assembly(), options),
+    );
+  });
+
+  it('部品の B-rep とメッシュも .pcad と同じく deflate が効く', async () => {
+    const attachments = attachedPartAttachments();
+    const withAttachments = await writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      parts: attachedPartFiles(),
+      partAttachments: attachments,
+    });
+    const withoutAttachments = await writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      parts: attachedPartFiles(),
+    });
+    const part = attachments.get('part-1');
+    const rawMesh = part === undefined ? null : encodeImportedMeshBytes(part.meshes.get('mesh-1') ?? makeMesh(0));
+    const rawBytes = (part?.shapes.get('shape-1')?.length ?? 0) + (rawMesh?.length ?? 0);
+    expect(withAttachments.length - withoutAttachments.length).toBeLessThan(rawBytes);
+  });
+
+  it('10 万三角形のメッシュを持つ部品 2 種でも圧縮後 500KB 以内', async () => {
+    const triangleCount = 100_000;
+    const vertexCount = 50_000;
+    const largeMesh = (seed: number): ImportedMeshBytes => {
+      const positions = new Float32Array(vertexCount * 3);
+      const normals = new Float32Array(vertexCount * 3);
+      const indices = new Uint32Array(triangleCount * 3);
+      positions[0] = seed;
+      for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+        normals[vertex * 3 + 2] = 1;
+      }
+      for (let index = 0; index < indices.length; index += 1) {
+        indices[index] = index % 3;
+      }
+      return { positions, normals, indices };
+    };
+    const meshDocument = (ref: string, fileName: string): PartDocument => ({
+      ...createEmptyPartDocument(),
+      solids: [
+        {
+          id: `importedMesh-${ref}`,
+          kind: 'importedMesh',
+          name: fileName,
+          suppressed: false,
+          meshRef: ref,
+          source: { format: 'stl', fileName, unit: 'mm', byteLength: 2_400_012 },
+          triangleCount,
+        },
+      ],
+    });
+    const bytes = await writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      parts: new Map([
+        ['part-1', meshDocument('mesh-1', 'a.stl')],
+        ['part-2', meshDocument('mesh-2', 'b.stl')],
+      ]),
+      partAttachments: new Map([
+        ['part-1', { ...emptyPcadAttachments(), meshes: new Map([['mesh-1', largeMesh(1)]]) }],
+        ['part-2', { ...emptyPcadAttachments(), meshes: new Map([['mesh-2', largeMesh(2)]]) }],
+      ]),
+    });
+    console.log(`[実測] 10 万三角形 × 2 部品の .pcada: ${String(bytes.length)} バイト`);
+    expect(bytes.length).toBeLessThanOrEqual(500 * 1024);
+    const result = expectPcadaOk(await readPcadaFile(bytes));
+    expect(result.partAttachments.get('part-2')?.meshes.get('mesh-2')?.indices.length).toBe(
+      triangleCount * 3,
+    );
+  });
+
+  it('共通の展開量上限は parts/<ref>/shapes にも効く', async () => {
+    const largeShape = new Uint8Array(4_096);
+    largeShape.fill(65);
+    const bytes = await writePcadaFile(assembly(), {
+      savedAt: SAVED_AT,
+      parts: new Map([
+        ['part-1', createEmptyPartDocument()],
+        ['part-2', createEmptyPartDocument()],
+      ]),
+      partAttachments: new Map([
+        ['part-1', { ...emptyPcadAttachments(), shapes: new Map([['shape-1', largeShape]]) }],
+      ]),
+    });
+    const entries = unzipSync(bytes);
+    const beforeShape =
+      entries[PCAD_DOCUMENT_ENTRY].length +
+      entries[`${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`].length +
+      entries[`${PCAD_PART_ENTRY_PREFIX}part-2${PCAD_PART_ENTRY_SUFFIX}`].length +
+      entries[`${PCAD_PART_ENTRY_PREFIX}part-1/${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY}`].length;
+    const error = expectPcadaError(
+      await readPcadaFile(bytes, {
+        limits: {
+          archiveCompressedBytes: bytes.length + 1,
+          archiveEntryCount: IO_LIMITS.archiveEntryCount,
+          archiveEntryExpandedBytes: IO_LIMITS.archiveEntryExpandedBytes,
+          archiveTotalExpandedBytes: beforeShape + 1_000,
+        },
+      }),
+    );
+    expect(error.code).toBe('notZip');
+    expect(error.message).toBe(ARCHIVE_TOO_LARGE_MESSAGE);
+  });
+
+  it('parts/ が空でインスタンスが partRef を指していれば「部品が見つかりません」で断る', async () => {
+    const bytes = await writePcadaFile(assembly(), { savedAt: SAVED_AT });
+    const error = expectPcadaError(await readPcadaFile(bytes));
     expect(error.code).toBe('missingField');
     expect(error.message).toContain('部品が見つかりません');
     expect(error.message).toContain(`${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`);
   });
 
-  it('抱き込んだ部品文書が壊れていれば、エントリ名を添えて断る(コードは中身の理由のまま)', () => {
-    const entries = unzipSync(writeExample());
+  it('抱き込んだ部品文書が壊れていれば、エントリ名を添えて断る(コードは中身の理由のまま)', async () => {
+    const entries = unzipSync(await writeExample());
     const broken: Record<string, Uint8Array> = {};
     for (const [name, content] of Object.entries(entries)) {
       broken[name] =
@@ -1210,37 +1411,37 @@ describe('.pcada の読み書き(P7 タスク3、FR-601、FR-801、要件§8)', 
           ? strToU8(strFromU8(content).replace('"sketches"', '"sketchez"'))
           : content;
     }
-    const error = expectPcadaError(readPcadaFile(makeZip(broken, 1)));
+    const error = expectPcadaError(await readPcadaFile(makeZip(broken, 1)));
     expect(error.code).toBe('missingField');
     expect(error.message).toContain(`${PCAD_PART_ENTRY_PREFIX}part-1${PCAD_PART_ENTRY_SUFFIX}`);
     expect(error.message).toContain('document.sketches');
   });
 
-  it('知らないエントリは読み飛ばす(parts/ の入れ子は部品として扱わない)', () => {
-    const withExtra: Record<string, Uint8Array> = { ...unzipSync(writeExample()) };
+  it('知らないエントリは読み飛ばす(parts/ の入れ子は部品として扱わない)', async () => {
+    const withExtra: Record<string, Uint8Array> = { ...unzipSync(await writeExample()) };
     withExtra['notes.txt'] = strToU8('メモ');
     withExtra[`${PCAD_PART_ENTRY_PREFIX}nested/part-3${PCAD_PART_ENTRY_SUFFIX}`] = strToU8('{}');
-    const result = expectPcadaOk(readPcadaFile(makeZip(withExtra, 1)));
+    const result = expectPcadaOk(await readPcadaFile(makeZip(withExtra, 1)));
     expect([...result.parts.keys()].sort()).toEqual(['part-1', 'part-2']);
   });
 
-  it('ZIP でなければ notZip、document.json が無ければ missingDocument', () => {
-    expect(expectPcadaError(readPcadaFile(strToU8('これは ZIP ではない'))).code).toBe('notZip');
-    expect(expectPcadaError(readPcadaFile(makeZip({ 'a.txt': strToU8('x') }, 0))).code).toBe(
+  it('ZIP でなければ notZip、document.json が無ければ missingDocument', async () => {
+    expect(expectPcadaError(await readPcadaFile(strToU8('これは ZIP ではない'))).code).toBe('notZip');
+    expect(expectPcadaError(await readPcadaFile(makeZip({ 'a.txt': strToU8('x') }, 0))).code).toBe(
       'missingDocument',
     );
   });
 
-  it('部品の .pcad を .pcada として読むと種別で断る(取り違えない)', () => {
+  it('部品の .pcad を .pcada として読むと種別で断る(取り違えない)', async () => {
     const error = expectPcadaError(
-      readPcadaFile(writePcadFile(createEmptyPartDocument(), { savedAt: SAVED_AT })),
+      await readPcadaFile(writePcadFile(createEmptyPartDocument(), { savedAt: SAVED_AT })),
     );
     expect(error.code).toBe('unsupportedKind');
     expect(error.message).toContain('アセンブリではありません');
   });
 
-  it('アセンブリの .pcada を .pcad として読むと種別で断る(取り違えない)', () => {
-    const error = expectError(readPcadFile(writeExample()));
+  it('アセンブリの .pcada を .pcad として読むと種別で断る(取り違えない)', async () => {
+    const error = expectError(readPcadFile(await writeExample()));
     expect(error.code).toBe('unsupportedKind');
     expect(error.message).toContain('assembly');
   });

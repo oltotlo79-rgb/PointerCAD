@@ -67,6 +67,23 @@ describe('readArchive', () => {
     expect([...result.entries.keys()]).toEqual(['document.json']);
   });
 
+  it('parts/ 接頭辞で許可した部品添付も展開量の累積へ数える', () => {
+    const bytes = zipSync({
+      'document.json': strToU8('{}'),
+      'parts/part-1/shapes/shape-1.brep': new Uint8Array(2_000),
+    });
+    const result = readArchive(bytes, {
+      shouldExtract: (name) => name === 'document.json' || name.startsWith('parts/'),
+      limits: { ...TEST_LIMITS, archiveTotalExpandedBytes: 1_000 },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.kind).toBe('totalExpanded');
+    expect(result.error.entryName).toBe('parts/part-1/shapes/shape-1.brep');
+  });
+
   it('小さな圧縮入力が 1 エントリの展開後上限を超えると途中で理由を返して断る', () => {
     const expanded = new Uint8Array(2_000_000);
     expanded.fill(65);

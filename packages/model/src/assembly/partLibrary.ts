@@ -4,8 +4,8 @@
  *
  * 要件§8 は「参照部品はアセンブリファイルに相対パス+内容ハッシュで記録(欠損時は警告)」と
  * 定める。その 3 つ(どのファイルから・いつ・どの中身を取り込んだか)を持つのがこのファイルで、
- * **部品の形(B-rep・メッシュ)は 1 バイトも持たない**(§0.a-0.4。形は開くたびに部品ごとに
- * 1 回だけ作り直し、全インスタンスで使い回す)。
+ * **再導出できる部品の形は持たない**が、読み込んだ B-rep・メッシュと下絵は原本なので
+ * 部品文書と同じ `partRef` の名前空間で抱き込む(P7 タスク49)。
  *
  * **抱き込んだ文書はアセンブリ文書の中に入らない。** `AssemblyDocument` が持つのは
  * 「どの `partRef` を置いたか」(`ComponentSource`)だけで、文書そのものと素性は
@@ -40,13 +40,34 @@ export interface EmbeddedPartFile {
   readonly path: string;
   /** 抱き込んだ文書の内容ハッシュ(`contentHashOf` が作る)。 */
   readonly contentHash: string;
+  /** 添付だけの内容ハッシュ(`attachmentsDigestOf` が作る)。文書のハッシュとは混ぜない。 */
+  readonly attachmentsDigest: string;
   /** 取り込んだ時刻(ISO 8601、UTC)。 */
   readonly importedAt: string;
 }
 
+/** 抱き込んだ読み込みメッシュ。io の `ImportedMeshBytes` と構造で同じ。 */
+export interface EmbeddedPartMesh {
+  readonly positions: Float32Array;
+  readonly normals: Float32Array;
+  readonly indices: Uint32Array;
+}
+
+/** 部品文書と一緒に抱き込む、再導出できない 3 種の添付。 */
+export interface EmbeddedPartAttachments {
+  readonly shapes: ReadonlyMap<string, Uint8Array>;
+  readonly meshes: ReadonlyMap<string, EmbeddedPartMesh>;
+  readonly canvases: ReadonlyMap<string, Uint8Array>;
+}
+
+/** 添付を持たない部品へ使う新しい空の表。 */
+export function emptyEmbeddedPartAttachments(): EmbeddedPartAttachments {
+  return { shapes: new Map(), meshes: new Map(), canvases: new Map() };
+}
+
 /**
- * 抱き込んだ部品の一式。`partFiles`(素性の並び)と `parts`(`ref` → 文書)の対で、
- * **同じ `ref` の組が必ず両方にそろっている**ことをこのファイルの関数が守る。
+ * 抱き込んだ部品の一式。`partFiles`(素性の並び)・`parts`(`ref` → 文書)・
+ * `attachments`(`ref` → 添付)で、**同じ `ref` の組が必ず 3 つにそろう**ことを守る。
  *
  * 並び順は取り込んだ順のまま保つ(`.pcada` へ書くときの並べ替えは io が名前順で行うので、
  * ここで並べ替えると同じことを 2 か所で決めることになる)。
@@ -54,16 +75,101 @@ export interface EmbeddedPartFile {
 export interface PartLibrary {
   readonly partFiles: readonly EmbeddedPartFile[];
   readonly parts: ReadonlyMap<string, PartDocument>;
+  readonly attachments: ReadonlyMap<string, EmbeddedPartAttachments>;
 }
 
 /** 何も抱き込んでいない一式。新しいアセンブリはここから始まる。 */
-export const EMPTY_PART_LIBRARY: PartLibrary = { partFiles: [], parts: new Map() };
+export const EMPTY_PART_LIBRARY: PartLibrary = {
+  partFiles: [],
+  parts: new Map(),
+  attachments: new Map(),
+};
 
 /** 抱き込んだ部品文書の `ref` の接頭辞。`part-1`、`part-2`、…(§2.2 の例と同じ綴り)。 */
 export const PART_REF_PREFIX = 'part-';
 
 /** 内容ハッシュの計算に使う要約の種類。**変えると既存のファイルの `contentHash` が全部変わる。** */
 export const CONTENT_HASH_ALGORITHM = 'SHA-256';
+
+/** 添付ダイジェストの入力を将来変えるときに判別できる、固定の領域名。 */
+const ATTACHMENTS_DIGEST_DOMAIN = 'PointerCAD-PartAttachments-1';
+const LITTLE_ENDIAN = true;
+
+function sortedEntries<T>(table: ReadonlyMap<string, T>): readonly (readonly [string, T])[] {
+  return [...table].sort((left, right) =>
+    left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0,
+  );
+}
+
+function uint32Bytes(value: number): Uint8Array {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setUint32(0, value, LITTLE_ENDIAN);
+  return bytes;
+}
+
+function meshBytesForDigest(mesh: EmbeddedPartMesh): Uint8Array {
+  const bytes = new Uint8Array(
+    8 + mesh.positions.byteLength + mesh.normals.byteLength + mesh.indices.byteLength,
+  );
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, mesh.positions.length, LITTLE_ENDIAN);
+  view.setUint32(4, mesh.indices.length, LITTLE_ENDIAN);
+  let offset = 8;
+  for (const value of mesh.positions) {
+    view.setFloat32(offset, value, LITTLE_ENDIAN);
+    offset += 4;
+  }
+  for (const value of mesh.normals) {
+    view.setFloat32(offset, value, LITTLE_ENDIAN);
+    offset += 4;
+  }
+  for (const value of mesh.indices) {
+    view.setUint32(offset, value, LITTLE_ENDIAN);
+    offset += 4;
+  }
+  return bytes;
+}
+
+function appendDigestEntry(
+  chunks: Uint8Array[],
+  kind: string,
+  ref: string,
+  bytes: Uint8Array,
+): void {
+  const encoder = new TextEncoder();
+  const kindBytes = encoder.encode(kind);
+  const refBytes = encoder.encode(ref);
+  chunks.push(uint32Bytes(kindBytes.length), kindBytes);
+  chunks.push(uint32Bytes(refBytes.length), refBytes);
+  chunks.push(uint32Bytes(bytes.length), bytes);
+}
+
+/** 添付を名前順・固定 endian の 1 本のバイト列へする。Map の挿入順には依存しない。 */
+function canonicalAttachmentsBytes(
+  attachments: EmbeddedPartAttachments,
+): Uint8Array<ArrayBuffer> {
+  const chunks: Uint8Array[] = [new TextEncoder().encode(ATTACHMENTS_DIGEST_DOMAIN)];
+  for (const [ref, bytes] of sortedEntries(attachments.shapes)) {
+    appendDigestEntry(chunks, 'shape', ref, bytes);
+  }
+  for (const [ref, mesh] of sortedEntries(attachments.meshes)) {
+    appendDigestEntry(chunks, 'mesh', ref, meshBytesForDigest(mesh));
+  }
+  for (const [ref, bytes] of sortedEntries(attachments.canvases)) {
+    appendDigestEntry(chunks, 'canvas', ref, bytes);
+  }
+  let byteLength = 0;
+  for (const chunk of chunks) {
+    byteLength += chunk.byteLength;
+  }
+  const joined = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return joined;
+}
 
 /*
   決定的な文字列化。
@@ -169,6 +275,17 @@ export async function contentHashOf(document: PartDocument): Promise<string> {
   return hexTextOf(new Uint8Array(digest));
 }
 
+/** 文書とは別に持つ添付の SHA-256。参照名・種類・バイト列のどれが変わっても変化する。 */
+export async function attachmentsDigestOf(
+  attachments: EmbeddedPartAttachments,
+): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    CONTENT_HASH_ALGORITHM,
+    canonicalAttachmentsBytes(attachments),
+  );
+  return hexTextOf(new Uint8Array(digest));
+}
+
 /** 次に抱き込む部品の `ref`。既存の最大連番 + 1 で、**消しても番号を再利用しない**(§0.a-0.19)。 */
 export function nextPartRef(library: PartLibrary): string {
   return nextSerialId(
@@ -182,6 +299,14 @@ export function partOf(library: PartLibrary, partRef: string): PartDocument | un
   return library.parts.get(partRef);
 }
 
+/** 抱き込んだ部品の添付を取り出す。知らない `ref` なら `undefined`。 */
+export function partAttachmentsOf(
+  library: PartLibrary,
+  partRef: string,
+): EmbeddedPartAttachments | undefined {
+  return library.attachments.get(partRef);
+}
+
 /** 抱き込んだ部品の素性を取り出す。知らない `ref` なら `undefined`。 */
 export function partFileOf(library: PartLibrary, partRef: string): EmbeddedPartFile | undefined {
   return library.partFiles.find((partFile) => partFile.ref === partRef);
@@ -191,6 +316,8 @@ export function partFileOf(library: PartLibrary, partRef: string): EmbeddedPartF
 export interface EmbedPartOptions {
   /** 取り込んだ時刻(ISO 8601、UTC)。 */
   readonly importedAt?: string;
+  /** 部品文書が指す添付。渡さなければ 3 種とも空として抱き込む。 */
+  readonly attachments?: EmbeddedPartAttachments;
 }
 
 /** `embedPart` の結果。`partRef` は**置く側(`ComponentSource`)がそのまま使う名前**。 */
@@ -207,7 +334,7 @@ export interface EmbedPartResult {
 /**
  * 部品文書を抱き込む(FR-601、要件§8)。
  *
- * **同じ部品文書を 2 回抱き込まない。** 内容ハッシュが同じものがすでにあれば、その
+ * **同じ部品文書と添付を 2 回抱き込まない。** 2 つのハッシュが同じものがすでにあれば、その
  * `partRef` を返して一式は増やさない(同じ部品を 2 個置いても形は 1 つ、§0.a-0.8)。
  * このとき**取り込み元のファイル名と相対パスは最初のものを残す**——中身が同じなら
  * どちらから取り込んでも開いた結果は変わらず、後から来たほうで上書きすると、
@@ -221,13 +348,20 @@ export async function embedPart(
   options: EmbedPartOptions = {},
 ): Promise<EmbedPartResult> {
   const contentHash = await contentHashOf(document);
-  const existing = library.partFiles.find((partFile) => partFile.contentHash === contentHash);
+  const attachments = options.attachments ?? emptyEmbeddedPartAttachments();
+  const attachmentsDigest = await attachmentsDigestOf(attachments);
+  const existing = library.partFiles.find(
+    (partFile) =>
+      partFile.contentHash === contentHash && partFile.attachmentsDigest === attachmentsDigest,
+  );
   if (existing !== undefined) {
     return { library, partRef: existing.ref, reused: true };
   }
   const ref = nextPartRef(library);
   const parts = new Map(library.parts);
   parts.set(ref, document);
+  const attachmentTable = new Map(library.attachments);
+  attachmentTable.set(ref, attachments);
   return {
     library: {
       partFiles: [
@@ -237,10 +371,12 @@ export async function embedPart(
           fileName,
           path,
           contentHash,
+          attachmentsDigest,
           importedAt: options.importedAt ?? new Date().toISOString(),
         },
       ],
       parts,
+      attachments: attachmentTable,
     },
     partRef: ref,
     reused: false,
@@ -251,7 +387,7 @@ export async function embedPart(
  * 抱き込んだ部品文書を差し替える(§0.a-0.11。「部品を別窓で直して戻る」と、
  * 元のファイルが更新されていたときの「取り込み直す」の 2 つがこれを通る)。
  *
- * **内容ハッシュと取り込み時刻を更新する**(中身が変わったのだから、どちらも新しくなる)。
+ * **文書ハッシュ・添付ダイジェスト・取り込み時刻を更新する**(中身が変わったため)。
  * ファイル名と相対パスは変えない——差し替えても「どのファイルから取り込んだか」は同じである。
  *
  * 知らない `ref` を渡されたら**何もせず元の一式を返す**(例外を投げない。NFR-RE-1)。
@@ -271,14 +407,22 @@ export async function replacePartDocument(
     return library;
   }
   const contentHash = await contentHashOf(next);
+  const attachments =
+    options.attachments ?? library.attachments.get(partRef) ?? emptyEmbeddedPartAttachments();
+  const attachmentsDigest = await attachmentsDigestOf(attachments);
   const importedAt = options.importedAt ?? new Date().toISOString();
   const parts = new Map(library.parts);
   parts.set(partRef, next);
+  const attachmentTable = new Map(library.attachments);
+  attachmentTable.set(partRef, attachments);
   return {
     partFiles: library.partFiles.map((partFile) =>
-      partFile.ref === partRef ? { ...partFile, contentHash, importedAt } : partFile,
+      partFile.ref === partRef
+        ? { ...partFile, contentHash, attachmentsDigest, importedAt }
+        : partFile,
     ),
     parts,
+    attachments: attachmentTable,
   };
 }
 

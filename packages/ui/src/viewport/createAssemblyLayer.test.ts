@@ -30,6 +30,80 @@ import {
   type AssemblyGeometryInput,
 } from './createAssemblyLayer.js';
 import { DEFAULT_THEME_COLORS } from './themeColors.js';
+import type { AppearanceInput } from './buildSolidGeometry.js';
+
+describe('インスタンス → 部品の面/ボディ → 既定の外観', () => {
+  const red: AppearanceSpec = { ...DEFAULT_APPEARANCE, color: '#ff0000' };
+  const blue: AppearanceSpec = { ...DEFAULT_APPEARANCE, color: '#0000ff' };
+  const green: AppearanceSpec = { ...DEFAULT_APPEARANCE, color: '#00ff00' };
+  const appearances: AppearanceInput = {
+    defaultAppearance: DEFAULT_APPEARANCE,
+    byBody: new Map([['extrude-1', { bodyAppearance: red, faceAppearances: new Map([[0, blue]]) }]]),
+  };
+
+  function meshColors(root: THREE.Object3D): string[] {
+    const result: string[] = [];
+    root.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const materials: unknown = object.material;
+      if (materials instanceof THREE.MeshStandardMaterial) result.push(materials.color.getHexString());
+      else if (Array.isArray(materials)) {
+        for (const material of materials) {
+          if (material instanceof THREE.MeshStandardMaterial) result.push(material.color.getHexString());
+        }
+      }
+    });
+    return result;
+  }
+
+  it('上書きありなら部品の面/ボディ外観より優先し、形は共有する', () => {
+    const input = sameParts(2);
+    const layer = createAssemblyLayer();
+    try {
+      layer.update(buildAssemblyGeometry({
+        ...input, components: input.components.map((component) => ({ ...component, appearance: green })),
+        appearances: new Map([['part-1', appearances]]),
+      }), 'shaded');
+      expect(meshColors(layer.group)).toEqual(['00ff00', '00ff00']);
+      expect(meshGeometriesOf(layer.group).size).toBe(1);
+    } finally { layer.dispose(); }
+  });
+
+  it('上書き無しなら部品の面とボディの材質を継承する', () => {
+    const layer = createAssemblyLayer();
+    try {
+      layer.update(buildAssemblyGeometry({
+        ...sameParts(1),
+        bodies: new Map([['part-1', [makeBody('extrude-1'), makeBody('extrude-2')]]]),
+        appearances: new Map([['part-1', {
+          ...appearances,
+          byBody: new Map([...appearances.byBody, ['extrude-2', {
+            bodyAppearance: red, faceAppearances: new Map<number, AppearanceSpec>(),
+          }]]),
+        }]]),
+      }), 'shaded');
+      expect(meshColors(layer.group)).toEqual(['ff0000', '0000ff', 'ff0000']);
+      const groups: unknown[] = [];
+      layer.group.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.geometry instanceof THREE.BufferGeometry) {
+          groups.push(object.geometry.groups);
+        }
+      });
+      expect(groups).toEqual([
+        [{ start: 0, count: 3, materialIndex: 1 }],
+        [{ start: 0, count: 3, materialIndex: 0 }],
+      ]);
+    } finally { layer.dispose(); }
+  });
+
+  it('外観の指定が無ければ既定のテーマ色を使う', () => {
+    const layer = createAssemblyLayer();
+    try {
+      layer.update(buildAssemblyGeometry(sameParts(1)), 'shaded');
+      expect(meshColors(layer.group)).toEqual([DEFAULT_THEME_COLORS.solid.toString(16).padStart(6, '0')]);
+    } finally { layer.dispose(); }
+  });
+});
 
 /** 1 コマぶんの予算(60fps、NFR-PF-1)。 */
 const FRAME_BUDGET_MS = 16;
@@ -268,12 +342,12 @@ describe('buildAssemblyGeometry(仕分け、§0.a-0.4)', () => {
     ]);
   });
 
-  it('色分けを割り当てていない部品は既定の外観になる(FR-605)', () => {
+  it('色分け未指定は継承として保持し、指定された上書きはそのまま渡す(FR-605)', () => {
     const painted: AppearanceSpec = { ...DEFAULT_APPEARANCE, preset: 'custom', color: '#ff0000' };
     const input = sameParts(2);
     const components = [input.components[0], makeComponent('component-2', { appearance: painted })];
     const bundle = buildAssemblyGeometry({ ...input, components });
-    expect(bundle.instances[0].appearance).toBe(DEFAULT_APPEARANCE);
+    expect(bundle.instances[0].appearance).toBeUndefined();
     expect(bundle.instances[1].appearance).toBe(painted);
   });
 });

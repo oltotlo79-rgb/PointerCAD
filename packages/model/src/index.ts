@@ -819,6 +819,7 @@ export {
 export { importedShapeOf, type ImportedShape } from './part/types.js';
 export type {
   MonitoredKernelBridge, KernelOperationStatus, KernelOperationCounts,
+  AssemblyKernelBridge, ShapeAvailability,
 } from './kernelBridge.js';
 export {
   createPartDocumentBundle,
@@ -828,3 +829,6 @@ export {
   type PartDocumentBundle,
   type AssemblyDocumentBundle,
 } from './assembly/documentBundle.js';
+export * from './assembly/constraints/mateResiduals.js';
+export * from './assembly/constraints/solveRigid.js';
+export * from './assembly/constraints/solveMates.js';

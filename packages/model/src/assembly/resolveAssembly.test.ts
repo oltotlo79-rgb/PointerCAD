@@ -10,6 +10,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { Parameter } from '../parameters/types.js';
 import { appendSolid, createEmptyPartDocument } from '../part/createPartDocument.js';
+import { resolvePart } from '../part/resolvePart.js';
 import type { PartDocument, PrimitiveFeature } from '../part/types.js';
 import { absoluteCoordinate } from '../sketch/createSketchDocument.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
@@ -139,6 +140,39 @@ beforeAll(async () => {
 });
 
 describe('部品ごとに 1 回だけ解決する(§0.a-0.4)', () => {
+  it('resolvedPartsを省くと従来どおりlibraryの文書を解決する', () => {
+    const assembly = assemblyWith([componentOf('component-1', partSource('part-1'))]);
+    const result = resolveAssembly(assembly, { library: library3 });
+    expect(result.parts.get('part-1')).toEqual(resolvePart(boxPart(expr('10'))));
+  });
+
+  it('resolvedPartsにある鍵はlibraryを引かず、同じ結果を2個で共有する', () => {
+    const part = resolvePart(boxPart(expr('42')));
+    const assembly = assemblyWith([
+      componentOf('component-1', partSource('part-1')),
+      componentOf('component-2', partSource('part-1')),
+    ]);
+    const result = resolveAssembly(assembly, { resolvedParts: new Map([['part-1', part]]) });
+    expect(result.parts.get('part-1')).toBe(part);
+    expect(result.parts.size).toBe(1);
+    expect([...result.partKeys.values()]).toEqual(['part-1', 'part-1']);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('resolvedPartsに無い鍵だけ従来どおりlibraryから解決する', () => {
+    const part = resolvePart(boxPart(expr('42')));
+    const assembly = assemblyWith([
+      componentOf('component-1', partSource('part-1')),
+      componentOf('component-2', partSource('part-2')),
+    ]);
+    const result = resolveAssembly(assembly, {
+      library: library3, resolvedParts: new Map([['part-1', part]]),
+    });
+    expect(result.parts.get('part-1')).toBe(part);
+    expect(result.parts.get('part-2')).toEqual(resolvePart(boxPart(expr('20'))));
+    expect(result.errors).toEqual([]);
+  });
+
   it('同じ部品を 5 個置いても解決は 1 回', async () => {
     const library = await libraryWith(boxPart(expr('10')));
     const assembly = assemblyWith([

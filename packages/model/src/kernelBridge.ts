@@ -12,6 +12,7 @@ import {
   DEFAULT_LINEAR_DEFLECTION,
   makeSketchChamfer,
   makeSketchFillet,
+  type createKernelApi,
   matchEdge,
   matchFace,
   matchVertex,
@@ -2481,7 +2482,7 @@ type BrokenRace<T> =
 
 interface KernelConnection {
   readonly worker: Worker;
-  readonly remote: Comlink.Remote<KernelApi>;
+  readonly remote: Comlink.Remote<ReturnType<typeof createKernelApi>>;
   readonly waiters: Set<() => void>;
   readonly counts: Record<KernelOperationStatus, number>;
   readonly results: WeakMap<object, KernelOperationStatus>;
@@ -2505,7 +2506,7 @@ function createKernelConnection(
   const worker = createKernelWorker();
   const connection: KernelConnection = {
     worker,
-    remote: Comlink.wrap<KernelApi>(worker),
+    remote: Comlink.wrap<ReturnType<typeof createKernelApi>>(worker),
     waiters: new Set(),
     counts,
     results,
@@ -2607,8 +2608,19 @@ function closeKernelConnection(connection: KernelConnection): void {
   connection.worker.terminate();
 }
 
+/** 部品単位の形の寿命と、再取得が必要な鍵。欠落を通常の計算失敗と混ぜない。 */
+export interface ShapeAvailability {
+  readonly partId: string;
+  readonly missingKeys: readonly string[];
+}
+
 /** 既存のKernelBridge実装・テストダブルへ必須メソッドを増やさないための追加の口。 */
-export interface MonitoredKernelBridge extends KernelBridge {
+export interface AssemblyKernelBridge extends KernelBridge {
+  releasePart(partId: string): Promise<void>;
+  checkShapeAvailability(partId: string, bodyKeys: readonly string[]): Promise<ShapeAvailability>;
+}
+
+export interface MonitoredKernelBridge extends AssemblyKernelBridge {
   pendingWaiters(): number;
   operationCounts(): KernelOperationCounts;
   pendingCallbacks(): number;
@@ -2650,6 +2662,18 @@ export function createKernelBridge(): MonitoredKernelBridge {
       (typeof result === 'object' && result !== null) || typeof result === 'function'
         ? results.get(result) : undefined,
     pendingCallbacks: () => [...callbackScopes].reduce((sum, scope) => sum + scope.size(), 0),
+    async releasePart(partId): Promise<void> {
+      const active = connection;
+      return raceWithBroken(active, () => active.remote.releasePart(partId), () => undefined);
+    },
+    async checkShapeAvailability(partId, bodyKeys): Promise<ShapeAvailability> {
+      const active = connection;
+      return raceWithBroken(
+        active,
+        () => active.remote.checkShapeAvailability(partId, bodyKeys),
+        () => ({ partId, missingKeys: [...new Set(bodyKeys)] }),
+      );
+    },
     async tessellateSketchFaces(faces): Promise<SketchTessellationOutcome> {
       if (faces.length === 0) {
         return { mesh: { faces: [] }, failures: [] };
@@ -2872,6 +2896,13 @@ export function createKernelBridge(): MonitoredKernelBridge {
   };
 }
 
+type PartLifetimeApi = KernelApi & Pick<AssemblyKernelBridge, 'releasePart' | 'checkShapeAvailability'>;
+
+function hasPartLifetime(api: KernelApi): api is PartLifetimeApi {
+  return 'releasePart' in api && typeof api.releasePart === 'function' &&
+    'checkShapeAvailability' in api && typeof api.checkShapeAvailability === 'function';
+}
+
 /**
  * Worker を通さず、同じプロセスの `KernelApi` へ直につなぐ橋(P4 タスク25)。
  *
@@ -2883,8 +2914,15 @@ export function createKernelBridge(): MonitoredKernelBridge {
  * Worker が無いので壊れの検知・作り直し(§2.9)は持たない。`dispose` も何もしない
  * (形状キャッシュは渡された `KernelApi` の持ち物で、寿命は呼び出し側が決める)。
  */
+export function createDirectKernelBridge(api: PartLifetimeApi): AssemblyKernelBridge;
+export function createDirectKernelBridge(api: KernelApi): KernelBridge;
 export function createDirectKernelBridge(api: KernelApi): KernelBridge {
   return {
+    ...(hasPartLifetime(api) ? {
+      releasePart: (partId: string) => api.releasePart(partId),
+      checkShapeAvailability: (partId: string, bodyKeys: readonly string[]) =>
+        api.checkShapeAvailability(partId, bodyKeys),
+    } : {}),
     async tessellateSketchFaces(faces): Promise<SketchTessellationOutcome> {
       if (faces.length === 0) {
         return { mesh: { faces: [] }, failures: [] };

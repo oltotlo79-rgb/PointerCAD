@@ -235,6 +235,20 @@ describe('同じWorker接続で異なるSTEP原本を持つ2文書を交互に�
 });
 
 describe('部品の識別子を kernel へ素通しする', () => {
+  it('直接の橋も部品の解放と構造化した欠落確認を同じAPIへ渡す', async () => {
+    const api = createKernelApi(() => Promise.reject(new Error('OCCTは使わない')));
+    const release = vi.spyOn(api, 'releasePart');
+    const check = vi.spyOn(api, 'checkShapeAvailability');
+    const bridge = createDirectKernelBridge(api);
+    await expect(bridge.checkShapeAvailability('part-2', ['shape-b'])).resolves.toEqual({
+      partId: 'part-2', missingKeys: ['shape-b'],
+    });
+    await bridge.releasePart('part-2');
+    expect(check).toHaveBeenCalledWith('part-2', ['shape-b']);
+    expect(release).toHaveBeenCalledWith('part-2');
+    bridge.dispose();
+  });
+
   it.each([undefined, 'part:library-a'])('再計算・全書き出し形式・点検へ partId=%s を渡す', async (partId) => {
     const api = createKernelApi(() => Promise.reject(new Error('OCCT はこの検査では起動しない')));
     const recompute = vi.spyOn(api, 'recomputeSolids').mockResolvedValue({
@@ -274,6 +288,59 @@ describe('部品の識別子を kernel へ素通しする', () => {
 describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', () => {
   beforeEach(() => {
     silentWorkers.clear();
+  });
+
+  it('releasePartの成功後は待機登録が0', async () => {
+    silentWorkers.respondWith(undefined);
+    const bridge = createKernelBridge();
+    try {
+      await bridge.releasePart('part-2');
+      expect(bridge.pendingWaiters()).toBe(0);
+      expect(bridge.operationCounts().success).toBe(1);
+    } finally { bridge.dispose(); }
+  });
+
+  it('releasePartの拒否後も待機登録が0', async () => {
+    silentWorkers.rejectWith('release failed');
+    const bridge = createKernelBridge();
+    try {
+      await expect(bridge.releasePart('part-2')).rejects.toThrow('release failed');
+      expect(bridge.pendingWaiters()).toBe(0);
+      expect(bridge.operationCounts().failed).toBe(1);
+    } finally { bridge.dispose(); }
+  });
+
+  it.each(['dispose', 'broken'] as const)('releasePartを%sで決着させる', async (ending) => {
+    const bridge = createKernelBridge();
+    const pending = bridge.releasePart('part-2');
+    expect(bridge.pendingWaiters()).toBe(1);
+    if (ending === 'dispose') bridge.dispose();
+    else silentWorkers.breakCurrent();
+    await pending;
+    expect(bridge.pendingWaiters()).toBe(0);
+    expect(bridge.operationCounts()[ending === 'dispose' ? 'cancelled' : 'workerBroken']).toBe(1);
+    bridge.dispose();
+  });
+
+  it('欠落のpartIdとmissingKeysを構造化したまま公開する', async () => {
+    silentWorkers.respondWith({ partId: 'part-2', missingKeys: ['shape-b'] });
+    const bridge = createKernelBridge();
+    try {
+      const result = await bridge.checkShapeAvailability('part-2', ['shape-a', 'shape-b']);
+      expect(result).toEqual({ partId: 'part-2', missingKeys: ['shape-b'] });
+      expect(bridge.pendingWaiters()).toBe(0);
+    } finally { bridge.dispose(); }
+  });
+
+  it('欠落確認中の破損は全鍵の再取得を通知し、永遠に待たない', async () => {
+    const bridge = createKernelBridge();
+    const pending = bridge.checkShapeAvailability('part-2', ['shape-b', 'shape-b']);
+    silentWorkers.breakCurrent();
+    const result = await pending;
+    expect(result).toEqual({ partId: 'part-2', missingKeys: ['shape-b'] });
+    expect(bridge.operationStatus(result)).toBe('workerBroken');
+    expect(bridge.pendingWaiters()).toBe(0);
+    bridge.dispose();
   });
 
   it('RPC を25回成功させた後の破損待機登録数は0', async () => {

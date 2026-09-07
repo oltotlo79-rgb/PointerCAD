@@ -90,6 +90,8 @@ export interface ResolvedAssembly {
 
 /** 解決に添える設定。どれも省略できる。 */
 export interface ResolveAssemblyOptions {
+  /** 再計算済みの部品。指定された鍵は解決し直さず、その結果を共有する。 */
+  readonly resolvedParts?: ReadonlyMap<string, ResolvedPart>;
   /**
    * 抱き込んだ部品の一式(`partLibrary.ts`)。**アセンブリ文書と対で持ち回るもの**で、
    * 省くと部品を 1 つも引けない(置いた部品はすべて「部品が見つかりません。」になる)。
@@ -273,6 +275,12 @@ export function resolveAssembly(
     const key = partKeyOf(component.source);
     if (parts.has(key)) {
       // 2 個目以降。**解決し直さない**(§0.a-0.4)。形は 1 つを全インスタンスで使い回す。
+      partKeys.set(component.id, key);
+      continue;
+    }
+    const resolved = options.resolvedParts?.get(key);
+    if (resolved !== undefined) {
+      parts.set(key, resolved);
       partKeys.set(component.id, key);
       continue;
     }

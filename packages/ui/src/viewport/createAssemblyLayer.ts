@@ -37,7 +37,7 @@ import {
   type PatternTextureSource,
 } from '../appearance/createAppearanceMaterial.js';
 import type { DisplayStyle } from '../store/viewSlice.js';
-import { buildSolidGeometry, solidEmphasisOf, type SolidEmphasis } from './buildSolidGeometry.js';
+import { buildSolidGeometry, solidEmphasisOf, type AppearanceInput, type SolidEmphasis } from './buildSolidGeometry.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +55,7 @@ import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 export interface AssemblyPartShape {
   readonly partKey: string;
   readonly bodies: readonly SolidBody[];
+  readonly appearances?: AppearanceInput;
 }
 
 /** 置いた部品 1 つ(インスタンス)の描き方。形は持たず、どの鍵の形を使うかだけを指す。 */
@@ -68,8 +69,8 @@ export interface AssemblyInstanceDraw {
   /** 表示/非表示(FR-605)。**偽でも形は捨てない**(入切のたびに作り直さない)。 */
   readonly visible: boolean;
   readonly emphasis: SolidEmphasis;
-  /** 組図での色分け(FR-605)。割り当てが無ければ既定の外観。 */
-  readonly appearance: AppearanceSpec;
+  /** 組図での上書き。無ければ部品の面・ボディ外観を継承する。 */
+  readonly appearance?: AppearanceSpec;
 }
 
 /** 層へ渡す一式。**形は鍵ごとに 1 つ**、配置は置いた数だけ。 */
@@ -94,6 +95,7 @@ export interface AssemblyGeometryInput {
    * **まだ届いていない鍵はここに無い**ので、その部品は描かない(計算中は出ない)。
    */
   readonly bodies: ReadonlyMap<string, readonly SolidBody[]>;
+  readonly appearances?: ReadonlyMap<string, AppearanceInput>;
   /** ホバー中のインスタンスの id(ストアの `hoveredElementId` をそのまま渡してよい)。 */
   readonly hoveredComponentId: string | null;
   /** 選択中の id(ストアの `selection` をそのまま渡してよい)。 */
@@ -130,7 +132,7 @@ export function buildAssemblyGeometry(input: AssemblyGeometryInput): AssemblyGeo
     }
     if (!placed.has(partKey)) {
       placed.add(partKey);
-      parts.push({ partKey, bodies });
+      parts.push({ partKey, bodies, appearances: input.appearances?.get(partKey) });
     }
     instances.push({
       componentId: component.id,
@@ -139,7 +141,7 @@ export function buildAssemblyGeometry(input: AssemblyGeometryInput): AssemblyGeo
       visible: component.visible,
       // 強調の決め方は立体と同じ(選択がホバーより強い)。判定を 2 通りに割らない。
       emphasis: solidEmphasisOf(component.id, input.hoveredComponentId, selected),
-      appearance: component.appearance ?? DEFAULT_APPEARANCE,
+      appearance: component.appearance,
     });
   }
 
@@ -195,12 +197,14 @@ function themedAppearance(spec: AppearanceSpec, solidColor: number): AppearanceS
  */
 interface PartShapeEntry {
   bodies: readonly SolidBody[];
+  appearances: AppearanceInput | undefined;
+  readonly meshAppearances: (readonly AppearanceSpec[])[];
   generation: number;
   readonly meshGeometries: THREE.BufferGeometry[];
   readonly edgeGeometries: THREE.BufferGeometry[];
 }
 
-type AssemblyMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
+type AssemblyMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]>;
 type AssemblyEdges = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
 /** 置いた部品 1 つぶんの入れ物。**形は持たない**(共有の形を指すだけ)。 */
@@ -241,11 +245,10 @@ export interface AssemblyLayer {
 /** 共有の形を 1 部品ぶん作る。**組み立ては立体と同じ純関数**(`buildSolidGeometry`)を通す。 */
 function fillGeometries(entry: PartShapeEntry, bodies: readonly SolidBody[]): void {
   /*
-    強調も外観もここでは要らない(強調はインスタンスごと、色分けは部品ごとに後から当てる)
-    ので、ホバー無し・選択無し・外観無しで組み立てる。**立体になっていないボディを外す
+    強調はインスタンスごと。部品の外観は共有形の面グループに反映する。**立体になっていないボディを外す
     判定と、柄のための箱投影 UV の控え**をそのまま使えるのが、この関数を通す理由である。
   */
-  const bundle = buildSolidGeometry(bodies, null, []);
+  const bundle = buildSolidGeometry(bodies, null, [], entry.appearances);
   for (const draw of bundle.entries) {
     const mesh = new THREE.BufferGeometry();
     mesh.setAttribute('position', new THREE.BufferAttribute(draw.positions, 3));
@@ -253,6 +256,8 @@ function fillGeometries(entry: PartShapeEntry, bodies: readonly SolidBody[]): vo
     // 柄(FR-1108)を貼るための箱投影 UV。控えから返るので作り直しは起きない。
     mesh.setAttribute('uv', new THREE.BufferAttribute(draw.uv, 2));
     mesh.setIndex(new THREE.BufferAttribute(draw.indices, 1));
+    for (const group of draw.groups) mesh.addGroup(group.start, group.count, group.materialIndex);
+    entry.meshAppearances.push(draw.appearances);
     // 包む球は視錐台の絞り込みと当たり判定の粗い絞りに使う。必ず取る。
     mesh.computeBoundingSphere();
     entry.meshGeometries.push(mesh);
@@ -273,6 +278,7 @@ function disposeGeometries(entry: PartShapeEntry): void {
     geometry.dispose();
   }
   entry.meshGeometries.length = 0;
+  entry.meshAppearances.length = 0;
   entry.edgeGeometries.length = 0;
 }
 
@@ -335,6 +341,8 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
       if (entry === undefined) {
         const created: PartShapeEntry = {
           bodies: part.bodies,
+          appearances: part.appearances,
+          meshAppearances: [],
           generation: 1,
           meshGeometries: [],
           edgeGeometries: [],
@@ -343,12 +351,13 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
         partShapes.set(part.partKey, created);
         continue;
       }
-      if (entry.bodies === part.bodies) {
+      if (entry.bodies === part.bodies && entry.appearances === part.appearances) {
         // 配置だけが変わった(形は同じ並び)。**1 バイトも触らない**(NFR-PF-1)。
         continue;
       }
       // 部品を計算し直した。古い形を捨ててから作り直し、版を進めて子の組み直しを促す。
       disposeGeometries(entry);
+      entry.appearances = part.appearances;
       fillGeometries(entry, part.bodies);
       entry.bodies = part.bodies;
       entry.generation += 1;
@@ -407,7 +416,7 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
       instances.set(draw.componentId, entry);
     }
     const material = materialStore.materialFor(
-      themedAppearance(draw.appearance, colors.solid),
+      themedAppearance(draw.appearance ?? shape.meshAppearances[0]?.[0] ?? DEFAULT_APPEARANCE, colors.solid),
       null,
     );
     if (entry.partKey !== draw.partKey || entry.generation !== shape.generation) {
@@ -435,8 +444,16 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
     entry.object.visible = draw.visible;
     entry.object.updateMatrixWorld();
 
-    for (const mesh of entry.meshes) {
-      mesh.material = material;
+    for (const [index, mesh] of entry.meshes.entries()) {
+      const appearances = shape.meshAppearances[index];
+      if (draw.appearance !== undefined || appearances.length === 1) {
+        mesh.material = materialStore.materialFor(
+          themedAppearance(draw.appearance ?? appearances[0], colors.solid), null,
+        );
+      } else {
+        mesh.material = appearances.map((spec) =>
+          materialStore.materialFor(themedAppearance(spec, colors.solid), null));
+      }
     }
     for (const edges of entry.edges) {
       edges.material = edgeMaterials[draw.emphasis];
@@ -469,7 +486,11 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
 
     // いま画面に出ている色だけを残す(テーマの色を当てた後の外観で数える)。
     materialStore.collect(
-      bundle.instances.map((draw) => themedAppearance(draw.appearance, colors.solid)),
+      bundle.instances.flatMap((draw) => {
+        const inherited = partShapes.get(draw.partKey)?.meshAppearances.flat() ?? [DEFAULT_APPEARANCE];
+        return (draw.appearance === undefined ? inherited : [draw.appearance])
+          .map((spec) => themedAppearance(spec, colors.solid));
+      }),
     );
     appearanceDirty = false;
   }

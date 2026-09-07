@@ -26,6 +26,7 @@ import {
   saveFileAsInBrowser,
   saveFileAsThrough,
   withPcadExtension,
+  withPcadaExtension,
   type FileGateway,
   type PickedFile,
 } from './fileGateway.js';
@@ -85,6 +86,35 @@ describe('File System Access API の判定', () => {
 });
 
 describe('ブラウザ用の口', () => {
+  it('assembly の開くは .pcada を選び、token の検証後だけ上書き先になる', async () => {
+    const fake = createSaveTargetOpenScope(['A.pcada']);
+    const gateway = createBrowserFileGateway(fake.scope);
+    const picked = await gateway.openPcad('assembly');
+    expect(picked?.name).toBe('A.pcada');
+    expect(gateway.hasSaveTarget()).toBe(false);
+    if (picked?.saveTargetToken == null) throw new Error('token required');
+    await gateway.confirmSaveTarget?.(picked.saveTargetToken);
+    expect(gateway.hasSaveTarget()).toBe(true);
+  });
+
+  it('一般の開くは両拡張子、assembly の保存は .pcada のフィルタを渡す', async () => {
+    const opened = createFakeOpenScope('a.pcada', Uint8Array.of(1));
+    await createBrowserFileGateway(opened.scope).openPcad('all');
+    expect(opened.options[0].types?.flatMap((type) => Object.values(type.accept).flat())).toEqual(['.pcad', '.pcada']);
+    const saved = createFakeSaveScope('a.pcada');
+    const gateway = createBrowserFileGateway(saved.scope);
+    await gateway.savePcad('a.pcada', Uint8Array.of(1), false, 'assembly');
+    expect(saved.options[0].types?.[0].accept).toEqual({ 'application/octet-stream': ['.pcada'] });
+    expect(withPcadaExtension(' a.PCADA ')).toBe('a.PCADA');
+    expect(withPcadaExtension('a')).toBe('a.pcada');
+  });
+
+  it('assembly の控えの書き出しでは通常の保存先を変えない', async () => {
+    const fake = createFakeSaveScope('recovery.pcada');
+    const gateway = createBrowserFileGateway(fake.scope);
+    expect(await saveFileAsThrough(gateway, 'recovery.pcada', 'pcada', Uint8Array.of(1))).toBe(true);
+    expect(gateway.hasSaveTarget()).toBe(false);
+  });
   it('作った直後は保存先を覚えていない(はじめの保存は必ず場所を聞く)', () => {
     expect(createBrowserFileGateway().hasSaveTarget()).toBe(false);
   });

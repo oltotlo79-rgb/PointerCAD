@@ -18,10 +18,11 @@ import { t, type FileGateway, type PickedFile } from '@pointercad/ui';
  * 何を返すかは確かめられないため。答えの形はこのファイルの中で 1 つずつ見る。
  */
 interface DesktopFileApi {
-  openPcad(): Promise<unknown>;
+  openPcad(kind?: 'part' | 'assembly' | 'all'): Promise<unknown>;
   confirmSaveTarget(token: string): Promise<unknown>;
   clearSaveTarget(): Promise<unknown>;
-  savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean): Promise<unknown>;
+  savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean,
+    kind?: 'part' | 'assembly'): Promise<unknown>;
   hasSaveTarget(): Promise<unknown>;
 }
 
@@ -188,8 +189,8 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
   );
 
   const base: FileGateway = {
-    async openPcad(): Promise<PickedFile | null> {
-      const result: unknown = await api.openPcad();
+    async openPcad(kind): Promise<PickedFile | null> {
+      const result: unknown = await api.openPcad(kind);
       if (result === null || result === undefined) {
         // 取り消された。
         return null;
@@ -221,8 +222,8 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
       void api.clearSaveTarget().catch(() => undefined);
     },
 
-    async savePcad(suggestedName, bytes, saveAs): Promise<string | null> {
-      const result: unknown = await api.savePcad(suggestedName, bytes, saveAs);
+    async savePcad(suggestedName, bytes, saveAs, kind): Promise<string | null> {
+      const result: unknown = await api.savePcad(suggestedName, bytes, saveAs, kind);
       if (result === null || result === undefined) {
         // 取り消された。
         return null;

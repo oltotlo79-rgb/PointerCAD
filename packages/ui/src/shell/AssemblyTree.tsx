@@ -129,6 +129,7 @@ function menuRight(right: number): number {
  */
 export function AssemblyTree(): React.JSX.Element {
   const assembly = useAppStore(activeAssemblyDocument);
+  const resolved = useAppStore((state) => state.assemblyView?.resolved);
   const selection = useAppStore((state) => state.selection);
   const hoveredElementId = useAppStore((state) => state.hoveredElementId);
   const [isExpanded, setIsExpanded] = useState(true);
@@ -188,13 +189,7 @@ export function AssemblyTree(): React.JSX.Element {
     );
   }
 
-  /*
-   * 解いた結果(`resolveAssembly` の `errors` / `partKeys`)はまだストアに無い。
-   * 置く操作とビューポートの層(P7 タスク10・11)がそれをストアへ載せたら、その欄を
-   * ここへ渡すだけで「中身が引けていない部品」の理由と未解決の印が出る
-   * (`assemblyTreeRows` の第 2 引数。渡さない間も文書だけで分かる印は出る)。
-   */
-  const sections = assemblyTreeRows(assembly);
+  const sections = assemblyTreeRows(assembly, resolved);
   const selectedIds = new Set(selection);
   const menuComponent = menu === null ? undefined : findComponent(assembly, menu.componentId);
   const chevronClassName = 'pcad-tree__chevron' + (isExpanded ? ' pcad-tree__chevron--open' : '');
@@ -202,15 +197,12 @@ export function AssemblyTree(): React.JSX.Element {
   /**
    * アセンブリ文書を差し替える。
    *
-   * いまアセンブリを持つ口はストアの `openAssembly` だけで、**取り消し(Ctrl+Z)はまだ
-   * つながっていない**(`undoStack` は部品文書のもの)。1 操作 = 1 段にする配線は、
-   * 置く操作をストアへ足す段(P7 タスク11)がまとめて行う。model の側は
-   * 「何も変わらない操作は同じ参照を返す」ので、その段でそのまま `pushUndo` へ渡せる。
+   * 文書と部品の添付を一緒に履歴へ積む。1 操作 = 1 段で取り消せる。
    */
   const applyAssembly = (next: AssemblyDocument): void => {
     const store = useAppStore.getState();
     if (next !== store.assembly) {
-      store.openAssembly(next);
+      store.applyAssembly(next);
     }
   };
 

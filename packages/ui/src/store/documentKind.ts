@@ -14,6 +14,33 @@
  * 渡せる。`documentDerived.ts` と同じ流儀)。
  */
 import type { AssemblyDocument, PartDocument } from '@pointercad/model';
+import type { AppState } from './appState.js';
+
+/** 保存・履歴・タイトルが見る文書。種類の選択はこの入口だけで行う。 */
+export function activeDocument(state: AppState) {
+  if (activeDocumentKind(state) === 'assembly' && state.assembly !== null) {
+    return {
+      kind: 'assembly' as const,
+      document: state.assembly,
+      library: state.assemblyLibrary,
+      saved: state.savedAssembly,
+      fileName: state.assemblyFileName,
+      initialName: state.assemblyInitialName,
+      documentId: state.activeDocumentId,
+    };
+  }
+  return {
+    kind: 'part' as const,
+    document: state.document,
+    saved: state.savedDocument,
+    fileName: state.fileName,
+    documentId: state.activeDocumentId,
+  };
+}
+
+export function activeFileName(state: AppState): string | null {
+  return activeDocument(state).fileName;
+}
 
 /**
  * 文書の種類。`empty` は**部品もアセンブリも開いていない**状態で、いまのストアは常に

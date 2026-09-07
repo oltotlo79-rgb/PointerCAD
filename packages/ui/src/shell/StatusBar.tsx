@@ -1,3 +1,5 @@
+import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
+import { activeFileName } from '../store/documentKind.js';
 import {
   isBaseWorkPlaneId,
   isFreeWorkPlaneId,
@@ -7,7 +9,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import { missingAppearanceCount } from '../appearance/appearanceCommands.js';
-import { documentLabel, hasUnsavedChanges } from '../file/partFile.js';
+import { documentLabel } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { LENGTH_UNIT_LABEL_KEYS, nextLengthUnit } from '../settings/settings.js';
 import { constraintPickGuide } from '../sketch/constraintActions.js';
@@ -180,13 +182,13 @@ export function StatusBar(): React.JSX.Element {
   const trackIndicator = useAppStore((state) => state.trackIndicator);
   // 名前(「線分1」)は履歴が持っている。案内線のもとになった要素だけを引く。
   const sketchFeatures = useAppStore((state) => state.sketch.features);
-  const fileName = useAppStore((state) => state.fileName);
+  const fileName = useAppStore(activeFileName);
   const fileMessage = useAppStore((state) => state.fileMessage);
   const recomputeProgress = useAppStore((state) => state.recomputeProgress);
   const recomputeCancelled = useAppStore((state) => state.recomputeCancelled);
   const cancelRecompute = useAppStore((state) => state.cancelRecompute);
   // 真偽で取り出して、印が付くか外れるかが変わったときだけ描き直す(NFR-PF-1)。
-  const unsaved = useAppStore((state) => hasUnsavedChanges(state.document, state.savedDocument));
+  const unsaved = useAppStore(activeHasUnsavedChanges);
   // 数で取り出す。ブーリアンの案内を出すかどうかにしか使わない(FR-404)。
   const selectedBodyCount = useAppStore((state) =>
     countSelectedBodies(state.selection, liveBodyIds(state.document)),

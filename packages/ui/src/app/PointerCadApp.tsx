@@ -7,6 +7,8 @@ import {
 } from '@pointercad/model';
 import { useEffect } from 'react';
 
+import { attachAssembly } from '../assembly/attachAssembly.js';
+import { activeDocumentKind, type DocumentKind } from '../store/documentKind.js';
 import { startAutoSave } from '../file/attachAutoSave.js';
 import { createPartExchanger } from '../file/partExchanger.js';
 import { attachDisplaySettings } from '../shell/applyDisplaySettings.js';
@@ -24,6 +26,8 @@ import { useAppStore } from '../store/useAppStore.js';
 
 /** 検査だけが使う読み取り口の 1 件ぶんの形(下の `useEffect` の注釈が理由)。 */
 interface RecomputeStats {
+  readonly pendingWaiters: number;
+  readonly activeDocumentKind: DocumentKind;
   /** 作り直さずに済んだ段の数(ストアの `cacheHits`)。 */
   readonly cacheHits: number;
   /** 計算中か(ストアの `isComputing`)。 */
@@ -58,6 +62,19 @@ declare global {
 export function PointerCadApp(): React.JSX.Element {
   useEffect(() => {
     const bridge = createKernelBridge();
+    window.pcadRecomputeStats = () => {
+      const state = useAppStore.getState();
+      return {
+        pendingWaiters: bridge.pendingWaiters(),
+        activeDocumentKind: activeDocumentKind(state),
+        cacheHits: state.cacheHits,
+        isComputing: state.isComputing,
+        requestedGeneration: state.requestedGeneration,
+        completedGeneration: state.completedGeneration,
+        lastOutcome: state.lastOutcome,
+      };
+    };
+    const detachAssembly = attachAssembly(bridge);
     // オフセット(FR-321、タスク15・21)の計算済みの結果を持ち回る。1 つ作って渡さないと
     // 呼び出しのたびにカーネルへ頼み直すことになる(NFR-PF-2、`recomputePart` の注釈)。
     const offsets = createOffsetCache();
@@ -157,6 +174,8 @@ export function PointerCadApp(): React.JSX.Element {
       detachMeasure();
       detach();
       unwatchDocument();
+      detachAssembly();
+      delete window.pcadRecomputeStats;
       bridge.dispose();
     };
   }, []);
@@ -178,33 +197,6 @@ export function PointerCadApp(): React.JSX.Element {
      * ここは始めて片付けるだけにする。
      */
     return attachDisplaySettings(document.documentElement);
-  }, []);
-
-  useEffect(() => {
-    /*
-     * **検査だけが使う読み取り口**(P5 タスク56、§0.a-0.53 の (b))。アプリはこれを
-     * 読まないし書かない。外した形は `e2e/tests/solid.spec.ts` の `pcadProgressSightings`
-     * と同じで、**頁の外(Playwright)からしか見えない状態を 1 つだけ差し出す**。
-     *
-     * 要る理由: 「色を変えても再計算が走らない」(§2.3、FR-1106)は**起きなかったこと**の
-     * 検査なので、画面に出る印だけでは足りない。計算し直せば作り直さずに済んだ段の数
-     * (`cacheHits`)が必ず増えるので、外観を変える前後で**増えていない**ことを見れば、
-     * 計算そのものが走らなかったと言い切れる(帯や三角形の数は「速すぎて見えなかった」
-     * だけかもしれない)。
-     */
-    window.pcadRecomputeStats = () => {
-      const state = useAppStore.getState();
-      return {
-        cacheHits: state.cacheHits,
-        isComputing: state.isComputing,
-        requestedGeneration: state.requestedGeneration,
-        completedGeneration: state.completedGeneration,
-        lastOutcome: state.lastOutcome,
-      };
-    };
-    return () => {
-      delete window.pcadRecomputeStats;
-    };
   }, []);
 
   return <AppShell />;

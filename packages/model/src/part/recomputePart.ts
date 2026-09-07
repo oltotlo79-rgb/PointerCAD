@@ -101,6 +101,8 @@ export interface PartRecomputeResult {
 }
 
 export interface PartRecomputeOptions {
+  /** 最終巡回の解決結果を、取消でない完了時に同じ参照で 1 回だけ通知する。 */
+  readonly onResolved?: (resolved: ResolvedPart) => void;
   /** 文書/session 内で安定した部品の識別子。橋へそのまま渡す。 */
   readonly partId?: string;
   /** 依頼ごとに 1 つ増やす番号。省くと 0。 */
@@ -757,6 +759,8 @@ export async function recomputePart(
   errors.push(...projectionErrors.values());
   errors.push(...resolved.errors.filter((error) => !dependencyErrors.has(error.featureId)));
   errors.push(...dependencyErrors.values());
+
+  options.onResolved?.(resolved);
 
   if (!solid.ok) {
     for (const step of resolved.steps) {

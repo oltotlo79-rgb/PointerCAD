@@ -1,4 +1,9 @@
 {
+  "assembly.fileType": "PointerCAD のアセンブリファイル",
+  "assembly.untitled": "名称未設定のアセンブリ",
+  "assembly.recomputeFailed": "部品を計算できませんでした。もう一度お試しください。",
+  "assembly.shapeMissing": "部品の形を取り直せませんでした。部品を更新してもう一度お試しください。",
+  "assembly.restoreTitle": "前回のアセンブリの作業が残っています。",
   "assembly.emptyState": "部品を置いて組み立てを始めましょう。",
   "assembly.menu.build": "組む",
   "assembly.menu.mate": "合わせる",

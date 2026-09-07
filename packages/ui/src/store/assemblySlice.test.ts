@@ -55,7 +55,7 @@ describe('文書の種類の切替(P7 §0.a-0.10、タスク5)', () => {
     expect(activeDocumentKind(useAppStore.getState())).toBe('part');
   });
 
-  it('アセンブリを開いても部品の欄と履歴は 1 つも変わらない(振る舞いを変えない)', () => {
+  it('アセンブリを開いても部品の欄と履歴は保ち、文書の寿命は進める', () => {
     const before = useAppStore.getState();
     const document = before.document;
     const undoStack = before.undoStack;
@@ -63,6 +63,6 @@ describe('文書の種類の切替(P7 §0.a-0.10、タスク5)', () => {
 
     expect(useAppStore.getState().document).toBe(document);
     expect(useAppStore.getState().undoStack).toBe(undoStack);
-    expect(useAppStore.getState().documentVersion).toBe(before.documentVersion);
+    expect(useAppStore.getState().documentVersion).toBe(before.documentVersion + 1);
   });
 });

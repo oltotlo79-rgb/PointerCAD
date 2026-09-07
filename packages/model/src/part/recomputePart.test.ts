@@ -51,7 +51,7 @@ import {
 import { appearanceOf, assignFaceAppearance } from '../appearance/documentAppearance.js';
 import { DEFAULT_APPEARANCE } from '../appearance/materialPresets.js';
 import { affectsShape } from './documentChange.js';
-import { recomputePart } from './recomputePart.js';
+import { recomputePart, type PartRecomputeOptions } from './recomputePart.js';
 import { createSubShapeCache } from './subShapeCache.js';
 import { resolvePart, type ResolvedSolidStep, type SubShapeQueryPlan } from './resolvePart.js';
 import type {
@@ -149,6 +149,46 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
     ...overrides,
   };
 }
+
+describe('最終巡回の通知(P7 11a)', () => {
+  it('完了時に 1 回だけ通知し、最終スケッチと同じ参照を渡す', async () => {
+    const { document } = oneExtrude();
+    const onResolved = vi.fn<NonNullable<PartRecomputeOptions['onResolved']>>();
+    const result = await recomputePart(document, fakeBridge(), { onResolved });
+    expect(result.cancelled).toBe(false);
+    expect(onResolved).toHaveBeenCalledTimes(1);
+    const resolved = onResolved.mock.calls[0][0];
+    expect(resolved.steps).toHaveLength(1);
+    expect(resolved.sketches[0].resolved).toBe(result.sketches[0].resolved);
+  });
+
+  it('ソリッドの計算中に取り消されたら通知しない', async () => {
+    const { document } = oneExtrude();
+    let cancelled = false;
+    const onResolved = vi.fn<NonNullable<PartRecomputeOptions['onResolved']>>();
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => {
+        cancelled = true;
+        return Promise.resolve(EMPTY_SOLID_OUTCOME);
+      },
+    }), { onResolved, shouldCancel: () => cancelled });
+    expect(result.cancelled).toBe(true);
+    expect(onResolved).not.toHaveBeenCalled();
+  });
+
+  it('スケッチの最終処理中の取消でも通知しない', async () => {
+    let cancelled = false;
+    const onResolved = vi.fn<NonNullable<PartRecomputeOptions['onResolved']>>();
+    const result = await recomputePart(createFixture().document, fakeBridge({
+      tessellateSketchFaces: () => {
+        cancelled = true;
+        return Promise.resolve(EMPTY_SKETCH_OUTCOME);
+      },
+    }), { onResolved, shouldCancel: () => cancelled });
+    expect(result.cancelled).toBe(true);
+    expect(onResolved).not.toHaveBeenCalled();
+  });
+});
 
 /** ソリッドの依頼を記録する偽の口。呼ばれた回数と引数をそのまま覚える。 */
 function recordSolids(

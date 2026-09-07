@@ -1,6 +1,6 @@
 /** 再計算の予約が古い計算を早く止めることの回帰テスト(R-7b、NFR-PF-4)。 */
 
-import { KERNEL_BROKEN_MESSAGE } from '@pointercad/model';
+import { createAssemblyDocument, KERNEL_BROKEN_MESSAGE } from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { attachPartRecompute } from './attachKernel.js';
 import {
@@ -22,6 +22,26 @@ beforeEach(() => {
 });
 
 describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4)', () => {
+  it('アセンブリを開いている間は part の再計算を始めない', () => {
+    useAppStore.getState().openAssembly(createAssemblyDocument('assembly'));
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    expect(fake.calls).toHaveLength(0);
+    useAppStore.getState().closeAssembly();
+    expect(fake.calls).toHaveLength(1);
+    detach();
+  });
+
+  it('アセンブリへの切替前の part 応答を適用しない', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    useAppStore.getState().openAssembly(createAssemblyDocument('assembly'));
+    expect(fake.calls[0].options.shouldCancel?.()).toBe(true);
+    fake.calls[0].settle({ ...resultFor(fake.calls[0].document), cacheHits: 100 });
+    await tick();
+    expect(useAppStore.getState().cacheHits).toBe(0);
+    detach();
+  });
   it('接続時の最初の依頼を requestedGeneration 1 として記録する', () => {
     const fake = createFakeRecompute();
     const detach = attachPartRecompute(fake.recompute);

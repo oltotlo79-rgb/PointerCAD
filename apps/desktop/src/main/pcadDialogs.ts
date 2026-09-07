@@ -63,6 +63,12 @@ class InputTooLargeError extends Error {}
  * 窓の題名は指定しない。指定しなければ OS が「開く」「名前を付けて保存」を各国語で出す。
  */
 const PCAD_FILE_FILTER = { name: 'PointerCAD の部品ファイル', extensions: [PCAD_EXTENSION] };
+const PCADA_FILE_FILTER = { name: 'PointerCAD のアセンブリファイル', extensions: ['pcada'] };
+
+function documentFilters(kind: 'part' | 'assembly' | 'all') {
+  return kind === 'assembly' ? [PCADA_FILE_FILTER] :
+    kind === 'all' ? [PCAD_FILE_FILTER, PCADA_FILE_FILTER] : [PCAD_FILE_FILTER];
+}
 
 /** ダイアログのフィルタ 1 つぶん(Electron の `FileFilter` と同じ形)。 */
 interface KindFilter {
@@ -83,6 +89,7 @@ interface KindFilter {
  * 載っているかどうかだけで確かめる。
  */
 const KIND_FILTERS: Readonly<Record<string, KindFilter | undefined>> = {
+  pcada: PCADA_FILE_FILTER,
   pcad: PCAD_FILE_FILTER,
   pcadt: { name: 'PointerCAD', extensions: ['pcadt'] },
   step: { name: 'STEP', extensions: ['step', 'stp'] },
@@ -216,10 +223,11 @@ async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> 
  * 親の窓が分からないときは窓を付けずに出す(その場合 OS によっては前面に来ないことがあるが、
  * 開けなくなるよりはよい)。
  */
-export async function openPcadDialog(window: BrowserWindow | null): Promise<OpenedPcadFile | null> {
+export async function openPcadDialog(window: BrowserWindow | null,
+  kind: 'part' | 'assembly' | 'all' = 'part'): Promise<OpenedPcadFile | null> {
   const options: OpenDialogOptions = {
     properties: ['openFile'],
-    filters: [PCAD_FILE_FILTER],
+    filters: documentFilters(kind),
   };
   const result =
     window === null
@@ -242,6 +250,7 @@ export async function savePcadDialog(
   bytes: Uint8Array,
   saveAs: boolean,
   lastPath: string | null,
+  kind: 'part' | 'assembly' = 'part',
 ): Promise<SavedPcadFile | null> {
   let filePath = saveAs ? null : lastPath;
   if (filePath === null) {
@@ -249,7 +258,7 @@ export async function savePcadDialog(
       // 「名前を付けて保存」でも、前に保存した場所と名前から始める。まだ無ければ画面が
       // 勧めてきた名前(既定の保存先フォルダに置かれる)。
       defaultPath: lastPath ?? suggestedName,
-      filters: [PCAD_FILE_FILTER],
+      filters: documentFilters(kind),
     };
     const result =
       window === null
@@ -258,7 +267,9 @@ export async function savePcadDialog(
     if (result.canceled || result.filePath === '') {
       return null;
     }
-    filePath = withPcadExtension(result.filePath);
+    filePath = kind === 'assembly'
+      ? (extname(result.filePath).toLowerCase() === '.pcada' ? result.filePath : `${result.filePath}.pcada`)
+      : withPcadExtension(result.filePath);
   }
   await writeBytesTo(filePath, bytes);
   return { name: basename(filePath), path: filePath };
@@ -459,13 +470,15 @@ export function registerPcadIpc(): void {
     PCAD_OPEN_CHANNEL,
     async (
       event: IpcMainInvokeEvent,
+      kind: unknown = 'part',
     ): Promise<{ name: string; bytes: Uint8Array; saveTargetToken: string } | null> => {
       if (!validateAppSender(event)) {
         return null;
       }
+      if (kind !== 'part' && kind !== 'assembly' && kind !== 'all') return null;
       // 未確定の候補は次の「開く」を始めた時点で失効する。確定済みの先はまだ保つ。
       pendingPaths.delete(event.sender.id);
-      const opened = await openPcadDialog(windowOf(event));
+      const opened = await openPcadDialog(windowOf(event), kind);
       if (opened === null) {
         return null;
       }
@@ -508,11 +521,11 @@ export function registerPcadIpc(): void {
       if (!validateAppSender(event)) {
         return null;
       }
-      const [suggestedName, bytes, saveAs] = args;
+      const [suggestedName, bytes, saveAs, kind = 'part'] = args;
       if (
         typeof suggestedName !== 'string' ||
         !(bytes instanceof Uint8Array) ||
-        typeof saveAs !== 'boolean'
+        typeof saveAs !== 'boolean' || (kind !== 'part' && kind !== 'assembly')
       ) {
         throw new Error('保存の依頼の形が正しくありません。');
       }
@@ -522,6 +535,7 @@ export function registerPcadIpc(): void {
         bytes,
         saveAs,
         lastPaths.get(event.sender.id) ?? null,
+        kind,
       );
       if (saved === null) {
         return null;

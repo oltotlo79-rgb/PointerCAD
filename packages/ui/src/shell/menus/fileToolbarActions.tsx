@@ -1,3 +1,4 @@
+import { activeHasUnsavedChanges } from '../../file/assemblyFile.js';
 /**
  * 「ファイル」の区画の配線(FR-806、FR-812、FR-814、FR-807。P6 §0.57、タスク31・33)。
  *
@@ -14,7 +15,6 @@ import { hasFileSystemAccess, PCAD_EXTENSION } from '../../file/fileGateway.js';
 import {
   createDefaultPartFileDeps,
   displayFileName,
-  hasUnsavedChanges,
   newPart,
   openPart,
   savePart,
@@ -186,7 +186,7 @@ async function runSaveAsTemplate(): Promise<void> {
 async function runNewFromTemplate(source: TemplateSource): Promise<void> {
   const before = useAppStore.getState();
   if (
-    hasUnsavedChanges(before.document, before.savedDocument) &&
+    activeHasUnsavedChanges(before) &&
     !(await createDefaultPartFileDeps().confirmDiscard('file.discardConfirm'))
   ) {
     return;

@@ -18,6 +18,9 @@ import type { MeasureSlice } from './measureSlice.js';
 import type { FileSlice } from './fileSlice.js';
 import type { AssemblySlice } from './assemblySlice.js';
 
+/** 文書とその寿命の欄を、購読へ中間状態を渡さず一緒に更新する。 */
+export type DocumentStateUpdate = (state: AppState) => Partial<AppState>;
+
 export interface AppState
   extends ViewSlice,
     CanvasSlice,

@@ -26,6 +26,8 @@ import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { activeDocument } from '../store/documentKind.js';
+import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly } from './assemblyFile.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 
@@ -285,7 +287,7 @@ export function createDefaultPartFileDeps(): PartFileDeps {
 /** 保存していない変更があれば確認する。進めてよければ true。 */
 async function mayDiscard(deps: PartFileDeps): Promise<boolean> {
   const state = useAppStore.getState();
-  if (!hasUnsavedChanges(state.document, state.savedDocument)) {
+  if (!activeHasUnsavedChanges(state)) {
     return true;
   }
   return deps.confirmDiscard('file.discardConfirm');
@@ -296,6 +298,7 @@ async function mayDiscard(deps: PartFileDeps): Promise<boolean> {
  * 進めるときは履歴のスタックごと作り直すので、新規の前へは戻れない。
  */
 export async function newPart(deps: PartFileDeps): Promise<void> {
+  if (activeDocument(useAppStore.getState()).kind === 'assembly') return newAssembly(deps);
   if (!(await mayDiscard(deps))) {
     return;
   }
@@ -316,12 +319,16 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   }
   let picked: PickedFile | null;
   try {
-    picked = await useAppStore.getState().fileGateway.openPcad();
+    picked = await useAppStore.getState().fileGateway.openPcad('all');
   } catch {
     useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
     return;
   }
   if (picked === null) {
+    return;
+  }
+  if (picked.name.toLowerCase().endsWith('.pcada')) {
+    await applyPickedAssembly(picked, deps);
     return;
   }
   const result = readPartDocument(picked.bytes);
@@ -358,6 +365,7 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
  * 保存先を覚えていない口(ダウンロードへ落とす環境)でも必ず場所を聞く形になる。
  */
 export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<void> {
+  if (activeDocument(useAppStore.getState()).kind === 'assembly') return saveAssembly(deps, saveAs);
   const store = useAppStore.getState();
   // 書き出す文書はここで確定させる。待っている間に文書が変わっても、
   // 「保存した文書」と実際に書いたものを食い違わせない。

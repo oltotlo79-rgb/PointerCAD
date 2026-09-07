@@ -5,15 +5,15 @@ import {
   addVec3,
   appearanceOf,
   checkCanvasImage,
+  createEmptySketchDocument,
   formatDisplayLength,
   isFreeWorkPlaneId,
   parseDisplayInput,
-  resolveAssembly,
+  resolveSketch,
   scaleVec3,
   toDisplayLength,
   worldToPlane,
   type LengthUnit,
-  type SolidBody,
 } from '@pointercad/model';
 
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
@@ -41,7 +41,7 @@ import {
   type AssemblyGeometryBundle,
 } from './createAssemblyLayer.js';
 import { sphereGridSphereOf, sphereGridTargetSphere } from '../sketch/sketchCommands.js';
-import { activeAssemblyDocument } from '../store/documentKind.js';
+import { activeAssemblyDocument, activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
@@ -54,6 +54,8 @@ import { toThreePlane } from './sectionView.js';
 import { readThemeColors } from './themeColors.js';
 
 /** 切断の予告を組み立てる材料。ストアから読むものだけを並べる。 */
+const EMPTY_PART_SKETCH = resolveSketch(createEmptySketchDocument());
+
 interface CutPreviewSource {
   readonly numericInput: ReturnType<typeof useAppStore.getState>['numericInput'];
   readonly document: ReturnType<typeof useAppStore.getState>['document'];
@@ -476,24 +478,6 @@ function sphereGridSpecOf(source: SphereGridSource): SphereGridSpec | null {
 }
 
 /**
- * 部品の鍵 → その部品を 1 回だけ再計算した形。**まだストアに置き場が無い。**
- *
- * 部品ごとの再計算(鍵ごとに 1 回の `recomputePart`)はカーネル(Worker)への往復なので、
- * 見張りの置き場はストア側(`store/attachKernel.ts` の `attachPartRecompute` と同じ形)で、
- * それを足すのは**アセンブリへ部品を置く操作を作るタスク11**である(このタスクが触るのは
- * 計画書のタスク10 の欄にある viewport の 3 ファイルだけ)。ここではその表を**空**のまま
- * 渡し、形が入った時点で絵が出るようにしてある。
- *
- * **抱き込んだ部品の一式(`PartLibrary`)も同じ事情**で、まだストアに欄が無い。下の
- * `resolveAssembly` はそれを渡さずに呼ぶので、配置は正しく解けるが「どの部品か」
- * (`partKeys`)は空になり、結局まだ 1 つも描かれない。**2 つはタスク11 で一緒に入る。**
- */
-const NO_ASSEMBLY_BODIES: ReadonlyMap<string, readonly SolidBody[]> = new Map<
-  string,
-  readonly SolidBody[]
->();
-
-/**
  * 配置した部品(FR-605、FR-606、P7 タスク10)をストアの状態から組み立てる。
  *
  * **アセンブリを開いていないあいだは空**(部品の画面では入れ物も形も 1 つも作らない)。
@@ -511,12 +495,15 @@ function assemblyBundleOf(
   if (assembly === null) {
     return EMPTY_ASSEMBLY_GEOMETRY;
   }
-  const resolved = resolveAssembly(assembly);
+  const view = state.assemblyView;
+  if (view === null) return EMPTY_ASSEMBLY_GEOMETRY;
+  const resolved = view.resolved;
   return buildAssemblyGeometry({
     components: assembly.components,
     placements: resolved.placements,
     partKeys: resolved.partKeys,
-    bodies: NO_ASSEMBLY_BODIES,
+    bodies: view.bodies,
+    appearances: view.appearances,
     hoveredComponentId: state.hoveredElementId,
     selectedComponentIds: state.selection,
   });
@@ -612,7 +599,8 @@ export function ViewportCanvas(): React.JSX.Element {
 
     /** いまの文書と復号済みの画像から、下絵を描き直す。 */
     function pushCanvases(): void {
-      scene.setCanvases(canvasDrawsOf(useAppStore.getState().document, decodedCanvases));
+      const part = activePartDocument(useAppStore.getState());
+      scene.setCanvases(part === null ? [] : canvasDrawsOf(part, decodedCanvases));
       requestDraw();
     }
 
@@ -734,9 +722,10 @@ export function ViewportCanvas(): React.JSX.Element {
     const initial = useAppStore.getState();
     // 引っぱっている最中(FR-313、P4b タスク14)は仮の形を描く。文書どおりの形
     // (`resolvedSketch`)は当たり判定・プロパティ・吸着がそのまま読み続ける。
-    scene.setSketch(initial.dragResolved ?? initial.resolvedSketch, initial.sketchMesh);
+    scene.setSketch(activePartDocument(initial) === null ? EMPTY_PART_SKETCH :
+      initial.dragResolved ?? initial.resolvedSketch, activePartDocument(initial) === null ? null : initial.sketchMesh);
     scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
-    scene.setBodies(initial.bodies);
+    scene.setBodies(activePartDocument(initial) === null ? [] : initial.bodies);
     // 配置した部品(FR-605、P7 タスク10)。アセンブリを開いていないあいだは空のまま。
     scene.setAssembly(assemblyBundleOf(initial));
     // 外観の割り当て(FR-1106〜1109)。文書の割り当てと、カーネルが選び直した面の対応から
@@ -781,13 +770,14 @@ export function ViewportCanvas(): React.JSX.Element {
         next.resolvedSketch !== previous.resolvedSketch ||
         next.sketchMesh !== previous.sketchMesh ||
         // 引っぱっている最中の仮の形(FR-313、タスク14)。1 コマに 1 回だけ差し替わる。
-        next.dragResolved !== previous.dragResolved
+        next.dragResolved !== previous.dragResolved || next.assembly !== previous.assembly
       ) {
-        scene.setSketch(next.dragResolved ?? next.resolvedSketch, next.sketchMesh);
+        scene.setSketch(activePartDocument(next) === null ? EMPTY_PART_SKETCH :
+          next.dragResolved ?? next.resolvedSketch, activePartDocument(next) === null ? null : next.sketchMesh);
       }
       // 立体(FR-105)。カーネルが返した三角形と稜線をボディごとに描く。
-      if (next.bodies !== previous.bodies) {
-        scene.setBodies(next.bodies);
+      if (next.bodies !== previous.bodies || next.assembly !== previous.assembly) {
+        scene.setBodies(activePartDocument(next) === null ? [] : next.bodies);
       }
       // 外観(FR-1106〜1109)。**割り当ての表そのものが変わったときだけ**組み立て直す。
       // 文書が変わるたびに作り直すと、スケッチを 1 本引いただけで材質の入れ替えが起きる
@@ -818,6 +808,7 @@ export function ViewportCanvas(): React.JSX.Element {
       */
       if (
         next.assembly !== previous.assembly ||
+        next.assemblyView !== previous.assemblyView ||
         next.hoveredElementId !== previous.hoveredElementId ||
         next.selection !== previous.selection
       ) {
@@ -880,7 +871,7 @@ export function ViewportCanvas(): React.JSX.Element {
         入切・移動・不透明度は文書の変化として届くが、**再計算は 1 回も走らない**
         (`affectsShape` が下絵を見ないので `isComputing` も立たない。§2.14)。
       */
-      if (next.document !== previous.document || next.canvases !== previous.canvases) {
+      if (next.document !== previous.document || next.canvases !== previous.canvases || next.assembly !== previous.assembly) {
         syncCanvases();
       }
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。任意の作業平面(FR-328)は

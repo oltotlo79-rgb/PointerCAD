@@ -4,8 +4,10 @@ import {
   appearanceFromPreset,
   appearanceOf,
   appendSolid,
+  createAssemblyDocument,
   createEmptyPartDocument,
   createEmptySketchDocument,
+  EMPTY_PART_LIBRARY,
   removeSolid,
 } from '@pointercad/model';
 import {
@@ -16,6 +18,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from 'vitest';
 import {
   setFeatureField,
@@ -29,6 +32,7 @@ import {
 import {
   useAppStore,
 } from './useAppStore.js';
+import { activeDocument } from './documentKind.js';
 import {
   resetTestStore,
   createFakeRecompute,
@@ -42,6 +46,124 @@ import {
 } from './testing/createTestStore.js';
 
 beforeEach(resetTestStore);
+
+describe('文書種別による共通入口(P7 タスク11a)', () => {
+  it('共通 Undo/Redo はアセンブリだけを戻し、裏の部品履歴と文書IDは保つ', () => {
+    const store = useAppStore.getState();
+    store.applyDocument(partWithPoint());
+    const part = useAppStore.getState().document;
+    const partHistory = useAppStore.getState().undoStack;
+    const assembly = createAssemblyDocument('assembly');
+    store.openAssembly(assembly);
+    const before = useAppStore.getState();
+    const changed = { ...assembly, name: 'changed' };
+    store.applyAssembly(changed);
+    expect(useAppStore.getState().canUndo).toBe(true);
+    store.undo();
+    expect(useAppStore.getState().assembly).toBe(assembly);
+    expect(useAppStore.getState().canUndo).toBe(false);
+    expect(useAppStore.getState().canRedo).toBe(true);
+    store.redo();
+    const after = useAppStore.getState();
+    expect(after.assembly).toBe(changed);
+    expect(after.canUndo).toBe(true);
+    expect(after.canRedo).toBe(false);
+    expect(after.document).toBe(part);
+    expect(after.undoStack).toBe(partHistory);
+    expect(after.activeDocumentId).toBe(before.activeDocumentId);
+    expect(after.documentVersion).toBe(before.documentVersion + 2);
+  });
+
+  it('空のアセンブリの Undo/Redo で裏の部品履歴を動かさない', () => {
+    const store = useAppStore.getState();
+    store.applyDocument(partWithPoint());
+    store.openAssembly(createAssemblyDocument('assembly'));
+    const before = useAppStore.getState();
+    store.undo();
+    store.redo();
+    expect(useAppStore.getState()).toBe(before);
+  });
+
+  it('アセンブリ中の通常 applyDocument は裏の部品を編集しない', () => {
+    const store = useAppStore.getState();
+    store.openAssembly(createAssemblyDocument('assembly'));
+    const before = useAppStore.getState();
+    store.applyDocument(partWithPoint());
+    expect(useAppStore.getState()).toBe(before);
+  });
+
+  it('部品を開く差し替えは、文書・種別・ID・添付履歴を一度に切り替える', () => {
+    const store = useAppStore.getState();
+    const assembly = createAssemblyDocument('assembly');
+    store.openAssembly(assembly);
+    store.applyAssembly({ ...assembly, name: 'edited' });
+    store.setAssemblyFileState('assembly.pcada', { document: assembly, library: EMPTY_PART_LIBRARY });
+    const before = useAppStore.getState();
+    const observed: ReturnType<typeof useAppStore.getState>[] = [];
+    const unsubscribe = useAppStore.subscribe((state) => { observed.push(state); });
+    const part = partWithPoint();
+    try {
+      store.applyDocument(part, { replacesDocument: true });
+    } finally {
+      unsubscribe();
+    }
+    expect(observed).toHaveLength(1);
+    const after = observed[0];
+    expect(activeDocument(after).kind).toBe('part');
+    expect(after.document).toBe(part);
+    expect(after.activeDocumentId).not.toBe(before.activeDocumentId);
+    expect(after.documentVersion).toBe(before.documentVersion + 1);
+    expect(after.assemblyLibrary).toBe(EMPTY_PART_LIBRARY);
+    expect(after.assemblyUndoStack).toBeNull();
+    expect(after.savedAssembly).toBeNull();
+    expect(after.assemblyFileName).toBeNull();
+    expect(after.assemblyView).toBeNull();
+    expect(after.undoStack.past.at(-1)).toBe(before.document);
+  });
+
+  it('部品の新規はアセンブリの保存先・添付履歴を消し、一度の通知で新文書にする', () => {
+    const store = useAppStore.getState();
+    store.openAssembly(createAssemblyDocument('assembly'));
+    const before = useAppStore.getState();
+    const clearSaveTarget = vi.fn();
+    useAppStore.setState({ fileGateway: { ...store.fileGateway, clearSaveTarget } });
+    const observed: ReturnType<typeof useAppStore.getState>[] = [];
+    const unsubscribe = useAppStore.subscribe((state) => { observed.push(state); });
+    const part = createEmptyPartDocument();
+    try {
+      store.resetDocument(part);
+    } finally {
+      unsubscribe();
+      useAppStore.setState({ fileGateway: store.fileGateway });
+    }
+    expect(clearSaveTarget).toHaveBeenCalledExactlyOnceWith();
+    expect(observed).toHaveLength(1);
+    const after = observed[0];
+    expect(activeDocument(after).kind).toBe('part');
+    expect(after.document).toBe(part);
+    expect(after.activeDocumentId).not.toBe(before.activeDocumentId);
+    expect(after.documentVersion).toBe(before.documentVersion + 1);
+    expect(after.assemblyLibrary).toBe(EMPTY_PART_LIBRARY);
+    expect(after.assemblyUndoStack).toBeNull();
+    expect(after.undoStack.present).toBe(part);
+    expect(after.undoStack.past).toEqual([]);
+    expect(after.undoStack.future).toEqual([]);
+    expect(after.canUndo).toBe(false);
+    expect(after.canRedo).toBe(false);
+  });
+
+  it('部品の通常編集ではIDを保ち、開く・新規で新しいIDにする', () => {
+    const store = useAppStore.getState();
+    const first = store.activeDocumentId;
+    store.applyDocument(partWithPoint());
+    expect(useAppStore.getState().activeDocumentId).toBe(first);
+    store.applyDocument(createEmptyPartDocument(), { replacesDocument: true });
+    const opened = useAppStore.getState().activeDocumentId;
+    expect(opened).not.toBe(first);
+    store.resetDocument(createEmptyPartDocument());
+    expect(useAppStore.getState().activeDocumentId).not.toBe(opened);
+  });
+});
 
 describe('履歴の差し替えと取り除き(FR-311、FR-504)', () => {
   it('式を直すと履歴が入れ替わる(打つたびの点滅を避けるため計算中の印は立てない)', () => {

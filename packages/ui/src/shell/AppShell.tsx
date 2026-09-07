@@ -6,10 +6,10 @@ import {
   formatSavedAt,
   restoreAutoSave,
 } from '../file/attachAutoSave.js';
+import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
 import { ImportUnitPanel } from '../file/ImportUnitPanel.js';
 import {
   createDefaultPartFileDeps,
-  hasUnsavedChanges,
   newPart,
   openPart,
   savePart,
@@ -19,7 +19,7 @@ import { t } from '../i18n/t.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
-import { activeDocumentKind } from '../store/documentKind.js';
+import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { AssemblyTree } from './AssemblyTree.js';
 import { FeatureTree } from './FeatureTree.js';
@@ -133,13 +133,14 @@ export function AppShell(): React.JSX.Element {
   );
   const viewportSize = useAppStore((state) => state.viewportSize);
   const snapIndicator = useAppStore((state) => state.snapIndicator);
-  const fileName = useAppStore((state) => state.fileName);
+  const fileName = useAppStore(activeFileName);
   // 真偽で取り出すので、文書が変わっても「保存していない」かどうかが変わったときだけ
   // 描き直す(打つたびに画面全体を作り直さない、NFR-PF-1)。
-  const unsaved = useAppStore((state) => hasUnsavedChanges(state.document, state.savedDocument));
+  const unsaved = useAppStore(activeHasUnsavedChanges);
   // 復元の案内(FR-805、§0.a-0.12)。控えを書く人がいないうちは押しても何もできないので、
   // 2 つが揃っているときだけカードを出す。
   const restorePrompt = useAppStore((state) => state.restorePrompt);
+  const recoveryKind = useAppStore((state) => state.recoveryRecord?.kind);
   const autoSaver = useAppStore((state) => state.autoSaver);
   // 読み込んだファイルの単位を訊いている最中か(FR-811、§0.a-0.6、P6 タスク32b)。
   const importUnitAsked = useAppStore((state) => state.importUnitAsked);
@@ -341,7 +342,8 @@ export function AppShell(): React.JSX.Element {
             <div className="pcad-viewport__overlay">
               <div className="pcad-card pcad-restore">
                 <p className="pcad-restore__title">
-                  {t(restorePrompt.unrecoverable ? 'restore.unrecoverableTitle' : 'restore.title')}
+                  {t(restorePrompt.unrecoverable ? 'restore.unrecoverableTitle' :
+                    recoveryKind === 'assembly' ? 'assembly.restoreTitle' : 'restore.title')}
                 </p>
                 {/*
                   カードが出ている間に何か描き始めた(= 未保存の変更がある)ら、

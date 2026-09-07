@@ -31,6 +31,7 @@
  */
 
 import type { FileKind } from '@pointercad/model';
+type SaveFileKind = FileKind | 'pcada';
 
 import { t, type MessageKey } from '../i18n/t.js';
 
@@ -54,12 +55,13 @@ export interface PickedTypedFile {
 
 export interface FileGateway {
   /** 開く。取り消されたら null。読めなかったときは例外を投げる。 */
-  openPcad(): Promise<PickedFile | null>;
+  openPcad(kind?: 'part' | 'assembly' | 'all'): Promise<PickedFile | null>;
   /**
    * 保存する。`saveAs` が false のときは、前に保存した先へ黙って上書きしてよい。
    * 保存できたらファイル名を返す。取り消されたら null。
    */
-  savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean): Promise<string | null>;
+  savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean,
+    kind?: 'part' | 'assembly'): Promise<string | null>;
   /** 前に保存した先を覚えているか(「保存」を「名前を付けて保存」に落とすかの判断)。 */
   hasSaveTarget(): boolean;
   /**
@@ -86,7 +88,7 @@ export interface FileGateway {
    * **呼ぶたびに名前を訊く**(上書き先を覚えない。§0.a-0.4)。
    * 省略できる理由は `openFile` と同じ。
    */
-  saveFileAs?(fileName: string, kind: FileKind, bytes: Uint8Array): Promise<boolean>;
+  saveFileAs?(fileName: string, kind: SaveFileKind, bytes: Uint8Array): Promise<boolean>;
   /**
    * 印刷する(FR-810。P6 計画書 §2.11、タスク29)。PNG のバイト列を渡すと、
    * 印刷できたら true、取り消されたら false を返す(**取り消しは例外にしない**)。
@@ -100,6 +102,17 @@ export interface FileGateway {
 
 /** 部品ファイルの拡張子(要件§8)。 */
 export const PCAD_EXTENSION = '.pcad';
+export const PCADA_EXTENSION = '.pcada';
+
+export function withPcadaExtension(name: string): string {
+  const trimmed = name.trim();
+  return trimmed.toLowerCase().endsWith(PCADA_EXTENSION) ? trimmed : `${trimmed}${PCADA_EXTENSION}`;
+}
+
+function documentFileTypes(kind: 'part' | 'assembly' | 'all'): readonly FilePickerType[] {
+  const assembly = { description: t('assembly.fileType'), accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } };
+  return kind === 'assembly' ? [assembly] : kind === 'all' ? [PCAD_FILE_TYPE, assembly] : [PCAD_FILE_TYPE];
+}
 
 /**
  * 部品ファイルの MIME 型。`.pcad` は世の中に登録された型を持たないので、
@@ -151,7 +164,8 @@ interface FileKindSpec {
  * 同じ内容を写してある(本体プロセスから `@pointercad/ui` を読むと画面用の実装まで
  * 抱き込むため。既存の `PCAD_FILE_FILTER` と同じ理由)。
  */
-const FILE_KIND_SPECS: Readonly<Record<FileKind, FileKindSpec>> = {
+const FILE_KIND_SPECS: Readonly<Record<SaveFileKind, FileKindSpec>> = {
+  pcada: { label: 'PointerCAD', descriptionKey: 'assembly.fileType', accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } },
   pcad: {
     label: 'PointerCAD',
     descriptionKey: 'file.typeDescription',
@@ -173,19 +187,19 @@ const FILE_KIND_SPECS: Readonly<Record<FileKind, FileKindSpec>> = {
 };
 
 /** その種類の拡張子(先頭の `.` を含む)。並びは表の順で、先頭が代表(書き出しで足す拡張子)。 */
-export function extensionsOf(kind: FileKind): readonly string[] {
+export function extensionsOf(kind: SaveFileKind): readonly string[] {
   return Object.values(FILE_KIND_SPECS[kind].accept).flat();
 }
 
 /** その種類を書き出すときに使う MIME 型(表の先頭)。ダウンロードの `Blob` に渡す。 */
-function primaryMimeTypeOf(kind: FileKind): string {
+function primaryMimeTypeOf(kind: SaveFileKind): string {
   // 表は必ず 1 つ以上の MIME 型を持つ。空の表を書けば下の `?? ` ではなく型検査が落ちるべきだが、
   // `Record` の値の空でないことは型で言えないので、取り出せなかったときは汎用の型へ落とす。
   return Object.keys(FILE_KIND_SPECS[kind].accept)[0] ?? PCAD_MIME_TYPE;
 }
 
 /** ファイル選択の窓に出す種別 1 つを組み立てる。 */
-function fileTypeOf(kind: FileKind): FilePickerType {
+function fileTypeOf(kind: SaveFileKind): FilePickerType {
   const spec = FILE_KIND_SPECS[kind];
   const key = spec.descriptionKey;
   return { description: key === undefined ? spec.label : t(key), accept: spec.accept };
@@ -628,7 +642,7 @@ export async function openFileInBrowser(
  */
 export async function saveFileAsInBrowser(
   fileName: string,
-  kind: FileKind,
+  kind: SaveFileKind,
   bytes: Uint8Array,
   scope: object = globalThis,
 ): Promise<boolean> {
@@ -676,7 +690,7 @@ export function openFileThrough(
 export function saveFileAsThrough(
   gateway: FileGateway,
   fileName: string,
-  kind: FileKind,
+  kind: SaveFileKind,
   bytes: Uint8Array,
 ): Promise<boolean> {
   return gateway.saveFileAs === undefined
@@ -709,15 +723,15 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
   let nextSaveTargetToken = 1;
 
   return {
-    async openPcad(): Promise<PickedFile | null> {
+    async openPcad(kind = 'part'): Promise<PickedFile | null> {
       // 前回の未確定候補は使えない。確定済みの保存先は、今回が失敗・取消なら保つ。
       pendingSaveTarget = null;
       if (!hasOpenPicker(scope)) {
-        return pickFileWithInput(PCAD_EXTENSION, scope);
+        return pickFileWithInput(kind === 'all' ? '.pcad,.pcada' : kind === 'assembly' ? PCADA_EXTENSION : PCAD_EXTENSION, scope);
       }
       let picked: unknown;
       try {
-        picked = await scope.showOpenFilePicker({ multiple: false, types: [PCAD_FILE_TYPE] });
+        picked = await scope.showOpenFilePicker({ multiple: false, types: documentFileTypes(kind) });
       } catch (error) {
         if (isAbortError(error)) {
           return null;
@@ -746,7 +760,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       return { name: handle.name, bytes, saveTargetToken };
     },
 
-    async savePcad(suggestedName, bytes, saveAs): Promise<string | null> {
+    async savePcad(suggestedName, bytes, saveAs, kind = 'part'): Promise<string | null> {
       if (!hasSavePicker(scope)) {
         // 場所は選べないので、名前を添えてダウンロードする(§0.a-0.10)。
         downloadBytes(scope, suggestedName, PCAD_MIME_TYPE, bytes);
@@ -756,7 +770,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       if (target === null) {
         let picked: unknown;
         try {
-          picked = await scope.showSaveFilePicker({ suggestedName, types: [PCAD_FILE_TYPE] });
+          picked = await scope.showSaveFilePicker({ suggestedName, types: documentFileTypes(kind) });
         } catch (error) {
           if (isAbortError(error)) {
             return null;

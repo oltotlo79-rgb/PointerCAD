@@ -1,5 +1,6 @@
 /**
- * 部品文書のスライス(唯一の正本 `document`、Undo / Redo、つまみ、作図面、パラメータ)。
+ * 文書操作の共通入口と部品文書のスライス(document、つまみ、作図面、パラメータ)。
+ * Undo / Redo はいまの文書種別で分岐し、部品の編集と明示的な文書切替をここで受ける。
  * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
  */
 
@@ -29,7 +30,8 @@ import { EMPTY_REFERENCE_DRAFT } from '../sketch/referenceCommands.js';
 import { EMPTY_SHAPE_DRAFT } from '../sketch/shapeCommands.js';
 import type { OrbitState } from '../viewport/cameraMath.js';
 import type { CanvasPixelSize } from '../viewport/canvasLayer.js';
-import type { AppState } from './appState.js';
+import type { AppState, DocumentStateUpdate } from './appState.js';
+import { activeDocumentKind } from './documentKind.js';
 import {
   constraintSummaryPatch,
   documentPatch,
@@ -233,7 +235,9 @@ export const createDocumentSlice: StateCreator<
     });
   },
   applyDocument: (incoming, options) => {
-    set((state) => {
+    // アセンブリ中の部品編集は行わない。開く等の明示的な文書切替だけを受ける。
+    if (activeDocumentKind(get()) === 'assembly' && options?.replacesDocument !== true) return;
+    const update: DocumentStateUpdate = (state) => {
       if (incoming === state.document) {
         return {};
       }
@@ -335,7 +339,9 @@ export const createDocumentSlice: StateCreator<
         // 形が変われば測り直し。外観だけの変更では材料が変わっても残る)。
         massProperties: affectsShape(state.document, next) ? null : state.massProperties,
       };
-    });
+    };
+    if (options?.replacesDocument === true) get().resetAssembly(update);
+    else set(update);
     /*
       つまみの初回の案内を出したら、二度と出さないよう端末に覚える(P4b タスク22b-(a)、
       利用者の決定①)。`set` の中は副作用を持たない純粋な差分にしたいので、
@@ -394,6 +400,10 @@ export const createDocumentSlice: StateCreator<
     });
   },
   undo: () => {
+    if (activeDocumentKind(get()) === 'assembly') {
+      get().undoAssembly();
+      return;
+    }
     set((state) => {
       const stack = undoStep(state.undoStack);
       if (stack === state.undoStack) {
@@ -423,6 +433,10 @@ export const createDocumentSlice: StateCreator<
     });
   },
   redo: () => {
+    if (activeDocumentKind(get()) === 'assembly') {
+      get().redoAssembly();
+      return;
+    }
     set((state) => {
       const stack = redoStep(state.undoStack);
       if (stack === state.undoStack) {
@@ -450,7 +464,8 @@ export const createDocumentSlice: StateCreator<
     set({ freeSketchPlane });
   },
   resetDocument: (next) => {
-    set((state) => ({
+    if (activeDocumentKind(get()) === 'assembly') get().fileGateway.clearSaveTarget?.();
+    get().resetAssembly((state) => ({
       // 新規・復元は丸ごとの差し替え(タスク22b-(i))。3D スケッチのままなら XY へ戻す。
       ...documentPatch(state, next, createUndoStack(next), true),
       // 新規・復元も文書の丸ごとの差し替え(§0.a-0.1〜)。

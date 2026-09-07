@@ -12,6 +12,9 @@ import {
   AUTO_SAVE_INTERVAL_MS,
   PCAD_DOCUMENT_ENTRY,
   createAutoSaver,
+  createMemoryAutoSaveStorage,
+  readDocumentBundle,
+  writeDocumentBundle,
   readPcadFile,
   serializeDocument,
   writePcadFile,
@@ -24,12 +27,20 @@ import {
   absoluteCoordinate,
   appendFeature,
   createEmptyPartDocument,
+  createAssemblyDocument,
+  createAssemblyDocumentBundle,
+  createPartDocumentBundle,
+  addComponent,
+  createComponentFor,
+  embedPart,
+  EMPTY_PART_LIBRARY,
+  emptyEmbeddedPartAttachments,
   createEmptySketchDocument,
   createPointFeature,
   replaceSketch,
   type PartDocument,
 } from '@pointercad/model';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -646,6 +657,125 @@ describe('起動時の配線', () => {
 
     clearAutoSaveFailure();
     expect(useAppStore.getState().fileMessage).toBeNull();
+  });
+});
+
+describe('文書・窓ごとのアセンブリの控え', () => {
+  it.each(['open', 'new'] as const)('assembly から part の %s で saver を1回だけ切り替え、旧文書へ保存しない', async (action) => {
+    const storage = createMemoryAutoSaveStorage();
+    const timer = createManualTimer();
+    const assembly = createAssemblyDocument('assembly');
+    useAppStore.getState().openAssembly(assembly);
+    useAppStore.getState().applyAssembly({ ...assembly, name: 'edited' });
+    const oldId = useAppStore.getState().activeDocumentId;
+    const created: AutoSaver[] = [];
+    const detach = startAutoSave({ storage, sessionId: 'window-A', createSaver: (options) => {
+      const saver = createAutoSaver({ ...options, setTimeout: timer.schedule, clearTimeout: timer.cancel });
+      created.push(saver);
+      return saver;
+    } });
+    const stop = vi.spyOn(created[0], 'stop');
+    const markOld = vi.spyOn(created[0], 'markDirty');
+    const document = partWithPoint();
+    try {
+      const store = useAppStore.getState();
+      if (action === 'open') store.applyDocument(document, { replacesDocument: true });
+      else store.resetDocument(document);
+      expect(stop).toHaveBeenCalledOnce();
+      expect(markOld).not.toHaveBeenCalled();
+      expect(created).toHaveLength(2);
+      expect(timer.pendingCount()).toBe(1);
+      const newId = useAppStore.getState().activeDocumentId;
+      expect(newId).not.toBe(oldId);
+      timer.fire();
+      await vi.waitFor(async () => expect(await storage.listRecords()).toHaveLength(1));
+      const [record] = await storage.listRecords();
+      expect(record).toMatchObject({ kind: 'part', documentId: newId, sessionId: 'window-A' });
+      const outcome = await readDocumentBundle(record.bytes, 'part');
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) throw new Error('part required');
+      expect(outcome.bundle.document).toEqual(document);
+    } finally {
+      detach();
+      stop.mockRestore();
+      markOld.mockRestore();
+    }
+    expect(timer.pendingCount()).toBe(0);
+  });
+
+  it('文書切替で旧 saver を停止し、新しい kind / documentId / sessionId へ保存する', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const timer = createManualTimer();
+    const created: AutoSaver[] = [];
+    const detach = startAutoSave({ storage, sessionId: 'window-A', createSaver: (options) => {
+      const saver = createAutoSaver({ ...options, setTimeout: timer.schedule, clearTimeout: timer.cancel });
+      created.push(saver);
+      return saver;
+    } });
+    const first = created[0];
+    const stop = vi.spyOn(first, 'stop');
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, createEmptyPartDocument(), 'a.pcad', './a.pcad', {
+      attachments: { ...emptyEmbeddedPartAttachments(), shapes: new Map([['shape', Uint8Array.of(3)]]) },
+    });
+    const empty = createAssemblyDocument('assembly');
+    useAppStore.getState().openAssembly(empty);
+    const identity = useAppStore.getState().activeDocumentId;
+    const document = addComponent(empty, createComponentFor(empty, { kind: 'part', partRef: embedded.partRef }));
+    useAppStore.getState().applyAssembly(document, embedded.library);
+    expect(stop).toHaveBeenCalledOnce();
+    expect(created).toHaveLength(2);
+    await useAppStore.getState().autoSaver?.saveNow(createAssemblyDocumentBundle(document, embedded.library));
+    const records = await storage.listRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ kind: 'assembly', documentId: identity, sessionId: 'window-A' });
+    const outcome = await readDocumentBundle(records[0].bytes, 'assembly');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok || outcome.bundle.kind !== 'assembly') throw new Error('assembly required');
+    expect(outcome.bundle.embeddedDocuments.get(embedded.partRef)?.attachments.shapes.get('shape')).toEqual(Uint8Array.of(3));
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().activeDocumentId).toBe(identity);
+    expect(created).toHaveLength(2);
+    detach();
+    expect(timer.pendingCount()).toBe(0);
+  });
+
+  it('part と assembly、別の窓の控えを区別し、assembly だけを復元する', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const document = createAssemblyDocument('recover');
+    const records: AutoSaveRecord[] = [
+      { kind: 'part', documentId: 'same-id', sessionId: 'window-old', savedAt: SAVED_AT,
+        documentName: 'part', bytes: await writeDocumentBundle(createPartDocumentBundle(partWithPoint())) },
+      { kind: 'assembly', documentId: 'same-id', sessionId: 'window-old', savedAt: SAVED_AT,
+        documentName: document.name, bytes: await writeDocumentBundle(createAssemblyDocumentBundle(document)) },
+    ];
+    for (const record of records) await storage.write(record);
+    useAppStore.getState().openAssembly(createAssemblyDocument('new'));
+    const timer = createManualTimer();
+    const detach = startAutoSave({ storage, sessionId: 'window-new', createSaver: (options) =>
+      createAutoSaver({ ...options, setTimeout: timer.schedule, clearTimeout: timer.cancel }) });
+    await vi.waitFor(() => expect(useAppStore.getState().recoveryRecord?.kind).toBe('assembly'));
+    const saver = useAppStore.getState().autoSaver;
+    if (saver === null) throw new Error('saver required');
+    await restoreAutoSave(saver);
+    expect(useAppStore.getState().assembly).toEqual(document);
+    expect(await storage.listRecords()).toHaveLength(2);
+    detach();
+  });
+
+  it('壊れた assembly の控えは理由を示して保持し、指定した窓の控えだけ破棄する', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const record: AutoSaveRecord = { kind: 'assembly', documentId: 'd', sessionId: 's1',
+      documentName: 'broken', savedAt: SAVED_AT, bytes: Uint8Array.of(0) };
+    await storage.write(record);
+    await storage.write({ ...record, sessionId: 's2' });
+    const saver = createAutoSaver({ storage, kind: 'assembly', documentId: 'd', sessionId: 's1' });
+    await loadAutoSavePrompt(saver);
+    expect(useAppStore.getState().restorePrompt?.unrecoverable).toBe(true);
+    await restoreAutoSave(saver);
+    expect(await storage.listRecords()).toHaveLength(2);
+    await discardAutoSave(saver);
+    expect((await storage.listRecords()).map((entry) => entry.sessionId)).toEqual(['s2']);
+    saver.stop();
   });
 });
 

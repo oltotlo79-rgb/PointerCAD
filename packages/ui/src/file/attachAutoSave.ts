@@ -20,14 +20,20 @@
 import {
   createAutoSaver,
   createIndexedDbAutoSaveStorage,
+  readDocumentBundle,
+  type AutoSaveRecord,
+  type AutoSaverOptions,
   type AutoSaver,
   type AutoSaveStorage,
 } from '@pointercad/io';
+import { createAssemblyDocumentBundle, createPartDocumentBundle, partLibraryOfBundle } from '@pointercad/model';
 
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { saveFileAsThrough, withPcadExtension } from './fileGateway.js';
-import { hasUnsavedChanges, readPartDocument } from './partFile.js';
+import { saveFileAsThrough, withPcadExtension, withPcadaExtension } from './fileGateway.js';
+import { openErrorMessageKey, readPartDocument } from './partFile.js';
+import { activeHasUnsavedChanges } from './assemblyFile.js';
+import { activeDocument } from '../store/documentKind.js';
 
 // ---------------------------------------------------------------------------
 // 保管庫を選ぶ
@@ -87,15 +93,17 @@ export function createAutoSaveStorageForBrowser(scope: object = globalThis): Aut
  */
 export function createUnsavedOnlyStorage(inner: AutoSaveStorage): AutoSaveStorage {
   return {
-    read: () => inner.read(),
+    read: (identity) => inner.read(identity),
     write: (record) => {
       const state = useAppStore.getState();
-      if (!hasUnsavedChanges(state.document, state.savedDocument)) {
+      if ((record.documentId === undefined || record.documentId === state.activeDocumentId) &&
+        !activeHasUnsavedChanges(state)) {
         return Promise.resolve();
       }
       return inner.write(record);
     },
-    clear: () => inner.clear(),
+    clear: (identity) => inner.clear(identity),
+    ...(inner.listRecords === undefined ? {} : { listRecords: () => inner.listRecords?.() ?? Promise.resolve([]) }),
   };
 }
 
@@ -140,6 +148,7 @@ function browserVisibilityTarget(): VisibilityTarget | null {
 // ---------------------------------------------------------------------------
 
 export interface AttachAutoSaveOptions {
+  readonly bundleParts?: boolean;
   /** 控えを書く人(`packages/io` の `createAutoSaver` が作る)。 */
   readonly saver: AutoSaver;
   /**
@@ -163,13 +172,18 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
   const { saver } = options;
 
   const unsubscribe = useAppStore.subscribe((next, previous) => {
-    if (next.document === previous.document) {
+    if (next.document === previous.document && next.assembly === previous.assembly &&
+      next.assemblyLibrary === previous.assemblyLibrary && next.importedShapes === previous.importedShapes &&
+      next.importedMeshes === previous.importedMeshes && next.canvases === previous.canvases) {
       return;
     }
-    if (!hasUnsavedChanges(next.document, next.savedDocument)) {
+    if (!activeHasUnsavedChanges(next)) {
       return;
     }
-    saver.markDirty(next.document);
+    const active = activeDocument(next);
+    saver.markDirty(active.kind === 'part' ? (options.bundleParts === true
+      ? createPartDocumentBundle(active.document, currentPcadAttachments()) : active.document) :
+      createAssemblyDocumentBundle(active.document, active.library));
   });
 
   const visibility =
@@ -179,10 +193,13 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
       return;
     }
     const state = useAppStore.getState();
-    if (!hasUnsavedChanges(state.document, state.savedDocument)) {
+    if (!activeHasUnsavedChanges(state)) {
       return;
     }
-    void saver.saveNow(state.document);
+    const active = activeDocument(state);
+    void saver.saveNow(active.kind === 'part' ? (options.bundleParts === true
+      ? createPartDocumentBundle(active.document, currentPcadAttachments()) : active.document) :
+      createAssemblyDocumentBundle(active.document, active.library));
   };
   if (visibility !== null) {
     visibility.addEventListener('visibilitychange', onVisibilityChange);
@@ -202,6 +219,7 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
 // ---------------------------------------------------------------------------
 
 export interface LoadAutoSavePromptOptions {
+  readonly record?: AutoSaveRecord | null;
   /**
    * 読み終わった時点で、まだ案内を出してよいか。false を返すと画面へは何も出さない。
    * React の StrictMode は起動の手続きを 2 回走らせるので、1 回目の片付けの後に
@@ -218,8 +236,10 @@ export async function loadAutoSavePrompt(
   saver: AutoSaver,
   options: LoadAutoSavePromptOptions = {},
 ): Promise<void> {
-  const record = await saver.readLatest();
+  const record = options.record === undefined ? await saver.readLatest() : options.record;
   const mayApply = (): boolean => options.shouldApply?.() !== false;
+  if (!mayApply()) return;
+  useAppStore.setState({ recoveryRecord: record });
 
   if (record === null) {
     if (mayApply()) {
@@ -227,7 +247,7 @@ export async function loadAutoSavePrompt(
     }
     return;
   }
-  const outcome = readPartDocument(record.bytes);
+  const outcome = record.kind === 'assembly' ? await readAssemblyRecovery(record) : readPartDocument(record.bytes);
   if (!outcome.ok) {
     if (mayApply()) {
       useAppStore.getState().setRestorePrompt({
@@ -255,9 +275,23 @@ export async function loadAutoSavePrompt(
  * 落ちても同じところから始められる。
  */
 export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
-  const record = await saver.readLatest();
+  const record = await recoveryRecordOf(saver);
   if (record === null) {
     useAppStore.getState().setRestorePrompt(null);
+    return;
+  }
+  if (record.kind === 'assembly') {
+    const outcome = await readDocumentBundle(record.bytes, 'assembly');
+    if (!outcome.ok || outcome.bundle.kind !== 'assembly') {
+      await loadAutoSavePrompt(saver, { record });
+      return;
+    }
+    const state = useAppStore.getState();
+    state.openAssembly(outcome.bundle.document, partLibraryOfBundle(outcome.bundle));
+    // 復元後は新しい窓の session で同じ文書を引き継ぐ。元の控えは消さない。
+    if (record.documentId !== undefined) useAppStore.setState({ activeDocumentId: record.documentId });
+    state.setRestorePrompt(null);
+    useAppStore.setState({ recoveryRecord: null });
     return;
   }
   const outcome = readPartDocument(record.bytes);
@@ -273,6 +307,7 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   }
   const store = useAppStore.getState();
   store.resetDocument(outcome.document);
+  if (record.documentId !== undefined) useAppStore.setState({ activeDocumentId: record.documentId });
   /*
    * 形そのもの(読み込んだ B-rep・三角形・下絵)は文書の外にあるので、**文書を作り直した
    * 後に**入れ直す(`resetDocument` が前の部品の表を空にするので、先に入れると消える。
@@ -285,15 +320,31 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   store.setRestorePrompt(null);
 }
 
+async function readAssemblyRecovery(record: AutoSaveRecord) {
+  const result = await readDocumentBundle(record.bytes, 'assembly');
+  return result.ok ? { ok: true as const } :
+    { ok: false as const, messageKey: openErrorMessageKey(result.error.code) };
+}
+
+function recoveryRecordOf(saver: AutoSaver): Promise<AutoSaveRecord | null> {
+  const state = useAppStore.getState();
+  const record = state.restorePrompt === null ? null : state.recoveryRecord;
+  return saver.readLatest(record?.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined
+    ? { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId } : undefined);
+}
+
 /** 案内の「破棄する」。控えを消して案内を閉じる。 */
 export async function discardAutoSave(saver: AutoSaver): Promise<void> {
-  await saver.discard();
+  const record = await recoveryRecordOf(saver);
+  await saver.discard(record?.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined
+    ? { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId } : undefined);
   useAppStore.getState().setRestorePrompt(null);
+  useAppStore.setState({ recoveryRecord: null });
 }
 
 /** 読めない控えを、内容を変えず既存のファイル保存の口から `.pcad` として書き出す。 */
 export async function exportAutoSave(saver: AutoSaver): Promise<void> {
-  const record = await saver.readLatest();
+  const record = await recoveryRecordOf(saver);
   if (record === null) {
     useAppStore.getState().setRestorePrompt(null);
     return;
@@ -302,8 +353,8 @@ export async function exportAutoSave(saver: AutoSaver): Promise<void> {
   try {
     const saved = await saveFileAsThrough(
       store.fileGateway,
-      withPcadExtension(record.documentName),
-      'pcad',
+      record.kind === 'assembly' ? withPcadaExtension(record.documentName) : withPcadExtension(record.documentName),
+      record.kind === 'assembly' ? 'pcada' : 'pcad',
       record.bytes,
     );
     if (saved) {
@@ -334,6 +385,66 @@ export function clearAutoSaveFailure(): void {
 export interface StartAutoSaveOptions {
   /** 控えを書く人。既定はブラウザ用の保管庫を使うもの。検査では時計とタイマーを差し替えて渡す。 */
   readonly saver?: AutoSaver;
+  readonly storage?: AutoSaveStorage;
+  readonly sessionId?: string;
+  readonly createSaver?: (options: AutoSaverOptions) => AutoSaver;
+}
+
+const WINDOW_SESSION_ID = crypto.randomUUID();
+
+function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
+  const storage = options.storage ?? createAutoSaveStorageForBrowser();
+  const factory = options.createSaver ?? createAutoSaver;
+  const sessionId = options.sessionId ?? WINDOW_SESSION_ID;
+  let detached = false;
+  let identity = '';
+  let revision = 0;
+  let stopCurrent: (() => void) | null = null;
+  let saver: AutoSaver | null = null;
+  const promptedKinds = new Set<string>();
+
+  function switchDocument(): void {
+    const state = useAppStore.getState();
+    const active = activeDocument(state);
+    const nextIdentity = `${active.kind}:${active.documentId}`;
+    if (identity === nextIdentity) return;
+    identity = nextIdentity;
+    revision += 1;
+    const currentRevision = revision;
+    stopCurrent?.();
+    const current = factory({ storage: createUnsavedOnlyStorage(storage), kind: active.kind,
+      documentId: active.documentId, sessionId,
+      onError: () => { if (!detached && currentRevision === revision) reportAutoSaveFailure(); },
+      onSuccess: () => { if (!detached && currentRevision === revision) clearAutoSaveFailure(); },
+    });
+    saver = current;
+    state.setAutoSaver(current);
+    stopCurrent = attachAutoSave({ saver: current, bundleParts: true });
+    if (activeHasUnsavedChanges(useAppStore.getState())) {
+      current.markDirty(active.kind === 'assembly'
+        ? createAssemblyDocumentBundle(active.document, active.library)
+        : createPartDocumentBundle(active.document, currentPcadAttachments()));
+    }
+    const shouldApply = () => !detached && currentRevision === revision;
+    if (promptedKinds.has(active.kind)) return;
+    promptedKinds.add(active.kind);
+    if (storage.listRecords === undefined) {
+      void loadAutoSavePrompt(current, { shouldApply });
+    } else {
+      void storage.listRecords().then((records) => loadAutoSavePrompt(current, { shouldApply,
+        record: records.filter((record) => (record.kind ?? 'part') === active.kind)
+          .sort((a, b) => b.savedAt.localeCompare(a.savedAt))[0] ?? null,
+      })).catch(() => { if (shouldApply()) reportAutoSaveFailure(); });
+    }
+  }
+  const unsubscribe = useAppStore.subscribe(switchDocument);
+  switchDocument();
+  return () => {
+    detached = true;
+    unsubscribe();
+    stopCurrent?.();
+    if (useAppStore.getState().autoSaver === saver) useAppStore.getState().setAutoSaver(null);
+  };
 }
 
 /**
@@ -344,6 +455,7 @@ export interface StartAutoSaveOptions {
  * カードが二重に出ることはない。
  */
 export function startAutoSave(options: StartAutoSaveOptions = {}): () => void {
+  if (options.saver === undefined) return startDocumentAutoSave(options);
   const saver =
     options.saver ??
     createAutoSaver({

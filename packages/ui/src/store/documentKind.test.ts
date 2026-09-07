@@ -11,8 +11,11 @@
  */
 import { createAssemblyDocument, createEmptyPartDocument } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
+import { useAppStore } from './useAppStore.js';
 
 import {
+  activeDocument,
+  activeFileName,
   activeAssemblyDocument,
   activeDocumentKind,
   activePartDocument,
@@ -24,6 +27,22 @@ const part = createEmptyPartDocument();
 const assembly = createAssemblyDocument('組み立て1');
 
 describe('いま開いている文書の種類(P7 タスク5)', () => {
+  it('共通入口の part は従来の文書・保存済み文書・名前を返す', () => {
+    const state = { ...useAppStore.getState(), document: part, assembly: null,
+      savedDocument: part, fileName: 'part.pcad' };
+    expect(activeDocument(state)).toEqual({ kind: 'part', document: part, saved: part,
+      fileName: 'part.pcad', documentId: state.activeDocumentId });
+    expect(activeFileName(state)).toBe('part.pcad');
+  });
+
+  it('共通入口の assembly は裏の part の名前・保存状態を採らない', () => {
+    const state = { ...useAppStore.getState(), document: part, assembly,
+      fileName: 'hidden.pcad', assemblyFileName: 'assembly.pcada' };
+    const active = activeDocument(state);
+    expect(active.kind).toBe('assembly');
+    expect(active.document).toBe(assembly);
+    expect(activeFileName(state)).toBe('assembly.pcada');
+  });
   it('部品だけを持っていれば part', () => {
     expect(activeDocumentKind({ document: part, assembly: null })).toBe('part');
   });

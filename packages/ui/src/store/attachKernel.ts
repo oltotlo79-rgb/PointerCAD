@@ -16,6 +16,7 @@ import type { PartMeasurer } from '../solid/measureCommands.js';
 import type { PartInspector } from '../solid/printCheckCommands.js';
 import type { AppState } from './appState.js';
 import type { RecomputeOutcome } from './recomputeSlice.js';
+import { activePartDocument } from './documentKind.js';
 import { useAppStore } from './useAppStore.js';
 
 /**
@@ -141,7 +142,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
 
   function start(document: PartDocument): void {
     running = true;
-    generation += 1;
+    generation = Math.max(generation, useAppStore.getState().requestedGeneration) + 1;
     const current = generation;
     useAppStore.getState().recordRecomputeRequest(current);
     // 利用者の中止は「この計算を始めた後に頼まれたか」で判る。新しい文書の予約と
@@ -154,12 +155,13 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
       generation: current,
       onProgress: (progress) => {
         // 古い世代の通知は捨てる。画面の進み具合を決めるのは最新の計算だけ。
-        if (detached || current !== generation) {
+        if (detached || current !== generation || activePartDocument(useAppStore.getState()) === null) {
           return;
         }
         useAppStore.getState().setRecomputeProgress(progress);
       },
       shouldCancel: () =>
+        detached || activePartDocument(useAppStore.getState()) === null ||
         useAppStore.getState().cancelRequestCount > cancelBaseline ||
         queued !== null ||
         generation !== current,
@@ -175,6 +177,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
           return;
         }
         const next = takeQueued();
+        if (activePartDocument(useAppStore.getState()) === null) return;
         if (next !== null) {
           // もっと新しい文書が来ている。この結果は使わずに次を計算する。
           useAppStore.getState().recordRecomputeCompletion(current, 'cancelled');
@@ -189,6 +192,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
           return;
         }
         const next = takeQueued();
+        if (activePartDocument(useAppStore.getState()) === null) return;
         if (next !== null) {
           useAppStore.getState().recordRecomputeCompletion(current, 'cancelled');
           start(next);
@@ -218,16 +222,20 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
     return documentUpTo(state.document, state.timelineIndex);
   }
 
-  request(shownDocument(useAppStore.getState()));
+  if (activePartDocument(useAppStore.getState()) !== null) request(shownDocument(useAppStore.getState()));
 
   const unsubscribe = useAppStore.subscribe((next, previous) => {
+    if (activePartDocument(next) === null) {
+      queued = null;
+      return;
+    }
     // つまみを動かしたときも計算し直す(FR-507)。切った文書のフィーチャーは複製されない
     // ので段の鍵は変わらず、前半の段は全部キャッシュに当たる(§2.7)。
     // **外観の割り当てだけが変わったときは投げない**(FR-1106〜1110、要件§4.12、
     // P5 §2.3.2)。色を変えるたびに 100 フィーチャーの解決と Worker の往復が起きるのを
     // 避けるための、P5 で最も効く 1 行。形の変化の判定は `model` の `affectsShape` が正本。
     if (
-      affectsShape(previous.document, next.document) ||
+      activePartDocument(previous) === null || affectsShape(previous.document, next.document) ||
       next.timelineIndex !== previous.timelineIndex
     ) {
       request(shownDocument(next));

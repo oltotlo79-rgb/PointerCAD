@@ -17,15 +17,16 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('pointercadDesktop', {
   platform: process.platform,
   /** 「開く」。答えは `{ name, bytes, saveTargetToken }` か null。token に実パスは含めない。 */
-  openPcad: (): Promise<unknown> => ipcRenderer.invoke('pcad:open'),
+  openPcad: (kind?: 'part' | 'assembly' | 'all'): Promise<unknown> => ipcRenderer.invoke('pcad:open', kind),
   /** 読み終えた部品について、開いた先を上書き先に確定する。 */
   confirmSaveTarget: (token: string): Promise<unknown> =>
     ipcRenderer.invoke('pcad:confirmTarget', token),
   /** 新しい文書へ替えるとき、確定済み・未確定の保存先を解除する。 */
   clearSaveTarget: (): Promise<unknown> => ipcRenderer.invoke('pcad:clearTarget'),
   /** 「保存」。答えは保存したファイル名か null(取り消し)。 */
-  savePcad: (suggestedName: string, bytes: Uint8Array, saveAs: boolean): Promise<unknown> =>
-    ipcRenderer.invoke('pcad:save', suggestedName, bytes, saveAs),
+  savePcad: (suggestedName: string, bytes: Uint8Array, saveAs: boolean,
+    kind?: 'part' | 'assembly'): Promise<unknown> =>
+    ipcRenderer.invoke('pcad:save', suggestedName, bytes, saveAs, kind),
   /** 上書き先を覚えているか。答えは真偽。 */
   hasSaveTarget: (): Promise<unknown> => ipcRenderer.invoke('pcad:hasTarget'),
   /**

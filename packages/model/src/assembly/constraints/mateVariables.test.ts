@@ -282,12 +282,12 @@ describe('mateValueOf', () => {
  * ------------------------------------------------------------------ */
 
 describe('mateEquationCount', () => {
-  it('平行は 2 本、同心は 4 本、距離・角度・接線は 1 本', () => {
+  it('平行・接線は 2 本、同心は 4 本、距離・角度は 1 本', () => {
     expect(mateEquationCount('parallel', null)).toBe(2);
     expect(mateEquationCount('concentric', null)).toBe(4);
     expect(mateEquationCount('distance', null)).toBe(1);
     expect(mateEquationCount('angle', null)).toBe(1);
-    expect(mateEquationCount('tangent', null)).toBe(1);
+    expect(mateEquationCount('tangent', null)).toBe(2);
   });
 
   it('一致は対象の種類で本数が変わる(面と面 3・点と点 3・点と面 1)', () => {

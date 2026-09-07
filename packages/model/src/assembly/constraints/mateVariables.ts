@@ -219,7 +219,7 @@ const MATE_EQUATION_COUNTS: Readonly<Record<Exclude<MateKind, 'coincident'>, num
   concentric: 4,
   distance: 1,
   angle: 1,
-  tangent: 1,
+  tangent: 2,
 };
 
 /** ジョイント 1 つが出す式の本数(§2.6 の表)。残る自由度は 6 − この数。 */

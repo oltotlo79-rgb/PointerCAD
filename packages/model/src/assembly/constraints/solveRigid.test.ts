@@ -1,0 +1,169 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  scaledRigidJacobian, solveRigid, type RigidResidualRow, type RigidSolveInput,
+} from './solveRigid.js';
+
+function row(value: number, gradient: readonly number[], unit: 'length' | 'angle' = 'length', scale = 1): RigidResidualRow {
+  return { value: value * scale, gradient: new Map(gradient.map((v, j) => [j, v * scale])), unit, scale };
+}
+function problem(initial: readonly number[], evaluate: (x: readonly number[]) => readonly RigidResidualRow[]): RigidSolveInput<readonly number[]> {
+  return { initial, variables: initial.map(() => 'length'),
+    evaluate: (base, step) => ({ rows: evaluate(base.map((v, j) => v + step[j])) }),
+    retract: (base, step) => base.map((v, j) => v + step[j]), options: { characteristicLength: 1 } };
+}
+
+describe('solveRigidの受理/棄却と停止理由', () => {
+  it('1変数の解析解x=7に収束する', () => {
+    const result = solveRigid(problem([0], ([x]) => [row(x - 7, [1])]));
+    expect(result.stop).toBe('converged');
+    expect(result.base[0]).toBeCloseTo(7, 10);
+    expect(result.maxResidual).toBeLessThan(1e-9);
+    expect(result.iterations).toBeGreaterThanOrEqual(1);
+    expect(result.iterations).toBeLessThanOrEqual(8);
+  });
+  it('2変数の解析解x=2,y=3に収束する', () => {
+    const result = solveRigid(problem([0, 0], ([x, y]) => [row(x + y - 5, [1, 1]), row(2 * x - y - 1, [2, -1])]));
+    expect(result.base[0]).toBeCloseTo(2, 10);
+    expect(result.base[1]).toBeCloseTo(3, 10);
+    expect(result.converged).toBe(true);
+  });
+  it('大きすぎる候補を棄却しても基準と入力を動かさない', () => {
+    const initial = Object.freeze([0.1]);
+    const calls: { base: readonly number[]; step: readonly number[] }[] = [];
+    const accepted: number[][] = [];
+    const result = solveRigid({ ...problem(initial, () => []),
+      evaluate: (base, step) => {
+        calls.push({ base, step: [...step] });
+        const x = base[0] + step[0];
+        return { rows: [row(x * x - 1, [2 * x])] };
+      }, retract: (base, step) => {
+        const next = [base[0] + step[0]];
+        accepted.push(next);
+        return Object.freeze(next);
+      } });
+    const firstAccepted = result.trace.findIndex((entry) => entry.accepted);
+    expect(firstAccepted).toBeGreaterThan(0);
+    expect(calls.slice(0, firstAccepted + 2).every((call) => call.base === initial)).toBe(true);
+    expect(accepted).toHaveLength(result.trace.filter((entry) => entry.accepted).length);
+    expect(initial).toEqual([0.1]);
+    expect(result.base[0]).toBeCloseTo(1, 10);
+  });
+  it('棄却でλを3倍にし、受理の後は次反復へ1/3を持ち越す', () => {
+    const result = solveRigid(problem([0.1], ([x]) => [row(x * x - 1, [2 * x])]));
+    expect(result.trace.some((entry) => !entry.accepted)).toBe(true);
+    for (let j = 1; j < result.trace.length; j += 1) {
+      const previous = result.trace[j - 1];
+      expect(result.trace[j].damping).toBe(previous.accepted
+        ? Math.max(1e-9, previous.damping / 3) : previous.damping * 3);
+    }
+  });
+  it('受理後の線形化は必ず増分ゼロで新しい基準を使う', () => {
+    const zeroBases: number[] = [];
+    const result = solveRigid({ ...problem([0], () => []), evaluate: (base, step) => {
+      if (step[0] === 0) zeroBases.push(base[0]);
+      return { rows: [row(base[0] + step[0] - 7, [1])] };
+    } });
+    expect(zeroBases).toHaveLength(result.iterations + 1);
+    expect(zeroBases[0]).toBe(0);
+    expect(zeroBases.at(-1)).toBe(result.base[0]);
+  });
+  it('反復上限はiterationLimitで矛盾と断定しない', () => {
+    const input = problem([0], ([x]) => [row(x - 7, [1])]);
+    const result = solveRigid({ ...input, options: { ...input.options, maxIterations: 1 } });
+    expect(result.stop).toBe('iterationLimit');
+    expect(result.limit).toBe('iterations');
+    expect(result.iterations).toBe(1);
+  });
+  it('時間上限を候補の前にも確認する', () => {
+    let time = 0;
+    const input = problem([0], ([x]) => [row(x - 7, [1])]);
+    const result = solveRigid({ ...input, options: { ...input.options, maxTimeMs: 1, now: () => time++ } });
+    expect(result.stop).toBe('iterationLimit');
+    expect(result.limit).toBe('time');
+    expect(result.base).toEqual([0]);
+  });
+  it('gradient=0の停留点は証明済み矛盾としない', () => {
+    const result = solveRigid(problem([0], ([x]) => [row(x * x - 1, [2 * x])]));
+    expect(result.stop).toBe('stalled');
+    expect(result.converged).toBe(false);
+  });
+  it('構造的に定数である矛盾はprovenConstantConflict', () => {
+    const result = solveRigid(problem([], () => [{ ...row(2, []), constant: true }]));
+    expect(result.stop).toBe('provenConstantConflict');
+    expect(result.maxResidual).toBe(2);
+  });
+  it('非有限の定数値を数学的矛盾の証明にしない', () => {
+    const result = solveRigid(problem([], () => [{ ...row(NaN, []), constant: true }]));
+    expect(result.stop).toBe('stalled');
+    expect(result.converged).toBe(false);
+  });
+  it('改善後に距離10と12が釣り合ったらsuspectedConflict', () => {
+    const result = solveRigid(problem([0], ([x]) => [row(x - 10, [1]), row(x - 12, [1])]));
+    expect(result.stop).toBe('suspectedConflict');
+    expect(result.base[0]).toBeCloseTo(11, 8);
+    expect(result.converged).toBe(false);
+  });
+  it('行ゼロでも分岐違反が残れば収束としない', () => {
+    const result = solveRigid({ ...problem([0], () => []),
+      evaluate: () => ({ rows: [row(0, [1])], branchViolations: ['mate-1'] }) });
+    expect(result.stop).toBe('stalled');
+  });
+  it('欠けた行を収束としない', () => {
+    const result = solveRigid({ ...problem([0], () => []), evaluate: () => ({ rows: [], valid: false }) });
+    expect(result.converged).toBe(false);
+  });
+  it('trialで行が消えたときは基準を採用しない', () => {
+    const result = solveRigid({ ...problem([0], () => []),
+      evaluate: (_base, step) => ({ rows: step[0] === 0 ? [row(-1, [1])] : [] }) });
+    expect(result.base).toEqual([0]);
+    expect(result.trace.every((entry) => !entry.accepted)).toBe(true);
+  });
+});
+
+describe('尺度とQR', () => {
+  it('行尺度を二重に掛けずΔt/L₀で列を尺度化する', () => {
+    const matrix = scaledRigidJacobian([row(2, [3, 4], 'length', 0.01)], ['length', 'angle'],
+      { characteristicLength: 100, lengthTolerance: 1e-7, angleTolerance: 1e-9 });
+    expect(matrix[0][0]).toBeCloseTo(3, 12);
+    expect(matrix[0][1]).toBeCloseTo(0.04, 12);
+  });
+  it('長さと角度の許容を別々に判定する', () => {
+    const result = solveRigid({ initial: [0, 0], variables: ['length', 'angle'],
+      evaluate: (base, step) => ({ rows: [row(base[0] + step[0] + 1e-8, [1, 0]),
+        row(base[1] + step[1] + 1e-8, [0, 1], 'angle')] }),
+      retract: (base, step) => base.map((v, j) => v + step[j]),
+      options: { lengthTolerance: 1e-7, angleTolerance: 1e-10 } });
+    expect(result.iterations).toBeGreaterThan(0);
+    expect(Math.abs(result.base[1] + 1e-8)).toBeLessThan(1e-10);
+  });
+  it.each([1e-6, 1, 1e6])('代表長さ%gでも解析解に収束する', (length) => {
+    const input = problem([0], ([x]) => [row(x - 3 * length, [1], 'length', 1 / length)]);
+    const result = solveRigid({ ...input, options: { characteristicLength: length } });
+    expect(Math.abs(result.base[0] - 3 * length)).toBeLessThan(1e-9);
+    expect(result.converged).toBe(true);
+  });
+  it('QRでも同じ2変数の解析解へ収束する', () => {
+    const input = problem([0, 0], ([x, y]) => [row(x + y - 5, [1, 1]), row(2 * x - y - 1, [2, -1])]);
+    const result = solveRigid({ ...input, options: { ...input.options, linearSolver: 'qr' } });
+    expect(result.converged).toBe(true);
+    expect(result.base[0]).toBeCloseTo(2, 10);
+    expect(result.base[1]).toBeCloseTo(3, 10);
+    expect(result.trace.every((entry) => entry.linearSolver === 'qr')).toBe(true);
+  });
+  it('ほぼ従属な列は自動でQRへ切り替える', () => {
+    const input = problem([0, 0], ([x, y]) => [row(x + y - 2, [1, 1]), row(1e-5 * (x - y), [1e-5, -1e-5])]);
+    const result = solveRigid(input);
+    expect(result.trace[0].linearSolver).toBe('qr');
+    expect(result.converged).toBe(true);
+    expect(result.base[0]).toBeCloseTo(1, 8);
+    expect(result.base[1]).toBeCloseTo(1, 8);
+  });
+  it('非有限trialは棄却する', () => {
+    const result = solveRigid({ ...problem([0], () => []), evaluate: (_base, step) => ({
+      rows: [row(step[0] === 0 ? -1 : NaN, [1])],
+    }) });
+    expect(result.base).toEqual([0]);
+    expect(result.converged).toBe(false);
+  });
+});

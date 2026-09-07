@@ -128,7 +128,7 @@ export const RANK_RELATIVE_TOLERANCE = 1e-9;
  *
  * `a` と `b` は書き換える(呼ぶ側が複製を渡す)。
  */
-function eliminate(a: Float64Array, b: Float64Array, n: number): Float64Array | null {
+export function eliminate(a: Float64Array, b: Float64Array, n: number): Float64Array | null {
   for (let k = 0; k < n; k += 1) {
     // 部分ピボット: k 列目の絶対値が最大の行を k 行目へ持ってくる。
     let pivot = k;

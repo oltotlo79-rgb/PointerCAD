@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type {
   PrintabilityCancelToken,
   PrintabilityProgressCallback,
-  PrintabilityResult,
 } from '../occt/inspectPrintability.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import type { RgbTuple } from '../occt/xcafDocument.js';
@@ -14,6 +13,7 @@ import type {
   PlaneCurve,
   ShapeExportItem,
   ShapeInspectRequest,
+  ShapeInspectResult,
   SketchPlaneFrame,
   SolidBodyMesh,
   SolidProgress,
@@ -40,7 +40,7 @@ async function runInspectPrintability(
   request: ShapeInspectRequest,
   onProgress?: PrintabilityProgressCallback,
   shouldCancel?: PrintabilityCancelToken,
-): Promise<PrintabilityResult> {
+): Promise<ShapeInspectResult> {
   if (target.inspectPrintability === undefined) {
     throw new Error('createKernelApi は inspectPrintability を必ず実装するはず');
   }
@@ -76,6 +76,26 @@ function extrudeStep(id: string, key: string, distance: number): SolidStepReques
       profile: RECTANGLE_CURVES,
       direction: [0, 0, 1],
       distance,
+    },
+  };
+}
+
+/** 掃引体専用の表示粗さが使われる、既定寸法のばね 1 段。 */
+function springStep(id: string, key: string): SolidStepRequest {
+  return {
+    key,
+    id,
+    label: id,
+    visible: true,
+    step: {
+      kind: 'spring',
+      origin: [0, 0, 0],
+      direction: [0, 0, 1],
+      coilDiameter: 20,
+      wireDiameter: 2,
+      pitch: 5,
+      turns: 4,
+      handedness: 'right',
     },
   };
 }
@@ -1601,6 +1621,62 @@ describe('KernelApi', () => {
     // 板は 40×30×10。最小肉厚のしきい値の既定(0.8mm)よりずっと厚い。
     expect(result.summary.minThicknessFoundMm).not.toBeNull();
     expect(result.summary.minThicknessFoundMm ?? 0).toBeGreaterThan(0.8);
+  });
+
+  it('ばねは実際の表示メッシュを同じ番号のまま点検する', async () => {
+    const key = 'api-inspect-spring-mesh-identity';
+    const built = await api.recomputeSolids({ steps: [springStep('ばね', key)], generation: 1 });
+    expect(built.failures).toEqual([]);
+
+    const inspected = await runInspectPrintability(api, {
+      bodies: [exportItem(key)],
+      deviationMm: 0.1,
+      angularDeflectionRad: 0.5,
+    });
+    const displayTriangleCount = built.bodies[0].triangleCount;
+    expect(displayTriangleCount).toBe(2066);
+    expect(inspected.triangleCount).toBe(displayTriangleCount);
+    expect(inspected.meshes).toHaveLength(1);
+    expect(inspected.meshes[0].bodyKey).toBe(key);
+    expect(inspected.meshes[0].meshRevision).toBeGreaterThan(0);
+    expect(inspected.meshes[0].triangleCount).toBe(displayTriangleCount);
+    // 判定の番号は表示メッシュの全三角形をちょうど覆い、別メッシュの番号へ出ない。
+    expect(inspected.summary.inspectedTriangleCount).toBe(displayTriangleCount);
+  });
+
+  it('箱も実際の表示メッシュを点検し、再計算後は meshRevision が進む', async () => {
+    const key = 'api-inspect-box-mesh-identity';
+    const first = await api.recomputeSolids({
+      steps: [extrudeStep('箱', key, 10)],
+      generation: 1,
+    });
+    expect(first.failures).toEqual([]);
+    const firstInspection = await runInspectPrintability(api, {
+      bodies: [exportItem(key)],
+      deviationMm: 0.02,
+      angularDeflectionRad: 0.2,
+    });
+    expect(firstInspection.triangleCount).toBe(first.bodies[0].triangleCount);
+    expect(firstInspection.meshes).toHaveLength(1);
+    expect(firstInspection.meshes[0].bodyKey).toBe(key);
+    expect(firstInspection.meshes[0].triangleCount).toBe(first.bodies[0].triangleCount);
+    const firstRevision = firstInspection.meshes[0].meshRevision;
+
+    const second = await api.recomputeSolids({
+      steps: [extrudeStep('箱', key, 10)],
+      generation: 2,
+    });
+    expect(second.cacheHits).toBe(1);
+    const secondInspection = await runInspectPrintability(api, {
+      bodies: [exportItem(key)],
+      deviationMm: 0.5,
+      angularDeflectionRad: 0.8,
+    });
+    expect(secondInspection.triangleCount).toBe(second.bodies[0].triangleCount);
+    expect(secondInspection.meshes).toHaveLength(1);
+    expect(secondInspection.meshes[0].bodyKey).toBe(key);
+    expect(secondInspection.meshes[0].meshRevision).toBe(firstRevision + 1);
+    expect(secondInspection.meshes[0].triangleCount).toBe(second.bodies[0].triangleCount);
   });
 
   it('shouldCancel が true を返すと、途中で打ち切って cancelled: true を返す(NFR-PF-4)', async () => {

@@ -16,6 +16,7 @@ import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
 // **ここでは輸出し直さない**(輸出の口は `index.ts` が作り手のファイルから 1 度だけ開く。
 // 同じ名前が 2 経路から出ると、取り込む側がどちらを指しているのか読めなくなるため)。
 import type { ExportMesh } from './occt/exportMesh.js';
+import type { PrintabilityResult } from './occt/inspectPrintability.js';
 import type { StepFileLengthUnit } from './occt/readStep.js';
 import type { RgbTuple } from './occt/xcafDocument.js';
 import type { FaceColorMap } from './occt/xcafFaceColors.js';
@@ -1568,16 +1569,12 @@ export type ShapeExportResult =
 /**
  * 3D プリント向けの点検の依頼(FR-815、NFR-PF-4、P6 §0.51・§2.16、タスク42)。
  *
- * **対象は書き出しと同じ `ShapeExportItem[]`。** 点検も「段のキャッシュの鍵から立体を引き、
- * `buildExportMesh` で三角形を作り直す」という書き出しの `'mesh'` とまったく同じ道を通る
- * (`occt/inspectPrintability.ts` の冒頭「書き出す形と同じものを点検できる」)ので、名前も
- * 色も使わないが**別の型を作らず** `ShapeExportItem` をそのまま使い回す
- * (`resolveExportShapes` / `buildExportMeshes` を書き出しと共有できる。同じ約束を
- * 2 か所に書かない、§0.a-0.2 の流儀)。
+ * **対象は書き出しと同じ `ShapeExportItem[]`。** 名前も色も使わず、`bodyKey` で
+ * Worker が直近に画面へ返した表示メッシュを引く。別品質で再メッシュ化しないため、
+ * 点検結果の三角形番号は表示メッシュの同じ番号を必ず指す。
  *
- * **品質(偏差)の対は `ShapeExportMeshQuality` を継承する。** `'mesh'` 形式の書き出しの依頼
- * (`ShapeExportRequest` の `'mesh'` の枝)と同じ 2 欄(`deviationMm` / `angularDeflectionRad`)
- * を持ち、意味も既定もまったく同じにする。
+ * **品質(偏差)の対は従来の呼び出しとの互換のため残すが、点検では使わない。** 精密な
+ * 別メッシュを点検する場合は、その結果メッシュ自体を画面へ重ねる別機能として扱う。
  *
  * **複数ボディを指定すると、三角形を 1 つに連ねてから点検する**(水密性・肉厚とも
  * 「ボディをまたいだ 1 つの形」として測る。`worker/kernelApi.ts` の実装)。
@@ -1589,6 +1586,22 @@ export interface ShapeInspectRequest extends ShapeExportMeshQuality {
   readonly minThicknessMm?: number;
   /** オーバーハングの角度のしきい値(度)。省略すると `DEFAULT_OVERHANG_ANGLE_DEG`。 */
   readonly overhangAngleDeg?: number;
+}
+
+/** 点検に実際に使った表示メッシュ 1 つの同一性。 */
+export interface ShapeInspectMeshIdentity {
+  /** 点検依頼で指定された、表示メッシュを持つ段の鍵。 */
+  readonly bodyKey: string;
+  /** その表示メッシュを画面へ返した再計算の世代。 */
+  readonly meshRevision: number;
+  /** その表示メッシュの三角形数。 */
+  readonly triangleCount: number;
+}
+
+/** Worker が返す点検結果。判定と、判定に使った表示メッシュの同一性を対にする。 */
+export interface ShapeInspectResult extends PrintabilityResult {
+  /** 複数ボディでは点検依頼と同じ順。各要素は上の 3 欄だけを持つ。 */
+  readonly meshes: readonly ShapeInspectMeshIdentity[];
 }
 
 /**

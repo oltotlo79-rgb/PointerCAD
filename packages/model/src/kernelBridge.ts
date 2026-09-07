@@ -27,7 +27,6 @@ import {
   type PlanarFaceRequest,
   type PlaneCurve,
   type PrintabilityProgress,
-  type PrintabilityResult,
   type ShapeExportItem,
   type ShapeInspectRequest,
   type ShapeExportRequest,
@@ -957,13 +956,10 @@ function toShapeImportOutcome(result: ShapeImportResult): ShapeImportOutcome {
  * ------------------------------------------------------------------ */
 
 /**
- * 画面に出ている三角形と**同じ細かさ**の対(§0.53 の色表示のための決め)。
+ * 従来の点検依頼が使っていた、画面の一般既定と同じ細かさの対。
  *
- * 点検の結果は**三角形ごとの真偽**で返り、ui はそれを画面の三角形へそのまま塗る
- * (`solid/printabilityColors.ts`)。塗る相手と測った相手の三角形の並びが違うと、
- * 赤や橙がまったく別の場所に付く。書き出し用の三角形は `buildExportMesh` が形の複製へ
- * 掛け直して作るが、**面の走査も向きの規則も画面用(`tessellate.ts`)とまったく同じ**
- * なので、細かさの対を画面と同じにすれば並びもそろう(`occt/exportMesh.ts` の注釈)。
+ * 現在の Worker は点検に実際の表示メッシュを使い、この値では再メッシュ化しない。
+ * 値を残すのは公開済みの依頼との互換と、粗さの定数を 1 か所から参照するためである。
  *
  * **数はカーネルの既定(`DEFAULT_LINEAR_DEFLECTION` / `DEFAULT_ANGULAR_DEFLECTION`)を
  * そのまま引く**——書き写すと、画面側の既定を変えたときにここだけ古くなる。
@@ -1064,9 +1060,23 @@ export interface PrintabilityReport {
   readonly overhangTriangles: Uint8Array;
   /** 開いた辺を持つ三角形。 */
   readonly openEdgeTriangles: Uint8Array;
+  /**
+   * 点検に実際に使った表示メッシュ。複数ボディでは依頼と同じ順。
+   *
+   * 任意なのは、既存文書の保存値ではなく実行中だけの結果であり、古い偽物の橋とも
+   * 構造互換を保つため。実カーネルの `KernelApi.inspectPrintability` は必ず入れる。
+   */
+  readonly meshes?: readonly PrintabilityMeshIdentity[];
   readonly summary: PrintabilitySummary;
   /** 途中でやめたか。**やめても結果は返る**(肉厚だけが測ったところまでになる)。 */
   readonly cancelled: boolean;
+}
+
+/** 点検した表示メッシュ 1 つの同一性。 */
+export interface PrintabilityMeshIdentity {
+  readonly bodyKey: string;
+  readonly meshRevision: number;
+  readonly triangleCount: number;
 }
 
 /**
@@ -1085,9 +1095,9 @@ export interface PrintabilityOptions {
    */
   readonly bodies: readonly string[];
   /**
-   * 三角形の細かさの対。**省くと画面と同じ細かさ**(`DISPLAY_MESH_QUALITY`)になり、
-   * 三角形の並びが画面と一致して色をそのまま塗れる(§0.53)。細かさを変えると
-   * 判定は精しくなるが、並びが画面と食い違うので色は塗れなくなる。
+   * 従来の依頼との互換のための欄。点検は実際の表示メッシュを使うので、現在は値に
+   * かかわらず同じ三角形を点検する。精密な別メッシュの点検は結果メッシュ自体を表示する
+   * 別機能として扱う。
    */
   readonly meshQuality?: ExportMeshQuality | null;
   /** 最小肉厚のしきい値(mm)。省くとカーネルの既定(0.8mm)。 */
@@ -1163,7 +1173,9 @@ function printabilityProgressOf(
 }
 
 /** 点検の結果を model の言葉へ詰め替える(kernel の型を外へ出さない、NFR-MA-1)。 */
-function toPrintabilityOutcome(result: PrintabilityResult): PrintabilityOutcome {
+type KernelPrintabilityResult = Awaited<ReturnType<KernelApi['inspectPrintability']>>;
+
+export function toPrintabilityOutcome(result: KernelPrintabilityResult): PrintabilityOutcome {
   return {
     kind: 'inspected',
     report: {
@@ -1171,6 +1183,7 @@ function toPrintabilityOutcome(result: PrintabilityResult): PrintabilityOutcome 
       thinTriangles: result.thinTriangles,
       overhangTriangles: result.overhangTriangles,
       openEdgeTriangles: result.openEdgeTriangles,
+      meshes: result.meshes,
       summary: {
         triangleCount: result.summary.triangleCount,
         degenerateCount: result.summary.degenerateCount,

@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createKernelBridge,
   KERNEL_BROKEN_MESSAGE,
+  toPrintabilityOutcome,
   type SketchOffsetRequestItem,
   type SketchProjectionRequestItem,
 } from './kernelBridge.js';
@@ -249,5 +250,40 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
       message: KERNEL_BROKEN_MESSAGE,
     });
     bridge.dispose();
+  });
+});
+
+describe('点検結果の表示メッシュ同一性', () => {
+  it('bodyKey・meshRevision・triangleCount を model の結果へそのまま写す', () => {
+    const outcome = toPrintabilityOutcome({
+      triangleCount: 1,
+      thinTriangles: new Uint8Array([0]),
+      overhangTriangles: new Uint8Array([0]),
+      openEdgeTriangles: new Uint8Array([0]),
+      meshes: [{ bodyKey: 'key-1', meshRevision: 7, triangleCount: 1 }],
+      summary: {
+        triangleCount: 1,
+        degenerateCount: 0,
+        inspectedTriangleCount: 1,
+        thinCount: 0,
+        overhangCount: 0,
+        openEdgeCount: 0,
+        openEdgeTriangleCount: 0,
+        watertight: true,
+        minThicknessFoundMm: 10,
+        minThicknessMm: 0.8,
+        overhangAngleDeg: 45,
+        cellSizeMm: 1.6,
+      },
+      cancelled: false,
+    });
+
+    expect(outcome.kind).toBe('inspected');
+    if (outcome.kind !== 'inspected') {
+      return;
+    }
+    expect(outcome.report.meshes).toEqual([
+      { bodyKey: 'key-1', meshRevision: 7, triangleCount: 1 },
+    ]);
   });
 });

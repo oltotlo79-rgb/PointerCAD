@@ -26,6 +26,7 @@ import {
 
 import { t, type MessageKey } from '../i18n/t.js';
 import {
+  rememberPrintabilityDisplayMeshes,
   printabilityTriangleOffsets,
   type PrintabilityBodyTriangles,
 } from './printabilityColors.js';
@@ -61,9 +62,8 @@ export interface PartInspectorDeps extends CachedResolveDeps {
  * 点検する手立てを組み立てる。
  *
  * カーネルは**段の鍵**でしか形を引けないので、点検の前に文書を解き直して段の一覧を作る
- * (`resolveCachedSteps`。測定・書き出しと同じ 1 か所)。**細かさの対は渡さない**——
- * 橋の既定(`DISPLAY_MESH_QUALITY` = 画面と同じ細かさ)のままにすることで、点検の
- * 三角形の並びが画面と一致し、結果をそのまま色に塗れる(`printabilityColors.ts` の冒頭)。
+ * (`resolveCachedSteps`。測定・書き出しと同じ 1 か所)。**細かさの対は渡さない**。
+ * Worker は別メッシュを作らず、直近に画面へ返した表示メッシュをそのまま点検する。
  */
 export function createPartInspector(deps: PartInspectorDeps): PartInspector {
   return (document, bodies, shouldCancel) =>
@@ -117,6 +117,9 @@ export const PRINT_CHECK_NO_BODY_KEY: MessageKey = 'printCheck.noBody';
 /** 点検の口がまだ差し出されていないとき(カーネルを積む前に押した)。 */
 export const PRINT_CHECK_UNAVAILABLE_KEY: MessageKey = 'printCheck.unavailable';
 
+/** 再計算で表示メッシュが入れ替わり、古い点検結果を塗れないとき。 */
+export const PRINT_CHECK_STALE_KEY: MessageKey = 'printCheck.stale';
+
 /** 点検の結果。断ったときは**そのまま画面へ出せる日本語 1 行**だけを返す(NFR-UX-5)。 */
 export type PrintCheckOutcomeView =
   | {
@@ -164,6 +167,9 @@ export async function runPrintCheck(input: PrintCheckInput): Promise<PrintCheckO
     // 断りの日本語はカーネル(または橋)が持っているものをそのまま出す(文言の正本は 1 つ)。
     return { ok: false, message: outcome.message };
   }
+  if (!rememberPrintabilityDisplayMeshes(outcome.report, targets)) {
+    return { ok: false, message: t(PRINT_CHECK_STALE_KEY) };
+  }
   return {
     ok: true,
     report: outcome.report,
@@ -172,7 +178,7 @@ export async function runPrintCheck(input: PrintCheckInput): Promise<PrintCheckO
 }
 
 /**
- * 点検が使った細かさの対。**橋の既定と同じもの**をここでも指すのは、ヘルプや申し送りが
- * 「点検は画面と同じ細かさで測る」と書いているとおりであることを、値の参照で示すため。
+ * 従来の点検依頼が省略時に使う細かさの対。値は互換のため残すが、Worker は実際の
+ * 表示メッシュを直接点検するため再メッシュ化には使わない。
  */
 export const PRINT_CHECK_MESH_QUALITY = DISPLAY_MESH_QUALITY;

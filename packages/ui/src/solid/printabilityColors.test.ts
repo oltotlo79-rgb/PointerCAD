@@ -14,7 +14,9 @@ import {
   printabilityAppearances,
   printabilityCovers,
   printabilityMaterialIndex,
+  printabilityMatchesDisplayMeshes,
   printabilityTriangleOffsets,
+  rememberPrintabilityDisplayMeshes,
   PRINTABILITY_DEFAULT_MATERIAL_INDEX,
   PRINTABILITY_MATERIAL_COUNT,
   PRINTABILITY_OVERHANG_MATERIAL_INDEX,
@@ -182,6 +184,45 @@ describe('立体ごとの先頭の三角形の番号', () => {
     const offsets = printabilityTriangleOffsets([{ featureId: 'box-1', triangleCount: 12 }]);
 
     expect(offsets.has('box-2')).toBe(false);
+  });
+});
+
+describe('点検結果と表示メッシュの同一性', () => {
+  it('bodyKey・meshRevision・triangleCount が結び付いた同じメッシュだけに色を許す', () => {
+    const report: PrintabilityReport = {
+      ...fakeReport(2),
+      meshes: [{ bodyKey: 'key-box', meshRevision: 4, triangleCount: 2 }],
+    };
+    const inspectedMesh = { triangleCount: 2 };
+    const inspectedBodies = [{ featureId: 'box-1', mesh: inspectedMesh }];
+
+    expect(rememberPrintabilityDisplayMeshes(report, inspectedBodies)).toBe(true);
+    expect(printabilityMatchesDisplayMeshes(report, inspectedBodies)).toBe(true);
+  });
+
+  it('再計算後の同枚数の別メッシュには古い結果を塗らない', () => {
+    const report: PrintabilityReport = {
+      ...fakeReport(2),
+      meshes: [{ bodyKey: 'key-box', meshRevision: 4, triangleCount: 2 }],
+    };
+    const inspectedBodies = [{ featureId: 'box-1', mesh: { triangleCount: 2 } }];
+    const recomputedBodies = [{ featureId: 'box-1', mesh: { triangleCount: 2 } }];
+
+    expect(rememberPrintabilityDisplayMeshes(report, inspectedBodies)).toBe(true);
+    expect(printabilityMatchesDisplayMeshes(report, recomputedBodies)).toBe(false);
+  });
+
+  it('点検結果の三角形数が表示メッシュと違えば最初から結び付けない', () => {
+    const report: PrintabilityReport = {
+      ...fakeReport(3),
+      meshes: [{ bodyKey: 'key-box', meshRevision: 4, triangleCount: 3 }],
+    };
+
+    expect(
+      rememberPrintabilityDisplayMeshes(report, [
+        { featureId: 'box-1', mesh: { triangleCount: 2 } },
+      ]),
+    ).toBe(false);
   });
 });
 

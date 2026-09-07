@@ -7,7 +7,12 @@ import type { ImportedMeshBytes } from '@pointercad/io';
 import type { PrintabilityReport } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { ExchangeKernel } from '../file/exchangeFile.js';
-import { type PartInspector, runPrintCheck } from '../solid/printCheckCommands.js';
+import { t } from '../i18n/t.js';
+import {
+  type PartInspector,
+  PRINT_CHECK_STALE_KEY,
+  runPrintCheck,
+} from '../solid/printCheckCommands.js';
 import type { AppState } from './appState.js';
 
 /**
@@ -144,6 +149,8 @@ export interface ExchangeSlice {
     report: PrintabilityReport | null,
     offsets?: ReadonlyMap<string, number> | null,
   ) => void;
+  /** 再計算で点検時の表示メッシュが古くなったとき、色と結果を捨てて理由を出す。 */
+  readonly invalidatePrintability: () => void;
   /**
    * いまの文書を 3D プリント向けに点検する(FR-815。ツールバーの「表示」の入口)。
    *
@@ -207,6 +214,13 @@ export const createExchangeSlice: StateCreator<
       printability,
       printabilityOffsets: printability === null ? null : offsets,
       printCheckErrorMessage: null,
+    });
+  },
+  invalidatePrintability: () => {
+    set({
+      printability: null,
+      printabilityOffsets: null,
+      printCheckErrorMessage: t(PRINT_CHECK_STALE_KEY),
     });
   },
   inspectPrintability: () => {

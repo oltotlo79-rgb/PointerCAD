@@ -27,6 +27,7 @@ import {
   type CutContext,
 } from '../solid/cutCommands.js';
 import { LENGTH_UNIT_LABEL_KEYS } from '../settings/settings.js';
+import { printabilityMatchesDisplayMeshes } from '../solid/printabilityColors.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
@@ -152,6 +153,9 @@ function printabilityHighlightOf(
   state: ReturnType<typeof useAppStore.getState>,
 ): PrintabilityHighlight | null {
   if (state.printability === null || state.printabilityOffsets === null) {
+    return null;
+  }
+  if (!printabilityMatchesDisplayMeshes(state.printability, state.bodies)) {
     return null;
   }
   return { report: state.printability, triangleOffsets: state.printabilityOffsets };
@@ -860,8 +864,16 @@ export function ViewportCanvas(): React.JSX.Element {
         塗る相手(`printabilityOffsets`)は結果と必ず一緒に入れ替わる(ストアの決め)ので、
         結果の入れ替わりだけを見ればよい。**再計算は 1 回も走らない**(§0.53)。
       */
-      if (next.printability !== previous.printability) {
-        scene.setPrintability(printabilityHighlightOf(next));
+      if (next.printability !== previous.printability || next.bodies !== previous.bodies) {
+        const highlight = printabilityHighlightOf(next);
+        scene.setPrintability(highlight);
+        if (
+          highlight === null &&
+          next.printability !== null &&
+          next.printabilityOffsets !== null
+        ) {
+          next.invalidatePrintability();
+        }
       }
       /*
         下絵(FR-332、タスク39)。**文書か画像の表が変わったときだけ**貼り直す。

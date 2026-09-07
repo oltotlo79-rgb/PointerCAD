@@ -10,7 +10,6 @@ import {
   inspectPrintability as runInspectPrintability,
   type PrintabilityCancelToken,
   type PrintabilityProgressCallback,
-  type PrintabilityResult,
 } from '../occt/inspectPrintability.js';
 import { makeOffsetWire } from '../occt/makeOffsetWire.js';
 import { distanceBetween, measureMassProperties } from '../occt/measureShape.js';
@@ -41,7 +40,9 @@ import type {
   ShapeImportBody,
   ShapeImportRequest,
   ShapeImportResult,
+  ShapeInspectMeshIdentity,
   ShapeInspectRequest,
+  ShapeInspectResult,
   SketchOffsetFailure,
   SketchOffsetOutcome,
   SketchOffsetRequest,
@@ -249,6 +250,56 @@ function mergeExportMeshes(meshes: readonly ExportMesh[]): ExportMesh {
   return { positions, normals, indices, triangleCount };
 }
 
+/** Worker に残す、直近の再計算で画面へ返した typed array とその世代。 */
+interface DisplayMeshEntry extends ShapeInspectMeshIdentity {
+  readonly mesh: ExportMesh;
+}
+
+/**
+ * 再計算の結果から、画面へ返した表示メッシュだけを段の鍵で引ける表にする。
+ *
+ * `SolidBodyMesh` は `ExportMesh` の 4 欄を包含するので、positions / normals / indices を
+ * 写さず同じ typed array を指す。OCCT の形は持たず、次の完了した再計算で表ごと捨てる。
+ */
+function displayMeshesOf(
+  request: SolidRecomputeRequest,
+  result: SolidRecomputeResult,
+  meshRevision: number,
+): ReadonlyMap<string, DisplayMeshEntry> {
+  const bodyById = new Map(result.bodies.map((body) => [body.id, body]));
+  const displayMeshes = new Map<string, DisplayMeshEntry>();
+  for (const step of request.steps) {
+    if (!step.visible || displayMeshes.has(step.key)) {
+      continue;
+    }
+    const body = bodyById.get(step.id);
+    if (body === undefined) {
+      continue;
+    }
+    displayMeshes.set(step.key, {
+      bodyKey: step.key,
+      meshRevision,
+      triangleCount: body.triangleCount,
+      mesh: body,
+    });
+  }
+  return displayMeshes;
+}
+
+/** 点検対象を、直近に画面へ返した表示メッシュから依頼順に引く。 */
+function resolveDisplayMeshes(
+  displayMeshes: ReadonlyMap<string, DisplayMeshEntry>,
+  bodies: readonly ShapeExportItem[],
+): readonly DisplayMeshEntry[] {
+  return bodies.map((item) => {
+    const displayed = displayMeshes.get(item.bodyKey);
+    if (displayed === undefined) {
+      throw new Error(MISSING_BODY_MESSAGE);
+    }
+    return displayed;
+  });
+}
+
 /** UI 側から Comlink 越しに呼べる幾何カーネルの窓口。 */
 export interface KernelApi {
   /** スケッチの曲線を折れ線に、閉ループを面にする(FR-309)。 */
@@ -341,11 +392,9 @@ export interface KernelApi {
    *
    * **最小肉厚・オーバーハングの角度・水密性の 3 つを 1 回の呼び出しでまとめて返す**
    * (§0.a-0.30「カーネルを呼ぶ回数を最小にする」)。対象は書き出し・投影と同じく
-   * **段のキャッシュの鍵**(`ShapeInspectRequest.bodies` の `bodyKey`)で指し、三角形は
-   * `exportShapes({ format: 'mesh' })` とまったく同じ道(`buildExportMesh`)で作り直す
-   * ので、「点検は通ったのに書き出したファイルは別の形だった」が起こらない
-   * (`occt/inspectPrintability.ts` 冒頭の理由 2)。複数ボディを指定したときは、
-   * 三角形を 1 つに連ねてから点検する(`mergeExportMeshes`)。
+   * **段のキャッシュの鍵**(`ShapeInspectRequest.bodies` の `bodyKey`)で指し、直近の再計算で
+   * 画面へ返した表示メッシュをそのまま使う。別品質で作り直さないので、結果の三角形番号は
+   * 画面の同じ番号を指す。複数ボディでは表示メッシュを依頼順に連ねて点検する。
    *
    * onProgress と shouldCancel は Comlink.proxy で包んだ関数を渡す
    * (`recomputeSolids` と同じ形)。中止が効くのは肉厚の段だけ
@@ -366,7 +415,7 @@ export interface KernelApi {
     request: ShapeInspectRequest,
     onProgress?: PrintabilityProgressCallback,
     shouldCancel?: PrintabilityCancelToken,
-  ): Promise<PrintabilityResult>;
+  ): Promise<ShapeInspectResult>;
 }
 
 /**
@@ -378,6 +427,9 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
   // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
   // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない(2026-09-03 統括判断)。
   const cache = createShapeCache<CachedSolid>();
+  // 表示メッシュは直近に完了した再計算 1 世代ぶんだけを指す。typed array は複製しない。
+  let displayMeshes: ReadonlyMap<string, DisplayMeshEntry> = new Map<string, DisplayMeshEntry>();
+  let meshRevision = 0;
 
   return {
     async tessellateSketch(sketch, options = {}): Promise<SketchTessellation> {
@@ -431,7 +483,19 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
       cancelToken,
     ): Promise<SolidRecomputeResult> {
       const oc = await loadOcct();
-      return runSolidRecompute({ oc, cache }, request, options, onProgress, cancelToken);
+      const result = await runSolidRecompute(
+        { oc, cache },
+        request,
+        options,
+        onProgress,
+        cancelToken,
+      );
+      // 途中で打ち切った結果は画面へ適用されないので、現在の表示メッシュも進めない。
+      if (!result.cancelled) {
+        meshRevision += 1;
+        displayMeshes = displayMeshesOf(request, result, meshRevision);
+      }
+      return result;
     },
 
     async offsetSketchCurves(request): Promise<SketchOffsetOutcome> {
@@ -754,18 +818,23 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
       }
     },
 
-    async inspectPrintability(request, onProgress, shouldCancel): Promise<PrintabilityResult> {
-      const oc = await loadOcct();
-      // 鍵の引き当ては書き出しと同じ関数(`resolveExportShapes`)を使い回す。
-      // 見つからなければ書き出しと同じ `MISSING_BODY_MESSAGE` で投げる。
-      const shapes = resolveExportShapes(cache, request.bodies);
-      const meshes = buildExportMeshes(oc, shapes, request);
-      const mesh = mergeExportMeshes(meshes);
-      return runInspectPrintability(
+    async inspectPrintability(request, onProgress, shouldCancel): Promise<ShapeInspectResult> {
+      // 別品質で作り直さず、直近に画面へ返した typed array そのものを点検する。
+      const displayed = resolveDisplayMeshes(displayMeshes, request.bodies);
+      const mesh = mergeExportMeshes(displayed.map((entry) => entry.mesh));
+      const result = await runInspectPrintability(
         mesh,
         { minThicknessMm: request.minThicknessMm, overhangAngleDeg: request.overhangAngleDeg },
         { onProgress, shouldCancel },
       );
+      return {
+        ...result,
+        meshes: displayed.map(({ bodyKey, meshRevision: revision, triangleCount }) => ({
+          bodyKey,
+          meshRevision: revision,
+          triangleCount,
+        })),
+      };
     },
   };
 }

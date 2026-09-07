@@ -25,12 +25,10 @@
  *
  * ## 三角形の番号が画面と点検で一致する理由
  *
- * 点検はカーネルが**書き出し用の三角形を作り直して**測る。その作り直しは面の走査も
- * 向きの規則も画面用とまったく同じ(`kernel/src/occt/exportMesh.ts` の注釈)なので、
- * **細かさの対を画面と同じにすれば並びもそろう**。model の `DISPLAY_MESH_QUALITY` が
- * その対で、点検を頼む側はこれを使う(`KernelBridge.inspectPrintability` の既定)。
- * それでも数が食い違ったときのために `printabilityCovers` で範囲を確かめ、
- * 合わないボディには色を塗らない(ずれた場所を赤くするより、塗らないほうがよい)。
+ * 点検は Worker が直近に画面へ返した表示メッシュの typed array そのものを測る。
+ * 結果の `bodyKey / meshRevision / triangleCount` と、このファイルが結果に結び付けた
+ * 表示メッシュ参照を着色前に照合する。`printabilityCovers` は最後の境界検査として残すが、
+ * 同一性の代わりにはしない。
  */
 
 import { readPrintabilityFlag, type AppearanceSpec, type PrintabilityReport } from '@pointercad/model';
@@ -56,6 +54,88 @@ export interface PrintabilityBodyTriangles {
   readonly featureId: string;
   /** 画面に出ている三角形の枚数。 */
   readonly triangleCount: number;
+}
+
+/** 画面に実際に出ているボディ。メッシュのオブジェクト参照を世代の札として使う。 */
+export interface PrintabilityDisplayBody {
+  readonly featureId: string;
+  readonly mesh: { readonly triangleCount: number };
+}
+
+interface RememberedDisplayMesh {
+  readonly featureId: string;
+  readonly mesh: PrintabilityDisplayBody['mesh'];
+  readonly bodyKey: string;
+  readonly meshRevision: number;
+  readonly triangleCount: number;
+}
+
+/**
+ * 点検結果の寿命だけ、結果 → 実際に点検を頼んだ表示メッシュの対応を覚える。
+ *
+ * WeakMap なので結果を閉じれば自動的に捨てられる。typed array は写さず、画面が持つ
+ * `mesh` の参照だけを世代の札にする。再計算後は `mesh` が別のオブジェクトになるため、
+ * 三角形数が偶然同じでも古い結果を新しい表示へ塗らない。
+ */
+const displayMeshesByReport = new WeakMap<PrintabilityReport, readonly RememberedDisplayMesh[]>();
+
+/** 点検結果と、点検を頼んだ時点の表示メッシュを結び付ける。 */
+export function rememberPrintabilityDisplayMeshes(
+  report: PrintabilityReport,
+  bodies: readonly PrintabilityDisplayBody[],
+): boolean {
+  const identities = report.meshes;
+  if (identities !== undefined && identities.length !== bodies.length) {
+    return false;
+  }
+  const remembered: RememberedDisplayMesh[] = [];
+  let total = 0;
+  for (let index = 0; index < bodies.length; index += 1) {
+    const body = bodies[index];
+    const identity = identities?.[index];
+    if (identity !== undefined && identity.triangleCount !== body.mesh.triangleCount) {
+      return false;
+    }
+    const triangleCount = identity?.triangleCount ?? body.mesh.triangleCount;
+    remembered.push({
+      featureId: body.featureId,
+      mesh: body.mesh,
+      bodyKey: identity?.bodyKey ?? '',
+      meshRevision: identity?.meshRevision ?? 0,
+      triangleCount,
+    });
+    total += triangleCount;
+  }
+  if (total !== report.triangleCount) {
+    return false;
+  }
+  displayMeshesByReport.set(report, remembered);
+  return true;
+}
+
+/** いま表示しているメッシュが、点検時の bodyKey・世代・枚数の組と同じか。 */
+export function printabilityMatchesDisplayMeshes(
+  report: PrintabilityReport,
+  bodies: readonly PrintabilityDisplayBody[],
+): boolean {
+  const remembered = displayMeshesByReport.get(report);
+  if (remembered === undefined) {
+    return false;
+  }
+  return remembered.every((entry, index) => {
+    const body = bodies.find((candidate) => candidate.featureId === entry.featureId);
+    const identity = report.meshes?.[index];
+    return (
+      body !== undefined &&
+      body.featureId === entry.featureId &&
+      body.mesh === entry.mesh &&
+      body.mesh.triangleCount === entry.triangleCount &&
+      (identity === undefined ||
+        (identity.bodyKey === entry.bodyKey &&
+          identity.meshRevision === entry.meshRevision &&
+          identity.triangleCount === entry.triangleCount))
+    );
+  });
 }
 
 /**

@@ -75,6 +75,7 @@
   "printCheck.noBody": "点検できる形がありません。",
   "printCheck.unavailable": "いまは 3D プリントの点検を使えません。",
   "printCheck.running": "3D プリントの点検をしています…",
+  "printCheck.stale": "再計算後に点検し直してください。",
   "template.saved": "ひな形として保存しました",
   "template.hasHistory": "このひな形には形が入っています。形は引き継がずに新しい部品を始めます。",
   "template.missing": "選んだひな形が見つかりません。",

@@ -1,6 +1,8 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
+
 /**
  * P4b(スケッチの仕上げ)完了済み機能のうち、**タイムライン**(FR-507、FR-506、FR-504)を
  * 実際のブラウザで通しで確かめる(統括の指示書「P4b タスク23 の前半(23a)」)。
@@ -18,50 +20,9 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * **ヘッドレスで実行する。**
  */
 
-const KERNEL_TIMEOUT_MS = 60_000;
-
-declare global {
-  interface Window {
-    /**
-     * **検査専用**。再計算の様子を読む(`packages/ui/src/app/PointerCadApp.tsx` が
-     * 差し出す口。アプリ自身はこれを 1 か所も呼ばない)。頁が載る前は `undefined`。
-     */
-    pcadRecomputeStats?: () => { readonly cacheHits: number; readonly isComputing: boolean };
-  }
-}
-
 /* ========================================================================== *
  * 補助関数(solid.spec.ts と同じ作り)
  * ========================================================================== */
-
-/**
- * 再計算が終わるのを待つ。**体積を確かめる前に必ずこれを通す。**
- *
- * 分ける理由は、落ちたときに原因が読めるようにするため(push #14 の赤 3 本、
- * docs/報告記録.md 2026-09-06 12:04)。体積だけを待つと「50MB の WASM の読み込みが
- * 間に合わなかった」のか「計算そのものが壊れて違う値になった」のかがログで区別できない。
- * ここで落ちれば前者、ここを通ってから体積で落ちれば後者と言い切れる。
- *
- * **待ちの上限(KERNEL_TIMEOUT_MS)は体積の待ちと同じで、緩めていない。**
- */
-async function waitForRecompute(page: Page): Promise<void> {
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(() => {
-          const read = window.pcadRecomputeStats;
-          if (read === undefined) {
-            return '頁がまだ載っていません';
-          }
-          return read().isComputing ? '計算中' : '計算は終わっています';
-        }),
-      {
-        timeout: KERNEL_TIMEOUT_MS,
-        message: '幾何カーネルの再計算が終わること(初回は 50MB の WASM の読み込みを含む)',
-      },
-    )
-    .toBe('計算は終わっています');
-}
 
 function collectErrors(page: Page): readonly string[] {
   const errors: string[] = [];
@@ -186,8 +147,10 @@ async function drawRectangle(
   await expect(popoverTitle(page)).toHaveText('矩形の 2 つ目の角');
   await useAbsolute(page);
   await fillFields(page, [corner2[0], corner2[1], '0']);
+  const token = await beginRecompute(page);
   await commitPopover(page);
   await cancelPopover(page);
+  await waitForRecompute(page, token);
 }
 
 async function makeFace(page: Page, elementNames: readonly string[]): Promise<void> {
@@ -212,8 +175,10 @@ async function extrudeFace(page: Page, faceName: string, distance: string | null
   await solidTool(page, '押し出し').click();
   await expect(popoverTitle(page)).toHaveText('押し出す');
   await fillFields(page, [distance]);
+  const token = await beginRecompute(page);
   await commitPopover(page);
   await expect(popover(page)).toHaveCount(0);
+  await waitForRecompute(page, token);
 }
 
 function featureTree(page: Page): Locator {

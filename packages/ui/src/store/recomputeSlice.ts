@@ -15,6 +15,14 @@ import type { StateCreator } from 'zustand';
 import type { AppState } from './appState.js';
 import { activeSketchErrors, activeSketchOf, constraintSummaryPatch } from './documentDerived.js';
 
+/** 検査口からも読める、最後に完了した再計算の結末。 */
+export type RecomputeOutcome =
+  | 'idle'
+  | 'success'
+  | 'failed'
+  | 'cancelled'
+  | 'workerBroken';
+
 /** 再計算のスライスが持つ欄と操作。 */
 export interface RecomputeSlice {
   /** ソリッドのボディ(§0.a-0.5)。カーネルが返した三角形と稜線。 */
@@ -45,12 +53,25 @@ export interface RecomputeSlice {
    * (時間で自動的に消さないのは、いつ消えるかを検査で決められるようにするため)。
    */
   readonly recomputeCancelled: boolean;
+  /** `attachPartRecompute` が最後に開始を依頼した世代。起動前は 0。 */
+  readonly requestedGeneration: number;
+  /** 成功・失敗・取消・Worker 破損のいずれかで最後に完了した世代。起動前は 0。 */
+  readonly completedGeneration: number;
+  /** `completedGeneration` の結末。まだ 1 度も完了していなければ `idle`。 */
+  readonly lastOutcome: RecomputeOutcome;
   /** 部品まるごとの再計算の結果を反映する(要件§6.3)。 */
   readonly applyRecompute: (document: PartDocument, result: PartRecomputeResult) => void;
   /** 計算の進み具合を出す・消す(NFR-PF-4)。 */
   readonly setRecomputeProgress: (progress: PartProgress | null) => void;
   /** 計算を止めるよう頼む(NFR-PF-4)。段と段の間でしか止まらない(§2.6 の限界)。 */
   readonly cancelRecompute: () => void;
+  /** 再計算を開始した世代を記録する(E2E の検査口、P7 タスク52)。 */
+  readonly recordRecomputeRequest: (generation: number) => void;
+  /** 再計算が終わった世代と結末を対で記録する(E2E の検査口、P7 タスク52)。 */
+  readonly recordRecomputeCompletion: (
+    generation: number,
+    outcome: Exclude<RecomputeOutcome, 'idle'>,
+  ) => void;
 }
 
 /**
@@ -74,6 +95,10 @@ export const createRecomputeSlice: StateCreator<
   [],
   Omit<RecomputeSlice, keyof RecomputeInitialState>
 > = (set) => ({
+  // 文書を作り直しても世代を巻き戻さないため、createInitialDocumentState には含めない。
+  requestedGeneration: 0,
+  completedGeneration: 0,
+  lastOutcome: 'idle',
   applyRecompute: (document, result) => {
     set((state) => {
       const sketch = activeSketchOf(document);
@@ -119,5 +144,11 @@ export const createRecomputeSlice: StateCreator<
   },
   cancelRecompute: () => {
     set((state) => ({ cancelRequestCount: state.cancelRequestCount + 1 }));
+  },
+  recordRecomputeRequest: (requestedGeneration) => {
+    set({ requestedGeneration });
+  },
+  recordRecomputeCompletion: (completedGeneration, lastOutcome) => {
+    set({ completedGeneration, lastOutcome });
   },
 });

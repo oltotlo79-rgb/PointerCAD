@@ -19,6 +19,7 @@ import {
   attachPartMeasure,
   attachPartRecompute,
 } from '../store/attachKernel.js';
+import type { RecomputeOutcome } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 /** 検査だけが使う読み取り口の 1 件ぶんの形(下の `useEffect` の注釈が理由)。 */
@@ -27,6 +28,12 @@ interface RecomputeStats {
   readonly cacheHits: number;
   /** 計算中か(ストアの `isComputing`)。 */
   readonly isComputing: boolean;
+  /** 最後に開始を依頼した再計算の世代。 */
+  readonly requestedGeneration: number;
+  /** 最後に結末まで記録した再計算の世代。 */
+  readonly completedGeneration: number;
+  /** `completedGeneration` の結末。 */
+  readonly lastOutcome: RecomputeOutcome;
 }
 
 declare global {
@@ -187,7 +194,13 @@ export function PointerCadApp(): React.JSX.Element {
      */
     window.pcadRecomputeStats = () => {
       const state = useAppStore.getState();
-      return { cacheHits: state.cacheHits, isComputing: state.isComputing };
+      return {
+        cacheHits: state.cacheHits,
+        isComputing: state.isComputing,
+        requestedGeneration: state.requestedGeneration,
+        completedGeneration: state.completedGeneration,
+        lastOutcome: state.lastOutcome,
+      };
     };
     return () => {
       delete window.pcadRecomputeStats;

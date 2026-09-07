@@ -1,6 +1,8 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
+
 /**
  * 基本形状(FR-429)を 1 つ置いた直後に、ビューポートを直接押して立体・面・頂点を
  * 選べることを確かめる(P5 仕上げ (j)、計画書 docs/plans/P5-高度なソリッド・外観と測定.md
@@ -29,54 +31,12 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * (P1 からの作りに合わせる)。選択子は `data-testid` を足さず role / aria / class で引く。
  */
 
-/** 幾何カーネル(Worker + OCCT、約 50MB)の読み込みぶんの上限。 */
-const KERNEL_TIMEOUT_MS = 60_000;
-
 /** 既定の箱の 1 辺(`packages/model/src/part/createPartDocument.ts` の DEFAULT_BOX_SIZE_MM)。 */
 const BOX_SIZE_MM = 20;
 /** 既定の箱の体積。中心が原点なので各軸 -10〜+10 に広がる。 */
 const BOX_VOLUME = BOX_SIZE_MM ** 3;
 /** ja.json の propertyPanel.unitCubicMillimeter。 */
 const VOLUME_UNIT = 'mm³';
-
-declare global {
-  interface Window {
-    /**
-     * **検査専用**。再計算の様子を読む(`packages/ui/src/app/PointerCadApp.tsx` が
-     * 差し出す口。アプリ自身はこれを 1 か所も呼ばない)。頁が載る前は `undefined`。
-     */
-    pcadRecomputeStats?: () => { readonly cacheHits: number; readonly isComputing: boolean };
-  }
-}
-
-/**
- * 再計算が終わるのを待つ。**体積を確かめる前に必ずこれを通す。**
- *
- * 分ける理由は、落ちたときに原因が読めるようにするため(push #14 の赤 3 本、
- * docs/報告記録.md 2026-09-06 12:04)。体積だけを待つと「50MB の WASM の読み込みが
- * 間に合わなかった」のか「計算そのものが壊れて違う値になった」のかがログで区別できない。
- * ここで落ちれば前者、ここを通ってから体積で落ちれば後者と言い切れる。
- *
- * **待ちの上限(KERNEL_TIMEOUT_MS)は体積の待ちと同じで、緩めていない。**
- */
-async function waitForRecompute(page: Page): Promise<void> {
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(() => {
-          const read = window.pcadRecomputeStats;
-          if (read === undefined) {
-            return '頁がまだ載っていません';
-          }
-          return read().isComputing ? '計算中' : '計算は終わっています';
-        }),
-      {
-        timeout: KERNEL_TIMEOUT_MS,
-        message: '幾何カーネルの再計算が終わること(初回は 50MB の WASM の読み込みを含む)',
-      },
-    )
-    .toBe('計算は終わっています');
-}
 
 /** コンソールのエラーとページの例外を集める。最後に 0 件であることを確かめる。 */
 function collectErrors(page: Page): readonly string[] {
@@ -298,6 +258,7 @@ async function placeBox(page: Page): Promise<void> {
   await menuTool(page, '作る', '箱').click();
   await expect(popoverTitle(page)).toHaveText('箱を置く');
   await expect(popoverInputs(page).nth(0)).toHaveValue(String(BOX_SIZE_MM));
+  const token = await beginRecompute(page);
   await commitPopover(page);
   await expect(solidRow(page, '箱1')).toBeVisible();
   // 段が閉じていなければ閉じる(次のクリックをポップアップに奪われないため)。
@@ -307,7 +268,7 @@ async function placeBox(page: Page): Promise<void> {
   await expect(popover(page)).toHaveCount(0);
   // 幾何カーネルが箱を作り終えるまで待つ(体積が出れば当たり判定の的も揃っている)。
   await solidRow(page, '箱1').click();
-  await waitForRecompute(page);
+  await waitForRecompute(page, token);
   await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
@@ -430,11 +391,12 @@ test.describe('P5 基本形状の当たり判定', () => {
     await menuTool(page, '作る', '箱').click();
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 頂点');
     await expect(popoverTitle(page)).toHaveText('箱を置く');
+    const token = await beginRecompute(page);
     await commitPopover(page);
 
     await expect(solidRow(page, '箱2')).toBeVisible();
     await solidRow(page, '箱2').click();
-    await waitForRecompute(page);
+    await waitForRecompute(page, token);
     await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });

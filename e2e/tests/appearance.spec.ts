@@ -3,6 +3,13 @@ import { statSync } from 'node:fs';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import {
+  beginRecompute,
+  KERNEL_TIMEOUT_MS,
+  readRecomputeStats,
+  waitForRecompute,
+} from './recompute.js';
+
 /**
  * 外観(FR-1106〜1110、要件§4.12)を、実際のブラウザで通しで確かめる
  * (計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク56 の (a)(b)、§0.a-0.53)。
@@ -22,9 +29,6 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * ゆらぐ検査を作らない。docs/報告記録.md 2026-09-04 06:10 の⑥)。
  */
 
-/** 幾何カーネル(Worker + OCCT、約 50MB)の読み込みぶんの上限。 */
-const KERNEL_TIMEOUT_MS = 60_000;
-
 /** ja.json の propertyPanel.unitCubicMillimeter。 */
 const VOLUME_UNIT = 'mm³';
 
@@ -38,11 +42,6 @@ const PLATE_TOP_CENTER: readonly [number, number, number] = [20, 15, 10];
 
 declare global {
   interface Window {
-    /**
-     * **検査専用**。再計算の様子を読む(`packages/ui/src/app/PointerCadApp.tsx` が
-     * 差し出す口。アプリ自身はこれを 1 か所も呼ばない)。頁が載る前は `undefined`。
-     */
-    pcadRecomputeStats?: () => { readonly cacheHits: number; readonly isComputing: boolean };
     /**
      * **検査専用**。計算中の帯が出ていた瞬間に積む控え(この spec だけが読み書きする)。
      * `solid.spec.ts` の `pcadProgressSightings` と同じ仕掛けだが、名前を分けてあるのは
@@ -116,19 +115,6 @@ async function takeProgress(page: Page): Promise<readonly string[]> {
   return page.evaluate(() => {
     const seen = window.pcadAppearanceProgress;
     return seen === undefined ? [] : seen.splice(0, seen.length);
-  });
-}
-
-/** 検査専用の口から、いまの `cacheHits` と `isComputing` を読む。 */
-async function recomputeStats(
-  page: Page,
-): Promise<{ readonly cacheHits: number; readonly isComputing: boolean }> {
-  return page.evaluate(() => {
-    const read = window.pcadRecomputeStats;
-    if (read === undefined) {
-      throw new Error('検査専用の口 pcadRecomputeStats が見つかりません。');
-    }
-    return read();
   });
 }
 
@@ -384,10 +370,12 @@ async function makePlate(page: Page): Promise<void> {
   await openToolMenu(page, '作る');
   await menuTool(page, '作る', '押し出し').click();
   await expect(popoverTitle(page)).toHaveText('押し出す');
+  const token = await beginRecompute(page);
   await commitPopover(page);
   await expect(popover(page)).toHaveCount(0);
 
   await solidRow(page, '押し出し1').click();
+  await waitForRecompute(page, token);
   await expect(propertyValue(page, '体積')).toHaveText(`${String(PLATE_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
@@ -451,10 +439,12 @@ test.describe('P5 外観', () => {
     const chooserPromise = page.waitForEvent('filechooser');
     await fileAction(page, '開く').click();
     const chooser = await chooserPromise;
+    const openToken = await beginRecompute(page);
     await chooser.setFiles(savedPath);
 
     await expect(solidRow(page, '押し出し1')).toBeVisible();
     await solidRow(page, '押し出し1').click();
+    await waitForRecompute(page, openToken);
     await expect(propertyValue(page, '体積')).toHaveText(`${String(PLATE_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
@@ -487,8 +477,7 @@ test.describe('P5 外観', () => {
      *    (板は 1 段だけなので、同じ形の計算し直しは必ず控えに当たる)。
      */
     await takeProgress(page);
-    const before = await recomputeStats(page);
-    expect(before.isComputing).toBe(false);
+    const before = await readRecomputeStats(page);
 
     /*
      * 2) 材質・色・光沢・粗さ・透過率を続けて変える(どれも形は 1 ミリも動かさない)。
@@ -513,9 +502,11 @@ test.describe('P5 外観', () => {
      *    ②計算中の帯が一度も出ていない。
      *    ③形の出力(体積・三角形の数)が 1 も変わっていない。
      */
-    const after = await recomputeStats(page);
+    const after = await readRecomputeStats(page);
     expect(after.cacheHits).toBe(before.cacheHits);
-    expect(after.isComputing).toBe(false);
+    expect(after.requestedGeneration).toBe(before.requestedGeneration);
+    expect(after.completedGeneration).toBe(before.completedGeneration);
+    expect(after.lastOutcome).toBe(before.lastOutcome);
     expect(await takeProgress(page)).toEqual([]);
     await expect(page.locator('[role="progressbar"]')).toHaveCount(0);
     await expect(propertyValue(page, '体積')).toHaveText(`${String(PLATE_VOLUME)} ${VOLUME_UNIT}`);
@@ -533,7 +524,7 @@ test.describe('P5 外観', () => {
     await page.keyboard.press('Control+z');
     // ガラスの既定(92)へ戻る。50 を打つ前の値がそのまま返ってくる。
     await expect(appearanceField(page, '透過率')).toHaveValue('92');
-    const undone = await recomputeStats(page);
+    const undone = await readRecomputeStats(page);
     expect(undone.cacheHits).toBe(before.cacheHits);
     expect(await takeProgress(page)).toEqual([]);
 

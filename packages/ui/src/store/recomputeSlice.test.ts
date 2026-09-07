@@ -30,7 +30,14 @@ import {
   bodyFor,
 } from './testing/createTestStore.js';
 
-beforeEach(resetTestStore);
+beforeEach(() => {
+  resetTestStore();
+  useAppStore.setState({
+    requestedGeneration: 0,
+    completedGeneration: 0,
+    lastOutcome: 'idle',
+  });
+});
 
 describe('文書の変化に応じた再計算の予約(要件§6.3)', () => {
   it('つないだ直後に今の文書を1回計算し、結果を反映する', async () => {
@@ -46,6 +53,10 @@ describe('文書の変化に応じた再計算の予約(要件§6.3)', () => {
 
     expect(useAppStore.getState().documentName).toBe('スケッチ1');
     expect(useAppStore.getState().isComputing).toBe(false);
+    expect(useAppStore.getState().completedGeneration).toBe(
+      useAppStore.getState().requestedGeneration,
+    );
+    expect(useAppStore.getState().lastOutcome).toBe('success');
     detach();
   });
 
@@ -135,6 +146,8 @@ describe('文書の変化に応じた再計算の予約(要件§6.3)', () => {
     await tick();
     expect(useAppStore.getState().errorMessage).toBe('計算できません');
     expect(useAppStore.getState().isComputing).toBe(false);
+    expect(useAppStore.getState().completedGeneration).toBe(1);
+    expect(useAppStore.getState().lastOutcome).toBe('failed');
     detach();
   });
 
@@ -282,6 +295,20 @@ describe('進捗と中止(NFR-PF-4、§0.a-0.22)', () => {
     expect(state.recomputeProgress).toBeNull();
     // 中止は失敗ではないので、赤い帯になる errorMessage は立てない。
     expect(state.errorMessage).toBeNull();
+  });
+
+  it('attachKernel で中止された世代は cancelled として完了する(P7 タスク52)', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+
+    fake.calls[0].settle({ ...resultFor(fake.calls[0].document), cancelled: true });
+    await tick();
+
+    const state = useAppStore.getState();
+    expect(state.requestedGeneration).toBe(1);
+    expect(state.completedGeneration).toBe(1);
+    expect(state.lastOutcome).toBe('cancelled');
+    detach();
   });
 
   it('最後まで走った計算が終わると中止の知らせは下りる', () => {

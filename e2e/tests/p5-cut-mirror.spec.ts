@@ -1,6 +1,13 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import {
+  beginRecompute,
+  KERNEL_TIMEOUT_MS,
+  waitForRecompute,
+  type RecomputeToken,
+} from './recompute.js';
+
 /**
  * 平面による切断(FR-432)とミラー(FR-419)を、ヘッドレスで通しで確かめる
  * (計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク27f・52)。
@@ -18,9 +25,6 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * 画素計算は要らない(立体はモデルブラウザの行から選ぶ)。
  */
 
-/** 幾何カーネル(Worker + OCCT、約 50MB)の読み込みぶんの上限。 */
-const KERNEL_TIMEOUT_MS = 60_000;
-
 /** 既定の箱の 1 辺(`packages/model/src/part/createPartDocument.ts` の DEFAULT_BOX_SIZE_MM)。 */
 const BOX_SIZE_MM = 20;
 /** 既定の箱の体積。中心が原点なので各軸 −10〜+10 に広がる。 */
@@ -31,45 +35,6 @@ const HALF_VOLUME = BOX_VOLUME / 2;
 const QUARTER_VOLUME = BOX_SIZE_MM * BOX_SIZE_MM * 5;
 /** ja.json の propertyPanel.unitCubicMillimeter。 */
 const VOLUME_UNIT = 'mm³';
-
-declare global {
-  interface Window {
-    /**
-     * **検査専用**。再計算の様子を読む(`packages/ui/src/app/PointerCadApp.tsx` が
-     * 差し出す口。アプリ自身はこれを 1 か所も呼ばない)。頁が載る前は `undefined`。
-     */
-    pcadRecomputeStats?: () => { readonly cacheHits: number; readonly isComputing: boolean };
-  }
-}
-
-/**
- * 再計算が終わるのを待つ。**体積を確かめる前に必ずこれを通す。**
- *
- * 分ける理由は、落ちたときに原因が読めるようにするため(push #14 の赤 3 本、
- * docs/報告記録.md 2026-09-06 12:04)。体積だけを待つと「50MB の WASM の読み込みが
- * 間に合わなかった」のか「計算そのものが壊れて違う値になった」のかがログで区別できない。
- * ここで落ちれば前者、ここを通ってから体積で落ちれば後者と言い切れる。
- *
- * **待ちの上限(KERNEL_TIMEOUT_MS)は体積の待ちと同じで、緩めていない。**
- */
-async function waitForRecompute(page: Page): Promise<void> {
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(() => {
-          const read = window.pcadRecomputeStats;
-          if (read === undefined) {
-            return '頁がまだ載っていません';
-          }
-          return read().isComputing ? '計算中' : '計算は終わっています';
-        }),
-      {
-        timeout: KERNEL_TIMEOUT_MS,
-        message: '幾何カーネルの再計算が終わること(初回は 50MB の WASM の読み込みを含む)',
-      },
-    )
-    .toBe('計算は終わっています');
-}
 
 /** コンソールのエラーとページの例外を集める。最後に 0 件であることを確かめる。 */
 function collectErrors(page: Page): readonly string[] {
@@ -228,9 +193,14 @@ function propertyToggle(page: Page, label: string): Locator {
 }
 
 /** その行を選び、計算が終わるのを待ってから、体積がその値になるまで待つ。 */
-async function expectVolume(page: Page, rowName: string, volume: number): Promise<void> {
+async function expectVolume(
+  page: Page,
+  rowName: string,
+  volume: number,
+  token?: RecomputeToken,
+): Promise<void> {
   await solidRow(page, rowName).click();
-  await waitForRecompute(page);
+  await waitForRecompute(page, token);
   await expect(propertyValue(page, '体積')).toHaveText(`${String(volume)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
@@ -242,11 +212,12 @@ async function placeBox(page: Page): Promise<void> {
   await menuTool(page, '作る', '箱').click();
   await expect(popoverTitle(page)).toHaveText('箱を置く');
   await expect(popoverInputs(page).nth(0)).toHaveValue(String(BOX_SIZE_MM));
+  const token = await beginRecompute(page);
   await popoverInputs(page).first().press('Enter');
   await expect(popover(page)).toHaveCount(0);
   await expect(solidRow(page, '箱1')).toBeVisible();
   // 幾何カーネルが箱を作り終えるまで待つ。
-  await expectVolume(page, '箱1', BOX_VOLUME);
+  await expectVolume(page, '箱1', BOX_VOLUME, token);
 }
 
 /** 「作る」の一覧から基本形状を既定のまま置く(箱以外にも使う)。 */
@@ -287,10 +258,11 @@ test.describe('P5 平面による切断とミラー', () => {
     await openToolMenu(page, '加工');
     await menuTool(page, '加工', '切断').click();
     await expect(popoverTitle(page)).toHaveText('切る面');
+    const cutToken = await beginRecompute(page);
     await commitPopover(page);
 
     await expect(solidRow(page, '切断1')).toBeVisible();
-    await expectVolume(page, '切断1', HALF_VOLUME);
+    await expectVolume(page, '切断1', HALF_VOLUME, cutToken);
 
     // 元の箱は切断に取り込まれて単独では出なくなる(§0.a-0.5)。
     await solidRow(page, '箱1').click();
@@ -313,13 +285,14 @@ test.describe('P5 平面による切断とミラー', () => {
     await menuTool(page, '加工', '切断').click();
     await expect(popoverTitle(page)).toHaveText('切る面');
     await popoverToggle(page, '反対側も残す(2 つに分ける)').click();
+    const splitToken = await beginRecompute(page);
     await commitPopover(page);
 
     // 木に「切断1」「切断2」が並び、どちらも生きたボディとして残る。
     await expect(solidRow(page, '切断1')).toBeVisible();
     await expect(solidRow(page, '切断2')).toBeVisible();
-    await expectVolume(page, '切断1', HALF_VOLUME);
-    await expectVolume(page, '切断2', HALF_VOLUME);
+    await expectVolume(page, '切断1', HALF_VOLUME, splitToken);
+    await expectVolume(page, '切断2', HALF_VOLUME, splitToken);
 
     // 2 つ目には対の相手への案内が出る(タスク27f)。
     await expect(propertyValue(page, '対になっている切断')).toHaveText('切断1');
@@ -337,24 +310,27 @@ test.describe('P5 平面による切断とミラー', () => {
 
     await openToolMenu(page, '加工');
     await menuTool(page, '加工', '切断').click();
+    const cutToken = await beginRecompute(page);
     await commitPopover(page);
-    await expectVolume(page, '切断1', HALF_VOLUME);
+    await expectVolume(page, '切断1', HALF_VOLUME, cutToken);
 
     // 切る面の決め方は読み取り専用で出る(選び直しは「選び直す」のボタン)。
     await expect(propertyValue(page, '切る面の決め方')).toHaveText('作図面からずらす');
     await expect(propertyValue(page, '残す側')).toHaveText('面の表側');
 
     // 距離を 5 にすると、残るのは z = 5〜10 の 20 × 20 × 5。
+    const distanceToken = await beginRecompute(page);
     await propertyField(page, '距離').fill('5');
-    await waitForRecompute(page);
+    await waitForRecompute(page, distanceToken);
     await expect(propertyValue(page, '体積')).toHaveText(
       `${String(QUARTER_VOLUME)} ${VOLUME_UNIT}`,
       { timeout: KERNEL_TIMEOUT_MS },
     );
 
     // 「反対側を残す」を入れると、残るのは z = −10〜5 の 20 × 20 × 15。
+    const reverseToken = await beginRecompute(page);
     await propertyToggle(page, '反対側を残す').click();
-    await waitForRecompute(page);
+    await waitForRecompute(page, reverseToken);
     await expect(propertyValue(page, '体積')).toHaveText(
       `${String(BOX_VOLUME - QUARTER_VOLUME)} ${VOLUME_UNIT}`,
       { timeout: KERNEL_TIMEOUT_MS },
@@ -392,12 +368,13 @@ test.describe('P5 平面による切断とミラー', () => {
 
     // 2) 新規 #1 → 基本形状を 2 種。
     await newDocument(page);
+    const primitivesToken = await beginRecompute(page);
     await placePrimitive(page, '球', '球を置く');
     await expect(solidRow(page, '球1')).toBeVisible();
     await placePrimitive(page, '円柱', '円柱を置く');
     await expect(solidRow(page, '円柱1')).toBeVisible();
     // 体積が出るまで待って、カーネルが 2 つとも作り終えたことを確かめる。
-    await waitForRecompute(page);
+    await waitForRecompute(page, primitivesToken);
     await expect(propertyValue(page, '体積')).toHaveText(new RegExp(`${VOLUME_UNIT}$`), {
       timeout: KERNEL_TIMEOUT_MS,
     });
@@ -417,11 +394,12 @@ test.describe('P5 平面による切断とミラー', () => {
     await openToolMenu(page, '加工');
     await menuTool(page, '加工', '切断').click();
     await expect(popoverTitle(page)).toHaveText('切る面');
+    const finalCutToken = await beginRecompute(page);
     await commitPopover(page);
 
     // ここが本題。失敗する版では「立体を切れませんでした。」が出て体積が出なかった。
     await expect(solidRow(page, '切断1')).toBeVisible();
-    await expectVolume(page, '切断1', HALF_VOLUME);
+    await expectVolume(page, '切断1', HALF_VOLUME, finalCutToken);
 
     expect(errors).toEqual([]);
   });
@@ -437,12 +415,13 @@ test.describe('P5 平面による切断とミラー', () => {
     await openToolMenu(page, '作る');
     await menuTool(page, '作る', 'ミラー').click();
     await expect(popoverTitle(page)).toHaveText('面の向こうへ映す');
+    const mirrorToken = await beginRecompute(page);
     await commitPopover(page);
 
     await expect(solidRow(page, 'ミラー1')).toBeVisible();
     // 鏡像の体積は元と同じで、**元の箱も生きたまま**(統合済みにならない)。
-    await expectVolume(page, 'ミラー1', BOX_VOLUME);
-    await expectVolume(page, '箱1', BOX_VOLUME);
+    await expectVolume(page, 'ミラー1', BOX_VOLUME, mirrorToken);
+    await expectVolume(page, '箱1', BOX_VOLUME, mirrorToken);
 
     expect(errors).toEqual([]);
   });

@@ -6,6 +6,7 @@ import type { PcadAttachments } from '@pointercad/io';
 import {
   affectsShape,
   documentUpTo,
+  KERNEL_BROKEN_MESSAGE,
   type PartDocument,
   type PartRecomputeOptions,
   type PartRecomputeResult,
@@ -14,6 +15,7 @@ import type { ExchangeKernel } from '../file/exchangeFile.js';
 import type { PartMeasurer } from '../solid/measureCommands.js';
 import type { PartInspector } from '../solid/printCheckCommands.js';
 import type { AppState } from './appState.js';
+import type { RecomputeOutcome } from './recomputeSlice.js';
 import { useAppStore } from './useAppStore.js';
 
 /**
@@ -104,9 +106,10 @@ export type PartRecomputer = (
  * (NFR-PF-1)。古い版の結果は捨てるので、`isComputing` が下りるのは最新の計算が
  * 終わったときだけになる。失敗しても例外を投げず、理由を画面に出す(FR-504、NFR-RE-1)。
  *
- * 依頼のたびに世代番号を 1 つ増やして渡す(NFR-PF-4)。番号はここに閉じて持ち、
- * ストアへは出さない。計算を始めるたびにストアを書き換えると、購読の通知の中で
- * さらに書き換えることになるため。中止は `cancelRecompute` が数える回数で拾う。
+ * 依頼のたびに世代番号を 1 つ増やして渡す(NFR-PF-4)。E2E が今回の依頼を区別できるよう、
+ * 開始した世代と完了した世代・結末だけはストアにも記録する(P7 タスク52)。この欄の変更は
+ * 下の購読条件(文書とタイムラインだけ)に当たらないので、再計算を再帰的に予約しない。
+ * 中止は `cancelRecompute` が数える回数で拾う。
  *
  * 戻り値を呼ぶと見張りをやめる。
  */
@@ -116,7 +119,17 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
   /** 実行中に届いた最新の文書。1 つだけ持つ。 */
   let queued: PartDocument | null = null;
   /** 依頼ごとに 1 つ増える世代番号。1 から始まる。 */
-  let generation = 0;
+  let generation = useAppStore.getState().requestedGeneration;
+
+  function outcomeOf(result: PartRecomputeResult): Exclude<RecomputeOutcome, 'idle'> {
+    if (result.cancelled) {
+      return 'cancelled';
+    }
+    if (result.errors.some((error) => error.message === KERNEL_BROKEN_MESSAGE)) {
+      return 'workerBroken';
+    }
+    return result.errors.length === 0 ? 'success' : 'failed';
+  }
 
   /** 1 本分が終わったときの後始末。次に回す文書があれば返す。 */
   function takeQueued(): PartDocument | null {
@@ -130,6 +143,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
     running = true;
     generation += 1;
     const current = generation;
+    useAppStore.getState().recordRecomputeRequest(current);
     // 利用者の中止は「この計算を始めた後に頼まれたか」で判る。新しい文書の予約と
     // 世代の交代は下の shouldCancel で別に拾う。
     const cancelBaseline = useAppStore.getState().cancelRequestCount;
@@ -163,10 +177,12 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
         const next = takeQueued();
         if (next !== null) {
           // もっと新しい文書が来ている。この結果は使わずに次を計算する。
+          useAppStore.getState().recordRecomputeCompletion(current, 'cancelled');
           start(next);
           return;
         }
         useAppStore.getState().applyRecompute(document, result);
+        useAppStore.getState().recordRecomputeCompletion(current, outcomeOf(result));
       },
       (error: unknown) => {
         if (detached) {
@@ -174,10 +190,12 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
         }
         const next = takeQueued();
         if (next !== null) {
+          useAppStore.getState().recordRecomputeCompletion(current, 'cancelled');
           start(next);
           return;
         }
         useAppStore.getState().setError(error instanceof Error ? error.message : String(error));
+        useAppStore.getState().recordRecomputeCompletion(current, 'failed');
       },
     );
   }

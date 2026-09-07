@@ -1,5 +1,6 @@
 /** 再計算の予約が古い計算を早く止めることの回帰テスト(R-7b、NFR-PF-4)。 */
 
+import { KERNEL_BROKEN_MESSAGE } from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { attachPartRecompute } from './attachKernel.js';
 import {
@@ -11,9 +12,27 @@ import {
 } from './testing/createTestStore.js';
 import { useAppStore } from './useAppStore.js';
 
-beforeEach(resetTestStore);
+beforeEach(() => {
+  resetTestStore();
+  useAppStore.setState({
+    requestedGeneration: 0,
+    completedGeneration: 0,
+    lastOutcome: 'idle',
+  });
+});
 
 describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4)', () => {
+  it('接続時の最初の依頼を requestedGeneration 1 として記録する', () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+
+    const state = useAppStore.getState();
+    expect(state.requestedGeneration).toBe(1);
+    expect(state.completedGeneration).toBe(0);
+    expect(state.lastOutcome).toBe('idle');
+    detach();
+  });
+
   it('計算中に新しい文書を予約すると、実行中の shouldCancel が真になる', () => {
     const fake = createFakeRecompute();
     const detach = attachPartRecompute(fake.recompute);
@@ -58,6 +77,9 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     await tick();
 
     expect(useAppStore.getState().recomputeCancelled).toBe(false);
+    expect(useAppStore.getState().requestedGeneration).toBe(2);
+    expect(useAppStore.getState().completedGeneration).toBe(1);
+    expect(useAppStore.getState().lastOutcome).toBe('cancelled');
     fake.calls[1].settle(resultFor(fake.calls[1].document));
     await tick();
 
@@ -65,6 +87,36 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     expect(state.recomputeCancelled).toBe(false);
     expect(state.featureNames).toEqual(['点1']);
     expect(state.isComputing).toBe(false);
+    detach();
+  });
+
+  it('通常のカーネル失敗は failed として完了する', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle({
+      ...resultFor(fake.calls[0].document),
+      errors: [{ featureId: 'solid-1', code: 'kernelFailed', message: '立体を作れませんでした' }],
+    });
+    await tick();
+
+    const state = useAppStore.getState();
+    expect(state.completedGeneration).toBe(1);
+    expect(state.lastOutcome).toBe('failed');
+    detach();
+  });
+
+  it('Worker 破損の理由で終わった世代は workerBroken になる', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle({
+      ...resultFor(fake.calls[0].document),
+      errors: [{ featureId: 'solid-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE }],
+    });
+    await tick();
+
+    const state = useAppStore.getState();
+    expect(state.completedGeneration).toBe(1);
+    expect(state.lastOutcome).toBe('workerBroken');
     detach();
   });
 

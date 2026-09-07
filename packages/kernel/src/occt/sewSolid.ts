@@ -8,6 +8,7 @@ import type { SewStepSpec, TessellationOptions } from '../types.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace, type OcctFaceHandle } from './makePlanarFace.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
+import { validateToleranceMm } from './tolerances.js';
 
 /**
  * 縫合に要る面の最小の枚数(§0.a-0.7)。
@@ -20,7 +21,7 @@ const MINIMUM_PROFILE_COUNT = 2;
 const MINIMUM_VOLUME = 1e-9;
 
 /**
- * 縫合した形の中から殻を 1 つ取り出す。無ければ null。
+ * 縫合した形の中にある殻を全て取り出す。
  *
  * 2026-09-03 に Node 上で実測した SewedShape() の種類(計画書 §1.2 の未確認点 3):
  *   箱の 6 面(閉じる)  → TopAbs_SHELL、自由辺 0
@@ -33,24 +34,35 @@ const MINIMUM_VOLUME = 1e-9;
  * 列挙の各値(TopAbs_SHELL 等)が空の型 `{}` になっており、列挙を引数に取る Init は
  * 強制変換なしでは型検査を通らないため(tessellate.ts・solidMesh.ts と同じ理由)。
  */
-function findShell(oc: OpenCascadeInstance, shape: TopoDS_Shape): TopoDS_Shell | null {
+function findShells(oc: OpenCascadeInstance, shape: TopoDS_Shape): readonly TopoDS_Shell[] {
   const shellType = oc.TopAbs_ShapeEnum.TopAbs_SHELL;
   if (shape.ShapeType() === shellType) {
-    return oc.TopoDS.Shell_1(shape);
+    return [oc.TopoDS.Shell_1(shape)];
   }
 
   const subShapes = new oc.TopTools_IndexedMapOfShape_1();
+  const shells: TopoDS_Shell[] = [];
   try {
     // 第 3・第 4 引数は「向きと位置を親からたどって積み上げる」指定。
     oc.TopExp.MapShapes_2(shape, subShapes, true, true);
     const subShapeCount = Number(subShapes.Size());
     for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
       const subShape = subShapes.FindKey(subShapeIndex);
-      if (subShape.ShapeType() === shellType) {
-        return oc.TopoDS.Shell_1(subShape);
+      try {
+        if (subShape.ShapeType() === shellType) {
+          shells.push(oc.TopoDS.Shell_1(subShape));
+        }
+      } finally {
+        // FindKey が返す wrapper は複製。Shell_1 の wrapper とは別にここで解放する。
+        subShape.delete();
       }
     }
-    return null;
+    return shells;
+  } catch (error) {
+    for (let shellIndex = shells.length - 1; shellIndex >= 0; shellIndex -= 1) {
+      shells[shellIndex].delete();
+    }
+    throw error;
   } finally {
     subShapes.delete();
   }
@@ -79,10 +91,7 @@ export function sewSolid(
   if (spec.profiles.length < MINIMUM_PROFILE_COUNT) {
     throw new Error('立体にするには面が 2 枚以上必要です。');
   }
-  // 数でない値(NaN)も同じ理由で断るため、正の数であることを直接確かめる。
-  if (!(spec.tolerance > 0)) {
-    throw new Error('つなぎ目の許容量は 0 より大きい数にしてください。');
-  }
+  const tolerance = validateToleranceMm(spec.tolerance);
 
   const faces: OcctFaceHandle[] = [];
   const deleteFaces = (): void => {
@@ -103,7 +112,7 @@ export function sewSolid(
 
   // 第 2〜第 5 引数は OCCT の既定の組み合わせ。縫合・解析・切り分けを行い、
   // 非多様体の殻は許さない(§0.a-0.7 のとおり P3 以降)。
-  const sewing = new oc.BRepBuilderAPI_Sewing(spec.tolerance, true, true, true, false);
+  const sewing = new oc.BRepBuilderAPI_Sewing(tolerance, true, true, true, false);
   const deleteSewing = (): void => {
     sewing.delete();
     deleteFaces();
@@ -138,11 +147,19 @@ export function sewSolid(
     deleteSewing();
   };
 
-  const shell = findShell(oc, sewed);
-  if (shell === null) {
+  const shells = findShells(oc, sewed);
+  if (shells.length === 0) {
     deleteSewed();
     throw new Error('面をつなげませんでした。面が重なっていないか確かめてください。');
   }
+  if (shells.length > 1) {
+    for (let shellIndex = shells.length - 1; shellIndex >= 0; shellIndex -= 1) {
+      shells[shellIndex].delete();
+    }
+    deleteSewed();
+    throw new Error('面が 2 つ以上の閉じた殻に分かれています。面を選び直してください。');
+  }
+  const shell = shells[0];
   const deleteShell = (): void => {
     shell.delete();
     deleteSewed();

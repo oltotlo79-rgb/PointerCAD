@@ -16,47 +16,63 @@ function loop(points: readonly Vec3Tuple[]): readonly CurveSpec[] {
   }));
 }
 
-/**
- * 10 × 20 × 30 mm の箱の 6 面(計画書 タスク4 の検証表の座標)。
- * 並びは 下(z=0)・上(z=30)・前(y=0)・後(y=20)・左(x=0)・右(x=10)。
- */
-const BOX_FACES: readonly (readonly CurveSpec[])[] = [
-  loop([
-    [0, 0, 0],
-    [10, 0, 0],
-    [10, 20, 0],
-    [0, 20, 0],
-  ]),
-  loop([
-    [0, 0, 30],
-    [10, 0, 30],
-    [10, 20, 30],
-    [0, 20, 30],
-  ]),
-  loop([
-    [0, 0, 0],
-    [10, 0, 0],
-    [10, 0, 30],
-    [0, 0, 30],
-  ]),
-  loop([
-    [0, 20, 0],
-    [10, 20, 0],
-    [10, 20, 30],
-    [0, 20, 30],
-  ]),
-  loop([
-    [0, 0, 0],
-    [0, 20, 0],
-    [0, 20, 30],
-    [0, 0, 30],
-  ]),
-  loop([
-    [10, 0, 0],
-    [10, 20, 0],
-    [10, 20, 30],
-    [10, 0, 30],
-  ]),
+/** 軸に平行な箱の 6 面を、下・上・前・後・左・右の順で作る。 */
+function boxFaces(origin: Vec3Tuple, size: Vec3Tuple): readonly (readonly CurveSpec[])[] {
+  const [x, y, z] = origin;
+  const [width, depth, height] = size;
+  const x1 = x + width;
+  const y1 = y + depth;
+  const z1 = z + height;
+  return [
+    loop([
+      [x, y, z],
+      [x1, y, z],
+      [x1, y1, z],
+      [x, y1, z],
+    ]),
+    loop([
+      [x, y, z1],
+      [x1, y, z1],
+      [x1, y1, z1],
+      [x, y1, z1],
+    ]),
+    loop([
+      [x, y, z],
+      [x1, y, z],
+      [x1, y, z1],
+      [x, y, z1],
+    ]),
+    loop([
+      [x, y1, z],
+      [x1, y1, z],
+      [x1, y1, z1],
+      [x, y1, z1],
+    ]),
+    loop([
+      [x, y, z],
+      [x, y1, z],
+      [x, y1, z1],
+      [x, y, z1],
+    ]),
+    loop([
+      [x1, y, z],
+      [x1, y1, z],
+      [x1, y1, z1],
+      [x1, y, z1],
+    ]),
+  ];
+}
+
+/** 10 × 20 × 30 mm の箱の 6 面(計画書 タスク4 の検証表の座標)。 */
+const BOX_FACES = boxFaces([0, 0, 0], [10, 20, 30]);
+
+/** 単一殻の新しい回帰検査に使う 10 × 20 × 40 mm の箱。 */
+const BOX_8000_FACES = boxFaces([0, 0, 0], [10, 20, 40]);
+
+/** 互いに触れない 2 箱の 12 面。どちらも閉じているため自由辺は 0 本になる。 */
+const DISCONNECTED_BOX_FACES = [
+  ...BOX_FACES,
+  ...boxFaces([100, 0, 0], [10, 20, 30]),
 ];
 
 /** 同じ箱の 6 面を、どれも逆回りに並べたもの。並び順で結果が変わらないことの確認に使う。 */
@@ -145,8 +161,33 @@ function shapeTypeName(oc: OpenCascadeInstance, shape: TopoDS_Shape): string {
 interface SewingObservation {
   readonly shapeType: string;
   readonly freeEdges: number;
+  readonly shellCount: number;
   /** 縫合の結果に殻が入っていれば、そこから素直に作った立体の体積。無ければ null。 */
   readonly rawSolidVolume: number | null;
+}
+
+/** 形自身または入れ物の中にある殻を数える。取り出した wrapper はこの口で解放する。 */
+function countShells(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
+  const shellType = oc.TopAbs_ShapeEnum.TopAbs_SHELL;
+  if (shape.ShapeType() === shellType) return 1;
+
+  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
+  let shellCount = 0;
+  try {
+    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+    const subShapeCount = Number(subShapes.Size());
+    for (let index = 1; index <= subShapeCount; index += 1) {
+      const subShape = subShapes.FindKey(index);
+      try {
+        if (subShape.ShapeType() === shellType) shellCount += 1;
+      } finally {
+        subShape.delete();
+      }
+    }
+    return shellCount;
+  } finally {
+    subShapes.delete();
+  }
 }
 
 /**
@@ -186,6 +227,7 @@ function observeSewing(
       return {
         shapeType: shapeTypeName(oc, sewed),
         freeEdges: Number(sewing.NbFreeEdges()),
+        shellCount: countShells(oc, sewed),
         rawSolidVolume,
       };
     } finally {
@@ -212,18 +254,21 @@ describe('面を縫い合わせて立体にする', () => {
     expect(observeSewing(oc, BOX_FACES)).toEqual({
       shapeType: 'TopAbs_SHELL',
       freeEdges: 0,
+      shellCount: 1,
       // 縫合が揃える向きは内側で、そのまま立体にすると裏返しになる(体積が負)。
       rawSolidVolume: -BOX_VOLUME,
     });
     expect(observeSewing(oc, BOX_FACES.slice(0, 5))).toEqual({
       shapeType: 'TopAbs_SHELL',
       freeEdges: 4,
+      shellCount: 1,
       // 開いた殻でも体積は出る(10 × 20 × 30 のうち上面を欠いた分)。
       rawSolidVolume: -4800,
     });
     expect(observeSewing(oc, BOX_FACES.slice(0, 1))).toEqual({
       shapeType: 'TopAbs_FACE',
       freeEdges: 4,
+      shellCount: 0,
       rawSolidVolume: null,
     });
   });
@@ -234,14 +279,42 @@ describe('面を縫い合わせて立体にする', () => {
     expect(observeSewing(oc, [BOX_FACES[0], FAR_FACE])).toEqual({
       shapeType: 'TopAbs_COMPOUND',
       freeEdges: 8,
+      shellCount: 0,
       rawSolidVolume: null,
     });
+  });
+
+  it('離れた 2 箱の 12 面は自由辺 0 本・殻 2 個になる', () => {
+    expect(observeSewing(oc, DISCONNECTED_BOX_FACES)).toEqual({
+      shapeType: 'TopAbs_COMPOUND',
+      freeEdges: 0,
+      shellCount: 2,
+      rawSolidVolume: null,
+    });
+  });
+
+  // 修正前はこの 12 面から最初の箱だけを取り出し、体積 6000 mm³ の立体を返していた。
+  it('離れた 2 箱の 12 面は、複数の閉じた殻に分かれる理由つきで断られる', () => {
+    expect(() => sewSolid(oc, sewSpec(DISCONNECTED_BOX_FACES))).toThrow(
+      '面が 2 つ以上の閉じた殻に分かれています。面を選び直してください。',
+    );
   });
 
   it('箱の 6 面を縫うと体積 6000 mm³ の閉じた立体になる', () => {
     const handle = sewSolid(oc, sewSpec(BOX_FACES));
     try {
       expect(measureVolume(oc, handle.shape)).toBeCloseTo(BOX_VOLUME, 6);
+      expect(isValidShape(oc, handle.shape)).toBe(true);
+      expect(hasSolid(oc, handle.shape)).toBe(true);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('10 × 20 × 40 mm の 6 面は従来どおり体積 8000 mm³ の立体になる', () => {
+    const handle = sewSolid(oc, sewSpec(BOX_8000_FACES));
+    try {
+      expect(measureVolume(oc, handle.shape)).toBeCloseTo(8000, 6);
       expect(isValidShape(oc, handle.shape)).toBe(true);
       expect(hasSolid(oc, handle.shape)).toBe(true);
     } finally {

@@ -27,3 +27,6 @@ scratchpad/
 
 # 目視の写真(担当が置く。追跡しない)
 shots/
+
+# Codex の sandbox 内で包み管理ツールが作る一時の store(追跡しない)
+.pnpm-store/

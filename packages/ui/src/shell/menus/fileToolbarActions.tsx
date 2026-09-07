@@ -1,4 +1,3 @@
-import { activeHasUnsavedChanges } from '../../file/assemblyFile.js';
 /**
  * 「ファイル」の区画の配線(FR-806、FR-812、FR-814、FR-807。P6 §0.57、タスク31・33)。
  *
@@ -8,6 +7,7 @@ import { activeHasUnsavedChanges } from '../../file/assemblyFile.js';
 
 import { DEFAULT_TOOL_DEFAULTS } from '@pointercad/model';
 import { useEffect, useRef } from 'react';
+import { activeHasUnsavedChanges, newAssembly } from '../../file/assemblyFile.js';
 import { createExchangeDeps, importFile } from '../../file/exchangeActions.js';
 import { exportBaseNameOf } from '../../file/exchangeFile.js';
 import { ExchangePanel } from '../../file/ExchangePanel.js';
@@ -18,6 +18,7 @@ import {
   newPart,
   openPart,
   savePart,
+  type PartFileDeps,
 } from '../../file/partFile.js';
 import {
   browserPrintOf,
@@ -110,6 +111,11 @@ export function runFileAction(id: FileActionId, saveAs: boolean): void {
       void savePart(deps, saveAs);
       return;
   }
+}
+
+/** 部品・アセンブリのどちらからでも、既存の確認と保存先初期化を通って空の組立を始める。 */
+export function runNewAssembly(deps: PartFileDeps = createDefaultPartFileDeps()): Promise<void> {
+  return newAssembly(deps);
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +290,9 @@ function runFileMenuActionId(
   onTemplatesChanged: () => void,
 ): void {
   switch (id) {
+    case 'newAssembly':
+      void runNewAssembly();
+      return;
     case 'saveAs':
       // 保存ボタンを Shift を押しながら押したときと同じ道筋(判断を 2 か所に書かない)。
       void savePart(createDefaultPartFileDeps(), true);

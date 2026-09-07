@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { addVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
 import { buildMateResidualReport, prepareMateResiduals, type MateResidualTargetPair } from './constraints/mateResiduals.js';
-import { applyMateIncrements, solveMates } from './constraints/solveMates.js';
+import { applyMateIncrements, diagnoseMates, solveMates } from './constraints/solveMates.js';
 import { solveRigid, type RigidSolveInput } from './constraints/solveRigid.js';
 import { collectMateVariables } from './constraints/mateVariables.js';
 import {
@@ -90,7 +90,67 @@ function median(action: () => void, warmups = 3): number {
   return times[3];
 }
 
+/**
+ * 相対比較は同じ時間帯で測る。一括の測定を終えてから分割を測ると、短い負荷変動を
+ * 解法の差と取り違える。ABBA順で各16回暖め、各32回の中央値を比べる。
+ * 両方式の先行/後行回数を等しくし、測定値の除外や合否による再試行はしない。
+ */
+function pairedMedians(first: () => void, second: () => void, now = () => performance.now()) {
+  for (let warmup = 0; warmup < 8; warmup += 1) {
+    first(); second(); second(); first();
+  }
+  const firstTimes: number[] = [];
+  const secondTimes: number[] = [];
+  const sample = (action: () => void, times: number[]): void => {
+    const start = now();
+    action();
+    times.push(now() - start);
+  };
+  for (let round = 0; round < 16; round += 1) {
+    sample(first, firstTimes); sample(second, secondTimes);
+    sample(second, secondTimes); sample(first, firstTimes);
+  }
+  const middle = (times: readonly number[]): number => {
+    const sorted = [...times].sort((a, b) => a - b);
+    return (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+  };
+  return { first: middle(firstTimes), second: middle(secondTimes), firstTimes, secondTimes };
+}
+
+describe('相対性能の測定', () => {
+  it.each([[8, 10], [10, 8]] as const)('負荷が単調増加しても真の所要差 %i / %i を保つ', (firstCost, secondCost) => {
+    let clock = 0;
+    let calls = 0;
+    const action = (cost: number): void => { calls += 1; clock += cost + calls / 10; };
+    const measured = pairedMedians(() => action(firstCost), () => action(secondCost), () => clock);
+    expect(measured.first - measured.second).toBeCloseTo(firstCost - secondCost, 10);
+    expect(measured.firstTimes).toHaveLength(32);
+    expect(measured.secondTimes).toHaveLength(32);
+    expect(calls).toBe(96);
+  });
+});
+
 describe('合致の性能(P7、50部品/150合致)', () => {
+  it('最終solve結果の診断は200ms以内', () => {
+    const data = fixture();
+    const solved = solveMates(data.assembly, data.targets, data.placements);
+    const diagnosis = diagnoseMates(data.assembly, solved);
+    expect(diagnosis.complete).toBe(true);
+    expect(diagnosis.converged).toBe(true);
+    expect(diagnosis.remainingDegreesOfFreedom).toBe(0);
+    expect(diagnosis.rows).toHaveLength(450);
+    const elapsed = median(() => { diagnoseMates(data.assembly, solved); });
+    console.log(`[P7性能] 診断50部品150合致: ${elapsed.toFixed(3)} ms / 200 ms`);
+    expectWithinBudget(elapsed, 200, '合致診断50部品150合致');
+  });
+  it('解き直しと表示用診断を合わせて500ms以内', () => {
+    const data = fixture();
+    const calculate = () => diagnoseMates(data.assembly, solveMates(data.assembly, data.targets, data.placements));
+    expect(calculate().complete).toBe(true);
+    const elapsed = median(() => { calculate(); }, 1);
+    console.log(`[P7性能] 解き直しと診断50部品150合致: ${elapsed.toFixed(3)} ms / 500 ms`);
+    expectWithinBudget(elapsed, 500, '合致解き直しと診断50部品150合致');
+  });
   it('1反復は20ms以内', () => {
     const data = fixture();
     const input = driver(data);
@@ -128,8 +188,10 @@ describe('合致の性能(P7、50部品/150合致)', () => {
     expect(a.iterations).toBe(1);
     expect(b.iterations).toBe(1);
     expect(Math.abs(one.residualNorm - Math.hypot(a.residualNorm, b.residualNorm))).toBeLessThan(1e-9);
-    const unsplit = median(() => { solveRigid(whole); });
-    const split = median(() => { solveRigid(first); solveRigid(second); });
+    const measured = pairedMedians(() => { solveRigid(whole); }, () => { solveRigid(first); solveRigid(second); });
+    const unsplit = measured.first;
+    const split = measured.second;
+    console.log('[P7性能] 成分分割の全測定値(ms):', JSON.stringify({ unsplit: measured.firstTimes, split: measured.secondTimes }));
     console.log(`[P7性能] 成分分割: 一括 ${unsplit.toFixed(3)} ms / 分割 ${split.toFixed(3)} ms = ${(unsplit / split).toFixed(3)} 倍 (見積もり 2 倍、実測を記録)`);
     expectWithinBudget(split, unsplit, '25部品×2成分は50部品一括より遅くない');
   });

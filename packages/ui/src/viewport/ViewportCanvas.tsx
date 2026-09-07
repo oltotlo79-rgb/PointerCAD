@@ -53,6 +53,19 @@ import type { SphereGridSpec } from './buildSphereGrid.js';
 import { toThreePlane } from './sectionView.js';
 import { readThemeColors } from './themeColors.js';
 
+/** E2Eだけが読む、実際に完了したビューポート描画の統計。製品の状態には含めない。 */
+interface ViewportRenderStats {
+  readonly completedRenders: number;
+  readonly lastCompletedAtMs: number;
+}
+
+declare global {
+  interface Window {
+    /** 検査専用。`scene.render` が正常に戻った回数と最後の完了時刻を読む。 */
+    pcadViewportRenderStats?: () => ViewportRenderStats;
+  }
+}
+
 /** 切断の予告を組み立てる材料。ストアから読むものだけを並べる。 */
 const EMPTY_PART_SKETCH = resolveSketch(createEmptySketchDocument());
 
@@ -555,6 +568,14 @@ export function ViewportCanvas(): React.JSX.Element {
     const scene = createViewportScene(canvas);
     const listeners = drawListenersRef.current;
     let frameId = 0;
+    let completedRenders = 0;
+    let lastCompletedAtMs = 0;
+    const readRenderStats = (): ViewportRenderStats => ({
+      completedRenders,
+      lastCompletedAtMs,
+    });
+    // StrictModeや将来の複数mountでは、最後に載った生きている口だけを公開する。
+    window.pcadViewportRenderStats = readRenderStats;
 
     /**
      * 3D の色をテーマから読み直すべきか(FR-908)。ルート要素へ `data-theme` を書くのは
@@ -572,6 +593,9 @@ export function ViewportCanvas(): React.JSX.Element {
       }
       const { projection, displayStyle, showGrid, displaySettings } = useAppStore.getState();
       scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
+      // `scene.render` が例外なく戻った実描画だけを、1回につきちょうど1つ数える。
+      completedRenders += 1;
+      lastCompletedAtMs = globalThis.performance.now();
       // 本体を描いた後にだけ知らせる。視点はこの時点で確定している。
       for (const listener of listeners) {
         listener();
@@ -952,6 +976,9 @@ export function ViewportCanvas(): React.JSX.Element {
     });
 
     return () => {
+      if (window.pcadViewportRenderStats === readRenderStats) {
+        delete window.pcadViewportRenderStats;
+      }
       if (frameId !== 0) {
         globalThis.cancelAnimationFrame(frameId);
       }

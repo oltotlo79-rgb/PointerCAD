@@ -82,7 +82,8 @@ export const DEFAULT_RIGID_LENGTH_TOLERANCE = 1e-9;
 export const DEFAULT_RIGID_ANGLE_TOLERANCE = 1e-9;
 export const DEFAULT_RIGID_CHARACTERISTIC_LENGTH = 100;
 
-function rowTolerance(row: RigidResidualRow, options: RigidSolveOptions): number {
+/** value/gradientと同じ尺度の許容。solverと表示用診断で判定を共有する。 */
+export function rigidRowTolerance(row: RigidResidualRow, options: RigidSolveOptions = {}): number {
   return row.scale * (row.tolerance ?? (row.unit === 'length'
     ? options.lengthTolerance ?? DEFAULT_RIGID_LENGTH_TOLERANCE
     : Math.sin(options.angleTolerance ?? DEFAULT_RIGID_ANGLE_TOLERANCE)));
@@ -90,7 +91,7 @@ function rowTolerance(row: RigidResidualRow, options: RigidSolveOptions): number
 
 function rowWeight(row: RigidResidualRow, options: RigidSolveOptions): number {
   // 許容の比だけで重み付けする。1/tolを直に掛けて1e18の正規方程式を作らない。
-  return (options.angleTolerance ?? DEFAULT_RIGID_ANGLE_TOLERANCE) / rowTolerance(row, options);
+  return (options.angleTolerance ?? DEFAULT_RIGID_ANGLE_TOLERANCE) / rigidRowTolerance(row, options);
 }
 
 function columnScales(variables: RigidSolveInput<unknown>['variables'], options: RigidSolveOptions): number[] {
@@ -119,7 +120,7 @@ function measure(evaluation: RigidEvaluation, options: RigidSolveOptions) {
   let satisfied = evaluation.valid !== false && (evaluation.branchViolations?.length ?? 0) === 0;
   let constantConflict = evaluation.constantConflict === true;
   for (const row of evaluation.rows) {
-    const tolerance = rowTolerance(row, options);
+    const tolerance = rigidRowTolerance(row, options);
     const finite = Number.isFinite(row.value) && Number.isFinite(tolerance) && tolerance > 0;
     const good = finite && Math.abs(row.value) < tolerance;
     satisfied = satisfied && good;
@@ -165,6 +166,8 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
   const diagonal = new Float64Array(n);
   const work = new Float64Array(n * n);
   const rhs = new Float64Array(n);
+  const rowColumns: number[] = [];
+  const rowValues: number[] = [];
   let madeProgress = false;
   const stopped = (): RigidSolveStopReason => madeProgress ? 'suspectedConflict' : 'stalled';
 
@@ -205,10 +208,19 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
     gradient.fill(0);
     for (const row of evaluation.rows) {
       const weight = rowWeight(row, options);
-      const entries = [...row.gradient].map(([j, value]) => [j, value * scales[j] * weight] as const);
-      for (const [j, gj] of entries) {
+      // 同じMap順・累算順のまま作業配列を使い回し、行ごとのタプル列と内側のiteratorを省く。
+      let count = 0;
+      for (const [j, value] of row.gradient) {
+        rowColumns[count] = j;
+        rowValues[count] = value * scales[j] * weight;
+        count += 1;
+      }
+      for (let p = 0; p < count; p += 1) {
+        const j = rowColumns[p];
+        const gj = rowValues[p];
         gradient[j] += gj * row.value * weight;
-        for (const [k, gk] of entries) normal[j * n + k] += gj * gk;
+        const offset = j * n;
+        for (let q = 0; q < count; q += 1) normal[offset + rowColumns[q]] += gj * rowValues[q];
       }
     }
     let smallest = Infinity;

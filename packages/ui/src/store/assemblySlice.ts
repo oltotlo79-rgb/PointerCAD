@@ -13,7 +13,8 @@
 
 import {
   createUndoStack, EMPTY_PART_LIBRARY, pushUndo, redo, undo,
-  type AssemblyDocument, type PartLibrary, type ResolvedAssembly, type SolidBody, type UndoStack,
+  type AssemblyDocument, type EmbeddedPartAttachments, type PartDocument, type PartLibrary,
+  type ResolvedAssembly, type SolidBody, type UndoStack,
 } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { AutoSaveRecord } from '@pointercad/io';
@@ -30,6 +31,24 @@ export interface AssemblyView {
   readonly bodies: ReadonlyMap<string, readonly SolidBody[]>;
   readonly appearances: ReadonlyMap<string, AppearanceInput>;
 }
+
+/** 部品ファイルの選択から配置確定までを、文書の寿命と要求IDに結び付ける一時状態。 */
+export type AssemblyPlacementState =
+  | {
+      readonly kind: 'choosing';
+      readonly requestId: string;
+      readonly documentId: string;
+    }
+  | {
+      readonly kind: 'ready' | 'committing';
+      readonly requestId: string;
+      readonly documentId: string;
+      readonly fileName: string;
+      readonly document: PartDocument;
+      readonly attachments: EmbeddedPartAttachments;
+      /** 確定前のXYZ式。配置操作の正本として文書と同じストアに置く。 */
+      readonly sources: readonly [string, string, string];
+    };
 
 /** アセンブリのスライスが持つ欄と操作。 */
 export interface AssemblySlice {
@@ -60,6 +79,8 @@ export interface AssemblySlice {
   readonly assemblyFileName: string | null;
   readonly assemblyInitialName: string | null;
   readonly assemblyView: AssemblyView | null;
+  /** 「部品を配置」の一時状態。取消・文書切替・確定編集で必ず消える。 */
+  readonly assemblyPlacement: AssemblyPlacementState | null;
   /** 文書の id は新規でも同じ値になり得るため、開く単位の安定 ID を別に持つ。 */
   readonly activeDocumentId: string;
   readonly recoveryRecord: AutoSaveRecord | null;
@@ -86,6 +107,7 @@ export const createAssemblySlice: StateCreator<
     assemblyFileName: null,
     assemblyInitialName: null,
     assemblyView: null,
+    assemblyPlacement: null as AssemblyPlacementState | null,
     activeDocumentId: crypto.randomUUID(),
   });
   function applyHistory(stack: UndoStack<AssemblySnapshot>): void {
@@ -99,6 +121,7 @@ export const createAssemblySlice: StateCreator<
       fileMessage: null,
       selection: [],
       hoveredElementId: null,
+      assemblyPlacement: null,
     }));
   }
   return {
@@ -127,7 +150,8 @@ export const createAssemblySlice: StateCreator<
       }
       const stack = pushUndo(state.assemblyUndoStack, { document: assembly, library });
       set({ assembly, assemblyLibrary: library, assemblyUndoStack: stack,
-        canUndo: stack.past.length > 0, canRedo: false, fileMessage: null });
+        canUndo: stack.past.length > 0, canRedo: false, fileMessage: null,
+        assemblyPlacement: null });
     },
     setAssemblyFileState: (assemblyFileName, savedAssembly) => {
       set({ assemblyFileName, savedAssembly });

@@ -5,9 +5,9 @@
  * NFR-PF-1(60fps)。
  *
  * **形(ジオメトリ)は部品の鍵ごとに 1 つだけ作って共有する**(§0.a-0.4)。同じ部品を
- * 50 個置いても `BufferGeometry` は 1 組で、置いた数だけ作るのは three の `Object3D`
- * (`position` + `quaternion`)だけになる。**行列を毎コマ作り直さない**——配置は
- * 四元数と位置のまま `Object3D` に載せ、three が 1 回だけ行列へ直す(§2.4)。
+ * 50 個置いても面と稜線をそれぞれ 1 回の instanced draw で描く。配置の行列は
+ * 位置・四元数が変わったときだけ three に作らせ、カメラの再描画では更新しない。
+ * 透過材質と、Float32 の相対配置では幾何公差を保てない部品は個別に描く。
  *
  * **カーネルの形(B-rep)は Comlink を越えない**(タスク6・8 の申し送り)。ここへ届くのは
  * 部品ごとに 1 回だけ再計算した結果(`SolidBody`)と、インスタンスごとの配置
@@ -31,9 +31,9 @@ import {
 } from '@pointercad/model';
 import * as THREE from 'three';
 
-import { appearanceKeyText } from '../appearance/buildFaceGroups.js';
 import {
   createAppearanceMaterialStore,
+  themedAppearance,
   type PatternTextureSource,
 } from '../appearance/createAppearanceMaterial.js';
 import type { DisplayStyle } from '../store/viewSlice.js';
@@ -81,6 +81,37 @@ export interface AssemblyGeometryBundle {
 
 /** 何も置いていないとき。アセンブリを開いていない間の値にも使う。 */
 export const EMPTY_ASSEMBLY_GEOMETRY: AssemblyGeometryBundle = { parts: [], instances: [] };
+
+/** 環境マップ要否の判定へ渡す、画面に見えているインスタンスの有効な外観一覧。 */
+export function assemblyAppearanceSpecs(bundle: AssemblyGeometryBundle): readonly AppearanceSpec[] {
+  const specs: AppearanceSpec[] = [];
+  const inheritedPartKeys = new Set<string>();
+  for (const instance of bundle.instances) {
+    if (!instance.visible) continue;
+    if (instance.appearance === undefined) {
+      inheritedPartKeys.add(instance.partKey);
+    } else {
+      specs.push(instance.appearance);
+    }
+  }
+  for (const part of bundle.parts) {
+    if (!inheritedPartKeys.has(part.partKey)) continue;
+    const input = part.appearances;
+    if (input === undefined) {
+      specs.push(DEFAULT_APPEARANCE);
+      continue;
+    }
+    for (const body of part.bodies) {
+      const assignment = input.byBody.get(body.featureId);
+      const faces = assignment?.faceAppearances;
+      const everyFaceOverridden = body.faces.length > 0
+        && body.faces.every((face) => faces?.has(face.index) === true);
+      if (!everyFaceOverridden) specs.push(assignment?.bodyAppearance ?? input.defaultAppearance);
+      if (faces !== undefined) specs.push(...faces.values());
+    }
+  }
+  return specs;
+}
 
 /** 仕分けの材料。`resolveAssembly` の結果と、部品ごとに 1 回だけ計算した形を並べる。 */
 export interface AssemblyGeometryInput {
@@ -164,36 +195,12 @@ const ASSEMBLY_RENDER_ORDER = 1;
 /** 稜線は面より後に描く(理由は `createSolidLayer.ts` の `SOLID_EDGE_RENDER_ORDER` と同じ)。 */
 const ASSEMBLY_EDGE_RENDER_ORDER = ASSEMBLY_RENDER_ORDER + 0.25;
 
-/** 既定の外観の鍵。テーマの色を当てる相手かどうかの判定に使う(下の `themedAppearance`)。 */
-const DEFAULT_APPEARANCE_KEY = appearanceKeyText(DEFAULT_APPEARANCE);
-
-/** 0xrrggbb を `#rrggbb` の文字にする(外観の色は文字で持つため)。 */
-function hexColorText(value: number): string {
-  return `#${value.toString(16).padStart(6, '0')}`;
-}
-
-/**
- * 既定の外観の色だけを、いまのテーマの立体の色(`--pcad-solid`)へ差し替える(FR-908)。
- *
- * **色分けを割り当てた部品は 1 つも触らない**(利用者が選んだ色をテーマで塗り替えない)。
- * 規則は `createSolidLayer.ts` の同名の関数とまったく同じにしてある——部品を開いたときと
- * アセンブリの中とで「色を決めていない部品の色」が食い違うと、同じ形が別物に見えるため。
- * (その関数は層の内側に閉じており、この層はタスク10 の欄のファイルだけを触る決めなので、
- * いまは同じ判定をここにも置いてある。両方の層を触るタスクが来たら 1 か所へ寄せてよい。)
- */
-function themedAppearance(spec: AppearanceSpec, solidColor: number): AppearanceSpec {
-  if (appearanceKeyText(spec) !== DEFAULT_APPEARANCE_KEY) {
-    return spec;
-  }
-  const color = hexColorText(solidColor);
-  return color === spec.color ? spec : { ...spec, color };
-}
-
 /**
  * 部品 1 種類ぶんの共有の形。**ボディごとに面 1 つ・稜線 1 つ**の `BufferGeometry` を持つ。
  *
  * `generation` は形を作り直した回数で、インスタンス側が「自分がぶら下げている形が
  * 作り直されたか」を数の比較 1 回で見分けるための札。
+ * 形と extent は登録前に埋め、登録後に形を変えるときは必ず新しい entry を作る。
  */
 interface PartShapeEntry {
   bodies: readonly SolidBody[];
@@ -202,20 +209,94 @@ interface PartShapeEntry {
   generation: number;
   readonly meshGeometries: THREE.BufferGeometry[];
   readonly edgeGeometries: THREE.BufferGeometry[];
+  /** GPU の相対配置を原点近傍に保つ。CPU の当たり判定は元の double 配置を使う。 */
+  origin: THREE.Vector3 | null;
+  readonly extent: THREE.Vector3;
 }
 
-type AssemblyMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]>;
-type AssemblyEdges = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+type FaceMaterial = THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[];
+type AssemblyMesh = THREE.Mesh<THREE.BufferGeometry, FaceMaterial>;
+type AssemblyEdges = THREE.LineSegments<THREE.InstancedBufferGeometry, THREE.LineBasicMaterial>;
 
-/** 置いた部品 1 つぶんの入れ物。**形は持たない**(共有の形を指すだけ)。 */
+/** 配置だけの控え。描画する Object3D を部品の数だけ増やさない。 */
 interface InstanceEntry {
-  /** 配置(位置 + 四元数)を載せる入れ物。シーンにはこれが置いた数だけ並ぶ。 */
-  readonly object: THREE.Group;
-  partKey: string;
-  /** ぶら下げている形の版(`PartShapeEntry.generation`)。 */
-  generation: number;
-  readonly meshes: AssemblyMesh[];
-  readonly edges: AssemblyEdges[];
+  readonly matrix: THREE.Matrix4;
+  version: number;
+  draw: AssemblyInstanceDraw;
+  /** 最新の判定だけを保持し、部品の削除時は entry ごと破棄する。 */
+  precision?: {
+    readonly shape: PartShapeEntry;
+    readonly placementVersion: number;
+    readonly originX: number;
+    readonly originY: number;
+    readonly originZ: number;
+    readonly result: boolean;
+  };
+}
+
+/**
+ * GPU 用 Float32 行列を CPU pick に逆輸入しない。旧 Mesh.raycast と同じ double の
+ * 世界行列で各面を調べ、native InstancedMesh と同じ instanceId を付けて返す。
+ */
+class AssemblyInstancedMesh extends THREE.InstancedMesh<THREE.BufferGeometry, FaceMaterial> {
+  placements: readonly THREE.Matrix4[] = [];
+  private readonly pickMesh: AssemblyMesh;
+  private readonly pickHits: THREE.Intersection[] = [];
+
+  constructor(geometry: THREE.BufferGeometry, material: FaceMaterial, capacity: number, private readonly root: THREE.Group) {
+    super(geometry, material, capacity);
+    this.pickMesh = new THREE.Mesh(geometry, material);
+    this.pickMesh.matrixAutoUpdate = false;
+  }
+
+  override raycast(raycaster: THREE.Raycaster, intersects: THREE.Intersection[]): void {
+    this.pickMesh.material = this.material;
+    for (let slot = 0; slot < this.count; slot += 1) {
+      this.pickMesh.matrixWorld.multiplyMatrices(this.root.matrixWorld, this.placements[slot]);
+      this.pickMesh.raycast(raycaster, this.pickHits);
+      for (const hit of this.pickHits) {
+        hit.instanceId = slot;
+        hit.object = this;
+        intersects.push(hit);
+      }
+      this.pickHits.length = 0;
+    }
+  }
+}
+
+interface BatchSlots {
+  members: readonly InstanceEntry[];
+  versions: readonly number[];
+}
+
+interface FaceBatch extends BatchSlots {
+  readonly partKey: string;
+  readonly object: AssemblyInstancedMesh;
+  readonly capacity: number;
+}
+
+interface EdgeBatch extends BatchSlots {
+  readonly partKey: string;
+  readonly object: AssemblyEdges;
+  readonly capacity: number;
+  readonly matrices: THREE.InstancedBufferAttribute;
+  readonly colors: THREE.InstancedBufferAttribute;
+  colorValues: readonly number[];
+}
+
+interface FacePlan {
+  readonly partKey: string;
+  readonly geometry: THREE.BufferGeometry;
+  readonly material: FaceMaterial;
+  readonly origin: THREE.Vector3;
+  readonly members: InstanceEntry[];
+}
+
+interface EdgePlan {
+  readonly partKey: string;
+  readonly geometry: THREE.BufferGeometry;
+  readonly origin: THREE.Vector3;
+  readonly members: InstanceEntry[];
 }
 
 export interface AssemblyLayer {
@@ -225,7 +306,11 @@ export interface AssemblyLayer {
    * 置いた部品を差し替える(FR-605)。**同じ一式(同一参照)を渡し直したときは、
    * 表示スタイルの入切だけで済ませる**(NFR-PF-1)。
    */
-  update(bundle: AssemblyGeometryBundle, displayStyle: DisplayStyle): void;
+  update(
+    bundle: AssemblyGeometryBundle,
+    displayStyle: DisplayStyle,
+    environment?: THREE.Texture | null,
+  ): void;
   /**
    * 表示テーマの色を反映する(FR-908)。**形は 1 つも作り直さない**——色を決めていない
    * 部品の材質だけが次の `update` で作り直される。
@@ -260,11 +345,21 @@ function fillGeometries(entry: PartShapeEntry, bodies: readonly SolidBody[]): vo
     entry.meshAppearances.push(draw.appearances);
     // 包む球は視錐台の絞り込みと当たり判定の粗い絞りに使う。必ず取る。
     mesh.computeBoundingSphere();
+    mesh.computeBoundingBox();
+    if (mesh.boundingBox !== null) {
+      entry.extent.max(mesh.boundingBox.min.clone().multiplyScalar(-1));
+      entry.extent.max(mesh.boundingBox.max);
+    }
     entry.meshGeometries.push(mesh);
 
     const edges = new THREE.BufferGeometry();
     edges.setAttribute('position', new THREE.BufferAttribute(draw.edgePositions, 3));
     edges.computeBoundingSphere();
+    edges.computeBoundingBox();
+    if (edges.boundingBox !== null) {
+      entry.extent.max(edges.boundingBox.min.clone().multiplyScalar(-1));
+      entry.extent.max(edges.boundingBox.max);
+    }
     entry.edgeGeometries.push(edges);
   }
 }
@@ -282,6 +377,58 @@ function disposeGeometries(entry: PartShapeEntry): void {
   entry.edgeGeometries.length = 0;
 }
 
+/** 区間の端を足す。TwoSum で double 自身の丸めを検出し、必要な側だけ外へ広げる。 */
+function sumBound(left: number, right: number, upper: boolean): number {
+  const sum = left + right;
+  const rightPart = sum - left;
+  const residual = (left - (sum - rightPart)) + (right - rightPart);
+  if (upper ? residual > 0 : residual < 0) {
+    const padding = Math.max(Number.MIN_VALUE, Math.abs(sum) * Number.EPSILON);
+    return upper ? sum + padding : sum - padding;
+  }
+  return sum;
+}
+
+/**
+ * Float32 同士の積は double に正確に入る。その積(最大 4 項)から shader の内積の
+ * 誤差上限を求める。全ての項の分割を調べ、加算順序と積和の融合(FMA)の違いを包む。
+ * 中間値は「まだ丸めない値」と Float32 に丸めた値の両方を含め、最後は必ず丸める。
+ * 整数の正確な積・和に一律の相対誤差を課さないので、通常の箱はバッチに残せる。
+ */
+function float32DotError(products: readonly number[], lower: Float64Array, upper: Float64Array): number {
+  const terms = products.filter((value) => value !== 0);
+  if (terms.length === 0) return 0;
+  let exactLower = 0;
+  let exactUpper = 0;
+  for (let index = 0; index < terms.length; index += 1) {
+    const term = terms[index];
+    const rounded = Math.fround(term);
+    if (!Number.isFinite(rounded)) return Infinity;
+    lower[1 << index] = Math.min(term, rounded);
+    upper[1 << index] = Math.max(term, rounded);
+    exactLower = sumBound(exactLower, term, false);
+    exactUpper = sumBound(exactUpper, term, true);
+  }
+  const full = (1 << terms.length) - 1;
+  for (let mask = 1; mask <= full; mask += 1) {
+    if ((mask & (mask - 1)) === 0) continue;
+    let minimum = Infinity;
+    let maximum = -Infinity;
+    for (let left = (mask - 1) & mask; left > 0; left = (left - 1) & mask) {
+      const right = mask ^ left;
+      if (left > right) continue;
+      const low = sumBound(lower[left], lower[right], false);
+      const high = sumBound(upper[left], upper[right], true);
+      minimum = Math.min(minimum, low, Math.fround(low));
+      maximum = Math.max(maximum, high, Math.fround(high));
+    }
+    if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return Infinity;
+    lower[mask] = minimum;
+    upper[mask] = maximum;
+  }
+  return Math.max(Math.abs(Math.fround(lower[full]) - exactUpper), Math.abs(Math.fround(upper[full]) - exactLower));
+}
+
 /**
  * アセンブリの層を作る。
  *
@@ -290,294 +437,443 @@ function disposeGeometries(entry: PartShapeEntry): void {
  */
 export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLayer {
   const group = new THREE.Group();
-
-  /** いま効いているテーマの色。`setThemeColors` が来るまでは既定(ダーク)。 */
+  group.matrixAutoUpdate = false;
   let colors: ThemeColors = DEFAULT_THEME_COLORS;
-
-  /** いまの表示スタイル。テーマが変わったとき、稜線の色をどちらへ塗るかの判断に使う。 */
   let lastDisplayStyle: DisplayStyle = 'shadedWithEdges';
-
-  /**
-   * 面の材質の入れ物。**見え方(`appearanceKeyText`)が同じなら同じ材質**を返すので、
-   * 同じ部品を 50 個置いても材質は 1 つで済む(P5 タスク9)。使われなくなった材質は
-   * `collect` が捨てる(WebGL の資源は GC で戻らない)。
-   *
-   * **映り込み(FR-1107)の環境マップは渡さない。** 作る・捨てるの判断はレンダラを持つ
-   * `createViewportScene.ts` が立体の層のために行っており、アセンブリの部品にも配るのは
-   * 鏡・ガラスの部品を置けるようになってからでよい(いまは映り込みの無い材質になる)。
-   */
   const materialStore = createAppearanceMaterialStore(patterns);
-
-  /**
-   * 稜線の材質は強調の度合いごとに 1 つずつ。部品ごとには作らず、どれを使うかだけを
-   * 切り替える(部品が 50 個あっても材質は 3 つのまま)。
-   */
-  const edgeMaterials: Readonly<Record<SolidEmphasis, THREE.LineBasicMaterial>> = {
-    none: new THREE.LineBasicMaterial({ color: DEFAULT_THEME_COLORS.solidEdgeOverSolid }),
-    hovered: new THREE.LineBasicMaterial({ color: DEFAULT_THEME_COLORS.hovered }),
-    selected: new THREE.LineBasicMaterial({ color: DEFAULT_THEME_COLORS.selected }),
+  let environment: THREE.Texture | null = null;
+  /*
+    LineSegments + InstancedBufferGeometry は Three の LINES / renderInstances 経路を通る。
+    USE_INSTANCING は標準 project_vertex の instanceMatrix 変換を有効にする。color は
+    divisor=1 の属性なので、標準 LineBasicMaterial の色・深度・tone mapping を保てる。
+  */
+  const edgeMaterial = Object.assign(new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: true }), {
+    defines: { USE_INSTANCING: '' },
+  });
+  const individualEdgeMaterials: Readonly<Record<SolidEmphasis, THREE.LineBasicMaterial>> = {
+    none: new THREE.LineBasicMaterial(),
+    hovered: new THREE.LineBasicMaterial(),
+    selected: new THREE.LineBasicMaterial(),
   };
-
-  /** 部品の鍵 → 共有の形。 */
   const partShapes = new Map<string, PartShapeEntry>();
-  /** インスタンスの id → 入れ物。 */
   const instances = new Map<string, InstanceEntry>();
-
-  /** 当たり判定にかける面(表示中のものだけ)。 */
+  const faceBatches = new Map<string, FaceBatch>();
+  const edgeBatches = new Map<string, EdgeBatch>();
+  const individualFaces = new Map<string, AssemblyMesh>();
+  const individualEdges = new Map<string, THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>>();
   const pickTargets: THREE.Object3D[] = [];
-  /** 当たった面 → インスタンスの id。 */
-  const idByObject = new Map<THREE.Object3D, string>();
-
+  const idsByObject = new Map<THREE.Object3D, readonly string[]>();
+  const pickOrder = new Map<string, number>();
   let lastBundle: AssemblyGeometryBundle | null = null;
-  /** 材質を作り直す必要があるか(テーマの色が変わった)。**毎コマは触らない。** */
   let appearanceDirty = true;
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3(1, 1, 1);
+  const relativeMatrix = new THREE.Matrix4();
+  const dotLower = new Float64Array(16);
+  const dotUpper = new Float64Array(16);
+  const edgeColor = new THREE.Color();
+  const sphere = new THREE.Sphere();
 
-  /** 共有の形を、渡された一式に合わせる。**同じ並びなら作り直さない。** */
+  function removeFaceBatch(key: string, batch: FaceBatch): void {
+    group.remove(batch.object);
+    // InstancedMesh.dispose が instanceMatrix の GPU 資源を返す。共有形と材質は捨てない。
+    batch.object.dispose();
+    faceBatches.delete(key);
+  }
+
+  function removeEdgeBatch(key: string, batch: EdgeBatch): void {
+    group.remove(batch.object);
+    batch.object.geometry.dispose();
+    edgeBatches.delete(key);
+  }
+
+  function releaseShape(partKey: string, shape: PartShapeEntry): void {
+    for (const [key, batch] of faceBatches) {
+      if (batch.partKey === partKey) removeFaceBatch(key, batch);
+    }
+    for (const [key, batch] of edgeBatches) {
+      if (batch.partKey === partKey) removeEdgeBatch(key, batch);
+    }
+    disposeGeometries(shape);
+  }
+
   function syncPartShapes(parts: readonly AssemblyPartShape[]): void {
     const alive = new Set<string>();
     for (const part of parts) {
       alive.add(part.partKey);
-      const entry = partShapes.get(part.partKey);
-      if (entry === undefined) {
-        const created: PartShapeEntry = {
-          bodies: part.bodies,
-          appearances: part.appearances,
-          meshAppearances: [],
-          generation: 1,
-          meshGeometries: [],
-          edgeGeometries: [],
-        };
-        fillGeometries(created, part.bodies);
-        partShapes.set(part.partKey, created);
-        continue;
-      }
-      if (entry.bodies === part.bodies && entry.appearances === part.appearances) {
-        // 配置だけが変わった(形は同じ並び)。**1 バイトも触らない**(NFR-PF-1)。
-        continue;
-      }
-      // 部品を計算し直した。古い形を捨ててから作り直し、版を進めて子の組み直しを促す。
-      disposeGeometries(entry);
-      entry.appearances = part.appearances;
-      fillGeometries(entry, part.bodies);
-      entry.bodies = part.bodies;
-      entry.generation += 1;
+      const previous = partShapes.get(part.partKey);
+      if (previous?.bodies === part.bodies && previous.appearances === part.appearances) continue;
+      if (previous !== undefined) releaseShape(part.partKey, previous);
+      const shape: PartShapeEntry = {
+        bodies: part.bodies, appearances: part.appearances, meshAppearances: [],
+        generation: (previous?.generation ?? 0) + 1, meshGeometries: [], edgeGeometries: [], origin: null,
+        extent: new THREE.Vector3(),
+      };
+      fillGeometries(shape, part.bodies);
+      partShapes.set(part.partKey, shape);
     }
-    for (const [partKey, entry] of partShapes) {
-      if (alive.has(partKey)) {
-        continue;
+    for (const [partKey, shape] of partShapes) {
+      if (!alive.has(partKey)) {
+        releaseShape(partKey, shape);
+        partShapes.delete(partKey);
       }
-      // その鍵を使うインスタンスが 1 つも無くなった。ここで初めて形を捨てる(P5 §7.3)。
-      disposeGeometries(entry);
-      partShapes.delete(partKey);
     }
   }
 
-  /** 入れ物の子(面と稜線)を、共有の形の数に合わせて組み直す。**形は捨てない。** */
-  function rebuildChildren(
-    entry: InstanceEntry,
-    shape: PartShapeEntry,
-    material: THREE.MeshStandardMaterial,
-  ): void {
-    for (const mesh of entry.meshes) {
-      entry.object.remove(mesh);
-    }
-    for (const edges of entry.edges) {
-      entry.object.remove(edges);
-    }
-    entry.meshes.length = 0;
-    entry.edges.length = 0;
-    for (let index = 0; index < shape.meshGeometries.length; index += 1) {
-      const mesh: AssemblyMesh = new THREE.Mesh(shape.meshGeometries[index], material);
-      mesh.renderOrder = ASSEMBLY_RENDER_ORDER;
-      entry.object.add(mesh);
-      entry.meshes.push(mesh);
-
-      const edges: AssemblyEdges = new THREE.LineSegments(
-        shape.edgeGeometries[index],
-        edgeMaterials.none,
-      );
-      edges.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER;
-      entry.object.add(edges);
-      entry.edges.push(edges);
-    }
-  }
-
-  /** 置いた部品 1 つを反映する。形を共有したまま、配置・色・強調だけを載せる。 */
-  function applyInstance(draw: AssemblyInstanceDraw): void {
-    const shape = partShapes.get(draw.partKey);
-    if (shape === undefined) {
-      return;
-    }
+  function syncPlacement(draw: AssemblyInstanceDraw): InstanceEntry {
     let entry = instances.get(draw.componentId);
+    const previous = entry?.draw;
+    const changed = previous === undefined
+      || draw.placement.position.some((value, index) => value !== previous.placement.position[index])
+      || draw.placement.rotation.some((value, index) => value !== previous.placement.rotation[index]);
     if (entry === undefined) {
-      const object = new THREE.Group();
-      group.add(object);
-      entry = { object, partKey: '', generation: 0, meshes: [], edges: [] };
+      entry = { matrix: new THREE.Matrix4(), version: 0, draw };
       instances.set(draw.componentId, entry);
     }
-    const material = materialStore.materialFor(
-      themedAppearance(draw.appearance ?? shape.meshAppearances[0]?.[0] ?? DEFAULT_APPEARANCE, colors.solid),
-      null,
-    );
-    if (entry.partKey !== draw.partKey || entry.generation !== shape.generation) {
-      rebuildChildren(entry, shape, material);
-      entry.partKey = draw.partKey;
-      entry.generation = shape.generation;
+    if (changed) {
+      position.fromArray(draw.placement.position);
+      rotation.fromArray(draw.placement.rotation);
+      entry.matrix.compose(position, rotation, scale);
+      entry.version += 1;
     }
+    entry.draw = draw;
+    return entry;
+  }
 
-    /*
-      配置は**位置と四元数のまま**載せる(§2.4、§0.a-0.5)。行列を自分で作らないので、
-      置き直しの費用は 7 個の数の書き込みだけで済む。世界行列はここで 1 回だけ取り直す
-      ——描く前に当たり判定が呼ばれても、動かした後の位置で当たる(FR-106)。
-    */
-    entry.object.position.set(
-      draw.placement.position[0],
-      draw.placement.position[1],
-      draw.placement.position[2],
-    );
-    entry.object.quaternion.set(
-      draw.placement.rotation[0],
-      draw.placement.rotation[1],
-      draw.placement.rotation[2],
-      draw.placement.rotation[3],
-    );
-    entry.object.visible = draw.visible;
-    entry.object.updateMatrixWorld();
+  function materialFor(draw: AssemblyInstanceDraw, shape: PartShapeEntry, body: number): FaceMaterial {
+    const appearances = shape.meshAppearances[body];
+    if (draw.appearance !== undefined || appearances.length === 1) {
+      return materialStore.materialFor(themedAppearance(draw.appearance ?? appearances[0], colors.solid), environment);
+    }
+    return appearances.map((spec) => materialStore.materialFor(themedAppearance(spec, colors.solid), environment));
+  }
 
-    for (const [index, mesh] of entry.meshes.entries()) {
-      const appearances = shape.meshAppearances[index];
-      if (draw.appearance !== undefined || appearances.length === 1) {
-        mesh.material = materialStore.materialFor(
-          themedAppearance(draw.appearance ?? appearances[0], colors.solid), null,
-        );
-      } else {
-        mesh.material = appearances.map((spec) =>
-          materialStore.materialFor(themedAppearance(spec, colors.solid), null));
+  function relativePlacement(entry: InstanceEntry, origin: THREE.Vector3): THREE.Matrix4 {
+    relativeMatrix.copy(entry.matrix);
+    relativeMatrix.setPosition(
+      entry.matrix.elements[12] - origin.x,
+      entry.matrix.elements[13] - origin.y,
+      entry.matrix.elements[14] - origin.z,
+    );
+    return relativeMatrix;
+  }
+
+  function canInstance(entry: InstanceEntry, shape: PartShapeEntry, origin: THREE.Vector3): boolean {
+    const previous = entry.precision;
+    if (previous?.shape === shape && previous.placementVersion === entry.version
+      && previous.originX === origin.x && previous.originY === origin.y && previous.originZ === origin.z) {
+      return previous.result;
+    }
+    const result = hasPreciseInstanceVertices(entry, shape, origin);
+    // Matrix4 と origin は可変なので参照だけを鍵にしない。配置の版と原点の値を控える。
+    // shape の参照は再構築時に変わる。履歴を蓄積せず、最新の形・配置の判定だけ残す。
+    entry.precision = { shape, placementVersion: entry.version, originX: origin.x, originY: origin.y, originZ: origin.z, result };
+    return result;
+  }
+
+  function hasPreciseInstanceVertices(entry: InstanceEntry, shape: PartShapeEntry, origin: THREE.Vector3): boolean {
+    // NFR-RE-3 の基準 1e-7 mm。回転の丸めは形の座標範囲を掛けて位置誤差へ直す。
+    const values = relativePlacement(entry, origin).elements;
+    const extent = shape.extent;
+    const error = (index: number): number => Math.abs(Math.fround(values[index]) - values[index]);
+    const axes = [0, 1, 2].map((row) => error(12 + row)
+      + error(row) * extent.x + error(4 + row) * extent.y + error(8 + row) * extent.z);
+    if (!(Math.hypot(...axes) <= 1e-7)) return false;
+    const rounded = values.map(Math.fround);
+    // project_vertex は instanceMatrix * vertex の後に modelViewMatrix を掛ける。
+    // 係数が正確でも 1e8 + 10 が 1e8 + 8 になるため、面・稜線の実頂点も検査する。
+    // syncBundle からだけ呼び、カメラのみの再描画ではこの計算を増やさない。
+    for (const geometry of [...shape.meshGeometries, ...shape.edgeGeometries]) {
+      const positions = geometry.getAttribute('position');
+      for (let vertex = 0; vertex < positions.count; vertex += 1) {
+        const x = positions.getX(vertex);
+        const y = positions.getY(vertex);
+        const z = positions.getZ(vertex);
+        const vertexErrors = axes.map((coefficientError, row) => coefficientError + float32DotError([
+          rounded[row] * x, rounded[4 + row] * y, rounded[8 + row] * z, rounded[12 + row],
+        ], dotLower, dotUpper));
+        if (!(Math.hypot(...vertexErrors) <= 1e-7)) return false;
       }
     }
-    for (const edges of entry.edges) {
-      edges.material = edgeMaterials[draw.emphasis];
+    return true;
+  }
+
+  function edgeHex(emphasis: SolidEmphasis, style: DisplayStyle): number {
+    if (emphasis !== 'none') return colors[emphasis];
+    return style === 'wireframe' ? colors.solidEdgeWireframe : colors.solidEdgeOverSolid;
+  }
+
+  function slotsChanged(batch: BatchSlots, members: readonly InstanceEntry[]): boolean {
+    return batch.members.length !== members.length || members.some((entry, slot) =>
+      batch.members[slot] !== entry || batch.versions[slot] !== entry.version);
+  }
+
+  function rememberSlots(batch: BatchSlots, members: readonly InstanceEntry[]): void {
+    batch.members = members;
+    batch.versions = members.map((entry) => entry.version);
+  }
+
+  function capacityFor(count: number): number {
+    return 2 ** Math.ceil(Math.log2(Math.max(1, count)));
+  }
+
+  function placeBatch(object: THREE.Object3D, origin: THREE.Vector3, renderOrder: number): void {
+    object.matrixAutoUpdate = false;
+    object.matrix.setPosition(origin);
+    object.renderOrder = renderOrder;
+    group.add(object);
+    object.updateMatrixWorld(true);
+  }
+
+  function syncFaces(plans: ReadonlyMap<string, FacePlan>, style: DisplayStyle): void {
+    for (const [key, batch] of faceBatches) {
+      if (!plans.has(key)) removeFaceBatch(key, batch);
+    }
+    for (const [key, plan] of plans) {
+      let batch = faceBatches.get(key);
+      if (batch !== undefined && batch.capacity < plan.members.length) {
+        removeFaceBatch(key, batch);
+        batch = undefined;
+      }
+      if (batch === undefined) {
+        const capacity = capacityFor(plan.members.length);
+        const object = new AssemblyInstancedMesh(plan.geometry, plan.material, capacity, group);
+        object.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        object.count = 0;
+        placeBatch(object, plan.origin, ASSEMBLY_RENDER_ORDER);
+        batch = { partKey: plan.partKey, object, capacity, members: [], versions: [] };
+        faceBatches.set(key, batch);
+      }
+      const object = batch.object;
+      if (slotsChanged(batch, plan.members)) {
+        object.count = plan.members.length;
+        plan.members.forEach((entry, slot) => object.setMatrixAt(slot, relativePlacement(entry, plan.origin)));
+        object.instanceMatrix.needsUpdate = true;
+        object.placements = plan.members.map((entry) => entry.matrix);
+        object.computeBoundingSphere();
+        // Box3.setFromObject 等の外部利用でも、以前の配置の包囲箱を残さない。
+        object.computeBoundingBox();
+        rememberSlots(batch, plan.members);
+      }
+      object.visible = object.count > 0 && style !== 'wireframe';
+      if (object.count > 0) {
+        pickTargets.push(object);
+        idsByObject.set(object, plan.members.map((entry) => entry.draw.componentId));
+      }
     }
   }
 
-  /** インスタンスを 1 つ片付ける。**形は共有なので捨てない**(材質も入れ物が持つ)。 */
-  function removeInstance(componentId: string, entry: InstanceEntry): void {
-    group.remove(entry.object);
-    entry.object.clear();
-    entry.meshes.length = 0;
-    entry.edges.length = 0;
-    instances.delete(componentId);
+  function syncEdges(plans: ReadonlyMap<string, EdgePlan>, style: DisplayStyle): void {
+    for (const [key, batch] of edgeBatches) {
+      if (!plans.has(key)) removeEdgeBatch(key, batch);
+    }
+    for (const [key, plan] of plans) {
+      let batch = edgeBatches.get(key);
+      if (batch !== undefined && batch.capacity < plan.members.length) {
+        // 属性の容量を変えると Three の _maxInstanceCount の控えも古くなるため形ごと交換。
+        removeEdgeBatch(key, batch);
+        batch = undefined;
+      }
+      if (batch === undefined) {
+        const capacity = capacityFor(plan.members.length);
+        const geometry = new THREE.InstancedBufferGeometry();
+        const source = plan.geometry.getAttribute('position');
+        // 同じ BufferAttribute を別の geometry と共有しない。片方の dispose が他方の
+        // GPU buffer を消すため。読み取り専用の typed array だけは共有できる。
+        geometry.setAttribute('position', new THREE.BufferAttribute(source.array, source.itemSize, source.normalized));
+        const matrices = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 16), 16).setUsage(THREE.DynamicDrawUsage);
+        const instanceColors = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute('instanceMatrix', matrices);
+        geometry.setAttribute('color', instanceColors);
+        geometry.instanceCount = 0;
+        geometry.boundingSphere = new THREE.Sphere();
+        geometry.boundingBox = new THREE.Box3();
+        const object: AssemblyEdges = new THREE.LineSegments(geometry, edgeMaterial);
+        placeBatch(object, plan.origin, ASSEMBLY_EDGE_RENDER_ORDER);
+        batch = { partKey: plan.partKey, object, capacity, matrices, colors: instanceColors, members: [], versions: [], colorValues: [] };
+        edgeBatches.set(key, batch);
+      }
+      const geometry = batch.object.geometry;
+      if (slotsChanged(batch, plan.members)) {
+        geometry.instanceCount = plan.members.length;
+        const bounds = new THREE.Sphere();
+        const box = new THREE.Box3();
+        const sourceBox = new THREE.Box3();
+        plan.members.forEach((entry, slot) => {
+          relativePlacement(entry, plan.origin).toArray(batch.matrices.array, slot * 16);
+          // 包囲球は実際に GPU へ送る Float32 行列から取る(視錐台で欠けない)。
+          relativeMatrix.fromArray(batch.matrices.array, slot * 16);
+          if (plan.geometry.boundingSphere !== null) bounds.union(sphere.copy(plan.geometry.boundingSphere).applyMatrix4(relativeMatrix));
+          if (plan.geometry.boundingBox !== null) box.union(sourceBox.copy(plan.geometry.boundingBox).applyMatrix4(relativeMatrix));
+        });
+        geometry.boundingSphere = bounds;
+        geometry.boundingBox = box;
+        batch.matrices.needsUpdate = true;
+        rememberSlots(batch, plan.members);
+      }
+      const colorValues = plan.members.map((entry) => edgeHex(entry.draw.emphasis, style));
+      if (batch.colorValues.length !== colorValues.length || colorValues.some((value, slot) => value !== batch.colorValues[slot])) {
+        colorValues.forEach((hex, slot) => {
+          edgeColor.setHex(hex);
+          batch.colors.setXYZ(slot, edgeColor.r, edgeColor.g, edgeColor.b);
+        });
+        batch.colors.needsUpdate = true;
+        batch.colorValues = colorValues;
+      }
+      batch.object.visible = geometry.instanceCount > 0;
+    }
   }
 
-  /** 一式を丸ごと反映する(形 → インスタンス → 使われなくなった材質の順)。 */
-  function syncBundle(bundle: AssemblyGeometryBundle): void {
+  function syncBundle(bundle: AssemblyGeometryBundle, style: DisplayStyle): void {
     syncPartShapes(bundle.parts);
-
-    const alive = new Set<string>();
-    for (const draw of bundle.instances) {
-      alive.add(draw.componentId);
-      applyInstance(draw);
-    }
-    for (const [componentId, entry] of [...instances]) {
-      if (!alive.has(componentId)) {
-        removeInstance(componentId, entry);
-      }
-    }
-
-    // いま画面に出ている色だけを残す(テーマの色を当てた後の外観で数える)。
-    materialStore.collect(
-      bundle.instances.flatMap((draw) => {
-        const inherited = partShapes.get(draw.partKey)?.meshAppearances.flat() ?? [DEFAULT_APPEARANCE];
-        return (draw.appearance === undefined ? inherited : [draw.appearance])
-          .map((spec) => themedAppearance(spec, colors.solid));
-      }),
-    );
-    appearanceDirty = false;
-  }
-
-  /**
-   * 表示スタイルと強調を反映する(FR-105、FR-106)。**ホバー中・選択中の部品の稜線は
-   * 面のみの表示でも出す**(強調を稜線でしか示さないため。立体の層と同じ決め)。
-   */
-  function applyStyle(bundle: AssemblyGeometryBundle, displayStyle: DisplayStyle): void {
-    lastDisplayStyle = displayStyle;
-    const showFaces = displayStyle !== 'wireframe';
-    const showEdges = displayStyle !== 'shaded';
-    edgeMaterials.none.color.setHex(
-      displayStyle === 'wireframe' ? colors.solidEdgeWireframe : colors.solidEdgeOverSolid,
-    );
     pickTargets.length = 0;
-    idByObject.clear();
+    idsByObject.clear();
+    pickOrder.clear();
+    const facePlans = new Map<string, FacePlan>();
+    const edgePlans = new Map<string, EdgePlan>();
+    const alive = new Set<string>();
+    const aliveFaces = new Set<string>();
+    const aliveEdges = new Set<string>();
+    for (const emphasis of ['none', 'hovered', 'selected'] as const) {
+      individualEdgeMaterials[emphasis].color.setHex(edgeHex(emphasis, style));
+    }
     for (const draw of bundle.instances) {
-      const entry = instances.get(draw.componentId);
-      if (entry === undefined) {
-        continue;
-      }
-      for (const mesh of entry.meshes) {
-        mesh.visible = showFaces;
-        if (draw.visible) {
-          // 表示中の部品だけを的にする(消してある部品は掴めない)。
-          pickTargets.push(mesh);
-          idByObject.set(mesh, draw.componentId);
+      const shape = partShapes.get(draw.partKey);
+      if (shape === undefined) continue;
+      alive.add(draw.componentId);
+      pickOrder.set(draw.componentId, pickOrder.size);
+      const entry = syncPlacement(draw);
+      shape.origin ??= new THREE.Vector3().fromArray(draw.placement.position);
+      const precise = canInstance(entry, shape, shape.origin);
+      const showEdges = draw.visible && (style !== 'shaded' || draw.emphasis !== 'none');
+      for (let body = 0; body < shape.meshGeometries.length; body += 1) {
+        const material = materialFor(draw, shape, body);
+        const materials = Array.isArray(material) ? material : [material];
+        const transparent = materials.some((value) => value.transparent
+          || (value instanceof THREE.MeshPhysicalMaterial && value.transmission > 0));
+        const individualKey = JSON.stringify([draw.componentId, body]);
+        if (transparent || !precise) {
+          aliveFaces.add(individualKey);
+          let object = individualFaces.get(individualKey);
+          if (object === undefined) {
+            object = new THREE.Mesh(shape.meshGeometries[body], material);
+            object.matrixAutoUpdate = false;
+            object.renderOrder = ASSEMBLY_RENDER_ORDER;
+            group.add(object);
+            individualFaces.set(individualKey, object);
+          }
+          object.geometry = shape.meshGeometries[body];
+          object.material = material;
+          if (!object.matrix.equals(entry.matrix)) object.matrixWorldNeedsUpdate = true;
+          object.matrix.copy(entry.matrix);
+          object.updateMatrixWorld();
+          object.visible = draw.visible && style !== 'wireframe';
+          if (draw.visible) {
+            pickTargets.push(object);
+            idsByObject.set(object, [draw.componentId]);
+          }
+        } else {
+          const key = JSON.stringify([draw.partKey, shape.generation, body, materials.map((value) => value.uuid)]);
+          let plan = facePlans.get(key);
+          if (plan === undefined) {
+            plan = { partKey: draw.partKey, geometry: shape.meshGeometries[body], material, origin: shape.origin, members: [] };
+            facePlans.set(key, plan);
+          }
+          if (draw.visible) plan.members.push(entry);
+        }
+        if (!precise) {
+          aliveEdges.add(individualKey);
+          let object = individualEdges.get(individualKey);
+          if (object === undefined) {
+            object = new THREE.LineSegments(shape.edgeGeometries[body], individualEdgeMaterials[draw.emphasis]);
+            object.matrixAutoUpdate = false;
+            object.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER;
+            group.add(object);
+            individualEdges.set(individualKey, object);
+          }
+          object.geometry = shape.edgeGeometries[body];
+          object.material = individualEdgeMaterials[draw.emphasis];
+          if (!object.matrix.equals(entry.matrix)) object.matrixWorldNeedsUpdate = true;
+          object.matrix.copy(entry.matrix);
+          object.updateMatrixWorld();
+          object.visible = showEdges;
+        } else {
+          const key = JSON.stringify([draw.partKey, shape.generation, body]);
+          let plan = edgePlans.get(key);
+          if (plan === undefined) {
+            plan = { partKey: draw.partKey, geometry: shape.edgeGeometries[body], origin: shape.origin, members: [] };
+            edgePlans.set(key, plan);
+          }
+          if (showEdges) plan.members.push(entry);
         }
       }
-      for (const edges of entry.edges) {
-        edges.visible = showEdges || draw.emphasis !== 'none';
-      }
     }
+    for (const id of instances.keys()) if (!alive.has(id)) instances.delete(id);
+    for (const [key, object] of individualFaces) {
+      if (!aliveFaces.has(key)) { group.remove(object); individualFaces.delete(key); }
+    }
+    for (const [key, object] of individualEdges) {
+      if (!aliveEdges.has(key)) { group.remove(object); individualEdges.delete(key); }
+    }
+    syncFaces(facePlans, style);
+    syncEdges(edgePlans, style);
+    // 所有する側だけが材質を捨てる。バッチの参照を差し替えた後に回収する。
+    materialStore.collect(bundle.instances.flatMap((draw) => {
+      const inherited = partShapes.get(draw.partKey)?.meshAppearances.flat() ?? [DEFAULT_APPEARANCE];
+      return (draw.appearance === undefined ? inherited : [draw.appearance]).map((spec) => themedAppearance(spec, colors.solid));
+    }));
+    appearanceDirty = false;
   }
 
   return {
     group,
-
-    update(bundle, displayStyle): void {
-      if (bundle !== lastBundle || appearanceDirty) {
-        lastBundle = bundle;
-        syncBundle(bundle);
+    update(bundle, displayStyle, nextEnvironment = null): void {
+      if (environment !== nextEnvironment) {
+        environment = nextEnvironment;
+        appearanceDirty = true;
       }
-      applyStyle(bundle, displayStyle);
+      if (bundle !== lastBundle || appearanceDirty || displayStyle !== lastDisplayStyle) {
+        syncBundle(bundle, displayStyle);
+        lastBundle = bundle;
+        lastDisplayStyle = displayStyle;
+      }
     },
-
     setThemeColors(next): void {
       colors = next;
-      // 色を決めていない部品の材質は次の `update` で作り直す(材質は鍵で使い回すので、
-      // 色を直に書き換えると鍵と中身が食い違う)。稜線はその場で塗り替えてよい。
       appearanceDirty = true;
-      edgeMaterials.none.color.setHex(
-        lastDisplayStyle === 'wireframe' ? colors.solidEdgeWireframe : colors.solidEdgeOverSolid,
-      );
-      edgeMaterials.hovered.color.setHex(colors.hovered);
-      edgeMaterials.selected.color.setHex(colors.selected);
     },
-
     pickComponent(raycaster): string | null {
-      // 近い順に並ぶので先頭が手前の部品。
-      const hits = raycaster.intersectObjects(pickTargets, false);
-      for (const hit of hits) {
-        const componentId = idByObject.get(hit.object);
-        if (componentId !== undefined) {
-          return componentId;
+      let nearest: string | null = null;
+      let distance = Infinity;
+      for (const hit of raycaster.intersectObjects(pickTargets, false)) {
+        if (hit.distance > distance) break;
+        const componentId = idsByObject.get(hit.object)?.[hit.instanceId ?? 0];
+        if (componentId !== undefined && (nearest === null
+          || (pickOrder.get(componentId) ?? Infinity) < (pickOrder.get(nearest) ?? Infinity))) {
+          nearest = componentId;
+          distance = hit.distance;
         }
       }
-      return null;
+      return nearest;
     },
-
     dispose(): void {
-      for (const [componentId, entry] of [...instances]) {
-        removeInstance(componentId, entry);
-      }
-      for (const entry of partShapes.values()) {
-        disposeGeometries(entry);
-      }
+      for (const [key, batch] of faceBatches) removeFaceBatch(key, batch);
+      for (const [key, batch] of edgeBatches) removeEdgeBatch(key, batch);
+      for (const shape of partShapes.values()) disposeGeometries(shape);
       partShapes.clear();
-      // 材質の入れ物は、貯めた材質と柄のテクスチャの表をまとめて捨てる。
+      instances.clear();
+      individualFaces.clear();
+      individualEdges.clear();
+      group.clear();
       materialStore.dispose();
-      edgeMaterials.none.dispose();
-      edgeMaterials.hovered.dispose();
-      edgeMaterials.selected.dispose();
+      edgeMaterial.dispose();
+      for (const material of Object.values(individualEdgeMaterials)) material.dispose();
       pickTargets.length = 0;
-      idByObject.clear();
+      idsByObject.clear();
+      pickOrder.clear();
       lastBundle = null;
+      environment = null;
       appearanceDirty = true;
     },
   };

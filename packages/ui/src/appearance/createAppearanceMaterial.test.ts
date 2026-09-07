@@ -29,6 +29,7 @@ import {
   GLASS_THICKNESS,
   needsEnvironment,
   PATTERN_ALPHA_TEST,
+  themedAppearance,
   type PatternTextureSource,
 } from './createAppearanceMaterial.js';
 import type { PatternCreateOptions, PatternKind } from './patternTexture.js';
@@ -372,6 +373,17 @@ describe('createAppearanceMaterialStore(FR-1107、FR-1109、§2.5.3)', () => {
 
     expect(after).not.toBe(before);
     store.dispose();
+  });
+});
+
+describe('themedAppearance(部品とアセンブリの共通テーマ規則)', () => {
+  it('既定の外観だけをテーマ色へ差し替える', () => {
+    expect(themedAppearance(appearanceFromPreset('default'), 0x112233).color).toBe('#112233');
+  });
+
+  it('利用者が決めた外観は変更しない', () => {
+    const custom = appearanceFromPreset('custom', '#abcdef');
+    expect(themedAppearance(custom, 0x112233)).toBe(custom);
   });
 });
 

@@ -16,6 +16,7 @@ import {
   windowTitle,
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
+import { PlaceComponentPopover } from '../assembly/PlaceComponentPopover.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
@@ -435,16 +436,20 @@ export function AppShell(): React.JSX.Element {
             決まった 1 手をストアへ反映するのは commitToStore.ts の applyNumericTransition
             (ポップアップとコマンドラインの共通の入口。P4b タスク18 でここから移した)。
           */}
-          <NumericInputPopover
-            viewportWidth={viewportSize[0]}
-            viewportHeight={viewportSize[1]}
-          />
+          {documentKind === 'assembly' ? (
+            <PlaceComponentPopover />
+          ) : (
+            <NumericInputPopover
+              viewportWidth={viewportSize[0]}
+              viewportHeight={viewportSize[1]}
+            />
+          )}
           {/*
             寸法拘束(距離・角度・半径・直径)の値をその場で聞く小さな入力
             (FR-313、NFR-UX-2、P4b タスク13)。道具のその場入力と同じ見た目・同じ操作で、
             聞くのは式 1 つだけ。開いているときだけ自分で姿を現す。
           */}
-          <ConstraintValuePopover />
+          {documentKind === 'part' ? <ConstraintValuePopover /> : null}
           {snapIndicator === null ? null : (
             /* 吸い付いている場所の印(FR-107)。 */
             <span

@@ -66,3 +66,32 @@ describe('文書の種類の切替(P7 §0.a-0.10、タスク5)', () => {
     expect(useAppStore.getState().documentVersion).toBe(before.documentVersion + 1);
   });
 });
+
+describe('配置中の一時状態(P7 タスク11b)', () => {
+  it('確定編集は配置状態を消し、Undoを1段だけ積む', () => {
+    const assembly = createAssemblyDocument('組み立て1');
+    useAppStore.getState().openAssembly(assembly);
+    const documentId = useAppStore.getState().activeDocumentId;
+    useAppStore.setState({
+      assemblyPlacement: { kind: 'choosing', requestId: 'request-1', documentId },
+    });
+
+    useAppStore.getState().applyAssembly({ ...assembly, name: '変更後' });
+
+    expect(useAppStore.getState().assemblyPlacement).toBeNull();
+    expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+  });
+
+  it('別文書を開くと配置状態を消し、文書IDを更新する', () => {
+    useAppStore.getState().openAssembly(createAssemblyDocument('組み立て1'));
+    const documentId = useAppStore.getState().activeDocumentId;
+    useAppStore.setState({
+      assemblyPlacement: { kind: 'choosing', requestId: 'request-1', documentId },
+    });
+
+    useAppStore.getState().openAssembly(createAssemblyDocument('組み立て2'));
+
+    expect(useAppStore.getState().assemblyPlacement).toBeNull();
+    expect(useAppStore.getState().activeDocumentId).not.toBe(documentId);
+  });
+});

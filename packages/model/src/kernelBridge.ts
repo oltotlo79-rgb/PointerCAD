@@ -58,7 +58,7 @@ import { importedShapeOf } from './part/types.js';
 
 import { EXPORT_MESH_QUALITY, type ExportMeshQuality } from './exchange/types.js';
 import type { ResolvedSubShape } from './geometry/planeSpec.js';
-import type { SubShapeRef } from './geometry/subShapeRef.js';
+import type { SubShapeFingerprint, SubShapeRef } from './geometry/subShapeRef.js';
 import type {
   ResolvedSolidStep,
   SolidStepPlan,
@@ -292,6 +292,8 @@ export interface SolidFaceEntry {
   readonly centroid: Vec3;
   /** 平面は法線、円柱・円錐は軸。求まらなければ null。 */
   readonly axis: Vec3 | null;
+  /** 円筒・円錐の解析軸上点(mm、部品座標)。重心とは別物。旧fixtureでは省略可。 */
+  readonly axisOrigin?: Vec3 | null;
   /** 円柱・円錐・球の半径(mm)。平面では null。 */
   readonly radius: number | null;
   /** この面の三角形が mesh.indices の何番目から何枚あるか。 */
@@ -311,6 +313,8 @@ export interface SolidEdgeEntry {
   readonly end: Vec3;
   /** 直線は向き、円は軸。求まらなければ null。 */
   readonly axis: Vec3 | null;
+  /** 円の解析中心(mm、部品座標)。円弧の重心とは別物。旧fixtureでは省略可。 */
+  readonly axisOrigin?: Vec3 | null;
   /** 円の半径(mm)。それ以外は null。 */
   readonly radius: number | null;
   /** この辺の線分が mesh.edgePositions の何番目から何本あるか。 */
@@ -2137,6 +2141,62 @@ export function selectSubShape(body: SolidBody, reference: SubShapeRef): Resolve
         surfaceKind: null,
         curveKind: null,
       };
+    }
+  }
+}
+
+/**
+ * 再計算で得た合致用の幾何。保存する指紋に解析軸上点を添えた実行時だけの値。
+ * SubShapeRef・schema・鍵には足さず、古い文書も現在の面・辺から解析点を取り直す。
+ */
+export type MateSubShapeGeometry = SubShapeFingerprint & { readonly axisOrigin?: Vec3 };
+
+/**
+ * 合致のため、現在の形から種類・大きさ・重心・解析軸上点を選び直す(P7-14b)。
+ * selectSubShape と同じ kernel の採点を使い、重心を解析点で置き換えない。
+ * body は部品座標の形。アセンブリの配置は resolveMateTarget が1回だけ掛ける。
+ */
+export function selectMateTargetGeometry(
+  body: SolidBody,
+  reference: SubShapeRef,
+): MateSubShapeGeometry | null {
+  if (body.featureId !== reference.bodyFeatureId) return null;
+  const query = toSubShapeQuery(reference);
+  const scale = matchScaleOf(body);
+  switch (query.kind) {
+    case 'face': {
+      const match = matchFace(body.faces, query, scale);
+      const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
+      if (found === undefined) return null;
+      return {
+        kind: 'face',
+        surfaceKind: found.surfaceKind,
+        area: found.area,
+        position: found.centroid,
+        axis: found.axis,
+        radius: found.radius,
+        ...(found.axisOrigin == null ? {} : { axisOrigin: found.axisOrigin }),
+      };
+    }
+    case 'edge': {
+      const match = matchEdge(body.edges, query, scale);
+      const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
+      if (found === undefined) return null;
+      return {
+        kind: 'edge',
+        curveKind: found.curveKind,
+        length: found.length,
+        position: found.midpoint,
+        axis: found.axis,
+        radius: found.radius,
+        ...(found.axisOrigin == null ? {} : { axisOrigin: found.axisOrigin }),
+      };
+    }
+    case 'vertex': {
+      const match = matchVertex(body.vertices, query, scale);
+      const found =
+        match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
+      return found === undefined ? null : { kind: 'vertex', position: found.position };
     }
   }
 }

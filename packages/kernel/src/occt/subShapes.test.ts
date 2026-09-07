@@ -1,11 +1,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { SolidFaceInfo, Vec3Tuple } from '../types.js';
+import { createAllocations, type Allocations, type OcctDeletable } from './allocations.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeBox } from './makeBox.js';
 import { makeExtrudeSolid, makeRevolveSolid } from './makeSolidSweep.js';
+import { placeShape } from './placeBodies.js';
 import type { SubShapeTables } from './subShapes.js';
 import {
   booleanMargin,
@@ -20,6 +22,207 @@ import {
 import { tessellate } from './tessellate.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
+
+describe('解析軸上点の収集(P7-14b)', () => {
+  let oc: Occt;
+  beforeAll(async () => { oc = await loadOcctForNode(); });
+
+  function halfShape(kind: 'cylinder' | 'cone'): OcctShapeHandle {
+    const { keep, release } = createAllocations();
+    try {
+      const maker = kind === 'cylinder'
+        ? keep(new oc.BRepPrimAPI_MakeCylinder_2(5, 10, Math.PI))
+        : keep(new oc.BRepPrimAPI_MakeCone_2(5, 0, 10, Math.PI));
+      return { shape: keep(maker.Shape()), delete: release };
+    } catch (error) { release(); throw error; }
+  }
+
+  function collect(shape: OcctShapeHandle['shape'], factory?: () => Allocations): SubShapeTables {
+    const mesh = tessellate(oc, shape);
+    const edges = extractEdges(oc, shape);
+    return collectSubShapes(oc, shape, mesh.faceRanges, edges.edgeRanges, factory);
+  }
+
+  function closePoint(actual: Vec3Tuple | null | undefined, expected: Vec3Tuple): void {
+    if (actual == null) throw new Error('解析点または軸がない');
+    expected.forEach((value, index) => expect(Math.abs(actual[index] - value)).toBeLessThanOrEqual(1e-9));
+  }
+
+  function analyticFace(table: SubShapeTables, kind: 'cylinder' | 'cone'): SolidFaceInfo {
+    const found = table.faces.find((face) => face.surfaceKind === kind);
+    if (found === undefined) throw new Error('解析面がない');
+    return found;
+  }
+
+  function counted(failAfter?: number): {
+    readonly factory: () => Allocations;
+    readonly counts: () => { kept: number; deleted: number; duplicates: number };
+  } {
+    let kept = 0;
+    let deleted = 0;
+    let duplicates = 0;
+    const released = new Set<OcctDeletable>();
+    return {
+      factory: () => {
+        const inner = createAllocations();
+        return {
+          keep<T extends OcctDeletable>(item: T): T {
+            kept += 1;
+            const originalDelete = item.delete.bind(item);
+            item.delete = (): void => {
+              if (released.has(item)) duplicates += 1;
+              released.add(item);
+              deleted += 1;
+              originalDelete();
+            };
+            inner.keep(item);
+            if (kept === failAfter) throw new Error('軸情報の読取検査');
+            return item;
+          },
+          release: () => inner.release(),
+        };
+      },
+      counts: () => ({ kept, deleted, duplicates }),
+    };
+  }
+
+  it('半円筒の軸上点は原点で、重心は軸から10/π離れる', () => {
+    const handle = halfShape('cylinder');
+    try {
+      const face = analyticFace(collect(handle.shape), 'cylinder');
+      closePoint(face.axisOrigin, [0, 0, 0]);
+      closePoint(face.centroid, [0, 10 / Math.PI, 5]);
+      expect(Math.abs(Math.hypot(face.centroid[0], face.centroid[1]) - 10 / Math.PI)).toBeLessThanOrEqual(1e-9);
+      expect(face.radius).toBe(5);
+    } finally { handle.delete(); }
+  });
+
+  it('半円錐の軸上点は基準断面の中心で、面重心を代用しない', () => {
+    const handle = halfShape('cone');
+    try {
+      const face = analyticFace(collect(handle.shape), 'cone');
+      closePoint(face.axisOrigin, [0, 0, 0]);
+      closePoint(face.centroid, [0, 20 / (3 * Math.PI), 10 / 3]);
+      closePoint(face.axis, [0, 0, 1]);
+    } finally { handle.delete(); }
+  });
+
+  it('半円の辺は長さ5π・重心y=10/πでも解析中心y=0を返す', () => {
+    const handle = halfShape('cylinder');
+    try {
+      const circles = collect(handle.shape).edges.filter((edge) => edge.curveKind === 'circle');
+      expect(circles).toHaveLength(2);
+      for (const edge of circles) {
+        const z = edge.midpoint[2] > 5 ? 10 : 0;
+        closePoint(edge.axisOrigin, [0, 0, z]);
+        closePoint(edge.midpoint, [0, 10 / Math.PI, z]);
+        expect(Math.abs(edge.length - 5 * Math.PI)).toBeLessThanOrEqual(1e-9);
+      }
+    } finally { handle.delete(); }
+  });
+
+  it('形にあるLocationを軸上点と円中心へ1回だけ適用する', () => {
+    for (const kind of ['cylinder', 'cone'] as const) {
+      const handle = halfShape(kind);
+      const moved = placeShape(oc, handle.shape, {
+        position: [11, 13, 17], rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+      });
+      try {
+        const table = collect(moved.shape);
+        const face = analyticFace(table, kind);
+        closePoint(face.axisOrigin, [11, 13, 17]);
+        closePoint(face.axis, [0, -1, 0]);
+        if (face.axis === null) throw new Error('軸がない');
+        expect(Math.abs(Math.hypot(...face.axis) - 1)).toBeLessThanOrEqual(1e-12);
+        for (const edge of table.edges.filter((item) => item.curveKind === 'circle' && item.length > 1e-7)) {
+          const y = kind === 'cylinder' && edge.midpoint[1] < 8 ? 3 : 13;
+          closePoint(edge.axisOrigin, [11, y, 17]);
+        }
+      } finally { moved.delete(); handle.delete(); }
+    }
+  });
+
+  it('円筒・円錐・円のLocationと軸Locationは所有元に波及しない複製', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const location = keep(new oc.gp_Pnt_3(11, 13, 17));
+      const geometries = [keep(new oc.gp_Cylinder_1()), keep(new oc.gp_Cone_1()), keep(new oc.gp_Circ_1())];
+      for (const geometry of geometries) {
+        expect(typeof geometry.Location).toBe('function');
+        geometry.SetLocation(location);
+        const first = keep(geometry.Location());
+        const second = keep(geometry.Location());
+        const axis = keep(geometry.Axis());
+        const axisPoint = keep(axis.Location());
+        first.SetX(999);
+        axisPoint.SetY(999);
+        expect(second.X()).toBe(11);
+        expect(keep(geometry.Location()).X()).toBe(11);
+        expect(keep(axis.Location()).Y()).toBe(13);
+      }
+    } finally { release(); }
+  });
+
+  it('収集の成功時は円筒・円錐の全登録オブジェクトを各1回だけ解放する', () => {
+    for (const kind of ['cylinder', 'cone'] as const) {
+      const handle = halfShape(kind);
+      const counter = counted();
+      try {
+        collect(handle.shape, counter.factory);
+        const counts = counter.counts();
+        expect(counts.kept).toBeGreaterThan(0);
+        expect(counts.deleted).toBe(counts.kept);
+        expect(counts.duplicates).toBe(0);
+        console.info('P7-14b allocations', kind, counts);
+      } finally { handle.delete(); }
+    }
+  });
+
+  it('軸情報を収集中の例外でも全登録オブジェクトを各1回だけ解放する', () => {
+    const handle = halfShape('cylinder');
+    // map・subShape・face・adaptor・cylinder・axis・direction・Locationの8個目。
+    // 解析点そのものを登録した直後に失敗させ、その複製も解放する。
+    const counter = counted(8);
+    try {
+      expect(() => collect(handle.shape, counter.factory)).toThrow('軸情報の読取検査');
+      expect(counter.counts()).toEqual({ kept: 8, deleted: 8, duplicates: 0 });
+      // 失敗後も貸した形は有効。
+      closePoint(analyticFace(collect(handle.shape), 'cylinder').axisOrigin, [0, 0, 0]);
+    } finally { handle.delete(); }
+  });
+
+  it('収集後に同じ形を再収集・移動しても元の面情報を壊さない', () => {
+    const handle = halfShape('cylinder');
+    try {
+      const before = collect(handle.shape);
+      const moved = placeShape(oc, handle.shape, { position: [10, 0, 0], rotation: [0, 0, 0, 1] });
+      try { closePoint(analyticFace(collect(moved.shape), 'cylinder').axisOrigin, [10, 0, 0]); }
+      finally { moved.delete(); }
+      expect(collect(handle.shape)).toEqual(before);
+    } finally { handle.delete(); }
+  });
+
+  it('平面と直線辺は解析軸上点をnullとし、重心・中点を置き換えない', () => {
+    const handle = makeBox(oc, { dx: 10, dy: 20, dz: 30 });
+    try {
+      const table = collect(handle.shape);
+      expect(table.faces.every((face) => face.axisOrigin === null)).toBe(true);
+      expect(table.edges.every((edge) => edge.axisOrigin === null)).toBe(true);
+      expect(table.faces.some((face) => face.centroid[2] === 30)).toBe(true);
+    } finally { handle.delete(); }
+  });
+
+  it('解析点は再収集で決定的になり負のゼロを含まない', () => {
+    const handle = halfShape('cylinder');
+    try {
+      const first = collect(handle.shape);
+      expect(collect(handle.shape)).toEqual(first);
+      const points = [...first.faces, ...first.edges].flatMap((item) => item.axisOrigin ?? []);
+      expect(points.length).toBeGreaterThan(0);
+      expect(points.every((value) => Number.isFinite(value) && !Object.is(value, -0))).toBe(true);
+    } finally { handle.delete(); }
+  });
+});
 
 /** 計画書 タスク4 の検証表が使う箱。頂点は (0,0,0)〜(10,20,30)。 */
 const BOX = { dx: 10, dy: 20, dz: 30 } as const;

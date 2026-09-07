@@ -47,6 +47,7 @@ import type { ConstraintMark } from '../sketch/constraintPicking.js';
 import { constraintKindSymbol } from '../sketch/constraintSummary.js';
 import { createCanvasLayer, type CanvasDraw } from './canvasLayer.js';
 import {
+  assemblyAppearanceSpecs,
   createAssemblyLayer,
   EMPTY_ASSEMBLY_GEOMETRY,
   type AssemblyGeometryBundle,
@@ -486,6 +487,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   renderer.localClippingEnabled = true;
 
   const scene = new THREE.Scene();
+  // シーンの原点は動かさない。毎コマ恒等行列を再設定すると、変更の無い全ての部品へも
+  // world 行列の強制更新が伝わる。カメラや各層の動く要素は自身の更新設定で追従する。
+  scene.matrixAutoUpdate = false;
 
   /** いま効いているテーマの色。`setThemeColors` が来るまでは既定(ダーク)。 */
   let colors: ThemeColors = DEFAULT_THEME_COLORS;
@@ -673,7 +677,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
    * (毎コマ呼ぶと、鏡を 1 つ足すたびに焼き直すことになる)。
    */
   function refreshEnvironment(): void {
-    const used = solidBundle.entries.flatMap((entry) => entry.appearances);
+    const used = [
+      ...solidBundle.entries.flatMap((entry) => entry.appearances),
+      ...assemblyAppearanceSpecs(assemblyBundle),
+    ];
     if (anyNeedsEnvironment(used)) {
       environments.ensureEnvironment(scene);
       return;
@@ -743,7 +750,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     solidLayer.updateCutPreview(cutPreview);
     solidLayer.updateSphereGrid(sphereGridPositions);
     // 配置した部品(FR-605)。同じ一式を渡し直したときは並びを触らない(NFR-PF-1)。
-    assemblyLayer.update(assemblyBundle, displayStyle);
+    assemblyLayer.update(assemblyBundle, displayStyle, environments.texture);
     sketchLayer.update(sketchBundle, displayStyle);
     // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す(P4 仕上げ (f))。
     // ズームでカメラ距離が変わるたびに効くよう、描画のたびに計算し直す。
@@ -837,6 +844,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       // 仕分け(どの形をいくつ置くか)は純関数が済ませてある。ここは覚えるだけで、
       // 入れ物への流し込みは次に描くとき(`drawScene`)に 1 回だけ行う。
       assemblyBundle = bundle;
+      refreshEnvironment();
     },
 
     setBodyHighlight(nextHovered, nextSelected): void {

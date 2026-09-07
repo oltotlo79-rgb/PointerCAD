@@ -74,6 +74,7 @@ function directionToTuple(direction: gp_Dir, reverse: boolean): Vec3Tuple | null
 interface FaceGeometry {
   readonly surfaceKind: FaceSurfaceKind;
   readonly axis: Vec3Tuple | null;
+  readonly axisOrigin: Vec3Tuple | null;
   readonly radius: number | null;
 }
 
@@ -116,15 +117,19 @@ function readFaceGeometry(
     const plane = keep(adaptor.Plane());
     const axis = keep(plane.Axis());
     const direction = keep(axis.Direction());
-    return { surfaceKind: 'plane', axis: directionToTuple(direction, reversed), radius: null };
+    return { surfaceKind: 'plane', axis: directionToTuple(direction, reversed), axisOrigin: null, radius: null };
   }
   if (surfaceType === kinds.GeomAbs_Cylinder) {
     const cylinder = keep(adaptor.Cylinder());
     const axis = keep(cylinder.Axis());
     const direction = keep(axis.Direction());
+    // Location() は独立した gp_Pnt の複製(2026-09-07 実測: 別ptr・変更非波及)。
+    // adaptor が形の Location を適用済みなので、ここで変換を重ねない。
+    const origin = keep(cylinder.Location());
     return {
       surfaceKind: 'cylinder',
       axis: directionToTuple(direction, reversed),
+      axisOrigin: pointToTuple(origin),
       radius: normalizeZero(cylinder.Radius()),
     };
   }
@@ -132,31 +137,36 @@ function readFaceGeometry(
     const cone = keep(adaptor.Cone());
     const axis = keep(cone.Axis());
     const direction = keep(axis.Direction());
+    // Axis() とその Location() はそれぞれ複製。基準断面の中心は解析軸上にあり、
+    // 部分円錐でも面重心に依らない(2026-09-07 の所有権・配置の実測)。
+    const origin = keep(axis.Location());
     // 円錐の半径は場所によって変わるので、基準の平面での半径(RefRadius)を採る。
     // 同じ形なら常に同じ値になり、円錐どうしを見分ける材料になる。
     return {
       surfaceKind: 'cone',
       axis: directionToTuple(direction, reversed),
+      axisOrigin: pointToTuple(origin),
       radius: normalizeZero(cone.RefRadius()),
     };
   }
   if (surfaceType === kinds.GeomAbs_Sphere) {
     const sphere = keep(adaptor.Sphere());
-    return { surfaceKind: 'sphere', axis: null, radius: normalizeZero(sphere.Radius()) };
+    return { surfaceKind: 'sphere', axis: null, axisOrigin: null, radius: normalizeZero(sphere.Radius()) };
   }
   if (surfaceType === kinds.GeomAbs_Torus) {
     const torus = keep(adaptor.Torus());
     const axis = keep(torus.Axis());
     const direction = keep(axis.Direction());
-    return { surfaceKind: 'torus', axis: directionToTuple(direction, reversed), radius: null };
+    return { surfaceKind: 'torus', axis: directionToTuple(direction, reversed), axisOrigin: null, radius: null };
   }
-  return { surfaceKind: 'other', axis: null, radius: null };
+  return { surfaceKind: 'other', axis: null, axisOrigin: null, radius: null };
 }
 
 /** 辺の下地の曲線から取れる素性(種類・軸・半径・両端)。 */
 interface EdgeGeometry {
   readonly curveKind: EdgeCurveKind;
   readonly axis: Vec3Tuple | null;
+  readonly axisOrigin: Vec3Tuple | null;
   readonly radius: number | null;
   readonly start: Vec3Tuple;
   readonly end: Vec3Tuple;
@@ -190,6 +200,7 @@ function readEdgeGeometry(
     return {
       curveKind: 'line',
       axis: directionToTuple(direction, false),
+      axisOrigin: null,
       radius: null,
       start,
       end,
@@ -199,9 +210,13 @@ function readEdgeGeometry(
     const circle = keep(curve.Circle());
     const axis = keep(circle.Axis());
     const direction = keep(axis.Direction());
+    // 全周でない円弧も中心は Location() から取れる。戻りは複製なので keep する。
+    // 2026-09-07 実測: 点を書き換えても円へ波及せず、配置済みの中心を返す。
+    const origin = keep(circle.Location());
     return {
       curveKind: 'circle',
       axis: directionToTuple(direction, false),
+      axisOrigin: pointToTuple(origin),
       radius: normalizeZero(circle.Radius()),
       start,
       end,
@@ -213,9 +228,9 @@ function readEdgeGeometry(
     const direction = keep(axis.Direction());
     // 楕円の半径は長半径と短半径の 2 つあり、どちらか一方では形を言い表せないので持たない
     // (types.ts の SolidEdgeInfo.radius の説明どおり、半径を持つのは円だけ)。
-    return { curveKind: 'ellipse', axis: directionToTuple(direction, false), radius: null, start, end };
+    return { curveKind: 'ellipse', axis: directionToTuple(direction, false), axisOrigin: null, radius: null, start, end };
   }
-  return { curveKind: 'other', axis: null, radius: null, start, end };
+  return { curveKind: 'other', axis: null, axisOrigin: null, radius: null, start, end };
 }
 
 /** 面 1 枚の素性を組み立てる。 */
@@ -239,6 +254,7 @@ function buildFaceInfo(
     area: normalizeZero(properties.Mass()),
     centroid: pointToTuple(centre),
     axis: geometry.axis,
+    axisOrigin: geometry.axisOrigin,
     radius: geometry.radius,
     triangleOffset: range.triangleOffset,
     triangleCount: range.triangleCount,
@@ -279,6 +295,7 @@ function buildEdgeInfo(
     start: geometry.start,
     end: geometry.end,
     axis: geometry.axis,
+    axisOrigin: geometry.axisOrigin,
     radius: geometry.radius,
     segmentOffset: range.segmentOffset,
     segmentCount: range.segmentCount,
@@ -313,12 +330,14 @@ export function collectSubShapes(
   shape: TopoDS_Shape,
   faceRanges: readonly FaceTriangleRange[],
   edgeRanges: readonly EdgeSegmentRange[],
+  // 所有権の検査で確保・解放を数える口。各部分形状の寿命は既定と同じに保つ。
+  allocationsFactory: () => Allocations = createAllocations,
 ): SubShapeTables {
   const faces: SolidFaceInfo[] = [];
   const edges: SolidEdgeInfo[] = [];
   const vertices: SolidVertexInfo[] = [];
 
-  const shared = createAllocations();
+  const shared = allocationsFactory();
 
   try {
     // 第 3・第 4 引数は「向きと位置を親からたどって積み上げる」指定で、
@@ -362,7 +381,7 @@ export function collectSubShapes(
     // 2 周目: 素性を読む。1 つぶんの確保はその場で作った順の逆に返し、
     // 面が数百枚ある形でも控えが伸び続けないようにする。
     for (const [index, position] of facePositions.entries()) {
-      const perItem = createAllocations();
+      const perItem = allocationsFactory();
       try {
         const subShape = perItem.keep(subShapes.FindKey(position));
         const face = perItem.keep(oc.TopoDS.Face_1(subShape));
@@ -373,7 +392,7 @@ export function collectSubShapes(
     }
 
     for (const [index, position] of edgePositions.entries()) {
-      const perItem = createAllocations();
+      const perItem = allocationsFactory();
       try {
         const subShape = perItem.keep(subShapes.FindKey(position));
         const edge = perItem.keep(oc.TopoDS.Edge_1(subShape));
@@ -384,7 +403,7 @@ export function collectSubShapes(
     }
 
     for (const [index, position] of vertexPositions.entries()) {
-      const perItem = createAllocations();
+      const perItem = allocationsFactory();
       try {
         const subShape = perItem.keep(subShapes.FindKey(position));
         const vertex = perItem.keep(oc.TopoDS.Vertex_1(subShape));

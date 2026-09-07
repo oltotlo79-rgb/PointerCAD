@@ -21,9 +21,10 @@ import { absoluteCoordinate } from '../../sketch/createSketchDocument.js';
 import type { Vec3 } from '../../sketch/vec3.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from '../createAssemblyDocument.js';
 import { embedPart, EMPTY_PART_LIBRARY, type PartLibrary } from '../partLibrary.js';
-import { IDENTITY_QUATERNION, type Quaternion, quaternionFromAxisAngle } from '../placementMath.js';
+import { IDENTITY_QUATERNION, type Quaternion, quaternionFromAxisAngle, type RigidPlacement } from '../placementMath.js';
 import { MISSING_PART_MESSAGE, resolveAssembly, type ResolvedAssembly } from '../resolveAssembly.js';
-import type { AssemblyComponent, MateTarget, OriginElement, Placement } from '../types.js';
+import type { AssemblyComponent, Mate, MateTarget, OriginElement, Placement } from '../types.js';
+import { prepareMateResiduals } from './mateResiduals.js';
 import {
   MISSING_AXIS_MESSAGE,
   MISSING_MATE_TARGET_MESSAGE,
@@ -512,5 +513,110 @@ describe('決定性(§0.a-0.54)', () => {
     const second = accepted(resolveMateTarget(subShapeTarget(TOP_FACE), resolved));
 
     expect(second).toEqual(first);
+  });
+});
+
+describe('解析軸上点の世界座標化(P7-14b)', () => {
+  function prepareAgainstOrigin(target: ResolvedMateTarget, resolved: ResolvedAssembly) {
+    const origin = accepted(resolveMateTarget(originTargetOf('z'), resolved));
+    const mate: Mate = { id: 'mate-1', name: '同心', kind: 'concentric',
+      a: originTargetOf('z'), b: originTargetOf('z'), flipped: false, suppressed: false };
+    return prepareMateResiduals({ mates: [mate],
+      targets: new Map([[mate.id, { a: target, b: origin }]]), placements: resolved.placements });
+  }
+
+  it('基準の3軸は定義上の軸上点を持ち、残差準備でmissingAxisにならない', () => {
+    const resolved = resolvedWith(placementOf([3, 4, 5]));
+    for (const element of ['x', 'y', 'z'] as const) {
+      const target = accepted(resolveMateTarget(originTargetOf(element), resolved));
+      expectClose(target.axisOrigin ?? null, [3, 4, 5]);
+      expect(prepareAgainstOrigin(target, resolved).skipped).toEqual([]);
+    }
+  });
+
+  it('直線辺の中点は定義上軸上なので軸上点を渡す', () => {
+    const resolved = resolvedWith();
+    const target = accepted(resolveMateTarget(
+      subShapeTarget(edgeRef('line', 10, [3, 4, 5], [1, 0, 0], null)), resolved,
+    ));
+    expectClose(target.axisOrigin ?? null, [3, 4, 5]);
+    expect(prepareAgainstOrigin(target, resolved).skipped).toEqual([]);
+  });
+
+  it('回転と並進を解析点へ1回掛け、代表点と軸を混ぜない', () => {
+    const ref = faceRef('cylinder', [7, 8, 9], [0, 0, 1], 5);
+    const resolved = resolvedWith(placementOf([11, 13, 17], quaternionFromAxisAngle([1, 0, 0], Math.PI / 2)));
+    const target = accepted(resolveMateTarget(subShapeTarget(ref), resolved, {
+      subShape: () => ({ ...ref.fingerprint, axisOrigin: [1, 2, 3] }),
+    }));
+    expectClose(target.axisOrigin ?? null, [12, 10, 19]);
+    expectClose(target.point, [18, 4, 25]);
+    expectClose(target.direction, [0, -1, 0]);
+    expect(target.radius).toBe(5);
+    const prepared = prepareAgainstOrigin(target, resolved);
+    expect(prepared.skipped).toEqual([]);
+    expectClose(prepared.mates[0].a.point, [1, 2, 3]);
+  });
+
+  it('親のX90°と子のZ90°を外側から合成して解析点を世界へ置く', () => {
+    const parent: RigidPlacement = { position: [11, 13, 17], rotation: quaternionFromAxisAngle([1, 0, 0], Math.PI / 2) };
+    const assembly = { ...createAssemblyDocument('親子'), components: [componentOf(
+      placementOf([1, 2, 3], quaternionFromAxisAngle([0, 0, 1], Math.PI / 2)),
+    )] };
+    const resolved = resolveAssembly(assembly, { library, parent });
+    const ref = faceRef('cone', [8, 9, 10], [0, 0, 1], 5);
+    const target = accepted(resolveMateTarget(subShapeTarget(ref), resolved, {
+      subShape: () => ({ ...ref.fingerprint, axisOrigin: [2, 0, 0] }),
+    }));
+    // 子: (2,0,0)→(1,4,3)、親: (1,4,3)→(12,10,21)。
+    expectClose(target.axisOrigin ?? null, [12, 10, 21]);
+    expectClose(target.direction, [0, -1, 0]);
+    expect(target.kind).toBe('axis');
+    expect(target.radius).toBeNull();
+  });
+
+  it('解析点の選び直しがnullなら旧円筒の重心へ後退しない', () => {
+    const ref = faceRef('cylinder', [0, 0, 5], [0, 0, 1], 5);
+    expectRefused(resolveMateTarget(subShapeTarget(ref), resolvedWith(), { subShape: () => null }),
+      'missingSubShape', MISSING_MATE_TARGET_MESSAGE);
+  });
+
+  it('解析点のNaNと正負の無限大は理由つきで断る', () => {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const ref = faceRef('cylinder', [0, 0, 5], [0, 0, 1], 5);
+      expectRefused(resolveMateTarget(subShapeTarget(ref), resolvedWith(), {
+        subShape: () => ({ ...ref.fingerprint, axisOrigin: [value, 0, 0] }),
+      }), 'missingAxis', MISSING_AXIS_MESSAGE);
+    }
+  });
+
+  it('旧円筒・円錐・全周円の指紋だけでは解析点を捏造せず残差準備で断る', () => {
+    const resolved = resolvedWith();
+    const refs = [
+      faceRef('cylinder', [0, 0, 5], [0, 0, 1], 5),
+      faceRef('cone', [0, 0, 5], [0, 0, 1], 5),
+      edgeRef('circle', 10 * Math.PI, [0, 0, 5], [0, 0, 1], 5),
+    ];
+    for (const ref of refs) {
+      const target = accepted(resolveMateTarget(subShapeTarget(ref), resolved));
+      expect('axisOrigin' in target).toBe(false);
+      const prepared = prepareAgainstOrigin(target, resolved);
+      expect(prepared.mates).toHaveLength(0);
+      expect(prepared.skipped.map((entry) => entry.reason)).toEqual(['missingAxis']);
+    }
+  });
+
+  it('同じ半円の指紋でも再計算から解析中心が届いた場合だけ軸を返す', () => {
+    const ref = edgeRef('circle', 5 * Math.PI, [0, 10 / Math.PI, 10], [0, 0, 1], 5);
+    const resolved = resolvedWith();
+    expectRefused(resolveMateTarget(subShapeTarget(ref), resolved), 'missingAxis', MISSING_AXIS_MESSAGE);
+    const target = accepted(resolveMateTarget(subShapeTarget(ref), resolved, {
+      subShape: () => ({ ...ref.fingerprint, axisOrigin: [0, 0, 10] }),
+    }));
+    expectClose(target.point, [0, 10 / Math.PI, 10]);
+    expectClose(target.axisOrigin ?? null, [0, 0, 10]);
+    expect(target.kind).toBe('axis');
+    expect(target.radius).toBe(5);
+    expect(prepareAgainstOrigin(target, resolved).skipped).toEqual([]);
   });
 });

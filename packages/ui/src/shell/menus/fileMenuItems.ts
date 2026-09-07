@@ -7,6 +7,7 @@
 import {
   ExportIcon,
   ImportIcon,
+  LayersIcon,
   PrintIcon,
   RecentFileIcon,
   SaveAsIcon,
@@ -37,6 +38,7 @@ import type { ToolMenuItem } from './menuItem.js';
  *   `fileMenuItems` が接頭辞つきの id で組み立てる。
  */
 export type FileMenuActionId =
+  | 'newAssembly'
   | 'saveAs'
   | 'exportShape'
   | 'importShape'
@@ -56,6 +58,12 @@ export type FileMenuActionId =
  * 画面を見るだけで見つかる(NFR-UX-7)。Shift 押しと Ctrl+Shift+S はそのまま残す。
  */
 export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
+  {
+    id: 'newAssembly',
+    labelKey: 'assembly.file.new',
+    tooltipKey: 'assembly.file.newTooltip',
+    Icon: LayersIcon,
+  },
   {
     id: 'saveAs',
     labelKey: 'toolbar.file.saveAs',
@@ -181,18 +189,24 @@ export interface NamedMenuEntry {
 export function fileMenuItems(
   templates: readonly NamedMenuEntry[],
   recentFiles: readonly NamedMenuEntry[],
+  documentKind: 'part' | 'assembly' = 'part',
 ): readonly ToolMenuItem<FileMenuItemId>[] {
-  const rows: ToolMenuItem<FileMenuItemId>[] = [...FILE_MENU_ITEMS];
-  for (const template of templates) {
-    rows.push({
-      id: `${STORED_TEMPLATE_MENU_PREFIX}${template.id}`,
-      // 名前の無いひな形は作れない(`templateFile.ts` が部品の名前へ落とす)が、
-      // 空の行を画面に出さない保険として決まった文言を土台に置く。
-      labelKey: 'toolbar.file.newFromTemplate',
-      tooltipKey: 'toolbar.file.storedTemplateTooltip',
-      Icon: TemplateNewIcon,
-      label: template.name,
-    });
+  // アセンブリで成立する固定操作は新規アセンブリと別名保存。その他は部品用。
+  const rows: ToolMenuItem<FileMenuItemId>[] = documentKind === 'assembly'
+    ? FILE_MENU_ITEMS.filter((item) => item.id === 'newAssembly' || item.id === 'saveAs')
+    : [...FILE_MENU_ITEMS];
+  if (documentKind === 'part') {
+    for (const template of templates) {
+      rows.push({
+        id: `${STORED_TEMPLATE_MENU_PREFIX}${template.id}`,
+        // 名前の無いひな形は作れない(`templateFile.ts` が部品の名前へ落とす)が、
+        // 空の行を画面に出さない保険として決まった文言を土台に置く。
+        labelKey: 'toolbar.file.newFromTemplate',
+        tooltipKey: 'toolbar.file.storedTemplateTooltip',
+        Icon: TemplateNewIcon,
+        label: template.name,
+      });
+    }
   }
   for (const recent of recentFiles) {
     rows.push({

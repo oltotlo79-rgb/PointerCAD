@@ -33,7 +33,7 @@
  * (この ui パッケージには jsdom を入れない方針。`themeColors.ts` 冒頭の注釈)。
  */
 
-import { WOOD_SPECIES, type AppearancePattern, type AppearanceSpec, type WoodSpecies } from '@pointercad/model';
+import { DEFAULT_APPEARANCE, WOOD_SPECIES, type AppearancePattern, type AppearanceSpec, type WoodSpecies } from '@pointercad/model';
 import * as THREE from 'three';
 
 import { appearanceKeyText } from './buildFaceGroups.js';
@@ -47,6 +47,15 @@ import {
 
 /** 百分率(0〜100)の満量。three.js の 0〜1 へ写すときの割る数。 */
 const PERCENT_FULL = 100;
+
+const DEFAULT_APPEARANCE_KEY = appearanceKeyText(DEFAULT_APPEARANCE);
+
+/** 既定の外観だけを現在のテーマ色へ合わせる。部品層とアセンブリ層の共通規則。 */
+export function themedAppearance(spec: AppearanceSpec, solidColor: number): AppearanceSpec {
+  if (appearanceKeyText(spec) !== DEFAULT_APPEARANCE_KEY) return spec;
+  const color = `#${solidColor.toString(16).padStart(6, '0')}`;
+  return color === spec.color ? spec : { ...spec, color };
+}
 
 /** ガラスの屈折率(§2.5.3、§0.a-0.10)。three.js の既定も 1.5 だが、意図として明示する。 */
 export const GLASS_IOR = 1.5;

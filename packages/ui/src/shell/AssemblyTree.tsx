@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 
 import {
   findComponent,
-  setComponentSuppressed,
-  setFixed,
-  setVisible,
-  type AssemblyDocument,
 } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
+import {
+  deleteAssemblyComponents,
+  duplicateAssemblyComponent,
+  toggleAssemblyComponentFixed,
+  toggleAssemblyComponentSuppressed,
+  toggleAssemblyComponentVisible,
+} from '../assembly/placeComponentActions.js';
 import { activeAssemblyDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
@@ -85,10 +88,10 @@ interface RowMenuState {
 }
 
 /**
- * 一覧の高さと幅の見込み(画素)。項目は固定・表示・抑制の 3 つ(`FeatureTree` の
- * いちばん多い行より少ない)。画面の端との余白も同じ値にそろえる。
+ * 一覧の高さと幅の見込み(画素)。項目は複製・削除・固定・表示・抑制の 5 つ。
+ * 画面の端との余白は `FeatureTree` と同じ値にそろえる。
  */
-const ROW_MENU_HEIGHT = 108;
+const ROW_MENU_HEIGHT = 168;
 const ROW_MENU_WIDTH = 132;
 const ROW_MENU_GAP = 4;
 const ROW_MENU_MARGIN = 8;
@@ -193,18 +196,6 @@ export function AssemblyTree(): React.JSX.Element {
   const selectedIds = new Set(selection);
   const menuComponent = menu === null ? undefined : findComponent(assembly, menu.componentId);
   const chevronClassName = 'pcad-tree__chevron' + (isExpanded ? ' pcad-tree__chevron--open' : '');
-
-  /**
-   * アセンブリ文書を差し替える。
-   *
-   * 文書と部品の添付を一緒に履歴へ積む。1 操作 = 1 段で取り消せる。
-   */
-  const applyAssembly = (next: AssemblyDocument): void => {
-    const store = useAppStore.getState();
-    if (next !== store.assembly) {
-      store.applyAssembly(next);
-    }
-  };
 
   const renderRow = (row: AssemblyTreeRow, sectionKey: AssemblyTreeSectionKey): React.JSX.Element => {
     const KindIcon = KIND_ICONS[row.kind];
@@ -388,7 +379,29 @@ export function AssemblyTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              applyAssembly(setFixed(assembly, menu.componentId, !menuComponent.fixed));
+              duplicateAssemblyComponent(menu.componentId);
+              setMenu(null);
+            }}
+          >
+            {t('assembly.tool.duplicate')}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="pcad-button pcad-menu__item"
+            onClick={() => {
+              deleteAssemblyComponents([menu.componentId]);
+              setMenu(null);
+            }}
+          >
+            {t('assembly.tool.delete')}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="pcad-button pcad-menu__item"
+            onClick={() => {
+              toggleAssemblyComponentFixed(menu.componentId);
               setMenu(null);
             }}
           >
@@ -399,7 +412,7 @@ export function AssemblyTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              applyAssembly(setVisible(assembly, menu.componentId, !menuComponent.visible));
+              toggleAssemblyComponentVisible(menu.componentId);
               setMenu(null);
             }}
           >
@@ -410,9 +423,7 @@ export function AssemblyTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              applyAssembly(
-                setComponentSuppressed(assembly, menu.componentId, !menuComponent.suppressed),
-              );
+              toggleAssemblyComponentSuppressed(menu.componentId);
               setMenu(null);
             }}
           >

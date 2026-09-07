@@ -4,6 +4,7 @@ export {
   createKernelHealth,
   KERNEL_BROKEN_MESSAGE,
   selectSubShape,
+  selectMateTargetGeometry,
   // 角の丸め・面取りの形を求める同期の純関数(FR-323、P4 タスク18・19)。ui の予告表示
   // (`cornerCommands.ts`)が、確定に使うのとまったく同じ式で形を先に見せるために使う。
   // 式の正本は kernel 側の 1 か所だけなので、写して 2 か所に持つことはしない。
@@ -18,6 +19,7 @@ export {
   type ImportedTriangles,
   type KernelBridge,
   type KernelHealth,
+  type MateSubShapeGeometry,
   type PartCancelToken,
   type PartProgress,
   type PartProgressCallback,

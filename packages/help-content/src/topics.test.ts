@@ -62,7 +62,12 @@ describe('ヘルプの目録', () => {
     // P6 タスク32 で 4 本(書き出す・読み込む・DXF・単位)足して 43 + 4 = 47。
     // P6 タスク43 で 4 本(切って中を見る・選ぶものを絞る・下絵・3D プリントの点検)足して 51。
     // P6 タスク33 で 2 本(ひな形・印刷と別名で保存)足して 53。
-    expect(HELP_TOPICS).toHaveLength(53);
+    // P7 タスク11bで「部品を置いて組み立てる」を1本足して54。
+    expect(HELP_TOPICS).toHaveLength(54);
+  });
+
+  it('アセンブリの説明を id で引ける(FR-601・602・605・606)', () => {
+    expect(findHelpTopic('assembly')?.path).toBe('docs/ja/assembly.md');
   });
 
   it('書き出し・読み込み・DXF・単位の説明を id で引ける(FR-802・803・811・813・814)', () => {

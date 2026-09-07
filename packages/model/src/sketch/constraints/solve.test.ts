@@ -5,6 +5,7 @@ import {
   CONSTRAINT_INITIAL_DAMPING,
   CONSTRAINT_MAX_ITERATIONS,
   CONSTRAINT_TOLERANCE,
+  eliminate,
   matrixRank,
   qrDecomposition,
   solveLeastSquares,
@@ -377,6 +378,23 @@ describe('ガウス消去(部分ピボット)', () => {
   it('大きさ 0 の連立は空の解を返す', () => {
     expect(solveLinearSystem([], [])).toEqual([]);
   });
+
+  it.each([2, 5, 6, 7, 8, 9])('%d列の部分配列でも行交換と末尾の消去を正しく行う', (n) => {
+    const expected = Array.from({ length: n }, (_, j) => j + 1);
+    const matrix = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) =>
+      (i === j ? 10 * n : 0) + (i * 3 + j * 7) % 11 - 5)).reverse();
+    const storage = new Float64Array(n * n + 4).fill(12345);
+    const work = storage.subarray(2, n * n + 2);
+    work.set(matrix.flat());
+    const rhs = Float64Array.from(matrix, (row) => row.reduce((sum, value, j) => sum + value * expected[j], 0));
+    const actual = eliminate(work, rhs, n);
+    expect(actual).not.toBeNull();
+    for (let j = 0; j < n; j += 1) expectClose(actual?.[j] ?? NaN, expected[j], 1e-12);
+    for (let i = 1; i < n; i += 1) {
+      for (let j = 0; j < i; j += 1) expect(work[i * n + j]).toBe(0);
+    }
+    expect([...storage.subarray(0, 2), ...storage.subarray(n * n + 2)]).toEqual([12345, 12345, 12345, 12345]);
+  });
 });
 
 describe('ハウスホルダー QR と階数', () => {
@@ -469,6 +487,68 @@ describe('ハウスホルダー QR と階数', () => {
     const qr = qrDecomposition([[], []], 0);
     expect(qr.rank).toBe(0);
     expect(qr.columnOrder).toEqual([]);
+  });
+
+  it.each([Number.NaN, Infinity])('列数%sで行があれば空の行でも従来のRangeErrorを返す', (columns) => {
+    for (const matrix of [[[1]], [[]]]) {
+      expect(() => qrDecomposition(matrix, columns)).toThrow(new RangeError('Invalid array length'));
+      expect(() => matrixRank(matrix, columns)).toThrow(new RangeError('Invalid array length'));
+    }
+  });
+
+  it('行がなければ列数NaNでも従来の空の分解を返す', () => {
+    expect(qrDecomposition([], Number.NaN)).toEqual({ rowCount: 0, columnCount: Number.NaN,
+      r: [], columnOrder: [], diagonal: [], rank: 0, reflectors: [] });
+    expect(matrixRank([], Number.NaN)).toBe(0);
+    expect(() => qrDecomposition([], Infinity)).toThrow(new RangeError('Invalid array length'));
+    expect(() => matrixRank([], Infinity)).toThrow(new RangeError('Invalid array length'));
+  });
+
+  it.each([-Infinity, -2, -0.5, 0, 0.5])('列数%sは従来どおり0に補正する', (columns) => {
+    expect(qrDecomposition([[1, 2]], columns)).toEqual({ rowCount: 1, columnCount: 0,
+      r: [[]], columnOrder: [], diagonal: [], rank: 0, reflectors: [] });
+    expect(matrixRank([[1, 2]], columns)).toBe(0);
+  });
+
+  it('列数の小数部分を切り捨て、余分な入力列を使わない', () => {
+    expect(qrDecomposition([[1, 2]], 1.9)).toEqual({ rowCount: 1, columnCount: 1,
+      r: [[-1]], columnOrder: [0], diagonal: [-1], rank: 1, reflectors: [[1]] });
+    expect(matrixRank([[1, 2]], 1.9)).toBe(1);
+  });
+
+  it.each([
+    { name: '正方・列交換', matrix: [[1, 2, 3], [4, 5, 6], [7, 8, 10]], columns: 3, rank: 3 },
+    { name: '横長', matrix: [[1, 2, 3, 4], [0, 1, 0, 2]], columns: 4, rank: 2 },
+    { name: '縦長', matrix: [[1, 2], [3, 4], [5, 6], [7, 9]], columns: 2, rank: 2 },
+    { name: '従属列', matrix: [[1, 2, 3], [2, 4, 6], [3, 6, 9]], columns: 3, rank: 1 },
+    { name: '短い行を0で補う', matrix: [[1], [0, 2], []], columns: 3, rank: 2 },
+    { name: '列がない', matrix: [[], []], columns: 0, rank: 0 },
+    { name: '行がない', matrix: [], columns: 3, rank: 0 },
+  ])('$nameでも公開した行配列Rと反射から元の列を復元できる', ({ matrix, columns, rank }) => {
+    const before = matrix.map((row) => [...row]);
+    const qr = qrDecomposition(matrix, columns);
+    expect(qr.rank).toBe(rank);
+    expect(qr.r).toHaveLength(matrix.length);
+    for (const row of qr.r) expect(row).toHaveLength(columns);
+    const reconstructed = qr.r.map((row) => [...row]);
+    // AP = QR。Qを作る反射を逆順にRへ掛け、返された列順の入力へ戻ることを確かめる。
+    for (const reflector of [...qr.reflectors].reverse()) {
+      for (let j = 0; j < columns; j += 1) {
+        const dot = reflector.reduce((sum, value, i) => sum + value * reconstructed[i][j], 0);
+        for (let i = 0; i < matrix.length; i += 1) reconstructed[i][j] -= 2 * dot * reflector[i];
+      }
+    }
+    for (let i = 0; i < matrix.length; i += 1) {
+      for (let j = 0; j < columns; j += 1) expectClose(reconstructed[i][j], matrix[i][qr.columnOrder[j]] ?? 0, 1e-12);
+    }
+    expect(matrix).toEqual(before);
+    expect(qrDecomposition(matrix, columns)).toEqual(qr);
+  });
+
+  it.each([
+    { diagonal: 0.5e-9, rank: 1 }, { diagonal: 1e-9, rank: 1 }, { diagonal: 1.5e-9, rank: 2 },
+  ])('相対許容の境界で対角$diagonalの階数は$rank', ({ diagonal, rank }) => {
+    expect(matrixRank([[1, 0], [0, diagonal]], 2)).toBe(rank);
   });
 });
 
@@ -928,30 +1008,67 @@ function scatteredProblem(
   return { initial, evaluate };
 }
 
+/**
+ * 単発の時計値の揺れを抑えるため、固定3回の予熱後に7回の中央値で判定する。
+ * 全 sample で同じ solve 全体を測る。結果検査は計時外で毎回行い、測定値は除外しない。
+ */
+function measureMedian<T>(action: () => T, check: (outcome: T) => void, now = () => performance.now()) {
+  let outcome = action();
+  for (let warmup = 1; warmup < 3; warmup += 1) outcome = action();
+  const samples: number[] = [];
+  for (let sample = 0; sample < 7; sample += 1) {
+    const startedAt = now();
+    outcome = action();
+    samples.push(now() - startedAt);
+    check(outcome);
+  }
+  const sorted = [...samples].sort((a, b) => a - b);
+  return { outcome, elapsedMs: sorted[3], samples };
+}
+
+describe('拘束を解く速さの測定', () => {
+  it('予熱3回の後の全7値を保持し、毎回の結果を検査して中央値を選ぶ', () => {
+    const durations = [99, 99, 99, 11, 2, 9, 5, 7, 3, 100];
+    let calls = 0;
+    let clock = 0;
+    const checked: number[] = [];
+    const measured = measureMedian(
+      () => { clock += durations[calls]; calls += 1; return calls; },
+      (outcome) => { checked.push(outcome); clock += 1000; },
+      () => clock,
+    );
+    expect(calls).toBe(10);
+    expect(checked).toEqual([4, 5, 6, 7, 8, 9, 10]);
+    expect(measured.samples).toEqual([11, 2, 9, 5, 7, 3, 100]);
+    expect(measured.elapsedMs).toBe(7);
+    expect(measured.outcome).toBe(10);
+  });
+});
+
 describe('拘束を解く速さ(§2.9、NFR-PF-2)', () => {
   it('変数 100・式 100 を 8ms 以内で解く', () => {
     const { initial, evaluate } = chainProblem(50, true);
-    solveLevenbergMarquardt(initial, evaluate); // 温め(JIT)
-    const startedAt = performance.now();
-    const outcome = solveLevenbergMarquardt(initial, evaluate);
-    const elapsedMs = performance.now() - startedAt;
-    console.log(
-      `拘束を解く(変数 100・式 100): ${elapsedMs.toFixed(2)} ms / 反復 ${outcome.iterations} 回(上限 8 ms)`,
+    const { outcome, elapsedMs, samples } = measureMedian(
+      () => solveLevenbergMarquardt(initial, evaluate),
+      (result) => { expect(result.converged).toBe(true); },
     );
-    expect(outcome.converged).toBe(true);
+    console.log('拘束を解く(変数 100・式 100)の全測定値(ms):', JSON.stringify(samples));
+    console.log(
+      `拘束を解く(変数 100・式 100): 中央値 ${elapsedMs.toFixed(2)} ms / 反復 ${outcome.iterations} 回(上限 8 ms)`,
+    );
     expectWithinBudget(elapsedMs, 8, '変数 100・式 100');
   });
 
   it('変数 200・式 200 を 500ms 以内で解く(NFR-PF-2)', () => {
     const { initial, evaluate } = chainProblem(100, true);
-    solveLevenbergMarquardt(initial, evaluate);
-    const startedAt = performance.now();
-    const outcome = solveLevenbergMarquardt(initial, evaluate);
-    const elapsedMs = performance.now() - startedAt;
-    console.log(
-      `拘束を解く(変数 200・式 200): ${elapsedMs.toFixed(2)} ms / 反復 ${outcome.iterations} 回(上限 500 ms)`,
+    const { outcome, elapsedMs, samples } = measureMedian(
+      () => solveLevenbergMarquardt(initial, evaluate),
+      (result) => { expect(result.converged).toBe(true); },
     );
-    expect(outcome.converged).toBe(true);
+    console.log('拘束を解く(変数 200・式 200)の全測定値(ms):', JSON.stringify(samples));
+    console.log(
+      `拘束を解く(変数 200・式 200): 中央値 ${elapsedMs.toFixed(2)} ms / 反復 ${outcome.iterations} 回(上限 500 ms)`,
+    );
     expectWithinBudget(elapsedMs, 500, '変数 200・式 200');
   });
 
@@ -959,12 +1076,12 @@ describe('拘束を解く速さ(§2.9、NFR-PF-2)', () => {
     const { initial, evaluate } = chainProblem(200, false);
     expect(initial.length).toBe(400);
     expect(evaluate(initial).length).toBe(399);
-    solveLevenbergMarquardt(initial, evaluate, { maxIterations: 1 });
-    const startedAt = performance.now();
-    const outcome = solveLevenbergMarquardt(initial, evaluate, { maxIterations: 1 });
-    const elapsedMs = performance.now() - startedAt;
-    console.log(`拘束を解く(変数 400・隣どうしの式)の 1 反復: ${elapsedMs.toFixed(2)} ms(目安 20 ms)`);
-    expect(outcome.iterations).toBe(1);
+    const { elapsedMs, samples } = measureMedian(
+      () => solveLevenbergMarquardt(initial, evaluate, { maxIterations: 1 }),
+      (result) => { expect(result.iterations).toBe(1); },
+    );
+    console.log('拘束を解く(変数 400・隣どうしの式)の全測定値(ms):', JSON.stringify(samples));
+    console.log(`拘束を解く(変数 400・隣どうしの式)の 1 反復: 中央値 ${elapsedMs.toFixed(2)} ms(目安 20 ms)`);
     expectWithinBudget(elapsedMs, 20, '変数 400・隣どうしの式の 1 反復');
   });
 
@@ -972,15 +1089,15 @@ describe('拘束を解く速さ(§2.9、NFR-PF-2)', () => {
     const { initial, evaluate } = scatteredProblem(400, 200);
     expect(initial.length).toBe(400);
     expect(evaluate(initial).length).toBe(200);
-    solveLevenbergMarquardt(initial, evaluate, { maxIterations: 1 });
-    const startedAt = performance.now();
-    const outcome = solveLevenbergMarquardt(initial, evaluate, { maxIterations: 1 });
-    const elapsedMs = performance.now() - startedAt;
-    console.log(
-      `拘束を解く(変数 400・式 200、散らした並び)の 1 反復: ${elapsedMs.toFixed(2)} ms(計画書 §2.2 の見積り 20〜40 ms)`,
+    // 式より変数が多い(階数が落ちる)ので、全 sample で減衰を伴う同じ1反復を測る。
+    const { elapsedMs, samples } = measureMedian(
+      () => solveLevenbergMarquardt(initial, evaluate, { maxIterations: 1 }),
+      (result) => { expect(result.iterations).toBe(1); },
     );
-    // 式より変数が多い(階数が落ちる)ので、減衰 λ が無いと 1 歩も進めない大きさ
-    expect(outcome.iterations).toBe(1);
+    console.log('拘束を解く(変数 400・式 200、散らした並び)の全測定値(ms):', JSON.stringify(samples));
+    console.log(
+      `拘束を解く(変数 400・式 200、散らした並び)の 1 反復: 中央値 ${elapsedMs.toFixed(2)} ms(計画書 §2.2 の見積り 20〜40 ms)`,
+    );
     expectWithinBudget(elapsedMs, 40, '変数 400・式 200(散らした並び)の 1 反復');
   });
 });

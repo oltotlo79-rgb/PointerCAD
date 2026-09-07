@@ -1,5 +1,6 @@
 /** 合致を成分ごとに解く。解は文書へ書き戻さない(P7 §2.5.6、FR-603/604)。 */
-import { matrixRank } from '../../sketch/constraints/solve.js';
+import { CONFLICT_REPORT_LIMIT, remainingMessage } from '../../sketch/constraints/diagnose.js';
+import { matrixRank, qrDecomposition } from '../../sketch/constraints/solve.js';
 import { addVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import {
   exponentialMap, multiplyQuaternion, normalizeQuaternion, rotateVector, type RigidPlacement,
@@ -15,7 +16,7 @@ import {
 } from './mateVariables.js';
 import {
   DEFAULT_RIGID_ANGLE_TOLERANCE, DEFAULT_RIGID_CHARACTERISTIC_LENGTH,
-  scaledRigidJacobian, solveRigid, type RigidEvaluation, type RigidResidualRow,
+  rigidRowTolerance, scaledRigidJacobian, solveRigid, type RigidEvaluation, type RigidResidualRow,
   type RigidSolveOptions, type RigidSolveOutcome, type RigidSolveStopReason,
 } from './solveRigid.js';
 
@@ -50,6 +51,83 @@ export interface MateComponentDiagnosis {
   readonly remainingDegreesOfFreedom: number | null;
   readonly status: RigidSolveStopReason | 'variableLimit';
   readonly result: RigidSolveOutcome<ReadonlyMap<string, RigidPlacement>> | null;
+  /** 最終rankの材料。旧呼出側が組み立てた結果との互換のため省略可。保存しない。 */
+  readonly linearization?: MateLinearizationSnapshot | null;
+}
+
+export interface MateLinearizationSnapshot {
+  /** rowsと同じ行順、gauge固定後のvariablesと同じ列順。 */
+  readonly scaledJacobian: readonly (readonly number[])[];
+  readonly rowTolerances: readonly number[];
+  readonly constantRows: readonly boolean[];
+}
+
+export type MateRowDependency = 'independent' | 'dependent' | 'noVariable' | 'singular' | 'unknown';
+
+export interface MateRowDiagnosis {
+  readonly componentIndex: number;
+  readonly rowIndex: number;
+  readonly mateId: string;
+  readonly residual: number | null;
+  readonly tolerance: number | null;
+  readonly normalizedResidual: number | null;
+  readonly satisfied: boolean | null;
+  readonly constant: boolean;
+  readonly dependency: MateRowDependency;
+}
+
+export interface MateDiagnosisComponent {
+  readonly componentIds: MateComponentDiagnosis['componentIds'];
+  readonly mateIds: MateComponentDiagnosis['mateIds'];
+  readonly gauge: MateComponentDiagnosis['gauge'];
+  readonly variables: number;
+  readonly rank: number | null;
+  readonly remainingDegreesOfFreedom: number | null;
+  readonly status: MateComponentDiagnosis['status'];
+  readonly limit: RigidSolveOutcome<ReadonlyMap<string, RigidPlacement>>['limit'];
+  readonly rows: readonly MateRowDiagnosis[];
+  readonly redundancyComplete: boolean;
+}
+
+export type MateDiagnosisMessageCode =
+  | 'remainingDegreesOfFreedom' | 'fullyConstrained' | 'redundant' | 'noVariable'
+  | 'provenConstantConflict' | 'suspectedConflict' | 'iterationLimit' | 'timeLimit'
+  | 'stalled' | 'variableLimit' | 'skippedTarget' | 'unsupportedJoint' | 'incompleteDiagnosis';
+
+export interface MateDiagnosisMessage {
+  readonly code: MateDiagnosisMessageCode;
+  readonly severity: 'info' | 'warning' | 'error';
+  readonly mateIds: readonly string[];
+  readonly text: string;
+}
+
+export interface MateDiagnosisCandidate {
+  readonly mateId: string;
+  readonly kind: 'provenConflict' | 'suspectedConflict' | 'unresolved';
+  readonly normalizedResidual: number | null;
+}
+
+export interface MateDiagnosis {
+  readonly status: MateSolveDiagnosis['status'];
+  readonly converged: boolean;
+  /** 全対象の評価・階数・行分類が揃ったこと。収束とは別。 */
+  readonly complete: boolean;
+  readonly remainingDegreesOfFreedom: number | null;
+  readonly components: readonly MateDiagnosisComponent[];
+  readonly rows: readonly MateRowDiagnosis[];
+  readonly redundantRowCount: number;
+  /** 収束済み成分で全有効行が局所的に従属する合致。大域的な削除可能性は保証しない。 */
+  readonly redundantMateIds: readonly string[];
+  readonly provenConflictMateIds: readonly string[];
+  readonly suspectedConflictMateIds: readonly string[];
+  readonly unresolvedMateIds: readonly string[];
+  /** 証明済みを優先し、残差比・文書順で最大3件。 */
+  readonly causeCandidates: readonly MateDiagnosisCandidate[];
+  readonly skipped: SolveMatesOutcome['skipped'];
+  readonly unsupportedJointIds: MateSolveDiagnosis['unsupportedJointIds'];
+  readonly limits: MateSolveDiagnosis['limits'];
+  readonly branchViolations: SolveMatesOutcome['branchViolations'];
+  readonly messages: readonly MateDiagnosisMessage[];
 }
 
 export interface MateSolveDiagnosis {
@@ -258,11 +336,15 @@ export function solveMates(
         }
       }
     }
-    const rank = limited || remainingTime() === 0 ? null
-      : matrixRank(scaledRigidJacobian(evaluation.rows, variables, options), variables.length);
+    const linearization: MateLinearizationSnapshot | null = limited || remainingTime() === 0 ? null : {
+      scaledJacobian: scaledRigidJacobian(evaluation.rows, variables, options),
+      rowTolerances: evaluation.rows.map((row) => rigidRowTolerance(row, options)),
+      constantRows: evaluation.rows.map((row) => row.constant === true),
+    };
+    const rank = linearization === null ? null : matrixRank(linearization.scaledJacobian, variables.length);
     components.push({ componentIds: group.componentIds, mateIds: group.mateIds, rows: report.rows, gauge,
       variables: variables.length, rank, remainingDegreesOfFreedom: rank === null ? null : variables.length - rank,
-      status: result?.stop ?? 'variableLimit', result });
+      status: result?.stop ?? 'variableLimit', result, linearization });
   }
   const priority: readonly MateSolveDiagnosis['status'][] = [
     'provenConstantConflict', 'variableLimit', 'iterationLimit', 'suspectedConflict', 'stalled',
@@ -273,4 +355,128 @@ export function solveMates(
     residualNorm: Math.sqrt(residualSquare), maxResidual,
     diagnosis: { status, components, limits, constantConflicts, unsupportedJointIds },
     skipped, branchViolations };
+}
+
+/** 転置QRは行の独立集合だけに使う。rank/gaugeはsolverの結果を上書きしない。 */
+function diagnoseMateComponent(component: MateComponentDiagnosis, componentIndex: number): MateDiagnosisComponent {
+  const snapshot = component.linearization;
+  const m = component.rows.length;
+  const n = component.variables;
+  const valid = snapshot != null && component.rank !== null
+    && snapshot.scaledJacobian.length === m && snapshot.rowTolerances.length === m
+    && snapshot.constantRows.length === m
+    && snapshot.scaledJacobian.every((row) => row.length === n && row.every(Number.isFinite))
+    && snapshot.rowTolerances.every((tolerance) => Number.isFinite(tolerance) && tolerance > 0)
+    && component.rows.every((row) => Number.isFinite(row.value));
+  let redundancyComplete = false;
+  const independent = new Set<number>();
+  if (valid) {
+    const transposed = Array.from({ length: n }, (_, column) => snapshot.scaledJacobian.map((row) => row[column]));
+    const qr = qrDecomposition(transposed, m);
+    redundancyComplete = qr.rank === component.rank;
+    if (redundancyComplete) {
+      // QRの交換順で完全重複の後続行を選んでも、同じ先行行へ戻す。近似判定は加えない。
+      const firstRows = new Map<string, number>();
+      const canonical = snapshot.scaledJacobian.map((row, index) => {
+        const key = JSON.stringify(row);
+        const first = firstRows.get(key);
+        if (first !== undefined) return first;
+        firstRows.set(key, index);
+        return index;
+      });
+      for (const index of qr.columnOrder.slice(0, qr.rank)) independent.add(canonical[index]);
+    }
+  }
+  const rows = component.rows.map((row, rowIndex): MateRowDiagnosis => {
+    const rawTolerance = snapshot?.rowTolerances[rowIndex];
+    const tolerance = rawTolerance !== undefined && Number.isFinite(rawTolerance) && rawTolerance > 0 ? rawTolerance : null;
+    const residual = Number.isFinite(row.value) ? row.value : null;
+    const ratio = residual === null || tolerance === null ? null : Math.abs(residual) / tolerance;
+    const constant = snapshot?.constantRows[rowIndex] === true;
+    const dependency: MateRowDependency = !redundancyComplete ? 'unknown' : constant ? 'noVariable'
+      : snapshot?.scaledJacobian[rowIndex].every((value) => value === 0) === true ? 'singular'
+        : independent.has(rowIndex) ? 'independent' : 'dependent';
+    return { componentIndex, rowIndex, mateId: row.mateId, residual, tolerance,
+      normalizedResidual: ratio !== null && Number.isFinite(ratio) ? ratio : null,
+      satisfied: residual === null || tolerance === null ? null : Math.abs(residual) < tolerance,
+      constant, dependency };
+  });
+  return { componentIds: component.componentIds, mateIds: component.mateIds, gauge: component.gauge,
+    variables: n, rank: component.rank, remainingDegreesOfFreedom: component.remainingDegreesOfFreedom,
+    status: component.status, limit: component.result?.limit ?? null, rows, redundancyComplete };
+}
+
+/**
+ * 最終solve結果から表示用診断を作る純関数(P7訂正0.68、FR-604)。
+ * 再求解・再配置・再gaugeはしない。線形従属や未収束は大域的矛盾の証明ではない。
+ */
+export function diagnoseMates(assembly: AssemblyDocument, outcome: SolveMatesOutcome): MateDiagnosis {
+  const components = outcome.diagnosis.components.map(diagnoseMateComponent);
+  const rows = components.flatMap((component) => component.rows);
+  const complete = components.every((component) => component.redundancyComplete)
+    && outcome.skipped.length === 0 && outcome.diagnosis.unsupportedJointIds.length === 0;
+  const remainingDegreesOfFreedom = components.some((component) => component.remainingDegreesOfFreedom === null)
+    ? null : components.reduce((sum, component) => sum + (component.remainingDegreesOfFreedom ?? 0), 0);
+  const order = new Map(assembly.mates.map((mate, index) => [mate.id, index]));
+  const documentOrder = (a: string, b: string): number => (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity)
+    || (a < b ? -1 : a > b ? 1 : 0);
+  const sortedIds = (ids: Iterable<string>): string[] => [...new Set(ids)].sort(documentOrder);
+  const rowsByMate = new Map<string, MateRowDiagnosis[]>();
+  const severity = new Map<string, number>();
+  for (const row of rows) {
+    const list = rowsByMate.get(row.mateId) ?? [];
+    list.push(row);
+    rowsByMate.set(row.mateId, list);
+    if (row.normalizedResidual !== null) severity.set(row.mateId, Math.max(severity.get(row.mateId) ?? 0, row.normalizedResidual));
+  }
+  const branches = new Set(outcome.branchViolations);
+  const provenConflictMateIds = sortedIds(outcome.diagnosis.constantConflicts);
+  const proven = new Set(provenConflictMateIds);
+  const violated = (id: string) => branches.has(id) || rowsByMate.get(id)?.some((row) => row.satisfied === false) === true;
+  const suspectedConflictMateIds = sortedIds(components.filter((component) => component.status === 'suspectedConflict')
+    .flatMap((component) => component.mateIds.filter((id) => !proven.has(id) && violated(id))));
+  const suspected = new Set(suspectedConflictMateIds);
+  const unresolvedMateIds = sortedIds(components.filter((component) => component.status !== 'converged')
+    .flatMap((component) => component.mateIds.filter((id) => !proven.has(id) && !suspected.has(id) && violated(id))));
+  const convergedMateIds = new Set(components.filter((component) => component.status === 'converged').flatMap((component) => component.mateIds));
+  const redundantMateIds = sortedIds([...rowsByMate].filter(([id, mateRows]) => convergedMateIds.has(id) && !branches.has(id)
+    && mateRows.every((row) => row.dependency === 'dependent' && row.satisfied === true)).map(([id]) => id));
+  const candidates: MateDiagnosisCandidate[] = [
+    ...provenConflictMateIds.map((mateId) => ({ mateId, kind: 'provenConflict' as const, normalizedResidual: severity.get(mateId) ?? null })),
+    ...suspectedConflictMateIds.map((mateId) => ({ mateId, kind: 'suspectedConflict' as const, normalizedResidual: severity.get(mateId) ?? null })),
+    ...unresolvedMateIds.map((mateId) => ({ mateId, kind: 'unresolved' as const, normalizedResidual: severity.get(mateId) ?? null })),
+  ];
+  candidates.sort((a, b) => Number(b.kind === 'provenConflict') - Number(a.kind === 'provenConflict')
+    || (b.normalizedResidual ?? -1) - (a.normalizedResidual ?? -1) || documentOrder(a.mateId, b.mateId));
+  const causeCandidates = candidates.slice(0, CONFLICT_REPORT_LIMIT);
+  const messages: MateDiagnosisMessage[] = [];
+  const add = (code: MateDiagnosisMessageCode, severity: MateDiagnosisMessage['severity'], text: string,
+    mateIds: readonly string[] = []) => { messages.push({ code, severity, text, mateIds }); };
+  if (remainingDegreesOfFreedom !== null && remainingDegreesOfFreedom > 0) {
+    add('remainingDegreesOfFreedom', 'info', remainingMessage(remainingDegreesOfFreedom));
+  } else if (remainingDegreesOfFreedom === 0 && complete && outcome.converged) {
+    add('fullyConstrained', 'info', remainingMessage(0));
+  }
+  for (const candidate of causeCandidates) {
+    if (candidate.kind === 'provenConflict') add('provenConstantConflict', 'error',
+      'この合致は同時には成り立ちません。固定した対象や合致の値を見直してください。', [candidate.mateId]);
+    else if (candidate.kind === 'suspectedConflict') add('suspectedConflict', 'warning',
+      'この合致がほかの条件と両立しない可能性があります。対象や値を見直してください。', [candidate.mateId]);
+  }
+  if (redundantMateIds.length > 0) add('redundant', 'info', '同じ条件が重なっています。', redundantMateIds);
+  const noVariable = sortedIds(rows.filter((row) => row.dependency === 'noVariable' && row.satisfied === true).map((row) => row.mateId));
+  if (noVariable.length > 0) add('noVariable', 'info', '固定した対象間の条件です。', noVariable);
+  const stopped = components.filter((component) => component.status === 'iterationLimit');
+  if (stopped.some((component) => component.limit === 'time')) add('timeLimit', 'warning', '計算時間の上限に達しました。合致はまだ解けていません。');
+  if (stopped.some((component) => component.limit !== 'time')) add('iterationLimit', 'warning', '計算回数の上限に達しました。合致はまだ解けていません。');
+  if (components.some((component) => component.status === 'stalled')) add('stalled', 'warning', '計算が進まなくなりました。配置や合致の対象を見直してください。');
+  if (outcome.diagnosis.limits.length > 0) add('variableLimit', 'warning', '動かせる部品の数が計算の上限を超えています。');
+  for (const skipped of outcome.skipped) add('skippedTarget', 'warning', skipped.message, [skipped.mateId]);
+  if (outcome.diagnosis.unsupportedJointIds.length > 0) add('unsupportedJoint', 'warning', 'まだ計算に対応していないジョイントがあります。');
+  if (!complete) add('incompleteDiagnosis', 'warning', '診断に必要な情報が揃っていません。未確定の条件があります。');
+  return { status: outcome.diagnosis.status, converged: outcome.converged, complete, remainingDegreesOfFreedom,
+    components, rows, redundantRowCount: rows.filter((row) => row.dependency === 'dependent').length,
+    redundantMateIds, provenConflictMateIds, suspectedConflictMateIds, unresolvedMateIds, causeCandidates,
+    skipped: outcome.skipped, unsupportedJointIds: outcome.diagnosis.unsupportedJointIds,
+    limits: outcome.diagnosis.limits, branchViolations: outcome.branchViolations, messages };
 }

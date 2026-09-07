@@ -22,6 +22,7 @@ import {
 import { editToolReadiness } from '../sketch/editCommands.js';
 import { workPlaneEntries } from '../sketch/referenceCommands.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
+import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   ChainIcon,
@@ -51,6 +52,7 @@ import {
   runFileMenuAction,
 } from './menus/fileToolbarActions.js';
 import { LookGroup } from './menus/LookGroup.js';
+import { AssemblyGroup } from './menus/AssemblyGroup.js';
 import { PlaneMenu } from './menus/PlaneMenu.js';
 import { activateEditTool, activateShapeTool, activateTool } from './menus/sketchToolActions.js';
 import { TOOLS } from './menus/sketchToolTables.js';
@@ -92,6 +94,7 @@ import {
  * 必ず読み上げ名(aria-label)と、名前で始まるツールチップを付ける(FR-904、NFR-UX-7)。
  */
 export function Toolbar(): React.JSX.Element {
+  const documentKind = useAppStore(activeDocumentKind);
   const projection = useAppStore((state) => state.projection);
   const displayStyle = useAppStore((state) => state.displayStyle);
   const showGrid = useAppStore((state) => state.showGrid);
@@ -145,13 +148,17 @@ export function Toolbar(): React.JSX.Element {
    * 読み直しの切っ掛けはファイルの名前(開く・保存でこの 2 つが変わる)と、ひな形を
    * 保存した回数。一覧を開くたびに読み直すより、変わった時だけで足りる(NFR-PF-1)。
    */
-  const fileName = useAppStore((state) => state.fileName);
+  const fileName = useAppStore(activeFileName);
   const [templateEntries, setTemplateEntries] = useState<readonly NamedMenuEntry[]>([]);
   const [templateSaveCount, setTemplateSaveCount] = useState(0);
   const [recentEntries, setRecentEntries] = useState<readonly NamedMenuEntry[]>([]);
   useEffect(() => {
     setRecentEntries(loadRecentFiles().map((entry) => ({ id: entry.name, name: entry.name })));
     let alive = true;
+    if (documentKind === 'assembly') {
+      setTemplateEntries([]);
+      return () => { alive = false; };
+    }
     void loadTemplateEntries().then((entries) => {
       // 読み終える前にこの区画が消えていたら、状態を触らない(片付け後の書き込みを避ける)。
       if (alive) {
@@ -161,7 +168,7 @@ export function Toolbar(): React.JSX.Element {
     return () => {
       alive = false;
     };
-  }, [fileName, templateSaveCount]);
+  }, [documentKind, fileName, templateSaveCount]);
 
   return (
     <header className="pcad-toolbar">
@@ -205,7 +212,11 @@ export function Toolbar(): React.JSX.Element {
               (P6 タスク33)。**0 件のものは 1 行も出ない**ので、押しても何も起きない行が
               画面に出ることはない。行がいくつ増えても溝の幅は変わらない。
             */
-            items={fileMenuItems(templateEntries, recentEntries)}
+            items={fileMenuItems(
+              templateEntries,
+              recentEntries,
+              documentKind === 'assembly' ? 'assembly' : 'part',
+            )}
             groupLabelKey="toolbar.fileMenu.groupLabel"
             groupTooltipKey="toolbar.fileMenu.tooltip"
             GroupIcon={FileMenuIcon}
@@ -232,7 +243,7 @@ export function Toolbar(): React.JSX.Element {
             書き出しのパネル(FR-803、§0.a-0.20)。一覧の「書き出す」を選んだときだけ出す。
             **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
           */}
-          {exportOpen ? (
+          {documentKind === 'part' && exportOpen ? (
             <ExportPanelHost
               onClose={() => {
                 setExportOpen(false);
@@ -283,11 +294,11 @@ export function Toolbar(): React.JSX.Element {
       */}
       <nav className="pcad-toolbar__modes" aria-label={t('toolbar.mode.groupLabel')}>
         <button type="button" className="pcad-tab" aria-pressed={true}>
-          {t('toolbar.mode.modeling')}
+          {t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}
         </button>
       </nav>
 
-      <div
+      {documentKind === 'part' ? <><div
         className="pcad-toolbar__group"
         role="group"
         aria-label={t('toolbar.sketch.groupLabel')}
@@ -412,6 +423,7 @@ export function Toolbar(): React.JSX.Element {
           </button>
         </div>
       </div>
+      </> : <AssemblyGroup />}
 
       <span className="pcad-toolbar__spacer" />
 
@@ -502,7 +514,7 @@ export function Toolbar(): React.JSX.Element {
             つまみとその場の数値入力で動かす。**形は切らない**(見た目だけのクリップ)。
             図柄は交差の印を当面そのまま使う(専用の図柄はタスク45 でまとめて作る)。
           */}
-          <button
+          {documentKind === 'part' ? <button
             type="button"
             className="pcad-button pcad-button--icon"
             title={t('toolbar.sectionView.tooltip')}
@@ -513,7 +525,7 @@ export function Toolbar(): React.JSX.Element {
             }}
           >
             <PlaneSectionIcon />
-          </button>
+          </button> : null}
         </div>
       </div>
 
@@ -535,7 +547,7 @@ export function Toolbar(): React.JSX.Element {
           >
             <GridIcon />
           </button>
-          <button
+          {documentKind === 'part' ? <button
             type="button"
             className="pcad-button pcad-button--collapsible"
             title={t('toolbar.chain.tooltip')}
@@ -547,11 +559,11 @@ export function Toolbar(): React.JSX.Element {
           >
             <ChainIcon />
             <span className="pcad-button__label">{t('toolbar.chain.label')}</span>
-          </button>
+          </button> : null}
         </div>
       </div>
 
-      <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.snap.groupLabel')}>
+      {documentKind === 'part' ? <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.snap.groupLabel')}>
         <span className="pcad-toolbar__group-label" title={t('toolbar.snap.tooltip')}>
           {t('toolbar.snap.groupLabel')}
         </span>
@@ -574,7 +586,7 @@ export function Toolbar(): React.JSX.Element {
             trackAngleStep={trackAngleStep}
           />
         </div>
-      </div>
+      </div> : null}
 
       <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.view.groupLabel')}>
         <span className="pcad-toolbar__group-label" title={t('toolbar.view.tooltip')}>

@@ -24,6 +24,8 @@ import {
   createDirectKernelBridge,
   KERNEL_BROKEN_MESSAGE,
   toPrintabilityOutcome,
+  selectMateTargetGeometry,
+  type SolidBody,
   type SketchOffsetRequestItem,
   type SketchProjectionRequestItem,
 } from './kernelBridge.js';
@@ -31,7 +33,16 @@ import { resolvePart, type ResolvedSolidStep } from './part/resolvePart.js';
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from './part/createPartDocument.js';
 import { recomputePart } from './part/recomputePart.js';
 import { WORK_PLANES } from './sketch/planeMath.js';
-import type { ResolvedFace } from './sketch/types.js';
+import type { ResolvedCurve, ResolvedFace } from './sketch/types.js';
+import type { SubShapeRef } from './geometry/subShapeRef.js';
+import type { Vec3 } from './sketch/vec3.js';
+import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './assembly/createAssemblyDocument.js';
+import { IDENTITY_PLACEMENT, type RigidPlacement } from './assembly/placementMath.js';
+import type { ResolvedAssembly } from './assembly/resolveAssembly.js';
+import type { AssemblyComponent, Mate, MateKind } from './assembly/types.js';
+import { resolveMateTarget } from './assembly/constraints/mateTargets.js';
+import { prepareMateResiduals, buildMateResidualReport, type MateResidualInput } from './assembly/constraints/mateResiduals.js';
+import { collectMateVariables } from './assembly/constraints/mateVariables.js';
 
 const silentWorkers = vi.hoisted(() => {
   let reply: { readonly value: unknown } | undefined;
@@ -232,6 +243,166 @@ describe('同じWorker接続で異なるSTEP原本を持つ2文書を交互に�
       expect(bridge.pendingWaiters()).toBe(0);
     } finally { bridge.dispose(); }
   }, 180_000);
+});
+
+describe('解析軸上点を実OCCTから合致へ渡す(P7-14b)', () => {
+  function axisStep(kind: 'cylinder' | 'cone'): ResolvedSolidStep {
+    const vertices: readonly Vec3[] = kind === 'cylinder'
+      ? [[0, 0, 0], [5, 0, 0], [5, 0, 10], [0, 0, 10]]
+      : [[0, 0, 0], [5, 0, 0], [0, 0, 10]];
+    const profile = vertices.map((from, index): ResolvedCurve => ({
+      kind: 'segment', featureId: `profile-${index}`, from, to: vertices[(index + 1) % vertices.length],
+    }));
+    return { featureId: 'axis-solid', name: kind, key: `axis-${kind}`, visible: true,
+      plan: { kind: 'revolve', profile, axisOrigin: [0, 0, 0], axisDirection: [0, 0, 1], angle: Math.PI } };
+  }
+
+  async function withBody(
+    kind: 'cylinder' | 'cone',
+    inspect: (body: SolidBody, step: ResolvedSolidStep) => void,
+    workerTransport = false,
+  ): Promise<void> {
+    const api = createKernelApi(loadOcctForNode);
+    silentWorkers.clear();
+    const bridge = workerTransport ? createKernelBridge() : createDirectKernelBridge(api);
+    if (workerTransport) Comlink.expose(api, silentWorkers.serverEndpoint());
+    try {
+      const step = axisStep(kind);
+      const result = await bridge.recomputeSolids([step], { partId: 'axis-part' });
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      inspect(result.bodies[0], step);
+    } finally {
+      await api.releasePart('axis-part');
+      bridge.dispose();
+    }
+  }
+
+  function faceReference(body: SolidBody, kind: 'cylinder' | 'cone'): SubShapeRef {
+    const face = body.faces.find((entry) => entry.surfaceKind === kind);
+    if (face === undefined) throw new Error('解析面が必要');
+    // 文書に残るのは旧来の指紋だけ。axisOriginを手入力しない。
+    return { bodyFeatureId: body.featureId, index: face.index,
+      fingerprint: { kind: 'face', surfaceKind: face.surfaceKind, area: face.area,
+        position: face.centroid, axis: face.axis, radius: face.radius } };
+  }
+
+  function residualInput(body: SolidBody, step: ResolvedSolidStep, ref: SubShapeRef, kind: MateKind): MateResidualInput {
+    const components: AssemblyComponent[] = ['a', 'b'].map((id) => ({
+      id, name: id, source: { kind: 'part', partRef: 'axis-part' },
+      placement: DEFAULT_COMPONENT_PLACEMENT, fixed: id === 'b', visible: true, suppressed: false,
+    }));
+    const placements = new Map<string, RigidPlacement>([
+      ['a', IDENTITY_PLACEMENT],
+      ['b', kind === 'tangent' ? { ...IDENTITY_PLACEMENT, position: [0, 5, 0] } : IDENTITY_PLACEMENT],
+    ]);
+    const part = { ...resolvePart(createEmptyPartDocument()), steps: [step], liveBodyIds: [body.featureId] };
+    const resolved: ResolvedAssembly = { parts: new Map([['axis-part', part]]), placements,
+      partKeys: new Map([['a', 'axis-part'], ['b', 'axis-part']]), errors: [] };
+    const mate: Mate = { id: 'mate-1', name: kind, kind,
+      a: { kind: 'subShape', componentId: 'a', ref },
+      b: { kind: 'origin', componentId: 'b', element: kind === 'tangent' ? 'xz' : 'z' },
+      flipped: false, suppressed: false };
+    const a = resolveMateTarget(mate.a, resolved, {
+      subShape: (key, reference) => key === 'axis-part' ? selectMateTargetGeometry(body, reference) : null,
+    });
+    const b = resolveMateTarget(mate.b, resolved);
+    if (!a.ok || !b.ok) throw new Error('合致対象の解決が必要');
+    const prepared = prepareMateResiduals({ mates: [mate], targets: new Map([[mate.id, { a: a.target, b: b.target }]]), placements });
+    expect(prepared.skipped).toEqual([]);
+    expect(prepared.mates).toHaveLength(1);
+    return { mates: prepared.mates, placements,
+      variableSet: collectMateVariables({ ...createAssemblyDocument('組'), components }), characteristicLength: 1 };
+  }
+
+  function closePoint(actual: Vec3 | null | undefined, expected: Vec3): void {
+    if (actual == null) throw new Error('解析点が必要');
+    expected.forEach((value, index) => expect(Math.abs(actual[index] - value)).toBeLessThanOrEqual(1e-9));
+  }
+
+  it('Comlink往復で面・辺の解析点と重心を別々に保持する', async () => {
+    await withBody('cylinder', (body) => {
+      const face = body.faces.find((entry) => entry.surfaceKind === 'cylinder');
+      if (face === undefined) throw new Error('円筒面が必要');
+      closePoint(face.axisOrigin, [0, 0, 0]);
+      closePoint(face.centroid, [0, 10 / Math.PI, 5]);
+      const circles = body.edges.filter((edge) => edge.curveKind === 'circle');
+      expect(circles).toHaveLength(2);
+      for (const edge of circles) {
+        const z = edge.midpoint[2] > 5 ? 10 : 0;
+        closePoint(edge.axisOrigin, [0, 0, z]);
+        closePoint(edge.midpoint, [0, 10 / Math.PI, z]);
+      }
+    }, true);
+  });
+
+  it('半円筒の古い指紋を実体から解決すると同心4行がゼロになる', async () => {
+    await withBody('cylinder', (body, step) => {
+      const input = residualInput(body, step, faceReference(body, 'cylinder'), 'concentric');
+      const report = buildMateResidualReport(input);
+      expect(report.skipped).toEqual([]);
+      expect(report.rows).toHaveLength(4);
+      expect(report.rows.every((row) => Math.abs(row.value) <= 1e-12)).toBe(true);
+    });
+  });
+
+  it('実円筒の支持平面は接線2行がゼロ、傾けたtrialは方向残差が残る', async () => {
+    await withBody('cylinder', (body, step) => {
+      const input = residualInput(body, step, faceReference(body, 'cylinder'), 'tangent');
+      const report = buildMateResidualReport(input);
+      expect(report.skipped).toEqual([]);
+      expect(report.rows).toHaveLength(2);
+      expect(report.rows.every((row) => Math.abs(row.value) <= 1e-12)).toBe(true);
+      const increments = input.variableSet.initial.map(() => 0);
+      const column = input.variableSet.columnOf('a', 'rx');
+      if (column === null) throw new Error('回転列が必要');
+      increments[column] = Math.PI / 6;
+      const tilted = buildMateResidualReport({ ...input, increments });
+      expect(tilted.skipped).toEqual([]);
+      expect(Math.abs(tilted.rows[0].value)).toBeGreaterThan(0.49);
+    });
+  });
+
+  it('実半円錐の軸を重心から分離し、同心4行へ渡す', async () => {
+    await withBody('cone', (body, step) => {
+      const ref = faceReference(body, 'cone');
+      const geometry = selectMateTargetGeometry(body, ref);
+      closePoint(geometry?.axisOrigin, [0, 0, 0]);
+      closePoint(geometry?.position, [0, 20 / (3 * Math.PI), 10 / 3]);
+      const input = residualInput(body, step, ref, 'concentric');
+      expect(input.mates[0].a.kind).toBe('axis');
+      expect(input.mates[0].a.radius).toBeNull();
+      const rows = buildMateResidualReport(input).rows;
+      expect(rows).toHaveLength(4);
+      expect(rows.every((row) => Math.abs(row.value) <= 1e-12)).toBe(true);
+    });
+  });
+
+  it('実半円辺の中心を橋で取り直し、円周長の全周判定に依存せず同心へ渡す', async () => {
+    await withBody('cylinder', (body, step) => {
+      const edge = body.edges.find((entry) => entry.curveKind === 'circle');
+      if (edge === undefined) throw new Error('円辺が必要');
+      const ref: SubShapeRef = { bodyFeatureId: body.featureId, index: edge.index,
+        fingerprint: { kind: 'edge', curveKind: edge.curveKind, length: edge.length,
+          position: edge.midpoint, axis: edge.axis, radius: edge.radius } };
+      expect(Math.abs(edge.length - 5 * Math.PI)).toBeLessThanOrEqual(1e-9);
+      const input = residualInput(body, step, ref, 'concentric');
+      const rows = buildMateResidualReport(input).rows;
+      expect(rows).toHaveLength(4);
+      expect(rows.every((row) => Math.abs(row.value) <= 1e-12)).toBe(true);
+    });
+  });
+
+  it('古い面番号は現在の面へ照合し、別ボディや消えた面へ戻らない', async () => {
+    await withBody('cylinder', (body) => {
+      const ref = faceReference(body, 'cylinder');
+      const changed = { ...body, faces: body.faces.map((face) => ({ ...face, index: face.index + 40 })) };
+      const geometry = selectMateTargetGeometry(changed, ref);
+      closePoint(geometry?.axisOrigin, [0, 0, 0]);
+      expect(selectMateTargetGeometry({ ...body, featureId: 'other' }, ref)).toBeNull();
+      expect(selectMateTargetGeometry({ ...body, faces: [] }, ref)).toBeNull();
+    });
+  });
 });
 
 describe('部品の識別子を kernel へ素通しする', () => {

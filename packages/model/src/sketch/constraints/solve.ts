@@ -129,6 +129,10 @@ export const RANK_RELATIVE_TOLERANCE = 1e-9;
  * `a` と `b` は書き換える(呼ぶ側が複製を渡す)。
  */
 export function eliminate(a: Float64Array, b: Float64Array, n: number): Float64Array | null {
+  // 内側の列走査は同じ行のviewで行い、各要素での行オフセット加算を省く。
+  // 不正な寸法や短い配列は従来の添字アクセスを保つ。viewは元のaと同じ領域を指す。
+  const rows = Number.isInteger(n) && n >= 0 && n * n <= a.length
+    ? Array.from({ length: n }, (_, i) => a.subarray(i * n, (i + 1) * n)) : null;
   for (let k = 0; k < n; k += 1) {
     // 部分ピボット: k 列目の絶対値が最大の行を k 行目へ持ってくる。
     let pivot = k;
@@ -161,8 +165,20 @@ export function eliminate(a: Float64Array, b: Float64Array, n: number): Float64A
         continue;
       }
       a[i * n + k] = 0;
-      for (let j = k + 1; j < n; j += 1) {
-        a[i * n + j] -= factor * a[k * n + j];
+      if (rows === null) {
+        for (let j = k + 1; j < n; j += 1) a[i * n + j] -= factor * a[k * n + j];
+      } else {
+        const target = rows[i];
+        const source = rows[k];
+        let j = k + 1;
+        // 各列の更新順・乗算と減算はそのままに、内側ループの比較を4列に1回へ減らす。
+        for (; j + 3 < n; j += 4) {
+          target[j] -= factor * source[j];
+          target[j + 1] -= factor * source[j + 1];
+          target[j + 2] -= factor * source[j + 2];
+          target[j + 3] -= factor * source[j + 3];
+        }
+        for (; j < n; j += 1) target[j] -= factor * source[j];
       }
       b[i] -= factor * b[k];
     }
@@ -246,14 +262,18 @@ export function qrDecomposition(
 ): QrDecomposition {
   const rowCount = matrix.length;
   const columnCount = Math.max(0, Math.trunc(columns));
-  const a: number[][] = matrix.map((row) => {
-    const copy = new Array<number>(columnCount).fill(0);
+  // 旧来の行コピーは、行があるときだけnew Array(NaN)で例外を投げていた。
+  if (rowCount > 0 && Number.isNaN(columnCount)) throw new RangeError('Invalid array length');
+  // QRの内側は列を縦に走査する。列ごとの配列にして、各要素での行配列の参照を省く。
+  // 算術・加算・ピボット選択の順序は保ち、公開するRだけ最後に行配列へ戻す。
+  const a = Array.from({ length: columnCount }, () => new Array<number>(rowCount).fill(0));
+  for (let i = 0; i < rowCount; i += 1) {
+    const row = matrix[i];
     const limit = Math.min(columnCount, row.length);
     for (let j = 0; j < limit; j += 1) {
-      copy[j] = row[j];
+      a[j][i] = row[j];
     }
-    return copy;
-  });
+  }
   const columnOrder = Array.from({ length: columnCount }, (_, index) => index);
   const steps = Math.min(rowCount, columnCount);
   const diagonal: number[] = [];
@@ -265,9 +285,10 @@ export function qrDecomposition(
     let bestColumn = k;
     let bestNorm = -1;
     for (let j = k; j < columnCount; j += 1) {
+      const column = a[j];
       let sum = 0;
       for (let i = k; i < rowCount; i += 1) {
-        sum += a[i][j] * a[i][j];
+        sum += column[i] * column[i];
       }
       if (sum > bestNorm) {
         bestNorm = sum;
@@ -275,27 +296,26 @@ export function qrDecomposition(
       }
     }
     if (bestColumn !== k) {
-      for (let i = 0; i < rowCount; i += 1) {
-        const swap = a[i][k];
-        a[i][k] = a[i][bestColumn];
-        a[i][bestColumn] = swap;
-      }
+      const swap = a[k];
+      a[k] = a[bestColumn];
+      a[bestColumn] = swap;
       const swapOrder = columnOrder[k];
       columnOrder[k] = columnOrder[bestColumn];
       columnOrder[bestColumn] = swapOrder;
     }
 
+    const pivotColumn = a[k];
     const reflector = new Array<number>(rowCount).fill(0);
     let norm = 0;
     for (let i = k; i < rowCount; i += 1) {
-      norm += a[i][k] * a[i][k];
+      norm += pivotColumn[i] * pivotColumn[i];
     }
     norm = Math.sqrt(norm);
     if (norm > 0) {
       // 桁落ちを避けるため、先頭成分と逆の符号を選ぶ。
-      const alpha = a[k][k] >= 0 ? -norm : norm;
+      const alpha = pivotColumn[k] >= 0 ? -norm : norm;
       for (let i = k; i < rowCount; i += 1) {
-        reflector[i] = a[i][k];
+        reflector[i] = pivotColumn[i];
       }
       reflector[k] -= alpha;
       let reflectorNorm = 0;
@@ -308,13 +328,14 @@ export function qrDecomposition(
           reflector[i] /= reflectorNorm;
         }
         for (let j = k; j < columnCount; j += 1) {
+          const column = a[j];
           let dot = 0;
           for (let i = k; i < rowCount; i += 1) {
-            dot += reflector[i] * a[i][j];
+            dot += reflector[i] * column[i];
           }
           dot *= 2;
           for (let i = k; i < rowCount; i += 1) {
-            a[i][j] -= dot * reflector[i];
+            column[i] -= dot * reflector[i];
           }
         }
       } else {
@@ -324,13 +345,13 @@ export function qrDecomposition(
         }
       }
       // 丸めの残りかすを消し、下三角を厳密に 0 にする。
-      a[k][k] = alpha;
+      pivotColumn[k] = alpha;
       for (let i = k + 1; i < rowCount; i += 1) {
-        a[i][k] = 0;
+        pivotColumn[i] = 0;
       }
     }
     reflectors.push(reflector);
-    diagonal.push(a[k][k]);
+    diagonal.push(pivotColumn[k]);
   }
 
   const rankTolerance = options?.rankTolerance ?? RANK_RELATIVE_TOLERANCE;
@@ -349,7 +370,8 @@ export function qrDecomposition(
     }
   }
 
-  return { rowCount, columnCount, r: a, columnOrder, diagonal, rank, reflectors };
+  const r = Array.from({ length: rowCount }, (_, i) => a.map((column) => column[i]));
+  return { rowCount, columnCount, r, columnOrder, diagonal, rank, reflectors };
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  scaledRigidJacobian, solveRigid, type RigidResidualRow, type RigidSolveInput,
+  rigidRowTolerance, scaledRigidJacobian, solveRigid, type RigidResidualRow, type RigidSolveInput,
 } from './solveRigid.js';
 
 function row(value: number, gradient: readonly number[], unit: 'length' | 'angle' = 'length', scale = 1): RigidResidualRow {
@@ -14,6 +14,19 @@ function problem(initial: readonly number[], evaluate: (x: readonly number[]) =>
 }
 
 describe('solveRigidの受理/棄却と停止理由', () => {
+  it.each(['normal', 'qr'] as const)('%sで疎な行の項数が減っても前の行の項を足さない', (linearSolver) => {
+    const sparse = (value: number, entries: readonly (readonly [number, number])[]): RigidResidualRow =>
+      ({ value, gradient: new Map(entries), unit: 'length', scale: 1 });
+    const input = problem([0, 0, 0], ([x, y, z]) => [
+      sparse(x + 2 * y + 3 * z - 14, [[2, 3], [0, 1], [1, 2]]),
+      sparse(y - 2, [[1, 1]]), sparse(z - 3, [[2, 1]]), sparse(0, []),
+    ]);
+    const result = solveRigid({ ...input, options: { characteristicLength: 1, linearSolver } });
+    expect(result.converged).toBe(true);
+    for (let i = 0; i < 3; i += 1) expect(Math.abs(result.base[i] - (i + 1))).toBeLessThan(1e-9);
+    expect(result.trace.every((entry) => entry.linearSolver === linearSolver)).toBe(true);
+    expect(input.initial).toEqual([0, 0, 0]);
+  });
   it('1変数の解析解x=7に収束する', () => {
     const result = solveRigid(problem([0], ([x]) => [row(x - 7, [1])]));
     expect(result.stop).toBe('converged');
@@ -118,6 +131,27 @@ describe('solveRigidの受理/棄却と停止理由', () => {
       evaluate: (_base, step) => ({ rows: step[0] === 0 ? [row(-1, [1])] : [] }) });
     expect(result.base).toEqual([0]);
     expect(result.trace.every((entry) => !entry.accepted)).toBe(true);
+  });
+});
+
+describe('診断と共有する行許容差', () => {
+  it('長さの許容へ行尺度を一度だけ掛ける', () => {
+    expect(rigidRowTolerance(row(2, [1], 'length', 0.01))).toBeCloseTo(1e-11, 20);
+  });
+  it('方向行はradの正弦許容を使う', () => {
+    expect(rigidRowTolerance(row(0, [1], 'angle'))).toBe(Math.sin(1e-9));
+    expect(rigidRowTolerance(row(0, [1], 'angle'), { angleTolerance: 0.01 })).toBe(Math.sin(0.01));
+  });
+  it('余弦残差の特殊許容を上書きせず共有する', () => {
+    const tolerance = 2 * Math.sin(1e-9 / 2) * Math.sin(Math.PI / 3 - 1e-9 / 2);
+    expect(rigidRowTolerance({ ...row(0, [1], 'angle'), tolerance })).toBe(tolerance);
+  });
+  it.each([0.5, 1, 2])('正規化残差%gの充足境界がsolverと一致する', (ratio) => {
+    const residual = row(ratio * 1e-9, [1], 'length', 0.01);
+    const result = solveRigid({ initial: 0, variables: ['length'], evaluate: () => ({ rows: [residual] }),
+      retract: (base) => base, options: { maxIterations: 0 } });
+    expect(Math.abs(residual.value) / rigidRowTolerance(residual)).toBe(ratio);
+    expect(result.converged).toBe(ratio < 1);
   });
 });
 

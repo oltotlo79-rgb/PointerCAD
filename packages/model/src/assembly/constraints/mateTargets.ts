@@ -3,8 +3,8 @@
  * FR-603 / FR-609 / FR-329)。
  *
  * 合致(`Mate`)とジョイント(`Joint`)が指しているのは「どのインスタンスの、どの部分形状か」
- * (`MateTarget`)だけである。残差とヤコビアン(タスク14)が要るのは**世界座標の代表点 `p` と
- * 代表の向き `n`**(§2.5.2)なので、その 2 つ(と円筒の半径)へ直すのがこのファイルの役目。
+ * (`MateTarget`)だけである。残差とヤコビアン(タスク14)が要る**世界座標の代表点 `p`、
+ * 解析軸上点、代表の向き `n`**(§2.5.2)と円筒の半径へ直すのがこのファイルの役目。
  *
  * **部品の中の座標を、配置を掛けて世界座標へ直す**(§2.3 の⑥)。掛けるのはタスク2 の純関数
  * (`applyPlacementToPoint` / `applyPlacementToDirection`)で、回転行列の式をここへ書き写さない。
@@ -14,17 +14,17 @@
  * 指紋の誤選択)の教訓で、選び直せなかった対象を黙って捨てると利用者が合致を作り直す羽目になる。
  * 文言は §2.12 の表から 1 字も変えずに使う。
  *
- * **カーネルを呼ばない純関数。** 部分形状の位置・軸・半径は**保存された指紋**
- * (`SubShapeRef.fingerprint`)から取れる(下の「指紋から何が取れるか」)ので、既定では
- * カーネルへ問い合わせない。上流が変わった後の**選び直し**(P4 と同じ流儀)が要るときだけ、
- * 呼び出し側が `ResolveMateTargetOptions.subShape` に「選び直した指紋を返す関数」を渡す
- * (`geometry/planeSpec.ts` の `PlaneResolveContext.subShape` とまったく同じ約束)。
+ * **カーネルを呼ばない純関数。** 合致を解く呼び出し側は `ResolveMateTargetOptions.subShape`
+ * に、再計算済みの部品の形から `selectMateTargetGeometry` で選び直す関数を渡す。
+ * 解析軸上点は保存指紋に無いので、この経路で取り直す(P7-14b)。旧指紋だけでも従来の
+ * 代表点は返すが、円筒・円錐の重心から解析軸上点を捏造しない。解析軸が無い合致は
+ * 残差準備側で missingAxis になる。
  *
  * **指紋から何が取れるか(2026-09-06 実測。`geometry/subShapeRef.ts:47`、
  * `packages/kernel/src/occt/subShapes.ts:97-153, 165-217`):**
  *   - 面: 種類(`surfaceKind`)・面積・**重心**(`position`)・**軸**(`axis`。平らな面は法線、
  *     円柱・円錐・トーラスは軸。球と自由曲面は null)・半径(円柱・円錐・球のみ)。
- *     **平らな面の法線も円筒の軸も指紋から取れる**ので、カーネルへの往復は要らない。
+ *     **向きは指紋にある**が解析軸上点は無いため、再計算済みの幾何から補う。
  *   - 辺: 種類(`curveKind`)・長さ・**重心**(`position`。直線なら中点、**全周の円ならその中心**)・
  *     軸(直線は向き、円・楕円は軸)・半径(円のみ)。
  *   - 頂点: 位置だけ。
@@ -36,7 +36,8 @@
  * 変えると外れやすい**——外れたときは対象を消さずに理由を返す(この関数の約束)。
  */
 
-import type { SubShapeFingerprint, SubShapeRef } from '../../geometry/subShapeRef.js';
+import type { SubShapeRef } from '../../geometry/subShapeRef.js';
+import type { MateSubShapeGeometry } from '../../kernelBridge.js';
 import { WORK_PLANES, WORLD_AXIS_DIRECTIONS } from '../../sketch/planeMath.js';
 import { lengthVec3, normalizeVec3, ORIGIN, type Vec3 } from '../../sketch/vec3.js';
 import {
@@ -59,13 +60,15 @@ export type MateTargetKind = 'plane' | 'axis' | 'point' | 'cylinder';
 /**
  * 解決した合致の対象(**世界座標**)。長さは mm、向きは長さ 1。
  *
- * `point` は代表点(面なら重心、軸なら軸の上の点、頂点ならその点)、`direction` は代表の向き
+ * `point` は代表点(面・円弧なら重心、直線なら中点、頂点ならその点)、`direction` は代表の向き
  * (面なら法線、軸なら軸の向き)で、`point` に向きが無い(`kind === 'point'`)ときだけ null。
  * `radius` は円筒面と円の辺だけが持つ。
  */
 export interface ResolvedMateTarget {
   readonly kind: MateTargetKind;
   readonly point: Vec3;
+  /** 解析軸上点(世界座標)。円筒・円錐・円辺では再計算済みの幾何から取得する。 */
+  readonly axisOrigin?: Vec3;
   readonly direction: Vec3 | null;
   readonly radius: number | null;
 }
@@ -90,18 +93,16 @@ export type MateTargetOutcome =
 export interface ResolveMateTargetOptions {
   /**
    * 部分形状の選び直し(P4 と同じ流儀)。**部品の鍵**(`ResolvedAssembly.partKeys` の値)と
-   * 保存された参照を受け取り、**いまの形での指紋**を返す。選び直せなければ null。
+   * 保存された参照を受け取り、**いまの形での指紋と解析軸上点**を返す。選び直せなければ null。
    *
    * 鍵で渡すのはインスタンスの id ではない——同じ部品を 5 個置いても形は 1 つ(§0.a-0.4)で、
    * 選び直しの答えも 1 つだからである(インスタンスごとに呼ぶと同じ照合を 5 回することになる)。
    *
-   * 返す型を `geometry/planeSpec.ts` の `ResolvedSubShape` ではなく**指紋そのもの**にしてある。
-   * `ResolvedSubShape` は半径・面積・長さを落とすので、円筒の半径(§2.5.2 の接線合致)と
-   * 円の辺が全周かどうかの判定(下の `isFullCircle`)が作れないためである。
-   * 画面の側は選んだ瞬間に同じ形を組み立てている(`ui/src/solid/subShapeSelection.ts`)ので、
-   * 渡す側に新しい詰め替えは要らない。
+   * kernelBridge の `selectMateTargetGeometry` を使う。ResolvedSubShape は半径・面積・
+   * 長さを落とすので使わない。旧callbackの普通の指紋も受け付けるが、解析軸上点の無い
+   * 円筒・円錐・円辺は残差の準備で断られる。解析点を文書や指紋の鍵へ保存しない。
    */
-  readonly subShape?: (partKey: string, reference: SubShapeRef) => SubShapeFingerprint | null;
+  readonly subShape?: (partKey: string, reference: SubShapeRef) => MateSubShapeGeometry | null;
 }
 
 /** 曲面(球面など)を合致の対象にした(§2.12 の断りの文言)。 */
@@ -145,8 +146,12 @@ function accept(
   point: Vec3,
   direction: Vec3 | null,
   radius: number | null,
+  axisOrigin?: Vec3,
 ): MateTargetOutcome {
-  return { ok: true, target: { kind, point, direction, radius } };
+  return {
+    ok: true,
+    target: { kind, point, direction, radius, ...(axisOrigin === undefined ? {} : { axisOrigin }) },
+  };
 }
 
 /** 長さ 1 へ揃えた向き。null・長さ 0・NaN は「向きが取れない」として null。 */
@@ -179,7 +184,7 @@ function isFullCircle(length: number, radius: number): boolean {
  * **球面・トーラス・自由曲面は断る**(§0.a-0.13「曲面は取れない」)。円錐は半径が場所で
  * 変わる(指紋の `radius` は基準位置の半径)ので、**半径を持たない `axis`** として返す。
  */
-function faceTarget(fingerprint: Extract<SubShapeFingerprint, { kind: 'face' }>): MateTargetOutcome {
+function faceTarget(fingerprint: Extract<MateSubShapeGeometry, { kind: 'face' }>): MateTargetOutcome {
   const direction = usableDirection(fingerprint.axis);
   switch (fingerprint.surfaceKind) {
     case 'plane':
@@ -189,11 +194,11 @@ function faceTarget(fingerprint: Extract<SubShapeFingerprint, { kind: 'face' }>)
     case 'cylinder':
       return direction === null || !usableRadius(fingerprint.radius)
         ? refuse('unusableFace', UNUSABLE_FACE_MESSAGE)
-        : accept('cylinder', fingerprint.position, direction, fingerprint.radius);
+        : accept('cylinder', fingerprint.position, direction, fingerprint.radius, fingerprint.axisOrigin);
     case 'cone':
       return direction === null
         ? refuse('unusableFace', UNUSABLE_FACE_MESSAGE)
-        : accept('axis', fingerprint.position, direction, null);
+        : accept('axis', fingerprint.position, direction, null, fingerprint.axisOrigin);
     case 'sphere':
     case 'torus':
     case 'other':
@@ -204,22 +209,22 @@ function faceTarget(fingerprint: Extract<SubShapeFingerprint, { kind: 'face' }>)
 /**
  * 辺 1 本を対象へ直す(部品の中の座標のまま)。
  *
- * 取れるのは**まっすぐな辺**(向きが軸になる)と**全周の円の辺**(中心と軸が取れる)だけ。
- * 楕円・自由曲線と欠けた円弧は「この形からは軸が決まりません。」と断る(§2.12)。
+ * まっすぐな辺は中点が軸上。円弧は解析中心が取得できたときだけ全周制限を外す。
+ * 旧指紋だけの欠けた円弧・楕円・自由曲線は従来どおり断る(§2.12)。
  */
-function edgeTarget(fingerprint: Extract<SubShapeFingerprint, { kind: 'edge' }>): MateTargetOutcome {
+function edgeTarget(fingerprint: Extract<MateSubShapeGeometry, { kind: 'edge' }>): MateTargetOutcome {
   const direction = usableDirection(fingerprint.axis);
   switch (fingerprint.curveKind) {
     case 'line':
       return direction === null
         ? refuse('missingAxis', MISSING_AXIS_MESSAGE)
-        : accept('axis', fingerprint.position, direction, null);
+        : accept('axis', fingerprint.position, direction, null, fingerprint.position);
     case 'circle':
       if (direction === null || !usableRadius(fingerprint.radius)) {
         return refuse('missingAxis', MISSING_AXIS_MESSAGE);
       }
-      return isFullCircle(fingerprint.length, fingerprint.radius)
-        ? accept('axis', fingerprint.position, direction, fingerprint.radius)
+      return fingerprint.axisOrigin !== undefined || isFullCircle(fingerprint.length, fingerprint.radius)
+        ? accept('axis', fingerprint.position, direction, fingerprint.radius, fingerprint.axisOrigin)
         : refuse('missingAxis', MISSING_AXIS_MESSAGE);
     case 'ellipse':
     case 'other':
@@ -228,10 +233,13 @@ function edgeTarget(fingerprint: Extract<SubShapeFingerprint, { kind: 'edge' }>)
 }
 
 /** 部分形状 1 つを対象へ直す(部品の中の座標のまま)。 */
-function subShapeTarget(fingerprint: SubShapeFingerprint): MateTargetOutcome {
+function subShapeTarget(fingerprint: MateSubShapeGeometry): MateTargetOutcome {
   if (!isFinitePoint(fingerprint.position)) {
     // 壊れた指紋(NaN・∞)。ここで断らないと NaN がそのままソルバの残差へ流れる。
     return refuse('missingSubShape', MISSING_MATE_TARGET_MESSAGE);
+  }
+  if (fingerprint.axisOrigin !== undefined && !isFinitePoint(fingerprint.axisOrigin)) {
+    return refuse('missingAxis', MISSING_AXIS_MESSAGE);
   }
   switch (fingerprint.kind) {
     case 'face':
@@ -257,7 +265,7 @@ function originTarget(element: OriginElement): MateTargetOutcome {
     case 'x':
     case 'y':
     case 'z':
-      return accept('axis', ORIGIN, WORLD_AXIS_DIRECTIONS[element], null);
+      return accept('axis', ORIGIN, WORLD_AXIS_DIRECTIONS[element], null, ORIGIN);
     case 'xy':
     case 'xz':
     case 'yz':
@@ -270,6 +278,9 @@ function inWorld(placement: RigidPlacement, local: ResolvedMateTarget): Resolved
   return {
     kind: local.kind,
     point: applyPlacementToPoint(placement, local.point),
+    ...(local.axisOrigin === undefined ? {} : {
+      axisOrigin: applyPlacementToPoint(placement, local.axisOrigin),
+    }),
     // 平行移動は向きを変えない(`placementMath.ts` の約束)。長さ 1 は回転で保たれる。
     direction:
       local.direction === null ? null : applyPlacementToDirection(placement, local.direction),

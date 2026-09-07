@@ -40,9 +40,10 @@ import {
 } from '@pointercad/model';
 import * as THREE from 'three';
 
-import { appearanceKeyText, type FaceGroup } from '../appearance/buildFaceGroups.js';
+import type { FaceGroup } from '../appearance/buildFaceGroups.js';
 import {
   createAppearanceMaterialStore,
+  themedAppearance,
   type PatternTextureSource,
 } from '../appearance/createAppearanceMaterial.js';
 import {
@@ -212,30 +213,6 @@ export function buildThreadMarkPositions(marks: readonly ThreadMarkInfo[]): Floa
  * P5 タスク11 で `appearance/appearanceCommands.ts` へ移した。ここは import して使うだけにする
  * (同じ組み立てを 2 か所に持たない)。
  */
-
-/** 既定の外観の鍵。テーマの色を当てる相手かどうかの判定に使う(下の `themedAppearance`)。 */
-const DEFAULT_APPEARANCE_KEY = appearanceKeyText(DEFAULT_APPEARANCE);
-
-/** 0xrrggbb を `#rrggbb` の文字にする(外観の色は文字で持つため)。 */
-function hexColorText(value: number): string {
-  return `#${value.toString(16).padStart(6, '0')}`;
-}
-
-/**
- * 既定の外観の色だけを、いまのテーマの立体の色(`--pcad-solid`)へ差し替える(FR-908)。
- *
- * 外観を割り当てていない立体の色はテーマが決める(P2 からの決まり)ので、材質を作る前に
- * ここで色を差し替える。**割り当てのある外観は 1 つも触らない**(利用者が選んだ色を
- * テーマで塗り替えない)。判定は鍵(見え方)で行うので、プリセット「既定」を明示的に
- * 割り当てた面も同じ扱いになる(見え方が同じものを 2 通りに描かない)。
- */
-function themedAppearance(spec: AppearanceSpec, solidColor: number): AppearanceSpec {
-  if (appearanceKeyText(spec) !== DEFAULT_APPEARANCE_KEY) {
-    return spec;
-  }
-  const color = hexColorText(solidColor);
-  return color === spec.color ? spec : { ...spec, color };
-}
 
 /** まとまりが前回と同じか(中身で比べる。組み立てのたびに新しい配列が来るため)。 */
 function sameGroups(previous: readonly FaceGroup[] | null, next: readonly FaceGroup[]): boolean {

@@ -8,10 +8,14 @@
  * 画面(DOM)は撮影で確かめるので、ここでは表と純関数だけを見る。
  */
 
-import { SKETCH_CONSTRAINT_KINDS } from '@pointercad/model';
+import { addComponent, createAssemblyDocument, createComponentFor, SKETCH_CONSTRAINT_KINDS } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
+import { useAppStore } from '../store/useAppStore.js';
+import { resetTestStore } from '../store/testing/createTestStore.js';
+import { ASSEMBLY_MENU_ITEMS, assemblyActionReadiness } from './menus/AssemblyGroup.js';
+import { runNewAssembly } from './menus/fileToolbarActions.js';
 import {
   BASIC_SKETCH_TOOL_COUNT,
   COMBINE_MENU_ITEMS,
@@ -97,6 +101,73 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
     const ids = [...SHAPE_MENU_ITEMS, ...EDIT_MENU_ITEMS].map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+});
+
+describe('アセンブリのツールバー(P7 タスク11b)', () => {
+  it('成立する4つの部品操作だけを一覧に出す', () => {
+    expect(ASSEMBLY_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'duplicate', 'delete', 'toggleFixed', 'toggleVisible',
+    ]);
+  });
+
+  it('どの部品操作も名前・説明・図柄を持つ', () => {
+    for (const item of ASSEMBLY_MENU_ITEMS) {
+      expect(t(item.labelKey)).not.toBe('');
+      expect(t(item.tooltipKey)).not.toBe('');
+      expect(typeof item.Icon).toBe('function');
+    }
+  });
+
+  it('部品1個を選んだときだけ部品操作を許す', () => {
+    let assembly = createAssemblyDocument('組立');
+    const component = createComponentFor(assembly, { kind: 'part', partRef: 'part-1' });
+    assembly = addComponent(assembly, component);
+    expect(assemblyActionReadiness(assembly, [])).toEqual({
+      ready: false, reasonKey: 'assembly.tool.selectOneComponentReason',
+    });
+    expect(assemblyActionReadiness(assembly, [component.id])).toEqual({ ready: true, reasonKey: null });
+  });
+
+  it('アセンブリのファイル一覧に新規入口を出し、部品専用操作とひな形を除く', () => {
+    const rows = fileMenuItems([{ id: 'template', name: 'ひな形' }], [{ id: 'recent', name: '最近' }], 'assembly');
+    expect(rows.map((item) => item.id)).toEqual(['newAssembly', 'saveAs', 'recentFile:recent']);
+    expect(t(rows[0].labelKey)).toBe('新しいアセンブリ');
+  });
+
+  it('製品UIと同じ入口で部品・アセンブリの双方から空の新規アセンブリを始める', async () => {
+    resetTestStore();
+    let cleared = 0;
+    const gateway = {
+      ...useAppStore.getState().fileGateway,
+      clearSaveTarget: () => { cleared += 1; },
+    };
+    useAppStore.setState({ fileGateway: gateway });
+    const deps = { captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true) };
+
+    await runNewAssembly(deps);
+    expect(useAppStore.getState().assembly?.components).toEqual([]);
+    expect(useAppStore.getState().canUndo).toBe(false);
+    expect(cleared).toBe(1);
+
+    const firstDocumentId = useAppStore.getState().activeDocumentId;
+    await runNewAssembly(deps);
+    expect(useAppStore.getState().assembly?.components).toEqual([]);
+    expect(useAppStore.getState().activeDocumentId).not.toBe(firstDocumentId);
+    expect(cleared).toBe(2);
+  });
+
+  it('未保存の部品を破棄しない選択なら新規アセンブリへ切り替えない', async () => {
+    resetTestStore();
+    const before = useAppStore.getState().document;
+    useAppStore.getState().applyDocument({ ...before, name: '未保存の部品' });
+    await runNewAssembly({
+      captureThumbnail: () => null,
+      confirmDiscard: () => Promise.resolve(false),
+    });
+    expect(useAppStore.getState().assembly).toBeNull();
+    expect(useAppStore.getState().document.name).toBe('未保存の部品');
+  });
+
 });
 
 describe('畳んだボタンに出す図柄', () => {
@@ -554,7 +625,7 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
 /* ===== P6 タスク31: 「ファイル」の畳んだ一覧(§0.57、FR-812、FR-904、要件§7.1) ===== */
 
 describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => {
-  it('決まった 6 行が並ぶ(配線先のある操作しか出さない)', () => {
+  it('決まった 7 行が並ぶ(配線先のある操作しか出さない)', () => {
     /*
       §0.57 の最終形は 7 項目だが、行を足すのは**その操作を作るタスク**の仕事にした。
       押しても何も起きない行を画面に出さないため(NFR-UX-5)。タスク32 が書き出す・
@@ -564,6 +635,7 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
       **期待値を緩めたのではなく、行が増えた事実を写している。**
     */
     expect(FILE_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'newAssembly',
       'saveAs',
       'exportShape',
       'importShape',
@@ -668,13 +740,13 @@ describe('「ファイル」の一覧の、数の決まらない行(P6 タスク
     { id: '蓋.pcad', name: '蓋.pcad' },
   ];
 
-  it('ひな形も履歴も 0 件なら、決まった 6 行だけになる(押して何も起きない行を作らない)', () => {
+  it('ひな形も履歴も 0 件なら、決まった 7 行だけになる(押して何も起きない行を作らない)', () => {
     expect(fileMenuItems([], []).map((item) => item.id)).toEqual(
       FILE_MENU_ITEMS.map((item) => item.id),
     );
   });
 
-  it('ひな形 2 件・履歴 3 件で 6 + 5 行になり、名前がそのまま出る', () => {
+  it('ひな形 2 件・履歴 3 件で 7 + 5 行になり、名前がそのまま出る', () => {
     const rows = fileMenuItems(TEMPLATES, RECENT);
     expect(rows).toHaveLength(FILE_MENU_ITEMS.length + 5);
     expect(rows.slice(FILE_MENU_ITEMS.length).map((row) => row.label)).toEqual([

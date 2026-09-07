@@ -102,6 +102,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/timeline.md',
   },
   { id: 'save-and-open', title: '保存する・開く', path: 'docs/ja/save-and-open.md' },
+  { id: 'assembly', title: '部品を置いて組み立てる', path: 'docs/ja/assembly.md' },
   {
     id: 'select-subshape',
     title: '面・辺・頂点を選ぶ',

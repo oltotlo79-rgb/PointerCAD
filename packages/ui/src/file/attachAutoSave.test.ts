@@ -510,6 +510,25 @@ describe('案内の返事', () => {
     expect(recording.stored()).not.toBeNull();
   });
 
+  it('読めた控えを復元すると、前の文書の保存先を1回解除する', async () => {
+    const recording = createRecordingStorage(recordOf(partWithPoint(), '部品1'));
+    const timer = createManualTimer();
+    const saver = createTestSaver(recording.storage, timer);
+    let clearSaveTargetCount = 0;
+    useAppStore.getState().setFileGateway({
+      openPcad: () => Promise.resolve(null),
+      savePcad: () => Promise.resolve(null),
+      hasSaveTarget: () => false,
+      clearSaveTarget: () => {
+        clearSaveTargetCount += 1;
+      },
+    });
+
+    await restoreAutoSave(saver);
+
+    expect(clearSaveTargetCount).toBe(1);
+  });
+
   it('「復元する」を押したときに控えが消えていれば、案内を閉じるだけ', async () => {
     const recording = createRecordingStorage();
     const timer = createManualTimer();
@@ -537,6 +556,25 @@ describe('案内の返事', () => {
       unrecoverable: true,
       reasonKey: 'file.error.tooNew',
     });
+  });
+
+  it('読めない控えを復元しても、前の文書の保存先を解除しない', async () => {
+    const recording = createRecordingStorage(futureRecord(partWithPoint()));
+    const timer = createManualTimer();
+    const saver = createTestSaver(recording.storage, timer);
+    let clearSaveTargetCount = 0;
+    useAppStore.getState().setFileGateway({
+      openPcad: () => Promise.resolve(null),
+      savePcad: () => Promise.resolve(null),
+      hasSaveTarget: () => false,
+      clearSaveTarget: () => {
+        clearSaveTargetCount += 1;
+      },
+    });
+
+    await restoreAutoSave(saver);
+
+    expect(clearSaveTargetCount).toBe(0);
   });
 
   it('「控えを書き出す」は元のバイト列を既存の pcad 保存口へそのまま渡す', async () => {

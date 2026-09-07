@@ -281,6 +281,7 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   store.setImportedAttachments(outcome.attachments.shapes, outcome.attachments.meshes);
   store.setCanvasImages(outcome.attachments.canvases);
   store.setFileState(null, null);
+  store.fileGateway.clearSaveTarget?.();
   store.setRestorePrompt(null);
 }
 

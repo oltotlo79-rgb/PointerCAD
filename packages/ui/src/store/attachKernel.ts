@@ -130,7 +130,8 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
     running = true;
     generation += 1;
     const current = generation;
-    // 中止は「この計算を始めた後に頼まれたか」で判る。始まっていない計算は止められない。
+    // 利用者の中止は「この計算を始めた後に頼まれたか」で判る。新しい文書の予約と
+    // 世代の交代は下の shouldCancel で別に拾う。
     const cancelBaseline = useAppStore.getState().cancelRequestCount;
     // 前の計算の進み具合は用済み。計算中の札は applyDocument が立てるのでここでは触らない。
     useAppStore.getState().setRecomputeProgress(null);
@@ -144,7 +145,10 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
         }
         useAppStore.getState().setRecomputeProgress(progress);
       },
-      shouldCancel: () => useAppStore.getState().cancelRequestCount > cancelBaseline,
+      shouldCancel: () =>
+        useAppStore.getState().cancelRequestCount > cancelBaseline ||
+        queued !== null ||
+        generation !== current,
       /*
        * 読み込んだ形の B-rep(FR-802、P6 §0.a-0.9)。**渡さないと `importedSolid` の段が
        * 「読み込んだ形が見つかりません」で失敗する。** 表は文書と一緒に差し替わるので、

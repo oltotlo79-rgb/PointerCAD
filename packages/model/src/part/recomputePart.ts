@@ -3,8 +3,8 @@
  *
  * 文書が変わるたびに、次の順で計算し直す。
  *   1. resolvePart … 履歴を1段ずつ解決し、消費を判定し、キャッシュの鍵を決める(タスク11)
- *   2. 面のテッセレーション … 面のあるスケッチだけ bridge.tessellateSketchFaces へ(P1 のまま)
- *   3. ソリッドの再計算 … 段が1つ以上あれば bridge.recomputeSolids へ1回だけ
+ *   2. ソリッドの再計算 … 参照・投影の依存を解決した間だけ次の巡へ進む
+ *   3. 面のテッセレーション … 最終結果の面のあるスケッチだけをカーネルへ渡す
  *
  * **例外を投げない。** 解決の失敗もカーネルの失敗も errors へ集めて返し、作れたものは返す
  * (FR-504、NFR-RE-1「止めずに警告する」)。カーネルとの通信ごと失敗したときは、
@@ -14,6 +14,7 @@
  */
 
 import { appearanceOf } from '../appearance/documentAppearance.js';
+import { fingerprintKeyText, type SubShapeRef } from '../geometry/subShapeRef.js';
 import type {
   AppearanceFaceRequest,
   AppearanceMatchEntry,
@@ -29,7 +30,9 @@ import { createOffsetCache, type OffsetCache } from '../sketch/offsetMath.js';
 import { createProjectionCache, type ProjectionCache } from '../sketch/projectionMath.js';
 import { fillOffsets } from '../sketch/recomputeSketch.js';
 import type { ResolvedCurve, ResolvedSketch, SketchError, SketchMesh } from '../sketch/types.js';
+import { projectionBodyFeatureId } from '../sketch/types.js';
 import {
+  referencedSketchIds,
   resolvePart,
   type ImportedShapeBytes,
   type PartError,
@@ -40,6 +43,7 @@ import {
 } from './resolvePart.js';
 import { applyParameters } from './reevaluatePart.js';
 import { createSubShapeCache, type SubShapeCache } from './subShapeCache.js';
+import { historyDependencies } from './timelineOrder.js';
 import type { PartDocument } from './types.js';
 
 /**
@@ -116,7 +120,7 @@ export interface PartRecomputeOptions {
   readonly projections?: ProjectionCache;
   /**
    * 立体の面・辺・頂点の選び直し(FR-325、FR-328〜330 の上流追従、タスク25)を
-   * 覚えておく入れ物。持ち回ると、上流が変わっていない再計算では 2 巡目が起きない。
+   * 覚えておく入れ物。持ち回ると、上流が変わっていない再計算では選び直しによる追加巡回を省ける。
    */
   readonly subShapes?: SubShapeCache;
   /**
@@ -313,8 +317,8 @@ function toProjectionItem(request: ResolvedProjection): SketchProjectionRequestI
 }
 
 /**
- * まだ形の無い投影・交差(FR-325)を埋める。**曲線が 1 本でも入ったら true**
- * (呼び出し側はそのときだけ解決をやり直す)。
+ * まだ形の無い投影・交差(FR-325)を埋める。**新しい鍵を解決したら true**
+ * (空の交差も解決済みと数え、同じ失敗の鍵を繰り返し頼まない)。
  *
  * 覚え書きに当たったものはカーネルへ頼まない。頼むものは投影と交差に分け、
  * それぞれ 1 回の往復でまとめる(最大 2 往復)。1 件失敗しても残りは作る(FR-504)。
@@ -324,7 +328,9 @@ async function fillProjections(
   requests: readonly ResolvedProjection[],
   cache: ProjectionCache,
   filled: Map<string, readonly ResolvedCurve[]>,
-  errors: SketchError[],
+  errors: Map<string, SketchError>,
+  attempted: Set<string>,
+  settled: Set<string>,
 ): Promise<boolean> {
   if (requests.length === 0) {
     return false;
@@ -334,13 +340,27 @@ async function fillProjections(
   const askSection: SketchProjectionRequestItem[] = [];
   let changed = false;
 
+  const remember = (request: ResolvedProjection, curves: readonly ResolvedCurve[]): void => {
+    filled.set(request.featureId, curves);
+    errors.delete(request.featureId);
+    const key = JSON.stringify(['projection', request.featureId, request.key]);
+    if (!settled.has(key)) {
+      settled.add(key);
+      changed = true;
+    }
+  };
+
   for (const request of requests) {
+    const key = JSON.stringify([request.featureId, request.key]);
     const remembered = cache.get(request.key);
     if (remembered !== null) {
-      filled.set(request.featureId, remembered);
-      changed = true;
+      remember(request, remembered);
       continue;
     }
+    if (attempted.has(key)) {
+      continue;
+    }
+    attempted.add(key);
     const item = toProjectionItem(request);
     if (request.source.kind === 'subShape') {
       askProjection.push(item);
@@ -360,7 +380,7 @@ async function fillProjections(
     try {
       const outcome = await call(items);
       for (const failure of outcome.failures) {
-        errors.push(projectionFailed(failure.featureId, failure.message));
+        errors.set(failure.featureId, projectionFailed(failure.featureId, failure.message));
       }
       for (const entry of outcome.results) {
         const request = byFeature.get(entry.featureId);
@@ -369,14 +389,13 @@ async function fillProjections(
         }
         // 交差が空(交わらない)ときも覚える。頼み直しても同じ答えになるため。
         cache.set(request.key, entry.curves);
-        filled.set(entry.featureId, entry.curves);
-        changed = true;
+        remember(request, entry.curves);
       }
     } catch (error) {
       // Worker との通信ごと失敗した場合。頼んだぶんはすべて作れていない。
       const message = toMessage(error);
       for (const item of items) {
-        errors.push(projectionFailed(item.featureId, message));
+        errors.set(item.featureId, projectionFailed(item.featureId, message));
       }
     }
   };
@@ -384,6 +403,145 @@ async function fillProjections(
   await take(askProjection, (items) => bridge.projectSketchCurves(items));
   await take(askSection, (items) => bridge.sectionSketchCurves(items));
   return changed;
+}
+
+/** 履歴の依存に、帯に出ない投影要素とその利用先を補う。公開の解決APIは変えない。 */
+function recomputeDependencies(document: PartDocument): ReadonlyMap<string, readonly string[]> {
+  const active = { ...document, solids: document.solids.filter((feature) => !feature.suppressed) };
+  const graph = new Map(historyDependencies(active));
+  const projectionsBySketch = new Map<string, string[]>();
+  for (const sketch of active.sketches) {
+    const ids: string[] = [];
+    for (const feature of sketch.features) {
+      if (feature.kind !== 'projectedCurve' && feature.kind !== 'planeSection') {
+        continue;
+      }
+      const source =
+        feature.kind === 'projectedCurve'
+          ? feature.source.bodyFeatureId
+          : feature.targetFeatureId;
+      graph.set(feature.id, [source, feature.planeId]);
+      ids.push(feature.id);
+    }
+    projectionsBySketch.set(sketch.id, ids);
+  }
+  for (const feature of active.solids) {
+    graph.set(feature.id, [
+      ...(graph.get(feature.id) ?? []),
+      ...referencedSketchIds(feature, active.sketches).flatMap(
+        (id) => projectionsBySketch.get(id) ?? [],
+      ),
+    ]);
+  }
+  return graph;
+}
+
+/** 強連結成分をまとめ、循環の全IDと、成分間の最長依存段数を求める。 */
+function dependencySchedule(graph: ReadonlyMap<string, readonly string[]>): {
+  readonly maxPasses: number;
+  readonly cyclicIds: ReadonlySet<string>;
+  readonly downstream: (sources: ReadonlySet<string>) => ReadonlySet<string>;
+} {
+  const indexes = new Map<string, number>();
+  const lows = new Map<string, number>();
+  const stack: string[] = [];
+  const visiting = new Set<string>();
+  const componentOf = new Map<string, number>();
+  const components: string[][] = [];
+  const visit = (id: string): void => {
+    const index = indexes.size;
+    indexes.set(id, index);
+    lows.set(id, index);
+    stack.push(id);
+    visiting.add(id);
+    for (const dependency of graph.get(id) ?? []) {
+      if (!graph.has(dependency)) {
+        continue;
+      }
+      if (!indexes.has(dependency)) {
+        visit(dependency);
+        lows.set(id, Math.min(lows.get(id) ?? index, lows.get(dependency) ?? index));
+      } else if (visiting.has(dependency)) {
+        lows.set(id, Math.min(lows.get(id) ?? index, indexes.get(dependency) ?? index));
+      }
+    }
+    if (lows.get(id) !== index) {
+      return;
+    }
+    const members: string[] = [];
+    let member = stack.pop();
+    while (member !== undefined) {
+      visiting.delete(member);
+      componentOf.set(member, components.length);
+      members.push(member);
+      if (member === id) {
+        break;
+      }
+      member = stack.pop();
+    }
+    components.push(members);
+  };
+  for (const id of graph.keys()) {
+    if (!indexes.has(id)) {
+      visit(id);
+    }
+  }
+  const cyclicIds = new Set<string>();
+  const depths: number[] = [];
+  // DFSで先に完了した依存成分から並んでいるので、深さも1回の走査で決まる。
+  components.forEach((members, component) => {
+    let depth = 0;
+    for (const id of members) {
+      if (members.length > 1 || graph.get(id)?.includes(id)) {
+        cyclicIds.add(id);
+      }
+      for (const dependency of graph.get(id) ?? []) {
+        const upstream = componentOf.get(dependency);
+        if (upstream !== undefined && upstream !== component) {
+          depth = Math.max(depth, depths[upstream]);
+        }
+      }
+    }
+    depths.push(depth + members.length);
+  });
+  const dependents = new Map<string, Set<string>>();
+  for (const [id, dependencies] of graph) {
+    for (const dependency of dependencies) {
+      const ids = dependents.get(dependency) ?? new Set<string>();
+      ids.add(id);
+      dependents.set(dependency, ids);
+    }
+  }
+  return {
+    maxPasses: 1 + depths.reduce((max, depth) => Math.max(max, depth), 0),
+    cyclicIds,
+    downstream(sources) {
+      const found = new Set<string>();
+      const queue = [...sources];
+      for (let index = 0; index < queue.length; index += 1) {
+        for (const id of dependents.get(queue[index]) ?? []) {
+          if (!found.has(id)) {
+            found.add(id);
+            queue.push(id);
+          }
+        }
+      }
+      return found;
+    },
+  };
+}
+
+/** 途中の形・スケッチ・診断を適用させない。generationは依頼開始時の番号だけを返す。 */
+function cancelledResult(generation: number): PartRecomputeResult {
+  return {
+    sketches: [],
+    bodies: [],
+    errors: [],
+    cacheHits: 0,
+    cancelled: true,
+    generation,
+    appearanceMatches: [],
+  };
 }
 
 /**
@@ -396,14 +554,14 @@ async function fillProjections(
  * 解けない**(投影のもとになる B-rep はカーネルが立体を作ったときに初めて形状キャッシュへ
  * 入り、面・辺の選び直しもそのときの一覧が要る)。そこで次の順で進む。
  *
- *   1 巡目: 解決(オフセットを埋める)→ 立体の再計算
+ *   各巡: 解決(オフセットを埋める)→ 立体の再計算
  *   → 返ってきたボディで①部分形状を選び直し、②投影・交差をカーネルへ頼む
- *   2 巡目: **どちらかで答えが変わったときだけ** 解決し直し → 立体の再計算
+ *   → 新しい参照・投影の鍵が解決された間だけ、依存段数を上限に次の巡へ進む
  *
- * **2 巡目は「変わったときだけ」**なので、投影も部分形状の参照も持たない部品
+ * **追加巡回は「新しい鍵が解決されたときだけ」**なので、投影も部分形状の参照も持たない部品
  * (ほとんどの部品)では 1 巡で終わり、これまでと同じ費用で済む(NFR-PF-3)。
- * 2 巡目の立体の再計算も、変わっていない段は鍵が当たって作り直されない。
- * 途中で打ち切られた(NFR-PF-4)ときは 2 巡目へ進まない。
+ * 追加巡回でも変わっていない段は鍵が当たって作り直されない。
+ * 進展が止まった要求と循環にはIDつきの診断を返す。各巡の前に取消を確認する(NFR-PF-4)。
  *
  * ## 外観の面の照合(FR-1106、P5 §2.2.3)
  *
@@ -437,6 +595,9 @@ export async function recomputePart(
   options: PartRecomputeOptions = {},
 ): Promise<PartRecomputeResult> {
   const generation = options.generation ?? 0;
+  if (options.shouldCancel?.()) {
+    return cancelledResult(generation);
+  }
   const evaluated = applyParameters(document).document;
   // 解決そのものは OCCT を呼ばない純関数のままで、形は覚え書き越しに差し込む。
   const offsets = options.offsets ?? createOffsetCache();
@@ -444,35 +605,130 @@ export async function recomputePart(
   const subShapes = options.subShapes ?? createSubShapeCache();
   /** この再計算の中で埋まった投影・交差の曲線(フィーチャーの id で引く)。 */
   const projectedByFeature = new Map<string, readonly ResolvedCurve[]>();
+  const askedSubShapes = new Map<
+    string,
+    { readonly reference: SubShapeRef; readonly value: string }
+  >();
   const resolveOptions: ResolvePartOptions = {
     offsetCurves: (key) => offsets.get(key),
     projectedCurves: (featureId) => projectedByFeature.get(featureId) ?? null,
-    subShape: (reference) => subShapes.resolve(reference),
+    subShape: (reference) => {
+      const value = subShapes.resolve(reference);
+      askedSubShapes.set(fingerprintKeyText(reference), { reference, value: JSON.stringify(value) });
+      return value;
+    },
     // 読み込んだ形のバイト列(FR-802、P6 §2.8)。渡されなければ resolvePart が空として扱う。
     importedShapes: options.importedShapes,
   };
 
   const offsetErrors: SketchError[] = [];
-  const projectionErrors: SketchError[] = [];
+  const projectionErrors = new Map<string, SketchError>();
+  const dependencyErrors = new Map<string, PartError>();
+  const attemptedProjections = new Set<string>();
+  const settled = new Set<string>();
+  const schedule = dependencySchedule(recomputeDependencies(evaluated));
   // 外観の割り当ては解決の結果に影響しないので、巡ごとに作り直さず 1 回だけ集める。
   const appearance = toAppearanceRequests(evaluated);
-  let resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
-  let solid = await callSolids(bridge, resolved, generation, options, appearance);
+  let resolved: ResolvedPart;
+  let solid: SolidCallOutcome;
+  for (let pass = 0; ; pass += 1) {
+    if (options.shouldCancel?.()) {
+      return cancelledResult(generation);
+    }
+    offsetErrors.length = 0;
+    askedSubShapes.clear();
+    resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
+    if (options.shouldCancel?.()) {
+      return cancelledResult(generation);
+    }
+    solid = await callSolids(bridge, resolved, generation, options, appearance);
+    if (options.shouldCancel?.() || (solid.ok && solid.outcome.cancelled)) {
+      return cancelledResult(generation);
+    }
+    if (!solid.ok) {
+      break;
+    }
 
-  if (solid.ok && !solid.outcome.cancelled) {
     // ①いまの形で面・辺・頂点を選び直す(上流追従)。②投影・交差の曲線を埋める。
-    const reselected = subShapes.refresh(solid.outcome.bodies);
+    const countBefore = settled.size;
+    const changedSources = new Set<string>();
+    if (subShapes.refresh(solid.outcome.bodies)) {
+      const bodyKeys = new Map(resolved.steps.map((step) => [step.featureId, step.key]));
+      for (const [key, asked] of askedSubShapes) {
+        if (asked.value !== JSON.stringify(subShapes.resolve(asked.reference))) {
+          const bodyId = asked.reference.bodyFeatureId;
+          changedSources.add(bodyId);
+          settled.add(JSON.stringify(['subShape', key, bodyKeys.get(bodyId)]));
+        }
+      }
+    }
+    const invalidated = schedule.downstream(changedSources);
+    for (const id of invalidated) {
+      projectedByFeature.delete(id);
+      projectionErrors.delete(id);
+    }
+    const pendingIds = new Set(
+      resolved.sketches.flatMap((entry) =>
+        entry.resolved.pendingProjections.map((pending) => pending.featureId),
+      ),
+    );
+    // まだ埋まっていない投影に依存する立体・作図面の投影は、次の巡で鍵が確定してから頼む。
+    const waiting = schedule.downstream(pendingIds);
+    const failedBodies = new Set(solid.outcome.failures.map((failure) => failure.featureId));
     const projected = await fillProjections(
       bridge,
-      resolved.projections,
+      resolved.projections.filter(
+        (request) =>
+          !invalidated.has(request.featureId) &&
+          !waiting.has(request.featureId) &&
+          !schedule.cyclicIds.has(request.featureId) &&
+          !failedBodies.has(projectionBodyFeatureId(request.source)),
+      ),
       projections,
       projectedByFeature,
       projectionErrors,
+      attemptedProjections,
+      settled,
     );
-    if (reselected || projected) {
-      resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
-      solid = await callSolids(bridge, resolved, generation, options, appearance);
+    if (options.shouldCancel?.()) {
+      return cancelledResult(generation);
     }
+    if (
+      (projected || changedSources.size > 0) &&
+      settled.size > countBefore &&
+      pass + 1 < schedule.maxPasses
+    ) {
+      continue;
+    }
+
+    for (const id of schedule.cyclicIds) {
+      dependencyErrors.set(id, {
+        featureId: id,
+        code: 'circularReference',
+        message: `参照・投影の依存が循環しています: ${[...schedule.cyclicIds].join('、')}`,
+      });
+    }
+    for (const id of pendingIds) {
+      if (!dependencyErrors.has(id) && !projectionErrors.has(id)) {
+        const reason = resolved.errors.find((error) => error.featureId === id)?.message;
+        dependencyErrors.set(id, {
+          featureId: id,
+          code: 'missingBody',
+          message: `参照・投影の依存を解決できず、再計算を停止しました: ${id}` +
+            (reason === undefined ? '' : `。${reason}`),
+        });
+      }
+    }
+    for (const id of invalidated) {
+      if (!dependencyErrors.has(id)) {
+        dependencyErrors.set(id, {
+          featureId: id,
+          code: 'missingSubShape',
+          message: `部分形状の選び直しが収束せず、再計算を停止しました: ${id}`,
+        });
+      }
+    }
+    break;
   }
 
   // 上流(スケッチ)から下流(ソリッド)の順に失敗を並べる。直す順序がそのまま読めるように。
@@ -483,6 +739,9 @@ export async function recomputePart(
     // 拘束の失敗は解決の失敗の直後に置く(同じスケッチの話を離さない。FR-504)。
     errors.push(...entry.constraintErrors);
     const outcome = await tessellateSketch(bridge, entry.resolved);
+    if (options.shouldCancel?.()) {
+      return cancelledResult(generation);
+    }
     errors.push(...outcome.errors);
     sketches.push({
       sketchId: entry.sketchId,
@@ -492,8 +751,9 @@ export async function recomputePart(
     });
   }
   errors.push(...offsetErrors);
-  errors.push(...projectionErrors);
-  errors.push(...resolved.errors);
+  errors.push(...projectionErrors.values());
+  errors.push(...resolved.errors.filter((error) => !dependencyErrors.has(error.featureId)));
+  errors.push(...dependencyErrors.values());
 
   if (!solid.ok) {
     for (const step of resolved.steps) {

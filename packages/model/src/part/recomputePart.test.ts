@@ -52,6 +52,7 @@ import { appearanceOf, assignFaceAppearance } from '../appearance/documentAppear
 import { DEFAULT_APPEARANCE } from '../appearance/materialPresets.js';
 import { affectsShape } from './documentChange.js';
 import { recomputePart } from './recomputePart.js';
+import { createSubShapeCache } from './subShapeCache.js';
 import { resolvePart, type ResolvedSolidStep, type SubShapeQueryPlan } from './resolvePart.js';
 import type {
   BooleanFeature,
@@ -650,11 +651,27 @@ describe('部品の再計算(要件§6.3)', () => {
 
   it('中止を尋ねる口をそのまま橋へ渡す(NFR-PF-4)', async () => {
     const recomputeSolids = recordSolids();
-    const shouldCancel = (): boolean => true;
+    const shouldCancel = (): boolean => false;
     const { document } = oneExtrude();
     await recomputePart(document, fakeBridge({ recomputeSolids }), { shouldCancel });
 
     expect(recomputeSolids.mock.calls[0][1]?.shouldCancel).toBe(shouldCancel);
+  });
+
+  it('初回から取消なら橋を呼ばず、途中の結果を返さない(NFR-PF-4)', async () => {
+    const recomputeSolids = recordSolids();
+    const tessellateSketchFaces = vi.fn<KernelBridge['tessellateSketchFaces']>();
+    const { document } = oneExtrude();
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids, tessellateSketchFaces,
+    }), { shouldCancel: () => true, generation: 8 });
+
+    expect(recomputeSolids).not.toHaveBeenCalled();
+    expect(tessellateSketchFaces).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      sketches: [], bodies: [], errors: [], cacheHits: 0,
+      cancelled: true, generation: 8, appearanceMatches: [],
+    });
   });
 
   it('打ち切られたことを結果に写す(NFR-PF-4)', async () => {
@@ -1635,6 +1652,283 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
       ...overrides,
     });
   }
+
+  /** A → 投影 → B → 投影 → C。各投影は直前の立体だけを参照する。 */
+  function projectionChain(count = 3): PartDocument {
+    const fixture = createFixture();
+    let document = withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA));
+    for (let index = 2; index <= count; index += 1) {
+      const sketchId = `sketch-${index}`;
+      const projectionId = `pj${index - 1}`;
+      const faceId = `face-pj${index - 1}`;
+      document = addSketch(document, {
+        id: sketchId, name: sketchId,
+        features: [
+          {
+            id: projectionId, name: projectionId, kind: 'projectedCurve',
+            planeId: DEFAULT_WORK_PLANE_ID, construction: false,
+            source: { ...FACE_REF, bodyFeatureId: `extrude-${index - 1}` },
+          },
+          {
+            id: faceId, name: faceId, kind: 'face', planeId: DEFAULT_WORK_PLANE_ID,
+            boundary: [{ featureId: projectionId }], color: DEFAULT_FACE_COLOR,
+          },
+        ],
+      });
+      document = appendSolid(document, extrudeFeature(`extrude-${index}`, {
+        sketchId, faceFeatureId: faceId,
+      }, { distance: String(index * 10) }));
+    }
+    return document;
+  }
+
+  /** 実際に頼まれた段の鍵だけを覚える。空のキャッシュに無い元への投影は必ず失敗させる。 */
+  function bridgeWithShapeCache() {
+    const shapes = new Map<string, readonly ResolvedCurve[]>();
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>((steps) => {
+      let cacheHits = 0;
+      for (const step of steps) {
+        if (shapes.has(step.key)) {
+          cacheHits += 1;
+        }
+        if (step.plan.kind === 'extrude') {
+          shapes.set(step.key, step.plan.profile);
+        }
+      }
+      return Promise.resolve({
+        bodies: steps.filter((step) => step.visible).map((step) => solidBody(step.featureId)),
+        failures: [], cacheHits, cancelled: false,
+      });
+    });
+    const projectSketchCurves = vi.fn<KernelBridge['projectSketchCurves']>((requests) => {
+      const results: SketchProjectionResult['results'][number][] = [];
+      const failures: SketchProjectionResult['failures'][number][] = [];
+      for (const request of requests) {
+        const curves = shapes.get(request.bodyKey);
+        if (curves === undefined) {
+          failures.push({ featureId: request.featureId, message: '元の形はまだ作られていません。' });
+        } else {
+          results.push({ featureId: request.featureId, curves });
+        }
+      }
+      return Promise.resolve({ results, failures });
+    });
+    return {
+      bridge: fakeBridge({ recomputeSolids, projectSketchCurves }),
+      recomputeSolids, projectSketchCurves,
+    };
+  }
+
+  it('三段連鎖を空のキャッシュから1回で解決し、温かいキャッシュと同じ形・エラーになる', async () => {
+    const document = projectionChain();
+    const { bridge, recomputeSolids, projectSketchCurves } = bridgeWithShapeCache();
+    const cold = await recomputePart(document, bridge);
+    expect(recomputeSolids).toHaveBeenCalledTimes(3);
+    expect(recomputeSolids.mock.calls.map(([steps]) => steps.map((step) => step.featureId)))
+      .toEqual([['extrude-1'], ['extrude-1', 'extrude-2'], ['extrude-1', 'extrude-2', 'extrude-3']]);
+    expect(projectSketchCurves).toHaveBeenCalledTimes(2);
+    expect(cold.bodies.map((body) => body.featureId)).toEqual(['extrude-1', 'extrude-2', 'extrude-3']);
+    expect(cold.sketches.flatMap((sketch) => sketch.resolved.pendingProjections)).toEqual([]);
+    expect(cold.sketches.slice(1).map((sketch) => sketch.resolved.faces.length)).toEqual([1, 1]);
+    expect(cold.errors).toEqual([]);
+
+    const warm = await recomputePart(document, bridge);
+    expect(warm.bodies).toEqual(cold.bodies);
+    expect(warm.sketches).toEqual(cold.sketches);
+    expect(warm.errors).toEqual(cold.errors);
+    expect(warm.cacheHits).toBe(3);
+  });
+
+  it('七段の投影連鎖でも依存が解けた巡だけ進む', async () => {
+    const { bridge, recomputeSolids, projectSketchCurves } = bridgeWithShapeCache();
+    const result = await recomputePart(projectionChain(7), bridge);
+    expect(result.bodies).toHaveLength(7);
+    expect(result.errors).toEqual([]);
+    expect(recomputeSolids).toHaveBeenCalledTimes(7);
+    expect(projectSketchCurves).toHaveBeenCalledTimes(6);
+  });
+
+  it('面の選び直しが連鎖しても最終の位置まで解決し、温かい参照キャッシュと一致する', async () => {
+    const fixture = createFixture();
+    let document = withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA, {
+      distance: '11',
+    }));
+    for (let index = 2; index <= 4; index += 1) {
+      const planeId = `plane-${index}`;
+      const sketchId = `sketch-${index}`;
+      const rectangleId = `rectangle-${index}`;
+      const faceId = `face-${index}`;
+      document = {
+        ...document,
+        references: [...document.references, {
+          id: planeId, name: planeId, kind: 'referencePlane', visible: true,
+          plane: { kind: 'face', offset: expr('0'), face: {
+            ...FACE_REF, bodyFeatureId: `extrude-${index - 1}`,
+            fingerprint: {
+              kind: 'face', surfaceKind: 'plane', area: 1200,
+              position: [20, 15, 10 * (index - 1)], axis: [0, 0, 1], radius: null,
+            },
+          } },
+        }],
+      };
+      document = addSketch(document, {
+        id: sketchId, name: sketchId,
+        features: [
+          {
+            id: rectangleId, name: rectangleId, kind: 'rectangle', planeId,
+            corner1: absoluteCoordinate(-20, -15, 0), corner2: absoluteCoordinate(20, 15, 0),
+            construction: false,
+          },
+          {
+            id: faceId, name: faceId, kind: 'face', planeId,
+            boundary: [{ featureId: rectangleId }], color: DEFAULT_FACE_COLOR,
+          },
+        ],
+      });
+      document = appendSolid(document, extrudeFeature(`extrude-${index}`, {
+        sketchId, faceFeatureId: faceId,
+      }));
+    }
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>((steps) => {
+      const bodies: SolidBody[] = [];
+      for (const step of steps) {
+        if (step.plan.kind !== 'extrude') {
+          continue;
+        }
+        const first = step.plan.profile[0];
+        if (first.kind !== 'segment') {
+          throw new Error('検査の断面は矩形のはずです。');
+        }
+        const height = first.from[2] + step.plan.distance;
+        bodies.push({
+          ...solidBody(step.featureId),
+          faces: [{
+            index: 4, surfaceKind: 'plane', area: 1200, centroid: [20, 15, height],
+            axis: [0, 0, 1], radius: null, triangleOffset: 0, triangleCount: 1,
+          }],
+        });
+      }
+      return Promise.resolve({ bodies, failures: [], cacheHits: 0, cancelled: false });
+    });
+    const bridge = fakeBridge({ recomputeSolids });
+    const subShapes = createSubShapeCache();
+    const cold = await recomputePart(document, bridge, { subShapes });
+    expect(cold.errors).toEqual([]);
+    expect(cold.bodies.map((body) => body.faces[0].centroid[2])).toEqual([11, 21, 31, 41]);
+    expect(recomputeSolids).toHaveBeenCalledTimes(4);
+    const warm = await recomputePart(document, bridge, { subShapes });
+    expect(warm.bodies).toEqual(cold.bodies);
+    expect(warm.sketches).toEqual(cold.sketches);
+    expect(warm.errors).toEqual(cold.errors);
+    expect(recomputeSolids).toHaveBeenCalledTimes(5);
+  });
+
+  it('投影の作図面を選び直した後の位置で投影を取り、古い平面の曲線を残さない', async () => {
+    const base = partWithProjection('projectedCurve');
+    const sketch = base.sketches[1];
+    const withPlane: PartDocument = {
+      ...base,
+      references: [{
+        id: 'plane-top', name: '上面', kind: 'referencePlane', visible: true,
+        plane: { kind: 'face', face: FACE_REF, offset: expr('0') },
+      }],
+    };
+    const document = replaceSketch(withPlane, {
+      ...sketch, features: sketch.features.map((feature) => ({ ...feature, planeId: 'plane-top' })),
+    });
+    const recomputeSolids = recordSolids({
+      bodies: [{
+        ...solidBody('extrude-1'),
+        faces: [{
+          index: 4, surfaceKind: 'plane', area: 1200, centroid: [20, 15, 20],
+          axis: [0, 0, 1], radius: null, triangleOffset: 0, triangleCount: 1,
+        }],
+      }], failures: [], cacheHits: 0, cancelled: false,
+    });
+    const projectSketchCurves = vi.fn<KernelBridge['projectSketchCurves']>((requests) =>
+      Promise.resolve({
+        results: requests.map((request) => ({
+          featureId: request.featureId,
+          curves: RECTANGLE.map((curve): ResolvedCurve => curve.kind === 'segment' ? {
+            ...curve,
+            from: [curve.from[0], curve.from[1], request.plane.origin[2]],
+            to: [curve.to[0], curve.to[1], request.plane.origin[2]],
+          } : curve),
+        })), failures: [],
+      }),
+    );
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids, projectSketchCurves }));
+    expect(result.errors).toEqual([]);
+    expect(projectSketchCurves).toHaveBeenCalledTimes(1);
+    expect(projectSketchCurves.mock.calls[0][0][0].plane.origin[2]).toBe(20);
+    expect(result.sketches[1].resolved.segments).toHaveLength(4);
+    expect(result.sketches[1].resolved.segments.every((segment) =>
+      segment.from[2] === 20 && segment.to[2] === 20)).toBe(true);
+  });
+
+  it('応答に結果も失敗も無い投影は1巡で停止し、対象IDつきの未解決診断を返す', async () => {
+    const projectSketchCurves = vi.fn<KernelBridge['projectSketchCurves']>(() =>
+      Promise.resolve(EMPTY_PROJECTION_RESULT));
+    const recomputeSolids = recordSolids({
+      ...EMPTY_SOLID_OUTCOME, bodies: [solidBody('extrude-1')],
+    });
+    const result = await recomputePart(partWithProjection('projectedCurve'), fakeBridge({
+      recomputeSolids, projectSketchCurves,
+    }));
+    expect(recomputeSolids).toHaveBeenCalledTimes(1);
+    expect(projectSketchCurves).toHaveBeenCalledTimes(1);
+    expect(result.errors).toContainEqual({
+      featureId: 'pj1', code: 'missingBody',
+      message: '参照・投影の依存を解決できず、再計算を停止しました: pj1',
+    });
+  });
+
+  it('循環する2つの投影は進展なしで止まり、両方のIDを診断して独立の立体を返す', async () => {
+    const chain = projectionChain();
+    const sketch = chain.sketches[1];
+    const document = replaceSketch(chain, {
+      ...sketch,
+      features: sketch.features.map((feature) => feature.kind === 'projectedCurve'
+        ? { ...feature, source: { ...feature.source, bodyFeatureId: 'extrude-3' } }
+        : feature),
+    });
+    const { bridge, recomputeSolids, projectSketchCurves } = bridgeWithShapeCache();
+    const result = await recomputePart(document, bridge);
+    expect(recomputeSolids).toHaveBeenCalledTimes(1);
+    expect(projectSketchCurves).not.toHaveBeenCalled();
+    expect(result.bodies.map((body) => body.featureId)).toEqual(['extrude-1']);
+    const cycles = result.errors.filter((error) => error.code === 'circularReference');
+    expect(cycles.map((error) => error.featureId)).toEqual(expect.arrayContaining(['pj1', 'pj2']));
+    expect(cycles.every((error) => error.message.includes('pj1') && error.message.includes('pj2')))
+      .toBe(true);
+  });
+
+  it('途中の巡で取消が真になったら開始時の世代だけ添え、途中の形を適用させない', async () => {
+    let cancelled = false;
+    const cached = bridgeWithShapeCache();
+    const projectSketchCurves = vi.fn<KernelBridge['projectSketchCurves']>(async (requests) => {
+      const outcome = await cached.projectSketchCurves(requests);
+      if (requests.some((request) => request.featureId === 'pj2')) {
+        cancelled = true;
+      }
+      return outcome;
+    });
+    const tessellateSketchFaces = vi.fn<KernelBridge['tessellateSketchFaces']>();
+    const shouldCancel = (): boolean => cancelled;
+    const result = await recomputePart(projectionChain(), {
+      ...cached.bridge, projectSketchCurves, tessellateSketchFaces,
+    }, { shouldCancel, generation: 12 });
+
+    expect(cached.recomputeSolids).toHaveBeenCalledTimes(2);
+    expect(projectSketchCurves).toHaveBeenCalledTimes(2);
+    expect(cached.recomputeSolids.mock.calls.every(([, options]) =>
+      options?.shouldCancel === shouldCancel && options.generation === 12)).toBe(true);
+    expect(tessellateSketchFaces).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      sketches: [], bodies: [], errors: [], cacheHits: 0,
+      cancelled: true, generation: 12, appearanceMatches: [],
+    });
+  });
 
   it('resolvePart はカーネルを呼べないので pendingProjections へ積んだままになる(回帰検査)', () => {
     const resolved = resolvePart(partWithProjection('projectedCurve'));

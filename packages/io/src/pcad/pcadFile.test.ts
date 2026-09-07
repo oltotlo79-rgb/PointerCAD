@@ -1,5 +1,12 @@
 import {
   createAssemblyDocument,
+  createPartDocumentBundle,
+  createAssemblyDocumentBundle,
+  importedShapeOf,
+  partLibraryOfBundle,
+  embedPart,
+  EMPTY_PART_LIBRARY,
+  resolvePart,
   createEmptyPartDocument,
   emptyAppearanceTable,
   PART_SCHEMA_VERSION,
@@ -30,6 +37,8 @@ import {
   PCAD_THUMBNAIL_ENTRY,
   readPcadaFile,
   readPcadFile,
+  readDocumentBundle,
+  writeDocumentBundle,
   writePcadaFile,
   writePcadFile,
   type ImportedMeshBytes,
@@ -50,6 +59,91 @@ import {
 
 /** 検査で保存時刻を固定する(時刻が違ってもバイト列が同じであることを確かめるため)。 */
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
+
+describe('文書の束とZIPの変換', () => {
+  it('旧pcadの原本にSHA-256を補い、再解決時に原本を読み直さない', () => {
+    const file = writePcadFile(importedDocument(), { savedAt: SAVED_AT, attachments: importedAttachments() });
+    const result = expectOk(readPcadFile(file));
+    const bytes = result.attachments.shapes.get('shape-1');
+    if (bytes === undefined) throw new Error('原本が必要');
+    const prepared = importedShapeOf(bytes);
+    expect(result.attachments.shapeDigests?.get('shape-1')).toBe(prepared.shapeDigest);
+    expect(prepared.shapeDigest).toMatch(/^[0-9a-f]{64}$/);
+    let reads = 0;
+    const length = bytes.byteLength;
+    Object.defineProperty(bytes, 'byteLength', { get: () => { reads += 1; return length; } });
+    const keys = Array.from({ length: 25 }, () =>
+      resolvePart(result.document, { importedShapes: result.attachments.shapes }).steps[0].key,
+    );
+    expect(new Set(keys).size).toBe(1);
+    expect(reads).toBe(0);
+  });
+
+  it('部品の束は原本3種類を保ち、既存writePcadFileと同じZIPになる', async () => {
+    const bundle = createPartDocumentBundle(importedDocument(), importedAttachments());
+    const bytes = await writeDocumentBundle(bundle, { savedAt: SAVED_AT });
+    expect(bytes).toEqual(writePcadFile(bundle.document, { savedAt: SAVED_AT, attachments: bundle.attachments }));
+    const read = await readDocumentBundle(bytes, 'part');
+    expect(read.ok).toBe(true);
+    if (!read.ok) throw new Error(read.error.message);
+    expect(read.bundle.document).toEqual(bundle.document);
+    expect(read.bundle.attachments.shapes).toEqual(bundle.attachments.shapes);
+    expect(read.bundle.attachments.meshes).toEqual(bundle.attachments.meshes);
+    expect(read.bundle.attachments.canvases).toEqual(bundle.attachments.canvases);
+    expect(await writeDocumentBundle(read.bundle, { savedAt: SAVED_AT })).toEqual(bytes);
+  });
+
+  it('2部品の同じshapeRefと異なる原本を束の往復後も区別し、封筒8とparts/*.jsonを保つ', async () => {
+    const first = await embedPart(EMPTY_PART_LIBRARY, importedDocument(), 'a.pcad', './a.pcad', {
+      importedAt: SAVED_AT, attachments: importedAttachments(),
+    });
+    const secondAttachments = { ...importedAttachments(), shapes: new Map([['shape-1', fakeBrep(99)]]) };
+    const second = await embedPart(first.library, importedDocument(), 'b.pcad', './b.pcad', {
+      importedAt: SAVED_AT, attachments: secondAttachments,
+    });
+    const bundle = createAssemblyDocumentBundle(createAssemblyDocument('組立1'), second.library);
+    const bytes = await writeDocumentBundle(bundle, { savedAt: SAVED_AT });
+    const oldApiBytes = await writePcadaFile(bundle.document, {
+      savedAt: SAVED_AT, partFiles: second.library.partFiles,
+      parts: second.library.parts, partAttachments: second.library.attachments,
+    });
+    expect(bytes).toEqual(oldApiBytes);
+    const entries = unzipSync(bytes);
+    expect(strFromU8(entries['document.json'])).toContain('"schema": 8');
+    expect(strFromU8(entries[`parts/${first.partRef}.json`]))
+      .toBe(serializeDocument(importedDocument(), { savedAt: SAVED_AT }));
+    const read = await readDocumentBundle(bytes, 'assembly');
+    expect(read.ok).toBe(true);
+    if (!read.ok || read.bundle.kind !== 'assembly') throw new Error('アセンブリの束が必要');
+    const library = partLibraryOfBundle(read.bundle);
+    expect(library.partFiles).toEqual(second.library.partFiles);
+    expect(library.parts).toEqual(second.library.parts);
+    const keys = [...read.bundle.embeddedDocuments.values()].map((part) =>
+      resolvePart(part.document, { importedShapes: part.attachments.shapes }).steps[0].key,
+    );
+    expect(new Set(keys).size).toBe(2);
+    expect(await writeDocumentBundle(read.bundle, { savedAt: SAVED_AT })).toEqual(bytes);
+  });
+
+  it.each(['part', 'assembly'] as const)('%sの未来版は束への変換でも同じ理由で拒否する', async (kind) => {
+    const bundle = kind === 'part' ? createPartDocumentBundle(createEmptyPartDocument())
+      : createAssemblyDocumentBundle(createAssemblyDocument('組立1'));
+    const entries = unzipSync(await writeDocumentBundle(bundle, { savedAt: SAVED_AT }));
+    entries['document.json'] = strToU8(strFromU8(entries['document.json']).replace('"schema": 8', '"schema": 999'));
+    const bytes = zipSync(entries);
+    const expected = kind === 'part' ? readPcadFile(bytes) : await readPcadaFile(bytes);
+    expect(expected.ok).toBe(false);
+    expect(await readDocumentBundle(bytes, kind)).toEqual(expected);
+  });
+
+  it('部品に属さないアセンブリの原本を黙って保存から落とさない', async () => {
+    const bundle = {
+      ...createAssemblyDocumentBundle(createAssemblyDocument('組立1')),
+      attachments: importedAttachments(),
+    };
+    await expect(writeDocumentBundle(bundle)).rejects.toThrow('embedded part');
+  });
+});
 
 /** 計画書 §2.8 の例(40×30 の面を 10mm 押し出した箱)に相当する部品文書。 */
 function exampleDocument(): PartDocument {

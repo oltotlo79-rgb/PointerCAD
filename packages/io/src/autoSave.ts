@@ -8,7 +8,7 @@
  * `readPcadFile`)と書式を1本化でき、UI 側は復元候補をそのまま「開く」と同じ経路で扱える。
  *
  * この一式は3層に分かれる。
- *  - `AutoSaveStorage`: 1件だけを読み書きする保管庫の抽象。
+ *  - `AutoSaveStorage`: 文書・窓ごとの控えを読み書きする保管庫の抽象。
  *  - `createMemoryAutoSaveStorage` / `createIndexedDbAutoSaveStorage`: 上の実装2つ。
  *  - `createAutoSaver`: 「間隔ごとに、変更があるときだけ書く」制御(タイマー注入可能)。
  *
@@ -17,29 +17,69 @@
  * `createAutoSaver` が `onError` コールバックへ渡す。`saveNow` の `Promise` は常に解決する。
  */
 
-import type { PartDocument } from '@pointercad/model';
+import { createPartDocumentBundle, type DocumentBundle, type PartDocument } from '@pointercad/model';
 
 import { isRecord } from './pcad/guards.js';
-import { writePcadFile, type PcadAttachments } from './pcad/pcadFile.js';
+import { writeDocumentBundle, type PcadAttachments } from './pcad/pcadFile.js';
 
 /** 自動保存の間隔(FR-805 の既定 5 分)。 */
 export const AUTO_SAVE_INTERVAL_MS = 300_000;
 
-/** 自動保存の1件。`bytes` は `writePcadFile` が作る `.pcad` そのもの(要件§8)。 */
+export interface AutoSaveIdentity {
+  readonly kind: DocumentBundle['kind'];
+  readonly documentId: string;
+  readonly sessionId: string;
+}
+
+/** 古い部品の控えを指す既定の識別子。新しい窓は固有のsessionIdを使う。 */
+export const DEFAULT_AUTO_SAVE_IDENTITY: AutoSaveIdentity = {
+  kind: 'part', documentId: 'default', sessionId: 'default',
+};
+
+/** 区切り文字をIDに含めても衝突しない。 */
+export function autoSaveRecordKey(identity: AutoSaveIdentity = DEFAULT_AUTO_SAVE_IDENTITY): string {
+  return `${identity.kind}:${encodeURIComponent(identity.documentId)}:${encodeURIComponent(identity.sessionId)}`;
+}
+
+/** 自動保存の1件。bytesは文書の束を保存したpcad/pcadaそのもの(要件§8)。 */
 export interface AutoSaveRecord {
+  /** 古い控えはこの3欄を持たない。3欄は一組として扱う。 */
+  readonly kind?: DocumentBundle['kind'];
+  readonly documentId?: string;
+  readonly sessionId?: string;
   /** 保存時刻(ISO 8601)。`.pcad` の中の `savedAt` と同じ値。 */
   readonly savedAt: string;
-  /** `.pcad` のバイト列(ZIP)。復元は `readPcadFile` で行う(ui 側)。 */
+  /** ZIPのバイト列。復元はkind(旧控えはpart)とreadDocumentBundleで行う。 */
   readonly bytes: Uint8Array;
   /** 復元カードの表示に使う文書名(要件§0.a-0.12「前回の作業が残っています」)。 */
   readonly documentName: string;
 }
 
-/** 自動保存の保管庫の抽象。1件だけを持つ(鍵は実装側が固定する)。 */
+/** 自動保存の保管庫。識別子を省いたread/clearは既定の部品の控えを扱う。 */
 export interface AutoSaveStorage {
-  read(): Promise<AutoSaveRecord | null>;
+  read(identity?: AutoSaveIdentity): Promise<AutoSaveRecord | null>;
   write(record: AutoSaveRecord): Promise<void>;
-  clear(): Promise<void>;
+  clear(identity?: AutoSaveIdentity): Promise<void>;
+  /** 旧来の外部実装はreadだけでも使える。組み込みの実装は必ず一覧の口を持つ。 */
+  listRecords?(): Promise<readonly AutoSaveRecord[]>;
+}
+
+export interface DocumentAutoSaveStorage extends AutoSaveStorage {
+  listRecords(): Promise<readonly AutoSaveRecord[]>;
+}
+
+function recordIdentity(record: AutoSaveRecord): AutoSaveIdentity {
+  if (record.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined) {
+    return { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId };
+  }
+  return DEFAULT_AUTO_SAVE_IDENTITY;
+}
+
+function sortedRecords(records: readonly AutoSaveRecord[]): readonly AutoSaveRecord[] {
+  return [...records].sort((left, right) =>
+    right.savedAt.localeCompare(left.savedAt) ||
+    autoSaveRecordKey(recordIdentity(left)).localeCompare(autoSaveRecordKey(recordIdentity(right))),
+  );
 }
 
 /** 自動保存の保管庫が失敗した理由。利用者向け文言ではなく、通知と検査で区別する識別子。 */
@@ -60,18 +100,20 @@ export class AutoSaveStorageError extends Error {
  * 検査用・IndexedDB が使えない環境用の記憶上の実装。
  * プロセス(タブ)の生存中だけ保つ。例外を投げない。
  */
-export function createMemoryAutoSaveStorage(): AutoSaveStorage {
-  let stored: AutoSaveRecord | null = null;
+export function createMemoryAutoSaveStorage(): DocumentAutoSaveStorage {
+  const stored = new Map<string, AutoSaveRecord>();
   return {
-    read: () => Promise.resolve(stored),
+    read: (identity) => Promise.resolve(stored.get(autoSaveRecordKey(identity)) ?? null),
     write: (record) => {
-      stored = record;
+      if (!isAutoSaveRecord(record)) return Promise.reject(new AutoSaveStorageError('error'));
+      stored.set(autoSaveRecordKey(recordIdentity(record)), record);
       return Promise.resolve();
     },
-    clear: () => {
-      stored = null;
+    clear: (identity) => {
+      stored.delete(autoSaveRecordKey(identity));
       return Promise.resolve();
     },
+    listRecords: () => Promise.resolve(sortedRecords([...stored.values()])),
   };
 }
 
@@ -96,6 +138,7 @@ interface MinimalIDBOpenDBRequest extends MinimalIDBRequest<MinimalIDBDatabase> 
   onupgradeneeded: (() => void) | null;
 }
 interface MinimalIDBObjectStore {
+  getAll(): MinimalIDBRequest<unknown>;
   get(key: string): MinimalIDBRequest<unknown>;
   put(value: unknown, key: string): MinimalIDBRequest<unknown>;
   delete(key: string): MinimalIDBRequest<undefined>;
@@ -137,7 +180,11 @@ function isAutoSaveRecord(value: unknown): value is AutoSaveRecord {
   return (
     typeof value.savedAt === 'string' &&
     typeof value.documentName === 'string' &&
-    value.bytes instanceof Uint8Array
+    value.bytes instanceof Uint8Array &&
+    ((value.kind === undefined && value.documentId === undefined && value.sessionId === undefined) ||
+      ((value.kind === 'part' || value.kind === 'assembly') &&
+        typeof value.documentId === 'string' && value.documentId.length > 0 &&
+        typeof value.sessionId === 'string' && value.sessionId.length > 0))
   );
 }
 
@@ -244,12 +291,12 @@ async function withObjectStore<T>(
 
 const DEFAULT_DB_NAME = 'pointercad';
 const DEFAULT_STORE_NAME = 'autosave';
-/** 自動保存は常に1件だけを保つので、鍵は固定する(要件§8-2.9)。 */
-const RECORD_KEY = 'current';
+/** 文書・窓別の鍵を導入する前に使っていた既定の部品の控え。 */
+const LEGACY_RECORD_KEY = 'current';
 
 /**
  * ブラウザ用の IndexedDB 実装。データベース `pointercad`(既定)・オブジェクトストア
- * `autosave`(既定)・鍵 `current` の1件だけを扱う。
+ * `autosave`(既定)を使う。旧currentは既定の鍵の読み込みと破棄で扱える。
  *
  * `read` の失敗は復元候補なしの `null` とする一方、`write` / `clear` は理由つきで失敗する。
  * とくに書き込みは request の成功ではなく transaction の `complete` だけを commit 済みの
@@ -258,25 +305,51 @@ const RECORD_KEY = 'current';
 export function createIndexedDbAutoSaveStorage(
   dbName: string = DEFAULT_DB_NAME,
   storeName: string = DEFAULT_STORE_NAME,
-): AutoSaveStorage {
+): DocumentAutoSaveStorage {
   return {
-    async read() {
+    async read(identity) {
       try {
+        const key = autoSaveRecordKey(identity);
         const value = await withObjectStore(dbName, storeName, 'readonly', (store) =>
-          store.get(RECORD_KEY),
+          store.get(key),
         );
-        return isAutoSaveRecord(value) ? value : null;
+        if (isAutoSaveRecord(value)) return value;
+        if (key !== autoSaveRecordKey()) return null;
+        const legacy = await withObjectStore(dbName, storeName, 'readonly', (store) =>
+          store.get(LEGACY_RECORD_KEY),
+        );
+        return isAutoSaveRecord(legacy) ? legacy : null;
       } catch {
         return null;
       }
     },
     async write(record) {
-      await withObjectStore(dbName, storeName, 'readwrite', (store) =>
-        store.put(record, RECORD_KEY),
-      );
+      if (!isAutoSaveRecord(record)) throw new AutoSaveStorageError('error');
+      const key = autoSaveRecordKey(recordIdentity(record));
+      await withObjectStore(dbName, storeName, 'readwrite', (store) => {
+        // 旧控えの置換と新しい控えの保存も、同じtransactionでまとめて確定する。
+        if (key === autoSaveRecordKey()) store.delete(LEGACY_RECORD_KEY);
+        return store.put(record, key);
+      });
     },
-    async clear() {
-      await withObjectStore(dbName, storeName, 'readwrite', (store) => store.delete(RECORD_KEY));
+    async clear(identity) {
+      const key = autoSaveRecordKey(identity);
+      await withObjectStore(dbName, storeName, 'readwrite', (store) => {
+        if (key === autoSaveRecordKey()) store.delete(LEGACY_RECORD_KEY);
+        return store.delete(key);
+      });
+    },
+    async listRecords() {
+      const values = await withObjectStore(dbName, storeName, 'readonly', (store) => store.getAll());
+      if (!Array.isArray(values)) return [];
+      const records = new Map<string, AutoSaveRecord>();
+      for (const value of values) {
+        if (!isAutoSaveRecord(value)) continue;
+        const key = autoSaveRecordKey(recordIdentity(value));
+        const previous = records.get(key);
+        if (previous === undefined || value.savedAt > previous.savedAt) records.set(key, value);
+      }
+      return sortedRecords([...records.values()]);
     },
   };
 }
@@ -325,6 +398,12 @@ function defaultCancelFn(handle: AutoSaveTimerHandle): void {
 }
 
 export interface AutoSaverOptions {
+  /** readLatest/discardを最初のmarkDirtyより前に呼ぶときの文書種別。 */
+  readonly kind?: DocumentBundle['kind'];
+  /** 文書を開いている間安定したID。未指定の束ではdocument.idを使う。 */
+  readonly documentId?: string;
+  /** 窓ごとのID。束を扱う場合の既定は、このsaver専用のUUID。 */
+  readonly sessionId?: string;
   readonly storage: AutoSaveStorage;
   /** 自動保存の間隔(ミリ秒)。既定 `AUTO_SAVE_INTERVAL_MS`(5分)。 */
   readonly intervalMs?: number;
@@ -355,36 +434,41 @@ export interface AutoSaverOptions {
 
 export interface AutoSaver {
   /** 文書が変わったことを記録する。次の間隔の到来で、変更があるときだけ書く。 */
-  markDirty(document: PartDocument): void;
+  markDirty(document: PartDocument | DocumentBundle): void;
   /** 間隔を待たず、いま渡した文書をすぐ書く(変更の有無を問わない)。 */
-  saveNow(document: PartDocument): Promise<void>;
+  saveNow(document: PartDocument | DocumentBundle): Promise<void>;
   /** 以後の自動保存(間隔ごとの書き込み)を止める。進行中の書き込みは止めない。 */
   stop(): void;
   /** 起動時の復元候補を読む。 */
-  readLatest(): Promise<AutoSaveRecord | null>;
+  readLatest(identity?: AutoSaveIdentity): Promise<AutoSaveRecord | null>;
   /** 控えを消す(利用者が「破棄」を選んだとき)。 */
-  discard(): Promise<void>;
+  discard(identity?: AutoSaveIdentity): Promise<void>;
+}
+
+export interface DocumentAutoSaver extends AutoSaver {
+  listRecords(): Promise<readonly AutoSaveRecord[]>;
 }
 
 /**
  * 自動保存の制御(FR-805、NFR-RE-2、計画書§0.a-0.11 / 0.12)。
  * `markDirty` で変更を記録し、`intervalMs` ごとに、前回書いた文書と違うときだけ
- * `writePcadFile` して保管庫へ書く(未変更なら書かない)。
+ * 文書の束をZIPにして保管庫へ書く(未変更なら書かない)。
  * 書き込み中に新しい依頼が来ても、二重に書き込みを始めず今動いている書き込みへ相乗りする
  * (「書き込み中の重複を避ける」)。例外は外へ出さない: 失敗は `onError` へ渡すだけで、
  * `saveNow` の戻り値の `Promise` は常に解決する。
  */
-export function createAutoSaver(options: AutoSaverOptions): AutoSaver {
+export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
   const { storage, onError, onSuccess } = options;
   const intervalMs = options.intervalMs ?? AUTO_SAVE_INTERVAL_MS;
   const now = options.now ?? Date.now;
   const scheduleFn = options.setTimeout ?? defaultScheduleFn;
   const cancelFn = options.clearTimeout ?? defaultCancelFn;
+  const sessionId = options.sessionId ?? crypto.randomUUID();
 
   /** markDirty / saveNow で渡された、最後に見た文書。 */
-  let latestDocument: PartDocument | null = null;
+  let latestDocument: PartDocument | DocumentBundle | null = null;
   /** 最後に書き込みへ成功した文書(参照の一致で「変更があるか」を判定する)。 */
-  let lastSavedDocument: PartDocument | null = null;
+  let lastSavedDocument: PartDocument | DocumentBundle | null = null;
   /** 進行中の書き込み。null なら空いている。 */
   let writeInFlight: Promise<void> | null = null;
   let stopped = false;
@@ -394,22 +478,39 @@ export function createAutoSaver(options: AutoSaverOptions): AutoSaver {
     return latestDocument !== null && latestDocument !== lastSavedDocument;
   }
 
-  function runWrite(document: PartDocument): Promise<void> {
+  function identityOf(document: PartDocument | DocumentBundle): AutoSaveIdentity | undefined {
+    if (!('kind' in document) && options.documentId === undefined && options.sessionId === undefined) {
+      return undefined;
+    }
+    return {
+      kind: 'kind' in document ? document.kind : 'part',
+      documentId: options.documentId ?? ('kind' in document ? document.document.id : document.id),
+      sessionId,
+    };
+  }
+
+  function latestIdentity(): AutoSaveIdentity | undefined {
+    if (latestDocument !== null) return identityOf(latestDocument);
+    return options.documentId === undefined ? undefined : {
+      kind: options.kind ?? 'part', documentId: options.documentId, sessionId,
+    };
+  }
+
+  function runWrite(document: PartDocument | DocumentBundle): Promise<void> {
     if (writeInFlight !== null) {
       // 書き込み中の重複を避ける: 新しい依頼は今動いている書き込みへ相乗りする。
       return writeInFlight;
     }
     const attempt = Promise.resolve()
-      .then(() => {
+      .then(async () => {
         const savedAt = new Date(now()).toISOString();
         // ZIP 化も書き込みと同じ失敗経路へ入れる。失敗時は成功済みの文書を更新せず、
         // dirty のまま保つので次の周期で再試行される。
-        const attachments = options.attachmentsOf?.(document);
-        const bytes =
-          attachments === undefined
-            ? writePcadFile(document, { savedAt })
-            : writePcadFile(document, { savedAt, attachments });
-        return storage.write({ savedAt, bytes, documentName: document.name });
+        const bundle = 'kind' in document ? document
+          : createPartDocumentBundle(document, options.attachmentsOf?.(document));
+        const bytes = await writeDocumentBundle(bundle, { savedAt });
+        const identity = identityOf(document);
+        return storage.write({ savedAt, bytes, documentName: bundle.document.name, ...identity });
       })
       .then(() => {
         lastSavedDocument = document;
@@ -462,11 +563,16 @@ export function createAutoSaver(options: AutoSaverOptions): AutoSaver {
         timerHandle = null;
       }
     },
-    readLatest() {
-      return storage.read();
+    readLatest(identity) {
+      return storage.read(identity ?? latestIdentity());
     },
-    discard() {
-      return storage.clear();
+    discard(identity) {
+      return storage.clear(identity ?? latestIdentity());
+    },
+    async listRecords() {
+      if (storage.listRecords !== undefined) return storage.listRecords();
+      const record = await storage.read();
+      return record === null ? [] : [record];
     },
   };
 }

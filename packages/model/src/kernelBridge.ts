@@ -53,6 +53,7 @@ import {
   type Vec2Tuple,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
+import { importedShapeOf } from './part/types.js';
 
 import { EXPORT_MESH_QUALITY, type ExportMeshQuality } from './exchange/types.js';
 import type { ResolvedSubShape } from './geometry/planeSpec.js';
@@ -944,7 +945,7 @@ function toImportedBody(body: ShapeImportBody): ImportedBody {
       },
     };
   }
-  return { ...common, bodyKind: body.bodyKind, brepBytes: body.brepBytes };
+  return { ...common, bodyKind: body.bodyKind, brepBytes: importedShapeOf(body.brepBytes).bytes };
 }
 
 /** 読み込みの結果を model の言葉へ詰め替える。 */
@@ -2209,18 +2210,99 @@ export function toSolidOutcome(
   };
 }
 
-/**
- * 進捗を受け取る関数を Comlink.proxy で包む。
- * 包まずに渡すと関数は構造化複製できず、実行時に「クローンできません」で落ちる(§1.2-5)。
- * Worker は計算中でも外向きの postMessage を出せるので、UI 側は計算中も更新を受け取れる。
- */
+/** 1ジョブが貸すcallbackと、その輸送に使ったportの所有者。 */
+interface KernelCallbackScope {
+  readonly active: boolean;
+  proxy<T extends object>(callback: T): T;
+  serialize(callback: object): [MessagePort, Transferable[]];
+  size(): number;
+  close(): void;
+}
+
+const callbackOwners = new WeakMap<object, KernelCallbackScope>();
+let callbackHandlerInstalled = false;
+
+/** Worker側の標準proxy読み手を保ち、こちらが所有するportだけをジョブ終了時に閉じる。 */
+function installCallbackHandler(): void {
+  if (callbackHandlerInstalled) return;
+  const original = Comlink.transferHandlers.get('proxy');
+  if (original === undefined) throw new Error('Comlink proxy transfer handler is unavailable');
+  Comlink.transferHandlers.set('proxy', {
+    canHandle: original.canHandle.bind(original),
+    deserialize: original.deserialize.bind(original),
+    serialize(value: unknown) {
+      if ((typeof value === 'object' && value !== null) || typeof value === 'function') {
+        const owner = callbackOwners.get(value);
+        if (owner !== undefined) return owner.serialize(value);
+      }
+      return original.serialize(value);
+    },
+  });
+  callbackHandlerInstalled = true;
+}
+
+function createKernelCallbackScope(onClose: () => void): KernelCallbackScope {
+  installCallbackHandler();
+  const callbacks = new Set<object>();
+  const cleanups = new Set<() => void>();
+  let active = true;
+  const scope: KernelCallbackScope = {
+    get active() { return active; },
+    proxy(callback) {
+      callbacks.add(callback);
+      callbackOwners.set(callback, scope);
+      return Comlink.proxy(callback);
+    },
+    serialize(callback) {
+      const { port1, port2 } = new MessageChannel();
+      const listeners = new Set<EventListenerOrEventListenerObject>();
+      const endpoint: Comlink.Endpoint = {
+        postMessage: (message: unknown, transfer?: Transferable[]) => {
+          if (active) port1.postMessage(message, transfer ?? []);
+        },
+        addEventListener: (type, listener) => {
+          listeners.add(listener);
+          port1.addEventListener(type, listener);
+        },
+        removeEventListener: (type, listener) => {
+          listeners.delete(listener);
+          port1.removeEventListener(type, listener);
+        },
+        start: () => port1.start(),
+      };
+      Comlink.expose(callback, endpoint);
+      cleanups.add(() => {
+        for (const listener of listeners) port1.removeEventListener('message', listener);
+        listeners.clear();
+        port1.close();
+        port2.close();
+      });
+      return [port2, [port2]];
+    },
+    size: () => callbacks.size,
+    close() {
+      if (!active) return;
+      active = false;
+      for (const callback of callbacks) callbackOwners.delete(callback);
+      callbacks.clear();
+      for (const cleanup of cleanups) cleanup();
+      cleanups.clear();
+      onClose();
+    },
+  };
+  return scope;
+}
+
+/** 進捗をComlinkで渡せる関数にし、終了後の遅れて届いた通知を捨てる。 */
 function toProgressProxy(
   onProgress: PartProgressCallback | undefined,
+  scope: KernelCallbackScope,
 ): ((progress: SolidProgress) => void) | undefined {
   if (onProgress === undefined) {
     return undefined;
   }
-  return Comlink.proxy((progress: SolidProgress) => {
+  return scope.proxy((progress: SolidProgress) => {
+    if (!scope.active) return;
     onProgress({
       featureId: progress.stepId,
       index: progress.index,
@@ -2239,9 +2321,12 @@ function toProgressProxy(
  */
 function toPrintabilityProgressProxy(
   onProgress: PrintabilityProgressCallback | undefined,
+  scope: KernelCallbackScope,
 ): ((progress: PrintabilityProgress) => void) | undefined {
   const copy = printabilityProgressOf(onProgress);
-  return copy === undefined ? undefined : Comlink.proxy(copy);
+  return copy === undefined ? undefined : scope.proxy((progress: PrintabilityProgress) => {
+    if (scope.active) copy(progress);
+  });
 }
 
 declare global {
@@ -2286,18 +2371,20 @@ function debugStepDelayMs(): number {
  */
 function toCancelProxy(
   shouldCancel: PartCancelToken | undefined,
+  scope: KernelCallbackScope,
 ): (() => boolean | Promise<boolean>) | undefined {
   if (shouldCancel === undefined) {
     return undefined;
   }
-  return Comlink.proxy(() => {
+  return scope.proxy(() => {
+    if (!scope.active) return true;
     const delayMs = debugStepDelayMs();
     if (delayMs === 0) {
       return shouldCancel();
     }
     return new Promise<boolean>((resolve) => {
       setTimeout(() => {
-        resolve(shouldCancel());
+        resolve(!scope.active || shouldCancel());
       }, delayMs);
     });
   });
@@ -2383,69 +2470,114 @@ export function createKernelHealth(): KernelHealth {
   };
 }
 
-/** Worker への 1 回の依頼が、応答で終わったか破損に割り込まれたかの内部結果。 */
-type BrokenRace<T> = { readonly broken: false; readonly result: T } | { readonly broken: true };
+/** 既存の結果の型とは別に読む、RPCの決着理由。 */
+export type KernelOperationStatus = 'success' | 'failed' | 'cancelled' | 'workerBroken';
+export type KernelOperationCounts = Readonly<Record<KernelOperationStatus, number>>;
 
-/**
- * Worker への接続 1 本ぶん(worker 本体・Comlink の代理・壊れた合図)。
- * `createKernelBridge` は壊れたら丸ごと作り直すので、この形にまとめて 1 回で差し替える。
- */
+type InterruptedStatus = 'cancelled' | 'workerBroken';
+type BrokenRace<T> =
+  | { readonly kind: 'response'; readonly result: T }
+  | { readonly kind: InterruptedStatus };
+
 interface KernelConnection {
   readonly worker: Worker;
   readonly remote: Comlink.Remote<KernelApi>;
-  /**
-   * Worker が壊れた瞬間に解決する合図(§2.9)。応答を待つだけの Promise は Worker が
-   * 壊れても永遠に解決しないため、応答待ちの処理をこの合図と Promise.race させることで、
-   * 待っている呼び出しだけは必ず終わらせる(進行中の依頼を拒否せず解決する、§0.a-0.19)。
-   */
-  readonly brokenSignal: Promise<void>;
+  readonly waiters: Set<() => void>;
+  readonly counts: Record<KernelOperationStatus, number>;
+  readonly results: WeakMap<object, KernelOperationStatus>;
   readonly handleBroken: () => void;
+  interruption: InterruptedStatus | null;
+  closed: boolean;
 }
 
-/** Worker を 1 本起動し、'error' / 'messageerror' を壊れた合図につなぐ(§2.9)。 */
-function createKernelConnection(onBroken: () => void): KernelConnection {
+function interruptKernelConnection(connection: KernelConnection, kind: InterruptedStatus): void {
+  connection.interruption ??= kind;
+  const waiting = [...connection.waiters];
+  connection.waiters.clear();
+  for (const notify of waiting) notify();
+}
+
+function createKernelConnection(
+  onBroken: () => void,
+  counts: Record<KernelOperationStatus, number>,
+  results: WeakMap<object, KernelOperationStatus>,
+): KernelConnection {
   const worker = createKernelWorker();
-  const remote = Comlink.wrap<KernelApi>(worker);
-  // Promise の executor は同期で走るので、resolver は必ず notify へ入ってから使われる。
-  // ここでは TypeScript の未代入検査を避けるため、あらかじめ no-op で初期化しておく。
-  let notify: () => void = () => undefined;
-  const brokenSignal = new Promise<void>((resolve) => {
-    notify = resolve;
-  });
-  const handleBroken = (): void => {
-    onBroken();
-    notify();
+  const connection: KernelConnection = {
+    worker,
+    remote: Comlink.wrap<KernelApi>(worker),
+    waiters: new Set(),
+    counts,
+    results,
+    interruption: null,
+    closed: false,
+    handleBroken: () => {
+      if (connection.closed) return;
+      onBroken();
+      interruptKernelConnection(connection, 'workerBroken');
+    },
   };
-  worker.addEventListener('error', handleBroken);
-  worker.addEventListener('messageerror', handleBroken);
-  return { worker, remote, brokenSignal, handleBroken };
+  worker.addEventListener('error', connection.handleBroken);
+  worker.addEventListener('messageerror', connection.handleBroken);
+  return connection;
+}
+
+function operationStatus(result: unknown): KernelOperationStatus {
+  if (typeof result === 'object' && result !== null) {
+    if (('cancelled' in result && result.cancelled === true) ||
+        ('kind' in result && result.kind === 'cancelled')) return 'cancelled';
+    if (('kind' in result && result.kind === 'failed') ||
+        ('failures' in result && Array.isArray(result.failures) && result.failures.length > 0)) {
+      return 'failed';
+    }
+  }
+  return 'success';
+}
+
+/** 返す値を変えず、文書や結果の寿命を延ばさないWeakMapに決着理由を添える。 */
+function rememberOperation<T>(connection: KernelConnection, status: KernelOperationStatus, result: T): T {
+  connection.counts[status] += 1;
+  if ((typeof result === 'object' && result !== null) || typeof result === 'function') {
+    connection.results.set(result, status);
+  }
+  return result;
 }
 
 /**
- * Worker への 1 回の依頼を、その接続の「壊れた合図」と競わせる(§2.9、§0.a-0.19)。
- *
- * **なぜ要るか**: Comlink の応答待ちの Promise は、Worker が `abort()` で止まると
- * 永遠に解決も拒否もしない。合図と競わせないと、待っている呼び出しがそのまま残り、
- * 画面は理由も出ないまま固まる(利用者からは「押しても何も起きない」に見える)。
- *
- * **1 か所にまとめる理由**: 以前は `recomputeSolids` だけがこの形を持っており、
- * 面の三角形分割・オフセット・投影・断面・測定の 5 つは合図と競っていなかった
- * (docs/報告記録.md 2026-09-06 12:04 の③)。同じ形を 5 か所へ写すと、次に手続きが
- * 増えたときにまた写し忘れる。だから競わせ方はこの関数だけが知っている。
- *
- * `refuse` は「壊れたときに返す値」を作る。**拒否(throw)はしない**——呼び手が
- * 既に扱っている断りの形(失敗の一覧、または `kind: 'failed'`)で解決する。
+ * Workerが黙ったまま壊れても全RPCを決着させる(§2.9)。共有Promiseのthenは使わず、
+ * 呼び出しごとの通知を登録する。同期送信失敗もfinallyを通し、通知とcallbackを解放する。
+ * 破損・disposeは既存のrefuseの値で返す。決着理由はoperationStatus(result)で区別する。
  */
 async function raceWithBroken<T>(
   connection: KernelConnection,
-  request: Promise<T>,
+  request: () => Promise<T>,
   refuse: () => T,
+  callbacks?: KernelCallbackScope,
 ): Promise<T> {
-  const race = await Promise.race<BrokenRace<T>>([
-    request.then((result) => ({ broken: false, result })),
-    connection.brokenSignal.then(() => ({ broken: true })),
-  ]);
-  return race.broken ? refuse() : race.result;
+  let notify: () => void = () => undefined;
+  try {
+    if (connection.interruption !== null) {
+      return rememberOperation(connection, connection.interruption, refuse());
+    }
+    const interrupted = new Promise<BrokenRace<T>>((resolve) => {
+      notify = () => resolve({ kind: connection.interruption ?? 'workerBroken' });
+      connection.waiters.add(notify);
+    });
+    const race = await Promise.race<BrokenRace<T>>([
+      request().then((result) => ({ kind: 'response', result })),
+      interrupted,
+    ]);
+    if (race.kind !== 'response') {
+      return rememberOperation(connection, race.kind, refuse());
+    }
+    return rememberOperation(connection, operationStatus(race.result), race.result);
+  } catch (error: unknown) {
+    rememberOperation(connection, 'failed', error);
+    throw error;
+  } finally {
+    connection.waiters.delete(notify);
+    callbacks?.close();
+  }
 }
 
 /**
@@ -2461,6 +2593,9 @@ function brokenFailures(
 
 /** 接続を締める。壊れた Worker への解放要求が失敗しても、後始末は続ける(NFR-RE-1)。 */
 function closeKernelConnection(connection: KernelConnection): void {
+  if (connection.closed) return;
+  connection.closed = true;
+  interruptKernelConnection(connection, 'cancelled');
   connection.worker.removeEventListener('error', connection.handleBroken);
   connection.worker.removeEventListener('messageerror', connection.handleBroken);
   try {
@@ -2472,10 +2607,30 @@ function closeKernelConnection(connection: KernelConnection): void {
   connection.worker.terminate();
 }
 
-/** Web Worker 内の幾何カーネルへつなぐ。ブラウザ・Electron のレンダラでのみ使える。 */
-export function createKernelBridge(): KernelBridge {
+/** 既存のKernelBridge実装・テストダブルへ必須メソッドを増やさないための追加の口。 */
+export interface MonitoredKernelBridge extends KernelBridge {
+  pendingWaiters(): number;
+  operationCounts(): KernelOperationCounts;
+  pendingCallbacks(): number;
+  /** この橋のRPCが返した結果(または拒否理由)の分類。別の値ならundefined。 */
+  operationStatus(result: unknown): KernelOperationStatus | undefined;
+}
+
+/** Web Worker内の幾何カーネルへつなぐ。ブラウザ・Electronのレンダラで使う。 */
+export function createKernelBridge(): MonitoredKernelBridge {
   const health = createKernelHealth();
-  let connection = createKernelConnection(() => health.markBroken());
+  const counts: Record<KernelOperationStatus, number> = {
+    success: 0, failed: 0, cancelled: 0, workerBroken: 0,
+  };
+  const callbackScopes = new Set<KernelCallbackScope>();
+  const results = new WeakMap<object, KernelOperationStatus>();
+  let disposed = false;
+  let connection = createKernelConnection(() => health.markBroken(), counts, results);
+  function callbackScope(): KernelCallbackScope {
+    const scope = createKernelCallbackScope(() => callbackScopes.delete(scope));
+    callbackScopes.add(scope);
+    return scope;
+  }
 
   /**
    * 壊れた Worker を締めて作り直す(§2.9、§0.a-0.19)。形状キャッシュは Worker の中にあるので
@@ -2485,16 +2640,22 @@ export function createKernelBridge(): KernelBridge {
   function restart(): void {
     closeKernelConnection(connection);
     health.reset();
-    connection = createKernelConnection(() => health.markBroken());
+    connection = createKernelConnection(() => health.markBroken(), counts, results);
   }
 
   return {
+    pendingWaiters: () => connection.waiters.size,
+    operationCounts: () => ({ ...counts }),
+    operationStatus: (result) =>
+      (typeof result === 'object' && result !== null) || typeof result === 'function'
+        ? results.get(result) : undefined,
+    pendingCallbacks: () => [...callbackScopes].reduce((sum, scope) => sum + scope.size(), 0),
     async tessellateSketchFaces(faces): Promise<SketchTessellationOutcome> {
       if (faces.length === 0) {
         return { mesh: { faces: [] }, failures: [] };
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
@@ -2502,7 +2663,7 @@ export function createKernelBridge(): KernelBridge {
       // (マウス操作のたびに Worker を往復させないため、NFR-PF-1、計画書 §2.7)。
       return raceWithBroken(
         active,
-        active.remote
+        () => active.remote
           .tessellateSketch({
             curves: [],
             faces: faces.map((face) => toFaceRequest(face)),
@@ -2518,21 +2679,22 @@ export function createKernelBridge(): KernelBridge {
         return { bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] };
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
       const request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
+      const callbacks = callbackScope();
       // 第 2 引数は全体のテッセレーションの粗さ。段の種類ごとの既定はカーネルが持っており
       // (toSolidRecomputeRequest の注釈)、ここで値を渡すとその既定が負けるので undefined。
       return raceWithBroken(
         active,
-        active.remote
+        () => active.remote
           .recomputeSolids(
             request,
             undefined,
-            toProgressProxy(options.onProgress),
-            toCancelProxy(options.shouldCancel),
+            toProgressProxy(options.onProgress, callbacks),
+            toCancelProxy(options.shouldCancel, callbacks),
           )
           .then((result) => toSolidOutcome(steps, result, options.appearance ?? [])),
         // Worker がこの依頼の途中で壊れた。拒否せずに理由つきの失敗として解決する
@@ -2548,6 +2710,7 @@ export function createKernelBridge(): KernelBridge {
           // 段の失敗の警告に「色を付けた面が見つかりません」を重ねてしまう(FR-504)。
           appearanceMatches: [],
         }),
+        callbacks,
       );
     },
 
@@ -2556,13 +2719,13 @@ export function createKernelBridge(): KernelBridge {
         return { results: [], failures: [] };
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
       return raceWithBroken(
         active,
-        active.remote
+        () => active.remote
           .offsetSketchCurves({ items: requests.map((request) => toOffsetItem(request)) })
           .then((outcome) => toOffsetResult(requests, outcome)),
         () => ({ results: [], failures: brokenFailures(requests) }),
@@ -2573,13 +2736,13 @@ export function createKernelBridge(): KernelBridge {
       if (requests.length === 0) {
         return { results: [], failures: [] };
       }
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
       return raceWithBroken(
         active,
-        active.remote
+        () => active.remote
           .projectSketchCurves({ items: requests.map((request) => toProjectionItem(request)) })
           .then((outcome) => toProjectionResult(requests, outcome)),
         () => ({ results: [], failures: brokenFailures(requests) }),
@@ -2590,13 +2753,13 @@ export function createKernelBridge(): KernelBridge {
       if (requests.length === 0) {
         return { results: [], failures: [] };
       }
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
       return raceWithBroken(
         active,
-        active.remote
+        () => active.remote
           .sectionSketchCurves({ items: requests.map((request) => toSectionItem(request)) })
           .then((outcome) => toProjectionResult(requests, outcome)),
         () => ({ results: [], failures: brokenFailures(requests) }),
@@ -2610,13 +2773,13 @@ export function createKernelBridge(): KernelBridge {
         return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
       return raceWithBroken(
         active,
-        active.remote.measure(request).then((result) => toMeasureOutcome(result)),
+        () => active.remote.measure(request).then((result) => toMeasureOutcome(result)),
         // 測定の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
         // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
         () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
@@ -2630,13 +2793,13 @@ export function createKernelBridge(): KernelBridge {
         return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
       return raceWithBroken(
         active,
-        active.remote.exportShapes(toShapeExportRequest(items, options)).then(
+        () => active.remote.exportShapes(toShapeExportRequest(items, options)).then(
           (result) => toShapeExportOutcome(result, options),
           // カーネルが断ったとき(鍵が消えていた・書けなかった)は理由をそのまま持ち回る。
           // **拒否のまま競わせない**——拒否は `raceWithBroken` を素通りしてしまうため。
@@ -2650,13 +2813,13 @@ export function createKernelBridge(): KernelBridge {
 
     async importShape(options): Promise<ShapeImportOutcome> {
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
       return raceWithBroken(
         active,
-        active.remote.importShape(toShapeImportRequest(options)).then(
+        () => active.remote.importShape(toShapeImportRequest(options)).then(
           (result) => toShapeImportOutcome(result),
           (error: unknown) => ({ kind: 'failed', message: toFailureMessage(error) }),
         ),
@@ -2675,17 +2838,18 @@ export function createKernelBridge(): KernelBridge {
         return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
-      if (health.broken) {
+      if (health.broken && !disposed) {
         restart();
       }
       const active = connection;
+      const callbacks = callbackScope();
       return raceWithBroken(
         active,
-        active.remote
+        () => active.remote
           .inspectPrintability(
             toShapeInspectRequest(items, options),
-            toPrintabilityProgressProxy(options.onProgress),
-            toCancelProxy(options.shouldCancel),
+            toPrintabilityProgressProxy(options.onProgress, callbacks),
+            toCancelProxy(options.shouldCancel, callbacks),
           )
           .then(
             (result) => toPrintabilityOutcome(result),
@@ -2696,11 +2860,14 @@ export function createKernelBridge(): KernelBridge {
         // 点検の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
         // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
         () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+        callbacks,
       );
     },
 
     dispose(): void {
+      disposed = true;
       closeKernelConnection(connection);
+      for (const scope of callbackScopes) scope.close();
     },
   };
 }

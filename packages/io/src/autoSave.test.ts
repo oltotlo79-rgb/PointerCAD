@@ -1,8 +1,13 @@
-import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
+import {
+  createEmptyPartDocument, createAssemblyDocument, createPartDocumentBundle,
+  createAssemblyDocumentBundle, type PartDocument,
+} from '@pointercad/model';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   AUTO_SAVE_INTERVAL_MS,
+  autoSaveRecordKey,
+  type AutoSaveIdentity,
   createAutoSaver,
   createIndexedDbAutoSaveStorage,
   createMemoryAutoSaveStorage,
@@ -10,7 +15,7 @@ import {
   type AutoSaveStorage,
   type AutoSaveTimerHandle,
 } from './autoSave.js';
-import { readPcadFile, type ImportedMeshBytes, type PcadAttachments } from './pcad/pcadFile.js';
+import { readDocumentBundle, readPcadFile, type ImportedMeshBytes, type PcadAttachments } from './pcad/pcadFile.js';
 
 /** 検査で保存時刻を固定する。 */
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
@@ -102,6 +107,7 @@ interface FakeIdbTransaction {
 }
 
 interface FakeIdbObjectStore {
+  getAll(): FakeIdbRequest<unknown>;
   get(key: string): FakeIdbRequest<unknown>;
   put(value: unknown, key: string): FakeIdbRequest<unknown>;
   delete(key: string): FakeIdbRequest<undefined>;
@@ -114,7 +120,12 @@ interface FakeIndexedDb {
 }
 
 /** request と transaction の出来事を別々に起こせる、最小の IndexedDB 偽物。 */
-function installFakeIndexedDb(outcomes: readonly FakeIdbOutcome[]): FakeIndexedDb {
+function installFakeIndexedDb(
+  outcomes: readonly FakeIdbOutcome[],
+  initialRecords: ReadonlyMap<string, unknown> = new Map(),
+): FakeIndexedDb {
+  const stored = new Map(initialRecords);
+  let commitManual: () => void = () => undefined;
   let nextOutcome = 0;
   let puts = 0;
   let closes = 0;
@@ -124,6 +135,7 @@ function installFakeIndexedDb(outcomes: readonly FakeIdbOutcome[]): FakeIndexedD
     result: T,
     transaction: FakeIdbTransaction,
     outcome: FakeIdbOutcome,
+    commit: () => void,
   ): FakeIdbRequest<T> => {
     const request: FakeIdbRequest<T> = {
       result,
@@ -139,7 +151,7 @@ function installFakeIndexedDb(outcomes: readonly FakeIdbOutcome[]): FakeIndexedD
       }
       request.onsuccess?.();
       if (outcome === 'complete') {
-        transaction.oncomplete?.();
+        queueMicrotask(() => { commit(); transaction.oncomplete?.(); });
       } else if (outcome === 'aborted') {
         transaction.onabort?.();
       } else if (outcome === 'error') {
@@ -155,22 +167,30 @@ function installFakeIndexedDb(outcomes: readonly FakeIdbOutcome[]): FakeIndexedD
     transaction: (): FakeIdbTransaction => {
       const outcome = outcomes[nextOutcome] ?? 'complete';
       nextOutcome += 1;
+      const changes: (() => void)[] = [];
+      const commit = (): void => { for (const change of changes) change(); changes.length = 0; };
       const transaction: FakeIdbTransaction = {
         error: null,
         oncomplete: null,
         onabort: null,
         onerror: null,
         objectStore: () => ({
-          get: () => eventRequest(null, transaction, outcome),
-          put: () => {
+          get: (key) => eventRequest(stored.get(key), transaction, outcome, commit),
+          getAll: () => eventRequest([...stored.values()], transaction, outcome, commit),
+          put: (value, key) => {
             puts += 1;
-            return eventRequest(undefined, transaction, outcome);
+            changes.push(() => { stored.set(key, value); });
+            return eventRequest(undefined, transaction, outcome, commit);
           },
-          delete: () => eventRequest(undefined, transaction, outcome),
+          delete: (key) => {
+            changes.push(() => { stored.delete(key); });
+            return eventRequest(undefined, transaction, outcome, commit);
+          },
         }),
       };
       if (outcome === 'manual') {
         manualTransaction = transaction;
+        commitManual = commit;
       }
       return transaction;
     },
@@ -201,6 +221,7 @@ function installFakeIndexedDb(outcomes: readonly FakeIdbOutcome[]): FakeIndexedD
     putCount: () => puts,
     closeCount: () => closes,
     completeManualTransaction: () => {
+      commitManual();
       manualTransaction?.oncomplete?.();
     },
   };
@@ -209,6 +230,140 @@ function installFakeIndexedDb(outcomes: readonly FakeIdbOutcome[]): FakeIndexedD
 describe('AUTO_SAVE_INTERVAL_MS', () => {
   it('既定は5分(FR-805)', () => {
     expect(AUTO_SAVE_INTERVAL_MS).toBe(300_000);
+  });
+});
+
+describe('文書と窓で分ける自動保存', () => {
+  const partIdentity: AutoSaveIdentity = { kind: 'part', documentId: 'doc-1', sessionId: 'window-1' };
+  const assemblyIdentity: AutoSaveIdentity = { ...partIdentity, kind: 'assembly' };
+  const secondWindow: AutoSaveIdentity = { ...partIdentity, sessionId: 'window-2' };
+  const legacy: AutoSaveRecord = { savedAt: SAVED_AT, bytes: Uint8Array.of(1), documentName: '旧部品' };
+  const record = (identity: AutoSaveIdentity): AutoSaveRecord => ({ ...legacy, ...identity });
+
+  it('鍵はkind:documentId:sessionIdで区切り文字を含むIDも衝突しない', () => {
+    expect(autoSaveRecordKey(partIdentity)).toBe('part:doc-1:window-1');
+    expect(autoSaveRecordKey()).toBe('part:default:default');
+    expect(autoSaveRecordKey({ ...partIdentity, documentId: 'a:b', sessionId: 'c' }))
+      .toBe('part:a%3Ab:c');
+    expect(autoSaveRecordKey({ ...partIdentity, documentId: 'a', sessionId: 'b:c' }))
+      .toBe('part:a:b%3Ac');
+  });
+
+  it.each(['memory', 'indexedDb'] as const)('%sで部品・組立・別窓の3控えを独立して読み書き/破棄する', async (kind) => {
+    if (kind === 'indexedDb') installFakeIndexedDb([]);
+    const storage = kind === 'memory' ? createMemoryAutoSaveStorage() : createIndexedDbAutoSaveStorage();
+    const identities = [partIdentity, assemblyIdentity, secondWindow];
+    for (const identity of identities) await storage.write(record(identity));
+    expect(await storage.listRecords()).toHaveLength(3);
+    for (const identity of identities) expect(await storage.read(identity)).toEqual(record(identity));
+    await storage.clear(secondWindow);
+    expect(await storage.read(secondWindow)).toBeNull();
+    expect(await storage.read(partIdentity)).toEqual(record(partIdentity));
+    expect(await storage.listRecords()).toHaveLength(2);
+  });
+
+  it('currentの旧控えを既定の鍵と一覧から読み、新しい保存後も重複させない', async () => {
+    installFakeIndexedDb([], new Map([['current', legacy]]));
+    const storage = createIndexedDbAutoSaveStorage();
+    expect(await storage.read()).toEqual(legacy);
+    expect(await storage.listRecords()).toEqual([legacy]);
+    const updated = { ...legacy, savedAt: '2026-09-07T00:00:00.000Z' };
+    await storage.write(updated);
+    expect(await storage.read()).toEqual(updated);
+    expect(await storage.listRecords()).toEqual([updated]);
+    await storage.clear();
+    expect(await storage.listRecords()).toEqual([]);
+    expect(await storage.read()).toBeNull();
+  });
+
+  it('listRecordsは新しい時刻の順で壊れたメタデータを候補にしない', async () => {
+    const older = { ...record(partIdentity), savedAt: '2026-09-01T00:00:00.000Z' };
+    installFakeIndexedDb([], new Map<string, unknown>([
+      [autoSaveRecordKey(partIdentity), older],
+      [autoSaveRecordKey(assemblyIdentity), record(assemblyIdentity)],
+      ['broken', { ...legacy, kind: 'assembly' }],
+    ]));
+    expect(await createIndexedDbAutoSaveStorage().listRecords()).toEqual([record(assemblyIdentity), older]);
+  });
+
+  it('文書別の書き込みもrequest成功だけでは確定せずcompleteで確定する', async () => {
+    const fake = installFakeIndexedDb(['manual']);
+    const storage = createIndexedDbAutoSaveStorage();
+    let done = false;
+    const writing = storage.write(record(assemblyIdentity)).then(() => { done = true; });
+    await flush();
+    expect(done).toBe(false);
+    expect(await storage.listRecords()).toEqual([]);
+    fake.completeManualTransaction();
+    await writing;
+    expect(done).toBe(true);
+    expect(await storage.read(assemblyIdentity)).toEqual(record(assemblyIdentity));
+  });
+
+  it('request成功後abortした別文書の控えは一覧に入らない', async () => {
+    installFakeIndexedDb(['aborted']);
+    const storage = createIndexedDbAutoSaveStorage();
+    await expect(storage.write(record(assemblyIdentity))).rejects.toMatchObject({ reason: 'aborted' });
+    expect(await storage.listRecords()).toEqual([]);
+  });
+
+  it('旧currentの置換がabortしたら元の控えが残る', async () => {
+    installFakeIndexedDb(['aborted'], new Map([['current', legacy]]));
+    const storage = createIndexedDbAutoSaveStorage();
+    await expect(storage.write({ ...legacy, documentName: '新しい控え' }))
+      .rejects.toMatchObject({ reason: 'aborted' });
+    expect(await storage.read()).toEqual(legacy);
+    expect(await storage.listRecords()).toEqual([legacy]);
+  });
+
+  it('最初のmarkDirty前でも指定されたアセンブリ/窓の控えを復元・破棄する', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    await storage.write(record(assemblyIdentity));
+    await storage.write(record(partIdentity));
+    const saver = createAutoSaver({ storage, ...assemblyIdentity });
+    try {
+      expect(await saver.readLatest()).toEqual(record(assemblyIdentity));
+      await saver.discard();
+      expect(await storage.read(assemblyIdentity)).toBeNull();
+      expect(await storage.read(partIdentity)).toEqual(record(partIdentity));
+    } finally { saver.stop(); }
+  });
+
+  it('同じ保管庫で部品とアセンブリの束を別々に保存・復元できる', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const partSaver = createAutoSaver({ storage, ...partIdentity });
+    const assemblySaver = createAutoSaver({ storage, ...assemblyIdentity });
+    const part = createPartDocumentBundle(createEmptyPartDocument());
+    const assembly = createAssemblyDocumentBundle(createAssemblyDocument('組立1'));
+    try {
+      await partSaver.saveNow(part);
+      await assemblySaver.saveNow(assembly);
+      expect(await assemblySaver.listRecords()).toHaveLength(2);
+      const partRecord = await partSaver.readLatest();
+      const assemblyRecord = await assemblySaver.readLatest();
+      if (partRecord === null || assemblyRecord === null) throw new Error('控えが必要');
+      expect(partRecord.kind).toBe('part');
+      expect(assemblyRecord.kind).toBe('assembly');
+      const restored = await readDocumentBundle(assemblyRecord.bytes, 'assembly');
+      expect(restored.ok).toBe(true);
+      if (restored.ok) expect(restored.bundle.document).toEqual(assembly.document);
+      await assemblySaver.discard();
+      expect(await partSaver.readLatest()).toEqual(partRecord);
+    } finally { partSaver.stop(); assemblySaver.stop(); }
+  });
+
+  it('sessionIdを省いた別々のsaverも互いの束の控えを上書きしない', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const first = createAutoSaver({ storage });
+    const second = createAutoSaver({ storage });
+    const bundle = createPartDocumentBundle(createEmptyPartDocument());
+    try {
+      await first.saveNow(bundle);
+      await second.saveNow(bundle);
+      const records = await storage.listRecords();
+      expect(records).toHaveLength(2);
+      expect(records[0].sessionId).not.toBe(records[1].sessionId);
+    } finally { first.stop(); second.stop(); }
   });
 });
 

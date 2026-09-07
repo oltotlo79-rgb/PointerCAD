@@ -41,6 +41,9 @@ import {
 } from './cacheKey.js';
 // 指紋の文字列化は subShapeRef.ts の1本だけを使う(丸めの規則を2か所に書かない、タスク14)。
 import { fingerprintKeyText } from './subShapeRef.js';
+import { importedShapeOf } from './types.js';
+
+const ABC_DIGEST = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
 
 const SQUARE_PROFILE: readonly KeyCurve[] = [
   { kind: 'segment', from: [0, 0, 0], to: [10, 0, 0] },
@@ -406,10 +409,10 @@ function shell(overrides: Partial<Omit<ShellKeyMaterial, 'kind'>> = {}): ShellKe
 }
 
 /**
- * 読み込んだ形(FR-802、P6 §2.8、タスク20)。**混ぜられる材料は入れ物の名前 1 つだけ。**
+ * 読み込んだ形の名前と、既知の原本 abc の SHA-256。
  */
 function importedSolid(shapeRef = 'shape-1'): ImportedSolidKeyMaterial {
-  return { kind: 'importedSolid', shapeRef };
+  return { kind: 'importedSolid', shapeRef, shapeDigest: ABC_DIGEST };
 }
 
 /** 23種類ぶんの材料を1つずつ。順序は SolidStepKeyMaterial の union の並びに合わせる。 */
@@ -1801,12 +1804,53 @@ describe('cacheKeyFor: 23種類が互いに衝突しない', () => {
 });
 
 describe('読み込んだ形の鍵の材料(importedSolid、FR-802、P6 §2.8、タスク20)', () => {
-  it('鍵の文字列は入れ物の名前だけを持つ', () => {
-    expect(keyMaterialText(importedSolid('shape-1'))).toBe('importedSolid{shapeRef=shape-1}');
+  it('内容ダイジェストが空なら名前だけの鍵へ後退しない', () => {
+    expect(() => cacheKeyFor({ ...importedSolid(), shapeDigest: '' })).toThrow('SHA-256');
+  });
+  it('別文書の同じ shapeRef でも取り込み内容が違えば鍵が衝突しない', () => {
+    const first = { ...importedSolid(), shapeDigest: 'a'.repeat(64) };
+    const second = { ...importedSolid(), shapeDigest: 'b'.repeat(64) };
+    expect(keyMaterialText(first)).not.toBe(keyMaterialText(second));
+    expect(cacheKeyFor(first)).not.toBe(cacheKeyFor(second));
+  });
+  it('鍵の文字列は入れ物の名前と原本の SHA-256 を持つ', () => {
+    expect(keyMaterialText(importedSolid('shape-1'))).toBe(
+      `importedSolid{shapeRef=shape-1,digest=${ABC_DIGEST}}`,
+    );
   });
 
-  it('入れ物の名前が同じなら同じ鍵、違えば違う鍵(中身は変わらないので毎回当たる)', () => {
+  it('同じ内容で入れ物の名前が同じなら同じ鍵、違えば違う鍵', () => {
     expect(cacheKeyFor(importedSolid('shape-1'))).toBe(cacheKeyFor(importedSolid('shape-1')));
     expect(cacheKeyFor(importedSolid('shape-1'))).not.toBe(cacheKeyFor(importedSolid('shape-2')));
+  });
+});
+
+describe('取り込み原本の SHA-256', () => {
+  it.each([0, 3, 55, 56, 63, 64, 65, 127, 128, 10000])(
+    '%i バイトで Web Crypto の SHA-256 と一致する', async (length) => {
+      const bytes = Uint8Array.from({ length }, (_, index) => index % 251);
+      const expected = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+      expect(importedShapeOf(bytes).shapeDigest).toBe(
+        [...expected].map((byte) => byte.toString(16).padStart(2, '0')).join(''),
+      );
+    },
+  );
+
+  it('既知の abc のダイジェストと一致し、原本を複製せず一度だけ読む', () => {
+    const bytes = Uint8Array.of(97, 98, 99);
+    let reads = 0;
+    Object.defineProperty(bytes, 'byteLength', { get: () => { reads += 1; return 3; } });
+    const shape = importedShapeOf(bytes);
+    expect(shape.shapeDigest).toBe(ABC_DIGEST);
+    for (let index = 0; index < 100; index += 1) {
+      expect(importedShapeOf(bytes)).toBe(shape);
+    }
+    expect(shape.bytes).toBe(bytes);
+    expect(reads).toBe(1);
+  });
+
+  it('バッファの一部だけのビューでは、その範囲だけを識別する', () => {
+    const bytes = Uint8Array.of(0, 97, 98, 99, 255).subarray(1, 4);
+    expect(importedShapeOf(bytes).shapeDigest).toBe(ABC_DIGEST);
   });
 });

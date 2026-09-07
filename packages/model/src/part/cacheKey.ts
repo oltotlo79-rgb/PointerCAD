@@ -694,13 +694,9 @@ export interface ShellKeyMaterial {
 /**
  * 読み込んだ形(ベースボディ。FR-802、P6 §2.8、§0.a-0.9)の鍵の材料。
  *
- * **`.pcad` の中の入れ物の名前(`shapeRef`)だけ**で足りる。読み込んだ形は再計算で
- * 変わりようがない——履歴も式も持たず、上流のボディも取らないので、鍵に混ぜられる材料が
- * ほかに 1 つも無い——から、同じ `shapeRef` は必ず同じ形を指す。
- *
- * **B-rep のバイト列そのものは混ぜない。** 混ぜても鍵は同じにしかならず(中身が変わらない
- * ため)、10MB のバイト列を再計算のたびにハッシュに掛ける費用だけが増えるためである。
- * 結果として**同じ部品を開いている間は 2 回目以降が必ず形状キャッシュに当たる**(NFR-PF-3)。
+ * 文書内連番の名前(`shapeRef`)と、原本の内容(`shapeDigest`)の両方を含める。
+ * 別文書が同じ連番を使っても内容が違えば鍵が変わる。原本のSHA-256は読み込み時に
+ * 一度だけ計算するため、大きなB-repを再計算のたびに読み直さない(NFR-PF-3)。
  *
  * **三角形の形(`importedMesh`)はここに無い。** B-rep にしない(§0.a-0.23)ので
  * カーネルの段にならず、作り直す計算が無いから鍵も要らない。
@@ -709,6 +705,8 @@ export interface ImportedSolidKeyMaterial {
   readonly kind: 'importedSolid';
   /** `.pcad` の `shapes/<shapeRef>.brep` の名前の素。 */
   readonly shapeRef: string;
+  /** 原本の SHA-256(16進64文字)。取り込み・読み込み時に一度だけ計算する。 */
+  readonly shapeDigest: string;
 }
 
 /**
@@ -1247,8 +1245,10 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;outward=${keyBoolean(material.outward)}}`
       );
     case 'importedSolid':
-      // 読み込んだ形(FR-802、P6 §2.8)。混ぜるのは入れ物の名前だけ。
-      return `importedSolid{shapeRef=${material.shapeRef}}`;
+      if (!/^[0-9a-f]{64}$/.test(material.shapeDigest)) {
+        throw new Error('Imported shape requires a SHA-256 content digest');
+      }
+      return `importedSolid{shapeRef=${material.shapeRef},digest=${material.shapeDigest}}`;
   }
 }
 

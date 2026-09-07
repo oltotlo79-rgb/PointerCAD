@@ -40,6 +40,11 @@
 
 import {
   attachmentsDigestOf,
+  importedShapeOf,
+  createPartDocumentBundle,
+  createAssemblyDocumentBundle,
+  partLibraryOfBundle,
+  type DocumentBundle,
   type AssemblyDocument,
   type EmbeddedPartAttachments,
   type EmbeddedPartMesh,
@@ -139,11 +144,84 @@ export type ImportedMeshBytes = EmbeddedPartMesh;
  * 3 つとも「空の表」を持つ(欄ごと無くさない)。読み手が毎回 `undefined` を確かめずに
  * 済み、添付を持たない `.pcad`(版 6 までのファイル)も同じ形で扱えるため。
  */
-export type PcadAttachments = EmbeddedPartAttachments;
+export type PcadAttachments = EmbeddedPartAttachments & {
+  /** 各原本の SHA-256。古い ZIP でも読み込み時に計算して補う。 */
+  readonly shapeDigests?: ReadonlyMap<string, string>;
+};
 
 /** 添付を 1 つも持たない表。版 6 までのファイルを読んだときの値でもある。 */
 export function emptyPcadAttachments(): PcadAttachments {
   return { shapes: new Map(), meshes: new Map(), canvases: new Map() };
+}
+
+export interface WriteDocumentBundleOptions {
+  readonly savedAt?: string;
+  readonly thumbnailPng?: Uint8Array;
+}
+
+/** 文書と原本を既存のZIP形式へ平坦化する。封筒とparts/*.jsonの形式は変えない。 */
+export async function writeDocumentBundle(
+  bundle: DocumentBundle,
+  options: WriteDocumentBundleOptions = {},
+): Promise<Uint8Array> {
+  if (bundle.kind === 'part') {
+    return writePcadFile(bundle.document, { ...options, attachments: bundle.attachments });
+  }
+  // 現行pcadaで原本を持つのは抱き込んだ部品。保存できない原本を黙って捨てない。
+  if (bundle.attachments.shapes.size + bundle.attachments.meshes.size + bundle.attachments.canvases.size > 0) {
+    throw new Error('Assembly attachments must belong to an embedded part');
+  }
+  const library = partLibraryOfBundle(bundle);
+  return writePcadaFile(bundle.document, {
+    ...options,
+    partFiles: library.partFiles,
+    parts: library.parts,
+    partAttachments: library.attachments,
+  });
+}
+
+export type ReadDocumentBundleResult =
+  | {
+      readonly ok: true;
+      readonly bundle: DocumentBundle;
+      readonly savedAt: string;
+      readonly thumbnailPng?: Uint8Array;
+    }
+  | { readonly ok: false; readonly error: ReadPcadFileError };
+
+/** 種別を明示して既存の読み手を通す。未来版や欠損の理由は既存の値のまま返す。 */
+export async function readDocumentBundle(
+  bytes: Uint8Array,
+  kind: DocumentBundle['kind'],
+  options: ReadPcadaFileOptions = {},
+): Promise<ReadDocumentBundleResult> {
+  if (kind === 'part') {
+    const result = readPcadFile(bytes);
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      bundle: createPartDocumentBundle(result.document, result.attachments),
+      savedAt: result.savedAt,
+      thumbnailPng: result.thumbnailPng,
+    };
+  }
+  const result = await readPcadaFile(bytes, options);
+  if (!result.ok) return result;
+  const partFiles = await Promise.all(result.partFiles.map(async (file) => ({
+    ...file,
+    attachmentsDigest: result.partAttachmentDigests.get(file.ref)
+      ?? await attachmentsDigestOf(emptyPcadAttachments()),
+  })));
+  return {
+    ok: true,
+    bundle: createAssemblyDocumentBundle(result.document, {
+      partFiles,
+      parts: result.parts,
+      attachments: result.partAttachments,
+    }),
+    savedAt: result.savedAt,
+    thumbnailPng: result.thumbnailPng,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -506,6 +584,7 @@ function collectAttachments(
   readonly allocatedMeshBytes: number;
 } {
   const shapes = new Map<string, Uint8Array>();
+  const shapeDigests = new Map<string, string>();
   const meshes = new Map<string, ImportedMeshBytes>();
   const canvases = new Map<string, Uint8Array>();
   let brokenMeshEntry: string | null = null;
@@ -515,6 +594,7 @@ function collectAttachments(
     const shapeRef = attachmentRef(name, PCAD_SHAPE_ENTRY_PREFIX, PCAD_SHAPE_ENTRY_SUFFIX);
     if (shapeRef !== null) {
       shapes.set(shapeRef, bytes);
+      shapeDigests.set(shapeRef, importedShapeOf(bytes).shapeDigest);
       continue;
     }
     const meshRef = attachmentRef(name, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX);
@@ -548,7 +628,7 @@ function collectAttachments(
     // どれでもない名前は知らないエントリとして読み飛ばす(P2 からの決めごと)。
   }
   return {
-    attachments: { shapes, meshes, canvases },
+    attachments: { shapes, meshes, canvases, shapeDigests },
     brokenMeshEntry,
     tooLargeMeshEntry,
     allocatedMeshBytes,

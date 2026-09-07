@@ -816,3 +816,15 @@ export {
   MATE_VARIABLE_AXES, MATE_VARIABLES_PER_COMPONENT, mateComponentGroups, mateEquationCount,
   mateValueOf, MAX_ASSEMBLY_VARIABLES, MAX_MOVABLE_COMPONENTS, TOO_MANY_COMPONENTS_MESSAGE,
 } from './assembly/constraints/mateVariables.js';
+export { importedShapeOf, type ImportedShape } from './part/types.js';
+export type {
+  MonitoredKernelBridge, KernelOperationStatus, KernelOperationCounts,
+} from './kernelBridge.js';
+export {
+  createPartDocumentBundle,
+  createAssemblyDocumentBundle,
+  partLibraryOfBundle,
+  type DocumentBundle,
+  type PartDocumentBundle,
+  type AssemblyDocumentBundle,
+} from './assembly/documentBundle.js';

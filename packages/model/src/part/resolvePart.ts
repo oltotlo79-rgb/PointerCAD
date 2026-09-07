@@ -32,6 +32,7 @@
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
+import { importedShapeOf } from './types.js';
 
 import type {
   AxisFrame,
@@ -4594,10 +4595,12 @@ function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
         keepPositive: plan.keepPositive,
       };
     case 'importedSolid':
-      // 読み込んだ形(FR-802、P6 §2.8)。**混ぜるのは `shapeRef` だけ**で、バイト列は
-      // 混ぜない(`ImportedSolidKeyMaterial` の注釈)。中身は二度と変わらないので、
-      // 同じ `shapeRef` なら 2 回目以降は必ず形状キャッシュに当たる(NFR-PF-3)。
-      return { kind: 'importedSolid', shapeRef: plan.shapeRef };
+      // 内容は原本ごとに一度だけ識別する。同じ文書内連番を持つ別部品とも衝突しない。
+      return {
+        kind: 'importedSolid',
+        shapeRef: plan.shapeRef,
+        shapeDigest: importedShapeOf(plan.bytes).shapeDigest,
+      };
   }
 }
 

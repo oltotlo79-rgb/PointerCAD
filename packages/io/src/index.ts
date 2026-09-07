@@ -66,6 +66,10 @@ export {
   PCAD_THUMBNAIL_ENTRY,
   readPcadaFile,
   readPcadFile,
+  readDocumentBundle,
+  writeDocumentBundle,
+  type ReadDocumentBundleResult,
+  type WriteDocumentBundleOptions,
   writePcadaFile,
   writePcadFile,
   type ImportedMeshBytes,
@@ -81,6 +85,11 @@ export {
 // 自動保存の保管庫と制御(FR-805、NFR-RE-2)。
 export {
   AUTO_SAVE_INTERVAL_MS,
+  DEFAULT_AUTO_SAVE_IDENTITY,
+  autoSaveRecordKey,
+  type AutoSaveIdentity,
+  type DocumentAutoSaveStorage,
+  type DocumentAutoSaver,
   createAutoSaver,
   createIndexedDbAutoSaveStorage,
   createMemoryAutoSaveStorage,

@@ -7181,7 +7181,7 @@ describe('読み込んだ形(importedSolid、FR-802、§2.8)', () => {
     expect(hole.plan.targetKey).toBe(resolved.steps[0].key);
   });
 
-  it('鍵は shapeRef だけで決まる(バイト列が違っても同じ鍵、shapeRef が違えば違う鍵)', () => {
+  it('鍵は shapeRef と内容で決まる(同じ内容なら同じ鍵、どちらが違っても違う鍵)', () => {
     function keyFor(shapeRef: string, bytes: readonly number[]): string {
       const document = withSolids(
         createEmptyPartDocument(),
@@ -7190,8 +7190,8 @@ describe('読み込んだ形(importedSolid、FR-802、§2.8)', () => {
       return resolvePart(document, { importedShapes: shapeBytes({ [shapeRef]: bytes }) }).steps[0]
         .key;
     }
-    // 中身は読み込んだあと変わらないので、鍵に混ぜない(毎回キャッシュに当たるため)。
-    expect(keyFor('shape-1', [1, 2, 3])).toBe(keyFor('shape-1', [9, 9, 9, 9]));
+    expect(keyFor('shape-1', [1, 2, 3])).toBe(keyFor('shape-1', [1, 2, 3]));
+    expect(keyFor('shape-1', [1, 2, 3])).not.toBe(keyFor('shape-1', [9, 9, 9, 9]));
     expect(keyFor('shape-1', [1, 2, 3])).not.toBe(keyFor('shape-2', [1, 2, 3]));
   });
 

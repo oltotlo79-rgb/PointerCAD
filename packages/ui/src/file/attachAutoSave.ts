@@ -18,10 +18,12 @@
  */
 
 import {
+  DEFAULT_AUTO_SAVE_IDENTITY,
   createAutoSaver,
   createIndexedDbAutoSaveStorage,
   readDocumentBundle,
   type AutoSaveRecord,
+  type AutoSaveIdentity,
   type AutoSaverOptions,
   type AutoSaver,
   type AutoSaveStorage,
@@ -318,6 +320,7 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   store.setFileState(null, null);
   store.fileGateway.clearSaveTarget?.();
   store.setRestorePrompt(null);
+  useAppStore.setState({ recoveryRecord: null });
 }
 
 async function readAssemblyRecovery(record: AutoSaveRecord) {
@@ -326,18 +329,23 @@ async function readAssemblyRecovery(record: AutoSaveRecord) {
     { ok: false as const, messageKey: openErrorMessageKey(result.error.code) };
 }
 
+function identityOfRecord(record: AutoSaveRecord): AutoSaveIdentity {
+  if (record.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined) {
+    return { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId };
+  }
+  return DEFAULT_AUTO_SAVE_IDENTITY;
+}
+
 function recoveryRecordOf(saver: AutoSaver): Promise<AutoSaveRecord | null> {
   const state = useAppStore.getState();
   const record = state.restorePrompt === null ? null : state.recoveryRecord;
-  return saver.readLatest(record?.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined
-    ? { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId } : undefined);
+  return saver.readLatest(record === null ? undefined : identityOfRecord(record));
 }
 
 /** 案内の「破棄する」。控えを消して案内を閉じる。 */
 export async function discardAutoSave(saver: AutoSaver): Promise<void> {
   const record = await recoveryRecordOf(saver);
-  await saver.discard(record?.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined
-    ? { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId } : undefined);
+  await saver.discard(record === null ? undefined : identityOfRecord(record));
   useAppStore.getState().setRestorePrompt(null);
   useAppStore.setState({ recoveryRecord: null });
 }

@@ -15,6 +15,7 @@
  */
 
 import {
+  DEFAULT_AUTO_SAVE_IDENTITY,
   readPcadFile,
   serializeDocument,
   writePcadFile,
@@ -418,6 +419,7 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   if (saver !== null) {
     try {
       await saver.discard();
+      await saver.discard(DEFAULT_AUTO_SAVE_IDENTITY);
     } catch {
       // 控えの消去に失敗しても、保存できたという知らせは変えない。
     }

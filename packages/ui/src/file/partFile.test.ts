@@ -10,8 +10,11 @@
  */
 
 import {
+  DEFAULT_AUTO_SAVE_IDENTITY,
   PCAD_SCHEMA_VERSION,
   SCHEMA_MIGRATIONS,
+  createAutoSaver,
+  createMemoryAutoSaveStorage,
   readPcadFile,
   writePcadFile,
   type AutoSaver,
@@ -587,7 +590,7 @@ describe('保存する(FR-806、FR-801)', () => {
     expect(state.fileMessage).toBeNull();
   });
 
-  it('保存に成功したら自動保存の控えを消す(計画書 タスク24)', async () => {
+  it('保存に成功したら現在の控えと旧控えを消す(計画書 タスク24)', async () => {
     const fake = createFakeGateway();
     useFake(fake);
     const autoSave = createFakeAutoSaver();
@@ -596,7 +599,42 @@ describe('保存する(FR-806、FR-801)', () => {
 
     await savePart(createFakeDeps(true).deps, false);
 
-    expect(autoSave.discards()).toBe(1);
+    expect(autoSave.discards()).toBe(2);
+  });
+
+  it('保存に成功したら3欄つきの自分の控えと3欄なしの旧控えが両方消える', async () => {
+    const fake = createFakeGateway();
+    useFake(fake);
+    const storage = createMemoryAutoSaveStorage();
+    const legacy = {
+      savedAt: '2026-09-03T09:30:00.000Z',
+      bytes: writePcadFile(partWithPoint()),
+      documentName: '旧控え',
+    };
+    await storage.write(legacy);
+    await storage.write({
+      ...legacy,
+      kind: 'part',
+      documentId: 'doc-1',
+      sessionId: 'win-1',
+      documentName: '自分の控え',
+    });
+    const saver = createAutoSaver({
+      storage,
+      kind: 'part',
+      documentId: 'doc-1',
+      sessionId: 'win-1',
+      setTimeout: () => null,
+      clearTimeout: () => undefined,
+    });
+    useAppStore.setState({ autoSaver: saver });
+    useAppStore.getState().applyDocument(partWithPoint());
+
+    await savePart(createFakeDeps(true).deps, false);
+
+    expect(await storage.listRecords()).toEqual([]);
+    expect(await storage.read(DEFAULT_AUTO_SAVE_IDENTITY)).toBeNull();
+    saver.stop();
   });
 
   it('保存を取り消したときは控えを消さない', async () => {

@@ -18,6 +18,7 @@ import {
   readPcadFile,
   serializeDocument,
   writePcadFile,
+  type AutoSaveIdentity,
   type AutoSaveRecord,
   type AutoSaver,
   type AutoSaveStorage,
@@ -197,9 +198,14 @@ function createFakeVisibility(): FakeVisibility {
  * 検査用の控えを書く人。保管庫は**本番と同じように**「未保存のときだけ書く」包みを
  * 通し、時計とタイマーは差し替える。
  */
-function createTestSaver(storage: AutoSaveStorage, timer: ManualTimer): AutoSaver {
+function createTestSaver(
+  storage: AutoSaveStorage,
+  timer: ManualTimer,
+  identity?: AutoSaveIdentity,
+): AutoSaver {
   return createAutoSaver({
     storage: createUnsavedOnlyStorage(storage),
+    ...identity,
     now: () => FIXED_NOW,
     setTimeout: timer.schedule,
     clearTimeout: timer.cancel,
@@ -209,6 +215,14 @@ function createTestSaver(storage: AutoSaveStorage, timer: ManualTimer): AutoSave
 /** 控え 1 件。中身は本物の `.pcad` にする(復元は「開く」と同じ経路を通るため)。 */
 function recordOf(document: PartDocument, documentName = document.name): AutoSaveRecord {
   return { savedAt: SAVED_AT, bytes: writePcadFile(document, { savedAt: SAVED_AT }), documentName };
+}
+
+function firstRecord(records: readonly AutoSaveRecord[]): AutoSaveRecord {
+  const record = records[0];
+  if (record === undefined) {
+    throw new Error('控えがありません');
+  }
+  return record;
 }
 
 /** ZIP の CRC-32。未来版の `document.json` を無圧縮 ZIP へ包むための検査用実装。 */
@@ -502,6 +516,69 @@ describe('起動時の案内(§2.9)', () => {
 });
 
 describe('案内の返事', () => {
+  it('3欄つきの saver でも旧控えを復元し、復元元だけを残して案内の状態を片付ける', async () => {
+    const document = partWithPoint();
+    const storage = createMemoryAutoSaveStorage();
+    await storage.write(recordOf(document, '旧控えの部品'));
+    const saver = createTestSaver(storage, createManualTimer(), {
+      kind: 'part', documentId: 'doc-1', sessionId: 'win-1',
+    });
+    await loadAutoSavePrompt(saver, { record: firstRecord(await storage.listRecords()) });
+
+    expect(useAppStore.getState().restorePrompt).toEqual({
+      savedAt: SAVED_AT,
+      documentName: '旧控えの部品',
+    });
+    await restoreAutoSave(saver);
+
+    const state = useAppStore.getState();
+    expect(state.document).toEqual(document);
+    expect(state.fileName).toBeNull();
+    expect(state.savedDocument).toBeNull();
+    expect(state.restorePrompt).toBeNull();
+    expect(state.recoveryRecord).toBeNull();
+    expect(await storage.listRecords()).toHaveLength(1);
+  });
+
+  it('3欄つきの saver でも案内に出した旧控えを破棄する', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    await storage.write(recordOf(partWithPoint(), '旧控えの部品'));
+    const saver = createTestSaver(storage, createManualTimer(), {
+      kind: 'part', documentId: 'doc-1', sessionId: 'win-1',
+    });
+    await loadAutoSavePrompt(saver, { record: firstRecord(await storage.listRecords()) });
+
+    await discardAutoSave(saver);
+
+    expect(await storage.listRecords()).toEqual([]);
+    expect(useAppStore.getState().restorePrompt).toBeNull();
+  });
+
+  it('自分の控えと旧控えがあるときは、案内に出した最新の旧控えだけを破棄する', async () => {
+    const storage = createMemoryAutoSaveStorage();
+    const own = {
+      ...recordOf(partWithPoint(), '自分の控え'),
+      kind: 'part' as const,
+      documentId: 'doc-1',
+      sessionId: 'win-1',
+    };
+    const legacy = {
+      ...recordOf(partWithPoint(), '最新の旧控え'),
+      savedAt: '2026-09-03T10:30:00.000Z',
+    };
+    await storage.write(own);
+    await storage.write(legacy);
+    const saver = createTestSaver(storage, createManualTimer(), {
+      kind: 'part', documentId: 'doc-1', sessionId: 'win-1',
+    });
+    await loadAutoSavePrompt(saver, { record: firstRecord(await storage.listRecords()) });
+
+    await discardAutoSave(saver);
+
+    expect(await storage.listRecords()).toEqual([own]);
+    expect(useAppStore.getState().restorePrompt).toBeNull();
+  });
+
   it('「復元する」で控えの部品が入り、案内が閉じる', async () => {
     const document = partWithPoint();
     const recording = createRecordingStorage(recordOf(document, '部品1'));

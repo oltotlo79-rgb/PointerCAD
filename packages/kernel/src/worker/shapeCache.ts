@@ -1,4 +1,5 @@
 import type { OcctShapeHandle } from '../occt/makeBox.js';
+import type { ShapeCacheDiagnostics } from '../types.js';
 
 /**
  * キャッシュに預けられるものの最低条件。
@@ -13,13 +14,24 @@ export interface ShapeCacheEntry {
 }
 
 /** キャッシュの働きぐあい。効き目の実測(NFR-PF-3)と取りこぼしの検知に使う。 */
-export interface ShapeCacheStats {
+export interface ShapeCacheStats extends ShapeCacheDiagnostics {
   /** 今持っている件数。 */
   readonly size: number;
   /** 容量を超えて追い出した件数(累計)。上書きや retain / clear は数えない。 */
   readonly evictions: number;
   /** delete() を呼んだ延べ件数(追い出し・上書き・delete・retain・clear の合計)。 */
   readonly released: number;
+}
+
+/** キャッシュ自身が発行・照合する使用中保護の印。所有権は移さない。 */
+export type AcquireToken = symbol;
+
+/** 再計算だけを包む既存の ShapeCache と、寿命を管理する側の口を分ける。 */
+export interface AcquiringShapeCache<T extends ShapeCacheEntry> extends ShapeCache<T> {
+  /** 未作成の鍵も予約できる。同じ token 内の重複は 1 回と数える。 */
+  acquire(keys: Iterable<string>): AcquireToken;
+  /** 最後の確保が外れた鍵は LRU 対象へ戻る。二重 release は何もしない。 */
+  release(token: AcquireToken): void;
 }
 
 /**
@@ -33,23 +45,23 @@ export interface ShapeCache<T extends ShapeCacheEntry = OcctShapeHandle> {
   /** 取り出す。当たったら「今使った」ことにする。 */
   get(key: string): T | undefined;
   /**
-   * 覚える。同じ鍵に別のものが入っていれば、古い方を delete() してから入れ替える
-   * (二重に確保したまま行方不明にしないため)。容量を超えた分は古い順に追い出す。
+   * 覚える。同じ鍵の旧形は delete() する。確保中なら最後の release まで旧形の解放を待つ。
+   * 容量を超えた分は未確保のものから古い順に追い出す。
    */
   set(key: string, entry: T): void;
   /** 持っているかだけを見る。順番は変えない。 */
   has(key: string): boolean;
-  /** 1件を手放す。持っていれば delete() して true、持っていなければ false。 */
+  /** 1件を手放す。未保持または確保中なら false。 */
   delete(key: string): boolean;
   /**
-   * 今回の依頼に出てきた鍵を渡す。**それ以外は全て** delete() して捨て、捨てた件数を返す。
+   * 今回の依頼に出てきた鍵を渡す。それ以外の未確保の形を捨て、捨てた件数を返す。
    * 持っていない鍵が混じっていても無視する。
    */
   retain(liveKeys: Iterable<string>): number;
-  /** 全部手放す。Worker を畳むときに呼ぶ。 */
+  /** 全部手放し token を無効化する。job 終了後に呼ぶ。確保が残っていれば診断へ記録。 */
   clear(): void;
   readonly size: number;
-  /** 同時に持てる上限。作るときに決めて以後変わらない。 */
+  /** 同時に持つ形の予算。保護対象だけで超える場合は診断し、数値自体は変えない。 */
   readonly capacity: number;
   stats(): ShapeCacheStats;
 }
@@ -75,7 +87,8 @@ export const SHAPE_CACHE_CAPACITY = 256;
  */
 export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
   capacity: number = SHAPE_CACHE_CAPACITY,
-): ShapeCache<T> {
+  meshBytesOf: (entry: T) => number = () => 0,
+): AcquiringShapeCache<T> {
   if (!Number.isInteger(capacity) || capacity < 1) {
     throw new Error(`形状キャッシュの容量は 1 以上の整数である必要があります: ${capacity}`);
   }
@@ -83,32 +96,47 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
   // Map は入れた順を覚えているので、追い出す順(古い→新しい)はこれ1つで足りる。
   // 使ったものは消して入れ直し、いちばん新しい位置へ移す。
   const entries = new Map<string, T>();
+  const references = new Map<string, number>();
+  const tokens = new Map<AcquireToken, ReadonlySet<string>>();
+  // 同じ鍵へ上書きされても、貸した旧形を最後の確保が外れるまでは解放しない。
+  const retired = new Map<string, T[]>();
   let evictions = 0;
   let released = 0;
+  let clearWithActiveTokensCount = 0;
 
-  function release(entry: T): void {
+  function disposeEntry(entry: T): void {
     entry.delete();
     released += 1;
   }
 
-  /** 最も古く使われた鍵。空なら undefined。 */
+  /** 未確保のうち最も古く使われた鍵。対象が無ければ undefined。 */
   function oldestKey(): string | undefined {
     for (const key of entries.keys()) {
-      return key;
+      if (!references.has(key)) {
+        return key;
+      }
     }
     return undefined;
   }
 
-  function dropOldest(): void {
+  function dropOldest(): boolean {
     const key = oldestKey();
     if (key === undefined) {
-      return;
+      return false;
     }
     const entry = entries.get(key);
     entries.delete(key);
     if (entry !== undefined) {
-      release(entry);
+      disposeEntry(entry);
       evictions += 1;
+    }
+    return true;
+  }
+
+  function trim(): void {
+    const retiredCount = Array.from(retired.values()).reduce((count, old) => count + old.length, 0);
+    while (entries.size + retiredCount > capacity && dropOldest()) {
+      // 保護対象だけになったら超過を許し、stats の診断で呼び手へ知らせる。
     }
   }
 
@@ -118,6 +146,38 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
   }
 
   return {
+    acquire(keys): AcquireToken {
+      const unique = new Set(keys);
+      const token = Symbol('shape-cache-acquire');
+      tokens.set(token, unique);
+      for (const key of unique) {
+        references.set(key, (references.get(key) ?? 0) + 1);
+      }
+      return token;
+    },
+
+    release(token): void {
+      const keys = tokens.get(token);
+      if (keys === undefined) {
+        return;
+      }
+      tokens.delete(token);
+      for (const key of keys) {
+        const remaining = (references.get(key) ?? 0) - 1;
+        if (remaining > 0) {
+          references.set(key, remaining);
+        } else {
+          references.delete(key);
+          const old = retired.get(key) ?? [];
+          retired.delete(key);
+          for (const entry of old) {
+            disposeEntry(entry);
+          }
+        }
+      }
+      trim();
+    },
+
     get(key: string): T | undefined {
       const entry = entries.get(key);
       if (entry === undefined) {
@@ -131,12 +191,21 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
       const existing = entries.get(key);
       // 同じものを入れ直したときに解放してしまうと、使用中の形を壊すことになる。
       if (existing !== undefined && existing !== entry) {
-        release(existing);
+        if (references.has(key)) {
+          const old = retired.get(key) ?? [];
+          old.push(existing);
+          retired.set(key, old);
+        } else {
+          disposeEntry(existing);
+        }
+      }
+      // 以前貸した形を再び現行に戻した場合も、同じ実体を二重解放しない。
+      const old = retired.get(key);
+      if (old !== undefined) {
+        retired.set(key, old.filter((value) => value !== entry));
       }
       touch(key, entry);
-      while (entries.size > capacity) {
-        dropOldest();
-      }
+      trim();
     },
 
     has(key: string): boolean {
@@ -145,32 +214,38 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
 
     delete(key: string): boolean {
       const entry = entries.get(key);
-      if (entry === undefined) {
+      if (entry === undefined || references.has(key)) {
         return false;
       }
       entries.delete(key);
-      release(entry);
+      disposeEntry(entry);
       return true;
     },
 
     retain(liveKeys: Iterable<string>): number {
       const live = new Set(liveKeys);
-      const doomed = Array.from(entries.keys()).filter((key) => !live.has(key));
+      const doomed = Array.from(entries.keys()).filter((key) => !live.has(key) && !references.has(key));
       for (const key of doomed) {
         const entry = entries.get(key);
         entries.delete(key);
         if (entry !== undefined) {
-          release(entry);
+          disposeEntry(entry);
         }
       }
       return doomed.length;
     },
 
     clear(): void {
-      const all = Array.from(entries.values());
+      if (tokens.size > 0) {
+        clearWithActiveTokensCount += 1;
+      }
+      const all = [...entries.values(), ...Array.from(retired.values()).flat()];
       entries.clear();
+      retired.clear();
+      references.clear();
+      tokens.clear();
       for (const entry of all) {
-        release(entry);
+        disposeEntry(entry);
       }
     },
 
@@ -181,7 +256,24 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
     capacity,
 
     stats(): ShapeCacheStats {
-      return { size: entries.size, evictions, released };
+      const all = [...entries.values(), ...Array.from(retired.values()).flat()];
+      const protectedOverBudget = Math.max(0, all.length - capacity);
+      const diagnostics: string[] = [];
+      if (protectedOverBudget > 0) {
+        diagnostics.push('保護対象だけで予算超過');
+      }
+      if (clearWithActiveTokensCount > 0) {
+        diagnostics.push('確保が残った状態で clear が呼ばれました');
+      }
+      return {
+        size: entries.size, evictions, released,
+        shapeCount: all.length,
+        protectedKeyCount: references.size,
+        meshBytes: all.reduce((total, entry) => total + meshBytesOf(entry), 0),
+        protectedOverBudget,
+        clearWithActiveTokensCount,
+        diagnostics,
+      };
     },
   };
 }

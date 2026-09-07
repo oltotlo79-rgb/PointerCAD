@@ -21,6 +21,7 @@ import type {
 } from '../types.js';
 import { recomputeSolids, type CachedSolid } from './recomputeSolids.js';
 import { createShapeCache, type ShapeCache } from './shapeCache.js';
+import { stepBytesForComparison } from './stepBytesForComparison.testSupport.js';
 
 /**
  * 決定性検査(`rules/03-品質ゲート.md` §7.1 が P6 に予定していたもの、
@@ -400,11 +401,8 @@ describe('決定性検査(recomputeSolids と writeStep、§0.62)', () => {
     const linesA = decode(bytesA).split(/\r?\n/);
     const linesB = decode(bytesB).split(/\r?\n/);
 
-    // 手順1: まず4行目が本当にFILE_NAMEで始まり時刻を含むことを確かめる
-    // (writeStep.test.ts の既存の決定性検査と同じ正規表現)。
-    const fileNamePattern = /^FILE_NAME\('Open CASCADE Shape Model','\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'/;
-    expect(linesA[3]).toMatch(fileNamePattern);
-    expect(linesB[3]).toMatch(fileNamePattern);
+    // 共通の比較で4行目の日時形式を検証する。日時以外は改行も含め全バイトを比べる。
+    expect(stepBytesForComparison(bytesB)).toEqual(stepBytesForComparison(bytesA));
 
     expect(linesB).toHaveLength(linesA.length);
     const differingLines: number[] = [];

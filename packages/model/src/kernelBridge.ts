@@ -471,6 +471,8 @@ export type PartCancelToken = () => boolean;
 
 /** 立体の再計算に添える設定。どれも省略できる。 */
 export interface SolidRecomputeOptions {
+  /** 文書/session 内で安定した部品の識別子。省略時は part:current。 */
+  readonly partId?: string;
   /**
    * 世代番号。呼び出しごとに 1 つ増やし、古い応答を捨てる目印にする
    * (P1 の attachSketchRecompute と同じ発想)。
@@ -661,6 +663,7 @@ export type ShapeExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
 
 /** 書き出しの依頼(model の言葉)。 */
 export interface ShapeExportOptions {
+  readonly partId?: string;
   readonly format: ShapeExportFormat;
   /** 書き出す立体。並びがそのままファイルの中の並びになる。 */
   readonly bodies: readonly ShapeExportBody[];
@@ -834,10 +837,11 @@ function toShapeExportRequest(
 ): ShapeExportRequest {
   switch (options.format) {
     case 'step':
-      return { format: 'step', bodies: items, withColors: options.withColors };
+      return { format: 'step', partId: options.partId, bodies: items, withColors: options.withColors };
     case 'stl':
       return {
         format: 'stl',
+        partId: options.partId,
         bodies: items,
         ascii: options.ascii,
         baseName: options.baseName,
@@ -847,12 +851,13 @@ function toShapeExportRequest(
     case 'gltf':
       return {
         format: options.format,
+        partId: options.partId,
         bodies: items,
         baseName: options.baseName,
         ...meshQualityOf(options),
       };
     case 'mesh':
-      return { format: 'mesh', bodies: items, ...meshQualityOf(options) };
+      return { format: 'mesh', partId: options.partId, bodies: items, ...meshQualityOf(options) };
   }
 }
 
@@ -1089,6 +1094,7 @@ export type PrintabilityOutcome =
 
 /** 点検の依頼(model の言葉)。 */
 export interface PrintabilityOptions {
+  readonly partId?: string;
   /**
    * 点検する立体を作ったフィーチャーの id。**並びがそのまま結果の三角形の並びになる**
    * (2 つ以上を指すと、カーネルは三角形を 1 つに連ねてから測る)。空なら断る。
@@ -1125,6 +1131,7 @@ function toShapeInspectRequest(
 ): ShapeInspectRequest {
   const quality = options.meshQuality ?? DISPLAY_MESH_QUALITY;
   return {
+    partId: options.partId,
     bodies: items,
     deviationMm: quality.deviationMm,
     angularDeflectionRad: quality.angularDeflectionRad,
@@ -2032,6 +2039,7 @@ function toSolidRecomputeRequest(
   options: SolidRecomputeOptions,
 ): SolidRecomputeRequest {
   return {
+    partId: options.partId,
     steps: steps.map((step) => toSolidStepRequest(step)),
     generation: options.generation ?? 0,
     appearanceQueries: toAppearanceQueries(steps, options.appearance ?? []),

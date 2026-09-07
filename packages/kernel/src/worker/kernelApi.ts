@@ -66,7 +66,23 @@ import {
   type SolidCancelToken,
   type SolidProgressCallback,
 } from './recomputeSolids.js';
-import { createShapeCache, type ShapeCache } from './shapeCache.js';
+import { createShapeCache, type AcquireToken, type ShapeCache, type ShapeCacheStats } from './shapeCache.js';
+
+const DEFAULT_PART_ID = 'part:current';
+
+/** Comlink でも name は残る。鍵の一覧は checkShapeAvailability から構造化して取得する。 */
+export class MissingBodiesError extends Error {
+  override readonly name = 'MissingBodiesError';
+
+  constructor(readonly partId: string, readonly missingKeys: readonly string[]) {
+    super(MISSING_BODY_MESSAGE);
+  }
+}
+
+export interface ShapeAvailability {
+  readonly partId: string;
+  readonly missingKeys: readonly string[];
+}
 
 /**
  * 投影・交差(FR-325)のもとになる立体が形状キャッシュに無いとき。
@@ -117,11 +133,16 @@ const IMPORT_TESSELLATION: TessellationOptions = {};
 function resolveExportShapes(
   cache: ShapeCache<CachedSolid>,
   bodies: readonly ShapeExportItem[],
+  partId: string,
 ): readonly TopoDS_Shape[] {
+  const missing = [...new Set(bodies.map((item) => item.bodyKey))].filter((key) => !cache.has(key));
+  if (missing.length > 0) {
+    throw new MissingBodiesError(partId, missing);
+  }
   return bodies.map((item) => {
     const cached = cache.get(item.bodyKey);
     if (cached === undefined) {
-      throw new Error(MISSING_BODY_MESSAGE);
+      throw new MissingBodiesError(partId, [item.bodyKey]);
     }
     return cached.shape;
   });
@@ -290,11 +311,12 @@ function displayMeshesOf(
 function resolveDisplayMeshes(
   displayMeshes: ReadonlyMap<string, DisplayMeshEntry>,
   bodies: readonly ShapeExportItem[],
+  partId: string,
 ): readonly DisplayMeshEntry[] {
   return bodies.map((item) => {
     const displayed = displayMeshes.get(item.bodyKey);
     if (displayed === undefined) {
-      throw new Error(MISSING_BODY_MESSAGE);
+      throw new MissingBodiesError(partId, [item.bodyKey]);
     }
     return displayed;
   });
@@ -418,20 +440,93 @@ export interface KernelApi {
   ): Promise<ShapeInspectResult>;
 }
 
+/** 寿命を管理する実装の口。既存の計算だけを包む KernelApi の利用者とも互換にする。 */
+export interface ManagedKernelApi extends KernelApi {
+  releasePart(partId: string): Promise<void>;
+  getShapeCacheStats(): Promise<ShapeCacheStats>;
+  /** 欠落時の再計算は model(11a)が行う。例外の独自欄に依存せず Worker 越しに読める。 */
+  checkShapeAvailability(partId: string, bodyKeys: readonly string[]): Promise<ShapeAvailability>;
+}
+
+interface PartShapes {
+  token: AcquireToken | undefined;
+  meshes: ReadonlyMap<string, DisplayMeshEntry>;
+  revision: number;
+  job: symbol;
+}
+
+/** 未作成の段も先に確保し、長い履歴の途中でも入力や最終形を追い出さない。 */
+function recomputeKeys(request: SolidRecomputeRequest): Set<string> {
+  const keys = new Set(request.steps.map((step) => step.key));
+  for (const { step } of request.steps) {
+    if ('targetKey' in step && typeof step.targetKey === 'string') {
+      keys.add(step.targetKey);
+    }
+    if (step.kind === 'boolean') {
+      keys.add(step.toolKey);
+    }
+    if (step.kind === 'thruSections') {
+      for (const section of step.sections) {
+        if (section.kind === 'faceQuery') {
+          keys.add(section.targetKey);
+        }
+      }
+    }
+  }
+  for (const query of request.appearanceQueries ?? []) {
+    keys.add(query.bodyKey);
+  }
+  return keys;
+}
+
 /**
- * OCCT の読み込み手続きを受け取って KernelApi を組み立てる。
+ * OCCT の読み込み手続きを受け取って、寿命管理を含む KernelApi を組み立てる。
  * ブラウザでは loadOcctForBrowser、Node のテストでは loadOcctForNode を渡す。
  */
-export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): KernelApi {
+export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): ManagedKernelApi {
   // 形状キャッシュは窓口 1 つにつき 1 つ。再計算をまたいで残すことで、
   // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
   // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない(2026-09-03 統括判断)。
-  const cache = createShapeCache<CachedSolid>();
-  // 表示メッシュは直近に完了した再計算 1 世代ぶんだけを指す。typed array は複製しない。
-  let displayMeshes: ReadonlyMap<string, DisplayMeshEntry> = new Map<string, DisplayMeshEntry>();
-  let meshRevision = 0;
+  const cache = createShapeCache<CachedSolid>(
+    undefined,
+    ({ mesh }) =>
+      mesh.positions.byteLength +
+      mesh.normals.byteLength +
+      mesh.indices.byteLength +
+      mesh.edgePositions.byteLength,
+  );
+  // 形と表示メッシュは同じ部品の次の完了結果まで保持する。配列は複製しない。
+  const parts = new Map<string, PartShapes>();
+
+  async function withAcquiredKeys<T>(keys: Iterable<string>, run: () => Promise<T>): Promise<T> {
+    const token = cache.acquire(keys);
+    try {
+      return await run();
+    } finally {
+      cache.release(token);
+    }
+  }
 
   return {
+    releasePart(partId): Promise<void> {
+      const part = parts.get(partId);
+      parts.delete(partId);
+      if (part?.token !== undefined) {
+        cache.release(part.token);
+      }
+      return Promise.resolve();
+    },
+
+    getShapeCacheStats(): Promise<ShapeCacheStats> {
+      return Promise.resolve(cache.stats());
+    },
+
+    checkShapeAvailability(partId, bodyKeys): Promise<ShapeAvailability> {
+      return Promise.resolve({
+        partId,
+        missingKeys: [...new Set(bodyKeys)].filter((key) => !cache.has(key)),
+      });
+    },
     async tessellateSketch(sketch, options = {}): Promise<SketchTessellation> {
       const oc = await loadOcct();
       const curvePolylines: Float32Array[] = [];
@@ -482,20 +577,35 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
       onProgress,
       cancelToken,
     ): Promise<SolidRecomputeResult> {
-      const oc = await loadOcct();
-      const result = await runSolidRecompute(
-        { oc, cache },
-        request,
-        options,
-        onProgress,
-        cancelToken,
-      );
-      // 途中で打ち切った結果は画面へ適用されないので、現在の表示メッシュも進めない。
-      if (!result.cancelled) {
-        meshRevision += 1;
-        displayMeshes = displayMeshesOf(request, result, meshRevision);
-      }
-      return result;
+      const partId = request.partId ?? DEFAULT_PART_ID;
+      const part: PartShapes = parts.get(partId) ?? {
+        token: undefined,
+        meshes: new Map<string, DisplayMeshEntry>(),
+        revision: 0,
+        job: Symbol(),
+      };
+      const job = Symbol();
+      part.job = job;
+      parts.set(partId, part);
+      return withAcquiredKeys(recomputeKeys(request), async () => {
+        const oc = await loadOcct();
+        const result = await runSolidRecompute(
+          { oc, cache }, request, options, onProgress, cancelToken,
+        );
+        // 取消・旧job・削除済み部品の結果で現行の最終形を置き換えない。
+        if (!result.cancelled && parts.get(partId) === part && part.job === job) {
+          const meshes = displayMeshesOf(request, result, part.revision + 1);
+          const token = meshes.size === 0 ? undefined : cache.acquire(meshes.keys());
+          const previous = part.token;
+          part.token = token;
+          part.meshes = meshes;
+          part.revision += 1;
+          if (previous !== undefined) {
+            cache.release(previous);
+          }
+        }
+        return result;
+      });
     },
 
     async offsetSketchCurves(request): Promise<SketchOffsetOutcome> {
@@ -524,219 +634,227 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
     },
 
     async projectSketchCurves(request): Promise<SketchProjectionOutcome> {
-      const oc = await loadOcct();
-      const results: SketchProjectionResult[] = [];
-      const failures: SketchProjectionFailure[] = [];
+      return withAcquiredKeys(request.items.map((item) => item.shapeKey), async () => {
+        const oc = await loadOcct();
+        const results: SketchProjectionResult[] = [];
+        const failures: SketchProjectionFailure[] = [];
 
-      // 1 件失敗しても残りは作る。失敗は理由つきで返す(FR-504、NFR-RE-1)。
-      for (const item of request.items) {
-        const cached = cache.get(item.shapeKey);
-        if (cached === undefined) {
-          failures.push({ id: item.id, message: MISSING_BODY_MESSAGE });
-          continue;
+        // 1 件失敗しても残りは作る。失敗は理由つきで返す(FR-504、NFR-RE-1)。
+        for (const item of request.items) {
+          const cached = cache.get(item.shapeKey);
+          if (cached === undefined) {
+            failures.push({ id: item.id, message: MISSING_BODY_MESSAGE });
+            continue;
+          }
+          // 指紋で選び直した面・辺は「新しく作られた形」なので、使い終えたら手放す。
+          // 立体そのもの(subShape が null)はキャッシュの持ち物なので手放さない。
+          const picked =
+            item.subShape === null
+              ? null
+              : pickSubShape(oc, cached.shape, cached.mesh, item.subShape);
+          if (item.subShape !== null && picked === null) {
+            failures.push({ id: item.id, message: MISSING_SUB_SHAPE_MESSAGE });
+            continue;
+          }
+          try {
+            const curves = makeProjection(oc, {
+              source: picked ?? cached.shape,
+              plane: item.plane,
+            });
+            results.push({ id: item.id, curves: curves.curves });
+          } catch (error) {
+            failures.push({
+              id: item.id,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          } finally {
+            picked?.delete();
+          }
         }
-        // 指紋で選び直した面・辺は「新しく作られた形」なので、使い終えたら手放す。
-        // 立体そのもの(subShape が null)はキャッシュの持ち物なので手放さない。
-        const picked =
-          item.subShape === null
-            ? null
-            : pickSubShape(oc, cached.shape, cached.mesh, item.subShape);
-        if (item.subShape !== null && picked === null) {
-          failures.push({ id: item.id, message: MISSING_SUB_SHAPE_MESSAGE });
-          continue;
-        }
-        try {
-          const curves = makeProjection(oc, {
-            source: picked ?? cached.shape,
-            plane: item.plane,
-          });
-          results.push({ id: item.id, curves: curves.curves });
-        } catch (error) {
-          failures.push({
-            id: item.id,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        } finally {
-          picked?.delete();
-        }
-      }
 
-      return { results, failures };
+        return { results, failures };
+      });
     },
 
     async sectionSketchCurves(request): Promise<SketchProjectionOutcome> {
-      const oc = await loadOcct();
-      const results: SketchProjectionResult[] = [];
-      const failures: SketchProjectionFailure[] = [];
+      return withAcquiredKeys(request.items.map((item) => item.shapeKey), async () => {
+        const oc = await loadOcct();
+        const results: SketchProjectionResult[] = [];
+        const failures: SketchProjectionFailure[] = [];
 
-      for (const item of request.items) {
-        const cached = cache.get(item.shapeKey);
-        if (cached === undefined) {
-          failures.push({ id: item.id, message: MISSING_BODY_MESSAGE });
-          continue;
+        for (const item of request.items) {
+          const cached = cache.get(item.shapeKey);
+          if (cached === undefined) {
+            failures.push({ id: item.id, message: MISSING_BODY_MESSAGE });
+            continue;
+          }
+          try {
+            const curves = makeSection(oc, { target: cached.shape, plane: item.plane });
+            results.push({ id: item.id, curves: curves.curves });
+          } catch (error) {
+            failures.push({
+              id: item.id,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
-        try {
-          const curves = makeSection(oc, { target: cached.shape, plane: item.plane });
-          results.push({ id: item.id, curves: curves.curves });
-        } catch (error) {
-          failures.push({
-            id: item.id,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
 
-      return { results, failures };
+        return { results, failures };
+      });
     },
 
     async measure(request): Promise<MeasureResult> {
-      const oc = await loadOcct();
-      // 選び直した面・辺・頂点は「新しく作られた形」なので、測り終えたら手放す。
-      // ボディそのもの(subShape が null)はキャッシュの持ち物なので手放さない。
-      const picked: TopoDS_Shape[] = [];
-      const shapes: TopoDS_Shape[] = [];
-
-      try {
-        for (const target of request.targets) {
-          const cached = cache.get(target.bodyKey);
-          if (cached === undefined) {
-            return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
-          }
-          if (target.subShape === null) {
-            shapes.push(cached.shape);
-            continue;
-          }
-          const subShape = pickSubShape(oc, cached.shape, cached.mesh, target.subShape);
-          if (subShape === null) {
-            return { kind: 'failed', message: MISSING_SUB_SHAPE_MESSAGE };
-          }
-          picked.push(subShape);
-          shapes.push(subShape);
-        }
+      return withAcquiredKeys(request.targets.map((target) => target.bodyKey), async () => {
+        const oc = await loadOcct();
+        // 選び直した面・辺・頂点は「新しく作られた形」なので、測り終えたら手放す。
+        // ボディそのもの(subShape が null)はキャッシュの持ち物なので手放さない。
+        const picked: TopoDS_Shape[] = [];
+        const shapes: TopoDS_Shape[] = [];
 
         try {
-          if (request.kind === 'distance') {
-            const [first, second] = shapes;
-            if (shapes.length !== 2 || first === undefined || second === undefined) {
-              return { kind: 'failed', message: MEASURE_NEEDS_TWO_MESSAGE };
+          for (const target of request.targets) {
+            const cached = cache.get(target.bodyKey);
+            if (cached === undefined) {
+              return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
             }
-            const found = distanceBetween(oc, first, second);
+            if (target.subShape === null) {
+              shapes.push(cached.shape);
+              continue;
+            }
+            const subShape = pickSubShape(oc, cached.shape, cached.mesh, target.subShape);
+            if (subShape === null) {
+              return { kind: 'failed', message: MISSING_SUB_SHAPE_MESSAGE };
+            }
+            picked.push(subShape);
+            shapes.push(subShape);
+          }
+
+          try {
+            if (request.kind === 'distance') {
+              const [first, second] = shapes;
+              if (shapes.length !== 2 || first === undefined || second === undefined) {
+                return { kind: 'failed', message: MEASURE_NEEDS_TWO_MESSAGE };
+              }
+              const found = distanceBetween(oc, first, second);
+              return {
+                kind: 'distance',
+                distance: found.distance,
+                pointA: found.pointA,
+                pointB: found.pointB,
+                inner: found.inner,
+              };
+            }
+            const [only] = shapes;
+            if (shapes.length !== 1 || only === undefined) {
+              return { kind: 'failed', message: MEASURE_NEEDS_ONE_MESSAGE };
+            }
+            const properties = measureMassProperties(oc, only);
             return {
-              kind: 'distance',
-              distance: found.distance,
-              pointA: found.pointA,
-              pointB: found.pointB,
-              inner: found.inner,
+              kind: 'massProperties',
+              volume: properties.volume,
+              area: properties.area,
+              centreOfMass: properties.centreOfMass,
+              principalMoments: properties.principalMoments,
+              principalAxes: properties.principalAxes,
+            };
+          } catch (error) {
+            // OCCT が測れなかった理由はそのまま画面に出せる日本語にしてある(FR-504)。
+            return {
+              kind: 'failed',
+              message: error instanceof Error ? error.message : String(error),
             };
           }
-          const [only] = shapes;
-          if (shapes.length !== 1 || only === undefined) {
-            return { kind: 'failed', message: MEASURE_NEEDS_ONE_MESSAGE };
+        } finally {
+          for (const shape of picked) {
+            shape.delete();
           }
-          const properties = measureMassProperties(oc, only);
-          return {
-            kind: 'massProperties',
-            volume: properties.volume,
-            area: properties.area,
-            centreOfMass: properties.centreOfMass,
-            principalMoments: properties.principalMoments,
-            principalAxes: properties.principalAxes,
-          };
-        } catch (error) {
-          // OCCT が測れなかった理由はそのまま画面に出せる日本語にしてある(FR-504)。
-          return {
-            kind: 'failed',
-            message: error instanceof Error ? error.message : String(error),
-          };
         }
-      } finally {
-        for (const shape of picked) {
-          shape.delete();
-        }
-      }
+      });
     },
 
     async exportShapes(request): Promise<ShapeExportResult> {
-      const oc = await loadOcct();
-      const shapes = resolveExportShapes(cache, request.bodies);
+      return withAcquiredKeys(request.bodies.map((body) => body.bodyKey), async () => {
+        const oc = await loadOcct();
+        const shapes = resolveExportShapes(cache, request.bodies, request.partId ?? DEFAULT_PART_ID);
 
-      // 網羅 `switch`(`default` を作らない)。形式が増えたら、ここが型検査で落ちる
-      // ことで配線し忘れが分かる(`ShapeExportRequest` の注釈)。
-      switch (request.format) {
-        case 'step': {
-          // 立体が 1 つも無いときの断り(「書き出せる立体がありません。」)は
-          // `buildXcafDocument` が持っている。ここで先回りして数えないのは、
-          // 同じ文言を 2 か所に置かないため(model の `selectExportBodies` も
-          // `nothingToExport` で先に断る)。
-          const written = writeStep(
-            oc,
-            request.bodies.map((item, index) => ({
-              shape: shapes[index],
-              name: item.name,
-              color: item.color,
-              // 面ごとの色(P6 タスク7b+13b)。`StepWriteEntry`(= `XcafShapeEntry`)が
-              // 元から持つ欄なので、依頼の欄をそのまま渡すだけでよい。
-              faceColors: item.faceColors,
-            })),
-            { withColors: request.withColors ?? true },
-          );
-          return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
+        // 網羅 `switch`(`default` を作らない)。形式が増えたら、ここが型検査で落ちる
+        // ことで配線し忘れが分かる(`ShapeExportRequest` の注釈)。
+        switch (request.format) {
+          case 'step': {
+            // 立体が 1 つも無いときの断り(「書き出せる立体がありません。」)は
+            // `buildXcafDocument` が持っている。ここで先回りして数えないのは、
+            // 同じ文言を 2 か所に置かないため(model の `selectExportBodies` も
+            // `nothingToExport` で先に断る)。
+            const written = writeStep(
+              oc,
+              request.bodies.map((item, index) => ({
+                shape: shapes[index],
+                name: item.name,
+                color: item.color,
+                // 面ごとの色(P6 タスク7b+13b)。`StepWriteEntry`(= `XcafShapeEntry`)が
+                // 元から持つ欄なので、依頼の欄をそのまま渡すだけでよい。
+                faceColors: item.faceColors,
+              })),
+              { withColors: request.withColors ?? true },
+            );
+            return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
+          }
+          case 'stl': {
+            // STL は三角形の網を 1 つしか持てないので、立体をそのまま順につなぐ(§2.4)。
+            // 色は書かない(§0.a-0.15。仕様に無い)ので、依頼の名前と色は使わない。
+            const written = writeStl(buildExportMeshes(oc, shapes, request), {
+              ascii: request.ascii ?? false,
+            });
+            return {
+              format: 'stl',
+              files: [
+                { fileName: `${normalizeBaseName(request.baseName)}.stl`, bytes: written.bytes },
+              ],
+              triangleCount: written.triangleCount,
+              droppedTriangleCount: written.droppedTriangleCount,
+            };
+          }
+          // OBJ と glTF は書き手が同じ(`writeCafMesh`)で、違うのは組み立てるファイルだけ。
+          // 依頼の `format` がそのまま書き手の `CafMeshFormat` になるので、2 つを 1 つの枝で受ける。
+          case 'obj':
+          case 'gltf': {
+            const meshes = buildExportMeshes(oc, shapes, request);
+            const written = writeCafMesh(
+              request.bodies.map((item, index) => ({
+                mesh: meshes[index],
+                name: item.name,
+                color: item.color,
+                // 面ごとの色(P6 タスク7b+13b)。`meshes[index]` は `buildExportMesh` の
+                // 戻りなので `faceRanges` を必ず持ち、`CafMeshBody.faceColors` へそのまま渡せる。
+                faceColors: item.faceColors,
+              })),
+              { format: request.format, baseName: request.baseName },
+            );
+            return {
+              format: request.format,
+              files: written.files,
+              triangleCount: written.triangleCount,
+              droppedTriangleCount: written.droppedTriangleCount,
+            };
+          }
+          case 'mesh': {
+            const meshes = buildExportMeshes(oc, shapes, request);
+            const bodies: ShapeExportMeshBody[] = request.bodies.map((item, index) => ({
+              bodyKey: item.bodyKey,
+              // 形の複製に掛けるので、画面用キャッシュの三角形は 1 枚も変わらない(§0.a-0.13)。
+              triangles: meshes[index],
+            }));
+            return { format: 'mesh', bodies };
+          }
+          case 'brep': {
+            const bodies: ShapeExportBrepBody[] = request.bodies.map((item, index) => ({
+              bodyKey: item.bodyKey,
+              bytes: writeBrepBytes(oc, shapes[index]),
+            }));
+            return { format: 'brep', bodies };
+          }
         }
-        case 'stl': {
-          // STL は三角形の網を 1 つしか持てないので、立体をそのまま順につなぐ(§2.4)。
-          // 色は書かない(§0.a-0.15。仕様に無い)ので、依頼の名前と色は使わない。
-          const written = writeStl(buildExportMeshes(oc, shapes, request), {
-            ascii: request.ascii ?? false,
-          });
-          return {
-            format: 'stl',
-            files: [
-              { fileName: `${normalizeBaseName(request.baseName)}.stl`, bytes: written.bytes },
-            ],
-            triangleCount: written.triangleCount,
-            droppedTriangleCount: written.droppedTriangleCount,
-          };
-        }
-        // OBJ と glTF は書き手が同じ(`writeCafMesh`)で、違うのは組み立てるファイルだけ。
-        // 依頼の `format` がそのまま書き手の `CafMeshFormat` になるので、2 つを 1 つの枝で受ける。
-        case 'obj':
-        case 'gltf': {
-          const meshes = buildExportMeshes(oc, shapes, request);
-          const written = writeCafMesh(
-            request.bodies.map((item, index) => ({
-              mesh: meshes[index],
-              name: item.name,
-              color: item.color,
-              // 面ごとの色(P6 タスク7b+13b)。`meshes[index]` は `buildExportMesh` の
-              // 戻りなので `faceRanges` を必ず持ち、`CafMeshBody.faceColors` へそのまま渡せる。
-              faceColors: item.faceColors,
-            })),
-            { format: request.format, baseName: request.baseName },
-          );
-          return {
-            format: request.format,
-            files: written.files,
-            triangleCount: written.triangleCount,
-            droppedTriangleCount: written.droppedTriangleCount,
-          };
-        }
-        case 'mesh': {
-          const meshes = buildExportMeshes(oc, shapes, request);
-          const bodies: ShapeExportMeshBody[] = request.bodies.map((item, index) => ({
-            bodyKey: item.bodyKey,
-            // 形の複製に掛けるので、画面用キャッシュの三角形は 1 枚も変わらない(§0.a-0.13)。
-            triangles: meshes[index],
-          }));
-          return { format: 'mesh', bodies };
-        }
-        case 'brep': {
-          const bodies: ShapeExportBrepBody[] = request.bodies.map((item, index) => ({
-            bodyKey: item.bodyKey,
-            bytes: writeBrepBytes(oc, shapes[index]),
-          }));
-          return { format: 'brep', bodies };
-        }
-      }
+      });
     },
 
     async importShape(request): Promise<ShapeImportResult> {
@@ -819,22 +937,29 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): K
     },
 
     async inspectPrintability(request, onProgress, shouldCancel): Promise<ShapeInspectResult> {
-      // 別品質で作り直さず、直近に画面へ返した typed array そのものを点検する。
-      const displayed = resolveDisplayMeshes(displayMeshes, request.bodies);
-      const mesh = mergeExportMeshes(displayed.map((entry) => entry.mesh));
-      const result = await runInspectPrintability(
-        mesh,
-        { minThicknessMm: request.minThicknessMm, overhangAngleDeg: request.overhangAngleDeg },
-        { onProgress, shouldCancel },
-      );
-      return {
-        ...result,
-        meshes: displayed.map(({ bodyKey, meshRevision: revision, triangleCount }) => ({
-          bodyKey,
-          meshRevision: revision,
-          triangleCount,
-        })),
-      };
+      return withAcquiredKeys(request.bodies.map((body) => body.bodyKey), async () => {
+        // 別品質で作り直さず、直近に画面へ返した typed array そのものを点検する。
+        const partId = request.partId ?? DEFAULT_PART_ID;
+        const displayed = resolveDisplayMeshes(
+          parts.get(partId)?.meshes ?? new Map<string, DisplayMeshEntry>(),
+          request.bodies,
+          partId,
+        );
+        const mesh = mergeExportMeshes(displayed.map((entry) => entry.mesh));
+        const result = await runInspectPrintability(
+          mesh,
+          { minThicknessMm: request.minThicknessMm, overhangAngleDeg: request.overhangAngleDeg },
+          { onProgress, shouldCancel },
+        );
+        return {
+          ...result,
+          meshes: displayed.map(({ bodyKey, meshRevision: revision, triangleCount }) => ({
+            bodyKey,
+            meshRevision: revision,
+            triangleCount,
+          })),
+        };
+      });
     },
   };
 }

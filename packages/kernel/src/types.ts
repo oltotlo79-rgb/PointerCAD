@@ -248,11 +248,13 @@ export interface SketchSectionItem {
 
 /** 投影の依頼をまとめたもの。1 回の往復で何件でも頼める。 */
 export interface SketchProjectionRequest {
+  readonly partId?: string;
   readonly items: readonly SketchProjectionItem[];
 }
 
 /** 交差の依頼をまとめたもの。 */
 export interface SketchSectionRequest {
+  readonly partId?: string;
   readonly items: readonly SketchSectionItem[];
 }
 
@@ -450,8 +452,25 @@ export interface SolidStepRequest {
   readonly tessellation?: TessellationOptions;
 }
 
+/** 形状キャッシュの使用中保護とメモリの診断(OCCT 本体のバイト数は含めない)。 */
+export interface ShapeCacheDiagnostics {
+  /** 保持する形の数。保護中の上書きで解放を待っている旧形も含む。 */
+  readonly shapeCount: number;
+  /** 確保中の異なる鍵の数。まだ作っていない鍵も含む。 */
+  readonly protectedKeyCount: number;
+  /** 保持するメッシュの typed array のバイト数の合計。 */
+  readonly meshBytes: number;
+  /** 保護対象だけで容量を超えた現在の件数。 */
+  readonly protectedOverBudget: number;
+  /** 確保が残った状態で clear した回数(累計)。 */
+  readonly clearWithActiveTokensCount: number;
+  readonly diagnostics: readonly string[];
+}
+
 /** 履歴をまとめて計算し直す依頼。 */
 export interface SolidRecomputeRequest {
+  /** 文書/session 内で安定した部品の識別子。省略時は part:current。 */
+  readonly partId?: string;
   readonly steps: readonly SolidStepRequest[];
   /** 取り消しの世代番号。cancelSolidRecompute に同じ番号を渡すと止まる(NFR-PF-4)。 */
   readonly generation: number;
@@ -1332,6 +1351,7 @@ export interface MeasureTargetSpec {
  * model 側が計算するので、Worker を往復しない(NFR-PF-4)。
  */
 export interface MeasureRequest {
+  readonly partId?: string;
   readonly targets: readonly MeasureTargetSpec[];
   readonly kind: 'distance' | 'massProperties';
 }
@@ -1473,12 +1493,14 @@ export interface ShapeExportFile {
  */
 export type ShapeExportRequest =
   | {
+      readonly partId?: string;
       readonly format: 'step';
       readonly bodies: readonly ShapeExportItem[];
       /** 色を書くか(§0.a-0.22)。省くと書く。列挙が取れない環境では形だけになる。 */
       readonly withColors?: boolean;
     }
   | ({
+      readonly partId?: string;
       readonly format: 'stl';
       readonly bodies: readonly ShapeExportItem[];
       /**
@@ -1492,22 +1514,26 @@ export type ShapeExportRequest =
       readonly baseName?: string;
     } & ShapeExportMeshQuality)
   | ({
+      readonly partId?: string;
       readonly format: 'obj';
       readonly bodies: readonly ShapeExportItem[];
       /** ファイル名の基(拡張子なし。省くと `model`)。`.obj` と `.mtl` で同じ基を使う。 */
       readonly baseName?: string;
     } & ShapeExportMeshQuality)
   | ({
+      readonly partId?: string;
       readonly format: 'gltf';
       readonly bodies: readonly ShapeExportItem[];
       /** ファイル名の基(拡張子なし。省くと `model`)。 */
       readonly baseName?: string;
     } & ShapeExportMeshQuality)
   | ({
+      readonly partId?: string;
       readonly format: 'mesh';
       readonly bodies: readonly ShapeExportItem[];
     } & ShapeExportMeshQuality)
   | {
+      readonly partId?: string;
       readonly format: 'brep';
       readonly bodies: readonly ShapeExportItem[];
     };
@@ -1580,6 +1606,7 @@ export type ShapeExportResult =
  * 「ボディをまたいだ 1 つの形」として測る。`worker/kernelApi.ts` の実装)。
  */
 export interface ShapeInspectRequest extends ShapeExportMeshQuality {
+  readonly partId?: string;
   /** 点検する立体。書き出しと同じ鍵の一覧(名前・色は使わない)。 */
   readonly bodies: readonly ShapeExportItem[];
   /** 最小肉厚のしきい値(mm)。省略すると `DEFAULT_MIN_THICKNESS_MM`(occt 側の既定)。 */

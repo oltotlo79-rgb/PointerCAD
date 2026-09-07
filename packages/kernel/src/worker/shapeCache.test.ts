@@ -216,20 +216,25 @@ describe('形状キャッシュ(鍵つき・容量上限つきの LRU)', () => {
 
   it('統計は件数・追い出し回数・解放した延べ件数を返す', () => {
     const cache = createShapeCache<FakeHandle>(2);
+    // 既存3欄の期待値はそのまま固定し、追加の診断欄は使用中保護の検査で確かめる。
+    const legacyStats = () => {
+      const { size, evictions, released } = cache.stats();
+      return { size, evictions, released };
+    };
     cache.set('a', fakeHandle('a'));
     cache.set('b', fakeHandle('b'));
-    expect(cache.stats()).toEqual({ size: 2, evictions: 0, released: 0 });
+    expect(legacyStats()).toEqual({ size: 2, evictions: 0, released: 0 });
 
     // 容量 2 に 3 件目を入れると、最も古い a を追い出す。
     cache.set('c', fakeHandle('c'));
-    expect(cache.stats()).toEqual({ size: 2, evictions: 1, released: 1 });
+    expect(legacyStats()).toEqual({ size: 2, evictions: 1, released: 1 });
 
     // 上書きは解放だが追い出しではない。
     cache.set('b', fakeHandle('b2'));
-    expect(cache.stats()).toEqual({ size: 2, evictions: 1, released: 2 });
+    expect(legacyStats()).toEqual({ size: 2, evictions: 1, released: 2 });
 
     cache.clear();
-    expect(cache.stats()).toEqual({ size: 0, evictions: 1, released: 4 });
+    expect(legacyStats()).toEqual({ size: 0, evictions: 1, released: 4 });
   });
 
   it('容量の既定は SHAPE_CACHE_CAPACITY 件で、超えた分だけ追い出す', () => {
@@ -259,6 +264,155 @@ describe('形状キャッシュ(鍵つき・容量上限つきの LRU)', () => {
     expect(() => createShapeCache(0)).toThrow(/容量/);
     expect(() => createShapeCache(-1)).toThrow(/容量/);
     expect(() => createShapeCache(1.5)).toThrow(/容量/);
+  });
+});
+
+describe('形状キャッシュの使用中保護', () => {
+  it('古い鍵でも確保中は追い出さず、未確保の形をLRU順に解放する', () => {
+    const cache = createShapeCache<FakeHandle>(2);
+    const a = fakeHandle('a');
+    const b = fakeHandle('b');
+    cache.set('a', a);
+    cache.set('b', b);
+    const token = cache.acquire(['a']);
+    cache.set('c', fakeHandle('c'));
+    expect(cache.has('a')).toBe(true);
+    expect(a.deleteCalls()).toBe(0);
+    expect(b.deleteCalls()).toBe(1);
+    cache.release(token);
+    cache.clear();
+  });
+
+  it('release後は元のLRU順で追い出される', () => {
+    const cache = createShapeCache<FakeHandle>(2);
+    const a = fakeHandle('a');
+    cache.set('a', a);
+    cache.set('b', fakeHandle('b'));
+    const token = cache.acquire(['a']);
+    cache.release(token);
+    cache.set('c', fakeHandle('c'));
+    expect(cache.has('a')).toBe(false);
+    expect(a.deleteCalls()).toBe(1);
+    cache.clear();
+  });
+
+  it('重複する鍵と複数tokenを参照カウントし、確保鍵数が0→2→1→0に戻る', () => {
+    const cache = createShapeCache<FakeHandle>(1);
+    expect(cache.stats().protectedKeyCount).toBe(0);
+    const first = cache.acquire(['a', 'a', 'b']);
+    const second = cache.acquire(['a']);
+    expect(cache.stats().protectedKeyCount).toBe(2);
+    cache.set('a', fakeHandle('a'));
+    cache.set('b', fakeHandle('b'));
+    cache.release(first);
+    expect(cache.stats().protectedKeyCount).toBe(1);
+    expect(cache.has('a')).toBe(true);
+    expect(cache.has('b')).toBe(false);
+    cache.release(second);
+    expect(cache.stats().protectedKeyCount).toBe(0);
+    cache.clear();
+  });
+
+  it('保護対象だけで容量を超えると超過を許して診断し、release時に予算へ戻す', () => {
+    const cache = createShapeCache<FakeHandle>(1);
+    const token = cache.acquire(['a', 'b']);
+    cache.set('a', fakeHandle('a'));
+    cache.set('b', fakeHandle('b'));
+    expect(cache.stats()).toMatchObject({ size: 2, shapeCount: 2, protectedKeyCount: 2, protectedOverBudget: 1, evictions: 0, diagnostics: ['保護対象だけで予算超過'] });
+    cache.set('c', fakeHandle('c'));
+    expect(cache.has('c')).toBe(false);
+    expect(cache.size).toBe(2);
+    cache.release(token);
+    expect(cache.stats()).toMatchObject({ size: 1, protectedKeyCount: 0, protectedOverBudget: 0, diagnostics: [] });
+    cache.clear();
+  });
+
+  it('retainとdeleteは確保中の形を解放せず、確保を外した後は解放できる', () => {
+    const cache = createShapeCache<FakeHandle>();
+    const a = fakeHandle('a');
+    cache.set('a', a);
+    cache.set('b', fakeHandle('b'));
+    const token = cache.acquire(['a']);
+    expect(cache.retain([])).toBe(1);
+    expect(cache.delete('a')).toBe(false);
+    expect(a.deleteCalls()).toBe(0);
+    cache.release(token);
+    expect(cache.delete('a')).toBe(true);
+    expect(a.deleteCalls()).toBe(1);
+  });
+
+  it('clearは全形と確保を解放して診断し、古いtokenが新しい確保に影響しない', () => {
+    const cache = createShapeCache<FakeHandle>();
+    const a = fakeHandle('a');
+    cache.set('a', a);
+    const old = cache.acquire(['a']);
+    cache.clear();
+    expect(a.deleteCalls()).toBe(1);
+    expect(cache.stats()).toMatchObject({ shapeCount: 0, protectedKeyCount: 0, clearWithActiveTokensCount: 1, diagnostics: ['確保が残った状態で clear が呼ばれました'] });
+    const fresh = cache.acquire(['a']);
+    cache.release(old);
+    expect(cache.stats().protectedKeyCount).toBe(1);
+    cache.release(fresh);
+    cache.clear();
+    expect(cache.stats().clearWithActiveTokensCount).toBe(1);
+    expect(a.deleteCalls()).toBe(1);
+  });
+
+  it('二重releaseと別のキャッシュのtokenは他の確保を外さない', () => {
+    const cache = createShapeCache<FakeHandle>();
+    const other = createShapeCache<FakeHandle>();
+    const first = cache.acquire(['a']);
+    const second = cache.acquire(['a']);
+    const foreign = other.acquire(['a']);
+    cache.release(first);
+    cache.release(first);
+    cache.release(foreign);
+    expect(cache.stats().protectedKeyCount).toBe(1);
+    cache.release(second);
+    expect(cache.stats().protectedKeyCount).toBe(0);
+    other.release(foreign);
+  });
+
+  it('保護中の上書きは貸した旧形も保持し、最後のreleaseで一度だけ解放する', () => {
+    const cache = createShapeCache<FakeHandle>(2, () => 12);
+    const a = fakeHandle('a');
+    const b = fakeHandle('b');
+    cache.set('a', a);
+    const token = cache.acquire(['a']);
+    cache.set('a', b);
+    expect(a.deleteCalls()).toBe(0);
+    expect(cache.stats()).toMatchObject({ size: 1, shapeCount: 2, meshBytes: 24 });
+    cache.release(token);
+    expect(a.deleteCalls()).toBe(1);
+    expect(cache.stats()).toMatchObject({ shapeCount: 1, meshBytes: 12 });
+    cache.clear();
+    expect(a.deleteCalls()).toBe(1);
+    expect(b.deleteCalls()).toBe(1);
+    expect(cache.stats().meshBytes).toBe(0);
+  });
+
+  it('保護中に旧形を現行へ戻してclearしても同じ実体を二重解放しない', () => {
+    const cache = createShapeCache<FakeHandle>();
+    const a = fakeHandle('a');
+    const b = fakeHandle('b');
+    cache.set('a', a);
+    const token = cache.acquire(['a']);
+    cache.set('a', b);
+    cache.set('a', a);
+    cache.clear();
+    cache.release(token);
+    expect(a.deleteCalls()).toBe(1);
+    expect(b.deleteCalls()).toBe(1);
+  });
+
+  it('鍵の列挙が途中で失敗したacquireは確保を残さない', () => {
+    const cache = createShapeCache<FakeHandle>();
+    function* keys(): Generator<string> {
+      yield 'a';
+      throw new Error('列挙失敗');
+    }
+    expect(() => cache.acquire(keys())).toThrow('列挙失敗');
+    expect(cache.stats().protectedKeyCount).toBe(0);
   });
 });
 

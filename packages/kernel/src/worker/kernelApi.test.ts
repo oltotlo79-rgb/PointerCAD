@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { expose, releaseProxy, wrap } from 'comlink';
 
 import type {
   PrintabilityCancelToken,
@@ -21,6 +22,7 @@ import type {
   SubShapeQuery,
 } from '../types.js';
 import { createKernelApi, type KernelApi } from './kernelApi.js';
+import { stepBytesForComparison } from './stepBytesForComparison.testSupport.js';
 
 /**
  * `KernelApi.inspectPrintability` を呼ぶ薄い橋渡し。
@@ -120,8 +122,227 @@ function perimeterOf(curves: readonly CurveSpec[]): number {
   }, 0);
 }
 
+describe('KernelApiの使用中保護', () => {
+  const item = (bodyKey: string): ShapeExportItem => ({ bodyKey, name: null, color: null });
+
+  it('寸法の異なる50部品の最終bodyすべてを測定・STEP書き出しでき、他部品の表示世代も残る', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const keys = Array.from({ length: 50 }, (_unused, index) => `part-${index}`);
+    let meshBytes = 0;
+    try {
+      for (const [index, key] of keys.entries()) {
+        const result = await target.recomputeSolids({ partId: key, generation: 1, steps: [extrudeStep(key, key, index + 1)] });
+        expect(result.failures).toEqual([]);
+        const mesh = result.bodies[0];
+        meshBytes += mesh.positions.byteLength + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength;
+      }
+      expect(await target.getShapeCacheStats()).toMatchObject({ shapeCount: 50, protectedKeyCount: 50, meshBytes, evictions: 0 });
+      for (const [index, key] of keys.entries()) {
+        const measured = await target.measure({ partId: key, kind: 'massProperties', targets: [{ bodyKey: key, subShape: null }] });
+        expect(measured.kind).toBe('massProperties');
+        if (measured.kind === 'massProperties') {
+          expect(measured.volume).toBeCloseTo(1200 * (index + 1), 6);
+        }
+      }
+      const exported = await target.exportShapes({ format: 'step', bodies: keys.map(item) });
+      expect(exported.format).toBe('step');
+      const first = await target.inspectPrintability({ partId: keys[0], bodies: [item(keys[0])], deviationMm: 0.1 });
+      expect(first.meshes).toEqual([{ bodyKey: keys[0], meshRevision: 1, triangleCount: 12 }]);
+      await target.recomputeSolids({ partId: keys[49], generation: 2, steps: [extrudeStep(keys[49], keys[49], 50)] });
+      const again = await target.inspectPrintability({ partId: keys[0], bodies: [item(keys[0])], deviationMm: 0.1 });
+      expect(again.meshes).toEqual(first.meshes);
+      console.log(`50部品: 測定50成功、STEP50形状、meshBytes=${meshBytes}、保護鍵50`);
+    } finally {
+      for (const key of keys) await target.releasePart(key);
+    }
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
+  });
+
+  it('別部品が同じ鍵を共有しても片方の置換やreleasePartで残りの保護を外さない', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    for (const partId of ['a', 'b']) {
+      await target.recomputeSolids({ partId, generation: 1, steps: [extrudeStep('body', 'shared', 1)] });
+    }
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(1);
+    await target.recomputeSolids({ partId: 'a', generation: 2, steps: [extrudeStep('body', 'replacement', 2)] });
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(2);
+    await target.releasePart('a');
+    await target.releasePart('a');
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(1);
+    expect((await target.inspectPrintability({ partId: 'b', bodies: [item('shared')], deviationMm: 0.1 })).meshes[0].meshRevision).toBe(1);
+    await expect(target.inspectPrintability({ partId: 'a', bodies: [item('replacement')], deviationMm: 0.1 })).rejects.toThrow(/もとになる立体/);
+    await target.releasePart('b');
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
+  });
+
+  it('取消jobの確保鍵数が0→2→0に戻る', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const counts = [(await target.getShapeCacheStats()).protectedKeyCount];
+    const result = await target.recomputeSolids({ generation: 1, steps: [extrudeStep('a', 'a', 1), extrudeStep('b', 'b', 2)] }, {}, undefined, async () => {
+      counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+      return true;
+    });
+    expect(result.cancelled).toBe(true);
+    counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+    expect(counts).toEqual([0, 2, 0]);
+  });
+
+  it('全段失敗したjobの入力保護は残らない', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const result = await target.recomputeSolids({ generation: 1, steps: [extrudeStep('bad', 'bad', 0)] });
+    expect(result.failures).toHaveLength(1);
+    expect(await target.getShapeCacheStats()).toMatchObject({ protectedKeyCount: 0, shapeCount: 0 });
+  });
+
+  it('進捗・取消callbackの例外でもjobの確保を外す', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const request = { generation: 1, steps: [extrudeStep('a', 'a', 1), extrudeStep('b', 'b', 2)] };
+    await expect(target.recomputeSolids(request, {}, () => { throw new Error('進捗失敗'); })).rejects.toThrow('進捗失敗');
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
+    await expect(target.recomputeSolids(request, {}, undefined, () => { throw new Error('取消確認失敗'); })).rejects.toThrow('取消確認失敗');
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
+  });
+
+  it('再計算と複数形操作はOCCT読み込み前から確保し、読み込み例外でも0に戻す', async () => {
+    const counts: number[] = [];
+    const target = createKernelApi(async () => {
+      counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+      throw new Error('読み込み失敗');
+    });
+    const plane: SketchPlaneFrame = { origin: [0, 0, 0], axisU: [1, 0, 0], normal: [0, 0, 1] };
+    const operations = [
+      () => target.recomputeSolids({ generation: 1, steps: [extrudeStep('a', 'a', 1), extrudeStep('b', 'b', 2)] }),
+      () => target.exportShapes({ format: 'step', bodies: [item('a'), item('b')] }),
+      () => target.measure({ kind: 'distance', targets: [{ bodyKey: 'a', subShape: null }, { bodyKey: 'b', subShape: null }] }),
+      () => target.projectSketchCurves({ items: ['a', 'b'].map((key) => ({ id: key, shapeKey: key, subShape: null, plane })) }),
+      () => target.sectionSketchCurves({ items: ['a', 'b'].map((key) => ({ id: key, shapeKey: key, plane })) }),
+    ];
+    for (const operation of operations) {
+      counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+      await expect(operation()).rejects.toThrow('読み込み失敗');
+      counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+    }
+    expect(counts).toEqual([0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0]);
+  });
+
+  it('成功する書き出し・測定の前後も確保鍵数が0→2→0に戻る', async () => {
+    let record = false;
+    const counts: number[] = [];
+    const target = createKernelApi(async () => {
+      if (record) counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+      return loadOcctForNode();
+    });
+    await target.recomputeSolids({ generation: 1, steps: [extrudeStep('a', 'a', 1), extrudeStep('b', 'b', 2)] });
+    await target.releasePart('part:current');
+    record = true;
+    counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+    expect((await target.exportShapes({ format: 'brep', bodies: [item('a'), item('b')] })).format).toBe('brep');
+    counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+    expect((await target.measure({ kind: 'distance', targets: [{ bodyKey: 'a', subShape: null }, { bodyKey: 'b', subShape: null }] })).kind).toBe('distance');
+    counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+    expect(counts).toEqual([0, 2, 0, 2, 0]);
+  });
+
+  it('点検中に部品を解放しても操作の保護は残り、取消完了時に0へ戻る', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    await target.recomputeSolids({ partId: 'inspect', generation: 1, steps: [extrudeStep('a', 'a', 1), extrudeStep('b', 'b', 2)] });
+    const counts: number[] = [];
+    const result = await target.inspectPrintability({ partId: 'inspect', bodies: [item('a'), item('b')], deviationMm: 0.1 }, undefined, async () => {
+      await target.releasePart('inspect');
+      counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+      return true;
+    });
+    expect(result.cancelled).toBe(true);
+    counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+    expect(counts).toEqual([2, 0]);
+  });
+
+  it('履歴外の入力鍵もjob開始時に確保する', async () => {
+    let record = false;
+    const counts: number[] = [];
+    const target = createKernelApi(async () => {
+      if (record) counts.push((await target.getShapeCacheStats()).protectedKeyCount);
+      return loadOcctForNode();
+    });
+    await target.recomputeSolids({ generation: 1, steps: [extrudeStep('input', 'input', 1)] });
+    await target.releasePart('part:current');
+    record = true;
+    const result = await target.recomputeSolids({ generation: 2, steps: [{ id: 'scaled', key: 'scaled', label: 'scaled', visible: true, step: { kind: 'scale', targetKey: 'input', origin: [0, 0, 0], uniform: 2, perAxis: null } }] });
+    expect(result.failures).toEqual([]);
+    expect(counts).toEqual([2]);
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(1);
+    await target.releasePart('part:current');
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
+  });
+
+  it('進行中jobの部品をreleasePartすると、完了しても保護や表示を復活させない', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const result = await target.recomputeSolids({ partId: 'removed', generation: 1, steps: [extrudeStep('a', 'a', 1), extrudeStep('b', 'b', 2)] }, {}, undefined, async () => {
+      await target.releasePart('removed');
+      return false;
+    });
+    expect(result.failures).toEqual([]);
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
+    await expect(target.inspectPrintability({ partId: 'removed', bodies: [item('a')], deviationMm: 0.1 })).rejects.toThrow(/もとになる立体/);
+  });
+
+  it('同じ部品の新jobが先に完了した場合、後から終わる旧jobで最終形や表示を戻さない', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    await target.recomputeSolids({ partId: 'part', generation: 1, steps: [extrudeStep('old-a', 'old-a', 1), extrudeStep('old-b', 'old-b', 2)] }, {}, undefined, async () => {
+      await target.recomputeSolids({ partId: 'part', generation: 2, steps: [extrudeStep('new', 'new', 3)] });
+      return false;
+    });
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(1);
+    expect((await target.inspectPrintability({ partId: 'part', bodies: [item('new')], deviationMm: 0.1 })).meshes[0].meshRevision).toBe(1);
+    await expect(target.inspectPrintability({ partId: 'part', bodies: [item('old-a')], deviationMm: 0.1 })).rejects.toThrow(/もとになる立体/);
+    await target.releasePart('part');
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
+  });
+
+  it('Comlink越しにも欠落の種類と構造化したpartId・missingKeysが届く', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const channel = new MessageChannel();
+    expose(target, channel.port1);
+    const remote = wrap<ReturnType<typeof createKernelApi>>(channel.port2);
+    try {
+      await expect(remote.exportShapes({ partId: 'lost', format: 'step', bodies: [item('missing')] })).rejects.toMatchObject({ name: 'MissingBodiesError', message: 'もとになる立体が見つかりませんでした。もう一度計算し直してください。' });
+      expect(await remote.checkShapeAvailability('lost', ['missing', 'missing', 'other'])).toEqual({ partId: 'lost', missingKeys: ['missing', 'other'] });
+      expect((await remote.getShapeCacheStats()).protectedKeyCount).toBe(0);
+      await remote.releasePart('lost');
+    } finally {
+      remote[releaseProxy]();
+      channel.port1.close();
+      channel.port2.close();
+    }
+  });
+});
+
 describe('KernelApi', () => {
   const api = createKernelApi(loadOcctForNode);
+
+  it('別部品の履歴が容量256を超えても、先の部品の最終bodyを測定・書き出しできる', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const first = { partId: 'part:first', generation: 1, steps: [extrudeStep('first', 'first-final', 1)] };
+    const second = {
+      partId: 'part:second',
+      generation: 1,
+      steps: Array.from({ length: 257 }, (_unused, index) => ({
+        ...extrudeStep(`second-${index}`, `second-${index}`, index + 2),
+        visible: index === 256,
+      })),
+    };
+    expect((await target.recomputeSolids(first)).failures).toEqual([]);
+    expect((await target.recomputeSolids(second)).failures).toEqual([]);
+    const measured = await target.measure({ kind: 'massProperties', targets: [{ bodyKey: 'first-final', subShape: null }] });
+    console.log(`追い出し再現: 登録鍵258、容量256、先の最終鍵first-final、測定結果=${measured.kind}`);
+    await expect(target.exportShapes({ format: 'step', bodies: [{ bodyKey: 'first-final', name: null, color: null }] })).resolves.toMatchObject({ format: 'step' });
+    expect(measured.kind).toBe('massProperties');
+    expect(await target.checkShapeAvailability('part:second', ['first-final', 'second-0', 'second-1', 'second-2'])).toEqual({ partId: 'part:second', missingKeys: ['second-0', 'second-1'] });
+    expect(await target.getShapeCacheStats()).toMatchObject({ size: 256, evictions: 2, protectedKeyCount: 2, protectedOverBudget: 0 });
+    await target.releasePart('part:first');
+    await target.releasePart('part:second');
+    expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
+  });
 
   it('履歴の段から立体のメッシュを作り、進捗を段ごとに知らせる', async () => {
     const progress: SolidProgress[] = [];
@@ -1384,7 +1605,9 @@ describe('KernelApi', () => {
     expect(stepWithout.format).toBe('step');
     expect(stepWithEmpty.format).toBe('step');
     if (stepWithout.format === 'step' && stepWithEmpty.format === 'step') {
-      expect(stepWithEmpty.bytes).toEqual(stepWithout.bytes);
+      expect(stepBytesForComparison(stepWithEmpty.bytes)).toEqual(
+        stepBytesForComparison(stepWithout.bytes),
+      );
     }
 
     const gltfWithout = await api.exportShapes({
@@ -1402,6 +1625,22 @@ describe('KernelApi', () => {
     if (gltfWithout.format === 'gltf' && gltfWithEmpty.format === 'gltf') {
       expect(gltfWithEmpty.files[0].bytes).toEqual(gltfWithout.files[0].bytes);
     }
+  });
+
+  it('STEP 比較は秒の差だけを除き、それ以外の 1 バイトの差と不正な日時を検出する', () => {
+    const text = "ISO-10303-21;\r\nHEADER;\r\nFILE_DESCRIPTION((''),'2;1');\r\n" +
+      "FILE_NAME('Open CASCADE Shape Model','2026-09-07T14:17:22',(''),(''),'writer','','');\r\nENDSEC;\r\n";
+    const encode = (value: string): Uint8Array => new TextEncoder().encode(value);
+    const original = encode(text);
+    const nextSecond = encode(text.replace('14:17:22', '14:17:23'));
+    expect(nextSecond).not.toEqual(original);
+    expect(stepBytesForComparison(nextSecond)).toEqual(stepBytesForComparison(original));
+    for (const changed of [text.replace('writer', 'Writer'), text.replace('ENDSEC', 'ENDSeC')]) {
+      expect(stepBytesForComparison(encode(changed))).not.toEqual(stepBytesForComparison(original));
+    }
+    expect(() => stepBytesForComparison(encode(text.replace('14:17:22', '99:17:22')))).toThrow(/ISO 8601/);
+    expect(() => stepBytesForComparison(encode(text.replace('14:17:22', 'not-time')))).toThrow(/ISO 8601/);
+    expect(encode(text)).toEqual(original);
   });
 
   it('要件の 5 形式(STEP / STL / OBJ / glTF / 3MF 用の三角形)がすべて 1 本の口から出る', async () => {

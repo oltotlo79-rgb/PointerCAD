@@ -15,15 +15,19 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createKernelApi } from '@pointercad/kernel';
 
 import {
   createKernelBridge,
+  createDirectKernelBridge,
   KERNEL_BROKEN_MESSAGE,
   toPrintabilityOutcome,
   type SketchOffsetRequestItem,
   type SketchProjectionRequestItem,
 } from './kernelBridge.js';
 import type { ResolvedSolidStep } from './part/resolvePart.js';
+import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from './part/createPartDocument.js';
+import { recomputePart } from './part/recomputePart.js';
 import { WORK_PLANES } from './sketch/planeMath.js';
 import type { ResolvedFace } from './sketch/types.js';
 
@@ -112,6 +116,43 @@ function fakeStep(featureId: string, key: string): ResolvedSolidStep {
     },
   };
 }
+
+describe('部品の識別子を kernel へ素通しする', () => {
+  it.each([undefined, 'part:library-a'])('再計算・全書き出し形式・点検へ partId=%s を渡す', async (partId) => {
+    const api = createKernelApi(() => Promise.reject(new Error('OCCT はこの検査では起動しない')));
+    const recompute = vi.spyOn(api, 'recomputeSolids').mockResolvedValue({
+      bodies: [], failures: [], cacheHits: 0, cancelled: false,
+    });
+    const exported = vi.spyOn(api, 'exportShapes').mockRejectedValue(new Error('依頼の受信までを検査'));
+    const inspected = vi.spyOn(api, 'inspectPrintability').mockRejectedValue(new Error('依頼の受信までを検査'));
+    const bridge = createDirectKernelBridge(api);
+    const steps = [fakeStep('body-1', 'key-1')];
+    try {
+      await bridge.recomputeSolids(steps, { partId });
+      expect(recompute.mock.calls[0][0]).toMatchObject({ partId });
+      recompute.mockClear();
+      const document = createEmptyPartDocument();
+      await recomputePart(appendSolid(document, createPrimitiveFeature(document, 'box')), bridge, { partId });
+      expect(recompute).toHaveBeenCalledTimes(1);
+      expect(recompute.mock.calls[0][0]).toMatchObject({ partId });
+      for (const format of ['step', 'stl', 'obj', 'gltf', 'mesh'] as const) {
+        await bridge.exportShapes(steps, {
+          partId, format, bodies: [{ featureId: 'body-1', name: null, color: null }],
+          meshQuality: { deviationMm: 0.1, angularDeflectionRad: 0.5 },
+          withColors: true, ascii: false, baseName: 'part',
+        });
+      }
+      expect(exported).toHaveBeenCalledTimes(5);
+      for (const [request] of exported.mock.calls) {
+        expect(request).toMatchObject({ partId, bodies: [{ bodyKey: 'key-1' }] });
+      }
+      await bridge.inspectPrintability(steps, { partId, bodies: ['body-1'] });
+      expect(inspected.mock.calls[0][0]).toMatchObject({ partId, bodies: [{ bodyKey: 'key-1' }] });
+    } finally {
+      bridge.dispose();
+    }
+  });
+});
 
 describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', () => {
   beforeEach(() => {

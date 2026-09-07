@@ -101,6 +101,8 @@ export interface PartRecomputeResult {
 }
 
 export interface PartRecomputeOptions {
+  /** 文書/session 内で安定した部品の識別子。橋へそのまま渡す。 */
+  readonly partId?: string;
   /** 依頼ごとに 1 つ増やす番号。省くと 0。 */
   readonly generation?: number;
   readonly onProgress?: PartProgressCallback;
@@ -271,6 +273,7 @@ async function callSolids(
     return {
       ok: true,
       outcome: await bridge.recomputeSolids(resolved.steps, {
+        partId: options.partId,
         generation,
         onProgress: options.onProgress,
         shouldCancel: options.shouldCancel,

@@ -439,6 +439,12 @@ describe('壊れたファイルの断り(§0.a-0.27、NFR-RE-1)', () => {
     expect(result).toEqual({ ok: false, reason: THREE_MF_READ_FAILED_MESSAGE });
   });
 
+  it('finite の入力でも Float32 変換で Infinity になる座標は断る', () => {
+    const broken = boxModelXml().replace('<vertex x="0"', '<vertex x="1e40"');
+    const result = readThreeMf(packThreeMf(broken));
+    expect(result).toEqual({ ok: false, reason: THREE_MF_READ_FAILED_MESSAGE });
+  });
+
   it('添字が頂点を指していない XML は断る', () => {
     const broken = boxModelXml().replace('<triangle v1="0" v2="2" v3="1"/>', '<triangle v1="0" v2="2" v3="99"/>');
     const result = readThreeMf(packThreeMf(broken));
@@ -493,6 +499,15 @@ describe('大きすぎる形の門(§2.8 の断りの表)', () => {
       '</triangles></mesh></object></resources><build><item objectid="2"/></build></model>';
     const result = readThreeMf(packThreeMf(xml));
     expect(result).toEqual({ ok: false, reason: threeMfTooLargeMessage(count) });
+  });
+
+  it('build item の複製で最終三角形数が上限を超えると、メッシュ確保前に断る', () => {
+    const tripled = boxModelXml().replace(
+      '<item objectid="2"/>',
+      '<item objectid="2"/><item objectid="2"/><item objectid="2"/>',
+    );
+    const result = readThreeMf(packThreeMf(tripled), { maximumTriangleCount: 24 });
+    expect(result).toEqual({ ok: false, reason: threeMfTooLargeMessage(36) });
   });
 });
 

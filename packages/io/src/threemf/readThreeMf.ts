@@ -3,7 +3,7 @@
  *
  * 3MF は ZIP の中に XML を入れた形式で、OCCT には読み手が無い(§0.a-0.26)。だから
  * `packages/io` が自前で読む。書き出し(`writeThreeMf.ts`)のちょうど逆で、
- * ZIP を `fflate` の `unzipSync` で開き、`3D/3dmodel.model` の
+ * ZIP を共通の上限つきストリーミング入口で開き、`3D/3dmodel.model` の
  * `<vertex x= y= z=>` と `<triangle v1= v2= v3=>` を拾う。
  *
  * **OCCT を呼ばない。** 返すのは素の JS の並び(位置・法線・添字)だけで、
@@ -38,8 +38,10 @@
  * 検査で固定する**(`readThreeMf.test.ts` に正本の文字列を書き写した検査がある)。
  */
 
-import { strFromU8, unzipSync, type Unzipped } from 'fflate';
+import { strFromU8 } from 'fflate';
 
+import { IO_LIMITS, meshAllocationByteLength } from '../limits.js';
+import { ARCHIVE_TOO_LARGE_MESSAGE, readArchive } from '../pcad/readArchive.js';
 import { THREE_MF_MODEL_ENTRY, type ThreeMfColor } from './writeThreeMf.js';
 
 /**
@@ -140,6 +142,12 @@ export type ThreeMfReadResult =
       readonly unit: ThreeMfLengthUnit;
     }
   | { readonly ok: false; readonly reason: string };
+
+/** 小さな上限を注入し、大きな実ファイルを作らず防御を検査するための口。 */
+export interface ReadThreeMfOptions {
+  readonly maximumTriangleCount?: number;
+  readonly maximumMeshAllocationBytes?: number;
+}
 
 /** 断りを組み立てる(結果の形を 1 か所にする)。 */
 function fail(reason: string): ThreeMfReadResult {
@@ -725,20 +733,29 @@ function buildMesh(
       positions[base] = x * unitScale;
       positions[base + 1] = y * unitScale;
       positions[base + 2] = z * unitScale;
-      continue;
+    } else {
+      // 行ベクトル × 4 行 3 列。最後の行(添字 9〜11)が平行移動。
+      positions[base] =
+        (x * transform[0] + y * transform[3] + z * transform[6] + transform[9]) * unitScale;
+      positions[base + 1] =
+        (x * transform[1] + y * transform[4] + z * transform[7] + transform[10]) * unitScale;
+      positions[base + 2] =
+        (x * transform[2] + y * transform[5] + z * transform[8] + transform[11]) * unitScale;
     }
-    // 行ベクトル × 4 行 3 列。最後の行(添字 9〜11)が平行移動。
-    positions[base] = (x * transform[0] + y * transform[3] + z * transform[6] + transform[9]) * unitScale;
-    positions[base + 1] =
-      (x * transform[1] + y * transform[4] + z * transform[7] + transform[10]) * unitScale;
-    positions[base + 2] =
-      (x * transform[2] + y * transform[5] + z * transform[8] + transform[11]) * unitScale;
+    // 入力値が finite でも、変換や Float32 への丸めで Infinity になることがある。
+    if (
+      !Number.isFinite(positions[base]) ||
+      !Number.isFinite(positions[base + 1]) ||
+      !Number.isFinite(positions[base + 2])
+    ) {
+      return null;
+    }
   }
 
   const indices = new Uint32Array(object.corners.length);
   for (let index = 0; index < object.corners.length; index += 1) {
     const corner = object.corners[index];
-    if (corner >= vertexCount) {
+    if (!Number.isInteger(corner) || corner < 0 || corner >= vertexCount) {
       return null;
     }
     indices[index] = corner;
@@ -770,15 +787,6 @@ function colorOf(object: RawObject, materials: ParsedModel['materials']): ThreeM
 /* ------------------------------------------------------------------ *
  * 入口
  * ------------------------------------------------------------------ */
-
-/** ZIP を展開する。ZIP でなければ `fflate` が例外を投げるので受け止めて `null` にする。 */
-function unzip(bytes: Uint8Array): Unzipped | null {
-  try {
-    return unzipSync(bytes);
-  } catch {
-    return null;
-  }
-}
 
 /** UTF-8 として読む。読めない並びは置き換え文字になるだけだが、念のため受け止める。 */
 function decodeUtf8(bytes: Uint8Array): string | null {
@@ -833,23 +841,40 @@ function countTriangleTags(xml: string): number {
  * **例外を投げない。** 壊れたファイル・面が 0 枚・大きすぎる形は、日本語の理由を添えた
  * `{ ok: false, reason }` で返す(§0.a-0.27、NFR-RE-1)。
  */
-export function readThreeMf(bytes: Uint8Array): ThreeMfReadResult {
+export function readThreeMf(
+  bytes: Uint8Array,
+  options: ReadThreeMfOptions = {},
+): ThreeMfReadResult {
   try {
-    const entries = unzip(bytes);
-    if (entries === null) {
+    const maximumTriangleCount =
+      options.maximumTriangleCount ?? THREE_MF_MAX_TRIANGLE_COUNT;
+    const maximumMeshAllocationBytes =
+      options.maximumMeshAllocationBytes ?? IO_LIMITS.meshAllocationBytes;
+    const archive = readArchive(bytes, {
+      shouldExtract: (name) => name === THREE_MF_MODEL_ENTRY,
+    });
+    if (!archive.ok) {
+      const reason =
+        archive.error.kind === 'compressedInput' ||
+        archive.error.kind === 'entryCount' ||
+        archive.error.kind === 'entryExpanded' ||
+        archive.error.kind === 'totalExpanded'
+          ? archive.error.reason
+          : THREE_MF_READ_FAILED_MESSAGE;
+      return fail(reason);
+    }
+    const modelEntry = archive.entries.get(THREE_MF_MODEL_ENTRY);
+    if (modelEntry === undefined) {
       return fail(THREE_MF_READ_FAILED_MESSAGE);
     }
-    if (!(THREE_MF_MODEL_ENTRY in entries)) {
-      return fail(THREE_MF_READ_FAILED_MESSAGE);
-    }
-    const xml = decodeUtf8(entries[THREE_MF_MODEL_ENTRY]);
+    const xml = decodeUtf8(modelEntry);
     if (xml === null) {
       return fail(THREE_MF_READ_FAILED_MESSAGE);
     }
 
     // 読む前の門(多すぎる)。上の注釈のとおり、畳む前に数えるほうが安全である。
     const roughTriangleCount = countTriangleTags(xml);
-    if (roughTriangleCount > THREE_MF_MAX_TRIANGLE_COUNT) {
+    if (roughTriangleCount > maximumTriangleCount) {
       return fail(threeMfTooLargeMessage(roughTriangleCount));
     }
 
@@ -867,14 +892,18 @@ export function readThreeMf(bytes: Uint8Array): ThreeMfReadResult {
       byId.set(object.id, object);
     }
     const unitScale = UNIT_TO_MILLIMETER[parsed.unit];
-    const meshes: ThreeMfMesh[] = [];
+    const plans: {
+      readonly object: RawObject;
+      readonly transform: number[] | null;
+      readonly color: ThreeMfColor | null;
+    }[] = [];
+    let plannedVertexCount = 0;
+    let plannedTriangleCount = 0;
     if (parsed.items.length === 0) {
       for (const object of parsed.objects) {
-        const mesh = buildMesh(object, null, unitScale, colorOf(object, parsed.materials));
-        if (mesh === null) {
-          return fail(THREE_MF_READ_FAILED_MESSAGE);
-        }
-        meshes.push(mesh);
+        plannedVertexCount += object.coordinates.length / 3;
+        plannedTriangleCount += object.corners.length / 3;
+        plans.push({ object, transform: null, color: colorOf(object, parsed.materials) });
       }
     } else {
       for (const item of parsed.items) {
@@ -883,24 +912,38 @@ export function readThreeMf(bytes: Uint8Array): ThreeMfReadResult {
           // 置いてある形の実体が無いファイルは、形が食い違っているので断る。
           return fail(THREE_MF_READ_FAILED_MESSAGE);
         }
-        const mesh = buildMesh(object, item.transform, unitScale, colorOf(object, parsed.materials));
-        if (mesh === null) {
-          return fail(THREE_MF_READ_FAILED_MESSAGE);
+        plannedVertexCount += object.coordinates.length / 3;
+        plannedTriangleCount += object.corners.length / 3;
+        if (plannedTriangleCount > maximumTriangleCount) {
+          // 同じ object の大量配置でも、配列を 1 本も確保する前に断る。
+          return fail(threeMfTooLargeMessage(plannedTriangleCount));
         }
-        meshes.push(mesh);
+        plans.push({
+          object,
+          transform: item.transform,
+          color: colorOf(object, parsed.materials),
+        });
       }
     }
 
-    let triangleCount = 0;
-    for (const mesh of meshes) {
-      triangleCount += mesh.triangleCount;
+    if (plannedTriangleCount > maximumTriangleCount) {
+      return fail(threeMfTooLargeMessage(plannedTriangleCount));
     }
-    if (triangleCount > THREE_MF_MAX_TRIANGLE_COUNT) {
-      // 同じ `<object>` を何度も置いた形は、門をくぐった後で初めて上限を超える。
-      return fail(threeMfTooLargeMessage(triangleCount));
+    const plannedMeshBytes = meshAllocationByteLength(plannedVertexCount, plannedTriangleCount);
+    if (plannedMeshBytes === null || plannedMeshBytes > maximumMeshAllocationBytes) {
+      return fail(ARCHIVE_TOO_LARGE_MESSAGE);
     }
-    if (triangleCount === 0) {
+    if (plannedTriangleCount === 0) {
       return fail(THREE_MF_NO_FACE_MESSAGE);
+    }
+
+    const meshes: ThreeMfMesh[] = [];
+    for (const plan of plans) {
+      const mesh = buildMesh(plan.object, plan.transform, unitScale, plan.color);
+      if (mesh === null) {
+        return fail(THREE_MF_READ_FAILED_MESSAGE);
+      }
+      meshes.push(mesh);
     }
     return { ok: true, meshes, unit: parsed.unit };
   } catch {

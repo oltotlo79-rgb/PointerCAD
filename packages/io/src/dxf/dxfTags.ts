@@ -33,6 +33,8 @@
  * `dxfTags.test.ts` の「往復」の検査で固定している。
  */
 
+import { IO_LIMITS } from '../limits.js';
+
 /** DXF のタグ 1 つ。`code` がグループコード、`value` は値の文字列(数値への変換は実体の段で行う)。 */
 export interface DxfTag {
   readonly code: number;
@@ -45,6 +47,9 @@ export interface DxfTag {
  * (利用者にとっては「この入れ物では開けない」という同じ 1 つの事実のため)。
  */
 export const DXF_UNSUPPORTED_FORMAT_MESSAGE = 'この DXF の形式には対応していません。';
+
+/** `split` 用の巨大な配列を作る前に断るときの文言。 */
+export const DXF_TOO_LARGE_MESSAGE = 'この DXF は大きすぎて開けません。';
 
 /** 書き出すときの改行。DXF の慣習に合わせて `\r\n` に固定する(計画書 §2.7)。 */
 const OUTPUT_LINE_BREAK = '\r\n';
@@ -64,11 +69,19 @@ const GROUP_CODE_PATTERN = /^[+-]?[0-9]+$/;
  *
  * @param text DXF のテキスト全体。
  * @returns 読めたタグの列(前から順)。
- * @throws {Error} `DXF_UNSUPPORTED_FORMAT_MESSAGE` を持つ例外。行数が奇数、
- *   またはコードの行が 10 進の整数でないとき。**途中まで読めた分を返さない**のは、
- *   対応がずれたまま実体の段へ渡すと、別の図形として読めてしまうため。
+ * @throws {Error} 本文が上限を超えたときは `DXF_TOO_LARGE_MESSAGE`、行数が奇数、
+ *   またはコードの行が 10 進の整数でないときは `DXF_UNSUPPORTED_FORMAT_MESSAGE`。
+ *   **途中まで読めた分を返さない**のは、対応がずれたまま実体の段へ渡すと、別の図形として
+ *   読めてしまうため。
  */
-export function parseDxfTags(text: string): readonly DxfTag[] {
+export function parseDxfTags(
+  text: string,
+  maximumCharacters: number = IO_LIMITS.dxfTextCharacters,
+): readonly DxfTag[] {
+  if (text.length > maximumCharacters) {
+    // DXF の既存契約は日本語の Error を上の層が捕捉する形。配列を作る前に同じ形で断る。
+    throw new Error(DXF_TOO_LARGE_MESSAGE);
+  }
   // `String.prototype.split` は必ず 1 個以上返すので、末尾の要素は常に存在する。
   const lines = text.split(INPUT_LINE_BREAK);
   // 末尾の改行 1 つぶんの空文字だけを落とす(`"0\nEOF\n"` の最後の要素)。

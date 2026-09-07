@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { DXF_UNSUPPORTED_FORMAT_MESSAGE, formatDxfTags, parseDxfTags } from './dxfTags.js';
+import {
+  DXF_TOO_LARGE_MESSAGE,
+  DXF_UNSUPPORTED_FORMAT_MESSAGE,
+  formatDxfTags,
+  parseDxfTags,
+} from './dxfTags.js';
 
 /*
  * DXF の字句(タグの列)の検査(計画書 docs/plans/P6-入出力.md タスク22 の検証表)。
@@ -105,6 +110,10 @@ describe('parseDxfTags', () => {
 
   it('断りの文言は定数のとおり(NFR-UX-5)', () => {
     expect(DXF_UNSUPPORTED_FORMAT_MESSAGE).toBe('この DXF の形式には対応していません。');
+  });
+
+  it('本文の文字数が上限を超えると split の前に「大きすぎる」で断る', () => {
+    expect(() => parseDxfTags('0\nEOF', 4)).toThrow(DXF_TOO_LARGE_MESSAGE);
   });
 });
 

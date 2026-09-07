@@ -39,8 +39,13 @@
  */
 
 import type { AssemblyDocument, LengthUnit, PartDocument } from '@pointercad/model';
-import { strFromU8, strToU8, unzipSync, zipSync, type Unzipped, type Zippable } from 'fflate';
+import { strFromU8, strToU8, zipSync, type Zippable } from 'fflate';
 
+import {
+  IO_LIMITS,
+  isMeshAllocationWithinLimit,
+  meshAllocationByteLength,
+} from '../limits.js';
 import {
   readAssemblyDocument,
   writeAssemblyDocument,
@@ -53,6 +58,7 @@ import {
   type PcadPartFile,
   type PcadToolDefaults,
 } from './schema.js';
+import { ARCHIVE_TOO_LARGE_MESSAGE, readArchive } from './readArchive.js';
 
 /** 部品文書を入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
@@ -216,12 +222,58 @@ export function encodeImportedMeshBytes(mesh: ImportedMeshBytes): Uint8Array | n
  * `meshes/<id>.bin` のバイト列から三角形を取り出す。読めなければ `null`
  * (**例外を投げない**。NFR-RE-1)。
  *
- * 確かめるのは**並びの整合だけ**(マジック・長さ)で、添字が頂点数の範囲に収まるか等の
- * 中身の妥当性は見ない。範囲外の添字は「壊れた形」ではあるが、そこで**ファイルごと
- * 開けなくする**のは FR-504(読み込みでファイルを失わせない)に反するので、
- * 表示・書き出しの段(タスク12・32)に任せる。
+ * マジック・長さ・確保予算に加え、位置と法線が finite であること、添字が頂点数の
+ * 範囲内であることを確かめる。壊れた値を描画・計測へ渡さないため、1 つでも違えば
+ * 添付全体を `null` で断る。
  */
 export function decodeImportedMeshBytes(bytes: Uint8Array): ImportedMeshBytes | null {
+  const header = inspectImportedMeshBytes(bytes);
+  if (
+    header === null ||
+    !isMeshAllocationWithinLimit(header.vertexCount, header.triangleCount)
+  ) {
+    return null;
+  }
+  const { view, vertexCount, triangleCount } = header;
+  const positions = new Float32Array(vertexCount * 3);
+  const normals = new Float32Array(vertexCount * 3);
+  const indices = new Uint32Array(triangleCount * 3);
+  let offset = MESH_HEADER_BYTES;
+  for (let index = 0; index < positions.length; index += 1) {
+    const value = view.getFloat32(offset, MESH_LITTLE_ENDIAN);
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    positions[index] = value;
+    offset += 4;
+  }
+  for (let index = 0; index < normals.length; index += 1) {
+    const value = view.getFloat32(offset, MESH_LITTLE_ENDIAN);
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    normals[index] = value;
+    offset += 4;
+  }
+  for (let index = 0; index < indices.length; index += 1) {
+    const value = view.getUint32(offset, MESH_LITTLE_ENDIAN);
+    if (!Number.isInteger(value) || value >= vertexCount) {
+      return null;
+    }
+    indices[index] = value;
+    offset += 4;
+  }
+  return { positions, normals, indices };
+}
+
+interface ImportedMeshHeader {
+  readonly view: DataView;
+  readonly vertexCount: number;
+  readonly triangleCount: number;
+}
+
+/** 配列を確保せずに `PCM1` の頭と宣言された全長を確かめる。 */
+function inspectImportedMeshBytes(bytes: Uint8Array): ImportedMeshHeader | null {
   if (bytes.length < MESH_HEADER_BYTES) {
     return null;
   }
@@ -235,27 +287,11 @@ export function decodeImportedMeshBytes(bytes: Uint8Array): ImportedMeshBytes | 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const vertexCount = view.getUint32(4, MESH_LITTLE_ENDIAN);
   const triangleCount = view.getUint32(8, MESH_LITTLE_ENDIAN);
-  const expected = MESH_HEADER_BYTES + vertexCount * 24 + triangleCount * 12;
-  if (bytes.byteLength !== expected) {
+  const bodyBytes = meshAllocationByteLength(vertexCount, triangleCount);
+  if (bodyBytes === null || bytes.byteLength !== MESH_HEADER_BYTES + bodyBytes) {
     return null;
   }
-  const positions = new Float32Array(vertexCount * 3);
-  const normals = new Float32Array(vertexCount * 3);
-  const indices = new Uint32Array(triangleCount * 3);
-  let offset = MESH_HEADER_BYTES;
-  for (let index = 0; index < positions.length; index += 1) {
-    positions[index] = view.getFloat32(offset, MESH_LITTLE_ENDIAN);
-    offset += 4;
-  }
-  for (let index = 0; index < normals.length; index += 1) {
-    normals[index] = view.getFloat32(offset, MESH_LITTLE_ENDIAN);
-    offset += 4;
-  }
-  for (let index = 0; index < indices.length; index += 1) {
-    indices[index] = view.getUint32(offset, MESH_LITTLE_ENDIAN);
-    offset += 4;
-  }
-  return { positions, normals, indices };
+  return { view, vertexCount, triangleCount };
 }
 
 export interface WritePcadFileOptions {
@@ -404,21 +440,11 @@ function fail(code: ReadPcadFileErrorCode, message: string): ReadPcadFileResult 
   return { ok: false, error: { code, message } };
 }
 
-/** ZIP を展開する。ZIP でなければ fflate が例外を投げるので、ここで受け止めて null にする。 */
-function unzip(bytes: Uint8Array): Unzipped | null {
-  try {
-    return unzipSync(bytes);
-  } catch {
-    return null;
-  }
-}
-
 /**
- * エントリを取り出す。`Unzipped` は「どんな名前でも引ける」型なので、
- * 名前が実際に入っているかを `in` で確かめてから取り出す。
+ * エントリを取り出す。共通入口は Map へ安全な名前だけを入れるので、値の有無だけを見る。
  */
-function findEntry(entries: Unzipped, name: string): Uint8Array | null {
-  return name in entries ? entries[name] : null;
+function findEntry(entries: ReadonlyMap<string, Uint8Array>, name: string): Uint8Array | null {
+  return entries.get(name) ?? null;
 }
 
 /** UTF-8 として読む。読めない並びは置き換え文字になるだけで例外にはならないが、念のため受け止める。 */
@@ -445,41 +471,80 @@ function attachmentRef(name: string, prefix: string, suffix: string): string | n
   return ref;
 }
 
+function isPcadArchiveEntry(name: string): boolean {
+  return (
+    name === PCAD_DOCUMENT_ENTRY ||
+    name === PCAD_THUMBNAIL_ENTRY ||
+    attachmentRef(name, PCAD_SHAPE_ENTRY_PREFIX, PCAD_SHAPE_ENTRY_SUFFIX) !== null ||
+    attachmentRef(name, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX) !== null ||
+    attachmentRef(name, PCAD_CANVAS_ENTRY_PREFIX, PCAD_CANVAS_ENTRY_SUFFIX) !== null
+  );
+}
+
+function isPcadaArchiveEntry(name: string): boolean {
+  return (
+    name === PCAD_DOCUMENT_ENTRY ||
+    name === PCAD_THUMBNAIL_ENTRY ||
+    attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX) !== null
+  );
+}
+
 /**
  * ZIP のエントリから添付の表を組み立てる。三角形の並びが壊れていたエントリ名を
  * 一緒に返し、呼び出し側に `invalidField` で断らせる(**エラーコードを増やさない**)。
  */
-function collectAttachments(entries: Unzipped): {
+function collectAttachments(entries: ReadonlyMap<string, Uint8Array>): {
   readonly attachments: PcadAttachments;
   readonly brokenMeshEntry: string | null;
+  readonly tooLargeMeshEntry: string | null;
 } {
   const shapes = new Map<string, Uint8Array>();
   const meshes = new Map<string, ImportedMeshBytes>();
   const canvases = new Map<string, Uint8Array>();
   let brokenMeshEntry: string | null = null;
-  for (const name of Object.keys(entries)) {
+  let tooLargeMeshEntry: string | null = null;
+  let allocatedMeshBytes = 0;
+  for (const [name, bytes] of entries) {
     const shapeRef = attachmentRef(name, PCAD_SHAPE_ENTRY_PREFIX, PCAD_SHAPE_ENTRY_SUFFIX);
     if (shapeRef !== null) {
-      shapes.set(shapeRef, entries[name]);
+      shapes.set(shapeRef, bytes);
       continue;
     }
     const meshRef = attachmentRef(name, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX);
     if (meshRef !== null) {
-      const mesh = decodeImportedMeshBytes(entries[name]);
+      const header = inspectImportedMeshBytes(bytes);
+      if (header === null) {
+        brokenMeshEntry ??= name;
+        break;
+      }
+      const meshBytes = meshAllocationByteLength(header.vertexCount, header.triangleCount);
+      if (
+        meshBytes === null ||
+        allocatedMeshBytes + meshBytes > IO_LIMITS.meshAllocationBytes
+      ) {
+        tooLargeMeshEntry ??= name;
+        break;
+      }
+      const mesh = decodeImportedMeshBytes(bytes);
       if (mesh === null) {
         brokenMeshEntry ??= name;
-        continue;
+        break;
       }
+      allocatedMeshBytes += meshBytes;
       meshes.set(meshRef, mesh);
       continue;
     }
     const canvasRef = attachmentRef(name, PCAD_CANVAS_ENTRY_PREFIX, PCAD_CANVAS_ENTRY_SUFFIX);
     if (canvasRef !== null) {
-      canvases.set(canvasRef, entries[name]);
+      canvases.set(canvasRef, bytes);
     }
     // どれでもない名前は知らないエントリとして読み飛ばす(P2 からの決めごと)。
   }
-  return { attachments: { shapes, meshes, canvases }, brokenMeshEntry };
+  return {
+    attachments: { shapes, meshes, canvases },
+    brokenMeshEntry,
+    tooLargeMeshEntry,
+  };
 }
 
 /**
@@ -520,10 +585,18 @@ function findMissingAttachment(
  * 壊れていても例外を投げず、日本語の理由を返す(FR-504、NFR-RE-1)。
  */
 export function readPcadFile(bytes: Uint8Array): ReadPcadFileResult {
-  const entries = unzip(bytes);
-  if (entries === null) {
-    return fail('notZip', NOT_ZIP_MESSAGE);
+  const archive = readArchive(bytes, { shouldExtract: isPcadArchiveEntry });
+  if (!archive.ok) {
+    const message =
+      archive.error.kind === 'compressedInput' ||
+      archive.error.kind === 'entryCount' ||
+      archive.error.kind === 'entryExpanded' ||
+      archive.error.kind === 'totalExpanded'
+        ? archive.error.reason
+        : NOT_ZIP_MESSAGE;
+    return fail('notZip', message);
   }
+  const entries = archive.entries;
   const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentEntry === null) {
     return fail('missingDocument', MISSING_DOCUMENT_MESSAGE);
@@ -538,6 +611,9 @@ export function readPcadFile(bytes: Uint8Array): ReadPcadFileResult {
     return { ok: false, error: parsed.error };
   }
   const collected = collectAttachments(entries);
+  if (collected.tooLargeMeshEntry !== null) {
+    return fail('invalidField', ARCHIVE_TOO_LARGE_MESSAGE);
+  }
   if (collected.brokenMeshEntry !== null) {
     return fail(
       'invalidField',
@@ -694,15 +770,15 @@ type CollectPartsResult =
   | { readonly ok: true; readonly parts: ReadonlyMap<string, PartDocument> }
   | { readonly ok: false; readonly error: ReadPcadFileError };
 
-function collectParts(entries: Unzipped): CollectPartsResult {
+function collectParts(entries: ReadonlyMap<string, Uint8Array>): CollectPartsResult {
   const parts = new Map<string, PartDocument>();
-  for (const name of Object.keys(entries)) {
+  for (const [name, bytes] of entries) {
     const ref = attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX);
     if (ref === null) {
       // どれでもない名前は知らないエントリとして読み飛ばす(P2 からの決めごと)。
       continue;
     }
-    const text = decodeUtf8(entries[name]);
+    const text = decodeUtf8(bytes);
     if (text === null) {
       return { ok: false, error: { code: 'notZip', message: NOT_ZIP_MESSAGE } };
     }
@@ -750,10 +826,18 @@ function findMissingPart(
  * 壊れていても例外を投げず、日本語の理由を返す(FR-504、NFR-RE-1)。
  */
 export function readPcadaFile(bytes: Uint8Array): ReadPcadaFileResult {
-  const entries = unzip(bytes);
-  if (entries === null) {
-    return failPcada('notZip', NOT_ZIP_MESSAGE);
+  const archive = readArchive(bytes, { shouldExtract: isPcadaArchiveEntry });
+  if (!archive.ok) {
+    const message =
+      archive.error.kind === 'compressedInput' ||
+      archive.error.kind === 'entryCount' ||
+      archive.error.kind === 'entryExpanded' ||
+      archive.error.kind === 'totalExpanded'
+        ? archive.error.reason
+        : NOT_ZIP_MESSAGE;
+    return failPcada('notZip', message);
   }
+  const entries = archive.entries;
   const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentEntry === null) {
     return failPcada('missingDocument', MISSING_DOCUMENT_MESSAGE);

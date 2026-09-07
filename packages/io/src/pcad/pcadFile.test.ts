@@ -826,6 +826,61 @@ describe('.pcad の添付(§0.a-0.55)', () => {
     expect(error.message).toContain(`${PCAD_MESH_ENTRY_PREFIX}mesh-1${PCAD_MESH_ENTRY_SUFFIX}`);
   });
 
+  it('三角形の添付の位置に NaN があれば invalidField で断る', () => {
+    const mesh = makeMesh(1);
+    mesh.positions[0] = Number.NaN;
+    const raw = encodeImportedMeshBytes(mesh);
+    if (raw === null) {
+      throw new Error('長さは正しいので書けるはず');
+    }
+    const zip = makeZip(
+      {
+        [PCAD_DOCUMENT_ENTRY]: strToU8(envelopeText()),
+        [`${PCAD_MESH_ENTRY_PREFIX}mesh-1${PCAD_MESH_ENTRY_SUFFIX}`]: raw,
+      },
+      1,
+    );
+    const error = expectError(readPcadFile(zip));
+    expect(error.code).toBe('invalidField');
+    expect(error.message).toContain(`${PCAD_MESH_ENTRY_PREFIX}mesh-1${PCAD_MESH_ENTRY_SUFFIX}`);
+  });
+
+  it('三角形の添付の法線に Infinity があれば invalidField で断る', () => {
+    const mesh = makeMesh(1);
+    mesh.normals[0] = Number.POSITIVE_INFINITY;
+    const raw = encodeImportedMeshBytes(mesh);
+    if (raw === null) {
+      throw new Error('長さは正しいので書けるはず');
+    }
+    const zip = makeZip(
+      {
+        [PCAD_DOCUMENT_ENTRY]: strToU8(envelopeText()),
+        [`${PCAD_MESH_ENTRY_PREFIX}mesh-1${PCAD_MESH_ENTRY_SUFFIX}`]: raw,
+      },
+      1,
+    );
+    const error = expectError(readPcadFile(zip));
+    expect(error.code).toBe('invalidField');
+  });
+
+  it('三角形の添付の index が頂点数以上なら invalidField で断る', () => {
+    const mesh = makeMesh(1);
+    mesh.indices[0] = mesh.positions.length / 3;
+    const raw = encodeImportedMeshBytes(mesh);
+    if (raw === null) {
+      throw new Error('長さは正しいので書けるはず');
+    }
+    const zip = makeZip(
+      {
+        [PCAD_DOCUMENT_ENTRY]: strToU8(envelopeText()),
+        [`${PCAD_MESH_ENTRY_PREFIX}mesh-1${PCAD_MESH_ENTRY_SUFFIX}`]: raw,
+      },
+      1,
+    );
+    const error = expectError(readPcadFile(zip));
+    expect(error.code).toBe('invalidField');
+  });
+
   it('ひな形(kind: partTemplate)の .pcad も同じ経路で読み書きできる(§0.a-0.35)', () => {
     const bytes = writePcadFile(createEmptyPartDocument(), {
       savedAt: SAVED_AT,

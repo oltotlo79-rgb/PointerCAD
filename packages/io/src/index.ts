@@ -3,6 +3,14 @@
  * STEP / STL / 3MF / OBJ / glTF は P4 以降。
  */
 
+// 圧縮入力・展開後・メッシュ配列・DXF 本文の読み込み上限（単一正本）。
+export {
+  IO_LIMITS,
+  isMeshAllocationWithinLimit,
+  meshAllocationByteLength,
+  type IoLimits,
+} from './limits.js';
+
 // .pcad / .pcada の書式の版と封筒(要件§8、§0.a-0.3、P7 §0.a-0.1)。
 export {
   PCAD_APP_NAME,
@@ -91,6 +99,7 @@ export {
 // DXF の読み書き(FR-813、計画書 §2.7)。字句(タグ)→ 曲線の換算 → 実体の読み取り、の 3 段を
 // この順で並べる。**座標の単位は換算していない**(`DxfReadResult.unit` を見て上の段が決める)。
 export {
+  DXF_TOO_LARGE_MESSAGE,
   DXF_UNSUPPORTED_FORMAT_MESSAGE,
   formatDxfTags,
   parseDxfTags,
@@ -176,4 +185,5 @@ export {
   type ThreeMfLengthUnit,
   type ThreeMfMesh,
   type ThreeMfReadResult,
+  type ReadThreeMfOptions,
 } from './threemf/readThreeMf.js';

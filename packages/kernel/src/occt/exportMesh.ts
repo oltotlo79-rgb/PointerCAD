@@ -59,6 +59,16 @@ export const EXPORT_COPY_FAILED_MESSAGE = '書き出し用の形を用意でき�
 export const EXPORT_ANGULAR_DEFLECTION_MESSAGE =
   '書き出しの品質(角度の偏差)は 0 より大きい数にしてください。';
 
+/** 三角形が付かなかった面を含むときの断り。欠けた書き出しを成功扱いにしない。 */
+function missingTriangulationMessage(faceCount: number): string {
+  return `面 ${String(faceCount)} 個の三角形分割ができませんでした。粗さを変えるか、形を確かめてください。`;
+}
+
+/** OCCT のメッシャーが完了しなかった、または状態フラグを報告したときの断り。 */
+function mesherFailureMessage(status: number): string {
+  return `三角形分割を完了できませんでした(状態 ${String(status)})。粗さを変えるか、形を確かめてください。`;
+}
+
 /**
  * `buildExportMesh` の任意の指定。
  *
@@ -159,6 +169,12 @@ export function buildExportMesh(
       linearDeflection: deflectionMm,
       angularDeflection: angularDeflectionRad,
     });
+    if (surface.missingTriangulationFaces > 0) {
+      throw new Error(missingTriangulationMessage(surface.missingTriangulationFaces));
+    }
+    if (!surface.mesherDone || surface.mesherStatus !== 0) {
+      throw new Error(mesherFailureMessage(surface.mesherStatus));
+    }
 
     return {
       positions: surface.positions,

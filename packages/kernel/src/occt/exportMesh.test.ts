@@ -2,6 +2,7 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PrimitiveShapeSpec, PrimitiveStepSpec } from '../types.js';
+import { createAllocations } from './allocations.js';
 import type { ExportMesh } from './exportMesh.js';
 import { buildExportMesh } from './exportMesh.js';
 import { loadOcctForNode } from './loadOcct.node.js';
@@ -129,6 +130,46 @@ describe('書き出し用の三角形の作り直し(FR-803、タスク11)', () 
 
   beforeAll(async () => {
     oc = await loadOcctForNode();
+  });
+
+  /** `makePlanarFace` が事前に断る自己交差面を、書き出し境界の検査用に直に作る。 */
+  function makeSelfIntersectingFace(): OcctShapeHandle {
+    const { keep, release } = createAllocations();
+    try {
+      const polygon = keep(new oc.BRepBuilderAPI_MakePolygon_1());
+      for (const [x, y] of [
+        [0, 0],
+        [10, 10],
+        [10, 0],
+        [0, 10],
+      ] as const) {
+        polygon.Add_1(keep(new oc.gp_Pnt_3(x, y, 0)));
+      }
+      polygon.Close();
+      if (!polygon.IsDone()) {
+        throw new Error('自己交差した検査用ワイヤを作れませんでした。');
+      }
+      const wire = keep(polygon.Wire());
+      const faceMaker = keep(new oc.BRepBuilderAPI_MakeFace_15(wire, true));
+      if (!faceMaker.IsDone()) {
+        throw new Error('自己交差した検査用面を作れませんでした。');
+      }
+      return { shape: keep(faceMaker.Face()), delete: release };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  it('三角形分割が付かない面は、面数と直し方を示して書き出しを断る', () => {
+    const handle = makeSelfIntersectingFace();
+    try {
+      expect(() => buildExportMesh(oc, handle.shape, 0.1)).toThrow(
+        '面 1 個の三角形分割ができませんでした。粗さを変えるか、形を確かめてください。',
+      );
+    } finally {
+      handle.delete();
+    }
   });
 
   it('偏差が正の有限な数でなければ、OCCT を呼ぶ前に断る(NFR-UX-5)', () => {

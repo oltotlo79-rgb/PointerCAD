@@ -36,6 +36,12 @@ export interface SurfaceMesh {
   readonly triangleCount: number;
   /** 面の枚数。三角形分割が付かなかった面も 1 枚として数える(faceRanges.length と必ず一致)。 */
   readonly faceCount: number;
+  /** 三角形が 0 枚だった面の数。退化面かどうかを面積で選別せず、欠けを過小報告しない。 */
+  readonly missingTriangulationFaces: number;
+  /** `BRepMesh_IncrementalMesh.IsDone()`。メッシャーが処理を完了したかを表す。 */
+  readonly mesherDone: boolean;
+  /** `BRepMesh_IncrementalMesh.GetStatusFlags()` の数値。0 は報告された異常なし。 */
+  readonly mesherStatus: number;
   /**
    * TopExp.MapShapes_2 の順に並ぶ、面ごとの三角形の範囲。
    * 三角形分割が付かなかった面も triangleCount: 0 で必ず 1 つ積む
@@ -359,13 +365,20 @@ export function tessellate(
   const normals: number[] = [];
   const indices: number[] = [];
   const faceRanges: FaceTriangleRange[] = [];
+  let missingTriangulationFaces = 0;
+  let mesherDone: boolean;
+  let mesherStatus: number;
 
   const shared = createAllocations();
 
   try {
-    shared.keep(
+    const mesher = shared.keep(
       new oc.BRepMesh_IncrementalMesh_2(shape, linearDeflection, false, angularDeflection, false),
     );
+    mesherDone = mesher.IsDone();
+    // opencascade.js は戻り値を未定義の Graphic3d_ZLayerId と束縛しているため、
+    // 実体である整数へ実行時変換してから外へ返す。
+    mesherStatus = Number(mesher.GetStatusFlags());
 
     // 第3・第4引数は「向きと位置を親からたどって積み上げる」指定で、
     // TopExp_Explorer と同じ結果になる既定値。
@@ -398,9 +411,13 @@ export function tessellate(
         perFace.release();
       }
 
+      const faceTriangleCount = indices.length / 3 - triangleOffset;
+      if (faceTriangleCount === 0) {
+        missingTriangulationFaces += 1;
+      }
       faceRanges.push({
         triangleOffset,
-        triangleCount: indices.length / 3 - triangleOffset,
+        triangleCount: faceTriangleCount,
       });
     }
   } finally {
@@ -413,6 +430,9 @@ export function tessellate(
     indices: new Uint32Array(indices),
     triangleCount: indices.length / 3,
     faceCount: faceRanges.length,
+    missingTriangulationFaces,
+    mesherDone,
+    mesherStatus,
     faceRanges,
   };
 }

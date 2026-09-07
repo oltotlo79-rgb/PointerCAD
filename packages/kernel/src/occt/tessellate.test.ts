@@ -204,11 +204,83 @@ function primitiveAt(shape: PrimitiveShapeSpec, x = 0): PrimitiveStepSpec {
   };
 }
 
+/**
+ * OCCT が面としては作る一方、三角形分割を付けられない自己交差した四角形を作る。
+ * `makePlanarFace` はこの形を BRepAlgo.IsValid_1 で先に断るため、失敗契約の検査では
+ * `BRepBuilderAPI_MakeFace_15` を直に使い、カーネル境界へ届きうる不正な面を再現する。
+ */
+function makeSelfIntersectingFace(oc: OpenCascadeInstance): OcctShapeHandle {
+  const { keep, release } = createAllocations();
+  try {
+    const polygon = keep(new oc.BRepBuilderAPI_MakePolygon_1());
+    for (const [x, y] of [
+      [0, 0],
+      [10, 10],
+      [10, 0],
+      [0, 10],
+    ] as const) {
+      polygon.Add_1(keep(new oc.gp_Pnt_3(x, y, 0)));
+    }
+    polygon.Close();
+    if (!polygon.IsDone()) {
+      throw new Error('自己交差した検査用ワイヤを作れませんでした。');
+    }
+    const wire = keep(polygon.Wire());
+    const faceMaker = keep(new oc.BRepBuilderAPI_MakeFace_15(wire, true));
+    if (!faceMaker.IsDone()) {
+      throw new Error('自己交差した検査用面を作れませんでした。');
+    }
+    return { shape: keep(faceMaker.Face()), delete: release };
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
 describe('面の走査の高速化(P6 タスク11b、出力は 1 ビットも変えない)', () => {
   let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 
   beforeAll(async () => {
     oc = await loadOcctForNode();
+  });
+
+  it('固定 WASM のメッシャー状態 API を箱で呼べる', () => {
+    const handle = makeBox(oc, { dx: 10, dy: 20, dz: 30 });
+    const mesher = new oc.BRepMesh_IncrementalMesh_2(
+      handle.shape,
+      DEFAULT_LINEAR_DEFLECTION,
+      false,
+      DEFAULT_ANGULAR_DEFLECTION,
+      false,
+    );
+    try {
+      const status = Number(mesher.GetStatusFlags());
+      console.log(
+        `[実測] BRepMesh_IncrementalMesh: IsDone=${String(mesher.IsDone())}, IsModified=${String(mesher.IsModified())}, GetStatusFlags=${String(status)}`,
+      );
+      expect(mesher.IsDone()).toBe(true);
+      expect(mesher.IsModified()).toBe(false);
+      expect(status).toBe(0);
+    } finally {
+      mesher.delete();
+      handle.delete();
+    }
+  });
+
+  it('自己交差した面の三角形が 0 枚なら欠け面 1 枚として返す', () => {
+    const handle = makeSelfIntersectingFace(oc);
+    try {
+      const mesh = tessellate(oc, handle.shape);
+      console.log(
+        `[再現] 自己交差した面: faceCount=${String(mesh.faceCount)}, triangleCount=${String(mesh.triangleCount)}, zeroRanges=${String(mesh.faceRanges.filter((range) => range.triangleCount === 0).length)}`,
+      );
+      expect(mesh.faceCount).toBe(1);
+      expect(mesh.triangleCount).toBe(0);
+      expect(mesh.missingTriangulationFaces).toBe(1);
+      expect(mesh.faceRanges).toEqual([{ triangleOffset: 0, triangleCount: 0 }]);
+    } finally {
+      handle.delete();
+    }
   });
 
   /**
@@ -279,6 +351,9 @@ describe('面の走査の高速化(P6 タスク11b、出力は 1 ビットも変
     try {
       const fresh = tessellate(oc, handle.shape);
       expectSameMesh(fresh, walkLegacy(oc, handle.shape));
+      expect(fresh.missingTriangulationFaces).toBe(0);
+      expect(fresh.mesherDone).toBe(true);
+      expect(fresh.mesherStatus).toBe(0);
       expect(countPlacedFaces(handle.shape).placed).toBe(0);
     } finally {
       handle.delete();

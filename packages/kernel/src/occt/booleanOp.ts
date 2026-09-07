@@ -7,8 +7,10 @@ import type {
 
 // 和・差・積の別 BooleanOperation は、依頼の型と同じ場所(types.ts)に置いてある。
 import type { BooleanOperation } from '../types.js';
+import type { Allocations } from './allocations.js';
+import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
+import { isValidShape, measureVolume } from './solidMesh.js';
 
 /**
  * これ未満の体積(mm³)は「何も残らなかった」とみなす。
@@ -42,83 +44,99 @@ export interface BooleanResult extends OcctShapeHandle {
 }
 
 /**
- * 演算に応じた maker を作る。
- * BRepAlgoAPI_Fuse_3 / Cut_3 / Common_3 はいずれも
- * (S1, S2, theRange: Message_ProgressRange) を取り、構築した時点で演算を終える。
+ * 演算前に非破壊モードを指定できるよう、空の maker を作る。
+ * 2026-09-07 に固定 WASM で、引数なしの構築 → 入力指定 → Build を3演算とも実証。
  * 各節は return で閉じる(no-fallthrough)。
  */
 function createBooleanMaker(
   oc: OpenCascadeInstance,
   operation: BooleanOperation,
-  target: TopoDS_Shape,
-  tool: TopoDS_Shape,
-  range: Message_ProgressRange,
 ): BRepAlgoAPI_BooleanOperation {
   switch (operation) {
     case 'union':
-      return new oc.BRepAlgoAPI_Fuse_3(target, tool, range);
+      return new oc.BRepAlgoAPI_Fuse_1();
     case 'subtract':
-      return new oc.BRepAlgoAPI_Cut_3(target, tool, range);
+      return new oc.BRepAlgoAPI_Cut_1();
     case 'intersect':
-      return new oc.BRepAlgoAPI_Common_3(target, tool, range);
+      return new oc.BRepAlgoAPI_Common_1();
   }
 }
 
-/**
- * 進捗の入れ物だけを呼び出し側に任せた本体。
- * 途中で断るときは自分で確保したもの(結果の形と maker)だけを解放し、
- * 進捗の入れ物は呼び出し側が解放する。
- */
+/** hasSolid と同じ判定。FindKey が返す形も含め、走査中の例外でも全て解放する。 */
+function hasResultSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
+  const { keep, release } = createAllocations();
+  try {
+    const subShapes = keep(new oc.TopTools_IndexedMapOfShape_1());
+    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+    const count = subShapes.Size();
+    for (let index = 1; index <= count; index += 1) {
+      // FindKey の戻りは独立したラッパー。入力の TShape 自体は借用のまま。
+      const subShape = keep(subShapes.FindKey(index));
+      if (subShape.ShapeType() === oc.TopAbs_ShapeEnum.TopAbs_SOLID) {
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    release();
+  }
+}
+
+/** 結果に必要な所有は allocations に積み、入力リストはこの呼び出し中に解放する。 */
 function buildBooleanResult(
   oc: OpenCascadeInstance,
   operation: BooleanOperation,
   target: TopoDS_Shape,
   tool: TopoDS_Shape,
   range: Message_ProgressRange,
+  allocations: Allocations,
 ): BooleanResult {
-  const maker = createBooleanMaker(oc, operation, target, tool, range);
+  const maker = allocations.keep(createBooleanMaker(oc, operation));
+  const inputs = createAllocations();
+  try {
+    const argumentsList = inputs.keep(new oc.TopTools_ListOfShape_1());
+    const toolsList = inputs.keep(new oc.TopTools_ListOfShape_1());
+    // Append_1 は入力と別のラッパーを返す(2026-09-07 固定 WASM 実測)。
+    // その戻りも解放するが、target / tool の所有は移さない。
+    inputs.keep(argumentsList.Append_1(target));
+    inputs.keep(toolsList.Append_1(tool));
+    maker.SetArguments(argumentsList);
+    maker.SetTools(toolsList);
+    // Build より前に立て、許容値や pcurve の更新をキャッシュの入力へ書き戻させない。
+    maker.SetNonDestructive(true);
+    maker.Build(range);
+  } finally {
+    inputs.release();
+  }
 
   // 成否は HasErrors() と IsDone() だけで見る。Error() の戻り値は
   // 型定義で空の型 `{}` になっており、比較に強制変換が要るため使わない
   // (makePlanarFace.ts と同じ理由)。
   if (maker.HasErrors() || !maker.IsDone()) {
-    maker.delete();
     throw new Error(COMBINE_FAILED_MESSAGE);
   }
 
-  const shape = maker.Shape();
-  const deleteResult = (): void => {
-    shape.delete();
-    maker.delete();
-    range.delete();
-  };
-  const abandon = (): void => {
-    shape.delete();
-    maker.delete();
-  };
+  const shape = allocations.keep(maker.Shape());
 
   // 2026-09-03 の実測では、交わらない 2 体の積や、含まれる側から含む側を引いた結果も
   // IsDone() は true・HasErrors() は false で、中身が空の COMPOUND が返る
   // (体積 0、IsNull() は false)。空かどうかはここで別に確かめる。
   // ソリッドが 1 つも無ければ体積を測るまでもないので、順に見て早く抜ける
   // (測るのは 1 回だけで、その値は結果と一緒に返す。BooleanResult の注釈)。
-  if (!hasSolid(oc, shape)) {
-    abandon();
+  if (!hasResultSolid(oc, shape)) {
     throw new Error(NOTHING_LEFT_MESSAGE);
   }
 
   const volume = measureVolume(oc, shape);
   if (volume < MIN_SOLID_VOLUME_MM3) {
-    abandon();
     throw new Error(NOTHING_LEFT_MESSAGE);
   }
 
   if (!isValidShape(oc, shape)) {
-    abandon();
     throw new Error(INVALID_RESULT_MESSAGE);
   }
 
-  return { shape, volume, delete: deleteResult };
+  return { shape, volume, delete: allocations.release };
 }
 
 /**
@@ -143,11 +161,12 @@ export function booleanOp(
   // 進捗の入れ物。2026-09-03 に Node で実測したところ、引数なしの
   // Message_ProgressRange_1 をそのまま渡して 3 種の演算とも成立した
   // (計画書 §1.2 の未確認点 4)。
-  const range = new oc.Message_ProgressRange_1();
+  const allocations = createAllocations();
   try {
-    return buildBooleanResult(oc, operation, target, tool, range);
+    const range = allocations.keep(new oc.Message_ProgressRange_1());
+    return buildBooleanResult(oc, operation, target, tool, range, allocations);
   } catch (error) {
-    range.delete();
+    allocations.release();
     throw error;
   }
 }

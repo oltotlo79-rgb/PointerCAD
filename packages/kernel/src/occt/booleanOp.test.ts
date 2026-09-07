@@ -1,7 +1,13 @@
-import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import type {
+  BRepAlgoAPI_BooleanOperation,
+  OpenCascadeInstance,
+  TopoDS_Shape,
+} from 'opencascade.js/dist/opencascade.full.js';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { BoxParameters, Vec3Tuple } from '../types.js';
+import type { BooleanOperation, BoxParameters, Vec3Tuple } from '../types.js';
+import type { OcctDeletable } from './allocations.js';
+import * as allocationModule from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
@@ -50,6 +56,151 @@ interface TestShapeHandle {
   delete(): void;
 }
 
+/** 同じ入力を貸し続けた場合と、新しい入力の結果を体積・位相で比較する。 */
+function shapeMetrics(oc: OpenCascadeInstance, shape: TopoDS_Shape) {
+  const { keep, release } = allocationModule.createAllocations();
+  try {
+    const map = keep(new oc.TopTools_IndexedMapOfShape_1());
+    oc.TopExp.MapShapes_2(shape, map, true, true);
+    let faces = 0;
+    let edges = 0;
+    for (let index = 1; index <= map.Size(); index += 1) {
+      const subShape = keep(map.FindKey(index));
+      if (subShape.ShapeType() === oc.TopAbs_ShapeEnum.TopAbs_FACE) faces += 1;
+      if (subShape.ShapeType() === oc.TopAbs_ShapeEnum.TopAbs_EDGE) edges += 1;
+    }
+    return { volume: measureVolume(oc, shape), faces, edges };
+  } finally {
+    release();
+  }
+}
+
+function expectSameMetrics(
+  actual: ReturnType<typeof shapeMetrics>,
+  expected: ReturnType<typeof shapeMetrics>,
+): void {
+  expect(Math.abs(actual.volume - expected.volume) / Math.abs(expected.volume)).toBeLessThan(1e-6);
+  expect(actual.faces).toBe(expected.faces);
+  expect(actual.edges).toBe(expected.edges);
+}
+
+/** 控えの実物を使い、確保した各オブジェクトへの delete を個別に数える。 */
+function observeAllocations(oc: OpenCascadeInstance) {
+  const entries: { item: OcctDeletable; deleted: number }[] = [];
+  const buildModes: boolean[] = [];
+  function track<T extends OcctDeletable>(item: T): T {
+    const entry = { item, deleted: 0 };
+    const originalDelete = item.delete.bind(item);
+    item.delete = (): void => {
+      entry.deleted += 1;
+      originalDelete();
+    };
+    entries.push(entry);
+    if (item instanceof oc.BRepAlgoAPI_BooleanOperation) {
+      const maker: BRepAlgoAPI_BooleanOperation = item;
+      const build = maker.Build.bind(maker);
+      // prototype の例外注入モックを二重に spyOn せず、実体の呼び出しだけを観測する。
+      maker.Build = (range): void => {
+        buildModes.push(maker.NonDestructive());
+        build(range);
+      };
+    }
+    return item;
+  }
+
+  const createAllocations = allocationModule.createAllocations;
+  vi.spyOn(allocationModule, 'createAllocations').mockImplementation(() => {
+    const allocations = createAllocations();
+    return {
+      keep<T extends OcctDeletable>(item: T): T {
+        return allocations.keep(track(item));
+      },
+      release: allocations.release,
+    };
+  });
+  // solidMesh の2関数は自分の finally で解放するため、その一時物も別に数える。
+  const Properties = oc.GProp_GProps_1;
+  vi.spyOn(oc, 'GProp_GProps_1').mockImplementation(function () {
+    return track(new Properties());
+  });
+  const Analyzer = oc.BRepCheck_Analyzer;
+  vi.spyOn(oc, 'BRepCheck_Analyzer').mockImplementation(function (
+    ...args: ConstructorParameters<typeof Analyzer>
+  ) {
+    return track(new Analyzer(...args));
+  });
+
+  return { entries, buildModes };
+}
+
+const OPERATIONS: readonly BooleanOperation[] = ['union', 'subtract', 'intersect'];
+const EXCEPTION_POINTS = [
+  'Append_1',
+  'SetArguments',
+  'SetTools',
+  'SetNonDestructive',
+  'Build',
+  'HasErrors',
+  'IsDone',
+  'Shape',
+  'MapShapes_2',
+  'FindKey',
+  'ShapeType',
+  'VolumeProperties_1',
+  'Mass',
+  'IsValid_2',
+] as const;
+
+function injectException(
+  oc: OpenCascadeInstance,
+  point: (typeof EXCEPTION_POINTS)[number],
+  failure: Error,
+): void {
+  const fail = (): never => {
+    throw failure;
+  };
+  switch (point) {
+    case 'Append_1':
+      vi.spyOn(oc.TopTools_ListOfShape.prototype, point).mockImplementation(fail);
+      return;
+    case 'SetArguments':
+    case 'SetNonDestructive':
+      vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, point).mockImplementation(fail);
+      return;
+    case 'SetTools':
+    case 'Build':
+      vi.spyOn(oc.BRepAlgoAPI_BooleanOperation.prototype, point).mockImplementation(fail);
+      return;
+    case 'HasErrors':
+      vi.spyOn(oc.BRepAlgoAPI_Algo.prototype, point).mockImplementation(fail);
+      return;
+    case 'IsDone':
+      vi.spyOn(oc.BRepBuilderAPI_Command.prototype, point).mockImplementation(fail);
+      return;
+    case 'Shape':
+      vi.spyOn(oc.BRepAlgoAPI_Algo.prototype, point).mockImplementation(fail);
+      return;
+    case 'MapShapes_2':
+      vi.spyOn(oc.TopExp, point).mockImplementation(fail);
+      return;
+    case 'FindKey':
+      vi.spyOn(oc.TopTools_IndexedMapOfShape.prototype, point).mockImplementation(fail);
+      return;
+    case 'ShapeType':
+      vi.spyOn(oc.TopoDS_Shape.prototype, point).mockImplementation(fail);
+      return;
+    case 'VolumeProperties_1':
+      vi.spyOn(oc.BRepGProp, point).mockImplementation(fail);
+      return;
+    case 'Mass':
+      vi.spyOn(oc.GProp_GProps.prototype, point).mockImplementation(fail);
+      return;
+    case 'IsValid_2':
+      vi.spyOn(oc.BRepCheck_Analyzer.prototype, point).mockImplementation(fail);
+      return;
+  }
+}
+
 /**
  * 箱を平行移動して置く。
  * makeBox は原点を角とする箱しか作れないので、離れた位置や半分だけ重なる位置の箱は
@@ -93,6 +244,131 @@ describe('立体の和・差・積(ブーリアン)', () => {
 
   beforeAll(async () => {
     oc = await loadOcctForNode();
+  });
+
+  it('A∪B のあと同じ A で A−C・A∩D を作っても、新しい A と体積・面数・辺数が一致する', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG_BOX));
+      const b = keep(makeTranslatedBox(oc, BIG_BOX, HALF_OFFSET));
+      const c = keep(makeTranslatedBox(oc, SMALL_BOX, [5, 5, 5]));
+      const d = keep(makeTranslatedBox(oc, BIG_BOX, [-10, 0, 0]));
+      const before = shapeMetrics(oc, a.shape);
+      const cases: readonly { operation: BooleanOperation; tool: TestShapeHandle; volume: number }[] = [
+        { operation: 'union', tool: b, volume: HALF_UNION },
+        { operation: 'subtract', tool: c, volume: SUBTRACT_CONTAINED },
+        { operation: 'intersect', tool: d, volume: BIG_VOLUME / 2 },
+      ];
+      for (const { operation, tool, volume } of cases) {
+        const result = booleanOp(oc, operation, a.shape, tool.shape);
+        try {
+          const fresh = keep(makeBox(oc, BIG_BOX));
+          const reference = keep(booleanOp(oc, operation, fresh.shape, tool.shape));
+          expectSameMetrics(shapeMetrics(oc, result.shape), shapeMetrics(oc, reference.shape));
+          expect(result.volume).toBeCloseTo(volume, 6);
+        } finally {
+          result.delete();
+        }
+        expectSameMetrics(shapeMetrics(oc, a.shape), before);
+      }
+    } finally {
+      release();
+    }
+  });
+
+  it.each(OPERATIONS)('%s: 空の工具で不成立になっても同じ入力を続く差に使える', (operation) => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG_BOX));
+      const empty = keep(new oc.TopoDS_Shape());
+      const tool = keep(makeBox(oc, SMALL_BOX));
+      expect(() => booleanOp(oc, operation, a.shape, empty)).toThrow(
+        '2 つの立体を組み合わせられませんでした。位置や形を見直してください。',
+      );
+      const result = keep(booleanOp(oc, 'subtract', a.shape, tool.shape));
+      const fresh = keep(makeBox(oc, BIG_BOX));
+      const reference = keep(booleanOp(oc, 'subtract', fresh.shape, tool.shape));
+      expect(result.volume).toBeCloseTo(SUBTRACT_CONTAINED, 6);
+      expectSameMetrics(shapeMetrics(oc, result.shape), shapeMetrics(oc, reference.shape));
+      expectSameMetrics(shapeMetrics(oc, a.shape), shapeMetrics(oc, fresh.shape));
+    } finally {
+      release();
+    }
+  });
+
+  it('何も残らず断った後にも同じ2形状の和を作れる', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG_BOX));
+      const far = keep(makeTranslatedBox(oc, SMALL_BOX, FAR_OFFSET));
+      expect(() => booleanOp(oc, 'intersect', a.shape, far.shape)).toThrow(
+        '組み合わせた結果、立体が残りませんでした。',
+      );
+      const result = keep(booleanOp(oc, 'union', a.shape, far.shape));
+      expect(result.volume).toBeCloseTo(UNION_DISJOINT, 6);
+      expect(isValidShape(oc, result.shape)).toBe(true);
+    } finally {
+      release();
+    }
+  });
+
+  it.each(OPERATIONS)('%s: Build前に非破壊モードを立て、一時物と結果の所有を解放する', (operation) => {
+    const big = makeBox(oc, BIG_BOX);
+    const small = makeBox(oc, SMALL_BOX);
+    try {
+      const { entries, buildModes } = observeAllocations(oc);
+      const result = booleanOp(oc, operation, big.shape, small.shape);
+      try {
+        expect(buildModes).toEqual([true]);
+        // 入力リスト・Appendの戻り・走査・測定・検査の一時物は既に解放済み。
+        const retained = entries.filter((entry) => entry.deleted === 0);
+        expect(retained).toHaveLength(3);
+        expect(retained.map((entry) => entry.item)).toEqual([
+          expect.any(oc.Message_ProgressRange),
+          expect.any(oc.BRepAlgoAPI_BooleanOperation),
+          result.shape,
+        ]);
+      } finally {
+        result.delete();
+      }
+      result.delete();
+      expect(entries.length).toBeGreaterThan(7);
+      for (const entry of entries) expect(entry.deleted).toBe(1);
+    } finally {
+      vi.restoreAllMocks();
+      small.delete();
+      big.delete();
+    }
+  });
+
+  describe.each(OPERATIONS)('%s の例外時の解放', (operation) => {
+    it.each(EXCEPTION_POINTS)('%s が投げても確保数と解放数が一致し、入力を再利用できる', (point) => {
+      const big = makeBox(oc, BIG_BOX);
+      const small = makeBox(oc, SMALL_BOX);
+      try {
+        const failure = new Error(`OCCT ${point} の例外`);
+        injectException(oc, point, failure);
+        const { entries } = observeAllocations(oc);
+        expect(() => booleanOp(oc, operation, big.shape, small.shape).delete()).toThrow(failure);
+        expect(entries.length).toBeGreaterThan(0);
+        for (const entry of entries) expect(entry.deleted).toBe(1);
+        const deleted = entries.reduce((sum, entry) => sum + entry.deleted, 0);
+        console.log(`${operation}/${point}: 確保${entries.length}・解放${deleted}`);
+        vi.restoreAllMocks();
+        const next = booleanOp(oc, 'subtract', big.shape, small.shape);
+        try {
+          expect(next.volume).toBeCloseTo(SUBTRACT_CONTAINED, 6);
+          expect(measureVolume(oc, big.shape)).toBeCloseTo(BIG_VOLUME, 6);
+          expect(measureVolume(oc, small.shape)).toBeCloseTo(SMALL_VOLUME, 6);
+        } finally {
+          next.delete();
+        }
+      } finally {
+        vi.restoreAllMocks();
+        small.delete();
+        big.delete();
+      }
+    });
   });
 
   it('小さい箱を完全に含む大きい箱との和は、大きい箱のままの 8000 mm³ になる', () => {

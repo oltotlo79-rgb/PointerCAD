@@ -35,7 +35,13 @@ export {
 } from './combineExpression.js';
 export type { ExpressionError, ExpressionErrorCode } from './errors.js';
 export { EXPRESSION_MAX_EXPONENT, EXPRESSION_MAX_LENGTH } from './errors.js';
-export { EXPRESSION_PRECISION } from './evaluate.js';
+export {
+  evaluateExpressionExact,
+  EXPRESSION_PRECISION,
+  type ExactEvaluateOptions,
+  type ExactExpressionResult,
+  type ExactExpressionValue,
+} from './evaluate.js';
 export {
   DISPLAY_SIGNIFICANT_DIGITS,
   evaluateExpression,

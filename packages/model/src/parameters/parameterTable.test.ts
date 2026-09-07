@@ -60,6 +60,25 @@ describe('analyzeParameters(変数表)', () => {
     expect(analysis.failures).toEqual([]);
   });
 
+  it('パラメータをまたいでも 1/7 の精度を保つ', () => {
+    const parameters = [param('a', '1/7'), param('b', '7*a - 1')];
+    const analysis = analyzeParameters(parameters, []);
+    expect(analysis.variables.get('b')).toBe(0);
+  });
+
+  it('0.1 を3段のパラメータで渡しても丸め誤差を入れない', () => {
+    const parameters = [param('a', '0.1'), param('b', 'a*3'), param('c', 'b - 0.3')];
+    const analysis = analyzeParameters(parameters, []);
+    expect(analysis.variables.get('b')).toBe(0.3);
+    expect(analysis.variables.get('c')).toBe(0);
+  });
+
+  it('in の単位空間で exact なパラメータを使っても精度を保つ', () => {
+    const parameters = [param('a', '1/7'), param('b', '(a*7)in')];
+    const analysis = analyzeParameters(parameters, []);
+    expect(analysis.variables.get('b')).toBe(1);
+  });
+
   it('解析しても表の並び順は変わらない(元の配列を書き換えない)', () => {
     const parameters = [param('C', 'B * 3'), param('B', 'A * 2'), param('A', '1')];
     analyzeParameters(parameters, []);

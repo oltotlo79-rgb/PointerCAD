@@ -3,7 +3,16 @@ import Decimal from 'decimal.js';
 import { describe, expect, it } from 'vitest';
 
 import { ExpressionFailure, type ExpressionError } from './errors.js';
-import { E, evaluateNode, EXPRESSION_PRECISION, ExpressionDecimal, PI } from './evaluate.js';
+import {
+  E,
+  evaluateExpressionExact,
+  evaluateNode,
+  EXPRESSION_PRECISION,
+  ExpressionDecimal,
+  PI,
+  type ExactExpressionResult,
+  type ExactExpressionValue,
+} from './evaluate.js';
 import { evaluateExpression } from './evaluateExpression.js';
 import { MM_PER_INCH_TEXT } from './lengthUnits.js';
 import { parse } from './parse.js';
@@ -20,6 +29,14 @@ const NO_VARIABLES: ReadonlyMap<string, number> = new Map();
 
 function evaluate(source: string, variables: ReadonlyMap<string, number> = NO_VARIABLES): Decimal {
   return evaluateNode(parse(source), variables);
+}
+
+/** exact 評価の成功値を取り出す。失敗なら理由を残してテストを落とす。 */
+function exactValueOf(result: ExactExpressionResult): ExactExpressionValue {
+  if (!result.ok) {
+    throw new Error(result.error.message);
+  }
+  return result.value;
 }
 
 /** 失敗したときのエラー内容を取り出す。エラーにならなければテストを落とす。 */
@@ -190,6 +207,35 @@ describe('任意精度の評価(FR-203、NFR-RE-4)', () => {
     expect(evaluate('b+0.2', variables).toString()).toBe('0.3');
   });
 
+  it('exact 変数はパラメータをまたいでも 1/7 の精度を保つ', () => {
+    const a = exactValueOf(evaluateExpressionExact('1/7'));
+    const b = exactValueOf(
+      evaluateExpressionExact('7*a - 1', {
+        exactVariables: new Map([['a', a.exact]]),
+      }),
+    );
+    expect(b.exact).toBe('0');
+    expect(b.value).toBe(0);
+  });
+
+  it('exact 変数を number より優先し、0.1 の連鎖でも精度を保つ', () => {
+    const a = exactValueOf(evaluateExpressionExact('0.1'));
+    const b = exactValueOf(
+      evaluateExpressionExact('a*3', {
+        variables: new Map([['a', 0.2]]),
+        exactVariables: new Map([['a', a.exact]]),
+      }),
+    );
+    const c = exactValueOf(
+      evaluateExpressionExact('b - 0.3', {
+        exactVariables: new Map([['b', b.exact]]),
+      }),
+    );
+    expect(b.exact).toBe('0.3');
+    expect(c.exact).toBe('0');
+    expect(c.value).toBe(0);
+  });
+
   it('変数表に無い名前は理由つきで断る(§2.5 #10)', () => {
     expect(codeAt('a+1')).toBe('unknownVariable@0');
     expect(failureOf('a+1').message).toBe('決まっていない名前です: 「a」(1 文字目)');
@@ -297,6 +343,17 @@ describe('長さの単位の評価(FR-814、計画書 docs/plans/P6-入出力.md
     expect(evaluate('w+10', variables).toString()).toBe('35.4');
     // mm は倍率 1 なので、割り算も掛け算も恒等になる。
     expect(evaluate('(w*2)mm', variables).toString()).toBe('50.8');
+  });
+
+  it('exact 変数は in の単位空間でも Decimal のまま換算する', () => {
+    const a = exactValueOf(evaluateExpressionExact('1/7'));
+    const result = exactValueOf(
+      evaluateExpressionExact('(a*7)in', {
+        exactVariables: new Map([['a', a.exact]]),
+      }),
+    );
+    expect(result.exact).toBe('1');
+    expect(result.value).toBe(1);
   });
 
   it('単位が合っていない式は unitMismatch で断る', () => {

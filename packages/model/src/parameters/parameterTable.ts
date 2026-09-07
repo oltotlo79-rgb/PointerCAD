@@ -10,13 +10,13 @@
  *   ① 各パラメータの式が参照する名前を集める(`collectVariableNames`)
  *   ② 有向グラフを作り、深さ優先で並べ替える(参照される側が先)
  *   ③ 循環に含まれる名前は評価せず「循環」の印を付ける(値は前回のまま据え置く)
- *   ④ 循環の外を並び順に評価し、変数表 `Map<string, number>` を育てる
+ *   ④ 循環の外を並び順に評価し、公開用の number と式間用の十進表記を育てる
  */
 
 import {
   checkVariableName,
   collectVariableNames,
-  evaluateExpression,
+  evaluateExpressionExact,
   renameVariable,
   toLengthUnit,
   type VariableNameIssue,
@@ -144,15 +144,17 @@ export function analyzeParameters(
   const { order, circular } = parameterEvaluationOrder(parameters);
 
   const variables = new Map<string, number>();
+  const exactVariables = new Map<string, string>();
   const failures: ParameterFailure[] = [];
   for (const name of order) {
     const parameter = byName.get(name);
     if (parameter === undefined) {
       continue;
     }
-    const result = evaluateExpression(parameter.value.source, { variables });
+    const result = evaluateExpressionExact(parameter.value.source, { variables, exactVariables });
     if (result.ok) {
       variables.set(name, result.value.value);
+      exactVariables.set(name, result.value.exact);
       continue;
     }
     // 循環の外にあって循環を参照している名前も、ここで unknownVariable として拾われる(§2.6)。

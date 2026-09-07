@@ -8,6 +8,7 @@ import {
   wrongArgumentCountError,
 } from './errors.js';
 import { lengthUnitFactor } from './lengthUnits.js';
+import { parse } from './parse.js';
 
 /**
  * 内部の演算桁数(計画書 docs/plans/P1-式とスケッチ.md §2.4、§0.a-0.7)。
@@ -67,6 +68,8 @@ interface UnitAwareValue {
 /** 評価の途中で持ち回るもの。 */
 interface EvaluateContext {
   readonly variables: ReadonlyMap<string, number>;
+  /** パラメータ間で丸めずに渡す十進表記。variables と重なる名前はこちらを優先する。 */
+  readonly exactVariables: ReadonlyMap<string, string>;
   /**
    * いま単位の空間の中にいるなら、その mm への倍率(inch なら 25.4)。外にいるなら null。
    * 単位の入れ子(`(1.5in*2)in`)はここが null でないことで見つける。
@@ -80,6 +83,8 @@ interface EvaluateContext {
 const NO_NON_LENGTH_VARIABLES: ReadonlySet<string> = new Set<string>();
 
 export interface EvaluateNodeOptions {
+  /** パラメータ間で丸めずに渡す十進表記。variables と重なる名前はこちらを優先する。 */
+  readonly exactVariables?: ReadonlyMap<string, string>;
   /**
    * 長さでないパラメータの名前(§0.a-0.63、計画書 タスク1b 手順5b)。
    *
@@ -90,6 +95,28 @@ export interface EvaluateNodeOptions {
    */
   readonly nonLengthVariables?: ReadonlySet<string>;
 }
+
+/** exact な変数を使って式を評価する公開入口の選択肢。 */
+export interface ExactEvaluateOptions extends EvaluateNodeOptions {
+  /** 後方互換の倍精度変数表。exactVariables に同じ名前があればそちらを優先する。 */
+  readonly variables?: ReadonlyMap<string, number>;
+}
+
+/** 倍精度の公開値と、丸める前の十進表記。 */
+export interface ExactExpressionValue {
+  readonly source: string;
+  readonly value: number;
+  readonly exact: string;
+}
+
+/** exact な変数を受け取れる式評価の結果。失敗の形は既存の式評価と同じ。 */
+export type ExactExpressionResult =
+  | { readonly ok: true; readonly value: ExactExpressionValue }
+  | { readonly ok: false; readonly error: import('./errors.js').ExpressionError };
+
+/** 既定の空の変数表。呼び出しごとに Map を作らない。 */
+const NO_VARIABLES: ReadonlyMap<string, number> = new Map<string, number>();
+const NO_EXACT_VARIABLES: ReadonlyMap<string, string> = new Map<string, string>();
 
 /** n 乗根。負の数が実数の n 乗根を持つのは、n が奇数の整数のときだけ。 */
 function evaluateRoot(value: Decimal, degree: Decimal, position: number): Decimal {
@@ -116,13 +143,18 @@ function requireFinite(value: Decimal, position: number): Decimal {
 }
 
 function evaluateVariable(name: string, position: number, context: EvaluateContext): Decimal {
+  const exact = context.exactVariables.get(name);
   const found = context.variables.get(name);
-  if (found === undefined) {
+  // パラメータ DAG は十進表記で受け取り、途中で double へ落とさない(NFR-RE-4)。
+  // 既存の呼び出しは従来どおり number を渡せる。両方に同じ名前があれば exact を優先する。
+  let value: Decimal;
+  if (exact !== undefined) {
+    value = new ExpressionDecimal(exact);
+  } else if (found !== undefined) {
+    value = new ExpressionDecimal(found);
+  } else {
     throw new ExpressionFailure(expressionError('unknownVariable', name, position));
   }
-  // 変数は double で受け取る(§0.a-0.6)。十進表記のまま Decimal へ移すので、
-  // ここで新たな誤差は入らない。
-  const value = new ExpressionDecimal(found);
   if (context.scale === null || context.nonLengthVariables.has(name)) {
     return value;
   }
@@ -268,7 +300,8 @@ function evaluateWithUnit(node: Node, context: EvaluateContext): UnitAwareValue 
 /**
  * 構文木を任意精度で評価する。中間結果は一度も number へ落とさない(NFR-RE-4)。
  * double へ丸めるのは呼び出し側が最後に 1 回だけ行う(§0.a-0.7)。
- * 変数表は FR-206 の土台。値は double で受け取る(§0.a-0.6)。P1 の UI は空の Map を渡す。
+ * 変数表は FR-206 の土台。既存の number と、パラメータ間で精度を保つ十進表記を受け取る。
+ * 両方に同じ名前があれば十進表記を優先する。P1 の UI は空の Map を渡す。
  *
  * 返す値は必ず **mm**(長さの単位を書いた式は、ここで倍率を掛け終えている。§2.9.1)。
  */
@@ -279,7 +312,37 @@ export function evaluateNode(
 ): Decimal {
   return evaluateWithUnit(node, {
     variables,
+    exactVariables: options.exactVariables ?? NO_EXACT_VARIABLES,
     scale: null,
     nonLengthVariables: options.nonLengthVariables ?? NO_NON_LENGTH_VARIABLES,
   }).value;
+}
+
+/**
+ * exact な変数表を受け取り、倍精度へ丸める前の十進表記も返す。
+ * パラメータ DAG は `exact` を次の式へ渡し、公開値には `value` を使う。
+ */
+export function evaluateExpressionExact(
+  source: string,
+  options: ExactEvaluateOptions = {},
+): ExactExpressionResult {
+  try {
+    const result = evaluateNode(parse(source), options.variables ?? NO_VARIABLES, options);
+    if (!result.isFinite()) {
+      return { ok: false, error: expressionError('notFinite', '') };
+    }
+    return {
+      ok: true,
+      value: {
+        source,
+        value: result.toNumber(),
+        exact: result.toString(),
+      },
+    };
+  } catch (error) {
+    if (error instanceof ExpressionFailure) {
+      return { ok: false, error: error.detail };
+    }
+    return { ok: false, error: expressionError('notFinite', '') };
+  }
 }

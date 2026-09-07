@@ -2,13 +2,23 @@ import ocGlueUrl from 'opencascade.js/dist/opencascade.full.js?url';
 import ocWasmUrl from 'opencascade.js/dist/opencascade.full.wasm?url';
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 
+import {
+  decompressAndVerifyOcctAsset,
+  parseOcctAssetManifest,
+  type DownloadedOcctAssetPart,
+  type OcctAssetManifest,
+} from './occtAssetManifest.js';
+
 /**
  * Emscripten が出力したグルーコードのファクトリ。
  * opencascade.js の dist/index.js が `new mainJS({ locateFile })` として呼んでいる形に合わせる。
  */
-type OcctModuleFactory = new (moduleOptions: {
-  locateFile(path: string): string;
-}) => Promise<OpenCascadeInstance>;
+interface OcctModuleOptions {
+  readonly locateFile?: (path: string) => string;
+  readonly wasmBinary?: ArrayBuffer;
+}
+
+type OcctModuleFactory = new (moduleOptions: OcctModuleOptions) => Promise<OpenCascadeInstance>;
 
 /** 実行時 import で読み込んだグルーコードの形。 */
 interface OcctGlueModule {
@@ -34,6 +44,52 @@ function isOcctGlueModule(value: unknown): value is OcctGlueModule {
 
 let cached: Promise<OpenCascadeInstance> | undefined;
 
+interface FetchedOcctAssetManifest {
+  readonly manifest: OcctAssetManifest;
+  readonly url: string;
+}
+
+async function fetchAssetManifest(): Promise<FetchedOcctAssetManifest | undefined> {
+  const url = `${import.meta.env.BASE_URL}occt/manifest.json`;
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    const contentType = response.headers.get('Content-Type') ?? '';
+    if (response.status === 404 || !contentType.toLowerCase().includes('application/json')) {
+      return undefined;
+    }
+    if (!response.ok) {
+      throw new Error(`OCCT 資産 manifest を取得できませんでした(HTTP ${response.status})。`);
+    }
+    const value: unknown = await response.json();
+    return { manifest: parseOcctAssetManifest(value), url: response.url };
+  } catch (error) {
+    // serve / Electron では従来の `?url` が実在するため、manifest が無ければ元経路へ戻る。
+    if (ocWasmUrl.length > 0) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function fetchCompressedWasm(
+  fetched: FetchedOcctAssetManifest,
+): Promise<ArrayBuffer> {
+  const downloaded: DownloadedOcctAssetPart[] = [];
+  for (const part of fetched.manifest.parts) {
+    const response = await fetch(new URL(part.file, fetched.url));
+    if (!response.ok) {
+      throw new Error(`OCCT 資産の片 ${part.order} を取得できませんでした(HTTP ${response.status})。`);
+    }
+    downloaded.push({ order: part.order, data: await response.arrayBuffer() });
+  }
+  return await decompressAndVerifyOcctAsset(fetched.manifest, downloaded);
+}
+
+async function importOcctGlue(): Promise<unknown> {
+  const glueModule: unknown = await import(/* @vite-ignore */ ocGlueUrl);
+  return glueModule;
+}
+
 /**
  * ブラウザ(および Web Worker)で OCCT を読み込む。
  *
@@ -46,11 +102,18 @@ let cached: Promise<OpenCascadeInstance> | undefined;
  */
 export function loadOcctForBrowser(): Promise<OpenCascadeInstance> {
   cached ??= (async (): Promise<OpenCascadeInstance> => {
-    const glueModule: unknown = await import(/* @vite-ignore */ ocGlueUrl);
+    const gluePromise = importOcctGlue();
+    const manifestPromise = fetchAssetManifest();
+    const glueModule = await gluePromise;
+    const fetchedManifest = await manifestPromise;
     if (!isOcctGlueModule(glueModule)) {
       throw new Error(
         `OCCT のグルーコードを読み込めませんでした(既定の書き出しが見つかりません): ${ocGlueUrl}`,
       );
+    }
+    if (fetchedManifest !== undefined) {
+      const wasmBinary = await fetchCompressedWasm(fetchedManifest);
+      return await new glueModule.default({ wasmBinary });
     }
     return await new glueModule.default({
       locateFile: (path: string): string => (path.endsWith('.wasm') ? ocWasmUrl : path),

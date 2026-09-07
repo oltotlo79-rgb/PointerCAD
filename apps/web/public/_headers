@@ -3,3 +3,11 @@
   Cross-Origin-Embedder-Policy: require-corp
   Cross-Origin-Resource-Policy: same-origin
   X-Content-Type-Options: nosniff
+
+/occt/*
+  Content-Type: application/octet-stream
+  Cache-Control: public, max-age=31536000, immutable
+
+/occt/manifest.json
+  Content-Type: application/json
+  Cache-Control: public, max-age=60, must-revalidate

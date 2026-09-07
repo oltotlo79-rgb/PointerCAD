@@ -1,5 +1,68 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
+
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+const OCCT_WASM_IMPORT = 'opencascade.js/dist/opencascade.full.wasm?url';
+const OCCT_WASM_VIRTUAL_ID = '\0pointercad:occt-wasm-url-disabled';
+const OCCT_WASM_PATH = fileURLToPath(
+  new URL(
+    '../../packages/kernel/node_modules/opencascade.js/dist/opencascade.full.wasm',
+    import.meta.url,
+  ),
+);
+
+/**
+ * Pages の 1 ファイル 25 MiB 制限を越える OCCT WASM を、ビルド時だけ gzip 資産へ置き換える。
+ * serve と Electron の Vite 設定にはこのプラグインが入らないため、従来の `?url` が残る。
+ */
+function occtAssets(emitAssets = true): Plugin {
+  return {
+    name: 'pointercad-occt-assets',
+    apply: 'build',
+    enforce: 'pre',
+    resolveId(source) {
+      if (source === OCCT_WASM_IMPORT) {
+        return OCCT_WASM_VIRTUAL_ID;
+      }
+      return undefined;
+    },
+    load(id) {
+      if (id === OCCT_WASM_VIRTUAL_ID) {
+        // Web の本番ビルドは manifest 経路だけを使う。空文字なら loader が欠落を検出できる。
+        return 'export default "";';
+      }
+      return undefined;
+    },
+    generateBundle() {
+      if (!emitAssets) {
+        return;
+      }
+      const source = readFileSync(OCCT_WASM_PATH);
+      const sha256 = createHash('sha256').update(source).digest('hex');
+      const compressed = gzipSync(source, { level: 9 });
+      const fileName = `occt/opencascade.full-${sha256.slice(0, 16)}.bin`;
+      const manifest = {
+        byteLength: source.byteLength,
+        sha256,
+        compression: 'gzip',
+        parts: [
+          { order: 0, file: fileName.slice('occt/'.length), byteLength: compressed.byteLength },
+        ],
+      };
+
+      this.emitFile({ type: 'asset', fileName, source: compressed });
+      this.emitFile({
+        type: 'asset',
+        fileName: 'occt/manifest.json',
+        source: `${JSON.stringify(manifest, undefined, 2)}\n`,
+      });
+    },
+  };
+}
 
 /** WASM の並列実行に必要な隔離状態を作る(FR-1003)。開発時も配信時と同じ条件にする。 */
 const crossOriginIsolationHeaders = {
@@ -63,12 +126,12 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), occtAssets()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },
   // 幾何カーネルの Worker は ES モジュールとして出力する。
   // Worker の中で実行時 import() を使うため(packages/kernel/src/occt/loadOcct.browser.ts)。
-  worker: { format: 'es' },
+  worker: { format: 'es', plugins: () => [occtAssets(false)] },
   build: {
     target: 'esnext',
     // 50MB の WASM が誤って埋め込まれないよう、資産の埋め込みを無効にする。

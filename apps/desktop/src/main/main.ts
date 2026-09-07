@@ -3,6 +3,7 @@ import type { IpcMainInvokeEvent } from 'electron';
 import { join } from 'node:path';
 
 import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './appProtocol.js';
+import { isAllowedAppUrl, registerAppWindow, validateAppSender } from './appSender.js';
 import { PCAD_PRINT_CHANNEL, registerPcadIpc } from './pcadDialogs.js';
 
 /**
@@ -41,6 +42,15 @@ function createMainWindow(): void {
       sandbox: true,
     },
   });
+  registerAppWindow(window);
+
+  window.webContents.on('will-navigate', (event, targetUrl) => {
+    if (!isAllowedAppUrl(targetUrl, devServerUrl)) {
+      event.preventDefault();
+    }
+  });
+  // P11b タスク 1 の固定 HTTPS 許可表による外部リンク処理は、この拒否口へ追加する。
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   window.once('ready-to-show', () => {
     window.show();
@@ -72,6 +82,13 @@ async function printPngInHiddenWindow(png: Uint8Array): Promise<boolean> {
       sandbox: true,
     },
   });
+  printWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    if (!isAllowedAppUrl(targetUrl, devServerUrl)) {
+      event.preventDefault();
+    }
+  });
+  // P11b タスク 1 の固定 HTTPS 許可表による外部リンク処理は、この拒否口へ追加する。
+  printWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   try {
     const dataUrl = `data:image/png;base64,${Buffer.from(png).toString('base64')}`;
     await printWindow.loadURL(dataUrl);
@@ -92,7 +109,10 @@ async function printPngInHiddenWindow(png: Uint8Array): Promise<boolean> {
 function registerPrintIpc(): void {
   ipcMain.handle(
     PCAD_PRINT_CHANNEL,
-    async (_event: IpcMainInvokeEvent, ...args: unknown[]): Promise<boolean> => {
+    async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<boolean> => {
+      if (!validateAppSender(event)) {
+        return false;
+      }
       const [png] = args;
       if (!(png instanceof Uint8Array)) {
         throw new Error('印刷の依頼の形が正しくありません。');

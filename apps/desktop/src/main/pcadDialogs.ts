@@ -1,7 +1,9 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import type { IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
-import { promises as fileSystem } from 'node:fs';
-import { basename, extname } from 'node:path';
+import { constants as fileSystemConstants, promises as fileSystem } from 'node:fs';
+import { basename, dirname, extname, join } from 'node:path';
+
+import { validateAppSender } from './appSender.js';
 
 /**
  * デスクトップ版の「開く」「保存」「名前を付けて保存」(計画書 docs/plans/P2-ソリッド基礎.md タスク26)と、
@@ -46,6 +48,11 @@ export const PCAD_PRINT_CHANNEL = 'pcad:print';
 
 /** 部品ファイルの拡張子(要件§8)。 */
 const PCAD_EXTENSION = 'pcad';
+
+/** `packages/io/src/limits.ts` の圧縮済み入力上限と同じ値。desktop は io に依存しないため写す。 */
+const MAX_COMPRESSED_INPUT_BYTES = 256 * 1024 * 1024;
+
+class InputTooLargeError extends Error {}
 
 /**
  * ファイル選択の窓に出す種別。
@@ -122,21 +129,83 @@ function withPcadExtension(filePath: string): string {
  */
 async function readBytesFrom(filePath: string): Promise<Uint8Array> {
   try {
+    const metadata = await fileSystem.stat(filePath);
+    if (metadata.size > MAX_COMPRESSED_INPUT_BYTES) {
+      throw new InputTooLargeError('ファイルが大きすぎます（上限は 256 MiB です）。');
+    }
     const contents = await fileSystem.readFile(filePath);
     // Buffer は Node の内部で使い回す記憶を指すことがあるので、自前の記憶へ写してから渡す。
     const bytes = new Uint8Array(contents.byteLength);
     bytes.set(contents);
     return bytes;
   } catch (cause) {
+    if (cause instanceof InputTooLargeError) {
+      throw cause;
+    }
     throw new Error('ファイルを読めませんでした。', { cause });
   }
 }
 
-/** ファイルを書く。失敗は日本語の `Error`(文面にパスを入れない理由は `readBytesFrom` と同じ)。 */
-async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> {
+/** 存在すれば消す。一時ファイルの後始末用なので、存在しない場合を含め失敗は外へ出さない。 */
+async function removeTemporaryFile(filePath: string): Promise<void> {
   try {
-    await fileSystem.writeFile(filePath, bytes);
+    await fileSystem.unlink(filePath);
+  } catch {
+    // 保存の本来の成否を、一時ファイルの後始末だけで上書きしない。
+  }
+}
+
+/**
+ * ファイルを書く。同じディレクトリの一時ファイルを完成させてから置換する。
+ * Windows で既存先への rename ができない場合は、元を控えてから上書きし、失敗時に戻す。
+ */
+async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> {
+  const directory = dirname(filePath);
+  const temporaryPath = join(directory, `${basename(filePath)}.tmp-${crypto.randomUUID()}`);
+  const backupPath = join(directory, `${basename(filePath)}.backup-${crypto.randomUUID()}`);
+  let backupCreated = false;
+  try {
+    await fileSystem.writeFile(temporaryPath, bytes, { flag: 'wx' });
+    try {
+      await fileSystem.rename(temporaryPath, filePath);
+      return;
+    } catch {
+      try {
+        await fileSystem.copyFile(filePath, backupPath, fileSystemConstants.COPYFILE_EXCL);
+        backupCreated = true;
+      } catch (backupCause) {
+        throw new Error('保存先を安全に置換できませんでした。', {
+          cause: backupCause,
+        });
+      }
+
+      try {
+        await fileSystem.copyFile(temporaryPath, filePath);
+      } catch (copyCause) {
+        try {
+          await fileSystem.copyFile(backupPath, filePath);
+        } catch (restoreCause) {
+          throw new Error('保存に失敗し、元のファイルも復元できませんでした。', {
+            cause: restoreCause,
+          });
+        }
+        throw copyCause;
+      }
+
+      await fileSystem.unlink(temporaryPath);
+      await fileSystem.unlink(backupPath);
+      backupCreated = false;
+    }
   } catch (cause) {
+    if (backupCreated) {
+      try {
+        await fileSystem.copyFile(backupPath, filePath);
+      } catch {
+        // 上で復元を試みた結果を cause に保持し、後始末を続ける。
+      }
+    }
+    await removeTemporaryFile(temporaryPath);
+    await removeTemporaryFile(backupPath);
     throw new Error('ファイルを保存できませんでした。', { cause });
   }
 }
@@ -391,6 +460,9 @@ export function registerPcadIpc(): void {
     async (
       event: IpcMainInvokeEvent,
     ): Promise<{ name: string; bytes: Uint8Array; saveTargetToken: string } | null> => {
+      if (!validateAppSender(event)) {
+        return null;
+      }
       // 未確定の候補は次の「開く」を始めた時点で失効する。確定済みの先はまだ保つ。
       pendingPaths.delete(event.sender.id);
       const opened = await openPcadDialog(windowOf(event));
@@ -405,6 +477,9 @@ export function registerPcadIpc(): void {
   ipcMain.handle(
     PCAD_CONFIRM_TARGET_CHANNEL,
     (event: IpcMainInvokeEvent, ...args: unknown[]): boolean => {
+      if (!validateAppSender(event)) {
+        return false;
+      }
       const [token] = args;
       if (typeof token !== 'string') {
         throw new Error('保存先の確定依頼の形が正しくありません。');
@@ -421,12 +496,18 @@ export function registerPcadIpc(): void {
   );
 
   ipcMain.handle(PCAD_CLEAR_TARGET_CHANNEL, (event: IpcMainInvokeEvent): void => {
+    if (!validateAppSender(event)) {
+      return;
+    }
     clearSaveTargets(event);
   });
 
   ipcMain.handle(
     PCAD_SAVE_CHANNEL,
     async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<string | null> => {
+      if (!validateAppSender(event)) {
+        return null;
+      }
       const [suggestedName, bytes, saveAs] = args;
       if (
         typeof suggestedName !== 'string' ||
@@ -450,13 +531,19 @@ export function registerPcadIpc(): void {
     },
   );
 
-  ipcMain.handle(PCAD_HAS_TARGET_CHANNEL, (event: IpcMainInvokeEvent): boolean =>
-    lastPaths.has(event.sender.id),
-  );
+  ipcMain.handle(PCAD_HAS_TARGET_CHANNEL, (event: IpcMainInvokeEvent): boolean => {
+    if (!validateAppSender(event)) {
+      return false;
+    }
+    return lastPaths.has(event.sender.id);
+  });
 
   ipcMain.handle(
     PCAD_OPEN_ANY_CHANNEL,
     async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<OpenedAnyFile | null> => {
+      if (!validateAppSender(event)) {
+        return null;
+      }
       const kinds = toKnownKinds(args[0]);
       if (kinds === null) {
         throw new Error('読み込みの依頼の形が正しくありません。');
@@ -469,6 +556,9 @@ export function registerPcadIpc(): void {
   ipcMain.handle(
     PCAD_SAVE_AS_CHANNEL,
     async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<boolean> => {
+      if (!validateAppSender(event)) {
+        return false;
+      }
       const [fileName, kind, bytes] = args;
       if (
         typeof fileName !== 'string' ||

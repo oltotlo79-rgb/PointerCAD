@@ -4,7 +4,8 @@ import { pathToFileURL } from 'node:url';
 
 /** 画面の配信に使う独自スキーム。Web 版と同じ「http のような」条件を再現する。 */
 export const APP_SCHEME = 'app';
-export const APP_ORIGIN = `${APP_SCHEME}://pointercad`;
+export const APP_HOST = 'pointercad';
+export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 export const APP_ENTRY_URL = `${APP_ORIGIN}/index.html`;
 
 /**
@@ -32,6 +33,9 @@ export function handleAppScheme(rendererRoot: string): void {
 
   protocol.handle(APP_SCHEME, async (request) => {
     const url = new URL(request.url);
+    if (url.host !== APP_HOST) {
+      return new Response('Forbidden', { status: 403 });
+    }
     const relativePath = url.pathname === '/' ? '/index.html' : url.pathname;
     const filePath = normalize(join(root, decodeURIComponent(relativePath)));
 

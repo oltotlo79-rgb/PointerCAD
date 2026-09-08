@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { addVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
 import { buildMateResidualReport, prepareMateResiduals, type MateResidualTargetPair } from './constraints/mateResiduals.js';
-import { applyMateIncrements, diagnoseMates, solveDrivenJoint, solveMates } from './constraints/solveMates.js';
+import { applyMateIncrements, diagnoseMates, prepareMateDrag, solveDrivenJoint, solveMateDrag, solveMates } from './constraints/solveMates.js';
 import { solveRigid, type RigidSolveInput } from './constraints/solveRigid.js';
 import { collectMateVariables } from './constraints/mateVariables.js';
 import {
@@ -338,5 +338,89 @@ describe('P7-19の混在joint性能(50部品/150joint/575行)', () => {
     });
     console.log('[P7-19性能] solve+診断/500ms', JSON.stringify(measured));
     expectWithinBudget(measured.median, 500, 'joint解き直しと診断50部品150条件575行');
+  });
+});
+
+/** Real movable components: planar translation, floating group, and offset cylindrical rotation. */
+function dragFixture(mode: 'fixed' | 'floating' | 'rotation', normal = false, count = 20, spacing = 20, angle = 0.02) {
+  const components = Array.from({ length: count }, (_, index): AssemblyComponent => ({ id: String(index), name: String(index),
+    source: { kind: 'part', partRef: 'box' }, placement: DEFAULT_COMPONENT_PLACEMENT,
+    fixed: index === 0 && mode !== 'floating', visible: true, suppressed: false }));
+  const placements = new Map<string, RigidPlacement>(components.map((c, index) => [c.id, {
+    ...IDENTITY_PLACEMENT, position: mode === 'rotation' ? [10, 0, index * spacing] : [index * spacing, 0, 0],
+  }]));
+  const mates: Mate[] = [];
+  const targets = new Map<string, MateResidualTargetPair>();
+  for (let i = 1; i < count; i += 1) {
+    const id = String(i);
+    mates.push({ id, name: id, kind: mode === 'rotation' ? 'concentric' : 'coincident',
+      a: { kind: 'origin', componentId: String(i), element: 'origin' },
+      b: { kind: 'origin', componentId: String(i - 1), element: 'origin' }, flipped: false, suppressed: false });
+    targets.set(id, mode === 'rotation' ? {
+      a: { kind: 'cylinder', point: [1, 2, 3], axisOrigin: [0, 0, 0], direction: [0, 0, 1], radius: 10 },
+      b: { kind: 'cylinder', point: [4, 5, 6], axisOrigin: [0, 0, 0], direction: [0, 0, 1], radius: 10 },
+    } : {
+      a: { kind: 'plane', point: [i * spacing / 2, 0, 0], direction: [0, 0, -1], radius: null },
+      b: { kind: 'plane', point: [i * spacing / 2, 0, 0], direction: [0, 0, 1], radius: null },
+    });
+  }
+  const target: Vec3 = mode === 'rotation' ? [10 * Math.cos(angle), 10 * Math.sin(angle), (count - 1) * spacing + 10]
+    : [(count - 1) * spacing + 10, 2, normal || mode === 'floating' ? 10 : 0];
+  return { assembly: { ...createAssemblyDocument('20 component drag'), components, mates }, placements, targets, target };
+}
+
+describe('P7-18 20部品の一時位置目標（通常測定、UIのFPSとは別）', () => {
+  it.each([0.1, 100, 1e5])('L=%s: 2/5/10/20部品×基点距離×回転量で5反復hard成立と実移動を固定する', (characteristicLength) => {
+    const measurements: unknown[] = [];
+    for (const count of [2, 5, 10, 20]) {
+      for (const spacing of [1, 20, 100]) {
+        for (const mode of ['fixed', 'floating', 'rotation'] as const) {
+          for (const angle of mode === 'rotation' ? [0.001, 0.02, 0.1] : [0]) {
+            const data = dragFixture(mode, mode === 'fixed', count, spacing, angle);
+            const id = String(count - 1);
+            const ready = prepareMateDrag(data.assembly, data.targets, data.placements, id, { characteristicLength });
+            if (!ready.ok) throw new Error(ready.reason);
+            const result = solveMateDrag(ready.drag, data.target, { phase: 'frame' });
+            const label = JSON.stringify({ characteristicLength, count, spacing, mode, angle });
+            const after = result.placements.get(id), before = data.placements.get(id);
+            expect.soft(result.hardSatisfied, label).toBe(true);
+            expect.soft(result.counts.totalIterations, label).toBeLessThanOrEqual(5);
+            expect.soft(after?.position, label).not.toEqual(before?.position);
+            measurements.push({ characteristicLength, count, spacing, mode, angle, stop: result.stop, counts: result.counts,
+              moved: JSON.stringify(after?.position) !== JSON.stringify(before?.position),
+              lastProjection: result.trace.filter((entry) => entry.phase === 'projection').at(-1)?.record });
+          }
+        }
+      }
+    }
+    console.log('[P7-18 lever sweep]', JSON.stringify(measurements));
+  });
+  it.each([
+    ['fixed', false], ['fixed', true], ['floating', false], ['rotation', false],
+  ] as const)('%s normal=%s: 選別・pin・soft/hard・overlayを16ms以内', (mode, normal) => {
+    const data = dragFixture(mode, normal);
+    const calculate = () => {
+      const preparation = prepareMateDrag(data.assembly, data.targets, data.placements, '19');
+      if (!preparation.ok) throw new Error(preparation.reason);
+      const outcome = solveMateDrag(preparation.drag, data.target, { phase: 'frame' });
+      // This is the model overlay consumed by 18b. Include copying every changed component.
+      return { outcome, overlay: new Map(outcome.placements) };
+    };
+    const counts: unknown[] = [];
+    const measured = jointMedian(calculate, ({ outcome, overlay }) => {
+      expect(outcome.hardSatisfied).toBe(true);
+      expect(outcome.counts.totalIterations).toBeGreaterThan(0);
+      expect(outcome.counts.totalIterations).toBeLessThanOrEqual(5);
+      expect(outcome.variableCount).toBe(mode === 'floating' ? 120 : 114);
+      const before = data.placements.get('19'), after = overlay.get('19');
+      if (before === undefined || after === undefined) throw new Error('missing performance placement');
+      expect(after.position).not.toEqual(before.position);
+      expect(outcome.driverSquaredError).toBeLessThan(data.target.reduce((sum, value, axis) => sum + (value - before.position[axis]) ** 2, 0));
+      if (mode === 'fixed') expect(Math.abs(after.position[2])).toBeLessThan(1e-9);
+      if (mode === 'rotation') expect(after.rotation).not.toEqual(before.rotation);
+      counts.push(outcome.counts);
+    });
+    console.log('[P7-18性能] 20部品frame/16ms', JSON.stringify({ mode, normal, ...measured, maximum: Math.max(...measured.samples), counts }));
+    expectWithinBudget(measured.median, 16, `20部品drag ${mode} normal=${normal}`);
   });
 });

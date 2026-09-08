@@ -83,6 +83,33 @@ describe('配置中の一時状態(P7 タスク11b)', () => {
     expect(after.requestedGeneration).toBe(before.requestedGeneration);
     expect(after.assemblyView).toBe(before.assemblyView);
   });
+
+  it('表示専用overlayをUndo snapshotへ入れず、通常編集では残さない', () => {
+    const assembly = createAssemblyDocument('組み立て1');
+    useAppStore.getState().openAssembly(assembly);
+    const state = useAppStore.getState();
+    useAppStore.setState({
+      assemblyDragOverlay: {
+        document: assembly,
+        library: state.assemblyLibrary,
+        documentId: state.activeDocumentId,
+        version: state.documentVersion,
+        generation: state.requestedGeneration,
+        placements: new Map(),
+        validatedIds: [],
+      },
+      assemblyDragNotice: 'dragging',
+    });
+    useAppStore.getState().applyAssembly({ ...assembly, name: '変更後' });
+    const edited = useAppStore.getState();
+    expect(edited.assemblyDragOverlay).toBeNull();
+    expect(edited.assemblyDragNotice).toBeNull();
+    expect(Object.keys(edited.assemblyUndoStack?.present ?? {}).sort()).toEqual(['document', 'library']);
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().assembly).toBe(assembly);
+    expect(useAppStore.getState().assemblyDragOverlay).toBeNull();
+  });
+
   it('確定編集は配置状態を消し、Undoを1段だけ積む', () => {
     const assembly = createAssemblyDocument('組み立て1');
     useAppStore.getState().openAssembly(assembly);

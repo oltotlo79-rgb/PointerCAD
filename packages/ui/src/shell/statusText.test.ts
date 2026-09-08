@@ -871,6 +871,47 @@ describe('引っぱりの帯(FR-313、P4b タスク14)', () => {
   });
 });
 
+
+describe('合致を保つ部品ドラッグの帯(P7 タスク18)', () => {
+  it.each([
+    ['dragging', 'guide', 'assembly.drag.dragging'],
+    ['limited', 'guide', 'assembly.drag.limited'],
+    ['complete', 'saved', 'assembly.drag.complete'],
+    ['cancelled', 'cancelled', 'assembly.drag.cancelled'],
+    ['fixed', 'failure', 'assemblyError.fixedComponentDrag'],
+    ['waiting', 'failure', 'assembly.drag.waiting'],
+    ['unavailable', 'failure', 'assembly.drag.unavailable'],
+    ['failed', 'failure', 'assembly.drag.failed'],
+  ] as const)('%s の結果を1文で知らせる', (notice, kind, key) => {
+    const line = describeStatus({ ...quiet(), assemblyDragNotice: notice });
+    expect(line.kind).toBe(kind);
+    expect(line.text).toBe(t(key));
+  });
+
+  it('ドラッグ失敗は合致の診断より先に出す', () => {
+    const line = describeStatus({
+      ...quiet(),
+      assemblyDragNotice: 'failed',
+      assemblyMateStatus: { failed: true, text: '合致の診断' },
+    });
+    expect(line.text).toBe(t('assembly.drag.failed'));
+  });
+
+  it('制限位置は失敗扱いにせず、合致の診断より先に出す', () => {
+    const line = describeStatus({
+      ...quiet(),
+      assemblyDragNotice: 'limited',
+      assemblyMateStatus: { failed: true, text: '矛盾した合致' },
+    });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe(t('assembly.drag.limited'));
+  });
+
+  it('知らせが無い既存状態は従来どおり準備完了を出す', () => {
+    expect(describeStatus({ ...quiet(), assemblyDragNotice: null }).text).toBe(t('statusBar.ready'));
+  });
+});
+
 describe('外観の案内と警告(FR-1106〜1110、P5 タスク11)', () => {
   it('外観の道具を選ぶと「面か立体を選んでください」の案内を出す', () => {
     expect(guideKeyFor('appearance', 0)).toBe('statusBar.guide.appearance');

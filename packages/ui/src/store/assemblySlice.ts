@@ -22,6 +22,7 @@ import type { AppState, DocumentStateUpdate } from './appState.js';
 import type { AppearanceInput } from '../viewport/buildSolidGeometry.js';
 import type { MateDiagnosis } from '@pointercad/model';
 import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
+import type { AssemblyDragState, AssemblyDragOverlay, AssemblyDragNotice } from '../assembly/dragComponentActions.js';
 
 export interface AssemblySnapshot {
   readonly document: AssemblyDocument;
@@ -90,6 +91,10 @@ export interface AssemblySlice {
   readonly assemblyPlacement: AssemblyPlacementState | null;
   /** 合致コマンドの打ちかけ。文書の寿命に結び、保存・Undoへは入れない。 */
   readonly assemblyMateDraft: AssemblyMateDraft | null;
+  /** Display-only drag state. No pin, candidate or solver trace enters AssemblySnapshot. */
+  readonly assemblyDrag: AssemblyDragState | null;
+  readonly assemblyDragOverlay: AssemblyDragOverlay | null;
+  readonly assemblyDragNotice: AssemblyDragNotice | null;
   /** 文書の id は新規でも同じ値になり得るため、開く単位の安定 ID を別に持つ。 */
   readonly activeDocumentId: string;
   readonly recoveryRecord: AutoSaveRecord | null;
@@ -118,6 +123,9 @@ export const createAssemblySlice: StateCreator<
     assemblyView: null,
     assemblyPlacement: null as AssemblyPlacementState | null,
     assemblyMateDraft: null as AssemblyMateDraft | null,
+    assemblyDrag: null,
+    assemblyDragOverlay: null,
+    assemblyDragNotice: null,
     activeDocumentId: crypto.randomUUID(),
   });
   function applyHistory(stack: UndoStack<AssemblySnapshot>): void {
@@ -133,6 +141,7 @@ export const createAssemblySlice: StateCreator<
       hoveredElementId: null,
       assemblyPlacement: null,
       assemblyMateDraft: null,
+      assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null,
     }));
   }
   return {
@@ -160,9 +169,17 @@ export const createAssemblySlice: StateCreator<
         return;
       }
       const stack = pushUndo(state.assemblyUndoStack, { document: assembly, library });
-      set({ assembly, assemblyLibrary: library, assemblyUndoStack: stack,
-        canUndo: stack.past.length > 0, canRedo: false, fileMessage: null,
-        assemblyPlacement: null, assemblyMateDraft: null });
+      set((current) => {
+        const overlay = current.assemblyDragOverlay;
+        const keepOverlay = overlay !== null && overlay.document === assembly
+          && overlay.library === library && overlay.documentId === current.activeDocumentId
+          && overlay.version === current.documentVersion;
+        return { assembly, assemblyLibrary: library, assemblyUndoStack: stack,
+          canUndo: stack.past.length > 0, canRedo: false, fileMessage: null,
+          assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null,
+          assemblyDragOverlay: keepOverlay ? overlay : null,
+          assemblyDragNotice: keepOverlay ? current.assemblyDragNotice : null };
+      });
     },
     setAssemblyFileState: (assemblyFileName, savedAssembly) => {
       set({ assemblyFileName, savedAssembly });
@@ -176,15 +193,15 @@ export const createAssemblySlice: StateCreator<
     undoAssembly: () => {
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.past.length > 0) applyHistory(undo(stack));
-      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null) {
-        set({ assemblyPlacement: null, assemblyMateDraft: null });
+      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null) {
+        set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null });
       }
     },
     redoAssembly: () => {
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.future.length > 0) applyHistory(redo(stack));
-      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null) {
-        set({ assemblyPlacement: null, assemblyMateDraft: null });
+      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null) {
+        set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null });
       }
     },
   };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  rigidRowTolerance, scaledRigidJacobian, solveRigid, type RigidResidualRow, type RigidSolveInput,
+  rigidRowTolerance, scaledRigidJacobian, solveRigid, type RigidResidualRow, type RigidSolveInput, type RigidIterationRecord,
 } from './solveRigid.js';
 
 function row(value: number, gradient: readonly number[], unit: 'length' | 'angle' = 'length', scale = 1): RigidResidualRow {
@@ -12,6 +12,80 @@ function problem(initial: readonly number[], evaluate: (x: readonly number[]) =>
     evaluate: (base, step) => ({ rows: evaluate(base.map((v, j) => v + step[j])) }),
     retract: (base, step) => base.map((v, j) => v + step[j]), options: { characteristicLength: 1 } };
 }
+
+describe('P7-18 opt-inの作業量と収束', () => {
+  it('追加条件なしの結果・評価順・traceが観測の有無で完全一致する', () => {
+    const run = (observed: boolean) => {
+      const calls: { base: readonly number[]; increments: readonly number[] }[] = [];
+      let iterations = 0, solves = 0;
+      const records: RigidIterationRecord[] = [];
+      const input = problem([0.1], ([x]) => [row(x * x - 1, [2 * x])]);
+      const result = solveRigid({ ...input, evaluate: (base, increments) => {
+        calls.push({ base: [...base], increments: [...increments] });
+        return input.evaluate(base, increments);
+      }, ...(observed ? { observer: {
+        iterationStarted: () => { iterations += 1; }, linearSolve: () => { solves += 1; },
+        trial: (record: RigidIterationRecord) => { records.push(record); },
+      } } : {}) });
+      return { result, calls, iterations, solves, records };
+    };
+    const ordinary = run(false), observed = run(true);
+    expect(observed.result).toEqual(ordinary.result);
+    expect(observed.calls).toEqual(ordinary.calls);
+    expect(observed.iterations).toBe(ordinary.result.iterations);
+    expect(observed.records).toEqual(ordinary.result.trace);
+    expect(observed.solves).toBe(ordinary.result.trace.length);
+  });
+  it('重み付き行の成立を生の位置到達と取り違えない', () => {
+    const input = problem([0], ([x]) => [row(0.01 * (x - 1e-8), [0.01])]);
+    expect(solveRigid(input).iterations).toBe(0);
+    const result = solveRigid({ ...input, canConverge: (base) => Math.abs(base[0] - 1e-8) < 1e-9 });
+    expect(result.converged).toBe(true);
+    expect(result.iterations).toBeGreaterThan(0);
+    expect(Math.abs(result.base[0] - 1e-8)).toBeLessThan(1e-9);
+  });
+  it('反復内time打切りでもstarted観測は減算しない（既存iterationsは維持）', () => {
+    let clock = 0, started = 0;
+    const result = solveRigid({ ...problem([0], ([x]) => [row(x - 10, [1])]),
+      observer: { iterationStarted: () => { started += 1; }, linearSolve: () => {}, trial: () => {} },
+      options: { characteristicLength: 1, maxTimeMs: 2, now: () => clock++ } });
+    expect(result.limit).toBe('time');
+    expect(result.iterations).toBe(0);
+    expect(started).toBe(1);
+    expect(result.trace).toEqual([]);
+  });
+  it.each(['auto', 'normal', 'qr'] as const)('%s: opt-in零列を厳密に保ち独立小列とspan従属列を混同しない', (linearSolver) => {
+    for (const ceiling of [0.001, 0.01, 1, 100]) {
+    for (const sensitivity of [0, ...Array.from({ length: 18 }, (_value, i) => 10 ** (i - 20)),
+      Number.EPSILON / 2, Number.EPSILON, Number.EPSILON * 2]) {
+      const independent = problem([0, 0, 0, 0], ([x, y]) => [row(x - 1, [1, 0, 0, 0]),
+        row(sensitivity * y - (sensitivity === 0 ? 0 : 1), [0, sensitivity, 0, 0])]);
+      const result = solveRigid({ ...independent, preserveZeroColumns: true, dampingCeilings: [ceiling, ceiling, ceiling, ceiling],
+        options: { ...independent.options, linearSolver } });
+      expect(result.converged).toBe(true);
+      expect(result.base[2]).toBe(0);
+      expect(result.base[3]).toBe(0);
+      if (sensitivity > 0) expect(Math.abs(result.base[1] * sensitivity - 1)).toBeLessThan(1e-9);
+      const dependent = problem([0, 0, 0], ([x, y, z]) => [row(x + sensitivity * z - 1, [1, 0, sensitivity]),
+        row(y + sensitivity * z - 1, [0, 1, sensitivity])]);
+      const span = solveRigid({ ...dependent, preserveZeroColumns: true, dampingCeilings: [ceiling, ceiling, ceiling],
+        options: { ...dependent.options, linearSolver } });
+      expect(span.converged).toBe(true);
+      expect(Math.abs(span.base[2])).toBeLessThanOrEqual(3 * sensitivity);
+    }
+    }
+  });
+  it('物理減衰尺度の疎配列・零・非有限・次元違いを演算前に拒否する', () => {
+    const inherited = new Array<number>(1); Object.setPrototypeOf(inherited, { 0: 1 });
+    for (const dampingCeilings of [new Array<number>(1), inherited, [0], [-1], [NaN], [Infinity], []]) {
+      const result = solveRigid({ ...problem([0], ([x]) => [row(x - 1, [1])]), dampingCeilings });
+      expect(result.stop).toBe('stalled');
+      expect(result.iterations).toBe(0);
+      expect(result.base).toEqual([0]);
+      expect(result.trace).toEqual([]);
+    }
+  });
+});
 
 describe('solveRigidの受理/棄却と停止理由', () => {
   const scaleSweep = [...Array.from({ length: 18 }, (_value, i) => 10 ** (i - 20)),

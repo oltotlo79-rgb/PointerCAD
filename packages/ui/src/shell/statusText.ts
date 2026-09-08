@@ -16,6 +16,7 @@ import {
   type WorkPlaneId,
 } from '@pointercad/model';
 import type { MateDiagnosis } from '@pointercad/model';
+import type { AssemblyDragNotice } from '../assembly/dragComponentActions.js';
 import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 
 import { t, type MessageKey } from '../i18n/t.js';
@@ -344,6 +345,8 @@ export function assemblyMateStatus(
 /** 帯に出す 1 文を選ぶのに要るもの。すべてストアから読める値。 */
 export interface StatusInput {
   readonly assemblyMateStatus?: { readonly text: string; readonly failed: boolean } | null;
+  /** 部品を合致に沿って直接動かした結果。 */
+  readonly assemblyDragNotice?: AssemblyDragNotice | null;
   /** ファイル操作の知らせ(FR-806)。失敗は最優先、成功は案内より優先。 */
   readonly fileMessage: FileMessage | null;
   /** 面を張れなかった理由(FR-309)。 */
@@ -802,12 +805,19 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // 他の断りと同じ高さに置く。
     return failureLine('statusBar.dragError', t(input.dragRefusalKey));
   }
+  switch (input.assemblyDragNotice) {
+    case 'fixed': return failureLine(null, t('assemblyError.fixedComponentDrag'));
+    case 'waiting': return failureLine(null, t('assembly.drag.waiting'));
+    case 'unavailable': return failureLine(null, t('assembly.drag.unavailable'));
+    case 'failed': return failureLine(null, t('assembly.drag.failed'));
+  }
   if (input.timelineRefusalMessage !== undefined && input.timelineRefusalMessage !== null) {
     // 順序の入れ替えの断り(FR-507、タスク20)。いま離したドラッグへの返事なので、
     // 他の断りと同じ高さに置く。理由の文は model が相手の名前つきで組み立てたものをそのまま出す。
     return failureLine('statusBar.timelineError', input.timelineRefusalMessage);
   }
-  if (input.assemblyMateStatus?.failed === true) {
+  if (input.assemblyMateStatus?.failed === true
+    && (input.assemblyDragNotice === undefined || input.assemblyDragNotice === null)) {
     return failureLine(null, input.assemblyMateStatus.text);
   }
   if (input.commandLineFailure !== undefined && input.commandLineFailure !== null) {
@@ -879,6 +889,16 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // (§0.a-0.23 ⑨。実測で初回は 3〜7 秒かかり、固まったように見えるため)。
     const key = input.kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel';
     return { kind: 'computing', text: t(key), hint: null, progress: null };
+  }
+  switch (input.assemblyDragNotice) {
+    case 'dragging':
+      return { kind: 'guide', text: t('assembly.drag.dragging'), hint: null, progress: null };
+    case 'limited':
+      return { kind: 'guide', text: t('assembly.drag.limited'), hint: null, progress: null };
+    case 'complete':
+      return { kind: 'saved', text: t('assembly.drag.complete'), hint: null, progress: null };
+    case 'cancelled':
+      return { kind: 'cancelled', text: t('assembly.drag.cancelled'), hint: null, progress: null };
   }
   if (input.assemblyMateStatus !== undefined && input.assemblyMateStatus !== null) {
     return { kind: 'guide', text: input.assemblyMateStatus.text, hint: null, progress: null };

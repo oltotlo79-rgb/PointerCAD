@@ -49,6 +49,18 @@ export interface RigidSolveInput<Base> {
   readonly retract: (base: Base, increments: readonly number[]) => Base;
   /** 明示反転の離れた分岐への候補。基準を変えずに評価し、違反が減った候補だけ受理。 */
   readonly branchCandidates?: (base: Base, violations: readonly string[]) => readonly (readonly number[])[];
+  /** Opt-in driver convergence, in addition to all existing residual checks. */
+  readonly canConverge?: (base: Base, evaluation: RigidEvaluation) => boolean;
+  /** Opt-in: an exactly zero Jacobian column has the exact damped solution Δ=0. */
+  readonly preserveZeroColumns?: boolean;
+  /** Opt-in physical pose metric. Apply the existing null/span protection in this metric, then bound observed-column damping. */
+  readonly dampingCeilings?: readonly number[];
+  /** Counts started work, including an iteration interrupted before a trial finishes. */
+  readonly observer?: {
+    readonly iterationStarted: () => void;
+    readonly linearSolve: (solver: 'normal' | 'qr', fallback: boolean) => void;
+    readonly trial: (record: RigidIterationRecord) => void;
+  };
   readonly options?: RigidSolveOptions;
 }
 
@@ -186,6 +198,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
   const scales = columnScales(input.variables, options);
   const zero = new Array<number>(n).fill(0);
   const trace: RigidIterationRecord[] = [];
+  const dampingCeilings = input.dampingCeilings;
   const now = options.now ?? (() => performance.now());
   const start = options.maxTimeMs === undefined ? 0 : now();
   const expired = () => options.maxTimeMs !== undefined && now() - start >= options.maxTimeMs;
@@ -199,8 +212,11 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
     base, converged: stop === 'converged', iterations, residualNorm: current.norm,
     maxResidual: current.max, stop, limit, damping, trace, evaluation,
   });
+  if (dampingCeilings !== undefined && (dampingCeilings.length !== n
+    || Array.from(dampingCeilings).some((value, index) => !Object.hasOwn(dampingCeilings, index)
+      || !Number.isFinite(value) || value <= 0))) return finish('stalled', 0);
   if (current.constantConflict) return finish('provenConstantConflict', 0);
-  if (current.satisfied) return finish('converged', 0);
+  if (current.satisfied && (input.canConverge?.(base, evaluation) ?? true)) return finish('converged', 0);
   if (evaluation.valid === false || !Number.isFinite(current.weightedSum)
     || scales.some((scale) => !Number.isFinite(scale) || scale <= 0)) return finish('stalled', 0);
 
@@ -212,10 +228,13 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
   const rhs = new Float64Array(n);
   const rowColumns: number[] = [];
   const rowValues: number[] = [];
+  const metricScales = dampingCeilings?.map((value, j) => scales[j] / value);
+  const metricNorms = dampingCeilings === undefined ? null : new Float64Array(n);
   let madeProgress = false;
   const stopped = (): RigidSolveStopReason => madeProgress ? 'suspectedConflict' : 'stalled';
 
   for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
+    input.observer?.iterationStarted();
     if (expired()) return finish('iterationLimit', iteration - 1, 'time');
     const branches = evaluation.branchViolations ?? [];
     if (branches.length > 0 && input.branchCandidates !== undefined) {
@@ -234,6 +253,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         trace.push({ iteration, attempt, damping, accepted, residualNorm: current.norm,
           trialResidualNorm: trial.norm, stepSize: Math.max(0, ...step.map((v, j) => Math.abs(v / scales[j]))),
           linearSolver: 'branch' });
+        input.observer?.trial(trace[trace.length - 1]);
         if (accepted) {
           base = input.retract(base, step);
           evaluation = input.evaluate(base, zero);
@@ -243,7 +263,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         }
       }
       if (accepted) {
-        if (current.satisfied) return finish('converged', iteration);
+        if (current.satisfied && (input.canConverge?.(base, evaluation) ?? true)) return finish('converged', iteration);
         continue;
       }
     }
@@ -274,7 +294,15 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
       if (value > 0) { smallest = Math.min(smallest, value); largest = Math.max(largest, value); }
       columnNorms[j] = Math.sqrt(value);
     }
-    dampingDiagonal(evaluation.rows, scales, options, columnNorms, diagonal);
+    if (dampingCeilings !== undefined && metricScales !== undefined && metricNorms !== null) {
+      // Protect null/span directions in physical pose units as well. Applying the old floor before
+      // this change of coordinates would make the same translation depend on the arbitrary L.
+      for (let j = 0; j < n; j += 1) metricNorms[j] = columnNorms[j] / dampingCeilings[j];
+      dampingDiagonal(evaluation.rows, metricScales, options, metricNorms, diagonal);
+      for (let j = 0; j < n; j += 1) {
+        diagonal[j] = Math.min(diagonal[j], 1) * dampingCeilings[j];
+      }
+    } else dampingDiagonal(evaluation.rows, scales, options, columnNorms, diagonal);
     let illConditioned = largest / smallest > 1e12;
     // ほぼ同じ列の桁落ちを、正規方程式を解く前に検出する。
     for (let j = 0; j < n && !illConditioned; j += 1) {
@@ -292,6 +320,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         || (options.linearSolver !== 'normal' && illConditioned) ? 'qr' : 'normal';
       let solved: readonly number[] | Float64Array | null = null;
       if (linearSolver === 'normal') {
+        input.observer?.linearSolve('normal', false);
         for (let j = 0; j < n; j += 1) {
           rhs[j] = -gradient[j] / diagonal[j];
           for (let k = 0; k < n; k += 1) work[j * n + k] = normal[j * n + k] / (diagonal[j] * diagonal[k]);
@@ -300,19 +329,43 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         solved = eliminate(work, rhs, n);
       }
       if (solved === null) {
+        input.observer?.linearSolve('qr', options.linearSolver !== 'qr');
         linearSolver = 'qr';
+        // Exact zero columns have the independent regularized solution zero. The drag opt-in
+        // may omit that work; every finite nonzero derivative remains in the linear system.
+        const qrColumns = Array.from({ length: n }, (_value, j) => j).filter((j) =>
+          dampingCeilings === undefined || !input.preserveZeroColumns || columnNorms[j] !== 0
+          || evaluation.rows.some((row) => (row.gradient.get(j) ?? 0) !== 0));
         const matrix = scaledRigidJacobian(evaluation.rows, input.variables, options)
-          .map((row) => row.map((value, j) => value / diagonal[j]));
+          .map((row) => qrColumns.map((j) => row[j] / diagonal[j]));
         const right = evaluation.rows.map((row) => -row.value * rowWeight(row, options));
-        for (let j = 0; j < n; j += 1) {
-          const row = new Array<number>(n).fill(0);
+        for (let j = 0; j < qrColumns.length; j += 1) {
+          const row = new Array<number>(qrColumns.length).fill(0);
           row[j] = Math.sqrt(damping);
-          matrix.push(row);
-          right.push(0);
+          if (dampingCeilings === undefined) {
+            matrix.push(row);
+            right.push(0);
+          } else {
+            // Same least-squares objective, with diagonal regularization first. Its zero RHS
+            // prevents cancellation in a strong residual from leaking into a tiny span column.
+            matrix.splice(j, 0, row);
+            right.splice(j, 0, 0);
+          }
         }
-        solved = solveLeastSquares(matrix, right, n);
+        const reduced = solveLeastSquares(matrix, right, qrColumns.length);
+        if (reduced !== null) {
+          const expanded = new Float64Array(n);
+          for (let j = 0; j < qrColumns.length; j += 1) expanded[qrColumns[j]] = reduced[j];
+          solved = expanded;
+        }
       }
       const step = solved === null ? null : Array.from(solved, (value, j) => value * scales[j] / diagonal[j]);
+      if (input.preserveZeroColumns && step !== null) {
+        for (let j = 0; j < n; j += 1) {
+          // Inspect the actual derivatives too: a nonzero norm can underflow when squared.
+          if (columnNorms[j] === 0 && evaluation.rows.every((row) => (row.gradient.get(j) ?? 0) === 0)) step[j] = 0;
+        }
+      }
       const stepSize = step === null ? 0 : Math.max(0, ...step.map((value, j) => Math.abs(value / scales[j])));
       const trialEvaluation = step === null ? null : input.evaluate(base, step);
       const trial = trialEvaluation === null ? null : measure(trialEvaluation, options);
@@ -322,6 +375,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         && Number.isFinite(trial.weightedSum) && trial.weightedSum < current.weightedSum;
       trace.push({ iteration, attempt, damping, accepted, residualNorm: current.norm,
         trialResidualNorm: trial?.norm ?? Infinity, stepSize, linearSolver });
+      input.observer?.trial(trace[trace.length - 1]);
       if (accepted && step !== null) {
         base = input.retract(base, step);
         evaluation = input.evaluate(base, zero);
@@ -329,7 +383,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         madeProgress = true;
         damping = Math.max(CONSTRAINT_MIN_DAMPING, damping / 3);
         if (current.constantConflict) return finish('provenConstantConflict', iteration);
-        if (current.satisfied) return finish('converged', iteration);
+        if (current.satisfied && (input.canConverge?.(base, evaluation) ?? true)) return finish('converged', iteration);
         if (evaluation.valid === false || !Number.isFinite(current.weightedSum)) return finish('stalled', iteration);
         if (stepSize < (options.stepTolerance ?? CONSTRAINT_STEP_TOLERANCE)) return finish(stopped(), iteration);
         break;

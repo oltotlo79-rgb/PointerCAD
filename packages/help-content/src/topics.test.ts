@@ -70,6 +70,17 @@ describe('ヘルプの目録', () => {
     expect(findHelpTopic('assembly')?.path).toBe('docs/ja/assembly.md');
   });
 
+
+  it('アセンブリの説明に直接移動・取消・履歴・保存の境界がある(P7 タスク18)', () => {
+    const topic = findHelpTopic('assembly');
+    if (topic === undefined) throw new Error('assembly topic required');
+    const text = readFileSync(resolve(packageRoot, topic.path), 'utf-8');
+    for (const phrase of ['部品を直接動かす', '合致を保てる', 'Esc', '元に戻す', '自動保存']) {
+      expect(text, phrase).toContain(phrase);
+    }
+    expect(text).toContain('引っぱっている途中の位置は文書へ書き込みません');
+  });
+
   it('書き出し・読み込み・DXF・単位の説明を id で引ける(FR-802・803・811・813・814)', () => {
     expect(findHelpTopic('export')?.path).toBe('docs/ja/export.md');
     expect(findHelpTopic('import')?.path).toBe('docs/ja/import.md');

@@ -43,6 +43,113 @@ describe('アセンブリ面pickから保存参照への変換', () => {
   });
 });
 
+function dragInteractionFixture() {
+  const f = interactionFixture();
+  f.interaction.detach();
+  useAppStore.setState({ selectionKind: 'body' });
+  const callbacks = new Map<number, () => void>();
+  let nextFrame = 0;
+  const requestFrame = vi.fn((callback: () => void) => { nextFrame += 1; callbacks.set(nextFrame, callback); return nextFrame; });
+  const cancelFrame = vi.fn((id: number) => { callbacks.delete(id); });
+  const canvas = Object.assign(f.canvas, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn(),
+    getBoundingClientRect: () => ({ left: 40, top: 20 }) });
+  const scene = { ...f.scene, screenToPlanePoint: vi.fn((x: number, y: number): readonly [number, number, number] | null => [x, y, 0]) };
+  scene.pickComponent.mockReturnValue('component-2');
+  const interaction = attachAssemblyInteraction(canvas, scene, { viewDirection: () => [0, 0, 1], requestFrame, cancelFrame });
+  const send = (type: string, properties: object = {}) => f.send(type,
+    { pointerId: 7, buttons: type === 'pointerup' ? 0 : 1, clientX: 43, clientY: 25, ...properties });
+  const flush = () => { const ready = [...callbacks.values()]; callbacks.clear(); for (const callback of ready) callback(); };
+  return { ...f, canvas, scene, interaction, send, flush, callbacks, requestFrame, cancelFrame };
+}
+
+describe('P7-18 pointer drag ownership and release', () => {
+  it('CSS coordinates retain the grab offset and many moves produce one frame with no document write', () => {
+    const f = dragInteractionFixture();
+    try {
+      f.send('pointerdown');
+      const state = useAppStore.getState();
+      expect(state.assemblyDrag?.grab).toEqual([3, 5, 0]);
+      expect(f.canvas.setPointerCapture).toHaveBeenCalledWith(7);
+      f.send('pointermove', { clientX: 50 }); f.send('pointermove', { clientX: 60 }); f.send('pointermove', { clientX: 70 });
+      expect(f.callbacks.size).toBe(1); expect(f.requestFrame).toHaveBeenCalledTimes(1);
+      f.flush();
+      expect(useAppStore.getState().assembly).toBe(state.assembly);
+      expect(useAppStore.getState().requestedGeneration).toBe(state.requestedGeneration);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(state.assemblyUndoStack);
+      expect(useAppStore.getState().assemblyDragOverlay?.placements.get('component-2')?.position[0]).toBeCloseTo(27, 6);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('release uses its latest coordinates before a queued frame and duplicate release creates no second Undo', () => {
+    const f = dragInteractionFixture();
+    try {
+      f.send('pointerdown'); f.send('pointermove', { clientX: 50 }); f.send('pointerup', { clientX: 73 });
+      const document = useAppStore.getState().assembly;
+      expect(document?.components[1].placement.position[0].value).toBeCloseTo(30, 6);
+      expect(f.callbacks.size).toBe(0); expect(f.cancelFrame).toHaveBeenCalledTimes(1);
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes(1);
+      f.send('pointerup', { clientX: 100 }); f.flush();
+      expect(useAppStore.getState().assembly).toBe(document);
+      expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+    } finally { f.interaction.detach(); }
+  });
+
+  it.each(['Escape', 'pointercancel', 'lostpointercapture', 'detach', 'camera'] as const)('%s discards pending work and does not commit', (kind) => {
+    const f = dragInteractionFixture();
+    f.send('pointerdown'); f.send('pointermove', { clientX: 100 });
+    const state = useAppStore.getState();
+    if (kind === 'Escape') f.send('keydown', { key: 'Escape' });
+    else if (kind === 'detach') f.interaction.detach();
+    else if (kind === 'camera') f.interaction.cancelDrag();
+    else f.send(kind);
+    f.flush(); f.send('pointerup', { clientX: 120 });
+    expect(useAppStore.getState().assembly).toBe(state.assembly);
+    expect(useAppStore.getState().assemblyUndoStack).toBe(state.assemblyUndoStack);
+    expect(useAppStore.getState().assemblyDrag).toBeNull();
+    expect(useAppStore.getState().assemblyDragOverlay).toBeNull();
+    expect(f.callbacks.size).toBe(0);
+    f.interaction.detach();
+  });
+
+  it.each([{ pointerId: 8 }, { button: 1 }])('unrelated end %j cannot release the active pointer', (properties) => {
+    const f = dragInteractionFixture();
+    try {
+      f.send('pointerdown'); const drag = useAppStore.getState().assemblyDrag;
+      expect(drag).not.toBeNull(); f.send('pointerup', properties);
+      expect(useAppStore.getState().assemblyDrag).toBe(drag);
+      expect(f.canvas.releasePointerCapture).not.toHaveBeenCalled();
+    } finally { f.interaction.detach(); }
+  });
+
+  it.each(['ray', 'capture', 'release', 'schedule', 'cancelFrame'] as const)('%s fault leaves no committed document or queued frame', (fault) => {
+    const f = dragInteractionFixture();
+    try {
+      const fail = () => { throw new Error(fault); };
+      if (fault === 'capture') f.canvas.setPointerCapture.mockImplementation(fail);
+      f.send('pointerdown');
+      if (fault === 'ray') f.scene.screenToPlanePoint.mockReturnValue(null);
+      if (fault === 'release') f.canvas.releasePointerCapture.mockImplementation(fail);
+      if (fault === 'schedule') f.requestFrame.mockImplementation(fail);
+      if (fault === 'cancelFrame') f.cancelFrame.mockImplementation((id) => { f.callbacks.delete(id); fail(); });
+      f.send('pointermove', { clientX: 80 }); f.send('pointerup', { clientX: 90 }); f.flush();
+      expect(useAppStore.getState().assembly).toBe(f.document);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(f.callbacks.size).toBe(0);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('a new mate command cancels drag, releases capture, and preserves its own draft', () => {
+    const f = dragInteractionFixture();
+    try {
+      f.send('pointerdown'); f.send('pointermove', { clientX: 70 }); startMate('coincident');
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(useAppStore.getState().assemblyMateDraft?.kind).toBe('coincident');
+      expect(f.callbacks.size).toBe(0);
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes(1);
+    } finally { f.interaction.detach(); }
+  });
+});
+
 beforeEach(resetTestStore);
 
 function interactionFixture() {

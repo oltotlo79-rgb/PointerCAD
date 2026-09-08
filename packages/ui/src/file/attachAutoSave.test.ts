@@ -816,6 +816,56 @@ describe('文書・窓ごとのアセンブリの控え', () => {
     expect(timer.pendingCount()).toBe(0);
   });
 
+
+  it('drag previewはdirty通知せず、確定文書だけを控えへ書く', async () => {
+    const recording = createRecordingStorage();
+    const timer = createManualTimer();
+    const document = createAssemblyDocument('drag autosave');
+    useAppStore.getState().openAssembly(document);
+    const state = useAppStore.getState();
+    const saver = createTestSaver(recording.storage, timer, {
+      kind: 'assembly',
+      documentId: state.activeDocumentId,
+      sessionId: 'window-drag',
+    });
+    const markDirty = vi.spyOn(saver, 'markDirty');
+    const detach = attachAutoSave({ saver });
+    const pendingBeforePreview = timer.pendingCount();
+    try {
+      useAppStore.setState({
+        assemblyDragOverlay: {
+          document,
+          library: state.assemblyLibrary,
+          documentId: state.activeDocumentId,
+          version: state.documentVersion,
+          generation: state.requestedGeneration,
+          placements: new Map(),
+          validatedIds: [],
+        },
+        assemblyDragNotice: 'dragging',
+      });
+      expect(markDirty).not.toHaveBeenCalled();
+      expect(timer.pendingCount()).toBe(pendingBeforePreview);
+
+      const committed = { ...document, name: 'drag committed' };
+      useAppStore.getState().applyAssembly(committed);
+      expect(markDirty).toHaveBeenCalledTimes(1);
+      expect(timer.pendingCount()).toBe(pendingBeforePreview);
+      timer.fire();
+      await vi.waitFor(() => expect(recording.writes).toHaveLength(1));
+      const record = recording.writes[0];
+      expect(record).toMatchObject({ kind: 'assembly', documentId: state.activeDocumentId,
+        sessionId: 'window-drag' });
+      const outcome = await readDocumentBundle(record.bytes, 'assembly');
+      if (!outcome.ok || outcome.bundle.kind !== 'assembly') throw new Error('assembly required');
+      expect(outcome.bundle.document).toEqual(committed);
+      expect(Object.hasOwn(outcome.bundle.document, 'assemblyDragOverlay')).toBe(false);
+    } finally {
+      detach();
+      markDirty.mockRestore();
+    }
+  });
+
   it('part と assembly、別の窓の控えを区別し、assembly だけを復元する', async () => {
     const storage = createMemoryAutoSaveStorage();
     const document = createAssemblyDocument('recover');

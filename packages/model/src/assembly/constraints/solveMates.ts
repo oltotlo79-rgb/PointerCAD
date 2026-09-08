@@ -30,7 +30,10 @@ import {
   driveJointRows, jointValue, prepareJointDrive, type JointDriveFailureReason, type JointDriveRequest,
   type PreparedJointDrive,
 } from '../joints/driveJoint.js';
-
+import {
+  finiteDragVector, hardDragSatisfied, validDragPlacement, validDragEvaluation, type PreparedMateDrag,
+} from './mateDrag.js';
+export { solveMateDrag, type MateDragOptions, type MateDragOutcome, type PreparedMateDrag } from './mateDrag.js';
 export type AssemblyConstraintRef = { readonly kind: 'mate' | 'joint'; readonly id: string };
 /** Internal keys never escape into document IDs or user-facing diagnosis. */
 function constraintKey(ref: AssemblyConstraintRef): string { return JSON.stringify([ref.kind, ref.id]); }
@@ -389,6 +392,82 @@ function branchCandidates(
     }
   }
   return candidates;
+}
+
+export type PrepareMateDragOptions = Pick<SolveMatesOptions,
+  'characteristicLength' | 'lengthTolerance' | 'angleTolerance' | 'linearSolver'
+  | 'maxComponentVariables' | 'parameters' | 'jointFrames'>;
+export type PrepareMateDragOutcome = { readonly ok: true; readonly drag: PreparedMateDrag }
+  | { readonly ok: false; readonly reason: 'invalidInput' | 'unavailableComponent'
+    | 'variableLimit' | 'unresolvedConstraint' | 'initialUnsatisfied' };
+
+/** Prepare once against the drag-start world geometry. No first-component gauge is applied. */
+export function prepareMateDrag(
+  assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
+  initial: ReadonlyMap<string, RigidPlacement>, componentId: string, options: PrepareMateDragOptions = {},
+): PrepareMateDragOutcome {
+  const positive = [options.characteristicLength, options.lengthTolerance, options.angleTolerance];
+  if (positive.some((value) => value !== undefined && (!Number.isFinite(value) || value <= 0))
+    || (options.maxComponentVariables !== undefined && (!Number.isInteger(options.maxComponentVariables) || options.maxComponentVariables < 0))
+    || (options.linearSolver !== undefined && !['auto', 'normal', 'qr'].includes(options.linearSolver))) return { ok: false, reason: 'invalidInput' };
+  const selected = assembly.components.find((component) => component.id === componentId);
+  if (selected === undefined || selected.fixed || selected.suppressed || !selected.visible) return { ok: false, reason: 'unavailableComponent' };
+  const allVariables = collectMateVariables(assembly);
+  const group = mateComponentGroups(allVariables, assembly.mates, assembly.joints)
+    .find((entry) => entry.componentIds.includes(componentId));
+  const maximum = Math.min(MAX_ASSEMBLY_VARIABLES, options.maxComponentVariables ?? MAX_ASSEMBLY_VARIABLES);
+  if (allVariables.tooMany || (group !== undefined && group.componentIds.length * 6 > maximum)) return { ok: false, reason: 'variableLimit' };
+  if (group === undefined) return { ok: false, reason: 'unavailableComponent' };
+  const ids = new Set(group.componentIds);
+  const placements = new Map<string, RigidPlacement>();
+  for (const component of assembly.components) {
+    const placement = initial.get(component.id);
+    if (placement === undefined) {
+      if (component.suppressed) continue;
+      return { ok: false, reason: 'invalidInput' };
+    }
+    if (!validDragPlacement(placement)) return { ok: false, reason: 'invalidInput' };
+    placements.set(component.id, { position: [...placement.position],
+      rotation: ids.has(component.id) ? normalizeQuaternion(placement.rotation) : [...placement.rotation] });
+  }
+  const mates = assembly.mates.filter((mate) => !mate.suppressed && (ids.has(mate.a.componentId) || ids.has(mate.b.componentId)));
+  const joints = assembly.joints.filter((joint) => !joint.suppressed && (ids.has(joint.a.componentId) || ids.has(joint.b.componentId)));
+  const active = new Set(assembly.components.filter((component) => !component.suppressed).map((component) => component.id));
+  if ([...mates, ...joints].some((entry) => !active.has(entry.a.componentId) || !active.has(entry.b.componentId))) return { ok: false, reason: 'unresolvedConstraint' };
+  for (const mate of mates) {
+    const pair = targets.get(mate.id);
+    if (pair === undefined || [pair.a, pair.b].some((target) => !finiteDragVector(target.point, 3)
+      || (target.direction !== null && !finiteDragVector(target.direction, 3))
+      || (target.axisOrigin !== undefined && !finiteDragVector(target.axisOrigin, 3)))) return { ok: false, reason: 'unresolvedConstraint' };
+  }
+  const prepared = prepareMateResiduals({ mates, targets, placements, parameters: options.parameters ?? assemblyVariables(assembly) });
+  if (prepared.skipped.length > 0 || (joints.length > 0 && options.jointFrames === undefined)) return { ok: false, reason: 'unresolvedConstraint' };
+  const preparedJoints = options.jointFrames === undefined ? { joints: [], skipped: [] }
+    : prepareJointResiduals({ joints, frames: options.jointFrames, placements });
+  if (preparedJoints.skipped.length > 0) return { ok: false, reason: 'unresolvedConstraint' };
+  const variableSet = collectMateVariables({ ...assembly, components: assembly.components.filter((component) => ids.has(component.id)) });
+  const variables = variableSet.variables.map((variable) => variable.axis.startsWith('t') ? 'length' as const : 'angle' as const);
+  const length = options.characteristicLength ?? DEFAULT_RIGID_CHARACTERISTIC_LENGTH;
+  const numericOptions: RigidSolveOptions = { characteristicLength: length,
+    lengthTolerance: options.lengthTolerance, angleTolerance: options.angleTolerance, linearSolver: options.linearSolver };
+  const byId = new Map(prepared.mates.map((mate) => [mate.mateId, mate]));
+  const jointsById = new Map(preparedJoints.joints.map((joint) => [joint.jointId, joint]));
+  const branches = new Map<string, BranchGeometry>(prepared.mates.map((mate) => [constraintKey({ kind: 'mate', id: mate.mateId }), mate]));
+  for (const joint of preparedJoints.joints) branches.set(constraintKey({ kind: 'joint', id: joint.jointId }), {
+    componentA: joint.componentA, componentB: joint.componentB,
+    a: { point: joint.frames.a.origin, frame: { t: joint.frames.a.x } },
+    b: { point: joint.frames.b.origin, frame: { t: joint.frames.b.x } },
+  });
+  const evaluate = (base: ReadonlyMap<string, RigidPlacement>, increments: readonly number[]) => rigidEvaluation(
+    buildMateResidualReport({ mates: prepared.mates, placements: base, variableSet, increments, characteristicLength: length }),
+    byId, variableSet, numericOptions,
+    buildJointResidualReport({ joints: preparedJoints.joints, placements: base, variableSet, increments, characteristicLength: length }), jointsById);
+  const initialEvaluation = evaluate(placements, new Array<number>(variables.length).fill(0));
+  if (!validDragEvaluation(initialEvaluation, variables, numericOptions)) return { ok: false, reason: 'invalidInput' };
+  if (!hardDragSatisfied(initialEvaluation, numericOptions)) return { ok: false, reason: 'initialUnsatisfied' };
+  return { ok: true, drag: { componentId, initial: placements, initialEvaluation, variableSet, variables, options: numericOptions, evaluate,
+    retract: (base, step) => applyMateIncrements(base, variableSet, step),
+    branchCandidates: (base, violations) => branchCandidates(base, violations, branches, variableSet) } };
 }
 
 /** targetsはmate.id→初期世界座標の対象対。prepareを1回だけ呼び、全候補で同じ局所幾何を使う。 */

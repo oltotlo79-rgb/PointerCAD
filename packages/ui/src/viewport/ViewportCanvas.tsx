@@ -48,8 +48,9 @@ import { attachCameraControls, type CameraControls } from './attachCameraControl
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
 import { MatePopover } from '../assembly/MatePopover.js';
+import { componentDragPlacements } from '../assembly/dragComponentActions.js';
 import { assemblyTargetId } from '../assembly/mateCommands.js';
-import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
+import { HOME_ORBIT, viewDirection, type OrbitState } from './cameraMath.js';
 import { createViewportScene, type SectionViewRender } from './createViewportScene.js';
 import type { CutPreview, PrintabilityHighlight } from './createSolidLayer.js';
 import type { SphereGridSpec } from './buildSphereGrid.js';
@@ -516,7 +517,7 @@ function assemblyBundleOf(
   const resolved = view.resolved;
   return buildAssemblyGeometry({
     components: assembly.components,
-    placements: resolved.placements,
+    placements: componentDragPlacements(state) ?? resolved.placements,
     partKeys: resolved.partKeys,
     bodies: view.bodies,
     appearances: view.appearances,
@@ -733,17 +734,24 @@ export function ViewportCanvas(): React.JSX.Element {
     // 用意できるまでは口が空で、印刷は「印刷する絵を作れませんでした。」で断られる。
     useAppStore.getState().setCapturePrintFrame(() => scene.capturePrintFrame());
 
-    const controls = attachCameraControls(canvas, requestDraw);
+    let assemblyInteraction: ReturnType<typeof attachAssemblyInteraction> | null = null;
+    const controls = attachCameraControls(canvas, () => {
+      assemblyInteraction?.cancelDrag();
+      requestDraw();
+    });
     controlsRef.current = controls;
     // 視点操作を先に結び、その後ろでスケッチの操作を結ぶ(中ボタン・Alt の取り合いを避ける)。
     // 視点そのものを渡す。距離は方眼の刻みに、向きは 3D スケッチで押した場所に置く面に使う
     // (FR-330、P4 タスク14)。
     // 合致の選択を先に受け、処理した左クリックは部品用の作図操作へ流さない。
-    const assemblyInteraction = attachAssemblyInteraction(canvas, scene);
+    assemblyInteraction = attachAssemblyInteraction(canvas, scene, {
+      viewDirection: () => viewDirection(controls.getOrbit()),
+    });
     const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit());
     setControlsReady(true);
 
     const observer = new ResizeObserver(() => {
+      assemblyInteraction?.cancelDrag();
       scene.resize(canvas.clientWidth, canvas.clientHeight);
       requestDraw();
     });
@@ -840,6 +848,7 @@ export function ViewportCanvas(): React.JSX.Element {
       if (
         next.assembly !== previous.assembly ||
         next.assemblyView !== previous.assemblyView ||
+        next.assemblyDragOverlay !== previous.assemblyDragOverlay ||
         next.assemblyMateDraft !== previous.assemblyMateDraft ||
         next.hoveredElementId !== previous.hoveredElementId ||
         next.selection !== previous.selection
@@ -972,6 +981,9 @@ export function ViewportCanvas(): React.JSX.Element {
         themeDirty = true;
       }
       // ホーム視点への復帰要求(FR-108)。数が増えたときだけ戻す。
+      if (next.projection !== previous.projection) {
+        assemblyInteraction?.cancelDrag();
+      }
       if (next.homeViewRequestCount !== previous.homeViewRequestCount) {
         controls.goHome();
       }
@@ -1003,7 +1015,7 @@ export function ViewportCanvas(): React.JSX.Element {
       useAppStore.getState().setCaptureThumbnail(null);
       useAppStore.getState().setCapturePrintFrame(null);
       interaction.detach();
-      assemblyInteraction.detach();
+      assemblyInteraction?.detach();
       controls.detach();
       scene.dispose();
       controlsRef.current = null;

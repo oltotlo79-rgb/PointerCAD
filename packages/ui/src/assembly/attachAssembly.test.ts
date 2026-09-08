@@ -14,6 +14,8 @@ import { attachAssembly } from './attachAssembly.js';
 import { addMateTarget, commitMateDraft, startMate, updateMateSource } from './mateActions.js';
 import { subShapeRefOf } from '../solid/subShapeSelection.js';
 import { assemblyMateStatus } from '../shell/statusText.js';
+import { beginComponentDrag, finishComponentDrag, moveComponentDrag } from './dragComponentActions.js';
+import { componentDragPlane } from '../viewport/dragComponent.js';
 
 beforeEach(resetTestStore);
 
@@ -401,6 +403,67 @@ describe('アセンブリの実経路', () => {
     await settle();
     expect(useAppStore.getState().completedGeneration).toBe(useAppStore.getState().requestedGeneration);
     detach();
+  });
+
+
+  it('dragのpreviewは文書・履歴・再計算を変えず、確定後の世代へ表示を引き渡す', async () => {
+    const f = await fixture();
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const fake = fakeBridge();
+    const detach = attachAssembly(fake.bridge);
+    try {
+      await settle();
+      const before = useAppStore.getState();
+      const id = f.document.components[1].id;
+      const origin = before.assemblyView?.resolved.placements.get(id)?.position;
+      if (origin === undefined) throw new Error('drag origin');
+      const plane = componentDragPlane(origin, [0, 0, 1]);
+      if (plane === null) throw new Error('drag plane');
+      const recomputes = fake.recomputeSolids.mock.calls.length;
+
+      expect(beginComponentDrag(id, plane, origin)).toBe(true);
+      expect(moveComponentDrag([origin[0] + 10, origin[1], origin[2]])?.hardSatisfied).toBe(true);
+      const preview = useAppStore.getState();
+      expect(preview.assembly).toBe(before.assembly);
+      expect(preview.assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(preview.requestedGeneration).toBe(before.requestedGeneration);
+      expect(fake.recomputeSolids).toHaveBeenCalledTimes(recomputes);
+      expect(preview.assemblyDragOverlay).not.toBeNull();
+
+      expect(finishComponentDrag([origin[0] + 10, origin[1], origin[2]])).toBe(true);
+      const committed = useAppStore.getState();
+      expect(committed.assemblyUndoStack?.past).toHaveLength(1);
+      expect(committed.requestedGeneration).toBe(before.requestedGeneration + 1);
+      expect(committed.assemblyDragOverlay?.document).toBe(committed.assembly);
+      await settle();
+      expect(useAppStore.getState().assemblyDragOverlay).toBeNull();
+      expect(useAppStore.getState().assemblyView?.sourceDocument).toBe(useAppStore.getState().assembly);
+      expect(fake.recomputeSolids).toHaveBeenCalledTimes(recomputes);
+    } finally {
+      detach();
+    }
+  });
+
+  it('新しい合致操作はinteractionが無くてもdragだけを同期取消する', async () => {
+    const f = await fixture();
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fakeBridge().bridge);
+    try {
+      await settle();
+      const state = useAppStore.getState();
+      const id = f.document.components[1].id;
+      const origin = state.assemblyView?.resolved.placements.get(id)?.position;
+      if (origin === undefined) throw new Error('drag origin');
+      const plane = componentDragPlane(origin, [0, 0, 1]);
+      if (plane === null) throw new Error('drag plane');
+      expect(beginComponentDrag(id, plane, origin)).toBe(true);
+      startMate('coincident');
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(useAppStore.getState().assemblyDragOverlay).toBeNull();
+      expect(useAppStore.getState().assemblyMateDraft?.kind).toBe('coincident');
+    } finally {
+      detach();
+    }
   });
 
   it('Worker の失敗は完了として知らせ、待ち続けない', async () => {

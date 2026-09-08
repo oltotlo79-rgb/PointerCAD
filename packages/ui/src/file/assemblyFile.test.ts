@@ -3,7 +3,7 @@ import { readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
 import {
   addComponent, createAssemblyDocument, createAssemblyDocumentBundle, createComponentFor,
   createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY, emptyEmbeddedPartAttachments,
-  moveComponent, replacePartDocument,
+  moveComponent, replacePartDocument, resolveAssembly, resolvePart, WORK_PLANES,
 } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -12,6 +12,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { activeHasUnsavedChanges, newAssembly, openAssembly, saveAssembly } from './assemblyFile.js';
 import { newPart, openPart, savePart, windowTitle, type PartFileDeps } from './partFile.js';
 import { type FileGateway, type PickedFile } from './fileGateway.js';
+import { beginComponentDrag, finishComponentDrag, moveComponentDrag } from '../assembly/dragComponentActions.js';
 
 beforeEach(resetTestStore);
 
@@ -75,6 +76,55 @@ describe('アセンブリの文書ファイル', () => {
     expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(true);
     useAppStore.getState().undo();
     expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(false);
+  });
+
+  it('実dragの確定配置だけを桁落ちなく保存し、一時状態を開き直さない', async () => {
+    const g = gateway();
+    const f = await fixture();
+    const document = addComponent(f.document,
+      createComponentFor(f.document, { kind: 'part', partRef: f.partRef }));
+    useAppStore.getState().applyAssembly(document, f.library);
+    const part = f.library.parts.get(f.partRef);
+    if (part === undefined) throw new Error('embedded part required');
+    const resolved = resolveAssembly(document, {
+      library: f.library,
+      resolvedParts: new Map([[f.partRef, resolvePart(part)]]),
+    });
+    useAppStore.setState({
+      assemblyView: { sourceDocument: document, resolved, bodies: new Map(),
+        appearances: new Map(), diagnosis: null, mateTargetErrors: new Map() },
+      isComputing: false,
+      selectionKind: 'body',
+    });
+    const id = document.components[1].id;
+    const origin = resolved.placements.get(id)?.position;
+    if (origin === undefined) throw new Error('component placement required');
+    const target = 1.2345678901234567;
+    const point: [number, number, number] = [origin[0] + target, origin[1], origin[2]];
+    expect(beginComponentDrag(id, { ...WORK_PLANES.xy, origin }, origin)).toBe(true);
+    expect(moveComponentDrag(point)?.hardSatisfied).toBe(true);
+    expect(useAppStore.getState().assembly).toBe(document);
+    expect(finishComponentDrag(point)).toBe(true);
+    const committed = useAppStore.getState().assembly;
+    const committedValue = committed?.components[1].placement.position[0].value;
+    if (committedValue === undefined) throw new Error('committed placement required');
+    expect(Math.abs(committedValue - point[0])).toBeLessThan(1e-9);
+    expect(committedValue).not.toBe(Number(committedValue.toFixed(12)));
+    expect(useAppStore.getState().assemblyDrag).toBeNull();
+
+    await saveAssembly(deps, false);
+    const saved = g.saved();
+    if (saved === null) throw new Error('saved assembly required');
+    const decoded = await readDocumentBundle(saved.bytes, 'assembly');
+    if (!decoded.ok || decoded.bundle.kind !== 'assembly') throw new Error('assembly bundle required');
+    expect(decoded.bundle.document.components[1].placement.position[0].value).toBe(committedValue);
+    expect(Object.hasOwn(decoded.bundle.document, 'assemblyDrag')).toBe(false);
+
+    await openAssembly(deps);
+    const reopened = useAppStore.getState();
+    expect(reopened.assembly?.components[1].placement.position[0].value).toBe(committedValue);
+    expect(reopened.assemblyDrag).toBeNull();
+    expect(reopened.assemblyDragOverlay).toBeNull();
   });
 
   it('Undo/Redo が参照する旧添付を保持する', async () => {

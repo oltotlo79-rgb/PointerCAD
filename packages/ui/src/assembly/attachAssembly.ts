@@ -199,10 +199,16 @@ export function attachAssembly(
     } else {
       lastGoodPlacements = new Map(resolved.placements);
     }
+    const current = useAppStore.getState();
+    const overlay = current.assemblyDragOverlay;
+    const handOffOverlay = overlay !== null && overlay.document === request.document
+      && overlay.library === request.library && overlay.documentId === request.documentId
+      && overlay.version === request.version && overlay.generation === request.generation;
     useAppStore.setState({
       assemblyView: { sourceDocument: request.document, resolved, bodies, appearances, diagnosis, mateTargetErrors },
       isComputing: false, recomputeProgress: null, recomputeCancelled: false, cacheHits,
       errorMessage: messages.length === 0 ? null : messages.join('\n'),
+      ...(handOffOverlay ? { assemblyDragOverlay: null } : {}),
     });
     useAppStore.getState().recordRecomputeCompletion(request.generation,
       messages.some((message) => message.includes(KERNEL_BROKEN_MESSAGE)) ? 'workerBroken' :
@@ -259,8 +265,13 @@ export function attachAssembly(
   }
 
   const unsubscribe = useAppStore.subscribe((next, previous) => {
-    if (next.assemblyPlacement !== null && previous.assemblyPlacement === null && next.assemblyMateDraft !== null) {
+    const placementStarted = next.assemblyPlacement !== null && previous.assemblyPlacement === null;
+    const mateStarted = next.assemblyMateDraft !== null && previous.assemblyMateDraft === null;
+    if (placementStarted && next.assemblyMateDraft !== null) {
       useAppStore.setState({ assemblyMateDraft: null, selection: [], hoveredElementId: null });
+    }
+    if (next.assemblyDrag !== null && (placementStarted || mateStarted)) {
+      useAppStore.setState({ assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null });
     }
     if (next.assembly !== previous.assembly || next.assemblyLibrary !== previous.assemblyLibrary ||
       next.activeDocumentId !== previous.activeDocumentId || next.documentVersion !== previous.documentVersion) {

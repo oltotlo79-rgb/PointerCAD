@@ -101,6 +101,7 @@ export function StatusBar(): React.JSX.Element {
   const mateDraft = useAppStore((state) => state.assemblyMateDraft);
   const mateDiagnosis = useAppStore((state) => state.assemblyView?.diagnosis ?? null);
   const mateTargetErrors = useAppStore((state) => state.assemblyView?.mateTargetErrors ?? null);
+  const assemblyDragNotice = useAppStore((state) => state.assemblyDragNotice);
   // 幾何カーネルの初回読み込み中かどうかで帯の文言を分ける(§0.a-0.23 ⑨)。
   const kernelLoaded = useAppStore((state) => state.kernelLoaded);
   const errorMessage = useAppStore((state) => state.errorMessage);
@@ -269,6 +270,7 @@ export function StatusBar(): React.JSX.Element {
 
   const line = describeStatus({
     assemblyMateStatus: assemblyMateStatus(mateDraft, mateDiagnosis, mateTargetErrors ?? new Map()),
+    assemblyDragNotice,
     fileMessage,
     faceErrorKey,
     solidErrorKey,

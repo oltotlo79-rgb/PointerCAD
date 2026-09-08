@@ -12,7 +12,7 @@ import type { AssemblyComponent, Joint, JointKind, Mate, MateKind } from '../typ
 import type { JointFrame, JointFramePair } from '../joints/jointFrames.js';
 import type { MateResidualTarget, MateResidualTargetPair } from './mateResiduals.js';
 import { collectMateVariables } from './mateVariables.js';
-import { applyMateIncrements, diagnoseMates, solveMates, type SolveMatesOptions, type SolveMatesOutcome } from './solveMates.js';
+import { applyMateIncrements, diagnoseMates, prepareMateDrag, solveMateDrag, solveMates, type SolveMatesOptions, type SolveMatesOutcome } from './solveMates.js';
 
 function component(id: string, fixed = false): AssemblyComponent {
   return { id, name: id, source: { kind: 'part', partRef: 'box' },
@@ -254,6 +254,97 @@ describe('P7-20 M1/L1: 単位付き境界と公開zeroの実solve回帰', () => 
       }
     }
     expect(data).toEqual(before);
+  });
+});
+
+describe('P7-18 実合致・jointとドラッグの成分境界', () => {
+  it.each([2, 20])('浮遊%s部品は先頭gaugeを付けず全体の並進を追従する', (count) => {
+    const components = Array.from({ length: count }, (_, index) => component(String(index)));
+    const mates = components.slice(1).map((c, index) => mate(`p${index}`, 'coincident', c.id, String(index)));
+    const assembly = { ...createAssemblyDocument('floating'), components, mates };
+    const placements = new Map(components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    const targets = new Map(mates.map((m) => [m.id, { a: point([0, 0, 0]), b: point([0, 0, 0]) }]));
+    const before = structuredClone({ assembly, targets, placements });
+    const ready = prepareMateDrag(assembly, targets, placements, '0');
+    if (!ready.ok) throw new Error(ready.reason);
+    expect(ready.drag.variables).toHaveLength(count * 6);
+    const result = solveMateDrag(ready.drag, [10, 20, 30], { phase: 'release' });
+    expect(result.committable).toBe(true);
+    expect(result.hardSatisfied).toBe(true);
+    for (const pose of result.placements.values()) {
+      pose.position.forEach((v, axis) => expect(Math.abs(v - [10, 20, 30][axis])).toBeLessThan(1e-9));
+      expect(pose.rotation).toEqual([0, 0, 0, 1]);
+    }
+    expect({ assembly, targets, placements }).toEqual(before);
+    const ordinary = solveMates(assembly, targets, placements);
+    expect(ordinary.diagnosis.components[0].gauge.kind).toBe('firstComponent');
+    expect(ordinary.diagnosis.components[0].gauge.removed).toBe(6);
+  });
+  it('固定端の共有だけで独立成分を巻き込まず、非表示の連結部品は解く', () => {
+    const components = [component('ground', true), component('moving'),
+      { ...component('hidden'), visible: false }, component('other')];
+    const mates = [mate('plane', 'coincident'), mate('pair', 'coincident', 'moving', 'hidden'),
+      mate('independent', 'coincident', 'other', 'ground')];
+    const assembly = { ...createAssemblyDocument('components'), components, mates };
+    const placements = new Map(components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    const targets = new Map<string, MateResidualTargetPair>([
+      ['plane', { a: plane([0, 0, 0], [0, 0, -1]), b: plane([0, 0, 0]) }],
+      ['pair', { a: point([0, 0, 0]), b: point([0, 0, 0]) }],
+      ['independent', { a: plane([0, 0, 0], [0, 0, -1]), b: plane([0, 0, 0]) }],
+    ]);
+    const ready = prepareMateDrag(assembly, targets, placements, 'moving');
+    if (!ready.ok) throw new Error(ready.reason);
+    expect(ready.drag.variableSet.movableComponentIds).toEqual(['moving', 'hidden']);
+    const result = solveMateDrag(ready.drag, [10, 20, 0], { phase: 'release' });
+    expect(result.committable).toBe(true);
+    expect(result.placements.get('other')).toEqual(placements.get('other'));
+    expect(result.placements.get('ground')).toEqual(placements.get('ground'));
+    expect(result.placements.get('hidden')?.position[0]).toBeCloseTo(10, 9);
+  });
+  it.each(['auto', 'normal', 'qr'] as const)('%s: 非零原点と非可換初期回転を持つ実円筒軸を再局所化しない', (linearSolver) => {
+    const assembly = { ...createAssemblyDocument('axis'), components: [component('ground', true), component('moving')],
+      mates: [mate('axis', 'concentric')] };
+    const origin: Vec3 = [4, 5, 6];
+    const placements = new Map<string, RigidPlacement>([
+      ['ground', { position: [-10, 3, 2], rotation: quaternionFromAxisAngle([1, 2, 3], 0.7) }],
+      ['moving', { position: [14, 5, 7], rotation: quaternionFromAxisAngle([2, -1, 4], -0.4) }],
+    ]);
+    const targets = new Map<string, MateResidualTargetPair>([['axis', { a: axis(origin), b: axis(origin) }]]);
+    const ready = prepareMateDrag(assembly, targets, placements, 'moving', { linearSolver });
+    if (!ready.ok) throw new Error(ready.reason);
+    let warm = ready.drag.initial;
+    for (const angle of [0.02, -0.03, 0]) {
+      const target: Vec3 = [4 + 10 * Math.cos(angle), 5 + 10 * Math.sin(angle), 17];
+      const result = solveMateDrag(ready.drag, target, { phase: 'release', placements: warm });
+      expect(result.hardSatisfied).toBe(true);
+      expect(result.committable).toBe(true);
+      expect(result.driverError).toBeLessThan(1e-9);
+      expect(result.counts.totalIterations).toBeLessThanOrEqual(50);
+      expect(result.placements.get('ground')).toEqual(placements.get('ground'));
+      warm = result.placements;
+    }
+  });
+  it.each(['revolute', 'slider', 'cylindrical', 'ball'] as const)('%sのhard行は通常入口と同じ単位・数を維持する', (kind) => {
+    const data = jointFixture(kind);
+    const ready = prepareMateDrag(data.assembly, data.targets, data.placements, 'moving', { jointFrames: data.frames });
+    if (!ready.ok) throw new Error(ready.reason);
+    const ordinary = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames });
+    const expected = ordinary.diagnosis.components[0].result?.evaluation;
+    expect(ready.drag.initialEvaluation).toEqual(expected);
+    const target: Vec3 = kind === 'slider' || kind === 'cylindrical' ? [0, 0, 10] : [10, 0, 0];
+    const result = solveMateDrag(ready.drag, target, { phase: 'release' });
+    expect(result.hardSatisfied).toBe(true);
+    expect(result.committable).toBe(true);
+    expect(result.hardEvaluation.rows).toHaveLength(expected?.rows.length ?? 0);
+    if (kind === 'slider' || kind === 'cylindrical') expect(result.driverError).toBeLessThan(1e-9);
+    else expect(result.stop).toBe('stationary');
+    expect(solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames })).toEqual(ordinary);
+  });
+  it('未解決mate/jointを外して見せかけの自由部品にしない', () => {
+    const data = jointFixture();
+    expect(prepareMateDrag(data.assembly, data.targets, data.placements, 'moving')).toEqual({ ok: false, reason: 'unresolvedConstraint' });
+    const box = boxes();
+    expect(prepareMateDrag(box.assembly, new Map(), box.placements, 'moving')).toEqual({ ok: false, reason: 'unresolvedConstraint' });
   });
 });
 

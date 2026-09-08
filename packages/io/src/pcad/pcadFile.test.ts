@@ -1,5 +1,6 @@
 import {
   createAssemblyDocument,
+  createDrawingDocument,
   createPartDocumentBundle,
   createAssemblyDocumentBundle,
   importedShapeOf,
@@ -11,6 +12,7 @@ import {
   emptyAppearanceTable,
   PART_SCHEMA_VERSION,
   type AssemblyDocument,
+  type DrawingSource,
   type PartDocument,
 } from '@pointercad/model';
 import { expectWithinBudget } from '@pointercad/test-utils';
@@ -34,12 +36,16 @@ import {
   PCAD_PART_ENTRY_SUFFIX,
   PCAD_SHAPE_ENTRY_PREFIX,
   PCAD_SHAPE_ENTRY_SUFFIX,
+  PCAD_SOURCE_ENTRY_PREFIX,
+  PCAD_SOURCE_ENTRY_SUFFIX,
   PCAD_THUMBNAIL_ENTRY,
   readPcadaFile,
+  readPcaddFile,
   readPcadFile,
   readDocumentBundle,
   writeDocumentBundle,
   writePcadaFile,
+  writePcaddFile,
   writePcadFile,
   type ImportedMeshBytes,
   type PcadAttachments,
@@ -93,7 +99,7 @@ describe('文書の束とZIPの変換', () => {
     expect(await writeDocumentBundle(read.bundle, { savedAt: SAVED_AT })).toEqual(bytes);
   });
 
-  it('2部品の同じshapeRefと異なる原本を束の往復後も区別し、封筒8とparts/*.jsonを保つ', async () => {
+  it('2部品の同じshapeRefと異なる原本を束の往復後も区別し、現行封筒とparts/*.jsonを保つ', async () => {
     const first = await embedPart(EMPTY_PART_LIBRARY, importedDocument(), 'a.pcad', './a.pcad', {
       importedAt: SAVED_AT, attachments: importedAttachments(),
     });
@@ -109,7 +115,7 @@ describe('文書の束とZIPの変換', () => {
     });
     expect(bytes).toEqual(oldApiBytes);
     const entries = unzipSync(bytes);
-    expect(strFromU8(entries['document.json'])).toContain('"schema": 8');
+    expect(strFromU8(entries['document.json'])).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
     expect(strFromU8(entries[`parts/${first.partRef}.json`]))
       .toBe(serializeDocument(importedDocument(), { savedAt: SAVED_AT }));
     const read = await readDocumentBundle(bytes, 'assembly');
@@ -129,7 +135,8 @@ describe('文書の束とZIPの変換', () => {
     const bundle = kind === 'part' ? createPartDocumentBundle(createEmptyPartDocument())
       : createAssemblyDocumentBundle(createAssemblyDocument('組立1'));
     const entries = unzipSync(await writeDocumentBundle(bundle, { savedAt: SAVED_AT }));
-    entries['document.json'] = strToU8(strFromU8(entries['document.json']).replace('"schema": 8', '"schema": 999'));
+    entries['document.json'] = strToU8(strFromU8(entries['document.json'])
+      .replace(`"schema": ${String(PCAD_SCHEMA_VERSION)}`, '"schema": 999'));
     const bytes = zipSync(entries);
     const expected = kind === 'part' ? readPcadFile(bytes) : await readPcadaFile(bytes);
     expect(expected.ok).toBe(false);
@@ -142,6 +149,109 @@ describe('文書の束とZIPの変換', () => {
       attachments: importedAttachments(),
     };
     await expect(writeDocumentBundle(bundle)).rejects.toThrow('embedded part');
+  });
+});
+
+describe('図面の .pcadd', () => {
+  const drawingSource: DrawingSource = {
+    sourceRef: 'source-1',
+    sourceKind: 'part',
+    fileName: 'part.pcad',
+    path: './part.pcad',
+    contentHash: 'hash-1',
+    importedAt: SAVED_AT,
+  };
+
+  it('document・thumbnail・sourceの3種類を入れる', () => {
+    const bytes = writePcaddFile(createDrawingDocument('部品図', drawingSource), {
+      source: { sourceKind: 'part', document: createEmptyPartDocument() },
+      savedAt: SAVED_AT,
+      thumbnailPng: new Uint8Array([137, 80, 78, 71]),
+    });
+    expect(Object.keys(unzipSync(bytes)).sort()).toEqual([
+      PCAD_DOCUMENT_ENTRY,
+      `${PCAD_SOURCE_ENTRY_PREFIX}${drawingSource.sourceRef}${PCAD_SOURCE_ENTRY_SUFFIX}`,
+      PCAD_THUMBNAIL_ENTRY,
+    ].sort());
+  });
+
+  it('同じ入力と保存時刻から同じバイト列を作る', () => {
+    const document = createDrawingDocument('部品図', drawingSource);
+    const options = {
+      source: { sourceKind: 'part' as const, document: createEmptyPartDocument() },
+      savedAt: SAVED_AT,
+    };
+    expect(writePcaddFile(document, options)).toEqual(writePcaddFile(document, options));
+  });
+
+  it('図面と抱き込んだ部品を往復する', () => {
+    const document = createDrawingDocument('部品図', drawingSource);
+    const sourceDocument = createEmptyPartDocument();
+    const result = readPcaddFile(writePcaddFile(document, {
+      source: { sourceKind: 'part', document: sourceDocument }, savedAt: SAVED_AT,
+    }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document).toEqual(document);
+    expect(result.source).toEqual({ sourceKind: 'part', document: sourceDocument });
+    expect(result.savedAt).toBe(SAVED_AT);
+  });
+
+  it('図面と抱き込んだアセンブリを往復する', () => {
+    const assemblySource = { ...drawingSource, sourceKind: 'assembly' as const };
+    const document = createDrawingDocument('組図', assemblySource);
+    const sourceDocument = createAssemblyDocument('組立1');
+    const result = readPcaddFile(writePcaddFile(document, {
+      source: { sourceKind: 'assembly', document: sourceDocument }, savedAt: SAVED_AT,
+    }));
+    expect(result.ok && result.source.sourceKind).toBe('assembly');
+    if (!result.ok) return;
+    expect(result.source.document).toEqual(sourceDocument);
+  });
+
+  it('参照元エントリが無ければ場所を添えて断る', () => {
+    const bytes = writePcaddFile(createDrawingDocument('部品図', drawingSource), {
+      source: { sourceKind: 'part', document: createEmptyPartDocument() }, savedAt: SAVED_AT,
+    });
+    const entries = unzipSync(bytes);
+    const withoutSource = Object.fromEntries(
+      Object.entries(entries).filter(([name]) => !name.startsWith(PCAD_SOURCE_ENTRY_PREFIX)),
+    );
+    const result = readPcaddFile(zipSync(withoutSource));
+    expect(result).toMatchObject({ ok: false, error: { code: 'missingField' } });
+    if (result.ok) return;
+    expect(result.error.message).toContain('source/source-1.json');
+  });
+
+  it('抱き込んだ文書が壊れていても例外を投げない', () => {
+    const bytes = writePcaddFile(createDrawingDocument('部品図', drawingSource), {
+      source: { sourceKind: 'part', document: createEmptyPartDocument() }, savedAt: SAVED_AT,
+    });
+    const entries = unzipSync(bytes);
+    const broken = {
+      ...entries,
+      [`${PCAD_SOURCE_ENTRY_PREFIX}${drawingSource.sourceRef}${PCAD_SOURCE_ENTRY_SUFFIX}`]: strToU8('{'),
+    };
+    expect(readPcaddFile(zipSync(broken))).toMatchObject({
+      ok: false, error: { code: 'invalidField' },
+    });
+  });
+
+  it('ZIPでなければnotZip、documentが無ければmissingDocument', () => {
+    expect(readPcaddFile(strToU8('zipではない'))).toMatchObject({
+      ok: false, error: { code: 'notZip' },
+    });
+    expect(readPcaddFile(zipSync({ 'memo.txt': strToU8('x') }))).toMatchObject({
+      ok: false, error: { code: 'missingDocument' },
+    });
+  });
+
+  it('部品ファイルを図面として読めば種別で断る', () => {
+    expect(readPcaddFile(writePcadFile(createEmptyPartDocument(), { savedAt: SAVED_AT })))
+      .toEqual({
+        ok: false,
+        error: { code: 'unsupportedKind', message: 'この形式の図面ではありません。' },
+      });
   });
 });
 

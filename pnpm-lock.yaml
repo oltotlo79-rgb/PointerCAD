@@ -226,6 +226,9 @@ importers:
 
   packages/model:
     dependencies:
+      '@pointercad/drawing':
+        specifier: workspace:*
+        version: link:../drawing
       '@pointercad/expression':
         specifier: workspace:*
         version: link:../expression

@@ -1,0 +1,165 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  createDrawingDocument,
+  type DrawingDocument,
+  type DrawingSource,
+} from '@pointercad/model';
+
+import { isRecord, isUnknownArray } from './guards.js';
+import { parseDrawing, serializeDrawing } from './drawingJson.js';
+import {
+  PCAD_APP_NAME,
+  PCAD_DRAWING_KIND,
+  PCAD_DRAWING_TEMPLATE_KIND,
+  PCAD_SCHEMA_VERSION,
+} from './schema.js';
+
+const SAVED_AT = '2026-09-09T00:00:00.000Z';
+const source: DrawingSource = {
+  sourceRef: 'source-1',
+  sourceKind: 'part',
+  fileName: 'part.pcad',
+  path: './part.pcad',
+  contentHash: 'abc123',
+  importedAt: SAVED_AT,
+};
+
+function populatedDrawing(): DrawingDocument {
+  const base = createDrawingDocument('部品図', source);
+  return {
+    ...base,
+    views: [{
+      id: 'view-1', name: '正面図', kind: 'front', position: [100, 100], scale: null,
+      direction: [0, -1, 0], xDir: [1, 0, 0], showHidden: true, showCenterLines: true,
+      layerId: 'layer-1', style: null,
+    }],
+    dimensions: [{
+      id: 'dim-1', kind: 'length', measurement: 'horizontal',
+      targets: [
+        { kind: 'point', viewId: 'view-1', paperPoint: [10, 20], modelPoint: [0, 0, 0] },
+        { kind: 'point', viewId: 'view-1', paperPoint: [30, 20], modelPoint: [20, 0, 0] },
+      ],
+      placement: { commonNormalCoordinate: 30, textPosition: null },
+      reference: false, origin: 'manual', layerId: 'layer-4',
+    }],
+    annotations: [{
+      id: 'note-1', kind: 'note', text: '注記', position: [20, 30], height: 3.5,
+      layerId: 'layer-5',
+    }],
+    tables: [{
+      id: 'table-1', kind: 'revision', position: [300, 20], columns: ['版', '内容'],
+      rows: [['A', '初版']], options: { showHeader: true }, layerId: 'layer-7',
+    }],
+    balloons: [{
+      id: 'balloon-1', itemNumber: 1, componentIds: ['component-1'], position: [200, 100],
+      leader: [[190, 90], [200, 100]], layerId: 'layer-5',
+    }],
+    parameters: [{
+      name: '縮尺値', value: { source: '1', value: 1, display: '1' }, unit: 'none', description: '',
+    }],
+  };
+}
+
+describe('図面 document.json', () => {
+  it('版9・drawing・アプリ名を決まった順序で書く', () => {
+    const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT });
+    expect(text.indexOf('"schema"')).toBeLessThan(text.indexOf('"kind"'));
+    expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
+    expect(text).toContain(`"kind": "${PCAD_DRAWING_KIND}"`);
+    expect(text).toContain(`"app": "${PCAD_APP_NAME}"`);
+  });
+
+  it('全欄を往復する', () => {
+    const document = populatedDrawing();
+    const result = parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT }));
+    expect(result).toEqual({ ok: true, document, savedAt: SAVED_AT, kind: 'drawing' });
+  });
+
+  it('保存時刻が同じなら文字列が完全に一致する', () => {
+    const document = populatedDrawing();
+    expect(serializeDrawing(document, { savedAt: SAVED_AT }))
+      .toBe(serializeDrawing(document, { savedAt: SAVED_AT }));
+  });
+
+  it('drawingTemplate も図面の読み手が受け入れる', () => {
+    const text = serializeDrawing(populatedDrawing(), {
+      savedAt: SAVED_AT,
+      kind: PCAD_DRAWING_TEMPLATE_KIND,
+    });
+    const result = parseDrawing(text);
+    expect(result.ok && result.kind).toBe('drawingTemplate');
+  });
+
+  it('part は図面として読まず日本語の理由を返す', () => {
+    const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT })
+      .replace('"kind": "drawing"', '"kind": "part"');
+    const result = parseDrawing(text);
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'unsupportedKind', message: 'この形式の図面ではありません。' },
+    });
+  });
+
+  it('壊れたJSONを投げずに断る', () => {
+    expect(parseDrawing('{')).toMatchObject({ ok: false, error: { code: 'invalidJson' } });
+  });
+
+  it('未来版を投げずに断る', () => {
+    const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT })
+      .replace(`"schema": ${String(PCAD_SCHEMA_VERSION)}`, '"schema": 99');
+    expect(parseDrawing(text)).toMatchObject({
+      ok: false, error: { code: 'unsupportedNewVersion' },
+    });
+  });
+
+  it('封筒と文書の版が違えば断る', () => {
+    const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT })
+      .replace(`"schemaVersion": ${String(PCAD_SCHEMA_VERSION)}`, '"schemaVersion": 8');
+    expect(parseDrawing(text)).toMatchObject({ ok: false, error: { code: 'versionMismatch' } });
+  });
+
+  it('版8の図面は版9へ移行して開く', () => {
+    const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT })
+      .replace(`"schema": ${String(PCAD_SCHEMA_VERSION)}`, '"schema": 8')
+      .replace(`"schemaVersion": ${String(PCAD_SCHEMA_VERSION)}`, '"schemaVersion": 8');
+    const result = parseDrawing(text);
+    expect(result.ok && result.document.schemaVersion).toBe(9);
+  });
+
+  it('必要な配列が欠けた図面を断る', () => {
+    const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT })
+      .replace('    "parameters": [', '    "unknownParameters": [');
+    expect(parseDrawing(text)).toMatchObject({ ok: false, error: { code: 'invalidField' } });
+  });
+
+  it('未知の欄を読み直し時に落とす', () => {
+    const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT });
+    const parsed: unknown = JSON.parse(text);
+    expect(isRecord(parsed) && isRecord(parsed['document'])).toBe(true);
+    if (!isRecord(parsed) || !isRecord(parsed['document'])) return;
+    parsed['document']['futureField'] = 123;
+    const result = parseDrawing(JSON.stringify(parsed));
+    expect(result.ok && 'futureField' in result.document).toBe(false);
+  });
+
+  it('投影線と計算済み寸法値を保存しない', () => {
+    const raw: unknown = JSON.parse(serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT }));
+    expect(isRecord(raw) && isRecord(raw['document'])).toBe(true);
+    if (!isRecord(raw) || !isRecord(raw['document'])) return;
+    const views = raw['document']['views'];
+    const dimensions = raw['document']['dimensions'];
+    expect(isUnknownArray(views) && isRecord(views[0])).toBe(true);
+    expect(isUnknownArray(dimensions) && isRecord(dimensions[0])).toBe(true);
+    if (!isUnknownArray(views) || !isRecord(views[0])
+      || !isUnknownArray(dimensions) || !isRecord(dimensions[0])) return;
+    views[0]['projectedLines'] = [1, 2];
+    dimensions[0]['value'] = 20;
+    const parsed = parseDrawing(JSON.stringify(raw));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const text = serializeDrawing(parsed.document, { savedAt: SAVED_AT });
+    expect(text).not.toContain('projectedLines');
+    expect(text).not.toContain('"value": 20');
+  });
+});

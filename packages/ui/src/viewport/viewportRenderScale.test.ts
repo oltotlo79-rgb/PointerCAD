@@ -17,14 +17,14 @@ describe('ビューポートの操作中解像度(P7 タスク48)', () => {
     expect(viewportPixelRatio(3, false)).toBe(2);
   });
 
-  it('視点操作中だけ縦横を0.4倍にする', () => {
-    expect(INTERACTIVE_VIEWPORT_SCALE).toBe(0.4);
-    expect(viewportPixelRatio(1, true)).toBe(0.4);
-    expect(viewportPixelRatio(2, true)).toBe(0.8);
+  it('視点操作中だけ縦横を0.3倍にする', () => {
+    expect(INTERACTIVE_VIEWPORT_SCALE).toBe(0.3);
+    expect(viewportPixelRatio(1, true)).toBe(0.3);
+    expect(viewportPixelRatio(2, true)).toBe(0.6);
   });
 
   it('壊れた0以下の端末値でも正の描画比を返す', () => {
     expect(viewportPixelRatio(0, false)).toBe(1);
-    expect(viewportPixelRatio(-2, true)).toBe(0.4);
+    expect(viewportPixelRatio(-2, true)).toBe(0.3);
   });
 });

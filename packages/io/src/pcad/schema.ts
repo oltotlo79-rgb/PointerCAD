@@ -7,7 +7,13 @@
  * (中身の形は版によって変わり得るため、版の判定を中身の解釈より先に済ませる)。
  */
 
-import { DEFAULT_BOM_SETTINGS, type AssemblyDocument, type LengthUnit, type PartDocument } from '@pointercad/model';
+import {
+  DEFAULT_BOM_SETTINGS,
+  type AssemblyDocument,
+  type DrawingDocument,
+  type LengthUnit,
+  type PartDocument,
+} from '@pointercad/model';
 
 import { isRecord } from './guards.js';
 
@@ -76,7 +82,7 @@ import { isRecord } from './guards.js';
  * 新しすぎる/古すぎる」の判定が種別ごとに分かれず 1 か所で済む。版 7 以前の
  * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
-export const PCAD_SCHEMA_VERSION = 8;
+export const PCAD_SCHEMA_VERSION = 9;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -140,6 +146,20 @@ export type PcadAssemblyKind = typeof PCAD_ASSEMBLY_KIND;
  * 部品・ひな形・図面はこの一覧に無いので `unsupportedKind` で断る。
  */
 export const PCAD_ASSEMBLY_KINDS: readonly PcadAssemblyKind[] = [PCAD_ASSEMBLY_KIND];
+
+/** 図面と図面ひな形の封筒種別(P8 タスク3・58)。 */
+export const PCAD_DRAWING_KIND = 'drawing';
+export const PCAD_DRAWING_TEMPLATE_KIND = 'drawingTemplate';
+
+export type PcadDrawingKind =
+  | typeof PCAD_DRAWING_KIND
+  | typeof PCAD_DRAWING_TEMPLATE_KIND;
+
+/** 図面の読み手だけが受け入れる種別。部品・アセンブリの読み手とは混ぜない。 */
+export const PCAD_DRAWING_KINDS: readonly PcadDrawingKind[] = [
+  PCAD_DRAWING_KIND,
+  PCAD_DRAWING_TEMPLATE_KIND,
+];
 
 /**
  * ひな形が持ち運ぶ道具の既定値(FR-814、§2.10、P6 タスク27)。**P6 ではこの 5 つに絞る**
@@ -255,6 +275,15 @@ export interface PcadAssemblyEnvelope {
   readonly document: AssemblyDocument;
   /** 抱き込んだ部品の素性。**空でも欄ごと書く**(読み手が毎回 `undefined` を見ずに済む)。 */
   readonly partFiles: readonly PcadPartFile[];
+}
+
+/** `.pcadd` の `document.json` に入る図面用の封筒。 */
+export interface PcadDrawingEnvelope {
+  readonly schema: number;
+  readonly kind: PcadDrawingKind;
+  readonly app: string;
+  readonly savedAt: string;
+  readonly document: DrawingDocument;
 }
 
 /**
@@ -523,5 +552,19 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
           ? migrateAssemblyDocumentToV8(document)
           : { ...document, schemaVersion: 8 },
     };
+  },
+  /**
+   * 版8 → 版9(P8 タスク3): 新しい封筒種別 `drawing` / `drawingTemplate` を足す。
+   * 既存文書の欄は変えないので、封筒と文書の版だけを同時に持ち上げる。
+   */
+  8: (raw) => {
+    if (!isRecord(raw)) {
+      return raw;
+    }
+    const document = raw['document'];
+    if (!isRecord(document)) {
+      return raw;
+    }
+    return { ...raw, schema: 9, document: { ...document, schemaVersion: 9 } };
   },
 };

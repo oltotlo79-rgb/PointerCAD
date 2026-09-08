@@ -475,10 +475,10 @@ describe('部品文書の生成(要件§8、FR-501)', () => {
   // P4 タスク31・§0.a-0.24 で版 4 へ上げ、P4b タスク21・§0.a-0.17(案 A)で版 5 へ上げ、
   // P5 タスク5・§0.a-0.15 で版 6 へ上げ、P6 タスク21・§0.a-0.55 で版 7 へ上げた
   // (io 側 PCAD_SCHEMA_VERSION と同じ値を保つ)。これは仕様変更であり、期待値の緩和ではない。
-  // P7 タスク3・§0.a-0.2 で版 8 へ上げた(封筒に `kind: 'assembly'` を足したため。
+  // P8 タスク3で版 9 へ上げた(封筒に `kind: 'drawing'` を足したため。
   // 部品とアセンブリで版の系列を分けない)。部品文書の欄は 1 つも増えていない。
-  it('保存形式の版は 8(§0.a-0.3、§0.a-0.22、§0.a-0.24、§0.a-0.17、§0.a-0.15、§0.a-0.55、P7 §0.a-0.2)', () => {
-    expect(PART_SCHEMA_VERSION).toBe(8);
+  it('保存形式の版は 9(P8 タスク3)', () => {
+    expect(PART_SCHEMA_VERSION).toBe(9);
     expect(createEmptyPartDocument().schemaVersion).toBe(PART_SCHEMA_VERSION);
   });
 

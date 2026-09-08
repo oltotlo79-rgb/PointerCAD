@@ -47,6 +47,8 @@ import {
   partLibraryOfBundle,
   type DocumentBundle,
   type AssemblyDocument,
+  type DrawingDocument,
+  type DrawingSourceInput,
   type EmbeddedPartAttachments,
   type EmbeddedPartMesh,
   type LengthUnit,
@@ -65,6 +67,7 @@ import {
   type ReadAssemblyDocumentResult,
 } from './assemblyJson.js';
 import { parseDocument, serializeDocument, type ParseErrorCode } from './documentJson.js';
+import { parseDrawing, serializeDrawing } from './drawingJson.js';
 import {
   PCAD_TEMPLATE_KIND,
   type PcadDocumentKind,
@@ -81,6 +84,9 @@ import {
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
 /** サムネイルを入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_THUMBNAIL_ENTRY = 'thumbnail.png';
+/** 図面が抱き込む参照元文書のエントリ名(P8 §2.3)。 */
+export const PCAD_SOURCE_ENTRY_PREFIX = 'source/';
+export const PCAD_SOURCE_ENTRY_SUFFIX = '.json';
 
 /**
  * 添付のエントリ名の前後(§0.a-0.55)。名前は `<前>` + 参照の文字列 + `<後>` でできている。
@@ -1172,4 +1178,123 @@ export async function readPcadaFile(
     partAttachmentDigests: collectedAttachments.digests,
     thumbnailPng: thumbnail,
   };
+}
+
+// ---------------------------------------------------------------------------
+// `.pcadd` — 図面文書と参照元モデル
+// ---------------------------------------------------------------------------
+
+export interface WritePcaddFileOptions {
+  readonly source: DrawingSourceInput;
+  readonly savedAt?: string;
+  readonly thumbnailPng?: Uint8Array;
+}
+
+/**
+ * 図面・サムネイル・参照元を、固定時刻と固定順序で ZIP にする。
+ * 参照元の封筒にも図面と同じ savedAt を使い、同じ入力から同じバイト列を作る。
+ */
+export function writePcaddFile(
+  document: DrawingDocument,
+  options: WritePcaddFileOptions,
+): Uint8Array {
+  const savedAt = options.savedAt ?? new Date().toISOString();
+  const sourceText = options.source.sourceKind === 'part'
+    ? serializeDocument(options.source.document, { savedAt })
+    : writeAssemblyDocument(options.source.document, { savedAt, partFiles: [] });
+  const entries: Zippable = {
+    [PCAD_DOCUMENT_ENTRY]: [
+      strToU8(serializeDrawing(document, { savedAt })),
+      { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ],
+  };
+  if (options.thumbnailPng !== undefined) {
+    entries[PCAD_THUMBNAIL_ENTRY] = [
+      options.thumbnailPng,
+      { level: THUMBNAIL_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+  }
+  entries[`${PCAD_SOURCE_ENTRY_PREFIX}${document.source.sourceRef}${PCAD_SOURCE_ENTRY_SUFFIX}`] = [
+    strToU8(sourceText),
+    { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
+  ];
+  return zipSync(entries);
+}
+
+export type ReadPcaddFileResult =
+  | {
+      readonly ok: true;
+      readonly document: DrawingDocument;
+      readonly source: DrawingSourceInput;
+      readonly savedAt: string;
+      readonly thumbnailPng?: Uint8Array;
+    }
+  | { readonly ok: false; readonly error: ReadPcadFileError };
+
+function failPcadd(code: ReadPcadFileErrorCode, message: string): ReadPcaddFileResult {
+  return { ok: false, error: { code, message } };
+}
+
+function isPcaddArchiveEntry(name: string): boolean {
+  return name === PCAD_DOCUMENT_ENTRY
+    || name === PCAD_THUMBNAIL_ENTRY
+    || attachmentRef(name, PCAD_SOURCE_ENTRY_PREFIX, PCAD_SOURCE_ENTRY_SUFFIX) !== null;
+}
+
+/** `.pcadd` を読み、図面が指す1件の参照元も既存の部品・アセンブリ読み手で検査する。 */
+export function readPcaddFile(bytes: Uint8Array): ReadPcaddFileResult {
+  const archive = readArchive(bytes, { shouldExtract: isPcaddArchiveEntry });
+  if (!archive.ok) {
+    const message = archive.error.kind === 'compressedInput'
+      || archive.error.kind === 'entryCount'
+      || archive.error.kind === 'entryExpanded'
+      || archive.error.kind === 'totalExpanded'
+      ? archive.error.reason
+      : NOT_ZIP_MESSAGE;
+    return failPcadd('notZip', message);
+  }
+  const documentBytes = findEntry(archive.entries, PCAD_DOCUMENT_ENTRY);
+  if (documentBytes === null) {
+    return failPcadd('missingDocument', MISSING_DOCUMENT_MESSAGE);
+  }
+  const documentText = decodeUtf8(documentBytes);
+  if (documentText === null) return failPcadd('notZip', NOT_ZIP_MESSAGE);
+  const drawing = parseDrawing(documentText);
+  if (!drawing.ok) return { ok: false, error: drawing.error };
+
+  const sourceEntry = `${PCAD_SOURCE_ENTRY_PREFIX}${drawing.document.source.sourceRef}${PCAD_SOURCE_ENTRY_SUFFIX}`;
+  const sourceBytes = findEntry(archive.entries, sourceEntry);
+  if (sourceBytes === null) {
+    return failPcadd(
+      'missingField',
+      `ファイルの中身が壊れています(${sourceEntry} が見つかりません)。`,
+    );
+  }
+  const sourceText = decodeUtf8(sourceBytes);
+  if (sourceText === null) return failPcadd('notZip', NOT_ZIP_MESSAGE);
+  const source: DrawingSourceInput | null = drawing.document.source.sourceKind === 'part'
+    ? (() => {
+        const parsed = parseDocument(sourceText);
+        return parsed.ok ? { sourceKind: 'part' as const, document: parsed.document } : null;
+      })()
+    : (() => {
+        const parsed = readAssemblyDocument(sourceText);
+        return parsed.ok ? { sourceKind: 'assembly' as const, document: parsed.document } : null;
+      })();
+  if (source === null) {
+    return failPcadd(
+      'invalidField',
+      `抱き込んだ文書を読めませんでした(${sourceEntry})。`,
+    );
+  }
+  const thumbnail = findEntry(archive.entries, PCAD_THUMBNAIL_ENTRY);
+  return thumbnail === null
+    ? { ok: true, document: drawing.document, source, savedAt: drawing.savedAt }
+    : {
+        ok: true,
+        document: drawing.document,
+        source,
+        savedAt: drawing.savedAt,
+        thumbnailPng: thumbnail,
+      };
 }

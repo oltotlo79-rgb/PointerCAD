@@ -597,7 +597,7 @@ pointercad/
 └── docs/                # 本書・設計文書
 ```
 
-依存方向は `apps → ui → model → kernel/expression` の一方向とし、逆流を禁止する。
+依存方向は `apps → ui → model → kernel / expression / drawing` の一方向とし、逆流を禁止する。`drawing` は kernel / model / ui / io に依存しない葉とする。
 
 ### 6.3 データフロー
 

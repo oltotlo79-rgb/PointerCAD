@@ -191,7 +191,11 @@ async function readViewportRenderStats(page: Page): Promise<ViewportRenderStats>
 }
 
 /** 50個を描いた状態でカメラとhoverを動かし、完了したscene.renderだけからfpsを求める。 */
-async function measureViewportFps(page: Page): Promise<number> {
+async function measureViewportFps(page: Page): Promise<{
+  readonly fps: number;
+  readonly completedRenders: number;
+  readonly elapsedMs: number;
+}> {
   const canvas = page.locator('canvas.pcad-viewport__canvas');
   const box = await canvas.boundingBox();
   if (box === null) throw new Error('ビューポートのcanvasの位置を取得できません。');
@@ -225,7 +229,9 @@ async function measureViewportFps(page: Page): Promise<number> {
   const after = await readViewportRenderStats(page);
   expect(after.completedRenders).toBeGreaterThan(before.completedRenders);
   expect(after.lastCompletedAtMs).toBeGreaterThanOrEqual(startedAtMs);
-  return (after.completedRenders - before.completedRenders) * 1_000 / (endedAtMs - startedAtMs);
+  const completedRenders = after.completedRenders - before.completedRenders;
+  const elapsedMs = endedAtMs - startedAtMs;
+  return { fps: completedRenders * 1_000 / elapsedMs, completedRenders, elapsedMs };
 }
 
 test.describe('P7 アセンブリの配置と基本操作', () => {
@@ -335,8 +341,8 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     }
     await expect(componentRows(page)).toHaveCount(50);
     const fps = await measureViewportFps(page);
-    console.log(`[実測] アセンブリ50個のビューポート: ${fps.toFixed(1)} fps (60推奨)`);
-    expect(fps).toBeGreaterThanOrEqual(30);
+    console.log(`[実測] アセンブリ50個のビューポート: ${fps.fps.toFixed(1)} fps (${fps.completedRenders}描画/${fps.elapsedMs.toFixed(1)}ms、60推奨)`);
+    expect(fps.fps).toBeGreaterThanOrEqual(30);
     const beforeHome = await readViewportRenderStats(page);
     await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
     await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders)

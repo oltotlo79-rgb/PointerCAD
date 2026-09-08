@@ -248,6 +248,72 @@ export {
   parameterEvaluationOrder, referencesTo, removeParameter, renameParameter, reorderParameters,
   replaceParameter,
 } from './parameters/parameterTable.js';
+/** 図面文書の生成・採番・参照元・レイヤー編集(P8 タスク4・7)。 */
+export type {
+  Annotation,
+  Balloon,
+  Dimension,
+  DrawingDocument,
+  DrawingElementStyle,
+  DrawingLayer,
+  DrawingLineType,
+  DrawingParameter,
+  DrawingSheet,
+  DrawingSource,
+  DrawingSubShapeFingerprint,
+  DrawingSubShapeRef,
+  DrawingTable,
+  DrawingTitleBlock,
+  DrawingView,
+  DrawingViewKind,
+  Point2 as DrawingPoint2,
+  Vector3 as DrawingVector3,
+} from '@pointercad/drawing';
+export {
+  DRAWING_SCHEMA_VERSION,
+  appendDrawingAnnotation,
+  appendDrawingBalloon,
+  appendDrawingDimension,
+  appendDrawingLayer,
+  appendDrawingTable,
+  appendDrawingView,
+  createDrawingDocument,
+  nextDrawingAnnotationId,
+  nextDrawingBalloonId,
+  nextDrawingDimensionId,
+  nextDrawingLayerId,
+  nextDrawingTableId,
+  nextDrawingViewId,
+} from './drawing/createDrawingDocument.js';
+export type {
+  DrawingSourceDocument,
+  DrawingSourceInput,
+  DrawingSourceLibrary,
+  EmbeddedDrawingSource,
+  EmbedDrawingSourceOptions,
+  EmbedDrawingSourceResult,
+} from './drawing/sourceLibrary.js';
+export {
+  canonicalDrawingSourceText,
+  drawingSourceContentHash,
+  drawingSourceDocumentOf,
+  embedDrawingSource,
+  emptyDrawingSourceLibrary,
+  replaceDrawingSource,
+} from './drawing/sourceLibrary.js';
+export type {
+  DrawingLayerEditResult,
+  NewDrawingLayer,
+  RemoveDrawingLayerResult,
+} from './drawing/layerEdit.js';
+export {
+  DUPLICATE_DRAWING_LAYER_NAME_MESSAGE,
+  INVALID_DRAWING_LAYER_COLOR_MESSAGE,
+  addDrawingLayer,
+  removeDrawingLayer,
+  reorderDrawingLayer,
+  replaceDrawingLayer,
+} from './drawing/layerEdit.js';
 export type {
   EdgeCurveKind, FaceSurfaceKind, SubShapeFingerprint, SubShapeKind, SubShapeRef,
 } from './geometry/subShapeRef.js';

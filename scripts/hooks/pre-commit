@@ -5,9 +5,15 @@
 hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$hook_dir/../.." && pwd)
 check_script="$repo_root/scripts/check.ps1"
+batch_guard="$repo_root/scripts/check-commit-batch.ps1"
 
 if [ ! -f "$check_script" ]; then
     printf '%s\n' "[NG] 検査スクリプトが見つからないため commit を中止します: $check_script" >&2
+    exit 1
+fi
+
+if [ ! -f "$batch_guard" ]; then
+    printf '%s\n' "[NG] 一括コミット検査が見つからないため commit を中止します: $batch_guard" >&2
     exit 1
 fi
 
@@ -20,6 +26,14 @@ elif command -v powershell >/dev/null 2>&1; then
 else
     printf '%s\n' '[NG] PowerShell が見つからないため commit を中止します' >&2
     exit 127
+fi
+
+"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$batch_guard" -RepositoryRoot "$repo_root"
+batch_status=$?
+
+if [ "$batch_status" -ne 0 ]; then
+    printf '%s\n' "[NG] main・10件一括の条件を満たさないため commit を中止します (終了コード: $batch_status)" >&2
+    exit "$batch_status"
 fi
 
 "$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Commit

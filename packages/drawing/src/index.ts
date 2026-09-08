@@ -1,27 +1,128 @@
 /**
- * 図面生成(要件 FR-7xx)。投影・寸法・JIS スタイル・SVG 生成は P6 で実装する。
- * P0 では用紙の既定値だけを定義する。
+ * 図面生成(要件 FR-7xx)。図面文書・投影・寸法・JIS スタイル・出力は P8 で実装する。
+ * このパッケージは他の PointerCAD パッケージへ依存しない純粋ロジックとする。
  */
 
-export interface PaperSize {
-  readonly id: 'A3-landscape' | 'A4-landscape' | 'A4-portrait';
-  readonly label: string;
-  /** 幅(mm)。 */
-  readonly width: number;
-  /** 高さ(mm)。 */
-  readonly height: number;
-}
+export type {
+  Annotation,
+  Balloon,
+  DrawingDocument,
+  DrawingElementStyle,
+  DrawingExpressionValue,
+  DrawingFrameSettings,
+  DrawingLayer,
+  DrawingLineType,
+  DrawingParameter,
+  DrawingSheet,
+  DrawingSource,
+  DrawingSubShapeFingerprint,
+  DrawingSubShapeRef,
+  DrawingTable,
+  DrawingTitleBlock,
+  DrawingView,
+  DrawingViewKind,
+  Point2,
+  Vector3,
+} from './types.js';
+export type {
+  AffineTransform2,
+  InkBounds,
+  PathCommand,
+  RenderClip,
+  RenderDocument,
+  RenderPath,
+  RenderPrimitive,
+  RenderStroke,
+  RenderSubpath,
+  RenderText,
+  SemanticTextMetrics,
+} from './render/types.js';
 
-/** A3 横を既定とする(FR-701)。 */
-export const PAPER_SIZES: readonly PaperSize[] = [
-  { id: 'A3-landscape', label: 'A3 横', width: 420, height: 297 },
-  { id: 'A4-landscape', label: 'A4 横', width: 297, height: 210 },
-  { id: 'A4-portrait', label: 'A4 縦', width: 210, height: 297 },
-];
+export {
+  DEFAULT_PAPER_SIZE_ID,
+  PAPER_SIZES,
+  paperSizeOf,
+  type PaperOrientation,
+  type PaperSeries,
+  type PaperSize,
+  type PaperSizeId,
+} from './paper/paperSize.js';
+export {
+  createPaperFrame,
+  type FrameRectangle,
+  type FrameSegment,
+  type PaperFrame,
+} from './paper/frame.js';
+export {
+  STANDARD_SCALES,
+  autoScale,
+  type AutoScaleInput,
+  type AutoScalePaperBounds,
+} from './layout/scale.js';
+export {
+  THIRD_ANGLE_DIRECTIONS,
+  thirdAngleLayout,
+  type OrthographicViewName,
+  type SheetLayoutArea,
+  type ThirdAngleLayout,
+  type ThirdAngleLayoutInput,
+  type ViewDirection,
+} from './layout/thirdAngle.js';
 
-export const DEFAULT_PAPER_SIZE_ID = 'A3-landscape';
+export {
+  ARROW_INCLUDED_ANGLE_DEGREES,
+  ARROW_LENGTH_MM,
+  ARROW_WIDTH_MM,
+  DEFAULT_ANNOTATION_TEXT_HEIGHT_MM,
+  DEFAULT_DIMENSION_TEXT_HEIGHT_MM,
+  DEFAULT_DRAWING_NUMBER_HEIGHT_MM,
+  DIMENSION_EXTENSION_GAP_MM,
+  DIMENSION_EXTENSION_OVER_MM,
+  DIMENSION_LINE_SPACING_MM,
+  LINE_DASH_PATTERNS,
+  LINE_WIDTHS_MM,
+  TEXT_HEIGHTS_MM,
+  lineStyleFor,
+  type DrawingLineUsage,
+  type LineStyle,
+} from './style/jisStyle.js';
+export {
+  DEFAULT_DRAWING_LAYERS,
+  isElementPrintable,
+  isElementVisible,
+  isValidLayerColor,
+  resolveStyle,
+  type LayerStyledElement,
+  type ResolvedDrawingStyle,
+} from './style/layers.js';
 
-/** JIS の標準縮尺系列(FR-703)。 */
-export const STANDARD_SCALES: readonly number[] = [
-  1 / 10, 1 / 5, 1 / 2, 1, 2, 5, 10,
-];
+export type {
+  Dimension,
+  DimensionKind,
+  DimensionMeasurement,
+  DimensionPlacement,
+  DimensionTarget,
+  DimensionTolerance,
+} from './dimension/types.js';
+export { formatDimension, type FormatDimensionInput } from './dimension/format.js';
+export {
+  blackDot,
+  createArrowTriangle,
+  shouldUseOutwardArrows,
+  type ArrowTriangle,
+  type BlackDot,
+} from './dimension/arrow.js';
+export {
+  createAngleDimensionGeometry,
+  createArcLengthDimensionGeometry,
+  createDiameterDimensionGeometry,
+  createLinearDimensionGeometry,
+  createRadiusDimensionGeometry,
+  type AngleDimensionGeometry,
+  type ArcGeometry,
+  type ArcLengthDimensionGeometry,
+  type DiameterDimensionGeometry,
+  type DimensionLineSegment,
+  type LinearDimensionGeometry,
+  type RadiusDimensionGeometry,
+} from './dimension/geometry.js';

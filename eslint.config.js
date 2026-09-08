@@ -8,7 +8,7 @@ import tseslint from 'typescript-eslint';
  * 検査専用のパッケージだけは層の外側に置く。
  *
  * `@pointercad/test-utils` は性能上限の判定の切替(`expectWithinBudget`)だけを持ち、
- * 製品の実行時コードを 1 行も含まない。層(apps → ui → model → kernel / expression)の
+ * 製品の実行時コードを 1 行も含まない。層(apps → ui → model → kernel / expression / drawing)の
  * どこからも devDependencies として参照してよいので、`@pointercad/*` を丸ごと禁じる
  * 最下層(expression / help-content / kernel)でも、これだけは除外する。
  * `!` で始まる項目は除外を表す(no-restricted-imports の group は gitignore と同じ書き方)。
@@ -16,16 +16,22 @@ import tseslint from 'typescript-eslint';
  */
 const TEST_ONLY_PACKAGE_EXCEPTION = '!@pointercad/test-utils';
 
-/** 依存方向 apps → ui → model → kernel / expression を機械的に守らせる(rules/04-設計の規律.md)。 */
+/** 依存方向 apps → ui → model → kernel / expression / drawing を機械施行する(rules/04)。 */
 const layerRules = [
   { files: ['packages/expression/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
   { files: ['packages/help-content/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
   { files: ['packages/kernel/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
   {
     files: ['packages/model/**/*.ts'],
-    forbidden: ['@pointercad/ui', '@pointercad/drawing', '@pointercad/io', '@pointercad/help-content'],
+    forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content'],
   },
-  { files: ['packages/drawing/**/*.ts'], forbidden: ['@pointercad/ui', '@pointercad/io'] },
+  {
+    files: ['packages/drawing/**/*.ts'],
+    forbidden: [
+      '@pointercad/kernel', '@pointercad/model', '@pointercad/ui', '@pointercad/io',
+      '@pointercad/help-content', 'opencascade.js', 'opencascade.js/*',
+    ],
+  },
   { files: ['packages/io/**/*.ts'], forbidden: ['@pointercad/ui', '@pointercad/drawing'] },
   // UI から幾何カーネルへ直接依存しない(ドキュメントモデル経由)
   { files: ['packages/ui/**/*.{ts,tsx}'], forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*'] },
@@ -80,7 +86,7 @@ export default tseslint.config(
             {
               group: forbidden,
               message:
-                '依存方向 apps → ui → model → kernel / expression に違反しています(rules/04-設計の規律.md)。',
+                '依存方向 apps → ui → model → kernel / expression / drawing に違反しています(rules/04-設計の規律.md)。',
             },
           ],
         },

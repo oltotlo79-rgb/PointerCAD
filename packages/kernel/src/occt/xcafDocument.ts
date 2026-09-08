@@ -3,12 +3,17 @@ import type {
   OpenCascadeInstance,
   Quantity_TypeOfColor,
   TDF_Label,
+  TopLoc_Location,
   TopoDS_Shape,
   XCAFDoc_ColorType,
+  XCAFDoc_ColorTool,
+  XCAFDoc_ShapeTool,
 } from 'opencascade.js/dist/opencascade.full.js';
 
+import type { PlacementSpec } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { makePlacementTransform } from './placeBodies.js';
 import type { FaceColorMap } from './xcafFaceColors.js';
 import { applyFaceColors, checkExportColor, checkFaceColors } from './xcafFaceColors.js';
 
@@ -98,6 +103,31 @@ export interface XcafDocumentOptions {
   readonly allocations?: Allocations;
 }
 
+/**
+ * 平らな文書とアセンブリ文書が共用する XCAF の組み立て口(P7 タスク41)。
+ *
+ * `shapeTool` / `colorTool` は Handle の `get()` が返す借り物なので外へ出さず、操作だけを
+ * メソッドにしている。作ったラベル・文字列・配置はすべて同じ確保の控えへ入り、`delete()`
+ * で逆順に返る。これにより平らな STEP と入れ子 STEP で所有権の規約を二重に持たない。
+ */
+export interface XcafDocumentBuilder extends XcafDocument {
+  /** 形の定義を 1 つ足す。戻り値は `addComponent` の参照先に使える。 */
+  addShape(entry: XcafShapeEntry, makeAssembly?: boolean, makePrepare?: boolean): TDF_Label;
+  /** 子を持つアセンブリ定義の空ラベルを作る。 */
+  addAssembly(name: string | null): TDF_Label;
+  /** 親アセンブリへ、定義を配置つきの参照として足す。 */
+  addComponent(
+    parent: TDF_Label,
+    definition: TDF_Label,
+    name: string | null,
+    placement: PlacementSpec,
+  ): TDF_Label;
+  /** compound に登録した元の形へ、色と面色だけを載せる。 */
+  applyAppearance(entry: XcafShapeEntry): void;
+  /** すべての子を足した後に XCAF のアセンブリ形を更新する。 */
+  updateAssemblies(): void;
+}
+
 /** 文書の記憶形式。XCAF の属性を持てる形式で、ファイルへは保存しないので中身は問わない。 */
 const STORAGE_FORMAT = 'BinXCAF';
 
@@ -181,6 +211,124 @@ function resolveColorEnums(oc: OpenCascadeInstance): ColorEnums | null {
   return { typeOfColor, colorType };
 }
 
+/** 空でない名前だけをラベルへ載せる。文字コードと所有権の決めはここ 1 か所。 */
+function setLabelName(
+  oc: OpenCascadeInstance,
+  label: TDF_Label,
+  name: string | null,
+  keep: Allocations['keep'],
+): void {
+  if (name === null || name.length === 0) {
+    return;
+  }
+  const text = keep(new oc.TCollection_ExtendedString_2(name, true));
+  keep(oc.TDataStd_Name.Set_1(label, text));
+}
+
+/**
+ * XCAF 文書を開き、平らな形とアセンブリの両方で使う操作を返す。
+ * 形が 0 個かどうかは、最終構造を知る呼び出し側が先に判定する。
+ */
+export function createXcafDocumentBuilder(
+  oc: OpenCascadeInstance,
+  options: XcafDocumentOptions = {},
+): XcafDocumentBuilder {
+  const withColors = options.withColors ?? true;
+  const palette = withColors ? resolveColorEnums(oc) : null;
+  const { keep, release } = options.allocations ?? createAllocations();
+
+  try {
+    const format = keep(new oc.TCollection_ExtendedString_2(STORAGE_FORMAT, false));
+    // 文書そのものは控えへ積まない。Handle が唯一の持ち主になる(冒頭の注釈 2)。
+    const doc = new oc.TDocStd_Document(format);
+    const handle = (() => {
+      try {
+        return keep(new oc.Handle_TDocStd_Document_2(doc));
+      } catch (error) {
+        // Handle の生成前に失敗したときだけ、まだ唯一の持ち主である文書をここで返す。
+        doc.delete();
+        throw error;
+      }
+    })();
+    const main = keep(doc.Main());
+    // `.get()` は借り物。builder のメソッドからだけ使い、delete/keep しない。
+    const shapeTool: XCAFDoc_ShapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
+    const colorTool: XCAFDoc_ColorTool = keep(oc.XCAFDoc_DocumentTool.ColorTool(main)).get();
+    const labels: TDF_Label[] = [];
+    let colorWritten = false;
+
+    const applyAppearance = (entry: XcafShapeEntry): void => {
+      if (entry.color !== null) {
+        checkExportColor(entry.color);
+      }
+      if (entry.faceColors !== undefined) {
+        checkFaceColors(entry.faceColors);
+      }
+      if (palette !== null && entry.color !== null) {
+        const color = keep(
+          new oc.Quantity_Color_3(
+            entry.color[0],
+            entry.color[1],
+            entry.color[2],
+            palette.typeOfColor,
+          ),
+        );
+        if (colorTool.SetColor_5(entry.shape, color, palette.colorType)) {
+          colorWritten = true;
+        }
+      }
+      if (palette !== null && entry.faceColors !== undefined && entry.faceColors.size > 0) {
+        if (applyFaceColors(
+          oc,
+          colorTool,
+          entry.shape,
+          entry.faceColors,
+          palette,
+          keep,
+        ) > 0) {
+          colorWritten = true;
+        }
+      }
+    };
+
+    const builder: XcafDocumentBuilder = {
+      handle,
+      labels,
+      get colorWritten(): boolean {
+        return colorWritten;
+      },
+      addShape(entry, makeAssembly = false, makePrepare = true): TDF_Label {
+        const label = keep(shapeTool.AddShape(entry.shape, makeAssembly, makePrepare));
+        labels.push(label);
+        setLabelName(oc, label, entry.name, keep);
+        applyAppearance(entry);
+        return label;
+      },
+      addAssembly(name): TDF_Label {
+        const label = keep(shapeTool.NewShape());
+        setLabelName(oc, label, name, keep);
+        return label;
+      },
+      addComponent(parent, definition, name, placement): TDF_Label {
+        const transform = makePlacementTransform(oc, placement, keep);
+        const location: TopLoc_Location = keep(new oc.TopLoc_Location_2(transform));
+        const label = keep(shapeTool.AddComponent_1(parent, definition, location));
+        setLabelName(oc, label, name, keep);
+        return label;
+      },
+      applyAppearance,
+      updateAssemblies(): void {
+        shapeTool.UpdateAssemblies();
+      },
+      delete: release,
+    };
+    return builder;
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
 /**
  * 立体の一覧から XCAF の文書を 1 つ組み立てる(§2.5)。
  *
@@ -214,70 +362,16 @@ export function buildXcafDocument(
     }
   }
 
-  const withColors = options.withColors ?? true;
-  const palette = withColors ? resolveColorEnums(oc) : null;
-  const { keep, release } = options.allocations ?? createAllocations();
-
+  const builder = createXcafDocumentBuilder(oc, options);
   try {
-    const format = keep(new oc.TCollection_ExtendedString_2(STORAGE_FORMAT, false));
-    // 文書そのものは控えへ積まない(冒頭の注釈 2。Handle が持ち主になる)。
-    const doc = new oc.TDocStd_Document(format);
-    const handle = keep(new oc.Handle_TDocStd_Document_2(doc));
-    const main = keep(doc.Main());
-    // `.get()` の戻りは借り物なので控えへ積まない(冒頭の注釈 1)。積むのは Handle だけ。
-    const shapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
-    const colorTool = keep(oc.XCAFDoc_DocumentTool.ColorTool(main)).get();
-
-    const labels: TDF_Label[] = [];
-    let colorWritten = false;
     for (const entry of entries) {
       // makeAssembly = false で平らに積む(§0.a-0.11)。makePrepare = true は
       // 書き手が求める下ごしらえ(部分形状の登録)を OCCT に任せる指定。
-      const label = keep(shapeTool.AddShape(entry.shape, false, true));
-      labels.push(label);
-
-      if (entry.name !== null && entry.name.length > 0) {
-        // 第 2 引数の true は「渡した文字列が多バイト(UTF-8)である」の指定。
-        // 日本語の名前が STEP の PRODUCT 行へそのまま出ることを実測で確かめてある。
-        const text = keep(new oc.TCollection_ExtendedString_2(entry.name, true));
-        keep(oc.TDataStd_Name.Set_1(label, text));
-      }
-
-      if (palette !== null && entry.color !== null) {
-        const color = keep(
-          new oc.Quantity_Color_3(
-            entry.color[0],
-            entry.color[1],
-            entry.color[2],
-            palette.typeOfColor,
-          ),
-        );
-        if (colorTool.SetColor_5(entry.shape, color, palette.colorType)) {
-          colorWritten = true;
-        }
-      }
-
-      // 面の色は立体の色より**あと**に載せる(面の割り当てが立体より優先する。§2.5.1)。
-      // 表が無い/空のときは 1 度も呼ばないので、面の色を足す前と同じ文書になる。
-      if (palette !== null && entry.faceColors !== undefined && entry.faceColors.size > 0) {
-        const applied = applyFaceColors(
-          oc,
-          colorTool,
-          entry.shape,
-          entry.faceColors,
-          palette,
-          keep,
-        );
-        if (applied > 0) {
-          colorWritten = true;
-        }
-      }
+      builder.addShape(entry);
     }
-
-    return { handle, labels, colorWritten, delete: release };
+    return builder;
   } catch (error) {
-    // 途中で断ったらその場で全部返す(`allocations.ts` の使い方の見本と同じ)。
-    release();
+    builder.delete();
     throw error;
   }
 }

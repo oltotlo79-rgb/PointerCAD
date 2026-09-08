@@ -751,6 +751,10 @@ export function ViewportCanvas(): React.JSX.Element {
     const controls = attachCameraControls(canvas, () => {
       assemblyInteraction?.cancelDrag();
       requestDraw();
+    }, (active) => {
+      scene.setInteractiveRendering(active);
+      // 離したときは通常解像度の静止画を必ず1枚描く。開始時も最初の入力を待たず切り替える。
+      requestDraw();
     });
     controlsRef.current = controls;
     // 視点操作を先に結び、その後ろでスケッチの操作を結ぶ(中ボタン・Alt の取り合いを避ける)。

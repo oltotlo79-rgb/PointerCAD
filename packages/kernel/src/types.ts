@@ -1438,6 +1438,45 @@ export interface ShapeExportItem {
   readonly faceColors?: FaceColorMap;
 }
 
+/** STEP のアセンブリで共有する部品定義 1 つ(P7 タスク41)。 */
+export interface ShapeExportAssemblyDefinition {
+  /** アセンブリの中だけで一意な、参照用の安定した id。 */
+  readonly id: string;
+  /** STEP の PRODUCT に書く部品名。 */
+  readonly name: string | null;
+  /** この部品を構成するボディ。同じ定義を何回置いても形はここに 1 回だけ載せる。 */
+  readonly bodies: readonly ShapeExportItem[];
+}
+
+/**
+ * STEP アセンブリの配置木。`part` は共有定義への参照、`assembly` は子を持つ参照である。
+ * 保存用の model 型へ依存させず、Comlink を越えられる文字列と数だけで表す。
+ */
+export type ShapeAssemblyNode =
+  | {
+      readonly kind: 'part';
+      readonly id: string;
+      readonly name: string | null;
+      readonly definitionId: string;
+      /** 親から見た局所配置。 */
+      readonly placement: PlacementSpec;
+    }
+  | {
+      readonly kind: 'assembly';
+      readonly id: string;
+      readonly name: string | null;
+      /** 親から見た局所配置。 */
+      readonly placement: PlacementSpec;
+      readonly children: readonly ShapeAssemblyNode[];
+    };
+
+/** STEP へ書くアセンブリ構造。 */
+export interface ShapeExportAssembly {
+  readonly name: string | null;
+  readonly definitions: readonly ShapeExportAssemblyDefinition[];
+  readonly children: readonly ShapeAssemblyNode[];
+}
+
 /**
  * 三角形を作る形式が共通で受ける品質の指定(FR-803)。
  *
@@ -1505,6 +1544,8 @@ export type ShapeExportRequest =
       readonly partId?: string;
       readonly format: 'step';
       readonly bodies: readonly ShapeExportItem[];
+      /** 省略時は従来どおり `bodies` を平らに書く。指定時は共有定義と配置木を書く。 */
+      readonly assembly?: ShapeExportAssembly;
       /** 色を書くか(§0.a-0.22)。省くと書く。列挙が取れない環境では形だけになる。 */
       readonly withColors?: boolean;
     }
@@ -1732,6 +1773,21 @@ export type ShapeImportBody =
       readonly bodyKind: 'mesh';
     });
 
+/** 読み込んだ STEP の共有部品定義と `bodies` の対応。 */
+export interface ShapeImportAssemblyDefinition {
+  readonly id: string;
+  readonly name: string | null;
+  /** この定義の B-rep・三角形を持つ `ShapeImportResult.bodies` の添字。 */
+  readonly bodyIndex: number;
+}
+
+/** 読み込んだ STEP のアセンブリ構造(P7 タスク42)。 */
+export interface ShapeImportAssembly {
+  readonly name: string | null;
+  readonly definitions: readonly ShapeImportAssemblyDefinition[];
+  readonly children: readonly ShapeAssemblyNode[];
+}
+
 /**
  * 読み込みの結果(FR-802、FR-811)。
  *
@@ -1762,6 +1818,8 @@ export interface ShapeImportResult {
    * **名前を持つのは STEP だけ**で、ほかの形式では必ず空になる。
    */
   readonly unitNames: readonly string[];
+  /** STEP が持つ共有定義と配置木。ほかの形式では省略する。 */
+  readonly assembly?: ShapeImportAssembly;
 }
 
 /**

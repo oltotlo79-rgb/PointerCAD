@@ -2,7 +2,7 @@ import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.j
 
 import { createAllocations } from './allocations.js';
 import { withVirtualFile } from './virtualFile.js';
-import type { XcafShapeEntry } from './xcafDocument.js';
+import type { XcafDocument, XcafShapeEntry } from './xcafDocument.js';
 import { buildXcafDocument } from './xcafDocument.js';
 
 /**
@@ -85,6 +85,33 @@ export interface StepWriteResult {
 const WRITE_FAILED_MESSAGE = 'STEP ファイルを書き出せませんでした。';
 
 /**
+ * 組み立て済みの XCAF 文書を STEP にする共通の書き手。
+ * 文書の解放は呼び出し側が行うため、平らな形とアセンブリ構造のどちらにも使える。
+ */
+export function writeXcafStepDocument(
+  oc: OpenCascadeInstance,
+  document: XcafDocument,
+  options: StepWriteOptions = {},
+): StepWriteResult {
+  const withColors = options.withColors ?? true;
+  const { keep, release } = createAllocations();
+  try {
+    const writer = keep(new oc.STEPCAFControl_Writer_1());
+    writer.SetColorMode(withColors);
+    writer.SetNameMode(true);
+    const range = keep(new oc.Message_ProgressRange_1());
+    const files = withVirtualFile(oc, 'step', (path) => {
+      if (!writer.Perform_2(document.handle, path, range)) {
+        throw new Error(WRITE_FAILED_MESSAGE);
+      }
+    });
+    return { bytes: files[0].bytes, colorWritten: document.colorWritten };
+  } finally {
+    release();
+  }
+}
+
+/**
  * 立体の一覧を STEP のバイト列にする(§2.3)。
  *
  * ```ts
@@ -102,23 +129,7 @@ export function writeStep(
   const withColors = options.withColors ?? true;
   const document = buildXcafDocument(oc, entries, { withColors });
   try {
-    const { keep, release } = createAllocations();
-    try {
-      const writer = keep(new oc.STEPCAFControl_Writer_1());
-      writer.SetColorMode(withColors);
-      writer.SetNameMode(true);
-      const range = keep(new oc.Message_ProgressRange_1());
-      const files = withVirtualFile(oc, 'step', (path) => {
-        // Perform_2 は成否を真偽で返す(例外を投げない)。false を黙って通すと
-        // 中身の無いファイルを保存させてしまうので、ここで理由に変える。
-        if (!writer.Perform_2(document.handle, path, range)) {
-          throw new Error(WRITE_FAILED_MESSAGE);
-        }
-      });
-      return { bytes: files[0].bytes, colorWritten: document.colorWritten };
-    } finally {
-      release();
-    }
+    return writeXcafStepDocument(oc, document, { withColors });
   } finally {
     document.delete();
   }

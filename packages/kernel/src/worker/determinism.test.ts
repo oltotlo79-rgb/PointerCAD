@@ -7,10 +7,12 @@ import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
 import type { StepWriteEntry } from '../occt/writeStep.js';
 import { writeStep } from '../occt/writeStep.js';
+import { writeStepAssembly } from '../occt/xcafAssembly.js';
 import type {
   CurveSpec,
   FilletStepSpec,
   HoleStepSpec,
+  ShapeAssemblyNode,
   SolidBodyMesh,
   SolidEdgeInfo,
   SolidFaceInfo,
@@ -418,5 +420,56 @@ describe('決定性検査(recomputeSolids と writeStep、§0.62)', () => {
       `決定性検査(STEP)の実測: ${bytesA.length} バイト / 4行目: ${linesA[3]} / ` +
         `違う行: [${differingLines.join(', ')}]`,
     );
+  });
+
+  it('共有部品と入れ子配置を独立に2回計算しても、アセンブリSTEPが時刻以外一致する', async () => {
+    const cacheA = newCache();
+    const cacheB = newCache();
+    const resultA = await recomputeSolids({ oc, cache: cacheA }, request());
+    const resultB = await recomputeSolids({ oc, cache: cacheB }, request());
+    expect(resultA.failures).toEqual([]);
+    expect(resultB.failures).toEqual([]);
+
+    const children: readonly ShapeAssemblyNode[] = [
+      {
+        kind: 'part', id: 'plate-1', name: '板:1', definitionId: 'plate',
+        placement: { position: [3, -7, 11], rotation: [0, 0, 0, 1] },
+      },
+      {
+        kind: 'assembly', id: 'nested', name: '子組立',
+        placement: { position: [0, 50, 0], rotation: [0, 0, 0, 1] },
+        children: [{
+          kind: 'part', id: 'plate-2', name: '板:2', definitionId: 'plate',
+          placement: { position: [7, 11, 13], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] },
+        }],
+      },
+      {
+        kind: 'part', id: 'revolve-1', name: '回転:1', definitionId: 'revolve',
+        placement: { position: [-30, 4, 9], rotation: [0, 0, 0, 1] },
+      },
+    ];
+    const writeFrom = (cache: ShapeCache<CachedSolid>): Uint8Array => {
+      const plate = cache.get('key-fillet');
+      const revolve = cache.get('key-revolve');
+      if (plate === undefined || revolve === undefined) {
+        throw new Error('決定性検査: 共有定義の形がキャッシュにありませんでした');
+      }
+      return writeStepAssembly(oc, {
+        name: '主組立',
+        definitions: [
+          { id: 'plate', name: '板', bodies: [{ shape: plate.shape, name: '板', color: null }] },
+          { id: 'revolve', name: '回転', bodies: [{ shape: revolve.shape, name: '回転', color: null }] },
+        ],
+        children,
+      }).bytes;
+    };
+
+    const bytesA = writeFrom(cacheA);
+    const bytesB = writeFrom(cacheB);
+    expect(stepBytesForComparison(bytesB)).toEqual(stepBytesForComparison(bytesA));
+    expect(new TextDecoder().decode(bytesA).match(/MANIFOLD_SOLID_BREP/g)).toHaveLength(2);
+    expect(new TextDecoder().decode(bytesA).match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\s*\(/g))
+      .toHaveLength(4);
+    console.log(`決定性検査(アセンブリSTEP)の実測: ${bytesA.length}バイト、定義2、参照4`);
   });
 });

@@ -1,0 +1,17 @@
+#!/bin/sh
+# PointerCAD commit-msg フック: UTF-8 BOM が件名へ混ざったコミットを拒否する。
+# PowerShell 5.1 の Set-Content -Encoding UTF8 は BOM を付けるため、メッセージは BOM なしで書く。
+
+message_file=$1
+if [ ! -f "$message_file" ]; then
+    printf '%s\n' "[NG] コミットメッセージが見つかりません: $message_file" >&2
+    exit 1
+fi
+
+first_three_bytes=$(od -An -tx1 -N3 "$message_file" | tr -d ' \r\n')
+if [ "$first_three_bytes" = "efbbbf" ]; then
+    printf '%s\n' '[NG] コミットメッセージの先頭に UTF-8 BOM があります。BOM なし UTF-8 で書き直してください。' >&2
+    exit 1
+fi
+
+exit 0

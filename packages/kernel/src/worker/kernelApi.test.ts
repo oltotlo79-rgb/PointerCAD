@@ -13,6 +13,8 @@ import type {
   HoleStepSpec,
   PlaneCurve,
   ShapeExportItem,
+  ShapeExportAssembly,
+  ShapeAssemblyNode,
   ShapeInspectRequest,
   ShapeInspectResult,
   SketchPlaneFrame,
@@ -1117,6 +1119,106 @@ describe('KernelApi', () => {
     expect(text).toContain('本体');
     expect(written.colorWritten).toBe(true);
     expect(text).toContain('COLOUR_RGB');
+  });
+
+  it('公開APIで共有定義・入れ子・配置をSTEPへ書き、同じ構造と体積へ戻す(FR-802、FR-804)', async () => {
+    const firstKey = 'api-assembly-first';
+    const secondKey = 'api-assembly-second';
+    const built = await api.recomputeSolids({
+      steps: [
+        extrudeStep('長い板', firstKey, 10),
+        extrudeStep('薄い板', secondKey, 5),
+      ],
+      generation: 1,
+    });
+    expect(built.failures).toEqual([]);
+
+    const nested: ShapeAssemblyNode = {
+      kind: 'assembly',
+      id: 'subassembly',
+      name: '子組立',
+      placement: {
+        position: [0, 50, 0],
+        rotation: [Math.sin(Math.PI / 12), 0, 0, Math.cos(Math.PI / 12)],
+      },
+      children: [{
+        kind: 'part',
+        id: 'long-2',
+        name: '長い板:2',
+        definitionId: 'long',
+        placement: {
+          position: [7, 11, 13],
+          rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2],
+        },
+      }],
+    };
+    const assembly: ShapeExportAssembly = {
+      name: '主組立',
+      definitions: [
+        {
+          id: 'long',
+          name: '長い板',
+          bodies: [{ bodyKey: firstKey, name: '長い板', color: [0.8, 0.2, 0.1] }],
+        },
+        {
+          id: 'thin',
+          name: '薄い板',
+          bodies: [{ bodyKey: secondKey, name: '薄い板', color: null }],
+        },
+      ],
+      children: [
+        {
+          kind: 'part', id: 'long-1', name: '長い板:1', definitionId: 'long',
+          placement: { position: [3, -7, 11], rotation: [0, 0, 0, 1] },
+        },
+        nested,
+        {
+          kind: 'part', id: 'thin-1', name: '薄い板:1', definitionId: 'thin',
+          placement: { position: [-30, 4, 9], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    };
+
+    const written = await api.exportShapes({ format: 'step', bodies: [], assembly });
+    expect(written.format).toBe('step');
+    if (written.format !== 'step') return;
+    const text = new TextDecoder().decode(written.bytes);
+    expect(text.match(/MANIFOLD_SOLID_BREP/g)).toHaveLength(2);
+    expect(text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\s*\(/g)).toHaveLength(4);
+
+    const read = await api.importShape({ format: 'step', bytes: written.bytes });
+    expect(read.bodies.map((body) => body.volume).sort((a, b) => a - b)).toEqual([6000, 12000]);
+    expect(read.assembly?.name).toBe('主組立');
+    expect(read.assembly?.definitions).toHaveLength(2);
+    expect(read.assembly?.children).toHaveLength(3);
+    const readNested = read.assembly?.children.find((node) => node.kind === 'assembly');
+    expect(readNested?.kind).toBe('assembly');
+    if (readNested?.kind !== 'assembly') throw new Error('子組立が戻りませんでした。');
+    expect(readNested.name).toBe('子組立');
+    expect(readNested.placement.position).toEqual([0, 50, 0]);
+    expect(readNested.children).toHaveLength(1);
+    expect(readNested.children[0]?.placement.position).toEqual([7, 11, 13]);
+    expect(readNested.children[0]?.placement.rotation[2]).toBeCloseTo(Math.SQRT1_2, 6);
+    expect(readNested.children[0]?.placement.rotation[3]).toBeCloseTo(Math.SQRT1_2, 6);
+  });
+
+  it('アセンブリ定義内の形状鍵が欠けていれば、空の直下bodiesでも書き出しを断る', async () => {
+    const assembly: ShapeExportAssembly = {
+      name: '欠落検査',
+      definitions: [{
+        id: 'missing-definition',
+        name: null,
+        bodies: [exportItem('api-assembly-missing')],
+      }],
+      children: [{
+        kind: 'part', id: 'missing-part', name: null, definitionId: 'missing-definition',
+        placement: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      }],
+    };
+    await expect(api.exportShapes({ format: 'step', bodies: [], assembly })).rejects.toMatchObject({
+      name: 'MissingBodiesError',
+      missingKeys: ['api-assembly-missing'],
+    });
   });
 
   it('色を書かない指定では colorWritten が false になり、色の行が入らない(§0.a-0.22)', async () => {

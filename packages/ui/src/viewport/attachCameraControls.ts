@@ -44,6 +44,7 @@ function wheelDeltaInPixels(event: WheelEvent): number {
 export function attachCameraControls(
   canvas: HTMLCanvasElement,
   onChange: () => void,
+  onInteractionChange: (active: boolean) => void = () => {},
 ): CameraControls {
   let state: OrbitState = HOME_ORBIT;
   let dragMode: 'orbit' | 'pan' | null = null;
@@ -68,6 +69,7 @@ export function attachCameraControls(
     lastY = event.clientY;
     // ビューポートの外へ出ても操作が続くようにする。
     canvas.setPointerCapture(event.pointerId);
+    onInteractionChange(true);
     event.preventDefault();
     // 既定動作を止めると焦点が移らないので、Home キーのために自分で当てる。
     canvas.focus({ preventScroll: true });
@@ -94,6 +96,7 @@ export function attachCameraControls(
       return;
     }
     dragMode = null;
+    onInteractionChange(false);
     if (canvas.hasPointerCapture(event.pointerId)) {
       canvas.releasePointerCapture(event.pointerId);
     }
@@ -101,6 +104,9 @@ export function attachCameraControls(
 
   /** 捕捉が外部要因で外れたときも掴んだままにしない。 */
   function onLostPointerCapture(): void {
+    if (dragMode !== null) {
+      onInteractionChange(false);
+    }
     dragMode = null;
   }
 
@@ -153,6 +159,10 @@ export function attachCameraControls(
       onChange();
     },
     detach: () => {
+      if (dragMode !== null) {
+        dragMode = null;
+        onInteractionChange(false);
+      }
       canvas.removeEventListener('pointerdown', beginDrag);
       canvas.removeEventListener('pointermove', moveDrag);
       canvas.removeEventListener('pointerup', endDrag);

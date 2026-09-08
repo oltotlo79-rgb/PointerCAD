@@ -120,7 +120,7 @@ export interface StepReadOptions {
 }
 
 /** 文書の記憶形式。XCAF の属性を持てる形式で、ファイルへは保存しないので中身は問わない。 */
-const STORAGE_FORMAT = 'BinXCAF';
+export const STEP_STORAGE_FORMAT = 'BinXCAF';
 
 /**
  * 取り込み先の長さの単位を決める OCCT の設定名と値。
@@ -131,6 +131,11 @@ const STORAGE_FORMAT = 'BinXCAF';
  */
 const CASCADE_UNIT_NAME = 'xstep.cascade.unit';
 const CASCADE_UNIT_MM = 'MM';
+
+/** STEP の取り込み先を内部単位 mm に戻す。アセンブリ読み込みもこの 1 か所を使う。 */
+export function prepareStepReadUnit(oc: OpenCascadeInstance): void {
+  oc.Interface_Static.SetCVal(CASCADE_UNIT_NAME, CASCADE_UNIT_MM);
+}
 
 /** `TCollection_AsciiString` へ写すときの「非 ASCII を置き換えない(= UTF-8 にする)」指定。 */
 const KEEP_NON_ASCII = 0;
@@ -162,7 +167,7 @@ function decodeCString(raw: string): string {
  * `Restore` は「同じ種類の属性から中身を写す」OCCT の常道で、強制変換を使わずに
  * 派生した型のメソッド(`Get()`)へ辿り着ける唯一の道である。
  */
-function readLabelName(
+export function readStepLabelName(
   oc: OpenCascadeInstance,
   label: TDF_Label,
   keep: Allocations['keep'],
@@ -187,7 +192,7 @@ function readLabelName(
  * 種類(面の色 / 線の色 / 一般)を区別する `XCAFDoc_ColorType` は列挙なので使わない
  * ——親が色かどうかは `IsColor` で確かめられ、区別しなくても「その立体の色」は決まる。
  */
-function readLabelColor(
+export function readStepLabelColor(
   oc: OpenCascadeInstance,
   colorTool: XCAFDoc_ColorTool,
   label: TDF_Label,
@@ -222,7 +227,7 @@ function readLabelColor(
 }
 
 /** OCCT が読み取った単位の名前を、内部で使う 3 通りへ畳む。 */
-function classifyUnit(names: readonly string[]): StepFileLengthUnit {
+export function classifyStepUnit(names: readonly string[]): StepFileLengthUnit {
   const first = (names[0] ?? '').trim().toLowerCase();
   if (first === 'mm' || first === 'millimetre' || first === 'millimeter') {
     return 'mm';
@@ -234,7 +239,7 @@ function classifyUnit(names: readonly string[]): StepFileLengthUnit {
 }
 
 /** ファイルが使っていた長さの単位の名前を読む(読み込みのあとで呼ぶ)。 */
-function readUnitNames(
+export function readStepUnitNames(
   oc: OpenCascadeInstance,
   reader: STEPCAFControl_Reader,
   keep: Allocations['keep'],
@@ -281,12 +286,12 @@ export function readStep(
   const withColors = options.withColors ?? true;
 
   // 取り込み先の単位を mm に固定する(冒頭の実測。既定と同じ値なので冪等)。
-  oc.Interface_Static.SetCVal(CASCADE_UNIT_NAME, CASCADE_UNIT_MM);
+  prepareStepReadUnit(oc);
 
   return withVirtualFileInput(oc, fileName, bytes, (path) => {
     const { keep, release } = createAllocations();
     try {
-      const format = keep(new oc.TCollection_ExtendedString_2(STORAGE_FORMAT, false));
+      const format = keep(new oc.TCollection_ExtendedString_2(STEP_STORAGE_FORMAT, false));
       // 文書そのものは控えへ積まない(Handle が持ち主になる。xcafDocument.ts の注釈 2)。
       const doc = new oc.TDocStd_Document(format);
       const handle = keep(new oc.Handle_TDocStd_Document_2(doc));
@@ -300,7 +305,7 @@ export function readStep(
         throw new Error(STEP_READ_FAILED_MESSAGE);
       }
 
-      const unitNames = readUnitNames(oc, reader, keep);
+      const unitNames = readStepUnitNames(oc, reader, keep);
 
       const main = keep(doc.Main());
       // `.get()` の戻りは借り物なので控えへ積まない。積むのは Handle だけ。
@@ -323,8 +328,8 @@ export function readStep(
         solidFound = solidFound || solid;
         bodies.push({
           shape,
-          name: readLabelName(oc, label, keep),
-          color: withColors ? readLabelColor(oc, colorTool, label, keep) : null,
+          name: readStepLabelName(oc, label, keep),
+          color: withColors ? readStepLabelColor(oc, colorTool, label, keep) : null,
           kind: solid ? 'solid' : 'shell',
         });
       }
@@ -332,7 +337,7 @@ export function readStep(
         throw new Error(STEP_NO_SOLID_MESSAGE);
       }
 
-      return { bodies, unit: classifyUnit(unitNames), unitNames, delete: release };
+      return { bodies, unit: classifyStepUnit(unitNames), unitNames, delete: release };
     } catch (error) {
       // 途中で断ったらその場で全部返す(`allocations.ts` の使い方の見本と同じ)。
       release();

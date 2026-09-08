@@ -20,13 +20,14 @@ import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
 import { placeShape } from '../occt/placeBodies.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from '../occt/pickSubShape.js';
 import { readCafMesh } from '../occt/readCafMesh.js';
-import { readStep } from '../occt/readStep.js';
+import { readStepAssembly } from '../occt/readStepAssembly.js';
 import { readStl } from '../occt/readStl.js';
 import { hasSolid, measureVolume } from '../occt/solidMesh.js';
 import { tessellate } from '../occt/tessellate.js';
 import { normalizeBaseName, writeCafMesh } from '../occt/writeCafMesh.js';
 import { writeStep } from '../occt/writeStep.js';
 import { writeStl } from '../occt/writeStl.js';
+import { writeStepAssembly } from '../occt/xcafAssembly.js';
 import type { RgbTuple } from '../occt/xcafDocument.js';
 import type {
   InterferenceRequest,
@@ -35,12 +36,14 @@ import type {
   MeasureRequest,
   MeasureResult,
   ShapeExportBrepBody,
+  ShapeExportAssembly,
   ShapeExportItem,
   ShapeExportMeshBody,
   ShapeExportMeshQuality,
   ShapeExportRequest,
   ShapeExportResult,
   ShapeImportBody,
+  ShapeImportAssembly,
   ShapeImportRequest,
   ShapeImportResult,
   ShapeInspectMeshIdentity,
@@ -153,6 +156,33 @@ function resolveExportShapes(
     }
     return cached.shape;
   });
+}
+
+/** アセンブリ STEP では、共有定義に載ったボディを 1 回ずつ確保する。 */
+function exportItemsOf(request: ShapeExportRequest): readonly ShapeExportItem[] {
+  if (request.format === 'step' && request.assembly !== undefined) {
+    return request.assembly.definitions.flatMap((definition) => definition.bodies);
+  }
+  return request.bodies;
+}
+
+/** 鍵から引いた OCCT の形を、アセンブリ書き手が受ける定義へ同じ順で詰める。 */
+function assemblyWithShapes(
+  assembly: ShapeExportAssembly,
+  shapes: readonly TopoDS_Shape[],
+): Parameters<typeof writeStepAssembly>[1] {
+  let shapeIndex = 0;
+  const definitions = assembly.definitions.map((definition) => ({
+    id: definition.id,
+    name: definition.name,
+    bodies: definition.bodies.map((body) => ({
+      shape: shapes[shapeIndex++],
+      name: body.name,
+      color: body.color,
+      faceColors: body.faceColors,
+    })),
+  }));
+  return { name: assembly.name, definitions, children: assembly.children };
 }
 
 /**
@@ -821,9 +851,10 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
     },
 
     async exportShapes(request): Promise<ShapeExportResult> {
-      return withAcquiredKeys(request.bodies.map((body) => body.bodyKey), async () => {
+      const exportItems = exportItemsOf(request);
+      return withAcquiredKeys(exportItems.map((body) => body.bodyKey), async () => {
         const oc = await loadOcct();
-        const shapes = resolveExportShapes(cache, request.bodies, request.partId ?? DEFAULT_PART_ID);
+        const shapes = resolveExportShapes(cache, exportItems, request.partId ?? DEFAULT_PART_ID);
 
         // 網羅 `switch`(`default` を作らない)。形式が増えたら、ここが型検査で落ちる
         // ことで配線し忘れが分かる(`ShapeExportRequest` の注釈)。
@@ -833,18 +864,22 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
             // `buildXcafDocument` が持っている。ここで先回りして数えないのは、
             // 同じ文言を 2 か所に置かないため(model の `selectExportBodies` も
             // `nothingToExport` で先に断る)。
-            const written = writeStep(
-              oc,
-              request.bodies.map((item, index) => ({
-                shape: shapes[index],
-                name: item.name,
-                color: item.color,
-                // 面ごとの色(P6 タスク7b+13b)。`StepWriteEntry`(= `XcafShapeEntry`)が
-                // 元から持つ欄なので、依頼の欄をそのまま渡すだけでよい。
-                faceColors: item.faceColors,
-              })),
-              { withColors: request.withColors ?? true },
-            );
+            const written = request.assembly === undefined
+              ? writeStep(
+                  oc,
+                  request.bodies.map((item, index) => ({
+                    shape: shapes[index],
+                    name: item.name,
+                    color: item.color,
+                    // 面ごとの色(P6 タスク7b+13b)。`StepWriteEntry`(= `XcafShapeEntry`)が
+                    // 元から持つ欄なので、依頼の欄をそのまま渡すだけでよい。
+                    faceColors: item.faceColors,
+                  })),
+                  { withColors: request.withColors ?? true },
+                )
+              : writeStepAssembly(oc, assemblyWithShapes(request.assembly, shapes), {
+                  withColors: request.withColors ?? true,
+                });
             return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
           }
           case 'stl': {
@@ -914,14 +949,23 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
         case 'step': {
           // `readStep` が返した形は読み手の持ち物。**必ず `delete()` する**
           // (`rules/06` 10.13 の解放の見分け。忘れると次の読み込みが数倍遅くなる)。
-          const read = readStep(oc, request.bytes, {
+          const read = readStepAssembly(oc, request.bytes, {
             fileName: request.fileName,
             withColors: request.withColors,
           });
           try {
+            const assembly: ShapeImportAssembly = {
+              name: read.name,
+              definitions: read.definitions.map((definition, bodyIndex) => ({
+                id: definition.id,
+                name: definition.name,
+                bodyIndex,
+              })),
+              children: read.children,
+            };
             return {
-              bodies: read.bodies.map((body) =>
-                // `StepReadBody.kind` の型は `SolidBodyKind`(3 種)だが、`readStep.ts` は
+              bodies: read.definitions.map((body) =>
+                // `StepAssemblyDefinition.kind` の型は `SolidBodyKind`(3 種)だが、読み手は
                 // **閉じた立体かどうかだけ**で `'solid' | 'shell'` を決めている
                 // (`kind: solid ? 'solid' : 'shell'`)ので `'mesh'` にはならない。
                 // B-rep を持つ 2 種へここで絞るのは、読み込んだ三角形の形
@@ -936,6 +980,7 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
               ),
               unit: read.unit,
               unitNames: read.unitNames,
+              assembly,
             };
           } finally {
             read.delete();

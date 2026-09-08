@@ -11,6 +11,8 @@ import {
 } from '@pointercad/model';
 import * as THREE from 'three';
 
+import { viewportPixelRatio } from './viewportRenderScale.js';
+
 import { capturePrintPng } from '../file/printView.js';
 import { captureThumbnailPng, THUMBNAIL_SIZE } from '../file/thumbnail.js';
 import type { PointerRay, TrackCandidate } from '../sketch/trackMath.js';
@@ -293,6 +295,8 @@ export interface ViewportScene {
    */
   pointerRay(x: number, y: number): PointerRay | null;
   resize(widthPixels: number, heightPixels: number): void;
+  /** 視点操作中は描画画素を減らし、離したら通常解像度へ戻す。 */
+  setInteractiveRendering(active: boolean): void;
   dispose(): void;
 }
 
@@ -325,9 +329,6 @@ const SPHERE_GRID_LIFT = 0.002;
 
 /** 本アプリは Z 軸が上(計画書 §0.a-0.9)。three.js の既定(Y 上)から変える。 */
 const UP_AXIS = new THREE.Vector3(0, 0, 1);
-
-/** 端末の画素密度をそのまま使うと高精細画面で負荷が跳ね上がるため上限を設ける(NFR-PF-1)。 */
-const MAX_PIXEL_RATIO = 2;
 
 const NEAR_PLANE = 0.05;
 const FAR_PLANE = 200_000;
@@ -479,7 +480,8 @@ function sameSphereGridSpec(a: SphereGridSpec | null, b: SphereGridSpec | null):
 export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   // 背景は CSS(.pcad-viewport の縦グラデーション)に任せ、描画結果だけを重ねる。
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio, MAX_PIXEL_RATIO));
+  let interactiveRendering = false;
+  renderer.setPixelRatio(viewportPixelRatio(globalThis.devicePixelRatio, interactiveRendering));
   renderer.setClearColor(0x000000, 0);
   /*
     ビューの断面表示(FR-111、P6 タスク35、§2.12)。**材質ごとの**クリッピング平面を
@@ -1089,6 +1091,16 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       width = Math.max(widthPixels, 1);
       height = Math.max(heightPixels, 1);
       // CSS の大きさは指定済みなので描画バッファだけを合わせる。
+      renderer.setSize(width, height, false);
+    },
+
+    setInteractiveRendering(active): void {
+      if (interactiveRendering === active) {
+        return;
+      }
+      interactiveRendering = active;
+      renderer.setPixelRatio(viewportPixelRatio(globalThis.devicePixelRatio, interactiveRendering));
+      // CSS の大きさは変えず、drawing buffer だけを操作中/静止時の密度へ切り替える。
       renderer.setSize(width, height, false);
     },
 

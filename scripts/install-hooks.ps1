@@ -1,5 +1,5 @@
 ﻿# PointerCAD gitフックの有効化(rules/00-施行の仕組み.md)
-# core.hooksPath を scripts/hooks に設定し、pre-commit / pre-push を有効にする。
+# core.hooksPath を scripts/hooks に設定し、pre-commit / commit-msg / pre-push を有効にする。
 # クローン直後に必ず1回実行する。
 
 [CmdletBinding()]
@@ -20,7 +20,7 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
 $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd([char[]]"\\/")
 
 $hooksDirectory = Join-Path $root "scripts\hooks"
-foreach ($hookName in @("pre-commit", "pre-push")) {
+foreach ($hookName in @("pre-commit", "commit-msg", "pre-push")) {
     $hookPath = Join-Path $hooksDirectory $hookName
     if (-not (Test-Path -LiteralPath $hookPath -PathType Leaf)) {
         Write-Host "[NG] フックが見つかりません: $hookPath" -ForegroundColor Red

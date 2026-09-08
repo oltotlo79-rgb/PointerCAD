@@ -343,10 +343,23 @@ export {
 // STEP の書き出し(§2.3、タスク7)と読み込み(§2.3・§2.9、タスク8)。
 export {
   writeStep,
+  writeXcafStepDocument,
   type StepWriteEntry,
   type StepWriteOptions,
   type StepWriteResult,
 } from './occt/writeStep.js';
+export {
+  writeStepAssembly,
+  ASSEMBLY_DUPLICATE_DEFINITION_MESSAGE,
+  ASSEMBLY_DUPLICATE_NODE_MESSAGE,
+  ASSEMBLY_EMPTY_DEFINITION_MESSAGE,
+  ASSEMBLY_EMPTY_NODE_MESSAGE,
+  ASSEMBLY_MISSING_DEFINITION_MESSAGE,
+  ASSEMBLY_NO_SHAPE_MESSAGE,
+  type XcafAssemblyDefinition,
+  type XcafAssemblySpec,
+  type XcafAssemblyWriteOptions,
+} from './occt/xcafAssembly.js';
 export {
   readStep,
   STEP_NO_SHAPE_MESSAGE,
@@ -357,6 +370,14 @@ export {
   type StepReadOptions,
   type StepReadResult,
 } from './occt/readStep.js';
+export {
+  readStepAssembly,
+  placementFromStepLocation,
+  STEP_ASSEMBLY_COMPONENT_MESSAGE,
+  STEP_ASSEMBLY_CYCLE_MESSAGE,
+  type StepAssemblyDefinition,
+  type StepAssemblyReadResult,
+} from './occt/readStepAssembly.js';
 // B-rep ↔ バイト列(§0.a-0.9・§0.a-0.10、タスク9)。読み込んだ形を `.pcad` へ抱き込む。
 export {
   readBrepBytes,
@@ -432,6 +453,8 @@ export {
 // 形式は依頼の中の `format` で判別する(§0.a-0.2)。
 export type {
   ShapeExportBrepBody,
+  ShapeExportAssembly,
+  ShapeExportAssemblyDefinition,
   ShapeExportFile,
   ShapeExportItem,
   ShapeExportMeshBody,
@@ -439,8 +462,11 @@ export type {
   ShapeExportRequest,
   ShapeExportResult,
   ShapeImportBody,
+  ShapeImportAssembly,
+  ShapeImportAssemblyDefinition,
   ShapeImportRequest,
   ShapeImportResult,
+  ShapeAssemblyNode,
 } from './types.js';
 // 読み込んだ形のベースボディの段(FR-802、§2.8、タスク10)。model 側(タスク20)が
 // `shapeRef` を鍵にしてこの段を組み立てる。

@@ -31,7 +31,7 @@
  */
 
 import type { FileKind } from '@pointercad/model';
-type SaveFileKind = FileKind | 'pcada';
+export type SaveFileKind = FileKind | 'pcada' | 'zip';
 
 import { t, type MessageKey } from '../i18n/t.js';
 
@@ -165,6 +165,7 @@ interface FileKindSpec {
  * 抱き込むため。既存の `PCAD_FILE_FILTER` と同じ理由)。
  */
 const FILE_KIND_SPECS: Readonly<Record<SaveFileKind, FileKindSpec>> = {
+  zip: { label: 'ZIP', accept: { 'application/zip': ['.zip'] } },
   pcada: { label: 'PointerCAD', descriptionKey: 'assembly.fileType', accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } },
   pcad: {
     label: 'PointerCAD',

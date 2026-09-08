@@ -89,6 +89,7 @@ interface KindFilter {
  * 載っているかどうかだけで確かめる。
  */
 const KIND_FILTERS: Readonly<Record<string, KindFilter | undefined>> = {
+  zip: { name: 'ZIP', extensions: ['zip'] },
   pcada: PCADA_FILE_FILTER,
   pcad: PCAD_FILE_FILTER,
   pcadt: { name: 'PointerCAD', extensions: ['pcadt'] },

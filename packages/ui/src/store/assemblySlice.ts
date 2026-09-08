@@ -13,8 +13,9 @@
 
 import {
   createUndoStack, EMPTY_PART_LIBRARY, pushUndo, redo, undo,
-  type AssemblyDocument, type EmbeddedPartAttachments, type PartDocument, type PartLibrary,
-  type ResolvedAssembly, type SolidBody, type UndoStack,
+  type AssemblyDocument, type AxisSpec, type EmbeddedPartAttachments, type PartDocument, type PartLibrary,
+  solveDrivenJoint, type JointCoordinate, type JointFramePair, type MateResidualTargetPair,
+  type ResolvedAssembly, type RigidPlacement, type SolidBody, type UndoStack,
 } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { AutoSaveRecord } from '@pointercad/io';
@@ -23,6 +24,11 @@ import type { AppearanceInput } from '../viewport/buildSolidGeometry.js';
 import type { MateDiagnosis } from '@pointercad/model';
 import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 import type { AssemblyDragState, AssemblyDragOverlay, AssemblyDragNotice } from '../assembly/dragComponentActions.js';
+import { assemblyMotionPlacements } from '../assembly/animation.js';
+import {
+  commitExplodeDraft, createExplodeDraft, type AssemblyExplodeDraft,
+} from '../assembly/explodeCommands.js';
+import { currentJointSliderValue, jointSliderBounds, jointSliderReference } from '../assembly/jointSlider.js';
 
 export interface AssemblySnapshot {
   readonly document: AssemblyDocument;
@@ -38,6 +44,11 @@ export interface AssemblyView {
   /** 合致の解と理由。保存・Undoへは入れない。 */
   readonly diagnosis: MateDiagnosis | null;
   readonly mateTargetErrors: ReadonlyMap<string, readonly string[]>;
+  /** 一時的なジョイント駆動でも同じ解決済み幾何を使う。 */
+  readonly mateTargets?: ReadonlyMap<string, MateResidualTargetPair>;
+  /** ジョイント対象から一度だけ作った部品局所フレーム。 */
+  readonly jointFrames?: ReadonlyMap<string, JointFramePair>;
+  readonly jointTargetErrors?: ReadonlyMap<string, readonly string[]>;
 }
 
 /** 部品ファイルの選択から配置確定までを、文書の寿命と要求IDに結び付ける一時状態。 */
@@ -57,6 +68,10 @@ export type AssemblyPlacementState =
       /** 確定前のXYZ式。配置操作の正本として文書と同じストアに置く。 */
       readonly sources: readonly [string, string, string];
     };
+
+export type AssemblyMotionNotice =
+  | { readonly kind: 'rangeEnd'; readonly min: number | null; readonly max: number | null; readonly value: number }
+  | { readonly kind: 'failed' };
 
 /** アセンブリのスライスが持つ欄と操作。 */
 export interface AssemblySlice {
@@ -95,6 +110,22 @@ export interface AssemblySlice {
   readonly assemblyDrag: AssemblyDragState | null;
   readonly assemblyDragOverlay: AssemblyDragOverlay | null;
   readonly assemblyDragNotice: AssemblyDragNotice | null;
+  /** 共通時間軸と一時 joint driver の結果。文書・保存・Undo には含めない。 */
+  readonly assemblyMotionTime: number;
+  readonly assemblyMotionPlaying: boolean;
+  readonly assemblyMotionPlacements: ReadonlyMap<string, RigidPlacement> | null;
+  readonly assemblyMotionSourceDocument: AssemblyDocument | null;
+  readonly assemblyMotionJointValues: ReadonlyMap<string, number>;
+  readonly assemblyMotionNotice: AssemblyMotionNotice | null;
+  readonly setAssemblyMotionTime: (time: number) => boolean;
+  readonly setAssemblyMotionPlaying: (playing: boolean) => void;
+  readonly driveAssemblyJoint: (jointId: string, coordinate: JointCoordinate, value: number) => boolean;
+  /** 分解距離のその場入力。確定時だけ applyAssembly を1回呼び、Undoを1段積む。 */
+  readonly assemblyExplodeDraft: AssemblyExplodeDraft | null;
+  readonly assemblyExplodeError: 'invalidExpression' | 'invalidStep' | null;
+  readonly beginAssemblyExplode: () => boolean;
+  readonly cancelAssemblyExplode: () => void;
+  readonly commitAssemblyExplode: (distanceSource: string, name: string, direction?: AxisSpec) => boolean;
   /** 文書の id は新規でも同じ値になり得るため、開く単位の安定 ID を別に持つ。 */
   readonly activeDocumentId: string;
   readonly recoveryRecord: AutoSaveRecord | null;
@@ -106,7 +137,42 @@ export interface AssemblySlice {
 /**
  * 部品を作り直すたびに初期値へ戻す欄。実体は `initialDocumentState.ts` が 1 か所で作る。
  */
-export type AssemblyInitialState = Pick<AssemblySlice, 'assembly'>;
+export type AssemblyInitialState = Pick<AssemblySlice,
+  'assembly'>;
+
+export type AssemblyOwnedInitialState = Pick<AssemblySlice,
+  'assemblyLibrary' | 'assemblyUndoStack' | 'savedAssembly' | 'assemblyFileName'
+  | 'assemblyInitialName' | 'assemblyView' | 'assemblyPlacement' | 'assemblyMateDraft'
+  | 'assemblyDrag' | 'assemblyDragOverlay' | 'assemblyDragNotice' | 'assemblyMotionTime'
+  | 'assemblyMotionPlaying' | 'assemblyMotionPlacements' | 'assemblyMotionSourceDocument'
+  | 'assemblyMotionJointValues' | 'assemblyMotionNotice' | 'assemblyExplodeDraft'
+  | 'assemblyExplodeError' | 'activeDocumentId'>;
+
+/** スライスが所有する一時状態を、起動・文書切替・検査で同じ値へ戻す唯一の正本。 */
+export function createAssemblyInitialState(): AssemblyOwnedInitialState {
+  return {
+    assemblyLibrary: EMPTY_PART_LIBRARY,
+    assemblyUndoStack: null,
+    savedAssembly: null,
+    assemblyFileName: null,
+    assemblyInitialName: null,
+    assemblyView: null,
+    assemblyPlacement: null,
+    assemblyMateDraft: null,
+    assemblyDrag: null,
+    assemblyDragOverlay: null,
+    assemblyDragNotice: null,
+    assemblyMotionTime: 0,
+    assemblyMotionPlaying: false,
+    assemblyMotionPlacements: null,
+    assemblyMotionSourceDocument: null,
+    assemblyMotionJointValues: new Map<string, number>(),
+    assemblyMotionNotice: null,
+    assemblyExplodeDraft: null,
+    assemblyExplodeError: null,
+    activeDocumentId: crypto.randomUUID(),
+  };
+}
 
 export const createAssemblySlice: StateCreator<
   AppState,
@@ -114,20 +180,7 @@ export const createAssemblySlice: StateCreator<
   [],
   Omit<AssemblySlice, keyof AssemblyInitialState>
 > = (set, get) => {
-  const empty = () => ({
-    assemblyLibrary: EMPTY_PART_LIBRARY,
-    assemblyUndoStack: null,
-    savedAssembly: null,
-    assemblyFileName: null,
-    assemblyInitialName: null,
-    assemblyView: null,
-    assemblyPlacement: null as AssemblyPlacementState | null,
-    assemblyMateDraft: null as AssemblyMateDraft | null,
-    assemblyDrag: null,
-    assemblyDragOverlay: null,
-    assemblyDragNotice: null,
-    activeDocumentId: crypto.randomUUID(),
-  });
+  const empty = createAssemblyInitialState;
   function applyHistory(stack: UndoStack<AssemblySnapshot>): void {
     set((state) => ({
       assembly: stack.present.document,
@@ -142,6 +195,9 @@ export const createAssemblySlice: StateCreator<
       assemblyPlacement: null,
       assemblyMateDraft: null,
       assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null,
+      assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
+      assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
+      assemblyExplodeDraft: null, assemblyExplodeError: null,
     }));
   }
   return {
@@ -178,8 +234,94 @@ export const createAssemblySlice: StateCreator<
           canUndo: stack.past.length > 0, canRedo: false, fileMessage: null,
           assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null,
           assemblyDragOverlay: keepOverlay ? overlay : null,
-          assemblyDragNotice: keepOverlay ? current.assemblyDragNotice : null };
+          assemblyDragNotice: keepOverlay ? current.assemblyDragNotice : null,
+          assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
+          assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
+          assemblyExplodeDraft: null, assemblyExplodeError: null };
       });
+    },
+    setAssemblyMotionTime: (time) => {
+      const state = get();
+      const view = state.assemblyView;
+      if (state.assembly === null || view === null || view.sourceDocument !== state.assembly) return false;
+      const motion = assemblyMotionPlacements({ document: state.assembly, resolved: view.resolved,
+        mateTargets: view.mateTargets, jointFrames: view.jointFrames, time });
+      if (!motion.ok) {
+        set({ assemblyMotionPlaying: false, assemblyMotionNotice: { kind: 'failed' } });
+        return false;
+      }
+      set({ assemblyMotionTime: time, assemblyMotionPlacements: motion.placements,
+        assemblyMotionSourceDocument: state.assembly, assemblyMotionNotice: null });
+      return true;
+    },
+    setAssemblyMotionPlaying: (playing) => {
+      if (!playing) {
+        set({ assemblyMotionPlaying: false });
+        return;
+      }
+      const state = get();
+      const ready = state.assembly !== null && state.assembly.presentation.length > 0
+        && state.assemblyView?.sourceDocument === state.assembly;
+      set({ assemblyMotionPlaying: ready });
+    },
+    driveAssemblyJoint: (jointId, coordinate, value) => {
+      const state = get();
+      const document = state.assembly;
+      const view = state.assemblyView;
+      if (document === null || view === null || view.sourceDocument !== document || !Number.isFinite(value)) return false;
+      const joint = document.joints.find((item) => item.id === jointId && !item.suppressed);
+      const frames = view.jointFrames?.get(jointId);
+      if (joint === undefined || frames === undefined) return false;
+      const key = `${jointId}\u0000${coordinate}`;
+      const bounds = jointSliderBounds(document, joint, coordinate);
+      if (!bounds.ok) return false;
+      const initialReference = jointSliderReference(bounds.bounds);
+      const reference = state.assemblyMotionJointValues.get(key)
+        ?? currentJointSliderValue({ document, joint, coordinate, placements: view.resolved.placements,
+          frames, referenceAngle: coordinate === 'angle' ? initialReference : undefined })
+        ?? initialReference;
+      const driven = solveDrivenJoint(document, view.mateTargets ?? new Map(), view.resolved.placements,
+        { jointId, coordinate, value, ...(coordinate === 'angle' ? { referenceAngle: reference } : {}),
+          ...(joint.kind === 'cylindrical' ? { bounds: { min: joint.minValue, max: joint.maxValue } } : {}) },
+        { jointFrames: view.jointFrames });
+      if (!driven.ok) {
+        set({ assemblyMotionPlaying: false, assemblyMotionNotice: { kind: 'failed' } });
+        return false;
+      }
+      const displayed = driven.atLimit ? driven.target : driven.actual;
+      const values = new Map(state.assemblyMotionJointValues).set(key, displayed);
+      set({ assemblyMotionTime: 0, assemblyMotionPlaying: false,
+        assemblyMotionPlacements: driven.placements, assemblyMotionSourceDocument: document,
+        assemblyMotionJointValues: values,
+        assemblyMotionNotice: driven.atLimit
+          ? { kind: 'rangeEnd', min: bounds.bounds.min, max: bounds.bounds.max, value: displayed }
+          : null });
+      return true;
+    },
+    beginAssemblyExplode: () => {
+      const state = get();
+      if (state.assembly === null || state.assemblyPlacement !== null || state.assemblyMateDraft !== null) return false;
+      const result = createExplodeDraft(state.assembly, state.selection);
+      if (!result.ok) return false;
+      set({ assemblyExplodeDraft: result.draft, assemblyExplodeError: null,
+        assemblyMotionPlaying: false });
+      return true;
+    },
+    cancelAssemblyExplode: () => {
+      set({ assemblyExplodeDraft: null, assemblyExplodeError: null });
+    },
+    commitAssemblyExplode: (distanceSource, name, direction) => {
+      const state = get();
+      if (state.assembly === null || state.assemblyExplodeDraft === null) return false;
+      const draft = direction === undefined ? state.assemblyExplodeDraft
+        : { ...state.assemblyExplodeDraft, direction };
+      const result = commitExplodeDraft(state.assembly, draft, distanceSource, name);
+      if (!result.ok) {
+        set({ assemblyExplodeError: result.reason === 'invalidExpression' ? 'invalidExpression' : 'invalidStep' });
+        return false;
+      }
+      get().applyAssembly(result.document);
+      return true;
     },
     setAssemblyFileState: (assemblyFileName, savedAssembly) => {
       set({ assemblyFileName, savedAssembly });
@@ -193,15 +335,19 @@ export const createAssemblySlice: StateCreator<
     undoAssembly: () => {
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.past.length > 0) applyHistory(undo(stack));
-      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null) {
-        set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null });
+      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
+        || get().assemblyExplodeDraft !== null) {
+        set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
+          assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null });
       }
     },
     redoAssembly: () => {
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.future.length > 0) applyHistory(redo(stack));
-      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null) {
-        set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null });
+      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
+        || get().assemblyExplodeDraft !== null) {
+        set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
+          assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null });
       }
     },
   };

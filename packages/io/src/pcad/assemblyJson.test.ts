@@ -270,6 +270,20 @@ describe('アセンブリの往復(FR-601、FR-603、FR-611)', () => {
     expect(roundTrip(document)).toEqual(document);
   });
 
+  it('ジョイント動作の座標と角度の周回基準を省略せず往復する', () => {
+    const document: AssemblyDocument = {
+      ...createAssemblyDocument('組立1'),
+      presentation: [{
+        id: 'step-1', name: '回転', start: 0, end: 1,
+        body: {
+          kind: 'joint', jointId: 'joint-1', coordinate: 'angle',
+          from: ev('350', 350), to: ev('370', 370), referenceAngle: 360,
+        },
+      }],
+    };
+    expect(roundTrip(document)).toEqual(document);
+  });
+
   it('往復した文書をもう一度書き出すと 1 文字も変わらない(正規化が終わっている)', () => {
     const document = richAssembly();
     const first = writeAssemblyDocument(document, { savedAt: SAVED_AT });

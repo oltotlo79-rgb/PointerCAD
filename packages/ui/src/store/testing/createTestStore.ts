@@ -25,6 +25,7 @@ import { DEFAULT_DISPLAY_SETTINGS } from '../../settings/settings.js';
 import type { OrbitState } from '../../viewport/cameraMath.js';
 import type { PartRecomputer } from '../attachKernel.js';
 import { createInitialDocumentState } from '../initialDocumentState.js';
+import { createAssemblyInitialState } from '../assemblySlice.js';
 import { useAppStore } from '../useAppStore.js';
 
 export interface PendingRecompute {
@@ -209,6 +210,7 @@ export function orbitFrom(azimuthDegrees: number, elevationDegrees: number): Orb
 export function resetTestStore(): void {
   useAppStore.setState({
     ...createInitialDocumentState(),
+    ...createAssemblyInitialState(),
     matchWorkPlaneRequestCount: 0,
     focusViewportRequestCount: 0,
     viewportSize: [0, 0],

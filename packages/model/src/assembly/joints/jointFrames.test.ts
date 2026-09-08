@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { crossVec3, dotVec3, lengthVec3, type Vec3 } from '../../sketch/vec3.js';
 import { IDENTITY_PLACEMENT, quaternionFromAxisAngle, type RigidPlacement } from '../placementMath.js';
-import { createJointFrame, jointCoordinateNames, transformJointFrame, validJointFrame, validJointPlacement, type JointFrame } from './jointFrames.js';
+import type { Joint } from '../types.js';
+import {
+  createJointFrame,
+  jointCoordinateNames,
+  jointFramePairFromTargets,
+  transformJointFrame,
+  validJointFrame,
+  validJointPlacement,
+  type JointFrame,
+} from './jointFrames.js';
 
 function frame(axis: Vec3 = [0, 0, 1]): JointFrame {
   const result = createJointFrame([1, 2, 3], axis);
@@ -49,6 +58,49 @@ describe('明示JointFrameと名前付きcoordinate', () => {
     ['revolute', ['angle']], ['slider', ['translation']], ['cylindrical', ['angle', 'translation']], ['ball', []],
   ] as const)('%sの独立coordinateだけを返す', (kind, names) => {
     expect(jointCoordinateNames(kind)).toEqual(names);
+  });
+  it('世界座標の対象を部品局所へ戻し、再配置すると同じ対象になる', () => {
+    const joint: Joint = {
+      id: 'joint-1', name: 'ジョイント1', kind: 'revolute',
+      a: { kind: 'origin', componentId: 'a', element: 'z' },
+      b: { kind: 'origin', componentId: 'b', element: 'z' },
+      minValue: null, maxValue: null, suppressed: false,
+    };
+    const placementA: RigidPlacement = {
+      position: [10, 20, 30],
+      rotation: quaternionFromAxisAngle([0, 0, 1], Math.PI / 2),
+    };
+    const targets = {
+      a: { kind: 'axis' as const, point: [8, 21, 33] as Vec3, direction: [0, 0, 1] as Vec3, radius: null },
+      b: { kind: 'axis' as const, point: [4, 5, 6] as Vec3, direction: [0, 1, 0] as Vec3, radius: null },
+    };
+    const pair = jointFramePairFromTargets(
+      joint,
+      targets,
+      new Map([['a', placementA], ['b', IDENTITY_PLACEMENT]]),
+    );
+    expect(pair).not.toBeNull();
+    if (pair === null) throw new Error('joint frame');
+    expect(transformJointFrame(pair.a, placementA)?.origin).toEqual(targets.a.point);
+    expect(transformJointFrame(pair.a, placementA)?.z).toEqual(targets.a.direction);
+    expect(transformJointFrame(pair.b, IDENTITY_PLACEMENT)?.origin).toEqual(targets.b.point);
+    expect(transformJointFrame(pair.b, IDENTITY_PLACEMENT)?.z).toEqual(targets.b.direction);
+  });
+  it('軸が要るジョイントは向きの無い対象を断り、ballだけは安定した局所軸を補う', () => {
+    const base: Joint = {
+      id: 'joint-1', name: 'ジョイント1', kind: 'revolute',
+      a: { kind: 'origin', componentId: 'a', element: 'origin' },
+      b: { kind: 'origin', componentId: 'b', element: 'origin' },
+      minValue: null, maxValue: null, suppressed: false,
+    };
+    const targets = {
+      a: { kind: 'point' as const, point: [0, 0, 0] as Vec3, direction: null, radius: null },
+      b: { kind: 'point' as const, point: [0, 0, 0] as Vec3, direction: null, radius: null },
+    };
+    const placements = new Map([['a', IDENTITY_PLACEMENT], ['b', IDENTITY_PLACEMENT]]);
+    expect(jointFramePairFromTargets(base, targets, placements)).toBeNull();
+    expect(jointFramePairFromTargets({ ...base, kind: 'ball' }, targets, placements))
+      .toMatchObject({ a: { z: [0, 0, 1] }, b: { z: [0, 0, 1] } });
   });
 });
 

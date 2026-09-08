@@ -517,7 +517,9 @@ function assemblyBundleOf(
   const resolved = view.resolved;
   return buildAssemblyGeometry({
     components: assembly.components,
-    placements: componentDragPlacements(state) ?? resolved.placements,
+    placements: componentDragPlacements(state)
+      ?? (state.assemblyMotionSourceDocument === assembly ? state.assemblyMotionPlacements : null)
+      ?? resolved.placements,
     partKeys: resolved.partKeys,
     bodies: view.bodies,
     appearances: view.appearances,
@@ -849,6 +851,8 @@ export function ViewportCanvas(): React.JSX.Element {
         next.assembly !== previous.assembly ||
         next.assemblyView !== previous.assemblyView ||
         next.assemblyDragOverlay !== previous.assemblyDragOverlay ||
+        next.assemblyMotionPlacements !== previous.assemblyMotionPlacements ||
+        next.assemblyMotionSourceDocument !== previous.assemblyMotionSourceDocument ||
         next.assemblyMateDraft !== previous.assemblyMateDraft ||
         next.hoveredElementId !== previous.hoveredElementId ||
         next.selection !== previous.selection

@@ -100,6 +100,14 @@ export {
   type AutoSaveTimerHandle,
 } from './autoSave.js';
 
+// 分解図・ジョイントの共通時間軸を、固定日時の31枚PNG ZIPへまとめる(P7 タスク22)。
+export {
+  createPngSequenceZip,
+  PNG_SEQUENCE_FRAME_COUNT,
+  type PngSequenceLimits,
+  type PngSequenceZipResult,
+} from './pngSequenceZip.js';
+
 // 書き出し・読み込みの形式(FR-803、FR-802)。**正本は `@pointercad/model` の
 // `exchange/types.ts` と `exchange/exportPart.ts`**(P6 タスク2)へ移したので、ここは
 // 同じ名前を再輸出するだけにしてある(二重定義にしない。io は model に依存している)。

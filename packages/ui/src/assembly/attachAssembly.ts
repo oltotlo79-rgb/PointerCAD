@@ -1,9 +1,11 @@
 /** 文書の寿命に沿って部品を再計算し、配置と共有形状をストアへ渡す。 */
 import {
-  appearanceOf, diagnoseMates, KERNEL_BROKEN_MESSAGE, recomputePart, resolveAssembly,
+  appearanceOf, diagnoseMates, jointFramePairFromTargets, KERNEL_BROKEN_MESSAGE,
+  recomputePart, resolveAssembly,
   resolveMateTarget, selectMateTargetGeometry, solveMates,
   type AssemblyDocument, type AssemblyKernelBridge, type EmbeddedPartAttachments, type PartDocument, type SolveMatesOutcome,
-  type MateDiagnosis, type MateResidualTargetPair, type PartRecomputeResult,
+  type JointFramePair, type MateDiagnosis, type MateResidualTargetPair, type MateTarget,
+  type PartRecomputeResult,
   type ResolvedPart, type RigidPlacement, type SolidBody,
 } from '@pointercad/model';
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
@@ -175,25 +177,41 @@ export function attachAssembly(
     messages.push(...resolved.errors.map((error) => error.message));
     let diagnosis: MateDiagnosis | null = null;
     const mateTargetErrors = new Map<string, readonly string[]>();
+    const jointTargetErrors = new Map<string, readonly string[]>();
+    const targets = new Map<string, MateResidualTargetPair>();
+    const jointFrames = new Map<string, JointFramePair>();
+    const resolveTarget = (target: MateTarget) => resolveMateTarget(target, resolved, {
+      subShape: (partKey, reference) => {
+        const body = bodies.get(partKey)?.find((item) => item.featureId === reference.bodyFeatureId);
+        return body === undefined ? null : selectMateTargetGeometry(body, reference);
+      },
+    });
     const activeMates = request.document.mates.filter((mate) => !mate.suppressed);
-    if (activeMates.length > 0) {
-      const targets = new Map<string, MateResidualTargetPair>();
-      for (const mate of activeMates) {
-        const errors: string[] = [];
-        const resolve = (target: typeof mate.a) => resolveMateTarget(target, resolved, {
-          subShape: (partKey, reference) => {
-            const body = bodies.get(partKey)?.find((item) => item.featureId === reference.bodyFeatureId);
-            return body === undefined ? null : selectMateTargetGeometry(body, reference);
-          },
-        });
-        const a = resolve(mate.a);
-        const b = resolve(mate.b);
-        if (!a.ok) errors.push(a.message);
-        if (!b.ok) errors.push(b.message);
-        if (a.ok && b.ok) targets.set(mate.id, { a: a.target, b: b.target });
-        if (errors.length > 0) mateTargetErrors.set(mate.id, errors);
+    for (const mate of activeMates) {
+      const errors: string[] = [];
+      const a = resolveTarget(mate.a);
+      const b = resolveTarget(mate.b);
+      if (!a.ok) errors.push(a.message);
+      if (!b.ok) errors.push(b.message);
+      if (a.ok && b.ok) targets.set(mate.id, { a: a.target, b: b.target });
+      if (errors.length > 0) mateTargetErrors.set(mate.id, errors);
+    }
+    const activeJoints = request.document.joints.filter((joint) => !joint.suppressed);
+    for (const joint of activeJoints) {
+      const errors: string[] = [];
+      const a = resolveTarget(joint.a);
+      const b = resolveTarget(joint.b);
+      if (!a.ok) errors.push(a.message);
+      if (!b.ok) errors.push(b.message);
+      if (a.ok && b.ok) {
+        const pair = jointFramePairFromTargets(joint, { a: a.target, b: b.target }, resolved.placements);
+        if (pair === null) errors.push(t('assembly.joint.invalidTargets'));
+        else jointFrames.set(joint.id, pair);
       }
-      const outcome = solveMates(request.document, targets, resolved.placements);
+      if (errors.length > 0) jointTargetErrors.set(joint.id, errors);
+    }
+    if (activeMates.length > 0 || activeJoints.length > 0) {
+      const outcome = solveMates(request.document, targets, resolved.placements, { jointFrames });
       diagnosis = diagnoseMates(request.document, outcome);
       resolved = { ...resolved, placements: retainSuccessfulPlacements(request.document, outcome, resolved.placements, lastGoodPlacements) };
     } else {
@@ -205,7 +223,8 @@ export function attachAssembly(
       && overlay.library === request.library && overlay.documentId === request.documentId
       && overlay.version === request.version && overlay.generation === request.generation;
     useAppStore.setState({
-      assemblyView: { sourceDocument: request.document, resolved, bodies, appearances, diagnosis, mateTargetErrors },
+      assemblyView: { sourceDocument: request.document, resolved, bodies, appearances, diagnosis,
+        mateTargetErrors, mateTargets: targets, jointFrames, jointTargetErrors },
       isComputing: false, recomputeProgress: null, recomputeCancelled: false, cacheHits,
       errorMessage: messages.length === 0 ? null : messages.join('\n'),
       ...(handOffOverlay ? { assemblyDragOverlay: null } : {}),

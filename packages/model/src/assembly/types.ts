@@ -207,6 +207,9 @@ export interface Mate {
  */
 export type JointKind = 'revolute' | 'slider' | 'cylindrical' | 'ball';
 
+/** ジョイントに残る、つまみで駆動できる自由度(P7 §0.a-0.69)。 */
+export type JointCoordinate = 'angle' | 'translation';
+
 /**
  * ジョイント 1 つ(FR-618、§0.a-0.21)。
  *
@@ -258,6 +261,13 @@ export interface PresentationStep {
         readonly jointId: string;
         readonly from: ExpressionValue;
         readonly to: ExpressionValue;
+        /**
+         * 円筒ジョイントでは回転と移動を区別する。省略は旧 schema 8 との互換用で、
+         * 自由度が 1 つだけのジョイントに限って解決時に補う。
+         */
+        readonly coordinate?: JointCoordinate;
+        /** 回転角の周回を連続に読む基準。角度を駆動するステップだけが持つ。 */
+        readonly referenceAngle?: number;
       };
 }
 

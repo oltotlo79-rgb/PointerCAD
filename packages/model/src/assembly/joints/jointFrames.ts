@@ -2,8 +2,12 @@
 import {
   addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3,
 } from '../../sketch/vec3.js';
-import { QUATERNION_TOLERANCE, rotateVector, type RigidPlacement } from '../placementMath.js';
-import type { JointKind } from '../types.js';
+import {
+  normalizeQuaternion, QUATERNION_TOLERANCE, rotateVector,
+  type Quaternion, type RigidPlacement,
+} from '../placementMath.js';
+import type { ResolvedMateTarget } from '../constraints/mateTargets.js';
+import type { Joint, JointCoordinate, JointKind } from '../types.js';
 import { createMateFrame, mateUnitDirection } from '../constraints/mateFrames.js';
 
 export interface JointFrame {
@@ -13,7 +17,7 @@ export interface JointFrame {
   readonly z: Vec3;
 }
 export interface JointFramePair { readonly a: JointFrame; readonly b: JointFrame }
-export type JointCoordinate = 'angle' | 'translation';
+export type { JointCoordinate } from '../types.js';
 
 export const JOINT_FRAME_TOLERANCE = 1e-12;
 
@@ -68,6 +72,36 @@ export function transformJointFrame(frame: JointFrame, placement: RigidPlacement
     z: rotateVector(placement.rotation, frame.z),
   };
   return validJointFrame(transformed) ? transformed : null;
+}
+
+/**
+ * 解決済みの世界座標の対象を、solver が反復中に使う部品局所フレームへ戻す。
+ * 形を選び直した時点の軸を一度だけ固定し、trial ごとに補助軸を選び直さない。
+ */
+export function jointFramePairFromTargets(
+  joint: Joint,
+  targets: { readonly a: ResolvedMateTarget; readonly b: ResolvedMateTarget },
+  placements: ReadonlyMap<string, RigidPlacement>,
+): JointFramePair | null {
+  const localFrame = (
+    componentId: string,
+    target: ResolvedMateTarget,
+  ): JointFrame | null => {
+    const placement = placements.get(componentId);
+    if (placement === undefined || !validJointPlacement(placement)) return null;
+    const rotation = normalizeQuaternion(placement.rotation);
+    const inverse: Quaternion = [-rotation[0], -rotation[1], -rotation[2], rotation[3]];
+    const worldOrigin = target.axisOrigin ?? target.point;
+    const localOrigin = rotateVector(inverse, subVec3(worldOrigin, placement.position));
+    const worldAxis = target.direction ?? (joint.kind === 'ball'
+      ? rotateVector(rotation, [0, 0, 1])
+      : null);
+    if (worldAxis === null) return null;
+    return createJointFrame(localOrigin, rotateVector(inverse, worldAxis));
+  };
+  const a = localFrame(joint.a.componentId, targets.a);
+  const b = localFrame(joint.b.componentId, targets.b);
+  return a === null || b === null ? null : { a, b };
 }
 
 /** 球の向き3自由度を単一angleへ押し込まない。値の読取/unwrap/driverはタスク20。 */

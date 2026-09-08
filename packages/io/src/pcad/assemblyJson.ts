@@ -259,6 +259,10 @@ function serializePresentationStep(step: PresentationStep): PresentationStep {
             jointId: step.body.jointId,
             from: serializeExpression(step.body.from),
             to: serializeExpression(step.body.to),
+            ...(step.body.coordinate === undefined ? {} : { coordinate: step.body.coordinate }),
+            ...(step.body.referenceAngle === undefined
+              ? {}
+              : { referenceAngle: step.body.referenceAngle }),
           },
   };
 }
@@ -803,9 +807,28 @@ function readPresentationBody(
   if (!to.ok) {
     return to;
   }
+  let coordinate: 'angle' | 'translation' | undefined;
+  if (Object.hasOwn(record.value, 'coordinate')) {
+    const checked = readLiteral(record.value, 'coordinate', path, ['angle', 'translation'] as const);
+    if (!checked.ok) return checked;
+    coordinate = checked.value;
+  }
+  let referenceAngle: number | undefined;
+  if (Object.hasOwn(record.value, 'referenceAngle')) {
+    const checked = readNumber(record.value, 'referenceAngle', path);
+    if (!checked.ok) return checked;
+    referenceAngle = checked.value;
+  }
   return {
     ok: true,
-    value: { kind: 'joint', jointId: jointId.value, from: from.value, to: to.value },
+    value: {
+      kind: 'joint',
+      jointId: jointId.value,
+      from: from.value,
+      to: to.value,
+      ...(coordinate === undefined ? {} : { coordinate }),
+      ...(referenceAngle === undefined ? {} : { referenceAngle }),
+    },
   };
 }
 

@@ -1375,6 +1375,25 @@
   scrollbar-color: var(--pcad-border-strong) transparent;
 }
 
+.pcad-property-list {
+  display: grid;
+  grid-template-columns: minmax(5em, auto) minmax(0, 1fr);
+  gap: var(--pcad-space-2) var(--pcad-space-3);
+  padding: var(--pcad-space-3);
+  margin: 0;
+}
+
+.pcad-property-list dt {
+  color: var(--pcad-text-muted);
+}
+
+.pcad-property-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 何も無いときの案内(NFR-UX-6)。 */
 .pcad-panel__empty {
   display: flex;
@@ -2366,6 +2385,67 @@ button.pcad-tree__row:focus-visible {
   border: 1px solid var(--pcad-border-strong);
   border-radius: var(--pcad-radius);
   box-shadow: var(--pcad-shadow-soft-raised);
+}
+
+.pcad-popover--explode {
+  top: 16px;
+  left: 16px;
+}
+
+/* 分解とジョイントで共有する、ビューポート下端の時間軸。 */
+.pcad-assembly-motion {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  gap: var(--pcad-space-2);
+  align-items: center;
+  box-sizing: border-box;
+  width: min(680px, calc(100% - 32px));
+  padding: var(--pcad-space-2);
+  color: var(--pcad-text);
+  background: var(--pcad-surface);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius);
+  box-shadow: var(--pcad-shadow-soft-raised);
+  transform: translateX(-50%);
+}
+
+.pcad-assembly-motion > input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 80px;
+}
+
+.pcad-assembly-motion output {
+  min-width: 3.5em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pcad-assembly-motion__joints {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--pcad-space-1);
+  padding: var(--pcad-space-2);
+}
+
+.pcad-assembly-motion > .pcad-assembly-motion__joints {
+  max-width: 260px;
+  padding: 0;
+}
+
+.pcad-assembly-motion__joint {
+  display: grid;
+  grid-template-columns: auto minmax(70px, 1fr) 5.5em auto;
+  gap: var(--pcad-space-1);
+  align-items: center;
+  font-size: var(--pcad-font-size-small);
+}
+
+.pcad-assembly-motion__joint .pcad-field__message {
+  grid-column: 2 / 5;
 }
 
 .pcad-popover__title {

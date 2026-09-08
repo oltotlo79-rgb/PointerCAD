@@ -9,7 +9,7 @@ import {
   toggleSelectedFixed,
   toggleSelectedVisible,
 } from '../../assembly/placeComponentActions.js';
-import { CopyToolIcon, CubeIcon, EmptyBoxIcon, FixConstraintIcon, LayersIcon } from '../icons.js';
+import { CopyToolIcon, CubeIcon, EmptyBoxIcon, FixConstraintIcon, LayersIcon, TransformIcon } from '../icons.js';
 import { AngleConstraintIcon, CoincidentConstraintIcon, ConcentricConstraintIcon,
   DistanceConstraintIcon, ParallelConstraintIcon, TangentConstraintIcon } from '../icons.js';
 import { cancelMate, deleteAssemblyMate, editAssemblyMate, flipAssemblyMate, mateKindReadiness, startMate } from '../../assembly/mateActions.js';
@@ -59,11 +59,21 @@ export function assemblyActionReadiness(
     : { ready: false, reasonKey: 'assembly.tool.selectOneComponentReason' };
 }
 
+export function explodeActionReadiness(
+  assembly: AssemblyDocument,
+  selection: readonly string[],
+): EditToolReadiness {
+  return selection.some((id) => findComponent(assembly, id) !== undefined)
+    ? { ready: true, reasonKey: null }
+    : { ready: false, reasonKey: 'assembly.explode.selectComponent' };
+}
+
 export function AssemblyGroup(): React.JSX.Element | null {
   const state = useAppStore();
   const { assembly, selection, assemblyPlacement: placement, assemblyMateDraft: mateDraft } = state;
   if (assembly === null) return null;
   const readiness = assemblyActionReadiness(assembly, selection);
+  const explodeReadiness = explodeActionReadiness(assembly, selection);
   const placeReady = placement === null;
   const selectedMate = selection.length === 1 ? assembly.mates.find((mate) => mate.id === selection[0]) : undefined;
 
@@ -117,6 +127,14 @@ export function AssemblyGroup(): React.JSX.Element | null {
               else deleteAssemblyMate(selectedMate.id);
             } else if (mateKindReadiness(useAppStore.getState(), id).ready) startMate(id);
           }} />
+        <button type="button" className="pcad-button pcad-button--collapsible"
+          title={t(explodeReadiness.ready ? 'assembly.explode.tooltip'
+            : explodeReadiness.reasonKey ?? 'assembly.explode.selectComponent')}
+          aria-label={t('assembly.tool.explode')} aria-disabled={!explodeReadiness.ready}
+          onClick={() => { if (explodeReadiness.ready) useAppStore.getState().beginAssemblyExplode(); }}>
+          <TransformIcon />
+          <span className="pcad-button__label">{t('assembly.tool.explode')}</span>
+        </button>
       </div>
     </div>
   );

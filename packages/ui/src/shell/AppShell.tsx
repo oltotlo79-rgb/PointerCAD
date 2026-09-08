@@ -17,6 +17,9 @@ import {
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
 import { PlaceComponentPopover } from '../assembly/PlaceComponentPopover.js';
+import { AssemblyMotionControls } from '../assembly/AssemblyMotionControls.js';
+import { AssemblyPropertyPanel } from '../assembly/AssemblyPropertyPanel.js';
+import { ExplodePopover } from '../assembly/ExplodePopover.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
@@ -437,7 +440,11 @@ export function AppShell(): React.JSX.Element {
             (ポップアップとコマンドラインの共通の入口。P4b タスク18 でここから移した)。
           */}
           {documentKind === 'assembly' ? (
-            <PlaceComponentPopover />
+            <>
+              <PlaceComponentPopover />
+              <ExplodePopover />
+              <AssemblyMotionControls />
+            </>
           ) : (
             <NumericInputPopover
               viewportWidth={viewportSize[0]}
@@ -462,7 +469,7 @@ export function AppShell(): React.JSX.Element {
             />
           )}
         </div>
-        <PropertyPanel />
+        {documentKind === 'assembly' ? <AssemblyPropertyPanel /> : <PropertyPanel />}
       </div>
       <StatusBar />
     </div>

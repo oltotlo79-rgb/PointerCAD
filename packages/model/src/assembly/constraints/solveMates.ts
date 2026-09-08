@@ -2,6 +2,7 @@
 import { CONFLICT_REPORT_LIMIT, remainingMessage } from '../../sketch/constraints/diagnose.js';
 import { matrixRank, qrDecomposition } from '../../sketch/constraints/solve.js';
 import { addVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
+import { nonLengthVariables } from '../../units/length.js';
 import {
   exponentialMap, multiplyQuaternion, normalizeQuaternion, rotateVector, type RigidPlacement,
 } from '../placementMath.js';
@@ -17,7 +18,7 @@ import {
 import {
   DEFAULT_RIGID_ANGLE_TOLERANCE, DEFAULT_RIGID_CHARACTERISTIC_LENGTH,
   rigidRowTolerance, scaledRigidJacobian, solveRigid, type RigidEvaluation, type RigidResidualRow,
-  type RigidSolveOptions, type RigidSolveOutcome, type RigidSolveStopReason,
+  type RigidSolveInput, type RigidSolveOptions, type RigidSolveOutcome, type RigidSolveStopReason,
 } from './solveRigid.js';
 
 import type { JointFramePair } from '../joints/jointFrames.js';
@@ -25,6 +26,10 @@ import {
   buildJointResidualReport, prepareJointResiduals, type JointResidualReport, type JointResidualRow,
   type PreparedJointResidual, type SkippedJointResidual,
 } from '../joints/jointResiduals.js';
+import {
+  driveJointRows, jointValue, prepareJointDrive, type JointDriveFailureReason, type JointDriveRequest,
+  type PreparedJointDrive,
+} from '../joints/driveJoint.js';
 
 export type AssemblyConstraintRef = { readonly kind: 'mate' | 'joint'; readonly id: string };
 /** Internal keys never escape into document IDs or user-facing diagnosis. */
@@ -37,6 +42,8 @@ export interface SolveMatesOptions extends RigidSolveOptions {
   /** 全体600とは別の、1成分の上限(既定600)。600を超える指定でも上限は広げない。 */
   readonly maxComponentVariables?: number;
   readonly parameters?: ReadonlyMap<string, number>;
+  /** joint driverの境界式だけに使う。省略時はassembly.parametersの単位から導出する。 */
+  readonly nonLengthVariables?: ReadonlySet<string>;
   /**
    * 上流で姿勢6自由度を固定済みの部品だけを指定する。その姿勢はplacementsから読む。
    * 位置だけのdrag pinは含めない。部分的なdriverの残差はタスク18/20で接続する。
@@ -192,6 +199,90 @@ export interface SolveMatesOutcome {
   readonly branchViolations: readonly string[];
 }
 
+export type SolveDrivenJointOutcome = {
+  readonly ok: true;
+  readonly placements: Map<string, RigidPlacement>;
+  readonly outcome: SolveMatesOutcome;
+  readonly requested: number;
+  readonly target: number;
+  readonly actual: number;
+  readonly referenceAngle?: number;
+  readonly atLimit: boolean;
+  readonly outOfRange: boolean;
+} | {
+  readonly ok: false;
+  readonly reason: JointDriveFailureReason | 'solveFailed';
+  readonly placements: Map<string, RigidPlacement>;
+  readonly outcome: SolveMatesOutcome | null;
+};
+
+/** 一時driverの成否と配置を原子的に返す。保存・履歴・恒久DOFを変更しない。 */
+export function solveDrivenJoint(
+  assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
+  initial: ReadonlyMap<string, RigidPlacement>, request: JointDriveRequest, options: SolveMatesOptions = {},
+): SolveDrivenJointOutcome {
+  const now = options.now ?? (() => performance.now());
+  const start = options.maxTimeMs === undefined ? 0 : now();
+  const failure = (reason: JointDriveFailureReason | 'solveFailed', outcome: SolveMatesOutcome | null = null): SolveDrivenJointOutcome => {
+    const placements = new Map(initial);
+    return { ok: false, reason, placements, outcome: outcome === null ? null : { ...outcome, placements } };
+  };
+  const matches = assembly.joints.filter((joint) => joint.id === request.jointId);
+  if (matches.length > 1) return failure('duplicateJoint');
+  const activeIds = new Set(assembly.components.filter((component) => !component.suppressed).map((component) => component.id));
+  const prepared = prepareJointDrive({ joint: matches[0], frames: options.jointFrames?.get(request.jointId),
+    placements: new Map([...initial].filter(([id]) => activeIds.has(id))), request,
+    parameters: options.parameters ?? assemblyVariables(assembly),
+    nonLengthVariables: options.nonLengthVariables ?? nonLengthVariables(assembly.parameters) });
+  if (!prepared.ok) return failure(prepared.reason);
+  const remaining = options.maxTimeMs === undefined ? undefined : Math.max(0, options.maxTimeMs - (now() - start));
+  const { drivenValue, ...outcome } = solveMatesCore(assembly, targets, initial,
+    { ...options, maxTimeMs: remaining, now }, prepared.drive);
+  if (!outcome.converged || drivenValue === undefined || !Number.isFinite(drivenValue)) return failure('solveFailed', outcome);
+  return { ok: true, placements: outcome.placements, outcome, requested: prepared.drive.requested,
+    target: prepared.drive.target, actual: drivenValue,
+    referenceAngle: request.coordinate === 'angle' ? drivenValue : undefined,
+    atLimit: prepared.drive.atLimit, outOfRange: prepared.drive.outOfRange };
+}
+
+interface DrivenState {
+  readonly placements: ReadonlyMap<string, RigidPlacement>;
+  readonly referenceAngle?: number;
+}
+
+/** unwrap参照は受理済みBaseの一部。evaluateの順序で動くクロージャ状態を持たない。 */
+function solveDrivenGroup(input: RigidSolveInput<ReadonlyMap<string, RigidPlacement>>,
+  variableSet: MateVariableSet, drive: PreparedJointDrive): {
+    readonly result: RigidSolveOutcome<ReadonlyMap<string, RigidPlacement>>;
+    readonly actual?: number;
+  } {
+  const valueInput = (state: DrivenState, increments?: readonly number[]) => ({ joint: drive.joint,
+    coordinate: drive.coordinate, placements: state.placements, referenceAngle: state.referenceAngle,
+    variableSet, increments, characteristicLength: input.options?.characteristicLength });
+  const solved = solveRigid<DrivenState>({
+    initial: { placements: input.initial, referenceAngle: drive.referenceAngle }, variables: input.variables,
+    options: input.options,
+    evaluate: (state, increments) => {
+      const permanent = input.evaluate(state.placements, increments);
+      const driver = driveJointRows({ ...valueInput(state, increments), target: drive.target });
+      if (!driver.ok) return { ...permanent, valid: false };
+      // 公開角度値(deg)も1e-9以内で合わせる。永久行のrad許容は変えない。
+      const rows = driver.rows.map((row) => drive.coordinate === 'angle'
+        ? { ...row, tolerance: Math.min(input.options?.angleTolerance ?? DEFAULT_RIGID_ANGLE_TOLERANCE, 1e-9 * Math.PI / 180) } : row);
+      return { ...permanent, rows: [...permanent.rows, ...rows] };
+    },
+    retract: (state, increments) => {
+      const current = jointValue(valueInput(state, increments));
+      return { placements: input.retract(state.placements, increments),
+        referenceAngle: drive.coordinate === 'angle' && current.ok ? current.value : state.referenceAngle };
+    },
+    branchCandidates: input.branchCandidates === undefined ? undefined
+      : (state, violations) => input.branchCandidates?.(state.placements, violations) ?? [],
+  });
+  const current = jointValue(valueInput(solved.base));
+  return { result: { ...solved, base: solved.base.placements }, actual: current.ok ? current.value : undefined };
+}
+
 /** Δtは世界並進へ足す。composePlacement(delta,base)はここでは使わない。 */
 export function applyMateIncrements(
   placements: ReadonlyMap<string, RigidPlacement>, variableSet: MateVariableSet,
@@ -305,6 +396,14 @@ export function solveMates(
   assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
   initial: ReadonlyMap<string, RigidPlacement>, options: SolveMatesOptions = {},
 ): SolveMatesOutcome {
+  return solveMatesCore(assembly, targets, initial, options);
+}
+
+function solveMatesCore(
+  assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
+  initial: ReadonlyMap<string, RigidPlacement>, options: SolveMatesOptions,
+  drive?: PreparedJointDrive,
+): SolveMatesOutcome & { readonly drivenValue?: number } {
   const now = options.now ?? (() => performance.now());
   const start = options.maxTimeMs === undefined ? 0 : now();
   const remainingTime = () => options.maxTimeMs === undefined ? undefined
@@ -354,6 +453,7 @@ export function solveMates(
   let residualSquare = 0;
   let maxResidual = 0;
   let iterations = 0;
+  let drivenValue: number | undefined;
 
   for (const group of solveGroups) {
     const groupIds = new Set(group.componentIds);
@@ -383,12 +483,16 @@ export function solveMates(
       variables: group.componentIds.length * 6, maximum: componentLimit });
     // 可動側が上限でも、固定同士の診断(変数0)は計算量を増やさず証明できる。
     const limited = group.componentIds.length > 0 && (allVariables.tooMany || tooLarge);
-    const result = limited ? null : solveRigid<ReadonlyMap<string, RigidPlacement>>({
+    const solveInput: RigidSolveInput<ReadonlyMap<string, RigidPlacement>> | null = limited ? null : {
       initial: new Map(placements), variables, evaluate,
       retract: (base, step) => applyMateIncrements(base, variableSet, step),
       branchCandidates: (base, violations) => branchCandidates(base, violations, branchGeometry, variableSet),
       options: { ...options, maxTimeMs: remainingTime(), now },
-    });
+    };
+    const driven = solveInput === null || drive === undefined || !group.jointIds.includes(drive.joint.jointId)
+      ? null : solveDrivenGroup(solveInput, variableSet, drive);
+    const result = solveInput === null ? null : driven?.result ?? solveRigid(solveInput);
+    if (driven !== null) drivenValue = driven.actual;
     if (result !== null) {
       for (const id of group.componentIds) {
         const placement = result.base.get(id);
@@ -455,7 +559,8 @@ export function solveMates(
   return { placements, converged: status === 'converged', iterations,
     residualNorm: Math.sqrt(residualSquare), maxResidual,
     diagnosis: { status, components, limits, constantConflicts, constantJointConflicts, unsupportedJointIds },
-    skipped, branchViolations, skippedJoints, jointBranchViolations };
+    skipped, branchViolations, skippedJoints, jointBranchViolations,
+    ...(drive === undefined ? {} : { drivenValue }) };
 }
 
 /** 転置QRは行の独立集合だけに使う。rank/gaugeはsolverの結果を上書きしない。 */

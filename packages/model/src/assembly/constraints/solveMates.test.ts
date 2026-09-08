@@ -1,5 +1,6 @@
-import { expressionValueFromNumber } from '@pointercad/expression';
+import { evaluateExpression, expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
+import * as jointDriving from '../../index.js';
 
 import { addVec3, type Vec3 } from '../../sketch/vec3.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from '../createAssemblyDocument.js';
@@ -56,6 +57,205 @@ function jointFixture(kind: JointKind = 'ball') {
   placements: new Map<string, RigidPlacement>([['ground', IDENTITY_PLACEMENT], ['moving', IDENTITY_PLACEMENT]]),
   frames: new Map<string, JointFramePair>([['j', { a: JOINT_FRAME, b: JOINT_FRAME }]]) };
 }
+
+describe('P7-20 一時driverを同一系で解き、文書へ書き戻さない', () => {
+  it.each([
+    ['revolute', 'angle', 30], ['revolute', 'angle', -30], ['slider', 'translation', 15],
+    ['slider', 'translation', -15], ['cylindrical', 'angle', 30], ['cylindrical', 'translation', 15],
+  ] as const)('%sの%sを%dへ実求解し、永久DOFを減らさない', (kind, coordinate, target) => {
+    const data = jointFixture(kind), before = structuredClone(data);
+    const result = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements,
+      { jointId: 'j', coordinate, value: target, referenceAngle: 0 }, { jointFrames: data.frames });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(Math.abs(result.actual - target)).toBeLessThan(1e-9);
+    expect(result.outcome.converged).toBe(true);
+    const diagnosis = diagnoseMates(data.assembly, result.outcome);
+    expect(diagnosis.complete).toBe(true);
+    expect(diagnosis.remainingDegreesOfFreedom).toBe(kind === 'cylindrical' ? 2 : 1);
+    expect(result.placements.get('ground')).toBe(IDENTITY_PLACEMENT);
+    expect(data).toEqual(before);
+  });
+  it.each([[170, 190], [-170, -190], [0, 450], [0, -450]] as const)('参照%dから%dへのdriveは受理済み状態で周回を引き継ぐ', (start, target) => {
+    const data = jointFixture('revolute');
+    data.placements.set('moving', { ...IDENTITY_PLACEMENT, rotation: quaternionFromAxisAngle([0, 0, 1], -start * Math.PI / 180) });
+    const result = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements,
+      { jointId: 'j', coordinate: 'angle', value: target, referenceAngle: start }, { jointFrames: data.frames });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(Math.abs(result.actual - target)).toBeLessThan(1e-9);
+    expect(result.referenceAngle).toBe(result.actual);
+    expect(data.placements.get('ground')).toBe(IDENTITY_PLACEMENT);
+  });
+  it('145度要求は120度へclampして実求解し、要求と適用を分ける', () => {
+    const data = jointFixture('revolute');
+    data.assembly.joints[0] = { ...data.assembly.joints[0], minValue: expressionValueFromNumber(30), maxValue: expressionValueFromNumber(120) };
+    const result = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements,
+      { jointId: 'j', coordinate: 'angle', value: 145, referenceAngle: 0 }, { jointFrames: data.frames });
+    expect(result).toMatchObject({ ok: true, requested: 145, target: 120, atLimit: true, outOfRange: true });
+    if (!result.ok) throw new Error(result.reason);
+    expect(Math.abs(result.actual - 120)).toBeLessThan(1e-9);
+  });
+  it('sliderのdriveでmate接続した別部品も動き、先にjointだけ解かない', () => {
+    const data = jointFixture('slider');
+    data.assembly.components.push(component('linked'));
+    data.assembly.mates = [...data.assembly.mates, mate('connection', 'coincident', 'moving', 'linked')];
+    data.placements.set('linked', IDENTITY_PLACEMENT);
+    data.targets.set('connection', { a: point([0, 0, 0]), b: point([0, 0, 0]) });
+    const result = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements,
+      { jointId: 'j', coordinate: 'translation', value: 15 }, { jointFrames: data.frames });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(Math.abs((result.placements.get('linked')?.position[2] ?? 0) - 15)).toBeLessThan(1e-9);
+    expect(diagnoseMates(data.assembly, result.outcome).rows.every((r) => r.satisfied)).toBe(true);
+    expect(result.outcome.diagnosis.components).toHaveLength(1);
+  });
+  it('非零腕のrevoluteをdriveすると取付点を保つ並進も同時に解く', () => {
+    const data = jointFixture('revolute');
+    data.frames.set('j', { a: { ...JOINT_FRAME, origin: [3, 4, 5] }, b: { ...JOINT_FRAME, origin: [3, 4, 5] } });
+    const result = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements,
+      { jointId: 'j', coordinate: 'angle', value: 30, referenceAngle: 0 }, { jointFrames: data.frames });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    const placement = result.placements.get('moving');
+    if (placement === undefined) throw new Error('配置なし');
+    const mount = applyPlacementToPoint(placement, [3, 4, 5]);
+    expect(Math.hypot(mount[0] - 3, mount[1] - 4, mount[2] - 5)).toBeLessThan(1e-9);
+    expect(Math.abs(result.actual - 30)).toBeLessThan(1e-9);
+  });
+  it.each(['fixed', 'iterations', 'time', 'missing', 'duplicate', 'suppressed'] as const)('%sの失敗は初期配置と全入力を原子的に保持する', (reason) => {
+    const data = jointFixture('revolute');
+    if (reason === 'fixed') data.assembly.components = data.assembly.components.map((c) => ({ ...c, fixed: true }));
+    if (reason === 'duplicate') data.assembly.joints.push({ ...data.assembly.joints[0] });
+    if (reason === 'suppressed') data.assembly.components[1] = { ...data.assembly.components[1], suppressed: true };
+    const before = structuredClone(data);
+    const result = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements,
+      { jointId: reason === 'missing' ? 'absent' : 'j', coordinate: 'angle', value: 30, referenceAngle: 0 },
+      { jointFrames: data.frames, ...(reason === 'iterations' ? { maxIterations: 0 } : {}),
+        ...(reason === 'time' ? { maxTimeMs: 0, now: () => 0 } : {}) });
+    expect(result.ok).toBe(false);
+    expect(result.placements).toEqual(data.placements);
+    expect(data).toEqual(before);
+  });
+  it('同じdrive20回とmap逆順は配置・trace・現在値まで決定的', () => {
+    const data = jointFixture('revolute');
+    const request = { jointId: 'j', coordinate: 'angle' as const, value: 30, referenceAngle: 0 };
+    const expected = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements, request, { jointFrames: data.frames });
+    expect(expected.ok).toBe(true);
+    for (let i = 0; i < 20; i += 1) expect(jointDriving.solveDrivenJoint(data.assembly, data.targets,
+      new Map([...data.placements].reverse()), request, { jointFrames: data.frames })).toEqual(expected);
+  });
+  it('範囲外の通常solveMatesは配置をclampせず、driverを文書へ残さない', () => {
+    const data = jointFixture('slider');
+    data.assembly.joints[0] = { ...data.assembly.joints[0], maxValue: expressionValueFromNumber(120) };
+    data.placements.set('moving', at([0, 0, 145]));
+    const before = structuredClone(data);
+    const ordinary = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(ordinary.placements.get('moving')?.position[2]).toBe(145);
+    const result = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements,
+      { jointId: 'j', coordinate: 'translation', value: 60 }, { jointFrames: data.frames });
+    expect(result.ok).toBe(true);
+    expect(solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames })).toEqual(ordinary);
+    expect(data).toEqual(before);
+  });
+});
+
+describe('P7-20 M1/L1: 単位付き境界と公開zeroの実solve回帰', () => {
+  const cases = [
+    ['none', '', 2, 2], ['none', 'mm', 2, 2], ['none', 'in', 2, 50.8],
+    ['degree', '', 2, 2], ['degree', 'mm', 2, 2], ['degree', 'in', 2, 50.8],
+    ['mm', '', 25.4, 25.4], ['mm', 'mm', 25.4, 25.4], ['mm', 'in', 25.4, 25.4],
+  ] as const;
+  for (const kind of ['slider', 'cylindrical'] as const) {
+    it.each(cases)(`${kind}: %s変数×%s節のmin/maxを失わずclampして実求解する`, (unit, suffix, parameter, limit) => {
+      const data = jointFixture(kind);
+      const parameters = [{ name: 'gain', unit, value: expressionValueFromNumber(parameter), description: '' }];
+      const source = suffix === '' ? 'gain*1' : `(gain*1)${suffix}`;
+      const control = evaluateExpression(source, { variables: new Map([['gain', parameter]]),
+        nonLengthVariables: new Set(unit === 'mm' ? [] : ['gain']) });
+      expect(control).toMatchObject({ ok: true, value: { value: limit } });
+      for (const side of ['lower', 'upper', 'both'] as const) {
+        const bounds = { min: side === 'upper' ? null : { source: `-(${source})`, value: -999, display: '-999' },
+          max: side === 'lower' ? null : { source, value: 999, display: '999' } };
+        const assembly = { ...data.assembly, parameters, joints: [{ ...data.assembly.joints[0],
+          minValue: bounds.min, maxValue: bounds.max }] };
+        for (const requested of [-30, 30]) {
+          const before = structuredClone({ assembly, placements: data.placements, bounds });
+          const result = jointDriving.solveDrivenJoint(assembly, data.targets, data.placements,
+            { jointId: 'j', coordinate: 'translation', value: requested,
+              ...(kind === 'cylindrical' ? { bounds } : {}) }, { jointFrames: data.frames });
+          const min = side === 'upper' ? -Infinity : -limit;
+          const max = side === 'lower' ? Infinity : limit;
+          const target = Math.min(max, Math.max(min, requested));
+          expect(result).toMatchObject({ ok: true, requested, target,
+            atLimit: target === min || target === max, outOfRange: requested < min || requested > max });
+          if (!result.ok) throw new Error(result.reason);
+          expect(Math.abs(result.actual - target)).toBeLessThan(1e-9);
+          expect(result.placements.get('ground')).toBe(IDENTITY_PLACEMENT);
+          expect(result.outcome.converged).toBe(true);
+          expect({ assembly, placements: data.placements, bounds }).toEqual(before);
+        }
+      }
+    });
+  }
+  it('明示した数値Mapと非長さ集合をdriverだけへ渡し、空集合による長さ扱いも保つ', () => {
+    const data = jointFixture('slider');
+    const bounds = { min: null, max: { source: '(gain*1)in', value: 999, display: '999' } };
+    const request = { jointId: 'j', coordinate: 'translation' as const, value: 30, bounds };
+    const options = { jointFrames: data.frames, parameters: new Map([['gain', 2]]) };
+    expect(jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements, request, options))
+      .toMatchObject({ ok: true, target: 2, atLimit: true, outOfRange: true });
+    expect(jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements, request,
+      { ...options, nonLengthVariables: new Set(['gain']) }))
+      .toMatchObject({ ok: true, target: 30, atLimit: false, outOfRange: false });
+    const assembly = { ...data.assembly, parameters: [{ name: 'gain', unit: 'none' as const,
+      value: expressionValueFromNumber(2), description: '' }] };
+    expect(jointDriving.solveDrivenJoint(assembly, data.targets, data.placements, request,
+      { ...options, nonLengthVariables: new Set() })).toMatchObject({ ok: true, target: 2 });
+  });
+  it.each(['revolute', 'cylindrical'] as const)('%s.angleの通常式と明示参照を変えない', (kind) => {
+    const data = jointFixture(kind);
+    const assembly = { ...data.assembly, parameters: [{ name: 'gain', unit: 'none' as const,
+      value: expressionValueFromNumber(2), description: '' }] };
+    const bounds = { min: null, max: { source: 'gain*20', value: 999, display: '999' } };
+    const request = { jointId: 'j', coordinate: 'angle' as const, value: 30, bounds };
+    expect(jointDriving.solveDrivenJoint(assembly, data.targets, data.placements, request, { jointFrames: data.frames }))
+      .toMatchObject({ ok: false, reason: 'invalidReference' });
+    const result = jointDriving.solveDrivenJoint(assembly, data.targets, data.placements,
+      { ...request, referenceAngle: 0 }, { jointFrames: data.frames });
+    expect(result).toMatchObject({ ok: true, target: 30, atLimit: false, outOfRange: false });
+    if (!result.ok) throw new Error(result.reason);
+    expect(Math.abs(result.actual - 30)).toBeLessThan(1e-9);
+  });
+  it('通常mateの旧評価結果にdriver専用の単位metadataを適用しない', () => {
+    const data = boxes();
+    const assembly = { ...data.assembly, parameters: [{ name: 'gain', unit: 'none' as const,
+      value: expressionValueFromNumber(2), description: '' }],
+      mates: [{ ...data.assembly.mates[0], value: { source: '(gain*1)in', value: 999, display: '999' } }] };
+    const ordinary = solveMates(assembly, data.targets, data.placements);
+    expect(ordinary.converged).toBe(true);
+    expect(solveMates(assembly, data.targets, data.placements, { nonLengthVariables: new Set(['gain']) })).toEqual(ordinary);
+    const literal = { ...assembly, mates: [{ ...assembly.mates[0], value: expressionValueFromNumber(2) }] };
+    expect(solveMates(literal, data.targets, data.placements)).toEqual(ordinary);
+  });
+  it.each([['revolute', 'angle'], ['slider', 'translation'], ['cylindrical', 'angle'],
+    ['cylindrical', 'translation']] as const)('%s.%sの-0要求/境界は成功結果にも-0を残さない', (kind, coordinate) => {
+    const data = jointFixture(kind);
+    const before = structuredClone(data);
+    for (const bounded of [false, true]) {
+      const zero = { source: '-0', value: -0, display: '-0' };
+      const result = jointDriving.solveDrivenJoint(data.assembly, data.targets, data.placements,
+        { jointId: 'j', coordinate, value: -0, referenceAngle: -0,
+          bounds: { min: bounded ? zero : null, max: bounded ? zero : null } }, { jointFrames: data.frames });
+      expect(result).toMatchObject({ ok: true, requested: 0, target: 0, actual: 0, atLimit: bounded, outOfRange: false });
+      if (!result.ok) throw new Error(result.reason);
+      for (const number of [result.requested, result.target, result.actual, result.referenceAngle]) {
+        expect(Object.is(number, -0)).toBe(false);
+      }
+    }
+    expect(data).toEqual(before);
+  });
+});
 
 describe('P7-19 jointとmateの同一ソルバー・同一診断', () => {
   it.each([['revolute', 5, 1], ['slider', 5, 1], ['cylindrical', 4, 2], ['ball', 3, 3]] as const)('%sの並進と傾きを解き%d行・DOF%dで診断する', (kind, count, dof) => {

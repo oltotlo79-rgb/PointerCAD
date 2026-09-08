@@ -91,7 +91,7 @@ export function prepareJointResiduals(input: JointResidualPreparationInput): Joi
   return { joints, skipped };
 }
 
-interface TrialJointFrame extends TrialGeometry {
+export interface TrialJointFrame extends TrialGeometry {
   readonly x: Vec3;
   readonly y: Vec3;
   readonly z: Vec3;
@@ -189,6 +189,21 @@ function validIncrements(increments: readonly number[], variableCount: number): 
     if (typeof value !== 'number' || !Number.isFinite(value)) return false;
   }
   return true;
+}
+
+/** 値読取と一時driverにも、検証済みの同じtrial幾何を渡す。 */
+export function jointTrialFrames(input: JointResidualInput, joint: PreparedJointResidual):
+  | { readonly ok: true; readonly a: TrialJointFrame; readonly b: TrialJointFrame }
+  | { readonly ok: false; readonly reason: JointResidualSkipReason } {
+  if (input.increments !== undefined && !validIncrements(input.increments, input.variableSet.variables.length)) {
+    return { ok: false, reason: 'invalidIncrement' };
+  }
+  const a = input.placements.get(joint.componentA), b = input.placements.get(joint.componentB);
+  if (a === undefined || b === undefined) return { ok: false, reason: 'dangling' };
+  if (!validJointPlacement(a) || !validJointPlacement(b)
+    || !validJointFrame(joint.frames.a) || !validJointFrame(joint.frames.b)) return { ok: false, reason: 'invalidFrame' };
+  return { ok: true, a: trialFrame(joint.frames.a, joint.componentA, a, input),
+    b: trialFrame(joint.frames.b, joint.componentB, b, input) };
 }
 
 export function buildJointResidualReport(input: JointResidualInput): JointResidualReport {

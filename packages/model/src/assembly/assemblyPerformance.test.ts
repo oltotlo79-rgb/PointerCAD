@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { addVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
 import { buildMateResidualReport, prepareMateResiduals, type MateResidualTargetPair } from './constraints/mateResiduals.js';
-import { applyMateIncrements, diagnoseMates, solveMates } from './constraints/solveMates.js';
+import { applyMateIncrements, diagnoseMates, solveDrivenJoint, solveMates } from './constraints/solveMates.js';
 import { solveRigid, type RigidSolveInput } from './constraints/solveRigid.js';
 import { collectMateVariables } from './constraints/mateVariables.js';
 import {
@@ -14,6 +14,49 @@ import {
 import type { AssemblyComponent, Joint, JointKind, Mate } from './types.js';
 import type { JointFrame, JointFramePair } from './joints/jointFrames.js';
 import { buildJointResidualReport, prepareJointResiduals } from './joints/jointResiduals.js';
+
+describe('P7-20 20部品の一時joint drive', () => {
+  it('単一連結成分114変数を最大5反復で駆動し、全体中央値16ms以内', () => {
+    const frame: JointFrame = { origin: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+    const components: AssemblyComponent[] = Array.from({ length: 20 }, (_, i) => ({ id: String(i), name: String(i),
+      source: { kind: 'part', partRef: 'part' }, placement: DEFAULT_COMPONENT_PLACEMENT,
+      fixed: i === 0, visible: true, suppressed: false }));
+    const joints: Joint[] = Array.from({ length: 19 }, (_, i) => ({ id: `drive-${i}`, name: `drive-${i}`, kind: 'slider',
+      a: { kind: 'origin', componentId: String(i + 1), element: 'origin' },
+      b: { kind: 'origin', componentId: String(i), element: 'origin' }, minValue: null, maxValue: null, suppressed: false }));
+    const assembly = { ...createAssemblyDocument('20部品drive'), components, joints };
+    const placements = new Map(components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    const jointFrames = new Map(joints.map((j) => [j.id, { a: frame, b: frame }]));
+    const targets = new Map<string, MateResidualTargetPair>();
+    const request = { jointId: 'drive-0', coordinate: 'translation' as const, value: 15 };
+    const run = () => solveDrivenJoint(assembly, targets, placements, request, { jointFrames, maxIterations: 5 });
+    const check = (result: ReturnType<typeof run>) => {
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(result.reason);
+      expect(Math.abs(result.actual - 15)).toBeLessThan(1e-9);
+      expect(result.outcome.iterations).toBeLessThanOrEqual(5);
+      expect(result.outcome.diagnosis.components).toHaveLength(1);
+      expect(result.outcome.diagnosis.components[0].variables).toBe(114);
+      expect(result.outcome.diagnosis.components[0].jointRows).toHaveLength(95);
+      expect(result.outcome.diagnosis.components[0].remainingDegreesOfFreedom).toBe(19);
+    };
+    expect(assembly.components).toHaveLength(20);
+    expect(assembly.joints).toHaveLength(19);
+    for (let i = 0; i < 3; i += 1) check(run());
+    const samples: number[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const start = performance.now();
+      const result = run();
+      samples.push(performance.now() - start);
+      check(result);
+    }
+    const medianMs = [...samples].sort((a, b) => a - b)[3];
+    console.log('[P7-20 20part drive median]', JSON.stringify({ components: 20, joints: 19, variables: 114,
+      maximumIterations: 5, warmups: 3, samples, medianMs, budgetMs: 16 }));
+    expectWithinBudget(medianMs, 16, 'P7-20 20部品のjoint drive');
+    expect([...placements.values()].every((placement) => placement === IDENTITY_PLACEMENT)).toBe(true);
+  });
+});
 
 function fixture(groupCount = 1) {
   const size = 50 / groupCount;

@@ -414,6 +414,80 @@ describe('P7-19 jointとmateの同一ソルバー・同一診断', () => {
 });
 
 describe('P7タスク15の検証表', () => {
+  for (const epsilon of [1e-7, 1e-12]) {
+    it.each(['auto', 'normal', 'qr'] as const)(`%sは実2平面の複数強列に従属するε=${epsilon}の自由方向を増幅しない`, (linearSolver) => {
+      const norm = Math.hypot(1, epsilon);
+      const first: Vec3 = [1 / norm, 0, epsilon / norm], second: Vec3 = [0, 1 / norm, epsilon / norm];
+      const assembly = { ...createAssemblyDocument('傾きが微小な直交2平面'),
+        components: [component('ground', true), component('moving')], mates: [mate('first'), mate('second')] };
+      const placements = new Map([['ground', IDENTITY_PLACEMENT], ['moving', IDENTITY_PLACEMENT]]);
+      const targets = new Map([
+        ['first', { a: plane([0, 0, 0], first), b: plane([1, 0, 0], first) }],
+        ['second', { a: plane([0, 0, 0], second), b: plane([0, 1, 0], second) }],
+      ]);
+      const before = structuredClone({ assembly, placements, targets });
+      const result = solveMates(assembly, targets, placements, { characteristicLength: 1, linearSolver });
+      const solved = movingPlacement(result);
+      expect(Math.abs(solved.position[2])).toBeLessThan(3 * epsilon);
+      expect(result.converged).toBe(true);
+      expect(result.iterations).toBeLessThanOrEqual(3);
+      expect(Math.abs(solved.position[0] - 1)).toBeLessThan(1e-9);
+      expect(Math.abs(solved.position[1] - 1)).toBeLessThan(1e-9);
+      const diagnosis = diagnoseMates(assembly, result);
+      expect(diagnosis.complete).toBe(true);
+      expect(diagnosis.components[0]).toMatchObject({ rank: 5, remainingDegreesOfFreedom: 1 });
+      expect(diagnosis.rows.every((entry) => entry.satisfied === true)).toBe(true);
+      expect(diagnosis.provenConflictMateIds).toEqual([]);
+      expect(result.placements.get('ground')).toBe(IDENTITY_PLACEMENT);
+      expect({ assembly, placements, targets }).toEqual(before);
+    });
+  }
+  it('ほぼ平行な2平面の独立した小列を減衰で失わず許容内に解く', () => {
+    const norm = Math.hypot(1, 1e-7);
+    const first: Vec3 = [1, 0, 0], second: Vec3 = [1 / norm, 1e-7 / norm, 0];
+    const assembly = { ...createAssemblyDocument('ほぼ平行な2平面'),
+      components: [component('ground', true), component('moving')], mates: [mate('first'), mate('second')] };
+    const placements = new Map([['ground', IDENTITY_PLACEMENT], ['moving', IDENTITY_PLACEMENT]]);
+    const targets = new Map([
+      ['first', { a: plane([0, 0, 0], first), b: plane([1, 0, 0], first) }],
+      ['second', { a: plane([0, 0, 0], second), b: plane([1, 1, 0], second) }],
+    ]);
+    const before = structuredClone({ assembly, targets, placements });
+    const result = solveMates(assembly, targets, placements);
+    expect(result.converged).toBe(true);
+    const solved = movingPlacement(result);
+    expect(Math.abs(solved.position[0] - 1)).toBeLessThan(1e-9);
+    expect(Math.abs(second[0] * (solved.position[0] - 1) + second[1] * (solved.position[1] - 1))).toBeLessThan(1e-9);
+    expect(Math.abs(solved.position[1] - 1)).toBeLessThan(0.01);
+    const diagnosis = diagnoseMates(assembly, result);
+    expect(diagnosis.complete).toBe(true);
+    expect(diagnosis.rows).toHaveLength(6);
+    expect(diagnosis.rows.every((entry) => entry.satisfied === true)).toBe(true);
+    expect(diagnosis.provenConflictMateIds).toEqual([]);
+    expect(result.placements.get('ground')).toBe(IDENTITY_PLACEMENT);
+    expect({ assembly, targets, placements }).toEqual(before);
+  });
+  const centeredBoxCases = [0, 50].flatMap((initialZ) => [0, 5, -5].flatMap((offset) => [false, true].map((reverse) => ({ initialZ, offset, reverse }))));
+  it.each(centeredBoxCases)('20mm箱の実重心: Z=$initialZ、offset=$offset、選択反転=$reverseで収束する', ({ initialZ, offset, reverse }) => {
+    const movingFace = plane([10, 10, initialZ], [0, 0, -1]);
+    const groundFace = plane([10, 10, 20], [0, 0, 1]);
+    const mating = mate('m', 'coincident', reverse ? 'ground' : 'moving', reverse ? 'moving' : 'ground', offset);
+    const assembly = { ...createAssemblyDocument('20mm箱'), components: [component('ground', true), component('moving')], mates: [mating] };
+    const placements = new Map([['ground', IDENTITY_PLACEMENT], ['moving', at([0, 0, initialZ])]]);
+    const targets = new Map([['m', reverse ? { a: groundFace, b: movingFace } : { a: movingFace, b: groundFace }]]);
+    const result = solveMates(assembly, targets, placements);
+    expect(result.converged).toBe(true);
+    expect(result.iterations).toBeLessThanOrEqual(3);
+    expect(Math.abs(movingPlacement(result).position[2] - (20 + offset))).toBeLessThan(1e-9);
+    const direction = rotateVector(movingPlacement(result).rotation, [0, 0, -1]);
+    expect(Math.hypot(direction[0], direction[1])).toBeLessThan(1e-9);
+    expect(direction[2]).toBeLessThan(0);
+    expect(result.placements.get('ground')).toBe(IDENTITY_PLACEMENT);
+    expect(placements.get('moving')?.position[2]).toBe(initialZ);
+    const diagnosis = diagnoseMates(assembly, result);
+    expect(diagnosis.components[0]).toMatchObject({ rank: 3, remainingDegreesOfFreedom: 3 });
+    expect(diagnosis.rows.every((row) => row.satisfied === true)).toBe(true);
+  });
   it.each([[0, 20], [5, 25]])('箱20³の上面と下面、オフセット%dでZ=%d', (offset, expected) => {
     const { assembly, placements, targets } = boxes(offset);
     const result = solveMates(assembly, targets, placements);

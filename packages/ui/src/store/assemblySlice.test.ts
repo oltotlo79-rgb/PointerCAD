@@ -20,6 +20,7 @@ import {
 import {
   resetTestStore,
 } from './testing/createTestStore.js';
+import { createMateDraft } from '../assembly/mateCommands.js';
 
 beforeEach(resetTestStore);
 
@@ -68,6 +69,20 @@ describe('文書の種類の切替(P7 §0.a-0.10、タスク5)', () => {
 });
 
 describe('配置中の一時状態(P7 タスク11b)', () => {
+  it.each(['undo', 'redo'] as const)('空履歴の%sはdraftを破棄し、履歴・版・再計算世代を増やさない', (operation) => {
+    const document = createAssemblyDocument('組立');
+    useAppStore.getState().openAssembly(document);
+    const before = useAppStore.getState();
+    useAppStore.setState({ assemblyMateDraft: createMateDraft(before.activeDocumentId, 'coincident') });
+    useAppStore.getState()[operation]();
+    const after = useAppStore.getState();
+    expect(after.assemblyMateDraft).toBeNull();
+    expect(after.assembly).toBe(document);
+    expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+    expect(after.documentVersion).toBe(before.documentVersion);
+    expect(after.requestedGeneration).toBe(before.requestedGeneration);
+    expect(after.assemblyView).toBe(before.assemblyView);
+  });
   it('確定編集は配置状態を消し、Undoを1段だけ積む', () => {
     const assembly = createAssemblyDocument('組み立て1');
     useAppStore.getState().openAssembly(assembly);

@@ -2,7 +2,7 @@
 import {
   CONSTRAINT_INITIAL_DAMPING, CONSTRAINT_MAX_DAMPING, CONSTRAINT_MAX_ITERATIONS,
   CONSTRAINT_MIN_DAMPING, CONSTRAINT_STEP_TOLERANCE, DAMPING_ATTEMPT_LIMIT,
-  eliminate, solveLeastSquares, type LinearizedRow,
+  eliminate, qrDecomposition, solveLeastSquares, type LinearizedRow,
 } from '../../sketch/constraints/solve.js';
 
 export type RigidSolveStopReason =
@@ -132,6 +132,49 @@ function measure(evaluation: RigidEvaluation, options: RigidSolveOptions) {
   return { norm: Math.sqrt(sum), weightedSum, max, satisfied, constantConflict };
 }
 
+/** 減衰Dだけを構成する。階数用Jsとnormal/QR切替用の生normは変更しない。 */
+function dampingDiagonal(
+  rows: readonly RigidResidualRow[], scales: readonly number[], options: RigidSolveOptions,
+  columnNorms: Float64Array, diagonal: Float64Array,
+): void {
+  let largestNorm = 0;
+  for (const norm of columnNorms) largestNorm = Math.max(largestNorm, norm);
+  const protectedNorm = largestNorm > 0 ? Math.min(1, largestNorm) : 1;
+  const weak: number[] = [];
+  for (let j = 0; j < columnNorms.length; j += 1) {
+    const norm = columnNorms[j];
+    // 絶対的に小さい感度も独立なら解に必要。非零列を大きさだけで保護しない。
+    diagonal[j] = norm === 0 ? protectedNorm : norm;
+    if (norm > 0 && norm < protectedNorm) weak.push(j);
+  }
+  if (weak.length === 0) return;
+
+  // 元のWJsの列ピボットで、強い独立方向から基底を選ぶ。強列をnorm>=1などの
+  // 固定境界で選ぶと、単位法線の正規化だけで必要な列が候補から落ちてしまう。
+  const weights = rows.map((row) => rowWeight(row, options));
+  const valueAt = (i: number, j: number): number =>
+    (rows[i].gradient.get(j) ?? 0) * scales[j] * weights[i];
+  const roundoff = 8 * Number.EPSILON * Math.max(1, rows.length, columnNorms.length);
+  const qr = qrDecomposition(rows.map((_row, i) => Array.from(columnNorms, (_norm, j) => valueAt(i, j))),
+    columnNorms.length, { rankTolerance: roundoff });
+  const independent = new Set(qr.columnOrder.slice(0, qr.rank));
+  for (const j of weak) {
+    if (independent.has(j)) continue;
+    const projected = rows.map((_row, i) => valueAt(i, j) / columnNorms[j]);
+    // rank判定で落ちた小列も、正規化して独立成分を再確認する。Qᵀを掛けた後の
+    // rank以降が基底に表せない成分なので、小さいだけの独立列は生normを保てる。
+    for (let k = 0; k < qr.rank; k += 1) {
+      const reflector = qr.reflectors[k];
+      let dot = 0;
+      for (let i = k; i < rows.length; i += 1) dot += reflector[i] * projected[i];
+      for (let i = k; i < rows.length; i += 1) projected[i] -= 2 * dot * reflector[i];
+    }
+    let outsideSquared = 0;
+    for (let i = qr.rank; i < rows.length; i += 1) outsideSquared += projected[i] ** 2;
+    if (Math.sqrt(outsideSquared) <= roundoff) diagonal[j] = protectedNorm;
+  }
+}
+
 /**
  * (J_sᵀ W²J_s + λD²)z = −J_sᵀW²r、Δ = columnScale*z。
  * Dで列を平衡化してから既存の消去法を呼ぶ。QRも同じ問題の
@@ -164,6 +207,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
   const normal = new Float64Array(n * n);
   const gradient = new Float64Array(n);
   const diagonal = new Float64Array(n);
+  const columnNorms = new Float64Array(n);
   const work = new Float64Array(n * n);
   const rhs = new Float64Array(n);
   const rowColumns: number[] = [];
@@ -228,13 +272,16 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
     for (let j = 0; j < n; j += 1) {
       const value = normal[j * n + j];
       if (value > 0) { smallest = Math.min(smallest, value); largest = Math.max(largest, value); }
-      diagonal[j] = value > 0 ? Math.sqrt(value) : 1;
+      columnNorms[j] = Math.sqrt(value);
     }
+    dampingDiagonal(evaluation.rows, scales, options, columnNorms, diagonal);
     let illConditioned = largest / smallest > 1e12;
     // ほぼ同じ列の桁落ちを、正規方程式を解く前に検出する。
     for (let j = 0; j < n && !illConditioned; j += 1) {
       for (let k = j + 1; k < n; k += 1) {
-        const correlation = Math.abs(normal[j * n + k] / (diagonal[j] * diagonal[k]));
+        const product = columnNorms[j] * columnNorms[k];
+        if (product === 0) continue;
+        const correlation = Math.abs(normal[j * n + k] / product);
         if (correlation > 1 - 1e-8 && correlation < 1 - 1e-14) { illConditioned = true; break; }
       }
     }

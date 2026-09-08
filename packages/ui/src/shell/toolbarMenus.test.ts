@@ -8,13 +8,20 @@
  * 画面(DOM)は撮影で確かめるので、ここでは表と純関数だけを見る。
  */
 
-import { addComponent, createAssemblyDocument, createComponentFor, SKETCH_CONSTRAINT_KINDS } from '@pointercad/model';
-import { describe, expect, it } from 'vitest';
+import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPartDocument, diagnoseMates, EMPTY_PART_LIBRARY,
+  resolveAssembly, resolveMateTarget, resolvePart, solveMates, SKETCH_CONSTRAINT_KINDS, type Mate, type MateResidualTargetPair } from '@pointercad/model';
+import { expressionValueFromNumber } from '@pointercad/expression';
+import { createElement, type ComponentType } from 'react';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
 
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
-import { ASSEMBLY_MENU_ITEMS, assemblyActionReadiness } from './menus/AssemblyGroup.js';
+import { ASSEMBLY_MATE_TOOLS, ASSEMBLY_MENU_ITEMS, AssemblyGroup, assemblyActionReadiness } from './menus/AssemblyGroup.js';
+import { AssemblyTree, assemblyMateRowDetails, assemblyRowMenuExpanded, assemblyRowMenuTarget } from './AssemblyTree.js';
 import { runNewAssembly } from './menus/fileToolbarActions.js';
 import {
   BASIC_SKETCH_TOOL_COUNT,
@@ -47,6 +54,121 @@ import {
 } from './toolbarMenus.js';
 
 describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
+  it('ヘルプは選択先行・キーボード・offset・診断と編集操作を案内する', () => {
+    const help = readFileSync(new URL('../../../help-content/docs/ja/assembly.md', import.meta.url), 'utf8');
+    for (const expected of ['対象を先に選んでも', 'Enter', 'Esc', 'Tab', 'ずらす距離', '負の値', '値の編集', '向きの反転', '削除', '未確定', '両立を確認できません', '矛盾']) expect(help).toContain(expected);
+    for (const item of ASSEMBLY_MATE_TOOLS) expect(help).toContain(t(item.labelKey));
+  });
+  const renderCurrent = (component: ComponentType) => {
+    // SSRにはlive storeのsnapshotを供給する。描画本体・対象解決・solverは実物を使う。
+    const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
+    try { return renderToStaticMarkup(createElement(component)); } finally { snapshot.mockRestore(); }
+  };
+
+  it('実ツールバーは合わせるを1つのmenu triggerに畳み、6道具へ説明と図柄を接続する', () => {
+    resetTestStore();
+    useAppStore.getState().openAssembly(createAssemblyDocument('組立'));
+    const markup = renderCurrent(AssemblyGroup);
+    expect(markup).toMatch(/aria-label="合わせる" aria-haspopup="(?:true|menu)"/);
+    expect(markup.match(/aria-label="合わせる"/g)).toHaveLength(1);
+    expect(markup).not.toContain('aria-label="一致"');
+    for (const item of ASSEMBLY_MATE_TOOLS) {
+      expect(t(item.tooltipKey)).not.toBe(item.tooltipKey);
+      expect(t(item.tooltipKey)).not.toBe(t(item.labelKey));
+      expect(typeof item.Icon).toBe('function');
+    }
+  });
+
+  it.each([false, true])('Treeは実solverの矛盾疑いと証明済みを区別する（固定=%s）', (fixed) => {
+    resetTestStore();
+    let document = createAssemblyDocument('診断');
+    for (let index = 0; index < 2; index += 1) document = addComponent(document, createComponentFor(document, { kind: 'part', partRef: 'p' }));
+    const part = createEmptyPartDocument();
+    const library = { ...EMPTY_PART_LIBRARY, parts: new Map([['p', part]]) };
+    const mates: Mate[] = [10, 20].map((value, index) => ({ id: 'm' + index, name: 'M' + index, kind: 'distance',
+      a: { kind: 'origin', componentId: 'component-1', element: 'origin' },
+      b: { kind: 'origin', componentId: 'component-2', element: 'origin' }, flipped: false, suppressed: false, value: expressionValueFromNumber(value) }));
+    document = { ...document, mates, components: document.components.map((component) => ({ ...component,
+      fixed: fixed || component.fixed, placement: { ...component.placement, position: [expressionValueFromNumber(component.fixed ? 0 : 12), expressionValueFromNumber(0), expressionValueFromNumber(0)] } })) };
+    const resolved = resolveAssembly(document, { library, resolvedParts: new Map([['p', resolvePart(part)]]) });
+    const targets = new Map<string, MateResidualTargetPair>();
+    for (const mate of mates) {
+      const a = resolveMateTarget(mate.a, resolved); const b = resolveMateTarget(mate.b, resolved);
+      if (!a.ok || !b.ok) throw new Error('fixture');
+      targets.set(mate.id, { a: a.target, b: b.target });
+    }
+    const diagnosis = diagnoseMates(document, solveMates(document, targets, resolved.placements));
+    const view = { resolved, bodies: new Map(), appearances: new Map(), diagnosis, mateTargetErrors: new Map() };
+    useAppStore.getState().openAssembly(document, library);
+    useAppStore.setState({ assemblyView: view });
+    const markup = renderCurrent(AssemblyTree);
+    if (fixed) {
+      expect(diagnosis.provenConflictMateIds).not.toHaveLength(0);
+      expect(markup).toContain('>矛盾</span>');
+      expect(markup).not.toContain('>両立を確認できません</span>');
+    } else {
+      expect(diagnosis.suspectedConflictMateIds).not.toHaveLength(0);
+      expect(markup).toContain('>両立を確認できません</span>');
+      expect(markup).not.toContain('>矛盾</span>');
+    }
+    expect(assemblyMateRowDetails('m0', view).message).not.toBeNull();
+  });
+
+  it('部品が残っている部分形状消失もTreeに未解決と実理由を示す', () => {
+    resetTestStore();
+    let document = createAssemblyDocument('欠落');
+    for (let index = 0; index < 2; index += 1) document = addComponent(document, createComponentFor(document, { kind: 'part', partRef: 'p' }));
+    const mate: Mate = { id: 'm', name: 'M', kind: 'coincident', flipped: false, suppressed: false,
+      a: { kind: 'subShape', componentId: 'component-1', ref: { bodyFeatureId: 'gone', index: 0,
+        fingerprint: { kind: 'vertex', position: [0, 0, 0] } } }, b: { kind: 'origin', componentId: 'component-2', element: 'origin' } };
+    document = { ...document, mates: [mate] };
+    const part = createEmptyPartDocument();
+    const library = { ...EMPTY_PART_LIBRARY, parts: new Map([['p', part]]) };
+    const resolved = resolveAssembly(document, { library, resolvedParts: new Map([['p', resolvePart(part)]]) });
+    const missing = resolveMateTarget(mate.a, resolved, { subShape: () => null });
+    if (missing.ok) throw new Error('消失を再現できていません');
+    const diagnosis = diagnoseMates(document, solveMates(document, new Map(), resolved.placements));
+    const view = { resolved, bodies: new Map(), appearances: new Map(), diagnosis, mateTargetErrors: new Map([['m', [missing.message]]]) };
+    useAppStore.getState().openAssembly(document, library); useAppStore.setState({ assemblyView: view });
+    expect(assemblyMateRowDetails('m', view)).toMatchObject({ missing: true });
+    const markup = renderCurrent(AssemblyTree);
+    expect(markup).toContain(missing.message);
+    expect(markup).toContain('>未解決</span>');
+    expect(markup).toContain('pcad-tree__row--suppressed');
+  });
+  it('アセンブリの合わせる入口はmodelの6種類を重複なく全部出す', () => {
+    expect(ASSEMBLY_MATE_TOOLS.map((item) => item.kind)).toEqual([
+      'coincident', 'concentric', 'distance', 'angle', 'parallel', 'tangent',
+    ]);
+    expect(new Set(ASSEMBLY_MATE_TOOLS.map((item) => item.labelKey)).size).toBe(6);
+  });
+
+  it.each([
+    ['component', 'component-2', { kind: 'component', rowId: 'component-2' }],
+    ['mate', 'mate-7', { kind: 'mate', rowId: 'mate-7' }],
+    ['joint', 'joint-1', null],
+    ['step', 'step-1', null],
+  ] as const)('%s行のメニュー対象を取り違えない', (section, id, expected) => {
+    expect(assemblyRowMenuTarget(section, id)).toEqual(expected);
+  });
+
+  it.each([
+    { name: '通常ID', rows: [['component', 'component-2'], ['mate', 'mate-7']] },
+    { name: 'colon付き保存ID', rows: [['component', 'component-2'], ['mate', 'legacy'], ['mate', 'mate:legacy']] },
+    { name: '部品と合致の同一ID', rows: [['component', 'shared'], ['mate', 'shared']] },
+    { name: '種類横断のcolon付き同一ID', rows: [['component', 'mate:legacy'], ['mate', 'mate:legacy'], ['mate', 'legacy']] },
+  ] as const)('Treeメニューのaria-expandedは$nameでも開いた対象だけtrueになる', ({ rows }) => {
+    const expanded = (menu: ReturnType<typeof assemblyRowMenuTarget>) =>
+      rows.map(([section, id]) => assemblyRowMenuExpanded(menu, section, id));
+    expect(expanded(null)).toEqual(rows.map(() => false));
+    for (const [openIndex, [section, id]] of rows.entries()) {
+      const menu = assemblyRowMenuTarget(section, id);
+      expect(menu).not.toBeNull();
+      // JSXのaria-expandedと同じ関数を通し、他行の状態は行位置で独立に期待する。
+      expect(expanded(menu)).toEqual(rows.map((_, index) => index === openIndex));
+    }
+    expect(expanded(null)).toEqual(rows.map(() => false));
+  });
   it('「作図」には P4 で足した 8 つの形が並ぶ(タスク36 の 3 点の円弧を含む)', () => {
     expect(SHAPE_MENU_ITEMS.map((item) => item.id)).toEqual([
       'circle',

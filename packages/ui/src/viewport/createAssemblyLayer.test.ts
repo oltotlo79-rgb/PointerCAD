@@ -33,6 +33,86 @@ import {
 } from './createAssemblyLayer.js';
 import { DEFAULT_THEME_COLORS } from './themeColors.js';
 import type { AppearanceInput } from './buildSolidGeometry.js';
+import { assemblyTargetId } from '../assembly/mateCommands.js';
+import { subShapeRefOf } from '../solid/subShapeSelection.js';
+
+describe('合致の面pickと強調の回帰', () => {
+  it('同距離のglass fallbackでもcomponent pickと同じ部品を選ぶ', () => {
+    const layer = createAssemblyLayer();
+    try {
+      const input = sameParts(2);
+      const components = [input.components[0], { ...input.components[1], appearance: appearanceFromPreset('glass') }];
+      const placements = new Map(components.map((component) => [component.id, placementAt(0)]));
+      const ray = new THREE.Raycaster(new THREE.Vector3(0.2, 0.2, 5), new THREE.Vector3(0, 0, -1));
+      for (const ordered of [components, [...components].reverse()]) {
+        layer.update(buildAssemblyGeometry({ ...input, components: ordered, placements }), 'shadedWithEdges');
+        expect(layer.pickMateFace(ray)?.componentId).toBe(ordered[0].id);
+        expect(layer.pickMateFace(ray)?.componentId).toBe(layer.pickComponent(ray));
+      }
+    } finally { layer.dispose(); }
+  });
+
+  it.each([10, 100_000_000.125])('多body・配置X=%sのfaceを同じinstanceから取る', (offset) => {
+    const layer = createAssemblyLayer();
+    try {
+      const input = sameParts(2);
+      const second = makeBody('second');
+      const moved = { ...second, mesh: { ...second.mesh, positions: second.mesh.positions.map((value, index) => index % 3 === 0 ? value + 3 : value) } };
+      layer.update(buildAssemblyGeometry({ ...input, placements: new Map([['component-1', placementAt(0)], ['component-2', placementAt(offset)]]),
+        bodies: new Map([['part-1', [makeBody('first'), moved]]]) }), 'shadedWithEdges');
+      const ray = new THREE.Raycaster(new THREE.Vector3(offset + 3.2, 0.2, 5), new THREE.Vector3(0, 0, -1));
+      expect(layer.pickMateFace(ray)).toEqual({ componentId: 'component-2', partKey: 'part-1', bodyFeatureId: 'second', faceIndex: 0 });
+    } finally { layer.dispose(); }
+  });
+
+  it('face pickも非表示・削除後のslot詰め直しを反映する', () => {
+    const layer = createAssemblyLayer();
+    try {
+      const input = sameParts(3);
+      layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+      layer.update(buildAssemblyGeometry({ ...input, components: [input.components[2], { ...input.components[0], visible: false }] }), 'wireframe');
+      const ray = new THREE.Raycaster(new THREE.Vector3(20.2, 0.2, 5), new THREE.Vector3(0, 0, -1));
+      expect(layer.pickMateFace(ray)?.componentId).toBe('component-3');
+      ray.ray.origin.x = 10.2; expect(layer.pickMateFace(ray)).toBeNull();
+      ray.ray.origin.x = 0.2; expect(layer.pickMateFace(ray)).toBeNull();
+    } finally { layer.dispose(); }
+  });
+
+  it('面の強調だけを局所overlayへ描き、共有形を残して解除時に一度だけ解放する', () => {
+    const layer = createAssemblyLayer();
+    try {
+      const input = sameParts(2);
+      const ref = subShapeRefOf([makeBody('extrude-1')], 'extrude-1#face:0');
+      if (ref === null) throw new Error('fixture');
+      const id = assemblyTargetId({ kind: 'subShape', componentId: 'component-2', ref });
+      const bundle = buildAssemblyGeometry({ ...input, selectedTargetIds: [id] });
+      layer.update(bundle, 'shadedWithEdges');
+      const shape = faceBatchesOf(layer)[0].geometry;
+      const overlay = layer.group.getObjectByName('assembly-mate-highlight:component-2');
+      expect(overlay?.matrix.elements[12]).toBe(10);
+      const mesh = overlay?.children.find((object) => object instanceof THREE.Mesh);
+      if (mesh === undefined) throw new Error('face overlay');
+      const geometry: unknown = mesh.geometry;
+      const material: unknown = mesh.material;
+      if (!(geometry instanceof THREE.BufferGeometry)) throw new Error('overlay geometry');
+      const position: unknown = geometry.getAttribute('position');
+      if (!(position instanceof THREE.BufferAttribute)) throw new Error('overlay position');
+      expect(position.count).toBe(3);
+      const disposed = vi.fn(); geometry.addEventListener('dispose', disposed);
+      if (!(material instanceof THREE.MeshBasicMaterial)) throw new Error('overlay material');
+      const materialDisposed = vi.fn(); material.addEventListener('dispose', materialDisposed);
+      layer.setThemeColors({ ...DEFAULT_THEME_COLORS, selected: 0x123456 });
+      layer.update(buildAssemblyGeometry({ ...input, selectedTargetIds: [id] }), 'shadedWithEdges');
+      expect(material.color.getHex()).toBe(0x123456);
+      expect(layer.group.getObjectByName(overlay?.name ?? '')).toBe(overlay);
+      expect(disposed).not.toHaveBeenCalled();
+      layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+      expect(disposed).toHaveBeenCalledTimes(1); expect(materialDisposed).toHaveBeenCalledTimes(1);
+      expect(faceBatchesOf(layer)[0].geometry).toBe(shape);
+      layer.dispose(); expect(disposed).toHaveBeenCalledTimes(1);
+    } finally { layer.dispose(); }
+  });
+});
 
 describe('インスタンス → 部品の面/ボディ → 既定の外観', () => {
   const red: AppearanceSpec = { ...DEFAULT_APPEARANCE, color: '#ff0000' };
@@ -567,6 +647,26 @@ describe('createAssemblyLayer(表示スタイルと強調、FR-105、FR-106)', (
 });
 
 describe('createAssemblyLayer(当たり判定、FR-106)', () => {
+  it('面合致のpickはinstance・part・body・faceを同じ交点から返す', () => {
+    const layer = createAssemblyLayer();
+    layer.update(buildAssemblyGeometry(sameParts(2)), 'shadedWithEdges');
+    const raycaster = new THREE.Raycaster(new THREE.Vector3(10.2, 0.2, 5), new THREE.Vector3(0, 0, -1));
+    expect(layer.pickMateFace(raycaster)).toEqual({
+      componentId: 'component-2', partKey: 'part-1', bodyFeatureId: 'extrude-1', faceIndex: 0,
+    });
+    layer.dispose();
+  });
+
+  it('面の外と非表示instanceは合致対象にならない', () => {
+    const layer = createAssemblyLayer();
+    const input = sameParts(2);
+    layer.update(buildAssemblyGeometry({ ...input, components: [input.components[0],
+      makeComponent('component-2', { visible: false })] }), 'shadedWithEdges');
+    expect(layer.pickMateFace(new THREE.Raycaster(new THREE.Vector3(10.2, 0.2, 5), new THREE.Vector3(0, 0, -1)))).toBeNull();
+    expect(layer.pickMateFace(new THREE.Raycaster(new THREE.Vector3(100, 100, 5), new THREE.Vector3(0, 0, -1)))).toBeNull();
+    layer.dispose();
+  });
+
   it('光線が当たった部品の id を返す', () => {
     const layer = createAssemblyLayer();
     const input = sameParts(2);

@@ -20,6 +20,8 @@ import type { StateCreator } from 'zustand';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
 import type { AppearanceInput } from '../viewport/buildSolidGeometry.js';
+import type { MateDiagnosis } from '@pointercad/model';
+import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 
 export interface AssemblySnapshot {
   readonly document: AssemblyDocument;
@@ -27,9 +29,14 @@ export interface AssemblySnapshot {
 }
 
 export interface AssemblyView {
+  /** この導出値を作った文書。古い形で合致を確定しない。 */
+  readonly sourceDocument?: AssemblyDocument;
   readonly resolved: ResolvedAssembly;
   readonly bodies: ReadonlyMap<string, readonly SolidBody[]>;
   readonly appearances: ReadonlyMap<string, AppearanceInput>;
+  /** 合致の解と理由。保存・Undoへは入れない。 */
+  readonly diagnosis: MateDiagnosis | null;
+  readonly mateTargetErrors: ReadonlyMap<string, readonly string[]>;
 }
 
 /** 部品ファイルの選択から配置確定までを、文書の寿命と要求IDに結び付ける一時状態。 */
@@ -81,6 +88,8 @@ export interface AssemblySlice {
   readonly assemblyView: AssemblyView | null;
   /** 「部品を配置」の一時状態。取消・文書切替・確定編集で必ず消える。 */
   readonly assemblyPlacement: AssemblyPlacementState | null;
+  /** 合致コマンドの打ちかけ。文書の寿命に結び、保存・Undoへは入れない。 */
+  readonly assemblyMateDraft: AssemblyMateDraft | null;
   /** 文書の id は新規でも同じ値になり得るため、開く単位の安定 ID を別に持つ。 */
   readonly activeDocumentId: string;
   readonly recoveryRecord: AutoSaveRecord | null;
@@ -108,6 +117,7 @@ export const createAssemblySlice: StateCreator<
     assemblyInitialName: null,
     assemblyView: null,
     assemblyPlacement: null as AssemblyPlacementState | null,
+    assemblyMateDraft: null as AssemblyMateDraft | null,
     activeDocumentId: crypto.randomUUID(),
   });
   function applyHistory(stack: UndoStack<AssemblySnapshot>): void {
@@ -122,6 +132,7 @@ export const createAssemblySlice: StateCreator<
       selection: [],
       hoveredElementId: null,
       assemblyPlacement: null,
+      assemblyMateDraft: null,
     }));
   }
   return {
@@ -151,7 +162,7 @@ export const createAssemblySlice: StateCreator<
       const stack = pushUndo(state.assemblyUndoStack, { document: assembly, library });
       set({ assembly, assemblyLibrary: library, assemblyUndoStack: stack,
         canUndo: stack.past.length > 0, canRedo: false, fileMessage: null,
-        assemblyPlacement: null });
+        assemblyPlacement: null, assemblyMateDraft: null });
     },
     setAssemblyFileState: (assemblyFileName, savedAssembly) => {
       set({ assemblyFileName, savedAssembly });
@@ -165,10 +176,16 @@ export const createAssemblySlice: StateCreator<
     undoAssembly: () => {
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.past.length > 0) applyHistory(undo(stack));
+      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null) {
+        set({ assemblyPlacement: null, assemblyMateDraft: null });
+      }
     },
     redoAssembly: () => {
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.future.length > 0) applyHistory(redo(stack));
+      else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null) {
+        set({ assemblyPlacement: null, assemblyMateDraft: null });
+      }
     },
   };
 };

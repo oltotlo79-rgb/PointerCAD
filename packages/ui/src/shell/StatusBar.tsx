@@ -30,6 +30,7 @@ import {
   countSelectedBodies,
   countSelectedSubShapes,
   describeStatus,
+  assemblyMateStatus,
   PROGRESS_DELAY_MS,
   type SpringNumericInputStep,
   type StatusLineKind,
@@ -97,6 +98,9 @@ function widthPercent(ratio: number): string {
  */
 export function StatusBar(): React.JSX.Element {
   const isComputing = useAppStore((state) => state.isComputing);
+  const mateDraft = useAppStore((state) => state.assemblyMateDraft);
+  const mateDiagnosis = useAppStore((state) => state.assemblyView?.diagnosis ?? null);
+  const mateTargetErrors = useAppStore((state) => state.assemblyView?.mateTargetErrors ?? null);
   // 幾何カーネルの初回読み込み中かどうかで帯の文言を分ける(§0.a-0.23 ⑨)。
   const kernelLoaded = useAppStore((state) => state.kernelLoaded);
   const errorMessage = useAppStore((state) => state.errorMessage);
@@ -264,6 +268,7 @@ export function StatusBar(): React.JSX.Element {
         }));
 
   const line = describeStatus({
+    assemblyMateStatus: assemblyMateStatus(mateDraft, mateDiagnosis, mateTargetErrors ?? new Map()),
     fileMessage,
     faceErrorKey,
     solidErrorKey,

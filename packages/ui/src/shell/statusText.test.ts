@@ -6,12 +6,17 @@
  * 描画そのもの(`StatusBar.tsx`)は Node では検査できないので E2E と目視に任せる。
  */
 
-import type { PartProgress, PartRecomputeError, SketchError } from '@pointercad/model';
+import { addComponent, createAssemblyDocument, createComponentFor, diagnoseMates, resolveAssembly, solveMates,
+  type AssemblyDocument, type Mate, type MateResidualTargetPair, type SolveMatesOptions,
+  type PartProgress, type PartRecomputeError, type SketchError } from '@pointercad/model';
+import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
+import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
 import {
   commandLineFailureText,
+  assemblyMateStatus,
   countSelectedBodies,
   countSelectedSubShapes,
   describeStatus,
@@ -26,6 +31,73 @@ import {
   trackGuideText,
   type StatusInput,
 } from './statusText.js';
+
+describe('合致の状態文', () => {
+  const diagnose = (kind: Mate['kind'], value: number, options: SolveMatesOptions = {}, fixed = false, duplicate = false) => {
+    let document: AssemblyDocument = createAssemblyDocument('診断');
+    for (let index = 0; index < 2; index += 1) document = addComponent(document, createComponentFor(document, { kind: 'part', partRef: 'p' }));
+    const mate: Mate = { id: 'm', name: 'm', kind, a: { kind: 'origin', componentId: 'component-1', element: 'origin' },
+      b: { kind: 'origin', componentId: 'component-2', element: 'origin' }, flipped: false, suppressed: false, value: expressionValueFromNumber(value) };
+    document = { ...document, mates: duplicate ? [mate, { ...mate, id: 'copy' }] : [mate],
+      components: document.components.map((component) => fixed ? { ...component, fixed: true } : component) };
+    const pair: MateResidualTargetPair = { a: { point: [0, 0, 0], direction: kind === 'angle' ? [1, 0, 0] : null, radius: null, kind: kind === 'angle' ? 'plane' : 'point' },
+      b: { point: [0, 0, 0], direction: kind === 'angle' ? [1, 0, 0] : null, radius: null, kind: kind === 'angle' ? 'plane' : 'point' } };
+    return diagnoseMates(document, solveMates(document, new Map(document.mates.map((m) => [m.id, pair])), resolveAssembly(document).placements, options));
+  };
+
+  it('実solverの零微分停止は理由と未解決を残し、DOF 0を完全固定と誤表示しない', () => {
+    const diagnosis = diagnose('angle', 90);
+    expect(diagnosis.converged).toBe(false);
+    const status = assemblyMateStatus(null, diagnosis, new Map());
+    expect(status?.failed).toBe(true);
+    expect(status?.text).toContain('計算が進まなく');
+    expect(status?.text).not.toContain(t('assembly.mate.fullyConstrained'));
+    const incomplete = diagnose('angle', 180, {}, true);
+    expect(incomplete.remainingDegreesOfFreedom).toBe(0);
+    expect(incomplete.complete).toBe(false);
+    expect(assemblyMateStatus(null, incomplete, new Map())?.text).not.toContain(t('assembly.mate.fullyConstrained'));
+  });
+
+  it.each([{ maxIterations: 0 }, { maxTimeMs: 0, now: () => 0 }, { maxComponentVariables: 0 }])(
+    '計算上限%jは実診断の警告を消さない', (options) => {
+      const diagnosis = diagnose('distance', 10, options);
+      const status = assemblyMateStatus(null, diagnosis, new Map());
+      expect(status?.failed).toBe(true);
+      for (const warning of diagnosis.messages.filter((message) => message.severity !== 'info')) expect(status?.text).toContain(warning.text);
+      expect(status?.text).not.toContain(t('assembly.mate.fullyConstrained'));
+    });
+
+  it('収束した重複のinfoは残自由度とともに表示する', () => {
+    const diagnosis = diagnose('coincident', 0, {}, false, true);
+    expect(diagnosis.redundantMateIds).not.toHaveLength(0);
+    const status = assemblyMateStatus(null, diagnosis, new Map());
+    expect(status?.failed).toBe(false);
+    expect(status?.text).toContain('同じ条件が重なっています');
+  });
+  const draft = (count: number): AssemblyMateDraft => ({
+    documentId: 'doc', kind: 'coincident', targets: ([
+      { kind: 'origin', componentId: 'a', element: 'origin' },
+      { kind: 'origin', componentId: 'b', element: 'origin' },
+    ] as const).slice(0, count), targetKinds: (['point', 'point'] as const).slice(0, count), source: '', flipped: false, editingMateId: null,
+  });
+
+  it.each([[0, 'assembly.mate.pickFirst'], [1, 'assembly.mate.pickSecond'], [2, 'assembly.mate.ready']] as const)(
+    '対象%d個の次操作を示す', (count, key) => {
+      expect(assemblyMateStatus(draft(count), null, new Map())?.text).toBe(t(key));
+    },
+  );
+
+  it('選び直せない対象の実理由を失敗として示す', () => {
+    expect(assemblyMateStatus(null, null, new Map([['mate-1', ['対象がありません。']]])))
+      .toEqual({ text: '対象がありません。', failed: true });
+  });
+
+  it('合致なしの完全な診断は決定済みとして示す', () => {
+    const assembly = createAssemblyDocument('空');
+    const diagnosis = diagnoseMates(assembly, solveMates(assembly, new Map(), new Map()));
+    expect(assemblyMateStatus(null, diagnosis, new Map())).toEqual({ text: t('assembly.mate.fullyConstrained'), failed: false });
+  });
+});
 
 /** 何も起きていない状態。各検査は要る欄だけを上書きする。 */
 function quiet(): StatusInput {

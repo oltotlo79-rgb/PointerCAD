@@ -46,6 +46,9 @@ import { useAppStore } from '../store/useAppStore.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
+import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
+import { MatePopover } from '../assembly/MatePopover.js';
+import { assemblyTargetId } from '../assembly/mateCommands.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import { createViewportScene, type SectionViewRender } from './createViewportScene.js';
 import type { CutPreview, PrintabilityHighlight } from './createSolidLayer.js';
@@ -518,7 +521,9 @@ function assemblyBundleOf(
     bodies: view.bodies,
     appearances: view.appearances,
     hoveredComponentId: state.hoveredElementId,
-    selectedComponentIds: state.selection,
+    selectedComponentIds: [...state.selection, ...(state.assemblyMateDraft?.targets.filter((target) => target.kind === 'origin').map((target) => target.componentId) ?? [])],
+    selectedTargetIds: state.assemblyMateDraft?.targets.map(assemblyTargetId) ?? state.selection,
+    hoveredTargetId: state.hoveredElementId,
   });
 }
 
@@ -733,6 +738,8 @@ export function ViewportCanvas(): React.JSX.Element {
     // 視点操作を先に結び、その後ろでスケッチの操作を結ぶ(中ボタン・Alt の取り合いを避ける)。
     // 視点そのものを渡す。距離は方眼の刻みに、向きは 3D スケッチで押した場所に置く面に使う
     // (FR-330、P4 タスク14)。
+    // 合致の選択を先に受け、処理した左クリックは部品用の作図操作へ流さない。
+    const assemblyInteraction = attachAssemblyInteraction(canvas, scene);
     const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit());
     setControlsReady(true);
 
@@ -833,6 +840,7 @@ export function ViewportCanvas(): React.JSX.Element {
       if (
         next.assembly !== previous.assembly ||
         next.assemblyView !== previous.assemblyView ||
+        next.assemblyMateDraft !== previous.assemblyMateDraft ||
         next.hoveredElementId !== previous.hoveredElementId ||
         next.selection !== previous.selection
       ) {
@@ -995,6 +1003,7 @@ export function ViewportCanvas(): React.JSX.Element {
       useAppStore.getState().setCaptureThumbnail(null);
       useAppStore.getState().setCapturePrintFrame(null);
       interaction.detach();
+      assemblyInteraction.detach();
       controls.detach();
       scene.dispose();
       controlsRef.current = null;
@@ -1020,6 +1029,7 @@ export function ViewportCanvas(): React.JSX.Element {
         断面表示の欄と同じく**区画は増やさない**。
       */}
       <CanvasScaleField />
+      <MatePopover />
       {controlsReady ? (
         <ViewCube getOrbit={getOrbit} setOrbit={setOrbit} subscribeDraw={subscribeDraw} />
       ) : null}

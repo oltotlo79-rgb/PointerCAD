@@ -14,6 +14,64 @@ function problem(initial: readonly number[], evaluate: (x: readonly number[]) =>
 }
 
 describe('solveRigidの受理/棄却と停止理由', () => {
+  const scaleSweep = [...Array.from({ length: 18 }, (_value, i) => 10 ** (i - 20)),
+    Number.EPSILON * (1 - Number.EPSILON), Number.EPSILON, Number.EPSILON * (1 + Number.EPSILON)];
+  for (const sensitivity of [1e-16, Number.EPSILON * (1 - Number.EPSILON), Number.EPSILON,
+    Number.EPSILON * (1 + Number.EPSILON), 1e-15]) {
+    it.each(['auto', 'normal', 'qr'] as const)(`%sはEPS境界の独立感度${sensitivity}でもy=1e8へ収束する`, (linearSolver) => {
+      const input = problem([0, 0], ([x, y]) => [row(x - 1, [1, 0]),
+        row(sensitivity * (y - 1e8), [0, sensitivity])]);
+      const result = solveRigid({ ...input, options: { ...input.options, linearSolver } });
+      expect(result.stop).toBe('converged');
+      expect(Math.abs(result.base[0] - 1)).toBeLessThan(1e-9);
+      expect(Math.abs(result.base[1] / 1e8 - 1)).toBeLessThan(1e-9);
+      expect(result.maxResidual).toBeLessThan(1e-9);
+      expect(result.iterations).toBeLessThanOrEqual(3);
+      expect(input.initial).toEqual([0, 0]);
+    });
+  }
+  for (const sensitivity of scaleSweep) {
+    it.each(['auto', 'normal', 'qr'] as const)(`%sの尺度sweep独立列s=${sensitivity}は生尺度を保つ`, (linearSolver) => {
+      const target = 1 / sensitivity;
+      // 軸に沿う行と、強列/弱列を45度回した行で同じ独立な解を持つ。
+      for (const rotated of [false, true]) {
+        const input = problem([0, 0], ([x, y]) => rotated
+          ? [row(x - 1 + sensitivity * (y - target), [1, sensitivity]),
+            row(x - 1 - sensitivity * (y - target), [1, -sensitivity])]
+          : [row(x - 1, [1, 0]), row(sensitivity * (y - target), [0, sensitivity])]);
+        const result = solveRigid({ ...input, options: { ...input.options, linearSolver } });
+        expect(result.stop).toBe('converged');
+        expect(Math.abs(result.base[0] - 1)).toBeLessThan(1e-9);
+        expect(Math.abs(result.base[1] / target - 1)).toBeLessThan(1e-9);
+        expect(result.maxResidual).toBeLessThan(1e-9);
+        expect(result.iterations).toBeLessThanOrEqual(3);
+        expect(input.initial).toEqual([0, 0]);
+      }
+    });
+    it.each(['auto', 'normal', 'qr'] as const)(`%sの尺度sweep従属列s=${sensitivity}は強列の線形包で保護する`, (linearSolver) => {
+      const input = problem([0, 0, 0], ([x, y, z]) => [row(x + sensitivity * z - 1, [1, 0, sensitivity]),
+        row(y + sensitivity * z - 1, [0, 1, sensitivity])]);
+      const result = solveRigid({ ...input, options: { ...input.options, linearSolver } });
+      // 最小ノルム解z=2s/(1+2s²)。自由方向がs→0で巨大化しないことを固定する。
+      expect(Math.abs(result.base[2])).toBeLessThan(3 * sensitivity);
+      expect(result.stop).toBe('converged');
+      expect(result.maxResidual).toBeLessThan(1e-9);
+      expect(Math.abs(result.base[0] + sensitivity * result.base[2] - 1)).toBeLessThan(1e-9);
+      expect(Math.abs(result.base[1] + sensitivity * result.base[2] - 1)).toBeLessThan(1e-9);
+      expect(result.iterations).toBeLessThanOrEqual(3);
+      expect(input.initial).toEqual([0, 0, 0]);
+    });
+    it.each(['auto', 'normal', 'qr'] as const)(`%sの尺度sweep真の零列s=${sensitivity}は初期自由値を保つ`, (linearSolver) => {
+      const input = problem([0, 0, 17], ([x, y]) => [row(x + sensitivity * y - 1, [1, sensitivity, 0])]);
+      const result = solveRigid({ ...input, options: { ...input.options, linearSolver } });
+      expect(result.stop).toBe('converged');
+      expect(result.base[2]).toBe(17);
+      expect(Math.abs(result.base[1])).toBeLessThan(2 * sensitivity);
+      expect(result.maxResidual).toBeLessThan(1e-9);
+      expect(result.iterations).toBeLessThanOrEqual(3);
+      expect(input.initial).toEqual([0, 0, 17]);
+    });
+  }
   it.each(['normal', 'qr'] as const)('%sで疎な行の項数が減っても前の行の項を足さない', (linearSolver) => {
     const sparse = (value: number, entries: readonly (readonly [number, number])[]): RigidResidualRow =>
       ({ value, gradient: new Map(entries), unit: 'length', scale: 1 });
@@ -156,6 +214,64 @@ describe('診断と共有する行許容差', () => {
 });
 
 describe('尺度とQR', () => {
+  it.each(['auto', 'normal', 'qr'] as const)('%sはrank候補から落ちる小列でも独立な感度を保つ', (linearSolver) => {
+    const sensitivity = 1e-15;
+    const input = problem([0, 0], ([x, y]) => [row(x - 1, [1, 0]), row(sensitivity * y - 1, [0, sensitivity])]);
+    const result = solveRigid({ ...input, options: { ...input.options, linearSolver } });
+    expect(result.converged).toBe(true);
+    expect(result.maxResidual).toBeLessThan(1e-9);
+    expect(Math.abs(result.base[0] - 1)).toBeLessThan(1e-9);
+    expect(Math.abs(result.base[1] / (1 / sensitivity) - 1)).toBeLessThan(1e-9);
+    expect(result.iterations).toBeLessThanOrEqual(3);
+    expect(input.initial).toEqual([0, 0]);
+  });
+  for (const epsilon of [1e-7, 1e-12]) {
+    it.each(['auto', 'normal', 'qr'] as const)(`%sは複数強列の線形包にある弱列ε=${epsilon}を巨大なzへ増幅しない`, (linearSolver) => {
+      const solve = (coupling: number) => {
+        const input = problem([0, 0, 0], ([x, y, z]) => [
+          row(x + coupling * z - 1, [1, 0, coupling]),
+          row(y + coupling * z - 1, [0, 1, coupling]),
+        ]);
+        const result = solveRigid({ ...input, options: { ...input.options, linearSolver } });
+        expect(input.initial).toEqual([0, 0, 0]);
+        return result;
+      };
+      const baseline = solve(0), result = solve(epsilon);
+      expect(Math.abs(result.base[2] - baseline.base[2])).toBeLessThan(3 * epsilon);
+      for (const outcome of [baseline, result]) {
+        expect(outcome.converged).toBe(true);
+        expect(outcome.maxResidual).toBeLessThan(1e-9);
+        expect(Math.abs(outcome.base[0] - 1)).toBeLessThan(1e-9);
+        expect(Math.abs(outcome.base[1] - 1)).toBeLessThan(1e-9);
+        expect(outcome.iterations).toBeLessThanOrEqual(3);
+      }
+    });
+  }
+  for (const sensitivity of [1e-5, 1e-6]) {
+    it.each(['auto', 'normal', 'qr'] as const)(`%sは小さい独立列${sensitivity}の解析解を減衰で失わない`, (linearSolver) => {
+      const input = problem([0, 0], ([x, y]) => [row(x - 1, [1, 0]), row(sensitivity * (y - 1), [0, sensitivity])]);
+      const result = solveRigid({ ...input, options: { ...input.options, linearSolver } });
+      expect(result.stop).toBe('converged');
+      expect(result.maxResidual).toBeLessThan(1e-9);
+      expect(Math.abs(result.base[0] - 1)).toBeLessThan(1e-9);
+      expect(Math.abs(result.base[1] - 1)).toBeLessThan(1e-9);
+      expect(result.iterations).toBeLessThanOrEqual(3);
+      expect(input.initial).toEqual([0, 0]);
+    });
+  }
+  it.each(['auto', 'normal', 'qr'] as const)('%sはf=x+εy−1の微小自由列を巨大なyへ増幅しない', (linearSolver) => {
+    const results = [0, 1e-20].map((epsilon) => {
+      const input = problem([0, 0], ([x, y]) => [row(x + epsilon * y - 1, [1, epsilon])]);
+      return solveRigid({ ...input, options: { ...input.options, linearSolver } });
+    });
+    for (const result of results) {
+      expect(result.converged).toBe(true);
+      expect(Math.abs(result.base[0] - 1)).toBeLessThan(1e-9);
+      expect(Math.abs(result.base[1])).toBeLessThan(1e-9);
+      expect(result.iterations).toBeLessThanOrEqual(3);
+    }
+    expect(Math.abs(results[0].base[1] - results[1].base[1])).toBeLessThan(1e-9);
+  });
   it('行尺度を二重に掛けずΔt/L₀で列を尺度化する', () => {
     const matrix = scaledRigidJacobian([row(2, [3, 4], 'length', 0.01)], ['length', 'angle'],
       { characteristicLength: 100, lengthTolerance: 1e-7, angleTolerance: 1e-9 });

@@ -206,6 +206,7 @@ export interface ViewportScene {
    * **非表示にした部品には当たらない**(`createAssemblyLayer.ts` の `pickComponent`)。
    */
   pickComponent(screenX: number, screenY: number): string | null;
+  pickAssemblyFace(screenX: number, screenY: number): import('./createAssemblyLayer.js').AssemblyMateFaceHit | null;
   /**
    * 画面座標のところにある面。当たった三角形の番号を、そのボディの面ごとの範囲表で
    * 面の通し番号へ直して返す(`pickSubShape.ts` の `faceIndexOfTriangle`)。当たらなければ
@@ -929,6 +930,13 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
       raycaster.setFromCamera(pointerNdc, lastCamera);
       return assemblyLayer.pickComponent(raycaster);
+    },
+
+    pickAssemblyFace(screenX, screenY) {
+      if (lastCamera === null) return null;
+      pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
+      raycaster.setFromCamera(pointerNdc, lastCamera);
+      return assemblyLayer.pickMateFace(raycaster);
     },
 
     pickFaceAt(screenX, screenY): { readonly featureId: string; readonly faceIndex: number } | null {

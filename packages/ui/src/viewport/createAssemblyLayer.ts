@@ -39,6 +39,9 @@ import {
 import type { DisplayStyle } from '../store/viewSlice.js';
 import { buildSolidGeometry, solidEmphasisOf, type AppearanceInput, type SolidEmphasis } from './buildSolidGeometry.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
+import { faceIndexOfTriangle } from '../solid/pickSubShape.js';
+import { parseAssemblyTargetId } from '../assembly/mateCommands.js';
+import { buildSubShapeGeometry, type SubShapeEmphasis } from './buildSubShapeGeometry.js';
 
 // ---------------------------------------------------------------------------
 // 仕分け(純関数。three.js に触れない)
@@ -71,6 +74,7 @@ export interface AssemblyInstanceDraw {
   readonly emphasis: SolidEmphasis;
   /** 組図での上書き。無ければ部品の面・ボディ外観を継承する。 */
   readonly appearance?: AppearanceSpec;
+  readonly subShapes?: { readonly hovered: string | null; readonly selected: readonly string[] };
 }
 
 /** 層へ渡す一式。**形は鍵ごとに 1 つ**、配置は置いた数だけ。 */
@@ -131,6 +135,8 @@ export interface AssemblyGeometryInput {
   readonly hoveredComponentId: string | null;
   /** 選択中の id(ストアの `selection` をそのまま渡してよい)。 */
   readonly selectedComponentIds: readonly string[];
+  readonly hoveredTargetId?: string | null;
+  readonly selectedTargetIds?: readonly string[];
 }
 
 /**
@@ -146,6 +152,11 @@ export interface AssemblyGeometryInput {
  */
 export function buildAssemblyGeometry(input: AssemblyGeometryInput): AssemblyGeometryBundle {
   const selected = new Set(input.selectedComponentIds);
+  const hoveredTarget = parseAssemblyTargetId(input.hoveredTargetId ?? '');
+  const selectedTargets = (input.selectedTargetIds ?? []).flatMap((id) => {
+    const target = parseAssemblyTargetId(id);
+    return target === null ? [] : [target];
+  });
   const parts: AssemblyPartShape[] = [];
   /** すでに `parts` へ入れた鍵。同じ形を 2 つ作らないための目印。 */
   const placed = new Set<string>();
@@ -165,6 +176,8 @@ export function buildAssemblyGeometry(input: AssemblyGeometryInput): AssemblyGeo
       placed.add(partKey);
       parts.push({ partKey, bodies, appearances: input.appearances?.get(partKey) });
     }
+    const subSelected = selectedTargets.filter((target) => target.componentId === component.id).map((target) => target.elementId);
+    const subHovered = hoveredTarget?.componentId === component.id ? hoveredTarget.elementId : null;
     instances.push({
       componentId: component.id,
       partKey,
@@ -173,6 +186,7 @@ export function buildAssemblyGeometry(input: AssemblyGeometryInput): AssemblyGeo
       // 強調の決め方は立体と同じ(選択がホバーより強い)。判定を 2 通りに割らない。
       emphasis: solidEmphasisOf(component.id, input.hoveredComponentId, selected),
       appearance: component.appearance,
+      ...(subSelected.length > 0 || subHovered !== null ? { subShapes: { hovered: subHovered, selected: subSelected } } : {}),
     });
   }
 
@@ -208,6 +222,7 @@ interface PartShapeEntry {
   readonly meshAppearances: (readonly AppearanceSpec[])[];
   generation: number;
   readonly meshGeometries: THREE.BufferGeometry[];
+  readonly meshSubShapes: { readonly bodyFeatureId: string; readonly faces: SolidBody['faces'] }[];
   readonly edgeGeometries: THREE.BufferGeometry[];
   /** GPU の相対配置を原点近傍に保つ。CPU の当たり判定は元の double 配置を使う。 */
   origin: THREE.Vector3 | null;
@@ -324,7 +339,16 @@ export interface AssemblyLayer {
    * 消してある部品を掴めてしまうと、画面に無いものが選ばれることになるため。
    */
   pickComponent(raycaster: THREE.Raycaster): string | null;
+  /** 面合致に使う、インスタンスと部品内の面。 */
+  pickMateFace(raycaster: THREE.Raycaster): AssemblyMateFaceHit | null;
   dispose(): void;
+}
+
+export interface AssemblyMateFaceHit {
+  readonly componentId: string;
+  readonly partKey: string;
+  readonly bodyFeatureId: string;
+  readonly faceIndex: number;
 }
 
 /** 共有の形を 1 部品ぶん作る。**組み立ては立体と同じ純関数**(`buildSolidGeometry`)を通す。 */
@@ -343,6 +367,7 @@ function fillGeometries(entry: PartShapeEntry, bodies: readonly SolidBody[]): vo
     mesh.setIndex(new THREE.BufferAttribute(draw.indices, 1));
     for (const group of draw.groups) mesh.addGroup(group.start, group.count, group.materialIndex);
     entry.meshAppearances.push(draw.appearances);
+    entry.meshSubShapes.push({ bodyFeatureId: draw.featureId, faces: draw.faces });
     // 包む球は視錐台の絞り込みと当たり判定の粗い絞りに使う。必ず取る。
     mesh.computeBoundingSphere();
     mesh.computeBoundingBox();
@@ -373,6 +398,7 @@ function disposeGeometries(entry: PartShapeEntry): void {
     geometry.dispose();
   }
   entry.meshGeometries.length = 0;
+  entry.meshSubShapes.length = 0;
   entry.meshAppearances.length = 0;
   entry.edgeGeometries.length = 0;
 }
@@ -463,7 +489,16 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
   const individualEdges = new Map<string, THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>>();
   const pickTargets: THREE.Object3D[] = [];
   const idsByObject = new Map<THREE.Object3D, readonly string[]>();
+  const shapeByObject = new Map<THREE.Object3D, { readonly partKey: string; readonly bodyFeatureId: string;
+    readonly faces: SolidBody['faces'] }>();
   const pickOrder = new Map<string, number>();
+  const highlights = new Map<string, {
+    readonly object: THREE.Group;
+    readonly geometries: THREE.BufferGeometry[];
+    readonly materials: { readonly material: THREE.MeshBasicMaterial | THREE.LineBasicMaterial | THREE.PointsMaterial; readonly emphasis: SubShapeEmphasis }[];
+    readonly bodies: readonly SolidBody[];
+    readonly key: string;
+  }>();
   let lastBundle: AssemblyGeometryBundle | null = null;
   let appearanceDirty = true;
   const position = new THREE.Vector3();
@@ -474,6 +509,72 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
   const dotUpper = new Float64Array(16);
   const edgeColor = new THREE.Color();
   const sphere = new THREE.Sphere();
+
+  function removeHighlight(id: string): void {
+    const overlay = highlights.get(id);
+    if (overlay === undefined) return;
+    group.remove(overlay.object);
+    for (const geometry of overlay.geometries) geometry.dispose();
+    for (const { material } of overlay.materials) material.dispose();
+    highlights.delete(id);
+  }
+
+  /** 局所座標の強調だけを小さな独立overlayへ作る。共有形・batchを組み替えない。 */
+  function syncHighlights(bundle: AssemblyGeometryBundle): void {
+    const alive = new Set<string>();
+    for (const draw of bundle.instances) {
+      if (!draw.visible || draw.subShapes === undefined) continue;
+      const bodies = partShapes.get(draw.partKey)?.bodies;
+      if (bodies === undefined) continue;
+      alive.add(draw.componentId);
+      const key = JSON.stringify(draw.subShapes);
+      let overlay = highlights.get(draw.componentId);
+      if (overlay?.key !== key || overlay.bodies !== bodies) {
+        removeHighlight(draw.componentId);
+        const object = new THREE.Group();
+        object.name = `assembly-mate-highlight:${draw.componentId}`;
+        object.matrixAutoUpdate = false;
+        const geometries: THREE.BufferGeometry[] = [];
+        const materials: { material: THREE.MeshBasicMaterial | THREE.LineBasicMaterial | THREE.PointsMaterial; emphasis: SubShapeEmphasis }[] = [];
+        const built = buildSubShapeGeometry(bodies, draw.subShapes.hovered, draw.subShapes.selected);
+        for (const highlight of [built.hovered, built.selected]) {
+          for (const kind of ['face', 'edge', 'vertex'] as const) {
+            const positions = kind === 'face' ? highlight.facePositions : kind === 'edge' ? highlight.edgePositions : highlight.vertexPositions;
+            if (positions.length === 0) continue;
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometries.push(geometry);
+            const color = colors[highlight.emphasis];
+            if (kind === 'face') {
+              geometry.setIndex(new THREE.BufferAttribute(highlight.faceIndices, 1));
+              const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false });
+              const mesh = new THREE.Mesh(geometry, material);
+              mesh.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
+              object.add(mesh); materials.push({ material, emphasis: highlight.emphasis });
+            } else if (kind === 'edge') {
+              const material = new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false });
+              const lines = new THREE.LineSegments(geometry, material);
+              lines.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
+              object.add(lines); materials.push({ material, emphasis: highlight.emphasis });
+            } else {
+              const material = new THREE.PointsMaterial({ color, size: 7, sizeAttenuation: false, depthTest: false, depthWrite: false });
+              const points = new THREE.Points(geometry, material);
+              points.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
+              object.add(points); materials.push({ material, emphasis: highlight.emphasis });
+            }
+          }
+        }
+        overlay = { object, geometries, materials, bodies, key };
+        highlights.set(draw.componentId, overlay);
+        group.add(object);
+      }
+      // modelView行列でカメラからの差をdoubleで求める、個別描画と同じ精度契約。
+      overlay.object.matrix.compose(position.fromArray(draw.placement.position), rotation.fromArray(draw.placement.rotation), scale);
+      overlay.object.matrixWorldNeedsUpdate = true;
+      for (const { material, emphasis } of overlay.materials) material.color.setHex(colors[emphasis]);
+    }
+    for (const id of highlights.keys()) if (!alive.has(id)) removeHighlight(id);
+  }
 
   function removeFaceBatch(key: string, batch: FaceBatch): void {
     group.remove(batch.object);
@@ -508,7 +609,7 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
       const shape: PartShapeEntry = {
         bodies: part.bodies, appearances: part.appearances, meshAppearances: [],
         generation: (previous?.generation ?? 0) + 1, meshGeometries: [], edgeGeometries: [], origin: null,
-        extent: new THREE.Vector3(),
+        extent: new THREE.Vector3(), meshSubShapes: [],
       };
       fillGeometries(shape, part.bodies);
       partShapes.set(part.partKey, shape);
@@ -660,6 +761,9 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
       if (object.count > 0) {
         pickTargets.push(object);
         idsByObject.set(object, plan.members.map((entry) => entry.draw.componentId));
+        const body = partShapes.get(plan.partKey)?.meshGeometries.indexOf(plan.geometry) ?? -1;
+        const subShapes = partShapes.get(plan.partKey)?.meshSubShapes[body];
+        if (subShapes !== undefined) shapeByObject.set(object, { partKey: plan.partKey, ...subShapes });
       }
     }
   }
@@ -729,6 +833,7 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
     syncPartShapes(bundle.parts);
     pickTargets.length = 0;
     idsByObject.clear();
+    shapeByObject.clear();
     pickOrder.clear();
     const facePlans = new Map<string, FacePlan>();
     const edgePlans = new Map<string, EdgePlan>();
@@ -772,6 +877,8 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
           if (draw.visible) {
             pickTargets.push(object);
             idsByObject.set(object, [draw.componentId]);
+            const subShapes = shape.meshSubShapes[body];
+            if (subShapes !== undefined) shapeByObject.set(object, { partKey: draw.partKey, ...subShapes });
           }
         } else {
           const key = JSON.stringify([draw.partKey, shape.generation, body, materials.map((value) => value.uuid)]);
@@ -835,6 +942,7 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
       }
       if (bundle !== lastBundle || appearanceDirty || displayStyle !== lastDisplayStyle) {
         syncBundle(bundle, displayStyle);
+        syncHighlights(bundle);
         lastBundle = bundle;
         lastDisplayStyle = displayStyle;
       }
@@ -857,7 +965,24 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
       }
       return nearest;
     },
+    pickMateFace(raycaster): AssemblyMateFaceHit | null {
+      let nearest: AssemblyMateFaceHit | null = null;
+      let distance = Infinity;
+      for (const hit of raycaster.intersectObjects(pickTargets, false)) {
+        if (hit.distance > distance) break;
+        const componentId = idsByObject.get(hit.object)?.[hit.instanceId ?? 0];
+        const shape = shapeByObject.get(hit.object);
+        if (componentId === undefined || shape === undefined || hit.faceIndex === undefined || hit.faceIndex === null) continue;
+        const faceIndex = faceIndexOfTriangle(shape.faces, hit.faceIndex);
+        if (faceIndex !== null && (nearest === null || (pickOrder.get(componentId) ?? Infinity) < (pickOrder.get(nearest.componentId) ?? Infinity))) {
+          nearest = { componentId, partKey: shape.partKey, bodyFeatureId: shape.bodyFeatureId, faceIndex };
+          distance = hit.distance;
+        }
+      }
+      return nearest;
+    },
     dispose(): void {
+      for (const id of highlights.keys()) removeHighlight(id);
       for (const [key, batch] of faceBatches) removeFaceBatch(key, batch);
       for (const [key, batch] of edgeBatches) removeEdgeBatch(key, batch);
       for (const shape of partShapes.values()) disposeGeometries(shape);
@@ -871,6 +996,7 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
       for (const material of Object.values(individualEdgeMaterials)) material.dispose();
       pickTargets.length = 0;
       idsByObject.clear();
+      shapeByObject.clear();
       pickOrder.clear();
       lastBundle = null;
       environment = null;

@@ -1,8 +1,10 @@
 /** 文書の寿命に沿って部品を再計算し、配置と共有形状をストアへ渡す。 */
 import {
-  appearanceOf, KERNEL_BROKEN_MESSAGE, recomputePart, resolveAssembly,
-  type AssemblyKernelBridge, type EmbeddedPartAttachments, type PartDocument,
-  type PartRecomputeResult, type ResolvedPart, type SolidBody,
+  appearanceOf, diagnoseMates, KERNEL_BROKEN_MESSAGE, recomputePart, resolveAssembly,
+  resolveMateTarget, selectMateTargetGeometry, solveMates,
+  type AssemblyDocument, type AssemblyKernelBridge, type EmbeddedPartAttachments, type PartDocument, type SolveMatesOutcome,
+  type MateDiagnosis, type MateResidualTargetPair, type PartRecomputeResult,
+  type ResolvedPart, type RigidPlacement, type SolidBody,
 } from '@pointercad/model';
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
 import { t } from '../i18n/t.js';
@@ -27,7 +29,43 @@ interface CachedPart {
   readonly appearances: AppearanceInput;
 }
 
-/** 偽の再計算を渡せる。実製品では同じ bridge を使う recomputePart が既定。 */
+/** 成立した独立成分だけ更新する。固定部品・新規部品の文書配置を古い解で上書きしない。 */
+export function retainSuccessfulPlacements(
+  document: AssemblyDocument, outcome: SolveMatesOutcome,
+  initial: ReadonlyMap<string, RigidPlacement>, lastGood: Map<string, RigidPlacement>,
+): ReadonlyMap<string, RigidPlacement> {
+  const fixed = new Set(document.components.filter((component) => component.fixed).map((component) => component.id));
+  const failed = new Set(outcome.diagnosis.components.filter((component) => component.status !== 'converged').flatMap((component) => component.componentIds));
+  const badMates = new Set([...outcome.skipped.map((item) => item.mateId), ...outcome.branchViolations, ...outcome.diagnosis.constantConflicts]);
+  const active = document.mates.filter((mate) => !mate.suppressed);
+  for (const mate of active) if (badMates.has(mate.id)) {
+    if (!fixed.has(mate.a.componentId)) failed.add(mate.a.componentId);
+    if (!fixed.has(mate.b.componentId)) failed.add(mate.b.componentId);
+  }
+  // 未解決の合致でsolverが分割した場合も、同じ可動成分の途中結果を採用しない。
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const mate of active) {
+      if (fixed.has(mate.a.componentId) || fixed.has(mate.b.componentId)) continue;
+      if (failed.has(mate.a.componentId) !== failed.has(mate.b.componentId)) {
+        failed.add(mate.a.componentId); failed.add(mate.b.componentId); expanded = true;
+      }
+    }
+  }
+  for (const id of lastGood.keys()) if (!initial.has(id)) lastGood.delete(id);
+  const placements = new Map<string, RigidPlacement>();
+  for (const [id, original] of initial) {
+    const successful = fixed.has(id) || !failed.has(id);
+    const placement = fixed.has(id) ? original : successful
+      ? outcome.placements.get(id) ?? original : lastGood.get(id) ?? original;
+    placements.set(id, placement);
+    if (successful) lastGood.set(id, placement);
+  }
+  return placements;
+}
+
+/** 部品再計算だけは検査用に差し替えられる。合致は常にmodelの実solverを使う。 */
 export function attachAssembly(
   bridge: AssemblyKernelBridge,
   recompute: PartRecomputer = (document, options) => recomputePart(document, bridge, options),
@@ -40,6 +78,7 @@ export function attachAssembly(
   let version = -1;
   const cache = new Map<string, CachedPart>();
   const retained = new Set<string>();
+  let lastGoodPlacements = new Map<string, RigidPlacement>();
 
   async function release(ref: string): Promise<void> {
     retained.delete(ref);
@@ -61,6 +100,7 @@ export function attachAssembly(
     if (documentId !== request.documentId) {
       await releaseAll();
       documentId = request.documentId;
+      lastGoodPlacements = new Map();
     }
     if (version !== request.version) {
       cache.clear();
@@ -131,16 +171,42 @@ export function attachAssembly(
       cacheHits += found.result.cacheHits;
     }
     if (obsolete(request)) return;
-    const resolved = resolveAssembly(request.document, { library: request.library, resolvedParts });
+    let resolved = resolveAssembly(request.document, { library: request.library, resolvedParts });
     messages.push(...resolved.errors.map((error) => error.message));
+    let diagnosis: MateDiagnosis | null = null;
+    const mateTargetErrors = new Map<string, readonly string[]>();
+    const activeMates = request.document.mates.filter((mate) => !mate.suppressed);
+    if (activeMates.length > 0) {
+      const targets = new Map<string, MateResidualTargetPair>();
+      for (const mate of activeMates) {
+        const errors: string[] = [];
+        const resolve = (target: typeof mate.a) => resolveMateTarget(target, resolved, {
+          subShape: (partKey, reference) => {
+            const body = bodies.get(partKey)?.find((item) => item.featureId === reference.bodyFeatureId);
+            return body === undefined ? null : selectMateTargetGeometry(body, reference);
+          },
+        });
+        const a = resolve(mate.a);
+        const b = resolve(mate.b);
+        if (!a.ok) errors.push(a.message);
+        if (!b.ok) errors.push(b.message);
+        if (a.ok && b.ok) targets.set(mate.id, { a: a.target, b: b.target });
+        if (errors.length > 0) mateTargetErrors.set(mate.id, errors);
+      }
+      const outcome = solveMates(request.document, targets, resolved.placements);
+      diagnosis = diagnoseMates(request.document, outcome);
+      resolved = { ...resolved, placements: retainSuccessfulPlacements(request.document, outcome, resolved.placements, lastGoodPlacements) };
+    } else {
+      lastGoodPlacements = new Map(resolved.placements);
+    }
     useAppStore.setState({
-      assemblyView: { resolved, bodies, appearances },
+      assemblyView: { sourceDocument: request.document, resolved, bodies, appearances, diagnosis, mateTargetErrors },
       isComputing: false, recomputeProgress: null, recomputeCancelled: false, cacheHits,
       errorMessage: messages.length === 0 ? null : messages.join('\n'),
     });
     useAppStore.getState().recordRecomputeCompletion(request.generation,
       messages.some((message) => message.includes(KERNEL_BROKEN_MESSAGE)) ? 'workerBroken' :
-        messages.length > 0 ? 'failed' : 'success');
+        messages.length > 0 || diagnosis?.converged === false || diagnosis?.complete === false ? 'failed' : 'success');
   }
 
   async function drain(): Promise<void> {
@@ -178,7 +244,10 @@ export function attachAssembly(
     if (active.kind === 'part') {
       latest = null;
       queued = null;
+      lastGoodPlacements.clear();
     } else {
+      const activeIds = new Set(active.document.components.filter((component) => !component.suppressed).map((component) => component.id));
+      for (const id of lastGoodPlacements.keys()) if (!activeIds.has(id)) lastGoodPlacements.delete(id);
       const generation = state.requestedGeneration + 1;
       latest = { document: active.document, library: active.library, documentId: active.documentId,
         version: state.documentVersion, generation, cancelBaseline: state.cancelRequestCount };
@@ -190,6 +259,9 @@ export function attachAssembly(
   }
 
   const unsubscribe = useAppStore.subscribe((next, previous) => {
+    if (next.assemblyPlacement !== null && previous.assemblyPlacement === null && next.assemblyMateDraft !== null) {
+      useAppStore.setState({ assemblyMateDraft: null, selection: [], hoveredElementId: null });
+    }
     if (next.assembly !== previous.assembly || next.assemblyLibrary !== previous.assemblyLibrary ||
       next.activeDocumentId !== previous.activeDocumentId || next.documentVersion !== previous.documentVersion) {
       requestCurrent();
@@ -200,6 +272,7 @@ export function attachAssembly(
     detached = true;
     latest = null;
     queued = null;
+    lastGoodPlacements.clear();
     unsubscribe();
     if (!running) void releaseAll().catch(() => undefined);
   };

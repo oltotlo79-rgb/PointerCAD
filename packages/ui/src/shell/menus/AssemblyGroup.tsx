@@ -10,6 +10,10 @@ import {
   toggleSelectedVisible,
 } from '../../assembly/placeComponentActions.js';
 import { CopyToolIcon, CubeIcon, EmptyBoxIcon, FixConstraintIcon, LayersIcon } from '../icons.js';
+import { AngleConstraintIcon, CoincidentConstraintIcon, ConcentricConstraintIcon,
+  DistanceConstraintIcon, ParallelConstraintIcon, TangentConstraintIcon } from '../icons.js';
+import { cancelMate, deleteAssemblyMate, editAssemblyMate, flipAssemblyMate, mateKindReadiness, startMate } from '../../assembly/mateActions.js';
+import type { MateKind } from '@pointercad/model';
 import type { ToolMenuItem } from '../toolbarMenus.js';
 import { ToolMenu } from './ToolMenu.js';
 
@@ -21,6 +25,28 @@ export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] 
   { id: 'toggleFixed', labelKey: 'assembly.tool.toggleFixed', tooltipKey: 'assembly.tool.toggleFixedTooltip', Icon: FixConstraintIcon },
   { id: 'toggleVisible', labelKey: 'assembly.tool.toggleVisible', tooltipKey: 'assembly.tool.toggleVisibleTooltip', Icon: LayersIcon },
 ];
+
+export const ASSEMBLY_MATE_TOOLS: readonly (ToolMenuItem<MateKind> & { readonly kind: MateKind })[] = [
+  { id: 'coincident', kind: 'coincident', labelKey: 'assembly.tool.mateCoincident', tooltipKey: 'assembly.mate.coincidentTooltip', Icon: CoincidentConstraintIcon },
+  { id: 'concentric', kind: 'concentric', labelKey: 'assembly.tool.mateConcentric', tooltipKey: 'assembly.mate.concentricTooltip', Icon: ConcentricConstraintIcon },
+  { id: 'distance', kind: 'distance', labelKey: 'assembly.tool.mateDistance', tooltipKey: 'assembly.mate.distanceTooltip', Icon: DistanceConstraintIcon },
+  { id: 'angle', kind: 'angle', labelKey: 'assembly.tool.mateAngle', tooltipKey: 'assembly.mate.angleTooltip', Icon: AngleConstraintIcon },
+  { id: 'parallel', kind: 'parallel', labelKey: 'assembly.tool.mateParallel', tooltipKey: 'assembly.mate.parallelTooltip', Icon: ParallelConstraintIcon },
+  { id: 'tangent', kind: 'tangent', labelKey: 'assembly.tool.mateTangent', tooltipKey: 'assembly.mate.tangentTooltip', Icon: TangentConstraintIcon },
+];
+type MateMenuAction = MateKind | 'editMate' | 'flipMate' | 'deleteMate';
+const MATE_MENU_ITEMS: readonly ToolMenuItem<MateMenuAction>[] = [
+  ...ASSEMBLY_MATE_TOOLS,
+  { id: 'editMate', labelKey: 'assembly.mate.edit', tooltipKey: 'assembly.mate.editTooltip', Icon: DistanceConstraintIcon },
+  { id: 'flipMate', labelKey: 'assembly.mate.flip', tooltipKey: 'assembly.mate.flipTooltip', Icon: ParallelConstraintIcon },
+  { id: 'deleteMate', labelKey: 'assembly.mate.delete', tooltipKey: 'assembly.mate.deleteTooltip', Icon: EmptyBoxIcon },
+];
+
+/** 配置入口も同じ操作の寿命へ揃える。ファイル選択を開く前に合致を取り消す。 */
+export function startAssemblyPartPlacement(deps?: Parameters<typeof startPlaceComponent>[0]): Promise<void> {
+  cancelMate();
+  return startPlaceComponent(deps);
+}
 
 /** 部品1個を対象にする操作の押せる条件と、断る理由の正本。 */
 export function assemblyActionReadiness(
@@ -34,12 +60,12 @@ export function assemblyActionReadiness(
 }
 
 export function AssemblyGroup(): React.JSX.Element | null {
-  const assembly = useAppStore((state) => state.assembly);
-  const selection = useAppStore((state) => state.selection);
-  const placement = useAppStore((state) => state.assemblyPlacement);
+  const state = useAppStore();
+  const { assembly, selection, assemblyPlacement: placement, assemblyMateDraft: mateDraft } = state;
   if (assembly === null) return null;
   const readiness = assemblyActionReadiness(assembly, selection);
   const placeReady = placement === null;
+  const selectedMate = selection.length === 1 ? assembly.mates.find((mate) => mate.id === selection[0]) : undefined;
 
   const choose = (id: AssemblyMenuActionId): void => {
     if (!assemblyActionReadiness(assembly, useAppStore.getState().selection).ready) return;
@@ -63,7 +89,7 @@ export function AssemblyGroup(): React.JSX.Element | null {
           title={t(placeReady ? 'assembly.tool.placePartTooltip' : 'assembly.tool.placementBusy')}
           aria-label={t('assembly.tool.placePart')}
           aria-disabled={!placeReady}
-          onClick={() => { if (placeReady) void startPlaceComponent(); }}
+          onClick={() => { if (placeReady) void startAssemblyPartPlacement(); }}
         >
           <CubeIcon />
           <span className="pcad-button__label">{t('assembly.tool.placePart')}</span>
@@ -78,6 +104,19 @@ export function AssemblyGroup(): React.JSX.Element | null {
           readinessOf={() => readiness}
           onChoose={choose}
         />
+        <ToolMenu items={MATE_MENU_ITEMS} groupLabelKey="assembly.menu.mate" groupTooltipKey="assembly.mate.menuTooltip"
+          GroupIcon={CoincidentConstraintIcon} activeTool={mateDraft?.kind ?? ''}
+          readinessOf={(id) => id === 'editMate' || id === 'flipMate' || id === 'deleteMate'
+            ? { ready: selectedMate !== undefined && placement === null, reasonKey: selectedMate !== undefined && placement === null ? null : 'assembly.mate.selectMate' }
+            : mateKindReadiness(state, id)}
+          onChoose={(id) => {
+            if (id === 'editMate' || id === 'flipMate' || id === 'deleteMate') {
+              if (selectedMate === undefined || placement !== null) return;
+              if (id === 'editMate') editAssemblyMate(selectedMate.id);
+              else if (id === 'flipMate') flipAssemblyMate(selectedMate.id);
+              else deleteAssemblyMate(selectedMate.id);
+            } else if (mateKindReadiness(useAppStore.getState(), id).ready) startMate(id);
+          }} />
       </div>
     </div>
   );

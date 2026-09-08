@@ -15,6 +15,8 @@ import {
   type SketchError,
   type WorkPlaneId,
 } from '@pointercad/model';
+import type { MateDiagnosis } from '@pointercad/model';
+import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { picksSolidVertices } from '../sketch/freeSketch.js';
@@ -314,8 +316,34 @@ export function commandLineFailureText(failure: CommandLineFailureView): string 
 /** ばねのその場入力の段(§2.11)。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
 export type SpringNumericInputStep = 'springShape' | 'springLength';
 
+/** 合致の選択中、または直近の実solver診断を1文へ畳む。 */
+export function assemblyMateStatus(
+  draft: AssemblyMateDraft | null,
+  diagnosis: MateDiagnosis | null,
+  targetErrors: ReadonlyMap<string, readonly string[]>,
+): { readonly text: string; readonly failed: boolean } | null {
+  if (draft !== null) {
+    if (draft.issue != null) return { text: draft.issue, failed: true };
+    const key = draft.targets.length === 0 ? 'assembly.mate.pickFirst'
+      : draft.targets.length === 1 ? 'assembly.mate.pickSecond' : draft.targets.length === 2 ? 'assembly.mate.ready' : 'assembly.mate.needTwo';
+    return { text: t(key), failed: false };
+  }
+  const targetError = [...targetErrors.values()].flat()[0];
+  if (targetError !== undefined) return { text: targetError, failed: true };
+  if (diagnosis === null) return null;
+  const stopped = !diagnosis.complete || !diagnosis.converged;
+  const reasons = diagnosis.messages.filter((message) => message.severity !== 'info');
+  const notices = diagnosis.messages.filter((message) => message.code === 'redundant');
+  const summary = diagnosis.remainingDegreesOfFreedom === null ? t('assembly.mate.dofUnknown')
+    : diagnosis.remainingDegreesOfFreedom === 0 ? stopped ? t('assembly.mate.incomplete') : t('assembly.mate.fullyConstrained')
+      : t('assembly.mate.remainingDof').replace('{count}', String(diagnosis.remainingDegreesOfFreedom));
+  return { text: [...reasons.map((message) => message.text), ...notices.map((message) => message.text), summary].join(' '),
+    failed: stopped || reasons.length > 0 };
+}
+
 /** 帯に出す 1 文を選ぶのに要るもの。すべてストアから読める値。 */
 export interface StatusInput {
+  readonly assemblyMateStatus?: { readonly text: string; readonly failed: boolean } | null;
   /** ファイル操作の知らせ(FR-806)。失敗は最優先、成功は案内より優先。 */
   readonly fileMessage: FileMessage | null;
   /** 面を張れなかった理由(FR-309)。 */
@@ -779,6 +807,9 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // 他の断りと同じ高さに置く。理由の文は model が相手の名前つきで組み立てたものをそのまま出す。
     return failureLine('statusBar.timelineError', input.timelineRefusalMessage);
   }
+  if (input.assemblyMateStatus?.failed === true) {
+    return failureLine(null, input.assemblyMateStatus.text);
+  }
   if (input.commandLineFailure !== undefined && input.commandLineFailure !== null) {
     // コマンドラインで打った 1 行への返事(FR-208)。他の断りと同じ扱いで、頭に「コマンド:」を付ける。
     return failureLine('commandLine.error', commandLineFailureText(input.commandLineFailure));
@@ -848,6 +879,9 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // (§0.a-0.23 ⑨。実測で初回は 3〜7 秒かかり、固まったように見えるため)。
     const key = input.kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel';
     return { kind: 'computing', text: t(key), hint: null, progress: null };
+  }
+  if (input.assemblyMateStatus !== undefined && input.assemblyMateStatus !== null) {
+    return { kind: 'guide', text: input.assemblyMateStatus.text, hint: null, progress: null };
   }
   /*
     向きの吸着(FR-110)は点の吸着と同じ「いま合っている先」の知らせだが、角度や

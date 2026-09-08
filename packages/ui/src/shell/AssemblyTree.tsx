@@ -12,8 +12,10 @@ import {
   toggleAssemblyComponentSuppressed,
   toggleAssemblyComponentVisible,
 } from '../assembly/placeComponentActions.js';
+import { deleteAssemblyMate, editAssemblyMate, flipAssemblyMate } from '../assembly/mateActions.js';
 import { activeAssemblyDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import type { AssemblyView } from '../store/assemblySlice.js';
 import {
   assemblyTreeRows,
   ASSEMBLY_BADGE_LABEL_KEYS,
@@ -82,7 +84,8 @@ const SECTION_ICONS: Readonly<
 
 /** 行から開く小さな一覧の位置(画面座標、画素)。作りは `FeatureTree.tsx` と同じ。 */
 interface RowMenuState {
-  readonly componentId: string;
+  readonly rowId: string;
+  readonly kind: 'component' | 'mate';
   readonly x: number;
   readonly y: number;
 }
@@ -111,6 +114,31 @@ function menuRight(right: number): number {
   return Math.min(Math.max(right, smallest), Math.max(smallest, largest));
 }
 
+export function assemblyRowMenuTarget(section: AssemblyTreeSectionKey, rowId: string):
+{ readonly kind: 'component' | 'mate'; readonly rowId: string } | null {
+  return section === 'component' || section === 'mate' ? { kind: section, rowId } : null;
+}
+
+/** メニューを開いた行だけを展開状態として読み上げる。 */
+export function assemblyRowMenuExpanded(
+  menu: Pick<RowMenuState, 'kind' | 'rowId'> | null,
+  section: AssemblyTreeSectionKey,
+  rowId: string,
+): boolean {
+  return menu !== null && menu.kind === section && menu.rowId === rowId;
+}
+
+/** 実診断を行IDで引く。部品が残っている場合の部分形状消失も理由として残す。 */
+export function assemblyMateRowDetails(rowId: string, view: AssemblyView | null | undefined): {
+  readonly missing: boolean; readonly suspected: boolean; readonly unresolved: boolean; readonly message: string | null;
+} {
+  const errors = view?.mateTargetErrors.get(rowId) ?? [];
+  const messages = view?.diagnosis?.messages.filter((message) => message.mateIds.includes(rowId)).map((message) => message.text) ?? [];
+  return { missing: errors.length > 0, suspected: view?.diagnosis?.suspectedConflictMateIds.includes(rowId) ?? false,
+    unresolved: view?.diagnosis?.unresolvedMateIds.includes(rowId) ?? false,
+    message: errors.length + messages.length === 0 ? null : [...new Set([...errors, ...messages])].join(' ') };
+}
+
 /**
  * 左のモデルブラウザの**アセンブリ版**(要件§7.1、FR-501。計画書 P7 タスク9)。
  *
@@ -132,7 +160,7 @@ function menuRight(right: number): number {
  */
 export function AssemblyTree(): React.JSX.Element {
   const assembly = useAppStore(activeAssemblyDocument);
-  const resolved = useAppStore((state) => state.assemblyView?.resolved);
+  const view = useAppStore((state) => state.assemblyView);
   const selection = useAppStore((state) => state.selection);
   const hoveredElementId = useAppStore((state) => state.hoveredElementId);
   const [isExpanded, setIsExpanded] = useState(true);
@@ -192,12 +220,21 @@ export function AssemblyTree(): React.JSX.Element {
     );
   }
 
-  const sections = assemblyTreeRows(assembly, resolved);
+  const conflictingIds = new Set([
+    ...(view?.diagnosis?.provenConflictMateIds ?? []),
+  ]);
+  const sections = assemblyTreeRows(assembly, view === null || view === undefined ? undefined : {
+    ...view.resolved,
+    conflictingIds,
+  });
   const selectedIds = new Set(selection);
-  const menuComponent = menu === null ? undefined : findComponent(assembly, menu.componentId);
+  const menuComponent = menu?.kind === 'component' ? findComponent(assembly, menu.rowId) : undefined;
+  const menuMate = menu?.kind === 'mate' ? assembly.mates.find((mate) => mate.id === menu.rowId) : undefined;
   const chevronClassName = 'pcad-tree__chevron' + (isExpanded ? ' pcad-tree__chevron--open' : '');
 
   const renderRow = (row: AssemblyTreeRow, sectionKey: AssemblyTreeSectionKey): React.JSX.Element => {
+    const details = sectionKey === 'mate' ? assemblyMateRowDetails(row.id, view) : null;
+    const errorMessage = details?.message ?? row.errorMessage;
     const KindIcon = KIND_ICONS[row.kind];
     const selected = selectedIds.has(row.id);
     const rowClassName =
@@ -205,7 +242,7 @@ export function AssemblyTree(): React.JSX.Element {
       (selected ? ' pcad-tree__row--selected' : '') +
       (hoveredElementId === row.id ? ' pcad-tree__row--hovered' : '') +
       // 抑制中・指し先が引けない行は薄く出す(部品の木の抑制と同じ薄さ)。
-      (row.dimmed ? ' pcad-tree__row--suppressed' : '');
+      (row.dimmed || details?.missing === true ? ' pcad-tree__row--suppressed' : '');
     return (
       <li key={row.key}>
         <div
@@ -220,13 +257,12 @@ export function AssemblyTree(): React.JSX.Element {
             }
           }}
           onContextMenu={(event) => {
-            if (sectionKey !== 'component') {
-              return;
-            }
+            const target = assemblyRowMenuTarget(sectionKey, row.id);
+            if (target === null) return;
             event.preventDefault();
             useAppStore.getState().setSelection([row.id]);
             setMenu({
-              componentId: row.id,
+              ...target,
               x: menuRight(event.clientX),
               y: menuTop(event.clientY, event.clientY),
             });
@@ -258,26 +294,32 @@ export function AssemblyTree(): React.JSX.Element {
               {t(ASSEMBLY_BADGE_LABEL_KEYS[badge])}
             </span>
           ))}
-          {row.errorMessage === null ? null : (
+          {details?.missing === true && !row.badges.includes('unresolved') ?
+            <span className="pcad-tree__badge" title={errorMessage ?? undefined}>{t('assembly.tree.unresolved')}</span> : null}
+          {details?.suspected === true ? <span className="pcad-tree__badge" title={t('assembly.mate.suspectedTooltip')}>{t('assembly.mate.suspected')}</span> : null}
+          {details?.unresolved === true ? <span className="pcad-tree__badge" title={errorMessage ?? undefined}>{t('assembly.mate.unresolved')}</span> : null}
+          {errorMessage === null ? null : (
             <span
               className="pcad-tree__alert"
-              title={`${row.errorMessage} ${t('featureTree.errorTooltip')}`}
+              title={`${errorMessage} ${t('featureTree.errorTooltip')}`}
             >
               <AlertIcon size={12} />
             </span>
           )}
-          {sectionKey !== 'component' ? null : (
+          {sectionKey !== 'component' && sectionKey !== 'mate' ? null : (
             <button
               type="button"
               className="pcad-tree__more"
               title={t('featureTree.menuTooltip')}
               aria-label={t('featureTree.menuTooltip')}
               aria-haspopup="menu"
-              aria-expanded={menu !== null && menu.componentId === row.id}
+              aria-expanded={assemblyRowMenuExpanded(menu, sectionKey, row.id)}
               onClick={(event) => {
+                const target = assemblyRowMenuTarget(sectionKey, row.id);
+                if (target === null) return;
                 const rect = event.currentTarget.getBoundingClientRect();
                 setMenu({
-                  componentId: row.id,
+                  ...target,
                   x: menuRight(rect.right),
                   y: menuTop(rect.bottom, rect.top),
                 });
@@ -367,19 +409,19 @@ export function AssemblyTree(): React.JSX.Element {
         部品の行の一覧(FR-602、FR-605、FR-503)。指し先が消えている間は開かない
         (部品の木の「⋮」と同じ約束)。
       */}
-      {menu === null || menuComponent === undefined ? null : (
+      {menu === null || (menuComponent === undefined && menuMate === undefined) ? null : (
         <div
           ref={menuRef}
           className="pcad-menu__panel pcad-tree__menu"
           role="menu"
           style={{ left: menu.x, top: menu.y }}
         >
-          <button
+          {menuComponent === undefined ? null : <><button
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              duplicateAssemblyComponent(menu.componentId);
+              duplicateAssemblyComponent(menu.rowId);
               setMenu(null);
             }}
           >
@@ -390,7 +432,7 @@ export function AssemblyTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              deleteAssemblyComponents([menu.componentId]);
+              deleteAssemblyComponents([menu.rowId]);
               setMenu(null);
             }}
           >
@@ -401,7 +443,7 @@ export function AssemblyTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              toggleAssemblyComponentFixed(menu.componentId);
+              toggleAssemblyComponentFixed(menu.rowId);
               setMenu(null);
             }}
           >
@@ -412,7 +454,7 @@ export function AssemblyTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              toggleAssemblyComponentVisible(menu.componentId);
+              toggleAssemblyComponentVisible(menu.rowId);
               setMenu(null);
             }}
           >
@@ -423,12 +465,26 @@ export function AssemblyTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              toggleAssemblyComponentSuppressed(menu.componentId);
+              toggleAssemblyComponentSuppressed(menu.rowId);
               setMenu(null);
             }}
           >
             {t(menuComponent.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
-          </button>
+          </button></>}
+          {menuMate === undefined ? null : <>
+            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+              onClick={() => { editAssemblyMate(menu.rowId); setMenu(null); }}>
+              {t('assembly.mate.edit')}
+            </button>
+            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+              onClick={() => { flipAssemblyMate(menu.rowId); setMenu(null); }}>
+              {t('assembly.mate.flip')}
+            </button>
+            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+              onClick={() => { deleteAssemblyMate(menu.rowId); setMenu(null); }}>
+              {t('assembly.mate.delete')}
+            </button>
+          </>}
         </div>
       )}
     </section>

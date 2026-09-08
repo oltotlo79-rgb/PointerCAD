@@ -317,6 +317,56 @@ export function commandLineFailureText(failure: CommandLineFailureView): string 
 /** ばねのその場入力の段(§2.11)。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
 export type SpringNumericInputStep = 'springShape' | 'springLength';
 
+/** アセンブリの上部にある全18道具と、次に行う操作の文言。 */
+export const ASSEMBLY_TOOL_GUIDE_KEYS = {
+  placePart: 'assembly.status.placePart',
+  placeStandardPart: 'assembly.status.placeStandardPart',
+  placeSubAssembly: 'assembly.status.placeSubAssembly',
+  replacePart: 'assembly.status.replacePart',
+  toggleFixed: 'assembly.status.toggleFixed',
+  coincident: 'assembly.status.pickMateTarget',
+  concentric: 'assembly.status.pickMateTarget',
+  distance: 'assembly.status.pickMateTarget',
+  angle: 'assembly.status.pickMateTarget',
+  parallel: 'assembly.status.pickMateTarget',
+  tangent: 'assembly.status.pickMateTarget',
+  revolute: 'assembly.status.pickJointTarget',
+  slider: 'assembly.status.pickJointTarget',
+  cylindrical: 'assembly.status.pickJointTarget',
+  ball: 'assembly.status.pickJointTarget',
+  interference: 'assembly.status.interference',
+  explode: 'assembly.status.explode',
+  bom: 'assembly.status.bom',
+} as const satisfies Readonly<Record<string, MessageKey>>;
+
+export type AssemblyToolGuideId = keyof typeof ASSEMBLY_TOOL_GUIDE_KEYS;
+
+export const ASSEMBLY_TOOL_GUIDE_IDS = [
+  'placePart',
+  'placeStandardPart',
+  'placeSubAssembly',
+  'replacePart',
+  'toggleFixed',
+  'coincident',
+  'concentric',
+  'distance',
+  'angle',
+  'parallel',
+  'tangent',
+  'revolute',
+  'slider',
+  'cylindrical',
+  'ball',
+  'interference',
+  'explode',
+  'bom',
+] as const satisfies readonly AssemblyToolGuideId[];
+
+/** 道具の id から、ステータスバーへ出す次の一手を引く。 */
+export function assemblyToolGuide(id: AssemblyToolGuideId): string {
+  return t(ASSEMBLY_TOOL_GUIDE_KEYS[id]);
+}
+
 /** 合致の選択中、または直近の実solver診断を1文へ畳む。 */
 export function assemblyMateStatus(
   draft: AssemblyMateDraft | null,
@@ -345,6 +395,10 @@ export function assemblyMateStatus(
 /** 帯に出す 1 文を選ぶのに要るもの。すべてストアから読める値。 */
 export interface StatusInput {
   readonly assemblyMateStatus?: { readonly text: string; readonly failed: boolean } | null;
+  /** 配置・規格部品・置換・干渉・分解・部品表で、いま行う次の一手。 */
+  readonly assemblyOperationStatus?: string | null;
+  /** 干渉を調べ終えたときだけ渡す組数。未実行・実行中は null。 */
+  readonly assemblyInterferenceCount?: number | null;
   /** 部品を合致に沿って直接動かした結果。 */
   readonly assemblyDragNotice?: AssemblyDragNotice | null;
   /** ファイル操作の知らせ(FR-806)。失敗は最優先、成功は案内より優先。 */
@@ -899,6 +953,20 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
       return { kind: 'saved', text: t('assembly.drag.complete'), hint: null, progress: null };
     case 'cancelled':
       return { kind: 'cancelled', text: t('assembly.drag.cancelled'), hint: null, progress: null };
+  }
+  if (input.assemblyOperationStatus !== undefined && input.assemblyOperationStatus !== null) {
+    return { kind: 'guide', text: input.assemblyOperationStatus, hint: null, progress: null };
+  }
+  if (input.assemblyInterferenceCount !== undefined && input.assemblyInterferenceCount !== null) {
+    return {
+      kind: 'guide',
+      text: t('assembly.status.interferenceCount').replace(
+        '{count}',
+        String(input.assemblyInterferenceCount),
+      ),
+      hint: null,
+      progress: null,
+    };
   }
   if (input.assemblyMateStatus !== undefined && input.assemblyMateStatus !== null) {
     return { kind: 'guide', text: input.assemblyMateStatus.text, hint: null, progress: null };

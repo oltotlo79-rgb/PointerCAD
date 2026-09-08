@@ -43,6 +43,7 @@ import {
   importedShapeOf,
   createPartDocumentBundle,
   createAssemblyDocumentBundle,
+  detectSubAssemblyProblem,
   partLibraryOfBundle,
   type DocumentBundle,
   type AssemblyDocument,
@@ -176,6 +177,7 @@ export async function writeDocumentBundle(
     ...options,
     partFiles: library.partFiles,
     parts: library.parts,
+    assemblies: library.assemblies,
     partAttachments: library.attachments,
   });
 }
@@ -218,6 +220,7 @@ export async function readDocumentBundle(
       partFiles,
       parts: result.parts,
       attachments: result.partAttachments,
+      assemblies: result.assemblies,
     }),
     savedAt: result.savedAt,
     thumbnailPng: result.thumbnailPng,
@@ -771,6 +774,8 @@ export interface WritePcadaFileOptions {
    * 欠けているほうは読み手が「部品が見つかりません」で断る。
    */
   readonly parts?: ReadonlyMap<string, PartDocument>;
+  /** 抱き込んだサブアセンブリ文書。部品と同じ `parts/<ref>.json` 名前空間へ書く。 */
+  readonly assemblies?: ReadonlyMap<string, AssemblyDocument>;
   /** 部品ごとの再導出できない添付。鍵は `parts` と同じ `partRef`。 */
   readonly partAttachments?: ReadonlyMap<string, PcadAttachments>;
 }
@@ -792,6 +797,21 @@ function appendParts(
 ): void {
   for (const [ref, document] of sortedEntries(parts)) {
     const text = serializeDocument(document, { savedAt });
+    entries[`${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`] = [
+      strToU8(text),
+      { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
+    ];
+  }
+}
+
+/** サブアセンブリも同じ名前空間へ、assembly 封筒のまま決定的に書く。 */
+function appendAssemblies(
+  entries: Zippable,
+  assemblies: ReadonlyMap<string, AssemblyDocument>,
+  savedAt: string,
+): void {
+  for (const [ref, document] of sortedEntries(assemblies)) {
+    const text = writeAssemblyDocument(document, { savedAt, partFiles: [] });
     entries[`${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`] = [
       strToU8(text),
       { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
@@ -848,6 +868,9 @@ export async function writePcadaFile(
   if (options.parts !== undefined) {
     appendParts(entries, options.parts, savedAt);
   }
+  if (options.assemblies !== undefined) {
+    appendAssemblies(entries, options.assemblies, savedAt);
+  }
   if (options.partAttachments !== undefined) {
     await appendPartAttachments(entries, options.partAttachments);
   }
@@ -867,6 +890,8 @@ export type ReadPcadaFileResult =
        * この版の読み手がまだ知らない参照を往復で失わないため)。
        */
       readonly parts: ReadonlyMap<string, PartDocument>;
+      /** 抱き込んだサブアセンブリ文書。 */
+      readonly assemblies: ReadonlyMap<string, AssemblyDocument>;
       /** 抱き込んだ部品ごとの添付。鍵は `partRef`。 */
       readonly partAttachments: ReadonlyMap<string, PcadAttachments>;
       /** 読み込み時に照合済みの添付 SHA-256。古いファイルでは内容から補う。 */
@@ -887,11 +912,16 @@ function failPcada(code: ReadPcadFileErrorCode, message: string): ReadPcadaFileR
  * (増やさない。`docs/報告記録.md` 2026-09-04 01:40 の③)。
  */
 type CollectPartsResult =
-  | { readonly ok: true; readonly parts: ReadonlyMap<string, PartDocument> }
+  | {
+      readonly ok: true;
+      readonly parts: ReadonlyMap<string, PartDocument>;
+      readonly assemblies: ReadonlyMap<string, AssemblyDocument>;
+    }
   | { readonly ok: false; readonly error: ReadPcadFileError };
 
 function collectParts(entries: ReadonlyMap<string, Uint8Array>): CollectPartsResult {
   const parts = new Map<string, PartDocument>();
+  const assemblies = new Map<string, AssemblyDocument>();
   for (const [name, bytes] of entries) {
     const ref = attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX);
     if (ref === null) {
@@ -903,18 +933,25 @@ function collectParts(entries: ReadonlyMap<string, Uint8Array>): CollectPartsRes
       return { ok: false, error: { code: 'notZip', message: NOT_ZIP_MESSAGE } };
     }
     const parsed = parseDocument(text);
-    if (!parsed.ok) {
-      return {
-        ok: false,
-        error: {
-          code: parsed.error.code,
-          message: `抱き込んだ部品を読めませんでした(${name})。${parsed.error.message}`,
-        },
-      };
+    if (parsed.ok) {
+      parts.set(ref, parsed.document);
+      continue;
     }
-    parts.set(ref, parsed.document);
+    const parsedAssembly = readAssemblyDocument(text);
+    if (parsedAssembly.ok) {
+      assemblies.set(ref, parsedAssembly.document);
+      continue;
+    }
+    const reason = parsed.error.code === 'unsupportedKind' ? parsedAssembly.error : parsed.error;
+    return {
+      ok: false,
+      error: {
+        code: reason.code,
+        message: `抱き込んだ文書を読めませんでした(${name})。${reason.message}`,
+      },
+    };
   }
-  return { ok: true, parts };
+  return { ok: true, parts, assemblies };
 }
 
 interface PartAttachmentEntries {
@@ -1031,10 +1068,21 @@ async function collectPartAttachments(
 function findMissingPart(
   document: AssemblyDocument,
   parts: ReadonlyMap<string, PartDocument>,
+  assemblies: ReadonlyMap<string, AssemblyDocument>,
+  ancestors: ReadonlySet<string> = new Set(),
 ): string | null {
   for (const component of document.components) {
     if (component.source.kind === 'part' && !parts.has(component.source.partRef)) {
       return component.source.partRef;
+    }
+    if (component.source.kind === 'subAssembly') {
+      const ref = component.source.assemblyRef;
+      const nested = assemblies.get(ref);
+      if (nested === undefined) return ref;
+      if (!ancestors.has(ref)) {
+        const missing = findMissingPart(nested, parts, assemblies, new Set([...ancestors, ref]));
+        if (missing !== null) return missing;
+      }
     }
   }
   return null;
@@ -1085,7 +1133,11 @@ export async function readPcadaFile(
   if (!collected.ok) {
     return { ok: false, error: collected.error };
   }
-  const missing = findMissingPart(parsed.document, collected.parts);
+  const subAssemblyProblem = detectSubAssemblyProblem(parsed.document, collected.assemblies);
+  if (subAssemblyProblem !== null) {
+    return failPcada('invalidField', subAssemblyProblem.message);
+  }
+  const missing = findMissingPart(parsed.document, collected.parts, collected.assemblies);
   if (missing !== null) {
     return failPcada(
       'missingField',
@@ -1104,6 +1156,7 @@ export async function readPcadaFile(
       savedAt: parsed.savedAt,
       partFiles: parsed.partFiles,
       parts: collected.parts,
+      assemblies: collected.assemblies,
       partAttachments: collectedAttachments.attachments,
       partAttachmentDigests: collectedAttachments.digests,
     };
@@ -1114,6 +1167,7 @@ export async function readPcadaFile(
     savedAt: parsed.savedAt,
     partFiles: parsed.partFiles,
     parts: collected.parts,
+    assemblies: collected.assemblies,
     partAttachments: collectedAttachments.attachments,
     partAttachmentDigests: collectedAttachments.digests,
     thumbnailPng: thumbnail,

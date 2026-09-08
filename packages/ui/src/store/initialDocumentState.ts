@@ -187,5 +187,7 @@ export function createInitialDocumentState(): InitialDocumentState {
     assembly: null,
     // 干渉解析の口はアプリ入口が起動後に差し出す。文書切替では取り下げない。
     assemblyInterferenceRunner: null,
+    // 置換候補の形を一度だけ計算する口も、カーネルを積むまでは無い。
+    assemblyReplacementRunner: null,
   };
 }

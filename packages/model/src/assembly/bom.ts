@@ -8,10 +8,11 @@
  */
 
 import {
-  DEFAULT_DENSITY_MATERIAL_ID,
   findDensityMaterial,
 } from '../appearance/densityMaterials.js';
 import { massFromVolume } from '../measure/massProperties.js';
+import type { MaterialBearingPartDocument } from './massProperties.js';
+import { materialOf } from './massProperties.js';
 import { partKeyOf } from './resolveAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, BomSettings } from './types.js';
 
@@ -30,6 +31,8 @@ export interface BomSubAssemblyData {
 export interface BomResolvedData {
   readonly partKeys: ReadonlyMap<string, string>;
   readonly bodies: ReadonlyMap<string, readonly BomBody[]>;
+  /** 材質を持つ将来版を含む、抱き込んだ部品文書。 */
+  readonly documents?: ReadonlyMap<string, MaterialBearingPartDocument>;
   /** `assemblyRef` から中身を引く表。無ければサブアセンブリは 1 行のままにする。 */
   readonly subAssemblies?: ReadonlyMap<string, BomSubAssemblyData>;
 }
@@ -142,7 +145,7 @@ export function buildBom(
     path: readonly string[],
   ): void => {
     const partKey = currentResolved.partKeys.get(component.id) ?? partKeyOf(component.source);
-    const materialId = component.materialId ?? DEFAULT_DENSITY_MATERIAL_ID;
+    const materialId = materialOf(component, currentResolved.documents?.get(partKey));
     const identity = `${scope}\u0000${partKey}\u0000${materialId}`;
     const found = grouped.get(identity);
     if (found !== undefined) {

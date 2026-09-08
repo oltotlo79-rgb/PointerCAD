@@ -272,7 +272,7 @@ describe('アセンブリの往復(FR-601、FR-603、FR-611)', () => {
 
   it('ジョイント動作の座標と角度の周回基準を省略せず往復する', () => {
     const document: AssemblyDocument = {
-      ...createAssemblyDocument('組立1'),
+      ...richAssembly(),
       presentation: [{
         id: 'step-1', name: '回転', start: 0, end: 1,
         body: {
@@ -360,7 +360,7 @@ describe('アセンブリの往復(FR-601、FR-603、FR-611)', () => {
 
   it('可動範囲が null のジョイントは null のまま往復する(無制限)', () => {
     const document: AssemblyDocument = {
-      ...createAssemblyDocument('組立1'),
+      ...richAssembly(),
       joints: [{ ...joint(), minValue: null, maxValue: null }],
     };
     const text = writeAssemblyDocument(document, { savedAt: SAVED_AT });

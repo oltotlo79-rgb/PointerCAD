@@ -165,6 +165,7 @@ export function AssemblyTree(): React.JSX.Element {
   const hoveredElementId = useAppStore((state) => state.hoveredElementId);
   const [isExpanded, setIsExpanded] = useState(true);
   const [collapsed, setCollapsed] = useState<readonly AssemblyTreeSectionKey[]>([]);
+  const [collapsedComponents, setCollapsedComponents] = useState<readonly string[]>([]);
   const [menu, setMenu] = useState<RowMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -232,11 +233,14 @@ export function AssemblyTree(): React.JSX.Element {
   const menuMate = menu?.kind === 'mate' ? assembly.mates.find((mate) => mate.id === menu.rowId) : undefined;
   const chevronClassName = 'pcad-tree__chevron' + (isExpanded ? ' pcad-tree__chevron--open' : '');
 
-  const renderRow = (row: AssemblyTreeRow, sectionKey: AssemblyTreeSectionKey): React.JSX.Element => {
+  const renderRow = (row: AssemblyTreeRow, sectionKey: AssemblyTreeSectionKey, depth = 0): React.JSX.Element => {
     const details = sectionKey === 'mate' ? assemblyMateRowDetails(row.id, view) : null;
     const errorMessage = details?.message ?? row.errorMessage;
     const KindIcon = KIND_ICONS[row.kind];
     const selected = selectedIds.has(row.id);
+    const hasChildren = (row.children?.length ?? 0) > 0;
+    const childrenOpen = !collapsedComponents.includes(row.id);
+    const rootRow = !row.id.includes('/');
     const rowClassName =
       'pcad-tree__row pcad-tree__row--child' +
       (selected ? ' pcad-tree__row--selected' : '') +
@@ -257,6 +261,7 @@ export function AssemblyTree(): React.JSX.Element {
             }
           }}
           onContextMenu={(event) => {
+            if (!rootRow) return;
             const target = assemblyRowMenuTarget(sectionKey, row.id);
             if (target === null) return;
             event.preventDefault();
@@ -268,9 +273,27 @@ export function AssemblyTree(): React.JSX.Element {
             });
           }}
         >
+          {hasChildren ? (
+            <button
+              type="button"
+              className="pcad-tree__branch-toggle"
+              style={{ paddingLeft: 26 + depth * 12 }}
+              title={t('featureTree.toggleTooltip')}
+              aria-label={t('featureTree.toggleTooltip')}
+              aria-expanded={childrenOpen}
+              onClick={() => {
+                setCollapsedComponents((ids) => ids.includes(row.id)
+                  ? ids.filter((id) => id !== row.id)
+                  : [...ids, row.id]);
+              }}
+            >
+              <ChevronRightIcon size={12} className={'pcad-tree__chevron' + (childrenOpen ? ' pcad-tree__chevron--open' : '')} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="pcad-tree__select"
+            style={hasChildren ? { paddingLeft: 0 } : { paddingLeft: 44 + depth * 12 }}
             aria-pressed={selected}
             title={t(row.kindLabelKey)}
             onClick={(event) => {
@@ -306,7 +329,7 @@ export function AssemblyTree(): React.JSX.Element {
               <AlertIcon size={12} />
             </span>
           )}
-          {sectionKey !== 'component' && sectionKey !== 'mate' ? null : (
+          {!rootRow || (sectionKey !== 'component' && sectionKey !== 'mate') ? null : (
             <button
               type="button"
               className="pcad-tree__more"
@@ -329,6 +352,11 @@ export function AssemblyTree(): React.JSX.Element {
             </button>
           )}
         </div>
+        {!hasChildren || !childrenOpen ? null : (
+          <ul className="pcad-tree__children pcad-tree__children--assembly-nested">
+            {row.children?.map((child) => renderRow(child, sectionKey, depth + 1))}
+          </ul>
+        )}
       </li>
     );
   };

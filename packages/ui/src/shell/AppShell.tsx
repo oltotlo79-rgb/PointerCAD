@@ -22,6 +22,7 @@ import { AssemblyInterferencePanel } from '../assembly/AssemblyInterferencePanel
 import { StandardPartPicker } from '../assembly/StandardPartPickerPanel.js';
 import { AssemblyPropertyPanel } from '../assembly/AssemblyPropertyPanel.js';
 import { ExplodePopover } from '../assembly/ExplodePopover.js';
+import { ReplacementPopover } from '../assembly/ReplacementPopover.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
@@ -446,6 +447,7 @@ export function AppShell(): React.JSX.Element {
               <PlaceComponentPopover />
               <StandardPartPicker />
               <ExplodePopover />
+              <ReplacementPopover />
               <AssemblyMotionControls />
               <AssemblyInterferencePanel />
             </>

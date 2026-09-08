@@ -75,6 +75,8 @@ export interface AssemblyTreeRow {
   readonly errorMessage: string | null;
   /** 薄く出す行か(抑制中・指し先が引けない)。判定を画面側へ持ち出さないための欄。 */
   readonly dimmed: boolean;
+  /** サブアセンブリの中身。各行の id/key は親からの経路を含む。 */
+  readonly children?: readonly AssemblyTreeRow[];
 }
 
 /** 木の束(節)1 つ。中身が空でも必ず返る。 */
@@ -106,6 +108,11 @@ export interface AssemblyTreeDiagnosis {
    * その段が入るまでは誰も渡さないので、`conflicting` の印は付かない。
    */
   readonly conflictingIds?: ReadonlySet<string>;
+  /** サブアセンブリの部品行を同じ木へ展開するための解決結果。 */
+  readonly subAssemblies?: ReadonlyMap<string, {
+    readonly assembly: AssemblyDocument;
+    readonly resolved: AssemblyTreeDiagnosis;
+  }>;
 }
 
 /** 部品の出どころごとの種類の名前(「部品を置く」等の道具の名前と同じ語にそろえる)。 */
@@ -223,44 +230,7 @@ export function assemblyTreeRows(
    * `resolveAssembly` の作りでは起きないが、起きても先に積まれたほうを出す
    * (行に同じ札を 2 つ並べない)。
    */
-  const messages = new Map<string, string>();
-  for (const error of diagnosis?.errors ?? []) {
-    if (!messages.has(error.componentId)) {
-      messages.set(error.componentId, error.message);
-    }
-  }
-
-  const componentRows: readonly AssemblyTreeRow[] = assembly.components.map((component) => {
-    /*
-     * 中身が引けたか(`partKeys.has`)。**抑制した部品は解決の対象から外れる**ので
-     * `partKeys` にも入らない——抑制は失敗ではないから、そこでは未解決の印を付けない。
-     */
-    const resolved =
-      component.suppressed || diagnosis === undefined || diagnosis.partKeys.has(component.id);
-    const badges: AssemblyRowBadge[] = [];
-    if (component.fixed) {
-      badges.push('fixed');
-    }
-    if (!component.visible) {
-      badges.push('hidden');
-    }
-    if (component.suppressed) {
-      badges.push('suppressed');
-    }
-    if (!resolved) {
-      badges.push('unresolved');
-    }
-    return {
-      key: assemblyRowKey('component', component.id),
-      id: component.id,
-      name: component.name,
-      kind: component.source.kind,
-      kindLabelKey: COMPONENT_KIND_LABEL_KEYS[component.source.kind],
-      badges,
-      errorMessage: messages.get(component.id) ?? null,
-      dimmed: component.suppressed || !resolved,
-    };
-  });
+  const componentRows = componentRowsOf(assembly, diagnosis);
 
   const mateRows: readonly AssemblyTreeRow[] = assembly.mates.map((mate) => {
     const resolved =
@@ -352,5 +322,45 @@ export function assemblyTreeRows(
  * 「木に何行あるか」を数えるときに外すと画面と食い違う)。
  */
 export function assemblyTreeRowCount(sections: readonly AssemblyTreeSection[]): number {
-  return sections.reduce((total, section) => total + 1 + section.rows.length, 0);
+  const countRows = (rows: readonly AssemblyTreeRow[]): number => rows.reduce(
+    (total, row) => total + 1 + countRows(row.children ?? []),
+    0,
+  );
+  return sections.reduce((total, section) => total + 1 + countRows(section.rows), 0);
+}
+
+function componentRowsOf(
+  assembly: AssemblyDocument,
+  diagnosis: AssemblyTreeDiagnosis | undefined,
+  prefix = '',
+): readonly AssemblyTreeRow[] {
+  const messages = new Map<string, string>();
+  for (const error of diagnosis?.errors ?? []) {
+    if (!messages.has(error.componentId)) messages.set(error.componentId, error.message);
+  }
+  return assembly.components.map((component) => {
+    const path = prefix === '' ? component.id : `${prefix}/${component.id}`;
+    const resolved = component.suppressed || diagnosis === undefined || diagnosis.partKeys.has(component.id);
+    const badges: AssemblyRowBadge[] = [];
+    if (component.fixed) badges.push('fixed');
+    if (!component.visible) badges.push('hidden');
+    if (component.suppressed) badges.push('suppressed');
+    if (!resolved) badges.push('unresolved');
+    const nested = component.source.kind === 'subAssembly'
+      ? diagnosis?.subAssemblies?.get(component.id)
+      : undefined;
+    return {
+      key: assemblyRowKey('component', path),
+      id: path,
+      name: component.name,
+      kind: component.source.kind,
+      kindLabelKey: COMPONENT_KIND_LABEL_KEYS[component.source.kind],
+      badges,
+      errorMessage: messages.get(component.id) ?? null,
+      dimmed: component.suppressed || !resolved,
+      ...(nested === undefined ? {} : {
+        children: componentRowsOf(nested.assembly, nested.resolved, path),
+      }),
+    };
+  });
 }

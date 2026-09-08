@@ -15,12 +15,21 @@ export interface PartDocumentBundle {
   readonly attachments: EmbeddedPartAttachments;
 }
 
+/** ルートのライブラリへ平らに抱き込むサブアセンブリ文書。 */
+export interface EmbeddedAssemblyDocumentBundle {
+  readonly kind: 'assembly';
+  readonly document: AssemblyDocument;
+}
+
+export type EmbeddedDocumentBundle = PartDocumentBundle | EmbeddedAssemblyDocumentBundle;
+
 export interface AssemblyDocumentBundle {
   readonly kind: 'assembly';
   readonly document: AssemblyDocument;
   /** アセンブリ自身は原本を持たない。原本はembeddedDocuments内の部品に属する。 */
   readonly attachments: EmbeddedPartAttachments;
   readonly embeddedDocuments: ReadonlyMap<string, PartDocumentBundle>;
+  readonly embeddedAssemblies: ReadonlyMap<string, EmbeddedAssemblyDocumentBundle>;
   readonly partFiles: readonly EmbeddedPartFile[];
 }
 
@@ -38,23 +47,41 @@ export function createAssemblyDocumentBundle(
   document: AssemblyDocument,
   library: PartLibrary = EMPTY_PART_LIBRARY,
 ): AssemblyDocumentBundle {
+  const embeddedDocuments = new Map<string, PartDocumentBundle>();
+  for (const [ref, part] of library.parts) {
+    embeddedDocuments.set(ref, createPartDocumentBundle(part, library.attachments.get(ref)));
+  }
+  const embeddedAssemblies = new Map<string, EmbeddedAssemblyDocumentBundle>(
+    [...(library.assemblies ?? [])].map(([ref, assembly]) => [
+      ref, { kind: 'assembly', document: assembly },
+    ]),
+  );
   return {
     kind: 'assembly',
     document,
     attachments: emptyEmbeddedPartAttachments(),
     partFiles: library.partFiles,
-    embeddedDocuments: new Map([...library.parts].map(([ref, part]) => [
-      ref,
-      createPartDocumentBundle(part, library.attachments.get(ref)),
-    ])),
+    embeddedDocuments,
+    embeddedAssemblies,
   };
 }
 
 /** 既存の部品の抱き込み・置換APIへそのまま渡せる。 */
 export function partLibraryOfBundle(bundle: AssemblyDocumentBundle): PartLibrary {
+  const parts = new Map<string, PartDocument>();
+  const attachments = new Map<string, EmbeddedPartAttachments>();
+  const assemblies = new Map<string, AssemblyDocument>();
+  for (const [ref, embedded] of bundle.embeddedDocuments) {
+    parts.set(ref, embedded.document);
+    attachments.set(ref, embedded.attachments);
+  }
+  for (const [ref, embedded] of bundle.embeddedAssemblies) {
+    assemblies.set(ref, embedded.document);
+  }
   return {
     partFiles: bundle.partFiles,
-    parts: new Map([...bundle.embeddedDocuments].map(([ref, part]) => [ref, part.document])),
-    attachments: new Map([...bundle.embeddedDocuments].map(([ref, part]) => [ref, part.attachments])),
+    parts,
+    attachments,
+    assemblies,
   };
 }

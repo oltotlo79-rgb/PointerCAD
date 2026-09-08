@@ -4,7 +4,7 @@ import {
   KERNEL_BROKEN_MESSAGE, partKeyOf,
   recomputePart, resolveAssembly,
   resolveMateTarget, selectMateTargetGeometry, solveMates,
-  type AssemblyDocument, type AssemblyKernelBridge, type EmbeddedPartAttachments, type PartDocument, type SolveMatesOutcome,
+  type AssemblyDocument, type AssemblyKernelBridge, type ComponentSource, type EmbeddedPartAttachments, type PartDocument, type PartLibrary, type SolveMatesOutcome,
   type JointFramePair, type MateDiagnosis, type MateResidualTargetPair, type MateTarget,
   type PartRecomputeResult,
   type ResolvedPart, type RigidPlacement, type SolidBody,
@@ -16,6 +16,7 @@ import type { PartRecomputer } from '../store/attachKernel.js';
 import { activeDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { AppearanceInput } from '../viewport/buildSolidGeometry.js';
+import type { AssemblyReplacementRunner } from './replaceCommands.js';
 
 interface Request extends AssemblySnapshot {
   readonly documentId: string;
@@ -30,6 +31,41 @@ interface CachedPart {
   readonly resolved: ResolvedPart;
   readonly result: PartRecomputeResult;
   readonly appearances: AppearanceInput;
+}
+
+type StandardPartSource = Extract<ComponentSource, { readonly kind: 'standardPart' }>;
+
+/** ルートと全サブアセンブリから、実際に形を作る部品参照を重複なく集める。 */
+export function collectAssemblyPartSources(
+  document: AssemblyDocument,
+  library: PartLibrary,
+): {
+  readonly references: ReadonlySet<string>;
+  readonly standardSources: ReadonlyMap<string, StandardPartSource>;
+} {
+  const references = new Set<string>();
+  const standardSources = new Map<string, StandardPartSource>();
+  const visitedAssemblies = new Set<string>();
+
+  const visit = (assembly: AssemblyDocument): void => {
+    for (const component of assembly.components) {
+      if (component.suppressed) continue;
+      if (component.source.kind === 'subAssembly') {
+        const ref = component.source.assemblyRef;
+        if (visitedAssemblies.has(ref)) continue;
+        visitedAssemblies.add(ref);
+        const nested = library.assemblies?.get(ref);
+        if (nested !== undefined) visit(nested);
+        continue;
+      }
+      const key = partKeyOf(component.source);
+      references.add(key);
+      if (component.source.kind === 'standardPart') standardSources.set(key, component.source);
+    }
+  };
+
+  visit(document);
+  return { references, standardSources };
 }
 
 /** 成立した独立成分だけ更新する。固定部品・新規部品の文書配置を古い解で上書きしない。 */
@@ -83,6 +119,22 @@ export function attachAssembly(
   const standardDocuments = new Map<string, PartDocument>();
   const retained = new Set<string>();
   let lastGoodPlacements = new Map<string, RigidPlacement>();
+  const replacementRunner: AssemblyReplacementRunner = {
+    resolve: async (document, attachments, requestId) => {
+      const partId = `replacement:${requestId}`;
+      try {
+        const result = await recompute(document, {
+          partId,
+          importedShapes: attachments.shapes,
+          shouldCancel: () => detached,
+        });
+        return result.bodies;
+      } finally {
+        await bridge.releasePart(partId);
+      }
+    },
+  };
+  useAppStore.getState().setAssemblyReplacementRunner(replacementRunner);
 
   async function release(ref: string): Promise<void> {
     retained.delete(ref);
@@ -111,15 +163,10 @@ export function attachAssembly(
       cache.clear();
       version = request.version;
     }
-    const standardSources = new Map(request.document.components.flatMap((component) => {
-      if (component.suppressed || component.source.kind !== 'standardPart') return [];
-      return [[partKeyOf(component.source), component.source] as const];
-    }));
-    const references = new Set(request.document.components.flatMap((component) => {
-      if (component.suppressed) return [];
-      return component.source.kind === 'part' || component.source.kind === 'standardPart'
-        ? [partKeyOf(component.source)] : [];
-    }));
+    const { standardSources, references } = collectAssemblyPartSources(
+      request.document,
+      request.library,
+    );
     for (const ref of [...retained]) {
       if (!references.has(ref)) await release(ref);
     }
@@ -189,6 +236,7 @@ export function attachAssembly(
     if (obsolete(request)) return;
     let resolved = resolveAssembly(request.document, {
       library: request.library, resolvedParts, standardPart: buildStandardPartFromSource,
+      subAssemblies: request.library.assemblies,
     });
     messages.push(...resolved.errors.map((error) => error.message));
     let diagnosis: MateDiagnosis | null = null;
@@ -320,6 +368,9 @@ export function attachAssembly(
     queued = null;
     lastGoodPlacements.clear();
     unsubscribe();
+    if (useAppStore.getState().assemblyReplacementRunner === replacementRunner) {
+      useAppStore.getState().setAssemblyReplacementRunner(null);
+    }
     if (!running) void releaseAll().catch(() => undefined);
   };
 }

@@ -68,6 +68,16 @@ export function LayersIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/** 部品表。見出しと3行2列の表で表す。 */
+export function BomIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="2" y="2.25" width="12" height="11.5" rx="1" />
+      <path d="M2 5.25h12M2 8.25h12M2 11.25h12M6 5.25v8.5" />
+    </SvgIcon>
+  );
+}
+
 /** 透視投影。画面の線から、奥の 1 点へ集まっていく 2 本の線で表す。 */
 export function PerspectiveIcon(props: IconProps): React.JSX.Element {
   return (

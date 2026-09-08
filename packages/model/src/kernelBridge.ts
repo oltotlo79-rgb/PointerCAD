@@ -2219,6 +2219,68 @@ export function selectMateTargetGeometry(
   }
 }
 
+/**
+ * 部品を差し替えた後のボディから、保存し直せる部分形状参照を作る(FR-614)。
+ * 採点・しきい値・同点時の選択は `selectSubShape` と同じ kernel の純関数を使う。
+ * 見つからなければ元の参照を消さずに残せるよう `null` を返す。
+ */
+export function rematchSubShapeRef(
+  bodies: readonly SolidBody[],
+  reference: SubShapeRef,
+): SubShapeRef | null {
+  const preferred = bodies.filter((body) => body.featureId === reference.bodyFeatureId);
+  const candidates = preferred.length > 0 ? preferred : bodies;
+  const query = toSubShapeQuery(reference);
+  for (const body of candidates) {
+    const scale = matchScaleOf(body);
+    switch (query.kind) {
+      case 'face': {
+        const match = matchFace(body.faces, query, scale);
+        const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
+        if (found !== undefined) {
+          return {
+            bodyFeatureId: body.featureId,
+            index: found.index,
+            fingerprint: {
+              kind: 'face', surfaceKind: found.surfaceKind, area: found.area,
+              position: found.centroid, axis: found.axis, radius: found.radius,
+            },
+          };
+        }
+        break;
+      }
+      case 'edge': {
+        const match = matchEdge(body.edges, query, scale);
+        const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
+        if (found !== undefined) {
+          return {
+            bodyFeatureId: body.featureId,
+            index: found.index,
+            fingerprint: {
+              kind: 'edge', curveKind: found.curveKind, length: found.length,
+              position: found.midpoint, axis: found.axis, radius: found.radius,
+            },
+          };
+        }
+        break;
+      }
+      case 'vertex': {
+        const match = matchVertex(body.vertices, query, scale);
+        const found = match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
+        if (found !== undefined) {
+          return {
+            bodyFeatureId: body.featureId,
+            index: found.index,
+            fingerprint: { kind: 'vertex', position: found.position },
+          };
+        }
+        break;
+      }
+    }
+  }
+  return null;
+}
+
 /** 立体が消えたとき(画面に出すはずの段の結果も理由も返らなかったとき)に付ける理由。 */
 const MISSING_BODY_MESSAGE = 'カーネルから立体が返りませんでした。';
 

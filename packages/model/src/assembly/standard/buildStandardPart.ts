@@ -22,7 +22,8 @@ import type {
 import {
   findMetricThread, metricThreadPitch, threadMinorDiameter, type ThreadSeries,
 } from '../../thread/metricThread.js';
-import type { StandardCatalogId } from '../types.js';
+import { planReplacement, type ReplacementPlan, type ReplacementResolvedData } from '../replaceComponent.js';
+import type { AssemblyDocument, StandardCatalogId } from '../types.js';
 import type { StandardPartSource } from '../resolveAssembly.js';
 import {
   findDeepGrooveBallBearing,
@@ -610,6 +611,23 @@ export function createStandardPartSource(
     catalogRevision: STANDARD_CATALOG_REVISION,
     generatorRevision: STANDARD_PART_GENERATOR_REVISION,
   };
+}
+
+/**
+ * 規格部品の呼び寸法を、通常の部品差し替えと同じ予告経路へ流す(FR-616)。
+ * 新しい寸法が表に無い、または対象が規格部品でなければ `null`。
+ */
+export function changeStandardSize(
+  assembly: AssemblyDocument,
+  componentId: string,
+  nextSize: string,
+  resolved: ReplacementResolvedData,
+): ReplacementPlan | null {
+  const component = assembly.components.find((candidate) => candidate.id === componentId);
+  if (component?.source.kind !== 'standardPart') return null;
+  const nextSource: StandardPartSource = { ...component.source, size: nextSize };
+  if (buildStandardPartFromSource(nextSource) === null) return null;
+  return planReplacement(assembly, componentId, nextSource, resolved);
 }
 
 /** 台本どおりの簡略形状の体積。実カーネルの体積検査の独立した期待値に使う。 */

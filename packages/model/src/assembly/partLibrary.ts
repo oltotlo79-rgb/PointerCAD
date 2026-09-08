@@ -22,6 +22,7 @@
 
 import type { PartDocument } from '../part/types.js';
 import { nextSerialId } from '../sketch/createSketchDocument.js';
+import type { AssemblyDocument } from './types.js';
 
 /**
  * 抱き込んだ部品 1 つの素性(要件§8)。
@@ -76,6 +77,8 @@ export interface PartLibrary {
   readonly partFiles: readonly EmbeddedPartFile[];
   readonly parts: ReadonlyMap<string, PartDocument>;
   readonly attachments: ReadonlyMap<string, EmbeddedPartAttachments>;
+  /** `assemblyRef` → 抱き込んだサブアセンブリ文書。旧い呼び手では省略できる。 */
+  readonly assemblies?: ReadonlyMap<string, AssemblyDocument>;
 }
 
 /** 何も抱き込んでいない一式。新しいアセンブリはここから始まる。 */
@@ -83,6 +86,7 @@ export const EMPTY_PART_LIBRARY: PartLibrary = {
   partFiles: [],
   parts: new Map(),
   attachments: new Map(),
+  assemblies: new Map(),
 };
 
 /** 抱き込んだ部品文書の `ref` の接頭辞。`part-1`、`part-2`、…(§2.2 の例と同じ綴り)。 */
@@ -299,6 +303,14 @@ export function partOf(library: PartLibrary, partRef: string): PartDocument | un
   return library.parts.get(partRef);
 }
 
+/** 抱き込んだサブアセンブリ文書を取り出す。 */
+export function assemblyOf(
+  library: PartLibrary,
+  assemblyRef: string,
+): AssemblyDocument | undefined {
+  return library.assemblies?.get(assemblyRef);
+}
+
 /** 抱き込んだ部品の添付を取り出す。知らない `ref` なら `undefined`。 */
 export function partAttachmentsOf(
   library: PartLibrary,
@@ -377,6 +389,7 @@ export async function embedPart(
       ],
       parts,
       attachments: attachmentTable,
+      assemblies: library.assemblies,
     },
     partRef: ref,
     reused: false,
@@ -423,6 +436,7 @@ export async function replacePartDocument(
     ),
     parts,
     attachments: attachmentTable,
+    assemblies: library.assemblies,
   };
 }
 

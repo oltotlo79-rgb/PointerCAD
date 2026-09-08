@@ -50,7 +50,11 @@ export type AssemblyErrorCode =
   /** 置いた部品の中身(部品文書・規格部品の寸法)が引けない。 */
   | 'missingPart'
   /** 置いた位置の式が数にならない。 */
-  | 'invalidValue';
+  | 'invalidValue'
+  /** サブアセンブリが自分自身へ戻る。 */
+  | 'subAssemblyCycle'
+  /** サブアセンブリが許された深さを超える。 */
+  | 'subAssemblyDepth';
 
 /** 解決できなかった理由 1 つ。**どの部品(インスタンス)の話か**を `componentId` で指す。 */
 export interface AssemblyError {
@@ -86,6 +90,16 @@ export interface ResolvedAssembly {
   readonly partKeys: ReadonlyMap<string, string>;
   /** 解決できなかった理由(FR-504)。抑制は失敗ではないので入らない。 */
   readonly errors: readonly AssemblyError[];
+  /** 外からは剛体 1 個として扱う、部品インスタンスごとの入れ子解決結果。 */
+  readonly subAssemblies?: ReadonlyMap<string, ResolvedSubAssembly>;
+}
+
+export interface ResolvedSubAssembly {
+  readonly componentId: string;
+  readonly assemblyRef: string;
+  readonly assembly: AssemblyDocument;
+  readonly placement: RigidPlacement;
+  readonly resolved: ResolvedAssembly;
 }
 
 /** 解決に添える設定。どれも省略できる。 */
@@ -108,6 +122,12 @@ export interface ResolveAssemblyOptions {
    * 渡さなければ規格部品は組み立てられず、`errors` に理由が積まれる。
    */
   readonly standardPart?: (source: StandardPartSource) => PartDocument | null;
+  /** 抱き込んだサブアセンブリ文書。鍵は `ComponentSource.assemblyRef`。 */
+  readonly subAssemblies?: ReadonlyMap<string, AssemblyDocument>;
+  /** 再帰専用。公開関数から渡してもよいが、通常は省く。 */
+  readonly depth?: number;
+  /** 再帰専用。現在の枝ですでに通った assemblyRef。 */
+  readonly ancestors?: readonly string[];
 }
 
 /** 部品文書が引けない(`parts/<ref>.json` が無い)。計画書のタスク6 の検証表の文言。 */
@@ -115,6 +135,11 @@ export const MISSING_PART_MESSAGE = '部品が見つかりません。';
 
 /** 規格部品の呼び寸法が寸法表に無い(§2.12 の断りの文言)。 */
 export const MISSING_STANDARD_SIZE_MESSAGE = 'この呼び寸法は用意されていません。';
+
+/** サブアセンブリの深さ上限と、利用者へ見せる固定文言。 */
+export const MAX_SUB_ASSEMBLY_DEPTH = 8;
+export const SUB_ASSEMBLY_DEPTH_MESSAGE = '組の入れ子が深すぎます(8 段まで)。';
+export const SUB_ASSEMBLY_CYCLE_MESSAGE = 'このアセンブリは自分自身を含んでいます。';
 
 /**
  * 置いた位置が数にならない(壊れた値。FR-504)。
@@ -261,6 +286,9 @@ export function resolveAssembly(
   const placements = new Map<string, RigidPlacement>();
   const partKeys = new Map<string, string>();
   const errors: AssemblyError[] = [];
+  const subAssemblies = new Map<string, ResolvedSubAssembly>();
+  const depth = options.depth ?? 0;
+  const ancestors = options.ancestors ?? [];
 
   for (const component of assembly.components) {
     // 抑制は失敗ではない(FR-503)。置かれなかったものとして扱い、errors にも入れない。
@@ -273,6 +301,52 @@ export function resolveAssembly(
     );
 
     const key = partKeyOf(component.source);
+    if (component.source.kind === 'subAssembly') {
+      const ref = component.source.assemblyRef;
+      if (ancestors.includes(ref)) {
+        errors.push({
+          componentId: component.id,
+          code: 'subAssemblyCycle',
+          message: SUB_ASSEMBLY_CYCLE_MESSAGE,
+        });
+        continue;
+      }
+      if (depth + 1 > MAX_SUB_ASSEMBLY_DEPTH) {
+        errors.push({
+          componentId: component.id,
+          code: 'subAssemblyDepth',
+          message: SUB_ASSEMBLY_DEPTH_MESSAGE,
+        });
+        continue;
+      }
+      const nested = options.subAssemblies?.get(ref);
+      if (nested === undefined) {
+        errors.push({ componentId: component.id, code: 'missingPart', message: MISSING_PART_MESSAGE });
+        continue;
+      }
+      const placement = placements.get(component.id) ?? parent;
+      const resolved = resolveAssembly(nested, {
+        ...options,
+        parent: placement,
+        depth: depth + 1,
+        ancestors: [...ancestors, ref],
+      });
+      subAssemblies.set(component.id, {
+        componentId: component.id,
+        assemblyRef: ref,
+        assembly: nested,
+        placement,
+        resolved,
+      });
+      partKeys.set(component.id, key);
+      for (const [partKey, part] of resolved.parts) {
+        if (!parts.has(partKey)) parts.set(partKey, part);
+      }
+      for (const error of resolved.errors) {
+        errors.push({ ...error, componentId: `${component.id}/${error.componentId}` });
+      }
+      continue;
+    }
     if (parts.has(key)) {
       // 2 個目以降。**解決し直さない**(§0.a-0.4)。形は 1 つを全インスタンスで使い回す。
       partKeys.set(component.id, key);
@@ -294,5 +368,5 @@ export function resolveAssembly(
     partKeys.set(component.id, key);
   }
 
-  return { parts, placements, partKeys, errors };
+  return { parts, placements, partKeys, errors, subAssemblies };
 }

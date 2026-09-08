@@ -36,6 +36,10 @@ import { t } from '../i18n/t.js';
 import {
   commitStandardPartChoice, type StandardPartCategory,
 } from '../assembly/standardPartPicker.js';
+import type {
+  AssemblyReplacementPreview,
+  AssemblyReplacementRunner,
+} from '../assembly/replaceCommands.js';
 
 export interface AssemblySnapshot {
   readonly document: AssemblyDocument;
@@ -134,6 +138,12 @@ export interface AssemblySlice {
     dimensionSeries?: 'annexJA' | 'main',
     threadSeries?: 'coarse' | 'fine',
   ) => boolean;
+  /** サブアセンブリ配置・部品置換の非同期処理と、確認が必要な置換予告。 */
+  readonly assemblyReplacementRunner: AssemblyReplacementRunner | null;
+  readonly assemblyReplacementPreview: AssemblyReplacementPreview | null;
+  readonly assemblyReplacementBusy: boolean;
+  readonly assemblyReplacementRequestId: string | null;
+  readonly setAssemblyReplacementRunner: (runner: AssemblyReplacementRunner | null) => void;
   /** 「部品を配置」の一時状態。取消・文書切替・確定編集で必ず消える。 */
   readonly assemblyPlacement: AssemblyPlacementState | null;
   /** 合致コマンドの打ちかけ。文書の寿命に結び、保存・Undoへは入れない。 */
@@ -170,7 +180,7 @@ export interface AssemblySlice {
  * 部品を作り直すたびに初期値へ戻す欄。実体は `initialDocumentState.ts` が 1 か所で作る。
  */
 export type AssemblyInitialState = Pick<AssemblySlice,
-  'assembly' | 'assemblyInterferenceRunner'>;
+  'assembly' | 'assemblyInterferenceRunner' | 'assemblyReplacementRunner'>;
 
 export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   'assemblyLibrary' | 'assemblyUndoStack' | 'savedAssembly' | 'assemblyFileName'
@@ -181,7 +191,8 @@ export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   | 'assemblyExplodeError' | 'activeDocumentId' | 'assemblyInterferenceOpen'
   | 'assemblyInterferenceResult' | 'assemblyInterferenceSelectedKey'
   | 'assemblyInterferenceProgress' | 'assemblyInterferenceRequestId' | 'assemblyGapRequestId'
-  | 'isCheckingAssemblyInterference' | 'assemblyInterferenceError' | 'standardPartPickerOpen'>;
+  | 'isCheckingAssemblyInterference' | 'assemblyInterferenceError' | 'standardPartPickerOpen'
+  | 'assemblyReplacementPreview' | 'assemblyReplacementBusy' | 'assemblyReplacementRequestId'>;
 
 type InterferenceTransientState = Pick<AssemblyOwnedInitialState,
   'assemblyInterferenceOpen' | 'assemblyInterferenceResult' | 'assemblyInterferenceSelectedKey'
@@ -225,6 +236,9 @@ export function createAssemblyInitialState(): AssemblyOwnedInitialState {
     assemblyExplodeDraft: null,
     assemblyExplodeError: null,
     standardPartPickerOpen: false,
+    assemblyReplacementPreview: null,
+    assemblyReplacementBusy: false,
+    assemblyReplacementRequestId: null,
     ...emptyInterferenceState(),
     activeDocumentId: crypto.randomUUID(),
   };
@@ -255,6 +269,7 @@ export const createAssemblySlice: StateCreator<
       assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
       assemblyExplodeDraft: null, assemblyExplodeError: null,
       standardPartPickerOpen: false,
+      assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
       ...emptyInterferenceState(),
     }));
   }
@@ -297,8 +312,12 @@ export const createAssemblySlice: StateCreator<
           assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
           assemblyExplodeDraft: null, assemblyExplodeError: null,
           standardPartPickerOpen: false,
+          assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
           ...emptyInterferenceState() };
       });
+    },
+    setAssemblyReplacementRunner: (assemblyReplacementRunner) => {
+      set({ assemblyReplacementRunner });
     },
     setAssemblyInterferenceRunner: (assemblyInterferenceRunner) => {
       set({ assemblyInterferenceRunner });
@@ -472,20 +491,24 @@ export const createAssemblySlice: StateCreator<
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.past.length > 0) applyHistory(undo(stack));
       else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
-        || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen) {
+        || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen
+        || get().assemblyReplacementPreview !== null || get().assemblyReplacementBusy) {
         set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
           assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null,
-          standardPartPickerOpen: false });
+          standardPartPickerOpen: false, assemblyReplacementPreview: null, assemblyReplacementBusy: false,
+          assemblyReplacementRequestId: null });
       }
     },
     redoAssembly: () => {
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.future.length > 0) applyHistory(redo(stack));
       else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
-        || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen) {
+        || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen
+        || get().assemblyReplacementPreview !== null || get().assemblyReplacementBusy) {
         set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
           assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null,
-          standardPartPickerOpen: false });
+          standardPartPickerOpen: false, assemblyReplacementPreview: null, assemblyReplacementBusy: false,
+          assemblyReplacementRequestId: null });
       }
     },
   };

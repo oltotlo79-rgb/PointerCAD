@@ -26,6 +26,8 @@ import {
   DEFAULT_APPEARANCE,
   type AppearanceSpec,
   type AssemblyComponent,
+  type AssemblyDocument,
+  type ResolvedAssembly,
   type RigidPlacement,
   type SolidBody,
 } from '@pointercad/model';
@@ -143,6 +145,49 @@ export interface AssemblyGeometryInput {
   readonly selectedComponentIds: readonly string[];
   readonly hoveredTargetId?: string | null;
   readonly selectedTargetIds?: readonly string[];
+}
+
+/** 入れ子の組を、描画層が扱う葉の部品一覧へ展開する。行IDは親からの経路を含む。 */
+export function flattenAssemblyGeometry(
+  document: AssemblyDocument,
+  resolved: ResolvedAssembly,
+  rootPlacements: ReadonlyMap<string, RigidPlacement> = resolved.placements,
+): Pick<AssemblyGeometryInput, 'components' | 'placements' | 'partKeys'> {
+  const components: AssemblyComponent[] = [];
+  const placements = new Map<string, RigidPlacement>();
+  const partKeys = new Map<string, string>();
+
+  const visit = (
+    assembly: AssemblyDocument,
+    current: ResolvedAssembly,
+    prefix: string,
+    inheritedVisible: boolean,
+    inheritedAppearance: AppearanceSpec | undefined,
+    placementOverride?: ReadonlyMap<string, RigidPlacement>,
+  ): void => {
+    for (const component of assembly.components) {
+      if (component.suppressed) continue;
+      const path = prefix === '' ? component.id : `${prefix}/${component.id}`;
+      const visible = inheritedVisible && component.visible;
+      const appearance = component.appearance ?? inheritedAppearance;
+      if (component.source.kind === 'subAssembly') {
+        const nested = current.subAssemblies?.get(component.id);
+        if (nested !== undefined) {
+          visit(nested.assembly, nested.resolved, path, visible, appearance);
+        }
+        continue;
+      }
+      const placement = placementOverride?.get(component.id) ?? current.placements.get(component.id);
+      const partKey = current.partKeys.get(component.id);
+      if (placement === undefined || partKey === undefined) continue;
+      components.push({ ...component, id: path, visible, ...(appearance === undefined ? {} : { appearance }) });
+      placements.set(path, placement);
+      partKeys.set(path, partKey);
+    }
+  };
+
+  visit(document, resolved, '', true, undefined, rootPlacements);
+  return { components, placements, partKeys };
 }
 
 /**

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { ASSEMBLY_MATE_TOOLS } from '../shell/menus/AssemblyGroup.js';
-import { addSelectedOriginTarget, cancelMate, commitMateDraft, handleMateKey, mateDraftCheck, mateFailureText,
-  mateKindReadiness, removeDraftTarget, startMate, toggleDraftFlipped, updateMateSource } from './mateActions.js';
+import { ASSEMBLY_JOINT_TOOLS, ASSEMBLY_MATE_TOOLS } from '../shell/menus/AssemblyGroup.js';
+import { addSelectedOriginTarget, cancelMate, commitJointDraft, commitMateDraft, handleMateKey, jointDraftReady,
+  mateDraftCheck, mateFailureText, mateKindReadiness, removeDraftTarget, startJoint, startMate,
+  toggleDraftFlipped, updateMateSource } from './mateActions.js';
 import { mateKindNeedsValue } from './mateCommands.js';
 
 export function MatePopover(): React.JSX.Element | null {
@@ -13,6 +14,7 @@ export function MatePopover(): React.JSX.Element | null {
   const open = draft !== null;
   const pair = draft?.targets.length === 2;
   const kind = draft?.kind;
+  const jointKind = draft?.jointKind;
   const editingId = draft?.editingMateId;
   useEffect(() => {
     if (open) {
@@ -22,26 +24,31 @@ export function MatePopover(): React.JSX.Element | null {
     }
   }, [open, pair, kind, editingId]);
   if (draft === null || state.assemblyPlacement !== null) return null;
-  const check = mateDraftCheck(state);
-  const ready = check?.ok === true;
-  const error = draft.issue ?? (draft.targets.length >= 2 ? mateFailureText(check) : null);
-  const needsValue = mateKindNeedsValue(draft.kind, draft.targetKinds);
+  const check = jointKind === undefined ? mateDraftCheck(state) : null;
+  const ready = jointKind === undefined ? check?.ok === true : jointDraftReady(state, jointKind);
+  const error = draft.issue ?? (draft.targets.length >= 2
+    ? jointKind === undefined ? mateFailureText(check) : ready ? null : t('assembly.mate.invalidTargets')
+    : null);
+  const needsValue = jointKind === undefined && mateKindNeedsValue(draft.kind, draft.targetKinds);
+  const titleKey = jointKind === undefined
+    ? draft.editingMateId === null ? 'assembly.mate.title' : 'assembly.mate.edit'
+    : 'assembly.joint.title';
   const componentSelected = state.selection.filter((id) => state.assembly?.components.some((c) => c.id === id && !c.suppressed)).length === 1;
   return (
     <div ref={panel} tabIndex={-1} className="pcad-popover pcad-popover--numeric" role="dialog"
-      aria-label={t(draft.editingMateId === null ? 'assembly.mate.title' : 'assembly.mate.edit')}
+      aria-label={t(titleKey)}
       style={{ left: 12, top: 12, maxWidth: 'calc(100% - 24px)', maxHeight: 'calc(100% - 24px)', overflow: 'auto' }}
       onKeyDown={(event) => {
         if (handleMateKey(event.key, event.nativeEvent.isComposing)) {
           event.preventDefault(); event.stopPropagation();
         }
       }}>
-      <div className="pcad-popover__title">{t(draft.editingMateId === null ? 'assembly.mate.title' : 'assembly.mate.edit')}</div>
+      <div className="pcad-popover__title">{t(titleKey)}</div>
       <p className="pcad-popover__hint">
         {t(draft.targets.length === 0 ? 'assembly.mate.pickFirst' : draft.targets.length === 1 ? 'assembly.mate.pickSecond'
           : draft.targets.length === 2 ? 'assembly.mate.ready' : 'assembly.mate.needTwo')}
       </p>
-      <label className="pcad-field">
+      {jointKind === undefined ? <label className="pcad-field">
         <span className="pcad-field__label">{t('assembly.mate.kind')}</span>
         <select value={draft.kind} onChange={(event) => {
           const item = ASSEMBLY_MATE_TOOLS.find((candidate) => candidate.kind === event.target.value);
@@ -52,7 +59,17 @@ export function MatePopover(): React.JSX.Element | null {
             return <option key={item.kind} value={item.kind} disabled={!readiness.ready}>{t(item.labelKey)}</option>;
           })}
         </select>
-      </label>
+      </label> : <label className="pcad-field">
+        <span className="pcad-field__label">{t('assembly.tool.joint')}</span>
+        <select value={jointKind} onChange={(event) => {
+          const item = ASSEMBLY_JOINT_TOOLS.find((candidate) => candidate.kind === event.target.value);
+          if (item !== undefined) startJoint(item.kind);
+        }}>
+          {ASSEMBLY_JOINT_TOOLS.map((item) => (
+            <option key={item.kind} value={item.kind}>{t(item.labelKey)}</option>
+          ))}
+        </select>
+      </label>}
       <ul>
         {draft.targets.map((target, index) => {
           const component = state.assembly?.components.find((item) => item.id === target.componentId);
@@ -83,15 +100,21 @@ export function MatePopover(): React.JSX.Element | null {
         </label>
       ) : null}
       {error === null ? null : <p role="status" className="pcad-field__message pcad-field__message--error">{error}</p>}
-      <label className="pcad-checkbox">
+      {jointKind === undefined ? <label className="pcad-checkbox">
         <input type="checkbox" checked={draft.flipped} onChange={() => { toggleDraftFlipped(); }} />
         {t('assembly.mate.flipped')}
-      </label>
+      </label> : null}
       <div className="pcad-popover__actions">
         <button type="button" className="pcad-button pcad-button--action" aria-disabled={!ready}
-          title={mateFailureText(check) ?? t('assembly.mate.commit')}
-          onClick={() => { if (ready) commitMateDraft(); }}>
-          {t(draft.editingMateId === null ? 'assembly.mate.commit' : 'assembly.mate.update')}
+          title={jointKind === undefined ? mateFailureText(check) ?? t('assembly.mate.commit') : t('assembly.joint.title')}
+          onClick={() => {
+            if (!ready) return;
+            if (jointKind === undefined) commitMateDraft();
+            else commitJointDraft();
+          }}>
+          {t(jointKind === undefined
+            ? draft.editingMateId === null ? 'assembly.mate.commit' : 'assembly.mate.update'
+            : 'assembly.joint.commit')}
         </button>
         <button type="button" className="pcad-button" onClick={cancelMate}>{t('assembly.mate.cancel')}</button>
       </div>

@@ -873,6 +873,10 @@ function readPresentationStep(value: unknown, path: string): Checked<Presentatio
   if (!end.ok) {
     return end;
   }
+  if (!Number.isFinite(start.value) || !Number.isFinite(end.value)
+    || start.value < 0 || end.value > 1 || start.value >= end.value) {
+    return fieldProblem(joinPath(path, 'start'), 'type');
+  }
   const body = readPresentationBody(record.value, 'body', path);
   if (!body.ok) {
     return body;
@@ -1103,6 +1107,35 @@ function failDuplicateId(label: string, id: string): ReadAssemblyDocumentResult 
   );
 }
 
+/** 保存文書内の id 参照が実在するかを確かめ、最初の壊れた欄を返す。 */
+function brokenReferencePath(document: AssemblyDocument): string | null {
+  const componentIds = new Set(document.components.map((component) => component.id));
+  for (const [index, mate] of document.mates.entries()) {
+    if (!componentIds.has(mate.a.componentId)) return `document.mates[${String(index)}].a.componentId`;
+    if (!componentIds.has(mate.b.componentId)) return `document.mates[${String(index)}].b.componentId`;
+  }
+  const jointIds = new Set(document.joints.map((joint) => joint.id));
+  for (const [index, joint] of document.joints.entries()) {
+    if (!componentIds.has(joint.a.componentId)) return `document.joints[${String(index)}].a.componentId`;
+    if (!componentIds.has(joint.b.componentId)) return `document.joints[${String(index)}].b.componentId`;
+  }
+  for (const [index, step] of document.presentation.entries()) {
+    if (step.body.kind === 'joint') {
+      if (!jointIds.has(step.body.jointId)) return `document.presentation[${String(index)}].body.jointId`;
+      continue;
+    }
+    for (const [componentIndex, componentId] of step.body.componentIds.entries()) {
+      if (!componentIds.has(componentId)) {
+        return `document.presentation[${String(index)}].body.componentIds[${String(componentIndex)}]`;
+      }
+    }
+    if (findDuplicateId(step.body.componentIds) !== null) {
+      return `document.presentation[${String(index)}].body.componentIds`;
+    }
+  }
+  return null;
+}
+
 /** 版の判定が済んだ封筒を読む。 */
 function readEnvelope(
   raw: Record<string, unknown>,
@@ -1163,6 +1196,10 @@ function readEnvelope(
   const duplicatePartRef = findDuplicateId(partFiles.value.map((partFile) => partFile.ref));
   if (duplicatePartRef !== null) {
     return failDuplicateId('抱き込んだ部品', duplicatePartRef);
+  }
+  const brokenReference = brokenReferencePath(decoded.value);
+  if (brokenReference !== null) {
+    return fail('invalidField', `ファイルの中身が壊れています(${brokenReference} の参照先が見つかりません)。`);
   }
   return {
     ok: true,

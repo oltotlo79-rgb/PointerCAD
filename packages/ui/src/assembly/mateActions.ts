@@ -1,7 +1,7 @@
-import { findComponent, type MateKind, type MateTarget, type OriginElement } from '@pointercad/model';
+import { findComponent, type JointKind, type MateKind, type MateTarget, type OriginElement } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { appendMateTarget, assemblyTargetId, availableMateKinds, commitMate, createMateDraft, defaultMateSource,
+import { appendMateTarget, assemblyTargetId, availableMateKinds, commitJoint, commitMate, createMateDraft, defaultMateSource,
   editMateDraft, refreshMateDraft, removeMate, resolveCurrentMateTarget, toggleMateFlipped,
   type AssemblyMateDraft, type MateCommandOutcome } from './mateCommands.js';
 
@@ -42,8 +42,19 @@ export function startMate(kind: MateKind): void {
   const previous = state.assemblyMateDraft;
   if (previous === null && state.selectionKind === 'body') useAppStore.setState({ selectionKind: 'face' });
   const draft = previous?.documentId === state.activeDocumentId ? previous : createMateDraft(state.activeDocumentId, kind);
-  putDraft({ ...draft, kind, mode: 'command', source: draft.kind === kind ? draft.source : defaultMateSource(kind),
+  putDraft({ ...draft, kind, jointKind: undefined, mode: 'command', source: draft.kind === kind ? draft.source : defaultMateSource(kind),
     alignmentChosen: draft.kind === kind ? draft.alignmentChosen : false, issue: null });
+}
+
+export function startJoint(kind: JointKind): void {
+  const state = useAppStore.getState();
+  if (state.assembly === null || state.assemblyPlacement !== null) return;
+  const previous = state.assemblyMateDraft;
+  if (previous === null && state.selectionKind === 'body') useAppStore.setState({ selectionKind: 'face' });
+  const draft = previous?.documentId === state.activeDocumentId
+    ? previous
+    : createMateDraft(state.activeDocumentId, 'coincident');
+  putDraft({ ...draft, jointKind: kind, mode: 'command', issue: null });
 }
 
 export function cancelMate(): void {
@@ -106,10 +117,62 @@ export function commitMateDraft(): MateCommandOutcome | null {
   return outcome;
 }
 
+export function jointDraftReady(state: MateState, kind: JointKind): boolean {
+  const draft = state.assemblyMateDraft;
+  const assembly = state.assembly;
+  const view = state.assemblyView;
+  if (assembly === null || view === null || draft === null || draft.jointKind !== kind
+    || draft.documentId !== state.activeDocumentId || draft.targets.length !== 2
+    || state.assemblyPlacement !== null || state.isComputing) return false;
+  const resolved = draft.targets.map((target) => resolveCurrentMateTarget(assembly, view, target));
+  if (resolved.some((result) => !result.ok)) return false;
+  return kind === 'ball' || resolved.every((result) => result.ok && 'direction' in result.target);
+}
+
+export function jointKindReadiness(state: MateState, kind: JointKind): {
+  readonly ready: boolean; readonly reasonKey: 'assembly.mate.notReady' | null;
+} {
+  const assembly = state.assembly;
+  if (assembly === null || state.assemblyPlacement !== null
+    || assembly.components.filter((component) => !component.suppressed).length < 2) {
+    return { ready: false, reasonKey: 'assembly.mate.notReady' };
+  }
+  const draft = state.assemblyMateDraft;
+  if (draft === null || draft.targets.length < 2) return { ready: true, reasonKey: null };
+  const view = state.assemblyView;
+  if (draft.targets.length !== 2 || view === null) {
+    return { ready: false, reasonKey: 'assembly.mate.notReady' };
+  }
+  const resolved = draft.targets.map((target) =>
+    resolveCurrentMateTarget(assembly, view, target));
+  const ready = resolved.every((result) => result.ok)
+    && (kind === 'ball' || resolved.every((result) =>
+      result.ok && 'direction' in result.target));
+  return ready
+    ? { ready: true, reasonKey: null }
+    : { ready: false, reasonKey: 'assembly.mate.notReady' };
+}
+
+export function commitJointDraft(): boolean {
+  const state = useAppStore.getState();
+  const draft = state.assemblyMateDraft;
+  if (state.assembly === null || draft?.jointKind === undefined
+    || !jointDraftReady(state, draft.jointKind)) return false;
+  const outcome = commitJoint(state.assembly, draft);
+  if (!outcome.ok) return false;
+  state.applyAssembly(outcome.document);
+  useAppStore.setState({ selection: [outcome.joint.id], hoveredElementId: null });
+  return true;
+}
+
 export function handleMateKey(key: string, isComposing = false): boolean {
   if (isComposing || useAppStore.getState().assemblyMateDraft === null) return false;
   if (key === 'Escape') { cancelMate(); return true; }
-  if (key === 'Enter') { commitMateDraft(); return true; }
+  if (key === 'Enter') {
+    if (useAppStore.getState().assemblyMateDraft?.jointKind === undefined) commitMateDraft();
+    else commitJointDraft();
+    return true;
+  }
   return false;
 }
 

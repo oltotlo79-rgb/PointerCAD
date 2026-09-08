@@ -38,6 +38,7 @@ import { canvasPlacementOf, type CanvasDraw } from './canvasLayer.js';
 import {
   buildAssemblyGeometry,
   EMPTY_ASSEMBLY_GEOMETRY,
+  flattenAssemblyGeometry,
   type AssemblyGeometryBundle,
 } from './createAssemblyLayer.js';
 import { sphereGridSphereOf, sphereGridTargetSphere } from '../sketch/sketchCommands.js';
@@ -515,16 +516,26 @@ function assemblyBundleOf(
   const view = state.assemblyView;
   if (view === null) return EMPTY_ASSEMBLY_GEOMETRY;
   const resolved = view.resolved;
-  return buildAssemblyGeometry({
-    components: assembly.components,
-    placements: componentDragPlacements(state)
+  const flattened = flattenAssemblyGeometry(
+    assembly,
+    resolved,
+    componentDragPlacements(state)
       ?? (state.assemblyMotionSourceDocument === assembly ? state.assemblyMotionPlacements : null)
       ?? resolved.placements,
-    partKeys: resolved.partKeys,
+  );
+  const selectedRoots = new Set([
+    ...state.selection,
+    ...(state.assemblyMateDraft?.targets.filter((target) => target.kind === 'origin').map((target) => target.componentId) ?? []),
+  ]);
+  const selectedComponentIds = flattened.components
+    .filter((component) => [...selectedRoots].some((id) => component.id === id || component.id.startsWith(`${id}/`)))
+    .map((component) => component.id);
+  return buildAssemblyGeometry({
+    ...flattened,
     bodies: view.bodies,
     appearances: view.appearances,
     hoveredComponentId: state.hoveredElementId,
-    selectedComponentIds: [...state.selection, ...(state.assemblyMateDraft?.targets.filter((target) => target.kind === 'origin').map((target) => target.componentId) ?? [])],
+    selectedComponentIds,
     selectedTargetIds: state.assemblyMateDraft?.targets.map(assemblyTargetId) ?? state.selection,
     hoveredTargetId: state.hoveredElementId,
   });

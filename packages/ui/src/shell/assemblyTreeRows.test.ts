@@ -157,6 +157,114 @@ describe('assemblyTreeRows(束の並び)', () => {
     ]);
     expect(assemblyTreeRows(document)).toEqual(first);
   });
+
+  it('サブアセンブリの中の部品を親行の子として出す(FR-613)', () => {
+    let parent = createAssemblyDocument('親');
+    parent = addComponent(
+      parent,
+      createComponentFor(parent, { kind: 'subAssembly', assemblyRef: 'assembly-1' }, {
+        partName: '子組',
+      }),
+    );
+    const child = assemblyWith(2);
+    const childDiagnosis = diagnosisFor(['component-1', 'component-2']);
+    const diagnosis: AssemblyTreeDiagnosis = {
+      partKeys: new Map([['component-1', 'assembly-1']]),
+      errors: [],
+      subAssemblies: new Map([['component-1', { assembly: child, resolved: childDiagnosis }]]),
+    };
+
+    expect(assemblyTreeRows(parent, diagnosis)[0].rows[0].children?.map((row) => row.name))
+      .toEqual(['ブラケット:1', 'ブラケット:2']);
+  });
+
+  it('入れ子のidとkeyには親からの経路を含める(rules/06 10.9)', () => {
+    let parent = createAssemblyDocument('親');
+    parent = addComponent(
+      parent,
+      createComponentFor(parent, { kind: 'subAssembly', assemblyRef: 'assembly-1' }),
+    );
+    const child = assemblyWith(1);
+    const diagnosis: AssemblyTreeDiagnosis = {
+      partKeys: new Map([['component-1', 'assembly-1']]),
+      errors: [],
+      subAssemblies: new Map([['component-1', {
+        assembly: child,
+        resolved: diagnosisFor(['component-1']),
+      }]]),
+    };
+    const nested = assemblyTreeRows(parent, diagnosis)[0].rows[0].children?.[0];
+
+    expect(nested?.id).toBe('component-1/component-1');
+    expect(nested?.key).toBe('component:component-1/component-1');
+  });
+
+  it('同じ子組を2つ置いても入れ子の兄弟keyが食い違う', () => {
+    let parent = createAssemblyDocument('親');
+    for (let index = 0; index < 2; index += 1) {
+      parent = addComponent(
+        parent,
+        createComponentFor(parent, { kind: 'subAssembly', assemblyRef: 'assembly-1' }),
+      );
+    }
+    const child = assemblyWith(1);
+    const resolvedChild = diagnosisFor(['component-1']);
+    const diagnosis: AssemblyTreeDiagnosis = {
+      partKeys: new Map([
+        ['component-1', 'assembly-1'],
+        ['component-2', 'assembly-1'],
+      ]),
+      errors: [],
+      subAssemblies: new Map([
+        ['component-1', { assembly: child, resolved: resolvedChild }],
+        ['component-2', { assembly: child, resolved: resolvedChild }],
+      ]),
+    };
+    const roots = assemblyTreeRows(parent, diagnosis)[0].rows;
+    const nestedKeys = roots.flatMap((row) => row.children?.map((childRow) => childRow.key) ?? []);
+
+    expect(nestedKeys).toEqual([
+      'component:component-1/component-1',
+      'component:component-2/component-1',
+    ]);
+    expect(new Set(nestedKeys).size).toBe(2);
+  });
+
+  it('木の行数は畳める入れ子の行も数える', () => {
+    let parent = createAssemblyDocument('親');
+    parent = addComponent(
+      parent,
+      createComponentFor(parent, { kind: 'subAssembly', assemblyRef: 'assembly-1' }),
+    );
+    const diagnosis: AssemblyTreeDiagnosis = {
+      partKeys: new Map([['component-1', 'assembly-1']]),
+      errors: [],
+      subAssemblies: new Map([['component-1', {
+        assembly: assemblyWith(2),
+        resolved: diagnosisFor(['component-1', 'component-2']),
+      }]]),
+    };
+
+    expect(assemblyTreeRowCount(assemblyTreeRows(parent, diagnosis))).toBe(4 + 1 + 2);
+  });
+
+  it('子組を解決できないときは親だけを未解決として残す', () => {
+    let parent = createAssemblyDocument('親');
+    parent = addComponent(
+      parent,
+      createComponentFor(parent, { kind: 'subAssembly', assemblyRef: 'missing' }),
+    );
+    const diagnosis = diagnosisFor([], [{
+      componentId: 'component-1',
+      code: 'missingPart',
+      message: '子組が見つかりません。',
+    }]);
+    const row = assemblyTreeRows(parent, diagnosis)[0].rows[0];
+
+    expect(row.badges).toContain('unresolved');
+    expect(row.errorMessage).toBe('子組が見つかりません。');
+    expect(row.children).toBeUndefined();
+  });
 });
 
 describe('行の key(rules/06 10.9)', () => {

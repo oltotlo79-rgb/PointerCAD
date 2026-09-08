@@ -62,12 +62,28 @@ describe('ヘルプの目録', () => {
     // P6 タスク32 で 4 本(書き出す・読み込む・DXF・単位)足して 43 + 4 = 47。
     // P6 タスク43 で 4 本(切って中を見る・選ぶものを絞る・下絵・3D プリントの点検)足して 51。
     // P6 タスク33 で 2 本(ひな形・印刷と別名で保存)足して 53。
-    // P7 タスク11bで「部品を置いて組み立てる」を1本足して54。
-    expect(HELP_TOPICS).toHaveLength(54);
+    // P7 タスク11bで1本、タスク46・47で操作別に8本を足して53 + 9 = 62。
+    expect(HELP_TOPICS).toHaveLength(62);
   });
 
   it('アセンブリの説明を id で引ける(FR-601・602・605・606)', () => {
     expect(findHelpTopic('assembly')?.path).toBe('docs/ja/assembly.md');
+  });
+
+  it('P7の操作別ヘルプ8本をidで引ける(FR-613・614・617・618、NFR-MA-4)', () => {
+    const expected = [
+      ['assembly-place', 'assembly-place.md'],
+      ['mate', 'mate.md'],
+      ['joint', 'joint.md'],
+      ['interference', 'interference.md'],
+      ['standard-parts', 'standard-parts.md'],
+      ['explode', 'explode.md'],
+      ['bom', 'bom.md'],
+      ['replace-subassembly', 'replace-subassembly.md'],
+    ];
+    for (const [id, fileName] of expected) {
+      expect(findHelpTopic(id)?.path).toBe(`docs/ja/${fileName}`);
+    }
   });
 
 
@@ -128,6 +144,11 @@ const FORBIDDEN_TERMS: readonly string[] = [
   'JSON',
   'IndexedDB',
   'キャッシュ',
+  'ヤコビアン',
+  '連立',
+  '四元数',
+  '境界箱',
+  '連結成分',
 ];
 
 describe('ヘルプの言葉づかい(rules/05 §11.3)', () => {

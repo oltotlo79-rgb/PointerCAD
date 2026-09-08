@@ -31,6 +31,7 @@ import {
   countSelectedSubShapes,
   describeStatus,
   assemblyMateStatus,
+  assemblyToolGuide,
   PROGRESS_DELAY_MS,
   type SpringNumericInputStep,
   type StatusLineKind,
@@ -102,6 +103,18 @@ export function StatusBar(): React.JSX.Element {
   const mateDiagnosis = useAppStore((state) => state.assemblyView?.diagnosis ?? null);
   const mateTargetErrors = useAppStore((state) => state.assemblyView?.mateTargetErrors ?? null);
   const assemblyDragNotice = useAppStore((state) => state.assemblyDragNotice);
+  const assemblyPlacement = useAppStore((state) => state.assemblyPlacement);
+  const standardPartPickerOpen = useAppStore((state) => state.standardPartPickerOpen);
+  const assemblyReplacementBusy = useAppStore((state) => state.assemblyReplacementBusy);
+  const assemblyReplacementPreview = useAppStore((state) => state.assemblyReplacementPreview);
+  const assemblyExplodeDraft = useAppStore((state) => state.assemblyExplodeDraft);
+  const checkingAssemblyInterference = useAppStore(
+    (state) => state.isCheckingAssemblyInterference,
+  );
+  const assemblyInterferenceCount = useAppStore(
+    (state) => state.assemblyInterferenceResult?.pairs.length ?? null,
+  );
+  const viewingAssemblyBom = useAppStore((state) => state.selection.includes('bom'));
   // 幾何カーネルの初回読み込み中かどうかで帯の文言を分ける(§0.a-0.23 ⑨)。
   const kernelLoaded = useAppStore((state) => state.kernelLoaded);
   const errorMessage = useAppStore((state) => state.errorMessage);
@@ -268,8 +281,26 @@ export function StatusBar(): React.JSX.Element {
                 null),
         }));
 
+  const assemblyOperationStatus = assemblyReplacementPreview !== null
+    ? t('assembly.status.replaceConfirm')
+    : assemblyReplacementBusy
+      ? t('assembly.status.fileReading')
+      : standardPartPickerOpen
+        ? assemblyToolGuide('placeStandardPart')
+        : assemblyPlacement !== null
+          ? assemblyToolGuide('placePart')
+          : assemblyExplodeDraft !== null
+            ? assemblyToolGuide('explode')
+            : checkingAssemblyInterference
+              ? t('assembly.status.interferenceRunning')
+              : viewingAssemblyBom
+                ? assemblyToolGuide('bom')
+                : null;
+
   const line = describeStatus({
     assemblyMateStatus: assemblyMateStatus(mateDraft, mateDiagnosis, mateTargetErrors ?? new Map()),
+    assemblyOperationStatus,
+    assemblyInterferenceCount,
     assemblyDragNotice,
     fileMessage,
     faceErrorKey,

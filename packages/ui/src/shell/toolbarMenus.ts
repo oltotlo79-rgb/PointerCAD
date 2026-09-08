@@ -58,3 +58,4 @@ export {
 } from './menus/solidMenuItems.js';
 export { PROJECTION_MENU_ITEMS, LOOK_MENU_ITEMS } from './menus/lookMenuItems.js';
 export type { LookToolId, CanvasActionId, PrintCheckActionId } from './menus/lookMenuItems.js';
+export { ASSEMBLY_MENU_ITEMS, MATE_MENU_ITEMS } from './menus/AssemblyGroup.js';

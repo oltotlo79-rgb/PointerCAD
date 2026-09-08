@@ -15,6 +15,9 @@ import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
 import {
+  ASSEMBLY_TOOL_GUIDE_KEYS,
+  ASSEMBLY_TOOL_GUIDE_IDS,
+  assemblyToolGuide,
   commandLineFailureText,
   assemblyMateStatus,
   countSelectedBodies,
@@ -97,6 +100,24 @@ describe('合致の状態文', () => {
     const diagnosis = diagnoseMates(assembly, solveMates(assembly, new Map(), new Map()));
     expect(assemblyMateStatus(null, diagnosis, new Map())).toEqual({ text: t('assembly.mate.fullyConstrained'), failed: false });
   });
+
+  it('2つ目の対象を選ぶ案内は操作を具体的に示す', () => {
+    expect(assemblyMateStatus(draft(1), null, new Map())?.text)
+      .toBe('合致させる 2 つ目の面を選んでください。');
+  });
+
+  it('残る自由度3を「あと3か所」と表示する', () => {
+    const base = diagnose('coincident', 0);
+    const diagnosis = {
+      ...base,
+      converged: true,
+      complete: true,
+      remainingDegreesOfFreedom: 3,
+      messages: [],
+    };
+    expect(assemblyMateStatus(null, diagnosis, new Map())?.text)
+      .toBe('あと 3 か所決まっていません。');
+  });
 });
 
 /** 何も起きていない状態。各検査は要る欄だけを上書きする。 */
@@ -136,6 +157,46 @@ function partError(message: string): PartRecomputeError {
 function sketchError(message: string): SketchError {
   return { featureId: 'face-1', code: 'kernelFailed', message };
 }
+
+describe('アセンブリ道具の次の一手(P7タスク47)', () => {
+  it.each(ASSEMBLY_TOOL_GUIDE_IDS)('%sに空でない案内がある', (id) => {
+    expect(assemblyToolGuide(id)).not.toBe('');
+    expect(assemblyToolGuide(id)).not.toBe(ASSEMBLY_TOOL_GUIDE_KEYS[id]);
+  });
+
+  it('調べる前は干渉件数を表示しない', () => {
+    expect(describeStatus({ ...quiet(), assemblyInterferenceCount: null }).text)
+      .toBe(t('statusBar.ready'));
+  });
+
+  it.each([
+    [0, '干渉している組は 0 件です。'],
+    [3, '干渉している組は 3 件です。'],
+  ])('調べた後は干渉件数%dを表示する', (count, expected) => {
+    const line = describeStatus({ ...quiet(), assemblyInterferenceCount: count });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe(expected);
+  });
+
+  it('進行中の操作案内は以前の干渉結果より先に出す', () => {
+    const line = describeStatus({
+      ...quiet(),
+      assemblyOperationStatus: t('assembly.status.interferenceRunning'),
+      assemblyInterferenceCount: 2,
+    });
+    expect(line.text).toBe(t('assembly.status.interferenceRunning'));
+  });
+
+  it('操作案内より失敗理由を先に出す', () => {
+    const line = describeStatus({
+      ...quiet(),
+      assemblyOperationStatus: assemblyToolGuide('explode'),
+      errorMessage: '分解できません。',
+    });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toContain('分解できません。');
+  });
+});
 
 describe('帯に出す 1 文の優先順位(FR-905)', () => {
   it('何も起きていなければ道具の案内を出す(FR-905、NFR-UX-7)', () => {

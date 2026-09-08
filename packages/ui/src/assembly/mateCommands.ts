@@ -5,8 +5,11 @@ import {
   resolveMateTarget,
   selectMateTargetGeometry,
   nextMateId,
+  nextJointId,
   type AssemblyDocument,
   type Mate,
+  type Joint,
+  type JointKind,
   type MateKind,
   type MateTarget,
   type MateTargetKind,
@@ -26,6 +29,8 @@ export interface AssemblyMateDraft {
   readonly mode?: 'selection' | 'command';
   readonly alignmentChosen?: boolean;
   readonly issue?: string | null;
+  /** 指定時は同じ2対象の収集UIをジョイント作成に使う。 */
+  readonly jointKind?: JointKind;
 }
 
 export interface MateFacePick {
@@ -38,6 +43,10 @@ export interface MateFacePick {
 export type MateCommandOutcome =
   | { readonly ok: true; readonly document: AssemblyDocument; readonly mate: Mate }
   | { readonly ok: false; readonly reason: 'targets' | 'sameComponent' | 'kind' | 'value' | 'stale'; readonly error?: ExpressionError; readonly message?: string };
+
+export type JointCommandOutcome =
+  | { readonly ok: true; readonly document: AssemblyDocument; readonly joint: Joint }
+  | { readonly ok: false; readonly reason: 'targets' | 'sameComponent' | 'kind' | 'stale'; readonly message?: string };
 
 export function createMateDraft(documentId: string, kind: MateKind): AssemblyMateDraft {
   return { documentId, kind, targets: [], targetKinds: [], source: defaultMateSource(kind), flipped: false, editingMateId: null, mode: 'command' };
@@ -172,6 +181,30 @@ export function commitMate(document: AssemblyDocument, draft: AssemblyMateDraft)
     ? [...document.mates, mate]
     : document.mates.map((item) => item.id === previous.id ? mate : item);
   return { ok: true, document: { ...document, mates }, mate };
+}
+
+/** 合致と同じ2対象から、残す動きの種類を持つジョイントを作る。 */
+export function commitJoint(document: AssemblyDocument, draft: AssemblyMateDraft): JointCommandOutcome {
+  const [a, b] = draft.targets;
+  const kind = draft.jointKind;
+  if (draft.targets.length !== 2 || a === undefined || b === undefined) return { ok: false, reason: 'targets' };
+  if (a.componentId === b.componentId) return { ok: false, reason: 'sameComponent' };
+  if (kind === undefined) return { ok: false, reason: 'kind' };
+  if ([a, b].some((target) => {
+    const component = findComponent(document, target.componentId);
+    return component === undefined || component.suppressed;
+  })) return { ok: false, reason: 'stale' };
+  const joint: Joint = {
+    id: nextJointId(document),
+    name: t('assembly.joint.defaultName').replace('{count}', String(document.joints.length + 1)),
+    kind,
+    a,
+    b,
+    minValue: null,
+    maxValue: null,
+    suppressed: false,
+  };
+  return { ok: true, document: { ...document, joints: [...document.joints, joint] }, joint };
 }
 
 export function removeMate(document: AssemblyDocument, mateId: string): AssemblyDocument {

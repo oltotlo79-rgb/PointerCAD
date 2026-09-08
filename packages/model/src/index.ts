@@ -15,6 +15,7 @@ export {
   createKernelBridge,
   createKernelHealth,
   KERNEL_BROKEN_MESSAGE,
+  rematchSubShapeRef,
   selectSubShape,
   selectMateTargetGeometry,
   // 角の丸め・面取りの形を求める同期の純関数(FR-323、P4 タスク18・19)。ui の予告表示
@@ -757,7 +758,7 @@ export type {
   PartLibrary,
 } from './assembly/partLibrary.js';
 export {
-  attachmentsDigestOf, canonicalPartDocumentText, CONTENT_HASH_ALGORITHM, contentHashOf,
+  assemblyOf, attachmentsDigestOf, canonicalPartDocumentText, CONTENT_HASH_ALGORITHM, contentHashOf,
   embedPart, emptyEmbeddedPartAttachments, EMPTY_PART_LIBRARY, nextPartRef, PART_REF_PREFIX,
   partAttachmentsOf, partFileOf, partOf, replacePartDocument, staleParts,
 } from './assembly/partLibrary.js';
@@ -771,12 +772,30 @@ export {
  * 上限 5 秒を割る)。部品が引けない・位置が数にならないは投げずに `errors` へ積む(FR-504)。
  */
 export type {
-  AssemblyError, AssemblyErrorCode, ResolveAssemblyOptions, ResolvedAssembly, StandardPartSource,
+  AssemblyError, AssemblyErrorCode, ResolveAssemblyOptions, ResolvedAssembly, ResolvedSubAssembly,
+  StandardPartSource,
 } from './assembly/resolveAssembly.js';
 export {
   assemblyVariables, INVALID_PLACEMENT_MESSAGE, MISSING_PART_MESSAGE,
-  MISSING_STANDARD_SIZE_MESSAGE, partKeyOf, resolveAssembly,
+  MAX_SUB_ASSEMBLY_DEPTH, MISSING_STANDARD_SIZE_MESSAGE, partKeyOf, resolveAssembly,
+  SUB_ASSEMBLY_CYCLE_MESSAGE, SUB_ASSEMBLY_DEPTH_MESSAGE,
 } from './assembly/resolveAssembly.js';
+
+export type { SubAssemblyProblem } from './assembly/subAssembly.js';
+export { detectCycle, detectSubAssemblyProblem, resolveSubAssembly } from './assembly/subAssembly.js';
+
+export type {
+  ReplacementPlan, ReplacementResolvedData,
+} from './assembly/replaceComponent.js';
+export { applyReplacement, planReplacement } from './assembly/replaceComponent.js';
+
+export type {
+  AssemblyMassBody, AssemblyMassProperties, AssemblyMassResolvedData,
+  MaterialBearingPartDocument,
+} from './assembly/massProperties.js';
+export {
+  assemblyMassProperties, materialOf, PARTIAL_ASSEMBLY_MASS_MESSAGE,
+} from './assembly/massProperties.js';
 
 /** 部品表の純粋な集計(FR-611、P7 §2.10・§2.10.1)。 */
 export type {
@@ -811,7 +830,7 @@ export {
   sectionMassFromArea, STRUCTURAL_SECTION_SOURCE,
 } from './assembly/standard/sections.js';
 export {
-  buildStandardPart, buildStandardPartFromSource, createStandardPartSource,
+  buildStandardPart, buildStandardPartFromSource, changeStandardSize, createStandardPartSource,
   DEFAULT_STANDARD_FASTENER_LENGTH, DEFAULT_STANDARD_SECTION_LENGTH,
   STANDARD_PART_UNAVAILABLE_MESSAGE, standardPartNominalVolume,
 } from './assembly/standard/buildStandardPart.js';
@@ -878,6 +897,8 @@ export {
   createAssemblyDocumentBundle,
   partLibraryOfBundle,
   type DocumentBundle,
+  type EmbeddedAssemblyDocumentBundle,
+  type EmbeddedDocumentBundle,
   type PartDocumentBundle,
   type AssemblyDocumentBundle,
 } from './assembly/documentBundle.js';

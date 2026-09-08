@@ -1399,6 +1399,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 干渉の各組はReact key用の包みを持つが、定義一覧の2列配置には影響させない。 */
+.pcad-property-list__pair {
+  display: contents;
+}
+
 /* ===== アセンブリの部品表(FR-611、FR-728、P7タスク34) ===== */
 
 .pcad-bom {
@@ -2492,6 +2497,27 @@ button.pcad-tree__row:focus-visible {
   border: 1px solid var(--pcad-border-strong);
   border-radius: var(--pcad-radius);
   box-shadow: var(--pcad-shadow-soft-raised);
+}
+
+.pcad-tree__branch-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  width: 38px;
+  height: 100%;
+  padding-top: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  color: var(--pcad-text-faint);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.pcad-tree__branch-toggle:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
 }
 
 .pcad-popover--explode {

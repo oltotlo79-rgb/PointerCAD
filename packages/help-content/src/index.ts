@@ -103,6 +103,18 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
   },
   { id: 'save-and-open', title: '保存する・開く', path: 'docs/ja/save-and-open.md' },
   { id: 'assembly', title: '部品を置いて組み立てる', path: 'docs/ja/assembly.md' },
+  { id: 'assembly-place', title: '部品を配置する', path: 'docs/ja/assembly-place.md' },
+  { id: 'mate', title: '部品どうしを合わせる', path: 'docs/ja/mate.md' },
+  { id: 'joint', title: 'ジョイントで動きを残す', path: 'docs/ja/joint.md' },
+  { id: 'interference', title: '部品の干渉を調べる', path: 'docs/ja/interference.md' },
+  { id: 'standard-parts', title: '規格部品を置く', path: 'docs/ja/standard-parts.md' },
+  { id: 'explode', title: '分解した見せ方を作る', path: 'docs/ja/explode.md' },
+  { id: 'bom', title: '部品表を確認する', path: 'docs/ja/bom.md' },
+  {
+    id: 'replace-subassembly',
+    title: '部品を差し替える・組を置く',
+    path: 'docs/ja/replace-subassembly.md',
+  },
   {
     id: 'select-subshape',
     title: '面・辺・頂点を選ぶ',

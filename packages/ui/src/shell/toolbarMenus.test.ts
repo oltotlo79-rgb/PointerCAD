@@ -20,9 +20,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
-import { ASSEMBLY_MATE_TOOLS, ASSEMBLY_MENU_ITEMS, AssemblyGroup, assemblyActionReadiness } from './menus/AssemblyGroup.js';
+import {
+  ASSEMBLY_JOINT_TOOLS,
+  ASSEMBLY_MATE_TOOLS,
+  ASSEMBLY_MENU_ITEMS,
+  MATE_MENU_ITEMS,
+  AssemblyGroup,
+  assemblyActionReadiness,
+} from './menus/AssemblyGroup.js';
 import { AssemblyTree, assemblyMateRowDetails, assemblyRowMenuExpanded, assemblyRowMenuTarget } from './AssemblyTree.js';
 import { runNewAssembly } from './menus/fileToolbarActions.js';
+import { ASSEMBLY_TOOL_GUIDE_IDS } from './statusText.js';
 import {
   BASIC_SKETCH_TOOL_COUNT,
   COMBINE_MENU_ITEMS,
@@ -225,19 +233,51 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
   });
 });
 
-describe('アセンブリのツールバー(P7 タスク11b)', () => {
-  it('成立する4つの部品操作だけを一覧に出す', () => {
+describe('アセンブリのツールバー(P7 タスク45)', () => {
+  it('「組む」には配置・置換・固定の5項目を出す', () => {
     expect(ASSEMBLY_MENU_ITEMS.map((item) => item.id)).toEqual([
-      'duplicate', 'delete', 'toggleFixed', 'toggleVisible',
+      'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
     ]);
   });
 
-  it('どの部品操作も名前・説明・図柄を持つ', () => {
-    for (const item of ASSEMBLY_MENU_ITEMS) {
+  it('「合わせる」は合致6種とジョイント4種の10項目である', () => {
+    expect(MATE_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'coincident', 'concentric', 'distance', 'angle', 'parallel', 'tangent',
+      'revolute', 'slider', 'cylindrical', 'ball',
+    ]);
+    expect(ASSEMBLY_MATE_TOOLS).toHaveLength(6);
+    expect(ASSEMBLY_JOINT_TOOLS).toHaveLength(4);
+  });
+
+  it('2つの一覧の全項目が名前・一行説明・図柄を持つ', () => {
+    for (const item of [...ASSEMBLY_MENU_ITEMS, ...MATE_MENU_ITEMS]) {
       expect(t(item.labelKey)).not.toBe('');
       expect(t(item.tooltipKey)).not.toBe('');
+      expect(t(item.tooltipKey)).not.toBe(t(item.labelKey));
       expect(typeof item.Icon).toBe('function');
     }
+  });
+
+  it('一覧15項目のidは重複しない', () => {
+    const ids = [...ASSEMBLY_MENU_ITEMS, ...MATE_MENU_ITEMS].map((item) => item.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('2つの一覧と干渉・分解・部品表の全道具にステータス案内がある', () => {
+    const toolbarIds = [
+      ...ASSEMBLY_MENU_ITEMS.map((item) => item.id),
+      ...MATE_MENU_ITEMS.map((item) => item.id),
+      'interference',
+      'explode',
+      'bom',
+    ].sort();
+    expect([...ASSEMBLY_TOOL_GUIDE_IDS].sort()).toEqual(toolbarIds);
+  });
+
+  it('アセンブリ専用区画は畳んだ一覧2つと図柄3つの幅だけを使う', () => {
+    const assemblyGroupWidth = segmentedWidthPixels(3, 2);
+    expect(assemblyGroupWidth).toBe(154);
+    expect(assemblyGroupWidth).toBeLessThan(1280);
   });
 
   it('部品1個を選んだときだけ部品操作を許す', () => {

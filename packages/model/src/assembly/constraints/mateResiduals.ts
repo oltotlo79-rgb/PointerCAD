@@ -5,7 +5,7 @@
  */
 import type { LinearizedRow } from '../../sketch/constraints/solve.js';
 import {
-  addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3,
+  addVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3,
 } from '../../sketch/vec3.js';
 import {
   exponentialMap, rotateVector, type Quaternion, type RigidPlacement,
@@ -16,6 +16,11 @@ import {
 } from './mateFrames.js';
 import { MISSING_AXIS_MESSAGE, type ResolvedMateTarget } from './mateTargets.js';
 import { mateValueOf, type MateVariableSet } from './mateVariables.js';
+
+import {
+  CARTESIAN_AXES, directionResidual, pointSpan, pointTerms, projectedResidual,
+  rotationDerivativeAxes, scaledResidual, validRigidPlacement,
+} from './rigidResidualGeometry.js';
 
 export const DEFAULT_MATE_CHARACTERISTIC_LENGTH = 100;
 export const MATE_ANGLE_REFUSAL_MESSAGE =
@@ -118,11 +123,6 @@ function finitePoint(point: Vec3): boolean {
   return point.every(Number.isFinite);
 }
 
-function validPlacement(placement: RigidPlacement): boolean {
-  return finitePoint(placement.position) && placement.rotation.every(Number.isFinite)
-    && Math.hypot(...placement.rotation) > 1e-12;
-}
-
 function axisTarget(target: ResolvedMateTarget): boolean {
   return target.kind === 'axis' || target.kind === 'cylinder';
 }
@@ -183,7 +183,7 @@ export function prepareMateResiduals(input: MateResidualPreparationInput): MateR
       continue;
     }
     const error = geometryError(pair.a) ?? geometryError(pair.b)
-      ?? (!validPlacement(pa) || !validPlacement(pb) ? 'degenerate' : null);
+      ?? (!validRigidPlacement(pa) || !validRigidPlacement(pb) ? 'degenerate' : null);
     if (error !== null) {
       skipped.push(refusal(mate.id, error));
       continue;
@@ -239,28 +239,6 @@ interface TrialTarget extends ResolvedMateTarget {
   readonly frame: MateFrame | null;
 }
 
-const CARTESIAN_AXES: readonly Vec3[] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-const TRANSLATION_AXES = ['tx', 'ty', 'tz'] as const;
-const ROTATION_AXES = ['rx', 'ry', 'rz'] as const;
-
-/**
- * exp(ω) の左ヤコビアン J_l = I + A[ω] + B[ω]² の列。
- * δ(Rv) = (J_l δω) × Rv。非ゼロ trial に零点の e×v を流用しない。
- * 小角では A=1/2−θ²/24+θ⁴/720、B=1/6−θ²/120+θ⁴/5040 で桁落ちを避ける。
- */
-function rotationDerivativeAxes(omega: Vec3): readonly Vec3[] {
-  const theta = lengthVec3(omega);
-  const square = theta * theta;
-  const a = theta < 1e-3 ? 0.5 - square / 24 + square * square / 720
-    : (1 - Math.cos(theta)) / square;
-  const b = theta < 1e-3 ? 1 / 6 - square / 120 + square * square / 5040
-    : (theta - Math.sin(theta)) / (square * theta);
-  return CARTESIAN_AXES.map((axis) => {
-    const first = crossVec3(omega, axis);
-    return addVec3(axis, addVec3(scaleVec3(first, a), scaleVec3(crossVec3(omega, first), b)));
-  });
-}
-
 function trialTarget(
   target: LocalMateResidualTarget, componentId: string, placement: RigidPlacement,
   input: MateResidualInput,
@@ -284,63 +262,16 @@ function trialTarget(
   };
 }
 
-/** 大きな世界座標へ微小な並進を足してから引くことを避ける。 */
-function pointSpan(a: TrialTarget, b: TrialTarget): Vec3 {
-  return addVec3(addVec3(subVec3(a.center, b.center), subVec3(a.arm, b.arm)), subVec3(a.delta, b.delta));
-}
-
-function addTerm(gradient: Map<number, number>, column: number | null, value: number): void {
-  if (column !== null && value !== 0) gradient.set(column, (gradient.get(column) ?? 0) + value);
-}
-
-/** ∂f/∂v = g なら ∂f/∂ω_j = g·((J_l e_j)×v)。点は部品原点からの腕を回す。 */
-function directionTerms(
-  gradient: Map<number, number>, target: TrialTarget, vector: Vec3, g: Vec3,
-  variables: MateVariableSet,
-): void {
-  ROTATION_AXES.forEach((axis, j) => {
-    addTerm(gradient, variables.columnOf(target.componentId, axis),
-      dotVec3(g, crossVec3(target.rotationAxes[j], vector)));
-  });
-}
-
-function pointTerms(
-  gradient: Map<number, number>, target: TrialTarget, g: Vec3, variables: MateVariableSet,
-): void {
-  TRANSLATION_AXES.forEach((axis, j) => addTerm(gradient, variables.columnOf(target.componentId, axis), g[j]));
-  directionTerms(gradient, target, target.arm, g, variables);
-}
-
 function rowOf(mateId: string, value: number, gradient: Map<number, number>, scale: number): MateResidualRow {
-  for (const [column, coefficient] of gradient) {
-    const scaled = coefficient * scale;
-    if (scaled === 0) gradient.delete(column);
-    else gradient.set(column, scaled);
-  }
-  return { mateId, value: value * scale, gradient, scale };
+  return { mateId, ...scaledResidual(value, gradient, scale) };
 }
-
-function directionRow(
-  id: string, a: TrialTarget, u: Vec3, b: TrialTarget, v: Vec3, offset: number,
-  variables: MateVariableSet,
-): MateResidualRow {
-  const gradient = new Map<number, number>();
-  directionTerms(gradient, a, u, v, variables);
-  directionTerms(gradient, b, v, u, variables);
-  return rowOf(id, dotVec3(u, v) - offset, gradient, 1);
+function directionRow(id: string, a: TrialTarget, u: Vec3, b: TrialTarget, v: Vec3,
+  offset: number, variables: MateVariableSet): MateResidualRow {
+  return { mateId: id, ...directionResidual(a, u, b, v, offset, variables) };
 }
-
-/** f=(p_a−p_b)·v_b−offset。bの点と方向の両方の微分を加える。 */
-function projectedRow(
-  id: string, a: TrialTarget, b: TrialTarget, v: Vec3, offset: number,
-  variables: MateVariableSet, scale: number,
-): MateResidualRow {
-  const span = pointSpan(a, b);
-  const gradient = new Map<number, number>();
-  pointTerms(gradient, a, v, variables);
-  pointTerms(gradient, b, scaleVec3(v, -1), variables);
-  directionTerms(gradient, b, v, span, variables);
-  return rowOf(id, dotVec3(span, v) - offset, gradient, scale);
+function projectedRow(id: string, a: TrialTarget, b: TrialTarget, v: Vec3, offset: number,
+  variables: MateVariableSet, scale: number): MateResidualRow {
+  return { mateId: id, ...projectedResidual(a, b, v, offset, variables, scale) };
 }
 
 function parallelRows(mate: PreparedMateResidual, a: TrialTarget, b: TrialTarget,
@@ -421,7 +352,7 @@ export function buildMateResidualReport(input: MateResidualInput): MateResidualR
       skipped.push(refusal(mate.mateId, 'dangling'));
       continue;
     }
-    if (!validPlacement(pa) || !validPlacement(pb)) {
+    if (!validRigidPlacement(pa) || !validRigidPlacement(pb)) {
       skipped.push(refusal(mate.mateId, 'degenerate'));
       continue;
     }

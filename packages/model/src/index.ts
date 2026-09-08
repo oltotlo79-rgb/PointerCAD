@@ -834,3 +834,6 @@ export {
 export * from './assembly/constraints/mateResiduals.js';
 export * from './assembly/constraints/solveRigid.js';
 export * from './assembly/constraints/solveMates.js';
+
+export * from './assembly/joints/jointFrames.js';
+export * from './assembly/joints/jointResiduals.js';

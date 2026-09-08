@@ -11,7 +11,9 @@ import { collectMateVariables } from './constraints/mateVariables.js';
 import {
   applyPlacementToPoint, IDENTITY_PLACEMENT, quaternionFromAxisAngle, type RigidPlacement,
 } from './placementMath.js';
-import type { AssemblyComponent, Mate } from './types.js';
+import type { AssemblyComponent, Joint, JointKind, Mate } from './types.js';
+import type { JointFrame, JointFramePair } from './joints/jointFrames.js';
+import { buildJointResidualReport, prepareJointResiduals } from './joints/jointResiduals.js';
 
 function fixture(groupCount = 1) {
   const size = 50 / groupCount;
@@ -194,5 +196,104 @@ describe('合致の性能(P7、50部品/150合致)', () => {
     console.log('[P7性能] 成分分割の全測定値(ms):', JSON.stringify({ unsplit: measured.firstTimes, split: measured.secondTimes }));
     console.log(`[P7性能] 成分分割: 一括 ${unsplit.toFixed(3)} ms / 分割 ${split.toFixed(3)} ms = ${(unsplit / split).toFixed(3)} 倍 (見積もり 2 倍、実測を記録)`);
     expectWithinBudget(split, unsplit, '25部品×2成分は50部品一括より遅くない');
+  });
+});
+
+/** 既知の整合姿勢から局所frameを作り、初期姿勢だけ摂動する。50/150/575は固定。 */
+function jointFixture() {
+  const base = fixture();
+  const joints: Joint[] = [];
+  const frames = new Map<string, JointFramePair>();
+  const frame = (origin: Vec3): JointFrame => ({ origin, x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] });
+  for (let k = 0; k < 150; k += 1) {
+    const layer = Math.floor(k / 50), i = k % 50, j = (i + 1 + layer * 7) % 50;
+    const a = String(i), b = String(j), id = `joint:${k}`;
+    const kind: JointKind = k < 75 ? 'ball' : k < 100 ? 'revolute' : k < 125 ? 'slider' : 'cylindrical';
+    const pin: Vec3 = layer === 0 ? [0, 0, 0] : layer === 1 ? [0, 10, 0] : [0, 0, 10];
+    joints.push({ id, name: id, kind, a: { kind: 'origin', componentId: a, element: 'origin' },
+      b: { kind: 'origin', componentId: b, element: 'origin' }, minValue: null, maxValue: null, suppressed: false });
+    frames.set(id, { a: frame(pin), b: frame(addVec3(pin, [(i - j) * 20, 0, 0])) });
+  }
+  return { assembly: { ...base.assembly, mates: [], joints }, placements: base.placements, frames };
+}
+
+function jointDriver(data: ReturnType<typeof jointFixture>): RigidSolveInput<ReadonlyMap<string, RigidPlacement>> {
+  const variableSet = collectMateVariables(data.assembly);
+  const prepared = prepareJointResiduals({ joints: data.assembly.joints, frames: data.frames, placements: data.placements });
+  expect(prepared.skipped).toEqual([]);
+  return { initial: data.placements, variables: variableSet.variables.map((v) => v.axis.startsWith('t') ? 'length' : 'angle'),
+    retract: (base, step) => applyMateIncrements(base, variableSet, step),
+    evaluate: (base, increments) => {
+      const report = buildJointResidualReport({ joints: prepared.joints, placements: base, variableSet, increments, characteristicLength: 100 });
+      return { rows: report.rows.map((row) => ({ ...row, unit: row.measure === 'length' ? 'length' as const : 'angle' as const,
+        ...(row.measure === 'rotation' ? { tolerance: 1e-9 } : {}) })), valid: report.skipped.length === 0, branchViolations: report.branchViolations };
+    }, options: { maxIterations: 1, characteristicLength: 100 } };
+}
+
+/** 全7sampleを保持し、sampleごとの結果の検査は計測区間の後で行う。 */
+function jointMedian<T>(action: () => T, check: (outcome: T) => void) {
+  for (let i = 0; i < 3; i += 1) action();
+  const samples: number[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const start = performance.now();
+    const outcome = action();
+    samples.push(performance.now() - start);
+    check(outcome);
+  }
+  return { samples, median: [...samples].sort((a, b) => a - b)[3] };
+}
+
+describe('P7-19の混在joint性能(50部品/150joint/575行)', () => {
+  it('1反復は20ms以内', () => {
+    const data = jointFixture(), input = jointDriver(data);
+    expect(data.assembly.components).toHaveLength(50);
+    expect(data.assembly.components.filter((c) => c.fixed)).toHaveLength(1);
+    expect(data.assembly.joints).toHaveLength(150);
+    expect(['ball', 'revolute', 'slider', 'cylindrical'].map((kind) => data.assembly.joints.filter((j) => j.kind === kind).length)).toEqual([75, 25, 25, 25]);
+    expect(input.variables).toHaveLength(294);
+    const measured = jointMedian(() => solveRigid(input), (result) => {
+      expect(result.iterations).toBe(1);
+      expect(result.evaluation.rows).toHaveLength(575);
+      expect(result.trace.some((entry) => entry.accepted)).toBe(true);
+    });
+    console.log('[P7-19性能] 1反復/20ms', JSON.stringify(measured));
+    expectWithinBudget(measured.median, 20, 'joint1反復50部品150条件575行');
+  });
+  it('準備・成分分割・rankを含むsolveは300ms以内', () => {
+    const data = jointFixture();
+    const measured = jointMedian(() => solveMates(data.assembly, new Map(), data.placements, { jointFrames: data.frames }), (outcome) => {
+      expect(outcome.converged).toBe(true);
+      expect(outcome.diagnosis.components).toHaveLength(1);
+      expect(outcome.diagnosis.components[0].rank).toBe(294);
+      expect(outcome.diagnosis.components[0].jointRows).toHaveLength(575);
+      expect(outcome.iterations).toBeGreaterThanOrEqual(1);
+      expect(outcome.iterations).toBeLessThanOrEqual(8);
+    });
+    console.log('[P7-19性能] solve/300ms', JSON.stringify(measured));
+    expectWithinBudget(measured.median, 300, 'joint解き直し50部品150条件575行');
+  });
+  it('最終snapshotの診断は200ms以内', () => {
+    const data = jointFixture();
+    const outcome = solveMates(data.assembly, new Map(), data.placements, { jointFrames: data.frames });
+    expect(outcome.converged).toBe(true);
+    const measured = jointMedian(() => diagnoseMates(data.assembly, outcome), (diagnosis) => {
+      expect(diagnosis.complete).toBe(true);
+      expect(diagnosis.jointRows).toHaveLength(575);
+      expect(diagnosis.remainingDegreesOfFreedom).toBe(0);
+    });
+    console.log('[P7-19性能] 診断/200ms', JSON.stringify(measured));
+    expectWithinBudget(measured.median, 200, 'joint診断50部品150条件575行');
+  });
+  it('solveと表示用診断の合計は500ms以内', () => {
+    const data = jointFixture();
+    const measured = jointMedian(() => diagnoseMates(data.assembly,
+      solveMates(data.assembly, new Map(), data.placements, { jointFrames: data.frames })), (diagnosis) => {
+      expect(diagnosis.converged).toBe(true);
+      expect(diagnosis.complete).toBe(true);
+      expect(diagnosis.remainingDegreesOfFreedom).toBe(0);
+      expect(diagnosis.jointRows?.every((r) => r.satisfied)).toBe(true);
+    });
+    console.log('[P7-19性能] solve+診断/500ms', JSON.stringify(measured));
+    expectWithinBudget(measured.median, 500, 'joint解き直しと診断50部品150条件575行');
   });
 });

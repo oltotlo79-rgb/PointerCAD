@@ -7,7 +7,8 @@ import {
   applyPlacementToPoint, IDENTITY_PLACEMENT, quaternionFromAxisAngle, rotateVector,
   type RigidPlacement,
 } from '../placementMath.js';
-import type { AssemblyComponent, Mate, MateKind } from '../types.js';
+import type { AssemblyComponent, Joint, JointKind, Mate, MateKind } from '../types.js';
+import type { JointFrame, JointFramePair } from '../joints/jointFrames.js';
 import type { MateResidualTarget, MateResidualTargetPair } from './mateResiduals.js';
 import { collectMateVariables } from './mateVariables.js';
 import { applyMateIncrements, diagnoseMates, solveMates, type SolveMatesOptions, type SolveMatesOutcome } from './solveMates.js';
@@ -43,6 +44,374 @@ function movingPlacement(result: ReturnType<typeof solveMates>, id = 'moving'): 
   if (placement === undefined) throw new Error(`配置が無い: ${id}`);
   return placement;
 }
+
+const JOINT_FRAME: JointFrame = { origin: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+function jointEntry(id: string, kind: JointKind = 'ball', a = 'moving', b = 'ground'): Joint {
+  return { id, name: id, kind, a: { kind: 'origin', componentId: a, element: 'origin' },
+    b: { kind: 'origin', componentId: b, element: 'origin' }, minValue: null, maxValue: null, suppressed: false };
+}
+function jointFixture(kind: JointKind = 'ball') {
+  return { assembly: { ...createAssemblyDocument('joint'), components: [component('ground', true), component('moving')],
+    joints: [jointEntry('j', kind)] }, targets: new Map<string, MateResidualTargetPair>(),
+  placements: new Map<string, RigidPlacement>([['ground', IDENTITY_PLACEMENT], ['moving', IDENTITY_PLACEMENT]]),
+  frames: new Map<string, JointFramePair>([['j', { a: JOINT_FRAME, b: JOINT_FRAME }]]) };
+}
+
+describe('P7-19 jointとmateの同一ソルバー・同一診断', () => {
+  it.each([['revolute', 5, 1], ['slider', 5, 1], ['cylindrical', 4, 2], ['ball', 3, 3]] as const)('%sの並進と傾きを解き%d行・DOF%dで診断する', (kind, count, dof) => {
+    const data = jointFixture(kind);
+    data.placements.set('moving', { position: [2, 3, 4], rotation: quaternionFromAxisAngle([1, 2, 3], 0.2) });
+    const before = structuredClone(data);
+    const outcome = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames });
+    const diagnosis = diagnoseMates(data.assembly, outcome);
+    expect(outcome.converged).toBe(true);
+    expect(outcome.iterations).toBeGreaterThan(0);
+    expect(diagnosis.complete).toBe(true);
+    expect(diagnosis.rows).toEqual([]);
+    expect(diagnosis.jointRows).toHaveLength(count);
+    expect(diagnosis.jointRows?.every((row) => row.satisfied)).toBe(true);
+    expect(diagnosis.components[0].rank).toBe(count);
+    expect(diagnosis.remainingDegreesOfFreedom).toBe(dof);
+    expect(outcome.diagnosis.components[0].linearization?.rowSources).toEqual(Array.from({ length: count }, () => ({ kind: 'joint', id: 'j' })));
+    expect(outcome.placements.get('ground')).toEqual(IDENTITY_PLACEMENT);
+    expect(data).toEqual(before);
+  });
+  it('πのsliderを偽収束せず解析回転誤差で解く', () => {
+    const data = jointFixture('slider');
+    data.placements.set('moving', { ...IDENTITY_PLACEMENT, rotation: [0, 0, 1, 0] });
+    const result = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.converged).toBe(true);
+    expect(result.iterations).toBeGreaterThan(0);
+    expect(Math.abs(movingPlacement(result).rotation[2])).toBeLessThan(5e-10);
+    expect(diagnoseMates(data.assembly, result).jointRows?.every((r) => r.satisfied)).toBe(true);
+  });
+  it.each(['revolute', 'cylindrical'] as const)('%sの逆軸を取り付け点を保つ半回転で直す', (kind) => {
+    const data = jointFixture(kind);
+    data.frames.set('j', { a: { ...JOINT_FRAME, origin: [100, 0, 0], y: [0, -1, 0], z: [0, 0, -1] },
+      b: { ...JOINT_FRAME, origin: [100, 0, 0] } });
+    const result = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.converged).toBe(true);
+    expect(result.jointBranchViolations).toEqual([]);
+    expect(result.diagnosis.components[0].result?.trace[0].linearSolver).toBe('branch');
+    expect(applyPlacementToPoint(movingPlacement(result), [100, 0, 0])).toEqual([100, 0, 0]);
+  });
+  it('明示Mapなしは旧unsupported、空MapはmissingFrame', () => {
+    const data = jointFixture();
+    const old = solveMates(data.assembly, data.targets, data.placements);
+    const opted = solveMates(data.assembly, data.targets, data.placements, { jointFrames: new Map() });
+    expect(old.diagnosis.unsupportedJointIds).toEqual(['j']);
+    expect(old.skippedJoints).toEqual([]);
+    expect(opted.diagnosis.unsupportedJointIds).toEqual([]);
+    expect(opted.skippedJoints?.map((r) => r.reason)).toEqual(['missingFrame']);
+    expect(old.converged).toBe(false);
+    expect(opted.converged).toBe(false);
+    expect(diagnoseMates(data.assembly, opted).messages).toContainEqual({ code: 'skippedTarget', severity: 'warning',
+      mateIds: [], jointIds: ['j'], text: 'ジョイントの取り付け位置と向きがまだ指定されていません。' });
+  });
+  it('固定同士のjoint残差は構造的矛盾、mateのIDへ混ぜない', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, components: data.assembly.components.map((c) => ({ ...c, fixed: true })) };
+    data.placements.set('moving', at([0, 0, 2]));
+    const result = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames });
+    const diagnosis = diagnoseMates(assembly, result);
+    expect(result.diagnosis.status).toBe('provenConstantConflict');
+    expect(result.diagnosis.constantConflicts).toEqual([]);
+    expect(diagnosis.provenConflictJointIds).toEqual(['j']);
+    expect(diagnosis.jointRows?.every((row) => row.dependency === 'noVariable')).toBe(true);
+    expect(diagnosis.messages.filter((m) => m.code === 'provenConstantConflict')[0].jointIds).toEqual(['j']);
+    expect(result.placements).toEqual(data.placements);
+  });
+  it('固定両端の逆軸は零残差でも証明済みの矛盾', () => {
+    const data = jointFixture('revolute');
+    const assembly = { ...data.assembly, components: data.assembly.components.map((c) => ({ ...c, fixed: true })) };
+    data.frames.set('j', { a: { ...JOINT_FRAME, y: [0, -1, 0], z: [0, 0, -1] }, b: JOINT_FRAME });
+    const result = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.maxResidual).toBe(0);
+    expect(result.diagnosis.constantJointConflicts).toEqual(['j']);
+    expect(diagnoseMates(assembly, result).constraintCauseCandidates).toEqual([
+      { constraint: { kind: 'joint', id: 'j' }, kind: 'provenConflict', normalizedResidual: 0 },
+    ]);
+  });
+  it('mateとjointが同じIDでも行・冗長・原因を区別する', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, mates: [mate('j')] };
+    data.targets.set('j', { a: point([0, 0, 0]), b: point([0, 0, 0]) });
+    const outcome = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames });
+    const diagnosis = diagnoseMates(assembly, outcome);
+    expect(outcome.converged).toBe(true);
+    expect(diagnosis.rows).toHaveLength(3);
+    expect(diagnosis.jointRows).toHaveLength(3);
+    expect(diagnosis.components[0].rank).toBe(3);
+    expect(diagnosis.redundantMateIds).toEqual([]);
+    expect(diagnosis.redundantJointIds).toEqual(['j']);
+    expect(diagnosis.redundantRowCount).toBe(3);
+    expect(outcome.diagnosis.components[0].linearization?.rowSources).toEqual([
+      ...Array.from({ length: 3 }, () => ({ kind: 'mate', id: 'j' })), ...Array.from({ length: 3 }, () => ({ kind: 'joint', id: 'j' })),
+    ]);
+  });
+  it('5条件の原因候補はmate/joint合計で3件、証明・残差比・文書順を守る', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, components: data.assembly.components.map((c) => ({ ...c, fixed: true })),
+      mates: [mate('same'), mate('m2')], joints: [jointEntry('same'), jointEntry('j2'), jointEntry('j3')] };
+    const targets = new Map([['same', { a: point([0, 0, 1]), b: point([0, 0, 0]) }],
+      ['m2', { a: point([0, 0, 2]), b: point([0, 0, 0]) }]]);
+    const frames = new Map([['same', { a: { ...JOINT_FRAME, origin: [0, 0, 3] as const }, b: JOINT_FRAME }],
+      ['j2', { a: { ...JOINT_FRAME, origin: [0, 0, 2] as const }, b: JOINT_FRAME }],
+      ['j3', { a: { ...JOINT_FRAME, origin: [0, 0, 2] as const }, b: JOINT_FRAME }]]);
+    const diagnosis = diagnoseMates(assembly, solveMates(assembly, targets, data.placements, { jointFrames: frames }));
+    expect(diagnosis.constraintCauseCandidates?.map((c) => c.constraint)).toEqual([
+      { kind: 'joint', id: 'same' }, { kind: 'mate', id: 'm2' }, { kind: 'joint', id: 'j2' },
+    ]);
+    expect(diagnosis.causeCandidates.map((c) => c.mateId)).toEqual(['m2']);
+    expect(diagnosis.messages.filter((m) => m.code === 'provenConstantConflict')).toHaveLength(3);
+    expect(diagnosis.provenConflictMateIds).toEqual(['same', 'm2']);
+    expect(diagnosis.provenConflictJointIds).toEqual(['same', 'j2', 'j3']);
+  });
+  it('joint同士の完全重複は後続jointの全行を従属として示す', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, joints: [jointEntry('first'), jointEntry('second')] };
+    const frames = new Map(assembly.joints.map((j) => [j.id, { a: JOINT_FRAME, b: JOINT_FRAME }]));
+    const diagnosis = diagnoseMates(assembly, solveMates(assembly, data.targets, data.placements, { jointFrames: frames }));
+    expect(diagnosis.complete).toBe(true);
+    expect(diagnosis.components[0].rank).toBe(3);
+    expect(diagnosis.remainingDegreesOfFreedom).toBe(3);
+    expect(diagnosis.jointRows?.map((r) => r.dependency)).toEqual([
+      'independent', 'independent', 'independent', 'dependent', 'dependent', 'dependent',
+    ]);
+    expect(diagnosis.redundantJointIds).toEqual(['second']);
+    expect(diagnosis.redundantRowCount).toBe(3);
+  });
+  it('面mateとballの一部の従属をjoint全体の冗長と誤報しない', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, mates: [mate('plane')] };
+    data.targets.set('plane', { a: plane([0, 0, 0]), b: plane([0, 0, 0]) });
+    const diagnosis = diagnoseMates(assembly, solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames }));
+    expect(diagnosis.complete).toBe(true);
+    expect(diagnosis.components[0].rank).toBe(5);
+    expect(diagnosis.remainingDegreesOfFreedom).toBe(1);
+    expect(diagnosis.rows.map((r) => r.dependency)).toEqual(['independent', 'independent', 'independent']);
+    expect(diagnosis.jointRows?.map((r) => r.dependency)).toEqual(['independent', 'independent', 'dependent']);
+    expect(diagnosis.redundantJointIds).toEqual([]);
+    expect(diagnosis.redundantMateIds).toEqual([]);
+    expect(diagnosis.redundantRowCount).toBe(1);
+  });
+  it('5条件で証明を優先し、疑いと未解決は残差比・同率の文書順で絞る', () => {
+    const ground = component('ground', true);
+    const proof = jointEntry('proof', 'ball', 'ground', 'fixed');
+    const suspectJoints = [jointEntry('suspect-a', 'ball', 'suspect'), jointEntry('suspect-b', 'ball', 'suspect')];
+    const unresolvedJoints = [jointEntry('unresolved-b', 'ball', 'unresolved'), jointEntry('unresolved-a', 'ball', 'unresolved')];
+    const proofAssembly = { ...createAssemblyDocument('proof'), components: [ground, component('fixed', true)], joints: [proof] };
+    const suspectAssembly = { ...createAssemblyDocument('suspect'), components: [ground, component('suspect')], joints: suspectJoints };
+    const unresolvedAssembly = { ...createAssemblyDocument('unresolved'), components: [ground, component('unresolved')], joints: unresolvedJoints };
+    const frames = new Map<string, JointFramePair>([
+      ['proof', { a: { ...JOINT_FRAME, origin: [1e-8, 0, 0] }, b: JOINT_FRAME }],
+      ['suspect-a', { a: JOINT_FRAME, b: JOINT_FRAME }],
+      ['suspect-b', { a: JOINT_FRAME, b: { ...JOINT_FRAME, origin: [2, 0, 0] } }],
+      ...unresolvedJoints.map((j): [string, JointFramePair] => [j.id, { a: JOINT_FRAME, b: { ...JOINT_FRAME, origin: [1000, 0, 0] } }]),
+    ]);
+    const initial = new Map([['ground', IDENTITY_PLACEMENT], ['fixed', IDENTITY_PLACEMENT],
+      ['suspect', at([3, 0, 0])], ['unresolved', IDENTITY_PLACEMENT]]);
+    // 異なる停止状態を、実ソルバーの結果と実snapshotから組み合わせる。架空の行やJacobianは作らない。
+    const proofResult = solveMates(proofAssembly, new Map(), initial, { jointFrames: frames });
+    const suspectResult = solveMates(suspectAssembly, new Map(), initial, { jointFrames: frames });
+    const unresolvedResult = solveMates(unresolvedAssembly, new Map(), initial, { jointFrames: frames, maxIterations: 0 });
+    expect([proofResult.diagnosis.status, suspectResult.diagnosis.status, unresolvedResult.diagnosis.status])
+      .toEqual(['provenConstantConflict', 'suspectedConflict', 'iterationLimit']);
+    const assembly = { ...proofAssembly, components: [ground, component('fixed', true), component('suspect'), component('unresolved')],
+      joints: [unresolvedJoints[0], proof, suspectJoints[0], unresolvedJoints[1], suspectJoints[1]] };
+    const outcome: SolveMatesOutcome = { ...suspectResult, diagnosis: { ...proofResult.diagnosis,
+      components: [...proofResult.diagnosis.components, ...suspectResult.diagnosis.components, ...unresolvedResult.diagnosis.components] } };
+    const diagnosis = diagnoseMates(assembly, outcome);
+    expect(diagnosis.provenConflictJointIds).toEqual(['proof']);
+    expect(diagnosis.suspectedConflictJointIds).toEqual(['suspect-a', 'suspect-b']);
+    expect(diagnosis.unresolvedJointIds).toEqual(['unresolved-b', 'unresolved-a']);
+    expect(diagnosis.constraintCauseCandidates?.map((c) => [c.constraint.id, c.kind])).toEqual([
+      ['proof', 'provenConflict'], ['unresolved-b', 'unresolved'], ['unresolved-a', 'unresolved'],
+    ]);
+    expect(diagnosis.constraintCauseCandidates?.[1].normalizedResidual).toBe(diagnosis.constraintCauseCandidates?.[2].normalizedResidual);
+    expect(diagnosis.causeCandidates).toEqual([]);
+  });
+  it('浮いた2成分はそれぞれgauge6で、全体から一度だけ引かない', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, components: ['a', 'b', 'c', 'd'].map((id) => component(id)),
+      joints: [jointEntry('ab', 'ball', 'a', 'b'), jointEntry('cd', 'slider', 'c', 'd')] };
+    const placements = new Map(assembly.components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    const frames = new Map(assembly.joints.map((j) => [j.id, { a: JOINT_FRAME, b: JOINT_FRAME }]));
+    const result = solveMates(assembly, data.targets, placements, { jointFrames: frames });
+    expect(result.diagnosis.components.map((c) => c.gauge.removed)).toEqual([6, 6]);
+    expect(diagnoseMates(assembly, result).remainingDegreesOfFreedom).toBe(4);
+  });
+  it('mateとjointを跨ぐ連鎖が同じ成分で追従する', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, components: [...data.assembly.components, component('other')],
+      mates: [mate('point', 'coincident', 'other', 'moving')],
+      joints: [...data.assembly.joints, jointEntry('slide', 'slider', 'other', 'moving')] };
+    data.placements.set('moving', at([2, 3, 4]));
+    data.placements.set('other', at([5, 6, 7]));
+    data.targets.set('point', { a: point([5, 6, 7]), b: point([2, 3, 4]) });
+    data.frames.set('slide', { a: JOINT_FRAME, b: JOINT_FRAME });
+    const result = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.converged).toBe(true);
+    expect(result.diagnosis.components).toHaveLength(1);
+    expect(result.diagnosis.components[0].componentIds).toEqual(['moving', 'other']);
+    expect(Math.hypot(...movingPlacement(result).position)).toBeLessThan(1e-9);
+    expect(Math.hypot(...movingPlacement(result, 'other').position)).toBeLessThan(1e-9);
+    expect(diagnoseMates(assembly, result).complete).toBe(true);
+  });
+  it('同IDのmateとjointの分岐を内部keyを漏らさず区別する', () => {
+    const data = jointFixture('revolute');
+    const assembly = { ...data.assembly, components: data.assembly.components.map((c) => ({ ...c, fixed: true })), mates: [mate('j')] };
+    data.targets.set('j', { a: point([0, 0, 0]), b: point([0, 0, 0]) });
+    data.frames.set('j', { a: { ...JOINT_FRAME, y: [0, -1, 0], z: [0, 0, -1] }, b: JOINT_FRAME });
+    const result = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.branchViolations).toEqual([]);
+    expect(result.jointBranchViolations).toEqual(['j']);
+    expect(result.diagnosis.components[0].result?.evaluation.branchViolations).toEqual([]);
+    expect(result.diagnosis.components[0].constraintBranchViolations).toEqual([{ kind: 'joint', id: 'j' }]);
+    expect(result.diagnosis.constantConflicts).toEqual([]);
+    expect(result.diagnosis.constantJointConflicts).toEqual(['j']);
+  });
+  it.each(['origin', 'driver'] as const)('明示%sの6自由度anchorを成分ごとに扱う', (kind) => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, components: data.assembly.components.map((c) => ({ ...c, fixed: false })) };
+    const result = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames, anchors: new Map([['ground', kind]]) });
+    expect(result.diagnosis.components[0].gauge).toEqual({ kind, componentId: 'ground', removed: 0 });
+    expect(result.diagnosis.components[0].variables).toBe(6);
+  });
+  it('hiddenは解き、suppressed jointはframeなしで外す', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, components: data.assembly.components.map((c) => ({ ...c, visible: false })),
+      joints: [...data.assembly.joints, { ...jointEntry('suppressed'), suppressed: true }] };
+    data.placements.set('moving', at([1, 2, 3]));
+    const result = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.converged).toBe(true);
+    expect(result.skippedJoints).toEqual([]);
+    expect(result.diagnosis.components[0].jointIds).toEqual(['j']);
+    expect(Math.hypot(...movingPlacement(result).position)).toBeLessThan(1e-9);
+  });
+  it('抑制された部品を指すjointはdanglingを報告する', () => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, components: data.assembly.components.map((c) => ({ ...c, suppressed: c.id === 'moving' })) };
+    const result = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.skippedJoints?.[0].reason).toBe('dangling');
+    expect(result.converged).toBe(false);
+  });
+  it('joint成分上限はgauge前の変数数で判定してrank不明を保つ', () => {
+    const data = jointFixture();
+    const result = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames, maxComponentVariables: 5 });
+    expect(result.diagnosis.status).toBe('variableLimit');
+    expect(result.diagnosis.components[0].rank).toBeNull();
+    expect(diagnoseMates(data.assembly, result).jointRows?.every((row) => row.dependency === 'unknown')).toBe(true);
+    expect(result.placements).toEqual(data.placements);
+  });
+  it.each([100, 101])('%d可動部品の600/606全体上限をjoint追加でも変えない', (count) => {
+    const data = jointFixture();
+    const assembly = { ...data.assembly, components: [component('ground', true), ...Array.from({ length: count }, (_, i) => component(String(i)))],
+      joints: [jointEntry('j', 'ball', '0')] };
+    const placements = new Map(assembly.components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    const result = solveMates(assembly, data.targets, placements, { jointFrames: data.frames });
+    expect(result.diagnosis.limits.some((l) => l.scope === 'assembly')).toBe(count === 101);
+    expect(result.converged).toBe(count === 100);
+  });
+  it.each(['missing', 'swapped'] as const)('混在snapshotのrowSourcesが%sなら分類を不明にする', (damage) => {
+    const data = jointFixture();
+    const result = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames });
+    const damaged: SolveMatesOutcome = { ...result, diagnosis: { ...result.diagnosis,
+      components: result.diagnosis.components.map((c) => ({ ...c, linearization: c.linearization == null ? null
+        : { ...c.linearization, rowSources: damage === 'missing' ? undefined
+          : c.linearization.rowSources?.map((ref) => ({ ...ref, kind: 'mate' as const })) } })) } };
+    const diagnosis = diagnoseMates(data.assembly, damaged);
+    expect(diagnosis.complete).toBe(false);
+    expect(diagnosis.jointRows?.every((row) => row.dependency === 'unknown' && row.satisfied === null)).toBe(true);
+    expect(diagnosis.components[0].rank).toBe(3);
+  });
+  it('可動範囲はこの段階の残差でclampしない', () => {
+    const data = jointFixture('slider');
+    const assembly = { ...data.assembly, joints: [{ ...data.assembly.joints[0], minValue: expressionValueFromNumber(10), maxValue: expressionValueFromNumber(20) }] };
+    const result = solveMates(assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.converged).toBe(true);
+    expect(movingPlacement(result).position[2]).toBe(0);
+  });
+  it.each(['iterations', 'time'] as const)('%s打切りをjointの証明済み矛盾と誤報しない', (limit) => {
+    const data = jointFixture();
+    data.placements.set('moving', at([1, 2, 3]));
+    const result = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames,
+      ...(limit === 'iterations' ? { maxIterations: 0 } : { maxTimeMs: 0, now: () => 0 }) });
+    expect(result.diagnosis.status).toBe('iterationLimit');
+    expect(result.diagnosis.constantJointConflicts).toEqual([]);
+    expect(diagnoseMates(data.assembly, result).provenConflictJointIds).toEqual([]);
+  });
+  it.each([1e-3, 1, 1e6])('L=%dの尺度をsolve/診断で共有する', (length) => {
+    const data = jointFixture();
+    data.placements.set('moving', at([length * 0.01, length * 0.02, 0]));
+    const result = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames, characteristicLength: length });
+    expect(result.converged).toBe(true);
+    expect(Math.hypot(...movingPlacement(result).position)).toBeLessThan(1e-9);
+    expect(diagnoseMates(data.assembly, result).jointRows?.every((row) => row.satisfied)).toBe(true);
+  });
+  it.each([1e-3, 1, 1e6])('全長さ・frame原点・L・長さ許容を%d倍しても分類/rank/DOFが同じ', (scale) => {
+    const scaled = (v: Vec3): Vec3 => [v[0] * scale, v[1] * scale, v[2] * scale];
+    const data = jointFixture();
+    const assembly = { ...data.assembly, joints: [jointEntry('ball'), jointEntry('slider', 'slider')] };
+    const frames = new Map(assembly.joints.map((j) => [j.id, {
+      a: { ...JOINT_FRAME, origin: scaled([3, 4, 5]) }, b: { ...JOINT_FRAME, origin: scaled([10, 20, 30]) },
+    }]));
+    const placements = new Map<string, RigidPlacement>([
+      ['ground', { ...IDENTITY_PLACEMENT, position: scaled([100, 200, 300]) }],
+      ['moving', { position: scaled([108, 214, 328]), rotation: quaternionFromAxisAngle([1, 2, 3], 0.1) }],
+    ]);
+    const result = solveMates(assembly, data.targets, placements, { jointFrames: frames,
+      characteristicLength: 100 * scale, lengthTolerance: 1e-9 * scale, angleTolerance: 1e-9 });
+    const diagnosis = diagnoseMates(assembly, result);
+    expect({ converged: diagnosis.converged, complete: diagnosis.complete, rank: diagnosis.components[0].rank,
+      dof: diagnosis.remainingDegreesOfFreedom, redundant: diagnosis.redundantJointIds,
+      proven: diagnosis.provenConflictJointIds, suspected: diagnosis.suspectedConflictJointIds, unresolved: diagnosis.unresolvedJointIds })
+      .toEqual({ converged: true, complete: true, rank: 6, dof: 0, redundant: [], proven: [], suspected: [], unresolved: [] });
+    expect(diagnosis.jointRows).toHaveLength(8);
+    expect(diagnosis.jointRows?.every((row) => row.satisfied)).toBe(true);
+    const snapshot = result.diagnosis.components[0].linearization;
+    result.diagnosis.components[0].jointRows?.forEach((row, index) => {
+      const expected = row.measure === 'length' ? (1e-9 * scale) / (100 * scale) : 1e-9;
+      expect(snapshot?.rowTolerances[index]).toBeCloseTo(expected, 20);
+    });
+    const position = movingPlacement(result).position;
+    for (const [axis, value] of [107, 216, 325].entries()) expect(Math.abs(position[axis] / scale - value)).toBeLessThan(1e-9);
+  });
+  it.each(['short-rotation', 'overflow-norm', 'empty-origin', 'sparse-position'] as const)('%sで偽収束せず元配置を保持する', (kind) => {
+    const data = jointFixture('slider');
+    const position: [number, number, number] = [0, 0, 0];
+    const rotation: [number, number, number, number] = [1, 0, 0, 1];
+    if (kind === 'short-rotation') rotation.splice(1, 3);
+    if (kind === 'overflow-norm') rotation.fill(1e308);
+    if (kind === 'sparse-position') Reflect.deleteProperty(position, '1');
+    if (kind === 'empty-origin') {
+      const origin: [number, number, number] = [0, 0, 0];
+      origin.splice(0, 3);
+      data.frames.set('j', { a: { ...JOINT_FRAME, origin }, b: JOINT_FRAME });
+    }
+    data.placements.set('moving', { position, rotation });
+    const before = structuredClone(data.placements);
+    const result = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames });
+    expect(result.converged).toBe(false);
+    expect(result.diagnosis.status).toBe('stalled');
+    expect(result.diagnosis.unsupportedJointIds).toEqual([]);
+    expect(result.skippedJoints?.map((r) => r.reason)).toEqual(['invalidFrame']);
+    expect(diagnoseMates(data.assembly, result).complete).toBe(false);
+    expect(result.placements).toEqual(before);
+    expect(data.placements).toEqual(before);
+  });
+  it('20回とMap逆順で配置・trace・診断が完全一致する', () => {
+    const data = jointFixture('slider');
+    data.placements.set('moving', { position: [2, 3, 4], rotation: quaternionFromAxisAngle([1, 2, 3], 0.2) });
+    const result = solveMates(data.assembly, data.targets, data.placements, { jointFrames: data.frames });
+    const diagnosis = diagnoseMates(data.assembly, result);
+    for (let i = 0; i < 20; i += 1) {
+      const repeated = solveMates(data.assembly, data.targets, new Map([...data.placements].reverse()), { jointFrames: new Map([...data.frames].reverse()) });
+      expect(repeated).toEqual(result);
+      expect(diagnoseMates(data.assembly, repeated)).toEqual(diagnosis);
+    }
+  });
+});
 
 describe('P7タスク15の検証表', () => {
   it.each([[0, 20], [5, 25]])('箱20³の上面と下面、オフセット%dでZ=%d', (offset, expected) => {

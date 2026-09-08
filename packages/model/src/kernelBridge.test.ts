@@ -14,14 +14,23 @@
  * 偽物で差し替える流儀は `measure/measureBridge.test.ts` の偽の `KernelApi` と同じ。
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createKernelApi } from '@pointercad/kernel';
+import { expressionValueFromNumber } from '@pointercad/expression';
 import * as Comlink from 'comlink';
 import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
+import { createShapeCache } from '../../kernel/src/worker/shapeCache.js';
+import type { CachedSolid } from '../../kernel/src/worker/recomputeSolids.js';
+import * as interferenceCommon from '../../kernel/src/occt/intersectionVolume.js';
+import * as interferenceMesh from '../../kernel/src/occt/exportMesh.js';
 
 import {
   createKernelBridge,
   createDirectKernelBridge,
+  createDirectInterferenceKernelBridge,
+  type AssemblyInterferenceInput,
+  type AssemblyInterferenceResult,
+  type AssemblyInterferenceProgress,
   KERNEL_BROKEN_MESSAGE,
   toPrintabilityOutcome,
   selectMateTargetGeometry,
@@ -769,5 +778,267 @@ describe('点検結果の表示メッシュ同一性', () => {
     expect(outcome.report.meshes).toEqual([
       { bodyKey: 'key-1', meshRevision: 7, triangleCount: 1 },
     ]);
+  });
+});
+
+describe('P7-25 干渉の実カーネルと輸送', () => {
+  const cleanups: (() => Promise<void>)[] = [];
+  beforeEach(() => silentWorkers.clear());
+  afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
+  function component(id: string, partRef = 'part-a'): AssemblyComponent {
+    return { id, name: id, source: { kind: 'part', partRef }, placement: DEFAULT_COMPONENT_PLACEMENT,
+      fixed: true, suppressed: false, visible: true };
+  }
+  async function fixture(multi = false, capacity = 16) {
+    const cache = createShapeCache<CachedSolid>(capacity);
+    const api = createKernelApi(loadOcctForNode, cache);
+    const direct = createDirectInterferenceKernelBridge(api);
+    let document = createEmptyPartDocument();
+    document = appendSolid(document, createPrimitiveFeature(document, 'box'));
+    if (multi) document = appendSolid(document, { ...createPrimitiveFeature(document, 'box'),
+      shape: { kind: 'box', sizeX: expressionValueFromNumber(10), sizeY: expressionValueFromNumber(10), sizeZ: expressionValueFromNumber(10) } });
+    let resolved = resolvePart(document);
+    const computed = await recomputePart(document, direct, { partId: 'part-a', onResolved: (value) => { resolved = value; } });
+    expect(computed.errors).toEqual([]);
+    const parts = new Map([['part-a', resolved]]);
+    const partKeys = new Map([['a', 'part-a'], ['b', 'part-a']]);
+    const placements = new Map<string, RigidPlacement>([['a', IDENTITY_PLACEMENT], ['b', { ...IDENTITY_PLACEMENT, position: [15, 0, 0] }]]);
+    const bodies = new Map<string, readonly SolidBody[]>([['part-a', computed.bodies]]);
+    const input: AssemblyInterferenceInput = { requestId: 'document-25:version-4', components: [component('a'), component('b')],
+      resolved: { parts, partKeys, placements, errors: [] }, bodies, placements };
+    cleanups.push(async () => { direct.dispose(); await api.releasePart('part-a'); await api.releasePart('part-b'); cache.clear(); });
+    return { api, cache, direct, input, document, resolved, parts, partKeys, placements, bodies, computed };
+  }
+  function check(result: AssemblyInterferenceResult, expectedPairs = 1): void {
+    expect(result.kind).toBe('checked'); expect(result.failures).toEqual([]); expect(result.pairs).toHaveLength(expectedPairs);
+    expect(result.totalPairCount).toBe(result.checkedPairCount + result.skippedPairCount + result.failures.length + result.pendingPairCount);
+  }
+  function connected(api: ReturnType<typeof createKernelApi>) {
+    const bridge = createKernelBridge(); Comlink.expose(api, silentWorkers.serverEndpoint());
+    cleanups.push(() => { bridge.dispose(); return Promise.resolve(); }); return bridge;
+  }
+  function bridgeOnlyInput(): AssemblyInterferenceInput {
+    return { requestId: 'old-generation', components: [component('a'), component('b')],
+      resolved: { parts: new Map(), partKeys: new Map(), placements: new Map(), errors: [] }, bodies: new Map(), placements: new Map() };
+  }
+  it('B01 実recomputePartのliveBodyIds全体からbody keyを取り実APIでunionする', async () => {
+    const context = await fixture(true); const calls = vi.spyOn(context.api, 'checkInterference');
+    const result = await context.direct.checkInterference(context.input); check(result);
+    const sent = calls.mock.calls[0][0].components[0]; if (sent.kind !== 'ready') throw new Error('ready');
+    expect(sent.bodyKeys).toEqual(context.resolved.steps.filter((step) => context.resolved.liveBodyIds.includes(step.featureId)).map((step) => step.key).sort());
+    expect(result.pairs[0].volume).toBeCloseTo(2000, 6);
+  }, 180_000);
+  it('B02 保存位置に依存せず提供世界配置xyz/xyzwを一回だけ使う', async () => {
+    const context = await fixture(); const calls = vi.spyOn(context.api, 'checkInterference');
+    context.placements.set('a', { position: [100, 20, 30], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] });
+    context.placements.set('b', { position: [100, 35, 30], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] });
+    const result = await context.direct.checkInterference(context.input); check(result); expect(result.pairs[0].volume).toBeCloseTo(2000, 6);
+    expect(calls.mock.calls[0][0].components[0]).toMatchObject({ placement: { position: [100, 20, 30], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] } });
+    const mesh = result.pairs[0].mesh.positions; expect(Math.min(...Array.from(mesh).filter((_, index) => index % 3 === 0))).toBeGreaterThan(80);
+  });
+  it('B03 別partの同名featureIdを各partのkeyへ分離する', async () => {
+    const context = await fixture(); const empty = createEmptyPartDocument();
+    const primitive = createPrimitiveFeature(empty, 'box');
+    const small = appendSolid(empty, { ...primitive, shape: { kind: 'box', sizeX: expressionValueFromNumber(10), sizeY: expressionValueFromNumber(10), sizeZ: expressionValueFromNumber(10) } });
+    let part = resolvePart(small);
+    const output = await recomputePart(small, context.direct, { partId: 'part-b', onResolved: (value) => { part = value; } });
+    context.parts.set('part-b', part); context.partKeys.set('b', 'part-b'); context.bodies.set('part-b', output.bodies); context.placements.set('b', IDENTITY_PLACEMENT);
+    expect(part.steps[0].featureId).toBe(context.resolved.steps[0].featureId); expect(part.steps[0].key).not.toBe(context.resolved.steps[0].key);
+    const result = await context.direct.checkInterference(context.input); check(result); expect(result.pairs[0].volume).toBeCloseTo(1000, 6);
+  });
+  it('B04 未解決/未計算/欠落snapshotを黙って省かない', async () => {
+    const context = await fixture();
+    for (const input of [
+      { ...context.input, resolved: { ...context.input.resolved, parts: new Map() } },
+      { ...context.input, bodies: new Map() },
+      { ...context.input, placements: new Map() },
+      { ...context.input, bodies: new Map([['part-a', []]]) },
+    ]) {
+      const result = await context.direct.checkInterference(input);
+      expect(result.totalPairCount).toBe(1); expect(result.failures).toHaveLength(1); expect(result.checkedPairCount).toBe(0); expect(result.pendingPairCount).toBe(0);
+    }
+  });
+  it('B05 0部品は固定noComponents文言、1部品は正常total0', async () => {
+    const context = await fixture();
+    const none = await context.direct.checkInterference({ ...context.input, components: [] });
+    expect(none).toMatchObject({ kind: 'failed', failure: { code: 'noComponents', message: '調べる部品がありません。' }, totalPairCount: 0 });
+    const one = await context.direct.checkInterference({ ...context.input, components: [component('a')] }); check(one, 0); expect(one.totalPairCount).toBe(0);
+  });
+  it('B06 unknown/self/重複componentはinvalidRequest、reverse pairは1回', async () => {
+    const context = await fixture();
+    for (const pair of [['a', 'missing'], ['a', 'a']]) {
+      expect(await context.direct.checkInterference(context.input, { pairs: [[pair[0], pair[1]]] })).toMatchObject({ kind: 'failed', failure: { code: 'invalidRequest' } });
+    }
+    expect(await context.direct.checkInterference({ ...context.input, components: [component('a'), component('a')] })).toMatchObject({ kind: 'failed', failure: { code: 'invalidRequest' } });
+    check(await context.direct.checkInterference(context.input, { pairs: [['b', 'a'], ['a', 'b']] }));
+  });
+  it('B07 await中のcaller Map変更でもsnapshotとrequestIdを保持する', async () => {
+    const context = await fixture();
+    const pending = context.direct.checkInterference(context.input);
+    context.placements.clear(); context.parts.clear(); context.partKeys.clear(); context.bodies.clear();
+    const result = await pending; check(result); expect(result.requestId).toBe('document-25:version-4'); expect(result.pairs[0].volume).toBeCloseTo(2000, 6);
+  });
+  it('B08 実MessageChannel/ComlinkがFloat32/Uint32を保持しnativeやdeleteを輸送しない', async () => {
+    const context = await fixture(); const channel = new MessageChannel();
+    Comlink.expose(context.api, channel.port1); const remote = Comlink.wrap<ReturnType<typeof createKernelApi>>(channel.port2);
+    const calls = vi.spyOn(context.api, 'checkInterference');
+    await context.direct.checkInterference(context.input); const dto = calls.mock.calls[0][0];
+    const before = structuredClone(context.computed.bodies[0].mesh.positions);
+    try {
+      const result = await remote.checkInterference(dto);
+      expect(result.pairs[0].mesh.positions).toBeInstanceOf(Float32Array); expect(result.pairs[0].mesh.normals).toBeInstanceOf(Float32Array); expect(result.pairs[0].mesh.indices).toBeInstanceOf(Uint32Array);
+      expect(Object.keys(result.pairs[0].mesh).sort()).toEqual(['indices', 'normals', 'positions', 'triangleCount']);
+      expect('shape' in result.pairs[0]).toBe(false); expect('delete' in result.pairs[0]).toBe(false);
+      expect(context.computed.bodies[0].mesh.positions).toEqual(before);
+    } finally { remote[Comlink.releaseProxy](); channel.port1.close(); channel.port2.close(); }
+  });
+  it('B09 lease中のreleasePart/容量圧迫でも借用shapeが生き終了保護数が戻る', async () => {
+    const context = await fixture(false, 1); const key = context.resolved.steps[0].key;
+    const source = context.cache.get(key); if (source === undefined) throw new Error('cache entry');
+    let releaseGate: () => void = () => undefined; let announce: () => void = () => undefined;
+    const entered = new Promise<void>((resolve) => { announce = resolve; }); const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+    const original = context.api.checkInterference.bind(context.api);
+    // callbackのawaitだけを制御し、実factory/acquire/native計算を全て通す。
+    vi.spyOn(context.api, 'checkInterference').mockImplementation((request, progress, cancel) => original(request, async (value) => { announce(); await gate; await progress?.(value); }, cancel));
+    const pending = context.direct.checkInterference(context.input); await entered;
+    await context.api.releasePart('part-a'); expect(context.cache.has(key)).toBe(true);
+    const pressure = { ...fakeStep('pressure', 'pressure-key'), plan: { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1], shape: { kind: 'sphere', radius: 3 }, originQuery: null, targetKey: null } } satisfies ResolvedSolidStep;
+    await context.direct.recomputeSolids([pressure], { partId: 'part-b' }); await context.api.releasePart('part-b');
+    expect(source.shape.IsNull()).toBe(false); expect(context.cache.stats().protectedKeyCount).toBe(1);
+    releaseGate(); check(await pending); expect(context.cache.stats().protectedKeyCount).toBe(0);
+  });
+  it('B10 同key上書き中は旧entryを使い最後にretiredを解放、次回は新entry', async () => {
+    const context = await fixture(); const key = context.resolved.steps[0].key;
+    const old = context.cache.get(key); if (old === undefined) throw new Error('cache'); const oldDelete = vi.spyOn(old, 'delete');
+    const otherStep = fakeStep('other', 'sphere-for-replacement'); await context.direct.recomputeSolids([otherStep], { partId: 'part-b' });
+    const replacement = context.cache.get(otherStep.key); if (replacement === undefined) throw new Error('replacement');
+    let changed = false;
+    const pending = context.direct.checkInterference(context.input, { onProgress() {
+      if (!changed) { changed = true; context.cache.set(key, { shape: replacement.shape, mesh: replacement.mesh, delete: () => undefined }); }
+    } });
+    const result = await pending; check(result); expect(result.pairs[0].volume).toBeCloseTo(2000, 6);
+    expect(oldDelete).not.toHaveBeenCalled(); await context.api.releasePart('part-a'); expect(oldDelete).toHaveBeenCalledTimes(1);
+    const next = await context.direct.checkInterference(context.input); check(next); expect(next.pairs[0].volume).not.toBeCloseTo(2000, 3);
+  });
+  it('B11 実Comlink進捗はrequestId一致・completed単調・終了後callback0', async () => {
+    const context = await fixture(); const bridge = connected(context.api); const progress: AssemblyInterferenceProgress[] = [];
+    check(await bridge.checkInterference(context.input, { onProgress: (value) => { progress.push(value); } }));
+    expect(progress.length).toBeGreaterThan(0); expect(progress.every((value) => value.requestId === context.input.requestId)).toBe(true);
+    expect(progress.map((value) => value.completedPairs)).toEqual(progress.map((value) => value.completedPairs).sort((a, b) => a - b));
+    expect(bridge.pendingCallbacks()).toBe(0); expect(bridge.pendingWaiters()).toBe(0);
+  });
+  it('B12 native後mesh前にmacrotask取消が届きmeshと次Commonを始めない', async () => {
+    const context = await fixture(); const bridge = connected(context.api); let cancel = false;
+    const original = interferenceCommon.intersectionVolume;
+    const common = vi.spyOn(interferenceCommon, 'intersectionVolume').mockImplementation((...args) => { const value = original(...args); setTimeout(() => { cancel = true; }, 0); return value; });
+    const mesh = vi.spyOn(interferenceMesh, 'buildExportMesh');
+    const result = await bridge.checkInterference(context.input, { shouldCancel: () => cancel });
+    expect(result).toMatchObject({ cancelled: true, pendingPairCount: 1, checkedPairCount: 0, pairs: [] });
+    expect(common).toHaveBeenCalledTimes(1); expect(mesh).not.toHaveBeenCalled(); expect(bridge.pendingCallbacks()).toBe(0);
+  });
+  it('B13 Worker errorはPromiseをworkerBrokenで決着しwaiter/callbackを残さない', async () => {
+    const bridge = createKernelBridge(); const pending = bridge.checkInterference(bridgeOnlyInput(), { onProgress: () => undefined });
+    silentWorkers.breakCurrent(); const result = await pending;
+    expect(result).toMatchObject({ kind: 'failed', failure: { code: 'workerBroken' }, pendingPairCount: 1 });
+    expect(bridge.operationStatus(result)).toBe('workerBroken'); expect(bridge.pendingWaiters()).toBe(0); expect(bridge.pendingCallbacks()).toBe(0); bridge.dispose();
+  });
+  it('B14 messageerrorも同じ破損経路で全通知を解放する', async () => {
+    const created = vi.spyOn(silentWorkers, 'create'); const bridge = createKernelBridge();
+    const pending = bridge.checkInterference(bridgeOnlyInput(), { onProgress: () => undefined });
+    const worker = created.mock.results[0]; if (worker.type !== 'return') throw new Error('worker'); worker.value.dispatchEvent(new Event('messageerror'));
+    const result = await pending; expect(bridge.operationStatus(result)).toBe('workerBroken'); expect(result).toMatchObject({ kind: 'failed', failure: { code: 'workerBroken' } });
+    expect(bridge.pendingWaiters()).toBe(0); expect(bridge.pendingCallbacks()).toBe(0); bridge.dispose();
+  });
+  it('B15 postMessage同期throwでもscopeのcallback/port/waiterが残らない', async () => {
+    const bridge = createKernelBridge(); silentWorkers.failPost();
+    const result = await bridge.checkInterference(bridgeOnlyInput(), { onProgress: () => undefined });
+    expect(result).toMatchObject({ kind: 'failed', failure: { code: 'rpcFailed' } }); expect(bridge.operationStatus(result)).toBe('failed');
+    expect(bridge.pendingWaiters()).toBe(0); expect(bridge.pendingCallbacks()).toBe(0); bridge.dispose();
+  });
+  it('B16 RPC rejectと実部分失敗を構造化してsuccessと分類しない', async () => {
+    const bridge = createKernelBridge(); silentWorkers.rejectWith('transport rejection');
+    const rejected = await bridge.checkInterference(bridgeOnlyInput()); expect(rejected).toMatchObject({ kind: 'failed', failure: { code: 'rpcFailed' } }); expect(bridge.operationStatus(rejected)).toBe('failed'); bridge.dispose();
+    silentWorkers.clear(); const context = await fixture(); const real = connected(context.api);
+    const partial = await real.checkInterference({ ...context.input, bodies: new Map() });
+    expect(partial.kind).toBe('checked'); expect(partial.failures).toHaveLength(1); expect(real.operationStatus(partial)).toBe('failed');
+  });
+  it('B17 disposeは旧requestIdを保ち遅い結果/進捗を無効にする', async () => {
+    const context = await fixture(); const bridge = connected(context.api); let callbacks = 0;
+    let announce: () => void = () => undefined; let finish: () => void = () => undefined;
+    const completed = new Promise<void>((resolve) => { announce = resolve; });
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    const original = context.api.checkInterference.bind(context.api);
+    vi.spyOn(context.api, 'checkInterference').mockImplementation(async (...args) => {
+      const result = await original(...args); announce(); await gate; return result;
+    });
+    const pending = bridge.checkInterference(context.input, { onProgress() { callbacks += 1; } });
+    await completed; const callbackCount = callbacks; bridge.dispose(); finish();
+    const result = await pending;
+    expect(result.requestId).toBe(context.input.requestId); expect(result.cancelled).toBe(true); expect(bridge.operationStatus(result)).toBe('cancelled');
+    await new Promise<void>((resolve) => setTimeout(resolve, 10)); expect(callbacks).toBe(callbackCount); expect(bridge.pendingCallbacks()).toBe(0); expect(bridge.pendingWaiters()).toBe(0);
+  });
+  it('B18 direct/Workerの結果が一致し旧基底overloadの計算口が使える', async () => {
+    const context = await fixture(); const bridge = connected(context.api);
+    const direct = await context.direct.checkInterference(context.input); expect(await bridge.checkInterference(context.input)).toEqual(direct);
+    const legacy = createDirectKernelBridge(context.api); const measured = await legacy.measure(context.resolved.steps, [{ bodyFeatureId: context.resolved.steps[0].featureId, subShape: null }], 'massProperties');
+    expect(measured.kind).not.toBe('failed'); legacy.dispose();
+  });
+  it('B19 callbackとlease解放が同時に失敗しても元理由と解放理由を保持する', async () => {
+    const context = await fixture(); const before = context.cache.stats();
+    const native = context.cache.release.bind(context.cache);
+    vi.spyOn(context.cache, 'release').mockImplementationOnce((token) => { native(token); throw new Error('lease cleanup'); });
+    const result = await context.direct.checkInterference(context.input, { onProgress() { throw new Error('progress failed'); } });
+    expect(result).toMatchObject({ kind: 'failed', failure: { code: 'callbackFailed', message: 'progress failed', cleanupMessages: ['lease cleanup'] }, pendingPairCount: 1 });
+    expect(context.cache.stats().protectedKeyCount).toBe(before.protectedKeyCount);
+  });
+  it('B20 2回目Common後の取消も再利用queueで直接mesh登録前に配送する', async () => {
+    const context = await fixture(); const bridge = connected(context.api);
+    const partKey = context.input.resolved.partKeys.get('b'); if (partKey === undefined) throw new Error('part key');
+    const input: AssemblyInterferenceInput = { ...context.input, components: [...context.input.components, { ...context.input.components[1], id: 'c' }],
+      resolved: { ...context.input.resolved, partKeys: new Map([...context.input.resolved.partKeys, ['c', partKey]]) },
+      placements: new Map([...context.input.placements, ['c', { position: [10, 0, 0], rotation: [0, 0, 0, 1] }]]) };
+    let cancel = false; let calls = 0; const native = interferenceCommon.intersectionVolume;
+    const common = vi.spyOn(interferenceCommon, 'intersectionVolume').mockImplementation((...args) => {
+      const result = native(...args); calls += 1; if (calls === 2) setTimeout(() => { cancel = true; }, 0); return result;
+    });
+    const mesh = vi.spyOn(interferenceMesh, 'buildExportMesh');
+    const result = await bridge.checkInterference(input, { shouldCancel: () => cancel });
+    expect(result).toMatchObject({ cancelled: true, checkedPairCount: 1, pendingPairCount: 2 });
+    expect(common).toHaveBeenCalledTimes(2); expect(mesh).not.toHaveBeenCalled(); expect(bridge.pendingCallbacks()).toBe(0);
+  });
+  it('B21 開始前取消とqueue/lease解放故障をdirect結果へ全て残す', async () => {
+    const context = await fixture(); const before = context.cache.stats(); const Channel = MessageChannel;
+    const release = context.cache.release.bind(context.cache);
+    vi.spyOn(context.cache, 'release').mockImplementationOnce((token) => { release(token); throw new Error('lease cleanup'); });
+    vi.spyOn(globalThis, 'MessageChannel').mockImplementation(function () {
+      const channel = new Channel(); const close = channel.port1.close.bind(channel.port1);
+      channel.port1.close = () => { close(); throw new Error('queue cleanup'); }; return channel;
+    });
+    const result = await context.direct.checkInterference(context.input, { shouldCancel: () => true });
+    expect(result).toMatchObject({ kind: 'failed', failure: { code: 'cleanupFailed', cleanupMessages: ['queue cleanup', 'lease cleanup'] },
+      cancelled: true, totalPairCount: 1, checkedPairCount: 0, skippedPairCount: 0, failures: [], pendingPairCount: 1 });
+    expect(context.cache.stats().protectedKeyCount).toBe(before.protectedKeyCount);
+  });
+  it('B22 実Comlinkは非同期relay故障を構造化して決着しcallback/leaseを返す', async () => {
+    const context = await fixture(); const bridge = connected(context.api); const before = context.cache.stats();
+    const Channel = MessageChannel; let commonStarted = false; const native = interferenceCommon.intersectionVolume;
+    const common = vi.spyOn(interferenceCommon, 'intersectionVolume').mockImplementationOnce((...args) => {
+      const result = native(...args); commonStarted = true; return result;
+    });
+    const channels = vi.spyOn(globalThis, 'MessageChannel').mockImplementation(function () {
+      const channel = new Channel();
+      // callback輸送は既に始まっている。Common後に作るkernelのqueueだけを故障させる。
+      if (commonStarted) vi.spyOn(channel.port1, 'postMessage').mockImplementation(() => { throw new Error('worker relay'); });
+      return channel;
+    });
+    const mesh = vi.spyOn(interferenceMesh, 'buildExportMesh');
+    const result = await bridge.checkInterference(context.input);
+    expect(result).toMatchObject({ kind: 'failed', failure: { code: 'unexpectedFailure', message: 'worker relay' }, cancelled: false,
+      totalPairCount: 1, checkedPairCount: 0, skippedPairCount: 0, failures: [], pendingPairCount: 1 });
+    expect(common).toHaveBeenCalledTimes(1); expect(mesh).not.toHaveBeenCalled();
+    expect(bridge.pendingCallbacks()).toBe(0); expect(bridge.pendingWaiters()).toBe(0);
+    expect(context.cache.stats().protectedKeyCount).toBe(before.protectedKeyCount);
+    channels.mockRestore(); common.mockRestore();
+    expect((await bridge.checkInterference(context.input)).kind).toBe('checked');
   });
 });

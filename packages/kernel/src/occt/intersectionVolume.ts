@@ -1,4 +1,4 @@
-import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
+import type { BOPAlgo_GlueEnum, OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
@@ -13,6 +13,9 @@ export type IntersectionVolumeStage =
   | 'createBuilder'
   | 'setInputs'
   | 'setNonDestructive'
+  | 'setGlue'
+  | 'setHistory'
+  | 'setCheckInverted'
   | 'build'
   | 'checkBuild'
   | 'readShape'
@@ -49,6 +52,37 @@ export type IntersectionVolumeResult =
       readonly shape: null;
       readonly failure: IntersectionVolumeFailure;
     };
+
+export interface IntersectionVolumeOptions {
+  /** 呼出側が新しい面交線のない部分一致を証明した場合だけ指定する。省略時は従来通り。 */
+  readonly glue?: 'shift';
+  /** 結果APIはModified/Generated履歴を返さない。省略時はOCCT既定を維持する。 */
+  readonly collectHistory?: false;
+  /** 呼出側が有界solidの外向き閉包を証明済みの場合だけtrue。結果の妥当性検査は維持。 */
+  readonly nonInverted?: true;
+}
+
+/**
+ * 固定bindingは列挙値を{}、SetGlue引数を列挙の入れ物として宣言している。
+ * 2026-09-08 PM承認の述語1箇所。makeSweep/xcafDocumentと同じ限定例外で、
+ * 他APIへ広げない。実WASMで列挙のconstructor・instance・value=1を確認済み。
+ * nullでないことだけでなく登録値の同一性とその実行時構造を検査する。
+ * この検査は幾何へのGlue適用条件を証明しない。その証明は呼出側が所有する。
+ */
+function isGlueShift(value: unknown, registry: unknown): value is BOPAlgo_GlueEnum {
+  return typeof registry === 'function' && 'BOPAlgo_GlueShift' in registry
+    && registry.BOPAlgo_GlueShift === value && typeof value === 'object' && value !== null
+    && value instanceof registry && 'value' in value && value.value === 1
+    && typeof value.constructor === 'function' && value.constructor.name === 'BOPAlgo_GlueEnum_BOPAlgo_GlueShift';
+}
+
+function glueShift(oc: OpenCascadeInstance): BOPAlgo_GlueEnum {
+  const registry: unknown = oc.BOPAlgo_GlueEnum;
+  const value: unknown = typeof registry === 'function' && 'BOPAlgo_GlueShift' in registry
+    ? registry.BOPAlgo_GlueShift : undefined;
+  if (!isGlueShift(value, registry)) throw new Error('OCCTのGlueShift列挙を確認できませんでした。');
+  return value;
+}
 
 function failed(failure: IntersectionVolumeFailure): IntersectionVolumeResult {
   return { kind: 'failed', volume: null, shape: null, failure };
@@ -106,6 +140,7 @@ export function intersectionVolume(
   oc: OpenCascadeInstance,
   a: TopoDS_Shape,
   b: TopoDS_Shape,
+  options: IntersectionVolumeOptions = {},
 ): IntersectionVolumeResult {
   const allocations = createAllocations();
   const cleanupMessages: string[] = [];
@@ -134,6 +169,18 @@ export function intersectionVolume(
       maker.SetTools(toolsList);
       stage = 'setNonDestructive';
       maker.SetNonDestructive(true);
+      if (options.glue === 'shift') {
+        stage = 'setGlue';
+        maker.SetGlue(glueShift(oc));
+      }
+      if (options.collectHistory === false) {
+        stage = 'setHistory';
+        maker.SetToFillHistory(false);
+      }
+      if (options.nonInverted === true) {
+        stage = 'setCheckInverted';
+        maker.SetCheckInverted(false);
+      }
       stage = 'build';
       maker.Build(range);
     } finally {

@@ -21,6 +21,11 @@ import {
   type CurveSpec,
   type FaceMeshData,
   type KernelApi,
+  type ManagedKernelApi,
+  type InterferenceComponentSpec,
+  type InterferenceRequest,
+  type InterferenceResult,
+  type InterferenceProgress,
   type MeasureRequest,
   type MeasureResult,
   type MeasureTargetSpec,
@@ -55,6 +60,9 @@ import {
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
 import { importedShapeOf } from './part/types.js';
+import type { AssemblyComponent } from './assembly/types.js';
+import type { ResolvedAssembly } from './assembly/resolveAssembly.js';
+import type { RigidPlacement } from './assembly/placementMath.js';
 
 import { EXPORT_MESH_QUALITY, type ExportMeshQuality } from './exchange/types.js';
 import type { ResolvedSubShape } from './geometry/planeSpec.js';
@@ -2547,6 +2555,7 @@ interface KernelConnection {
   readonly counts: Record<KernelOperationStatus, number>;
   readonly results: WeakMap<object, KernelOperationStatus>;
   readonly handleBroken: () => void;
+  readonly closeTransport: () => void;
   interruption: InterruptedStatus | null;
   closed: boolean;
 }
@@ -2564,14 +2573,34 @@ function createKernelConnection(
   results: WeakMap<object, KernelOperationStatus>,
 ): KernelConnection {
   const worker = createKernelWorker();
+  const localReplies = new EventTarget();
+  const listeners = new Set<EventListenerOrEventListenerObject>();
+  const endpoint: Comlink.Endpoint = {
+    postMessage(message: unknown, transfer?: Transferable[]) {
+      // Comlink 4のreleaseProxyはvoidを返し、内部Promiseを呼出側ではcatchできない。
+      // 終了するWorkerへRELEASEを送らず、その後始末だけをローカルで決着する。
+      if (connection.closed && typeof message === 'object' && message !== null
+        && 'type' in message && message.type === 'RELEASE' && 'id' in message) {
+        localReplies.dispatchEvent(new MessageEvent('message', { data: { id: message.id, type: 'RAW', value: undefined } }));
+        return;
+      }
+      worker.postMessage(message, transfer ?? []);
+    },
+    addEventListener(type, listener) { listeners.add(listener); worker.addEventListener(type, listener); localReplies.addEventListener(type, listener); },
+    removeEventListener(type, listener) { listeners.delete(listener); worker.removeEventListener(type, listener); localReplies.removeEventListener(type, listener); },
+  };
   const connection: KernelConnection = {
     worker,
-    remote: Comlink.wrap<ReturnType<typeof createKernelApi>>(worker),
+    remote: Comlink.wrap<ReturnType<typeof createKernelApi>>(endpoint),
     waiters: new Set(),
     counts,
     results,
     interruption: null,
     closed: false,
+    closeTransport() {
+      for (const listener of listeners) { worker.removeEventListener('message', listener); localReplies.removeEventListener('message', listener); }
+      listeners.clear();
+    },
     handleBroken: () => {
       if (connection.closed) return;
       onBroken();
@@ -2665,6 +2694,7 @@ function closeKernelConnection(connection: KernelConnection): void {
     // Worker がすでに応答しない状態では解放の要求自体が失敗しうるが、
     // 呼び出し側は必ず worker.terminate() へ進むので実害は無い。
   }
+  connection.closeTransport();
   connection.worker.terminate();
 }
 
@@ -2680,7 +2710,147 @@ export interface AssemblyKernelBridge extends KernelBridge {
   checkShapeAvailability(partId: string, bodyKeys: readonly string[]): Promise<ShapeAvailability>;
 }
 
-export interface MonitoredKernelBridge extends AssemblyKernelBridge {
+export interface AssemblyInterferenceInput {
+  readonly requestId: string;
+  readonly components: readonly AssemblyComponent[];
+  readonly resolved: ResolvedAssembly;
+  readonly bodies: ReadonlyMap<string, readonly SolidBody[]>;
+  readonly placements: ReadonlyMap<string, RigidPlacement>;
+}
+export type AssemblyInterferencePairId = readonly [string, string];
+export interface AssemblyInterferenceOptions {
+  readonly pairs?: readonly AssemblyInterferencePairId[];
+  readonly ignoredPairs?: readonly AssemblyInterferencePairId[];
+  readonly onProgress?: (progress: AssemblyInterferenceProgress) => void;
+  readonly shouldCancel?: PartCancelToken;
+}
+export interface AssemblyInterferenceProgress {
+  readonly requestId: string;
+  readonly phase: 'prepare' | 'candidates' | 'common' | 'mesh';
+  readonly completedPairs: number;
+  readonly totalPairs: number;
+  readonly completedComponents: number;
+  readonly totalComponents: number;
+  readonly currentPair?: AssemblyInterferencePairId;
+}
+export interface AssemblyInterferenceMesh {
+  readonly positions: Float32Array;
+  readonly normals: Float32Array;
+  readonly indices: Uint32Array;
+  readonly triangleCount: number;
+}
+export interface AssemblyInterferencePair {
+  readonly aComponentId: string;
+  readonly bComponentId: string;
+  readonly volume: number;
+  readonly mesh: AssemblyInterferenceMesh;
+}
+export interface AssemblyInterferencePairFailure {
+  readonly pair: AssemblyInterferencePairId;
+  readonly stage: 'input' | 'bounds' | 'union' | 'placement' | 'common' | 'mesh' | 'release';
+  readonly code: 'unresolvedPart' | 'missingBody' | 'unsupportedBody' | 'invalidPlacement' | 'boundsFailed'
+    | 'unionFailed' | 'meshFailed' | 'invalidInput' | 'buildFailed' | 'invalidResult' | 'measurementFailed'
+    | 'occtException' | 'cleanupFailed';
+  readonly message: string;
+  readonly missingKeys?: readonly string[];
+  readonly cleanupMessages?: readonly string[];
+}
+export interface AssemblyInterferenceReport {
+  readonly requestId: string;
+  readonly pairs: readonly AssemblyInterferencePair[];
+  readonly failures: readonly AssemblyInterferencePairFailure[];
+  readonly skips: readonly { readonly pair: AssemblyInterferencePairId; readonly reason: 'suppressed' | 'hidden' | 'ignored' }[];
+  readonly totalPairCount: number;
+  readonly checkedPairCount: number;
+  readonly skippedPairCount: number;
+  readonly pendingPairCount: number;
+  readonly cancelled: boolean;
+}
+export interface AssemblyInterferenceRootFailure {
+  readonly code: 'invalidRequest' | 'noComponents' | 'kernelUnavailable' | 'callbackFailed'
+    | 'cleanupFailed' | 'unexpectedFailure' | 'workerBroken' | 'rpcFailed';
+  readonly message: string;
+  readonly cleanupMessages?: readonly string[];
+}
+export type AssemblyInterferenceResult = AssemblyInterferenceReport & (
+  | { readonly kind: 'checked'; readonly failure: null }
+  | { readonly kind: 'failed'; readonly failure: AssemblyInterferenceRootFailure });
+export interface InterferenceKernelBridge extends AssemblyKernelBridge {
+  checkInterference(input: AssemblyInterferenceInput, options?: AssemblyInterferenceOptions): Promise<AssemblyInterferenceResult>;
+}
+
+/** 保存配置へ後退せず、現在表示されている世界配置と完了body群をawait前に写す。 */
+function toInterferenceRequest(input: AssemblyInterferenceInput, options: AssemblyInterferenceOptions): InterferenceRequest {
+  return {
+    requestId: input.requestId,
+    components: input.components.map((component): InterferenceComponentSpec => {
+      const componentId = component.id;
+      if (component.suppressed) return { kind: 'excluded', componentId, reason: 'suppressed' };
+      if (!component.visible) return { kind: 'excluded', componentId, reason: 'hidden' };
+      const partKey = input.resolved.partKeys.get(componentId);
+      const part = partKey === undefined ? undefined : input.resolved.parts.get(partKey);
+      if (partKey === undefined || part === undefined || part.errors.length > 0) return {
+        kind: 'unavailable', componentId, code: 'unresolvedPart', message: '部品の計算結果がありません。',
+      };
+      const placement = input.placements.get(componentId);
+      if (placement === undefined) return { kind: 'unavailable', componentId, code: 'invalidPlacement', message: '部品の現在の位置がありません。' };
+      const completed = input.bodies.get(partKey);
+      if (completed === undefined || part.liveBodyIds.length === 0) return { kind: 'unavailable', componentId,
+        code: 'missingBody', message: '部品の立体の計算が完了していません。' };
+      const bodyKeys: string[] = [];
+      for (const id of part.liveBodyIds) {
+        const body = completed.find((entry) => entry.featureId === id);
+        const step = part.steps.find((entry) => entry.featureId === id && entry.visible);
+        if (body === undefined) return { kind: 'unavailable', componentId, code: 'missingBody',
+          message: '部品の立体の計算が完了していません。', ...(step === undefined ? {} : { missingKeys: [step.key] }) };
+        if (body.bodyKind !== 'solid') return { kind: 'unavailable', componentId, code: 'unsupportedBody', message: '面や三角形だけの部品は調べられません。' };
+        if (step === undefined || !body.isValid) return { kind: 'unavailable', componentId, code: 'missingBody', message: '部品の立体を取得できません。' };
+        bodyKeys.push(step.key);
+      }
+      return { kind: 'ready', componentId, bodyKeys: [...new Set(bodyKeys)].sort(), placement: {
+        position: [...placement.position],
+        rotation: [...placement.rotation],
+      } };
+    }),
+    ...(options.pairs === undefined ? {} : { pairs: options.pairs.map(([a, b]): AssemblyInterferencePairId => [a, b]) }),
+    ...(options.ignoredPairs === undefined ? {} : { ignoredPairs: options.ignoredPairs.map(([a, b]): AssemblyInterferencePairId => [a, b]) }),
+  };
+}
+
+function interferenceProgressOf(progress: InterferenceProgress): AssemblyInterferenceProgress {
+  return { requestId: progress.requestId, phase: progress.phase, completedPairs: progress.completedPairs,
+    totalPairs: progress.totalPairs, completedComponents: progress.completedComponents, totalComponents: progress.totalComponents,
+    ...(progress.currentPair === undefined ? {} : { currentPair: [progress.currentPair[0], progress.currentPair[1]] }) };
+}
+
+function toInterferenceResult(result: InterferenceResult): AssemblyInterferenceResult {
+  const report: AssemblyInterferenceReport = {
+    requestId: result.requestId, totalPairCount: result.totalPairCount, checkedPairCount: result.checkedPairCount,
+    skippedPairCount: result.skippedPairCount, pendingPairCount: result.pendingPairCount, cancelled: result.cancelled,
+    pairs: result.pairs.map((pair) => ({ aComponentId: pair.aComponentId, bComponentId: pair.bComponentId,
+      volume: pair.volume, mesh: { positions: pair.mesh.positions, normals: pair.mesh.normals,
+        indices: pair.mesh.indices, triangleCount: pair.mesh.triangleCount } })),
+    failures: result.failures.map((failure) => ({ pair: [failure.pair[0], failure.pair[1]], stage: failure.stage,
+      code: failure.code, message: failure.message,
+      ...(failure.missingKeys === undefined ? {} : { missingKeys: [...failure.missingKeys] }),
+      ...(failure.cleanupMessages === undefined ? {} : { cleanupMessages: [...failure.cleanupMessages] }) })),
+    skips: result.skips.map((skip) => ({ pair: [skip.pair[0], skip.pair[1]], reason: skip.reason })),
+  };
+  return result.kind === 'checked' ? { ...report, kind: 'checked', failure: null }
+    : { ...report, kind: 'failed', failure: { code: result.failure.code, message: result.failure.message,
+      ...(result.failure.cleanupMessages === undefined ? {} : { cleanupMessages: [...result.failure.cleanupMessages] }) } };
+}
+
+/** 輸送自体が決着しなかった組はpending。計算済み・clearを捏造しない。 */
+function refusedInterference(request: InterferenceRequest, failure: AssemblyInterferenceRootFailure, cancelled = false): AssemblyInterferenceResult {
+  const total = request.pairs === undefined ? request.components.length * (request.components.length - 1) / 2
+    : new Set(request.pairs.map(([a, b]) => JSON.stringify([a, b].sort()))).size;
+  const report: AssemblyInterferenceReport = { requestId: request.requestId, pairs: [], failures: [], skips: [],
+    totalPairCount: total, checkedPairCount: 0, skippedPairCount: 0, pendingPairCount: total, cancelled };
+  return cancelled ? { ...report, kind: 'checked', failure: null } : { ...report, kind: 'failed', failure };
+}
+
+export interface MonitoredKernelBridge extends InterferenceKernelBridge {
   pendingWaiters(): number;
   operationCounts(): KernelOperationCounts;
   pendingCallbacks(): number;
@@ -2722,6 +2892,24 @@ export function createKernelBridge(): MonitoredKernelBridge {
       (typeof result === 'object' && result !== null) || typeof result === 'function'
         ? results.get(result) : undefined,
     pendingCallbacks: () => [...callbackScopes].reduce((sum, scope) => sum + scope.size(), 0),
+    async checkInterference(input, options = {}): Promise<AssemblyInterferenceResult> {
+      const request = toInterferenceRequest(input, options);
+      const active = connection;
+      const callbacks = callbackScope();
+      const onProgress = options.onProgress;
+      const progress = onProgress === undefined ? undefined : callbacks.proxy((value: InterferenceProgress) => {
+        if (callbacks.active) onProgress(interferenceProgressOf(value));
+      });
+      return raceWithBroken(active, async () => {
+        try {
+          return toInterferenceResult(await active.remote.checkInterference(request, progress,
+            toCancelProxy(options.shouldCancel ?? (() => false), callbacks), 'message'));
+        } catch (error) {
+          return refusedInterference(request, { code: 'rpcFailed', message: toFailureMessage(error) });
+        }
+      }, () => refusedInterference(request, { code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE },
+        active.interruption === 'cancelled'), callbacks);
+    },
     async releasePart(partId): Promise<void> {
       const active = connection;
       return raceWithBroken(active, () => active.remote.releasePart(partId), () => undefined);
@@ -2957,6 +3145,26 @@ export function createKernelBridge(): MonitoredKernelBridge {
 }
 
 type PartLifetimeApi = KernelApi & Pick<AssemblyKernelBridge, 'releasePart' | 'checkShapeAvailability'>;
+
+/** Node統合検査用。基底の旧overload/fakeへ新しい必須能力を要求しない。 */
+export function createDirectInterferenceKernelBridge(api: ManagedKernelApi): InterferenceKernelBridge {
+  const bridge = createDirectKernelBridge(api);
+  let disposed = false;
+  return {
+    ...bridge,
+    async checkInterference(input, options = {}): Promise<AssemblyInterferenceResult> {
+      const request = toInterferenceRequest(input, options);
+      const onProgress = options.onProgress;
+      const shouldCancel = options.shouldCancel;
+      try {
+        return toInterferenceResult(await api.checkInterference(request,
+          onProgress === undefined ? undefined : (progress) => { if (!disposed) onProgress(interferenceProgressOf(progress)); },
+          () => disposed || (shouldCancel?.() ?? false)));
+      } catch (error) { return refusedInterference(request, { code: 'rpcFailed', message: toFailureMessage(error) }); }
+    },
+    dispose() { disposed = true; bridge.dispose(); },
+  };
+}
 
 function hasPartLifetime(api: KernelApi): api is PartLifetimeApi {
   return 'releasePart' in api && typeof api.releasePart === 'function' &&

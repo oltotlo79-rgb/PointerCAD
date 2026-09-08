@@ -418,6 +418,149 @@ describe('共通体積の分類・例外安全・所有・性能', () => {
   let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
   beforeAll(async () => { oc = await loadOcctForNode(); });
 
+  it('GlueShiftは省略時の呼出順を変えず、指定時だけ非破壊設定後Build前に指定する', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]);
+      const observed = observeAllocations(oc);
+      const original = captureMethod<'SetGlue', Parameters<BRepAlgoAPI_BooleanOperation['SetGlue']>, void>(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetGlue');
+      const glue = vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetGlue').mockImplementation(function (this: BRepAlgoAPI_BooleanOperation, mode) {
+        observed.buildOrder.push('glue'); original.call(this, mode);
+      });
+      consume(intersectionVolume(oc, a.shape, b.shape), 2000);
+      expect(glue).not.toHaveBeenCalled();
+      expect(observed.buildOrder).toEqual(['arguments', 'tools', 'nonDestructive', 'build']);
+      observed.buildOrder.length = 0;
+      consume(intersectionVolume(oc, a.shape, b.shape, { glue: 'shift' }), 2000);
+      expect(glue).toHaveBeenCalledExactlyOnceWith(oc.BOPAlgo_GlueEnum.BOPAlgo_GlueShift);
+      expect(observed.buildOrder).toEqual(['arguments', 'tools', 'nonDestructive', 'glue', 'build']);
+      expectReleased(observed, 'GlueShift order');
+    } finally { vi.restoreAllMocks(); release(); }
+  });
+
+  it('GlueShift設定例外はsetGlue失敗として全所有物を解放し、入力を再利用できる', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]);
+      const observed = observeAllocations(oc);
+      vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetGlue').mockImplementationOnce(() => { throw new Error('glue setup failed'); });
+      const result = intersectionVolume(oc, a.shape, b.shape, { glue: 'shift' });
+      try {
+        expect(result).toMatchObject({ kind: 'failed', failure: { code: 'occtException', stage: 'setGlue', detail: 'glue setup failed' } });
+      } finally { if (result.kind === 'overlap') result.delete(); }
+      expect(observed.buildOrder).not.toContain('build');
+      expectReleased(observed, 'GlueShift exception');
+      consume(intersectionVolume(oc, a.shape, b.shape), 2000);
+      expectReleased(observed, 'GlueShift recovery');
+    } finally { vi.restoreAllMocks(); release(); }
+  });
+
+  it.each(['missingRegistry', 'nullRegistry', 'objectRegistry', 'missingValue', 'nullValue', 'numberValue', 'plainObject', 'wrongMember'] as const)(
+    'GlueShift列挙の%sはnative設定前に断り全解放し、省略時は同じ入力を処理できる', (kind) => {
+      const { keep, release } = allocationModule.createAllocations();
+      try {
+        const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]);
+        const observed = observeAllocations(oc);
+        const glue = vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetGlue');
+        const broken = new Proxy(oc, {
+          get(target, property, receiver): unknown {
+            if (property !== 'BOPAlgo_GlueEnum') return Reflect.get(target, property, receiver);
+            if (kind === 'missingRegistry') return undefined;
+            if (kind === 'nullRegistry') return null;
+            if (kind === 'objectRegistry') return {};
+            return new Proxy(target.BOPAlgo_GlueEnum, {
+              get(registry, member, enumReceiver): unknown {
+                if (member !== 'BOPAlgo_GlueShift') return Reflect.get(registry, member, enumReceiver);
+                if (kind === 'missingValue') return undefined;
+                if (kind === 'nullValue') return null;
+                if (kind === 'numberValue') return 1;
+                if (kind === 'plainObject') return { value: 1 };
+                return registry.BOPAlgo_GlueOff;
+              },
+            });
+          },
+        });
+        // 壊れた列挙でもoption省略の実Commonを先にcontrolとして消費する。
+        consume(intersectionVolume(broken, a.shape, b.shape), 2000);
+        expect(glue).not.toHaveBeenCalled(); expectReleased(observed, `${kind}/control`);
+        observed.buildOrder.length = 0;
+        const result = intersectionVolume(broken, a.shape, b.shape, { glue: 'shift' });
+        try {
+          expect(result).toMatchObject({ kind: 'failed', failure: {
+            code: 'occtException', stage: 'setGlue', detail: 'OCCTのGlueShift列挙を確認できませんでした。',
+          } });
+        } finally { if (result.kind === 'overlap') result.delete(); }
+        expect(glue).not.toHaveBeenCalled(); expect(observed.buildOrder).not.toContain('build');
+        expectReleased(observed, `${kind}/rejected`);
+        consume(intersectionVolume(oc, a.shape, b.shape), 2000); expectReleased(observed, `${kind}/recovery`);
+      } finally { vi.restoreAllMocks(); release(); }
+    },
+  );
+
+  it('GlueShift設定とlist解放の同時故障でも主失敗を保持し全解放を試みる', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]);
+      const observed = observeAllocations(oc); const List = oc.TopTools_ListOfShape_1;
+      vi.spyOn(oc, 'TopTools_ListOfShape_1').mockImplementation(function () {
+        const list = new List(); const nativeDelete = list.delete.bind(list);
+        list.delete = () => { nativeDelete(); throw new Error('glue list cleanup'); }; return list;
+      });
+      vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetGlue').mockImplementation(() => { throw new Error('primary glue failure'); });
+      const result = intersectionVolume(oc, a.shape, b.shape, { glue: 'shift' });
+      expect(result).toMatchObject({ kind: 'failed', failure: { code: 'occtException', stage: 'setGlue',
+        detail: 'primary glue failure', cleanupMessages: ['glue list cleanup'] } });
+      expectReleased(observed, 'GlueShift combined failures');
+    } finally { vi.restoreAllMocks(); release(); }
+  });
+
+  it('不要なBoolean履歴は明示指定時だけ生成を止め、実体積と全所有を保つ', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]);
+      const observed = observeAllocations(oc);
+      const history = vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetToFillHistory');
+      consume(intersectionVolume(oc, a.shape, b.shape), 2000); expect(history).not.toHaveBeenCalled();
+      consume(intersectionVolume(oc, a.shape, b.shape, { collectHistory: false }), 2000);
+      expect(history).toHaveBeenCalledExactlyOnceWith(false); expectReleased(observed, 'history disabled');
+    } finally { vi.restoreAllMocks(); release(); }
+  });
+
+  it('Boolean履歴設定の例外もsetHistoryとして解放し、通常入力を再利用できる', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]); const observed = observeAllocations(oc);
+      vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetToFillHistory').mockImplementationOnce(() => { throw new Error('history setup'); });
+      expectFailed(intersectionVolume(oc, a.shape, b.shape, { collectHistory: false }), 'occtException', 'setHistory');
+      expectReleased(observed, 'history setup failure'); consume(intersectionVolume(oc, a.shape, b.shape), 2000);
+      expectReleased(observed, 'history setup recovery');
+    } finally { vi.restoreAllMocks(); release(); }
+  });
+
+  it('非反転の証明指定だけで重複する反転判定を省き、結果の実妥当性検査は残す', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]); const observed = observeAllocations(oc);
+      const inverted = vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetCheckInverted');
+      consume(intersectionVolume(oc, a.shape, b.shape), 2000); expect(inverted).not.toHaveBeenCalled();
+      const valid = vi.spyOn(observed.analyzerPrototype, 'IsValid_2');
+      consume(intersectionVolume(oc, a.shape, b.shape, { nonInverted: true }), 2000);
+      expect(inverted).toHaveBeenCalledExactlyOnceWith(false); expect(valid).toHaveBeenCalledTimes(1);
+      expectReleased(observed, 'certified non-inverted');
+    } finally { vi.restoreAllMocks(); release(); }
+  });
+
+  it('非反転設定の例外もsetCheckInvertedとして解放し、再利用できる', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]); const observed = observeAllocations(oc);
+      vi.spyOn(oc.BRepAlgoAPI_BuilderAlgo.prototype, 'SetCheckInverted').mockImplementationOnce(() => { throw new Error('inverted setup'); });
+      expectFailed(intersectionVolume(oc, a.shape, b.shape, { nonInverted: true }), 'occtException', 'setCheckInverted');
+      expectReleased(observed, 'inverted setup failure'); consume(intersectionVolume(oc, a.shape, b.shape), 2000);
+      expectReleased(observed, 'inverted setup recovery');
+    } finally { vi.restoreAllMocks(); release(); }
+  });
+
   const classifications = [
     { name: 'HasErrors', code: 'buildFailed', stage: 'checkBuild' },
     { name: 'IsDone', code: 'buildFailed', stage: 'checkBuild' },

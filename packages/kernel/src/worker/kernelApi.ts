@@ -28,6 +28,8 @@ import { writeStep } from '../occt/writeStep.js';
 import { writeStl } from '../occt/writeStl.js';
 import type { RgbTuple } from '../occt/xcafDocument.js';
 import type {
+  InterferenceRequest,
+  InterferenceResult,
   FaceMeshData,
   MeasureRequest,
   MeasureResult,
@@ -66,7 +68,11 @@ import {
   type SolidCancelToken,
   type SolidProgressCallback,
 } from './recomputeSolids.js';
-import { createShapeCache, type AcquireToken, type ShapeCache, type ShapeCacheStats } from './shapeCache.js';
+import { createShapeCache, type AcquireToken, type AcquiringShapeCache, type ShapeCache, type ShapeCacheStats } from './shapeCache.js';
+import {
+  checkInterference as runCheckInterference, snapshotInterferenceRequest, prepareInterference,
+  initialInterferenceResult, interferenceRootFailure, type InterferenceProgressCallback,
+} from './checkInterference.js';
 
 const DEFAULT_PART_ID = 'part:current';
 
@@ -441,7 +447,12 @@ export interface KernelApi {
 }
 
 /** 寿命を管理する実装の口。既存の計算だけを包む KernelApi の利用者とも互換にする。 */
-export interface ManagedKernelApi extends KernelApi {
+export interface InterferenceKernelApi extends KernelApi {
+  checkInterference(request: InterferenceRequest, onProgress?: InterferenceProgressCallback,
+    shouldCancel?: SolidCancelToken, callbackDelivery?: 'message'): Promise<InterferenceResult>;
+}
+
+export interface ManagedKernelApi extends InterferenceKernelApi {
   releasePart(partId: string): Promise<void>;
   getShapeCacheStats(): Promise<ShapeCacheStats>;
   /** 欠落時の再計算は model(11a)が行う。例外の独自欄に依存せず Worker 越しに読める。 */
@@ -483,11 +494,11 @@ function recomputeKeys(request: SolidRecomputeRequest): Set<string> {
  * OCCT の読み込み手続きを受け取って、寿命管理を含む KernelApi を組み立てる。
  * ブラウザでは loadOcctForBrowser、Node のテストでは loadOcctForNode を渡す。
  */
-export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): ManagedKernelApi {
+export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, shapeCache?: AcquiringShapeCache<CachedSolid>): ManagedKernelApi {
   // 形状キャッシュは窓口 1 つにつき 1 つ。再計算をまたいで残すことで、
   // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
   // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない(2026-09-03 統括判断)。
-  const cache = createShapeCache<CachedSolid>(
+  const cache = shapeCache ?? createShapeCache<CachedSolid>(
     undefined,
     ({ mesh }) =>
       mesh.positions.byteLength +
@@ -508,6 +519,36 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>): M
   }
 
   return {
+    async checkInterference(request, onProgress, shouldCancel, callbackDelivery): Promise<InterferenceResult> {
+      const snapshot = snapshotInterferenceRequest(request);
+      const preparation = prepareInterference(snapshot);
+      let result = initialInterferenceResult(snapshot, preparation);
+      if (result.kind === 'failed' || preparation.jobs.length === 0) return result;
+      const needed = new Set(preparation.jobs.flatMap((job) => job.pair));
+      const keys = snapshot.components.flatMap((component) =>
+        component.kind === 'ready' && needed.has(component.componentId) ? component.bodyKeys : []);
+      let phase: 'load' | 'run' = 'load';
+      let token: AcquireToken | undefined;
+      try {
+        token = cache.acquire(keys);
+        // acquire直後・最初のawaitより前に旧entryを確定。同key上書きはlease終了までretired。
+        const bodies = new Map([...new Set(keys)].map((key) => [key, cache.get(key)]));
+        const oc = await loadOcct();
+        phase = 'run';
+        result = await runCheckInterference(snapshot, oc, bodies, onProgress, shouldCancel, callbackDelivery);
+      } catch (error) {
+        result = interferenceRootFailure(result, { code: phase === 'load' ? 'kernelUnavailable' : 'unexpectedFailure',
+        message: error instanceof Error ? error.message : String(error) });
+      } finally {
+        if (token !== undefined) try { cache.release(token); } catch (error) {
+          const cleanup = error instanceof Error ? error.message : String(error);
+          result = interferenceRootFailure(result, result.kind === 'failed'
+            ? { ...result.failure, cleanupMessages: [...(result.failure.cleanupMessages ?? []), cleanup] }
+            : { code: 'cleanupFailed', message: '使用中の立体を返せませんでした。', cleanupMessages: [cleanup] });
+        }
+      }
+      return result;
+    },
     releasePart(partId): Promise<void> {
       const part = parts.get(partId);
       parts.delete(partId);

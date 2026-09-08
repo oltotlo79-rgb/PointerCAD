@@ -302,7 +302,12 @@ export {
   type SolidProgressCallback,
   type SolidRecomputeDeps,
 } from './worker/recomputeSolids.js';
-export { createKernelApi, type KernelApi } from './worker/kernelApi.js';
+export { createKernelApi, type KernelApi, type ManagedKernelApi, type InterferenceKernelApi } from './worker/kernelApi.js';
+export type {
+  InterferenceComponentSpec, InterferenceFailureCode, InterferenceInputCode, InterferenceMesh,
+  InterferencePair, InterferencePairFailure, InterferencePairId, InterferenceProgress,
+  InterferenceReport, InterferenceRequest, InterferenceResult, InterferenceRootFailure, InterferenceSkip,
+} from './types.js';
 export { createKernelWorker } from './client/createKernelWorker.js';
 // ---------------------------------------------------------------------------
 // 入出力(FR-802、FR-803、FR-804。P6 タスク6〜11、タスク10 でまとめて輸出した)。

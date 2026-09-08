@@ -1785,3 +1785,73 @@ export interface PlacementSpec {
   /** 向き。原点まわりの回転で、部品の中の座標に掛かる。 */
   readonly rotation: QuaternionTuple;
 }
+/** 干渉解析専用の導出DTO。保存文書・履歴・形状キャッシュの鍵には含めない。 */
+export type InterferencePairId = readonly [string, string];
+export type InterferenceInputCode = 'unresolvedPart' | 'missingBody' | 'unsupportedBody' | 'invalidPlacement';
+export type InterferenceFailureCode = InterferenceInputCode | 'boundsFailed' | 'unionFailed' | 'meshFailed'
+  | import('./occt/intersectionVolume.js').IntersectionVolumeFailure['code'];
+export type InterferenceComponentSpec =
+  | { readonly kind: 'ready'; readonly componentId: string; readonly bodyKeys: readonly string[];
+      readonly placement: PlacementSpec }
+  | { readonly kind: 'excluded'; readonly componentId: string; readonly reason: 'hidden' | 'suppressed' }
+  | { readonly kind: 'unavailable'; readonly componentId: string; readonly code: InterferenceInputCode;
+      readonly message: string; readonly missingKeys?: readonly string[] };
+export interface InterferenceRequest {
+  readonly requestId: string;
+  readonly components: readonly InterferenceComponentSpec[];
+  readonly pairs?: readonly InterferencePairId[];
+  readonly ignoredPairs?: readonly InterferencePairId[];
+}
+export interface InterferenceMesh {
+  readonly positions: Float32Array;
+  readonly normals: Float32Array;
+  readonly indices: Uint32Array;
+  readonly triangleCount: number;
+}
+export interface InterferencePair {
+  readonly aComponentId: string;
+  readonly bComponentId: string;
+  readonly volume: number;
+  readonly mesh: InterferenceMesh;
+}
+export interface InterferencePairFailure {
+  readonly pair: InterferencePairId;
+  readonly stage: 'input' | 'bounds' | 'union' | 'placement' | 'common' | 'mesh' | 'release';
+  readonly code: InterferenceFailureCode;
+  readonly message: string;
+  readonly missingKeys?: readonly string[];
+  readonly cleanupMessages?: readonly string[];
+}
+export interface InterferenceSkip {
+  readonly pair: InterferencePairId;
+  readonly reason: 'suppressed' | 'hidden' | 'ignored';
+}
+export interface InterferenceReport {
+  readonly requestId: string;
+  readonly pairs: readonly InterferencePair[];
+  readonly totalPairCount: number;
+  readonly checkedPairCount: number;
+  readonly skippedPairCount: number;
+  readonly pendingPairCount: number;
+  readonly failures: readonly InterferencePairFailure[];
+  readonly skips: readonly InterferenceSkip[];
+  readonly cancelled: boolean;
+}
+export interface InterferenceRootFailure {
+  readonly code: 'invalidRequest' | 'noComponents' | 'kernelUnavailable' | 'callbackFailed'
+    | 'cleanupFailed' | 'unexpectedFailure';
+  readonly message: string;
+  readonly cleanupMessages?: readonly string[];
+}
+export type InterferenceResult = InterferenceReport & (
+  | { readonly kind: 'checked'; readonly failure: null }
+  | { readonly kind: 'failed'; readonly failure: InterferenceRootFailure });
+export interface InterferenceProgress {
+  readonly requestId: string;
+  readonly phase: 'prepare' | 'candidates' | 'common' | 'mesh';
+  readonly completedPairs: number;
+  readonly totalPairs: number;
+  readonly completedComponents: number;
+  readonly totalComponents: number;
+  readonly currentPair?: InterferencePairId;
+}

@@ -145,6 +145,8 @@ function serializeComponentSource(source: ComponentSource): ComponentSource {
         catalog: source.catalog,
         size: source.size,
         options: serializeStandardOptions(source.options),
+        catalogRevision: source.catalogRevision,
+        generatorRevision: source.generatorRevision,
       };
   }
 }
@@ -482,6 +484,14 @@ function readComponentSource(
       if (!options.ok) {
         return options;
       }
+      const catalogRevision = readString(record.value, 'catalogRevision', path);
+      if (!catalogRevision.ok) {
+        return catalogRevision;
+      }
+      const generatorRevision = readString(record.value, 'generatorRevision', path);
+      if (!generatorRevision.ok) {
+        return generatorRevision;
+      }
       return {
         ok: true,
         value: {
@@ -489,6 +499,8 @@ function readComponentSource(
           catalog: catalog.value,
           size: size.value,
           options: options.value,
+          catalogRevision: catalogRevision.value,
+          generatorRevision: generatorRevision.value,
         },
       };
     }

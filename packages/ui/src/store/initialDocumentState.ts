@@ -185,5 +185,7 @@ export function createInitialDocumentState(): InitialDocumentState {
       新規の部品を作ったときも null へ戻す(`documentSlice.ts` の `resetDocument`)。
     */
     assembly: null,
+    // 干渉解析の口はアプリ入口が起動後に差し出す。文書切替では取り下げない。
+    assemblyInterferenceRunner: null,
   };
 }

@@ -3,6 +3,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { EmptyBoxIcon } from '../shell/icons.js';
 import { JointSliderControls } from './AssemblyMotionControls.js';
+import { BomTable } from './BomTable.js';
 
 export function assemblyPropertyKey(kind: 'component' | 'mate' | 'joint' | 'step', id: string): string {
   return `${kind}:${id}`;
@@ -54,6 +55,7 @@ export function AssemblyPropertyPanel(): React.JSX.Element {
       <div className="pcad-panel__body">
         {section ?? <div className="pcad-panel__empty"><EmptyBoxIcon size={28} />
           <p className="pcad-panel__empty-text">{t('propertyPanel.empty')}</p></div>}
+        <BomTable />
       </div>
     </section>
   );

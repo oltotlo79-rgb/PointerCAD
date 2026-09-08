@@ -732,6 +732,20 @@ describe('KernelApi', () => {
     };
   }
 
+  /** 20×20×20 の立方体。アセンブリ配置つき測定で同じキャッシュ形状を使い回す。 */
+  function cube20Step(key: string): SolidStepRequest {
+    const profile: readonly CurveSpec[] = [
+      { kind: 'segment', from: [0, 0, 0], to: [20, 0, 0] },
+      { kind: 'segment', from: [20, 0, 0], to: [20, 20, 0] },
+      { kind: 'segment', from: [20, 20, 0], to: [0, 20, 0] },
+      { kind: 'segment', from: [0, 20, 0], to: [0, 0, 0] },
+    ];
+    return {
+      key, id: key, label: key, visible: true,
+      step: { kind: 'extrude', profile, direction: [0, 0, 1], distance: 20 },
+    };
+  }
+
   /** 頂点の指紋。位置がそのまま照合の材料になる(matchVertex)。 */
   function vertexQueryAt(body: SolidBodyMesh, position: readonly number[]): SubShapeQuery {
     const found = body.vertices.find(
@@ -798,6 +812,27 @@ describe('KernelApi', () => {
     expect(measured.inner).toBe(false);
     expect(measured.pointA[0]).toBeCloseTo(40, 6);
     expect(measured.pointB[0]).toBeCloseTo(45, 6);
+  });
+
+  it('同じ20 mm立方体を現在配置へ移して測り、中心間50 mmなら隙間30 mm・重なれば0 mm(P7 タスク26)', async () => {
+    const key = 'api-measure-placed-cube';
+    const result = await api.recomputeSolids({ steps: [cube20Step(key)], generation: 1 });
+    expect(result.failures).toEqual([]);
+    const target = (x: number) => ({
+      bodyKey: key,
+      subShape: null,
+      placement: { position: [x, 0, 0] as const, rotation: [0, 0, 0, 1] as const },
+    });
+
+    const separated = await api.measure({
+      targets: [target(0), target(50)], kind: 'distance',
+    });
+    expect(separated).toMatchObject({ kind: 'distance', distance: 30, inner: false });
+
+    const overlapping = await api.measure({
+      targets: [target(0), target(15)], kind: 'distance',
+    });
+    expect(overlapping).toMatchObject({ kind: 'distance', distance: 0 });
   });
 
   it('指紋で選び直した面どうしの距離を測る(FR-1102)', async () => {

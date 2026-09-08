@@ -201,6 +201,36 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
     expect(t('assemblyError.isAssemblyFile')).toBe('このファイルはアセンブリです。');
   });
 
+  it('P7の合致・ジョイント・規格部品・部品表の見出しがすべてそろっている', () => {
+    const mateKeys: readonly MessageKey[] = [
+      'assembly.tool.mateCoincident', 'assembly.tool.mateConcentric',
+      'assembly.tool.mateDistance', 'assembly.tool.mateAngle',
+      'assembly.tool.mateParallel', 'assembly.tool.mateTangent',
+    ];
+    const jointKeys: readonly MessageKey[] = [
+      'assembly.tool.jointRevolute', 'assembly.tool.jointSlider',
+      'assembly.tool.jointCylindrical', 'assembly.tool.jointBall',
+    ];
+    const standardPartKeys: readonly MessageKey[] = [
+      'assembly.standardPart.hexBolt', 'assembly.standardPart.hexNut',
+      'assembly.standardPart.plainWasher', 'assembly.standardPart.springWasher',
+      'assembly.standardPart.socketHeadCapScrew', 'assembly.standardPart.panHeadScrew',
+      'assembly.standardPart.deepGrooveBallBearing', 'assembly.standardPart.structuralSection',
+    ];
+    const bomColumnKeys: readonly MessageKey[] = [
+      'assembly.bom.column.number', 'assembly.bom.column.name',
+      'assembly.bom.column.quantity', 'assembly.bom.column.material',
+      'assembly.bom.column.mass',
+    ];
+    expect(mateKeys).toHaveLength(6);
+    expect(jointKeys).toHaveLength(4);
+    expect(standardPartKeys).toHaveLength(8);
+    expect(bomColumnKeys).toHaveLength(5);
+    for (const key of [...mateKeys, ...jointKeys, ...standardPartKeys, ...bomColumnKeys]) {
+      expect(t(key).length, key).toBeGreaterThan(0);
+    }
+  });
+
   it('コンポーネント(.tsx)へ日本語を直書きしていない', () => {
     const offenders: string[] = [];
     for (const file of listFiles(sourceRoot, '.tsx')) {

@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import {
   addComponent, createAssemblyDocument, createComponentFor, createEmptyPartDocument,
+  createStandardPartSource,
   embedPart, emptyEmbeddedPartAttachments, EMPTY_PART_LIBRARY, KERNEL_BROKEN_MESSAGE,
   applyPlacementToDirection, moveComponent, quaternionFromAxisAngle, removeComponent, resolvePart,
+  partKeyOf,
   type AssemblyDocument, type AssemblyKernelBridge, type Mate, type PartDocument, type SolidBody, type Vec3,
 } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
@@ -102,6 +104,27 @@ function originMate(document: AssemblyDocument, kind: 'coincident' | 'distance',
 }
 
 describe('アセンブリの実経路', () => {
+  it('寸法表から組んだ規格部品を通常部品と同じ橋で再計算して表示する', async () => {
+    let document = createAssemblyDocument('規格部品');
+    const source = createStandardPartSource('hexBolt', 'M8', { length: '30' });
+    document = addComponent(document, createComponentFor(document, source));
+    useAppStore.getState().openAssembly(document);
+    const fake = fakeBridge();
+    const detach = attachAssembly(fake.bridge);
+    try {
+      await settle();
+      const key = partKeyOf(source);
+      expect(fake.recomputeSolids).toHaveBeenCalledTimes(1);
+      expect(fake.recomputeSolids.mock.calls[0][1]?.partId).toBe(key);
+      expect(useAppStore.getState().assemblyView?.bodies.has(key)).toBe(true);
+      expect(useAppStore.getState().assemblyView?.resolved.partKeys.get('component-1')).toBe(key);
+      expect(useAppStore.getState().assemblyView?.resolved.errors).toEqual([]);
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+    } finally {
+      detach();
+    }
+  });
+
   it.each([0, 5, -5])('実部分形状と実solverで20mm箱の面offset %sを解き、Undo/Redoも解き直す', async (offset) => {
     const f = await fixture();
     let document = createAssemblyDocument('箱');

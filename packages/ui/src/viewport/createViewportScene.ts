@@ -2,6 +2,7 @@ import {
   DEFAULT_WORK_PLANE_ID,
   WORK_PLANES,
   type ResolvedReferences,
+  type AssemblyInterferenceResult,
   type ResolvedSketch,
   type SketchMesh,
   type SolidBody,
@@ -53,6 +54,7 @@ import {
   type AssemblyGeometryBundle,
 } from './createAssemblyLayer.js';
 import { createConstraintLayer } from './createConstraintLayer.js';
+import { createInterferenceLayer } from './createInterferenceLayer.js';
 import { createMeasureLayer, type MeasurementState } from './createMeasureLayer.js';
 import { createReferenceLayer } from './createReferenceLayer.js';
 import { createSketchLayer } from './createSketchLayer.js';
@@ -134,6 +136,8 @@ export interface ViewportScene {
    * **同じ一式(同一参照)を渡し直したときは並びを触らない**(NFR-PF-1)。
    */
   setAssembly(bundle: AssemblyGeometryBundle): void;
+  /** 干渉解析の共通形状と、一覧で選んだ組を独立層へ渡す。 */
+  setInterference(result: AssemblyInterferenceResult | null, selectedKey: string | null): void;
   /**
    * 外観の割り当てを差し替える(FR-1106〜1109、P5 タスク10)。文書の割り当てと、
    * カーネルが選び直した面の対応から `createSolidLayer.ts` の `buildAppearanceInput` が
@@ -566,11 +570,13 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     文書は 1 つだけ(§0.a-0.10)なので同時には出ないが、形の持ち方が違う(立体は
     フィーチャーごとに 1 つ、アセンブリは**部品の鍵ごとに 1 つを全インスタンスで共有**)
     ため、同じ入れ物に混ぜると共有の判断が 2 通りに割れる。
-    **断面表示のクリッピング平面(FR-111)は配らない**——部品を開いているあいだの機能で、
-    アセンブリの断面表示は P7 の以後の段が要るときに配る。
+    断面表示のクリッピング平面(FR-111)は、下の独立した干渉層と同時に配る。
   */
   const assemblyLayer = createAssemblyLayer();
   scene.add(assemblyLayer.group);
+  // 干渉の赤は共有材質を変えず、共通形状だけを独立した層へ重ねる(P7 タスク26)。
+  const interferenceLayer = createInterferenceLayer();
+  scene.add(interferenceLayer.group);
 
   /*
     下絵の画像(FR-332、P6 タスク39)。**スケッチの線より必ず後ろ**に描く(§0.a-0.46)ので、
@@ -848,6 +854,10 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       refreshEnvironment();
     },
 
+    setInterference(result, selectedKey): void {
+      interferenceLayer.update(result, selectedKey);
+    },
+
     setBodyHighlight(nextHovered, nextSelected): void {
       hoveredBodyId = nextHovered;
       selectedBodyIds = nextSelected;
@@ -874,6 +884,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
         if (sectionActive) {
           // 平面の枚数が 0 に戻ったことを材質へ知らせる(空なら three.js は素通りする)。
           solidLayer.setSectionPlanes([]);
+          assemblyLayer.setSectionPlanes([]);
+          interferenceLayer.setSectionPlanes([]);
           sectionActive = false;
         }
         solidLayer.updateSectionHandle(null);
@@ -888,6 +900,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       sectionPlane.constant = view.plane.constant;
       if (!sectionActive) {
         solidLayer.setSectionPlanes([sectionPlane]);
+        assemblyLayer.setSectionPlanes([sectionPlane]);
+        interferenceLayer.setSectionPlanes([sectionPlane]);
         sectionActive = true;
       }
       solidLayer.updateSectionHandle(view.handle);
@@ -987,6 +1001,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       skyLight.groundColor.setHex(colors.sceneGround);
       solidLayer.setThemeColors(colors);
       assemblyLayer.setThemeColors(colors);
+      interferenceLayer.setThemeColors(colors);
       sketchLayer.setThemeColors(colors);
       referenceLayer.setThemeColors(colors);
       trackingLayer.setThemeColors(colors);
@@ -1087,6 +1102,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       solidLayer.dispose();
       // 配置した部品の共有の形と材質も、画面ごと閉じるときに必ず捨てる(P5 §7.3)。
       assemblyLayer.dispose();
+      interferenceLayer.dispose();
       // 下絵はテクスチャを持つ(P5 §4)ので、画面ごと閉じるときに必ず捨てる。
       canvasLayer.dispose();
       sketchLayer.dispose();

@@ -47,6 +47,8 @@ export type StandardCatalogId =
   | 'springWasher'
   /** 六角穴付きボルト */
   | 'socketHeadCapScrew'
+  /** 十字穴付きなべ小ねじ */
+  | 'panHeadScrew'
   /** 深溝玉軸受(簡略形状。§0.a-0.33) */
   | 'deepGrooveBallBearing'
   /** 等辺山形鋼 */
@@ -78,6 +80,10 @@ export type ComponentSource =
       readonly catalog: StandardCatalogId;
       readonly size: string;
       readonly options: Readonly<Record<string, string>>;
+      /** 寸法表の保存版。表を直しても古いアセンブリの形を黙って変えない(P7 §2.8.1)。 */
+      readonly catalogRevision: string;
+      /** 普通の PartDocument を組む台本の版。同じ寸法行でも台本の変更を区別する。 */
+      readonly generatorRevision: string;
     };
 
 /**

@@ -149,7 +149,7 @@ export function partKeyOf(source: ComponentSource): string {
         .sort((left, right) => (left[0] < right[0] ? -1 : 1))
         .map(([name, value]) => `|${name}=${value}`)
         .join('');
-      return `${source.catalog}:${source.size}${options}`;
+      return `${source.catalog}@${source.catalogRevision}/${source.generatorRevision}:${source.size}${options}`;
     }
   }
 }

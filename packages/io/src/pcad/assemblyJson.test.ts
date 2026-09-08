@@ -308,6 +308,8 @@ describe('アセンブリの往復(FR-601、FR-603、FR-611)', () => {
             catalog: 'hexBolt',
             size: 'M8',
             options: { length: '40' },
+            catalogRevision: 'test-catalog',
+            generatorRevision: 'test-generator',
           },
         },
       ],
@@ -321,7 +323,8 @@ describe('アセンブリの往復(FR-601、FR-603、FR-611)', () => {
       components: [
         {
           ...component('component-1', 'part-1'),
-          source: { kind: 'standardPart', catalog: 'equalAngle', size: 'L50x50x6', options },
+          source: { kind: 'standardPart', catalog: 'equalAngle', size: 'L50x50x6', options,
+            catalogRevision: 'test-catalog', generatorRevision: 'test-generator' },
         },
       ],
     });
@@ -443,7 +446,8 @@ describe('壊れたアセンブリのファイルを断る(FR-504、NFR-UX-5)', 
       components: [
         {
           ...component('component-1', 'part-1'),
-          source: { kind: 'standardPart', catalog: 'hexBolt', size: 'M8', options: {} },
+          source: { kind: 'standardPart', catalog: 'hexBolt', size: 'M8', options: {},
+            catalogRevision: 'test-catalog', generatorRevision: 'test-generator' },
         },
       ],
     };

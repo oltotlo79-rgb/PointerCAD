@@ -3,7 +3,9 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import { addVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
+import { addComponent, createComponentFor } from './assemblyEdit.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
+import { buildStandardPart, createStandardPartSource } from './standard/buildStandardPart.js';
 import { buildMateResidualReport, prepareMateResiduals, type MateResidualTargetPair } from './constraints/mateResiduals.js';
 import { applyMateIncrements, diagnoseMates, prepareMateDrag, solveDrivenJoint, solveMateDrag, solveMates } from './constraints/solveMates.js';
 import { solveRigid, type RigidSolveInput } from './constraints/solveRigid.js';
@@ -172,6 +174,34 @@ describe('相対性能の測定', () => {
     expect(measured.firstTimes).toHaveLength(32);
     expect(measured.secondTimes).toHaveLength(32);
     expect(calls).toBe(96);
+  });
+});
+
+describe('P7-32 規格部品を1つ置く性能', () => {
+  const cases = [
+    ['六角ボルト M8', 'hexBolt', 'M8', { length: '30' }],
+    ['六角ナット M8', 'hexNut', 'M8', {}],
+    ['平座金 M8', 'plainWasher', 'M8', {}],
+    ['ばね座金 M8', 'springWasher', 'M8', {}],
+    ['六角穴付きボルト M8', 'socketHeadCapScrew', 'M8', { length: '30' }],
+    ['十字穴付きなべ小ねじ M8', 'panHeadScrew', 'M8', { length: '30' }],
+    ['深溝玉軸受 6000', 'deepGrooveBallBearing', '6000', {}],
+    ['等辺山形鋼 L50×50×6', 'equalAngle', 'L 50×50×6', { length: '1000' }],
+  ] as const;
+
+  it.each(cases)('%sは500ms以内', (label, catalog, size, options) => {
+    let placed = createAssemblyDocument('規格部品性能');
+    const elapsed = median(() => {
+      const part = buildStandardPart(catalog, size, options);
+      if (part === null) throw new Error(`${label}を組めません。`);
+      const assembly = createAssemblyDocument('規格部品性能');
+      placed = addComponent(assembly, createComponentFor(
+        assembly, createStandardPartSource(catalog, size, options), { partName: part.name },
+      ));
+    });
+    expect(placed.components).toHaveLength(1);
+    console.log(`[P7-32性能] ${label}: ${elapsed.toFixed(3)} ms / 500 ms`);
+    expectWithinBudget(elapsed, 500, `規格部品を置く: ${label}`);
   });
 });
 

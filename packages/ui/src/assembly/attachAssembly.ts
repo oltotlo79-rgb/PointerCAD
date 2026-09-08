@@ -1,6 +1,7 @@
 /** 文書の寿命に沿って部品を再計算し、配置と共有形状をストアへ渡す。 */
 import {
-  appearanceOf, diagnoseMates, jointFramePairFromTargets, KERNEL_BROKEN_MESSAGE,
+  appearanceOf, buildStandardPartFromSource, diagnoseMates, jointFramePairFromTargets,
+  KERNEL_BROKEN_MESSAGE, partKeyOf,
   recomputePart, resolveAssembly,
   resolveMateTarget, selectMateTargetGeometry, solveMates,
   type AssemblyDocument, type AssemblyKernelBridge, type EmbeddedPartAttachments, type PartDocument, type SolveMatesOutcome,
@@ -79,12 +80,14 @@ export function attachAssembly(
   let documentId: string | null = null;
   let version = -1;
   const cache = new Map<string, CachedPart>();
+  const standardDocuments = new Map<string, PartDocument>();
   const retained = new Set<string>();
   let lastGoodPlacements = new Map<string, RigidPlacement>();
 
   async function release(ref: string): Promise<void> {
     retained.delete(ref);
     cache.delete(ref);
+    standardDocuments.delete(ref);
     await bridge.releasePart(ref);
   }
 
@@ -108,9 +111,15 @@ export function attachAssembly(
       cache.clear();
       version = request.version;
     }
-    const references = new Set(request.document.components.flatMap((component) =>
-      !component.suppressed && component.source.kind === 'part' ? [component.source.partRef] : [],
-    ));
+    const standardSources = new Map(request.document.components.flatMap((component) => {
+      if (component.suppressed || component.source.kind !== 'standardPart') return [];
+      return [[partKeyOf(component.source), component.source] as const];
+    }));
+    const references = new Set(request.document.components.flatMap((component) => {
+      if (component.suppressed) return [];
+      return component.source.kind === 'part' || component.source.kind === 'standardPart'
+        ? [partKeyOf(component.source)] : [];
+    }));
     for (const ref of [...retained]) {
       if (!references.has(ref)) await release(ref);
     }
@@ -121,9 +130,14 @@ export function attachAssembly(
     let cacheHits = 0;
     for (const ref of references) {
       if (obsolete(request)) return;
-      const document = request.library.parts.get(ref);
+      const standardSource = standardSources.get(ref);
+      let document = standardSource === undefined ? request.library.parts.get(ref) : standardDocuments.get(ref);
+      if (document === undefined && standardSource !== undefined) {
+        document = buildStandardPartFromSource(standardSource) ?? undefined;
+        if (document !== undefined) standardDocuments.set(ref, document);
+      }
       if (document === undefined) continue; // resolveAssembly が行ごとの欠落を知らせる。
-      const attachments = request.library.attachments.get(ref);
+      const attachments = standardSource === undefined ? request.library.attachments.get(ref) : undefined;
       let found = cache.get(ref);
       if (found?.document !== document || found.attachments !== attachments) found = undefined;
       const available = async (entry: CachedPart): Promise<boolean> => {
@@ -173,7 +187,9 @@ export function attachAssembly(
       cacheHits += found.result.cacheHits;
     }
     if (obsolete(request)) return;
-    let resolved = resolveAssembly(request.document, { library: request.library, resolvedParts });
+    let resolved = resolveAssembly(request.document, {
+      library: request.library, resolvedParts, standardPart: buildStandardPartFromSource,
+    });
     messages.push(...resolved.errors.map((error) => error.message));
     let diagnosis: MateDiagnosis | null = null;
     const mateTargetErrors = new Map<string, readonly string[]>();

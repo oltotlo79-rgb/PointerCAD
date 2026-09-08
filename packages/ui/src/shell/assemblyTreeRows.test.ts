@@ -304,6 +304,8 @@ describe('行の種類と文言', () => {
         catalog: 'hexBolt',
         size: 'M10',
         options: {},
+        catalogRevision: 'test-catalog',
+        generatorRevision: 'test-generator',
       }),
     );
 

@@ -1340,6 +1340,11 @@ export interface MeasureTargetSpec {
   readonly bodyKey: string;
   /** 測る部分形状の指紋。ボディ全体を測るなら `null`。 */
   readonly subShape: SubShapeQuery | null;
+  /**
+   * アセンブリで表示中の配置。省略時は部品内の局所座標のまま測る。
+   * 測定専用の導出値で、形状キャッシュや履歴は変更しない。
+   */
+  readonly placement?: PlacementSpec;
 }
 
 /**

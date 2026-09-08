@@ -292,6 +292,8 @@ describe('規格部品(FR-612、FR-616、§0.a-0.35)', () => {
     catalog: 'hexBolt',
     size: 'M8',
     options: { length: '30' },
+    catalogRevision: 'test-catalog',
+    generatorRevision: 'test-generator',
   };
 
   it('台本が無ければ「この呼び寸法は用意されていません。」', () => {
@@ -326,6 +328,8 @@ describe('規格部品(FR-612、FR-616、§0.a-0.35)', () => {
       catalog: 'equalAngle',
       size: 'L50x50x6',
       options: { length: '1000', material: 'steel' },
+      catalogRevision: 'test-catalog',
+      generatorRevision: 'test-generator',
     };
     const backward: ComponentSource = {
       ...forward,
@@ -333,7 +337,9 @@ describe('規格部品(FR-612、FR-616、§0.a-0.35)', () => {
     };
 
     expect(partKeyOf(forward)).toBe(partKeyOf(backward));
-    expect(partKeyOf(forward)).toBe('equalAngle:L50x50x6|length=1000|material=steel');
+    expect(partKeyOf(forward)).toBe(
+      'equalAngle@test-catalog/test-generator:L50x50x6|length=1000|material=steel',
+    );
   });
 });
 

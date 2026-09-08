@@ -18,6 +18,8 @@ import {
 import { t } from '../i18n/t.js';
 import { PlaceComponentPopover } from '../assembly/PlaceComponentPopover.js';
 import { AssemblyMotionControls } from '../assembly/AssemblyMotionControls.js';
+import { AssemblyInterferencePanel } from '../assembly/AssemblyInterferencePanel.js';
+import { StandardPartPicker } from '../assembly/StandardPartPickerPanel.js';
 import { AssemblyPropertyPanel } from '../assembly/AssemblyPropertyPanel.js';
 import { ExplodePopover } from '../assembly/ExplodePopover.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
@@ -442,8 +444,10 @@ export function AppShell(): React.JSX.Element {
           {documentKind === 'assembly' ? (
             <>
               <PlaceComponentPopover />
+              <StandardPartPicker />
               <ExplodePopover />
               <AssemblyMotionControls />
+              <AssemblyInterferencePanel />
             </>
           ) : (
             <NumericInputPopover

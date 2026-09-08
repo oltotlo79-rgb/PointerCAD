@@ -9,7 +9,8 @@ import {
   toggleSelectedFixed,
   toggleSelectedVisible,
 } from '../../assembly/placeComponentActions.js';
-import { CopyToolIcon, CubeIcon, EmptyBoxIcon, FixConstraintIcon, LayersIcon, TransformIcon } from '../icons.js';
+import { CopyToolIcon, CubeIcon, EmptyBoxIcon, FixConstraintIcon, IntersectIcon, LayersIcon,
+  ThreadShaftIcon, TransformIcon } from '../icons.js';
 import { AngleConstraintIcon, CoincidentConstraintIcon, ConcentricConstraintIcon,
   DistanceConstraintIcon, ParallelConstraintIcon, TangentConstraintIcon } from '../icons.js';
 import { cancelMate, deleteAssemblyMate, editAssemblyMate, flipAssemblyMate, mateKindReadiness, startMate } from '../../assembly/mateActions.js';
@@ -74,7 +75,11 @@ export function AssemblyGroup(): React.JSX.Element | null {
   if (assembly === null) return null;
   const readiness = assemblyActionReadiness(assembly, selection);
   const explodeReadiness = explodeActionReadiness(assembly, selection);
-  const placeReady = placement === null;
+  const placeReady = placement === null && !state.standardPartPickerOpen;
+  const standardPartReady = placement === null && state.assemblyDrag === null && !state.isComputing;
+  const interferenceReady = assembly.components.filter((component) => component.visible && !component.suppressed).length >= 2
+    && state.assemblyView?.sourceDocument === assembly && state.assemblyInterferenceRunner !== null
+    && !state.isComputing && placement === null && mateDraft === null && state.assemblyDrag === null;
   const selectedMate = selection.length === 1 ? assembly.mates.find((mate) => mate.id === selection[0]) : undefined;
 
   const choose = (id: AssemblyMenuActionId): void => {
@@ -103,6 +108,27 @@ export function AssemblyGroup(): React.JSX.Element | null {
         >
           <CubeIcon />
           <span className="pcad-button__label">{t('assembly.tool.placePart')}</span>
+        </button>
+        <button
+          type="button"
+          className="pcad-button pcad-button--collapsible"
+          title={t(standardPartReady
+            ? 'assembly.tool.placeStandardPartTooltip' : 'assembly.tool.placementBusy')}
+          aria-label={t('assembly.tool.placeStandardPart')}
+          aria-disabled={!standardPartReady}
+          aria-pressed={state.standardPartPickerOpen}
+          onClick={() => {
+            if (!standardPartReady) return;
+            if (useAppStore.getState().standardPartPickerOpen) {
+              useAppStore.getState().closeStandardPartPicker();
+            } else {
+              cancelMate();
+              useAppStore.getState().openStandardPartPicker();
+            }
+          }}
+        >
+          <ThreadShaftIcon />
+          <span className="pcad-button__label">{t('assembly.tool.placeStandardPart')}</span>
         </button>
         <ToolMenu
           items={ASSEMBLY_MENU_ITEMS}
@@ -134,6 +160,14 @@ export function AssemblyGroup(): React.JSX.Element | null {
           onClick={() => { if (explodeReadiness.ready) useAppStore.getState().beginAssemblyExplode(); }}>
           <TransformIcon />
           <span className="pcad-button__label">{t('assembly.tool.explode')}</span>
+        </button>
+        <button type="button" className="pcad-button pcad-button--collapsible"
+          title={t(interferenceReady ? 'assembly.interference.tooltip' : 'assembly.interference.notReady')}
+          aria-label={t('assembly.tool.interference')} aria-disabled={!interferenceReady}
+          aria-pressed={state.assemblyInterferenceOpen}
+          onClick={() => { if (interferenceReady) useAppStore.getState().runAssemblyInterference(); }}>
+          <IntersectIcon />
+          <span className="pcad-button__label">{t('assembly.tool.interference')}</span>
         </button>
       </div>
     </div>

@@ -778,6 +778,44 @@ export {
   MISSING_STANDARD_SIZE_MESSAGE, partKeyOf, resolveAssembly,
 } from './assembly/resolveAssembly.js';
 
+/** 部品表の純粋な集計(FR-611、P7 §2.10・§2.10.1)。 */
+export type {
+  BomBody, BomResolvedData, BomRow, BomSubAssemblyData,
+} from './assembly/bom.js';
+export { buildBom, bomPartName } from './assembly/bom.js';
+
+/** JIS規格部品の寸法表・出典・普通の部品文書を組む台本(P7 タスク27〜29)。 */
+export type {
+  BearingSeries, ChannelRow, DeepGrooveBallBearingRow, EqualAngleRow, FastenerDimensionSeries,
+  HBeamRow, HexBoltRow, HexNutRow, PanHeadScrewRow, PlainWasherRow, SectionRow,
+  SocketHeadCapScrewRow, SpringWasherRow,
+  StandardDimensionRow, StandardTableSource,
+} from './assembly/standard/types.js';
+export {
+  STANDARD_CATALOG_REVISION, STANDARD_PART_GENERATOR_REVISION,
+} from './assembly/standard/types.js';
+export {
+  findHexBolt, findHexNut, findPanHeadScrew, findPlainWasher, findSocketHeadCapScrew,
+  findSpringWasher,
+  HEX_BOLT_NOMINAL_LENGTHS, HEX_BOLT_SOURCE, HEX_BOLT_TABLE, HEX_NUT_SOURCE, HEX_NUT_TABLE,
+  PAN_HEAD_SCREW_SOURCE, PAN_HEAD_SCREW_TABLE, PLAIN_WASHER_SOURCE, PLAIN_WASHER_TABLE,
+  SOCKET_HEAD_CAP_SCREW_SOURCE,
+  SOCKET_HEAD_CAP_SCREW_TABLE, SPRING_WASHER_SOURCE, SPRING_WASHER_TABLE,
+} from './assembly/standard/fasteners.js';
+export {
+  bearingBoreFromDesignation, bearingSizes, DEEP_GROOVE_BALL_BEARINGS,
+  DEEP_GROOVE_BALL_BEARING_SOURCE, findDeepGrooveBallBearing,
+} from './assembly/standard/bearings.js';
+export {
+  CHANNEL_TABLE, EQUAL_ANGLE_TABLE, findChannel, findEqualAngle, findHBeam, H_BEAM_TABLE,
+  sectionMassFromArea, STRUCTURAL_SECTION_SOURCE,
+} from './assembly/standard/sections.js';
+export {
+  buildStandardPart, buildStandardPartFromSource, createStandardPartSource,
+  DEFAULT_STANDARD_FASTENER_LENGTH, DEFAULT_STANDARD_SECTION_LENGTH,
+  STANDARD_PART_UNAVAILABLE_MESSAGE, standardPartNominalVolume,
+} from './assembly/standard/buildStandardPart.js';
+
 /**
  * 部品を置く・消す・固定・表示の履歴操作(FR-601、FR-602、FR-505、FR-605、FR-606。
  * 計画書 P7 タスク7)。

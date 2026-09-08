@@ -17,6 +17,7 @@ import { makePlanarFace } from '../occt/makePlanarFace.js';
 import { makeProjection } from '../occt/makeProjection.js';
 import { makeSection } from '../occt/makeSection.js';
 import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
+import { placeShape } from '../occt/placeBodies.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from '../occt/pickSubShape.js';
 import { readCafMesh } from '../occt/readCafMesh.js';
 import { readStep } from '../occt/readStep.js';
@@ -750,6 +751,7 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
         // 選び直した面・辺・頂点は「新しく作られた形」なので、測り終えたら手放す。
         // ボディそのもの(subShape が null)はキャッシュの持ち物なので手放さない。
         const picked: TopoDS_Shape[] = [];
+        const placed: ReturnType<typeof placeShape>[] = [];
         const shapes: TopoDS_Shape[] = [];
 
         try {
@@ -758,16 +760,22 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
             if (cached === undefined) {
               return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
             }
-            if (target.subShape === null) {
-              shapes.push(cached.shape);
-              continue;
+            let source = cached.shape;
+            if (target.subShape !== null) {
+              const subShape = pickSubShape(oc, cached.shape, cached.mesh, target.subShape);
+              if (subShape === null) {
+                return { kind: 'failed', message: MISSING_SUB_SHAPE_MESSAGE };
+              }
+              picked.push(subShape);
+              source = subShape;
             }
-            const subShape = pickSubShape(oc, cached.shape, cached.mesh, target.subShape);
-            if (subShape === null) {
-              return { kind: 'failed', message: MISSING_SUB_SHAPE_MESSAGE };
+            if (target.placement === undefined) {
+              shapes.push(source);
+            } else {
+              const moved = placeShape(oc, source, target.placement);
+              placed.push(moved);
+              shapes.push(moved.shape);
             }
-            picked.push(subShape);
-            shapes.push(subShape);
           }
 
           try {
@@ -806,9 +814,8 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
             };
           }
         } finally {
-          for (const shape of picked) {
-            shape.delete();
-          }
+          for (let index = placed.length - 1; index >= 0; index -= 1) placed[index]?.delete();
+          for (let index = picked.length - 1; index >= 0; index -= 1) picked[index]?.delete();
         }
       });
     },

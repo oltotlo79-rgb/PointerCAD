@@ -86,6 +86,12 @@ export interface AssemblyGeometryBundle {
 /** 何も置いていないとき。アセンブリを開いていない間の値にも使う。 */
 export const EMPTY_ASSEMBLY_GEOMETRY: AssemblyGeometryBundle = { parts: [], instances: [] };
 
+/** `Object3D.traverse` の未知の材質を、Three.js の材質配列へ安全に絞る。 */
+function isMaterialArray(value: unknown): value is readonly THREE.Material[] {
+  return Array.isArray(value)
+    && value.every((candidate: unknown) => candidate instanceof THREE.Material);
+}
+
 /** 環境マップ要否の判定へ渡す、画面に見えているインスタンスの有効な外観一覧。 */
 export function assemblyAppearanceSpecs(bundle: AssemblyGeometryBundle): readonly AppearanceSpec[] {
   const specs: AppearanceSpec[] = [];
@@ -331,6 +337,8 @@ export interface AssemblyLayer {
    * 部品の材質だけが次の `update` で作り直される。
    */
   setThemeColors(colors: ThemeColors): void;
+  /** 断面表示の平面を、共有材質と個別表示の全材質へ同時に配る。 */
+  setSectionPlanes(planes: readonly THREE.Plane[]): void;
   /**
    * 光線に当たった部品(インスタンス)の id。当たらなければ null(FR-106)。
    *
@@ -467,6 +475,7 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
   let colors: ThemeColors = DEFAULT_THEME_COLORS;
   let lastDisplayStyle: DisplayStyle = 'shadedWithEdges';
   const materialStore = createAppearanceMaterialStore(patterns);
+  const sectionPlanes: THREE.Plane[] = [];
   let environment: THREE.Texture | null = null;
   /*
     LineSegments + InstancedBufferGeometry は Three の LINES / renderInstances 経路を通る。
@@ -481,6 +490,8 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
     hovered: new THREE.LineBasicMaterial(),
     selected: new THREE.LineBasicMaterial(),
   };
+  edgeMaterial.clippingPlanes = sectionPlanes;
+  for (const material of Object.values(individualEdgeMaterials)) material.clippingPlanes = sectionPlanes;
   const partShapes = new Map<string, PartShapeEntry>();
   const instances = new Map<string, InstanceEntry>();
   const faceBatches = new Map<string, FaceBatch>();
@@ -548,16 +559,19 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
             if (kind === 'face') {
               geometry.setIndex(new THREE.BufferAttribute(highlight.faceIndices, 1));
               const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false });
+              material.clippingPlanes = sectionPlanes;
               const mesh = new THREE.Mesh(geometry, material);
               mesh.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
               object.add(mesh); materials.push({ material, emphasis: highlight.emphasis });
             } else if (kind === 'edge') {
               const material = new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false });
+              material.clippingPlanes = sectionPlanes;
               const lines = new THREE.LineSegments(geometry, material);
               lines.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
               object.add(lines); materials.push({ material, emphasis: highlight.emphasis });
             } else {
               const material = new THREE.PointsMaterial({ color, size: 7, sizeAttenuation: false, depthTest: false, depthWrite: false });
+              material.clippingPlanes = sectionPlanes;
               const points = new THREE.Points(geometry, material);
               points.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
               object.add(points); materials.push({ material, emphasis: highlight.emphasis });
@@ -644,10 +658,11 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
 
   function materialFor(draw: AssemblyInstanceDraw, shape: PartShapeEntry, body: number): FaceMaterial {
     const appearances = shape.meshAppearances[body];
-    if (draw.appearance !== undefined || appearances.length === 1) {
-      return materialStore.materialFor(themedAppearance(draw.appearance ?? appearances[0], colors.solid), environment);
-    }
-    return appearances.map((spec) => materialStore.materialFor(themedAppearance(spec, colors.solid), environment));
+    const found = draw.appearance !== undefined || appearances.length === 1
+      ? materialStore.materialFor(themedAppearance(draw.appearance ?? appearances[0], colors.solid), environment)
+      : appearances.map((spec) => materialStore.materialFor(themedAppearance(spec, colors.solid), environment));
+    for (const material of Array.isArray(found) ? found : [found]) material.clippingPlanes = sectionPlanes;
+    return found;
   }
 
   function relativePlacement(entry: InstanceEntry, origin: THREE.Vector3): THREE.Matrix4 {
@@ -950,6 +965,23 @@ export function createAssemblyLayer(patterns?: PatternTextureSource): AssemblyLa
     setThemeColors(next): void {
       colors = next;
       appearanceDirty = true;
+    },
+    setSectionPlanes(planes): void {
+      const countChanged = sectionPlanes.length !== planes.length;
+      sectionPlanes.splice(0, sectionPlanes.length, ...planes);
+      group.traverse((object) => {
+        const value: unknown = 'material' in object ? object.material : undefined;
+        const materials = value instanceof THREE.Material ? [value] : isMaterialArray(value) ? value : [];
+        for (const material of materials) {
+          material.clippingPlanes = sectionPlanes;
+          if (countChanged) material.needsUpdate = true;
+        }
+      });
+      edgeMaterial.clippingPlanes = sectionPlanes;
+      for (const material of Object.values(individualEdgeMaterials)) {
+        material.clippingPlanes = sectionPlanes;
+        if (countChanged) material.needsUpdate = true;
+      }
     },
     pickComponent(raycaster): string | null {
       let nearest: string | null = null;

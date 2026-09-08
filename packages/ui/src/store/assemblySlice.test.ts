@@ -6,6 +6,7 @@ import {
   createComponentFor,
   createEmptyPartDocument,
   resolveAssembly,
+  type AssemblyInterferenceResult,
   type JointFrame,
 } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
@@ -24,10 +25,43 @@ import {
 } from './useAppStore.js';
 import {
   resetTestStore,
+  tick,
 } from './testing/createTestStore.js';
 import { createMateDraft } from '../assembly/mateCommands.js';
+import type { AssemblyInterferenceRunner } from '../assembly/interferenceActions.js';
+import {
+  DEFAULT_STANDARD_PART_PICKER,
+} from '../assembly/standardPartPicker.js';
 
 beforeEach(resetTestStore);
+
+describe('P7-31 規格部品の繰り返し配置', () => {
+  it('既定のM8×30六角ボルトをEnter相当で続けて置き、Undoは1個ずつ戻す', () => {
+    useAppStore.getState().openAssembly(createAssemblyDocument('規格部品'));
+    expect(useAppStore.getState().openStandardPartPicker()).toBe(true);
+
+    for (let count = 1; count <= 2; count += 1) {
+      expect(useAppStore.getState().placeStandardPart(
+        DEFAULT_STANDARD_PART_PICKER.category,
+        DEFAULT_STANDARD_PART_PICKER.choiceKey,
+        DEFAULT_STANDARD_PART_PICKER.lengthSource,
+      )).toBe(true);
+      const state = useAppStore.getState();
+      expect(state.assembly?.components).toHaveLength(count);
+      expect(state.standardPartPickerOpen).toBe(true);
+      expect(state.assembly?.components.at(-1)?.source).toMatchObject({
+        kind: 'standardPart', catalog: 'hexBolt', size: 'M8',
+        options: { length: '30', dimensionSeries: 'annexJA', threadSeries: 'coarse' },
+      });
+    }
+
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().assembly?.components).toHaveLength(1);
+    expect(useAppStore.getState().standardPartPickerOpen).toBe(false);
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().assembly?.components).toHaveLength(0);
+  });
+});
 
 describe('文書の種類の切替(P7 §0.a-0.10、タスク5)', () => {
   it('起動直後はアセンブリを開いていない(部品の画面)', () => {
@@ -247,5 +281,93 @@ describe('P7-22/35 表示専用の動きと分解履歴', () => {
     expect(state.assemblyMotionNotice).toMatchObject({ kind: 'rangeEnd', min: -5, max: 10, value: 10 });
     expect(state.assembly).toBe(document);
     expect(state.assemblyUndoStack).toBe(stack);
+  });
+});
+
+describe('P7-26 表示専用の干渉解析状態', () => {
+  function publishAssembly() {
+    let document = createAssemblyDocument('干渉確認');
+    document = addComponent(document, createComponentFor(document,
+      { kind: 'part', partRef: 'a' }, { partName: '部品A' }));
+    document = addComponent(document, createComponentFor(document,
+      { kind: 'part', partRef: 'b' }, { partName: '部品B' }));
+    useAppStore.getState().openAssembly(document);
+    const view = { sourceDocument: document, resolved: resolveAssembly(document),
+      bodies: new Map(), appearances: new Map(), diagnosis: null, mateTargetErrors: new Map() };
+    useAppStore.setState({ assemblyView: view });
+    return { document, view, a: document.components[0].id, b: document.components[1].id };
+  }
+
+  function checked(requestId: string, a: string, b: string): AssemblyInterferenceResult {
+    return { kind: 'checked', failure: null, requestId,
+      pairs: [{ aComponentId: a, bComponentId: b, volume: 125,
+        mesh: { positions: new Float32Array(9), normals: new Float32Array(9),
+          indices: new Uint32Array([0, 1, 2]), triangleCount: 1 } }],
+      failures: [], skips: [], totalPairCount: 1, checkedPairCount: 1,
+      skippedPairCount: 0, pendingPairCount: 0, cancelled: false };
+  }
+
+  it('解析結果・進捗・選択を文書とUndoへ混ぜない', async () => {
+    const fixture = publishAssembly();
+    const runner: AssemblyInterferenceRunner = {
+      check: (input, options) => {
+        options?.onProgress?.({ requestId: input.requestId, phase: 'common',
+          completedPairs: 1, totalPairs: 1, completedComponents: 2, totalComponents: 2 });
+        return Promise.resolve(checked(input.requestId, fixture.a, fixture.b));
+      },
+      measureGap: () => Promise.resolve(null),
+    };
+    useAppStore.getState().setAssemblyInterferenceRunner(runner);
+    const before = useAppStore.getState();
+    useAppStore.getState().runAssemblyInterference();
+    await tick();
+    const after = useAppStore.getState();
+    expect(after.assembly).toBe(before.assembly);
+    expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+    expect(after.documentVersion).toBe(before.documentVersion);
+    expect(after.assemblyInterferenceResult?.pairs).toHaveLength(1);
+    expect(after.assemblyInterferenceSelectedKey).toBe(`interference:${fixture.a}:${fixture.b}`);
+  });
+
+  it('閉じた要求を中止扱いにし、遅れて届いた結果を復活させない', async () => {
+    const fixture = publishAssembly();
+    let settle: ((value: AssemblyInterferenceResult) => void) | undefined;
+    let shouldCancel: (() => boolean | Promise<boolean>) | undefined;
+    const runner: AssemblyInterferenceRunner = {
+      check: (_input, options) => {
+        shouldCancel = options?.shouldCancel;
+        return new Promise((resolve) => { settle = resolve; });
+      },
+      measureGap: () => Promise.resolve(null),
+    };
+    useAppStore.getState().setAssemblyInterferenceRunner(runner);
+    useAppStore.getState().runAssemblyInterference();
+    const requestId = useAppStore.getState().assemblyInterferenceRequestId;
+    expect(requestId).not.toBeNull();
+    useAppStore.getState().closeAssemblyInterference();
+    expect(shouldCancel === undefined ? false : await shouldCancel()).toBe(true);
+    if (requestId === null || settle === undefined) throw new Error('fixture');
+    settle(checked(requestId, fixture.a, fixture.b));
+    await tick();
+    const state = useAppStore.getState();
+    expect(state.assemblyInterferenceOpen).toBe(false);
+    expect(state.assemblyInterferenceResult).toBeNull();
+    expect(state.isCheckingAssemblyInterference).toBe(false);
+  });
+
+  it('確定編集で古い解析結果と選択をまとめて破棄する', async () => {
+    const fixture = publishAssembly();
+    const runner: AssemblyInterferenceRunner = {
+      check: (input) => Promise.resolve(checked(input.requestId, fixture.a, fixture.b)),
+      measureGap: () => Promise.resolve(null),
+    };
+    useAppStore.getState().setAssemblyInterferenceRunner(runner);
+    useAppStore.getState().runAssemblyInterference();
+    await tick();
+    useAppStore.getState().applyAssembly({ ...fixture.document, name: '編集後' });
+    const state = useAppStore.getState();
+    expect(state.assemblyInterferenceOpen).toBe(false);
+    expect(state.assemblyInterferenceResult).toBeNull();
+    expect(state.assemblyInterferenceSelectedKey).toBeNull();
   });
 });

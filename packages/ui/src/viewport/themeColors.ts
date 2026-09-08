@@ -86,6 +86,8 @@ export interface ThemeColors {
    * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
    */
   readonly measure: number;
+  /** 干渉体積の独立した重ね描き。5テーマでビューポートの地と3:1以上。 */
+  readonly interference: number;
   /**
    * 3D プリントの点検の色(FR-815、P6 §0.53、タスク46)。**点検を出している間だけ**
    * 立体をこの 3 色で塗り分ける(薄い肉厚 = 赤、せり出し = 橙、開いた辺 = 紫の線)。
@@ -145,6 +147,7 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   constraintFixed: 0xc08cff,
   // 測定(P5 タスク31)。ダークの値は appShell.css の :root と同じ。
   measure: 0xffa64d,
+  interference: 0xff6b6b,
   // 3D プリントの点検(P6 タスク46)。ダークの値は appShell.css の :root と同じ。
   printThin: 0xff6b6b,
   printOverhang: 0xffa64d,
@@ -162,7 +165,7 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
 };
 
 /**
- * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 35 個がそろっていること
+ * 欄と CSS トークンの対応。`appShell.css` のテーマごとの塊にこの 36 個がそろっていること
  * (どのテーマでも 1 つも欠けないこと)は `themeColors.test.ts` が固定する。
  */
 export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
@@ -189,6 +192,7 @@ export const THEME_COLOR_TOKENS: Readonly<Record<keyof ThemeColors, string>> = {
   constraintConflict: '--pcad-constraint-conflict',
   constraintFixed: '--pcad-constraint-fixed',
   measure: '--pcad-measure',
+  interference: '--pcad-interference',
   printThin: '--pcad-print-thin',
   printOverhang: '--pcad-print-overhang',
   printOpenEdge: '--pcad-print-open-edge',
@@ -290,6 +294,7 @@ export function themeColorsFrom(read: (token: string) => string): ThemeColors {
     constraintConflict: colors.constraintConflict,
     constraintFixed: colors.constraintFixed,
     measure: colors.measure,
+    interference: colors.interference,
     printThin: colors.printThin,
     printOverhang: colors.printOverhang,
     printOpenEdge: colors.printOpenEdge,

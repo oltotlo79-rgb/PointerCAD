@@ -86,6 +86,7 @@ export const STANDARD_CATALOG_IDS: readonly StandardCatalogId[] = [
   'plainWasher',
   'springWasher',
   'socketHeadCapScrew',
+  'panHeadScrew',
   'deepGrooveBallBearing',
   'equalAngle',
   'channel',

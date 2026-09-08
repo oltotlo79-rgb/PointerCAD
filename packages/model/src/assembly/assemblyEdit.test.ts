@@ -158,6 +158,8 @@ describe('createComponentFor / addComponent', () => {
         catalog: 'hexBolt',
         size: 'M8',
         options: {},
+        catalogRevision: 'test-catalog',
+        generatorRevision: 'test-generator',
       }),
     );
 

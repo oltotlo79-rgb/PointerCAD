@@ -525,8 +525,15 @@ export interface SolidRecomputeOptions {
  */
 export interface MeasureTarget {
   readonly bodyFeatureId: string;
+  /**
+   * アセンブリのように同じ feature id を複数部品が持ちうる場合の明示的な段の鍵。
+   * 省略時は従来どおり `steps` から feature id で引く。
+   */
+  readonly bodyKey?: string;
   /** 面・辺・頂点の指紋。ボディ全体を測るなら null。 */
   readonly subShape: SubShapeRef | null;
+  /** 表示中のアセンブリ配置。省略時は部品内の局所座標のまま測る。 */
+  readonly placement?: RigidPlacement;
 }
 
 /**
@@ -592,13 +599,16 @@ function toMeasureRequest(
   const keyByFeatureId = new Map(steps.map((step) => [step.featureId, step.key]));
   const specs: MeasureTargetSpec[] = [];
   for (const target of targets) {
-    const bodyKey = keyByFeatureId.get(target.bodyFeatureId);
+    const bodyKey = target.bodyKey ?? keyByFeatureId.get(target.bodyFeatureId);
     if (bodyKey === undefined) {
       return null;
     }
     specs.push({
       bodyKey,
       subShape: target.subShape === null ? null : toSubShapeQuery(target.subShape),
+      ...(target.placement === undefined ? {} : { placement: {
+        position: [...target.placement.position], rotation: [...target.placement.rotation],
+      } }),
     });
   }
   return { targets: specs, kind };

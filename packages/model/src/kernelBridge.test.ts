@@ -429,6 +429,25 @@ describe('部品の識別子を kernel へ素通しする', () => {
     bridge.dispose();
   });
 
+  it('配置済み測定は明示body keyと世界配置を失わずkernelへ渡す', async () => {
+    const api = createKernelApi(() => Promise.reject(new Error('OCCTは使わない')));
+    const measure = vi.spyOn(api, 'measure').mockResolvedValue({ kind: 'distance', distance: 30,
+      pointA: [20, 0, 0], pointB: [50, 0, 0], inner: false });
+    const bridge = createDirectKernelBridge(api);
+    try {
+      const first = { position: [0, 0, 0] as const, rotation: [0, 0, 0, 1] as const };
+      const second = { position: [50, 0, 0] as const, rotation: [0, 0, 0, 1] as const };
+      await bridge.measure([], [
+        { bodyFeatureId: 'same-id', bodyKey: 'part-a:body', subShape: null, placement: first },
+        { bodyFeatureId: 'same-id', bodyKey: 'part-b:body', subShape: null, placement: second },
+      ], 'distance');
+      expect(measure).toHaveBeenCalledWith({ kind: 'distance', targets: [
+        { bodyKey: 'part-a:body', subShape: null, placement: first },
+        { bodyKey: 'part-b:body', subShape: null, placement: second },
+      ] });
+    } finally { bridge.dispose(); }
+  });
+
   it.each([undefined, 'part:library-a'])('再計算・全書き出し形式・点検へ partId=%s を渡す', async (partId) => {
     const api = createKernelApi(() => Promise.reject(new Error('OCCT はこの検査では起動しない')));
     const recompute = vi.spyOn(api, 'recomputeSolids').mockResolvedValue({

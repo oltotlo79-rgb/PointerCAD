@@ -115,10 +115,10 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
     expect(themeColorsFrom(readerFor('[data-theme="dark"]'))).toEqual(DEFAULT_THEME_COLORS);
   });
 
-  it('5 テーマとも 35 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
+  it('5 テーマとも 36 個のトークンを 1 つも欠かさず持ち、すべて読める色である', () => {
     // 表題の数が実際の欄の数と食い違わないよう、件数もここで固定する
     // (26 と書いたまま 31 個になっていた。P6 タスク46 で点検の 3 色を足した)。
-    expect(COLOR_FIELDS).toHaveLength(35);
+    expect(COLOR_FIELDS).toHaveLength(36);
     for (const [theme, selector] of THEME_SELECTORS) {
       const block = blockOf(selector);
       for (const field of COLOR_FIELDS) {
@@ -309,6 +309,23 @@ describe('appShell.css のテーマと 3D の色(FR-908)', () => {
           parseCssColor(tokenValue(block, otherToken)),
           `${theme} の ${otherToken} と同じ色になっていない`,
         ).not.toBe(measure);
+      }
+    }
+  });
+
+  it('干渉の赤(FR-615)は5テーマともビューポートの上下端と3:1以上(P7 タスク26)', () => {
+    for (const [theme, selector] of THEME_SELECTORS) {
+      const block = blockOf(selector);
+      const interference = parseCssColor(tokenValue(block, '--pcad-interference'));
+      expect(interference, `${theme} の --pcad-interference`).not.toBeNull();
+      if (interference === null) continue;
+      for (const groundToken of ['--pcad-viewport-top', '--pcad-viewport-bottom']) {
+        const ground = parseCssColor(tokenValue(block, groundToken));
+        expect(ground, `${theme} の ${groundToken}`).not.toBeNull();
+        if (ground !== null) expect(
+          contrastRatio(interference, ground),
+          `${theme} の --pcad-interference / ${groundToken}`,
+        ).toBeGreaterThanOrEqual(3);
       }
     }
   });

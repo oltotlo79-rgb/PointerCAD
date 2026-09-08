@@ -12,8 +12,9 @@
  */
 
 import {
-  createUndoStack, EMPTY_PART_LIBRARY, pushUndo, redo, undo,
+  addComponent, createComponentFor, createUndoStack, EMPTY_PART_LIBRARY, pushUndo, redo, undo,
   type AssemblyDocument, type AxisSpec, type EmbeddedPartAttachments, type PartDocument, type PartLibrary,
+  type AssemblyInterferenceProgress, type AssemblyInterferenceResult,
   solveDrivenJoint, type JointCoordinate, type JointFramePair, type MateResidualTargetPair,
   type ResolvedAssembly, type RigidPlacement, type SolidBody, type UndoStack,
 } from '@pointercad/model';
@@ -29,6 +30,12 @@ import {
   commitExplodeDraft, createExplodeDraft, type AssemblyExplodeDraft,
 } from '../assembly/explodeCommands.js';
 import { currentJointSliderValue, jointSliderBounds, jointSliderReference } from '../assembly/jointSlider.js';
+import type { AssemblyInterferenceRunner } from '../assembly/interferenceActions.js';
+import { interferencePairKey } from '../assembly/interferenceView.js';
+import { t } from '../i18n/t.js';
+import {
+  commitStandardPartChoice, type StandardPartCategory,
+} from '../assembly/standardPartPicker.js';
 
 export interface AssemblySnapshot {
   readonly document: AssemblyDocument;
@@ -102,6 +109,31 @@ export interface AssemblySlice {
   readonly assemblyFileName: string | null;
   readonly assemblyInitialName: string | null;
   readonly assemblyView: AssemblyView | null;
+  /** カーネルを持つアプリ入口から差し出す、表示専用の干渉解析と隙間測定の口。 */
+  readonly assemblyInterferenceRunner: AssemblyInterferenceRunner | null;
+  readonly assemblyInterferenceOpen: boolean;
+  readonly assemblyInterferenceResult: AssemblyInterferenceResult | null;
+  readonly assemblyInterferenceSelectedKey: string | null;
+  readonly assemblyInterferenceProgress: AssemblyInterferenceProgress | null;
+  readonly assemblyInterferenceRequestId: string | null;
+  readonly assemblyGapRequestId: string | null;
+  readonly isCheckingAssemblyInterference: boolean;
+  readonly assemblyInterferenceError: string | null;
+  readonly setAssemblyInterferenceRunner: (runner: AssemblyInterferenceRunner | null) => void;
+  readonly runAssemblyInterference: () => void;
+  readonly selectAssemblyInterference: (key: string | null) => void;
+  readonly closeAssemblyInterference: () => void;
+  /** モーダルにしない規格部品の選択パネル。確定後も開いたままなのでEnterで繰り返せる。 */
+  readonly standardPartPickerOpen: boolean;
+  readonly openStandardPartPicker: () => boolean;
+  readonly closeStandardPartPicker: () => void;
+  readonly placeStandardPart: (
+    category: StandardPartCategory,
+    choiceKey: string,
+    lengthSource: string,
+    dimensionSeries?: 'annexJA' | 'main',
+    threadSeries?: 'coarse' | 'fine',
+  ) => boolean;
   /** 「部品を配置」の一時状態。取消・文書切替・確定編集で必ず消える。 */
   readonly assemblyPlacement: AssemblyPlacementState | null;
   /** 合致コマンドの打ちかけ。文書の寿命に結び、保存・Undoへは入れない。 */
@@ -138,7 +170,7 @@ export interface AssemblySlice {
  * 部品を作り直すたびに初期値へ戻す欄。実体は `initialDocumentState.ts` が 1 か所で作る。
  */
 export type AssemblyInitialState = Pick<AssemblySlice,
-  'assembly'>;
+  'assembly' | 'assemblyInterferenceRunner'>;
 
 export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   'assemblyLibrary' | 'assemblyUndoStack' | 'savedAssembly' | 'assemblyFileName'
@@ -146,7 +178,29 @@ export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   | 'assemblyDrag' | 'assemblyDragOverlay' | 'assemblyDragNotice' | 'assemblyMotionTime'
   | 'assemblyMotionPlaying' | 'assemblyMotionPlacements' | 'assemblyMotionSourceDocument'
   | 'assemblyMotionJointValues' | 'assemblyMotionNotice' | 'assemblyExplodeDraft'
-  | 'assemblyExplodeError' | 'activeDocumentId'>;
+  | 'assemblyExplodeError' | 'activeDocumentId' | 'assemblyInterferenceOpen'
+  | 'assemblyInterferenceResult' | 'assemblyInterferenceSelectedKey'
+  | 'assemblyInterferenceProgress' | 'assemblyInterferenceRequestId' | 'assemblyGapRequestId'
+  | 'isCheckingAssemblyInterference' | 'assemblyInterferenceError' | 'standardPartPickerOpen'>;
+
+type InterferenceTransientState = Pick<AssemblyOwnedInitialState,
+  'assemblyInterferenceOpen' | 'assemblyInterferenceResult' | 'assemblyInterferenceSelectedKey'
+  | 'assemblyInterferenceProgress' | 'assemblyInterferenceRequestId' | 'assemblyGapRequestId'
+  | 'isCheckingAssemblyInterference' | 'assemblyInterferenceError'>;
+
+/** 文書を替える全経路で解析結果と非同期要求を同時に失効させる正本。 */
+function emptyInterferenceState(): InterferenceTransientState {
+  return {
+    assemblyInterferenceOpen: false,
+    assemblyInterferenceResult: null,
+    assemblyInterferenceSelectedKey: null,
+    assemblyInterferenceProgress: null,
+    assemblyInterferenceRequestId: null,
+    assemblyGapRequestId: null,
+    isCheckingAssemblyInterference: false,
+    assemblyInterferenceError: null,
+  };
+}
 
 /** スライスが所有する一時状態を、起動・文書切替・検査で同じ値へ戻す唯一の正本。 */
 export function createAssemblyInitialState(): AssemblyOwnedInitialState {
@@ -170,6 +224,8 @@ export function createAssemblyInitialState(): AssemblyOwnedInitialState {
     assemblyMotionNotice: null,
     assemblyExplodeDraft: null,
     assemblyExplodeError: null,
+    standardPartPickerOpen: false,
+    ...emptyInterferenceState(),
     activeDocumentId: crypto.randomUUID(),
   };
 }
@@ -198,6 +254,8 @@ export const createAssemblySlice: StateCreator<
       assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
       assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
       assemblyExplodeDraft: null, assemblyExplodeError: null,
+      standardPartPickerOpen: false,
+      ...emptyInterferenceState(),
     }));
   }
   return {
@@ -237,8 +295,86 @@ export const createAssemblySlice: StateCreator<
           assemblyDragNotice: keepOverlay ? current.assemblyDragNotice : null,
           assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
           assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
-          assemblyExplodeDraft: null, assemblyExplodeError: null };
+          assemblyExplodeDraft: null, assemblyExplodeError: null,
+          standardPartPickerOpen: false,
+          ...emptyInterferenceState() };
       });
+    },
+    setAssemblyInterferenceRunner: (assemblyInterferenceRunner) => {
+      set({ assemblyInterferenceRunner });
+    },
+    runAssemblyInterference: () => {
+      const state = get();
+      const document = state.assembly;
+      const view = state.assemblyView;
+      const runner = state.assemblyInterferenceRunner;
+      if (document === null || view === null || view.sourceDocument !== document || runner === null) {
+        set({ assemblyInterferenceOpen: true, assemblyInterferenceError: t('assembly.interference.notReady') });
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      const placements = state.assemblyMotionPlacements !== null
+        && state.assemblyMotionSourceDocument === document
+        ? new Map(state.assemblyMotionPlacements) : new Map(view.resolved.placements);
+      const input = { requestId, components: [...document.components], resolved: view.resolved,
+        bodies: new Map(view.bodies), placements };
+      set({ assemblyInterferenceOpen: true, assemblyInterferenceResult: null,
+        assemblyInterferenceSelectedKey: null, assemblyInterferenceProgress: null,
+        assemblyInterferenceRequestId: requestId, isCheckingAssemblyInterference: true,
+        assemblyInterferenceError: null });
+      void runner.check(input, {
+        onProgress: (progress) => {
+          if (get().assemblyInterferenceRequestId === requestId) set({ assemblyInterferenceProgress: progress });
+        },
+        shouldCancel: () => get().assemblyInterferenceRequestId !== requestId,
+      }).then((result) => {
+        const current = get();
+        if (current.assemblyInterferenceRequestId !== requestId || current.assembly !== document
+          || current.assemblyView !== view) return;
+        const first = result.pairs[0];
+        set({ assemblyInterferenceResult: result,
+          assemblyInterferenceSelectedKey: first === undefined ? null
+            : interferencePairKey(first.aComponentId, first.bComponentId),
+          assemblyInterferenceProgress: null, assemblyInterferenceRequestId: null,
+          isCheckingAssemblyInterference: false,
+          assemblyInterferenceError: result.kind === 'failed' ? result.failure.message : null });
+      }).catch((error: unknown) => {
+        if (get().assemblyInterferenceRequestId !== requestId) return;
+        set({ assemblyInterferenceProgress: null, assemblyInterferenceRequestId: null,
+          isCheckingAssemblyInterference: false,
+          assemblyInterferenceError: error instanceof Error ? error.message : String(error) });
+      });
+    },
+    selectAssemblyInterference: (assemblyInterferenceSelectedKey) => {
+      set({ assemblyInterferenceSelectedKey });
+    },
+    closeAssemblyInterference: () => {
+      set({ ...emptyInterferenceState(), measurement: null, massProperties: null });
+    },
+    openStandardPartPicker: () => {
+      const state = get();
+      if (state.assembly === null || state.assemblyPlacement !== null
+        || state.assemblyMateDraft !== null || state.assemblyDrag !== null || state.isComputing) return false;
+      set({ standardPartPickerOpen: true, assemblyExplodeDraft: null, assemblyExplodeError: null });
+      return true;
+    },
+    closeStandardPartPicker: () => {
+      set({ standardPartPickerOpen: false });
+    },
+    placeStandardPart: (category, choiceKey, lengthSource, dimensionSeries, threadSeries) => {
+      const state = get();
+      if (!state.standardPartPickerOpen || state.assembly === null) return false;
+      const selected = commitStandardPartChoice(
+        category, choiceKey, lengthSource, dimensionSeries, threadSeries,
+      );
+      if (!selected.ok) return false;
+      const component = createComponentFor(state.assembly, selected.value.source, {
+        partName: selected.value.name,
+      });
+      get().applyAssembly(addComponent(state.assembly, component));
+      // 確定後も同じ選択を残す。次のEnterを同じ1操作としてもう1個置ける(NFR-UX-4)。
+      set({ standardPartPickerOpen: true });
+      return true;
     },
     setAssemblyMotionTime: (time) => {
       const state = get();
@@ -336,18 +472,20 @@ export const createAssemblySlice: StateCreator<
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.past.length > 0) applyHistory(undo(stack));
       else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
-        || get().assemblyExplodeDraft !== null) {
+        || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen) {
         set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
-          assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null });
+          assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null,
+          standardPartPickerOpen: false });
       }
     },
     redoAssembly: () => {
       const stack = get().assemblyUndoStack;
       if (stack !== null && stack.future.length > 0) applyHistory(redo(stack));
       else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
-        || get().assemblyExplodeDraft !== null) {
+        || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen) {
         set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
-          assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null });
+          assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null,
+          standardPartPickerOpen: false });
       }
     },
   };

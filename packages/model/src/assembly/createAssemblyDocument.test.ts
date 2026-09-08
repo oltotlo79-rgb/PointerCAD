@@ -282,10 +282,11 @@ describe('種類の一覧', () => {
   });
 
   it('規格部品は 9 種で、重複が無い(§0.a-0.32)', () => {
-    expect(STANDARD_CATALOG_IDS).toHaveLength(9);
+    expect(STANDARD_CATALOG_IDS).toHaveLength(10);
     expect(new Set(STANDARD_CATALOG_IDS).size).toBe(STANDARD_CATALOG_IDS.length);
     expect(STANDARD_CATALOG_IDS).toContain('hexBolt');
     expect(STANDARD_CATALOG_IDS).toContain('deepGrooveBallBearing');
+    expect(STANDARD_CATALOG_IDS).toContain('panHeadScrew');
   });
 
   it('部品表の列は 5 つで、重複が無い(§0.a-0.38)', () => {

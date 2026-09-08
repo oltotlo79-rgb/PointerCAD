@@ -605,6 +605,27 @@ describe('createAssemblyLayer(形の共有、§0.a-0.4)', () => {
 });
 
 describe('createAssemblyLayer(表示スタイルと強調、FR-105、FR-106)', () => {
+  it('断面の平面を面と稜線へ配り、解除時は空へ戻す(P7 タスク26)', () => {
+    const layer = createAssemblyLayer();
+    const plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), -5);
+    layer.update(buildAssemblyGeometry(sameParts(2)), 'shadedWithEdges');
+    layer.setSectionPlanes([plane]);
+    const materials = materialsOf(layer.group);
+    expect(materials.size).toBeGreaterThanOrEqual(2);
+    for (const material of materials) expect(material.clippingPlanes).toEqual([plane]);
+    layer.setSectionPlanes([]);
+    for (const material of materials) expect(material.clippingPlanes).toEqual([]);
+    layer.dispose();
+  });
+
+  it('断面を先に入れても後から作る共有材質へ同じ平面を配る', () => {
+    const layer = createAssemblyLayer();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    layer.setSectionPlanes([plane]);
+    layer.update(buildAssemblyGeometry(sameParts(1)), 'shadedWithEdges');
+    for (const material of materialsOf(layer.group)) expect(material.clippingPlanes).toEqual([plane]);
+    layer.dispose();
+  });
   it('ワイヤーフレームでは面を出さず、シェーディングのみでは稜線を出さない', () => {
     const layer = createAssemblyLayer();
     const bundle = buildAssemblyGeometry(sameParts(1));

@@ -769,6 +769,7 @@ export function ViewportCanvas(): React.JSX.Element {
     scene.setBodies(activePartDocument(initial) === null ? [] : initial.bodies);
     // 配置した部品(FR-605、P7 タスク10)。アセンブリを開いていないあいだは空のまま。
     scene.setAssembly(assemblyBundleOf(initial));
+    scene.setInterference(initial.assemblyInterferenceResult, initial.assemblyInterferenceSelectedKey);
     // 外観の割り当て(FR-1106〜1109)。文書の割り当てと、カーネルが選び直した面の対応から
     // 組み立てる(P5 タスク10)。割り当てが 1 つも無ければ既定の外観 1 色になる。
     scene.setAppearance(
@@ -858,6 +859,10 @@ export function ViewportCanvas(): React.JSX.Element {
         next.selection !== previous.selection
       ) {
         scene.setAssembly(assemblyBundleOf(next));
+      }
+      if (next.assemblyInterferenceResult !== previous.assemblyInterferenceResult
+        || next.assemblyInterferenceSelectedKey !== previous.assemblyInterferenceSelectedKey) {
+        scene.setInterference(next.assemblyInterferenceResult, next.assemblyInterferenceSelectedKey);
       }
       /*
         切断面の予告(FR-432、タスク27e)。**材料が変わったときだけ**組み立て直す

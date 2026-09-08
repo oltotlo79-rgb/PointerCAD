@@ -22,6 +22,30 @@ const JOINT_KIND_LABELS: Readonly<Record<'revolute' | 'slider' | 'cylindrical' |
   cylindrical: 'assembly.tool.jointCylindrical', ball: 'assembly.tool.jointBall',
 };
 
+interface MatePropertyDiagnosis {
+  readonly provenConflictMateIds: readonly string[];
+  readonly suspectedConflictMateIds: readonly string[];
+  readonly unresolvedMateIds: readonly string[];
+}
+
+/** 数学的な証明と未収束の疑いを混同せず、木と同じ状態名をプロパティへ出す。 */
+export function assemblyMatePropertyState(
+  mateId: string,
+  hasTargetError: boolean,
+  diagnosis: MatePropertyDiagnosis | null | undefined,
+): MessageKey {
+  if (hasTargetError || diagnosis?.unresolvedMateIds.includes(mateId) === true) {
+    return 'assembly.property.unresolved';
+  }
+  if (diagnosis?.provenConflictMateIds.includes(mateId) === true) {
+    return 'assembly.property.conflicting';
+  }
+  if (diagnosis?.suspectedConflictMateIds.includes(mateId) === true) {
+    return 'assembly.mate.suspected';
+  }
+  return 'assembly.property.resolved';
+}
+
 /** アセンブリを開いたとき、右の既存区画へ選択内容を表示する。 */
 export function AssemblyPropertyPanel(): React.JSX.Element {
   const document = useAppStore((state) => state.assembly);
@@ -60,12 +84,11 @@ export function AssemblyPropertyPanel(): React.JSX.Element {
         <dt>{t('assembly.property.kind')}</dt><dd>{t(MATE_KIND_LABELS[mate.kind])}</dd>
         <dt>{t('assembly.property.targets')}</dt><dd>{componentName(mate.a.componentId)} / {componentName(mate.b.componentId)}</dd>
         <dt>{t('assembly.property.value')}</dt><dd>{mate.value?.source ?? '0'}</dd>
-        <dt>{t('assembly.property.state')}</dt><dd>{
-          (view?.mateTargetErrors.get(mate.id)?.length ?? 0) > 0
-            ? t('assembly.property.unresolved')
-            : view?.diagnosis?.provenConflictMateIds.includes(mate.id) === true
-              ? t('assembly.property.conflicting') : t('assembly.property.resolved')
-        }</dd>
+        <dt>{t('assembly.property.state')}</dt><dd>{t(assemblyMatePropertyState(
+          mate.id,
+          (view?.mateTargetErrors.get(mate.id)?.length ?? 0) > 0,
+          view?.diagnosis,
+        ))}</dd>
       </dl>
     </section>
   ) : (

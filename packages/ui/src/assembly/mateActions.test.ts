@@ -1,6 +1,7 @@
 import { addComponent, createAssemblyDocument, createAssemblyDocumentBundle, createComponentFor,
   createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY, resolveAssembly, resolvePart, type AssemblyDocument } from '@pointercad/model';
 import { readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React, { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -9,8 +10,8 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { addMateTarget, cancelMate, commitMateDraft, deleteAssemblyMate, editAssemblyMate,
-  flipAssemblyMate, handleMateKey, mateDraftCheck, mateFailureText, mateKindReadiness, removeDraftTarget,
-  startMate, toggleDraftFlipped, updateMateSource } from './mateActions.js';
+  flipAssemblyMate, handleMateKey, jointDraftCheck, mateDraftCheck, mateFailureText, mateKindReadiness,
+  removeDraftTarget, startJoint, startMate, toggleDraftFlipped, updateJointRangeSource, updateMateSource } from './mateActions.js';
 import { startAssemblyPartPlacement } from '../shell/menus/AssemblyGroup.js';
 
 function openAssembly(): AssemblyDocument {
@@ -52,6 +53,9 @@ describe('合致の共通action', () => {
     expect(markup).toContain('value="-10*2"');
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain('tabindex="-1"');
+    expect(markup).toContain('right:12px');
+    expect(markup).not.toContain('left:12px');
+    expect(markup).toContain('pcad-popover__actions--mate-targets');
     handleMateKey('Enter');
     const state = useAppStore.getState();
     if (state.assembly === null) throw new Error('fixture');
@@ -98,6 +102,49 @@ describe('合致の共通action', () => {
     cancelMate();
     expect(useAppStore.getState().assemblyMateDraft).toBeNull();
   });
+
+  it('合致popoverはビューポートcanvasより上の入力層に固定する', () => {
+    const css = readFileSync(new URL('../shell/appShell.css', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(css).toMatch(/\.pcad-viewport\s*\{[^}]*isolation:\s*isolate;/u);
+    expect(css).toMatch(/\.pcad-viewport__canvas\s*\{[^}]*z-index:\s*0;/u);
+    expect(css).toMatch(/\.pcad-popover\s*\{[^}]*z-index:\s*2;/u);
+    expect(css).toMatch(/\.pcad-popover__actions--mate-targets\s*\{[^}]*flex-wrap:\s*wrap;/u);
+  });
+
+  it('ジョイントの範囲式をpopoverで編集し、Undo 1段で保存する', () => {
+    openAssembly(); startJoint('revolute');
+    for (const componentId of ['component-1', 'component-2']) {
+      addMateTarget({ kind: 'origin', componentId, element: 'z' });
+    }
+    updateJointRangeSource('min', '10*3');
+    updateJointRangeSource('max', '60*2');
+    const markup = popover();
+    expect(markup).toContain(t('assembly.joint.rangeMinimum'));
+    expect(markup).toContain(t('assembly.joint.rangeMaximum'));
+    expect(markup).toContain('value="10*3"');
+    expect(markup).toContain('value="60*2"');
+    expect(markup).toMatch(/pcad-button--action" aria-disabled="false"/);
+    handleMateKey('Enter');
+    expect(useAppStore.getState().assembly?.joints[0]).toMatchObject({
+      kind: 'revolute', minValue: { source: '10*3', value: 30 }, maxValue: { source: '60*2', value: 120 },
+    });
+    expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+  });
+
+  it.each([['unknown', '120'], ['120', '30']])(
+    '不正なジョイント範囲 %s〜%s はpopoverに理由を出して確定しない', (min, max) => {
+      openAssembly(); startJoint('revolute');
+      for (const componentId of ['component-1', 'component-2']) {
+        addMateTarget({ kind: 'origin', componentId, element: 'z' });
+      }
+      updateJointRangeSource('min', min); updateJointRangeSource('max', max);
+      expect(jointDraftCheck(useAppStore.getState(), 'revolute')).toMatchObject({ ok: false, reason: 'range' });
+      expect(popover()).toContain('role="status"');
+      expect(popover()).toMatch(/pcad-button--action" aria-disabled="true"/);
+      handleMateKey('Enter');
+      expect(useAppStore.getState().assembly?.joints).toHaveLength(0);
+    });
 
   it('別部品の2対象を追加し確定はUndoを1段だけ積む', () => {
     openAssembly();

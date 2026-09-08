@@ -438,6 +438,24 @@ describe('共通体積の分類・例外安全・所有・性能', () => {
     } finally { vi.restoreAllMocks(); release(); }
   });
 
+  it('認証済み直方体だけはCommonと体積測定を保ち、重複する位相・妥当性走査を省く', () => {
+    const { keep, release } = allocationModule.createAllocations();
+    try {
+      const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]);
+      const map = vi.spyOn(oc.TopExp, 'MapShapes_2');
+      const analyzer = vi.spyOn(oc, 'BRepCheck_Analyzer');
+      const measure = vi.spyOn(oc.BRepGProp, 'VolumeProperties_1');
+      const build = vi.spyOn(oc.BRepAlgoAPI_BooleanOperation.prototype, 'Build');
+      consume(intersectionVolume(oc, a.shape, b.shape, {
+        glue: 'shift', collectHistory: false, nonInverted: true, certifiedBoxOverlap: true,
+      }), 2000);
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(measure).toHaveBeenCalledTimes(1);
+      expect(map).not.toHaveBeenCalled();
+      expect(analyzer).not.toHaveBeenCalled();
+    } finally { vi.restoreAllMocks(); release(); }
+  });
+
   it('GlueShift設定例外はsetGlue失敗として全所有物を解放し、入力を再利用できる', () => {
     const { keep, release } = allocationModule.createAllocations();
     try {

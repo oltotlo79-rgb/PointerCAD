@@ -1,8 +1,8 @@
 /** 剛体用LMの受理/棄却。基準の更新はこのdriverだけで行う(P7 §2.5.6)。 */
 import {
   CONSTRAINT_INITIAL_DAMPING, CONSTRAINT_MAX_DAMPING, CONSTRAINT_MAX_ITERATIONS,
-  CONSTRAINT_MIN_DAMPING, CONSTRAINT_STEP_TOLERANCE, DAMPING_ATTEMPT_LIMIT,
-  eliminate, qrDecomposition, solveLeastSquares, type LinearizedRow,
+  CONSTRAINT_MIN_DAMPING, CONSTRAINT_STEP_TOLERANCE, DAMPING_ATTEMPT_LIMIT, LINEAR_PIVOT_TOLERANCE,
+  qrDecomposition, solveLeastSquares, type LinearizedRow,
 } from '../../sketch/constraints/solve.js';
 
 export type RigidSolveStopReason =
@@ -36,6 +36,8 @@ export interface RigidSolveOptions {
   readonly maxTimeMs?: number;
   readonly now?: () => number;
   readonly initialDamping?: number;
+  /** 棄却後に次の減衰を直接ここまで上げる。遠い一時目標を持つdriverだけが指定する。 */
+  readonly rejectionDampingFloor?: number;
   readonly stepTolerance?: number;
   readonly linearSolver?: 'auto' | 'normal' | 'qr';
 }
@@ -144,6 +146,80 @@ function measure(evaluation: RigidEvaluation, options: RigidSolveOptions) {
   return { norm: Math.sqrt(sum), weightedSum, max, satisfied, constantConflict };
 }
 
+/** 疎な行から対称な正規行列の下三角を作る。棄却後はgradientを保ったまま行列だけ再構築できる。 */
+function assembleNormalSystem(
+  rows: readonly RigidResidualRow[], scales: readonly number[], options: RigidSolveOptions, n: number,
+  normal: Float64Array, gradient: Float64Array | null, rowColumns: number[], rowValues: number[],
+): void {
+  normal.fill(0);
+  gradient?.fill(0);
+  for (const row of rows) {
+    const weight = rowWeight(row, options);
+    let count = 0;
+    for (const [j, value] of row.gradient) {
+      rowColumns[count] = j;
+      rowValues[count] = value * scales[j] * weight;
+      count += 1;
+    }
+    for (let p = 0; p < count; p += 1) {
+      const j = rowColumns[p];
+      const gj = rowValues[p];
+      if (gradient !== null) gradient[j] += gj * row.value * weight;
+      for (let q = 0; q <= p; q += 1) {
+        const k = rowColumns[q];
+        const index = j >= k ? j * n + k : k * n + j;
+        normal[index] += gj * rowValues[q];
+      }
+    }
+  }
+}
+
+/**
+ * アセンブリLMの対称正定値な正規方程式を、下三角だけのコレスキー分解で解く。
+ * `a`は分解結果で書き換える。正定値でなければnullを返して既存QRへ退避する。
+ */
+export function solvePositiveDefinite(
+  a: Float64Array,
+  b: Float64Array,
+  n: number,
+): Float64Array | null {
+  if (!Number.isInteger(n) || n < 0 || n * n > a.length || n > b.length) return null;
+  const rows = Array.from({ length: n }, (_, index) => a.subarray(index * n, (index + 1) * n));
+  for (let i = 0; i < n; i += 1) {
+    const target = rows[i];
+    for (let j = 0; j <= i; j += 1) {
+      const source = rows[j];
+      let sum = target[j];
+      let k = 0;
+      for (; k + 3 < j; k += 4) {
+        sum -= target[k] * source[k];
+        sum -= target[k + 1] * source[k + 1];
+        sum -= target[k + 2] * source[k + 2];
+        sum -= target[k + 3] * source[k + 3];
+      }
+      for (; k < j; k += 1) sum -= target[k] * source[k];
+      if (i === j) {
+        if (!(sum > LINEAR_PIVOT_TOLERANCE)) return null;
+        target[j] = Math.sqrt(sum);
+      } else target[j] = sum / source[j];
+    }
+  }
+  for (let i = 0; i < n; i += 1) {
+    const row = rows[i];
+    let sum = b[i];
+    for (let k = 0; k < i; k += 1) sum -= row[k] * b[k];
+    b[i] = sum / row[i];
+  }
+  const x = new Float64Array(n);
+  for (let i = n - 1; i >= 0; i -= 1) {
+    let sum = b[i];
+    for (let k = i + 1; k < n; k += 1) sum -= rows[k][i] * x[k];
+    x[i] = sum / rows[i][i];
+    if (!Number.isFinite(x[i])) return null;
+  }
+  return x;
+}
+
 /** 減衰Dだけを構成する。階数用Jsとnormal/QR切替用の生normは変更しない。 */
 function dampingDiagonal(
   rows: readonly RigidResidualRow[], scales: readonly number[], options: RigidSolveOptions,
@@ -204,6 +280,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
   const expired = () => options.maxTimeMs !== undefined && now() - start >= options.maxTimeMs;
   const maxIterations = Math.max(0, Math.trunc(options.maxIterations ?? CONSTRAINT_MAX_ITERATIONS));
   let damping = Math.max(CONSTRAINT_MIN_DAMPING, options.initialDamping ?? CONSTRAINT_INITIAL_DAMPING);
+  const rejectionDampingFloor = options.rejectionDampingFloor ?? CONSTRAINT_MIN_DAMPING;
   let base = input.initial;
   let evaluation = input.evaluate(base, zero);
   let current = measure(evaluation, options);
@@ -215,6 +292,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
   if (dampingCeilings !== undefined && (dampingCeilings.length !== n
     || Array.from(dampingCeilings).some((value, index) => !Object.hasOwn(dampingCeilings, index)
       || !Number.isFinite(value) || value <= 0))) return finish('stalled', 0);
+  if (!Number.isFinite(rejectionDampingFloor) || rejectionDampingFloor < CONSTRAINT_MIN_DAMPING) return finish('stalled', 0);
   if (current.constantConflict) return finish('provenConstantConflict', 0);
   if (current.satisfied && (input.canConverge?.(base, evaluation) ?? true)) return finish('converged', 0);
   if (evaluation.valid === false || !Number.isFinite(current.weightedSum)
@@ -223,8 +301,8 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
   const normal = new Float64Array(n * n);
   const gradient = new Float64Array(n);
   const diagonal = new Float64Array(n);
+  const inverseDiagonal = new Float64Array(n);
   const columnNorms = new Float64Array(n);
-  const work = new Float64Array(n * n);
   const rhs = new Float64Array(n);
   const rowColumns: number[] = [];
   const rowValues: number[] = [];
@@ -268,30 +346,16 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
       }
     }
 
-    normal.fill(0);
-    gradient.fill(0);
-    for (const row of evaluation.rows) {
-      const weight = rowWeight(row, options);
-      // 同じMap順・累算順のまま作業配列を使い回し、行ごとのタプル列と内側のiteratorを省く。
-      let count = 0;
-      for (const [j, value] of row.gradient) {
-        rowColumns[count] = j;
-        rowValues[count] = value * scales[j] * weight;
-        count += 1;
-      }
-      for (let p = 0; p < count; p += 1) {
-        const j = rowColumns[p];
-        const gj = rowValues[p];
-        gradient[j] += gj * row.value * weight;
-        const offset = j * n;
-        for (let q = 0; q < count; q += 1) normal[offset + rowColumns[q]] += gj * rowValues[q];
-      }
-    }
+    assembleNormalSystem(evaluation.rows, scales, options, n, normal, gradient, rowColumns, rowValues);
+    const inspectCondition = options.linearSolver !== 'normal';
     let smallest = Infinity;
     let largest = 0;
     for (let j = 0; j < n; j += 1) {
       const value = normal[j * n + j];
-      if (value > 0) { smallest = Math.min(smallest, value); largest = Math.max(largest, value); }
+      if (inspectCondition && value > 0) {
+        smallest = Math.min(smallest, value);
+        largest = Math.max(largest, value);
+      }
       columnNorms[j] = Math.sqrt(value);
     }
     if (dampingCeilings !== undefined && metricScales !== undefined && metricNorms !== null) {
@@ -303,13 +367,14 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         diagonal[j] = Math.min(diagonal[j], 1) * dampingCeilings[j];
       }
     } else dampingDiagonal(evaluation.rows, scales, options, columnNorms, diagonal);
-    let illConditioned = largest / smallest > 1e12;
+    for (let j = 0; j < n; j += 1) inverseDiagonal[j] = 1 / diagonal[j];
+    let illConditioned = inspectCondition && largest / smallest > 1e12;
     // ほぼ同じ列の桁落ちを、正規方程式を解く前に検出する。
-    for (let j = 0; j < n && !illConditioned; j += 1) {
+    for (let j = 0; inspectCondition && j < n && !illConditioned; j += 1) {
       for (let k = j + 1; k < n; k += 1) {
         const product = columnNorms[j] * columnNorms[k];
         if (product === 0) continue;
-        const correlation = Math.abs(normal[j * n + k] / product);
+        const correlation = Math.abs(normal[k * n + j] / product);
         if (correlation > 1 - 1e-8 && correlation < 1 - 1e-14) { illConditioned = true; break; }
       }
     }
@@ -321,12 +386,16 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
       let solved: readonly number[] | Float64Array | null = null;
       if (linearSolver === 'normal') {
         input.observer?.linearSolve('normal', false);
+        // コレスキー分解は行列を書き換える。通常の初回受理ではコピーを作らず、
+        // 候補を棄却して同じ線形化を再利用するときだけ疎な行から下三角を作り直す。
+        if (attempt > 1) assembleNormalSystem(evaluation.rows, scales, options, n, normal, null, rowColumns, rowValues);
         for (let j = 0; j < n; j += 1) {
-          rhs[j] = -gradient[j] / diagonal[j];
-          for (let k = 0; k < n; k += 1) work[j * n + k] = normal[j * n + k] / (diagonal[j] * diagonal[k]);
-          work[j * n + j] += damping;
+          rhs[j] = -gradient[j] * inverseDiagonal[j];
+          const rowScale = inverseDiagonal[j];
+          for (let k = 0; k <= j; k += 1) normal[j * n + k] *= rowScale * inverseDiagonal[k];
+          normal[j * n + j] += damping;
         }
-        solved = eliminate(work, rhs, n);
+        solved = solvePositiveDefinite(normal, rhs, n);
       }
       if (solved === null) {
         input.observer?.linearSolve('qr', options.linearSolver !== 'qr');
@@ -359,7 +428,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
           solved = expanded;
         }
       }
-      const step = solved === null ? null : Array.from(solved, (value, j) => value * scales[j] / diagonal[j]);
+      const step = solved === null ? null : Array.from(solved, (value, j) => value * scales[j] * inverseDiagonal[j]);
       if (input.preserveZeroColumns && step !== null) {
         for (let j = 0; j < n; j += 1) {
           // Inspect the actual derivatives too: a nonzero norm can underflow when squared.
@@ -389,7 +458,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         break;
       }
       if (step !== null && stepSize < (options.stepTolerance ?? CONSTRAINT_STEP_TOLERANCE)) return finish(stopped(), iteration);
-      damping *= 3;
+      damping = Math.max(damping * 3, rejectionDampingFloor);
       if (damping > CONSTRAINT_MAX_DAMPING) return finish(stopped(), iteration);
     }
     if (!accepted) return finish(stopped(), iteration);

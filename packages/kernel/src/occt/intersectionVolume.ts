@@ -60,6 +60,12 @@ export interface IntersectionVolumeOptions {
   readonly collectHistory?: false;
   /** 呼出側が有界solidの外向き閉包を証明済みの場合だけtrue。結果の妥当性検査は維持。 */
   readonly nonInverted?: true;
+  /**
+   * 呼出側が、同じ妥当な軸平行直方体の1軸平行移動で、しきい値を十分に超える
+   * 正体積の共通部分まで証明済みの場合だけtrue。Commonと厳密体積測定は省かず、
+   * 入力2形状のSOLID走査と、捨てる結果B-repの重複SOLID/妥当性走査だけを省く。
+   */
+  readonly certifiedBoxOverlap?: true;
 }
 
 /**
@@ -149,7 +155,9 @@ export function intersectionVolume(
   function calculate(): IntersectionVolumeResult {
     const aIsNull = a.IsNull();
     const bIsNull = b.IsNull();
-    if (aIsNull || bIsNull || !containsSolid(oc, a, cleanupMessages) || !containsSolid(oc, b, cleanupMessages)) {
+    const certifiedBoxOverlap = options.certifiedBoxOverlap === true;
+    if (aIsNull || bIsNull || (!certifiedBoxOverlap
+      && (!containsSolid(oc, a, cleanupMessages) || !containsSolid(oc, b, cleanupMessages)))) {
       return failed({ code: 'invalidInput', stage, message: '重なりを調べる立体がありません。' });
     }
 
@@ -198,7 +206,7 @@ export function intersectionVolume(
       return failed({ code: 'invalidResult', stage, message: '重なりの形を取得できませんでした。' });
     }
     stage = 'inspectResult';
-    if (!containsSolid(oc, shape, cleanupMessages)) {
+    if (!certifiedBoxOverlap && !containsSolid(oc, shape, cleanupMessages)) {
       return { kind: 'clear', reason: 'empty', volume: 0, shape: null };
     }
     stage = 'measure';
@@ -207,7 +215,7 @@ export function intersectionVolume(
       return failed({ code: 'measurementFailed', stage, message: '重なりの体積を正しく測れませんでした。' });
     }
     stage = 'validateResult';
-    if (!isValidShape(oc, shape)) {
+    if (!certifiedBoxOverlap && !isValidShape(oc, shape)) {
       return failed({ code: 'invalidResult', stage, message: '重なりの形が正しくありませんでした。' });
     }
     if (volume <= MIN_INTERFERENCE_VOLUME_MM3) {

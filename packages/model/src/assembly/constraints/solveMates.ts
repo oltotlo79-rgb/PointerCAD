@@ -295,12 +295,12 @@ export function applyMateIncrements(
   for (const id of variableSet.movableComponentIds) {
     const placement = placements.get(id);
     if (placement === undefined) continue;
-    const value = (axis: 'tx' | 'ty' | 'tz' | 'rx' | 'ry' | 'rz'): number => {
-      const column = variableSet.columnOf(id, axis);
-      return column === null ? 0 : (increments[column] ?? 0);
-    };
-    const translation: Vec3 = [value('tx'), value('ty'), value('tz')];
-    const rotation: Vec3 = [value('rx'), value('ry'), value('rz')];
+    // collectMateVariablesは各部品をtx,ty,tz,rx,ry,rzの連続6列にする。
+    // 反復ごとに同じMapを6回引かず、先頭列だけを取得する。
+    const column = variableSet.columnOf(id, 'tx');
+    if (column === null) continue;
+    const translation: Vec3 = [increments[column] ?? 0, increments[column + 1] ?? 0, increments[column + 2] ?? 0];
+    const rotation: Vec3 = [increments[column + 3] ?? 0, increments[column + 4] ?? 0, increments[column + 5] ?? 0];
     next.set(id, { position: addVec3(placement.position, translation),
       rotation: normalizeQuaternion(multiplyQuaternion(exponentialMap(rotation), placement.rotation)) });
   }
@@ -445,11 +445,21 @@ export function prepareMateDrag(
   const preparedJoints = options.jointFrames === undefined ? { joints: [], skipped: [] }
     : prepareJointResiduals({ joints, frames: options.jointFrames, placements });
   if (preparedJoints.skipped.length > 0) return { ok: false, reason: 'unresolvedConstraint' };
-  const variableSet = collectMateVariables({ ...assembly, components: assembly.components.filter((component) => ids.has(component.id)) });
+  // 選択した連結成分が全可動部品なら、上限判定用に作った同じ変数表を再利用する。
+  // 切り離された成分だけを動かす場合は従来どおりその成分専用の連続列を作る。
+  const coversAllMovable = group.componentIds.length === allVariables.movableComponentIds.length
+    && group.componentIds.every((id, index) => id === allVariables.movableComponentIds[index]);
+  const variableSet = coversAllMovable ? allVariables
+    : collectMateVariables({ ...assembly, components: assembly.components.filter((component) => ids.has(component.id)) });
   const variables = variableSet.variables.map((variable) => variable.axis.startsWith('t') ? 'length' as const : 'angle' as const);
   const length = options.characteristicLength ?? DEFAULT_RIGID_CHARACTERISTIC_LENGTH;
   const numericOptions: RigidSolveOptions = { characteristicLength: length,
-    lengthTolerance: options.lengthTolerance, angleTolerance: options.angleTolerance, linearSolver: options.linearSolver };
+    lengthTolerance: options.lengthTolerance, angleTolerance: options.angleTolerance,
+    // The drag solve always has a positive LM damping diagonal, including exact null columns.
+    // Its normal system is therefore nonsingular. Keep the per-frame default on that O(n^3)
+    // path instead of rebuilding an augmented QR matrix for every projection iteration.
+    // Callers and numerical regression tests can still request auto/qr explicitly.
+    linearSolver: options.linearSolver ?? 'normal' };
   const byId = new Map(prepared.mates.map((mate) => [mate.mateId, mate]));
   const jointsById = new Map(preparedJoints.joints.map((joint) => [joint.jointId, joint]));
   const branches = new Map<string, BranchGeometry>(prepared.mates.map((mate) => [constraintKey({ kind: 'mate', id: mate.mateId }), mate]));

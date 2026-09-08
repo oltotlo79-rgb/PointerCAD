@@ -3,8 +3,8 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { ASSEMBLY_JOINT_TOOLS, ASSEMBLY_MATE_TOOLS } from '../shell/menus/AssemblyGroup.js';
 import { addSelectedOriginTarget, cancelMate, commitJointDraft, commitMateDraft, handleMateKey, jointDraftReady,
-  mateDraftCheck, mateFailureText, mateKindReadiness, removeDraftTarget, startJoint, startMate,
-  toggleDraftFlipped, updateMateSource } from './mateActions.js';
+  jointDraftCheck, jointFailureText, mateDraftCheck, mateFailureText, mateKindReadiness, removeDraftTarget,
+  startJoint, startMate, toggleDraftFlipped, updateJointRangeSource, updateMateSource } from './mateActions.js';
 import { mateKindNeedsValue } from './mateCommands.js';
 
 export function MatePopover(): React.JSX.Element | null {
@@ -25,19 +25,21 @@ export function MatePopover(): React.JSX.Element | null {
   }, [open, pair, kind, editingId]);
   if (draft === null || state.assemblyPlacement !== null) return null;
   const check = jointKind === undefined ? mateDraftCheck(state) : null;
+  const jointCheck = jointKind === undefined ? null : jointDraftCheck(state, jointKind);
   const ready = jointKind === undefined ? check?.ok === true : jointDraftReady(state, jointKind);
   const error = draft.issue ?? (draft.targets.length >= 2
-    ? jointKind === undefined ? mateFailureText(check) : ready ? null : t('assembly.mate.invalidTargets')
+    ? jointKind === undefined ? mateFailureText(check) : jointFailureText(jointCheck)
     : null);
   const needsValue = jointKind === undefined && mateKindNeedsValue(draft.kind, draft.targetKinds);
   const titleKey = jointKind === undefined
     ? draft.editingMateId === null ? 'assembly.mate.title' : 'assembly.mate.edit'
     : 'assembly.joint.title';
   const componentSelected = state.selection.filter((id) => state.assembly?.components.some((c) => c.id === id && !c.suppressed)).length === 1;
+  // 対象を選ぶモデルブラウザは左にあるため、入力は右へ寄せて互いの操作面を重ねない。
   return (
     <div ref={panel} tabIndex={-1} className="pcad-popover pcad-popover--numeric" role="dialog"
       aria-label={t(titleKey)}
-      style={{ left: 12, top: 12, maxWidth: 'calc(100% - 24px)', maxHeight: 'calc(100% - 24px)', overflow: 'auto' }}
+      style={{ right: 12, top: 12, maxWidth: 'calc(100% - 24px)', maxHeight: 'calc(100% - 24px)', overflow: 'auto' }}
       onKeyDown={(event) => {
         if (handleMateKey(event.key, event.nativeEvent.isComposing)) {
           event.preventDefault(); event.stopPropagation();
@@ -82,7 +84,7 @@ export function MatePopover(): React.JSX.Element | null {
           </li>;
         })}
       </ul>
-      <div className="pcad-popover__actions">
+      <div className="pcad-popover__actions pcad-popover__actions--mate-targets">
         {(['origin', 'x', 'y', 'z', 'xy', 'xz', 'yz'] as const).map((element) => (
           <button key={element} type="button" className="pcad-button" aria-disabled={!componentSelected}
             title={componentSelected ? t(`assembly.mate.origin.${element}`) : t('assembly.mate.selectComponent')}
@@ -99,6 +101,15 @@ export function MatePopover(): React.JSX.Element | null {
           <span className="pcad-field__unit">{t(draft.kind === 'angle' ? 'numericInput.unit.degree' : 'numericInput.unit.mm')}</span>
         </label>
       ) : null}
+      {jointKind !== undefined && jointKind !== 'ball' ? <>
+        <p className="pcad-popover__hint">{t('assembly.joint.rangeHint')}</p>
+        {(['min', 'max'] as const).map((bound) => <label className="pcad-field" key={bound}>
+          <span className="pcad-field__label">{t(bound === 'min' ? 'assembly.joint.rangeMinimum' : 'assembly.joint.rangeMaximum')}</span>
+          <input className="pcad-field__input" value={bound === 'min' ? draft.minSource : draft.maxSource}
+            aria-invalid={error !== null} onChange={(event) => { updateJointRangeSource(bound, event.target.value); }} />
+          <span className="pcad-field__unit">{t(jointKind === 'slider' ? 'numericInput.unit.mm' : 'numericInput.unit.degree')}</span>
+        </label>)}
+      </> : null}
       {error === null ? null : <p role="status" className="pcad-field__message pcad-field__message--error">{error}</p>}
       {jointKind === undefined ? <label className="pcad-checkbox">
         <input type="checkbox" checked={draft.flipped} onChange={() => { toggleDraftFlipped(); }} />

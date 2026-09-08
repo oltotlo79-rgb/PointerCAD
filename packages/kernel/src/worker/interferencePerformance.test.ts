@@ -203,6 +203,13 @@ async function measureFixture(id: string, kind: 'box' | 'sphere' | 'multi', comp
 }
 
 describe('P7-25 全経路の固定性能条件', () => {
+  // 最も余裕の小さい条件を端末reporterの長い出力が積み上がる前に測る。
+  it('P05 密な50箱x=0.01iは全1225候補を返す、全経路2秒', async () => {
+    const volumes: number[] = [];
+    for (let a = 0; a < 50; a += 1) for (let b = a + 1; b < 50; b += 1) volumes.push(400 * (20 - 0.01 * (b - a)));
+    await measureFixture('P05', 'box', Array.from({ length: 50 }, (_, index) => ready(index, index * 0.01, ['shape'])), volumes.sort((a, b) => b - a), 49);
+    // 完走して全5回を報告するための検査タイムアウト。合格予算2000msは変更しない。
+  }, 600_000);
   it('P01 20³箱2個5mm侵入はV2000、全経路500ms', async () => {
     await measureFixture('P01', 'box', [ready(0, 0, ['shape']), ready(1, 15, ['shape'])], [2000], 1);
   });
@@ -215,12 +222,6 @@ describe('P7-25 全経路の固定性能条件', () => {
   it('P04 10組の侵入と30孤立箱は候補10/共有Common1/各V2000、全経路2秒', async () => {
     await measureFixture('P04', 'box', clusters(15, ['shape']), Array.from({ length: 10 }, () => 2000), 1);
   });
-  it('P05 密な50箱x=0.01iは全1225候補を返す、全経路2秒', async () => {
-    const volumes: number[] = [];
-    for (let a = 0; a < 50; a += 1) for (let b = a + 1; b < 50; b += 1) volumes.push(400 * (20 - 0.01 * (b - a)));
-    await measureFixture('P05', 'box', Array.from({ length: 50 }, (_, index) => ready(index, index * 0.01, ['shape'])), volumes.sort((a, b) => b - a), 49);
-    // 完走して全5回を報告するための検査タイムアウト。合格予算2000msは変更しない。
-  }, 600_000);
   it('P06 複数body部品50配置はunion1/候補10/共有Common1/各V500、全経路2秒', async () => {
     await measureFixture('P06', 'multi', clusters(10, ['first', 'second']), Array.from({ length: 10 }, () => 500), 1);
   });

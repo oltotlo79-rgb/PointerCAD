@@ -1,7 +1,18 @@
 /// <reference lib="dom" />
 import { statSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { beginRecompute, waitForRecompute } from './recompute.js';
+import {
+  boxPartFile,
+  chooseToolMenuItem,
+  distinctFiftyPartAssemblyFile,
+  installAssemblyFileGateway,
+  readAssemblyStats,
+  replacementAssemblyFile,
+  resetAssemblyFileGateway,
+  spherePartFile,
+  twoBoxAssemblyFile,
+} from './assemblyTestSupport.js';
+import { beginRecompute, readRecomputeStats, waitForRecompute, type RecomputeToken } from './recompute.js';
 
 interface ViewportRenderStats {
   readonly completedRenders: number;
@@ -27,34 +38,30 @@ function fileAction(page: Page, name: string): Locator {
 }
 
 function componentRows(page: Page): Locator {
-  return page.locator('.pcad-tree__children .pcad-tree__select');
+  return treeSectionRows(page, '部品').locator('.pcad-tree__select');
 }
 
 function componentMoreButtons(page: Page): Locator {
-  return page.locator('.pcad-tree__children .pcad-tree__more');
+  return treeSectionRows(page, '部品').locator('.pcad-tree__more');
 }
 
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-
-async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) {
-    await page.locator('.pcad-toolbar').getByRole('button', { name: new RegExp(`^${menu}`, 'u') }).first().click();
-  }
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
+function treeSectionRows(page: Page, sectionName: string): Locator {
+  const section = page.locator('.pcad-tree__sections > li').filter({
+    has: page.locator('.pcad-tree__section .pcad-tree__label', { hasText: sectionName }),
+  });
+  return section.locator(':scope > .pcad-tree__children > li > .pcad-tree__row');
 }
 
 async function chooseFileMenu(page: Page, name: string): Promise<void> {
-  await openToolMenu(page, 'ファイルのほかの操作');
-  await toolMenuPanel(page, 'ファイルのほかの操作')
-    .getByRole('button', { name, exact: true })
-    .click();
+  await chooseToolMenuItem(page, 'ファイルのほかの操作', name);
 }
 
 async function chooseComponentAction(page: Page, name: string): Promise<void> {
-  await openToolMenu(page, '部品の操作');
-  await toolMenuPanel(page, '部品の操作').getByRole('button', { name, exact: true }).click();
+  await chooseToolMenuItem(page, '組む', name);
+}
+
+async function chooseMateAction(page: Page, name: string): Promise<void> {
+  await chooseToolMenuItem(page, '合わせる', name);
 }
 
 async function chooseTreeComponentAction(page: Page, index: number, name: string): Promise<void> {
@@ -70,19 +77,93 @@ async function selectComponent(page: Page, index: number): Promise<void> {
   await expect(row).toHaveAttribute('aria-pressed', 'true');
 }
 
-async function placePart(page: Page, partPath: string, sources: readonly string[]): Promise<void> {
-  const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('group', { name: '組む' }).getByRole('button', { name: '部品を置く' }).click();
-  await (await chooser).setFiles(partPath);
-  await expect(page.getByRole('dialog', { name: '部品を置く位置' })).toBeVisible();
-  const fields = page.locator('.pcad-popover input.pcad-field__input');
+async function placeQueuedPart(page: Page, sources: readonly string[]): Promise<void> {
+  await chooseToolMenuItem(page, '組む', '部品を置く');
+  const dialog = page.getByRole('dialog', { name: '部品を置く位置' });
+  await expect(dialog).toBeVisible();
+  const fields = dialog.locator('input.pcad-field__input');
   for (let index = 0; index < sources.length; index += 1) {
     if (sources[index] !== '') await fields.nth(index).fill(sources[index]);
   }
   const token = await beginRecompute(page);
   await fields.first().press('Enter');
-  await expect(page.getByRole('dialog', { name: '部品を置く位置' })).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
   await waitForRecompute(page, token);
+}
+
+async function createOriginMate(
+  page: Page,
+  kind: '一致' | '距離',
+  element: '選択部品の原点' | 'Z軸',
+  source?: string,
+  expectedOutcome: 'success' | 'failed' = 'success',
+): Promise<void> {
+  await chooseMateAction(page, kind);
+  const dialog = page.getByRole('dialog', { name: '合致を作る' });
+  await expect(dialog).toBeVisible();
+  for (const index of [0, 1]) {
+    await selectComponent(page, index);
+    const originButton = dialog.getByRole('button', { name: element, exact: true });
+    const layer = await originButton.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const panel = button.closest<HTMLElement>('[role="dialog"]');
+      const canvas = document.querySelector<HTMLElement>('.pcad-viewport__canvas');
+      return {
+        hit: hit instanceof HTMLElement ? `${hit.tagName}.${hit.className}` : String(hit),
+        hitInsidePanel: panel !== null && hit !== null && panel.contains(hit),
+        panelZ: panel === null ? null : getComputedStyle(panel).zIndex,
+        panelPointerEvents: panel === null ? null : getComputedStyle(panel).pointerEvents,
+        canvasZ: canvas === null ? null : getComputedStyle(canvas).zIndex,
+        buttonRect: [rect.left, rect.top, rect.width, rect.height],
+        panelRect: panel === null ? null : (() => {
+          const value = panel.getBoundingClientRect();
+          return [value.left, value.top, value.width, value.height];
+        })(),
+      };
+    });
+    expect(layer.hitInsidePanel, JSON.stringify(layer)).toBe(true);
+    await originButton.click();
+  }
+  if (source !== undefined) await dialog.locator('input.pcad-field__input').fill(source);
+  const token = await beginRecompute(page);
+  await dialog.getByRole('button', { name: '合致を作る', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  if (expectedOutcome === 'success') await waitForRecompute(page, token);
+  else await waitForRecomputeCompletion(page, token, 'failed');
+}
+
+async function waitForRecomputeCompletion(
+  page: Page,
+  token: RecomputeToken,
+  outcome: 'success' | 'failed',
+): Promise<void> {
+  await expect.poll(async () => {
+    const stats = await readRecomputeStats(page);
+    return stats.completedGeneration > token.requestedGeneration
+      && stats.completedGeneration === stats.requestedGeneration && !stats.isComputing
+      ? stats.lastOutcome : 'idle';
+  }).toBe(outcome);
+}
+
+async function openAssemblyFixture(
+  page: Page,
+  bytes: Uint8Array,
+  expectedOutcome: 'success' | 'failed' = 'success',
+): Promise<void> {
+  await installAssemblyFileGateway(page, { documents: [{ name: 'fixture.pcada', bytes }] });
+  const token = await beginRecompute(page);
+  await fileAction(page, '開く').click();
+  if (expectedOutcome === 'success') await waitForRecompute(page, token);
+  else await waitForRecomputeCompletion(page, token, 'failed');
+  await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'assembly');
+}
+
+function collectBrowserErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('pageerror', (error) => errors.push(error.message));
+  return errors;
 }
 
 async function undoAndWait(page: Page): Promise<void> {
@@ -149,26 +230,17 @@ async function measureViewportFps(page: Page): Promise<number> {
 
 test.describe('P7 アセンブリの配置と基本操作', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
+  test.afterEach(async ({ page }) => { await resetAssemblyFileGateway(page); });
 
   test('空状態、原点・式配置、各Undo、保存往復、見分けられる同じ箱50個', async ({ page }, testInfo) => {
     const errors: string[] = [];
     page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
     page.on('pageerror', (error) => errors.push(error.message));
     await disableFilePickers(page);
-    const boxPath = testInfo.outputPath('box.pcad');
+    const box = boxPartFile();
+    const distinctAssembly = await distinctFiftyPartAssemblyFile();
 
     await page.goto('/');
-    // 実際の画面で箱を作って保存し、配置元ファイルにする。
-    await openToolMenu(page, '作る');
-    await toolMenuPanel(page, '作る').getByRole('button', { name: '箱', exact: true }).click();
-    const boxToken = await beginRecompute(page);
-    await page.locator('.pcad-popover input.pcad-field__input').first().press('Enter');
-    await waitForRecompute(page, boxToken);
-    const boxDownload = page.waitForEvent('download');
-    await fileAction(page, '保存').click();
-    await (await boxDownload).saveAs(boxPath);
-    expect(statSync(boxPath).size).toBeGreaterThan(0);
-
     // 手組みのpcadaを使わず、製品のファイルメニューから空のアセンブリを始める。
     const newAssemblyToken = await beginRecompute(page);
     await chooseFileMenu(page, '新しいアセンブリ');
@@ -177,19 +249,24 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     await expect(page.locator('.pcad-viewport__empty-state')).toContainText('部品を置いて');
     await expect(componentRows(page)).toHaveCount(0);
 
-    await placePart(page, boxPath, ['', '', '']);
+    // 計画書どおり検査内で作った部品をfileGatewayへ並べ、製品の「部品を置く」を50回通す。
+    await installAssemblyFileGateway(page, {
+      parts: Array.from({ length: 50 }, () => ({ fileName: '箱.pcad', bytes: box })),
+    });
+
+    await placeQueuedPart(page, ['', '', '']);
     await expect(componentRows(page)).toHaveCount(1);
     await undoAndWait(page);
     await expect(componentRows(page)).toHaveCount(0);
     await redoAndWait(page);
     await expect(componentRows(page)).toHaveCount(1);
 
-    await placePart(page, boxPath, ['10*2', '', '']);
+    await placeQueuedPart(page, ['10*2', '', '']);
     await expect(componentRows(page)).toHaveCount(2);
     await selectComponent(page, 1);
 
     let token = await beginRecompute(page);
-    await chooseComponentAction(page, '固定を切り替える');
+    await chooseComponentAction(page, '固定する');
     await waitForRecompute(page, token);
     await expect(page.locator('.pcad-tree__badge', { hasText: '固定' })).toHaveCount(2);
     await undoAndWait(page);
@@ -200,7 +277,7 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     // Undo/Redoは選択を消すため、次の操作前に毎回対象を明示的に選び直す。
     await selectComponent(page, 1);
     token = await beginRecompute(page);
-    await chooseComponentAction(page, '表示を切り替える');
+    await chooseTreeComponentAction(page, 1, '画面から隠す');
     await waitForRecompute(page, token);
     await expect(page.locator('.pcad-tree__badge', { hasText: '非表示' })).toHaveCount(1);
     await undoAndWait(page);
@@ -254,7 +331,7 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     const additionalPositions = gridPositions.slice(0, 48);
     expect(additionalPositions).toHaveLength(48);
     for (const [x, y] of additionalPositions) {
-      await placePart(page, boxPath, [String(x), String(y), '']);
+      await placeQueuedPart(page, [String(x), String(y), '']);
     }
     await expect(componentRows(page)).toHaveCount(50);
     const fps = await measureViewportFps(page);
@@ -269,6 +346,8 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
       contentType: 'image/png',
     });
 
+    // ここから先は保存・OSファイル選択の実経路へ戻す。
+    await resetAssemblyFileGateway(page);
     const downloadPromise = page.waitForEvent('download');
     await fileAction(page, '保存').click();
     const savedPath = testInfo.outputPath('assembly.pcada');
@@ -281,6 +360,131 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     await (await reopenChooser).setFiles(savedPath);
     await waitForRecompute(page, reopenToken);
     await expect(componentRows(page)).toHaveCount(50);
+    await installAssemblyFileGateway(page, {
+      documents: [{ name: '異なる10種50個.pcada', bytes: distinctAssembly }],
+    });
+    const beforeDistinctRender = await readViewportRenderStats(page);
+    const distinctStartedAt = await page.evaluate(() => performance.now());
+    const distinctToken = await beginRecompute(page);
+    await fileAction(page, '開く').click();
+    await waitForRecompute(page, distinctToken);
+    await expect(componentRows(page)).toHaveCount(50);
+    await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders)
+      .toBeGreaterThan(beforeDistinctRender.completedRenders);
+    const distinctElapsed = await page.evaluate((startedAt) => performance.now() - startedAt, distinctStartedAt);
+    console.log(`[実測] 異なる部品10種・合計50個を開いて描画: ${distinctElapsed.toFixed(1)} ms (上限5000ms)`);
+    expect(distinctElapsed).toBeLessThanOrEqual(5_000);
+    expect(new Set((await readAssemblyStats(page)).components.map((component) => component.sourceRef)).size).toBe(10);
+    expect(errors).toEqual([]);
+  });
+
+  test('(a) 部品2つを置いて合致し、干渉の赤表示・分解図・部品表まで通せる', async ({ page }) => {
+    const errors = collectBrowserErrors(page);
+    await disableFilePickers(page);
+    await page.goto('/');
+    const token = await beginRecompute(page);
+    await chooseFileMenu(page, '新しいアセンブリ');
+    await waitForRecompute(page, token);
+    const box = boxPartFile();
+    await installAssemblyFileGateway(page, { parts: [
+      { fileName: '箱.pcad', bytes: box }, { fileName: '箱.pcad', bytes: box },
+    ] });
+    await placeQueuedPart(page, ['', '', '']);
+    await placeQueuedPart(page, ['40', '', '']);
+    await expect(componentRows(page)).toHaveCount(2);
+    await createOriginMate(page, '一致', '選択部品の原点');
+
+    const beforeInterferenceRender = await readViewportRenderStats(page);
+    await page.getByRole('group', { name: '組む' })
+      .getByRole('button', { name: '干渉を調べる', exact: true }).click();
+    const interferenceRow = page.locator('.pcad-interference__row').first();
+    await expect(interferenceRow).toBeVisible();
+    await interferenceRow.click();
+    await expect(interferenceRow).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await readAssemblyStats(page)).interferenceSelectedKey).not.toBeNull();
+    await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders)
+      .toBeGreaterThan(beforeInterferenceRender.completedRenders);
+
+    await selectComponent(page, 1);
+    await page.getByRole('group', { name: '組む' })
+      .getByRole('button', { name: '分解図', exact: true }).click();
+    const explode = page.getByRole('dialog', { name: '分解ステップを作る' });
+    await expect(explode).toBeVisible();
+    const explodeToken = await beginRecompute(page);
+    await explode.locator('input.pcad-field__input').press('Enter');
+    await waitForRecompute(page, explodeToken);
+    await expect(treeSectionRows(page, '分解ステップ')).toHaveCount(1);
+
+    await page.getByRole('group', { name: '組む' })
+      .getByRole('button', { name: '部品表', exact: true }).click();
+    const bomRow = page.locator('.pcad-bom__table tbody tr');
+    await expect(bomRow).toHaveCount(1);
+    await expect(bomRow.locator('td').nth(2)).toHaveText('2');
+    expect(errors).toEqual([]);
+  });
+
+  test('(b) 固定した部品は動かず、もう1つだけが距離合致で動く', async ({ page }) => {
+    const errors = collectBrowserErrors(page);
+    await disableFilePickers(page);
+    const fixture = await twoBoxAssemblyFile(50);
+    await page.goto('/');
+    await openAssemblyFixture(page, fixture);
+    const before = await readAssemblyStats(page);
+    await createOriginMate(page, '距離', '選択部品の原点', '10');
+    const after = await readAssemblyStats(page);
+    expect(before.components[0]?.fixed).toBe(true);
+    expect(before.components[1]?.fixed).toBe(false);
+    expect(after.components[0]?.resolved).toEqual(before.components[0]?.resolved);
+    expect(after.components[1]?.resolved).not.toEqual(before.components[1]?.resolved);
+    const fixed = after.components[0]?.resolved?.position;
+    const moved = after.components[1]?.resolved?.position;
+    if (fixed === undefined || moved === undefined) throw new Error('合致後の配置を取得できません。');
+    expect(Math.hypot(moved[0] - fixed[0], moved[1] - fixed[1], moved[2] - fixed[2])).toBeCloseTo(10, 5);
+    expect(errors).toEqual([]);
+  });
+
+  test('(c) 矛盾する合致を足すと原因の合致が木とプロパティで指される', async ({ page }) => {
+    const errors = collectBrowserErrors(page);
+    await disableFilePickers(page);
+    const fixture = await twoBoxAssemblyFile(40);
+    await page.goto('/');
+    await openAssemblyFixture(page, fixture);
+    await createOriginMate(page, '一致', '選択部品の原点');
+    await createOriginMate(page, '距離', '選択部品の原点', '10', 'failed');
+    const diagnosis = (await readAssemblyStats(page)).diagnosis;
+    expect(diagnosis?.converged).toBe(false);
+    expect(diagnosis?.provenConflictMateIds).toEqual([]);
+    expect(diagnosis?.suspectedConflictMateIds).toContain('mate-2');
+    const secondMate = treeSectionRows(page, '合致').nth(1);
+    await expect(secondMate.locator('.pcad-tree__badge')).toContainText('両立を確認できません');
+    await secondMate.locator('.pcad-tree__select').click();
+    await expect(page.locator('.pcad-property-list')).toContainText('両立を確認できません');
+    expect(errors).toEqual([]);
+  });
+
+  test('(f) 部品を差し替える前に不一致を予告し、確定後も合致2本を保つ', async ({ page }) => {
+    const errors = collectBrowserErrors(page);
+    await disableFilePickers(page);
+    const fixture = await replacementAssemblyFile();
+    const replacement = spherePartFile('差し替え球');
+    await page.goto('/');
+    await openAssemblyFixture(page, fixture, 'failed');
+    const before = await readAssemblyStats(page);
+    await installAssemblyFileGateway(page, { parts: [{ fileName: '差し替え球.pcad', bytes: replacement }] });
+    await selectComponent(page, 0);
+    await chooseComponentAction(page, '置換する');
+    const preview = page.getByRole('dialog', { name: '置換する' });
+    await expect(preview).toContainText('合致 2 本のうち 1 本');
+    const token = await beginRecompute(page);
+    await preview.getByRole('button', { name: '差し替える', exact: true }).click();
+    await waitForRecomputeCompletion(page, token, 'failed');
+    const after = await readAssemblyStats(page);
+    expect(after.mateIds).toEqual(['mate-1', 'mate-2']);
+    expect(after.components[0]?.sourceRef).not.toBe(before.components[0]?.sourceRef);
+    await expect(treeSectionRows(page, '合致')).toHaveCount(2);
+    const validMate = treeSectionRows(page, '合致').first();
+    await validMate.locator('.pcad-tree__select').click();
+    await expect(page.locator('.pcad-property-list')).toContainText('解決済み');
     expect(errors).toEqual([]);
   });
 });

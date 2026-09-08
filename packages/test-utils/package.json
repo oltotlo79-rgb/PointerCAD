@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./performance-sequencer": {
+      "types": "./dist/performanceSequencer.d.ts",
+      "default": "./src/performanceSequencer.ts"
     }
   },
   "scripts": {

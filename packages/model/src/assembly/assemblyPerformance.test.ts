@@ -441,6 +441,11 @@ describe('P7-18 20部品の一時位置目標（通常測定、UIのFPSとは別
       expect(outcome.hardSatisfied).toBe(true);
       expect(outcome.counts.totalIterations).toBeGreaterThan(0);
       expect(outcome.counts.totalIterations).toBeLessThanOrEqual(5);
+      // The damped drag system must stay on the bounded normal-equation path by default.
+      // Falling back to an augmented QR matrix here regresses a 20-part frame past 16ms.
+      expect(outcome.counts.qrFallbacks).toBe(0);
+      // At most one rejected soft trial plus one solve per bounded iteration.
+      expect(outcome.counts.linearTrials).toBeLessThanOrEqual(6);
       expect(outcome.variableCount).toBe(mode === 'floating' ? 120 : 114);
       const before = data.placements.get('19'), after = overlay.get('19');
       if (before === undefined || after === undefined) throw new Error('missing performance placement');

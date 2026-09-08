@@ -2,7 +2,7 @@ import { addComponent, createAssemblyDocument, createComponentFor, type Assembly
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { appendMateTarget, availableMateKinds, commitMate, createMateDraft, editMateDraft,
+import { appendMateTarget, availableMateKinds, commitJoint, commitMate, createMateDraft, editMateDraft,
   assemblyTargetId, parseAssemblyTargetId, mateKindNeedsValue, removeMate, toggleMateFlipped } from './mateCommands.js';
 
 function assembly(): AssemblyDocument {
@@ -149,5 +149,33 @@ describe('合致コマンド', () => {
     const document = assembly();
     expect(toggleMateFlipped(document, 'missing')).toBe(document);
     expect(removeMate(document, 'missing')).toBe(document);
+  });
+
+  it('ジョイントの可動範囲を式の原文と評価値で保存し、空欄は無制限にする', () => {
+    const document = assembly();
+    const base = appendMateTarget(appendMateTarget(createMateDraft('doc', 'coincident'),
+      { kind: 'origin', componentId: 'component-1', element: 'z' }, 'axis')!,
+    { kind: 'origin', componentId: 'component-2', element: 'z' }, 'axis')!;
+    const ranged = commitJoint(document, { ...base, jointKind: 'revolute', minSource: '10*3', maxSource: '60*2' });
+    expect(ranged).toMatchObject({ ok: true, joint: {
+      minValue: { source: '10*3', value: 30 }, maxValue: { source: '60*2', value: 120 },
+    } });
+    expect(commitJoint(document, { ...base, jointKind: 'revolute' })).toMatchObject({
+      ok: true, joint: { minValue: null, maxValue: null },
+    });
+  });
+
+  it.each([
+    ['unknown', '120'],
+    ['30', '1/0'],
+    ['120', '30'],
+  ])('不正なジョイント範囲 %s〜%s は文書を変えず断る', (minSource, maxSource) => {
+    const document = assembly();
+    const draft = appendMateTarget(appendMateTarget(createMateDraft('doc', 'coincident'),
+      { kind: 'origin', componentId: 'component-1', element: 'z' }, 'axis')!,
+    { kind: 'origin', componentId: 'component-2', element: 'z' }, 'axis')!;
+    expect(commitJoint(document, { ...draft, jointKind: 'revolute', minSource, maxSource }))
+      .toMatchObject({ ok: false, reason: 'range' });
+    expect(document.joints).toHaveLength(0);
   });
 });

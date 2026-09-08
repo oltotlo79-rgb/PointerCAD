@@ -8,12 +8,14 @@
 #   (2) pnpm run lint           -Level Commit / Push の両方
 #   (3) pnpm run test           -Level Commit / Push の両方
 #   (4) pnpm run build          -Level Commit / Push の両方
-#   (5) pnpm run test:e2e       -Level Push のときだけ(スクリプトが定義されている場合)
+#   (5) pnpm run test:e2e       -Level Push のときだけ(スクリプトが定義されている場合)。
+#       -E2ERepeats で、ほかの4段を重複させず同じE2Eを連続実行できる。
 # -Level Commit は `git worktree add --detach HEAD` で写しを作り、`git diff --cached` を
 # `git apply` で載せ、node_modules だけジャンクションで元へ向けてから写しの中で検査する
 # (並列作業中の他担当の未 stage な書きかけに影響されないため)。-Level Push は従来どおり
 # 作業ツリー全体を対象にする(並列編集が無い前提)。
 # 既定は -Level Push(全部)。pre-commit だけが -Level Commit を渡す。
+# 修正中の短いフィードバックには -E2EOnly と -E2EGrep を使えるが、最終合格の代用にはしない。
 # ルート package.json が無い間(P0未着手)は検査対象なしとして合格扱い。
 # typecheck / lint / test / build のスクリプト欠落は失敗(fail-closed)。
 # 検査の単一正本: CI(.github/workflows/ci.yml)とgitフックもこのスクリプトを実行する。
@@ -27,6 +29,12 @@ param(
     # Push  : 上記に E2E を足した5つ(pre-push、CI、統括の手動実行の既定)
     [ValidateSet("Commit", "Push")]
     [string]$Level = "Push",
+    [ValidateRange(1, 10)]
+    [int]$E2ERepeats = 1,
+    # 診断用: 1〜4段を省きE2Eだけを実行する。最終のPushゲートは必ずこの指定なしで通す。
+    [switch]$E2EOnly,
+    # -E2EOnly のときだけPlaywrightの--grepへ渡す。空なら全E2Eを実行する。
+    [string]$E2EGrep = "",
     # 診断用: 性能検査の判定モード(厳密/参考)の表示だけを行って終了する(pnpmは一切実行しない)。
     # 統括の動作確認、および scripts/check.selftest.ps1 からの検証に使う。
     [switch]$ShowPerfModeOnly
@@ -97,6 +105,14 @@ try {
     if ($ShowPerfModeOnly) {
         Write-Host "[診断] -ShowPerfModeOnly のため、性能検査の判定モード表示だけで終了します(pnpmは実行していません)" -ForegroundColor Yellow
         exit 0
+    }
+    if ($E2EOnly -and $Level -ne "Push") {
+        Write-Host "[NG] -E2EOnly は -Level Push の診断でだけ使えます" -ForegroundColor Red
+        exit 1
+    }
+    if (-not $E2EOnly -and -not [string]::IsNullOrWhiteSpace($E2EGrep)) {
+        Write-Host "[NG] -E2EGrep は -E2EOnly と一緒に指定してください" -ForegroundColor Red
+        exit 1
     }
 
     $packageJsonPath = Join-Path $root "package.json"
@@ -176,18 +192,37 @@ try {
         }
 
         $runE2E = $hasE2E
-        $totalChecks = 4
-        if ($runE2E) { $totalChecks = 5 }
-        Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
-        Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
-        Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
-        Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
+        if ($E2EOnly -and -not $runE2E) {
+            Write-Host "[NG] -E2EOnly を指定しましたが test:e2e スクリプトがありません" -ForegroundColor Red
+            exit 1
+        }
+        $totalChecks = if ($E2EOnly) { 1 } elseif ($runE2E) { 5 } else { 4 }
+        if ($E2EOnly) {
+            Write-Host "[診断] E2Eだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
+        }
+        else {
+            Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
+            Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
+            Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
+            Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
+        }
         if ($runE2E) {
             # Playwright のブラウザは初回だけ取得され、2回目以降は即座に終わる。
             # ここで面倒を見ることで .github/workflows/ci.yml を変えずに済み、
             # 検査の単一正本(rules/03-品質ゲート.md §7.2)を保てる。
             Invoke-Check "(準備) Playwright のブラウザ確認" pnpm @("exec", "playwright", "install", "chromium")
-            Invoke-Check "(5/$totalChecks) pnpm run test:e2e" pnpm @("run", "test:e2e")
+            for ($e2eRun = 1; $e2eRun -le $E2ERepeats; $e2eRun++) {
+                $repeatLabel = ""
+                if ($E2ERepeats -gt 1) { $repeatLabel = " ($e2eRun/$E2ERepeats)" }
+                $e2eArgs = @("run", "test:e2e")
+                if ($E2EOnly -and -not [string]::IsNullOrWhiteSpace($E2EGrep)) {
+                    # pnpm run はスクリプト名より後ろを直接転送する。ここに区切りの -- を足すと、
+                    # Playwright側で「以後はオプションではない」と解釈されgrepが効かなくなる。
+                    $e2eArgs += @("--grep", $E2EGrep)
+                }
+                $e2eStep = if ($E2EOnly) { 1 } else { 5 }
+                Invoke-Check "($e2eStep/$totalChecks) pnpm run test:e2e$repeatLabel" pnpm $e2eArgs
+            }
         }
 
         $afterSnapshot = Get-TrackedTreeSnapshot -Root $root -Level $Level
@@ -210,7 +245,12 @@ try {
     }
 
     Write-Host ""
-    Write-Host "[OK] 全ての検査に合格しました" -ForegroundColor Green
+    if ($E2EOnly) {
+        Write-Host "[OK] 指定したE2E診断に合格しました(最終のPushゲートには数えません)" -ForegroundColor Green
+    }
+    else {
+        Write-Host "[OK] 全ての検査に合格しました" -ForegroundColor Green
+    }
 }
 finally {
     Pop-Location

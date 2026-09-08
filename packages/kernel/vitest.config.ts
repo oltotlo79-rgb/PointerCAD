@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { PerformanceFirstSequencer } from '@pointercad/test-utils/performance-sequencer';
 
 export default defineConfig({
   test: {
@@ -14,6 +15,7 @@ export default defineConfig({
     // 同時に動く worker を1つに固定しテストファイルを順番に実行する。
     pool: 'forks',
     fileParallelism: false,
+    sequence: { sequencer: PerformanceFirstSequencer },
     // Vitest 4 の既定の表示は、端末以外(パイプ・リダイレクト・CI)へ出すとき
     // テストごとの console 出力を省く。OCCT の初期化時間を必ず記録に残すため、
     // 出力の形式を明示する。

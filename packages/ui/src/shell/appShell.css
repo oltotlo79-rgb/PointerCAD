@@ -2301,6 +2301,7 @@ button.pcad-tree__row:focus-visible {
 
 .pcad-viewport {
   position: relative;
+  isolation: isolate;
   min-width: 0;
   min-height: 0;
 
@@ -2310,6 +2311,7 @@ button.pcad-tree__row:focus-visible {
 
 .pcad-viewport__canvas {
   position: absolute;
+  z-index: 0;
   inset: 0;
   display: block;
   width: 100%;
@@ -2863,6 +2865,12 @@ button.pcad-tree__row:focus-visible {
   display: flex;
   gap: var(--pcad-space-2);
   justify-content: flex-end;
+}
+
+/* 合致の基準7個は小窓の幅に収める。横一列のままだと先頭がoverflowで裁断される。 */
+.pcad-popover__actions--mate-targets {
+  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 
 /* 決定は主たる操作なので、押していなくてもアクセントの淡い面で示す。 */

@@ -81,7 +81,8 @@ describe('合致の状態文', () => {
     documentId: 'doc', kind: 'coincident', targets: ([
       { kind: 'origin', componentId: 'a', element: 'origin' },
       { kind: 'origin', componentId: 'b', element: 'origin' },
-    ] as const).slice(0, count), targetKinds: (['point', 'point'] as const).slice(0, count), source: '', flipped: false, editingMateId: null,
+    ] as const).slice(0, count), targetKinds: (['point', 'point'] as const).slice(0, count), source: '',
+    flipped: false, editingMateId: null, minSource: '', maxSource: '',
   });
 
   it.each([[0, 'assembly.mate.pickFirst'], [1, 'assembly.mate.pickSecond'], [2, 'assembly.mate.ready']] as const)(

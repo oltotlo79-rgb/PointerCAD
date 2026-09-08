@@ -639,7 +639,9 @@ export async function checkInterference(
       let common: ReturnType<typeof intersectionVolume>;
       try {
         common = certifiedMesh !== null
-          ? intersectionVolume(oc, first, second, { glue: 'shift', collectHistory: false, nonInverted: true }) : intersectionVolume(oc, first, second);
+          ? intersectionVolume(oc, first, second, {
+            glue: 'shift', collectHistory: false, nonInverted: true, certifiedBoxOverlap: true,
+          }) : intersectionVolume(oc, first, second);
       }
       catch (error) { failures.push({ pair: job.pair, stage: 'common', code: 'occtException', message: detail(error) }); continue; }
       if (common.kind === 'failed') { failures.push({ ...common.failure, pair: job.pair, stage: 'common' }); continue; }

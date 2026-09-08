@@ -7,7 +7,9 @@ import {
 } from '@pointercad/model';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { AssemblyPropertyPanel, assemblyPropertyKey } from './AssemblyPropertyPanel.js';
+import {
+  AssemblyPropertyPanel, assemblyMatePropertyState, assemblyPropertyKey,
+} from './AssemblyPropertyPanel.js';
 import { AssemblyMotionControls } from './AssemblyMotionControls.js';
 
 const FRAME: JointFrame = { origin: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
@@ -51,5 +53,18 @@ describe('P7-22 joint sliders in both existing UI regions', () => {
     const kinds: readonly ('component' | 'mate' | 'joint' | 'step')[] = ['component', 'mate', 'joint', 'step'];
     expect(kinds.map((kind) => assemblyPropertyKey(kind, 'same')))
       .toEqual(['component:same', 'mate:same', 'joint:same', 'step:same']);
+  });
+
+  it('keeps proven, suspected, unresolved, and resolved mate states distinct', () => {
+    const diagnosis = {
+      provenConflictMateIds: ['proven'],
+      suspectedConflictMateIds: ['suspected'],
+      unresolvedMateIds: ['unresolved'],
+    };
+    expect(assemblyMatePropertyState('proven', false, diagnosis)).toBe('assembly.property.conflicting');
+    expect(assemblyMatePropertyState('suspected', false, diagnosis)).toBe('assembly.mate.suspected');
+    expect(assemblyMatePropertyState('unresolved', false, diagnosis)).toBe('assembly.property.unresolved');
+    expect(assemblyMatePropertyState('resolved', false, diagnosis)).toBe('assembly.property.resolved');
+    expect(assemblyMatePropertyState('suspected', true, diagnosis)).toBe('assembly.property.unresolved');
   });
 });

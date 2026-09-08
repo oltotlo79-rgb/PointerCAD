@@ -13,6 +13,8 @@ import {
 } from './solveRigid.js';
 
 type Placements = ReadonlyMap<string, RigidPlacement>;
+/** 拘束面から遠い候補が棄却された後、3倍を12回繰り返さず安全な縮小値へ直接進む。 */
+const DRAG_REJECTION_DAMPING_FLOOR = 1;
 export interface PreparedMateDrag {
   readonly componentId: string;
   readonly initial: Placements;
@@ -82,9 +84,11 @@ export function validDragPlacement(value: RigidPlacement): boolean {
 export function hardDragSatisfied(evaluation: RigidEvaluation, options: RigidSolveOptions): boolean {
   return evaluation.valid !== false && evaluation.constantConflict !== true
     && (evaluation.branchViolations?.length ?? 0) === 0
-    && evaluation.rows.every((row) => Number.isFinite(row.value)
-      && Number.isFinite(rigidRowTolerance(row, options)) && rigidRowTolerance(row, options) > 0
-      && Math.abs(row.value) < rigidRowTolerance(row, options));
+    && evaluation.rows.every((row) => {
+      const tolerance = rigidRowTolerance(row, options);
+      return Number.isFinite(row.value) && Number.isFinite(tolerance) && tolerance > 0
+        && Math.abs(row.value) < tolerance;
+    });
 }
 
 /** Validate the arithmetic consumed by LM, not just its unweighted input numbers. */
@@ -119,10 +123,11 @@ export function validDragEvaluation(
 export function mateDragRows(
   position: Vec3, target: Vec3, columns: readonly [number, number, number], length: number,
   weight = DRAG_PIN_WEIGHT,
+  gradients?: readonly ReadonlyMap<number, number>[],
 ): readonly RigidResidualRow[] {
   return columns.map((column, axis) => ({ unit: 'length', scale: 1 / length,
     value: weight * (position[axis] - target[axis]) / length,
-    gradient: new Map([[column, weight / length]]) }));
+    gradient: gradients?.[axis] ?? new Map([[column, weight / length]]) }));
 }
 
 class DragInterrupted extends Error {
@@ -255,6 +260,11 @@ export function solveMateDrag(drag: PreparedMateDrag, target: Vec3, request: Mat
     accepted = warmStart;
     acceptedEvaluation = warmEvaluation;
     interrupt();
+    const columns = ['tx', 'ty', 'tz'].map((axis) =>
+      drag.variableSet.variables.findIndex((variable) => variable.componentId === drag.componentId && variable.axis === axis));
+    if (columns.some((column) => column < 0)) throw new DragInterrupted('numericalFailure');
+    const driverColumns: [number, number, number] = [columns[0], columns[1], columns[2]];
+    const driverGradients = driverColumns.map((column) => new Map([[column, DRAG_PIN_WEIGHT / length]]));
     while (counts.totalIterations < budget) {
       const beforeError = errorAt(accepted, drag.componentId, target);
       if (beforeError.max < tolerance) { stop = 'targetReached'; break; }
@@ -262,8 +272,6 @@ export function solveMateDrag(drag: PreparedMateDrag, target: Vec3, request: Mat
       if (hardRows > 0 && budget - counts.totalIterations < 2) break;
       cycle += 1;
       const previousDamping = softDamping;
-      const columns = ['tx', 'ty', 'tz'].map((axis) => drag.variableSet.variables.findIndex((v) => v.componentId === drag.componentId && v.axis === axis));
-      if (columns.some((column) => column < 0)) throw new DragInterrupted('numericalFailure');
       const soft = solveRigid({ initial: accepted, variables: drag.variables, retract,
         preserveZeroColumns: true, dampingCeilings,
         branchCandidates: drag.branchCandidates, observer: observer('soft'),
@@ -272,13 +280,14 @@ export function solveMateDrag(drag: PreparedMateDrag, target: Vec3, request: Mat
           const evaluation = evaluateHard(base, increments);
           const placement = base.get(drag.componentId);
           if (placement === undefined) throw new DragInterrupted('numericalFailure');
-          const point: Vec3 = [placement.position[0] + increments[columns[0]],
-            placement.position[1] + increments[columns[1]], placement.position[2] + increments[columns[2]]];
-          const rows = mateDragRows(point, target, [columns[0], columns[1], columns[2]], length);
+          const point: Vec3 = [placement.position[0] + increments[driverColumns[0]],
+            placement.position[1] + increments[driverColumns[1]], placement.position[2] + increments[driverColumns[2]]];
+          const rows = mateDragRows(point, target, driverColumns, length, DRAG_PIN_WEIGHT, driverGradients);
           const combined = { ...evaluation, rows: [...evaluation.rows, ...rows] };
           if (!validDragEvaluation(combined, drag.variables, drag.options)) throw new DragInterrupted('numericalFailure');
           return combined;
-        }, options: { ...drag.options, maxIterations: 1, initialDamping: softDamping } });
+        }, options: { ...drag.options, maxIterations: 1, initialDamping: softDamping,
+          rejectionDampingFloor: DRAG_REJECTION_DAMPING_FLOOR } });
       softDamping = soft.damping;
       // A stalled soft solve alone is not evidence of a completed projected stationary step.
       if (!soft.trace.some((record) => record.accepted)) { stop = 'stalled'; break; }

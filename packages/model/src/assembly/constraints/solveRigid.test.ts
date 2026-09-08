@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { CONSTRAINT_INITIAL_DAMPING } from '../../sketch/constraints/solve.js';
 import {
-  rigidRowTolerance, scaledRigidJacobian, solveRigid, type RigidResidualRow, type RigidSolveInput, type RigidIterationRecord,
+  rigidRowTolerance, scaledRigidJacobian, solvePositiveDefinite, solveRigid,
+  type RigidResidualRow, type RigidSolveInput, type RigidIterationRecord,
 } from './solveRigid.js';
 
 function row(value: number, gradient: readonly number[], unit: 'length' | 'angle' = 'length', scale = 1): RigidResidualRow {
@@ -84,6 +86,45 @@ describe('P7-18 opt-inの作業量と収束', () => {
       expect(result.base).toEqual([0]);
       expect(result.trace).toEqual([]);
     }
+  });
+  it('遠いdriverは最初の棄却後だけ減衰床へ跳び、近い通常解の初期減衰は変えない', () => {
+    const input = problem([0.1], ([x]) => [row(x * x - 1, [2 * x])]);
+    const ordinary = solveRigid({ ...input, options: { ...input.options, maxIterations: 1 } });
+    const driver = solveRigid({ ...input, options: { ...input.options, maxIterations: 1, rejectionDampingFloor: 1 } });
+    expect(driver.trace[0]?.accepted).toBe(false);
+    expect(driver.trace[0]?.damping).toBe(CONSTRAINT_INITIAL_DAMPING);
+    expect(driver.trace[1]?.damping).toBe(1);
+    expect(driver.trace.some((entry) => entry.accepted)).toBe(true);
+    expect(driver.trace.length).toBeLessThan(ordinary.trace.length);
+  });
+  it.each([0, -1, NaN, Infinity])('不正な棄却後減衰床%sは演算前に拒否する', (rejectionDampingFloor) => {
+    const input = problem([0], ([x]) => [row(x - 1, [1])]);
+    const result = solveRigid({ ...input, options: { ...input.options, rejectionDampingFloor } });
+    expect(result.stop).toBe('stalled');
+    expect(result.iterations).toBe(0);
+    expect(result.trace).toEqual([]);
+  });
+});
+
+describe('アセンブリ正規方程式のコレスキー分解', () => {
+  it('下三角だけを使って3元の既知解を返す', () => {
+    const lowerOnly = new Float64Array([
+      6, Number.NaN, Number.NaN,
+      2, 5, Number.NaN,
+      1, 2, 4,
+    ]);
+    const actual = solvePositiveDefinite(lowerOnly, new Float64Array([5, -2, 9]), 3);
+    expect(actual).not.toBeNull();
+    expect(actual?.[0]).toBeCloseTo(1, 12);
+    expect(actual?.[1]).toBeCloseTo(-2, 12);
+    expect(actual?.[2]).toBeCloseTo(3, 12);
+  });
+
+  it('正定値でない行列と不正な寸法はnullを返してQR退避を許す', () => {
+    expect(solvePositiveDefinite(new Float64Array([1, 0, 2, 1]), new Float64Array(2), 2)).toBeNull();
+    expect(solvePositiveDefinite(new Float64Array(3), new Float64Array(2), 2)).toBeNull();
+    expect(solvePositiveDefinite(new Float64Array(4), new Float64Array(1), 2)).toBeNull();
+    expect(solvePositiveDefinite(new Float64Array(0), new Float64Array(0), 0)).toEqual(new Float64Array(0));
   });
 });
 

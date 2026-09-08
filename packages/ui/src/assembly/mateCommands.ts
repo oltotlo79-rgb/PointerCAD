@@ -2,6 +2,7 @@ import { evaluateExpression, type ExpressionError, type ExpressionValue } from '
 import {
   assemblyVariables,
   findComponent,
+  nonLengthVariables,
   resolveMateTarget,
   selectMateTargetGeometry,
   nextMateId,
@@ -31,6 +32,10 @@ export interface AssemblyMateDraft {
   readonly issue?: string | null;
   /** 指定時は同じ2対象の収集UIをジョイント作成に使う。 */
   readonly jointKind?: JointKind;
+  /** 空欄は下限なし。入力した式は再編集できるよう原文を保存する。 */
+  readonly minSource: string;
+  /** 空欄は上限なし。入力した式は再編集できるよう原文を保存する。 */
+  readonly maxSource: string;
 }
 
 export interface MateFacePick {
@@ -46,10 +51,11 @@ export type MateCommandOutcome =
 
 export type JointCommandOutcome =
   | { readonly ok: true; readonly document: AssemblyDocument; readonly joint: Joint }
-  | { readonly ok: false; readonly reason: 'targets' | 'sameComponent' | 'kind' | 'stale'; readonly message?: string };
+  | { readonly ok: false; readonly reason: 'targets' | 'sameComponent' | 'kind' | 'range' | 'stale'; readonly error?: ExpressionError; readonly message?: string };
 
 export function createMateDraft(documentId: string, kind: MateKind): AssemblyMateDraft {
-  return { documentId, kind, targets: [], targetKinds: [], source: defaultMateSource(kind), flipped: false, editingMateId: null, mode: 'command' };
+  return { documentId, kind, targets: [], targetKinds: [], source: defaultMateSource(kind), flipped: false,
+    editingMateId: null, mode: 'command', minSource: '', maxSource: '' };
 }
 
 export function editMateDraft(documentId: string, mate: Mate): AssemblyMateDraft {
@@ -63,6 +69,8 @@ export function editMateDraft(documentId: string, mate: Mate): AssemblyMateDraft
     editingMateId: mate.id,
     mode: 'command',
     alignmentChosen: true,
+    minSource: '',
+    maxSource: '',
   };
 }
 
@@ -194,17 +202,43 @@ export function commitJoint(document: AssemblyDocument, draft: AssemblyMateDraft
     const component = findComponent(document, target.componentId);
     return component === undefined || component.suppressed;
   })) return { ok: false, reason: 'stale' };
+  const range = jointRangeFromSource(document, draft.minSource, draft.maxSource);
+  if (!range.ok) return range;
   const joint: Joint = {
     id: nextJointId(document),
     name: t('assembly.joint.defaultName').replace('{count}', String(document.joints.length + 1)),
     kind,
     a,
     b,
-    minValue: null,
-    maxValue: null,
+    minValue: range.minValue,
+    maxValue: range.maxValue,
     suppressed: false,
   };
   return { ok: true, document: { ...document, joints: [...document.joints, joint] }, joint };
+}
+
+function jointRangeFromSource(
+  document: AssemblyDocument,
+  minSource: string,
+  maxSource: string,
+): { readonly ok: true; readonly minValue: ExpressionValue | null; readonly maxValue: ExpressionValue | null }
+  | { readonly ok: false; readonly reason: 'range'; readonly error?: ExpressionError; readonly message?: string } {
+  const variables = assemblyVariables(document);
+  const dimensionless = nonLengthVariables(document.parameters);
+  const evaluateBound = (source: string): { readonly ok: true; readonly value: ExpressionValue | null }
+    | { readonly ok: false; readonly error: ExpressionError } => {
+    if (source.trim() === '') return { ok: true, value: null };
+    const result = evaluateExpression(source, { variables, nonLengthVariables: dimensionless });
+    return result.ok ? { ok: true, value: result.value } : result;
+  };
+  const min = evaluateBound(minSource);
+  if (!min.ok) return { ok: false, reason: 'range', error: min.error };
+  const max = evaluateBound(maxSource);
+  if (!max.ok) return { ok: false, reason: 'range', error: max.error };
+  if (min.value !== null && max.value !== null && min.value.value > max.value.value) {
+    return { ok: false, reason: 'range', message: t('assembly.joint.invalidRange') };
+  }
+  return { ok: true, minValue: min.value, maxValue: max.value };
 }
 
 export function removeMate(document: AssemblyDocument, mateId: string): AssemblyDocument {

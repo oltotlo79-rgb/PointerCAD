@@ -11,6 +11,8 @@ import { attachAssembly } from '../assembly/attachAssembly.js';
 import { attachAssemblyInterference } from '../assembly/attachAssemblyInterference.js';
 import { activeDocumentKind, type DocumentKind } from '../store/documentKind.js';
 import { startAutoSave } from '../file/attachAutoSave.js';
+import type { FileGateway } from '../file/fileGateway.js';
+import { setFileGateway } from '../file/installFileGateway.js';
 import { createPartExchanger } from '../file/partExchanger.js';
 import { attachDisplaySettings } from '../shell/applyDisplaySettings.js';
 import { AppShell } from '../shell/AppShell.js';
@@ -41,6 +43,29 @@ interface RecomputeStats {
   readonly lastOutcome: RecomputeOutcome;
 }
 
+interface AssemblyTestStats {
+  readonly components: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly fixed: boolean;
+    readonly sourceKind: string;
+    readonly sourceRef: string;
+    readonly resolved: { readonly position: readonly number[]; readonly rotation: readonly number[] } | null;
+    readonly displayed: { readonly position: readonly number[]; readonly rotation: readonly number[] } | null;
+  }[];
+  readonly mateIds: readonly string[];
+  readonly jointIds: readonly string[];
+  readonly stepIds: readonly string[];
+  readonly diagnosis: {
+    readonly converged: boolean;
+    readonly provenConflictMateIds: readonly string[];
+    readonly suspectedConflictMateIds: readonly string[];
+    readonly unresolvedMateIds: readonly string[];
+  } | null;
+  readonly jointValues: readonly { readonly key: string; readonly value: number }[];
+  readonly interferenceSelectedKey: string | null;
+}
+
 declare global {
   interface Window {
     /**
@@ -48,6 +73,12 @@ declare global {
      * 頁を開いてから `PointerCadApp` が載るまでの間は `undefined`。
      */
     pcadRecomputeStats?: () => RecomputeStats;
+    /** E2E専用。VITE_PCAD_E2E=1 のビルドだけが設定する。 */
+    pcadSetFileGateway?: (gateway: FileGateway) => void;
+    /** E2E専用。試験で差し替えたファイル口を起動時の値へ戻す。 */
+    pcadResetFileGateway?: () => void;
+    /** E2E専用。保存値を書き換えず、解決済み・表示中の組立状態を読む。 */
+    pcadAssemblyStats?: () => AssemblyTestStats;
   }
 }
 
@@ -63,6 +94,7 @@ declare global {
 export function PointerCadApp(): React.JSX.Element {
   useEffect(() => {
     const bridge = createKernelBridge();
+    const initialFileGateway = useAppStore.getState().fileGateway;
     window.pcadRecomputeStats = () => {
       const state = useAppStore.getState();
       return {
@@ -75,6 +107,44 @@ export function PointerCadApp(): React.JSX.Element {
         lastOutcome: state.lastOutcome,
       };
     };
+    if (import.meta.env.VITE_PCAD_E2E === '1') {
+      window.pcadSetFileGateway = setFileGateway;
+      window.pcadResetFileGateway = () => { setFileGateway(initialFileGateway); };
+      window.pcadAssemblyStats = () => {
+        const state = useAppStore.getState();
+        const assembly = state.assembly;
+        const view = state.assemblyView;
+        const displayed = state.assemblyMotionPlacements !== null
+          && state.assemblyMotionSourceDocument === assembly
+          ? state.assemblyMotionPlacements : view?.resolved.placements;
+        return {
+          components: (assembly?.components ?? []).map((component) => {
+            const source = component.source;
+            const sourceRef = source.kind === 'part' ? source.partRef
+              : source.kind === 'subAssembly' ? source.assemblyRef : `${source.catalog}/${source.size}`;
+            const resolved = view?.resolved.placements.get(component.id);
+            const shown = displayed?.get(component.id);
+            return {
+              id: component.id, name: component.name, fixed: component.fixed,
+              sourceKind: source.kind, sourceRef,
+              resolved: resolved === undefined ? null : { position: [...resolved.position], rotation: [...resolved.rotation] },
+              displayed: shown === undefined ? null : { position: [...shown.position], rotation: [...shown.rotation] },
+            };
+          }),
+          mateIds: assembly?.mates.map((mate) => mate.id) ?? [],
+          jointIds: assembly?.joints.map((joint) => joint.id) ?? [],
+          stepIds: assembly?.presentation.map((step) => step.id) ?? [],
+          diagnosis: view?.diagnosis === null || view?.diagnosis === undefined ? null : {
+            converged: view.diagnosis.converged,
+            provenConflictMateIds: [...view.diagnosis.provenConflictMateIds],
+            suspectedConflictMateIds: [...view.diagnosis.suspectedConflictMateIds],
+            unresolvedMateIds: [...view.diagnosis.unresolvedMateIds],
+          },
+          jointValues: [...state.assemblyMotionJointValues].map(([key, value]) => ({ key, value })),
+          interferenceSelectedKey: state.assemblyInterferenceSelectedKey,
+        };
+      };
+    }
     const detachAssembly = attachAssembly(bridge);
     const detachAssemblyInterference = attachAssemblyInterference(bridge);
     // オフセット(FR-321、タスク15・21)の計算済みの結果を持ち回る。1 つ作って渡さないと
@@ -179,6 +249,9 @@ export function PointerCadApp(): React.JSX.Element {
       detachAssemblyInterference();
       detachAssembly();
       delete window.pcadRecomputeStats;
+      delete window.pcadSetFileGateway;
+      delete window.pcadResetFileGateway;
+      delete window.pcadAssemblyStats;
       bridge.dispose();
     };
   }, []);

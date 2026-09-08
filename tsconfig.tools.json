@@ -10,6 +10,12 @@
   // まだ1つも無い段階でも tsc --build が通り、かつ include はそのまま残るので
   // 後続タスクで *.config.ts / e2e/**/*.ts が増えたら自動で型検査に入る。
   "files": [],
+  "references": [
+    { "path": "./packages/test-utils" },
+    { "path": "./packages/expression" },
+    { "path": "./packages/model" },
+    { "path": "./packages/io" }
+  ],
   "include": [
     "*.config.ts",
     "packages/*/*.config.ts",

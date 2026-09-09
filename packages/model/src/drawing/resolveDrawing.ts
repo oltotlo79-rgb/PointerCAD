@@ -1,9 +1,10 @@
 import type { DrawingDocument, DrawingSource, DrawingView, Point2, Vector3 } from '@pointercad/drawing';
-import { clipCurves, type ClipRegion } from '@pointercad/drawing';
+import { clipCurves, drawingViewBasis, type ClipRegion } from '@pointercad/drawing';
 import { resolvePlaneSpec, type PlaneResolveContext, type PlaneSpec, type ResolvedPlane } from '../geometry/planeSpec.js';
 import { resolveAuxiliaryDirection } from './viewDirection.js';
 import { validateSectionSpec, type SectionSpec } from './sectionSpec.js';
 import type { RigidPlacement } from '../assembly/placementMath.js';
+import type { DrawingDimensionInstance } from './dimensionTarget.js';
 
 export interface DrawingInstance {
   readonly bodyId: string;
@@ -22,6 +23,7 @@ export interface DrawingProjectionCurve {
 }
 
 export interface DrawingSourceResolution {
+  readonly dimensionInstances?: readonly DrawingDimensionInstance[];
   readonly bodyIds: readonly string[];
   readonly instances?: readonly DrawingInstance[];
   /** 部品座標での中心。図ごとに投影して用紙の図中心へ合わせる(FR-702)。 */
@@ -166,11 +168,22 @@ export async function resolveDrawing(
   let source: DrawingSourceResolution;
   try { source = await kernel.prepareDrawingSource(document.source); }
   catch (error) { return { ok: false, message: error instanceof Error ? error.message : '図にできる立体がありません。' }; }
+  return resolveDrawingWithSource(document, kernel, source, options);
+}
+
+/** 再評価済みの同じ元形状を投影と寸法の双方へ使う。 */
+export async function resolveDrawingWithSource(
+  document: DrawingDocument, kernel: DrawingResolveKernel, source: DrawingSourceResolution,
+  options: DrawingResolutionOptions = {},
+): Promise<ResolvedDrawing> {
   if (source.bodyIds.length === 0) return { ok: false, message: '図にできる立体がありません。' };
   const effectiveViews: DrawingView[] = [];
   const sections = new Map<string, DrawingSectionRequest>();
   for (const original of document.views) {
     let view = original;
+    if (drawingViewBasis({ normal: view.direction, xDir: view.xDir }) === null) {
+      return { ok: false, message: 'この向きでは図を作れません。' };
+    }
     const auxiliary = options.auxiliary?.[view.id];
     if (auxiliary !== undefined) {
       if (options.planeContext === undefined) return { ok: false, message: 'この面からは向きが決まりません。' };
@@ -251,19 +264,16 @@ export async function resolveDrawing(
 }
 
 function projectionRequest(id: string, view: DrawingView): DrawingProjectionRequest['views'][number] {
-  return { id, origin: [0, 0, 0], normal: view.direction, xDir: view.xDir, includeHidden: view.showHidden, mode: 'precise' };
+  const opposite = (value: number): number => value === 0 ? 0 : -value;
+  return { id, origin: [0, 0, 0], normal: [opposite(view.direction[0]), opposite(view.direction[1]), opposite(view.direction[2])], xDir: view.xDir, includeHidden: view.showHidden, mode: 'precise' };
 }
 
 function projectedCenter(center: Vector3, view: DrawingView): Point2 {
-  const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  const normalLength = Math.hypot(...view.direction);
-  const n: Vector3 = [view.direction[0] / normalLength, view.direction[1] / normalLength, view.direction[2] / normalLength];
-  const along = dot(view.xDir, n);
-  const projected: Vector3 = [view.xDir[0] - along * n[0], view.xDir[1] - along * n[1], view.xDir[2] - along * n[2]];
-  const length = Math.hypot(...projected);
-  const u: Vector3 = [projected[0] / length, projected[1] / length, projected[2] / length];
-  const v: Vector3 = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
-  return [dot(center, u), dot(center, v)];
+  // DrawingView.directionは見る向き。OCCTの投影平面法線はその反対。
+  const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
+  if (basis === null) throw new Error('この向きでは図を作れません。');
+  const dot = (axis: Vector3): number => axis[0] * center[0] + axis[1] * center[1] + axis[2] * center[2];
+  return [dot(basis.x), dot(basis.y)];
 }
 
 /** テスト・文書破棄時に、そのカーネルの投影記憶だけを捨てる。 */

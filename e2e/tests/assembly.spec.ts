@@ -251,6 +251,15 @@ async function measureViewportFps(page: Page): Promise<{
   expect(after.lastCompletedAtMs).toBeGreaterThanOrEqual(startedAtMs);
   const completedRenders = after.completedRenders - before.completedRenders;
   const elapsedMs = endedAtMs - startedAtMs;
+  const webgl = await canvas.evaluate((element: HTMLCanvasElement) => {
+    const gl = element.getContext('webgl2');
+    if (gl === null) return null;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    return { renderer: String(info === null ? gl.getParameter(gl.RENDERER) : gl.getParameter(info.UNMASKED_RENDERER_WEBGL)),
+      width: gl.drawingBufferWidth, height: gl.drawingBufferHeight };
+  });
+  // 起動引数を変えた結果、手元だけ実GPUへ逃げて合格することを防ぐ。
+  expect(webgl?.renderer).toMatch(/SwiftShader/i);
   console.log('[描画診断]', JSON.stringify({
     sceneRenderMs: after.totalSceneRenderMs - before.totalSceneRenderMs,
     drawListenerMs: after.totalDrawListenerMs - before.totalDrawListenerMs,
@@ -258,13 +267,7 @@ async function measureViewportFps(page: Page): Promise<{
     averageMoveMs: moveDurations.reduce((sum, ms) => sum + ms, 0) / moveDurations.length,
     maxMoveMs: Math.max(...moveDurations),
     completedRenders, elapsedMs,
-    webgl: await canvas.evaluate((element: HTMLCanvasElement) => {
-      const gl = element.getContext('webgl2');
-      if (gl === null) return null;
-      const info = gl.getExtension('WEBGL_debug_renderer_info');
-      return { renderer: info === null ? gl.getParameter(gl.RENDERER) : gl.getParameter(info.UNMASKED_RENDERER_WEBGL),
-        width: gl.drawingBufferWidth, height: gl.drawingBufferHeight };
-    }),
+    webgl,
   }));
   return { fps: completedRenders * 1_000 / elapsedMs, completedRenders, elapsedMs };
 }

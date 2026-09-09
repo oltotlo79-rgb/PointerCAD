@@ -461,10 +461,13 @@ function buildGrid(facts: MeshFacts, ranges: Int32Array, plan: GridPlan): Packed
   return { plan, cellStart, items };
 }
 
-function boundsOverlap(a: Float64Array, ao: number, b: Float64Array, bo: number): boolean {
-  return a[ao] <= b[bo + 3] && b[bo] <= a[ao + 3]
-    && a[ao + 1] <= b[bo + 4] && b[bo + 1] <= a[ao + 4]
-    && a[ao + 2] <= b[bo + 5] && b[bo + 2] <= a[ao + 5];
+/** 最も薄い軸から棄却する。平面状の三角形では面の向きに関係なく候補を早く落とせる。 */
+function boundsOverlap(a: Float64Array, ao: number, b: Float64Array, bo: number, firstAxis: number): boolean {
+  if (a[ao + firstAxis] > b[bo + firstAxis + 3] || b[bo + firstAxis] > a[ao + firstAxis + 3]) return false;
+  const secondAxis = (firstAxis + 1) % 3;
+  if (a[ao + secondAxis] > b[bo + secondAxis + 3] || b[bo + secondAxis] > a[ao + secondAxis + 3]) return false;
+  const thirdAxis = (firstAxis + 2) % 3;
+  return a[ao + thirdAxis] <= b[bo + thirdAxis + 3] && b[bo + thirdAxis] <= a[ao + thirdAxis + 3];
 }
 
 /**
@@ -508,6 +511,10 @@ export function findTriangleOverlaps(
     let copiedB = false;
     const stamp = bTriangle + 1;
     const rangeOffset = bTriangle * 6;
+    const bx = b.bounds[rangeOffset + 3] - b.bounds[rangeOffset];
+    const by = b.bounds[rangeOffset + 4] - b.bounds[rangeOffset + 1];
+    const bz = b.bounds[rangeOffset + 5] - b.bounds[rangeOffset + 2];
+    const firstAxis = bx <= by && bx <= bz ? 0 : by <= bz ? 1 : 2;
     for (let z = rangesB[rangeOffset + 4]; z <= rangesB[rangeOffset + 5]; z += 1) {
       for (let y = rangesB[rangeOffset + 2]; y <= rangesB[rangeOffset + 3]; y += 1) {
         for (let x = rangesB[rangeOffset]; x <= rangesB[rangeOffset + 1]; x += 1) {
@@ -517,7 +524,7 @@ export function findTriangleOverlaps(
             if (seen[aTriangle] === stamp) continue;
             seen[aTriangle] = stamp;
             candidatePairCount += 1;
-            if (!boundsOverlap(a.bounds, aTriangle * 6, b.bounds, bTriangle * 6)) continue;
+            if (!boundsOverlap(a.bounds, aTriangle * 6, b.bounds, rangeOffset, firstAxis)) continue;
             testedPairCount += 1;
             copyTriangle(a, aTriangle, triangleA);
             if (!copiedB) {

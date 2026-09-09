@@ -400,6 +400,10 @@ export const createDocumentSlice: StateCreator<
     });
   },
   undo: () => {
+    if (activeDocumentKind(get()) === 'drawing') {
+      get().undoDrawing();
+      return;
+    }
     if (activeDocumentKind(get()) === 'assembly') {
       get().undoAssembly();
       return;
@@ -433,6 +437,10 @@ export const createDocumentSlice: StateCreator<
     });
   },
   redo: () => {
+    if (activeDocumentKind(get()) === 'drawing') {
+      get().redoDrawing();
+      return;
+    }
     if (activeDocumentKind(get()) === 'assembly') {
       get().redoAssembly();
       return;

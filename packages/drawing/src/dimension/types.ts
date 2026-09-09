@@ -53,6 +53,8 @@ export interface Dimension {
   readonly targets: readonly DimensionTarget[];
   readonly placement: DimensionPlacement;
   readonly tolerance?: DimensionTolerance;
+  /** 許容差は公称寸法ごとに引き直す。表から導出する上下偏差は保存しない。 */
+  readonly fit?: { readonly symbol: string; readonly showDeviation: boolean };
   readonly prefix?: string;
   readonly suffix?: string;
   readonly reference: boolean;

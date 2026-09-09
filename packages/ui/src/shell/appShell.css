@@ -2469,7 +2469,7 @@ button.pcad-tree__row:focus-visible {
 }
 
 .pcad-drawing-sheet {
-  width: min(78vw, 840px);
+  width: min(94%, 1100px);
   aspect-ratio: 420 / 297;
   display: grid;
   place-items: center;
@@ -2477,7 +2477,19 @@ button.pcad-tree__row:focus-visible {
   background: #fff;
   border: 1px solid #727984;
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  touch-action: none;
 }
+
+.pcad-drawing-svg { width: 100%; }
+.pcad-drawing-tree-dimension { width: 100%; justify-content: flex-start; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.pcad-drawing-tools { position: relative; }
+.pcad-drawing-tools > summary { cursor: pointer; white-space: nowrap; padding: 6px; }
+.pcad-drawing-tools > .pcad-menu__panel { position: absolute; left: 0; right: auto; z-index: 30; display: grid; min-width: 150px; }
+.pcad-drawing-svg > svg { display: block; width: 100%; height: auto; }
+.pcad-drawing-notice { position: absolute; bottom: 8px; left: 16px; color: var(--pcad-text); background: var(--pcad-surface); padding: 8px; }
+.pcad-drawing-input { position: absolute; z-index: 20; right: 16px; top: 16px; display: grid; gap: 8px; width: 240px; padding: 12px; color: var(--pcad-text); background: var(--pcad-surface); border: 1px solid var(--pcad-border); border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / 18%); }
+.pcad-drawing-input label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pcad-drawing-input input:not([type="checkbox"]), .pcad-drawing-input select { max-width: 140px; min-width: 0; }
 
 /*
  * 吸い付いている場所の印(FR-107)。位置は画素値で style から与える

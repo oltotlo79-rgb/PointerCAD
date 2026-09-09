@@ -5,6 +5,7 @@
  */
 
 import {
+  DrawingSheetIcon,
   ExportIcon,
   ImportIcon,
   LayersIcon,
@@ -38,6 +39,7 @@ import type { ToolMenuItem } from './menuItem.js';
  *   `fileMenuItems` が接頭辞つきの id で組み立てる。
  */
 export type FileMenuActionId =
+  | 'newDrawingFromPart'
   | 'newAssembly'
   | 'saveAs'
   | 'exportShape'
@@ -58,6 +60,7 @@ export type FileMenuActionId =
  * 画面を見るだけで見つかる(NFR-UX-7)。Shift 押しと Ctrl+Shift+S はそのまま残す。
  */
 export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
+  { id: 'newDrawingFromPart', labelKey: 'drawing.file.fromPart', tooltipKey: 'drawing.file.fromPart', Icon: DrawingSheetIcon },
   {
     id: 'newAssembly',
     labelKey: 'assembly.file.new',

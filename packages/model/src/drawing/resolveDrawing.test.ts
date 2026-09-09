@@ -169,7 +169,7 @@ describe('resolveDrawing', () => {
     await resolveDrawing(documentWith([{ ...baseView, kind: 'auxiliary' }]), fake.kernel, {
       planeContext: context, auxiliary: { front: { plane: section.plane, originalViewV: [0, 0, 1] } },
     });
-    expect(fake.calls[0]?.views[0]).toMatchObject({ normal: [0, -1, 0], xDir: [0, 0, 1] });
+    expect(fake.calls[0]?.views[0]).toMatchObject({ normal: [0, 1, 0], xDir: [0, 0, 1] });
   });
 
   it('部分投影の輪郭は生の投影座標で切り、線の出自を保って用紙へ置く', async () => {
@@ -186,7 +186,7 @@ describe('resolveDrawing', () => {
     const fake = fakeKernel();
     fake.kernel.prepareDrawingSource = () => Promise.resolve({ bodyIds: ['body-1'], center: [5, 20, 30] });
     const result = await resolveDrawing(documentWith([{ ...baseView, direction: [1, 0, 0], xDir: [0, 1, 0] }]), fake.kernel);
-    expect(result.ok && result.views[0]?.visible[0]?.curve).toMatchObject({ from: [80, 70], to: [90, 70] });
+    expect(result.ok && result.views[0]?.visible[0]?.curve).toMatchObject({ from: [80, 130], to: [90, 130] });
   });
 
   it('切断指定のない断面を通常図として黙って作らない', async () => {

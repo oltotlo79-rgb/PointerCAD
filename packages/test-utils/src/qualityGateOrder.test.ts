@@ -65,7 +65,8 @@ describe('品質ゲートのテスト実行順', () => {
     const functional = config.slice(config.indexOf("name: 'functional'"));
     expect(config).toContain('const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個/u;');
     expect(performance).toContain('grep: VIEWPORT_PERFORMANCE_TEST');
-    expect(performance).toContain("args: ['--use-angle=swiftshader']");
+    expect(performance).toContain("args: ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader']");
+    expect(performance).not.toContain("'--use-angle=swiftshader'");
     expect(functional).toContain('grepInvert: VIEWPORT_PERFORMANCE_TEST');
     expect(functional).toContain("dependencies: ['viewport-performance']");
     expect(config).toContain('workers: 2');

@@ -736,7 +736,7 @@ export interface SolidFaceInfo {
   readonly centroid: Vec3Tuple;
   /** 平面は法線、円柱・円錐は軸。求まらなければ null。 */
   readonly axis: Vec3Tuple | null;
-  /** 円筒・円錐の解析軸上点(mm)。重心と異なる。収集結果では他の面は null。 */
+  /** 円筒・円錐の解析軸上点または球の解析中心(mm)。面積重心と異なる。他の面は null。 */
   readonly axisOrigin?: Vec3Tuple | null;
   /** 円柱・円錐・球の半径(mm)。平面では null。 */
   readonly radius: number | null;

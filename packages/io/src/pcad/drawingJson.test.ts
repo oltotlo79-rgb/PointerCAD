@@ -75,6 +75,25 @@ describe('図面 document.json', () => {
     const result = parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT }));
     expect(result).toEqual({ ok: true, document, savedAt: SAVED_AT, kind: 'drawing' });
   });
+  it('はめあい記号を保存し、寸法依存の上下偏差は保存しない', () => {
+    const base = populatedDrawing(), document = { ...base, dimensions: [{ ...base.dimensions[0], fit: { symbol: 'H7', showDeviation: true } }] };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT }))).toMatchObject({ ok: true, document });
+    expect(serializeDrawing(document, { savedAt: SAVED_AT })).not.toContain('"upper"');
+  });
+  it('表面性状の式・面への保存参照とねじ注記のフィーチャー参照を往復する', () => {
+    const base = populatedDrawing();
+    const document: DrawingDocument = { ...base, annotations: [
+      { ...base.annotations[0], kind: 'surfaceFinish', sourceTarget: base.dimensions[0].targets[0],
+        surfaceFinish: { process: 'removal', parameter: 'Ra', value: { source: '3.2', value: 3.2, display: '3.2' } } },
+      { ...base.annotations[0], id: 'note-2', kind: 'leaderNote', sourceTarget: base.dimensions[0].targets[0], machiningFeatureId: 'thread-1' },
+    ] };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT }))).toMatchObject({ ok: true, document });
+  });
+  it('はめあいと手動公差を同時に持つファイルを断る', () => {
+    const base = populatedDrawing(), document = { ...base, dimensions: [{ ...base.dimensions[0], fit: { symbol: 'H7', showDeviation: true },
+      tolerance: { kind: 'symmetric' as const, value: 0.1 } }] };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT })).ok).toBe(false);
+  });
 
   it('公差の式と数値の混在を保存して読み直す', () => {
     const base = populatedDrawing();

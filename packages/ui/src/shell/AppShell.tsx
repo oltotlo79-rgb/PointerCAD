@@ -16,6 +16,7 @@ import {
   windowTitle,
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
+import { commitDrawingDimension, deleteSelectedDrawingElements } from '../drawing/dimensionCommands.js';
 import {
   DrawingPropertyPanel,
   DrawingStatusBar,
@@ -192,6 +193,17 @@ export function AppShell(): React.JSX.Element {
      */
     const onKeyDown = (event: KeyboardEvent): void => {
       if (activeDocumentKind(useAppStore.getState()) === 'drawing') {
+        if (isTextEntry(event.target) || event.altKey) return;
+        const state = useAppStore.getState();
+        if (event.ctrlKey || event.metaKey) {
+          const key = event.key.toLowerCase();
+          if (key === 'z' || key === 'y') {
+            event.preventDefault();
+            if (key === 'y' || event.shiftKey) state.redo(); else state.undo();
+          }
+        } else if (event.key === 'Escape') { event.preventDefault(); state.setDrawingTool('select'); }
+        else if (event.key === 'Enter' && !event.repeat && !activatedBySpace(event.target)) { event.preventDefault(); commitDrawingDimension(); }
+        else if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteSelectedDrawingElements(); }
         return;
       }
       /*

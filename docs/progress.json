@@ -3,7 +3,7 @@
   "totalTasks": 552,
   "futureEstimateTasks": 115,
   "completedBeforeTrackedPhases": 305,
-  "reportedCompleted": 392,
+  "reportedCompleted": 402,
   "phases": [
     {
       "id": "P7",
@@ -220,15 +220,25 @@
         "P8-22",
         "P8-23",
         "P8-24",
+        "P8-25",
+        "P8-26",
         "P8-27",
+        "P8-28",
         "P8-29",
         "P8-30",
         "P8-31",
         "P8-32",
+        "P8-33",
         "P8-34",
         "P8-35",
+        "P8-36",
         "P8-37",
+        "P8-38",
+        "P8-39",
+        "P8-40",
+        "P8-41",
         "P8-42",
+        "P8-43",
         "P8-44"
       ]
     }

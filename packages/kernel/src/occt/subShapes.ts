@@ -151,7 +151,8 @@ function readFaceGeometry(
   }
   if (surfaceType === kinds.GeomAbs_Sphere) {
     const sphere = keep(adaptor.Sphere());
-    return { surfaceKind: 'sphere', axis: null, axisOrigin: null, radius: normalizeZero(sphere.Radius()) };
+    const center = keep(sphere.Location());
+    return { surfaceKind: 'sphere', axis: null, axisOrigin: pointToTuple(center), radius: normalizeZero(sphere.Radius()) };
   }
   if (surfaceType === kinds.GeomAbs_Torus) {
     const torus = keep(adaptor.Torus());

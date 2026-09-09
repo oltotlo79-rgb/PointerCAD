@@ -140,8 +140,20 @@ function cleanView(view: DrawingView): DrawingView {
 
 type ToleranceValue = number | DrawingParameter['value'];
 
+function cleanExpressionValue(value: DrawingParameter['value']): DrawingParameter['value'] {
+  return { source: value.source, value: value.value, display: value.display };
+}
+
 function cleanToleranceValue(value: ToleranceValue): ToleranceValue {
-  return typeof value === 'number' ? value : { source: value.source, value: value.value, display: value.display };
+  return typeof value === 'number' ? value : cleanExpressionValue(value);
+}
+
+function cleanDimensionTarget(target: Dimension['targets'][number]): Dimension['targets'][number] {
+  return target.kind === 'point'
+    ? { kind: 'point', viewId: target.viewId, paperPoint: [...target.paperPoint],
+      ...(target.modelPoint === undefined ? {} : { modelPoint: [...target.modelPoint] }) }
+    : { kind: 'subShape', viewId: target.viewId, sourceRef: target.sourceRef,
+      ...(target.componentId === undefined ? {} : { componentId: target.componentId }), ref: cleanSubShapeRef(target.ref) };
 }
 
 function cleanDimension(dimension: Dimension): Dimension {
@@ -149,20 +161,7 @@ function cleanDimension(dimension: Dimension): Dimension {
     id: dimension.id,
     kind: dimension.kind,
     measurement: dimension.measurement,
-    targets: dimension.targets.map((target) => target.kind === 'point'
-      ? {
-          kind: 'point' as const,
-          viewId: target.viewId,
-          paperPoint: [...target.paperPoint],
-          ...(target.modelPoint === undefined ? {} : { modelPoint: [...target.modelPoint] }),
-        }
-      : {
-          kind: 'subShape' as const,
-          viewId: target.viewId,
-          sourceRef: target.sourceRef,
-          ...(target.componentId === undefined ? {} : { componentId: target.componentId }),
-          ref: cleanSubShapeRef(target.ref),
-        }),
+    targets: dimension.targets.map(cleanDimensionTarget),
     placement: {
       commonNormalCoordinate: dimension.placement.commonNormalCoordinate,
       textPosition: dimension.placement.textPosition === null
@@ -174,6 +173,7 @@ function cleanDimension(dimension: Dimension): Dimension {
       : { kind: 'deviation' as const, upper: cleanToleranceValue(dimension.tolerance.upper), lower: cleanToleranceValue(dimension.tolerance.lower) } }),
     ...(dimension.prefix === undefined ? {} : { prefix: dimension.prefix }),
     ...(dimension.suffix === undefined ? {} : { suffix: dimension.suffix }),
+    ...(dimension.fit === undefined ? {} : { fit: { symbol: dimension.fit.symbol, showDeviation: dimension.fit.showDeviation } }),
     reference: dimension.reference,
     origin: dimension.origin,
     layerId: dimension.layerId,
@@ -191,6 +191,10 @@ function cleanAnnotation(annotation: Annotation): Annotation {
       ? {}
       : { leader: annotation.leader.map((point) => [...point]) }),
     ...(annotation.target === undefined ? {} : { target: cleanSubShapeRef(annotation.target) }),
+    ...(annotation.sourceTarget === undefined ? {} : { sourceTarget: cleanDimensionTarget(annotation.sourceTarget) }),
+    ...(annotation.surfaceFinish === undefined ? {} : { surfaceFinish: { process: annotation.surfaceFinish.process,
+      parameter: annotation.surfaceFinish.parameter, value: cleanExpressionValue(annotation.surfaceFinish.value) } }),
+    ...(annotation.machiningFeatureId === undefined ? {} : { machiningFeatureId: annotation.machiningFeatureId }),
     height: annotation.height,
     layerId: annotation.layerId,
     ...(annotation.style === undefined ? {} : { style: cleanStyle(annotation.style) }),
@@ -453,6 +457,8 @@ function isDimension(value: unknown): value is Dimension {
     || !(value['placement']['textPosition'] === null || isPoint2(value['placement']['textPosition']))
     || (value['prefix'] !== undefined && typeof value['prefix'] !== 'string')
     || (value['suffix'] !== undefined && typeof value['suffix'] !== 'string')
+    || (value['fit'] !== undefined && (!isRecord(value['fit']) || !hasString(value['fit'], 'symbol')
+      || !hasBoolean(value['fit'], 'showDeviation') || value['tolerance'] !== undefined))
     || !hasBoolean(value, 'reference')
     || !isLiteral(value['origin'], ['auto', 'manual'])
     || !hasString(value, 'layerId')
@@ -474,6 +480,12 @@ function isAnnotation(value: unknown): value is Annotation {
     && (value['leader'] === undefined
       || (isUnknownArray(value['leader']) && value['leader'].every(isPoint2)))
     && (value['target'] === undefined || isSubShapeRef(value['target']))
+    && (value['sourceTarget'] === undefined || isDimensionTarget(value['sourceTarget']))
+    && (value['machiningFeatureId'] === undefined || (typeof value['machiningFeatureId'] === 'string' && value['kind'] === 'leaderNote'))
+    && (value['surfaceFinish'] === undefined || (value['kind'] === 'surfaceFinish' && isRecord(value['surfaceFinish'])
+      && isLiteral(value['surfaceFinish']['process'], ['basic', 'removal', 'noRemoval'])
+      && isLiteral(value['surfaceFinish']['parameter'], ['Ra', 'Rz'])
+      && isRecord(value['surfaceFinish']['value']) && isToleranceValue(value['surfaceFinish']['value'])))
     && hasNumber(value, 'height')
     && hasString(value, 'layerId')
     && hasOptionalStyle(value);

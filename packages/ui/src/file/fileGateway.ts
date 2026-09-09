@@ -31,7 +31,7 @@
  */
 
 import type { FileKind } from '@pointercad/model';
-export type SaveFileKind = FileKind | 'pcada' | 'zip';
+export type SaveFileKind = FileKind | 'pcada' | 'zip' | 'svg';
 
 import { t, type MessageKey } from '../i18n/t.js';
 
@@ -185,6 +185,7 @@ const FILE_KIND_SPECS: Readonly<Record<SaveFileKind, FileKindSpec>> = {
   },
   '3mf': { label: '3MF', accept: { 'model/3mf': ['.3mf'] } },
   dxf: { label: 'DXF', accept: { 'image/vnd.dxf': ['.dxf'] } },
+  svg: { label: 'SVG', accept: { 'image/svg+xml': ['.svg'] } },
 };
 
 /** その種類の拡張子(先頭の `.` を含む)。並びは表の順で、先頭が代表(書き出しで足す拡張子)。 */

@@ -135,7 +135,12 @@ describe('一様格子による候補の絞り込み(P7タスク23)', () => {
   it('5000枚×2の格子処理を2ms上限で実測する', () => {
     const a = distributed(5000);
     const b = distributed(5000, [0.1, 0.1, 1]);
+    const firstStart = performance.now();
     findTriangleOverlaps(a, b);
+    const firstMs = performance.now() - firstStart;
+    // 元から初回を除く定常性能の検査。1回だけでは最適化の移行が7標本を跨ぐため、
+    // 合否や測定値で回数を増やさず、固定20回の準備を全環境で同じように行う。
+    for (let warmup = 0; warmup < 20; warmup += 1) findTriangleOverlaps(a, b);
     const samples: number[] = [];
     let testedPairCount = 0;
     for (let run = 0; run < 7; run += 1) {
@@ -147,8 +152,26 @@ describe('一様格子による候補の絞り込み(P7タスク23)', () => {
     }
     // 2ms級ではOSの割込みが測定値より大きくなるため、同じ入力の最小値を純処理時間とする。
     const elapsed = Math.min(...samples);
-    console.log(`三角形5000枚×2の格子: ${samples.map((value) => value.toFixed(3)).join(' / ')} ms (最小${elapsed.toFixed(3)}) / SAT ${testedPairCount}組 / 上限2ms`);
+    console.log(`三角形5000枚×2の格子: ${samples.map((value) => value.toFixed(3)).join(' / ')} ms (最小${elapsed.toFixed(3)}) / SAT ${testedPairCount}組 / 上限2ms / 初回${firstMs.toFixed(3)}ms・準備20回`);
     expectWithinBudget(elapsed, 2, '三角形5000枚×2の格子');
+  });
+
+  it.each([0, 1, 2])('薄い軸が%sでも接触・交差を総当たりと同じ組で返す', (axis) => {
+    const rotate = (point: readonly [number, number, number]): readonly [number, number, number] =>
+      axis === 0 ? [point[2], point[0], point[1]] : axis === 1 ? [point[1], point[2], point[0]] : point;
+    const triangles = Array.from({ length: 36 }, (_, index): Triangle3 => {
+      const shifted = translated(XY, (index * 7 % 9) / 2, (index * 5 % 11) / 2, index % 3);
+      return [rotate(shifted[0]), rotate(shifted[1]), rotate(shifted[2])];
+    });
+    const other = triangles.map((triangle, index) => translated(triangle, index % 2, 0, 0));
+    const expected: { aTriangle: number; bTriangle: number }[] = [];
+    for (const [aTriangle, a] of triangles.entries()) {
+      for (const [bTriangle, b] of other.entries()) {
+        if (trianglesIntersect(a, b)) expected.push({ aTriangle, bTriangle });
+      }
+    }
+    expect(expected.length).toBeGreaterThan(0);
+    expect(findTriangleOverlaps(meshOf(triangles), meshOf(other), { cellSizeMm: 2 }).overlaps).toEqual(expected);
   });
 
   it('最大件数を指定すると、その件数で打ち切ったことを返す', () => {

@@ -1019,3 +1019,9 @@ export * from './assembly/joints/jointFrames.js';
 export * from './assembly/joints/jointResiduals.js';
 export * from './assembly/joints/driveJoint.js';
 export * from './assembly/presentation.js';
+
+export { drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingDimensions,
+  resolveDrawingAnnotationTarget, type ResolvedDimensionTarget, type DrawingDimensionInstance, type DimensionResolveContext, type ResolvedDrawingDimension } from './drawing/dimensionTarget.js';
+export { suggestDimensionKind, type SuggestedDimensionKind } from './drawing/dimensionKind.js';
+export { machiningSymbols, type MachiningFeature, type MachiningNote, type MachiningNoteToken } from './drawing/machiningSymbols.js';
+export { refreshDrawing, replaceSource, drawingSourceChangedExternally, type DrawingRefreshOptions, type DrawingRefreshResult } from './drawing/refreshDrawing.js';

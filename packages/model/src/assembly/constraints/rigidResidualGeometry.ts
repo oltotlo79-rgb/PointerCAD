@@ -27,6 +27,7 @@ const ROTATION_AXES = ['rx', 'ry', 'rz'] as const;
  * 小角では A=1/2−θ²/24+θ⁴/720、B=1/6−θ²/120+θ⁴/5040 で桁落ちを避ける。
  */
 export function rotationDerivativeAxes(omega: Vec3): readonly Vec3[] {
+  if (omega[0] === 0 && omega[1] === 0 && omega[2] === 0) return CARTESIAN_AXES;
   const theta = lengthVec3(omega);
   const square = theta * theta;
   const a = theta < 1e-3 ? 0.5 - square / 24 + square * square / 720
@@ -53,16 +54,23 @@ export function directionTerms(
   gradient: Map<number, number>, target: TrialGeometry, vector: Vec3, g: Vec3,
   variables: MateVariableSet,
 ): void {
-  ROTATION_AXES.forEach((axis, j) => {
-    addTerm(gradient, variables.columnOf(target.componentId, axis),
-      dotVec3(g, crossVec3(target.rotationAxes[j], vector)));
-  });
+  for (let j = 0; j < ROTATION_AXES.length; j += 1) {
+    const column = variables.columnOf(target.componentId, ROTATION_AXES[j]);
+    if (column === null) continue;
+    const axis = target.rotationAxes[j];
+    // 外積を一時配列にせず、同じ演算順の内積を直接求める。固定部品の微分は作らない。
+    addTerm(gradient, column, g[0] * (axis[1] * vector[2] - axis[2] * vector[1])
+      + g[1] * (axis[2] * vector[0] - axis[0] * vector[2])
+      + g[2] * (axis[0] * vector[1] - axis[1] * vector[0]));
+  }
 }
 
 export function pointTerms(
   gradient: Map<number, number>, target: TrialGeometry, g: Vec3, variables: MateVariableSet,
 ): void {
-  TRANSLATION_AXES.forEach((axis, j) => addTerm(gradient, variables.columnOf(target.componentId, axis), g[j]));
+  for (let j = 0; j < TRANSLATION_AXES.length; j += 1) {
+    if (g[j] !== 0) addTerm(gradient, variables.columnOf(target.componentId, TRANSLATION_AXES[j]), g[j]);
+  }
   directionTerms(gradient, target, target.arm, g, variables);
 }
 

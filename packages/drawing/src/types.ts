@@ -140,6 +140,15 @@ export interface Annotation {
   readonly position: Point2;
   readonly leader?: readonly Point2[];
   readonly target?: DrawingSubShapeRef;
+  /** 新しい注記は図・元文書・部品まで含む参照を保持する。targetは旧保存形との互換用。 */
+  readonly sourceTarget?: DimensionTarget;
+  readonly surfaceFinish?: {
+    readonly process: 'basic' | 'removal' | 'noRemoval';
+    readonly parameter: 'Ra' | 'Rz';
+    readonly value: DrawingExpressionValue;
+  };
+  /** ねじ等の表示文字は元部品から作る。注記へ複製して保存しない。 */
+  readonly machiningFeatureId?: string;
   readonly height: number;
   readonly layerId: string;
   readonly style?: DrawingElementStyle | null;
@@ -179,7 +188,7 @@ export interface DrawingLayer {
   readonly lineWidth: number;
 }
 
-import type { Dimension } from './dimension/types.js';
+import type { Dimension, DimensionTarget } from './dimension/types.js';
 
 /** `.pcadd` の document.json に保存する図面文書。id を除く内容の欄は11個(§2.3)。 */
 export interface DrawingDocument {

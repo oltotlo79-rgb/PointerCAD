@@ -99,6 +99,7 @@ const KIND_FILTERS: Readonly<Record<string, KindFilter | undefined>> = {
   glb: { name: 'glTF', extensions: ['glb', 'gltf'] },
   '3mf': { name: '3MF', extensions: ['3mf'] },
   dxf: { name: 'DXF', extensions: ['dxf'] },
+  svg: { name: 'SVG', extensions: ['svg'] },
 };
 
 /** 「開く」で選ばれたファイル。`path` は本体プロセスの中だけで使う。 */

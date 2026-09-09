@@ -35,7 +35,11 @@ export default defineConfig({
       grep: VIEWPORT_PERFORMANCE_TEST,
       // GPUの有無を揃え、別テストのWASM初期化とCPUを奪い合わずに測る。
       // 50部品・実描画回数・30fpsの下限は手元でもCIでも同じ。
-      use: { launchOptions: { args: ['--use-angle=swiftshader'] } },
+      // swiftshaderだけではブラウザの合成まで仮想GPUへ入り、Linuxでコンテキスト
+      // 切替が律速になる。WebGL専用のソフトウェア経路を明示する(実測5.0→42.3fps)。
+      // Chromium公式: https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
+      // opt-inはこのローカル検査ブラウザだけ。Web/desktopの製品起動には渡さない。
+      use: { launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader'] } },
     },
     {
       name: 'functional',

@@ -800,6 +800,14 @@ export function ChainIcon(props: IconProps): React.JSX.Element {
  * 名前は読み上げ名(aria-label)とツールチップが担う(Toolbar.tsx、FR-904)。
  */
 
+/** 図面作成。三面図と表題欄のある用紙。 */
+export function DrawingSheetIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}>
+    <path d="M1.5 2.5h13v11h-13zM8.5 10.5h6M10.5 10.5v3" />
+    <path d="M4 5h4v3H4zM10 5h2v3h-2zM4 10h4" />
+  </SvgIcon>;
+}
+
 /** 新規。角を折った白紙。 */
 export function NewFileIcon(props: IconProps): React.JSX.Element {
   return (

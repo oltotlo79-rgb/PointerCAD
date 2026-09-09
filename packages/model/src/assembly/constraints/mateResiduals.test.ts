@@ -59,6 +59,27 @@ function values(input: MateResidualInput): readonly number[] {
   return report.rows.map((r) => r.value);
 }
 
+describe('同じ部品の複数対象に対する増分評価', () => {
+  it('違う局所点の残差・微分を保ち、次の増分と受理姿勢へ古い回転を持ち越さない', () => {
+    const first = { ...mate('coincident'), id: 'first' };
+    const second = { ...mate('coincident'), id: 'second' };
+    const setup = prepared({ ...preparation(first, point(), point()), mates: [first, second],
+      targets: new Map([[first.id, { a: point([3, 0, 1]), b: point([0, 2, 0]) }],
+        [second.id, { a: point([-1, 4, 2]), b: point([5, 0, 3]) }]]) });
+    for (const angle of [0.02, -0.07, 0]) {
+      const increments = setup.variableSet.variables.map((variable) => variable.axis === 'rz' ? angle : 0);
+      const placements = new Map(setup.placements);
+      placements.set('a', { position: [angle, 2 * angle, 0], rotation: quaternionFromAxisAngle(Z, angle) });
+      const current = { ...setup, increments, placements };
+      const together = buildMateResidualReport(current);
+      const separate = setup.mates.flatMap((item) => buildMateResidualReport({ ...current, mates: [item] }).rows);
+      expect(together.skipped).toEqual([]);
+      expect(together.rows).toEqual(separate);
+      expect(together.rows.slice(0, 3).map((row) => row.value)).not.toEqual(together.rows.slice(3).map((row) => row.value));
+    }
+  });
+});
+
 describe('平行と一致(P7の検証表、L₀=1mmで生の値を照合)', () => {
   it('平行は2本', () => expect(values(input('parallel'))).toEqual([0, 0]));
   it('一致済みの面は3本とも0', () => expect(values(input('coincident'))).toEqual([0, 0, 0]));

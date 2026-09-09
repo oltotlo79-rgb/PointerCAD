@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 
 import { attachAssembly } from '../assembly/attachAssembly.js';
 import { attachAssemblyInterference } from '../assembly/attachAssemblyInterference.js';
+import { attachDrawing } from '../drawing/attachDrawing.js';
 import { activeDocumentKind, type DocumentKind } from '../store/documentKind.js';
 import { startAutoSave } from '../file/attachAutoSave.js';
 import type { FileGateway } from '../file/fileGateway.js';
@@ -147,6 +148,7 @@ export function PointerCadApp(): React.JSX.Element {
     }
     const detachAssembly = attachAssembly(bridge);
     const detachAssemblyInterference = attachAssemblyInterference(bridge);
+    const detachDrawing = attachDrawing(bridge);
     // オフセット(FR-321、タスク15・21)の計算済みの結果を持ち回る。1 つ作って渡さないと
     // 呼び出しのたびにカーネルへ頼み直すことになる(NFR-PF-2、`recomputePart` の注釈)。
     const offsets = createOffsetCache();
@@ -241,6 +243,7 @@ export function PointerCadApp(): React.JSX.Element {
     );
 
     return () => {
+      detachDrawing();
       detachInspect();
       detachExchange();
       detachMeasure();

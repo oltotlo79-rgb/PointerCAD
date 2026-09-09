@@ -239,10 +239,15 @@ interface TrialTarget extends ResolvedMateTarget {
   readonly frame: MateFrame | null;
 }
 
-function trialTarget(
-  target: LocalMateResidualTarget, componentId: string, placement: RigidPlacement,
-  input: MateResidualInput,
-): TrialTarget {
+interface TrialMotion {
+  readonly placement: RigidPlacement;
+  readonly delta: Vec3;
+  readonly rotation: Quaternion;
+  readonly rotate: (vector: Vec3) => Vec3;
+  readonly rotationAxes: readonly Vec3[];
+}
+
+function trialMotion(componentId: string, placement: RigidPlacement, input: MateResidualInput): TrialMotion {
   const increment = (axis: 'tx' | 'ty' | 'tz' | 'rx' | 'ry' | 'rz'): number => {
     const column = input.variableSet.columnOf(componentId, axis);
     return column === null ? 0 : (input.increments?.[column] ?? 0);
@@ -251,14 +256,21 @@ function trialTarget(
   const omega: Vec3 = [increment('rx'), increment('ry'), increment('rz')];
   const rotation = exponentialMap(omega);
   // 基準の回転を先に掛け、増分を最後に掛ける。微小なtrialを四元数の合成/再正規化で失わない。
-  const rotate = (vector: Vec3): Vec3 => rotateVector(rotation, rotateVector(placement.rotation, vector));
+  const zeroRotation = omega[0] === 0 && omega[1] === 0 && omega[2] === 0;
+  const rotate = zeroRotation ? (vector: Vec3): Vec3 => rotateVector(placement.rotation, vector)
+    : (vector: Vec3): Vec3 => rotateVector(rotation, rotateVector(placement.rotation, vector));
+  return { placement, delta: dt, rotation, rotate, rotationAxes: rotationDerivativeAxes(omega) };
+}
+
+function trialTarget(target: LocalMateResidualTarget, componentId: string, motion: TrialMotion): TrialTarget {
+  const { placement, delta, rotation, rotate, rotationAxes } = motion;
   const arm = rotate(target.point);
   return {
-    kind: target.kind, componentId, arm, center: placement.position, delta: dt, radius: target.radius,
-    point: addVec3(addVec3(placement.position, dt), arm),
+    kind: target.kind, componentId, arm, center: placement.position, delta, radius: target.radius,
+    point: addVec3(addVec3(placement.position, delta), arm),
     direction: target.direction === null ? null : rotate(target.direction),
     frame: target.frame === null ? null : rotateMateFrame(rotateMateFrame(target.frame, placement.rotation), rotation),
-    rotationAxes: rotationDerivativeAxes(omega),
+    rotationAxes,
   };
 }
 
@@ -336,6 +348,14 @@ export function buildMateResidualReport(input: MateResidualInput): MateResidualR
   const rows: MateResidualRow[] = [];
   const skipped: SkippedMateResidual[] = [];
   const branchViolations: string[] = [];
+  // 同じ部品に複数の合致が付いても、増分の指数写像と回転微分は評価1回につき1回。
+  // 局所の対象点/面は共有せず、受理姿勢や増分が変わる次の評価へキャッシュを持ち越さない。
+  const motions = new Map<string, TrialMotion>();
+  const motionFor = (id: string, placement: RigidPlacement): TrialMotion => {
+    let motion = motions.get(id);
+    if (motion === undefined) { motion = trialMotion(id, placement, input); motions.set(id, motion); }
+    return motion;
+  };
   const length = input.characteristicLength ?? DEFAULT_MATE_CHARACTERISTIC_LENGTH;
   const invalid: MateResidualSkipReason | null = !Number.isFinite(length) || length <= 0
     || !Number.isFinite(1 / length) ? 'invalidScale'
@@ -352,12 +372,12 @@ export function buildMateResidualReport(input: MateResidualInput): MateResidualR
       skipped.push(refusal(mate.mateId, 'dangling'));
       continue;
     }
-    if (!validRigidPlacement(pa) || !validRigidPlacement(pb)) {
+    if ((!motions.has(mate.componentA) && !validRigidPlacement(pa)) || (!motions.has(mate.componentB) && !validRigidPlacement(pb))) {
       skipped.push(refusal(mate.mateId, 'degenerate'));
       continue;
     }
-    const a = trialTarget(mate.a, mate.componentA, pa, input);
-    const b = trialTarget(mate.b, mate.componentB, pb, input);
+    const a = trialTarget(mate.a, mate.componentA, motionFor(mate.componentA, pa));
+    const b = trialTarget(mate.b, mate.componentB, motionFor(mate.componentB, pb));
     const result = mateRows(mate, a, b, input.variableSet, 1 / length);
     if (typeof result === 'string') {
       skipped.push(refusal(mate.mateId, result));

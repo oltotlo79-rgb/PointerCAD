@@ -206,3 +206,7 @@ export {
   type LinearDimensionGeometry,
   type RadiusDimensionGeometry,
 } from './dimension/geometry.js';
+
+export { autoDimension, type AutoDimensionInput, type AutoDimensionPoint, type AutoDimensionCircle, type AutoDimensionResult } from './dimension/autoDimension.js';
+export { renderDrawing, type DrawingRenderCurve, type DrawingRenderElement, type DrawingRenderView, type RenderDrawingOptions,
+  type DrawingRenderIssue, type DrawingRenderResult } from './render/renderDrawing.js';

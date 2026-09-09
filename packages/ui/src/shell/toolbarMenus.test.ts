@@ -787,7 +787,7 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
 /* ===== P6 タスク31: 「ファイル」の畳んだ一覧(§0.57、FR-812、FR-904、要件§7.1) ===== */
 
 describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => {
-  it('決まった 7 行が並ぶ(配線先のある操作しか出さない)', () => {
+  it('図面作成を含む8行が並ぶ(配線先のある操作しか出さない)', () => {
     /*
       §0.57 の最終形は 7 項目だが、行を足すのは**その操作を作るタスク**の仕事にした。
       押しても何も起きない行を画面に出さないため(NFR-UX-5)。タスク32 が書き出す・
@@ -797,6 +797,7 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
       **期待値を緩めたのではなく、行が増えた事実を写している。**
     */
     expect(FILE_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'newDrawingFromPart',
       'newAssembly',
       'saveAs',
       'exportShape',
@@ -902,13 +903,13 @@ describe('「ファイル」の一覧の、数の決まらない行(P6 タスク
     { id: '蓋.pcad', name: '蓋.pcad' },
   ];
 
-  it('ひな形も履歴も 0 件なら、決まった 7 行だけになる(押して何も起きない行を作らない)', () => {
+  it('ひな形も履歴も 0 件なら、図面作成を含む8行になる', () => {
     expect(fileMenuItems([], []).map((item) => item.id)).toEqual(
       FILE_MENU_ITEMS.map((item) => item.id),
     );
   });
 
-  it('ひな形 2 件・履歴 3 件で 7 + 5 行になり、名前がそのまま出る', () => {
+  it('ひな形 2 件・履歴 3 件で 8 + 5 行になり、名前がそのまま出る', () => {
     const rows = fileMenuItems(TEMPLATES, RECENT);
     expect(rows).toHaveLength(FILE_MENU_ITEMS.length + 5);
     expect(rows.slice(FILE_MENU_ITEMS.length).map((row) => row.label)).toEqual([

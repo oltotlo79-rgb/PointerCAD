@@ -86,6 +86,24 @@ describe('解析軸上点の収集(P7-14b)', () => {
     };
   }
 
+  it('半球の解析中心は面の重心と別に保持する(P8-25)', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const center = keep(new oc.gp_Pnt_3(12, -8, 30));
+      const axis = keep(new oc.gp_Dir_4(0, 0, 1));
+      const axes = keep(new oc.gp_Ax2_3(center, axis));
+      const maker = keep(new oc.BRepPrimAPI_MakeSphere_11(axes, 10, 0, Math.PI / 2));
+      const shape = keep(maker.Shape());
+      const sphere = collect(shape).faces.find((face) => face.surfaceKind === 'sphere');
+      if (sphere === undefined) throw new Error('半球面がない');
+      closePoint(sphere.axisOrigin, [12, -8, 30]);
+      // 半球表面の面積重心は球の中心からR/2上。中心の代用にはならない。
+      closePoint(sphere.centroid, [12, -8, 35]);
+      expect(sphere.radius).toBe(10);
+      expect(sphere.axis).toBeNull();
+    } finally { release(); }
+  });
+
   it('半円筒の軸上点は原点で、重心は軸から10/π離れる', () => {
     const handle = halfShape('cylinder');
     try {

@@ -9,6 +9,8 @@
 
 import {
   DEFAULT_BOM_SETTINGS,
+  createDefaultNamedViews,
+  createDefaultConfigurationsFromSources,
   type AssemblyDocument,
   type DrawingDocument,
   type LengthUnit,
@@ -82,7 +84,7 @@ import { isRecord } from './guards.js';
  * 新しすぎる/古すぎる」の判定が種別ごとに分かれず 1 か所で済む。版 7 以前の
  * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
-export const PCAD_SCHEMA_VERSION = 9;
+export const PCAD_SCHEMA_VERSION = 10;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -566,5 +568,32 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
       return raw;
     }
     return { ...raw, schema: 9, document: { ...document, schemaVersion: 9 } };
+  },
+  /** 版9 → 版10: 名前付き視点と、パラメータの式だけを持つ構成を追加する。 */
+  9: (raw) => {
+    if (!isRecord(raw)) return raw;
+    const document = raw['document'];
+    if (!isRecord(document)) return raw;
+    let migrated: Record<string, unknown> = { ...document, schemaVersion: 10 };
+    if (raw['kind'] === PCAD_DOCUMENT_KIND || raw['kind'] === PCAD_TEMPLATE_KIND) {
+      const values: [string, string][] = [];
+      const parameters = document['parameters'];
+      if (Array.isArray(parameters)) {
+        for (const parameter of parameters) {
+          if (!isRecord(parameter) || typeof parameter['name'] !== 'string') continue;
+          const value = parameter['value'];
+          if (isRecord(value) && typeof value['source'] === 'string') values.push([parameter['name'], value['source']]);
+        }
+      }
+      migrated = { ...migrated,
+        namedViews: 'namedViews' in document ? document['namedViews'] : createDefaultNamedViews(),
+        configurations: 'configurations' in document ? document['configurations']
+          : createDefaultConfigurationsFromSources(Object.fromEntries(values)),
+        activeConfigurationId: 'activeConfigurationId' in document ? document['activeConfigurationId'] : 'configuration-1',
+      };
+    } else if (raw['kind'] === PCAD_ASSEMBLY_KIND) {
+      migrated = { ...migrated, namedViews: 'namedViews' in document ? document['namedViews'] : createDefaultNamedViews() };
+    }
+    return { ...raw, schema: 10, document: migrated };
   },
 };

@@ -1,11 +1,12 @@
-import type { DrawingDocument, DrawingSource, Vector3 } from '@pointercad/drawing';
-import { createDrawingResolveKernel, IDENTITY_PLACEMENT, recomputePart, refreshDrawing,
+import { drawingViewBasis, type DrawingDocument, type DrawingSource, type Vector3 } from '@pointercad/drawing';
+import { createDrawingResolveKernel, drawingSourceInputOf, IDENTITY_PLACEMENT, recomputePart, refreshDrawing, resolveHoleSchedule,
   type AssemblyKernelBridge, type DrawingKernelBridge, type DrawingSourceLibrary, type DrawingSourceResolution,
-  type ImportedShapeBytes, type PartDocument, type PartRecomputeOptions, type PartRecomputeResult, type ResolvedPart,
+  type EmbeddedDrawingSource, type HoleScheduleResult, type ImportedShapeBytes, type PartDocument, type PartRecomputeOptions, type PartRecomputeResult, type ResolvedPart,
 } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { prepareAssemblyDrawingSource, type PreparedAssemblyDrawing } from './prepareAssemblyDrawingSource.js';
 
 export type DrawingPartRecomputer = (document: PartDocument, options: PartRecomputeOptions) => Promise<PartRecomputeResult>;
 interface Request {
@@ -19,6 +20,8 @@ interface Prepared {
   readonly document: PartDocument;
   readonly importedShapes: ImportedShapeBytes;
   readonly result: DrawingSourceResolution;
+  readonly resolved: ResolvedPart;
+  readonly holes: Map<string, HoleScheduleResult>;
 }
 
 /** メッシュの座標全体で外接範囲を取る。球の頂点の欠落や大配列のspreadに依存しない。 */
@@ -49,11 +52,13 @@ export function attachDrawing(
   let latest: Request | null = null;
   let current: Request | null = null;
   let prepared: Prepared | null = null;
+  let preparedAssembly: { readonly entry: EmbeddedDrawingSource; readonly documentId: string; readonly output: PreparedAssemblyDrawing } | null = null;
   const retained = new Set<string>();
 
   const obsolete = (request: Request): boolean => detached || latest !== request;
   const release = async (): Promise<void> => {
     prepared = null;
+    preparedAssembly = null;
     for (const id of retained) { await bridge.releasePart(id); retained.delete(id); }
   };
 
@@ -62,7 +67,25 @@ export function attachDrawing(
     if (request === null || obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
     const entry = request.sources.sources.find((item) => item.metadata.sourceRef === source.sourceRef
       && item.metadata.contentHash === source.contentHash && item.metadata.sourceKind === source.sourceKind);
-    if (entry === undefined || source.sourceKind !== 'part' || !('sketches' in entry.document)) {
+    if (entry === undefined) throw new Error(t('drawing.error.selectSource'));
+    const input = drawingSourceInputOf(entry);
+    if (input?.sourceKind === 'assembly') {
+      if (preparedAssembly?.entry === entry && preparedAssembly.documentId === request.documentId) {
+        let available = true;
+        for (const [id, keys] of preparedAssembly.output.owners) {
+          if ((await bridge.checkShapeAvailability(id, keys)).missingKeys.length > 0) available = false;
+        }
+        if (available && !obsolete(request)) return preparedAssembly.output.result;
+      }
+      await release();
+      if (obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
+      const output = await prepareAssemblyDrawingSource(input, source.sourceRef, request.documentId,
+        bridge, recompute, () => obsolete(request), (id) => { retained.add(id); });
+      if (obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
+      preparedAssembly = { entry, documentId: request.documentId, output };
+      return output.result;
+    }
+    if (input?.sourceKind !== 'part' || !('sketches' in entry.document)) {
       throw new Error(t('drawing.error.selectSource'));
     }
     const partId = `drawing:${request.documentId}:${source.sourceRef}`;
@@ -91,10 +114,37 @@ export function attachDrawing(
     const output = { bodyIds: dimensionInstances.map((instance) => instance.bodyId), dimensionInstances, center: sourceCenter(result) };
     const available = await bridge.checkShapeAvailability(partId, output.bodyIds);
     if (available.missingKeys.length > 0) throw new Error(t('drawing.error.viewFailed'));
-    prepared = { partId, document: entry.document, importedShapes: request.importedShapes, result: output };
+    prepared = { partId, document: entry.document, importedShapes: request.importedShapes, result: output, resolved: part, holes: new Map() };
     return output;
   };
   const kernel = createDrawingResolveKernel(bridge, prepareDrawingSource);
+
+  async function withHoleTables(request: Request, source: DrawingSourceResolution): Promise<DrawingSourceResolution> {
+    const part = prepared;
+    const tables = request.document.tables.filter((table) => table.kind === 'hole');
+    if (tables.length === 0) return source;
+    const holeTables = new Map<string, HoleScheduleResult>();
+    for (const table of tables) {
+      const view = request.document.views.find((item) => item.id === table.options.viewId);
+      const basis = view === undefined ? null : drawingViewBasis({ normal: view.direction, xDir: view.xDir });
+      const x = table.options.datumX ?? 0, y = table.options.datumY ?? 0, z = table.options.datumZ ?? 0;
+      if (part === null || basis === null || typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') {
+        holeTables.set(table.id, { ok: false, reason: 'invalidFrame' }); continue;
+      }
+      const frame = { datum: [x, y, z] as const, x: basis.x, y: basis.y };
+      const cacheKey = JSON.stringify(frame);
+      const cached = part.holes.get(cacheKey);
+      if (cached !== undefined) { holeTables.set(table.id, cached); continue; }
+      const result = await resolveHoleSchedule(part.document, part.resolved, bridge, frame,
+        { partId: part.partId, shouldCancel: () => obsolete(request) });
+      if (obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
+      if (!result.ok && (result.reason === 'cancelled' || result.reason === 'kernelFailed')) throw new Error(t('drawing.error.viewFailed'));
+      // cancelled/kernelFailedは上で断り、修正可能な穴の指定不備だけを表示へ渡す。
+      const rows: HoleScheduleResult = result;
+      part.holes.set(cacheKey, rows); holeTables.set(table.id, rows);
+    }
+    return { ...source, holeTables };
+  }
 
   async function drain(): Promise<void> {
     running = true;
@@ -104,7 +154,9 @@ export function attachDrawing(
         queued = null;
         current = request;
         const result = await refreshDrawing(request.document, kernel);
-        if (!obsolete(request)) useAppStore.getState().setDrawingResolution(request.document, result, result.ok ? prepared?.result ?? null : null);
+        const source = prepared?.result ?? preparedAssembly?.output.result ?? null;
+        const output = !obsolete(request) && result.ok && source !== null ? await withHoleTables(request, source) : null;
+        if (!obsolete(request)) useAppStore.getState().setDrawingResolution(request.document, result, output);
       }
     } finally {
       running = false;

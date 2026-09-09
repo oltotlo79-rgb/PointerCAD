@@ -23,6 +23,40 @@
   --pcad-scale: 1;
 }
 
+.pcad-drawing-table-editor,
+.pcad-drawing-table-editor fieldset {
+  display: grid;
+  gap: calc(6px * var(--pcad-scale));
+  min-width: 0;
+}
+
+.pcad-drawing-table-editor label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(4px * var(--pcad-scale));
+  min-width: 0;
+}
+
+.pcad-drawing-table-editor input:not([type="checkbox"]),
+.pcad-drawing-table-editor select {
+  flex: 1 1 calc(70px * var(--pcad-scale));
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pcad-drawing-table-editor fieldset {
+  border: 1px solid var(--pcad-border);
+  padding: calc(6px * var(--pcad-scale));
+}
+
+.pcad-drawing-table-column {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: calc(4px * var(--pcad-scale));
+}
+
 /*
  * ダーク(既定)。:root と [data-theme="dark"] の両方を受けるのは、画面全体だけでなく
  * **途中の要素に data-theme を付けたときにも一式が効く**ようにするため(設定パネルの
@@ -2319,6 +2353,45 @@ button.pcad-tree__row:focus-visible {
 
   /* 視点操作をブラウザのスクロールや長押しに横取りさせない。 */
   touch-action: none;
+}
+
+.pcad-quad {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  pointer-events: none;
+}
+
+.pcad-drawing-settings label {
+  display: grid;
+  gap: 3px;
+  margin-block: 6px;
+}
+
+.pcad-drawing-settings input,
+.pcad-drawing-settings select {
+  min-width: 0;
+  width: 100%;
+}
+
+.pcad-drawing-settings input[type="checkbox"] { width: auto; justify-self: start; }
+.pcad-drawing-settings__field { border-block-end: 1px solid var(--pcad-border); padding-block: 6px; }
+
+.pcad-quad__pane {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--pcad-border);
+}
+
+.pcad-quad__pane[data-active="true"] {
+  border-color: var(--pcad-accent);
+}
+
+.pcad-quad__label {
+  margin: 4px;
+  pointer-events: auto;
 }
 
 .pcad-viewport__canvas:focus-visible {

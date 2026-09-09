@@ -13,6 +13,10 @@ import { DrawingAnnotationPopover } from './DrawingAnnotationPopover.js';
 import { displayDrawingAnnotations } from './annotationDisplay.js';
 import { DrawingNotePopover } from './DrawingNotePopover.js';
 import { drawingNoteBounds } from './noteDisplay.js';
+import { displayDrawingTables } from './tableDisplay.js';
+import { drawingProjectionRenderViews, selectedDrawingProjectionOwners } from './projectionDisplay.js';
+import { selectedDrawingComponents, selectedDrawingTableRows } from './drawingSelection.js';
+import { beginDrawingTableDrag, commitDrawingBalloon, finishDrawingTableDrag, previewDrawingTableDrag, type DrawingTableDrag } from './tableCommands.js';
 import { beginDrawingAnnotationDrag, finishDrawingAnnotationDrag, previewDrawingAnnotationDrag, type DrawingAnnotationDrag } from './noteCommands.js';
 
 export function DrawingCanvas(): React.JSX.Element {
@@ -27,10 +31,11 @@ export function DrawingCanvas(): React.JSX.Element {
   const container = useRef<HTMLDivElement>(null);
   const drag = useRef<DrawingDimensionDrag | null>(null);
   const noteDrag = useRef<DrawingAnnotationDrag | null>(null);
+  const tableDrag = useRef<DrawingTableDrag | null>(null);
   const [notePlacement, setNotePlacement] = useState<{ readonly point: Point2; readonly anchor: Point2 } | null>(null);
   useEffect(() => useAppStore.subscribe((next, previous) => {
     if (next.drawing?.id !== previous.drawing?.id || next.drawingTool !== previous.drawingTool) {
-      setNotePlacement(null); noteDrag.current = null; drag.current = null;
+      setNotePlacement(null); noteDrag.current = null; drag.current = null; tableDrag.current = null;
     }
   }), []);
   const [fontStatus, setFontStatus] = useState(drawingFont.status);
@@ -55,7 +60,9 @@ export function DrawingCanvas(): React.JSX.Element {
       ? previewDrawingDimensionDrag(drag.current, dragPoint) : null;
     const annotationPreview = noteDrag.current !== null && noteDrag.current.document === drawing && dragPoint !== null
       ? previewDrawingAnnotationDrag(noteDrag.current, dragPoint) : null;
-    const document = { ...drawing,
+    const tablePreview = tableDrag.current !== null && tableDrag.current.document === drawing && dragPoint !== null
+      ? previewDrawingTableDrag(tableDrag.current, dragPoint) : drawing;
+    const document = { ...tablePreview,
       dimensions: preview === null ? drawing.dimensions : drawing.dimensions.map((item) => item.id === preview.id ? preview : item),
       annotations: annotationPreview === null ? drawing.annotations : drawing.annotations.map((item) => item.id === annotationPreview.id ? annotationPreview : item) };
     const shownAnnotations = annotationPreview === null ? annotations : displayDrawingAnnotations(document,
@@ -63,14 +70,20 @@ export function DrawingCanvas(): React.JSX.Element {
     const displays = dimensions.map((dimension) => displayDrawingDimension(document,
       preview !== null && preview.id === dimension.dimension.id ? { ...dimension, dimension: preview } : dimension, drawingFont.outline));
     const views = resolution?.ok === true ? resolution.projection.views : [];
-    const rendered = renderDrawing({ document, views, elements: [...displays.map((display) => display.element), ...shownAnnotations] }, { outlineText: drawingFont.outline });
+    const tables = displayDrawingTables(document, source, drawingFont.outline);
+    const rendered = renderDrawing({ document, views: drawingProjectionRenderViews(views),
+      elements: [...displays.map((display) => display.element), ...shownAnnotations, ...tables.elements] }, { outlineText: drawingFont.outline });
+    const components = selectedDrawingComponents(document, selectedIds, targets);
+    const highlightedIds = new Set(selectedDrawingProjectionOwners(views, [...selectedIds, ...[...components].map((id) => `component:${id}`)]));
+    for (const item of document.balloons) if (item.componentIds.some((id) => components.has(id))) highlightedIds.add(item.id);
+    for (const owner of selectedDrawingTableRows(tables.items, selectedIds, components)) highlightedIds.add(owner);
     const primitives = rendered.document.primitives.map((primitive) => {
-      if (!selectedIds.includes(primitive.ownerId)) return primitive;
+      if (!highlightedIds.has(primitive.ownerId)) return primitive;
       return primitive.kind === 'path' ? { ...primitive, stroke: primitive.stroke === null ? null : { ...primitive.stroke, color: '#2563eb' },
         fill: primitive.fill === null ? null : '#2563eb' } : { ...primitive, fill: '#2563eb' };
     });
-    return { svg: toSvg({ ...rendered.document, primitives }), height: rendered.document.heightMm, displays, views };
-  }, [drawing, dimensions, annotations, resolution, selectedIds, dragPoint, fontStatus, source, library]);
+    return { svg: toSvg({ ...rendered.document, primitives }), height: rendered.document.heightMm, displays, views, tables };
+  }, [drawing, dimensions, annotations, resolution, selectedIds, targets, dragPoint, fontStatus, source, library]);
 
   function paperPoint(event: React.PointerEvent): { readonly point: Point2; readonly tolerance: number } | null {
     const svg = container.current?.querySelector('svg');
@@ -87,6 +100,33 @@ export function DrawingCanvas(): React.JSX.Element {
         if (busy || event.button !== 0 || shown === null || drawing === null) return;
         const hit = paperPoint(event);
         if (hit === null) return;
+        if (tool === 'balloon') {
+          if (targets.length === 1) commitDrawingBalloon(hit.point);
+          else if (source !== null) {
+            const picked = pickDrawingGeometry(drawing, source, shown.views, hit.point, hit.tolerance);
+            if (picked?.kind === 'subShape' && picked.componentId !== undefined) pickDrawingTarget(picked);
+          }
+          event.preventDefault(); return;
+        }
+        const pickedTable = shown.tables.items.find((item) => {
+          const element = drawing.tables.find((table) => table.id === item.id) ?? drawing.balloons.find((entry) => entry.id === item.id);
+          return element !== undefined && resolveStyle(element, drawing.layers)?.visible === true
+            && hit.point[0] >= item.bounds.left - hit.tolerance && hit.point[0] <= item.bounds.right + hit.tolerance
+            && hit.point[1] >= item.bounds.bottom - hit.tolerance && hit.point[1] <= item.bounds.top + hit.tolerance;
+        });
+        if (pickedTable !== undefined && tool === 'select') {
+          let y = pickedTable.bounds.top;
+          let componentIds = pickedTable.rowHeights.length === 0 ? pickedTable.rowComponentIds[0] ?? [] : [];
+          for (let index = 0; index < pickedTable.rowHeights.length; index++) {
+            const nextY = y - pickedTable.rowHeights[index];
+            if (index > 0 && hit.point[1] <= y && hit.point[1] >= nextY) componentIds = pickedTable.rowComponentIds[index - 1] ?? [];
+            y = nextY;
+          }
+          // 関連する風船は描画だけで強調する。削除の対象へ追加しない。
+          useAppStore.getState().selectDrawingIds([pickedTable.id, ...componentIds.map((id) => `component:${id}`)]);
+          tableDrag.current = beginDrawingTableDrag(pickedTable.id, hit.point);
+          event.currentTarget.setPointerCapture(event.pointerId); event.currentTarget.focus(); event.preventDefault(); return;
+        }
         if (tool === 'note') {
           setNotePlacement({ point: hit.point, anchor: [event.clientX, event.clientY] });
           useAppStore.getState().selectDrawingIds([]); event.preventDefault(); return;
@@ -121,19 +161,21 @@ export function DrawingCanvas(): React.JSX.Element {
         event.currentTarget.focus();
         event.preventDefault();
       }}
-      onPointerMove={(event) => { const point = paperPoint(event); if ((drag.current !== null || noteDrag.current !== null) && point !== null) setDragPoint(point.point); }}
+      onPointerMove={(event) => { const point = paperPoint(event); if ((drag.current !== null || noteDrag.current !== null || tableDrag.current !== null) && point !== null) setDragPoint(point.point); }}
       onPointerUp={(event) => {
         const point = paperPoint(event);
         if (drag.current !== null && point !== null) finishDrawingDimensionDrag(drag.current, point.point);
         if (noteDrag.current !== null && point !== null) finishDrawingAnnotationDrag(noteDrag.current, point.point);
-        drag.current = null; noteDrag.current = null; setDragPoint(null);
+        if (tableDrag.current !== null && point !== null) finishDrawingTableDrag(tableDrag.current, point.point);
+        drag.current = null; noteDrag.current = null; tableDrag.current = null; setDragPoint(null);
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       }}
-      onPointerCancel={() => { drag.current = null; noteDrag.current = null; setDragPoint(null); }}>
+      onPointerCancel={() => { drag.current = null; noteDrag.current = null; tableDrag.current = null; setDragPoint(null); }}>
       {shown?.svg == null ? <p className="pcad-viewport__empty-text">{t(fontStatus === 'ready' ? 'drawing.viewport.empty' : 'drawing.status.computing')}</p>
         : <div className="pcad-drawing-svg" dangerouslySetInnerHTML={{ __html: shown.svg }} />}
     </div>
     {fontStatus === 'failed' ? <p role="alert" className="pcad-drawing-notice">{t('drawing.error.fontFailed')}</p> : null}
+    {shown !== null && shown.tables.unresolved.length > 0 ? <p role="alert" className="pcad-drawing-notice">{t('drawing.table.unresolved')}</p> : null}
     {targets.length > 0 ? <p className="pcad-drawing-notice">{t('drawing.dimension.selectHint')}</p> : null}
     {tool === 'note' && notePlacement !== null ? <DrawingNotePopover key={`new:${JSON.stringify(notePlacement.point)}`} position={notePlacement.point} anchor={notePlacement.anchor} /> : null}
     {tool === 'select' ? drawing?.annotations.filter((annotation) => selectedIds.length === 1 && selectedIds[0] === annotation.id

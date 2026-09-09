@@ -58,6 +58,9 @@ const SHAPE_FIELDS: Readonly<
   appearance: null,
   selectionSets: null,
   canvases: null,
+  namedViews: null,
+  configurations: null,
+  activeConfigurationId: null,
 };
 
 /**

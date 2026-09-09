@@ -808,6 +808,14 @@ export function DrawingSheetIcon(props: IconProps): React.JSX.Element {
   </SvgIcon>;
 }
 
+/** 図面ひな形から新規。破線の横長用紙と、表題欄のある新しい用紙。 */
+export function DrawingTemplateIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}>
+    <path d="M1 2h10v7H1z" strokeDasharray="1.6 1.2" />
+    <path d="M5 6h10v8H5zM10 11h5M12 11v3" />
+  </SvgIcon>;
+}
+
 /** 新規。角を折った白紙。 */
 export function NewFileIcon(props: IconProps): React.JSX.Element {
   return (

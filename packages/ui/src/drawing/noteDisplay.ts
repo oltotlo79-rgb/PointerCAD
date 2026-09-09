@@ -1,4 +1,4 @@
-import { note, type Annotation, type DrawingRenderElement, type OutlinedText, type RenderSubpath, type InkBounds } from '@pointercad/drawing';
+import { note, type Annotation, type DrawingRenderElement, type OutlinedText, type RenderSubpath, type InkBounds, type NoteGeometry } from '@pointercad/drawing';
 
 export function drawingNoteBounds(annotation: Annotation, outline: (text: string, size: number) => OutlinedText): InkBounds | null {
   const display = displayDrawingNote(annotation, outline);
@@ -23,6 +23,11 @@ export function displayDrawingNote(annotation: Annotation, outline: (text: strin
     ...(target === undefined ? {} : { leader: { target, end: annotation.leaderEnd ?? 'arrow' } }),
     measureText: (text, size) => outline(text, size).metrics });
   if (geometry === null) return null;
+  return drawingNoteGeometryElement(annotation, geometry);
+}
+
+/** 穴表の記号も普通の引出線と同じ矢印・線・文字を描く。 */
+export function drawingNoteGeometryElement(annotation: Pick<Annotation, 'id' | 'layerId' | 'style'>, geometry: NoteGeometry): DrawingRenderElement {
   const fills: NonNullable<DrawingRenderElement['fills']>[number][] = [];
   if (geometry.arrow !== null) {
     const [a, b, c] = geometry.arrow.points;

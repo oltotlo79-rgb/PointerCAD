@@ -20,6 +20,7 @@
  * `assembly/constraints/**` が自分で持つ(`part/types.ts` と `part/resolvePart.ts` の関係と同じ)。
  */
 
+import type { NamedView } from '../part/namedViews.js';
 import type { ExpressionValue } from '@pointercad/expression';
 
 import type { AppearanceSpec } from '../appearance/types.js';
@@ -278,7 +279,7 @@ export interface PresentationStep {
 }
 
 /** 部品表の列(FR-611 の 4 列 + 質量。§0.a-0.38)。 */
-export type BomColumnId = 'number' | 'name' | 'quantity' | 'material' | 'mass';
+export type BomColumnId = 'number' | 'name' | 'quantity' | 'material' | 'mass' | 'configuration';
 
 /** 部品表の並べ替えの基準(§2.10)。 */
 export type BomSortKey = 'number' | 'name' | 'quantity' | 'mass';
@@ -321,6 +322,7 @@ export interface AssemblyDocument {
   readonly presentation: readonly PresentationStep[];
   /** 名前を付けた数値の表(FR-207)。部品文書のものとは別物(§0.a-0.9)。 */
   readonly parameters: readonly Parameter[];
+  readonly namedViews: readonly NamedView[];
   /** 部品表の並びと列(FR-611)。 */
   readonly bom: BomSettings;
 }

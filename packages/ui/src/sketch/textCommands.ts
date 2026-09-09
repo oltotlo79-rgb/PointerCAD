@@ -48,9 +48,9 @@ export async function applySketchText(input: SketchTextInput): Promise<boolean> 
       && current.activeTool === state.activeTool && current.numericInput === state.numericInput;
   };
   const heightSource = parseDisplayInput(input.heightSource, state.displaySettings.lengthUnit);
-  const variables = analyzeParameters(document.parameters, [heightSource, input.angleSource]).variables;
-  const height = evaluateExpression(heightSource, { variables, nonLengthVariables: state.nonLengthVariables });
-  const angle = evaluateExpression(input.angleSource, { variables });
+  const analysis = analyzeParameters(document.parameters, [heightSource, input.angleSource]);
+  const height = evaluateExpression(heightSource, analysis);
+  const angle = evaluateExpression(input.angleSource, analysis);
   if (!height.ok || !angle.ok || height.value.value <= 0 || !input.origin.every(Number.isFinite)) {
     state.setShapeError(t('text.error.invalid')); return false;
   }

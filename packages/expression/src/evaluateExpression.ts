@@ -23,6 +23,8 @@ export type ExpressionResult =
   | { readonly ok: false; readonly error: ExpressionError };
 
 export interface EvaluateOptions {
+  /** 式間の十進精度を最終公開まで保つ。 */
+  readonly exactVariables?: ReadonlyMap<string, string>;
   /** 変数表(FR-206)。P1 の UI は渡さない(= 空として扱う)。 */
   readonly variables?: ReadonlyMap<string, number>;
   /**
@@ -50,9 +52,11 @@ export function evaluateExpression(
   try {
     const node = parse(source);
     const result = evaluateNode(node, options.variables ?? NO_VARIABLES, {
+      exactVariables: options.exactVariables,
       nonLengthVariables: options.nonLengthVariables,
     });
-    if (!result.isFinite()) {
+    const publicValue = result.toNumber();
+    if (!result.isFinite() || !Number.isFinite(publicValue)) {
       // 変数表から無限大を渡された場合など、評価の途中では弾かれない経路がある。
       return { ok: false, error: expressionError('notFinite', '') };
     }
@@ -61,7 +65,7 @@ export function evaluateExpression(
       value: {
         source,
         // 丸めはここ1回だけ。double へ落とすのが最終段(NFR-RE-4、FR-203)。
-        value: result.toNumber(),
+        value: publicValue,
         display: result.toSignificantDigits(DISPLAY_SIGNIFICANT_DIGITS).toString(),
       },
     };

@@ -193,6 +193,25 @@ export function AppShell(): React.JSX.Element {
      * 止められないことがある。そのときはツールバーの「新規」を使う(デスクトップ版では効く)。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
+      // 文書の種類や入力欄の判定より先に扱い、図面にも保存・開く・新規を届ける。
+      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+        const fileKey = event.key.toLowerCase();
+        if (fileKey === 's') {
+          event.preventDefault();
+          void savePart(createDefaultPartFileDeps(), event.shiftKey);
+          return;
+        }
+        if (fileKey === 'o' && !event.shiftKey) {
+          event.preventDefault();
+          void openPart(createDefaultPartFileDeps());
+          return;
+        }
+        if (fileKey === 'n' && !event.shiftKey) {
+          event.preventDefault();
+          void newPart(createDefaultPartFileDeps());
+          return;
+        }
+      }
       if (activeDocumentKind(useAppStore.getState()) === 'drawing') {
         if (isTextEntry(event.target) || event.altKey) return;
         const state = useAppStore.getState();
@@ -265,21 +284,6 @@ export function AppShell(): React.JSX.Element {
         event.preventDefault();
         store.redo();
         return;
-      }
-      // 保存は Ctrl+S、名前を付けて保存は Ctrl+Shift+S。
-      if (key === 's') {
-        event.preventDefault();
-        void savePart(createDefaultPartFileDeps(), event.shiftKey);
-        return;
-      }
-      if (key === 'o' && !event.shiftKey) {
-        event.preventDefault();
-        void openPart(createDefaultPartFileDeps());
-        return;
-      }
-      if (key === 'n' && !event.shiftKey) {
-        event.preventDefault();
-        void newPart(createDefaultPartFileDeps());
       }
     };
     globalThis.addEventListener('keydown', onKeyDown);

@@ -141,6 +141,8 @@ const FIELD_KEY_ALIASES: Readonly<Record<string, string>> = {
 export interface CommandLineContext {
   readonly plane: WorkPlane | null;
   readonly variables: ReadonlyMap<string, number>;
+  readonly exactVariables?: ReadonlyMap<string, string>;
+  readonly nonLengthVariables?: ReadonlySet<string>;
   /** 直前の点があるか(`@` を使えるか、FR-302)。 */
   readonly hasPrevious: boolean;
 }
@@ -376,7 +378,7 @@ function parseAbsoluteOrRelative(
 
   const values: ExpressionValue[] = [];
   for (const raw of rawParts) {
-    const result = evaluateExpression(raw.trim(), { variables: context.variables });
+    const result = evaluateExpression(raw.trim(), context);
     if (!result.ok) {
       return errorOutcome(result.error.message, []);
     }
@@ -406,11 +408,11 @@ function parsePolar(body: string, angleIndex: number, hasAt: boolean, context: C
     return errorOutcome(t('commandLine.error.polarNot3d'), []);
   }
 
-  const distanceResult = evaluateExpression(distanceSource, { variables: context.variables });
+  const distanceResult = evaluateExpression(distanceSource, context);
   if (!distanceResult.ok) {
     return errorOutcome(distanceResult.error.message, []);
   }
-  const angleResult = evaluateExpression(angleSource, { variables: context.variables });
+  const angleResult = evaluateExpression(angleSource, context);
   if (!angleResult.ok) {
     return errorOutcome(angleResult.error.message, []);
   }

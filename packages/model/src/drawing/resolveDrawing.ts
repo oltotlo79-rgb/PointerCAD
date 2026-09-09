@@ -5,6 +5,8 @@ import { resolveAuxiliaryDirection } from './viewDirection.js';
 import { validateSectionSpec, type SectionSpec } from './sectionSpec.js';
 import type { RigidPlacement } from '../assembly/placementMath.js';
 import type { DrawingDimensionInstance } from './dimensionTarget.js';
+import type { BomRow } from '../assembly/bom.js';
+import type { HoleScheduleResult } from './holeSchedule.js';
 
 export interface DrawingInstance {
   readonly bodyId: string;
@@ -23,6 +25,8 @@ export interface DrawingProjectionCurve {
 }
 
 export interface DrawingSourceResolution {
+  readonly bomRows?: readonly BomRow[];
+  readonly holeTables?: ReadonlyMap<string, HoleScheduleResult>;
   readonly dimensionInstances?: readonly DrawingDimensionInstance[];
   readonly bodyIds: readonly string[];
   readonly instances?: readonly DrawingInstance[];

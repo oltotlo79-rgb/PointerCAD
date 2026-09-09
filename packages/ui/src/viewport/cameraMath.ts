@@ -8,6 +8,9 @@ export interface OrbitState {
   readonly distance: number;
   /** 注視点の座標(mm)。 */
   readonly target: readonly [number, number, number];
+  /** 名前付き視点が持つ上向きとレンズのズーム。既存の視点はZ上・1倍。 */
+  readonly up?: readonly [number, number, number];
+  readonly zoom?: number;
 }
 
 /** 真上・真下でカメラの上方向が反転しないよう、仰角にわずかな余裕を残す。 */
@@ -126,16 +129,29 @@ export function pan(
   deltaYPixels: number,
   viewportHeightPixels: number,
 ): OrbitState {
-  const scale = worldUnitsPerPixel(state.distance, viewportHeightPixels);
+  const scale = worldUnitsPerPixel(state.distance, viewportHeightPixels) / (state.zoom ?? 1);
 
   // 画面右方向のワールドベクトル(Z 軸が上なので水平面内で方位角に直交する)。
-  const right: [number, number, number] = [-Math.sin(state.azimuth), Math.cos(state.azimuth), 0];
+  let right: [number, number, number] = [-Math.sin(state.azimuth), Math.cos(state.azimuth), 0];
   // 画面上方向のワールドベクトル。
-  const up: [number, number, number] = [
+  let up: [number, number, number] = [
     -Math.sin(state.elevation) * Math.cos(state.azimuth),
     -Math.sin(state.elevation) * Math.sin(state.azimuth),
     Math.cos(state.elevation),
   ];
+
+  if (state.up !== undefined) {
+    const direction = viewDirection(state), requested = state.up;
+    const cross = [direction[1] * requested[2] - direction[2] * requested[1],
+      direction[2] * requested[0] - direction[0] * requested[2],
+      direction[0] * requested[1] - direction[1] * requested[0]];
+    const length = Math.hypot(...cross);
+    if (length > 1e-10) {
+      right = [cross[0] / length, cross[1] / length, cross[2] / length];
+      up = [right[1] * direction[2] - right[2] * direction[1],
+        right[2] * direction[0] - right[0] * direction[2], right[0] * direction[1] - right[1] * direction[0]];
+    }
+  }
 
   return {
     ...state,

@@ -1,7 +1,7 @@
 import { evaluateExpression, type ExpressionError, type ExpressionValue } from '@pointercad/expression';
 import {
   addComponent,
-  assemblyVariables,
+  assemblyExpressionContext,
   createComponentFor,
   findComponent,
   removeComponent,
@@ -21,12 +21,12 @@ export function placementFromSources(
   assembly: AssemblyDocument,
   sources: PlacementSources,
 ): PlacementInputOutcome {
-  const variables = assemblyVariables(assembly);
+  const context = assemblyExpressionContext(assembly);
   const values: (ExpressionValue | null)[] = [];
   const errors: (ExpressionError | null)[] = [];
   for (const entered of sources) {
     const source = entered.trim() === '' ? '0' : entered;
-    const result = evaluateExpression(source, { variables });
+    const result = evaluateExpression(source, context);
     values.push(result.ok ? result.value : null);
     errors.push(result.ok ? null : result.error);
   }

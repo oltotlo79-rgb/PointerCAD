@@ -39,6 +39,8 @@ param(
     [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils")]
     [string]$UnitPackage = "",
     [string[]]$UnitTests = @(),
+    # 実装途中の診断専用。既定・pre-commit・pre-pushの必須段数は変えない。
+    [switch]$StaticOnly,
     # 診断用: 性能検査の判定モード(厳密/参考)の表示だけを行って終了する(pnpmは一切実行しない)。
     # 統括の動作確認、および scripts/check.selftest.ps1 からの検証に使う。
     [switch]$ShowPerfModeOnly
@@ -116,6 +118,10 @@ try {
         exit 1
     }
     $unitDiagnostic = -not [string]::IsNullOrWhiteSpace($UnitPackage)
+    if ($StaticOnly -and ($Level -ne "Push" -or $E2EOnly -or $unitDiagnostic -or $UnitTests.Count -gt 0)) {
+        Write-Host "[NG] -StaticOnly は -Level Push で他の診断指定と分けてください" -ForegroundColor Red
+        exit 1
+    }
     if (($unitDiagnostic -and ($Level -ne "Push" -or $E2EOnly -or $UnitTests.Count -eq 0)) -or
         (-not $unitDiagnostic -and $UnitTests.Count -gt 0)) {
         Write-Host "[NG] ユニット診断は -Level Push -UnitPackage と -UnitTests を指定し、E2E診断とは分けてください" -ForegroundColor Red
@@ -124,6 +130,12 @@ try {
     foreach ($unitTest in $UnitTests) {
         if ($unitTest -notmatch '^src/[A-Za-z0-9_./-]+\.test\.tsx?$' -or $unitTest.Contains('..')) {
             Write-Host "[NG] ユニット診断には src/ 配下のテストファイルを指定してください" -ForegroundColor Red
+            exit 1
+        }
+        $unitFolder = if ($UnitPackage -eq "desktop") { "apps/desktop" } else { "packages/$UnitPackage" }
+        $unitTestPath = Join-Path (Join-Path $root $unitFolder) $unitTest
+        if (-not (Test-Path -LiteralPath $unitTestPath -PathType Leaf)) {
+            Write-Host "[NG] 指定したユニットテストが見つかりません: $unitFolder/$unitTest" -ForegroundColor Red
             exit 1
         }
     }
@@ -228,12 +240,12 @@ try {
             Write-Host "[警告] stage 済みのファイルが無いため、検査前後の比較を省略します" -ForegroundColor Yellow
         }
 
-        $runE2E = $hasE2E -and -not $unitDiagnostic
+        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly
         if ($E2EOnly -and -not $runE2E) {
             Write-Host "[NG] -E2EOnly を指定しましたが test:e2e スクリプトがありません" -ForegroundColor Red
             exit 1
         }
-        $totalChecks = if ($E2EOnly) { 1 } elseif ($runE2E) { 5 } else { 4 }
+        $totalChecks = if ($StaticOnly) { 2 } elseif ($E2EOnly) { 1 } elseif ($runE2E) { 5 } else { 4 }
         if ($unitDiagnostic) {
             Write-Host "[診断] 指定ユニットテストだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
             $unitArgs = @("--filter", "@pointercad/$UnitPackage", "exec", "vitest", "run") + $UnitTests
@@ -245,8 +257,10 @@ try {
         else {
             Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
             Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
-            Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
-            Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
+            if (-not $StaticOnly) {
+                Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
+                Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
+            }
         }
         if ($runE2E) {
             # Playwright のブラウザは初回だけ取得され、2回目以降は即座に終わる。
@@ -287,7 +301,10 @@ try {
     }
 
     Write-Host ""
-    if ($unitDiagnostic) {
+    if ($StaticOnly) {
+        Write-Host "[OK] 型・lint診断に合格しました(最終のPushゲートには数えません)" -ForegroundColor Green
+    }
+    elseif ($unitDiagnostic) {
         Write-Host "[OK] 指定ユニット診断に合格しました(最終のPushゲートには数えません)" -ForegroundColor Green
     }
     elseif ($E2EOnly) {

@@ -1,7 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -102,22 +98,7 @@ describe('ホーム視点(FR-108)', () => {
     expect(dot([-1, 0, 0])).toBeCloseTo(-facing, 12);
   });
 
-  /*
-   * 「視点を戻す」(Home キーとビューキューブの家 → `goHome`)が既定の視点と同じ定数を
-   * 使っていること。数を書き写した控えがもう 1 つ増えると、既定を変えたときに片方だけ
-   * 古いままになる(P6 の名前付きビューでも同じ定数を使う)。`attachCameraControls` は
-   * canvas を要る関数で、この package の検査は環境が node なので**原文を読んで**確かめる。
-   */
-  it('起動直後も「視点を戻す」も HOME_ORBIT ただ 1 つを使う', () => {
-    const sourcePath = resolve(dirname(fileURLToPath(import.meta.url)), 'attachCameraControls.ts');
-    const source = readFileSync(sourcePath, 'utf8');
-
-    // 初期値・Home キー・goHome の 3 か所とも HOME_ORBIT を入れている。
-    expect(source.match(/state(?::\s*OrbitState)?\s*=\s*HOME_ORBIT/g)).toHaveLength(3);
-    // 方位角・仰角を書き写した控えがどこにも無い。
-    expect(source).not.toMatch(/azimuth\s*:/);
-    expect(source).not.toMatch(/elevation\s*:\s*Math\./);
-  });
+  // 起動/キー/ボタンが同じHOME_ORBITへ戻ることはquadControls.test.tsの実イベントで検査する。
 });
 
 describe('平行移動(FR-101)', () => {

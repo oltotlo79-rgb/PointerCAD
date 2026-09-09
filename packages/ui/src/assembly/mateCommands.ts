@@ -1,8 +1,7 @@
 import { evaluateExpression, type ExpressionError, type ExpressionValue } from '@pointercad/expression';
 import {
-  assemblyVariables,
+  assemblyExpressionContext,
   findComponent,
-  nonLengthVariables,
   resolveMateTarget,
   selectMateTargetGeometry,
   nextMateId,
@@ -151,7 +150,7 @@ function valueFromSource(
 ): { readonly ok: true; readonly value: ExpressionValue | undefined } | { readonly ok: false; readonly error: ExpressionError } {
   if (!mateKindNeedsValue(kind, kinds)) return { ok: true, value: undefined };
   const entered = source.trim() === '' ? '0' : source;
-  const result = evaluateExpression(entered, { variables: assemblyVariables(document) });
+  const result = evaluateExpression(entered, assemblyExpressionContext(document));
   if (!result.ok) return result;
   if (kind === 'distance' && result.value.value < 0) {
     return { ok: false, error: { code: 'outOfRange', message: t('assembly.mate.negativeDistance'), position: -1 } };
@@ -223,12 +222,11 @@ function jointRangeFromSource(
   maxSource: string,
 ): { readonly ok: true; readonly minValue: ExpressionValue | null; readonly maxValue: ExpressionValue | null }
   | { readonly ok: false; readonly reason: 'range'; readonly error?: ExpressionError; readonly message?: string } {
-  const variables = assemblyVariables(document);
-  const dimensionless = nonLengthVariables(document.parameters);
+  const context = assemblyExpressionContext(document);
   const evaluateBound = (source: string): { readonly ok: true; readonly value: ExpressionValue | null }
     | { readonly ok: false; readonly error: ExpressionError } => {
     if (source.trim() === '') return { ok: true, value: null };
-    const result = evaluateExpression(source, { variables, nonLengthVariables: dimensionless });
+    const result = evaluateExpression(source, context);
     return result.ok ? { ok: true, value: result.value } : result;
   };
   const min = evaluateBound(minSource);

@@ -9,6 +9,7 @@
  * 解決(形の再計算と配置の合成)は `assembly/resolveAssembly.ts`(P7 タスク6)の担当にする。
  */
 
+import { createDefaultNamedViews } from '../part/namedViews.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 
 import { PART_SCHEMA_VERSION } from '../part/createPartDocument.js';
@@ -100,6 +101,7 @@ export const BOM_COLUMN_IDS: readonly BomColumnId[] = [
   'quantity',
   'material',
   'mass',
+  'configuration',
 ];
 
 /** 部品表の並べ替えの基準の一覧(§2.10)。 */
@@ -110,7 +112,7 @@ export const BOM_SORT_KEYS: readonly BomSortKey[] = ['number', 'name', 'quantity
  * サブアセンブリは中身を展開せず 1 行として数える。
  */
 export const DEFAULT_BOM_SETTINGS: BomSettings = {
-  columns: BOM_COLUMN_IDS,
+  columns: ['number', 'name', 'quantity', 'material', 'mass'],
   sortBy: 'number',
   expandSubAssemblies: false,
 };
@@ -134,6 +136,7 @@ export function createAssemblyDocument(name: string): AssemblyDocument {
     // パラメータ表(FR-207)の既定は空。名前を付けた数値は利用者が足す(部品文書と同じ)。
     parameters: [],
     bom: DEFAULT_BOM_SETTINGS,
+    namedViews: createDefaultNamedViews(),
   };
 }
 

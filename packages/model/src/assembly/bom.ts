@@ -44,6 +44,7 @@ export interface BomRow {
   /** 木で最初に現れた順から導出した表示番号。保存データではない。 */
   readonly number: number;
   readonly name: string;
+  readonly configurationName: string | null;
   readonly quantity: number;
   /** 密度表の id。材質は部品表の同一性に含む。 */
   readonly materialId: string;
@@ -62,6 +63,7 @@ interface MutableBomRow {
   readonly rowKey: string;
   readonly number: number;
   readonly name: string;
+  readonly configurationName: string | null;
   readonly materialId: string;
   readonly materialName: string;
   readonly massEach: number | null;
@@ -145,7 +147,9 @@ export function buildBom(
     path: readonly string[],
   ): void => {
     const partKey = currentResolved.partKeys.get(component.id) ?? partKeyOf(component.source);
-    const materialId = materialOf(component, currentResolved.documents?.get(partKey));
+    const partDocument = currentResolved.documents?.get(partKey);
+    const materialId = materialOf(component, partDocument);
+    const configurationName = partDocument?.configurations.find((configuration) => configuration.id === partDocument.activeConfigurationId)?.name ?? null;
     const identity = `${scope}\u0000${partKey}\u0000${materialId}`;
     const found = grouped.get(identity);
     if (found !== undefined) {
@@ -159,6 +163,7 @@ export function buildBom(
       rowKey: rowKeyOf(scope, partKey, materialId),
       number: nextNumber,
       name: bomPartName(component),
+      configurationName,
       quantity: 1,
       materialId,
       materialName: materialId,

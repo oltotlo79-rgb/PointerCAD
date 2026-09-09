@@ -8,6 +8,8 @@
  * part/resolvePart.ts の担当にする。
  */
 
+import { createDefaultConfigurations } from './configurationDefaults.js';
+import { createDefaultNamedViews } from './namedViews.js';
 import { type ExpressionValue, expressionValueFromNumber } from '@pointercad/expression';
 
 import { emptyAppearanceTable } from '../appearance/appearanceTable.js';
@@ -69,7 +71,7 @@ import type {
  * 下絵(`canvases`、FR-332)も版 7 に含め、版 6 以前のファイルは
  * `SCHEMA_MIGRATIONS[6]` がこの 2 欄の省略を空配列で補って読み込む。
  */
-export const PART_SCHEMA_VERSION = 9;
+export const PART_SCHEMA_VERSION = 10;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;
@@ -613,6 +615,9 @@ export function createEmptyPartDocument(): PartDocument {
     solids: [],
     // パラメータ表(FR-207)の既定は空。名前を付けた数値は利用者が足す(P4b タスク2)。
     parameters: [],
+    namedViews: createDefaultNamedViews(),
+    configurations: createDefaultConfigurations([]),
+    activeConfigurationId: 'configuration-1',
     // 外観の割り当て(FR-1106〜1110)の既定は空の表。割り当てが1つも無い文書は
     // P2 からの単色(`DEFAULT_APPEARANCE`)で描かれ、見た目は変わらない(P5 §0.a-0.4)。
     appearance: emptyAppearanceTable(),

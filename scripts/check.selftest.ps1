@@ -408,6 +408,28 @@ if ($null -ne $perfModeShellCommand) {
 }
 
 Write-Host ""
+# 指定ファイルの一部だけが実在していても、存在しない検査を黙って省略しない。
+if ($null -ne $perfModeShellCommand) {
+    $missingUnitOutput = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath `
+        -Level Push -UnitPackage ui -UnitTests src/this-test-must-not-exist.test.ts | Out-String
+    Assert-True ($LASTEXITCODE -ne 0) "存在しない対象ユニットテストを指定すると非0で終了する"
+    Assert-True ($missingUnitOutput.Contains("指定したユニットテストが見つかりません")) "存在しない対象の名前を検査実行前に知らせる"
+    Assert-True (-not $missingUnitOutput.Contains("=== ユニット診断")) "存在しない対象があればpnpmを実行しない"
+}
+# 診断を通常ゲートと混ぜたり、一部を黙って省略したりしない。
+if ($null -ne $perfModeShellCommand) {
+    foreach ($arguments in @(
+        @('-Level', 'Commit', '-StaticOnly'),
+        @('-Level', 'Push', '-StaticOnly', '-E2EOnly'),
+        @('-Level', 'Push', '-StaticOnly', '-UnitPackage', 'ui', '-UnitTests', 'src/i18n/jaMessages.test.ts')
+    )) {
+        $staticOutput = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath @arguments | Out-String
+        Assert-True ($LASTEXITCODE -ne 0) "StaticOnlyと他のゲート/診断の混在を非0で断る: $arguments"
+        Assert-True ($staticOutput.Contains('-StaticOnly は -Level Push')) "StaticOnlyの不正な組合せの理由を表示する"
+        Assert-True (-not $staticOutput.Contains('=== (1/')) "不正な組合せでは検査コマンドを開始しない"
+    }
+}
+
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red
     exit 1

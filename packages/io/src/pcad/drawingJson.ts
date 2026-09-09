@@ -17,6 +17,7 @@ import type {
 } from '@pointercad/model';
 
 import { isRecord, isUnknownArray } from './guards.js';
+import { hasOnlyFiniteJsonNumbers, preserveDrawingJsonFields } from './drawingJsonCompatibility.js';
 import { migrateToCurrentSchema, type ParseError } from './documentJson.js';
 import {
   PCAD_APP_NAME,
@@ -95,7 +96,7 @@ function cleanSource(source: DrawingSource): DrawingSource {
   };
 }
 
-function cleanSheet(sheet: DrawingSheet): DrawingSheet {
+export function cleanSheet(sheet: DrawingSheet): DrawingSheet {
   return {
     paperSizeId: sheet.paperSizeId,
     orientation: sheet.orientation,
@@ -111,6 +112,9 @@ function cleanSheet(sheet: DrawingSheet): DrawingSheet {
       material: sheet.titleBlock.material,
     },
     ...(sheet.generalTolerance === undefined ? {} : { generalTolerance: sheet.generalTolerance }),
+    ...(sheet.textHeight === undefined ? {} : { textHeight: sheet.textHeight }),
+    ...(sheet.scaleOptions === undefined ? {} : { scaleOptions: [...sheet.scaleOptions] }),
+    ...(sheet.titleBlockFields === undefined ? {} : { titleBlockFields: sheet.titleBlockFields.map((field) => ({ ...field })) }),
   };
 }
 
@@ -228,6 +232,8 @@ function cleanTable(table: DrawingTable): DrawingTable {
 
 function cleanBalloon(balloon: Balloon): Balloon {
   return {
+    ...(balloon.sourceTarget === undefined ? {} : { sourceTarget: cleanDimensionTarget(balloon.sourceTarget) }),
+    ...(balloon.targetKind === undefined ? {} : { targetKind: balloon.targetKind }),
     id: balloon.id,
     itemNumber: balloon.itemNumber,
     componentIds: [...balloon.componentIds],
@@ -264,7 +270,7 @@ function cleanParameter(parameter: DrawingParameter): DrawingParameter {
 }
 
 function cleanDrawingDocument(document: DrawingDocument): DrawingDocument {
-  return {
+  const clean: DrawingDocument = {
     id: document.id,
     name: document.name,
     schemaVersion: document.schemaVersion,
@@ -278,13 +284,15 @@ function cleanDrawingDocument(document: DrawingDocument): DrawingDocument {
     layers: document.layers.map(cleanLayer),
     parameters: document.parameters.map(cleanParameter),
   };
+  return preserveDrawingJsonFields(document, clean);
 }
 
-/** 未知の欄と導出値を落とし、決まった欄順で図面の封筒を書く。 */
+/** 未知の指定を保ち、投影線などの導出値を除いて図面の封筒を書く。 */
 export function serializeDrawing(
   document: DrawingDocument,
   options: SerializeDrawingOptions = {},
 ): string {
+  if (!hasOnlyFiniteJsonNumbers(document)) throw new Error('図面に有限でない数値が含まれるため保存できません。');
   const envelope: PcadDrawingEnvelope = {
     schema: document.schemaVersion,
     kind: options.kind ?? PCAD_DRAWING_KIND,
@@ -299,8 +307,12 @@ function hasString(record: Record<string, unknown>, key: string): boolean {
   return typeof record[key] === 'string';
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 function hasNumber(record: Record<string, unknown>, key: string): boolean {
-  return typeof record[key] === 'number';
+  return isFiniteNumber(record[key]);
 }
 
 function hasBoolean(record: Record<string, unknown>, key: string): boolean {
@@ -318,14 +330,14 @@ function isLiteral<T extends string>(value: unknown, allowed: readonly T[]): val
 function isPoint2(value: unknown): value is readonly [number, number] {
   return isUnknownArray(value)
     && value.length === 2
-    && typeof value[0] === 'number'
-    && typeof value[1] === 'number';
+    && isFiniteNumber(value[0])
+    && isFiniteNumber(value[1]);
 }
 
 function isVector3(value: unknown): value is readonly [number, number, number] {
   return isUnknownArray(value)
     && value.length === 3
-    && value.every((item) => typeof item === 'number');
+    && value.every((item) => isFiniteNumber(item));
 }
 
 const LINE_TYPES = ['solid', 'dashed', 'chain', 'chain2', 'zigzag'] as const;
@@ -335,7 +347,7 @@ function isStyle(value: unknown): value is DrawingElementStyle | null {
   if (!isRecord(value)) return false;
   return (value['color'] === undefined || typeof value['color'] === 'string')
     && (value['lineType'] === undefined || isLiteral(value['lineType'], LINE_TYPES))
-    && (value['lineWidth'] === undefined || typeof value['lineWidth'] === 'number');
+    && (value['lineWidth'] === undefined || isFiniteNumber(value['lineWidth']));
 }
 
 function hasOptionalStyle(record: Record<string, unknown>): boolean {
@@ -347,13 +359,13 @@ function isFingerprint(value: unknown): value is DrawingSubShapeFingerprint {
   if (!isVector3(value['position'])) return false;
   if (value['kind'] === 'vertex') return true;
   const common = (value['axis'] === null || isVector3(value['axis']))
-    && (value['radius'] === null || typeof value['radius'] === 'number');
+    && (value['radius'] === null || isFiniteNumber(value['radius']));
   if (!common) return false;
   return value['kind'] === 'face'
     ? isLiteral(value['surfaceKind'], ['plane', 'cylinder', 'cone', 'sphere', 'torus', 'other'])
-      && typeof value['area'] === 'number'
+      && isFiniteNumber(value['area'])
     : isLiteral(value['curveKind'], ['line', 'circle', 'ellipse', 'other'])
-      && typeof value['length'] === 'number';
+      && isFiniteNumber(value['length']);
 }
 
 function isSubShapeRef(value: unknown): value is DrawingSubShapeRef {
@@ -373,11 +385,17 @@ function isSource(value: unknown): value is DrawingSource {
     && hasString(value, 'importedAt');
 }
 
-function isSheet(value: unknown): value is DrawingSheet {
+function isTitleBlockField(value: unknown): boolean {
+  return isRecord(value) && hasString(value, 'key') && hasString(value, 'label')
+    && (value['fixedText'] === undefined || typeof value['fixedText'] === 'string')
+    && (value['widthWeight'] === undefined || (isFiniteNumber(value['widthWeight']) && value['widthWeight'] > 0));
+}
+
+export function isSheet(value: unknown): value is DrawingSheet {
   if (!isRecord(value)
     || !hasString(value, 'paperSizeId')
     || !isLiteral(value['orientation'], ['landscape', 'portrait'])
-    || !hasNumber(value, 'scale')
+    || !isFiniteNumber(value['scale']) || value['scale'] <= 0
     || value['projectionMethod'] !== 'third'
     || !isRecord(value['frame'])
     || !hasBoolean(value['frame'], 'visible')
@@ -385,7 +403,12 @@ function isSheet(value: unknown): value is DrawingSheet {
   const title = value['titleBlock'];
   return ['title', 'drawingNumber', 'revision', 'author', 'date', 'material'].every(
     (key) => hasString(title, key),
-  ) && (value['generalTolerance'] === undefined || typeof value['generalTolerance'] === 'string');
+  ) && (value['generalTolerance'] === undefined || typeof value['generalTolerance'] === 'string')
+    && (value['textHeight'] === undefined || (isFiniteNumber(value['textHeight']) && value['textHeight'] > 0))
+    && (value['scaleOptions'] === undefined || (isUnknownArray(value['scaleOptions']) && value['scaleOptions'].length > 0
+      && value['scaleOptions'].every((scale) => isFiniteNumber(scale) && scale > 0)))
+    && (value['titleBlockFields'] === undefined || (isUnknownArray(value['titleBlockFields']) && value['titleBlockFields'].length > 0
+      && value['titleBlockFields'].every(isTitleBlockField)));
 }
 
 function isView(value: unknown): value is DrawingView {
@@ -397,7 +420,7 @@ function isView(value: unknown): value is DrawingView {
       'auxiliary', 'partial', 'broken',
     ])
     || !isPoint2(value['position'])
-    || !(value['scale'] === null || typeof value['scale'] === 'number')
+    || !(value['scale'] === null || (isFiniteNumber(value['scale']) && value['scale'] > 0))
     || !isVector3(value['direction'])
     || !isVector3(value['xDir'])
     || !hasBoolean(value, 'showHidden')
@@ -509,12 +532,14 @@ function isTable(value: unknown): value is DrawingTable {
     || !hasString(value, 'layerId')
     || !hasOptionalStyle(value)) return false;
   return Object.values(value['options']).every(
-    (item) => typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean',
+    (item) => typeof item === 'string' || isFiniteNumber(item) || typeof item === 'boolean',
   );
 }
 
 function isBalloon(value: unknown): value is Balloon {
   return isRecord(value)
+    && (value['sourceTarget'] === undefined || isDimensionTarget(value['sourceTarget']))
+    && (value['targetKind'] === undefined || value['targetKind'] === 'face' || value['targetKind'] === 'edge')
     && hasString(value, 'id')
     && hasNumber(value, 'itemNumber')
     && isStringArray(value['componentIds'])
@@ -525,7 +550,7 @@ function isBalloon(value: unknown): value is Balloon {
     && hasOptionalStyle(value);
 }
 
-function isLayer(value: unknown): value is DrawingLayer {
+export function isLayer(value: unknown): value is DrawingLayer {
   return isRecord(value)
     && hasString(value, 'id')
     && hasString(value, 'name')
@@ -599,6 +624,7 @@ export function parseDrawing(text: string): ParseDrawingResult {
   } catch {
     return failure('invalidJson', '図面ファイルの中身を読み取れませんでした。');
   }
+  if (!hasOnlyFiniteJsonNumbers(parsed)) return failure('invalidField', '図面に有限でない数値が含まれています。');
   if (!isRecord(parsed) || typeof parsed['schema'] !== 'number') {
     return failure('notPcad', NOT_DRAWING_MESSAGE);
   }

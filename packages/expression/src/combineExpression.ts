@@ -219,6 +219,11 @@ function wrapSource(source: string): string {
   return isAtomicSource(source) ? source : `(${source})`;
 }
 
+/** 積・商の式を簡約せず連結し、入力された部分式と演算順序を保つ。 */
+export function composeExpressionSource(left: string, right: string, operator: '*' | '/'): string {
+  return `${wrapSource(left)}${operator}${wrapSource(right)}`;
+}
+
 /**
  * 組み立てた式から `ExpressionValue` を作る。値は再評価して得る(2 通りの評価を作らない)。
  *

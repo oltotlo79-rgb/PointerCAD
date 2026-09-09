@@ -4131,6 +4131,8 @@ export function fillDefaults(state: NumericInputState): NumericInputState {
  * 検査は 1 文字も書き換えずに同じ値を返す(安全側の既定)。
  */
 export interface DisplayUnitOptions {
+  /** パラメータ間の精度を決定時まで保持する。 */
+  readonly exactVariables?: ReadonlyMap<string, string>;
   /** 画面に出している長さの単位(`DisplaySettings.lengthUnit`)。省くと mm。 */
   readonly lengthUnit?: LengthUnit;
   /**
@@ -4150,6 +4152,7 @@ export function evaluateNumericInput(
     const result = evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
       variables,
       nonLengthVariables: display.nonLengthVariables,
+      exactVariables: display.exactVariables,
     });
     if (!result.ok) {
       return { key: field.key, value: null, error: result.error };
@@ -4702,6 +4705,7 @@ function evaluateCarried(
     const result = evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
       variables,
       nonLengthVariables: display.nonLengthVariables,
+      exactVariables: display.exactVariables,
     });
     if (result.ok) {
       map.set(field.key, result.value);

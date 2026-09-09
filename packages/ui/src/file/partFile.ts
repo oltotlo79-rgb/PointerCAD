@@ -33,6 +33,7 @@ import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 import { queueDocumentSave } from './documentSaveQueue.js';
+import { applyPickedDrawing, saveDrawing } from './drawingFile.js';
 
 /**
  * 手続きが外の世界へ触れる口(検査では偽物を差し込む)。
@@ -334,6 +335,10 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     await applyPickedAssembly(picked, deps);
     return;
   }
+  if (picked.name.toLowerCase().endsWith('.pcadd')) {
+    await applyPickedDrawing(picked, deps);
+    return;
+  }
   const result = readPartDocument(picked.bytes);
   if (!result.ok) {
     useAppStore.getState().setFileMessage({ key: result.messageKey, failed: true });
@@ -371,6 +376,7 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   const store = useAppStore.getState();
   const active = activeDocument(store);
   if (active.kind === 'assembly') return saveAssembly(deps, saveAs);
+  if (active.kind === 'drawing') return saveDrawing(deps, saveAs);
   if (active.kind !== 'part') return;
   // 書き出す文書はここで確定させる。待っている間に文書が変わっても、
   // 「保存した文書」と実際に書いたものを食い違わせない。

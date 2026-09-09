@@ -300,7 +300,7 @@ export function removeConstraintById(constraintId: string): void {
  * 通ったり通らなかったりしないようにする(t18 の申し送り)。
  */
 export function evaluateConstraintSource(store: Store, source: string): ExpressionValue | null {
-  const result = evaluateExpression(source, { variables: store.parameterAnalysis.variables });
+  const result = evaluateExpression(source, store.parameterAnalysis);
   return result.ok ? result.value : null;
 }
 

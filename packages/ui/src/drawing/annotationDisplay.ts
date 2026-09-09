@@ -13,7 +13,8 @@ export function resolveMachiningAnnotation(document: DrawingDocument, library: D
     && entry.metadata.contentHash === document.source.contentHash);
   if (embedded === undefined || !('sketches' in embedded.document)) return null;
   const id = featureId ?? target.ref.bodyFeatureId;
-  const evaluation = reevaluatePartDocument(embedded.document, analyzeParameters(embedded.document.parameters, []).variables);
+  const analysis = analyzeParameters(embedded.document.parameters, []);
+  const evaluation = reevaluatePartDocument(embedded.document, analysis.variables, analysis);
   if (evaluation.failures.some((failure) => failure.ownerId === id)) return null;
   const feature = evaluation.document.solids.find((item) => item.id === id);
   return feature?.kind === 'hole' || feature?.kind === 'threadHole' || feature?.kind === 'threadShaft' || feature?.kind === 'chamfer'
@@ -29,7 +30,7 @@ function arrowFill(tip: Point2, from: Point2): { readonly subpaths: readonly Ren
 export function displayDrawingAnnotations(document: DrawingDocument, source: DrawingSourceResolution, library: DrawingSourceLibrary,
   outline: (text: string, sizeMm: number) => OutlinedText): readonly DrawingRenderElement[] {
   const context = { instances: source.dimensionInstances ?? [], modelCenter: source.center };
-  const variables = analyzeParameters(document.parameters, []).variables;
+  const analysis = analyzeParameters(document.parameters, []);
   return document.annotations.flatMap((annotation): DrawingRenderElement[] => {
     if (annotation.sourceTarget === undefined) {
       const display = displayDrawingNote(annotation, outline);
@@ -41,7 +42,7 @@ export function displayDrawingAnnotations(document: DrawingDocument, source: Dra
       texts: [{ text: '？', position: annotation.position, sizeMm: annotation.height }] }];
     if (target === null) return unresolved();
     if (annotation.surfaceFinish !== undefined) {
-      const evaluated = evaluateExpression(annotation.surfaceFinish.value.source, { variables });
+      const evaluated = evaluateExpression(annotation.surfaceFinish.value.source, analysis);
       if (!evaluated.ok) return unresolved();
       const symbol = surfaceFinish({ ...annotation.surfaceFinish, value: evaluated.value.value, position: annotation.position, target, sizeMm: annotation.height });
       if (symbol === null) return unresolved();

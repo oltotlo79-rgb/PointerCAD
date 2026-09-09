@@ -227,3 +227,7 @@ export {
 
 export { writeDrawingDxf, type DrawingDxfResult } from './dxf/writeDrawingDxf.js';
 export { type DxfWriteEntity, type DxfWriteOptions } from './dxf/dxfDrawingTypes.js';
+
+export * from './pcad/drawingTemplateJson.js';
+export * from './pcad/drawingTemplateFile.js';
+export { readDrawingBundle, writeDrawingBundle } from './pcad/drawingBundle.js';

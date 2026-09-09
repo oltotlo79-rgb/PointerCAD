@@ -16,6 +16,7 @@
  * 封筒の `schema` には同じ値を書く。読み手は封筒の `schema` を先に検査してから中身を読む。
  */
 
+import { readConfigurationData, readNamedViews, serializeConfigurations, serializeNamedViews } from './documentMetadataJson.js';
 import {
   type AppearanceEntry,
   type AppearancePattern,
@@ -1770,6 +1771,9 @@ function serializePartDocument(document: PartDocument): PartDocument {
     // ファイルの並び(id → … → appearance)が 1 行も動かない。
     selectionSets: document.selectionSets.map(serializeSelectionSet),
     canvases: document.canvases.map(serializeSketchCanvas),
+    namedViews: serializeNamedViews(document.namedViews),
+    configurations: serializeConfigurations(document.configurations),
+    activeConfigurationId: document.activeConfigurationId,
   };
 }
 
@@ -6441,6 +6445,10 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!canvases.ok) {
     return canvases;
   }
+  const namedViews = readNamedViews(record.value, path);
+  if (!namedViews.ok) return namedViews;
+  const configurations = readConfigurationData(record.value, path, parameters.value);
+  if (!configurations.ok) return configurations;
   return {
     ok: true,
     value: {
@@ -6455,6 +6463,8 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
       appearance: appearance.value,
       selectionSets: selectionSets.value,
       canvases: canvases.value,
+      namedViews: namedViews.value,
+      ...configurations.value,
     },
   };
 }

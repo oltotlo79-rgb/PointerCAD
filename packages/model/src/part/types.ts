@@ -14,6 +14,8 @@
  * 鍵の材料の型は cacheKey.ts が自分で持つ)。
  */
 
+import type { Configuration } from './configurations.js';
+import type { NamedView } from './namedViews.js';
 import type { ExpressionValue } from '@pointercad/expression';
 // 球へつなぐときの点の数(24 / 48 / 72)は kernel の `SphereSegmentCount` が正本
 // (§0.a-0.74、統括の指示 2026-09-05)。型だけの取り込みなので実行時の読み込みは起きない。
@@ -1514,6 +1516,11 @@ export interface PartDocument {
    * (`packages/io`、タスク21。必須にすると版 4 以前が開けなくなる)。
    */
   readonly parameters: readonly Parameter[];
+  /** 名前を付けたカメラ。基準ジオメトリの履歴から独立して保存する(FR-113)。 */
+  readonly namedViews: readonly NamedView[];
+  /** パラメータの式を構成別に保存する(FR-516)。導出した数値・形状は含めない。 */
+  readonly configurations: readonly Configuration[];
+  readonly activeConfigurationId: string | null;
   /**
    * 外観の割り当て(色・材質・柄。FR-1106〜1110、要件§4.12、P5 §0.a-0.1)。
    *

@@ -59,14 +59,25 @@ describe('品質ゲートのテスト実行順', () => {
     expect(checkScript).not.toContain('@("--", "--grep", $E2EGrep)');
   });
 
-  it('50部品のFPS測定をソフトウェア描画で先行し、他のE2Eと競合させない', () => {
+  it('50部品と4分割のFPS測定をソフトウェア描画で先行し、他のE2Eと競合させない', () => {
     const config = readRootFile('e2e/playwright.config.ts');
     const performance = config.slice(config.indexOf("name: 'viewport-performance'"), config.indexOf("name: 'functional'"));
     const functional = config.slice(config.indexOf("name: 'functional'"));
-    expect(config).toContain('const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個/u;');
+    const selectedSource = /^const VIEWPORT_PERFORMANCE_TEST = \/(.+)\/u;/mu.exec(config)?.[1];
+    const filesSource = /testMatch: \/(.+)\/u,/u.exec(performance)?.[1];
+    if (selectedSource === undefined || filesSource === undefined) throw new Error('性能検査の対象指定がありません');
+    const selected = new RegExp(selectedSource, 'u');
+    const files = new RegExp(filesSource, 'u');
+    expect(selected.test('空状態、原点・式配置、各Undo、保存往復、見分けられる同じ箱50個')).toBe(true);
+    expect(selected.test('4分割の実描画性能')).toBe(true);
+    expect(selected.test('図面を保存して開き直す')).toBe(false);
+    expect(files.test('e2e/tests/assembly.spec.ts')).toBe(true);
+    expect(files.test('e2e/tests/p8-drawing.spec.ts')).toBe(true);
+    expect(files.test('e2e/tests/smoke.spec.ts')).toBe(false);
     expect(performance).toContain('grep: VIEWPORT_PERFORMANCE_TEST');
     expect(performance).toContain("args: ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader']");
     expect(performance).not.toContain("'--use-angle=swiftshader'");
+    expect(performance).toContain('workers: 1');
     expect(functional).toContain('grepInvert: VIEWPORT_PERFORMANCE_TEST');
     expect(functional).toContain("dependencies: ['viewport-performance']");
     expect(config).toContain('workers: 2');

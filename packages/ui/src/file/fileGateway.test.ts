@@ -97,10 +97,10 @@ describe('ブラウザ用の口', () => {
     expect(gateway.hasSaveTarget()).toBe(true);
   });
 
-  it('一般の開くは両拡張子、assembly の保存は .pcada のフィルタを渡す', async () => {
+  it('一般の開くは3種の文書、assembly の保存は .pcada のフィルタを渡す', async () => {
     const opened = createFakeOpenScope('a.pcada', Uint8Array.of(1));
     await createBrowserFileGateway(opened.scope).openPcad('all');
-    expect(opened.options[0].types?.flatMap((type) => Object.values(type.accept).flat())).toEqual(['.pcad', '.pcada']);
+    expect(opened.options[0].types?.flatMap((type) => Object.values(type.accept).flat())).toEqual(['.pcad', '.pcada', '.pcadd']);
     const saved = createFakeSaveScope('a.pcada');
     const gateway = createBrowserFileGateway(saved.scope);
     await gateway.savePcad('a.pcada', Uint8Array.of(1), false, 'assembly');

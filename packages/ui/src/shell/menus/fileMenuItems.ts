@@ -6,6 +6,7 @@
 
 import {
   DrawingSheetIcon,
+  DrawingTemplateIcon,
   ExportIcon,
   ImportIcon,
   LayersIcon,
@@ -40,6 +41,7 @@ import type { ToolMenuItem } from './menuItem.js';
  */
 export type FileMenuActionId =
   | 'newDrawingFromPart'
+  | 'newDrawingFromTemplate'
   | 'newAssembly'
   | 'saveAs'
   | 'exportShape'
@@ -61,6 +63,7 @@ export type FileMenuActionId =
  */
 export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
   { id: 'newDrawingFromPart', labelKey: 'drawing.file.fromPart', tooltipKey: 'drawing.file.fromPart', Icon: DrawingSheetIcon },
+  { id: 'newDrawingFromTemplate', labelKey: 'drawing.template.new', tooltipKey: 'drawing.template.newTooltip', Icon: DrawingTemplateIcon },
   {
     id: 'newAssembly',
     labelKey: 'assembly.file.new',
@@ -194,9 +197,12 @@ export function fileMenuItems(
   recentFiles: readonly NamedMenuEntry[],
   documentKind: 'part' | 'assembly' = 'part',
 ): readonly ToolMenuItem<FileMenuItemId>[] {
-  // アセンブリで成立する固定操作は新規アセンブリと別名保存。その他は部品用。
+  // 図面作成は部品と組立の両方で使う。部品用ひな形と図面用ひな形は分ける。
   const rows: ToolMenuItem<FileMenuItemId>[] = documentKind === 'assembly'
-    ? FILE_MENU_ITEMS.filter((item) => item.id === 'newAssembly' || item.id === 'saveAs')
+    ? FILE_MENU_ITEMS.filter((item) => item.id === 'newAssembly' || item.id === 'saveAs'
+      || item.id === 'newDrawingFromPart' || item.id === 'newDrawingFromTemplate')
+      .map((item) => item.id === 'newDrawingFromPart'
+        ? { ...item, labelKey: 'drawing.file.fromAssembly', tooltipKey: 'drawing.file.fromAssembly' } : item)
     : [...FILE_MENU_ITEMS];
   if (documentKind === 'part') {
     for (const template of templates) {

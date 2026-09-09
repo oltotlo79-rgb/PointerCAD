@@ -328,14 +328,15 @@ export function evaluateExpressionExact(
 ): ExactExpressionResult {
   try {
     const result = evaluateNode(parse(source), options.variables ?? NO_VARIABLES, options);
-    if (!result.isFinite()) {
+    const publicValue = result.toNumber();
+    if (!result.isFinite() || !Number.isFinite(publicValue)) {
       return { ok: false, error: expressionError('notFinite', '') };
     }
     return {
       ok: true,
       value: {
         source,
-        value: result.toNumber(),
+        value: publicValue,
         exact: result.toString(),
       },
     };

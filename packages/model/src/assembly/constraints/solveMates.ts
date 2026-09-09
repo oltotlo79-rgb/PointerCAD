@@ -2,11 +2,10 @@
 import { CONFLICT_REPORT_LIMIT, remainingMessage } from '../../sketch/constraints/diagnose.js';
 import { matrixRank, qrDecomposition } from '../../sketch/constraints/solve.js';
 import { addVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
-import { nonLengthVariables } from '../../units/length.js';
 import {
   exponentialMap, multiplyQuaternion, normalizeQuaternion, rotateVector, type RigidPlacement,
 } from '../placementMath.js';
-import { assemblyVariables } from '../resolveAssembly.js';
+import { assemblyExpressionContext } from '../resolveAssembly.js';
 import type { AssemblyDocument } from '../types.js';
 import {
   buildMateResidualReport, prepareMateResiduals, type MateResidualTargetPair,
@@ -45,13 +44,25 @@ export interface SolveMatesOptions extends RigidSolveOptions {
   /** 全体600とは別の、1成分の上限(既定600)。600を超える指定でも上限は広げない。 */
   readonly maxComponentVariables?: number;
   readonly parameters?: ReadonlyMap<string, number>;
-  /** joint driverの境界式だけに使う。省略時はassembly.parametersの単位から導出する。 */
+  readonly exactVariables?: ReadonlyMap<string, string>;
+  /** 合致・joint driverの式に使う。省略時はassembly.parametersの単位から導出する。 */
   readonly nonLengthVariables?: ReadonlySet<string>;
   /**
    * 上流で姿勢6自由度を固定済みの部品だけを指定する。その姿勢はplacementsから読む。
    * 位置だけのdrag pinは含めない。部分的なdriverの残差はタスク18/20で接続する。
    */
   readonly anchors?: ReadonlyMap<string, 'origin' | 'driver'>;
+}
+
+function constraintExpressionContext(assembly: AssemblyDocument, options: Pick<SolveMatesOptions,
+  'parameters' | 'exactVariables' | 'nonLengthVariables'>) {
+  const context = assemblyExpressionContext(assembly);
+  return {
+    parameters: options.parameters ?? context.variables,
+    // 外部の数値表を渡す呼出元には、文書の古い十進値を優先させない。
+    exactVariables: options.exactVariables ?? (options.parameters === undefined ? context.exactVariables : undefined),
+    nonLengthVariables: options.nonLengthVariables ?? context.nonLengthVariables,
+  };
 }
 
 export interface MateVariableLimit {
@@ -235,8 +246,7 @@ export function solveDrivenJoint(
   const activeIds = new Set(assembly.components.filter((component) => !component.suppressed).map((component) => component.id));
   const prepared = prepareJointDrive({ joint: matches[0], frames: options.jointFrames?.get(request.jointId),
     placements: new Map([...initial].filter(([id]) => activeIds.has(id))), request,
-    parameters: options.parameters ?? assemblyVariables(assembly),
-    nonLengthVariables: options.nonLengthVariables ?? nonLengthVariables(assembly.parameters) });
+    ...constraintExpressionContext(assembly, options) });
   if (!prepared.ok) return failure(prepared.reason);
   const remaining = options.maxTimeMs === undefined ? undefined : Math.max(0, options.maxTimeMs - (now() - start));
   const { drivenValue, ...outcome } = solveMatesCore(assembly, targets, initial,
@@ -396,7 +406,7 @@ function branchCandidates(
 
 export type PrepareMateDragOptions = Pick<SolveMatesOptions,
   'characteristicLength' | 'lengthTolerance' | 'angleTolerance' | 'linearSolver'
-  | 'maxComponentVariables' | 'parameters' | 'jointFrames'>;
+  | 'maxComponentVariables' | 'parameters' | 'exactVariables' | 'nonLengthVariables' | 'jointFrames'>;
 export type PrepareMateDragOutcome = { readonly ok: true; readonly drag: PreparedMateDrag }
   | { readonly ok: false; readonly reason: 'invalidInput' | 'unavailableComponent'
     | 'variableLimit' | 'unresolvedConstraint' | 'initialUnsatisfied' };
@@ -440,7 +450,7 @@ export function prepareMateDrag(
       || (target.direction !== null && !finiteDragVector(target.direction, 3))
       || (target.axisOrigin !== undefined && !finiteDragVector(target.axisOrigin, 3)))) return { ok: false, reason: 'unresolvedConstraint' };
   }
-  const prepared = prepareMateResiduals({ mates, targets, placements, parameters: options.parameters ?? assemblyVariables(assembly) });
+  const prepared = prepareMateResiduals({ mates, targets, placements, ...constraintExpressionContext(assembly, options) });
   if (prepared.skipped.length > 0 || (joints.length > 0 && options.jointFrames === undefined)) return { ok: false, reason: 'unresolvedConstraint' };
   const preparedJoints = options.jointFrames === undefined ? { joints: [], skipped: [] }
     : prepareJointResiduals({ joints, frames: options.jointFrames, placements });
@@ -504,7 +514,7 @@ function solveMatesCore(
     fixed: component.fixed || options.anchors?.has(component.id) === true })) };
   const allVariables = collectMateVariables(effective);
   const prepared = prepareMateResiduals({ mates: assembly.mates, targets, placements: activePlacements,
-    parameters: options.parameters ?? assemblyVariables(assembly) });
+    ...constraintExpressionContext(assembly, options) });
   const preparedById = new Map(prepared.mates.map((mate) => [mate.mateId, mate]));
   const activeMates = assembly.mates.filter((mate) => preparedById.has(mate.id));
   const preparedJoints = options.jointFrames === undefined ? { joints: [], skipped: [] }

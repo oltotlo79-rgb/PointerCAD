@@ -20,6 +20,7 @@
  * `document.json` ではなく ZIP の別エントリ(`parts/<ref>.json`、`pcadFile.ts`)に入る。
  */
 
+import { readNamedViews, serializeNamedViews } from './documentMetadataJson.js';
 import {
   BOM_COLUMN_IDS,
   BOM_SORT_KEYS,
@@ -278,7 +279,7 @@ function serializeBomSettings(bom: BomSettings): BomSettings {
   };
 }
 
-/** アセンブリ文書(9 欄)を決まった順で組み立てる。 */
+/** アセンブリ文書を決まった順で組み立てる。 */
 function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocument {
   return {
     id: document.id,
@@ -290,6 +291,7 @@ function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocu
     presentation: document.presentation.map(serializePresentationStep),
     parameters: document.parameters.map(serializeParameter),
     bom: serializeBomSettings(document.bom),
+    namedViews: serializeNamedViews(document.namedViews),
   };
 }
 
@@ -985,6 +987,8 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
   if (!bom.ok) {
     return bom;
   }
+  const namedViews = readNamedViews(record.value, path);
+  if (!namedViews.ok) return namedViews;
   return {
     ok: true,
     value: {
@@ -997,6 +1001,7 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
       presentation: presentation.value,
       parameters: parameters.value,
       bom: bom.value,
+      namedViews: namedViews.value,
     },
   };
 }

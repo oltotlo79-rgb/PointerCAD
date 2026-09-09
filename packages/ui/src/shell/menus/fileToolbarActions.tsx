@@ -7,6 +7,7 @@
 
 import { DEFAULT_TOOL_DEFAULTS } from '@pointercad/model';
 import { createDrawingFromCurrentPart } from '../../drawing/createDrawingCommands.js';
+import { createDrawingFromTemplateFile } from '../../drawing/drawingTemplateActions.js';
 import { useEffect, useRef } from 'react';
 import { activeHasUnsavedChanges, newAssembly } from '../../file/assemblyFile.js';
 import { createExchangeDeps, importFile } from '../../file/exchangeActions.js';
@@ -293,6 +294,9 @@ function runFileMenuActionId(
   switch (id) {
     case 'newDrawingFromPart':
       void createDrawingFromCurrentPart();
+      return;
+    case 'newDrawingFromTemplate':
+      void createDrawingFromTemplateFile();
       return;
     case 'newAssembly':
       void runNewAssembly();

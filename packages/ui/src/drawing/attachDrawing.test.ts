@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDrawingDocument, createEmptyPartDocument, embedDrawingSource, emptyDrawingSourceLibrary,
+  createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT, embedPart, EMPTY_PART_LIBRARY, emptyEmbeddedPartAttachments,
+  type AssemblyDocument, type PartLibrary,
   type AssemblyKernelBridge, type DrawingKernelBridge, type DrawingProjectionResult, type PartDocument, type SolidBody } from '@pointercad/model';
 import type { DrawingView } from '@pointercad/drawing';
+import { expressionValueFromNumber } from '@pointercad/expression';
+import { readDrawingBundle, writeDrawingBundle } from '@pointercad/io';
 import { useAppStore } from '../store/useAppStore.js';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { attachDrawing } from './attachDrawing.js';
@@ -93,5 +97,105 @@ describe('図面再評価の寿命と最新結果の適用', () => {
     await vi.waitFor(() => expect(state().drawingBusy).toBe(false));
     expect(state().drawingResolution?.ok).toBe(false); expect(state().drawingMessage).not.toBeNull();
     expect(fake.recomputeSolids).not.toHaveBeenCalled();
+  });
+});
+
+async function assemblyFixture() {
+  const embedded = await embedPart(EMPTY_PART_LIBRARY, part, 'part.pcad', '', {
+    attachments: { ...emptyEmbeddedPartAttachments(), shapes: new Map([['shape-1', Uint8Array.of(1)]]) },
+  });
+  const document: AssemblyDocument = { ...createAssemblyDocument('組図の元'), components: [0, 30].map((x, index) => ({
+    id: `component-${index + 1}`, name: `共通部品:${index + 1}`, source: { kind: 'part', partRef: embedded.partRef },
+    placement: { ...DEFAULT_COMPONENT_PLACEMENT, position: [expressionValueFromNumber(x), expressionValueFromNumber(0), expressionValueFromNumber(0)] },
+    fixed: index === 0, visible: true, suppressed: false,
+  })) };
+  return { document, library: embedded.library };
+}
+async function openAssemblySource(document: AssemblyDocument, library: PartLibrary) {
+  const source = { sourceKind: 'assembly' as const, document, library };
+  const embedded = await embedDrawingSource(emptyDrawingSourceLibrary(), source, 'assembly.pcada', '');
+  const drawing = { ...createDrawingDocument('組図', embedded.source), views: [view] };
+  state().openDrawing(drawing, { sources: embedded.library });
+  return { source, drawing, embedded };
+}
+
+describe('組図の再計算・配置・部品表・寿命(P8-59/64)', () => {
+  beforeEach(() => useAppStore.setState(createInitialDocumentState()));
+  afterEach(async () => { detach?.(); detach = undefined; await Promise.resolve(); });
+  it('同じ部品を一度だけ再計算し、二つの配置と部品表数量を導く', async () => {
+    const f = await assemblyFixture(); await openAssemblySource(f.document, f.library);
+    const fake = engine(); detach = attachDrawing(fake.bridge); await settle();
+    expect(fake.recomputeSolids).toHaveBeenCalledOnce();
+    expect(state().drawingSourceResolution?.center).toEqual([25, 5, 15]);
+    expect(state().drawingSourceResolution?.bomRows).toMatchObject([{ quantity: 2, number: 1 }]);
+    expect(fake.hiddenLineViews.mock.calls[0]?.[0].instances).toMatchObject([
+      { occurrenceId: 'component-1', placement: { position: [0, 0, 0] } },
+      { occurrenceId: 'component-2', placement: { position: [30, 0, 0] } },
+    ]);
+  });
+  it('合致を解いた配置を投影し、保存されていた移動前の座標を使わない', async () => {
+    const f = await assemblyFixture();
+    const document: AssemblyDocument = { ...f.document, mates: [{ id: 'mate-1', name: '原点を重ねる', kind: 'coincident',
+      a: { kind: 'origin', componentId: 'component-1', element: 'origin' },
+      b: { kind: 'origin', componentId: 'component-2', element: 'origin' },
+      value: expressionValueFromNumber(0), flipped: false, suppressed: false }] };
+    await openAssemblySource(document, f.library);
+    const fake = engine(); detach = attachDrawing(fake.bridge); await settle();
+    const x = state().drawingSourceResolution?.instances?.[1].placement.position[0];
+    expect(x).toBeCloseTo(0, 6);
+    expect(document.components[1].placement.position[0].value).toBe(30);
+  });
+  it('サブアセンブリの親の配置を投影座標へ反映する', async () => {
+    const f = await assemblyFixture();
+    const root: AssemblyDocument = { ...createAssemblyDocument('外側'), components: [{ id: 'outer', name: '内部',
+      source: { kind: 'subAssembly', assemblyRef: 'assembly-1' }, fixed: true, visible: true, suppressed: false,
+      placement: { ...DEFAULT_COMPONENT_PLACEMENT, position: [expressionValueFromNumber(100), expressionValueFromNumber(0), expressionValueFromNumber(0)] } }] };
+    await openAssemblySource(root, { ...f.library, assemblies: new Map([['assembly-1', f.document]]) });
+    const fake = engine(); detach = attachDrawing(fake.bridge); await settle();
+    expect(state().drawingSourceResolution?.center).toEqual([125, 5, 15]);
+    expect(state().drawingSourceResolution?.instances?.map((item) => item.occurrenceId)).toEqual(['outer/component-1', 'outer/component-2']);
+  });
+  it('非表示の部品を投影と図面全体の中心から除く', async () => {
+    const f = await assemblyFixture();
+    await openAssemblySource({ ...f.document, components: f.document.components.map((component, index) => ({ ...component, visible: index === 0 })) }, f.library);
+    const fake = engine(); detach = attachDrawing(fake.bridge); await settle();
+    expect(state().drawingSourceResolution?.instances).toHaveLength(1);
+    expect(state().drawingSourceResolution?.center).toEqual([10, 5, 15]);
+  });
+  it('保存してストアを初期化してから開いても配置と表を再作成する', async () => {
+    const f = await assemblyFixture(); const opened = await openAssemblySource(f.document, f.library);
+    const bytes = await writeDrawingBundle(opened.drawing, { source: opened.source });
+    useAppStore.setState(createInitialDocumentState());
+    const read = await readDrawingBundle(bytes);
+    if (!read.ok) throw new Error(read.error.message);
+    state().openDrawing(read.document, { sources: { sources: [{ metadata: read.document.source, ...read.source }] } });
+    const fake = engine(); detach = attachDrawing(fake.bridge); await settle();
+    expect(state().drawingSourceResolution?.bomRows).toMatchObject([{ quantity: 2 }]);
+    expect(state().drawingSourceResolution?.center).toEqual([25, 5, 15]);
+  });
+  it('図面の表題編集で元の組立を再計算しない', async () => {
+    const f = await assemblyFixture(); await openAssemblySource(f.document, f.library);
+    const fake = engine(); detach = attachDrawing(fake.bridge); await settle(); editTitle('組図の改名'); await settle();
+    expect(fake.recomputeSolids).toHaveBeenCalledOnce();
+  });
+  it('Workerの形が消えたら再取得してから投影する', async () => {
+    const f = await assemblyFixture(); await openAssemblySource(f.document, f.library);
+    const fake = engine(); detach = attachDrawing(fake.bridge); await settle();
+    fake.keys.clear(); editTitle(); await settle();
+    expect(fake.recomputeSolids).toHaveBeenCalledTimes(2);
+  });
+  it('閉じた組図が所有する部品を解放する', async () => {
+    const f = await assemblyFixture(); await openAssemblySource(f.document, f.library);
+    const fake = engine(); detach = attachDrawing(fake.bridge); await settle(); state().closeDrawing();
+    await vi.waitFor(() => expect(fake.releasePart).toHaveBeenCalledOnce());
+    expect(fake.releasePart.mock.calls[0]?.[0]).toContain('drawing:');
+  });
+  it('参照部品が欠けた組図は不完全な部品表を成功結果として出さない', async () => {
+    const f = await assemblyFixture(); await openAssemblySource(f.document, { ...f.library, parts: new Map() });
+    const fake = engine(); detach = attachDrawing(fake.bridge);
+    await vi.waitFor(() => expect(state().drawingBusy).toBe(false));
+    expect(state().drawingResolution?.ok).toBe(false);
+    expect(state().drawingSourceResolution).toBeNull();
+    expect(fake.hiddenLineViews).not.toHaveBeenCalled();
   });
 });

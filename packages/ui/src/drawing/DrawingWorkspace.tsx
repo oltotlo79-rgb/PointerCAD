@@ -5,11 +5,15 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CubeIcon, LayersIcon, PlaneSectionIcon } from '../shell/icons.js';
 import { DrawingCanvas } from './DrawingCanvas.js';
+import { DrawingTablePanel } from './DrawingTablePanel.js';
+import { DrawingSheetPanel } from './DrawingSheetPanel.js';
+import { DrawingViewPanel } from './DrawingViewPanel.js';
 import { startDrawingDimension } from './dimensionCommands.js';
 import { runDrawingAutoDimensions } from './autoDimensionCommands.js';
 import { exportDrawingSvg } from './exportDrawingSvg.js';
 import { startDrawingAnnotation } from './annotationCommands.js';
 import { closeDrawingWithConfirmation } from './closeDrawing.js';
+import { createDefaultPartFileDeps, openPart, savePart } from '../file/partFile.js';
 
 export const DRAWING_DIMENSION_KINDS = [
   { key: 'drawing.dimension.length', kind: 'length', measurement: 'trueDistance' },
@@ -64,6 +68,12 @@ export function DrawingToolbar(): React.JSX.Element {
       </div>
       <span className="pcad-badge">{t('drawing.mode')}</span>
       <div className="pcad-toolbar__actions">
+        <button type="button" className="pcad-button" title={t('toolbar.file.openTooltip')}
+          onClick={() => { void openPart(createDefaultPartFileDeps()); }}>{t('toolbar.file.open')}</button>
+        <button type="button" className="pcad-button" title={t('toolbar.file.saveTooltip')}
+          onClick={() => { void savePart(createDefaultPartFileDeps(), false); }}>{t('toolbar.file.save')}</button>
+        <button type="button" className="pcad-button" title={t('toolbar.file.saveAsTooltip')}
+          onClick={() => { void savePart(createDefaultPartFileDeps(), true); }}>{t('toolbar.file.saveAs')}</button>
         <button type="button" className="pcad-button" onClick={() => { void closeDrawingWithConfirmation(); }}>{t('drawing.file.returnToPart')}</button>
         <button type="button" className="pcad-button" disabled={!canUndo} onClick={() => useAppStore.getState().undo()}>{t('toolbar.history.undo')}</button>
         <button type="button" className="pcad-button" disabled={!canRedo} onClick={() => useAppStore.getState().redo()}>{t('toolbar.history.redo')}</button>
@@ -129,7 +139,8 @@ export function DrawingTree(): React.JSX.Element {
             </li>
           ))}
           {drawing?.views.map((view) => <li key={`view:${view.id}`} className="pcad-tree__row">
-            <span className="pcad-tree__label">{view.name}</span>
+            <button type="button" className="pcad-button pcad-tree__label" aria-pressed={selected.includes(view.id)}
+              onClick={() => useAppStore.getState().selectDrawingIds([view.id])}>{view.name}</button>
           </li>)}
           {drawing?.dimensions.map((dimension, index) => {
             const resolved = resolution?.ok === true ? resolution.dimensions.find((item) => item.dimension.id === dimension.id) : undefined;
@@ -165,6 +176,9 @@ export function DrawingPropertyPanel(): React.JSX.Element {
             <dd className="pcad-properties__value">{drawing.sheet.paperSizeId}</dd>
           </dl>
         )}
+        <DrawingSheetPanel />
+        <DrawingViewPanel />
+        <DrawingTablePanel />
       </div>
     </section>
   );
@@ -176,14 +190,15 @@ export function DrawingViewport(): React.JSX.Element {
 
 export function DrawingStatusBar(): React.JSX.Element {
   const message = useAppStore((state) => state.drawingMessage);
+  const fileMessage = useAppStore((state) => state.fileMessage);
   const busy = useAppStore((state) => state.drawingBusy);
   const resolution = useAppStore((state) => state.drawingResolution);
   const unresolved = resolution?.ok === true ? resolution.unresolvedCount : 0;
   return (
     <footer className="pcad-statusbar">
       <span className="pcad-statusbar__message" aria-live="polite">
-        <span className="pcad-statusbar__text">{message ?? (busy ? t('drawing.status.computing')
-          : unresolved > 0 ? t('drawing.dimension.unresolvedCount').replace('{count}', String(unresolved)) : t('drawing.status.ready'))}</span>
+        <span className="pcad-statusbar__text">{fileMessage === null ? message ?? (busy ? t('drawing.status.computing')
+          : unresolved > 0 ? t('drawing.dimension.unresolvedCount').replace('{count}', String(unresolved)) : t('drawing.status.ready')) : t(fileMessage.key)}</span>
       </span>
       <span className="pcad-statusbar__spacer" />
       <span className="pcad-statusbar__state">mm</span>

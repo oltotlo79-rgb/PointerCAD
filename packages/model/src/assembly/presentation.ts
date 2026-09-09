@@ -1,14 +1,13 @@
 /** P7 タスク21。保存したステップから任意時刻の表示配置を純関数で導く。 */
-import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 import { resolveRevolveAxis } from '../part/resolvePart.js';
 import { nextSerialId } from '../sketch/createSketchDocument.js';
 import { WORLD_AXIS_DIRECTIONS } from '../sketch/planeMath.js';
 import { type Vec3 } from '../sketch/vec3.js';
-import { nonLengthVariables } from '../units/length.js';
 import { type JointDriveRequest } from './joints/driveJoint.js';
 import { jointCoordinateNames, validJointPlacement } from './joints/jointFrames.js';
 import { rotateVector, type RigidPlacement } from './placementMath.js';
-import { assemblyVariables, type ResolvedAssembly } from './resolveAssembly.js';
+import { assemblyExpressionContext, type ResolvedAssembly } from './resolveAssembly.js';
 import type { AssemblyDocument, JointCoordinate, PresentationStep } from './types.js';
 
 export type ExplodeStepBody = Extract<PresentationStep['body'], { readonly kind: 'explode' }>;
@@ -81,13 +80,9 @@ export function resolvePresentationDirection(
 
 function evaluatedValue(
   source: ExpressionValue,
-  document: AssemblyDocument,
-  variables: ReadonlyMap<string, number>,
+  context: EvaluateOptions,
 ): number | null {
-  const result = evaluateExpression(source.source, {
-    variables,
-    nonLengthVariables: nonLengthVariables(document.parameters),
-  });
+  const result = evaluateExpression(source.source, context);
   return result.ok && Number.isFinite(result.value.value)
     ? result.value.value === 0 ? 0 : result.value.value
     : null;
@@ -143,11 +138,11 @@ export function explodedPlacements(
   if (stepProgress({ start: 0, end: 1 }, t) === null) return { ok: false, reason: 'invalidTime' };
   const valid = validatePresentationSteps(document);
   if (!valid.ok) return valid;
-  const variables = assemblyVariables(document);
+  const context = assemblyExpressionContext(document);
   let result: Map<string, RigidPlacement> | null = null;
   for (const step of document.presentation) {
     if (step.body.kind !== 'explode') continue;
-    const distance = evaluatedValue(step.body.distance, document, variables);
+    const distance = evaluatedValue(step.body.distance, context);
     if (distance === null) return { ok: false, reason: 'invalidExpression', stepId: step.id };
     const direction = resolvePresentationDirection(step.body, resolved, placements);
     if (direction === null) return { ok: false, reason: 'missingDirection', stepId: step.id };
@@ -181,7 +176,7 @@ export function addExplodeStep(
   const value = { ...document, presentation: [...document.presentation, step] };
   const valid = validatePresentationSteps(value);
   if (!valid.ok) return valid;
-  if (evaluatedValue(input.body.distance, document, assemblyVariables(document)) === null) {
+  if (evaluatedValue(input.body.distance, assemblyExpressionContext(document)) === null) {
     return { ok: false, reason: 'invalidExpression', stepId: step.id };
   }
   return { ok: true, value };
@@ -242,7 +237,7 @@ export function presentationJointRequests(
     group.push({ step, body, coordinate });
     groups.set(key, group);
   }
-  const variables = assemblyVariables(document);
+  const context = assemblyExpressionContext(document);
   const requests: JointDriveRequest[] = [];
   for (const group of groups.values()) {
     group.sort((a, b) => a.step.start - b.step.start || a.step.id.localeCompare(b.step.id));
@@ -254,8 +249,8 @@ export function presentationJointRequests(
     let active = group[0];
     if (active === undefined) continue;
     for (const entry of group) if (entry.step.start <= t) active = entry;
-    const from = evaluatedValue(active.body.from, document, variables);
-    const to = evaluatedValue(active.body.to, document, variables);
+    const from = evaluatedValue(active.body.from, context);
+    const to = evaluatedValue(active.body.to, context);
     if (from === null || to === null) {
       return { ok: false, reason: 'invalidExpression', stepId: active.step.id };
     }

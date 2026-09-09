@@ -194,12 +194,12 @@ describe('図面 document.json', () => {
     expect(parseDrawing(text)).toMatchObject({ ok: false, error: { code: 'versionMismatch' } });
   });
 
-  it('版8の図面は版9へ移行して開く', () => {
+  it('版8の図面は現行版へ移行して開く', () => {
     const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT })
       .replace(`"schema": ${String(PCAD_SCHEMA_VERSION)}`, '"schema": 8')
       .replace(`"schemaVersion": ${String(PCAD_SCHEMA_VERSION)}`, '"schemaVersion": 8');
     const result = parseDrawing(text);
-    expect(result.ok && result.document.schemaVersion).toBe(9);
+    expect(result.ok && result.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
   });
 
   it('必要な配列が欠けた図面を断る', () => {
@@ -208,14 +208,15 @@ describe('図面 document.json', () => {
     expect(parseDrawing(text)).toMatchObject({ ok: false, error: { code: 'invalidField' } });
   });
 
-  it('未知の欄を読み直し時に落とす', () => {
+  it('未知の欄を読み直し・保存時にも保持する(P8-64)', () => {
     const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT });
     const parsed: unknown = JSON.parse(text);
     expect(isRecord(parsed) && isRecord(parsed['document'])).toBe(true);
     if (!isRecord(parsed) || !isRecord(parsed['document'])) return;
     parsed['document']['futureField'] = 123;
     const result = parseDrawing(JSON.stringify(parsed));
-    expect(result.ok && 'futureField' in result.document).toBe(false);
+    expect(result.ok && result.document).toMatchObject({ futureField: 123 });
+    if (result.ok) expect(serializeDrawing(result.document, { savedAt: SAVED_AT })).toContain('"futureField": 123');
   });
 
   it('投影線と計算済み寸法値を保存しない', () => {

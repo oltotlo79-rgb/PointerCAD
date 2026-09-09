@@ -183,6 +183,7 @@ interface FieldDraft {
  * 「長さでないパラメータ」を足したもの。
  */
 interface FieldUnits {
+  readonly exactVariables: ReadonlyMap<string, string>;
   /** パラメータ表の変数表(FR-207)。押し出しの距離に `板厚 * 2` と書けるようにする。 */
   readonly variables: ReadonlyMap<string, number>;
   /** 長さでないパラメータの名前(§0.a-0.63)。inch の空間で倍率を掛けない名前。 */
@@ -193,10 +194,11 @@ interface FieldUnits {
 
 /** 式の欄が要る材料を 1 か所で取る。欄を持つ節がすべてこれを呼ぶ(タスク3b)。 */
 function useFieldUnits(): FieldUnits {
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const analysis = useAppStore((state) => state.parameterAnalysis);
+  const variables = analysis.variables;
   const nonLengthVariables = useAppStore((state) => state.nonLengthVariables);
   const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
-  return { variables, nonLengthVariables, lengthUnit };
+  return { variables, nonLengthVariables, lengthUnit, exactVariables: analysis.exactVariables };
 }
 
 /**
@@ -213,10 +215,7 @@ function evaluateFieldSource(
   drafted: boolean,
   units: FieldUnits,
 ): ExpressionResult {
-  return evaluateExpression(drafted ? applyDisplayUnit(source, unit, units.lengthUnit) : source, {
-    variables: units.variables,
-    nonLengthVariables: units.nonLengthVariables,
-  });
+  return evaluateExpression(drafted ? applyDisplayUnit(source, unit, units.lengthUnit) : source, units);
 }
 
 /** 打ち込みを履歴へ書き戻すときの式(打った文字を表示の単位で包む。タスク3b)。 */
@@ -395,10 +394,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { path: item.path, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(committedFieldSource(next, item.unit, units), {
-            variables: units.variables,
-            nonLengthVariables: units.nonLengthVariables,
-          });
+          const parsed = evaluateExpression(committedFieldSource(next, item.unit, units), units);
           if (!parsed.ok) {
             return;
           }
@@ -914,15 +910,12 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: item.key, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(committedFieldSource(next, item.unit, units), {
-            variables: units.variables,
-            nonLengthVariables: units.nonLengthVariables,
-          });
+          const parsed = evaluateExpression(committedFieldSource(next, item.unit, units), units);
           if (!parsed.ok || rangeErrorFor({ ...numericField, source: next }, parsed.value) !== null) {
             return;
           }
           apply(
-            setSolidField(feature, item.key, parsed.value, units.variables),
+            setSolidField(feature, item.key, parsed.value, units.variables, units),
             `field:${feature.id}:${item.key}`,
           );
         }}
@@ -1026,7 +1019,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
               key={choice.key}
               choice={choice}
               onChoose={(value) => {
-                apply(setSolidChoice(feature, choice.key, value, units.variables));
+                apply(setSolidChoice(feature, choice.key, value, units.variables, units));
               }}
             />
           ))}
@@ -1195,10 +1188,7 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: draftKey, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(committedFieldSource(next, field.unit, units), {
-            variables: units.variables,
-            nonLengthVariables: units.nonLengthVariables,
-          });
+          const parsed = evaluateExpression(committedFieldSource(next, field.unit, units), units);
           if (parsed.ok) {
             onCommit(parsed.value);
           }
@@ -1349,10 +1339,7 @@ function SphereGridSection(): React.JSX.Element {
           onFocus={() => undefined}
           onChange={(next) => {
             setDraft(next);
-            const parsed = evaluateExpression(committedFieldSource(next, 'degree', units), {
-              variables: units.variables,
-              nonLengthVariables: units.nonLengthVariables,
-            });
+            const parsed = evaluateExpression(committedFieldSource(next, 'degree', units), units);
             if (parsed.ok) {
               useAppStore.getState().setSphereGridStep(parsed.value);
             }
@@ -1485,10 +1472,7 @@ function SphereGridPointSection({
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { path, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(committedFieldSource(next, 'degree', units), {
-            variables: units.variables,
-            nonLengthVariables: units.nonLengthVariables,
-          });
+          const parsed = evaluateExpression(committedFieldSource(next, 'degree', units), units);
           if (!parsed.ok) {
             return;
           }
@@ -1704,10 +1688,7 @@ function ReferenceProperties({
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key, source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(committedFieldSource(next, unit, units), {
-            variables: units.variables,
-            nonLengthVariables: units.nonLengthVariables,
-          });
+          const parsed = evaluateExpression(committedFieldSource(next, unit, units), units);
           if (parsed.ok) {
             write(parsed.value);
           }
@@ -2158,7 +2139,7 @@ function AppearanceSection({
   const renderPercentField = (field: AppearanceNumberField): React.JSX.Element => {
     const value = spec[field];
     const source = draft !== null && draft.key === field ? draft.source : value.source;
-    const evaluated = evaluateExpression(source, { variables: units.variables });
+    const evaluated = evaluateExpression(source, units);
     const numericField: NumericField = {
       key: field,
       labelKey: PERCENT_FIELD_LABEL_KEYS[field],
@@ -2188,7 +2169,7 @@ function AppearanceSection({
           onChange={(event) => {
             const next = event.target.value;
             setDraftState({ draft: { key: field, source: next }, seenVersion: documentVersion });
-            const parsed = evaluateExpression(next, { variables: units.variables });
+            const parsed = evaluateExpression(next, units);
             if (!parsed.ok || rangeErrorFor(numericField, parsed.value) !== null) {
               return;
             }
@@ -2229,10 +2210,7 @@ function AppearanceSection({
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: 'spacing', source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(committedFieldSource(next, 'mm', units), {
-            variables: units.variables,
-            nonLengthVariables: units.nonLengthVariables,
-          });
+          const parsed = evaluateExpression(committedFieldSource(next, 'mm', units), units);
           if (!parsed.ok) {
             return;
           }
@@ -2497,7 +2475,7 @@ function MassPropertiesSection({
   /** 密度の欄の式。材料を選び直すとその材料の密度で置き換わる(式で上書きもできる)。 */
   const [densitySource, setDensitySource] = useState(() => String(densityOf(materialId)));
 
-  const evaluated = evaluateExpression(densitySource, { variables: units.variables });
+  const evaluated = evaluateExpression(densitySource, units);
   const density = evaluated.ok ? evaluated.value.value : densityOf(materialId);
   const view = massProperties === null ? null : massPropertiesView(massProperties, density);
 

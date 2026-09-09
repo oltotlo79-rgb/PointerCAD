@@ -71,6 +71,8 @@ import {
 import type { SectionPlaneNumbers } from './sectionView.js';
 import { axisLength, gridExtent, gridFadeOpacity, gridSpacing, isMajorGridLine } from './gridMath.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
+import { quadLayout, type QuadRectangle, type QuadViewId } from './quadLayout.js';
+import type { QuadCameraState } from './quadCamera.js';
 
 /**
  * 1 枚描くときの見せ方。視点はここでも持たず、呼び出しごとに渡されたものを控えるだけ
@@ -112,6 +114,9 @@ export interface ViewportScene {
     showGrid: boolean,
     uiScale: number,
   ): void;
+  renderQuad(state: QuadCameraState, projection: ProjectionMode, displayStyle: DisplayStyle, showGrid: boolean, uiScale: number): void;
+  /** 入力の最初に切り替える。描画待ちの間も選択は対象の区画のカメラを使う。 */
+  setActivePane(pane: QuadViewId): void;
   /** スケッチの表示を差し替える(FR-105、FR-310)。 */
   setSketch(sketch: ResolvedSketch, mesh: SketchMesh | null): void;
   /**
@@ -736,6 +741,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   let lastCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
   /** 最後に描いたときの見せ方。サムネイルを撮るときに同じ絵を描き直すのに使う。 */
   let lastRender: RenderSettings | null = null;
+  let lastQuad: QuadCameraState | null = null;
+  let quadProjection: ProjectionMode = 'perspective';
+  let activeRectangle: QuadRectangle = { x: 0, y: 0, width, height };
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
   const scratch = new THREE.Vector3();
@@ -745,9 +753,8 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
   const planeOrigin = new THREE.Vector3();
 
   /** 1 枚描く。表示スタイルの反映からカメラの置き直しまで、絵を作る手順はここだけ。 */
-  function drawScene(settings: RenderSettings): void {
+  function drawScene(settings: RenderSettings, rectangle: QuadRectangle, spacing: number): void {
     const { orbit, projection, displayStyle, showGrid, uiScale } = settings;
-    const spacing = gridSpacing(orbit.distance);
     if (spacing !== currentSpacing) {
       rebuildGrid(spacing);
     }
@@ -764,14 +771,17 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     sketchLayer.update(sketchBundle, displayStyle);
     // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す(P4 仕上げ (f))。
     // ズームでカメラ距離が変わるたびに効くよう、描画のたびに計算し直す。
-    referenceLayer.updateScreenScale(orbit.distance, height, uiScale);
+    referenceLayer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangle.height, uiScale);
     // 測定の値の札も同じ大きさ(約 13px)にそろえる(P5 タスク31)。
-    measureLayer.updateScreenScale(orbit.distance, height, uiScale);
+    measureLayer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangle.height, uiScale);
 
     updateKeyLight(orbit);
+    renderer.render(scene, configureCamera(orbit, projection, rectangle));
+  }
 
+  function configureCamera(orbit: OrbitState, projection: ProjectionMode, rectangle: QuadRectangle): THREE.Camera {
     const [x, y, z] = cameraPosition(orbit);
-    const aspect = width / height;
+    const aspect = rectangle.width / rectangle.height;
     const camera = projection === 'perspective' ? perspectiveCamera : orthographicCamera;
 
     if (projection === 'perspective') {
@@ -785,14 +795,67 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       orthographicCamera.right = (frustumHeight * aspect) / 2;
     }
     camera.position.set(x, y, z);
-    camera.up.copy(UP_AXIS);
+    if (orbit.up === undefined) camera.up.copy(UP_AXIS);
+    else camera.up.set(...orbit.up);
+    camera.zoom = orbit.zoom ?? 1;
     camera.lookAt(orbit.target[0], orbit.target[1], orbit.target[2]);
     camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
 
     // 画面座標との行き来(worldToScreen / screenToPlanePoint / pickBody)はこのカメラで行う。
     lastCamera = camera;
-    lastRender = settings;
-    renderer.render(scene, camera);
+    activeRectangle = rectangle;
+    return camera;
+  }
+
+  function setPointer(screenX: number, screenY: number): void {
+    pointerNdc.set(2 * (screenX - activeRectangle.x) / activeRectangle.width - 1,
+      1 - 2 * (screenY - activeRectangle.y) / activeRectangle.height);
+  }
+
+  function quadPanes() {
+    const ratio = renderer.getPixelRatio();
+    const logical = (rectangle: QuadRectangle): QuadRectangle => ({
+      x: rectangle.x / ratio, y: rectangle.y / ratio,
+      width: rectangle.width / ratio, height: rectangle.height / ratio,
+    });
+    return quadLayout(canvas.width, canvas.height, quadProjection)
+      .filter((pane) => pane.rectangle.width > 0 && pane.rectangle.height > 0)
+      .map((pane) => ({ ...pane, rectangle: logical(pane.rectangle), scissor: logical(pane.scissor) }));
+  }
+
+  function activatePane(id: QuadViewId): void {
+    if (lastQuad === null) return;
+    const pane = quadPanes().find((entry) => entry.id === id);
+    if (pane === undefined) return;
+    lastQuad = { ...lastQuad, active: id };
+    configureCamera(lastQuad.orbits[id], pane.projection, pane.rectangle);
+  }
+
+  /** サムネイル・印刷も4区画を同じ同期描画で再現する。 */
+  function redraw(): void {
+    if (lastRender === null) return;
+    if (lastQuad === null) {
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, width, height);
+      drawScene(lastRender, { x: 0, y: 0, width, height }, gridSpacing(lastRender.orbit.distance));
+      return;
+    }
+    // 共通格子を区画ごとに作り直さない。最大距離で1回だけ間隔を決める。
+    const spacing = gridSpacing(Math.max(...Object.values(lastQuad.orbits).map((entry) => entry.distance)));
+    renderer.setScissorTest(true);
+    try {
+      for (const pane of quadPanes()) {
+        const box = pane.scissor;
+        renderer.setViewport(box.x, box.y, box.width, box.height);
+        renderer.setScissor(box.x, box.y, box.width, box.height);
+        drawScene({ ...lastRender, orbit: lastQuad.orbits[pane.id], projection: pane.projection }, pane.rectangle, spacing);
+      }
+    } finally {
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, width, height);
+      activatePane(lastQuad.active);
+    }
   }
 
   return {
@@ -933,7 +996,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       if (lastCamera === null) {
         return null;
       }
-      pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
+      setPointer(screenX, screenY);
       // 平行投影でも setFromCamera が視線の起点と向きを組み立て直す(three.js が
       // カメラの種類を見て分ける)ので、投影の切替でそのまま動く。
       raycaster.setFromCamera(pointerNdc, lastCamera);
@@ -944,14 +1007,14 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       if (lastCamera === null) {
         return null;
       }
-      pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
+      setPointer(screenX, screenY);
       raycaster.setFromCamera(pointerNdc, lastCamera);
       return assemblyLayer.pickComponent(raycaster);
     },
 
     pickAssemblyFace(screenX, screenY) {
       if (lastCamera === null) return null;
-      pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
+      setPointer(screenX, screenY);
       raycaster.setFromCamera(pointerNdc, lastCamera);
       return assemblyLayer.pickMateFace(raycaster);
     },
@@ -960,7 +1023,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       if (lastCamera === null) {
         return null;
       }
-      pointerNdc.set((screenX / width) * 2 - 1, -((screenY / height) * 2 - 1));
+      setPointer(screenX, screenY);
       raycaster.setFromCamera(pointerNdc, lastCamera);
       const hit = solidLayer.pickFace(raycaster);
       if (hit === null) {
@@ -983,7 +1046,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       }
       // 画面へ出した時点で描画バッファは捨てられるので、最後と同じ見せ方で描き直し、
       // **同じ同期処理の中で**読む。間に非同期の待ちを挟んではいけない。
-      drawScene(lastRender);
+      redraw();
       return captureThumbnailPng(canvas, size);
     },
 
@@ -993,7 +1056,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
         return null;
       }
       // サムネイルと同じ理由で、最後と同じ見せ方で描き直して**同じ同期処理の中で**読む。
-      drawScene(lastRender);
+      redraw();
       return capturePrintPng(canvas);
     },
 
@@ -1058,14 +1121,15 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       if (scratch.z < -1 || scratch.z > 1) {
         return null;
       }
-      return [((scratch.x + 1) / 2) * width, ((1 - scratch.y) / 2) * height];
+      return [activeRectangle.x + ((scratch.x + 1) / 2) * activeRectangle.width,
+        activeRectangle.y + ((1 - scratch.y) / 2) * activeRectangle.height];
     },
 
     screenToPlanePoint(x, y, plane): Vec3 | null {
       if (lastCamera === null) {
         return null;
       }
-      pointerNdc.set((x / width) * 2 - 1, -((y / height) * 2 - 1));
+      setPointer(x, y);
       raycaster.setFromCamera(pointerNdc, lastCamera);
       planeNormal.set(plane.normal[0], plane.normal[1], plane.normal[2]);
       planeOrigin.set(plane.origin[0], plane.origin[1], plane.origin[2]);
@@ -1078,7 +1142,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
       if (lastCamera === null) {
         return null;
       }
-      pointerNdc.set((x / width) * 2 - 1, -((y / height) * 2 - 1));
+      setPointer(x, y);
       // 平行投影でも setFromCamera が視線の起点と向きを組み立て直す(pickBody と同じ事情)。
       raycaster.setFromCamera(pointerNdc, lastCamera);
       const { origin, direction } = raycaster.ray;
@@ -1110,8 +1174,19 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     },
 
     render(orbit, projection, displayStyle, showGrid, uiScale): void {
-      drawScene({ orbit, projection, displayStyle, showGrid, uiScale });
+      lastQuad = null;
+      lastRender = { orbit, projection, displayStyle, showGrid, uiScale };
+      redraw();
     },
+
+    renderQuad(state, projection, displayStyle, showGrid, uiScale): void {
+      lastQuad = state;
+      quadProjection = projection;
+      lastRender = { orbit: state.orbits[state.active], projection, displayStyle, showGrid, uiScale };
+      redraw();
+    },
+
+    setActivePane: activatePane,
 
     dispose(): void {
       // 環境マップはレンダーターゲット 1 枚ぶんの資源なので、画面ごと閉じるときに捨てる。

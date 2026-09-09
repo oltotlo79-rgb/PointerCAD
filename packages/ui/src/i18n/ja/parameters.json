@@ -33,5 +33,21 @@
   "parameterPanel.usageTooltip": "この名前を使っている式の数です",
   "parameterPanel.circular": "循環",
   "parameterPanel.circularTooltip": "名前どうしが呼び合っています",
-  "parameterPanel.circularNote": "名前どうしが呼び合っているので、値を決められません。どちらかの式を直してください。"
+  "parameterPanel.circularNote": "名前どうしが呼び合っているので、値を決められません。どちらかの式を直してください。",
+  "configuration.label": "構成",
+  "configuration.none": "構成なし",
+  "configuration.name": "構成の名前",
+  "configuration.create": "追加",
+  "configuration.createHint": "現在の式を新しい構成として残します",
+  "configuration.rename": "改名",
+  "configuration.renameHint": "選んだ構成の名前を変更します",
+  "configuration.delete": "削除",
+  "configuration.deleteHint": "選んだ構成を削除します。取り消しで戻せます",
+  "configuration.error.emptyName": "構成の名前を入力してください。",
+  "configuration.error.duplicateName": "同じ名前の構成があります。別の名前を入力してください。",
+  "configuration.error.notFound": "構成が見つかりません。選び直してください。",
+  "configuration.error.unknownParameter": "この構成に、表にないパラメータ名が含まれています。",
+  "configuration.error.missingParameter": "この構成に、必要なパラメータの式がありません。",
+  "configuration.error.invalidExpression": "構成の式を計算できません。式の誤りや循環する参照を直してください。",
+  "configuration.error.partRequired": "設計表は部品を開いているときに使えます。"
 }

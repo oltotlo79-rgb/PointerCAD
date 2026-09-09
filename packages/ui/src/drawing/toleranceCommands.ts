@@ -11,8 +11,7 @@ export type DrawingToleranceInput =
   | { readonly kind: 'fit'; readonly symbol: string; readonly showDeviation: boolean };
 
 function expression(document: DrawingDocument, source: string): ExpressionValue | null {
-  const result = evaluateExpression(source, { variables: analyzeParameters(document.parameters, [source]).variables,
-    nonLengthVariables: new Set(document.parameters.filter((parameter) => parameter.unit !== 'mm').map((parameter) => parameter.name)) });
+  const result = evaluateExpression(source, analyzeParameters(document.parameters, [source]));
   return result.ok ? result.value : null;
 }
 

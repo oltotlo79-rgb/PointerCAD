@@ -139,19 +139,25 @@ function median(action: () => void, warmups = 3): number {
 
 /**
  * 相対比較は同じ時間帯で測る。一括の測定を終えてから分割を測ると、短い負荷変動を
- * 解法の差と取り違える。ABBA順で各16回暖め、各32回の中央値を比べる。
+ * 解法の差と取り違える。ABBA順で各16組暖め、各32組の中央値を比べる。
+ * 1組を8回の計算にし、1回あたりへ戻す。数msの1回だけを測ったときの時計・
+ * 呼出し境界の揺れを分割の費用と取り違えず、同じ総計算量で比較する。
  * 両方式の先行/後行回数を等しくし、測定値の除外や合否による再試行はしない。
  */
 function pairedMedians(first: () => void, second: () => void, now = () => performance.now()) {
+  const runsPerSample = 8;
+  const runBatch = (action: () => void): void => {
+    for (let run = 0; run < runsPerSample; run += 1) action();
+  };
   for (let warmup = 0; warmup < 8; warmup += 1) {
-    first(); second(); second(); first();
+    runBatch(first); runBatch(second); runBatch(second); runBatch(first);
   }
   const firstTimes: number[] = [];
   const secondTimes: number[] = [];
   const sample = (action: () => void, times: number[]): void => {
     const start = now();
-    action();
-    times.push(now() - start);
+    runBatch(action);
+    times.push((now() - start) / runsPerSample);
   };
   for (let round = 0; round < 16; round += 1) {
     sample(first, firstTimes); sample(second, secondTimes);
@@ -161,7 +167,7 @@ function pairedMedians(first: () => void, second: () => void, now = () => perfor
     const sorted = [...times].sort((a, b) => a - b);
     return (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
   };
-  return { first: middle(firstTimes), second: middle(secondTimes), firstTimes, secondTimes };
+  return { first: middle(firstTimes), second: middle(secondTimes), firstTimes, secondTimes, runsPerSample };
 }
 
 describe('相対性能の測定', () => {
@@ -173,7 +179,17 @@ describe('相対性能の測定', () => {
     expect(measured.first - measured.second).toBeCloseTo(firstCost - secondCost, 10);
     expect(measured.firstTimes).toHaveLength(32);
     expect(measured.secondTimes).toHaveLength(32);
-    expect(calls).toBe(96);
+    expect(calls).toBe(768);
+    expect(measured.runsPerSample).toBe(8);
+  });
+  it('測定境界の固定費を8回へ分散し、1回の計算時間として報告する', () => {
+    let clock = 0;
+    const measured = pairedMedians(() => { clock += 10; }, () => { clock += 8; }, () => { clock += 8; return clock; });
+    expect(measured.first).toBe(11);
+    expect(measured.second).toBe(9);
+    expect(measured.first - measured.second).toBe(2);
+    expect(measured.firstTimes).toHaveLength(32);
+    expect(measured.secondTimes).toHaveLength(32);
   });
 });
 
@@ -266,10 +282,12 @@ describe('合致の性能(P7、50部品/150合致)', () => {
     const measured = pairedMedians(() => { solveRigid(whole); }, () => { solveRigid(first); solveRigid(second); });
     const unsplit = measured.first;
     const split = measured.second;
-    console.log('[P7性能] 成分分割の全測定値(ms):', JSON.stringify({ unsplit: measured.firstTimes, split: measured.secondTimes }));
+    console.log('[P7性能] 成分分割の全測定値(ms):', JSON.stringify({ runsPerSample: measured.runsPerSample, unsplit: measured.firstTimes, split: measured.secondTimes }));
     console.log(`[P7性能] 成分分割: 一括 ${unsplit.toFixed(3)} ms / 分割 ${split.toFixed(3)} ms = ${(unsplit / split).toFixed(3)} 倍 (見積もり 2 倍、実測を記録)`);
     expectWithinBudget(split, unsplit, '25部品×2成分は50部品一括より遅くない');
-  });
+    // 768回のウォームアップ/測定を含む実行枠。並列の参考検査では5秒を超える。
+    // 1回の20ms予算と分割側の相対性能条件は、上の測定値で従来どおり判定する。
+  }, 30_000);
 });
 
 /** 既知の整合姿勢から局所frameを作り、初期姿勢だけ摂動する。50/150/575は固定。 */

@@ -24,6 +24,7 @@ import { workPlaneEntries } from '../sketch/referenceCommands.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { NamedViewsMenu } from '../viewport/NamedViewsMenu.js';
 import {
   ChainIcon,
   ConstraintGroupIcon,
@@ -459,6 +460,7 @@ export function Toolbar(): React.JSX.Element {
         </div>
       </div>
 
+      <NamedViewsMenu />
       <div
         className="pcad-toolbar__group"
         role="group"

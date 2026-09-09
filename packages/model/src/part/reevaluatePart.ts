@@ -20,7 +20,7 @@
  * フィーチャーの種類が増えたら型検査で落ちる(「値を変えても追従しない欄」を作らないため)。
  */
 
-import { evaluateExpression, renameVariable, type ExpressionValue } from '@pointercad/expression';
+import { evaluateExpression, renameVariable, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 
 import type { PlaneSpec } from '../geometry/planeSpec.js';
 import { analyzeParameters } from '../parameters/parameterTable.js';
@@ -574,8 +574,9 @@ function reevaluateValue(
   value: ExpressionValue,
   variables: ReadonlyMap<string, number>,
   onFailure: (message: string) => void,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): ExpressionValue {
-  const result = evaluateExpression(value.source, { variables });
+  const result = evaluateExpression(value.source, { ...options, variables });
   if (!result.ok) {
     onFailure(result.error.message);
     return value;
@@ -594,12 +595,13 @@ function reevaluateValue(
 export function reevaluatePartDocument(
   document: PartDocument,
   variables: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): PartReevaluation {
   const failures: ReevaluationFailure[] = [];
   const next = mapDocumentExpressions(document, (value, ownerId) =>
     reevaluateValue(value, variables, (message) => {
       failures.push({ ownerId, source: value.source, message });
-    }),
+    }, options),
   );
   return { document: next, failures };
 }
@@ -634,6 +636,8 @@ export function renameVariableInPartDocument(
 /** パラメータ表が空のときの解析結果。呼び出しのたびに作らないよう1つだけ持つ。 */
 const EMPTY_ANALYSIS: ParameterAnalysis = {
   variables: new Map<string, number>(),
+  exactVariables: new Map<string, string>(),
+  nonLengthVariables: new Set<string>(),
   circular: [],
   unused: [],
   failures: [],
@@ -654,11 +658,11 @@ export function applyParameters(document: PartDocument): AppliedParameters {
     return { document, analysis: EMPTY_ANALYSIS, failures: [] };
   }
   const analysis = analyzeParameters(document.parameters, collectExpressionSources(document));
-  const reevaluated = reevaluatePartDocument(document, analysis.variables);
+  const reevaluated = reevaluatePartDocument(document, analysis.variables, analysis);
   const parameters = mapKeepingIdentity(reevaluated.document.parameters, (parameter) =>
     mapParameter(parameter, (value) =>
       // 表の側の失敗は `analysis.failures` がすでに持っているので、ここでは数えない。
-      reevaluateValue(value, analysis.variables, () => undefined),
+      reevaluateValue(value, analysis.variables, () => undefined, analysis),
     ),
   );
   return {

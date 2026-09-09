@@ -11,6 +11,11 @@ import { DEFAULT_WORK_PLANE_ID, isBaseWorkPlaneId, type PlaneSpec } from '@point
 import type { StateCreator } from 'zustand';
 import { type DisplaySettings, loadSettings, saveSettings } from '../settings/settings.js';
 import type { AppState } from './appState.js';
+import type { ViewCameraController } from '../viewport/namedCamera.js';
+import { orbitFromNamedCamera } from '../viewport/namedCamera.js';
+import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
+import { createQuadCameraState, resetQuadCamera, updateQuadCamera, type QuadCameraState } from '../viewport/quadCamera.js';
+import type { QuadViewId } from '../viewport/quadLayout.js';
 
 /** 透視投影 / 平行投影(FR-102)。 */
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -38,6 +43,13 @@ export interface SectionViewState {
 
 /** 表示のスライスが持つ欄と操作。 */
 export interface ViewSlice {
+  readonly quadCamera: QuadCameraState | null;
+  readonly setQuadViewEnabled: (enabled: boolean) => void;
+  readonly setQuadActivePane: (pane: QuadViewId) => void;
+  readonly setQuadOrbit: (orbit: OrbitState) => void;
+  readonly resetQuadOrbit: () => void;
+  readonly viewCameraController: ViewCameraController | null;
+  readonly setViewCameraController: (controller: ViewCameraController | null) => void;
   readonly projection: ProjectionMode;
   readonly displayStyle: DisplayStyle;
   readonly showGrid: boolean;
@@ -152,6 +164,27 @@ export const createViewSlice: StateCreator<
   [],
   Omit<ViewSlice, keyof ViewInitialState>
 > = (set) => ({
+  quadCamera: null,
+  setQuadViewEnabled: (enabled) => {
+    set((state) => {
+      if (!enabled) return state.quadCamera === null ? {} : { quadCamera: null };
+      if (state.quadCamera !== null) return {};
+      const captured = state.viewCameraController?.capture();
+      return { quadCamera: createQuadCameraState(captured === undefined ? HOME_ORBIT : orbitFromNamedCamera(captured) ?? HOME_ORBIT) };
+    });
+  },
+  setQuadActivePane: (pane) => {
+    set((state) => state.quadCamera === null || state.quadCamera.active === pane ? {}
+      : { quadCamera: { ...state.quadCamera, active: pane } });
+  },
+  setQuadOrbit: (orbit) => {
+    set((state) => state.quadCamera === null ? {} : { quadCamera: updateQuadCamera(state.quadCamera, state.quadCamera.active, orbit) });
+  },
+  resetQuadOrbit: () => {
+    set((state) => state.quadCamera === null ? {} : { quadCamera: resetQuadCamera(state.quadCamera) });
+  },
+  viewCameraController: null,
+  setViewCameraController: (viewCameraController) => { set({ viewCameraController }); },
   projection: 'perspective',
   displayStyle: 'shadedWithEdges',
   showGrid: true,

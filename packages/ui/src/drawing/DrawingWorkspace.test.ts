@@ -30,6 +30,10 @@ const refusalMessages = [
 ] as const;
 
 describe('図面画面の5区画に入る内容', () => {
+  it('図面の案内に内部実装の用語を出さない(P8-65)', () => {
+    const internalTerms = /隠線処理|ベジェ|xref|グリフ|中間表現/iu;
+    expect(Object.entries(ja).filter(([key, value]) => key.startsWith('drawing.') && internalTerms.test(value))).toEqual([]);
+  });
   it('木は5つの束を持つ', () => expect(DRAWING_TREE_KEYS).toHaveLength(5));
   it('ツールバーは文字注記を含む図面の14道具を持つ', () => {
     expect(DRAWING_TOOL_GROUPS.flatMap((group) => group.tools)).toHaveLength(14);

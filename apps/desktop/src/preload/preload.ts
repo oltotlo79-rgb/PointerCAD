@@ -18,7 +18,7 @@ import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
 contextBridge.exposeInMainWorld('pointercadDesktop', {
   platform: process.platform,
   /** 「開く」。答えは `{ name, bytes, saveTargetToken }` か null。token に実パスは含めない。 */
-  openPcad: (kind?: 'part' | 'assembly' | 'all'): Promise<unknown> => ipcRenderer.invoke('pcad:open', kind),
+  openPcad: (kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown> => ipcRenderer.invoke('pcad:open', kind),
   /** 読み終えた部品について、開いた先を上書き先に確定する。 */
   confirmSaveTarget: (token: string): Promise<unknown> =>
     ipcRenderer.invoke('pcad:confirmTarget', token),
@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
   clearSaveTarget: (): Promise<unknown> => ipcRenderer.invoke('pcad:clearTarget'),
   /** 「保存」。答えは保存したファイル名か null(取り消し)。 */
   savePcad: (suggestedName: string, bytes: Uint8Array, saveAs: boolean,
-    kind?: 'part' | 'assembly'): Promise<unknown> =>
+    kind?: 'part' | 'assembly' | 'drawing'): Promise<unknown> =>
     ipcRenderer.invoke('pcad:save', suggestedName, bytes, saveAs, kind),
   /** 上書き先を覚えているか。答えは真偽。 */
   hasSaveTarget: (): Promise<unknown> => ipcRenderer.invoke('pcad:hasTarget'),

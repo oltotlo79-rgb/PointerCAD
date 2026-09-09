@@ -216,10 +216,10 @@ function measure(dimension: Dimension, targets: readonly ResolvedDimensionTarget
 /** 文書を開く/再計算する際に1回呼び、得た結果を描画へ渡す。保存文書は書き換えない。 */
 export function resolveDrawingDimensions(document: DrawingDocument, context: DimensionResolveContext): readonly ResolvedDrawingDimension[] {
   const cache = new Map<string, ResolvedDimensionTarget | null>();
-  const variables = analyzeParameters(document.parameters, []).variables;
+  const analysis = analyzeParameters(document.parameters, []);
   const toleranceValue = (value: number | { readonly source: string }): number | null => {
     if (typeof value === 'number') return value;
-    const evaluated = evaluateExpression(value.source, { variables });
+    const evaluated = evaluateExpression(value.source, analysis);
     return evaluated.ok ? evaluated.value.value : null;
   };
   return document.dimensions.map((dimension): ResolvedDrawingDimension => {

@@ -31,8 +31,8 @@ export interface DrawingRenderElement {
 }
 export interface DrawingRenderView {
   readonly viewId: string;
-  readonly visible: readonly { readonly curve: DrawingRenderCurve }[];
-  readonly hidden: readonly { readonly curve: DrawingRenderCurve }[];
+  readonly visible: readonly { readonly curve: DrawingRenderCurve; readonly ownerId?: string }[];
+  readonly hidden: readonly { readonly curve: DrawingRenderCurve; readonly ownerId?: string }[];
   readonly cuttingCurves: readonly DrawingRenderCurve[];
 }
 export interface RenderDrawingOptions {
@@ -106,7 +106,8 @@ export function renderDrawing(input: {
   };
   const frameLayerId = options.frameLayerId ?? 'layer-7';
   const frame = createPaperFrame(paper);
-  const title = createTitleBlock({ paper });
+  const title = createTitleBlock({ paper, fields: drawing.sheet.titleBlockFields });
+  const titleTextHeight = drawing.sheet.textHeight ?? 3.5;
   if (drawing.sheet.frame.visible) append({ ownerId: `${drawing.id}:frame`, layerId: frameLayerId,
     curves: [...frame.border, ...frame.centerMarks].map((line) => ({ kind: 'segment', from: line.from, to: line.to })) });
   if (title !== null) {
@@ -121,10 +122,10 @@ export function renderDrawing(input: {
     for (const cell of title.fields) {
       const fitText = (text: string, y: number): void => {
         if (text.length === 0) return;
-        const measured = options.outlineText(text, 3.5).metrics;
+        const measured = options.outlineText(text, titleTextHeight).metrics;
         const width = measured === null ? 0 : measured.inkBounds.right - measured.inkBounds.left;
         const available = cell.right - cell.left - 2;
-        const sizeMm = Math.max(2.5, width <= 0 ? 3.5 : 3.5 * Math.min(1, available / width));
+        const sizeMm = Math.max(Math.min(2.5, titleTextHeight), width <= 0 ? titleTextHeight : titleTextHeight * Math.min(1, available / width));
         const rows: string[] = [];
         let row = '';
         for (const character of Array.from(text)) {
@@ -168,9 +169,11 @@ export function renderDrawing(input: {
   for (const view of input.views) {
     const source = drawing.views.find((candidate) => candidate.id === view.viewId);
     if (source === undefined) continue;
-    append({ ownerId: view.viewId, layerId: source.layerId, style: source.style,
-      curves: [...view.visible.map((item) => item.curve), ...view.cuttingCurves] });
-    if (source.showHidden) append({ ownerId: view.viewId, layerId: options.hiddenLayerId ?? 'layer-2', curves: view.hidden.map((item) => item.curve) });
+    for (const item of view.visible) append({ ownerId: item.ownerId ?? view.viewId,
+      layerId: source.layerId, style: source.style, curves: [item.curve] });
+    append({ ownerId: view.viewId, layerId: source.layerId, style: source.style, curves: view.cuttingCurves });
+    if (source.showHidden) for (const item of view.hidden) append({ ownerId: item.ownerId ?? view.viewId,
+      layerId: options.hiddenLayerId ?? 'layer-2', curves: [item.curve] });
   }
   for (const element of input.elements ?? []) append(element);
   for (const annotation of drawing.annotations) {

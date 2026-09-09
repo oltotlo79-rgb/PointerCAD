@@ -1,3 +1,5 @@
+import type { TitleBlockFieldDefinition } from './paper/titleBlock.js';
+
 /** 図面の用紙座標(mm)。左下が原点で、上が +v(FR-701、§0.58)。 */
 export type Point2 = readonly [number, number];
 
@@ -90,6 +92,12 @@ export interface DrawingSheet {
   readonly frame: DrawingFrameSettings;
   readonly titleBlock: DrawingTitleBlock;
   readonly generalTolerance?: string;
+  /** 表題欄の項目・並び・固定文字(FR-725)。省略時は既定の項目。 */
+  readonly titleBlockFields?: readonly TitleBlockFieldDefinition[];
+  /** 新規注記と表題欄の文字高さ(mm)。既存の個別指定はそのまま使う。 */
+  readonly textHeight?: number;
+  /** 縮尺の候補。値自体はscaleに持つ。 */
+  readonly scaleOptions?: readonly number[];
 }
 
 /** P8 で扱う投影図の種類(FR-702、FR-704、FR-713〜715)。 */
@@ -169,6 +177,8 @@ export interface DrawingTable {
 
 /** 組図の部品番号と引出線(FR-726、FR-728)。 */
 export interface Balloon {
+  readonly sourceTarget?: DimensionTarget;
+  readonly targetKind?: 'face' | 'edge';
   readonly id: string;
   readonly itemNumber: number;
   readonly componentIds: readonly string[];

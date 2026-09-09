@@ -57,6 +57,10 @@ import type { CutPreview, PrintabilityHighlight } from './createSolidLayer.js';
 import type { SphereGridSpec } from './buildSphereGrid.js';
 import { toThreePlane } from './sectionView.js';
 import { readThemeColors } from './themeColors.js';
+import { namedCameraFromOrbit, orbitFromNamedCamera, type ViewCameraController } from './namedCamera.js';
+import { attachQuadInput } from './attachQuadInput.js';
+import { quadLayout } from './quadLayout.js';
+import { QuadPaneLabels } from './QuadPaneLabels.js';
 
 /** E2Eだけが読む、実際に完了したビューポート描画の統計。製品の状態には含めない。 */
 interface ViewportRenderStats {
@@ -555,6 +559,7 @@ function assemblyBundleOf(
  * この通知に相乗りして同じ描画機会に1回だけ描く。
  */
 export function ViewportCanvas(): React.JSX.Element {
+  const quadActive = useAppStore((state) => state.quadCamera?.active ?? null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /** ビューキューブが `getOrbit` / `setOrbit` を借りるための入口。 */
   const controlsRef = useRef<CameraControls | null>(null);
@@ -616,9 +621,10 @@ export function ViewportCanvas(): React.JSX.Element {
         themeDirty = false;
         scene.setThemeColors(readThemeColors());
       }
-      const { projection, displayStyle, showGrid, displaySettings } = useAppStore.getState();
+      const { projection, displayStyle, showGrid, displaySettings, quadCamera } = useAppStore.getState();
       const renderStartedAt = globalThis.performance.now();
-      scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
+      if (quadCamera === null) scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
+      else scene.renderQuad(quadCamera, projection, displayStyle, showGrid, displaySettings.uiScale);
       // `scene.render` が例外なく戻った実描画だけを、1回につきちょうど1つ数える。
       completedRenders += 1;
       lastCompletedAtMs = globalThis.performance.now();
@@ -757,6 +763,10 @@ export function ViewportCanvas(): React.JSX.Element {
     useAppStore.getState().setCapturePrintFrame(() => scene.capturePrintFrame());
 
     let assemblyInteraction: ReturnType<typeof attachAssemblyInteraction> | null = null;
+    const detachQuadInput = attachQuadInput(canvas, () => useAppStore.getState().quadCamera !== null, (pane) => {
+      useAppStore.getState().setQuadActivePane(pane);
+      scene.setActivePane(pane);
+    });
     const controls = attachCameraControls(canvas, () => {
       assemblyInteraction?.cancelDrag();
       requestDraw();
@@ -764,8 +774,35 @@ export function ViewportCanvas(): React.JSX.Element {
       scene.setInteractiveRendering(active);
       // 離したときは通常解像度の静止画を必ず1枚描く。開始時も最初の入力を待たず切り替える。
       requestDraw();
+    }, {
+      getOrbit: () => {
+        const state = useAppStore.getState().quadCamera;
+        return state === null ? null : state.orbits[state.active];
+      },
+      setOrbit: (next) => useAppStore.getState().setQuadOrbit(next),
+      goHome: () => useAppStore.getState().resetQuadOrbit(),
+      canOrbit: () => useAppStore.getState().quadCamera?.active === 'isometric',
+      viewportHeight: () => {
+        const pane = quadLayout(canvas.width, canvas.height).find((entry) => entry.id === useAppStore.getState().quadCamera?.active);
+        return Math.max(1, (pane?.rectangle.height ?? canvas.height) * canvas.clientHeight / Math.max(1, canvas.height));
+      },
     });
     controlsRef.current = controls;
+    const viewCameraController: ViewCameraController = {
+      capture: () => {
+        const { quadCamera, projection } = useAppStore.getState();
+        return namedCameraFromOrbit(controls.getOrbit(), quadCamera === null || quadCamera.active === 'isometric' ? projection : 'orthographic');
+      },
+      restore: (camera) => {
+        const orbit = orbitFromNamedCamera(camera);
+        if (orbit === null) return false;
+        useAppStore.getState().setQuadViewEnabled(false);
+        useAppStore.getState().setProjection(camera.projection);
+        controls.setOrbit(orbit);
+        return true;
+      },
+    };
+    useAppStore.getState().setViewCameraController(viewCameraController);
     // 視点操作を先に結び、その後ろでスケッチの操作を結ぶ(中ボタン・Alt の取り合いを避ける)。
     // 視点そのものを渡す。距離は方眼の刻みに、向きは 3D スケッチで押した場所に置く面に使う
     // (FR-330、P4 タスク14)。
@@ -1038,6 +1075,7 @@ export function ViewportCanvas(): React.JSX.Element {
       unsubscribe();
       observer.disconnect();
       canvas.removeEventListener('pointerdown', onCanvasScalePointerDown);
+      detachQuadInput();
       // 下絵の画像の記憶を返す(テクスチャは `scene.dispose()` が捨てる。P5 §4)。
       detached = true;
       for (const image of decodedCanvases.values()) {
@@ -1047,6 +1085,9 @@ export function ViewportCanvas(): React.JSX.Element {
       // 片付けた場面をもう使えないので、サムネイルと印刷の作り手も取り下げる。
       useAppStore.getState().setCaptureThumbnail(null);
       useAppStore.getState().setCapturePrintFrame(null);
+      if (useAppStore.getState().viewCameraController === viewCameraController) {
+        useAppStore.getState().setViewCameraController(null);
+      }
       interaction.detach();
       assemblyInteraction?.detach();
       controls.detach();
@@ -1069,13 +1110,14 @@ export function ViewportCanvas(): React.JSX.Element {
         ビューポートの中に浮かべ、断面表示を入れているあいだだけ出す。
       */}
       <SectionOffsetField />
+      <QuadPaneLabels />
       {/*
         下絵の 2 点の寸法合わせ(FR-332、NFR-UX-2)。合わせている間だけ出る。
         断面表示の欄と同じく**区画は増やさない**。
       */}
       <CanvasScaleField />
       <MatePopover />
-      {controlsReady ? (
+      {controlsReady && (quadActive === null || quadActive === 'isometric') ? (
         <ViewCube getOrbit={getOrbit} setOrbit={setOrbit} subscribeDraw={subscribeDraw} />
       ) : null}
     </>

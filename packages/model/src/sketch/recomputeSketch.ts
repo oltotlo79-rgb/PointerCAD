@@ -7,7 +7,7 @@
  * どこで失敗しても例外を投げず、理由を errors へ入れて返す(FR-504、NFR-RE-1)。
  */
 
-import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 
 import type {
   KernelBridge,
@@ -251,8 +251,8 @@ export async function recomputeSketch(
  * `mapSketchExpressions` が「1 つも変わらなかった」ことを参照の比較だけで判定でき、
  * 中身が同じ文書を作り直して下流の鍵を無駄に変えることがなくなる(P4b タスク3)。
  */
-function reevaluate(value: ExpressionValue, variables: ReadonlyMap<string, number>): ExpressionValue {
-  const result = evaluateExpression(value.source, { variables });
+function reevaluate(value: ExpressionValue, variables: ReadonlyMap<string, number>, options: EvaluateOptions): ExpressionValue {
+  const result = evaluateExpression(value.source, { ...options, variables });
   if (!result.ok) {
     // 評価できない式で文書を壊さない。解決の段で invalidValue として拾われる(FR-504)。
     return value;
@@ -273,6 +273,7 @@ function reevaluate(value: ExpressionValue, variables: ReadonlyMap<string, numbe
 export function reevaluateDocument(
   document: SketchDocument,
   variables: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): SketchDocument {
-  return mapSketchExpressions(document, (value) => reevaluate(value, variables));
+  return mapSketchExpressions(document, (value) => reevaluate(value, variables, options));
 }

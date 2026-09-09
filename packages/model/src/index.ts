@@ -299,6 +299,8 @@ export type {
 export {
   canonicalDrawingSourceText,
   drawingSourceContentHash,
+  drawingSourceInputHash,
+  drawingSourceInputOf,
   drawingSourceDocumentOf,
   embedDrawingSource,
   emptyDrawingSourceLibrary,
@@ -433,6 +435,8 @@ export type {
   PartRecomputeError, PartRecomputeOptions, PartRecomputeResult, PartSketchResult,
 } from './part/recomputePart.js';
 export { recomputePart } from './part/recomputePart.js';
+export { resolveConstrainedAssembly, type ConstrainedAssemblyResult } from './assembly/resolveConstrainedAssembly.js';
+export { drawingSourceCenter } from './drawing/sourceCenter.js';
 /**
  * 部品文書の全式の評価し直し(FR-207、FR-502、P4b タスク3)。
  * パラメータ表の値を 1 か所変えると、参照している全ての欄が追従する仕組みの入口。
@@ -885,7 +889,7 @@ export type {
   StandardPartSource,
 } from './assembly/resolveAssembly.js';
 export {
-  assemblyVariables, INVALID_PLACEMENT_MESSAGE, MISSING_PART_MESSAGE,
+  assemblyVariables, assemblyExpressionContext, INVALID_PLACEMENT_MESSAGE, MISSING_PART_MESSAGE,
   MAX_SUB_ASSEMBLY_DEPTH, MISSING_STANDARD_SIZE_MESSAGE, partKeyOf, resolveAssembly,
   SUB_ASSEMBLY_CYCLE_MESSAGE, SUB_ASSEMBLY_DEPTH_MESSAGE,
 } from './assembly/resolveAssembly.js';
@@ -1030,3 +1034,11 @@ export { textFeature, type TextFeatureInput, type TextFeatureResult } from './sk
 
 export { drawingToDxf, type DrawingDxfGeometry } from './exchange/drawingToDxf.js';
 export type { DrawingDxfEntity, DrawingDxfLayer, DrawingDxfLineType, DrawingDxfOptions } from './exchange/drawingDxfTypes.js';
+
+export * from './part/namedViews.js';
+export * from './part/configurations.js';
+export * from './part/configurationDefaults.js';
+
+export * from './drawing/drawingTemplate.js';
+export * from './drawing/holeSchedule.js';
+export * from './drawing/resolveHoleSchedule.js';

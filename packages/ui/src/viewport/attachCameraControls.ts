@@ -9,6 +9,15 @@ export interface CameraControls {
   detach(): void;
 }
 
+/** 分割表示の間だけ差し替える視点。解除後は元の単一視点へ戻る。 */
+export interface CameraControlOverride {
+  getOrbit(): OrbitState | null;
+  setOrbit(next: OrbitState): void;
+  goHome(): void;
+  viewportHeight(): number;
+  canOrbit(): boolean;
+}
+
 const LEFT_BUTTON = 0;
 const MIDDLE_BUTTON = 1;
 
@@ -45,11 +54,24 @@ export function attachCameraControls(
   canvas: HTMLCanvasElement,
   onChange: () => void,
   onInteractionChange: (active: boolean) => void = () => {},
+  override?: CameraControlOverride,
 ): CameraControls {
   let state: OrbitState = HOME_ORBIT;
   let dragMode: 'orbit' | 'pan' | null = null;
   let lastX = 0;
   let lastY = 0;
+
+  const getOrbit = (): OrbitState => override?.getOrbit() ?? state;
+  const setOrbit = (next: OrbitState): void => {
+    if (override?.getOrbit() != null) override.setOrbit(next);
+    else state = next;
+    onChange();
+  };
+  const goHome = (): void => {
+    if (override?.getOrbit() != null) override.goHome();
+    else state = HOME_ORBIT;
+    onChange();
+  };
 
   function beginDrag(event: PointerEvent): void {
     const isOrbitButton = event.button === MIDDLE_BUTTON && !event.shiftKey;
@@ -58,6 +80,7 @@ export function attachCameraControls(
     const isAltPan = event.button === LEFT_BUTTON && event.altKey && event.shiftKey;
 
     if (isOrbitButton || isAltOrbit) {
+      if (override?.getOrbit() != null && !override.canOrbit()) return;
       dragMode = 'orbit';
     } else if (isPanButton || isAltPan) {
       dragMode = 'pan';
@@ -84,11 +107,12 @@ export function attachCameraControls(
     lastX = event.clientX;
     lastY = event.clientY;
 
-    state =
+    const current = getOrbit();
+    setOrbit(
       dragMode === 'orbit'
-        ? orbit(state, deltaX, deltaY)
-        : pan(state, deltaX, deltaY, canvas.clientHeight);
-    onChange();
+        ? orbit(current, deltaX, deltaY)
+        : pan(current, deltaX, deltaY, override?.getOrbit() != null ? override.viewportHeight() : canvas.clientHeight),
+    );
   }
 
   function endDrag(event: PointerEvent): void {
@@ -113,15 +137,13 @@ export function attachCameraControls(
   function onWheel(event: WheelEvent): void {
     // Ctrl + ホイールでの頁全体の拡大や、タッチパッドの慣性スクロールを止める。
     event.preventDefault();
-    state = zoom(state, wheelDeltaInPixels(event));
-    onChange();
+    setOrbit(zoom(getOrbit(), wheelDeltaInPixels(event)));
   }
 
   function onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Home') {
       event.preventDefault();
-      state = HOME_ORBIT;
-      onChange();
+      goHome();
     }
   }
 
@@ -149,15 +171,9 @@ export function attachCameraControls(
   canvas.addEventListener('keydown', onKeyDown);
 
   return {
-    getOrbit: () => state,
-    setOrbit: (next) => {
-      state = next;
-      onChange();
-    },
-    goHome: () => {
-      state = HOME_ORBIT;
-      onChange();
-    },
+    getOrbit,
+    setOrbit,
+    goHome,
     detach: () => {
       if (dragMode !== null) {
         dragMode = null;

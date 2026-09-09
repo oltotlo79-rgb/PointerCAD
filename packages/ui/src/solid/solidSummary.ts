@@ -15,7 +15,7 @@
  * (derived)を要するためタスク29b がここへ追記する(この時点ではまだ空)。
  */
 
-import { evaluateExpression, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
+import { composeExpressionSource, evaluateExpression, expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 import {
   consumedBodyIds,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
@@ -2024,6 +2024,7 @@ export function setSolidField(
   key: SolidFieldKey,
   value: ExpressionValue,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidFeature {
   switch (feature.kind) {
     case 'extrude':
@@ -2049,7 +2050,7 @@ export function setSolidField(
     case 'pattern':
       return setPatternField(feature, key, value);
     case 'spring':
-      return setSpringField(feature, key, value, variables);
+      return setSpringField(feature, key, value, variables, options);
     case 'boolean':
       return feature;
     case 'primitive':
@@ -2233,8 +2234,9 @@ const SPRING_DERIVED_FIELD_KEY: Readonly<Record<SpringDerived, SolidFieldKey>> =
 function evaluatedExpressionValue(
   source: string,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): ExpressionValue {
-  const result = evaluateExpression(source, { variables });
+  const result = evaluateExpression(source, { ...options, variables });
   return result.ok ? result.value : { source, value: 0, display: '0' };
 }
 
@@ -2251,25 +2253,26 @@ function resolveSpringDerivedFields(
   pitch: ExpressionValue,
   turns: ExpressionValue,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): { readonly length: ExpressionValue; readonly pitch: ExpressionValue; readonly turns: ExpressionValue } {
   switch (derived) {
     case 'length':
       return {
-        length: evaluatedExpressionValue(`${pitch.source}*${turns.source}`, variables),
+        length: evaluatedExpressionValue(composeExpressionSource(pitch.source, turns.source, '*'), variables, options),
         pitch,
         turns,
       };
     case 'pitch':
       return {
         length,
-        pitch: evaluatedExpressionValue(`${length.source}/${turns.source}`, variables),
+        pitch: evaluatedExpressionValue(composeExpressionSource(length.source, turns.source, '/'), variables, options),
         turns,
       };
     case 'turns':
       return {
         length,
         pitch,
-        turns: evaluatedExpressionValue(`${length.source}/${pitch.source}`, variables),
+        turns: evaluatedExpressionValue(composeExpressionSource(length.source, pitch.source, '/'), variables, options),
       };
   }
 }
@@ -2278,6 +2281,7 @@ function resolveSpringDerivedFields(
 function recomputeSpringDerived(
   feature: SpringFeature,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): SpringFeature {
   const { length, pitch, turns } = resolveSpringDerivedFields(
     feature.derived,
@@ -2285,6 +2289,7 @@ function recomputeSpringDerived(
     feature.pitch,
     feature.turns,
     variables,
+    options,
   );
   return { ...feature, length, pitch, turns };
 }
@@ -2303,6 +2308,7 @@ function setSpringField(
   key: SolidFieldKey,
   value: ExpressionValue,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidFeature {
   if (key === SPRING_DERIVED_FIELD_KEY[feature.derived]) {
     return feature;
@@ -2313,11 +2319,11 @@ function setSpringField(
     case 'wireDiameter':
       return { ...feature, wireDiameter: value };
     case 'springPitch':
-      return recomputeSpringDerived({ ...feature, pitch: value }, variables);
+      return recomputeSpringDerived({ ...feature, pitch: value }, variables, options);
     case 'springTurns':
-      return recomputeSpringDerived({ ...feature, turns: value }, variables);
+      return recomputeSpringDerived({ ...feature, turns: value }, variables, options);
     case 'springLength':
-      return recomputeSpringDerived({ ...feature, length: value }, variables);
+      return recomputeSpringDerived({ ...feature, length: value }, variables, options);
     default:
       return feature;
   }
@@ -2585,11 +2591,12 @@ function setSpringDerived(
   feature: SolidFeature,
   derived: SpringDerived,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidFeature {
   if (feature.kind !== 'spring') {
     return feature;
   }
-  return recomputeSpringDerived({ ...feature, derived }, variables);
+  return recomputeSpringDerived({ ...feature, derived }, variables, options);
 }
 
 /**
@@ -2604,6 +2611,7 @@ export function setSolidChoice(
   key: SolidChoiceSummary['key'],
   value: string,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidFeature {
   switch (key) {
     case 'depthKind':
@@ -2633,7 +2641,7 @@ export function setSolidChoice(
       return value === 'right' || value === 'left' ? setSpringHandedness(feature, value) : feature;
     case 'springDerived':
       return value === 'length' || value === 'pitch' || value === 'turns'
-        ? setSpringDerived(feature, value, variables)
+        ? setSpringDerived(feature, value, variables, options)
         : feature;
     case 'ruledSphereSegments':
       // 面をつなぐの「なめらかさ」(§0.a-0.74)。3 択の外の値は黙って捨てる(他の選択肢と同じ)。

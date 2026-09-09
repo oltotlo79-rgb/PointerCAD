@@ -5,11 +5,12 @@ export interface DrawingBomRow {
   readonly rowKey: string;
   readonly number: number;
   readonly name: string;
+  readonly configurationName?: string | null;
   readonly quantity: number;
   readonly materialName: string;
   readonly massEach: number | null;
 }
-export type BomColumnId = 'number' | 'name' | 'quantity' | 'material' | 'mass';
+export type BomColumnId = 'number' | 'name' | 'quantity' | 'material' | 'mass' | 'configuration';
 export interface BomTableInput extends Omit<TableLayoutInput, 'rows' | 'columns'> {
   readonly rows: readonly DrawingBomRow[];
   readonly columns?: readonly BomColumnId[];
@@ -28,14 +29,14 @@ export interface BomTableGeometry extends TableGeometry {
   readonly totalMass: number | null;
 }
 const defaults: readonly BomColumnId[] = ['number', 'name', 'quantity', 'material', 'mass'];
-const widths: Readonly<Record<BomColumnId, number>> = { number: 12, name: 50, quantity: 15, material: 28, mass: 20 };
+const widths: Readonly<Record<BomColumnId, number>> = { number: 12, name: 50, quantity: 15, material: 28, mass: 20, configuration: 30 };
 
 export function bomTable(input: BomTableInput): BomTableGeometry | null {
   const columnIds = input.columns ?? defaults;
   const direction = input.direction ?? 'bottomToTop';
   const sortBy = input.sortBy ?? 'number';
   if (columnIds.length === 0 || new Set(columnIds).size !== columnIds.length
-    || columnIds.some((id) => !defaults.includes(id)) || !['bottomToTop', 'topToBottom'].includes(direction)
+    || columnIds.some((id) => !Object.hasOwn(widths, id)) || !['bottomToTop', 'topToBottom'].includes(direction)
     || !['number', 'name', 'quantity', 'mass'].includes(sortBy)
     || new Set(input.rows.map((row) => row.rowKey)).size !== input.rows.length
     || new Set(input.rows.map((row) => row.number)).size !== input.rows.length
@@ -67,6 +68,7 @@ export function bomTable(input: BomTableInput): BomTableGeometry | null {
     switch (id) {
       case 'number': return String(row.number);
       case 'name': return row.name;
+      case 'configuration': return row.configurationName ?? '';
       case 'quantity': return String(row.quantity);
       case 'material': return row.materialName;
       case 'mass': return row.massEach === null ? input.unknownMassText : input.formatMass(row.massEach);

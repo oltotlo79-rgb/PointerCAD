@@ -1,7 +1,7 @@
 /** P7 タスク35。分解ステップを作るまでの判断を DOM とストアから分離した純関数。 */
 import { evaluateExpression } from '@pointercad/expression';
 import {
-  addExplodeStep, assemblyVariables, nonLengthVariables,
+  addExplodeStep, assemblyExpressionContext,
   type AssemblyDocument, type AxisSpec, type MateTarget,
 } from '@pointercad/model';
 
@@ -84,10 +84,7 @@ export function commitExplodeDraft(
   interval: { readonly start: number; readonly end: number } = { start: 0, end: 1 },
 ): ExplodeCommitResult {
   if (document !== draft.sourceDocument) return { ok: false, reason: 'staleDocument' };
-  const distance = evaluateExpression(distanceSource, {
-    variables: assemblyVariables(document),
-    nonLengthVariables: nonLengthVariables(document.parameters),
-  });
+  const distance = evaluateExpression(distanceSource, assemblyExpressionContext(document));
   if (!distance.ok) return { ok: false, reason: 'invalidExpression' };
   const added = addExplodeStep(document, {
     name,

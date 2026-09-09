@@ -7,6 +7,7 @@ import {
   createPointFeature,
   DEFAULT_TOOL_DEFAULTS,
   replaceSketch,
+  synchronizeConfigurations,
   type PartDocument,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
@@ -83,11 +84,11 @@ function documentWithParametersAndHistory(): PartDocument {
   const base = createEmptyPartDocument();
   const sketch = base.sketches[0];
   const withPoint = appendFeature(sketch, createPointFeature(sketch, absoluteCoordinate(0, 0, 0)));
-  return {
+  return synchronizeConfigurations({
     ...replaceSketch(base, withPoint),
     name: '受け皿',
     parameters: [THICKNESS_PARAMETER],
-  };
+  });
 }
 
 /** 見出しだけの 1 件(並べ替えと間引きの検査用)。 */

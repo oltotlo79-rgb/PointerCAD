@@ -7,6 +7,7 @@ import type { StateCreator } from 'zustand';
 import type { AppState } from './appState.js';
 
 export interface OpenDrawingOptions {
+  readonly preserveSaveTarget?: boolean;
   readonly fileName?: string | null;
   readonly saved?: boolean;
   readonly sources?: DrawingSourceLibrary;
@@ -17,12 +18,13 @@ export interface DrawingSnapshot {
   readonly document: DrawingDocument;
   readonly sources: DrawingSourceLibrary;
 }
-export type DrawingTool = 'select' | 'dimension' | 'annotation' | 'note';
+export type DrawingTool = 'select' | 'dimension' | 'annotation' | 'note' | 'balloon';
 
 /** 図面文書の寿命。履歴と保存処理はP8後段が同じ欄へ接続する。 */
 export interface DrawingSlice {
   readonly drawing: DrawingDocument | null;
   readonly savedDrawing: DrawingDocument | null;
+  readonly savedDrawingSources: DrawingSourceLibrary | null;
   readonly drawingFileName: string | null;
   readonly drawingInitialName: string | null;
   readonly drawingSources: DrawingSourceLibrary;
@@ -45,19 +47,19 @@ export interface DrawingSlice {
   readonly selectDrawingIds: (ids: readonly string[]) => void;
   readonly setDrawingMessage: (message: string | null) => void;
   readonly setDrawingResolution: (document: DrawingDocument, result: DrawingRefreshResult, source: DrawingSourceResolution | null) => void;
-  readonly setDrawingFileState: (name: string | null, saved: DrawingDocument | null) => void;
+  readonly setDrawingFileState: (name: string | null, saved: DrawingDocument | null, sources?: DrawingSourceLibrary) => void;
   readonly closeDrawing: () => void;
 }
 
 export type DrawingInitialState = Pick<
   DrawingSlice,
-  'drawing' | 'savedDrawing' | 'drawingFileName' | 'drawingInitialName' | 'drawingSources' | 'drawingImportedShapes'
+  'drawing' | 'savedDrawing' | 'savedDrawingSources' | 'drawingFileName' | 'drawingInitialName' | 'drawingSources' | 'drawingImportedShapes'
   | 'drawingUndoStack' | 'drawingTool' | 'drawingRequestedDimension' | 'drawingTargets' | 'drawingSelectedIds'
   | 'drawingResolution' | 'drawingSourceResolution' | 'drawingBusy' | 'drawingMessage'
 >;
 
 export function createDrawingInitialState(): DrawingInitialState {
-  return { drawing: null, savedDrawing: null, drawingFileName: null, drawingInitialName: null,
+  return { drawing: null, savedDrawing: null, savedDrawingSources: null, drawingFileName: null, drawingInitialName: null,
     drawingSources: emptyDrawingSourceLibrary(), drawingImportedShapes: new Map(), drawingUndoStack: null,
     drawingTool: 'select', drawingRequestedDimension: null, drawingTargets: [], drawingSelectedIds: [],
     drawingResolution: null, drawingSourceResolution: null, drawingBusy: false, drawingMessage: null };
@@ -65,7 +67,7 @@ export function createDrawingInitialState(): DrawingInitialState {
 
 export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlice, keyof DrawingInitialState>> = (set, get) => ({
   openDrawing: (drawing, options) => {
-    get().fileGateway.clearSaveTarget?.();
+    if (options?.preserveSaveTarget !== true) get().fileGateway.clearSaveTarget?.();
     const sources = options?.sources ?? emptyDrawingSourceLibrary();
     set((state) => ({
       ...createDrawingInitialState(),
@@ -74,6 +76,7 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
       drawingImportedShapes: options?.importedShapes ?? new Map(),
       drawingUndoStack: createUndoStack({ document: drawing, sources }),
       savedDrawing: options?.saved === true ? drawing : null,
+      savedDrawingSources: options?.saved === true ? sources : null,
       drawingFileName: options?.fileName ?? null,
       drawingInitialName: drawing.name,
       assembly: null,
@@ -124,7 +127,8 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
     set({ drawingResolution, drawingSourceResolution, drawingBusy: false,
       drawingMessage: drawingResolution.ok ? null : drawingResolution.message });
   },
-  setDrawingFileState: (drawingFileName, savedDrawing) => set({ drawingFileName, savedDrawing }),
+  setDrawingFileState: (drawingFileName, savedDrawing, sources) => set({ drawingFileName, savedDrawing,
+    savedDrawingSources: savedDrawing === null ? null : sources ?? get().drawingSources }),
   closeDrawing: () => {
     get().fileGateway.clearSaveTarget?.();
     set((state) => ({

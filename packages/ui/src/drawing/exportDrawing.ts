@@ -9,6 +9,8 @@ import { displayDrawingDimension } from './dimensionDisplay.js';
 import { drawingFont } from './drawingFont.js';
 import { displayDrawingAnnotations } from './annotationDisplay.js';
 import { rasterDrawing, type DrawingDpi } from './rasterDrawing.js';
+import { displayDrawingTables } from './tableDisplay.js';
+import { drawingProjectionRenderViews } from './projectionDisplay.js';
 
 export type DrawingOutputFormat = 'pdf' | 'svg' | 'png' | 'jpg' | 'dxf';
 export interface PreparedDrawingOutput {
@@ -37,8 +39,10 @@ export async function prepareDrawingOutput(): Promise<PreparedDrawingOutput | nu
     throw new Error(t('drawing.error.dimensionUnsupported'));
   }
   const annotations = displayDrawingAnnotations(drawing, source, state.drawingSources, drawingFont.outline);
-  const rendered = renderDrawing({ document: drawing, views: resolution.projection.views,
-    elements: [...displays.map((display) => display.element), ...annotations] }, { forPrint: true, outlineText: drawingFont.outline });
+  const tables = displayDrawingTables(drawing, source, drawingFont.outline);
+  if (tables.unresolved.length > 0) throw new Error(t('drawing.table.unresolved'));
+  const rendered = renderDrawing({ document: drawing, views: drawingProjectionRenderViews(resolution.projection.views),
+    elements: [...displays.map((display) => display.element), ...annotations, ...tables.elements] }, { forPrint: true, outlineText: drawingFont.outline });
   if (rendered.issues.length > 0) throw new Error(t(rendered.issues.some((issue) => issue.kind === 'font')
     ? 'drawing.error.fontFailed' : 'drawing.error.outputFailed'));
   return { drawing, render: rendered.document, isCurrent };

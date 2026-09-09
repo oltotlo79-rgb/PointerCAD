@@ -20,6 +20,7 @@ const COLUMN_LABEL_KEYS: Readonly<Record<BomColumnId, MessageKey>> = {
   quantity: 'assembly.bom.column.quantity',
   material: 'assembly.bom.column.material',
   mass: 'assembly.bom.column.mass',
+  configuration: 'assembly.bom.column.configuration',
 };
 
 const SORT_LABEL_KEYS: Readonly<Record<BomSortKey, MessageKey>> = {
@@ -55,7 +56,7 @@ function isBomSortKey(value: string): value is BomSortKey {
   return BOM_SORT_KEYS.some((key) => key === value);
 }
 
-function materialLabel(materialId: string, fallback: string): string {
+export function materialLabel(materialId: string, fallback: string): string {
   const key = MATERIAL_LABEL_KEYS[materialId];
   return key === undefined ? fallback : t(key);
 }
@@ -65,12 +66,14 @@ export function BomTable(): React.JSX.Element {
   const document = useAppStore((state) => state.assembly);
   const view = useAppStore((state) => state.assemblyView);
   const selection = useAppStore((state) => state.selection);
+  const library = useAppStore((state) => state.assemblyLibrary);
 
   if (document === null) return <></>;
   const currentView = view?.sourceDocument === document ? view : null;
   const rows = buildBom(document, {
     partKeys: currentView?.resolved.partKeys ?? EMPTY_PART_KEYS,
     bodies: currentView?.bodies ?? EMPTY_BODIES,
+    documents: library.parts,
   }, document.bom);
   const tableRows = bomTableRows(rows, selection, materialLabel);
 

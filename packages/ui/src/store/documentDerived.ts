@@ -17,7 +17,6 @@ import {
   findFeature,
   findSketch,
   isFreeWorkPlaneId,
-  nonLengthVariables,
   type ParameterAnalysis,
   type PartDocument,
   type PartRecomputeError,
@@ -294,15 +293,8 @@ export function parameterPatch(
       nonLengthVariables: EMPTY_NON_LENGTH_VARIABLES,
     };
   }
-  return {
-    parameterAnalysis: analyzeParameters(
-      document.parameters,
-      collectExpressionSources(document),
-    ),
-    // 長さでない名前だけを集める(タスク3b)。作るのは文書が変わったこの 1 回だけで、
-    // 欄で 1 文字打つたびに作り直さない(NFR-PF-1。参照の同一性も保つ)。
-    nonLengthVariables: nonLengthVariables(document.parameters),
-  };
+  const parameterAnalysis = analyzeParameters(document.parameters, collectExpressionSources(document));
+  return { parameterAnalysis, nonLengthVariables: parameterAnalysis.nonLengthVariables };
 }
 
 /** 長さでないパラメータが 1 つも無いときの集合。作り直さずに使い回す(参照の同一性)。 */
@@ -310,6 +302,8 @@ export const EMPTY_NON_LENGTH_VARIABLES: ReadonlySet<string> = new Set<string>()
 
 /** パラメータが 1 つも無いときの控え。作り直さずに使い回す(参照の同一性を保つ)。 */
 export const EMPTY_PARAMETER_ANALYSIS: ParameterAnalysis = {
+  exactVariables: new Map<string, string>(),
+  nonLengthVariables: EMPTY_NON_LENGTH_VARIABLES,
   variables: new Map<string, number>(),
   circular: [],
   unused: [],

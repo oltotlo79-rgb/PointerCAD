@@ -99,7 +99,7 @@ export function readNumber(
   if (!found.ok) {
     return found;
   }
-  if (typeof found.value !== 'number') {
+  if (typeof found.value !== 'number' || !Number.isFinite(found.value)) {
     return fieldProblem(joinPath(parentPath, key), 'type');
   }
   return { ok: true, value: found.value };
@@ -227,7 +227,8 @@ export function readVec3Item(value: unknown, path: string): Checked<Vec3> {
   const x = value[0];
   const y = value[1];
   const z = value[2];
-  if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') {
+  if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number'
+    || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
     return fieldProblem(path, 'type');
   }
   return { ok: true, value: [x, y, z] };
@@ -277,7 +278,7 @@ export function readOptionalNumber(
   if (found.value === null) {
     return { ok: true, value: null };
   }
-  if (typeof found.value !== 'number') {
+  if (typeof found.value !== 'number' || !Number.isFinite(found.value)) {
     return fieldProblem(joinPath(parentPath, key), 'type');
   }
   return { ok: true, value: found.value };

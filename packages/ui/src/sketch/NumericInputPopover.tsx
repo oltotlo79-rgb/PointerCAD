@@ -270,7 +270,8 @@ export function NumericInputPopover({
    * なってしまう(タスク18 の申し送り。3 つの入口へ**同じ表**を渡す)。
    * 評価と確定の両方へ渡す。片方だけだと、欄では緑なのに決定で断られる。
    */
-  const variables = useAppStore((store) => store.parameterAnalysis.variables);
+  const analysis = useAppStore((store) => store.parameterAnalysis);
+  const variables = analysis.variables;
   /*
    * 表示の単位(FR-811、P6 タスク3b)。単位を書かない入力を inch とみなすかどうかが
    * これで決まるので、**評価・確定・札のすべてへ同じ値を渡す**(片方だけだと欄の
@@ -304,7 +305,7 @@ export function NumericInputPopover({
     return null;
   }
 
-  const evaluation = evaluateNumericInput(state, variables, { lengthUnit, nonLengthVariables });
+  const evaluation = evaluateNumericInput(state, variables, { lengthUnit, nonLengthVariables, exactVariables: analysis.exactVariables });
   const position = clampAnchor(anchor, viewportWidth, viewportHeight);
   const coordinateStep = asksCoordinate(state.step);
   // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
@@ -328,7 +329,7 @@ export function NumericInputPopover({
    */
   const handleKey = (key: NumericInputKey): void => {
     applyNumericTransition(
-      applyNumericInputKey(state, key, { variables, lengthUnit, nonLengthVariables }),
+      applyNumericInputKey(state, key, { ...analysis, lengthUnit }),
     );
   };
 

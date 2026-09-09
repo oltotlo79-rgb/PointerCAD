@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
-const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個/u;
+const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個|4分割の実描画性能/u;
 
 export default defineConfig({
   testDir: './tests',
@@ -31,7 +31,8 @@ export default defineConfig({
   projects: [
     {
       name: 'viewport-performance',
-      testMatch: /assembly\.spec\.ts$/u,
+      testMatch: /(?:assembly|p8-drawing)\.spec\.ts$/u,
+      workers: 1,
       grep: VIEWPORT_PERFORMANCE_TEST,
       // GPUの有無を揃え、別テストのWASM初期化とCPUを奪い合わずに測る。
       // 50部品・実描画回数・30fpsの下限は手元でもCIでも同じ。

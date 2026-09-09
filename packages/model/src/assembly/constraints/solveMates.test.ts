@@ -227,7 +227,7 @@ describe('P7-20 M1/L1: 単位付き境界と公開zeroの実solve回帰', () => 
     if (!result.ok) throw new Error(result.reason);
     expect(Math.abs(result.actual - 30)).toBeLessThan(1e-9);
   });
-  it('通常mateの旧評価結果にdriver専用の単位metadataを適用しない', () => {
+  it('通常mateも文書の無次元パラメータを読み、2inchを50.8mmとして解く(R04・R05)', () => {
     const data = boxes();
     const assembly = { ...data.assembly, parameters: [{ name: 'gain', unit: 'none' as const,
       value: expressionValueFromNumber(2), description: '' }],
@@ -235,7 +235,9 @@ describe('P7-20 M1/L1: 単位付き境界と公開zeroの実solve回帰', () => 
     const ordinary = solveMates(assembly, data.targets, data.placements);
     expect(ordinary.converged).toBe(true);
     expect(solveMates(assembly, data.targets, data.placements, { nonLengthVariables: new Set(['gain']) })).toEqual(ordinary);
-    const literal = { ...assembly, mates: [{ ...assembly.mates[0], value: expressionValueFromNumber(2) }] };
+    // gainは単位なし。2×1inch = 50.8mm。古い評価値999や、単位を落とした2mmを使わない。
+    expect(ordinary.placements.get('moving')?.position[2]).toBeCloseTo(20 + 2 * 25.4, 9);
+    const literal = { ...assembly, mates: [{ ...assembly.mates[0], value: expressionValueFromNumber(50.8) }] };
     expect(solveMates(literal, data.targets, data.placements)).toEqual(ordinary);
   });
   it.each([['revolute', 'angle'], ['slider', 'translation'], ['cylindrical', 'angle'],

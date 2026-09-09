@@ -162,6 +162,7 @@ export function applySolidCommit(commit: SolidInputCommit): boolean {
     // ばねの導出式(ピッチ × 巻数 = 全長)にパラメータ表の変数表を渡す(P4b タスク22b-(h))。
     // 渡さないと、ピッチに「板厚」と書いたとき全長の読み取り専用の欄が = 0 になる。
     store.parameterAnalysis.variables,
+    store.parameterAnalysis,
   );
   if (!outcome.ok) {
     store.setSolidError(outcome.reasonKey);

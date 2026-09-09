@@ -39,10 +39,10 @@ interface ConstraintValueFieldProps {
  * なった時点で文書へ流し、読めないあいだは形を変えない(打っている途中で壊れないように)。
  */
 function ConstraintValueField({ summary }: ConstraintValueFieldProps): React.JSX.Element {
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const analysis = useAppStore((state) => state.parameterAnalysis);
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? summary.value?.source ?? '';
-  const readable = evaluateExpression(shown, { variables }).ok;
+  const readable = evaluateExpression(shown, analysis).ok;
 
   return (
     <input

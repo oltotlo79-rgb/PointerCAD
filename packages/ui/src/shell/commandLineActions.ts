@@ -225,7 +225,7 @@ export function commandLineContext(): CommandLineContext {
     // 3D スケッチ(作図面なし、FR-330)では作図面が無いので null を渡す。
     // `commandLine.ts` はこれを見て、極座標を断り、座標を 3 つ受け取る。
     plane: isFreeWorkPlaneId(store.workPlaneId) ? null : store.workPlane,
-    variables: store.parameterAnalysis.variables,
+    ...store.parameterAnalysis,
     hasPrevious: hasPreviousPoint(),
   };
 }
@@ -345,6 +345,7 @@ function commitStep(filled: NumericInputState): CommandLineSubmission {
   const display = {
     lengthUnit: store.displaySettings.lengthUnit,
     nonLengthVariables: store.nonLengthVariables,
+    exactVariables: store.parameterAnalysis.exactVariables,
   };
   const transition = applyNumericInputKey(filled, 'Enter', { variables, ...display });
   applyNumericTransition(transition);

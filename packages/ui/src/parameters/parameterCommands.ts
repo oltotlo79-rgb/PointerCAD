@@ -36,6 +36,8 @@ import {
   removeParameter,
   renameParameter,
   renameVariableInPartDocument,
+  renameConfigurationParameter,
+  synchronizeConfigurations,
   reorderParameters,
   replaceParameter,
   type Parameter,
@@ -217,12 +219,18 @@ export function parameterUsageCounts(document: PartDocument): ReadonlyMap<string
   for (const source of collectExpressionSources(document)) {
     bump(collectVariableNames(source));
   }
+  for (const configuration of document.configurations) {
+    if (configuration.id === document.activeConfigurationId) continue;
+    for (const [owner, source] of Object.entries(configuration.values)) {
+      bump(collectVariableNames(source).filter((name) => name !== owner));
+    }
+  }
   return counts;
 }
 
 /** 部品文書のパラメータ表を差し替えて `applyParameters` を通す(全確定関数の最後の一歩)。 */
 function applied(document: PartDocument): ParameterCommandSuccess {
-  const outcome = applyParameters(document);
+  const outcome = applyParameters(synchronizeConfigurations(document));
   return {
     ok: true,
     document: outcome.document,
@@ -313,7 +321,9 @@ export function commitRenameParameter(
     return duplicateRename();
   }
   const parameters = renameParameter(document.parameters, from, to);
-  const renamed = renameVariableInPartDocument({ ...document, parameters }, from, to);
+  const renamed = renameVariableInPartDocument(
+    renameConfigurationParameter({ ...document, parameters }, from, to), from, to,
+  );
   return applied(renamed);
 }
 

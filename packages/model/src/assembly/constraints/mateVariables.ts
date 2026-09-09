@@ -23,7 +23,7 @@
  * 並びの変数と同じ順の連結成分を返す(§0.a-0.54 の決定性)。**例外を投げない**(FR-504)。
  */
 
-import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 
 import type { AssemblyDocument, Joint, JointKind, Mate, MateKind } from '../types.js';
 import type { MateTargetKind } from './mateTargets.js';
@@ -197,11 +197,12 @@ export function collectMateVariables(assembly: AssemblyDocument): MateVariableSe
 export function mateValueOf(
   value: ExpressionValue | null | undefined,
   variables: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): number | null {
   if (value === null || value === undefined) {
     return null;
   }
-  const result = evaluateExpression(value.source, { variables });
+  const result = evaluateExpression(value.source, { ...options, variables });
   const number = result.ok ? result.value.value : value.value;
   return Number.isFinite(number) ? number : null;
 }

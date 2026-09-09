@@ -9,6 +9,7 @@ function row(extra: Partial<BomRow> = {}): BomRow {
     rowKey: 'bom:root:part-a:steel',
     number: 1,
     name: 'ブラケット',
+    configurationName: null,
     quantity: 2,
     materialId: 'steel',
     materialName: 'steel',
@@ -64,8 +65,12 @@ describe('bomTableRows', () => {
 
   it('番号・名前・数量・材質・合計質量を各セルへ変換する', () => {
     expect(bomTableRows([row()], [])[0]?.cells).toEqual({
-      number: '1', name: 'ブラケット', quantity: '2', material: 'steel', mass: '125.60 g',
+      number: '1', name: 'ブラケット', quantity: '2', material: 'steel', mass: '125.60 g', configuration: '',
     });
+  });
+
+  it('現在の構成名を構成列へ表示する', () => {
+    expect(bomTableRows([row({ configurationName: '小' })], [])[0]?.cells.configuration).toBe('小');
   });
 
   it('材料の表示名をUIの翻訳関数から受け取る', () => {

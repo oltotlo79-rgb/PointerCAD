@@ -218,3 +218,7 @@ export { note, type NoteInput, type NoteGeometry } from './annotation/note.js';
 export { tableLayout, type TableColumn, type TableLayoutInput, type TableGeometry } from './table/tableLayout.js';
 export { bomTable, type DrawingBomRow, type BomColumnId, type BomTableInput, type BomTableGeometry } from './table/bomTable.js';
 export { drawingPrintOptions, readDrawingPrintOptions, type DrawingPrintOptions } from './paper/printSettings.js';
+
+export * from './table/balloon.js';
+export * from './table/holeTable.js';
+export * from './table/revisionTable.js';

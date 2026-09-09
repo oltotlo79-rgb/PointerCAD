@@ -11,6 +11,12 @@ import { ja, JA_PARTS } from './ja.js';
 import { MESSAGE_KEYS } from './t.js';
 
 describe('機能ごとに分けた文言の表(P6 タスク52)', () => {
+  it('文字コード変換で日本語が疑問符の列や置換文字に化けていない', () => {
+    // PowerShell 5.1の既定パイプへ日本語を流すとASCIIの?へ不可逆変換される。
+    // 文言はUTF-8のファイルから書き、壊れた文字列を通常のunit/CIで止める。
+    const damaged = Object.entries(ja).filter(([, value]) => /\?{2,}|\uFFFD/u.test(value));
+    expect(damaged).toEqual([]);
+  });
   it('分けた JSON のあいだで鍵が重なっていない', () => {
     const owner = new Map<string, string>();
     const collisions: string[] = [];

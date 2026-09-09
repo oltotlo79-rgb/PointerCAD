@@ -16,7 +16,7 @@ export function addDrawingSurfaceFinish(input: {
   const document = state.drawing, source = state.drawingSourceResolution;
   if (document === null || source === null || state.drawingBusy) return false;
   const point = resolveDrawingAnnotationTarget(input.target, document, { instances: source.dimensionInstances ?? [], modelCenter: source.center });
-  const value = evaluateExpression(input.value, { variables: analyzeParameters(document.parameters, [input.value]).variables });
+  const value = evaluateExpression(input.value, analyzeParameters(document.parameters, [input.value]));
   if (point === null || !value.ok) { state.setDrawingMessage(t('drawing.error.dimensionSourceMissing')); return false; }
   const geometry = surfaceFinish({ process: input.process, parameter: input.parameter, value: value.value.value, position: input.position, target: point });
   if (geometry === null) { state.setDrawingMessage(t('drawing.error.surfaceFinishInvalid')); return false; }

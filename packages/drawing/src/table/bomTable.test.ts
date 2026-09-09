@@ -3,7 +3,7 @@ import { bomTable, type BomTableInput } from './bomTable.js';
 
 const input: BomTableInput = {
   position: [20, 200], bounds: { left: 10, bottom: 10, right: 287, top: 410 },
-  headings: { number: 'No', name: 'Name', quantity: 'Qty', material: 'Material', mass: 'Mass' },
+  headings: { number: 'No', name: 'Name', quantity: 'Qty', material: 'Material', mass: 'Mass', configuration: 'Configuration' },
   rows: [{ rowKey: 'a', number: 1, name: 'Part A', quantity: 2, materialName: 'Al', massEach: 10 },
     { rowKey: 'b', number: 2, name: 'Part B', quantity: 3, materialName: 'Fe', massEach: 20 }],
   formatMass: (value) => value.toFixed(1), unknownMassText: '?',

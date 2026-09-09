@@ -16,7 +16,7 @@
  * `solidToolReadiness` / `commitSolidInput` はそちらへ委譲する。
  */
 
-import { evaluateExpression, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
+import { composeExpressionSource, evaluateExpression, expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 import {
   appendSolid,
   DEFAULT_EXTRUDE_DISTANCE_MM,
@@ -368,8 +368,9 @@ export function selectedSpringOrigin(
 function evaluatedExpressionValue(
   source: string,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): ExpressionValue {
-  const result = evaluateExpression(source, { variables });
+  const result = evaluateExpression(source, { ...options, variables });
   if (result.ok) {
     return result.value;
   }
@@ -382,9 +383,9 @@ function evaluatedExpressionValue(
  * 上書きする(呼び出し側は「入力された 2 つ」だけを正しく渡せばよい)。
  *
  * 自動生成した式の `source` は次のとおり(タスク25b の検証表で固定)。
- * - `derived: 'length'` → `` `${pitch.source}*${turns.source}` ``
- * - `derived: 'pitch'` → `` `${length.source}/${turns.source}` ``
- * - `derived: 'turns'` → `` `${length.source}/${pitch.source}` ``
+ * - `derived: 'length'` → `(pitch) * (turns)`（単一の数・名前なら括弧なし）
+ * - `derived: 'pitch'` → `(length) / (turns)`（同上）
+ * - `derived: 'turns'` → `(length) / (pitch)`（同上）
  *
  * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
  */
@@ -394,25 +395,26 @@ function resolveSpringLengthFields(
   pitch: ExpressionValue,
   turns: ExpressionValue,
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): { readonly length: ExpressionValue; readonly pitch: ExpressionValue; readonly turns: ExpressionValue } {
   switch (derived) {
     case 'length':
       return {
-        length: evaluatedExpressionValue(`${pitch.source}*${turns.source}`, variables),
+        length: evaluatedExpressionValue(composeExpressionSource(pitch.source, turns.source, '*'), variables, options),
         pitch,
         turns,
       };
     case 'pitch':
       return {
         length,
-        pitch: evaluatedExpressionValue(`${length.source}/${turns.source}`, variables),
+        pitch: evaluatedExpressionValue(composeExpressionSource(length.source, turns.source, '/'), variables, options),
         turns,
       };
     case 'turns':
       return {
         length,
         pitch,
-        turns: evaluatedExpressionValue(`${length.source}/${pitch.source}`, variables),
+        turns: evaluatedExpressionValue(composeExpressionSource(length.source, pitch.source, '/'), variables, options),
       };
   }
 }
@@ -443,6 +445,7 @@ export function commitSpring(
     readonly handedness: SpringHandedness;
   },
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidCommandOutcome {
   if (!pointRefExists(document, params.origin)) {
     return { ok: false, reasonKey: 'springError.noOriginPoint' };
@@ -453,6 +456,7 @@ export function commitSpring(
     params.pitch,
     params.turns,
     variables,
+    options,
   );
   const id = nextSolidId(document, 'spring');
   const feature: SpringFeature = {
@@ -806,6 +810,7 @@ export function commitSolidInput(
   commit: SolidInputCommit,
   bodies: readonly SubShapeBody[] = [],
   variables?: ReadonlyMap<string, number>,
+  options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidCommandOutcome {
   switch (commit.tool) {
     /*
@@ -901,7 +906,7 @@ export function commitSolidInput(
         coilDiameter: commit.values.coilDiameter ?? DEFAULT_SPRING_COIL_DIAMETER,
         wireDiameter: commit.values.wireDiameter ?? DEFAULT_SPRING_WIRE_DIAMETER,
         handedness: commit.springHandedness ?? DEFAULT_SPRING_HANDEDNESS,
-      }, variables);
+      }, variables, options);
     }
     // 基本形状5種(タスク18、FR-429)。対象を消費しない「作る」フィーチャー(§0.a-0.19)。
     case 'sphere':

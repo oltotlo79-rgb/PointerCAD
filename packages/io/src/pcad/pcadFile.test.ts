@@ -258,6 +258,7 @@ describe('図面の .pcadd', () => {
 /** 計画書 §2.8 の例(40×30 の面を 10mm 押し出した箱)に相当する部品文書。 */
 function exampleDocument(): PartDocument {
   return {
+    ...createEmptyPartDocument(),
     id: 'part-1',
     name: '部品1',
     schemaVersion: PART_SCHEMA_VERSION,

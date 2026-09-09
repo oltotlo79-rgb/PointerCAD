@@ -55,13 +55,13 @@ export interface PickedTypedFile {
 
 export interface FileGateway {
   /** 開く。取り消されたら null。読めなかったときは例外を投げる。 */
-  openPcad(kind?: 'part' | 'assembly' | 'all'): Promise<PickedFile | null>;
+  openPcad(kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<PickedFile | null>;
   /**
    * 保存する。`saveAs` が false のときは、前に保存した先へ黙って上書きしてよい。
    * 保存できたらファイル名を返す。取り消されたら null。
    */
   savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean,
-    kind?: 'part' | 'assembly'): Promise<string | null>;
+    kind?: 'part' | 'assembly' | 'drawing'): Promise<string | null>;
   /** 前に保存した先を覚えているか(「保存」を「名前を付けて保存」に落とすかの判断)。 */
   hasSaveTarget(): boolean;
   /**
@@ -103,15 +103,23 @@ export interface FileGateway {
 /** 部品ファイルの拡張子(要件§8)。 */
 export const PCAD_EXTENSION = '.pcad';
 export const PCADA_EXTENSION = '.pcada';
+export const PCADD_EXTENSION = '.pcadd';
+
+export function withPcaddExtension(name: string): string {
+  const trimmed = name.trim();
+  return trimmed.toLowerCase().endsWith(PCADD_EXTENSION) ? trimmed : `${trimmed}${PCADD_EXTENSION}`;
+}
 
 export function withPcadaExtension(name: string): string {
   const trimmed = name.trim();
   return trimmed.toLowerCase().endsWith(PCADA_EXTENSION) ? trimmed : `${trimmed}${PCADA_EXTENSION}`;
 }
 
-function documentFileTypes(kind: 'part' | 'assembly' | 'all'): readonly FilePickerType[] {
+function documentFileTypes(kind: 'part' | 'assembly' | 'drawing' | 'all'): readonly FilePickerType[] {
   const assembly = { description: t('assembly.fileType'), accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } };
-  return kind === 'assembly' ? [assembly] : kind === 'all' ? [PCAD_FILE_TYPE, assembly] : [PCAD_FILE_TYPE];
+  const drawing = { description: t('drawing.fileType'), accept: { [PCAD_MIME_TYPE]: [PCADD_EXTENSION] } };
+  return kind === 'drawing' ? [drawing] : kind === 'assembly' ? [assembly]
+    : kind === 'all' ? [PCAD_FILE_TYPE, assembly, drawing] : [PCAD_FILE_TYPE];
 }
 
 /**
@@ -733,7 +741,8 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       // 前回の未確定候補は使えない。確定済みの保存先は、今回が失敗・取消なら保つ。
       pendingSaveTarget = null;
       if (!hasOpenPicker(scope)) {
-        return pickFileWithInput(kind === 'all' ? '.pcad,.pcada' : kind === 'assembly' ? PCADA_EXTENSION : PCAD_EXTENSION, scope);
+        return pickFileWithInput(kind === 'all' ? '.pcad,.pcada,.pcadd' : kind === 'drawing' ? PCADD_EXTENSION
+          : kind === 'assembly' ? PCADA_EXTENSION : PCAD_EXTENSION, scope);
       }
       let picked: unknown;
       try {

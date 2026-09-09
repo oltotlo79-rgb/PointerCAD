@@ -77,6 +77,8 @@ export interface MateResidualPreparationInput {
   readonly targets: ReadonlyMap<string, MateResidualTargetPair>;
   readonly placements: ReadonlyMap<string, RigidPlacement>;
   readonly parameters?: ReadonlyMap<string, number>;
+  readonly exactVariables?: ReadonlyMap<string, string>;
+  readonly nonLengthVariables?: ReadonlySet<string>;
 }
 
 export interface MateResidualPreparationReport {
@@ -199,7 +201,7 @@ export function prepareMateResiduals(input: MateResidualPreparationInput): MateR
     }
     const needsValue = mate.kind === 'angle' || mate.kind === 'distance'
       || (mate.kind === 'coincident' && a.kind === 'plane' && mate.value !== undefined);
-    const rawValue = needsValue ? mateValueOf(mate.value, input.parameters ?? new Map()) : 0;
+    const rawValue = needsValue ? mateValueOf(mate.value, input.parameters ?? new Map(), input) : 0;
     if (rawValue === null) {
       skipped.push(refusal(mate.id, 'invalidValue'));
       continue;

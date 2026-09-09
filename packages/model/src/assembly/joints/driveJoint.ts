@@ -116,6 +116,7 @@ export function prepareJointDrive(input: {
   readonly placements: ReadonlyMap<string, RigidPlacement>;
   readonly request: JointDriveRequest;
   readonly parameters?: ReadonlyMap<string, number>;
+  readonly exactVariables?: ReadonlyMap<string, string>;
   /** inch節内で換算しない角度・無次元の名前。省略時は既存の数値Map契約を保つ。 */
   readonly nonLengthVariables?: ReadonlySet<string>;
 }): JointDriveFailure | { readonly ok: true; readonly drive: PreparedJointDrive } {
@@ -138,7 +139,7 @@ export function prepareJointDrive(input: {
   for (const expression of [bounds.min, bounds.max]) {
     if (expression === null) { values.push(null); continue; }
     const evaluated = evaluateExpression(expression.source, {
-      variables: input.parameters, nonLengthVariables: input.nonLengthVariables,
+      variables: input.parameters, exactVariables: input.exactVariables, nonLengthVariables: input.nonLengthVariables,
     });
     if (!evaluated.ok || !finite(evaluated.value.value)) return { ok: false, reason: 'invalidExpression' };
     values.push(canonicalZero(evaluated.value.value));

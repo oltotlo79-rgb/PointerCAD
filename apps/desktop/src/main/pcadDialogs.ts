@@ -65,10 +65,11 @@ class InputTooLargeError extends Error {}
  */
 const PCAD_FILE_FILTER = { name: 'PointerCAD の部品ファイル', extensions: [PCAD_EXTENSION] };
 const PCADA_FILE_FILTER = { name: 'PointerCAD のアセンブリファイル', extensions: ['pcada'] };
+const PCADD_FILE_FILTER = { name: 'PointerCAD の図面ファイル', extensions: ['pcadd'] };
 
-function documentFilters(kind: 'part' | 'assembly' | 'all') {
-  return kind === 'assembly' ? [PCADA_FILE_FILTER] :
-    kind === 'all' ? [PCAD_FILE_FILTER, PCADA_FILE_FILTER] : [PCAD_FILE_FILTER];
+function documentFilters(kind: 'part' | 'assembly' | 'drawing' | 'all') {
+  return kind === 'drawing' ? [PCADD_FILE_FILTER] : kind === 'assembly' ? [PCADA_FILE_FILTER] :
+    kind === 'all' ? [PCAD_FILE_FILTER, PCADA_FILE_FILTER, PCADD_FILE_FILTER] : [PCAD_FILE_FILTER];
 }
 
 /** ダイアログのフィルタ 1 つぶん(Electron の `FileFilter` と同じ形)。 */
@@ -225,7 +226,7 @@ async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> 
  * 開けなくなるよりはよい)。
  */
 export async function openPcadDialog(window: BrowserWindow | null,
-  kind: 'part' | 'assembly' | 'all' = 'part'): Promise<OpenedPcadFile | null> {
+  kind: 'part' | 'assembly' | 'drawing' | 'all' = 'part'): Promise<OpenedPcadFile | null> {
   const options: OpenDialogOptions = {
     properties: ['openFile'],
     filters: documentFilters(kind),
@@ -251,7 +252,7 @@ export async function savePcadDialog(
   bytes: Uint8Array,
   saveAs: boolean,
   lastPath: string | null,
-  kind: 'part' | 'assembly' = 'part',
+  kind: 'part' | 'assembly' | 'drawing' = 'part',
 ): Promise<SavedPcadFile | null> {
   let filePath = saveAs ? null : lastPath;
   if (filePath === null) {
@@ -268,7 +269,9 @@ export async function savePcadDialog(
     if (result.canceled || result.filePath === '') {
       return null;
     }
-    filePath = kind === 'assembly'
+    filePath = kind === 'drawing'
+      ? (extname(result.filePath).toLowerCase() === '.pcadd' ? result.filePath : `${result.filePath}.pcadd`)
+      : kind === 'assembly'
       ? (extname(result.filePath).toLowerCase() === '.pcada' ? result.filePath : `${result.filePath}.pcada`)
       : withPcadExtension(result.filePath);
   }
@@ -480,7 +483,7 @@ export function registerPcadIpc(): void {
       if (!validateAppSender(event)) {
         return null;
       }
-      if (kind !== 'part' && kind !== 'assembly' && kind !== 'all') return null;
+      if (kind !== 'part' && kind !== 'assembly' && kind !== 'drawing' && kind !== 'all') return null;
       // 未確定の候補は次の「開く」を始めた時点で失効する。確定済みの先はまだ保つ。
       pendingPaths.delete(event.sender.id);
       const opened = await openPcadDialog(windowOf(event), kind);
@@ -530,7 +533,7 @@ export function registerPcadIpc(): void {
       if (
         typeof suggestedName !== 'string' ||
         !(bytes instanceof Uint8Array) ||
-        typeof saveAs !== 'boolean' || (kind !== 'part' && kind !== 'assembly')
+        typeof saveAs !== 'boolean' || (kind !== 'part' && kind !== 'assembly' && kind !== 'drawing')
       ) {
         throw new Error('保存の依頼の形が正しくありません。');
       }

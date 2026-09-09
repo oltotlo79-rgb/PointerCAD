@@ -24,6 +24,7 @@ import { evaluateExpression } from '@pointercad/expression';
 import { PARAMETER_UNITS, type ParameterUnit } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { ConfigurationPanel } from './ConfigurationPanel.js';
 import { initialDraftVersionState, reconcileDraftVersion } from '../shell/fieldDraft.js';
 import { applyDisplayUnit, fieldValueText } from '../sketch/numericInput.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -194,7 +195,7 @@ export function ParameterPanel(): React.JSX.Element {
       );
     }
     const result = evaluateExpression(parameterExpression(row, current.text), {
-      variables: analysis.variables,
+      ...analysis,
       nonLengthVariables,
     });
     return result.ok
@@ -392,6 +393,7 @@ export function ParameterPanel(): React.JSX.Element {
 
   return (
     <div className="pcad-section pcad-parameters">
+      <ConfigurationPanel key={documentVersion} />
       {/* 循環しているときの 1 文(FR-207、FR-504)。行の赤い印だけでは理由が分からない。 */}
       {analysis.circular.length === 0 ? null : (
         <p className="pcad-panel__error">{t('parameterPanel.circularNote')}</p>

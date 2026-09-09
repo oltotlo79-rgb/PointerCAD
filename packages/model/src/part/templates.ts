@@ -186,6 +186,9 @@ export function documentFromTemplate(
     ...emptyHistory(),
     parameters: template.document.parameters,
     appearance: template.document.appearance,
+    namedViews: template.document.namedViews,
+    configurations: template.document.configurations,
+    activeConfigurationId: template.document.activeConfigurationId,
   };
 }
 

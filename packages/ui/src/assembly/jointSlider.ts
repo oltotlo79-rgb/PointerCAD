@@ -1,12 +1,11 @@
 /** P7 タスク22。ジョイントのつまみの範囲と入力値を決める純関数。 */
 import { evaluateExpression } from '@pointercad/expression';
 import {
-  assemblyVariables,
+  assemblyExpressionContext,
   clampToRange,
   collectMateVariables,
   jointValue,
   jointCoordinateNames,
-  nonLengthVariables,
   prepareJointResiduals,
   type AssemblyDocument,
   type Joint,
@@ -46,18 +45,14 @@ export function jointSliderBounds(
   if (!jointCoordinateNames(joint.kind).includes(coordinate)) {
     return { ok: false, reason: 'unsupported' };
   }
-  const variables = assemblyVariables(document);
-  const dimensionless = nonLengthVariables(document.parameters);
+  const context = assemblyExpressionContext(document);
   const values: (number | null)[] = [];
   for (const expression of [joint.minValue, joint.maxValue]) {
     if (expression === null) {
       values.push(null);
       continue;
     }
-    const evaluated = evaluateExpression(expression.source, {
-      variables,
-      nonLengthVariables: dimensionless,
-    });
+    const evaluated = evaluateExpression(expression.source, context);
     if (!evaluated.ok || !Number.isFinite(evaluated.value.value)) {
       return { ok: false, reason: 'invalidExpression' };
     }

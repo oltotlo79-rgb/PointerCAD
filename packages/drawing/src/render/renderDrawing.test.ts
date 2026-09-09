@@ -72,6 +72,15 @@ describe('用紙と解決済みの形状を同じ中間表現へ写す(P8-41)', 
       visible: [], hidden: [{ curve: segment }], cuttingCurves: [] }] }, { outlineText });
     expect(result.document.primitives.some((primitive) => primitive.ownerId === 'front')).toBe(false);
   });
+  it('組図の線の所有者を保持し、断面の線と部品図はビューを所有者にする', () => {
+    const result = renderDrawing({ document: document({ views: [view] }), views: [{ viewId: 'front',
+      visible: [{ curve: segment, ownerId: 'first' }, { curve: segment, ownerId: 'second' }, { curve: segment }],
+      hidden: [{ curve: segment, ownerId: 'first' }], cuttingCurves: [segment] }] }, { outlineText });
+    expect(result.document.primitives.filter((primitive) => ['first', 'second', 'front'].includes(primitive.ownerId))
+      .map((primitive) => [primitive.ownerId, primitive.layerId])).toEqual([
+      ['first', 'layer-1'], ['second', 'layer-1'], ['front', 'layer-1'], ['front', 'layer-1'], ['first', 'layer-2'],
+    ]);
+  });
   it('円弧をC命令へ変換し入口の座標を維持する', () => {
     const result = render(document(), [{ ...line, curves: [{ kind: 'arc', center: [10, 10], radius: 5, startAngle: 0, endAngle: Math.PI / 2 }] }]);
     const arc = result.document.primitives.find((primitive) => primitive.ownerId === 'line');

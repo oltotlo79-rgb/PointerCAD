@@ -291,10 +291,11 @@ describe('アセンブリのツールバー(P7 タスク45)', () => {
     expect(assemblyActionReadiness(assembly, [component.id])).toEqual({ ready: true, reasonKey: null });
   });
 
-  it('アセンブリのファイル一覧に新規入口を出し、部品専用操作とひな形を除く', () => {
+  it('アセンブリのファイル一覧に組図と図面ひな形の入口を出し、部品専用操作と部品ひな形を除く', () => {
     const rows = fileMenuItems([{ id: 'template', name: 'ひな形' }], [{ id: 'recent', name: '最近' }], 'assembly');
-    expect(rows.map((item) => item.id)).toEqual(['newAssembly', 'saveAs', 'recentFile:recent']);
-    expect(t(rows[0].labelKey)).toBe('新しいアセンブリ');
+    expect(rows.map((item) => item.id)).toEqual(['newDrawingFromPart', 'newDrawingFromTemplate', 'newAssembly', 'saveAs', 'recentFile:recent']);
+    expect(t(rows[0].labelKey)).toBe('この組立から図面を作成');
+    expect(t(rows[1].labelKey)).toBe('図面ひな形から作成');
   });
 
   it('製品UIと同じ入口で部品・アセンブリの双方から空の新規アセンブリを始める', async () => {
@@ -799,6 +800,7 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
     */
     expect(FILE_MENU_ITEMS.map((item) => item.id)).toEqual([
       'newDrawingFromPart',
+      'newDrawingFromTemplate',
       'newAssembly',
       'saveAs',
       'exportShape',

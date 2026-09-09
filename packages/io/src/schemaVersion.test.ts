@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PART_SCHEMA_VERSION } from '@pointercad/model';
 
 import { canRoundTrip, EXPORT_FORMATS, IMPORT_FORMATS, PCAD_SCHEMA_VERSION } from './index.js';
 
@@ -15,12 +16,13 @@ describe('入出力の骨組み', () => {
   // (`shapes/*.brep` / `meshes/*.bin` / `canvases/*.png`)をまとめて足して 7 になった
   // (§0.a-0.55)。P7 タスク3 が封筒の新しい種別 `assembly`(アセンブリ文書、`.pcada`)を
   // 足して 8 になり、P8の図面種別を足して9になった(部品・アセンブリ・図面で版を分けない)。
-  // これは仕様変更であり、期待値の緩和ではない。
+  // P8-60/62/64で名前付き視点と構成を必須欄にし、旧版を移行して10になった。
   it(
-    '.pcad のスキーマバージョンは 9 である' +
+    '.pcad のスキーマバージョンは 10 である' +
       '(要件§8、§0.a-0.22、§0.a-0.24、§0.a-0.17、§0.a-0.15、§0.a-0.55、P7 §0.a-0.2)',
     () => {
-      expect(PCAD_SCHEMA_VERSION).toBe(9);
+      expect(PCAD_SCHEMA_VERSION).toBe(10);
+      expect(PART_SCHEMA_VERSION).toBe(PCAD_SCHEMA_VERSION);
     },
   );
 

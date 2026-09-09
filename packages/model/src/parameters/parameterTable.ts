@@ -23,6 +23,7 @@ import {
 } from '@pointercad/expression';
 
 import { nextSerialName } from '../sketch/createSketchDocument.js';
+import { nonLengthVariables } from '../units/length.js';
 
 import type {
   Parameter,
@@ -145,13 +146,14 @@ export function analyzeParameters(
 
   const variables = new Map<string, number>();
   const exactVariables = new Map<string, string>();
+  const nonLength = nonLengthVariables(parameters);
   const failures: ParameterFailure[] = [];
   for (const name of order) {
     const parameter = byName.get(name);
     if (parameter === undefined) {
       continue;
     }
-    const result = evaluateExpressionExact(parameter.value.source, { variables, exactVariables });
+    const result = evaluateExpressionExact(parameter.value.source, { variables, exactVariables, nonLengthVariables: nonLength });
     if (result.ok) {
       variables.set(name, result.value.value);
       exactVariables.set(name, result.value.exact);
@@ -163,6 +165,8 @@ export function analyzeParameters(
 
   return {
     variables,
+    exactVariables,
+    nonLengthVariables: nonLength,
     circular,
     unused: unusedParameterNames(parameters, usedSources),
     failures,

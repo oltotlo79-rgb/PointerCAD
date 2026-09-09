@@ -35,3 +35,23 @@ describe('デスクトップ画面の保存先キャッシュ（レビュー R02
     expect(gateway.hasSaveTarget()).toBe(true);
   });
 });
+
+describe('図面の読み書きを本体プロセスへ届ける（P8-64）', () => {
+  it('図面のバイト列・形式と保存先の確定を往復し、パスを画面へ出さない', async () => {
+    const bytes = Uint8Array.of(1, 2, 3);
+    const api = {
+      openPcad: vi.fn(() => Promise.resolve({ name: '組図.pcadd', bytes, saveTargetToken: 'opaque-drawing' })),
+      confirmSaveTarget: vi.fn(() => Promise.resolve(true)), clearSaveTarget: () => Promise.resolve(undefined),
+      savePcad: vi.fn(() => Promise.resolve('組図.pcadd')), hasSaveTarget: () => Promise.resolve(false),
+    };
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    if (gateway === null) throw new Error('gateway が必要');
+    const opened = await gateway.openPcad('drawing');
+    expect(api.openPcad).toHaveBeenCalledWith('drawing');
+    expect(opened).toEqual({ name: '組図.pcadd', bytes, saveTargetToken: 'opaque-drawing' });
+    expect(gateway.hasSaveTarget()).toBe(false);
+    await gateway.confirmSaveTarget?.('opaque-drawing'); expect(gateway.hasSaveTarget()).toBe(true);
+    expect(await gateway.savePcad('組図.pcadd', bytes, false, 'drawing')).toBe('組図.pcadd');
+    expect(api.savePcad).toHaveBeenCalledWith('組図.pcadd', bytes, false, 'drawing');
+  });
+});

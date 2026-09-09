@@ -118,7 +118,7 @@ describe('createAssemblyDocument', () => {
     expect(document.bom.expandSubAssemblies).toBe(false);
   });
 
-  it('文書の欄は 9 つ(§2.2)', () => {
+  it('アセンブリ文書は名前付き視点を含む10欄(P8-60)', () => {
     // 欄が増減したらここで気づけるようにする(io の読み書きが版と一緒に動くため)。
     expect(Object.keys(createAssemblyDocument('組立')).sort()).toEqual([
       'bom',
@@ -127,13 +127,14 @@ describe('createAssemblyDocument', () => {
       'joints',
       'mates',
       'name',
+      'namedViews',
       'parameters',
       'presentation',
       'schemaVersion',
     ]);
   });
 
-  it('部品文書には 1 欄も足していない(§0.a-0.1)', () => {
+  it('部品文書は承認した名前付き視点と構成を含む14欄(P8-60・62)', () => {
     /*
       P7 はアセンブリの型を新しく作るだけで、部品文書の欄を 1 つも増やさない。
 
@@ -142,12 +143,16 @@ describe('createAssemblyDocument', () => {
       足して 11 になっている(`part/types.ts` の注釈と `PART_SCHEMA_VERSION = 7` の由来)。
       期待値を緩めているのではなく、**P7 の着手時点の現在値**を固定している。
     */
+    // P8の承認済み追加: namedViews / configurations / activeConfigurationId。
     expect(Object.keys(createEmptyPartDocument()).sort()).toEqual([
+      'activeConfigurationId',
       'activeSketchId',
       'appearance',
       'canvases',
+      'configurations',
       'id',
       'name',
+      'namedViews',
       'parameters',
       'references',
       'schemaVersion',
@@ -290,7 +295,8 @@ describe('種類の一覧', () => {
   });
 
   it('部品表の列は 5 つで、重複が無い(§0.a-0.38)', () => {
-    expect(BOM_COLUMN_IDS).toHaveLength(5);
+    expect(BOM_COLUMN_IDS).toContain('configuration');
+    expect(DEFAULT_BOM_SETTINGS.columns).not.toContain('configuration');
     expect(new Set(BOM_COLUMN_IDS).size).toBe(BOM_COLUMN_IDS.length);
   });
 });

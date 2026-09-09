@@ -14,9 +14,9 @@
 import type { ExpressionValue } from '@pointercad/expression';
 
 /**
- * パラメータの単位。**表示にだけ使い、計算には効かせない**(FR-207 の「名前・値(式)・説明」に
- * 単位を足したもの)。長さは mm、角度は度で持つという既定(NFR-RE-3、FR-205)は文書全体で
- * 共通なので、ここで単位を変えても数値は換算しない。
+ * パラメータの量の種類。長さはmm、角度は度、無次元は倍率として扱う。
+ * 単位つきの式の中では長さだけを単位換算し、角度・無次元へ長さの倍率を掛けない。
+ * 単位欄そのものの変更で保存済みの数値を換算することはない。
  */
 export type ParameterUnit = 'mm' | 'degree' | 'none';
 
@@ -32,7 +32,7 @@ export interface Parameter {
   readonly name: string;
   /** 値の式。他のパラメータを参照できる。 */
   readonly value: ExpressionValue;
-  /** 単位。表示だけに使い、計算には効かせない。 */
+  /** 量の種類。単位つき式で長さと倍率を区別する。 */
   readonly unit: ParameterUnit;
   /** 説明(FR-207)。空でよい。 */
   readonly description: string;
@@ -54,6 +54,8 @@ export interface ParameterFailure {
 export interface ParameterAnalysis {
   /** 評価できた変数表。循環に含まれる名前と、評価に失敗した名前は入らない。 */
   readonly variables: ReadonlyMap<string, number>;
+  readonly exactVariables: ReadonlyMap<string, string>;
+  readonly nonLengthVariables: ReadonlySet<string>;
   /** 循環に含まれる名前(FR-207「参照が循環している名前は画面上で示す」)。 */
   readonly circular: readonly string[];
   /** どこからも参照されない名前(FR-207「使われていない名前」)。 */

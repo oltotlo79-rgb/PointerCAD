@@ -23,7 +23,7 @@
  * 合致の解はその上に別の段として乗る(§0.a-0.6。解は保存しない)。
  */
 
-import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 
 import { analyzeParameters } from '../parameters/parameterTable.js';
 import { applyParameters } from '../part/reevaluatePart.js';
@@ -202,12 +202,18 @@ export function assemblyVariables(assembly: AssemblyDocument): ReadonlyMap<strin
   return analyzeParameters(assembly.parameters, placementSources(assembly)).variables;
 }
 
+/** 配置・合致・可動範囲で、十進精度と量の種類を同じ解析結果から引き継ぐ。 */
+export function assemblyExpressionContext(assembly: AssemblyDocument): EvaluateOptions {
+  return assembly.parameters.length === 0 ? { variables: NO_VARIABLES }
+    : analyzeParameters(assembly.parameters, placementSources(assembly));
+}
+
 /**
  * 式 1 つを変数表つきで数にする。**評価できなければ保存された評価値を残す**
  * (`reevaluatePart.ts` の `reevaluateValue` と同じ約束。FR-504)。
  */
-function numberOf(value: ExpressionValue, variables: ReadonlyMap<string, number>): number {
-  const result = evaluateExpression(value.source, { variables });
+function numberOf(value: ExpressionValue, context: EvaluateOptions): number {
+  const result = evaluateExpression(value.source, context);
   return result.ok ? result.value.value : value.value;
 }
 
@@ -220,11 +226,11 @@ function numberOf(value: ExpressionValue, variables: ReadonlyMap<string, number>
  */
 function rigidPlacementOf(
   component: AssemblyComponent,
-  variables: ReadonlyMap<string, number>,
+  context: EvaluateOptions,
   errors: AssemblyError[],
 ): RigidPlacement {
   const [x, y, z] = component.placement.position;
-  const raw: Vec3 = [numberOf(x, variables), numberOf(y, variables), numberOf(z, variables)];
+  const raw: Vec3 = [numberOf(x, context), numberOf(y, context), numberOf(z, context)];
   if (!raw.every((value) => Number.isFinite(value))) {
     // 3 つのうち何本壊れていても 1 件だけ積む(木の行 1 つに同じ断りを並べない)。
     errors.push({
@@ -281,7 +287,7 @@ export function resolveAssembly(
   options: ResolveAssemblyOptions = {},
 ): ResolvedAssembly {
   const parent = options.parent ?? IDENTITY_PLACEMENT;
-  const variables = assemblyVariables(assembly);
+  const context = assemblyExpressionContext(assembly);
   const parts = new Map<string, ResolvedPart>();
   const placements = new Map<string, RigidPlacement>();
   const partKeys = new Map<string, string>();
@@ -297,7 +303,7 @@ export function resolveAssembly(
     }
     placements.set(
       component.id,
-      composePlacement(parent, rigidPlacementOf(component, variables, errors)),
+      composePlacement(parent, rigidPlacementOf(component, context, errors)),
     );
 
     const key = partKeyOf(component.source);

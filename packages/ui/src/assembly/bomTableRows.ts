@@ -41,6 +41,7 @@ export function bomTableRows(
       cells: {
         number: String(row.number),
         name: row.name,
+        configuration: row.configurationName ?? '',
         quantity: String(row.quantity),
         material: materialLabel(row.materialId, row.materialName),
         mass: formatBomMass(row.massTotal),

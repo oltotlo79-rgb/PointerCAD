@@ -50,7 +50,7 @@ function tooltipKeyOf(kind: SketchConstraintKind): MessageKey {
 export function ConstraintValuePopover(): React.JSX.Element | null {
   const prompt = useAppStore((state) => state.constraintPrompt);
   const viewportSize = useAppStore((state) => state.viewportSize);
-  const variables = useAppStore((state) => state.parameterAnalysis.variables);
+  const analysis = useAppStore((state) => state.parameterAnalysis);
   const [source, setSource] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +75,7 @@ export function ConstraintValuePopover(): React.JSX.Element | null {
   };
   // 空欄は既定値(いま測った値)として読む(`effectiveSource` と同じ約束、NFR-UX-4)。
   const effective = source.trim() === '' ? prompt.defaultSource : source;
-  const evaluated = evaluateExpression(effective, { variables });
+  const evaluated = evaluateExpression(effective, analysis);
   const value: ExpressionValue | null = evaluated.ok ? evaluated.value : null;
   const error: ExpressionError | null = evaluated.ok ? null : evaluated.error;
   const position = clampAnchor(prompt.anchor, viewportSize[0], viewportSize[1]);

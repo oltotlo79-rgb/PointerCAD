@@ -29,6 +29,7 @@ export const DEFAULT_ANGLE_UNIT: AngleUnit = 'degree';
 
 export {
   addExpression,
+  composeExpressionSource,
   divideExpression,
   multiplyExpression,
   subtractExpression,

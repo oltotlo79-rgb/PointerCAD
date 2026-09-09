@@ -19,11 +19,11 @@ import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
  * 何を返すかは確かめられないため。答えの形はこのファイルの中で 1 つずつ見る。
  */
 interface DesktopFileApi {
-  openPcad(kind?: 'part' | 'assembly' | 'all'): Promise<unknown>;
+  openPcad(kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown>;
   confirmSaveTarget(token: string): Promise<unknown>;
   clearSaveTarget(): Promise<unknown>;
   savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean,
-    kind?: 'part' | 'assembly'): Promise<unknown>;
+    kind?: 'part' | 'assembly' | 'drawing'): Promise<unknown>;
   hasSaveTarget(): Promise<unknown>;
 }
 

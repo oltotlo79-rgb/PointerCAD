@@ -220,5 +220,8 @@ export function resetTestStore(): void {
     // displaySettings も同じ理由(タスク1)。他の検査が setDisplaySettings を呼んでも
     // 次の検査へ持ち越さない。
     displaySettings: DEFAULT_DISPLAY_SETTINGS,
+    // 文書間では保つ表示専用の状態も、独立した試験の間では持ち越さない。
+    quadCamera: null,
+    viewCameraController: null,
   });
 }

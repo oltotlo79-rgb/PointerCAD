@@ -51,6 +51,9 @@ catalogs:
     opencascade.js:
       specifier: 2.0.0-beta.b5ff984
       version: 2.0.0-beta.b5ff984
+    opentype.js:
+      specifier: 2.0.0
+      version: 2.0.0
     react:
       specifier: 19.2.8
       version: 19.2.8
@@ -165,6 +168,10 @@ importers:
         version: 8.2.2(@types/node@22.20.1)
 
   packages/drawing:
+    dependencies:
+      opentype.js:
+        specifier: 'catalog:'
+        version: 2.0.0
     devDependencies:
       vitest:
         specifier: 'catalog:'
@@ -1093,6 +1100,9 @@ packages:
     resolution: {integrity: sha512-4ZIrYrfrCV7SXvQFSmbHlfueSYngQNWGVrRVloVaAEZHDSY+R1k2htdY4AU5axbIGkbWVmrj+M8nmyeMLAelwA==}
     peerDependencies:
       ws: ^8.5.0
+
+  opentype.js@2.0.0:
+    resolution: {integrity: sha512-kCyjv6xdDY1W/jLWZ/L3QhhTlKUqDZMQ5+Jdlw12b3dXkKNpYBqqlMMj0YDQPShWFTMwgZI1hG14kN3XUDSg/A==}
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -2149,6 +2159,8 @@ snapshots:
   opencascade.js@2.0.0-beta.b5ff984(ws@8.21.3):
     dependencies:
       ws: 8.21.3
+
+  opentype.js@2.0.0: {}
 
   optionator@0.9.4:
     dependencies:

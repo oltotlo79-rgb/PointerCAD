@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { drawingSymbol } from '../annotation/symbols.js';
 import {
   DEFAULT_TITLE_BLOCK_FIELDS,
   createTitleBlock,
@@ -22,10 +23,12 @@ describe('表題欄', () => {
   it.each([[1, '1:1'], [0.5, '1:2'], [2, '2:1']] as const)('縮尺%sを%sと書く', (scale, text) => {
     expect(formatDrawingScale(scale)).toBe(text);
   });
-  it('第三角法記号は線6本と円弧', () => {
+  it('第三角法記号は共通定義の二重円と円錐台を使う', () => {
     const symbol = createTitleBlock({ paper: 'A3-landscape' })?.symbol;
-    expect(symbol?.lines).toHaveLength(6);
-    expect(symbol?.arc.endAngle).toBe(2 * Math.PI);
+    expect(symbol).toEqual(drawingSymbol('thirdAngle', 3.5, [392, 38]));
+    expect(symbol?.lines).toHaveLength(4);
+    expect(symbol?.arcs).toHaveLength(4);
+    expect(symbol?.centerLines).toHaveLength(2);
   });
   it('入らない幅はnull', () => expect(createTitleBlock({ paper: 'A4-portrait', widthMm: 191 })).toBeNull());
   it('不正な縮尺は疑問符', () => expect(formatDrawingScale(0)).toBe('？'));

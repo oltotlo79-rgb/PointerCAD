@@ -185,12 +185,18 @@ export function solvePositiveDefinite(
 ): Float64Array | null {
   if (!Number.isInteger(n) || n < 0 || n * n > a.length || n > b.length) return null;
   const rows = Array.from({ length: n }, (_, index) => a.subarray(index * n, (index + 1) * n));
+  // 行頭の厳密な零より前には消去による非零要素も生じない。対角まで密に走査する
+  // 代わりに、この範囲だけを分解する。範囲内の零は埋まるので飛ばさず、微小な非零も残す。
+  const firstColumns = new Uint32Array(n);
   for (let i = 0; i < n; i += 1) {
     const target = rows[i];
-    for (let j = 0; j <= i; j += 1) {
+    let first = 0;
+    while (first < i && target[first] === 0) first += 1;
+    firstColumns[i] = first;
+    for (let j = first; j <= i; j += 1) {
       const source = rows[j];
       let sum = target[j];
-      let k = 0;
+      let k = Math.max(first, firstColumns[j]);
       for (; k + 3 < j; k += 4) {
         sum -= target[k] * source[k];
         sum -= target[k + 1] * source[k + 1];
@@ -199,7 +205,7 @@ export function solvePositiveDefinite(
       }
       for (; k < j; k += 1) sum -= target[k] * source[k];
       if (i === j) {
-        if (!(sum > LINEAR_PIVOT_TOLERANCE)) return null;
+        if (!(sum > LINEAR_PIVOT_TOLERANCE) || !Number.isFinite(sum)) return null;
         target[j] = Math.sqrt(sum);
       } else target[j] = sum / source[j];
     }
@@ -207,7 +213,7 @@ export function solvePositiveDefinite(
   for (let i = 0; i < n; i += 1) {
     const row = rows[i];
     let sum = b[i];
-    for (let k = 0; k < i; k += 1) sum -= row[k] * b[k];
+    for (let k = firstColumns[i]; k < i; k += 1) sum -= row[k] * b[k];
     b[i] = sum / row[i];
   }
   const x = new Float64Array(n);
@@ -243,9 +249,13 @@ function dampingDiagonal(
   const valueAt = (i: number, j: number): number =>
     (rows[i].gradient.get(j) ?? 0) * scales[j] * weights[i];
   const roundoff = 8 * Number.EPSILON * Math.max(1, rows.length, columnNorms.length);
-  const qr = qrDecomposition(rows.map((_row, i) => Array.from(columnNorms, (_norm, j) => valueAt(i, j))),
-    columnNorms.length, { rankTolerance: roundoff });
-  const independent = new Set(qr.columnOrder.slice(0, qr.rank));
+  // 厳密な零列はどの反射でも零のままで、基底にも入らない。元の列順と許容を保って
+  // 除き、列番号だけ戻す。normの二乗がunderflowした微小な非零列は除かない。
+  const activeColumns = Array.from({ length: columnNorms.length }, (_value, j) => j)
+    .filter((j) => columnNorms[j] !== 0 || rows.some((_row, i) => valueAt(i, j) !== 0));
+  const qr = qrDecomposition(rows.map((_row, i) => activeColumns.map((j) => valueAt(i, j))),
+    activeColumns.length, { rankTolerance: roundoff });
+  const independent = new Set(qr.columnOrder.slice(0, qr.rank).map((column) => activeColumns[column]));
   for (const j of weak) {
     if (independent.has(j)) continue;
     const projected = rows.map((_row, i) => valueAt(i, j) / columnNorms[j]);

@@ -20,6 +20,16 @@ describe('ヘルプの目録', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('同梱字体の日本語案内とOFL/MITの本文を欠かさない', () => {
+    const topic = findHelpTopic('font-licenses');
+    if (topic === undefined) throw new Error('字体のライセンス案内がない');
+    const text = readFileSync(resolve(packageRoot, topic.path), 'utf8');
+    expect(text).toContain('# 字体と解析ライブラリのライセンス');
+    expect(text).toContain('SIL OPEN FONT LICENSE Version 1.1');
+    expect(text).toContain('Permission is hereby granted');
+    expect(text).not.toMatch(/\?{4,}|\uFFFD/);
+  });
+
   it('ビューポートの説明を id で引ける(FR-903 の土台)', () => {
     expect(findHelpTopic('viewport')?.path).toBe('docs/ja/viewport.md');
   });
@@ -63,7 +73,8 @@ describe('ヘルプの目録', () => {
     // P6 タスク43 で 4 本(切って中を見る・選ぶものを絞る・下絵・3D プリントの点検)足して 51。
     // P6 タスク33 で 2 本(ひな形・印刷と別名で保存)足して 53。
     // P7 タスク11bで1本、タスク46・47で操作別に8本を足して53 + 9 = 62。
-    expect(HELP_TOPICS).toHaveLength(62);
+    // P8の同梱字体・解析ライブラリのライセンスを1本足して63。
+    expect(HELP_TOPICS).toHaveLength(63);
   });
 
   it('アセンブリの説明を id で引ける(FR-601・602・605・606)', () => {

@@ -275,6 +275,13 @@ export function qrDecomposition(
     }
   }
   const columnOrder = Array.from({ length: columnCount }, (_, index) => index);
+  // 次のピボットに必要な列の長さを、反射後の書き戻しと同時に求める。
+  // 差引き更新は桁落ちで列順・階数が変わるので使わず、従来と同じ順で足す。
+  const remainingNorms = a.map((column) => {
+    let sum = 0;
+    for (const value of column) sum += value * value;
+    return sum;
+  });
   const steps = Math.min(rowCount, columnCount);
   const diagonal: number[] = [];
   const reflectors: number[][] = [];
@@ -285,11 +292,7 @@ export function qrDecomposition(
     let bestColumn = k;
     let bestNorm = -1;
     for (let j = k; j < columnCount; j += 1) {
-      const column = a[j];
-      let sum = 0;
-      for (let i = k; i < rowCount; i += 1) {
-        sum += column[i] * column[i];
-      }
+      const sum = remainingNorms[j];
       if (sum > bestNorm) {
         bestNorm = sum;
         bestColumn = j;
@@ -302,15 +305,15 @@ export function qrDecomposition(
       const swapOrder = columnOrder[k];
       columnOrder[k] = columnOrder[bestColumn];
       columnOrder[bestColumn] = swapOrder;
+      const swapNorm = remainingNorms[k];
+      remainingNorms[k] = remainingNorms[bestColumn];
+      remainingNorms[bestColumn] = swapNorm;
     }
 
     const pivotColumn = a[k];
     const reflector = new Array<number>(rowCount).fill(0);
-    let norm = 0;
-    for (let i = k; i < rowCount; i += 1) {
-      norm += pivotColumn[i] * pivotColumn[i];
-    }
-    norm = Math.sqrt(norm);
+    const norm = Math.sqrt(remainingNorms[k]);
+    let updatedNorms = false;
     if (norm > 0) {
       // 桁落ちを避けるため、先頭成分と逆の符号を選ぶ。
       const alpha = pivotColumn[k] >= 0 ? -norm : norm;
@@ -334,10 +337,14 @@ export function qrDecomposition(
             dot += reflector[i] * column[i];
           }
           dot *= 2;
+          let nextNorm = 0;
           for (let i = k; i < rowCount; i += 1) {
             column[i] -= dot * reflector[i];
+            if (i > k) nextNorm += column[i] * column[i];
           }
+          remainingNorms[j] = nextNorm;
         }
+        updatedNorms = true;
       } else {
         // すでに e1 の向きに揃っている段。反射は要らない。
         for (let i = k; i < rowCount; i += 1) {
@@ -348,6 +355,14 @@ export function qrDecomposition(
       pivotColumn[k] = alpha;
       for (let i = k + 1; i < rowCount; i += 1) {
         pivotColumn[i] = 0;
+      }
+    }
+    if (!updatedNorms) {
+      // 反射しなかった段も次の部分列の実値を使う。非有限値の扱いも変えない。
+      for (let j = k + 1; j < columnCount; j += 1) {
+        let sum = 0;
+        for (let i = k + 1; i < rowCount; i += 1) sum += a[j][i] * a[j][i];
+        remainingNorms[j] = sum;
       }
     }
     reflectors.push(reflector);

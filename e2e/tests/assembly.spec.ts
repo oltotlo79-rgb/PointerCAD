@@ -17,6 +17,8 @@ import { beginRecompute, readRecomputeStats, waitForRecompute, type RecomputeTok
 interface ViewportRenderStats {
   readonly completedRenders: number;
   readonly lastCompletedAtMs: number;
+  readonly totalSceneRenderMs: number;
+  readonly totalDrawListenerMs: number;
 }
 
 declare global {
@@ -201,24 +203,42 @@ async function measureViewportFps(page: Page): Promise<{
   if (box === null) throw new Error('ビューポートのcanvasの位置を取得できません。');
   const centerX = box.x + box.width / 2;
   const centerY = box.y + box.height / 2;
+  const normalBuffer = await canvas.evaluate((element: HTMLCanvasElement) => ({
+    width: element.width, height: element.height,
+  }));
   await page.mouse.move(centerX, centerY);
   const before = await readViewportRenderStats(page);
   const startedAtMs = await page.evaluate(() => performance.now());
+  const moveDurations: number[] = [];
 
   await page.mouse.down({ button: 'middle' });
   try {
-    // 描画より細かい間隔で視点を往復させ、要求を1描画機会へまとめる本番経路を約2秒動かす。
+    const interactiveBuffer = await canvas.evaluate((element: HTMLCanvasElement) => ({
+      width: element.width, height: element.height,
+      cssWidth: element.clientWidth, cssHeight: element.clientHeight,
+    }));
+    expect(interactiveBuffer.width).toBeLessThan(normalBuffer.width);
+    expect(interactiveBuffer.height).toBeLessThan(normalBuffer.height);
+    expect(interactiveBuffer.cssWidth).toBeCloseTo(box.width, 0);
+    expect(interactiveBuffer.cssHeight).toBeCloseTo(box.height, 0);
+    // mouse.move自体がCDPの入力処理完了を待つ。ここへsleepを足すと次の入力が
+    // フレーム締切を逃し、描画能力ではなくテストの入力待ちをfpsとして測ってしまう。
+    // 実マウス入力を逐次送り、要求を1描画機会へまとめる本番経路を約2秒動かす。
     const measurementEndsAt = Date.now() + 2_000;
     let frame = 0;
     while (Date.now() < measurementEndsAt) {
       const direction = frame % 2 === 0 ? 1 : -1;
+      const moveStartedAt = performance.now();
       await page.mouse.move(centerX + direction * 36, centerY + direction * 18);
-      await page.waitForTimeout(8);
+      moveDurations.push(performance.now() - moveStartedAt);
       frame += 1;
     }
   } finally {
     await page.mouse.up({ button: 'middle' });
   }
+  expect(await canvas.evaluate((element: HTMLCanvasElement) => ({
+    width: element.width, height: element.height,
+  }))).toEqual(normalBuffer);
   // カメラ操作後はボタンを離して別の位置へ動かし、通常のhover更新も実描画へ通す。
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4);
   await page.waitForTimeout(16);
@@ -231,6 +251,21 @@ async function measureViewportFps(page: Page): Promise<{
   expect(after.lastCompletedAtMs).toBeGreaterThanOrEqual(startedAtMs);
   const completedRenders = after.completedRenders - before.completedRenders;
   const elapsedMs = endedAtMs - startedAtMs;
+  console.log('[描画診断]', JSON.stringify({
+    sceneRenderMs: after.totalSceneRenderMs - before.totalSceneRenderMs,
+    drawListenerMs: after.totalDrawListenerMs - before.totalDrawListenerMs,
+    moves: moveDurations.length,
+    averageMoveMs: moveDurations.reduce((sum, ms) => sum + ms, 0) / moveDurations.length,
+    maxMoveMs: Math.max(...moveDurations),
+    completedRenders, elapsedMs,
+    webgl: await canvas.evaluate((element: HTMLCanvasElement) => {
+      const gl = element.getContext('webgl2');
+      if (gl === null) return null;
+      const info = gl.getExtension('WEBGL_debug_renderer_info');
+      return { renderer: info === null ? gl.getParameter(gl.RENDERER) : gl.getParameter(info.UNMASKED_RENDERER_WEBGL),
+        width: gl.drawingBufferWidth, height: gl.drawingBufferHeight };
+    }),
+  }));
   return { fps: completedRenders * 1_000 / elapsedMs, completedRenders, elapsedMs };
 }
 

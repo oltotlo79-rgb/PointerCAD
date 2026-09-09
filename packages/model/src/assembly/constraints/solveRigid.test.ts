@@ -125,6 +125,56 @@ describe('アセンブリ正規方程式のコレスキー分解', () => {
     expect(solvePositiveDefinite(new Float64Array(3), new Float64Array(2), 2)).toBeNull();
     expect(solvePositiveDefinite(new Float64Array(4), new Float64Array(1), 2)).toBeNull();
     expect(solvePositiveDefinite(new Float64Array(0), new Float64Array(0), 0)).toEqual(new Float64Array(0));
+    expect(solvePositiveDefinite(new Float64Array([Infinity]), new Float64Array([1]), 1)).toBeNull();
+  });
+
+  it('疎な行列の内部に生じる非零と微小な結合を残して既知解を返す', () => {
+    // 3行目2列目は元は零だが、共通の1列目の消去で非零になる。
+    const matrix = new Float64Array([
+      4, 0, 0, 0,
+      1, 4, 0, 0,
+      1, 0, 4, 0,
+      0, 0, 1e-20, 1,
+    ]);
+    const result = solvePositiveDefinite(matrix, new Float64Array([9, 9, 13, 4]), 4);
+    expect(result).not.toBeNull();
+    [1, 2, 3, 4].forEach((value, index) => expect(result?.[index]).toBeCloseTo(value, 12));
+    expect(matrix[9]).not.toBe(0);
+    expect(matrix[14]).toBeGreaterThan(0);
+    expect(matrix[14]).toBeLessThan(1e-20);
+    expect(matrix[12]).toBe(0);
+    expect(matrix[13]).toBe(0);
+  });
+
+  it.each([1, 6, 19, 114, 294])('疎密の異なる%s元の正定値行列で元の方程式を満たす', (n) => {
+    for (const width of [1, 4, n]) {
+      // 対称な狭義対角優位行列。既知解から右辺を作り、元の行列で残差も検査する。
+      const original = new Float64Array(n * n);
+      for (let i = 0; i < n; i += 1) {
+        for (let j = Math.max(0, i - width); j < i; j += 1) {
+          const value = Math.sin(i * 7 + j * 3) / n;
+          original[i * n + j] = value;
+          original[j * n + i] = value;
+          original[i * n + i] += Math.abs(value);
+          original[j * n + j] += Math.abs(value);
+        }
+        original[i * n + i] += 1;
+      }
+      const expected = Float64Array.from({ length: n }, (_value, i) => Math.cos(i));
+      const rhs = Float64Array.from({ length: n }, (_value, i) =>
+        expected.reduce((sum, value, j) => sum + original[i * n + j] * value, 0));
+      const actual = solvePositiveDefinite(original.slice(), rhs.slice(), n);
+      expect(actual).not.toBeNull();
+      if (actual === null) throw new Error('正定値行列を解けない');
+      let maxError = 0, maxResidual = 0;
+      for (let i = 0; i < n; i += 1) {
+        maxError = Math.max(maxError, Math.abs(actual[i] - expected[i]));
+        const measured = actual.reduce((sum, value, j) => sum + original[i * n + j] * value, 0);
+        maxResidual = Math.max(maxResidual, Math.abs(measured - rhs[i]));
+      }
+      expect(maxError).toBeLessThan(1e-12);
+      expect(maxResidual).toBeLessThan(1e-12);
+    }
   });
 });
 

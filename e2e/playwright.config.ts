@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
+const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個/u;
 
 export default defineConfig({
   testDir: './tests',
@@ -17,7 +18,7 @@ export default defineConfig({
    * 50MB の OCCT WASM をコンパイルし直すため、**初回のカーネル読み込みが 1 並列の 17〜30 秒から
    * 6 並列では 55〜80 秒へ延び**、spec 側の待ちの上限(KERNEL_TIMEOUT_MS = 60 秒)を越えて落ちた
    * (push #14 の赤 3 本。docs/報告記録.md 2026-09-06 12:04)。上限 60 秒は緩めない。
-   * 2 という数は CI の共有ランナー(2 コア)が選ぶ本数と同じで、手元の結果が CI を予測する。
+   * FPSの測定だけは先行projectで専有し、残りの操作検査は2並列で実行する。
    */
   workers: 2,
   use: {
@@ -27,6 +28,21 @@ export default defineConfig({
     // カーネルや再計算の長い待機はexpect.poll側で明示しており、この上限には含まれない。
     actionTimeout: 15_000,
   },
+  projects: [
+    {
+      name: 'viewport-performance',
+      testMatch: /assembly\.spec\.ts$/u,
+      grep: VIEWPORT_PERFORMANCE_TEST,
+      // GPUの有無を揃え、別テストのWASM初期化とCPUを奪い合わずに測る。
+      // 50部品・実描画回数・30fpsの下限は手元でもCIでも同じ。
+      use: { launchOptions: { args: ['--use-angle=swiftshader'] } },
+    },
+    {
+      name: 'functional',
+      grepInvert: VIEWPORT_PERFORMANCE_TEST,
+      dependencies: ['viewport-performance'],
+    },
+  ],
   webServer: {
     // preview は事前にビルドが必要なため、ビルド→preview の順で実行する。
     // apps/web の preview は COOP/COEP ヘッダーを付ける(vite.config.ts)。

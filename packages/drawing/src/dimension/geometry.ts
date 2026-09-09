@@ -46,6 +46,8 @@ function pointOn(center: Point2, radius: number, angle: number): Point2 {
 export interface LinearDimensionInput {
   readonly first: Point2;
   readonly second: Point2;
+  /** 水平/垂直寸法などの紙上の測定軸。省略時は両点を結ぶ向き。 */
+  readonly direction?: Point2;
   /** 寸法線の共通法線座標 h。offset と同時には指定しない。 */
   readonly commonNormalCoordinate?: number;
   /** first から寸法線までの符号つき距離。h を省略した場合に使う。 */
@@ -61,13 +63,16 @@ export function createLinearDimensionGeometry(
   input: LinearDimensionInput,
 ): LinearDimensionGeometry | null {
   const delta = subtract(input.second, input.first);
-  const direction = normalized(delta);
-  if (direction === null) {
+  const direction = normalized(input.direction ?? delta);
+  if (direction === null || ![...input.first, ...input.second, ...direction].every(Number.isFinite)) {
     return null;
   }
+  const signedSpan = dot(delta, direction);
+  if (signedSpan === 0) return null;
   const normal: Point2 = [-direction[1], direction[0]];
   const firstNormal = dot(input.first, normal);
   const h = input.commonNormalCoordinate ?? firstNormal + (input.offset ?? 0);
+  if (!Number.isFinite(h)) return null;
   const firstShift = h - firstNormal;
   const secondShift = h - dot(input.second, normal);
   const firstEnd: Point2 = [
@@ -82,25 +87,27 @@ export function createLinearDimensionGeometry(
   const gap = input.gap ?? DIMENSION_EXTENSION_GAP_MM;
   const over = input.over ?? DIMENSION_EXTENSION_OVER_MM;
   const extensionDirection: Point2 = [normal[0] * side, normal[1] * side];
+  const firstExtension: Point2 = [normal[0] * (firstShift < 0 ? -1 : 1), normal[1] * (firstShift < 0 ? -1 : 1)];
+  const secondExtension: Point2 = [normal[0] * (secondShift < 0 ? -1 : 1), normal[1] * (secondShift < 0 ? -1 : 1)];
   const extensionLines: readonly [DimensionLineSegment, DimensionLineSegment] = [
     {
       from: [
-        input.first[0] + extensionDirection[0] * gap,
-        input.first[1] + extensionDirection[1] * gap,
+        input.first[0] + firstExtension[0] * gap,
+        input.first[1] + firstExtension[1] * gap,
       ],
       to: [
-        firstEnd[0] + extensionDirection[0] * over,
-        firstEnd[1] + extensionDirection[1] * over,
+        firstEnd[0] + firstExtension[0] * over,
+        firstEnd[1] + firstExtension[1] * over,
       ],
     },
     {
       from: [
-        input.second[0] + extensionDirection[0] * gap,
-        input.second[1] + extensionDirection[1] * gap,
+        input.second[0] + secondExtension[0] * gap,
+        input.second[1] + secondExtension[1] * gap,
       ],
       to: [
-        secondEnd[0] + extensionDirection[0] * over,
-        secondEnd[1] + extensionDirection[1] * over,
+        secondEnd[0] + secondExtension[0] * over,
+        secondEnd[1] + secondExtension[1] * over,
       ],
     },
   ];
@@ -110,14 +117,15 @@ export function createLinearDimensionGeometry(
     input.textWidth ?? 0,
     input.textMargin ?? 0,
   );
+  const along: Point2 = signedSpan < 0 ? [-direction[0], -direction[1]] : direction;
   const firstArrowDirection: Point2 = outwardArrows
-    ? [-direction[0], -direction[1]]
-    : direction;
+    ? [-along[0], -along[1]]
+    : along;
   const secondArrowDirection: Point2 = outwardArrows
-    ? direction
-    : [-direction[0], -direction[1]];
+    ? along
+    : [-along[0], -along[1]];
   return {
-    value: Math.hypot(delta[0], delta[1]),
+    value: input.direction === undefined ? Math.hypot(delta[0], delta[1]) : Math.abs(signedSpan),
     dimensionLine: { from: firstEnd, to: secondEnd },
     extensionLines,
     arrows: [

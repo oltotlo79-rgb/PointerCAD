@@ -125,6 +125,7 @@ function cleanView(view: DrawingView): DrawingView {
     xDir: [...view.xDir],
     showHidden: view.showHidden,
     showCenterLines: view.showCenterLines,
+    ...(view.hiddenCenterMarkIds === undefined ? {} : { hiddenCenterMarkIds: [...view.hiddenCenterMarkIds] }),
     ...(view.section === undefined ? {} : { section: { ...view.section } }),
     ...(view.detail === undefined
       ? {}
@@ -135,6 +136,12 @@ function cleanView(view: DrawingView): DrawingView {
     layerId: view.layerId,
     ...(view.style === undefined ? {} : { style: cleanStyle(view.style) }),
   };
+}
+
+type ToleranceValue = number | DrawingParameter['value'];
+
+function cleanToleranceValue(value: ToleranceValue): ToleranceValue {
+  return typeof value === 'number' ? value : { source: value.source, value: value.value, display: value.display };
 }
 
 function cleanDimension(dimension: Dimension): Dimension {
@@ -162,7 +169,9 @@ function cleanDimension(dimension: Dimension): Dimension {
         ? null
         : [...dimension.placement.textPosition],
     },
-    ...(dimension.tolerance === undefined ? {} : { tolerance: { ...dimension.tolerance } }),
+    ...(dimension.tolerance === undefined ? {} : { tolerance: dimension.tolerance.kind === 'symmetric'
+      ? { kind: 'symmetric' as const, value: cleanToleranceValue(dimension.tolerance.value) }
+      : { kind: 'deviation' as const, upper: cleanToleranceValue(dimension.tolerance.upper), lower: cleanToleranceValue(dimension.tolerance.lower) } }),
     ...(dimension.prefix === undefined ? {} : { prefix: dimension.prefix }),
     ...(dimension.suffix === undefined ? {} : { suffix: dimension.suffix }),
     reference: dimension.reference,
@@ -388,6 +397,7 @@ function isView(value: unknown): value is DrawingView {
     || !isVector3(value['xDir'])
     || !hasBoolean(value, 'showHidden')
     || !hasBoolean(value, 'showCenterLines')
+    || (value['hiddenCenterMarkIds'] !== undefined && !isStringArray(value['hiddenCenterMarkIds']))
     || !hasString(value, 'layerId')
     || !hasOptionalStyle(value)) return false;
   const section = value['section'];
@@ -420,6 +430,12 @@ function isDimensionTarget(value: unknown): boolean {
     && isSubShapeRef(value['ref']);
 }
 
+function isToleranceValue(value: unknown): value is ToleranceValue {
+  return (typeof value === 'number' && Number.isFinite(value)) ||
+    (isRecord(value) && hasString(value, 'source') && hasString(value, 'display')
+      && typeof value['value'] === 'number' && Number.isFinite(value['value']));
+}
+
 function isDimension(value: unknown): value is Dimension {
   if (!isRecord(value)
     || !hasString(value, 'id')
@@ -445,8 +461,8 @@ function isDimension(value: unknown): value is Dimension {
   if (tolerance === undefined) return true;
   if (!isRecord(tolerance) || !isLiteral(tolerance['kind'], ['symmetric', 'deviation'])) return false;
   return tolerance['kind'] === 'symmetric'
-    ? hasNumber(tolerance, 'value')
-    : hasNumber(tolerance, 'upper') && hasNumber(tolerance, 'lower');
+    ? isToleranceValue(tolerance['value'])
+    : isToleranceValue(tolerance['upper']) && isToleranceValue(tolerance['lower']);
 }
 
 function isAnnotation(value: unknown): value is Annotation {

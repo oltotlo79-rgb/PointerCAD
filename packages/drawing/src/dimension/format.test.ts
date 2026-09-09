@@ -50,6 +50,15 @@ describe('寸法値の書式', () => {
     })).toBe('50 +0.1 / −0.05');
   });
 
+  it('公差の式は評価値で表示し、逆転した上下限は数値に見せない', () => {
+    expect(formatDimension({ value: 50, kind: 'length', tolerance: {
+      kind: 'symmetric', value: { source: '板厚/20', value: 0.15, display: '0.15' },
+    } })).toBe('50±0.15');
+    expect(formatDimension({ value: 50, kind: 'length', tolerance: {
+      kind: 'deviation', upper: -0.1, lower: 0.1,
+    } })).toBe('？');
+  });
+
   it.each([null, Number.NaN, Number.POSITIVE_INFINITY])('未解決の%sは疑問符にする', (value) => {
     expect(formatDimension({ value, kind: 'length' })).toBe('？');
   });

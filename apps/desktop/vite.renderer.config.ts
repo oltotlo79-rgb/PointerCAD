@@ -68,6 +68,8 @@ function manualChunks(id: string): string | undefined {
 export default defineConfig({
   // 資産の場所を相対で書き出す。独自スキーム app:// の下でも正しく解決される。
   base: './',
+  // Webと同じ字体を通常の静的資産として配り、JSへバイト列を埋め込まない。
+  publicDir: 'resources',
   plugins: [react()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },

@@ -55,6 +55,27 @@ describe('長さ寸法の幾何', () => {
   it('同じ2点は寸法にできない', () => {
     expect(createLinearDimensionGeometry({ first: [1, 1], second: [1, 1], offset: 10 })).toBeNull();
   });
+  it('明示した水平軸は30×40の対角を30として描く', () => {
+    const result = createLinearDimensionGeometry({ first: [0, 0], second: [30, 40], direction: [1, 0], commonNormalCoordinate: 50 });
+    expect(result?.value).toBe(30);
+    expect(result?.dimensionLine).toEqual({ from: [0, 50], to: [30, 50] });
+  });
+  it('両端を逆にしても共通hを反転させず矢印の向きだけを変える', () => {
+    const forward = createLinearDimensionGeometry({ first: [0, 0], second: [30, 40], direction: [1, 0], commonNormalCoordinate: 50 })!;
+    const reverse = createLinearDimensionGeometry({ first: [30, 40], second: [0, 0], direction: [1, 0], commonNormalCoordinate: 50 })!;
+    expect(reverse.dimensionLine).toEqual({ from: forward.dimensionLine.to, to: forward.dimensionLine.from });
+    expect(reverse.arrows).toEqual([forward.arrows[1], forward.arrows[0]]);
+    expect(reverse.value).toBe(30);
+  });
+  it('明示軸のゼロ距離と不正な方向を断る', () => {
+    expect(createLinearDimensionGeometry({ first: [0, 0], second: [0, 40], direction: [1, 0] })).toBeNull();
+    expect(createLinearDimensionGeometry({ first: [0, 0], second: [30, 40], direction: [0, 0] })).toBeNull();
+    expect(createLinearDimensionGeometry({ first: [0, 0], second: [30, 40], direction: [NaN, 0] })).toBeNull();
+  });
+  it('両端の間へ寸法線を置くと各補助線はそれぞれ寸法線へ向かう', () => {
+    expect(createLinearDimensionGeometry({ first: [0, 0], second: [30, 40], direction: [1, 0], commonNormalCoordinate: 10 })?.extensionLines)
+      .toEqual([{ from: [0, 1], to: [0, 12] }, { from: [30, 39], to: [30, 8] }]);
+  });
 });
 
 describe('角度・直径・半径・弧長寸法の幾何', () => {

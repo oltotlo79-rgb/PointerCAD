@@ -1,4 +1,5 @@
 import type { Point2 } from '../types.js';
+import { drawingSymbol, type SymbolGeometry } from '../annotation/symbols.js';
 import { createPaperFrame } from './frame.js';
 import type { PaperSize, PaperSizeId } from './paperSize.js';
 
@@ -46,10 +47,7 @@ export interface TitleBlockCell {
   readonly top: number;
 }
 
-export interface ThirdAngleSymbol {
-  readonly lines: readonly TitleBlockLine[];
-  readonly arc: TitleBlockArc;
-}
+export type ThirdAngleSymbol = SymbolGeometry;
 
 export interface TitleBlockLayout {
   readonly left: number;
@@ -76,24 +74,6 @@ export function formatDrawingScale(scale: number): string {
   return `${String(scale)}:1`;
 }
 
-function thirdAngleSymbolAt(center: Point2): ThirdAngleSymbol {
-  const [x, y] = center;
-  const halfHeight = 5;
-  const left = x - 10;
-  const right = x + 10;
-  return {
-    lines: [
-      { from: [left, y - halfHeight], to: [left, y + halfHeight] },
-      { from: [left, y + halfHeight], to: [x - 2, y + 3] },
-      { from: [x - 2, y + 3], to: [x - 2, y - 3] },
-      { from: [x - 2, y - 3], to: [left, y - halfHeight] },
-      { from: [right - 4, y - 4], to: [right + 4, y - 4] },
-      { from: [right + 4, y + 4], to: [right - 4, y + 4] },
-    ],
-    arc: { center: [right, y], radius: 4, startAngle: 0, endAngle: 2 * Math.PI },
-  };
-}
-
 /** 内枠の右下へ、差し替え可能な項目から表題欄を組み立てる(FR-701、FR-725)。 */
 export function createTitleBlock(input: CreateTitleBlockInput): TitleBlockLayout | null {
   const frame = createPaperFrame(input.paper);
@@ -105,6 +85,8 @@ export function createTitleBlock(input: CreateTitleBlockInput): TitleBlockLayout
   const bottom = frame.inner.bottom;
   const left = right - width;
   const top = bottom + height;
+  const symbol = drawingSymbol('thirdAngle', 3.5, [right - 18, bottom + height / 2]);
+  if (symbol === null) return null;
   const fields = input.fields ?? DEFAULT_TITLE_BLOCK_FIELDS;
   const totalWeight = fields.reduce((sum, field) => sum + (field.widthWeight ?? 1), 0);
   let cursor = left;
@@ -118,6 +100,6 @@ export function createTitleBlock(input: CreateTitleBlockInput): TitleBlockLayout
   });
   return {
     left, bottom, right, top, width, height, fields: cells,
-    symbol: thirdAngleSymbolAt([right - 18, bottom + height / 2]),
+    symbol,
   };
 }

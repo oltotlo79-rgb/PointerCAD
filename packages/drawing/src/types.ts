@@ -119,6 +119,8 @@ export interface DrawingView {
   readonly xDir: Vector3;
   readonly showHidden: boolean;
   readonly showCenterLines: boolean;
+  /** 元形状の安定ID。中心線を消した操作を再投影・保存後も保持する(FR-708)。 */
+  readonly hiddenCenterMarkIds?: readonly string[];
   readonly section?: {
     readonly cuttingLineId: string;
     readonly direction: 'forward' | 'backward';

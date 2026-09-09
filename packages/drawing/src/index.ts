@@ -37,6 +37,39 @@ export type {
   RenderText,
   SemanticTextMetrics,
 } from './render/types.js';
+export {
+  DEFAULT_ARC_TOLERANCE_MM, bezierArc, cubicBezierPoint, measureBezierRadialError,
+  type BezierArc, type CubicBezierSegment,
+} from './render/bezierArc.js';
+export { DRAWING_FONT_ASSET } from './text/fontAsset.js';
+export { createFontStore, parseDrawingFont, type DrawingFont, type FontLoadStatus, type OutlinedText } from './text/fontStore.js';
+export { outlineInkBounds, textOutline, type GlyphPathCommand, type TextOutlineGeometry } from './text/textOutline.js';
+export { outlineCurves, type OutlineContour, type OutlineCurve } from './text/outlineCurves.js';
+export { toSvg, type SvgOptions } from './render/toSvg.js';
+export { FIT_SYMBOLS, fitTolerance, formatFit, type FitSymbol, type FitTolerance } from './dimension/fitTable.js';
+export {
+  DEFAULT_GENERAL_TOLERANCE_GRADE, GENERAL_TOLERANCE_GRADES, generalToleranceNote,
+  type GeneralToleranceGrade, type GeneralToleranceNote,
+} from './annotation/generalTolerance.js';
+export { drawingSymbol, type DrawingSymbolKind, type SymbolGeometry, type SymbolText } from './annotation/symbols.js';
+export { surfaceFinish, type SurfaceFinishGeometry, type SurfaceFinishInput, type SurfaceFinishProcess } from './annotation/surfaceFinish.js';
+export {
+  arrangeDimensions, dragDimensionPlacement,
+  type DimensionArrangementItem, type DimensionArrangementResult, type DimensionTextBox,
+} from './dimension/placement.js';
+export {
+  CENTER_MARK_EXTENSION_MM, createCenterMarks, hideCenterMark,
+  type CenterMark, type CenterMarkSource, type CenterMarkView,
+} from './dimension/centerMark.js';
+export {
+  TOLERANCE_TEXT_HEIGHT_RATIO, layoutDimensionTolerance, resolveDimensionTolerance,
+  type MeasureDimensionText, type ResolvedDimensionTolerance, type ToleranceTextLayout, type ToleranceTextRun,
+} from './dimension/tolerance.js';
+export {
+  dimensionSeries, drawingViewBasis,
+  type CoordinateDimensionRow, type DimensionSeriesInput, type DimensionSeriesPoint, type DimensionSeriesResult,
+  type DrawingViewBasis, type ProgressiveDimensionTick, type SeriesDimension,
+} from './dimension/series.js';
 
 export {
   DEFAULT_PAPER_SIZE_ID,

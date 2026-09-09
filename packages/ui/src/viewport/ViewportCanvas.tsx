@@ -62,6 +62,8 @@ import { readThemeColors } from './themeColors.js';
 interface ViewportRenderStats {
   readonly completedRenders: number;
   readonly lastCompletedAtMs: number;
+  readonly totalSceneRenderMs: number;
+  readonly totalDrawListenerMs: number;
 }
 
 declare global {
@@ -589,9 +591,13 @@ export function ViewportCanvas(): React.JSX.Element {
     let frameId = 0;
     let completedRenders = 0;
     let lastCompletedAtMs = 0;
+    let totalSceneRenderMs = 0;
+    let totalDrawListenerMs = 0;
     const readRenderStats = (): ViewportRenderStats => ({
       completedRenders,
       lastCompletedAtMs,
+      totalSceneRenderMs,
+      totalDrawListenerMs,
     });
     // StrictModeや将来の複数mountでは、最後に載った生きている口だけを公開する。
     window.pcadViewportRenderStats = readRenderStats;
@@ -611,14 +617,17 @@ export function ViewportCanvas(): React.JSX.Element {
         scene.setThemeColors(readThemeColors());
       }
       const { projection, displayStyle, showGrid, displaySettings } = useAppStore.getState();
+      const renderStartedAt = globalThis.performance.now();
       scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
       // `scene.render` が例外なく戻った実描画だけを、1回につきちょうど1つ数える。
       completedRenders += 1;
       lastCompletedAtMs = globalThis.performance.now();
+      totalSceneRenderMs += lastCompletedAtMs - renderStartedAt;
       // 本体を描いた後にだけ知らせる。視点はこの時点で確定している。
       for (const listener of listeners) {
         listener();
       }
+      totalDrawListenerMs += globalThis.performance.now() - lastCompletedAtMs;
     }
 
     /** 同じ描画機会に何度呼ばれても描画は1回にまとめる。 */

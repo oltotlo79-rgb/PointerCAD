@@ -64,6 +64,7 @@ export interface RenderText {
   readonly kind: 'text';
   readonly text: string;
   readonly position: Point2;
+  /** 紙面の+Xから反時計回り、ラジアン。 */
   readonly angle: number;
   readonly anchor: 'start' | 'middle' | 'end';
   readonly baseline: 'top' | 'middle' | 'bottom' | 'alphabetic';

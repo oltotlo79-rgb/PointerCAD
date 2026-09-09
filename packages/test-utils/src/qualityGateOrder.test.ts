@@ -58,4 +58,16 @@ describe('品質ゲートのテスト実行順', () => {
     expect(checkScript).toContain('$e2eArgs += @("--grep", $E2EGrep)');
     expect(checkScript).not.toContain('@("--", "--grep", $E2EGrep)');
   });
+
+  it('50部品のFPS測定をソフトウェア描画で先行し、他のE2Eと競合させない', () => {
+    const config = readRootFile('e2e/playwright.config.ts');
+    const performance = config.slice(config.indexOf("name: 'viewport-performance'"), config.indexOf("name: 'functional'"));
+    const functional = config.slice(config.indexOf("name: 'functional'"));
+    expect(config).toContain('const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個/u;');
+    expect(performance).toContain('grep: VIEWPORT_PERFORMANCE_TEST');
+    expect(performance).toContain("args: ['--use-angle=swiftshader']");
+    expect(functional).toContain('grepInvert: VIEWPORT_PERFORMANCE_TEST');
+    expect(functional).toContain("dependencies: ['viewport-performance']");
+    expect(config).toContain('workers: 2');
+  });
 });

@@ -1,4 +1,6 @@
 import type { DimensionKind, DimensionTolerance } from './types.js';
+import { dimensionDecimals, dimensionNumberText as roundedText, signedDimensionNumberText as signedText } from './numberText.js';
+import { resolveDimensionTolerance } from './tolerance.js';
 
 export interface FormatDimensionInput {
   /** null は対象を選び直せなかった未解決の寸法。 */
@@ -9,28 +11,6 @@ export interface FormatDimensionInput {
   readonly suffix?: string;
   readonly tolerance?: DimensionTolerance;
   readonly reference?: boolean;
-}
-
-function trimDecimal(text: string): string {
-  return text.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1').replace(/^-0$/, '0');
-}
-
-function roundedText(value: number, decimals: number): string {
-  const threshold = 10 ** -decimals;
-  if (value !== 0 && Math.abs(value) < threshold) {
-    return `${trimDecimal(threshold.toFixed(decimals))} 未満`;
-  }
-  return trimDecimal(value.toFixed(decimals));
-}
-
-function signedText(value: number, decimals: number): string {
-  if (value > 0) {
-    return `+${roundedText(value, decimals)}`;
-  }
-  if (value < 0) {
-    return `−${roundedText(Math.abs(value), decimals)}`;
-  }
-  return '0';
 }
 
 function decorateValue(kind: DimensionKind, value: string): string {
@@ -60,15 +40,17 @@ export function formatDimension(input: FormatDimensionInput): string {
   if (input.value === null || !Number.isFinite(input.value)) {
     return '？';
   }
-  const decimals = Math.max(0, Math.min(12, Math.trunc(input.decimals ?? 2)));
+  const decimals = dimensionDecimals(input.decimals);
+  const tolerance = input.tolerance === undefined ? undefined : resolveDimensionTolerance(input.tolerance);
+  if (tolerance === null) return '？';
   let text = `${input.prefix ?? ''}${decorateValue(
     input.kind,
     roundedText(input.value, decimals),
   )}${input.suffix ?? ''}`;
-  if (input.tolerance?.kind === 'symmetric') {
-    text += `±${roundedText(Math.abs(input.tolerance.value), decimals)}`;
-  } else if (input.tolerance?.kind === 'deviation') {
-    text += ` ${signedText(input.tolerance.upper, decimals)} / ${signedText(input.tolerance.lower, decimals)}`;
+  if (tolerance?.kind === 'symmetric') {
+    text += `±${roundedText(tolerance.value, decimals)}`;
+  } else if (tolerance?.kind === 'deviation') {
+    text += ` ${signedText(tolerance.upper, decimals)} / ${signedText(tolerance.lower, decimals)}`;
   }
   return input.reference === true ? `(${text})` : text;
 }

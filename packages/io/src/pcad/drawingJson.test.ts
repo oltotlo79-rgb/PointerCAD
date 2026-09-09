@@ -76,6 +76,62 @@ describe('図面 document.json', () => {
     expect(result).toEqual({ ok: true, document, savedAt: SAVED_AT, kind: 'drawing' });
   });
 
+  it('公差の式と数値の混在を保存して読み直す', () => {
+    const base = populatedDrawing();
+    const document: DrawingDocument = { ...base, dimensions: [
+      { ...base.dimensions[0], tolerance: { kind: 'deviation',
+        upper: { source: '板厚/20', value: 0.15, display: '0.15' }, lower: 0 } },
+      { ...base.dimensions[0], id: 'dim-2', tolerance: { kind: 'symmetric',
+        value: { source: '0.1', value: 0.1, display: '0.1' } } },
+    ] };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT })))
+      .toEqual({ ok: true, document, savedAt: SAVED_AT, kind: 'drawing' });
+  });
+
+  it('公差の式の未知欄を保存・読込の両方で除き、不完全な式は断る', () => {
+    const base = populatedDrawing();
+    const expression = { source: 'x', value: 0.1, display: '0.1', derivedWidth: 999 };
+    const document: DrawingDocument = { ...base, dimensions: [
+      { ...base.dimensions[0], tolerance: { kind: 'symmetric', value: expression } },
+    ] };
+    const serialized = serializeDrawing(document, { savedAt: SAVED_AT });
+    expect(serialized).not.toContain('derivedWidth');
+    const envelope: unknown = JSON.parse(serialized);
+    if (!isRecord(envelope) || !isRecord(envelope['document']) || !isUnknownArray(envelope['document']['dimensions'])) throw new Error('図面JSONが違う');
+    const dimension = envelope['document']['dimensions'][0];
+    if (!isRecord(dimension) || !isRecord(dimension['tolerance'])) throw new Error('公差がない');
+    dimension['tolerance']['value'] = expression;
+    const parsed = parseDrawing(JSON.stringify(envelope));
+    expect(parsed.ok).toBe(true);
+    expect(JSON.stringify(parsed)).not.toContain('derivedWidth');
+    dimension['tolerance']['value'] = { source: 'x', value: 0.1 };
+    expect(parseDrawing(JSON.stringify(envelope)).ok).toBe(false);
+  });
+
+  it('従来の数値公差を式へ書き換えず往復する', () => {
+    const base = populatedDrawing();
+    const document: DrawingDocument = { ...base, dimensions: [
+      { ...base.dimensions[0], tolerance: { kind: 'symmetric', value: 0.1 } },
+      { ...base.dimensions[0], id: 'dim-2', tolerance: { kind: 'deviation', upper: 0, lower: -0.05 } },
+    ] };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT })))
+      .toEqual({ ok: true, document, savedAt: SAVED_AT, kind: 'drawing' });
+  });
+
+  it('消した中心線の元形状IDを保存し、旧版の省略も受け入れる', () => {
+    const base = populatedDrawing();
+    const document = { ...base, views: base.views.map((view) => ({ ...view, hiddenCenterMarkIds: ['["view-1","edge-1"]'] })) };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT })))
+      .toEqual({ ok: true, document, savedAt: SAVED_AT, kind: 'drawing' });
+    expect(parseDrawing(serializeDrawing(base, { savedAt: SAVED_AT })).ok).toBe(true);
+    const invalid: unknown = JSON.parse(serializeDrawing(document, { savedAt: SAVED_AT }));
+    if (!isRecord(invalid) || !isRecord(invalid['document']) || !isUnknownArray(invalid['document']['views'])) throw new Error('図面JSONが違う');
+    const first = invalid['document']['views'][0];
+    if (!isRecord(first)) throw new Error('図がない');
+    first['hiddenCenterMarkIds'] = [5];
+    expect(parseDrawing(JSON.stringify(invalid)).ok).toBe(false);
+  });
+
   it('保存時刻が同じなら文字列が完全に一致する', () => {
     const document = populatedDrawing();
     expect(serializeDrawing(document, { savedAt: SAVED_AT }))

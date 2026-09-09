@@ -1,4 +1,4 @@
-import type { DrawingElementStyle, DrawingSubShapeRef, Point2, Vector3 } from '../types.js';
+import type { DrawingElementStyle, DrawingExpressionValue, DrawingSubShapeRef, Point2, Vector3 } from '../types.js';
 
 export type DimensionKind =
   | 'length'
@@ -42,8 +42,8 @@ export interface DimensionPlacement {
 }
 
 export type DimensionTolerance =
-  | { readonly kind: 'symmetric'; readonly value: number }
-  | { readonly kind: 'deviation'; readonly upper: number; readonly lower: number };
+  | { readonly kind: 'symmetric'; readonly value: number | DrawingExpressionValue }
+  | { readonly kind: 'deviation'; readonly upper: number | DrawingExpressionValue; readonly lower: number | DrawingExpressionValue };
 
 /** 寸法の保存形。`value` は意図的に持たない(FR-706、FR-710)。 */
 export interface Dimension {

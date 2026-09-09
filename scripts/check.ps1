@@ -36,7 +36,7 @@ param(
     # -E2EOnly のときだけPlaywrightの--grepへ渡す。空なら全E2Eを実行する。
     [string]$E2EGrep = "",
     # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
-    [ValidateSet("", "drawing", "kernel", "model", "ui", "test-utils")]
+    [ValidateSet("", "drawing", "kernel", "model", "io", "ui", "test-utils")]
     [string]$UnitPackage = "",
     [string[]]$UnitTests = @(),
     # 診断用: 性能検査の判定モード(厳密/参考)の表示だけを行って終了する(pnpmは一切実行しない)。

@@ -649,6 +649,7 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
   let width = 1;
   let height = 1;
+  let sizeInitialized = false;
 
   /** スケッチの現在値。組み立て直すのは変化したときだけ(NFR-PF-1)。 */
   let resolvedSketch: ResolvedSketch = EMPTY_RESOLVED_SKETCH;
@@ -1088,8 +1089,12 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
     },
 
     resize(widthPixels, heightPixels): void {
-      width = Math.max(widthPixels, 1);
-      height = Math.max(heightPixels, 1);
+      const nextWidth = Math.max(widthPixels, 1);
+      const nextHeight = Math.max(heightPixels, 1);
+      if (sizeInitialized && width === nextWidth && height === nextHeight) return;
+      width = nextWidth;
+      height = nextHeight;
+      sizeInitialized = true;
       // CSS の大きさは指定済みなので描画バッファだけを合わせる。
       renderer.setSize(width, height, false);
     },
@@ -1099,9 +1104,9 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
         return;
       }
       interactiveRendering = active;
+      // setPixelRatio 自身が現在の論理サイズで setSize を呼ぶ。重ねて呼ぶと
+      // canvas.width/height が再代入され、同じ寸法でも描画バッファを再確保してしまう。
       renderer.setPixelRatio(viewportPixelRatio(globalThis.devicePixelRatio, interactiveRendering));
-      // CSS の大きさは変えず、drawing buffer だけを操作中/静止時の密度へ切り替える。
-      renderer.setSize(width, height, false);
     },
 
     render(orbit, projection, displayStyle, showGrid, uiScale): void {

@@ -31,6 +31,9 @@ export {
   type ImportedBody,
   type ImportedTriangles,
   type KernelBridge,
+  type DrawingKernelBridge,
+  type DrawingOperationOptions,
+  type DrawingOperationProgress,
   type KernelHealth,
   type MateSubShapeGeometry,
   type PartCancelToken,
@@ -314,6 +317,46 @@ export {
   reorderDrawingLayer,
   replaceDrawingLayer,
 } from './drawing/layerEdit.js';
+export type {
+  CuttingLineArrow,
+  CuttingLineGeometry,
+  CuttingLineSegment,
+  SectionSpec,
+} from './drawing/sectionSpec.js';
+export {
+  createCuttingLine,
+  sectionLetter,
+  validateSectionSpec,
+} from './drawing/sectionSpec.js';
+export type {
+  AuxiliaryDirectionOutcome,
+  DrawingDirection,
+} from './drawing/viewDirection.js';
+export {
+  auxiliaryDirectionFromPlane,
+  auxiliaryPlacementDirection,
+  createPartialProjection,
+  resolveAuxiliaryDirection,
+} from './drawing/viewDirection.js';
+export type {
+  DrawingProjectionCurve,
+  DrawingProjectionRequest,
+  DrawingProjectionResult,
+  DrawingSectionRequest,
+  DrawingSectionResult,
+  DrawingResolutionOptions,
+  DrawingResolveKernel,
+  DrawingSourceResolution,
+  DrawingInstance,
+  ResolvedDrawing,
+  ResolvedDrawingCurve,
+  ResolvedDrawingView,
+} from './drawing/resolveDrawing.js';
+export {
+  clearDrawingProjectionCache,
+  createDrawingResolveKernel,
+  resolveDrawing,
+} from './drawing/resolveDrawing.js';
 export type {
   EdgeCurveKind, FaceSurfaceKind, SubShapeFingerprint, SubShapeKind, SubShapeRef,
 } from './geometry/subShapeRef.js';

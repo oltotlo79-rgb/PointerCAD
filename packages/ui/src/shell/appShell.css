@@ -2459,6 +2459,26 @@ button.pcad-tree__row:focus-visible {
   margin: 0;
 }
 
+.pcad-drawing-viewport {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  background: var(--pcad-color-canvas, #d9dde3);
+}
+
+.pcad-drawing-sheet {
+  width: min(78vw, 840px);
+  aspect-ratio: 420 / 297;
+  display: grid;
+  place-items: center;
+  color: #3a3f47;
+  background: #fff;
+  border: 1px solid #727984;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
 /*
  * 吸い付いている場所の印(FR-107)。位置は画素値で style から与える
  * (AppShell.tsx)。操作の邪魔をしないよう当たり判定を持たせない。

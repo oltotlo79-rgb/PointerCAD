@@ -21,6 +21,7 @@ import { createSelectionSlice } from './selectionSlice.js';
 import { createMeasureSlice } from './measureSlice.js';
 import { createFileSlice } from './fileSlice.js';
 import { createAssemblySlice } from './assemblySlice.js';
+import { createDrawingSlice } from './drawingSlice.js';
 
 export type { AppState } from './appState.js';
 export type { ViewSlice } from './viewSlice.js';
@@ -35,6 +36,7 @@ export type { SelectionSlice } from './selectionSlice.js';
 export type { MeasureSlice } from './measureSlice.js';
 export type { FileSlice } from './fileSlice.js';
 export type { AssemblySlice } from './assemblySlice.js';
+export type { DrawingSlice } from './drawingSlice.js';
 
 export const useAppStore = create<AppState>()((...args) => ({
   ...createInitialDocumentState(),
@@ -50,4 +52,5 @@ export const useAppStore = create<AppState>()((...args) => ({
   ...createMeasureSlice(...args),
   ...createFileSlice(...args),
   ...createAssemblySlice(...args),
+  ...createDrawingSlice(...args),
 }));

@@ -16,6 +16,13 @@ import {
   windowTitle,
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
+import {
+  DrawingPropertyPanel,
+  DrawingStatusBar,
+  DrawingToolbar,
+  DrawingTree,
+  DrawingViewport,
+} from '../drawing/DrawingWorkspace.js';
 import { PlaceComponentPopover } from '../assembly/PlaceComponentPopover.js';
 import { AssemblyMotionControls } from '../assembly/AssemblyMotionControls.js';
 import { AssemblyInterferencePanel } from '../assembly/AssemblyInterferencePanel.js';
@@ -184,6 +191,9 @@ export function AppShell(): React.JSX.Element {
      * 止められないことがある。そのときはツールバーの「新規」を使う(デスクトップ版では効く)。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (activeDocumentKind(useAppStore.getState()) === 'drawing') {
+        return;
+      }
       /*
        * 選択の種類の手動切替(§0.a-0.6、§2.11「選択の種類の切替」)。修飾キーなしの
        * 1/2/3/4 だけを見るので、Ctrl 系の分岐(この下)より前に置く。文字入力中
@@ -309,28 +319,38 @@ export function AppShell(): React.JSX.Element {
       rules/04-設計の規律.md)。E2E もここを見れば、どちらの画面が出ているかを判定できる。
     */
     <div className="pcad-shell" data-document-kind={documentKind}>
-      <Toolbar />
+      {documentKind === 'drawing' ? <DrawingToolbar /> : <Toolbar />}
       <div className="pcad-shell__body">
         {/*
           左のモデルブラウザ。**区画は増やさず、開いている文書の種類で中身だけを入れ替える**
           (P7 §0.a-0.10、タスク9)。部品なら履歴の木、アセンブリなら部品・合致・
           ジョイント・分解ステップの 4 つの束が同じ場所に出る。
         */}
-        {documentKind === 'assembly' ? <AssemblyTree /> : <FeatureTree />}
+        {documentKind === 'drawing' ? (
+          <DrawingTree />
+        ) : documentKind === 'assembly' ? (
+          <AssemblyTree />
+        ) : (
+          <FeatureTree />
+        )}
         <div className="pcad-viewport" ref={viewportRef}>
-          <Suspense
-            fallback={
-              <div className="pcad-viewport__overlay">
-                <div className="pcad-card">
-                  <span className="pcad-spinner" aria-hidden="true" />
-                  <span>{t('viewport.loading')}</span>
+          {documentKind === 'drawing' ? (
+            <DrawingViewport />
+          ) : (
+            <Suspense
+              fallback={
+                <div className="pcad-viewport__overlay">
+                  <div className="pcad-card">
+                    <span className="pcad-spinner" aria-hidden="true" />
+                    <span>{t('viewport.loading')}</span>
+                  </div>
                 </div>
-              </div>
-            }
-          >
-            <ViewportCanvas />
-          </Suspense>
-          {importUnitAsked ? (
+              }
+            >
+              <ViewportCanvas />
+            </Suspense>
+          )}
+          {documentKind === 'drawing' ? null : importUnitAsked ? (
             /*
               読み込んだファイルの単位を訊く小窓(§0.a-0.6、タスク32b)。**この問いは
               読み込みを止めて待っている**ので、控えの案内や計算中の札より先に出す
@@ -451,19 +471,19 @@ export function AppShell(): React.JSX.Element {
               <AssemblyMotionControls />
               <AssemblyInterferencePanel />
             </>
-          ) : (
+          ) : documentKind === 'part' ? (
             <NumericInputPopover
               viewportWidth={viewportSize[0]}
               viewportHeight={viewportSize[1]}
             />
-          )}
+          ) : null}
           {/*
             寸法拘束(距離・角度・半径・直径)の値をその場で聞く小さな入力
             (FR-313、NFR-UX-2、P4b タスク13)。道具のその場入力と同じ見た目・同じ操作で、
             聞くのは式 1 つだけ。開いているときだけ自分で姿を現す。
           */}
           {documentKind === 'part' ? <ConstraintValuePopover /> : null}
-          {snapIndicator === null ? null : (
+          {documentKind !== 'part' || snapIndicator === null ? null : (
             /* 吸い付いている場所の印(FR-107)。 */
             <span
               className="pcad-snap-marker"
@@ -475,9 +495,15 @@ export function AppShell(): React.JSX.Element {
             />
           )}
         </div>
-        {documentKind === 'assembly' ? <AssemblyPropertyPanel /> : <PropertyPanel />}
+        {documentKind === 'drawing' ? (
+          <DrawingPropertyPanel />
+        ) : documentKind === 'assembly' ? (
+          <AssemblyPropertyPanel />
+        ) : (
+          <PropertyPanel />
+        )}
       </div>
-      <StatusBar />
+      {documentKind === 'drawing' ? <DrawingStatusBar /> : <StatusBar />}
     </div>
   );
 }

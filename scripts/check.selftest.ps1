@@ -321,6 +321,22 @@ try {
             "シナリオ11: 本物の作業ツリーの未 stage な変更(pkgDependency)は片付け後も無事"
 
         & git reset --quiet | Out-Null
+
+        # 実際の入口を空indexで呼び、未stage実装を検査済みと誤認する経路を閉じる。
+        $guardCheckPath = Join-Path $scriptDirectory "check.ps1"
+        $guardShell = if (Get-Command powershell.exe -ErrorAction SilentlyContinue) { "powershell.exe" } else { "pwsh" }
+        Set-Content -LiteralPath (Join-Path $tempRoot "package.json") -Encoding UTF8 -Value '{"scripts":{"typecheck":"unused","lint":"unused","test":"unused","build":"unused"}}'
+        $emptyIndexOutput = & $guardShell -NoProfile -ExecutionPolicy Bypass -File $guardCheckPath -RepositoryRoot $tempRoot -Level Commit | Out-String
+        Assert-True ($LASTEXITCODE -eq 1 -and $emptyIndexOutput.Contains("stage 済みの変更がありません")) "空indexのCommit検査はpnpm起動前に拒否する"
+        foreach ($badArgs in @(
+            @('-UnitPackage', 'kernel'),
+            @('-UnitPackage', 'kernel', '-UnitTests', 'src/../escape.test.ts'),
+            @('-UnitTests', 'src/example.test.ts'),
+            @('-UnitPackage', 'kernel', '-UnitTests', 'src/example.test.ts', '-E2EOnly')
+        )) {
+            $invalidOutput = & $guardShell -NoProfile -ExecutionPolicy Bypass -File $guardCheckPath -RepositoryRoot $tempRoot -Level Push @badArgs | Out-String
+            Assert-True ($LASTEXITCODE -eq 1 -and $invalidOutput.Contains("[NG]")) "不正なユニット診断指定はpnpm起動前に拒否する: $($badArgs -join ' ')"
+        }
     }
     finally {
         Pop-Location
@@ -330,6 +346,12 @@ finally {
     # .git 内部のファイルは Windows で読み取り専用属性が付くことがあり、
     # 単純な Remove-Item -Force だけでは消しきれない場合がある。属性を外してから再試行する。
     if (Test-Path -LiteralPath $tempRoot) {
+        $verifiedTempRoot = [IO.Path]::GetFullPath($tempRoot)
+        $expectedTempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([char[]]"\/")
+        if ((Split-Path -Parent $verifiedTempRoot).TrimEnd([char[]]"\/") -ne $expectedTempParent -or
+            (Split-Path -Leaf $verifiedTempRoot) -notmatch '^pointercad-checkselftest-[a-f0-9]{32}$') {
+            throw "自己試験の削除対象が専用一時ディレクトリ外です: $verifiedTempRoot"
+        }
         try {
             Get-ChildItem -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue |
                 ForEach-Object { $_.Attributes = 'Normal' }

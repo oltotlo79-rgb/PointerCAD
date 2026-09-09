@@ -282,7 +282,8 @@ export const createAssemblySlice: StateCreator<
     openAssembly: (assembly, library = EMPTY_PART_LIBRARY, options) => {
       if (options?.preserveSaveTarget !== true) get().fileGateway.clearSaveTarget?.();
       set((state) => ({
-        ...empty(), assembly, assemblyLibrary: library, assemblyInitialName: assembly.name,
+        ...empty(), assembly, drawing: null, savedDrawing: null, drawingFileName: null,
+        drawingInitialName: null, assemblyLibrary: library, assemblyInitialName: assembly.name,
         assemblyUndoStack: createUndoStack({ document: assembly, library }),
         documentVersion: state.documentVersion + 1,
         canUndo: false, canRedo: false, selection: [], hoveredElementId: null,

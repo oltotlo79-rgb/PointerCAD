@@ -225,6 +225,105 @@ export interface SketchOffsetOutcome {
  */
 export type { PlaneArc, PlaneCurve, PlanePolyline, PlaneSegment, SketchPlaneFrame, Vec2Tuple };
 
+/** 図面用の隠線処理。精密は円弧を保ち、近似は表示速度を優先する(FR-702)。 */
+export type HiddenLineMode = 'precise' | 'poly';
+
+export interface HiddenLineViewRequest {
+  readonly id: string;
+  readonly origin: Vec3Tuple;
+  readonly normal: Vec3Tuple;
+  readonly xDir: Vec3Tuple;
+  readonly includeHidden: boolean;
+  readonly mode: HiddenLineMode;
+}
+
+export interface HiddenLineRequest {
+  readonly partId?: string;
+  /** recomputeSolids が預けた形状キャッシュの鍵。 */
+  readonly bodyIds: readonly string[];
+  readonly instances?: readonly DrawingBodyInstance[];
+  /** 複数方向を1回の Worker 往復で処理する。 */
+  readonly views: readonly HiddenLineViewRequest[];
+}
+
+export type HiddenLineProvenance =
+  | {
+      readonly kind: 'edge';
+      readonly bodyId: string;
+      readonly occurrenceId: string | null;
+      readonly edgeIndex: number | null;
+      readonly parameterRange: readonly [number, number] | null;
+      /** HLR後の区間を元辺へ一意に戻せないときは false。 */
+      readonly dimensionTarget: boolean;
+    }
+  | {
+      readonly kind: 'silhouette';
+      readonly bodyId: string;
+      readonly occurrenceId: string | null;
+      readonly faceIndex: number | null;
+      readonly generated: 'outline' | 'smooth' | 'seam';
+      readonly dimensionTarget: false;
+    };
+
+export interface DrawingBodyInstance {
+  readonly bodyId: string;
+  readonly occurrenceId: string;
+  readonly placement: PlacementSpec;
+}
+
+export interface HiddenLineCurve {
+  readonly curve: PlaneCurve;
+  readonly provenance: HiddenLineProvenance;
+}
+
+export interface HiddenLineViewResult {
+  readonly viewId: string;
+  readonly visible: readonly HiddenLineCurve[];
+  readonly hidden: readonly HiddenLineCurve[];
+}
+
+export interface DrawingKernelFailure {
+  readonly viewId: string | null;
+  readonly bodyId: string | null;
+  readonly message: string;
+}
+
+export interface HiddenLineResult {
+  readonly views: readonly HiddenLineViewResult[];
+  readonly failures: readonly DrawingKernelFailure[];
+  readonly cancelled: boolean;
+}
+
+export interface DrawingKernelProgress {
+  readonly completed: number;
+  readonly total: number;
+  readonly viewId: string | null;
+}
+
+export type DrawingKernelProgressCallback = (progress: DrawingKernelProgress) => void;
+export type DrawingKernelCancelToken = () => boolean | Promise<boolean>;
+
+/** 図面断面は切断形状のHLRと切断面との交線を同じ結果で返す(FR-713)。 */
+export interface SectionRequest {
+  readonly partId?: string;
+  readonly bodyIds: readonly string[];
+  readonly instances?: readonly DrawingBodyInstance[];
+  readonly view: HiddenLineViewRequest;
+  readonly plane: SketchPlaneFrame;
+  readonly keepSide: 'positive' | 'negative';
+  readonly kind?: 'full' | 'half' | 'local' | 'revolved' | 'stepped';
+  readonly boundary?: readonly Vec2Tuple[];
+}
+
+export interface SectionResult {
+  readonly viewId: string;
+  readonly visible: readonly HiddenLineCurve[];
+  readonly hidden: readonly HiddenLineCurve[];
+  readonly cuttingCurves: readonly PlaneCurve[];
+  readonly failures: readonly DrawingKernelFailure[];
+  readonly cancelled: boolean;
+}
+
 /** 投影 1 件の依頼。`id` は結果の対応づけに使う(オフセットと同じ約束)。 */
 export interface SketchProjectionItem {
   readonly id: string;

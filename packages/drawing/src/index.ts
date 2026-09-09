@@ -68,6 +68,53 @@ export {
   type ThirdAngleLayoutInput,
   type ViewDirection,
 } from './layout/thirdAngle.js';
+export {
+  DEFAULT_TITLE_BLOCK_FIELDS,
+  DEFAULT_TITLE_BLOCK_HEIGHT_MM,
+  DEFAULT_TITLE_BLOCK_WIDTH_MM,
+  createTitleBlock,
+  formatDrawingScale,
+  type CreateTitleBlockInput,
+  type ThirdAngleSymbol,
+  type TitleBlockArc,
+  type TitleBlockCell,
+  type TitleBlockFieldDefinition,
+  type TitleBlockLayout,
+  type TitleBlockLine,
+} from './paper/titleBlock.js';
+export {
+  ISOMETRIC_DIRECTION,
+  ISOMETRIC_X_DIRECTION,
+  isometricViewDirection,
+} from './layout/isometric.js';
+export {
+  VIEW_ALIGNMENT_TOLERANCE_MM,
+  effectiveViewScale,
+  moveView,
+  snapToAligned,
+  viewTitle,
+  type ViewAlignmentGuide,
+} from './layout/viewPlacement.js';
+export { hatchArea, type HatchAreaInput, type HatchSegment } from './hatch/hatchArea.js';
+export { hatchStyle, type HatchStyle } from './hatch/hatchStyle.js';
+export {
+  clipCurves,
+  regionContainsAnyCurvePoint,
+  type ClipCurve,
+  type ClipRegion,
+} from './layout/clipRegion.js';
+export {
+  createDetailView,
+  type DetailCurve,
+  type DetailViewInput,
+  type DetailViewResult,
+} from './layout/detailView.js';
+export {
+  applyBreak,
+  type BreakLine,
+  type BreakResult,
+  type BreakSpec,
+} from './layout/breakOut.js';
 
 export {
   ARROW_INCLUDED_ANGLE_DEGREES,

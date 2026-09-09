@@ -59,6 +59,9 @@ import {
   type Vec2Tuple,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
+import type {
+  DrawingProjectionRequest, DrawingProjectionResult, DrawingSectionRequest, DrawingSectionResult,
+} from './drawing/resolveDrawing.js';
 import { importedShapeOf } from './part/types.js';
 import type { AssemblyComponent } from './assembly/types.js';
 import type { ResolvedAssembly } from './assembly/resolveAssembly.js';
@@ -2931,7 +2934,23 @@ export interface MonitoredKernelBridge extends InterferenceKernelBridge {
 }
 
 /** Web Worker内の幾何カーネルへつなぐ。ブラウザ・Electronのレンダラで使う。 */
-export function createKernelBridge(): MonitoredKernelBridge {
+export interface DrawingOperationOptions {
+  readonly onProgress?: (progress: DrawingOperationProgress) => void;
+  readonly shouldCancel?: () => boolean;
+}
+
+export interface DrawingOperationProgress {
+  readonly completed: number;
+  readonly total: number;
+  readonly viewId: string | null;
+}
+
+export interface DrawingKernelBridge {
+  hiddenLineViews(request: DrawingProjectionRequest, options?: DrawingOperationOptions): Promise<DrawingProjectionResult>;
+  sectionViews(request: DrawingSectionRequest, options?: DrawingOperationOptions): Promise<DrawingSectionResult>;
+}
+
+export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridge {
   const health = createKernelHealth();
   const counts: Record<KernelOperationStatus, number> = {
     success: 0, failed: 0, cancelled: 0, workerBroken: 0,
@@ -2959,6 +2978,28 @@ export function createKernelBridge(): MonitoredKernelBridge {
 
   return {
     pendingWaiters: () => connection.waiters.size,
+    async hiddenLineViews(request, options = {}) {
+      if (health.broken && !disposed) restart();
+      const active = connection;
+      const failed = (): DrawingProjectionResult => ({ views: [], cancelled: false,
+        failures: [{ viewId: null, bodyId: null, message: KERNEL_BROKEN_MESSAGE }] });
+      const callbacks = callbackScope();
+      const progress = options.onProgress;
+      return raceWithBroken(active, () => active.remote.hiddenLineViews(request,
+        progress === undefined ? undefined : callbacks.proxy((value: DrawingOperationProgress) => { if (callbacks.active) progress(value); }),
+        toCancelProxy(options.shouldCancel, callbacks)).catch(failed), failed, callbacks);
+    },
+    async sectionViews(request, options = {}) {
+      if (health.broken && !disposed) restart();
+      const active = connection;
+      const failed = (): DrawingSectionResult => ({ viewId: request.view.id, visible: [], hidden: [], cuttingCurves: [], cancelled: false,
+        failures: [{ viewId: request.view.id, bodyId: null, message: KERNEL_BROKEN_MESSAGE }] });
+      const callbacks = callbackScope();
+      const progress = options.onProgress;
+      return raceWithBroken(active, () => active.remote.sectionViews(request,
+        progress === undefined ? undefined : callbacks.proxy((value: DrawingOperationProgress) => { if (callbacks.active) progress(value); }),
+        toCancelProxy(options.shouldCancel, callbacks)).catch(failed), failed, callbacks);
+    },
     operationCounts: () => ({ ...counts }),
     operationStatus: (result) =>
       (typeof result === 'object' && result !== null) || typeof result === 'function'
@@ -3254,10 +3295,12 @@ function hasPartLifetime(api: KernelApi): api is PartLifetimeApi {
  * Worker が無いので壊れの検知・作り直し(§2.9)は持たない。`dispose` も何もしない
  * (形状キャッシュは渡された `KernelApi` の持ち物で、寿命は呼び出し側が決める)。
  */
-export function createDirectKernelBridge(api: PartLifetimeApi): AssemblyKernelBridge;
-export function createDirectKernelBridge(api: KernelApi): KernelBridge;
-export function createDirectKernelBridge(api: KernelApi): KernelBridge {
+export function createDirectKernelBridge(api: PartLifetimeApi): AssemblyKernelBridge & DrawingKernelBridge;
+export function createDirectKernelBridge(api: KernelApi): KernelBridge & DrawingKernelBridge;
+export function createDirectKernelBridge(api: KernelApi): KernelBridge & DrawingKernelBridge {
   return {
+    hiddenLineViews: (request, options = {}) => api.hiddenLineViews(request, options.onProgress, options.shouldCancel),
+    sectionViews: (request, options = {}) => api.sectionViews(request, options.onProgress, options.shouldCancel),
     ...(hasPartLifetime(api) ? {
       releasePart: (partId: string) => api.releasePart(partId),
       checkShapeAvailability: (partId: string, bodyKeys: readonly string[]) =>

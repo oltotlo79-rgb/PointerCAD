@@ -18,6 +18,7 @@ import file from './ja/file.json';
 import view from './ja/view.json';
 import parameters from './ja/parameters.json';
 import assembly from './ja/assembly.json';
+import drawing from './ja/drawing.json';
 
 /** 機能ごとの表を 1 つに合わせたもの。鍵の型(`MessageKey`)はここから導く。 */
 export const ja = {
@@ -45,6 +46,8 @@ export const ja = {
    * ジョイント・干渉・分解・部品表の道具名と、断りの文言(計画書 P7 §2.12)がここに入る。
    */
   ...assembly,
+  // 図面(P8)。道具・木・プロパティと、利用者へ返す断りの正本。
+  ...drawing,
 };
 
 /** 分けた表そのもの(重なりの検査が読む)。並びは `ja` を合わせる順と同じ。 */
@@ -59,4 +62,5 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['view', view],
   ['parameters', parameters],
   ['assembly', assembly],
+  ['drawing', drawing],
 ];

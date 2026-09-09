@@ -32,6 +32,9 @@ function content(snapshot: AssemblySnapshot): string {
 export function activeHasUnsavedChanges(state: AppState): boolean {
   const active = activeDocument(state);
   if (active.kind === 'part') return hasUnsavedChanges(active.document, active.saved);
+  if (active.kind === 'drawing') return active.saved === null
+    ? active.document.views.length > 0 || active.document.name !== active.initialName
+    : active.document !== active.saved;
   if (active.saved === null) return active.document.components.length > 0 ||
     active.library.partFiles.length > 0 ||
     active.document.name !== (active.initialName ?? active.document.name) ||

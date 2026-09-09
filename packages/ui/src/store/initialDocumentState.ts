@@ -27,6 +27,7 @@ import {
   NO_CONSTRAINT_TARGETS,
 } from './documentDerived.js';
 import type { AssemblyInitialState } from './assemblySlice.js';
+import { createDrawingInitialState, type DrawingInitialState } from './drawingSlice.js';
 import type { CanvasInitialState } from './canvasSlice.js';
 import type { ConstraintInitialState } from './constraintSlice.js';
 import type { DocumentInitialState } from './documentSlice.js';
@@ -51,7 +52,8 @@ export type InitialDocumentState = ViewInitialState &
   SelectionInitialState &
   MeasureInitialState &
   FileInitialState &
-  AssemblyInitialState;
+  AssemblyInitialState &
+  DrawingInitialState;
 
 /**
  * 球面の案内線の間隔の既定(度。FR-431、§0.a-0.21)。**数そのものは
@@ -185,6 +187,7 @@ export function createInitialDocumentState(): InitialDocumentState {
       新規の部品を作ったときも null へ戻す(`documentSlice.ts` の `resetDocument`)。
     */
     assembly: null,
+    ...createDrawingInitialState(),
     // 干渉解析の口はアプリ入口が起動後に差し出す。文書切替では取り下げない。
     assemblyInterferenceRunner: null,
     // 置換候補の形を一度だけ計算する口も、カーネルを積むまでは無い。

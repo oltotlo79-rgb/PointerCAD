@@ -14,8 +14,11 @@ import {
 import { makeOffsetWire } from '../occt/makeOffsetWire.js';
 import { distanceBetween, measureMassProperties } from '../occt/measureShape.js';
 import { makePlanarFace } from '../occt/makePlanarFace.js';
+import { hiddenLineViewForBodies, type HiddenLineSource } from '../occt/makeHiddenLineViews.js';
+import { createAllocations } from '../occt/allocations.js';
 import { makeProjection } from '../occt/makeProjection.js';
 import { makeSection } from '../occt/makeSection.js';
+import { makeSectionShape } from '../occt/makeSectionShape.js';
 import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
 import { placeShape } from '../occt/placeBodies.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from '../occt/pickSubShape.js';
@@ -32,7 +35,12 @@ import type { RgbTuple } from '../occt/xcafDocument.js';
 import type {
   InterferenceRequest,
   InterferenceResult,
+  DrawingKernelCancelToken,
+  DrawingBodyInstance,
+  DrawingKernelProgressCallback,
   FaceMeshData,
+  HiddenLineRequest,
+  HiddenLineResult,
   MeasureRequest,
   MeasureResult,
   ShapeExportBrepBody,
@@ -49,6 +57,8 @@ import type {
   ShapeInspectMeshIdentity,
   ShapeInspectRequest,
   ShapeInspectResult,
+  SectionRequest,
+  SectionResult,
   SketchOffsetFailure,
   SketchOffsetOutcome,
   SketchOffsetRequest,
@@ -400,6 +410,18 @@ export interface KernelApi {
    * 交わらないときは**失敗ではなく空の結果**を返す(`makeSection.ts` の決め)。
    */
   sectionSketchCurves(request: SketchSectionRequest): Promise<SketchProjectionOutcome>;
+  /** 複数の図を1往復で隠線処理する。中止は図と図の間で受け付ける(FR-702)。 */
+  hiddenLineViews(
+    request: HiddenLineRequest,
+    onProgress?: DrawingKernelProgressCallback,
+    cancelToken?: DrawingKernelCancelToken,
+  ): Promise<HiddenLineResult>;
+  /** 半空間で切った形のHLRと切断面との交線をまとめて返す(FR-713)。 */
+  sectionViews(
+    request: SectionRequest,
+    onProgress?: DrawingKernelProgressCallback,
+    cancelToken?: DrawingKernelCancelToken,
+  ): Promise<SectionResult>;
   /**
    * 覚えてある形を測る(FR-1101、FR-1102、P5 タスク28)。
    *
@@ -772,6 +794,134 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
         }
 
         return { results, failures };
+      });
+    },
+
+    async hiddenLineViews(request, onProgress, cancelToken): Promise<HiddenLineResult> {
+      return withAcquiredKeys(request.bodyIds, async () => {
+        const allocations = createAllocations();
+        try {
+        const oc = await loadOcct();
+        const failures: HiddenLineResult['failures'][number][] = [];
+        const inputs: readonly (Pick<DrawingBodyInstance, 'bodyId'> & Partial<DrawingBodyInstance>)[] = request.instances ?? request.bodyIds.map((bodyId) => ({ bodyId }));
+        const sources = inputs.flatMap((input): HiddenLineSource[] => {
+          const { bodyId } = input;
+          const cached = cache.get(bodyId);
+          if (cached === undefined || !request.bodyIds.includes(bodyId)) {
+            failures.push({ viewId: null, bodyId, message: MISSING_BODY_MESSAGE });
+            return [];
+          }
+          if (input.placement !== undefined) {
+            const placed = allocations.keep(placeShape(oc, cached.shape, input.placement));
+            return [{ bodyId, occurrenceId: input.occurrenceId, shape: placed.shape }];
+          }
+          return [{ bodyId, shape: cached.shape }];
+        });
+        const views: HiddenLineResult['views'][number][] = [];
+        for (let index = 0; index < request.views.length; index += 1) {
+          const view = request.views[index];
+          if (view === undefined) continue;
+          if (await cancelToken?.() === true) return { views, failures, cancelled: true };
+          const outcome = hiddenLineViewForBodies(oc, {
+            viewId: view.id,
+            sources,
+            origin: view.origin,
+            normal: view.normal,
+            xDir: view.xDir,
+            mode: view.mode,
+            includeHidden: view.includeHidden,
+          });
+          if (outcome.ok) views.push(outcome.result);
+          else failures.push({ viewId: view.id, bodyId: null, message: outcome.message });
+          await Promise.resolve(onProgress?.({ completed: index + 1, total: request.views.length, viewId: view.id }));
+        }
+        return { views, failures, cancelled: false };
+        } finally { allocations.release(); }
+      });
+    },
+
+    async sectionViews(request, onProgress, cancelToken): Promise<SectionResult> {
+      return withAcquiredKeys(request.bodyIds, async () => {
+        const failures: SectionResult['failures'][number][] = [];
+        if (await cancelToken?.() === true) {
+          return { viewId: request.view.id, visible: [], hidden: [], cuttingCurves: [], failures, cancelled: true };
+        }
+        const oc = await loadOcct();
+        const sections: Array<{
+          readonly bodyId: string;
+          readonly occurrenceId?: string;
+          readonly result: Extract<ReturnType<typeof makeSectionShape>, { readonly ok: true }>;
+        }> = [];
+        const placements = createAllocations();
+        try {
+          const inputs: readonly (Pick<DrawingBodyInstance, 'bodyId'> & Partial<DrawingBodyInstance>)[] = request.instances ?? request.bodyIds.map((bodyId) => ({ bodyId }));
+          for (const input of inputs) {
+            const { bodyId } = input;
+            const cached = cache.get(bodyId);
+            if (cached === undefined || !request.bodyIds.includes(bodyId)) {
+              failures.push({ viewId: request.view.id, bodyId, message: MISSING_BODY_MESSAGE });
+              continue;
+            }
+            const placed = input.placement === undefined ? cached.shape : placements.keep(placeShape(oc, cached.shape, input.placement)).shape;
+            const outcome = makeSectionShape(oc, {
+              target: placed,
+              plane: request.plane,
+              projectionPlane: request.kind === 'revolved' ? undefined : {
+                origin: request.view.origin, normal: request.view.normal, axisU: request.view.xDir,
+              },
+              keepSide: request.keepSide,
+              kind: request.kind,
+              boundary: request.boundary,
+            });
+            if (outcome.ok) sections.push({ bodyId, occurrenceId: input.occurrenceId, result: outcome });
+            else failures.push({ viewId: request.view.id, bodyId, message: outcome.message });
+          }
+          if (await cancelToken?.() === true) {
+            return { viewId: request.view.id, visible: [], hidden: [], cuttingCurves: [], failures, cancelled: true };
+          }
+          if (request.kind === 'revolved') {
+            const visible = sections.flatMap((section) => section.result.cutFaces.flatMap((face) => face.curves.map((curve) => ({
+              curve,
+              provenance: { kind: 'silhouette' as const, bodyId: section.bodyId, occurrenceId: section.occurrenceId ?? null,
+                faceIndex: face.index, generated: 'outline' as const, dimensionTarget: false as const },
+            }))));
+            await Promise.resolve(onProgress?.({ completed: 1, total: 1, viewId: request.view.id }));
+            return { viewId: request.view.id, visible, hidden: [], cuttingCurves: visible.map((item) => item.curve), failures, cancelled: false };
+          }
+          const hlr = hiddenLineViewForBodies(oc, {
+            viewId: request.view.id,
+            sources: sections.map((section) => ({
+              bodyId: section.bodyId,
+              occurrenceId: section.occurrenceId,
+              shape: section.result.shape,
+            })),
+            origin: request.view.origin,
+            normal: request.view.normal,
+            xDir: request.view.xDir,
+            mode: request.view.mode,
+            includeHidden: request.view.includeHidden,
+          });
+          await Promise.resolve(onProgress?.({ completed: 1, total: 1, viewId: request.view.id }));
+          return hlr.ok
+            ? {
+                viewId: request.view.id,
+                visible: hlr.result.visible,
+                hidden: hlr.result.hidden,
+                cuttingCurves: sections.flatMap((section) => section.result.cutCurves),
+                failures,
+                cancelled: false,
+              }
+            : {
+                viewId: request.view.id,
+                visible: [], hidden: [],
+                cuttingCurves: sections.flatMap((section) => section.result.cutCurves),
+                failures: [...failures, { viewId: request.view.id, bodyId: null, message: hlr.message }],
+                cancelled: false,
+              };
+        } finally {
+          for (const section of sections) section.result.delete();
+          placements.release();
+        }
       });
     },
 

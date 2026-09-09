@@ -13,11 +13,22 @@
  * ここはストアに触れず、渡された欄だけを見る純関数にしてある(Node の検査で素の値を
  * 渡せる。`documentDerived.ts` と同じ流儀)。
  */
+import type { DrawingDocument } from '@pointercad/drawing';
 import type { AssemblyDocument, PartDocument } from '@pointercad/model';
 import type { AppState } from './appState.js';
 
 /** 保存・履歴・タイトルが見る文書。種類の選択はこの入口だけで行う。 */
 export function activeDocument(state: AppState) {
+  if (activeDocumentKind(state) === 'drawing' && state.drawing !== null) {
+    return {
+      kind: 'drawing' as const,
+      document: state.drawing,
+      saved: state.savedDrawing,
+      fileName: state.drawingFileName,
+      initialName: state.drawingInitialName,
+      documentId: state.activeDocumentId,
+    };
+  }
   if (activeDocumentKind(state) === 'assembly' && state.assembly !== null) {
     return {
       kind: 'assembly' as const,
@@ -48,7 +59,7 @@ export function activeFileName(state: AppState): string | null {
  * それでも定義して検査で固定しておくのは、部品を閉じる操作(P8 以降)を足したときに
  * **直す場所をここ 1 か所に閉じ込める**ため。
  */
-export type DocumentKind = 'part' | 'assembly' | 'empty';
+export type DocumentKind = 'part' | 'assembly' | 'drawing' | 'empty';
 
 /**
  * 種類の判定に要る欄だけ。ストア全体(`AppState`)を要求しないので、検査からは
@@ -59,6 +70,8 @@ export interface DocumentKindState {
   readonly document: PartDocument | null;
   /** アセンブリ文書(`assemblySlice.ts`)。開いていなければ null。 */
   readonly assembly: AssemblyDocument | null;
+  /** 図面文書。開いていなければ null。 */
+  readonly drawing: DrawingDocument | null;
 }
 
 /**
@@ -66,6 +79,9 @@ export interface DocumentKindState {
  * (同時に 2 つ開かないので、部品の欄に何が残っていても見ない)。
  */
 export function activeDocumentKind(state: DocumentKindState): DocumentKind {
+  if (state.drawing !== null) {
+    return 'drawing';
+  }
   if (state.assembly !== null) {
     return 'assembly';
   }
@@ -79,7 +95,12 @@ export function activePartDocument(state: DocumentKindState): PartDocument | nul
 
 /** いま画面に出ているアセンブリ文書。部品を開いているあいだは null。 */
 export function activeAssemblyDocument(state: DocumentKindState): AssemblyDocument | null {
-  return state.assembly;
+  return activeDocumentKind(state) === 'assembly' ? state.assembly : null;
+}
+
+/** いま画面に出ている図面文書。ほかの種類を開いているあいだは null。 */
+export function activeDrawingDocument(state: DocumentKindState): DrawingDocument | null {
+  return activeDocumentKind(state) === 'drawing' ? state.drawing : null;
 }
 
 /**
@@ -96,6 +117,7 @@ export function activeAssemblyDocument(state: DocumentKindState): AssemblyDocume
 const DOCUMENT_KIND_KEY_PREFIXES: Readonly<Record<DocumentKind, string>> = {
   part: 'part:',
   assembly: 'assembly:',
+  drawing: 'drawing:',
   empty: 'empty:',
 };
 

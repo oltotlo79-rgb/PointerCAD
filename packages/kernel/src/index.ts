@@ -42,6 +42,22 @@ export type {
 } from './types.js';
 export { makeProjection, orderPlaneCurves, planeBasisOf, projectPointToPlane } from './occt/makeProjection.js';
 export { makeSection } from './occt/makeSection.js';
+export {
+  hiddenLineView,
+  hiddenLineViewForBodies,
+  NO_DRAWABLE_SOLID_MESSAGE,
+  type HiddenLineBodiesSpec,
+  type HiddenLineSource,
+  type HiddenLineViewOutcome,
+  type HiddenLineViewSpec,
+} from './occt/makeHiddenLineViews.js';
+export {
+  makeSectionShape,
+  NO_SECTION_AT_POSITION_MESSAGE,
+  type CutFaceInfo,
+  type SectionShapeOutcome,
+  type SectionShapeSpec,
+} from './occt/makeSectionShape.js';
 export { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './occt/pickSubShape.js';
 // ソリッド(立体)の依頼と結果(FR-401〜404)。Comlink 越しに渡せる素の値だけで書いてある。
 export type {
@@ -303,6 +319,22 @@ export {
   type SolidRecomputeDeps,
 } from './worker/recomputeSolids.js';
 export { createKernelApi, type KernelApi, type ManagedKernelApi, type InterferenceKernelApi } from './worker/kernelApi.js';
+export type {
+  DrawingKernelCancelToken,
+  DrawingBodyInstance,
+  DrawingKernelFailure,
+  DrawingKernelProgress,
+  DrawingKernelProgressCallback,
+  HiddenLineCurve,
+  HiddenLineMode,
+  HiddenLineProvenance,
+  HiddenLineRequest,
+  HiddenLineResult,
+  HiddenLineViewRequest,
+  HiddenLineViewResult,
+  SectionRequest,
+  SectionResult,
+} from './types.js';
 export type {
   InterferenceComponentSpec, InterferenceFailureCode, InterferenceInputCode, InterferenceMesh,
   InterferencePair, InterferencePairFailure, InterferencePairId, InterferenceProgress,

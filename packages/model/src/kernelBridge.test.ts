@@ -42,6 +42,8 @@ import { resolvePart, type ResolvedSolidStep } from './part/resolvePart.js';
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from './part/createPartDocument.js';
 import { recomputePart } from './part/recomputePart.js';
 import { WORK_PLANES } from './sketch/planeMath.js';
+import { createDrawingDocument } from './drawing/createDrawingDocument.js';
+import { createDrawingResolveKernel, resolveDrawing } from './drawing/resolveDrawing.js';
 import type { ResolvedCurve, ResolvedFace } from './sketch/types.js';
 import type { SubShapeRef } from './geometry/subShapeRef.js';
 import type { Vec3 } from './sketch/vec3.js';
@@ -836,6 +838,46 @@ describe('P7-25 干渉の実カーネルと輸送', () => {
     const bridge = createKernelBridge(); Comlink.expose(api, silentWorkers.serverEndpoint());
     cleanups.push(() => { bridge.dispose(); return Promise.resolve(); }); return bridge;
   }
+  it.each([false, true])('P8 部品の再計算から図面のHLRと断面まで実カーネルへ通る(Worker=%s)', async (worker) => {
+    const api = createKernelApi(loadOcctForNode);
+    const bridge = worker ? connected(api) : createDirectKernelBridge(api);
+    const empty = createEmptyPartDocument();
+    const part = appendSolid(empty, createPrimitiveFeature(empty, 'box'));
+    const source = { sourceRef: 'drawing-source', sourceKind: 'part' as const, contentHash: 'box-v1', fileName: 'box.pcad', path: '', importedAt: '2026-09-09T00:00:00Z' };
+    const document = createDrawingDocument('図面', source);
+    const drawing = { ...document, views: [{ id: 'front', name: '正面図', kind: 'front' as const, position: [100, 100] as const,
+      scale: null, direction: [0, 0, 1] as const, xDir: [1, 0, 0] as const, showHidden: true, showCenterLines: true, layerId: 'visible' }] };
+    const resolver = createDrawingResolveKernel(bridge, async () => {
+      let resolved = resolvePart(part);
+      const result = await recomputePart(part, bridge, { partId: 'drawing-source', onResolved: (value) => { resolved = value; } });
+      expect(result.errors).toEqual([]);
+      const visible = new Set(result.bodies.map((body) => body.featureId));
+      return { bodyIds: resolved.steps.filter((step) => visible.has(step.featureId)).map((step) => step.key), center: [0, 0, 0] };
+    });
+    try {
+      const projected = await resolveDrawing(drawing, resolver);
+      expect(projected.ok).toBe(true);
+      if (projected.ok) { expect(projected.failures).toEqual([]); expect(projected.views[0]?.visible).toHaveLength(4); }
+      const prepared = await resolver.prepareDrawingSource(source);
+      const requestView = { id: 'a', origin: [0, 0, 0] as const, normal: [0, 0, 1] as const,
+        xDir: [1, 0, 0] as const, includeHidden: true, mode: 'precise' as const };
+      const completed: number[] = [];
+      const cancelled = await bridge.hiddenLineViews({ bodyIds: prepared.bodyIds,
+        views: [requestView, { ...requestView, id: 'b' }] }, {
+        onProgress: (value) => { completed.push(value.completed); }, shouldCancel: () => completed.length > 0,
+      });
+      expect(cancelled.cancelled).toBe(true); expect(cancelled.views).toHaveLength(1); expect(completed).toEqual([1]);
+      const stoppedSection = await bridge.sectionViews({ bodyIds: prepared.bodyIds, view: requestView, kind: 'full',
+        keepSide: 'positive', plane: { origin: [0, 0, 0], axisU: [1, 0, 0], normal: [0, 0, 1] } }, { shouldCancel: () => true });
+      expect(stoppedSection.cancelled).toBe(true); expect(stoppedSection.visible).toEqual([]);
+      const cut = await resolveDrawing({ ...drawing, views: [{ ...drawing.views[0], kind: 'section' }] }, resolver, {
+        sections: { front: { kind: 'full', keepSide: 'positive', plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(0) } } },
+        planeContext: { point: () => null, axis: () => null, workPlane: (id) => Object.values(WORK_PLANES).find((plane) => plane.id === id) ?? null },
+      });
+      expect(cut.ok).toBe(true);
+      if (cut.ok) { expect(cut.failures).toEqual([]); expect(cut.views[0]?.visible).toHaveLength(4); expect(cut.views[0]?.cuttingCurves).toHaveLength(4); }
+    } finally { await api.releasePart('drawing-source'); bridge.dispose(); }
+  });
   function bridgeOnlyInput(): AssemblyInterferenceInput {
     return { requestId: 'old-generation', components: [component('a'), component('b')],
       resolved: { parts: new Map(), partKeys: new Map(), placements: new Map(), errors: [] }, bodies: new Map(), placements: new Map() };

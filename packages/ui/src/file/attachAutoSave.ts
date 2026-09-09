@@ -175,6 +175,7 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
 
   const unsubscribe = useAppStore.subscribe((next, previous) => {
     if (next.document === previous.document && next.assembly === previous.assembly &&
+      next.drawing === previous.drawing &&
       next.assemblyLibrary === previous.assemblyLibrary && next.importedShapes === previous.importedShapes &&
       next.importedMeshes === previous.importedMeshes && next.canvases === previous.canvases) {
       return;
@@ -183,6 +184,8 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
       return;
     }
     const active = activeDocument(next);
+    // 図面の自動保存封筒はP8後段で接続する。誤って部品/アセンブリとして書かない。
+    if (active.kind === 'drawing') return;
     saver.markDirty(active.kind === 'part' ? (options.bundleParts === true
       ? createPartDocumentBundle(active.document, currentPcadAttachments()) : active.document) :
       createAssemblyDocumentBundle(active.document, active.library));
@@ -199,6 +202,7 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
       return;
     }
     const active = activeDocument(state);
+    if (active.kind === 'drawing') return;
     void saver.saveNow(active.kind === 'part' ? (options.bundleParts === true
       ? createPartDocumentBundle(active.document, currentPcadAttachments()) : active.document) :
       createAssemblyDocumentBundle(active.document, active.library));
@@ -420,6 +424,12 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
     revision += 1;
     const currentRevision = revision;
     stopCurrent?.();
+    if (active.kind === 'drawing') {
+      saver = null;
+      state.setAutoSaver(null);
+      stopCurrent = null;
+      return;
+    }
     const current = factory({ storage: createUnsavedOnlyStorage(storage), kind: active.kind,
       documentId: active.documentId, sessionId,
       onError: () => { if (!detached && currentRevision === revision) reportAutoSaveFailure(); },

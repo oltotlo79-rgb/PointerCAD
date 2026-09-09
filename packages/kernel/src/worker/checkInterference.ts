@@ -453,9 +453,8 @@ export async function checkInterference(
   const interruptedCleanup: string[] = [];
   let taskQueue: MessageChannel | undefined;
   let pendingTask: { resolve(): void; reject(error: Error): void } | undefined;
-  let taskReadyAt = 0;
-  let taskClockPassed = false;
-  function queueMacrotask(): Promise<void> {
+  let taskRelayed = false;
+  async function queueMacrotask(): Promise<void> {
     if (typeof MessageChannel === 'undefined') return new Promise<void>((resolve) => setTimeout(resolve, 0));
     if (taskQueue === undefined) {
       taskQueue = new MessageChannel();
@@ -463,10 +462,8 @@ export async function checkInterference(
         const task = pendingTask;
         if (task === undefined) return;
         try {
-          // 即時のport往復だけだと同じpoll周期でtimer取消を追い越す(Node実測)。
-          // 同じ受信portへ自己投稿せず両portを交互に使い、timer周期後も一巡させる。
-          if (performance.now() < taskReadyAt) { port.postMessage(null); return; }
-          if (!taskClockPassed) { taskClockPassed = true; port.postMessage(null); return; }
+          // 両portを一往復させ、別portへ届く取消messageにも実行機会を渡す。
+          if (!taskRelayed) { taskRelayed = true; port.postMessage(null); return; }
           if (taskQueue !== undefined) for (const candidate of [taskQueue.port1, taskQueue.port2]) {
             const port: ReferencedMessagePort = candidate;
             if (hasPortReferences(port) && 'unref' in port && typeof port.unref === 'function') port.unref();
@@ -484,11 +481,20 @@ export async function checkInterference(
       channel.port2.onmessage = () => { runTask(channel.port2); };
     }
     const channel = taskQueue;
+    // 実timerを待つ。Nodeではcheck phaseを回してpollの粗い待機時間を避ける。
+    // タイマー自身の発火を待つので、先行する取消timerの到達保証は変わらない。
+    await new Promise<void>((resolve) => {
+      let waiting = true;
+      setTimeout(() => { waiting = false; resolve(); }, 0);
+      if (typeof setImmediate === 'function') {
+        const pump = (): void => { if (waiting) setImmediate(pump); };
+        setImmediate(pump);
+      }
+    });
     return new Promise<void>((resolve, reject) => {
       pendingTask = { resolve, reject };
       try {
-        taskReadyAt = performance.now() + 1;
-        taskClockPassed = false;
+        taskRelayed = false;
         const port: ReferencedMessagePort = channel.port1;
         if (hasPortReferences(port) && 'ref' in port && typeof port.ref === 'function') port.ref();
         channel.port2.postMessage(null);

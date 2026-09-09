@@ -548,6 +548,10 @@ export const createDocumentSlice: StateCreator<
         `activeDocumentKind` がアセンブリのままになり、作ったばかりの部品が画面に出ない。
       */
       assembly: null,
+      drawing: null,
+      savedDrawing: null,
+      drawingFileName: null,
+      drawingInitialName: null,
     }));
   },
 });

@@ -330,7 +330,7 @@ export function attachAssembly(
   function requestCurrent(): void {
     const state = useAppStore.getState();
     const active = activeDocument(state);
-    if (active.kind === 'part') {
+    if (active.kind !== 'assembly') {
       latest = null;
       queued = null;
       lastGoodPlacements.clear();

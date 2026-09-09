@@ -35,6 +35,10 @@ param(
     [switch]$E2EOnly,
     # -E2EOnly のときだけPlaywrightの--grepへ渡す。空なら全E2Eを実行する。
     [string]$E2EGrep = "",
+    # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
+    [ValidateSet("", "drawing", "kernel", "model", "ui", "test-utils")]
+    [string]$UnitPackage = "",
+    [string[]]$UnitTests = @(),
     # 診断用: 性能検査の判定モード(厳密/参考)の表示だけを行って終了する(pnpmは一切実行しない)。
     # 統括の動作確認、および scripts/check.selftest.ps1 からの検証に使う。
     [switch]$ShowPerfModeOnly
@@ -110,6 +114,18 @@ try {
         Write-Host "[NG] -E2EOnly は -Level Push の診断でだけ使えます" -ForegroundColor Red
         exit 1
     }
+    $unitDiagnostic = -not [string]::IsNullOrWhiteSpace($UnitPackage)
+    if (($unitDiagnostic -and ($Level -ne "Push" -or $E2EOnly -or $UnitTests.Count -eq 0)) -or
+        (-not $unitDiagnostic -and $UnitTests.Count -gt 0)) {
+        Write-Host "[NG] ユニット診断は -Level Push -UnitPackage と -UnitTests を指定し、E2E診断とは分けてください" -ForegroundColor Red
+        exit 1
+    }
+    foreach ($unitTest in $UnitTests) {
+        if ($unitTest -notmatch '^src/[A-Za-z0-9_./-]+\.test\.tsx?$' -or $unitTest.Contains('..')) {
+            Write-Host "[NG] ユニット診断には src/ 配下のテストファイルを指定してください" -ForegroundColor Red
+            exit 1
+        }
+    }
     if (-not $E2EOnly -and -not [string]::IsNullOrWhiteSpace($E2EGrep)) {
         Write-Host "[NG] -E2EGrep は -E2EOnly と一緒に指定してください" -ForegroundColor Red
         exit 1
@@ -141,6 +157,16 @@ try {
     }
 
     if ($Level -eq "Commit") {
+        & git diff --cached --quiet --exit-code
+        $stagedDiffExitCode = $LASTEXITCODE
+        if ($stagedDiffExitCode -eq 0) {
+            Write-Host "[NG] stage 済みの変更がありません。Commit検査は未stageの変更を検査しません。作業ツリーの検査には -Level Push を使ってください。" -ForegroundColor Red
+            exit 1
+        }
+        if ($stagedDiffExitCode -ne 1) {
+            Write-Host "[NG] stage 済み差分を確認できませんでした。" -ForegroundColor Red
+            exit $stagedDiffExitCode
+        }
         # -Level Commit: stage 済みの差分だけを写した別の作業ツリーで検査する(rules/06 10.7)。
         # 本物の作業ツリー・indexには一切触れないため、前後の追跡対象比較(#0)は不要。
         Write-Host "作業ツリーの状態記録: 写しの中で検査するため省略します(-Level Commit、rules/03-品質ゲート.md §7.1 #0)" -ForegroundColor Cyan
@@ -191,13 +217,18 @@ try {
             Write-Host "[警告] stage 済みのファイルが無いため、検査前後の比較を省略します" -ForegroundColor Yellow
         }
 
-        $runE2E = $hasE2E
+        $runE2E = $hasE2E -and -not $unitDiagnostic
         if ($E2EOnly -and -not $runE2E) {
             Write-Host "[NG] -E2EOnly を指定しましたが test:e2e スクリプトがありません" -ForegroundColor Red
             exit 1
         }
         $totalChecks = if ($E2EOnly) { 1 } elseif ($runE2E) { 5 } else { 4 }
-        if ($E2EOnly) {
+        if ($unitDiagnostic) {
+            Write-Host "[診断] 指定ユニットテストだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
+            $unitArgs = @("--filter", "@pointercad/$UnitPackage", "exec", "vitest", "run") + $UnitTests
+            Invoke-Check "ユニット診断: $UnitPackage" pnpm $unitArgs
+        }
+        elseif ($E2EOnly) {
             Write-Host "[診断] E2Eだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
         }
         else {
@@ -245,7 +276,10 @@ try {
     }
 
     Write-Host ""
-    if ($E2EOnly) {
+    if ($unitDiagnostic) {
+        Write-Host "[OK] 指定ユニット診断に合格しました(最終のPushゲートには数えません)" -ForegroundColor Green
+    }
+    elseif ($E2EOnly) {
         Write-Host "[OK] 指定したE2E診断に合格しました(最終のPushゲートには数えません)" -ForegroundColor Green
     }
     else {

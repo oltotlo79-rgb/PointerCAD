@@ -19,6 +19,7 @@ import { createAssemblySlice } from './assemblySlice.js';
 import { createCanvasSlice } from './canvasSlice.js';
 import { createConstraintSlice } from './constraintSlice.js';
 import { createDocumentSlice } from './documentSlice.js';
+import { createDrawingSlice } from './drawingSlice.js';
 import { createExchangeSlice } from './exchangeSlice.js';
 import { createFileSlice } from './fileSlice.js';
 import { createInitialDocumentState } from './initialDocumentState.js';
@@ -35,6 +36,7 @@ const SLICES = [
   ['canvasSlice', createCanvasSlice],
   ['exchangeSlice', createExchangeSlice],
   ['documentSlice', createDocumentSlice],
+  ['drawingSlice', createDrawingSlice],
   ['timelineSlice', createTimelineSlice],
   ['recomputeSlice', createRecomputeSlice],
   ['sketchSlice', createSketchSlice],

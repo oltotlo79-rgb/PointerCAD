@@ -10,7 +10,11 @@ import { resolveDrawingDimensions } from './drawing/dimensionTarget.js';
 
 describe('実OCCTの三面図と寸法の向きの一致', () => {
   let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
-  beforeAll(async () => { oc = await loadOcctForNode(); });
+  beforeAll(async () => {
+    const started = performance.now();
+    oc = await loadOcctForNode();
+    console.log(`三面図検査のOCCT初期化: ${(performance.now() - started).toFixed(1)}ms`);
+  }, 180_000); // kernelと同じ初期化上限。形状計算や性能判定の上限とは分ける。
   it.each([
     ['front', 20, 40], ['top', 20, 30], ['right', 30, 40],
   ] as const)('%sは左右と上下を反転せず、投影幅%s・高さ%sになる', async (kind, width, height) => {

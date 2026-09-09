@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { DrawingExportPopover } from './DrawingExportPopover.js';
+import { printDrawing } from './printDrawing.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CubeIcon, LayersIcon, PlaneSectionIcon } from '../shell/icons.js';
@@ -6,6 +9,7 @@ import { startDrawingDimension } from './dimensionCommands.js';
 import { runDrawingAutoDimensions } from './autoDimensionCommands.js';
 import { exportDrawingSvg } from './exportDrawingSvg.js';
 import { startDrawingAnnotation } from './annotationCommands.js';
+import { closeDrawingWithConfirmation } from './closeDrawing.js';
 
 export const DRAWING_DIMENSION_KINDS = [
   { key: 'drawing.dimension.length', kind: 'length', measurement: 'trueDistance' },
@@ -32,7 +36,7 @@ export const DRAWING_TOOL_GROUPS = [
   },
   {
     label: 'drawing.toolbar.annotations',
-    tools: ['drawing.tool.dimension', 'drawing.tool.annotation', 'drawing.tool.centerMark'],
+    tools: ['drawing.tool.dimension', 'drawing.tool.note', 'drawing.tool.annotation', 'drawing.tool.centerMark'],
   },
   {
     label: 'drawing.toolbar.tables',
@@ -46,6 +50,9 @@ export const DRAWING_PROPERTY_KEYS = [
 ] as const satisfies readonly MessageKey[];
 
 export function DrawingToolbar(): React.JSX.Element {
+  const [exportOpen, setExportOpen] = useState(false);
+  const [copies, setCopies] = useState('1');
+  const desktopPrint = useAppStore((state) => state.fileGateway.print !== undefined);
   const busy = useAppStore((state) => state.drawingBusy);
   const canUndo = useAppStore((state) => state.canUndo);
   const canRedo = useAppStore((state) => state.canRedo);
@@ -57,7 +64,7 @@ export function DrawingToolbar(): React.JSX.Element {
       </div>
       <span className="pcad-badge">{t('drawing.mode')}</span>
       <div className="pcad-toolbar__actions">
-        <button type="button" className="pcad-button" onClick={() => useAppStore.getState().closeDrawing()}>{t('drawing.file.returnToPart')}</button>
+        <button type="button" className="pcad-button" onClick={() => { void closeDrawingWithConfirmation(); }}>{t('drawing.file.returnToPart')}</button>
         <button type="button" className="pcad-button" disabled={!canUndo} onClick={() => useAppStore.getState().undo()}>{t('toolbar.history.undo')}</button>
         <button type="button" className="pcad-button" disabled={!canRedo} onClick={() => useAppStore.getState().redo()}>{t('toolbar.history.redo')}</button>
         {DRAWING_TOOL_GROUPS.map((group) => (
@@ -70,6 +77,7 @@ export function DrawingToolbar(): React.JSX.Element {
                 <button key={key} type="button" className="pcad-button pcad-button--action" title={t(key)}
                   disabled={busy} onClick={(event) => { if (key === 'drawing.tool.dimension') startDrawingDimension();
                     else if (key === 'drawing.tool.annotation') startDrawingAnnotation();
+                    else if (key === 'drawing.tool.note') { const state = useAppStore.getState(); state.setDrawingTool('note'); state.selectDrawingIds([]); state.setDrawingMessage(t('drawing.note.pickPosition')); }
                     event.currentTarget.closest('details')?.removeAttribute('open'); }}>
                   {t(key)}
                 </button>
@@ -87,6 +95,11 @@ export function DrawingToolbar(): React.JSX.Element {
         </select>
         <button type="button" className="pcad-button" disabled={busy} onClick={() => { void runDrawingAutoDimensions(); }}>{t('drawing.dimension.auto')}</button>
         <button type="button" className="pcad-button" disabled={busy} onClick={() => { void exportDrawingSvg(); }}>{t('drawing.action.exportSvg')}</button>
+        <button type="button" className="pcad-button" disabled={busy} onClick={() => setExportOpen(true)}>{t('drawing.export.title')}</button>
+        {desktopPrint ? <label>{t('drawing.print.copies')}<input aria-label={t('drawing.print.copies')} value={copies} inputMode="numeric"
+          style={{ width: 42 }} onChange={(event) => setCopies(event.target.value)} /></label> : null}
+        <button type="button" className="pcad-button" disabled={busy} onClick={() => { void printDrawing(desktopPrint ? Number(copies) : 1); }}>{t('drawing.print.title')}</button>
+        {exportOpen ? <DrawingExportPopover onClose={() => setExportOpen(false)} /> : null}
       </div>
     </header>
   );

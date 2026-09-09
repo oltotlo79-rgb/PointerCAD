@@ -190,6 +190,7 @@ function cleanAnnotation(annotation: Annotation): Annotation {
     ...(annotation.leader === undefined
       ? {}
       : { leader: annotation.leader.map((point) => [...point]) }),
+    ...(annotation.leaderEnd === undefined ? {} : { leaderEnd: annotation.leaderEnd }),
     ...(annotation.target === undefined ? {} : { target: cleanSubShapeRef(annotation.target) }),
     ...(annotation.sourceTarget === undefined ? {} : { sourceTarget: cleanDimensionTarget(annotation.sourceTarget) }),
     ...(annotation.surfaceFinish === undefined ? {} : { surfaceFinish: { process: annotation.surfaceFinish.process,
@@ -481,6 +482,7 @@ function isAnnotation(value: unknown): value is Annotation {
       || (isUnknownArray(value['leader']) && value['leader'].every(isPoint2)))
     && (value['target'] === undefined || isSubShapeRef(value['target']))
     && (value['sourceTarget'] === undefined || isDimensionTarget(value['sourceTarget']))
+    && (value['leaderEnd'] === undefined || (value['kind'] === 'leaderNote' && isLiteral(value['leaderEnd'], ['arrow', 'dot'])))
     && (value['machiningFeatureId'] === undefined || (typeof value['machiningFeatureId'] === 'string' && value['kind'] === 'leaderNote'))
     && (value['surfaceFinish'] === undefined || (value['kind'] === 'surfaceFinish' && isRecord(value['surfaceFinish'])
       && isLiteral(value['surfaceFinish']['process'], ['basic', 'removal', 'noRemoval'])

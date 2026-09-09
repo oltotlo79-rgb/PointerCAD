@@ -1,6 +1,11 @@
 /** P8-44: 固定字体の輪郭が実OCCTでも穴を保つことを確認する。 */
 import { existsSync, readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { expressionValueFromNumber as num } from '@pointercad/expression';
+import { createEmptySketchDocument } from './sketch/createSketchDocument.js';
+import { resolveSketch } from './sketch/resolveSketch.js';
+import { textFeature } from './sketch/textFeature.js';
+import { WORK_PLANES } from './sketch/planeMath.js';
 import { createFontStore, outlineCurves } from '@pointercad/drawing';
 import { createAllocations, bsplineDataForSpline, measureArea, measureVolume } from '@pointercad/kernel';
 import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
@@ -16,9 +21,11 @@ describe.skipIf(!available)('固定字体の3次B-spline・穴あき面・押し
   let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
   const font = createFontStore({ read: () => Promise.resolve(Uint8Array.from(readFileSync(fontPath)).buffer) });
   beforeAll(async () => {
+    const started = performance.now();
     expect(await font.load()).toBe('ready');
     oc = await loadOcctForNode();
-  });
+    console.log(`字体検査の字体・OCCT初期化: ${(performance.now() - started).toFixed(1)}ms`);
+  }, 180_000); // kernelと同じ初期化上限。文字の面積・体積検査の上限は変えない。
 
   // 固定したSans2.004の各Mの対応。外周/穴の向きはoutlineCurvesが保ったまま渡す。
   // 「板」は右の囲み(輪0+穴1)と左の木へん(輪2)の2面。
@@ -27,11 +34,20 @@ describe.skipIf(!available)('固定字体の3次B-spline・穴あき面・押し
     { character: 'φ', regions: [[1, 0, 2]] },
     { character: '日', regions: [[2, 0, 1]] },
     { character: '板', regions: [[0, 1], [2]] },
-  ])('$characterは穴を保ったまま面積と体積が一致する', ({ character, regions }) => {
+  ].flatMap((sample) => [false, true].map((viaFeatures) => ({ ...sample, viaFeatures }))))('$character（スケッチ経由=$viaFeatures）は穴を保ったまま面積と体積が一致する', ({ character, regions, viaFeatures }) => {
     const outlined = font.outline(character, 3.5);
     expect(outlined.status).toBe('ready');
-    const contours = outlineCurves(outlined.subpaths);
-    if (contours === null) throw new Error('閉じた文字輪郭を作れません。');
+    const sourceContours = outlineCurves(outlined.subpaths);
+    if (sourceContours === null) throw new Error('閉じた文字輪郭を作れません。');
+    const generated = textFeature({ idPrefix: 'text', name: '文字', text: character, height: num(3.5), angleDegrees: 0,
+      align: 'start', origin: [num(0), num(0), num(0)], plane: WORK_PLANES.xy, outlineText: font.outline });
+    if (!generated.ok) throw new Error(generated.reason);
+    const resolved = resolveSketch({ ...createEmptySketchDocument(), features: generated.features });
+    expect(resolved.errors).toEqual([]);
+    const curves = new Map([...resolved.segments, ...resolved.splines].map((curve) => [curve.featureId, curve] as const));
+    const contours = viaFeatures ? generated.contours.map((contour) => ({ signedArea: contour.signedArea,
+      curves: contour.featureIds.map((id) => { const curve = curves.get(id); if (curve === undefined) throw new Error('文字の辺が解決されない'); return curve; }),
+    })) : sourceContours;
     expect(contours).toHaveLength(3);
     const { keep, release } = createAllocations();
     try {
@@ -73,7 +89,7 @@ describe.skipIf(!available)('固定字体の3次B-spline・穴あき面・押し
         expect(oc.BRepAlgo.IsValid_1(solid)).toBe(true);
         volume += measureVolume(oc, solid);
       }
-      const exactArea = contours.reduce((sum, contour) => sum + contour.signedArea, 0);
+      const exactArea = sourceContours.reduce((sum, contour) => sum + contour.signedArea, 0);
       expect(exactArea).toBeGreaterThan(0);
       expect(Math.abs(area - exactArea)).toBeLessThan(1e-6);
       expect(Math.abs(volume - exactArea * thickness)).toBeLessThan(2e-6);

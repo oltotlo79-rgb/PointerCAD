@@ -17,7 +17,7 @@ export interface DrawingSnapshot {
   readonly document: DrawingDocument;
   readonly sources: DrawingSourceLibrary;
 }
-export type DrawingTool = 'select' | 'dimension' | 'annotation';
+export type DrawingTool = 'select' | 'dimension' | 'annotation' | 'note';
 
 /** 図面文書の寿命。履歴と保存処理はP8後段が同じ欄へ接続する。 */
 export interface DrawingSlice {

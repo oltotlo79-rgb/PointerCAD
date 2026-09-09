@@ -1714,3 +1714,7 @@ export function RecentFileIcon(props: IconProps): React.JSX.Element {
     </SvgIcon>
   );
 }
+
+export function TextToolIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}><path d="M3 13 8 3l5 10M5 9h6" /></SvgIcon>;
+}

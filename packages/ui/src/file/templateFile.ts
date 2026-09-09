@@ -45,6 +45,7 @@ import {
   type FileGateway,
 } from './fileGateway.js';
 import { openErrorMessageKey } from './partFile.js';
+import { saveFailureMessageKey } from './saveFailure.js';
 
 // ---------------------------------------------------------------------------
 // 置き場(list / get / put / remove の 4 つだけ)
@@ -477,9 +478,9 @@ export async function saveTemplate(
       'pcadt',
       bytes,
     );
-  } catch {
+  } catch (error) {
     // ファイルへは書けなかったが、置き場には残っている。理由だけを伝える(NFR-UX-5)。
-    return { ok: false, messageKey: 'file.saveFailed' };
+    return { ok: false, messageKey: saveFailureMessageKey(error) };
   }
   return { ok: true, saved: summaryOf(record), wroteFile };
 }

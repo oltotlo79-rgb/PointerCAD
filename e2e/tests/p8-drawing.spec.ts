@@ -134,3 +134,187 @@ test.describe('P8 図面の実操作', () => {
     await page.screenshot({ path: testInfo.outputPath('drawing-surface-finish.png'), fullPage: true });
   });
 });
+
+test.describe('P8 図面の出力と文字注記', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  async function addNote(page: Page): Promise<void> {
+    await page.locator('summary').filter({ hasText: /^寸法・注記$/ }).click();
+    await page.getByRole('group', { name: '寸法・注記', exact: true }).getByRole('button', { name: '文字注記', exact: true }).click();
+    const point = await page.locator('.pcad-drawing-svg svg').evaluate((element) => {
+      if (!(element instanceof SVGSVGElement)) throw new Error('図面のSVGが無い');
+      const matrix = element.getScreenCTM();
+      if (matrix === null) throw new Error('用紙の位置が無い');
+      const client = new DOMPoint(80, 77).matrixTransform(matrix);
+      return { x: client.x, y: client.y };
+    });
+    await page.mouse.click(point.x, point.y);
+    const form = page.getByRole('form', { name: '文字注記', exact: true });
+    await expect(form).toBeVisible();
+    await form.getByLabel('注記の文章', { exact: true }).fill('8 日 φ\n加工面は清掃する');
+    await form.getByRole('button', { name: '決定', exact: true }).click();
+    await expect(page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]')).toHaveCount(1);
+    await expect(page.locator('.pcad-drawing-svg [aria-label="加工面は清掃する"]')).toHaveCount(1);
+    await form.getByRole('button', { name: '閉じる', exact: true }).click();
+  }
+
+  async function downloadFormat(page: Page, format: 'pdf' | 'svg' | 'dxf' | 'png' | 'jpg', dpi?: number) {
+    await page.getByRole('button', { name: '図面を書き出す', exact: true }).click();
+    const form = page.getByRole('form', { name: '図面を書き出す', exact: true });
+    await form.getByLabel('ファイルの種類', { exact: true }).selectOption(format);
+    if (dpi !== undefined) await form.getByLabel('画像の解像度', { exact: true }).selectOption(String(dpi));
+    const pending = page.waitForEvent('download');
+    await form.getByRole('button', { name: '書き出す', exact: true }).click();
+    const download = await pending;
+    expect(download.suggestedFilename()).toMatch(new RegExp(`\\.${format}$`));
+    const path = await download.path();
+    if (path === null) throw new Error('書き出したファイルが無い');
+    return { download, bytes: await readFile(path) };
+  }
+
+  test('複数行の文字注記を編集・移動してもUndo一回ずつで戻る', async ({ page }, testInfo) => {
+    await drawingFromBox(page); await addNote(page);
+    const text = page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]');
+    const before = await waitForTextBounds(text);
+    await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(before.x + before.width / 2 + 20, before.y + before.height / 2 - 10, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(async () => (await readTextBounds(text))?.x).toBeCloseTo(before.x + 20, 0);
+    await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect.poll(async () => (await readTextBounds(text))?.x).toBeCloseTo(before.x, 0);
+    // Undoは選択を解除するので、画面上の注記を選び直して編集する。
+    const restored = await waitForTextBounds(text);
+    await page.mouse.click(restored.x + restored.width / 2, restored.y + restored.height / 2);
+    const form = page.getByRole('form', { name: '文字注記', exact: true });
+    await form.getByLabel('注記の文章', { exact: true }).fill('検査済み');
+    await form.getByRole('button', { name: '決定', exact: true }).click();
+    await expect(page.locator('.pcad-drawing-svg [aria-label="検査済み"]')).toHaveCount(1);
+    await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(text).toHaveCount(1);
+    await page.screenshot({ path: testInfo.outputPath('drawing-note.png'), fullPage: true });
+  });
+
+  test('部品へ戻る際の破棄を断ると図面とUndoが残り、同意した時だけ閉じる（R03）', async ({ page }) => {
+    await drawingFromBox(page); await addNote(page);
+    const text = page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]');
+    const dialogOpened = page.waitForEvent('dialog');
+    const clicked = page.getByRole('button', { name: '部品へ戻る', exact: true }).click();
+    const dialog = await dialogOpened;
+    expect(dialog.type()).toBe('confirm'); expect(dialog.message()).toContain('保存していない変更');
+    await dialog.dismiss(); await clicked;
+    await expect(text).toHaveCount(1);
+    await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(text).toHaveCount(0);
+    const confirmed = page.waitForEvent('dialog');
+    const returnClick = page.getByRole('button', { name: '部品へ戻る', exact: true }).click();
+    await (await confirmed).accept(); await returnClick;
+    await expect(page.locator('.pcad-drawing-svg')).toHaveCount(0);
+    await expect(page.locator('canvas.pcad-viewport__canvas')).toBeVisible();
+  });
+
+  test('注記を含む同じ図面をPDF・SVG・R12 DXFへ書き出す', async ({ page }, testInfo) => {
+    const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
+    await drawingFromBox(page); await addNote(page);
+    for (const format of ['pdf', 'svg', 'dxf'] as const) {
+      const { bytes, download } = await downloadFormat(page, format);
+      await download.saveAs(testInfo.outputPath(`drawing-output.${format}`));
+      const content = bytes.toString('utf8');
+      if (format === 'pdf') {
+        expect(content.startsWith('%PDF-1.4')).toBe(true);
+        expect(content).toMatch(/\/MediaBox\s*\[0 0 1190\.5512 841\.8898\]/u);
+        expect(content).not.toContain('/Subtype /Image');
+      } else if (format === 'svg') {
+        expect(content).toContain('width="420mm"'); expect(content).toContain('8 日 φ'); expect(content).not.toContain('<text');
+      } else {
+        expect(content).toContain('AC1009'); expect(content).toContain('TEXT'); expect(content).toContain('\\U+65E5');
+        await expect(page.locator('.pcad-statusbar')).toContainText('線の太さは保存されません');
+      }
+      console.log(`[実測] 図面${format}: ${bytes.length}バイト`);
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test('図面の印刷ボタンが実寸の紙面を渡し、印刷後も図面とUndoを保つ', async ({ page, context }, testInfo) => {
+    await drawingFromBox(page); await addNote(page);
+    // window.printは置き換えず、ブラウザーの実際のbeforeprintで紙面を採取する。
+    await page.evaluate(() => {
+      window.addEventListener('beforeprint', () => {
+        const image = document.querySelector('.pcad-drawing-print-sheet img');
+        if (!(image instanceof HTMLImageElement)) return;
+        const style = Array.from(document.querySelectorAll('style')).find((item) => item.textContent.includes('.pcad-drawing-print-sheet'));
+        document.documentElement.dataset.printCss = style?.textContent ?? '';
+        // Blob URLの読取は印刷中に開始する。アプリによる後始末を遅らせない。
+        void fetch(image.src).then((response) => response.text()).then((svg) => {
+          document.documentElement.dataset.printSvg = svg;
+        });
+      }, { once: true });
+    });
+    await page.getByRole('button', { name: '図面を印刷', exact: true }).click();
+    await expect.poll(() => page.locator('html').getAttribute('data-print-svg')).toContain('8 日 φ');
+    await expect(page.locator('.pcad-drawing-print-sheet')).toHaveCount(0);
+    const output = await page.locator('html').evaluate((element) => ({ svg: element.dataset.printSvg ?? '', css: element.dataset.printCss ?? '' }));
+    expect(output.css).toContain('@page { size: A3 landscape; margin: 0; }');
+    expect(output.svg).toContain('width="420mm"'); expect(output.svg).not.toContain('<text');
+    const printed = await context.newPage();
+    try {
+      await printed.evaluate(async ({ svg, css }) => {
+        const style = document.createElement('style'); style.textContent = css; document.head.append(style);
+        const sheet = document.createElement('section'); sheet.className = 'pcad-drawing-print-sheet';
+        const image = document.createElement('img');
+        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        sheet.append(image); document.body.append(sheet); await image.decode();
+      }, output);
+      const bytes = await printed.pdf({ preferCSSPageSize: true, printBackground: true, path: testInfo.outputPath('drawing-browser-print.pdf') });
+      expect(bytes.length).toBeGreaterThan(1000);
+    } finally { await printed.close(); }
+    await expect(page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]')).toHaveCount(1);
+    await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]')).toHaveCount(0);
+  });
+
+  test('A3の実画像を600dpi PNGと150dpi JPEGで保存し、白い背景で開ける', async ({ page }, testInfo) => {
+    await drawingFromBox(page); await addNote(page);
+    for (const [format, dpi, width, height] of [['png', 600, 9921, 7016], ['jpg', 150, 2480, 1754]] as const) {
+      const started = Date.now();
+      const { bytes, download } = await downloadFormat(page, format, dpi);
+      await download.saveAs(testInfo.outputPath(`drawing-${dpi}.${format}`));
+      const decoded = await page.evaluate(async ({ base64, mime }) => {
+        const data = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([data], { type: mime }));
+        const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;
+        const context = canvas.getContext('2d'); if (context === null) throw new Error('画像の読取に失敗');
+        try {
+          context.drawImage(bitmap, 0, 0, 1, 1, 0, 0, 1, 1);
+          return { width: bitmap.width, height: bitmap.height, corner: Array.from(context.getImageData(0, 0, 1, 1).data) };
+        } finally { bitmap.close(); canvas.width = 0; canvas.height = 0; }
+      }, { base64: bytes.toString('base64'), mime: format === 'png' ? 'image/png' : 'image/jpeg' });
+      expect(decoded).toEqual({ width, height, corner: [255, 255, 255, 255] });
+      expect(bytes.length).toBeGreaterThan(1000);
+      console.log(`[実測] A3 ${dpi}dpi ${format}: ${decoded.width}×${decoded.height}, ${bytes.length}バイト, ${Date.now() - started}ms`);
+    }
+  });
+});
+
+test('P8 文字の輪郭を作図面へ置き、全ての辺をUndo一回で戻せる', async ({ page }, testInfo) => {
+  await page.goto('/');
+  await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+  const sketch = page.locator('.pcad-panel--left .pcad-tree__sections > li').filter({ hasText: 'スケッチ' });
+  const rows = sketch.locator('.pcad-tree__children > li');
+  await expect(rows).toHaveCount(0);
+  await page.getByRole('group', { name: 'スケッチ' }).locator('.pcad-menu__trigger').first().click();
+  await page.locator('.pcad-menu__panel[aria-label="作図"]').getByRole('button', { name: '文字をかく', exact: true }).click();
+  await page.locator('canvas.pcad-viewport__canvas').click();
+  const form = page.getByRole('form', { name: '文字をかく', exact: true });
+  await expect(form).toBeVisible();
+  await form.getByLabel('文字列', { exact: true }).fill('8日φ');
+  await form.getByLabel('文字の高さ (mm)', { exact: true }).fill('12');
+  await form.getByLabel('文字の角度 (°)', { exact: true }).fill('30');
+  await form.getByRole('button', { name: '決定', exact: true }).click();
+  await expect(form).toBeHidden();
+  await expect.poll(() => rows.count()).toBeGreaterThan(10);
+  const featureCount = await rows.count();
+  await page.keyboard.press('Control+z'); await expect(rows).toHaveCount(0);
+  await page.keyboard.press('Control+y'); await expect(rows).toHaveCount(featureCount);
+  await page.screenshot({ path: testInfo.outputPath('sketch-text-outlines.png'), fullPage: true });
+});

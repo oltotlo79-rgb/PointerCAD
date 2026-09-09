@@ -36,7 +36,7 @@ param(
     # -E2EOnly のときだけPlaywrightの--grepへ渡す。空なら全E2Eを実行する。
     [string]$E2EGrep = "",
     # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
-    [ValidateSet("", "drawing", "kernel", "model", "io", "ui", "test-utils")]
+    [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils")]
     [string]$UnitPackage = "",
     [string[]]$UnitTests = @(),
     # 診断用: 性能検査の判定モード(厳密/参考)の表示だけを行って終了する(pnpmは一切実行しない)。
@@ -82,6 +82,7 @@ function Invoke-Check {
     }
 }
 
+$validationQos = $null
 Push-Location $root
 try {
     # 性能検査(NFR-PF-2/PF-3、packages/kernel/src/worker/solidPerformance.test.ts、および
@@ -151,6 +152,16 @@ try {
         exit 1
     }
     $hasE2E = $definedScripts -contains "test:e2e"
+
+    # Windowsの自動バックグラウンド省電力で基準機の実測が約1.7倍になった(06 §10.54)。
+    # 厳密検査の新しい子プロセスだけHighQoSにし、最後に元へ戻す。PC全体は変更しない。
+    if ($env:POINTERCAD_PERF_STRICT -eq '1' -and [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        if (-not ('PointerCad.WindowsValidationQos' -as [type])) {
+            Add-Type -Path (Join-Path $scriptDirectory 'lib\WindowsValidationQos.cs')
+        }
+        $validationQos = New-Object PointerCad.WindowsValidationQos
+        Write-Host "性能検査: この検査と新しい子プロセスをHighQoSで実行します" -ForegroundColor Cyan
+    }
 
     if ($Install) {
         Invoke-Check "(0) pnpm install --frozen-lockfile" pnpm @("install", "--frozen-lockfile")
@@ -287,6 +298,12 @@ try {
     }
 }
 finally {
-    Pop-Location
+    try {
+        if ($null -ne $validationQos) {
+            $validationQos.Dispose()
+            Write-Host "性能検査: HighQoS対象 $($validationQos.ObservedCount) プロセスの後片付けを完了しました" -ForegroundColor Cyan
+        }
+    }
+    finally { Pop-Location }
 }
 exit 0

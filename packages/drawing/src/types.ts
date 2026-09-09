@@ -139,6 +139,7 @@ export interface Annotation {
   readonly text: string;
   readonly position: Point2;
   readonly leader?: readonly Point2[];
+  readonly leaderEnd?: 'arrow' | 'dot';
   readonly target?: DrawingSubShapeRef;
   /** 新しい注記は図・元文書・部品まで含む参照を保持する。targetは旧保存形との互換用。 */
   readonly sourceTarget?: DimensionTarget;

@@ -4,6 +4,7 @@
  * 一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
  */
 
+import { t } from '../../i18n/t.js';
 import { isFreeWorkPlaneId } from '@pointercad/model';
 import { applyProjectionCommit } from '../../sketch/commitToStore.js';
 import { mirrorAxisAvailability } from '../../sketch/copyCommands.js';
@@ -55,7 +56,7 @@ export function activateTool(id: SketchToolId, pressed: boolean): void {
  * 最初に開く段は `SHAPE_TOOL_STEPS`(numericInput.ts)が正本で、ここへ表を作り直さない。
  * 同じ道具をもう一度押したら選択へ戻すのは `activateTool` と同じ約束にする。
  */
-export function activateShapeTool(id: ShapeToolId, pressed: boolean): void {
+export function activateShapeTool(id: ShapeToolId | 'text', pressed: boolean): void {
   if (blockedInFreeSketch(id)) {
     return;
   }
@@ -66,6 +67,7 @@ export function activateShapeTool(id: ShapeToolId, pressed: boolean): void {
     return;
   }
   store.setActiveTool(id);
+  if (id === 'text') { store.setShapeError(t('text.status.pickOrigin')); store.requestViewportFocus(); return; }
   store.openNumericInput(createNumericInput(id, SHAPE_TOOL_STEPS[id]), viewportCenterAnchor());
 }
 

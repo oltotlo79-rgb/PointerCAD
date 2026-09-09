@@ -7,6 +7,7 @@
 import type { SketchConstraintKind } from '@pointercad/model';
 import type { EditMenuToolId, ShapeToolId } from '../../sketch/numericInput.js';
 import {
+  TextToolIcon,
   AngleConstraintIcon,
   CircleToolIcon,
   CircularArrayToolIcon,
@@ -49,7 +50,8 @@ import type { ToolMenuItem } from './menuItem.js';
  * (利用者の決定 2026-09-04「図柄付きの畳んだボタンで 1 段に戻す」)。
  * 並びがそのまま一覧の上からの順になる。
  */
-export const SHAPE_MENU_ITEMS: readonly ToolMenuItem<ShapeToolId>[] = [
+export const SHAPE_MENU_ITEMS: readonly ToolMenuItem<ShapeToolId | 'text'>[] = [
+  { id: 'text', labelKey: 'text.tool', tooltipKey: 'text.tooltip', Icon: TextToolIcon },
   {
     id: 'circle',
     labelKey: 'toolbar.tool.circle',

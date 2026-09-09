@@ -32,6 +32,7 @@ import { AssemblyPropertyPanel } from '../assembly/AssemblyPropertyPanel.js';
 import { ExplodePopover } from '../assembly/ExplodePopover.js';
 import { ReplacementPopover } from '../assembly/ReplacementPopover.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
+import { SketchTextInputHost } from '../sketch/SketchTextInputHost.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
@@ -484,10 +485,10 @@ export function AppShell(): React.JSX.Element {
               <AssemblyInterferencePanel />
             </>
           ) : documentKind === 'part' ? (
-            <NumericInputPopover
+            <><SketchTextInputHost /><NumericInputPopover
               viewportWidth={viewportSize[0]}
               viewportHeight={viewportSize[1]}
-            />
+            /></>
           ) : null}
           {/*
             寸法拘束(距離・角度・半径・直径)の値をその場で聞く小さな入力

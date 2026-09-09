@@ -4,6 +4,8 @@ import { evaluateExpression } from '@pointercad/expression';
 import { analyzeParameters, machiningSymbols, reevaluatePartDocument, resolveDrawingAnnotationTarget,
   type DrawingSourceLibrary, type DrawingSourceResolution, type MachiningNote } from '@pointercad/model';
 
+import { displayDrawingNote } from './noteDisplay.js';
+
 export function resolveMachiningAnnotation(document: DrawingDocument, library: DrawingSourceLibrary,
   target: DimensionTarget, featureId?: string): MachiningNote | null {
   if (target.kind !== 'subShape' || target.sourceRef !== document.source.sourceRef || target.componentId !== undefined) return null;
@@ -29,7 +31,10 @@ export function displayDrawingAnnotations(document: DrawingDocument, source: Dra
   const context = { instances: source.dimensionInstances ?? [], modelCenter: source.center };
   const variables = analyzeParameters(document.parameters, []).variables;
   return document.annotations.flatMap((annotation): DrawingRenderElement[] => {
-    if (annotation.sourceTarget === undefined) return [];
+    if (annotation.sourceTarget === undefined) {
+      const display = displayDrawingNote(annotation, outline);
+      return display === null ? [] : [display];
+    }
     const target = resolveDrawingAnnotationTarget(annotation.sourceTarget, document, context);
     const common = { ownerId: annotation.id, layerId: annotation.layerId, style: annotation.style };
     const unresolved = (): DrawingRenderElement[] => [{ ...common, style: { ...annotation.style, color: '#c2410c' },

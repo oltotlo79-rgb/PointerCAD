@@ -10,6 +10,8 @@ import { t } from '../i18n/t.js';
 import { withPcadaExtension, type PickedFile } from './fileGateway.js';
 import { hasUnsavedChanges, openErrorMessageKey, type PartFileDeps } from './partFile.js';
 import { recordRecentFile } from './recentFiles.js';
+import { saveFailureMessageKey } from './saveFailure.js';
+import { queueDocumentSave } from './documentSaveQueue.js';
 
 const contentCache = new WeakMap<AssemblyDocument, WeakMap<PartLibrary, string>>();
 
@@ -33,7 +35,9 @@ export function activeHasUnsavedChanges(state: AppState): boolean {
   const active = activeDocument(state);
   if (active.kind === 'part') return hasUnsavedChanges(active.document, active.saved);
   if (active.kind === 'drawing') return active.saved === null
-    ? active.document.views.length > 0 || active.document.name !== active.initialName
+    ? active.document.views.length > 0 || active.document.dimensions.length > 0 || active.document.annotations.length > 0
+      || active.document.tables.length > 0 || active.document.balloons.length > 0 || active.document.parameters.length > 0
+      || (state.drawingUndoStack?.past.length ?? 0) > 0 || active.document.name !== active.initialName
     : active.document !== active.saved;
   if (active.saved === null) return active.document.components.length > 0 ||
     active.library.partFiles.length > 0 ||
@@ -90,29 +94,27 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
   const active = activeDocument(before);
   if (active.kind !== 'assembly') return;
   const snapshot = { document: active.document, library: active.library };
+  return queueDocumentSave(before, async (isCurrent) => {
   try {
     const thumbnailPng = deps.captureThumbnail();
     const bytes = await writeDocumentBundle(createAssemblyDocumentBundle(active.document, active.library),
       thumbnailPng === null ? {} : { thumbnailPng });
-    if (useAppStore.getState().activeDocumentId !== active.documentId) return;
+    if (!isCurrent()) return;
     const saved = await before.fileGateway.savePcad(
       withPcadaExtension(active.fileName ?? active.document.name ?? t('assembly.untitled')),
       bytes, saveAs || !before.fileGateway.hasSaveTarget(), 'assembly');
-    if (saved === null) return;
-    if (useAppStore.getState().activeDocumentId !== active.documentId) {
-      before.fileGateway.clearSaveTarget?.();
-      return;
-    }
+    if (saved === null || !isCurrent()) return;
     const name = withPcadaExtension(saved);
     before.setAssemblyFileState(name, snapshot);
     before.setFileMessage({ key: 'file.saved', failed: false });
     recordRecentFile(name, { storage: deps.recentFilesStorage });
-    if (!activeHasUnsavedChanges(useAppStore.getState())) {
+    if (useAppStore.getState().autoSaver === before.autoSaver && !activeHasUnsavedChanges(useAppStore.getState())) {
       try { await before.autoSaver?.discard(); } catch { /* ファイル自体の保存は成功済み。 */ }
     }
-  } catch {
-    if (useAppStore.getState().activeDocumentId === active.documentId) {
-      before.setFileMessage({ key: 'file.saveFailed', failed: true });
+  } catch (error) {
+    if (isCurrent()) {
+      before.setFileMessage({ key: saveFailureMessageKey(error), failed: true });
     }
   }
+  });
 }

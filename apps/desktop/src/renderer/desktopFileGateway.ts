@@ -1,4 +1,5 @@
 import { t, type FileGateway, type PickedFile } from '@pointercad/ui';
+import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
 
 /**
  * `window.pointercadDesktop`(preload が出す口)を、画面が使う `FileGateway` の形へ直す
@@ -40,7 +41,7 @@ interface DesktopExchangeApi {
  * この口を出さない古い preload でも他の口は動かすため(§1.5 の保険)。
  */
 interface DesktopPrintApi {
-  print(png: Uint8Array): Promise<unknown>;
+  print(bytes: Uint8Array, options?: DrawingPrintOptions): Promise<unknown>;
 }
 
 function isObject(value: unknown): value is object {
@@ -71,8 +72,8 @@ function isDesktopPrintApi(value: object): value is DesktopPrintApi {
  * 印刷の口を包む。**答えが true のときだけ「印刷した」**とみなし、
  * 取り消し(false)も答えの形が違うときも false にする(取り消しを例外にしない。NFR-RE-1)。
  */
-function wrapPrint(api: DesktopPrintApi): (png: Uint8Array) => Promise<boolean> {
-  return async (png: Uint8Array): Promise<boolean> => (await api.print(png)) === true;
+function wrapPrint(api: DesktopPrintApi): NonNullable<FileGateway['print']> {
+  return async (bytes, options): Promise<boolean> => (await (options === undefined ? api.print(bytes) : api.print(bytes, options))) === true;
 }
 
 function isDesktopExchangeApi(value: object): value is DesktopExchangeApi {
@@ -209,8 +210,9 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
     },
 
     async confirmSaveTarget(token): Promise<void> {
+      const revision = ++targetStateVersion;
       const result: unknown = await api.confirmSaveTarget(token);
-      targetStateVersion += 1;
+      if (revision !== targetStateVersion) return;
       hasTarget = result === true;
       // false なら本体側も古い保存先へ戻らないよう解除済みなので、画面側も false にする。
     },
@@ -223,7 +225,9 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
     },
 
     async savePcad(suggestedName, bytes, saveAs, kind): Promise<string | null> {
+      const revision = ++targetStateVersion;
       const result: unknown = await api.savePcad(suggestedName, bytes, saveAs, kind);
+      if (revision !== targetStateVersion) return null;
       if (result === null || result === undefined) {
         // 取り消された。
         return null;
@@ -231,7 +235,6 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
       if (typeof result !== 'string') {
         throw new Error(t('file.saveFailed'));
       }
-      targetStateVersion += 1;
       hasTarget = true;
       return result;
     },

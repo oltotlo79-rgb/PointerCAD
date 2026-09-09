@@ -63,6 +63,7 @@ import {
   type DxfSplineGeometry,
 } from './dxfCurves.js';
 import { DXF_UNSUPPORTED_FORMAT_MESSAGE, type DxfTag } from './dxfTags.js';
+import { decodeDxfString } from './dxfDrawingTypes.js';
 
 /** すべての実体が持つ欄。 */
 export interface DxfEntityBase {
@@ -290,7 +291,7 @@ function readEntityBase(tags: readonly DxfTag[]): DxfEntityBase {
   const layer = firstTagValue(tags, 8);
   const color = firstTagValue(tags, 62);
   return {
-    layer: layer ?? '0',
+    layer: layer === undefined ? '0' : decodeDxfString(layer),
     color: color === undefined ? null : parseDxfInteger(color),
   };
 }

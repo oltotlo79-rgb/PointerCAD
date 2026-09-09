@@ -166,11 +166,12 @@ const SECTION_HANDLE_PICK_RADIUS_PIXELS = 18;
  * ここへ入った。いずれも「押した場所が座標そのもの」になる道具なので、既存のかき込む
  * 4 道具とまったく同じ扱いにする(立体も部分形状も拾わない)。
  */
-type DrawingToolId = Exclude<SketchToolId, 'select' | 'face'> | ShapeToolId;
+type DrawingToolId = Exclude<SketchToolId, 'select' | 'face'> | ShapeToolId | 'text';
 
 /** 道具ごとの、最初に開く段階。新しい図形の最初の段は `SHAPE_TOOL_STEPS` が正本。 */
 const FIRST_STEP: Readonly<Record<DrawingToolId, NumericInputStep>> = {
   point: 'point',
+  text: 'point',
   line: 'lineStart',
   arc: 'arcCenter',
   pointArray: 'pointArrayBase',
@@ -1657,7 +1658,8 @@ export function attachSketchInteraction(
     // 円弧の半径や点列の個数は座標ではないので、位置だけを動かす。
     const world = isCoordinateStep(current.step) ? pickedPointAt(pointer) : null;
     const filled = world === null ? current : fillClickedPoint(current, world);
-    state.openNumericInput(filled, pointer);
+    if (tool === 'text' && world === null) return;
+    state.openNumericInput(tool === 'text' && world !== null ? { ...filled, textOrigin: world } : filled, pointer);
   }
 
   /**

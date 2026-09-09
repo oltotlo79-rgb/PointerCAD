@@ -224,3 +224,6 @@ export {
   type ThreeMfReadResult,
   type ReadThreeMfOptions,
 } from './threemf/readThreeMf.js';
+
+export { writeDrawingDxf, type DrawingDxfResult } from './dxf/writeDrawingDxf.js';
+export { type DxfWriteEntity, type DxfWriteOptions } from './dxf/dxfDrawingTypes.js';

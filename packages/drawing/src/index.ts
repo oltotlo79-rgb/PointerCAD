@@ -210,3 +210,11 @@ export {
 export { autoDimension, type AutoDimensionInput, type AutoDimensionPoint, type AutoDimensionCircle, type AutoDimensionResult } from './dimension/autoDimension.js';
 export { renderDrawing, type DrawingRenderCurve, type DrawingRenderElement, type DrawingRenderView, type RenderDrawingOptions,
   type DrawingRenderIssue, type DrawingRenderResult } from './render/renderDrawing.js';
+
+export { createPdf, PDF_POINTS_PER_MM, type PdfOptions, type PdfResult } from './render/pdfWriter.js';
+export { toPdf } from './render/toPdf.js';
+export { flattenRenderPath, type FlattenedRenderPath } from './render/flattenRenderPath.js';
+export { note, type NoteInput, type NoteGeometry } from './annotation/note.js';
+export { tableLayout, type TableColumn, type TableLayoutInput, type TableGeometry } from './table/tableLayout.js';
+export { bomTable, type DrawingBomRow, type BomColumnId, type BomTableInput, type BomTableGeometry } from './table/bomTable.js';
+export { drawingPrintOptions, readDrawingPrintOptions, type DrawingPrintOptions } from './paper/printSettings.js';

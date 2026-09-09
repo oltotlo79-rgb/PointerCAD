@@ -36,6 +36,7 @@ import { saveFileAsThrough, withPcadExtension, withPcadaExtension } from './file
 import { openErrorMessageKey, readPartDocument } from './partFile.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { activeDocument } from '../store/documentKind.js';
+import { hasSaveRecoveryCopy } from './saveFailure.js';
 
 // ---------------------------------------------------------------------------
 // 保管庫を選ぶ
@@ -372,8 +373,8 @@ export async function exportAutoSave(saver: AutoSaver): Promise<void> {
     if (saved) {
       useAppStore.getState().setFileMessage({ key: 'restore.exported', failed: false });
     }
-  } catch {
-    useAppStore.getState().setFileMessage({ key: 'restore.exportFailed', failed: true });
+  } catch (error) {
+    useAppStore.getState().setFileMessage({ key: hasSaveRecoveryCopy(error) ? 'file.saveRecoveryCopyRetained' : 'restore.exportFailed', failed: true });
   }
 }
 

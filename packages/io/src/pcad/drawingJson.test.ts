@@ -238,3 +238,24 @@ describe('図面 document.json', () => {
     expect(text).not.toContain('"value": 20');
   });
 });
+
+
+describe('文字注記の引出線を保存する(P8-52)', () => {
+  it.each(['arrow', 'dot'] as const)('複数行・紙上の先端・%sをそのまま往復する', (leaderEnd) => {
+    const base = populatedDrawing();
+    const document: DrawingDocument = { ...base, annotations: [{ ...base.annotations[0], kind: 'leaderNote',
+      text: '加工面を清掃\n8 日 φ', leader: [[60, 70]], leaderEnd }] };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT }))).toMatchObject({ ok: true, document });
+  });
+  it('未知の先端形状を通常の矢印として読まない', () => {
+    const base = populatedDrawing();
+    const document: DrawingDocument = { ...base, annotations: [{ ...base.annotations[0], kind: 'leaderNote', leader: [[60, 70]], leaderEnd: 'dot' }] };
+    const invalid = serializeDrawing(document, { savedAt: SAVED_AT }).replace('"leaderEnd": "dot"', '"leaderEnd": "triangle"');
+    expect(parseDrawing(invalid).ok).toBe(false);
+  });
+  it('引出線以外の注記へ先端属性を混ぜない', () => {
+    const base = populatedDrawing();
+    const document: DrawingDocument = { ...base, annotations: [{ ...base.annotations[0], leaderEnd: 'dot' }] };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT })).ok).toBe(false);
+  });
+});

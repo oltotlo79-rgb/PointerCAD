@@ -53,6 +53,7 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
+import { hasSaveRecoveryCopy } from './saveFailure.js';
 import {
   openFileThrough,
   saveFileAsThrough,
@@ -530,7 +531,7 @@ export async function runExport(
     try {
       saved = await saveFileAsThrough(deps.gateway, file.fileName, request.format, file.bytes);
     } catch (error) {
-      return { ok: false, message: messageOfError(error) };
+      return { ok: false, message: hasSaveRecoveryCopy(error) ? deps.messageOf('file.saveRecoveryCopyRetained') : messageOfError(error) };
     }
     if (!saved) {
       // 1 つ目で取り消したら 2 つ目も訊かない(訊き続けるほうが煩わしい)。
@@ -618,7 +619,7 @@ export async function runExportDxf(
       bytes,
     );
   } catch (error) {
-    return { ok: false, message: messageOfError(error) };
+    return { ok: false, message: hasSaveRecoveryCopy(error) ? deps.messageOf('file.saveRecoveryCopyRetained') : messageOfError(error) };
   }
   if (!saved) {
     return { ok: false, cancelled: true };

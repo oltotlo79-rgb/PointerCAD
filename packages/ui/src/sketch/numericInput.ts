@@ -370,6 +370,7 @@ export type MeasureToolId = 'measure';
 /** ポップアップを開ける道具。スケッチの道具より広い。 */
 export type NumericInputToolId =
   | SketchToolId
+  | 'text'
   | SolidToolId
   | ShapeToolId
   | ReferenceToolId
@@ -853,6 +854,8 @@ export function numericChoiceOptionLabel(option: NumericChoiceOption): string {
 }
 
 export interface NumericInputState {
+  readonly textValue?: string;
+  readonly textOrigin?: readonly [number, number, number];
   readonly toolId: NumericInputToolId;
   readonly step: NumericInputStep;
   readonly mode: CoordinateMode;

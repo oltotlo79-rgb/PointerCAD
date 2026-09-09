@@ -220,6 +220,8 @@ export function applyReferenceCommit(commit: ReferenceInputCommit): boolean {
  */
 export function applyNumericTransition(transition: NumericInputTransition): void {
   const store = useAppStore.getState();
+  // 文字は字体待ちを含む専用の一括確定を通す。通常のpoint段から点を作らない。
+  if (store.numericInput?.toolId === 'text' && transition.kind !== 'cancelled') return;
   switch (transition.kind) {
     case 'open':
       store.updateNumericInput(transition.state);

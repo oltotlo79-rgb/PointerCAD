@@ -31,7 +31,7 @@
  */
 
 import type { FileKind } from '@pointercad/model';
-export type SaveFileKind = FileKind | 'pcada' | 'zip' | 'svg';
+export type SaveFileKind = FileKind | 'pcada' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg';
 
 import { t, type MessageKey } from '../i18n/t.js';
 
@@ -97,7 +97,7 @@ export interface FileGateway {
    * ここへ実装を置かない(口があるかどうかが「デスクトップ版か」の判断になる。
    * 使い分けは `printView.ts` の `desktopPrintOf`)。
    */
-  print?(png: Uint8Array): Promise<boolean>;
+  print?(bytes: Uint8Array, options?: import('@pointercad/drawing').DrawingPrintOptions): Promise<boolean>;
 }
 
 /** 部品ファイルの拡張子(要件§8)。 */
@@ -186,6 +186,9 @@ const FILE_KIND_SPECS: Readonly<Record<SaveFileKind, FileKindSpec>> = {
   '3mf': { label: '3MF', accept: { 'model/3mf': ['.3mf'] } },
   dxf: { label: 'DXF', accept: { 'image/vnd.dxf': ['.dxf'] } },
   svg: { label: 'SVG', accept: { 'image/svg+xml': ['.svg'] } },
+  pdf: { label: 'PDF', accept: { 'application/pdf': ['.pdf'] } },
+  png: { label: 'PNG', accept: { 'image/png': ['.png'] } },
+  jpg: { label: 'JPEG', accept: { 'image/jpeg': ['.jpg', '.jpeg'] } },
 };
 
 /** その種類の拡張子(先頭の `.` を含む)。並びは表の順で、先頭が代表(書き出しで足す拡張子)。 */
@@ -723,6 +726,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
   let pendingSaveTarget: { readonly token: string; readonly handle: WritableFileHandle } | null =
     null;
   let nextSaveTargetToken = 1;
+  let targetRevision = 0;
 
   return {
     async openPcad(kind = 'part'): Promise<PickedFile | null> {
@@ -763,6 +767,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
     },
 
     async savePcad(suggestedName, bytes, saveAs, kind = 'part'): Promise<string | null> {
+      const revision = ++targetRevision;
       if (!hasSavePicker(scope)) {
         // 場所は選べないので、名前を添えてダウンロードする(§0.a-0.10)。
         downloadBytes(scope, suggestedName, PCAD_MIME_TYPE, bytes);
@@ -784,12 +789,14 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
         }
         target = picked;
       }
+      if (revision !== targetRevision) return null;
       const writable = await target.createWritable();
       if (!isWritableFile(writable)) {
         throw new Error(t('file.saveFailed'));
       }
       await writable.write(bytes);
       await writable.close();
+      if (revision !== targetRevision) return null;
       saveTarget = target;
       pendingSaveTarget = null;
       return target.name;
@@ -801,6 +808,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
 
     confirmSaveTarget(token): Promise<void> {
       if (pendingSaveTarget?.token === token) {
+        targetRevision += 1;
         saveTarget = pendingSaveTarget.handle;
         pendingSaveTarget = null;
       }
@@ -808,6 +816,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
     },
 
     clearSaveTarget(): void {
+      targetRevision += 1;
       saveTarget = null;
       pendingSaveTarget = null;
     },

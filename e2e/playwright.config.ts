@@ -52,7 +52,7 @@ export default defineConfig({
     // apps/web の preview は COOP/COEP ヘッダーを付ける(vite.config.ts)。
     // --host 127.0.0.1 を明示しないと、この環境の vite preview は IPv6 ループバック(::1)
     // だけに bind し、127.0.0.1 への接続が確立できず webServer の起動待ちがタイムアウトする(実測)。
-    command: `pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview --port ${PREVIEW_PORT} --strictPort --host 127.0.0.1`,
+    command: `pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview --port ${PREVIEW_PORT} --strictPort --host 127.0.0.1`,
     env: { VITE_PCAD_E2E: '1' },
     url: BASE_URL,
     reuseExistingServer: false,

@@ -125,7 +125,7 @@ describe('writeDxf の骨組み', () => {
       'CONTINUOUS',
       'LAYER',
       '0',
-      '外形',
+      '\\U+5916\\U+5F62',
       'ENTITIES',
     ]);
   });
@@ -272,7 +272,7 @@ describe('writeDxf の実体', () => {
 
     // 色は実体ごとの 62。レイヤーの表の 62(7)と合わせて 2 つ出る。
     expect(valuesOf(text, 62)).toEqual(['7', '7', '3']);
-    expect(valuesOf(text, 8)).toEqual(['外形']);
+    expect(valuesOf(text, 8)).toEqual(['\\U+5916\\U+5F62']);
     expect(readBack(text)).toEqual([entity]);
   });
 

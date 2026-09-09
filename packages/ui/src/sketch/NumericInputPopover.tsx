@@ -259,7 +259,7 @@ export function NumericInputPopover({
   viewportWidth,
   viewportHeight,
 }: NumericInputPopoverProps): React.JSX.Element | null {
-  const state = useAppStore((store) => store.numericInput);
+  const state = useAppStore((store) => store.numericInput?.toolId === 'text' ? null : store.numericInput);
   const anchor = useAppStore((store) => store.numericInputAnchor);
   // 3D スケッチ(FR-330)では極座標の指定方法を隠す(§0.a-0.5、タスク14)。
   const workPlaneId = useAppStore((store) => store.workPlaneId);

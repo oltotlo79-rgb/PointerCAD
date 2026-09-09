@@ -1025,3 +1025,8 @@ export { drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingDime
 export { suggestDimensionKind, type SuggestedDimensionKind } from './drawing/dimensionKind.js';
 export { machiningSymbols, type MachiningFeature, type MachiningNote, type MachiningNoteToken } from './drawing/machiningSymbols.js';
 export { refreshDrawing, replaceSource, drawingSourceChangedExternally, type DrawingRefreshOptions, type DrawingRefreshResult } from './drawing/refreshDrawing.js';
+
+export { textFeature, type TextFeatureInput, type TextFeatureResult } from './sketch/textFeature.js';
+
+export { drawingToDxf, type DrawingDxfGeometry } from './exchange/drawingToDxf.js';
+export type { DrawingDxfEntity, DrawingDxfLayer, DrawingDxfLineType, DrawingDxfOptions } from './exchange/drawingDxfTypes.js';

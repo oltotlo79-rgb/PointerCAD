@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from 'electron';
 import type { IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
 import { constants as fileSystemConstants, promises as fileSystem } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
+import { SAVE_RECOVERY_COPY_MARKER, hasSaveRecoveryCopy } from '@pointercad/ui/save-errors';
 
 import { validateAppSender } from './appSender.js';
 
@@ -100,6 +101,9 @@ const KIND_FILTERS: Readonly<Record<string, KindFilter | undefined>> = {
   '3mf': { name: '3MF', extensions: ['3mf'] },
   dxf: { name: 'DXF', extensions: ['dxf'] },
   svg: { name: 'SVG', extensions: ['svg'] },
+  pdf: { name: 'PDF', extensions: ['pdf'] },
+  png: { name: 'PNG', extensions: ['png'] },
+  jpg: { name: 'JPEG', extensions: ['jpg', 'jpeg'] },
 };
 
 /** 「開く」で選ばれたファイル。`path` は本体プロセスの中だけで使う。 */
@@ -173,6 +177,7 @@ async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> 
   const temporaryPath = join(directory, `${basename(filePath)}.tmp-${crypto.randomUUID()}`);
   const backupPath = join(directory, `${basename(filePath)}.backup-${crypto.randomUUID()}`);
   let backupCreated = false;
+  let backupMayBeRemoved = false;
   try {
     await fileSystem.writeFile(temporaryPath, bytes, { flag: 'wx' });
     try {
@@ -193,29 +198,23 @@ async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> 
       } catch (copyCause) {
         try {
           await fileSystem.copyFile(backupPath, filePath);
+          backupMayBeRemoved = true;
         } catch (restoreCause) {
-          throw new Error('保存に失敗し、元のファイルも復元できませんでした。', {
+          throw new AggregateError([copyCause, restoreCause], `${SAVE_RECOVERY_COPY_MARKER} 保存と復元に失敗しました。元の内容は同じフォルダーの .backup- を含む控えに残しています。`, {
             cause: restoreCause,
           });
         }
         throw copyCause;
       }
-
-      await fileSystem.unlink(temporaryPath);
-      await fileSystem.unlink(backupPath);
-      backupCreated = false;
+      backupMayBeRemoved = true;
     }
   } catch (cause) {
-    if (backupCreated) {
-      try {
-        await fileSystem.copyFile(backupPath, filePath);
-      } catch {
-        // 上で復元を試みた結果を cause に保持し、後始末を続ける。
-      }
-    }
-    await removeTemporaryFile(temporaryPath);
-    await removeTemporaryFile(backupPath);
+    if (hasSaveRecoveryCopy(cause)) throw cause;
     throw new Error('ファイルを保存できませんでした。', { cause });
+  } finally {
+    await removeTemporaryFile(temporaryPath);
+    // 復元不能時の正常なコピーは回収用に残す。後始末の失敗で保存を巻き戻さない。
+    if (backupCreated && backupMayBeRemoved) await removeTemporaryFile(backupPath);
   }
 }
 
@@ -412,6 +411,7 @@ interface PendingSaveTarget {
 }
 
 const pendingPaths = new Map<number, PendingSaveTarget>();
+const targetRevisions = new Map<number, object>();
 const watchedWindowIds = new Set<number>();
 let nextSaveTargetToken = 1;
 
@@ -426,6 +426,7 @@ function watchWindow(event: IpcMainInvokeEvent): void {
   contents.once('destroyed', () => {
     lastPaths.delete(id);
     pendingPaths.delete(id);
+    targetRevisions.delete(id);
     watchedWindowIds.delete(id);
   });
 }
@@ -448,6 +449,8 @@ function rememberPendingPath(event: IpcMainInvokeEvent, filePath: string): strin
 
 /** 現在の文書の保存先と、未確定の候補を一緒に解除する。 */
 function clearSaveTargets(event: IpcMainInvokeEvent): void {
+  watchWindow(event);
+  targetRevisions.set(event.sender.id, {});
   lastPaths.delete(event.sender.id);
   pendingPaths.delete(event.sender.id);
 }
@@ -501,10 +504,10 @@ export function registerPcadIpc(): void {
       }
       const pending = pendingPaths.get(event.sender.id);
       if (pending?.token !== token) {
-        // 文書と保存先の対応を証明できないので、古い確定先も含めて安全側へ倒す。
-        clearSaveTargets(event);
+        // 古い確定依頼は、別の文書の確定済み保存先を解除しない。
         return false;
       }
+      targetRevisions.set(event.sender.id, {});
       rememberPath(event, pending.path);
       return true;
     },
@@ -531,6 +534,9 @@ export function registerPcadIpc(): void {
       ) {
         throw new Error('保存の依頼の形が正しくありません。');
       }
+      watchWindow(event);
+      const revision = {};
+      targetRevisions.set(event.sender.id, revision);
       const saved = await savePcadDialog(
         windowOf(event),
         suggestedName,
@@ -539,7 +545,7 @@ export function registerPcadIpc(): void {
         lastPaths.get(event.sender.id) ?? null,
         kind,
       );
-      if (saved === null) {
+      if (saved === null || targetRevisions.get(event.sender.id) !== revision) {
         return null;
       }
       rememberPath(event, saved.path);

@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { join } from 'node:path';
+import { readDrawingPrintOptions, type DrawingPrintOptions } from '@pointercad/ui/print-settings';
+import { drawingPrintDocument } from './drawingPrintDocument.js';
 
 import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './appProtocol.js';
 import { isAllowedAppUrl, registerAppWindow, validateAppSender } from './appSender.js';
@@ -66,14 +68,16 @@ function createMainWindow(): void {
  * `webContents.print()` を呼ぶ。画面の窓をそのまま印刷しないのは、ツールバーや区画まで
  * 紙に出てしまうため。紙に出すのは、画面側が背景を白にして描いた 1 コマだけ(FR-908)。
  *
- * 用紙サイズ・向き・部数は OS の印刷ダイアログに任せる(`silent: false`。§0.a-0.39)。
+ * 部品の画像はOSの印刷設定を使う。図面は検証済みの用紙・向き・部数を初期値にする。
+ * どちらも `silent: false` で、利用者が印刷画面で確認できる。
  * 取り消しは `success` が false で返る。**例外にしない**(NFR-RE-1)。
  *
  * **隠しの窓は `finally` で必ず閉じる。** 閉じ忘れると見えない窓が残り、
  * 画面の窓を全部閉じてもアプリが終わらなくなる。
  */
-async function printPngInHiddenWindow(png: Uint8Array): Promise<boolean> {
+async function printInHiddenWindow(png: Uint8Array, options?: DrawingPrintOptions): Promise<boolean> {
   const printWindow = new BrowserWindow({
+    title: 'PointerCAD',
     show: false,
     webPreferences: {
       // 絵を 1 枚出すだけなので、画面の口(preload)は渡さない。
@@ -90,10 +94,13 @@ async function printPngInHiddenWindow(png: Uint8Array): Promise<boolean> {
   // P11b タスク 1 の固定 HTTPS 許可表による外部リンク処理は、この拒否口へ追加する。
   printWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   try {
-    const dataUrl = `data:image/png;base64,${Buffer.from(png).toString('base64')}`;
+    const dataUrl = options === undefined ? `data:image/png;base64,${Buffer.from(png).toString('base64')}`
+      : `data:text/html;base64,${Buffer.from(drawingPrintDocument(png, options)).toString('base64')}`;
     await printWindow.loadURL(dataUrl);
+    await printWindow.webContents.executeJavaScript('Promise.all(Array.from(document.images, image => image.decode()))');
     return await new Promise<boolean>((resolve) => {
-      printWindow.webContents.print({ silent: false, printBackground: true }, (success) => {
+      printWindow.webContents.print({ silent: false, printBackground: true, ...(options === undefined ? {}
+        : { pageSize: options.pageSize, landscape: options.landscape, copies: options.copies, margins: { marginType: 'none' }, scaleFactor: 100 }) }, (success) => {
         resolve(success);
       });
     });
@@ -113,11 +120,13 @@ function registerPrintIpc(): void {
       if (!validateAppSender(event)) {
         return false;
       }
-      const [png] = args;
+      const [png, rawOptions] = args;
       if (!(png instanceof Uint8Array)) {
         throw new Error('印刷の依頼の形が正しくありません。');
       }
-      return printPngInHiddenWindow(png);
+      const options = rawOptions === undefined ? undefined : readDrawingPrintOptions(rawOptions);
+      if (options === null) throw new Error('図面の印刷設定が正しくありません。');
+      return printInHiddenWindow(png, options);
     },
   );
 }

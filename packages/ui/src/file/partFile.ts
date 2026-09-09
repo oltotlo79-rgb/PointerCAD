@@ -31,6 +31,8 @@ import { activeDocument } from '../store/documentKind.js';
 import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly } from './assemblyFile.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
+import { saveFailureMessageKey } from './saveFailure.js';
+import { queueDocumentSave } from './documentSaveQueue.js';
 
 /**
  * 手続きが外の世界へ触れる口(検査では偽物を差し込む)。
@@ -366,8 +368,10 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
  * 保存先を覚えていない口(ダウンロードへ落とす環境)でも必ず場所を聞く形になる。
  */
 export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<void> {
-  if (activeDocument(useAppStore.getState()).kind === 'assembly') return saveAssembly(deps, saveAs);
   const store = useAppStore.getState();
+  const active = activeDocument(store);
+  if (active.kind === 'assembly') return saveAssembly(deps, saveAs);
+  if (active.kind !== 'part') return;
   // 書き出す文書はここで確定させる。待っている間に文書が変わっても、
   // 「保存した文書」と実際に書いたものを食い違わせない。
   const document = store.document;
@@ -377,24 +381,20 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
    * 添付を落とすと、読み込んだ形を含む部品が開き直せなくなる(`PartFileDeps.attachmentsOf`)。
    */
   const attachments = deps.attachmentsOf?.();
-  const bytes = writePcadFile(document, {
+  return queueDocumentSave(store, async (isCurrent) => {
+  try {
+    const bytes = writePcadFile(document, {
     ...(thumbnailPng === null ? {} : { thumbnailPng }),
     ...(attachments === undefined ? {} : { attachments }),
   });
   const suggestedName = withPcadExtension(displayFileName(store.fileName));
 
-  let savedName: string | null;
-  try {
-    savedName = await store.fileGateway.savePcad(
+    const savedName = await store.fileGateway.savePcad(
       suggestedName,
       bytes,
       saveAs || !store.fileGateway.hasSaveTarget(),
     );
-  } catch {
-    useAppStore.getState().setFileMessage({ key: 'file.saveFailed', failed: true });
-    return;
-  }
-  if (savedName === null) {
+  if (savedName === null || !isCurrent()) {
     // 取り消された。今の状態のままにする。
     return;
   }
@@ -415,13 +415,21 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
    * ファイルより古いものを勧めてしまう。
    * 控えを消せなくても保存そのものは成功しているので、失敗は伝えない(NFR-RE-1)。
    */
-  const saver = after.autoSaver;
-  if (saver !== null) {
+  const saver = store.autoSaver;
+  const canDiscard = (): boolean => {
+    const current = useAppStore.getState();
+    return isCurrent() && current.autoSaver === saver && !hasUnsavedChanges(current.document, document);
+  };
+  if (saver !== null && canDiscard()) {
     try {
       await saver.discard();
-      await saver.discard(DEFAULT_AUTO_SAVE_IDENTITY);
+      if (canDiscard()) await saver.discard(DEFAULT_AUTO_SAVE_IDENTITY);
     } catch {
       // 控えの消去に失敗しても、保存できたという知らせは変えない。
     }
   }
+  } catch (error) {
+    if (isCurrent()) useAppStore.getState().setFileMessage({ key: saveFailureMessageKey(error), failed: true });
+  }
+  });
 }

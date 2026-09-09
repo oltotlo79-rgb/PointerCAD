@@ -64,7 +64,9 @@ async function fetchAssetManifest(): Promise<FetchedOcctAssetManifest | undefine
     return { manifest: parseOcctAssetManifest(value), url: response.url };
   } catch (error) {
     // serve / Electron では従来の `?url` が実在するため、manifest が無ければ元経路へ戻る。
-    if (ocWasmUrl.length > 0) {
+    // ?urlはビルド時に実URLへ置換される。文字数へ畳み込むと置換用の印まで
+    // 数式へ混ざるため、空URLとの比較のまま代替資産の有無を判定する。
+    if (ocWasmUrl !== '') {
       return undefined;
     }
     throw error;

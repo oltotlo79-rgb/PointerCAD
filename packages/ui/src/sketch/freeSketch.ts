@@ -40,6 +40,7 @@ import { COORDINATE_MODES, type CoordinateMode, type NumericInputToolId } from '
  */
 const PLANE_BOUND_TOOLS: Readonly<Partial<Record<NumericInputToolId, true>>> = {
   pointArray: true,
+  text: true,
   circle: true,
   twoPointArc: true,
   rectangle: true,

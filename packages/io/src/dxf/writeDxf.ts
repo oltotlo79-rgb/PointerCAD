@@ -21,7 +21,8 @@
  *   レイヤーと線種が表に無い DXF を断る読み手がある**ので、「他 CAD で開ける最小」
  *   (タスク25 の検証表の判断基準)を満たすためにこの 2 つだけ足す。逆に
  *   `VPORT` / `STYLE` / `VIEW` は名指ししないので書かない。
- * - **文字・寸法・線種の使い分け・レイヤーの色分けは書かない**(FR-730 は P8。§0.a-0.30)。
+ * - P8の`writeDxfDocument`はTEXT・SOLID・3次元POLYLINEとLAYER・LTYPE・STYLEを扱う。
+ *   従来の`writeDxf`の入出力を保ち、図面だけが追加の表を指定する。日本語はR12のCIF表現で書く。
  *
  * ## R12 に無い実体の落とし方(楕円・自由曲線)
  *
@@ -54,6 +55,8 @@
  */
 
 import { azimuthToEllipseParameter, sampleSpline, type Vec3 } from '@pointercad/model';
+
+import { dxfString, type DxfWriteEntity, type DxfWriteOptions } from './dxfDrawingTypes.js';
 
 import type { DxfPoint2d } from './dxfCurves.js';
 import { formatDxfTags, type DxfTag } from './dxfTags.js';
@@ -186,7 +189,7 @@ function layerName(entity: DxfEntityBase): string {
   if (entity.layer.includes('\n') || entity.layer.includes('\r')) {
     throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
-  return entity.layer === '' ? DEFAULT_LAYER : entity.layer;
+  return entity.layer === '' ? DEFAULT_LAYER : dxfString(entity.layer);
 }
 
 /**
@@ -202,6 +205,10 @@ function baseTags(entity: DxfEntityBase): DxfTag[] {
       throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
     }
     tags.push(tag(62, String(entity.color)));
+  }
+  if ('lineType' in entity) {
+    if (typeof entity.lineType !== 'string' || entity.lineType.length === 0) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    tags.push(tag(6, dxfString(entity.lineType)));
   }
   return tags;
 }
@@ -355,8 +362,21 @@ function writeSplineEntity(entity: DxfSplineEntity): DxfTag[] {
 }
 
 /** 1 つの実体のタグ。折れ線へ落としたかどうかも返す(案内の件数を数えるため)。 */
-function writeEntity(entity: DxfEntity): { readonly tags: DxfTag[]; readonly flattened: boolean } {
+function writeEntity(entity: DxfWriteEntity): { readonly tags: DxfTag[]; readonly flattened: boolean } {
   switch (entity.kind) {
+    case 'text': {
+      if (!Number.isFinite(entity.height) || entity.height <= 0 || ![0, 1, 2].includes(entity.horizontal)
+        || ![0, 1, 2, 3].includes(entity.vertical)) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+      return { flattened: false, tags: [tag(0, 'TEXT'), ...baseTags(entity), ...pointTags(10, entity.position),
+        numberTag(40, entity.height), tag(1, dxfString(entity.text)), numberTag(50, foldDegrees(entity.rotation)),
+        tag(7, 'STANDARD'), numberTag(72, entity.horizontal), ...pointTags(11, entity.position), numberTag(73, entity.vertical)] };
+    }
+    case 'solid':
+      return { flattened: false, tags: [tag(0, 'SOLID'), ...baseTags(entity),
+        ...entity.points.flatMap((point, index) => pointTags(10 + index, point))] };
+    case 'polyline':
+      if (entity.points.length < 2) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+      return { flattened: false, tags: writePolyline(entity, entity.points, entity.closed) };
     case 'point':
       return { tags: writePointEntity(entity), flattened: false };
     case 'line':
@@ -422,7 +442,7 @@ function tablesTags(layers: readonly string[]): DxfTag[] {
 }
 
 /** 実体が使っているレイヤーを、出てきた順に並べる(`0` は必ず先頭)。 */
-function collectLayers(entities: readonly DxfEntity[]): readonly string[] {
+function collectLayers(entities: readonly DxfWriteEntity[]): readonly string[] {
   const layers: string[] = [DEFAULT_LAYER];
   for (const entity of entities) {
     const name = layerName(entity);
@@ -443,10 +463,11 @@ function collectLayers(entities: readonly DxfEntity[]): readonly string[] {
  *   **途中まで書いた分を返さない**のは、欠けた図形のファイルを「書けた」ことに
  *   しないため(読み込みの段と同じ考え方)。
  */
-export function writeDxfDocument(entities: readonly DxfEntity[]): DxfWriteResult {
+export function writeDxfDocument(entities: readonly DxfWriteEntity[], options?: DxfWriteOptions): DxfWriteResult {
+  const table = options === undefined ? tablesTags(collectLayers(entities)) : drawingTablesTags(entities, options);
   const tags: DxfTag[] = [
     ...headerTags(),
-    ...tablesTags(collectLayers(entities)),
+    ...table,
     tag(0, 'SECTION'),
     tag(2, 'ENTITIES'),
   ];
@@ -470,4 +491,40 @@ export function writeDxfDocument(entities: readonly DxfEntity[]): DxfWriteResult
  */
 export function writeDxf(entities: readonly DxfEntity[]): string {
   return writeDxfDocument(entities).text;
+}
+
+
+/** P8: P6のHEADER/ENTITIES/EOFを維持し、表と文字用STYLEだけを拡張する。 */
+function drawingTablesTags(entities: readonly DxfWriteEntity[], options: DxfWriteOptions): DxfTag[] {
+  const types = options.lineTypes;
+  const names = new Set(types.map((lineType) => lineType.name));
+  if (!names.has('CONTINUOUS') || names.size !== types.length
+    || types.some((lineType) => lineType.name.length === 0 || lineType.segments.some((value) => !Number.isFinite(value)))) {
+    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+  }
+  const layers = [...options.layers];
+  if (!layers.some((layer) => layer.name === DEFAULT_LAYER)) layers.unshift({ name: DEFAULT_LAYER,
+    color: LAYER_TABLE_COLOR, lineType: CONTINUOUS_LINETYPE, visible: true });
+  const layerNames = new Set(layers.map((layer) => layer.name));
+  if (layerNames.size !== layers.length || layers.some((layer) => layer.name.length === 0
+      || !names.has(layer.lineType) || !Number.isInteger(layer.color) || layer.color < 1 || layer.color > 255)
+    || entities.some((entity) => !layerNames.has(entity.layer || DEFAULT_LAYER)
+      || (entity.lineType !== undefined && !names.has(entity.lineType)))) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+  const tags: DxfTag[] = [tag(0, 'SECTION'), tag(2, 'TABLES'), tag(0, 'TABLE'), tag(2, 'LTYPE'), numberTag(70, types.length)];
+  for (const lineType of types) {
+    const total = lineType.segments.reduce((sum, value) => sum + Math.abs(value), 0);
+    if (lineType.segments.length > 0 && total === 0) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    tags.push(tag(0, 'LTYPE'), tag(2, dxfString(lineType.name)), tag(70, '0'), tag(3, ''), tag(72, '65'),
+      numberTag(73, lineType.segments.length), numberTag(40, total), ...lineType.segments.map((value) => numberTag(49, value)));
+  }
+  tags.push(tag(0, 'ENDTAB'), tag(0, 'TABLE'), tag(2, 'LAYER'), numberTag(70, layers.length));
+  for (const layer of layers) tags.push(tag(0, 'LAYER'), tag(2, dxfString(layer.name)), tag(70, '0'),
+    numberTag(62, layer.color * (layer.visible ? 1 : -1)), tag(6, dxfString(layer.lineType)));
+  tags.push(tag(0, 'ENDTAB'));
+  if (entities.some((entity) => entity.kind === 'text')) {
+    tags.push(tag(0, 'TABLE'), tag(2, 'STYLE'), tag(70, '1'), tag(0, 'STYLE'), tag(2, 'STANDARD'), tag(70, '0'),
+      tag(40, '0'), tag(41, '1'), tag(50, '0'), tag(71, '0'), tag(42, '3.5'), tag(3, 'NotoSansJP-Regular.otf'), tag(4, ''), tag(0, 'ENDTAB'));
+  }
+  tags.push(tag(0, 'ENDSEC'));
+  return tags;
 }

@@ -64,6 +64,7 @@ const GUIDE_KEYS = {
   // (FR-314〜318、FR-326)。この表は網羅が要るので、段を足した同じタスクで案内も足す
   // (P3 タスク24 で `Record<NumericInputToolId>` が非網羅になった前例、
   //  docs/報告記録.md 2026-09-04 03:20 ③)。ツールバーのボタンはタスク32。
+  text: 'text.status.pickOrigin',
   circle: 'statusBar.guide.circle',
   twoPointArc: 'statusBar.guide.twoPointArc',
   // P4 タスク36(2026-09-04 追加要件)が `ShapeToolId` へ足した 3 点の円弧(FR-330)。

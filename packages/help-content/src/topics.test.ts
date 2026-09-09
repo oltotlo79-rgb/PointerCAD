@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -62,19 +62,30 @@ describe('ヘルプの目録', () => {
     expect(findHelpTopic('sphere-grid')?.path).toBe('docs/ja/sphere-grid.md');
   });
 
-  /**
-   * 目録の件数(P5 タスク52・27f)。**新しい機能はヘルプを必ず伴う**(NFR-MA-4)ので、
-   * 道具を足したのに目録が増えていない取りこぼしをここで止める。
-   * P4 完了時 27 + P5 で足した 16(外観 3・画面の見た目・基本形状・球の表面に点を置く・
-   * 面をつなぐ/ロフト・測定 2・立体の形を変える・平面で切る ほか)= 43。
-   */
-  it('目録の件数が数えたとおりになる(NFR-MA-4)', () => {
-    // P6 タスク32 で 4 本(書き出す・読み込む・DXF・単位)足して 43 + 4 = 47。
-    // P6 タスク43 で 4 本(切って中を見る・選ぶものを絞る・下絵・3D プリントの点検)足して 51。
-    // P6 タスク33 で 2 本(ひな形・印刷と別名で保存)足して 53。
-    // P7 タスク11bで1本、タスク46・47で操作別に8本を足して53 + 9 = 62。
-    // P8の同梱字体・解析ライブラリのライセンスを1本足して63。
-    expect(HELP_TOPICS).toHaveLength(63);
+  it('既存のヘルプIDを失わず、文書と目録が相互に対応する(NFR-MA-4)', () => {
+    // 2026-09-09時点の公開IDを保持する。増加のたびに固定件数で停止させない。
+    const requiredIds = [
+      'drawing', 'text-sketch', 'font-licenses', 'viewport',
+      'numeric-input', 'parameters', 'sketch-tools', 'shapes',
+      'ellipse', 'spline', 'work-plane', 'work-plane-custom',
+      'reference-geometry', 'origin', 'edit-curves', 'constraints',
+      'sketch-fillet', 'copy-array', 'project-intersect', 'snap',
+      'tracking', 'command-line', 'face-and-color', 'edit-sketch',
+      'solid-basics', 'solid-combine', 'feature-tree', 'timeline',
+      'save-and-open', 'assembly', 'assembly-place', 'mate',
+      'joint', 'interference', 'standard-parts', 'explode',
+      'bom', 'replace-subassembly', 'select-subshape', 'hole',
+      'fillet-chamfer', 'thread', 'pattern', 'spring',
+      'primitive', 'sphere-grid', 'ruled-loft', 'shape-edit',
+      'cut', 'display-settings', 'appearance-color', 'appearance-pattern',
+      'appearance-glass', 'measure', 'mass-properties', 'export',
+      'import', 'dxf', 'units', 'section-view',
+      'selection', 'canvas', 'print-check', 'template',
+      'print-save-as',
+    ];
+    expect(HELP_TOPICS.map((topic) => topic.id)).toEqual(expect.arrayContaining(requiredIds));
+    const documents = readdirSync(resolve(packageRoot, 'docs/ja')).filter((name) => name.endsWith('.md'));
+    expect(HELP_TOPICS.map((topic) => topic.path).sort()).toEqual(documents.map((name) => `docs/ja/${name}`).sort());
   });
 
   it('アセンブリの説明を id で引ける(FR-601・602・605・606)', () => {

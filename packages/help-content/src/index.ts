@@ -12,6 +12,8 @@ export interface HelpTopic {
 }
 
 export const HELP_TOPICS: readonly HelpTopic[] = [
+  { id: 'drawing', title: '部品から図面を作る・注記する・書き出す', path: 'docs/ja/drawing.md' },
+  { id: 'text-sketch', title: '文字をスケッチの輪郭にする', path: 'docs/ja/text-sketch.md' },
   { id: 'font-licenses', title: '字体と解析ライブラリのライセンス', path: 'docs/ja/font-licenses.md' },
   { id: 'viewport', title: '画面を回す・動かす・拡大する', path: 'docs/ja/viewport.md' },
   { id: 'numeric-input', title: '数値と式の入れ方', path: 'docs/ja/numeric-input.md' },

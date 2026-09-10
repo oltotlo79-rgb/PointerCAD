@@ -49,8 +49,8 @@ catalogs:
       specifier: 17.11.0
       version: 17.11.0
     opencascade.js:
-      specifier: 2.0.0-beta.b5ff984
-      version: 2.0.0-beta.b5ff984
+      specifier: 2.0.0-beta.5780049
+      version: 2.0.0-beta.5780049
     opentype.js:
       specifier: 2.0.0
       version: 2.0.0
@@ -222,7 +222,7 @@ importers:
         version: 4.4.2
       opencascade.js:
         specifier: 'catalog:'
-        version: 2.0.0-beta.b5ff984(ws@8.21.3)
+        version: 2.0.0-beta.5780049(ws@7.5.13)
     devDependencies:
       '@pointercad/test-utils':
         specifier: workspace:*
@@ -1099,10 +1099,10 @@ packages:
     resolution: {integrity: sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==}
     engines: {node: '>=12.20.0'}
 
-  opencascade.js@2.0.0-beta.b5ff984:
-    resolution: {integrity: sha512-4ZIrYrfrCV7SXvQFSmbHlfueSYngQNWGVrRVloVaAEZHDSY+R1k2htdY4AU5axbIGkbWVmrj+M8nmyeMLAelwA==}
+  opencascade.js@2.0.0-beta.5780049:
+    resolution: {integrity: sha512-WgCkR08Px1VYGcQV8qlgm+GNUI/ieZptP+bCok8ejc+fJanoC7L5TTqsUxMl/eg7QyLahFSM33mfQHtCV5Krhw==}
     peerDependencies:
-      ws: ^8.5.0
+      ws: ^7.4.5
 
   opentype.js@2.0.0:
     resolution: {integrity: sha512-kCyjv6xdDY1W/jLWZ/L3QhhTlKUqDZMQ5+Jdlw12b3dXkKNpYBqqlMMj0YDQPShWFTMwgZI1hG14kN3XUDSg/A==}
@@ -1371,12 +1371,12 @@ packages:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
 
-  ws@8.21.3:
-    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
-    engines: {node: '>=10.0.0'}
+  ws@7.5.13:
+    resolution: {integrity: sha512-rsKI6xDBFVf4r/x8XyChGK04QR/XHroxs/jUcoWvtEZM8TPU/X/uIY9B1CsSzYws9ZJb/6bbBu7dPhFW00CAoA==}
+    engines: {node: '>=8.3.0'}
     peerDependencies:
       bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
+      utf-8-validate: ^5.0.2
     peerDependenciesMeta:
       bufferutil:
         optional: true
@@ -2159,9 +2159,9 @@ snapshots:
 
   obug@2.1.4: {}
 
-  opencascade.js@2.0.0-beta.b5ff984(ws@8.21.3):
+  opencascade.js@2.0.0-beta.5780049(ws@7.5.13):
     dependencies:
-      ws: 8.21.3
+      ws: 7.5.13
 
   opentype.js@2.0.0: {}
 
@@ -2366,7 +2366,7 @@ snapshots:
 
   word-wrap@1.2.5: {}
 
-  ws@8.21.3: {}
+  ws@7.5.13: {}
 
   yallist@3.1.1: {}
 

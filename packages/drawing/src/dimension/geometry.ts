@@ -4,6 +4,7 @@ import {
   DIMENSION_EXTENSION_OVER_MM,
 } from '../style/jisStyle.js';
 import { createArrowTriangle, shouldUseOutwardArrows, type ArrowTriangle } from './arrow.js';
+import { createProjectedArcLengthDimensionGeometry } from './arcLengthGeometry.js';
 
 export interface DimensionLineSegment {
   readonly from: Point2;
@@ -269,24 +270,22 @@ export function createArcLengthDimensionGeometry(
   startAngle: number,
   endAngle: number,
 ): ArcLengthDimensionGeometry | null {
-  if (radius <= 0) {
-    return null;
-  }
+  if (![...center, radius, startAngle, endAngle].every(Number.isFinite) || radius <= 0) return null;
   const sweep = positiveAngle(endAngle - startAngle);
   if (sweep === 0) {
     return null;
   }
   const end = startAngle + sweep;
-  const startPoint = pointOn(center, radius, startAngle);
-  const endPoint = pointOn(center, radius, end);
+  const geometry = createProjectedArcLengthDimensionGeometry({ center, axes: [
+    [radius * Math.cos(startAngle), radius * Math.sin(startAngle)],
+    [-radius * Math.sin(startAngle), radius * Math.cos(startAngle)],
+  ], sweep, offset: 0 });
+  if (geometry === null) return null;
   return {
     value: radius * sweep,
     dimensionArc: { center, radius, startAngle, endAngle: end },
-    arrows: [
-      createArrowTriangle(startPoint, [-Math.sin(startAngle), Math.cos(startAngle)]),
-      createArrowTriangle(endPoint, [Math.sin(end), -Math.cos(end)]),
-    ],
-    textPosition: pointOn(center, radius + 1, startAngle + sweep / 2),
+    arrows: geometry.arrows,
+    textPosition: geometry.textPosition,
     symbol: '⌒',
   };
 }

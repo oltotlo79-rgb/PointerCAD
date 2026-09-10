@@ -1,3 +1,4 @@
+import { drawingDimensionContext } from '@pointercad/model';
 import { createPaperFrame, paperSizeOf, type DrawingDocument, type DrawingTable, type OutlinedText, type Point2 } from '@pointercad/drawing';
 import { nextDrawingBalloonId, nextDrawingTableId, resolveDrawingAnnotationTarget } from '@pointercad/model';
 import { t } from '../i18n/t.js';
@@ -59,7 +60,7 @@ export function commitDrawingBalloon(position: Point2,
   if (document === null || source === null || state.drawingBusy || state.drawingTargets.length !== 1
     || target?.kind !== 'subShape' || target.componentId === undefined) return false;
   const row = source.bomRows?.find((item) => item.componentIds.includes(target.componentId ?? ''));
-  const point = resolveDrawingAnnotationTarget(target, document, { instances: source.dimensionInstances ?? [], modelCenter: source.center });
+  const point = resolveDrawingAnnotationTarget(target, document, drawingDimensionContext(source));
   const layer = document.layers[0];
   if (row === undefined || point === null || layer === undefined) return false;
   const id = nextDrawingBalloonId(document);

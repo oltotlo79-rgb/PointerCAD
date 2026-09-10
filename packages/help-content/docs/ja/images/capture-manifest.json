@@ -1,0 +1,314 @@
+[
+  {
+    "file": "gdt-flatness-perpendicularity.png",
+    "testRun": "p9-weld-e2e3",
+    "testSource": "e2e/tests/gdt.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "243fa1607aee9992cac5bc1f17bfde0afc45d090adc6cfdc36b5e3dd2f08a0e3",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "gdt-restored.png",
+    "testRun": "p9-weld-e2e3",
+    "testSource": "e2e/tests/gdt.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "23c8b16bfb5412db3af942443a99a8861ba624f45acef58d4d5382fd38361795",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "welding-eight-kinds.png",
+    "testRun": "p9-weld-e2e5",
+    "testSource": "e2e/tests/welding.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "135c53345048191339c9fd93623200612cd13e07564c3f98d869175d00097c52",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "welding-restored.png",
+    "testRun": "p9-weld-e2e5",
+    "testSource": "e2e/tests/welding.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "c0bc90d3e557c645e836bc848fff0b23637dda5b51e9dc1b19dc6698b53dc88d",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "gdt-position-abc.png",
+    "testRun": "p9-output-fixed-e2e1",
+    "testSource": "e2e/tests/gdt-position.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "bbc2f00316810083e711b365dea8b8875fc28854822f1781d3ac0e9064569e32",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "gdt-position-median-multirow.png",
+    "testRun": "p9-output-fixed-e2e1",
+    "testSource": "e2e/tests/gdt-position.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "a976f3494288977c7b6097462d0b20143a77fdfd6203c6e4c7ccdd1f28e5cc30",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "advanced-drawing-section.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "998472e6244da128164f6cb70ea0c3989f2b169202fb8d3f922e01da43023b0a",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "advanced-drawing-views.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "23db5a3487b3d1d27f126c09380a90dba7aa046c173aeb1cedae62b255d8af56",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-bom-balloon.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "bed2bf621a01a1e5fd52fbcb45d09fc5722c9e9bf26b92f83d0bf78b6108c0eb",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-hole-table.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "60b53604f9da678ce3d8c1e9c52a9ae138f759a9444e891bd918e1c4a537f7f4",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-template-view.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "228e4a2407ecb0226322d8a708f25cbabc8479b3f88cadb44a9ab352dbae4c1e",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-note.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "d4b7520bd4a7ff2701300acf2eb98acbe462c859023085d02d7e5f6630149521",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-layer-settings.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "12e78e424db1e2b2688e5cc38b3e2789a81c6f8ed991faf4021dfe1b9d4762a1",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-surface-finish.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "0ed80264f553d0ccd893a2d6f65e20c35e6bbe928c6e95cdc7ddc846a475eb23",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "parallel-arranged.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "ad5f46e611f65b2dc7257ceec1c7e1c664682cf5f6ac4d26f39a2aada6b26a29",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "progressive-dimensions.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "1774c17d65636529c2a543fbe62fc62e2f26e6dd99823448761727d32fa6d0a5",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "arc-and-coordinate-dimensions.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "84758058f19ed30f2f7204a443b116e67fce61667e6d1bac336ff495aa334f7f",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-tree-groups.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "8658ee107f3b893bda306f8e3409c4929838dc48c5c17c01ebaa56f9b1cc3e12",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "quad-four-views.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "5b3490a2c06c72fd5a01b79447d9ea48bf09e91e1d6b5d934a88e3040e967b1d",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sketch-text-outlines.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1280,
+      720
+    ],
+    "sha256": "a0f3cf28a3df8fec121e88ca27e1635fd64c6998f546f1ab1797f1ff6e5f1919",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-dimensions.png",
+    "testRun": "help-spacing-e2e1",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "13a4e1b551de44b021c8589c50ea1c421cf5b967b8dc32bb66233100265fad2f",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-export-panel.png",
+    "testRun": "help-spacing-e2e1",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "0e5274e084d24c8e4172ee98d89f3a4e16c14240f86fb41a5cadbb7a42bedbea",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "configuration-long.png",
+    "testRun": "p8-p9-acceptance3",
+    "testSource": "e2e/tests/p8-drawing.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "e2f4075cb1b015b3bc59ad38b233bee359d8381e7f7e5d4506eea243e9175111",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-source-updated.png",
+    "testRun": "source-refresh-e2e2",
+    "testSource": "e2e/tests/drawing-source-refresh.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "55fc264cf7c3a2cd48c55836e6f2aee6dbe9ad8240e78f4988f00ee446a5b9ee",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-recovery-prompt.png",
+    "testRun": "recovery-e2e1",
+    "testSource": "e2e/tests/drawing-recovery.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "a8e7bb88fc14733fd24069ec807d50ab9ddfa0af4d04d1d3fc9939e13ef092de",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "drawing-recovery-restored.png",
+    "testRun": "recovery-e2e1",
+    "testSource": "e2e/tests/drawing-recovery.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "96d576d32c9acdd83a3f471957d76fb4bfffba75d15f02cceec0f01e0f211a6d",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  }
+]

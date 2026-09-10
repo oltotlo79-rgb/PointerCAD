@@ -4,10 +4,11 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { saveDrawingNote } from './noteCommands.js';
 
-export function DrawingNotePopover({ annotation, position = [80, 200], anchor }: {
+export function DrawingNotePopover({ annotation, position = [80, 200], anchor, inline = false }: {
   readonly annotation?: Annotation;
   readonly position?: Point2;
   readonly anchor?: Point2;
+  readonly inline?: boolean;
 }): React.JSX.Element {
   const [text, setText] = useState(annotation?.text ?? '');
   const [height, setHeight] = useState(String(annotation?.height ?? 3.5));
@@ -25,7 +26,7 @@ export function DrawingNotePopover({ annotation, position = [80, 200], anchor }:
     saveDrawingNote({ ...(annotation === undefined ? {} : { id: annotation.id }), text, heightMm: Number(height),
       position: [Number(x), Number(y)], ...(leader ? { leader: { target: [Number(targetX), Number(targetY)], end } } : {}) });
   }
-  return <form className="pcad-drawing-input" aria-label={t('drawing.note.title')}
+  return <form className={inline ? 'pcad-drawing-settings' : 'pcad-drawing-input'} aria-label={t('drawing.note.title')}
     style={anchor === undefined ? undefined : { position: 'fixed', right: 'auto',
       left: Math.max(8, Math.min(anchor[0] + 12, window.innerWidth - 280)), top: Math.max(8, Math.min(anchor[1] + 12, window.innerHeight - 430)),
       maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }}

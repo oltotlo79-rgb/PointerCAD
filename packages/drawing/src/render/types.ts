@@ -42,6 +42,8 @@ export interface RenderPath {
   readonly clip: RenderClip | null;
   readonly transform: AffineTransform2;
   readonly ownerId: string;
+  /** 所有者が子図の符号でも、実際に描かれる親図を識別する。 */
+  readonly viewId?: string;
   readonly layerId: string;
 }
 
@@ -74,6 +76,8 @@ export interface RenderText {
   readonly clip: RenderClip | null;
   readonly transform: AffineTransform2;
   readonly ownerId: string;
+  /** 所有者が子図の符号でも、実際に描かれる親図を識別する。 */
+  readonly viewId?: string;
   readonly layerId: string;
 }
 

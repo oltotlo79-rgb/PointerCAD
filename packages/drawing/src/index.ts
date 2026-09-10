@@ -24,6 +24,15 @@ export type {
   Point2,
   Vector3,
 } from './types.js';
+export type { DrawingClipDefinition, DrawingPlaneDefinition, DrawingViewConstruction } from './view/construction.js';
+export type { DatumDefinition, DatumId, DatumReference, DatumReferenceMember, GdtFrameSegment, GdtFeature, GdtShapeTarget,
+  GdtToleranceValue, GeometricToleranceFrame, MaterialRequirement, ToleranceCharacteristic, ToleranceZone } from './gdt/types.js';
+export { gdtSymbolGeometry, type GdtSymbol, type GdtSymbolGeometry } from './gdt/symbolGeometry.js';
+export { gdtFrameGeometry, type GdtToken, type GdtDisplayRow, type GdtFrameGeometry, type MeasureGdtText } from './gdt/frameGeometry.js';
+export { gdtDatumGeometry } from './gdt/datumGeometry.js';
+export type { WeldKind, WeldLengthValue, WeldSideSpec, WeldSymbol } from './welding/types.js';
+export { weldSymbolGeometry } from './welding/symbolGeometry.js';
+export { weldGeometry, type WeldDisplaySide, type WeldGeometry } from './welding/weldGeometry.js';
 export type {
   AffineTransform2,
   InkBounds,
@@ -128,10 +137,13 @@ export {
   viewTitle,
   type ViewAlignmentGuide,
 } from './layout/viewPlacement.js';
-export { hatchArea, type HatchAreaInput, type HatchSegment } from './hatch/hatchArea.js';
+export { hatchArea, checkedHatchArea, type HatchAreaInput, type HatchAreaResult, type HatchSegment } from './hatch/hatchArea.js';
+export { validateDrawingPolygon, MAX_DRAWING_BOUNDARY_POINTS } from './layout/validatePolygon.js';
 export { hatchStyle, type HatchStyle } from './hatch/hatchStyle.js';
+export { sectionBoundaryLoops, sectionHatch } from './hatch/sectionHatch.js';
 export {
   clipCurves,
+  drawingRegionContainsPoint,
   regionContainsAnyCurvePoint,
   type ClipCurve,
   type ClipRegion,
@@ -144,6 +156,8 @@ export {
 } from './layout/detailView.js';
 export {
   applyBreak,
+  movePointAcrossBreak,
+  breakDrawingCurve,
   type BreakLine,
   type BreakResult,
   type BreakSpec,
@@ -206,9 +220,10 @@ export {
   type LinearDimensionGeometry,
   type RadiusDimensionGeometry,
 } from './dimension/geometry.js';
+export { createProjectedArcLengthDimensionGeometry, type ArcLengthDimensionInput, type ProjectedArcLengthDimensionGeometry } from './dimension/arcLengthGeometry.js';
 
 export { autoDimension, type AutoDimensionInput, type AutoDimensionPoint, type AutoDimensionCircle, type AutoDimensionResult } from './dimension/autoDimension.js';
-export { renderDrawing, type DrawingRenderCurve, type DrawingRenderElement, type DrawingRenderView, type RenderDrawingOptions,
+export { renderDrawing, renderDrawingElements, type DrawingRenderCurve, type DrawingRenderElement, type DrawingRenderView, type RenderDrawingOptions,
   type DrawingRenderIssue, type DrawingRenderResult } from './render/renderDrawing.js';
 
 export { createPdf, PDF_POINTS_PER_MM, type PdfOptions, type PdfResult } from './render/pdfWriter.js';

@@ -25,6 +25,7 @@
   "restore.discard": "破棄する",
   "restore.savedAt": "保存した時刻",
   "restore.documentName": "部品の名前",
+  "restore.drawingName": "図面の名前",
   "restore.reason": "復元できない理由",
   "autoSave.failed": "自動保存できませんでした。変更はまだ保存されていません。",
   "file.type.template": "PointerCAD のひな形ファイル",

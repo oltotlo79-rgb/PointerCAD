@@ -89,9 +89,11 @@ export function attachDrawing(
       throw new Error(t('drawing.error.selectSource'));
     }
     const partId = `drawing:${request.documentId}:${source.sourceRef}`;
+    // 取り込み直しとUndoは文書と添付を一組で切り替える。前版の原本へ戻さない。
+    const importedShapes = entry.attachments?.shapes ?? request.importedShapes;
     if ([...retained].some((id) => id !== partId)) await release();
     if (prepared !== null && prepared.partId === partId && prepared.document === entry.document
-      && prepared.importedShapes === request.importedShapes) {
+      && prepared.importedShapes === importedShapes) {
       const available = await bridge.checkShapeAvailability(partId, prepared.result.bodyIds);
       if (available.missingKeys.length === 0) return prepared.result;
       prepared = null;
@@ -99,7 +101,7 @@ export function attachDrawing(
     if (obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
     retained.add(partId);
     const resolved = new Map<string, ResolvedPart>();
-    const result = await recompute(entry.document, { partId, importedShapes: request.importedShapes,
+    const result = await recompute(entry.document, { partId, importedShapes,
       shouldCancel: () => obsolete(request), onResolved: (part) => { resolved.set(partId, part); } });
     if (result.cancelled || obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
     if (result.errors.length > 0) throw new Error(result.errors.map((error) => error.message).join('\n'));
@@ -114,7 +116,7 @@ export function attachDrawing(
     const output = { bodyIds: dimensionInstances.map((instance) => instance.bodyId), dimensionInstances, center: sourceCenter(result) };
     const available = await bridge.checkShapeAvailability(partId, output.bodyIds);
     if (available.missingKeys.length > 0) throw new Error(t('drawing.error.viewFailed'));
-    prepared = { partId, document: entry.document, importedShapes: request.importedShapes, result: output, resolved: part, holes: new Map() };
+    prepared = { partId, document: entry.document, importedShapes, result: output, resolved: part, holes: new Map() };
     return output;
   };
   const kernel = createDrawingResolveKernel(bridge, prepareDrawingSource);
@@ -125,7 +127,8 @@ export function attachDrawing(
     if (tables.length === 0) return source;
     const holeTables = new Map<string, HoleScheduleResult>();
     for (const table of tables) {
-      const view = request.document.views.find((item) => item.id === table.options.viewId);
+      const viewId = table.options.viewId;
+      const view = typeof viewId === 'string' ? source.viewFrames?.get(viewId)?.view ?? request.document.views.find((item) => item.id === viewId) : undefined;
       const basis = view === undefined ? null : drawingViewBasis({ normal: view.direction, xDir: view.xDir });
       const x = table.options.datumX ?? 0, y = table.options.datumY ?? 0, z = table.options.datumZ ?? 0;
       if (part === null || basis === null || typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') {
@@ -155,7 +158,8 @@ export function attachDrawing(
         current = request;
         const result = await refreshDrawing(request.document, kernel);
         const source = prepared?.result ?? preparedAssembly?.output.result ?? null;
-        const output = !obsolete(request) && result.ok && source !== null ? await withHoleTables(request, source) : null;
+        const output = !obsolete(request) && result.ok && source !== null
+          ? await withHoleTables(request, { ...source, viewFrames: result.projection.viewFrames }) : null;
         if (!obsolete(request)) useAppStore.getState().setDrawingResolution(request.document, result, output);
       }
     } finally {

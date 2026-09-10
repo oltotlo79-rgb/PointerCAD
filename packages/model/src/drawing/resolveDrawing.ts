@@ -1,5 +1,5 @@
-import type { DrawingDocument, DrawingSource, DrawingView, Point2, Vector3 } from '@pointercad/drawing';
-import { clipCurves, drawingViewBasis, type ClipRegion } from '@pointercad/drawing';
+import type { CenterMark, DrawingDocument, DrawingRenderElement, DrawingSource, DrawingView, Point2, Vector3 } from '@pointercad/drawing';
+import { applyBreak, breakDrawingCurve, checkedHatchArea, clipCurves, drawingViewBasis, hatchStyle, sectionBoundaryLoops, type ClipRegion } from '@pointercad/drawing';
 import { resolvePlaneSpec, type PlaneResolveContext, type PlaneSpec, type ResolvedPlane } from '../geometry/planeSpec.js';
 import { resolveAuxiliaryDirection } from './viewDirection.js';
 import { validateSectionSpec, type SectionSpec } from './sectionSpec.js';
@@ -7,6 +7,9 @@ import type { RigidPlacement } from '../assembly/placementMath.js';
 import type { DrawingDimensionInstance } from './dimensionTarget.js';
 import type { BomRow } from '../assembly/bom.js';
 import type { HoleScheduleResult } from './holeSchedule.js';
+import { resolveViewConstructions, type ConstructedDrawingView } from './viewConstruction.js';
+import { projectionCenterMarkGroups } from './projectionCenterMarks.js';
+import { addDrawingViewDecorations } from './viewDecorations.js';
 
 export interface DrawingInstance {
   readonly bodyId: string;
@@ -25,6 +28,7 @@ export interface DrawingProjectionCurve {
 }
 
 export interface DrawingSourceResolution {
+  readonly viewFrames?: ReadonlyMap<string, ConstructedDrawingView>;
   readonly bomRows?: readonly BomRow[];
   readonly holeTables?: ReadonlyMap<string, HoleScheduleResult>;
   readonly dimensionInstances?: readonly DrawingDimensionInstance[];
@@ -80,6 +84,8 @@ export interface DrawingSectionResult {
   readonly visible: readonly DrawingProjectionCurve[];
   readonly hidden: readonly DrawingProjectionCurve[];
   readonly cuttingCurves: readonly ResolvedDrawingCurve[];
+  readonly cuttingAreas?: readonly { readonly bodyId: string; readonly occurrenceId: string | null;
+    readonly point: Vector3; readonly normal: Vector3; readonly curves: readonly ResolvedDrawingCurve[] }[];
   readonly failures: DrawingProjectionResult['failures'];
   readonly cancelled: boolean;
 }
@@ -108,12 +114,22 @@ export interface ResolvedDrawingView {
   readonly visible: readonly DrawingProjectionCurve[];
   readonly hidden: readonly DrawingProjectionCurve[];
   readonly cuttingCurves: readonly ResolvedDrawingCurve[];
+  /** 紙面mmの細い破断線。元形状の辺ではないので寸法参照へ変換しない。 */
+  readonly breakCurves?: readonly ResolvedDrawingCurve[];
+  readonly hatchCurves?: readonly ResolvedDrawingCurve[];
+  readonly centerCurves?: readonly ResolvedDrawingCurve[];
+  /** 非表示にした組も含む、個別の表示切替に使う出自付き中心マーク。 */
+  readonly centerMarks?: readonly CenterMark[];
+  readonly decorations?: readonly DrawingRenderElement[];
+  /** 省略・切り抜き前の紙面輪郭と実平面。切り口の奥にある元の面を選択させない。 */
+  readonly cuttingAreas?: readonly { readonly point: Vector3; readonly normal: Vector3; readonly loops: readonly (readonly Point2[])[] }[];
 }
 
 export type ResolvedDrawing =
   | {
       readonly ok: true;
       readonly views: readonly ResolvedDrawingView[];
+      readonly viewFrames?: ReadonlyMap<string, ConstructedDrawingView>;
       readonly failures: DrawingProjectionResult['failures'];
       readonly cancelled: boolean;
     }
@@ -123,6 +139,7 @@ interface CachedProjection {
   readonly visible: readonly DrawingProjectionCurve[];
   readonly hidden: readonly DrawingProjectionCurve[];
   readonly cuttingCurves?: readonly ResolvedDrawingCurve[];
+  readonly cuttingAreas?: DrawingSectionResult['cuttingAreas'];
 }
 
 /** カーネルの寿命ごとに生の投影を覚える。用紙の位置と縮尺は鍵へ入れない。 */
@@ -181,10 +198,14 @@ export async function resolveDrawingWithSource(
   options: DrawingResolutionOptions = {},
 ): Promise<ResolvedDrawing> {
   if (source.bodyIds.length === 0) return { ok: false, message: '図にできる立体がありません。' };
+  const construction = resolveViewConstructions(document, source);
+  if (!construction.ok) return construction;
+  const viewFrames = construction.views;
   const effectiveViews: DrawingView[] = [];
   const sections = new Map<string, DrawingSectionRequest>();
   for (const original of document.views) {
-    let view = original;
+    const frame = viewFrames.get(original.id);
+    let view = frame?.view ?? original;
     if (drawingViewBasis({ normal: view.direction, xDir: view.xDir }) === null) {
       return { ok: false, message: 'この向きでは図を作れません。' };
     }
@@ -196,7 +217,9 @@ export async function resolveDrawingWithSource(
       view = { ...view, direction: direction.direction.normal, xDir: direction.direction.xDir };
     }
     const spec = options.sections?.[view.id] ?? (view.section === undefined ? undefined : options.sections?.[view.section.cuttingLineId]);
-    if (spec !== undefined) {
+    if (frame?.section !== undefined) {
+      sections.set(view.id, { bodyIds: source.bodyIds, instances: source.instances, view: projectionRequest(view.id, view), ...frame.section });
+    } else if (spec !== undefined) {
       const invalid = validateSectionSpec(spec);
       if (invalid !== null) return { ok: false, message: invalid };
       if (options.planeContext === undefined) return { ok: false, message: '切断面の向きを決められません。' };
@@ -248,23 +271,73 @@ export async function resolveDrawingWithSource(
     const raw = cache.get(directionKey(view, document.source.contentHash, source.bodyIds, sections.get(view.id), source.instances));
     if (raw === undefined) continue;
     const scale = view.scale ?? document.sheet.scale;
-    const center = projectedCenter(source.center, view);
+    if (!Number.isFinite(scale) || scale <= 0) return { ok: false, message: '図の縮尺を正しく指定してください。' };
+    const frame = viewFrames.get(view.id);
+    const center = projectedCenter(frame?.modelCenter ?? source.center, view);
     const clip = options.partial?.[view.id];
+    const clips = [...(frame?.clips ?? []), ...(clip === undefined ? [] : [clip])];
     const mapped = (curves: readonly DrawingProjectionCurve[]): readonly DrawingProjectionCurve[] => {
-      const clipped = clip === undefined ? curves : curves.flatMap((item) => clipCurves([item.curve], clip).map((curve) => ({ ...item, curve })));
+      let clipped = curves;
+      for (const region of clips) clipped = clipped.flatMap((item) => clipCurves([item.curve], region).map((curve) => ({ ...item, curve })));
       return clipped.map((curve) => transformCurve(curve, center, view, scale));
     };
+    const visible = mapped(raw.visible), hidden = mapped(raw.hidden);
+    const cutting = mapped((raw.cuttingCurves ?? []).map((curve) => ({ curve, provenance: {} })));
+    const breakSpec = frame?.breakSpec;
+    const broken = (curves: readonly DrawingProjectionCurve[]): readonly DrawingProjectionCurve[] => breakSpec === undefined ? curves
+      : curves.flatMap((item) => breakDrawingCurve(item.curve, breakSpec).map((curve) => ({ ...item, curve })));
+    const paperPointToRaw = (point: Point2): Point2 => [(point[0] - view.position[0]) / scale + center[0], (point[1] - view.position[1]) / scale + center[1]];
+    const paperLinesToRaw = (lines: readonly { readonly from: Point2; readonly to: Point2 }[]): readonly DrawingProjectionCurve[] => lines
+      .map((line) => ({ provenance: {}, curve: { kind: 'segment', from: paperPointToRaw(line.from), to: paperPointToRaw(line.to) } }));
+    const cylinderFaceIds = new Set(frame?.section === undefined ? (source.dimensionInstances ?? []).flatMap((instance) => instance.body.faces
+      .filter((face) => face.surfaceKind === 'cylinder').map((face) => JSON.stringify([instance.bodyId, instance.componentId ?? null, 'silhouette', face.index]))) : []);
+    const centers = projectionCenterMarkGroups({ ...view, showCenterLines: true, hiddenCenterMarkIds: [] }, raw.visible,
+      (point) => transformPoint(point, center, view.position, scale), scale, cylinderFaceIds);
+    const centerMarks = centers.map((mark): CenterMark => ({ ...mark,
+      lines: broken(mapped(paperLinesToRaw(mark.lines))).flatMap((item) => item.curve.kind === 'segment' ? [{ from: item.curve.from, to: item.curve.to }] : []) }))
+      .filter((mark) => mark.lines.length > 0);
+    const hiddenCenters = new Set(view.hiddenCenterMarkIds ?? []);
+    const centerCurves = !view.showCenterLines ? [] : centerMarks.filter((mark) => !mark.sourceIds.some((id) => hiddenCenters.has(id)))
+      .flatMap((mark) => mark.lines.map((line): ResolvedDrawingCurve => ({ kind: 'segment', ...line })));
+    const breakLines = breakSpec === undefined ? null : applyBreak([...visible, ...hidden, ...cutting].map((item) => item.curve), breakSpec);
+    if (breakLines?.ok === false) return breakLines;
+    if (breakLines?.ok === true && breakLines.breakLines.every((line) => line.points.length === 0)) {
+      return { ok: false, message: '破断区間が図の外にあります。区間を図の中へ移してください。' };
+    }
+    const hatchCurves: ResolvedDrawingCurve[] = [];
+    const cuttingAreas: NonNullable<ResolvedDrawingView['cuttingAreas']>[number][] = [];
+    const componentKeys = [...new Set((raw.cuttingAreas ?? []).map((area) => JSON.stringify([area.bodyId, area.occurrenceId])))].sort();
+    for (const area of raw.cuttingAreas ?? []) {
+      const paperCurves = area.curves.map((curve) => transformCurve({ curve, provenance: {} }, center, view, scale).curve);
+      const loops = sectionBoundaryLoops(paperCurves);
+      if (loops === null) return { ok: false, message: '切り口の輪郭を閉じられません。切断面の位置を確認してください。' };
+      cuttingAreas.push({ point: area.point, normal: area.normal, loops });
+      const hatch = checkedHatchArea({ loops, ...hatchStyle(componentKeys.indexOf(JSON.stringify([area.bodyId, area.occurrenceId]))) });
+      if (!hatch.ok) return { ok: false, message: hatch.reason === 'budget'
+        ? 'ハッチングが細かすぎます。図の縮尺や切断面の位置を調整してください。'
+        : '切り口の座標を計算できません。切断面の位置を確認してください。' };
+      // 先に閉じた切り口へハッチを入れ、その後で詳細/部分図の範囲に切る。
+      const rawHatches = paperLinesToRaw(hatch.segments);
+      hatchCurves.push(...broken(mapped(rawHatches)).map((item) => item.curve));
+    }
     views.push({
       viewId: view.id,
       name: view.name,
       position: view.position,
       scale,
-      visible: mapped(raw.visible),
-      hidden: mapped(raw.hidden),
-      cuttingCurves: (raw.cuttingCurves ?? []).map((curve) => transformCurve({ curve, provenance: {} }, center, view, scale).curve),
+      visible: broken(visible),
+      hidden: broken(hidden),
+      cuttingCurves: broken(cutting).map((item) => item.curve),
+      ...(hatchCurves.length === 0 ? {} : { hatchCurves }),
+      ...(centerCurves.length === 0 ? {} : { centerCurves }),
+      ...(centerMarks.length === 0 ? {} : { centerMarks }),
+      ...(cuttingAreas.length === 0 ? {} : { cuttingAreas }),
+      ...(breakLines?.ok === true ? { breakCurves: breakLines.breakLines
+        .filter((line) => line.points.some((point) => Math.hypot(point[0] - line.points[0][0], point[1] - line.points[0][1]) > 1e-9))
+        .map((line): ResolvedDrawingCurve => ({ kind: 'polyline', points: line.points, closed: false })) } : {}),
     });
   }
-  return { ok: true, views, failures, cancelled };
+  return { ok: true, views: addDrawingViewDecorations(document, views, viewFrames), viewFrames, failures, cancelled };
 }
 
 function projectionRequest(id: string, view: DrawingView): DrawingProjectionRequest['views'][number] {

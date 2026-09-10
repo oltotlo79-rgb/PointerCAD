@@ -850,6 +850,7 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
         const sections: Array<{
           readonly bodyId: string;
           readonly occurrenceId?: string;
+          readonly referenceShape: TopoDS_Shape;
           readonly result: Extract<ReturnType<typeof makeSectionShape>, { readonly ok: true }>;
         }> = [];
         const placements = createAllocations();
@@ -866,19 +867,23 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
             const outcome = makeSectionShape(oc, {
               target: placed,
               plane: request.plane,
-              projectionPlane: request.kind === 'revolved' ? undefined : {
+              projectionPlane: {
                 origin: request.view.origin, normal: request.view.normal, axisU: request.view.xDir,
               },
               keepSide: request.keepSide,
               kind: request.kind,
               boundary: request.boundary,
             });
-            if (outcome.ok) sections.push({ bodyId, occurrenceId: input.occurrenceId, result: outcome });
+            if (outcome.ok) sections.push({ bodyId, occurrenceId: input.occurrenceId, referenceShape: placed, result: outcome });
             else failures.push({ viewId: request.view.id, bodyId, message: outcome.message });
           }
           if (await cancelToken?.() === true) {
             return { viewId: request.view.id, visible: [], hidden: [], cuttingCurves: [], failures, cancelled: true };
           }
+          const cuttingAreas = sections.flatMap((section) => section.result.cutFaces
+            .filter((face) => request.kind === 'revolved' || face.normal.reduce((sum, value, axis) => sum + value * request.view.normal[axis], 0) > 1e-9)
+            .map((face) => ({ bodyId: section.bodyId, occurrenceId: section.occurrenceId ?? null,
+              point: face.point, normal: face.normal, curves: face.curves })));
           if (request.kind === 'revolved') {
             const visible = sections.flatMap((section) => section.result.cutFaces.flatMap((face) => face.curves.map((curve) => ({
               curve,
@@ -886,7 +891,7 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
                 faceIndex: face.index, generated: 'outline' as const, dimensionTarget: false as const },
             }))));
             await Promise.resolve(onProgress?.({ completed: 1, total: 1, viewId: request.view.id }));
-            return { viewId: request.view.id, visible, hidden: [], cuttingCurves: visible.map((item) => item.curve), failures, cancelled: false };
+            return { viewId: request.view.id, visible, hidden: [], cuttingCurves: visible.map((item) => item.curve), cuttingAreas, failures, cancelled: false };
           }
           const hlr = hiddenLineViewForBodies(oc, {
             viewId: request.view.id,
@@ -894,6 +899,7 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
               bodyId: section.bodyId,
               occurrenceId: section.occurrenceId,
               shape: section.result.shape,
+              referenceShape: section.referenceShape,
             })),
             origin: request.view.origin,
             normal: request.view.normal,
@@ -907,14 +913,16 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
                 viewId: request.view.id,
                 visible: hlr.result.visible,
                 hidden: hlr.result.hidden,
-                cuttingCurves: sections.flatMap((section) => section.result.cutCurves),
+                cuttingCurves: cuttingAreas.flatMap((area) => area.curves),
+                cuttingAreas,
                 failures,
                 cancelled: false,
               }
             : {
                 viewId: request.view.id,
                 visible: [], hidden: [],
-                cuttingCurves: sections.flatMap((section) => section.result.cutCurves),
+                cuttingCurves: cuttingAreas.flatMap((area) => area.curves),
+                cuttingAreas,
                 failures: [...failures, { viewId: request.view.id, bodyId: null, message: hlr.message }],
                 cancelled: false,
               };

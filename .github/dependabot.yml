@@ -1,0 +1,29 @@
+# 依存脆弱性監視と更新方針: docs/security/dependency-monitoring.md（R15）。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+      time: '07:00'
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    groups:
+      compatible-tooling:
+        dependency-type: development
+        patterns: ['*']
+        update-types: [minor, patch]
+        exclude-patterns: ['electron', '@playwright/test', 'opencascade.js', 'fflate', 'opentype.js']
+    commit-message:
+      prefix: '依存更新'
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:00'
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'CI依存更新'

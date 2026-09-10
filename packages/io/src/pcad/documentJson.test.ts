@@ -895,17 +895,17 @@ describe(
   '.pcad の版(§0.a-0.3、§0.a-0.22、§0.a-0.24、§0.a-0.17、P5 タスク5・§0.a-0.15、' +
     'P6 タスク21・§0.a-0.55、P7 タスク3・§0.a-0.2、P8 タスク3)',
   () => {
-    it('封筒の版は 10 で、部品文書の版と同じ値である', () => {
-      expect(PCAD_SCHEMA_VERSION).toBe(10);
+    it('封筒の版は 11 で、部品文書の版と同じ値である', () => {
+      expect(PCAD_SCHEMA_VERSION).toBe(11);
       expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
     });
 
     it(
-      '版を上げる変換表は版 2→3 から 9→10 までの8つを持つ' +
+      '変換表が最古の対応版2から現行版まで途切れずに連続する' +
         '(P3・P4 タスク31・P4b タスク21・P5 タスク5・P6 タスク21・P7 タスク3が' +
         '版を1つずつ足したため)',
       () => {
-        expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(['2', '3', '4', '5', '6', '7', '8', '9']);
+        expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(Array.from({ length: PCAD_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)));
       },
     );
   },
@@ -978,14 +978,14 @@ describe('部品文書の書き出し(serializeDocument)', () => {
     };
     expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(
       `{
-  "schema": 10,
+  "schema": ${String(PCAD_SCHEMA_VERSION)},
   "kind": "part",
   "app": "PointerCAD",
   "savedAt": "2026-09-03T01:23:45.678Z",
   "document": {
     "id": "part-1",
     "name": "部品1",
-    "schemaVersion": 10,
+    "schemaVersion": ${String(PCAD_SCHEMA_VERSION)},
     "sketches": [
       {
         "id": "sketch-1",
@@ -3294,7 +3294,7 @@ describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
   it('freeOrientation・subShape 参照は現在の版でも省略可能(前方互換とは無関係な理由で版が上がった)', () => {
     const text = serializeDocument(documentWith(freeSketch()), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(10);
+    expect(PCAD_SCHEMA_VERSION).toBe(11);
   });
 });
 
@@ -3798,7 +3798,7 @@ describe('球面上の点の読み書き(FR-431、P5 タスク19)', () => {
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
     // P6 タスク21(§0.a-0.55)が別の理由(ZIP の添付・選択セット・下絵)で 7 へ、
     // P7 タスク3(P7 §0.a-0.2)がさらに別の理由(封筒の種別 assembly)で 8 へ上げた。
-    expect(PCAD_SCHEMA_VERSION).toBe(10);
+    expect(PCAD_SCHEMA_VERSION).toBe(11);
   });
 
   it('緯度の欄が欠けていれば場所つきで断る', () => {
@@ -5382,9 +5382,9 @@ describe('古いファイルの読み込み(NFR-RE-3、P5 タスク47)', () => {
     expect(after).toBe(before);
   });
 
-  it('移行表は版2〜9の8つで、版は10である(P8-62)', () => {
-    expect(Object.keys(SCHEMA_MIGRATIONS).sort()).toEqual(['2', '3', '4', '5', '6', '7', '8', '9']);
-    expect(PCAD_SCHEMA_VERSION).toBe(10);
+  it('移行表が版2から現行版11の直前まで揃う(P9-4)', () => {
+    expect(Object.keys(SCHEMA_MIGRATIONS).sort()).toEqual(Array.from({ length: PCAD_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)).sort());
+    expect(PCAD_SCHEMA_VERSION).toBe(11);
     expect(PART_SCHEMA_VERSION).toBe(PCAD_SCHEMA_VERSION);
   });
 });
@@ -6078,7 +6078,7 @@ describe('ひな形の封筒の任意の欄(FR-814、§2.10)', () => {
       toolDefaults: TOOL_DEFAULTS,
     });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(10);
+    expect(PCAD_SCHEMA_VERSION).toBe(11);
   });
 });
 
@@ -6292,7 +6292,7 @@ describe('選択セットの員の 4 種類(FR-112、利用者の決定 2026-09-
       },
     ]);
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(10);
+    expect(PCAD_SCHEMA_VERSION).toBe(11);
   });
 
   it('立体・面だけの既存の版 7 のファイルはそのまま読める(語が増えても壊さない)', () => {

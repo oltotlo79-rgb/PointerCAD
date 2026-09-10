@@ -36,6 +36,12 @@ describe('寸法値の書式', () => {
   it('接頭文字を寸法記号より前に付ける', () => {
     expect(formatDimension({ value: 8, kind: 'diameter', prefix: '4×' })).toBe('4×φ8');
   });
+  it('補足文字は公差の後ろ、はめあいは寸法値の直後に置く', () => {
+    expect(formatDimension({ value: 20, kind: 'length', prefix: '4×', suffix: ' 通し', reference: true,
+      tolerance: { kind: 'symmetric', value: 0.2 } })).toBe('(4×20±0.2 通し)');
+    expect(formatDimension({ value: 20, kind: 'length', fitSymbol: 'H7', suffix: ' 通し',
+      tolerance: { kind: 'deviation', upper: 0.021, lower: 0 }, decimals: 4 })).toBe('20H7 +0.021 / 0 通し');
+  });
 
   it('対称公差を付ける', () => {
     expect(formatDimension({

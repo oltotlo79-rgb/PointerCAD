@@ -22,17 +22,20 @@ import {
   createAutoSaver,
   createIndexedDbAutoSaveStorage,
   readDocumentBundle,
+  readDrawingBundle,
+  type AutoSaveDocument,
   type AutoSaveRecord,
   type AutoSaveIdentity,
   type AutoSaverOptions,
   type AutoSaver,
   type AutoSaveStorage,
 } from '@pointercad/io';
-import { createAssemblyDocumentBundle, createPartDocumentBundle, partLibraryOfBundle } from '@pointercad/model';
+import { createAssemblyDocumentBundle, createPartDocumentBundle, drawingSourceInputOf, partLibraryOfBundle } from '@pointercad/model';
 
 import { currentPcadAttachments } from '../store/attachKernel.js';
+import type { AppState } from '../store/appState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { saveFileAsThrough, withPcadExtension, withPcadaExtension } from './fileGateway.js';
+import { saveFileAsThrough, withPcadExtension, withPcadaExtension, withPcaddExtension } from './fileGateway.js';
 import { openErrorMessageKey, readPartDocument } from './partFile.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { activeDocument } from '../store/documentKind.js';
@@ -150,6 +153,19 @@ function browserVisibilityTarget(): VisibilityTarget | null {
 // 文書の変化を見張る
 // ---------------------------------------------------------------------------
 
+function recoveryDocument(state: AppState, bundleParts: boolean): AutoSaveDocument | null {
+  const active = activeDocument(state);
+  if (active.kind === 'drawing') {
+    const entry = state.drawingSources.sources.find((item) => item.metadata.sourceRef === active.document.source.sourceRef
+      && item.metadata.contentHash === active.document.source.contentHash);
+    const source = entry === undefined ? null : drawingSourceInputOf(entry);
+    if (source === null) { reportAutoSaveFailure(); return null; }
+    return { kind: 'drawing', document: active.document, source };
+  }
+  return active.kind === 'assembly' ? createAssemblyDocumentBundle(active.document, active.library)
+    : bundleParts ? createPartDocumentBundle(active.document, currentPcadAttachments()) : active.document;
+}
+
 export interface AttachAutoSaveOptions {
   readonly bundleParts?: boolean;
   /** 控えを書く人(`packages/io` の `createAutoSaver` が作る)。 */
@@ -176,7 +192,7 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
 
   const unsubscribe = useAppStore.subscribe((next, previous) => {
     if (next.document === previous.document && next.assembly === previous.assembly &&
-      next.drawing === previous.drawing &&
+      next.drawing === previous.drawing && next.drawingSources === previous.drawingSources &&
       next.assemblyLibrary === previous.assemblyLibrary && next.importedShapes === previous.importedShapes &&
       next.importedMeshes === previous.importedMeshes && next.canvases === previous.canvases) {
       return;
@@ -184,12 +200,8 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
     if (!activeHasUnsavedChanges(next)) {
       return;
     }
-    const active = activeDocument(next);
-    // 図面の自動保存封筒はP8後段で接続する。誤って部品/アセンブリとして書かない。
-    if (active.kind === 'drawing') return;
-    saver.markDirty(active.kind === 'part' ? (options.bundleParts === true
-      ? createPartDocumentBundle(active.document, currentPcadAttachments()) : active.document) :
-      createAssemblyDocumentBundle(active.document, active.library));
+    const document = recoveryDocument(next, options.bundleParts === true);
+    if (document !== null) saver.markDirty(document);
   });
 
   const visibility =
@@ -202,11 +214,8 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
     if (!activeHasUnsavedChanges(state)) {
       return;
     }
-    const active = activeDocument(state);
-    if (active.kind === 'drawing') return;
-    void saver.saveNow(active.kind === 'part' ? (options.bundleParts === true
-      ? createPartDocumentBundle(active.document, currentPcadAttachments()) : active.document) :
-      createAssemblyDocumentBundle(active.document, active.library));
+    const document = recoveryDocument(state, options.bundleParts === true);
+    if (document !== null) void saver.saveNow(document);
   };
   if (visibility !== null) {
     visibility.addEventListener('visibilitychange', onVisibilityChange);
@@ -254,7 +263,8 @@ export async function loadAutoSavePrompt(
     }
     return;
   }
-  const outcome = record.kind === 'assembly' ? await readAssemblyRecovery(record) : readPartDocument(record.bytes);
+  const outcome = record.kind === 'drawing' ? await readDrawingRecovery(record)
+    : record.kind === 'assembly' ? await readAssemblyRecovery(record) : readPartDocument(record.bytes);
   if (!outcome.ok) {
     if (mayApply()) {
       useAppStore.getState().setRestorePrompt({
@@ -282,9 +292,28 @@ export async function loadAutoSavePrompt(
  * 落ちても同じところから始められる。
  */
 export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
+  const before = useAppStore.getState();
+  const isCurrent = () => useAppStore.getState().activeDocumentId === before.activeDocumentId
+    && useAppStore.getState().documentVersion === before.documentVersion;
   const record = await recoveryRecordOf(saver);
+  if (!isCurrent()) return;
   if (record === null) {
     useAppStore.getState().setRestorePrompt(null);
+    return;
+  }
+  if (record.kind === 'drawing') {
+    const outcome = await readDrawingBundle(record.bytes);
+    if (!isCurrent()) return;
+    if (!outcome.ok) { await loadAutoSavePrompt(saver, { record, shouldApply: isCurrent }); return; }
+    before.openDrawing(outcome.document, {
+      sources: { sources: [{ metadata: outcome.document.source, ...outcome.source }] },
+      importedShapes: outcome.source.sourceKind === 'part' ? outcome.source.attachments?.shapes : undefined,
+    });
+    // 原本の控えは成功保存まで保持。文書のIDと元sessionを結び付けて別窓を消さない。
+    if (record.documentId !== undefined) useAppStore.setState({ activeDocumentId: record.documentId });
+    before.setRestorePrompt(null);
+    // 空の用紙設定だけを復元した場合も、新規の未変更図面とは区別する。
+    useAppStore.setState({ recoveryRecord: record, drawingInitialName: null });
     return;
   }
   if (record.kind === 'assembly') {
@@ -328,6 +357,12 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   useAppStore.setState({ recoveryRecord: null });
 }
 
+async function readDrawingRecovery(record: AutoSaveRecord) {
+  const result = await readDrawingBundle(record.bytes);
+  return result.ok ? { ok: true as const } :
+    { ok: false as const, messageKey: openErrorMessageKey(result.error.code) };
+}
+
 async function readAssemblyRecovery(record: AutoSaveRecord) {
   const result = await readDocumentBundle(record.bytes, 'assembly');
   return result.ok ? { ok: true as const } :
@@ -366,8 +401,9 @@ export async function exportAutoSave(saver: AutoSaver): Promise<void> {
   try {
     const saved = await saveFileAsThrough(
       store.fileGateway,
-      record.kind === 'assembly' ? withPcadaExtension(record.documentName) : withPcadExtension(record.documentName),
-      record.kind === 'assembly' ? 'pcada' : 'pcad',
+      record.kind === 'drawing' ? withPcaddExtension(record.documentName)
+        : record.kind === 'assembly' ? withPcadaExtension(record.documentName) : withPcadExtension(record.documentName),
+      record.kind === 'drawing' ? 'pcadd' : record.kind === 'assembly' ? 'pcada' : 'pcad',
       record.bytes,
     );
     if (saved) {
@@ -425,12 +461,6 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
     revision += 1;
     const currentRevision = revision;
     stopCurrent?.();
-    if (active.kind === 'drawing') {
-      saver = null;
-      state.setAutoSaver(null);
-      stopCurrent = null;
-      return;
-    }
     const current = factory({ storage: createUnsavedOnlyStorage(storage), kind: active.kind,
       documentId: active.documentId, sessionId,
       onError: () => { if (!detached && currentRevision === revision) reportAutoSaveFailure(); },
@@ -440,20 +470,23 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
     state.setAutoSaver(current);
     stopCurrent = attachAutoSave({ saver: current, bundleParts: true });
     if (activeHasUnsavedChanges(useAppStore.getState())) {
-      current.markDirty(active.kind === 'assembly'
-        ? createAssemblyDocumentBundle(active.document, active.library)
-        : createPartDocumentBundle(active.document, currentPcadAttachments()));
+      const document = recoveryDocument(useAppStore.getState(), true);
+      if (document !== null) current.markDirty(document);
     }
     const shouldApply = () => !detached && currentRevision === revision;
     if (promptedKinds.has(active.kind)) return;
+    const startup = promptedKinds.size === 0 && active.kind === 'part' && !activeHasUnsavedChanges(state);
     promptedKinds.add(active.kind);
     if (storage.listRecords === undefined) {
       void loadAutoSavePrompt(current, { shouldApply });
     } else {
-      void storage.listRecords().then((records) => loadAutoSavePrompt(current, { shouldApply,
-        record: records.filter((record) => (record.kind ?? 'part') === active.kind)
-          .sort((a, b) => b.savedAt.localeCompare(a.savedAt))[0] ?? null,
-      })).catch(() => { if (shouldApply()) reportAutoSaveFailure(); });
+      void storage.listRecords().then((records) => {
+        if (!shouldApply()) return;
+        const record = records.filter((item) => startup || (item.kind ?? 'part') === active.kind)
+          .sort((a, b) => b.savedAt.localeCompare(a.savedAt))[0] ?? null;
+        if (record !== null) promptedKinds.add(record.kind ?? 'part');
+        return loadAutoSavePrompt(current, { shouldApply, record });
+      }).catch(() => { if (shouldApply()) reportAutoSaveFailure(); });
     }
   }
   const unsubscribe = useAppStore.subscribe(switchDocument);

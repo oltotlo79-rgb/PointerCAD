@@ -783,6 +783,11 @@
   }
 }
 
+/* 視点とF1の入口を含め1280pxで1段を保つ。ボタンの押下領域は縮めない。 */
+@media (max-width: 1399px) {
+  .pcad-toolbar { --pcad-toolbar-gap: calc(4px * var(--pcad-scale, 1)); }
+}
+
 /*
  * 1200 画素より狭い窓では 1 段に収まらないので、崩れた折り返しに任せず 2 段に分ける。
  * 隙間を行いっぱいに広げて区切りにし、「作るための道具(製品名・ファイル・履歴・モード・
@@ -1644,6 +1649,52 @@ button.pcad-tree__row:focus-visible {
   padding-left: 20px;
 }
 
+.pcad-drawing-tree-group > summary {
+  box-sizing: border-box;
+  cursor: pointer;
+  padding-left: var(--pcad-space-2);
+}
+
+.pcad-drawing-tree-group > summary::before {
+  content: '▸';
+  flex: none;
+}
+
+.pcad-drawing-tree-group[open] > summary::before {
+  content: '▾';
+}
+
+.pcad-drawing-tree-group > summary:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: -2px;
+}
+
+.pcad-drawing-tree-group .pcad-tree__row > button,
+.pcad-drawing-tree-sheet {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pcad-drawing-tree-group .pcad-tree__row > button[aria-pressed='true'] {
+  color: var(--pcad-accent);
+  outline: 1px solid var(--pcad-accent);
+  outline-offset: -1px;
+}
+
+.pcad-drawing-tree-empty {
+  padding: var(--pcad-space-1) var(--pcad-space-3);
+  color: var(--pcad-text-faint);
+}
+
+.pcad-drawing-tree-unresolved {
+  margin-right: var(--pcad-space-1);
+  font-weight: 700;
+}
+
 /*
  * 節の見出しの器。見出しの折りたたみボタンと「＋」(スケッチを追加)を横に並べる
  * (入れ子のボタンは作れないため。P4 仕上げ (g))。
@@ -2377,6 +2428,14 @@ button.pcad-tree__row:focus-visible {
 }
 
 .pcad-drawing-settings input[type="checkbox"] { width: auto; justify-self: start; }
+.pcad-drawing-settings > strong,
+.pcad-drawing-settings > output { display: block; overflow-wrap: anywhere; margin-block: 6px; }
+.pcad-drawing-settings label:has(> input[type="checkbox"]) { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.pcad-drawing-property-section { border-block-end: 1px solid var(--pcad-border); padding-block: 5px; }
+.pcad-drawing-property-section > summary { cursor: pointer; padding: 8px; box-sizing: border-box; }
+.pcad-drawing-property-section > .pcad-section, .pcad-drawing-property-section > form { padding: 8px; }
+.pcad-drawing-property-hint { padding: 8px; color: var(--pcad-text-muted); }
+.pcad-drawing-element-layer { display: grid; gap: 5px; padding: 8px; }
 .pcad-drawing-settings__field { border-block-end: 1px solid var(--pcad-border); padding-block: 6px; }
 
 .pcad-quad__pane {
@@ -2556,6 +2615,10 @@ button.pcad-tree__row:focus-visible {
 .pcad-drawing-svg { width: 100%; }
 .pcad-drawing-tree-dimension { width: 100%; justify-content: flex-start; white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .pcad-drawing-tools { position: relative; }
+.pcad-named-views > summary { display: flex; align-items: center; gap: 3px; }
+@media (max-width: 1399px) {
+  .pcad-named-views__label { display: none; }
+}
 .pcad-drawing-tools > summary { cursor: pointer; white-space: nowrap; padding: 6px; }
 .pcad-drawing-tools > .pcad-menu__panel { position: absolute; left: 0; right: auto; z-index: 30; display: grid; min-width: 150px; }
 .pcad-drawing-svg > svg { display: block; width: 100%; height: auto; }
@@ -3673,4 +3736,14 @@ button.pcad-tree__row:focus-visible {
     width: 100%;
     height: auto;
   }
+}
+
+/* 図面の部数は必要なときだけ出し、ツールバーの幅を増やさない。 */
+.pcad-drawing-print {
+  position: fixed;
+  z-index: 40;
+  right: 24px;
+  top: 80px;
+  width: min(320px, calc(100vw - 48px));
+  padding: var(--pcad-space-3);
 }

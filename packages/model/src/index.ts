@@ -1,3 +1,18 @@
+export { resolveGdtFeature, type ResolvedGdtFeature } from './drawing/gdt.js';
+export { compatibleGdtSizeDimensions } from './drawing/gdtAttachment.js';
+export { drawingMedianPlaneFeature } from './drawing/gdtMedianPlane.js';
+export { dimensionAngleDirections } from './drawing/dimensionAngle.js';
+export { drawingDimensionPaperEnds } from './drawing/dimensionTarget.js';
+export { GDT_RULES, defaultGdtToleranceZone, datumMembers, resolveDrawingDatums, resolveGdtFrame, gdtFrameDisplayRows, resolveDrawingGdt,
+  type DrawingGdtResolution, type GdtIssue, type GdtRule, type ResolvedDatum, type ResolvedFrameSegment, type ResolvedGdtFrame } from './drawing/gdtValidation.js';
+export { drawingManufacturingIds, nextDatumLabel, putDrawingDatum, putDrawingGdtFrame, moveDrawingManufacturing,
+  type DrawingGdtEditResult } from './drawing/gdtEdit.js';
+export { duplicateDrawingGdt, type DrawingGdtCopyResult } from './drawing/gdtCopy.js';
+export { resolveWeldSymbol, resolveDrawingWelds, putDrawingWeld, type WeldIssue, type ResolvedWeldSide, type ResolvedWeldSymbol } from './drawing/welding.js';
+export { weldDisplaySides } from './drawing/weldDisplay.js';
+export type { DatumDefinition, DatumId, DatumReference, GdtFrameSegment, GdtFeature, GeometricToleranceFrame,
+  MaterialRequirement, ToleranceCharacteristic, ToleranceZone } from './drawing/gdt.js';
+export type { GdtShapeTarget, GdtToleranceValue, WeldKind, WeldLengthValue, WeldSideSpec, WeldSymbol } from '@pointercad/drawing';
 export {
   createDirectKernelBridge,
   createDirectInterferenceKernelBridge,
@@ -256,6 +271,10 @@ export type {
   Annotation,
   Balloon,
   Dimension,
+  DimensionTarget,
+  DrawingPlaneDefinition,
+  DrawingClipDefinition,
+  DrawingViewConstruction,
   DrawingDocument,
   DrawingElementStyle,
   DrawingLayer,
@@ -1024,15 +1043,18 @@ export * from './assembly/joints/jointResiduals.js';
 export * from './assembly/joints/driveJoint.js';
 export * from './assembly/presentation.js';
 
-export { drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingDimensions,
+export { drawingDimensionContext, drawingModelPointToPaper, resolvedDimensionView, drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingDimensions,
   resolveDrawingAnnotationTarget, type ResolvedDimensionTarget, type DrawingDimensionInstance, type DimensionResolveContext, type ResolvedDrawingDimension } from './drawing/dimensionTarget.js';
 export { suggestDimensionKind, type SuggestedDimensionKind } from './drawing/dimensionKind.js';
 export { machiningSymbols, type MachiningFeature, type MachiningNote, type MachiningNoteToken } from './drawing/machiningSymbols.js';
 export { refreshDrawing, replaceSource, drawingSourceChangedExternally, type DrawingRefreshOptions, type DrawingRefreshResult } from './drawing/refreshDrawing.js';
+export { resolveViewConstructions, type ConstructedDrawingView, type DrawingConstructionResult } from './drawing/viewConstruction.js';
+export { resolveDrawingPlane } from './drawing/resolveDrawingPlane.js';
+export { unfoldDrawingPick, drawingSectionRetainsPoint } from './drawing/viewPickFrame.js';
 
 export { textFeature, type TextFeatureInput, type TextFeatureResult } from './sketch/textFeature.js';
 
-export { drawingToDxf, type DrawingDxfGeometry } from './exchange/drawingToDxf.js';
+export { drawingToDxf, type DrawingDxfGeometry, type DrawingDxfConversionOptions } from './exchange/drawingToDxf.js';
 export type { DrawingDxfEntity, DrawingDxfLayer, DrawingDxfLineType, DrawingDxfOptions } from './exchange/drawingDxfTypes.js';
 
 export * from './part/namedViews.js';

@@ -8,8 +8,13 @@ export interface DrawingDxfGeometry {
   readonly skippedPrimitiveCount: number;
   readonly flattenedCurveCount: number;
   readonly approximatedColorCount: number;
+  readonly outlinedTextCount: number;
   /** R12に線幅属性は無い。描画の線幅を保存したと誤表示しないための明示情報。 */
   readonly lineWidthsPreserved: false;
+}
+export interface DrawingDxfConversionOptions {
+  /** 製作指示の字体と位置を受け側のフォントに依存させない。輪郭線として保存する。 */
+  readonly outlineTextOwnerIds?: ReadonlySet<string>;
 }
 const typeNames: Readonly<Record<DrawingLineType, string>> = {
   solid: 'CONTINUOUS', dashed: 'DASHED', chain: 'CENTER', chain2: 'PHANTOM', zigzag: 'CONTINUOUS',
@@ -69,13 +74,25 @@ function textEntity(text: RenderText, layer: string, color: number): DrawingDxfE
     height: text.metrics.sizeMm * sx, rotation: (text.angle + Math.atan2(m[1], m[0])) * 180 / Math.PI, horizontal, vertical };
 }
 
+function textOutlineTransform(text: RenderText): AffineTransform2 | null {
+  if (text.clip !== null || text.outline === null) return null;
+  const ink = text.metrics.inkBounds;
+  const dx = text.anchor === 'middle' ? -text.metrics.advanceMm / 2 : text.anchor === 'end' ? -text.metrics.advanceMm : 0;
+  const dy = text.baseline === 'top' ? -ink.top : text.baseline === 'middle' ? -(ink.top + ink.bottom) / 2 : text.baseline === 'bottom' ? -ink.bottom : 0;
+  const c = Math.cos(text.angle), s = Math.sin(text.angle);
+  const transform = compose(text.transform, [c, s, -s, c,
+    text.position[0] + c * dx - s * dy, text.position[1] + s * dx + c * dy]);
+  return transform.every(Number.isFinite) && Math.abs(transform[0] * transform[3] - transform[1] * transform[2]) > 1e-12 ? transform : null;
+}
+
 /** 用紙上の共通IRをP6のR12書き手へ渡す。新しいDXF実体を混ぜず、省略は件数で返す。 */
-export function drawingToDxf(document: RenderDocument, layers: readonly DrawingLayer[], toleranceMm = 0.001): DrawingDxfGeometry {
+export function drawingToDxf(document: RenderDocument, layers: readonly DrawingLayer[], toleranceMm = 0.001,
+  options: DrawingDxfConversionOptions = {}): DrawingDxfGeometry {
   if (![document.widthMm, document.heightMm, toleranceMm].every((value) => Number.isFinite(value) && value > 0)
     || new Set(layers.map((layer) => layer.id)).size !== layers.length) throw new Error('図面の用紙またはレイヤーが正しくありません。');
   const byId = new Map(layers.map((layer) => [layer.id, layer]));
   const entities: DrawingDxfEntity[] = [];
-  let skippedPrimitiveCount = 0, flattenedCurveCount = 0, approximatedColorCount = 0;
+  let skippedPrimitiveCount = 0, flattenedCurveCount = 0, approximatedColorCount = 0, outlinedTextCount = 0;
   const tableLayers = layers.map((layer) => {
     const color = aci(layer.color);
     if (color === null || color.approximate) approximatedColorCount += 1;
@@ -88,11 +105,23 @@ export function drawingToDxf(document: RenderDocument, layers: readonly DrawingL
     if (color === null) return false;
     const common = { layer: layer.name, color: color.index };
     const pending: DrawingDxfEntity[] = [];
-    let flattened = 0, approximate = color.approximate;
+    let flattened = 0, outlined = 0, approximate = color.approximate;
     if (primitive.kind === 'text') {
-      const text = textEntity(primitive, layer.name, color.index);
-      if (text === null) return false;
-      pending.push(text);
+      if (options.outlineTextOwnerIds?.has(primitive.ownerId)) {
+        const transform = textOutlineTransform(primitive);
+        if (transform === null || primitive.outline === null || primitive.outline.length === 0 && primitive.text.trim().length > 0) return false;
+        for (const subpath of primitive.outline) {
+          const flat = flattenRenderPath(subpath, toleranceMm / 2, transform);
+          if (flat === null || !flat.closed || flat.points.length < 3) return false;
+          pending.push({ ...common, kind: 'polyline', lineType: 'CONTINUOUS', points: flat.points.map(point), closed: true });
+          if (flat.curved) flattened += 1;
+        }
+        outlined = 1;
+      } else {
+        const text = textEntity(primitive, layer.name, color.index);
+        if (text === null) return false;
+        pending.push(text);
+      }
     } else {
       const name = lineType(primitive);
       if (name === null) return false;
@@ -126,9 +155,11 @@ export function drawingToDxf(document: RenderDocument, layers: readonly DrawingL
     }
     for (const entity of pending) entities.push(entity);
     flattenedCurveCount += flattened;
+    outlinedTextCount += outlined;
     if (approximate) approximatedColorCount += 1;
     return true;
   };
   for (const primitive of document.primitives) if (!append(primitive)) skippedPrimitiveCount += 1;
-  return { entities, options: { layers: tableLayers, lineTypes }, skippedPrimitiveCount, flattenedCurveCount, approximatedColorCount, lineWidthsPreserved: false };
+  return { entities, options: { layers: tableLayers, lineTypes }, skippedPrimitiveCount, flattenedCurveCount, approximatedColorCount,
+    outlinedTextCount, lineWidthsPreserved: false };
 }

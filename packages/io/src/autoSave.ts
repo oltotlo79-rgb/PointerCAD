@@ -17,16 +17,26 @@
  * `createAutoSaver` が `onError` コールバックへ渡す。`saveNow` の `Promise` は常に解決する。
  */
 
-import { createPartDocumentBundle, type DocumentBundle, type PartDocument } from '@pointercad/model';
+import { createPartDocumentBundle, type DocumentBundle, type DrawingDocument, type DrawingSourceInput, type PartDocument } from '@pointercad/model';
 
+import { writeDrawingBundle } from './pcad/drawingBundle.js';
 import { isRecord } from './pcad/guards.js';
 import { writeDocumentBundle, type PcadAttachments } from './pcad/pcadFile.js';
+
+/** 図面は参照元と添付一式を伴う。同じpcaddの読み書きを自動保存でも使う。 */
+export interface DrawingAutoSaveBundle {
+  readonly kind: 'drawing';
+  readonly document: DrawingDocument;
+  readonly source: DrawingSourceInput;
+}
+export type AutoSaveBundle = DocumentBundle | DrawingAutoSaveBundle;
+export type AutoSaveDocument = PartDocument | AutoSaveBundle;
 
 /** 自動保存の間隔(FR-805 の既定 5 分)。 */
 export const AUTO_SAVE_INTERVAL_MS = 300_000;
 
 export interface AutoSaveIdentity {
-  readonly kind: DocumentBundle['kind'];
+  readonly kind: AutoSaveBundle['kind'];
   readonly documentId: string;
   readonly sessionId: string;
 }
@@ -44,7 +54,7 @@ export function autoSaveRecordKey(identity: AutoSaveIdentity = DEFAULT_AUTO_SAVE
 /** 自動保存の1件。bytesは文書の束を保存したpcad/pcadaそのもの(要件§8)。 */
 export interface AutoSaveRecord {
   /** 古い控えはこの3欄を持たない。3欄は一組として扱う。 */
-  readonly kind?: DocumentBundle['kind'];
+  readonly kind?: AutoSaveBundle['kind'];
   readonly documentId?: string;
   readonly sessionId?: string;
   /** 保存時刻(ISO 8601)。`.pcad` の中の `savedAt` と同じ値。 */
@@ -182,7 +192,7 @@ function isAutoSaveRecord(value: unknown): value is AutoSaveRecord {
     typeof value.documentName === 'string' &&
     value.bytes instanceof Uint8Array &&
     ((value.kind === undefined && value.documentId === undefined && value.sessionId === undefined) ||
-      ((value.kind === 'part' || value.kind === 'assembly') &&
+      ((value.kind === 'part' || value.kind === 'assembly' || value.kind === 'drawing') &&
         typeof value.documentId === 'string' && value.documentId.length > 0 &&
         typeof value.sessionId === 'string' && value.sessionId.length > 0))
   );
@@ -399,7 +409,7 @@ function defaultCancelFn(handle: AutoSaveTimerHandle): void {
 
 export interface AutoSaverOptions {
   /** readLatest/discardを最初のmarkDirtyより前に呼ぶときの文書種別。 */
-  readonly kind?: DocumentBundle['kind'];
+  readonly kind?: AutoSaveBundle['kind'];
   /** 文書を開いている間安定したID。未指定の束ではdocument.idを使う。 */
   readonly documentId?: string;
   /** 窓ごとのID。束を扱う場合の既定は、このsaver専用のUUID。 */
@@ -434,9 +444,9 @@ export interface AutoSaverOptions {
 
 export interface AutoSaver {
   /** 文書が変わったことを記録する。次の間隔の到来で、変更があるときだけ書く。 */
-  markDirty(document: PartDocument | DocumentBundle): void;
+  markDirty(document: AutoSaveDocument): void;
   /** 間隔を待たず、いま渡した文書をすぐ書く(変更の有無を問わない)。 */
-  saveNow(document: PartDocument | DocumentBundle): Promise<void>;
+  saveNow(document: AutoSaveDocument): Promise<void>;
   /** 以後の自動保存(間隔ごとの書き込み)を止める。進行中の書き込みは止めない。 */
   stop(): void;
   /** 起動時の復元候補を読む。 */
@@ -466,9 +476,9 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
   const sessionId = options.sessionId ?? crypto.randomUUID();
 
   /** markDirty / saveNow で渡された、最後に見た文書。 */
-  let latestDocument: PartDocument | DocumentBundle | null = null;
+  let latestDocument: AutoSaveDocument | null = null;
   /** 最後に書き込みへ成功した文書(参照の一致で「変更があるか」を判定する)。 */
-  let lastSavedDocument: PartDocument | DocumentBundle | null = null;
+  let lastSavedDocument: AutoSaveDocument | null = null;
   /** 進行中の書き込み。null なら空いている。 */
   let writeInFlight: Promise<void> | null = null;
   let stopped = false;
@@ -478,7 +488,7 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
     return latestDocument !== null && latestDocument !== lastSavedDocument;
   }
 
-  function identityOf(document: PartDocument | DocumentBundle): AutoSaveIdentity | undefined {
+  function identityOf(document: AutoSaveDocument): AutoSaveIdentity | undefined {
     if (!('kind' in document) && options.documentId === undefined && options.sessionId === undefined) {
       return undefined;
     }
@@ -496,7 +506,7 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
     };
   }
 
-  function runWrite(document: PartDocument | DocumentBundle): Promise<void> {
+  function runWrite(document: AutoSaveDocument): Promise<void> {
     if (writeInFlight !== null) {
       // 書き込み中の重複を避ける: 新しい依頼は今動いている書き込みへ相乗りする。
       return writeInFlight;
@@ -508,7 +518,9 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
         // dirty のまま保つので次の周期で再試行される。
         const bundle = 'kind' in document ? document
           : createPartDocumentBundle(document, options.attachmentsOf?.(document));
-        const bytes = await writeDocumentBundle(bundle, { savedAt });
+        const bytes = bundle.kind === 'drawing'
+          ? await writeDrawingBundle(bundle.document, { source: bundle.source, savedAt })
+          : await writeDocumentBundle(bundle, { savedAt });
         const identity = identityOf(document);
         return storage.write({ savedAt, bytes, documentName: bundle.document.name, ...identity });
       })

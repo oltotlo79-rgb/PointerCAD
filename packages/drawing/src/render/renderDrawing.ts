@@ -19,6 +19,7 @@ export type DrawingRenderCurve =
 /** 寸法の矢印・ハッチング・記号も同じ紙面mmのパスへ渡す。由来の解決はmodelの責務。 */
 export interface DrawingRenderElement {
   readonly ownerId: string;
+  readonly viewId?: string;
   readonly layerId: string;
   readonly style?: DrawingElementStyle | null;
   readonly curves?: readonly DrawingRenderCurve[];
@@ -34,12 +35,19 @@ export interface DrawingRenderView {
   readonly visible: readonly { readonly curve: DrawingRenderCurve; readonly ownerId?: string }[];
   readonly hidden: readonly { readonly curve: DrawingRenderCurve; readonly ownerId?: string }[];
   readonly cuttingCurves: readonly DrawingRenderCurve[];
+  readonly breakCurves?: readonly DrawingRenderCurve[];
+  readonly hatchCurves?: readonly DrawingRenderCurve[];
+  readonly centerCurves?: readonly DrawingRenderCurve[];
+  /** 切断線と詳細範囲の符号。ownerIdは対応する派生図のID。 */
+  readonly decorations?: readonly DrawingRenderElement[];
 }
 export interface RenderDrawingOptions {
   readonly forPrint?: boolean;
   readonly outlineText: (text: string, sizeMm: number) => OutlinedText;
   readonly frameLayerId?: string;
   readonly hiddenLayerId?: string;
+  readonly centerLayerId?: string;
+  readonly hatchLayerId?: string;
   readonly annotationLayerId?: string;
 }
 export interface DrawingRenderIssue {
@@ -67,6 +75,44 @@ function curvePath(curve: DrawingRenderCurve): readonly RenderSubpath[] | null {
   return [{ commands }];
 }
 
+/** 同じ中間表現で変更要素だけを描く。用紙・投影・無関係な文字を再生成しない。 */
+export function renderDrawingElements(drawing: DrawingDocument, elements: readonly DrawingRenderElement[],
+  options: RenderDrawingOptions): DrawingRenderResult {
+  const paper = paperSizeOf(drawing.sheet.paperSizeId);
+  if (paper === undefined) throw new Error('知らない用紙です。');
+  const primitives: RenderPrimitive[] = [], issues: DrawingRenderIssue[] = [];
+  for (const element of elements) appendDrawingElement(element, drawing, options, primitives, issues);
+  return { document: { widthMm: paper.width, heightMm: paper.height, primitives }, issues };
+}
+
+function appendDrawingElement(element: DrawingRenderElement, drawing: DrawingDocument, options: RenderDrawingOptions,
+  primitives: RenderPrimitive[], issues: DrawingRenderIssue[]): void {
+  const style = resolveStyle(element, drawing.layers);
+  if (style === null) { issues.push({ ownerId: element.ownerId, kind: 'layer' }); return; }
+  if (!style.visible || (options.forPrint === true && !style.printable)) return;
+  const common = { ownerId: element.ownerId, ...(element.viewId === undefined ? {} : { viewId: element.viewId }), layerId: element.layerId, clip: element.clip ?? null, transform: IDENTITY };
+  const stroke: RenderStroke = { color: style.color, widthMm: style.lineWidth, dashMm: LINE_DASH_PATTERNS[style.lineType] };
+  for (const curve of element.curves ?? []) {
+    const subpaths = curvePath(curve);
+    if (subpaths === null) { issues.push({ ownerId: element.ownerId, kind: 'geometry' }); continue; }
+    primitives.push({ ...common, kind: 'path', subpaths, stroke, fill: null, fillRule: 'nonzero' });
+  }
+  for (const fill of element.fills ?? []) primitives.push({ ...common, ...fill, kind: 'path', stroke: null, fill: style.color });
+  for (const text of element.texts ?? []) {
+    const outline = options.outlineText(text.text, text.sizeMm);
+    if (outline.status !== 'ready' || outline.metrics === null) {
+      issues.push({ ownerId: element.ownerId, kind: 'font', text: text.text });
+      // 不確かな字体で印刷しない。画面の未読込印だけを輪郭の枠で表す。
+      if (options.forPrint !== true) primitives.push({ ...common, kind: 'path', subpaths: outline.subpaths,
+        transform: [1, 0, 0, 1, text.position[0], text.position[1]], fillRule: 'nonzero', fill: null, stroke });
+      continue;
+    }
+    primitives.push({ ...common, kind: 'text', text: text.text, position: text.position, angle: text.angle ?? 0,
+      anchor: text.anchor ?? 'start', baseline: text.baseline ?? 'alphabetic', metrics: outline.metrics,
+      outline: outline.subpaths, fill: style.color });
+  }
+}
+
 /** 用紙を一つの決定的な中間表現へ写す。文字の実測は字体キャッシュへ注入する(P8-41)。 */
 export function renderDrawing(input: {
   readonly document: DrawingDocument;
@@ -78,32 +124,7 @@ export function renderDrawing(input: {
   if (paper === undefined) throw new Error('知らない用紙です。');
   const primitives: RenderPrimitive[] = [];
   const issues: DrawingRenderIssue[] = [];
-  const append = (element: DrawingRenderElement): void => {
-    const style = resolveStyle(element, drawing.layers);
-    if (style === null) { issues.push({ ownerId: element.ownerId, kind: 'layer' }); return; }
-    if (!style.visible || (options.forPrint === true && !style.printable)) return;
-    const common = { ownerId: element.ownerId, layerId: element.layerId, clip: element.clip ?? null, transform: IDENTITY };
-    const stroke: RenderStroke = { color: style.color, widthMm: style.lineWidth, dashMm: LINE_DASH_PATTERNS[style.lineType] };
-    for (const curve of element.curves ?? []) {
-      const subpaths = curvePath(curve);
-      if (subpaths === null) { issues.push({ ownerId: element.ownerId, kind: 'geometry' }); continue; }
-      primitives.push({ ...common, kind: 'path', subpaths, stroke, fill: null, fillRule: 'nonzero' });
-    }
-    for (const fill of element.fills ?? []) primitives.push({ ...common, ...fill, kind: 'path', stroke: null, fill: style.color });
-    for (const text of element.texts ?? []) {
-      const outline = options.outlineText(text.text, text.sizeMm);
-      if (outline.status !== 'ready' || outline.metrics === null) {
-        issues.push({ ownerId: element.ownerId, kind: 'font', text: text.text });
-        // 不確かな字体で印刷しない。画面の未読込印だけを輪郭の枠で表す。
-        if (options.forPrint !== true) primitives.push({ ...common, kind: 'path', subpaths: outline.subpaths,
-          transform: [1, 0, 0, 1, text.position[0], text.position[1]], fillRule: 'nonzero', fill: null, stroke });
-        continue;
-      }
-      primitives.push({ ...common, kind: 'text', text: text.text, position: text.position, angle: text.angle ?? 0,
-        anchor: text.anchor ?? 'start', baseline: text.baseline ?? 'alphabetic', metrics: outline.metrics,
-        outline: outline.subpaths, fill: style.color });
-    }
-  };
+  const append = (element: DrawingRenderElement): void => appendDrawingElement(element, drawing, options, primitives, issues);
   const frameLayerId = options.frameLayerId ?? 'layer-7';
   const frame = createPaperFrame(paper);
   const title = createTitleBlock({ paper, fields: drawing.sheet.titleBlockFields });
@@ -167,13 +188,29 @@ export function renderDrawing(input: {
     }
   }
   for (const view of input.views) {
+    const appendView = (element: DrawingRenderElement): void => append({ ...element, viewId: view.viewId });
     const source = drawing.views.find((candidate) => candidate.id === view.viewId);
     if (source === undefined) continue;
-    for (const item of view.visible) append({ ownerId: item.ownerId ?? view.viewId,
+    const sourceStyle = resolveStyle(source, drawing.layers);
+    if (sourceStyle === null) { issues.push({ ownerId: view.viewId, kind: 'layer' }); continue; }
+    if (!sourceStyle.visible || options.forPrint === true && !sourceStyle.printable) continue;
+    for (const item of view.visible) appendView({ ownerId: item.ownerId ?? view.viewId,
       layerId: source.layerId, style: source.style, curves: [item.curve] });
-    append({ ownerId: view.viewId, layerId: source.layerId, style: source.style, curves: view.cuttingCurves });
-    if (source.showHidden) for (const item of view.hidden) append({ ownerId: item.ownerId ?? view.viewId,
+    appendView({ ownerId: view.viewId, layerId: source.layerId, style: source.style, curves: view.cuttingCurves });
+    if (view.breakCurves !== undefined) appendView({ ownerId: view.viewId, layerId: source.layerId,
+      style: { ...source.style, lineType: 'solid', lineWidth: 0.25 }, curves: view.breakCurves });
+    if (view.hatchCurves !== undefined) appendView({ ownerId: view.viewId,
+      layerId: options.hatchLayerId ?? (drawing.layers.some((layer) => layer.id === 'layer-6') ? 'layer-6' : source.layerId), curves: view.hatchCurves });
+    if (source.showCenterLines && view.centerCurves !== undefined) appendView({ ownerId: view.viewId,
+      layerId: options.centerLayerId ?? (drawing.layers.some((layer) => layer.id === 'layer-3') ? 'layer-3' : source.layerId), curves: view.centerCurves });
+    if (source.showHidden) for (const item of view.hidden) appendView({ ownerId: item.ownerId ?? view.viewId,
       layerId: options.hiddenLayerId ?? 'layer-2', curves: [item.curve] });
+    for (const decoration of view.decorations ?? []) {
+      const owner = drawing.views.find((candidate) => candidate.id === decoration.ownerId);
+      const ownerStyle = owner === undefined ? null : resolveStyle(owner, drawing.layers);
+      if (ownerStyle === null || !ownerStyle.visible || options.forPrint === true && !ownerStyle.printable) continue;
+      appendView(decoration);
+    }
   }
   for (const element of input.elements ?? []) append(element);
   for (const annotation of drawing.annotations) {

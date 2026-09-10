@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { expressionValueFromNumber } from '../../packages/expression/src/index.js';
-import { writeDocumentBundle, writePcadFile } from '../../packages/io/src/index.js';
+import { readDocumentBundle, writeDocumentBundle, writePcadFile } from '../../packages/io/src/index.js';
 import {
   addComponent,
   appendSolid,
@@ -221,6 +221,17 @@ export function twoBoxAssemblyFile(secondX = 40): Promise<Uint8Array> {
       { kind: 'part', partRef }, { partName: '箱', placement: placement(secondX) }));
     return document;
   });
+}
+
+/** 保存済みの同じ参照と配置IDを保持したまま3個目を追加する。 */
+export async function addThirdBoxAssemblyFile(bytes: Uint8Array): Promise<Uint8Array> {
+  const read = await readDocumentBundle(bytes, 'assembly');
+  if (!read.ok || read.bundle.kind !== 'assembly') throw new Error('追加元の組立なし');
+  const bundle = read.bundle, first = bundle.document.components[0];
+  if (first?.source.kind !== 'part') throw new Error('追加元の部品参照なし');
+  const document = addComponent(bundle.document, createComponentFor(bundle.document,
+    { kind: 'part', partRef: first.source.partRef }, { partName: '箱', placement: placement(80) }));
+  return writeDocumentBundle({ ...bundle, document }, { savedAt: SAVED_AT });
 }
 
 export function replacementAssemblyFile(): Promise<Uint8Array> {

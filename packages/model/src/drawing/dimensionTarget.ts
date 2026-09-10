@@ -1,17 +1,21 @@
 import {
-  drawingViewBasis, fitTolerance, formatDimension, resolveDimensionTolerance,
-  type Dimension, type DimensionTarget, type DimensionTolerance, type DrawingDocument, type DrawingViewBasis, type Point2, type Vector3,
+  dimensionSeries, drawingViewBasis, fitTolerance, formatDimension, movePointAcrossBreak, resolveDimensionTolerance,
+  type Dimension, type DimensionSeriesResult, type DimensionTarget, type DimensionTolerance, type DrawingDocument, type DrawingView, type DrawingViewBasis, type Point2, type Vector3,
 } from '@pointercad/drawing';
 import { evaluateExpression } from '@pointercad/expression';
 import { analyzeParameters } from '../parameters/parameterTable.js';
 import { rematchSubShapeRef, type SolidBody } from '../kernelBridge.js';
 import { applyPlacementToDirection, applyPlacementToPoint, type RigidPlacement } from '../assembly/placementMath.js';
-import type { DrawingProjectionCurve } from './resolveDrawing.js';
+import type { DrawingProjectionCurve, DrawingSourceResolution } from './resolveDrawing.js';
+import type { ConstructedDrawingView } from './viewConstruction.js';
+import { dimensionAngleDirections } from './dimensionAngle.js';
 
 export type ResolvedDimensionTarget =
   | { readonly kind: 'point'; readonly point: Vector3; readonly paperPoint: Point2 }
   | { readonly kind: 'line'; readonly from: Vector3; readonly to: Vector3; readonly paperFrom: Point2; readonly paperTo: Point2; readonly length: number }
   | { readonly kind: 'circle' | 'arc'; readonly center: Vector3; readonly axis: Vector3; readonly radius: number; readonly length: number;
+      /** 辺の厳密な線重心。半円の2つの候補を見分けるために使い、円の中心とは混同しない。 */
+      readonly centroid?: Vector3;
       readonly from: Vector3; readonly to: Vector3; readonly paperCenter: Point2; readonly paperFrom: Point2; readonly paperTo: Point2 }
   | { readonly kind: 'plane'; readonly point: Vector3; readonly normal: Vector3; readonly paperPoint: Point2 }
   | { readonly kind: 'sphere'; readonly center: Vector3; readonly radius: number; readonly paperCenter: Point2 };
@@ -46,9 +50,30 @@ export function drawingTargetFromProjection(
     } } };
 }
 export interface DimensionResolveContext {
+  readonly viewFrames?: ReadonlyMap<string, ConstructedDrawingView>;
   readonly instances: readonly DrawingDimensionInstance[];
   /** resolveDrawingと同じ、配置済み元モデル全体の中心。 */
   readonly modelCenter: Vector3;
+}
+/** UIの寸法・注記・選択・書き出しで派生図の座標を渡し忘れないための共通入口。 */
+export function drawingDimensionContext(source: DrawingSourceResolution): DimensionResolveContext {
+  return { instances: source.dimensionInstances ?? [], modelCenter: source.center, viewFrames: source.viewFrames };
+}
+
+export function resolvedDimensionView(id: string, document: DrawingDocument, context: Pick<DimensionResolveContext, 'viewFrames'>): DrawingView | undefined {
+  return context.viewFrames?.get(id)?.view ?? document.views.find((view) => view.id === id);
+}
+
+/** 見る向き・原点・縮尺・破断後の配置は、モデルの測定座標とは別に扱う。 */
+export function drawingModelPointToPaper(point: Vector3, view: DrawingView, sheetScale: number,
+  context: DimensionResolveContext): Point2 | null {
+  const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
+  const scale = view.scale ?? sheetScale;
+  if (basis === null || !Number.isFinite(scale) || scale <= 0) return null;
+  const frame = context.viewFrames?.get(view.id);
+  const relative = delta(point, frame?.modelCenter ?? context.modelCenter);
+  const paper: Point2 = [view.position[0] + dot(relative, basis.x) * scale, view.position[1] + dot(relative, basis.y) * scale];
+  return frame?.breakSpec === undefined ? paper : movePointAcrossBreak(paper, frame.breakSpec);
 }
 export interface ResolvedDrawingDimension {
   readonly dimension: Dimension;
@@ -60,6 +85,24 @@ export interface ResolvedDrawingDimension {
   readonly status: 'resolved' | 'unresolved';
   readonly reason: 'target' | 'measurement' | 'view' | null;
   readonly displayTolerance?: DimensionTolerance;
+  readonly progressive?: Extract<DimensionSeriesResult, { readonly ok: true; readonly kind: 'progressive' }>;
+}
+
+/** 線間距離の初期配置と描画で、2本目の終点への対角方向を誤って使わない。 */
+export function drawingDimensionPaperEnds(targets: readonly ResolvedDimensionTarget[]): readonly [Point2, Point2] | null {
+  const [first, second] = targets;
+  if (first === undefined) return null;
+  if (second === undefined) return first.kind === 'line' ? [first.paperFrom, first.paperTo] : null;
+  if (first.kind === 'line' && second.kind === 'line') {
+    const dx = first.paperTo[0] - first.paperFrom[0], dy = first.paperTo[1] - first.paperFrom[1], squared = dx * dx + dy * dy;
+    if (squared < 1e-18) return null;
+    const along = ((second.paperFrom[0] - first.paperFrom[0]) * dx + (second.paperFrom[1] - first.paperFrom[1]) * dy) / squared;
+    return [[first.paperFrom[0] + along * dx, first.paperFrom[1] + along * dy], second.paperFrom];
+  }
+  const center = (target: ResolvedDimensionTarget): Point2 => target.kind === 'line'
+    ? [(target.paperFrom[0] + target.paperTo[0]) / 2, (target.paperFrom[1] + target.paperTo[1]) / 2]
+    : target.kind === 'point' || target.kind === 'plane' ? target.paperPoint : target.paperCenter;
+  return [center(first), center(second)];
 }
 
 const GEOMETRY_TOLERANCE = 1e-7;
@@ -78,14 +121,17 @@ function parallel(a: Vector3, b: Vector3): boolean {
 export function resolveDimensionTarget(
   target: DimensionTarget, document: DrawingDocument, context: DimensionResolveContext,
 ): ResolvedDimensionTarget | null {
-  const view = document.views.find((item) => item.id === target.viewId);
+  const view = resolvedDimensionView(target.viewId, document, context);
   if (view === undefined) return null;
   const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
   const scale = view.scale ?? document.sheet.scale;
   if (basis === null || !Number.isFinite(scale) || scale <= 0) return null;
   const paper = (point: Vector3): Point2 => {
-    const relative = delta(point, context.modelCenter);
-    return [view.position[0] + dot(relative, basis.x) * scale, view.position[1] + dot(relative, basis.y) * scale];
+    // 向きと縮尺は上で検証済み。同じ変換を注記と面選択にも使う。
+    const frame = context.viewFrames?.get(view.id);
+    const relative = delta(point, frame?.modelCenter ?? context.modelCenter);
+    const mapped: Point2 = [view.position[0] + dot(relative, basis.x) * scale, view.position[1] + dot(relative, basis.y) * scale];
+    return frame?.breakSpec === undefined ? mapped : movePointAcrossBreak(mapped, frame.breakSpec);
   };
   if (target.kind === 'point') {
     // 紙面だけにある点からモデルの長さを逆算しない。
@@ -116,7 +162,7 @@ export function resolveDimensionTarget(
     const center = point(edge.axisOrigin);
     const full = Math.abs(edge.length - 2 * Math.PI * edge.radius) <= GEOMETRY_TOLERANCE * Math.max(1, edge.length)
       && Math.hypot(...delta(from, to)) <= GEOMETRY_TOLERANCE;
-    return { kind: full ? 'circle' : 'arc', center, axis: direction(edge.axis), radius: edge.radius, length: edge.length,
+    return { kind: full ? 'circle' : 'arc', center, centroid: point(edge.midpoint), axis: direction(edge.axis), radius: edge.radius, length: edge.length,
       from, to, paperCenter: paper(center), paperFrom: paper(from), paperTo: paper(to) };
   }
   const face = instance.body.faces.find((item) => item.index === reference.index);
@@ -137,7 +183,7 @@ export function resolveDimensionTarget(
 export function resolveDrawingAnnotationTarget(target: DimensionTarget, document: DrawingDocument, context: DimensionResolveContext): Point2 | null {
   if (target.kind === 'subShape' && target.ref.fingerprint.kind === 'face') {
     if (target.sourceRef !== document.source.sourceRef) return null;
-    const view = document.views.find((item) => item.id === target.viewId);
+    const view = resolvedDimensionView(target.viewId, document, context);
     if (view === undefined) return null;
     const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
     const scale = view.scale ?? document.sheet.scale;
@@ -147,8 +193,7 @@ export function resolveDrawingAnnotationTarget(target: DimensionTarget, document
     const instance = matches[0], reference = rematchSubShapeRef([instance.body], target.ref);
     const face = reference === null ? undefined : instance.body.faces.find((item) => item.index === reference.index);
     if (face === undefined) return null;
-    const point = delta(applyPlacementToPoint(instance.placement, face.centroid), context.modelCenter);
-    return [view.position[0] + dot(point, basis.x) * scale, view.position[1] + dot(point, basis.y) * scale];
+    return drawingModelPointToPaper(applyPlacementToPoint(instance.placement, face.centroid), view, document.sheet.scale, context);
   }
   const resolved = resolveDimensionTarget(target, document, context);
   if (resolved === null) return null;
@@ -185,6 +230,12 @@ function measure(dimension: Dimension, targets: readonly ResolvedDimensionTarget
   if (dimension.kind === 'arcLength') return targets.length === 1 && (first.kind === 'circle' || first.kind === 'arc') ? first.length : null;
   if (dimension.kind === 'angle') {
     if (targets.length !== 2) return null;
+    if (first.kind === 'line' && targets[1].kind === 'line') {
+      const rays = dimensionAngleDirections(first, targets[1]);
+      if (rays === null) return null;
+      const a = unit(rays.first), b = unit(rays.second);
+      return a === null || b === null ? null : Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * 180 / Math.PI;
+    }
     const a = directionOf(first), b = directionOf(targets[1]);
     return a === null || b === null ? null : Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * 180 / Math.PI;
   }
@@ -226,7 +277,7 @@ export function resolveDrawingDimensions(document: DrawingDocument, context: Dim
     const unresolved = (reason: 'target' | 'measurement' | 'view', targets: readonly ResolvedDimensionTarget[] = []): ResolvedDrawingDimension => ({
       dimension, targets, value: null, coordinates: null, text: '？', status: 'unresolved', reason,
     });
-    const view = document.views.find((item) => item.id === dimension.targets[0]?.viewId);
+    const view = resolvedDimensionView(dimension.targets[0]?.viewId ?? '', document, context);
     if (view === undefined || dimension.targets.some((target) => target.viewId !== view.id)) return unresolved('view');
     const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
     if (basis === null) return unresolved('view');
@@ -238,20 +289,32 @@ export function resolveDrawingDimensions(document: DrawingDocument, context: Dim
       if (current == null) return unresolved('target', targets);
       targets.push(current);
     }
+    let coordinates: Point2 | null = null;
     if (dimension.measurement === 'coordinate') {
+      if (dimension.kind !== 'coordinate') return unresolved('measurement', targets);
       const ends = measurementEnds(targets);
       if (ends === null) return unresolved('measurement', targets);
       const vector = delta(ends[1], ends[0]);
-      const coordinates: Point2 = [dot(vector, basis.x), dot(vector, basis.y)];
+      coordinates = [dot(vector, basis.x), dot(vector, basis.y)];
       if (!coordinates.every(Number.isFinite)) return unresolved('measurement', targets);
-      return { dimension, targets, value: null, coordinates, text: coordinates.map((value, index) =>
-        `${index === 0 ? 'X' : 'Y'}: ${formatDimension({ value, kind: 'coordinate' })}`).join(' / '), status: 'resolved', reason: null };
     }
-    const value = measure(dimension, targets, basis);
-    if (value === null || !Number.isFinite(value)) return unresolved('measurement', targets);
+    let progressive: ResolvedDrawingDimension['progressive'];
+    if (dimension.series !== undefined) {
+      if (dimension.kind !== 'length' || !['horizontal', 'vertical'].includes(dimension.measurement)
+        || targets.some((target) => target.kind !== 'point')) return unresolved('measurement', targets);
+      const series = dimensionSeries({ kind: dimension.series.kind, baseIndex: dimension.series.baseIndex,
+        axis: dimension.measurement === 'horizontal' ? 'x' : 'y', commonNormalCoordinate: dimension.placement.commonNormalCoordinate,
+        view: { normal: view.direction, xDir: view.xDir }, points: targets.flatMap((target, index) => target.kind === 'point'
+          ? [{ id: JSON.stringify(dimension.targets[index]), modelPoint: target.point, paperPoint: target.paperPoint }] : []) });
+      if (!series.ok || series.kind !== 'progressive') return unresolved('measurement', targets);
+      progressive = series;
+    }
+    const value = coordinates === null && progressive === undefined ? measure(dimension, targets, basis) : null;
+    if (coordinates === null && progressive === undefined && (value === null || !Number.isFinite(value))) return unresolved('measurement', targets);
     let displayTolerance: DimensionTolerance | undefined;
+    if (dimension.basic === true && (dimension.reference || dimension.tolerance !== undefined || dimension.fit !== undefined)) return unresolved('measurement', targets);
     if (dimension.fit !== undefined) {
-      if (dimension.tolerance !== undefined || !['length', 'diameter'].includes(dimension.kind)) return unresolved('measurement', targets);
+      if (value === null || dimension.tolerance !== undefined || !['length', 'diameter'].includes(dimension.kind)) return unresolved('measurement', targets);
       const fit = fitTolerance(value, dimension.fit.symbol);
       if (fit === null) return unresolved('measurement', targets);
       if (dimension.fit.showDeviation) displayTolerance = { kind: 'deviation', ...fit };
@@ -267,10 +330,14 @@ export function resolveDrawingDimensions(document: DrawingDocument, context: Dim
       }
       if (resolveDimensionTolerance(displayTolerance) === null) return unresolved('measurement', targets);
     }
-    const text = formatDimension({ value, kind: dimension.kind, prefix: dimension.prefix,
-      suffix: `${dimension.fit?.symbol ?? ''}${dimension.suffix ?? ''}`, decimals: dimension.fit === undefined ? undefined : 4,
-      tolerance: displayTolerance, reference: dimension.reference });
-    return { dimension, targets, value, coordinates: null, text, status: 'resolved', reason: null,
-      ...(displayTolerance === undefined ? {} : { displayTolerance }) };
+    const coordinateText = coordinates?.map((value, index) => `${index === 0 ? 'X' : 'Y'}: ${formatDimension({ value, kind: 'coordinate', tolerance: displayTolerance })}`).join(' / ');
+    const annotatedCoordinates = coordinateText === undefined ? '' : `${dimension.prefix ?? ''}${coordinateText}${dimension.suffix ?? ''}`;
+    const progressiveText = progressive?.ticks.map((tick) => formatDimension({ value: tick.value, kind: 'length', prefix: dimension.prefix,
+      suffix: dimension.suffix, tolerance: displayTolerance, reference: dimension.reference })).join(' / ');
+    const text = progressiveText ?? (coordinates !== null ? (dimension.reference ? `(${annotatedCoordinates})` : annotatedCoordinates) : formatDimension({ value, kind: dimension.kind, prefix: dimension.prefix,
+      fitSymbol: dimension.fit?.symbol, suffix: dimension.suffix, decimals: dimension.fit === undefined ? undefined : 4,
+      tolerance: displayTolerance, reference: dimension.reference }));
+    return { dimension, targets, value, coordinates, text, status: 'resolved', reason: null,
+      ...(displayTolerance === undefined ? {} : { displayTolerance }), ...(progressive === undefined ? {} : { progressive }) };
   });
 }

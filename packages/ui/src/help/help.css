@@ -1,0 +1,44 @@
+.pcad-help {
+  width: min(1120px, calc(100vw - 32px));
+  height: min(800px, calc(100dvh - 32px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  color: var(--pcad-text);
+  background: var(--pcad-surface);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius);
+}
+.pcad-help::backdrop { background: rgb(0 0 0 / 45%); }
+.pcad-help[open] { display: flex; flex-direction: column; }
+.pcad-help__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--pcad-border); }
+.pcad-help__header h2 { margin: 0; font-size: 16px; }
+.pcad-help__body { display: grid; grid-template-columns: minmax(180px, 28%) minmax(0, 1fr); flex: 1; min-height: 0; }
+.pcad-help__nav { min-width: 0; padding: 12px; overflow-y: auto; border-right: 1px solid var(--pcad-border); }
+.pcad-help__nav label { display: grid; gap: 6px; }
+.pcad-help__nav ul { list-style: none; padding: 0; }
+.pcad-help__topic { display: block; width: 100%; padding: 8px; font: inherit; line-height: 1.5; color: var(--pcad-text); text-align: left; background: transparent; border: 0; border-radius: var(--pcad-radius); cursor: pointer; }
+.pcad-help__topic[aria-current="page"] { background: var(--pcad-bg); color: var(--pcad-accent); font-weight: 600; }
+.pcad-help__topic:hover { background: var(--pcad-bg); }
+.pcad-help__article { min-width: 0; padding: 16px 24px; overflow: auto; line-height: 1.8; overflow-wrap: anywhere; }
+.pcad-help__article > :first-child { margin-top: 0; }
+.pcad-help__image { display: block; width: 100%; height: auto; margin-block: 12px; border: 1px solid var(--pcad-border); border-radius: 4px; }
+.pcad-help__article h1 { font-size: 24px; }
+.pcad-help__article h2 { font-size: 20px; }
+.pcad-help__article h3 { font-size: 17px; }
+.pcad-help__article li p { margin: 4px 0; }
+.pcad-help__article code { padding: 1px 4px; background: var(--pcad-bg); font-size: 0.95em; }
+.pcad-help__article pre { padding: 12px; overflow-x: auto; background: var(--pcad-bg); }
+.pcad-help__article pre code { padding: 0; }
+.pcad-help__article blockquote { margin-inline: 0; padding-left: 12px; border-left: 3px solid var(--pcad-border); }
+.pcad-help__article a, .pcad-help__link { color: var(--pcad-accent); }
+.pcad-help__link { padding: 0; font: inherit; text-align: inherit; text-decoration: underline; background: none; border: 0; cursor: pointer; }
+.pcad-help__table { overflow-x: auto; }
+.pcad-help__table table { width: 100%; border-collapse: collapse; }
+.pcad-help__table th, .pcad-help__table td { padding: 6px 8px; vertical-align: top; border: 1px solid var(--pcad-border); }
+.pcad-help__table th { background: var(--pcad-bg); text-align: left; }
+@media (max-width: 650px) {
+  .pcad-help__body { grid-template-columns: minmax(120px, 34%) minmax(0, 1fr); }
+  .pcad-help__article { padding: 12px; }
+}
+@media print { .pcad-help[open] { display: none; } }

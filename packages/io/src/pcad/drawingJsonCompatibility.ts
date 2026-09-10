@@ -20,13 +20,16 @@ export function hasOnlyFiniteJsonNumbers(value: unknown): boolean {
 
 /** 現行で導出専用と分かっている欄。将来版の未知の指定と区別する。 */
 function derivedField(path: readonly string[], key: string, value: unknown): boolean {
-  if (['derivedWidth', 'derivedHeight', 'projectionCache', 'tessellation', 'brep', 'mesh', 'resolvedViews', 'renderItems'].includes(key)) return true;
+  if (['derivedWidth', 'derivedHeight', 'projectionCache', 'tessellation', 'brep', 'mesh', 'resolvedViews', 'renderItems', 'viewFrames'].includes(key)) return true;
   if (path.length === 2 && path[0] === 'views' && path[1] === '*') {
-    return ['projectedLines', 'projectedCurves', 'curves', 'cuttingCurves'].includes(key)
+    return ['projectedLines', 'projectedCurves', 'curves', 'cuttingCurves', 'breakCurves', 'hatchCurves', 'centerCurves', 'cuttingAreas'].includes(key)
       || ((key === 'visible' || key === 'hidden') && isUnknownArray(value));
   }
+  if (['datums', 'gdtFrames', 'weldSymbols'].includes(path[0] ?? '')) {
+    if (['resolvedFeature', 'shapeKeys', 'paperPoint', 'valueMm', 'rowWidths', 'compartmentWidths', 'renderElements', 'issues'].includes(key)) return true;
+  }
   return path.length === 2 && path[0] === 'dimensions' && path[1] === '*'
-    && ['value', 'measuredValue', 'resolvedValue', 'geometry'].includes(key);
+    && ['value', 'measuredValue', 'resolvedValue', 'geometry', 'progressive'].includes(key);
 }
 
 /**

@@ -67,4 +67,53 @@ describe('字体の取得と失敗時の代替表示(P8-44)', () => {
     const store = ready(); await store.load();
     expect(store.outline('板', 3.5)).toEqual(store.outline('板', 3.5));
   });
+  it('ドラッグで同じ文字を繰り返し描いても字形と送り幅を再計算しない', async () => {
+    const commands = vi.fn((text: string, size: number) => font.commands(text, size));
+    const advance = vi.fn((text: string, size: number) => font.advance(text, size));
+    const store = createFontStore({ read: () => Promise.resolve(new ArrayBuffer(4)), parse: () => ({ ...font, commands, advance }) });
+    await store.load();
+    const original = store.outline('20', 3.5);
+    for (let i = 0; i < 100; i++) expect(store.outline('20', 3.5)).toBe(original);
+    expect(commands).toHaveBeenCalledTimes(1); expect(advance).toHaveBeenCalledTimes(1);
+    expect(store.outline('20', 7).metrics?.advanceMm).toBe(14);
+    store.outline('板', 3.5);
+    expect(commands).toHaveBeenCalledTimes(3);
+  });
+  it('多数の注記では最近使った字形を残し、古い字形を再計算する', async () => {
+    const commands = vi.fn((text: string, size: number) => font.commands(text, size));
+    const store = createFontStore({ read: () => Promise.resolve(new ArrayBuffer(4)), parse: () => ({ ...font, commands }) });
+    await store.load(); store.outline('古い注記', 3.5);
+    for (let i = 0; i < 400; i++) { store.outline(`注記${i}`, 3.5); store.outline('選択中', 3.5); }
+    const before = commands.mock.calls.length;
+    store.outline('選択中', 3.5); expect(commands).toHaveBeenCalledTimes(before);
+    store.outline('古い注記', 3.5); expect(commands).toHaveBeenCalledTimes(before + 1);
+  });
+  it('失敗した字形は記憶せず、次の有効な結果と字体ごとの幅を使う', async () => {
+    const commands = vi.fn((text: string, size: number) => font.commands(text, size)).mockImplementationOnce(() => { throw new Error('temporary glyph failure'); });
+    const store = createFontStore({ read: () => Promise.resolve(new ArrayBuffer(4)), parse: () => ({ ...font, commands }) });
+    await store.load(); expect(store.outline('20', 3.5).status).toBe('invalidText');
+    expect(store.outline('20', 3.5).status).toBe('ready'); expect(commands).toHaveBeenCalledTimes(2);
+    const other = createFontStore({ read: () => Promise.resolve(new ArrayBuffer(4)), parse: () => ({ ...font, advance: () => 12 }) });
+    await other.load(); expect(other.outline('20', 3.5).metrics?.advanceMm).toBe(12);
+    expect(store.outline('20', 3.5).metrics?.advanceMm).toBe(7);
+  });
+  it('注記が少数でも輪郭と長い文字列の保持量が上限を超えない', async () => {
+    const dense = vi.fn<DrawingFont['commands']>(() => [{ type: 'M', x: 0, y: 0 },
+      ...Array.from({ length: 20_000 }, (_, index) => ({ type: 'L' as const, x: index % 20, y: Math.floor(index / 20) }))]);
+    const store = createFontStore({ read: () => Promise.resolve(new ArrayBuffer(4)), parse: () => ({ ...font, commands: dense }) });
+    await store.load();
+    store.outline('密な輪郭A', 3.5); store.outline('密な輪郭B', 3.5); store.outline('密な輪郭A', 3.5);
+    expect(dense).toHaveBeenCalledTimes(3);
+    const commands = vi.fn((text: string, size: number) => font.commands(text, size));
+    const texts = createFontStore({ read: () => Promise.resolve(new ArrayBuffer(4)), parse: () => ({ ...font, commands }) });
+    await texts.load(); const first = '板'.repeat(1000);
+    texts.outline(first, 3.5);
+    for (let i = 0; i < 30; i++) texts.outline(`${first}${i}`, 3.5);
+    const before = commands.mock.calls.length;
+    texts.outline(first, 3.5); expect(commands).toHaveBeenCalledTimes(before + 1);
+    // 単独で予算を超えるキーも残さず、結果自体は正確に返す。
+    const huge = '板'.repeat(20_000);
+    expect(texts.outline(huge, 3.5).status).toBe('ready'); texts.outline(huge, 3.5);
+    expect(commands).toHaveBeenCalledTimes(before + 3);
+  });
 });

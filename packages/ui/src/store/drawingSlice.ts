@@ -1,4 +1,4 @@
-import type { DimensionTarget, DrawingDocument } from '@pointercad/drawing';
+import type { DimensionSeriesInput, DimensionTarget, DrawingDocument, DrawingTable, DrawingViewConstruction } from '@pointercad/drawing';
 import { createUndoStack, emptyDrawingSourceLibrary, pushUndo, undo, redo,
   type DrawingSourceLibrary, type DrawingSourceResolution, type DrawingRefreshResult,
   type SuggestedDimensionKind, type UndoStack, type ImportedShapeBytes } from '@pointercad/model';
@@ -18,7 +18,14 @@ export interface DrawingSnapshot {
   readonly document: DrawingDocument;
   readonly sources: DrawingSourceLibrary;
 }
-export type DrawingTool = 'select' | 'dimension' | 'annotation' | 'note' | 'balloon';
+export type DrawingTool = 'select' | 'dimension' | 'dimensionSeries' | 'annotation' | 'note' | 'balloon' | 'datum' | 'gdt' | 'weld';
+/** 作成フォームの表示だけを管理する。文書や保存データには含めない。 */
+export type DrawingEditor = { readonly kind: 'view'; readonly cameraId?: string; readonly constructionKind?: DrawingViewConstruction['kind'];
+  readonly sourceViewId?: string; readonly targets?: readonly DimensionTarget[] }
+  | { readonly kind: 'table'; readonly tableKind?: DrawingTable['kind'] }
+  | { readonly kind: 'dimension'; readonly seriesKind: DimensionSeriesInput['kind']; readonly axis: 'x' | 'y'; readonly baseIndex: number; readonly offset: string }
+  | { readonly kind: 'annotation'; readonly manufacturingKind: 'datum' | 'gdt' | 'weld'; readonly elementId?: string }
+  | { readonly kind: 'layer' };
 
 /** 図面文書の寿命。履歴と保存処理はP8後段が同じ欄へ接続する。 */
 export interface DrawingSlice {
@@ -31,6 +38,7 @@ export interface DrawingSlice {
   readonly drawingImportedShapes: ImportedShapeBytes;
   readonly drawingUndoStack: UndoStack<DrawingSnapshot> | null;
   readonly drawingTool: DrawingTool;
+  readonly drawingEditor: DrawingEditor | null;
   readonly drawingRequestedDimension: SuggestedDimensionKind | null;
   readonly drawingTargets: readonly DimensionTarget[];
   readonly drawingSelectedIds: readonly string[];
@@ -43,6 +51,8 @@ export interface DrawingSlice {
   readonly undoDrawing: () => void;
   readonly redoDrawing: () => void;
   readonly setDrawingTool: (tool: DrawingTool, requested?: SuggestedDimensionKind | null) => void;
+  readonly openDrawingEditor: (editor: DrawingEditor) => void;
+  readonly updateDrawingSeriesEditor: (changes: Partial<Omit<Extract<DrawingEditor, { kind: 'dimension' }>, 'kind'>>) => void;
   readonly setDrawingTargets: (targets: readonly DimensionTarget[]) => void;
   readonly selectDrawingIds: (ids: readonly string[]) => void;
   readonly setDrawingMessage: (message: string | null) => void;
@@ -54,14 +64,14 @@ export interface DrawingSlice {
 export type DrawingInitialState = Pick<
   DrawingSlice,
   'drawing' | 'savedDrawing' | 'savedDrawingSources' | 'drawingFileName' | 'drawingInitialName' | 'drawingSources' | 'drawingImportedShapes'
-  | 'drawingUndoStack' | 'drawingTool' | 'drawingRequestedDimension' | 'drawingTargets' | 'drawingSelectedIds'
+  | 'drawingUndoStack' | 'drawingTool' | 'drawingEditor' | 'drawingRequestedDimension' | 'drawingTargets' | 'drawingSelectedIds'
   | 'drawingResolution' | 'drawingSourceResolution' | 'drawingBusy' | 'drawingMessage'
 >;
 
 export function createDrawingInitialState(): DrawingInitialState {
   return { drawing: null, savedDrawing: null, savedDrawingSources: null, drawingFileName: null, drawingInitialName: null,
     drawingSources: emptyDrawingSourceLibrary(), drawingImportedShapes: new Map(), drawingUndoStack: null,
-    drawingTool: 'select', drawingRequestedDimension: null, drawingTargets: [], drawingSelectedIds: [],
+    drawingTool: 'select', drawingEditor: null, drawingRequestedDimension: null, drawingTargets: [], drawingSelectedIds: [],
     drawingResolution: null, drawingSourceResolution: null, drawingBusy: false, drawingMessage: null };
 }
 
@@ -106,7 +116,7 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
     if (stack === current.drawingUndoStack) return;
     set((state) => ({ drawing: stack.present.document, drawingSources: stack.present.sources, drawingUndoStack: stack,
       canUndo: stack.past.length > 0, canRedo: stack.future.length > 0, documentVersion: state.documentVersion + 1,
-      drawingSelectedIds: [], drawingTargets: [], drawingTool: 'select', drawingRequestedDimension: null, drawingMessage: null }));
+      drawingSelectedIds: [], drawingTargets: [], drawingTool: 'select', drawingEditor: null, drawingRequestedDimension: null, drawingMessage: null }));
   },
   redoDrawing: () => {
     const current = get();
@@ -115,13 +125,27 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
     if (stack === current.drawingUndoStack) return;
     set((state) => ({ drawing: stack.present.document, drawingSources: stack.present.sources, drawingUndoStack: stack,
       canUndo: stack.past.length > 0, canRedo: stack.future.length > 0, documentVersion: state.documentVersion + 1,
-      drawingSelectedIds: [], drawingTargets: [], drawingTool: 'select', drawingRequestedDimension: null, drawingMessage: null }));
+      drawingSelectedIds: [], drawingTargets: [], drawingTool: 'select', drawingEditor: null, drawingRequestedDimension: null, drawingMessage: null }));
   },
   setDrawingTool: (drawingTool, drawingRequestedDimension = null) => set({ drawingTool, drawingRequestedDimension,
-    drawingTargets: [], drawingSelectedIds: [], drawingMessage: null }),
-  setDrawingTargets: (drawingTargets) => set({ drawingTargets, drawingSelectedIds: [], drawingMessage: null }),
-  selectDrawingIds: (drawingSelectedIds) => set({ drawingSelectedIds, drawingTargets: [], drawingMessage: null }),
-  setDrawingMessage: (drawingMessage) => set({ drawingMessage }),
+    drawingEditor: null, drawingTargets: [], drawingSelectedIds: [], drawingMessage: null }),
+  openDrawingEditor: (drawingEditor) => {
+    if (get().drawing === null || get().drawingBusy) return;
+    set({ drawingEditor, drawingTool: drawingEditor.kind === 'dimension' ? 'dimensionSeries' : drawingEditor.kind === 'annotation' ? drawingEditor.manufacturingKind : 'select', drawingTargets: [], drawingSelectedIds: [], drawingRequestedDimension: null, drawingMessage: null });
+  },
+  updateDrawingSeriesEditor: (changes) => {
+    const editor = get().drawingEditor;
+    if (editor?.kind === 'dimension') set({ drawingEditor: { ...editor, ...changes } });
+  },
+  setDrawingTargets: (drawingTargets) => set((state) => {
+    const editor = state.drawingEditor;
+    const base = editor?.kind === 'dimension' ? state.drawingTargets[editor.baseIndex] : undefined;
+    const baseIndex = base === undefined ? 0 : Math.max(0, drawingTargets.findIndex((target) => JSON.stringify(target) === JSON.stringify(base)));
+    return { drawingTargets, drawingEditor: editor?.kind === 'dimension' ? { ...editor, baseIndex } : editor?.kind === 'annotation' ? editor : null, drawingSelectedIds: [], drawingMessage: null };
+  }),
+  selectDrawingIds: (drawingSelectedIds) => set((state) => ({ drawingSelectedIds, drawingEditor: null, drawingTargets: [], drawingMessage: null,
+    ...(state.drawingTool === 'dimensionSeries' ? { drawingTool: 'select' as const } : {}) })),
+  setDrawingMessage: (drawingMessage) => set(drawingMessage === null ? { drawingMessage } : { drawingMessage, fileMessage: null }),
   setDrawingResolution: (drawing, drawingResolution, drawingSourceResolution) => {
     if (get().drawing !== drawing) return;
     set({ drawingResolution, drawingSourceResolution, drawingBusy: false,

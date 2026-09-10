@@ -320,6 +320,9 @@ export interface SectionResult {
   readonly visible: readonly HiddenLineCurve[];
   readonly hidden: readonly HiddenLineCurve[];
   readonly cuttingCurves: readonly PlaneCurve[];
+  /** 面ごとの閉じた輪郭。配置ごとのハッチングを混同しない。 */
+  readonly cuttingAreas?: readonly { readonly bodyId: string; readonly occurrenceId: string | null;
+    readonly point: Vec3Tuple; readonly normal: Vec3Tuple; readonly curves: readonly PlaneCurve[] }[];
   readonly failures: readonly DrawingKernelFailure[];
   readonly cancelled: boolean;
 }

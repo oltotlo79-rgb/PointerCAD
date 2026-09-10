@@ -52,12 +52,16 @@ export interface Dimension {
   readonly measurement: DimensionMeasurement;
   readonly targets: readonly DimensionTarget[];
   readonly placement: DimensionPlacement;
+  /** 累進寸法は1本の線と全参照を保存する。各目盛りの実値・描画形状は再計算する。 */
+  readonly series?: { readonly kind: 'progressive'; readonly baseIndex: number };
   readonly tolerance?: DimensionTolerance;
   /** 許容差は公称寸法ごとに引き直す。表から導出する上下偏差は保存しない。 */
   readonly fit?: { readonly symbol: string; readonly showDeviation: boolean };
   readonly prefix?: string;
   readonly suffix?: string;
   readonly reference: boolean;
+  /** 理論的に正確な寸法。公称値を長方形で囲み、寸法公差とは併用しない。 */
+  readonly basic?: boolean;
   readonly origin: 'auto' | 'manual';
   readonly layerId: string;
   readonly style?: DrawingElementStyle | null;

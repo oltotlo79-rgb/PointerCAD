@@ -1,5 +1,7 @@
-import { drawingViewBasis, type DimensionTarget, type DrawingDocument, type Point2, type Vector3 } from '@pointercad/drawing';
-import { applyPlacementToPoint, drawingTargetFromProjection, resolveDimensionTarget, type DrawingSourceResolution, type ResolvedDrawingCurve, type ResolvedDrawingView } from '@pointercad/model';
+import { drawingDimensionContext } from '@pointercad/model';
+import { drawingRegionContainsPoint, drawingViewBasis, type DimensionTarget, type DrawingDocument, type Point2, type Vector3 } from '@pointercad/drawing';
+import { applyPlacementToPoint, drawingTargetFromProjection, resolveDimensionTarget, resolvedDimensionView, unfoldDrawingPick, drawingSectionRetainsPoint,
+  type DrawingSourceResolution, type ResolvedDrawingCurve, type ResolvedDrawingView } from '@pointercad/model';
 
 function distanceToSegment(point: Point2, a: Point2, b: Point2): number {
   const x = b[0] - a[0], y = b[1] - a[1], denominator = x * x + y * y;
@@ -26,7 +28,7 @@ export function distanceToDrawingCurve(point: Point2, curve: ResolvedDrawingCurv
 export function pickDrawingGeometry(document: DrawingDocument, source: DrawingSourceResolution, views: readonly ResolvedDrawingView[],
   point: Point2, toleranceMm: number): DimensionTarget | null {
   const instances = source.dimensionInstances ?? [];
-  const context = { instances, modelCenter: source.center };
+  const context = drawingDimensionContext(source);
   let nearest: DimensionTarget | null = null, distance = toleranceMm;
   let vertexTarget: DimensionTarget | null = null, vertexDistance = toleranceMm * 0.65;
   for (const view of views) {
@@ -57,22 +59,35 @@ export function pickDrawingGeometry(document: DrawingDocument, source: DrawingSo
 
 /** 実メッシュの三角形を紙面へ写し、視線の手前の面を選ぶ。輪郭の矩形で穴を埋めない。 */
 export function pickDrawingFace(document: DrawingDocument, source: DrawingSourceResolution, views: readonly ResolvedDrawingView[], point: Point2): DimensionTarget | null {
+  const context = drawingDimensionContext(source);
   for (const projected of views) {
-    const view = document.views.find((item) => item.id === projected.viewId);
+    const view = resolvedDimensionView(projected.viewId, document, context);
     if (view === undefined || document.layers.find((layer) => layer.id === view.layerId)?.visible !== true) continue;
     const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
     if (basis === null) continue;
+    const hit = unfoldDrawingPick(point, projected.viewId, document, context); if (hit === null) continue;
+    const frame = source.viewFrames?.get(projected.viewId), center = frame?.modelCenter ?? source.center;
     const scale = view.scale ?? document.sheet.scale;
     const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     let nearest: DimensionTarget | null = null, depth = Infinity;
+    const originCoordinate = (axis: number): number => center[axis]
+      + (hit[0] - view.position[0]) / scale * basis.x[axis] + (hit[1] - view.position[1]) / scale * basis.y[axis];
+    const origin: Vector3 = [originCoordinate(0), originCoordinate(1), originCoordinate(2)];
+    for (const area of projected.cuttingAreas ?? []) {
+      if (!area.loops.reduce((inside, loop) => inside !== drawingRegionContainsPoint(hit, { kind: 'polygon', points: loop }), false)) continue;
+      const denominator = dot(view.direction, area.normal);
+      if (Math.abs(denominator) < 1e-9) continue;
+      const relative: Vector3 = [area.point[0] - origin[0], area.point[1] - origin[1], area.point[2] - origin[2]];
+      depth = Math.min(depth, dot(relative, area.normal) / denominator);
+    }
     for (const instance of source.dimensionInstances ?? []) {
       if (instance.sourceRef !== document.source.sourceRef) continue;
       const mesh = instance.body.mesh;
-      const vertices: { readonly point: Point2; readonly depth: number }[] = [];
+      const vertices: { readonly point: Point2; readonly depth: number; readonly world: Vector3 }[] = [];
       for (let offset = 0; offset < mesh.positions.length; offset += 3) {
         const world = applyPlacementToPoint(instance.placement, [mesh.positions[offset], mesh.positions[offset + 1], mesh.positions[offset + 2]]);
-        const relative: Vector3 = [world[0] - source.center[0], world[1] - source.center[1], world[2] - source.center[2]];
-        vertices.push({ point: [view.position[0] + dot(relative, basis.x) * scale, view.position[1] + dot(relative, basis.y) * scale], depth: dot(relative, view.direction) });
+        const relative: Vector3 = [world[0] - center[0], world[1] - center[1], world[2] - center[2]];
+        vertices.push({ point: [view.position[0] + dot(relative, basis.x) * scale, view.position[1] + dot(relative, basis.y) * scale], depth: dot(relative, view.direction), world });
       }
       for (const face of instance.body.faces) {
         for (let triangle = face.triangleOffset; triangle < face.triangleOffset + face.triangleCount; triangle++) {
@@ -81,10 +96,13 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
           const cross = (x: Point2, y: Point2, z: Point2): number => (y[0] - x[0]) * (z[1] - x[1]) - (y[1] - x[1]) * (z[0] - x[0]);
           const area = cross(a.point, b.point, c.point);
           if (Math.abs(area) < 1e-10) continue;
-          const u = cross(point, b.point, c.point) / area, v = cross(point, c.point, a.point) / area, w = 1 - u - v;
+          const u = cross(hit, b.point, c.point) / area, v = cross(hit, c.point, a.point) / area, w = 1 - u - v;
           if (Math.min(u, v, w) < -1e-9) continue;
           const currentDepth = u * a.depth + v * b.depth + w * c.depth;
           if (currentDepth >= depth) continue;
+          const coordinate = (axis: number): number => u * a.world[axis] + v * b.world[axis] + w * c.world[axis];
+          const world: Vector3 = [coordinate(0), coordinate(1), coordinate(2)];
+          if (!drawingSectionRetainsPoint(world, frame?.section)) continue;
           depth = currentDepth;
           nearest = { kind: 'subShape', viewId: view.id, sourceRef: instance.sourceRef,
             ...(instance.componentId === undefined ? {} : { componentId: instance.componentId }),

@@ -19,11 +19,52 @@ function resolved(targets: readonly ResolvedDimensionTarget[] = [line], dimensio
 }
 
 describe('寸法の画面とSVGに共通する表示', () => {
+  it.each([2.5, 3.5, 5])('基本寸法は文字高%sでも四辺に紙面1mmの余白を取り、実測値とサイズ寸法線を保つ', (textHeight) => {
+    const paper = { ...document, sheet: { ...document.sheet, textHeight } };
+    const ordinary = displayDrawingDimension(paper, resolved([line], { prefix: '2×', suffix: ' 通し' }), outline);
+    const basic = displayDrawingDimension(paper, resolved([line], { basic: true, prefix: '2×', suffix: ' 通し' }), outline);
+    expect(basic.element.texts).toEqual(ordinary.element.texts); expect(basic.unresolved).toBe(false);
+    expect(basic.sizeDimensionLine).toEqual({ from: [0, 10], to: [60, 10] });
+    if (basic.bounds === null || ordinary.bounds === null) throw new Error('文字境界なし');
+    expect(ordinary.bounds.left - basic.bounds.left).toBeCloseTo(1, 10);
+    expect(basic.bounds.right - ordinary.bounds.right).toBeCloseTo(1, 10);
+    expect(ordinary.bounds.bottom - basic.bounds.bottom).toBeCloseTo(1, 10);
+    expect(basic.bounds.top - ordinary.bounds.top).toBeCloseTo(1, 10);
+    for (const scale of [0.5, 1, 2]) {
+      const scaled = displayDrawingDimension({ ...paper, sheet: { ...paper.sheet, scale } },
+        resolved([line], { basic: true, prefix: '2×', suffix: ' 通し' }), outline);
+      expect(scaled.bounds).toEqual(basic.bounds);
+    }
+    expect(basic.element.curves?.at(-1)).toMatchObject({ kind: 'polyline', closed: true });
+    expect(displayDrawingDimension(document, resolved([line], { basic: true, reference: true }), outline).unresolved).toBe(true);
+  });
+  it('弧長を半径や紙上長に置き換えず、実測値と寸法円弧を表示する', () => {
+    const display = displayDrawingDimension(document, resolved([circle], { kind: 'arcLength', measurement: 'radius' }, Math.PI * 8), outline);
+    expect(display.unresolved).toBe(false); expect(display.element.texts?.[0].text).toMatch(/^⌒25\.13/u);
+    expect(display.element.curves?.[0]?.kind).toBe('polyline'); expect(display.element.fills).toHaveLength(2);
+  });
+  it('座標は縮尺によらない符号付きのX/Yを、終点へ引出線で示す', () => {
+    const points: readonly ResolvedDimensionTarget[] = [{ kind: 'point', point: [0, 0, 0], paperPoint: [20, 30] },
+      { kind: 'point', point: [-30, 0, 40], paperPoint: [-40, 110] }];
+    const display = displayDrawingDimension(document, { ...resolved(points, { kind: 'coordinate', measurement: 'coordinate' }),
+      value: null, coordinates: [-30, 40], text: 'X: -30 / Y: 40' }, outline);
+    expect(display.unresolved).toBe(false); expect(display.element.texts?.[0].text).toBe('X: -30 / Y: 40');
+    expect(display.element.curves?.[0]).toMatchObject({ kind: 'segment', from: [-40, 110] }); expect(display.element.fills).toHaveLength(1);
+  });
   it('紙上60mmでも元の実距離50を表示する', () => {
     const display = displayDrawingDimension(document, resolved(), outline);
     expect(display.element.texts?.[0].text).toBe('50');
     expect(display.element.curves?.[0]).toEqual({ kind: 'segment', from: [0, 10], to: [60, 10] });
     expect(display.element.fills).toHaveLength(2);
+  });
+  it('用紙の文字高さを通常寸法と座標寸法へ共通に適用する', () => {
+    const custom = { ...document, sheet: { ...document.sheet, textHeight: 5 } };
+    expect(displayDrawingDimension(custom, resolved(), outline).element.texts?.[0].sizeMm).toBe(5);
+    const dimension = { ...resolved([line], { kind: 'coordinate', measurement: 'coordinate' }), value: null,
+      coordinates: [30, 40] as const, text: 'X: 30±0.1 / Y: 40±0.1', displayTolerance: { kind: 'symmetric', value: 0.1 } as const };
+    const display = displayDrawingDimension(custom, dimension, outline);
+    expect(display.element.texts?.[0]).toMatchObject({ sizeMm: 5, text: 'X: 30±0.1 / Y: 40±0.1' });
+    expect(display.unresolved).toBe(false);
   });
   it('倍尺の円に実径8を表示し、紙面の矢印は半径8の位置へ置く', () => {
     const display = displayDrawingDimension(document, resolved([circle], { kind: 'diameter', measurement: 'radius' }, 8), outline);
@@ -51,6 +92,11 @@ describe('寸法の画面とSVGに共通する表示', () => {
   it('±0.1を1行に表示する', () => {
     const display = displayDrawingDimension(document, resolved([line], { tolerance: { kind: 'symmetric', value: 0.1 } }), outline);
     expect(display.element.texts?.map((text) => text.text)).toEqual(['50±0.1']);
+  });
+  it('表示と共通出力で接尾文字を公差の後ろに置き参考寸法全体を括る', () => {
+    const display = displayDrawingDimension(document, resolved([line], { prefix: '4×', suffix: ' 通し', reference: true,
+      tolerance: { kind: 'symmetric', value: 0.1 } }), outline);
+    expect(display.element.texts?.map((text) => text.text)).toEqual(['(4×50±0.1 通し)']);
   });
   it('上下偏差を2段に分けて0.7倍の字体で表示する', () => {
     const display = displayDrawingDimension(document, resolved([line], { tolerance: { kind: 'deviation', upper: 0.2, lower: -0.1 } }), outline);

@@ -1,10 +1,10 @@
 import type { DimensionTarget, DrawingView, Point2 } from '@pointercad/drawing';
-import { createDrawingDocument, IDENTITY_PLACEMENT, type SolidBody, type SolidEdgeEntry } from '@pointercad/model';
+import { createDrawingDocument, drawingDimensionContext, IDENTITY_PLACEMENT, resolveDrawingDimensions, type SolidBody, type SolidEdgeEntry } from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { beginDrawingDimensionDrag, commitDrawingDimension, deleteSelectedDrawingElements, finishDrawingDimensionDrag,
-  pickDrawingTarget, previewDrawingDimensionDrag, startDrawingDimension } from './dimensionCommands.js';
+  pickDrawingTarget, previewDrawingDimensionDrag, previewDrawingDimensionsDrag, startDrawingDimension } from './dimensionCommands.js';
 
 const source = { sourceRef: 'source-1', sourceKind: 'part' as const, fileName: 'plate.pcad', path: '', contentHash: 'hash', importedAt: '' };
 const front: DrawingView = { id: 'view-1', name: '正面', kind: 'front', position: [100, 100], scale: null,
@@ -43,6 +43,14 @@ describe('図面寸法の確定・選択・移動(P8-28)', () => {
     expect(dimensions()).toHaveLength(1);
     expect(dimensions()[0]).toMatchObject({ ...lengthKind, targets: [edgeTarget()], origin: 'manual' });
   });
+  it('寸法用の既定レイヤーを削除した後も有効なレイヤーへ寸法を作る', () => {
+    const document = state().drawing;
+    if (document === null) throw new Error('図面なし');
+    state().applyDrawing({ ...document, layers: document.layers.filter((layer) => layer.id !== 'layer-4') });
+    pickDrawingTarget(edgeTarget());
+    expect(commitDrawingDimension()).toBe(true);
+    expect(state().drawing?.layers.some((layer) => layer.id === dimensions()[0].layerId)).toBe(true);
+  });
   it('長さを押してから辺を選んでも同じ対象で1本増える', () => {
     startDrawingDimension(lengthKind);
     expect(dimensions()).toHaveLength(0);
@@ -53,6 +61,33 @@ describe('図面寸法の確定・選択・移動(P8-28)', () => {
     pickDrawingTarget(edgeTarget(circle));
     expect(commitDrawingDimension()).toBe(true);
     expect(dimensions()[0].kind).toBe('diameter');
+  });
+  it('Ctrl/Shiftで始めた線間距離は2本目まで待ち、1本の長さへ早期確定しない', () => {
+    const other: SolidEdgeEntry = { ...line, index: 2, start: [0, 0, 30], end: [20, 0, 30], midpoint: [10, 0, 30] };
+    const sourceResolution = state().drawingSourceResolution;
+    if (sourceResolution === null) throw new Error('source missing');
+    useAppStore.setState({ drawingSourceResolution: { ...sourceResolution, dimensionInstances: [{ ...sourceResolution.dimensionInstances?.[0],
+      sourceRef: source.sourceRef, bodyId: 'worker-key', placement: IDENTITY_PLACEMENT, body: { ...body, edges: [...body.edges, other] } }] } });
+    startDrawingDimension(lengthKind); const history = state().drawingUndoStack;
+    expect(pickDrawingTarget(edgeTarget(), true)).toBe(true); expect(dimensions()).toHaveLength(0); expect(state().drawingUndoStack).toBe(history);
+    expect(pickDrawingTarget(edgeTarget(other), true)).toBe(true); expect(dimensions()[0].targets).toHaveLength(2);
+    const current = state().drawing, geometry = state().drawingSourceResolution;
+    if (current === null || geometry === null) throw new Error('drawing missing');
+    expect(resolveDrawingDimensions(current, drawingDimensionContext(geometry))[0].value).toBe(30);
+    expect(dimensions()[0].placement.commonNormalCoordinate).toBe(-92);
+    state().undo(); expect(dimensions()).toHaveLength(0);
+  });
+  it('弧長を明示すると元の円への参照を残し、値を保存しない', () => {
+    pickDrawingTarget(edgeTarget(circle));
+    expect(startDrawingDimension({ kind: 'arcLength', measurement: 'radius' })).toBe(true);
+    expect(dimensions()[0]).toMatchObject({ kind: 'arcLength', targets: [edgeTarget(circle)] });
+    expect(dimensions()[0]).not.toHaveProperty('value'); state().undo(); expect(dimensions()).toHaveLength(0);
+  });
+  it('座標寸法は2点を基準・測定点の順で残して一度に確定する', () => {
+    startDrawingDimension({ kind: 'coordinate', measurement: 'coordinate' });
+    pickDrawingTarget(pointTarget([10, 20])); expect(dimensions()).toHaveLength(0);
+    pickDrawingTarget(pointTarget([-20, 60]), true);
+    expect(dimensions()[0]).toMatchObject({ kind: 'coordinate', measurement: 'coordinate', targets: [pointTarget([10, 20]), pointTarget([-20, 60])] });
   });
   it('確定直後は道具が選択に戻り作成した木の行が選択済み', () => {
     startDrawingDimension(); pickDrawingTarget(edgeTarget());
@@ -125,6 +160,34 @@ describe('図面寸法の確定・選択・移動(P8-28)', () => {
     state().undo();
     expect(drag === null ? null : finishDrawingDimensionDrag(drag, [120, 120])).toBe(false);
     expect(dimensions()).toEqual([]);
+  });
+  it('法線の異なる2寸法を同じ差分で移動し、1回のUndoで両方を戻す', () => {
+    pickDrawingTarget(edgeTarget()); commitDrawingDimension();
+    pickDrawingTarget(edgeTarget(circle)); commitDrawingDimension();
+    const document = state().drawing, original = dimensions(), version = state().documentVersion;
+    const drag = beginDrawingDimensionDrag('dim-1', [0, 1], [110, 109], [110, 109],
+      [{ id: 'dim-2', normal: [1, 0], textPosition: [120, 120] }]);
+    if (drag === null) throw new Error('group drag');
+    const preview = previewDrawingDimensionsDrag(drag, [115, 119]);
+    expect(preview?.map((item) => item.placement)).toEqual([
+      { commonNormalCoordinate: original[0].placement.commonNormalCoordinate + 10, textPosition: [115, 119] },
+      { commonNormalCoordinate: original[1].placement.commonNormalCoordinate + 5, textPosition: [125, 130] },
+    ]);
+    expect(state().drawing).toBe(document); expect(state().documentVersion).toBe(version);
+    expect(finishDrawingDimensionDrag(drag, [115, 119])).toBe(true);
+    expect(dimensions()).toEqual(preview); expect(state().documentVersion).toBe(version + 1);
+    expect(state().drawingSelectedIds).toEqual(['dim-1', 'dim-2']);
+    state().undo(); expect(state().drawing).toBe(document);
+    state().redo(); expect(dimensions()).toEqual(preview);
+  });
+  it('移動対象の一部が無効な場合や再計算中は、どの寸法も更新しない', () => {
+    pickDrawingTarget(edgeTarget()); commitDrawingDimension(); const original = state().drawing;
+    expect(beginDrawingDimensionDrag('dim-1', [0, 1], [110, 109], [110, 109],
+      [{ id: 'missing', normal: [1, 0], textPosition: [0, 0] }])).toBeNull();
+    const drag = beginDrawingDimensionDrag('dim-1', [0, 1], [110, 109], [110, 109]);
+    if (drag === null) throw new Error('drag');
+    useAppStore.setState({ drawingBusy: true });
+    expect(finishDrawingDimensionDrag(drag, [115, 119])).toBe(false); expect(state().drawing).toBe(original);
   });
   it('動かなかったドラッグとNaN座標で履歴を増やさない', () => {
     pickDrawingTarget(edgeTarget()); commitDrawingDimension();

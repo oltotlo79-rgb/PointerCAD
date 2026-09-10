@@ -6,6 +6,7 @@ export interface DrawingDxfResult {
   readonly skippedPrimitiveCount: number;
   readonly flattenedCurveCount: number;
   readonly approximatedColorCount: number;
+  readonly outlinedTextCount: number;
   readonly lineWidthsPreserved: false;
 }
 
@@ -15,5 +16,5 @@ export function writeDrawingDxf(...input: Parameters<typeof drawingToDxf>): Draw
   const written = writeDxfDocument(converted.entities, converted.options);
   return { text: written.text, skippedPrimitiveCount: converted.skippedPrimitiveCount,
     flattenedCurveCount: converted.flattenedCurveCount, approximatedColorCount: converted.approximatedColorCount,
-    lineWidthsPreserved: false };
+    outlinedTextCount: converted.outlinedTextCount, lineWidthsPreserved: false };
 }

@@ -63,4 +63,18 @@ describe('寸法の公差と実測字体による上下2段配置', () => {
   it('同じ入力は同じ位置と幅になる', () => {
     expect(layout({ kind: 'deviation', upper: 0.1, lower: -0.05 })).toEqual(layout({ kind: 'deviation', upper: 0.1, lower: -0.05 }));
   });
+  it('対称公差の後ろに補足文字を置き参考括弧で全体を囲む', () => {
+    expect(layoutDimensionTolerance({ mainText: '4×20', suffix: ' 通し', reference: true, sizeMm: 3.5,
+      tolerance: { kind: 'symmetric', value: 0.2 }, measure })?.runs[0].text).toBe('(4×20±0.2 通し)');
+  });
+  it('上下偏差と補足文字が重ならず、墨の範囲に補足全体を含める', () => {
+    const result = layoutDimensionTolerance({ mainText: '20H7', suffix: ' 通し', reference: true, sizeMm: 3.5,
+      tolerance: { kind: 'deviation', upper: 0.021, lower: 0 }, decimals: 4, measure });
+    if (result === null) throw new Error('配置なし');
+    expect(result.runs.map((run) => run.text)).toEqual(['(20H7', '+0.021', '0', ' 通し)']);
+    const [, upper, lower, suffix] = result.runs;
+    expect(suffix.position[0] + suffix.metrics.inkBounds.left).toBeGreaterThan(Math.max(
+      upper.position[0] + upper.metrics.inkBounds.right, lower.position[0] + lower.metrics.inkBounds.right));
+    expect(result.inkBounds.right).toBeGreaterThanOrEqual(suffix.position[0] + suffix.metrics.inkBounds.right);
+  });
 });

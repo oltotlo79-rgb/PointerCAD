@@ -205,6 +205,7 @@ async function measureViewportFps(page: Page): Promise<{
   const centerY = box.y + box.height / 2;
   const normalBuffer = await canvas.evaluate((element: HTMLCanvasElement) => ({
     width: element.width, height: element.height,
+    cssWidth: element.clientWidth, cssHeight: element.clientHeight,
   }));
   await page.mouse.move(centerX, centerY);
   const before = await readViewportRenderStats(page);
@@ -219,8 +220,9 @@ async function measureViewportFps(page: Page): Promise<{
     }));
     expect(interactiveBuffer.width).toBeLessThan(normalBuffer.width);
     expect(interactiveBuffer.height).toBeLessThan(normalBuffer.height);
-    expect(interactiveBuffer.cssWidth).toBeCloseTo(box.width, 0);
-    expect(interactiveBuffer.cssHeight).toBeCloseTo(box.height, 0);
+    // client寸法は整数、boundingBoxは小数。操作前後の同じ測定値を厳密に比較する。
+    expect(interactiveBuffer.cssWidth).toBe(normalBuffer.cssWidth);
+    expect(interactiveBuffer.cssHeight).toBe(normalBuffer.cssHeight);
     // mouse.move自体がCDPの入力処理完了を待つ。ここへsleepを足すと次の入力が
     // フレーム締切を逃し、描画能力ではなくテストの入力待ちをfpsとして測ってしまう。
     // 実マウス入力を逐次送り、要求を1描画機会へまとめる本番経路を約2秒動かす。
@@ -238,6 +240,7 @@ async function measureViewportFps(page: Page): Promise<{
   }
   expect(await canvas.evaluate((element: HTMLCanvasElement) => ({
     width: element.width, height: element.height,
+    cssWidth: element.clientWidth, cssHeight: element.clientHeight,
   }))).toEqual(normalBuffer);
   // カメラ操作後はボタンを離して別の位置へ動かし、通常のhover更新も実描画へ通す。
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4);

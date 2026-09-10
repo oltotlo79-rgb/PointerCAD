@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { propertySectionKey } from './propertySectionKeys.js';
+import { DRAWING_PROPERTY_KINDS, drawingPropertySectionKey, propertySectionKey } from './propertySectionKeys.js';
 
 const KEYS = {
   component: propertySectionKey('component', 'shared'),
@@ -39,5 +39,16 @@ describe('propertySectionKey(rules/06 10.9)', () => {
   it('同じ入力から毎回同じkeyを返す', () => {
     expect(propertySectionKey('component', 'component-7'))
       .toBe(propertySectionKey('component', 'component-7'));
+  });
+  it.each(DRAWING_PROPERTY_KINDS)('図面の%s節を他の5節・組立の節と区別する', (kind) => {
+    const key = drawingPropertySectionKey(kind, 'shared', 'shared');
+    for (const other of DRAWING_PROPERTY_KINDS.filter((entry) => entry !== kind)) {
+      expect(key).not.toBe(drawingPropertySectionKey(other, 'shared', 'shared'));
+    }
+    expect(Object.values(KEYS)).not.toContain(key);
+  });
+  it('IDに区切り記号があっても文書と要素の組を取り違えない', () => {
+    expect(drawingPropertySectionKey('view', 'doc:a', 'b')).not.toBe(drawingPropertySectionKey('view', 'doc', 'a:b'));
+    expect(drawingPropertySectionKey('view', 'doc', 'a')).not.toBe(drawingPropertySectionKey('view', 'doc', 'b'));
   });
 });

@@ -1,0 +1,86 @@
+/// <reference lib="dom" />
+import { readFile } from 'node:fs/promises';
+import { expect, test } from '@playwright/test';
+import { KERNEL_TIMEOUT_MS } from './recompute.js';
+import { drawingFromBox, chooseDrawingMenu } from './drawingManufacturingFixture.js';
+import { drawingMessage } from './drawingMessages.js';
+
+test.describe('P9 幾何公差の実操作', () => {
+  test('平面度とデータム参照付き直角度を作成し、編集・移動・削除Undo・保存・SVGでも意味が残る(P9-8〜18)', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
+    await drawingFromBox(page);
+    const sheet = page.locator('.pcad-drawing-sheet'), tree = page.locator('.pcad-panel--left');
+    const owner = (id: string) => page.locator(`.pcad-drawing-svg [data-owner-id="${id}"]`);
+    async function face(viewId: string): Promise<void> {
+      const point = await owner(viewId).locator('path').evaluateAll((paths) => {
+        const bounds = paths.map((path) => path.getBoundingClientRect());
+        const left = Math.min(...bounds.map((box) => box.left)), right = Math.max(...bounds.map((box) => box.right));
+        const top = Math.min(...bounds.map((box) => box.top)), bottom = Math.max(...bounds.map((box) => box.bottom));
+        return { x: left + (right - left) * 0.35, y: top + (bottom - top) * 0.4 };
+      });
+      await page.mouse.click(point.x, point.y);
+    }
+    await chooseDrawingMenu(page, drawingMessage('drawing.toolbar.annotations'), drawingMessage('drawing.gdt.title')); await face('view-1');
+    const form = page.getByRole('form', { name: '幾何公差', exact: true });
+    await expect(form).toBeVisible(); await form.getByLabel('公差の値・式', { exact: true }).fill('0.1/2');
+    await form.getByLabel('横の位置 (mm)', { exact: true }).fill('110');
+    await form.getByLabel('縦の位置 (mm)', { exact: true }).fill('80');
+    await form.getByRole('button', { name: '決定', exact: true }).click();
+    await expect(owner('gdt-1').locator('[aria-label="0.05"]')).toHaveCount(1);
+    await expect(tree.getByRole('button', { name: '幾何公差 1', exact: true })).toBeVisible();
+    await chooseDrawingMenu(page, drawingMessage('drawing.toolbar.annotations'), drawingMessage('drawing.gdt.datum')); await face('view-2');
+    const datum = page.getByRole('form', { name: 'データム', exact: true });
+    await datum.getByLabel('横の位置 (mm)', { exact: true }).fill('140');
+    await datum.getByLabel('縦の位置 (mm)', { exact: true }).fill('240');
+    await datum.getByRole('button', { name: '決定', exact: true }).click();
+    await expect(owner('datum-1').locator('[aria-label="A"]')).toHaveCount(1);
+    await chooseDrawingMenu(page, drawingMessage('drawing.toolbar.annotations'), drawingMessage('drawing.gdt.title')); await face('view-1');
+    await form.getByLabel('公差の種類', { exact: true }).selectOption('perpendicularity');
+    await form.getByLabel('公差の値・式', { exact: true }).fill('0.02');
+    await form.getByRole('group', { name: '第1データム', exact: true }).getByLabel('データム', { exact: true }).selectOption({ label: 'A' });
+    await form.getByLabel('横の位置 (mm)', { exact: true }).fill('150');
+    await form.getByLabel('縦の位置 (mm)', { exact: true }).fill('80');
+    await form.getByRole('button', { name: '決定', exact: true }).click();
+    await expect(owner('gdt-2').locator('[aria-label="0.02"]')).toHaveCount(1);
+    await expect(owner('gdt-2').locator('[aria-label="A"]')).toHaveCount(1);
+    await tree.getByRole('button', { name: 'データム 1 A', exact: true }).click();
+    await datum.getByLabel('データム名（A〜Z）', { exact: true }).fill('B');
+    await datum.getByRole('button', { name: '決定', exact: true }).click();
+    await expect(owner('gdt-2').locator('[aria-label="B"]')).toHaveCount(1);
+    await sheet.focus(); await page.keyboard.press('Delete');
+    await expect(owner('datum-1')).toHaveCount(0);
+    await expect(page.getByRole('alert').filter({ hasText: drawingMessage('drawing.manufacturing.outputUnresolved') })).toBeVisible();
+    await page.keyboard.press('Control+z'); await expect(owner('datum-1').locator('[aria-label="B"]')).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: drawingMessage('drawing.manufacturing.outputUnresolved') })).toHaveCount(0);
+    await expect(page.locator('.pcad-statusbar')).not.toContainText('作り直しています');
+    await expect(owner('gdt-1').locator('[aria-label="0.05"]')).toBeVisible();
+    const bounds = await owner('gdt-1').locator('[aria-label="0.05"]').boundingBox(); if (bounds === null) throw new Error('公差枠なし');
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2); await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width / 2 + 20, bounds.y + bounds.height / 2 + 10, { steps: 10 }); await page.mouse.up();
+    await tree.getByRole('button', { name: '幾何公差 1', exact: true }).click();
+    await expect(form.getByLabel('公差の値・式', { exact: true })).toHaveValue('0.1/2');
+    await expect(form.getByLabel('横の位置 (mm)', { exact: true })).not.toHaveValue('110');
+    await page.screenshot({ path: testInfo.outputPath('gdt-flatness-perpendicularity.png'), fullPage: true });
+    await sheet.focus(); const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
+    const saved = await (await saving).path(); if (saved === null) throw new Error('公差図面の保存なし'); const bytes = await readFile(saved);
+    await chooseDrawingMenu(page, 'ファイル', '図面を書き出す');
+    const output = page.getByRole('form', { name: '図面を書き出す', exact: true }); await output.getByLabel('ファイルの種類', { exact: true }).selectOption('svg');
+    const downloading = page.waitForEvent('download'); await output.getByRole('button', { name: '書き出す', exact: true }).click();
+    const download = await downloading, svgPath = await download.path(); if (svgPath === null) throw new Error('公差SVGなし');
+    const svg = await readFile(svgPath, 'utf8'); expect(svg).toContain('data-owner-id="gdt-1"'); expect(svg).toContain('aria-label="0.02"');
+    await download.saveAs(testInfo.outputPath('gdt-manufacturing.svg'));
+    await page.reload(); const reopening = page.waitForEvent('filechooser'); await page.getByRole('button', { name: '開く', exact: true }).click();
+    await (await reopening).setFiles({ name: '幾何公差.pcadd', mimeType: 'application/zip', buffer: bytes });
+    await expect(owner('gdt-2').locator('[aria-label="B"]')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
+    await tree.getByRole('button', { name: '幾何公差 1', exact: true }).click();
+    await expect(form.getByLabel('公差の値・式', { exact: true })).toHaveValue('0.1/2');
+    await page.screenshot({ path: testInfo.outputPath('gdt-restored.png'), fullPage: true });
+    await form.getByLabel('公差の値・式', { exact: true }).focus(); await page.keyboard.press('F1');
+    const help = page.getByRole('dialog', { name: 'PointerCAD ヘルプ', exact: true });
+    await expect(help.getByRole('article').getByRole('heading', { level: 1 })).toHaveText('幾何公差とデータムを記入する');
+    const screenshot = help.getByRole('img', { name: '平面度とデータム参照付き直角度を記入した実画面', exact: true });
+    await expect(screenshot).toBeVisible(); await expect.poll(() => screenshot.evaluate((element) => element instanceof HTMLImageElement ? element.naturalWidth : 0)).toBe(1440);
+    await page.keyboard.press('Escape'); await expect(form.getByLabel('公差の値・式', { exact: true })).toBeFocused(); expect(errors).toEqual([]);
+  });
+});

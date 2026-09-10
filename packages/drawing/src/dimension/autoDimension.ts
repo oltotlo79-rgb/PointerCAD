@@ -36,6 +36,10 @@ export interface AutoDimensionResult {
 }
 const GAP = 8;
 const TOLERANCE = 1e-7;
+// 字形が接触していなくても隣の寸法と読める間隔を取る。両側1mmで計2mm。
+const paddedTextBox = (box: DimensionTextBox): DimensionTextBox => ({ ...box, bounds: {
+  left: box.bounds.left - 1, right: box.bounds.right + 1, bottom: box.bounds.bottom - 1, top: box.bounds.top + 1,
+} });
 
 /** 全体幅/高さ、同径の円、穴の位置を安定した順番で記入する(P8-38)。 */
 export function autoDimension(input: AutoDimensionInput): AutoDimensionResult | null {
@@ -119,7 +123,7 @@ export function autoDimension(input: AutoDimensionInput): AutoDimensionResult | 
     for (const center of row) { length(previous, center, 0, 'holeX'); previous = center; }
   }
   if (failed) return null;
-  const arranged = arrangeDimensions(items, [...boxes, ...(input.existingTextBoxes ?? [])]);
+  const arranged = arrangeDimensions(items, [...boxes, ...(input.existingTextBoxes ?? [])].map(paddedTextBox));
   if (arranged === null) return null;
   const untouched = input.existing.filter((dimension) => dimension.origin !== 'auto'
     || !dimension.targets.some((target) => target.viewId === input.viewId));

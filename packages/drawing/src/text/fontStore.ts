@@ -1,6 +1,7 @@
 import type { RenderSubpath, SemanticTextMetrics } from '../render/types.js';
 import { DRAWING_FONT_ASSET } from './fontAsset.js';
 import { textOutline, type GlyphPathCommand } from './textOutline.js';
+import { createOutlineCache } from './outlineCache.js';
 
 /** 字体の解析と取得を注入できる境界。文字の配置・輪郭化は同じ字体から求める。 */
 export interface DrawingFont {
@@ -55,6 +56,7 @@ export function createFontStore(options: {
   let status: FontLoadStatus = 'unloaded';
   let font: DrawingFont | null = null;
   let pending: Promise<FontLoadStatus> | null = null;
+  const outlines = createOutlineCache();
   const load = (): Promise<FontLoadStatus> => {
     if (status === 'ready') return Promise.resolve(status);
     if (pending !== null) return pending;
@@ -70,14 +72,18 @@ export function createFontStore(options: {
     if (!Number.isFinite(sizeMm) || sizeMm <= 0) return fallback('invalidText', sizeMm);
     const loadedFont = font;
     if (loadedFont === null) return fallback(status, sizeMm);
+    const cached = outlines.get(text, sizeMm);
+    if (cached !== undefined) return cached;
     try {
       const missing = [...new Set([...text].filter((character) => !loadedFont.hasGlyph(character)))];
       if (missing.length > 0) return fallback('missingGlyph', sizeMm, missing);
       const geometry = textOutline(loadedFont.commands(text, sizeMm));
       const advanceMm = loadedFont.advance(text, sizeMm);
       if (geometry === null || !Number.isFinite(advanceMm) || advanceMm < 0) return fallback('invalidText', sizeMm);
-      return { status: 'ready', subpaths: geometry.subpaths, fillRule: geometry.fillRule, missingCharacters: [],
+      const result: OutlinedText = { status: 'ready', subpaths: geometry.subpaths, fillRule: geometry.fillRule, missingCharacters: [],
         metrics: { fontId: loadedFont.id, sizeMm, advanceMm, inkBounds: geometry.inkBounds } };
+      outlines.put(text, sizeMm, result);
+      return result;
     } catch {
       return fallback('invalidText', sizeMm);
     }

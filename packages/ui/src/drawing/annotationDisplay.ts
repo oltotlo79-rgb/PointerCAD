@@ -1,3 +1,4 @@
+import { drawingDimensionContext } from '@pointercad/model';
 import { createArrowTriangle, drawingSymbol, surfaceFinish, type DimensionTarget, type DrawingDocument,
   type DrawingRenderCurve, type DrawingRenderElement, type OutlinedText, type Point2, type RenderSubpath } from '@pointercad/drawing';
 import { evaluateExpression } from '@pointercad/expression';
@@ -29,7 +30,7 @@ function arrowFill(tip: Point2, from: Point2): { readonly subpaths: readonly Ren
 /** 注記も寸法と同じ保存参照・最新の式から解決し、画面と書き出しへ共通の図形を渡す。 */
 export function displayDrawingAnnotations(document: DrawingDocument, source: DrawingSourceResolution, library: DrawingSourceLibrary,
   outline: (text: string, sizeMm: number) => OutlinedText): readonly DrawingRenderElement[] {
-  const context = { instances: source.dimensionInstances ?? [], modelCenter: source.center };
+  const context = drawingDimensionContext(source);
   const analysis = analyzeParameters(document.parameters, []);
   return document.annotations.flatMap((annotation): DrawingRenderElement[] => {
     if (annotation.sourceTarget === undefined) {

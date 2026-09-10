@@ -113,6 +113,9 @@ export function toSvg(document: RenderDocument, options: SvgOptions = {}): strin
   const definitions: string[] = [];
   const elements: string[] = [];
   for (const [index, primitive] of document.primitives.entries()) {
+    const view = primitive.viewId === undefined ? '' : xml(primitive.viewId);
+    if (view === null) return null;
+    const viewAttribute = primitive.viewId === undefined ? '' : ` data-view-id="${view}"`;
     const owner = xml(primitive.ownerId);
     const layer = xml(primitive.layerId);
     const transform = matrix(primitive.transform);
@@ -128,7 +131,7 @@ export function toSvg(document: RenderDocument, options: SvgOptions = {}): strin
       definitions.push(`<clipPath id="${id}" clipPathUnits="userSpaceOnUse"><path d="${data}" clip-rule="${primitive.clip.fillRule}" transform="${clipTransform}"/></clipPath>`);
       clip = ` clip-path="url(#${id})"`;
     }
-    elements.push(`<g data-owner-id="${owner}" data-layer-id="${layer}" transform="${transform}"${clip}>${body}</g>`);
+    elements.push(`<g data-owner-id="${owner}" data-layer-id="${layer}"${viewAttribute} transform="${transform}"${clip}>${body}</g>`);
   }
   const width = number(document.widthMm);
   const height = number(document.heightMm);

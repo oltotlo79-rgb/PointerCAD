@@ -33,6 +33,8 @@ export interface HiddenLineSource {
   readonly bodyId: string;
   readonly occurrenceId?: string | null;
   readonly shape: TopoDS_Shape;
+  /** 切断後の通し番号を元形状へ流用しないための、同じ配置の参照元。 */
+  readonly referenceShape?: TopoDS_Shape;
 }
 
 export interface HiddenLineBodiesSpec {

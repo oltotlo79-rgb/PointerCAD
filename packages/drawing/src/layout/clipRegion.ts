@@ -12,7 +12,7 @@ export type ClipRegion =
 const EPSILON = 1e-9;
 const TAU = 2 * Math.PI;
 
-function pointInside(point: Point2, region: ClipRegion): boolean {
+export function drawingRegionContainsPoint(point: Point2, region: ClipRegion): boolean {
   if (region.kind === 'circle') return Math.hypot(point[0] - region.center[0], point[1] - region.center[1]) <= region.radius + EPSILON;
   let inside = false;
   for (let i = 0, j = region.points.length - 1; i < region.points.length; j = i, i += 1) {
@@ -28,6 +28,8 @@ function pointInside(point: Point2, region: ClipRegion): boolean {
   }
   return inside;
 }
+
+const pointInside = drawingRegionContainsPoint;
 
 function segmentIntersectionParameters(from: Point2, to: Point2, region: ClipRegion): number[] {
   const dx = to[0] - from[0]; const dy = to[1] - from[1];
@@ -65,8 +67,8 @@ function clipSegment(from: Point2, to: Point2, region: ClipRegion): ClipCurve[] 
 }
 
 function angleFraction(angle: number, start: number, sweep: number): number {
-  const sign = sweep >= 0 ? 1 : -1; let delta = sign * (angle - start);
-  while (delta < 0) delta += TAU; while (delta >= TAU) delta -= TAU;
+  const sign = sweep >= 0 ? 1 : -1;
+  const delta = ((sign * (angle - start % TAU)) % TAU + TAU) % TAU;
   return delta / Math.abs(sweep);
 }
 

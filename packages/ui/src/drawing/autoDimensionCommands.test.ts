@@ -56,6 +56,27 @@ describe('自動寸法の操作と更新(P8-40)', () => {
   it('再実行でも同じIDと順序になり自動寸法が増殖しない', () => {
     const once = generate(); expect(generate(once)).toEqual(once);
   });
+  it('補助図の解決済み基底で外形を測り、表示と同じ文字高さを使う', () => {
+    const document = { ...initial, sheet: { ...initial.sheet, textHeight: 5 } };
+    const rotated = { ...initial.views[0], xDir: [0, 0, 1] as const };
+    const resolvedSource = { ...source, viewFrames: new Map([['front', { view: rotated, modelCenter: source.center }]]) };
+    const measure = vi.fn(outline);
+    const next = generateDrawingAutoDimensions(document, resolvedSource, [view], measure);
+    if (next === null) throw new Error('回転図の自動寸法なし');
+    expect(resolveDrawingDimensions(next, { instances: source.dimensionInstances ?? [], modelCenter: source.center,
+      viewFrames: resolvedSource.viewFrames }).map((dimension) => dimension.value)).toEqual([60, 100]);
+    expect(measure.mock.calls.every((call) => call[1] === 5)).toBe(true);
+  });
+  it('切り抜きの外の頂点から外形寸法を作らない', () => {
+    const clipped = { ...source, viewFrames: new Map([['front', { view: initial.views[0], modelCenter: source.center,
+      clips: [{ kind: 'polygon' as const, points: [[20, 10], [80, 10], [80, 50], [20, 50]] as const }] }]]) };
+    expect(generateDrawingAutoDimensions(initial, clipped, [view], outline)).toBeNull();
+    expect(initial.dimensions).toHaveLength(0);
+  });
+  it('非表示の図を自動記入の対象に戻さない', () => {
+    const document = { ...initial, layers: initial.layers.map((layer) => layer.id === 'layer-1' ? { ...layer, visible: false } : layer) };
+    expect(generate(document).dimensions).toHaveLength(0);
+  });
   it('手動寸法の対象と配置と参照を保持する', () => {
     const base = generate();
     const manual: Dimension = { ...base.dimensions[0], id: 'dim-1', origin: 'manual', placement: { commonNormalCoordinate: 300, textPosition: [10, 300] } };
@@ -72,7 +93,8 @@ describe('自動寸法の操作と更新(P8-40)', () => {
     if (fixed === null) throw new Error('手動寸法の字体がない');
     for (const { bounds } of displays.slice(1)) {
       if (bounds === null) throw new Error('自動寸法の字体がない');
-      expect(bounds.left < fixed.right && fixed.left < bounds.right && bounds.bottom < fixed.top && fixed.bottom < bounds.top).toBe(false);
+      expect(bounds.left < fixed.right + 2 && fixed.left < bounds.right + 2
+        && bounds.bottom < fixed.top + 2 && fixed.bottom < bounds.top + 2).toBe(false);
     }
     expect(next.dimensions[0]).toBe(manual);
     expect(generate(next)).toEqual(next);
@@ -125,5 +147,22 @@ describe('自動寸法の操作と更新(P8-40)', () => {
     open(); useAppStore.setState({ drawingBusy: true });
     expect(await runDrawingAutoDimensions()).toBe(false);
     expect(useAppStore.getState().drawing?.dimensions).toHaveLength(0);
+  });
+  it('字体待ちの間に再計算が始まった場合も古い投影へ寸法を追加しない', async () => {
+    open(); vi.spyOn(drawingFont, 'load').mockImplementation(() => {
+      useAppStore.setState({ drawingBusy: true }); return Promise.resolve('ready');
+    });
+    expect(await runDrawingAutoDimensions()).toBe(false);
+    expect(useAppStore.getState().drawing).toBe(initial);
+  });
+  it('密集した文字を規定回数で避けられなかったときは件数を隠さない', async () => {
+    const base = generate(), manual: Dimension = { ...base.dimensions[0], id: 'manual', origin: 'manual' };
+    open({ ...initial, dimensions: [manual] });
+    vi.spyOn(drawingFont, 'outline').mockImplementation((text, size) => ({ ...outline(text, size), metrics: {
+      fontId: 'large-test', sizeMm: size, advanceMm: 1000, inkBounds: { left: 0, right: 1000, bottom: 0, top: 1000 },
+    } }));
+    expect(await runDrawingAutoDimensions()).toBe(true);
+    expect(useAppStore.getState().drawingMessage).toContain('重な');
+    expect(useAppStore.getState().drawing?.dimensions.find((item) => item.id === manual.id)).toBe(manual);
   });
 });

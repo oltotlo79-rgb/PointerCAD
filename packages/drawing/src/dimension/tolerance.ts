@@ -57,6 +57,8 @@ function runBounds(run: ToleranceTextRun): InkBounds {
 /** 寸法値+公差の実測字体による配置。未読込時に文字数で幅を推測しない。 */
 export function layoutDimensionTolerance(input: {
   readonly mainText: string;
+  readonly suffix?: string;
+  readonly reference?: boolean;
   readonly tolerance: DimensionTolerance;
   readonly sizeMm: number;
   readonly decimals?: number;
@@ -65,14 +67,16 @@ export function layoutDimensionTolerance(input: {
   const tolerance = resolveDimensionTolerance(input.tolerance);
   if (tolerance === null || !Number.isFinite(input.sizeMm) || input.sizeMm <= 0) return null;
   const decimals = dimensionDecimals(input.decimals);
+  const mainText = `${input.reference === true ? '(' : ''}${input.mainText}`;
+  const suffixText = `${input.suffix ?? ''}${input.reference === true ? ')' : ''}`;
   if (tolerance.kind === 'symmetric') {
-    const text = `${input.mainText}±${dimensionNumberText(tolerance.value, decimals)}`;
+    const text = `${mainText}±${dimensionNumberText(tolerance.value, decimals)}${suffixText}`;
     const metrics = input.measure(text, input.sizeMm);
     return validMetrics(metrics)
       ? { runs: [{ text, metrics, position: [0, 0] }], inkBounds: metrics.inkBounds, advanceMm: metrics.advanceMm }
       : null;
   }
-  const main = input.measure(input.mainText, input.sizeMm);
+  const main = input.measure(mainText, input.sizeMm);
   const upperText = signedDimensionNumberText(tolerance.upper, decimals);
   const lowerText = signedDimensionNumberText(tolerance.lower, decimals);
   const smallSize = input.sizeMm * TOLERANCE_TEXT_HEIGHT_RATIO;
@@ -86,13 +90,21 @@ export function layoutDimensionTolerance(input: {
   const lowerBaseline = bottom - lower.inkBounds.bottom;
   const upperBaseline = bottom + lower.inkBounds.top - lower.inkBounds.bottom + gap - upper.inkBounds.bottom;
   const x = Math.max(main.advanceMm, main.inkBounds.right) + gap - Math.min(upper.inkBounds.left, lower.inkBounds.left);
-  const runs: readonly ToleranceTextRun[] = [
-    { text: input.mainText, position: [0, 0], metrics: main },
+  const runs: ToleranceTextRun[] = [
+    { text: mainText, position: [0, 0], metrics: main },
     { text: upperText, position: [x, upperBaseline], metrics: upper },
     { text: lowerText, position: [x, lowerBaseline], metrics: lower },
   ];
+  let advanceMm = Math.max(main.advanceMm, x + upper.advanceMm, x + lower.advanceMm);
+  if (suffixText !== '') {
+    const suffix = input.measure(suffixText, input.sizeMm);
+    if (!validMetrics(suffix)) return null;
+    const suffixX = Math.max(advanceMm, x + upper.inkBounds.right, x + lower.inkBounds.right) + gap - Math.min(0, suffix.inkBounds.left);
+    runs.push({ text: suffixText, position: [suffixX, 0], metrics: suffix });
+    advanceMm = suffixX + suffix.advanceMm;
+  }
   const bounds = runs.map(runBounds);
-  return { runs, advanceMm: Math.max(main.advanceMm, x + upper.advanceMm, x + lower.advanceMm),
+  return { runs, advanceMm,
     inkBounds: { left: Math.min(...bounds.map((item) => item.left)), bottom: Math.min(...bounds.map((item) => item.bottom)),
       right: Math.max(...bounds.map((item) => item.right)), top: Math.max(...bounds.map((item) => item.top)) } };
 }

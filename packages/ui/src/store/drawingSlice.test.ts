@@ -41,4 +41,39 @@ describe('drawingSlice', () => {
       kind: 'drawing', document: drawing, saved: drawing, fileName: 'drawing.pcadd',
     });
   });
+
+  it('作成フォームは保存文書と履歴を変えず、道具や選択が変わると解除する', () => {
+    const document = createDrawingDocument('図面', source);
+    useAppStore.getState().openDrawing(document);
+    const stack = useAppStore.getState().drawingUndoStack;
+    useAppStore.getState().openDrawingEditor({ kind: 'layer' });
+    expect(useAppStore.getState().drawing).toBe(document);
+    expect(useAppStore.getState().drawingUndoStack).toBe(stack);
+    expect(useAppStore.getState().drawingEditor).toEqual({ kind: 'layer' });
+    useAppStore.getState().setDrawingTool('note');
+    expect(useAppStore.getState().drawingEditor).toBeNull();
+    useAppStore.getState().openDrawingEditor({ kind: 'table', tableKind: 'revision' });
+    useAppStore.getState().selectDrawingIds(['layer-1']);
+    expect(useAppStore.getState().drawingEditor).toBeNull();
+  });
+
+  it('新規・閉じる・Undo/Redoで前の作成フォームを持ち越さない', () => {
+    const document = createDrawingDocument('図面', source);
+    useAppStore.getState().openDrawing(document);
+    useAppStore.getState().applyDrawing({ ...document, name: '変更' });
+    useAppStore.getState().openDrawingEditor({ kind: 'view' });
+    useAppStore.getState().undoDrawing();
+    expect(useAppStore.getState().drawingEditor).toBeNull();
+    useAppStore.getState().openDrawingEditor({ kind: 'layer' });
+    useAppStore.getState().redoDrawing();
+    expect(useAppStore.getState().drawingEditor).toBeNull();
+    useAppStore.getState().openDrawingEditor({ kind: 'layer' });
+    useAppStore.getState().openDrawing(document);
+    expect(useAppStore.getState().drawingEditor).toBeNull();
+    useAppStore.getState().openDrawingEditor({ kind: 'layer' });
+    useAppStore.getState().closeDrawing();
+    expect(useAppStore.getState().drawingEditor).toBeNull();
+    useAppStore.getState().openDrawingEditor({ kind: 'view' });
+    expect(useAppStore.getState().drawingEditor).toBeNull();
+  });
 });

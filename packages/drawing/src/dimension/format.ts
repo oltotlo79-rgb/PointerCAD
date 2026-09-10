@@ -9,6 +9,7 @@ export interface FormatDimensionInput {
   readonly decimals?: number;
   readonly prefix?: string;
   readonly suffix?: string;
+  readonly fitSymbol?: string;
   readonly tolerance?: DimensionTolerance;
   readonly reference?: boolean;
 }
@@ -46,11 +47,12 @@ export function formatDimension(input: FormatDimensionInput): string {
   let text = `${input.prefix ?? ''}${decorateValue(
     input.kind,
     roundedText(input.value, decimals),
-  )}${input.suffix ?? ''}`;
+  )}${input.fitSymbol ?? ''}`;
   if (tolerance?.kind === 'symmetric') {
     text += `±${roundedText(tolerance.value, decimals)}`;
   } else if (tolerance?.kind === 'deviation') {
     text += ` ${signedText(tolerance.upper, decimals)} / ${signedText(tolerance.lower, decimals)}`;
   }
+  text += input.suffix ?? '';
   return input.reference === true ? `(${text})` : text;
 }

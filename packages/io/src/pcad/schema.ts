@@ -84,7 +84,8 @@ import { isRecord } from './guards.js';
  * 新しすぎる/古すぎる」の判定が種別ごとに分かれず 1 か所で済む。版 7 以前の
  * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
-export const PCAD_SCHEMA_VERSION = 10;
+/** 版11: 図面の派生図・寸法列と製作指示（データム、公差枠、溶接記号）。 */
+export const PCAD_SCHEMA_VERSION = 11;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -595,5 +596,14 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
       migrated = { ...migrated, namedViews: 'namedViews' in document ? document['namedViews'] : createDefaultNamedViews() };
     }
     return { ...raw, schema: 10, document: migrated };
+  },
+  /** 版10 → 版11: 旧図面だけへ製作指示の空配列を補う。既存の未知指定は保持する。 */
+  10: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    const document = raw['document'];
+    const manufacturing = raw['kind'] === PCAD_DRAWING_KIND || raw['kind'] === PCAD_DRAWING_TEMPLATE_KIND
+      ? { datums: 'datums' in document ? document['datums'] : [], gdtFrames: 'gdtFrames' in document ? document['gdtFrames'] : [],
+        weldSymbols: 'weldSymbols' in document ? document['weldSymbols'] : [] } : {};
+    return { ...raw, schema: 11, document: { ...document, ...manufacturing, schemaVersion: 11 } };
   },
 };

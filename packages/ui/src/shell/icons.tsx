@@ -25,6 +25,10 @@ interface SvgIconProps extends IconProps {
 
 const DEFAULT_SIZE = 16;
 
+export function HelpIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}><circle cx={8} cy={8} r={6.5} /><path d="M6 5.5a2 2 0 0 1 4 0c0 1.5-2 1.5-2 3" /><circle cx={8} cy={11.5} r={0.35} fill="currentColor" /></SvgIcon>;
+}
+
 /** 全アイコン共通の外枠。大きさと色以外の指定をここ1箇所に集める。 */
 function SvgIcon({ size = DEFAULT_SIZE, className, children }: SvgIconProps): React.JSX.Element {
   return (

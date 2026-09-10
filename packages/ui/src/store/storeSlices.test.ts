@@ -22,6 +22,7 @@ import { createDocumentSlice } from './documentSlice.js';
 import { createDrawingSlice } from './drawingSlice.js';
 import { createExchangeSlice } from './exchangeSlice.js';
 import { createFileSlice } from './fileSlice.js';
+import { createHelpSlice } from './helpSlice.js';
 import { createInitialDocumentState } from './initialDocumentState.js';
 import { createMeasureSlice } from './measureSlice.js';
 import { createRecomputeSlice } from './recomputeSlice.js';
@@ -45,6 +46,7 @@ const SLICES = [
   ['measureSlice', createMeasureSlice],
   ['fileSlice', createFileSlice],
   ['assemblySlice', createAssemblySlice],
+  ['helpSlice', createHelpSlice],
 ] as const;
 
 /**

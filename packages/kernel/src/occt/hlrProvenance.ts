@@ -1,7 +1,8 @@
-import type { HLRTopoBRep_OutLiner, OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
+import type { HLRBRep_HLRToShape, HLRTopoBRep_OutLiner, OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { HiddenLineCurve, HiddenLineMode, HiddenLineProvenance } from '../types.js';
 import type { Allocations } from './allocations.js';
+import { readSeamOutlines } from './hlrSeamOutlines.js';
 import {
   makeProjection, orderPlaneCurves, planeBasisOf, projectEdgeToPlane,
   type PlaneCurve, type SketchPlaneFrame,
@@ -13,6 +14,7 @@ export interface HlrConverter {
   HCompound_2(shape: TopoDS_Shape): TopoDS_Shape;
   OutLineVCompound_2(shape: TopoDS_Shape): TopoDS_Shape;
   OutLineHCompound_2(shape: TopoDS_Shape): TopoDS_Shape;
+  CompoundOfEdges_2?: HLRBRep_HLRToShape['CompoundOfEdges_2'];
 }
 
 const XY_PLANE = { origin: [0, 0, 0], axisU: [1, 0, 0], normal: [0, 0, 1] } as const;
@@ -80,7 +82,7 @@ function polyCurves(curves: readonly PlaneCurve[], curvedEdge: boolean): readonl
 export function readHlrSource(
   oc: OpenCascadeInstance,
   converter: HlrConverter,
-  source: { readonly shape: TopoDS_Shape; readonly bodyId: string; readonly occurrenceId?: string | null },
+  source: { readonly shape: TopoDS_Shape; readonly referenceShape?: TopoDS_Shape; readonly bodyId: string; readonly occurrenceId?: string | null },
   plane: SketchPlaneFrame,
   mode: HiddenLineMode,
   includeHidden: boolean,
@@ -91,6 +93,15 @@ export function readHlrSource(
   const basis = planeBasisOf(plane);
   const map = keep(new oc.TopTools_IndexedMapOfShape_1());
   oc.TopExp.MapShapes_2(source.shape, map, true, true);
+  const referenceMap = source.referenceShape === undefined ? null : keep(new oc.TopTools_IndexedMapOfShape_1());
+  const referenceEdges = new Map<number, number>();
+  if (referenceMap !== null && source.referenceShape !== undefined) {
+    oc.TopExp.MapShapes_2(source.referenceShape, referenceMap, true, true);
+    let originalIndex = 0;
+    for (let index = 1; index <= Number(referenceMap.Size()); index++) {
+      if (keep(referenceMap.FindKey(index)).ShapeType() === oc.TopAbs_ShapeEnum.TopAbs_EDGE) referenceEdges.set(index, originalIndex++);
+    }
+  }
   const generatedShapes = new Map<number, TopoDS_Shape[]>();
   if (outliner !== undefined) {
     const history = keep(outliner.DataStructure());
@@ -114,6 +125,7 @@ export function readHlrSource(
     const isFace = shape.ShapeType() === oc.TopAbs_ShapeEnum.TopAbs_FACE;
     if (!isEdge && !isFace) continue;
     const edge = isEdge ? keep(oc.TopoDS.Edge_1(shape)) : null;
+    const originalEdgeIndex = referenceMap === null ? edgeIndex : referenceEdges.get(Number(referenceMap.FindIndex(shape)));
     // 球の極など、形状番号には含まれるが幾何曲線を持たない辺は投影しない。
     if (edge !== null && oc.BRep_Tool.Degenerated(edge)) { edgeIndex += 1; continue; }
     const adaptor = edge === null ? null : keep(new oc.BRepAdaptor_Curve_2(edge));
@@ -126,12 +138,14 @@ export function readHlrSource(
           : isVisible ? converter.OutLineVCompound_2(generated) : converter.OutLineHCompound_2(generated));
         return read(oc, output);
       });
+      if (isFace && outliner !== undefined && converter.CompoundOfEdges_2 !== undefined) projected.push(...readSeamOutlines(oc,
+        { CompoundOfEdges_2: converter.CompoundOfEdges_2.bind(converter) }, shape, generatedShapes.get(index) ?? [shape], plane, isVisible, allocations));
       const curves = mode === 'poly' ? polyCurves(projected, curved) : projected;
       for (const curve of curves) {
         const range = adaptor === null ? null : interval(original, curve, adaptor.FirstParameter(), adaptor.LastParameter());
         const provenance: HiddenLineProvenance = isEdge
           ? { kind: 'edge', bodyId: source.bodyId, occurrenceId: source.occurrenceId ?? null,
-              edgeIndex, parameterRange: range, dimensionTarget: range !== null }
+              edgeIndex: originalEdgeIndex ?? edgeIndex, parameterRange: range, dimensionTarget: range !== null && originalEdgeIndex !== undefined }
           : { kind: 'silhouette', bodyId: source.bodyId, occurrenceId: source.occurrenceId ?? null,
               faceIndex, generated: 'outline', dimensionTarget: false };
         (isVisible ? visible : hidden).push({ curve, provenance });

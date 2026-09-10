@@ -1,4 +1,7 @@
 import type { TitleBlockFieldDefinition } from './paper/titleBlock.js';
+import type { DrawingViewConstruction } from './view/construction.js';
+import type { DatumDefinition, GeometricToleranceFrame } from './gdt/types.js';
+import type { WeldSymbol } from './welding/types.js';
 
 /** 図面の用紙座標(mm)。左下が原点で、上が +v(FR-701、§0.58)。 */
 export type Point2 = readonly [number, number];
@@ -129,6 +132,7 @@ export interface DrawingView {
   readonly showCenterLines: boolean;
   /** 元形状の安定ID。中心線を消した操作を再投影・保存後も保持する(FR-708)。 */
   readonly hiddenCenterMarkIds?: readonly string[];
+  readonly construction?: DrawingViewConstruction;
   readonly section?: {
     readonly cuttingLineId: string;
     readonly direction: 'forward' | 'backward';
@@ -213,6 +217,9 @@ export interface DrawingDocument {
   readonly annotations: readonly Annotation[];
   readonly tables: readonly DrawingTable[];
   readonly balloons: readonly Balloon[];
+  readonly datums: readonly DatumDefinition[];
+  readonly gdtFrames: readonly GeometricToleranceFrame[];
+  readonly weldSymbols: readonly WeldSymbol[];
   readonly layers: readonly DrawingLayer[];
   readonly parameters: readonly DrawingParameter[];
 }

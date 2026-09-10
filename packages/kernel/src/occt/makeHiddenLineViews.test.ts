@@ -7,6 +7,7 @@ import type { OcctDeletable } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { measureVolume } from './solidMesh.js';
 import { hiddenLineView, hiddenLineViewForBodies, NO_DRAWABLE_SOLID_MESSAGE } from './makeHiddenLineViews.js';
+import { isHlrOutlineKind } from './hlrSeamOutlines.js';
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -29,6 +30,12 @@ function runBox(mode: 'precise' | 'poly', normal: readonly [number, number, numb
 }
 
 describe('図面の隠線処理', () => {
+  it('輪郭列挙は実WASMの登録値だけを受け、別種・偽の数値・壊れた表を断る', () => {
+    const registry = oc.HLRBRep_TypeOfResultingEdge;
+    expect(isHlrOutlineKind(registry.HLRBRep_OutLine, registry)).toBe(true);
+    for (const value of [null, 2, {}, { value: 2 }, registry.HLRBRep_Sharp]) expect(isHlrOutlineKind(value, registry)).toBe(false);
+    expect(isHlrOutlineKind(registry.HLRBRep_OutLine, { HLRBRep_OutLine: registry.HLRBRep_OutLine })).toBe(false);
+  });
   it.each(runtimeClasses)('%s が実行時にも存在する', (name) => {
     expect(oc[name]).toBeTypeOf('function');
   });
@@ -101,6 +108,26 @@ describe('図面の隠線処理', () => {
     const box = makeBox(oc, { dx: 2, dy: 3, dz: 4 });
     expect(box.shape.IsNull()).toBe(false);
     box.delete();
+  });
+
+  it.each(['precise', 'poly'] as const)('%sの円柱側面は継ぎ目の向きによらず左右両方の輪郭を持つ', (mode) => {
+    const maker = new oc.BRepPrimAPI_MakeCylinder_1(10, 20), shape = maker.Shape();
+    try {
+      const directions = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0]] as const;
+      for (const normal of directions) {
+        const outcome = hiddenLineView(oc, { viewId: 'cylinder-side', shape, origin: [0, 0, 0], normal,
+          xDir: normal[0] === 0 ? [1, 0, 0] : [0, 1, 0], mode, includeHidden: true });
+        expect(outcome.ok).toBe(true); if (!outcome.ok) continue;
+        const segments = outcome.result.visible.flatMap(({ curve }) => curve.kind === 'segment' ? [[curve.from, curve.to]]
+          : curve.kind === 'polyline' ? curve.points.slice(1).map((to, index) => [curve.points[index], to]) : []);
+        for (const side of [-1, 1]) {
+          const verticalLength = segments.filter(([a, b]) => Math.abs(a[0] - side * 10) < 0.1 && Math.abs(b[0] - side * 10) < 0.1)
+            .reduce((sum, [a, b]) => sum + Math.abs(b[1] - a[1]), 0);
+          expect(verticalLength, JSON.stringify({ mode, normal, side, visible: outcome.result.visible })).toBeGreaterThanOrEqual(19.99);
+          expect(verticalLength).toBeLessThanOrEqual(20.01);
+        }
+      }
+    } finally { shape.delete(); maker.delete(); }
   });
 
   it('等角図は可視9本・隠線3本で、元辺と径数範囲をすべて識別する', () => {

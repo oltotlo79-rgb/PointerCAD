@@ -23,6 +23,42 @@ const view = (id: string, normal: readonly [number, number, number], xDir: reado
 });
 
 describe('KernelApi drawing RPC', () => {
+  it.each(['positive', 'negative'] as const)('残す%s側の切り口だけを外側から見せ、裏面越しにハッチを重ねない', async (keepSide) => {
+    const api = createKernelApi(loadOcctForNode);
+    await api.recomputeSolids({ partId: 'cut-facing', generation: 1, steps: [boxStep('facing-box')] });
+    const outward = keepSide === 'positive' ? -1 : 1;
+    try {
+      const plane = { origin: [0, 0, 10] as const, axisU: [1, 0, 0] as const, normal: [0, 0, 1] as const };
+      const front = await api.sectionViews({ bodyIds: ['facing-box'], plane, keepSide, view: view('front', [0, 0, outward], [1, 0, 0]) });
+      expect(front.failures).toEqual([]); expect(front.cuttingCurves).toHaveLength(4);
+      expect(front.cuttingAreas?.[0].normal).toEqual([0, 0, outward]);
+      expect(front.cuttingAreas?.[0].point[2]).toBeCloseTo(10);
+      const back = await api.sectionViews({ bodyIds: ['facing-box'], plane, keepSide, view: view('back', [0, 0, -outward], [1, 0, 0]) });
+      expect(back.failures).toEqual([]); expect(back.visible.length).toBeGreaterThan(0);
+      expect(back.cuttingCurves).toEqual([]); expect(back.cuttingAreas).toEqual([]);
+    } finally { await api.releasePart('cut-facing'); }
+  });
+  it('切断後の辺番号を流用せず、残った元辺だけを元の番号で寸法参照にする', async () => {
+    const api = createKernelApi(loadOcctForNode);
+    await api.recomputeSolids({ partId: 'section-reference', generation: 1, steps: [boxStep('reference-box')] });
+    const direction = view('reference', [1, 1, 1], [1, -1, 0]);
+    try {
+      const original = await api.hiddenLineViews({ bodyIds: ['reference-box'], views: [direction] });
+      const cut = await api.sectionViews({ bodyIds: ['reference-box'], view: direction,
+        plane: { origin: [0, 0, 10], axisU: [1, 0, 0], normal: [0, 0, 1] }, keepSide: 'positive' });
+      expect(cut.failures).toEqual([]);
+      const supported = [...cut.visible, ...cut.hidden].filter((item) => item.provenance.kind === 'edge' && item.provenance.dimensionTarget);
+      expect(supported.length).toBeGreaterThan(0);
+      expect([...cut.visible, ...cut.hidden].some((item) => item.provenance.kind === 'edge' && !item.provenance.dimensionTarget)).toBe(true);
+      const originals = original.views.flatMap((item) => [...item.visible, ...item.hidden]);
+      for (const current of supported) {
+        const provenance = current.provenance; if (provenance.kind !== 'edge') throw new Error('edge required');
+        const same = originals.filter((item) => item.provenance.kind === 'edge' && item.provenance.edgeIndex === provenance.edgeIndex);
+        expect(same.some((item) => JSON.stringify(item.curve) === JSON.stringify(current.curve))).toBe(true);
+      }
+    } finally { await api.releasePart('section-reference'); }
+  });
+
   it('3方向を1回の依頼で返し、入力idを保つ', async () => {
     const api = createKernelApi(loadOcctForNode);
     await api.recomputeSolids({ partId: 'drawing', generation: 1, steps: [boxStep('box')] });
@@ -81,12 +117,13 @@ describe('KernelApi drawing RPC', () => {
         bodyIds: ['section-box'],
         view: view('A-A', [0, 0, 1], [1, 0, 0]),
         plane: { origin: [5, 7, 10], axisU: [0, 1, 0], normal: [0, 0, 1] },
-        keepSide: 'positive',
+        keepSide: 'negative',
       });
       expect(result.cancelled).toBe(false);
       expect(result.failures).toEqual([]);
       expect(result.visible.length).toBeGreaterThan(0);
       expect(result.cuttingCurves).toHaveLength(4);
+      expect(result.cuttingAreas).toMatchObject([{ bodyId: 'section-box', occurrenceId: null, normal: [0, 0, 1], curves: result.cuttingCurves }]);
       const corners = result.cuttingCurves.flatMap((curve) => curve.kind === 'segment' ? [curve.from, curve.to] : []);
       expect(Math.min(...corners.map((point) => point[0]))).toBeCloseTo(0, 7);
       expect(Math.max(...corners.map((point) => point[0]))).toBeCloseTo(20, 7);
@@ -117,9 +154,14 @@ describe('KernelApi drawing RPC', () => {
     await api.recomputeSolids({ partId: 'revolved', generation: 1, steps: [boxStep('revolved-box')] });
     try {
       const result = await api.sectionViews({ bodyIds: ['revolved-box'], view: view('R', [0, 0, 1], [1, 0, 0]),
-        kind: 'revolved', plane: { origin: [0, 0, 10], axisU: [1, 0, 0], normal: [0, 0, 1] }, keepSide: 'positive' });
+        kind: 'revolved', plane: { origin: [5, 7, 10], axisU: [0, 1, 0], normal: [0, 0, 1] }, keepSide: 'positive' });
       expect(result.failures).toEqual([]); expect(result.visible).toHaveLength(4); expect(result.hidden).toEqual([]);
       expect(result.visible.map((item) => item.curve)).toEqual(result.cuttingCurves);
+      const corners = result.cuttingCurves.flatMap((curve) => curve.kind === 'segment' ? [curve.from, curve.to] : []);
+      expect(Math.min(...corners.map((point) => point[0]))).toBeCloseTo(0);
+      expect(Math.min(...corners.map((point) => point[1]))).toBeCloseTo(0);
+      expect(Math.max(...corners.map((point) => point[0]))).toBeCloseTo(20);
+      expect(Math.max(...corners.map((point) => point[1]))).toBeCloseTo(20);
     } finally { await api.releasePart('revolved'); }
   });
   it('切断面が外なら空の図を成功扱いにせず理由を返す', async () => {
@@ -149,9 +191,10 @@ describe('KernelApi drawing RPC', () => {
       const xs = second.flatMap((item) => item.curve.kind === 'segment' ? [item.curve.from[0], item.curve.to[0]] : []);
       expect(Math.min(...xs)).toBe(40); expect(Math.max(...xs)).toBe(60);
       const section = await api.sectionViews({ bodyIds: ['shared-box'], instances,
-        view: view('cut', [0, 0, 1], [1, 0, 0]), plane: { origin: [0, 0, 10], axisU: [1, 0, 0], normal: [0, 0, 1] }, keepSide: 'positive' });
+        view: view('cut', [0, 0, 1], [1, 0, 0]), plane: { origin: [0, 0, 10], axisU: [1, 0, 0], normal: [0, 0, 1] }, keepSide: 'negative' });
       expect(section.failures).toEqual([]);
       expect(new Set(section.visible.map((item) => item.provenance.occurrenceId))).toEqual(new Set(['a', 'b']));
+      expect(section.cuttingAreas?.map((area) => area.occurrenceId)).toEqual(['a', 'b']);
       const original = await api.hiddenLineViews({ bodyIds: ['shared-box'], views: [view('front', [0, 0, 1], [1, 0, 0])] });
       const originalXs = original.views[0]?.visible.flatMap((item) => item.curve.kind === 'segment' ? [item.curve.from[0], item.curve.to[0]] : []) ?? [];
       expect(Math.max(...originalXs)).toBe(20);

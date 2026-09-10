@@ -89,7 +89,10 @@ function collectCutFaces(
       const location = keep(axis.Location());
       const direction = keep(axis.Direction());
       const point: Vec3Tuple = [location.X(), location.Y(), location.Z()];
-      const normal: Vec3Tuple = [direction.X(), direction.Y(), direction.Z()];
+      const orientation = face.Orientation_1() === oc.TopAbs_Orientation.TopAbs_REVERSED ? -1 : 1;
+      const oriented = (value: number): number => value === 0 ? 0 : value * orientation;
+      // 幾何面の法線ではなく、残した立体から外へ向く面法線を使う。
+      const normal: Vec3Tuple = [oriented(direction.X()), oriented(direction.Y()), oriented(direction.Z())];
       if (onCuttingPlane(point, normal, plane)) {
         // 面そのものの投影は外周だけになるため、compoundに包んで内側の穴の辺も含める。
         const compound = keep(new oc.TopoDS_Compound());

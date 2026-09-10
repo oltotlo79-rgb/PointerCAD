@@ -95,4 +95,51 @@ describe('図面レイヤーの編集', () => {
     expect(reorderDrawingLayer(document, 'layer-1', 99).layers.at(-1)?.id).toBe('layer-1');
     expect(reorderDrawingLayer(document, 'layer-7', -4).layers[0]?.id).toBe('layer-7');
   });
+
+  it.each(['', ' ', '\t\n'])('空の名前 %j では保存文書を作らない', (name) => {
+    const document = createDrawingDocument('図面', source);
+    expect(addDrawingLayer(document, { name }).ok).toBe(false);
+    const first = document.layers[0];
+    expect(replaceDrawingLayer(document, first.id, { ...first, name }).ok).toBe(false);
+  });
+
+  it('空白を除いた名前で重複を判定し、正規化して保存する', () => {
+    const document = createDrawingDocument('図面', source);
+    expect(addDrawingLayer(document, { name: ' 外形線 ' }).ok).toBe(false);
+    const added = addDrawingLayer(document, { name: ' 補助 ' });
+    expect(added.ok && added.document.layers.at(-1)?.name).toBe('補助');
+  });
+
+  it.each([NaN, Infinity, -Infinity, 0, -0.1])('線幅 %s は追加と編集の両方で断る', (lineWidth) => {
+    const document = createDrawingDocument('図面', source), layer = document.layers[0];
+    expect(addDrawingLayer(document, { name: '補助', lineWidth }).ok).toBe(false);
+    expect(replaceDrawingLayer(document, layer.id, { ...layer, lineWidth }).ok).toBe(false);
+    expect(document.layers[0]).toBe(layer);
+  });
+
+  it('存在しないIDや別のIDで置き換えて参照を壊さない', () => {
+    const document = createDrawingDocument('図面', source), first = document.layers[0];
+    expect(replaceDrawingLayer(document, 'missing', { ...first, id: 'missing' }).ok).toBe(false);
+    expect(replaceDrawingLayer(document, first.id, { ...first, id: 'renamed' }).ok).toBe(false);
+  });
+
+  it('同じ値の適用と同じ順序への移動は文書を変更しない', () => {
+    const document = createDrawingDocument('図面', source), first = document.layers[0];
+    expect(replaceDrawingLayer(document, first.id, { ...first })).toEqual({ ok: true, document });
+    expect(reorderDrawingLayer(document, first.id, 0)).toBe(document);
+  });
+
+  it.each([NaN, Infinity, -Infinity])('不正な並び位置 %s で先頭へ移さない', (target) => {
+    const document = createDrawingDocument('図面', source);
+    expect(reorderDrawingLayer(document, 'layer-4', target)).toBe(document);
+  });
+
+  it('最後のレイヤーと、その中の要素は削除しない', () => {
+    const base = createDrawingDocument('図面', source);
+    const document = { ...base, layers: base.layers.slice(0, 1), views: [view('layer-1')] };
+    const result = removeDrawingLayer(document, 'layer-1');
+    expect(result.document).toBe(document);
+    expect(result.removedElementCount).toBe(0);
+    expect(result.message).toBeDefined();
+  });
 });

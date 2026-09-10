@@ -4,13 +4,13 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { commitDrawingSheet, saveCurrentDrawingTemplate } from './drawingTemplateActions.js';
 
-export function DrawingSheetPanel(): React.JSX.Element | null {
+export function DrawingSheetPanel({ embedded = false }: { readonly embedded?: boolean }): React.JSX.Element | null {
   const drawing = useAppStore((state) => state.drawing);
   if (drawing === null) return null;
-  return <SheetForm key={`${drawing.id}:${JSON.stringify(drawing.sheet)}`} drawing={drawing} />;
+  return <SheetForm key={`${drawing.id}:${JSON.stringify(drawing.sheet)}`} drawing={drawing} embedded={embedded} />;
 }
 
-function SheetForm({ drawing }: { readonly drawing: DrawingDocument }): React.JSX.Element {
+function SheetForm({ drawing, embedded }: { readonly drawing: DrawingDocument; readonly embedded: boolean }): React.JSX.Element {
   const [paperId, setPaperId] = useState(drawing.sheet.paperSizeId);
   const [scale, setScale] = useState(String(drawing.sheet.scale));
   const [scaleOptions, setScaleOptions] = useState((drawing.sheet.scaleOptions ?? [0.1, 0.2, 0.5, 1, 2, 5]).join(', '));
@@ -41,8 +41,8 @@ function SheetForm({ drawing }: { readonly drawing: DrawingDocument }): React.JS
     { key: 'revision', label: 'drawing.sheet.revision' }, { key: 'author', label: 'drawing.sheet.author' },
     { key: 'date', label: 'drawing.sheet.date' }, { key: 'material', label: 'drawing.sheet.material' },
   ];
-  return <details className="pcad-section pcad-drawing-settings" open>
-    <summary className="pcad-section__title">{t('drawing.property.sheet')}</summary>
+  return <section className="pcad-section pcad-drawing-settings">
+    {embedded ? null : <h3 className="pcad-section__title">{t('drawing.property.sheet')}</h3>}
     <form onSubmit={(event) => { event.preventDefault(); apply(); }}>
       <label>{t('drawing.sheet.paper')}<select className="pcad-field__input" aria-label={t('drawing.sheet.paper')} value={paperId} onChange={(event) => setPaperId(event.target.value)}>
         {PAPER_SIZES.map((paper) => <option key={paper.id} value={paper.id}>{paper.label}</option>)}
@@ -81,5 +81,5 @@ function SheetForm({ drawing }: { readonly drawing: DrawingDocument }): React.JS
       setSaving(true);
       void saveCurrentDrawingTemplate(templateName).finally(() => setSaving(false));
     }}>{t('drawing.template.save')}</button>
-  </details>;
+  </section>;
 }

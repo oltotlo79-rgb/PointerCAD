@@ -106,6 +106,8 @@ export {
   DEFAULT_AUTO_SAVE_IDENTITY,
   autoSaveRecordKey,
   type AutoSaveIdentity,
+  type AutoSaveDocument,
+  type DrawingAutoSaveBundle,
   type DocumentAutoSaveStorage,
   type DocumentAutoSaver,
   createAutoSaver,

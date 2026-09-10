@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDrawingDocument, createEmptyPartDocument, embedDrawingSource, emptyDrawingSourceLibrary,
-  createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT, embedPart, EMPTY_PART_LIBRARY, emptyEmbeddedPartAttachments,
+  createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT, embedPart, EMPTY_PART_LIBRARY, emptyEmbeddedPartAttachments, recomputePart,
   type AssemblyDocument, type PartLibrary,
   type AssemblyKernelBridge, type DrawingKernelBridge, type DrawingProjectionResult, type PartDocument, type SolidBody } from '@pointercad/model';
 import type { DrawingView } from '@pointercad/drawing';
@@ -54,6 +54,19 @@ function editTitle(name = '変更') { const drawing = state().drawing; if (drawi
 describe('図面再評価の寿命と最新結果の適用', () => {
   beforeEach(async () => { useAppStore.setState(createInitialDocumentState()); await open(); });
   afterEach(async () => { detach?.(); detach = undefined; await Promise.resolve(); });
+  it('元の取り込み直しとUndoでは、同じ参照名でも各版の原本を使う', async () => {
+    const fake = engine();
+    const recompute = vi.fn((document: PartDocument, options: Parameters<typeof recomputePart>[2]) => recomputePart(document, fake.bridge, options));
+    detach = attachDrawing(fake.bridge, recompute); await settle();
+    const initial = state().drawing, sources = state().drawingSources; if (initial === null) throw new Error('図面なし');
+    const changed = new Map([['shape-1', Uint8Array.of(2)]]);
+    state().applyDrawing(initial, { sources: sources.sources.map((entry) => ({ ...entry,
+      attachments: { ...emptyEmbeddedPartAttachments(), shapes: changed } })) });
+    await settle(); expect(recompute.mock.calls.at(-1)?.[1]?.importedShapes).toBe(changed);
+    state().undo(); await settle();
+    expect(recompute.mock.calls.at(-1)?.[1]?.importedShapes).toBe(state().drawingImportedShapes);
+    expect(state().drawingSources).toBe(sources);
+  });
   it('抱き込んだ部品を実resolvePart経由で評価しWorkerの鍵で投影する', async () => {
     const fake = engine(); detach = attachDrawing(fake.bridge); await settle();
     const request = fake.hiddenLineViews.mock.calls[0][0];

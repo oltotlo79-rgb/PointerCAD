@@ -23,6 +23,13 @@ describe('紙面の複数行注記・引出線・編集・移動(P8-52)', () => 
     expect(saveDrawingNote(input)).toBe(true); expect(first()).toMatchObject({ kind: 'note', text: input.text, position: [30, 80], height: 3.5 });
     expect(state().drawingSelectedIds).toEqual([first().id]);
   });
+  it('注記用の既定レイヤーを削除した後も有効なレイヤーへ注記を作る', () => {
+    const document = state().drawing;
+    if (document === null) throw new Error('図面なし');
+    state().applyDrawing({ ...document, layers: document.layers.filter((layer) => layer.id !== 'layer-5') });
+    expect(saveDrawingNote(input)).toBe(true);
+    expect(state().drawing?.layers.some((layer) => layer.id === first().layerId)).toBe(true);
+  });
   it('CRLFを1行の送りへ正規化する', () => { saveDrawingNote({ ...input, text: 'a\r\nb\rc' }); expect(first().text).toBe('a\nb\nc'); });
   it('矢印の先端と方式を保持する', () => {
     saveDrawingNote({ ...input, leader: { target: [0, 20], end: 'arrow' } });

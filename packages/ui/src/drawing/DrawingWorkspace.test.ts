@@ -35,8 +35,14 @@ describe('図面画面の5区画に入る内容', () => {
     expect(Object.entries(ja).filter(([key, value]) => key.startsWith('drawing.') && internalTerms.test(value))).toEqual([]);
   });
   it('木は5つの束を持つ', () => expect(DRAWING_TREE_KEYS).toHaveLength(5));
-  it('ツールバーは文字注記を含む図面の14道具を持つ', () => {
-    expect(DRAWING_TOOL_GROUPS.flatMap((group) => group.tools)).toHaveLength(14);
+  it('ツールバーは5メニューへ図・寸法・記入・見た目・ファイルを収める', () => {
+    expect(DRAWING_TOOL_GROUPS.map((group) => group.label)).toEqual([
+      'toolbar.file.title', 'drawing.toolbar.views', 'drawing.toolbar.dimensions', 'drawing.toolbar.annotations', 'toolbar.look.groupLabel',
+    ]);
+    const tools = DRAWING_TOOL_GROUPS.flatMap((group) => [...group.items]);
+    expect(new Set(tools.map((tool) => tool.id)).size).toBe(tools.length);
+    expect(tools.map((tool) => tool.id)).toEqual(expect.arrayContaining(['section', 'detail', 'auxiliary', 'partial', 'broken', 'note', 'annotation', 'centerMark']));
+    for (const tool of tools) expect(ja[tool.tooltipKey].length).toBeGreaterThan(8);
   });
   it('プロパティは6つの節を持つ', () => expect(DRAWING_PROPERTY_KEYS).toHaveLength(6));
   it.each(refusalMessages)('断り文言を正本へ収録する: %s', (message) => {

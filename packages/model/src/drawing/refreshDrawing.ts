@@ -2,6 +2,8 @@ import type { DrawingDocument, DrawingSource } from '@pointercad/drawing';
 import { resolveDrawingDimensions, type ResolvedDrawingDimension } from './dimensionTarget.js';
 import { resolveDrawingWithSource, type DrawingResolutionOptions, type DrawingResolveKernel, type DrawingSourceResolution, type ResolvedDrawing } from './resolveDrawing.js';
 import { replaceDrawingSource, type DrawingSourceInput, type DrawingSourceLibrary } from './sourceLibrary.js';
+import { resolveDrawingGdt } from './gdtValidation.js';
+import { resolveDrawingWelds } from './welding.js';
 
 export interface DrawingRefreshOptions extends DrawingResolutionOptions {
   /** ファイル監視結果。異なっていても承諾なしに抱き込みを上書きしない。 */
@@ -46,9 +48,11 @@ export async function refreshDrawing(
     })) return { ok: false, message: '手動の寸法を保ったまま作り直せませんでした。' };
     const projection = await resolveDrawingWithSource(document, kernel, source, options);
     if (!projection.ok) return projection;
-    const dimensions = resolveDrawingDimensions(document, { instances: source.dimensionInstances ?? [], modelCenter: source.center });
+    const dimensions = resolveDrawingDimensions(document, { instances: source.dimensionInstances ?? [], modelCenter: source.center, viewFrames: projection.viewFrames });
+    const gdt = resolveDrawingGdt(document, { instances: source.dimensionInstances ?? [], modelCenter: source.center, viewFrames: projection.viewFrames });
+    const welds = resolveDrawingWelds(document, { instances: source.dimensionInstances ?? [], modelCenter: source.center, viewFrames: projection.viewFrames });
     return { ok: true, document, projection, dimensions,
-      unresolvedCount: dimensions.filter((dimension) => dimension.status === 'unresolved').length,
+      unresolvedCount: dimensions.filter((dimension) => dimension.status === 'unresolved').length + gdt.unresolvedCount + welds.filter((weld) => weld.issues.length > 0).length,
       sourceChangedExternally: drawingSourceChangedExternally(drawing.source, options.externalContentHash) };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : '図面を作り直せませんでした。' };

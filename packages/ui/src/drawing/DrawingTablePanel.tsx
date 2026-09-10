@@ -11,11 +11,11 @@ const kindLabels: Readonly<Record<DrawingTable['kind'], MessageKey>> = { bom: 'd
 const revisionLabels: readonly MessageKey[] = ['drawing.table.revision', 'drawing.table.date', 'drawing.table.description', 'drawing.table.approvedBy'];
 function isColumn(value: string): value is BomColumnId { return BOM_COLUMN_IDS.some((id) => value === id); }
 
-function TableEditor({ table }: { readonly table: DrawingTable | undefined }): React.JSX.Element {
+function TableEditor({ table, initialKind }: { readonly table: DrawingTable | undefined; readonly initialKind: DrawingTable['kind'] | undefined }): React.JSX.Element {
   const drawing = useAppStore((state) => state.drawing);
   const busy = useAppStore((state) => state.drawingBusy);
   const paper = drawing === null ? undefined : paperSizeOf(drawing.sheet.paperSizeId);
-  const [kind, setKind] = useState<DrawingTable['kind']>(table?.kind ?? (drawing?.source.sourceKind === 'assembly' ? 'bom' : 'hole'));
+  const [kind, setKind] = useState<DrawingTable['kind']>(table?.kind ?? initialKind ?? (drawing?.source.sourceKind === 'assembly' ? 'bom' : 'hole'));
   const [x, setX] = useState(String(table?.position[0] ?? 20));
   const [y, setY] = useState(String(table?.position[1] ?? (paper === undefined ? 270 : createPaperFrame(paper).inner.top - 10)));
   const [rowHeight, setRowHeight] = useState(String(table?.options.rowHeight ?? 7));
@@ -45,7 +45,7 @@ function TableEditor({ table }: { readonly table: DrawingTable | undefined }): R
       columns: kind === 'bom' ? columns : kind === 'hole' ? ['symbol', 'x', 'y', 'diameter', 'depth'] : ['revision', 'date', 'description', 'approvedBy'],
       ...(kind === 'revision' ? { rows: rows.filter((row) => row.some((value) => value.trim() !== '')) } : {}) }, table?.id);
   };
-  return <div className="pcad-drawing-table-editor pcad-drawing-settings">
+  return <div className="pcad-drawing-table-editor pcad-drawing-settings" data-help-topic={kind === 'bom' ? 'drawing-bom' : 'drawing-table'}>
     <label>{t('drawing.table.title')}<select className="pcad-field__input" aria-label={t('drawing.table.title')} value={kind} disabled={table !== undefined} onChange={(event) => {
       const value = event.target.value; if (value === 'bom' || value === 'hole' || value === 'revision') setKind(value);
     }}>{(['bom', 'hole', 'revision'] as const).map((value) => <option key={value} value={value}
@@ -100,15 +100,17 @@ function TableEditor({ table }: { readonly table: DrawingTable | undefined }): R
   </div>;
 }
 
-export function DrawingTablePanel(): React.JSX.Element {
+export function DrawingTablePanel({ embedded = false }: { readonly embedded?: boolean }): React.JSX.Element {
   const drawing = useAppStore((state) => state.drawing);
   const selected = useAppStore((state) => state.drawingSelectedIds);
   const documentId = useAppStore((state) => state.activeDocumentId);
+  const editor = useAppStore((state) => state.drawingEditor);
   const busy = useAppStore((state) => state.drawingBusy);
   if (drawing === null) return <></>;
   const table = drawing.tables.find((item) => selected.includes(item.id));
-  return <section className="pcad-section"><h3 className="pcad-section__title">{t('drawing.table.title')}</h3>
-    <TableEditor key={`${documentId}:${JSON.stringify(table ?? null)}`} table={table} />
+  const initialKind = editor?.kind === 'table' ? editor.tableKind : undefined;
+  return <section className="pcad-section">{embedded ? null : <h3 className="pcad-section__title">{t('drawing.table.title')}</h3>}
+    <TableEditor key={`${documentId}:${JSON.stringify(table ?? null)}:${initialKind ?? ''}`} table={table} initialKind={initialKind} />
     <button type="button" className="pcad-button" title={t('drawing.table.balloon')} disabled={busy || drawing.source.sourceKind !== 'assembly'} onClick={startDrawingBalloon}>{t('drawing.table.balloon')}</button>
     <button type="button" className="pcad-button" title={t('drawing.table.delete')} disabled={!drawing.tables.some((item) => selected.includes(item.id)) && !drawing.balloons.some((item) => selected.includes(item.id))}
       onClick={deleteDrawingTables}>{t('drawing.table.delete')}</button>

@@ -34,3 +34,17 @@ export function configurableBoxPartFile(): Uint8Array {
   const box = { ...primitive, shape: { ...primitive.shape, sizeX: { ...number(20), source: '長さ' } } };
   return writePcadFile(appendSolid(empty, box), { savedAt: '2026-09-10T00:00:00.000Z' });
 }
+
+/** 0/20/50/90mmに実頂点がある2つの箱。投影と選択は本物のOCCTで行う。 */
+export function dimensionSeriesPartFile(): Uint8Array {
+  const number = expressionValueFromNumber;
+  let document = { ...createEmptyPartDocument(), name: '寸法列の基準部品' };
+  for (const [center, width] of [[10, 20], [70, 40]]) {
+    const primitive = createPrimitiveFeature(document, 'box', { kind: 'coordinate', value: {
+      mode: 'absolute', x: number(center), y: number(0), z: number(0),
+    } });
+    if (primitive.shape.kind !== 'box') throw new Error('箱ではありません');
+    document = appendSolid(document, { ...primitive, shape: { ...primitive.shape, sizeX: number(width) } });
+  }
+  return writePcadFile(document, { savedAt: '2026-09-10T00:00:00.000Z' });
+}

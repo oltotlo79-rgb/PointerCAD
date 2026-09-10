@@ -10,6 +10,10 @@ function curveOwner(viewId: string, item: DrawingProjectionCurve): string {
 /** 組図の各線を配置IDへ関連付ける。見た目と線の順序は全出力で共通。 */
 export function drawingProjectionRenderViews(views: readonly ResolvedDrawingView[]): readonly DrawingRenderView[] {
   return views.map((view) => ({ viewId: view.viewId, cuttingCurves: view.cuttingCurves,
+    ...(view.breakCurves === undefined ? {} : { breakCurves: view.breakCurves }),
+    ...(view.hatchCurves === undefined ? {} : { hatchCurves: view.hatchCurves }),
+    ...(view.centerCurves === undefined ? {} : { centerCurves: view.centerCurves }),
+    ...(view.decorations === undefined ? {} : { decorations: view.decorations }),
     visible: view.visible.map((item) => ({ curve: item.curve, ownerId: curveOwner(view.viewId, item) })),
     hidden: view.hidden.map((item) => ({ curve: item.curve, ownerId: curveOwner(view.viewId, item) })) }));
 }

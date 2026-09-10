@@ -17,6 +17,8 @@ import type {
 } from '@pointercad/model';
 
 import { isRecord, isUnknownArray } from './guards.js';
+import { cleanDrawingConstruction, isDrawingConstruction } from './drawingConstructionJson.js';
+import { cleanDatum, cleanGdtFrame, cleanWeldSymbol, isDatumDefinition, isGdtFrame, isWeldSymbol } from './gdtJson.js';
 import { hasOnlyFiniteJsonNumbers, preserveDrawingJsonFields } from './drawingJsonCompatibility.js';
 import { migrateToCurrentSchema, type ParseError } from './documentJson.js';
 import {
@@ -130,6 +132,7 @@ function cleanView(view: DrawingView): DrawingView {
     showHidden: view.showHidden,
     showCenterLines: view.showCenterLines,
     ...(view.hiddenCenterMarkIds === undefined ? {} : { hiddenCenterMarkIds: [...view.hiddenCenterMarkIds] }),
+    ...(view.construction === undefined ? {} : { construction: cleanDrawingConstruction(view.construction, cleanDimensionTarget) }),
     ...(view.section === undefined ? {} : { section: { ...view.section } }),
     ...(view.detail === undefined
       ? {}
@@ -166,6 +169,7 @@ function cleanDimension(dimension: Dimension): Dimension {
     kind: dimension.kind,
     measurement: dimension.measurement,
     targets: dimension.targets.map(cleanDimensionTarget),
+    ...(dimension.series === undefined ? {} : { series: { kind: dimension.series.kind, baseIndex: dimension.series.baseIndex } }),
     placement: {
       commonNormalCoordinate: dimension.placement.commonNormalCoordinate,
       textPosition: dimension.placement.textPosition === null
@@ -179,6 +183,7 @@ function cleanDimension(dimension: Dimension): Dimension {
     ...(dimension.suffix === undefined ? {} : { suffix: dimension.suffix }),
     ...(dimension.fit === undefined ? {} : { fit: { symbol: dimension.fit.symbol, showDeviation: dimension.fit.showDeviation } }),
     reference: dimension.reference,
+    ...(dimension.basic === undefined ? {} : { basic: dimension.basic }),
     origin: dimension.origin,
     layerId: dimension.layerId,
     ...(dimension.style === undefined ? {} : { style: cleanStyle(dimension.style) }),
@@ -281,6 +286,9 @@ function cleanDrawingDocument(document: DrawingDocument): DrawingDocument {
     annotations: document.annotations.map(cleanAnnotation),
     tables: document.tables.map(cleanTable),
     balloons: document.balloons.map(cleanBalloon),
+    datums: document.datums.map((datum) => cleanDatum(datum, { ref: cleanSubShapeRef, style: cleanStyle })),
+    gdtFrames: document.gdtFrames.map((frame) => cleanGdtFrame(frame, { ref: cleanSubShapeRef, style: cleanStyle })),
+    weldSymbols: document.weldSymbols.map((symbol) => cleanWeldSymbol(symbol, { ref: cleanSubShapeRef, style: cleanStyle }, cleanDimensionTarget)),
     layers: document.layers.map(cleanLayer),
     parameters: document.parameters.map(cleanParameter),
   };
@@ -429,6 +437,8 @@ function isView(value: unknown): value is DrawingView {
     || !hasString(value, 'layerId')
     || !hasOptionalStyle(value)) return false;
   const section = value['section'];
+  if (value['construction'] !== undefined && (!isDrawingConstruction(value['construction'], isDimensionTarget)
+    || value['construction'].kind !== value['kind'])) return false;
   if (section !== undefined && (!isRecord(section)
     || !hasString(section, 'cuttingLineId')
     || !isLiteral(section['direction'], ['forward', 'backward'])
@@ -484,9 +494,15 @@ function isDimension(value: unknown): value is Dimension {
     || (value['fit'] !== undefined && (!isRecord(value['fit']) || !hasString(value['fit'], 'symbol')
       || !hasBoolean(value['fit'], 'showDeviation') || value['tolerance'] !== undefined))
     || !hasBoolean(value, 'reference')
+    || (value['basic'] !== undefined && typeof value['basic'] !== 'boolean')
     || !isLiteral(value['origin'], ['auto', 'manual'])
     || !hasString(value, 'layerId')
     || !hasOptionalStyle(value)) return false;
+  const series = value['series'];
+  if (series !== undefined && (!isRecord(series) || series['kind'] !== 'progressive' || value['kind'] !== 'length'
+    || !isLiteral(value['measurement'], ['horizontal', 'vertical']) || !hasNumber(series, 'baseIndex')
+    || !Number.isInteger(series['baseIndex']) || typeof series['baseIndex'] !== 'number' || series['baseIndex'] < 0
+    || series['baseIndex'] >= value['targets'].length || value['targets'].length < 2)) return false;
   const tolerance = value['tolerance'];
   if (tolerance === undefined) return true;
   if (!isRecord(tolerance) || !isLiteral(tolerance['kind'], ['symmetric', 'deviation'])) return false;
@@ -584,6 +600,9 @@ function isDrawingDocument(value: unknown): value is DrawingDocument {
     && isUnknownArray(value['annotations']) && value['annotations'].every(isAnnotation)
     && isUnknownArray(value['tables']) && value['tables'].every(isTable)
     && isUnknownArray(value['balloons']) && value['balloons'].every(isBalloon)
+    && isUnknownArray(value['datums']) && value['datums'].length <= 10000 && value['datums'].every((datum) => isDatumDefinition(datum, { target: isDimensionTarget, style: isStyle }))
+    && isUnknownArray(value['gdtFrames']) && value['gdtFrames'].length <= 10000 && value['gdtFrames'].every((frame) => isGdtFrame(frame, { target: isDimensionTarget, style: isStyle }))
+    && isUnknownArray(value['weldSymbols']) && value['weldSymbols'].length <= 10000 && value['weldSymbols'].every((symbol) => isWeldSymbol(symbol, { target: isDimensionTarget, style: isStyle }))
     && isUnknownArray(value['layers']) && value['layers'].every(isLayer)
     && isUnknownArray(value['parameters']) && value['parameters'].every(isParameter);
 }

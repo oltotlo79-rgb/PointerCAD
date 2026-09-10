@@ -1,11 +1,11 @@
 import { expressionValueFromNumber as num } from '@pointercad/expression';
-import type { DimensionTarget, DrawingView, OutlinedText } from '@pointercad/drawing';
+import type { DimensionTarget, DrawingView, OutlinedText, Point2 } from '@pointercad/drawing';
 import { createDrawingDocument, createEmptyPartDocument, IDENTITY_PLACEMENT,
   type DrawingSourceLibrary, type SolidBody, type SolidFaceEntry, type ThreadHoleFeature } from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { addDrawingMachiningNote, addDrawingSurfaceFinish, startDrawingAnnotation } from './annotationCommands.js';
+import { addDrawingMachiningNote, addDrawingSurfaceFinish, editDrawingSourceAnnotation, startDrawingAnnotation } from './annotationCommands.js';
 import { displayDrawingAnnotations } from './annotationDisplay.js';
 import { pickDrawingFace } from './drawingPick.js';
 
@@ -52,6 +52,20 @@ describe('表面性状と加工注記の操作・再評価(P8-36)', () => {
     expect(displays()[0].fills).toHaveLength(1);
     expect(state().drawing?.annotations[0]).toMatchObject({ sourceTarget: target, surfaceFinish: { value: { source: '3.2' } } });
   });
+  it('既定の注記レイヤーを削除しても存在するレイヤーへ表面性状と加工注記を作る', () => {
+    const document = state().drawing;
+    if (document === null) throw new Error('図面なし');
+    state().applyDrawing({ ...document, layers: document.layers.filter((layer) => layer.id !== 'layer-5') });
+    expect(addDrawingSurfaceFinish(input)).toBe(true);
+    expect(addDrawingMachiningNote(target, [150, 100])).toBe(true);
+    const current = state().drawing;
+    expect(current?.annotations).toHaveLength(2);
+    for (const annotation of current?.annotations ?? []) {
+      expect(current?.layers.some((layer) => layer.id === annotation.layerId)).toBe(true);
+    }
+    expect(text()).toContain('Ra 3.2');
+    expect(text()).toContain('M8');
+  });
   it('除去加工の指定は横棒を加える', () => {
     addDrawingSurfaceFinish({ ...input, process: 'removal' });
     expect(displays()[0].curves).toHaveLength(5);
@@ -63,6 +77,39 @@ describe('表面性状と加工注記の操作・再評価(P8-36)', () => {
   it('注記はUndo1回で消えRedoで戻る', () => {
     addDrawingSurfaceFinish(input); state().undo(); expect(state().drawing?.annotations).toHaveLength(0);
     state().redo(); expect(text()).toBe('Ra 3.2');
+  });
+  it('表面性状の式・加工方法・高さ・位置を一回で編集しUndoとRedoで戻す', () => {
+    addDrawingSurfaceFinish(input);
+    const original = state().drawing, annotation = original?.annotations[0];
+    if (annotation === undefined) throw new Error('注記なし');
+    expect(editDrawingSourceAnnotation(annotation, { kind: 'surfaceFinish', process: 'noRemoval', parameter: 'Rz', value: '8/5',
+      height: 5, position: [140, 135] })).toBe(true);
+    expect(text()).toBe('Rz 1.6'); expect(displays()[0].texts?.[0].sizeMm).toBe(5);
+    expect(state().drawing?.annotations[0]).toMatchObject({ id: annotation.id, position: [140, 135], sourceTarget: target, layerId: annotation.layerId });
+    state().undo(); expect(state().drawing).toBe(original); state().redo(); expect(text()).toBe('Rz 1.6');
+  });
+  it('加工注記を移動しても元のねじ穴の呼びと式を保持する', () => {
+    addDrawingMachiningNote(target, input.position);
+    const original = state().drawing, annotation = original?.annotations[0];
+    if (annotation === undefined) throw new Error('注記なし');
+    expect(editDrawingSourceAnnotation(annotation, { kind: 'machining', height: 5, position: [150, 140] })).toBe(true);
+    expect(text()).toBe('M8×1.25'); expect(state().drawing?.annotations[0].machiningFeatureId).toBe(thread.id);
+    state().undo(); expect(state().drawing).toBe(original);
+  });
+  it.each([0, -1, NaN, Infinity, 101])('不正な文字高さ%sで参照注記を変更しない', (height) => {
+    addDrawingSurfaceFinish(input); const original = state().drawing, annotation = original?.annotations[0];
+    if (annotation === undefined) throw new Error('注記なし');
+    expect(editDrawingSourceAnnotation(annotation, { kind: 'surfaceFinish', ...input, height })).toBe(false);
+    expect(state().drawing).toBe(original);
+  });
+  it('粗さの式が不正なら位置も変えず再選択前の入力も拒否する', () => {
+    addDrawingSurfaceFinish(input); const original = state().drawing, annotation = original?.annotations[0];
+    if (annotation === undefined) throw new Error('注記なし');
+    expect(editDrawingSourceAnnotation(annotation, { kind: 'surfaceFinish', ...input, value: '1/0', height: 5, position: [140, 130] })).toBe(false);
+    expect(state().drawing).toBe(original);
+    state().selectDrawingIds([]);
+    expect(editDrawingSourceAnnotation(annotation, { kind: 'surfaceFinish', ...input, height: 5 })).toBe(false);
+    expect(state().drawing).toBe(original);
   });
   it('作成後に選択へ戻して作った注記を選ぶ', () => {
     startDrawingAnnotation(); addDrawingSurfaceFinish(input);
@@ -114,5 +161,16 @@ describe('表面性状と加工注記の操作・再評価(P8-36)', () => {
     const views = [{ viewId: view.id, name: view.name, position: view.position, scale: 1, visible: [], hidden: [], cuttingCurves: [] }];
     expect(pickDrawingFace(document, resolved, views, [105, 105])).toEqual(target);
     expect(pickDrawingFace(document, resolved, views, [119, 119])).toBeNull();
+  });
+  it('切り口の奥に隠れた元の面を選ばず、穴と手前の実面は選べる', () => {
+    const document = state().drawing, resolved = state().drawingSourceResolution;
+    if (document === null || resolved === null) throw new Error('図面なし');
+    const outer: readonly Point2[] = [[100, 100], [120, 100], [120, 120], [100, 120]];
+    const hole: readonly Point2[] = [[103, 103], [107, 103], [107, 107], [103, 107]];
+    const projection = { viewId: view.id, name: view.name, position: view.position, scale: 1, visible: [], hidden: [], cuttingCurves: [] };
+    const cap = { point: [0, -5, 0] as const, normal: [0, -1, 0] as const, loops: [outer] };
+    expect(pickDrawingFace(document, resolved, [{ ...projection, cuttingAreas: [cap] }], [105, 105])).toBeNull();
+    expect(pickDrawingFace(document, resolved, [{ ...projection, cuttingAreas: [{ ...cap, loops: [outer, hole] }] }], [105, 105])).toEqual(target);
+    expect(pickDrawingFace(document, resolved, [{ ...projection, cuttingAreas: [{ ...cap, point: [0, 5, 0] }] }], [105, 105])).toEqual(target);
   });
 });

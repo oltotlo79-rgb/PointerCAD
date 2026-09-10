@@ -1,4 +1,4 @@
-import type { Point2 } from '@pointercad/drawing';
+import { MAX_DRAWING_BOUNDARY_POINTS, validateDrawingPolygon, type Point2 } from '@pointercad/drawing';
 
 import type { PlaneSpec } from '../geometry/planeSpec.js';
 
@@ -49,7 +49,8 @@ function markAt(point: Point2, direction: Point2): CuttingLineSegment {
 
 /** 0=A、25=Z、26=AA の決定的な断面符号。 */
 export function sectionLetter(index: number): string {
-  let remaining = Math.max(0, Math.floor(index));
+  if (!Number.isSafeInteger(index) || index < 0) throw new RangeError('断面の符号番号は0以上の安全な整数で指定してください。');
+  let remaining = index;
   let result = '';
   do {
     result = String.fromCharCode(65 + (remaining % 26)) + result;
@@ -64,12 +65,16 @@ export function createCuttingLine(
   labelIndex: number,
   viewSide: 'left' | 'right' = 'right',
 ): CuttingLineGeometry | null {
-  if (points.length < 2 || points.some((point) => !point.every(Number.isFinite))) return null;
+  if (!Number.isSafeInteger(labelIndex) || labelIndex < 0 || points.length < 2 || points.length > MAX_DRAWING_BOUNDARY_POINTS
+      || points.some((point) => !point.every(Number.isFinite))) return null;
   const chain = points.slice(0, -1).flatMap((from, index): CuttingLineSegment[] => {
     const to = points[index + 1];
     return to === undefined ? [] : [{ from, to, style: 'thin-chain' }];
   });
-  if (chain.some((line) => line.from[0] === line.to[0] && line.from[1] === line.to[1])) return null;
+  if (chain.some((line) => {
+    const length = Math.hypot(line.to[0] - line.from[0], line.to[1] - line.from[1]);
+    return !Number.isFinite(length) || length <= 1e-9;
+  })) return null;
 
   const heavyMarks = points.map((point, index) => {
     const before = points[Math.max(0, index - 1)] ?? point;
@@ -91,13 +96,23 @@ export function createCuttingLine(
 
 /** Must の3種に必要な境界指定を検査する。 */
 export function validateSectionSpec(spec: SectionSpec): string | null {
+  return validateSectionBoundary(spec);
+}
+
+export function validateSectionBoundary(spec: Pick<SectionSpec, 'kind' | 'boundary'>): string | null {
   if (spec.kind === 'full' || spec.kind === 'revolved') return null;
-  if (spec.boundary?.some((point) => !point.every(Number.isFinite)) ||
-      (spec.kind === 'half' && spec.boundary?.length !== 2)) return '断面の範囲を指定してください。';
-  const minimum = spec.kind === 'local' ? 3 : 2;
-  return (spec.boundary?.length ?? 0) >= minimum
-    ? null
-    : spec.kind === 'local'
-      ? '部分断面の閉じた輪郭を指定してください。'
-      : '断面の範囲を指定してください。';
+  const boundary = spec.boundary ?? [];
+  if (spec.kind === 'local') return validateDrawingPolygon(boundary);
+  if (boundary.length < 2 || boundary.length > MAX_DRAWING_BOUNDARY_POINTS
+      || boundary.some((point) => !point.every(Number.isFinite))
+      || spec.kind === 'half' && boundary.length !== 2) return '断面の範囲を指定してください。';
+  for (let index = 1; index < boundary.length; index++) {
+    const a = boundary[index - 1], b = boundary[index], c = boundary[index + 1];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!Number.isFinite(length) || length <= 1e-9) return '断面の境界で隣り合う点を離してください。';
+    if (spec.kind === 'stepped' && (b[0] < a[0] || c !== undefined && b[0] === a[0] && c[0] === b[0]
+        && (b[1] - a[1]) * (c[1] - b[1]) <= 0)) return '段付き断面の境界は横座標の小さい順に、折り返さず指定してください。';
+  }
+  return spec.kind === 'stepped' && boundary[0][0] === boundary[boundary.length - 1][0]
+    ? '段付き断面には横方向の広がりが必要です。' : null;
 }

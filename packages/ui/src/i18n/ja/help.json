@@ -1,0 +1,14 @@
+{
+  "help.open": "ヘルプ (F1)",
+  "help.title": "PointerCAD ヘルプ",
+  "help.close": "ヘルプを閉じる (Esc)",
+  "help.contents": "ヘルプの目次",
+  "help.search": "ヘルプ本文を検索",
+  "help.article": "ヘルプ本文",
+  "help.loading": "ヘルプを読み込んでいます。",
+  "help.searching": "本文を検索しています。",
+  "help.noResults": "一致する項目がありません。別の言葉で検索してください。",
+  "help.searchIncomplete": "一部の本文を読み込めませんでした。読み込めた項目を表示しています。",
+  "help.loadFailed": "ヘルプを読み込めませんでした。接続を確認して再試行してください。",
+  "help.retry": "再試行"
+}

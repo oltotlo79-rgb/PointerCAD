@@ -3,6 +3,7 @@ import { nextDrawingAnnotationId } from '@pointercad/model';
 import { drawingFont } from './drawingFont.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { drawingCreationLayer } from './drawingCreationLayer.js';
 
 export interface DrawingNoteInput {
   readonly id?: string;
@@ -16,6 +17,8 @@ export interface DrawingNoteInput {
 export function saveDrawingNote(input: DrawingNoteInput): boolean {
   const state = useAppStore.getState(), document = state.drawing;
   if (document === null || state.drawingBusy) return false;
+  const layerId = drawingCreationLayer(document, 'layer-5');
+  if (layerId === null) return false;
   const existing = input.id === undefined ? undefined : document.annotations.find((item) => item.id === input.id);
   if (input.id !== undefined && (existing === undefined || existing.surfaceFinish !== undefined
     || existing.machiningFeatureId !== undefined || !['note', 'leaderNote'].includes(existing.kind))) return false;
@@ -29,7 +32,7 @@ export function saveDrawingNote(input: DrawingNoteInput): boolean {
   const annotation: Annotation = {
     id: existing?.id ?? nextDrawingAnnotationId(document), kind: input.leader === undefined ? 'note' : 'leaderNote',
     text: input.text.replace(/\r\n?/gu, '\n'), position: input.position, height: input.heightMm,
-    layerId: existing?.layerId ?? 'layer-5',
+    layerId: existing?.layerId ?? layerId,
     ...(existing?.style === undefined ? {} : { style: existing.style }),
     ...(input.leader === undefined ? {} : { leader: [input.leader.target], leaderEnd: input.leader.end }),
   };

@@ -30,6 +30,9 @@ const sample = {
   annotations: [],
   tables: [],
   balloons: [],
+  datums: [],
+  gdtFrames: [],
+  weldSymbols: [],
   layers: DEFAULT_DRAWING_LAYERS,
   parameters: [],
 } satisfies DrawingDocument;
@@ -39,8 +42,8 @@ describe('図面文書の型', () => {
     expect(sample.name).toBe('見本');
   });
 
-  it('id を除く内容の欄は11個である(§2.3)', () => {
-    expect(Object.keys(sample).filter((key) => key !== 'id')).toHaveLength(11);
+  it('id を除く内容に製作指示3配列を含む14欄を持つ', () => {
+    expect(Object.keys(sample).filter((key) => key !== 'id')).toHaveLength(14);
   });
 
   it('投影の線や寸法値を保存する欄を持たない', () => {

@@ -35,6 +35,22 @@ describe('sectionSpec', () => {
   it('退化した切断線を断る', () => {
     expect(createCuttingLine([[0, 0], [0, 0]], 0)).toBeNull();
   });
+  it.each([Infinity, NaN, -1, 0.5, Number.MAX_SAFE_INTEGER + 1])('不正な符号番号 %s を無限ループさせず断る', (index) => {
+    expect(() => sectionLetter(index)).toThrow(RangeError);
+    expect(createCuttingLine([[0, 0], [10, 0]], index)).toBeNull();
+  });
+  it('段付きは横座標順と幅を要求し、垂直な段差を許す', () => {
+    const spec = { kind: 'stepped', plane, keepSide: 'positive' } as const;
+    expect(validateSectionSpec({ ...spec, boundary: [[0, 0], [10, 0], [10, 5], [20, 5]] })).toBeNull();
+    for (const boundary of [
+      [[0, 0], [10, 0], [5, 5]], [[0, 0], [0, 5]],
+      [[0, 0], [10, 0], [10, 5], [10, 2], [20, 2]], [[0, 0], [0, 0], [10, 0]],
+    ] as const) expect(validateSectionSpec({ ...spec, boundary })).not.toBeNull();
+  });
+  it('半断面の同一点と部分断面の交差を断る', () => {
+    expect(validateSectionSpec({ kind: 'half', plane, keepSide: 'positive', boundary: [[1, 2], [1, 2]] })).not.toBeNull();
+    expect(validateSectionSpec({ kind: 'local', plane, keepSide: 'positive', boundary: [[0, 0], [10, 10], [0, 10], [10, 0]] })).not.toBeNull();
+  });
   it.each(['full', 'revolved'] as const)('%s は境界なしで有効', (kind) => {
     expect(validateSectionSpec({ kind, plane, keepSide: 'positive' })).toBeNull();
   });

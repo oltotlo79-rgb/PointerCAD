@@ -149,6 +149,10 @@ export function AssemblyGroup(): React.JSX.Element | null {
 
   return (
     <div className="pcad-toolbar__group" role="group" aria-label={t('assembly.menu.build')}>
+      <span className="pcad-toolbar__group-label" title={t('assembly.menu.buildTooltip')}>
+        {t('assembly.mode')}
+      </span>
+      <div className="pcad-segmented">
       <ToolMenu
         items={ASSEMBLY_MENU_ITEMS}
         groupLabelKey="assembly.menu.build"
@@ -197,6 +201,7 @@ export function AssemblyGroup(): React.JSX.Element | null {
         onClick={() => { if (assembly.components.length > 0) state.setSelection(['bom']); }}>
         <BomIcon /><span className="pcad-button__label">{t('assembly.tool.bom')}</span>
       </button>
+      </div>
     </div>
   );
 }

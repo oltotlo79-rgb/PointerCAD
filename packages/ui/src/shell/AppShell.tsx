@@ -16,7 +16,10 @@ import {
   windowTitle,
 } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
+import { HelpHost } from '../help/HelpHost.js';
+import { contextualHelpTopic } from '../help/helpContext.js';
 import { commitDrawingDimension, deleteSelectedDrawingElements } from '../drawing/dimensionCommands.js';
+import { commitDrawingDimensionSeries } from '../drawing/dimensionSeriesCommands.js';
 import {
   DrawingPropertyPanel,
   DrawingStatusBar,
@@ -193,6 +196,7 @@ export function AppShell(): React.JSX.Element {
      * 止められないことがある。そのときはツールバーの「新規」を使う(デスクトップ版では効く)。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (useAppStore.getState().helpTopicId !== null) return;
       // 文書の種類や入力欄の判定より先に扱い、図面にも保存・開く・新規を届ける。
       if ((event.ctrlKey || event.metaKey) && !event.altKey) {
         const fileKey = event.key.toLowerCase();
@@ -222,7 +226,10 @@ export function AppShell(): React.JSX.Element {
             if (key === 'y' || event.shiftKey) state.redo(); else state.undo();
           }
         } else if (event.key === 'Escape') { event.preventDefault(); state.setDrawingTool('select'); }
-        else if (event.key === 'Enter' && !event.repeat && !activatedBySpace(event.target)) { event.preventDefault(); commitDrawingDimension(); }
+        else if (event.key === 'Enter' && !event.repeat && !activatedBySpace(event.target)) {
+          event.preventDefault();
+          if (state.drawingTool === 'dimensionSeries') void commitDrawingDimensionSeries(); else commitDrawingDimension();
+        }
         else if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteSelectedDrawingElements(); }
         return;
       }
@@ -307,6 +314,14 @@ export function AppShell(): React.JSX.Element {
      * その Esc は「一覧を閉じる」ための押下で、測定とは関係がないため。
      */
     const onEscape = (event: KeyboardEvent): void => {
+      const helpState = useAppStore.getState();
+      if (event.key === 'F1') {
+        event.preventDefault(); event.stopPropagation();
+        const explicit = event.target instanceof HTMLElement ? event.target.closest('[data-help-topic]')?.getAttribute('data-help-topic') : null;
+        helpState.openHelpTopic(contextualHelpTopic(helpState, explicit, isTextEntry(event.target)));
+        return;
+      }
+      if (helpState.helpTopicId !== null) return;
       if (event.key !== 'Escape' || isTextEntry(event.target) || isInsideMenu(event.target)) {
         return;
       }
@@ -336,6 +351,7 @@ export function AppShell(): React.JSX.Element {
       rules/04-設計の規律.md)。E2E もここを見れば、どちらの画面が出ているかを判定できる。
     */
     <div className="pcad-shell" data-document-kind={documentKind}>
+      <HelpHost />
       {documentKind === 'drawing' ? <DrawingToolbar /> : <Toolbar />}
       <div className="pcad-shell__body">
         {/*
@@ -367,7 +383,7 @@ export function AppShell(): React.JSX.Element {
               <ViewportCanvas />
             </Suspense>
           )}
-          {documentKind === 'drawing' ? null : importUnitAsked ? (
+          {documentKind !== 'drawing' && importUnitAsked ? (
             /*
               読み込んだファイルの単位を訊く小窓(§0.a-0.6、タスク32b)。**この問いは
               読み込みを止めて待っている**ので、控えの案内や計算中の札より先に出す
@@ -405,7 +421,7 @@ export function AppShell(): React.JSX.Element {
                 <dl className="pcad-restore__details">
                   <dt>{t('restore.savedAt')}</dt>
                   <dd>{formatSavedAt(restorePrompt.savedAt)}</dd>
-                  <dt>{t('restore.documentName')}</dt>
+                  <dt>{t(recoveryKind === 'drawing' ? 'restore.drawingName' : 'restore.documentName')}</dt>
                   <dd>{restorePrompt.documentName}</dd>
                   {restorePrompt.unrecoverable && restorePrompt.reasonKey !== undefined ? (
                     <>
@@ -448,7 +464,7 @@ export function AppShell(): React.JSX.Element {
                 </div>
               </div>
             </div>
-          ) : isComputing ? (
+          ) : documentKind === 'drawing' ? null : isComputing ? (
             /*
               計算中は中央に札を出す。空状態の案内とは同時に出さない。初回だけ
               幾何カーネル(約 50MB)の読み込みを含むので文言を分ける(§0.a-0.23 ⑨)。

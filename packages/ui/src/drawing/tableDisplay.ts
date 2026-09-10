@@ -1,3 +1,4 @@
+import { drawingDimensionContext } from '@pointercad/model';
 import { balloon, bomTable, createPaperFrame, holeTable, paperSizeOf, resolveStyle, revisionTable,
   type BalloonCircle, type BomColumnId, type DrawingDocument, type DrawingRenderElement,
   type DrawingTable, type InkBounds, type OutlinedText, type TableGeometry } from '@pointercad/drawing';
@@ -78,7 +79,7 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
       if (holes?.ok === true && source !== null && typeof viewId === 'string') {
         const callouts = holes.rows.map((row, index) => {
           const target = resolveDrawingAnnotationTarget({ kind: 'point', viewId, paperPoint: [0, 0], modelPoint: row.center },
-            document, { instances: source.dimensionInstances ?? [], modelCenter: source.center });
+            document, drawingDimensionContext(source));
           const metrics = measureText(row.symbol, common.textHeightMm);
           if (target === null || metrics === null) return null;
           const width = metrics.inkBounds.right - metrics.inkBounds.left;
@@ -95,7 +96,7 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
             throughText: t('drawing.table.through'), formatLength: (value) => String(Number(value.toFixed(3))) });
           geometry = result;
           if (result !== null) for (const callout of result.callouts) {
-            elements.push(drawingNoteGeometryElement({ id: table.id, layerId: table.layerId, style: table.style }, callout.geometry));
+            elements.push({ ...drawingNoteGeometryElement({ id: table.id, layerId: table.layerId, style: table.style }, callout.geometry), viewId });
           }
         }
       }
@@ -110,7 +111,7 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
   for (const item of document.balloons) {
     const matches = source?.bomRows?.filter((row) => item.componentIds.length > 0 && item.componentIds.every((id) => row.componentIds.includes(id))) ?? [];
     const target = item.sourceTarget === undefined ? item.leader[0] : source === null ? null
-      : resolveDrawingAnnotationTarget(item.sourceTarget, document, { instances: source.dimensionInstances ?? [], modelCenter: source.center });
+      : resolveDrawingAnnotationTarget(item.sourceTarget, document, drawingDimensionContext(source));
     const geometry = matches.length !== 1 || target == null ? null : balloon({ itemNumber: matches[0].number,
       bomNumbers: new Set(source?.bomRows?.map((row) => row.number)), position: item.position, target,
       targetKind: item.targetKind ?? 'edge', heightMm: document.sheet.textHeight ?? 3.5, occupied, measureText });

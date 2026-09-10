@@ -6,6 +6,7 @@ import { queueDocumentSave } from './documentSaveQueue.js';
 import { withPcaddExtension, type PickedFile } from './fileGateway.js';
 import { openErrorMessageKey, type PartFileDeps } from './partFile.js';
 import { recordRecentFile } from './recentFiles.js';
+import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 
 export async function applyPickedDrawing(picked: PickedFile, deps: PartFileDeps): Promise<void> {
@@ -52,6 +53,18 @@ export async function saveDrawing(deps: PartFileDeps, saveAs: boolean): Promise<
       before.setDrawingFileState(name, drawing, before.drawingSources);
       before.setFileMessage({ key: 'file.saved', failed: false });
       recordRecentFile(name, { storage: deps.recentFilesStorage });
+      const mayClear = () => isCurrent() && useAppStore.getState().autoSaver === before.autoSaver
+        && !activeHasUnsavedChanges(useAppStore.getState());
+      if (mayClear() && before.autoSaver !== null) {
+        try {
+          await before.autoSaver.discard();
+          const record = before.recoveryRecord;
+          if (mayClear() && record?.kind === 'drawing' && record.documentId === before.activeDocumentId && record.sessionId !== undefined) {
+            await before.autoSaver.discard({ kind: 'drawing', documentId: record.documentId, sessionId: record.sessionId });
+            if (mayClear() && useAppStore.getState().recoveryRecord === record) useAppStore.setState({ recoveryRecord: null });
+          }
+        } catch { /* 手動保存は成功済み。消せない控えは保持する。 */ }
+      }
     } catch (error) {
       if (isCurrent()) before.setFileMessage({ key: saveFailureMessageKey(error), failed: true });
     }

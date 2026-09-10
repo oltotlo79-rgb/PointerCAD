@@ -10,23 +10,46 @@ export interface HatchAreaInput {
 }
 
 const EPSILON = 1e-9;
+export const MAX_HATCH_POINTS = 65_536;
+const MAX_HATCH_LINES = 16_384;
+const MAX_HATCH_SEGMENTS = 65_536;
+const MAX_HATCH_EDGE_CHECKS = 10_000_000;
+export type HatchAreaResult = { readonly ok: true; readonly segments: readonly HatchSegment[] }
+  | { readonly ok: false; readonly reason: 'invalid' | 'budget' };
 
 function dot(point: Point2, axis: Point2): number { return point[0] * axis[0] + point[1] * axis[1]; }
 
 /** 平行線と全輪郭の交点を半開区間で数え、頂点を二重計上せず偶奇で中を選ぶ。 */
 export function hatchArea(input: HatchAreaInput): readonly HatchSegment[] {
-  if (!Number.isFinite(input.angleRad) || !Number.isFinite(input.pitchMm) || input.pitchMm <= 0) return [];
-  const points = input.loops.flat();
-  if (points.length < 3) return [];
+  const result = checkedHatchArea(input);
+  return result.ok ? result.segments : [];
+}
+
+/** 資源超過を空の切り口と混同せず、部分的なハッチも返さない。 */
+export function checkedHatchArea(input: HatchAreaInput): HatchAreaResult {
+  if (!Number.isFinite(input.angleRad) || !Number.isFinite(input.pitchMm) || input.pitchMm <= 0) return { ok: false, reason: 'invalid' };
+  if (input.loops.length === 0) return { ok: true, segments: [] };
+  if (input.loops.length > MAX_HATCH_POINTS / 3) return { ok: false, reason: 'budget' };
+  let pointCount = 0, minimum = Infinity, maximum = -Infinity;
   const direction: Point2 = [Math.cos(input.angleRad), Math.sin(input.angleRad)];
   const normal: Point2 = [-direction[1], direction[0]];
-  const offsets = points.map((point) => dot(point, normal));
-  const minimum = Math.min(...offsets);
-  const maximum = Math.max(...offsets);
+  for (const loop of input.loops) {
+    pointCount += loop.length;
+    if (pointCount > MAX_HATCH_POINTS) return { ok: false, reason: 'budget' };
+    if (loop.length < 3) return { ok: false, reason: 'invalid' };
+    for (const point of loop) {
+      const offset = dot(point, normal), along = dot(point, direction);
+      if (!point.every(Number.isFinite) || !Number.isFinite(offset) || !Number.isFinite(along)) return { ok: false, reason: 'invalid' };
+      minimum = Math.min(minimum, offset); maximum = Math.max(maximum, offset);
+    }
+  }
   // 輪郭の中心を通る線を基準にする。45°と135°の鏡像で位相がずれて本数が変わるのを防ぐ。
-  const phase = (minimum + maximum) / 2;
+  const phase = minimum / 2 + maximum / 2;
   const first = Math.ceil((minimum - phase - EPSILON) / input.pitchMm);
   const last = Math.floor((maximum - phase + EPSILON) / input.pitchMm);
+  const lineCount = last - first + 1;
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || !Number.isSafeInteger(lineCount)
+      || lineCount > MAX_HATCH_LINES || lineCount * pointCount > MAX_HATCH_EDGE_CHECKS) return { ok: false, reason: 'budget' };
   const result: HatchSegment[] = [];
 
   for (let lineIndex = first; lineIndex <= last; lineIndex += 1) {
@@ -41,9 +64,12 @@ export function hatchArea(input: HatchAreaInput): readonly HatchSegment[] {
         const sideB = dot(b, normal) - offset;
         // 一端を含み他端を含まない半開規則。直線が頂点を通っても交点は1回だけになる。
         if (!((sideA <= EPSILON && sideB > EPSILON) || (sideB <= EPSILON && sideA > EPSILON))) continue;
-        const ratio = sideA / (sideA - sideB);
-        const point: Point2 = [a[0] + (b[0] - a[0]) * ratio, a[1] + (b[1] - a[1]) * ratio];
-        intersections.push(dot(point, direction));
+        const divisor = sideA - sideB;
+        if (!Number.isFinite(divisor)) return { ok: false, reason: 'invalid' };
+        const ratio = sideA / divisor;
+        const along = dot(a, direction) * (1 - ratio) + dot(b, direction) * ratio;
+        if (!Number.isFinite(along)) return { ok: false, reason: 'invalid' };
+        intersections.push(along);
       }
     }
     intersections.sort((a, b) => a - b);
@@ -51,11 +77,14 @@ export function hatchArea(input: HatchAreaInput): readonly HatchSegment[] {
       const from = intersections[index];
       const to = intersections[index + 1];
       if (from === undefined || to === undefined || to - from <= EPSILON) continue;
-      result.push({
+      if (result.length >= MAX_HATCH_SEGMENTS) return { ok: false, reason: 'budget' };
+      const segment: HatchSegment = {
         from: [direction[0] * from + normal[0] * offset, direction[1] * from + normal[1] * offset],
         to: [direction[0] * to + normal[0] * offset, direction[1] * to + normal[1] * offset],
-      });
+      };
+      if (!segment.from.every(Number.isFinite) || !segment.to.every(Number.isFinite)) return { ok: false, reason: 'invalid' };
+      result.push(segment);
     }
   }
-  return result;
+  return { ok: true, segments: result };
 }

@@ -90,9 +90,10 @@ describe('PDF・DXF・PNG・JPEGの出力境界(P8-47/48)', () => {
     expect(body).not.toContain('/Subtype /Image'); expect(fake.savePcad).not.toHaveBeenCalled();
   });
   it('DXFはR12の文字実体を保存して制限を表示する', async () => {
-    const fake = setup(); expect(await exportDrawing({ format: 'dxf' })).toBe(true);
+    const fake = setup(); state().setFileMessage({ key: 'file.saved', failed: false }); expect(await exportDrawing({ format: 'dxf' })).toBe(true);
     expect(fake.saveFileAs.mock.calls[0][1]).toBe('dxf');
-    expect(new TextDecoder().decode(fake.saveFileAs.mock.calls[0][2])).toContain('AC1009'); expect(state().drawingMessage).not.toBeNull();
+    expect(new TextDecoder().decode(fake.saveFileAs.mock.calls[0][2])).toContain('AC1009');
+    expect(state().drawingMessage).toContain('省略 0件'); expect(state().fileMessage).toBeNull();
   });
   it.each(['png', 'jpg'] as const)('%sは指定600dpiで画像化したバイト列を保存する', async (format) => {
     const fake = setup(); expect(await exportDrawing({ format, dpi: 600 })).toBe(true);

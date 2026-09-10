@@ -35,6 +35,12 @@ function document(dimensions: readonly Dimension[] = [dimension()], patch: Parti
 const resolve = (doc = document(), instances = [instance()]) => resolveDrawingDimensions(doc, { instances, modelCenter: [0, 0, 0] });
 
 describe('元の3D形状から解決する寸法(P8-25)', () => {
+  it('理論的に正確な寸法は通常値を測り、公差・はめあい・参考括弧との混在は未解決にする', () => {
+    expect(resolve(document([dimension(undefined, { basic: true })]))[0]).toMatchObject({ status: 'resolved', value: 20 });
+    for (const conflict of [{ reference: true }, { tolerance: { kind: 'symmetric' as const, value: 0.1 } }, { fit: { symbol: 'H7', showDeviation: true } }]) {
+      expect(resolve(document([dimension(undefined, { basic: true, ...conflict })]))[0].status).toBe('unresolved');
+    }
+  });
   it('箱の20mmの辺を20として解く', () => expect(resolve()[0]).toMatchObject({ status: 'resolved', value: 20, text: '20' }));
   it('視線方向へ傾いた30×40の辺は紙上30でも実距離50', () => {
     const current = edge([30, 40, 0]);
@@ -59,6 +65,15 @@ describe('元の3D形状から解決する寸法(P8-25)', () => {
     const current = edge([-30, 12, 40]);
     const result = resolve(document([dimension([target(current)], { kind: 'coordinate', measurement: 'coordinate' })]), [instance(body([current]))])[0];
     expect(result).toMatchObject({ status: 'resolved', value: null, coordinates: [-30, 40], text: 'X: -30 / Y: 40' });
+  });
+  it('座標寸法の各成分にも許容差を評価し、前後文字・参考括弧を保つ', () => {
+    const current = edge([-30, 12, 40]);
+    const result = resolve(document([dimension([target(current)], { kind: 'coordinate', measurement: 'coordinate',
+      tolerance: { kind: 'symmetric', value: 0.1 }, prefix: '位置 ', suffix: ' mm', reference: true })]), [instance(body([current]))])[0];
+    expect(result).toMatchObject({ status: 'resolved', coordinates: [-30, 40], text: '(位置 X: -30±0.1 / Y: 40±0.1 mm)' });
+    const invalid = resolve(document([dimension([target(current)], { kind: 'coordinate', measurement: 'coordinate',
+      tolerance: { kind: 'symmetric', value: -0.1 } })]), [instance(body([current]))])[0];
+    expect(invalid.status).toBe('unresolved');
   });
   it('球面の重心と異なる解析中心から球径を得る', () => {
     const face = { index: 0, surfaceKind: 'sphere' as const, area: 200 * Math.PI, centroid: [12, -8, 35] as const,

@@ -70,6 +70,48 @@ describe('図面の共通描画からR12 DXFを書き出す(P8-48)', () => {
     expect(field(record, 1)).toBe('100\\U+00B10.1'); expect(field(record, 40)).toBe('3.5');
     expect(field(record, 72)).toBe('1'); expect(field(record, 73)).toBe('1');
   });
+  it('製作指示の外周と穴を閉じた輪郭線で保存し、回転・文字揃え・変換後の紙面位置を保つ', () => {
+    const glyph: RenderText = { ...text, ownerId: 'gdt', angle: Math.PI / 2, transform: [2, 0, 0, 2, 5, 7], outline: [
+      { commands: [{ kind: 'M', to: [0, 0] }, { kind: 'L', to: [10, 0] }, { kind: 'L', to: [10, 4] }, { kind: 'L', to: [0, 4] }, { kind: 'Z' }] },
+      { commands: [{ kind: 'M', to: [2, 1] }, { kind: 'L', to: [2, 3] }, { kind: 'L', to: [8, 3] }, { kind: 'L', to: [8, 1] }, { kind: 'Z' }] },
+    ] };
+    const result = writeDrawingDxf({ widthMm: 420, heightMm: 297, primitives: [glyph, text] }, layers, 0.001, { outlineTextOwnerIds: new Set(['gdt']) });
+    expect(result.outlinedTextCount).toBe(1); expect(result.skippedPrimitiveCount).toBe(0);
+    expect(records(result.text, 'TEXT')).toHaveLength(1);
+    expect(records(result.text, 'POLYLINE').map((record) => field(record, 70))).toEqual(['1', '1']);
+    const vertices = records(result.text, 'VERTEX').map((record) => [Number(field(record, 10)), Number(field(record, 20))]);
+    expect(vertices).toHaveLength(8);
+    const expected = [[123, 47], [123, 67], [115, 67], [115, 47], [121, 51], [117, 51], [117, 63], [121, 63]];
+    for (const [index, vertex] of vertices.entries()) for (const axis of [0, 1]) expect(vertex[axis]).toBeCloseTo(expected[index][axis], 8);
+  });
+  it('製作指示の曲線字形を0.001mm以内の輪郭にし、TEXTへ戻さない', () => {
+    const glyph: RenderText = { ...text, outline: [{ commands: [
+      { kind: 'M', to: [0, 0] }, { kind: 'C', control1: [0, 10], control2: [10, 10], to: [10, 0] }, { kind: 'Z' },
+    ] }] };
+    const result = writeDrawingDxf({ widthMm: 420, heightMm: 297, primitives: [glyph] }, layers, 0.001, { outlineTextOwnerIds: new Set(['dimension']) });
+    expect(result.outlinedTextCount).toBe(1); expect(result.flattenedCurveCount).toBe(1);
+    expect(records(result.text, 'TEXT')).toHaveLength(0); expect(records(result.text, 'VERTEX').length).toBeGreaterThan(10);
+    const vertices = records(result.text, 'VERTEX').map((record) => [Number(field(record, 10)), Number(field(record, 20))]);
+    for (let sample = 0; sample <= 100; sample++) {
+      const t = sample / 100, x = 55 + 30 * (1 - t) * t * t + 10 * t ** 3, y = 26 + 30 * (1 - t) * t;
+      let distance = Number.POSITIVE_INFINITY;
+      for (let index = 1; index < vertices.length; index++) {
+        const [a, b] = [vertices[index - 1], vertices[index]], dx = b[0] - a[0], dy = b[1] - a[1];
+        const along = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy)));
+        distance = Math.min(distance, Math.hypot(x - a[0] - along * dx, y - a[1] - along * dy));
+      }
+      expect(distance).toBeLessThanOrEqual(0.001);
+    }
+  });
+  it.each(['missing', 'open', 'nonfinite', 'empty'] as const)('製作指示の%s輪郭をフォント依存の文字へ置換せず、全体を省略として報告する', (kind) => {
+    const closed = { commands: [{ kind: 'M', to: [0, 0] }, { kind: 'L', to: [3, 0] }, { kind: 'L', to: [0, 3] }, { kind: 'Z' }] } as const;
+    const glyph: RenderText = { ...text, outline: kind === 'missing' ? null : kind === 'empty' ? [] : [closed,
+      { commands: [{ kind: 'M', to: [0, 0] }, { kind: 'L', to: [3, kind === 'nonfinite' ? Number.NaN : 0] }] }] };
+    const result = writeDrawingDxf({ widthMm: 420, heightMm: 297, primitives: [line, glyph] }, layers, 0.001, { outlineTextOwnerIds: new Set(['dimension']) });
+    expect(result.skippedPrimitiveCount).toBe(1); expect(result.outlinedTextCount).toBe(0);
+    expect(records(result.text, 'TEXT')).toHaveLength(0); expect(records(result.text, 'POLYLINE')).toHaveLength(0);
+    expect(records(result.text, 'LINE')).toHaveLength(1);
+  });
   it('原点は左下でy=20を反転しない', () => {
     const record = records(output().text, 'LINE')[0]; expect(field(record, 10)).toBe('10'); expect(field(record, 20)).toBe('20');
     expect(field(record, 11)).toBe('110'); expect(field(record, 21)).toBe('20');

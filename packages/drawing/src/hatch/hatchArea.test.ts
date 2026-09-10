@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Point2 } from '../types.js';
-import { hatchArea } from './hatchArea.js';
+import { checkedHatchArea, hatchArea } from './hatchArea.js';
 
 const square: readonly Point2[] = [[0, 0], [30, 0], [30, 30], [0, 30]];
 const totalLength = (segments: ReturnType<typeof hatchArea>): number => segments.reduce(
@@ -8,6 +8,20 @@ const totalLength = (segments: ReturnType<typeof hatchArea>): number => segments
 );
 
 describe('ハッチング', () => {
+  it('極小ピッチを反復前に断り、部分的な成功にしない', () => {
+    expect(checkedHatchArea({ loops: [square], angleRad: 0, pitchMm: Number.MIN_VALUE })).toEqual({ ok: false, reason: 'budget' });
+    expect(checkedHatchArea({ loops: [square], angleRad: 0, pitchMm: 0.0001 })).toEqual({ ok: false, reason: 'budget' });
+  });
+  it('有限の巨大座標の差分があふれても停止し、無効を返す', () => {
+    const huge: readonly Point2[] = [[-1e308, -1e308], [1e308, -1e308], [1e308, 1e308], [-1e308, 1e308]];
+    expect(checkedHatchArea({ loops: [huge], angleRad: Math.PI / 4, pitchMm: 3 }).ok).toBe(false);
+    expect(checkedHatchArea({ loops: [[[0, 0], [30, NaN], [0, 30]]], angleRad: 0, pitchMm: 3 })).toEqual({ ok: false, reason: 'invalid' });
+  });
+  it('空の断面と資源超過を別の結果で返す', () => {
+    expect(checkedHatchArea({ loops: [], angleRad: 0, pitchMm: 3 })).toEqual({ ok: true, segments: [] });
+    expect(checkedHatchArea({ loops: [Array.from({ length: 65_537 }, (): Point2 => [0, 0])], angleRad: 0, pitchMm: 3 }))
+      .toEqual({ ok: false, reason: 'budget' });
+  });
   it('30角・45度・3mmは独立検算で15本になる', () => {
     expect(hatchArea({ loops: [square], angleRad: Math.PI / 4, pitchMm: 3 })).toHaveLength(15);
   });

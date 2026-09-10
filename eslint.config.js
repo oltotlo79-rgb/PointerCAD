@@ -56,6 +56,15 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ['e2e/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'CallExpression[callee.name="Number"] > MemberExpression.arguments > CallExpression.object[callee.name="getComputedStyle"]',
+        message: 'CSSの計算済み長さにはpx等の単位が付くため、Number.parseFloatで読む（rules/06）。',
+      }],
+    },
+  },
+  {
     // 型情報を使うルールはソースとテストにだけ適用する。
     // 設定ファイル(*.config.ts)は projectService の対象外なので型情報なしのルールだけが効く。
     files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],

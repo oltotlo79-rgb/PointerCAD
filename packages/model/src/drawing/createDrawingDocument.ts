@@ -44,6 +44,9 @@ export function createDrawingDocument(name: string, source: DrawingSource): Draw
     annotations: [],
     tables: [],
     balloons: [],
+    datums: [],
+    gdtFrames: [],
+    weldSymbols: [],
     layers: DEFAULT_DRAWING_LAYERS.map((layer) => ({ ...layer })),
     parameters: [],
   };

@@ -62,6 +62,18 @@ function populatedDrawing(): DrawingDocument {
 }
 
 describe('図面 document.json', () => {
+  it('累進の基準と全点の参照を保存し、実測値・投影線は保存しない', () => {
+    const base = populatedDrawing();
+    const document = { ...base, dimensions: [{ ...base.dimensions[0], series: { kind: 'progressive' as const, baseIndex: 1 } }] };
+    const text = serializeDrawing(document, { savedAt: SAVED_AT });
+    expect(parseDrawing(text)).toMatchObject({ ok: true, document });
+    expect(text).not.toContain('"ticks"'); expect(text).not.toContain('"progressive":');
+  });
+  it.each([-1, 0.5, 2])('累進の基準index%sが選択点に対応しなければ読込を断る', (baseIndex) => {
+    const base = populatedDrawing();
+    const text = serializeDrawing({ ...base, dimensions: [{ ...base.dimensions[0], series: { kind: 'progressive', baseIndex } }] }, { savedAt: SAVED_AT });
+    expect(parseDrawing(text).ok).toBe(false);
+  });
   it('版9・drawing・アプリ名を決まった順序で書く', () => {
     const text = serializeDrawing(populatedDrawing(), { savedAt: SAVED_AT });
     expect(text.indexOf('"schema"')).toBeLessThan(text.indexOf('"kind"'));

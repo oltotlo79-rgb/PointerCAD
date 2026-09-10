@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
-const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個|4分割の実描画性能/u;
+const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個|4分割の実描画性能|100フィーチャー・三面図・50寸法/u;
 
 export default defineConfig({
   testDir: './tests',
@@ -18,7 +18,7 @@ export default defineConfig({
    * 50MB の OCCT WASM をコンパイルし直すため、**初回のカーネル読み込みが 1 並列の 17〜30 秒から
    * 6 並列では 55〜80 秒へ延び**、spec 側の待ちの上限(KERNEL_TIMEOUT_MS = 60 秒)を越えて落ちた
    * (push #14 の赤 3 本。docs/報告記録.md 2026-09-06 12:04)。上限 60 秒は緩めない。
-   * FPSの測定だけは先行projectで専有し、残りの操作検査は2並列で実行する。
+   * FPS・図面応答の測定は先行projectで専有し、残りの操作検査は2並列で実行する。
    */
   workers: 2,
   use: {
@@ -31,7 +31,7 @@ export default defineConfig({
   projects: [
     {
       name: 'viewport-performance',
-      testMatch: /(?:assembly|p8-drawing)\.spec\.ts$/u,
+      testMatch: /(?:assembly|p8-drawing|drawing-performance)\.spec\.ts$/u,
       workers: 1,
       grep: VIEWPORT_PERFORMANCE_TEST,
       // GPUの有無を揃え、別テストのWASM初期化とCPUを奪い合わずに測る。

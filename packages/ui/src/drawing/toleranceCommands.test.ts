@@ -3,7 +3,7 @@ import { createDrawingDocument, resolveDrawingDimensions } from '@pointercad/mod
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { applyDrawingTolerance } from './toleranceCommands.js';
+import { applyDrawingTolerance, type DrawingDimensionPresentation } from './toleranceCommands.js';
 
 const initial: DrawingDocument = { ...createDrawingDocument('図面', { sourceRef: 's', sourceKind: 'part', fileName: '', path: '', contentHash: '', importedAt: '' }),
   views: [{ id: 'v', name: '正面', kind: 'front', position: [0, 0], scale: null, direction: [0, 1, 0], xDir: [1, 0, 0],
@@ -14,6 +14,8 @@ const initial: DrawingDocument = { ...createDrawingDocument('図面', { sourceRe
   placement: { commonNormalCoordinate: 10, textPosition: null }, reference: false, origin: 'manual', layerId: 'layer-4' }] };
 function drawing(): DrawingDocument { const value = useAppStore.getState().drawing; if (value === null) throw new Error('図面'); return value; }
 const resolved = () => resolveDrawingDimensions(drawing(), { instances: [], modelCenter: [0, 0, 0] })[0];
+const presentation: DrawingDimensionPresentation = { prefix: '4×', suffix: ' 通し', reference: false,
+  placement: { commonNormalCoordinate: 15, textPosition: [12, 18] } };
 
 describe('寸法の公差とはめあい(P8-36)', () => {
   beforeEach(() => {
@@ -24,6 +26,17 @@ describe('寸法の公差とはめあい(P8-36)', () => {
     expect(applyDrawingTolerance('d', { kind: 'symmetric', value: '1/10' })).toBe(true);
     expect(drawing().dimensions[0].tolerance).toEqual({ kind: 'symmetric', value: { source: '1/10', value: 0.1, display: '0.1' } });
     expect(resolved().text).toBe('20±0.1');
+  });
+  it('基本寸法の四角枠を1回のUndoで戻し、公差・参考寸法との併用を断る', () => {
+    expect(applyDrawingTolerance('d', { kind: 'none' }, { ...presentation, basic: true })).toBe(true);
+    expect(drawing().dimensions[0].basic).toBe(true); expect(resolved().value).toBe(20);
+    const before = drawing();
+    expect(applyDrawingTolerance('d', { kind: 'symmetric', value: '0.1' })).toBe(false); expect(drawing()).toBe(before);
+    expect(applyDrawingTolerance('d', { kind: 'none' }, { ...presentation, basic: true, reference: true })).toBe(false); expect(drawing()).toBe(before);
+    useAppStore.getState().undoDrawing(); expect(drawing()).toBe(initial);
+    useAppStore.getState().redoDrawing(); expect(drawing().dimensions[0].basic).toBe(true);
+    expect(applyDrawingTolerance('d', { kind: 'symmetric', value: '0.1' }, { ...presentation, basic: false })).toBe(true);
+    expect(drawing().dimensions[0].basic).toBeUndefined(); expect(resolved().text).toContain('±0.1');
   });
   it('上下偏差を付けて1回のUndoで戻す', () => {
     applyDrawingTolerance('d', { kind: 'deviation', upper: '0.2', lower: '-0.1' });
@@ -92,5 +105,36 @@ describe('寸法の公差とはめあい(P8-36)', () => {
     const version = useAppStore.getState().documentVersion;
     applyDrawingTolerance('d', { kind: 'symmetric', value: '0.1' });
     expect(useAppStore.getState().documentVersion).toBe(version);
+  });
+  it('接頭接尾・配置・公差を同時に編集して一回のUndoで全部戻す', () => {
+    const original = initial.dimensions[0]; useAppStore.getState().selectDrawingIds(['d']);
+    expect(applyDrawingTolerance('d', { kind: 'symmetric', value: '0.2' }, presentation, original)).toBe(true);
+    expect(resolved().text).toBe('4×20±0.2 通し'); expect(resolved().value).toBe(20);
+    expect(drawing().dimensions[0]).toMatchObject(presentation);
+    useAppStore.getState().undo(); expect(drawing()).toBe(initial);
+    useAppStore.getState().redo(); expect(drawing().dimensions[0]).toMatchObject(presentation);
+  });
+  it('参考寸法と文字の自動配置へ戻しても元の幾何参照を保つ', () => {
+    applyDrawingTolerance('d', { kind: 'none' }, { ...presentation, prefix: '', suffix: '', reference: true,
+      placement: { commonNormalCoordinate: 10, textPosition: null } });
+    expect(resolved().text).toBe('(20)'); expect(drawing().dimensions[0].targets).toBe(initial.dimensions[0].targets);
+    expect(drawing().dimensions[0].prefix).toBeUndefined(); expect(drawing().dimensions[0].suffix).toBeUndefined();
+  });
+  it.each([
+    { ...presentation, placement: { ...presentation.placement, commonNormalCoordinate: NaN } },
+    { ...presentation, placement: { ...presentation.placement, textPosition: [Infinity, 0] as const } },
+    { ...presentation, prefix: 'a\nb' }, { ...presentation, suffix: 'a'.repeat(101) },
+  ])('不正な表示設定では公差も履歴も一部分だけ更新しない %#', (input) => {
+    expect(applyDrawingTolerance('d', { kind: 'symmetric', value: '0.2' }, input)).toBe(false);
+    expect(drawing()).toBe(initial); expect(useAppStore.getState().canUndo).toBe(false);
+    expect(useAppStore.getState().drawingMessage).toContain('配置');
+  });
+  it('古い入力欄から現在の寸法を上書きしない', () => {
+    const old = initial.dimensions[0]; useAppStore.getState().selectDrawingIds(['d']);
+    applyDrawingTolerance('d', { kind: 'symmetric', value: '0.1' });
+    const current = drawing();
+    expect(applyDrawingTolerance('d', { kind: 'none' }, presentation, old)).toBe(false); expect(drawing()).toBe(current);
+    useAppStore.getState().selectDrawingIds([]);
+    expect(applyDrawingTolerance('d', { kind: 'none' }, presentation, current.dimensions[0])).toBe(false);
   });
 });

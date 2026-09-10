@@ -114,13 +114,15 @@ export function dimensionSeries(input: DimensionSeriesInput): DimensionSeriesRes
     return { ok: true, kind: 'progressive', line: { from: at(low, h), to: at(high, h) }, ticks, basePointId: base.id };
   }
   const dimensions: SeriesDimension[] = [];
+  const reference = input.points.reduce((sum, point) => sum + point.paperPoint[0] * normal[0] + point.paperPoint[1] * normal[1], 0) / input.points.length;
+  const outside = input.commonNormalCoordinate < reference ? -1 : 1;
   for (let i = 0; i < input.points.length; i += 1) {
     if ((input.kind === 'chain' && i === 0) || (input.kind === 'parallel' && i === baseIndex)) continue;
     const firstIndex = input.kind === 'chain' ? i - 1 : baseIndex;
     const value = Math.abs(rows[i][axis] - rows[firstIndex][axis]);
     const width = input.textWidth?.(value) ?? (input.textWidth === undefined ? 0 : null);
     if (width === null || !Number.isFinite(width) || width < 0) return failure('text');
-    const h = input.commonNormalCoordinate + (input.kind === 'parallel' ? dimensions.length * DIMENSION_LINE_SPACING_MM : 0);
+    const h = input.commonNormalCoordinate + (input.kind === 'parallel' ? outside * dimensions.length * DIMENSION_LINE_SPACING_MM : 0);
     const geometry = createLinearDimensionGeometry({ first: input.points[firstIndex].paperPoint, second: input.points[i].paperPoint,
       direction, commonNormalCoordinate: h, textWidth: width });
     if (geometry === null) return failure('projection');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderDrawing, type DrawingRenderElement } from './renderDrawing.js';
+import { renderDrawing, renderDrawingElements, type DrawingRenderElement } from './renderDrawing.js';
 import { DEFAULT_DRAWING_LAYERS } from '../style/layers.js';
 import type { DrawingDocument, DrawingView } from '../types.js';
 import type { OutlinedText } from '../text/fontStore.js';
@@ -10,7 +10,7 @@ function document(patch: Partial<DrawingDocument> = {}): DrawingDocument {
     source: { sourceRef: 'part', sourceKind: 'part', fileName: 'part.pcad', path: '', contentHash: '', importedAt: '' },
     sheet: { paperSizeId: 'A3-landscape', orientation: 'landscape', scale: 1, projectionMethod: 'third', frame: { visible: true },
       titleBlock: { title: '部品図', drawingNumber: 'A-001', revision: '1', author: '作成者', date: '2026-09-09', material: 'アルミ' } },
-    views: [], dimensions: [], annotations: [], tables: [], balloons: [], layers: DEFAULT_DRAWING_LAYERS, parameters: [], ...patch };
+    views: [], dimensions: [], annotations: [], tables: [], balloons: [], datums: [], gdtFrames: [], weldSymbols: [], layers: DEFAULT_DRAWING_LAYERS, parameters: [], ...patch };
 }
 function outlineText(text: string, sizeMm: number): OutlinedText {
   return { status: 'ready', missingCharacters: [], fillRule: 'nonzero',
@@ -27,6 +27,36 @@ const render = (doc = document(), elements: readonly DrawingRenderElement[] = [l
   renderDrawing({ document: doc, views: [], elements }, { outlineText, forPrint });
 
 describe('用紙と解決済みの形状を同じ中間表現へ写す(P8-41)', () => {
+  it('要素だけのプレビューも全体出力と同じ線・輪郭・字形・レイヤー制御を保つ', () => {
+    const shape = outlineText('8', 3.5).subpaths;
+    const elements: readonly DrawingRenderElement[] = [{ ...line, style: { color: '#2563eb', lineType: 'dashed' },
+      fills: [{ subpaths: shape, fillRule: 'evenodd' }],
+      clip: { subpaths: shape, fillRule: 'evenodd', transform: [1, 0, 0, 1, 3, 4] },
+      texts: [{ text: '8', position: [20, 30], sizeMm: 3.5, angle: 0.3, anchor: 'middle' }] },
+    { ownerId: 'bad-layer', layerId: 'missing', curves: [segment] }];
+    for (const visible of [false, true]) for (const forPrint of [false, true]) {
+      const doc = document({ layers: DEFAULT_DRAWING_LAYERS.map((layer) => layer.id === line.layerId ? { ...layer, visible, printable: false } : layer) });
+      const full = render(doc, elements, forPrint), partial = renderDrawingElements(doc, elements, { outlineText, forPrint });
+      expect(partial.document).toEqual({ widthMm: 420, heightMm: 297,
+        primitives: full.document.primitives.filter((item) => item.ownerId === line.ownerId) });
+      expect(partial.issues).toEqual([{ ownerId: 'bad-layer', kind: 'layer' }]);
+    }
+  });
+  it('親図の詳細符号も子図の非表示・印刷設定に従い、非表示の親図には描かない', () => {
+    const child = { ...view, id: 'detail', layerId: 'layer-5' };
+    const projection = { viewId: view.id, visible: [], hidden: [], cuttingCurves: [],
+      decorations: [{ ownerId: child.id, layerId: 'layer-3', curves: [segment] }] };
+    const primitives = (doc: DrawingDocument, forPrint = false) => renderDrawing({ document: doc, views: [projection] }, { outlineText, forPrint })
+      .document.primitives.filter((item) => item.ownerId === child.id);
+    expect(primitives(document({ views: [view, child] }))).toHaveLength(1);
+    expect(primitives(document({ views: [view, child] }))[0]).toMatchObject({ ownerId: child.id, viewId: view.id });
+    expect(primitives(document({ views: [view, child], layers: DEFAULT_DRAWING_LAYERS.map((layer) => layer.id === 'layer-5'
+      ? { ...layer, visible: false } : layer) }))).toHaveLength(0);
+    const noPrint = document({ views: [view, child], layers: DEFAULT_DRAWING_LAYERS.map((layer) => layer.id === 'layer-5' ? { ...layer, printable: false } : layer) });
+    expect(primitives(noPrint)).toHaveLength(1); expect(primitives(noPrint, true)).toHaveLength(0);
+    expect(primitives(document({ views: [view, child], layers: DEFAULT_DRAWING_LAYERS.map((layer) => layer.id === 'layer-1'
+      ? { ...layer, visible: false } : layer) }))).toHaveLength(0);
+  });
   it('A3横は420×297mmで枠4本と中心マーク4本を持つ', () => {
     const result = render(document(), []);
     expect(result.document).toMatchObject({ widthMm: 420, heightMm: 297 });
@@ -72,6 +102,19 @@ describe('用紙と解決済みの形状を同じ中間表現へ写す(P8-41)', 
       visible: [], hidden: [{ curve: segment }], cuttingCurves: [] }] }, { outlineText });
     expect(result.document.primitives.some((primitive) => primitive.ownerId === 'front')).toBe(false);
   });
+  it('中心線とハッチのレイヤー設定をSVG/PDF共通の出力に適用する', () => {
+    const projection = { viewId: 'front', visible: [], hidden: [], cuttingCurves: [], centerCurves: [segment], hatchCurves: [segment] };
+    const doc = document({ views: [view], layers: DEFAULT_DRAWING_LAYERS.map((layer) => layer.id === 'layer-6'
+      ? { ...layer, color: '#ff0000', lineWidth: 0.35, printable: false } : layer) });
+    const shown = renderDrawing({ document: doc, views: [projection] }, { outlineText }).document.primitives.filter((p) => p.ownerId === view.id);
+    expect(shown.map((p) => p.layerId)).toEqual(['layer-6', 'layer-3']);
+    expect(shown[0]).toMatchObject({ stroke: { color: '#ff0000', widthMm: 0.35 } });
+    expect(shown[1]).toMatchObject({ stroke: { widthMm: 0.25, dashMm: [10, 1, 1, 1] } });
+    expect(renderDrawing({ document: doc, views: [projection] }, { outlineText, forPrint: true }).document.primitives
+      .filter((p) => p.ownerId === view.id).map((p) => p.layerId)).toEqual(['layer-3']);
+    const hidden = { ...doc, layers: doc.layers.map((layer) => ({ ...layer, visible: layer.id !== view.layerId })) };
+    expect(renderDrawing({ document: hidden, views: [projection] }, { outlineText }).document.primitives.some((p) => p.ownerId === view.id)).toBe(false);
+  });
   it('組図の線の所有者を保持し、断面の線と部品図はビューを所有者にする', () => {
     const result = renderDrawing({ document: document({ views: [view] }), views: [{ viewId: 'front',
       visible: [{ curve: segment, ownerId: 'first' }, { curve: segment, ownerId: 'second' }, { curve: segment }],
@@ -80,6 +123,8 @@ describe('用紙と解決済みの形状を同じ中間表現へ写す(P8-41)', 
       .map((primitive) => [primitive.ownerId, primitive.layerId])).toEqual([
       ['first', 'layer-1'], ['second', 'layer-1'], ['front', 'layer-1'], ['front', 'layer-1'], ['first', 'layer-2'],
     ]);
+    expect(result.document.primitives.filter((primitive) => ['first', 'second', 'front'].includes(primitive.ownerId))
+      .every((primitive) => primitive.viewId === view.id)).toBe(true);
   });
   it('円弧をC命令へ変換し入口の座標を維持する', () => {
     const result = render(document(), [{ ...line, curves: [{ kind: 'arc', center: [10, 10], radius: 5, startAngle: 0, endAngle: Math.PI / 2 }] }]);

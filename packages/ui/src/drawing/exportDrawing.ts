@@ -1,5 +1,6 @@
+import { drawingDimensionContext } from '@pointercad/model';
 import { renderDrawing, toPdf, toSvg, type DrawingDocument, type RenderDocument } from '@pointercad/drawing';
-import { resolveDrawingDimensions } from '@pointercad/model';
+import { resolveDrawingDimensions, resolveDrawingGdt, resolveDrawingWelds } from '@pointercad/model';
 import { writeDrawingDxf } from '@pointercad/io';
 import { saveFileAsThrough } from '../file/fileGateway.js';
 import { hasSaveRecoveryCopy } from '../file/saveFailure.js';
@@ -11,6 +12,8 @@ import { displayDrawingAnnotations } from './annotationDisplay.js';
 import { rasterDrawing, type DrawingDpi } from './rasterDrawing.js';
 import { displayDrawingTables } from './tableDisplay.js';
 import { drawingProjectionRenderViews } from './projectionDisplay.js';
+import { displayDrawingGdt } from './gdtDisplay.js';
+import { displayDrawingWelds } from './weldDisplay.js';
 
 export type DrawingOutputFormat = 'pdf' | 'svg' | 'png' | 'jpg' | 'dxf';
 export interface PreparedDrawingOutput {
@@ -33,16 +36,20 @@ export async function prepareDrawingOutput(): Promise<PreparedDrawingOutput | nu
   };
   if (await drawingFont.load() !== 'ready') throw new Error(t('drawing.error.fontFailed'));
   if (!isCurrent()) return null;
-  const dimensions = resolveDrawingDimensions(drawing, { instances: source.dimensionInstances ?? [], modelCenter: source.center });
-  const displays = dimensions.map((dimension) => displayDrawingDimension(drawing, dimension, drawingFont.outline));
+  const dimensions = resolveDrawingDimensions(drawing, drawingDimensionContext(source));
+  const displays = dimensions.map((dimension) => displayDrawingDimension(drawing, dimension, drawingFont.outline, source));
   if (displays.some((display, index) => display.unresolved && dimensions[index].status === 'resolved')) {
     throw new Error(t('drawing.error.dimensionUnsupported'));
   }
   const annotations = displayDrawingAnnotations(drawing, source, state.drawingSources, drawingFont.outline);
   const tables = displayDrawingTables(drawing, source, drawingFont.outline);
   if (tables.unresolved.length > 0) throw new Error(t('drawing.table.unresolved'));
+  const manufacturing = [...displayDrawingGdt(drawing, resolveDrawingGdt(drawing, drawingDimensionContext(source)), displays, drawingFont.outline),
+    ...displayDrawingWelds(drawing, resolveDrawingWelds(drawing, drawingDimensionContext(source)), drawingFont.outline)];
+  const unresolved = manufacturing.filter((item) => item.unresolved);
+  if (unresolved.length > 0) throw new Error(`${t('drawing.manufacturing.outputUnresolved')}\n${unresolved.map((item) => `${item.id}: ${item.messages.join(' ')}`).join('\n')}`);
   const rendered = renderDrawing({ document: drawing, views: drawingProjectionRenderViews(resolution.projection.views),
-    elements: [...displays.map((display) => display.element), ...annotations, ...tables.elements] }, { forPrint: true, outlineText: drawingFont.outline });
+    elements: [...displays.map((display) => display.element), ...annotations, ...tables.elements, ...manufacturing.map((item) => item.element)] }, { forPrint: true, outlineText: drawingFont.outline });
   if (rendered.issues.length > 0) throw new Error(t(rendered.issues.some((issue) => issue.kind === 'font')
     ? 'drawing.error.fontFailed' : 'drawing.error.outputFailed'));
   return { drawing, render: rendered.document, isCurrent };
@@ -63,10 +70,14 @@ export async function exportDrawing(options: { readonly format: DrawingOutputFor
     let bytes: Uint8Array;
     let notice: string | null = null;
     if (options.format === 'dxf') {
-      const result = writeDrawingDxf(prepared.render, drawing.layers);
+      const outlineTextOwnerIds = new Set<string>([...drawing.datums, ...drawing.gdtFrames, ...drawing.weldSymbols].map((item) => item.id));
+      for (const item of [...drawing.datums, ...drawing.gdtFrames]) if (item.sizeDimensionId !== undefined) outlineTextOwnerIds.add(item.sizeDimensionId);
+      for (const frame of drawing.gdtFrames) for (const segment of frame.segments) for (const id of segment.basicDimensionIds) outlineTextOwnerIds.add(id);
+      const result = writeDrawingDxf(prepared.render, drawing.layers, 0.001, { outlineTextOwnerIds });
       bytes = new TextEncoder().encode(result.text);
       notice = t('drawing.export.dxfDetails').replace('{omitted}', String(result.skippedPrimitiveCount))
-        .replace('{colors}', String(result.approximatedColorCount)).replace('{curves}', String(result.flattenedCurveCount));
+        .replace('{colors}', String(result.approximatedColorCount)).replace('{curves}', String(result.flattenedCurveCount))
+        .replace('{outlines}', String(result.outlinedTextCount));
     } else if (options.format === 'pdf') {
       const result = toPdf(prepared.render, { title: drawing.sheet.titleBlock.title || drawing.name });
       if (!result.ok) throw new Error(t('drawing.error.outputFailed'));

@@ -37,6 +37,7 @@ export function activeHasUnsavedChanges(state: AppState): boolean {
   if (active.kind === 'drawing') return active.saved === null
     ? active.document.views.length > 0 || active.document.dimensions.length > 0 || active.document.annotations.length > 0
       || active.document.tables.length > 0 || active.document.balloons.length > 0 || active.document.parameters.length > 0
+      || active.document.datums.length > 0 || active.document.gdtFrames.length > 0 || active.document.weldSymbols.length > 0
       || (state.drawingUndoStack?.past.length ?? 0) > 0 || active.document.name !== active.initialName
     : active.document !== active.saved || state.drawingSources !== state.savedDrawingSources;
   if (active.saved === null) return active.document.components.length > 0 ||

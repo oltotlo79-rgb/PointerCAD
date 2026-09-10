@@ -18,6 +18,11 @@ const text: RenderText = {
 const documentOf = (...primitives: RenderDocument['primitives']): RenderDocument => ({ widthMm: 420, heightMm: 297, primitives });
 
 describe('SVG出力の座標・文字・安全性', () => {
+  it('図の範囲は所有者とは別に保持し、属性へ混入する文字を拒否する', () => {
+    expect(toSvg(documentOf({ ...line, viewId: 'parent"&' }))).toContain('data-view-id="parent&quot;&amp;"');
+    expect(toSvg(documentOf({ ...line, viewId: 'parent\u0001' }))).toBeNull();
+    expect(toSvg(documentOf(line))).not.toContain('data-view-id');
+  });
   it('A3横の寸法とviewBoxはmmのまま', () => {
     expect(toSvg(documentOf(line))).toContain('width="420mm" height="297mm" viewBox="0 0 420 297"');
   });

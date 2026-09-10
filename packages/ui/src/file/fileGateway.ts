@@ -31,7 +31,7 @@
  */
 
 import type { FileKind } from '@pointercad/model';
-export type SaveFileKind = FileKind | 'pcada' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg';
+export type SaveFileKind = FileKind | 'pcada' | 'pcadd' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg';
 
 import { t, type MessageKey } from '../i18n/t.js';
 
@@ -175,6 +175,7 @@ interface FileKindSpec {
 const FILE_KIND_SPECS: Readonly<Record<SaveFileKind, FileKindSpec>> = {
   zip: { label: 'ZIP', accept: { 'application/zip': ['.zip'] } },
   pcada: { label: 'PointerCAD', descriptionKey: 'assembly.fileType', accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } },
+  pcadd: { label: 'PointerCAD', descriptionKey: 'drawing.fileType', accept: { [PCAD_MIME_TYPE]: [PCADD_EXTENSION] } },
   pcad: {
     label: 'PointerCAD',
     descriptionKey: 'file.typeDescription',

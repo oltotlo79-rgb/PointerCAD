@@ -13,6 +13,7 @@ export { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { useEffect, useState } from 'react';
 import { loadRecentFiles } from '../file/recentFiles.js';
 import { t } from '../i18n/t.js';
+import { HelpButton } from '../help/HelpButton.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
 import {
   cancelConstraintTool,
@@ -294,7 +295,7 @@ export function Toolbar(): React.JSX.Element {
         §0.34 の幅の圧縮)。実装したらここへ戻す。
       */}
       <nav className="pcad-toolbar__modes" aria-label={t('toolbar.mode.groupLabel')}>
-        <button type="button" className="pcad-tab" aria-pressed={true}>
+        <button type="button" className="pcad-tab" aria-pressed={true} title={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}>
           {t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}
         </button>
       </nav>
@@ -617,6 +618,7 @@ export function Toolbar(): React.JSX.Element {
         1 段を保つ幅の予算のため(囲むと 6 画素増える)。
       */}
       <SettingsPanel />
+      <HelpButton />
     </header>
   );
 }

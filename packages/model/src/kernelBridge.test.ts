@@ -215,7 +215,7 @@ describe('同じWorker接続で異なるSTEP原本を持つ2文書を交互に�
         };
         const progress = vi.fn();
         const cancel = vi.fn(() => false);
-        // 中止は段と段の間だけ尋ねる契約。2段にして実際のcallback往復も検査する。
+        // 初段を含む各段の開始前に中止を確認する。輸送越しでも初回進捗より先に届く。
         const computed = await bridge.recomputeSolids([
           { ...source, featureId: 'prelude', visible: false }, source,
         ], {
@@ -224,7 +224,8 @@ describe('同じWorker接続で異なるSTEP原本を持つ2文書を交互に�
         expect(computed.failures).toEqual([]);
         expect(computed.cacheHits).toBe(1);
         expect(progress).toHaveBeenCalled();
-        expect(cancel).toHaveBeenCalledTimes(1);
+        expect(cancel).toHaveBeenCalledTimes(2);
+        expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(progress.mock.invocationCallOrder[0]);
         expect(bridge.pendingCallbacks()).toBe(0);
         const step = await api.exportShapes({
           partId: `source-${radius}`, format: 'step',

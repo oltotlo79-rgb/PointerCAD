@@ -562,7 +562,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       },
       () => {
         asked += 1;
-        return true;
+        return progress.length > 0;
       },
     );
 
@@ -570,8 +570,8 @@ describe('履歴の再計算(recomputeSolids)', () => {
     expect(result.bodies.map((body) => body.id)).toEqual(['extrude-1']);
     expect(result.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
     expect(result.failures).toEqual([]);
-    // 尋ねるのは段と段の間だけ。1 段目は必ず計算する。
-    expect(asked).toBe(1);
+    // 1段目の前は未取消、2段目の前で取消。
+    expect(asked).toBe(2);
     expect(progress).toHaveLength(1);
     expect(cache.size).toBe(1);
   });
@@ -590,7 +590,19 @@ describe('履歴の再計算(recomputeSolids)', () => {
     );
 
     expect(result.cancelled).toBe(true);
-    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies).toHaveLength(0);
+    expect(cache.size).toBe(0);
+  });
+
+  it.each([false, true])('実行前の取消はキャッシュ有り=%sでも形状と成功結果を作らない', async (warm) => {
+    const { cache, built } = newCache();
+    const input = request([extrudeStep('cancelled', 'cancelled-key', 40, 30, 10)]);
+    if (warm) await recomputeSolids({ oc, cache }, input);
+    const before = built(), progress: SolidProgress[] = [];
+    const result = await recomputeSolids({ oc, cache }, input, {}, (item) => progress.push(item), () => true);
+    expect(result).toMatchObject({ cancelled: true, bodies: [], failures: [], cacheHits: 0 });
+    expect(progress).toEqual([]); expect(built()).toBe(before);
+    expect(cache.size).toBe(warm ? 1 : 0);
   });
 
   it('段が 1 つも無い依頼は、何もせずに空の結果を返す', async () => {

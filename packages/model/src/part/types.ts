@@ -14,6 +14,9 @@
  * 鍵の材料の型は cacheKey.ts が自分で持つ)。
  */
 
+import type { SolidFeatureBase } from './featureIdentity.js';
+import type { SheetBaseFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetUnfoldDefinition } from '../sheetMetal/types.js';
+import type { SketchFaceRef, SketchCurveRef, SketchLineRef, SketchPointRef } from './featureReferences.js';
 import type { Configuration } from './configurations.js';
 import type { NamedView } from './namedViews.js';
 import type { ExpressionValue } from '@pointercad/expression';
@@ -129,10 +132,7 @@ export function importedShapeOf(bytes: Uint8Array): ImportedShape {
 }
 
 /** スケッチの面フィーチャー1枚への参照。断面に使う(§0.a-0.7、§0.a-0.8)。 */
-export interface SketchFaceRef {
-  readonly sketchId: string;
-  readonly faceFeatureId: string;
-}
+export type { SketchFaceRef };
 
 /**
  * スケッチの曲線フィーチャーの並びへの参照(P5 §2.11、タスク43)。
@@ -144,17 +144,10 @@ export interface SketchFaceRef {
  * 並びが意味を持つ(経路は書かれた順につながっている前提)。実際につながっているか、
  * 1 つの平面に乗っているかは解決(タスク46)とカーネルが確かめて理由つきで断る(FR-504)。
  */
-export interface SketchCurveRef {
-  readonly sketchId: string;
-  /** 曲線フィーチャー(線分・円弧・スプライン等)の id。1 つ以上。並びが意味を持つ。 */
-  readonly curveIds: readonly string[];
-}
+export type { SketchCurveRef };
 
 /** スケッチの線分フィーチャー1本への参照。回転軸に使う(§0.a-0.9)。 */
-export interface SketchLineRef {
-  readonly sketchId: string;
-  readonly lineFeatureId: string;
-}
+export type { SketchLineRef };
 
 /**
  * スケッチの点フィーチャー・点列フィーチャーへの参照
@@ -164,11 +157,7 @@ export interface SketchLineRef {
  * (要素 id `point-1#3` ではなくフィーチャー id を持つため)。座標そのものは複製せず、
  * 位置は式のまま再編集できる(FR-202、FR-502)。
  */
-export interface SketchPointRef {
-  readonly sketchId: string;
-  /** 点フィーチャー(kind: 'point')または点列フィーチャー(kind: 'pointArray')の id。 */
-  readonly pointFeatureId: string;
-}
+export type { SketchPointRef };
 
 /**
  * 部分形状(面・辺・頂点)への参照一式(`SubShapeKind` / `FaceSurfaceKind` / `EdgeCurveKind` /
@@ -184,6 +173,10 @@ export interface SketchPointRef {
 export type { EdgeCurveKind, FaceSurfaceKind, SubShapeFingerprint, SubShapeKind, SubShapeRef };
 
 export type SolidFeatureKind =
+  | 'sheetBase'
+  | 'sheetFlange'
+  | 'sheetBend'
+  | 'sheetRelief'
   | 'extrude'
   | 'revolve'
   | 'sew'
@@ -260,17 +253,7 @@ export type SolidFeatureKind =
    */
   | 'importedMesh';
 
-interface SolidFeatureBase {
-  /**
-   * フィーチャーの id。同時にこのフィーチャーが作るボディの id でもある(§0.a-0.5)。
-   * 他のフィーチャー(ブーリアン)から参照されるので、文書の中で重ならない。
-   */
-  readonly id: string;
-  /** フィーチャーツリーの表示名(FR-501)。 */
-  readonly name: string;
-  /** 抑制(FR-503)。true なら再計算で飛ばし、ボディを作らない。 */
-  readonly suppressed: boolean;
-}
+export type { SolidFeatureBase };
 
 /**
  * 押し出しの終端(FR-415、P5 計画書 §2.11、タスク43)。
@@ -1245,6 +1228,10 @@ export interface ImportedMeshFeature extends SolidFeatureBase {
 }
 
 export type SolidFeature =
+  | SheetBaseFeature
+  | SheetFlangeFeature
+  | SheetBendFeature
+  | SheetReliefFeature
   | ExtrudeFeature
   | RevolveFeature
   | SewFeature
@@ -1507,6 +1494,8 @@ export interface PartDocument {
   readonly references: readonly ReferenceFeature[];
   /** ソリッドフィーチャーの履歴。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
   readonly solids: readonly SolidFeature[];
+  /** 版12: 展開の固定面と明示継ぎ目。折曲げ/展開の表示状態は保存しない。 */
+  readonly sheetUnfolds: readonly SheetUnfoldDefinition[];
   /**
    * 名前を付けた数値の表(FR-207、P4b §0.a-0.17)。部品に 1 つだけ持ち、スケッチごとには
    * 持たない(「どの数値欄からも名前で参照でき」が部品全体を対象にしているため)。

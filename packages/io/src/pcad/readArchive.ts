@@ -1,13 +1,13 @@
 /**
- * `.pcad` / `.pcada` / 3MF が共有する、上限つきの ZIP 読み込み入口。
- *
- * fflate のストリーミング API が返す実際の inflate 出力を数える。ZIP ヘッダの
- * `originalSize` は早期判定にも使わず、偽の宣言サイズで上限を抜けられないようにする。
+ * `.pcad` / `.pcada` / `.pcadd` / 3MF が共有する上限つきZIP読み込み。
+ * 出力を確保する前に中央目録とraw DEFLATEの実展開長を検査し、固定出力へ展開してCRCを照合する。
+ * 宣言サイズだけを信用せず、選択されたエントリの累積も同じ予算へ数える（R06/R10）。
  */
-
-import { Unzip, UnzipInflate } from 'fflate';
-
+import { inflateSync } from 'fflate';
 import { IO_LIMITS, type IoLimits } from '../limits.js';
+import { DeflateSizeError, deflateExpandedSize } from './deflateExpandedSize.js';
+import { ZipDirectoryError, zipDirectory } from './zipDirectory.js';
+import { zipCrc32 } from './zipCrc32.js';
 
 export type ArchiveReadLimits = Pick<
   IoLimits,
@@ -48,133 +48,51 @@ export interface ReadArchiveOptions {
 export const ARCHIVE_TOO_LARGE_MESSAGE = 'ファイルが大きすぎるため開けません。';
 export const ARCHIVE_BROKEN_MESSAGE = 'ファイルが壊れているため開けません。';
 
-class ArchiveAbort extends Error {
-  readonly archiveError: ArchiveReadError;
-
-  constructor(archiveError: ArchiveReadError) {
-    super(archiveError.reason);
-    this.archiveError = archiveError;
-  }
+function failure(kind: ArchiveReadErrorKind, entryName?: string): ReadArchiveResult {
+  const oversized = kind === 'compressedInput' || kind === 'entryCount' || kind === 'entryExpanded' || kind === 'totalExpanded';
+  const error: ArchiveReadError = { kind, reason: oversized ? ARCHIVE_TOO_LARGE_MESSAGE : ARCHIVE_BROKEN_MESSAGE,
+    ...(entryName === undefined ? {} : { entryName }) };
+  return { ok: false, error };
 }
 
-function tooLarge(kind: ArchiveReadErrorKind, entryName?: string): ArchiveReadError {
-  return entryName === undefined
-    ? { kind, reason: ARCHIVE_TOO_LARGE_MESSAGE }
-    : { kind, reason: ARCHIVE_TOO_LARGE_MESSAGE, entryName };
-}
-
-function broken(kind: ArchiveReadErrorKind, entryName?: string): ArchiveReadError {
-  return entryName === undefined
-    ? { kind, reason: ARCHIVE_BROKEN_MESSAGE }
-    : { kind, reason: ARCHIVE_BROKEN_MESSAGE, entryName };
-}
-
-/** 絶対パス、親参照、Windows 区切りを含む名前を通さない。 */
-function hasUnsafeName(name: string): boolean {
-  if (name.startsWith('/') || name.includes('\\') || name.includes('\0')) {
-    return true;
-  }
-  if (/^[A-Za-z]:\//.test(name)) {
-    return true;
-  }
-  return name.split('/').includes('..');
-}
-
-function joinChunks(chunks: readonly Uint8Array[], byteLength: number): Uint8Array {
-  if (chunks.length === 1) {
-    return chunks[0] ?? new Uint8Array(0);
-  }
-  const joined = new Uint8Array(byteLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return joined;
-}
-
-/**
- * ZIP を同期的に読み、許可されたエントリだけを返す。失敗・上限超過は例外を外へ出さない。
- */
 export function readArchive(bytes: Uint8Array, options: ReadArchiveOptions): ReadArchiveResult {
   const limits = options.limits ?? IO_LIMITS;
-  if (bytes.byteLength > limits.archiveCompressedBytes) {
-    return { ok: false, error: tooLarge('compressedInput') };
-  }
-
+  if (!Object.values(limits).every((value) => Number.isSafeInteger(value) && value >= 0)) return failure('invalidZip');
+  if (bytes.length > limits.archiveCompressedBytes) return failure('compressedInput');
   const entries = new Map<string, Uint8Array>();
-  const names = new Set<string>();
-  let entryCount = 0;
-  let totalExpandedBytes = 0;
-  let pendingAbort: ArchiveReadError | null = null;
-
+  let name: string | undefined, total = 0;
   try {
-    const unzip = new Unzip((file) => {
-      entryCount += 1;
-      if (entryCount > limits.archiveEntryCount) {
-        throw new ArchiveAbort(tooLarge('entryCount', file.name));
+    for (const entry of zipDirectory(bytes, limits.archiveEntryCount)) {
+      name = entry.name;
+      if (!options.shouldExtract(name)) continue;
+      const remaining = limits.archiveTotalExpandedBytes - total;
+      if (entry.expandedSize > limits.archiveEntryExpandedBytes) return failure('entryExpanded', name);
+      if (entry.expandedSize > remaining) return failure('totalExpanded', name);
+      const budget = Math.min(limits.archiveEntryExpandedBytes, remaining);
+      let actualSize: number;
+      try {
+        actualSize = entry.method === 0 ? entry.compressed.length : deflateExpandedSize(entry.compressed, budget);
+      } catch (error) {
+        if (error instanceof DeflateSizeError && error.kind === 'expandedLimit') {
+          return failure(limits.archiveEntryExpandedBytes <= remaining ? 'entryExpanded' : 'totalExpanded', name);
+        }
+        throw error;
       }
-      if (hasUnsafeName(file.name)) {
-        throw new ArchiveAbort(broken('invalidName', file.name));
+      if (actualSize > limits.archiveEntryExpandedBytes) return failure('entryExpanded', name);
+      if (actualSize > remaining) return failure('totalExpanded', name);
+      if (actualSize !== entry.expandedSize) return failure('invalidZip', name);
+      // この地点までは展開出力を確保しない。実長と予算が一致してから固定領域へ出す。
+      const output = new Uint8Array(actualSize);
+      if (entry.method === 0) output.set(entry.compressed);
+      else {
+        const decoded = inflateSync(entry.compressed, { out: output });
+        if (decoded.length !== actualSize) return failure('invalidZip', name);
       }
-      if (names.has(file.name)) {
-        throw new ArchiveAbort(broken('duplicateName', file.name));
-      }
-      names.add(file.name);
-
-      if (!options.shouldExtract(file.name)) {
-        return;
-      }
-
-      const chunks: Uint8Array[] = [];
-      let entryExpandedBytes = 0;
-      file.ondata = (error, chunk, final) => {
-        if (pendingAbort !== null) {
-          throw new ArchiveAbort(pendingAbort);
-        }
-        if (error !== null) {
-          file.terminate();
-          throw new ArchiveAbort(broken('invalidZip', file.name));
-        }
-
-        const nextEntryBytes = entryExpandedBytes + chunk.byteLength;
-        if (nextEntryBytes > limits.archiveEntryExpandedBytes) {
-          pendingAbort = tooLarge('entryExpanded', file.name);
-          file.terminate();
-          throw new ArchiveAbort(pendingAbort);
-        }
-        const nextTotalBytes = totalExpandedBytes + chunk.byteLength;
-        if (nextTotalBytes > limits.archiveTotalExpandedBytes) {
-          pendingAbort = tooLarge('totalExpanded', file.name);
-          file.terminate();
-          throw new ArchiveAbort(pendingAbort);
-        }
-
-        entryExpandedBytes = nextEntryBytes;
-        totalExpandedBytes = nextTotalBytes;
-        chunks.push(chunk);
-        if (final) {
-          entries.set(file.name, joinChunks(chunks, entryExpandedBytes));
-        }
-      };
-      file.start();
-    });
-    unzip.register(UnzipInflate);
-    unzip.push(bytes, true);
-    const isEmptyZip =
-      bytes.byteLength >= 22 &&
-      bytes[0] === 0x50 &&
-      bytes[1] === 0x4b &&
-      bytes[2] === 0x05 &&
-      bytes[3] === 0x06;
-    if (entryCount === 0 && !isEmptyZip) {
-      return { ok: false, error: broken('invalidZip') };
+      if (zipCrc32(output) !== entry.crc32) return failure('invalidZip', name);
+      total += actualSize; entries.set(name, output);
     }
     return { ok: true, entries };
   } catch (error) {
-    if (error instanceof ArchiveAbort) {
-      return { ok: false, error: error.archiveError };
-    }
-    return { ok: false, error: broken('invalidZip') };
+    return error instanceof ZipDirectoryError ? failure(error.kind, error.entryName) : failure('invalidZip', name);
   }
 }

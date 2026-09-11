@@ -47,6 +47,7 @@ import type { TessellationOptions, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { discretizeEdge } from './makeSketchEdges.js';
+import { curveSampleCoordinates } from './curveSampleCoordinates.js';
 
 /** 作図面の上の座標(mm)。第 1 軸の向きが u、第 2 軸(法線 × 第 1 軸)の向きが v。 */
 export type Vec2Tuple = readonly [number, number];
@@ -253,11 +254,11 @@ function sampleEdgeToPlane(
   basis: PlaneBasis,
   options: TessellationOptions | undefined,
   closed: boolean,
+  preservePrecision: boolean,
 ): PlanePolyline | null {
-  // discretizeEdge は表示と同じ道具立て(GCPnts_TangentialDeflection)で折れ線にする。
-  // 戻りが Float32Array なので 40mm の座標で 2.4e-6mm ほどの丸めが乗るが、
-  // 折れ線そのものの近似の粗さ(既定 0.1mm)よりはるかに小さいので問題にならない。
-  const polyline = discretizeEdge(oc, edge, options ?? {});
+  // 通常表示のFloat32と、製作用出力のdoubleを入口で分ける。
+  // 精密断面では後段の表示用100点への間引きも行わない。
+  const polyline = preservePrecision ? curveSampleCoordinates(oc, edge, options, 100_000) : discretizeEdge(oc, edge, options ?? {});
   const points: Vec2Tuple[] = [];
   for (let index = 0; index + 2 < polyline.length; index += 3) {
     const projected = projectPointToPlane(
@@ -276,7 +277,7 @@ function sampleEdgeToPlane(
   if (points.length < (closed ? 3 : 2)) {
     return null;
   }
-  return { kind: 'polyline', points: thinPoints(points, MAX_POLYLINE_POINTS), closed };
+  return { kind: 'polyline', points: preservePrecision ? points : thinPoints(points, MAX_POLYLINE_POINTS), closed };
 }
 
 /**
@@ -292,6 +293,7 @@ export function projectEdgeToPlane(
   basis: PlaneBasis,
   options: TessellationOptions | undefined,
   allocations: Allocations,
+  preservePrecision = false,
 ): PlaneCurve | null {
   const { keep } = allocations;
   const adaptor = keep(new oc.BRepAdaptor_Curve_2(edge));
@@ -339,7 +341,7 @@ export function projectEdgeToPlane(
     }
   }
 
-  return sampleEdgeToPlane(oc, edge, basis, options, closed);
+  return sampleEdgeToPlane(oc, edge, basis, options, closed, preservePrecision);
 }
 
 /** 曲線の両端(作図面の上の座標)と、それ自身で閉じているか。 */

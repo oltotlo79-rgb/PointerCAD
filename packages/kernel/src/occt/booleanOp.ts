@@ -87,7 +87,7 @@ function buildBooleanResult(
   oc: OpenCascadeInstance,
   operation: BooleanOperation,
   target: TopoDS_Shape,
-  tool: TopoDS_Shape,
+  tools: readonly TopoDS_Shape[],
   range: Message_ProgressRange,
   allocations: Allocations,
 ): BooleanResult {
@@ -99,7 +99,7 @@ function buildBooleanResult(
     // Append_1 は入力と別のラッパーを返す(2026-09-07 固定 WASM 実測)。
     // その戻りも解放するが、target / tool の所有は移さない。
     inputs.keep(argumentsList.Append_1(target));
-    inputs.keep(toolsList.Append_1(tool));
+    for (const tool of tools) inputs.keep(toolsList.Append_1(tool));
     maker.SetArguments(argumentsList);
     maker.SetTools(toolsList);
     // Build より前に立て、許容値や pcurve の更新をキャッシュの入力へ書き戻させない。
@@ -164,9 +164,19 @@ export function booleanOp(
   const allocations = createAllocations();
   try {
     const range = allocations.keep(new oc.Message_ProgressRange_1());
-    return buildBooleanResult(oc, operation, target, tool, range, allocations);
+    return buildBooleanResult(oc, operation, target, [tool], range, allocations);
   } catch (error) {
     allocations.release();
     throw error;
   }
+}
+
+/** 全入力を一度に交差計算する。中間の結合体を繰り返し分割・検査しない。 */
+export function unionShapes(oc: OpenCascadeInstance, shapes: readonly TopoDS_Shape[]): BooleanResult {
+  if (shapes.length < 2) throw new Error('結合する立体を2つ以上指定してください。');
+  const allocations = createAllocations();
+  try {
+    const range = allocations.keep(new oc.Message_ProgressRange_1());
+    return buildBooleanResult(oc, 'union', shapes[0], shapes.slice(1), range, allocations);
+  } catch (error) { allocations.release(); throw error; }
 }

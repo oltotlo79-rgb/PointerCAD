@@ -1,4 +1,5 @@
 import { net, protocol } from 'electron';
+import { contentSecurityPolicyFor } from '@pointercad/ui/security-policy';
 import { join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -45,6 +46,9 @@ export function handleAppScheme(rendererRoot: string): void {
 
     const response = await net.fetch(pathToFileURL(filePath).toString());
     const headers = new Headers(response.headers);
+    headers.set('Content-Security-Policy', contentSecurityPolicyFor(url.pathname));
+    headers.set('X-Frame-Options', 'DENY');
+    headers.set('Referrer-Policy', 'no-referrer');
     // Web 版(apps/web/public/_headers)と同じ隔離状態を作る(FR-1003)。
     headers.set('Cross-Origin-Opener-Policy', 'same-origin');
     headers.set('Cross-Origin-Embedder-Policy', 'require-corp');

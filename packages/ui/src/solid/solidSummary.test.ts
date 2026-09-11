@@ -1890,7 +1890,10 @@ describe('Should 群の要約(P5 §2.11、タスク43)', () => {
     // model の `SOLID_LABELS` と同じ 34 個(P2〜P5 タスク43 の 30 個 +
     // タスク46 が前倒ししたくり抜き 1 個 + タスク27c の切断 1 個 +
     // P6 タスク20 の読み込んだ形 2 個)。
-    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(34);
+    // P10の基板・フランジ・指定線曲げ・リリーフを含め38種。型による全キー網羅も維持する。
+    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(38);
+    expect(SOLID_KIND_LABEL_KEYS.sheetBase).toBe('sheetMetal.base');
+    expect(SOLID_KIND_LABEL_KEYS.sheetFlange).toBe('sheetMetal.flange');
     expect(SOLID_KIND_LABEL_KEYS.draft).toBe('toolbar.machining.draft');
     expect(SOLID_KIND_LABEL_KEYS.pointPattern).toBe('toolbar.machining.pointPattern');
     expect(SOLID_KIND_LABEL_KEYS.shell).toBe('toolbar.machining.shell');

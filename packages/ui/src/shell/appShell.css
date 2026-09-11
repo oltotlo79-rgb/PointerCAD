@@ -788,6 +788,11 @@
   .pcad-toolbar { --pcad-toolbar-gap: calc(4px * var(--pcad-scale, 1)); }
 }
 
+/* 1280pxではF1も同じ段へ置く。26pxの押下領域を保ち、区画間の余白だけを詰める。 */
+@media (min-width: 1200px) and (max-width: 1299px) {
+  .pcad-toolbar { --pcad-toolbar-gap: calc(2px * var(--pcad-scale, 1)); }
+}
+
 /*
  * 1200 画素より狭い窓では 1 段に収まらないので、崩れた折り返しに任せず 2 段に分ける。
  * 隙間を行いっぱいに広げて区切りにし、「作るための道具(製品名・ファイル・履歴・モード・

@@ -61,6 +61,7 @@ describe('canonicalPartDocumentText', () => {
   it('欄の並び順を辞書順にそろえる(作り方が違っても同じ文字列)', () => {
     const document = partWithBoxes('ブラケット', 1);
     const reordered: PartDocument = {
+      sheetUnfolds: document.sheetUnfolds,
       activeConfigurationId: document.activeConfigurationId,
       configurations: document.configurations,
       namedViews: document.namedViews,
@@ -96,6 +97,7 @@ describe('contentHashOf', () => {
   it('欄の順序だけが違う同じ内容の文書は同じハッシュになる', async () => {
     const document = partWithBoxes('ブラケット', 2);
     const reordered: PartDocument = {
+      sheetUnfolds: document.sheetUnfolds,
       activeConfigurationId: document.activeConfigurationId,
       configurations: document.configurations,
       namedViews: document.namedViews,

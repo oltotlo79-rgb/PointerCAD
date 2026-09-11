@@ -21,6 +21,9 @@ export function hasOnlyFiniteJsonNumbers(value: unknown): boolean {
 /** 現行で導出専用と分かっている欄。将来版の未知の指定と区別する。 */
 function derivedField(path: readonly string[], key: string, value: unknown): boolean {
   if (['derivedWidth', 'derivedHeight', 'projectionCache', 'tessellation', 'brep', 'mesh', 'resolvedViews', 'renderItems', 'viewFrames'].includes(key)) return true;
+  if (path.length === 2 && path[0] === 'source' && path[1] === 'flatSheet') {
+    return ['flatCoordinates', 'panelPlacements', 'geometry', 'bodyKey', 'displayMode', 'transforms'].includes(key);
+  }
   if (path.length === 2 && path[0] === 'views' && path[1] === '*') {
     return ['projectedLines', 'projectedCurves', 'curves', 'cuttingCurves', 'breakCurves', 'hatchCurves', 'centerCurves', 'cuttingAreas'].includes(key)
       || ((key === 'visible' || key === 'hidden') && isUnknownArray(value));

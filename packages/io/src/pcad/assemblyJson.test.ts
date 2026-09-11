@@ -203,9 +203,9 @@ function roundTrip(document: AssemblyDocument, partFiles?: readonly PcadPartFile
 }
 
 describe('アセンブリの封筒と版(P7 タスク3、§0.a-0.1、§0.a-0.2)', () => {
-  it('封筒の種別は assembly で、版は部品と同じ系列(10)', () => {
+  it('封筒の種別は assembly で、版は部品と同じ系列', () => {
     expect(PCAD_ASSEMBLY_KIND).toBe('assembly');
-    expect(PCAD_SCHEMA_VERSION).toBe(11);
+    // 現行版の数値はschemaVersion.test.tsで固定し、ここでは文書種別の一致を守る。
     expect(ASSEMBLY_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
     expect(PCAD_SCHEMA_VERSION).toBe(ASSEMBLY_SCHEMA_VERSION);
   });

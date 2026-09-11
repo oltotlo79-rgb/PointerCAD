@@ -141,7 +141,7 @@ export interface PartTemplate {
  */
 function emptyHistory(): Pick<
   PartDocument,
-  'sketches' | 'activeSketchId' | 'references' | 'solids' | 'selectionSets' | 'canvases'
+  'sketches' | 'activeSketchId' | 'references' | 'solids' | 'sheetUnfolds' | 'selectionSets' | 'canvases'
 > {
   // スケッチは 0 本にできない(`activeSketchId` が `sketches` のいずれかを指す約束、
   // §0.a-0.4)。起動直後の部品と同じく、空のスケッチを 1 本だけ持たせる。
@@ -151,6 +151,7 @@ function emptyHistory(): Pick<
     activeSketchId: sketch.id,
     references: [],
     solids: [],
+    sheetUnfolds: [],
     selectionSets: [],
     canvases: [],
   };

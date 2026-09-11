@@ -20,6 +20,7 @@
     "*.config.ts",
     "packages/*/*.config.ts",
     "apps/*/*.config.ts",
+    "apps/*/build/**/*.ts",
     "e2e/**/*.ts"
   ]
 }

@@ -36,7 +36,7 @@ param(
     # -E2EOnly のときだけPlaywrightの--grepへ渡す。空なら全E2Eを実行する。
     [string]$E2EGrep = "",
     # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
-    [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils")]
+    [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content")]
     [string]$UnitPackage = "",
     [string[]]$UnitTests = @(),
     # 実装途中の診断専用。既定・pre-commit・pre-pushの必須段数は変えない。
@@ -213,6 +213,8 @@ try {
             # (New-StagedTreeWorktree 冒頭のコメント、rules/06-過去の失敗と対策.md 10.7)。
             $savedGitEnvForChecks = Clear-InheritedGitEnv
             try {
+                Invoke-Check "(0) 品質ゲート自身の自己試験" (Get-Process -Id $PID).Path @(
+                    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $copy.Path "scripts/check.selftest.ps1"))
                 Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
                 Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
                 Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
@@ -232,7 +234,7 @@ try {
         # (0) 検査がコミット対象のファイルを書き換えていないかを、実行の前後で比べる。
         $beforeSnapshot = Get-TrackedTreeSnapshot -Root $root -Level $Level
         if (-not $beforeSnapshot.Ok) {
-            Write-Host "[NG] 追跡対象変更ガードの git 呼び出しが失敗しました" -ForegroundColor Red
+            Write-Host "[NG] 検査前のファイル状態を取得できません: $($beforeSnapshot.Reason)" -ForegroundColor Red
             exit 1
         }
         $skipTreeCompare = ($beforeSnapshot.Mode -eq "Staged") -and ($beforeSnapshot.Paths.Count -eq 0)
@@ -246,6 +248,10 @@ try {
             exit 1
         }
         $totalChecks = if ($StaticOnly) { 2 } elseif ($E2EOnly) { 1 } elseif ($runE2E) { 5 } else { 4 }
+        if (-not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic) {
+            Invoke-Check "(0) 品質ゲート自身の自己試験" (Get-Process -Id $PID).Path @(
+                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "scripts/check.selftest.ps1"))
+        }
         if ($unitDiagnostic) {
             Write-Host "[診断] 指定ユニットテストだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
             $unitArgs = @("--filter", "@pointercad/$UnitPackage", "exec", "vitest", "run") + $UnitTests
@@ -266,7 +272,11 @@ try {
             # Playwright のブラウザは初回だけ取得され、2回目以降は即座に終わる。
             # ここで面倒を見ることで .github/workflows/ci.yml を変えずに済み、
             # 検査の単一正本(rules/03-品質ゲート.md §7.2)を保てる。
-            Invoke-Check "(準備) Playwright のブラウザ確認" pnpm @("exec", "playwright", "install", "chromium")
+            $browserInstallArgs = @("exec", "playwright", "install", "chromium", "firefox")
+            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Unix) {
+                $browserInstallArgs = @("exec", "playwright", "install", "--with-deps", "chromium", "firefox")
+            }
+            Invoke-Check "(準備) Playwright のブラウザ確認" pnpm $browserInstallArgs
             for ($e2eRun = 1; $e2eRun -le $E2ERepeats; $e2eRun++) {
                 $repeatLabel = ""
                 if ($E2ERepeats -gt 1) { $repeatLabel = " ($e2eRun/$E2ERepeats)" }
@@ -277,13 +287,20 @@ try {
                     $e2eArgs += @("--grep", $E2EGrep)
                 }
                 $e2eStep = if ($E2EOnly) { 1 } else { 5 }
-                Invoke-Check "($e2eStep/$totalChecks) pnpm run test:e2e$repeatLabel" pnpm $e2eArgs
+                # Linuxの実Electronに必要な画面だけを用意する。ブラウザーのsandboxは変更しない。
+                # https://playwright.dev/docs/ci#running-headed
+                if ([Environment]::OSVersion.Platform -eq [PlatformID]::Unix -and [string]::IsNullOrWhiteSpace($env:DISPLAY)) {
+                    if ($null -eq (Get-Command xvfb-run -ErrorAction SilentlyContinue)) { throw '実Electronの検査にはxvfb-runが必要です' }
+                    Invoke-Check "($e2eStep/$totalChecks) pnpm run test:e2e$repeatLabel" xvfb-run (@("-a", "pnpm") + $e2eArgs)
+                } else {
+                    Invoke-Check "($e2eStep/$totalChecks) pnpm run test:e2e$repeatLabel" pnpm $e2eArgs
+                }
             }
         }
 
         $afterSnapshot = Get-TrackedTreeSnapshot -Root $root -Level $Level
         if (-not $afterSnapshot.Ok) {
-            Write-Host "[NG] 追跡対象変更ガードの git 呼び出しが失敗しました" -ForegroundColor Red
+            Write-Host "[NG] 検査後のファイル状態を取得できません: $($afterSnapshot.Reason)" -ForegroundColor Red
             exit 1
         }
         if (-not $skipTreeCompare) {
@@ -291,10 +308,8 @@ try {
             if (-not $comparison.Unchanged) {
                 Write-Host ""
                 Write-Host "[NG] 検査が追跡対象のファイルを書き換えました" -ForegroundColor Red
-                Write-Host "実行前:" -ForegroundColor Yellow
-                Write-Host $beforeSnapshot.Status
-                Write-Host "実行後:" -ForegroundColor Yellow
-                Write-Host $afterSnapshot.Status
+                foreach ($changedPath in $comparison.ChangedPaths) { Write-Host ($changedPath | ConvertTo-Json -Compress) }
+                if ($comparison.MetadataChanged) { Write-Host "HEADまたはindexが変わりました" -ForegroundColor Yellow }
                 exit 1
             }
         }

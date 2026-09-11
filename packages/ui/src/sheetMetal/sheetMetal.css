@@ -1,0 +1,15 @@
+.pcad-section.pcad-sheet-metal { display: grid; gap: 0.65rem; overflow-wrap: anywhere; padding: var(--pcad-space-3); }
+.pcad-sheet-metal h3, .pcad-sheet-metal p { margin: 0; }
+.pcad-sheet-metal fieldset { min-width: 0; display: grid; gap: 0.35rem; }
+.pcad-sheet-metal .pcad-field { display: grid; gap: 0.25rem; grid-template-columns: minmax(0, 1fr) auto; }
+.pcad-sheet-metal .pcad-field > span:first-child { grid-column: 1 / -1; }
+.pcad-sheet-metal .pcad-field > select { grid-column: 1 / -1; }
+.pcad-sheet-metal select, .pcad-sheet-metal input[type="text"] { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; }
+.pcad-sheet-metal__check { display: flex; align-items: center; gap: 0.4rem; }
+.pcad-sheet-metal__actions { display: flex; gap: 0.5rem; }
+.pcad-sheet-metal__actions button { flex: 1; }
+.pcad-sheet-metal .pcad-button { justify-content: center; box-shadow: inset 0 0 0 1px var(--pcad-border); }
+.pcad-sheet-metal .pcad-button:disabled { opacity: 0.5; cursor: default; }
+.pcad-properties.pcad-sheet-metal__dimensions { grid-template-columns: minmax(0, 1fr); }
+.pcad-sheet-metal__dimensions .pcad-properties__key { white-space: normal; overflow: visible; }
+.pcad-sheet-metal__dimensions dd { margin: 0 0 var(--pcad-space-1); text-align: right; font-variant-numeric: tabular-nums; }

@@ -1,4 +1,5 @@
-import type { DrawingSource } from '@pointercad/drawing';
+import type { DrawingSource, DrawingSheetFlatReference } from '@pointercad/drawing';
+import { sheetFlatReferenceIssue } from '../sheetMetal/flatSheetReference.js';
 
 import type { AssemblyDocument } from '../assembly/types.js';
 import { attachmentsDigestOf, type EmbeddedPartAttachments, type PartLibrary } from '../assembly/partLibrary.js';
@@ -8,7 +9,7 @@ import { nextSerialId } from '../sketch/createSketchDocument.js';
 export type DrawingSourceDocument = PartDocument | AssemblyDocument;
 
 export type DrawingSourceInput =
-  | { readonly sourceKind: 'part'; readonly document: PartDocument; readonly attachments?: EmbeddedPartAttachments }
+  | { readonly sourceKind: 'part'; readonly document: PartDocument; readonly attachments?: EmbeddedPartAttachments; readonly flatSheet?: DrawingSheetFlatReference }
   | { readonly sourceKind: 'assembly'; readonly document: AssemblyDocument; readonly library?: PartLibrary };
 
 export interface EmbeddedDrawingSource {
@@ -81,7 +82,11 @@ export async function drawingSourceContentHash(document: DrawingSourceDocument):
 
 /** 参照文書の変更に加え、同じ参照名で差し替わった部品・原本の変更も検出する。 */
 export async function drawingSourceInputHash(input: DrawingSourceInput): Promise<string> {
-  if (input.sourceKind === 'part' && input.attachments === undefined
+  const flat = input.sourceKind === 'part' ? input.flatSheet : undefined;
+  if (input.sourceKind === 'part' && flat !== undefined) {
+    const issue = sheetFlatReferenceIssue(input.document, flat); if (issue !== null) throw new Error(issue);
+  }
+  if (input.sourceKind === 'part' && input.attachments === undefined && flat === undefined
     || input.sourceKind === 'assembly' && input.library === undefined) return drawingSourceContentHash(input.document);
   const dependencies = input.sourceKind === 'part'
     ? { attachments: input.attachments === undefined ? null : await attachmentsDigestOf(input.attachments) }
@@ -91,16 +96,18 @@ export async function drawingSourceInputHash(input: DrawingSourceInput): Promise
           return { ref, document, attachments: attachments === undefined ? null : await attachmentsDigestOf(attachments) };
         })),
       assemblies: [...(input.library?.assemblies ?? [])].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0) };
-  const text = canonicalDrawingSourceText({ document: input.document, dependencies });
+  const text = canonicalDrawingSourceText({ document: input.document, dependencies, ...(flat === undefined ? {} : { flatSheet: flat }) });
   return hexText(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 }
 
 /** 文書の型と参照種別を照合し、保存にも再解決にも同じ原本一式を渡す。 */
 export function drawingSourceInputOf(source: EmbeddedDrawingSource): DrawingSourceInput | null {
   if (source.metadata.sourceKind === 'part' && 'sketches' in source.document) {
-    return { sourceKind: 'part', document: source.document, ...(source.attachments === undefined ? {} : { attachments: source.attachments }) };
+    if (source.metadata.flatSheet !== undefined && sheetFlatReferenceIssue(source.document, source.metadata.flatSheet) !== null) return null;
+    return { sourceKind: 'part', document: source.document, ...(source.attachments === undefined ? {} : { attachments: source.attachments }),
+      ...(source.metadata.flatSheet === undefined ? {} : { flatSheet: source.metadata.flatSheet }) };
   }
-  if (source.metadata.sourceKind === 'assembly' && 'components' in source.document) {
+  if (source.metadata.sourceKind === 'assembly' && source.metadata.flatSheet === undefined && 'components' in source.document) {
     return { sourceKind: 'assembly', document: source.document, ...(source.library === undefined ? {} : { library: source.library }) };
   }
   return null;
@@ -137,6 +144,7 @@ export async function embedDrawingSource(
   const metadata: DrawingSource = {
     sourceRef,
     sourceKind: input.sourceKind,
+    ...(input.sourceKind === 'part' && input.flatSheet !== undefined ? { flatSheet: input.flatSheet } : {}),
     fileName,
     path,
     contentHash,
@@ -165,7 +173,8 @@ export async function replaceDrawingSource(
     sources: library.sources.map((source) => source.metadata.sourceRef === sourceRef
       ? {
           metadata: {
-            ...source.metadata,
+            sourceRef: source.metadata.sourceRef, fileName: source.metadata.fileName, path: source.metadata.path,
+            ...(input.sourceKind === 'part' && input.flatSheet !== undefined ? { flatSheet: input.flatSheet } : {}),
             sourceKind: input.sourceKind,
             contentHash,
             importedAt: options.importedAt ?? new Date().toISOString(),

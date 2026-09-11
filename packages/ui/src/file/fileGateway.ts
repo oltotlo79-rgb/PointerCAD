@@ -34,6 +34,7 @@ import type { FileKind } from '@pointercad/model';
 export type SaveFileKind = FileKind | 'pcada' | 'pcadd' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { readBrowserFile, type BrowserReadableFile } from './readBrowserFile.js';
 
 /** 開いたファイル 1 つぶん(§2.10)。 */
 export interface PickedFile {
@@ -335,9 +336,7 @@ interface WritableFile {
 }
 
 /** 読み出したファイルの中身。 */
-interface ReadableFile {
-  arrayBuffer(): Promise<ArrayBuffer>;
-}
+type ReadableFile = BrowserReadableFile;
 
 /** 名前つきの中身(`<input type="file">` が渡してくるファイル)。 */
 interface NamedReadableFile extends ReadableFile {
@@ -387,7 +386,8 @@ function isWritableFile(value: unknown): value is WritableFile {
 }
 
 function isReadableFile(value: unknown): value is ReadableFile {
-  return isObject(value) && 'arrayBuffer' in value && typeof value.arrayBuffer === 'function';
+  return isObject(value) && 'size' in value && typeof value.size === 'number'
+    && 'arrayBuffer' in value && typeof value.arrayBuffer === 'function';
 }
 
 function isNamedReadableFile(value: unknown): value is NamedReadableFile {
@@ -569,13 +569,18 @@ function pickFileWithInput(accept: string, scope: object): Promise<PickedFile | 
     });
     input.addEventListener('change', () => {
       const file: unknown = input.files?.[0];
-      if (!isNamedReadableFile(file)) {
+      if (file === undefined || file === null) {
         finish(null);
         return;
       }
-      file.arrayBuffer().then(
-        (buffer) => {
-          finish({ name: file.name, bytes: new Uint8Array(buffer), saveTargetToken: null });
+      if (!isNamedReadableFile(file)) {
+        input.remove();
+        reject(new Error(t('file.openFailed')));
+        return;
+      }
+      readBrowserFile(file).then(
+        (bytes) => {
+          finish({ name: file.name, bytes, saveTargetToken: null });
         },
         (error: unknown) => {
           input.remove();
@@ -645,7 +650,7 @@ export async function openFileInBrowser(
   if (!isReadableFile(file)) {
     throw new Error(t('file.openFailed'));
   }
-  return { kind, fileName: handle.name, bytes: new Uint8Array(await file.arrayBuffer()) };
+  return { kind, fileName: handle.name, bytes: await readBrowserFile(file) };
 }
 
 /**
@@ -766,7 +771,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       if (!isReadableFile(file)) {
         throw new Error(t('file.openFailed'));
       }
-      const bytes = new Uint8Array(await file.arrayBuffer());
+      const bytes = await readBrowserFile(file);
       let saveTargetToken: string | null = null;
       if (isWritableFileHandle(handle)) {
         saveTargetToken = `save-target-${String(nextSaveTargetToken)}`;

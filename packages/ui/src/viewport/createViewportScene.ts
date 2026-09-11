@@ -107,6 +107,8 @@ export interface SectionViewRender {
 
 /** ビューポートの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
 export interface ViewportScene {
+  /** 明示的な診断時だけ実メッシュ全頂点を投影する。描画ループでは呼ばない。 */
+  fullyFramedBodyIds(): readonly string[];
   render(
     orbit: OrbitState,
     projection: ProjectionMode,
@@ -1110,6 +1112,20 @@ export function createViewportScene(canvas: HTMLCanvasElement): ViewportScene {
 
     setMeasurement(measurement): void {
       measureLayer.update(measurement);
+    },
+
+    fullyFramedBodyIds(): readonly string[] {
+      if (lastCamera === null) return [];
+      const camera = lastCamera;
+      return bodies.filter((body) => {
+        const positions = body.mesh.positions;
+        if (positions.length === 0) return false;
+        for (let i = 0; i < positions.length; i += 3) {
+          scratch.set(positions[i], positions[i + 1], positions[i + 2]).project(camera);
+          if (![scratch.x, scratch.y, scratch.z].every((value) => Number.isFinite(value) && Math.abs(value) <= 1)) return false;
+        }
+        return true;
+      }).map((body) => body.featureId);
     },
 
     worldToScreen(point): readonly [number, number] | null {

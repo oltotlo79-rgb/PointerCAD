@@ -1,5 +1,5 @@
 import { drawingViewBasis, type DrawingDocument, type DrawingSource, type Vector3 } from '@pointercad/drawing';
-import { createDrawingResolveKernel, drawingSourceInputOf, IDENTITY_PLACEMENT, recomputePart, refreshDrawing, resolveHoleSchedule,
+import { createDrawingResolveKernel, drawingSourceInputOf, IDENTITY_PLACEMENT, recomputePart, refreshDrawing, resolveHoleSchedule, buildSheetFlatHoleSchedule,
   type AssemblyKernelBridge, type DrawingKernelBridge, type DrawingSourceLibrary, type DrawingSourceResolution,
   type EmbeddedDrawingSource, type HoleScheduleResult, type ImportedShapeBytes, type PartDocument, type PartRecomputeOptions, type PartRecomputeResult, type ResolvedPart,
 } from '@pointercad/model';
@@ -7,6 +7,7 @@ import { createDrawingResolveKernel, drawingSourceInputOf, IDENTITY_PLACEMENT, r
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { prepareAssemblyDrawingSource, type PreparedAssemblyDrawing } from './prepareAssemblyDrawingSource.js';
+import { prepareFlatDrawingSource } from './prepareFlatDrawingSource.js';
 
 export type DrawingPartRecomputer = (document: PartDocument, options: PartRecomputeOptions) => Promise<PartRecomputeResult>;
 interface Request {
@@ -17,6 +18,8 @@ interface Request {
 }
 interface Prepared {
   readonly partId: string;
+  readonly shapePartId: string;
+  readonly entry: EmbeddedDrawingSource;
   readonly document: PartDocument;
   readonly importedShapes: ImportedShapeBytes;
   readonly result: DrawingSourceResolution;
@@ -89,12 +92,13 @@ export function attachDrawing(
       throw new Error(t('drawing.error.selectSource'));
     }
     const partId = `drawing:${request.documentId}:${source.sourceRef}`;
+    const shapePartId = input.flatSheet === undefined ? partId : `${partId}:flat`;
     // 取り込み直しとUndoは文書と添付を一組で切り替える。前版の原本へ戻さない。
     const importedShapes = entry.attachments?.shapes ?? request.importedShapes;
-    if ([...retained].some((id) => id !== partId)) await release();
-    if (prepared !== null && prepared.partId === partId && prepared.document === entry.document
+    if ([...retained].some((id) => id !== partId && id !== shapePartId)) await release();
+    if (prepared !== null && prepared.partId === partId && prepared.entry === entry && prepared.document === entry.document
       && prepared.importedShapes === importedShapes) {
-      const available = await bridge.checkShapeAvailability(partId, prepared.result.bodyIds);
+      const available = await bridge.checkShapeAvailability(prepared.shapePartId, prepared.result.bodyIds);
       if (available.missingKeys.length === 0) return prepared.result;
       prepared = null;
     }
@@ -107,6 +111,15 @@ export function attachDrawing(
     if (result.errors.length > 0) throw new Error(result.errors.map((error) => error.message).join('\n'));
     const part = resolved.get(partId);
     if (part === undefined || result.bodies.length === 0) throw new Error(t('drawing.error.noSolid'));
+    if (input.flatSheet !== undefined) {
+      retained.add(shapePartId);
+      const flat = await prepareFlatDrawingSource(entry.document, input.flatSheet, source.sourceRef, result, bridge, shapePartId, () => obsolete(request));
+      if (obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
+      const available = await bridge.checkShapeAvailability(shapePartId, flat.result.bodyIds);
+      if (available.missingKeys.length > 0) throw new Error(t('drawing.error.viewFailed'));
+      prepared = { partId, shapePartId, entry, document: entry.document, importedShapes, result: flat.result, resolved: part, holes: new Map() };
+      return flat.result;
+    }
     const dimensionInstances = result.bodies.map((body) => {
       // featureIdは文書の名前であり、Workerのshape cache keyではない。
       const step = part.steps.find((item) => item.visible && item.featureId === body.featureId);
@@ -116,7 +129,7 @@ export function attachDrawing(
     const output = { bodyIds: dimensionInstances.map((instance) => instance.bodyId), dimensionInstances, center: sourceCenter(result) };
     const available = await bridge.checkShapeAvailability(partId, output.bodyIds);
     if (available.missingKeys.length > 0) throw new Error(t('drawing.error.viewFailed'));
-    prepared = { partId, document: entry.document, importedShapes, result: output, resolved: part, holes: new Map() };
+    prepared = { partId, shapePartId, entry, document: entry.document, importedShapes, result: output, resolved: part, holes: new Map() };
     return output;
   };
   const kernel = createDrawingResolveKernel(bridge, prepareDrawingSource);
@@ -138,8 +151,8 @@ export function attachDrawing(
       const cacheKey = JSON.stringify(frame);
       const cached = part.holes.get(cacheKey);
       if (cached !== undefined) { holeTables.set(table.id, cached); continue; }
-      const result = await resolveHoleSchedule(part.document, part.resolved, bridge, frame,
-        { partId: part.partId, shouldCancel: () => obsolete(request) });
+      const result = source.sheetFlat === undefined ? await resolveHoleSchedule(part.document, part.resolved, bridge, frame,
+        { partId: part.partId, shouldCancel: () => obsolete(request) }) : buildSheetFlatHoleSchedule(source.sheetFlat.outline, frame);
       if (obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
       if (!result.ok && (result.reason === 'cancelled' || result.reason === 'kernelFailed')) throw new Error(t('drawing.error.viewFailed'));
       // cancelled/kernelFailedは上で断り、修正可能な穴の指定不備だけを表示へ渡す。

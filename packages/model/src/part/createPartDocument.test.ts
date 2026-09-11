@@ -478,7 +478,7 @@ describe('部品文書の生成(要件§8、FR-501)', () => {
   // P8 タスク3で版 9 へ上げた(封筒に `kind: 'drawing'` を足したため。
   // 部品とアセンブリで版の系列を分けない)。P8-60/62/64では名前付き視点・構成を足して版10へ上げる。
   it('保存形式の版は 10(P8 タスク60・62・64)', () => {
-    expect(PART_SCHEMA_VERSION).toBe(11);
+    expect(PART_SCHEMA_VERSION).toBe(12);
     expect(createEmptyPartDocument().schemaVersion).toBe(PART_SCHEMA_VERSION);
   });
 
@@ -621,6 +621,10 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
   it('種類ごとに独立して数え、ブーリアンは演算ごとに別の連番', () => {
     const { document, target, tool } = documentWithSubtract();
     expect(SOLID_LABELS).toEqual({
+      sheetBase: '板金基板',
+      sheetFlange: 'フランジ',
+  sheetBend: '指定線で曲げる',
+  sheetRelief: '曲げリリーフ',
       extrude: '押し出し',
       revolve: '回転',
       sew: '縫合',
@@ -768,14 +772,15 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('種類ごとの既定名は34個(既存6 + 加工6 + ばね1 + 基本形状5 + つなぐ2 + Should 群10 + くり抜き1 + 切断1 + 読み込んだ形2)', () => {
+  it('種類ごとの既定名は38個(従来34 + 板金の4種類)', () => {
     // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になり、
     // タスク25 で面をつなぐ(FR-430)・ロフト(FR-410)が増えて 18 → 20 になった。
     // タスク43 で Should 群 9 種と点パターン(FR-425)が増えて 20 → 30 になり、
     // タスク46 でくり抜き(FR-418、§2.12)が増えて 30 → 31 になり、
     // タスク27c で平面による切断(FR-432、§2.9b)が増えて 31 → 32 になり、
     // P6 タスク20 で読み込んだ形のベースボディ 2 種(FR-802、§2.8)が増えて 32 → 34 になった。
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(34);
+    // P10の板金基板・フランジ・指定線曲げを含む。全キーの一致は上の独立した表で検査する。
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(38);
     expect(SOLID_LABELS.hole).toBe('穴');
     expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
     expect(SOLID_LABELS.spring).toBe('ばね');
@@ -1364,7 +1369,7 @@ describe('基本形状(FR-429、P5 タスク15)', () => {
 });
 
 describe('基本形状を足したあとの立体フィーチャーの種類(FR-501)', () => {
-  it('種類は26種になり、数え漏れは型検査で落ちる', () => {
+  it('板金基板・フランジを含む30種で、数え漏れは型検査で落ちる', () => {
     /*
       `Record<SolidFeatureKind, true>` にしておくと、種類を足したのにこの表を直し忘れた
       ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
@@ -1377,6 +1382,10 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       (期待値を緩めているのではなく、仕掛けが働いた結果を写し取っている)。
     */
     const kinds: Readonly<Record<SolidFeatureKind, true>> = {
+      sheetBase: true,
+      sheetFlange: true,
+      sheetBend: true,
+      sheetRelief: true,
       extrude: true,
       revolve: true,
       sew: true,
@@ -1404,16 +1413,20 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       importedSolid: true,
       importedMesh: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(26);
+    expect(Object.keys(kinds)).toHaveLength(30);
   });
 
   it(
-    'SOLID_FEATURE_KINDS(実行時の一覧、P5 仕上げ (h)、t47 指摘③)は26種を重複なく持ち、' +
+    'SOLID_FEATURE_KINDS(実行時の一覧、P10板金を含む)は30種を重複なく持ち、' +
       '上のテストで手で数え上げた表(SolidFeatureKind そのものの網羅の確かめ)と同じ集合になる',
     () => {
-      expect(SOLID_FEATURE_KINDS).toHaveLength(26);
-      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(26);
+      expect(SOLID_FEATURE_KINDS).toHaveLength(30);
+      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(30);
       const kinds: Readonly<Record<SolidFeatureKind, true>> = {
+        sheetBase: true,
+        sheetFlange: true,
+      sheetBend: true,
+      sheetRelief: true,
         extrude: true,
         revolve: true,
         sew: true,

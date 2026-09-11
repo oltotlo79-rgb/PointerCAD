@@ -17,6 +17,10 @@ import { makeHole } from '../occt/makeHole.js';
 import { makePrimitive, resolvePrimitiveOrigin } from '../occt/makePrimitive.js';
 import { makeRib } from '../occt/makeRib.js';
 import { makeShell } from '../occt/makeShell.js';
+import { makeSheetMetalBase } from '../occt/makeSheetMetalBase.js';
+import { makeSheetMetalFlanges } from '../occt/makeSheetMetalFlange.js';
+import { makeSheetMetalBody } from '../occt/makeSheetMetalBody.js';
+import { joinSheetMetalShapes } from '../occt/sheetMetalJoin.js';
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import type { SurfaceResult } from '../occt/makeSurface.js';
@@ -54,6 +58,7 @@ import type {
   ThruSectionsStepSpec,
 } from '../types.js';
 import type { ShapeCache } from './shapeCache.js';
+import { createSheetBodyReuse } from './sheetBodyReuse.js';
 
 /**
  * 掃引体(ばね・実らせん)専用の粗いテッセレーション許容値(P3 仕上げ、2026-09-04)。
@@ -644,6 +649,20 @@ function createStepSolid(
   failedLabels: ReadonlyMap<string, string>,
 ): StepSolidResult {
   switch (spec.kind) {
+    case 'sheetBody': {
+      const result = makeSheetMetalBody(oc, spec);
+      return noMarks(result, result.volume);
+    }
+    case 'sheetJoin': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey), tool = findStepInput(cache, failedLabels, spec.toolKey);
+      return noMarks(joinSheetMetalShapes(oc, target.shape, tool.shape, 'flat'));
+    }
+    case 'sheetBase':
+      return noMarks(makeSheetMetalBase(oc, spec));
+    case 'sheetFlange': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      return noMarks(makeSheetMetalFlanges(oc, target.shape, spec.flanges));
+    }
     case 'extrude':
       // 終端(FR-415)・テーパ(FR-401)・薄板(FR-416)の振り分けは createExtrudeSolid に
       // 集めてある。欄をすべて省いた依頼は P2 からの押し出しと同じ道を通る。
@@ -891,7 +910,7 @@ export function matchAppearances(
  *   依頼が無ければこの段は何もせず、OCCT を 1 回も呼ばない。
  *
  * 進捗と中止は呼び出し側の関数で受け取る。Comlink 越しでは Comlink.proxy した関数が渡る。
- * 中止を尋ねるのは段と段の間だけで、最初の段は必ず計算する。
+ * 各段の開始前に中止を尋ねる。実行前に取り消された1段だけの依頼も計算しない。
  */
 export async function recomputeSolids(
   deps: SolidRecomputeDeps,
@@ -901,6 +920,7 @@ export async function recomputeSolids(
   shouldCancel?: SolidCancelToken,
 ): Promise<SolidRecomputeResult> {
   const { oc, cache } = deps;
+  const sheetBodies = createSheetBodyReuse(oc, cache);
   const total = request.steps.length;
   const bodies: SolidBodyMesh[] = [];
   const failures: SolidStepFailure[] = [];
@@ -942,8 +962,8 @@ export async function recomputeSolids(
     const step = request.steps[index];
 
     // 中止の口が渡されているときだけ制御を譲る。渡されていなければ拾うものが無い。
-    if (index > 0 && shouldCancel !== undefined) {
-      await yieldToMessages();
+    if (shouldCancel !== undefined) {
+      if (index > 0) await yieldToMessages();
       if (await shouldCancel()) {
         cancelled = true;
         break;
@@ -955,6 +975,7 @@ export async function recomputeSolids(
     const cached = cache.get(step.key);
     if (cached !== undefined) {
       cacheHits += 1;
+      sheetBodies.remember(step.step, step.key);
       if (step.visible) {
         // 同じ形を別のフィーチャーが使うことがあるので、id はこの段のものに差し替える。
         // 表面積を求められていて覚えていなければ、覚えてある形からその場で測って足す。
@@ -966,7 +987,8 @@ export async function recomputeSolids(
     }
 
     try {
-      const stepResult = createStepSolid(oc, step.step, options, cache, failedLabels);
+      const reused = sheetBodies.copy(step.step);
+      const stepResult = reused === null ? createStepSolid(oc, step.step, options, cache, failedLabels) : noMarks(reused, reused.volume);
       const meshOptions = resolveTessellationOptions(options, step);
       const entry = buildCachedSolid(
         oc,
@@ -979,6 +1001,7 @@ export async function recomputeSolids(
         stepResult.area,
       );
       cache.set(step.key, entry);
+      sheetBodies.remember(step.step, step.key);
       if (step.visible) {
         bodies.push(entry.mesh);
         rememberBodyForAppearance(step.key, step.id, entry.shape);

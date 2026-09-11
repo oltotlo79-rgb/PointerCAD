@@ -15,6 +15,7 @@ export type {
   DrawingParameter,
   DrawingSheet,
   DrawingSource,
+  DrawingSheetFlatReference,
   DrawingSubShapeFingerprint,
   DrawingSubShapeRef,
   DrawingTable,

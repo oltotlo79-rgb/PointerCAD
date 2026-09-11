@@ -3,6 +3,7 @@
  */
 
 import type { PartDocument } from '@pointercad/model';
+import { SheetMetalMenu } from '../../sheetMetal/SheetMetalMenu.js';
 import { t } from '../../i18n/t.js';
 import type { NumericInputToolId } from '../../sketch/numericInput.js';
 import {
@@ -62,6 +63,7 @@ export function SolidGroup({
         {t('toolbar.solid.title')}
       </span>
       <div className="pcad-segmented">
+        <SheetMetalMenu />
         <ToolMenu
           items={CREATE_MENU_ITEMS}
           groupLabelKey="toolbar.create.groupLabel"

@@ -39,6 +39,7 @@ import { featureIdOf } from '../sketch/featureSummary.js';
 import { resolveReferencesOf, resolveWorkPlaneOf } from '../sketch/referenceCommands.js';
 import { type OrbitState, viewDirection } from '../viewport/cameraMath.js';
 import type { AppState } from './appState.js';
+import { emptySheetMetalTool } from './sheetMetalSlice.js';
 
 /**
  * 同点とみなす傾きの差。等角のホーム視点では 3 面が等しく傾くが、三角関数の丸めで
@@ -146,6 +147,8 @@ export function filterSelectionForFaceTool(
 export type DocumentPatch = Pick<
   AppState,
   | 'document'
+  | 'sheetMetalTool'
+  | 'sheetMetalPreview' | 'sheetMetalRequestId' | 'sheetMetalError'
   | 'undoStack'
   | 'canUndo'
   | 'canRedo'
@@ -260,6 +263,7 @@ export function documentPatch(
     : DEFAULT_WORK_PLANE_ID;
   return {
     document: next,
+    ...emptySheetMetalTool(),
     undoStack: stack,
     canUndo: stackCanUndo(stack),
     canRedo: stackCanRedo(stack),

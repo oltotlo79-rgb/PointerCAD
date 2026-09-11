@@ -5,20 +5,24 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import { flattenAssemblyGeometry } from '../viewport/createAssemblyLayer.js';
+import type { SheetMetalPreview } from '../store/sheetMetalSlice.js';
 
 /** 現在の部品または組立と原本一式を抱き込み、配置済みの形から三面図を作る。 */
-export async function createDrawingFromCurrentPart(template?: DrawingTemplate): Promise<boolean> {
+export async function createDrawingFromCurrentPart(template?: DrawingTemplate, flatPreview?: SheetMetalPreview): Promise<boolean> {
   const state = useAppStore.getState();
   if (state.drawing !== null || state.isComputing) {
     useAppStore.setState({ fileMessage: { key: 'drawing.error.noSolid', failed: true } });
     return false;
   }
+  if (flatPreview !== undefined && (state.assembly !== null || flatPreview.flat === undefined
+    || state.sheetMetalPreview !== flatPreview || state.sheetMetalTool !== flatPreview.session || state.document !== flatPreview.session.document)) return false;
   try {
     const geometry: { body: SolidBody; placement: RigidPlacement }[] = [];
     const source: DrawingSourceInput = state.assembly === null
-      ? { sourceKind: 'part', document: state.document, attachments: currentPcadAttachments() }
+      ? { sourceKind: 'part', document: state.document, attachments: currentPcadAttachments(),
+          ...(flatPreview?.flat === undefined ? {} : { flatSheet: { partId: state.document.id, ...flatPreview.flat.definition } }) }
       : { sourceKind: 'assembly', document: state.assembly, library: state.assemblyLibrary };
-    if (state.assembly === null) geometry.push(...state.bodies.map((body) => ({ body, placement: IDENTITY_PLACEMENT })));
+    if (state.assembly === null) geometry.push(...(flatPreview?.bodies ?? state.bodies).map((body) => ({ body, placement: IDENTITY_PLACEMENT })));
     else {
       const view = state.assemblyView;
       if (view === null || view.sourceDocument !== state.assembly || view.diagnosis?.converged === false
@@ -36,7 +40,8 @@ export async function createDrawingFromCurrentPart(template?: DrawingTemplate): 
       (state.assembly === null ? state.fileName : state.assemblyFileName) ?? `${source.document.name}.${source.sourceKind === 'part' ? 'pcad' : 'pcada'}`, '');
     const current = useAppStore.getState();
     if (current.document !== state.document || current.assembly !== state.assembly || current.assemblyLibrary !== state.assemblyLibrary
-      || current.activeDocumentId !== state.activeDocumentId || current.drawing !== null) return false;
+      || current.activeDocumentId !== state.activeDocumentId || current.drawing !== null
+      || (flatPreview !== undefined && current.sheetMetalPreview !== flatPreview)) return false;
     if (template !== undefined) {
       const created = drawingFromTemplate(template, `${source.document.name} - ${template.name}`, embedded.source);
       if (!created.ok) throw new Error(t('drawing.template.invalid'));
@@ -58,9 +63,18 @@ export async function createDrawingFromCurrentPart(template?: DrawingTemplate): 
     const paper = paperSizeOf(drawing.sheet.paperSizeId);
     if (paper === undefined) throw new Error(t('drawing.error.viewFailed'));
     const scale = autoScale({ paperSizeId: paper.id, orientation: paper.orientation,
-      titleBlockHeight: DEFAULT_TITLE_BLOCK_HEIGHT_MM, extents, gap: 30 });
+      titleBlockHeight: DEFAULT_TITLE_BLOCK_HEIGHT_MM, extents: flatPreview === undefined ? extents : [extents[0], 0, extents[1]], gap: 30 });
     if (scale === null) throw new Error(t('drawing.error.partTooLarge'));
     const frame = createPaperFrame(paper);
+    if (flatPreview !== undefined) {
+      const view: DrawingView = { id: 'view-1', name: t('sheetMetal.flatDrawing'), kind: 'top',
+        position: [frame.inner.left + frame.inner.width / 2, frame.inner.bottom + (frame.inner.height + DEFAULT_TITLE_BLOCK_HEIGHT_MM) / 2],
+        scale: null, direction: [0, 0, -1], xDir: [1, 0, 0], showHidden: false, showCenterLines: true, layerId: 'layer-1' };
+      state.openDrawing({ ...drawing, name: `${source.document.name} - ${t('sheetMetal.flatDrawing')}`, sheet: { ...drawing.sheet, scale }, views: [view] }, {
+        sources: embedded.library, importedShapes: state.importedShapes,
+      });
+      return true;
+    }
     const layout = thirdAngleLayout({ extents, scale, gap: 30, sheet: { ...frame.inner, bottom: frame.inner.bottom + DEFAULT_TITLE_BLOCK_HEIGHT_MM } });
     const views = (['front', 'top', 'right'] as const).map((kind, index): DrawingView => ({
       id: `view-${index + 1}`, name: t(`drawing.view.${kind}`), kind, position: layout[kind], scale: null,

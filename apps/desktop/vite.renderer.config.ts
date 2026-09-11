@@ -1,5 +1,6 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { APP_META_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
 
 /** WASM の並列実行に必要な隔離状態を作る(FR-1003)。配信時は app:// の応答ヘッダーで付ける。 */
 const crossOriginIsolationHeaders = {
@@ -70,7 +71,14 @@ export default defineConfig({
   base: './',
   // Webと同じ字体を通常の静的資産として配り、JSへバイト列を埋め込まない。
   publicDir: 'resources',
-  plugins: [react()],
+  plugins: [react(), {
+    name: 'pointercad-renderer-security-policy',
+    apply: 'build',
+    transformIndexHtml: { order: 'post', handler: () => [{
+      tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: APP_META_CONTENT_SECURITY_POLICY },
+      injectTo: 'head-prepend',
+    }] },
+  }],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },
   // 幾何カーネルの Worker は ES モジュールとして出力する。

@@ -89,8 +89,11 @@ describe('readArchive', () => {
     expanded.fill(65);
     const bytes = zipSync({ 'large.txt': expanded }, { level: 9 });
     expect(bytes.length).toBeLessThan(10_000);
-    // ローカルヘッダの「展開後サイズ」を 1 と偽っても、実出力を数えるので結果は変わらない。
-    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(22, 1, true);
+    // 両ヘッダを一致させて小さく偽っても、DEFLATEの実長で確保前に断る。
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    view.setUint32(22, 1, true);
+    const central = view.getUint32(bytes.length - 6, true);
+    view.setUint32(central + 24, 1, true);
 
     const result = readAll(bytes, {
       ...TEST_LIMITS,

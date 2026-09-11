@@ -34,6 +34,14 @@ describe('品質ゲートのテスト実行順', () => {
     expect(config).toContain('fileParallelism:');
   });
 
+  it('板金の性能判定が共通の厳密/参考モードと優先実行へ接続される', () => {
+    const source = readRootFile('packages/model/src/sheetMetal/sheetPerformance.test.ts');
+    expect(source).toContain("import { expectWithinBudget } from '@pointercad/test-utils'");
+    expect(source).toMatch(/expectWithinBudget\(elapsed, 5000,/u);
+    expect(source).toMatch(/expectWithinBudget\(elapsed, 500,/u);
+    expect(source).not.toMatch(/expect\(elapsed\)\.toBeLessThan/u);
+  });
+
   it('連続E2Eはほかの4段を重複させず品質ゲートの正本から実行する', () => {
     const checkScript = readRootFile('scripts/check.ps1');
 

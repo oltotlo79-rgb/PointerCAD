@@ -590,7 +590,7 @@ export type NumericInputStep =
   | ReferenceNumericInputStep
   | EditNumericInputStep;
 
-export type FieldUnit = 'mm' | 'degree' | 'count';
+export type FieldUnit = 'mm' | 'degree' | 'count' | 'ratio';
 
 /**
  * **どの欄が長さかを決める唯一の表**(P6 タスク3b、FR-811・FR-814・FR-205)。
@@ -610,6 +610,7 @@ export function isLengthFieldUnit(unit: FieldUnit): boolean {
       return true;
     case 'degree':
     case 'count':
+    case 'ratio':
       return false;
   }
 }
@@ -3249,6 +3250,7 @@ export const UNIT_KEYS: Readonly<Record<FieldUnit, MessageKey>> = {
   mm: 'numericInput.unit.mm',
   degree: 'numericInput.unit.degree',
   count: 'numericInput.unit.count',
+  ratio: 'numericInput.unit.ratio',
 };
 
 /**

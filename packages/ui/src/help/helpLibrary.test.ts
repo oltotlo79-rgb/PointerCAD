@@ -13,7 +13,8 @@ describe('同梱ヘルプの本文と検索', () => {
   it('本文の実画面リンクが同梱画像へ解決され、P8の17章・構成とP9の2章は画像を持つ', async () => {
     const required = new Set(['drawing', 'drawing-views', 'drawing-section', 'drawing-scale', 'dimension', 'dimension-auto',
       'dimension-series', 'dimension-tolerance', 'dimension-arrange', 'surface-finish', 'drawing-note', 'drawing-layer',
-      'drawing-bom', 'drawing-table', 'drawing-export', 'text-outline', 'named-view', 'parameters', 'gdt', 'welding']);
+      'drawing-bom', 'drawing-table', 'drawing-export', 'text-outline', 'named-view', 'parameters', 'gdt', 'welding',
+      'sheet-metal', 'sheet-metal-flange', 'sheet-metal-bend-relief', 'sheet-metal-flat']);
     for (const topic of HELP_TOPICS) {
       const text = await HELP_LOADERS[topic.id]();
       const images = [...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/gu)];

@@ -71,7 +71,7 @@ import type {
  * 下絵(`canvases`、FR-332)も版 7 に含め、版 6 以前のファイルは
  * `SCHEMA_MIGRATIONS[6]` がこの 2 欄の省略を空配列で補って読み込む。
  */
-export const PART_SCHEMA_VERSION = 11;
+export const PART_SCHEMA_VERSION = 12;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;
@@ -419,6 +419,10 @@ export function filletRadiusOf(feature: FilletFeature): FilletRadius {
  * パターンも同じ理由で配置ごと(直線 / 円形)に分ける。
  */
 export type SolidLabelKey =
+  | 'sheetBase'
+  | 'sheetFlange'
+  | 'sheetBend'
+  | 'sheetRelief'
   | 'extrude'
   | 'revolve'
   | 'sew'
@@ -491,6 +495,10 @@ function keysOf<K extends string>(record: Readonly<Record<K, true>>): readonly K
  * `SOLID_FEATURE_KINDS` はこの表の鍵をそのまま並べたもの。
  */
 const SOLID_FEATURE_KIND_TABLE = {
+  sheetBase: true,
+  sheetFlange: true,
+      sheetBend: true,
+      sheetRelief: true,
   extrude: true,
   revolve: true,
   sew: true,
@@ -541,6 +549,10 @@ export const SOLID_FEATURE_KINDS: readonly SolidFeatureKind[] = keysOf(SOLID_FEA
  * (UI 文字列 ja.json とは別扱い。スケッチの KIND_LABELS と同じ考え方)。
  */
 export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
+  sheetBase: '板金基板',
+  sheetFlange: 'フランジ',
+  sheetBend: '指定線で曲げる',
+  sheetRelief: '曲げリリーフ',
   extrude: '押し出し',
   revolve: '回転',
   sew: '縫合',
@@ -613,6 +625,7 @@ export function createEmptyPartDocument(): PartDocument {
     activeSketchId: sketch.id,
     references: [],
     solids: [],
+    sheetUnfolds: [],
     // パラメータ表(FR-207)の既定は空。名前を付けた数値は利用者が足す(P4b タスク2)。
     parameters: [],
     namedViews: createDefaultNamedViews(),
@@ -954,6 +967,8 @@ export function createPrimitiveFeature(
  */
 export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
   switch (feature.kind) {
+    case 'sheetBase': return [];
+    case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return [feature.targetFeatureId];
     case 'extrude':
     case 'revolve':
     case 'sew':
@@ -1015,6 +1030,8 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
  */
 export function isMachiningFeature(feature: SolidFeature): boolean {
   switch (feature.kind) {
+    // 板金の曲げはパネルグラフを伴い、加工パターンの材料にはしない。
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return false;
     case 'hole':
     case 'threadHole':
     case 'fillet':

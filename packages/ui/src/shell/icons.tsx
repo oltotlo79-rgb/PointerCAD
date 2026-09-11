@@ -25,6 +25,20 @@ interface SvgIconProps extends IconProps {
 
 const DEFAULT_SIZE = 16;
 
+/** 一定厚の平板と、縁を折り曲げたフランジ。 */
+export function SheetBaseIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}><path d="m2 9 7-5 5 3-7 5z" /><path d="M2 9v2l5 3 7-5V7M7 12v2" /></SvgIcon>;
+}
+export function SheetFlangeIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}><path d="M2 3v7c0 2 1 3 3 3h9M4 3v7c0 1 0 1 1 1h9" /><path d="M2 3h2m10 8v2" /></SvgIcon>;
+}
+export function SheetLineBendIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}><path d="m1 10 5 3 4-4V3l-5 4v6m5-4 5 2" /><path d="m5 7 5 2" strokeDasharray="1.5 1.5" /></SvgIcon>;
+}
+export function SheetReliefIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}><path d="M2 3h4v5a2 2 0 0 0 4 0V3h4v10H2z" /><path d="M1 6h4m6 0h4" strokeDasharray="1.5 1.5" /></SvgIcon>;
+}
+
 export function HelpIcon(props: IconProps): React.JSX.Element {
   return <SvgIcon {...props}><circle cx={8} cy={8} r={6.5} /><path d="M6 5.5a2 2 0 0 1 4 0c0 1.5-2 1.5-2 3" /><circle cx={8} cy={11.5} r={0.35} fill="currentColor" /></SvgIcon>;
 }

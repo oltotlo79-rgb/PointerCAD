@@ -10,6 +10,10 @@ import type { HoleScheduleResult } from './holeSchedule.js';
 import { resolveViewConstructions, type ConstructedDrawingView } from './viewConstruction.js';
 import { projectionCenterMarkGroups } from './projectionCenterMarks.js';
 import { addDrawingViewDecorations } from './viewDecorations.js';
+import { addSheetBendDecorations } from './sheetBendDecorations.js';
+import type { SheetFlatGeometry } from '../sheetMetal/unfoldSheetBody.js';
+import type { SheetFlatOutline } from '../sheetMetal/flatOutline.js';
+import type { SheetFlatBendLine } from '../sheetMetal/flatBendLines.js';
 
 export interface DrawingInstance {
   readonly bodyId: string;
@@ -28,6 +32,8 @@ export interface DrawingProjectionCurve {
 }
 
 export interface DrawingSourceResolution {
+  /** 派生した製造指示。PCADDには元部品と展開条件だけを保存する。 */
+  readonly sheetFlat?: { readonly geometry: SheetFlatGeometry; readonly outline: SheetFlatOutline; readonly bends: readonly SheetFlatBendLine[] };
   readonly viewFrames?: ReadonlyMap<string, ConstructedDrawingView>;
   readonly bomRows?: readonly BomRow[];
   readonly holeTables?: ReadonlyMap<string, HoleScheduleResult>;
@@ -337,7 +343,9 @@ export async function resolveDrawingWithSource(
         .map((line): ResolvedDrawingCurve => ({ kind: 'polyline', points: line.points, closed: false })) } : {}),
     });
   }
-  return { ok: true, views: addDrawingViewDecorations(document, views, viewFrames), viewFrames, failures, cancelled };
+  const decorated = addDrawingViewDecorations(document, views, viewFrames);
+  return { ok: true, views: source.sheetFlat === undefined ? decorated
+    : addSheetBendDecorations(document, decorated, viewFrames, source.center, source.sheetFlat.bends), viewFrames, failures, cancelled };
 }
 
 function projectionRequest(id: string, view: DrawingView): DrawingProjectionRequest['views'][number] {

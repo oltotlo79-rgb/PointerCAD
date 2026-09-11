@@ -783,7 +783,7 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
             continue;
           }
           try {
-            const curves = makeSection(oc, { target: cached.shape, plane: item.plane });
+            const curves = makeSection(oc, { target: cached.shape, plane: item.plane, curveToleranceMm: item.curveToleranceMm });
             results.push({ id: item.id, curves: curves.curves });
           } catch (error) {
             failures.push({

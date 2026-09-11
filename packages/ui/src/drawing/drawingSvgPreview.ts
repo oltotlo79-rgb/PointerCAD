@@ -29,10 +29,10 @@ export function createDrawingSvgPreview(svg: SVGSVGElement, owners: ReadonlySet<
         const value = item.getAttribute('clip-path');
         if (value?.startsWith('url(#') === true) item.setAttribute('clip-path', `url(#${prefix}${value.slice(5)}`);
       }
-      definitions.replaceChildren(...[...parsed.querySelectorAll('defs > *')].map((item) => svg.ownerDocument.importNode(item, true)));
+      // Rangeが同じDocumentへ作ったノードを移動する。毎フレーム全輪郭を複製しない。
+      definitions.replaceChildren(...parsed.querySelectorAll('defs > *'));
       const nodes = [...parsed.querySelectorAll('[data-owner-id]')];
-      for (const [owner, slot] of slots) slot.parent.replaceChildren(...nodes.filter((node) => node.getAttribute('data-owner-id') === owner)
-        .map((node) => svg.ownerDocument.importNode(node, true)));
+      for (const [owner, slot] of slots) slot.parent.replaceChildren(...nodes.filter((node) => node.getAttribute('data-owner-id') === owner));
       return true;
     },
     restore(): void {

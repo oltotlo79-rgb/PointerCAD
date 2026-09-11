@@ -23,6 +23,7 @@ import { createFileSlice } from './fileSlice.js';
 import { createAssemblySlice } from './assemblySlice.js';
 import { createDrawingSlice } from './drawingSlice.js';
 import { createHelpSlice } from './helpSlice.js';
+import { createSheetMetalSlice } from './sheetMetalSlice.js';
 
 export type { AppState } from './appState.js';
 export type { ViewSlice } from './viewSlice.js';
@@ -55,4 +56,5 @@ export const useAppStore = create<AppState>()((...args) => ({
   ...createAssemblySlice(...args),
   ...createDrawingSlice(...args),
   ...createHelpSlice(...args),
+  ...createSheetMetalSlice(...args),
 }));

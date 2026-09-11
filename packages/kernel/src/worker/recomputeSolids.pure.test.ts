@@ -330,12 +330,21 @@ describe('段の種類(SolidStepSpec の union)', () => {
     shell: true,
     // P6 タスク10 で足した 1 種(読み込んだ形のベースボディ、FR-802)。
     importedSolid: true,
+    // P10: 板金の基板と、基板を消費するフランジ。
+    sheetBase: true,
+    sheetFlange: true,
+    sheetJoin: true,
+    sheetBody: true,
   };
 
-  it('段の種類は 23 種で、基本形状(primitive)と罫線面・ロフト(thruSections)を含む', () => {
-    expect(Object.keys(STEP_KINDS)).toHaveLength(23);
+  it('段の種類は27種で、既存の形状と板金の基板・フランジ・展開結合・再構築を含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(27);
     expect(Object.keys(STEP_KINDS)).toContain('primitive');
     expect(Object.keys(STEP_KINDS)).toContain('thruSections');
+    expect(Object.keys(STEP_KINDS)).toContain('sheetBase');
+    expect(Object.keys(STEP_KINDS)).toContain('sheetFlange');
+    expect(Object.keys(STEP_KINDS)).toContain('sheetJoin');
+    expect(Object.keys(STEP_KINDS)).toContain('sheetBody');
   });
 
   /*

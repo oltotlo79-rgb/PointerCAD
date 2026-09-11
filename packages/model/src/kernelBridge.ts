@@ -155,6 +155,8 @@ export interface SketchOffsetResult {
  */
 export interface SketchProjectionRequestItem {
   readonly featureId: string;
+  /** sectionSketchCurves専用。指定精度の断面はdoubleを保持し、点数を間引かない。 */
+  readonly curveToleranceMm?: number;
   /** もとの立体の段の鍵。 */
   readonly bodyKey: string;
   /**
@@ -1561,6 +1563,7 @@ function toProjectionItem(request: SketchProjectionRequestItem): SketchProjectio
 function toSectionItem(request: SketchProjectionRequestItem): SketchSectionItem {
   return {
     id: request.featureId,
+    ...(request.curveToleranceMm === undefined ? {} : { curveToleranceMm: request.curveToleranceMm }),
     shapeKey: request.bodyKey,
     plane: toPlaneFrame(request.plane),
   };
@@ -1578,6 +1581,7 @@ export function toProjectionResult(
   outcome: SketchProjectionOutcome,
 ): SketchProjectionResult {
   const planeByFeature = new Map(requests.map((request) => [request.featureId, request.plane]));
+  const preciseFeatures = new Set(requests.filter((request) => request.curveToleranceMm !== undefined).map((request) => request.featureId));
   const results: SketchProjectionEntry[] = [];
   const failures: SketchProjectionFailure[] = outcome.failures.map((failure) => ({
     featureId: failure.id,
@@ -1593,7 +1597,13 @@ export function toProjectionResult(
     }
     results.push({
       featureId: result.id,
-      curves: result.curves.map((curve) => fromPlaneCurve(curve, plane, result.id)),
+      curves: result.curves.flatMap((curve) => {
+        if (curve.kind !== 'polyline' || !preciseFeatures.has(result.id)) return [fromPlaneCurve(curve, plane, result.id)];
+        // 精密出力の折線を補間スプラインへ読み替えない。受け取った弦をそのまま保持する。
+        return curve.points.slice(0, curve.closed ? undefined : -1).map((point, index) => fromPlaneCurve({
+          kind: 'segment', from: point, to: curve.points[(index + 1) % curve.points.length],
+        }, plane, result.id));
+      }),
     });
   }
 
@@ -1680,6 +1690,20 @@ function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
  */
 function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
   switch (plan.kind) {
+    case 'sheetBody': return { kind: 'sheetBody', panels: plan.panels.map((panel) => ({ thickness: panel.thickness, normal: panel.normal,
+      reversed: panel.reversed, outer: panel.outer.map(toCurveSpec), holes: panel.holes.map((loop) => loop.map(toCurveSpec)) })),
+      bends: plan.bends.map((bend) => bend.kind === 'rectangle' ? bend : { ...bend, outer: bend.outer.map(toCurveSpec),
+        holes: bend.holes.map((loop) => loop.map(toCurveSpec)) }) };
+    case 'sheetJoin': return { kind: 'sheetJoin', targetKey: plan.targetKey, toolKey: plan.toolKey };
+    case 'sheetBase': return { kind: 'sheetBase', outer: plan.outer.map(toCurveSpec), holes: plan.holes.map((loop) => loop.map(toCurveSpec)),
+      thickness: plan.thickness, normal: plan.normal, reversed: plan.reversed };
+    case 'sheetFlange': return { kind: 'sheetFlange', targetKey: plan.targetKey, flanges: plan.flanges.map((flange) => {
+      const common = { frame: flange.frame, width: flange.width, thickness: flange.thickness, radius: flange.radius, angle: flange.angle };
+      switch (flange.kind) {
+        case 'rectangle': return { ...common, kind: 'rectangle' as const, secondLength: flange.secondLength };
+        case 'profile': return { ...common, kind: 'profile' as const, outer: flange.outer.map(toCurveSpec), holes: flange.holes.map((loop) => loop.map(toCurveSpec)) };
+      }
+    }) };
     case 'extrude':
       // P5 で足した終端・傾き・薄板(FR-415・FR-401・FR-416)は**省略されたまま渡す**。
       // 段に無い欄はカーネルでも既定(距離ぶんを片側へ、傾きなし、中実)になるので、

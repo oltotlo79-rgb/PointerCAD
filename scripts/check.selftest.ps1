@@ -125,6 +125,127 @@ try {
         Assert-True (@($result6.ChangedPaths) -contains $japaneseFileName) `
             "シナリオ6: 変化したファイル名(日本語名)を正しく報告する"
 
+        # === R13: 変更済み・未追跡・HEAD/indexの再変更と読取不能 ===
+        if ([string]::IsNullOrWhiteSpace($tempRoot) -or -not (Test-Path -LiteralPath (Join-Path $tempRoot '.git'))) {
+            throw 'R13 scenarios require the isolated selftest repository'
+        }
+        $reportedRoot = (Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('rev-parse', '--show-toplevel')).Trim()
+        if ([IO.Path]::GetFullPath($reportedRoot) -ne [IO.Path]::GetFullPath($tempRoot)) {
+            throw 'R13 repository root mismatch'
+        }
+
+        # 13a: git status文字列もmtime/長さも同じdirty→dirtyを検出する。
+        $dirtyPath = Join-Path $tempRoot 'c.txt'
+        [IO.File]::WriteAllText($dirtyPath, 'dirty-A', [Text.UTF8Encoding]::new($false))
+        $dirtyTime = [IO.File]::GetLastWriteTimeUtc($dirtyPath)
+        $before13a = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        $status13a = Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('status', '--porcelain', '--untracked-files=no')
+        [IO.File]::WriteAllText($dirtyPath, 'dirty-B', [Text.UTF8Encoding]::new($false))
+        [IO.File]::SetLastWriteTimeUtc($dirtyPath, $dirtyTime)
+        $after13a = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        $status13aAfter = Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('status', '--porcelain', '--untracked-files=no')
+        $result13a = Compare-TrackedTreeSnapshot -Before $before13a -After $after13a
+        Assert-True ($status13a -ceq $status13aAfter) 'R13a前提: dirtyのstatusは書換前後で同一'
+        Assert-True (-not $result13a.Unchanged -and @($result13a.ChangedPaths) -contains 'c.txt') 'R13a: 同じ長さ/mtimeのdirty再書換を内容で検出'
+        Set-Content -LiteralPath $dirtyPath -Value 'base' -NoNewline -Encoding UTF8
+
+        # 13b: 初めから未追跡のファイルも内容で比較する。
+        $untrackedPath = Join-Path $tempRoot 'b.txt'
+        $before13b = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        [IO.File]::WriteAllText($untrackedPath, 'untracked-changed-again', [Text.UTF8Encoding]::new($false))
+        $result13b = Compare-TrackedTreeSnapshot -Before $before13b -After (Get-TrackedTreeSnapshot -Root $tempRoot -Level Push)
+        Assert-True (-not $result13b.Unchanged -and @($result13b.ChangedPaths) -contains 'b.txt') 'R13b: 未追跡ファイルの再書換を検出'
+
+        # 13c: 検査開始後の追加と削除をいずれも検出する。空白、日本語、[]をLiteralPathで扱う。
+        $newName = '追加 [監査] 空白.txt'
+        $newPath = Join-Path $tempRoot $newName
+        $before13c = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        [IO.File]::WriteAllText($newPath, 'new', [Text.UTF8Encoding]::new($false))
+        $added13c = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        $result13c = Compare-TrackedTreeSnapshot -Before $before13c -After $added13c
+        Assert-True (-not $result13c.Unchanged -and @($result13c.ChangedPaths) -contains $newName) 'R13c: 日本語と空白を含む未追跡の追加を検出'
+        Remove-Item -LiteralPath $newPath -ErrorAction Stop
+        $result13cRemoved = Compare-TrackedTreeSnapshot -Before $added13c -After (Get-TrackedTreeSnapshot -Root $tempRoot -Level Push)
+        Assert-True (-not $result13cRemoved.Unchanged -and @($result13cRemoved.ChangedPaths) -contains $newName) 'R13c: 未追跡の削除も検出'
+
+        # 13d: worktree内容を変えずindexだけを変更しても検査証跡を流用できない。
+        [IO.File]::WriteAllText($dirtyPath, 'index-only', [Text.UTF8Encoding]::new($false))
+        $before13d = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        $null = Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('add', '--', 'c.txt')
+        $result13d = Compare-TrackedTreeSnapshot -Before $before13d -After (Get-TrackedTreeSnapshot -Root $tempRoot -Level Push)
+        Assert-True (-not $result13d.Unchanged -and $result13d.MetadataChanged -and $result13d.ChangedPaths.Count -eq 0) 'R13d: indexだけの変更を検出'
+        $null = Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('reset', '--quiet', 'HEAD', '--', 'c.txt')
+        Set-Content -LiteralPath $dirtyPath -Value 'base' -NoNewline -Encoding UTF8
+
+        # 13e: Linuxで許される改行と大文字小文字違いを別ファイルとして比較する。
+        if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+            $specialNames = @("line`nbreak.txt", 'case.txt', 'CASE.txt')
+            foreach ($specialName in $specialNames) { [IO.File]::WriteAllText((Join-Path $tempRoot $specialName), 'first') }
+            $before13e = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+            [IO.File]::WriteAllText((Join-Path $tempRoot 'CASE.txt'), 'second')
+            [IO.File]::WriteAllText((Join-Path $tempRoot "line`nbreak.txt"), 'second')
+            $result13e = Compare-TrackedTreeSnapshot -Before $before13e -After (Get-TrackedTreeSnapshot -Root $tempRoot -Level Push)
+            Assert-True (@($result13e.ChangedPaths) -ccontains 'CASE.txt') 'R13e: 大文字のファイル変更を検出'
+            Assert-True (-not (@($result13e.ChangedPaths) -ccontains 'case.txt')) 'R13e: 小文字の別ファイルを同一視しない'
+            Assert-True (@($result13e.ChangedPaths) -contains "line`nbreak.txt") 'R13e: NUL区切りで改行付きパスを保持'
+            foreach ($specialName in $specialNames) { Remove-Item -LiteralPath (Join-Path $tempRoot $specialName) -ErrorAction Stop }
+        }
+
+        # 13f: 読取失敗は「変化なし」へ縮退しない。
+        $invalid13f = [pscustomobject]@{ Ok=$false; Mode='Full'; Paths=@(); Fingerprints=@{} }
+        $result13f = Compare-TrackedTreeSnapshot -Before $before13a -After $invalid13f
+        Assert-True (-not $result13f.Unchanged -and $result13f.GitFailed) 'R13f: 指紋を取得できなければ必ず失敗'
+
+        # 13g: 内容もindexも同じHEADだけの移動も検出する（専用temp repoのrefのみ）。
+        $head13g = (Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('rev-parse', 'HEAD')).Trim()
+        $tree13g = (Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('rev-parse', 'HEAD^{tree}')).Trim()
+        $before13g = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        $next13g = (Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('commit-tree', $tree13g, '-p', $head13g, '-m', 'R13 HEAD-only fixture')).Trim()
+        $null = Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('update-ref', 'HEAD', $next13g, $head13g)
+        try {
+            $result13g = Compare-TrackedTreeSnapshot -Before $before13g -After (Get-TrackedTreeSnapshot -Root $tempRoot -Level Push)
+            Assert-True (-not $result13g.Unchanged -and $result13g.MetadataChanged -and $result13g.ChangedPaths.Count -eq 0) 'R13g: HEADのみの移動を検出'
+        } finally {
+            $null = Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('update-ref', 'HEAD', $head13g, $next13g)
+        }
+
+        # 13h: renameは旧名の消失と新名の出現を報告する。
+        $renamedName = '変更後 [監査].txt'
+        $renamedPath = Join-Path $tempRoot $renamedName
+        $before13h = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        if (Test-Path -LiteralPath $renamedPath) { throw 'R13 rename target already exists' }
+        foreach ($movePath13h in @($untrackedPath, $renamedPath)) {
+            if ([IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($movePath13h)))) -ne [IO.Path]::GetFullPath($tempRoot)) {
+                throw 'R13 move target is outside the isolated repository'
+            }
+        }
+        [IO.File]::Move($untrackedPath, $renamedPath)
+        try {
+            $result13h = Compare-TrackedTreeSnapshot -Before $before13h -After (Get-TrackedTreeSnapshot -Root $tempRoot -Level Push)
+            Assert-True (@($result13h.ChangedPaths) -contains 'b.txt' -and @($result13h.ChangedPaths) -contains $renamedName) 'R13h: renameの旧名と新名を検出'
+        } finally { [IO.File]::Move($renamedPath, $untrackedPath) }
+
+        # 13i: 生成物として無視されたファイルの書換だけでは誤検出しない。
+        $ignore13i = Join-Path $tempRoot '.gitignore'
+        if (Test-Path -LiteralPath $ignore13i) { throw 'R13 isolated fixture already has .gitignore' }
+        [IO.File]::WriteAllText($ignore13i, "ignored-result.tmp`n", [Text.UTF8Encoding]::new($false))
+        $before13i = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+        $ignored13i = Join-Path $tempRoot 'ignored-result.tmp'
+        [IO.File]::WriteAllText($ignored13i, 'generated')
+        $result13i = Compare-TrackedTreeSnapshot -Before $before13i -After (Get-TrackedTreeSnapshot -Root $tempRoot -Level Push)
+        Assert-True ($result13i.Unchanged) 'R13i: gitignoreされた出力だけなら合格'
+        Remove-Item -LiteralPath $ignore13i -ErrorAction Stop
+        Remove-Item -LiteralPath $ignored13i -ErrorAction Stop
+
+        # 13j: Windowsの排他的ロックで実際に読取不能にし、取得失敗を成功扱いしない。
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            $lock13j = [IO.File]::Open($dirtyPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+            try {
+                $snapshot13j = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
+                Assert-True (-not $snapshot13j.Ok) 'R13j: 読取不能な実ファイルでスナップショットを失敗させる'
+            } finally { $lock13j.Dispose() }
+        }
+
         # === シナリオ7(a): -Level Commit の写し(git worktree)には stage 済みの差分だけが載る ===
         # 実運用の再現: 追加・変更・削除に加え、写しに含めてはいけない「未 stage の壊れたファイル」を
         # 作業ツリーに置く(他担当の書きかけを模す)。写しにはそれが一切現れないことを確認する。

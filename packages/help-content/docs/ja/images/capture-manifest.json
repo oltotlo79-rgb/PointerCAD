@@ -310,5 +310,161 @@
     "sha256": "96d576d32c9acdd83a3f471957d76fb4bfffba75d15f02cceec0f01e0f211a6d",
     "kind": "actual-application-screenshot",
     "edited": false
+  },
+  {
+    "file": "sheet-edit-flange-preview.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "e57b7d1328568305dfa63abc8461c3460a464a23217ab79f379dccc86b8a7002",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-flange-preview.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "11b976566f53200ab056a5f7a06655fcecaee5a75971fc321a25fe1092da1f14",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-line-preview.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "1fc369eaea01282d42180d093c26ee2b2e9e96fa4d34f12b5094d510e12801b7",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-line-created.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "445f79d08d2421d4332e0ce0521abe4281d2a014d4be6f8943e2c4a90c1003c2",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-relief-preview.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "b8cddbae1451898ac433ce7aae6d468b9b4aef74ab54be16b30d17ee4b290ea3",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-edit-reference.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "92c2ead66d4c638c9dded4210d403475ec71d9172de04d3fda57dd7d6f75d77e",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-unfold.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "4c6bf767453a28c26d52a572001397682c084823ee41827a988810c5b0c81fe6",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-flat-drawing.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "0ba5f39217134f3e2bf0f7b0f2d0275b8df5a3d429bb596090a3a3ec15ad8546",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-flat-hole-table.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-hole-table.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "747a603bc5f834a23956dea3920e035b26b4db6c299b926ab2cbb3902a2ab083",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-base-input.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-metal.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "3ccc17d5a8dad54175e9f96abc1ef0c237f62084bf794ec4771d7fc29b7bb2eb",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-profile-preview.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-profile.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "0a25e3a71fe6014d0914b915d1f112a0119ada31eead4a268609016271f11a52",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-profile-created.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-profile.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "5f5d701d8d2ca561b68574510365f1e6c5031d9c37a937c2b37b230b6ccb0747",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sheet-configuration.png",
+    "testRun": "p10-full6",
+    "testSource": "e2e/tests/sheet-configuration.spec.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "4ae8676521ae1da4d6754148e5c57aa79b71fe65c5520160212034ced55fbf28",
+    "kind": "actual-application-screenshot",
+    "edited": false
   }
 ]

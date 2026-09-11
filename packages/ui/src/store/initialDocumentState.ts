@@ -40,6 +40,7 @@ import type { SketchInitialState } from './sketchSlice.js';
 import type { TimelineInitialState } from './timelineSlice.js';
 import type { ViewInitialState } from './viewSlice.js';
 import type { HelpInitialState } from './helpSlice.js';
+import { emptySheetMetalTool, type SheetMetalInitialState } from './sheetMetalSlice.js';
 
 /** `createInitialDocumentState` が返すもの。スライスごとの宣言を束ねる。 */
 export type InitialDocumentState = ViewInitialState &
@@ -54,7 +55,7 @@ export type InitialDocumentState = ViewInitialState &
   MeasureInitialState &
   FileInitialState &
   AssemblyInitialState &
-  DrawingInitialState & HelpInitialState;
+  DrawingInitialState & HelpInitialState & SheetMetalInitialState;
 
 /**
  * 球面の案内線の間隔の既定(度。FR-431、§0.a-0.21)。**数そのものは
@@ -71,6 +72,8 @@ export function createInitialDocumentState(): InitialDocumentState {
   const sketch = activeSketchOf(document);
   return {
     helpTopicId: null,
+    ...emptySheetMetalTool(),
+    sheetMetalBodies: new Map(),
     activeTool: 'select',
     // 'select' は立体を選ぶ道具(選択の種類の対応は selectionKindForTool の既定分岐、§0.a-0.6)。
     selectionKind: 'body',

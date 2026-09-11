@@ -70,6 +70,8 @@ export interface PartSketchResult {
 }
 
 export interface PartRecomputeResult {
+  /** 実カーネルで成功し表示される板金のパネル。失敗段や消費済みボディは貸さない。 */
+  readonly sheetMetalBodies?: ResolvedPart['sheetMetalBodies'];
   /** 文書の順に並んだスケッチの結果。 */
   readonly sketches: readonly PartSketchResult[];
   /** いま画面に出るボディ(§0.a-0.5)。消費されたボディは入らない。 */
@@ -785,6 +787,10 @@ export async function recomputePart(
   return {
     sketches,
     bodies: solid.outcome.bodies,
+    ...(resolved.sheetMetalBodies === undefined ? {} : { sheetMetalBodies: new Map(solid.outcome.bodies.flatMap((body) => {
+      const sheet = resolved.sheetMetalBodies?.get(body.featureId);
+      return sheet === undefined ? [] : [[body.featureId, sheet] as const];
+    })) }),
     errors,
     cacheHits: solid.outcome.cacheHits,
     cancelled: solid.outcome.cancelled,

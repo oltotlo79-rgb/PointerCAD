@@ -133,6 +133,7 @@
   "numericInput.unit.mm": "mm",
   "numericInput.unit.degree": "°",
   "numericInput.unit.count": "個",
+  "numericInput.unit.ratio": "無次元",
   "numericInput.toggle.reversed": "向きを反転",
   "numericInput.toggle.symmetric": "両側へ",
   "numericInput.toggle.through": "貫通",

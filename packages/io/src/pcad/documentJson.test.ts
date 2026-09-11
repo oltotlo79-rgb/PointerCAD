@@ -896,7 +896,7 @@ describe(
     'P6 タスク21・§0.a-0.55、P7 タスク3・§0.a-0.2、P8 タスク3)',
   () => {
     it('封筒の版は 11 で、部品文書の版と同じ値である', () => {
-      expect(PCAD_SCHEMA_VERSION).toBe(11);
+      expect(PCAD_SCHEMA_VERSION).toBe(12);
       expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
     });
 
@@ -1014,6 +1014,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
         "symmetric": false
       }
     ],
+    "sheetUnfolds": [],
     "parameters": [],
     "appearance": {
       "entries": []
@@ -1130,6 +1131,7 @@ describe('部品文書の書き出し(serializeDocument)', () => {
   it('欄を書いた順が違っても同じ文字列ができる(決定的)', () => {
     const document = richDocument();
     const shuffled: PartDocument = {
+      sheetUnfolds: document.sheetUnfolds,
       activeConfigurationId: document.activeConfigurationId,
       configurations: document.configurations,
       namedViews: document.namedViews,
@@ -2401,7 +2403,8 @@ describe('基本形状(PrimitiveFeature)の読み書き(FR-429、FR-801、P5 タ
     // 45 バイト(`,\n    "selectionSets": [],\n    "canvases": []`)だけ長くなった
     // (1313 → 1358)。中身のある文書ではこの 2 欄が増えるだけで他は 1 バイトも変わらない。
     // 版10は既定4視点・式だけの構成1件と選択IDを加え、2,972バイトになる(P8-60/62)。
-    expect(Buffer.byteLength(text, 'utf8')).toBe(2972);
+    // 版12は展開定義の空配列を24バイト加える。既存の値・式は変えない。
+    expect(Buffer.byteLength(text, 'utf8')).toBe(2996);
   });
 });
 
@@ -2997,6 +3000,7 @@ describe('読み方の規則(計画書 タスク14)', () => {
       'schemaVersion',
       // 選択セット(FR-112、P6 タスク37)。`canvases` と同じ道筋で必須の欄になった。
       'selectionSets',
+      'sheetUnfolds',
       'sketches',
       'solids',
     ]);
@@ -3294,7 +3298,7 @@ describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
   it('freeOrientation・subShape 参照は現在の版でも省略可能(前方互換とは無関係な理由で版が上がった)', () => {
     const text = serializeDocument(documentWith(freeSketch()), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(11);
+    expect(PCAD_SCHEMA_VERSION).toBe(12);
   });
 });
 
@@ -3798,7 +3802,7 @@ describe('球面上の点の読み書き(FR-431、P5 タスク19)', () => {
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
     // P6 タスク21(§0.a-0.55)が別の理由(ZIP の添付・選択セット・下絵)で 7 へ、
     // P7 タスク3(P7 §0.a-0.2)がさらに別の理由(封筒の種別 assembly)で 8 へ上げた。
-    expect(PCAD_SCHEMA_VERSION).toBe(11);
+    expect(PCAD_SCHEMA_VERSION).toBe(12);
   });
 
   it('緯度の欄が欠けていれば場所つきで断る', () => {
@@ -4740,6 +4744,17 @@ function allPointReferences(): readonly PointReference[] {
  */
 function allSolidFeatures(): SolidFeatureByKind {
   return {
+    sheetRelief: { id: 'sheet-relief', name: '曲げリリーフ1', kind: 'sheetRelief', suppressed: false, targetFeatureId: 'sheet-base',
+      boundary: { panelId: 'panel0', boundaryId: 'edge0' }, position: ev('10', 10), width: ev('2', 2), depth: ev('2 + 3', 5), shape: 'slot' },
+    sheetBend: { id: 'sheet-line-bend', name: '指定線曲げ1', kind: 'sheetBend', suppressed: false, targetFeatureId: 'sheet-base', panelId: 'panel0',
+      line: { sketchId: 'sketch-1', lineFeatureId: 'line-1' }, fixedSide: 'left', angle: ev('45 * 2', 90),
+      rule: { innerRadius: ev('2 * 2', 4), kFactor: ev('0.3', 0.3) } },
+    sheetBase: { id: 'sheet-base', name: '板金基板1', kind: 'sheetBase', suppressed: false,
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-1' }, holes: [], reversed: false,
+      rule: { thickness: ev('板厚', 2), innerRadius: ev('3', 3), kFactor: ev('0.4', 0.4) } },
+    sheetFlange: { id: 'sheet-flange', name: 'フランジ1', kind: 'sheetFlange', suppressed: false, targetFeatureId: 'sheet-base',
+      edges: [{ panelId: 'panel0', boundaryId: 'edge0' }], profile: null, length: ev('20', 20), angle: ev('-90', -90),
+      startOffset: ev('0', 0), endOffset: ev('1', 1), lengthBasis: 'tangent', rule: { innerRadius: null, kFactor: null } },
     extrude: {
       id: 'extrude-1',
       kind: 'extrude',
@@ -5074,7 +5089,7 @@ function documentWithAllSolids(): PartDocument {
 describe('26 種すべての読み書き(P5 タスク47・P6 タスク20、FR-801、FR-202)', () => {
   it('26 種のソリッドフィーチャーが 1 つの文書で往復しても一致する', () => {
     const document = documentWithAllSolids();
-    expect(document.solids).toHaveLength(26);
+    expect(document.solids).toHaveLength(30);
     expect(roundTrip(document)).toEqual(document);
   });
 
@@ -5384,7 +5399,7 @@ describe('古いファイルの読み込み(NFR-RE-3、P5 タスク47)', () => {
 
   it('移行表が版2から現行版11の直前まで揃う(P9-4)', () => {
     expect(Object.keys(SCHEMA_MIGRATIONS).sort()).toEqual(Array.from({ length: PCAD_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)).sort());
-    expect(PCAD_SCHEMA_VERSION).toBe(11);
+    expect(PCAD_SCHEMA_VERSION).toBe(12);
     expect(PART_SCHEMA_VERSION).toBe(PCAD_SCHEMA_VERSION);
   });
 });
@@ -6078,7 +6093,7 @@ describe('ひな形の封筒の任意の欄(FR-814、§2.10)', () => {
       toolDefaults: TOOL_DEFAULTS,
     });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(11);
+    expect(PCAD_SCHEMA_VERSION).toBe(12);
   });
 });
 
@@ -6292,7 +6307,7 @@ describe('選択セットの員の 4 種類(FR-112、利用者の決定 2026-09-
       },
     ]);
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(11);
+    expect(PCAD_SCHEMA_VERSION).toBe(12);
   });
 
   it('立体・面だけの既存の版 7 のファイルはそのまま読める(語が増えても壊さない)', () => {

@@ -32,6 +32,7 @@
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
+import { curveSamplePoints } from '../sketch/curvePlaneSamples.js';
 import { importedShapeOf } from './types.js';
 
 import type {
@@ -43,6 +44,10 @@ import type {
 } from '../geometry/planeSpec.js';
 import { resolvePlaneSpec, subShapeFromFingerprint } from '../geometry/planeSpec.js';
 import { projectionCacheKey } from '../sketch/projectionMath.js';
+import { planSheetFeature } from '../sheetMetal/planSheetFeature.js';
+import { sheetShapeKey } from '../sheetMetal/shapeKey.js';
+import { sheetFeatureDependencies } from '../sheetMetal/featureInputs.js';
+import type { SheetSolidPlan, ResolvedSheetBody } from '../sheetMetal/resolveSheetGeometry.js';
 import {
   degreesToRadians,
   tiltedDirection,
@@ -62,10 +67,8 @@ import {
   type ResolveContext,
 } from '../sketch/resolveCoordinate.js';
 import {
-  arcPointAt,
   curveEnd,
   curveStart,
-  ellipsePointAt,
   fitPlaneNormal,
 } from '../sketch/resolveSketch.js';
 import { projectionBodyFeatureId } from '../sketch/types.js';
@@ -320,6 +323,7 @@ export type SurfaceShapePlan =
  * 向き・反転・両側の平行移動はここまでで済ませてあり、kernel へは断面・向き・長さだけが渡る。
  */
 export type SolidStepPlan =
+  | SheetSolidPlan
   | {
       readonly kind: 'extrude';
       /** 断面の閉ループ。両側(symmetric)のときは平行移動した後の座標。 */
@@ -850,6 +854,8 @@ export interface ResolvedMeshBody {
 }
 
 export interface ResolvedPart {
+  /** 板金の展開・次の曲げに使う導出情報。通常の部品では省略し、文書へ保存しない。 */
+  readonly sheetMetalBodies?: ReadonlyMap<string, ResolvedSheetBody>;
   /**
    * スケッチ id ごとの解決結果(P1 の resolveSketch をそのまま呼ぶ)。文書の順を保つ。
    * スケッチ側の失敗は resolved.errors に入っており、下の errors へは写さない
@@ -899,8 +905,6 @@ export interface RevolveAxisFrame {
   readonly direction: Vec3;
 }
 
-/** 平面の当てはめに使う円弧の標本点の数(両端を含む)。resolveSketch の平面判定と揃える。 */
-const ARC_PLANE_SAMPLES = 5;
 
 /** 角度の上限(度)。全周を超える回転は受け付けない(§0.a-0.9)。 */
 const MAX_REVOLVE_DEGREES = 360;
@@ -930,41 +934,6 @@ function negateVec3(vector: Vec3): Vec3 {
     vector[1] === 0 ? 0 : -vector[1],
     vector[2] === 0 ? 0 : -vector[2],
   ];
-}
-
-/**
- * 平面の当てはめに使う標本点。円弧は中心と弧の上の数点まで見る。
- * 端点だけを見ると、端点だけが一致する別々の平面の円弧を同じ平面と誤判定する
- * (resolveSketch.ts の curveSamplePoints と同じ理由。あちらは非公開なのでここに置く)。
- */
-function curveSamplePoints(curve: ResolvedCurve): readonly Vec3[] {
-  switch (curve.kind) {
-    case 'segment':
-      return [curve.from, curve.to];
-    case 'arc': {
-      const span = curve.endAngle - curve.startAngle;
-      const samples: Vec3[] = [curve.center];
-      for (let index = 0; index < ARC_PLANE_SAMPLES; index += 1) {
-        samples.push(
-          arcPointAt(curve, curve.startAngle + (span * index) / (ARC_PLANE_SAMPLES - 1)),
-        );
-      }
-      return samples;
-    }
-    case 'ellipse': {
-      const span = curve.endAngle - curve.startAngle;
-      const samples: Vec3[] = [curve.center];
-      for (let index = 0; index < ARC_PLANE_SAMPLES; index += 1) {
-        samples.push(
-          ellipsePointAt(curve, curve.startAngle + (span * index) / (ARC_PLANE_SAMPLES - 1)),
-        );
-      }
-      return samples;
-    }
-    case 'spline':
-      // 極は点のアフィン結合なので、点が乗る平面に曲線も必ず乗る(resolveSketch と同じ理由)。
-      return curve.points;
-  }
 }
 
 /** 曲線をベクトルぶん平行移動する(押し出しの「両側へ」に使う、§0.a-0.8)。 */
@@ -4088,7 +4057,7 @@ function importedMeshTargetError(
 }
 
 function planSolid(
-  feature: SolidFeature,
+  feature: Exclude<SolidFeature, { kind: 'sheetBase' | 'sheetFlange' | 'sheetBend' | 'sheetRelief' }>,
   solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
@@ -4346,7 +4315,7 @@ function toKeySurfaceShape(shape: SurfaceShapePlan): SurfaceShapeKeyMaterial {
 }
 
 /** 1段ぶんの鍵の材料(§0.a-0.20)。名前・抑制・色は混ぜない(形が変わらないため)。 */
-function keyMaterialFor(plan: SolidStepPlan): SolidStepKeyMaterial {
+function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): SolidStepKeyMaterial {
   switch (plan.kind) {
     case 'extrude':
       // P5 で足した 5 欄は**省略された欄も既定で埋めてから**渡す。埋めても
@@ -4838,6 +4807,7 @@ export function referencedSketchIds(
   sketches: readonly SketchDocument[] = [],
 ): readonly string[] {
   switch (feature.kind) {
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return sheetFeatureDependencies(feature).sketchItems.map((item) => item.sketchId);
     case 'extrude':
       return [feature.profile.sketchId];
     case 'revolve':
@@ -5097,6 +5067,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   const errors: PartError[] = references.errors.map(toPartError);
   /** 作成に成功したボディの鍵。ここに無い id は下流から参照できない。 */
   const bodyKeys = new Map<string, string>();
+  const sheetMetalBodies = new Map<string, ResolvedSheetBody>();
   /** すでに他のフィーチャーが消費したボディ。同じものを2度は使えない(§2.2)。 */
   const consumed = new Set<string>();
 
@@ -5121,20 +5092,24 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
       });
       continue;
     }
-    const outcome = planSolid(
-      feature,
-      document.solids,
-      sketches,
-      bodyKeys,
-      consumed,
-      context,
-      importedShapes,
-    );
+    let outcome: PlanOutcome;
+    if (feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief') {
+      const sheet = planSheetFeature(feature,
+        (reference) => sketches.find((entry) => entry.sketchId === reference.sketchId)?.resolved.faces.find((face) => face.featureId === reference.faceFeatureId),
+        bodyKeys, consumed, sheetMetalBodies,
+        (reference) => sketches.find((entry) => entry.sketchId === reference.sketchId)?.resolved.segments.find((segment) => segment.featureId === reference.lineFeatureId));
+      if (!sheet.ok) { errors.push(partError(feature.id, 'invalidValue', sheet.message)); continue; }
+      sheetMetalBodies.set(feature.id, sheet.value.body);
+      outcome = { ok: true, plan: sheet.value.plan };
+    } else {
+      outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed, context, importedShapes);
+    }
     if (!outcome.ok) {
       errors.push(outcome.error);
       continue;
     }
-    const key = cacheKeyFor(keyMaterialFor(outcome.plan));
+    const key = outcome.plan.kind === 'sheetBase' || outcome.plan.kind === 'sheetFlange' || outcome.plan.kind === 'sheetJoin' || outcome.plan.kind === 'sheetBody'
+      ? sheetShapeKey(outcome.plan) : cacheKeyFor(keyMaterialFor(outcome.plan));
     drafts.push({ featureId: feature.id, name: feature.name, key, plan: outcome.plan });
     bodyKeys.set(feature.id, key);
     // 消費するボディを記録する(ブーリアンは対象と相手、加工は対象1つ、§0.a-0.5)。
@@ -5179,6 +5154,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     sketches,
     references,
     steps,
+    ...(sheetMetalBodies.size === 0 ? {} : { sheetMetalBodies }),
     meshBodies,
     projections,
     errors,

@@ -6,7 +6,7 @@
 #
 # -Level Commit: 比較対象を `git diff --cached --name-only`(stage 済みのパス)に限定する。
 #   並列で動く他の作業担当の未追跡・未 stage の変化に影響されず、統括がコミットできるようにするため。
-# -Level Push  : 従来どおり `git status --porcelain --untracked-files=no` で作業ツリー全体を比較する。
+# -Level Push  : HEAD/indexと、追跡済み・無視されていない未追跡ファイルのSHA256を比較する。
 #
 # 日本語ファイル名などの非ASCIIパスへの対処(実測): gitの既定 core.quotepath=true は、名前欄に
 # 非ASCII文字を含むパスを `"docs/\346\212\261...md"` のように二重引用符+8進エスケープで返す。
@@ -27,6 +27,8 @@
 # で失敗する(自己試験はフックの外(この変数が無い状態)で走るため再現しなかった)。
 # 写しに関わる git 呼び出し・写しの中で実行するコマンドはすべてこれらの環境変数を一時的に
 # 消してから実行し、終わったら元に戻す(Clear-InheritedGitEnv / Restore-InheritedGitEnv)。
+. (Join-Path $PSScriptRoot "pushTreeFingerprint.ps1")
+
 $script:PointerCadInheritedGitEnvNames = @(
     "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX",
     "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -115,7 +117,7 @@ function Get-GitFileFingerprint {
 }
 
 # 検査前後で比較するための「その時点の状態」を1つ取得する。
-# -Level Commit は stage 済みファイルごとの内容ハッシュ、-Level Push は git status の全文。
+# -Level Commit はstage済みファイルの内容ハッシュ、Pushは全対象内容とHEAD/indexの指紋。
 function Get-TrackedTreeSnapshot {
     param(
         [Parameter(Mandatory)][string]$Root,
@@ -134,13 +136,7 @@ function Get-TrackedTreeSnapshot {
         return [pscustomobject]@{ Ok = $true; Mode = "Staged"; Paths = $paths; Fingerprints = $fingerprints }
     }
 
-    $global:LASTEXITCODE = 0
-    # -Level Push はパスをTest-Pathへ渡さず全文字列比較のみなので例外は起きないが、
-    # 日本語ファイル名が絡む差分をそのまま失敗時にWrite-Hostする(下の呼び出し元)ため、
-    # 読める形にそろえる目的で Get-StagedTrackedPaths と同じ対処を適用する。
-    $status = (Invoke-GitUtf8Output { & git -C $Root -c core.quotepath=false status --porcelain --untracked-files=no }) -join "`n"
-    $ok = ($LASTEXITCODE -eq 0)
-    return [pscustomobject]@{ Ok = $ok; Mode = "Full"; Status = $status }
+    return Get-PushContentSnapshot -Root $Root
 }
 
 # 2つのスナップショットを比較する。Unchanged が $false なら検査中の書き換えを検出したということ。
@@ -156,8 +152,7 @@ function Compare-TrackedTreeSnapshot {
         $changed = @($Before.Paths | Where-Object { $After.Fingerprints[$_] -ne $Before.Fingerprints[$_] })
         return [pscustomobject]@{ Unchanged = ($changed.Count -eq 0); GitFailed = $false; ChangedPaths = $changed }
     }
-    $unchanged = ($Before.Status -eq $After.Status)
-    return [pscustomobject]@{ Unchanged = $unchanged; GitFailed = $false; ChangedPaths = @() }
+    return Compare-PushContentSnapshot -Before $Before -After $After
 }
 
 # ===========================================================================

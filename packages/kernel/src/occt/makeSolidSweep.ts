@@ -12,6 +12,7 @@ import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
+import { computeVolumeProperties } from './volumeProperties.js';
 import { booleanMargin, boundingDiagonal } from './subShapes.js';
 
 /**
@@ -311,8 +312,7 @@ function advanceOfCentre(
   const { keep, release } = createAllocations();
   try {
     const properties = keep(new oc.GProp_GProps_1());
-    // 第 3〜5 引数は OnlyClosed / SkipShared / UseTriangulation。solidMesh.ts と同じ指定。
-    oc.BRepGProp.VolumeProperties_1(solid, properties, false, false, false);
+    computeVolumeProperties(oc, solid, properties);
     const centre = keep(properties.CentreOfMass());
     return (
       (centre.X() - basePoint[0]) * direction[0] +

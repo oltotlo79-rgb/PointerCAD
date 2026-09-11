@@ -42,6 +42,8 @@ export interface PlaneSectionSpec {
   readonly plane: SketchPlaneFrame;
   /** 点列へ落とすときの粗さ。省略時は表示と同じ既定値。 */
   readonly tessellation?: TessellationOptions;
+  /** 精密出力の弦誤差。指定時はdoubleを保ち、点数を間引かない。 */
+  readonly curveToleranceMm?: number;
 }
 
 /** 交差そのものが成立しなかったとき(FR-504、NFR-RE-1)。 */
@@ -80,6 +82,10 @@ function collectSectionEdges(
  * なっており、比較に強制変換が要るため使わない(booleanOp.ts と同じ理由)。
  */
 export function makeSection(oc: OpenCascadeInstance, spec: PlaneSectionSpec): PlaneCurves {
+  const tolerance = spec.curveToleranceMm;
+  if (tolerance !== undefined && (!Number.isFinite(tolerance) || tolerance < 1e-7)) throw new Error('断面の出力精度は1e-7mm以上の有限値を指定してください。');
+  // 断面曲線自体のOCCT近似にも誤差があるため、弦近似へ全予算を使わない。
+  const options = tolerance === undefined ? spec.tessellation : { ...spec.tessellation, linearDeflection: tolerance / 2 };
   const basis = planeBasisOf(spec.plane);
   const allocations = createAllocations();
   const { keep, release } = allocations;
@@ -97,7 +103,7 @@ export function makeSection(oc: OpenCascadeInstance, spec: PlaneSectionSpec): Pl
     const shape = keep(maker.Shape());
     const curves: PlaneCurve[] = [];
     for (const edge of collectSectionEdges(oc, shape, allocations)) {
-      const curve = projectEdgeToPlane(oc, edge, basis, spec.tessellation, allocations);
+      const curve = projectEdgeToPlane(oc, edge, basis, options, allocations, tolerance !== undefined);
       if (curve !== null) {
         curves.push(curve);
       }

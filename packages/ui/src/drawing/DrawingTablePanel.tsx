@@ -29,6 +29,7 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
   const [datum, setDatum] = useState([String(table?.options.datumX ?? 0), String(table?.options.datumY ?? 0), String(table?.options.datumZ ?? 0)]);
   const [rows, setRows] = useState<readonly (readonly string[])[]>(table?.rows ?? [['', '', '', '']]);
   if (drawing === null) return <></>;
+  const datumLabel = t(drawing.source.flatSheet === undefined ? 'drawing.table.datum' : 'drawing.table.flatDatum');
   const submit = (): void => {
     const options: Record<string, string | number | boolean> = { ...table?.options, rowHeight: Number(rowHeight), textHeight: Number(textHeight) };
     if (kind === 'bom') {
@@ -45,7 +46,7 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
       columns: kind === 'bom' ? columns : kind === 'hole' ? ['symbol', 'x', 'y', 'diameter', 'depth'] : ['revision', 'date', 'description', 'approvedBy'],
       ...(kind === 'revision' ? { rows: rows.filter((row) => row.some((value) => value.trim() !== '')) } : {}) }, table?.id);
   };
-  return <div className="pcad-drawing-table-editor pcad-drawing-settings" data-help-topic={kind === 'bom' ? 'drawing-bom' : 'drawing-table'}>
+  return <div className="pcad-drawing-table-editor pcad-drawing-settings" data-help-topic={kind === 'bom' ? 'drawing-bom' : kind === 'hole' && drawing.source.flatSheet !== undefined ? 'sheet-metal-flat' : 'drawing-table'}>
     <label>{t('drawing.table.title')}<select className="pcad-field__input" aria-label={t('drawing.table.title')} value={kind} disabled={table !== undefined} onChange={(event) => {
       const value = event.target.value; if (value === 'bom' || value === 'hole' || value === 'revision') setKind(value);
     }}>{(['bom', 'hole', 'revision'] as const).map((value) => <option key={value} value={value}
@@ -79,8 +80,8 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
       <label>{t('drawing.table.view')}<select className="pcad-field__input" aria-label={t('drawing.table.view')} value={viewId} onChange={(event) => setViewId(event.target.value)}>
         {drawing.views.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
       </select></label>
-      <fieldset><legend>{t('drawing.table.datum')}</legend>{['X', 'Y', 'Z'].map((axis, index) => <label key={axis}>{axis}
-        <input className="pcad-field__input" aria-label={`${t('drawing.table.datum')} ${axis}`} inputMode="decimal" value={datum[index]}
+      <fieldset><legend>{datumLabel}</legend>{['X', 'Y', 'Z'].map((axis, index) => <label key={axis}>{axis}
+        <input className="pcad-field__input" aria-label={`${datumLabel} ${axis}`} inputMode="decimal" value={datum[index]}
           onChange={(event) => setDatum(datum.map((value, at) => at === index ? event.target.value : value))} /></label>)}</fieldset>
     </> : null}
     {kind === 'revision' ? <fieldset><legend>{t('drawing.table.rows')}</legend>

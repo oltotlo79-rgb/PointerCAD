@@ -1,7 +1,7 @@
 import { drawingDimensionContext, moveDrawingManufacturing, resolveDrawingGdt, resolveDrawingWelds } from '@pointercad/model';
 import { renderDrawing, renderDrawingElements, resolveStyle, toSvg, type DrawingDocument, type DrawingRenderElement, type Point2 } from '@pointercad/drawing';
 import { resolveDimensionTarget, resolveDrawingDimensions } from '@pointercad/model';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { drawingFont } from './drawingFont.js';
@@ -53,6 +53,7 @@ export function DrawingCanvas(): React.JSX.Element {
   const [fontStatus, setFontStatus] = useState(drawingFont.status);
   // ポインター中の表示だけ。離すまで保存文書・Undo履歴は変えない。
   const [dragPoint, setDragPoint] = useState<Point2 | null>(null);
+  const [dimensionDragStart, setDimensionDragStart] = useState(0);
   useEffect(() => {
     let detached = false;
     void drawingFont.load().then((status) => { if (!detached) setFontStatus(status); });
@@ -125,7 +126,7 @@ export function DrawingCanvas(): React.JSX.Element {
     const scale = Math.hypot(matrix.a, matrix.b);
     return { point: [point.x, shown.height - point.y], tolerance: 7 / Math.max(scale, 0.01) };
   }
-  function previewDimension(point: Point2): boolean {
+  const previewDimension = useCallback((point: Point2): boolean => {
     const current = drag.current;
     if (current === null || drawing === null || current.document !== drawing || busy || shown === null) return false;
     const changed = previewDrawingDimensionsDrag(current, point);
@@ -145,7 +146,14 @@ export function DrawingCanvas(): React.JSX.Element {
     const rendered = renderDrawingElements(drawing, elements, { outlineText: drawingFont.outline });
     dimensionSvgPreview.current ??= createDrawingSvgPreview(svg, new Set(elements.map((element) => element.ownerId)));
     return dimensionSvgPreview.current.update(rendered.document);
-  }
+  }, [drawing, busy, shown, dimensions, gdt, source, selectedIds]);
+  // 選択表示のDOMが確定した時点で差替え枠と最初の輪郭を用意する。
+  // 最初のpointermoveへ全SVGの走査・退避・解析の初期費用を持ち込まない。
+  useLayoutEffect(() => {
+    const current = drag.current;
+    if (current !== null && current.document === drawing) previewDimension(current.start);
+    return () => { dimensionSvgPreview.current?.restore(); dimensionSvgPreview.current = null; };
+  }, [dimensionDragStart, drawing, previewDimension]);
   return <div className="pcad-drawing-viewport" data-testid="drawing-viewport">
     <div className="pcad-drawing-sheet" aria-label={drawing?.name ?? t('drawing.mode')}
       ref={container} tabIndex={0}
@@ -230,7 +238,10 @@ export function DrawingCanvas(): React.JSX.Element {
           useAppStore.getState().selectDrawingIds(ids);
           drag.current = ids.includes(id) ? beginDrawingDimensionDrag(id, dimension.normal, dimension.textPosition, hit.point,
             shown.displays.filter((item) => ids.includes(item.element.ownerId)).map((item) => ({ id: item.element.ownerId, normal: item.normal, textPosition: item.textPosition }))) : null;
-          if (drag.current !== null) event.currentTarget.setPointerCapture(event.pointerId);
+          if (drag.current !== null) {
+            setDimensionDragStart((value) => value + 1);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
         } else {
           const picked = source === null ? null : pickDrawingGeometry(drawing, source, shown.views, hit.point, hit.tolerance);
           if (picked !== null && tool === 'select' && selectedIds.includes(picked.viewId) && !event.shiftKey && !event.ctrlKey) {

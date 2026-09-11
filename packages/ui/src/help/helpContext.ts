@@ -1,6 +1,7 @@
 import type { AppState } from '../store/appState.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { helpTopic } from './helpLibrary.js';
+import { sheetHelpTopic } from '../sheetMetal/sheetHelpTopic.js';
 
 export function contextualHelpTopic(state: AppState, explicit?: string | null, textEntry = false): string {
   if (explicit !== undefined && explicit !== null && helpTopic(explicit) !== undefined) return explicit;
@@ -15,8 +16,9 @@ export function contextualHelpTopic(state: AppState, explicit?: string | null, t
     if (state.drawingTool === 'dimensionSeries') return 'dimension-series';
     if (state.drawingTool === 'balloon') return 'drawing-bom';
     if (state.drawingEditor?.kind === 'table') return state.drawingEditor.tableKind === 'bom' ? 'drawing-bom' : 'drawing-table';
-    return 'drawing';
+    return state.drawing?.source.flatSheet === undefined ? 'drawing' : 'sheet-metal-flat';
   }
+  if (state.sheetMetalTool !== null) return sheetHelpTopic(state.sheetMetalTool.kind);
   if (textEntry) return 'numeric-input';
   if (kind === 'assembly') {
     if (state.assemblyMateDraft !== null) return state.assemblyMateDraft.jointKind === undefined ? 'mate' : 'joint';

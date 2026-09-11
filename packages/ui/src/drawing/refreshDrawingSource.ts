@@ -21,7 +21,8 @@ export async function refreshDrawingSource(): Promise<boolean> {
     if (!read.ok) { before.setDrawingMessage(t(openErrorMessageKey(read.error.code))); return false; }
     const bundle = read.bundle;
     const input: DrawingSourceInput = bundle.kind === 'part'
-      ? { sourceKind: 'part', document: bundle.document, attachments: bundle.attachments }
+      ? { sourceKind: 'part', document: bundle.document, attachments: bundle.attachments,
+        ...(drawing.source.flatSheet === undefined ? {} : { flatSheet: drawing.source.flatSheet }) }
       : { sourceKind: 'assembly', document: bundle.document, library: partLibraryOfBundle(bundle) };
     if (input.sourceKind !== drawing.source.sourceKind) { before.setDrawingMessage(t('drawing.sourceRefresh.kind')); return false; }
     const next = await replaceSource(drawing, before.drawingSources, input);

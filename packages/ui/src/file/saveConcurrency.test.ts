@@ -122,7 +122,8 @@ describe('ブラウザの保存先も古い非同期完了で戻さない（レ�
   it('新しい文書で確定した保存先は古い close の完了後も保たれる', async () => {
     const closing = deferred<void>(), finished = deferred<void>();
     const written: string[] = [];
-    const handle = (name: string) => ({ name, getFile: () => Promise.resolve({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) }),
+    // 実際のFileでsize/arrayBufferの契約を共有し、読込前のサイズ検査をすり抜けるmockを作らない。
+    const handle = (name: string) => ({ name, getFile: () => Promise.resolve(new File([], name)),
       createWritable: () => Promise.resolve({ write: () => { written.push(name); return Promise.resolve(); }, close: async () => {
         if (name === 'A.pcad') { closing.resolve(); await finished.promise; }
       } }) });

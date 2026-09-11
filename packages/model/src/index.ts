@@ -1,3 +1,11 @@
+export { drawingNumberIssue, type DrawingNumberIssue } from './drawing/drawingNumberIssue.js';
+export { defaultSheetMetalRule, createSheetBaseFeature, createSheetFlangeFeature, createSheetBendFeature, createSheetReliefFeature } from './sheetMetal/createSheetFeature.js';
+export { sheetBoundaryEdges, sheetTangentFrame, type SheetPanelGeometry, type SheetBoundaryEdge } from './sheetMetal/panelGeometry.js';
+export type { ResolvedSheetBody, ResolvedSheetBend } from './sheetMetal/resolveSheetGeometry.js';
+export type { SheetMetalRule, SheetBaseFeature, SheetPanelBoundaryRef, SheetBendRuleOverride, SheetFlangeFeature, SheetFlangeProfile,
+  SheetBendFeature, SheetReliefFeature, SheetUnfoldDefinition, SheetMetalFeature } from './sheetMetal/types.js';
+export { evaluateSheetField, resolveSheetRule, mapSheetMetalExpressions, sheetFeatureDependencies, sheetPanelId,
+  type SheetFieldDimension, type SheetFieldResult, type SheetRuleValues, type SheetFeatureDependencies } from './sheetMetal/featureInputs.js';
 export { resolveGdtFeature, type ResolvedGdtFeature } from './drawing/gdt.js';
 export { compatibleGdtSizeDimensions } from './drawing/gdtAttachment.js';
 export { drawingMedianPlaneFeature } from './drawing/gdtMedianPlane.js';
@@ -282,6 +290,7 @@ export type {
   DrawingParameter,
   DrawingSheet,
   DrawingSource,
+  DrawingSheetFlatReference,
   DrawingSubShapeFingerprint,
   DrawingSubShapeRef,
   DrawingTable,
@@ -1064,3 +1073,19 @@ export * from './part/configurationDefaults.js';
 export * from './drawing/drawingTemplate.js';
 export * from './drawing/holeSchedule.js';
 export * from './drawing/resolveHoleSchedule.js';
+export { availableSheetBoundaryEdges } from './sheetMetal/availableBoundaryEdges.js';
+export { pickSheetBoundary } from './sheetMetal/pickSheetBoundary.js';
+export { createSheetFlatSteps } from './sheetMetal/flatSteps.js';
+export { sheetFlangeProfileEdges } from './sheetMetal/profileFlange.js';
+export { unfoldSheetBody, type SheetFlatGeometry, type SheetFlatBend, type SheetFlatJoin } from './sheetMetal/unfoldSheetBody.js';
+export { setSheetUnfoldDefinition } from './sheetMetal/sheetUnfoldDefinition.js';
+export { resolveSheetSeams } from './sheetMetal/seamConnections.js';
+export { sheetBendMetrics, sheetStraightLength } from './sheetMetal/bendAllowance.js';
+export { recomputeSheetFlat, type SheetFlatResult } from './sheetMetal/recomputeSheetFlat.js';
+export { resolveSheetFlatOutline, classifySheetOutline, SHEET_OUTLINE_TOLERANCE_MM, type SheetFlatOutline } from './sheetMetal/flatOutline.js';
+export { sheetFlatBendLines, type SheetFlatBendLine } from './sheetMetal/flatBendLines.js';
+export { sheetFlatDxfEntities } from './sheetMetal/flatDxf.js';
+
+export { sheetFlatReferenceIssue } from './sheetMetal/flatSheetReference.js';
+
+export { buildSheetFlatHoleSchedule } from './sheetMetal/flatHoleSchedule.js';

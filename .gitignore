@@ -5,6 +5,10 @@ dist/
 dist-types/
 out/
 build/
+# WebのCSP用ビルドプラグインは成果物ではなく入力ソース
+!/apps/web/build/
+/apps/web/build/*
+!/apps/web/build/securityPolicy.ts
 .vite/
 coverage/
 *.tsbuildinfo

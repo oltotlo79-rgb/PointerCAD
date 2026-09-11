@@ -1,4 +1,9 @@
 export type { BoxParameters, MeshData, TessellationOptions } from './types.js';
+export type { SheetBaseStepSpec, SheetFlangeStepSpec, SheetBodyStepSpec } from './types.js';
+export type { SheetMetalBaseInput } from './occt/makeSheetMetalBase.js';
+export type { SheetMetalBendFrame, SheetMetalBendStripInput } from './occt/makeSheetMetalBend.js';
+export type { SheetMetalFlangeInput } from './occt/makeSheetMetalFlange.js';
+export type { SheetMetalProfileFlangeInput } from './occt/makeSheetMetalProfileFlange.js';
 export type {
   ArcSpec,
   CurveSpec,

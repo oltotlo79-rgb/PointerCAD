@@ -16,6 +16,8 @@ import type {
   DrawingView,
 } from '@pointercad/model';
 
+import { drawingNumberIssue } from '@pointercad/model';
+import { cleanDrawingFlatReference, isDrawingFlatReference } from './drawingFlatJson.js';
 import { isRecord, isUnknownArray } from './guards.js';
 import { cleanDrawingConstruction, isDrawingConstruction } from './drawingConstructionJson.js';
 import { cleanDatum, cleanGdtFrame, cleanWeldSymbol, isDatumDefinition, isGdtFrame, isWeldSymbol } from './gdtJson.js';
@@ -95,6 +97,7 @@ function cleanSource(source: DrawingSource): DrawingSource {
     path: source.path,
     contentHash: source.contentHash,
     importedAt: source.importedAt,
+    ...(source.flatSheet === undefined ? {} : { flatSheet: cleanDrawingFlatReference(source.flatSheet) }),
   };
 }
 
@@ -390,7 +393,8 @@ function isSource(value: unknown): value is DrawingSource {
     && hasString(value, 'fileName')
     && hasString(value, 'path')
     && hasString(value, 'contentHash')
-    && hasString(value, 'importedAt');
+    && hasString(value, 'importedAt')
+    && (value['flatSheet'] === undefined || (value['sourceKind'] === 'part' && isDrawingFlatReference(value['flatSheet'])));
 }
 
 function isTitleBlockField(value: unknown): boolean {
@@ -627,6 +631,8 @@ function readCurrentEnvelope(raw: Record<string, unknown>): ParseDrawingResult {
       `ファイルの版の記録が食い違っています(封筒 ${String(PCAD_SCHEMA_VERSION)} / 文書 ${String(raw['document'].schemaVersion)})。`,
     );
   }
+  const numberIssue = drawingNumberIssue(raw['document']);
+  if (numberIssue !== null) return failure('invalidField', numberIssue.message);
   return {
     ok: true,
     document: cleanDrawingDocument(raw['document']),

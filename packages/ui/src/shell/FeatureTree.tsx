@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { SheetBaseIcon, SheetFlangeIcon, SheetLineBendIcon, SheetReliefIcon } from './icons.js';
 
 import {
   addSketch,
@@ -135,6 +136,10 @@ const KIND_ICONS: Readonly<
     (props: IconProps) => React.JSX.Element
   >
 > = {
+  sheetBase: SheetBaseIcon,
+  sheetFlange: SheetFlangeIcon,
+  sheetBend: SheetLineBendIcon,
+  sheetRelief: SheetReliefIcon,
   point: PlotPointIcon,
   line: LineToolIcon,
   arc: ArcToolIcon,

@@ -23,6 +23,7 @@
 import { evaluateExpression, renameVariable, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 
 import type { PlaneSpec } from '../geometry/planeSpec.js';
+import { mapSheetMetalExpressions } from '../sheetMetal/featureInputs.js';
 import { analyzeParameters } from '../parameters/parameterTable.js';
 import type { Parameter, ParameterAnalysis } from '../parameters/types.js';
 import {
@@ -194,6 +195,7 @@ function rebuildSolidOrigin(origin: SolidOrigin, map: ValueMapper): SolidOrigin 
 /** 立体フィーチャー11種の式の欄を写す。 */
 function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeature {
   switch (feature.kind) {
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return mapSheetMetalExpressions(feature, map);
     case 'extrude':
       // 終端(FR-415)・傾き(FR-401)・薄板(FR-416)の欄は省略できる(P5 タスク43)。
       // 省略されている欄は `undefined` のまま残し、既定を書き込まない

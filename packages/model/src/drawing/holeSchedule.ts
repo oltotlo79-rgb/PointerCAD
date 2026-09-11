@@ -37,7 +37,7 @@ const POSITION_TOLERANCE_MM = 1e-7;
 const finite = (vector: Vec3): boolean => vector.every(Number.isFinite);
 const positive = (value: number): boolean => Number.isFinite(value) && value > 0;
 
-function validFrame(frame: HoleScheduleFrame): boolean {
+export function isValidHoleScheduleFrame(frame: HoleScheduleFrame): boolean {
   return finite(frame.datum) && finite(frame.x) && finite(frame.y)
     && Math.abs(lengthVec3(frame.x) - 1) < 1e-10
     && Math.abs(lengthVec3(frame.y) - 1) < 1e-10
@@ -58,9 +58,8 @@ function diameterLabel(index: number): string {
 
 /** 投影の円や可視性に依存せず、穴・ねじ穴フィーチャーから実寸の行を作る(FR-729)。 */
 export function buildHoleSchedule(document: PartDocument, context: HoleScheduleContext): HoleScheduleResult {
-  if (!validFrame(context.frame)) return { ok: false, reason: 'invalidFrame' };
-  type Candidate = Omit<HoleScheduleRow, 'symbol'>;
-  const candidates: Candidate[] = [];
+  if (!isValidHoleScheduleFrame(context.frame)) return { ok: false, reason: 'invalidFrame' };
+  const candidates: HoleScheduleCandidate[] = [];
   for (const feature of document.solids) {
     if (feature.suppressed || (feature.kind !== 'hole' && feature.kind !== 'threadHole')) continue;
     const diameter = feature.kind === 'hole' ? feature.diameter.value : feature.drillDiameter.value;
@@ -89,10 +88,17 @@ export function buildHoleSchedule(document: PartDocument, context: HoleScheduleC
         y: y === 0 ? 0 : y, diameter, depth, featureIds: [feature.id] });
     }
   }
+  return labelHoleScheduleRows(candidates);
+}
+
+export type HoleScheduleCandidate = Omit<HoleScheduleRow, 'symbol'>;
+/** 通常穴と展開穴で径グループ・重複・符号の規則を共用する。 */
+export function labelHoleScheduleRows(rows: readonly HoleScheduleCandidate[]): HoleScheduleResult {
+  const candidates = [...rows];
   candidates.sort((a, b) => a.diameter - b.diameter || a.x - b.x || a.y - b.y
     || a.center[0] - b.center[0] || a.center[1] - b.center[1] || a.center[2] - b.center[2]
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const unique: Candidate[] = [];
+  const unique: HoleScheduleCandidate[] = [];
   for (const candidate of candidates) {
     const duplicate = unique.findIndex((row) => row.diameter === candidate.diameter
       && lengthVec3(subVec3(row.center, candidate.center)) <= POSITION_TOLERANCE_MM);

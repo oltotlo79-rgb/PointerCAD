@@ -2,6 +2,9 @@
 // 同じ約束を2か所に書かないため、ここでは取り込んで輸出し直すだけにする
 // (型だけの取り込みなので、実行時の読み込みは起きない)。
 import type { HoleEntrySpec } from './occt/makeHole.js';
+import type { SheetMetalBaseInput } from './occt/makeSheetMetalBase.js';
+import type { SheetMetalFlangeInput } from './occt/makeSheetMetalFlange.js';
+import type { SheetMetalBodyInput } from './occt/makeSheetMetalBody.js';
 import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
 // 押し出しの終端(FR-415)・薄板の厚みの向き(FR-416)・曲面の作り方(FR-428)も
 // オフセットと同じ理由で、作り手のファイルの定義を取り込んで輸出し直すだけにする
@@ -346,6 +349,7 @@ export interface SketchSectionItem {
   readonly id: string;
   readonly shapeKey: string;
   readonly plane: SketchPlaneFrame;
+  readonly curveToleranceMm?: number;
 }
 
 /** 投影の依頼をまとめたもの。1 回の往復で何件でも頼める。 */
@@ -529,7 +533,29 @@ export type SolidStepSpec =
   /** くり抜き(FR-418)。 */
   | ShellStepSpec
   /** 読み込んだ形のベースボディ(FR-802、P6 §2.8、タスク10)。定義は下の節にある。 */
-  | ImportedSolidStepSpec;
+  | ImportedSolidStepSpec
+  | SheetBaseStepSpec
+  | SheetFlangeStepSpec
+  | SheetJoinStepSpec
+  | SheetBodyStepSpec;
+
+/** 指定線やリリーフで分割された平面/円筒領域から1つの板金を再構築する。 */
+export interface SheetBodyStepSpec extends SheetMetalBodyInput { readonly kind: 'sheetBody' }
+
+/** 展開の板同士を、1ソリッド・体積加算一致を条件として接続する。 */
+export interface SheetJoinStepSpec { readonly kind: 'sheetJoin'; readonly targetKey: string; readonly toolKey: string }
+
+/** P10: 基板の輪郭と板厚。Kは展開だけに使うため折曲げB-repの段へ混ぜない。 */
+export interface SheetBaseStepSpec extends SheetMetalBaseInput {
+  readonly kind: 'sheetBase';
+}
+
+/** 縁の接線座標はmodelが解決し、形の接続・食込みはカーネルでも検査する。 */
+export interface SheetFlangeStepSpec {
+  readonly kind: 'sheetFlange';
+  readonly targetKey: string;
+  readonly flanges: readonly SheetMetalFlangeInput[];
+}
 
 /** 履歴 1 段ぶんの依頼。 */
 export interface SolidStepRequest {

@@ -21,6 +21,7 @@ import {
 import type { StateCreator } from 'zustand';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
+import { emptySheetMetalTool } from './sheetMetalSlice.js';
 import type { AppearanceInput } from '../viewport/buildSolidGeometry.js';
 import type { MateDiagnosis } from '@pointercad/model';
 import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
@@ -282,7 +283,7 @@ export const createAssemblySlice: StateCreator<
     openAssembly: (assembly, library = EMPTY_PART_LIBRARY, options) => {
       if (options?.preserveSaveTarget !== true) get().fileGateway.clearSaveTarget?.();
       set((state) => ({
-        ...empty(), assembly, drawing: null, savedDrawing: null, drawingFileName: null,
+        ...empty(), assembly, drawing: null, savedDrawing: null, drawingFileName: null, ...emptySheetMetalTool(),
         drawingInitialName: null, assemblyLibrary: library, assemblyInitialName: assembly.name,
         assemblyUndoStack: createUndoStack({ document: assembly, library }),
         documentVersion: state.documentVersion + 1,

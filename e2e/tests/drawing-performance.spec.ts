@@ -8,7 +8,7 @@ import { KERNEL_TIMEOUT_MS } from './recompute.js';
 declare global {
   interface Window {
     __drawingPerformance: { openedAt: number; fontAt: number; drawingAt: number; active: boolean; moveAt: number | null;
-      renderingMs: number[]; coordinatesMs: number[]; fragmentMs: number[] };
+      renderingMs: number[]; coordinatesMs: number[]; fragmentMs: number[]; workerMs: { method: string; elapsedMs: number }[] };
   }
 }
 
@@ -17,8 +17,29 @@ test('P8 100フィーチャー・三面図・50寸法を5秒以内で開き、�
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => {
     const trace: Window['__drawingPerformance'] = { openedAt: 0, fontAt: 0, drawingAt: 0, active: false, moveAt: null,
-      renderingMs: [], coordinatesMs: [], fragmentMs: [] };
+      renderingMs: [], coordinatesMs: [], fragmentMs: [], workerMs: [] };
     window.__drawingPerformance = trace;
+    // 上限超過時もWorkerの演算と画面側の待機を区別できる。要求・結果の内容は変更しない。
+    const posting = Worker.prototype.postMessage;
+    const pending = new WeakMap<Worker, Map<string, { method: string; at: number }>>();
+    Worker.prototype.postMessage = function (message: unknown, transfer?: Transferable[] | StructuredSerializeOptions) {
+      let requests = pending.get(this);
+      if (requests === undefined) {
+        requests = new Map(); pending.set(this, requests);
+        this.addEventListener('message', (event: MessageEvent<unknown>) => {
+          const value = event.data;
+          if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string') return;
+          const request = pending.get(this)?.get(value.id);
+          if (request === undefined) return;
+          pending.get(this)?.delete(value.id);
+          if (trace.openedAt > 0) trace.workerMs.push({ method: request.method, elapsedMs: performance.now() - request.at });
+        });
+      }
+      if (typeof message === 'object' && message !== null && 'id' in message && typeof message.id === 'string'
+        && 'path' in message && Array.isArray(message.path) && message.path.every((item: unknown) => typeof item === 'string'))
+        requests.set(message.id, { method: message.path.join('.'), at: performance.now() });
+      posting.call(this, message, Array.isArray(transfer) ? { transfer } : transfer);
+    };
     const screenMatrix = SVGGraphicsElement.prototype.getScreenCTM;
     SVGGraphicsElement.prototype.getScreenCTM = function () {
       const start = performance.now(), result = screenMatrix.call(this);
@@ -65,7 +86,7 @@ test('P8 100フィーチャー・三面図・50寸法を5秒以内で開き、�
     const font = performance.getEntriesByType('resource').filter((entry) => entry instanceof PerformanceResourceTiming && entry.initiatorType === 'fetch'
       && entry.name.includes('NotoSansJP-Regular.otf'))[0];
     if (font === undefined || trace.fontAt <= 0) throw new Error('字体の初回描画時刻なし');
-    return { openingMs: trace.drawingAt - trace.openedAt, fontMs: trace.fontAt - font.startTime, bytes: 0 };
+    return { openingMs: trace.drawingAt - trace.openedAt, fontMs: trace.fontAt - font.startTime, bytes: 0, workerMs: trace.workerMs };
   });
   loading.bytes = fixture.byteLength;
   console.log(`[実測] 100フィーチャー/三面図/50寸法: ${JSON.stringify(loading)}`);

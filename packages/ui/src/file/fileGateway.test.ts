@@ -255,7 +255,7 @@ function createFakeOpenScope(
         {
           name: fileName,
           getFile: (): Promise<unknown> =>
-            Promise.resolve({ arrayBuffer: (): Promise<ArrayBuffer> => Promise.resolve(toArrayBuffer(bytes)) }),
+            Promise.resolve({ size: bytes.byteLength, arrayBuffer: (): Promise<ArrayBuffer> => Promise.resolve(toArrayBuffer(bytes)) }),
         },
       ]);
     },
@@ -276,7 +276,7 @@ function createSaveTargetOpenScope(fileNames: readonly string[]): { readonly sco
         {
           name,
           getFile: (): Promise<unknown> =>
-            Promise.resolve({ arrayBuffer: (): Promise<ArrayBuffer> => Promise.resolve(new ArrayBuffer(0)) }),
+            Promise.resolve({ size: 0, arrayBuffer: (): Promise<ArrayBuffer> => Promise.resolve(new ArrayBuffer(0)) }),
           createWritable: (): Promise<unknown> =>
             Promise.resolve({
               write: (): Promise<void> => Promise.resolve(),

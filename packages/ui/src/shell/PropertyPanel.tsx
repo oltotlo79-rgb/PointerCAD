@@ -1,4 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { SheetMetalPanel } from '../sheetMetal/SheetMetalPanel.js';
+import { SheetUnfoldPanel } from '../sheetMetal/SheetUnfoldPanel.js';
+import { sheetFieldUnitError } from '../sheetMetal/sheetFieldError.js';
 
 import {
   evaluateExpression,
@@ -728,7 +731,7 @@ function ChoiceButtons({
   readonly choice: SolidChoiceSummary;
   readonly onChoose: (value: string) => void;
 }): React.JSX.Element {
-  const isLong = choice.options.length > LONG_CHOICE_OPTION_THRESHOLD;
+  const isLong = choice.presentation === 'menu' || choice.options.length > LONG_CHOICE_OPTION_THRESHOLD;
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const groupLabel = t(choice.labelKey);
@@ -882,6 +885,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   const renderField = (item: SolidFieldSummary): React.JSX.Element => {
     const drafted = draft !== null && draft.key === item.key;
     const source = drafted ? draft.source : item.value.source;
+    const unitError = sheetFieldUnitError(item.key, source);
     const evaluated = evaluateFieldSource(source, item.unit, drafted, units);
     const numericField: NumericField = {
       key: item.key,
@@ -899,7 +903,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         field={numericField}
         lengthUnit={units.lengthUnit}
         result={
-          !evaluated.ok
+          unitError !== null ? { key: item.key, value: null, error: unitError } : !evaluated.ok
             ? { key: item.key, value: null, error: evaluated.error }
             : rangeError !== null
               ? { key: item.key, value: null, error: rangeError }
@@ -910,6 +914,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: item.key, source: next }, seenVersion: documentVersion });
+          if (sheetFieldUnitError(item.key, next) !== null) return;
           const parsed = evaluateExpression(committedFieldSource(next, item.unit, units), units);
           if (!parsed.ok || rangeErrorFor({ ...numericField, source: next }, parsed.value) !== null) {
             return;
@@ -1082,6 +1087,12 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           </dl>
         </div>
       )}
+
+      {feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief' ? <div className="pcad-section">
+        <button type="button" className="pcad-button" disabled={feature.suppressed}
+          title={t(feature.suppressed ? 'sheetMetal.editSuppressed' : 'sheetMetal.editHint')}
+          onClick={() => useAppStore.getState().openSheetMetalTool(feature.kind, feature.id)}>{t('sheetMetal.editReferences')}</button>
+      </div> : null}
 
       <div className="pcad-section">
         <h3 className="pcad-section__title">{t('propertyPanel.sectionResult')}</h3>
@@ -1660,7 +1671,7 @@ function ReferenceProperties({
   const renderExpression = (
     key: string,
     labelKey: MessageKey,
-    unit: 'mm' | 'degree' | 'count',
+    unit: NumericField['unit'],
     value: { readonly source: string },
     write: (parsed: ExpressionValue) => void,
   ): React.JSX.Element => {
@@ -3130,6 +3141,7 @@ type PanelTab = 'properties' | 'parameters';
  * 画面だけの状態なので `useState` に置く(同上「表示専用の一時状態だけ」)。
  */
 export function PropertyPanel(): React.JSX.Element {
+  const sheetMetalTool = useAppStore((state) => state.sheetMetalTool);
   const [tab, setTab] = useState<PanelTab>('properties');
   const part = useAppStore((state) => state.document);
   const sketch = useAppStore((state) => state.sketch);
@@ -3172,6 +3184,12 @@ export function PropertyPanel(): React.JSX.Element {
   const kinds = selectionKindLabelKeys(part, selection).map((key) => t(key));
   // 「ここを原点にする」を出せる 1 点(FR-331、タスク35b)。立体の頂点はここだけに出る。
   const origin = useOriginSelection();
+
+  if (sheetMetalTool !== null && sheetMetalTool.document === part) return <section className="pcad-panel pcad-panel--right">
+    <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
+    {sheetMetalTool.kind === 'sheetUnfold' ? <SheetUnfoldPanel key={sheetMetalTool.id} session={sheetMetalTool} />
+      : <SheetMetalPanel key={sheetMetalTool.id} session={sheetMetalTool} />}
+  </section>;
 
   return (
     <section className="pcad-panel pcad-panel--right">

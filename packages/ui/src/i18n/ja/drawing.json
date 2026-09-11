@@ -148,6 +148,7 @@
   "drawing.table.textHeight": "文字の高さ（mm）",
   "drawing.table.view": "穴の座標を測る図",
   "drawing.table.datum": "穴座標の基準点（元部品のmm）",
+  "drawing.table.flatDatum": "穴座標の基準点（展開面のmm）",
   "drawing.table.rows": "改訂の行（改訂・日付・変更内容・承認）",
   "drawing.table.positionX": "左からの位置（mm）",
   "drawing.table.positionY": "下からの位置（mm）",

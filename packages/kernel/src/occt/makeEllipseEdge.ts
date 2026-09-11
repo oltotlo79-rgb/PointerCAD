@@ -75,7 +75,7 @@ export function makeEllipseEdge(oc: OpenCascadeInstance, spec: EllipseSpec): Occ
   // 三項演算子の条件へ直接書く(受けると startAngle/endAngle が number | undefined のまま残る)。
   const maker =
     spec.startAngle !== undefined && spec.endAngle !== undefined
-      ? new oc.BRepBuilderAPI_MakeEdge_13(elips, spec.startAngle, spec.endAngle)
+      ? new oc.BRepBuilderAPI_MakeEdge_13(elips, Math.min(spec.startAngle, spec.endAngle), Math.max(spec.startAngle, spec.endAngle))
       : new oc.BRepBuilderAPI_MakeEdge_12(elips);
 
   const cleanup = (): void => {
@@ -92,6 +92,7 @@ export function makeEllipseEdge(oc: OpenCascadeInstance, spec: EllipseSpec): Occ
     throw new Error('楕円の稜線を作れませんでした。半径か角度を確かめてください。');
   }
   const edge = maker.Edge();
+  if (spec.startAngle !== undefined && spec.endAngle !== undefined && spec.endAngle < spec.startAngle) edge.Reverse();
   return {
     edge,
     delete(): void {

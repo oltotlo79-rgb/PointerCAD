@@ -6,6 +6,7 @@ import { addThirdBoxAssemblyFile, twoBoxAssemblyFile } from './assemblyTestSuppo
 import { configurableBoxPartFile, dimensionSeriesPartFile, offsetHolePartFile } from './drawingTestSupport.js';
 import { drawingMessage } from './drawingMessages.js';
 import { expectDrawingStroke } from './drawingManufacturingFixture.js';
+import { observeDrawingPrint } from './observeDrawingPrint.js';
 
 type ClientBounds = Readonly<{ x: number; y: number; width: number; height: number }>;
 
@@ -1008,21 +1009,13 @@ test.describe('P8 図面の出力と文字注記', () => {
 
   test('図面の印刷ボタンが実寸の紙面を渡し、印刷後も図面とUndoを保つ', async ({ page, context }, testInfo) => {
     await drawingFromBox(page); await addNote(page);
-    // window.printは置き換えず、ブラウザーの実際のbeforeprintで紙面を採取する。
-    await page.evaluate(() => {
-      window.addEventListener('beforeprint', () => {
-        const image = document.querySelector('.pcad-drawing-print-sheet img');
-        if (!(image instanceof HTMLImageElement)) return;
-        const style = Array.from(document.querySelectorAll('style')).find((item) => item.textContent.includes('.pcad-drawing-print-sheet'));
-        document.documentElement.dataset.printCss = style?.textContent ?? '';
-        // Blob URLの読取は印刷中に開始する。アプリによる後始末を遅らせない。
-        void fetch(image.src).then((response) => response.text()).then((svg) => {
-          document.documentElement.dataset.printSvg = svg;
-        });
-      }, { once: true });
-    });
+    await observeDrawingPrint(page);
     await chooseDrawingMenu(page, 'ファイル', '図面を印刷');
-    await expect.poll(() => page.locator('html').getAttribute('data-print-svg')).toContain('8 日 φ');
+    await expect.poll(() => page.locator('html').evaluate((element) => ({
+      status: element.dataset.printStatus, error: element.dataset.printError ?? null,
+    }))).toEqual({ status: 'ready', error: null });
+    await expect(page.locator('html')).toHaveAttribute('data-print-violations', '[]');
+    await expect(page.locator('html')).toHaveAttribute('data-print-svg', /8 日 φ/u);
     await expect(page.locator('.pcad-drawing-print-sheet')).toHaveCount(0);
     const output = await page.locator('html').evaluate((element) => ({ svg: element.dataset.printSvg ?? '', css: element.dataset.printCss ?? '' }));
     expect(output.css).toContain('@page { size: A3 landscape; margin: 0; }');

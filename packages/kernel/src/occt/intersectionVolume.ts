@@ -210,7 +210,8 @@ export function intersectionVolume(
       return { kind: 'clear', reason: 'empty', volume: 0, shape: null };
     }
     stage = 'measure';
-    const volume = measureVolume(oc, shape);
+    // 認証済み直方体同士の共通部分は平面だけで囲まれる。周期曲線の探索だけを省く。
+    const volume = measureVolume(oc, shape, certifiedBoxOverlap);
     if (!Number.isFinite(volume) || volume < 0) {
       return failed({ code: 'measurementFailed', stage, message: '重なりの体積を正しく測れませんでした。' });
     }

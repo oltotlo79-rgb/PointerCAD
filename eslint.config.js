@@ -33,6 +33,10 @@ const layerRules = [
     ],
   },
   { files: ['packages/io/**/*.ts'], forbidden: ['@pointercad/ui', '@pointercad/drawing'] },
+  {
+    files: ['packages/io/src/pcad/codecs/**/*.ts'],
+    forbidden: ['@pointercad/ui', '@pointercad/drawing', '**/documentJson.js', '**/documentJson'],
+  },
   // UI から幾何カーネルへ直接依存しない(ドキュメントモデル経由)
   { files: ['packages/ui/**/*.{ts,tsx}'], forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*'] },
   { files: ['apps/**/*.{ts,tsx}'], forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*'] },
@@ -55,6 +59,23 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    files: ['**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'CallExpression[callee.name=/^(beforeEach|beforeAll|afterEach|afterAll)$/] > ArrowFunctionExpression.arguments[expression=true] > CallExpression.body[callee.property.name=/^mock(Clear|Reset|Restore)$/]',
+        message: 'mockClear等の戻り値はmock関数です。テストhookから返すと後処理として呼ばれるため、voidのブロック本体を使ってください（rules/06 §10.67）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/io/src/pcad/documentJson.ts', 'packages/io/src/pcad/codecs/**/*.ts'],
+    rules: {
+      // R14: 新しいフィーチャーは担当codecへ追加し、入口や1関数への再集中を検出する。
+      'max-lines': ['error', { max: 700, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 200, skipBlankLines: true, skipComments: true }],
+    },
+  },
   {
     files: ['e2e/**/*.ts'],
     rules: {

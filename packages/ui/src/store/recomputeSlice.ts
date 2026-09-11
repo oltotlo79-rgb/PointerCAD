@@ -120,6 +120,7 @@ export const createRecomputeSlice: StateCreator<
         // 途中で打ち切られた結果は「作れたところまで」でしかないので、前のボディを
         // 半分だけの形へ置き換えない(NFR-PF-4、§2.6 の限界)。
         bodies: result.cancelled ? state.bodies : result.bodies,
+        sheetMetalBodies: result.cancelled ? state.sheetMetalBodies : (result.sheetMetalBodies ?? new Map()),
         // 外観の面の照合(FR-1106)はボディと対で意味を持つので、ボディを差し替えたときだけ
         // 一緒に差し替える(打ち切られた結果の照合は「作れたところまで」でしかない)。
         appearanceMatches: result.cancelled

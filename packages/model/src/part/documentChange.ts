@@ -54,6 +54,8 @@ const SHAPE_FIELDS: Readonly<
   activeSketchId: (document) => document.activeSketchId,
   references: (document) => document.references,
   solids: (document) => document.solids,
+  // 展開の配置だけを変える。折曲げ形状の段やカーネル再計算へは影響させない。
+  sheetUnfolds: null,
   parameters: (document) => document.parameters,
   appearance: null,
   selectionSets: null,

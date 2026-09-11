@@ -2,6 +2,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
 import { createEmptyPartDocument, PART_SCHEMA_VERSION } from '../part/createPartDocument.js';
+import type { PartDocument } from '../part/types.js';
 
 import {
   ASSEMBLY_SCHEMA_VERSION,
@@ -134,7 +135,7 @@ describe('createAssemblyDocument', () => {
     ]);
   });
 
-  it('部品文書は承認した名前付き視点と構成を含む14欄(P8-60・62)', () => {
+  it('部品文書は名前付き視点・構成・板金の展開入力を持ち、導出結果は含まない(P8・P10)', () => {
     /*
       P7 はアセンブリの型を新しく作るだけで、部品文書の欄を 1 つも増やさない。
 
@@ -143,23 +144,14 @@ describe('createAssemblyDocument', () => {
       足して 11 になっている(`part/types.ts` の注釈と `PART_SCHEMA_VERSION = 7` の由来)。
       期待値を緩めているのではなく、**P7 の着手時点の現在値**を固定している。
     */
-    // P8の承認済み追加: namedViews / configurations / activeConfigurationId。
-    expect(Object.keys(createEmptyPartDocument()).sort()).toEqual([
-      'activeConfigurationId',
-      'activeSketchId',
-      'appearance',
-      'canvases',
-      'configurations',
-      'id',
-      'name',
-      'namedViews',
-      'parameters',
-      'references',
-      'schemaVersion',
-      'selectionSets',
-      'sketches',
-      'solids',
-    ]);
+    // 定義の増減を静的検査でも検出する。P10は固定面と継ぎ目だけを保存対象へ加える。
+    const savedFields = {
+      activeConfigurationId: true, activeSketchId: true, appearance: true, canvases: true,
+      configurations: true, id: true, name: true, namedViews: true, parameters: true,
+      references: true, schemaVersion: true, selectionSets: true, sheetUnfolds: true,
+      sketches: true, solids: true,
+    } satisfies Record<keyof PartDocument, true>;
+    expect(Object.keys(createEmptyPartDocument()).sort()).toEqual(Object.keys(savedFields).sort());
   });
 
   it('呼ぶたびに別の配列を返す(前の文書と入れ物を共有しない)', () => {

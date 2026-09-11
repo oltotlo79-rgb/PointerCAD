@@ -105,6 +105,7 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
+import { SHEET_FIELD_DEFINITIONS, setSheetField, sheetFieldValues, type SheetFieldKey } from '../sheetMetal/sheetFields.js';
 import {
   baseSummary,
   coordinateSummaryFor,
@@ -129,6 +130,7 @@ import { findSketchFeatureAt } from './sketchRefs.js';
  * タスク29b が使う欄で、型はここでまとめて広げる(計画書タスク27 の型宣言のとおり)。
  */
 export type SolidFieldKey =
+  | SheetFieldKey
   | 'distance'
   | 'angle'
   | 'tolerance'
@@ -256,6 +258,8 @@ export interface SolidToggleSummary {
  * 使うため `patternDirection` 1つのキーを共用する(計画書タスク27 の型宣言のとおり)。
  */
 export interface SolidChoiceSummary {
+  /** 長い説明を横一列へ詰めず、1つのメニューで選ぶ。 */
+  readonly presentation?: 'menu';
   readonly key:
     | 'depthKind'
     | 'threadDesignation'
@@ -291,7 +295,10 @@ export interface SolidChoiceSummary {
     | 'threadShaftSeries'
     | 'threadShaftFromEnd'
     /** 曲面の作り方(FR-428)。同じ材料で作り直せる範囲だけを選択肢に出す。 */
-    | 'surfaceOperation';
+    | 'surfaceOperation'
+    | 'sheetLengthBasis'
+    | 'sheetFixedSide'
+    | 'sheetReliefShape';
   readonly labelKey: MessageKey;
   readonly value: string;
   readonly options: readonly {
@@ -357,6 +364,10 @@ export interface SolidSummary {
  * 暫定キーは ja.json から削除した(統括の指示どおり)。
  */
 export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> = {
+  sheetBase: 'sheetMetal.base',
+  sheetFlange: 'sheetMetal.flange',
+  sheetBend: 'sheetMetal.lineBend',
+  sheetRelief: 'sheetMetal.relief',
   extrude: 'toolbar.solid.extrude',
   revolve: 'toolbar.solid.revolve',
   sew: 'toolbar.solid.sew',
@@ -492,6 +503,7 @@ const FIELD_DEFINITIONS: Readonly<
     }
   >
 > = {
+  ...SHEET_FIELD_DEFINITIONS,
   distance: {
     labelKey: 'numericInput.field.distance',
     tooltipKey: 'numericInput.tooltip.extrudeDistance',
@@ -1577,6 +1589,22 @@ export function summarizeSolid(
   };
 
   switch (feature.kind) {
+    case 'sheetRelief': return { ...base, fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
+      toggles: [], choices: [{ key: 'sheetReliefShape', labelKey: 'sheetMetal.reliefShape', value: feature.shape, presentation: 'menu',
+        options: [{ value: 'rectangle', labelKey: 'sheetMetal.rectangle' }, { value: 'slot', labelKey: 'sheetMetal.reliefSlot' }] }],
+      references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)], subShapeCounts: [] };
+    case 'sheetBend': return { ...base, fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
+      toggles: [], choices: [{ key: 'sheetFixedSide', labelKey: 'sheetMetal.fixedSide', value: feature.fixedSide, presentation: 'menu',
+        options: [{ value: 'right', labelKey: 'sheetMetal.fixedRight' }, { value: 'left', labelKey: 'sheetMetal.fixedLeft' }] }],
+      references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)], subShapeCounts: [] };
+    case 'sheetBase': return { ...base, fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
+      toggles: [toggleSummary('reversed', feature.reversed)], choices: [],
+      references: [feature.profile, ...feature.holes].map((ref) => profileReference(document, ref)), subShapeCounts: [] };
+    case 'sheetFlange': return { ...base, fields: sheetFieldValues(feature).map(([key, value]) => fieldSummary(key, value)),
+      toggles: [], choices: feature.profile === null ? [{ key: 'sheetLengthBasis', labelKey: 'sheetMetal.lengthBasis', value: feature.lengthBasis, presentation: 'menu',
+        options: [{ value: 'tangent', labelKey: 'sheetMetal.basisTangent' }, { value: 'outer', labelKey: 'sheetMetal.basisOuter' }, { value: 'inner', labelKey: 'sheetMetal.basisInner' }] }] : [],
+      references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId),
+        ...(feature.profile === null ? [] : [feature.profile.face, ...feature.profile.holes].map((ref) => profileReference(document, ref)))], subShapeCounts: [] };
     case 'extrude': {
       /*
         押し出し(FR-401、FR-415、FR-416。タスク52・55)。**省略できる 5 欄は必ず
@@ -2027,6 +2055,7 @@ export function setSolidField(
   options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidFeature {
   switch (feature.kind) {
+    case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return setSheetField(feature, key, value);
     case 'extrude':
       return setExtrudeField(feature, key, value);
     case 'revolve':
@@ -2614,6 +2643,10 @@ export function setSolidChoice(
   options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidFeature {
   switch (key) {
+    case 'sheetReliefShape': return feature.kind === 'sheetRelief' && (value === 'rectangle' || value === 'slot') ? { ...feature, shape: value } : feature;
+    case 'sheetFixedSide': return feature.kind === 'sheetBend' && (value === 'left' || value === 'right') ? { ...feature, fixedSide: value } : feature;
+    case 'sheetLengthBasis': return feature.kind === 'sheetFlange' && (value === 'tangent' || value === 'inner' || value === 'outer')
+      ? { ...feature, lengthBasis: value } : feature;
     case 'depthKind':
       return value === 'through' || value === 'blind' ? setSolidDepthKind(feature, value) : feature;
     case 'threadDesignation':
@@ -2912,7 +2945,7 @@ export function setSolidToggle(
   if (feature.kind === 'extrude') {
     return setExtrudeToggle(feature, key, value);
   }
-  if (feature.kind === 'revolve') {
+  if (feature.kind === 'revolve' || feature.kind === 'sheetBase') {
     return key === 'reversed' ? { ...feature, reversed: value } : feature;
   }
   if (feature.kind === 'chamfer') {

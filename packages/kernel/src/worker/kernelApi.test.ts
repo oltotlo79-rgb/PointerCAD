@@ -290,10 +290,17 @@ describe('KernelApiの使用中保護', () => {
 
   it('同じ部品の新jobが先に完了した場合、後から終わる旧jobで最終形や表示を戻さない', async () => {
     const target = createKernelApi(loadOcctForNode);
-    await target.recomputeSolids({ partId: 'part', generation: 1, steps: [extrudeStep('old-a', 'old-a', 1), extrudeStep('old-b', 'old-b', 2)] }, {}, undefined, async () => {
-      await target.recomputeSolids({ partId: 'part', generation: 2, steps: [extrudeStep('new', 'new', 3)] });
+    let oldStarted = false;
+    let newerRuns = 0;
+    await target.recomputeSolids({ partId: 'part', generation: 1, steps: [extrudeStep('old-a', 'old-a', 1), extrudeStep('old-b', 'old-b', 2)] }, {}, () => { oldStarted = true; }, async () => {
+      // 取消照会の回数に依存せず、旧jobの開始後に新jobを1度だけ完了させる。
+      if (oldStarted && newerRuns === 0) {
+        newerRuns++;
+        await target.recomputeSolids({ partId: 'part', generation: 2, steps: [extrudeStep('new', 'new', 3)] });
+      }
       return false;
     });
+    expect(newerRuns).toBe(1);
     expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(1);
     expect((await target.inspectPrintability({ partId: 'part', bodies: [item('new')], deviationMm: 0.1 })).meshes[0].meshRevision).toBe(1);
     await expect(target.inspectPrintability({ partId: 'part', bodies: [item('old-a')], deviationMm: 0.1 })).rejects.toThrow(/もとになる立体/);

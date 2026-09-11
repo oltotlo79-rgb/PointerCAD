@@ -44,6 +44,7 @@ import {
 import { sphereGridSphereOf, sphereGridTargetSphere } from '../sketch/sketchCommands.js';
 import { activeAssemblyDocument, activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { displayedSheetBodies, isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
@@ -74,6 +75,7 @@ declare global {
   interface Window {
     /** 検査専用。`scene.render` が正常に戻った回数と最後の完了時刻を読む。 */
     pcadViewportRenderStats?: () => ViewportRenderStats;
+    pcadViewportFramedBodies?: () => readonly string[];
   }
 }
 
@@ -606,6 +608,8 @@ export function ViewportCanvas(): React.JSX.Element {
     });
     // StrictModeや将来の複数mountでは、最後に載った生きている口だけを公開する。
     window.pcadViewportRenderStats = readRenderStats;
+    const readFramedBodies = (): readonly string[] => scene.fullyFramedBodyIds();
+    window.pcadViewportFramedBodies = readFramedBodies;
 
     /**
      * 3D の色をテーマから読み直すべきか(FR-908)。ルート要素へ `data-theme` を書くのは
@@ -824,10 +828,11 @@ export function ViewportCanvas(): React.JSX.Element {
     const initial = useAppStore.getState();
     // 引っぱっている最中(FR-313、P4b タスク14)は仮の形を描く。文書どおりの形
     // (`resolvedSketch`)は当たり判定・プロパティ・吸着がそのまま読み続ける。
-    scene.setSketch(activePartDocument(initial) === null ? EMPTY_PART_SKETCH :
-      initial.dragResolved ?? initial.resolvedSketch, activePartDocument(initial) === null ? null : initial.sketchMesh);
+    const initialSketchHidden = activePartDocument(initial) === null || isSheetFlatDisplayed(initial);
+    scene.setSketch(initialSketchHidden ? EMPTY_PART_SKETCH : initial.dragResolved ?? initial.resolvedSketch,
+      initialSketchHidden ? null : initial.sketchMesh);
     scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
-    scene.setBodies(activePartDocument(initial) === null ? [] : initial.bodies);
+    scene.setBodies(activePartDocument(initial) === null ? [] : displayedSheetBodies(initial));
     // 配置した部品(FR-605、P7 タスク10)。アセンブリを開いていないあいだは空のまま。
     scene.setAssembly(assemblyBundleOf(initial));
     scene.setInterference(initial.assemblyInterferenceResult, initial.assemblyInterferenceSelectedKey);
@@ -873,14 +878,16 @@ export function ViewportCanvas(): React.JSX.Element {
         next.resolvedSketch !== previous.resolvedSketch ||
         next.sketchMesh !== previous.sketchMesh ||
         // 引っぱっている最中の仮の形(FR-313、タスク14)。1 コマに 1 回だけ差し替わる。
-        next.dragResolved !== previous.dragResolved || next.assembly !== previous.assembly
+        next.dragResolved !== previous.dragResolved || next.assembly !== previous.assembly ||
+        isSheetFlatDisplayed(next) !== isSheetFlatDisplayed(previous)
       ) {
-        scene.setSketch(activePartDocument(next) === null ? EMPTY_PART_SKETCH :
-          next.dragResolved ?? next.resolvedSketch, activePartDocument(next) === null ? null : next.sketchMesh);
+        const sketchHidden = activePartDocument(next) === null || isSheetFlatDisplayed(next);
+        scene.setSketch(sketchHidden ? EMPTY_PART_SKETCH : next.dragResolved ?? next.resolvedSketch, sketchHidden ? null : next.sketchMesh);
       }
       // 立体(FR-105)。カーネルが返した三角形と稜線をボディごとに描く。
-      if (next.bodies !== previous.bodies || next.assembly !== previous.assembly) {
-        scene.setBodies(activePartDocument(next) === null ? [] : next.bodies);
+      if (next.bodies !== previous.bodies || next.assembly !== previous.assembly || next.sheetMetalPreview !== previous.sheetMetalPreview
+        || next.sheetMetalTool !== previous.sheetMetalTool) {
+        scene.setBodies(activePartDocument(next) === null ? [] : displayedSheetBodies(next));
       }
       // 外観(FR-1106〜1109)。**割り当ての表そのものが変わったときだけ**組み立て直す。
       // 文書が変わるたびに作り直すと、スケッチを 1 本引いただけで材質の入れ替えが起きる
@@ -1069,6 +1076,7 @@ export function ViewportCanvas(): React.JSX.Element {
       if (window.pcadViewportRenderStats === readRenderStats) {
         delete window.pcadViewportRenderStats;
       }
+      if (window.pcadViewportFramedBodies === readFramedBodies) delete window.pcadViewportFramedBodies;
       if (frameId !== 0) {
         globalThis.cancelAnimationFrame(frameId);
       }

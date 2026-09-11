@@ -10,6 +10,7 @@
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
     },
+    "./security-policy": { "types": "./dist/security/contentSecurityPolicy.d.ts", "default": "./src/security/contentSecurityPolicy.ts" },
     "./print-settings": { "types": "./dist/file/drawingPrintSettings.d.ts", "default": "./src/file/drawingPrintSettings.ts" },
     "./save-errors": { "types": "./dist/file/saveFailure.d.ts", "default": "./src/file/saveFailure.ts" },
     "./style.css": "./src/shell/appShell.css"

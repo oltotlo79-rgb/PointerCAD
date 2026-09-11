@@ -12,6 +12,10 @@ export interface HelpTopic {
 }
 
 export const HELP_TOPICS: readonly HelpTopic[] = [
+  { id: 'sheet-metal', title: '板金の基板と曲げ条件を作る', path: 'docs/ja/sheet-metal.md' },
+  { id: 'sheet-metal-flange', title: '板金の縁からフランジを作る', path: 'docs/ja/sheet-metal-flange.md' },
+  { id: 'sheet-metal-bend-relief', title: '指定線で板を曲げる・曲げリリーフを作る', path: 'docs/ja/sheet-metal-bend-relief.md' },
+  { id: 'sheet-metal-flat', title: '板金を展開し、穴表・図面・加工用ファイルを作る', path: 'docs/ja/sheet-metal-flat.md' },
   { id: 'dimension', title: '図面に寸法を記入する', path: 'docs/ja/dimension.md' },
   { id: 'dimension-auto', title: '自動寸法を記入する', path: 'docs/ja/dimension-auto.md' },
   { id: 'dimension-arrange', title: '寸法線をまとめて整列する', path: 'docs/ja/dimension-arrange.md' },

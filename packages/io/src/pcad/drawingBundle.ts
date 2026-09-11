@@ -62,7 +62,8 @@ export async function readDrawingBundle(bytes: Uint8Array): Promise<ReadPcaddFil
     if (!parsed.ok) return parsed;
     const bundle = parsed.bundle;
     const source: DrawingSourceInput = bundle.kind === 'part'
-      ? { sourceKind: 'part', document: bundle.document, attachments: bundle.attachments }
+      ? { sourceKind: 'part', document: bundle.document, attachments: bundle.attachments,
+          ...(drawing.document.source.flatSheet === undefined ? {} : { flatSheet: drawing.document.source.flatSheet }) }
       : { sourceKind: 'assembly', document: bundle.document, library: partLibraryOfBundle(bundle) };
     return { ...drawing, source };
   } catch (error) {

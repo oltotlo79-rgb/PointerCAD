@@ -1,3 +1,4 @@
+import * as volumeModule from './volumeProperties.js';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import type {
   BRepAlgoAPI_BooleanOperation,
@@ -151,8 +152,8 @@ function observeAllocations(oc: OpenCascadeInstance) {
   });
   const mapShapes = oc.TopExp.MapShapes_2.bind(oc.TopExp);
   vi.spyOn(oc.TopExp, 'MapShapes_2').mockImplementation((...args) => timed('map', () => mapShapes(...args)));
-  const volumeProperties = oc.BRepGProp.VolumeProperties_1.bind(oc.BRepGProp);
-  vi.spyOn(oc.BRepGProp, 'VolumeProperties_1').mockImplementation((...args) => timed('measure', () => volumeProperties(...args)));
+  const volumeProperties = volumeModule.computeVolumeProperties;
+  vi.spyOn(volumeModule, 'computeVolumeProperties').mockImplementation((...args) => timed('measure', () => volumeProperties(...args)));
   return { entries, deletionOrder, buildModes, buildOrder, stageMs, analyzerPrototype: Analyzer.prototype };
 }
 
@@ -180,7 +181,7 @@ type ExceptionPoint =
   | 'inputIsNull' | 'mapConstructor' | 'MapShapes_2' | 'Size' | 'FindKey' | 'ShapeType'
   | 'rangeConstructor' | 'commonConstructor' | 'listConstructor' | 'Append_1'
   | 'SetArguments' | 'SetTools' | 'SetNonDestructive' | 'Build' | 'HasErrors' | 'IsDone'
-  | 'Shape' | 'resultIsNull' | 'propertiesConstructor' | 'VolumeProperties_1' | 'Mass'
+  | 'Shape' | 'resultIsNull' | 'propertiesConstructor' | 'computeVolumeProperties' | 'Mass'
   | 'analyzerConstructor' | 'IsValid_2';
 
 interface ExceptionCase {
@@ -201,7 +202,7 @@ const exceptionCases: ExceptionCase[] = [
     ['rangeConstructor', 'createBuilder'], ['commonConstructor', 'createBuilder'],
     ['SetArguments', 'setInputs'], ['SetTools', 'setInputs'], ['SetNonDestructive', 'setNonDestructive'],
     ['Build', 'build'], ['HasErrors', 'checkBuild'], ['IsDone', 'checkBuild'], ['Shape', 'readShape'],
-    ['resultIsNull', 'readShape'], ['propertiesConstructor', 'measure'], ['VolumeProperties_1', 'measure'],
+    ['resultIsNull', 'readShape'], ['propertiesConstructor', 'measure'], ['computeVolumeProperties', 'measure'],
     ['Mass', 'measure'], ['analyzerConstructor', 'validateResult'], ['IsValid_2', 'validateResult'],
   ] as const).map(([point, stage]) => ({ name: point, point, nth: 1, stage })),
   ...([1, 2] as const).flatMap((nth) => (['listConstructor', 'Append_1'] as const).map((point) => ({
@@ -292,7 +293,7 @@ function injectException(
     case 'Shape': vi.spyOn(oc.BRepAlgoAPI_Algo.prototype, point).mockImplementation(fail); return;
     case 'IsDone': vi.spyOn(oc.BRepBuilderAPI_Command.prototype, point).mockImplementation(fail); return;
     case 'propertiesConstructor': vi.mocked(oc.GProp_GProps_1).mockImplementationOnce(fail); return;
-    case 'VolumeProperties_1': vi.spyOn(oc.BRepGProp, 'VolumeProperties_1').mockImplementation(fail); return;
+    case 'computeVolumeProperties': vi.spyOn(volumeModule, 'computeVolumeProperties').mockImplementation(fail); return;
     case 'Mass': vi.spyOn(oc.GProp_GProps.prototype, point).mockImplementation(fail); return;
     case 'analyzerConstructor': vi.mocked(oc.BRepCheck_Analyzer).mockImplementationOnce(fail); return;
     case 'IsValid_2': vi.spyOn(observed.analyzerPrototype, point).mockImplementation(fail); return;
@@ -444,7 +445,7 @@ describe('共通体積の分類・例外安全・所有・性能', () => {
       const a = keep(makeBox(oc, BIG)); const b = boxAt(oc, keep, [15, 0, 0]);
       const map = vi.spyOn(oc.TopExp, 'MapShapes_2');
       const analyzer = vi.spyOn(oc, 'BRepCheck_Analyzer');
-      const measure = vi.spyOn(oc.BRepGProp, 'VolumeProperties_1');
+      const measure = vi.spyOn(volumeModule, 'computeVolumeProperties');
       const build = vi.spyOn(oc.BRepAlgoAPI_BooleanOperation.prototype, 'Build');
       consume(intersectionVolume(oc, a.shape, b.shape, {
         glue: 'shift', collectHistory: false, nonInverted: true, certifiedBoxOverlap: true,

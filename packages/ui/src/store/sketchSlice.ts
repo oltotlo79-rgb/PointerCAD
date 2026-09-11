@@ -26,6 +26,7 @@ import type { TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
 import { keepsSelectionKind, selectionKindForTool } from '../solid/subShapeSelection.js';
 import type { AppState } from './appState.js';
+import { emptySheetMetalTool } from './sheetMetalSlice.js';
 import { filterSelectionForFaceTool, NO_CONSTRAINT_TARGETS } from './documentDerived.js';
 
 /** いま吸い付いている場所。印を出すのに使う(FR-107)。 */
@@ -271,6 +272,7 @@ export const createSketchSlice: StateCreator<
       const kindChanged = selectionKind !== state.selectionKind;
       return {
         activeTool,
+        ...emptySheetMetalTool(),
         selectionKind,
         numericInput: null,
         numericInputAnchor: null,

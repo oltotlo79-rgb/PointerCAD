@@ -1,3 +1,4 @@
+import { sheetFlatReferenceIssue, canonicalDrawingSourceText } from '@pointercad/model';
 /**
  * `.pcad` / `.pcada` の ZIP コンテナの読み書き
  * (計画書 docs/plans/P2-ソリッド基礎.md タスク15、P7 §2.2 タスク3、要件§8、FR-801)。
@@ -1199,6 +1200,14 @@ export function writePcaddFile(
   options: WritePcaddFileOptions,
 ): Uint8Array {
   const savedAt = options.savedAt ?? new Date().toISOString();
+  const flat = document.source.flatSheet;
+  if (document.source.sourceKind !== options.source.sourceKind
+    || canonicalDrawingSourceText(flat) !== canonicalDrawingSourceText(options.source.sourceKind === 'part' ? options.source.flatSheet : undefined))
+    throw new Error('Drawing source definition mismatch');
+  if (flat !== undefined) {
+    if (options.source.sourceKind !== 'part') throw new Error('Only part sources can be unfolded');
+    const issue = sheetFlatReferenceIssue(options.source.document, flat); if (issue !== null) throw new Error(issue);
+  }
   const sourceText = options.source.sourceKind === 'part'
     ? serializeDocument(options.source.document, { savedAt })
     : writeAssemblyDocument(options.source.document, { savedAt, partFiles: [] });
@@ -1275,7 +1284,10 @@ export function readPcaddFile(bytes: Uint8Array): ReadPcaddFileResult {
   const source: DrawingSourceInput | null = drawing.document.source.sourceKind === 'part'
     ? (() => {
         const parsed = parseDocument(sourceText);
-        return parsed.ok ? { sourceKind: 'part' as const, document: parsed.document } : null;
+        if (!parsed.ok) return null;
+        const flat = drawing.document.source.flatSheet;
+        if (flat !== undefined && sheetFlatReferenceIssue(parsed.document, flat) !== null) return null;
+        return { sourceKind: 'part' as const, document: parsed.document, ...(flat === undefined ? {} : { flatSheet: flat }) };
       })()
     : (() => {
         const parsed = readAssemblyDocument(sourceText);

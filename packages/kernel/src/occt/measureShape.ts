@@ -38,20 +38,13 @@ import type {
 import type { Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
 import { measureArea } from './solidMesh.js';
+import { computeVolumeProperties } from './volumeProperties.js';
 
 /** 2 つの形の最短距離を測れなかったとき(FR-504、NFR-RE-1)。 */
 export const DISTANCE_FAILED_MESSAGE = '2 つの形の間の距離を測れませんでした。';
 
 /** 質量特性を測れなかったとき(FR-504、NFR-RE-1)。 */
 export const MASS_PROPERTIES_FAILED_MESSAGE = '体積と重心を測れませんでした。';
-
-/**
- * 体積を測るときの OnlyClosed の指定。
- * `solidMesh.ts` の `measureVolume`(`VOLUME_ONLY_CLOSED`)と同じ false で、
- * 閉じ切らなかった形でも 0 ではなく途中までの値が出るようにする
- * (同じ形を 2 通りの指定で測って値が食い違うことが無いように揃えてある)。
- */
-const VOLUME_ONLY_CLOSED = false;
 
 /** 2 つの形の最短距離と、その距離を与える点(FR-1102)。 */
 export interface ShapeDistance {
@@ -270,9 +263,7 @@ export function measureMassProperties(
   const { keep, release } = allocations;
   try {
     const properties = keep(new oc.GProp_GProps_1());
-    // 第 4・第 5 引数は SkipShared と UseTriangulation。共有面を飛ばさず、
-    // 三角形近似ではなく厳密な面で積分する(solidMesh.ts の measureVolume と同じ)。
-    oc.BRepGProp.VolumeProperties_1(shape, properties, VOLUME_ONLY_CLOSED, false, false);
+    computeVolumeProperties(oc, shape, properties);
     const centre = keep(properties.CentreOfMass());
     const principal = keep(properties.PrincipalProperties());
 

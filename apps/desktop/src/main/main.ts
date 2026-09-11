@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, session } from 'electron';
+import { denyBrowserPermissions } from './sessionPermissions.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import { join } from 'node:path';
 import { readDrawingPrintOptions, type DrawingPrintOptions } from '@pointercad/ui/print-settings';
@@ -132,6 +133,7 @@ function registerPrintIpc(): void {
 }
 
 void app.whenReady().then(() => {
+  denyBrowserPermissions(session.defaultSession);
   // 既定のメニューバー(File / Edit / View / Window)は使わないので消す。
   Menu.setApplicationMenu(null);
   handleAppScheme(rendererRoot);

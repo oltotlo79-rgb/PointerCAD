@@ -1,3 +1,4 @@
+import * as volumeModule from './volumeProperties.js';
 import type {
   BRepAlgoAPI_BooleanOperation,
   OpenCascadeInstance,
@@ -146,7 +147,7 @@ const EXCEPTION_POINTS = [
   'MapShapes_2',
   'FindKey',
   'ShapeType',
-  'VolumeProperties_1',
+  'computeVolumeProperties',
   'Mass',
   'IsValid_2',
 ] as const;
@@ -189,8 +190,8 @@ function injectException(
     case 'ShapeType':
       vi.spyOn(oc.TopoDS_Shape.prototype, point).mockImplementation(fail);
       return;
-    case 'VolumeProperties_1':
-      vi.spyOn(oc.BRepGProp, point).mockImplementation(fail);
+    case 'computeVolumeProperties':
+      vi.spyOn(volumeModule, point).mockImplementation(fail);
       return;
     case 'Mass':
       vi.spyOn(oc.GProp_GProps.prototype, point).mockImplementation(fail);

@@ -5,6 +5,7 @@ import { createUndoStack, emptyDrawingSourceLibrary, pushUndo, undo, redo,
 import type { StateCreator } from 'zustand';
 
 import type { AppState } from './appState.js';
+import { emptySheetMetalTool } from './sheetMetalSlice.js';
 
 export interface OpenDrawingOptions {
   readonly preserveSaveTarget?: boolean;
@@ -91,6 +92,7 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
       drawingInitialName: drawing.name,
       assembly: null,
       activeDocumentId: crypto.randomUUID(),
+      ...emptySheetMetalTool(),
       documentVersion: state.documentVersion + 1,
       selection: [],
       hoveredElementId: null,

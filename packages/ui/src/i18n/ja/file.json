@@ -7,6 +7,8 @@
   "file.saveRecoveryCopyRetained": "保存と元のファイルへの復元に失敗しました。保存先と同じフォルダーに、元のファイル名に .backup- と識別番号を付けた控えを残しています。控えを別のフォルダーへコピーし、コピーの名前から .backup- 以降を取り除いて開いてください。",
   "file.unsavedChanges": "保存していない変更があります。",
   "file.discardConfirm": "保存していない変更は失われます。続けますか。",
+  "file.error.invalidSize": "ファイルの大きさを確認できないため開けませんでした。",
+  "file.error.tooLarge": "ファイルが大きすぎるため開けません。",
   "file.error.corrupted": "ファイルが壊れているため開けませんでした。",
   "file.error.tooOld": "古い形式のため開けません。",
   "file.error.tooNew": "新しい版の PointerCAD で保存されたファイルです。アプリを更新してください。",

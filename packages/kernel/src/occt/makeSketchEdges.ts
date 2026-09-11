@@ -1,8 +1,6 @@
 import type { OpenCascadeInstance, TopoDS_Edge } from 'opencascade.js/dist/opencascade.full.js';
 
 import {
-  DEFAULT_ANGULAR_DEFLECTION,
-  DEFAULT_LINEAR_DEFLECTION,
   type ArcSpec,
   type CurveSpec,
   type TessellationOptions,
@@ -10,6 +8,7 @@ import {
 } from '../types.js';
 import { makeEllipseEdge } from './makeEllipseEdge.js';
 import { makeSplineEdge } from './makeSplineEdge.js';
+import { curveSampleCoordinates } from './curveSampleCoordinates.js';
 
 /** OCCT の稜線と、そのために確保した領域の解放手続き。 */
 export interface OcctEdgeHandle {
@@ -70,7 +69,7 @@ export function makeArcEdge(oc: OpenCascadeInstance, arc: ArcSpec): OcctEdgeHand
   const maker =
     sweep >= FULL_TURN - FULL_TURN_EPSILON
       ? new oc.BRepBuilderAPI_MakeEdge_8(circle)
-      : new oc.BRepBuilderAPI_MakeEdge_9(circle, arc.startAngle, arc.endAngle);
+      : new oc.BRepBuilderAPI_MakeEdge_9(circle, Math.min(arc.startAngle, arc.endAngle), Math.max(arc.startAngle, arc.endAngle));
 
   const cleanup = (): void => {
     maker.delete();
@@ -86,6 +85,9 @@ export function makeArcEdge(oc: OpenCascadeInstance, arc: ArcSpec): OcctEdgeHand
     throw new Error('円弧の稜線を作れませんでした。半径か角度を確かめてください。');
   }
   const edge = maker.Edge();
+  // OCCTの周期曲線は降順の径数を一周分繰り上げる。区間を昇順で作り、
+  // 位相の向きだけを反転して、時計回りを反対側の弧へ変えない。
+  if (arc.endAngle < arc.startAngle) edge.Reverse();
   return {
     edge,
     delete(): void {
@@ -121,28 +123,5 @@ export function discretizeEdge(
   edge: TopoDS_Edge,
   options: TessellationOptions = {},
 ): Float32Array {
-  const linearDeflection = options.linearDeflection ?? DEFAULT_LINEAR_DEFLECTION;
-  const angularDeflection = options.angularDeflection ?? DEFAULT_ANGULAR_DEFLECTION;
-
-  const adaptor = new oc.BRepAdaptor_Curve_2(edge);
-  const discretizer = new oc.GCPnts_TangentialDeflection_2(
-    adaptor,
-    angularDeflection,
-    linearDeflection,
-    2,
-    1.0e-9,
-    1.0e-7,
-  );
-
-  const values: number[] = [];
-  const count = Number(discretizer.NbPoints());
-  for (let index = 1; index <= count; index += 1) {
-    const point = discretizer.Value(index);
-    values.push(point.X(), point.Y(), point.Z());
-    point.delete();
-  }
-
-  discretizer.delete();
-  adaptor.delete();
-  return new Float32Array(values);
+  return new Float32Array(curveSampleCoordinates(oc, edge, options));
 }

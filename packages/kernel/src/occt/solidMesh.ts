@@ -1,3 +1,4 @@
+import { countSolidShapes } from './solidTopology.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type {
@@ -9,9 +10,10 @@ import type {
 import { extractEdges } from './extractEdges.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { computeVolumeProperties } from './volumeProperties.js';
 
 /**
- * BRepGProp.VolumeProperties_1 の OnlyClosed に渡す値。
+ * computeVolumePropertiesのOnlyClosed=falseについての従来の実測。
  *
  * 2026-09-03 に Node で実測した結果(計画書 §1.2 の未確認点 2):
  *   10 × 20 × 30 の箱     OnlyClosed=false → 6000 / OnlyClosed=true → 6000
@@ -23,18 +25,15 @@ import { tessellate } from './tessellate.js';
  * 「縫合が閉じなかった」ことに気づきやすく原因を追いやすいため(FR-504)。
  * 閉じているかどうかは hasSolid と isValidShape で別に判定する。
  */
-const VOLUME_ONLY_CLOSED = false;
 
 /**
  * 立体の体積(mm³)。
  * 閉じていない形では 0 に近い値や負の値が出るので、呼び出し側が妥当性も見る。
  */
-export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
+export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape, knownPlanar = false): number {
   const properties = new oc.GProp_GProps_1();
   try {
-    // 第 4・第 5 引数は SkipShared と UseTriangulation。
-    // 共有面を飛ばさず、三角形近似ではなく厳密な面で積分する(既定の精度)。
-    oc.BRepGProp.VolumeProperties_1(shape, properties, VOLUME_ONLY_CLOSED, false, false);
+    computeVolumeProperties(oc, shape, properties, knownPlanar);
     return properties.Mass();
   } finally {
     properties.delete();
@@ -88,22 +87,7 @@ export function isValidShape(oc: OpenCascadeInstance, shape: TopoDS_Shape): bool
  * MapShapes_2 は形そのものも含めて数えるので、単体のソリッドでも true になる。
  */
 export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
-  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
-  try {
-    // 第 3・第 4 引数は「向きと位置を親からたどって積み上げる」指定で、
-    // TopExp_Explorer と同じ結果になる既定値。
-    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
-    const solidType = oc.TopAbs_ShapeEnum.TopAbs_SOLID;
-    const subShapeCount = subShapes.Size();
-    for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
-      if (subShapes.FindKey(subShapeIndex).ShapeType() === solidType) {
-        return true;
-      }
-    }
-    return false;
-  } finally {
-    subShapes.delete();
-  }
+  return countSolidShapes(oc, shape, 1) > 0;
 }
 
 /**

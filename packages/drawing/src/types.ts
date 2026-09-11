@@ -61,10 +61,20 @@ export interface DrawingSubShapeRef {
   readonly fingerprint: DrawingSubShapeFingerprint;
 }
 
+/** P10: 抱き込んだ元部品から展開を導出する入力。 */
+export interface DrawingSheetFlatReference {
+  readonly partId: string;
+  readonly sourceFeatureId: string;
+  readonly fixedPanelId: string;
+  readonly seamConnectionIds: readonly string[];
+}
+
 /** 図面 ZIP に抱き込んだ参照元の素性(要件§8、§0.3)。 */
 export interface DrawingSource {
   readonly sourceRef: string;
   readonly sourceKind: 'part' | 'assembly';
+  /** partだけに指定できる。省略時は従来の折曲げ形状。 */
+  readonly flatSheet?: DrawingSheetFlatReference;
   readonly fileName: string;
   readonly path: string;
   readonly contentHash: string;

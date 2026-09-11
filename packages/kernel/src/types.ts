@@ -1169,6 +1169,8 @@ export type SphereSegmentCount = 24 | 48 | 72;
  */
 export interface ThruSectionsStepSpec {
   readonly kind: 'thruSections';
+  /** ロフト自身の断面間を滑らかに近似する。既存文書では false。隣接面へのG1指定ではない。 */
+  readonly smooth: boolean;
   /** つなぐ断面。2 つ以上。球を入れられるのは 1 つまでで、そのとき輪郭は 1 つだけ。 */
   readonly sections: readonly ThruSectionSpec[];
   /** true なら直線で結ぶ(罫線面)、false ならなめらかに結ぶ(ロフト)。 */
@@ -1288,6 +1290,8 @@ export interface SweepStepSpec {
   readonly profile: readonly CurveSpec[];
   /** 経路。並んだ順につながっていること。閉じた経路でもよい。 */
   readonly path: readonly CurveSpec[];
+  /** 断面の向きと倍率を指定する任意の案内線。 */
+  readonly guide?: readonly CurveSpec[];
   /** true で Frenet(既定)、false で「ねじれを抑える」向きの決め方。 */
   readonly frenet: boolean;
 }

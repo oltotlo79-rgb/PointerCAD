@@ -1,0 +1,23 @@
+.pcad-strength { display: flex; flex-direction: column; gap: var(--pcad-space-2); min-width: 0; padding: var(--pcad-space-3); box-sizing: border-box; }
+.pcad-strength p { margin: 0; font-size: var(--pcad-font-size-small); line-height: 1.5; overflow-wrap: anywhere; }
+.pcad-strength .pcad-field { grid-template-columns: minmax(0, 1fr) auto; }
+.pcad-strength .pcad-field__label { grid-column: 1 / -1; }
+.pcad-strength .pcad-field__input { grid-column: 1; width: 100%; }
+.pcad-strength .pcad-field__unit { grid-column: 2; }
+.pcad-strength .pcad-field__message { grid-column: 1 / -1; }
+.pcad-strength__select { display: flex; flex-direction: column; gap: 0.25rem; }
+.pcad-strength__select label { font-size: var(--pcad-font-size-small); }
+.pcad-strength select { width: 100%; min-width: 0; padding: var(--pcad-space-1); color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-border); border-radius: 3px; }
+.pcad-strength__actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.pcad-strength__actions button { font: inherit; padding: var(--pcad-space-1) var(--pcad-space-2); cursor: pointer; }
+.pcad-strength__actions button:disabled { cursor: not-allowed; opacity: 0.6; }
+.pcad-strength__results { display: flex; flex-direction: column; gap: 0.6rem; }
+.pcad-strength__results h4 { margin: 0.4rem 0; }
+.pcad-strength__results .pcad-properties { display: flex; flex-direction: column; gap: 0.5rem; }
+.pcad-strength__results dd { margin: 0; }
+.pcad-strength__assessment { border-inline-start: 3px solid currentColor; padding-inline-start: 0.5rem; font-weight: bold; }
+.pcad-strength__assessment--below { color: var(--pcad-danger-text); }
+.pcad-strength details { padding: var(--pcad-space-1); border: 1px solid var(--pcad-border); border-radius: 3px; }
+.pcad-strength summary { cursor: pointer; font-size: var(--pcad-font-size-small); }
+.pcad-strength details p { margin-block-start: 0.5rem; }
+.pcad-strength__formula { overflow-wrap: anywhere; }

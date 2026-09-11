@@ -14,7 +14,7 @@ describe('同梱ヘルプの本文と検索', () => {
     const required = new Set(['drawing', 'drawing-views', 'drawing-section', 'drawing-scale', 'dimension', 'dimension-auto',
       'dimension-series', 'dimension-tolerance', 'dimension-arrange', 'surface-finish', 'drawing-note', 'drawing-layer',
       'drawing-bom', 'drawing-table', 'drawing-export', 'text-outline', 'named-view', 'parameters', 'gdt', 'welding',
-      'sheet-metal', 'sheet-metal-flange', 'sheet-metal-bend-relief', 'sheet-metal-flat']);
+      'sheet-metal', 'sheet-metal-flange', 'sheet-metal-bend-relief', 'sheet-metal-flat', 'sketch-intersections', 'strength', 'dxf', 'ruled-loft', 'shape-edit', 'cam', 'scripts', 'script-api', 'script-tools']);
     for (const topic of HELP_TOPICS) {
       const text = await HELP_LOADERS[topic.id]();
       const images = [...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/gu)];

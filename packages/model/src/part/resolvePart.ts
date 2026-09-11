@@ -532,6 +532,7 @@ export type SolidStepPlan =
        * 対象を取らない「作る」段で、輪郭を貸した立体は消費しない(§0.a-0.27)。
        */
       readonly kind: 'thruSections';
+      readonly smooth: boolean;
       /** つなぐ断面。2 つ以上。並びが意味を持つ。 */
       readonly sections: readonly ThruSectionPlan[];
       /** true なら直線で結ぶ(罫線面)、false ならなめらかに結ぶ(ロフト)。 */
@@ -610,6 +611,7 @@ export type SolidStepPlan =
       readonly profile: readonly ResolvedCurve[];
       /** 経路。並びが意味を持つ(書かれた順につながっている前提)。 */
       readonly path: readonly ResolvedCurve[];
+      readonly guide?: readonly ResolvedCurve[];
       /** true で Frenet、false(既定)で「ねじれを抑える」。 */
       readonly frenet: boolean;
     }
@@ -2817,6 +2819,11 @@ function resolveRuledSection(
   bodyKeys: ReadonlyMap<string, string>,
 ): ThruSectionOutcome {
   switch (section.kind) {
+    case 'sketchCurves': {
+      const curves = findResolvedCurves(sketches, section.ref);
+      if (curves === null) return { ok: false, error: partError(featureId, 'missingProfile', THRU_SECTIONS_MISSING_FACE_MESSAGE) };
+      return { ok: true, section: { kind: 'curves', curves } };
+    }
     case 'sketchFace': {
       const face = findResolvedFace(sketches, section.ref);
       if (face === undefined) {
@@ -2923,7 +2930,7 @@ function planRuled(
   return {
     ok: true,
     plan: {
-      kind: 'thruSections',
+      kind: 'thruSections', smooth: false,
       sections: sections.sections,
       // 直線で結ぶ(罫線面)。ロフトとの違いはこの 1 つだけ(§0.a-0.25)。
       ruled: true,
@@ -2967,7 +2974,7 @@ function planLoft(
   return {
     ok: true,
     plan: {
-      kind: 'thruSections',
+      kind: 'thruSections', smooth: feature.smooth,
       sections: sections.sections,
       ruled: false,
       closed: true,
@@ -3370,9 +3377,14 @@ function planSweep(feature: SweepFeature, sketches: readonly ResolvedPartSketch[
   if (path === null) {
     return fail(feature.id, 'missingProfile', SWEEP_MISSING_PATH_MESSAGE);
   }
+  const guide = feature.guide === undefined ? undefined : findResolvedCurves(sketches, feature.guide);
+  if (guide === null) {
+    return fail(feature.id, 'missingProfile', '案内線が見つかりません。案内線を選び直すか「なし」にしてください。');
+  }
   return {
     ok: true,
-    plan: { kind: 'sweep', profile: face.curves, path, frenet: feature.frenet },
+    plan: { kind: 'sweep', profile: face.curves, path, frenet: feature.frenet,
+      ...(guide === undefined ? {} : { guide }) },
   };
 }
 
@@ -4449,7 +4461,7 @@ function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): SolidStep
       // 断面の輪郭・球の中心と半径をすべて混ぜる(cacheKey.ts の `ThruSectionsKeyMaterial`)。
       // 混ぜないと、スケッチの面を動かしても段の鍵が変わらず古い形が返る(NFR-PF-3)。
       return {
-        kind: 'thruSections',
+        kind: 'thruSections', smooth: plan.smooth,
         sections: plan.sections.map(toKeyThruSection),
         ruled: plan.ruled,
         closed: plan.closed,
@@ -4498,6 +4510,7 @@ function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): SolidStep
         kind: 'sweep',
         profile: plan.profile.map(toKeyCurve),
         path: plan.path.map(toKeyCurve),
+        ...(plan.guide === undefined ? {} : { guide: plan.guide.map(toKeyCurve) }),
         frenet: plan.frenet,
       };
     case 'rib':
@@ -4863,7 +4876,7 @@ export function referencedSketchIds(
       // 渡されないときは P5 タスク43 のまま空——既存の呼び出しのふるまいを変えないため)。
       return pointSketchIds([feature.origin], sketches);
     case 'sweep':
-      return [feature.profile.sketchId, feature.path.sketchId];
+      return [feature.profile.sketchId, feature.path.sketchId, ...(feature.guide === undefined ? [] : [feature.guide.sketchId])];
     case 'rib':
       return [feature.profile.sketchId];
     case 'surface':
@@ -4944,7 +4957,7 @@ function surfaceSketchIds(operation: SurfaceOperation): readonly string[] {
 /** 罫線面・ロフトの断面が使うスケッチの id(スケッチの面を指したものだけ)。 */
 function sectionSketchIds(sections: readonly RuledSection[]): readonly string[] {
   return sections.flatMap((section) =>
-    section.kind === 'sketchFace' ? [section.ref.sketchId] : [],
+    section.kind === 'sketchFace' || section.kind === 'sketchCurves' ? [section.ref.sketchId] : [],
   );
 }
 

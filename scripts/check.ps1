@@ -254,6 +254,19 @@ try {
         }
         if ($unitDiagnostic) {
             Write-Host "[診断] 指定ユニットテストだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
+            # 公開の形式・版の契約は個別機能の診断でも一緒に検査する(06 10.83)。
+            $requiredUnitTests = @(switch ($UnitPackage) {
+                "io" { "src/schemaVersion.test.ts" }
+                "model" { "src/exchange/exportPart.test.ts"; "src/part/createPartDocument.test.ts" }
+            })
+            foreach ($requiredUnitTest in $requiredUnitTests) {
+                if (-not (Test-Path -LiteralPath (Join-Path $root "packages/$UnitPackage/$requiredUnitTest") -PathType Leaf)) {
+                    throw "形式・版の必須テストがありません: $requiredUnitTest"
+                }
+                if ($UnitTests -notcontains $requiredUnitTest) {
+                    $UnitTests += $requiredUnitTest
+                }
+            }
             $unitArgs = @("--filter", "@pointercad/$UnitPackage", "exec", "vitest", "run") + $UnitTests
             Invoke-Check "ユニット診断: $UnitPackage" pnpm $unitArgs
         }

@@ -111,6 +111,7 @@
 
 import type {
   BRepBuilderAPI_TransitionMode,
+  BRepFill_TypeOfContact,
   BRepOffsetAPI_MakePipeShell,
   OpenCascadeInstance,
   TopoDS_Shape,
@@ -120,6 +121,7 @@ import type {
 import type { CurveSpec, RigidTransformSpec, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { addGuidedSections, prepareSweepGuide } from './sweepGuide.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
@@ -190,6 +192,8 @@ export interface SweepInput {
   readonly path: readonly CurveSpec[];
   /** true なら `SetMode_1`(Frenet)、false なら `SetMode_3`(副法線を上下方向へ固定)。 */
   readonly frenet: boolean;
+  /** 断面の向きと相似倍率を指定する案内線。対応は両線の同じ弧長比。 */
+  readonly guide?: readonly CurveSpec[];
 }
 
 function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
@@ -475,6 +479,23 @@ function rightCornerMode(oc: OpenCascadeInstance): BRepBuilderAPI_TransitionMode
   return value;
 }
 
+/**
+ * P11b §0.a-0.4で承認された列挙型の補完。embindの宣言は各値を{}とするため必要。
+ * 値は読み込んだOCCTのNoContactそのものとの同一性で検証し、他の列挙/任意オブジェクトは通さない。
+ * TypeScript上の列挙構造までは検証できない。実OCCTで方向と断面倍率の結果を別に確認する。
+ */
+function isGuideNoContact(value: unknown, oc: OpenCascadeInstance): value is BRepFill_TypeOfContact {
+  return value !== undefined && value === oc.BRepFill_TypeOfContact.BRepFill_NoContact;
+}
+
+function applyGuideMode(oc: OpenCascadeInstance, pipe: BRepOffsetAPI_MakePipeShell, guide: TopoDS_Wire): void {
+  const mode: unknown = oc.BRepFill_TypeOfContact.BRepFill_NoContact;
+  if (!isGuideNoContact(mode, oc)) throw new Error(KERNEL_NOT_READY_MESSAGE);
+  // ContactOnBorderは円断面で成功する一方、矩形/楕円では失敗する実証結果がある。
+  // NoContactの向き＋明示的な相似断面で幅も合わせる。補助spineと非互換のSetLawは使わない。
+  pipe.SetMode_5(guide, true, mode);
+}
+
 /** 掃引の向きの指定を `MakePipeShell` へ渡す(§0.a-0.43)。 */
 function applySweepMode(
   oc: OpenCascadeInstance,
@@ -528,21 +549,29 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
 
     // 断面が経路の曲がりを追い越すと掃引面が裏返る。出来上がりからは見分けられないので、
     // 作る前に断る(冒頭の注釈 (b)、NFR-UX-5)。
-    if (frame.radius >= minimumCurvatureRadius(oc, spine, keep)) {
+    const minimumRadius = minimumCurvatureRadius(oc, spine, keep);
+    if (frame.radius >= minimumRadius) {
       throw new Error(TOO_TIGHT_MESSAGE);
     }
     // Copy = true で複製を作るので、もとの断面のワイヤは触られない。
     const moved = keep(transformShape(oc, profileWire, placementOf(frame, start)));
     const placed = keep(oc.TopoDS.Wire_1(moved.shape));
 
+    const guideWire = input.guide === undefined ? null : makeWire(oc, input.guide,
+      '案内線は1本につながった線を選んでください。', keep);
+    const guidePlan = guideWire === null ? null : prepareSweepGuide(oc, spine, guideWire, placed, keep);
+    if (guidePlan !== null && frame.radius * guidePlan.maxScale >= minimumRadius) throw new Error(TOO_TIGHT_MESSAGE);
+
     const pipe = keep(new oc.BRepOffsetAPI_MakePipeShell(spine));
-    applySweepMode(oc, pipe, input.frenet, start.tangent, keep);
+    if (guideWire === null) applySweepMode(oc, pipe, input.frenet, start.tangent, keep);
+    else applyGuideMode(oc, pipe, guideWire);
     // 角は留め継ぎでつなぐ(冒頭の注釈 (a))。既定の `Transformed` は角で掃引が止まる。
     pipe.SetTransitionMode(rightCornerMode(oc));
     // 断面はすでに正しい位置と向きにあるので、OCCT 側の寄せ(WithContact)と
     // 向き直し(WithCorrection)は使わない。WithContact は断面を経路へ「接する」
     // まで平行移動する指定で、重心を経路に乗せる置き方(冒頭の注釈)と食い違う。
-    pipe.Add_1(placed, false, false);
+    if (guidePlan === null) pipe.Add_1(placed, false, false);
+    else addGuidedSections(oc, pipe, placed, guidePlan, keep);
     if (!pipe.IsReady()) {
       throw new Error(BUILD_FAILED_MESSAGE);
     }
@@ -566,7 +595,11 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
       shape = keep(solidMaker.Shape());
     }
 
-    const volume = Math.abs(measureVolume(oc, shape));
+    // 閉経路の複数断面では内向きの殻が返ることがある。絶対値だけで通すと
+    // 表裏や後続ブーリアンが逆になるため、縫合と同じく生成した形の向きを直す。
+    const signedVolume = measureVolume(oc, shape);
+    if (signedVolume < 0) shape = keep(shape.Reversed());
+    const volume = Math.abs(signedVolume);
     if (!hasSolid(oc, shape) || volume < MIN_SOLID_VOLUME_MM3) {
       throw new Error(NOT_SOLID_MESSAGE);
     }
@@ -575,7 +608,9 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
     }
     // 掃引できた長さの検査(冒頭の注釈 (a))。角で途中まで止まっていても OCCT は
     // 「正しい立体」と答えるので、体積 = 断面の面積 × 経路の長さ からずれていないかで見る。
-    const expectedVolume = frame.area * wireLength(oc, spine, keep);
+    // 案内線では断面積が変わるため A0×∫scale(s)²ds と照合する。
+    // 全経路を作れたかの1%基準は同じまま保つ。
+    const expectedVolume = frame.area * (guidePlan?.volumePerArea ?? wireLength(oc, spine, keep));
     if (Math.abs(volume - expectedVolume) > expectedVolume * SWEPT_LENGTH_TOLERANCE) {
       throw new Error(INCOMPLETE_MESSAGE);
     }

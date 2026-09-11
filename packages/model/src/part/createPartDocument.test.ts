@@ -477,8 +477,8 @@ describe('部品文書の生成(要件§8、FR-501)', () => {
   // (io 側 PCAD_SCHEMA_VERSION と同じ値を保つ)。これは仕様変更であり、期待値の緩和ではない。
   // P8 タスク3で版 9 へ上げた(封筒に `kind: 'drawing'` を足したため。
   // 部品とアセンブリで版の系列を分けない)。P8-60/62/64では名前付き視点・構成を足して版10へ上げる。
-  it('保存形式の版は 10(P8 タスク60・62・64)', () => {
-    expect(PART_SCHEMA_VERSION).toBe(12);
+  it('保存形式の現行版と新規部品文書の版が一致する', () => {
+    expect(PART_SCHEMA_VERSION).toBe(13);
     expect(createEmptyPartDocument().schemaVersion).toBe(PART_SCHEMA_VERSION);
   });
 

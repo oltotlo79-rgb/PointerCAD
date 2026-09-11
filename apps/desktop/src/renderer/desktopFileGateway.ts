@@ -1,5 +1,6 @@
 import { t, type FileGateway, type PickedFile } from '@pointercad/ui';
 import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
+import { desktopCamGateway } from './desktopCamGateway.js';
 
 /**
  * `window.pointercadDesktop`(preload が出す口)を、画面が使う `FileGateway` の形へ直す
@@ -137,12 +138,14 @@ function isOpenedShape(value: unknown): value is OpenedShape {
 }
 
 /** 種類つきの「開く」の答えの形。`kind` の綴りは `matchKind` で確かめる。 */
-interface OpenedTypedShape extends OpenedShape {
+interface OpenedTypedShape {
+  readonly name: string;
+  readonly bytes: unknown;
   readonly kind: unknown;
 }
 
 function isOpenedTypedShape(value: unknown): value is OpenedTypedShape {
-  return isOpenedShape(value) && 'kind' in value;
+  return isObject(value) && 'name' in value && typeof value.name === 'string' && 'bytes' in value && 'kind' in value;
 }
 
 /**
@@ -190,6 +193,7 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
   );
 
   const base: FileGateway = {
+    ...desktopCamGateway(api),
     async openPcad(kind): Promise<PickedFile | null> {
       const result: unknown = await api.openPcad(kind);
       if (result === null || result === undefined) {

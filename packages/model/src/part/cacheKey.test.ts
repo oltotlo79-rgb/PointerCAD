@@ -248,7 +248,7 @@ function thruSections(
   overrides: Partial<Omit<ThruSectionsKeyMaterial, 'kind'>> = {},
 ): ThruSectionsKeyMaterial {
   return {
-    kind: 'thruSections',
+    kind: 'thruSections', smooth: false,
     sections: [curvesSection(), sphereSection()],
     ruled: true,
     closed: true,
@@ -1196,7 +1196,7 @@ describe('面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)の鍵の
       'thruSections{sections=2:[' +
         'curves(1:[segment(0.000000000,0.000000000,0.000000000|1.000000000,0.000000000,0.000000000)])' +
         ',sphere(0.000000000,0.000000000,40.000000000|10.000000000)' +
-        '];ruled=true;closed=true;twist=0.000000000;sphereSegments=24.000000000}',
+        '];ruled=true;smooth=false;closed=true;twist=0.000000000;sphereSegments=24.000000000}',
     );
   });
 
@@ -1225,6 +1225,7 @@ describe('面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)の鍵の
     const base = cacheKeyFor(thruSections());
     expect(cacheKeyFor(thruSections({ twist: 1 }))).not.toBe(base);
     expect(cacheKeyFor(thruSections({ sphereSegments: 48 }))).not.toBe(base);
+    expect(cacheKeyFor(thruSections({ smooth: true }))).not.toBe(base);
     // 同じ断面でも、直線で結ぶかなめらかに結ぶかで形が違う(§0.a-0.25)。
     expect(cacheKeyFor(thruSections({ ruled: false }))).not.toBe(base);
     expect(cacheKeyFor(thruSections({ closed: false }))).not.toBe(base);

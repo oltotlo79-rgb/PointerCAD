@@ -1,0 +1,18 @@
+.pcad-script { padding: 10px; display: flex; flex-direction: column; gap: 10px; min-width: 0; text-align: left; }
+.pcad-script__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pcad-script h2, .pcad-script p { margin: 0; }
+.pcad-script h2 { font-size: 14px; }
+.pcad-script label { display: flex; flex-direction: column; gap: 4px; }
+.pcad-script input, .pcad-script select, .pcad-script textarea { box-sizing: border-box; width: 100%; min-width: 0; color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-border); border-radius: 3px; padding: 5px 6px; }
+.pcad-script button { font: inherit; color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-border); border-radius: 3px; padding: 4px 7px; cursor: pointer; }
+.pcad-script button:disabled { opacity: 0.5; cursor: not-allowed; }
+.pcad-script__source { min-height: 250px; resize: vertical; padding: 8px; font-family: ui-monospace, monospace; font-size: 12px; line-height: 20px; white-space: pre; overflow: auto; tab-size: 2; }
+.pcad-script__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.pcad-script details { display: flex; flex-direction: column; gap: 8px; }
+.pcad-script summary { cursor: pointer; font-weight: 600; padding-block: 4px; }
+.pcad-script pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; font-size: 12px; }
+.pcad-script__metrics { font-size: 11px; overflow-wrap: anywhere; }
+.pcad-script__metrics dd { margin: 2px 0 6px; }
+.pcad-script__error { color: var(--pcad-danger-text); overflow-wrap: anywhere; }
+.pcad-script__tool { padding: 6px 0; border-bottom: 1px solid var(--pcad-border); }
+.pcad-script__tool > span { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; overflow-wrap: anywhere; }

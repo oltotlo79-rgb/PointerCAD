@@ -7,6 +7,7 @@ export function contextualHelpTopic(state: AppState, explicit?: string | null, t
   if (explicit !== undefined && explicit !== null && helpTopic(explicit) !== undefined) return explicit;
   if (state.helpTopicId !== null) return state.helpTopicId;
   const kind = activeDocumentKind(state);
+  if (kind === 'part' && state.scriptPanelOpen) return 'scripts';
   if (kind === 'drawing') {
     if (state.drawingEditor?.kind === 'view') return state.drawingEditor.constructionKind === 'section' ? 'drawing-section' : 'drawing-views';
     if (state.drawingEditor?.kind === 'layer') return 'drawing-layer';

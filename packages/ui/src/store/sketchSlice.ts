@@ -256,6 +256,7 @@ export const createSketchSlice: StateCreator<
   Omit<SketchSlice, keyof SketchInitialState>
 > = (set, get) => ({
   setActiveTool: (activeTool) => {
+    get().closeScriptPanel();
     // 道具を変えたら入力中のポップアップを閉じ、取りかけの始点と吸着の印も落とす
     // (取りかけの操作を持ち越さない、NFR-UX-3)。選ぶ部分形状の種類(§0.a-0.6)も
     // 道具に応じて自動で切り替える(selectionKindForTool は subShapeSelection.ts の

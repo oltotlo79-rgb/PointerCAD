@@ -229,13 +229,18 @@ try {
         $ignore13i = Join-Path $tempRoot '.gitignore'
         if (Test-Path -LiteralPath $ignore13i) { throw 'R13 isolated fixture already has .gitignore' }
         [IO.File]::WriteAllText($ignore13i, "ignored-result.tmp`n", [Text.UTF8Encoding]::new($false))
+        # Unix の先頭ドットも Hidden 扱い。Windows でも同じ属性で後片付けを検証する。
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            [IO.File]::SetAttributes($ignore13i, [IO.FileAttributes]::Hidden)
+        }
         $before13i = Get-TrackedTreeSnapshot -Root $tempRoot -Level Push
         $ignored13i = Join-Path $tempRoot 'ignored-result.tmp'
         [IO.File]::WriteAllText($ignored13i, 'generated')
         $result13i = Compare-TrackedTreeSnapshot -Before $before13i -After (Get-TrackedTreeSnapshot -Root $tempRoot -Level Push)
         Assert-True ($result13i.Unchanged) 'R13i: gitignoreされた出力だけなら合格'
-        Remove-Item -LiteralPath $ignore13i -ErrorAction Stop
+        Remove-Item -LiteralPath $ignore13i -Force -ErrorAction Stop
         Remove-Item -LiteralPath $ignored13i -ErrorAction Stop
+        Assert-True (-not (Test-Path -LiteralPath $ignore13i)) 'R13i: Hidden属性の.gitignoreも後片付けできる'
 
         # 13j: Windowsの排他的ロックで実際に読取不能にし、取得失敗を成功扱いしない。
         if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {

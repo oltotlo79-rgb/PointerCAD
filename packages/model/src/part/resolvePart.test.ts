@@ -4447,6 +4447,7 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
       name: options.name ?? id,
       suppressed: options.suppressed ?? false,
       kind: 'loft',
+      smooth: false,
       sections,
       twist: toExpr(options.twist ?? '0'),
     };

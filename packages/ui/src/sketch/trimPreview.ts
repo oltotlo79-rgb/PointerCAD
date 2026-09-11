@@ -34,6 +34,7 @@ import {
   curvePointAt,
   curveStart,
   distanceVec3,
+  hasConnectedSegmentEnd,
   isFullCircle,
   lengthVec3,
   normalizeVec3,
@@ -275,6 +276,9 @@ export function trimPreviewAt(
   const closed = curve.kind === 'arc' && isFullCircle(curve);
   const cuts = cutRatiosOf(curve, resolved, closed);
   if (cuts.length === 0) {
+    if (curve.kind === 'segment' && hasConnectedSegmentEnd(curve, resolved)) {
+      return { ok: true, preview: { kind: 'trim', points: [curve.from, curve.to] } };
+    }
     return refuse('noIntersection');
   }
   if (closed && cuts.length < 2) {

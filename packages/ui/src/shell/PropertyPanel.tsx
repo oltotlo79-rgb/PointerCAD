@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { surfaceHelpTopic } from '../solid/surfaceHelpTopic.js';
 import { SheetMetalPanel } from '../sheetMetal/SheetMetalPanel.js';
+import { ScriptPanel } from '../scripting/ScriptPanel.js';
 import { SheetUnfoldPanel } from '../sheetMetal/SheetUnfoldPanel.js';
 import { sheetFieldUnitError } from '../sheetMetal/sheetFieldError.js';
 
@@ -984,7 +986,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
       summary.toggles.length === 0 &&
       summary.choices.length === 0 &&
       axis === null ? null : (
-        <div className="pcad-section">
+        <div className="pcad-section" data-help-topic={surfaceHelpTopic(feature.kind)}>
           <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
           {summary.fields.length === 0 ? null : (
             <div className="pcad-coordinate__fields">
@@ -1024,7 +1026,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
               key={choice.key}
               choice={choice}
               onChoose={(value) => {
-                apply(setSolidChoice(feature, choice.key, value, units.variables, units));
+                apply(setSolidChoice(feature, choice.key, value, units.variables, units, part));
               }}
             />
           ))}
@@ -3141,6 +3143,7 @@ type PanelTab = 'properties' | 'parameters';
  * 画面だけの状態なので `useState` に置く(同上「表示専用の一時状態だけ」)。
  */
 export function PropertyPanel(): React.JSX.Element {
+  const scriptOpen = useAppStore(state => state.scriptPanelOpen);
   const sheetMetalTool = useAppStore((state) => state.sheetMetalTool);
   const [tab, setTab] = useState<PanelTab>('properties');
   const part = useAppStore((state) => state.document);
@@ -3185,6 +3188,7 @@ export function PropertyPanel(): React.JSX.Element {
   // 「ここを原点にする」を出せる 1 点(FR-331、タスク35b)。立体の頂点はここだけに出る。
   const origin = useOriginSelection();
 
+  if (scriptOpen) return <section className="pcad-panel pcad-panel--right"><ScriptPanel /></section>;
   if (sheetMetalTool !== null && sheetMetalTool.document === part) return <section className="pcad-panel pcad-panel--right">
     <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
     {sheetMetalTool.kind === 'sheetUnfold' ? <SheetUnfoldPanel key={sheetMetalTool.id} session={sheetMetalTool} />

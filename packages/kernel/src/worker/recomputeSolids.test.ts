@@ -1705,7 +1705,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       topZ: number,
     ): SolidStepRequest {
       const step: ThruSectionsStepSpec = {
-        kind: 'thruSections',
+        kind: 'thruSections', smooth: false,
         sections: [
           { kind: 'faceQuery', targetKey, query: face },
           { kind: 'curves', curves: centeredRectangle(20, 15, topZ) },
@@ -1953,7 +1953,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
         side: SubShapeQuery,
       ): SolidStepRequest {
         const spec: ThruSectionsStepSpec = {
-          kind: 'thruSections',
+          kind: 'thruSections', smooth: false,
           sections: [
             { kind: 'faceQuery', targetKey: 'key-box', query: top },
             { kind: 'faceQuery', targetKey: 'key-box', query: side },
@@ -1998,7 +1998,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
         const { cache } = newCache();
         const { top } = boxFaceQueries();
         const spec: ThruSectionsStepSpec = {
-          kind: 'thruSections',
+          kind: 'thruSections', smooth: false,
           sections: [
             { kind: 'faceQuery', targetKey: 'key-box', query: top },
             { kind: 'curves', curves: boxTopRectangle(10, 40) },

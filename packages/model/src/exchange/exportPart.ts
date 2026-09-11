@@ -20,7 +20,6 @@ import {
   type ExportQuality,
   type ExportRequest,
   type FileKind,
-  type ImportFormat,
 } from './types.js';
 
 /**
@@ -97,8 +96,10 @@ export function usesTriangles(kind: FileKind): boolean {
       return true;
     case 'pcad':
     case 'pcadt':
+    case 'pcadscript':
     case 'step':
     case 'dxf':
+    case 'dwg':
       return false;
   }
 }
@@ -225,6 +226,8 @@ export function selectExportBodies(
  * P2 が `packages/io` に置いた関数を、P6 で model へ寄せたもの(あちらは再輸出だけ)。
  * 一覧は `EXPORT_FORMATS` の 1 か所だけを見る(並びを写さない)。
  */
-export function canRoundTrip(format: ImportFormat): boolean {
-  return EXPORT_FORMATS.some((candidate) => candidate === format);
+export function canRoundTrip(format: FileKind): boolean {
+  // DWGは変換案内だけ。読書きできる文書・DXFと、立体出力形式を区別する。
+  return format === 'pcad' || format === 'pcadt' || format === 'pcadscript' || format === 'dxf'
+    || EXPORT_FORMATS.some((candidate) => candidate === format);
 }

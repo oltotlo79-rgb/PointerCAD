@@ -42,6 +42,7 @@ export async function verifySheetStepFiles(page: Page, partPath: string, files: 
     await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイルのほかの操作/ }).first().click();
     const chooser = page.waitForEvent('filechooser');
     await page.locator('.pcad-toolbar').getByRole('group', { name: 'ファイルのほかの操作', exact: true }).getByRole('button', { name: '読み込む', exact: true }).click();
+    await page.getByRole('form', { name: '読み込み', exact: true }).getByRole('button', { name: 'STEP', exact: true }).click();
     await (await chooser).setFiles(path);
     await expect(rows).toHaveCount(count + 1, { timeout: 60_000 });
     await rows.last().click();

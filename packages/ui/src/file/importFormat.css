@@ -1,0 +1,3 @@
+.pcad-import-format__kinds { display: flex; flex-wrap: wrap; gap: var(--pcad-space-2); }
+.pcad-import-format__guide { display: grid; gap: var(--pcad-space-2); }
+.pcad-import-format__guide p { margin: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }

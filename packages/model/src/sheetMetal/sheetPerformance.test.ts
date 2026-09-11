@@ -12,28 +12,34 @@ import { sheetPerformanceFixture, U_BRACKET_VOLUME } from './testing/sheetPerfor
 let bridge: AssemblyKernelBridge;
 const document = sheetPerformanceFixture(), owner = 'sheet-performance-100';
 let cold: PartRecomputeResult;
+let coldElapsed = 0;
 beforeAll(async () => {
   const start = performance.now();
   await loadOcctForNode();
   process.stdout.write(`[実測] 板金性能・OCCT初期化: ${(performance.now() - start).toFixed(1)} ms（計算本体から分離）\n`);
   bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode));
+  // The reference CI mode must reach the actual 5000ms budget assertion. A generic
+  // 5000ms test-body timeout otherwise races that measurement at its own limit.
+  // Keep initialization separate, measure all 100 stages once, and assert the same
+  // strict/reference contract below. The existing bounded setup owns this work.
+  const stages: { id: string; at: number }[] = [];
+  const calculationStart = performance.now();
+  cold = await recomputePart(document, bridge, { partId: owner, generation: 1,
+    onProgress: (progress) => { stages.push({ id: progress.featureId, at: performance.now() }); } });
+  coldElapsed = performance.now() - calculationStart;
+  const totals = new Map<string, number>();
+  for (const [i, stage] of stages.entries()) {
+    const kind = stage.id.split('-')[0];
+    totals.set(kind, (totals.get(kind) ?? 0) + ((stages[i + 1]?.at ?? calculationStart + coldElapsed) - stage.at));
+  }
+  console.log('[描画診断] 板金の段別時間', { beforeKernelMs: (stages[0]?.at ?? calculationStart) - calculationStart, stages: Object.fromEntries(totals) });
 }, 180_000);
 afterAll(async () => { await bridge.releasePart(owner); await bridge.releasePart('sheet-performance-flat'); });
 
 describe.sequential('P10 板金100段の実OCCT性能と部分更新', () => {
-  it('異なる座標の25個のU板を100段全再計算し、5秒以内で独立した体積と一致する', async () => {
+  it('異なる座標の25個のU板を100段全再計算し、5秒以内で独立した体積と一致する', () => {
     expect(document.solids).toHaveLength(100);
-    const stages: { id: string; at: number }[] = [];
-    const start = performance.now();
-    cold = await recomputePart(document, bridge, { partId: owner, generation: 1,
-      onProgress: (progress) => { stages.push({ id: progress.featureId, at: performance.now() }); } });
-    const elapsed = performance.now() - start;
-    const totals = new Map<string, number>();
-    for (const [i, stage] of stages.entries()) {
-      const kind = stage.id.split('-')[0];
-      totals.set(kind, (totals.get(kind) ?? 0) + ((stages[i + 1]?.at ?? start + elapsed) - stage.at));
-    }
-    console.log('[描画診断] 板金の段別時間', { beforeKernelMs: (stages[0]?.at ?? start) - start, stages: Object.fromEntries(totals) });
+    const elapsed = coldElapsed;
     process.stdout.write(`[実測] 板金100段全再計算: ${elapsed.toFixed(1)} ms / 上限5000ms / cache ${cold.cacheHits}\n`);
     expect(cold.errors).toEqual([]); expect(cold.cancelled).toBe(false);
     expect(cold.cacheHits).toBe(0); expect(cold.bodies).toHaveLength(25);

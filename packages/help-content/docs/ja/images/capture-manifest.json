@@ -466,5 +466,221 @@
     "sha256": "4ae8676521ae1da4d6754148e5c57aa79b71fe65c5520160212034ced55fbf28",
     "kind": "actual-application-screenshot",
     "edited": false
+  },
+  {
+    "file": "cam-step-handoff.png",
+    "testRun": "codex-p8-tables-cam-e2e4",
+    "testSource": "e2e/tests/camFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "aa04ae37eeb26dfcc640560caf791dd2aa4799543c1a0288ed1f3426b781094f",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "cam-stl-handoff.png",
+    "testRun": "codex-p8-tables-cam-e2e3",
+    "testSource": "e2e/tests/camFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "764ba4eab24a4d60073210da3da6952bae566352a4472e4590aacc0b7d3b82bd",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "dwg-conversion-guide.png",
+    "testRun": "codex-p8-tables-p11b-e2e4",
+    "testSource": "e2e/tests/dwgFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "e0b68a1aa977dbae2573c8bf5eb717cbadfd23ca9ef1d5d456b0f0cea5fa9f49",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "loft-spline-input.png",
+    "testRun": "codex-p8-tables-surfaces-e2e4",
+    "testSource": "e2e/tests/surfacesFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "9625d24526ace084862d593a5043ee8b3089c881f204e15401796da1aff853d5",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "loft-spline-smooth.png",
+    "testRun": "codex-p8-tables-surfaces-e2e4",
+    "testSource": "e2e/tests/surfacesFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "0565e8d5f36abb56ca35daf0d21363fd142d1076636a0d4c1aef649cf56690ba",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "script-error-line.png",
+    "testRun": "codex-p8-tables-script-e2e4",
+    "testSource": "e2e/tests/scriptsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "30f10c00de89ec5cb7ccc8be4fa0aaba28b4678ae38c408a4a5d0ac662f22f96",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "script-module-created.png",
+    "testRun": "codex-p8-tables-script-e2e5",
+    "testSource": "e2e/tests/scriptToolsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "c229aa04149a4ab016484c9323b31c8d8120009201dee578c3d5e4dde14dd639",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "script-plate-created.png",
+    "testRun": "codex-p8-tables-script-e2e4",
+    "testSource": "e2e/tests/scriptsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "86635d0ffe5598dc869f25f4fd1b368fb375b7b28d7de3c472e75405c29fbdbd",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "script-tool-menu.png",
+    "testRun": "codex-p8-tables-script-e2e5",
+    "testSource": "e2e/tests/scriptsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "c8ee9c6a753ea758f121b859c12e27d453be0b5a4a9974cd8f8d51c7c83bd91c",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "strength-beam-input.png",
+    "testRun": "codex-p8-tables-p11b-e2e4",
+    "testSource": "e2e/tests/strengthFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "74e8c96f882133280f3bae4a830c620d2682556babc285cd9018f054ec9f139d",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "strength-beam-results.png",
+    "testRun": "codex-p8-tables-p11b-e2e4",
+    "testSource": "e2e/tests/strengthFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "44fc07f03c7a17a8c2d5af9b0a62e396c62045c2a8eb493196437409d44ea866",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "strength-bolt-input.png",
+    "testRun": "codex-p8-tables-p11b-e2e4",
+    "testSource": "e2e/tests/strengthFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "cdd1c41b695cb8acc8245b83607d0a31224c592e9afa4e157bf9965e7573de06",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "strength-shaft-results.png",
+    "testRun": "codex-p8-tables-p11b-e2e4",
+    "testSource": "e2e/tests/strengthFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "0df41cdc0d956a939f140a7762eb1098b7a9cbb39e965ae4f7daee3dfaead116",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sweep-guide-input.png",
+    "testRun": "codex-p8-tables-surfaces-e2e4",
+    "testSource": "e2e/tests/surfacesFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "bf142e93152ab659156b73e169f519d37de9001e919faca7ae2793a9024f4347",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "sweep-guide-result.png",
+    "testRun": "codex-p8-tables-surfaces-e2e4",
+    "testSource": "e2e/tests/surfacesFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "bbda00370f6edf5a92f473382977f56b0b713468b14b0e7463abed84ccd6dbd8",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "intersection-bent.png",
+    "testRun": "codex-p8-tables-p11-layout-trim1",
+    "testSource": "e2e/tests/intersectionsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "eb510585a36a1aa712224ad9908792f3c154b0a6add97c2da366c3642458e342",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "intersection-created.png",
+    "testRun": "codex-p8-tables-p11-layout-trim1",
+    "testSource": "e2e/tests/intersectionsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "da69a5adb0873b89d91a8c6456df8ee1f0088b961e20fc3574e6d6a3333375ce",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "intersection-trim-preview.png",
+    "testRun": "codex-p8-tables-p11-layout-trim1",
+    "testSource": "e2e/tests/intersectionsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "b7f491a16ae60a42a97fd700ab939cec694a6b75bd380f1f2f8411ec10f7e619",
+    "kind": "actual-application-screenshot",
+    "edited": false
   }
 ]

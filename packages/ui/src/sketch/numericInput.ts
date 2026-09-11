@@ -590,7 +590,7 @@ export type NumericInputStep =
   | ReferenceNumericInputStep
   | EditNumericInputStep;
 
-export type FieldUnit = 'mm' | 'degree' | 'count' | 'ratio';
+export type FieldUnit = 'mm' | 'degree' | 'count' | 'ratio' | 'N' | 'MPa' | 'Nmm';
 
 /**
  * **どの欄が長さかを決める唯一の表**(P6 タスク3b、FR-811・FR-814・FR-205)。
@@ -609,6 +609,9 @@ export function isLengthFieldUnit(unit: FieldUnit): boolean {
     case 'mm':
       return true;
     case 'degree':
+    case 'N':
+    case 'MPa':
+    case 'Nmm':
     case 'count':
     case 'ratio':
       return false;
@@ -712,6 +715,7 @@ export type NumericToggleKey =
    * (線分・円弧・円・2点+半径の円弧・矩形・正多角形・長穴・楕円・スプライン)。既定は切。
    */
   | 'construction'
+  | 'splitIntersections'
   /** 楕円を一部だけ(楕円弧)にするか(FR-318)。既定は切=全周。 */
   | 'ellipseArc'
   /** スプラインの最後の点から最初の点へ戻してつなぐか(FR-317)。既定は切。 */
@@ -732,6 +736,7 @@ export type NumericToggleKey =
   | 'thinWalled'
   /** スイープで断面を曲がりに合わせて回すか(FR-409)。既定は切=ねじれを抑える。 */
   | 'sweepFrenet'
+  | 'loftSmooth'
   /** エンボスを浮き出すか(FR-421)。既定は切=彫る。 */
   | 'raised'
   /** 拡大縮小を軸ごとの倍率にするか(FR-424)。入にすると欄が 1 つから 3 つへ増える。 */
@@ -760,6 +765,7 @@ export type RevolveAxisChoice = 'x' | 'y' | 'z' | 'line';
  * patternDirection は直線パターン専用(向きであって回転軸ではないので別のキーにする)。
  */
 export type NumericChoiceKey =
+  | 'sweepGuide'
   | 'axis'
   | 'threadDesignation'
   | 'threadSeries'
@@ -839,6 +845,7 @@ export interface NumericChoiceOption {
 
 /** いくつかから1つを選ぶつまみ。 */
 export interface NumericChoice {
+  readonly presentation?: 'menu';
   readonly key: NumericChoiceKey;
   /** つまみの見出し(例:「回転軸」「決め方」「求める値」)。 */
   readonly labelKey: MessageKey;
@@ -2450,7 +2457,7 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   // 面をつなぐ・ロフトもつまみを持たない(§2.15 の段の表。ロフトの「閉じる」は
   // 常に入で文書にも UI にも出さない決まりになった。タスク25 の統括の決定)。
   ruledTwist: [],
-  loftTwist: [],
+  loftTwist: ['loftSmooth'],
   /*
     P5 の Should / Could 群のつまみ(§2.15 の段の表)。
     リブは**向きのつまみを持たない**(輪郭の平面と対象の位置で向きが決まる規約。タスク46)。
@@ -2485,7 +2492,7 @@ const SKETCH_STEP_TOGGLE_KEYS: Readonly<
 > = {
   point: [],
   lineStart: [],
-  lineEnd: ['construction'],
+  lineEnd: ['construction', 'splitIntersections'],
   arcCenter: [],
   arcShape: ['construction'],
   pointArrayBase: [],
@@ -2552,6 +2559,7 @@ export const TOGGLE_LABEL_KEYS: Readonly<Record<NumericToggleKey, MessageKey>> =
   patternSymmetric: 'numericInput.toggle.patternSymmetric',
   fullCircle: 'numericInput.toggle.fullCircle',
   construction: 'numericInput.toggle.construction',
+  splitIntersections: 'numericInput.toggle.splitIntersections',
   ellipseArc: 'numericInput.toggle.ellipseArc',
   splineClosed: 'numericInput.toggle.splineClosed',
   // P5 の Should / Could 群(タスク48 が ja.json へ足した見出し)。
@@ -2559,6 +2567,7 @@ export const TOGGLE_LABEL_KEYS: Readonly<Record<NumericToggleKey, MessageKey>> =
   taperOutward: 'numericInput.toggle.taperOutward',
   thinWalled: 'numericInput.toggle.thinWalled',
   sweepFrenet: 'numericInput.toggle.sweepFrenet',
+  loftSmooth: 'numericInput.toggle.loftSmooth',
   raised: 'numericInput.toggle.raised',
   scalePerAxis: 'numericInput.toggle.scalePerAxis',
   shellOutward: 'numericInput.toggle.shellOutward',
@@ -2581,6 +2590,7 @@ const TOGGLE_DEFAULT_VALUES: Readonly<Record<NumericToggleKey, boolean>> = {
   // 構築線・楕円弧・閉じたスプラインは、いずれも「ふつうはしないこと」なので既定は切
   // (FR-320 の既定オフ、楕円は全周、スプラインは開いた曲線)。
   construction: false,
+  splitIntersections: true,
   ellipseArc: false,
   splineClosed: false,
   /*
@@ -2592,6 +2602,7 @@ const TOGGLE_DEFAULT_VALUES: Readonly<Record<NumericToggleKey, boolean>> = {
   taperOutward: false,
   thinWalled: false,
   sweepFrenet: DEFAULT_SWEEP_FRENET,
+  loftSmooth: false,
   raised: DEFAULT_EMBOSS_RAISED,
   scalePerAxis: false,
   shellOutward: DEFAULT_SHELL_OUTWARD,
@@ -3108,6 +3119,9 @@ function cutPlaneKindChoice(): NumericChoice {
 /** 段階ごとの選択肢の並び。持たない段は空配列。 */
 function choicesFor(step: NumericInputStep, options: NumericInputOptions): readonly NumericChoice[] {
   switch (step) {
+    case 'sweepOptions':
+      return [{ key: 'sweepGuide', labelKey: 'numericInput.choice.sweepGuide', value: 'none', presentation: 'menu',
+        options: [{ value: 'none', labelKey: 'numericInput.sweepGuide.none' }, ...(options.sweepGuides ?? [])] }];
     case 'sketchChamferSize':
       return [sketchChamferModeChoice()];
     case 'offsetDistance':
@@ -3251,6 +3265,9 @@ export const UNIT_KEYS: Readonly<Record<FieldUnit, MessageKey>> = {
   degree: 'numericInput.unit.degree',
   count: 'numericInput.unit.count',
   ratio: 'numericInput.unit.ratio',
+  N: 'strength.unit.N',
+  MPa: 'strength.unit.MPa',
+  Nmm: 'strength.unit.Nmm',
 };
 
 /**
@@ -3492,6 +3509,7 @@ export function toggleValueOf(state: NumericInputState, key: NumericToggleKey): 
 
 /** ポップアップを開くときに外から渡せるもの。無くても既定で成り立つ(NFR-UX-4)。 */
 export interface NumericInputOptions {
+  readonly sweepGuides?: readonly NumericChoiceOption[];
   /**
    * 回転軸・パターンの向き・ばねの軸に選べるスケッチの線分(§0.a-0.9)。
    * 線分が選ばれているときだけタスク21 が渡し、渡されなければ軸は X / Y / Z だけになる。
@@ -3637,6 +3655,12 @@ export type NumericFocusTarget =
   | { readonly kind: 'toggle'; readonly index: number };
 
 /** Tab で巡る輪。P1 の段は欄しか無いので、輪の添字は欄の添字と一致する。 */
+export function numericToggleEnabled(state: NumericInputState, key: NumericToggleKey): boolean {
+  if (key !== 'sweepFrenet') return true;
+  const guide = state.choices.find((choice) => choice.key === 'sweepGuide')?.value;
+  return guide === undefined || guide === 'none';
+}
+
 export function numericFocusTargets(state: NumericInputState): readonly NumericFocusTarget[] {
   const targets: NumericFocusTarget[] = state.fields.map((_field, index) => ({
     kind: 'field',
@@ -3645,8 +3669,8 @@ export function numericFocusTargets(state: NumericInputState): readonly NumericF
   state.choices.forEach((_choice, index) => {
     targets.push({ kind: 'choice', index });
   });
-  state.toggles.forEach((_toggle, index) => {
-    targets.push({ kind: 'toggle', index });
+  state.toggles.forEach((toggle, index) => {
+    if (numericToggleEnabled(state, toggle.key)) targets.push({ kind: 'toggle', index });
   });
   return targets;
 }
@@ -3848,6 +3872,7 @@ export function reduceNumericInput(
       return { ...state, fields };
     }
     case 'toggle': {
+      if (!numericToggleEnabled(state, event.key)) return state;
       if (!state.toggles.some((toggle) => toggle.key === event.key)) {
         return state;
       }
@@ -4236,6 +4261,8 @@ export type PointArrayLayoutChoice = 'linear' | 'circular' | 'grid';
 export interface SketchCommitFlags {
   /** 構築線にするか(FR-320)。 */
   readonly construction?: boolean;
+  /** 確定した線分の交点を共有点でつなぎ、区間ごとに編集できるようにする。 */
+  readonly splitIntersections?: boolean;
   /** 楕円を一部だけ(楕円弧)にするか(FR-318)。 */
   readonly ellipseArc?: boolean;
   /** スプラインを閉じるか(FR-317)。 */
@@ -4421,6 +4448,7 @@ export interface SolidCommitFlags {
   readonly thinWalled?: boolean;
   /** スイープで断面を曲がりに合わせて回すか(FR-409)。 */
   readonly sweepFrenet?: boolean;
+  readonly loftSmooth?: boolean;
   /** エンボスを浮き出すか(FR-421)。切なら彫る。 */
   readonly raised?: boolean;
   /** 拡大縮小を軸ごとの倍率にするか(FR-424)。 */
@@ -4479,6 +4507,7 @@ export interface SolidInputCommit {
 
 /** P5 の Should / Could 群の選択肢の値(タスク49)。持たない段では欄ごと入らない。 */
 export interface SolidShapeChoices {
+  readonly sweepGuide?: string;
   /** 押し出しの終わり方('distance' / 'toFace' / 'toNext')。 */
   readonly extrudeEnd?: string;
   /** 薄板押し出しの厚みを付ける側('inner' / 'outer' / 'both')。 */
@@ -4868,6 +4897,7 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
     taperOutward?: boolean;
     thinWalled?: boolean;
     sweepFrenet?: boolean;
+    loftSmooth?: boolean;
     raised?: boolean;
     scalePerAxis?: boolean;
     shellOutward?: boolean;
@@ -4907,6 +4937,9 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
         break;
       case 'sweepFrenet':
         flags.sweepFrenet = toggle.value;
+        break;
+      case 'loftSmooth':
+        flags.loftSmooth = toggle.value;
         break;
       case 'raised':
         flags.raised = toggle.value;
@@ -5031,11 +5064,14 @@ function toArcBulge(value: string | undefined): 'left' | 'right' | undefined {
 
 /** スケッチのつまみを確定結果の形へ写す。持たないつまみは欄ごと現れない。 */
 function sketchFlagsFor(toggles: readonly NumericToggle[]): SketchCommitFlags {
-  const flags: { construction?: boolean; ellipseArc?: boolean; splineClosed?: boolean } = {};
+  const flags: { construction?: boolean; splitIntersections?: boolean; ellipseArc?: boolean; splineClosed?: boolean } = {};
   for (const toggle of toggles) {
     switch (toggle.key) {
       case 'construction':
         flags.construction = toggle.value;
+        break;
+      case 'splitIntersections':
+        flags.splitIntersections = toggle.value;
         break;
       case 'ellipseArc':
         flags.ellipseArc = toggle.value;
@@ -5133,6 +5169,7 @@ function buildSolidCommit(
  */
 function shapeChoicesFrom(choices: readonly NumericChoice[]): SolidShapeChoices {
   return {
+    sweepGuide: choiceValueFrom(choices, 'sweepGuide'),
     extrudeEnd: choiceValueFrom(choices, 'extrudeEnd'),
     thicknessSide: choiceValueFrom(choices, 'thicknessSide'),
     mirrorPlane: choiceValueFrom(choices, 'mirrorPlane'),
@@ -5448,8 +5485,13 @@ export function nextNumericInput(
     case 'point':
       // 点は 1 段階で終わるので、同じ指定方法のまま次の点を聞く。
       return chaining ? createNumericInput(state.toolId, 'point', state.mode) : null;
-    case 'lineEnd':
-      return chaining ? createNumericInput(state.toolId, 'lineEnd') : null;
+    case 'lineEnd': {
+      if (!chaining) return null;
+      const next = createNumericInput(state.toolId, 'lineEnd');
+      const split = state.toggles.find((toggle) => toggle.key === 'splitIntersections');
+      return split === undefined ? next : { ...next, toggles: next.toggles.map((toggle) =>
+        toggle.key === 'splitIntersections' ? { ...toggle, value: split.value } : toggle) };
+    }
     case 'arcShape':
       return chaining ? createNumericInput(state.toolId, 'arcCenter') : null;
     case 'circleRadius':

@@ -1467,7 +1467,7 @@ describe('P4 新しい図形の道具と段(計画書 docs/plans/P4-スケッチ
   it('P1 の線分・円弧の最後の段にも構築線が付いた(FR-320。欄と既定値は変えていない)', () => {
     const lineEnd = createNumericInput('line', 'lineEnd');
     expect(lineEnd.fields.map((field) => field.key)).toEqual(['dx', 'dy', 'dz']);
-    expect(lineEnd.toggles.map((toggle) => toggle.key)).toEqual(['construction']);
+    expect(lineEnd.toggles.map((toggle) => toggle.key)).toEqual(['construction', 'splitIntersections']);
     const arcShape = createNumericInput('arc', 'arcShape');
     expect(arcShape.fields.map((field) => field.source)).toEqual(['10', '0', '90']);
     expect(arcShape.toggles.map((toggle) => toggle.key)).toEqual(['construction']);
@@ -2934,13 +2934,14 @@ describe('面をつなぐ・ロフトの段(FR-430、FR-410、§2.15 の段の�
     }
   });
 
-  it('どちらもねじれ 1 欄(既定 0、単位は個)で、つまみは持たない', () => {
+  it('どちらもねじれ1欄で、ロフトだけ平滑化を既定オフで持つ', () => {
     for (const { tool, step } of RULED_STEPS) {
       const state = createNumericInput(tool, step);
       expect(state.fields.map((field) => field.key), tool).toEqual(['ruledTwist']);
       expect(state.fields.map((field) => field.source), tool).toEqual(['0']);
       expect(state.fields[0].unit, tool).toBe('count');
-      expect(state.toggles, tool).toEqual([]);
+      expect(state.toggles, tool).toEqual(tool === 'loft'
+        ? [{ key: 'loftSmooth', labelKey: 'numericInput.toggle.loftSmooth', value: false }] : []);
     }
   });
 
@@ -3075,7 +3076,7 @@ const SHAPE_STEPS: readonly ShapeStepExpectation[] = [
     fieldKeys: [],
     defaults: [],
     toggleKeys: ['sweepFrenet'],
-    choiceKeys: [],
+    choiceKeys: ['sweepGuide'],
   },
   {
     tool: 'rib',

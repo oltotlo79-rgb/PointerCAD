@@ -32,7 +32,7 @@ import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
-import { queueDocumentSave } from './documentSaveQueue.js';
+import { completeDocumentSave, queueDocumentSave } from './documentSaveQueue.js';
 import { applyPickedDrawing, saveDrawing } from './drawingFile.js';
 
 /**
@@ -407,7 +407,6 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   const after = useAppStore.getState();
   const savedFileName = withPcadExtension(savedName);
   after.setFileState(savedFileName, document);
-  after.setFileMessage({ key: 'file.saved', failed: false });
   /*
    * 保存できたものも履歴へ残す(FR-807)。別名保存で名前が変わったときは、**新しい名前**が
    * 先頭へ来る(`savedName` は口が実際に書いた先の名前で、候補名ではない)。
@@ -426,14 +425,12 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
     const current = useAppStore.getState();
     return isCurrent() && current.autoSaver === saver && !hasUnsavedChanges(current.document, document);
   };
-  if (saver !== null && canDiscard()) {
-    try {
+  await completeDocumentSave(isCurrent, async () => {
+    if (saver !== null && canDiscard()) {
       await saver.discard();
       if (canDiscard()) await saver.discard(DEFAULT_AUTO_SAVE_IDENTITY);
-    } catch {
-      // 控えの消去に失敗しても、保存できたという知らせは変えない。
     }
-  }
+  });
   } catch (error) {
     if (isCurrent()) useAppStore.getState().setFileMessage({ key: saveFailureMessageKey(error), failed: true });
   }

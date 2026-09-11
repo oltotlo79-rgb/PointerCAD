@@ -12,9 +12,18 @@ import {
 } from '../solid/measureCommands.js';
 import type { MeasurementState } from '../viewport/createMeasureLayer.js';
 import type { AppState } from './appState.js';
+import {
+  calculateStrengthSession, createStrengthSession, editStrengthSession,
+  type StrengthEdit, type StrengthSession,
+} from '../strength/strengthSession.js';
 
 /** 測定のスライスが持つ欄と操作。 */
 export interface MeasureSlice {
+  readonly strengthSession: StrengthSession | null;
+  readonly toggleStrength: () => void;
+  readonly closeStrength: () => void;
+  readonly editStrength: (edit: StrengthEdit) => void;
+  readonly calculateStrength: () => void;
   /**
    * いま画面に出している測定の結果(FR-1102、P5 タスク31)。無ければ null。
    *
@@ -94,6 +103,7 @@ export type MeasureInitialState = Pick<
   | 'massProperties'
   | 'measureErrorKey'
   | 'partMeasurer'
+  | 'strengthSession'
 >;
 
 export const createMeasureSlice: StateCreator<
@@ -102,6 +112,19 @@ export const createMeasureSlice: StateCreator<
   [],
   Omit<MeasureSlice, keyof MeasureInitialState>
 > = (set, get) => ({
+  toggleStrength: () => {
+    const state = get();
+    set({ strengthSession: state.strengthSession === null ? createStrengthSession(state.displaySettings.lengthUnit) : null });
+  },
+  closeStrength: () => { set({ strengthSession: null }); },
+  editStrength: edit => {
+    const session = get().strengthSession;
+    if (session !== null) set({ strengthSession: editStrengthSession(session, edit) });
+  },
+  calculateStrength: () => {
+    const state = get();
+    if (state.strengthSession !== null) set({ strengthSession: calculateStrengthSession(state.strengthSession, state.assembly?.parameters ?? state.document.parameters) });
+  },
   setMeasurement: (measurement, massProperties = null) => {
     // 測った値を出したら、前の断りは用済み(NFR-UX-5「押したら必ず何かが起きる」)。
     set({ measurement, massProperties, measureErrorKey: null });

@@ -98,6 +98,52 @@ describe('保存の完了を開始した文書へ結び付ける（レビュー 
     useAppStore.setState({ activeDocumentId: crypto.randomUUID() });
     discardFinished.resolve(); await pending;
     expect(discard).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().fileMessage).toBeNull();
+  });
+
+  it('手動保存は現行と旧形式の控えの削除を終えてから完了を表示する（Firefoxの即時再読込）', async () => {
+    const delayed = delayedGateway();
+    const clears = [
+      { started: deferred<void>(), finished: deferred<void>() },
+      { started: deferred<void>(), finished: deferred<void>() },
+    ];
+    let next = 0;
+    const discard = vi.fn(async () => {
+      const clear = clears[next++];
+      if (!clear) throw new Error('予期しない控えの削除');
+      clear.started.resolve();
+      await clear.finished.promise;
+    });
+    useAppStore.setState({ autoSaver: saver(discard), fileMessage: { key: 'file.saved', failed: false } });
+    const pending = savePart(deps, false);
+    await delayed.started.promise;
+    expect(useAppStore.getState().fileMessage).toBeNull();
+    delayed.completed.resolve('A.pcad');
+    await clears[0].started.promise;
+    expect(useAppStore.getState().fileMessage).toBeNull();
+    clears[0].finished.resolve();
+    await clears[1].started.promise;
+    expect(useAppStore.getState().fileMessage).toBeNull();
+    clears[1].finished.resolve();
+    await pending;
+    expect(useAppStore.getState().fileMessage).toEqual({ key: 'file.saved', failed: false });
+  });
+
+  it('控えの削除待機中の編集には古い保存完了を表示せず、新しい控えも消さない', async () => {
+    const delayed = delayedGateway(), started = deferred<void>(), finished = deferred<void>();
+    const discard = vi.fn(async () => { started.resolve(); await finished.promise; });
+    useAppStore.setState({ autoSaver: saver(discard) });
+    const pending = savePart(deps, false);
+    await delayed.started.promise;
+    delayed.completed.resolve('A.pcad');
+    await started.promise;
+    const state = useAppStore.getState();
+    useAppStore.setState({ document: { ...state.document, name: '削除待機中の編集' }, documentVersion: state.documentVersion + 1 });
+    finished.resolve();
+    await pending;
+    expect(discard).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().fileMessage).toBeNull();
+    expect(hasUnsavedChanges(useAppStore.getState().document, useAppStore.getState().savedDocument)).toBe(true);
   });
 
   it('復元失敗の控えが残ったときは通常の失敗より詳しい案内を出す', async () => {

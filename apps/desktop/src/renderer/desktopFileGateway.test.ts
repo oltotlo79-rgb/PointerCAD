@@ -37,6 +37,20 @@ describe('デスクトップ画面の保存先キャッシュ（レビュー R02
 });
 
 describe('図面の読み書きを本体プロセスへ届ける（P8-64）', () => {
+  it.each(['pcadscript', 'step', 'stl', 'pcadt'] satisfies Array<'pcadscript' | 'step' | 'stl' | 'pcadt'>)('%sの読込に通常文書の保存先tokenを要求しない', async kind => {
+    const bytes = Uint8Array.of(1, 2, 3);
+    const api = {
+      openPcad: () => Promise.resolve(null), confirmSaveTarget: () => Promise.resolve(true),
+      clearSaveTarget: () => Promise.resolve(undefined), savePcad: () => Promise.resolve('model.pcad'), hasSaveTarget: () => Promise.resolve(true),
+      openFile: vi.fn(() => Promise.resolve({ name: `sample.${kind}`, kind, bytes })), saveFileAs: () => Promise.resolve(true),
+    };
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    if (gateway?.openFile === undefined) throw new Error('typed gateway required');
+    await Promise.resolve();
+    expect(await gateway.openFile([kind])).toEqual({ fileName: `sample.${kind}`, kind, bytes });
+    expect(api.openFile).toHaveBeenCalledWith([kind]);
+    expect(gateway.hasSaveTarget()).toBe(true);
+  });
   it('図面のバイト列・形式と保存先の確定を往復し、パスを画面へ出さない', async () => {
     const bytes = Uint8Array.of(1, 2, 3);
     const api = {

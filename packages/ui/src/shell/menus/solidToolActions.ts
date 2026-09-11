@@ -11,6 +11,8 @@ import {
   type SolidToolId,
 } from '../../sketch/numericInput.js';
 import { ruledSelectionHasSphere } from '../../solid/ruledCommands.js';
+import { selectedCurvePath } from '../../solid/shapeEditCommands.js';
+import { sweepGuideCandidates } from '../../solid/sweepGuideChoices.js';
 import {
   commitBooleanFromSelection,
   selectedLineRef,
@@ -63,6 +65,7 @@ function openSolidInput(tool: SolidToolId): void {
     createNumericInput(tool, SOLID_TOOL_STEPS[tool], undefined, {
       ...(axisLine === undefined ? {} : { axisLine }),
       ...(ruledHasSphere === undefined ? {} : { ruledHasSphere }),
+      ...(tool === 'sweep' ? { sweepGuides: sweepGuideCandidates(store.document, selectedCurvePath(store.document, store.selection) ?? undefined) } : {}),
     }),
     solidAnchor(),
   );

@@ -440,6 +440,7 @@ export type ThruSectionKeyMaterial =
  */
 export interface ThruSectionsKeyMaterial {
   readonly kind: 'thruSections';
+  readonly smooth: boolean;
   readonly sections: readonly ThruSectionKeyMaterial[];
   readonly ruled: boolean;
   readonly closed: boolean;
@@ -540,6 +541,7 @@ export interface SweepKeyMaterial {
   readonly profile: readonly KeyCurve[];
   /** 経路。並びが意味を持つ。 */
   readonly path: readonly KeyCurve[];
+  readonly guide?: readonly KeyCurve[];
   /** true で Frenet、false で「ねじれを抑える」。形が変わるので混ぜる。 */
   readonly frenet: boolean;
 }
@@ -1156,6 +1158,7 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
       return (
         `thruSections{sections=${keyThruSectionList(material.sections)}` +
         `;ruled=${keyBoolean(material.ruled)}` +
+        `;smooth=${keyBoolean(material.smooth)}` +
         `;closed=${keyBoolean(material.closed)}` +
         `;twist=${keyNumber(material.twist)}` +
         `;sphereSegments=${keyNumber(material.sphereSegments)}}`
@@ -1194,6 +1197,7 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
       return (
         `sweep{profile=${keyCurveList(material.profile)}` +
         `;path=${keyCurveList(material.path)}` +
+        (material.guide === undefined ? '' : `;guide=${keyCurveList(material.guide)}`) +
         `;frenet=${keyBoolean(material.frenet)}}`
       );
     case 'rib':

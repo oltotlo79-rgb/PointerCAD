@@ -1,4 +1,7 @@
 {
+  "splitLines.error.missingLine": "交点をつなぐ線分の形が決まっていません。入力を確認してください。",
+  "splitLines.error.constrainedLine": "交わる線に拘束があります。拘束を解除するか「交点でつなぐ」を切ると、線を確定できます。",
+  "splitLines.error.invalidReferences": "交点をつなぐと既存の参照を保てません。「交点でつなぐ」を切り、入力と参照を確認してください。",
   "originCommand.action": "ここを原点にする",
   "originCommand.vertexAction": "この頂点を原点にする",
   "originCommand.tooltip": "選んだ点が (0, 0, 0) になるように、ほかの要素も式のまま一緒に動きます",
@@ -109,6 +112,7 @@
   "shapeError.noDraftFace": "傾ける面が選ばれていません。基準の面のほかに、傾けたい側面も選んでください。",
   "shapeError.noProfile": "輪郭が選ばれていません。",
   "shapeError.noPath": "通る経路の線が選ばれていません。",
+  "shapeError.noSweepGuide": "案内線が見つかりません。案内線を選び直すか「なし」にしてください。",
   "shapeError.noFlatFace": "平らな面が選ばれていません。",
   "shapeError.notCylinderFace": "ねじを切れるのは丸い軸の面だけです。",
   "shapeError.noPatternPoints": "置き場所にする点を 2 つ以上選んでください。",

@@ -1,7 +1,7 @@
 /**
  * 機能ごとに分けたストア(P6 タスク52)が、分ける前と同じ 1 本のままであることの検査。
  *
- * `create()` は `createInitialDocumentState()` と 12 本のスライスを `...` で重ねる。
+ * `create()` は `createInitialDocumentState()` と登録済みのスライスを `...` で重ねる。
  * **重ねる順に後ろが勝つ**ので、2 か所が同じ欄を作ると片方が黙って消える(型の上では
  * `Omit` で防いであるが、`Omit` の相手(`*InitialState`)を書き忘れたときは通ってしまう)。
  * ここで実際に作らせて、欄が重なっていないこと・合わせるとちょうど全部になることを見る。
@@ -15,41 +15,10 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { createAssemblySlice } from './assemblySlice.js';
-import { createCanvasSlice } from './canvasSlice.js';
-import { createConstraintSlice } from './constraintSlice.js';
-import { createDocumentSlice } from './documentSlice.js';
-import { createDrawingSlice } from './drawingSlice.js';
-import { createExchangeSlice } from './exchangeSlice.js';
-import { createFileSlice } from './fileSlice.js';
-import { createHelpSlice } from './helpSlice.js';
-import { createSheetMetalSlice } from './sheetMetalSlice.js';
 import { createInitialDocumentState } from './initialDocumentState.js';
-import { createMeasureSlice } from './measureSlice.js';
-import { createRecomputeSlice } from './recomputeSlice.js';
-import { createSelectionSlice } from './selectionSlice.js';
-import { createSketchSlice } from './sketchSlice.js';
-import { createTimelineSlice } from './timelineSlice.js';
-import { useAppStore } from './useAppStore.js';
-import { createViewSlice } from './viewSlice.js';
+import { STORE_SLICE_CREATORS, useAppStore } from './useAppStore.js';
 
-const SLICES = [
-  ['viewSlice', createViewSlice],
-  ['canvasSlice', createCanvasSlice],
-  ['exchangeSlice', createExchangeSlice],
-  ['documentSlice', createDocumentSlice],
-  ['drawingSlice', createDrawingSlice],
-  ['timelineSlice', createTimelineSlice],
-  ['recomputeSlice', createRecomputeSlice],
-  ['sketchSlice', createSketchSlice],
-  ['constraintSlice', createConstraintSlice],
-  ['selectionSlice', createSelectionSlice],
-  ['measureSlice', createMeasureSlice],
-  ['fileSlice', createFileSlice],
-  ['assemblySlice', createAssemblySlice],
-  ['helpSlice', createHelpSlice],
-  ['sheetMetalSlice', createSheetMetalSlice],
-] as const;
+const SLICES = Object.entries(STORE_SLICE_CREATORS);
 
 /**
  * スライスの作り手をそのまま呼んで、作る欄の名前だけを見る。

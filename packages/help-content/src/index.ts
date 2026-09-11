@@ -12,6 +12,10 @@ export interface HelpTopic {
 }
 
 export const HELP_TOPICS: readonly HelpTopic[] = [
+  { id: 'scripts', title: 'JavaScriptで自動作図する', path: 'docs/ja/scripts.md' },
+  { id: 'script-api', title: '自動作図APIリファレンス', path: 'docs/ja/script-api.md' },
+  { id: 'script-tools', title: '処理を保存し、道具として登録する', path: 'docs/ja/script-tools.md' },
+  { id: 'cam', title: '作った形を加工ソフトへ渡す', path: 'docs/ja/cam.md' },
   { id: 'sheet-metal', title: '板金の基板と曲げ条件を作る', path: 'docs/ja/sheet-metal.md' },
   { id: 'sheet-metal-flange', title: '板金の縁からフランジを作る', path: 'docs/ja/sheet-metal-flange.md' },
   { id: 'sheet-metal-bend-relief', title: '指定線で板を曲げる・曲げリリーフを作る', path: 'docs/ja/sheet-metal-bend-relief.md' },
@@ -45,6 +49,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/parameters.md',
   },
   { id: 'sketch-tools', title: '点・線・円弧をかく', path: 'docs/ja/sketch-tools.md' },
+  { id: 'sketch-intersections', title: '交点で線をつなぐ・曲げる・区間を消す', path: 'docs/ja/sketch-intersections.md' },
   {
     id: 'shapes',
     title: '四角・多角形・長穴・円をかく',
@@ -203,6 +208,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: 'measure',
     title: '長さ・角度・面積を測る',
     path: 'docs/ja/measure.md',
+  },
+  {
+    id: 'strength',
+    title: '梁・軸・ボルトの簡易強度計算',
+    path: 'docs/ja/strength.md',
   },
   {
     id: 'mass-properties',

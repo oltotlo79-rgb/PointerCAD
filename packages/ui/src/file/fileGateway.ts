@@ -31,7 +31,9 @@
  */
 
 import type { FileKind } from '@pointercad/model';
-export type SaveFileKind = FileKind | 'pcada' | 'pcadd' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg';
+import { SCRIPT_FILE_LIMITS } from '@pointercad/model/scripting';
+import type { CamFormat, CamTool, ExportReceipt } from './openWith.js';
+export type SaveFileKind = Exclude<FileKind, 'dwg'> | 'pcada' | 'pcadd' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { readBrowserFile, type BrowserReadableFile } from './readBrowserFile.js';
@@ -90,6 +92,10 @@ export interface FileGateway {
    * 省略できる理由は `openFile` と同じ。
    */
   saveFileAs?(fileName: string, kind: SaveFileKind, bytes: Uint8Array): Promise<boolean>;
+  /** Desktopの書出し成功1回に対応する札。パスは本体側だけが持つ。nullは取消。 */
+  saveExport?(fileName: string, kind: CamFormat, bytes: Uint8Array): Promise<ExportReceipt | null>;
+  openExport?(token: string): Promise<boolean>;
+  openCamTool?(tool: CamTool): Promise<boolean>;
   /**
    * 印刷する(FR-810。P6 計画書 §2.11、タスク29)。PNG のバイト列を渡すと、
    * 印刷できたら true、取り消されたら false を返す(**取り消しは例外にしない**)。
@@ -173,7 +179,8 @@ interface FileKindSpec {
  * 同じ内容を写してある(本体プロセスから `@pointercad/ui` を読むと画面用の実装まで
  * 抱き込むため。既存の `PCAD_FILE_FILTER` と同じ理由)。
  */
-const FILE_KIND_SPECS: Readonly<Record<SaveFileKind, FileKindSpec>> = {
+const FILE_KIND_SPECS: Readonly<Record<SaveFileKind | FileKind, FileKindSpec>> = {
+  pcadscript: { label: 'PointerCAD Script', accept: { 'application/json': ['.pcadscript'] } },
   zip: { label: 'ZIP', accept: { 'application/zip': ['.zip'] } },
   pcada: { label: 'PointerCAD', descriptionKey: 'assembly.fileType', accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } },
   pcadd: { label: 'PointerCAD', descriptionKey: 'drawing.fileType', accept: { [PCAD_MIME_TYPE]: [PCADD_EXTENSION] } },
@@ -195,6 +202,7 @@ const FILE_KIND_SPECS: Readonly<Record<SaveFileKind, FileKindSpec>> = {
   },
   '3mf': { label: '3MF', accept: { 'model/3mf': ['.3mf'] } },
   dxf: { label: 'DXF', accept: { 'image/vnd.dxf': ['.dxf'] } },
+  dwg: { label: 'DWG', descriptionKey: 'exchange.dwgType', accept: { 'image/vnd.dwg': ['.dwg'] } },
   svg: { label: 'SVG', accept: { 'image/svg+xml': ['.svg'] } },
   pdf: { label: 'PDF', accept: { 'application/pdf': ['.pdf'] } },
   png: { label: 'PNG', accept: { 'image/png': ['.png'] } },
@@ -202,7 +210,7 @@ const FILE_KIND_SPECS: Readonly<Record<SaveFileKind, FileKindSpec>> = {
 };
 
 /** その種類の拡張子(先頭の `.` を含む)。並びは表の順で、先頭が代表(書き出しで足す拡張子)。 */
-export function extensionsOf(kind: SaveFileKind): readonly string[] {
+export function extensionsOf(kind: SaveFileKind | FileKind): readonly string[] {
   return Object.values(FILE_KIND_SPECS[kind].accept).flat();
 }
 
@@ -214,7 +222,7 @@ function primaryMimeTypeOf(kind: SaveFileKind): string {
 }
 
 /** ファイル選択の窓に出す種別 1 つを組み立てる。 */
-function fileTypeOf(kind: SaveFileKind): FilePickerType {
+function fileTypeOf(kind: SaveFileKind | FileKind): FilePickerType {
   const spec = FILE_KIND_SPECS[kind];
   const key = spec.descriptionKey;
   return { description: key === undefined ? spec.label : t(key), accept: spec.accept };
@@ -578,7 +586,10 @@ function pickFileWithInput(accept: string, scope: object): Promise<PickedFile | 
         reject(new Error(t('file.openFailed')));
         return;
       }
-      readBrowserFile(file).then(
+      if (file.name.toLowerCase().endsWith('.dwg')) {
+        input.remove(); reject(new Error(t('exchange.dwgGuide'))); return;
+      }
+      readBrowserFile(file, file.name.toLowerCase().endsWith('.pcadscript') ? SCRIPT_FILE_LIMITS.bytes : undefined).then(
         (bytes) => {
           finish({ name: file.name, bytes, saveTargetToken: null });
         },
@@ -611,6 +622,7 @@ export async function openFileInBrowser(
   kinds: readonly FileKind[],
   scope: object = globalThis,
 ): Promise<PickedTypedFile | null> {
+  if (kinds.length === 1 && kinds[0] === 'dwg') throw new Error(t('exchange.dwgGuide'));
   if (!hasOpenPicker(scope)) {
     const picked = await pickFileWithInput(acceptAttributeFor(kinds), scope);
     if (picked === null) {
@@ -643,6 +655,7 @@ export async function openFileInBrowser(
     throw new Error(t('file.openFailed'));
   }
   const kind = fileKindOfName(handle.name, kinds);
+  if (handle.name.toLowerCase().endsWith('.dwg')) throw new Error(t('exchange.dwgGuide'));
   if (kind === null) {
     throw new Error(t('file.openFailed'));
   }
@@ -650,7 +663,7 @@ export async function openFileInBrowser(
   if (!isReadableFile(file)) {
     throw new Error(t('file.openFailed'));
   }
-  return { kind, fileName: handle.name, bytes: await readBrowserFile(file) };
+  return { kind, fileName: handle.name, bytes: await readBrowserFile(file, kind === 'pcadscript' ? SCRIPT_FILE_LIMITS.bytes : undefined) };
 }
 
 /**
@@ -767,6 +780,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       if (!isReadableFileHandle(handle)) {
         throw new Error(t('file.openFailed'));
       }
+      if (handle.name.toLowerCase().endsWith('.dwg')) throw new Error(t('exchange.dwgGuide'));
       const file = await handle.getFile();
       if (!isReadableFile(file)) {
         throw new Error(t('file.openFailed'));

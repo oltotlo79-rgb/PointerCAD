@@ -5,6 +5,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { SAVE_RECOVERY_COPY_MARKER, hasSaveRecoveryCopy } from '@pointercad/ui/save-errors';
 
 import { validateAppSender } from './appSender.js';
+import { clearExportHandoff, registerExportHandoffIpc } from './exportHandoffIpc.js';
 
 /**
  * デスクトップ版の「開く」「保存」「名前を付けて保存」(計画書 docs/plans/P2-ソリッド基礎.md タスク26)と、
@@ -52,6 +53,7 @@ const PCAD_EXTENSION = 'pcad';
 
 /** `packages/io/src/limits.ts` の圧縮済み入力上限と同じ値。desktop は io に依存しないため写す。 */
 const MAX_COMPRESSED_INPUT_BYTES = 256 * 1024 * 1024;
+const DWG_GUIDE = 'DWGは直接読み書きできません。DXFへ変換する手順をヘルプで確認してください。';
 
 class InputTooLargeError extends Error {}
 
@@ -96,12 +98,14 @@ const KIND_FILTERS: Readonly<Record<string, KindFilter | undefined>> = {
   pcadd: PCADD_FILE_FILTER,
   pcad: PCAD_FILE_FILTER,
   pcadt: { name: 'PointerCAD', extensions: ['pcadt'] },
+  pcadscript: { name: 'PointerCAD Script', extensions: ['pcadscript'] },
   step: { name: 'STEP', extensions: ['step', 'stp'] },
   stl: { name: 'STL', extensions: ['stl'] },
   obj: { name: 'OBJ', extensions: ['obj'] },
   glb: { name: 'glTF', extensions: ['glb', 'gltf'] },
   '3mf': { name: '3MF', extensions: ['3mf'] },
   dxf: { name: 'DXF', extensions: ['dxf'] },
+  dwg: { name: 'DWG (DXFへの変換が必要)', extensions: ['dwg'] },
   svg: { name: 'SVG', extensions: ['svg'] },
   pdf: { name: 'PDF', extensions: ['pdf'] },
   png: { name: 'PNG', extensions: ['png'] },
@@ -143,12 +147,16 @@ function withPcadExtension(filePath: string): string {
  * `ja.json` の `file.openFailed` で、ここの文面は記録用。
  */
 async function readBytesFrom(filePath: string): Promise<Uint8Array> {
+  if (extname(filePath).toLowerCase() === '.dwg') throw new Error(DWG_GUIDE);
   try {
     const metadata = await fileSystem.stat(filePath);
-    if (metadata.size > MAX_COMPRESSED_INPUT_BYTES) {
-      throw new InputTooLargeError('ファイルが大きすぎます（上限は 256 MiB です）。');
+    // Script JSON may escape each source byte six times. Mirrors SCRIPT_FILE_LIMITS.bytes.
+    const maximum = extname(filePath).toLowerCase() === '.pcadscript' ? 6 * 1024 * 1024 + 65536 : MAX_COMPRESSED_INPUT_BYTES;
+    if (metadata.size > maximum) {
+      throw new InputTooLargeError('ファイルが大きすぎます。種類ごとの読込上限を超えています。');
     }
     const contents = await fileSystem.readFile(filePath);
+    if (contents.byteLength > maximum || contents.byteLength !== metadata.size) throw new InputTooLargeError('読込中にファイルの大きさが変わりました。もう一度開いてください。');
     // Buffer は Node の内部で使い回す記憶を指すことがあるので、自前の記憶へ写してから渡す。
     const bytes = new Uint8Array(contents.byteLength);
     bytes.set(contents);
@@ -348,6 +356,7 @@ export async function openAnyDialog(
   window: BrowserWindow | null,
   kinds: readonly string[],
 ): Promise<OpenedAnyFile | null> {
+  if (kinds.length === 1 && kinds[0] === 'dwg') throw new Error(DWG_GUIDE);
   // Electron の `FileFilter` は書き換えられる並びを求めるので、写しを渡す。
   const filters: { name: string; extensions: string[] }[] = [];
   for (const kind of kinds) {
@@ -366,6 +375,7 @@ export async function openAnyDialog(
     return null;
   }
   const kind = kindOfPath(filePath, kinds);
+  if (extname(filePath).toLowerCase() === '.dwg') throw new Error(DWG_GUIDE);
   if (kind === null) {
     throw new Error('この拡張子のファイルは、頼まれた種類として読めません。');
   }
@@ -376,12 +386,17 @@ export async function openAnyDialog(
  * 種類を選んで「書き出す」。**呼ぶたびに必ず窓を出す**(上書き先を覚えない。§0.a-0.4)。
  * 書けたら true、取り消されたら false。**返り値にパスも名前も含めない**(NFR-SE-1)。
  */
-export async function saveAsDialog(
+export async function saveAsDialog(window: BrowserWindow | null, fileName: string, kind: string, bytes: Uint8Array): Promise<boolean> {
+  return await saveAsPathDialog(window, fileName, kind, bytes) !== null;
+}
+
+async function saveAsPathDialog(
   window: BrowserWindow | null,
   fileName: string,
   kind: string,
   bytes: Uint8Array,
-): Promise<boolean> {
+): Promise<string | null> {
+  if (kind === 'dwg') throw new Error(DWG_GUIDE);
   const filter = filterOf(kind);
   const options: SaveDialogOptions = {
     // 画面が勧めてきた名前から始める(既定の保存先フォルダに置かれる)。
@@ -394,10 +409,11 @@ export async function saveAsDialog(
       ? await dialog.showSaveDialog(options)
       : await dialog.showSaveDialog(window, options);
   if (result.canceled || result.filePath === '') {
-    return false;
+    return null;
   }
-  await writeBytesTo(withKindExtension(result.filePath, kind), bytes);
-  return true;
+  const path = withKindExtension(result.filePath, kind);
+  await writeBytesTo(path, bytes);
+  return path;
 }
 
 /**
@@ -453,6 +469,7 @@ function rememberPendingPath(event: IpcMainInvokeEvent, filePath: string): strin
 
 /** 現在の文書の保存先と、未確定の候補を一緒に解除する。 */
 function clearSaveTargets(event: IpcMainInvokeEvent): void {
+  clearExportHandoff(event.sender.id);
   watchWindow(event);
   targetRevisions.set(event.sender.id, {});
   lastPaths.delete(event.sender.id);
@@ -475,6 +492,7 @@ function windowOf(event: IpcMainInvokeEvent): BrowserWindow | null {
  * `app.whenReady()` の中から1回だけ呼ぶ(2回呼ぶと Electron が二重登録で失敗する)。
  */
 export function registerPcadIpc(): void {
+  registerExportHandoffIpc(saveAsPathDialog);
   ipcMain.handle(
     PCAD_OPEN_CHANNEL,
     async (
@@ -595,6 +613,7 @@ export function registerPcadIpc(): void {
         throw new Error('保存の依頼の形が正しくありません。');
       }
       // `rememberPath` を呼ばない。書き出した先は覚えないので、次の Ctrl+S は部品へ向かう。
+      clearExportHandoff(event.sender.id);
       return saveAsDialog(windowOf(event), fileName, kind, bytes);
     },
   );

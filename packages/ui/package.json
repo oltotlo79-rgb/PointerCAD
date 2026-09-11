@@ -13,6 +13,7 @@
     "./security-policy": { "types": "./dist/security/contentSecurityPolicy.d.ts", "default": "./src/security/contentSecurityPolicy.ts" },
     "./print-settings": { "types": "./dist/file/drawingPrintSettings.d.ts", "default": "./src/file/drawingPrintSettings.ts" },
     "./save-errors": { "types": "./dist/file/saveFailure.d.ts", "default": "./src/file/saveFailure.ts" },
+    "./open-with": { "types": "./dist/file/openWith.d.ts", "default": "./src/file/openWith.ts" },
     "./style.css": "./src/shell/appShell.css"
   },
   "scripts": {

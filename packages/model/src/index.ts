@@ -206,6 +206,21 @@ export {
   INTERSECTION_TOLERANCE_MM, isClosedCurve, segmentSegmentIntersection, traceCurveChain,
 } from './sketch/intersectionMath.js';
 export type { ExtendRequest, TrimErrorKey, TrimOutcome, TrimRequest } from './sketch/trimExtend.js';
+export { splitLineIntersections } from './sketch/splitLineIntersections.js';
+export { calculateStrength, strengthCalculationFields } from './measure/strengthCalculation.js';
+export type { StrengthCalculationInput, StrengthCalculationValue, StrengthCalculationOutcome, StrengthFieldName } from './measure/strengthCalculation.js';
+export { readStrengthInputs } from './measure/strengthInputs.js';
+export type { StrengthInputField, StrengthInputValue, StrengthQuantityKind } from './measure/strengthInputs.js';
+export { strengthFormulas } from './measure/strengthExact.js';
+export type { StrengthCalculation, BeamSectionKind, StrengthResultName } from './measure/strengthExact.js';
+export { STRENGTH_MATERIALS, STRENGTH_SOURCES, findStrengthMaterial } from './measure/strengthMaterials.js';
+export { checkStrengthMaterialCondition, strengthMaterialSources } from './measure/strengthMaterialTypes.js';
+export type { StrengthMaterialPreset, StrengthMaterialProperty, StrengthSource } from './measure/strengthMaterialTypes.js';
+export { BOLT_TENSILE_AREAS, findBoltStressArea } from './measure/boltStressAreas.js';
+export { tensileStressArea } from './measure/tensileStressArea.js';
+export type { TensileAreaMethod, TensileAreaOutcome } from './measure/tensileStressArea.js';
+export { hasConnectedSegmentEnd } from './sketch/connectedSegment.js';
+export type { SplitLineFailure, SplitLineOutcome } from './sketch/splitLineIntersections.js';
 export {
   explodeCompoundFeature, extendCurve, nearestCurveEnd, parseElementId, trimCurve,
 } from './sketch/trimExtend.js';

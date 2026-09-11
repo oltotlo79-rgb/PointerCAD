@@ -278,12 +278,13 @@ export const createAssemblySlice: StateCreator<
     ...empty(),
     recoveryRecord: null,
     resetAssembly: (update) => {
-      set((state) => ({ ...update(state), ...empty(), assembly: null }));
+      set((state) => ({ ...update(state), ...empty(), assembly: null, strengthSession: null, exportHandoff: null, exportHandoffAttempt: null }));
     },
     openAssembly: (assembly, library = EMPTY_PART_LIBRARY, options) => {
       if (options?.preserveSaveTarget !== true) get().fileGateway.clearSaveTarget?.();
       set((state) => ({
-        ...empty(), assembly, drawing: null, savedDrawing: null, drawingFileName: null, ...emptySheetMetalTool(),
+        ...empty(), assembly, drawing: null, savedDrawing: null, drawingFileName: null, strengthSession: null,
+        exportHandoff: null, exportHandoffAttempt: null, ...emptySheetMetalTool(),
         drawingInitialName: null, assemblyLibrary: library, assemblyInitialName: assembly.name,
         assemblyUndoStack: createUndoStack({ document: assembly, library }),
         documentVersion: state.documentVersion + 1,

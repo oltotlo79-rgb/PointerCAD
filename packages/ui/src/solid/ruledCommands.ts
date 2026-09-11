@@ -65,7 +65,7 @@ export const DEFAULT_RULED_TWIST_VALUE: ExpressionValue =
 const READY: SolidToolReadiness = { ready: true, reasonKey: null };
 
 /** 面フィーチャーだけを当たりとする種類の集合(`findSketchFeatureAt` へ渡す)。 */
-const FACE_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['face']);
+const SECTION_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['face', 'spline']);
 
 /** 面をつなぐ・ロフトのコマンドが必要とする文脈。 */
 export interface RuledContext {
@@ -123,7 +123,12 @@ function ruledSectionOf(context: RuledContext, elementId: string): RuledSection 
   if (solid !== undefined) {
     return isSphereFeature(solid) ? { kind: 'sphere', sphereFeatureId: solid.id } : null;
   }
-  const found = findSketchFeatureAt(context.document, elementId, FACE_KINDS);
+  const found = findSketchFeatureAt(context.document, elementId, SECTION_KINDS);
+  if (found?.feature.kind === 'spline') {
+    return found.feature.closed && !found.feature.construction
+      ? { kind: 'sketchCurves', ref: { sketchId: found.sketchId, curveIds: [found.featureId] } }
+      : null;
+  }
   return found === undefined
     ? null
     : { kind: 'sketchFace', ref: { sketchId: found.sketchId, faceFeatureId: found.featureId } };
@@ -320,7 +325,7 @@ export function commitRuled(
  */
 export function commitLoft(
   context: RuledContext,
-  params: { readonly twist: ExpressionValue },
+  params: { readonly twist: ExpressionValue; readonly smooth?: boolean },
 ): SolidCommandOutcome {
   const sections = ruledSectionsOf(context);
   const rejection = loftSectionsRejection(sections);
@@ -337,6 +342,7 @@ export function commitLoft(
     name: nextSolidName(context.document, 'loft'),
     suppressed: false,
     kind: 'loft',
+    smooth: params.smooth ?? false,
     sections,
     twist: params.twist,
   };
@@ -361,7 +367,7 @@ export function commitRuledInput(
         sphereSegments: commit.ruledSphereSegments ?? DEFAULT_RULED_SPHERE_SEGMENTS,
       });
     case 'loft':
-      return commitLoft(context, { twist });
+      return commitLoft(context, { twist, smooth: commit.flags.loftSmooth });
     case null:
       // 面をつなぐ・ロフトでない道具の確定が回ってきた(呼び出し側の振り分けの誤り)。
       return { ok: false, reasonKey: 'ruledError.notRuledTool' };

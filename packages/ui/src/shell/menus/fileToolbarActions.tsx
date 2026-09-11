@@ -10,7 +10,7 @@ import { createDrawingFromCurrentPart } from '../../drawing/createDrawingCommand
 import { createDrawingFromTemplateFile } from '../../drawing/drawingTemplateActions.js';
 import { useEffect, useRef } from 'react';
 import { activeHasUnsavedChanges, newAssembly } from '../../file/assemblyFile.js';
-import { createExchangeDeps, importFile } from '../../file/exchangeActions.js';
+import { createExchangeDeps } from '../../file/exchangeActions.js';
 import { exportBaseNameOf } from '../../file/exchangeFile.js';
 import { ExchangePanel } from '../../file/ExchangePanel.js';
 import { hasFileSystemAccess, PCAD_EXTENSION } from '../../file/fileGateway.js';
@@ -259,14 +259,14 @@ async function runPrint(): Promise<void> {
  * 出さないための仕掛け)。数の決まらない行(保存したひな形・最近使ったファイル)は
  * 接頭辞で見分けてから、同じ 1 か所で配る。
  *
- * **書き出しだけがパネルを開く**(形式・対象・なめらかさを訊くため。§0.a-0.20)ので、
- * 開く手立てを引数で受ける。読み込みは訊くことが無い(窓でファイルを選ぶだけ)ので、
- * ここから直に走らせる。
+ * 書き出しと読み込みの形式パネルを開く手立てを引数で受ける。読み込みはDWGを
+ * ファイル選択より先に案内し、直接読める形式は次のクリックで選択窓を開く。
  */
 export function runFileMenuAction(
   id: FileMenuItemId,
   openExportPanel: () => void,
   onTemplatesChanged: () => void,
+  openImportPanel: () => void,
 ): void {
   if (isStoredTemplateMenuId(id)) {
     void runNewFromTemplate({ from: 'stored', id: storedTemplateIdOf(id) });
@@ -282,7 +282,7 @@ export function runFileMenuAction(
     void openPart(createDefaultPartFileDeps());
     return;
   }
-  runFileMenuActionId(id, openExportPanel, onTemplatesChanged);
+  runFileMenuActionId(id, openExportPanel, onTemplatesChanged, openImportPanel);
 }
 
 /** 決まった操作の配り先(網羅 `switch`。行を足すと型検査がここを落とす)。 */
@@ -290,6 +290,7 @@ function runFileMenuActionId(
   id: FileMenuActionId,
   openExportPanel: () => void,
   onTemplatesChanged: () => void,
+  openImportPanel: () => void,
 ): void {
   switch (id) {
     case 'newDrawingFromPart':
@@ -309,7 +310,7 @@ function runFileMenuActionId(
       openExportPanel();
       return;
     case 'importShape':
-      void importFile();
+      openImportPanel();
       return;
     case 'saveAsTemplate':
       // 置き場へ入り終えてから一覧を読み直す(先に読むと、いま残したひな形が並ばない)。

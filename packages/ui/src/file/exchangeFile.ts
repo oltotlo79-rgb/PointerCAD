@@ -15,6 +15,8 @@
  * P6 タスク28 の申し送り)。呼び出し側が今の文書・立体・選択を引数で渡す。
  */
 
+import { saveExportFile } from './saveExportFile.js';
+import type { ExportHandoff } from './openWith.js';
 import {
   dxfFlattenedCurveMessage,
   parseDxfTags,
@@ -98,7 +100,10 @@ export const EXPORT_PANEL_FORMAT_ORDER: readonly ExportPanelFormat[] = [
  * の順をそのまま使っているため。DXF はどちらも一覧の最後で、読み書きとも平らな
  * スケッチの線として出入りする(立体にはならない。§0.a-0.34)。
  */
-export const IMPORT_FILE_KINDS: readonly FileKind[] = ['step', 'stl', 'obj', '3mf', 'glb', 'dxf'];
+/** DWGは変換案内を表示する種類。ネイティブ読込には渡さない。 */
+export type ImportFileKind = Exclude<FileKind, 'pcad' | 'pcadt' | 'pcadscript'>;
+export const IMPORT_FILE_KINDS: readonly ImportFileKind[] = ['step', 'stl', 'obj', '3mf', 'glb', 'dxf', 'dwg'];
+const READABLE_FILE_KINDS = IMPORT_FILE_KINDS.filter(kind => kind !== 'dwg');
 
 /**
  * カーネルへ渡す書き出しの形式(`KernelApi.exportShapes` の `format`)。
@@ -145,7 +150,9 @@ export function importedSourceFormatOf(kind: FileKind): ImportedSourceFormat | n
       return '3mf';
     case 'pcad':
     case 'pcadt':
+    case 'pcadscript':
     case 'dxf':
+    case 'dwg':
       return null;
   }
 }
@@ -442,7 +449,7 @@ export interface ExchangeKernel {
 
 /** 手続きの結果。**断りも案内も日本語の文**で返し、画面はそのまま帯へ出す(§2.8)。 */
 export type ExchangeOutcome =
-  | { readonly ok: true; readonly notices: readonly string[] }
+  | { readonly ok: true; readonly notices: readonly string[]; readonly handoff?: ExportHandoff }
   | { readonly ok: false; readonly message: string }
   /** 利用者が窓を取り消した。何も起きなかったので、断りも出さない。 */
   | { readonly ok: false; readonly cancelled: true };
@@ -526,10 +533,13 @@ export async function runExport(
    * 名前を変えたり片方だけ保存したりすると色が付かない(§2.4)。場所を選べない環境では
    * ダウンロードが 2 回起きる(§0.a-0.13 の暫定。利用者の決定が出たら 1 つにまとめる)。
    */
+  let handoff: ExportHandoff | undefined;
   for (const file of files) {
     let saved: boolean;
     try {
-      saved = await saveFileAsThrough(deps.gateway, file.fileName, request.format, file.bytes);
+      const result = await saveExportFile(deps.gateway, file.fileName, request.format, file.bytes);
+      saved = result.saved;
+      if (files.length === 1) handoff = result.handoff;
     } catch (error) {
       return { ok: false, message: hasSaveRecoveryCopy(error) ? deps.messageOf('file.saveRecoveryCopyRetained') : messageOfError(error) };
     }
@@ -540,7 +550,7 @@ export async function runExport(
   }
 
   const dropped = droppedTriangleNotice(deps.droppedTriangleTemplate, outcome.droppedTriangleCount);
-  return { ok: true, notices: dropped === null ? notices : [...notices, dropped] };
+  return { ok: true, notices: dropped === null ? notices : [...notices, dropped], ...(handoff === undefined ? {} : { handoff }) };
 }
 
 // ---------------------------------------------------------------------------
@@ -772,7 +782,7 @@ export async function runImportBody(
 ): Promise<ImportOutcome> {
   let picked;
   try {
-    picked = await openFileThrough(deps.gateway, IMPORT_FILE_KINDS);
+    picked = await openFileThrough(deps.gateway, READABLE_FILE_KINDS);
   } catch (error) {
     return { ok: false, message: messageOfError(error) };
   }
@@ -959,10 +969,12 @@ export async function runImport(
   document: PartDocument,
   sketch: SketchDocument,
   plane: WorkPlane,
+  format?: ImportFileKind,
 ): Promise<ImportAnyOutcome> {
+  if (format === 'dwg') return { ok: false, message: deps.messageOf('exchange.dwgGuide') };
   let picked;
   try {
-    picked = await openFileThrough(deps.gateway, IMPORT_FILE_KINDS);
+    picked = await openFileThrough(deps.gateway, format === undefined ? READABLE_FILE_KINDS : [format]);
   } catch (error) {
     return { ok: false, message: messageOfError(error) };
   }

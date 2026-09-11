@@ -22,6 +22,7 @@ import {
   type ExchangeExportOutcome,
   type ExchangeFile,
   type ExchangeKernel,
+  type ImportFileKind,
 } from './exchangeFile.js';
 
 /**
@@ -125,13 +126,14 @@ function showNotices(notices: readonly string[]): void {
  * 次の再計算で形が見つからないか、保存したファイルが開き直せなくなる
  * (`packages/io` の `findMissingAttachment`)。
  */
-export async function importFile(): Promise<void> {
+export async function importFile(format?: ImportFileKind): Promise<void> {
   const store = useAppStore.getState();
   const outcome = await runImport(
     createExchangeDeps(''),
     store.document,
     store.sketch,
     store.workPlane,
+    format,
   );
   if (!outcome.ok) {
     // 取り消しは失敗ではないので、断りも出さない(NFR-UX-3)。

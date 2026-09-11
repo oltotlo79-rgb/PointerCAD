@@ -16,6 +16,7 @@
  */
 
 import { composeExpressionSource, evaluateExpression, expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
+import { setSweepGuide, sweepGuideDisplayCandidates, sweepGuideValue } from './sweepGuideChoices.js';
 import {
   consumedBodyIds,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
@@ -261,6 +262,7 @@ export interface SolidChoiceSummary {
   /** 長い説明を横一列へ詰めず、1つのメニューで選ぶ。 */
   readonly presentation?: 'menu';
   readonly key:
+    | 'sweepGuide'
     | 'depthKind'
     | 'threadDesignation'
     | 'threadSeries'
@@ -854,6 +856,11 @@ function ruledSectionReference(
   labelKey: MessageKey,
 ): SolidReferenceSummary {
   switch (section.kind) {
+    case 'sketchCurves': {
+      const sketch = document.sketches.find((candidate) => candidate.id === section.ref.sketchId);
+      const names = section.ref.curveIds.map((id) => sketch?.features.find((feature) => feature.id === id)?.name ?? id);
+      return { labelKey, name: `${sketch?.name ?? section.ref.sketchId} / ${names.join('、')}`, elementId: section.ref.curveIds[0] ?? null };
+    }
     case 'sketchFace': {
       const profile = profileReference(document, section.ref);
       return { ...profile, labelKey };
@@ -1827,13 +1834,12 @@ export function summarizeSolid(
     case 'loft':
       /*
         ロフト(FR-410)。断面は 2 つ以上なので、**選んだ順のまま**参照として出す
-        (並びが形の順そのものなので、順を読めることに意味がある)。球は置けないので
-        なめらかさの選択肢は持たない。
+        (並びが形の順そのものなので、順を読めることに意味がある)。
       */
       return {
         ...base,
         fields: [fieldSummary('ruledTwist', feature.twist)],
-        toggles: [],
+        toggles: [toggleSummary('loftSmooth', feature.smooth)],
         choices: [],
         references: feature.sections.map((section) =>
           ruledSectionReference(document, section, 'propertyPanel.loftSection'),
@@ -1896,8 +1902,10 @@ export function summarizeSolid(
       return {
         ...base,
         fields: [],
-        toggles: [toggleSummary('sweepFrenet', feature.frenet)],
-        choices: [],
+        toggles: feature.guide === undefined ? [toggleSummary('sweepFrenet', feature.frenet)] : [],
+        choices: [{ key: 'sweepGuide', labelKey: 'numericInput.choice.sweepGuide', presentation: 'menu',
+          value: feature.guide === undefined ? 'none' : sweepGuideValue(feature.guide),
+          options: [{ value: 'none', labelKey: 'numericInput.sweepGuide.none' }, ...sweepGuideDisplayCandidates(document, feature)] }],
         references: [profileReference(document, feature.profile)],
         subShapeCounts: [
           { labelKey: 'propertyPanel.sweepPath', count: feature.path.curveIds.length },
@@ -2641,8 +2649,10 @@ export function setSolidChoice(
   value: string,
   variables?: ReadonlyMap<string, number>,
   options: Omit<EvaluateOptions, 'variables'> = {},
+  document?: PartDocument,
 ): SolidFeature {
   switch (key) {
+    case 'sweepGuide': return feature.kind === 'sweep' && document !== undefined ? setSweepGuide(feature, value, document) : feature;
     case 'sheetReliefShape': return feature.kind === 'sheetRelief' && (value === 'rectangle' || value === 'slot') ? { ...feature, shape: value } : feature;
     case 'sheetFixedSide': return feature.kind === 'sheetBend' && (value === 'left' || value === 'right') ? { ...feature, fixedSide: value } : feature;
     case 'sheetLengthBasis': return feature.kind === 'sheetFlange' && (value === 'tangent' || value === 'inner' || value === 'outer')
@@ -2981,6 +2991,9 @@ export function setSolidToggle(
   }
   if (feature.kind === 'sweep') {
     return key === 'sweepFrenet' ? { ...feature, frenet: value } : feature;
+  }
+  if (feature.kind === 'loft') {
+    return key === 'loftSmooth' ? { ...feature, smooth: value } : feature;
   }
   if (feature.kind === 'rib') {
     return key === 'ribExtendToBody' ? { ...feature, extendToBody: value } : feature;

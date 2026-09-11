@@ -40,7 +40,7 @@ import {
 const RIB_SIDES: readonly RibSide[] = ['both', 'positive', 'negative'];
 
 /** 罫線面・ロフトの断面の 3 通り(P5 §2.9.1)。知らない `kind` は `readLiteral` が断る。 */
-const RULED_SECTION_KINDS: readonly RuledSection['kind'][] = ['sketchFace', 'solidFace', 'sphere'];
+const RULED_SECTION_KINDS: readonly RuledSection['kind'][] = ['sketchFace', 'sketchCurves', 'solidFace', 'sphere'];
 
 /**
  * 罫線面・ロフトの断面 1 つ(FR-430、FR-410、P5 計画書 §2.9.1、タスク25)。
@@ -48,6 +48,8 @@ const RULED_SECTION_KINDS: readonly RuledSection['kind'][] = ['sketchFace', 'sol
  */
 function serializeRuledSection(section: RuledSection): RuledSection {
   switch (section.kind) {
+    case 'sketchCurves':
+      return { kind: 'sketchCurves', ref: serializeCurveRef(section.ref) };
     case 'sketchFace':
       return { kind: 'sketchFace', ref: serializeFaceRef(section.ref) };
     case 'solidFace':
@@ -68,6 +70,10 @@ function readRuledSectionItem(value: unknown, path: string): Checked<RuledSectio
     return kind;
   }
   switch (kind.value) {
+    case 'sketchCurves': {
+      const ref = readCurveRef(record.value, 'ref', path);
+      return ref.ok ? { ok: true, value: { kind: 'sketchCurves', ref: ref.value } } : ref;
+    }
     case 'sketchFace': {
       const ref = readFaceRef(record.value, 'ref', path);
       if (!ref.ok) {
@@ -177,9 +183,12 @@ export function readLoftFeature(
   if (!twist.ok) {
     return twist;
   }
+  // 旧版の省略は12→13の移行でfalseに補う。現行版の欠落/不正値は黙って補わない。
+  const smooth = readBoolean(record, 'smooth', path);
+  if (!smooth.ok) return smooth;
   return {
     ok: true,
-    value: { ...base, kind: 'loft', sections: sections.value, twist: twist.value },
+    value: { ...base, kind: 'loft', smooth: smooth.value, sections: sections.value, twist: twist.value },
   };
 }
 
@@ -197,6 +206,8 @@ export function readSweepFeature(
   if (!sweepPath.ok) {
     return sweepPath;
   }
+  const guide = 'guide' in record ? readCurveRef(record, 'guide', path) : undefined;
+  if (guide !== undefined && !guide.ok) return guide;
   const frenet = readBoolean(record, 'frenet', path);
   if (!frenet.ok) {
     return frenet;
@@ -208,6 +219,7 @@ export function readSweepFeature(
       kind: 'sweep',
       profile: profile.value,
       path: sweepPath.value,
+      ...(guide === undefined ? {} : { guide: guide.value }),
       frenet: frenet.value,
     },
   };
@@ -313,7 +325,7 @@ export function serializeLoftFeature(feature: Extract<SolidFeature, { readonly k
   // ロフト(FR-410)。断面は 2 つ以上で、球を置けないので点の数の欄は持たない。
   return {
     id: feature.id,
-    kind: 'loft',
+    kind: 'loft', smooth: feature.smooth,
     name: feature.name,
     suppressed: feature.suppressed,
     sections: feature.sections.map(serializeRuledSection),
@@ -330,6 +342,7 @@ export function serializeSweepFeature(feature: Extract<SolidFeature, { readonly 
     suppressed: feature.suppressed,
     profile: serializeFaceRef(feature.profile),
     path: serializeCurveRef(feature.path),
+    ...(feature.guide === undefined ? {} : { guide: serializeCurveRef(feature.guide) }),
     frenet: feature.frenet,
   };
 }

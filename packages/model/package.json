@@ -6,6 +6,10 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./scripting": {
+      "types": "./dist/scripting/index.d.ts",
+      "default": "./src/scripting/index.ts"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
@@ -18,7 +22,8 @@
     "@pointercad/drawing": "workspace:*",
     "@pointercad/expression": "workspace:*",
     "@pointercad/kernel": "workspace:*",
-    "comlink": "catalog:"
+    "comlink": "catalog:",
+    "quickjs-wasi": "catalog:"
   },
   "devDependencies": {
     "@pointercad/test-utils": "workspace:*",

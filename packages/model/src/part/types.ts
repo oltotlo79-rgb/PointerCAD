@@ -713,6 +713,8 @@ export interface PrimitiveFeature extends SolidFeatureBase {
 export type RuledSection =
   /** スケッチの面フィーチャー1枚。その境界が輪郭になる。 */
   | { readonly kind: 'sketchFace'; readonly ref: SketchFaceRef }
+  /** 閉じたスプライン等を、面を挟まず輪郭として直接参照する(FR-435)。 */
+  | { readonly kind: 'sketchCurves'; readonly ref: SketchCurveRef }
   /** 立体の面1枚。カーネルが指紋で選び直し、外周を輪郭に取り出す。 */
   | { readonly kind: 'solidFace'; readonly ref: SubShapeRef }
   /**
@@ -768,6 +770,8 @@ export interface RuledFeature extends SolidFeatureBase {
  */
 export interface LoftFeature extends SolidFeatureBase {
   readonly kind: 'loft';
+  /** ロフト自身の断面間をなめらかにする。保存済みの形を守るため省略しない。 */
+  readonly smooth: boolean;
   /** つなぐ断面。並びが意味を持つ。2 つ以上ないと解決のときに断る。 */
   readonly sections: readonly RuledSection[];
   /** ねじれの補正(罫線面と同じ意味、§0.a-0.28)。整数の式。既定 0。 */
@@ -893,6 +897,8 @@ export interface SweepFeature extends SolidFeatureBase {
   readonly profile: SketchFaceRef;
   /** 経路。並んだ順につながっていること。 */
   readonly path: SketchCurveRef;
+  /** 断面の縁を案内する曲線。省略すると従来の一定断面。 */
+  readonly guide?: SketchCurveRef;
   /**
    * 向きの決め方。true で Frenet(曲線の曲がりに合わせて断面も回る)、
    * false(既定)で「ねじれを抑える」(§2.15 の段の表のつまみ)。

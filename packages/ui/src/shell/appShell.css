@@ -1,3 +1,5 @@
+@import './camHandoff.css';
+
 /*
  * PointerCAD 画面シェルの見た目。
  *
@@ -707,6 +709,10 @@
   border-radius: var(--pcad-radius);
 }
 
+.pcad-toolbar__mode-icon {
+  display: none;
+}
+
 /*
  * 左寄せの区画群と右寄せの区画群のあいだを押し広げる隙間。
  * 窓が狭いときは §狭い窓 でここが行の区切りになる。
@@ -783,9 +789,13 @@
   }
 }
 
-/* 視点とF1の入口を含め1280pxで1段を保つ。ボタンの押下領域は縮めない。 */
+/* 自動作図・視点・F1の入口を1280pxでも1段に保つ。現在のモードは図柄に畳み、
+ * 読み上げ名・ツールチップを残す。押下領域は他の図柄ボタンと同じ26px以上。 */
 @media (max-width: 1399px) {
   .pcad-toolbar { --pcad-toolbar-gap: calc(4px * var(--pcad-scale, 1)); }
+  .pcad-toolbar .pcad-toolbar__mode { width: 26px; min-width: 26px; height: 26px; padding: 0; justify-content: center; }
+  .pcad-toolbar__mode-icon { display: block; }
+  .pcad-toolbar__mode-label { display: none; }
 }
 
 /* 1280pxではF1も同じ段へ置く。26pxの押下領域を保ち、区画間の余白だけを詰める。 */

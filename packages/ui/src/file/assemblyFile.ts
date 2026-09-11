@@ -11,7 +11,7 @@ import { withPcadaExtension, type PickedFile } from './fileGateway.js';
 import { hasUnsavedChanges, openErrorMessageKey, type PartFileDeps } from './partFile.js';
 import { recordRecentFile } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
-import { queueDocumentSave } from './documentSaveQueue.js';
+import { completeDocumentSave, queueDocumentSave } from './documentSaveQueue.js';
 
 const contentCache = new WeakMap<AssemblyDocument, WeakMap<PartLibrary, string>>();
 
@@ -107,11 +107,12 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
     if (saved === null || !isCurrent()) return;
     const name = withPcadaExtension(saved);
     before.setAssemblyFileState(name, snapshot);
-    before.setFileMessage({ key: 'file.saved', failed: false });
     recordRecentFile(name, { storage: deps.recentFilesStorage });
-    if (useAppStore.getState().autoSaver === before.autoSaver && !activeHasUnsavedChanges(useAppStore.getState())) {
-      try { await before.autoSaver?.discard(); } catch { /* ファイル自体の保存は成功済み。 */ }
-    }
+    await completeDocumentSave(isCurrent, async () => {
+      if (useAppStore.getState().autoSaver === before.autoSaver && !activeHasUnsavedChanges(useAppStore.getState())) {
+        await before.autoSaver?.discard();
+      }
+    });
   } catch (error) {
     if (isCurrent()) {
       before.setFileMessage({ key: saveFailureMessageKey(error), failed: true });

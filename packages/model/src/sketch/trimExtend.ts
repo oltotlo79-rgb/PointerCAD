@@ -25,6 +25,8 @@
  */
 
 import { expressionValueFromNumber } from '@pointercad/expression';
+import { hasConnectedSegmentEnd } from './connectedSegment.js';
+import { constraintTargets } from './constraints/types.js';
 
 import {
   absoluteCoordinate,
@@ -623,6 +625,16 @@ export function trimCurve(
   const closed = curve.kind === 'arc' && isFullCircle(curve);
   const cuts = cutRatios(curve, resolved, closed);
   if (cuts.length === 0) {
+    if (curve.kind === 'segment' && hasConnectedSegmentEnd(curve, resolved)) {
+      return { ok: true, document: { ...prepDocument,
+        features: prepDocument.features.filter((other) => other.id !== feature.id),
+        ...(prepDocument.constraints === undefined ? {} : {
+          constraints: prepDocument.constraints.filter((constraint) => !constraintTargets(constraint).some((target) =>
+            target.kind === 'point' ? target.pointId === feature.id || target.pointId.startsWith(`${feature.id}:`)
+              : target.kind === 'vertex' ? target.featureId === feature.id : target.element.featureId === feature.id)),
+        }),
+      } };
+    }
     return refuse('noIntersection', '交わる線・円弧が無いので、切り取る場所を決められません。');
   }
   if (closed && cuts.length < 2) {

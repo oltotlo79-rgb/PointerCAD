@@ -294,6 +294,7 @@ async function exportShape(page: Page, format: string, savePath: string): Promis
 async function importFile(page: Page, path: string): Promise<void> {
   const chooser = page.waitForEvent('filechooser');
   await chooseFileMenu(page, '読み込む');
+  await page.getByRole('form', { name: '読み込み', exact: true }).getByRole('button', { name: 'ファイルを選ぶ', exact: true }).click();
   await (await chooser).setFiles(path);
 }
 

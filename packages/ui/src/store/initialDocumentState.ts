@@ -162,6 +162,7 @@ export function createInitialDocumentState(): InitialDocumentState {
     originNoticeMessage: null,
     // 起動直後は何も測っていない(FR-1102、P5 タスク31・32)。
     measurement: null,
+    strengthSession: null,
     massProperties: null,
     measureErrorKey: null,
     // 形を測る手立てはカーネルを持つ側が起動時に差し出す(P5 タスク32)。
@@ -172,6 +173,8 @@ export function createInitialDocumentState(): InitialDocumentState {
     printCheckCancelRequested: false,
     printCheckErrorMessage: null,
     exchangeNotice: null,
+    exportHandoff: null,
+    exportHandoffAttempt: null,
     // 書き出し・読み込みの口も同じ(P6 タスク32)。差し出されるまでは理由つきで断る。
     exchangeKernel: null,
     // 起動直後は何も読み込んでいないので、単位を訊く小窓も出ていない(P6 タスク32b)。

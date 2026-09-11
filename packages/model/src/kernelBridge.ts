@@ -1825,7 +1825,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         カーネル側が必須の欄にしてある(既定を入れるのは model の役目)ので必ず渡す。
       */
       return {
-        kind: 'thruSections',
+        kind: 'thruSections', smooth: plan.smooth,
         sections: plan.sections.map((section) => toThruSectionSpec(section)),
         ruled: plan.ruled,
         closed: plan.closed,
@@ -1882,6 +1882,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         kind: 'sweep',
         profile: plan.profile.map((curve) => toCurveSpec(curve)),
         path: plan.path.map((curve) => toCurveSpec(curve)),
+        ...(plan.guide === undefined ? {} : { guide: plan.guide.map((curve) => toCurveSpec(curve)) }),
         frenet: plan.frenet,
       };
     case 'rib':

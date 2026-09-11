@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
+import { surfaceHelpTopic } from '../solid/surfaceHelpTopic.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { applyNumericTransition } from './commitToStore.js';
 import { ExpressionField } from './ExpressionField.js';
@@ -15,6 +16,7 @@ import {
   MODE_TOOLTIP_KEYS,
   NUMERIC_INPUT_KEYS,
   numericChoiceOptionLabel,
+  numericToggleEnabled,
   reduceNumericInput,
   splineFinishStateFrom,
   STEP_TITLE_KEYS,
@@ -144,7 +146,7 @@ interface ChoiceGroupProps {
  * (rules/04-設計の規律.md「useState は表示専用の一時状態だけ」)。
  */
 function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupProps): React.JSX.Element {
-  const isLong = choice.options.length > LONG_CHOICE_OPTION_THRESHOLD;
+  const isLong = choice.presentation === 'menu' || choice.options.length > LONG_CHOICE_OPTION_THRESHOLD;
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const groupLabel = t(choice.labelKey);
@@ -341,6 +343,7 @@ export function NumericInputPopover({
   return (
     <div
       className="pcad-popover"
+      data-help-topic={surfaceHelpTopic(state.toolId)}
       style={{ left: `${String(position.left)}px`, top: `${String(position.top)}px` }}
       role="dialog"
       aria-label={t(STEP_TITLE_KEYS[state.step])}
@@ -435,8 +438,10 @@ export function NumericInputPopover({
               }}
               type="button"
               role="switch"
+              data-help-topic={toggle.key === 'splitIntersections' ? 'sketch-intersections' : undefined}
               className="pcad-switch"
               aria-checked={toggle.value}
+              disabled={!numericToggleEnabled(state, toggle.key)}
               onClick={() => {
                 /*
                   切り替えた後の欄の数で焦点位置を数える(P5 タスク49)。拡大縮小の
@@ -457,6 +462,7 @@ export function NumericInputPopover({
         </div>
       )}
 
+      {state.step === 'sweepOptions' ? <p className="pcad-popover__hint">{t('numericInput.sweepGuide.hint')}</p> : null}
       <p className="pcad-popover__hint">{t('numericInput.keyHint')}</p>
 
       <div className="pcad-popover__actions">

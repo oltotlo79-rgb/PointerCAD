@@ -1,0 +1,9 @@
+{
+  "bytes": 748917,
+  "sha256": "86984372d287728d6b7e947b706a1fa8ef7a07c754a167542830ad0942baf8df",
+  "compiler": "clang 22.1.8; LLVM ca7933e47d3a3451d81e72ac174dcb5aa28b59d1; wasm32-wasip1; wasi-sdk 32",
+  "sourceRevision": "65641a0c1e85cc266d7613d6673a22ec834bb941",
+  "wrapperRevision": "54c4d2dd4be2445409aeab603ecfc3bb209c7310",
+  "wrapperVersion": "3.6.0",
+  "upstreamWasmSha256": "b006d95d9475edf7c6648cc3eb391d3b780efdd99022fbfbb470f2359da460ff"
+}

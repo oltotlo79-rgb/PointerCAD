@@ -98,7 +98,7 @@ function spec(
   overrides: Partial<Omit<ThruSectionsStepSpec, 'kind' | 'sections'>> = {},
 ): ThruSectionsStepSpec {
   return {
-    kind: 'thruSections',
+    kind: 'thruSections', smooth: false,
     sections,
     ruled: true,
     closed: true,

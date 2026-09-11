@@ -561,6 +561,7 @@ function ruledSectionDependencies(
   return sections.flatMap((section) => {
     switch (section.kind) {
       case 'sketchFace':
+      case 'sketchCurves':
         return [];
       case 'sphere':
         return solidDependency(context, section.sphereFeatureId);

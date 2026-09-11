@@ -71,7 +71,7 @@ import type {
  * 下絵(`canvases`、FR-332)も版 7 に含め、版 6 以前のファイルは
  * `SCHEMA_MIGRATIONS[6]` がこの 2 欄の省略を空配列で補って読み込む。
  */
-export const PART_SCHEMA_VERSION = 12;
+export const PART_SCHEMA_VERSION = 13;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;

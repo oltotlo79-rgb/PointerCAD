@@ -199,6 +199,7 @@ export function ExchangePanel({
       return;
     }
     setRunning(true);
+    const attempt = useAppStore.getState().beginExportHandoff();
     const started =
       request === null
         ? runExportDxf(deps, dxfInput, fileName)
@@ -206,6 +207,8 @@ export function ExchangePanel({
     void started.then(
       (outcome) => {
         setRunning(false);
+        if (useAppStore.getState().exportHandoffAttempt !== attempt) return;
+        useAppStore.getState().finishExportHandoff(attempt, outcome.ok ? outcome.handoff ?? null : null);
         if (outcome.ok) {
           /*
             **成功は成功の口で知らせる**(タスク45 の指摘、2026-09-06)。書き出せたことを
@@ -226,6 +229,8 @@ export function ExchangePanel({
       },
       (error: unknown) => {
         setRunning(false);
+        if (useAppStore.getState().exportHandoffAttempt !== attempt) return;
+        useAppStore.getState().finishExportHandoff(attempt, null);
         onFailed(error instanceof Error ? error.message : String(error));
       },
     );

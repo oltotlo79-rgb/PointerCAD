@@ -18,6 +18,23 @@ function inputScope(file: unknown) {
 }
 
 describe('Web読み込み全入口の確保前検査（R07）', () => {
+  it('DWGを選ぶだけならファイル選択を開かず、誤選択しても本文を取得しない', async () => {
+    const { file, arrayBuffer } = pickedFile(3, '図面.DWG');
+    const getFile = vi.fn(() => Promise.resolve(file));
+    const showOpenFilePicker = vi.fn(() => Promise.resolve([{ name: file.name, getFile }]));
+    const scope = { showOpenFilePicker };
+    await expect(openFileInBrowser(['dwg'], scope)).rejects.toThrow('DXFへ変換');
+    expect(showOpenFilePicker).not.toHaveBeenCalled();
+    await expect(openFileInBrowser(['step', 'dwg'], scope)).rejects.toThrow('DXFへ変換');
+    await expect(createBrowserFileGateway(scope).openPcad()).rejects.toThrow('DXFへ変換');
+    expect(getFile).not.toHaveBeenCalled();
+    for (const part of [true, false]) {
+      const input = inputScope(file);
+      await expect(part ? createBrowserFileGateway(input.scope).openPcad() : openFileInBrowser(['step'], input.scope)).rejects.toThrow('DXFへ変換');
+      expect(input.remove).toHaveBeenCalledTimes(1);
+    }
+    expect(arrayBuffer).not.toHaveBeenCalled();
+  });
   it.each([300 * 1024 * 1024, Infinity, NaN, -1, 0.5, '3', undefined])('%sのFileを全入口で本文取得前に拒否する', async (size) => {
     for (const kind of ['part', 'assembly', 'drawing'] as const) {
       const { file, arrayBuffer } = pickedFile(size);

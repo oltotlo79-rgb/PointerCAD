@@ -21,6 +21,8 @@ import assembly from './ja/assembly.json';
 import drawing from './ja/drawing.json';
 import help from './ja/help.json';
 import sheetMetal from './ja/sheetMetal.json';
+import strength from './ja/strength.json';
+import script from './ja/script.json';
 
 /** 機能ごとの表を 1 つに合わせたもの。鍵の型(`MessageKey`)はここから導く。 */
 export const ja = {
@@ -52,10 +54,13 @@ export const ja = {
   ...drawing,
   ...help,
   ...sheetMetal,
+  ...strength,
+  ...script,
 };
 
 /** 分けた表そのもの(重なりの検査が読む)。並びは `ja` を合わせる順と同じ。 */
 export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, string>>])[] = [
+  ['script', script],
   ['numericInput', numericInput],
   ['propertyPanel', propertyPanel],
   ['toolbar', toolbar],
@@ -69,4 +74,5 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['drawing', drawing],
   ['help', help],
   ['sheetMetal', sheetMetal],
+  ['strength', strength],
 ];

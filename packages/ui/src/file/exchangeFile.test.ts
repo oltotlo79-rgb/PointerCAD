@@ -195,8 +195,8 @@ describe('形式の一覧と対応(FR-802、FR-803)', () => {
     expect([...EXPORT_FORMAT_ORDER]).toEqual(['step', 'stl', '3mf', 'obj', 'glb']);
   });
 
-  it('読み込みは 6 形式(書き出しの 5 つに DXF が加わる)', () => {
-    expect([...IMPORT_FILE_KINDS]).toEqual(['step', 'stl', 'obj', '3mf', 'glb', 'dxf']);
+  it('直接読める6形式とDWGの変換案内を並べる', () => {
+    expect([...IMPORT_FILE_KINDS]).toEqual(['step', 'stl', 'obj', '3mf', 'glb', 'dxf', 'dwg']);
   });
 
   it('カーネルの言葉では glTF が gltf、3MF が mesh になる(§0.a-0.19)', () => {
@@ -450,6 +450,7 @@ describe('書き出しの流れ(§2.4、FR-803)', () => {
     expect(result).toEqual({
       ok: true,
       notices: ['面積が 0 の三角形を 4 枚除きました。'],
+      handoff: { format: 'stl', token: null },
     });
   });
 
@@ -462,7 +463,7 @@ describe('書き出しの流れ(§2.4、FR-803)', () => {
       createExportRequest('stl', { withColors: false }),
       '部品.pcad',
     );
-    expect(result).toEqual({ ok: true, notices: ['[exchangeError.shellNotSupported]'] });
+    expect(result).toEqual({ ok: true, notices: ['[exchangeError.shellNotSupported]'], handoff: { format: 'stl', token: null } });
   });
 
   it('カーネルが断ったら、その日本語の理由をそのまま返す(§2.8)', async () => {
@@ -596,7 +597,7 @@ describe('立体の読み込みの流れ(FR-802、FR-811)', () => {
     const fake = createFakeGateway();
     const kernel = createFakeKernel(oneFileOutcome('x'));
     await runImportBody(createDeps(fake, kernel.kernel), createEmptyPartDocument());
-    expect(fake.openedKinds[0]).toEqual(IMPORT_FILE_KINDS);
+    expect(fake.openedKinds[0]).toEqual(['step', 'stl', 'obj', '3mf', 'glb', 'dxf']);
   });
 
   it('取り消したら何も起きない(断りも出さない)', async () => {
@@ -769,7 +770,7 @@ describe('「読み込む」の 1 つの入口(FR-802、FR-813)', () => {
       XY_PLANE,
     );
     expect(fake.openedKinds).toHaveLength(1);
-    expect(fake.openedKinds[0]).toEqual(IMPORT_FILE_KINDS);
+    expect(fake.openedKinds[0]).toEqual(['step', 'stl', 'obj', '3mf', 'glb', 'dxf']);
   });
 
   it('STEP を選ぶと立体になる(履歴へベースボディが積まれる)', async () => {
@@ -868,7 +869,7 @@ describe('出していない欄の警告を落とす(§0.a-0.20、タスク43b)'
       createExportRequest('step'),
       '部品.pcad',
     );
-    expect(result).toEqual({ ok: true, notices: [] });
+    expect(result).toEqual({ ok: true, notices: [], handoff: { format: 'step', token: null } });
   });
 
   it('STL を既定のまま(色を渡さずに)書き出しても、案内は 1 件も出ない', async () => {
@@ -881,7 +882,7 @@ describe('出していない欄の警告を落とす(§0.a-0.20、タスク43b)'
       createExportRequest('stl', { withColors: false }),
       '部品.pcad',
     );
-    expect(result).toEqual({ ok: true, notices: [] });
+    expect(result).toEqual({ ok: true, notices: [], handoff: { format: 'stl', token: null } });
   });
 
   it('弾いた立体があるときは、案内としてちゃんと残る', async () => {
@@ -893,7 +894,7 @@ describe('出していない欄の警告を落とす(§0.a-0.20、タスク43b)'
       createExportRequest('stl', { withColors: false }),
       '部品.pcad',
     );
-    expect(result).toEqual({ ok: true, notices: ['[exchangeError.shellNotSupported]'] });
+    expect(result).toEqual({ ok: true, notices: ['[exchangeError.shellNotSupported]'], handoff: { format: 'stl', token: null } });
   });
 });
 

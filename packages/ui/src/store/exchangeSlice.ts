@@ -7,6 +7,7 @@ import type { ImportedMeshBytes } from '@pointercad/io';
 import type { PrintabilityReport } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { ExchangeKernel } from '../file/exchangeFile.js';
+import type { ExportHandoff } from '../file/openWith.js';
 import { t } from '../i18n/t.js';
 import {
   type PartInspector,
@@ -27,6 +28,11 @@ export type { PrintabilityReport, PrintabilitySummary } from '@pointercad/model'
 
 /** 入出力と点検のスライスが持つ欄と操作。 */
 export interface ExchangeSlice {
+  readonly exportHandoff: ExportHandoff | null;
+  readonly exportHandoffAttempt: object | null;
+  readonly beginExportHandoff: () => object;
+  readonly finishExportHandoff: (attempt: object, handoff: ExportHandoff | null) => void;
+  readonly clearExportHandoff: () => void;
   /**
    * 3D プリントの点検の結果(FR-815、P6 §0.53、タスク42・43)。まだ点検していなければ `null`。
    *
@@ -178,6 +184,8 @@ export type ExchangeInitialState = Pick<
   | 'printCheckCancelRequested'
   | 'printCheckErrorMessage'
   | 'exchangeNotice'
+  | 'exportHandoff'
+  | 'exportHandoffAttempt'
   | 'exchangeKernel'
   | 'importUnitAsked'
   | 'importedShapes'
@@ -191,6 +199,15 @@ export const createExchangeSlice: StateCreator<
   [],
   Omit<ExchangeSlice, keyof ExchangeInitialState>
 > = (set, get) => ({
+  beginExportHandoff: () => {
+    const attempt = {};
+    set({ exportHandoff: null, exportHandoffAttempt: attempt });
+    return attempt;
+  },
+  finishExportHandoff: (attempt, exportHandoff) => {
+    if (get().exportHandoffAttempt === attempt) set({ exportHandoff });
+  },
+  clearExportHandoff: () => { set({ exportHandoff: null, exportHandoffAttempt: null }); },
   setExchangeKernel: (exchangeKernel) => {
     set({ exchangeKernel });
   },

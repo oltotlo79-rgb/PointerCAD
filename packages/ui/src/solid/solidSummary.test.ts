@@ -1576,7 +1576,7 @@ describe('面をつなぐ・ロフトの要約(FR-430、FR-410、P5 タスク27)
     id: 'loft-1',
     name: 'ロフト1',
     suppressed: false,
-    kind: 'loft',
+    kind: 'loft', smooth: false,
     sections: [
       { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-1' } },
       { kind: 'sketchFace', ref: { sketchId: 'sketch-1', faceFeatureId: 'face-2' } },

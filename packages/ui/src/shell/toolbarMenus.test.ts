@@ -521,6 +521,7 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
     expect(LOOK_MENU_ITEMS.map((item) => item.id)).toEqual([
       'appearance',
       'measure',
+      'strength',
       'canvas',
       'printCheck',
     ]);
@@ -531,7 +532,7 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       畳んだ一覧の中に項目をいくつ足しても溝の幅は変わらない、という約束の実例。
       平置きにしていたら図柄 4 個で 120 画素になり、1440 画素の窓の余裕が削れていた。
     */
-    expect(LOOK_MENU_ITEMS).toHaveLength(4);
+    expect(LOOK_MENU_ITEMS).toHaveLength(5);
     expect(segmentedWidthPixels(0, SINGLE_MENU_COUNT)).toBe(37);
   });
 

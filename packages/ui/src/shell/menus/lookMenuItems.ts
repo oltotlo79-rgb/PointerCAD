@@ -45,7 +45,7 @@ export const PROJECTION_MENU_ITEMS: readonly ToolMenuItem<ProjectionMode>[] = [
  * 外観(FR-1106〜1110)と測る(FR-1101、FR-1102)は、どちらも**立体を作らず**
  * 「選んでいるものについて何かをする」道具なので、同じ一覧に入る。
  */
-export type LookToolId = AppearanceToolId | MeasureToolId | CanvasActionId | PrintCheckActionId;
+export type LookToolId = AppearanceToolId | MeasureToolId | CanvasActionId | PrintCheckActionId | 'strength';
 
 /**
  * 下絵(FR-332、P6 タスク39)の入口の id。
@@ -89,6 +89,12 @@ export const LOOK_MENU_ITEMS: readonly ToolMenuItem<LookToolId>[] = [
     id: 'measure',
     labelKey: 'toolbar.measure.title',
     tooltipKey: 'toolbar.measure.tooltip',
+    Icon: MeasureIcon,
+  },
+  {
+    id: 'strength',
+    labelKey: 'strength.title',
+    tooltipKey: 'strength.tooltip',
     Icon: MeasureIcon,
   },
   /*

@@ -803,7 +803,8 @@ test.describe('P4 スケッチ拡張(作図面の上の図形と編集)', () => 
     await page.goto('/');
     await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
 
-    // 1) 十字にした 2 本のうち、横の線の右半分をトリムで消す。
+    // 1) 自動接続を切った十字の2本で、交点まで部分トリムできる。
+    // 既定の自動接続による区間削除は intersectionsFlow.ts が3環境で検査する。
     await chooseSketchTool(page, '線分');
     await expect(popoverTitle(page)).toHaveText('線分の始点');
     await fillFields(page, ['-40', '0', '0']);
@@ -816,11 +817,18 @@ test.describe('P4 スケッチ拡張(作図面の上の図形と編集)', () => 
     await chooseSketchTool(page, '線分');
     await fillFields(page, ['0', '-40', '0']);
     await commitPopover(page);
+    const connectIntersections = page.getByRole('switch', { name: '交点でつなぐ', exact: true });
+    await expect(connectIntersections).toBeChecked();
+    await connectIntersections.click();
+    await expect(connectIntersections).not.toBeChecked();
     await useAbsolute(page);
     await fillFields(page, ['0', '40', '0']);
     await commitPopover(page);
     await cancelPopover(page);
     await expect(treeRow(page, '線分2')).toBeVisible();
+
+    await expect(page.locator('.pcad-panel--left').getByRole('button', { name: /^線分\d+$/u })).toHaveCount(2);
+    await expect(treeRow(page, '交点1')).toHaveCount(0);
 
     await chooseEditTool(page, 'トリム');
     await expect(statusText(page)).toContainText('消したい部分をクリック');

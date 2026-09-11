@@ -17,6 +17,9 @@ import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
  */
 contextBridge.exposeInMainWorld('pointercadDesktop', {
   platform: process.platform,
+  saveExport: (name: string, kind: string, bytes: Uint8Array): Promise<unknown> => ipcRenderer.invoke('pcad:saveExport', name, kind, bytes),
+  openExport: (token: string): Promise<unknown> => ipcRenderer.invoke('pcad:openExport', token),
+  openCamTool: (tool: string): Promise<unknown> => ipcRenderer.invoke('pcad:openCamTool', tool),
   /** 「開く」。答えは `{ name, bytes, saveTargetToken }` か null。token に実パスは含めない。 */
   openPcad: (kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown> => ipcRenderer.invoke('pcad:open', kind),
   /** 読み終えた部品について、開いた先を上書き先に確定する。 */

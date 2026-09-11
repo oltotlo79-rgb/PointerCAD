@@ -84,8 +84,8 @@ import { isRecord } from './guards.js';
  * 新しすぎる/古すぎる」の判定が種別ごとに分かれず 1 か所で済む。版 7 以前の
  * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
-/** 版12: 板金フィーチャーの入力・安定パネル参照。導出形状は保存しない。 */
-export const PCAD_SCHEMA_VERSION = 12;
+/** 版13: ロフトの平滑化と曲線断面。古いアプリが指定を黙って落として形を変えない。 */
+export const PCAD_SCHEMA_VERSION = 13;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -613,5 +613,15 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
     const sheet = raw['kind'] === PCAD_DOCUMENT_KIND || raw['kind'] === PCAD_TEMPLATE_KIND
       ? { sheetUnfolds: 'sheetUnfolds' in document ? document['sheetUnfolds'] : [] } : {};
     return { ...raw, schema: 12, document: { ...document, ...sheet, schemaVersion: 12 } };
+  },
+  /** 版12 → 13: 従来のロフトは平滑化オフ。既存の不正値を既定で上書きしない。 */
+  12: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    const document = raw['document'];
+    const solids: unknown = document['solids'];
+    const part = raw['kind'] === PCAD_DOCUMENT_KIND || raw['kind'] === PCAD_TEMPLATE_KIND;
+    const fields = part && Array.isArray(solids) ? { solids: solids.map((solid: unknown) =>
+      isRecord(solid) && solid['kind'] === 'loft' && !('smooth' in solid) ? { ...solid, smooth: false } : solid) } : {};
+    return { ...raw, schema: 13, document: { ...document, ...fields, schemaVersion: 13 } };
   },
 };

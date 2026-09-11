@@ -24,6 +24,7 @@ import { createAssemblySlice } from './assemblySlice.js';
 import { createDrawingSlice } from './drawingSlice.js';
 import { createHelpSlice } from './helpSlice.js';
 import { createSheetMetalSlice } from './sheetMetalSlice.js';
+import { createScriptSlice } from './scriptSlice.js';
 
 export type { AppState } from './appState.js';
 export type { ViewSlice } from './viewSlice.js';
@@ -40,21 +41,42 @@ export type { FileSlice } from './fileSlice.js';
 export type { AssemblySlice } from './assemblySlice.js';
 export type { DrawingSlice } from './drawingSlice.js';
 
+/** Shared with the ownership checks: a new slice cannot disappear from their registry. */
+export const STORE_SLICE_CREATORS = {
+  viewSlice: createViewSlice,
+  canvasSlice: createCanvasSlice,
+  exchangeSlice: createExchangeSlice,
+  documentSlice: createDocumentSlice,
+  timelineSlice: createTimelineSlice,
+  recomputeSlice: createRecomputeSlice,
+  sketchSlice: createSketchSlice,
+  constraintSlice: createConstraintSlice,
+  selectionSlice: createSelectionSlice,
+  measureSlice: createMeasureSlice,
+  fileSlice: createFileSlice,
+  assemblySlice: createAssemblySlice,
+  drawingSlice: createDrawingSlice,
+  helpSlice: createHelpSlice,
+  sheetMetalSlice: createSheetMetalSlice,
+  scriptSlice: createScriptSlice,
+};
+
 export const useAppStore = create<AppState>()((...args) => ({
   ...createInitialDocumentState(),
-  ...createViewSlice(...args),
-  ...createCanvasSlice(...args),
-  ...createExchangeSlice(...args),
-  ...createDocumentSlice(...args),
-  ...createTimelineSlice(...args),
-  ...createRecomputeSlice(...args),
-  ...createSketchSlice(...args),
-  ...createConstraintSlice(...args),
-  ...createSelectionSlice(...args),
-  ...createMeasureSlice(...args),
-  ...createFileSlice(...args),
-  ...createAssemblySlice(...args),
-  ...createDrawingSlice(...args),
-  ...createHelpSlice(...args),
-  ...createSheetMetalSlice(...args),
+  ...STORE_SLICE_CREATORS.viewSlice(...args),
+  ...STORE_SLICE_CREATORS.canvasSlice(...args),
+  ...STORE_SLICE_CREATORS.exchangeSlice(...args),
+  ...STORE_SLICE_CREATORS.documentSlice(...args),
+  ...STORE_SLICE_CREATORS.timelineSlice(...args),
+  ...STORE_SLICE_CREATORS.recomputeSlice(...args),
+  ...STORE_SLICE_CREATORS.sketchSlice(...args),
+  ...STORE_SLICE_CREATORS.constraintSlice(...args),
+  ...STORE_SLICE_CREATORS.selectionSlice(...args),
+  ...STORE_SLICE_CREATORS.measureSlice(...args),
+  ...STORE_SLICE_CREATORS.fileSlice(...args),
+  ...STORE_SLICE_CREATORS.assemblySlice(...args),
+  ...STORE_SLICE_CREATORS.drawingSlice(...args),
+  ...STORE_SLICE_CREATORS.helpSlice(...args),
+  ...STORE_SLICE_CREATORS.sheetMetalSlice(...args),
+  ...STORE_SLICE_CREATORS.scriptSlice(...args),
 }));

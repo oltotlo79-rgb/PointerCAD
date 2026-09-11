@@ -293,8 +293,10 @@ describe('なめらかさと形式の一覧(§0.a-0.20、FR-802、FR-803)', () =
     expect([...triangleKinds]).toEqual(['stl', 'obj', 'glb', '3mf']);
   });
 
-  it('ファイルの種類は 8 つで、書き出し・読み込みの形式はその部分集合である', () => {
-    expect([...FILE_KINDS]).toEqual(['pcad', 'pcadt', 'step', 'stl', 'obj', 'glb', '3mf', 'dxf']);
+  it('文書・処理・交換形式を区別し、書き出し・読み込みはその部分集合である', () => {
+    expect([...FILE_KINDS]).toEqual(['pcad', 'pcadt', 'pcadscript', 'step', 'stl', 'obj', 'glb', '3mf', 'dxf', 'dwg']);
+    expect(canRoundTrip('dwg')).toBe(false);
+    expect(canRoundTrip('pcadscript')).toBe(true);
     for (const format of EXPORT_FORMATS) {
       expect(FILE_KINDS.includes(format), format).toBe(true);
     }

@@ -78,7 +78,7 @@
   "ruledError.sphereOrigin": "中心を立体の頂点で決めた球は、まだ面をつなぐ相手にできません。球の中心を座標かスケッチの点で決めてください。",
   "ruledError.twistNotInteger": "ねじれは整数にしてください。",
   "ruledError.notRuledTool": "面をつなぐ・ロフトとして作れない道具です。",
-  "loftError.needTwoSections": "つなぐ面を、つなぐ順に 2 つ以上選んでください。",
+  "loftError.needTwoSections": "面または閉じたスプラインを、つなぐ順に2つ以上選んでください。",
   "loftError.sphere": "ロフトには球を使えません。「面をつなぐ」を使ってください。",
   "cutError.collinear": "3 つの点が一直線に並んでいます。別の点を選んでください。",
   "cutError.notStraightEdge": "まっすぐでない辺は切る面の基準にできません。直線の辺を選んでください。",

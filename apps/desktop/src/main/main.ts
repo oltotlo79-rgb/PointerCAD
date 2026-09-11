@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, Menu, session } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
+import { isAllowedCamUrl } from '@pointercad/ui/open-with';
 import { denyBrowserPermissions } from './sessionPermissions.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import { join } from 'node:path';
@@ -52,8 +53,12 @@ function createMainWindow(): void {
       event.preventDefault();
     }
   });
-  // P11b タスク 1 の固定 HTTPS 許可表による外部リンク処理は、この拒否口へ追加する。
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // 加工先は検証済みの専用IPCから固定HTTPSだけを開く。一般の新窓要求は許可しない。
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    // ヘルプ内の公式リンクも完全一致の表だけをOSへ渡す。アプリ内の新窓は作らない。
+    if (isAllowedCamUrl(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: 'deny' };
+  });
 
   window.once('ready-to-show', () => {
     window.show();

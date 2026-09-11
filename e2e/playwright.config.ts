@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 const ELECTRON_TEST_FILE = /electron-[\w-]+\.spec\.ts$/u;
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
-const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個|4分割の実描画性能|100フィーチャー・三面図・50寸法|板金100段の実描画性能/u;
+const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個|4分割の実描画性能|100フィーチャー・三面図・50寸法|板金100段の実描画性能|自動作図実行中の実描画性能/u;
 
 export default defineConfig({
   testDir: './tests',
@@ -32,7 +32,7 @@ export default defineConfig({
   projects: [
     {
       name: 'viewport-performance',
-      testMatch: /(?:assembly|p8-drawing|drawing-performance|sheet-performance)\.spec\.ts$/u,
+      testMatch: /(?:assembly|p8-drawing|drawing-performance|sheet-performance|script-performance)\.spec\.ts$/u,
       workers: 1,
       grep: VIEWPORT_PERFORMANCE_TEST,
       // GPUの有無を揃え、別テストのWASM初期化とCPUを奪い合わずに測る。
@@ -51,9 +51,11 @@ export default defineConfig({
     },
     {
       name: 'firefox',
+      // Electron専用ケースの末尾がWebの名前と重なっても、Firefox枠へ混入させない。
+      testIgnore: ELECTRON_TEST_FILE,
       // 実カーネル・保存再読込・復元・製作図・F1・CSPを既存の同じ操作で検査する。
       // 板金の操作検査は分割した新ファイルも自動的に対象へ入れる。
-      testMatch: /(?:smoke|solid|gdt|drawing-recovery|browser-security|sheet-[\w-]+)\.spec\.ts$/u,
+      testMatch: /(?:smoke|solid|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|sheet-[\w-]+)\.spec\.ts$/u,
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       use: { ...devices['Desktop Firefox'] },
       dependencies: ['viewport-performance'],

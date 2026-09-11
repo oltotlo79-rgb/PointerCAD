@@ -1,0 +1,22 @@
+.pcad-card.pcad-cam-handoff {
+  position: absolute;
+  z-index: 35;
+  top: calc(82px * var(--pcad-scale));
+  right: calc(16px * var(--pcad-scale));
+  width: min(calc(390px * var(--pcad-scale)), calc(100vw - 32px));
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(10px * var(--pcad-scale));
+  box-sizing: border-box;
+  padding: var(--pcad-space-3);
+  align-items: stretch;
+  text-align: left;
+  color: var(--pcad-text);
+  background: var(--pcad-surface-raised);
+  border: 1px solid var(--pcad-border-strong);
+}
+.pcad-cam-handoff__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pcad-cam-handoff__heading h2 { margin: 0; font-size: 1em; }
+.pcad-cam-handoff p { margin: 0; line-height: 1.65; }

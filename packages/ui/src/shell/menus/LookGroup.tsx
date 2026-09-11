@@ -49,12 +49,14 @@ export function LookGroup({
   matches,
   activeTool,
 }: LookGroupProps): React.JSX.Element {
+  const isAssembly = useAppStore(state => state.assembly !== null);
   const readiness = appearanceReadiness({ document, bodies, selection, selectionKind, matches });
   /*
     項目ごとの押せる条件。外観は `appearanceReadiness`(タスク11)、測るは
     `measureToolReadiness`(タスク32)で、どちらも判断の正本はそれぞれ 1 か所にある。
   */
   const readinessOf = (id: LookToolId): SolidToolReadiness => {
+    if (id === 'strength') return { ready: true, reasonKey: null };
     if (id === 'measure') {
       return measureToolReadiness(selection, bodies);
     }
@@ -81,13 +83,19 @@ export function LookGroup({
       </span>
       <div className="pcad-segmented">
         <ToolMenu
-          items={LOOK_MENU_ITEMS}
+          items={isAssembly ? LOOK_MENU_ITEMS.filter(item => item.id === 'strength') : LOOK_MENU_ITEMS}
           groupLabelKey="toolbar.look.groupLabel"
           groupTooltipKey="toolbar.look.tooltip"
           GroupIcon={AppearanceIcon}
           activeTool={activeTool}
           readinessOf={readinessOf}
           onChoose={(id, pressed) => {
+            if (id === 'strength') {
+              const store = useAppStore.getState();
+              store.setActiveTool('select');
+              store.toggleStrength();
+              return;
+            }
             if (id === 'measure') {
               runMeasureTool(readinessOf(id));
               return;

@@ -20,6 +20,7 @@ import type { AssemblySlice } from './assemblySlice.js';
 import type { DrawingSlice } from './drawingSlice.js';
 import type { HelpSlice } from './helpSlice.js';
 import type { SheetMetalSlice } from './sheetMetalSlice.js';
+import type { ScriptSlice } from './scriptSlice.js';
 
 /** 文書とその寿命の欄を、購読へ中間状態を渡さず一緒に更新する。 */
 export type DocumentStateUpdate = (state: AppState) => Partial<AppState>;
@@ -38,4 +39,4 @@ export interface AppState
     FileSlice,
     AssemblySlice,
     DrawingSlice,
-    HelpSlice, SheetMetalSlice {}
+    HelpSlice, SheetMetalSlice, ScriptSlice {}

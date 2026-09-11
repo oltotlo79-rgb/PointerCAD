@@ -30,7 +30,6 @@ import {
   vertexKey,
   WORK_PLANES,
   worldToPlane,
-  type ConstraintTarget,
   type ResolveContext,
   type ResolvedSketch,
   type SketchDocument,
@@ -51,7 +50,6 @@ import {
   constraintMarkAt,
   constraintMarksOf,
   pickConstraintTarget,
-  vertexAt,
 } from '../sketch/constraintPicking.js';
 import {
   cornerNear,
@@ -145,6 +143,7 @@ import {
   solveWithDrag,
 } from './dragSketch.js';
 import type { ViewportScene } from './createViewportScene.js';
+import { pickSketchDragTarget } from './pickSketchDragTarget.js';
 import { gridSpacing } from './gridMath.js';
 import { snapToSphereGrid, type SphereGridPoint, type SphereGridSpec } from './buildSphereGrid.js';
 
@@ -1479,9 +1478,8 @@ export function attachSketchInteraction(
   function beginDragAt(pointer: readonly [number, number]): boolean {
     const state = useAppStore.getState();
     const context = constraintContextOfStore(state);
-    const vertex = vertexAt(state.resolvedSketch, project, pointer);
-    const picked = vertex === null ? pickSketchElement(state.resolvedSketch, project, pointer) : null;
-    if (vertex === null && (picked === null || picked.kind !== 'point')) {
+    const target = pickSketchDragTarget(state.resolvedSketch, project, pointer);
+    if (target === null) {
       // 点でも端点でもない(線の途中・面・何も無いところ)。掴まない。
       return false;
     }
@@ -1496,10 +1494,6 @@ export function attachSketchInteraction(
       dragPlane = null;
       return false;
     }
-    const target: ConstraintTarget =
-      vertex !== null
-        ? { kind: 'vertex', featureId: vertex.featureId, vertex: vertex.vertex }
-        : { kind: 'point', pointId: picked?.elementId ?? '' };
     const outcome = draggableAt(
       state.sketch,
       context.variableSet,

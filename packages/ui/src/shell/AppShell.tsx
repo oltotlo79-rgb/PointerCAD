@@ -8,6 +8,7 @@ import {
 } from '../file/attachAutoSave.js';
 import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
 import { ImportUnitPanel } from '../file/ImportUnitPanel.js';
+import { ExportHandoffPanel } from '../file/ExportHandoffPanel.js';
 import {
   createDefaultPartFileDeps,
   newPart,
@@ -40,6 +41,7 @@ import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { StrengthPropertyPanel } from '../strength/StrengthPropertyPanel.js';
 import { AssemblyTree } from './AssemblyTree.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
@@ -124,6 +126,7 @@ export function AppShell(): React.JSX.Element {
    * (NFR-PF-1)。木・ツールバー・プロパティの中身の入れ替えは以後の段が足す。
    */
   const documentKind = useAppStore(activeDocumentKind);
+  const strengthOpen = useAppStore(state => state.strengthSession !== null);
   const isComputing = useAppStore((state) => state.isComputing);
   // 幾何カーネルをまだ読み込み終えていないか(§0.a-0.23 ⑨)。初回の計算中だけ帯と札の
   // 文言を分け、固まったように見えないようにする。
@@ -326,6 +329,9 @@ export function AppShell(): React.JSX.Element {
         return;
       }
       const store = useAppStore.getState();
+      if (store.strengthSession !== null) {
+        event.preventDefault(); event.stopPropagation(); store.closeStrength(); return;
+      }
       if (store.measurement === null && store.massProperties === null) {
         return;
       }
@@ -352,6 +358,7 @@ export function AppShell(): React.JSX.Element {
     */
     <div className="pcad-shell" data-document-kind={documentKind}>
       <HelpHost />
+      <ExportHandoffPanel />
       {documentKind === 'drawing' ? <DrawingToolbar /> : <Toolbar />}
       <div className="pcad-shell__body">
         {/*
@@ -528,7 +535,9 @@ export function AppShell(): React.JSX.Element {
             />
           )}
         </div>
-        {documentKind === 'drawing' ? (
+        {strengthOpen ? (
+          <StrengthPropertyPanel />
+        ) : documentKind === 'drawing' ? (
           <DrawingPropertyPanel />
         ) : documentKind === 'assembly' ? (
           <AssemblyPropertyPanel />

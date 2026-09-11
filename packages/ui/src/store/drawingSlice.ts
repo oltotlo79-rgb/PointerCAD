@@ -82,6 +82,9 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
     const sources = options?.sources ?? emptyDrawingSourceLibrary();
     set((state) => ({
       ...createDrawingInitialState(),
+      strengthSession: null,
+      exportHandoff: null,
+      exportHandoffAttempt: null,
       drawing,
       drawingSources: sources,
       drawingImportedShapes: options?.importedShapes ?? new Map(),

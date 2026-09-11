@@ -51,6 +51,17 @@ beforeEach(() => {
 afterEach(() => { sender.emit('destroyed'); });
 
 describe('本体プロセスの保存先を文書切替で失効させる（レビュー R02）', () => {
+  it('加工先の書き出し後もCtrl+S相当の保存は元のpcadへ向かう', async () => {
+    const part = resolve('memory-only', 'source.pcad'), exported = resolve('memory-only', 'part.stl');
+    electron.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: part }).mockResolvedValueOnce({ canceled: false, filePath: exported });
+    await invoke(PCAD_SAVE_CHANNEL, 'source.pcad', Uint8Array.of(1), true);
+    const receipt = await invoke('pcad:saveExport', 'part.stl', 'stl', Uint8Array.of(2));
+    if (typeof receipt !== 'object' || receipt === null || !('token' in receipt)) throw new Error('書き出しの札なし');
+    expect(typeof receipt.token).toBe('string');
+    await invoke(PCAD_SAVE_CHANNEL, 'source.pcad', Uint8Array.of(3), false);
+    expect(memory.get(part)).toEqual(Uint8Array.of(3)); expect(memory.get(exported)).toEqual(Uint8Array.of(2));
+    expect(electron.showSaveDialog).toHaveBeenCalledTimes(2);
+  });
   it.each(['clear', 'destroy'])('保存ダイアログ待機中の%s後に古い保存先を復活させない', async (action) => {
     const selection = deferred<{ canceled: boolean; filePath: string }>();
     electron.showSaveDialog.mockReturnValueOnce(selection.promise);

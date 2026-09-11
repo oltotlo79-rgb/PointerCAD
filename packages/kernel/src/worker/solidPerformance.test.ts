@@ -128,7 +128,7 @@ function buildSteps(count: number): SolidStepRequest[] {
  */
 function ruledToSphere(segments: SphereSegmentCount): ThruSectionsStepSpec {
   return {
-    kind: 'thruSections',
+    kind: 'thruSections', smooth: false,
     sections: [
       { kind: 'sphere', center: [0, 0, 0], radius: 10 },
       {

@@ -49,7 +49,8 @@ describe('プロジェクト進捗台帳の重複防止(rules/06 10.23)', () => 
     expect(ledger).not.toBeNull();
     if (ledger === null) throw new Error('進捗台帳の根はオブジェクトである必要があります。');
 
-    expect(requiredNumber(ledger, 'totalTasks')).toBe(552);
+    // ADD-1〜28: 交点接続と、大学数学/関数作図27件。将来見積115件は除外しない。
+    expect(requiredNumber(ledger, 'totalTasks')).toBe(580);
     expect(requiredNumber(ledger, 'futureEstimateTasks')).toBe(115);
     const baseline = requiredNumber(ledger, 'completedBeforeTrackedPhases');
     const reported = requiredNumber(ledger, 'reportedCompleted');

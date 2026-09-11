@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { loadRecentFiles } from '../file/recentFiles.js';
 import { t } from '../i18n/t.js';
 import { HelpButton } from '../help/HelpButton.js';
+import { ScriptToolsMenu } from '../scripting/ScriptToolsMenu.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
 import {
   cancelConstraintTool,
@@ -54,6 +55,7 @@ import {
   runFileMenuAction,
 } from './menus/fileToolbarActions.js';
 import { LookGroup } from './menus/LookGroup.js';
+import { ImportFormatPanel } from '../file/ImportFormatPanel.js';
 import { AssemblyGroup } from './menus/AssemblyGroup.js';
 import { PlaneMenu } from './menus/PlaneMenu.js';
 import { activateEditTool, activateShapeTool, activateTool } from './menus/sketchToolActions.js';
@@ -140,6 +142,7 @@ export function Toolbar(): React.JSX.Element {
    * 部品文書と端末の好みが対象)。
    */
   const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   /*
    * 「ファイル」の一覧に並べる、数の決まらない行の材料(P6 タスク33)。
    *  - 保存したひな形(FR-814): ブラウザの中の置き場から**非同期**で読む。
@@ -238,6 +241,7 @@ export function Toolbar(): React.JSX.Element {
                   // 保存し終えたひな形が一覧へすぐ並ぶよう、読み直しの切っ掛けを立てる。
                   setTemplateSaveCount((count) => count + 1);
                 },
+                () => { setExportOpen(false); setImportOpen(true); },
               );
             }}
           />
@@ -245,6 +249,8 @@ export function Toolbar(): React.JSX.Element {
             書き出しのパネル(FR-803、§0.a-0.20)。一覧の「書き出す」を選んだときだけ出す。
             **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
           */}
+          {documentKind === 'part' ? <ScriptToolsMenu /> : null}
+          {documentKind === 'part' && importOpen ? <ImportFormatPanel onClose={() => { setImportOpen(false); }} /> : null}
           {documentKind === 'part' && exportOpen ? (
             <ExportPanelHost
               onClose={() => {
@@ -295,8 +301,11 @@ export function Toolbar(): React.JSX.Element {
         §0.34 の幅の圧縮)。実装したらここへ戻す。
       */}
       <nav className="pcad-toolbar__modes" aria-label={t('toolbar.mode.groupLabel')}>
-        <button type="button" className="pcad-tab" aria-pressed={true} title={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}>
-          {t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}
+        <button type="button" className="pcad-tab pcad-toolbar__mode" aria-pressed={true}
+          aria-label={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}
+          title={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}>
+          <CubeIcon className="pcad-toolbar__mode-icon" />
+          <span className="pcad-toolbar__mode-label">{t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}</span>
         </button>
       </nav>
 
@@ -425,7 +434,8 @@ export function Toolbar(): React.JSX.Element {
           </button>
         </div>
       </div>
-      </> : <AssemblyGroup />}
+      </> : <><AssemblyGroup /><LookGroup document={partDocument} bodies={subShapeBodies}
+        selection={selection} selectionKind={selectionKind} matches={appearanceMatches} activeTool={activeTool} /></>}
 
       <span className="pcad-toolbar__spacer" />
 

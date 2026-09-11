@@ -1,0 +1,154 @@
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -8543,8 +8543,45 @@
+     }
+ }
+ 
++/* PointerCAD: one VM per transaction; first resource fault survives guest catch.
++ * Capture only existing bytecode metadata, without allocating or running JS. */
++static int pointercad_resource_failure_code;
++static int pointercad_resource_line_number;
++static int pointercad_resource_column_number;
++static char pointercad_resource_source[129];
++__attribute__((export_name("pointercad_resource_failure")))
++int pointercad_resource_failure(void) { return pointercad_resource_failure_code; }
++__attribute__((export_name("pointercad_resource_line")))
++int pointercad_resource_line(void) { return pointercad_resource_line_number; }
++__attribute__((export_name("pointercad_resource_column")))
++int pointercad_resource_column(void) { return pointercad_resource_column_number; }
++__attribute__((export_name("pointercad_resource_file_byte")))
++int pointercad_resource_file_byte(int index) {
++    return index >= 0 && index < 129 ? (unsigned char)pointercad_resource_source[index] : 0;
++}
++static void pointercad_record_resource_failure(JSContext *ctx, int code) {
++    if (pointercad_resource_failure_code) return;
++    pointercad_resource_failure_code = code;
++    for (JSStackFrame *frame = ctx->rt->current_stack_frame; frame; frame = frame->prev_frame) {
++        if (JS_VALUE_GET_TAG(frame->cur_func) != JS_TAG_OBJECT || !frame->cur_pc) continue;
++        JSObject *object = JS_VALUE_GET_OBJ(frame->cur_func);
++        if (!js_class_has_bytecode(object->class_id)) continue;
++        JSFunctionBytecode *bytecode = object->u.func.function_bytecode;
++        if (!bytecode->filename || __JS_AtomIsTaggedInt(bytecode->filename)) continue;
++        JSAtomStruct *name = ctx->rt->atom_array[bytecode->filename];
++        if (!name || name->is_wide_char || name->len > 128) continue;
++        if (name->len >= 19 && !memcmp(str8(name), "pointercad-internal-", 19)) continue;
++        uint32_t pc = frame->cur_pc - bytecode->byte_code_buf - 1;
++        pointercad_resource_line_number = find_line_num(ctx, bytecode, pc, &pointercad_resource_column_number);
++        memcpy(pointercad_resource_source, str8(name), name->len);
++        pointercad_resource_source[name->len] = 0;
++        return;
++    }
++}
++
+ JSValue JS_ThrowOutOfMemory(JSContext *ctx)
+ {
++    pointercad_record_resource_failure(ctx, 1);
+     JSRuntime *rt = ctx->rt;
+     if (!rt->in_out_of_memory) {
+         rt->in_out_of_memory = true;
+@@ -8556,6 +8593,7 @@
+ 
+ static JSValue JS_ThrowStackOverflow(JSContext *ctx)
+ {
++    pointercad_record_resource_failure(ctx, 2);
+     return JS_ThrowRangeError(ctx, "Maximum call stack size exceeded");
+ }
+ 
+@@ -8633,6 +8671,7 @@
+ 
+ static void JS_ThrowInterrupted(JSContext *ctx)
+ {
++    pointercad_record_resource_failure(ctx, 3);
+     JS_ThrowInternalError(ctx, "interrupted");
+     JS_SetUncatchableError(ctx, ctx->rt->current_exception);
+ }
+@@ -19141,21 +19180,25 @@
+             BREAK;
+ 
+         CASE(OP_goto):
++            sf->cur_pc = pc; /* Preserve interrupt location before changing the branch PC. */
+             pc += (int32_t)get_u32(pc);
+             if (unlikely(js_poll_interrupts(ctx)))
+                 goto exception;
+             BREAK;
+         CASE(OP_goto16):
++            sf->cur_pc = pc; /* Preserve interrupt location before changing the branch PC. */
+             pc += (int16_t)get_u16(pc);
+             if (unlikely(js_poll_interrupts(ctx)))
+                 goto exception;
+             BREAK;
+         CASE(OP_goto8):
++            sf->cur_pc = pc; /* Preserve interrupt location before changing the branch PC. */
+             pc += (int8_t)pc[0];
+             if (unlikely(js_poll_interrupts(ctx)))
+                 goto exception;
+             BREAK;
+         CASE(OP_if_true):
++            sf->cur_pc = pc; /* Preserve interrupt location before changing the branch PC. */
+             {
+                 int res;
+                 JSValue op1;
+@@ -19176,6 +19219,7 @@
+             }
+             BREAK;
+         CASE(OP_if_false):
++            sf->cur_pc = pc; /* Preserve interrupt location before changing the branch PC. */
+             {
+                 int res;
+                 JSValue op1;
+@@ -19196,6 +19240,7 @@
+             }
+             BREAK;
+         CASE(OP_if_true8):
++            sf->cur_pc = pc; /* Preserve interrupt location before changing the branch PC. */
+             {
+                 int res;
+                 JSValue op1;
+@@ -19216,6 +19261,7 @@
+             }
+             BREAK;
+         CASE(OP_if_false8):
++            sf->cur_pc = pc; /* Preserve interrupt location before changing the branch PC. */
+             {
+                 int res;
+                 JSValue op1;
+@@ -29521,6 +29567,7 @@
+         }
+         break;
+     case TOK_WHILE:
++        emit_source_loc(s); /* Empty loops still need a source location for interrupts. */
+         {
+             int label_cont, label_break;
+             BlockEnv break_entry;
+@@ -29551,6 +29598,7 @@
+         }
+         break;
+     case TOK_DO:
++        emit_source_loc(s); /* Empty loops still need a source location for interrupts. */
+         {
+             int label_cont, label_break, label1;
+             BlockEnv break_entry;
+@@ -29590,6 +29638,7 @@
+         }
+         break;
+     case TOK_FOR:
++        emit_source_loc(s); /* Empty loops still need a source location for interrupts. */
+         {
+             int label_cont, label_break, label_body, label_test;
+             int pos_cont, pos_body, block_scope_level;
+@@ -49727,6 +49776,7 @@
+                 JS_ThrowInterrupted(ctx);
+                 break;
+             case LRE_RET_MEMORY_ERROR:
++                pointercad_record_resource_failure(ctx, 1);
+                 JS_ThrowInternalError(ctx, "out of memory in regexp execution");
+                 break;
+             case LRE_RET_BYTECODE_ERROR:
+@@ -49945,6 +49995,7 @@
+                     JS_ThrowInterrupted(ctx);
+                     break;
+                 case LRE_RET_MEMORY_ERROR:
++                    pointercad_record_resource_failure(ctx, 1);
+                     JS_ThrowInternalError(ctx, "out of memory in regexp execution");
+                     break;
+                 case LRE_RET_BYTECODE_ERROR:

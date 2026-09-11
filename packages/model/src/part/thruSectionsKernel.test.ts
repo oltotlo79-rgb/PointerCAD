@@ -134,6 +134,7 @@ function loftFeature(id: string, sections: readonly RuledSection[]): LoftFeature
     name: id,
     suppressed: false,
     kind: 'loft',
+    smooth: false,
     sections,
     twist: expr('0'),
   };

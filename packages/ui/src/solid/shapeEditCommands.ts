@@ -25,6 +25,7 @@
  */
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
+import { selectedSweepGuide } from './sweepGuideChoices.js';
 import {
   appendSolid,
   DEFAULT_DRAFT_ANGLE_DEGREES,
@@ -207,7 +208,7 @@ function selectedSketchFace(
  * 最初に見つかった線のスケッチだけを見て、別のスケッチの線は読み飛ばす。
  * 同じフィーチャーを 2 度選んでも 1 回だけ数える。
  */
-function selectedCurvePath(
+export function selectedCurvePath(
   document: PartDocument,
   selection: readonly string[],
 ): SketchCurveRef | null {
@@ -714,6 +715,8 @@ function commitSweep(context: MachiningContext, commit: SolidInputCommit): Solid
   if (path === null) {
     return { ok: false, reasonKey: 'shapeError.noPath' };
   }
+  const guide = selectedSweepGuide(context.document, commit.shapeChoices?.sweepGuide, path);
+  if (guide === null) return { ok: false, reasonKey: 'shapeError.noSweepGuide' };
   const id = nextSolidId(context.document, 'sweep');
   const feature: SweepFeature = {
     id,
@@ -723,6 +726,7 @@ function commitSweep(context: MachiningContext, commit: SolidInputCommit): Solid
     profile,
     path,
     frenet: commit.flags.sweepFrenet ?? DEFAULT_SWEEP_FRENET,
+    ...(guide === undefined ? {} : { guide }),
   };
   return appended(context.document, feature, id);
 }

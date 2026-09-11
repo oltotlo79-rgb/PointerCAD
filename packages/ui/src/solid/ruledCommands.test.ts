@@ -593,7 +593,7 @@ describe('ねじれが効かない旨の注記(§0.a-0.87、タスク24b)', () =
       id: 'loft-1',
       name: 'ロフト1',
       suppressed: false,
-      kind: 'loft',
+      kind: 'loft', smooth: false,
       sections: [SKETCH_SECTION, SOLID_SECTION],
       twist: expressionValueFromNumber(0),
     };

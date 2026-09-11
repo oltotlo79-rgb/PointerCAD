@@ -15,6 +15,7 @@ import {
   FREE_WORK_PLANE_ID,
   isFreeWorkPlaneId,
   nextFeatureId,
+  splitLineIntersections,
   WORK_PLANES,
   type ProjectionSource,
   type SketchDocument,
@@ -25,6 +26,7 @@ import {
 import { commitSolidInput } from '../solid/solidCommands.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { splitLineFailureMessage } from './splitLineMessages.js';
 import { commitSketchChamfer, commitSketchFillet } from './cornerCommands.js';
 import {
   commitCircularArray,
@@ -94,7 +96,21 @@ export function applySketchCommit(
   });
   store.setShapeError(outcome.rejection);
   // 予告していた拘束(FR-333)を同じ文書へ足してから 1 回だけ差し替える。
-  const document = withInferredConstraints(store, commit, outcome.document);
+  let document = outcome.document;
+  let connected = false;
+  if (outcome.rejection === null && commit.step === 'lineEnd' && document !== store.sketch
+      && commit.flags.splitIntersections !== false) {
+    const split = splitLineIntersections(document, nextFeatureId(store.sketch, 'line'), cornerResolveOptions());
+    if (!split.ok) {
+      store.setShapeError(splitLineFailureMessage(split.reason));
+      return false;
+    }
+    document = split.document;
+    connected = split.pointIds.length > 0;
+  }
+  // The preview concerned the whole straight line. Do not attach it to only its final piece.
+  if (connected) store.setInferredConstraints(null);
+  else document = withInferredConstraints(store, commit, document);
   if (document !== store.sketch) {
     store.setSketch(document);
   }

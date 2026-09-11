@@ -320,7 +320,11 @@ function countSubShapes(
  */
 function checkSectionFace(oc: OpenCascadeInstance, face: TopoDS_Face, wire: TopoDS_Wire): void {
   const wireType = oc.TopAbs_ShapeEnum.TopAbs_WIRE;
-  if (countSubShapes(oc, face, (candidate) => candidate.ShapeType() === wireType) !== 1) {
+  const wireCount = countSubShapes(oc, face, (candidate) => candidate.ShapeType() === wireType);
+  if (wireCount > 1) {
+    throw new Error('穴のある面はつなぐ断面に使えません。穴のない輪郭を選んでください。');
+  }
+  if (wireCount !== 1) {
     throw new Error(UNUSABLE_SECTION_FACE_MESSAGE);
   }
   const edgeType = oc.TopAbs_ShapeEnum.TopAbs_EDGE;
@@ -885,6 +889,9 @@ function makePlainThruSections(
   keep: Allocations['keep'],
 ): TopoDS_Shape {
   const maker = keep(new oc.BRepOffsetAPI_ThruSections(spec.closed, spec.ruled, SEWING_TOLERANCE));
+  // FR-435: 既存の罫線面/ロフトは変更せず、明示したロフトだけ近似を平滑化する。
+  // これはロフト内部の指定であり、借りた断面の隣接面へのG1接続を保証しない。
+  if (!spec.ruled && spec.smooth) maker.SetSmoothing(true);
   // 辺の数と向きを揃える(§2.9.2)。輪郭ごとに稜線の数が違っても対応が付く。
   //
   // **ひねりを指定したときは揃え直さない**(2026-09-05 実測)。`CheckCompatibility` は

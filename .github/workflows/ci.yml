@@ -17,7 +17,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: リポジトリの取得
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Node.js の準備
         if: ${{ hashFiles('package.json') != '' }}

@@ -28,32 +28,45 @@ function fixture(seam: string, shape: SheetReliefFeature['shape'] = 'rectangle')
 }
 
 describe('閉周回のリリーフと明示継ぎ目', () => {
-  it.each((['rectangle', 'slot'] as const).flatMap((shape) => [0,1,2,3].map((seam) => ({ shape, seam }))))(
-    '$shape、継ぎ目$seamで4固定面の実材料を保ち、工具が継ぎ目を飛び越えない', async ({ shape, seam }) => {
+  const cases = (['rectangle', 'slot'] as const).flatMap((shape) => [0,1,2,3].map((seam) => ({ shape, seam })));
+  const flatCases = cases.flatMap(({ shape, seam }) => {
+    const input = fixture(`corner-${seam}`, shape), resolved = resolveSheetRelief(input.feature, input.body);
+    if (!resolved.ok) throw new Error(resolved.message);
+    return resolved.value.body.panels.map((panel) => ({ shape, seam, fixedPanelId: panel.id }));
+  });
+  it.each(cases)(
+    '$shape、継ぎ目$seamの曲げ形状で実材料を保ち、工具が継ぎ目を飛び越えない', async ({ shape, seam }) => {
       const input = fixture(`corner-${seam}`, shape), before = JSON.stringify(input.body);
       const result = resolveSheetRelief(input.feature, input.body); if (!result.ok) throw new Error(result.message);
       const id = `closed-relief-${shape}-${seam}`, { body, plan } = result.value;
       const panelRemoved = shape === 'rectangle' ? 20 : 12 + 2 * Math.PI;
       const foldedRemoved = seam === 0 ? panelRemoved : shape === 'rectangle' ? 20 + 400 / 19 : 78 * (6 + Math.PI) / 19;
-      const flatRemoved = panelRemoved * (seam === 0 ? 1 : 2);
       try {
         const folded = await bridge.recomputeSolids([{ featureId: id, name: id, plan, key: sheetShapeKey(plan), visible: true }], { partId: id, generation: 1 });
         expect(folded.failures).toEqual([]); expect(folded.bodies).toHaveLength(1);
         expect(folded.bodies[0].volume).toBeCloseTo(3200 + 320 * Math.PI - foldedRemoved, 5);
         const mapped = resolveSheetSeams(body, [`corner-${seam}`]); if (!mapped.ok) throw new Error(mapped.message);
         expect(mapped.value).toHaveLength(1);
-        for (const [index, panel] of body.panels.entries()) {
-          const flat = await recomputeSheetFlat(body, { sourceFeatureId: id, fixedPanelId: panel.id, seamConnectionIds: [`corner-${seam}`] }, bridge,
-            { partId: id, generation: index + 2 });
-          if (!flat.ok) throw new Error(flat.message);
-          expect(flat.body.volume).toBeCloseTo(3200 + 304 * Math.PI - flatRemoved, 5);
-          const outline = await resolveSheetFlatOutline(bridge, flat.bodyKey, 2); if (!outline.ok) throw new Error(outline.message);
-          expect(outline.value.loops).toHaveLength(1);
-          expect(outline.value.loops.reduce((area, loop) => area + sheetLoopSignedArea(loop.curves, [0,0,1]), 0))
-            .toBeCloseTo((3200 + 304 * Math.PI - flatRemoved) / 2, 5);
-        }
       } finally { await bridge.releasePart(id); }
       expect(JSON.stringify(input.body)).toBe(before);
+  });
+  it.each(flatCases)('$shape、継ぎ目$seam・固定面$fixedPanelIdの展開で実材料と輪郭を保つ', async ({ shape, seam, fixedPanelId }) => {
+    const input = fixture(`corner-${seam}`, shape), before = JSON.stringify(input.body);
+    const result = resolveSheetRelief(input.feature, input.body); if (!result.ok) throw new Error(result.message);
+    const id = `closed-flat-${shape}-${seam}-${fixedPanelId}`, { body } = result.value;
+    const panelRemoved = shape === 'rectangle' ? 20 : 12 + 2 * Math.PI;
+    const flatRemoved = panelRemoved * (seam === 0 ? 1 : 2);
+    try {
+      const flat = await recomputeSheetFlat(body, { sourceFeatureId: id, fixedPanelId, seamConnectionIds: [`corner-${seam}`] }, bridge,
+        { partId: id, generation: 1 });
+      if (!flat.ok) throw new Error(flat.message);
+      expect(flat.body.volume).toBeCloseTo(3200 + 304 * Math.PI - flatRemoved, 5);
+      const outline = await resolveSheetFlatOutline(bridge, flat.bodyKey, 2); if (!outline.ok) throw new Error(outline.message);
+      expect(outline.value.loops).toHaveLength(1);
+      expect(outline.value.loops.reduce((area, loop) => area + sheetLoopSignedArea(loop.curves, [0,0,1]), 0))
+        .toBeCloseTo((3200 + 304 * Math.PI - flatRemoved) / 2, 5);
+    } finally { await bridge.releasePart(id); }
+    expect(JSON.stringify(input.body)).toBe(before);
   });
   it('二段の切欠き後も加工前の継ぎ目を追跡し、手前の加工を変えない', () => {
     const input = fixture('corner-3'), first = resolveSheetRelief(input.feature, input.body); if (!first.ok) throw new Error(first.message);

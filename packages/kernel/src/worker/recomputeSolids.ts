@@ -288,11 +288,7 @@ function toFailureMessage(error: unknown): string {
  * **限界:** 止まれるのは段と段の間だけで、1 段の OCCT 演算そのものは途中で止められない。
  * 時間のかかるブーリアン 1 回を打ち切ることはできない。
  */
-function yieldToMessages(): Promise<void> {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, 0);
-  });
-}
+import { yieldToMessages } from './yieldToMessages.js';
 
 /**
  * 段の入力をキャッシュから引く。無ければ理由をつけて断る。

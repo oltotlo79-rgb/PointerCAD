@@ -743,6 +743,9 @@ function makeGeneralSphereSolid(
   // 罫線の殻。輪郭の点と接点が同じ数・同じ並びなので、対応の付け直しは要らない
   // (`CheckCompatibility` を呼ぶと余計な分割が起きて遅くなる。2026-09-05 実測)。
   const lateral = keep(new oc.BRepOffsetAPI_ThruSections(false, true, SEWING_TOLERANCE));
+  // OCCT enables compatibility correction by default. The two polygons were
+  // constructed point-for-point, so keep that correspondence explicitly.
+  lateral.CheckCompatibility(false);
   lateral.AddWire(contourPolygon);
   lateral.AddWire(tangentPolygon);
   lateral.Build(keep(new oc.Message_ProgressRange_1()));
@@ -752,6 +755,8 @@ function makeGeneralSphereSolid(
 
   // 球冠を張る殻。接点の列を球面に沿って帽の中心へ寄せた輪を挟み、頂点で閉じる。
   const cap = keep(new oc.BRepOffsetAPI_ThruSections(false, false, SEWING_TOLERANCE));
+  // Keep OCCT's compatibility correction for the smooth cap: it contributes
+  // to the fitted surface, unlike the point-for-point ruled lateral shell.
   cap.AddWire(tangentPolygon);
   for (let ring = 1; ring <= SPHERE_CAP_RINGS; ring += 1) {
     const ratio = ring / (SPHERE_CAP_RINGS + 1);

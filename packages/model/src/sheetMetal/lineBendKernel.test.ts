@@ -24,8 +24,9 @@ const rectangle = polygon([[0, 0, 0], [40, 0, 0], [40, 30, 0], [0, 30, 0]]);
 const line: ResolvedSegment = { kind: 'segment', featureId: 'line', from: [0, 15, 0], to: [40, 15, 0] };
 
 describe('指定線での曲げを実OCCTへつなぐ', () => {
-  it.each([90, -90])('角度%s・左右固定・任意平面で、穴を横断する曲げが閉じた1立体になる', (angle) => {
-    for (const frame of [flat, yz]) for (const side of ['left', 'right'] as const) {
+  const cases = [90, -90].flatMap((angle) => [{ plane: 'XY', frame: flat }, { plane: 'YZ', frame: yz }]
+    .flatMap(({ plane, frame }) => (['left', 'right'] as const).map((side) => ({ angle, plane, frame, side }))));
+  it.each(cases)('角度$angle・$side固定・$plane平面で、穴を横断する曲げが閉じた1立体になる', ({ angle, frame, side }) => {
       const source: SheetPanelGeometry = { id: 'source', outer: rectangle.map((curve) => rigidSheetCurve(curve, flat, frame)),
         holes: [[rigidSheetCurve(circle, flat, frame)]], normal: frame.normal };
       const axis = rigidSheetCurve(line, flat, frame); if (axis.kind !== 'segment') throw new Error('直線が必要です');
@@ -47,6 +48,5 @@ describe('指定線での曲げを実OCCTへつなぐ', () => {
         expect(measureVolume(oc, shape)).toBeCloseTo(2 * (1200 - 16 * Math.PI + (4 / 3.8 - 1) * bandArea), 5);
         expect(measureVolume(oc, original.shape)).toBe(before);
       } finally { release(); }
-    }
   });
 });

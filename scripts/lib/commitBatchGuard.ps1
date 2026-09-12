@@ -63,16 +63,18 @@ function Test-CommitBatchRepository {
         return New-CommitBatchGuardResult -Ok $false -Message '現在のブランチを取得できませんでした。'
     }
     $branch = $branchResult.Text.Trim()
-    if ($branch -ne $RequiredBranch) {
-        $shownBranch = if ([string]::IsNullOrWhiteSpace($branch)) { '(detached HEAD)' } else { $branch }
-        return New-CommitBatchGuardResult -Ok $false -Message "コミット先は $RequiredBranch に限定されています。現在: $shownBranch"
+    if ([string]::IsNullOrWhiteSpace($branch)) {
+        return New-CommitBatchGuardResult -Ok $false -Message '作業を保存するブランチが必要です。detached HEADではコミットできません。'
     }
 
     $pathsResult = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @(
-        '-c', 'core.quotepath=false', 'diff', '--cached', '--name-only', '--diff-filter=ACMR'
+        '-c', 'core.quotepath=false', 'diff', '--cached', '--name-only', '--diff-filter=ACMRD'
     )
     if (-not $pathsResult.Ok) {
         return New-CommitBatchGuardResult -Ok $false -Message 'stage済みファイルの一覧を取得できませんでした。'
+    }
+    if ($branch -ne $RequiredBranch) {
+        return New-CommitBatchGuardResult -Ok $true -Message "作業ブランチ $branch へ保存します。mainへの統合は10原タスク以上とし、この保存で完成度を増やしません。"
     }
 
     $implementationPaths = @($pathsResult.Lines | Where-Object {
@@ -81,6 +83,33 @@ function Test-CommitBatchRepository {
     })
     if ($implementationPaths.Count -eq 0) {
         return New-CommitBatchGuardResult -Ok $true -Message "文書だけのコミットです。ブランチ $RequiredBranch を確認しました。"
+    }
+
+    # A user-authorized exception applies only to the exact parent and staged tree.
+    # It changes the batch size rule only; the ordinary quality hooks still run.
+    $gitDirectory = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('rev-parse', '--absolute-git-dir')
+    if (-not $gitDirectory.Ok) {
+        return New-CommitBatchGuardResult -Ok $false -Message '承認記録の保存先を取得できませんでした。'
+    }
+    $approvalPath = Join-Path $gitDirectory.Text.Trim() 'pointercad-commit-batch-approval.json'
+    if (Test-Path -LiteralPath $approvalPath) {
+        try {
+            $approval = Get-Content -LiteralPath $approvalPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $head = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('rev-parse', 'HEAD')
+            $tree = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('write-tree')
+            if ($head.Ok -and $tree.Ok -and
+                $approval.approvedBy -ceq 'user' -and
+                -not [string]::IsNullOrWhiteSpace([string]$approval.reason) -and
+                $approval.base -ceq $head.Text.Trim() -and
+                $approval.tree -ceq $tree.Text.Trim()) {
+                return New-CommitBatchGuardResult -Ok $true `
+                    -Message "利用者が承認した同一の変更をmainへ先行します: $($approval.reason)" `
+                    -ImplementationPaths $implementationPaths
+            }
+        }
+        catch {
+            return New-CommitBatchGuardResult -Ok $false -Message '一括件数の例外承認記録を読み取れませんでした。'
+        }
     }
 
     $stagedProgressResult = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('show', ":$ProgressPath")

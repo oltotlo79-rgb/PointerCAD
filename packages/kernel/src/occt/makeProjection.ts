@@ -38,6 +38,7 @@
  */
 
 import type {
+  BRepAdaptor_Curve,
   OpenCascadeInstance,
   TopoDS_Edge,
   TopoDS_Shape,
@@ -294,9 +295,11 @@ export function projectEdgeToPlane(
   options: TessellationOptions | undefined,
   allocations: Allocations,
   preservePrecision = false,
+  existingAdaptor?: BRepAdaptor_Curve,
 ): PlaneCurve | null {
   const { keep } = allocations;
-  const adaptor = keep(new oc.BRepAdaptor_Curve_2(edge));
+  // 既に元辺を読んでいる呼び出し側から借りる場合、その所有者が解放する。
+  const adaptor = existingAdaptor ?? keep(new oc.BRepAdaptor_Curve_2(edge));
   const curveType = adaptor.GetType();
   const kinds = oc.GeomAbs_CurveType;
   const first = adaptor.FirstParameter();

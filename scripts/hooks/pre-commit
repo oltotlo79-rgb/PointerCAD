@@ -32,7 +32,7 @@ fi
 batch_status=$?
 
 if [ "$batch_status" -ne 0 ]; then
-    printf '%s\n' "[NG] main・10件一括の条件を満たさないため commit を中止します (終了コード: $batch_status)" >&2
+    printf '%s\n' "[NG] ブランチ・一括件数・明示承認の条件を満たさないため commit を中止します (終了コード: $batch_status)" >&2
     exit "$batch_status"
 fi
 

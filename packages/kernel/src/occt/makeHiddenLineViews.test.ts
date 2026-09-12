@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import * as allocationModule from './allocations.js';
+import * as projectionModule from './makeProjection.js';
 import type { OcctDeletable } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { measureVolume } from './solidMesh.js';
@@ -30,6 +31,19 @@ function runBox(mode: 'precise' | 'poly', normal: readonly [number, number, numb
 }
 
 describe('図面の隠線処理', () => {
+  it('正面で点に潰れる4辺を投影せず、可視と隠線の元辺をそれぞれ保つ', () => {
+    const projection = vi.spyOn(projectionModule, 'projectEdgeToPlane');
+    try {
+      const result = runBox('poly');
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(result.message);
+      expect(result.result.visible).toHaveLength(4);
+      expect(result.result.hidden).toHaveLength(4);
+      expect(projection).toHaveBeenCalledTimes(8);
+      expect(new Set([...result.result.visible, ...result.result.hidden].map((item) =>
+        item.provenance.kind === 'edge' ? item.provenance.edgeIndex : null)).size).toBe(8);
+    } finally { projection.mockRestore(); }
+  });
   it('輪郭列挙は実WASMの登録値だけを受け、別種・偽の数値・壊れた表を断る', () => {
     const registry = oc.HLRBRep_TypeOfResultingEdge;
     expect(isHlrOutlineKind(registry.HLRBRep_OutLine, registry)).toBe(true);

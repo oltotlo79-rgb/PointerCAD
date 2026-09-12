@@ -56,6 +56,9 @@ export function createDrawingTranslationPreview(svg: SVGSVGElement, viewId: stri
     const parent = svg.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'g');
     originals[0].before(parent); parent.append(...originals); return { parent, originals };
   });
+  // Finish the layout invalidated by reparenting while establishing the drag.
+  // Otherwise the first pointermove's paper-coordinate lookup pays for every moved outline.
+  svg.getScreenCTM();
   return {
     update(delta: readonly [number, number]): void {
       if (!delta.every(Number.isFinite) || !svg.isConnected) return;

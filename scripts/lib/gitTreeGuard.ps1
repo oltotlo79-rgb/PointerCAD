@@ -28,6 +28,7 @@
 # 写しに関わる git 呼び出し・写しの中で実行するコマンドはすべてこれらの環境変数を一時的に
 # 消してから実行し、終わったら元に戻す(Clear-InheritedGitEnv / Restore-InheritedGitEnv)。
 . (Join-Path $PSScriptRoot "pushTreeFingerprint.ps1")
+. (Join-Path $PSScriptRoot "directoryLinks.ps1")
 
 $script:PointerCadInheritedGitEnvNames = @(
     "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX",
@@ -284,11 +285,12 @@ function Resolve-WorkspaceAwareJunctionTarget {
     $targetFull = ([IO.Path]::GetFullPath($RealTarget)).TrimEnd([char[]]"\/")
     $prefixBackslash = $rootFull + [IO.Path]::DirectorySeparatorChar
     $prefixSlash = $rootFull + [IO.Path]::AltDirectorySeparatorChar
-    $isUnderRoot = $targetFull.StartsWith($prefixBackslash, [StringComparison]::OrdinalIgnoreCase) -or
-                   $targetFull.StartsWith($prefixSlash, [StringComparison]::OrdinalIgnoreCase)
+    $comparison = if ([IO.Path]::DirectorySeparatorChar -eq '\') { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $isUnderRoot = $targetFull.StartsWith($prefixBackslash, $comparison) -or
+                   $targetFull.StartsWith($prefixSlash, $comparison)
     if ($isUnderRoot) {
         $relative = $targetFull.Substring($rootFull.Length).TrimStart([char[]]"\/")
-        if ($relative -match '^(packages|apps)[\\/]') {
+        if ($relative -cmatch '^(packages|apps)[\\/]') {
             return (Join-Path $WorktreePath $relative)
         }
     }
@@ -325,12 +327,10 @@ function New-NodeModulesShadowEntry {
 
     $isReparsePoint = ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
     if ($isReparsePoint) {
-        $rawTarget = $Item.Target
-        $realTarget = if ($rawTarget -is [array]) { $rawTarget[0] } else { $rawTarget }
-        if ([string]::IsNullOrWhiteSpace($realTarget)) { $realTarget = $Item.FullName }
+        $realTarget = Get-DirectoryLinkTarget -Item $Item
         $linkTarget = Resolve-WorkspaceAwareJunctionTarget -Root $Root -WorktreePath $WorktreePath -RealTarget $realTarget
         try {
-            New-Item -ItemType Junction -Path $Destination -Target $linkTarget -ErrorAction Stop | Out-Null
+            New-PortableDirectoryLink -Path $Destination -Target $linkTarget
             return [pscustomobject]@{ Created = @($Destination) }
         } catch {
             Write-Host "[警告] node_modules 直下のジャンクションを作れませんでした($($Item.Name)): $($_.Exception.Message)" -ForegroundColor Yellow
@@ -356,7 +356,7 @@ function New-NodeModulesShadowEntry {
 
     # 通常はここに来ない(スコープ以外の非リパースポイントのディレクトリ)。安全側で丸ごとジャンクション。
     try {
-        New-Item -ItemType Junction -Path $Destination -Target $Item.FullName -ErrorAction Stop | Out-Null
+        New-PortableDirectoryLink -Path $Destination -Target $Item.FullName
         return [pscustomobject]@{ Created = @($Destination) }
     } catch {
         Write-Host "[警告] node_modules 直下のジャンクションを作れませんでした($($Item.Name)): $($_.Exception.Message)" -ForegroundColor Yellow
@@ -428,19 +428,18 @@ function New-NodeModulesJunctions {
 # `Remove-Item -Recurse` はリパースポイントの実装によっては実体を辿って消しかねないため使わない
 # (2026-09-05 実測: `git worktree remove --force` はジャンクションを辿って実体側の内容を削除した。
 #  rules/06-過去の失敗と対策.md 10.7)。.NET の `Directory.Delete(path, $false)` は非再帰なので
-# ジャンクション自身だけを外せる(実測済み)。失敗したら `cmd /c rmdir`(こちらも非再帰)へ後退する。
+# ジャンクション自身だけを外せる。削除前にリンク属性を確認し、別シェルへパスを渡さない。
 function Remove-JunctionSafely {
     param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $true }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) { return -not (Test-Path -LiteralPath $Path) }
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) { return $false }
     try {
-        [System.IO.Directory]::Delete($Path, $false)
-        return -not (Test-Path -LiteralPath $Path)
+        if ($item.PSIsContainer) { [System.IO.Directory]::Delete($Path, $false) }
+        else { [System.IO.File]::Delete($Path) }
+        return $null -eq (Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue)
     } catch {
-        try {
-            # stderr はリダイレクトしない(New-StagedTreeWorktree 冒頭のコメントと同じ理由)。
-            & cmd.exe /c ('rmdir "' + $Path + '"') | Out-Null
-        } catch {}
-        return -not (Test-Path -LiteralPath $Path)
+        return $false
     }
 }
 
@@ -453,10 +452,23 @@ function Remove-StagedTreeWorktree {
         [Parameter(Mandatory)][string]$WorktreePath,
         [string[]]$JunctionPaths = @()
     )
+    $fullWorktree = [IO.Path]::GetFullPath($WorktreePath).TrimEnd([char[]]'\/')
+    $tempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([char[]]'\/')
+    $comparison = if ([IO.Path]::DirectorySeparatorChar -eq '\') { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    if (-not [string]::Equals((Split-Path -Parent $fullWorktree), $tempParent, $comparison) -or
+        (Split-Path -Leaf $fullWorktree) -notmatch '^pointercad-commitcheck-[a-f0-9]{32}$') {
+        Write-Host "[警告] 検査専用の一時パスではないため削除しません: $WorktreePath" -ForegroundColor Yellow
+        return
+    }
     foreach ($junction in $JunctionPaths) {
+        if (-not [IO.Path]::GetFullPath($junction).StartsWith($fullWorktree + [IO.Path]::DirectorySeparatorChar, $comparison)) {
+            Write-Host "[警告] 写しの外のリンクは削除しません: $junction" -ForegroundColor Yellow
+            return
+        }
         $removed = Remove-JunctionSafely -Path $junction
         if (-not $removed) {
             Write-Host "[警告] ジャンクションを外せませんでした(手動確認要): $junction" -ForegroundColor Yellow
+            return
         }
     }
 

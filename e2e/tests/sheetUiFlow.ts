@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { beginRecompute, waitForRecompute } from './recompute.js';
 
 export const tree = (page: Page, name: string) => page.locator('.pcad-panel--left').getByRole('button', { name, exact: true });
 export async function command(page: Page, text: string) {
@@ -28,6 +29,8 @@ export async function rectangleFace(page: Page, width = 50, height = 30) {
   await fields.first().press('Escape');
   await tree(page, '矩形1').click();
   await sketch.getByRole('button', { name: '面', exact: true }).click();
+  const faceRecompute = await beginRecompute(page);
   await page.locator('canvas.pcad-viewport__canvas').press('Enter');
   await expect(tree(page, '面1')).toBeVisible();
+  await waitForRecompute(page, faceRecompute);
 }

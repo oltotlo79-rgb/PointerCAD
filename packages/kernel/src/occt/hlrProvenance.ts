@@ -121,16 +121,15 @@ export function readHlrSource(
   let edgeIndex = 0; let faceIndex = 0;
   for (let index = 1; index <= Number(map.Size()); index += 1) {
     const shape = keep(map.FindKey(index));
-    const isEdge = shape.ShapeType() === oc.TopAbs_ShapeEnum.TopAbs_EDGE;
-    const isFace = shape.ShapeType() === oc.TopAbs_ShapeEnum.TopAbs_FACE;
+    const shapeType = shape.ShapeType();
+    const isEdge = shapeType === oc.TopAbs_ShapeEnum.TopAbs_EDGE;
+    const isFace = shapeType === oc.TopAbs_ShapeEnum.TopAbs_FACE;
     if (!isEdge && !isFace) continue;
     const edge = isEdge ? keep(oc.TopoDS.Edge_1(shape)) : null;
     const originalEdgeIndex = referenceMap === null ? edgeIndex : referenceEdges.get(Number(referenceMap.FindIndex(shape)));
     // 球の極など、形状番号には含まれるが幾何曲線を持たない辺は投影しない。
     if (edge !== null && oc.BRep_Tool.Degenerated(edge)) { edgeIndex += 1; continue; }
-    const adaptor = edge === null ? null : keep(new oc.BRepAdaptor_Curve_2(edge));
-    const original = edge === null ? null : projectEdgeToPlane(oc, edge, basis, undefined, allocations);
-    const curved = adaptor !== null && adaptor.GetType() !== oc.GeomAbs_CurveType.GeomAbs_Line;
+    let edgeData: { original: PlaneCurve | null; curved: boolean; first: number; last: number } | undefined;
     for (const isVisible of includeHidden ? [true, false] : [true]) {
       const projected = (generatedShapes.get(index) ?? [shape]).flatMap((generated) => {
         const output = keep(isEdge
@@ -140,9 +139,20 @@ export function readHlrSource(
       });
       if (isFace && outliner !== undefined && converter.CompoundOfEdges_2 !== undefined) projected.push(...readSeamOutlines(oc,
         { CompoundOfEdges_2: converter.CompoundOfEdges_2.bind(converter) }, shape, generatedShapes.get(index) ?? [shape], plane, isVisible, allocations));
-      const curves = mode === 'poly' ? polyCurves(projected, curved) : projected;
+      // 視線と平行な辺や出力のない面には、元曲線の投影・サンプリングを行わない。
+      // 可視・隠線の両方に現れる辺は、同じ読み取り結果を共有する。
+      if (projected.length === 0) continue;
+      if (edge !== null && edgeData === undefined) {
+        const adaptor = keep(new oc.BRepAdaptor_Curve_2(edge));
+        edgeData = {
+          original: projectEdgeToPlane(oc, edge, basis, undefined, allocations, false, adaptor),
+          curved: adaptor.GetType() !== oc.GeomAbs_CurveType.GeomAbs_Line,
+          first: adaptor.FirstParameter(), last: adaptor.LastParameter(),
+        };
+      }
+      const curves = mode === 'poly' ? polyCurves(projected, edgeData?.curved ?? false) : projected;
       for (const curve of curves) {
-        const range = adaptor === null ? null : interval(original, curve, adaptor.FirstParameter(), adaptor.LastParameter());
+        const range = edgeData === undefined ? null : interval(edgeData.original, curve, edgeData.first, edgeData.last);
         const provenance: HiddenLineProvenance = isEdge
           ? { kind: 'edge', bodyId: source.bodyId, occurrenceId: source.occurrenceId ?? null,
               edgeIndex: originalEdgeIndex ?? edgeIndex, parameterRange: range, dimensionTarget: range !== null && originalEdgeIndex !== undefined }

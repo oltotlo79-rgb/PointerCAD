@@ -65,6 +65,9 @@ export default tseslint.config(
       'no-restricted-syntax': ['error', {
         selector: 'CallExpression[callee.name=/^(beforeEach|beforeAll|afterEach|afterAll)$/] > ArrowFunctionExpression.arguments[expression=true] > CallExpression.body[callee.property.name=/^mock(Clear|Reset|Restore)$/]',
         message: 'mockClear等の戻り値はmock関数です。テストhookから返すと後処理として呼ばれるため、voidのブロック本体を使ってください（rules/06 §10.67）。',
+      }, {
+        selector: "CallExpression[callee.callee.object.name='it'][callee.callee.property.name='each'] > ArrowFunctionExpression.arguments ForOfStatement:has(CallExpression[callee.name=/^(recomputeSheetFlat|makeSheetMetalBody)$/])",
+        message: '固定面・角度等の独立したOCCTケースはit.eachの行へ展開し、1件の5秒枠へ複数の再計算を詰め込まないでください（rules/06 §10.71）。',
       }],
     },
   },

@@ -533,6 +533,9 @@ describe('makeThruSections(球へつなぐ分割数 sphereSegments。§0.a-0.74)
   });
 
   it('t24 と同じ配置(球 r10 + 円 r8 @ (5,0,−20))で 3 通りの所要・三角形の数を実測する', () => {
+    // Preserve the accepted surface while optimizing the builder. In particular,
+    // disabling cap compatibility changes its fitted geometry at all resolutions.
+    const acceptedVolumes = { 24: 6975.920596, 48: 7072.168197, 72: 7090.318721 };
     for (const segments of CHOICES) {
       const started = performance.now();
       const handle = makeThruSections(
@@ -550,6 +553,8 @@ describe('makeThruSections(球へつなぐ分割数 sphereSegments。§0.a-0.74)
         );
         expect(hasSolid(oc, handle.shape)).toBe(true);
         expect(volume).toBeGreaterThan(1e-9);
+        expect(Math.abs(volume - acceptedVolumes[segments]) / acceptedVolumes[segments])
+          .toBeLessThanOrEqual(1e-6);
       } finally {
         handle.delete();
       }

@@ -36,33 +36,45 @@ function fixture(angle: number) {
 }
 
 describe('円筒帯をまたぐリリーフの再構築と再展開', () => {
-  it.each([-90, 90].flatMap((angle) => (['rectangle', 'slot'] as const).map((shape) => ({ angle, shape }))))(
-    '$angle度の$shapeが基板と曲げ帯を同じ輪郭で切り、どちらの固定面でも材料を保つ', async ({ angle, shape }) => {
+  const cases = [-90, 90].flatMap((angle) => (['rectangle', 'slot'] as const).map((shape) => ({ angle, shape })));
+  const flatCases = cases.flatMap(({ angle, shape }) => {
+    const source = fixture(angle), result = resolveSheetRelief({ ...source.feature, shape }, source.body);
+    if (!result.ok) throw new Error(result.message);
+    return result.value.body.panels.map(panel => ({ angle, shape, fixedPanelId: panel.id }));
+  });
+  it.each(cases)(
+    '$angle度の$shapeが基板と曲げ帯を同じ輪郭で切り、曲げ形状の材料を保つ', async ({ angle, shape }) => {
       const source = fixture(angle), before = JSON.stringify(source.body), feature = { ...source.feature, shape };
       const result = resolveSheetRelief(feature, source.body); if (!result.ok) throw new Error(result.message);
-      const { plan, body } = result.value, id = `relief-${shape}-${angle}`;
-      const removedFlat = shape === 'rectangle' ? 40 : 24 + 4 * Math.PI;
+      const { plan } = result.value, id = `relief-${shape}-${angle}`;
       const removedFolded = shape === 'rectangle' ? 20 + 400 / 19 : 78 * (6 + Math.PI) / 19;
       try {
         const folded = await bridge.recomputeSolids([{ featureId: id, name: id, plan, key: sheetShapeKey(plan), visible: true }], { partId: id, generation: 1 });
         expect(folded.failures).toEqual([]); expect(folded.bodies).toHaveLength(1);
         expect(folded.bodies[0].volume).toBeCloseTo(1200 + 80 * Math.PI - removedFolded, 5);
-        for (const [i, panel] of body.panels.entries()) {
-          const flat = await recomputeSheetFlat(body, { sourceFeatureId: id, fixedPanelId: panel.id, seamConnectionIds: [] }, bridge, { partId: id, generation: i + 2 });
-          if (!flat.ok) throw new Error(flat.message);
-          expect(flat.body.volume).toBeCloseTo(1200 + 76 * Math.PI - removedFlat, 5);
-          const outline = await resolveSheetFlatOutline(bridge, flat.bodyKey, flat.geometry.thickness);
-          if (!outline.ok) throw new Error(outline.message);
-          const area = outline.value.loops.reduce((sum, loop) => sum + sheetLoopSignedArea(loop.curves, [0, 0, 1]), 0);
-          expect(area).toBeCloseTo((1200 + 76 * Math.PI - removedFlat) / 2, 5);
-          expect(outline.value.loops).toHaveLength(1);
-          const lines = sheetFlatBendLines(flat.geometry); if (!lines.ok) throw new Error(lines.message);
-          expect(lines.value.length).toBeGreaterThan(0);
-          expect(lines.value.every((line) => line.direction === (angle > 0 ? 'up' : 'down'))).toBe(true);
-        }
         expect(JSON.stringify(source.body)).toBe(before);
       } finally { await bridge.releasePart(id); }
     });
+  it.each(flatCases)('$angle度の$shapeを$fixedPanelIdで固定して展開し、体積・輪郭・曲げ方向を保つ', async ({ angle, shape, fixedPanelId }) => {
+    const source = fixture(angle), before = JSON.stringify(source.body);
+    const result = resolveSheetRelief({ ...source.feature, shape }, source.body); if (!result.ok) throw new Error(result.message);
+    const id = `relief-flat-${shape}-${angle}-${fixedPanelId}`;
+    const removedFlat = shape === 'rectangle' ? 40 : 24 + 4 * Math.PI;
+    try {
+      const flat = await recomputeSheetFlat(result.value.body, { sourceFeatureId: id, fixedPanelId, seamConnectionIds: [] }, bridge, { partId: id, generation: 1 });
+      if (!flat.ok) throw new Error(flat.message);
+      expect(flat.body.volume).toBeCloseTo(1200 + 76 * Math.PI - removedFlat, 5);
+      const outline = await resolveSheetFlatOutline(bridge, flat.bodyKey, flat.geometry.thickness);
+      if (!outline.ok) throw new Error(outline.message);
+      const area = outline.value.loops.reduce((sum, loop) => sum + sheetLoopSignedArea(loop.curves, [0, 0, 1]), 0);
+      expect(area).toBeCloseTo((1200 + 76 * Math.PI - removedFlat) / 2, 5);
+      expect(outline.value.loops).toHaveLength(1);
+      const lines = sheetFlatBendLines(flat.geometry); if (!lines.ok) throw new Error(lines.message);
+      expect(lines.value.length).toBeGreaterThan(0);
+      expect(lines.value.every((line) => line.direction === (angle > 0 ? 'up' : 'down'))).toBe(true);
+      expect(JSON.stringify(source.body)).toBe(before);
+    } finally { await bridge.releasePart(id); }
+  });
   it.each([0, 90])('%s度の曲げ全幅を横断する切欠きが子パネルまで届き、0度の接続も保持する', async (angle) => {
     const source = fixture(angle), result = resolveSheetRelief({ ...source.feature, width: n(20) }, source.body);
     if (!result.ok) throw new Error(result.message);

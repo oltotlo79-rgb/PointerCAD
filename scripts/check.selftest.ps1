@@ -298,7 +298,12 @@ try {
         $copy8 = New-StagedTreeWorktree -Root $tempRoot
         Assert-True ($copy8.Ok) "シナリオ8 前提: 写しの用意に成功する"
         $junctionPath8 = Join-Path $copy8.Path "node_modules"
-        New-Item -ItemType Junction -Path $junctionPath8 -Target $realNodeModules | Out-Null
+        New-PortableDirectoryLink -Path $junctionPath8 -Target $realNodeModules
+        $expectedLinkType8 = if ([IO.Path]::DirectorySeparatorChar -eq '\') { 'Junction' } else { 'SymbolicLink' }
+        Assert-True ((Get-Item -LiteralPath $junctionPath8).LinkType -eq $expectedLinkType8) `
+            "シナリオ8: OSに対応するリンク種別で作成される"
+        Assert-True (-not (Remove-JunctionSafely -Path $realNodeModules)) `
+            "シナリオ8: 実体ディレクトリのリンク削除を拒否する"
         Assert-True (Test-Path -LiteralPath (Join-Path $junctionPath8 "precious.txt")) `
             "シナリオ8 前提: ジャンクション越しに実体(precious.txt)が見える"
 
@@ -408,7 +413,12 @@ try {
         $consumerNodeModules = Join-Path $tempRoot "packages\pkgConsumer\node_modules"
         New-Item -ItemType Directory -Path (Join-Path $consumerNodeModules "@scope") -Force | Out-Null
         $workspaceLinkPath = Join-Path $consumerNodeModules "@scope\pkgDependency"
-        New-Item -ItemType Junction -Path $workspaceLinkPath -Target (Join-Path $tempRoot "packages\pkgDependency") | Out-Null
+        if ([IO.Path]::DirectorySeparatorChar -eq '\') {
+            New-PortableDirectoryLink -Path $workspaceLinkPath -Target (Join-Path $tempRoot "packages\pkgDependency")
+        } else {
+            # pnpm on Unix uses relative symlinks. Resolve from the link's parent, not the process cwd.
+            New-Item -ItemType SymbolicLink -Path $workspaceLinkPath -Target '../../../pkgDependency' -ErrorAction Stop | Out-Null
+        }
 
         # 本物の作業ツリーだけに、未 stage の変更を置く(コミットの queue が扱う実際の状況を模す:
         # scripts/rules だけ stage 済み、packages/model は未 stage で書きかけ中)。
@@ -554,6 +564,14 @@ if ($null -ne $perfModeShellCommand) {
         Assert-True ($staticOutput.Contains('-StaticOnly は -Level Push')) "StaticOnlyの不正な組合せの理由を表示する"
         Assert-True (-not $staticOutput.Contains('=== (1/')) "不正な組合せでは検査コマンドを開始しない"
     }
+}
+
+$batchSelftest = Join-Path $PSScriptRoot 'check-commit-batch.selftest.ps1'
+if ($null -ne $perfModeShellCommand -and (Test-Path -LiteralPath $batchSelftest -PathType Leaf)) {
+    & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $batchSelftest
+    Assert-True ($LASTEXITCODE -eq 0) '一括件数・作業ブランチ・同一変更だけの明示承認を自己試験する'
+} else {
+    Assert-True $false '一括件数の自己試験を実行できること'
 }
 
 if ($failures -gt 0) {

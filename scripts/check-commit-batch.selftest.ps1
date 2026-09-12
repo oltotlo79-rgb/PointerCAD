@@ -80,9 +80,44 @@ try {
     $ten = Test-CommitBatchRepository -RepositoryRoot $tempRoot
     Assert-CommitBatch ($ten.Ok -and $ten.AddedTaskIds.Count -eq 10) '実装10件を通す'
 
+    & git -C $tempRoot reset --quiet --hard HEAD | Out-Null
     & git -C $tempRoot checkout --quiet -b feature | Out-Null
-    $wrongBranch = Test-CommitBatchRepository -RepositoryRoot $tempRoot
-    Assert-CommitBatch (-not $wrongBranch.Ok -and $wrongBranch.Message -match 'main') 'main以外のブランチを拒否する'
+    [IO.File]::WriteAllText((Join-Path $tempRoot 'packages\demo\index.ts'), 'export const value = 1;')
+    & git -C $tempRoot add packages/demo/index.ts | Out-Null
+    $workBranch = Test-CommitBatchRepository -RepositoryRoot $tempRoot
+    Assert-CommitBatch ($workBranch.Ok -and $workBranch.AddedTaskIds.Count -eq 0) 'A1: 作業ブランチでの小さな保存を認め、完了IDを加算しない'
+    & git -C $tempRoot checkout --quiet main | Out-Null
+    $mainAgain = Test-CommitBatchRepository -RepositoryRoot $tempRoot
+    Assert-CommitBatch (-not $mainAgain.Ok) 'A1: 同じ小さな変更でもmainへの通常統合は拒否する'
+
+    $approvedBase = (& git -C $tempRoot rev-parse HEAD).Trim()
+    $approvedTree = (& git -C $tempRoot write-tree).Trim()
+    $approvalPath = Join-Path $tempRoot '.git/pointercad-commit-batch-approval.json'
+    $approval = @{ approvedBy = 'user'; reason = '利用者がCI修正の先行を承認'; base = $approvedBase; tree = $approvedTree }
+    [IO.File]::WriteAllText($approvalPath, ($approval | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
+    Assert-CommitBatch (Test-CommitBatchRepository -RepositoryRoot $tempRoot).Ok '明示承認の親とstage全体が一致する場合だけ例外を認める'
+
+    [IO.File]::WriteAllText((Join-Path $tempRoot 'docs/note.md'), 'unapproved addition')
+    & git -C $tempRoot add docs/note.md | Out-Null
+    Assert-CommitBatch (-not (Test-CommitBatchRepository -RepositoryRoot $tempRoot).Ok) '承認後に文書だけを追加しても別のstageとして拒否する'
+    & git -C $tempRoot restore --source=HEAD --staged --worktree -- docs/note.md | Out-Null
+    $approval.base = ('0' * 40)
+    [IO.File]::WriteAllText($approvalPath, ($approval | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
+    Assert-CommitBatch (-not (Test-CommitBatchRepository -RepositoryRoot $tempRoot).Ok) '親コミットが違う承認を使い回さない'
+    $approval.base = $approvedBase
+    $approval.reason = ''
+    [IO.File]::WriteAllText($approvalPath, ($approval | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
+    Assert-CommitBatch (-not (Test-CommitBatchRepository -RepositoryRoot $tempRoot).Ok) '理由のない例外記録を拒否する'
+    [IO.File]::WriteAllText($approvalPath, '{ invalid json')
+    Assert-CommitBatch (-not (Test-CommitBatchRepository -RepositoryRoot $tempRoot).Ok) '壊れた例外記録を拒否する'
+    Remove-Item -LiteralPath $approvalPath -Force
+
+    & git -C $tempRoot reset --quiet --hard HEAD | Out-Null
+    & git -C $tempRoot rm --quiet packages/demo/index.ts | Out-Null
+    Assert-CommitBatch (-not (Test-CommitBatchRepository -RepositoryRoot $tempRoot).Ok) '実装ファイルの削除だけでも10件条件を適用する'
+    & git -C $tempRoot reset --quiet --hard HEAD | Out-Null
+    & git -C $tempRoot checkout --quiet --detach HEAD | Out-Null
+    Assert-CommitBatch (-not (Test-CommitBatchRepository -RepositoryRoot $tempRoot).Ok) 'detached HEADへの保存は拒否する'
 }
 finally {
     $resolvedRoot = [IO.Path]::GetFullPath($tempRoot)

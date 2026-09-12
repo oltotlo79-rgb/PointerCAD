@@ -28,7 +28,7 @@ catalog:
   typescript: 5.9.3
   typescript-eslint: 8.69.0
   vite: 8.2.2
-  vitest: 4.1.11
+  vitest: 5.0.0
   zustand: 5.0.15
 
 # pnpm 10 以降は既定でインストール後スクリプトを実行しないため、明示的に許可する。

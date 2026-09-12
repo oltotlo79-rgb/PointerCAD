@@ -34,8 +34,8 @@ catalogs:
       specifier: 10.6.0
       version: 10.6.0
     electron:
-      specifier: 44.1.0
-      version: 44.1.0
+      specifier: 44.2.0
+      version: 44.2.0
     eslint:
       specifier: 10.9.1
       version: 10.9.1
@@ -140,7 +140,7 @@ importers:
         version: 6.1.1(vite@8.2.2(@types/node@22.20.1))
       electron:
         specifier: 'catalog:'
-        version: 44.1.0
+        version: 44.2.0
       vite:
         specifier: 'catalog:'
         version: 8.2.2(@types/node@22.20.1)
@@ -801,8 +801,8 @@ packages:
   electron-to-chromium@1.5.418:
     resolution: {integrity: sha512-UzS26r3AEbG5wSoGVpJKqwHIU9zwQN7LHdVIThDrJpS0I5KdlXFMEb8543fhc9dVnIIAST6ar8rhwa00AL5MlA==}
 
-  electron@44.1.0:
-    resolution: {integrity: sha512-kmLg8axOg22DC3fXx5NCwBYW8fx0rK2zzJ3Tf67GjNCkxfoxEcd+yo0QfDjlBtHJs3xeA8fTg64b6iVzFTVErg==}
+  electron@44.2.0:
+    resolution: {integrity: sha512-oK1icjhapp3xsUZycO9WZaLmd3hJnA7ieobC4mpdtO1pEN+PPGWpA3m1Mgzzuc1wzSD2Wai4zcH4yfpGJqxFMA==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -1909,7 +1909,7 @@ snapshots:
 
   electron-to-chromium@1.5.418: {}
 
-  electron@44.1.0:
+  electron@44.2.0:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0

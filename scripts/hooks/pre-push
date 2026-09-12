@@ -23,7 +23,21 @@ else
     exit 127
 fi
 
-"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Push
+# Receipts apply only when every actual update sends the currently checked HEAD.
+# Other refs still run the complete ordinary gate; an empty push sends no change.
+head_sha=$(git -C "$repo_root" rev-parse HEAD) || exit 1
+update_count=0
+receipt_phase=Push
+while read -r local_ref local_sha remote_ref remote_sha; do
+    update_count=$((update_count + 1))
+    if [ "$local_sha" != "$head_sha" ]; then receipt_phase=Disabled; fi
+done
+if [ "$update_count" -eq 0 ]; then
+    printf '%s\n' '[OK] 送信する変更がありません'
+    exit 0
+fi
+
+"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Push -ReceiptPhase "$receipt_phase"
 check_status=$?
 
 if [ "$check_status" -ne 0 ]; then

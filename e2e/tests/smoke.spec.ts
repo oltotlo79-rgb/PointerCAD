@@ -2,7 +2,9 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { readPcadFile } from '../../packages/io/src/index.js';
-import { waitForStartupHealth } from './startupHealth.js';
+import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
+
+test.beforeEach(async({page})=>{await installStartupDiagnostics(page);});
 
 test('Web 版が起動し、空のスケッチの案内が出る', async ({ page }, info) => {
   const consoleErrors: string[] = [];
@@ -16,6 +18,8 @@ test('Web 版が起動し、空のスケッチの案内が出る', async ({ page
   });
 
   await page.goto('/');
+
+  await waitForStartupHealth(page,info);
 
   await expect(page).toHaveTitle('PointerCAD');
 
@@ -35,8 +39,6 @@ test('Web 版が起動し、空のスケッチの案内が出る', async ({ page
 
   // ビューキューブも常時表示されている(FR-103)。
   await expect(page.locator('canvas.pcad-viewcube')).toBeVisible();
-  await waitForStartupHealth(page, info);
-
   expect(consoleErrors).toEqual([]);
 });
 

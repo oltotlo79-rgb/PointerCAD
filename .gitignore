@@ -12,6 +12,8 @@ build/
 .vite/
 coverage/
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 
 # E2E
 playwright-report/

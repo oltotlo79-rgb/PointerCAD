@@ -36,7 +36,7 @@ if [ "$batch_status" -ne 0 ]; then
     exit "$batch_status"
 fi
 
-"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Commit
+"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Commit -ReceiptPhase Commit
 check_status=$?
 
 if [ "$check_status" -ne 0 ]; then

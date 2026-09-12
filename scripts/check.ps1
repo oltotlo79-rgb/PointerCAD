@@ -29,6 +29,9 @@ param(
     # Push  : 上記に E2E を足した5つ(pre-push、CI、統括の手動実行の既定)
     [ValidateSet("Commit", "Push")]
     [string]$Level = "Push",
+    # B3: hooks can consume a completed full-check receipt. Manual checks always execute.
+    [ValidateSet('Manual', 'Commit', 'Push', 'Disabled')]
+    [string]$ReceiptPhase = 'Manual',
     [ValidateRange(1, 10)]
     [int]$E2ERepeats = 1,
     # 診断用: 1〜4段を省きE2Eだけを実行する。最終のPushゲートは必ずこの指定なしで通す。
@@ -63,28 +66,39 @@ $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd([char[]]"\\/")
 
 # (0) の前後比較で使う関数群(scripts/check.selftest.ps1 と共有する単一正本)
 . (Join-Path $scriptDirectory "lib\gitTreeGuard.ps1")
+. (Join-Path $scriptDirectory "lib\validationReceipt.ps1")
 
 function Invoke-Check {
     param([string]$Name, [string]$Command, [string[]]$CommandArgs)
     Write-Host ""
     Write-Host "=== $Name ===" -ForegroundColor Cyan
+    Write-Host ("[開始] {0:yyyy-MM-ddTHH:mm:ss.fffzzz}" -f [DateTimeOffset]::Now)
+    $checkTimer = [Diagnostics.Stopwatch]::StartNew()
+    $checkExitCode = 1
     # 直前のコマンドの終了コードが残って偽の合格にならないよう必ずリセットする
     $global:LASTEXITCODE = 0
     # コマンド不在などの起動失敗はここでcatchして確実に失敗終了させる
     try {
         & $Command @CommandArgs
+        $checkExitCode = $LASTEXITCODE
     } catch {
         Write-Host "[NG] $Name を起動できませんでした: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
+    } finally {
+        $checkTimer.Stop()
+        Write-Host ("[終了] {0:yyyy-MM-ddTHH:mm:ss.fffzzz} / {1} / 所要 {2:F3} 秒 / 終了コード {3}" -f `
+            [DateTimeOffset]::Now, $Name, $checkTimer.Elapsed.TotalSeconds, $checkExitCode)
     }
-    if ($LASTEXITCODE -ne 0) {
+    if ($checkExitCode -ne 0) {
         Write-Host ""
-        Write-Host "[NG] $Name が失敗しました(終了コード: $LASTEXITCODE)" -ForegroundColor Red
-        exit $LASTEXITCODE
+        Write-Host "[NG] $Name が失敗しました(終了コード: $checkExitCode)" -ForegroundColor Red
+        exit $checkExitCode
     }
 }
 
 $validationQos = $null
+$receiptToken = ''
+$receiptCompleted = $false
 Push-Location $root
 try {
     # 性能検査(NFR-PF-2/PF-3、packages/kernel/src/worker/solidPerformance.test.ts、および
@@ -164,6 +178,20 @@ try {
         exit 1
     }
     $hasE2E = $definedScripts -contains "test:e2e"
+
+    $ordinaryGate = -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and -not $Install
+    $receiptPhaseMatches = ($ReceiptPhase -eq 'Commit' -and $Level -eq 'Commit') -or
+        ($ReceiptPhase -eq 'Push' -and $Level -eq 'Push')
+    if ($ordinaryGate -and $receiptPhaseMatches -and -not $isRunningOnCI) {
+        $shared = Invoke-ValidationReceipt -Root $root -Action reuse -Phase $ReceiptPhase -Repeats $E2ERepeats
+        if ($shared.ok) {
+            Write-Host "[OK] B3: 同一内容の厳密な全体検査を共用しました($ReceiptPhase / $($shared.tree))" -ForegroundColor Green
+            exit 0
+        }
+        Write-Host "[検査] B3の共用条件が揃わないため、通常検査を実行します: $($shared.reason)"
+    }
+    # A failed/new/partial check cannot leave an earlier success available for a later push.
+    $null = Invoke-ValidationReceipt -Root $root -Action invalidate
 
     # Windowsの自動バックグラウンド省電力で基準機の実測が約1.7倍になった(06 §10.54)。
     # 厳密検査の新しい子プロセスだけHighQoSにし、最後に元へ戻す。PC全体は変更しない。
@@ -251,6 +279,15 @@ try {
         if (-not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic) {
             Invoke-Check "(0) 品質ゲート自身の自己試験" (Get-Process -Id $PID).Path @(
                 "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "scripts/check.selftest.ps1"))
+        }
+        # Self-tests launch deliberately invalid diagnostics in this repository.
+        # They must finish before recording the inputs of the five product stages.
+        # The original source snapshot still guards the entire check, including (0).
+        # A pre-push fallback never issues a reusable success for a failed send.
+        if ($ReceiptPhase -eq 'Manual' -and -not $isRunningOnCI -and -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and $hasE2E) {
+            $receiptStart = Invoke-ValidationReceipt -Root $root -Action start -Repeats $E2ERepeats
+            if ($receiptStart.ok) { $receiptToken = $receiptStart.token }
+            else { Write-Host "[検査] B3の開始記録を作成できませんでした: $($receiptStart.reason)" }
         }
         if ($unitDiagnostic) {
             Write-Host "[診断] 指定ユニットテストだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
@@ -341,9 +378,18 @@ try {
     else {
         Write-Host "[OK] 全ての検査に合格しました" -ForegroundColor Green
     }
+    if (-not [string]::IsNullOrWhiteSpace($receiptToken)) {
+        $receiptFinish = Invoke-ValidationReceipt -Root $root -Action finish -Token $receiptToken -Repeats $E2ERepeats
+        $receiptCompleted = [bool]$receiptFinish.ok
+        if ($receiptCompleted) { Write-Host '[OK] B3: 直後の同一コミット・pushに使う全体検査の記録を保存しました' -ForegroundColor Green }
+        else { Write-Host "[検査] B3の共用記録は作成しませんでした: $($receiptFinish.reason)" }
+    }
 }
 finally {
     try {
+        if (-not [string]::IsNullOrWhiteSpace($receiptToken) -and -not $receiptCompleted) {
+            $null = Invoke-ValidationReceipt -Root $root -Action invalidate
+        }
         if ($null -ne $validationQos) {
             $validationQos.Dispose()
             Write-Host "性能検査: HighQoS対象 $($validationQos.ObservedCount) プロセスの後片付けを完了しました" -ForegroundColor Cyan

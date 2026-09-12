@@ -13,6 +13,7 @@
     "test": "pnpm --recursive --reverse --workspace-concurrency=1 --if-present run test",
     "build": "pnpm --recursive --if-present run build",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "validation:runtime": "node scripts/lib/validationRuntime.mjs",
     "clean": "tsc --build --clean"
   },
   "devDependencies": {

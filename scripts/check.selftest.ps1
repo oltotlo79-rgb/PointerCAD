@@ -574,6 +574,16 @@ if ($null -ne $perfModeShellCommand -and (Test-Path -LiteralPath $batchSelftest 
     Assert-True $false '一括件数の自己試験を実行できること'
 }
 
+$receiptSelftest = Join-Path $PSScriptRoot 'validation-receipt.selftest.py'
+if (Test-Path -LiteralPath $receiptSelftest -PathType Leaf) {
+    & python -B -X utf8 $receiptSelftest
+    Assert-True ($LASTEXITCODE -eq 0) 'B3の同一入力・一度だけの共用・変更/改変/中断/期限切れの拒否を自己試験する'
+    & python -B -X utf8 (Join-Path $PSScriptRoot 'validation-receipt.integration.selftest.py')
+    Assert-True ($LASTEXITCODE -eq 0) '実際のPowerShell・GitフックでB3を共用し、送信拒否や失敗後は通常検査へ戻る'
+} else {
+    Assert-True $false 'B3の自己試験が存在すること'
+}
+
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red
     exit 1

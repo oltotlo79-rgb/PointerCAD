@@ -1,18 +1,19 @@
 import { defineConfig, devices } from '@playwright/test';
+import { FIREFOX_GRAPHICS_PREFS } from './firefoxLaunch.js';
 
 const ELECTRON_TEST_FILE = /electron-[\w-]+\.spec\.ts$/u;
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
 const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個|4分割の実描画性能|100フィーチャー・三面図・50寸法|板金100段の実描画性能|自動作図実行中の実描画性能/u;
 
-const FIREFOX_PREFERENCES: Record<string, boolean> = process.platform === 'win32' ? { 'webgl.angle.force-warp': true } : {};
 const FIREFOX_USE = {
   ...devices['Desktop Firefox'],
   // Same OS-provided software renderer locally and on Windows CI without a GPU.
   // Mozilla: modules/libpref/init/StaticPrefList.yaml, webgl.angle.force-warp.
-  launchOptions: { firefoxUserPrefs: FIREFOX_PREFERENCES },
+  launchOptions: { firefoxUserPrefs: FIREFOX_GRAPHICS_PREFS },
 };
-const WEB_STARTUP_TEST = /(?:^|[\\/])smoke\.spec\.ts$/u;
+const WEB_STARTUP_TEST = /(?:^|[\\/])(?:smoke|firefox-graphics)\.spec\.ts$/u;
+const FIREFOX_GRAPHICS_TEST = /(?:^|[\\/])firefox-graphics\.spec\.ts$/u;
 const ELECTRON_STARTUP_TEST = /electron-startup\.spec\.ts$/u;
 
 export default defineConfig({
@@ -59,7 +60,7 @@ export default defineConfig({
     },
     {
       name: 'functional',
-      testIgnore: ELECTRON_TEST_FILE,
+      testIgnore: [ELECTRON_TEST_FILE, FIREFOX_GRAPHICS_TEST],
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       dependencies: ['viewport-performance'],
     },

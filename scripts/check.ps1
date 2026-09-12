@@ -280,6 +280,18 @@ try {
             Invoke-Check "(0) 品質ゲート自身の自己試験" (Get-Process -Id $PID).Path @(
                 "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "scripts/check.selftest.ps1"))
         }
+        if ($runE2E) {
+            # Initial downloads change the dependencies/browsers protected by B3.
+            # Complete them before recording inputs, including Electron's lazy install.
+            $browserInstallArgs = @("exec", "playwright", "install", "chromium", "firefox")
+            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Unix) {
+                $browserInstallArgs = @("exec", "playwright", "install", "--with-deps", "chromium", "firefox")
+            }
+            Invoke-Check "(準備) Playwright のブラウザ確認" pnpm $browserInstallArgs
+            if (Test-Path -LiteralPath (Join-Path $root 'apps/desktop/package.json') -PathType Leaf) {
+                Invoke-Check "(準備) Electron の実行ファイル確認" pnpm @('--filter', '@pointercad/desktop', 'exec', 'install-electron')
+            }
+        }
         # Self-tests launch deliberately invalid diagnostics in this repository.
         # They must finish before recording the inputs of the five product stages.
         # The original source snapshot still guards the entire check, including (0).
@@ -319,14 +331,6 @@ try {
             }
         }
         if ($runE2E) {
-            # Playwright のブラウザは初回だけ取得され、2回目以降は即座に終わる。
-            # ここで面倒を見ることで .github/workflows/ci.yml を変えずに済み、
-            # 検査の単一正本(rules/03-品質ゲート.md §7.2)を保てる。
-            $browserInstallArgs = @("exec", "playwright", "install", "chromium", "firefox")
-            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Unix) {
-                $browserInstallArgs = @("exec", "playwright", "install", "--with-deps", "chromium", "firefox")
-            }
-            Invoke-Check "(準備) Playwright のブラウザ確認" pnpm $browserInstallArgs
             for ($e2eRun = 1; $e2eRun -le $E2ERepeats; $e2eRun++) {
                 $repeatLabel = ""
                 if ($E2ERepeats -gt 1) { $repeatLabel = " ($e2eRun/$E2ERepeats)" }

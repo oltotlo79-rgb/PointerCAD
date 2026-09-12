@@ -112,17 +112,28 @@ def browser_roots(root: Path, node: str) -> list[Path]:
 
 
 def git_tool_inputs(selected: Path) -> tuple[Path, list[Path]]:
-    """Git for Windows exposes the same runtime through cmd/ and mingw*/bin/.
+    """Recognize the installed Git entry points that hooks prepend to PATH.
 
-    The Git hook changes PATH between these shipped entry points. Hash every
-    recognized entry point plus the actual runtime, so this is never a general
+    Hash every recognized shipped entry point and its runtime. Unix packages
+    can install either hard links or identical copies. Neither allows a general
     exemption for another executable with the same name or version string.
     """
-    if os.name != 'nt' or selected.name.lower() != 'git.exe':
+    if selected.name.lower() not in {'git', 'git.exe'}:
         return selected, []
     output = subprocess.run([str(selected), '--exec-path'], check=True, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, timeout=10)
     core = Path(output.stdout.decode().strip()).resolve(strict=True)
+    if os.name != 'nt':
+        # Git prepends its exec-path to PATH inside hooks. On Unix both entries
+        # can be hard links or separate copies. Only the installed bin/ and
+        # lib[exec]/git-core pair is eligible; hash BOTH entries in either case.
+        runtime = core / 'git'
+        entry = core.parent.parent / 'bin/git'
+        if core.name == 'git-core' and core.parent.name in {'lib', 'libexec'} and runtime.is_file() and entry.is_file():
+            runtime, entry = runtime.resolve(strict=True), entry.resolve(strict=True)
+            if selected in {runtime, entry} and file_hash(entry) == file_hash(runtime):
+                return runtime, [entry]
+        return selected, []
     architecture = core.parent.parent
     # Determine the layout from the installed executable. ARM64 uses clangarm64,
     # so assuming the x86 mingw64 directory would disable reuse on the user's PC.
@@ -287,8 +298,10 @@ def operate(action: str, root: Path, tools: dict[str, str], phase: str, token: s
         return {'ok': True, 'token': token}
     if action == 'finish':
         before = read_record(running_path, key)
-        if before['token'] != token or before['repeats'] != repeats or any(before['state'][name] != current[name] for name in current if name != 'outputs'):
-            raise ValueError('The full check no longer matches its starting inputs')
+        changed = [name for name in current if name != 'outputs' and before['state'].get(name) != current[name]]
+        if before['token'] != token or before['repeats'] != repeats or changed:
+            # Categories only: never print environment values or private file contents.
+            raise ValueError('The full check no longer matches its starting inputs; changed: ' + ', '.join(changed))
         write_record(receipt_path, {'version': VERSION, 'state': current, 'at': time.time(), 'monotonic': time.monotonic(),
                                    'repeats': repeats, 'phase': 'prepared', 'token': token}, key)
         running_path.unlink(); return {'ok': True}

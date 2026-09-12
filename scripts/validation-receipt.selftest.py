@@ -71,6 +71,35 @@ class ReceiptTests(unittest.TestCase):
         with self.assertRaises(OSError):
             self.run_action('reuse', 'Push')
 
+    def test_unix_hook_git_hashes_both_shipped_entries_and_rejects_other_copies(self):
+        core = self.root / 'git-layout/lib/git-core'
+        core.mkdir(parents=True)
+        runtime = self.write('git-layout/lib/git-core/git', 'actual git executable')
+        selected = self.root / 'git-layout/bin/git'
+        selected.parent.mkdir(parents=True)
+        os.link(runtime, selected)
+        from types import SimpleNamespace
+        output = SimpleNamespace(stdout=str(core).encode())
+        # Avoid changing os.name: pathlib must keep the real host path semantics.
+        with patch.object(receipt, 'os', SimpleNamespace(name='posix')), patch.object(receipt.subprocess, 'run', return_value=output):
+            expected = (runtime.resolve(), [selected.resolve()])
+            self.assertEqual(receipt.git_tool_inputs(selected), expected)
+            self.assertEqual(receipt.git_tool_inputs(runtime), expected)
+            copied = self.write('git-layout/another/git', runtime.read_text())
+            self.assertEqual(receipt.git_tool_inputs(copied), (copied, []))
+            runtime.write_text('changed executable', encoding='utf8')
+            self.assertEqual(receipt.file_hash(runtime), receipt.file_hash(selected))
+            self.assertNotEqual(receipt.file_hash(runtime), receipt.file_hash(copied))
+            # Debian/Ubuntu packages may install the two shipped entries as copies.
+            selected.unlink()
+            selected.write_bytes(runtime.read_bytes())
+            self.assertFalse(selected.samefile(runtime))
+            self.assertEqual(receipt.git_tool_inputs(selected), expected)
+            self.assertEqual(receipt.git_tool_inputs(runtime), expected)
+            selected.write_text('different installed entry', encoding='utf8')
+            self.assertEqual(receipt.git_tool_inputs(selected), (selected, []))
+            self.assertEqual(receipt.git_tool_inputs(runtime), (runtime, []))
+
     def test_commit_cannot_consume_twice_or_leave_stale_success(self):
         self.complete(); self.run_action('reuse', 'Commit')
         with self.assertRaises(ValueError):
@@ -104,6 +133,17 @@ class ReceiptTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.run_action('reuse', 'Commit')
         self.assert_no_receipt()
+
+    def test_lazy_runtime_download_must_finish_before_recording_inputs(self):
+        start = self.run_action('start')
+        self.write('node_modules/electron/dist/electron.bin', 'downloaded runtime')
+        self.write('browser/new-build/runtime.bin', 'downloaded browser')
+        with self.assertRaisesRegex(ValueError, 'changed: dependencies, browsers'):
+            self.run_action('finish', token=start['token'])
+        self.assert_no_receipt()
+        # Once preparation is complete, a fresh unchanged full check can be shared.
+        self.complete()
+        self.assertTrue(self.run_action('reuse', 'Commit')['used'])
 
     def test_actual_runtime_package_is_checked_beyond_unchanged_launcher(self):
         ignore = self.root / '.gitignore'

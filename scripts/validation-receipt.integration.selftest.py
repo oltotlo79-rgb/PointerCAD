@@ -31,6 +31,9 @@ class ReceiptHookTests(unittest.TestCase):
         self.env.update(CI='', POINTERCAD_PERF_STRICT='1', PYTHONDONTWRITEBYTECODE='1')
         self.env['PATH'] = str(self.root / 'test-bin') + os.pathsep + self.env['PATH']
         self.env['PCAD_SELFTEST_CALL_LOG'] = str(self.root / 'gate-calls.log')
+        # Reproduce a PowerShell 7 parent launching Windows PowerShell 5 through
+        # Git hooks. It must build its own module path, not inherit another edition.
+        self.env['PSModulePath'] = str(self.base / 'unavailable-parent-edition-modules')
         for relative in ('check.ps1', 'check-commit-batch.ps1', 'hooks/pre-commit', 'hooks/pre-push',
                          'lib/gitTreeGuard.ps1', 'lib/pushTreeFingerprint.ps1', 'lib/directoryLinks.ps1',
                          'lib/commitBatchGuard.ps1', 'lib/validationReceipt.ps1',
@@ -54,13 +57,13 @@ exit 0
             'typecheck', 'lint', 'test', 'build', 'test:e2e', 'validation:runtime')}}))
         # Match the real workspace: the app exists before building its ignored output.
         self.write('apps/web/package.json', '{"name":"fixture-web"}')
+        self.write('apps/desktop/package.json', '{"name":"@pointercad/desktop"}')
         planned = [f'P0-{number}' for number in range(1, 13)]
         self.write('docs/progress.json', json.dumps({
             'schemaVersion': 1, 'totalTasks': 12, 'futureEstimateTasks': 0,
             'completedBeforeTrackedPhases': 0, 'reportedCompleted': 0,
             'phases': [{'id': 'P0', 'plannedTaskCount': 12, 'plannedTaskIds': planned, 'completedTaskIds': []}]}))
-        for browser in ('chromium-123', 'firefox-456'):
-            self.write(f'browsers/{browser}/browser.exe', 'fixture browser, never executed')
+        # No downloaded runtime initially: preparation must precede the receipt.
         self.write('node_modules/@playwright/test/index.js', """
 const path = require('node:path');
 module.exports = Object.fromEntries(['chromium','firefox'].map((name, i) =>
@@ -75,6 +78,19 @@ if (args === '--silent run validation:runtime') {
   await import('../scripts/lib/validationRuntime.mjs');
 } else {
   fs.appendFileSync(process.env.PCAD_SELFTEST_CALL_LOG, args + '\\n');
+  if (args.includes('playwright install')) {
+    for (const browser of ['chromium-123','firefox-456']) {
+      fs.mkdirSync('browsers/' + browser, {recursive:true});
+      fs.writeFileSync('browsers/' + browser + '/browser.exe','fixture browser, never executed');
+    }
+  }
+  if (args === '--filter @pointercad/desktop exec install-electron') {
+    fs.mkdirSync('apps/desktop/node_modules/electron/dist', {recursive:true});
+    fs.writeFileSync('apps/desktop/node_modules/electron/dist/electron.bin','fixture runtime, never executed');
+  }
+  if (args.startsWith('run ') && !fs.existsSync('apps/desktop/node_modules/electron/dist/electron.bin')) {
+    throw new Error('Product check started before the first runtime download');
+  }
   if (args === 'run build') {
     fs.mkdirSync('apps/web/dist', {recursive: true});
     fs.writeFileSync('apps/web/dist/index.js', 'the checked build');
@@ -109,7 +125,8 @@ if (args === '--silent run validation:runtime') {
         return target
 
     def command(self, args, success=True):
-        result = subprocess.run(args, cwd=self.root, env=self.env, capture_output=True, timeout=100)
+        child_environment = {key: value for key, value in self.env.items() if key.upper() != 'PSMODULEPATH'}
+        result = subprocess.run(args, cwd=self.root, env=child_environment, capture_output=True, timeout=100)
         text = (result.stdout + result.stderr).decode('utf-8', errors='replace')
         if success:
             self.assertEqual(result.returncode, 0, text[-12000:])

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef } from 'react';
+import { ViewportBoundary } from '../viewport/ViewportBoundary.js';
 
 import {
   discardAutoSave,
@@ -377,7 +378,7 @@ export function AppShell(): React.JSX.Element {
           {documentKind === 'drawing' ? (
             <DrawingViewport />
           ) : (
-            <Suspense
+            <ViewportBoundary><Suspense
               fallback={
                 <div className="pcad-viewport__overlay">
                   <div className="pcad-card">
@@ -388,7 +389,7 @@ export function AppShell(): React.JSX.Element {
               }
             >
               <ViewportCanvas />
-            </Suspense>
+            </Suspense></ViewportBoundary>
           )}
           {documentKind !== 'drawing' && importUnitAsked ? (
             /*

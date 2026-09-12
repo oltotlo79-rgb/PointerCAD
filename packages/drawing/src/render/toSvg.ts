@@ -1,4 +1,5 @@
 import type { AffineTransform2, PathCommand, RenderDocument, RenderPrimitive, RenderSubpath, RenderText } from './types.js';
+import { immutablePathData } from './immutableSubpaths.js';
 
 export interface SvgOptions {
   /** 輪郭を既定とする。semanticは文字として編集するための明示指定。 */
@@ -83,7 +84,7 @@ function primitiveBody(primitive: RenderPrimitive, textMode: 'outline' | 'semant
     if (content === null || fill === null || transform === null) return null;
     if (textMode === 'outline') {
       if (primitive.outline === null) return null;
-      const data = pathData(primitive.outline);
+      const data = immutablePathData(primitive.outline, pathData);
       return data === null ? null
         : `<g transform="${transform}" aria-label="${content}"><path d="${data}" fill="${fill}" fill-rule="nonzero"/></g>`;
     }

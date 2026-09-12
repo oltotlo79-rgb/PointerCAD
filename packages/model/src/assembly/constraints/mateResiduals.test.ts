@@ -450,6 +450,26 @@ describe('断り・尺度・試行の純粋性', () => {
     expect(buildMateResidualReport(base)).toEqual(zero);
     expect({ mates: base.mates, placements: base.placements }).toEqual(before);
   });
+  it('150合致でも列の参照は部品ごと6回以内で、次の評価では固定の変更を反映する', () => {
+    const source = preparation(mate('coincident'), point([1, 2, 3]), point([4, 5, 6]));
+    const sharedMates = prepared(source).mates;
+    for (const fixedA of [false, true]) {
+      const base = { ...prepared(source, fixedA), mates: sharedMates };
+      const expected = buildMateResidualReport(base);
+      let lookups = 0;
+      const report = buildMateResidualReport({ ...base, mates: Array.from({ length: 150 }, () => sharedMates[0]),
+        variableSet: { ...base.variableSet, columnOf: (id, axis) => {
+          lookups += 1;
+          return base.variableSet.columnOf(id, axis);
+        } } });
+      expect(report.skipped).toEqual([]);
+      expect(report.rows).toHaveLength(450);
+      for (let offset = 0; offset < report.rows.length; offset += 3) {
+        expect(report.rows.slice(offset, offset + 3)).toEqual(expected.rows);
+      }
+      expect(lookups).toBeLessThanOrEqual(12);
+    }
+  });
   it('呼び手が受理して基準を更新した零増分の値はtrialと一致する', () => {
     const base = input('coincident', plane([2, 3, 5]));
     const delta: Vec3 = [0.2, -0.3, 0.4];

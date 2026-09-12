@@ -155,7 +155,7 @@ export function DrawingCanvas(): React.JSX.Element {
     return () => { dimensionSvgPreview.current?.restore(); dimensionSvgPreview.current = null; };
   }, [dimensionDragStart, drawing, previewDimension]);
   return <div className="pcad-drawing-viewport" data-testid="drawing-viewport">
-    <div className="pcad-drawing-sheet" aria-label={drawing?.name ?? t('drawing.mode')}
+    <div className="pcad-drawing-sheet" aria-label={drawing?.name ?? t('drawing.mode')} aria-busy={busy}
       ref={container} tabIndex={0}
       onPointerDown={(event) => {
         if (busy || event.button !== 0 || shown === null || drawing === null) return;

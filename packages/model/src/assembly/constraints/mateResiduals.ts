@@ -15,7 +15,7 @@ import {
   createMateFrame, mateAlignmentSign, mateUnitDirection, rotateMateFrame, type MateFrame,
 } from './mateFrames.js';
 import { MISSING_AXIS_MESSAGE, type ResolvedMateTarget } from './mateTargets.js';
-import { mateValueOf, type MateVariableSet } from './mateVariables.js';
+import { MATE_VARIABLE_AXES, mateValueOf, type MateVariableSet } from './mateVariables.js';
 
 import {
   CARTESIAN_AXES, directionResidual, pointSpan, pointTerms, projectedResidual,
@@ -239,6 +239,7 @@ interface TrialTarget extends ResolvedMateTarget {
   readonly arm: Vec3;
   readonly rotationAxes: readonly Vec3[];
   readonly frame: MateFrame | null;
+  readonly columns: readonly (number | null)[];
 }
 
 interface TrialMotion {
@@ -247,32 +248,34 @@ interface TrialMotion {
   readonly rotation: Quaternion;
   readonly rotate: (vector: Vec3) => Vec3;
   readonly rotationAxes: readonly Vec3[];
+  readonly columns: readonly (number | null)[];
 }
 
 function trialMotion(componentId: string, placement: RigidPlacement, input: MateResidualInput): TrialMotion {
-  const increment = (axis: 'tx' | 'ty' | 'tz' | 'rx' | 'ry' | 'rz'): number => {
-    const column = input.variableSet.columnOf(componentId, axis);
+  const columns = MATE_VARIABLE_AXES.map((axis) => input.variableSet.columnOf(componentId, axis));
+  const increment = (index: number): number => {
+    const column = columns[index];
     return column === null ? 0 : (input.increments?.[column] ?? 0);
   };
-  const dt: Vec3 = [increment('tx'), increment('ty'), increment('tz')];
-  const omega: Vec3 = [increment('rx'), increment('ry'), increment('rz')];
+  const dt: Vec3 = [increment(0), increment(1), increment(2)];
+  const omega: Vec3 = [increment(3), increment(4), increment(5)];
   const rotation = exponentialMap(omega);
   // 基準の回転を先に掛け、増分を最後に掛ける。微小なtrialを四元数の合成/再正規化で失わない。
   const zeroRotation = omega[0] === 0 && omega[1] === 0 && omega[2] === 0;
   const rotate = zeroRotation ? (vector: Vec3): Vec3 => rotateVector(placement.rotation, vector)
     : (vector: Vec3): Vec3 => rotateVector(rotation, rotateVector(placement.rotation, vector));
-  return { placement, delta: dt, rotation, rotate, rotationAxes: rotationDerivativeAxes(omega) };
+  return { placement, delta: dt, rotation, rotate, rotationAxes: rotationDerivativeAxes(omega), columns };
 }
 
 function trialTarget(target: LocalMateResidualTarget, componentId: string, motion: TrialMotion): TrialTarget {
-  const { placement, delta, rotation, rotate, rotationAxes } = motion;
+  const { placement, delta, rotation, rotate, rotationAxes, columns } = motion;
   const arm = rotate(target.point);
   return {
     kind: target.kind, componentId, arm, center: placement.position, delta, radius: target.radius,
     point: addVec3(addVec3(placement.position, delta), arm),
     direction: target.direction === null ? null : rotate(target.direction),
     frame: target.frame === null ? null : rotateMateFrame(rotateMateFrame(target.frame, placement.rotation), rotation),
-    rotationAxes,
+    rotationAxes, columns,
   };
 }
 

@@ -49,6 +49,10 @@ require('node:fs').writeFileSync(${JSON.stringify(join(directory, 'bootstrap.jso
 app.setPath('userData', ${JSON.stringify(profile)});
 require(${JSON.stringify(join(root, 'apps/desktop/dist/main/main.cjs'))});
 `);
-  const app = await playwright._electron.launch({ executablePath: executable, args: [entry], cwd: root, timeout: 30_000 });
+  // Explicit WebGL software rendering works without a physical GPU on hosted CI.
+  // Keep the same path in local real-Electron tests; never pass this opt-in to the product launcher.
+  // https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md
+  const app = await playwright._electron.launch({ executablePath: executable,
+    args: ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader', entry], cwd: root, timeout: 30_000 });
   return { app, directory };
 }

@@ -8,6 +8,7 @@ import { commitDrawingDatum, commitDrawingGdtFrame, drawingGdtFeature, duplicate
 import { deleteSelectedDrawingElements, pickDrawingTarget } from './dimensionCommands.js';
 import { displayDrawingGdt } from './gdtDisplay.js';
 import { displayDrawingDimension } from './dimensionDisplay.js';
+import { t } from '../i18n/t.js';
 
 const metadata = { sourceRef: 'source', sourceKind: 'part' as const, fileName: 'part.pcad', path: '', contentHash: '', importedAt: '' };
 const faces: readonly SolidFaceEntry[] = [
@@ -132,6 +133,7 @@ describe('幾何公差の作成・編集・寸法線への関連付け', () => {
     state().selectDrawingIds([]); expect(commitDrawingGdtFrame({ ...frameInput, height: 5 }, frame)).toBe(false);
     useAppStore.setState({ drawingBusy: true }); expect(commitDrawingDatum(datumInput)).toBe(false);
     expect(deleteSelectedDrawingElements()).toBe(false); expect(document()).toBe(before);
+    expect(state().drawingMessage).toBe(t('drawing.status.computing'));
   });
   it('基準と枠を一緒に複製すると新しい名前・IDへ参照を結び、全体をUndo1回で戻す', () => {
     commitDrawingDatum(datumInput); const datum = document().datums[0];

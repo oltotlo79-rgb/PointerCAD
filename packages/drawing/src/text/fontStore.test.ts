@@ -88,6 +88,18 @@ describe('字体の取得と失敗時の代替表示(P8-44)', () => {
     store.outline('選択中', 3.5); expect(commands).toHaveBeenCalledTimes(before);
     store.outline('古い注記', 3.5); expect(commands).toHaveBeenCalledTimes(before + 1);
   });
+  it('共有する字形の配列・命令・座標を書換できず、別の文字や高さへ汚染しない', async () => {
+    const store = ready(); await store.load();
+    const original = store.outline('20', 3.5), path = original.subpaths[0], command = path.commands[0];
+    expect(Reflect.set(original.subpaths, '0', { commands: [] })).toBe(false);
+    expect(Reflect.set(path, 'commands', [])).toBe(false);
+    expect(Reflect.set(path.commands, '0', { kind: 'Z' })).toBe(false);
+    expect(Reflect.set(command, 'kind', 'Z')).toBe(false);
+    if (command.kind === 'Z') throw new Error('先頭の移動命令がない');
+    expect(Reflect.set(command.to, '0', Infinity)).toBe(false);
+    expect(store.outline('20', 3.5)).toBe(original);
+    expect(store.outline('20', 7).subpaths).not.toBe(original.subpaths);
+  });
   it('失敗した字形は記憶せず、次の有効な結果と字体ごとの幅を使う', async () => {
     const commands = vi.fn((text: string, size: number) => font.commands(text, size)).mockImplementationOnce(() => { throw new Error('temporary glyph failure'); });
     const store = createFontStore({ read: () => Promise.resolve(new ArrayBuffer(4)), parse: () => ({ ...font, commands }) });

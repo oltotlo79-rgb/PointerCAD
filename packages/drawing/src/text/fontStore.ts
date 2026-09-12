@@ -2,6 +2,7 @@ import type { RenderSubpath, SemanticTextMetrics } from '../render/types.js';
 import { DRAWING_FONT_ASSET } from './fontAsset.js';
 import { textOutline, type GlyphPathCommand } from './textOutline.js';
 import { createOutlineCache } from './outlineCache.js';
+import { freezeFontSubpaths } from '../render/immutableSubpaths.js';
 
 /** 字体の解析と取得を注入できる境界。文字の配置・輪郭化は同じ字体から求める。 */
 export interface DrawingFont {
@@ -80,7 +81,7 @@ export function createFontStore(options: {
       const geometry = textOutline(loadedFont.commands(text, sizeMm));
       const advanceMm = loadedFont.advance(text, sizeMm);
       if (geometry === null || !Number.isFinite(advanceMm) || advanceMm < 0) return fallback('invalidText', sizeMm);
-      const result: OutlinedText = { status: 'ready', subpaths: geometry.subpaths, fillRule: geometry.fillRule, missingCharacters: [],
+      const result: OutlinedText = { status: 'ready', subpaths: freezeFontSubpaths(geometry.subpaths), fillRule: geometry.fillRule, missingCharacters: [],
         metrics: { fontId: loadedFont.id, sizeMm, advanceMm, inkBounds: geometry.inkBounds } };
       outlines.put(text, sizeMm, result);
       return result;

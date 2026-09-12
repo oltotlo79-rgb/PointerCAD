@@ -789,9 +789,10 @@
   }
 }
 
-/* 自動作図・視点・F1の入口を1280pxでも1段に保つ。現在のモードは図柄に畳み、
- * 読み上げ名・ツールチップを残す。押下領域は他の図柄ボタンと同じ26px以上。 */
-@media (max-width: 1399px) {
+/* 1440pxではOS書体の余裕が15pxでも、日本語書体へ替えると約23px広がる。
+ * 製品名と同じ1519pxからモードを畳み、書体差で二段になるのを防ぐ。
+ * 読み上げ名・ツールチップと26px以上の押下領域は保つ。 */
+@media (max-width: 1519px) {
   .pcad-toolbar { --pcad-toolbar-gap: calc(4px * var(--pcad-scale, 1)); }
   .pcad-toolbar .pcad-toolbar__mode { width: 26px; min-width: 26px; height: 26px; padding: 0; justify-content: center; }
   .pcad-toolbar__mode-icon { display: block; }
@@ -2481,6 +2482,15 @@ button.pcad-tree__row:focus-visible {
   place-items: center;
   pointer-events: none;
 }
+
+.pcad-card.pcad-viewport__failure {
+  pointer-events: auto;
+  max-width: min(480px, calc(100% - 32px));
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--pcad-space-2);
+}
+.pcad-viewport__failure p { margin: 0; }
 
 .pcad-card {
   display: flex;

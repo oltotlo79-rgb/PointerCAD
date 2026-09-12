@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
+import { waitForStartupHealth } from './startupHealth.js';
 
 // Each case uses a fresh real process and profile. These are separate required
 // starts, not retries that could turn a failed launch into an apparent success.
@@ -17,10 +18,12 @@ for (let attempt = 1; attempt <= 5; attempt += 1) {
       });
       const page = await app.firstWindow();
       await expect(page.getByRole('button', { name: '開く', exact: true })).toBeVisible();
+      await waitForStartupHealth(page, info);
       expect(page.url()).toBe('app://pointercad/index.html');
       expect(await app.evaluate(({ app: electronApp }) => electronApp.isReady())).toBe(true);
       await page.reload();
       await expect(page.getByRole('button', { name: '開く', exact: true })).toBeVisible();
+      await waitForStartupHealth(page, info);
     } finally { await app.close(); }
     await expect.poll(() => child.exitCode).toBe(0);
   });

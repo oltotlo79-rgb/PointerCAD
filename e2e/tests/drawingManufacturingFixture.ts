@@ -2,6 +2,11 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 
+/** New annotation text may paint before the source check completes; wait for the actual editable sheet. */
+export async function waitForDrawingReady(page: Page): Promise<void> {
+  await expect(page.locator('.pcad-drawing-sheet')).toHaveAttribute('aria-busy', 'false', { timeout: KERNEL_TIMEOUT_MS });
+}
+
 /** 縦線・横線は矩形の一辺が0でも描かれる。線の長さ・塗り・表示変換で確認する。 */
 export async function expectDrawingStroke(locator: Locator): Promise<void> {
   await expect.poll(() => locator.evaluateAll((elements) => elements.some((element) => {
@@ -31,10 +36,11 @@ export async function drawingFromBox(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'この部品から図面を作成', exact: true }).click();
   await expect(page.locator('.pcad-drawing-svg svg')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
   await expect.poll(() => page.locator('.pcad-drawing-svg [data-owner-id="view-1"] path').count(), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
-  await expect(page.locator('.pcad-statusbar')).not.toContainText('作り直しています');
+  await waitForDrawingReady(page);
 }
 
 export async function chooseDrawingMenu(page: Page, group: string, item: string): Promise<void> {
+  await waitForDrawingReady(page);
   const menu = page.locator('.pcad-toolbar .pcad-toolbar__group').filter({
     has: page.locator('.pcad-toolbar__group-label', { hasText: new RegExp(`^${group}$`, 'u') }),
   });

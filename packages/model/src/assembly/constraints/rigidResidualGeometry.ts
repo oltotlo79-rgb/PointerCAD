@@ -10,6 +10,8 @@ export interface TrialGeometry {
   readonly delta: Vec3;
   readonly arm: Vec3;
   readonly rotationAxes: readonly Vec3[];
+  /** 当該評価で取得した tx,ty,tz,rx,ry,rz の列。姿勢・評価の間では共有しない。 */
+  readonly columns?: readonly (number | null)[];
 }
 export interface ScaledResidualRow extends LinearizedRow { readonly scale: number }
 export function validRigidPlacement(placement: RigidPlacement): boolean {
@@ -55,7 +57,8 @@ export function directionTerms(
   variables: MateVariableSet,
 ): void {
   for (let j = 0; j < ROTATION_AXES.length; j += 1) {
-    const column = variables.columnOf(target.componentId, ROTATION_AXES[j]);
+    const column = target.columns === undefined ? variables.columnOf(target.componentId, ROTATION_AXES[j])
+      : target.columns[j + 3] ?? null;
     if (column === null) continue;
     const axis = target.rotationAxes[j];
     // 外積を一時配列にせず、同じ演算順の内積を直接求める。固定部品の微分は作らない。
@@ -69,7 +72,8 @@ export function pointTerms(
   gradient: Map<number, number>, target: TrialGeometry, g: Vec3, variables: MateVariableSet,
 ): void {
   for (let j = 0; j < TRANSLATION_AXES.length; j += 1) {
-    if (g[j] !== 0) addTerm(gradient, variables.columnOf(target.componentId, TRANSLATION_AXES[j]), g[j]);
+    if (g[j] !== 0) addTerm(gradient, target.columns === undefined
+      ? variables.columnOf(target.componentId, TRANSLATION_AXES[j]) : target.columns[j] ?? null, g[j]);
   }
   directionTerms(gradient, target, target.arm, g, variables);
 }

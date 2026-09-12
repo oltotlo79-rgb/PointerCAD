@@ -2,13 +2,15 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { KERNEL_TIMEOUT_MS } from './recompute.js';
-import { drawingFromBox, chooseDrawingMenu } from './drawingManufacturingFixture.js';
+import { drawingFromBox, chooseDrawingMenu, waitForDrawingReady } from './drawingManufacturingFixture.js';
 import { drawingMessage } from './drawingMessages.js';
+import {installDrawingRefreshHold,controlDrawingRefresh,expectDrawingRefreshHeld} from './holdDrawingRefresh.js';
 
 test.describe('P9 幾何公差の実操作', () => {
   test('平面度とデータム参照付き直角度を作成し、編集・移動・削除Undo・保存・SVGでも意味が残る(P9-8〜18)', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
+    await installDrawingRefreshHold(page);
     await drawingFromBox(page);
     const sheet = page.locator('.pcad-drawing-sheet'), tree = page.locator('.pcad-panel--left');
     const owner = (id: string) => page.locator(`.pcad-drawing-svg [data-owner-id="${id}"]`);
@@ -46,14 +48,21 @@ test.describe('P9 幾何公差の実操作', () => {
     await expect(owner('gdt-2').locator('[aria-label="A"]')).toHaveCount(1);
     await tree.getByRole('button', { name: 'データム 1 A', exact: true }).click();
     await datum.getByLabel('データム名（A〜Z）', { exact: true }).fill('B');
+    await waitForDrawingReady(page); await controlDrawingRefresh(page,'arm');
     await datum.getByRole('button', { name: '決定', exact: true }).click();
     await expect(owner('gdt-2').locator('[aria-label="B"]')).toHaveCount(1);
+    await expectDrawingRefreshHeld(page); await expect(sheet).toHaveAttribute('aria-busy','true');
+    // Text has already changed, but Delete must preserve the drawing while the real source request is held.
+    await sheet.focus(); await page.keyboard.press('Delete');
+    await expect(tree.getByRole('button',{name:'データム 1 B',exact:true})).toBeVisible();
+    await expect(page.locator('.pcad-statusbar')).toContainText(drawingMessage('drawing.status.computing'));
+    await controlDrawingRefresh(page,'release'); await waitForDrawingReady(page);
     await sheet.focus(); await page.keyboard.press('Delete');
     await expect(owner('datum-1')).toHaveCount(0);
     await expect(page.getByRole('alert').filter({ hasText: drawingMessage('drawing.manufacturing.outputUnresolved') })).toBeVisible();
     await page.keyboard.press('Control+z'); await expect(owner('datum-1').locator('[aria-label="B"]')).toBeVisible();
     await expect(page.getByRole('alert').filter({ hasText: drawingMessage('drawing.manufacturing.outputUnresolved') })).toHaveCount(0);
-    await expect(page.locator('.pcad-statusbar')).not.toContainText('作り直しています');
+    await waitForDrawingReady(page);
     await expect(owner('gdt-1').locator('[aria-label="0.05"]')).toBeVisible();
     const bounds = await owner('gdt-1').locator('[aria-label="0.05"]').boundingBox(); if (bounds === null) throw new Error('公差枠なし');
     await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2); await page.mouse.down();

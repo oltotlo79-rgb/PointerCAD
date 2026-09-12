@@ -5,6 +5,16 @@ const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
 const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個|4分割の実描画性能|100フィーチャー・三面図・50寸法|板金100段の実描画性能|自動作図実行中の実描画性能/u;
 
+const FIREFOX_PREFERENCES: Record<string, boolean> = process.platform === 'win32' ? { 'webgl.angle.force-warp': true } : {};
+const FIREFOX_USE = {
+  ...devices['Desktop Firefox'],
+  // Same OS-provided software renderer locally and on Windows CI without a GPU.
+  // Mozilla: modules/libpref/init/StaticPrefList.yaml, webgl.angle.force-warp.
+  launchOptions: { firefoxUserPrefs: FIREFOX_PREFERENCES },
+};
+const WEB_STARTUP_TEST = /(?:^|[\\/])smoke\.spec\.ts$/u;
+const ELECTRON_STARTUP_TEST = /electron-startup\.spec\.ts$/u;
+
 export default defineConfig({
   testDir: './tests',
   // 50MB の WASM を読み込むため、通常の Web アプリより長く待つ(この2値は変えない)。
@@ -12,7 +22,9 @@ export default defineConfig({
   // 個々の expect の上限。カーネル読込み等の長い待ちは spec 側で明示しているため、
   // ここは通常の失敗検出を速くするために短くする(P2 タスク1、P1 の残件)。
   expect: { timeout: 30_000 },
-  reporter: [['list']],
+  // Publish each failing test as an annotation, so public CI evidence contains its
+  // cause even when downloading the complete Actions log requires authentication.
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   /*
    * 並列で走らせる本数を 2 に固定する(指定が無いと Playwright は「論理コア数 ÷ 2」を選び、
    * この機械(12 コア)では 6 になる)。検査は 1 本ごとに新しいブラウザ文脈を作り、文脈ごとに
@@ -28,6 +40,8 @@ export default defineConfig({
     // TestConfig直下ではなくPlaywrightのuseへ置く。遮られたclick/fillを3分待たせない。
     // カーネルや再計算の長い待機はexpect.poll側で明示しており、この上限には含まれない。
     actionTimeout: 15_000,
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
   projects: [
     {
@@ -41,7 +55,7 @@ export default defineConfig({
       // 切替が律速になる。WebGL専用のソフトウェア経路を明示する(実測5.0→42.3fps)。
       // Chromium公式: https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
       // opt-inはこのローカル検査ブラウザだけ。Web/desktopの製品起動には渡さない。
-      use: { launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader'] } },
+      use: { trace: 'off', launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader'] } },
     },
     {
       name: 'functional',
@@ -50,21 +64,29 @@ export default defineConfig({
       dependencies: ['viewport-performance'],
     },
     {
+      name: 'startup-firefox', testMatch: WEB_STARTUP_TEST, use: FIREFOX_USE,
+      dependencies: ['viewport-performance'],
+    },
+    {
       name: 'firefox',
       // Electron専用ケースの末尾がWebの名前と重なっても、Firefox枠へ混入させない。
-      testIgnore: ELECTRON_TEST_FILE,
+      testIgnore: [ELECTRON_TEST_FILE, WEB_STARTUP_TEST],
       // 実カーネル・保存再読込・復元・製作図・F1・CSPを既存の同じ操作で検査する。
       // 板金の操作検査は分割した新ファイルも自動的に対象へ入れる。
       testMatch: /(?:smoke|solid|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|sheet-[\w-]+)\.spec\.ts$/u,
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
-      use: { ...devices['Desktop Firefox'] },
+      use: FIREFOX_USE,
+      dependencies: ['viewport-performance', 'startup-firefox'],
+    },
+    {
+      name: 'startup-electron', testMatch: ELECTRON_STARTUP_TEST, workers: 1,
       dependencies: ['viewport-performance'],
     },
     {
       name: 'electron',
-      testMatch: ELECTRON_TEST_FILE,
+      testMatch: ELECTRON_TEST_FILE, testIgnore: ELECTRON_STARTUP_TEST,
       workers: 1,
-      dependencies: ['viewport-performance'],
+      dependencies: ['viewport-performance', 'startup-electron'],
     },
   ],
   webServer: {

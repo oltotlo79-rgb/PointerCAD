@@ -102,7 +102,8 @@ export function commitDrawingDimension(): boolean {
 export function deleteSelectedDrawingElements(): boolean {
   const state = useAppStore.getState();
   const drawing = state.drawing;
-  if (drawing === null || state.drawingBusy) return false;
+  if (drawing === null) return false;
+  if (state.drawingBusy) { state.setDrawingMessage(t('drawing.status.computing')); return false; }
   const ids = new Set(state.drawingSelectedIds);
   const dimensions = drawing.dimensions.filter((item) => !ids.has(item.id));
   const annotations = drawing.annotations.filter((item) => !ids.has(item.id));

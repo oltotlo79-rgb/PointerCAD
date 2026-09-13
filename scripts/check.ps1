@@ -32,6 +32,10 @@ param(
     # B3: hooks can consume a completed full-check receipt. Manual checks always execute.
     [ValidateSet('Manual', 'Commit', 'Push', 'Disabled')]
     [string]$ReceiptPhase = 'Manual',
+    # 2026-09-13: local checks follow the complete change scope; CI/release remain full.
+    [switch]$Full,
+    # pre-push passes the actual remote commit, never an inferred branch tip.
+    [string]$ComparisonBase = '',
     [ValidateRange(1, 10)]
     [int]$E2ERepeats = 1,
     # 診断用: 1〜4段を省きE2Eだけを実行する。最終のPushゲートは必ずこの指定なしで通す。
@@ -93,6 +97,18 @@ function Invoke-Check {
         Write-Host ""
         Write-Host "[NG] $Name が失敗しました(終了コード: $checkExitCode)" -ForegroundColor Red
         exit $checkExitCode
+    }
+}
+
+function Invoke-LocalPackageChecks {
+    param([string[]]$Packages)
+    foreach ($packageName in $Packages) {
+        $folder = if ($packageName -eq 'desktop') { 'apps/desktop' } else { "packages/$packageName" }
+        $packageFile = Join-Path (Get-Location).Path "$folder/package.json"
+        if (-not (Test-Path -LiteralPath $packageFile -PathType Leaf)) { throw "Required local package is missing: $packageName" }
+        $packageInfo = Get-Content -LiteralPath $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]::IsNullOrWhiteSpace([string]$packageInfo.scripts.test)) { throw "Required local test command is missing: $packageName" }
+        Invoke-Check "変更箇所の全ユニット検査: $packageName" pnpm @('--filter', "@pointercad/$packageName", 'run', 'test')
     }
 }
 
@@ -180,6 +196,25 @@ try {
     $hasE2E = $definedScripts -contains "test:e2e"
 
     $ordinaryGate = -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and -not $Install
+    $localScope = $null
+    if ($ordinaryGate -and -not $Full -and -not $isRunningOnCI -and $E2ERepeats -eq 1 -and $ReceiptPhase -ne 'Disabled') {
+        $scopeScript = Join-Path $scriptDirectory 'lib/local_change_scope.py'
+        if (Test-Path -LiteralPath $scopeScript -PathType Leaf) {
+            try {
+                $scopeArgs = @('-B', $scopeScript, '--root', $root, '--level', $Level, '--phase', $ReceiptPhase)
+                if (-not [string]::IsNullOrWhiteSpace($ComparisonBase)) { $scopeArgs += @('--base', $ComparisonBase) }
+                $scopeJson = & python @scopeArgs
+                if ($LASTEXITCODE -ne 0) { throw 'Local scope inspection failed' }
+                $candidateScope = ($scopeJson -join "`n") | ConvertFrom-Json
+                $allowedPackages = @('desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression')
+                if ($candidateScope.mode -eq 'targeted' -and @($candidateScope.packages).Count -gt 0 -and
+                    @($candidateScope.packages | Where-Object { $allowedPackages -notcontains $_ }).Count -eq 0) {
+                    $localScope = $candidateScope
+                    Write-Host "[検査範囲] 変更箇所別: $($localScope.reason) / $($localScope.packages -join ', ')。全検査は両OS CIで実施します。" -ForegroundColor Cyan
+                } else { Write-Host "[検査範囲] 全体: $($candidateScope.reason)" }
+            } catch { Write-Host "[検査範囲] 判定できないため全体検査へ戻します: $($_.Exception.Message)" }
+        } else { Write-Host '[検査範囲] 判定処理が無いため全体検査へ戻します' }
+    }
     $receiptPhaseMatches = ($ReceiptPhase -eq 'Commit' -and $Level -eq 'Commit') -or
         ($ReceiptPhase -eq 'Push' -and $Level -eq 'Push')
     if ($ordinaryGate -and $receiptPhaseMatches -and -not $isRunningOnCI) {
@@ -245,7 +280,8 @@ try {
                     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $copy.Path "scripts/check.selftest.ps1"))
                 Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
                 Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
-                Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
+                if ($null -ne $localScope) { Invoke-LocalPackageChecks -Packages @($localScope.packages) }
+                else { Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test") }
                 Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             }
             finally {
@@ -270,7 +306,7 @@ try {
             Write-Host "[警告] stage 済みのファイルが無いため、検査前後の比較を省略します" -ForegroundColor Yellow
         }
 
-        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly
+        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and $null -eq $localScope
         if ($E2EOnly -and -not $runE2E) {
             Write-Host "[NG] -E2EOnly を指定しましたが test:e2e スクリプトがありません" -ForegroundColor Red
             exit 1
@@ -296,7 +332,7 @@ try {
         # They must finish before recording the inputs of the five product stages.
         # The original source snapshot still guards the entire check, including (0).
         # A pre-push fallback never issues a reusable success for a failed send.
-        if ($ReceiptPhase -eq 'Manual' -and -not $isRunningOnCI -and -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and $hasE2E) {
+        if ($ReceiptPhase -eq 'Manual' -and -not $isRunningOnCI -and -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and $hasE2E -and $null -eq $localScope) {
             $receiptStart = Invoke-ValidationReceipt -Root $root -Action start -Repeats $E2ERepeats
             if ($receiptStart.ok) { $receiptToken = $receiptStart.token }
             else { Write-Host "[検査] B3の開始記録を作成できませんでした: $($receiptStart.reason)" }
@@ -327,7 +363,8 @@ try {
             Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
             Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
             if (-not $StaticOnly) {
-                Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
+                if ($null -ne $localScope) { Invoke-LocalPackageChecks -Packages @($localScope.packages) }
+                else { Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test") }
                 Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             }
         }
@@ -379,6 +416,9 @@ try {
     }
     elseif ($E2EOnly) {
         Write-Host "[OK] 指定したE2E診断に合格しました(最終のPushゲートには数えません)" -ForegroundColor Green
+    }
+    elseif ($null -ne $localScope) {
+        Write-Host '[OK] 変更箇所別のローカル検査に合格しました。完成確定には同一SHAの両OS CI全検査が必要です。' -ForegroundColor Green
     }
     else {
         Write-Host "[OK] 全ての検査に合格しました" -ForegroundColor Green

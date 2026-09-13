@@ -584,6 +584,14 @@ if (Test-Path -LiteralPath $receiptSelftest -PathType Leaf) {
     Assert-True $false 'B3の自己試験が存在すること'
 }
 
+$scopeSelftest = Join-Path $PSScriptRoot 'local-change-scope.selftest.py'
+if (Test-Path -LiteralPath $scopeSelftest -PathType Leaf) {
+    & python -B -X utf8 $scopeSelftest
+    Assert-True ($LASTEXITCODE -eq 0) '変更範囲・実Gitフック・不明時の全検査・CI全5段を自己試験する'
+} else {
+    Assert-True $false '変更箇所別の検査範囲の自己試験が存在すること'
+}
+
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red
     exit 1

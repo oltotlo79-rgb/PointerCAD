@@ -8,3 +8,7 @@ scripts/hooks/pre-push text eol=lf
 # Windows PowerShell 5.1 がANSIとして読み、日本語が化けて構文エラーになる。
 # 2026-09-01 に本リポジトリで実測)。改行はCRLFのままでよい。
 *.ps1 text
+
+# 許諾原文は取得元と同じバイト列で検証・配布する。LF/CRLFが原文ごとに
+# 異なるため、保存時も取り出し時もGitの改行変換を適用しない。
+docs/standards/licenses/*.txt -text

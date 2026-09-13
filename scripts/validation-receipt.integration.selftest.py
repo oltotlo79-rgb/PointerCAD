@@ -50,7 +50,8 @@ class ReceiptHookTests(unittest.TestCase):
         for relative in ('check.ps1', 'check-commit-batch.ps1', 'hooks/pre-commit', 'hooks/pre-push',
                          'lib/gitTreeGuard.ps1', 'lib/pushTreeFingerprint.ps1', 'lib/directoryLinks.ps1',
                          'lib/commitBatchGuard.ps1', 'lib/validationReceipt.ps1',
-                         'lib/validation_receipt.py', 'lib/validationRuntime.mjs', 'lib/WindowsValidationQos.cs'):
+                         'lib/validation_receipt.py', 'lib/validationRuntime.mjs', 'lib/WindowsValidationQos.cs',
+                         'lib/local_change_scope.py'):
             target = self.root / 'scripts' / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(SOURCE / relative, target)

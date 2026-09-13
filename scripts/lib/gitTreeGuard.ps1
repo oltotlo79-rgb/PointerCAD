@@ -216,13 +216,35 @@ function New-StagedTreeWorktree {
     # git 呼び出しへ紛れ込まないよう一時的に消す(冒頭のコメント、rules/06-過去の失敗と対策.md 10.7)。
     $savedGitEnv = Clear-InheritedGitEnv
     try {
+        $usingOverride = -not [string]::IsNullOrWhiteSpace($PatchFileOverride)
+        $checkoutArguments = @('worktree', 'add', '--detach', '--quiet')
+        if (-not $usingOverride) { $checkoutArguments += '--no-checkout' }
+        $checkoutArguments += @('--', $worktreePath, 'HEAD')
         $global:LASTEXITCODE = 0
-        & git -C $Root worktree add --detach --quiet -- $worktreePath HEAD
+        & git -C $Root @checkoutArguments
         if ($LASTEXITCODE -ne 0) {
             return [pscustomobject]@{ Ok = $false; Path = $worktreePath; Reason = "git worktree add に失敗しました(終了コード: $LASTEXITCODE。詳細はコンソール出力を参照)" }
         }
 
-        $usingOverride = -not [string]::IsNullOrWhiteSpace($PatchFileOverride)
+        if (-not $usingOverride) {
+            # Materialize the complete staged tree once, using its own attributes from
+            # the private index. Applying an attributes-only patch after HEAD checkout
+            # leaves unchanged files converted with the old rules (06 section 10.136).
+            $stagedTree = (& git -C $Root write-tree | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or $stagedTree -notmatch '^[a-f0-9]{40}$') {
+                return [pscustomobject]@{ Ok = $false; Path = $worktreePath; Reason = 'Cannot read the complete staged tree' }
+            }
+            & git -C $worktreePath read-tree --reset $stagedTree
+            if ($LASTEXITCODE -ne 0) {
+                return [pscustomobject]@{ Ok = $false; Path = $worktreePath; Reason = 'Cannot prepare the private staged index' }
+            }
+            & git -C $worktreePath checkout-index --all --force
+            if ($LASTEXITCODE -ne 0) {
+                return [pscustomobject]@{ Ok = $false; Path = $worktreePath; Reason = 'Cannot materialize the staged files' }
+            }
+            return [pscustomobject]@{ Ok = $true; Path = $worktreePath; Reason = $null }
+        }
+
         $patchFile = if ($usingOverride) { $PatchFileOverride } else { Join-Path ([IO.Path]::GetTempPath()) ("pointercad-staged-" + [Guid]::NewGuid().ToString("N") + ".patch") }
         try {
             if (-not $usingOverride) {

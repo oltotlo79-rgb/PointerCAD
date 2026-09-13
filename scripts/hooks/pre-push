@@ -28,16 +28,19 @@ fi
 head_sha=$(git -C "$repo_root" rev-parse HEAD) || exit 1
 update_count=0
 receipt_phase=Push
+comparison_base=
 while read -r local_ref local_sha remote_ref remote_sha; do
     update_count=$((update_count + 1))
     if [ "$local_sha" != "$head_sha" ]; then receipt_phase=Disabled; fi
+    comparison_base=$remote_sha
 done
 if [ "$update_count" -eq 0 ]; then
     printf '%s\n' '[OK] 送信する変更がありません'
     exit 0
 fi
+if [ "$update_count" -ne 1 ]; then receipt_phase=Disabled; fi
 
-"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Push -ReceiptPhase "$receipt_phase"
+"$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$check_script" -RepositoryRoot "$repo_root" -Level Push -ReceiptPhase "$receipt_phase" -ComparisonBase "$comparison_base"
 check_status=$?
 
 if [ "$check_status" -ne 0 ]; then

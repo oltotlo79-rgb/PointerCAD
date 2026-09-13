@@ -1,5 +1,9 @@
 ﻿$ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'lib\gitTreeGuard.ps1')
+$isolatedEntry = Start-IsolatedGitSelftest -ScriptPath $MyInvocation.MyCommand.Path
+if ($isolatedEntry.Restarted) { exit $isolatedEntry.ExitCode }
+
 $libraryPath = Join-Path $PSScriptRoot 'lib\commitBatchGuard.ps1'
 if (-not (Test-Path -LiteralPath $libraryPath -PathType Leaf)) {
     Write-Host "[NG] 一括コミット検査のライブラリが見つかりません: $libraryPath" -ForegroundColor Red
@@ -52,6 +56,13 @@ New-Item -ItemType Directory -Path (Join-Path $tempRoot 'packages\demo') -Force 
 
 try {
     & git -C $tempRoot init --quiet | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $tempRoot '.git') -PathType Container)) {
+        throw '一括件数の自己試験用リポジトリを初期化できませんでした'
+    }
+    $initialRoot = (Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('rev-parse', '--show-toplevel')).Trim()
+    if ([IO.Path]::GetFullPath($initialRoot) -ne [IO.Path]::GetFullPath($tempRoot)) {
+        throw '一括件数の自己試験の変更先が専用リポジトリと一致しません'
+    }
     & git -C $tempRoot config user.email 'batchguard@example.invalid' | Out-Null
     & git -C $tempRoot config user.name 'commit batch guard selftest' | Out-Null
     & git -C $tempRoot checkout --quiet -b main | Out-Null

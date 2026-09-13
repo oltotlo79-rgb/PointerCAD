@@ -20,6 +20,7 @@ GATE_FILES = {
     'scripts/check.ps1', 'scripts/check.selftest.ps1', 'scripts/hooks/pre-commit', 'scripts/hooks/pre-push',
     'scripts/lib/local_change_scope.py', 'scripts/local-change-scope.selftest.py',
     'scripts/lib/gitTreeGuard.ps1',
+    'scripts/check-commit-batch.selftest.ps1', 'scripts/git-selftest-environment.selftest.py',
     'scripts/hooks/commit-msg', 'scripts/lib/commit_message.py', 'scripts/commit-message.selftest.py',
     'scripts/validation-receipt.integration.selftest.py',
 }

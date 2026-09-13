@@ -18,6 +18,9 @@ if (-not (Test-Path -LiteralPath $libPath -PathType Leaf)) {
 }
 . $libPath
 
+$isolatedEntry = Start-IsolatedGitSelftest -ScriptPath $MyInvocation.MyCommand.Path
+if ($isolatedEntry.Restarted) { exit $isolatedEntry.ExitCode }
+
 $failures = 0
 
 function Assert-True {
@@ -49,6 +52,13 @@ try {
     Push-Location $tempRoot
     try {
         & git init --quiet . 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $tempRoot '.git') -PathType Container)) {
+            throw '自己試験の専用リポジトリを初期化できませんでした'
+        }
+        $initialRoot = (Read-GitSnapshotMetadata -Root $tempRoot -Arguments @('rev-parse', '--show-toplevel')).Trim()
+        if ([IO.Path]::GetFullPath($initialRoot) -ne [IO.Path]::GetFullPath($tempRoot)) {
+            throw '自己試験の変更先が専用リポジトリと一致しません'
+        }
         & git config user.email "selftest@example.invalid" | Out-Null
         & git config user.name "check.selftest" | Out-Null
         & git config core.autocrlf false | Out-Null
@@ -593,6 +603,9 @@ if (Test-Path -LiteralPath $receiptSelftest -PathType Leaf) {
 } else {
     Assert-True $false 'B3の自己試験が存在すること'
 }
+
+& python -B -X utf8 (Join-Path $PSScriptRoot 'git-selftest-environment.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '自己試験がフックの保存先を引き継がず、通常・worktree・相対index・失敗でも元の履歴と設定を保つ'
 
 $scopeSelftest = Join-Path $PSScriptRoot 'local-change-scope.selftest.py'
 if (Test-Path -LiteralPath $scopeSelftest -PathType Leaf) {

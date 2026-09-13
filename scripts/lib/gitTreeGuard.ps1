@@ -58,6 +58,24 @@ function Restore-InheritedGitEnv {
     }
 }
 
+# 自己試験は別リポジトリを作る。フックの対象を継承したままgit init/config/addを実行しない。
+# 全試験を同じ入口の子プロセスで実行し、終了コードと呼出元の環境をそのまま保つ。
+function Start-IsolatedGitSelftest {
+    param([Parameter(Mandatory)][string]$ScriptPath)
+    $saved = Clear-InheritedGitEnv
+    if ($saved.Count -eq 0) {
+        return [pscustomobject]@{ Restarted = $false; ExitCode = 0 }
+    }
+    try {
+        $selftestShell = (Get-Process -Id $PID).Path
+        & $selftestShell -NoProfile -ExecutionPolicy Bypass -File $ScriptPath | Out-Host
+        $selftestExitCode = $LASTEXITCODE
+    } finally {
+        Restore-InheritedGitEnv -Saved $saved
+    }
+    return [pscustomobject]@{ Restarted = $true; ExitCode = $selftestExitCode }
+}
+
 # コンソール出力符号化を一時的にUTF-8へ切り替えてから $ScriptBlock(git呼び出し)を実行する。
 # コンソールハンドルが無い等の環境で切替自体が失敗しても、呼び出しは続行する(fail-open)。
 # quotepath=false と -z による例外回避は符号化の成否に関わらず効くため、致命的にはしない。

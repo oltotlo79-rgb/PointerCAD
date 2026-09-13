@@ -1,4 +1,7 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Session } from 'node:inspector';
+import { writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createMathBackend } from './createMathBackend.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { createFunctionImplicitEvaluator } from './functionImplicitEvaluation.js';
@@ -8,6 +11,11 @@ import type { MathExecutionBackend } from './mathWorkExecution.js';
 
 let backend: MathExecutionBackend;
 beforeAll(()=>{ backend=createMathBackend(); });
+const geometryRecords:unknown[]=[];
+afterAll(()=>{
+  const destination=process.env.POINTERCAD_IMPLICIT_CPU_PROFILE;
+  if(destination)writeFileSync(destination+'.geometry.json',JSON.stringify(geometryRecords),{flag:'wx'});
+});
 const options:ImplicitGridOptions = {minimum:[-2,-2,-2],maximum:[2,2,2],tolerance:0.5,
   maximumSamples:200_000,maximumCells:400_000,maximumTriangles:200_000,maximumDepth:12};
 function grid(source:string, changes:Partial<ImplicitGridOptions>={}):ImplicitGridResult {
@@ -15,13 +23,36 @@ function grid(source:string, changes:Partial<ImplicitGridOptions>={}):ImplicitGr
   return buildImplicitGrid(createFunctionImplicitEvaluator(definition,[],{backend,shouldStop:()=>undefined}),{...options,...changes});
 }
 function mesh(source:string, changes:Partial<ImplicitGridOptions>={}):ImplicitMesh {
+  const started=performance.now();
   const sampled=grid(source,changes); if(sampled.status!=='ready') throw new Error(JSON.stringify(sampled));
+  const sampledAt=performance.now();
   expect(sampled.maximumCellDiameter).toBeLessThanOrEqual(changes.tolerance ?? options.tolerance);
   const definition=createFunctionMathSource(source,'text','radian',{axes:['X','Y','Z'],parameters:[],coefficients:[]},backend);
   const evaluator=createFunctionImplicitEvaluator(definition,[],{backend,shouldStop:()=>undefined});
+  const preparedAt=performance.now();
   const result=meshImplicitTetrahedra(sampled.cells,{maximumVertices:200_000,maximumTriangles:200_000,tolerance:changes.tolerance??options.tolerance,
     regularRegion:(minimum,maximum)=>evaluator.enclosure(minimum,maximum).continuous && evaluator.partials(minimum,maximum).some(value=>value!==null && (value.lower>0 || value.upper<0))});
-  if(result.status!=='ready') throw new Error(JSON.stringify(result)); return result.mesh;
+  if(result.status!=='ready') throw new Error(JSON.stringify(result));
+  const timing={gridMs:sampledAt-started,prepareMs:preparedAt-sampledAt,
+    meshMs:performance.now()-preparedAt,samples:sampled.samples,visited:sampled.visited,cells:sampled.cells.length,
+    vertices:result.mesh.vertices.length,triangles:result.mesh.triangles.length};
+  console.log('[実測] 陰関数メッシュ',JSON.stringify(timing));
+  if(process.env.POINTERCAD_IMPLICIT_CPU_PROFILE)geometryRecords.push({source,changes,...timing,
+    gridSha256:createHash('sha256').update(JSON.stringify(sampled)).digest('hex'),
+    meshSha256:createHash('sha256').update(JSON.stringify(result.mesh)).digest('hex')});
+  return result.mesh;
+}
+async function withImplicitProfile(work:()=>void):Promise<void> {
+  const destination=process.env.POINTERCAD_IMPLICIT_CPU_PROFILE;
+  if(!destination){work();return;}
+  const session=new Session();session.connect();
+  const post=(method:'Profiler.enable'|'Profiler.start'|'Profiler.stop')=>new Promise<unknown>((resolve,reject)=>{
+    session.post(method,(error,result)=>error?reject(error):resolve(result));
+  });
+  try {
+    await post('Profiler.enable');await post('Profiler.start');
+    try {work();} finally {writeFileSync(destination,JSON.stringify(await post('Profiler.stop')),{flag:'wx'});}
+  } finally {session.disconnect();}
 }
 function edgeCounts(mesh:ImplicitMesh):readonly {readonly count:number;readonly orientation:number}[] {
   const edges=new Map<string,{count:number;orientation:number}>();
@@ -38,11 +69,11 @@ function volume(mesh:ImplicitMesh):number {
   },0);
 }
 describe('XYZの有限範囲から陰関数の接続した等値面を作る',()=>{
-  it('トーラスの全辺の共有・向きと体積を保つ',()=>{
+  it('トーラスの全辺の共有・向きと体積を保つ',async()=>withImplicitProfile(()=>{
     const torus=mesh('(X^2+Y^2+Z^2+4-0.25)^2-16*(X^2+Y^2)',{minimum:[-3,-3,-1],maximum:[3,3,1],tolerance:1});
     expect(edgeCounts(torus).filter(edge=>edge.count!==2 || edge.orientation!==0)).toEqual([]);
     const measured=volume(torus); expect(measured).toBeGreaterThan(Math.PI**2*0.85);expect(measured).toBeLessThan(Math.PI**2*1.05);
-  });
+  }));
   it('離れた2つの球面を接続せず、全成分を保持する',()=>{
     const separated=mesh('((X-1)^2+Y^2+Z^2-0.25)*((X+1)^2+Y^2+Z^2-0.25)');
     const joined=separated.triangles.filter(triangle=>{

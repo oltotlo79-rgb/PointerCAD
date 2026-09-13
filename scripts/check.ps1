@@ -14,7 +14,8 @@
 # `git apply` で載せ、node_modules だけジャンクションで元へ向けてから写しの中で検査する
 # (並列作業中の他担当の未 stage な書きかけに影響されないため)。-Level Push は従来どおり
 # 作業ツリー全体を対象にする(並列編集が無い前提)。
-# 既定は -Level Push(全部)。pre-commit だけが -Level Commit を渡す。
+# 既定は -Level Push。承認済みの変更範囲から関係先を選び、CI/Full/判定不能では全部を検査する。
+# pre-commit だけが -Level Commit を渡す。
 # 修正中の短いフィードバックには -E2EOnly と -E2EGrep を使えるが、最終合格の代用にはしない。
 # ルート package.json が無い間(P0未着手)は検査対象なしとして合格扱い。
 # typecheck / lint / test / build のスクリプト欠落は失敗(fail-closed)。
@@ -204,6 +205,7 @@ try {
 
     $ordinaryGate = -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and -not $Install
     $localScope = $null
+    $localRuntimeChecks = $false
     if ($ordinaryGate -and -not $Full -and -not $isRunningOnCI -and $E2ERepeats -eq 1 -and $ReceiptPhase -ne 'Disabled') {
         $scopeScript = Join-Path $scriptDirectory 'lib/local_change_scope.py'
         if (Test-Path -LiteralPath $scopeScript -PathType Leaf) {
@@ -217,9 +219,17 @@ try {
                 if ($candidateScope.mode -eq 'targeted' -and @($candidateScope.packages).Count -gt 0 -and
                     @($candidateScope.packages | Where-Object { $allowedPackages -notcontains $_ }).Count -eq 0) {
                     $localScope = $candidateScope
+                    if ($candidateScope.PSObject.Properties.Name -contains 'runtimeChecks') {
+                        if ($candidateScope.runtimeChecks -isnot [bool]) { throw 'Invalid runtime scope flag' }
+                        $localRuntimeChecks = $candidateScope.runtimeChecks
+                    }
                     Write-Host "[検査範囲] 変更箇所別: $($localScope.reason) / $($localScope.packages -join ', ')。全検査は両OS CIで実施します。" -ForegroundColor Cyan
                 } else { Write-Host "[検査範囲] 全体: $($candidateScope.reason)" }
-            } catch { Write-Host "[検査範囲] 判定できないため全体検査へ戻します: $($_.Exception.Message)" }
+            } catch {
+                $localScope = $null
+                $localRuntimeChecks = $false
+                Write-Host "[検査範囲] 判定できないため全体検査へ戻します: $($_.Exception.Message)"
+            }
         } else { Write-Host '[検査範囲] 判定処理が無いため全体検査へ戻します' }
     }
     $receiptPhaseMatches = ($ReceiptPhase -eq 'Commit' -and $Level -eq 'Commit') -or
@@ -313,7 +323,7 @@ try {
             Write-Host "[警告] stage 済みのファイルが無いため、検査前後の比較を省略します" -ForegroundColor Yellow
         }
 
-        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and $null -eq $localScope
+        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and ($null -eq $localScope -or $localRuntimeChecks)
         if ($E2EOnly -and -not $runE2E) {
             Write-Host "[NG] -E2EOnly を指定しましたが test:e2e スクリプトがありません" -ForegroundColor Red
             exit 1
@@ -380,6 +390,12 @@ try {
                 $repeatLabel = ""
                 if ($E2ERepeats -gt 1) { $repeatLabel = " ($e2eRun/$E2ERepeats)" }
                 $e2eArgs = @("run", "test:e2e")
+                if ($localRuntimeChecks) {
+                    # All unit tests of changed packages and their consumers ran above.
+                    # Retain strict rendering and actual Firefox/Electron startup locally;
+                    # the same commit's CI and release -Full run every existing operation.
+                    $e2eArgs += @('--project=viewport-performance', '--project=startup-firefox', '--project=startup-electron')
+                }
                 if ($E2EOnly -and -not [string]::IsNullOrWhiteSpace($E2EGrep)) {
                     # pnpm run はスクリプト名より後ろを直接転送する。ここに区切りの -- を足すと、
                     # Playwright側で「以後はオプションではない」と解釈されgrepが効かなくなる。

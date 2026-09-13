@@ -389,36 +389,40 @@ export function tessellate(
 
     for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
       const subShape = subShapes.FindKey(subShapeIndex);
-      if (subShape.ShapeType() !== faceType) {
-        continue;
-      }
-
-      // この面の三角形は、いま積み終わっている三角形の次から始まる。
-      const triangleOffset = indices.length / 3;
-      const perFace = createAllocations();
-
       try {
-        const face = perFace.keep(oc.TopoDS.Face_1(subShape));
-        const location = perFace.keep(new oc.TopLoc_Location_1());
-        const triangulationHandle = perFace.keep(oc.BRep_Tool.Triangulation(face, location, 0));
-
-        // 三角形分割が付かなかった面(細すぎる面など)は三角形を 1 枚も積まないが、
-        // 範囲表には 0 枚として積む(下の push)。飛ばすと以降の面の通し番号がずれる。
-        if (!triangulationHandle.IsNull()) {
-          appendFaceMesh(oc, face, triangulationHandle, location, positions, normals, indices);
+        if (subShape.ShapeType() !== faceType) {
+          continue;
         }
-      } finally {
-        perFace.release();
-      }
 
-      const faceTriangleCount = indices.length / 3 - triangleOffset;
-      if (faceTriangleCount === 0) {
-        missingTriangulationFaces += 1;
+        // この面の三角形は、いま積み終わっている三角形の次から始まる。
+        const triangleOffset = indices.length / 3;
+        const perFace = createAllocations();
+
+        try {
+          const face = perFace.keep(oc.TopoDS.Face_1(subShape));
+          const location = perFace.keep(new oc.TopLoc_Location_1());
+          const triangulationHandle = perFace.keep(oc.BRep_Tool.Triangulation(face, location, 0));
+
+          // 三角形分割が付かなかった面(細すぎる面など)は三角形を 1 枚も積まないが、
+          // 範囲表には 0 枚として積む(下の push)。飛ばすと以降の面の通し番号がずれる。
+          if (!triangulationHandle.IsNull()) {
+            appendFaceMesh(oc, face, triangulationHandle, location, positions, normals, indices);
+          }
+        } finally {
+          perFace.release();
+        }
+
+        const faceTriangleCount = indices.length / 3 - triangleOffset;
+        if (faceTriangleCount === 0) {
+          missingTriangulationFaces += 1;
+        }
+        faceRanges.push({
+          triangleOffset,
+          triangleCount: faceTriangleCount,
+        });
+      } finally {
+        subShape.delete();
       }
-      faceRanges.push({
-        triangleOffset,
-        triangleCount: faceTriangleCount,
-      });
     }
   } finally {
     shared.release();

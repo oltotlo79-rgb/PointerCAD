@@ -1,5 +1,6 @@
 """Exercise local scope against real Git indexes and real PowerShell/hooks."""
 import importlib.util
+import json
 import os
 import shutil
 from pathlib import Path
@@ -20,6 +21,29 @@ def load(name, path):
 
 scope = load('local_change_scope', HERE / 'lib/local_change_scope.py')
 hooks = load('receipt_hook_fixtures', HERE / 'validation-receipt.integration.selftest.py')
+
+
+# Deliberately independent from production's folder mapping and closure algorithm.
+FIXTURE_FOLDERS = {
+    'expression': 'packages/expression', 'kernel': 'packages/kernel',
+    'model': 'packages/model', 'drawing': 'packages/drawing', 'io': 'packages/io',
+    'ui': 'packages/ui', 'help-content': 'packages/help-content',
+    'test-utils': 'packages/test-utils', 'desktop': 'apps/desktop', 'web': 'apps/web',
+}
+FIXTURE_DEPENDENCIES = {
+    'model': ['expression', 'kernel', 'drawing'], 'io': ['model'],
+    'ui': ['model', 'io', 'help-content'], 'desktop': ['ui'], 'web': ['ui'],
+}
+
+
+def install_workspace_fixture(write):
+    for name, folder in FIXTURE_FOLDERS.items():
+        write(folder + '/package.json', json.dumps({
+            'name': '@pointercad/' + name,
+            'scripts': {} if name == 'web' else {'test': 'fixture'},
+            'dependencies': {'@pointercad/' + dependency: 'workspace:*'
+                             for dependency in FIXTURE_DEPENDENCIES.get(name, [])},
+        }))
 
 
 class ScopeTests(unittest.TestCase):
@@ -54,6 +78,123 @@ class ScopeTests(unittest.TestCase):
     def inspect(self, level='Push', phase='Manual', base='', force=False):
         with patch.dict(os.environ, self.environment, clear=True):
             return scope.inspect(self.root, level, phase, base, force)
+
+    def install_workspace(self):
+        install_workspace_fixture(self.write)
+        self.git('add', '.')
+        self.git('commit', '-qm', 'complete dependency fixture')
+        self.base = self.git('rev-parse', 'HEAD').decode().strip()
+        self.git('update-ref', 'refs/remotes/origin/main', self.base)
+
+    def test_runtime_changes_select_direct_and_indirect_consumers_with_performance_and_startup(self):
+        self.install_workspace()
+        self.write('packages/expression/src/evaluate.ts', 'changed mathematics')
+        result = self.inspect()
+        self.assertEqual(result['mode'], 'targeted')
+        self.assertEqual(result['packages'], ['expression', 'desktop', 'io', 'model', 'test-utils', 'ui'])
+        self.assertTrue(result['runtimeChecks'])
+        self.assertEqual(result['changedPackages'], ['expression'])
+        self.write('packages/drawing/src/project.ts', 'changed drawing')
+        result = self.inspect()
+        self.assertEqual(result['packages'], ['expression', 'desktop', 'drawing', 'io', 'model', 'test-utils', 'ui'])
+
+    def test_runtime_deletion_rename_and_all_unsent_commits_keep_their_consumers(self):
+        self.install_workspace()
+        self.git('rm', 'packages/model/src/runtime.ts')
+        self.git('commit', '-qm', 'remove runtime')
+        self.write('README.md', 'last commit is documentation')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'documentation')
+        result = self.inspect('Push', 'Push', self.base)
+        self.assertEqual(result['packages'], ['desktop', 'help-content', 'io', 'model', 'test-utils', 'ui'])
+        self.assertTrue(result['runtimeChecks'])
+        self.write('packages/kernel/src/original.ts', 'kernel')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'new kernel source')
+        self.git('mv', 'packages/kernel/src/original.ts', 'docs/moved.md')
+        self.assertIn('kernel', self.inspect('Commit', 'Commit')['packages'])
+
+    def test_runtime_commit_reads_staged_dependencies_while_manual_sees_unstaged_manifest_changes(self):
+        self.install_workspace()
+        self.write('packages/model/src/runtime.ts', 'changed')
+        self.git('add', 'packages/model/src/runtime.ts')
+        self.write('packages/ui/package.json', json.dumps({'name': '@pointercad/ui', 'scripts': {'test': 'fixture'}}))
+        staged = self.inspect('Commit', 'Commit')
+        self.assertTrue(staged['runtimeChecks'])
+        self.assertEqual(staged['packages'], ['desktop', 'io', 'model', 'test-utils', 'ui'])
+        self.assertEqual(self.inspect()['mode'], 'full')
+
+    def test_peer_optional_dev_dependencies_and_cycles_do_not_omit_consumers(self):
+        self.install_workspace()
+        for name, field, target in [('drawing', 'peerDependencies', 'expression'),
+                                    ('kernel', 'optionalDependencies', 'drawing'),
+                                    ('expression', 'devDependencies', 'kernel')]:
+            path = FIXTURE_FOLDERS[name] + '/package.json'
+            manifest = json.loads((self.root / path).read_text(encoding='utf8'))
+            manifest[field] = {'@pointercad/' + target: 'workspace:*'}
+            self.write(path, json.dumps(manifest))
+        self.git('add', '.')
+        self.git('commit', '-qm', 'cyclic fixture dependencies')
+        self.git('update-ref', 'refs/remotes/origin/main', self.git('rev-parse', 'HEAD').decode().strip())
+        self.write('packages/expression/src/evaluate.ts', 'changed')
+        result = self.inspect()
+        self.assertEqual(result['packages'], ['expression', 'desktop', 'drawing', 'io', 'kernel', 'model', 'test-utils', 'ui'])
+
+    def test_missing_unknown_invalid_manifests_and_unmapped_local_dependencies_fall_back(self):
+        self.install_workspace()
+        self.write('packages/model/src/runtime.ts', 'changed')
+        self.git('add', 'packages/model/src/runtime.ts')
+        path = 'packages/ui/package.json'
+        original = (self.root / path).read_text(encoding='utf8')
+        for invalid in [None, [], {'name': '@pointercad/wrong'},
+                        {'name': '@pointercad/ui', 'scripts': {}},
+                        {'name': '@pointercad/ui', 'scripts': {'test': 'fixture'}, 'dependencies': {'other': 'file:../other'}},
+                        {'name': '@pointercad/ui', 'scripts': {'test': 'fixture'}, 'dependencies': {'@pointercad/unknown': 'workspace:*'}}]:
+            with self.subTest(invalid=invalid):
+                self.write(path, json.dumps(invalid))
+                self.git('add', path)
+                with self.assertRaises(ValueError):
+                    scope.workspace_dependencies(self.git)
+                self.assertEqual(self.inspect('Commit', 'Commit')['mode'], 'full')
+        self.write(path, '{broken json')
+        self.git('add', path)
+        with self.assertRaises(ValueError):
+            scope.workspace_dependencies(self.git)
+        self.write(path, original)
+        self.git('add', path)
+        self.git('rm', 'packages/drawing/package.json')
+        with self.assertRaises(ValueError):
+            scope.workspace_dependencies(self.git)
+        self.assertEqual(self.inspect('Commit', 'Commit')['mode'], 'full')
+
+    def test_deleted_git_links_and_unknown_workspace_manifests_remain_full(self):
+        self.install_workspace()
+        self.write('link-target.txt', 'target')
+        self.git('add', '.')
+        blob = subprocess.run(['git', '-C', str(self.root), 'hash-object', '-w', '--stdin'],
+                              input=b'../../../../link-target.txt', env=self.environment,
+                              capture_output=True, check=True, timeout=15).stdout.decode().strip()
+        link = 'packages/model/src/linked.ts'
+        # An index link reproduces removed-link detection without requiring OS link privileges.
+        self.git('update-index', '--add', '--cacheinfo', '120000,' + blob + ',' + link)
+        self.git('commit', '-qm', 'link in baseline')
+        self.git('update-index', '--force-remove', link)
+        self.assertEqual(self.inspect('Commit', 'Commit')['mode'], 'full')
+        self.write('packages/new/package.json', '{"name":"@pointercad/new"}')
+        self.git('add', 'packages/new/package.json')
+        with self.assertRaises(ValueError):
+            scope.workspace_dependencies(self.git)
+
+    def test_web_runtime_retains_global_builds_and_local_startup_without_inventing_a_unit_command(self):
+        self.install_workspace()
+        self.write('apps/web/src/main.tsx', 'changed')
+        result = self.inspect()
+        self.assertEqual(result['packages'], ['test-utils'])
+        self.assertTrue(result['runtimeChecks'])
+        self.assertEqual(result['changedPackages'], ['web'])
+        self.assertEqual(self.inspect(force=True)['mode'], 'full')
+        with patch.dict(os.environ, {'CI': 'true'}):
+            self.assertEqual(scope.inspect(self.root, 'Push', 'Manual', '', False)['mode'], 'full')
 
     def test_notice_and_documentation_are_targeted_but_runtime_is_not(self):
         self.write('README.md', 'updated')
@@ -170,6 +311,63 @@ class ScopeHookTests(unittest.TestCase):
         fixture.git('-c', 'core.hooksPath=', 'commit', '-qm', 'scope fixture inputs')
         self.base = fixture.git('rev-parse', 'HEAD').strip()
         fixture.git('update-ref', 'refs/remotes/origin/main', self.base)
+
+    def install_runtime_workspace(self):
+        fixture = self.fixture
+        install_workspace_fixture(fixture.write)
+        fixture.git('add', '.')
+        # Seed only the throwaway remote; the changes under test use the real hooks below.
+        fixture.git('-c', 'core.hooksPath=', 'commit', '-qm', 'complete workspace fixture')
+        fixture.git('-c', 'core.hooksPath=', 'push', 'origin', 'HEAD:main')
+        self.base = fixture.git('rev-parse', 'HEAD').strip()
+
+    def test_runtime_commit_and_actual_push_keep_consumers_and_startup_then_ci_runs_everything(self):
+        self.install_runtime_workspace()
+        fixture = self.fixture
+        fixture.write('packages/expression/src/evaluate.ts', 'changed mathematics')
+        fixture.git('add', 'packages/expression/src/evaluate.ts')
+        fixture.git('commit', '-qm', 'runtime change')
+        unit_calls = ['--filter @pointercad/' + name + ' run test'
+                      for name in ['expression', 'desktop', 'io', 'model', 'test-utils', 'ui']]
+        expected_checks = ['run typecheck', 'run lint', *unit_calls, 'run build']
+        self.assertEqual(fixture.calls(), expected_checks)
+        before = len(fixture.calls())
+        fixture.git('push', 'origin', 'HEAD:main')
+        actual_push = fixture.calls()[before:]
+        self.assertIn('exec playwright install chromium firefox', actual_push)
+        self.assertIn('--filter @pointercad/desktop exec install-electron', actual_push)
+        self.assertEqual([call for call in actual_push if call.startswith('run ') or call in unit_calls],
+                         expected_checks + ['run test:e2e --project=viewport-performance --project=startup-firefox --project=startup-electron'])
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
+        fixture.env['CI'] = 'true'
+        before = len(fixture.calls())
+        fixture.full_check()
+        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    def test_runtime_manual_scope_has_startup_and_explicit_full_has_no_project_filter(self):
+        self.install_runtime_workspace()
+        fixture = self.fixture
+        fixture.write('packages/model/src/runtime.ts', 'changed model')
+        fixture.full_check()
+        self.assertEqual(fixture.calls()[-1], 'run test:e2e --project=viewport-performance --project=startup-firefox --project=startup-electron')
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
+        before = len(fixture.calls())
+        fixture.command([fixture.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                         str(fixture.root / 'scripts/check.ps1'), '-Full'])
+        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    def test_runtime_failure_stops_before_build_and_invalidates_any_old_receipt(self):
+        self.install_runtime_workspace()
+        fixture = self.fixture
+        fixture.write('packages/model/src/runtime.ts', 'changed model')
+        fixture.write('.git/fail-step', '--filter @pointercad/model run test')
+        fixture.write('.git/validation-receipt.json', '{"notAValidPriorReceipt":true}')
+        fixture.full_check(success=False)
+        self.assertNotIn('run build', fixture.calls())
+        self.assertFalse(any(call.startswith('run test:e2e') for call in fixture.calls()))
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
 
     def test_real_hooks_use_targeted_commands_and_ci_still_executes_all_five(self):
         fixture = self.fixture

@@ -264,6 +264,7 @@ export function PointerCadApp(): React.JSX.Element {
       delete window.pcadSetFileGateway;
       delete window.pcadResetFileGateway;
       delete window.pcadAssemblyStats;
+      recomputePart.releaseOwner(bridge);
       bridge.dispose();
     };
   }, []);

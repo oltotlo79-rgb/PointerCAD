@@ -69,47 +69,51 @@ export function extractEdges(
 
     for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
       const subShape = subShapes.FindKey(subShapeIndex);
-      if (subShape.ShapeType() !== edgeType) {
-        continue;
-      }
-
-      // この辺の線分は、いま積み終わっている線分の次から始まる。
-      const segmentOffset = segments.length / 6;
-      const perEdge = createAllocations();
-
       try {
-        const edge = perEdge.keep(oc.TopoDS.Edge_1(subShape));
-        const adaptor = perEdge.keep(new oc.BRepAdaptor_Curve_2(edge));
-        const discretizer = perEdge.keep(
-          new oc.GCPnts_TangentialDeflection_2(
-            adaptor,
-            angularDeflection,
-            linearDeflection,
-            2,
-            1.0e-9,
-            1.0e-7,
-          ),
-        );
-
-        // 個数の型 Graphic3d_ZLayerId は型定義のどこにも無いので整数へ直してから使う
-        // (tessellate.ts の NbNodes() と同じ理由)。点が 1 つ以下の辺は線分が 0 本になり、
-        // 範囲表には 0 本として積まれる。
-        const pointCount = Number(discretizer.NbPoints());
-        for (let i = 1; i < pointCount; i += 1) {
-          const from = discretizer.Value(i);
-          const to = discretizer.Value(i + 1);
-          segments.push(from.X(), from.Y(), from.Z(), to.X(), to.Y(), to.Z());
-          from.delete();
-          to.delete();
+        if (subShape.ShapeType() !== edgeType) {
+          continue;
         }
-      } finally {
-        perEdge.release();
-      }
 
-      edgeRanges.push({
-        segmentOffset,
-        segmentCount: segments.length / 6 - segmentOffset,
-      });
+        // この辺の線分は、いま積み終わっている線分の次から始まる。
+        const segmentOffset = segments.length / 6;
+        const perEdge = createAllocations();
+
+        try {
+          const edge = perEdge.keep(oc.TopoDS.Edge_1(subShape));
+          const adaptor = perEdge.keep(new oc.BRepAdaptor_Curve_2(edge));
+          const discretizer = perEdge.keep(
+            new oc.GCPnts_TangentialDeflection_2(
+              adaptor,
+              angularDeflection,
+              linearDeflection,
+              2,
+              1.0e-9,
+              1.0e-7,
+            ),
+          );
+
+          // 個数の型 Graphic3d_ZLayerId は型定義のどこにも無いので整数へ直してから使う
+          // (tessellate.ts の NbNodes() と同じ理由)。点が 1 つ以下の辺は線分が 0 本になり、
+          // 範囲表には 0 本として積まれる。
+          const pointCount = Number(discretizer.NbPoints());
+          for (let i = 1; i < pointCount; i += 1) {
+            const from = discretizer.Value(i);
+            const to = discretizer.Value(i + 1);
+            segments.push(from.X(), from.Y(), from.Z(), to.X(), to.Y(), to.Z());
+            from.delete();
+            to.delete();
+          }
+        } finally {
+          perEdge.release();
+        }
+
+        edgeRanges.push({
+          segmentOffset,
+          segmentCount: segments.length / 6 - segmentOffset,
+        });
+      } finally {
+        subShape.delete();
+      }
     }
   } finally {
     shared.release();

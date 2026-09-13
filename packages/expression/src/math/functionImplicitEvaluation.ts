@@ -2,7 +2,7 @@
 import { compileFunctionScalar } from './compileFunctionScalar.js';
 import { createScalarSampler } from './scalarMathTape.js';
 import { createScalarIntervalSampler } from './scalarMathIntervals.js';
-import { createScalarDirectionalJet } from './scalarCurveCurvature.js';
+import { createScalarFirstDerivatives } from './scalarCurveCurvature.js';
 import { createScalarDifferential,type ScalarDifferential } from './scalarDifferential.js';
 import type { PreparedScalarMathContext } from './evaluatePreparedScalarMath.js';
 import type { FunctionPoint } from './functionGeometryBounds.js';
@@ -28,7 +28,7 @@ export function createFunctionImplicitEvaluator(definition:unknown,coefficients:
   const tape=context.backend.withinDeadline(()=>compileFunctionScalar(definition,fixedInputs,coefficients,context));
   const scalar=createScalarSampler(tape),interval=createScalarIntervalSampler(tape),differential=createScalarDifferential(tape);
   const box=(minimum:FunctionPoint,maximum:FunctionPoint)=>slots.map(axis=>({lower:minimum[axis],upper:maximum[axis]}));
-  const partials=AXES.map(axis=>createScalarDirectionalJet(tape,fixedInputs.map(input=>input===axis?1:0)));
+  const partials=createScalarFirstDerivatives(tape,AXES.map(axis=>fixedInputs.map(input=>input===axis?1:0)));
   return {
     point:point=>scalar(slots.map(axis=>point[axis])),
     enclosure:(minimum,maximum)=>interval(box(minimum,maximum)),
@@ -38,10 +38,10 @@ export function createFunctionImplicitEvaluator(definition:unknown,coefficients:
         const slot=fixedInputs.indexOf(axis);return slot<0?0:gradient[slot];
       })};
     },
-    partials:(minimum,maximum)=>partials.map(evaluate=>evaluate(box(minimum,maximum)).first),
+    partials:(minimum,maximum)=>partials(box(minimum,maximum)),
     along:direction=>{
-      const evaluate=createScalarDirectionalJet(tape,slots.map(axis=>direction[axis]));
-      return (minimum,maximum)=>evaluate(box(minimum,maximum)).first;
+      const evaluate=createScalarFirstDerivatives(tape,[slots.map(axis=>direction[axis])]);
+      return (minimum,maximum)=>evaluate(box(minimum,maximum))[0] ?? null;
     },
   };
 }

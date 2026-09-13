@@ -1,5 +1,6 @@
 /** Interval automatic differentiation, for a proved interpolation bound on a one-variable curve. */
 import type { ScalarTape } from './scalarMathTape.js';
+import type { IntervalUnion } from './mathIntervalUnion.js';
 import { createScalarIntervalEvaluation } from './scalarMathIntervals.js';
 import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, intervalSqrt, intervalSquare,
   type MathInterval, type IntervalValue } from './mathInterval.js';
@@ -29,30 +30,34 @@ function multiply(a: Range, b: Range): Range {
 }
 function divide(a: Range, b: Range): Range { return a === null || b === null ? null : unpack(intervalDivide(a, b)); }
 function square(a: Range): Range { return a === null ? null : unpack(intervalSquare(a)); }
-function compose(inner: Jet, first: Range, second: Range): Jet {
+function composeJet(inner: Jet, first: Range, second: Range, secondOrder: boolean): Jet {
   return { first: multiply(first, inner.first),
-    second: add(multiply(second, square(inner.first)), multiply(first, inner.second)) };
+    second: secondOrder ? add(multiply(second, square(inner.first)), multiply(first, inner.second)) : null };
 }
-function sum(a: Jet, b: Jet): Jet { return { first: add(a.first, b.first), second: add(a.second, b.second) }; }
-function product(a: Jet, aValue: Range, b: Jet, bValue: Range): Jet {
+function sumJet(a: Jet, b: Jet, secondOrder: boolean): Jet { return { first: add(a.first, b.first), second: secondOrder ? add(a.second, b.second) : null }; }
+function productJet(a: Jet, aValue: Range, b: Jet, bValue: Range, secondOrder: boolean): Jet {
   return { first: add(multiply(a.first, bValue), multiply(aValue, b.first)),
-    second: add(add(multiply(a.second, bValue), multiply(TWO, multiply(a.first, b.first))), multiply(aValue, b.second)) };
+    second: secondOrder ? add(add(multiply(a.second, bValue), multiply(TWO, multiply(a.first, b.first))), multiply(aValue, b.second)) : null };
 }
-function reciprocal(a: Jet, value: Range): Jet {
+function reciprocalJet(a: Jet, value: Range, secondOrder: boolean): Jet {
   const squared = square(value);
-  return compose(a, negate(divide(ONE, squared)), divide(TWO, multiply(squared, value)));
+  return composeJet(a, negate(divide(ONE, squared)), secondOrder ? divide(TWO, multiply(squared, value)) : null, secondOrder);
 }
 
-/** Shared directional interval derivatives. Null components do not certify regularity. */
-export function createScalarDirectionalJet(tape: ScalarTape, direction: readonly number[]): (inputs: readonly MathInterval[]) => ScalarIntervalJet {
+/** Read the shared value intervals synchronously, retaining the same derivative formulas for both orders. */
+function directionalJet(tape: ScalarTape, direction: readonly number[],
+  intervals: ReturnType<typeof createScalarIntervalEvaluation>, secondOrder: boolean): (result: IntervalUnion) => ScalarIntervalJet {
   if (direction.length !== tape.inputs.length || direction.some(value => !Number.isFinite(value))) {
     throw new RangeError('各独立変数の有限な微分方向を指定してください。');
   }
   const fixedDirection = [...direction];
-  const intervals = createScalarIntervalEvaluation(tape), derivatives: Jet[] = [];
+  const derivatives: Jet[] = [];
+  const compose = (inner: Jet, first: Range, second: Range) => composeJet(inner, first, second, secondOrder);
+  const sum = (a: Jet, b: Jet) => sumJet(a, b, secondOrder);
+  const product = (a: Jet, aValue: Range, b: Jet, bValue: Range) => productJet(a, aValue, b, bValue, secondOrder);
+  const reciprocal = (a: Jet, value: Range) => reciprocalJet(a, value, secondOrder);
   const angle = tape.angleUnit === 'degree' ? DEGREE : ONE;
-  return inputs => {
-    const result = intervals.evaluate(inputs);
+  return result => {
     if (!result.continuous || result.ranges.length !== 1) return UNKNOWN;
     const value = (index: number): Range => {
       const stored = intervals.values[index];
@@ -141,6 +146,23 @@ export function createScalarDirectionalJet(tape: ScalarTape, direction: readonly
       derivatives[index] = jet;
     }
     return derivatives[tape.output] ?? UNKNOWN;
+  };
+}
+
+/** Shared directional interval derivatives. Null components do not certify regularity. */
+export function createScalarDirectionalJet(tape: ScalarTape, direction: readonly number[]): (inputs: readonly MathInterval[]) => ScalarIntervalJet {
+  const intervals = createScalarIntervalEvaluation(tape), evaluate = directionalJet(tape, direction, intervals, true);
+  return inputs => evaluate(intervals.evaluate(inputs));
+}
+
+/** Up to three coordinate directions share one value evaluation and do not calculate unused second derivatives. */
+export function createScalarFirstDerivatives(tape: ScalarTape, directions: readonly (readonly number[])[]): (inputs: readonly MathInterval[]) => readonly Range[] {
+  if (directions.length < 1 || directions.length > 3) throw new RangeError('一次微分には1つから3つの方向を指定してください。');
+  const intervals = createScalarIntervalEvaluation(tape);
+  const derivatives = directions.map(direction => directionalJet(tape, direction, intervals, false));
+  return inputs => {
+    const result = intervals.evaluate(inputs);
+    return derivatives.map(evaluate => evaluate(result).first);
   };
 }
 

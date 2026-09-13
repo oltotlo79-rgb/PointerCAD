@@ -11,6 +11,7 @@ import {
   exponentialMap, rotateVector, type Quaternion, type RigidPlacement,
 } from '../placementMath.js';
 import type { Mate, MateKind } from '../types.js';
+import { prepareVectorRotation } from '../prepareVectorRotation.js';
 import {
   createMateFrame, mateAlignmentSign, mateUnitDirection, rotateMateFrame, type MateFrame,
 } from './mateFrames.js';
@@ -262,8 +263,9 @@ function trialMotion(componentId: string, placement: RigidPlacement, input: Mate
   const rotation = exponentialMap(omega);
   // 基準の回転を先に掛け、増分を最後に掛ける。微小なtrialを四元数の合成/再正規化で失わない。
   const zeroRotation = omega[0] === 0 && omega[1] === 0 && omega[2] === 0;
-  const rotate = zeroRotation ? (vector: Vec3): Vec3 => rotateVector(placement.rotation, vector)
-    : (vector: Vec3): Vec3 => rotateVector(rotation, rotateVector(placement.rotation, vector));
+  const rotateBase = prepareVectorRotation(placement.rotation);
+  const rotateTrial = zeroRotation ? null : prepareVectorRotation(rotation);
+  const rotate = rotateTrial === null ? rotateBase : (vector: Vec3): Vec3 => rotateTrial(rotateBase(vector));
   return { placement, delta: dt, rotation, rotate, rotationAxes: rotationDerivativeAxes(omega), columns };
 }
 

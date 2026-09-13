@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "confirmedAt": "2026-09-13T02:45:32.566113+00:00",
+  "mainCommit": "1206ad82460b0811b2eb54e6f9f6788f8a11f761",
+  "totalTasks": 580,
+  "futureEstimateTasks": 115,
+  "confirmedCompleted": 503,
+  "previousConfirmedCompleted": 449,
+  "newlyConfirmedTaskIds": [
+    "P10-1",
+    "P10-2",
+    "P10-3",
+    "P10-4",
+    "P10-5",
+    "P10-6",
+    "P10-7",
+    "P10-8",
+    "P10-9",
+    "P10-10",
+    "P10-11",
+    "P10-12",
+    "P10-13",
+    "P10-14",
+    "P10-15",
+    "P10-16",
+    "P10-17",
+    "P10-18",
+    "P10-19",
+    "P10-20",
+    "P10-21",
+    "P10-22",
+    "P10-23",
+    "P10-24",
+    "P10-25",
+    "P11-1",
+    "P11-2",
+    "P11-3",
+    "P11-4",
+    "P11-5",
+    "P11-6",
+    "P11-7",
+    "P11-8",
+    "P11-9",
+    "P11-10",
+    "P11-11",
+    "P11-12",
+    "P11-13",
+    "P11-14",
+    "P11-15",
+    "P11-16",
+    "P11-17",
+    "P11-18",
+    "P11-19",
+    "P11-20",
+    "P11b-1",
+    "P11b-2",
+    "P11b-3",
+    "P11b-4",
+    "P11b-5a",
+    "P11b-5b",
+    "P11b-5c",
+    "P11b-6",
+    "ADD-1"
+  ],
+  "ciRun": {
+    "id": 34730422766,
+    "name": "CI",
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "html_url": "https://github.com/oltotlo79-rgb/PointerCAD/actions/runs/34730422766",
+    "head_sha": "1206ad82460b0811b2eb54e6f9f6788f8a11f761",
+    "head_branch": "main",
+    "run_attempt": 1,
+    "created_at": "2026-09-13T01:23:54Z",
+    "updated_at": "2026-09-13T02:34:32Z"
+  },
+  "ciJobs": [
+    {
+      "id": 103652072792,
+      "name": "checks (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "1206ad82460b0811b2eb54e6f9f6788f8a11f761",
+      "html_url": "https://github.com/oltotlo79-rgb/PointerCAD/actions/runs/34730422766/job/103652072792",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "リポジトリの取得",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Node.js の準備",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "pnpm の準備 (corepack)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "一括検査 (scripts/check.ps1)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "失敗した実画面検査の記録を保存",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Node.js の準備",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post リポジトリの取得",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 103652072797,
+      "name": "checks (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "1206ad82460b0811b2eb54e6f9f6788f8a11f761",
+      "html_url": "https://github.com/oltotlo79-rgb/PointerCAD/actions/runs/34730422766/job/103652072797",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "リポジトリの取得",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Node.js の準備",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "pnpm の準備 (corepack)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "一括検査 (scripts/check.ps1)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "失敗した実画面検査の記録を保存",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Node.js の準備",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post リポジトリの取得",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "localGate": "codex-ci-delivery-git-entry-20260913-full2",
+  "repairCommits": [
+    "ec7cac6b38bfa1a98fb298e71edb107b6270f901",
+    "5bf4489fc3e64142682e9b288da1d7f9696bb731",
+    "97d25e2147796421eddc75cf8eede6f63abd2030",
+    "62d31cb7ca71cfe11b0a9990fa23d5219cd9586c",
+    "1206ad82460b0811b2eb54e6f9f6788f8a11f761"
+  ],
+  "acceptanceGate": "codex-p8-tables-p11-full8",
+  "acceptanceE2EPasses": [
+    179,
+    179,
+    179
+  ],
+  "acceptanceUnitTests": 12198,
+  "ciEvidenceSha256": "caca7ff9ea93129747b04ff3ae56732de7f5c87c320a616d8bb64f50d8fe937e"
+}

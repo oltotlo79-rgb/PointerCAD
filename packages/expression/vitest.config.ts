@@ -5,7 +5,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
-    fileParallelism: process.env.POINTERCAD_PERF_STRICT !== '1',
+    // 実際の曲面を生成する検査は、Commit/CIでも同時実行の負荷を受けない。
+    fileParallelism: false,
     sequence: { sequencer: PerformanceFirstSequencer },
   },
 });

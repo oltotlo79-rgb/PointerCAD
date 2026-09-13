@@ -42,7 +42,7 @@ describe('品質ゲートのテスト実行順', () => {
     expect(source).not.toMatch(/expect\(elapsed\)\.toBeLessThan/u);
   });
 
-  it.each(['model', 'kernel'])('%sの実CAD検査はCommit・CIでも1 workerに固定する', (name) => {
+  it.each(['model', 'kernel', 'expression'])('%sの実形状検査はCommit・CIでも1 workerに固定する', (name) => {
     const config = readRootFile(`packages/${name}/vitest.config.ts`);
     // 性能の参考モードでも5000msの通常期限は有効。環境変数で並列へ戻さない。
     expect(config).toMatch(/fileParallelism:\s*false\s*,/u);

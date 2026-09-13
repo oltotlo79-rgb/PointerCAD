@@ -86,6 +86,10 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(self.inspect()['mode'], 'targeted')
         self.write('.gitattributes', '*.ps1 text\n*.ts -text\n')
         self.assertEqual(self.inspect()['mode'], 'full')
+        self.write('.gitattributes', '*.ps1 text\nscripts/hooks/commit-msg text eol=lf\n')
+        self.assertEqual(self.inspect()['mode'], 'targeted')
+        self.write('.gitattributes', '*.ps1 text\nscripts/hooks/pre-push -text\n')
+        self.assertEqual(self.inspect()['mode'], 'full')
 
     def test_actual_push_base_includes_all_unsent_commits(self):
         self.write('packages/model/src/runtime.ts', 'changed')
@@ -115,7 +119,11 @@ class ScopeTests(unittest.TestCase):
         result = scope.classify(['packages/io/src/format.test.ts', 'apps/desktop/src/main/mathNoticeCheckout.test.ts'])
         self.assertEqual(result['packages'], ['desktop', 'io'])
         self.assertEqual(scope.classify(['scripts/check.ps1'])['packages'], ['desktop', 'test-utils'])
+        self.assertEqual(scope.classify(['scripts/hooks/commit-msg', 'scripts/lib/commit_message.py',
+                                        'scripts/commit-message.selftest.py'])['packages'], ['desktop', 'test-utils'])
         self.assertEqual(scope.classify(['packages/unknown/src/new.test.ts'])['mode'], 'full')
+        self.assertEqual(scope.classify(['packages/expression/vitest.config.ts'])['packages'], ['expression', 'test-utils'])
+        self.assertEqual(scope.classify(['packages/expression/unknown.config.ts'])['mode'], 'full')
 
     def test_commit_copy_uses_staged_attributes_even_for_unchanged_originals(self):
         self.git('config', 'core.autocrlf', 'true')

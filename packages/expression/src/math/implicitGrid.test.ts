@@ -38,12 +38,18 @@ function volume(mesh:ImplicitMesh):number {
   },0);
 }
 describe('XYZの有限範囲から陰関数の接続した等値面を作る',()=>{
-  it('トーラスと離れた2つの球面の全成分を保持する',()=>{
+  it('トーラスの全辺の共有・向きと体積を保つ',()=>{
     const torus=mesh('(X^2+Y^2+Z^2+4-0.25)^2-16*(X^2+Y^2)',{minimum:[-3,-3,-1],maximum:[3,3,1],tolerance:1});
-    for(const edge of edgeCounts(torus)){expect(edge.count).toBe(2);expect(edge.orientation).toBe(0);}
-    expect(volume(torus)).toBeGreaterThan(Math.PI**2*0.85);expect(volume(torus)).toBeLessThan(Math.PI**2*1.05);
+    expect(edgeCounts(torus).filter(edge=>edge.count!==2 || edge.orientation!==0)).toEqual([]);
+    const measured=volume(torus); expect(measured).toBeGreaterThan(Math.PI**2*0.85);expect(measured).toBeLessThan(Math.PI**2*1.05);
+  });
+  it('離れた2つの球面を接続せず、全成分を保持する',()=>{
     const separated=mesh('((X-1)^2+Y^2+Z^2-0.25)*((X+1)^2+Y^2+Z^2-0.25)');
-    for(const triangle of separated.triangles){const x=triangle.map(index=>separated.vertices[index][0]); expect(x.every(value=>value>0)||x.every(value=>value<0)).toBe(true);}
+    const joined=separated.triangles.filter(triangle=>{
+      const x=triangle.map(index=>separated.vertices[index][0]);
+      return !(x.every(value=>value>0)||x.every(value=>value<0));
+    });
+    expect(joined).toEqual([]);
     expect(separated.vertices.some(point=>point[0]<0)).toBe(true);expect(separated.vertices.some(point=>point[0]>0)).toBe(true);
   });
   it('球の全辺を2面で共有し、向き・残差・体積を独立な解析値で確認する',()=>{

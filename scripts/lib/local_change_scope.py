@@ -16,6 +16,7 @@ GATE_FILES = {
     'scripts/check.ps1', 'scripts/check.selftest.ps1', 'scripts/hooks/pre-commit', 'scripts/hooks/pre-push',
     'scripts/lib/local_change_scope.py', 'scripts/local-change-scope.selftest.py',
     'scripts/lib/gitTreeGuard.ps1',
+    'scripts/hooks/commit-msg', 'scripts/lib/commit_message.py', 'scripts/commit-message.selftest.py',
     'scripts/validation-receipt.integration.selftest.py',
 }
 NOTICE_BUILD_FILES = {'scripts/vite/mathNotices.mjs', 'scripts/vite/mathNotices.d.mts',
@@ -38,16 +39,19 @@ def classify(paths, before_attributes=b'', after_attributes=b''):
     areas = set()
     for path in paths:
         if path == '.gitattributes':
-            permitted = 'docs/standards/licenses/*.txt -text'
+            permitted = {'docs/standards/licenses/*.txt -text', 'scripts/hooks/commit-msg text eol=lf'}
             before = attribute_rules(before_attributes)
             after = attribute_rules(after_attributes)
-            if [line for line in before if line != permitted] != [line for line in after if line != permitted]:
-                return full('Attributes outside the notice originals changed')
+            if [line for line in before if line not in permitted] != [line for line in after if line not in permitted]:
+                return full('Attributes outside the notice originals or commit-message hook changed')
             packages.add('desktop')
             areas.add('notices')
         elif path in GATE_FILES:
             packages.update(['desktop', 'test-utils'])
             areas.add('quality-gate')
+        elif path == 'packages/expression/vitest.config.ts':
+            packages.update(['expression', 'test-utils'])
+            areas.add('expression-test-configuration')
         elif path in NOTICE_BUILD_FILES or re.fullmatch(r'docs/standards/licenses/[a-z0-9.-]+\.(txt|json)', path):
             packages.add('desktop')
             areas.add('notices')

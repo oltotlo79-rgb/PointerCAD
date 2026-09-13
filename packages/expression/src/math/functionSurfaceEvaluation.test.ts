@@ -22,13 +22,18 @@ function ready(result: FunctionSurfaceSamplingResult): Ready {
 }
 function interiorResiduals(result: Ready, original: (parameters: SurfaceParameter) => FunctionPoint): void {
   let maximum = 0;
-  for (const [i,j,k] of result.triangles) for (const weights of [[1/3,1/3,1/3], [0.25,0.25,0.5], [0.5,0.5,0]]) {
-    const vertices = [result.vertices[i],result.vertices[j],result.vertices[k]];
-    const u = vertices.reduce((sum, vertex, index) => sum+vertex.parameters[0]*weights[index],0);
-    const v = vertices.reduce((sum, vertex, index) => sum+vertex.parameters[1]*weights[index],0);
-    const point = [0,1,2].map(axis => vertices.reduce((sum, vertex, index) => sum+vertex.point[axis]*weights[index],0));
-    const actual = original([u,v]);
-    maximum = Math.max(maximum,Math.hypot(...point.map((value,axis) => value-actual[axis])));
+  const weights = [[1/3,1/3,1/3], [0.25,0.25,0.5], [0.5,0.5,0]] as const;
+  for (const [i,j,k] of result.triangles) {
+    const a = result.vertices[i], b = result.vertices[j], c = result.vertices[k];
+    for (const [wa,wb,wc] of weights) {
+      const u = a.parameters[0]*wa+b.parameters[0]*wb+c.parameters[0]*wc;
+      const v = a.parameters[1]*wa+b.parameters[1]*wb+c.parameters[1]*wc;
+      const point = original([u,v]);
+      const dx = a.point[0]*wa+b.point[0]*wb+c.point[0]*wc-point[0];
+      const dy = a.point[1]*wa+b.point[1]*wb+c.point[1]*wc-point[1];
+      const dz = a.point[2]*wa+b.point[2]*wb+c.point[2]*wc-point[2];
+      maximum = Math.max(maximum,Math.hypot(dx,dy,dz));
+    }
   }
   expect(maximum).toBeLessThanOrEqual(options.tolerance);
 }

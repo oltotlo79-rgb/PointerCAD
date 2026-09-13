@@ -32,6 +32,16 @@ function Assert-True {
 }
 
 # 一時ディレクトリに、この試験専用のgitリポジトリを作る(本リポジトリには一切触れない)
+$messageSelftest = Join-Path $PSScriptRoot 'commit-message.selftest.py'
+if (Test-Path -LiteralPath $messageSelftest -PathType Leaf) {
+    & python -B -X utf8 $messageSelftest
+    Assert-True ($LASTEXITCODE -eq 0) '実Gitで日本語の件名・接頭辞禁止・UTF-8を検査し、違反時はコミットしない'
+} else {
+    Assert-True $false 'コミットコメントの自己試験が存在すること'
+}
+
+if ($failures -gt 0) { exit 1 }
+
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("pointercad-checkselftest-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 
@@ -591,6 +601,7 @@ if (Test-Path -LiteralPath $scopeSelftest -PathType Leaf) {
 } else {
     Assert-True $false '変更箇所別の検査範囲の自己試験が存在すること'
 }
+
 
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red

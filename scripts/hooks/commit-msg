@@ -1,17 +1,15 @@
 #!/bin/sh
-# PointerCAD commit-msg フック: UTF-8 BOM が件名へ混ざったコミットを拒否する。
-# PowerShell 5.1 の Set-Content -Encoding UTF8 は BOM を付けるため、メッセージは BOM なしで書く。
-
-message_file=$1
-if [ ! -f "$message_file" ]; then
-    printf '%s\n' "[NG] コミットメッセージが見つかりません: $message_file" >&2
+# PointerCAD: 日本語の件名、接頭辞禁止、BOMなしUTF-8を施行する(rules/03 §6)。
+hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+validator="$hook_dir/../lib/commit_message.py"
+if [ ! -f "$validator" ]; then
+    printf '%s\n' '[NG] コミットコメントの検査処理が見つからないため中止します。' >&2
     exit 1
 fi
-
-first_three_bytes=$(od -An -tx1 -N3 "$message_file" | tr -d ' \r\n')
-if [ "$first_three_bytes" = "efbbbf" ]; then
-    printf '%s\n' '[NG] コミットメッセージの先頭に UTF-8 BOM があります。BOM なし UTF-8 で書き直してください。' >&2
-    exit 1
+if command -v python >/dev/null 2>&1; then
+    exec python -B -X utf8 "$validator" "$1"
+elif command -v python3 >/dev/null 2>&1; then
+    exec python3 -B -X utf8 "$validator" "$1"
 fi
-
-exit 0
+printf '%s\n' '[NG] Pythonが見つからないためコミットコメントを検査できません。' >&2
+exit 127

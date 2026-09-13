@@ -1,3 +1,4 @@
+import { observeMathWorkers } from './mathWorkerDiagnostics.js';
 import { functionPlotMessage } from './functionMessages.js';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
@@ -7,6 +8,12 @@ import { beginRecompute, waitForRecompute } from './recompute.js';
 
 const text = functionPlotMessage;
 export async function functionClosedSurfaceFlow(page: Page, info: TestInfo, app?: ElectronApplication, mode:'parametric'|'implicit'='parametric'): Promise<void> {
+  const attach = await observeMathWorkers(page);
+  try { await runClosedSurfaceFlow(page, info, app, mode); }
+  finally { await attach(info); }
+}
+
+async function runClosedSurfaceFlow(page: Page, info: TestInfo, app: ElectronApplication | undefined, mode:'parametric'|'implicit'): Promise<void> {
   const implicit=mode==='implicit',fileName=implicit?'function-implicit-sphere.pcad':'function-sphere.pcad';
   await chooseToolMenuItem(page,'作図',text('menuTitle'));
   const dialog=page.locator('.pcad-function-dialog');

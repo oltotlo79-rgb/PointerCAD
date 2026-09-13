@@ -1,3 +1,4 @@
+import { FUNCTION_DIRECTION_SCENARIOS } from './functionDirectionScenarios.js';
 import { expect, test } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { functionPlotFlow } from './functionPlotFlow.js';
@@ -102,3 +103,14 @@ test('ADD-FUNCTION 実Electronの関数曲面・必須XYZ範囲・保存再編�
     await functionSurfaceFlow(page, info, app); expect(errors).toEqual([]);
   } finally { await app.close(); }
 });
+
+for (const scenario of FUNCTION_DIRECTION_SCENARIOS) {
+  test(`ADD-FUNCTION 実Electronで${scenario.name}の点から接線・法線を作り、保存再開・長さ編集・作成と編集のUndoを通す`, async ({ playwright }, info) => {
+    const { app } = await launchDesktop(playwright, info);
+    try {
+      const page = await app.firstWindow(), errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await scenario.run(page, info, app); expect(errors).toEqual([]);
+    } finally { await app.close(); }
+  });
+}

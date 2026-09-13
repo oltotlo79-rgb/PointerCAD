@@ -47,6 +47,9 @@ const startup = { loader: typeof globalThis.__playwright_run === 'function', rea
 if (!startup.loader || startup.ready || startup.windows !== 0) throw new Error('Electron startup barrier missing');
 require('node:fs').writeFileSync(${JSON.stringify(join(directory, 'bootstrap.json'))}, JSON.stringify(startup));
 app.setPath('userData', ${JSON.stringify(profile)});
+// Native desktop keystrokes must not enter an automated test window.
+// Playwright sends input directly to webContents; the real window still renders.
+app.on('browser-window-created', (_event, window) => window.setFocusable(false));
 require(${JSON.stringify(join(root, 'apps/desktop/dist/main/main.cjs'))});
 `);
   // Explicit WebGL software rendering works without a physical GPU on hosted CI.

@@ -1,24 +1,27 @@
+import { createBrowserMathWorker } from './browserMathWorker.js';
+import { createMathWorkerGroup } from './mathWorkerGroup.js';
 /** Browser-owned numerical evaluator for every part computation, including assembly/drawing/export inputs. */
 import { FunctionSurfacePlanCache, hasDocumentMath, recomputePart, type KernelBridge, type PartDocument, type PartRecomputeOptions,
   type PartRecomputeResult } from '@pointercad/model';
-import type { MathWorkerClient } from '@pointercad/expression/math/client';
+import type { MathWorkerClient, MathWorkerPort } from '@pointercad/expression/math/client';
 import { createBrowserMathClient } from './createBrowserMathClient.js';
 import { createBrowserFunctionClient, createBrowserFunctionSurfaceClient, createBrowserImplicitSurfaceClient, createBrowserImplicitCurveClient, createBrowserFunctionPointContinuationClient } from './createBrowserFunctionClient.js';
 
-export function createMathPartRecomputer(createClient: () => MathWorkerClient) {
+export function createMathPartRecomputer(createClient: (createWorker: () => MathWorkerPort) => MathWorkerClient) {
   const surfacePlans = new FunctionSurfacePlanCache();
   return async (document: PartDocument, bridge: KernelBridge, options: PartRecomputeOptions = {}): Promise<PartRecomputeResult> => {
     if (!hasDocumentMath(document) || options.math !== undefined || options.shouldCancel?.()) return recomputePart(document, bridge, options);
-    const client = createClient(), abort = new AbortController();
+    const workers = createMathWorkerGroup(createBrowserMathWorker);
+    const client = createClient(workers.createPort), abort = new AbortController();
     const hasSurfaces = document.solids.some(feature => feature.kind === 'functionSurface' && !feature.suppressed);
     const curves = (hasSurfaces || document.sketches.some(sketch => sketch.features.some(feature => feature.kind === 'functionCurve')))
-      && options.functions === undefined ? createBrowserFunctionClient() : undefined;
-    const surfaces = hasSurfaces && options.functions === undefined ? createBrowserFunctionSurfaceClient() : undefined;
+      && options.functions === undefined ? createBrowserFunctionClient(workers.createPort) : undefined;
+    const surfaces = hasSurfaces && options.functions === undefined ? createBrowserFunctionSurfaceClient(workers.createPort) : undefined;
     const hasImplicitSurfaces = document.solids.some(feature => feature.kind === 'functionSurface' && !feature.suppressed && feature.definition.formula.kind === 'implicit-surface');
-    const implicitSurfaces = hasImplicitSurfaces && options.functions === undefined ? createBrowserImplicitSurfaceClient() : undefined;
+    const implicitSurfaces = hasImplicitSurfaces && options.functions === undefined ? createBrowserImplicitSurfaceClient(workers.createPort) : undefined;
     const hasImplicitCurves=document.sketches.some(sketch=>sketch.features.some(feature=>feature.kind==='functionCurve' && feature.definition.formula.kind==='implicit-curve'));
-    const implicitCurves=hasImplicitCurves && options.functions===undefined ? createBrowserImplicitCurveClient() : undefined;
-    const points=curves===undefined?undefined:createBrowserFunctionPointContinuationClient();
+    const implicitCurves=hasImplicitCurves && options.functions===undefined ? createBrowserImplicitCurveClient(workers.createPort) : undefined;
+    const points=curves===undefined?undefined:createBrowserFunctionPointContinuationClient(workers.createPort);
     const isCurrent = () => !abort.signal.aborted && !options.shouldCancel?.();
     // Existing geometry callers expose a cancellation predicate. Bridge it to termination while math is synchronous in its Worker.
     const cancelWatch = setInterval(() => { if (options.shouldCancel?.()) abort.abort(); }, 16);
@@ -35,6 +38,7 @@ export function createMathPartRecomputer(createClient: () => MathWorkerClient) {
       implicitSurfaces?.dispose();
       implicitCurves?.dispose();
       points?.dispose();
+      workers.dispose();
     }
   };
 }

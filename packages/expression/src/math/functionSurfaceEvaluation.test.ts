@@ -81,8 +81,15 @@ describe('XYZ範囲内の関数曲面を適応分割し、つながる三角形�
     const bounded = { ...options, lower:[0,0] as const, upper:[2*Math.PI,2*Math.PI] as const,
       minimum:[-3,-3,-1] as const, maximum:[3,3,1] as const,
       maximumSamples:100_000,maximumCells:100_000,maximumTriangles:200_000 };
-    const result = ready(sampleFunctionSurface(evaluator(['(1.5+0.5*cos(V))*cos(U)','(1.5+0.5*cos(V))*sin(U)','0.5*sin(V)']), bounded));
+    const started = performance.now();
+    const surface = evaluator(['(1.5+0.5*cos(V))*cos(U)','(1.5+0.5*cos(V))*sin(U)','0.5*sin(V)']);
+    const prepared = performance.now();
+    const result = ready(sampleFunctionSurface(surface, bounded));
+    const sampled = performance.now();
     interiorResiduals(result,([u,v]) => [(1.5+0.5*Math.cos(v))*Math.cos(u),(1.5+0.5*Math.cos(v))*Math.sin(u),0.5*Math.sin(v)]);
+    console.log('[実測] トーラスの曲面検査', JSON.stringify({ prepareMs: prepared-started,
+      sampleMs: sampled-prepared, verificationMs: performance.now()-sampled,
+      vertices: result.vertices.length, triangles: result.triangles.length, stats: result.stats }));
     expect(result.maximumInterpolationErrorBound).toBeLessThanOrEqual(options.tolerance);
   });
   it('1/Uの無限面でXYZ外を除外し、極の左右を同じ三角形へ結ばない', () => {

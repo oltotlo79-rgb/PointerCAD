@@ -12,11 +12,11 @@ function readRootFile(path: string): string {
 }
 
 describe('品質ゲートのテスト実行順', () => {
-  it('性能検査を含む各パッケージを専有実行し、長いkernelを後へ回す', () => {
+  it('数学を先行し、失敗なら後続を止め、成功時も数学を二重実行しない', () => {
     const packageJson = JSON.parse(readRootFile('package.json')) as RootPackageJson;
 
     expect(packageJson.scripts?.test).toBe(
-      'pnpm --recursive --reverse --workspace-concurrency=1 --if-present run test',
+      'pnpm --filter @pointercad/expression run test && pnpm --recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test',
     );
   });
 

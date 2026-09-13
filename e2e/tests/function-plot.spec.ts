@@ -1,3 +1,4 @@
+import { FUNCTION_DIRECTION_SCENARIOS } from './functionDirectionScenarios.js';
 import { expect, test } from '@playwright/test';
 import { functionPlotFlow } from './functionPlotFlow.js';
 import { functionSurfaceFlow } from './functionSurfaceFlow.js';
@@ -92,3 +93,15 @@ test('ADD-FUNCTION 関数曲面の必須XYZ範囲・実形状確認・保存再�
   });
   await page.goto('/'); await functionSurfaceFlow(page, info); expect(errors).toEqual([]);
 });
+
+for (const scenario of FUNCTION_DIRECTION_SCENARIOS) {
+  test(`ADD-FUNCTION ${scenario.name}の点から接線・法線を作り、保存再開・長さ編集・作成と編集のUndoを通す`, async ({ page }, info) => {
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(() => {
+      for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
+        Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+      }
+    });
+    await page.goto('/'); await scenario.run(page, info); expect(errors).toEqual([]);
+  });
+}

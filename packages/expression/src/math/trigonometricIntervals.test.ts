@@ -36,4 +36,31 @@ describe('三角関数の区間を丸め方向付きTaylor展開で包む', () =
     expect(trigonometricInterval({ lower: 90, upper: 90 }, true, true))
       .toEqual({ status: 'range', interval: { lower: 0, upper: 0 } });
   });
+  it('再利用と古い値の追出しを挟んでも、区間端・sin/cos・度/ラジアンを混同しない', () => {
+    const inputs = [
+      { lower: 0.3, upper: 0.3 }, { lower: 0.3, upper: 0.30000000000000004 },
+      { lower: 0.30000000000000004, upper: 0.30000000000000004 },
+      { lower: -0.3, upper: -0.3 }, { lower: -0.3, upper: 0.3 },
+      { lower: 1e-30, upper: 2e-30 }, { lower: 90, upper: 90 },
+    ];
+    const samples = inputs.flatMap(input => [false, true].flatMap(cosine => [false, true].map(degree => {
+      const expected = trigonometricInterval(input, cosine, degree);
+      if (expected.status !== 'range') throw new Error(JSON.stringify(expected));
+      const middle = input.lower + (input.upper-input.lower)/2;
+      const point = (cosine ? Math.cos : Math.sin)(middle*(degree ? Math.PI/180 : 1));
+      // Exact degree quarter turns are tested separately, avoiding Math.cos(pi/2)'s nonzero result.
+      if (!degree || middle !== 90) {
+        expect(point).toBeGreaterThanOrEqual(expected.interval.lower);
+        expect(point).toBeLessThanOrEqual(expected.interval.upper);
+      }
+      return { input, cosine, degree, expected };
+    })));
+    for (const sample of samples) expect(trigonometricInterval(sample.input, sample.cosine, sample.degree)).toEqual(sample.expected);
+    // More than the fixed capacity, followed by the same inputs in reverse order.
+    for (let index = 0; index < 4096; index++) {
+      const point = 0.123 + index/4096;
+      trigonometricInterval({ lower: point, upper: point }, index%2 === 0, index%3 === 0);
+    }
+    for (const sample of samples.reverse()) expect(trigonometricInterval(sample.input, sample.cosine, sample.degree)).toEqual(sample.expected);
+  });
 });

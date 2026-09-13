@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { createBox } from './drawingManufacturingFixture.js';
 import { drawingPerformanceFixture } from './drawingPerformanceFixture.js';
+import { startDrawingCpuProfile } from './drawingCpuProfile.js';
 import { KERNEL_TIMEOUT_MS } from './recompute.js';
 
 declare global {
@@ -78,9 +79,12 @@ test('P8 100フィーチャー・三面図・50寸法を5秒以内で開き、�
   });
   // WASM準備は別の起動条件。箱を実UIで作って準備を終え、図面を開く操作から測る。
   await createBox(page); page.on('dialog', (dialog) => { void dialog.accept(); });
-  const opening = page.waitForEvent('filechooser'); await page.keyboard.press('Control+o');
-  await (await opening).setFiles({ name: '100フィーチャー.pcadd', mimeType: 'application/zip', buffer: Buffer.from(fixture) });
-  await expect.poll(() => page.evaluate(() => window.__drawingPerformance.drawingAt), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
+  const stopOpeningProfile = await startDrawingCpuProfile(page, testInfo);
+  try {
+    const opening = page.waitForEvent('filechooser'); await page.keyboard.press('Control+o');
+    await (await opening).setFiles({ name: '100フィーチャー.pcadd', mimeType: 'application/zip', buffer: Buffer.from(fixture) });
+    await expect.poll(() => page.evaluate(() => window.__drawingPerformance.drawingAt), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
+  } finally { await stopOpeningProfile(); }
   const loading = await page.evaluate(() => {
     const trace = window.__drawingPerformance;
     const font = performance.getEntriesByType('resource').filter((entry) => entry instanceof PerformanceResourceTiming && entry.initiatorType === 'fetch'

@@ -1,3 +1,5 @@
+import {createMathWorkerGroup} from '../math/mathWorkerGroup.js';
+import {createBrowserMathWorker} from '../math/browserMathWorker.js';
 import {useEffect,useId,useMemo,useRef,useState} from 'react';
 import {expressionValueFromNumber as number} from '@pointercad/expression';
 import type {FunctionPointParent} from '@pointercad/model';
@@ -48,7 +50,8 @@ export function FunctionPointDialog({parent,pointId,onClose}:{readonly parent:Fu
   const change=(next:FunctionPointFields)=>{running.current?.abort();setFields(next);setBusy(false);setSearch(null);setSelected(null);setMessage('');};
   const calculate=async()=>{
     if(!isCurrent()||busy) return;
-    const abort=new AbortController(),client=createBrowserMathClient(),points=createBrowserFunctionPointClient();running.current=abort;
+    const workers=createMathWorkerGroup(createBrowserMathWorker);
+    const abort=new AbortController(),client=createBrowserMathClient(workers.createPort),points=createBrowserFunctionPointClient(workers.createPort);running.current=abort;
     const current=()=>isCurrent()&&!abort.signal.aborted&&running.current===abort;
     setBusy(true);setSearch(null);setSelected(null);setMessage('');
     try {
@@ -59,7 +62,7 @@ export function FunctionPointDialog({parent,pointId,onClose}:{readonly parent:Fu
         if(result.search.exhaustive&&result.search.unresolved===0&&result.search.candidates.length===1) setSelected(result.search.candidates[0]);
       }
     }catch(error){if(current()) setMessage(error instanceof Error?error.message:t('math.workerFailed'));}
-    finally{client.dispose();points.dispose();if(running.current===abort){running.current=null;if(mounted.current)setBusy(false);}}
+    finally{client.dispose();points.dispose();workers.dispose();if(running.current===abort){running.current=null;if(mounted.current)setBusy(false);}}
   };
   const input=editor===null?null:fields[editor];
   const coordinateCount=FUNCTION_AXES.filter(axis=>fields[axis]!==null).length;

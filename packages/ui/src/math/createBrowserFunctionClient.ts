@@ -1,3 +1,4 @@
+import type { MathWorkerPort } from '@pointercad/expression/math/client';
 import {
   CurvePointWorkerClient,
   CurvePointContinuationWorkerClient,
@@ -11,43 +12,43 @@ import {
 
 
 
-import { browserMathWorker } from './browserMathWorker.js';
+import { createBrowserMathWorker } from './browserMathWorker.js';
 
 
-export function createBrowserFunctionPointClient(): PointCalculationWorkerClient {
-  return new PointCalculationWorkerClient({createWorker: () => browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), {type:'module'}))});
+export function createBrowserFunctionPointClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): PointCalculationWorkerClient {
+  return new PointCalculationWorkerClient({createWorker});
 }
-export function createBrowserCurvePointClient(): CurvePointWorkerClient {
-  return new CurvePointWorkerClient({createWorker: () => browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), {type:'module'}))});
+export function createBrowserCurvePointClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): CurvePointWorkerClient {
+  return new CurvePointWorkerClient({createWorker});
 }
-export function createBrowserCurvePointContinuationClient(): CurvePointContinuationWorkerClient {
-  return new CurvePointContinuationWorkerClient({createWorker: () => browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), {type:'module'}))});
+export function createBrowserCurvePointContinuationClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): CurvePointContinuationWorkerClient {
+  return new CurvePointContinuationWorkerClient({createWorker});
 }
-export function createBrowserFunctionPointContinuationClient(): PointContinuationWorkerClient {
-  return new PointContinuationWorkerClient({createWorker: () => browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), {type:'module'}))});
+export function createBrowserFunctionPointContinuationClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): PointContinuationWorkerClient {
+  return new PointContinuationWorkerClient({createWorker});
 }
 
 /** Dispose on editor/document close. No mathematical engine is instantiated on the UI thread. */
-export function createBrowserFunctionClient(): FunctionCurveWorkerClient {
+export function createBrowserFunctionClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): FunctionCurveWorkerClient {
   return new FunctionCurveWorkerClient({
-    createWorker: () => browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), { type: 'module' })),
+    createWorker,
   });
 }
 
-export function createBrowserFunctionSurfaceClient(): FunctionSurfaceWorkerClient {
+export function createBrowserFunctionSurfaceClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): FunctionSurfaceWorkerClient {
   return new FunctionSurfaceWorkerClient({
-    createWorker: () => browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), { type: 'module' })),
+    createWorker,
   });
 }
 
-export function createBrowserImplicitSurfaceClient(): FunctionImplicitWorkerClient {
+export function createBrowserImplicitSurfaceClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): FunctionImplicitWorkerClient {
   return new FunctionImplicitWorkerClient({
-    createWorker: () => browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), { type: 'module' })),
+    createWorker,
   });
 }
 
-export function createBrowserImplicitCurveClient(): FunctionImplicitCurveWorkerClient {
+export function createBrowserImplicitCurveClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): FunctionImplicitCurveWorkerClient {
   return new FunctionImplicitCurveWorkerClient({
-    createWorker: () => browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), { type: 'module' })),
+    createWorker,
   });
 }

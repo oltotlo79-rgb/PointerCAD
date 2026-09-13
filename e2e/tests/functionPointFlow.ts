@@ -1,3 +1,4 @@
+import { observeMathWorkers } from './mathWorkerDiagnostics.js';
 import { functionPlotMessage, functionPointMessage } from './functionMessages.js';
 import {expect,type ElectronApplication,type Page,type TestInfo} from '@playwright/test';
 import {chooseToolMenuItem} from './assemblyTestSupport.js';
@@ -10,16 +11,22 @@ import {functionDirectionFlow} from './functionDirectionFlow.js';
 
 const text = functionPointMessage;
 const plot = functionPlotMessage;
-export async function functionPointFlow(page:Page,info:TestInfo,app?:ElectronApplication,form:'implicit'|'coordinate'='implicit'):Promise<void> {
+export async function functionPointFlow(page:Page,info:TestInfo,app?:ElectronApplication,form:'implicit'|'coordinate'='implicit',scenario:'point'|'direction'='point'):Promise<void> {
+  const attach = await observeMathWorkers(page);
+  try { await runPointFlow(page, info, app, form, scenario); }
+  finally { await attach(info); }
+}
+
+async function runPointFlow(page:Page,info:TestInfo,app:ElectronApplication|undefined,form:'implicit'|'coordinate',scenario:'point'|'direction'):Promise<void> {
   await observeFunctionRecompute(page);
-  try { await runFunctionPointFlow(page,info,app,form); }
+  try { await runFunctionPointFlow(page,info,app,form,scenario); }
   finally {
     if(!page.isClosed()) try { await attachFunctionRecomputeDiagnostics(page,info); }
     catch(error) { console.warn('関数再計算の診断を添付できませんでした',error); }
   }
 }
 
-async function runFunctionPointFlow(page:Page,info:TestInfo,app:ElectronApplication|undefined,form:'implicit'|'coordinate'):Promise<void> {
+async function runFunctionPointFlow(page:Page,info:TestInfo,app:ElectronApplication|undefined,form:'implicit'|'coordinate',scenario:'point'|'direction'):Promise<void> {
   await chooseToolMenuItem(page,'作図',plot('menuTitle'));
   const dialog=page.locator('.pcad-function-dialog');
   await dialog.getByRole('combobox',{name:plot('geometry'),exact:true}).selectOption('surface');
@@ -61,6 +68,8 @@ async function runFunctionPointFlow(page:Page,info:TestInfo,app:ElectronApplicat
   const saved=await savePart(page,info,'function-point.pcad',app),point=saved.sketches.flatMap(sketch=>sketch.features).find(item=>item.kind==='point');
   if(point?.kind!=='point'||point.at.mode==='absolute'||point.at.base.kind!=='functionPoint')throw new Error('Function point definition not saved');
   expect(point.at.base.choice.location).toMatchObject({kind:'implicit',axis:'Z',interval:{lower:height,upper:height}});
+  // Each independent journey creates its own real point; neither relies on another test's files.
+  if(scenario==='direction'){await functionDirectionFlow(page,info,point,app,'implicit-surface');return;}
   await reopenPart(page,info,'function-point.pcad',app);await page.getByText(point.name,{exact:true}).click();
   await page.getByRole('button',{name:text('edit'),exact:true}).click();
   await expect(dialog.getByRole('textbox',{name:`X ${text('coordinate')}`,exact:true})).toHaveValue('0');
@@ -76,5 +85,4 @@ async function runFunctionPointFlow(page:Page,info:TestInfo,app:ElectronApplicat
   expect(restored.sketches.flatMap(sketch=>sketch.features).find(item=>item.id===point.id))
     .toMatchObject({at:{base:{known:[{axis:'X',value:{source:'0'}},{axis:'Y',value:{source:'0'}}]}}});
   await page.getByText(point.name,{exact:true}).click();await page.screenshot({path:info.outputPath('function-point-properties.png'),fullPage:true});
-  await functionDirectionFlow(page,info,point,app,'implicit-surface');
 }

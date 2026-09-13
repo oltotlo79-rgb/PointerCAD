@@ -6,10 +6,16 @@ import {reopenPart} from './reopenPart.js';
 import {beginRecompute,waitForRecompute} from './recompute.js';
 import {waitForFunctionPreview} from './waitForFunctionPreview.js';
 import {functionDirectionFlow} from './functionDirectionFlow.js';
+import {observeMathWorkers} from './mathWorkerDiagnostics.js';
 
 const text = functionPointMessage;
 const plot = functionPlotMessage;
-export async function functionCurvePointFlow(page:Page,info:TestInfo,form:'coordinate'|'parametric',app?:ElectronApplication):Promise<void> {
+export async function functionCurvePointFlow(page:Page,info:TestInfo,form:'coordinate'|'parametric',app?:ElectronApplication,scenario:'point'|'direction'='point'):Promise<void> {
+  const attach = await observeMathWorkers(page);
+  try { await runFunctionCurvePointFlow(page,info,form,app,scenario); }
+  finally { await attach(info); }
+}
+async function runFunctionCurvePointFlow(page:Page,info:TestInfo,form:'coordinate'|'parametric',app?:ElectronApplication,scenario:'point'|'direction'='point'):Promise<void> {
   await chooseToolMenuItem(page,'作図',plot('menuTitle'));
   const dialog=page.locator('.pcad-function-dialog');
   await dialog.getByRole('combobox',{name:plot('form'),exact:true}).selectOption(form);
@@ -64,6 +70,7 @@ export async function functionCurvePointFlow(page:Page,info:TestInfo,form:'coord
   if(!point||point.at.mode==='absolute'||point.at.base.kind!=='functionPoint')throw new Error('Missing saved function point');
   expect(point.at.base.choice).toMatchObject({input:{kind:'curve',minimum:[-4,-4,-4],maximum:[4,4,4]},
     location:{kind:'curve',independent:form==='coordinate'?'Y':'T',interval:{lower:1,upper:1},direct:form==='coordinate'}});
+  if(scenario==='direction'){await functionDirectionFlow(page,info,point,app);return;}
   await reopenPart(page,info,file,app);await tree.getByRole('button',{name:point.name,exact:true}).click();
   await page.getByRole('button',{name:text('edit'),exact:true}).click();
   const field=dialog.getByRole('textbox',{name:`${axis} ${text('coordinate')}`,exact:true});await expect(field).toHaveValue('1');
@@ -77,5 +84,4 @@ export async function functionCurvePointFlow(page:Page,info:TestInfo,form:'coord
   const undo=await beginRecompute(page);await page.getByRole('button',{name:'元に戻す',exact:true}).click();await waitForRecompute(page,undo);
   const restored=await savePart(page,info,`curve-point-${form}-undo.pcad`,app);
   expect(restored.sketches.flatMap(sketch=>sketch.features).find(feature=>feature.id===point.id)).toEqual(point);
-  await functionDirectionFlow(page,info,point,app);
 }

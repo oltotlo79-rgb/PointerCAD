@@ -21,6 +21,11 @@ for (let attempt = 1; attempt <= 5; attempt += 1) {
       await waitForStartupHealth(page, info);
       expect(page.url()).toBe('app://pointercad/index.html');
       expect(await app.evaluate(({ app: electronApp }) => electronApp.isReady())).toBe(true);
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window =>
+        !window.isFocusable() && !window.isFocused()))).toBe(true);
+      // Automation still exercises actual text input without taking desktop focus.
+      const search = page.locator('.pcad-panel--left input').first();
+      await search.fill('startup-input'); await expect(search).toHaveValue('startup-input'); await search.fill('');
       await page.reload();
       await expect(page.getByRole('button', { name: '開く', exact: true })).toBeVisible();
       await waitForStartupHealth(page, info);

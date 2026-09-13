@@ -1,3 +1,5 @@
+import {createMathWorkerGroup} from '../math/mathWorkerGroup.js';
+import {createBrowserMathWorker} from '../math/browserMathWorker.js';
 import {useEffect,useId,useMemo,useRef,useState} from 'react';
 import {expressionValueFromNumber as number} from '@pointercad/expression';
 import type {FunctionPointReference} from '@pointercad/model';
@@ -36,13 +38,14 @@ export function FunctionDirectionDialog({pointId,reference,onClose,lineId}:{read
   const invalidate=()=>{running.current?.abort();setBusy(false);setPreview(null);setMessage('');};
   const calculate=async()=>{
     if(!isCurrent()||busy)return;
-    const abort=new AbortController(),client=createBrowserMathClient(),points=createBrowserFunctionPointClient(),continuations=createBrowserFunctionPointContinuationClient();
+    const workers=createMathWorkerGroup(createBrowserMathWorker);
+    const abort=new AbortController(),client=createBrowserMathClient(workers.createPort),points=createBrowserFunctionPointClient(workers.createPort),continuations=createBrowserFunctionPointContinuationClient(workers.createPort);
     running.current=abort;setBusy(true);setPreview(null);setMessage('');
     const current=()=>isCurrent()&&!abort.signal.aborted&&running.current===abort;
     try{const result=await evaluateFunctionDirection(prepared,owner.documentVersion,pointId,kind,length,reverse,client,points,continuations,abort.signal,current,lineId);
       if(current()&&result)setPreview(result);
     }catch(error){if(current())setMessage(error instanceof Error?error.message:t('math.workerFailed'));}
-    finally{client.dispose();points.dispose();continuations.dispose();if(running.current===abort){running.current=null;if(mounted.current)setBusy(false);}}
+    finally{client.dispose();points.dispose();continuations.dispose();workers.dispose();if(running.current===abort){running.current=null;if(mounted.current)setBusy(false);}}
   };
   return <><dialog ref={dialog} className="pcad-function-dialog" aria-labelledby={`${id}-title`} data-help-topic="function-point"
     onCancel={event=>{event.preventDefault();close();}} onKeyDown={event=>event.stopPropagation()}>

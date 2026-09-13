@@ -1,9 +1,13 @@
-import {beforeAll, describe, expect, it} from 'vitest';
+import {beforeAll, describe, expect, it, vi} from 'vitest';
 import {createMathBackend} from './createMathBackend.js';
 import {executeMathWorkRequest, type MathExecutionBackend} from './mathWorkExecution.js';
 import {createMathWorkEnvelope, type MathWorkRequest} from './mathWorkRequest.js';
 import {decodeMathWorkReply} from './mathWorkReply.js';
 import {CANDIDATE_MATH_BY_ID} from './mathOperations.js';
+
+// The standalone positive LaTeX grammar is the only source parser. Loading the full
+// engine entry would also register another parser and unused code generators.
+vi.mock('@cortex-js/compute-engine', () => { throw new Error('Math evaluation must not load the full engine entry'); });
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

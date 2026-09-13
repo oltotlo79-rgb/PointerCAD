@@ -1,5 +1,5 @@
 /** Instantiate inside the disposable calculation Worker; never attach an engine to the input field. */
-import {CancellationError,ComputeEngine} from '@cortex-js/compute-engine';
+import {CancellationError,ComputeEngine} from '@cortex-js/compute-engine/core';
 import {MathInputProblem} from './mathInputContract.js';
 import {CANDIDATE_MATH_OPERATIONS,CANDIDATE_MATH_BY_ID} from './mathOperations.js';
 import {createMathLatexCodec} from './mathLatexCodec.js';

@@ -205,6 +205,32 @@ if (args === '--silent run validation:runtime') {
         self.assertFalse(proof.exists())
         self.assertEqual(self.calls()[len(before):], ['run typecheck', 'run lint', 'run test', 'run build'])
 
+    def test_e2e_target_diagnostic_cannot_replace_full_ci_or_hook_checks(self):
+        entry = [self.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(self.root / 'scripts/check.ps1')]
+        selected = ['-E2EOnly', '-E2EGrep', 'fixture-selected', '-E2ENoDependencies']
+        for arguments in [
+            ['-E2ENoDependencies'], ['-E2EOnly', '-E2ENoDependencies'],
+            selected + ['-Full'], selected + ['-Install'], selected + ['-Level', 'Commit'],
+            selected + ['-ReceiptPhase', 'Push'], selected + ['-E2ERepeats', '2'],
+        ]:
+            with self.subTest(arguments=arguments):
+                self.command(entry + arguments, success=False)
+                self.assertEqual(self.calls(), [], 'Invalid combinations must stop before any package command')
+        self.env['CI'] = 'true'
+        self.command(entry + selected, success=False)
+        self.assertEqual(self.calls(), [])
+        self.env['CI'] = ''
+        self.command(entry + selected)
+        self.assertEqual([line for line in self.calls() if line.startswith('run ')],
+                         ['run test:e2e --grep fixture-selected --no-deps'])
+        proof = self.root / '.git/validation-receipt.json'
+        self.assertFalse(proof.exists(), 'A diagnostic must never issue reusable full-check evidence')
+        before = self.calls()
+        self.full_check()
+        self.assertEqual([line for line in self.calls()[len(before):] if line.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+        self.assertTrue(proof.exists())
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

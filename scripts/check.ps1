@@ -42,6 +42,8 @@ param(
     [switch]$E2EOnly,
     # -E2EOnly のときだけPlaywrightの--grepへ渡す。空なら全E2Eを実行する。
     [string]$E2EGrep = "",
+    # 対象原因の調査専用。前提projectを省いた結果を通常ゲート・CIへ使用しない。
+    [switch]$E2ENoDependencies,
     # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
     [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content", "expression")]
     [string]$UnitPackage = "",
@@ -171,6 +173,11 @@ try {
     }
     if (-not $E2EOnly -and -not [string]::IsNullOrWhiteSpace($E2EGrep)) {
         Write-Host "[NG] -E2EGrep は -E2EOnly と一緒に指定してください" -ForegroundColor Red
+        exit 1
+    }
+    if ($E2ENoDependencies -and (-not $E2EOnly -or [string]::IsNullOrWhiteSpace($E2EGrep) -or
+        $Full -or $Install -or $isRunningOnCI -or $ReceiptPhase -ne 'Manual' -or $E2ERepeats -ne 1)) {
+        Write-Host '[NG] -E2ENoDependencies は対象名付きの手動E2E診断だけに使用できます。全体検査・CI・フック・連続検査には使用できません。' -ForegroundColor Red
         exit 1
     }
 
@@ -377,6 +384,10 @@ try {
                     # pnpm run はスクリプト名より後ろを直接転送する。ここに区切りの -- を足すと、
                     # Playwright側で「以後はオプションではない」と解釈されgrepが効かなくなる。
                     $e2eArgs += @("--grep", $E2EGrep)
+                }
+                if ($E2ENoDependencies) {
+                    Write-Host '[診断] 前提projectを省いて対象操作へ直接進みます。全体検査の合格には数えません。' -ForegroundColor Yellow
+                    $e2eArgs += '--no-deps'
                 }
                 $e2eStep = if ($E2EOnly) { 1 } else { 5 }
                 # Linuxの実Electronに必要な画面だけを用意する。ブラウザーのsandboxは変更しない。

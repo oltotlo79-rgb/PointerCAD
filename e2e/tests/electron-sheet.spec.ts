@@ -22,6 +22,7 @@ async function makeBase(page: Page) {
 
 test('P10 板金を実Electronで基板・フランジ・リリーフから作り、ネイティブ保存・展開出力・図面を通す', async ({ playwright }, info) => {
   const { app, directory } = await launchDesktop(playwright, info);
+  await app.context().tracing.start({ snapshots: true, screenshots: true });
   try {
     const page = await app.firstWindow(), errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -76,7 +77,10 @@ test('P10 板金を実Electronで基板・フランジ・リリーフから作�
     expect(bundle.document.views).toHaveLength(1);
     await page.screenshot({ path: info.outputPath('native-sheet-drawing.png') });
     expect(errors).toEqual([]);
-  } finally { await app.close(); await writeFile(info.outputPath('native-sheet-closed.json'), JSON.stringify({ closed: true })); }
+  } finally {
+    try { await app.context().tracing.stop({ path: info.outputPath('native-sheet-input-trace.zip') }); }
+    finally { await app.close(); await writeFile(info.outputPath('native-sheet-closed.json'), JSON.stringify({ closed: true })); }
+  }
 });
 
 test('P10 板金の指定線曲げを実Electronで取消・作成し、実ファイル再開・式編集・Undoを通す', async ({ playwright }, info) => {

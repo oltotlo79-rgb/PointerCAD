@@ -40,7 +40,7 @@ function positivePower(value: MathInterval, exponent: number): MathInterval | nu
   }
   return accumulated;
 }
-function taylor(value: MathInterval, cosine: boolean): MathInterval | null {
+function calculateTaylor(value: MathInterval, cosine: boolean): MathInterval | null {
   const magnitude = Math.max(Math.abs(value.lower), Math.abs(value.upper));
   if (!(magnitude <= 4)) return null;
   const squared = unpack(intervalSquare(value)); if (squared === null) return null;
@@ -56,6 +56,26 @@ function taylor(value: MathInterval, cosine: boolean): MathInterval | null {
   const power = relative === null ? null : positivePower(relative, cosine ? 38 : 39);
   const error = power === null ? null : multiply(power, { lower: TAYLOR_ERROR, upper: TAYLOR_ERROR });
   return error === null ? null : unpack(intervalAdd(polynomial, { lower: -error.upper, upper: error.upper }));
+}
+
+// The interval VM revisits identical parameter coordinates for different outputs,
+// derivative directions and neighboring cells. Reuse only exactly equal reduced
+// endpoints and the same function; never quantize inputs or cache a sampled value.
+// This worker-local FIFO has a fixed size, including across successive documents.
+const TAYLOR_CACHE_CAPACITY = 1024;
+const taylorCache = new Map<string, MathInterval>();
+function taylor(value: MathInterval, cosine: boolean): MathInterval | null {
+  const key = `${cosine ? 'cos' : 'sin'}:${value.lower}:${value.upper}`;
+  const cached = taylorCache.get(key);
+  if (cached !== undefined) return cached;
+  const calculated = calculateTaylor(value, cosine);
+  if (calculated === null) return null;
+  if (taylorCache.size === TAYLOR_CACHE_CAPACITY) {
+    const oldest = taylorCache.keys().next().value;
+    if (oldest !== undefined) taylorCache.delete(oldest);
+  }
+  taylorCache.set(key, Object.freeze(calculated));
+  return calculated;
 }
 
 /** The centre is evaluated by a certified polynomial; |sin'| and |cos'|<=1 cover the rest of the interval. */

@@ -60,6 +60,7 @@ import type {
 } from '../types.js';
 import type { ShapeCache } from './shapeCache.js';
 import { createSheetBodyReuse } from './sheetBodyReuse.js';
+import { createPrimitiveReuse } from './primitiveReuse.js';
 
 /**
  * 掃引体(ばね・実らせん)専用の粗いテッセレーション許容値(P3 仕上げ、2026-09-04)。
@@ -922,6 +923,7 @@ export async function recomputeSolids(
 ): Promise<SolidRecomputeResult> {
   const { oc, cache } = deps;
   const sheetBodies = createSheetBodyReuse(oc, cache);
+  const primitives = createPrimitiveReuse(oc, cache);
   const total = request.steps.length;
   const bodies: SolidBodyMesh[] = [];
   const failures: SolidStepFailure[] = [];
@@ -977,6 +979,7 @@ export async function recomputeSolids(
     if (cached !== undefined) {
       cacheHits += 1;
       sheetBodies.remember(step.step, step.key);
+      primitives.remember(step.step, step.key);
       if (step.visible) {
         // 同じ形を別のフィーチャーが使うことがあるので、id はこの段のものに差し替える。
         // 表面積を求められていて覚えていなければ、覚えてある形からその場で測って足す。
@@ -988,7 +991,7 @@ export async function recomputeSolids(
     }
 
     try {
-      const reused = sheetBodies.copy(step.step);
+      const reused = sheetBodies.copy(step.step) ?? primitives.copy(step.step);
       const stepResult = reused === null ? createStepSolid(oc, step.step, options, cache, failedLabels) : noMarks(reused, reused.volume);
       const meshOptions = resolveTessellationOptions(options, step);
       const meshStarted = performance.now();
@@ -1005,6 +1008,7 @@ export async function recomputeSolids(
       if (step.step.kind === 'functionSurface') console.debug('[pcad:function-phase]', JSON.stringify({ phase: 'display-mesh', elapsedMs: performance.now() - meshStarted }));
       cache.set(step.key, entry);
       sheetBodies.remember(step.step, step.key);
+      primitives.remember(step.step, step.key);
       if (step.visible) {
         bodies.push(entry.mesh);
         rememberBodyForAppearance(step.key, step.id, entry.shape);

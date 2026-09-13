@@ -5,9 +5,15 @@ import {openTarget} from './electronAppFlow.js';
 import {savePart} from './scriptsFlow.js';
 import {beginRecompute,waitForRecompute} from './recompute.js';
 import {uiMessage} from './uiMessages.js';
+import {observeMathWorkers} from './mathWorkerDiagnostics.js';
 
 const text = functionPlotMessage;
 export async function functionImplicitCurveFlow(page:Page,info:TestInfo,app?:ElectronApplication):Promise<void>{
+  const attach = await observeMathWorkers(page);
+  try { await runFunctionImplicitCurveFlow(page,info,app); }
+  finally { await attach(info); }
+}
+async function runFunctionImplicitCurveFlow(page:Page,info:TestInfo,app?:ElectronApplication):Promise<void>{
   await chooseToolMenuItem(page,'作図',text('menuTitle'));const dialog=page.locator('.pcad-function-dialog');
   await expect(dialog).toBeVisible();await dialog.getByRole('combobox',{name:text('presets'),exact:true}).selectOption('implicit-circle');
   await expect(dialog.getByRole('combobox',{name:text('fixedAxis'),exact:true})).toHaveValue('Z');

@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { expect, type Page } from '@playwright/test';
+import { recomputeTerminalOutcome } from '../../packages/test-utils/src/recomputeState.js';
 
 /**
  * E2E の再計算待ちを 1 か所にまとめる(P7 タスク52、rules/06 10.18・10.19)。
@@ -101,20 +102,15 @@ export async function waitForRecompute(page: Page, token?: RecomputeToken): Prom
           if (last.progress !== '') {
             lastProgress = last.progress;
           }
-          const stats = last.stats;
-          return stats !== null &&
-            stats.completedGeneration > baseline &&
-            stats.completedGeneration === stats.requestedGeneration &&
-            stats.lastOutcome === 'success'
-            ? 'success'
-            : 'waiting';
+          return recomputeTerminalOutcome(last.stats, baseline);
         },
         {
           timeout: KERNEL_TIMEOUT_MS,
           message: '操作後の最新世代の再計算が success で完了すること',
         },
       )
-      .toBe('success');
+      .not.toBe('waiting');
+    expect(last.stats?.lastOutcome, '最新世代が失敗した場合は再計算の上限まで待たず失敗を知らせる').toBe('success');
   } catch (error: unknown) {
     const stats = last.stats;
     const reason = error instanceof Error ? error.message : String(error);

@@ -16,3 +16,7 @@ export function browserMathWorker(worker:Worker):MathWorkerPort {
   worker.addEventListener('message',message);worker.addEventListener('error',error);worker.addEventListener('messageerror',messageerror);
   return port;
 }
+
+export function createBrowserMathWorker(): MathWorkerPort {
+  return browserMathWorker(new Worker(new URL('./math.worker.ts', import.meta.url), { type: 'module' }));
+}

@@ -1,3 +1,4 @@
+import { observeMathWorkers } from './mathWorkerDiagnostics.js';
 import { functionPlotMessage } from './functionMessages.js';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
@@ -8,6 +9,12 @@ import { helpNavigationFlow } from './helpNavigationFlow.js';
 
 const text = functionPlotMessage;
 export async function functionSurfaceFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  const attach = await observeMathWorkers(page);
+  try { await runSurfaceFlow(page, info, app); }
+  finally { await attach(info); }
+}
+
+async function runSurfaceFlow(page: Page, info: TestInfo, app: ElectronApplication | undefined): Promise<void> {
   await chooseToolMenuItem(page, '作図', text('menuTitle'));
   const dialog = page.locator('.pcad-function-dialog');
   await dialog.getByRole('combobox', { name: text('geometry'), exact: true }).selectOption('surface');

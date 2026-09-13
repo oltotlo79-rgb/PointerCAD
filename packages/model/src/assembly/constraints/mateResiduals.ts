@@ -18,7 +18,7 @@ import { MISSING_AXIS_MESSAGE, type ResolvedMateTarget } from './mateTargets.js'
 import { MATE_VARIABLE_AXES, mateValueOf, type MateVariableSet } from './mateVariables.js';
 
 import {
-  CARTESIAN_AXES, directionResidual, pointSpan, pointTerms, projectedResidual,
+  directionResidual, pointCoincidenceResiduals, pointSpan, pointTerms, projectedResidual,
   rotationDerivativeAxes, scaledResidual, validRigidPlacement,
 } from './rigidResidualGeometry.js';
 
@@ -305,12 +305,8 @@ function mateRows(mate: PreparedMateResidual, a: TrialTarget, b: TrialTarget,
     case 'parallel': return parallelRows(mate, a, b, variables);
     case 'coincident': {
       if (a.kind === 'point' && b.kind === 'point') {
-        return CARTESIAN_AXES.map((axis) => {
-          const gradient = new Map<number, number>();
-          pointTerms(gradient, a, axis, variables);
-          pointTerms(gradient, b, scaleVec3(axis, -1), variables);
-          return rowOf(mate.mateId, dotVec3(pointSpan(a, b), axis), gradient, scale);
-        });
+        return pointCoincidenceResiduals(a, b, variables, scale)
+          .map((row) => ({ mateId: mate.mateId, ...row }));
       }
       if (b.direction === null) return 'degenerate';
       return [...(a.kind === 'plane' ? parallelRows(mate, a, b, variables) : []),

@@ -106,6 +106,82 @@ class ReceiptTests(unittest.TestCase):
             self.run_action('reuse', 'Commit')
         self.assert_no_receipt()
 
+    def test_windows_git_launchers_share_all_inputs_for_x64_and_arm64(self):
+        from types import SimpleNamespace
+        for architecture in ('mingw64', 'clangarm64'):
+            with self.subTest(architecture=architecture):
+                base = 'windows-git/' + architecture
+                core = self.root / base / architecture / 'libexec/git-core'
+                runtime = self.write(base + '/' + architecture + '/libexec/git-core/git.exe', 'runtime')
+                shipped = [self.write(base + '/cmd/git.exe', 'cmd launcher'),
+                           self.write(base + '/bin/git.exe', 'bin launcher'),
+                           self.write(base + '/' + architecture + '/bin/git.exe', 'architecture launcher'), runtime]
+                output = SimpleNamespace(stdout=str(core).encode())
+                with patch.object(receipt, 'os', SimpleNamespace(name='nt')), patch.object(receipt.subprocess, 'run', return_value=output):
+                    expected = (runtime.resolve(), shipped)
+                    for selected in shipped:
+                        self.assertEqual(receipt.git_tool_inputs(selected), expected)
+                    before = receipt.directory_digest(shipped, self.root, dependencies=False)
+                    shipped[1].write_text('changed bin launcher', encoding='utf8')
+                    self.assertNotEqual(receipt.directory_digest(shipped, self.root, dependencies=False), before)
+                    outside = self.write(base + '/unrecognized/git.exe', 'runtime')
+                    self.assertEqual(receipt.git_tool_inputs(outside), (outside, []))
+
+    def test_browser_debug_output_does_not_change_runtime_inputs_but_code_always_does(self):
+        browser = self.root / 'browser/chromium_headless_shell-1234'
+        executable = self.write('browser/chromium_headless_shell-1234/chrome-headless-shell-win64/chrome-headless-shell.exe', 'browser')
+        before = receipt.browser_digest([browser], self.root)
+        log = self.write('browser/chromium_headless_shell-1234/chrome-headless-shell-win64/debug.log', 'GPU diagnostic')
+        self.assertEqual(receipt.browser_digest([browser], self.root), before)
+        log.write_text('another diagnostic', encoding='utf8')
+        self.assertEqual(receipt.browser_digest([browser], self.root), before)
+        log.unlink()
+        self.assertEqual(receipt.browser_digest([browser], self.root), before)
+        executable.write_text('changed browser', encoding='utf8')
+        self.assertNotEqual(receipt.browser_digest([browser], self.root), before)
+        executable.write_text('browser', encoding='utf8')
+        self.write('browser/chromium_headless_shell-1234/chrome-headless-shell-win64/resources.pak', 'changed resource')
+        self.assertNotEqual(receipt.browser_digest([browser], self.root), before)
+
+    def test_browser_log_exemption_is_not_a_general_filename_exemption(self):
+        browser = self.root / 'browser/chromium_headless_shell-1234'
+        self.write('browser/chromium_headless_shell-1234/chrome-headless-shell-win64/chrome-headless-shell.exe', 'browser')
+        before = receipt.browser_digest([browser], self.root)
+        arbitrary = self.write('browser/chromium_headless_shell-1234/debug.log', 'not the known browser output')
+        self.assertNotEqual(receipt.browser_digest([browser], self.root), before)
+        arbitrary.unlink()
+        invalid = browser / 'chrome-headless-shell-win64/debug.log'
+        invalid.mkdir()
+        with self.assertRaises(ValueError):
+            receipt.browser_digest([browser], self.root)
+        invalid.rmdir()
+        target = self.write('browser/actual-input.js', 'real code')
+        try:
+            invalid.symlink_to(target)
+        except OSError as error:
+            if os.name != 'nt' or error.winerror != 1314:
+                raise
+            # Exercise the refusal on Windows without granting extra privilege.
+            # Linux and Windows with symlink rights use the actual link below.
+            invalid.write_text('not an ordinary output', encoding='utf8')
+            original = Path.is_symlink
+            with patch.object(Path, 'is_symlink', lambda path: path == invalid or original(path)):
+                with self.assertRaises(ValueError):
+                    receipt.browser_digest([browser], self.root)
+            return
+        with self.assertRaises(ValueError):
+            receipt.browser_digest([browser], self.root)
+
+    def test_browser_generated_log_during_check_allows_receipt_without_ignoring_runtime_changes(self):
+        browser = self.root / 'browser/chromium_headless_shell-1234'
+        self.write('browser/chromium_headless_shell-1234/chrome-headless-shell-win64/chrome-headless-shell.exe', 'browser')
+        with patch.object(receipt, 'browser_roots', return_value=[browser]):
+            start = self.run_action('start')
+            self.assertTrue(start['ok'])
+            self.write('browser/chromium_headless_shell-1234/chrome-headless-shell-win64/debug.log', 'diagnostic from actual rendering')
+            self.assertTrue(self.run_action('finish', token=start['token'])['ok'])
+            self.assertTrue(self.run_action('reuse', 'Commit')['used'])
+
     def test_push_cannot_send_a_different_head_or_uncommitted_index(self):
         self.complete()
         with self.assertRaises(ValueError):

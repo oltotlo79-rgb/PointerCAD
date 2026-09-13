@@ -78,6 +78,33 @@ export function pointTerms(
   directionTerms(gradient, target, target.arm, g, variables);
 }
 
+/** 点同士の一致の3行。各回転列の外積を3座標で共有し、同じ微分を作り直さない。 */
+export function pointCoincidenceResiduals(
+  a: TrialGeometry, b: TrialGeometry, variables: MateVariableSet, scale: number,
+): readonly ScaledResidualRow[] {
+  const gradients = [new Map<number, number>(), new Map<number, number>(), new Map<number, number>()];
+  const addPoint = (target: TrialGeometry, sign: number): void => {
+    for (let j = 0; j < 3; j += 1) {
+      const column = target.columns === undefined ? variables.columnOf(target.componentId, TRANSLATION_AXES[j])
+        : target.columns[j] ?? null;
+      addTerm(gradients[j], column, sign);
+    }
+    for (let j = 0; j < 3; j += 1) {
+      const column = target.columns === undefined ? variables.columnOf(target.componentId, ROTATION_AXES[j])
+        : target.columns[j + 3] ?? null;
+      if (column === null) continue;
+      const axis = target.rotationAxes[j], arm = target.arm;
+      addTerm(gradients[0], column, sign * (axis[1] * arm[2] - axis[2] * arm[1]));
+      addTerm(gradients[1], column, sign * (axis[2] * arm[0] - axis[0] * arm[2]));
+      addTerm(gradients[2], column, sign * (axis[0] * arm[1] - axis[1] * arm[0]));
+    }
+  };
+  addPoint(a, 1);
+  addPoint(b, -1);
+  const span = pointSpan(a, b);
+  return gradients.map((gradient, axis) => scaledResidual(span[axis], gradient, scale));
+}
+
 export function scaledResidual(value: number, gradient: Map<number, number>, scale: number): ScaledResidualRow {
   for (const [column, coefficient] of gradient) {
     const scaled = coefficient * scale;

@@ -28,8 +28,21 @@ class ReceiptHookTests(unittest.TestCase):
         self.node = shutil.which('node')
         self.assertIsNotNone(self.node, 'The normal quality gate requires Node')
         self.env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
-        self.env.update(CI='', POINTERCAD_PERF_STRICT='1', PYTHONDONTWRITEBYTECODE='1')
+        self.env.update(CI='', POINTERCAD_PERF_STRICT='1', PYTHONDONTWRITEBYTECODE='1',
+                        LANG='C.UTF-8', LC_ALL='C.UTF-8', LC_CTYPE='C.UTF-8')
+        # The fixture intentionally fixes its locale. Git's Windows shell fills
+        # absent locale variables; that is a real input difference, not reusable
+        # evidence. Production receipt checks still compare locale unchanged.
         self.env['PATH'] = str(self.root / 'test-bin') + os.pathsep + self.env['PATH']
+        if os.name == 'nt':
+            selected_git = shutil.which('git')
+            self.assertIsNotNone(selected_git)
+            core = Path(subprocess.check_output([selected_git, '--exec-path']).decode().strip()).resolve()
+            runner_launcher = core.parent.parent.parent / 'bin/git.exe'
+            if runner_launcher.is_file():
+                # Exercise the Actions runner's entry point even on a developer
+                # machine whose normal PATH selects cmd/git.exe instead.
+                self.env['PATH'] = str(runner_launcher.parent) + os.pathsep + self.env['PATH']
         self.env['PCAD_SELFTEST_CALL_LOG'] = str(self.root / 'gate-calls.log')
         # Reproduce a PowerShell 7 parent launching Windows PowerShell 5 through
         # Git hooks. It must build its own module path, not inherit another edition.

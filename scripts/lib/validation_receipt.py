@@ -55,7 +55,8 @@ def git(root: Path, *args: str) -> bytes:
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
 
 
-def directory_digest(roots: list[Path], workspace: Path, *, dependencies: bool) -> str:
+def directory_digest(roots: list[Path], workspace: Path, *, dependencies: bool,
+                     output_logs: frozenset[Path] = frozenset()) -> str:
     """Follow dependency links once; never recurse from a workspace alias back into the source tree."""
     result = hashlib.sha256()
     visited: set[Path] = set()
@@ -82,12 +83,25 @@ def directory_digest(roots: list[Path], workspace: Path, *, dependencies: bool) 
                 emit('workspace-source-and-output-covered-separately'); return
             if 'node_modules' not in real.parts:
                 raise ValueError('Dependency link leaves inspected modules: ' + str(path))
-        names = sorted(os.listdir(path))
+        def input_names():
+            names = []
+            for name in os.listdir(path):
+                child = path / name
+                if child in output_logs:
+                    # Only a regular diagnostic output is excluded. A link or
+                    # directory at that exact path is never an input exemption.
+                    if child.is_symlink() or not child.is_file():
+                        raise ValueError('Browser diagnostic output is not a regular file: ' + str(child))
+                    continue
+                names.append(name)
+            return sorted(names)
+
+        names = input_names()
         for name in names:
             if dependencies and path.name == 'node_modules' and name in CACHE_NAMES:
                 continue
             walk(path / name)
-        if sorted(os.listdir(path)) != names:
+        if input_names() != names:
             raise ValueError('Directory changed during fingerprint: ' + str(path))
 
     for path in sorted(roots):
@@ -109,6 +123,25 @@ def browser_roots(root: Path, node: str) -> list[Path]:
         roots.add(folder)
         roots.update(path for path in folder.parent.iterdir() if path.is_dir() and re.fullmatch(r'(?:chromium_headless_shell|ffmpeg)-\d+', path.name))
     return sorted(roots)
+
+
+def browser_digest(roots: list[Path], workspace: Path) -> str:
+    """Inspect runtime inputs, excluding Chromium's executable-adjacent debug output only."""
+    logs: set[Path] = set()
+    layouts = {
+        'chrome-win64': 'chrome.exe', 'chrome-linux64': 'chrome',
+        'chrome-headless-shell-win64': 'chrome-headless-shell.exe',
+        'chrome-headless-shell-linux64': 'chrome-headless-shell',
+        'chrome-headless-shell-mac-arm64': 'chrome-headless-shell',
+        'chrome-headless-shell-mac-x64': 'chrome-headless-shell',
+    }
+    for root in roots:
+        if not re.fullmatch(r'(?:chromium|chromium_headless_shell)-\d+', root.name):
+            continue
+        for folder, executable in layouts.items():
+            if (root / folder / executable).is_file():
+                logs.add(root / folder / 'debug.log')
+    return directory_digest(roots, workspace, dependencies=False, output_logs=frozenset(logs))
 
 
 def git_tool_inputs(selected: Path) -> tuple[Path, list[Path]]:
@@ -140,7 +173,11 @@ def git_tool_inputs(selected: Path) -> tuple[Path, list[Path]]:
     if core.name != 'git-core' or core.parent.name != 'libexec':
         return selected, []
     runtime = core / 'git.exe'
-    shipped = [architecture.parent / 'cmd/git.exe', architecture / 'bin/git.exe', runtime]
+    # The Actions Windows runner resolves Git/bin/git.exe, while developer shells
+    # commonly resolve Git/cmd/git.exe and hooks prepend the architecture runtime.
+    # Include both official launchers in the same content fingerprint.
+    shipped = [architecture.parent / 'cmd/git.exe', architecture.parent / 'bin/git.exe',
+               architecture / 'bin/git.exe', runtime]
     if not runtime.is_file() or selected not in [path.resolve() for path in shipped]:
         return selected, []
     return runtime.resolve(strict=True), shipped
@@ -219,7 +256,7 @@ def capture(root: Path, tools: dict[str, str]) -> dict:
              'outputs': directory_digest(outputs, root, dependencies=False),
              'tools': {name: digest([path, tool_files[name]]) for name, path in tool_paths.items()},
              'toolPackages': directory_digest(extra_tools, root, dependencies=False),
-             'browsers': directory_digest(browser_roots(root, tool_paths['node_runtime']), root, dependencies=False),
+             'browsers': browser_digest(browser_roots(root, tool_paths['node_runtime']), root),
              'environment': digest([environment, [[str(path), file_hash(path)] for path in environment_files],
                                     directory_digest(sorted(configuration), root, dependencies=False), platform.platform(), platform.machine(), sys.version])}
     if head != git(root, 'rev-parse', 'HEAD').decode().strip() or index != git(root, 'ls-files', '--stage', '-z'):

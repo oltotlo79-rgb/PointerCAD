@@ -33,6 +33,8 @@ import type {
 } from './types.js';
 
 /** 世界の x / y / z にかける平行移動の量(式のまま)。原点にした点の座標がそのまま入る。 */
+import { shiftFunctionDefinition } from '../functionGeometry/shiftFunctionDefinition.js';
+
 export interface OriginShift {
   readonly x: ExpressionValue;
   readonly y: ExpressionValue;
@@ -313,6 +315,8 @@ export function shiftSketchFeature(feature: SketchFeature, shift: CoordinateShif
       };
     case 'ellipse':
       return { ...feature, center: shiftCoordinateInput(feature.center, shift) };
+    case 'functionCurve':
+      return { ...feature, definition: shiftFunctionDefinition(feature.definition, shift.axes) };
     case 'spline':
       return {
         ...feature,

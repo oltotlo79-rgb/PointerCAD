@@ -40,6 +40,7 @@ import {
   type SolveOutcome,
 } from './solve.js';
 import { sketchConstraints, type SketchConstraint } from './types.js';
+import { resolveInvalidConstraintInputs } from './invalidInputs.js';
 import {
   canonicalPointKey,
   collectVariables,
@@ -359,9 +360,22 @@ export function resolveConstrainedSketch(
   options: SketchResolveOptions = {},
   solveOptions?: ConstrainedSolveOptions,
 ): ConstrainedSketch {
+  const initial = resolveInvalidConstraintInputs(document, options);
+  const checkedOptions = initial.options, invalidInputs = checkedOptions.invalidInputs;
+  const constraintInputErrors: readonly SketchError[] = sketchConstraints(document).flatMap(constraint => {
+    const message = invalidInputs?.get(constraint.id);
+    return message === undefined ? [] : [{ featureId: constraint.id, code: 'invalidValue' as const, message }];
+  });
+  const resolveChecked = (inputOptions: SketchResolveOptions): ResolvedSketch => {
+    const resolved = resolveSketch(document, inputOptions);
+    return constraintInputErrors.length === 0 ? resolved : { ...resolved, errors: [...resolved.errors, ...constraintInputErrors] };
+  };
   // ① 拘束を無視した解決。ソルバーの初期値であり、解かないときの答えでもある。
-  const base = resolveSketch(document, options);
-  const constraints: readonly SketchConstraint[] = sketchConstraints(document);
+  const base = constraintInputErrors.length === 0 ? initial.base
+    : { ...initial.base, errors: [...initial.base.errors, ...constraintInputErrors] };
+  const allConstraints = sketchConstraints(document);
+  const constraints: readonly SketchConstraint[] = invalidInputs === undefined || invalidInputs.size === 0
+    ? allConstraints : allConstraints.filter(constraint => !invalidInputs.has(constraint.id));
   const pinned = solveOptions?.pinned;
   const dragging = pinned !== undefined && pinned.size > 0;
   if (constraints.length === 0 && !dragging) {
@@ -409,7 +423,7 @@ export function resolveConstrainedSketch(
       pointOverrides.set(pin.pointKey, planeToWorld(plane, pin.target[0], pin.target[1]));
     }
     return {
-      resolved: resolveSketch(document, { ...options, pointOverrides }),
+      resolved: resolveChecked({ ...checkedOptions, pointOverrides }),
       diagnosis: null,
       errors: [],
       solution: pointOverrides,
@@ -467,7 +481,7 @@ export function resolveConstrainedSketch(
   const resolved =
     pointOverrides.size === 0 && radiusOverrides.size === 0
       ? base
-      : resolveSketch(document, { ...options, pointOverrides, radiusOverrides });
+      : resolveChecked({ ...checkedOptions, pointOverrides, radiusOverrides });
 
   return {
     resolved,

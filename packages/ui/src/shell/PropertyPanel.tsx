@@ -1,4 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { FunctionCurveProperties } from '../functionPlot/FunctionCurveProperties.js';
+import { FunctionSurfaceProperties } from '../functionPlot/FunctionSurfaceProperties.js';
+import { FunctionPointProperties } from '../functionPlot/FunctionPointProperties.js';
+import { FunctionDirectionProperties } from '../functionPlot/FunctionDirectionProperties.js';
+import { FunctionSectionProperties } from '../functionPlot/FunctionSectionProperties.js';
+import { tryMathComposition } from '../math/tryMathComposition.js';
 import { surfaceHelpTopic } from '../solid/surfaceHelpTopic.js';
 import { SheetMetalPanel } from '../sheetMetal/SheetMetalPanel.js';
 import { ScriptPanel } from '../scripting/ScriptPanel.js';
@@ -59,6 +65,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { ParameterPanel } from '../parameters/ParameterPanel.js';
 import { ConstraintList } from '../sketch/ConstraintList.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
+import { PropertyMathField, replacePropertySketchFeature } from '../math/PropertyMathField.js';
 import { initialDraftVersionState, reconcileDraftVersion } from './fieldDraft.js';
 import { ChevronRightIcon } from './icons.js';
 import { isFeatureAheadOfTimeline } from './timelineRail.js';
@@ -88,14 +95,11 @@ import {
   setPrimitiveAxis,
   setPrimitiveField,
   setPrimitiveOriginCoordinate,
-  type PrimitiveFieldKey,
-  type PrimitiveOriginAxis,
 } from '../solid/primitiveCommands.js';
 import {
   measureKindLabel,
-  measureReadiness,
-  type MeasureReadiness,
 } from '../solid/measure.js';
+import { partMeasureReadiness, type PartMeasureReadiness } from '../sketch/sketchMeasure.js';
 import {
   defaultDensityMaterialId,
   densityOf,
@@ -338,12 +342,20 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   }
   const draft = reconciled.draft;
 
-  const baseSummary = summarizeFeature(feature, sketchErrors, {
+  const functionPoint=feature.kind==='point'&&feature.at.mode!=='absolute'&&feature.at.base.kind==='functionPoint'?feature.at.base:null;
+  const summarized = summarizeFeature(feature, sketchErrors, {
     document: sketch,
     // 立体の名前は部品文書にしかないので、ここで引いて渡す(頂点参照の「押し出し1 / 立体の頂点」)。
     bodyName: (featureId) => findSolid(part, featureId)?.name ?? null,
     rectangleView,
   });
+  const attachedFunctionPoint=functionPoint!==null&&feature.kind==='point'&&feature.at.mode==='relative'
+    &&[feature.at.dx,feature.at.dy,feature.at.dz].every(value=>value.source==='0'&&!value.mathDefinition);
+  const attachedDirection=feature.kind==='line'&&feature.from.mode==='relative'&&feature.from.base.kind==='point'
+    &&feature.to.mode==='relative'&&feature.to.base.kind==='functionPoint'
+    &&feature.to.base.direction?.sourcePointId===feature.from.base.pointId
+    &&[feature.from.dx,feature.from.dy,feature.from.dz,feature.to.dx,feature.to.dy,feature.to.dz].every(value=>value.source==='0'&&!value.mathDefinition);
+  const baseSummary=attachedFunctionPoint||attachedDirection?{...summarized,coordinates:[]}:summarized;
   /*
     拘束で決まった、いまの位置を欄の下へ添える(FR-313、P4b タスク22b-(g))。
     解いた座標は文書に書かない(rules/04「導出できるものは保存しない」)ので、上の欄には
@@ -378,8 +390,10 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
     const source = drafted ? draft.source : item.value.source;
     const evaluated = evaluateFieldSource(source, item.unit, drafted, units);
     return (
-      <ExpressionField
+      <PropertyMathField
         key={item.path}
+        storedValue={item.value}
+        replaceValue={(document, value) => replacePropertySketchFeature(document, feature.id, setFeatureField(feature, item.path, value))}
         lengthUnit={units.lengthUnit}
         field={{
           key: item.path,
@@ -416,6 +430,11 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
       {summary.errorMessage === null ? null : (
         <p className="pcad-panel__error">{summary.errorMessage}</p>
       )}
+
+      {feature.kind === 'functionCurve' ? <FunctionCurveProperties feature={feature} /> : null}
+      {feature.kind === 'planeSection' ? <FunctionSectionProperties featureId={feature.id} /> : null}
+      {functionPoint?<FunctionPointProperties pointId={feature.id} reference={functionPoint}/>:null}
+      {feature.kind==='line'?<FunctionDirectionProperties key={feature.id} feature={feature}/>:null}
 
       {summary.coordinates.length === 0 &&
       summary.scalars.length === 0 &&
@@ -900,8 +919,10 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
     };
     const rangeError = evaluated.ok ? rangeErrorFor(numericField, evaluated.value) : null;
     return (
-      <ExpressionField
+      <PropertyMathField
         key={item.key}
+        storedValue={item.value}
+        replaceValue={(document, value) => replaceSolid(document, feature.id, setSolidField(feature, item.key, value, units.variables, units))}
         field={numericField}
         lengthUnit={units.lengthUnit}
         result={
@@ -921,10 +942,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           if (!parsed.ok || rangeErrorFor({ ...numericField, source: next }, parsed.value) !== null) {
             return;
           }
-          apply(
-            setSolidField(feature, item.key, parsed.value, units.variables, units),
-            `field:${feature.id}:${item.key}`,
-          );
+          const calculated = tryMathComposition(() => setSolidField(feature, item.key, parsed.value, units.variables, units));
+          if (!calculated.ok) { useAppStore.getState().setShapeError(calculated.message); return; }
+          apply(calculated.value, `field:${feature.id}:${item.key}`);
         }}
       />
     );
@@ -1026,7 +1046,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
               key={choice.key}
               choice={choice}
               onChoose={(value) => {
-                apply(setSolidChoice(feature, choice.key, value, units.variables, units, part));
+                const calculated = tryMathComposition(() => setSolidChoice(feature, choice.key, value, units.variables, units, part));
+                if (!calculated.ok) { useAppStore.getState().setShapeError(calculated.message); return; }
+                apply(calculated.value);
               }}
             />
           ))}
@@ -1090,6 +1112,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         </div>
       )}
 
+      {feature.kind === 'functionSurface' ? <FunctionSurfaceProperties feature={feature} /> : null}
       {feature.kind === 'sheetBase' || feature.kind === 'sheetFlange' || feature.kind === 'sheetBend' || feature.kind === 'sheetRelief' ? <div className="pcad-section">
         <button type="button" className="pcad-button" disabled={feature.suppressed}
           title={t(feature.suppressed ? 'sheetMetal.editSuppressed' : 'sheetMetal.editHint')}
@@ -1181,14 +1204,17 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
   const renderExpression = (
     draftKey: string,
     field: NumericField,
-    onCommit: (value: ExpressionValue) => void,
+    storedValue: ExpressionValue,
+    transform: (value: ExpressionValue) => PrimitiveFeature,
   ): React.JSX.Element => {
     const drafted = draft !== null && draft.key === draftKey;
     const source = drafted ? draft.source : field.source;
     const evaluated = evaluateFieldSource(source, field.unit, drafted, units);
     return (
-      <ExpressionField
+      <PropertyMathField
         key={draftKey}
+        storedValue={storedValue}
+        replaceValue={(document, value) => replaceSolid(document, feature.id, transform(value))}
         field={{ ...field, source }}
         lengthUnit={units.lengthUnit}
         result={
@@ -1203,7 +1229,7 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
           setDraftState({ draft: { key: draftKey, source: next }, seenVersion: documentVersion });
           const parsed = evaluateExpression(committedFieldSource(next, field.unit, units), units);
           if (parsed.ok) {
-            onCommit(parsed.value);
+            apply(transform(parsed.value), `primitive:${feature.id}:${draftKey}`);
           }
         }}
       />
@@ -1228,10 +1254,8 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
                 defaultSource: item.value.source,
                 source: item.value.source,
               },
-              (value: ExpressionValue) => {
-                const key: PrimitiveFieldKey = item.key;
-                apply(setPrimitiveField(feature, key, value), `primitive:${feature.id}:${key}`);
-              },
+              item.value,
+              (value: ExpressionValue) => setPrimitiveField(feature, item.key, value),
             ),
           )}
         </div>
@@ -1274,13 +1298,8 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
                   defaultSource: item.value.source,
                   source: item.value.source,
                 },
-                (value: ExpressionValue) => {
-                  const axis: PrimitiveOriginAxis = item.axis;
-                  apply(
-                    setPrimitiveOriginCoordinate(feature, axis, value),
-                    `primitive:${feature.id}:origin:${axis}`,
-                  );
-                },
+                item.value,
+                (value: ExpressionValue) => setPrimitiveOriginCoordinate(feature, item.axis, value),
               ),
             )}
           </div>
@@ -1465,8 +1484,10 @@ function SphereGridPointSection({
     const source = drafted ? draft.source : value.source;
     const evaluated = evaluateFieldSource(source, 'degree', drafted, units);
     return (
-      <ExpressionField
+      <PropertyMathField
         key={path}
+        storedValue={value}
+        replaceValue={(document, parsed) => replacePropertySketchFeature(document, feature.id, setSphereGridAngle(feature, key, parsed))}
         lengthUnit={units.lengthUnit}
         field={{
           key: path,
@@ -1674,15 +1695,17 @@ function ReferenceProperties({
     key: string,
     labelKey: MessageKey,
     unit: NumericField['unit'],
-    value: { readonly source: string },
-    write: (parsed: ExpressionValue) => void,
+    value: ExpressionValue,
+    transform: (parsed: ExpressionValue) => ReferenceFeature,
   ): React.JSX.Element => {
     const drafted = draft !== null && draft.key === key;
     const source = drafted ? draft.source : value.source;
     const evaluated = evaluateFieldSource(source, unit, drafted, units);
     return (
-      <ExpressionField
+      <PropertyMathField
         key={key}
+        storedValue={value}
+        replaceValue={(document, parsed) => replaceReference(document, feature.id, transform(parsed))}
         lengthUnit={units.lengthUnit}
         field={{
           key,
@@ -1703,7 +1726,7 @@ function ReferenceProperties({
           setDraftState({ draft: { key, source: next }, seenVersion: documentVersion });
           const parsed = evaluateExpression(committedFieldSource(next, unit, units), units);
           if (parsed.ok) {
-            write(parsed.value);
+            apply(transform(parsed.value));
           }
         }}
       />
@@ -1730,7 +1753,7 @@ function ReferenceProperties({
           <div className="pcad-coordinate__fields">
             {summary.fields.map((item) =>
               renderExpression(item.key, item.labelKey, item.unit, item.value, (parsed) => {
-                apply(setReferenceField(feature, item.key, parsed));
+                return setReferenceField(feature, item.key, parsed);
               }),
             )}
           </div>
@@ -1743,17 +1766,17 @@ function ReferenceProperties({
                 renderExpression(item.path, item.labelKey, item.unit, item.value, (parsed) => {
                   const current = findReference(part, feature.id);
                   if (current === undefined || current.kind !== 'referencePoint') {
-                    return;
+                    return feature;
                   }
                   if (current.definition.kind !== 'coordinate') {
-                    return;
+                    return feature;
                   }
                   const nextAt = setCoordinateField(
                     current.definition.at,
                     item.path.slice(item.path.lastIndexOf('.') + 1),
                     parsed,
                   );
-                  apply(setReferenceCoordinate(current, nextAt));
+                  return setReferenceCoordinate(current, nextAt);
                 }),
               )}
             </div>
@@ -2421,7 +2444,7 @@ function densityMaterialLabelKey(id: string): MessageKey {
 function MeasureSection({
   readiness,
 }: {
-  readonly readiness: MeasureReadiness;
+  readonly readiness: PartMeasureReadiness;
 }): React.JSX.Element {
   const measurement = useAppStore((state) => state.measurement);
   return (
@@ -3167,12 +3190,14 @@ export function PropertyPanel(): React.JSX.Element {
     ここは「節を出すかどうか」を決めるためだけに読む。測った結果は選択の変化では消えない
     (§0.a-0.29)ので、いま選んでいるものが測れなくても結果が残っていれば節を出す。
   */
-  const measureReady = measureReadiness(selection, appearanceContext.bodies);
+  const measureSketch = useAppStore(state => state.isComputing ? undefined : state.resolvedSketch);
+  const measureReady = partMeasureReadiness(selection, appearanceContext.bodies, measureSketch);
   const measurement = useAppStore((state) => state.measurement);
   const showMeasure = measureReady.ready || measurement !== null;
   // 質量特性は立体を 1 つ選んでいるときだけ(`measureReadiness` が種類でそう言う)。
   const showMass = measureReady.kinds.includes('massProperties');
-  const massBodyId = showMass ? (measureReady.targets[0]?.bodyFeatureId ?? null) : null;
+  const massTarget = measureReady.targets[0];
+  const massBodyId = showMass && massTarget !== undefined && 'bodyFeatureId' in massTarget ? massTarget.bodyFeatureId : null;
 
   const featureIds = [...new Set(selection.map((id) => featureIdOf(id)))];
   const single = featureIds.length === 1;

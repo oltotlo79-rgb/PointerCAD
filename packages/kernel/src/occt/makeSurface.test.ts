@@ -768,7 +768,7 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
     it('面だけの形に加工を掛けさせない文言が用意されている', () => {
       // 実際に断りを足すのはタスク42(makeFillet.ts / makeHole.ts など)。
       // ここでは判定と文言が 1 か所にまとまっていることだけを固定する。
-      expect(SHELL_NOT_SUPPORTED_MESSAGE).toContain('面だけの形には使えません');
+      expect(SHELL_NOT_SUPPORTED_MESSAGE).toContain('閉じていない面を含む形には使えません');
     });
 
     it('作った面の面積は測り直さなくても結果に添えて返る', () => {

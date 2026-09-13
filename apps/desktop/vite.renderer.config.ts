@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { APP_META_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
+import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
 
 /** WASM の並列実行に必要な隔離状態を作る(FR-1003)。配信時は app:// の応答ヘッダーで付ける。 */
 const crossOriginIsolationHeaders = {
@@ -71,7 +72,7 @@ export default defineConfig({
   base: './',
   // Webと同じ字体を通常の静的資産として配り、JSへバイト列を埋め込まない。
   publicDir: 'resources',
-  plugins: [react(), {
+  plugins: [react(), mathNotices(), {
     name: 'pointercad-renderer-security-policy',
     apply: 'build',
     transformIndexHtml: { order: 'post', handler: () => [{

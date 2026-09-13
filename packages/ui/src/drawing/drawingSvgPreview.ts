@@ -1,5 +1,24 @@
 import { toSvg, type RenderDocument } from '@pointercad/drawing';
 
+/** Keep the live SVG nodes while moving; only changed geometry and attributes need DOM mutations. */
+function updatePreviewChildren(parent: Element, desired: readonly Element[]): void {
+  const existing = [...parent.children];
+  for (let index = 0; index < desired.length; index += 1) {
+    const next = desired[index], current = existing[index];
+    if (current === undefined) { parent.append(next); continue; }
+    if (current.localName !== next.localName || current.namespaceURI !== next.namespaceURI) {
+      current.replaceWith(next); continue;
+    }
+    for (const attribute of [...current.attributes]) if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+    for (const attribute of [...next.attributes]) if (current.getAttribute(attribute.name) !== attribute.value) {
+      current.setAttribute(attribute.name, attribute.value);
+    }
+    if (current.childElementCount > 0 || next.childElementCount > 0) updatePreviewChildren(current, [...next.children]);
+    else if (current.textContent !== next.textContent) current.textContent = next.textContent;
+  }
+  for (const extra of existing.slice(desired.length)) extra.remove();
+}
+
 /** 保存・出力と同じSVGを使い、ドラッグ中の所有者だけを一時的に差し替える。 */
 export function createDrawingSvgPreview(svg: SVGSVGElement, owners: ReadonlySet<string>) {
   const slots = new Map<string, { readonly parent: SVGGElement; readonly originals: readonly Element[] }>();
@@ -30,9 +49,9 @@ export function createDrawingSvgPreview(svg: SVGSVGElement, owners: ReadonlySet<
         if (value?.startsWith('url(#') === true) item.setAttribute('clip-path', `url(#${prefix}${value.slice(5)}`);
       }
       // Rangeが同じDocumentへ作ったノードを移動する。毎フレーム全輪郭を複製しない。
-      definitions.replaceChildren(...parsed.querySelectorAll('defs > *'));
+      updatePreviewChildren(definitions, [...parsed.querySelectorAll('defs > *')]);
       const nodes = [...parsed.querySelectorAll('[data-owner-id]')];
-      for (const [owner, slot] of slots) slot.parent.replaceChildren(...nodes.filter((node) => node.getAttribute('data-owner-id') === owner));
+      for (const [owner, slot] of slots) updatePreviewChildren(slot.parent, nodes.filter((node) => node.getAttribute('data-owner-id') === owner));
       return true;
     },
     restore(): void {

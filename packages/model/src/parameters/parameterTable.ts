@@ -20,10 +20,14 @@ import {
   renameVariable,
   toLengthUnit,
   type VariableNameIssue,
+  type ExpressionValue,
 } from '@pointercad/expression';
 
 import { nextSerialName } from '../sketch/createSketchDocument.js';
 import { nonLengthVariables } from '../units/length.js';
+import { ensureParameterMathIds } from './parameterMathIdentity.js';
+import { expressionParameterNames } from './expressionReferences.js';
+import { knownMathParameterEvaluation } from './mathParameterEvaluation.js';
 
 import type {
   Parameter,
@@ -69,7 +73,7 @@ export function parameterDependencies(
     if (graph.has(parameter.name)) {
       continue;
     }
-    const referenced = collectVariableNames(parameter.value.source).filter((name) =>
+    const referenced = expressionParameterNames(parameter.value, parameters).filter((name) =>
       known.has(name),
     );
     graph.set(parameter.name, referenced);
@@ -139,8 +143,10 @@ export function parameterEvaluationOrder(parameters: readonly Parameter[]): Para
  */
 export function analyzeParameters(
   parameters: readonly Parameter[],
-  usedSources: Iterable<string>,
+  usedSources: Iterable<string | Pick<ExpressionValue, 'source' | 'mathDefinition'>>,
 ): ParameterAnalysis {
+  const known = knownMathParameterEvaluation(parameters);
+  if (known !== undefined) return { ...known, unused: unusedParameterNames(parameters, usedSources) };
   const byName = indexByName(parameters);
   const { order, circular } = parameterEvaluationOrder(parameters);
 
@@ -151,6 +157,10 @@ export function analyzeParameters(
   for (const name of order) {
     const parameter = byName.get(name);
     if (parameter === undefined) {
+      continue;
+    }
+    if (parameter.value.mathDefinition !== undefined) {
+      failures.push({ name, message: 'この数式は数学計算部での再計算が必要です。' });
       continue;
     }
     const result = evaluateExpressionExact(parameter.value.source, { variables, exactVariables, nonLengthVariables: nonLength });
@@ -181,18 +191,18 @@ export function analyzeParameters(
  */
 function unusedParameterNames(
   parameters: readonly Parameter[],
-  usedSources: Iterable<string>,
+  usedSources: Iterable<string | Pick<ExpressionValue, 'source' | 'mathDefinition'>>,
 ): readonly string[] {
   const referenced = new Set<string>();
   for (const parameter of parameters) {
-    for (const name of collectVariableNames(parameter.value.source)) {
+    for (const name of expressionParameterNames(parameter.value, parameters)) {
       if (name !== parameter.name) {
         referenced.add(name);
       }
     }
   }
   for (const source of usedSources) {
-    for (const name of collectVariableNames(source)) {
+    for (const name of typeof source === 'string' ? collectVariableNames(source) : expressionParameterNames(source, parameters)) {
       referenced.add(name);
     }
   }
@@ -212,7 +222,7 @@ export function referencesTo(
   return parameters
     .filter(
       (parameter) =>
-        parameter.name !== name && collectVariableNames(parameter.value.source).includes(name),
+        parameter.name !== name && expressionParameterNames(parameter.value, parameters).includes(name),
     )
     .map((parameter) => parameter.name);
 }
@@ -221,8 +231,10 @@ export function referencesTo(
 export function addParameter(
   parameters: readonly Parameter[],
   parameter: Parameter,
+  minimumMathSerial = 0,
 ): readonly Parameter[] {
-  return [...parameters, parameter];
+  const next = [...parameters, parameter];
+  return minimumMathSerial > 0 || next.some(value => value.mathId !== undefined) ? ensureParameterMathIds(next, minimumMathSerial) : next;
 }
 
 /**
@@ -243,7 +255,8 @@ export function replaceParameter(
   name: string,
   next: Parameter,
 ): readonly Parameter[] {
-  return parameters.map((parameter) => (parameter.name === name ? next : parameter));
+  return parameters.map((parameter) => parameter.name !== name ? parameter
+    : parameter.mathId === undefined ? next : { ...next, mathId: parameter.mathId });
 }
 
 /**
@@ -265,7 +278,7 @@ export function renameParameter(
     return parameters;
   }
   return parameters.map((parameter) => {
-    const source = renameVariable(parameter.value.source, from, to);
+    const source = parameter.value.mathDefinition === undefined ? renameVariable(parameter.value.source, from, to) : parameter.value.source;
     return {
       ...parameter,
       name: parameter.name === from ? to : parameter.name,

@@ -178,6 +178,8 @@ export interface VariableSet {
  * 式で書かれている欄が 1 つでもあれば、動かすと式を壊すので変数にしない(FR-202)。
  */
 export function isLiteralCoordinate(input: CoordinateInput): boolean {
+  // A selected function solution moves only by editing its defining coordinates, never by adding a free offset.
+  if (input.mode !== 'absolute' && input.base.kind === 'functionPoint') return false;
   switch (input.mode) {
     case 'absolute':
       return (
@@ -567,6 +569,7 @@ export function collectVariables(
       case 'offset':
       case 'copy':
       case 'projectedCurve':
+      case 'functionCurve':
       case 'planeSection': {
         addDerivedGroup(builder, id, pointsByFeature.get(id), resolved.curvesByFeature.get(id));
         break;

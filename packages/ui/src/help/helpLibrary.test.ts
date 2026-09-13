@@ -10,6 +10,12 @@ describe('同梱ヘルプの本文と検索', () => {
     for (const topic of HELP_TOPICS) expect((await HELP_LOADERS[topic.id]?.())?.trim().startsWith('#'), topic.path).toBe(true);
     for (const group of DRAWING_TOOL_GROUPS) expect(HELP_LOADERS[group.helpTopic], group.label).toBeDefined();
   });
+  it('関数上の点の説明は画面の実文言を使い、未解決の参照を残さない', async () => {
+    const source = await HELP_LOADERS['function-point']();
+    expect(source).toContain('候補を探す');
+    expect(source).toContain('選んだ点を作成');
+    expect(source).not.toContain('{{ui:');
+  });
   it('本文の実画面リンクが同梱画像へ解決され、P8の17章・構成とP9の2章は画像を持つ', async () => {
     const required = new Set(['drawing', 'drawing-views', 'drawing-section', 'drawing-scale', 'dimension', 'dimension-auto',
       'dimension-series', 'dimension-tolerance', 'dimension-arrange', 'surface-finish', 'drawing-note', 'drawing-layer',

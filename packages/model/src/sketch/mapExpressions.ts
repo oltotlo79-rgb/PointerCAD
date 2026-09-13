@@ -15,6 +15,7 @@
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
+import { mapFunctionDefinition } from '../functionGeometry/mapFunctionDefinition.js';
 
 import type { SketchConstraint } from './constraints/types.js';
 import type {
@@ -58,15 +59,17 @@ export function mapKeepingIdentity<T>(items: readonly T[], map: (item: T) => T):
 /**
  * 座標の基準(`PointReference`)の式を写す(網羅。`default` を書かない)。
  *
- * 基準が式を持つのは**球面上の点(FR-431、P5 タスク19)だけ**で、緯度・経度が
- * パラメータ表に追従する対象になる(`resolveCoordinate.ts` の `sphereGrid`)。
- * 他の 5 種は指し先の id しか持たないので、そのまま返す。
+ * 球面の緯度・経度と関数上の点の既知座標は、パラメータ表に追従する。
+ * 選択枝を定義する過去の入力は変更せず、現在の入力との間の連続性を別途確認する。
  */
 export function mapPointReferenceExpressions(
   reference: PointReference,
   map: ValueMapper,
 ): PointReference {
   switch (reference.kind) {
+    case 'functionPoint':
+      return {...reference,known:reference.known.map(item=>({...item,value:map(item.value)})),
+        ...(reference.direction?{direction:{...reference.direction,length:map(reference.direction.length)}}:{})};
     case 'origin':
     case 'previous':
     case 'point':
@@ -247,6 +250,8 @@ function rebuildFeature(feature: SketchFeature, map: ValueMapper): SketchFeature
         ...feature,
         points: feature.points.map((input) => mapCoordinateExpressions(input, map)),
       };
+    case 'functionCurve':
+      return { ...feature, definition: mapFunctionDefinition(feature.definition, map) };
     case 'offset':
       // オフセットが持つ式は距離だけ(元の要素・側・角は式ではない)。
       return { ...feature, distance: map(feature.distance) };

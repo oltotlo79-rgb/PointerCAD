@@ -33,6 +33,7 @@ import {
   type ExpressionError,
   type ExpressionValue,
 } from '@pointercad/expression';
+import { evaluateNumericMath } from './numericMathValues.js';
 import {
   DEFAULT_BOX_SIZE_MM,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
@@ -684,6 +685,8 @@ export interface NumericFieldDefinition {
 
 export interface NumericField extends NumericFieldDefinition {
   readonly source: string;
+  /** A verified mathematical draft, invalidated by typing or snapping. Not a stored-value cache. */
+  readonly mathValue?: ExpressionValue;
   /**
    * `source` を**利用者がこの欄へ打ち込んだ**か(P6 タスク3b、§0.a-0.63)。
    *
@@ -862,6 +865,8 @@ export function numericChoiceOptionLabel(option: NumericChoiceOption): string {
 }
 
 export interface NumericInputState {
+  /** 二段入力の修正先。文書や履歴へ保存しない入力中の状態。 */
+  readonly previousStage?: NumericInputState;
   readonly textValue?: string;
   readonly textOrigin?: readonly [number, number, number];
   readonly toolId: NumericInputToolId;
@@ -3581,6 +3586,7 @@ function editStage2StateFrom(
   const next = createNumericInput(state.toolId, step);
   return {
     ...next,
+    previousStage: state,
     carriedStage1: { fields: state.fields, choices: state.choices, mode: state.mode },
   };
 }
@@ -3608,6 +3614,7 @@ function solidStage2StateFrom(
   const next = createNumericInput(state.toolId, step, undefined, { axisLine: state.axisLine });
   return {
     ...next,
+    previousStage: state,
     carriedStage1: { fields: state.fields, choices: state.choices, axisLine: state.axisLine },
   };
 }
@@ -3696,7 +3703,7 @@ function mergeFieldValues(
     const existing = previous.find((field) => field.key === definition.key);
     return existing === undefined
       ? { ...definition, source: definition.defaultSource }
-      : { ...definition, source: existing.source, typed: existing.typed };
+      : { ...definition, source: existing.source, typed: existing.typed, mathValue: existing.mathValue };
   });
 }
 
@@ -3830,7 +3837,7 @@ export function reduceNumericInput(
       }
       const fields = state.fields.map((field, index) =>
         // 打った欄だけ `typed` が立つ(表示が inch のときここだけが `(…)in` で包まれる)。
-        index === event.index ? { ...field, source: event.source, typed: true } : field,
+        index === event.index ? { ...field, source: event.source, typed: true, mathValue: undefined } : field,
       );
       return { ...state, fields, focusedIndex: event.index };
     }
@@ -3867,7 +3874,7 @@ export function reduceNumericInput(
         // 落とさないと、直前に打った欄へ吸い付いた値が入ったときに inch として包まれる。
         return value === undefined
           ? field
-          : { ...field, source: expressionValueFromNumber(value).source, typed: false };
+          : { ...field, source: expressionValueFromNumber(value).source, typed: false, mathValue: undefined };
       });
       return { ...state, fields };
     }
@@ -4064,6 +4071,7 @@ export interface NumericFieldResult {
 }
 
 export interface NumericInputEvaluation {
+  readonly carriedError?: ExpressionError;
   readonly results: readonly NumericFieldResult[];
   /** すべての欄が妥当なら true。false のときは決定させない(NFR-UX-5)。 */
   readonly canCommit: boolean;
@@ -4176,11 +4184,7 @@ export function evaluateNumericInput(
   display: DisplayUnitOptions = {},
 ): NumericInputEvaluation {
   const results: NumericFieldResult[] = state.fields.map((field) => {
-    const result = evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
-      variables,
-      nonLengthVariables: display.nonLengthVariables,
-      exactVariables: display.exactVariables,
-    });
+    const result = evaluateNumericField(field, variables, display);
     if (!result.ok) {
       return { key: field.key, value: null, error: result.error };
     }
@@ -4195,7 +4199,27 @@ export function evaluateNumericInput(
       : { key: field.key, value: null, error: rangeError };
   });
   const firstErrorIndex = results.findIndex((result) => result.error !== null);
+  for (const field of state.carriedStage1?.fields ?? []) {
+    const result = evaluateNumericField(field, variables, display);
+    const error = result.ok ? rangeErrorFor(field, result.value) : result.error;
+    if (error !== null) {
+      return { results, canCommit: false, firstErrorIndex: Math.max(0, firstErrorIndex),
+        carriedError: { ...error, message: `前の入力「${t(field.labelKey)}」: ${error.message}` } };
+    }
+  }
   return { results, canCommit: firstErrorIndex === -1, firstErrorIndex };
+}
+
+/** Use the same validation for visible fields and values carried from a previous step. */
+function evaluateNumericField(field: NumericField, variables: ReadonlyMap<string, number>, display: DisplayUnitOptions) {
+  if (field.mathValue !== undefined) {
+    if (field.source !== field.mathValue.source) return { ok: false as const, error: { code: 'unknownVariable' as const,
+      position: -1, message: '数式を変更したため再確認が必要です。「数式で入力」を開いてください。' } };
+    return evaluateNumericMath(field.mathValue, variables, display.exactVariables);
+  }
+  return evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
+    variables, nonLengthVariables: display.nonLengthVariables, exactVariables: display.exactVariables,
+  });
 }
 
 /** 評価できた値だけを順に取り出す。決定のときに使う。 */
@@ -4733,11 +4757,7 @@ function evaluateCarried(
   }
   for (const field of fields) {
     // 1 段目で打った文字も、2 段目の確定のときに同じ規則で包む(タスク3b)。
-    const result = evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
-      variables,
-      nonLengthVariables: display.nonLengthVariables,
-      exactVariables: display.exactVariables,
-    });
+    const result = evaluateNumericField(field, variables ?? new Map(), display);
     if (result.ok) {
       map.set(field.key, result.value);
     }

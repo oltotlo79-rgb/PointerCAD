@@ -1,4 +1,5 @@
 import { countSolidShapes } from './solidTopology.js';
+import { shapeBodyKind, measureClosedBodyVolume } from './shapeBodyKind.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type {
@@ -103,7 +104,7 @@ export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean 
  * 渡されなければ空配列にする(押し出し・回転・穴・面取り・ばね等はねじの印を持たない)。
  *
  * **形の種類(`bodyKind`)は必ず返す**(FR-428。`SolidBodyMesh` の必須の欄。§0.a-0.77)。
- * 判定は `hasSolid` そのままで安く、**体積では決めない**——ふたの無い開いた殻は体積が 0 とは
+ * 判定は実際の位相による。閉じた立体以外に面が残る場合は `mixed` とし、**体積では決めない**。開いた殻は体積が 0 とは
  * 限らない(タスク41 の実測: 体積 8000 の開いた殻)ので、体積からは見分けられないためである。
  * `'shell'` が来るのは曲面の段(`makeSurface.ts`)から。
  *
@@ -140,7 +141,7 @@ export function buildSolidBodyMesh(
   const surface = tessellate(oc, shape, options);
   const edges = extractEdges(oc, shape, options);
   const subShapes = collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges);
-  const bodyKind: SolidBodyKind = hasSolid(oc, shape) ? 'solid' : 'shell';
+  const bodyKind: SolidBodyKind = shapeBodyKind(oc, shape);
 
   return {
     id,
@@ -151,7 +152,7 @@ export function buildSolidBodyMesh(
     triangleCount: surface.triangleCount,
     faceCount: surface.faceCount,
     edgeCount: edges.edgeCount,
-    volume: knownVolume ?? measureVolume(oc, shape),
+    volume: knownVolume ?? (bodyKind === 'mixed' ? measureClosedBodyVolume(oc, shape, solid => measureVolume(oc, solid)) : measureVolume(oc, shape)),
     // 求められていないときは欄ごと落とす(undefined を入れるのと同じだが、
     // 「測っていない」ことが JSON の見た目でも分かるようにする)。
     // 作り手がすでに測ってあれば(`knownArea`)その値を使い、同じ形を測り直さない。

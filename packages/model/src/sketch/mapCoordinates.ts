@@ -32,6 +32,6 @@ export function mapSketchCoordinates(feature: SketchFeature, map: CoordinateMapp
     case 'ellipse': return { ...feature, center: map(feature.center) };
     case 'spline': return { ...feature, points: feature.points.map(map) };
     case 'copy': return { ...feature, placement: mapPlacement(feature.placement, map) };
-    case 'face': case 'offset': case 'projectedCurve': case 'planeSection': return feature;
+    case 'face': case 'offset': case 'projectedCurve': case 'planeSection': case 'functionCurve': return feature;
   }
 }

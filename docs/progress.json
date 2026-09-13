@@ -3,7 +3,7 @@
   "totalTasks": 580,
   "futureEstimateTasks": 115,
   "completedBeforeTrackedPhases": 305,
-  "reportedCompleted": 503,
+  "reportedCompleted": 518,
   "phases": [
     {
       "id": "ADD",
@@ -39,7 +39,22 @@
         "ADD-28"
       ],
       "completedTaskIds": [
-        "ADD-1"
+        "ADD-1",
+        "ADD-2",
+        "ADD-3",
+        "ADD-4",
+        "ADD-5",
+        "ADD-6",
+        "ADD-7",
+        "ADD-8",
+        "ADD-9",
+        "ADD-10",
+        "ADD-11",
+        "ADD-12",
+        "ADD-13",
+        "ADD-14",
+        "ADD-15",
+        "ADD-16"
       ]
     },
     {

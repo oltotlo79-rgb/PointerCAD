@@ -2,8 +2,8 @@
  * model から幾何カーネルへの唯一の接点(計画書 docs/plans/P1-式とスケッチ.md タスク12、
  * docs/plans/P3-加工フィーチャー.md タスク17)。
  *
- * @pointercad/kernel の型はこのファイルの中だけで使い、外へは model の型で返す
- * (P0 §0.11、rules/04-設計の規律.md の依存方向)。ここ以外から kernel を呼ばない。
+ * @pointercad/kernel の型はこの入口と kernelBridge/ 内の変換処理で使い、外へは model の型で返す
+ * (P0 §0.11、rules/04-設計の規律.md の依存方向)。Workerの接続と実行はこの入口が所有し、変換処理は通信しない。
  */
 
 import {
@@ -18,7 +18,6 @@ import {
   matchVertex,
   type AppearanceMatch,
   type AppearanceQuery,
-  type CurveSpec,
   type FaceMeshData,
   type KernelApi,
   type ManagedKernelApi,
@@ -26,20 +25,11 @@ import {
   type InterferenceRequest,
   type InterferenceResult,
   type InterferenceProgress,
-  type MeasureRequest,
-  type MeasureResult,
-  type MeasureTargetSpec,
   type OffsetJoinType,
-  type PlanarFaceRequest,
   type PlaneCurve,
   type PrintabilityProgress,
   type ShapeExportItem,
   type ShapeInspectRequest,
-  type ShapeExportRequest,
-  type ShapeExportResult,
-  type ShapeImportBody,
-  type ShapeImportRequest,
-  type ShapeImportResult,
   type SketchOffsetItem,
   type SketchOffsetOutcome,
   type SketchPlaneFrame,
@@ -51,195 +41,174 @@ import {
   type SolidProgress,
   type SolidRecomputeRequest,
   type SolidRecomputeResult,
-  type SolidStepRequest,
-  type SolidStepSpec,
-  type SubShapeQuery,
-  type SurfaceInput,
-  type ThruSectionSpec,
   type Vec2Tuple,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
+import { readFunctionCurveGeometry, type FunctionKernelBridge } from './functionGeometry/functionCurveGeometry.js';
 import type {
-  DrawingProjectionRequest, DrawingProjectionResult, DrawingSectionRequest, DrawingSectionResult,
+  DrawingProjectionResult,
+  DrawingSectionResult,
 } from './drawing/resolveDrawing.js';
-import { importedShapeOf } from './part/types.js';
-import type { AssemblyComponent } from './assembly/types.js';
-import type { ResolvedAssembly } from './assembly/resolveAssembly.js';
-import type { RigidPlacement } from './assembly/placementMath.js';
 
-import { EXPORT_MESH_QUALITY, type ExportMeshQuality } from './exchange/types.js';
+import type { ExportMeshQuality } from './exchange/types.js';
 import type { ResolvedSubShape } from './geometry/planeSpec.js';
-import type { SubShapeFingerprint, SubShapeRef } from './geometry/subShapeRef.js';
 import type {
-  ResolvedSolidStep,
-  SolidStepPlan,
-  SubShapeQueryPlan,
-  SurfaceShapePlan,
-  ThruSectionPlan,
-} from './part/resolvePart.js';
-import type { EdgeCurveKind, FaceSurfaceKind } from './part/types.js';
+  SubShapeRef,
+} from './geometry/subShapeRef.js';
+import type { ResolvedSolidStep } from './part/resolvePart.js';
+
 import type { WorkPlane } from './sketch/planeMath.js';
-import { isFullEllipse } from './sketch/resolveSketch.js';
+
 import type {
   OffsetCornerKind,
   ResolvedCurve,
   ResolvedFace,
   SketchFaceMesh,
-  SketchMesh,
 } from './sketch/types.js';
 import { addVec3, scaleVec3, type Vec3 } from './sketch/vec3.js';
 
-/** 面 1 枚を作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
-export interface SketchFaceFailure {
-  /** 依頼した面フィーチャーの id。 */
-  readonly featureId: string;
-  readonly message: string;
-}
-
-/**
- * 面をカーネルへ渡した結果。1 枚失敗しても残りは作るので、
- * できた面(mesh)とできなかった理由(failures)を両方返す(FR-504、NFR-RE-1)。
- */
-export interface SketchTessellationOutcome {
-  readonly mesh: SketchMesh;
-  readonly failures: readonly SketchFaceFailure[];
-}
-
-/**
- * オフセット 1 件の依頼(model の言葉、FR-321、P4 タスク15)。
- * 距離は**符号つき**で、どちら側かは呼び出し側(`recomputeSketch`)が決めてから渡す。
- */
-export interface SketchOffsetRequestItem {
-  readonly featureId: string;
-  /** オフセット元の曲線。並んだ順につながっていること。 */
-  readonly curves: readonly ResolvedCurve[];
-  readonly distance: number;
-  readonly corner: OffsetCornerKind;
-}
-
-/** オフセットで得た輪郭 1 本。面の境界に使えるのは閉じているものだけ。 */
-export interface SketchOffsetContour {
-  readonly curves: readonly ResolvedCurve[];
-  readonly closed: boolean;
-}
-
-/** オフセット 1 件の結果。輪郭が 2 本以上に分かれることもある。 */
-export interface SketchOffsetEntry {
-  readonly featureId: string;
-  readonly contours: readonly SketchOffsetContour[];
-}
-
-/** オフセットを 1 件作れなかった理由。カーネルが日本語で返したものを持ち回る(FR-504)。 */
-export interface SketchOffsetFailure {
-  readonly featureId: string;
-  readonly message: string;
-}
-
-/** オフセットの結果。1 件失敗しても残りは作る(FR-504、NFR-RE-1)。 */
-export interface SketchOffsetResult {
-  readonly results: readonly SketchOffsetEntry[];
-  readonly failures: readonly SketchOffsetFailure[];
-}
-
-/* ------------------------------------------------------------------ *
- * 投影・交差(FR-325、P4 タスク25・26)
- * ------------------------------------------------------------------ */
-
-/**
- * 投影・交差 1 件の依頼(model の言葉)。
- *
- * **もとの立体は「段の鍵」で指す。** 立体の B-rep はカーネル(Worker)の中にしか無く、
- * 形そのものは渡せないので、`recomputeSolids` が預けたときの鍵(`ResolvedSolidStep.key`)を
- * そのまま渡してカーネル側の形状キャッシュから引いてもらう。鍵は上流の値から作られている
- * ので、上流が変われば鍵が変わり、投影も必ず作り直される(NFR-PF-3 の鍵の連鎖)。
- */
-export interface SketchProjectionRequestItem {
-  readonly featureId: string;
-  /** sectionSketchCurves専用。指定精度の断面はdoubleを保持し、点数を間引かない。 */
-  readonly curveToleranceMm?: number;
-  /** もとの立体の段の鍵。 */
-  readonly bodyKey: string;
-  /**
-   * 投影する面・辺。**`null` なら立体そのもの**(交差、または立体全体の投影)。
-   * 面・辺は指紋で渡し、選び直しはカーネルの中で行う(§2.2.4)。
-   */
-  readonly source: SubShapeRef | null;
-  /** 投影先・切り口の作図面。 */
-  readonly plane: WorkPlane;
-}
-
-/** 投影・交差 1 件の結果。曲線はワールド座標へ戻した後の形で、つながる順に並ぶ。 */
-export interface SketchProjectionEntry {
-  readonly featureId: string;
-  readonly curves: readonly ResolvedCurve[];
-}
-
-/** 投影・交差を 1 件作れなかった理由。カーネルが日本語で返したものを持ち回る(FR-504)。 */
-export interface SketchProjectionFailure {
-  readonly featureId: string;
-  readonly message: string;
-}
-
-/** 投影・交差の結果。1 件失敗しても残りは作る(FR-504、NFR-RE-1)。 */
-export interface SketchProjectionResult {
-  readonly results: readonly SketchProjectionEntry[];
-  readonly failures: readonly SketchProjectionFailure[];
-}
-
-/* ------------------------------------------------------------------ *
- * スケッチの角の丸め・面取り(FR-323、P4 タスク18・19)— Worker を通らない同期の口
- * ------------------------------------------------------------------ */
-
-/**
- * ## なぜ Worker を往復しないのか、なぜここに置くのか(統括の決定 §0.a-0.20)
- *
- * 角の丸め・面取りの形は、角を作るのが 2 本の**線分**である限り閉じた式で解ける。
- * タスク19 の実測で OCCT(`ChFi2d_FilletAlgo` / `ChFi2d_ChamferAPI`)は使わないと決まり、
- * kernel の `makeSketchFillet2d.ts` / `makeSketchChamfer2d.ts` は **OCCT に触れない純関数**
- * になった(理由は同ファイルの冒頭)。だから Worker への往復は要らない。
- *
- * それでも呼び出しをこのファイルに通すのは、**model からカーネルを呼ぶのは
- * `kernelBridge.ts` だけ**という決め(このファイルの冒頭、P0 §0.11)を守るため。
- * 式そのものは kernel が単一の正本を持ち(OCCT との一致を検査で固定しているのは
- * kernel 側だけで、model からは OCCT を呼べない)、model 側へ写して 2 か所に持つことは
- * しない(`splineMath.ts` が抱えている二重定義を増やさない)。
- *
- * ほかの口と違って**同期の純関数**である。Worker を持たないので `KernelBridge` の
- * メソッドにはせず、このファイルの関数として置く。
- */
-
-/** 角を作る線分 1 本(model の言葉)。 */
-export interface SketchCornerSegment {
-  readonly from: Vec3;
-  readonly to: Vec3;
-}
-
-/**
- * 丸めの円弧を置く作図面。**角度 0 の向き(第1軸)を含む**のは、model の円弧
- * (`SketchArcFeature`)の開始角・終了角が作図面の第1軸から測ると決まっているため。
- */
-export interface SketchCornerPlane {
-  readonly origin: Vec3;
-  readonly normal: Vec3;
-  readonly axisU: Vec3;
-}
-
-/** 丸めた結果。角度は plane.axisU を 0 とし plane.normal まわりに正(ラジアン)。 */
-export interface SketchFilletGeometry {
-  /** 丸め後、1 本目の線の新しい端点(円弧との接点)。 */
-  readonly trimmed1: Vec3;
-  readonly trimmed2: Vec3;
-  readonly arcCenter: Vec3;
-  readonly arcRadius: number;
-  readonly arcStartAngle: number;
-  readonly arcEndAngle: number;
-}
-
-/** 面取りした結果。足す線分は trimmed1 から trimmed2 へ引く。 */
-export interface SketchChamferGeometry {
-  readonly trimmed1: Vec3;
-  readonly trimmed2: Vec3;
-}
+import { toCurveSpec, toFaceRequest, fromCurveSpec } from './kernelBridge/curveConversions.js';
+import { toSubShapeQuery } from './kernelBridge/subShapeQuery.js';
+import { toMeasureRequest, toMeasureOutcome } from './kernelBridge/measureConversions.js';
+import { toShapeExportItems, toShapeExportRequest, toShapeExportOutcome, toShapeImportRequest, toShapeImportOutcome } from './kernelBridge/exchangeConversions.js';
+import { toSolidStepRequest } from './kernelBridge/solidRequests.js';
+import type {
+  SketchFaceFailure,
+  SketchTessellationOutcome,
+  SketchOffsetRequestItem,
+  SketchOffsetEntry,
+  SketchOffsetFailure,
+  SketchOffsetResult,
+  SketchProjectionRequestItem,
+  SketchProjectionEntry,
+  SketchProjectionFailure,
+  SketchProjectionResult,
+  SketchCornerSegment,
+  SketchCornerPlane,
+  SketchFilletGeometry,
+  SketchChamferGeometry,
+} from './kernelBridge/sketchContracts.js';
+export type {
+  SketchFaceFailure,
+  SketchTessellationOutcome,
+  SketchOffsetRequestItem,
+  SketchOffsetContour,
+  SketchOffsetEntry,
+  SketchOffsetFailure,
+  SketchOffsetResult,
+  SketchProjectionRequestItem,
+  SketchProjectionEntry,
+  SketchProjectionFailure,
+  SketchProjectionResult,
+  SketchCornerSegment,
+  SketchCornerPlane,
+  SketchFilletGeometry,
+  SketchChamferGeometry,
+  SolidBodyMeshData,
+} from './kernelBridge/sketchContracts.js';
+import type {
+  AppearanceFaceRequest,
+  AppearanceMatchEntry,
+  SolidBody,
+  SolidBodyFailure,
+  SolidRecomputeOutcome,
+  PartProgressCallback,
+  PartCancelToken,
+  SolidRecomputeOptions,
+  MateSubShapeGeometry,
+} from './kernelBridge/solidContracts.js';
+export type {
+  SolidFaceEntry,
+  SolidEdgeEntry,
+  SolidVertexEntry,
+  ThreadMarkEntry,
+  SolidBodyKind,
+  AppearanceFaceRequest,
+  AppearanceMatchEntry,
+  SolidBody,
+  SolidBodyFailure,
+  SolidRecomputeOutcome,
+  PartProgress,
+  PartProgressCallback,
+  PartCancelToken,
+  SolidRecomputeOptions,
+  MateSubShapeGeometry,
+} from './kernelBridge/solidContracts.js';
+import type {
+  MeasureOutcome,
+  PrintabilityProgressCallback,
+  PrintabilityOutcome,
+  PrintabilityOptions,
+} from './kernelBridge/analysisContracts.js';
+import type { ShapeExportOutcome, ShapeImportOutcome } from './kernelBridge/exchangeContracts.js';
+export type {
+  MeasureTarget,
+  MeasureOutcome,
+  PrintabilityPhase,
+  PrintabilityProgressView,
+  PrintabilityProgressCallback,
+  PrintabilitySummary,
+  PrintabilityReport,
+  PrintabilityMeshIdentity,
+  PrintabilityOutcome,
+  PrintabilityOptions,
+} from './kernelBridge/analysisContracts.js';
+export type {
+  ExportColor,
+  ShapeExportBody,
+  ShapeExportFormat,
+  ShapeExportOptions,
+  ExportedFile,
+  ExportedMeshBody,
+  ShapeExportOutcome,
+  ShapeImportOptions,
+  ImportedTriangles,
+  ImportedBody,
+  ShapeImportOutcome,
+} from './kernelBridge/exchangeContracts.js';
+import type {
+  KernelBridge,
+  KernelHealth,
+  KernelOperationStatus,
+  ShapeAvailability,
+  AssemblyKernelBridge,
+  AssemblyInterferenceInput,
+  AssemblyInterferencePairId,
+  AssemblyInterferenceOptions,
+  AssemblyInterferenceProgress,
+  AssemblyInterferenceReport,
+  AssemblyInterferenceRootFailure,
+  AssemblyInterferenceResult,
+  InterferenceKernelBridge,
+  MonitoredKernelBridge,
+  DrawingOperationProgress,
+  DrawingKernelBridge,
+} from './kernelBridge/bridgeContracts.js';
+export type {
+  KernelBridge,
+  KernelHealth,
+  KernelOperationStatus,
+  KernelOperationCounts,
+  ShapeAvailability,
+  AssemblyKernelBridge,
+  AssemblyInterferenceInput,
+  AssemblyInterferencePairId,
+  AssemblyInterferenceOptions,
+  AssemblyInterferenceProgress,
+  AssemblyInterferenceMesh,
+  AssemblyInterferencePair,
+  AssemblyInterferencePairFailure,
+  AssemblyInterferenceReport,
+  AssemblyInterferenceRootFailure,
+  AssemblyInterferenceResult,
+  InterferenceKernelBridge,
+  MonitoredKernelBridge,
+  DrawingOperationOptions,
+  DrawingOperationProgress,
+  DrawingKernelBridge,
+} from './kernelBridge/bridgeContracts.js';
+export { toCurveSpec, toFaceRequest, fromCurveSpec } from './kernelBridge/curveConversions.js';
+export { toSolidStepRequest } from './kernelBridge/solidRequests.js';
 
 /**
  * 角を丸めた形を求める(FR-323)。角として成り立たないとき、半径が線の長さに
@@ -277,308 +246,6 @@ export function sketchChamferGeometry(
   });
 }
 
-/** ボディ 1 つの表示用データ(model の言葉)。kernel の SolidBodyMesh を詰め替えたもの。 */
-export interface SolidBodyMeshData {
-  /** 頂点座標。x, y, z の順に 3 個ずつ並ぶ。 */
-  readonly positions: Float32Array;
-  /** 頂点法線。positions と同じ長さ。 */
-  readonly normals: Float32Array;
-  /** 三角形の頂点番号。3 個ずつ並ぶ。 */
-  readonly indices: Uint32Array;
-  /** 稜線の線分列。線分 1 本あたり 6 個(始点 xyz + 終点 xyz)。 */
-  readonly edgePositions: Float32Array;
-  readonly triangleCount: number;
-}
-
-/**
- * 面 1 枚の素性(計画書 P3 §2.2、§2.8)。部分形状の当たり判定・強調・指紋の材料になる。
- * kernel の `SolidFaceInfo` と同じ形だが、model は kernel の型を再輸出しないので
- * この場に自分の型として持つ(P0 §0.11)。
- */
-export interface SolidFaceEntry {
-  /** `TopExp.MapShapes_2` の順で数えた 0 始まりの通し番号。 */
-  readonly index: number;
-  readonly surfaceKind: FaceSurfaceKind;
-  /** 面積(mm²)。 */
-  readonly area: number;
-  /** 重心(mm)。 */
-  readonly centroid: Vec3;
-  /** 平面は法線、円柱・円錐は軸。求まらなければ null。 */
-  readonly axis: Vec3 | null;
-  /** 円筒・円錐の解析軸上点または球の解析中心(mm、部品座標)。面積重心とは別物。旧fixtureでは省略可。 */
-  readonly axisOrigin?: Vec3 | null;
-  /** 円柱・円錐・球の半径(mm)。平面では null。 */
-  readonly radius: number | null;
-  /** この面の三角形が mesh.indices の何番目から何枚あるか。 */
-  readonly triangleOffset: number;
-  readonly triangleCount: number;
-}
-
-/** 辺 1 本の素性。並びは面と同じく通し番号の順(計画書 P3 §2.2、§2.8)。 */
-export interface SolidEdgeEntry {
-  readonly index: number;
-  readonly curveKind: EdgeCurveKind;
-  /** 長さ(mm)。 */
-  readonly length: number;
-  /** 中点(mm)。 */
-  readonly midpoint: Vec3;
-  readonly start: Vec3;
-  readonly end: Vec3;
-  /** 直線は向き、円は軸。求まらなければ null。 */
-  readonly axis: Vec3 | null;
-  /** 円の解析中心(mm、部品座標)。円弧の重心とは別物。旧fixtureでは省略可。 */
-  readonly axisOrigin?: Vec3 | null;
-  /** 円の半径(mm)。それ以外は null。 */
-  readonly radius: number | null;
-  /** この辺の線分が mesh.edgePositions の何番目から何本あるか。 */
-  readonly segmentOffset: number;
-  readonly segmentCount: number;
-}
-
-/** 頂点 1 つの素性。位置しか持たない(計画書 P3 §2.2、§2.8)。 */
-export interface SolidVertexEntry {
-  readonly index: number;
-  readonly position: Vec3;
-}
-
-/**
- * ねじの簡略表示の印(§0.a-0.15)。B-rep には現れない、描画だけのための情報。
- * 下穴は実際に掘るが、ねじ山は形を作らずに細い円と軸線で表すので、再計算の費用がかからない。
- */
-export interface ThreadMarkEntry {
-  readonly origin: Vec3;
-  readonly direction: Vec3;
-  readonly majorDiameter: number;
-  readonly length: number;
-}
-
-/**
- * 形の種類(FR-428、P5 §0.a-0.45。P6 §0.a-0.24 で `'mesh'` が加わった)。閉じた立体を含む形は
- * `'solid'`、面だけのボディ(押し出し面・回転面など)は `'shell'`、**読み込んだ三角形の形**
- * (STL / OBJ / glTF / 3MF のベースボディ、FR-802、P6 §2.8)は `'mesh'`。
- *
- * kernel にも同じ名前・同じ3値の型があるが、**kernel の型は再輸出しない**約束
- * (このファイルの冒頭、P0 §0.11)なので model 側で同じ並びを持つ(P6 タスク10 が
- * kernel 側を広げ、タスク20 の前借りとして model 側もここで追随した)。P5 タスク3 の
- * 時点ではどの段も閉じた立体しか作らないので必ず `'solid'` で、`'shell'` が実際に来るのは
- * 曲面の段が入るタスク41 から、`'mesh'` が来るのは読み込んだ形のベースボディ
- * (`importedMesh` のフィーチャー)が入る P6 タスク20 から。
- */
-export type SolidBodyKind = 'solid' | 'shell' | 'mesh';
-
-/**
- * 外観を割り当てた面 1 つぶんの照合の依頼(FR-1106、P5 §2.2.3、§0.a-0.2)。
- *
- * 文書は面を指紋(`SubShapeRef`)で覚えているだけなので、形を作り直すと面の通し番号が
- * ずれる。**選び直しの採点はカーネルにしか無い**(`matchSubShape.ts`。重みとしきい値を
- * model へ複製しない、§0.a-0.2)ので、再計算のたびにこの依頼をカーネルへ添えて
- * 選び直してもらう。`bodyFeatureId` はその面を持つボディを作ったフィーチャーの id で、
- * 橋がそれを段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
- */
-export interface AppearanceFaceRequest {
-  /** 割り当て 1 つの id(`AppearanceEntry.id`)。結果との対応づけだけに使う。 */
-  readonly id: string;
-  readonly bodyFeatureId: string;
-  readonly ref: SubShapeRef;
-}
-
-/**
- * 外観の面の照合の結果 1 件(FR-1106)。**依頼と同じ並び・同じ件数で返る**
- * (1 件も落とさない)。
- *
- * `faceIndex` が `null` なら「選び直せなかった」で、呼び出し側(ui)は警告を出して
- * その面を既定の外観で描く(FR-1106「選び直せなかった割り当ては警告し、既定の外観に
- * 戻す」)。**割り当て自体は文書から消さない**ので、利用者が形を元に戻せば復活する。
- */
-export interface AppearanceMatchEntry {
-  readonly id: string;
-  readonly bodyFeatureId: string;
-  readonly faceIndex: number | null;
-}
-
-/** 画面に出るボディ 1 つ。id はそれを作ったフィーチャーの id と同じ(§0.a-0.5)。 */
-export interface SolidBody {
-  readonly featureId: string;
-  readonly mesh: SolidBodyMeshData;
-  /** 体積(mm³)。プロパティ欄に出す(FR-501)。 */
-  readonly volume: number;
-  /**
-   * 表面積(mm²)。測定(FR-1102)と曲面(FR-428)で使う。
-   *
-   * **任意の欄にしてあるのは、`SolidBody` を組み立てている見本(`packages/ui` の
-   * ビューポートとストアの検査、`part/subShapeCache.test.ts`)を直せるのが、
-   * それぞれのパッケージを受け持つ後続のタスク(ui のタスク10・11)だからである。**
-   * ここを必須にすると、P5 タスク4 の担当が触れない範囲の型検査が落ちる。
-   * カーネルから来た値はそのまま写し、**カーネルが返さなかったときは欄ごと省く**
-   * (0 と偽らない)。kernel 側で必須へ引き上げる話は kernel の後続タスクが持つ。
-   */
-  readonly area?: number;
-  /**
-   * 形の種類(FR-428)。**model の型ではまだ任意**にしてあるが、任意にしてある理由は
-   * `area` と同じ(`SolidBody` を組み立てている ui の見本を直せるのが ui のタスク)。
-   * **詰め替えでは必ず値を入れる**——カーネル側は §0.a-0.77(タスク42b)で必須の欄に
-   * なったので、`toSolidBody` は既定へ落とさずカーネルの値をそのまま写す。
-   * 実際の再計算の結果でこの欄が空になることは無い。
-   */
-  readonly bodyKind?: SolidBodyKind;
-  /**
-   * 中身のある立体として受け取れたか。三角形が 1 枚以上あり、体積が有限の正の値であること。
-   *
-   * カーネルは立体になっていない形(体積 0、B-rep として壊れている形)を作った時点で
-   * 断って failures へ回すので、いまここへ来るボディは必ず true になる。それでも欄を持つのは、
-   * 表示側が「形は返ったが中身が無い」を毎回自分で確かめずに済ませるため(FR-504、NFR-RE-1)。
-   */
-  readonly isValid: boolean;
-  /**
-   * 部分形状(面・辺・頂点)の一覧(計画書 P3 §2.2、§2.8、タスク10・17)。並びは通し番号の順で、
-   * `faces.length` / `edges.length` は必ずカーネルの `faceCount` / `edgeCount` と一致する
-   * (kernel 側の buildSolidBodyMesh・subShapes.ts が保証し、本ファイルの検査で固定する)。
-   * 加工フィーチャー(穴・面取り等)が保存する `SubShapeRef` の指紋は、この一覧から作る。
-   */
-  readonly faces: readonly SolidFaceEntry[];
-  readonly edges: readonly SolidEdgeEntry[];
-  readonly vertices: readonly SolidVertexEntry[];
-  /** ねじの簡略表示の印(§0.a-0.15)。無ければ空配列。 */
-  readonly threadMarks: readonly ThreadMarkEntry[];
-}
-
-/** 立体を 1 つ作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
-export interface SolidBodyFailure {
-  /** 作れなかったフィーチャーの id。 */
-  readonly featureId: string;
-  readonly message: string;
-}
-
-/** 立体の再計算の結果。1 段失敗しても止めずに残りを返す(FR-504、NFR-RE-1)。 */
-export interface SolidRecomputeOutcome {
-  readonly bodies: readonly SolidBody[];
-  readonly failures: readonly SolidBodyFailure[];
-  /** 作り直さずに済んだ段の数(NFR-PF-3 の効き目の実測値)。 */
-  readonly cacheHits: number;
-  /** 段と段の間で打ち切られたか(NFR-PF-4)。 */
-  readonly cancelled: boolean;
-  /**
-   * 外観の面の照合の結果(FR-1106)。`SolidRecomputeOptions.appearance` と
-   * 同じ並び・同じ件数で返り、頼まなければ空配列。
-   *
-   * 任意の欄にしてあるのは `SolidBody.area` と同じ理由(この型を組み立てている見本を
-   * 直せるのが別のタスクの担当だから)で、詰め替えでは必ず値を入れる。
-   */
-  readonly appearanceMatches?: readonly AppearanceMatchEntry[];
-}
-
-/** 計算の進み具合(NFR-PF-4)。kernel の SolidProgress を model の言葉へ写したもの。 */
-export interface PartProgress {
-  /** これから計算する段のフィーチャー id。 */
-  readonly featureId: string;
-  /** これから計算する段の位置。0 から始まる。画面には index + 1 を出す。 */
-  readonly index: number;
-  /** 段の総数。 */
-  readonly total: number;
-  /** 画面に出す段の名前。 */
-  readonly label: string;
-}
-
-/** 段を始める前に 1 回ずつ呼ばれる(NFR-PF-4)。 */
-export type PartProgressCallback = (progress: PartProgress) => void;
-
-/**
- * 中止を尋ねる口。true を返すと、段と段の間で残りを打ち切る(NFR-PF-4)。
- * 1 段の演算そのものは途中で止められない(§2.6 の限界)。
- */
-export type PartCancelToken = () => boolean;
-
-/** 立体の再計算に添える設定。どれも省略できる。 */
-export interface SolidRecomputeOptions {
-  /** 文書/session 内で安定した部品の識別子。省略時は part:current。 */
-  readonly partId?: string;
-  /**
-   * 世代番号。呼び出しごとに 1 つ増やし、古い応答を捨てる目印にする
-   * (P1 の attachSketchRecompute と同じ発想)。
-   */
-  readonly generation?: number;
-  readonly onProgress?: PartProgressCallback;
-  readonly shouldCancel?: PartCancelToken;
-  /**
-   * 外観を割り当てた面(FR-1106、§2.2.3)。**省略か空なら照合を一切頼まない。**
-   * 照合の物差し(境界箱の対角長)を測るのにもカーネルは OCCT を呼ぶので、外観を
-   * 1 つも割り当てていない文書では費用をゼロにする(§0.a-0.54)。
-   */
-  readonly appearance?: readonly AppearanceFaceRequest[];
-  /**
-   * ボディの表面積(`SolidBody.area`)を測るか(FR-1102、統括の決定 2026-09-05 07:28)。
-   *
-   * **既定は測らない。** 表面積は測定・質量特性(タスク29 以降)が求めたときだけ要る値で、
-   * 測る費用(カーネルの実測で面 26 枚の板に 11.4ms)を毎回の再計算で払わないため。
-   * **外観の面の照合はこの値を使わない**(照合が見るのは面ごとの面積で、それは
-   * 面の一覧に元から入っている)ので、`appearance` を渡してもここは真にならない。
-   */
-  readonly measureAreas?: boolean;
-}
-
-/* ------------------------------------------------------------------ *
- * 測定(FR-1101、FR-1102、P5 タスク29)
- * ------------------------------------------------------------------ */
-
-/**
- * 測る対象 1 つ(model の言葉)。
- *
- * 立体は「それを作ったフィーチャーの id」で指す(§0.a-0.5「段の id = ボディの id」)。
- * kernel は形状キャッシュの鍵(`ResolvedSolidStep.key`)でしか形を引けないので、
- * `KernelBridge.measure` がこの id を鍵へ引き直してからカーネルへ渡す(外観の面の照合
- * `toAppearanceQueries` と同じ流儀、§2.2.3)。
- */
-export interface MeasureTarget {
-  readonly bodyFeatureId: string;
-  /**
-   * アセンブリのように同じ feature id を複数部品が持ちうる場合の明示的な段の鍵。
-   * 省略時は従来どおり `steps` から feature id で引く。
-   */
-  readonly bodyKey?: string;
-  /** 面・辺・頂点の指紋。ボディ全体を測るなら null。 */
-  readonly subShape: SubShapeRef | null;
-  /** 表示中のアセンブリ配置。省略時は部品内の局所座標のまま測る。 */
-  readonly placement?: RigidPlacement;
-}
-
-/**
- * 測定の結果(FR-1101、FR-1102)。kernel の `MeasureResult` を model の言葉へ詰め替えたもの
- * (kind ごとの欄はそのまま持ち回る)。
- *
- * **距離・重心はワールド座標の mm。慣性モーメント(`principalMoments`)は重心を通る主軸
- * まわりの体積の 2 次モーメントで、密度を掛けていない mm⁵のまま**(§0.a-0.32)。
- * 密度(g/cm³)を掛けた質量(g)・慣性モーメント(g·mm²)は、密度表を持つ model 側の
- * `measure/massProperties.ts`(`massFromVolume` / `inertiaWithDensity`)が別途計算する
- * (統括の決定: 密度の掛け算は model のこの 1 か所だけで行う)。
- */
-export type MeasureOutcome =
-  | {
-      readonly kind: 'distance';
-      /** 最短距離(mm)。交わっているときは 0。 */
-      readonly distance: number;
-      /** 1 つ目の対象の上の最近点(mm)。 */
-      readonly pointA: Vec3;
-      /** 2 つ目の対象の上の最近点(mm)。 */
-      readonly pointB: Vec3;
-      /** 一方が他方の内側にある(交わっている)か。 */
-      readonly inner: boolean;
-    }
-  | {
-      readonly kind: 'massProperties';
-      /** 体積(mm³)。 */
-      readonly volume: number;
-      /** 表面積(mm²)。 */
-      readonly area: number;
-      /** 重心(mm)。 */
-      readonly centreOfMass: Vec3;
-      /** 重心を通る主軸まわりの体積の 2 次モーメント(mm⁵、密度を掛けていない)。 */
-      readonly principalMoments: readonly [number, number, number];
-      /** 主軸の向き(長さ 1)。第 1・第 2・第 3 の順。 */
-      readonly principalAxes: readonly [Vec3, Vec3, Vec3];
-    }
-  /** 測れなかった。message はそのまま画面に出す日本語(FR-504。kernel の文言を持ち回る)。 */
-  | { readonly kind: 'failed'; readonly message: string };
-
 /**
  * 対象の立体を作ったフィーチャーの id が、いま渡された `steps` の中に見つからなかったとき
  * (§0.a-0.30)。
@@ -592,214 +259,6 @@ export type MeasureOutcome =
 const MEASURE_MISSING_SHAPE_MESSAGE = '測れませんでした。もう一度お試しください。';
 
 /**
- * 測定の依頼を kernel の言葉へ詰め替える。対象の立体を「段の鍵」へ引き直す
- * (`toAppearanceQueries` と同じ流儀)。**1 つでも鍵が引けなければ null を返し**、
- * 呼び出し側はカーネルを呼ばずに断る(§0.a-0.30)。
- */
-function toMeasureRequest(
-  steps: readonly ResolvedSolidStep[],
-  targets: readonly MeasureTarget[],
-  kind: 'distance' | 'massProperties',
-): MeasureRequest | null {
-  const keyByFeatureId = new Map(steps.map((step) => [step.featureId, step.key]));
-  const specs: MeasureTargetSpec[] = [];
-  for (const target of targets) {
-    const bodyKey = target.bodyKey ?? keyByFeatureId.get(target.bodyFeatureId);
-    if (bodyKey === undefined) {
-      return null;
-    }
-    specs.push({
-      bodyKey,
-      subShape: target.subShape === null ? null : toSubShapeQuery(target.subShape),
-      ...(target.placement === undefined ? {} : { placement: {
-        position: [...target.placement.position], rotation: [...target.placement.rotation],
-      } }),
-    });
-  }
-  return { targets: specs, kind };
-}
-
-/** 測定の結果を model の言葉へ詰め替える(kernel の型を外へ出さない、NFR-MA-1)。 */
-function toMeasureOutcome(result: MeasureResult): MeasureOutcome {
-  switch (result.kind) {
-    case 'distance':
-      return {
-        kind: 'distance',
-        distance: result.distance,
-        pointA: result.pointA,
-        pointB: result.pointB,
-        inner: result.inner,
-      };
-    case 'massProperties':
-      return {
-        kind: 'massProperties',
-        volume: result.volume,
-        area: result.area,
-        centreOfMass: result.centreOfMass,
-        principalMoments: result.principalMoments,
-        principalAxes: result.principalAxes,
-      };
-    case 'failed':
-      return { kind: 'failed', message: result.message };
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * 書き出しと読み込み(FR-802〜804、FR-811、P6 タスク32b)
- * ------------------------------------------------------------------ */
-
-/**
- * 色 1 つ(sRGB の 0〜1)。`exchange/exportColors.ts` の `rgbTupleOf` が返す並びそのままで、
- * kernel の `RgbTuple` と欄が同じ。
- *
- * **model にも名前を置くのは、`packages/ui` が kernel の型を輸入できないから**である
- * (依存の向きは `ui → model → kernel`、rules/04)。書き出しの依頼を組み立てるのは ui なので、
- * ui が読める言葉で受ける口をここに置く(`exchange/types.ts` の `ExportMeshQuality` と同じ理由)。
- */
-export type ExportColor = readonly [number, number, number];
-
-/**
- * 書き出す立体 1 つ(model の言葉)。
- *
- * **形も段の鍵も渡さない。** 立体は「それを作ったフィーチャーの id」で指し、鍵
- * (`ResolvedSolidStep.key`)への引き直しは `KernelBridge.exportShapes` が行う
- * (測定の `MeasureTarget` とまったく同じ流儀、§0.a-0.5)。
- *
- * 名前と色は**ファイルへ書き込む値**で、履歴の名前と外観の割り当て(`bodyColorsFor` /
- * `faceColorsFor`)から呼び出し側が組む。**色を書かない指定のときは `null` と省略で渡す**
- * ——形式ごとに「色を書くか」の欄を持つのは STEP だけなので、ほかの形式では
- * 値そのものを空にするのが色を落とす唯一の手立てである(§0.a-0.22)。
- */
-export interface ShapeExportBody {
-  /** 書き出す立体を作ったフィーチャーの id(= ボディの id)。 */
-  readonly featureId: string;
-  /** 立体の名前。`null` なら幾何カーネルの既定になる。 */
-  readonly name: string | null;
-  /** 立体の色。`null` なら色を付けない。 */
-  readonly color: ExportColor | null;
-  /**
-   * 面ごとの色(面の通し番号 → 色。§2.5.1)。**面の割り当ては立体の色より優先する。**
-   * 色を付けた面が 1 枚も無い立体では省く(空の表を作らない)。
-   */
-  readonly faceColors?: ReadonlyMap<number, ExportColor>;
-}
-
-/**
- * 書き出しの形式(幾何カーネルの言葉)。**3MF だけ `'mesh'`** で、三角形までを受け取って
- * ZIP と XML は `packages/io` が組む(§0.a-0.19。io は幾何カーネルを呼べない)。
- */
-export type ShapeExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
-
-/** 書き出しの依頼(model の言葉)。 */
-export interface ShapeExportOptions {
-  readonly partId?: string;
-  readonly format: ShapeExportFormat;
-  /** 書き出す立体。並びがそのままファイルの中の並びになる。 */
-  readonly bodies: readonly ShapeExportBody[];
-  /** 三角形の細かさの対(§0.a-0.64)。三角形を使わない形式(STEP)では `null`。 */
-  readonly meshQuality: ExportMeshQuality | null;
-  /** 色を書くか(§0.a-0.22)。**効くのは STEP だけ**(ほかは `color` を空にして落とす)。 */
-  readonly withColors: boolean;
-  /** STL を文字で書くか(§0.a-0.14)。STL 以外では見ない。 */
-  readonly ascii: boolean;
-  /** ファイル名の基(拡張子なし)。`.obj` と `.mtl` は同じ基を使う(§0.a-0.16)。 */
-  readonly baseName: string;
-}
-
-/**
- * 書き出したファイル 1 つ。**名前を変えずにそのまま保存する。**
- * `.obj` の材質の行が `.mtl` を名前で指しているので、変えると色が付かない(§2.4)。
- */
-export interface ExportedFile {
-  readonly fileName: string;
-  readonly bytes: Uint8Array;
-}
-
-/** 書き出した立体 1 つぶんの三角形(3MF のときだけ返る。§0.a-0.19)。 */
-export interface ExportedMeshBody {
-  /** 依頼に入れた名前をそのまま返す(io が 3MF の物体の名前に使う)。 */
-  readonly name: string | null;
-  /** 依頼に入れた色をそのまま返す。 */
-  readonly color: ExportColor | null;
-  readonly positions: Float32Array;
-  readonly indices: Uint32Array;
-}
-
-/**
- * 書き出しの結果。**断りは投げずに `kind: 'failed'` で返す**(測定と同じ流儀)。
- * 理由の日本語は幾何カーネルが持っているものをそのまま持ち回る(FR-504、NFR-RE-1)。
- */
-export type ShapeExportOutcome =
-  | {
-      readonly kind: 'files';
-      /** 保存するファイル。STEP は `[.step]`、OBJ は `[.obj, .mtl]`、glTF は `[.glb]`。 */
-      readonly files: readonly ExportedFile[];
-      /** 面積 0 で落とした三角形の枚数。三角形を使わない形式では 0。 */
-      readonly droppedTriangleCount: number;
-    }
-  | { readonly kind: 'meshes'; readonly bodies: readonly ExportedMeshBody[] }
-  | { readonly kind: 'failed'; readonly message: string };
-
-/** 読み込みの依頼(model の言葉)。3MF は `packages/io` が読むのでここには入らない。 */
-export interface ShapeImportOptions {
-  readonly format: 'step' | 'stl' | 'obj' | 'gltf';
-  /** 仮想ファイルに付ける名前。中身の判別には使われない。 */
-  readonly fileName: string;
-  readonly bytes: Uint8Array;
-  /** 色を読むか(効くのは STEP だけ。省くと読む)。 */
-  readonly withColors?: boolean;
-}
-
-/** 読み込んだ三角形の形の中身(`.pcad` の `meshes/<id>.bin` へそのまま入る並び)。 */
-export interface ImportedTriangles {
-  readonly positions: Float32Array;
-  readonly normals: Float32Array;
-  readonly indices: Uint32Array;
-}
-
-/** 読み込んだ立体 1 つに共通する欄。 */
-interface ImportedBodyCommon {
-  /** ファイルに入っていた名前。無ければ `null`。 */
-  readonly name: string | null;
-  /** ファイルに入っていた色。無ければ `null`(当面は使わない。§0.a-0.28)。 */
-  readonly color: ExportColor | null;
-  /** 体積(mm³)。 */
-  readonly volume: number;
-  /** 画面用の三角形の枚数。 */
-  readonly triangleCount: number;
-}
-
-/**
- * 読み込んだ立体 1 つ(FR-802、§2.8)。**B-rep を持つ枝と三角形だけの枝を型で分ける。**
- * 「無い値に `null` を入れる」形にすると、受け取る側が確かめ忘れても型検査が助けない
- * (kernel の `ShapeImportBody` と同じ分け方)。
- */
-export type ImportedBody =
-  | (ImportedBodyCommon & {
-      readonly bodyKind: 'solid' | 'shell';
-      /** `.pcad` の `shapes/<id>.brep` へそのまま入れるバイト列。 */
-      readonly brepBytes: Uint8Array;
-    })
-  | (ImportedBodyCommon & {
-      readonly bodyKind: 'mesh';
-      /** `.pcad` の `meshes/<id>.bin` へ入れる三角形。 */
-      readonly mesh: ImportedTriangles;
-    });
-
-/**
- * 読み込みの結果(FR-802、FR-811)。**座標はすでに mm へ換算済み**(NFR-RE-3)で、
- * `unit` は「ファイルが何で書かれていたか」の記録である。`'other'`(STL / OBJ)のときは
- * 呼び出し側が利用者へ訊く(§0.a-0.6)。
- */
-export type ShapeImportOutcome =
-  | {
-      readonly kind: 'imported';
-      readonly bodies: readonly ImportedBody[];
-      readonly unit: 'mm' | 'inch' | 'other';
-    }
-  | { readonly kind: 'failed'; readonly message: string };
-
-/**
  * 書き出す立体の段の鍵が引けなかったとき。
  *
  * kernel(`worker/kernelApi.ts` の `MISSING_BODY_MESSAGE`)が形状キャッシュに鍵が無かった
@@ -810,179 +269,9 @@ export type ShapeImportOutcome =
  */
 const EXPORT_MISSING_SHAPE_MESSAGE = 'もとになる立体が見つかりませんでした。もう一度計算し直してください。';
 
-/**
- * 頼んでいない形式が返ったとき。**この橋は `'brep'` を頼まない**(`.pcad` へ抱き込む
- * バイト列は読み込みの経路で得る)ので起こらないが、網羅 `switch` の枝を黙って落とさない
- * ために断りを 1 つ置く。エラーコードは増やしていない(日本語の 1 行だけ)。
- */
-const EXPORT_UNEXPECTED_FORMAT_MESSAGE = '書き出せませんでした。もう一度お試しください。';
-
-/** STEP のファイル名に付ける拡張子。ほかの 3 形式の名前は幾何カーネルが組んで返す。 */
-const STEP_FILE_EXTENSION = '.step';
-
 /** カーネルが投げた理由を、そのまま画面へ出せる 1 行にする(文言の正本はカーネル側)。 */
 function toFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * 書き出す立体を kernel の言葉へ詰め替える。**1 つでも段の鍵が引けなければ `null`** を返し、
- * 呼び出し側はカーネルを呼ばずに断る(`toMeasureRequest` と同じ流儀)。
- */
-function toShapeExportItems(
-  steps: readonly ResolvedSolidStep[],
-  bodies: readonly ShapeExportBody[],
-): readonly ShapeExportItem[] | null {
-  const keyByFeatureId = new Map(steps.map((step) => [step.featureId, step.key]));
-  const items: ShapeExportItem[] = [];
-  for (const body of bodies) {
-    const bodyKey = keyByFeatureId.get(body.featureId);
-    if (bodyKey === undefined) {
-      return null;
-    }
-    items.push({
-      bodyKey,
-      name: body.name,
-      color: body.color,
-      faceColors: body.faceColors,
-    });
-  }
-  return items;
-}
-
-/**
- * 三角形の細かさの対。三角形を使う形式なのに対が無いのは呼び出し側の取り違えだが、
- * **断らずに標準の細かさで書く**(NFR-RE-1「止めずに警告する」)。表の正本は
- * `exchange/types.ts` の 1 か所だけ(同じ 3 つの数を写さない)。
- */
-function meshQualityOf(options: ShapeExportOptions): ExportMeshQuality {
-  return options.meshQuality ?? EXPORT_MESH_QUALITY.normal;
-}
-
-/** 書き出しの依頼を kernel の言葉へ詰め替える(網羅 `switch`。形式が増えたら落ちる)。 */
-function toShapeExportRequest(
-  items: readonly ShapeExportItem[],
-  options: ShapeExportOptions,
-): ShapeExportRequest {
-  switch (options.format) {
-    case 'step':
-      return { format: 'step', partId: options.partId, bodies: items, withColors: options.withColors };
-    case 'stl':
-      return {
-        format: 'stl',
-        partId: options.partId,
-        bodies: items,
-        ascii: options.ascii,
-        baseName: options.baseName,
-        ...meshQualityOf(options),
-      };
-    case 'obj':
-    case 'gltf':
-      return {
-        format: options.format,
-        partId: options.partId,
-        bodies: items,
-        baseName: options.baseName,
-        ...meshQualityOf(options),
-      };
-    case 'mesh':
-      return { format: 'mesh', partId: options.partId, bodies: items, ...meshQualityOf(options) };
-  }
-}
-
-/**
- * 書き出しの結果を model の言葉へ詰め替える(kernel の型を外へ出さない、NFR-MA-1)。
- *
- * **STEP のファイル名だけはここで組む。** ほかの 3 形式は名前まで幾何カーネルが返す
- * (`.obj` が `.mtl` を名前で指すため)ので、呼び出し側から見た約束——「返ったファイルを
- * 名前のまま全部保存する」——を STEP でも同じにしておく。
- */
-function toShapeExportOutcome(
-  result: ShapeExportResult,
-  options: ShapeExportOptions,
-): ShapeExportOutcome {
-  switch (result.format) {
-    case 'step':
-      return {
-        kind: 'files',
-        files: [
-          { fileName: `${options.baseName}${STEP_FILE_EXTENSION}`, bytes: result.bytes },
-        ],
-        // STEP は三角形を通らないので、落とした三角形は 1 枚も無い。
-        droppedTriangleCount: 0,
-      };
-    case 'stl':
-    case 'obj':
-    case 'gltf':
-      return {
-        kind: 'files',
-        files: result.files,
-        droppedTriangleCount: result.droppedTriangleCount,
-      };
-    case 'mesh':
-      // 並びは依頼のままなので、名前と色は同じ位置の依頼から取れる(kernel の約束)。
-      return {
-        kind: 'meshes',
-        bodies: result.bodies.map((body, index) => ({
-          name: options.bodies[index]?.name ?? null,
-          color: options.bodies[index]?.color ?? null,
-          positions: body.triangles.positions,
-          indices: body.triangles.indices,
-        })),
-      };
-    case 'brep':
-      return { kind: 'failed', message: EXPORT_UNEXPECTED_FORMAT_MESSAGE };
-  }
-}
-
-/** 読み込みの依頼を kernel の言葉へ詰め替える(網羅 `switch`)。 */
-function toShapeImportRequest(options: ShapeImportOptions): ShapeImportRequest {
-  switch (options.format) {
-    case 'step':
-      return {
-        format: 'step',
-        bytes: options.bytes,
-        fileName: options.fileName,
-        withColors: options.withColors,
-      };
-    case 'stl':
-      return { format: 'stl', bytes: options.bytes, fileName: options.fileName };
-    case 'obj':
-      return { format: 'obj', bytes: options.bytes, fileName: options.fileName };
-    case 'gltf':
-      return { format: 'gltf', bytes: options.bytes, fileName: options.fileName };
-  }
-}
-
-/** 読み込んだ立体 1 つを model の言葉へ詰め替える(B-rep の枝と三角形の枝を保つ)。 */
-function toImportedBody(body: ShapeImportBody): ImportedBody {
-  const common: ImportedBodyCommon = {
-    name: body.name,
-    color: body.color,
-    volume: body.volume,
-    triangleCount: body.triangles.triangleCount,
-  };
-  if (body.bodyKind === 'mesh') {
-    return {
-      ...common,
-      bodyKind: 'mesh',
-      mesh: {
-        positions: body.triangles.positions,
-        normals: body.triangles.normals,
-        indices: body.triangles.indices,
-      },
-    };
-  }
-  return { ...common, bodyKind: body.bodyKind, brepBytes: importedShapeOf(body.brepBytes).bytes };
-}
-
-/** 読み込みの結果を model の言葉へ詰め替える。 */
-function toShapeImportOutcome(result: ShapeImportResult): ShapeImportOutcome {
-  return {
-    kind: 'imported',
-    bodies: result.bodies.map((body) => toImportedBody(body)),
-    unit: result.unit,
-  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -1024,124 +313,6 @@ export {
   DEFAULT_OVERHANG_ANGLE_DEG,
   readPrintabilityFlag,
 } from '@pointercad/kernel';
-
-/** 点検のどの段を計算しているか(NFR-PF-4 の進み具合)。重いのは肉厚の段だけ。 */
-export type PrintabilityPhase = 'watertight' | 'overhang' | 'thickness';
-
-/** 点検の進み具合(NFR-PF-4)。kernel の `PrintabilityProgress` を model の言葉へ写したもの。 */
-export interface PrintabilityProgressView {
-  readonly phase: PrintabilityPhase;
-  /** その段で見終わった三角形の枚数。 */
-  readonly processed: number;
-  /** 三角形の総数。 */
-  readonly total: number;
-  /** 全体でどこまで進んだか(0〜1)。 */
-  readonly ratio: number;
-}
-
-/** 点検の進み具合を受け取る口(`PartProgressCallback` と同じ流儀)。 */
-export type PrintabilityProgressCallback = (progress: PrintabilityProgressView) => void;
-
-/**
- * 点検の要約(数と真偽だけ。画面の文言は ui が作る)。
- *
- * **欄の名前も型もカーネルの `PrintabilitySummary` にそろえてある**ので、詰め替えは
- * 欄を写すだけで済む(`toPrintabilityOutcome`)。名前をそろえるのは、点検の意味を決めて
- * いるのがカーネル側の 1 か所(`occt/inspectPrintability.ts`)だからで、model が別の
- * 言い換えを作ると、しきい値の意味が 2 通りに割れる。
- */
-export interface PrintabilitySummary {
-  /** 点検した三角形の総数(面積 0 のものを含む)。 */
-  readonly triangleCount: number;
-  /** 面積 0(または座標が `NaN`)で点検から外した三角形の枚数。 */
-  readonly degenerateCount: number;
-  /** 肉厚の段で見終わった三角形の枚数。途中でやめると総数より少なくなる。 */
-  readonly inspectedTriangleCount: number;
-  /** しきい値より薄かった三角形の枚数。 */
-  readonly thinCount: number;
-  /** 支持が要る(せり出している)三角形の枚数。 */
-  readonly overhangCount: number;
-  /** ちょうど 2 枚に共有されていない辺の本数。 */
-  readonly openEdgeCount: number;
-  /** そういう辺を 1 本でも持つ三角形の枚数。 */
-  readonly openEdgeTriangleCount: number;
-  /** 閉じた形か(開いた辺が 1 本も無いか)。 */
-  readonly watertight: boolean;
-  /** 測れた肉厚のうち最も薄い値(mm)。1 本も反対側に当たらなければ `null`。 */
-  readonly minThicknessFoundMm: number | null;
-  /** 判定に使った最小肉厚のしきい値(mm)。 */
-  readonly minThicknessMm: number;
-  /** 判定に使ったせり出しの角度(度)。 */
-  readonly overhangAngleDeg: number;
-  /** 肉厚の判定に使った升目の大きさ(mm)。形が大きいと既定より粗くなる。 */
-  readonly cellSizeMm: number;
-}
-
-/**
- * 点検の結果(FR-815)。
- *
- * 三角形ごとの真偽は**1 ビットずつ詰めてある**(5 万三角形で 1 本 6,250 バイト、
- * 3 本で 18.3KiB。§2.17-9)。読み出しは `readPrintabilityFlag`——**同じビットの並べ方を
- * 2 か所に書かない**ため、model はカーネルの純関数をそのまま輸出し直す
- * (`sketchFilletGeometry` と同じ扱い)。
- */
-export interface PrintabilityReport {
-  /** 三角形の総数(ビット列の長さの根拠)。 */
-  readonly triangleCount: number;
-  /** しきい値より薄い三角形。 */
-  readonly thinTriangles: Uint8Array;
-  /** 支持が要る三角形。 */
-  readonly overhangTriangles: Uint8Array;
-  /** 開いた辺を持つ三角形。 */
-  readonly openEdgeTriangles: Uint8Array;
-  /**
-   * 点検に実際に使った表示メッシュ。複数ボディでは依頼と同じ順。
-   *
-   * 任意なのは、既存文書の保存値ではなく実行中だけの結果であり、古い偽物の橋とも
-   * 構造互換を保つため。実カーネルの `KernelApi.inspectPrintability` は必ず入れる。
-   */
-  readonly meshes?: readonly PrintabilityMeshIdentity[];
-  readonly summary: PrintabilitySummary;
-  /** 途中でやめたか。**やめても結果は返る**(肉厚だけが測ったところまでになる)。 */
-  readonly cancelled: boolean;
-}
-
-/** 点検した表示メッシュ 1 つの同一性。 */
-export interface PrintabilityMeshIdentity {
-  readonly bodyKey: string;
-  readonly meshRevision: number;
-  readonly triangleCount: number;
-}
-
-/**
- * 点検の結果。**断りは投げずに `kind: 'failed'` で返す**(測定・書き出しと同じ流儀、
- * FR-504、NFR-RE-1)。理由の日本語はカーネルが持っているものをそのまま持ち回る。
- */
-export type PrintabilityOutcome =
-  | { readonly kind: 'inspected'; readonly report: PrintabilityReport }
-  | { readonly kind: 'failed'; readonly message: string };
-
-/** 点検の依頼(model の言葉)。 */
-export interface PrintabilityOptions {
-  readonly partId?: string;
-  /**
-   * 点検する立体を作ったフィーチャーの id。**並びがそのまま結果の三角形の並びになる**
-   * (2 つ以上を指すと、カーネルは三角形を 1 つに連ねてから測る)。空なら断る。
-   */
-  readonly bodies: readonly string[];
-  /**
-   * 従来の依頼との互換のための欄。点検は実際の表示メッシュを使うので、現在は値に
-   * かかわらず同じ三角形を点検する。精密な別メッシュの点検は結果メッシュ自体を表示する
-   * 別機能として扱う。
-   */
-  readonly meshQuality?: ExportMeshQuality | null;
-  /** 最小肉厚のしきい値(mm)。省くとカーネルの既定(0.8mm)。 */
-  readonly minThicknessMm?: number;
-  /** せり出しの角度のしきい値(度)。省くとカーネルの既定(45°)。 */
-  readonly overhangAngleDeg?: number;
-  readonly onProgress?: PrintabilityProgressCallback;
-  readonly shouldCancel?: PartCancelToken;
-}
 
 /**
  * 点検する立体が 1 つも指定されていないとき。
@@ -1237,201 +408,6 @@ export function toPrintabilityOutcome(result: KernelPrintabilityResult): Printab
       cancelled: result.cancelled,
     },
   };
-}
-
-/** model から幾何カーネルへの唯一の接点。ここ以外から kernel を呼ばない。 */
-export interface KernelBridge {
-  /** 面の一覧をカーネルへ渡し、表示用の三角形を受け取る(FR-309)。 */
-  tessellateSketchFaces(faces: readonly ResolvedFace[]): Promise<SketchTessellationOutcome>;
-  /**
-   * 解決済みの段を履歴順にカーネルへ渡し、表示用のボディを受け取る(FR-401〜404、要件§6.3)。
-   * 文書が変わったときだけ呼ぶ。ホバー・選択・視点操作では呼ばない(§2.4)。
-   *
-   * Worker が壊れて応答しなくなったときは例外を投げず、進行中の依頼を
-   * `KERNEL_BROKEN_MESSAGE` の失敗として解決する(§2.9、NFR-RE-1「止めずに警告する」)。
-   * 次にこの関数を呼んだときは Worker を作り直してから依頼を出す。作り直すと
-   * 形状キャッシュが空になるので、次の再計算は全段作り直しになる(遅くなるが落ちない)。
-   */
-  recomputeSolids(
-    steps: readonly ResolvedSolidStep[],
-    options?: SolidRecomputeOptions,
-  ): Promise<SolidRecomputeOutcome>;
-  /**
-   * 輪郭を距離ぶんずらした曲線の列をカーネルへ頼む(FR-321、P4 タスク15)。
-   * 何件でも 1 回の往復でまとめて頼め、1 件失敗しても残りは返る(FR-504)。
-   */
-  offsetSketchCurves(
-    requests: readonly SketchOffsetRequestItem[],
-  ): Promise<SketchOffsetResult>;
-  /**
-   * 立体の面・辺の輪郭を作図面へ投影した曲線をカーネルへ頼む(FR-325、P4 タスク25)。
-   * 何件でも 1 回の往復でまとめて頼め、1 件失敗しても残りは返る(FR-504)。
-   */
-  projectSketchCurves(
-    requests: readonly SketchProjectionRequestItem[],
-  ): Promise<SketchProjectionResult>;
-  /**
-   * 立体と作図面の交線(断面の輪郭)をカーネルへ頼む(FR-325)。
-   * **交わらないときは失敗ではなく曲線 0 本**で返る(断るのは呼び出し側)。
-   */
-  sectionSketchCurves(
-    requests: readonly SketchProjectionRequestItem[],
-  ): Promise<SketchProjectionResult>;
-  /**
-   * 覚えてある形を測る(FR-1101、FR-1102、P5 タスク29)。**再計算を起こさない読み取り**
-   * (§0.a-0.30)。対象は立体を作ったフィーチャーの id で指し、`steps` から段の鍵
-   * (`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す(外観の面の照合と同じ流儀)。
-   *
-   * **`steps` の中に鍵が引けない対象が 1 つでもあれば、カーネルを呼ばずに断る**
-   * (測定は読み取りだけなので、ここから再計算を起こさない、§0.a-0.30)。
-   */
-  measure(
-    steps: readonly ResolvedSolidStep[],
-    targets: readonly MeasureTarget[],
-    kind: 'distance' | 'massProperties',
-  ): Promise<MeasureOutcome>;
-  /**
-   * 覚えてある形をファイルへ書き出す(FR-803、FR-804、P6 タスク32b)。**測定と同じく
-   * 再計算を起こさない読み取り**で、対象は立体を作ったフィーチャーの id で指し、`steps` から
-   * 段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
-   *
-   * **1 つでも鍵が引けなければ、カーネルを呼ばずに `kind: 'failed'` で断る**(一部だけ
-   * 入ったファイルを渡さない、NFR-UX-5)。書けなかった理由も投げずに返す(NFR-RE-1)。
-   */
-  exportShapes(
-    steps: readonly ResolvedSolidStep[],
-    options: ShapeExportOptions,
-  ): Promise<ShapeExportOutcome>;
-  /**
-   * ファイルから立体を読み込む(FR-802、FR-811、P6 タスク32b)。**今の文書には触れない**
-   * ——読めた形を返すだけで、履歴へ積むかどうかは呼び出し側が決める(NFR-RE-1)。
-   *
-   * 読めなかった理由は投げずに `kind: 'failed'` で返す(文言の正本は幾何カーネル)。
-   */
-  importShape(options: ShapeImportOptions): Promise<ShapeImportOutcome>;
-  /**
-   * 3D プリント向けの点検(FR-815、P6 タスク46)。**測定・書き出しと同じく再計算を
-   * 起こさない読み取り**で、対象は立体を作ったフィーチャーの id で指し、`steps` から
-   * 段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
-   *
-   * **1 つでも鍵が引けなければ、カーネルを呼ばずに `kind: 'failed'` で断る**(測定と同じ、
-   * §0.a-0.30)。点検できなかった理由も投げずに返す(NFR-RE-1)。
-   *
-   * 進み具合と中止は `options` に渡す(`recomputeSolids` と同じ形)。**中止しても結果は
-   * 返る**(`PrintabilityReport.cancelled` が真になり、肉厚だけが測ったところまでになる)。
-   */
-  inspectPrintability(
-    steps: readonly ResolvedSolidStep[],
-    options: PrintabilityOptions,
-  ): Promise<PrintabilityOutcome>;
-  dispose(): void;
-}
-
-/**
- * 解決済みの曲線をカーネルの言葉へ直す。長さは mm、角度はラジアン(FR-203)。
- *
- * 楕円の角度は解決の段でパラメータ角へ直してあるので、そのまま渡す(§1.4-8)。
- * **全周の楕円は開始角・終了角を渡さない**: カーネルは両方そろっているときだけ
- * 弧として作り、無ければ全周の楕円にする(`makeEllipseEdge.ts` の決め)。
- */
-export function toCurveSpec(curve: ResolvedCurve): CurveSpec {
-  switch (curve.kind) {
-    case 'segment':
-      return { kind: 'segment', from: curve.from, to: curve.to };
-    case 'arc':
-      return {
-        kind: 'arc',
-        center: curve.center,
-        normal: curve.normal,
-        xAxis: curve.xAxis,
-        radius: curve.radius,
-        startAngle: curve.startAngle,
-        endAngle: curve.endAngle,
-      };
-    case 'ellipse':
-      if (isFullEllipse(curve)) {
-        return {
-          kind: 'ellipse',
-          center: curve.center,
-          normal: curve.normal,
-          majorAxis: curve.majorAxis,
-          majorRadius: curve.majorRadius,
-          minorRadius: curve.minorRadius,
-        };
-      }
-      return {
-        kind: 'ellipse',
-        center: curve.center,
-        normal: curve.normal,
-        majorAxis: curve.majorAxis,
-        majorRadius: curve.majorRadius,
-        minorRadius: curve.minorRadius,
-        startAngle: curve.startAngle,
-        endAngle: curve.endAngle,
-      };
-    case 'spline':
-      return {
-        kind: 'spline',
-        mode: curve.mode,
-        points: curve.points,
-        closed: curve.closed,
-      };
-  }
-}
-
-/** 面 1 枚の依頼を作る。結果との対応づけには面フィーチャーの id を使う。 */
-export function toFaceRequest(face: ResolvedFace): PlanarFaceRequest {
-  return { id: face.featureId, curves: face.curves.map((curve) => toCurveSpec(curve)) };
-}
-
-/** 全周(ラジアン)。カーネルが角度を省いた楕円は全周の意味になる。 */
-const FULL_TURN = 2 * Math.PI;
-
-/**
- * カーネルから返った曲線を model の言葉へ直す(FR-321、P4 タスク15)。`toCurveSpec` の逆。
- *
- * `featureId` は結果を持つフィーチャー(オフセット)の id を付ける。オフセットが返すのは
- * 線分と円弧だけ(`makeOffsetWire.ts`)だが、型の上では 4 種すべて来うるので全部を受ける。
- * B スプラインが返る道(将来の投影・交差)では、曲線の式ではなく**点列**として受ける
- * (`ResolvedSpline` は通過点・制御点しか持たない、`types.ts` の注釈)。
- * 全周の楕円は角度が省かれて返るので、0 から 1 周ぶんとして読む(`toCurveSpec` の裏返し)。
- */
-export function fromCurveSpec(spec: CurveSpec, featureId: string): ResolvedCurve {
-  switch (spec.kind) {
-    case 'segment':
-      return { kind: 'segment', featureId, from: spec.from, to: spec.to };
-    case 'arc':
-      return {
-        kind: 'arc',
-        featureId,
-        center: spec.center,
-        normal: spec.normal,
-        xAxis: spec.xAxis,
-        radius: spec.radius,
-        startAngle: spec.startAngle,
-        endAngle: spec.endAngle,
-      };
-    case 'ellipse':
-      return {
-        kind: 'ellipse',
-        featureId,
-        center: spec.center,
-        normal: spec.normal,
-        majorAxis: spec.majorAxis,
-        majorRadius: spec.majorRadius,
-        minorRadius: spec.minorRadius,
-        startAngle: spec.startAngle ?? 0,
-        endAngle: spec.endAngle ?? FULL_TURN,
-      };
-    case 'spline':
-      return {
-        kind: 'spline',
-        featureId,
-        mode: spec.mode,
-        points: spec.points,
-        closed: spec.closed,
-      };
-  }
 }
 
 /** 角の作り方(model の言葉)をカーネルの言葉へ直す。 */
@@ -1620,394 +596,6 @@ export function toProjectionResult(
   return { results, failures };
 }
 
-/**
- * 部分形状の指紋を kernel の言葉(`SubShapeQuery`)へ詰め替える(§2.4.2、§2.8、タスク17 手順3)。
- *
- * model の `SubShapeQueryPlan`(= `SubShapeRef`)は「そのボディを作ったフィーチャーの id」
- * (`bodyFeatureId`)を持つが、カーネルは段の対象(targetKey で指したボディ)の中だけを
- * 探すのでその id は要らない。`fingerprint` に包まれた欄をカーネルの平らな形へ展開する。
- * `as` は使わず、種類ごとに手で組む(fingerprint.kind で分岐し、各節を return で閉じる)。
- */
-function toSubShapeQuery(reference: SubShapeQueryPlan): SubShapeQuery {
-  const { index, fingerprint } = reference;
-  switch (fingerprint.kind) {
-    case 'face':
-      return {
-        kind: 'face',
-        index,
-        surfaceKind: fingerprint.surfaceKind,
-        area: fingerprint.area,
-        position: fingerprint.position,
-        axis: fingerprint.axis,
-        radius: fingerprint.radius,
-      };
-    case 'edge':
-      return {
-        kind: 'edge',
-        index,
-        curveKind: fingerprint.curveKind,
-        length: fingerprint.length,
-        position: fingerprint.position,
-        axis: fingerprint.axis,
-        radius: fingerprint.radius,
-      };
-    case 'vertex':
-      return { kind: 'vertex', index, position: fingerprint.position };
-  }
-}
-
-/**
- * 罫線面・ロフトの断面 1 つをカーネルの言葉へ直す(FR-430、FR-410、P5 §2.9)。
- * 曲線の並びは `toCurveSpec` を使い回し、球は中心と半径をそのまま渡す。
- */
-function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
-  switch (section.kind) {
-    case 'curves':
-      return { kind: 'curves', curves: section.curves.map((curve) => toCurveSpec(curve)) };
-    case 'sphere':
-      return { kind: 'sphere', center: section.center, radius: section.radius };
-    case 'faceQuery':
-      // 立体の面(§0.a-0.73)。輪郭の取り出しはカーネルの中で行うので、指紋と
-      // 対象の段の鍵だけを渡す(穴・面取りの面と同じ扱い)。対象は消費しない(§0.a-0.27)。
-      return {
-        kind: 'faceQuery',
-        targetKey: section.targetKey,
-        query: toSubShapeQuery(section.query),
-      };
-  }
-}
-
-/**
- * 解決済みの 1 段の作り方をカーネルの言葉へ直す。
- * 向き・反転・両側の平行移動・角度の度→ラジアンは resolvePart が済ませてあるので、
- * ここでやるのは欄の名前を合わせることと、曲線・指紋を kernel の形へ直すことだけ。
- * 各節は return で閉じる(no-fallthrough)。
- *
- * 穴・ねじ穴・R面取り・C面取り・ばねの欄(`centers` / `transforms` / `thread` / `mark` / `size` 等)は
- * model 側の型(resolvePart.ts の `SolidStepPlan`)と kernel 側の型(kernel/src/types.ts の
- * `HoleStepSpec` 等)で欄の名前と形をそろえてあるので、指紋(`face` / `targets`)だけ
- * `toSubShapeQuery` で詰め替え、残りはそのまま渡す(タスク17 手順3)。
- */
-function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
-  switch (plan.kind) {
-    case 'sheetBody': return { kind: 'sheetBody', panels: plan.panels.map((panel) => ({ thickness: panel.thickness, normal: panel.normal,
-      reversed: panel.reversed, outer: panel.outer.map(toCurveSpec), holes: panel.holes.map((loop) => loop.map(toCurveSpec)) })),
-      bends: plan.bends.map((bend) => bend.kind === 'rectangle' ? bend : { ...bend, outer: bend.outer.map(toCurveSpec),
-        holes: bend.holes.map((loop) => loop.map(toCurveSpec)) }) };
-    case 'sheetJoin': return { kind: 'sheetJoin', targetKey: plan.targetKey, toolKey: plan.toolKey };
-    case 'sheetBase': return { kind: 'sheetBase', outer: plan.outer.map(toCurveSpec), holes: plan.holes.map((loop) => loop.map(toCurveSpec)),
-      thickness: plan.thickness, normal: plan.normal, reversed: plan.reversed };
-    case 'sheetFlange': return { kind: 'sheetFlange', targetKey: plan.targetKey, flanges: plan.flanges.map((flange) => {
-      const common = { frame: flange.frame, width: flange.width, thickness: flange.thickness, radius: flange.radius, angle: flange.angle };
-      switch (flange.kind) {
-        case 'rectangle': return { ...common, kind: 'rectangle' as const, secondLength: flange.secondLength };
-        case 'profile': return { ...common, kind: 'profile' as const, outer: flange.outer.map(toCurveSpec), holes: flange.holes.map((loop) => loop.map(toCurveSpec)) };
-      }
-    }) };
-    case 'extrude':
-      // P5 で足した終端・傾き・薄板(FR-415・FR-401・FR-416)は**省略されたまま渡す**。
-      // 段に無い欄はカーネルでも既定(距離ぶんを片側へ、傾きなし、中実)になるので、
-      // P2 からの押し出しの依頼は 1 ドットも変わらない(`ExtrudeStepSpec` の注釈)。
-      return {
-        kind: 'extrude',
-        profile: plan.profile.map((curve) => toCurveSpec(curve)),
-        direction: plan.direction,
-        distance: plan.distance,
-        ...(plan.end === undefined ? {} : { end: plan.end }),
-        ...(plan.taperAngle === undefined
-          ? {}
-          : { taperAngle: plan.taperAngle, taperOutward: plan.taperOutward ?? false }),
-        ...(plan.thin === undefined || plan.thin === null ? {} : { thin: plan.thin }),
-        ...(plan.targetKey === undefined || plan.targetKey === null
-          ? {}
-          : { targetKey: plan.targetKey }),
-      };
-    case 'revolve':
-      return {
-        kind: 'revolve',
-        profile: plan.profile.map((curve) => toCurveSpec(curve)),
-        axisOrigin: plan.axisOrigin,
-        axisDirection: plan.axisDirection,
-        angle: plan.angle,
-      };
-    case 'sew':
-      return {
-        kind: 'sew',
-        profiles: plan.profiles.map((profile) => profile.map((curve) => toCurveSpec(curve))),
-        tolerance: plan.tolerance,
-      };
-    case 'boolean':
-      return {
-        kind: 'boolean',
-        operation: plan.operation,
-        targetKey: plan.targetKey,
-        toolKey: plan.toolKey,
-      };
-    case 'hole':
-      return {
-        kind: 'hole',
-        targetKey: plan.targetKey,
-        face: toSubShapeQuery(plan.face),
-        centers: plan.centers,
-        diameter: plan.diameter,
-        depth: plan.depth,
-        tiltAngle: plan.tiltAngle,
-        tiltAzimuth: plan.tiltAzimuth,
-        transforms: plan.transforms,
-        // 入口の形(ざぐり・皿もみ、FR-422、タスク46)。**広げないときは段にも載せない**
-        // (省くとカーネルでも `{ kind: 'plain' }` になる。`HoleStepSpec.entry` の注釈)。
-        ...(plan.entry === undefined ? {} : { entry: plan.entry }),
-      };
-    case 'thread':
-      return {
-        kind: 'thread',
-        targetKey: plan.targetKey,
-        face: toSubShapeQuery(plan.face),
-        centers: plan.centers,
-        drillDiameter: plan.drillDiameter,
-        depth: plan.depth,
-        tiltAngle: plan.tiltAngle,
-        tiltAzimuth: plan.tiltAzimuth,
-        transforms: plan.transforms,
-        thread: plan.thread,
-        mark: plan.mark,
-        // 入口の形(ざぐり・皿もみ、FR-422、42c/46c)。穴とまったく同じ扱い(上の 'hole' 節)。
-        ...(plan.entry === undefined ? {} : { entry: plan.entry }),
-      };
-    case 'fillet':
-      return {
-        kind: 'fillet',
-        targetKey: plan.targetKey,
-        targets: plan.targets.map((target) => toSubShapeQuery(target)),
-        radius: plan.radius,
-      };
-    case 'chamfer':
-      return {
-        kind: 'chamfer',
-        targetKey: plan.targetKey,
-        targets: plan.targets.map((target) => toSubShapeQuery(target)),
-        size: plan.size,
-        swapReferenceFace: plan.swapReferenceFace,
-      };
-    case 'spring':
-      // ばねは対象ボディを持たない(§0.36)ので targetKey が無い。
-      return {
-        kind: 'spring',
-        origin: plan.origin,
-        direction: plan.direction,
-        coilDiameter: plan.coilDiameter,
-        wireDiameter: plan.wireDiameter,
-        pitch: plan.pitch,
-        turns: plan.turns,
-        handedness: plan.handedness,
-      };
-    case 'primitive':
-      // 基本形状(FR-429、P5 §2.7)。中心・向き・寸法だけで決まる「作る」段だが、
-      // 中心を立体の頂点にしたときだけ頂点の指紋(`originQuery`)と、その頂点を持つ
-      // 立体の段の鍵(`targetKey`)を添え、カーネルが頂点を引いて位置を決める
-      // (§0.a-0.18)。**それでも対象は消費しない**(§0.a-0.19)ので、加工フィーチャーの
-      // `targetKey` と違い結果には両方のボディが残る。寸法(`shape`)は model と kernel で
-      // 欄の名前・形をそろえてあるので、指紋だけ詰め替えて残りはそのまま渡す。
-      return {
-        kind: 'primitive',
-        origin: plan.origin,
-        axis: plan.axis,
-        shape: plan.shape,
-        originQuery: plan.originQuery === null ? null : toSubShapeQuery(plan.originQuery),
-        targetKey: plan.targetKey,
-      };
-    case 'thruSections':
-      /*
-        罫線面(FR-430)とロフト(FR-410)は、model のフィーチャーが 2 種類でも
-        カーネルの段は 1 種類で `ruled` の真偽しか違わない(P5 §0.a-0.25)。
-        断面は輪郭(曲線の並び)・球(中心と半径)・立体の面(指紋と上流の鍵)の 3 通りで、
-        詰め替えは `toThruSectionSpec`。球の近似の点の数(`sphereSegments`、§0.a-0.74)は
-        カーネル側が必須の欄にしてある(既定を入れるのは model の役目)ので必ず渡す。
-      */
-      return {
-        kind: 'thruSections', smooth: plan.smooth,
-        sections: plan.sections.map((section) => toThruSectionSpec(section)),
-        ruled: plan.ruled,
-        closed: plan.closed,
-        twist: plan.twist,
-        sphereSegments: plan.sphereSegments,
-      };
-    /*
-      P5 の Should 群のうちタスク45 が解決する 4 種(FR-417・FR-419・FR-424)。
-      角度のラジアン化・平面の数値化・倍率の正規化は resolvePart が済ませてあるので、
-      ここでやるのは指紋(`faces` / `neutralFace`)の詰め替えだけである。
-      **消費するかどうかは `visible` を決める model 側の話**で、依頼の形には出ない。
-    */
-    case 'draft':
-      return {
-        kind: 'draft',
-        targetKey: plan.targetKey,
-        faces: plan.faces.map((face) => toSubShapeQuery(face)),
-        neutralFace: toSubShapeQuery(plan.neutralFace),
-        angle: plan.angle,
-        reversed: plan.reversed,
-      };
-    case 'mirror':
-      return {
-        kind: 'mirror',
-        targetKey: plan.targetKey,
-        origin: plan.origin,
-        normal: plan.normal,
-      };
-    case 'transform':
-      return {
-        kind: 'transform',
-        targetKey: plan.targetKey,
-        translation: plan.translation,
-        rotationOrigin: plan.rotationOrigin,
-        rotationAxis: plan.rotationAxis,
-        rotationAngle: plan.rotationAngle,
-      };
-    case 'scale':
-      return {
-        kind: 'scale',
-        targetKey: plan.targetKey,
-        origin: plan.origin,
-        uniform: plan.uniform,
-        perAxis: plan.perAxis,
-      };
-    /*
-      P5 の Should 群のうちタスク46 が解決する 5 種(FR-409・420・421・423・428)と、
-      前倒しした Could 群の 1 種(FR-418)。断面・経路の座標、向き、角度のラジアン化、
-      呼び径の引き当ては resolvePart が済ませてあるので、ここでやるのは曲線と指紋の
-      詰め替えだけである(欄の名前と形は model と kernel でそろえてある)。
-    */
-    case 'sweep':
-      return {
-        kind: 'sweep',
-        profile: plan.profile.map((curve) => toCurveSpec(curve)),
-        path: plan.path.map((curve) => toCurveSpec(curve)),
-        ...(plan.guide === undefined ? {} : { guide: plan.guide.map((curve) => toCurveSpec(curve)) }),
-        frenet: plan.frenet,
-      };
-    case 'rib':
-      return {
-        kind: 'rib',
-        targetKey: plan.targetKey,
-        profile: plan.profile.map((curve) => toCurveSpec(curve)),
-        normal: plan.normal,
-        thickness: plan.thickness,
-        symmetric: plan.symmetric,
-        direction: plan.direction,
-        // 材料に届くまで伸ばすか(FR-420、42c/46c)。RibStepSpec.extendToBody と同じ欄名。
-        extendToBody: plan.extendToBody,
-      };
-    case 'emboss':
-      return {
-        kind: 'emboss',
-        targetKey: plan.targetKey,
-        face: toSubShapeQuery(plan.face),
-        profiles: plan.profiles.map((profile) => profile.map((curve) => toCurveSpec(curve))),
-        depth: plan.depth,
-        raised: plan.raised,
-      };
-    case 'threadShaft':
-      return {
-        kind: 'threadShaft',
-        targetKey: plan.targetKey,
-        face: toSubShapeQuery(plan.face),
-        majorDiameter: plan.majorDiameter,
-        pitch: plan.pitch,
-        length: plan.length,
-        fromEnd: plan.fromEnd,
-        modeled: plan.modeled,
-      };
-    case 'surface':
-      // 曲面(FR-428)。作り方 6 種の詰め替えは `toSurfaceInput`。`face` / `offset` の
-      // ときだけ面を借りる立体の鍵を添えるが、**消費はしない**(§0.a-0.45)。
-      return {
-        kind: 'surface',
-        shape: toSurfaceInput(plan.shape),
-        targetKey: plan.targetKey,
-      };
-    case 'shell':
-      return {
-        kind: 'shell',
-        targetKey: plan.targetKey,
-        openFaces: plan.openFaces.map((face) => toSubShapeQuery(face)),
-        thickness: plan.thickness,
-        outward: plan.outward,
-      };
-    case 'cut':
-      // 平面による切断(FR-432、§2.9b)。平面は resolvePart が「通る点+単位法線」まで
-      // 解いてあるので、欄名を合わせるだけ(指紋は段へ運ばない)。
-      return {
-        kind: 'cut',
-        targetKey: plan.targetKey,
-        origin: plan.origin,
-        normal: plan.normal,
-        keepPositive: plan.keepPositive,
-      };
-    case 'importedSolid':
-      /*
-        読み込んだ形(FR-802、P6 §2.8、タスク20)。カーネルの `ImportedSolidStepSpec` は
-        **バイト列 1 つだけ**を受け取る(`shapeRef` は `.pcad` の中の入れ物の名前で、
-        カーネルは `.pcad` を知らないので運ばない。鍵は resolvePart が済ませてある)。
-      */
-      return { kind: 'importedSolid', bytes: plan.bytes };
-  }
-}
-
-/**
- * 曲面の作り方(FR-428)をカーネルの `SurfaceInput` へ直す(タスク46)。
- * 種類も欄名も同じだが、曲線(`ResolvedCurve` → `CurveSpec`)と指紋
- * (`SubShapeRef` → `SubShapeQuery`)だけは詰め替えが要る。各節は return で閉じる。
- */
-function toSurfaceInput(shape: SurfaceShapePlan): SurfaceInput {
-  switch (shape.kind) {
-    case 'extrude':
-      return {
-        kind: 'extrude',
-        profile: shape.profile.map((curve) => toCurveSpec(curve)),
-        direction: shape.direction,
-        distance: shape.distance,
-      };
-    case 'revolve':
-      return {
-        kind: 'revolve',
-        profile: shape.profile.map((curve) => toCurveSpec(curve)),
-        axisOrigin: shape.axisOrigin,
-        axisDirection: shape.axisDirection,
-        angle: shape.angle,
-      };
-    case 'planar':
-      return { kind: 'planar', profile: shape.profile.map((curve) => toCurveSpec(curve)) };
-    case 'loft':
-      return {
-        kind: 'loft',
-        sections: shape.sections.map((section) => section.map((curve) => toCurveSpec(curve))),
-        ruled: shape.ruled,
-      };
-    case 'face':
-      return { kind: 'face', face: toSubShapeQuery(shape.face) };
-    case 'offset':
-      return {
-        kind: 'offset',
-        face: toSubShapeQuery(shape.face),
-        distance: shape.distance,
-      };
-  }
-}
-
-/**
- * 履歴 1 段ぶんの依頼を作る。結果との対応づけにはフィーチャーの id を使い、
- * 進捗に出す名前はフィーチャーの表示名をそのまま渡す(FR-501)。
- */
-export function toSolidStepRequest(step: ResolvedSolidStep): SolidStepRequest {
-  return {
-    key: step.key,
-    id: step.featureId,
-    label: step.name,
-    step: toSolidStepSpec(step.plan),
-    visible: step.visible,
-  };
-}
-
 /* ------------------------------------------------------------------ *
  * 外観の面の照合(FR-1106、P5 §2.2.3、タスク4)
  * ------------------------------------------------------------------ */
@@ -2192,12 +780,6 @@ export function selectSubShape(body: SolidBody, reference: SubShapeRef): Resolve
 }
 
 /**
- * 再計算で得た合致用の幾何。保存する指紋に解析軸上点を添えた実行時だけの値。
- * SubShapeRef・schema・鍵には足さず、古い文書も現在の面・辺から解析点を取り直す。
- */
-export type MateSubShapeGeometry = SubShapeFingerprint & { readonly axisOrigin?: Vec3 };
-
-/**
  * 合致のため、現在の形から種類・大きさ・重心・解析軸上点を選び直す(P7-14b)。
  * selectSubShape と同じ kernel の採点を使い、重心を解析点で置き換えない。
  * body は部品座標の形。アセンブリの配置は resolveMateTarget が1回だけ掛ける。
@@ -2335,7 +917,7 @@ function toSolidBody(mesh: SolidBodyMesh): SolidBody {
     // 形の種類はカーネルの必須の欄(§0.a-0.77、タスク42b)なので、そのまま写す。
     // 判定は kernel の `hasSolid` そのままで、体積では決めない(体積 8000 の開いた殻がある)。
     bodyKind: mesh.bodyKind,
-    isValid: mesh.triangleCount > 0 && Number.isFinite(mesh.volume) && mesh.volume > 0,
+    isValid: mesh.triangleCount > 0 && Number.isFinite(mesh.volume) && (mesh.bodyKind === 'shell' || mesh.volume > 0),
     faces: mesh.faces,
     edges: mesh.edges,
     vertices: mesh.vertices,
@@ -2611,19 +1193,6 @@ function toOutcome(
 export const KERNEL_BROKEN_MESSAGE =
   'カーネルが止まりました。値を元に戻してから、もう一度お試しください。';
 
-/**
- * Worker が壊れたかどうかを持つ小さな状態機械(§2.9)。
- * Worker そのものには触れないので、実物の Worker を起動できない Node のテストからも
- * 判断のロジックだけを確かめられる(docs/報告記録.md 2026-09-02 14:50 の④
- * 「Worker の実動作は Node では確かめられない」)。
- */
-export interface KernelHealth {
-  readonly broken: boolean;
-  markBroken(): void;
-  /** 作り直したことにする。 */
-  reset(): void;
-}
-
 export function createKernelHealth(): KernelHealth {
   let broken = false;
   return {
@@ -2638,10 +1207,6 @@ export function createKernelHealth(): KernelHealth {
     },
   };
 }
-
-/** 既存の結果の型とは別に読む、RPCの決着理由。 */
-export type KernelOperationStatus = 'success' | 'failed' | 'cancelled' | 'workerBroken';
-export type KernelOperationCounts = Readonly<Record<KernelOperationStatus, number>>;
 
 type InterruptedStatus = 'cancelled' | 'workerBroken';
 type BrokenRace<T> =
@@ -2798,87 +1363,6 @@ function closeKernelConnection(connection: KernelConnection): void {
   connection.worker.terminate();
 }
 
-/** 部品単位の形の寿命と、再取得が必要な鍵。欠落を通常の計算失敗と混ぜない。 */
-export interface ShapeAvailability {
-  readonly partId: string;
-  readonly missingKeys: readonly string[];
-}
-
-/** 既存のKernelBridge実装・テストダブルへ必須メソッドを増やさないための追加の口。 */
-export interface AssemblyKernelBridge extends KernelBridge {
-  releasePart(partId: string): Promise<void>;
-  checkShapeAvailability(partId: string, bodyKeys: readonly string[]): Promise<ShapeAvailability>;
-}
-
-export interface AssemblyInterferenceInput {
-  readonly requestId: string;
-  readonly components: readonly AssemblyComponent[];
-  readonly resolved: ResolvedAssembly;
-  readonly bodies: ReadonlyMap<string, readonly SolidBody[]>;
-  readonly placements: ReadonlyMap<string, RigidPlacement>;
-}
-export type AssemblyInterferencePairId = readonly [string, string];
-export interface AssemblyInterferenceOptions {
-  readonly pairs?: readonly AssemblyInterferencePairId[];
-  readonly ignoredPairs?: readonly AssemblyInterferencePairId[];
-  readonly onProgress?: (progress: AssemblyInterferenceProgress) => void;
-  readonly shouldCancel?: PartCancelToken;
-}
-export interface AssemblyInterferenceProgress {
-  readonly requestId: string;
-  readonly phase: 'prepare' | 'candidates' | 'common' | 'mesh';
-  readonly completedPairs: number;
-  readonly totalPairs: number;
-  readonly completedComponents: number;
-  readonly totalComponents: number;
-  readonly currentPair?: AssemblyInterferencePairId;
-}
-export interface AssemblyInterferenceMesh {
-  readonly positions: Float32Array;
-  readonly normals: Float32Array;
-  readonly indices: Uint32Array;
-  readonly triangleCount: number;
-}
-export interface AssemblyInterferencePair {
-  readonly aComponentId: string;
-  readonly bComponentId: string;
-  readonly volume: number;
-  readonly mesh: AssemblyInterferenceMesh;
-}
-export interface AssemblyInterferencePairFailure {
-  readonly pair: AssemblyInterferencePairId;
-  readonly stage: 'input' | 'bounds' | 'union' | 'placement' | 'common' | 'mesh' | 'release';
-  readonly code: 'unresolvedPart' | 'missingBody' | 'unsupportedBody' | 'invalidPlacement' | 'boundsFailed'
-    | 'unionFailed' | 'meshFailed' | 'invalidInput' | 'buildFailed' | 'invalidResult' | 'measurementFailed'
-    | 'occtException' | 'cleanupFailed';
-  readonly message: string;
-  readonly missingKeys?: readonly string[];
-  readonly cleanupMessages?: readonly string[];
-}
-export interface AssemblyInterferenceReport {
-  readonly requestId: string;
-  readonly pairs: readonly AssemblyInterferencePair[];
-  readonly failures: readonly AssemblyInterferencePairFailure[];
-  readonly skips: readonly { readonly pair: AssemblyInterferencePairId; readonly reason: 'suppressed' | 'hidden' | 'ignored' }[];
-  readonly totalPairCount: number;
-  readonly checkedPairCount: number;
-  readonly skippedPairCount: number;
-  readonly pendingPairCount: number;
-  readonly cancelled: boolean;
-}
-export interface AssemblyInterferenceRootFailure {
-  readonly code: 'invalidRequest' | 'noComponents' | 'kernelUnavailable' | 'callbackFailed'
-    | 'cleanupFailed' | 'unexpectedFailure' | 'workerBroken' | 'rpcFailed';
-  readonly message: string;
-  readonly cleanupMessages?: readonly string[];
-}
-export type AssemblyInterferenceResult = AssemblyInterferenceReport & (
-  | { readonly kind: 'checked'; readonly failure: null }
-  | { readonly kind: 'failed'; readonly failure: AssemblyInterferenceRootFailure });
-export interface InterferenceKernelBridge extends AssemblyKernelBridge {
-  checkInterference(input: AssemblyInterferenceInput, options?: AssemblyInterferenceOptions): Promise<AssemblyInterferenceResult>;
-}
-
 /** 保存配置へ後退せず、現在表示されている世界配置と完了body群をawait前に写す。 */
 function toInterferenceRequest(input: AssemblyInterferenceInput, options: AssemblyInterferenceOptions): InterferenceRequest {
   return {
@@ -2950,32 +1434,7 @@ function refusedInterference(request: InterferenceRequest, failure: AssemblyInte
   return cancelled ? { ...report, kind: 'checked', failure: null } : { ...report, kind: 'failed', failure };
 }
 
-export interface MonitoredKernelBridge extends InterferenceKernelBridge {
-  pendingWaiters(): number;
-  operationCounts(): KernelOperationCounts;
-  pendingCallbacks(): number;
-  /** この橋のRPCが返した結果(または拒否理由)の分類。別の値ならundefined。 */
-  operationStatus(result: unknown): KernelOperationStatus | undefined;
-}
-
-/** Web Worker内の幾何カーネルへつなぐ。ブラウザ・Electronのレンダラで使う。 */
-export interface DrawingOperationOptions {
-  readonly onProgress?: (progress: DrawingOperationProgress) => void;
-  readonly shouldCancel?: () => boolean;
-}
-
-export interface DrawingOperationProgress {
-  readonly completed: number;
-  readonly total: number;
-  readonly viewId: string | null;
-}
-
-export interface DrawingKernelBridge {
-  hiddenLineViews(request: DrawingProjectionRequest, options?: DrawingOperationOptions): Promise<DrawingProjectionResult>;
-  sectionViews(request: DrawingSectionRequest, options?: DrawingOperationOptions): Promise<DrawingSectionResult>;
-}
-
-export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridge {
+export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridge & FunctionKernelBridge {
   const health = createKernelHealth();
   const counts: Record<KernelOperationStatus, number> = {
     success: 0, failed: 0, cancelled: 0, workerBroken: 0,
@@ -3139,6 +1598,17 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
           .offsetSketchCurves({ items: requests.map((request) => toOffsetItem(request)) })
           .then((outcome) => toOffsetResult(requests, outcome)),
         () => ({ results: [], failures: brokenFailures(requests) }),
+      );
+    },
+
+    async functionSketchCurves(input) {
+      if (health.broken && !disposed) restart();
+      const active = connection;
+      return raceWithBroken(active,
+        () => active.remote.functionSketchCurves({ components: input.components, bounds: input.bounds,
+          ...(input.bezier === undefined ? {} : { bezier: input.bezier }) })
+          .then((outcome) => readFunctionCurveGeometry(outcome, input)),
+        () => ({ status: 'failed', message: KERNEL_BROKEN_MESSAGE }),
       );
     },
 
@@ -3320,10 +1790,14 @@ function hasPartLifetime(api: KernelApi): api is PartLifetimeApi {
  * Worker が無いので壊れの検知・作り直し(§2.9)は持たない。`dispose` も何もしない
  * (形状キャッシュは渡された `KernelApi` の持ち物で、寿命は呼び出し側が決める)。
  */
-export function createDirectKernelBridge(api: PartLifetimeApi): AssemblyKernelBridge & DrawingKernelBridge;
-export function createDirectKernelBridge(api: KernelApi): KernelBridge & DrawingKernelBridge;
-export function createDirectKernelBridge(api: KernelApi): KernelBridge & DrawingKernelBridge {
+export function createDirectKernelBridge(api: PartLifetimeApi): AssemblyKernelBridge & DrawingKernelBridge & FunctionKernelBridge;
+export function createDirectKernelBridge(api: KernelApi): KernelBridge & DrawingKernelBridge & FunctionKernelBridge;
+export function createDirectKernelBridge(api: KernelApi): KernelBridge & DrawingKernelBridge & FunctionKernelBridge {
   return {
+    async functionSketchCurves(input) {
+      return readFunctionCurveGeometry(await api.functionSketchCurves({ components: input.components, bounds: input.bounds,
+        ...(input.bezier === undefined ? {} : { bezier: input.bezier }) }), input);
+    },
     hiddenLineViews: (request, options = {}) => api.hiddenLineViews(request, options.onProgress, options.shouldCancel),
     sectionViews: (request, options = {}) => api.sectionViews(request, options.onProgress, options.shouldCancel),
     ...(hasPartLifetime(api) ? {

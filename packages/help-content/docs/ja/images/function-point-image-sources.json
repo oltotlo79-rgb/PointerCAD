@@ -1,0 +1,926 @@
+[
+  {
+    "image": "function-point-candidates.png",
+    "source": "scratchpad/p8-next-implementation/evidence/codex-p8-tables-coefficient-source-e2e1-artifacts/test-results/function-plot-ADD-FUNCTION-77389-YZから選び、保存再開・指定座標変更で同じ点を更新する-functional/function-point-candidates.png",
+    "sha256": "9052456fd5454bca4c2b01ae3274ba0a76eff7cdfba5e64d77c00ef5815485ef",
+    "reviewedAt": "2026-09-13",
+    "host": "Chromium",
+    "releaseCertified": false,
+    "sidecars": {}
+  },
+  {
+    "image": "function-point-normal.png",
+    "source": "scratchpad/p8-next-implementation/evidence/codex-p8-tables-coefficient-source-e2e1-artifacts/test-results/function-plot-ADD-FUNCTION-77389-YZから選び、保存再開・指定座標変更で同じ点を更新する-functional/function-direction-implicit-surface-preview-detail.png",
+    "sha256": "f165775b9a4cca59bdf3d4ea20aece8aa53f09a03e5e208513834e91a5689c7a",
+    "reviewedAt": "2026-09-13",
+    "host": "Chromium",
+    "releaseCertified": false,
+    "sidecars": {
+      "-capture.json": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "ADD-FUNCTION 関数上の点をXYZから選び、保存再開・指定座標変更で同じ点を更新する",
+        "scriptSha256": "c36a450c2d48b91c7f0c0bc9ef59a2b1dde41d46778de86d6b31abf2fb71c4c6",
+        "fixture": {
+          "filename": "function-direction-implicit-surface-preview-fixture.json",
+          "sha256": "22b163708fee67a4a9df2948463b2bf320df56c647f42d25feef910e8757ce92"
+        },
+        "screen": {
+          "filename": "function-direction-implicit-surface-preview-screen.png",
+          "sha256": "02c3aeead11fe27d184a5aba978bdb504a9356344d4d37de77c7cc5441ea9524"
+        },
+        "detail": {
+          "filename": "function-direction-implicit-surface-preview-detail.png",
+          "sha256": "f165775b9a4cca59bdf3d4ea20aece8aa53f09a03e5e208513834e91a5689c7a"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 4,
+          "completedGeneration": 4,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 220,
+          "y": 46.03125,
+          "width": 1000,
+          "height": 807.921875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "-fixture.json": {
+        "mathParameterSerial": 0,
+        "id": "part-1",
+        "name": "部品1",
+        "schemaVersion": 14,
+        "sketches": [
+          {
+            "id": "sketch-1",
+            "name": "スケッチ1",
+            "features": [
+              {
+                "id": "point-1",
+                "name": "点1",
+                "planeId": "free",
+                "kind": "point",
+                "at": {
+                  "mode": "relative",
+                  "base": {
+                    "kind": "functionPoint",
+                    "parent": {
+                      "kind": "surface",
+                      "featureId": "functionSurface-1"
+                    },
+                    "known": [
+                      {
+                        "axis": "X",
+                        "value": {
+                          "source": "0",
+                          "value": 0,
+                          "display": "0",
+                          "mathDefinition": {
+                            "format": "pointercad-math/1",
+                            "source": "0",
+                            "inputNotation": "text",
+                            "angleUnit": "degree",
+                            "expression": {
+                              "kind": "number",
+                              "decimal": "0"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "axis": "Y",
+                        "value": {
+                          "source": "0",
+                          "value": 0,
+                          "display": "0",
+                          "mathDefinition": {
+                            "format": "pointercad-math/1",
+                            "source": "0",
+                            "inputNotation": "text",
+                            "angleUnit": "degree",
+                            "expression": {
+                              "kind": "number",
+                              "decimal": "0"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "choice": {
+                      "input": {
+                        "expression": {
+                          "format": "pointercad-math/1",
+                          "source": "X^2+Y^2+Z^2-1",
+                          "inputNotation": "text",
+                          "angleUnit": "degree",
+                          "expression": {
+                            "kind": "operation",
+                            "operation": "subtract",
+                            "operands": [
+                              {
+                                "kind": "operation",
+                                "operation": "add",
+                                "operands": [
+                                  {
+                                    "kind": "operation",
+                                    "operation": "add",
+                                    "operands": [
+                                      {
+                                        "kind": "operation",
+                                        "operation": "power",
+                                        "operands": [
+                                          {
+                                            "kind": "symbol",
+                                            "reference": {
+                                              "role": "axis",
+                                              "name": "X"
+                                            }
+                                          },
+                                          {
+                                            "kind": "number",
+                                            "decimal": "2"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "kind": "operation",
+                                        "operation": "power",
+                                        "operands": [
+                                          {
+                                            "kind": "symbol",
+                                            "reference": {
+                                              "role": "axis",
+                                              "name": "Y"
+                                            }
+                                          },
+                                          {
+                                            "kind": "number",
+                                            "decimal": "2"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "kind": "operation",
+                                    "operation": "power",
+                                    "operands": [
+                                      {
+                                        "kind": "symbol",
+                                        "reference": {
+                                          "role": "axis",
+                                          "name": "Z"
+                                        }
+                                      },
+                                      {
+                                        "kind": "number",
+                                        "decimal": "2"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "kind": "number",
+                                "decimal": "1"
+                              }
+                            ]
+                          }
+                        },
+                        "minimum": [
+                          -2,
+                          -2,
+                          -2
+                        ],
+                        "maximum": [
+                          2,
+                          2,
+                          2
+                        ],
+                        "tolerance": 1e-07,
+                        "coefficients": [],
+                        "known": [
+                          {
+                            "axis": "X",
+                            "value": 0
+                          },
+                          {
+                            "axis": "Y",
+                            "value": 0
+                          }
+                        ]
+                      },
+                      "location": {
+                        "kind": "implicit",
+                        "axis": "Z",
+                        "interval": {
+                          "lower": 1,
+                          "upper": 1
+                        }
+                      }
+                    }
+                  },
+                  "dx": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "dy": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "dz": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "activeSketchId": "sketch-1",
+        "references": [],
+        "solids": [
+          {
+            "id": "functionSurface-1",
+            "name": "関数曲面1",
+            "suppressed": false,
+            "kind": "functionSurface",
+            "definition": {
+              "format": "pointercad-function/1",
+              "bounds": {
+                "X": {
+                  "min": {
+                    "source": "-2",
+                    "value": -2,
+                    "display": "-2",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "-2",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "operation",
+                        "operation": "negate",
+                        "operands": [
+                          {
+                            "kind": "number",
+                            "decimal": "2"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "max": {
+                    "source": "2",
+                    "value": 2,
+                    "display": "2",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "2",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "number",
+                        "decimal": "2"
+                      }
+                    }
+                  }
+                },
+                "Y": {
+                  "min": {
+                    "source": "-2",
+                    "value": -2,
+                    "display": "-2",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "-2",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "operation",
+                        "operation": "negate",
+                        "operands": [
+                          {
+                            "kind": "number",
+                            "decimal": "2"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "max": {
+                    "source": "2",
+                    "value": 2,
+                    "display": "2",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "2",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "number",
+                        "decimal": "2"
+                      }
+                    }
+                  }
+                },
+                "Z": {
+                  "min": {
+                    "source": "-2",
+                    "value": -2,
+                    "display": "-2",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "-2",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "operation",
+                        "operation": "negate",
+                        "operands": [
+                          {
+                            "kind": "number",
+                            "decimal": "2"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "max": {
+                    "source": "2",
+                    "value": 2,
+                    "display": "2",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "2",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "number",
+                        "decimal": "2"
+                      }
+                    }
+                  }
+                }
+              },
+              "formula": {
+                "kind": "implicit-surface",
+                "expression": {
+                  "format": "pointercad-math/1",
+                  "source": "X^2+Y^2+Z^2-1",
+                  "inputNotation": "text",
+                  "angleUnit": "degree",
+                  "expression": {
+                    "kind": "operation",
+                    "operation": "subtract",
+                    "operands": [
+                      {
+                        "kind": "operation",
+                        "operation": "add",
+                        "operands": [
+                          {
+                            "kind": "operation",
+                            "operation": "add",
+                            "operands": [
+                              {
+                                "kind": "operation",
+                                "operation": "power",
+                                "operands": [
+                                  {
+                                    "kind": "symbol",
+                                    "reference": {
+                                      "role": "axis",
+                                      "name": "X"
+                                    }
+                                  },
+                                  {
+                                    "kind": "number",
+                                    "decimal": "2"
+                                  }
+                                ]
+                              },
+                              {
+                                "kind": "operation",
+                                "operation": "power",
+                                "operands": [
+                                  {
+                                    "kind": "symbol",
+                                    "reference": {
+                                      "role": "axis",
+                                      "name": "Y"
+                                    }
+                                  },
+                                  {
+                                    "kind": "number",
+                                    "decimal": "2"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "operation",
+                            "operation": "power",
+                            "operands": [
+                              {
+                                "kind": "symbol",
+                                "reference": {
+                                  "role": "axis",
+                                  "name": "Z"
+                                }
+                              },
+                              {
+                                "kind": "number",
+                                "decimal": "2"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "number",
+                        "decimal": "1"
+                      }
+                    ]
+                  }
+                }
+              },
+              "tolerance": {
+                "source": "0.01",
+                "value": 0.01,
+                "display": "0.01",
+                "mathDefinition": {
+                  "format": "pointercad-math/1",
+                  "source": "0.01",
+                  "inputNotation": "text",
+                  "angleUnit": "degree",
+                  "expression": {
+                    "kind": "number",
+                    "decimal": "0.01"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "sheetUnfolds": [],
+        "parameters": [],
+        "appearance": {
+          "entries": []
+        },
+        "selectionSets": [],
+        "canvases": [],
+        "namedViews": [
+          {
+            "id": "namedView-front",
+            "name": "正面",
+            "position": [
+              0,
+              -200,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-top",
+            "name": "平面",
+            "position": [
+              0,
+              0,
+              200
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-right",
+            "name": "右側面",
+            "position": [
+              200,
+              0,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-isometric",
+            "name": "等角",
+            "position": [
+              115.47005383792516,
+              -115.47005383792516,
+              115.47005383792516
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "perspective",
+            "zoom": 1
+          }
+        ],
+        "configurations": [
+          {
+            "id": "configuration-1",
+            "name": "既定",
+            "values": {}
+          }
+        ],
+        "activeConfigurationId": "configuration-1"
+      }
+    }
+  },
+  {
+    "image": "function-section-coordinate.png",
+    "source": "scratchpad/p8-next-implementation/evidence/codex-p8-tables-coefficient-source-e2e1-artifacts/test-results/function-plot-ADD-FUNCTION-座標断面線の範囲拒否・Y座標の作成再編集・Undo・保存再開-functional/function-section-coordinate-detail.png",
+    "sha256": "9a5fc59836ef914fa1e1be5c46af09c6219fd37b146d0e5e8fec71c76f5b922e",
+    "reviewedAt": "2026-09-13",
+    "host": "Chromium",
+    "releaseCertified": false,
+    "sidecars": {
+      "-capture.json": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "ADD-FUNCTION 座標断面線の範囲拒否・Y座標の作成再編集・Undo・保存再開",
+        "scriptSha256": "26368e310617a5ad2aec63bcc0f463effa9b9ed1999ef6d30646a25530eec453",
+        "fixture": {
+          "filename": "function-section-coordinate-fixture.json",
+          "sha256": "6c54a1fe6cd62eab1a98e4301fdee8dd4013f461b0669433d69ed410763fe5c1"
+        },
+        "screen": {
+          "filename": "function-section-coordinate-screen.png",
+          "sha256": "9d460816cd3a69d1635229d834c07ae33fafc096e663b53a787c3363aac402c6"
+        },
+        "detail": {
+          "filename": "function-section-coordinate-detail.png",
+          "sha256": "9a5fc59836ef914fa1e1be5c46af09c6219fd37b146d0e5e8fec71c76f5b922e"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 220,
+          "y": 248.78125,
+          "width": 1000,
+          "height": 402.421875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "-fixture.json": {
+        "mathParameterSerial": 0,
+        "id": "part-1",
+        "name": "部品1",
+        "schemaVersion": 14,
+        "sketches": [
+          {
+            "id": "sketch-1",
+            "name": "スケッチ1",
+            "features": []
+          }
+        ],
+        "activeSketchId": "sketch-1",
+        "references": [],
+        "solids": [
+          {
+            "id": "functionSurface-1",
+            "name": "関数曲面1",
+            "suppressed": false,
+            "kind": "functionSurface",
+            "definition": {
+              "format": "pointercad-function/1",
+              "bounds": {
+                "X": {
+                  "min": {
+                    "source": "-1",
+                    "value": -1,
+                    "display": "-1",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "-1",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "operation",
+                        "operation": "negate",
+                        "operands": [
+                          {
+                            "kind": "number",
+                            "decimal": "1"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "max": {
+                    "source": "1",
+                    "value": 1,
+                    "display": "1",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "1",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "number",
+                        "decimal": "1"
+                      }
+                    }
+                  }
+                },
+                "Y": {
+                  "min": {
+                    "source": "-1",
+                    "value": -1,
+                    "display": "-1",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "-1",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "operation",
+                        "operation": "negate",
+                        "operands": [
+                          {
+                            "kind": "number",
+                            "decimal": "1"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "max": {
+                    "source": "1",
+                    "value": 1,
+                    "display": "1",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "1",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "number",
+                        "decimal": "1"
+                      }
+                    }
+                  }
+                },
+                "Z": {
+                  "min": {
+                    "source": "-0.5",
+                    "value": -0.5,
+                    "display": "-0.5",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "-0.5",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "operation",
+                        "operation": "negate",
+                        "operands": [
+                          {
+                            "kind": "number",
+                            "decimal": "0.5"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "max": {
+                    "source": "0.5",
+                    "value": 0.5,
+                    "display": "0.5",
+                    "mathDefinition": {
+                      "format": "pointercad-math/1",
+                      "source": "0.5",
+                      "inputNotation": "text",
+                      "angleUnit": "degree",
+                      "expression": {
+                        "kind": "number",
+                        "decimal": "0.5"
+                      }
+                    }
+                  }
+                }
+              },
+              "formula": {
+                "kind": "coordinate-surface",
+                "output": "Z",
+                "expression": {
+                  "format": "pointercad-math/1",
+                  "source": "X+Y",
+                  "inputNotation": "text",
+                  "angleUnit": "degree",
+                  "expression": {
+                    "kind": "operation",
+                    "operation": "add",
+                    "operands": [
+                      {
+                        "kind": "symbol",
+                        "reference": {
+                          "role": "axis",
+                          "name": "X"
+                        }
+                      },
+                      {
+                        "kind": "symbol",
+                        "reference": {
+                          "role": "axis",
+                          "name": "Y"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "tolerance": {
+                "source": "0.01",
+                "value": 0.01,
+                "display": "0.01",
+                "mathDefinition": {
+                  "format": "pointercad-math/1",
+                  "source": "0.01",
+                  "inputNotation": "text",
+                  "angleUnit": "degree",
+                  "expression": {
+                    "kind": "number",
+                    "decimal": "0.01"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "sheetUnfolds": [],
+        "parameters": [],
+        "appearance": {
+          "entries": []
+        },
+        "selectionSets": [],
+        "canvases": [],
+        "namedViews": [
+          {
+            "id": "namedView-front",
+            "name": "正面",
+            "position": [
+              0,
+              -200,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-top",
+            "name": "平面",
+            "position": [
+              0,
+              0,
+              200
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-right",
+            "name": "右側面",
+            "position": [
+              200,
+              0,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-isometric",
+            "name": "等角",
+            "position": [
+              115.47005383792516,
+              -115.47005383792516,
+              115.47005383792516
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "perspective",
+            "zoom": 1
+          }
+        ],
+        "configurations": [
+          {
+            "id": "configuration-1",
+            "name": "既定",
+            "values": {}
+          }
+        ],
+        "activeConfigurationId": "configuration-1"
+      }
+    }
+  }
+]

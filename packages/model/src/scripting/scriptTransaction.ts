@@ -3,7 +3,8 @@ import { recomputePart, type PartRecomputeResult } from '../part/recomputePart.j
 import type { ImportedShapeBytes, ResolvedSolidStep } from '../part/resolvePart.js';
 import type { PartDocument } from '../part/types.js';
 import type { LengthUnit } from '../units/length.js';
-import { applyScriptCommands } from './scriptCommands.js';
+import { applyScriptCommands,prepareScriptCommands } from './scriptCommands.js';
+import type {ScriptFunctionCompiler} from './scriptFunctionCommands.js';
 import type { ScriptModelReference } from './scriptCommandContext.js';
 import { locateScriptError } from './scriptLocation.js';
 import type { ScriptCommand, ScriptFailure } from './scriptTypes.js';
@@ -28,9 +29,10 @@ function failure(kind: ScriptFailure['kind'], message: string): ScriptPreparatio
 
 /** No app-state mutation. Every failing path releases its separate kernel owner. */
 export async function prepareScriptTransaction(input: ScriptTransactionInput, bridge: AssemblyKernelBridge,
-  shouldCancel: () => boolean, onProgress?: PartProgressCallback): Promise<ScriptPreparation> {
+  shouldCancel: () => boolean, onProgress?: PartProgressCallback, calculate:typeof recomputePart=recomputePart,compile?:ScriptFunctionCompiler): Promise<ScriptPreparation> {
   if (shouldCancel()) return failure('cancelled', '処理を中止しました。');
-  const batch = applyScriptCommands(input.document, input.commands, input.references, input.commandNamespace, input.lengthUnit, input.sources);
+  const argumentsForCommands=[input.document,input.commands,input.references,input.commandNamespace,input.lengthUnit,input.sources]as const;
+  const batch = compile===undefined?applyScriptCommands(...argumentsForCommands):await prepareScriptCommands(argumentsForCommands,compile,shouldCancel);
   if (!batch.ok) return batch;
   const candidate = input.placeDocument?.(batch.document) ?? batch.document;
   const partId = `script-preview:${input.requestId}`;
@@ -41,7 +43,7 @@ export async function prepareScriptTransaction(input: ScriptTransactionInput, br
   };
   try {
     let steps: readonly ResolvedSolidStep[] = [];
-    const result = await recomputePart(candidate, bridge, { partId, generation: 1, shouldCancel, onProgress,
+    const result = await calculate(candidate, bridge, { partId, generation: 1, shouldCancel, onProgress,
       importedShapes: input.importedShapes, onResolved: (resolved) => { steps = resolved.steps; } });
     if (shouldCancel() || result.cancelled) return failure('cancelled', '処理を中止しました。');
     const firstError = result.errors[0];

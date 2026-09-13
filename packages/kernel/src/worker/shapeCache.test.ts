@@ -27,6 +27,29 @@ function fakeHandle(name: string): FakeHandle {
 }
 
 describe('形状キャッシュ(鍵つき・容量上限つきの LRU)', () => {
+  it('貸した旧形の復帰・解放・全消去の後も保持数と容量判定が一致する', () => {
+    const cache = createShapeCache<FakeHandle>(3);
+    const a = fakeHandle('a'), b = fakeHandle('b'), c = fakeHandle('c');
+    cache.set('a', a);
+    const token = cache.acquire(['a']);
+    cache.set('a', b);
+    cache.set('a', c);
+    cache.set('a', a);
+    expect(cache.stats()).toMatchObject({ shapeCount: 3, protectedOverBudget: 0 });
+    const disposable = fakeHandle('evicted');
+    cache.set('evicted', disposable);
+    expect(disposable.deleteCalls()).toBe(1);
+    cache.release(token);
+    expect([a.deleteCalls(), b.deleteCalls(), c.deleteCalls()]).toEqual([0, 1, 1]);
+    cache.set('second', fakeHandle('second'));
+    cache.set('third', fakeHandle('third'));
+    expect(cache.size).toBe(3);
+    cache.clear();
+    for (let index = 0; index < 3; index++) cache.set(String(index), fakeHandle(String(index)));
+    expect(cache.stats()).toMatchObject({ size: 3, shapeCount: 3, protectedOverBudget: 0 });
+    cache.clear();
+  });
+
   it('set した形を同じ鍵で取り出せる', () => {
     const cache = createShapeCache<FakeHandle>();
     const a = fakeHandle('a');

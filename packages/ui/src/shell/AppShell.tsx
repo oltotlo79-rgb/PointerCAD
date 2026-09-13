@@ -97,7 +97,7 @@ function activatedBySpace(target: EventTarget | null): boolean {
  * 自分で受ける)なので、測定の結果を消す Esc はそれを横取りしない。
  */
 function isInsideMenu(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && target.closest('.pcad-menu') !== null;
+  return target instanceof HTMLElement && target.closest('.pcad-menu, .pcad-name-search') !== null;
 }
 
 /**

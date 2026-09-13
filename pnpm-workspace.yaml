@@ -5,6 +5,7 @@ packages:
 # 依存のバージョンはここに1箇所だけ書く。各 package.json は "catalog:" と書いて参照する。
 # 範囲指定(^ / ~)を使わず完全固定する(docs/requirements.md §6.1)。
 catalog:
+  "@cortex-js/compute-engine": 0.128.6
   "@eslint/js": 10.0.1
   "@playwright/test": 1.62.1
   "@types/node": 22.20.1
@@ -19,6 +20,7 @@ catalog:
   eslint-plugin-react-hooks: 7.1.1
   fflate: 0.8.3
   globals: 17.11.0
+  mathlive: 0.110.0
   opencascade.js: 2.0.0-beta.b5ff984
   opentype.js: 2.0.0
   quickjs-wasi: 3.6.0
@@ -30,6 +32,8 @@ catalog:
   vite: 8.2.2
   vitest: 4.1.11
   zustand: 5.0.15
+
+minimumReleaseAgeStrict: true
 
 # pnpm 10 以降は既定でインストール後スクリプトを実行しないため、明示的に許可する。
 # 記述場所はここ(pnpm-workspace.yaml)で pnpm 11.25.0 に認識される(`pnpm config list` で確認)。

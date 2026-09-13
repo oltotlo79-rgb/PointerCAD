@@ -84,8 +84,8 @@ import { isRecord } from './guards.js';
  * 新しすぎる/古すぎる」の判定が種別ごとに分かれず 1 か所で済む。版 7 以前の
  * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
-/** 版13: ロフトの平滑化と曲線断面。古いアプリが指定を黙って落として形を変えない。 */
-export const PCAD_SCHEMA_VERSION = 13;
+/** 版14: 数学定義と係数ID。旧アプリが式を落としてキャッシュだけで作図することを防ぐ。 */
+export const PCAD_SCHEMA_VERSION = 14;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -623,5 +623,10 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
     const fields = part && Array.isArray(solids) ? { solids: solids.map((solid: unknown) =>
       isRecord(solid) && solid['kind'] === 'loft' && !('smooth' in solid) ? { ...solid, smooth: false } : solid) } : {};
     return { ...raw, schema: 13, document: { ...document, ...fields, schemaVersion: 13 } };
+  },
+  /** 版13 → 14: 従来の短式・度単位を変換しない。新しい数学定義は明示的な編集時だけ加える。 */
+  13: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 14, document: { ...raw['document'], schemaVersion: 14 } };
   },
 };

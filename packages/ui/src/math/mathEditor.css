@@ -1,0 +1,84 @@
+/* Existing app tokens retain the five themes and UI scaling. Product integration imports this with the view. */
+.pcad-math-dialog {
+  box-sizing: border-box;
+  width: min(calc(720px * var(--pcad-scale)), calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  background: var(--pcad-bg);
+  color: var(--pcad-text);
+  font: inherit;
+  padding: calc(16px * var(--pcad-scale));
+}
+.pcad-math-dialog::backdrop { background: rgb(0 0 0 / .4); }
+.pcad-math-dialog h2 { margin: 0; font-size: 1.1em; }
+.pcad-math-editor {
+  display: grid;
+  gap: calc(10px * var(--pcad-scale));
+  min-width: 0;
+  color: var(--pcad-text);
+}
+.pcad-math-editor__header,
+.pcad-math-editor__options,
+.pcad-math-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(6px * var(--pcad-scale));
+}
+.pcad-math-editor__header h3 { flex: 1; margin: 0; font-size: 1em; }
+.pcad-math-editor__options label,
+.pcad-math-editor__palette label { display: grid; gap: calc(4px * var(--pcad-scale)); }
+.pcad-math-editor__options button[aria-pressed="true"] { background: var(--pcad-accent-soft); border-color: var(--pcad-accent); }
+:where(.pcad-math-editor) :where(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  padding: calc(5px * var(--pcad-scale));
+  background: var(--pcad-surface);
+  min-width: 0;
+  max-width: 100%;
+}
+.pcad-math-editor button { cursor: pointer; }
+.pcad-math-editor button:disabled { opacity: .55; cursor: default; }
+.pcad-math-editor button:focus-visible,
+.pcad-math-editor input:focus-visible,
+.pcad-math-editor select:focus-visible,
+.pcad-math-editor textarea:focus-visible { outline: 2px solid var(--pcad-accent); outline-offset: 2px; }
+.pcad-math-editor textarea { display: block; box-sizing: border-box; width: 100%; min-height: 5em; resize: vertical; }
+.pcad-math-editor__structured { overflow-x: auto; min-width: 0; }
+.pcad-math-editor math-field {
+  display: block;
+  min-height: calc(52px * var(--pcad-scale));
+  max-width: 100%;
+  font-size: calc(19px * var(--pcad-scale));
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius-small);
+  padding: calc(6px * var(--pcad-scale));
+  color: var(--pcad-text);
+  background: var(--pcad-bg);
+}
+.pcad-math-editor math-field:focus-within { outline: 2px solid var(--pcad-accent); outline-offset: 2px; }
+.pcad-math-editor__hint,
+.pcad-math-editor__meaning { color: var(--pcad-text-muted); font-size: .9em; overflow-wrap: anywhere; }
+.pcad-math-editor__hint { margin: 0; }
+.pcad-math-editor__symbols { display: grid; gap: calc(6px * var(--pcad-scale)); }
+.pcad-math-editor__symbols fieldset { min-width: 0; border: 1px solid var(--pcad-border); padding: calc(6px * var(--pcad-scale)); }
+.pcad-math-editor__symbols button { margin: calc(2px * var(--pcad-scale)); }
+.pcad-math-editor__palette summary { cursor: pointer; margin-block-end: calc(6px * var(--pcad-scale)); }
+.pcad-math-editor__palette ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: calc(6px * var(--pcad-scale));
+  max-height: calc(240px * var(--pcad-scale));
+  overflow-y: auto;
+}
+.pcad-math-editor__palette li { display: grid; gap: calc(3px * var(--pcad-scale)); }
+.pcad-math-editor__palette button { text-align: start; }
+.pcad-math-editor__result { overflow-wrap: anywhere; border-inline-start: 3px solid var(--pcad-accent); padding-inline-start: calc(8px * var(--pcad-scale)); }
+.pcad-math-editor__result p { margin: calc(4px * var(--pcad-scale)) 0; }
+.pcad-math-editor__result--error { color: var(--pcad-danger-text); border-color: var(--pcad-danger); }
+.pcad-math-editor__actions { justify-content: flex-end; }

@@ -50,6 +50,8 @@ const SHAPE_FIELDS: Readonly<
   id: null,
   name: null,
   schemaVersion: null,
+  // 発行番号は参照の再利用防止だけに使う。式や係数値を変えない限り形は同じ。
+  mathParameterSerial: null,
   sketches: (document) => document.sketches,
   activeSketchId: (document) => document.activeSketchId,
   references: (document) => document.references,

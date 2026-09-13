@@ -29,6 +29,7 @@ function createFakeKernelApi(measureImpl: (request: MeasureRequest) => Promise<M
     offsetSketchCurves: () => unimplemented('offsetSketchCurves'),
     projectSketchCurves: () => unimplemented('projectSketchCurves'),
     sectionSketchCurves: () => unimplemented('sectionSketchCurves'),
+    functionSketchCurves: () => unimplemented('functionSketchCurves'),
     hiddenLineViews: () => unimplemented('hiddenLineViews'),
     sectionViews: () => unimplemented('sectionViews'),
     measure: measureImpl,

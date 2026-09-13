@@ -1,5 +1,6 @@
 /** Unknown VM output is parsed, bounded and copied at the host boundary. No guest coercion. */
 import { scriptUtf8Bytes } from './scriptBytes.js';
+import {readScriptFunctionDefinition,ScriptFunctionInputError} from './scriptFunctionInput.js';
 import { SCRIPT_LIMITS, type ScriptAxis, type ScriptCommand, type ScriptCoordinate, type ScriptPlane } from './scriptTypes.js';
 
 type Row = Record<string, unknown>;
@@ -57,6 +58,14 @@ function readCommand(input: unknown, executionId: string): ScriptCommand {
   if (!/^[1-9][0-9]{0,3}$/.test(serial) || Number(serial) > SCRIPT_LIMITS.commands) return fail('resultId');
   const common = { callStack, resultId };
   switch (command.kind) {
+    case 'function.curve':{
+      const fields=row(command.fields,['sketch','definition']);
+      return {...common,kind:command.kind,fields:{sketch:reference(fields.sketch),definition:readScriptFunctionDefinition(fields.definition,'curve')}};
+    }
+    case 'function.surface':{
+      const fields=row(command.fields,['definition']);
+      return {...common,kind:command.kind,fields:{definition:readScriptFunctionDefinition(fields.definition,'surface')}};
+    }
     case 'sketch.create': {
       const fields = row(command.fields, ['name', 'plane']);
       return { ...common, kind: command.kind, fields: { name: reference(fields.name), plane: plane(fields.plane) } };
@@ -122,7 +131,7 @@ export function readSerializedScriptCommand(serialized: string, executionId: str
     const parsed: unknown = JSON.parse(serialized);
     return { ok: true, command: readCommand(parsed, executionId), bytes };
   } catch (error) {
-    if (error instanceof CommandInputError) return { ok: false, reason: error.message };
+    if (error instanceof CommandInputError||error instanceof ScriptFunctionInputError) return { ok: false, reason: error.message };
     if (error instanceof SyntaxError) return { ok: false, reason: 'json' };
     throw error;
   }

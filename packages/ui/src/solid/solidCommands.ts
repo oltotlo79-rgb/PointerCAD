@@ -16,7 +16,8 @@
  * `solidToolReadiness` / `commitSolidInput` はそちらへ委譲する。
  */
 
-import { composeExpressionSource, evaluateExpression, expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
+import { expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
+import { deriveSpringValue } from './springExpressions.js';
 import {
   appendSolid,
   DEFAULT_EXTRUDE_DISTANCE_MM,
@@ -354,30 +355,6 @@ export function selectedSpringOrigin(
 }
 
 /**
- * 式 `source` を評価して `ExpressionValue` にする。全長・ピッチ・巻数の関係式
- * (`全長 = ピッチ × 巻数`、§0.a-0.30)を自動生成した式を評価するのに使う。
- *
- * `pitch.source` と `turns.source` はどちらもすでに妥当な式(欄の検査を通っている)なので
- * `*` / `/` でつないだ式もほぼ必ず評価できるが、万一失敗しても例外を投げず(FR-504
- * 「止めずに警告する」)、少なくとも source は残して値 0 で作る。
- *
- * `variables` はパラメータ表(FR-207)の変数表。渡さなければ空として扱う(§0.a-9 の申し送り①、
- * P4b タスク22a。ピッチ・巻数にパラメータ名を書いても、ここへ通さないと自動生成した式
- * `板厚*4` の `板厚` が読めず読み取り専用の全長欄だけ `= 0` になっていた)。
- */
-function evaluatedExpressionValue(
-  source: string,
-  variables?: ReadonlyMap<string, number>,
-  options: Omit<EvaluateOptions, 'variables'> = {},
-): ExpressionValue {
-  const result = evaluateExpression(source, { ...options, variables });
-  if (result.ok) {
-    return result.value;
-  }
-  return { source, value: 0, display: '0' };
-}
-
-/**
  * ばねの全長・ピッチ・巻数のうち、`derived` が指す 1 つを他の 2 つから自動生成した式で
  * 計算し直す(§0.a-0.30)。呼び出し側が `derived` の欄に何を渡していても、ここで必ず
  * 上書きする(呼び出し側は「入力された 2 つ」だけを正しく渡せばよい)。
@@ -400,21 +377,21 @@ function resolveSpringLengthFields(
   switch (derived) {
     case 'length':
       return {
-        length: evaluatedExpressionValue(composeExpressionSource(pitch.source, turns.source, '*'), variables, options),
+        length: deriveSpringValue(pitch, turns, '*', variables, options),
         pitch,
         turns,
       };
     case 'pitch':
       return {
         length,
-        pitch: evaluatedExpressionValue(composeExpressionSource(length.source, turns.source, '/'), variables, options),
+        pitch: deriveSpringValue(length, turns, '/', variables, options),
         turns,
       };
     case 'turns':
       return {
         length,
         pitch,
-        turns: evaluatedExpressionValue(composeExpressionSource(length.source, pitch.source, '/'), variables, options),
+        turns: deriveSpringValue(length, pitch, '/', variables, options),
       };
   }
 }

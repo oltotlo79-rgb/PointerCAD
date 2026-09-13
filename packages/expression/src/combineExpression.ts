@@ -29,6 +29,7 @@ import {
   type ExpressionValue,
 } from './evaluateExpression.js';
 import { parse } from './parse.js';
+import { composeMathValues } from './math/mathComposition.js';
 
 /** 簡約してよい整数の上限。これを超えたら簡約せず式のまま残す(タスク35 の落とし穴)。 */
 const MAX_SAFE = new ExpressionDecimal(Number.MAX_SAFE_INTEGER);
@@ -250,6 +251,8 @@ export function subtractExpression(
   b: ExpressionValue,
   options: EvaluateOptions = {},
 ): ExpressionValue {
+  const mathematical = composeMathValues(a, b, '-');
+  if (mathematical !== null) return mathematical;
   // 同じ式どうしの差は、中身が何であれ厳密に 0(§0.a-0.25 ⑤。原点にした点自身がここ)。
   if (a.source === b.source) {
     return expressionValueFromNumber(0);
@@ -280,6 +283,8 @@ export function addExpression(
   b: ExpressionValue,
   options: EvaluateOptions = {},
 ): ExpressionValue {
+  const mathematical = composeMathValues(a, b, '+');
+  if (mathematical !== null) return mathematical;
   const left = rationalOfSource(a.source);
   const right = rationalOfSource(b.source);
   if (left !== null && right !== null) {
@@ -313,6 +318,8 @@ export function multiplyExpression(
   b: ExpressionValue,
   options: EvaluateOptions = {},
 ): ExpressionValue {
+  const mathematical = composeMathValues(a, b, '*');
+  if (mathematical !== null) return mathematical;
   const left = rationalOfSource(a.source);
   const right = rationalOfSource(b.source);
   if (left !== null && right !== null) {
@@ -347,6 +354,8 @@ export function divideExpression(
   b: ExpressionValue,
   options: EvaluateOptions = {},
 ): ExpressionValue {
+  const mathematical = composeMathValues(a, b, '/');
+  if (mathematical !== null) return mathematical;
   const left = rationalOfSource(a.source);
   const right = rationalOfSource(b.source);
   if (left !== null && right !== null && !right.numerator.isZero()) {

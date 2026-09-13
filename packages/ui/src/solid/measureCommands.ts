@@ -36,6 +36,8 @@ import {
   type WoodSpecies,
 } from '@pointercad/model';
 
+import type { ResolvedSketch } from '@pointercad/model';
+import { partMeasureReadiness } from '../sketch/sketchMeasure.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import type { MeasureAngleSpec, MeasurementState } from '../viewport/createMeasureLayer.js';
 
@@ -43,7 +45,6 @@ import {
   formatMeasure,
   measureKindLabel,
   measureLocally,
-  measureReadiness,
   measureRejectionMessageKey,
   MEASURE_FAILED_MESSAGE_KEY,
   type LocalMeasureResult,
@@ -83,8 +84,9 @@ const READY: SolidToolReadiness = { ready: true, reasonKey: null };
 export function measureToolReadiness(
   selection: readonly string[],
   bodies: readonly SubShapeBody[],
+  sketch?: ResolvedSketch,
 ): SolidToolReadiness {
-  const readiness = measureReadiness(selection, bodies);
+  const readiness = partMeasureReadiness(selection, bodies, sketch);
   if (readiness.ready) {
     return READY;
   }
@@ -96,7 +98,7 @@ export function measureToolReadiness(
  * ここはそれを引くだけにする(同じ表を 2 か所に書かない、NFR-MA-5)。
  * 理由が無い(= 測れる)ときは、カーネルが測れなかったときと同じ断りへ落とす。
  */
-function measureRejectionKeyOf(readiness: MeasureReadiness): MessageKey {
+function measureRejectionKeyOf(readiness: Pick<MeasureReadiness, 'reason'>): MessageKey {
   return readiness.reason === null
     ? MEASURE_FAILED_MESSAGE_KEY
     : measureRejectionMessageKey(readiness.reason);
@@ -121,7 +123,7 @@ const SUMMARY_SEPARATOR = ' / ';
  * 測る相手の要約(「面 / 面」「立体 / 立体」)。選んだ順に並べる。
  * 何も選んでいなければ空文字を返し、呼び出し側は欄そのものを出さない。
  */
-export function describeMeasureTargets(targets: readonly MeasureTarget[]): string {
+export function describeMeasureTargets(targets: readonly Pick<MeasureTarget, 'kind'>[]): string {
   return targets.map((target) => t(SELECTION_KIND_LABEL_KEYS[target.kind])).join(SUMMARY_SEPARATOR);
 }
 
@@ -558,6 +560,8 @@ export type MeasureOutcomeView =
 
 /** 測るのに要るもの一式(ストアが持っている値をそのまま渡せる形)。 */
 export interface MeasureContext {
+  /** Current evaluated sketch; omit while its recomputation is pending. */
+  readonly sketch?: ResolvedSketch;
   readonly document: PartDocument;
   readonly selection: readonly string[];
   /** カーネルが返したボディの一覧(体積つき)。 */
@@ -583,7 +587,9 @@ export interface MeasureContext {
  *   カーネルへ聞く(重心と慣性モーメントは一覧に無い、§0.a-0.30)。
  */
 export async function runMeasure(context: MeasureContext): Promise<MeasureOutcomeView> {
-  const readiness = measureReadiness(context.selection, context.bodies);
+  const ready = partMeasureReadiness(context.selection, context.bodies, context.sketch, context.lengthUnit);
+  if ('source' in ready) return { ok: true, measurement: ready.measurement, massProperties: null };
+  const readiness = ready;
   if (!readiness.ready || readiness.kind === null) {
     return { ok: false, reasonKey: measureRejectionKeyOf(readiness) };
   }

@@ -1,13 +1,15 @@
 /** 名前付きの設計表。保存するのは式だけで、切替時にパラメータと形状を再評価する。 */
-import { renameVariable } from '@pointercad/expression';
+import { renameVariable, type StoredMathExpression } from '@pointercad/expression';
 
 import { analyzeParameters } from '../parameters/parameterTable.js';
 import type { Parameter } from '../parameters/types.js';
 
 import { applyParameters } from './reevaluatePart.js';
 import type { PartDocument } from './types.js';
+import { configurationDefinitions, configurationParameters, sameConfigurationDefinitions } from './configurationExpressions.js';
 
 export interface Configuration {
+  readonly mathDefinitions?: Readonly<Record<string, StoredMathExpression>>;
   readonly id: string;
   readonly name: string;
   readonly values: Readonly<Record<string, string>>;
@@ -34,35 +36,41 @@ function validateValues(document: PartDocument, values: Readonly<Record<string, 
 }
 
 function withSources(parameters: readonly Parameter[], values: Readonly<Record<string, string>>): readonly Parameter[] {
-  let changed = false;
-  const result = parameters.map((parameter) => {
-    const source = values[parameter.name];
-    if (source === parameter.value.source) return parameter;
-    changed = true;
-    return { ...parameter, value: { ...parameter.value, source } };
-  });
-  return changed ? result : parameters;
+  return configurationParameters(parameters, { values });
 }
 
 export function createConfiguration(
   document: PartDocument, name: string, overrides: Readonly<Record<string, string>> = {},
 ): ConfigurationChange {
+  const prepared = prepareConfigurationCreation(document, name, overrides);
+  if (!prepared.ok) return prepared;
+  const configuration = prepared.configuration;
+  if (configuration.mathDefinitions !== undefined) return { ok: false, reason: 'invalidExpression' };
+  const reason = validateValues(document, configuration.values);
+  if (reason !== null) return { ok: false, reason };
+  const next = { ...document, configurations: [...document.configurations, configuration] };
+  return document.activeConfigurationId === null ? activateConfiguration(next, configuration.id) : { ok: true, document: next };
+}
+
+/** Common structural preparation. Mathematical values still require the asynchronous evaluation boundary. */
+export function prepareConfigurationCreation(
+  document: PartDocument, name: string, overrides: Readonly<Record<string, string>> = {},
+): { readonly ok: true; readonly configuration: Configuration } | Extract<ConfigurationChange, { ok: false }> {
   const trimmed = name.trim();
   if (trimmed.length === 0) return { ok: false, reason: 'emptyName' };
   if (document.configurations.some((configuration) => configuration.name === trimmed)) return { ok: false, reason: 'duplicateName' };
   const values = { ...sources(document.parameters), ...overrides };
-  const reason = validateValues(document, values);
-  if (reason !== null) return { ok: false, reason };
+  const names = new Set(document.parameters.map(parameter => parameter.name));
+  if (Object.keys(values).some(key => !names.has(key))) return { ok: false, reason: 'unknownParameter' };
+  if (Object.values(values).some(value => typeof value !== 'string' || value.trim().length === 0)) return { ok: false, reason: 'invalidExpression' };
   let serial = 1;
   for (const entry of document.configurations) {
     const match = /^configuration-(\d+)$/.exec(entry.id);
     if (match !== null && Number.isSafeInteger(Number(match[1]))) serial = Math.max(serial, Number(match[1]) + 1);
   }
-  const configuration = { id: `configuration-${String(serial)}`, name: trimmed, values };
-  const next = { ...document, configurations: [...document.configurations, configuration] };
-  return document.activeConfigurationId === null
-    ? activateConfiguration(next, configuration.id)
-    : { ok: true, document: next };
+  const mathDefinitions = configurationDefinitions(document.parameters, values);
+  return { ok: true, configuration: { id: `configuration-${String(serial)}`, name: trimmed, values,
+    ...(mathDefinitions === undefined ? {} : { mathDefinitions }) } };
 }
 
 export function activateConfiguration(document: PartDocument, id: string): ConfigurationChange {
@@ -70,7 +78,9 @@ export function activateConfiguration(document: PartDocument, id: string): Confi
   if (configuration === undefined) return { ok: false, reason: 'notFound' };
   const reason = validateValues(document, configuration.values);
   if (reason !== null) return { ok: false, reason };
-  const parameters = withSources(document.parameters, configuration.values);
+  // Mathematical configurations are applied only after asynchronous validation by activateMathConfiguration.
+  if (configuration.mathDefinitions !== undefined) return { ok: false, reason: 'invalidExpression' };
+  const parameters = configurationParameters(document.parameters, configuration);
   if (document.activeConfigurationId === id && parameters === document.parameters) return { ok: true, document };
   const next = { ...document, activeConfigurationId: id, parameters };
   return { ok: true, document: applyParameters(next).document };
@@ -104,11 +114,22 @@ export function synchronizeConfigurations(document: PartDocument): PartDocument 
     const active = configuration.id === document.activeConfigurationId;
     const entries = document.parameters.map((parameter) => [parameter.name,
       active || !Object.hasOwn(configuration.values, parameter.name)
-        ? parameter.value.source : configuration.values[parameter.name]] as const);
+         ? parameter.value.source : configuration.values[parameter.name]] as const);
+    const values = Object.fromEntries(entries);
+    const definitions = active ? configurationDefinitions(document.parameters, values) : Object.fromEntries(
+      document.parameters.flatMap(parameter => {
+        const definition = Object.hasOwn(configuration.values, parameter.name)
+          ? configuration.mathDefinitions?.[parameter.name] : parameter.value.mathDefinition;
+        return definition === undefined ? [] : [[parameter.name, definition] as const];
+      }),
+    );
+    const mathDefinitions = definitions !== undefined && Object.keys(definitions).length > 0 ? definitions : undefined;
     if (entries.length === Object.keys(configuration.values).length
-      && entries.every(([name, value]) => configuration.values[name] === value)) return configuration;
+      && entries.every(([name, value]) => configuration.values[name] === value)
+      && sameConfigurationDefinitions(configuration.mathDefinitions, mathDefinitions)) return configuration;
     changed = true;
-    return { ...configuration, values: Object.fromEntries(entries) };
+    return { id: configuration.id, name: configuration.name, values,
+      ...(mathDefinitions === undefined ? {} : { mathDefinitions }) };
   });
   return changed ? { ...document, configurations } : document;
 }

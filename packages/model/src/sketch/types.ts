@@ -8,6 +8,8 @@
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
+import type { FunctionDefinition } from '../functionGeometry/functionDefinitionTypes.js';
+import type { FunctionPointReference } from '../functionGeometry/functionPointReference.js';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import type { SketchConstraint } from './constraints/types.js';
@@ -29,6 +31,7 @@ import type { Vec3 } from './vec3.js';
  * 型に入れなかった。解決できない種類を先に型へ持ち込むと、意味を持たない分岐が残るため)。
  */
 export type PointReference =
+  | FunctionPointReference
   | { readonly kind: 'origin' }
   | { readonly kind: 'previous' }
   | { readonly kind: 'point'; readonly pointId: string }
@@ -100,6 +103,7 @@ export type SketchFeatureKind =
   | 'slot'
   | 'ellipse'
   | 'spline'
+  | 'functionCurve'
   | 'offset'
   | 'copy'
   | 'projectedCurve'
@@ -467,6 +471,13 @@ export interface SketchPlaneSectionFeature extends SketchFeatureBase {
   readonly construction: boolean;
 }
 
+/** World-coordinate function curve. Store its formula and all XYZ limits; derive every displayed point. */
+export interface SketchFunctionCurveFeature extends SketchFeatureBase {
+  readonly kind: 'functionCurve';
+  readonly definition: FunctionDefinition;
+  readonly construction: boolean;
+}
+
 export type SketchFeature =
   | SketchPointFeature
   | SketchLineFeature
@@ -478,6 +489,7 @@ export type SketchFeature =
   | SketchSlotFeature
   | SketchEllipseFeature
   | SketchSplineFeature
+  | SketchFunctionCurveFeature
   | SketchOffsetFeature
   | SketchCopyFeature
   | SketchProjectedCurveFeature
@@ -563,6 +575,8 @@ export interface ResolvedSpline {
   /** 通過点(interpolate)または制御点(control)。並び順が曲線の向き。 */
   readonly points: readonly Vec3[];
   readonly closed: boolean;
+  /** Function samples preserve their certified chords; ordinary splines omit this. */
+  readonly degree?: 1;
 }
 
 export type ResolvedCurve = ResolvedSegment | ResolvedArc | ResolvedEllipse | ResolvedSpline;

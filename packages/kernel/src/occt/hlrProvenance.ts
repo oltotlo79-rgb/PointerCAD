@@ -2,7 +2,7 @@ import type { HLRBRep_HLRToShape, HLRTopoBRep_OutLiner, OpenCascadeInstance, Top
 
 import type { HiddenLineCurve, HiddenLineMode, HiddenLineProvenance } from '../types.js';
 import type { Allocations } from './allocations.js';
-import { readSeamOutlines } from './hlrSeamOutlines.js';
+import { readFaceSeams, readSeamOutlines } from './hlrSeamOutlines.js';
 import {
   makeProjection, orderPlaneCurves, planeBasisOf, projectEdgeToPlane,
   type PlaneCurve, type SketchPlaneFrame,
@@ -130,6 +130,8 @@ export function readHlrSource(
     // 球の極など、形状番号には含まれるが幾何曲線を持たない辺は投影しない。
     if (edge !== null && oc.BRep_Tool.Degenerated(edge)) { edgeIndex += 1; continue; }
     let edgeData: { original: PlaneCurve | null; curved: boolean; first: number; last: number } | undefined;
+    const seams = isFace && outliner !== undefined && converter.CompoundOfEdges_2 !== undefined
+      ? readFaceSeams(oc, shape, allocations) : undefined;
     for (const isVisible of includeHidden ? [true, false] : [true]) {
       const projected = (generatedShapes.get(index) ?? [shape]).flatMap((generated) => {
         const output = keep(isEdge
@@ -137,8 +139,8 @@ export function readHlrSource(
           : isVisible ? converter.OutLineVCompound_2(generated) : converter.OutLineHCompound_2(generated));
         return read(oc, output);
       });
-      if (isFace && outliner !== undefined && converter.CompoundOfEdges_2 !== undefined) projected.push(...readSeamOutlines(oc,
-        { CompoundOfEdges_2: converter.CompoundOfEdges_2.bind(converter) }, shape, generatedShapes.get(index) ?? [shape], plane, isVisible, allocations));
+      if (seams !== undefined && seams.length > 0 && converter.CompoundOfEdges_2 !== undefined) projected.push(...readSeamOutlines(oc,
+        { CompoundOfEdges_2: converter.CompoundOfEdges_2.bind(converter) }, shape, generatedShapes.get(index) ?? [shape], plane, isVisible, allocations, seams));
       // 視線と平行な辺や出力のない面には、元曲線の投影・サンプリングを行わない。
       // 可視・隠線の両方に現れる辺は、同じ読み取り結果を共有する。
       if (projected.length === 0) continue;

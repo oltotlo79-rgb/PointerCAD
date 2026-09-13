@@ -335,10 +335,12 @@ describe('段の種類(SolidStepSpec の union)', () => {
     sheetFlange: true,
     sheetJoin: true,
     sheetBody: true,
+    functionSurface: true,
   };
 
-  it('段の種類は27種で、既存の形状と板金の基板・フランジ・展開結合・再構築を含む', () => {
-    expect(Object.keys(STEP_KINDS)).toHaveLength(27);
+  it('段の種類は28種で、既存の形状・板金・関数曲面を含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(28);
+    expect(Object.keys(STEP_KINDS)).toContain('functionSurface');
     expect(Object.keys(STEP_KINDS)).toContain('primitive');
     expect(Object.keys(STEP_KINDS)).toContain('thruSections');
     expect(Object.keys(STEP_KINDS)).toContain('sheetBase');

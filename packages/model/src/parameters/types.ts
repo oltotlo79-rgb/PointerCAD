@@ -11,7 +11,7 @@
  * (`parameterTable.ts` の `analyzeParameters`)。
  */
 
-import type { ExpressionValue } from '@pointercad/expression';
+import type { ExpressionValue, MathCoefficientValue } from '@pointercad/expression';
 
 /**
  * パラメータの量の種類。長さはmm、角度は度、無次元は倍率として扱う。
@@ -28,6 +28,8 @@ export const PARAMETER_UNITS: readonly ParameterUnit[] = ['mm', 'degree', 'none'
 
 /** 名前を付けた数値 1 つ(FR-207)。 */
 export interface Parameter {
+  /** 数式での永続参照。旧文書は省略でき、初回の数式適用と同じUndo単位で付与する。 */
+  readonly mathId?: string;
   /** 式から参照される名前。文書の中で重ならない。 */
   readonly name: string;
   /** 値の式。他のパラメータを参照できる。 */
@@ -55,6 +57,8 @@ export interface ParameterAnalysis {
   /** 評価できた変数表。循環に含まれる名前と、評価に失敗した名前は入らない。 */
   readonly variables: ReadonlyMap<string, number>;
   readonly exactVariables: ReadonlyMap<string, string>;
+  /** Original expressions from this evaluated immutable snapshot; never persisted as numeric proof. */
+  readonly mathCoefficients?: ReadonlyMap<string, MathCoefficientValue>;
   readonly nonLengthVariables: ReadonlySet<string>;
   /** 循環に含まれる名前(FR-207「参照が循環している名前は画面上で示す」)。 */
   readonly circular: readonly string[];

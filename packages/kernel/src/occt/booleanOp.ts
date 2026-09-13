@@ -11,6 +11,7 @@ import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
+import { OPEN_FACES_NOT_SUPPORTED, shapeBodyKind } from './shapeBodyKind.js';
 
 /**
  * これ未満の体積(mm³)は「何も残らなかった」とみなす。
@@ -164,6 +165,8 @@ export function booleanOp(
   const allocations = createAllocations();
   try {
     const range = allocations.keep(new oc.Message_ProgressRange_1());
+    if (target.IsNull() || tool.IsNull()) throw new Error(COMBINE_FAILED_MESSAGE);
+    if (shapeBodyKind(oc, target) !== 'solid' || shapeBodyKind(oc, tool) !== 'solid') throw new Error(OPEN_FACES_NOT_SUPPORTED);
     return buildBooleanResult(oc, operation, target, [tool], range, allocations);
   } catch (error) {
     allocations.release();
@@ -177,6 +180,8 @@ export function unionShapes(oc: OpenCascadeInstance, shapes: readonly TopoDS_Sha
   const allocations = createAllocations();
   try {
     const range = allocations.keep(new oc.Message_ProgressRange_1());
+    if (shapes.some(shape => shape.IsNull())) throw new Error(COMBINE_FAILED_MESSAGE);
+    if (shapes.some(shape => shapeBodyKind(oc, shape) !== 'solid')) throw new Error(OPEN_FACES_NOT_SUPPORTED);
     return buildBooleanResult(oc, 'union', shapes[0], shapes.slice(1), range, allocations);
   } catch (error) { allocations.release(); throw error; }
 }

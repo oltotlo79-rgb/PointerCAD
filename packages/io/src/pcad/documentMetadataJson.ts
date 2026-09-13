@@ -1,5 +1,5 @@
 /** 名前付き視点と構成の保存境界。式は読み込み後に修正できるよう文字列のまま保つ。 */
-import { isValidNamedViewCamera, type Configuration, type NamedView, type Parameter } from '@pointercad/model';
+import { decodeMathExpressionStorage, isValidNamedViewCamera, type Configuration, type NamedView, type Parameter } from '@pointercad/model';
 
 import {
   checkRecord, fieldProblem, indexPath, joinPath, readArray, readLiteral, readNumber,
@@ -15,6 +15,10 @@ export function serializeNamedViews(views: readonly NamedView[]): readonly Named
 export function serializeConfigurations(configurations: readonly Configuration[]): readonly Configuration[] {
   return configurations.map((configuration) => ({ id: configuration.id, name: configuration.name,
     values: Object.fromEntries(Object.entries(configuration.values).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)),
+    ...(configuration.mathDefinitions === undefined ? {} : { mathDefinitions: Object.fromEntries(
+      Object.entries(configuration.mathDefinitions).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([name, definition]) => [name, decodeMathExpressionStorage(definition, configuration.values[name])]),
+    ) }),
   }));
 }
 
@@ -92,9 +96,23 @@ export function readConfigurationData(
       values.push([key, source]);
     }
     if (values.length !== parameterNames.size) return fieldProblem(joinPath(entryPath, 'values'), 'type');
+    let mathDefinitions: Configuration['mathDefinitions'];
+    if (Object.hasOwn(configuration.value, 'mathDefinitions')) {
+      const rawDefinitions = readRecord(configuration.value, 'mathDefinitions', entryPath);
+      if (!rawDefinitions.ok) return rawDefinitions;
+      const decoded: [string, NonNullable<Configuration['mathDefinitions']>[string]][] = [];
+      for (const [key, definition] of Object.entries(rawDefinitions.value)) {
+        const source = rawValues.value[key];
+        if (!parameterNames.has(key) || typeof source !== 'string') return fieldProblem(joinPath(entryPath, `mathDefinitions.${key}`), 'type');
+        try { decoded.push([key, decodeMathExpressionStorage(definition, source)]); }
+        catch { return fieldProblem(joinPath(entryPath, `mathDefinitions.${key}`), 'type'); }
+      }
+      mathDefinitions = Object.fromEntries(decoded);
+    }
     ids.add(id.value);
     names.add(name.value.trim());
-    configurations.push({ id: id.value, name: name.value, values: Object.fromEntries(values) });
+    configurations.push({ id: id.value, name: name.value, values: Object.fromEntries(values),
+      ...(mathDefinitions === undefined ? {} : { mathDefinitions }) });
   }
   const active = readValue(record, 'activeConfigurationId', path);
   if (!active.ok) return active;

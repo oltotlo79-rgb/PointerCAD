@@ -13,7 +13,7 @@ import type {
   XCAFDoc_ColorTool,
 } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { PlacementSpec, ShapeAssemblyNode, SolidBodyKind } from '../types.js';
+import type { PlacementSpec, ShapeAssemblyNode } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import {
@@ -29,7 +29,7 @@ import {
   type StepFileLengthUnit,
   type StepReadOptions,
 } from './readStep.js';
-import { hasSolid } from './solidMesh.js';
+import { shapeBodyKind, type CadBodyKind } from './shapeBodyKind.js';
 import { withVirtualFileInput } from './virtualFile.js';
 import type { RgbTuple } from './xcafDocument.js';
 import { decodeStepAssemblyOccurrenceName } from './stepAssemblyMetadata.js';
@@ -45,7 +45,7 @@ export interface StepAssemblyDefinition {
   readonly name: string | null;
   readonly shape: TopoDS_Shape;
   readonly color: RgbTuple | null;
-  readonly kind: SolidBodyKind;
+  readonly kind: CadBodyKind;
 }
 
 /** 読み込んだ XCAF アセンブリ。 */
@@ -170,14 +170,14 @@ export function readStepAssembly(
           return existing.value;
         }
         const shape = keep(oc.XCAFDoc_ShapeTool.GetShape_2(label));
-        const solid = hasSolid(oc, shape);
-        solidFound = solidFound || solid;
+        const kind = shapeBodyKind(oc, shape);
+        solidFound = solidFound || kind !== 'shell';
         const value: StepAssemblyDefinition = {
           id: `definition-${String(definitions.length + 1)}`,
           name: readStepLabelName(oc, label, keep),
           shape,
           color: withColors ? readStepLabelColor(oc, colorTool, label, keep) : null,
-          kind: solid ? 'solid' : 'shell',
+          kind,
         };
         known.push({ label, value });
         definitions.push(value);

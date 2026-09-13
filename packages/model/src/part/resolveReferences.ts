@@ -124,6 +124,8 @@ export interface ResolvedReferences {
 
 /** 基準ジオメトリを解くのに要る、外から渡す手掛かり。 */
 export interface ReferenceResolveDeps {
+  readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
+  readonly invalidInputs?: ReadonlyMap<string, string>;
   /**
    * スケッチ 1 本の解決結果。まだ解けない(循環している)ときは null を返す。
    * 呼び出し側(`resolvePart`)が遅延解決と記憶を担う。
@@ -330,6 +332,7 @@ export function createReferenceResolver(
    * null を返す。呼び出し側はそれを 1 つの断り(`MISSING_SPHERE_MESSAGE`)にまとめる。
    */
   function sphereAt(sphereFeatureId: string, limit: number): ResolvedSphere | null {
+    if (deps.invalidInputs?.has(sphereFeatureId)) return null;
     if (activeSpheres.has(sphereFeatureId)) {
       // 球の中心が自分の球面上の点を指している(循環)。解こうとすると戻ってこないので断る。
       return null;
@@ -400,6 +403,12 @@ export function createReferenceResolver(
         // 頂点はその位置、辺は中点、面は重心(`subShapeFromFingerprint` と同じ約束)。
         const found = resolveSubShape(reference.ref);
         return found === null ? null : found.position;
+      }
+      case 'functionPoint': {
+        // This order contains reference geometry only; a sketch/solid ID cannot be checked against it.
+        // The point recomputer must have validated and evaluated this exact owner before publishing it.
+        const owner=document.references[limit]?.id;
+        return owner===undefined?null:deps.functionPoint?.(reference,owner)??null;
       }
       case 'sphereGrid': {
         // 球面上の点(FR-431、P5 タスク19)。**位置と緯度の範囲の規則は
@@ -707,6 +716,8 @@ export function createReferenceResolver(
   }
 
   function resolveFeature(feature: ReferenceFeature, limit: number): ReferenceOutcome {
+    const invalid = deps.invalidInputs?.get(feature.id);
+    if (invalid !== undefined) return failed(feature.id, 'invalidValue', invalid);
     switch (feature.kind) {
       case 'referencePlane':
         return resolvePlaneFeature(feature, limit);

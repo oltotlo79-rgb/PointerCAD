@@ -99,13 +99,37 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 
 上記は開発版の機能です。製品全体の受入検査と配布準備を進めています。実装状況は[開発計画](docs/plans/)と[進捗台帳](docs/progress.json)で確認できます。
 
-## 追加開発の計画：数式から曲線・曲面を設計する
+## 数式から曲線・曲面を設計する
 
-**以下は追加計画で、現在の開発版ではまだ利用できません。初回リリースの対象として実装を進めます。**
+**開発中の作業版では、座標式・媒介式から曲線・曲面を作る画面と保存・再編集を、Chrome・Firefox・Windowsデスクトップで検証しています。球面の例から閉じた立体を作る操作も確認しました。mainへの反映と初回リリースの受入は継続中です。**
 
-- **関数と範囲から形を作る**：座標式・媒介式・陰関数とXYZの描画範囲から曲線や曲面を作り、閉じた有効な面を立体にします。式・係数・範囲を後から変更できるようにします。
-- **関数の形を、寸法や位置の設計へつなぐ**：XYZのうち1つか2つを指定し、点が定まる場合は関数上へ点を作成します。複数の候補がある場合は選べるようにし、断面線や接線・法線、係数のスライダーも用意します。
+「作図」→「関数作図」で式を入力し、X・Y・Zそれぞれの最小値・最大値を指定します。無限に続く関数でも、その範囲にある部分だけがCADの曲線になります。画面で回転して形を確認してから確定でき、原式・係数・範囲を保存して再編集できます。座標軸Xと同名の係数X、πなどの定数は入力欄で区別します。[関数曲線の操作説明](packages/help-content/docs/ja/function-curve.md)
+
+関数の曲線を道筋として選び、円などの断面を動かして立体を作れます。関数上の点から作った接線・法線も、通常の「測る」で長さや角度を確認できます。**式で決めた形を、そのまま加工と測定へつなげる**操作を、3種類の実行環境で確認しています。[関数曲線に沿った立体の作成](packages/help-content/docs/ja/function-curve.md#関数の曲線に沿って立体を作る) · [点と方向の測定](packages/help-content/docs/ja/function-point.md#点の距離と接線法線の寸法を測る)
+
+三角関数の角度は**度が既定で、必要に応じてラジアンへ切り替えられます**。選んだ単位も式と一緒に保存するため、開き直しても式の意味を保持します。
+
+作業版では、測定データの平均・母分散／標本分散・相関・回帰も同じ数式入力へ組み込んでいます。**データから求めた値を、寸法や位置に使う式として保存する**ための機能です。現在は整数・小数・分数に確定できるデータを扱い、配布前の検証を進めています。[統計入力の規約と操作](packages/help-content/docs/ja/math-input.md#データから統計量を求める)
+
+連立一次式の解から位置や寸法を決める入力も作業版で整備しています。解が一つに決まる式と自由な値が残る式を区別し、使う成分を明示して保存します。行列・統計などは数学の分野で絞り込んで探せます。QR分解では直交した方向とその係数を、LU分解では行交換と下三角・上三角の成分を取り出せます。特性多項式の係数や、2次・三角行列の固有値も同じ数式欄で扱います。これらは配布前の検証中です。[行列・連立一次式の入力](packages/help-content/docs/ja/math-input.md#連立一次式と行列から値を求める)
+
+![開発中の実画面：式とXYZの範囲を指定し、切り取られた曲線を確認する](packages/help-content/docs/ja/images/function-xyz-preview.png)
+
+`Z=X+Y`の斜面や`Z=U*V`の鞍状の面も、**XYZの範囲で切り取ったCAD曲面**として作れます。媒介変数U・Vの範囲とXYZの範囲を別々に指定し、回転・拡大して確認できます。開いた面の体積を立体の体積として表示することはありません。[関数曲面の操作説明](packages/help-content/docs/ja/function-surface.md)
+
+![開発中の実画面：U・VとXYZの範囲を指定して関数曲面を確認する](packages/help-content/docs/ja/images/function-surface-parametric.png)
+
+球面・トーラスなどの例を選んで始められます。**式や係数を残したまま、閉じた曲面を体積のある立体として使える**ことも特徴です。XYZの範囲で球面を途中まで切ったときは、開いた曲面になります。切り口に底面を勝手に追加しません。
+
+![開発中の実画面：球面の式と範囲から閉じた立体を作り、面積と体積を確認する](packages/help-content/docs/ja/images/function-closed-sphere.png)
+
+初回リリースへ向け、続けて次を実装します。
+
+- **等式から形を作る**：作業中の版では、`X^2+Y^2-1=0`の円や`X^2+Y^2+Z^2-1=0`の球を全XYZ範囲内で作れます。固定する軸と座標を分け、曲線の式を一方の座標へ解き直さずに入力できます。球の等式を0.01 mmの許容誤差で作成・保存・再読込し、Z範囲で開いた半球へ変える操作をChrome・Firefox・デスクトップ版で確認しました。球やトーラスと一致する等式では解析的なCAD曲面を利用します。他の等式は指定精度で近似し、計算しきれない場合は理由を表示します。[平面等式の操作](packages/help-content/docs/ja/function-curve.md#平面上の等式から円や双曲線を作る) · [空間等式の操作](packages/help-content/docs/ja/function-surface.md#等式fxyz0から面を作る)
+- **関数の形を、寸法や位置の設計へつなぐ**：XYZのうち1つか2つを指定し、点が定まる場合は関数上へ点を作成します。複数の候補は画面で選びます。元の式とXYZ範囲から解を調べ、調べきれていない候補は確定しない設計です。保存後や親の式を編集した後に別の解へ飛ばないよう、座標曲線・媒介曲線・媒介曲面上の点の追従も整備中です。媒介曲面のU・Vと実際のXYZを区別した候補表示や、1座標から頂点が定まる場合の操作も実装・検証中です。係数のスライダーで式を書き直さずに形を調整する操作と、X・Y・Zの座標を固定した断面線を作り、元の関数に追従させる操作を実装・検証中です。ドラッグや断面線の作成はUndo1回で戻せます。[関数上の点](packages/help-content/docs/ja/function-point.md)、[係数を調整する操作説明](packages/help-content/docs/ja/function-curve.md#係数を動かして形を調整する)、[断面線の作成と再編集](packages/help-content/docs/ja/function-surface.md#座標を固定して断面線を作る)
+- **曲がる向きや面に垂直な向きを、次の作図に使う**：関数上の点から接線・法線を作る操作を実装・検証中です。長さを式で指定し、向きを矢印で確認して線分にできます。保存後の長さ・方向の再編集や、元の点・関数の変更への追従を整備しています。尖った点や直線部分の主法線など、方向が定まらない場合は理由を表示します。[接線・法線の操作説明](packages/help-content/docs/ja/function-point.md#点から接線法線を作る)
 - **普段の座標欄でも大学数学を使う**：分数、累乗、階乗、絶対値、三角関数、対数、微積分、行列、複素数、確率統計などを分野別に整備します。XYZ、係数、πなどの定数、演算記号を区別して指定できる入力欄と数学パレットを用意し、計算結果の型や複数解も明示します。
+- **関数で作った形と自動作図を組み合わせる**：JavaScriptからもXYZ全範囲を指定して関数曲線・曲面を作り、係数の変更へ追従させる機能を実装・検証中です。座標式・媒介式・等式の原式を保持し、手作業と同じ数学入力を使いながら、実行全体をUndo1回で戻せるように整備しています。[自動作図API](packages/help-content/docs/ja/script-api.md)
 
 目指すのは、数学で表した曲線・曲面を、通常の選択・加工・寸法変更へつなげられる設計です。対応する記号・演算、精度、適用範囲、操作方法をヘルプと取扱説明書へ揃えて公開します。[数学入力の計画と対応表](docs/plans/追加-数学入力.md) · [関数作図の計画](docs/plans/追加-関数作図.md)
 
@@ -123,6 +147,8 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 <!-- pointercad:release-links:end -->
 
 [リリースの公開状況](https://github.com/oltotlo79-rgb/PointerCAD/releases) · [開発中の機能別ヘルプ](packages/help-content/docs/ja/)
+
+説明書は、必要な操作を探しやすいように**7分冊と全巻検索**を整備中です。アプリ内のF1ヘルプと同じ本文・画面の呼び方を使い、章ごとにも通しても読める構成にします。実画面の説明とPDFを含む配布一式は、内容の整合を確認してから公開します。[分冊と章の目録](packages/help-content/src/manualManifest.ts) · [ヘルプの使い方](packages/help-content/docs/ja/help-reader.md)
 
 ## 使用データと参照先
 
@@ -200,6 +226,8 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 | 表面性状の記号 | [MISUMI meviy 解説](https://jp.meviy.misumi-ec.com/info/ja/howto/54355/)、[記号の実装と参照注記](packages/drawing/src/annotation/surfaceFinish.ts) |
 | 深さ・ざぐり・皿もみ等の寸法補助記号 | [MISUMI JIS B0001抜粋](https://sg.misumi-ec.com/tech-info/categories/technical_data/td01/g0049.html)、[SOLIDWORKS記号説明](https://help.solidworks.com/2018/english/SolidWorks/sldworks/t_customizing_a_symbol.htm)、[実装と未照合の比率](packages/drawing/src/annotation/symbols.ts) |
 | 日本語書体 | [Noto Sans JP Regular・Sans2.004の原ファイル](https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf)、[版・SHA-256](packages/drawing/src/text/fontAsset.ts)、[SIL OFL 1.1ライセンス](packages/help-content/docs/ja/font-licenses.md) |
+| 数学入力・数値求積（実装中） | [数学入力の分野別計画・公式資料](docs/plans/追加-数学入力.md)、[計算部と入力部の採用理由・版・許諾・配信サイズ](docs/standards/math-runtime.md)、[入力と計算結果の説明](packages/help-content/docs/ja/math-input.md)、[NIST DLMF §3.5 数値求積](https://dlmf.nist.gov/3.5)。近似の推定誤差を数学的に保証した上限とは扱いません |
+| 数式用字体・依存の許諾 | [MathLiveの字体別著作権表示](docs/standards/licenses/mathlive-fonts.txt)、[字体のSIL OFL 1.1本文](docs/standards/licenses/ofl-1.1.txt)、[固定版・許諾原文・字体の一覧とSHA-256](docs/standards/licenses/math-notices.json)。配布確認中の項目は[採用資料](docs/standards/math-runtime.md)に記載 |
 | スクリプト実行用WASM | [採用版・原ソース・修正・再現ビルド・ライセンスの記録](docs/standards/scripting-runtime.md)、[配布資産の版とSHA-256](packages/model/src/vendor/script-runtime/manifest.json)。自動作図機能は接続・受入検査中 |
 | 外部加工ソフト・DWG変換先の案内 | [加工先の公式参照リンク](packages/help-content/docs/ja/cam.md)、[DWG変換の案内](packages/help-content/docs/ja/dxf.md)。各社の公式案内へ移動し、設計ファイルを自動送信しません |
 

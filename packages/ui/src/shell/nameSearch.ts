@@ -1,0 +1,56 @@
+import { normalizeHelpSearch } from '@pointercad/help-content';
+import type { SketchTreeGroup, TreeRow, TreeSection } from '../solid/solidSummary.js';
+import { t, type MessageKey } from '../i18n/t.js';
+import type { AssemblyTreeRow, AssemblyTreeSection } from './assemblyTreeRows.js';
+
+export interface NameSearchEntry {
+  readonly key: string;
+  readonly name: string;
+  readonly context: string;
+  readonly selectionId: string | null;
+  readonly sketchId?: string;
+  readonly badges: readonly MessageKey[];
+}
+
+export function partNameSearchEntries(sections: readonly TreeSection[], sketches: readonly SketchTreeGroup[]): readonly NameSearchEntry[] {
+  const entries: NameSearchEntry[] = [];
+  const add = (row: TreeRow, context: string, sketchId?: string): void => {
+    const badges: MessageKey[] = [];
+    if (row.hidden) badges.push('nameSearch.hidden');
+    if (row.suppressed) badges.push('nameSearch.suppressed');
+    if (row.consumed) badges.push('nameSearch.consumed');
+    entries.push({ key: JSON.stringify([sketchId ?? null, row.id]), name: row.name, context,
+      selectionId: row.id, ...(sketchId === undefined ? {} : { sketchId }), badges });
+  };
+  for (const section of sections) {
+    if (section.key !== 'sketch') for (const row of section.rows) add(row, t(section.titleKey));
+  }
+  for (const group of sketches) {
+    entries.push({ key: JSON.stringify(['sketch', group.sketchId]), name: group.name, context: t('nameSearch.sketch'),
+      sketchId: group.sketchId, selectionId: null, badges: [] });
+    for (const row of group.rows) add(row, `${group.name} / ${t(row.kindLabelKey)}`, group.sketchId);
+  }
+  return entries;
+}
+
+export function assemblyNameSearchEntries(sections: readonly AssemblyTreeSection[]): readonly NameSearchEntry[] {
+  const entries: NameSearchEntry[] = [];
+  const add = (row: AssemblyTreeRow, context: string): void => {
+    const badges: MessageKey[] = [];
+    if (row.badges.includes('hidden')) badges.push('nameSearch.hidden');
+    if (row.badges.includes('suppressed')) badges.push('nameSearch.suppressed');
+    entries.push({ key: row.key, name: row.name, context, selectionId: row.id, badges });
+    for (const child of row.children ?? []) add(child, `${context} / ${row.name}`);
+  };
+  for (const section of sections) for (const row of section.rows) add(row, t(section.titleKey));
+  return entries;
+}
+
+export function searchNamedEntries(entries: readonly NameSearchEntry[], query: string): readonly { readonly entry: NameSearchEntry; readonly ordinal: number }[] {
+  const words = [...new Set(normalizeHelpSearch(query).split(' ').filter(Boolean))];
+  if (words.length === 0) return [];
+  return entries.flatMap((entry, index) => {
+    const name = normalizeHelpSearch(entry.name), context = normalizeHelpSearch(entry.context);
+    return words.every(word => name.includes(word) || context.includes(word)) ? [{ entry, ordinal: index + 1 }] : [];
+  });
+}

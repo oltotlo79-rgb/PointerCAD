@@ -35,6 +35,7 @@ const KIND_LABELS: Readonly<Record<SketchFeatureKind, string>> = {
   slot: '長穴',
   ellipse: '楕円',
   spline: 'スプライン',
+  functionCurve: '関数曲線',
   offset: 'オフセット',
   // ミラー・複写・配列複写はどれも `kind: 'copy'` の 1 種類(`types.ts` の `CopyPlacement`)。
   // 木に出す名前を並べ方ごとに分けるかはタスク33(ツリー・プロパティ)で判断する。
@@ -142,7 +143,7 @@ export function findFeature(
 }
 
 /** 絶対座標の指定を作る。ビューポートのクリックや既定値から使う(NFR-UX-4)。 */
-export function absoluteCoordinate(x: number, y: number, z: number): CoordinateInput {
+export function absoluteCoordinate(x: number, y: number, z: number): Extract<CoordinateInput, { readonly mode: 'absolute' }> {
   return {
     mode: 'absolute',
     x: expressionValueFromNumber(x),

@@ -99,14 +99,29 @@ test('P8 100フィーチャー・三面図・50寸法を5秒以内で開き、�
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   const stableProjection = await page.locator('.pcad-drawing-svg [data-owner-id="view-1"] path').first().elementHandle();
   if (stableProjection === null) throw new Error('保持する投影線なし');
+  // Profiling is an explicit diagnosis. The ordinary acceptance measures without profiler overhead or warmup.
+  const profiler = process.env.POINTERCAD_DRAWING_CPU_PROFILE === '1' ? await page.context().newCDPSession(page) : null;
+  if (profiler !== null) {
+    await profiler.send('Profiler.enable');
+    await profiler.send('Profiler.setSamplingInterval', { interval: 1000 });
+    await profiler.send('Profiler.start');
+  }
   await page.evaluate(() => { window.__drawingPerformance.active = true; });
+  const liveDimension = await dimension.elementHandle();
+  if (liveDimension === null) throw new Error('移動中に保持する寸法輪郭なし');
   for (let i = 1; i <= 40; i++) {
     await page.mouse.move(x + i / 2, y + i / 2);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   }
   await expect(dimension).not.toHaveAttribute('transform', before ?? '');
+  expect(await liveDimension.evaluate(node => node.isConnected)).toBe(true);
   expect(await stableProjection.evaluate((node) => node.isConnected)).toBe(true);
   const renderingMs = await page.evaluate(() => { window.__drawingPerformance.active = false; return window.__drawingPerformance.renderingMs; });
+  if (profiler !== null) {
+    const cpu = await profiler.send('Profiler.stop');
+    await profiler.detach();
+    await writeFile(testInfo.outputPath('drawing-drag.cpuprofile'), JSON.stringify(cpu.profile));
+  }
   await page.mouse.up();
   const stages = await page.evaluate(() => ({ coordinatesMs: window.__drawingPerformance.coordinatesMs, fragmentMs: window.__drawingPerformance.fragmentMs }));
   const measurements = { ...loading, frames: renderingMs.length, maxRenderingMs: Math.max(...renderingMs), renderingMs, ...stages };

@@ -4,6 +4,7 @@ import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import * as allocationModule from './allocations.js';
 import * as projectionModule from './makeProjection.js';
+import * as seamModule from './hlrSeamOutlines.js';
 import type { OcctDeletable } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { measureVolume } from './solidMesh.js';
@@ -31,6 +32,18 @@ function runBox(mode: 'precise' | 'poly', normal: readonly [number, number, numb
 }
 
 describe('図面の隠線処理', () => {
+  it('可視線と隠線で同じ面の継ぎ目を読み直さず、全8辺の元参照を残す', () => {
+    const seams = vi.spyOn(seamModule, 'readFaceSeams');
+    try {
+      const outcome = runBox('precise');
+      if (!outcome.ok) throw new Error(outcome.message);
+      expect(seams).toHaveBeenCalledTimes(6);
+      expect(outcome.result.visible).toHaveLength(4); expect(outcome.result.hidden).toHaveLength(4);
+      const curves = [...outcome.result.visible, ...outcome.result.hidden];
+      expect(curves.every(item => item.provenance.kind === 'edge' && item.provenance.dimensionTarget)).toBe(true);
+      expect(new Set(curves.map(item => item.provenance.kind === 'edge' ? item.provenance.edgeIndex : null)).size).toBe(8);
+    } finally { seams.mockRestore(); }
+  });
   it('正面で点に潰れる4辺を投影せず、可視と隠線の元辺をそれぞれ保つ', () => {
     const projection = vi.spyOn(projectionModule, 'projectEdgeToPlane');
     try {

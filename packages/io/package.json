@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./limits": { "types": "./dist/limits.d.ts", "default": "./src/limits.ts" },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"

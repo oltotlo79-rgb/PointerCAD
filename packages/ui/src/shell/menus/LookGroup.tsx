@@ -49,6 +49,7 @@ export function LookGroup({
   matches,
   activeTool,
 }: LookGroupProps): React.JSX.Element {
+  const measureSketch = useAppStore(state => state.isComputing ? undefined : state.resolvedSketch);
   const isAssembly = useAppStore(state => state.assembly !== null);
   const readiness = appearanceReadiness({ document, bodies, selection, selectionKind, matches });
   /*
@@ -58,7 +59,7 @@ export function LookGroup({
   const readinessOf = (id: LookToolId): SolidToolReadiness => {
     if (id === 'strength') return { ready: true, reasonKey: null };
     if (id === 'measure') {
-      return measureToolReadiness(selection, bodies);
+      return measureToolReadiness(selection, bodies, measureSketch);
     }
     if (id === 'canvas') {
       // 下絵(FR-332)はいつでも押せる。立体もスケッチも要らない(空の部品にも貼れる)。

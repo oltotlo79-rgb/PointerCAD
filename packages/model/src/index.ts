@@ -1,3 +1,21 @@
+export { FUNCTION_PLOT_AXES, FunctionPlotBounds, type FunctionPlotAxis, type FunctionPlotBoundsData,
+  type FunctionPlotBoundsIssue, type FunctionPlotBoundsResult, type FunctionPlotInterval } from './functionGeometry/functionPlotBounds.js';
+export { FUNCTION_DEFINITION_FORMAT, type FunctionDefinition, type FunctionFormula, type FunctionInputRange,
+  type FunctionCoordinateRanges, type FunctionCoordinates } from './functionGeometry/functionDefinitionTypes.js';
+export { readFunctionDefinition, FunctionDefinitionProblem, type FunctionDefinitionReader,
+  type FunctionExpressionScope } from './functionGeometry/readFunctionDefinition.js';
+export { resolveFunctionRanges, type FunctionRangeContext, type FunctionRangeResult,
+  type ResolvedFunctionRanges } from './functionGeometry/resolveFunctionRanges.js';
+export { functionCurveRequest, type ExplicitFunctionCurveFormula, type FunctionCurveRequestContext } from './functionGeometry/functionCurveRequest.js';
+export { createFunctionSurface, type FunctionSurfaceFeature, type FunctionSurfacePlan } from './functionGeometry/functionSurfaceFeature.js';
+export { functionSurfaceRequest, type ExplicitFunctionSurfaceFormula } from './functionGeometry/functionSurfaceRequest.js';
+export type { FunctionRequestContext } from './functionGeometry/functionRequestInputs.js';
+export { mapFunctionDefinition } from './functionGeometry/mapFunctionDefinition.js';
+export { createFunctionCurve } from './functionGeometry/createFunctionCurve.js';
+export { mapDocumentFunctionExpressions, functionExpressionScope } from './part/documentFunctions.js';
+export type { FunctionRecomputeContext } from './functionGeometry/recomputeFunctionCurves.js';
+export { FunctionSurfacePlanCache } from './functionGeometry/functionSurfacePlanCache.js';
+export type { FunctionKernelBridge, FunctionCurveGeometryOutcome } from './functionGeometry/functionCurveGeometry.js';
 export { drawingNumberIssue, type DrawingNumberIssue } from './drawing/drawingNumberIssue.js';
 export { defaultSheetMetalRule, createSheetBaseFeature, createSheetFlangeFeature, createSheetBendFeature, createSheetReliefFeature } from './sheetMetal/createSheetFeature.js';
 export { sheetBoundaryEdges, sheetTangentFrame, type SheetPanelGeometry, type SheetBoundaryEdge } from './sheetMetal/panelGeometry.js';
@@ -128,7 +146,7 @@ export type {
   SketchFaceFeature, SketchFaceMesh, SketchFeature, SketchFeatureKind, SketchLineFeature,
   SketchMesh, SketchOffsetFeature, SketchPointArrayFeature, SketchPointFeature,
   SketchPlaneSectionFeature, SketchPolygonFeature, SketchProjectedCurveFeature,
-  SketchRectangleFeature, SketchSlotFeature, SketchSplineFeature,
+  SketchRectangleFeature, SketchSlotFeature, SketchSplineFeature, SketchFunctionCurveFeature,
 } from './sketch/types.js';
 export { projectionBodyFeatureId } from './sketch/types.js';
 /** 拘束(FR-313、P4b タスク4)。型と、変数の切り出し・自由度の数え方。 */
@@ -284,6 +302,13 @@ export type {
   Parameter, ParameterAnalysis, ParameterFailure, ParameterOrder, ParameterUnit,
 } from './parameters/types.js';
 export { PARAMETER_UNITS } from './parameters/types.js';
+export { ensureParameterMathIds, allocateParameterMathIds, isParameterMathId } from './parameters/parameterMathIdentity.js';
+export { prepareDocumentMathIdentity } from './part/documentMathIdentity.js';
+export { activateMathConfiguration, createMathConfiguration, deleteMathConfiguration } from './part/mathConfigurations.js';
+export { renameDocumentMathParameter, type MathParameterRenameResult } from './part/renameDocumentMathParameter.js';
+export { expressionParameterNames } from './parameters/expressionReferences.js';
+export { decodeMathExpressionStorage } from '@pointercad/expression';
+export { evaluateDocumentMath, evaluatedDocumentMathValue, hasDocumentMath, type DocumentMathContext, type DocumentMathResult } from './part/evaluateDocumentMath.js';
 export {
   addParameter, analyzeParameters, nextParameterName, PARAMETER_LABEL, parameterDependencies,
   parameterEvaluationOrder, referencesTo, removeParameter, renameParameter, reorderParameters,
@@ -1104,3 +1129,5 @@ export { sheetFlatDxfEntities } from './sheetMetal/flatDxf.js';
 export { sheetFlatReferenceIssue } from './sheetMetal/flatSheetReference.js';
 
 export { buildSheetFlatHoleSchedule } from './sheetMetal/flatHoleSchedule.js';
+export {readFunctionPointChoice,functionPointReferenceKey,type FunctionPointReference,type FunctionPointParent,type FunctionPointChoice} from './functionGeometry/functionPointReference.js';
+export {functionPointRequest} from './functionGeometry/functionPointRequest.js';

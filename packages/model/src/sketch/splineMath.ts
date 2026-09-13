@@ -31,6 +31,9 @@ import { addVec3, distanceVec3, scaleVec3, type Vec3 } from './vec3.js';
  */
 export const MAX_SPLINE_POINTS = 100;
 
+/** Linear generated curves need no interpolation solver; keep the function sampling ceiling. */
+export const MAX_LINEAR_SPLINE_POINTS = 200_000;
+
 /** 開いた曲線の点の下限。2 点は直線として許す(§0.a-0.17)。 */
 export const MIN_SPLINE_POINTS = 2;
 
@@ -402,10 +405,12 @@ function expandKnots(data: SplineCurveData): number[] {
 export function splineCurveData(spline: ResolvedSpline): SplineCurveData | null {
   const points = spline.points;
   const minimum = spline.closed ? MIN_CLOSED_SPLINE_POINTS : MIN_SPLINE_POINTS;
-  if (points.length < minimum || points.length > MAX_SPLINE_POINTS) {
+  const linear = spline.degree === 1 && spline.mode === 'control';
+  if (spline.degree !== undefined && !linear) return null;
+  if (points.length < minimum || points.length > (linear ? MAX_LINEAR_SPLINE_POINTS : MAX_SPLINE_POINTS)) {
     return null;
   }
-  const degree = splineDegree(points.length);
+  const degree = spline.degree ?? splineDegree(points.length);
   if (spline.mode === 'control') {
     return controlPointData(points, degree, spline.closed);
   }
@@ -494,6 +499,8 @@ export function sampleSpline(
     }
     return spline.closed ? [...spline.points, spline.points[0]] : [...spline.points];
   }
+  // Every knot is a real corner. Keep them exactly and avoid making 16 redundant points per span.
+  if (data.degree === 1) return spline.closed ? [...data.poles, data.poles[0]] : [...data.poles];
   const spans = spline.closed ? spline.points.length : spline.points.length - 1;
   return sampleSplineCurve(data, Math.max(1, segmentsPerSpan * spans));
 }

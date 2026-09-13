@@ -17,7 +17,7 @@ export function createScriptSnapshot(document: PartDocument, namespace: string, 
   const sketches = document.sketches.map((sketch) => {
     const id = alias({ kind: 'sketch', sketchId: sketch.id, featureId: sketch.id, planeId: sketch.features[0]?.planeId ?? 'xy' });
     const elements = sketch.features.flatMap((feature) => {
-      const kind = feature.kind === 'point' ? 'point' : feature.kind === 'line' ? 'edge' : feature.kind === 'face' ? 'face' : null;
+      const kind = feature.kind === 'point' ? 'point' : feature.kind === 'line' || feature.kind === 'functionCurve' ? 'edge' : feature.kind === 'face' ? 'face' : null;
       if (kind === null) return [];
       return [{ id: alias({ kind, sketchId: sketch.id, featureId: feature.id, planeId: feature.planeId }), kind, name: feature.name }];
     });

@@ -25,6 +25,7 @@ import { createDrawingSlice } from './drawingSlice.js';
 import { createHelpSlice } from './helpSlice.js';
 import { createSheetMetalSlice } from './sheetMetalSlice.js';
 import { createScriptSlice } from './scriptSlice.js';
+import { createFunctionPlotSlice } from './functionPlotSlice.js';
 
 export type { AppState } from './appState.js';
 export type { ViewSlice } from './viewSlice.js';
@@ -59,6 +60,7 @@ export const STORE_SLICE_CREATORS = {
   helpSlice: createHelpSlice,
   sheetMetalSlice: createSheetMetalSlice,
   scriptSlice: createScriptSlice,
+  functionPlotSlice: createFunctionPlotSlice,
 };
 
 export const useAppStore = create<AppState>()((...args) => ({
@@ -79,4 +81,5 @@ export const useAppStore = create<AppState>()((...args) => ({
   ...STORE_SLICE_CREATORS.helpSlice(...args),
   ...STORE_SLICE_CREATORS.sheetMetalSlice(...args),
   ...STORE_SLICE_CREATORS.scriptSlice(...args),
+  ...STORE_SLICE_CREATORS.functionPlotSlice(...args),
 }));

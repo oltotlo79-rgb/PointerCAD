@@ -23,6 +23,9 @@ export function validateScriptReferences(commands: readonly ScriptCommand[], exi
     const needs: { id: string; kind: ScriptReferenceKind; sketch?: string }[] = [];
     let result: ScriptReference | null = null;
     switch (command.kind) {
+      case 'function.curve':
+        needs.push({id:command.fields.sketch,kind:'sketch'});result={kind:'edge',sketch:command.fields.sketch};break;
+      case 'function.surface':result={kind:'solid',sketch:null};break;
       case 'parameter.set': break;
       case 'sketch.create': result = { kind: 'sketch', sketch: null }; break;
       case 'sketch.point':

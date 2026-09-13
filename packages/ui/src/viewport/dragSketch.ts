@@ -344,6 +344,9 @@ function baseWorldPosition(
       return vertexPositionOf(resolved, base.featureId, base.vertex);
     case 'subShape':
       return subShapeFromFingerprint(base.ref)?.position ?? null;
+    case 'functionPoint':
+      // Function solutions are frozen by collectVariables; moving them requires editing the known coordinates.
+      return null;
     case 'sphereGrid':
       // 球面上の点(FR-431、P5 タスク19)。球の中心・半径は部品文書の側にしか無く、
       // ここ(スケッチ 1 本の引っぱり)からは引けないので分からない扱いにする。

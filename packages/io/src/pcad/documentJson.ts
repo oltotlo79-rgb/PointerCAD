@@ -98,7 +98,11 @@ export { readParameter } from './codecs/parameters.js';
 export { readAppearanceSpec } from './codecs/appearance.js';
 
 function serializePartDocument(document: PartDocument): PartDocument {
+  if (document.mathParameterSerial !== undefined && (!Number.isSafeInteger(document.mathParameterSerial) || document.mathParameterSerial < 0)) {
+    throw new RangeError('係数の参照番号が不正です。');
+  }
   return {
+    ...(document.mathParameterSerial === undefined ? {} : { mathParameterSerial: document.mathParameterSerial }),
     id: document.id,
     name: document.name,
     schemaVersion: document.schemaVersion,
@@ -238,9 +242,15 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!configurations.ok) return configurations;
   const sheetUnfolds = readSheetUnfolds(record.value, path);
   if (!sheetUnfolds.ok) return sheetUnfolds;
+  const mathParameterSerial = record.value.mathParameterSerial;
+  if (Object.hasOwn(record.value, 'mathParameterSerial') && (typeof mathParameterSerial !== 'number'
+    || !Number.isSafeInteger(mathParameterSerial) || mathParameterSerial < 0)) {
+    return fieldProblem(`${path}.mathParameterSerial`, 'type');
+  }
   return {
     ok: true,
     value: {
+      ...(typeof mathParameterSerial === 'number' ? { mathParameterSerial } : {}),
       id: id.value,
       name: name.value,
       schemaVersion: schemaVersion.value,

@@ -33,12 +33,21 @@ export function handleAppScheme(rendererRoot: string): void {
   const root = normalize(rendererRoot);
 
   protocol.handle(APP_SCHEME, async (request) => {
-    const url = new URL(request.url);
-    if (url.host !== APP_HOST) {
+    let url: URL;
+    let relativePath: string;
+    try {
+      url = new URL(request.url);
+      relativePath = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+    } catch {
+      return new Response('Bad Request', { status: 400 });
+    }
+    if (relativePath.includes('\0')) {
+      return new Response('Bad Request', { status: 400 });
+    }
+    if (url.protocol !== `${APP_SCHEME}:` || url.host !== APP_HOST) {
       return new Response('Forbidden', { status: 403 });
     }
-    const relativePath = url.pathname === '/' ? '/index.html' : url.pathname;
-    const filePath = normalize(join(root, decodeURIComponent(relativePath)));
+    const filePath = normalize(join(root, relativePath));
 
     if (filePath !== root && !filePath.startsWith(root + sep)) {
       return new Response('Forbidden', { status: 403 });

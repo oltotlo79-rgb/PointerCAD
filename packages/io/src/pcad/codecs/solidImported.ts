@@ -41,7 +41,7 @@ const IMPORTED_SOURCE_FORMATS: readonly ImportedSourceFormat[] = [
  * 読み込んだ形の種類(FR-802、P6 §2.8)。**三角形の形はここに入らない**——
  * `'mesh'` は `importedMesh` という別のフィーチャーとして持つ(§0.a-0.24)。
  */
-const IMPORTED_BODY_KINDS: readonly ImportedSolidFeature['bodyKind'][] = ['solid', 'shell'];
+const IMPORTED_BODY_KINDS: readonly ImportedSolidFeature['bodyKind'][] = ['solid', 'shell', 'mixed'];
 
 /**
  * 読み込んだ形の素性(FR-802、P6 §2.8、タスク20)を書き出す。

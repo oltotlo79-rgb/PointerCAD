@@ -33,6 +33,7 @@ import {
 } from '@pointercad/expression';
 
 import type { PlaneSpec } from '../geometry/planeSpec.js';
+import { shiftFunctionDefinition } from '../functionGeometry/shiftFunctionDefinition.js';
 import {
   baseWorkPlane,
   isFreeWorkPlaneId,
@@ -214,7 +215,10 @@ export function shiftOrigin(document: PartDocument, shift: OriginShift): PartDoc
   );
   const references = document.references.map((feature) => shiftReferenceFeature(feature, shift));
   // 新しい作業平面は最後に足す(基準面しか参照しないので、順序の制約に触れない)。
-  return { ...document, sketches, references: [...references, ...created] };
+  const axes = worldShiftAxes(shift);
+  const solids = document.solids.map(feature => feature.kind === 'functionSurface'
+    ? { ...feature, definition: shiftFunctionDefinition(feature.definition, axes) } : feature);
+  return { ...document, sketches, solids, references: [...references, ...created] };
 }
 
 /**

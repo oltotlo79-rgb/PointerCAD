@@ -59,8 +59,10 @@ import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
+import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './pickSubShape.js';
-import { hasSolid, measureArea } from './solidMesh.js';
+import { measureArea } from './solidMesh.js';
+import { OPEN_FACES_NOT_SUPPORTED, shapeBodyKind } from './shapeBodyKind.js';
 import type { SubShapeTables } from './subShapes.js';
 
 /** つなぐには断面が 2 つ要る(`makeThruSections.ts` と同じ決め)。 */
@@ -127,20 +129,19 @@ const OFFSET_FAILED_MESSAGE = '面をずらせませんでした。距離を小�
  * ボディを作れるようになったので、加工の段はその形を受け取ったら**掛ける前に断る**
  * 必要がある。判定は `isShellShape`、文言はこれを使う(同じ文言を各所へ散らさない)。
  */
-export const SHELL_NOT_SUPPORTED_MESSAGE = '面だけの形には使えません。立体を選び直してください。';
+export const SHELL_NOT_SUPPORTED_MESSAGE = OPEN_FACES_NOT_SUPPORTED;
 
 /**
  * 面だけの形か(= `SolidBodyMesh.bodyKind` が `'shell'` になるか)。
  *
- * **判定は `solidMesh.ts` の `bodyKind` と同じ 1 つの式**(`hasSolid` の否定)で、
- * 別の規約を作らない(§0.a-0.45 の「`hasSolid` なら `'solid'`、そうでなければ `'shell'`」)。
+ * 判定は表示と共通のshapeBodyKindで行い、開面と立体が混在する形も加工前に断る。
  * 判定を 2 か所に持つと、表示は面のボディなのに加工は通る、といった食い違いが起きるため。
  *
  * `oc` を取るのは、部分形状を数えるのに OCCT の実体が要るためである
  * (`hasSolid` は `TopExp.MapShapes_2` と `ShapeType()` の値比較でソリッドを探す)。
  */
 export function isShellShape(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
-  return !hasSolid(oc, shape);
+  return shapeBodyKind(oc, shape) !== 'solid';
 }
 
 /**
@@ -228,7 +229,7 @@ function makeProfileWire(
     throw new Error(NO_CURVE_MESSAGE);
   }
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
-  for (const curve of curves) {
+  for (const curve of continuousCurvePieces(curves)) {
     wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
   }
   if (!wireMaker.IsDone()) {

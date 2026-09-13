@@ -24,7 +24,10 @@ export const SCRIPT_GUEST_BOOTSTRAP = `(() => {
   const stackOf = Function.prototype.call.bind(Object.getOwnPropertyDescriptor(Error.prototype, 'stack').get);
   function callStack() { return stackOf(new ErrorType()); }
   function limit(kind) { sendLimit(kind, callStack()); }
-  const stringAt = Function.prototype.call.bind(String.prototype.charCodeAt);
+  const exec = Function.prototype.call.bind(RegExp.prototype.exec);
+  const twoByteRuns = /[\\u0080-\\u07ff]+/g;
+  const threeByteRuns = /[\\u0800-\\uffff]+/g;
+  const surrogatePairRuns = /(?:[\\ud800-\\udbff][\\udc00-\\udfff])+/g;
   const trim = Function.prototype.call.bind(String.prototype.trim);
   const includes = Function.prototype.call.bind(Array.prototype.includes);
   const map = Function.prototype.call.bind(Array.prototype.map);
@@ -32,16 +35,18 @@ export const SCRIPT_GUEST_BOOTSTRAP = `(() => {
   let nextId = 0, count = 0, commandBytes = 0, logCount = 0, logBytes = 0;
 
   function byteLength(value, maximum, limitKind = 'bytes') {
-    let bytes = 0;
-    for (let i = 0; i < value.length; i++) {
-      const code = stringAt(value, i);
-      if (code < 0x80) bytes++;
-      else if (code < 0x800) bytes += 2;
-      else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length
-        && stringAt(value, i + 1) >= 0xdc00 && stringAt(value, i + 1) <= 0xdfff) { bytes += 4; i++; }
-      else bytes += 3;
-      if (bytes > maximum) { limit(limitKind); throw new ErrorType('送る内容が大きすぎます。'); }
+    // Scan runs in the VM's native regexp engine, not one interpreted call per byte.
+    // Captured exec cannot be replaced by user code. Lone surrogates cost 3 bytes.
+    let bytes = value.length, match;
+    if (bytes <= maximum) {
+      surrogatePairRuns.lastIndex = 0;
+      while ((match = exec(surrogatePairRuns, value)) !== null) bytes -= match[0].length;
+      twoByteRuns.lastIndex = 0;
+      while ((match = exec(twoByteRuns, value)) !== null) bytes += match[0].length;
+      threeByteRuns.lastIndex = 0;
+      while ((match = exec(threeByteRuns, value)) !== null) bytes += 2 * match[0].length;
     }
+    if (bytes > maximum) { limit(limitKind); throw new ErrorType('送る内容が大きすぎます。'); }
     return bytes;
   }
   function immutable(value) {
@@ -92,6 +97,10 @@ export const SCRIPT_GUEST_BOOTSTRAP = `(() => {
   const cad = immutable({
     apiVersion: 1,
     document: { read: () => snapshot },
+    function: {
+      curve(sketch, definition) { return record('function.curve', {sketch:identifier(sketch),definition:object(definition,['bounds','tolerance','angleUnit','formula'])}); },
+      surface(definition) { return record('function.surface', {definition:object(definition,['bounds','tolerance','angleUnit','formula'])}); },
+    },
     parameters: {
       set(name, value, unit) {
         if (unit !== undefined && !includes(['mm', 'degree', 'none'], unit)) throw new ErrorType('使えない単位です。');

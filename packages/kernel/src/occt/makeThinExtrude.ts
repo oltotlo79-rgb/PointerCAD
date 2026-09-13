@@ -8,6 +8,7 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makeOffsetWire } from './makeOffsetWire.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
+import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { measureVolume } from './solidMesh.js';
 
 /**
@@ -377,7 +378,7 @@ export function makeThinExtrude(
   try {
     // 輪郭が閉じているかどうかは、組み立てたワイヤ自身に聞く(makeOffsetWire.ts と同じ)。
     const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
-    for (const curve of input.profile) {
+    for (const curve of continuousCurvePieces(input.profile)) {
       wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
     }
     if (!wireMaker.IsDone()) {

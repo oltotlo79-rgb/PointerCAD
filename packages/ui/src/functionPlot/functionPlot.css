@@ -1,0 +1,32 @@
+.pcad-function-dialog { box-sizing: border-box; width: min(calc(1000px * var(--pcad-scale)), calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; color: var(--pcad-text); background: var(--pcad-bg); border: 1px solid var(--pcad-border); border-radius: var(--pcad-radius-small); padding: calc(16px * var(--pcad-scale)); font: inherit; }
+.pcad-function-dialog form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 0 12px; }
+.pcad-function-dialog form > :not(fieldset) { grid-column: 1 / -1; }
+.pcad-function-dialog fieldset { min-width: 0; }
+.pcad-function-dialog::backdrop { background: rgb(0 0 0 / 40%); }
+.pcad-function-dialog h2 { margin-top: 0; }
+.pcad-function-dialog fieldset { border: 1px solid var(--pcad-border); border-radius: var(--pcad-radius-small); margin: 12px 0; padding: calc(12px * var(--pcad-scale)); }
+.pcad-function-dialog fieldset > label { margin-right: 16px; }
+.pcad-function-presets { display: block; margin-bottom: 12px; }
+.pcad-function-dialog input, .pcad-function-dialog select, .pcad-function-dialog button { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-border); border-radius: var(--pcad-radius-small); padding: calc(5px * var(--pcad-scale)); }
+.pcad-function-dialog button { cursor: pointer; }
+.pcad-function-dialog button:disabled { opacity: .55; cursor: default; }
+.pcad-function-dialog :is(input, button, select):focus-visible { outline: 2px solid var(--pcad-accent); outline-offset: 2px; }
+.pcad-function-dialog input { min-width: 0; width: 100%; box-sizing: border-box; }
+.pcad-function-dialog input[aria-invalid="true"] { outline: 2px solid var(--pcad-danger); }
+.pcad-function-dialog table { width: 100%; border-spacing: 8px; }
+.pcad-function-dialog th { text-align: left; }
+.pcad-function-field { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+.pcad-function-equation { display: grid; grid-template-columns: 2em 1fr auto; gap: 8px; align-items: center; margin: 12px 0; }
+.pcad-function-equation small { grid-column: 2 / -1; }
+.pcad-function-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 16px; position: sticky; bottom: 0; padding: 10px 0; background: var(--pcad-bg); border-top: 1px solid var(--pcad-border); }
+.pcad-function-preview { margin: 12px 0; scroll-margin-bottom: calc(70px * var(--pcad-scale)); }
+.pcad-function-dialog caption { text-align: left; padding-top: 8px; }
+.pcad-function-preview canvas { display: block; width: 100%; height: calc(240px * var(--pcad-scale)); touch-action: none; border: 1px solid var(--pcad-border); }
+.pcad-function-preview figcaption { margin: 6px 0; }
+.pcad-function-dialog input:is([type="checkbox"], [type="radio"]) { width: auto; flex: 0 0 auto; }
+.pcad-function-point-choice { display: flex; align-items: center; gap: 8px; padding: 6px; overflow-wrap: anywhere; }
+.pcad-function-point-preview { position: relative; }
+.pcad-function-dialog .pcad-function-point-marker { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; min-width: 28px; min-height: 28px; padding: 2px; color: var(--pcad-text); background: var(--pcad-surface); border: 2px solid var(--pcad-accent); }
+.pcad-function-dialog .pcad-function-point-marker[aria-pressed="true"] { color: var(--pcad-bg); background: var(--pcad-text); box-shadow: 0 0 0 2px var(--pcad-accent); }
+.pcad-function-dialog .pcad-function-field > label { flex: 0 0 auto; min-width: 70px; }
+@media (max-width: 800px) { .pcad-function-dialog form { grid-template-columns: minmax(0, 1fr); } .pcad-function-equation { grid-template-columns: 2em 1fr; } .pcad-function-equation button { grid-column: 2; } }

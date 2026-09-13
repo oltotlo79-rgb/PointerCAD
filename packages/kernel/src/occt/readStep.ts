@@ -6,10 +6,9 @@ import type {
   XCAFDoc_ColorTool,
 } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { SolidBodyKind } from '../types.js';
+import { shapeBodyKind, type CadBodyKind } from './shapeBodyKind.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
-import { hasSolid } from './solidMesh.js';
 import { withVirtualFileInput } from './virtualFile.js';
 import type { RgbTuple } from './xcafDocument.js';
 
@@ -96,7 +95,7 @@ export interface StepReadBody {
   /** ファイルに入っていた色(sRGB の 0〜1)。無ければ `null`。 */
   readonly color: RgbTuple | null;
   /** 閉じた立体か、面だけの殻か。 */
-  readonly kind: SolidBodyKind;
+  readonly kind: CadBodyKind;
 }
 
 /** 読み込みの結果。使い終わったら必ず `delete()` する。 */
@@ -324,13 +323,13 @@ export function readStep(
       for (let index = 1; index <= count; index += 1) {
         const label = keep(labels.Value(index));
         const shape = keep(oc.XCAFDoc_ShapeTool.GetShape_2(label));
-        const solid = hasSolid(oc, shape);
-        solidFound = solidFound || solid;
+        const kind = shapeBodyKind(oc, shape);
+        solidFound = solidFound || kind !== 'shell';
         bodies.push({
           shape,
           name: readStepLabelName(oc, label, keep),
           color: withColors ? readStepLabelColor(oc, colorTool, label, keep) : null,
-          kind: solid ? 'solid' : 'shell',
+          kind,
         });
       }
       if (!solidFound) {

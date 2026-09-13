@@ -18,7 +18,7 @@
  * 14:05 の 9b。同じ不具合をこの表でも起こさないため)。
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { evaluateExpression } from '@pointercad/expression';
 import { PARAMETER_UNITS, type ParameterUnit } from '@pointercad/model';
@@ -31,7 +31,6 @@ import { useAppStore } from '../store/useAppStore.js';
 import {
   commitAddParameter,
   commitRemoveParameter,
-  commitRenameParameter,
   commitReorderParameters,
   commitReplaceParameter,
   parameterDraftFor,
@@ -40,6 +39,8 @@ import {
   type ParameterCommandOutcome,
   type ParameterRow,
 } from './parameterCommands.js';
+import { runMathParameterRename } from './mathParameterActions.js';
+import { ParameterMathDialog, type ParameterMathTarget } from './ParameterMathDialog.js';
 
 /** 表の中で打ちかけになっている欄の種類。 */
 type ParameterFieldKind = 'name' | 'source' | 'description';
@@ -73,6 +74,10 @@ export function ParameterPanel(): React.JSX.Element {
   const document = useAppStore((state) => state.document);
   const analysis = useAppStore((state) => state.parameterAnalysis);
   const documentVersion = useAppStore((state) => state.documentVersion);
+  const pendingRename = useRef<AbortController | null>(null);
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [mathTarget, setMathTarget] = useState<ParameterMathTarget | null>(null);
+  useEffect(() => () => { pendingRename.current?.abort(); pendingRename.current = null; }, []);
   /*
    * 表示の単位と「長さでないパラメータの名前」(FR-811、P6 タスク3b、§0.a-0.63)。
    *
@@ -148,10 +153,20 @@ export function ParameterPanel(): React.JSX.Element {
     const rejected = { name: row.name, field, text };
     const key = `parameter:${row.name}:${field}`;
     switch (field) {
-      case 'name':
-        // 改名は参照している式もすべて書き換える(`commitRenameParameter`、FR-207)。
-        run(commitRenameParameter(document, row.name, text.trim()), rejected, key);
+      case 'name': {
+        if (pendingRename.current !== null) return;
+        const controller = new AbortController();
+        pendingRename.current = controller;
+        setRenameBusy(true);
+        setDraft(null);
+        void runMathParameterRename(row.name, text.trim(), { signal: controller.signal }).then(outcome => {
+          if (pendingRename.current !== controller) return;
+          pendingRename.current = null;
+          setRenameBusy(false);
+          if (!outcome.ok && useAppStore.getState().document === document) setDraft({ ...rejected, message: outcome.message });
+        });
         return;
+      }
       case 'source':
         /*
          * 式は**文字列のまま**入れる(FR-202)。読めない式でも断らず、値は前のまま
@@ -234,6 +249,7 @@ export function ParameterPanel(): React.JSX.Element {
             commitDraft(row, field);
           }}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === 'Enter') {
               event.preventDefault();
               commitDraft(row, field);
@@ -355,6 +371,14 @@ export function ParameterPanel(): React.JSX.Element {
           sourceMessage(row),
           row.circular || row.failureMessage !== null || draftOf(row, 'source')?.message != null,
         )}
+        <button type="button" className="pcad-button" onMouseDown={event => event.preventDefault()}
+          onClick={() => {
+            const parameter = document.parameters.find(parameter => parameter.name === row.name);
+            if (parameter === undefined) return;
+            const sourceDraft = draftOf(row, 'source');
+            setMathTarget({ document, documentVersion, parameter: sourceDraft === null ? parameter : { ...parameter,
+              value: { source: parameterExpression(row, sourceDraft.text), value: row.value, display: String(row.value) } } });
+          }}>{t('math.open')}</button>
 
         <div className="pcad-choice pcad-parameter__units">
           <span className="pcad-choice__label">{t('parameterPanel.unitLabel')}</span>
@@ -393,6 +417,10 @@ export function ParameterPanel(): React.JSX.Element {
 
   return (
     <div className="pcad-section pcad-parameters">
+      {renameBusy ? <p role="status">{t('math.rename.busy')}
+        <button type="button" className="pcad-button" onClick={() => pendingRename.current?.abort()}>{t('math.cancel')}</button>
+      </p> : null}
+      <fieldset className="pcad-parameters__fields" disabled={renameBusy}>
       <ConfigurationPanel key={documentVersion} />
       {/* 循環しているときの 1 文(FR-207、FR-504)。行の赤い印だけでは理由が分からない。 */}
       {analysis.circular.length === 0 ? null : (
@@ -426,6 +454,8 @@ export function ParameterPanel(): React.JSX.Element {
           {t('parameterPanel.addMark')}
         </button>
       </div>
+      </fieldset>
+      {mathTarget === null ? null : <ParameterMathDialog target={mathTarget} onClose={() => setMathTarget(null)} />}
     </div>
   );
 }

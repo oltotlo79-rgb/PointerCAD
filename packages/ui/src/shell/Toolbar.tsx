@@ -11,6 +11,7 @@
 export { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 
 import { useEffect, useState } from 'react';
+import { FunctionPlotDialog } from '../functionPlot/FunctionPlotDialog.js';
 import { loadRecentFiles } from '../file/recentFiles.js';
 import { t } from '../i18n/t.js';
 import { HelpButton } from '../help/HelpButton.js';
@@ -143,6 +144,7 @@ export function Toolbar(): React.JSX.Element {
    */
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [functionOpen, setFunctionOpen] = useState(false);
   /*
    * 「ファイル」の一覧に並べる、数の決まらない行の材料(P6 タスク33)。
    *  - 保存したひな形(FR-814): ブラウザの中の置き場から**非同期**で読む。
@@ -347,8 +349,12 @@ export function Toolbar(): React.JSX.Element {
             groupTooltipKey="toolbar.shape.tooltip"
             GroupIcon={ShapeGroupIcon}
             activeTool={activeTool}
-            onChoose={activateShapeTool}
+            onChoose={(id, pressed) => {
+              if (id === 'functionPlot') { useAppStore.getState().setActiveTool('select'); setFunctionOpen(true); }
+              else activateShapeTool(id, pressed);
+            }}
           />
+          {functionOpen ? <FunctionPlotDialog onClose={() => setFunctionOpen(false)} /> : null}
           <ToolMenu
             items={EDIT_MENU_ITEMS}
             groupLabelKey="toolbar.edit.groupLabel"

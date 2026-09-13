@@ -1,4 +1,5 @@
 /** 部品 JSON: スケッチ文書と要素の振り分け。documentJson.ts への逆向きの依存を持たない。 */
+import { readFunctionCurveFeature, serializeFunctionDefinition } from './functionGeometry.js';
 
 import {
   type Checked,
@@ -62,6 +63,7 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'slot',
   'ellipse',
   'spline',
+  'functionCurve',
   'offset',
   'copy',
   // 投影・交差(FR-325、P4 タスク25)。曲線そのものは保存せず、立体への参照だけを持つ。
@@ -71,6 +73,9 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
 
 function serializeSketchFeature(feature: SketchFeature): SketchFeature {
   switch (feature.kind) {
+    case 'functionCurve':
+      return { id: feature.id, kind: 'functionCurve', name: feature.name, planeId: feature.planeId,
+        construction: feature.construction, definition: serializeFunctionDefinition(feature.definition) };
     case 'point':
       return {
         id: feature.id,
@@ -259,6 +264,8 @@ function readSketchFeature(value: unknown, path: string): Checked<SketchFeature>
     return base;
   }
   switch (kind.value) {
+    case 'functionCurve':
+      return readFunctionCurveFeature(record.value, path, base.value);
     case 'point':
       return readPointFeature(record.value, path, base.value);
     case 'line':

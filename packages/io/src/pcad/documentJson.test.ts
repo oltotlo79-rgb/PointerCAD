@@ -896,7 +896,7 @@ describe(
     'P6 タスク21・§0.a-0.55、P7 タスク3・§0.a-0.2、P8 タスク3)',
   () => {
     it('封筒の現行版は部品文書の版と同じ値である', () => {
-      expect(PCAD_SCHEMA_VERSION).toBe(13);
+      expect(PCAD_SCHEMA_VERSION).toBe(14);
       expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
     });
 
@@ -3298,7 +3298,7 @@ describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
   it('freeOrientation・subShape 参照は現在の版でも省略可能(前方互換とは無関係な理由で版が上がった)', () => {
     const text = serializeDocument(documentWith(freeSketch()), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(13);
+    expect(PCAD_SCHEMA_VERSION).toBe(14);
   });
 });
 
@@ -3802,7 +3802,7 @@ describe('球面上の点の読み書き(FR-431、P5 タスク19)', () => {
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
     // P6 タスク21(§0.a-0.55)が別の理由(ZIP の添付・選択セット・下絵)で 7 へ、
     // P7 タスク3(P7 §0.a-0.2)がさらに別の理由(封筒の種別 assembly)で 8 へ上げた。
-    expect(PCAD_SCHEMA_VERSION).toBe(13);
+    expect(PCAD_SCHEMA_VERSION).toBe(14);
   });
 
   it('緯度の欄が欠けていれば場所つきで断る', () => {
@@ -5042,6 +5042,13 @@ function allSolidFeatures(): SolidFeatureByKind {
     },
     // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
     // 形そのもの(B-rep / 三角形)は ZIP の別エントリなので、ここには名前と素性だけが入る。
+    functionSurface: {
+      id: 'function-surface-1', name: '関数曲面1', kind: 'functionSurface', suppressed: false,
+      definition: { format: 'pointercad-function/1',
+        bounds: { X: { min: ev('-1', -1), max: ev('1', 1) }, Y: { min: ev('-1', -1), max: ev('1', 1) }, Z: { min: ev('-1', -1), max: ev('1', 1) } },
+        tolerance: ev('0.01', 0.01), formula: { kind: 'coordinate-surface', output: 'Z',
+          expression: { format: 'pointercad-math/1', inputNotation: 'text', source: '0', angleUnit: 'radian', expression: { kind: 'number', decimal: '0' } } } },
+    },
     importedSolid: {
       id: 'importedSolid-1',
       kind: 'importedSolid',
@@ -5087,9 +5094,9 @@ function documentWithAllSolids(): PartDocument {
 }
 
 describe('26 種すべての読み書き(P5 タスク47・P6 タスク20、FR-801、FR-202)', () => {
-  it('26 種のソリッドフィーチャーが 1 つの文書で往復しても一致する', () => {
+  it('板金と関数曲面を含む31種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
     const document = documentWithAllSolids();
-    expect(document.solids).toHaveLength(30);
+    expect(document.solids).toHaveLength(31);
     expect(roundTrip(document)).toEqual(document);
   });
 
@@ -5399,7 +5406,7 @@ describe('古いファイルの読み込み(NFR-RE-3、P5 タスク47)', () => {
 
   it('移行表が版2から現行版の直前まで揃う', () => {
     expect(Object.keys(SCHEMA_MIGRATIONS).sort()).toEqual(Array.from({ length: PCAD_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)).sort());
-    expect(PCAD_SCHEMA_VERSION).toBe(13);
+    expect(PCAD_SCHEMA_VERSION).toBe(14);
     expect(PART_SCHEMA_VERSION).toBe(PCAD_SCHEMA_VERSION);
   });
 });
@@ -5718,6 +5725,12 @@ describe('断りの網羅(P5 タスク47、FR-504、NFR-UX-5)', () => {
 });
 
 describe('読み込んだ形のベースボディ 2 種の読み書き(FR-802、P6 §2.8、タスク20)', () => {
+  it('閉じた立体と開いた面が混在するB-repの種類を保存往復で維持する', () => {
+    const feature = { ...allSolidFeatures().importedSolid, bodyKind: 'mixed' as const };
+    const document = documentWithSolid(feature);
+    expect(roundTrip(document)).toEqual(document);
+    expect(serializeDocument(document, { savedAt: SAVED_AT })).toContain('"bodyKind": "mixed"');
+  });
   it('読み込んだ形は入れ物の名前と素性だけを書き、形そのものは書かない(§0.a-0.9)', () => {
     const document = documentWithSolid(allSolidFeatures().importedSolid);
     const text = serializeDocument(document, { savedAt: SAVED_AT });
@@ -6093,7 +6106,7 @@ describe('ひな形の封筒の任意の欄(FR-814、§2.10)', () => {
       toolDefaults: TOOL_DEFAULTS,
     });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(13);
+    expect(PCAD_SCHEMA_VERSION).toBe(14);
   });
 });
 
@@ -6307,7 +6320,7 @@ describe('選択セットの員の 4 種類(FR-112、利用者の決定 2026-09-
       },
     ]);
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(13);
+    expect(PCAD_SCHEMA_VERSION).toBe(14);
   });
 
   it('立体・面だけの既存の版 7 のファイルはそのまま読める(語が増えても壊さない)', () => {

@@ -51,6 +51,8 @@ export interface ApplyDocumentOptions {
    * (立てるとプロパティ欄で 1 文字打つたびに札が点滅する)。
    */
   readonly coalesceKey?: string;
+  /** Gesture mode requires a new coalesceKey for each pointer drag or key press. */
+  readonly coalesceMode?: 'time' | 'gesture';
   /**
    * Undo に段を積むか。既定は積む(true)。計算結果の反映のように
    * 利用者の操作ではない差し替えでは false にする。
@@ -284,7 +286,7 @@ export const createDocumentSlice: StateCreator<
         options?.undoable === false
           ? // 段は増やさないが、present は常に document と同じものにしておく。
             { ...state.undoStack, present: next }
-          : pushUndo(state.undoStack, next, { coalesceKey });
+          : pushUndo(state.undoStack, next, { coalesceKey, coalesceMode: options?.coalesceMode });
       return {
         // 丸ごとの差し替え(開く・復元)では 3D スケッチも降ろす(タスク22b-(i))。
         ...documentPatch(state, next, stack, options?.replacesDocument === true),

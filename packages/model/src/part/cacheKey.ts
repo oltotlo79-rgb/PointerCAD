@@ -96,6 +96,7 @@ export interface KeySpline {
   readonly mode: 'interpolate' | 'control';
   readonly points: readonly KeyVec3[];
   readonly closed: boolean;
+  readonly degree?: 1;
 }
 
 /** 断面・面を作る曲線(kernel の `CurveSpec` と同じ形)。 */
@@ -717,6 +718,7 @@ export interface ImportedSolidKeyMaterial {
  * `targetKey` と `transforms` を差し替えたものとして表すため(§0.a-0.20、§0.a-0.42)。
  */
 export type SolidStepKeyMaterial =
+  | { readonly kind: 'functionSurface'; readonly inputSignature: string }
   | ExtrudeKeyMaterial
   | RevolveKeyMaterial
   | SewKeyMaterial
@@ -811,7 +813,7 @@ function keyCurve(curve: KeyCurve): string {
     case 'spline':
       // 点の並びは順序が意味を持つので、長さも混ぜる(曲線の並びと同じ衝突対策)。
       return (
-        `spline(${curve.mode}|${keyBoolean(curve.closed)}` +
+        `spline(${curve.mode}|${keyBoolean(curve.closed)}${curve.degree === undefined ? '' : '|degree:1'}` +
         `|${String(curve.points.length)}:[${curve.points.map(keyVec3).join(',')}])`
       );
   }
@@ -1228,6 +1230,10 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;fromEnd=${material.fromEnd}` +
         `;modeled=${keyBoolean(material.modeled)}}`
       );
+    case 'functionSurface':
+      // Native face topology changes when exact planar triangle pairs become quads.
+      // Keep persisted shape/selection caches distinct from the earlier triangulated bodies.
+      return `functionSurface{cad=planar-pairs/1;input=${JSON.stringify(material.inputSignature)}}`;
     case 'surface':
       // 面を借りる作り方でも消費しないが targetKey を混ぜる(SurfaceKeyMaterial の注釈)。
       return (

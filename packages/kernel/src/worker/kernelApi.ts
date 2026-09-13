@@ -18,6 +18,8 @@ import { hiddenLineViewForBodies, type HiddenLineSource } from '../occt/makeHidd
 import { createAllocations } from '../occt/allocations.js';
 import { makeProjection } from '../occt/makeProjection.js';
 import { makeSection } from '../occt/makeSection.js';
+import { functionCurvePolylines, type FunctionCurveSketchResult } from '../occt/functionCurvePolylines.js';
+import type { FunctionCurveGeometrySpec } from '../occt/makeFunctionCurve.js';
 import { makeSectionShape } from '../occt/makeSectionShape.js';
 import { discretizeEdge, makeCurveEdge } from '../occt/makeSketchEdges.js';
 import { placeShape } from '../occt/placeBodies.js';
@@ -25,7 +27,8 @@ import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from '../occt/pickSubShape.js
 import { readCafMesh } from '../occt/readCafMesh.js';
 import { readStepAssembly } from '../occt/readStepAssembly.js';
 import { readStl } from '../occt/readStl.js';
-import { hasSolid, measureVolume } from '../occt/solidMesh.js';
+import { measureVolume } from '../occt/solidMesh.js';
+import { measureClosedBodyVolume, shapeBodyKind, type CadBodyKind } from '../occt/shapeBodyKind.js';
 import { tessellate } from '../occt/tessellate.js';
 import { normalizeBaseName, writeCafMesh } from '../occt/writeCafMesh.js';
 import { writeStep } from '../occt/writeStep.js';
@@ -211,10 +214,11 @@ function toImportBody(
   shape: TopoDS_Shape,
   name: string | null,
   color: RgbTuple | null,
-  bodyKind: 'solid' | 'shell',
+  bodyKind: CadBodyKind,
 ): ShapeImportBody {
   const brepBytes = writeBrepBytes(oc, shape);
-  const volume = measureVolume(oc, shape);
+  const volume = bodyKind === 'mixed' ? measureClosedBodyVolume(oc, shape, solid => measureVolume(oc, solid))
+    : bodyKind === 'shell' ? 0 : measureVolume(oc, shape);
   const surface = tessellate(oc, shape, IMPORT_TESSELLATION);
   return {
     name,
@@ -371,6 +375,8 @@ function resolveDisplayMeshes(
 
 /** UI 側から Comlink 越しに呼べる幾何カーネルの窓口。 */
 export interface KernelApi {
+  /** Build and clip certified chords, then return every surviving corner in double precision. */
+  functionSketchCurves(request: FunctionCurveGeometrySpec): Promise<FunctionCurveSketchResult>;
   /** スケッチの曲線を折れ線に、閉ループを面にする(FR-309)。 */
   tessellateSketch(
     request: SketchTessellationRequest,
@@ -682,7 +688,11 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
       part.job = job;
       parts.set(partId, part);
       return withAcquiredKeys(recomputeKeys(request), async () => {
+        const functionLoadStarted = performance.now();
         const oc = await loadOcct();
+        if (request.steps.some(step => step.step.kind === 'functionSurface')) {
+          console.debug('[pcad:function-phase]', JSON.stringify({ phase: 'load', elapsedMs: performance.now() - functionLoadStarted, generation: request.generation }));
+        }
         const result = await runSolidRecompute(
           { oc, cache }, request, options, onProgress, cancelToken,
         );
@@ -725,6 +735,10 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
       }
 
       return { results, failures };
+    },
+
+    async functionSketchCurves(request): Promise<FunctionCurveSketchResult> {
+      return functionCurvePolylines(await loadOcct(), request);
     },
 
     async projectSketchCurves(request): Promise<SketchProjectionOutcome> {
@@ -1123,17 +1137,13 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
             };
             return {
               bodies: read.definitions.map((body) =>
-                // `StepAssemblyDefinition.kind` の型は `SolidBodyKind`(3 種)だが、読み手は
-                // **閉じた立体かどうかだけ**で `'solid' | 'shell'` を決めている
-                // (`kind: solid ? 'solid' : 'shell'`)ので `'mesh'` にはならない。
-                // B-rep を持つ 2 種へここで絞るのは、読み込んだ三角形の形
-                // (`bodyKind: 'mesh'`)が B-rep のバイト列を持たない別の枝だから。
+                // 読み手が検出した開面との混在を、そのまま保存と表示へ渡す。
                 toImportBody(
                   oc,
                   body.shape,
                   body.name,
                   body.color,
-                  body.kind === 'solid' ? 'solid' : 'shell',
+                  body.kind,
                 ),
               ),
               unit: read.unit,
@@ -1151,7 +1161,7 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
           try {
             return {
               bodies: [
-                toImportBody(oc, shape, null, null, hasSolid(oc, shape) ? 'solid' : 'shell'),
+                toImportBody(oc, shape, null, null, shapeBodyKind(oc, shape)),
               ],
               unit: 'mm',
               unitNames: [],

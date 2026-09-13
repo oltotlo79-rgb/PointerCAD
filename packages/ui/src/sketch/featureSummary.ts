@@ -244,6 +244,7 @@ export const FEATURE_KIND_LABEL_KEYS: Readonly<Record<SketchTreeKind, MessageKey
   slot: 'toolbar.tool.slot',
   ellipse: 'toolbar.tool.ellipse',
   spline: 'toolbar.tool.spline',
+  functionCurve: 'functionPlot.curveTitle',
   offset: 'toolbar.tool.offset',
   copy: 'toolbar.tool.copy',
   // 投影・交差(FR-325、P4 タスク25)。道具そのものはタスク27 で足す。
@@ -386,6 +387,8 @@ export function baseSummary(
   options: FeatureSummaryOptions = {},
 ): CoordinateBaseSummary {
   switch (reference.kind) {
+    case 'functionPoint': return namedBase('functionPoint.base',reference.parent.kind==='surface'
+      ? options.bodyName?.(reference.parent.featureId)??null:featureNameOf(options.document,reference.parent.featureId),reference.parent.featureId);
     case 'origin':
       return plainBase(BASE_LABEL_KEYS.origin);
     case 'previous':
@@ -1034,6 +1037,8 @@ export function summarizeFeature(
       return summarizeEllipse(base, feature, options);
     case 'spline':
       return summarizeSpline(base, feature, options);
+    case 'functionCurve':
+      return summaryOf(base, { toggles: [constructionToggle(feature.construction)] });
     case 'offset':
       return summarizeOffset(base, feature, options);
     case 'copy':
@@ -1433,6 +1438,7 @@ export function setFeatureToggle(
       case 'offset':
       case 'copy':
       case 'projectedCurve':
+      case 'functionCurve':
       case 'planeSection':
         return feature.construction === value ? feature : { ...feature, construction: value };
       case 'point':
@@ -1574,6 +1580,7 @@ export function constructionFeatureIds(document: SketchDocument): ReadonlySet<st
       case 'offset':
       case 'copy':
       case 'projectedCurve':
+      case 'functionCurve':
       case 'planeSection':
         if (feature.construction) {
           ids.add(feature.id);
@@ -1868,7 +1875,8 @@ export function resolvedFields(
     case 'offset':
     case 'copy':
     case 'projectedCurve':
-    case 'planeSection': {
+    case 'planeSection':
+    case 'functionCurve': {
       // 1 フィーチャーが複数の曲線を生むものは、できた曲線の本数と長さの合計を出す
       // (§0.a-0.8 の `curvesByFeature` がそのまま「何本できたか」の答えになる)。
       const curves = resolved.curvesByFeature.get(feature.id);

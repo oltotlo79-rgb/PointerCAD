@@ -15,9 +15,11 @@ import {
   FREE_WORK_PLANE_ID,
   isFreeWorkPlaneId,
   nextFeatureId,
+  replaceSketch,
   splitLineIntersections,
   WORK_PLANES,
   type ProjectionSource,
+  type PartDocument,
   type SketchDocument,
   type SketchResolveOptions,
   type WorkPlane,
@@ -54,6 +56,15 @@ import {
 } from './projectionCommands.js';
 import { commitReferenceInput } from './referenceCommands.js';
 import { commitSketchInput } from './sketchCommands.js';
+import { prepareNumericMathCommit } from './numericMathValues.js';
+import { tryMathComposition } from '../math/tryMathComposition.js';
+
+/** Keep coefficient identities private until the same operation publishes a real feature. */
+function mathCommitBase(inputs: unknown): PartDocument | null {
+  const store = useAppStore.getState(), result = prepareNumericMathCommit(store.document, inputs);
+  if (!result.ok) { store.setShapeError(result.message); return null; }
+  return result.document;
+}
 
 /**
  * いま線や図形を置いている面。作図面があればそれを解いた面(`workPlane`)、3D スケッチ
@@ -83,7 +94,9 @@ export function applySketchCommit(
   input: NumericInputState | null,
 ): boolean {
   const store = useAppStore.getState();
-  const outcome = commitSketchInput(commit, {
+  const base = mathCommitBase([commit, store.shapeDraft]);
+  if (base === null) return false;
+  const calculated = tryMathComposition(() => commitSketchInput(commit, {
     document: store.sketch,
     planeId: store.workPlaneId,
     plane: drawingPlane(),
@@ -93,7 +106,9 @@ export function applySketchCommit(
     // 欄の値を名前で引くのに、確定した段の状態も渡す。
     shapeDraft: store.shapeDraft,
     input: input ?? undefined,
-  });
+  }));
+  if (!calculated.ok) { store.setShapeError(calculated.message); return false; }
+  const outcome = calculated.value;
   store.setShapeError(outcome.rejection);
   // 予告していた拘束(FR-333)を同じ文書へ足してから 1 回だけ差し替える。
   let document = outcome.document;
@@ -112,7 +127,7 @@ export function applySketchCommit(
   if (connected) store.setInferredConstraints(null);
   else document = withInferredConstraints(store, commit, document);
   if (document !== store.sketch) {
-    store.setSketch(document);
+    store.applyDocument(replaceSketch(base, document));
   }
   store.setPendingStart(outcome.pendingStart);
   store.setShapeDraft(outcome.shapeDraft);
@@ -168,10 +183,12 @@ function withInferredConstraints(
  */
 export function applySolidCommit(commit: SolidInputCommit): boolean {
   const store = useAppStore.getState();
+  const base = mathCommitBase(commit);
+  if (base === null) return false;
   // 加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の確定には部分形状の一覧が
   // 要る(solidCommands.ts タスク25b の4引数目)。
-  const outcome = commitSolidInput(
-    store.document,
+  const calculated = tryMathComposition(() => commitSolidInput(
+    base,
     store.selection,
     commit,
     subShapeBodiesOf(store.bodies),
@@ -179,7 +196,9 @@ export function applySolidCommit(commit: SolidInputCommit): boolean {
     // 渡さないと、ピッチに「板厚」と書いたとき全長の読み取り専用の欄が = 0 になる。
     store.parameterAnalysis.variables,
     store.parameterAnalysis,
-  );
+  ));
+  if (!calculated.ok) { store.setShapeError(calculated.message); return false; }
+  const outcome = calculated.value;
   if (!outcome.ok) {
     store.setSolidError(outcome.reasonKey);
     // 断られたらポップアップを閉じない(理由は帯に出ている、P4 タスク33)。
@@ -203,15 +222,19 @@ export function applySolidCommit(commit: SolidInputCommit): boolean {
  */
 export function applyReferenceCommit(commit: ReferenceInputCommit): boolean {
   const store = useAppStore.getState();
-  const outcome = commitReferenceInput(commit, {
-    document: store.document,
+  const base = mathCommitBase([commit, store.referenceDraft]);
+  if (base === null) return false;
+  const calculated = tryMathComposition(() => commitReferenceInput(commit, {
+    document: base,
     planeId: store.workPlaneId,
     bodies: subShapeBodiesOf(store.bodies),
     selection: store.selection,
     draft: store.referenceDraft,
-  });
+  }));
+  if (!calculated.ok) { store.setShapeError(calculated.message); return false; }
+  const outcome = calculated.value;
   store.setReferenceError(outcome.rejection);
-  if (outcome.document !== store.document) {
+  if (outcome.document !== base) {
     store.applyDocument(outcome.document);
   }
   store.setReferenceDraft(outcome.draft);
@@ -306,10 +329,14 @@ function openNext(state: NumericInputState): void {
  */
 export function applyEditCommit(commit: EditInputCommit): boolean {
   const store = useAppStore.getState();
+  const base = mathCommitBase(commit);
+  if (base === null) return false;
   if (commit.tool === 'sketchFillet' || commit.tool === 'sketchChamfer') {
-    return applyCornerCommit(commit);
+    return applyCornerCommit(commit, base);
   }
-  const outcome = editCommitOutcome(commit, store);
+  const calculated = tryMathComposition(() => editCommitOutcome(commit, store));
+  if (!calculated.ok) { store.setShapeError(calculated.message); return false; }
+  const outcome = calculated.value;
   if (outcome === null) {
     return false;
   }
@@ -319,7 +346,7 @@ export function applyEditCommit(commit: EditInputCommit): boolean {
     return false;
   }
   store.setEditError(null);
-  store.setSketch(outcome.document);
+  store.applyDocument(replaceSketch(base, outcome.document));
   store.setActiveTool('select');
   store.setSelection([outcome.featureId]);
   return true;
@@ -369,7 +396,7 @@ export function applyProjectionCommit(
  * 案内は `setSketch` の**あと**に出す。`applyDocument` は文書が変わるたびに古い断り・
  * 案内を落とすので、先に出すと消えてしまう。
  */
-function applyCornerCommit(commit: EditInputCommit): boolean {
+function applyCornerCommit(commit: EditInputCommit, base: PartDocument): boolean {
   const store = useAppStore.getState();
   const outcome =
     commit.tool === 'sketchFillet'
@@ -381,7 +408,7 @@ function applyCornerCommit(commit: EditInputCommit): boolean {
     return false;
   }
   store.setEditError(null);
-  store.setSketch(outcome.document);
+  store.applyDocument(replaceSketch(base, outcome.document));
   // 足した円弧・線分を選んでおく(次の一手がそのまま続く、NFR-UX-1)。道具は残す。
   store.setSelection([outcome.featureId]);
   if (outcome.boundaryNeedsUpdate) {

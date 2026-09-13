@@ -8,6 +8,7 @@
  */
 
 import type { ExtrudeFeature, Vec3 } from '@pointercad/model';
+import { decodeMathExpressionStorage } from '@pointercad/model';
 
 /**
  * 式文字列と評価値の組(FR-202)。@pointercad/expression の `ExpressionValue` と同じ型を、
@@ -212,6 +213,15 @@ export function readExpressionItem(item: unknown, path: string): Checked<Express
     return found;
   }
   const value = typeof found.value === 'number' ? found.value : Number.NaN;
+  if (Object.hasOwn(record.value, 'mathDefinition')) {
+    try {
+      if (!Number.isFinite(value)) return fieldProblem(joinPath(path, 'value'), 'type');
+      const mathDefinition = decodeMathExpressionStorage(record.value.mathDefinition, text.value);
+      return { ok: true, value: { source: text.value, value, display: display.value, mathDefinition } };
+    } catch {
+      return fieldProblem(joinPath(path, 'mathDefinition'), 'type');
+    }
+  }
   return { ok: true, value: { source: text.value, value, display: display.value } };
 }
 

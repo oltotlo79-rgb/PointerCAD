@@ -1,0 +1,22 @@
+.pcad-function-coefficient {
+  min-width: 0;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid var(--pcad-border, currentColor);
+}
+
+.pcad-function-coefficient__bounds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pcad-function-coefficient__bounds input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.pcad-function-coefficient__range {
+  width: 100%;
+}

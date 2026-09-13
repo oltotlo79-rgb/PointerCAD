@@ -402,7 +402,7 @@ export interface ExchangeExportOutcome {
 /** 読み込んだ立体 1 つ。B-rep を持つ形と三角形だけの形を `bodyKind` で分ける(§0.a-0.23)。 */
 export type ExchangeImportedBody =
   | {
-      readonly bodyKind: 'solid' | 'shell';
+      readonly bodyKind: 'solid' | 'shell' | 'mixed';
       readonly name: string | null;
       readonly volume: number;
       readonly triangleCount: number;

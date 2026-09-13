@@ -2,6 +2,8 @@
 export { createScriptExecutor } from './scriptExecutor.js';
 export type { ScriptExecutor, ScriptRequest, ScriptRunResult, ScriptPhase } from './scriptExecutor.js';
 export type { PreparedScriptTransaction } from './scriptTransaction.js';
+export type {ScriptFunctionCompiler,CompiledScriptFunction} from './scriptFunctionCommands.js';
+export type {ScriptFunctionDefinition} from './scriptFunctionInput.js';
 export { SCRIPT_API_VERSION, SCRIPT_LIMITS } from './scriptTypes.js';
 export type { ScriptProgram, ScriptModule, ScriptFailure, ScriptLocation, ScriptConsoleLine } from './scriptTypes.js';
 export { sha256ScriptSource, validateScriptProgram, isScriptModuleName } from './scriptModules.js';

@@ -9,12 +9,29 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./math/contracts": {
+      "types": "./dist/math/publicContracts.d.ts",
+      "default": "./src/math/publicContracts.ts"
+    },
+    "./math/client": {
+      "types": "./dist/math/publicClient.d.ts",
+      "default": "./src/math/publicClient.ts"
+    },
+    "./math/worker": {
+      "types": "./dist/math/publicWorker.d.ts",
+      "default": "./src/math/publicWorker.ts"
+    },
+    "./math/geometry": {
+      "types": "./dist/math/publicGeometry.d.ts",
+      "default": "./src/math/publicGeometry.ts"
     }
   },
   "scripts": {
     "test": "vitest run"
   },
   "dependencies": {
+    "@cortex-js/compute-engine": "catalog:",
     "decimal.js": "catalog:"
   },
   "devDependencies": {

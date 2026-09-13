@@ -144,6 +144,7 @@ export const createMeasureSlice: StateCreator<
     const state = get();
     void runMeasure({
       document: state.document,
+      sketch: state.isComputing ? undefined : state.resolvedSketch,
       selection: state.selection,
       // カーネルが返したボディはそのまま `MeasureBody`(体積つき)を満たす。
       bodies: state.bodies,
@@ -153,6 +154,8 @@ export const createMeasureSlice: StateCreator<
     }).then((outcome) => {
       // 待っているあいだに文書が変わっていることがあるので、置く先は取り直す。
       const after = get();
+      // A result belongs to the document and geometry captured before the await.
+      if (after.document !== state.document || after.resolvedSketch !== state.resolvedSketch || after.bodies !== state.bodies) return;
       if (outcome.ok) {
         after.setMeasurement(outcome.measurement, outcome.massProperties);
         return;

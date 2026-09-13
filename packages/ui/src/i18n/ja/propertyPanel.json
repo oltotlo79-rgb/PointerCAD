@@ -1,4 +1,7 @@
 {
+  "display.rangeSeparator": " ～ ",
+  "display.listSeparator": "・",
+  "propertyPanel.missingSketchFeature": "編集する図形が見つかりません。",
   "propertyPanel.title": "プロパティ",
   "propertyPanel.empty": "選択されているものはありません。",
   "propertyPanel.sectionSketch": "かたち",

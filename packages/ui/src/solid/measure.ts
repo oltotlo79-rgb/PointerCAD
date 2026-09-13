@@ -469,7 +469,7 @@ function unit(a: Vec3): Vec3 | null {
  * `acos` ではなく `atan2(|a×b|, |a·b|)` を使う。`acos` は 0 度・180 度の近くで
  * 入力のわずかな誤差が角度の誤差へ大きく効くのに対し、`atan2` はどの角度でも精度が保てる。
  */
-function angleDegreesBetween(a: Vec3, b: Vec3): number | null {
+export function angleDegreesBetween(a: Vec3, b: Vec3): number | null {
   if (norm(a) === 0 || norm(b) === 0) {
     return null;
   }

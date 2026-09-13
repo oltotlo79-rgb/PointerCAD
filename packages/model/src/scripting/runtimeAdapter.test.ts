@@ -12,6 +12,21 @@ async function input(source: string, modules: readonly ScriptModule[] = []): Pro
 }
 async function run(source: string) { return executeScriptVm(await input(source), wasm); }
 describe('隔離VMの実バイナリによる実行境界', () => {
+  it('実VMから関数曲線と曲面の式・全XYZ範囲・ラジアンを命令として渡す', async () => {
+    const result = await run(`const sketch=cad.sketch.create('式の線');
+      const bounds={X:['-2','2'],Y:['-2','2'],Z:['-2','2']};
+      cad.function.curve(sketch,{bounds,tolerance:'0.01',formula:{kind:'coordinate-curve',independent:'X',outputs:{Y:'sin(X)',Z:'0'}}});
+      cad.function.surface({bounds,tolerance:'0.01',angleUnit:'radian',formula:{kind:'coordinate-surface',output:'Z',expression:'sin(X)+cos(Y)'}});`);
+    expect(result.ok).toBe(true); if (!result.ok) throw new Error(result.error.message);
+    expect(result.commands).toHaveLength(3);
+    expect(result.commands[1]).toMatchObject({kind:'function.curve',fields:{sketch:result.commands[0].resultId,definition:{angleUnit:'degree'}}});
+    expect(result.commands[2]).toMatchObject({kind:'function.surface',fields:{definition:{angleUnit:'radian',formula:{expression:'sin(X)+cos(Y)'}}}});
+  });
+  it('関数のXYZ指定漏れをcatchしても一部だけの作図を成功させない', async () => {
+    const result = await run(`cad.solid.box({x:'1',y:'1',z:'1'});
+      try { cad.function.surface({bounds:{X:['-1','1'],Y:['-1','1']},tolerance:'0.01',formula:{kind:'implicit-surface',expression:'X^2+Y^2+Z^2-1'}}); } catch {}`);
+    expect(result.ok).toBe(false);
+  });
   it('資源超過の保持を持たない配布元バイナリでは成功を返さない', async () => {
     const unpatched = new Uint8Array(await readFile(new URL(import.meta.resolve('quickjs-wasi/quickjs.wasm'))));
     expect(await executeScriptVm(await input('console.log(42);'), unpatched)).toMatchObject({ ok: false, error: { kind: 'worker' } });
@@ -85,6 +100,23 @@ describe('隔離VMの実バイナリによる実行境界', () => {
     const result = await run(source);
     expect(result.ok).toBe(false); if (result.ok) return;
     expect(result.error.kind).toBe(kind); expect(result.error.message).toContain(message);
+  });
+  it.each([
+    ['ASCII', '"a".repeat(1048576)'],
+    ['2バイト', '"é".repeat(524288)'],
+    ['3バイト', '"図".repeat(349525)+"a"'],
+    ['サロゲート対', '"😀".repeat(262144)'],
+    ['孤立サロゲート', '"\\ud800".repeat(349525)+"a"'],
+    ['混在', '"aé図😀".repeat(104857)+"abcdef"'],
+  ])('%sのUTF-8境界を実VMで数え、組込みの改変でも上限を保つ', async (_name, expression) => {
+    const altered = 'RegExp.prototype.exec=()=>null;RegExp.prototype.test=()=>false;String.prototype.charCodeAt=()=>0;';
+    const exact = await run(`${altered}console.log(${expression});`);
+    expect(exact.ok).toBe(true); if (!exact.ok) return;
+    expect(new TextEncoder().encode(exact.console[0].text).length).toBe(1024*1024);
+    const overflow = await run(`${altered}try{console.log((${expression})+"a")}catch{}`);
+    expect(overflow.ok).toBe(false); if (overflow.ok) return;
+    expect(overflow.error.kind).toBe('console'); expect(overflow.error.message).toContain('上限1MiB');
+    expect((await run('console.log("再実行");')).ok).toBe(true);
   });
   it.each([
     'throw {get message(){while(true){}}, get stack(){while(true){}}};',

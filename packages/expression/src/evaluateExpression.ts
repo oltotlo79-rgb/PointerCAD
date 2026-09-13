@@ -1,6 +1,7 @@
 import { expressionError, ExpressionFailure, type ExpressionError } from './errors.js';
 import { evaluateNode, ExpressionDecimal } from './evaluate.js';
 import { parse } from './parse.js';
+import type { StoredMathExpression } from './math/mathInputContract.js';
 
 /** 表示用に丸める有効数字の桁数(計画書 docs/plans/P1-式とスケッチ.md §2.4)。値そのものには使わない。 */
 export const DISPLAY_SIGNIFICANT_DIGITS = 12;
@@ -10,6 +11,8 @@ export const DISPLAY_SIGNIFICANT_DIGITS = 12;
  * 評価結果だけを保存せず、必ず source も一緒に持つ。
  */
 export interface ExpressionValue {
+  /** 新しい数学入力の定義。数値はキャッシュであり、Workerで原式を照合してから再計算する。 */
+  readonly mathDefinition?: StoredMathExpression;
   /** 利用者が入力した式そのもの。編集時にこれを再表示する。 */
   readonly source: string;
   /** 評価値。長さ欄は mm、角度欄は度、個数欄は整数。丸めはここで1回だけ(NFR-RE-4)。 */

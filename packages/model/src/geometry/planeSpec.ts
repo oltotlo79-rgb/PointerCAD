@@ -23,6 +23,7 @@
 import type { ExpressionValue } from '@pointercad/expression';
 
 import { keyNumber } from '../part/cacheKey.js';
+import { functionPointReferenceKey } from '../functionGeometry/functionPointReference.js';
 import type { SketchLineRef } from '../part/types.js';
 import {
   degreesToRadians,
@@ -568,6 +569,7 @@ function pointReferenceKeyText(
   fingerprintText: (reference: SubShapeRef) => string,
 ): string {
   switch (reference.kind) {
+    case 'functionPoint': return `functionPoint:${functionPointReferenceKey(reference)}`;
     case 'origin':
       return 'origin';
     case 'previous':

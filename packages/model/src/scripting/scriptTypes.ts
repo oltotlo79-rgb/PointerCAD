@@ -1,4 +1,5 @@
 /** FR-1111: 隔離した自動作図処理の公開形式と資源上限。 */
+import type {ScriptFunctionDefinition} from './scriptFunctionInput.js';
 export const SCRIPT_API_VERSION = 1;
 
 export const SCRIPT_LIMITS = Object.freeze({
@@ -58,6 +59,8 @@ interface PrimitiveFields {
   readonly axis: ScriptAxis;
 }
 export type ScriptCommand =
+  | (CreatedCommand & {readonly kind:'function.curve';readonly fields:{readonly sketch:string;readonly definition:ScriptFunctionDefinition}})
+  | (CreatedCommand & {readonly kind:'function.surface';readonly fields:{readonly definition:ScriptFunctionDefinition}})
   | (LocatedCommand & { readonly kind: 'parameter.set'; readonly resultId: null;
       readonly fields: { readonly name: string; readonly source: string; readonly unit: 'mm' | 'degree' | 'none' | null } })
   | (CreatedCommand & { readonly kind: 'sketch.create'; readonly fields: { readonly name: string; readonly plane: ScriptPlane } })

@@ -111,6 +111,7 @@ export interface ResolveContext {
    * ここは「球が見つかりません」になる(履歴の順序を知っているのは部品文書の側だから)。
    */
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
+  readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
 }
 
 export type ResolveOutcome<T> =
@@ -132,6 +133,11 @@ export function resolvePointReference(
   featureId: string,
 ): ResolveOutcome<Vec3> {
   switch (reference.kind) {
+    case 'functionPoint': {
+      const point=context.functionPoint?.(reference,featureId)??null;
+      return point===null?failure(featureId,'missingBase','関数上の点を確定できません。親の関数と既知座標を確認し、候補を選び直してください。')
+        :{ok:true,value:point};
+    }
     case 'origin':
       // ワールド原点。P1 の作図面はすべて原点を通るので平面の原点とも一致する(§2.8)。
       return { ok: true, value: ORIGIN };

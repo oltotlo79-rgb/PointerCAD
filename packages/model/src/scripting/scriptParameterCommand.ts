@@ -2,6 +2,7 @@ import { evaluateExpression } from '@pointercad/expression';
 import { analyzeParameters, checkNewParameterName } from '../parameters/parameterTable.js';
 import { applyParameters } from '../part/reevaluatePart.js';
 import { synchronizeConfigurations } from '../part/configurations.js';
+import {hasDocumentMath} from '../part/evaluateDocumentMath.js';
 import { parseDisplayInput, normalizeInchQuotes } from '../units/length.js';
 import { ScriptCommandError, type ScriptCommandChange, type ScriptCommandContext } from './scriptCommandContext.js';
 import type { ScriptCommand } from './scriptTypes.js';
@@ -16,10 +17,14 @@ export function applyScriptParameterCommand(context: ScriptCommandContext,
   const analysis = analyzeParameters(context.document.parameters, []);
   const evaluated = evaluateExpression(source, { exactVariables: analysis.exactVariables, nonLengthVariables: analysis.nonLengthVariables });
   if (!evaluated.ok) throw new ScriptCommandError(evaluated.error.message);
-  const parameter = { name, unit, value: evaluated.value, description: previous?.description ?? '' };
+  const parameter = { ...previous,name, unit, value: evaluated.value, description: previous?.description ?? '' };
   const parameters = previous === undefined ? [...context.document.parameters, parameter]
     : context.document.parameters.map((value) => value.name === name ? parameter : value);
-  const next = applyParameters(synchronizeConfigurations({ ...context.document, parameters }));
+  const updated=synchronizeConfigurations({ ...context.document, parameters });
+  // This is a candidate only. Mathematical definitions must be evaluated by the
+  // transaction's Worker-backed recomputer before any change is published.
+  if(hasDocumentMath(updated))return {document:updated,reference:null,featureIds:[]};
+  const next = applyParameters(updated);
   if (next.analysis.circular.length > 0) throw new ScriptCommandError('パラメータの参照が循環しています。');
   const failure = next.analysis.failures[0] ?? next.failures[0];
   if (failure !== undefined) throw new ScriptCommandError(failure.message);

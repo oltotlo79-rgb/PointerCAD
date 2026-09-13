@@ -10,10 +10,8 @@ export function isHlrOutlineKind(value: unknown, registry: unknown): value is HL
     && typeof value.constructor === 'function' && value.constructor.name === 'HLRBRep_TypeOfResultingEdge_HLRBRep_OutLine';
 }
 
-/** 継ぎ目を実稜線扱いせず、同じ元面に属する3D輪郭から取り出す。 */
-export function readSeamOutlines(oc: OpenCascadeInstance, converter: Pick<HLRBRep_HLRToShape, 'CompoundOfEdges_2'>,
-  faceShape: TopoDS_Shape, generated: readonly TopoDS_Shape[], plane: SketchPlaneFrame, visible: boolean,
-  allocations: Allocations): readonly PlaneCurve[] {
+/** 元面の継ぎ目は可視/隠線の区別に依存しない。wrapperは呼出側のallocationsが所有する。 */
+export function readFaceSeams(oc: OpenCascadeInstance, faceShape: TopoDS_Shape, allocations: Allocations): readonly TopoDS_Edge[] {
   const { keep } = allocations, face = keep(oc.TopoDS.Face_1(faceShape));
   const map = keep(new oc.TopTools_IndexedMapOfShape_1());
   oc.TopExp.MapShapes_2(face, map, true, true);
@@ -24,7 +22,15 @@ export function readSeamOutlines(oc: OpenCascadeInstance, converter: Pick<HLRBRe
     const edge = keep(oc.TopoDS.Edge_1(shape));
     if (!oc.BRep_Tool.Degenerated(edge) && oc.BRep_Tool.IsClosed_2(edge, face)) seams.push(edge);
   }
+  return seams;
+}
+
+/** 継ぎ目を実稜線扱いせず、同じ元面に属する3D輪郭から取り出す。 */
+export function readSeamOutlines(oc: OpenCascadeInstance, converter: Pick<HLRBRep_HLRToShape, 'CompoundOfEdges_2'>,
+  faceShape: TopoDS_Shape, generated: readonly TopoDS_Shape[], plane: SketchPlaneFrame, visible: boolean,
+  allocations: Allocations, seams: readonly TopoDS_Edge[] = readFaceSeams(oc, faceShape, allocations)): readonly PlaneCurve[] {
   if (seams.length === 0) return [];
+  const { keep } = allocations;
   const outlineKind: unknown = oc.HLRBRep_TypeOfResultingEdge.HLRBRep_OutLine;
   if (!isHlrOutlineKind(outlineKind, oc.HLRBRep_TypeOfResultingEdge)) throw new Error('OCCTの輪郭列挙を確認できませんでした。');
   const result: PlaneCurve[] = [];

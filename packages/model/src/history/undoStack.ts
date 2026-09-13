@@ -31,6 +31,8 @@ export interface UndoStack<T> {
 export interface PushUndoOptions {
   /** 同じ鍵の変更が UNDO_COALESCE_MS 以内に続いたら1段にまとめる。 */
   readonly coalesceKey?: string;
+  /** A unique pointer/key gesture ends by changing its key, independently of pauses during the gesture. */
+  readonly coalesceMode?: 'time' | 'gesture';
   /** 検査で時刻を固定するための口。既定は Date.now()。 */
   readonly now?: number;
 }
@@ -59,7 +61,7 @@ export function pushUndo<T>(stack: UndoStack<T>, next: T, options?: PushUndoOpti
   const canCoalesce =
     coalesceKey !== null &&
     stack.coalesceKey === coalesceKey &&
-    now - stack.coalesceAt <= UNDO_COALESCE_MS;
+    (options?.coalesceMode === 'gesture' || now - stack.coalesceAt <= UNDO_COALESCE_MS);
 
   if (canCoalesce) {
     return { ...stack, present: next, coalesceAt: now };

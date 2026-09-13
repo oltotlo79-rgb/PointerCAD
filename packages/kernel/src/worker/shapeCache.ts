@@ -100,6 +100,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
   const tokens = new Map<AcquireToken, ReadonlySet<string>>();
   // 同じ鍵へ上書きされても、貸した旧形を最後の確保が外れるまでは解放しない。
   const retired = new Map<string, T[]>();
+  let retiredCount = 0;
   let evictions = 0;
   let released = 0;
   let clearWithActiveTokensCount = 0;
@@ -134,7 +135,6 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
   }
 
   function trim(): void {
-    const retiredCount = Array.from(retired.values()).reduce((count, old) => count + old.length, 0);
     while (entries.size + retiredCount > capacity && dropOldest()) {
       // 保護対象だけになったら超過を許し、stats の診断で呼び手へ知らせる。
     }
@@ -170,6 +170,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
           references.delete(key);
           const old = retired.get(key) ?? [];
           retired.delete(key);
+          retiredCount -= old.length;
           for (const entry of old) {
             disposeEntry(entry);
           }
@@ -195,6 +196,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
           const old = retired.get(key) ?? [];
           old.push(existing);
           retired.set(key, old);
+          retiredCount += 1;
         } else {
           disposeEntry(existing);
         }
@@ -202,7 +204,10 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
       // 以前貸した形を再び現行に戻した場合も、同じ実体を二重解放しない。
       const old = retired.get(key);
       if (old !== undefined) {
-        retired.set(key, old.filter((value) => value !== entry));
+        const remaining = old.filter((value) => value !== entry);
+        retiredCount -= old.length - remaining.length;
+        if (remaining.length === 0) retired.delete(key);
+        else retired.set(key, remaining);
       }
       touch(key, entry);
       trim();
@@ -242,6 +247,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
       const all = [...entries.values(), ...Array.from(retired.values()).flat()];
       entries.clear();
       retired.clear();
+      retiredCount = 0;
       references.clear();
       tokens.clear();
       for (const entry of all) {

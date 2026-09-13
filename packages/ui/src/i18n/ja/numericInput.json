@@ -1,4 +1,5 @@
 {
+  "numericInput.previousStage": "前の入力へ戻る",
   "numericInput.toggle.splitIntersections": "交点でつなぐ",
   "numericInput.title.point": "点を作る",
   "numericInput.title.lineStart": "線分の始点",

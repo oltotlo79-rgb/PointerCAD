@@ -95,6 +95,7 @@ const ALL_SKETCH_FEATURE_KINDS: Readonly<Record<SketchFeatureKind, true>> = {
   slot: true,
   ellipse: true,
   spline: true,
+  functionCurve: true,
   offset: true,
   copy: true,
   projectedCurve: true,
@@ -103,8 +104,8 @@ const ALL_SKETCH_FEATURE_KINDS: Readonly<Record<SketchFeatureKind, true>> = {
 
 describe('dxfToSketch', () => {
   it('新しい `SketchFeature` の種類を 1 つも作らない(計画書 タスク26)', () => {
-    // P4b までの 14 種類から増えていない。増やせばこの数と `Record` の網羅の両方が落ちる。
-    expect(Object.keys(ALL_SKETCH_FEATURE_KINDS)).toHaveLength(14);
+    // 関数作図で追加した1種を含む。DXFが生成する種類は下の5種だけのまま。
+    expect(Object.keys(ALL_SKETCH_FEATURE_KINDS)).toHaveLength(15);
     const entities: readonly SketchDxfEntity[] = [
       point(1, 2),
       line(0, 0, 10, 0),

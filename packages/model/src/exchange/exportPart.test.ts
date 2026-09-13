@@ -229,6 +229,8 @@ describe('形式 × 立体の種類の可否(§0.a-0.12、§0.a-0.23、§2.8)', 
     ['3mf', 'solid', true], ['3mf', 'shell', false], ['3mf', 'mesh', true],
     ['obj', 'solid', true], ['obj', 'shell', true], ['obj', 'mesh', true],
     ['glb', 'solid', true], ['glb', 'shell', true], ['glb', 'mesh', true],
+    ['step', 'mixed', true], ['stl', 'mixed', false], ['3mf', 'mixed', false],
+    ['obj', 'mixed', true], ['glb', 'mixed', true],
   ];
 
   it('表のとおりに受け入れ、断るときは種類に対応するキーを返す', () => {
@@ -237,7 +239,7 @@ describe('形式 × 立体の種類の可否(§0.a-0.12、§0.a-0.23、§2.8)', 
       expect(refusal === null, `${format} × ${kind}`).toBe(accepted);
       if (!accepted) {
         expect(refusal, `${format} × ${kind}`).toBe(
-          kind === 'shell' ? 'shellNotSupported' : 'meshNotSupported',
+          kind === 'shell' || kind === 'mixed' ? 'shellNotSupported' : 'meshNotSupported',
         );
       }
     }

@@ -1,4 +1,5 @@
 @import './camHandoff.css';
+@import '../math/mathEditor.css';
 
 /*
  * PointerCAD 画面シェルの見た目。
@@ -2900,6 +2901,14 @@ button.pcad-tree__row:focus-visible {
   outline-offset: -2px;
 }
 
+.pcad-field__expression-input {
+  display: flex;
+  gap: 3px;
+  min-width: 0;
+}
+.pcad-field__expression-input > .pcad-field__input { width: 100%; flex: 1; }
+.pcad-field__math { flex: none; padding: 2px 5px; }
+
 .pcad-field__unit {
   font-size: var(--pcad-font-size-small);
   color: var(--pcad-text-muted);
@@ -3772,3 +3781,5 @@ button.pcad-tree__row:focus-visible {
   width: min(320px, calc(100vw - 48px));
   padding: var(--pcad-space-3);
 }
+/* A parameter transaction disables the existing controls while retaining their layout. */
+.pcad-parameters__fields { border: 0; padding: 0; margin: 0; min-width: 0; }

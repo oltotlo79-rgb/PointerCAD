@@ -124,6 +124,7 @@ import { createAllocations } from './allocations.js';
 import { addGuidedSections, prepareSweepGuide } from './sweepGuide.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
+import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { transformShape } from './transformShape.js';
 
@@ -233,7 +234,7 @@ function makeWire(
   keep: Allocations['keep'],
 ): TopoDS_Wire {
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
-  for (const curve of curves) {
+  for (const curve of continuousCurvePieces(curves)) {
     wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
   }
   if (!wireMaker.IsDone()) {
@@ -526,7 +527,8 @@ function applySweepMode(
  * テッセレーションの粗さを使わない(粗さは段の種類ごとに `recomputeSolids.ts` が
  * 掛ける)ので受け取らない。`makeSpring.ts` / `makeHole.ts` と同じ判断。
  */
-export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShapeHandle {
+export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
+  observe?: (stage: 'wires' | 'frames' | 'placement' | 'build' | 'solid' | 'volume' | 'validity' | 'length', elapsedMs: number) => void): OcctShapeHandle {
   if (input.path.length === 0) {
     throw new Error(NO_PATH_MESSAGE);
   }
@@ -535,6 +537,11 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
   }
 
   const { keep, release } = createAllocations();
+  let previousTime = observe === undefined ? 0 : performance.now();
+  const mark = (stage: Parameters<NonNullable<typeof observe>>[0]) => {
+    if (observe === undefined) return;
+    const now = performance.now(); observe(stage, now - previousTime); previousTime = now;
+  };
   try {
     const spine = makeWire(oc, input.path, PATH_NOT_CONNECTED_MESSAGE, keep);
     const profileWire = makeWire(
@@ -544,8 +551,10 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
       keep,
     );
 
+    mark('wires');
     const frame = readProfileFrame(oc, profileWire, keep);
     const start = readPathStart(oc, spine, keep);
+    mark('frames');
 
     // 断面が経路の曲がりを追い越すと掃引面が裏返る。出来上がりからは見分けられないので、
     // 作る前に断る(冒頭の注釈 (b)、NFR-UX-5)。
@@ -561,6 +570,7 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
       '案内線は1本につながった線を選んでください。', keep);
     const guidePlan = guideWire === null ? null : prepareSweepGuide(oc, spine, guideWire, placed, keep);
     if (guidePlan !== null && frame.radius * guidePlan.maxScale >= minimumRadius) throw new Error(TOO_TIGHT_MESSAGE);
+    mark('placement');
 
     const pipe = keep(new oc.BRepOffsetAPI_MakePipeShell(spine));
     if (guideWire === null) applySweepMode(oc, pipe, input.frenet, start.tangent, keep);
@@ -576,6 +586,7 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
       throw new Error(BUILD_FAILED_MESSAGE);
     }
     pipe.Build(keep(new oc.Message_ProgressRange_1()));
+    mark('build');
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
     // (docs/報告記録.md 2026-09-03 06:56 の⑤。makeSpring.ts と同じ扱い)。
     if (!pipe.IsDone()) {
@@ -595,9 +606,11 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
       shape = keep(solidMaker.Shape());
     }
 
+    mark('solid');
     // 閉経路の複数断面では内向きの殻が返ることがある。絶対値だけで通すと
     // 表裏や後続ブーリアンが逆になるため、縫合と同じく生成した形の向きを直す。
     const signedVolume = measureVolume(oc, shape);
+    mark('volume');
     if (signedVolume < 0) shape = keep(shape.Reversed());
     const volume = Math.abs(signedVolume);
     if (!hasSolid(oc, shape) || volume < MIN_SOLID_VOLUME_MM3) {
@@ -606,11 +619,13 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput): OcctShape
     if (!isValidShape(oc, shape)) {
       throw new Error(NOT_SOLID_MESSAGE);
     }
+    mark('validity');
     // 掃引できた長さの検査(冒頭の注釈 (a))。角で途中まで止まっていても OCCT は
     // 「正しい立体」と答えるので、体積 = 断面の面積 × 経路の長さ からずれていないかで見る。
     // 案内線では断面積が変わるため A0×∫scale(s)²ds と照合する。
     // 全経路を作れたかの1%基準は同じまま保つ。
     const expectedVolume = frame.area * (guidePlan?.volumePerArea ?? wireLength(oc, spine, keep));
+    mark('length');
     if (Math.abs(volume - expectedVolume) > expectedVolume * SWEPT_LENGTH_TOLERANCE) {
       throw new Error(INCOMPLETE_MESSAGE);
     }

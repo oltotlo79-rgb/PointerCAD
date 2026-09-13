@@ -23,7 +23,6 @@
 
 import {
   checkVariableName,
-  collectVariableNames,
   expressionValueFromNumber,
   type VariableNameIssue,
 } from '@pointercad/expression';
@@ -31,7 +30,9 @@ import {
   addParameter,
   applyParameters,
   collectExpressionOwners,
-  collectExpressionSources,
+  expressionParameterNames,
+  hasDocumentMath,
+  prepareDocumentMathIdentity,
   nextParameterName,
   removeParameter,
   renameParameter,
@@ -73,7 +74,8 @@ export type ParameterCommandRejectionReason =
   | 'duplicateName'
   | 'duplicateRename'
   | 'referenced'
-  | 'notFound';
+  | 'notFound'
+  | 'requiresMathWorker';
 
 export interface ParameterCommandRejection {
   readonly ok: false;
@@ -172,7 +174,7 @@ export function referencingFeatureNames(
     if (names.includes(owner.ownerName)) {
       continue;
     }
-    if (collectVariableNames(owner.source).includes(name)) {
+    if (expressionParameterNames(owner, document.parameters).includes(name)) {
       names.push(owner.ownerName);
     }
   }
@@ -213,16 +215,18 @@ export function parameterUsageCounts(document: PartDocument): ReadonlyMap<string
   for (const parameter of document.parameters) {
     // 自分自身への参照は数えない(model の `referencesTo` と同じ規則)。
     bump(
-      collectVariableNames(parameter.value.source).filter((name) => name !== parameter.name),
+      expressionParameterNames(parameter.value, document.parameters).filter((name) => name !== parameter.name),
     );
   }
-  for (const source of collectExpressionSources(document)) {
-    bump(collectVariableNames(source));
+  for (const owner of collectExpressionOwners(document)) {
+    bump(expressionParameterNames(owner, document.parameters));
   }
   for (const configuration of document.configurations) {
     if (configuration.id === document.activeConfigurationId) continue;
     for (const [owner, source] of Object.entries(configuration.values)) {
-      bump(collectVariableNames(source).filter((name) => name !== owner));
+      const mathDefinition = configuration.mathDefinitions?.[owner];
+      bump(expressionParameterNames({ source, ...(mathDefinition === undefined ? {} : { mathDefinition }) },
+        document.parameters).filter((name) => name !== owner));
     }
   }
   return counts;
@@ -230,6 +234,7 @@ export function parameterUsageCounts(document: PartDocument): ReadonlyMap<string
 
 /** 部品文書のパラメータ表を差し替えて `applyParameters` を通す(全確定関数の最後の一歩)。 */
 function applied(document: PartDocument): ParameterCommandSuccess {
+  if (document.mathParameterSerial !== undefined) document = prepareDocumentMathIdentity(document);
   const outcome = applyParameters(synchronizeConfigurations(document));
   return {
     ok: true,
@@ -271,7 +276,7 @@ export function commitAddParameter(document: PartDocument, draft: Parameter): Pa
   if (hasName(document.parameters, draft.name)) {
     return duplicateName();
   }
-  return applied({ ...document, parameters: addParameter(document.parameters, draft) });
+  return applied({ ...document, parameters: addParameter(document.parameters, draft, document.mathParameterSerial) });
 }
 
 /**
@@ -319,6 +324,9 @@ export function commitRenameParameter(
   }
   if (hasName(document.parameters, to)) {
     return duplicateRename();
+  }
+  if (hasDocumentMath(document) || document.configurations.some(configuration => configuration.mathDefinitions !== undefined)) {
+    return { ok: false, reason: 'requiresMathWorker', message: t('math.rename.requiresWorker') };
   }
   const parameters = renameParameter(document.parameters, from, to);
   const renamed = renameVariableInPartDocument(
@@ -382,9 +390,9 @@ export interface ParameterRow {
 
 /**
  * パラメータ表をパネルの行へ直す(FR-207)。表の並び順(`document.parameters` の順)のまま返す。
- * 値は `document.parameters` にすでに書き戻されている評価値をそのまま使う
- * (`applyParameters` が確定のたびに書き直すので、ここで変数表から引き直さない。
- * 循環しているときは前回の値のまま据え置かれているのも、そのまま画面に出したい振る舞い)。
+ * 現在の文書世代で検証した解析値を優先する。数学Workerの結果は保存文書を別のUndoで
+ * 書き換えないため、保存キャッシュだけでは係数変更後の古い値を表示してしまう。
+ * 評価失敗の理由を出すときだけ前回の値へ戻す。
  */
 export function parameterRowsOf(
   document: PartDocument,
@@ -398,7 +406,7 @@ export function parameterRowsOf(
   return document.parameters.map((parameter) => ({
     name: parameter.name,
     source: parameter.value.source,
-    value: parameter.value.value,
+    value: analysis.variables.get(parameter.name) ?? parameter.value.value,
     unit: parameter.unit,
     description: parameter.description,
     circular: circular.has(parameter.name),

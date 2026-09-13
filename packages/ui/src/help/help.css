@@ -13,6 +13,10 @@
 .pcad-help[open] { display: flex; flex-direction: column; }
 .pcad-help__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--pcad-border); }
 .pcad-help__header h2 { margin: 0; font-size: 16px; }
+.pcad-help__volume h3 { margin: 18px 0 6px; font-size: 13px; }
+.pcad-help__history { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.pcad-help__adjacent { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--pcad-border); }
+.pcad-help__adjacent button { max-width: 48%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .pcad-help__body { display: grid; grid-template-columns: minmax(180px, 28%) minmax(0, 1fr); flex: 1; min-height: 0; }
 .pcad-help__nav { min-width: 0; padding: 12px; overflow-y: auto; border-right: 1px solid var(--pcad-border); }
 .pcad-help__nav label { display: grid; gap: 6px; }

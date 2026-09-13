@@ -2,6 +2,7 @@ import type { OpenCascadeInstance, TopoDS_Face } from 'opencascade.js/dist/openc
 
 import type { CurveSpec, TessellationOptions } from '../types.js';
 import { discretizeEdge, makeCurveEdge, type OcctEdgeHandle } from './makeSketchEdges.js';
+import { continuousCurvePieces } from './continuousCurvePieces.js';
 
 /** OCCT の面と、そのために確保した領域の解放手続き。 */
 export interface OcctFaceHandle {
@@ -71,7 +72,7 @@ export function makePlanarFace(
   };
 
   try {
-    for (const curve of curves) {
+    for (const curve of continuousCurvePieces(curves)) {
       const handle = makeCurveEdge(oc, curve);
       edges.push(handle);
       wireMaker.Add_1(handle.edge);

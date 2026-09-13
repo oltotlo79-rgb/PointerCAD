@@ -25,6 +25,7 @@ export interface ExpressionFieldProps {
   readonly focused: boolean;
   readonly onChange: (source: string) => void;
   readonly onFocus: () => void;
+  readonly onMath?: () => void;
 }
 
 /**
@@ -56,6 +57,7 @@ export function ExpressionField({
   focused,
   onChange,
   onFocus,
+  onMath,
 }: ExpressionFieldProps): React.JSX.Element {
   const inputId = useId();
   const messageId = `${inputId}-message`;
@@ -82,7 +84,7 @@ export function ExpressionField({
       <label className="pcad-field__label" htmlFor={inputId} title={t(field.tooltipKey)}>
         {t(field.labelKey)}
       </label>
-      <input
+      <span className="pcad-field__expression-input"><input
         ref={inputRef}
         id={inputId}
         className="pcad-field__input"
@@ -99,6 +101,9 @@ export function ExpressionField({
           onChange(event.target.value);
         }}
       />
+      {onMath === undefined ? null : <button type="button" className="pcad-button pcad-field__math"
+        title={`${t(field.labelKey)}: ${t('math.open')}`} aria-label={`${t(field.labelKey)}: ${t('math.open')}`}
+        onKeyDown={event => event.stopPropagation()} onClick={onMath}>ƒx</button>}</span>
       <span className="pcad-field__unit">{t(fieldUnitLabelKey(field.unit, lengthUnit))}</span>
       <p
         id={messageId}

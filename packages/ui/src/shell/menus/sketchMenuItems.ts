@@ -50,7 +50,8 @@ import type { ToolMenuItem } from './menuItem.js';
  * (利用者の決定 2026-09-04「図柄付きの畳んだボタンで 1 段に戻す」)。
  * 並びがそのまま一覧の上からの順になる。
  */
-export const SHAPE_MENU_ITEMS: readonly ToolMenuItem<ShapeToolId | 'text'>[] = [
+export const SHAPE_MENU_ITEMS: readonly ToolMenuItem<ShapeToolId | 'text' | 'functionPlot'>[] = [
+  { id: 'functionPlot', labelKey: 'functionPlot.menuTitle', tooltipKey: 'functionPlot.tooltip', Icon: SplineToolIcon },
   { id: 'text', labelKey: 'text.tool', tooltipKey: 'text.tooltip', Icon: TextToolIcon },
   {
     id: 'circle',

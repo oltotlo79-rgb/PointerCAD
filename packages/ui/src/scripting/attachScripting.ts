@@ -2,9 +2,11 @@ import type { AssemblyKernelBridge } from '@pointercad/model';
 import { createScriptExecutor } from '@pointercad/model/scripting';
 import { useAppStore } from '../store/useAppStore.js';
 import { loadScriptLibrary } from './scriptActions.js';
+import {recomputePartWithMath} from '../math/recomputePartWithMath.js';
+import { compileScriptFunction } from './scriptFunctionCompiler.js';
 
 export function attachScripting(bridge: AssemblyKernelBridge): () => void {
-  const executor = createScriptExecutor(bridge);
+  const executor = createScriptExecutor(bridge,undefined,recomputePartWithMath,compileScriptFunction);
   useAppStore.setState({ scriptExecutor: executor });
   void loadScriptLibrary();
   return () => {

@@ -71,7 +71,7 @@ import type {
  * 下絵(`canvases`、FR-332)も版 7 に含め、版 6 以前のファイルは
  * `SCHEMA_MIGRATIONS[6]` がこの 2 欄の省略を空配列で補って読み込む。
  */
-export const PART_SCHEMA_VERSION = 13;
+export const PART_SCHEMA_VERSION = 14;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;
@@ -460,6 +460,7 @@ export type SolidLabelKey =
   | 'emboss'
   | 'threadShaft'
   | 'surface'
+  | 'functionSurface'
   /*
     点集合パターン(FR-425、§0.a-0.42)。直線・円形と同じ理由で配置ごとに連番を分ける
     (`PatternPlacement` に case が 1 つ増えたので、鍵も 1 つ増える)。
@@ -521,6 +522,7 @@ const SOLID_FEATURE_KIND_TABLE = {
   emboss: true,
   threadShaft: true,
   surface: true,
+  functionSurface: true,
   shell: true,
   cut: true,
   importedSolid: true,
@@ -584,6 +586,7 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   emboss: 'エンボス',
   threadShaft: '外ねじ',
   surface: '曲面',
+  functionSurface: '関数曲面',
   pointPattern: '点パターン',
   // くり抜き(FR-418、§2.12。P5 の Could 群、タスク46 で前倒し)。
   shell: 'くり抜き',
@@ -1008,6 +1011,7 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'pattern':
       return [feature.sourceFeatureId];
     case 'surface':
+    case 'functionSurface':
       // 曲面(FR-428)。`face` のときだけ相手の立体を指すが、面を読むだけなので
       // **どの作り方でも消費しない**(§0.a-0.45)。分岐を残してあるのは、面のオフセット・
       // 厚み付け(消費しうる種類)が後で足されたときにここを直すと分かるようにするため。
@@ -1059,6 +1063,7 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'scale':
     case 'sweep':
     case 'surface':
+    case 'functionSurface':
     case 'importedSolid':
     case 'importedMesh':
       // 読み込んだ形の 2 種(FR-802、P6 §2.8)は対象を取らないので加工ではない。

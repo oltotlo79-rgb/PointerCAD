@@ -9,7 +9,7 @@ import {
   baseWorkPlane,
   canRedo as stackCanRedo,
   canUndo as stackCanUndo,
-  collectExpressionSources,
+  collectExpressionOwners,
   type ConstraintDiagnosis,
   type ConstraintTarget,
   DEFAULT_WORK_PLANE_ID,
@@ -297,7 +297,7 @@ export function parameterPatch(
       nonLengthVariables: EMPTY_NON_LENGTH_VARIABLES,
     };
   }
-  const parameterAnalysis = analyzeParameters(document.parameters, collectExpressionSources(document));
+  const parameterAnalysis = analyzeParameters(document.parameters, collectExpressionOwners(document));
   return { parameterAnalysis, nonLengthVariables: parameterAnalysis.nonLengthVariables };
 }
 

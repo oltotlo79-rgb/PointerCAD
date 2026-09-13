@@ -47,6 +47,7 @@ export type {
 } from './types.js';
 export { makeProjection, orderPlaneCurves, planeBasisOf, projectPointToPlane } from './occt/makeProjection.js';
 export { makeSection } from './occt/makeSection.js';
+export { functionCurvePolylines, type FunctionCurveSketchResult } from './occt/functionCurvePolylines.js';
 export {
   hiddenLineView,
   hiddenLineViewForBodies,
@@ -297,6 +298,12 @@ export {
 } from './occt/makeHelix.js';
 // ばね(FR-414、タスク9b)。
 export { makeSpring, makeSpringProfile } from './occt/makeSpring.js';
+export { makeFunctionCurve, type FunctionCurveGeometrySpec, type FunctionCurveGeometryResult } from './occt/makeFunctionCurve.js';
+export { makeFunctionSurface, type FunctionSurfaceGeometryResult } from './occt/makeFunctionSurface.js';
+export { makeFunctionSurfaceBodies } from './occt/makeFunctionSurfaceBodies.js';
+export type { FunctionSurfaceBodies, FunctionSurfaceBody } from './occt/classifyFunctionSurface.js';
+export { MAX_FUNCTION_SURFACE_FACES, MAX_FUNCTION_SURFACE_VERTICES, type FunctionSurfaceGeometrySpec, type FunctionSurfaceInput } from './occt/functionSurfaceGeometrySpec.js';
+export { clipFunctionShape, FUNCTION_CLIP_BOUND_TOLERANCE, type FunctionClipBox, type FunctionClipResult } from './occt/clipFunctionShape.js';
 // 剛体変換(パターン、FR-411、FR-412、タスク9)。
 export {
   IDENTITY_TRANSFORM,

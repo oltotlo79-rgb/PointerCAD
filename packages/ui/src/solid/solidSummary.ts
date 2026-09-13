@@ -15,7 +15,8 @@
  * (derived)を要するためタスク29b がここへ追記する(この時点ではまだ空)。
  */
 
-import { composeExpressionSource, evaluateExpression, expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
+import { expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
+import { deriveSpringValue } from './springExpressions.js';
 import { setSweepGuide, sweepGuideDisplayCandidates, sweepGuideValue } from './sweepGuideChoices.js';
 import {
   consumedBodyIds,
@@ -401,6 +402,7 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   mirror: 'toolbar.solid.mirror',
   sweep: 'toolbar.solid.sweep',
   surface: 'toolbar.solid.surface',
+  functionSurface: 'functionSurface.name',
   draft: 'toolbar.machining.draft',
   rib: 'toolbar.machining.rib',
   emboss: 'toolbar.machining.emboss',
@@ -1998,6 +2000,8 @@ export function summarizeSolid(
         subShapeCounts: parts.subShapeCounts,
       };
     }
+    case 'functionSurface':
+      return { ...base, fields: [], toggles: [], choices: [], references: [], subShapeCounts: [] };
     case 'importedSolid':
       /*
         読み込んだ形(FR-802、P6 §2.8、タスク20)。履歴を持たないので式の欄は1つも無い
@@ -2013,7 +2017,7 @@ export function summarizeSolid(
           ...importedSourceReferences(feature.id, feature.source),
           {
             labelKey: 'propertyPanel.importedBodyKind',
-            name: feature.bodyKind === 'solid' ? 'Solid' : 'Shell',
+            name: feature.bodyKind === 'solid' ? 'Solid' : feature.bodyKind === 'mixed' ? 'Solid + Shell' : 'Shell',
             elementId: feature.id,
           },
         ],
@@ -2120,6 +2124,8 @@ export function setSolidField(
       return key === 'threadLength' ? { ...feature, length: value } : feature;
     case 'surface':
       return setSurfaceField(feature, key, value);
+    case 'functionSurface':
+      return feature;
     case 'shell':
       return key === 'shellThickness' ? { ...feature, thickness: value } : feature;
     case 'cut':
@@ -2260,24 +2266,6 @@ const SPRING_DERIVED_FIELD_KEY: Readonly<Record<SpringDerived, SolidFieldKey>> =
 };
 
 /**
- * 式 `source` を評価する(`solidCommands.ts` の `evaluatedExpressionValue` と同じ考え方。
- * 互いに独立した純関数のパッケージなので同じ小さな式をそれぞれに書く)。失敗しても止めず、
- * source は残して値 0 で作る(FR-504「止めずに警告する」)。
- *
- * `variables` はパラメータ表(FR-207)の変数表。渡さなければ空として扱う(§0.a-9 の申し送り①、
- * P4b タスク22a。ピッチ・巻数にパラメータ名を書いても、ここへ通さないと自動生成した式
- * `板厚*4` の `板厚` が読めず読み取り専用の全長欄だけ `= 0` になっていた)。
- */
-function evaluatedExpressionValue(
-  source: string,
-  variables?: ReadonlyMap<string, number>,
-  options: Omit<EvaluateOptions, 'variables'> = {},
-): ExpressionValue {
-  const result = evaluateExpression(source, { ...options, variables });
-  return result.ok ? result.value : { source, value: 0, display: '0' };
-}
-
-/**
  * ばねの全長・ピッチ・巻数のうち、`derived` が指す1つを他の2つから自動生成した式で
  * 計算し直す(§0.a-0.30)。`solidCommands.ts` の `commitSpring` が使う式(タスク25b で
  * 固定済み)と同じものを、欄を書き換えた直後・求める値を切り替えた直後の書き戻しにも使う。
@@ -2295,21 +2283,21 @@ function resolveSpringDerivedFields(
   switch (derived) {
     case 'length':
       return {
-        length: evaluatedExpressionValue(composeExpressionSource(pitch.source, turns.source, '*'), variables, options),
+        length: deriveSpringValue(pitch, turns, '*', variables, options),
         pitch,
         turns,
       };
     case 'pitch':
       return {
         length,
-        pitch: evaluatedExpressionValue(composeExpressionSource(length.source, turns.source, '/'), variables, options),
+        pitch: deriveSpringValue(length, turns, '/', variables, options),
         turns,
       };
     case 'turns':
       return {
         length,
         pitch,
-        turns: evaluatedExpressionValue(composeExpressionSource(length.source, pitch.source, '/'), variables, options),
+        turns: deriveSpringValue(length, pitch, '/', variables, options),
       };
   }
 }

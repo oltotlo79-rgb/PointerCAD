@@ -1,4 +1,5 @@
 /** 部品 JSON: 座標と点の参照。documentJson.ts への逆向きの依存を持たない。 */
+import {readFunctionPointReference,serializeFunctionPointReference} from './functionPoint.js';
 
 import {
   type Checked,
@@ -29,6 +30,7 @@ import {
 const COORDINATE_MODES: readonly CoordinateInput['mode'][] = ['absolute', 'relative', 'polar'];
 
 const POINT_REFERENCE_KINDS: readonly PointReference['kind'][] = [
+  'functionPoint',
   'origin',
   'previous',
   'point',
@@ -41,6 +43,7 @@ const POINT_REFERENCE_KINDS: readonly PointReference['kind'][] = [
 
 export function serializePointReference(reference: PointReference): PointReference {
   switch (reference.kind) {
+    case 'functionPoint': return serializeFunctionPointReference(reference);
     case 'origin':
       return { kind: 'origin' };
     case 'previous':
@@ -133,6 +136,7 @@ function readPointReferenceRecord(
     return kind;
   }
   switch (kind.value) {
+    case 'functionPoint': return readFunctionPointReference(record,path);
     case 'origin':
       return { ok: true, value: { kind: 'origin' } };
     case 'previous':

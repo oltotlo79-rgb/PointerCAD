@@ -26,6 +26,7 @@
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { selectedSweepGuide } from './sweepGuideChoices.js';
+import { SKETCH_PATH_KINDS } from './sketchPathKinds.js';
 import {
   appendSolid,
   DEFAULT_DRAFT_ANGLE_DEGREES,
@@ -173,18 +174,7 @@ const POINT_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['point', 'point
  * 面(`face`)と点(`point` / `pointArray`)以外はすべて線を持つ。複写(`copy`)だけは
  * 「元の要素をまとめて複製したもの」で 1 本の線として指せないため外す。
  */
-const CURVE_KINDS: ReadonlySet<SketchFeature['kind']> = new Set([
-  'line',
-  'arc',
-  'rectangle',
-  'polygon',
-  'slot',
-  'ellipse',
-  'spline',
-  'offset',
-  'projectedCurve',
-  'planeSection',
-]);
+const CURVE_KINDS = SKETCH_PATH_KINDS;
 
 /** 選択から最初のスケッチの面を拾う(スイープの断面・エンボスの輪郭)。 */
 function selectedSketchFace(

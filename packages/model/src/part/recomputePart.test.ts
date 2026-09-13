@@ -151,6 +151,27 @@ function fakeBridge(overrides: Partial<KernelBridge> = {}): KernelBridge {
 }
 
 describe('最終巡回の通知(P7 11a)', () => {
+  it.each(['missing-worker', 'worker-error'] as const)('数学計算部が%sなら保存キャッシュをカーネルへ送らない', async mode => {
+    const source = createEmptyPartDocument();
+    const value: ExpressionValue = { source: '2', value: 999, display: '999', mathDefinition: {
+      format: 'pointercad-math/1', source: '2', inputNotation: 'text', angleUnit: 'degree', expression: { kind: 'number', decimal: '2' },
+    } };
+    const document: PartDocument = { ...source, parameters: [{ name: 'A', mathId: 'A', value, unit: 'mm', description: '' }] };
+    const recomputeSolids = vi.fn(() => Promise.resolve(EMPTY_SOLID_OUTCOME));
+    const tessellateSketchFaces = vi.fn(() => Promise.resolve(EMPTY_SKETCH_OUTCOME));
+    const onResolved = vi.fn<NonNullable<PartRecomputeOptions['onResolved']>>();
+    const math: PartRecomputeOptions['math'] = mode === 'missing-worker' ? undefined : {
+      identity: { documentId: document.id, documentVersion: 1 }, isCurrent: () => true,
+      client: { evaluate: request => Promise.resolve({ status: 'worker-error', identity: request.identity }) },
+    };
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids, tessellateSketchFaces }), { math, onResolved });
+    expect(result.cancelled).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.bodies).toEqual([]);
+    expect(recomputeSolids).not.toHaveBeenCalled();
+    expect(tessellateSketchFaces).not.toHaveBeenCalled();
+    expect(onResolved).not.toHaveBeenCalled();
+  });
   it('完了時に 1 回だけ通知し、最終スケッチと同じ参照を渡す', async () => {
     const { document } = oneExtrude();
     const onResolved = vi.fn<NonNullable<PartRecomputeOptions['onResolved']>>();

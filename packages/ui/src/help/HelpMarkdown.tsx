@@ -6,6 +6,9 @@ export interface HelpMarkdownProps {
   readonly onTopic: (id: string, anchor: string) => void;
   readonly onAnchor: (anchor: string) => void;
   readonly images?: Readonly<Record<string, string>>;
+  /** Static manual pages use real links, sharing the same parsing and escaping as the app. */
+  readonly topicHref?: (id: string, anchor: string) => string;
+  readonly headingPrefix?: string;
 }
 
 export function helpHeadingId(text: string): string {
@@ -13,7 +16,7 @@ export function helpHeadingId(text: string): string {
 }
 
 /** 同梱本文で使用するMarkdownをReactへ変換する。生HTMLをDOMへ挿入しない。 */
-export function HelpMarkdown({ source, onTopic, onAnchor, images = {} }: HelpMarkdownProps): React.JSX.Element {
+export function HelpMarkdown({ source, onTopic, onAnchor, images = {}, topicHref, headingPrefix = 'help-' }: HelpMarkdownProps): React.JSX.Element {
   const inline = (text: string, depth = 0): ReactNode => {
     if (depth > 12) return text;
     const pieces: ReactNode[] = []; let offset = 0;
@@ -27,6 +30,7 @@ export function HelpMarkdown({ source, onTopic, onAnchor, images = {} }: HelpMar
         const link = resolveHelpLink(match[6] ?? ''); const label = inline(match[5], depth + 1);
         if (link === null) node = label;
         else if (link.kind === 'external') node = <a href={link.href} target="_blank" rel="noopener noreferrer">{label}</a>;
+        else if (topicHref) node = <a href={link.kind === 'topic' ? topicHref(link.id, link.anchor) : `#${headingPrefix}${link.anchor}`}>{label}</a>;
         else node = <button className="pcad-help__link" type="button" onClick={() => link.kind === 'topic' ? onTopic(link.id, link.anchor) : onAnchor(link.anchor)}>{label}</button>;
       } else if (match[7] !== undefined) node = <em>{inline(match[7], depth + 1)}</em>;
       else if (match[9] !== undefined) {
@@ -65,7 +69,7 @@ export function HelpMarkdown({ source, onTopic, onAnchor, images = {} }: HelpMar
       const heading = /^(#{1,6})\s+(.+?)\s*#*$/u.exec(line);
       if (heading !== null) {
         const text = heading[2] ?? ''; const base = helpHeadingId(text); const count = headings.get(base) ?? 0; headings.set(base, count + 1);
-        nodes.push(createElement(`h${heading[1]?.length ?? 1}`, { key, id: `help-${base}${count === 0 ? '' : `-${count}`}` }, inline(text)));
+        nodes.push(createElement(`h${heading[1]?.length ?? 1}`, { key, id: `${headingPrefix}${base}${count === 0 ? '' : `-${count}`}` }, inline(text)));
         i += 1; continue;
       }
       if (/^\s*(?:[-*_]\s*){3,}$/u.test(line)) { nodes.push(<hr key={key} />); i += 1; continue; }

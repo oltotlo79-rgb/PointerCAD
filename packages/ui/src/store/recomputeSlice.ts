@@ -128,6 +128,10 @@ export const createRecomputeSlice: StateCreator<
           : (result.appearanceMatches ?? []),
         partErrors: result.errors,
         cacheHits: result.cacheHits,
+        ...(result.parameterAnalysis === undefined || result.cancelled || result.generation !== state.requestedGeneration
+          || document.id !== state.document.id || document.parameters !== state.document.parameters ? {} : {
+            parameterAnalysis: result.parameterAnalysis, nonLengthVariables: result.parameterAnalysis.nonLengthVariables,
+          }),
         documentName: sketch.name,
         featureNames: sketch.features.map((feature) => feature.name),
         isComputing: false,

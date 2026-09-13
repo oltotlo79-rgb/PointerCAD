@@ -1,4 +1,10 @@
 {
+  "functionSurface.name": "関数曲面",
+  "functionSurface.formula": "関数の式",
+  "functionSurface.rangeX": "Xの描画範囲",
+  "functionSurface.rangeY": "Yの描画範囲",
+  "functionSurface.rangeZ": "Zの描画範囲",
+  "functionSurface.tolerance": "近似の精度",
   "solidError.noFace": "面が選ばれていません。先に面を張ってください。",
   "solidError.noBody": "立体が選ばれていません。",
   "solidError.needTwoBodies": "立体を 2 つ選んでください。",

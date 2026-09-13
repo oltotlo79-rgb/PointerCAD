@@ -25,6 +25,7 @@ import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import type { SurfaceResult } from '../occt/makeSurface.js';
 import { makeSurface } from '../occt/makeSurface.js';
+import { makeFunctionSurfaceBody } from '../occt/makeFunctionSurfaceBody.js';
 import { makeSweep } from '../occt/makeSweep.js';
 import { makeThinExtrude } from '../occt/makeThinExtrude.js';
 import { makeThreadHole, makeThreadShaft } from '../occt/makeThread.js';
@@ -645,6 +646,10 @@ function createStepSolid(
   failedLabels: ReadonlyMap<string, string>,
 ): StepSolidResult {
   switch (spec.kind) {
+    case 'functionSurface': {
+      const result = makeFunctionSurfaceBody(oc, spec.geometry);
+      return noMarks(result, result.volume, result.area);
+    }
     case 'sheetBody': {
       const result = makeSheetMetalBody(oc, spec);
       return noMarks(result, result.volume);
@@ -986,6 +991,7 @@ export async function recomputeSolids(
       const reused = sheetBodies.copy(step.step);
       const stepResult = reused === null ? createStepSolid(oc, step.step, options, cache, failedLabels) : noMarks(reused, reused.volume);
       const meshOptions = resolveTessellationOptions(options, step);
+      const meshStarted = performance.now();
       const entry = buildCachedSolid(
         oc,
         step.id,
@@ -996,6 +1002,7 @@ export async function recomputeSolids(
         stepResult.volume,
         stepResult.area,
       );
+      if (step.step.kind === 'functionSurface') console.debug('[pcad:function-phase]', JSON.stringify({ phase: 'display-mesh', elapsedMs: performance.now() - meshStarted }));
       cache.set(step.key, entry);
       sheetBodies.remember(step.step, step.key);
       if (step.visible) {

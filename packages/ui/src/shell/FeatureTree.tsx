@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { DocumentNameSearch } from './DocumentNameSearch.js';
+import { partNameSearchEntries } from './nameSearch.js';
 import { SheetBaseIcon, SheetFlangeIcon, SheetLineBendIcon, SheetReliefIcon } from './icons.js';
 
 import {
@@ -150,6 +152,7 @@ const KIND_ICONS: Readonly<
   slot: SlotToolIcon,
   ellipse: EllipseToolIcon,
   spline: SplineToolIcon,
+  functionCurve: SplineToolIcon,
   offset: OffsetToolIcon,
   // 複製(FR-324)は配置ごとに絵を変える。どの複製かが木の絵だけで分かるようにするため。
   // `copy` そのものは配置の分からない総称なので、いちばん素直な「複写」の絵にする。
@@ -202,6 +205,7 @@ const KIND_ICONS: Readonly<
   emboss: EmbossIcon,
   threadShaft: ThreadShaftIcon,
   surface: SurfaceIcon,
+  functionSurface: SurfaceIcon,
   // 点パターン(FR-425)。直線・円形パターンと同じ絵では見分けが付かない。
   pointPattern: PointPatternIcon,
   // くり抜き(FR-418、P5 タスク46)。タスク55 で道具と同じ図柄へ差し替えた。
@@ -1087,6 +1091,8 @@ export function FeatureTree(): React.JSX.Element {
   return (
     <section className="pcad-panel pcad-panel--left">
       <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
+      <DocumentNameSearch key={part.id} helpTopic="feature-tree" getEntries={() => partNameSearchEntries(sections, sketchGroups)}
+        onSelect={entry => { activateRowSketch(entry.sketchId); useAppStore.getState().setSelection(entry.selectionId === null ? [] : [entry.selectionId]); }} />
       <div className="pcad-panel__body">
         {rowCount === 0 ? (
           <div className="pcad-panel__empty">

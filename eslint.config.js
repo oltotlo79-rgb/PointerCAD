@@ -80,11 +80,56 @@ export default tseslint.config(
     },
   },
   {
+    files: ['packages/model/src/kernelBridge/*Contracts.ts'],
+    rules: {
+      'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', {
+        selector: "ImportDeclaration[importKind!='type']",
+        message: 'カーネルとの契約は型だけを参照し、変換や通信の実行処理を持たせないでください（レビューF08）。',
+      }, {
+        selector: 'FunctionDeclaration, ClassDeclaration, VariableDeclaration',
+        message: 'カーネルとの契約へ実行処理を戻さず、変換・通信の担当モジュールへ置いてください（レビューF08）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/kernel/src/occt/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'CallExpression[callee.name="keep"] > CallExpression.arguments[callee.property.name="get"]',
+        message: 'OCCT Handle.get()は借用です。keep(handle)で所有者を保持し、borrowHandle(handle)でdeleteを持たない参照を読んでください（rules/06 §10.91）。',
+      }, {
+        selector: 'CallExpression[callee.property.name="keep"] > CallExpression.arguments[callee.property.name="get"]',
+        message: 'OCCT Handle.get()の借用先を解放一覧へ登録しないでください。borrowHandleを使います（rules/06 §10.91）。',
+      }],
+    },
+  },
+  {
     files: ['e2e/**/*.ts'],
     rules: {
       'no-restricted-syntax': ['error', {
         selector: 'CallExpression[callee.name="Number"] > MemberExpression.arguments > CallExpression.object[callee.name="getComputedStyle"]',
         message: 'CSSの計算済み長さにはpx等の単位が付くため、Number.parseFloatで読む（rules/06）。',
+      }, {
+        selector: 'ImportDeclaration[source.value=/\\.json$/]',
+        message: 'E2EのJSONはNodeのimport属性差を避けてreadFileSyncで読み、操作ラベルはuiMessageの共通入口を使ってください（rules/06 §10.91）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx', '**/*.worker.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: "ImportDeclaration[importKind!='type'][source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
+        message: '画面の実行時は数学のcontracts/client入口を使い、計算処理はWorkerへ依頼してください。型だけならimport typeを使います（レビューF09）。',
+      }, {
+        selector: "ImportExpression[source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
+        message: '画面から数学の計算部を動的に読み込まず、計算Workerへ依頼してください（レビューF09）。',
+      }, {
+        selector: ":matches(ExportNamedDeclaration, ExportAllDeclaration)[exportKind!='type'][source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
+        message: '画面用の入口から数学の計算部を再公開せず、通信に必要な型だけを公開してください（レビューF09）。',
       }],
     },
   },

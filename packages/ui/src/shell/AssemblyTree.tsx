@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { DocumentNameSearch } from './DocumentNameSearch.js';
+import { assemblyNameSearchEntries } from './nameSearch.js';
 
 import {
   findComponent,
@@ -364,6 +366,8 @@ export function AssemblyTree(): React.JSX.Element {
   return (
     <section className="pcad-panel pcad-panel--left">
       <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
+      <DocumentNameSearch key={assembly.id} helpTopic="assembly" getEntries={() => assemblyNameSearchEntries(sections)}
+        onSelect={entry => useAppStore.getState().setSelection(entry.selectionId === null ? [] : [entry.selectionId])} />
       <div className="pcad-panel__body">
         <ul className="pcad-tree">
           <li>

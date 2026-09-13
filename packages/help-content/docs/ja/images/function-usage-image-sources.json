@@ -1,0 +1,53 @@
+{
+  "format": "pointercad-manual-image-sources/1",
+  "gate": "codex-p8-tables-function-sketch-measure-e2e1",
+  "images": [
+    {
+      "filename": "function-sweep.png",
+      "sha256": "5ed911df6b2e6044c806b5ce07cddb0f0ba35fb10f7fcc71cae63a6b92d72e12",
+      "fixture": "function-plot-ADD-FUNCTION-関数曲線の必須XYZ範囲・確認・数学入力・保存再編集・Undo-functional/function-sweep.pcad",
+      "fixtureSha256": "da6f7b2829a522650f9396a44bba6e47ecc4e199b28745d36e0eea4ab7989762",
+      "wheelDelta": -2900,
+      "sourceCapture": "scratchpad/p8-next-implementation/evidence/function-usage-manual-20260913-2",
+      "sourceCaptureSha256": "ce07e9696575758706c96207ec6ecb12f4882cf7c21fbb17d9ea374aa9f710f3",
+      "sourceRunCompleted": false,
+      "indexSha256": "b918faa3488ef651879a401a119ce6af70d6ebd5440d93805c94925d4ea99042",
+      "appScriptHashes": {
+        "/assets/index-BYOcZtEW.js": "e953aec006a8d3e86bf82bb58e8caacda24122c77c3eb5f2b92e502dae59b851",
+        "/assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+        "/assets/messages-CAL89ecS.js": "655cbd7f2ec4e39ef1bd8c87b3fae6a35dcdbbdcde907387fb31ad1703a735a5",
+        "/assets/pcad-core-BDMmUc7e.js": "9d8c163884ac2ce792dba3381b50921ab48246b224bffdfadf2e469f83e2e3f0",
+        "/assets/vendor-react-CkYA7T0c.js": "ecfa299460fe7a6e313abce9742a938a6fba02d239dc579bdb94059837df2b6f",
+        "/assets/partFile-lJUXUYTb.js": "30e52a93eaf6977299a43c7d0769fa3c195db8e79857ce2328e6a294af14a6f0",
+        "/assets/icons-CQ0-Fmer.js": "fe33542f6295bec71de48ed8f0b52bf73d62713f3c0ad4c952f0c7bf6a83560d",
+        "/assets/index-kqAMH-Ab.css": "9b0addef98d053911a0c86bbddd4e0ccfe9961bfb0013ee836eecf49f00a5c37"
+      },
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    },
+    {
+      "filename": "function-direction-measure.png",
+      "sha256": "c1777a31c82b19d17f4aef3f5b003aafd6830af727019f1f0f94849e92d77582",
+      "fixture": "function-plot-ADD-FUNCTION-0fbaa-線上の点を指定・選択し、保存再開・再編集・Undoする-functional/function-direction-undo-edit.pcad",
+      "fixtureSha256": "67f929c2d4d0530e841353f37bb4926cf84abd2fb5dbc6e6b5ec876a712f01a6",
+      "wheelDelta": -2000,
+      "sourceCapture": "scratchpad/p8-next-implementation/evidence/function-usage-manual-20260913-4",
+      "sourceCaptureSha256": "aa647430c90e1cbaa09388c8add8fc54bd2b0066445bd1bfe95333c04b968253",
+      "sourceRunCompleted": true,
+      "indexSha256": "b918faa3488ef651879a401a119ce6af70d6ebd5440d93805c94925d4ea99042",
+      "appScriptHashes": {
+        "/assets/index-BYOcZtEW.js": "e953aec006a8d3e86bf82bb58e8caacda24122c77c3eb5f2b92e502dae59b851",
+        "/assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+        "/assets/messages-CAL89ecS.js": "655cbd7f2ec4e39ef1bd8c87b3fae6a35dcdbbdcde907387fb31ad1703a735a5",
+        "/assets/pcad-core-BDMmUc7e.js": "9d8c163884ac2ce792dba3381b50921ab48246b224bffdfadf2e469f83e2e3f0",
+        "/assets/vendor-react-CkYA7T0c.js": "ecfa299460fe7a6e313abce9742a938a6fba02d239dc579bdb94059837df2b6f",
+        "/assets/partFile-lJUXUYTb.js": "30e52a93eaf6977299a43c7d0769fa3c195db8e79857ce2328e6a294af14a6f0",
+        "/assets/icons-CQ0-Fmer.js": "fe33542f6295bec71de48ed8f0b52bf73d62713f3c0ad4c952f0c7bf6a83560d",
+        "/assets/index-kqAMH-Ab.css": "9b0addef98d053911a0c86bbddd4e0ccfe9961bfb0013ee836eecf49f00a5c37"
+      },
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    }
+  ],
+  "note": "スイープの個別撮影は成功。後続の長いパスによる読込失敗は別記録として保持し、短い同一内容の写しから測定画像を撮影した。リリース用全資産認証はP12/P13で実施する。"
+}

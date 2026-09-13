@@ -39,6 +39,24 @@ beforeEach(() => {
   });
 });
 
+describe('Workerで検証した数学係数の表示値', () => {
+  it.each(['current', 'cancelled', 'generation', 'parameters', 'document'] as const)(
+    '%sの結果は現在の文書と一致する場合だけ係数表へ反映する', (scenario) => {
+      const state = useAppStore.getState(), document = state.document;
+      const previous = state.parameterAnalysis;
+      const analysis = { ...previous, variables: new Map([['検証済み', 42]]), nonLengthVariables: new Set(['検証済み']) };
+      state.recordRecomputeRequest(7);
+      const target = scenario === 'parameters' ? { ...document, parameters: [...document.parameters] }
+        : scenario === 'document' ? { ...document, id: 'another-document' } : document;
+      state.applyRecompute(target, { ...resultFor(document), parameterAnalysis: analysis,
+        generation: scenario === 'generation' ? 6 : 7, cancelled: scenario === 'cancelled' });
+      expect(useAppStore.getState().parameterAnalysis).toBe(scenario === 'current' ? analysis : previous);
+      expect(useAppStore.getState().document).toBe(document);
+      if (scenario === 'current') expect(useAppStore.getState().nonLengthVariables).toBe(analysis.nonLengthVariables);
+    },
+  );
+});
+
 describe('文書の変化に応じた再計算の予約(要件§6.3)', () => {
   it('つないだ直後に今の文書を1回計算し、結果を反映する', async () => {
     const fake = createFakeRecompute();

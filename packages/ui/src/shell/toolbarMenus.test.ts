@@ -177,8 +177,9 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
     }
     expect(expanded(null)).toEqual(rows.map(() => false));
   });
-  it('「作図」には文字とP4の8つの形が並ぶ(3点の円弧を含む)', () => {
+  it('「作図」には関数曲線・文字とP4の8つの形が並ぶ(3点の円弧を含む)', () => {
     expect(SHAPE_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'functionPlot',
       'text',
       'circle',
       'twoPointArc',

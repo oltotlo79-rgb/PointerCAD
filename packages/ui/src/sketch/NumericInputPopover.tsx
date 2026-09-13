@@ -5,6 +5,7 @@ import { surfaceHelpTopic } from '../solid/surfaceHelpTopic.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { applyNumericTransition } from './commitToStore.js';
 import { ExpressionField } from './ExpressionField.js';
+import { NumericMathDialog, type NumericMathTarget } from './NumericMathDialog.js';
 import { coordinateModesFor } from './freeSketch.js';
 import {
   applyNumericInputKey,
@@ -261,6 +262,7 @@ export function NumericInputPopover({
   viewportWidth,
   viewportHeight,
 }: NumericInputPopoverProps): React.JSX.Element | null {
+  const [mathTarget, setMathTarget] = useState<NumericMathTarget | null>(null);
   const state = useAppStore((store) => store.numericInput?.toolId === 'text' ? null : store.numericInput);
   const anchor = useAppStore((store) => store.numericInputAnchor);
   // 3D スケッチ(FR-330)では極座標の指定方法を隠す(§0.a-0.5、タスク14)。
@@ -341,7 +343,7 @@ export function NumericInputPopover({
   };
 
   return (
-    <div
+    <><div
       className="pcad-popover"
       data-help-topic={surfaceHelpTopic(state.toolId)}
       style={{ left: `${String(position.left)}px`, top: `${String(position.top)}px` }}
@@ -360,6 +362,16 @@ export function NumericInputPopover({
       }}
     >
       <div className="pcad-popover__title">{t(STEP_TITLE_KEYS[state.step])}</div>
+      {evaluation.carriedError === undefined ? null : (
+        <p className="pcad-field__error" role="alert">{evaluation.carriedError.message}</p>
+      )}
+      {state.previousStage === undefined ? null : (
+        <button type="button" className="pcad-button"
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}
+          onClick={() => { if (state.previousStage !== undefined) update(state.previousStage); }}>
+          {t('numericInput.previousStage')}
+        </button>
+      )}
 
       {coordinateStep ? (
         <div
@@ -399,6 +411,8 @@ export function NumericInputPopover({
               result={evaluation.results[index]}
               lengthUnit={lengthUnit}
               focused={index === state.focusedIndex}
+              onMath={() => { const current = useAppStore.getState(); setMathTarget({ document: current.document,
+                documentVersion: current.documentVersion, input: state, index, lengthUnit }); }}
               onChange={(source) => {
                 update(reduceNumericInput(state, { type: 'edit', index, source }));
               }}
@@ -509,5 +523,6 @@ export function NumericInputPopover({
         </button>
       </div>
     </div>
+    {mathTarget === null ? null : <NumericMathDialog target={mathTarget} onClose={() => setMathTarget(null)} />}</>
   );
 }

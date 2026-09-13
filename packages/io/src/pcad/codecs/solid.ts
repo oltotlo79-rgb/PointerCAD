@@ -1,5 +1,6 @@
 /** 部品 JSON: 立体フィーチャーの振り分け。documentJson.ts への逆向きの依存を持たない。 */
 import { readSheetBaseFeature, readSheetFlangeFeature, readSheetBendFeature, readSheetReliefFeature, serializeSheetMetalFeature } from './sheetMetal.js';
+import { readFunctionSurfaceFeature, serializeFunctionSurfaceFeature } from './functionSurface.js';
 
 import {
   type Checked,
@@ -107,6 +108,7 @@ export function serializeSolidFeature(feature: SolidFeature): SolidFeature {
     case 'emboss': return serializeEmbossFeature(feature);
     case 'threadShaft': return serializeThreadShaftFeature(feature);
     case 'surface': return serializeSurfaceFeature(feature);
+    case 'functionSurface': return serializeFunctionSurfaceFeature(feature);
     case 'shell': return serializeShellFeature(feature);
     case 'cut': return serializeCutFeature(feature);
     case 'importedSolid': return serializeImportedSolidFeature(feature);
@@ -177,6 +179,8 @@ export function readSolidFeature(value: unknown, path: string): Checked<SolidFea
       return readThreadShaftFeature(record.value, path, base.value);
     case 'surface':
       return readSurfaceFeature(record.value, path, base.value);
+    case 'functionSurface':
+      return readFunctionSurfaceFeature(record.value, path, base.value);
     // P5 の Could 群のうちタスク46 が前倒しした 1 種(FR-418)。
     case 'shell':
       return readShellFeature(record.value, path, base.value);

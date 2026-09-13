@@ -73,6 +73,7 @@ export function checkExportBodyKind(
     case 'solid':
       return null;
     case 'shell':
+    case 'mixed':
       return acceptsShellBody(format) ? null : 'shellNotSupported';
     case 'mesh':
       return acceptsMeshBody(format) ? null : 'meshNotSupported';

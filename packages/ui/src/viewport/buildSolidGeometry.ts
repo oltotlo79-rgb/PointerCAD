@@ -146,9 +146,8 @@ export function solidEmphasisOf(
 /**
  * 描く価値があるボディか。
  *
- * `isValid` は「中身のある立体として受け取れたか」で、表示側が毎回自分で確かめずに
- * 済ませるための欄(model の kernelBridge.ts)。ここで 1 回だけ見て、立体になっていない
- * ものは描かない。三角形も稜線も無いものは、描いても何も見えないうえに空の入れ物を
+ * `isValid` は描画できるCAD形状かを示す(model の kernelBridge.ts)。閉じた立体だけでなく、
+ * 体積0の有効な開面も描く。無効な形や、三角形も稜線も無いものは空の入れ物を
  * 1 つ増やすだけなので同じく外す(FR-504 の理由表示は失敗の一覧が受け持つ)。
  */
 function isDrawableBody(body: SolidBodyWithSubShapes): boolean {

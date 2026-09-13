@@ -1,5 +1,6 @@
 /** 実Workerを1つの入口で配線する。プレビューの所有先は文書本体と分け、必ず返す。 */
-import { recomputePart, recomputeSheetFlat, type AssemblyKernelBridge } from '@pointercad/model';
+import { recomputeSheetFlat, type AssemblyKernelBridge } from '@pointercad/model';
+import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 import type { SheetMetalComputer, SheetMetalFlatComputer } from '../store/sheetMetalSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { createSheetOutputComputer } from './sheetOutputComputer.js';

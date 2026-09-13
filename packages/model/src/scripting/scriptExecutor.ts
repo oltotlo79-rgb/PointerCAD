@@ -1,6 +1,8 @@
 import type { AssemblyKernelBridge } from '../kernelBridge.js';
 import type { ImportedShapeBytes } from '../part/resolvePart.js';
 import type { PartDocument } from '../part/types.js';
+import {recomputePart} from '../part/recomputePart.js';
+import type {ScriptFunctionCompiler} from './scriptFunctionCommands.js';
 import type { LengthUnit } from '../units/length.js';
 import { createScriptSnapshot } from './scriptSnapshot.js';
 import { sha256ScriptSource, validateScriptProgram } from './scriptModules.js';
@@ -21,7 +23,7 @@ export type ScriptRunResult =
   | { readonly ok: false; readonly error: ScriptFailure; readonly console: readonly ScriptConsoleLine[] };
 export type ScriptExecutor = (request: ScriptRequest, signal: AbortSignal, onPhase: (phase: ScriptPhase) => void) => Promise<ScriptRunResult>;
 
-export function createScriptExecutor(bridge: AssemblyKernelBridge, factory?: ScriptWorkerFactory): ScriptExecutor {
+export function createScriptExecutor(bridge: AssemblyKernelBridge, factory?: ScriptWorkerFactory, calculate:typeof recomputePart=recomputePart,compile?:ScriptFunctionCompiler): ScriptExecutor {
   return async (request, signal, onPhase) => {
     const controller = new AbortController(); let timedOut = false;
     const cancel = (): void => { controller.abort(); };
@@ -52,7 +54,7 @@ export function createScriptExecutor(bridge: AssemblyKernelBridge, factory?: Scr
       const sources = new Map(request.program.modules.map((module) => [module.name, module.source])); sources.set('user-script.js', request.program.source);
       const prepared = await prepareScriptTransaction({ requestId: request.requestId, document: request.document, commandNamespace,
         commands: result.commands, references: snapshot.references, lengthUnit: request.lengthUnit, sources, importedShapes: request.importedShapes, placeDocument: request.placeDocument },
-      bridge, () => controller.signal.aborted);
+      bridge, () => controller.signal.aborted,undefined,calculate,compile);
       if (controller.signal.aborted) { if (prepared.ok) await prepared.prepared.release(); return stopped(); }
       if (!prepared.ok) return { ...prepared, console: result.console };
       return { ok: true, prepared: prepared.prepared, console: result.console, commandCount: result.commands.length,

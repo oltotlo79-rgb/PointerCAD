@@ -1,8 +1,10 @@
 /** 書き出し中だけ実形状を専用所有先で保持する。プレビューのLRU残存には依存しない。 */
 import { writeDxfDocument } from '@pointercad/io';
-import { createSheetFlatSteps, recomputePart, recomputeSheetFlat, resolveSheetFlatOutline, sheetFlatBendLines, sheetFlatDxfEntities,
+import { createSheetFlatSteps, recomputeSheetFlat, resolveSheetFlatOutline, sheetFlatBendLines, sheetFlatDxfEntities,
   type AssemblyKernelBridge, type ImportedShapeBytes, type PartDocument, type ResolvedSheetBody,
   type ResolvedSolidStep, type SheetUnfoldDefinition } from '@pointercad/model';
+
+import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 
 export type SheetOutputFormat = 'flatDxf' | 'flatStep' | 'foldedStep';
 export interface SheetOutputRequest {

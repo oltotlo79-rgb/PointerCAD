@@ -751,6 +751,8 @@ function pushResolvedCurves(
  * 渡されなければ基準の 3 面だけを引き、任意平面の id は `missingBase` で断る。
  */
 export interface SketchResolveOptions {
+  /** Current-generation mathematical failures. Cached fields of these owners are never resolved. */
+  readonly invalidInputs?: ReadonlyMap<string, string>;
   readonly workPlane?: (planeId: WorkPlaneId) => WorkPlane | null;
   /**
    * 立体の部分形状(頂点・辺・面)の選び直し(FR-330、タスク10)。
@@ -776,6 +778,8 @@ export interface SketchResolveOptions {
    * 引けなければ「まだ計算していない」として `pendingProjections` へ積む。
    */
   readonly projectedCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
+  /** Current-generation, XYZ-clipped function geometry, supplied only after both workers succeed. */
+  readonly functionCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
   /**
    * 拘束を解いた後の点の位置(FR-313、P4b タスク8。3 段の解決の③)。
    *
@@ -808,6 +812,7 @@ export interface SketchResolveOptions {
    * 球を引くのは部品文書の側(`resolvePart.ts`)の役目である。
    */
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
+  readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
 }
 
 /** 円弧の面の中で、その点が中心から見て何ラジアンの向きにあるか(`arcPointAt` の逆)。 */
@@ -976,6 +981,13 @@ export function resolveSketch(
   let previous: Vec3 | null = null;
 
   for (const feature of document.features) {
+    const invalid = options.invalidInputs?.get(feature.id);
+    if (invalid !== undefined) {
+      errors.push({ featureId: feature.id, code: 'invalidValue', message: invalid });
+      // A failed point-producing step must not make "previous" silently refer to an older point.
+      if (feature.kind !== 'face') previous = null;
+      continue;
+    }
     // 面は作図面を使わない(境界に選んだ要素だけで決まる)ので、作図面を引く前に片づける。
     if (feature.kind === 'face') {
       const face = resolveFace(
@@ -1005,7 +1017,7 @@ export function resolveSketch(
       );
       continue;
     }
-    const context: ResolveContext = { plane, points, previous, vertices, subShape, sphere };
+    const context: ResolveContext = { plane, points, previous, vertices, subShape, sphere, functionPoint:options.functionPoint };
 
     if (feature.kind === 'point') {
       const at = resolveCoordinate(feature.at, context, feature.id);
@@ -1475,6 +1487,25 @@ export function resolveSketch(
       vertices.set(vertexKey(feature.id, 'start'), curveStart(firstCopy));
       vertices.set(vertexKey(feature.id, 'end'), curveEnd(lastCopy));
       previous = curveEnd(lastCopy);
+      continue;
+    }
+
+    if (feature.kind === 'functionCurve') {
+      const remembered = options.functionCurves?.(feature.id);
+      if (remembered == null || remembered.length === 0) {
+        previous = null;
+        errors.push(error(feature.id, 'invalidValue', remembered == null
+          ? '関数の再計算が完了していません。'
+          : '指定したXYZの範囲に曲線がありません。'));
+        continue;
+      }
+      const created = remembered.map(curve => retagCurve(curve, feature.id));
+      pushResolvedCurves(created, segments, arcs, ellipses, splines);
+      curvesByFeature.set(feature.id, created);
+      if (feature.construction) constructionFeatureIds.add(feature.id);
+      vertices.set(vertexKey(feature.id, 'start'), curveStart(created[0]));
+      previous = curveEnd(created[created.length - 1]);
+      vertices.set(vertexKey(feature.id, 'end'), previous);
       continue;
     }
 

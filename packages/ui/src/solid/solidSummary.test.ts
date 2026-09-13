@@ -24,6 +24,7 @@ import {
   MAX_TAPER_ANGLE_DEGREES,
   MIN_SCALE,
   replaceSketch,
+  SOLID_LABELS,
   type BooleanFeature,
   type ChamferFeature,
   // 平面による切断(FR-432、P5 タスク27c)。
@@ -1887,11 +1888,9 @@ describe('Should 群の要約(P5 §2.11、タスク43)', () => {
   });
 
   it('種類の名前の表は SolidLabelKey を 1 つ残らず持つ(数え漏れを型で止める)', () => {
-    // model の `SOLID_LABELS` と同じ 34 個(P2〜P5 タスク43 の 30 個 +
-    // タスク46 が前倒ししたくり抜き 1 個 + タスク27c の切断 1 個 +
-    // P6 タスク20 の読み込んだ形 2 個)。
-    // P10の基板・フランジ・指定線曲げ・リリーフを含め38種。型による全キー網羅も維持する。
-    expect(Object.keys(SOLID_KIND_LABEL_KEYS)).toHaveLength(38);
+    // 固定した件数を二重管理せず、modelで保存できる種類とUIの表示名を突き合わせる。
+    expect(Object.keys(SOLID_KIND_LABEL_KEYS).sort()).toEqual(Object.keys(SOLID_LABELS).sort());
+    expect(SOLID_KIND_LABEL_KEYS.functionSurface).toBe('functionSurface.name');
     expect(SOLID_KIND_LABEL_KEYS.sheetBase).toBe('sheetMetal.base');
     expect(SOLID_KIND_LABEL_KEYS.sheetFlange).toBe('sheetMetal.flange');
     expect(SOLID_KIND_LABEL_KEYS.draft).toBe('toolbar.machining.draft');

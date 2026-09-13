@@ -123,6 +123,8 @@ export interface SplineCurveSpec {
   readonly mode: 'interpolate' | 'control';
   readonly points: readonly Vec3Tuple[];
   readonly closed: boolean;
+  /** Certified function chords must remain linear through downstream CAD operations. */
+  readonly degree?: 1;
 }
 
 export type CurveSpec = SegmentSpec | ArcSpec | EllipseCurveSpec | SplineCurveSpec;
@@ -495,6 +497,7 @@ export interface BooleanStepSpec {
 export type BooleanOperation = BooleanStepSpec['operation'];
 
 export type SolidStepSpec =
+  | FunctionSurfaceStepSpec
   | ExtrudeStepSpec
   | RevolveStepSpec
   | SewStepSpec
@@ -538,6 +541,12 @@ export type SolidStepSpec =
   | SheetFlangeStepSpec
   | SheetJoinStepSpec
   | SheetBodyStepSpec;
+
+/** 関数の近似面をXYZの指定範囲で切り、閉面・開面・空洞を判定して保持する。 */
+export interface FunctionSurfaceStepSpec {
+  readonly kind: 'functionSurface';
+  readonly geometry: import('./occt/functionSurfaceGeometrySpec.js').FunctionSurfaceInput;
+}
 
 /** 指定線やリリーフで分割された平面/円筒領域から1つの板金を再構築する。 */
 export interface SheetBodyStepSpec extends SheetMetalBodyInput { readonly kind: 'sheetBody' }
@@ -632,11 +641,12 @@ export interface SolidRecomputeRequest {
 /**
  * 形の種類(FR-428、P5 §0.a-0.45。P6 §0.a-0.24 で `'mesh'` が加わった)。
  *
- * - `'solid'`: 閉じた立体を含む形。
+ * - `'solid'`: 閉じた立体のみからなる形。
  * - `'shell'`: 面だけのボディ(押し出し面・回転面など)。曲面の段(`makeSurface.ts`)が作る。
  * - `'mesh'`: **読み込んだ三角形の形**(STL / OBJ / glTF / 3MF のベースボディ、FR-802)。
+ * - `'mixed'`: 閉じた立体と、立体に属さない開いた面が混在する形。
  *
- * `'solid'` と `'shell'` の判定は `solidMesh.ts` の `hasSolid` そのままで、**体積では決めない**
+ * CAD形の分類はshapeBodyKindで面の所属を調べ、**体積では決めない**
  * (ふたの無い開いた殻は体積が 0 とは限らない。P5 タスク41 の実測)。
  *
  * **`'mesh'` を作るのは kernel ではなく model 側**(`importedMesh` のフィーチャー。
@@ -645,7 +655,7 @@ export interface SolidRecomputeRequest {
  * 「段の材料にできない印」** で、加工の段が対象に取ろうとしたら
  * `worker/recomputeSolids.ts` の `findStepInput` が 1 か所で断る(§2.8 の断りの表)。
  */
-export type SolidBodyKind = 'solid' | 'shell' | 'mesh';
+export type SolidBodyKind = 'solid' | 'shell' | 'mesh' | 'mixed';
 
 /** ボディ 1 つ分の表示用データ。MeshData と同じ並び方をする。 */
 export interface SolidBodyMesh {
@@ -1893,7 +1903,7 @@ interface ShapeImportBodyCommon {
 export type ShapeImportBody =
   | (ShapeImportBodyCommon & {
       /** 閉じた立体か、面だけの殻か。どちらも B-rep を持つ。 */
-      readonly bodyKind: 'solid' | 'shell';
+      readonly bodyKind: 'solid' | 'shell' | 'mixed';
       /** `.pcad` の `shapes/<id>.brep` へそのまま入れるバイト列。 */
       readonly brepBytes: Uint8Array;
     })

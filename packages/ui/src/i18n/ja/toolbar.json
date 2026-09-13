@@ -1,4 +1,13 @@
 {
+  "nameSearch.label": "名前で探す",
+  "nameSearch.hint": "名前や所属を入力。下矢印で候補へ移動、Escで検索を解除します",
+  "nameSearch.clear": "解除",
+  "nameSearch.empty": "一致する名前がありません",
+  "nameSearch.results": "件の候補",
+  "nameSearch.hidden": "非表示",
+  "nameSearch.suppressed": "抑制中",
+  "nameSearch.consumed": "後の形に統合済み",
+  "nameSearch.sketch": "スケッチ",
   "toolbar.file.title": "ファイル",
   "toolbar.file.new": "新規",
   "toolbar.file.newTooltip": "新規 (Ctrl+N)",

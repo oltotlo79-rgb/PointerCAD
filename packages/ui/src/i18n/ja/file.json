@@ -76,7 +76,7 @@
   "exchange.importUnitMillimeter": "ミリメートル",
   "exchange.importUnitInch": "インチ",
   "exchangeError.nothingToExport": "書き出せる立体がありません。",
-  "exchangeError.shellNotSupported": "面だけの立体は STL に書き出せません。",
+  "exchangeError.shellNotSupported": "閉じていない面を含む形は STL・3MF に書き出せません。",
   "exchangeError.meshNotSupported": "読み込んだ三角形の形は STEP に書き出せません。STL・3MF・OBJ・glTF なら書き出せます。",
   "exchangeError.colorNotSupported": "この環境では色を書き出せません。形だけを書き出します。",
   "exchangeError.qualityIgnored": "この形式では品質の指定は効きません。",

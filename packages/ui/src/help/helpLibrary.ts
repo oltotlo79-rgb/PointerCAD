@@ -1,4 +1,4 @@
-import { HELP_TOPICS, type HelpTopic } from '@pointercad/help-content';
+import { createHelpSearchIndex, normalizeHelpSearch, HELP_TOPICS, type HelpTopic } from '@pointercad/help-content';
 
 export type HelpLoader = () => Promise<string>;
 export const helpTopic = (id: string): HelpTopic | undefined => HELP_TOPICS.find((topic) => topic.id === id);
@@ -6,6 +6,7 @@ export const helpTopic = (id: string): HelpTopic | undefined => HELP_TOPICS.find
 /** 章の失敗をキャッシュせず再試行できる。検索時にだけ本文を全件読む。 */
 export function createHelpLibrary(loaders: Readonly<Record<string, HelpLoader>>) {
   const cache = new Map<string, Promise<string>>();
+  let index: ReturnType<typeof createHelpSearchIndex> | null = null;
   const load = (id: string): Promise<string> => {
     const existing = cache.get(id);
     if (existing !== undefined) return existing;
@@ -18,15 +19,17 @@ export function createHelpLibrary(loaders: Readonly<Record<string, HelpLoader>>)
   return {
     load,
     async search(query: string): Promise<{ readonly topics: readonly HelpTopic[]; readonly failed: number }> {
-      const words = query.normalize('NFKC').toLocaleLowerCase('ja').trim().split(/\s+/u).filter(Boolean);
-      if (words.length === 0) return { topics: HELP_TOPICS, failed: 0 };
+      if (normalizeHelpSearch(query) === '') return { topics: HELP_TOPICS, failed: 0 };
+      if (index !== null) return { topics: index.search(query).flatMap(hit => helpTopic(hit.id) ?? []), failed: 0 };
       const loaded = await Promise.allSettled(HELP_TOPICS.map(async (topic) => ({ topic, body: await load(topic.id) })));
-      const topics: HelpTopic[] = []; let failed = 0;
+      const documents = []; let failed = 0;
       for (const result of loaded) {
         if (result.status === 'rejected') { failed += 1; continue; }
-        const text = `${result.value.topic.title}\n${result.value.body}`.normalize('NFKC').toLocaleLowerCase('ja');
-        if (words.every((word) => text.includes(word))) topics.push(result.value.topic);
+        documents.push({ ...result.value.topic, body: result.value.body });
       }
+      const current = createHelpSearchIndex(documents);
+      if (failed === 0) index = current;
+      const topics = current.search(query).flatMap(hit => helpTopic(hit.id) ?? []);
       return { topics, failed };
     },
   };

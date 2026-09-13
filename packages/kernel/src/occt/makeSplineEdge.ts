@@ -67,6 +67,8 @@ export interface SplineSpec {
    * 通過点方式では重なった点として断る。
    */
   readonly closed?: boolean;
+  /** Only control polylines may override the ordinary automatic degree. */
+  readonly degree?: 1;
 }
 
 /**
@@ -377,7 +379,10 @@ export function bsplineDataForSpline(spec: SplineSpec): BSplineData {
     }
   }
 
-  const degree = splineDegree(points.length);
+  if (spec.degree !== undefined && (spec.degree !== 1 || spec.mode !== 'control')) {
+    throw new Error('一次のスプラインは制御点の折れ線として指定してください。');
+  }
+  const degree = spec.degree ?? splineDegree(points.length);
 
   if (spec.mode === 'control') {
     return controlPointData(points, degree, closed);

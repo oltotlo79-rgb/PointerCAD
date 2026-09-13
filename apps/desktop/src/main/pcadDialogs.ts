@@ -4,6 +4,9 @@ import { constants as fileSystemConstants, promises as fileSystem } from 'node:f
 import { basename, dirname, extname, join } from 'node:path';
 import { SAVE_RECOVERY_COPY_MARKER, hasSaveRecoveryCopy } from '@pointercad/ui/save-errors';
 
+import { nativeFileFilter, isFileDialogKind, MAX_COMPRESSED_INPUT_BYTES,
+  PCAD_EXTENSION as PCAD_DOTTED_EXTENSION, type NativeFileFilter as KindFilter } from '@pointercad/ui/file-contracts';
+
 import { validateAppSender } from './appSender.js';
 import { clearExportHandoff, registerExportHandoffIpc } from './exportHandoffIpc.js';
 
@@ -48,69 +51,19 @@ export const PCAD_SAVE_AS_CHANNEL = 'pcad:saveAs';
  */
 export const PCAD_PRINT_CHANNEL = 'pcad:print';
 
-/** 部品ファイルの拡張子(要件§8)。 */
-const PCAD_EXTENSION = 'pcad';
-
-/** `packages/io/src/limits.ts` の圧縮済み入力上限と同じ値。desktop は io に依存しないため写す。 */
-const MAX_COMPRESSED_INPUT_BYTES = 256 * 1024 * 1024;
+const PCAD_EXTENSION = PCAD_DOTTED_EXTENSION.slice(1);
 const DWG_GUIDE = 'DWGは直接読み書きできません。DXFへ変換する手順をヘルプで確認してください。';
 
 class InputTooLargeError extends Error {}
 
-/**
- * ファイル選択の窓に出す種別。
- *
- * 文言は `packages/ui/src/i18n/ja.json` の `file.typeDescription` と同じにしてある
- * (Web 版のファイル選択と同じ表示にするため)。本体プロセスから ja.json を引くには
- * `@pointercad/ui` を本体側の束へ持ち込むことになり、画面用の実装まで抱き込むので写している。
- * 窓の題名は指定しない。指定しなければ OS が「開く」「名前を付けて保存」を各国語で出す。
- */
-const PCAD_FILE_FILTER = { name: 'PointerCAD の部品ファイル', extensions: [PCAD_EXTENSION] };
-const PCADA_FILE_FILTER = { name: 'PointerCAD のアセンブリファイル', extensions: ['pcada'] };
-const PCADD_FILE_FILTER = { name: 'PointerCAD の図面ファイル', extensions: ['pcadd'] };
+const PCAD_FILE_FILTER = nativeFileFilter('pcad');
+const PCADA_FILE_FILTER = nativeFileFilter('pcada');
+const PCADD_FILE_FILTER = nativeFileFilter('pcadd');
 
 function documentFilters(kind: 'part' | 'assembly' | 'drawing' | 'all') {
   return kind === 'drawing' ? [PCADD_FILE_FILTER] : kind === 'assembly' ? [PCADA_FILE_FILTER] :
     kind === 'all' ? [PCAD_FILE_FILTER, PCADA_FILE_FILTER, PCADD_FILE_FILTER] : [PCAD_FILE_FILTER];
 }
-
-/** ダイアログのフィルタ 1 つぶん(Electron の `FileFilter` と同じ形)。 */
-interface KindFilter {
-  readonly name: string;
-  /** 拡張子。**先頭の `.` を付けない**(Electron の決まり)。先頭が代表で、書き出しのときに足す。 */
-  readonly extensions: readonly string[];
-}
-
-/**
- * ファイルの種類ごとのダイアログのフィルタ(§2.2)。
- *
- * **正本は `packages/ui/src/file/fileGateway.ts` の表**で、ここはその写しである。写している
- * 理由は上の `PCAD_FILE_FILTER` と同じで、本体プロセスから `@pointercad/ui` を読むと
- * 画面用の実装まで本体側の束へ入ってしまうため。**片方を直したらもう片方も直す。**
- *
- * 鍵は `FileKind`(`@pointercad/model`)の文字列。本体プロセスはその型を持てない(依存が
- * `@pointercad/ui` だけ)ので、鍵の綴りは文字列として持ち、画面から来た値はこの表に
- * 載っているかどうかだけで確かめる。
- */
-const KIND_FILTERS: Readonly<Record<string, KindFilter | undefined>> = {
-  zip: { name: 'ZIP', extensions: ['zip'] },
-  pcada: PCADA_FILE_FILTER,
-  pcadd: PCADD_FILE_FILTER,
-  pcad: PCAD_FILE_FILTER,
-  pcadt: { name: 'PointerCAD', extensions: ['pcadt'] },
-  pcadscript: { name: 'PointerCAD Script', extensions: ['pcadscript'] },
-  step: { name: 'STEP', extensions: ['step', 'stp'] },
-  stl: { name: 'STL', extensions: ['stl'] },
-  obj: { name: 'OBJ', extensions: ['obj'] },
-  glb: { name: 'glTF', extensions: ['glb', 'gltf'] },
-  '3mf': { name: '3MF', extensions: ['3mf'] },
-  dxf: { name: 'DXF', extensions: ['dxf'] },
-  dwg: { name: 'DWG (DXFへの変換が必要)', extensions: ['dwg'] },
-  svg: { name: 'SVG', extensions: ['svg'] },
-  pdf: { name: 'PDF', extensions: ['pdf'] },
-  png: { name: 'PNG', extensions: ['png'] },
-  jpg: { name: 'JPEG', extensions: ['jpg', 'jpeg'] },
-};
 
 /** 「開く」で選ばれたファイル。`path` は本体プロセスの中だけで使う。 */
 export interface OpenedPcadFile {
@@ -303,7 +256,7 @@ export interface OpenedAnyFile {
 
 /** 表に載っている種類か。載っていなければ undefined。 */
 function filterOf(kind: string): KindFilter | undefined {
-  return KIND_FILTERS[kind];
+  return isFileDialogKind(kind) ? nativeFileFilter(kind) : undefined;
 }
 
 /** 画面から来た「頼む種類の一覧」を確かめる。1 つも無い・知らない綴りが混じるものは受けない。 */

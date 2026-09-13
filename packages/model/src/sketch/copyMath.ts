@@ -264,6 +264,7 @@ export function transformCurve(
         mode: curve.mode,
         points: curve.points.map((point) => transformPoint(transform, point)),
         closed: curve.closed,
+        ...(curve.degree === undefined ? {} : { degree: curve.degree }),
       };
   }
 }

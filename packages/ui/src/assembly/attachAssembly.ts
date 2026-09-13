@@ -2,7 +2,7 @@
 import {
   appearanceOf, buildStandardPartFromSource, diagnoseMates, jointFramePairFromTargets,
   KERNEL_BROKEN_MESSAGE, partKeyOf,
-  recomputePart, resolveAssembly,
+  resolveAssembly,
   resolveMateTarget, selectMateTargetGeometry, solveMates,
   type AssemblyDocument, type AssemblyKernelBridge, type ComponentSource, type EmbeddedPartAttachments, type PartDocument, type PartLibrary, type SolveMatesOutcome,
   type JointFramePair, type MateDiagnosis, type MateResidualTargetPair, type MateTarget,
@@ -15,6 +15,7 @@ import type { AssemblySnapshot } from '../store/assemblySlice.js';
 import type { PartRecomputer } from '../store/attachKernel.js';
 import { activeDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 import type { AppearanceInput } from '../viewport/buildSolidGeometry.js';
 import type { AssemblyReplacementRunner } from './replaceCommands.js';
 

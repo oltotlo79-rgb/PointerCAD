@@ -14,6 +14,9 @@
  */
 
 import { appearanceOf } from '../appearance/documentAppearance.js';
+import { recomputeFunctionCurves, type FunctionRecomputeContext } from '../functionGeometry/recomputeFunctionCurves.js';
+import { recomputeFunctionSurfaces } from '../functionGeometry/recomputeFunctionSurfaces.js';
+import { recomputeFunctionPoints } from '../functionGeometry/recomputeFunctionPoints.js';
 import { fingerprintKeyText, type SubShapeRef } from '../geometry/subShapeRef.js';
 import type {
   AppearanceFaceRequest,
@@ -42,6 +45,8 @@ import {
   type ResolvePartOptions,
 } from './resolvePart.js';
 import { applyParameters } from './reevaluatePart.js';
+import { evaluateDocumentMath, hasDocumentMath, type DocumentMathContext } from './evaluateDocumentMath.js';
+import type { ParameterAnalysis } from '../parameters/types.js';
 import { createSubShapeCache, type SubShapeCache } from './subShapeCache.js';
 import { historyDependencies } from './timelineOrder.js';
 import type { PartDocument } from './types.js';
@@ -70,6 +75,8 @@ export interface PartSketchResult {
 }
 
 export interface PartRecomputeResult {
+  /** Current-generation scalar mathematics, for the parameter view; absent until all formulas are verified. */
+  readonly parameterAnalysis?: ParameterAnalysis;
   /** 実カーネルで成功し表示される板金のパネル。失敗段や消費済みボディは貸さない。 */
   readonly sheetMetalBodies?: ResolvedPart['sheetMetalBodies'];
   /** 文書の順に並んだスケッチの結果。 */
@@ -103,6 +110,9 @@ export interface PartRecomputeResult {
 }
 
 export interface PartRecomputeOptions {
+  /** Required for new mathematical definitions; absent evaluators must never use cached coordinates. */
+  readonly math?: DocumentMathContext;
+  readonly functions?: FunctionRecomputeContext;
   /** 最終巡回の解決結果を、取消でない完了時に同じ参照で 1 回だけ通知する。 */
   readonly onResolved?: (resolved: ResolvedPart) => void;
   /** 文書/session 内で安定した部品の識別子。橋へそのまま渡す。 */
@@ -605,7 +615,38 @@ export async function recomputePart(
   if (options.shouldCancel?.()) {
     return cancelledResult(generation);
   }
-  const evaluated = applyParameters(document).document;
+  let evaluated: PartDocument;
+  let parameterAnalysis: ParameterAnalysis | undefined;
+  let invalidInputs: ReadonlyMap<string, string> | undefined;
+  const parameterErrors: PartRecomputeError[] = [];
+  if (hasDocumentMath(document)) {
+    const math = options.math;
+    if (math === undefined) return { sketches: [], bodies: [], cacheHits: 0, cancelled: false, generation,
+      errors: [{ featureId: document.id, code: 'invalidValue', message: '数学計算部を準備できません。数式の再計算後に作図してください。' }] };
+    const result = await evaluateDocumentMath(document, { ...math, isCurrent: () => !options.shouldCancel?.() && math.isCurrent() });
+    if (!result.ok) {
+      if (result.cancelled) return cancelledResult(generation);
+      if (result.recompute === undefined) return { sketches: [], bodies: [], cacheHits: 0, cancelled: false, generation,
+        errors: result.failures.map(failure => ({ featureId: failure.ownerId, code: 'invalidValue', message: failure.message })) };
+      evaluated = result.recompute.document;
+      parameterAnalysis = result.recompute.analysis;
+      invalidInputs = result.recompute.invalidInputs;
+      parameterErrors.push(...parameterAnalysis.failures.map(failure => ({ featureId: failure.name, code: 'invalidValue' as const, message: failure.message })));
+    } else {
+      evaluated = result.document;
+      parameterAnalysis = result.analysis;
+    }
+  } else evaluated = applyParameters(document).document;
+  const functions = await recomputeFunctionCurves(evaluated, bridge, parameterAnalysis, options.math,
+    options.functions, invalidInputs, () => options.shouldCancel?.() ?? false);
+  if (functions.cancelled) return cancelledResult(generation);
+  const surfaces = await recomputeFunctionSurfaces(evaluated, parameterAnalysis, options.math,
+    options.functions, functions.invalidInputs, () => options.shouldCancel?.() ?? false);
+  if (surfaces.cancelled) return cancelledResult(generation);
+  const functionPoints = await recomputeFunctionPoints(evaluated, parameterAnalysis, options.math,
+    options.functions, surfaces.invalidInputs, () => options.shouldCancel?.() ?? false);
+  if (functionPoints.cancelled) return cancelledResult(generation);
+  invalidInputs = functionPoints.invalidInputs;
   // 解決そのものは OCCT を呼ばない純関数のままで、形は覚え書き越しに差し込む。
   const offsets = options.offsets ?? createOffsetCache();
   const projections = options.projections ?? createProjectionCache();
@@ -617,8 +658,12 @@ export async function recomputePart(
     { readonly reference: SubShapeRef; readonly value: string }
   >();
   const resolveOptions: ResolvePartOptions = {
+    invalidInputs,
     offsetCurves: (key) => offsets.get(key),
     projectedCurves: (featureId) => projectedByFeature.get(featureId) ?? null,
+    functionCurves: featureId => functions.curves.get(featureId) ?? null,
+    functionSurfaces: featureId => surfaces.plans.get(featureId) ?? null,
+    functionPoint: functionPoints.resolve,
     subShape: (reference) => {
       const value = subShapes.resolve(reference);
       askedSubShapes.set(fingerprintKeyText(reference), { reference, value: JSON.stringify(value) });
@@ -739,7 +784,7 @@ export async function recomputePart(
   }
 
   // 上流(スケッチ)から下流(ソリッド)の順に失敗を並べる。直す順序がそのまま読めるように。
-  const errors: PartRecomputeError[] = [];
+  const errors: PartRecomputeError[] = [...parameterErrors];
   const sketches: PartSketchResult[] = [];
   for (const entry of resolved.sketches) {
     errors.push(...entry.resolved.errors);
@@ -778,6 +823,7 @@ export async function recomputePart(
       cancelled: false,
       generation,
       appearanceMatches: [],
+      ...(parameterAnalysis === undefined ? {} : { parameterAnalysis }),
     };
   }
 
@@ -796,5 +842,6 @@ export async function recomputePart(
     cancelled: solid.outcome.cancelled,
     generation,
     appearanceMatches: solid.outcome.appearanceMatches ?? [],
+    ...(parameterAnalysis === undefined ? {} : { parameterAnalysis }),
   };
 }

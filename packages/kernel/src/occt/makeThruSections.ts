@@ -111,6 +111,7 @@ import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
+import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { pickSubShape } from './pickSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { tangentConeThroughCircle, tangentPointOnSphere } from './sphereTangent.js';
@@ -247,7 +248,7 @@ function makeSectionWire(
     throw new Error(OPEN_PROFILE_MESSAGE);
   }
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
-  for (const curve of curves) {
+  for (const curve of continuousCurvePieces(curves)) {
     wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
   }
   if (!wireMaker.IsDone()) {

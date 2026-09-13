@@ -12,6 +12,7 @@ import type { CurveSpec, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
+import { continuousCurvePieces } from './continuousCurvePieces.js';
 
 /**
  * 輪郭のオフセット(FR-321、計画書 P4 §2.5・§0.a-0.22、タスク16)。
@@ -297,7 +298,7 @@ export function makeOffsetWire(
 
   try {
     const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
-    for (const curve of spec.curves) {
+    for (const curve of continuousCurvePieces(spec.curves)) {
       wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
     }
     if (!wireMaker.IsDone()) {

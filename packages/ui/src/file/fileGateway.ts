@@ -33,9 +33,10 @@
 import type { FileKind } from '@pointercad/model';
 import { SCRIPT_FILE_LIMITS } from '@pointercad/model/scripting';
 import type { CamFormat, CamTool, ExportReceipt } from './openWith.js';
-export type SaveFileKind = Exclude<FileKind, 'dwg'> | 'pcada' | 'pcadd' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg';
+import { FILE_KIND_SPECS, PCAD_EXTENSION, PCADA_EXTENSION, PCADD_EXTENSION, PCAD_MIME_TYPE, type SaveFileKind } from './fileContracts.js';
+export { PCAD_EXTENSION, PCADA_EXTENSION, PCADD_EXTENSION, type SaveFileKind } from './fileContracts.js';
 
-import { t, type MessageKey } from '../i18n/t.js';
+import { t } from '../i18n/t.js';
 import { readBrowserFile, type BrowserReadableFile } from './readBrowserFile.js';
 
 /** 開いたファイル 1 つぶん(§2.10)。 */
@@ -107,11 +108,6 @@ export interface FileGateway {
   print?(bytes: Uint8Array, options?: import('@pointercad/drawing').DrawingPrintOptions): Promise<boolean>;
 }
 
-/** 部品ファイルの拡張子(要件§8)。 */
-export const PCAD_EXTENSION = '.pcad';
-export const PCADA_EXTENSION = '.pcada';
-export const PCADD_EXTENSION = '.pcadd';
-
 export function withPcaddExtension(name: string): string {
   const trimmed = name.trim();
   return trimmed.toLowerCase().endsWith(PCADD_EXTENSION) ? trimmed : `${trimmed}${PCADD_EXTENSION}`;
@@ -129,85 +125,11 @@ function documentFileTypes(kind: 'part' | 'assembly' | 'drawing' | 'all'): reado
     : kind === 'all' ? [PCAD_FILE_TYPE, assembly, drawing] : [PCAD_FILE_TYPE];
 }
 
-/**
- * 部品ファイルの MIME 型。`.pcad` は世の中に登録された型を持たないので、
- * 「中身は決めのないバイト列」を表す汎用の型を使う。
- */
-const PCAD_MIME_TYPE = 'application/octet-stream';
-
-// ---------------------------------------------------------------------------
-// ファイルの種類 → 拡張子・MIME 型の表(**この 1 か所だけ**)
-// ---------------------------------------------------------------------------
-
 /** ファイル選択の窓に出す種別 1 つぶん。File System Access API の `types` の要素と同じ形。 */
 interface FilePickerType {
   readonly description: string;
   readonly accept: Readonly<Record<string, readonly string[]>>;
 }
-
-/** ファイルの種類ごとの見せ方。 */
-interface FileKindSpec {
-  /**
-   * 形式の呼び名。STEP・STL・OBJ・glTF・3MF・DXF は形式そのものの名前(固有名詞)で、
-   * 訳す言葉ではないのでここに直接書く。日本語の説明が要る種類は `descriptionKey` を持つ。
-   */
-  readonly label: string;
-  /**
-   * 利用者へ見せる説明の文言のキー(NFR-MA-5。文言は `ja.json` が持つ)。
-   * 無い種類は `label` をそのまま出す。ひな形(`.pcadt`)の説明の文言はタスク5 が
-   * `ja.json` へ足す予定なので、それまでは呼び名だけを出す。
-   */
-  readonly descriptionKey?: MessageKey;
-  /**
-   * MIME 型 → その型が名乗る拡張子。File System Access API の `accept` と同じ形にしてある。
-   * glTF だけ 1 つの種類が 2 つの MIME 型を持つ(バイナリの `.glb` と JSON の `.gltf`)。
-   */
-  readonly accept: Readonly<Record<string, readonly string[]>>;
-}
-
-/**
- * ファイルの種類ごとの拡張子と MIME 型(§2.2)。**表はここ 1 か所だけ**にある。
- *
- * 種類の一覧(`FileKind`)の正本は `@pointercad/model` の `exchange/types.ts`(タスク2)で、
- * ここは写しを作らず import して `Record` の鍵に使う。種類が増えれば型検査がここを落とす。
- *
- * MIME 型は IANA に登録のあるものを使う(`model/step`・`model/stl`・`model/obj`・
- * `model/gltf-binary`・`model/gltf+json`・`model/3mf`・`image/vnd.dxf`)。
- * `.pcad` / `.pcadt` は登録が無いので汎用のバイト列の型にする。
- *
- * デスクトップ版のダイアログのフィルタは `apps/desktop/src/main/pcadDialogs.ts` に
- * 同じ内容を写してある(本体プロセスから `@pointercad/ui` を読むと画面用の実装まで
- * 抱き込むため。既存の `PCAD_FILE_FILTER` と同じ理由)。
- */
-const FILE_KIND_SPECS: Readonly<Record<SaveFileKind | FileKind, FileKindSpec>> = {
-  pcadscript: { label: 'PointerCAD Script', accept: { 'application/json': ['.pcadscript'] } },
-  zip: { label: 'ZIP', accept: { 'application/zip': ['.zip'] } },
-  pcada: { label: 'PointerCAD', descriptionKey: 'assembly.fileType', accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } },
-  pcadd: { label: 'PointerCAD', descriptionKey: 'drawing.fileType', accept: { [PCAD_MIME_TYPE]: [PCADD_EXTENSION] } },
-  pcad: {
-    label: 'PointerCAD',
-    descriptionKey: 'file.typeDescription',
-    accept: { [PCAD_MIME_TYPE]: [PCAD_EXTENSION] },
-  },
-  pcadt: {
-    label: 'PointerCAD',
-    accept: { [PCAD_MIME_TYPE]: ['.pcadt'] },
-  },
-  step: { label: 'STEP', accept: { 'model/step': ['.step', '.stp'] } },
-  stl: { label: 'STL', accept: { 'model/stl': ['.stl'] } },
-  obj: { label: 'OBJ', accept: { 'model/obj': ['.obj'] } },
-  glb: {
-    label: 'glTF',
-    accept: { 'model/gltf-binary': ['.glb'], 'model/gltf+json': ['.gltf'] },
-  },
-  '3mf': { label: '3MF', accept: { 'model/3mf': ['.3mf'] } },
-  dxf: { label: 'DXF', accept: { 'image/vnd.dxf': ['.dxf'] } },
-  dwg: { label: 'DWG', descriptionKey: 'exchange.dwgType', accept: { 'image/vnd.dwg': ['.dwg'] } },
-  svg: { label: 'SVG', accept: { 'image/svg+xml': ['.svg'] } },
-  pdf: { label: 'PDF', accept: { 'application/pdf': ['.pdf'] } },
-  png: { label: 'PNG', accept: { 'image/png': ['.png'] } },
-  jpg: { label: 'JPEG', accept: { 'image/jpeg': ['.jpg', '.jpeg'] } },
-};
 
 /** その種類の拡張子(先頭の `.` を含む)。並びは表の順で、先頭が代表(書き出しで足す拡張子)。 */
 export function extensionsOf(kind: SaveFileKind | FileKind): readonly string[] {

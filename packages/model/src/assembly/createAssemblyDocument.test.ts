@@ -150,8 +150,11 @@ describe('createAssemblyDocument', () => {
       configurations: true, id: true, name: true, namedViews: true, parameters: true,
       references: true, schemaVersion: true, selectionSets: true, sheetUnfolds: true,
       sketches: true, solids: true,
-    } satisfies Record<keyof PartDocument, true>;
-    expect(Object.keys(createEmptyPartDocument()).sort()).toEqual(Object.keys(savedFields).sort());
+      mathParameterSerial: 'optional',
+    } satisfies Record<keyof PartDocument, true | 'optional'>;
+    expect(Object.keys(createEmptyPartDocument()).sort()).toEqual(
+      Object.entries(savedFields).filter(([, presence]) => presence === true).map(([field]) => field).sort(),
+    );
   });
 
   it('呼ぶたびに別の配列を返す(前の文書と入れ物を共有しない)', () => {

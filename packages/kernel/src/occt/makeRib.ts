@@ -6,6 +6,7 @@ import { createAllocations } from './allocations.js';
 import type { BooleanResult } from './booleanOp.js';
 import { booleanOp } from './booleanOp.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
+import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { distanceBetween } from './measureShape.js';
 import { measureVolume } from './solidMesh.js';
 import { booleanMargin, boundingDiagonal } from './subShapes.js';
@@ -355,7 +356,7 @@ export function makeRib(
   try {
     // ① 輪郭 → ワイヤ → 帯(厚みの向きへ掃いたシェル)。
     const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
-    for (const curve of input.profile) {
+    for (const curve of continuousCurvePieces(input.profile)) {
       wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
     }
     if (!wireMaker.IsDone()) {

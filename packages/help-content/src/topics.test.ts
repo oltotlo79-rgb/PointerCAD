@@ -20,6 +20,19 @@ describe('ヘルプの目録', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('数学の節を追加しても見出しが重複せず、本文が空の節を残さない', () => {
+    const topic = findHelpTopic('math-input');
+    if (topic === undefined) throw new Error('Math help is missing');
+    const text = readFileSync(resolve(packageRoot, topic.path), 'utf8');
+    const sections = text.split(/^## /mu).slice(1).map(section => {
+      const newline = section.indexOf('\n');
+      return { title: section.slice(0, newline).trim(), body: section.slice(newline + 1).trim() };
+    });
+    expect(sections.length).toBeGreaterThan(0);
+    expect(new Set(sections.map(section => section.title)).size).toBe(sections.length);
+    for (const section of sections) expect(section.body, section.title).not.toBe('');
+  });
+
   it('同梱字体の日本語案内とOFL/MITの本文を欠かさない', () => {
     const topic = findHelpTopic('font-licenses');
     if (topic === undefined) throw new Error('字体のライセンス案内がない');
@@ -173,13 +186,24 @@ const FORBIDDEN_TERMS: readonly string[] = [
   '連結成分',
 ];
 
+function internalHelpTerms(topicId: string, source: string): readonly string[] {
+  // This is the actual name of a user-operated math tool, not the assembly solver's internals.
+  // Permit only the complete visible term in its own help topic; keep every other prohibition.
+  const text = topicId === 'math-input' ? source.replaceAll('連立一次式', '') : source;
+  return FORBIDDEN_TERMS.filter(term => text.includes(term));
+}
+
 describe('ヘルプの言葉づかい(rules/05 §11.3)', () => {
   it('内部用語が 1 語も出てこない', () => {
     for (const topic of HELP_TOPICS) {
       const text = readFileSync(resolve(packageRoot, topic.path), 'utf-8');
-      for (const term of FORBIDDEN_TERMS) {
-        expect(text.includes(term), `${topic.path} に「${term}」がある`).toBe(false);
-      }
+      expect(internalHelpTerms(topic.id, text), topic.path).toEqual([]);
     }
+  });
+  it('数学の操作名だけを認め、内部の連立計算や他の内部用語を解説へ混ぜない', () => {
+    expect(internalHelpTerms('math-input', '連立一次式から一意な解を選びます。')).toEqual([]);
+    expect(internalHelpTerms('math-input', '連立一次式をWorkerで計算します。')).toEqual(['Worker']);
+    expect(internalHelpTerms('math-input', '内部の連立計算で拘束します。')).toEqual(['連立']);
+    expect(internalHelpTerms('assembly', '連立一次式を内部で計算します。')).toEqual(['連立']);
   });
 });

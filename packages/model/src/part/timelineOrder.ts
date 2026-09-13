@@ -217,6 +217,9 @@ function pointReferenceDependencies(
   reference: PointReference,
 ): readonly string[] {
   switch (reference.kind) {
+    case 'functionPoint': return [...(reference.parent.kind==='surface'?solidDependency(context,reference.parent.featureId)
+      :sketchDependencies(context,reference.parent.sketchId)),...(reference.direction?.sourcePointId
+      ?pointReferenceDependencies(context,{kind:'point',pointId:reference.direction.sourcePointId}):[])];
     case 'origin':
       return [];
     case 'previous':
@@ -335,6 +338,7 @@ function sketchFeatureDependencies(
     case 'spline':
       return feature.points.flatMap((point) => coordinateDependencies(context, point));
     case 'offset':
+    case 'functionCurve':
       // オフセットが持つのは同じスケッチの要素の参照と距離だけ。
       return [];
     case 'copy':
@@ -533,6 +537,9 @@ function solidDependencies(
         `pairedWith` は依存ではない(対の相手は同じ対象を切るだけで、互いを材料にしない)。
       */
       found.push(...planeSpecDependencies(context, feature.plane));
+      break;
+    case 'functionSurface':
+      // 関数は係数だけを参照し、他の履歴の形状には依存しない。
       break;
     case 'importedSolid':
     case 'importedMesh':

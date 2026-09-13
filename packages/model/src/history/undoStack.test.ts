@@ -20,6 +20,27 @@ describe('createUndoStack', () => {
   });
 });
 
+describe('明示的な1回のドラッグの履歴', () => {
+  it('途中で長く止めても同じドラッグはUndo1回、次のドラッグは別の1回になる', () => {
+    const first = pushUndo(createUndoStack('start'), 'middle', { coalesceKey: 'gesture-1', coalesceMode: 'gesture', now: 0 });
+    const paused = pushUndo(first, 'finish', { coalesceKey: 'gesture-1', coalesceMode: 'gesture', now: 60_000 });
+    expect(undo(paused).present).toBe('start');
+    const next = pushUndo(paused, 'next', { coalesceKey: 'gesture-2', coalesceMode: 'gesture', now: 60_001 });
+    expect(undo(next).present).toBe('finish');
+    expect(undo(undo(next)).present).toBe('start');
+  });
+
+  it('別の編集やUndoを挟んだ後に古いドラッグを合体しない', () => {
+    const first = pushUndo(createUndoStack('start'), 'drag', { coalesceKey: 'gesture-1', coalesceMode: 'gesture', now: 0 });
+    const other = pushUndo(first, 'other');
+    const next = pushUndo(other, 'next', { coalesceKey: 'gesture-1', coalesceMode: 'gesture' });
+    expect(undo(next).present).toBe('other');
+    const undone = pushUndo(undo(first), 'after-undo', { coalesceKey: 'gesture-1', coalesceMode: 'gesture' });
+    expect(undone.past).toEqual(['start']);
+    expect(undone.future).toEqual([]);
+  });
+});
+
 describe('pushUndo → undo → redo', () => {
   it('undo で present が元へ戻り、canRedo が true になる', () => {
     const s0 = createUndoStack('a');

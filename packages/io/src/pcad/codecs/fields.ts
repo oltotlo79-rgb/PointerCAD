@@ -16,6 +16,7 @@ import {
   readValue,
 } from '../guards.js';
 import {
+  decodeMathExpressionStorage,
   type Vec3,
 } from '@pointercad/model';
 
@@ -41,6 +42,11 @@ import {
  * 書けないので `null` になり、読み戻すとまた NaN になる。
  */
 export function serializeExpression(value: ExpressionValueJson): ExpressionValueJson {
+  if (value.mathDefinition !== undefined) {
+    if (!Number.isFinite(value.value)) throw new Error('数学入力の計算値を有限の数で保存できません。');
+    return { source: value.source, value: value.value, display: value.display,
+      mathDefinition: decodeMathExpressionStorage(value.mathDefinition, value.source) };
+  }
   return { source: value.source, value: value.value, display: value.display };
 }
 

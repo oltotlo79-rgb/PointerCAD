@@ -39,7 +39,7 @@ param(
     # -E2EOnly のときだけPlaywrightの--grepへ渡す。空なら全E2Eを実行する。
     [string]$E2EGrep = "",
     # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
-    [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content")]
+    [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content", "expression")]
     [string]$UnitPackage = "",
     [string[]]$UnitTests = @(),
     # 実装途中の診断専用。既定・pre-commit・pre-pushの必須段数は変えない。
@@ -303,14 +303,15 @@ try {
         }
         if ($unitDiagnostic) {
             Write-Host "[診断] 指定ユニットテストだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
-            # 公開の形式・版の契約は個別機能の診断でも一緒に検査する(06 10.83)。
+            # 公開の形式・旧版移行・UI文言は個別機能の診断でも一緒に検査する(06 10.83、10.132、10.133)。
             $requiredUnitTests = @(switch ($UnitPackage) {
-                "io" { "src/schemaVersion.test.ts" }
+                "io" { "src/schemaVersion.test.ts"; "src/pcad/loftSurfaceJson.test.ts"; "src/pcad/mathExpressionJson.test.ts" }
                 "model" { "src/exchange/exportPart.test.ts"; "src/part/createPartDocument.test.ts" }
+                "ui" { "src/i18n/i18n.test.ts"; "src/i18n/jaMessages.test.ts" }
             })
             foreach ($requiredUnitTest in $requiredUnitTests) {
                 if (-not (Test-Path -LiteralPath (Join-Path $root "packages/$UnitPackage/$requiredUnitTest") -PathType Leaf)) {
-                    throw "形式・版の必須テストがありません: $requiredUnitTest"
+                    throw "必須の契約テストがありません: $requiredUnitTest"
                 }
                 if ($UnitTests -notcontains $requiredUnitTest) {
                     $UnitTests += $requiredUnitTest

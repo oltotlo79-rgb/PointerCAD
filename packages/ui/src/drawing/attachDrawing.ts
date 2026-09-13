@@ -1,11 +1,12 @@
 import { drawingViewBasis, type DrawingDocument, type DrawingSource, type Vector3 } from '@pointercad/drawing';
-import { createDrawingResolveKernel, drawingSourceInputOf, IDENTITY_PLACEMENT, recomputePart, refreshDrawing, resolveHoleSchedule, buildSheetFlatHoleSchedule,
+import { createDrawingResolveKernel, drawingSourceInputOf, IDENTITY_PLACEMENT, refreshDrawing, resolveHoleSchedule, buildSheetFlatHoleSchedule,
   type AssemblyKernelBridge, type DrawingKernelBridge, type DrawingSourceLibrary, type DrawingSourceResolution,
   type EmbeddedDrawingSource, type HoleScheduleResult, type ImportedShapeBytes, type PartDocument, type PartRecomputeOptions, type PartRecomputeResult, type ResolvedPart,
 } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 import { prepareAssemblyDrawingSource, type PreparedAssemblyDrawing } from './prepareAssemblyDrawingSource.js';
 import { prepareFlatDrawingSource } from './prepareFlatDrawingSource.js';
 

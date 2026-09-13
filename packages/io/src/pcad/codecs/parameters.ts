@@ -6,6 +6,9 @@ import {
   readExpression,
   readLiteral,
   readString,
+  fieldProblem,
+  joinPath,
+  indexPath,
 } from '../guards.js';
 import {
   readList,
@@ -15,6 +18,7 @@ import {
   type Parameter,
   PARAMETER_UNITS,
   type ParameterUnit,
+  isParameterMathId,
 } from '@pointercad/model';
 
 /**
@@ -28,6 +32,7 @@ export function serializeParameter(parameter: Parameter): Parameter {
     value: serializeExpression(parameter.value),
     unit: parameter.unit,
     description: parameter.description,
+    ...(parameter.mathId === undefined ? {} : { mathId: parameter.mathId }),
   };
 }
 
@@ -41,6 +46,8 @@ export function readParameter(value: unknown, path: string): Checked<Parameter> 
   if (!name.ok) {
     return name;
   }
+  const mathId = record.value.mathId;
+  if ('mathId' in record.value && !isParameterMathId(mathId)) return fieldProblem(joinPath(path, 'mathId'), 'type');
   const parameterValue = readExpression(record.value, 'value', path);
   if (!parameterValue.ok) {
     return parameterValue;
@@ -60,6 +67,7 @@ export function readParameter(value: unknown, path: string): Checked<Parameter> 
       value: parameterValue.value,
       unit: unit.value,
       description: description.value,
+      ...(isParameterMathId(mathId) ? { mathId } : {}),
     },
   };
 }
@@ -73,5 +81,13 @@ export function readParameters(
   record: Record<string, unknown>,
   path: string,
 ): Checked<readonly Parameter[]> {
-  return readList(record, 'parameters', path, readParameter);
+  const result = readList(record, 'parameters', path, readParameter);
+  if (!result.ok) return result;
+  const ids = new Set<string>();
+  for (const [index, parameter] of result.value.entries()) {
+    if (parameter.mathId === undefined) continue;
+    if (ids.has(parameter.mathId)) return fieldProblem(joinPath(indexPath(joinPath(path, 'parameters'), index), 'mathId'), 'type');
+    ids.add(parameter.mathId);
+  }
+  return result;
 }

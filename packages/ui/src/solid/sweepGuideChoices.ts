@@ -1,6 +1,7 @@
 /** 案内線の候補を作成欄・再編集・確定の3経路で共用する。 */
 import type { PartDocument, SketchCurveRef, SweepFeature } from '@pointercad/model';
 import { t } from '../i18n/t.js';
+import { isSketchPathFeature } from './sketchPathKinds.js';
 
 export interface SweepGuideCandidate {
   readonly value: string;
@@ -14,8 +15,7 @@ export function sweepGuideValue(reference: SketchCurveRef): string {
 
 export function sweepGuideCandidates(document: PartDocument, path?: SketchCurveRef): readonly SweepGuideCandidate[] {
   return document.sketches.flatMap((sketch) => sketch.features.flatMap((feature) => {
-    if (feature.kind !== 'line' && feature.kind !== 'arc' && feature.kind !== 'ellipse' && feature.kind !== 'spline'
-      && feature.kind !== 'rectangle' && feature.kind !== 'polygon' && feature.kind !== 'slot' && feature.kind !== 'offset') return [];
+    if (!isSketchPathFeature(feature)) return [];
     if (feature.construction || (path?.sketchId === sketch.id && path.curveIds.includes(feature.id))) return [];
     const reference: SketchCurveRef = { sketchId: sketch.id, curveIds: [feature.id] };
     return [{ value: sweepGuideValue(reference), label: `${sketch.name} / ${feature.name}`, reference }];

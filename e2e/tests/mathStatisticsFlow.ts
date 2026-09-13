@@ -1,0 +1,50 @@
+import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
+import { savePart } from './scriptsFlow.js';
+import { reopenPart } from './reopenPart.js';
+
+/** Use the actual editor and saved parameter to distinguish n and n-1 in every supported host. */
+export async function mathStatisticsFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  await page.getByRole('tab', { name: 'パラメータ', exact: true }).click();
+  await page.getByRole('button', { name: '名前を付けた数値を足します', exact: true }).click();
+  const row = page.locator('.pcad-parameter').last();
+  const name = row.locator('.pcad-field').nth(0).locator('input');
+  await name.fill('統計値'); await name.press('Enter');
+  await row.getByRole('button', { name: '数式で入力', exact: true }).click();
+  const dialog = page.locator('.pcad-math-dialog');
+  await dialog.locator('textarea').fill('samplevariance([1,2,3])');
+  await expect(dialog.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
+  await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
+  await expect(dialog.locator('math-field')).toBeVisible();
+  await dialog.locator('summary').filter({ hasText: '記号と演算を探す' }).click();
+  await dialog.getByLabel('数学の分野', { exact: true }).selectOption({ label: '統計' });
+  await expect(dialog.getByRole('button', { name: /連立一次式の一意な解/u })).toHaveCount(0);
+  await dialog.getByRole('searchbox', { name: '名前・記号で検索', exact: true }).fill('分散');
+  await expect(dialog.getByRole('button', { name: /母分散（nで割る）/u })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /標本分散（n−1で割る）/u })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('math-statistics-conventions.png'), fullPage: true });
+  await dialog.getByRole('button', { name: 'この式を使う', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row.locator('.pcad-field').nth(1).locator('.pcad-field__message')).toHaveText('= 1');
+  const first = await savePart(page, info, 'math-statistics-sample.pcad', app);
+  expect(first.parameters.find(parameter => parameter.name === '統計値')?.value.value).toBe(1);
+  await row.getByRole('button', { name: '数式で入力', exact: true }).click();
+  await dialog.getByRole('button', { name: 'テキスト入力', exact: true }).click();
+  await dialog.locator('textarea').fill('populationvariance([1,2,3])');
+  await expect(dialog.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
+  await dialog.getByRole('button', { name: 'この式を使う', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row.locator('.pcad-field').nth(1).locator('input')).toHaveValue('populationvariance([1,2,3])');
+  const saved = await savePart(page, info, 'math-statistics-population.pcad', app);
+  expect(saved.parameters.find(parameter => parameter.name === '統計値')?.value.value).toBeCloseTo(2/3, 12);
+  await page.locator('canvas.pcad-viewport__canvas').focus(); await page.keyboard.press('Control+z');
+  await expect(row.locator('.pcad-field').nth(1).locator('.pcad-field__message')).toHaveText('= 1');
+  await reopenPart(page, info, 'math-statistics-population.pcad', app);
+  await page.getByRole('tab', { name: 'パラメータ', exact: true }).click();
+  await row.getByRole('button', { name: '数式で入力', exact: true }).click();
+  await expect(dialog.locator('textarea')).toHaveValue('populationvariance([1,2,3])');
+  await expect(dialog.locator('textarea')).toBeFocused();
+  await page.keyboard.press('F1');
+  await expect(page.locator('.pcad-help__article')).toContainText('データから統計量を求める');
+  await page.keyboard.press('Escape');
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+}

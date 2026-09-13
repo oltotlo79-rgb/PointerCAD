@@ -21,6 +21,8 @@
  */
 
 import { evaluateExpression, renameVariable, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
+import { mapDocumentFunctionExpressions } from './documentFunctions.js';
+import { mapFunctionDefinition } from '../functionGeometry/mapFunctionDefinition.js';
 
 import type { PlaneSpec } from '../geometry/planeSpec.js';
 import { mapSheetMetalExpressions } from '../sheetMetal/featureInputs.js';
@@ -310,6 +312,8 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       return { ...feature, pitch: map(feature.pitch), length: map(feature.length) };
     case 'surface':
       return { ...feature, operation: rebuildSurfaceOperation(feature.operation, map) };
+    case 'functionSurface':
+      return { ...feature, definition: mapFunctionDefinition(feature.definition, map, expression => expression) };
     case 'shell':
       // くり抜き(FR-418、§2.12、タスク46)。式の欄は壁の厚さ 1 つだけで、
       // 開ける面の指紋・向きのつまみは式ではない。
@@ -468,7 +472,7 @@ function mapParameter(parameter: Parameter, map: ExpressionMapper): Parameter {
  * (`analyzeParameters` の `usedSources`)に自分自身の式を混ぜてはいけないため。
  * `A = 'A + 1'` の自己参照を「使われている」と数えると、誰も使っていない名前が消せなくなる。
  */
-function mapDocumentExpressions(document: PartDocument, map: ExpressionMapper): PartDocument {
+export function mapDocumentExpressions(document: PartDocument, map: ExpressionMapper): PartDocument {
   const sketches = mapKeepingIdentity(document.sketches, (sketch) =>
     mapSketchExpressions(sketch, map),
   );
@@ -504,11 +508,16 @@ export function collectExpressionSources(document: PartDocument): readonly strin
     sources.push(value.source);
     return value;
   });
+  mapDocumentFunctionExpressions(document, definition => {
+    sources.push(definition.source);
+    return definition;
+  });
   return sources;
 }
 
 /** 式1つと、それを持っているものの id・表示名(FR-207、P4b タスク22b)。 */
 export interface ExpressionOwner {
+  readonly mathDefinition?: ExpressionValue['mathDefinition'];
   /** 利用者が書いた式の文字列。 */
   readonly source: string;
   /** その式を持っているもの の id(フィーチャー・拘束)。`ReevaluationFailure.ownerId` と同じ。 */
@@ -560,8 +569,13 @@ export function collectExpressionOwners(document: PartDocument): readonly Expres
   const names = displayNames(document);
   const owners: ExpressionOwner[] = [];
   mapDocumentExpressions(document, (value, ownerId) => {
-    owners.push({ source: value.source, ownerId, ownerName: names.get(ownerId) ?? ownerId });
+    owners.push({ source: value.source, ownerId, ownerName: names.get(ownerId) ?? ownerId,
+      ...(value.mathDefinition === undefined ? {} : { mathDefinition: value.mathDefinition }) });
     return value;
+  });
+  mapDocumentFunctionExpressions(document, (definition, ownerId) => {
+    owners.push({ source: definition.source, ownerId, ownerName: names.get(ownerId) ?? ownerId, mathDefinition: definition });
+    return definition;
   });
   return owners;
 }
@@ -578,6 +592,10 @@ function reevaluateValue(
   onFailure: (message: string) => void,
   options: Omit<EvaluateOptions, 'variables'> = {},
 ): ExpressionValue {
+  if (value.mathDefinition !== undefined) {
+    onFailure('この数式は数学計算部での再計算が必要です。');
+    return value;
+  }
   const result = evaluateExpression(value.source, { ...options, variables });
   if (!result.ok) {
     onFailure(result.error.message);
@@ -625,6 +643,7 @@ export function renameVariableInPartDocument(
   to: string,
 ): PartDocument {
   const rename: ExpressionMapper = (value) => {
+    if (value.mathDefinition !== undefined) return value;
     const source = renameVariable(value.source, from, to);
     return source === value.source ? value : { ...value, source };
   };
@@ -659,7 +678,7 @@ export function applyParameters(document: PartDocument): AppliedParameters {
   if (document.parameters.length === 0) {
     return { document, analysis: EMPTY_ANALYSIS, failures: [] };
   }
-  const analysis = analyzeParameters(document.parameters, collectExpressionSources(document));
+  const analysis = analyzeParameters(document.parameters, collectExpressionOwners(document));
   const reevaluated = reevaluatePartDocument(document, analysis.variables, analysis);
   const parameters = mapKeepingIdentity(reevaluated.document.parameters, (parameter) =>
     mapParameter(parameter, (value) =>

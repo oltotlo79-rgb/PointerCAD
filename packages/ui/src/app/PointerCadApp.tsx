@@ -3,7 +3,6 @@ import {
   createOffsetCache,
   createProjectionCache,
   createSubShapeCache,
-  recomputePart,
 } from '@pointercad/model';
 import { useEffect } from 'react';
 
@@ -12,6 +11,7 @@ import { attachAssemblyInterference } from '../assembly/attachAssemblyInterferen
 import { attachDrawing } from '../drawing/attachDrawing.js';
 import { attachSheetMetal } from '../sheetMetal/attachSheetMetal.js';
 import { attachScripting } from '../scripting/attachScripting.js';
+import { attachFunctionPlot } from '../functionPlot/attachFunctionPlot.js';
 import { activeDocumentKind, type DocumentKind } from '../store/documentKind.js';
 import { startAutoSave } from '../file/attachAutoSave.js';
 import type { FileGateway } from '../file/fileGateway.js';
@@ -29,6 +29,7 @@ import {
 } from '../store/attachKernel.js';
 import type { RecomputeOutcome } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 
 /** 検査だけが使う読み取り口の 1 件ぶんの形(下の `useEffect` の注釈が理由)。 */
 interface RecomputeStats {
@@ -153,6 +154,7 @@ export function PointerCadApp(): React.JSX.Element {
     const detachDrawing = attachDrawing(bridge);
     const detachSheetMetal = attachSheetMetal(bridge);
     const detachScripting = attachScripting(bridge);
+    const detachFunctionPlot = attachFunctionPlot(bridge);
     // オフセット(FR-321、タスク15・21)の計算済みの結果を持ち回る。1 つ作って渡さないと
     // 呼び出しのたびにカーネルへ頼み直すことになる(NFR-PF-2、`recomputePart` の注釈)。
     const offsets = createOffsetCache();
@@ -249,6 +251,7 @@ export function PointerCadApp(): React.JSX.Element {
     return () => {
       detachSheetMetal();
       detachScripting();
+      detachFunctionPlot();
       detachDrawing();
       detachInspect();
       detachExchange();

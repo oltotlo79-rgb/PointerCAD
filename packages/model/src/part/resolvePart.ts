@@ -323,6 +323,7 @@ export type SurfaceShapePlan =
  * 向き・反転・両側の平行移動はここまでで済ませてあり、kernel へは断面・向き・長さだけが渡る。
  */
 export type SolidStepPlan =
+  | import('../functionGeometry/functionSurfaceFeature.js').FunctionSurfacePlan
   | SheetSolidPlan
   | {
       readonly kind: 'extrude';
@@ -1015,6 +1016,8 @@ type PlanOutcome =
  * 束ねる理由である。
  */
 interface SolidPlanContext {
+  readonly functionPoint: ResolvePartOptions['functionPoint'];
+  readonly functionSurfaces: (featureId: string) => import('../functionGeometry/functionSurfaceFeature.js').FunctionSurfacePlan | null;
   /**
    * 面・辺・頂点の位置と向き。`resolvePart` の `options.subShape` が渡されていれば
    * 「いまの形」で選び直した値、渡されていなければ保存された指紋の値になる
@@ -2635,10 +2638,11 @@ export function resolveSolidOrigin(
   origin: SolidOrigin,
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
+  functionPoint?: ResolvePartOptions['functionPoint'],
 ): SolidOriginOutcome {
   switch (origin.kind) {
     case 'coordinate': {
-      const resolved = resolveCoordinate(origin.value, PART_COORDINATE_CONTEXT, featureId);
+      const resolved = resolveCoordinate(origin.value, { ...PART_COORDINATE_CONTEXT, functionPoint }, featureId);
       if (!resolved.ok) {
         // 式のエラー(値が数でない・基準が無い)をそのまま見せる(§2.7.1 の断り方の表)。
         return { ok: false, error: partError(featureId, 'invalidValue', resolved.error.message) };
@@ -2690,8 +2694,9 @@ function planPrimitive(
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   axisFrames: ReadonlyMap<string, AxisFrame>,
+  functionPoint: ResolvePartOptions['functionPoint'],
 ): PlanOutcome {
-  const origin = resolveSolidOrigin(feature.id, feature.origin, sketches, bodyKeys);
+  const origin = resolveSolidOrigin(feature.id, feature.origin, sketches, bodyKeys, functionPoint);
   if (!origin.ok) {
     return origin;
   }
@@ -4104,7 +4109,7 @@ function planSolid(
     case 'pattern':
       return planPattern(feature, solids, sketches, bodyKeys, consumed, context);
     case 'primitive':
-      return planPrimitive(feature, sketches, bodyKeys, axisFrames);
+      return planPrimitive(feature, sketches, bodyKeys, axisFrames, context.functionPoint);
     case 'ruled':
       return planRuled(feature, solids, sketches, bodyKeys);
     case 'loft':
@@ -4128,6 +4133,10 @@ function planSolid(
       return planThreadShaft(feature, bodyKeys, consumed);
     case 'surface':
       return planSurface(feature, sketches, bodyKeys, context);
+    case 'functionSurface': {
+      const plan = context.functionSurfaces(feature.id);
+      return plan === null ? fail(feature.id, 'invalidValue', '関数曲面の原式を再計算してください。') : { ok: true, plan };
+    }
     case 'shell':
       return planShell(feature, bodyKeys, consumed);
     // 平面による切断(FR-432、§2.9b、タスク27c)。
@@ -4545,6 +4554,8 @@ function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): SolidStep
         fromEnd: plan.fromEnd,
         modeled: plan.modeled,
       };
+    case 'functionSurface':
+      return { kind: 'functionSurface', inputSignature: plan.inputSignature };
     case 'surface':
       // 面を借りる作り方(face / offset)でも消費しないが targetKey は必ず混ぜる
       // (混ぜないと上流を編集しても鍵が変わらず古い面の形が返る。NFR-PF-3)。
@@ -4643,7 +4654,8 @@ function toResolvedPartSketch(sketchId: string, constrained: ConstrainedSketch):
 function resolveSketchesAndReferences(
   document: PartDocument,
   options: Required<Pick<ResolvePartOptions, 'offsetCurves' | 'projectedCurves'>> &
-    Pick<ResolvePartOptions, 'subShape'>,
+    Pick<ResolvePartOptions, 'subShape' | 'invalidInputs' | 'functionCurves'> &
+    { readonly functionPoint: ResolvePartOptions['functionPoint'] },
 ): {
   readonly sketches: readonly ResolvedPartSketch[];
   readonly references: ResolvedReferences;
@@ -4674,6 +4686,7 @@ function resolveSketchesAndReferences(
    * なのでまだ空)。どちらも P5 タスク19b の検証範囲(座標で指定した球)には現れない。
    */
   function sphereAt(sphereFeatureId: string): ResolvedSphere | null {
+    if (options.invalidInputs?.has(sphereFeatureId)) return null;
     const feature = document.solids.find((candidate) => candidate.id === sphereFeatureId);
     if (feature === undefined || feature.kind !== 'primitive' || feature.shape.kind !== 'sphere') {
       return null;
@@ -4694,20 +4707,26 @@ function resolveSketchesAndReferences(
       feature.origin,
       knownSketches,
       new Map<string, string>(),
+      options.functionPoint,
     );
     return origin.ok ? { center: origin.value.origin, radius } : null;
   }
 
   const solveOne = (sketch: SketchDocument): ConstrainedSketch =>
     resolveConstrainedSketch(sketch, {
+      invalidInputs: options.invalidInputs,
       workPlane: (planeId) => resolver.workPlane(planeId),
       offsetCurves,
       projectedCurves,
+      functionCurves: options.functionCurves,
+      functionPoint: options.functionPoint,
       subShape,
       sphere: sphereAt,
     });
 
   const resolver = createReferenceResolver(document, {
+    functionPoint: options.functionPoint,
+    invalidInputs: options.invalidInputs,
     sketch: (sketchId) => {
       const remembered = resolvedSketches.get(sketchId);
       if (remembered !== undefined) {
@@ -4781,6 +4800,7 @@ export function sketchIdOfPointReference(
   reference: PointReference,
   sketches: readonly SketchDocument[],
 ): string | null {
+  if (reference.kind === 'functionPoint') return reference.parent.kind === 'curve' ? reference.parent.sketchId : null;
   let featureId: string | null = null;
   if (reference.kind === 'point') {
     featureId = reference.pointId;
@@ -4881,6 +4901,8 @@ export function referencedSketchIds(
       return [feature.profile.sketchId];
     case 'surface':
       return surfaceSketchIds(feature.operation);
+    case 'functionSurface':
+      return [];
     case 'cut':
       // 切断(FR-432、タスク27c)。切断面の点がスケッチの点でありうるので、拡大縮小の
       // 中心とまったく同じ扱いで id から探す(スケッチの一覧を渡されたときだけ数える)。
@@ -5006,9 +5028,13 @@ function laterProjectionBodyMessage(source: ProjectionSource): string {
  * 積まれ、カーネルへ頼んで埋めるのは `recomputePart` の役目。
  */
 export interface ResolvePartOptions {
+  readonly invalidInputs?: ReadonlyMap<string, string>;
   readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
   /** 計算済みの投影・交差の曲線をフィーチャーの id で引く(タスク25)。 */
   readonly projectedCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
+  readonly functionCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
+  readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
+  readonly functionSurfaces?: (featureId: string) => import('../functionGeometry/functionSurfaceFeature.js').FunctionSurfacePlan | null;
   /**
    * 立体の面・辺・頂点の選び直し(FR-325、FR-328〜330 の上流追従、タスク25)。
    *
@@ -5056,14 +5082,19 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   const { sketches, references, workPlane, point, axisFrames } = resolveSketchesAndReferences(
     document,
     {
+      invalidInputs: options.invalidInputs,
       offsetCurves: options.offsetCurves ?? noOffsetCurves,
       projectedCurves: options.projectedCurves ?? noProjectedCurves,
+      functionCurves: options.functionCurves,
+      functionPoint: options.functionPoint,
       subShape: options.subShape,
     },
   );
   // 面・辺・頂点の位置は、選び直しの関数があればそれ、無ければ保存された指紋から取る
   // (`resolveReferences.ts` の `resolveSubShape` とまったく同じ既定。§0.a-0.33)。
   const context: SolidPlanContext = {
+    functionPoint: options.functionPoint,
+    functionSurfaces: options.functionSurfaces ?? (() => null),
     subShape: options.subShape ?? subShapeFromFingerprint,
     workPlane,
     point,
@@ -5089,6 +5120,8 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     if (feature.suppressed) {
       continue;
     }
+    const invalid = options.invalidInputs?.get(feature.id);
+    if (invalid !== undefined) { errors.push(partError(feature.id, 'invalidValue', invalid)); continue; }
     if (feature.kind === 'importedMesh') {
       /*
         読み込んだ三角形の形(FR-802、§2.8、§0.a-0.23)。**カーネルの段を作らない**ので
@@ -5115,7 +5148,13 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
       sheetMetalBodies.set(feature.id, sheet.value.body);
       outcome = { ok: true, plan: sheet.value.plan };
     } else {
-      outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed, context, importedShapes);
+      const ownerContext: SolidPlanContext = {
+        ...context,
+        point: reference => reference.kind === 'functionPoint'
+          ? options.functionPoint?.(reference, feature.id) ?? null
+          : context.point(reference),
+      };
+      outcome = planSolid(feature, document.solids, sketches, bodyKeys, consumed, ownerContext, importedShapes);
     }
     if (!outcome.ok) {
       errors.push(outcome.error);

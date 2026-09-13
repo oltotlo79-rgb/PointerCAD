@@ -15,6 +15,7 @@
  */
 
 import type { SolidFeatureBase } from './featureIdentity.js';
+import type { FunctionSurfaceFeature } from '../functionGeometry/functionSurfaceFeature.js';
 import type { SheetBaseFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetUnfoldDefinition } from '../sheetMetal/types.js';
 import type { SketchFaceRef, SketchCurveRef, SketchLineRef, SketchPointRef } from './featureReferences.js';
 import type { Configuration } from './configurations.js';
@@ -226,6 +227,7 @@ export type SolidFeatureKind =
   | 'threadShaft'
   /** 曲面(FR-428)。閉じた立体ではなく面だけのボディを作る。対象を消費しない。 */
   | 'surface'
+  | 'functionSurface'
   /**
    * くり抜き(シェル。FR-418、§0.a-0.47、P5 計画書 §2.12)。壁の厚さを残して中身を抜く。
    * 対象を消費する。Could 群だが、型・解決・読み書きはタスク46 で前倒しした
@@ -1201,7 +1203,7 @@ export interface ImportedSolidFeature extends SolidFeatureBase {
    * だけの時点(書き出しの可否の案内、STL への断り「面だけの立体は STL に書き出せません。」)で
    * 要るので、読み込んだ素性の一部として保存する(この節の冒頭の例外の内側)。
    */
-  readonly bodyKind: 'solid' | 'shell';
+  readonly bodyKind: 'solid' | 'shell' | 'mixed';
 }
 
 /**
@@ -1261,6 +1263,7 @@ export type SolidFeature =
   | EmbossFeature
   | ThreadShaftFeature
   | SurfaceFeature
+  | FunctionSurfaceFeature
   // P5 の Could 群のうち、型・解決・読み書きをタスク46 が前倒しした 1 種(FR-418)。
   | ShellFeature
   // 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。
@@ -1485,6 +1488,8 @@ export interface SketchCanvas {
  * (FR-505、FR-801)。変更のたびに新しい配列を作る(不変)。
  */
 export interface PartDocument {
+  /** Mathematics coefficient high-water mark. Deletion never makes a previously issued ID available again. */
+  readonly mathParameterSerial?: number;
   readonly id: string;
   readonly name: string;
   /** 保存形式の版(§0.a-0.3)。読み書きの互換判定は packages/io が行う。 */

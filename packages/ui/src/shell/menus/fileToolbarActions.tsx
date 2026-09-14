@@ -267,6 +267,7 @@ export function runFileMenuAction(
   openExportPanel: () => void,
   onTemplatesChanged: () => void,
   openImportPanel: () => void,
+  openComparison: () => void,
 ): void {
   if (isStoredTemplateMenuId(id)) {
     void runNewFromTemplate({ from: 'stored', id: storedTemplateIdOf(id) });
@@ -282,7 +283,7 @@ export function runFileMenuAction(
     void openPart(createDefaultPartFileDeps());
     return;
   }
-  runFileMenuActionId(id, openExportPanel, onTemplatesChanged, openImportPanel);
+  runFileMenuActionId(id, openExportPanel, onTemplatesChanged, openImportPanel, openComparison);
 }
 
 /** 決まった操作の配り先(網羅 `switch`。行を足すと型検査がここを落とす)。 */
@@ -291,8 +292,12 @@ function runFileMenuActionId(
   openExportPanel: () => void,
   onTemplatesChanged: () => void,
   openImportPanel: () => void,
+  openComparison: () => void,
 ): void {
   switch (id) {
+    case 'compareDocuments':
+      openComparison();
+      return;
     case 'newDrawingFromPart':
       void createDrawingFromCurrentPart();
       return;

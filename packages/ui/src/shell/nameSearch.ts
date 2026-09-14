@@ -12,6 +12,7 @@ export interface NameSearchEntry {
   readonly sketchId?: string;
   readonly badges: readonly MessageKey[];
   readonly historyTarget?: FeatureNoteTarget;
+  readonly assemblyReveal?: { readonly section: AssemblyTreeSection['key']; readonly parents: readonly string[] };
 }
 
 export function partNameSearchEntries(sections: readonly TreeSection[], sketches: readonly SketchTreeGroup[]): readonly NameSearchEntry[] {
@@ -37,14 +38,14 @@ export function partNameSearchEntries(sections: readonly TreeSection[], sketches
 
 export function assemblyNameSearchEntries(sections: readonly AssemblyTreeSection[]): readonly NameSearchEntry[] {
   const entries: NameSearchEntry[] = [];
-  const add = (row: AssemblyTreeRow, context: string): void => {
+  const add = (row: AssemblyTreeRow, context: string, section: AssemblyTreeSection['key'], parents: readonly string[]): void => {
     const badges: MessageKey[] = [];
     if (row.badges.includes('hidden')) badges.push('nameSearch.hidden');
     if (row.badges.includes('suppressed')) badges.push('nameSearch.suppressed');
-    entries.push({ key: row.key, name: row.name, context, selectionId: row.id, badges });
-    for (const child of row.children ?? []) add(child, `${context} / ${row.name}`);
+    entries.push({ key: row.key, name: row.name, context, selectionId: row.id, badges, assemblyReveal: { section, parents } });
+    for (const child of row.children ?? []) add(child, `${context} / ${row.name}`, section, [...parents, row.id]);
   };
-  for (const section of sections) for (const row of section.rows) add(row, t(section.titleKey));
+  for (const section of sections) for (const row of section.rows) add(row, t(section.titleKey), section.key, []);
   return entries;
 }
 

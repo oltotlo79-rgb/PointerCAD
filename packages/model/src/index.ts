@@ -1137,3 +1137,6 @@ export type { FeatureNoteTarget, FeatureNote } from './history/featureNotes.js';
 
 export { checkFeatureFolders, featureFolderMemberKey, createFeatureFolder, moveFeatureFolderMember, renameFeatureFolder, removeFeatureFolder, pruneRemovedFolderMembers, FEATURE_FOLDER_MAX_COUNT, FEATURE_FOLDER_MAX_DEPTH, FEATURE_FOLDER_NAME_MAX_LENGTH, FeatureFolderError } from './history/featureFolders.js';
 export type { FeatureFolder, FeatureFolderMember, FeatureFolderProblem, FeatureFolderCheck } from './history/featureFolders.js';
+
+export { compareDocuments, DocumentComparisonLimit, type DocumentRelationship, type DocumentDefinitionComparison, type DocumentDefinitionChange, type DocumentDefinitionEntry, type DefinitionGroup } from './diff/compareDocuments.js';
+export type { DefinitionDifference } from './diff/definitionValues.js';

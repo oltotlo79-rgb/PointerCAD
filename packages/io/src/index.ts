@@ -96,6 +96,7 @@ export {
   type ReadPcadFileError,
   type ReadPcadFileErrorCode,
   type ReadPcadFileResult,
+  type ReadPcadFileOptions,
   type WritePcadaFileOptions,
   type WritePcaddFileOptions,
   type WritePcadFileOptions,

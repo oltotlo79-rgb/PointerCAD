@@ -42,6 +42,8 @@ describe('名前検索の結果を実際の所属と選択先へ結び付ける'
     const result = searchNamedEntries(entries, '右側 ぼると');
     expect(result).toHaveLength(1); expect(result[0].entry.selectionId).toBe('right/bolt');
     expect(result[0].entry.badges).toContain('nameSearch.hidden');
+    expect(result[0].entry.assemblyReveal).toEqual({ section: 'component', parents: ['right'] });
+    expect(entries.find(entry => entry.selectionId === 'right')?.assemblyReveal).toEqual({ section: 'component', parents: [] });
     expect(searchNamedEntries(entries, 'ボルト').map(item => item.ordinal)).toEqual([2, 4]);
   });
 

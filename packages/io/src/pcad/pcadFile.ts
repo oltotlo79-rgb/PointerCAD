@@ -682,8 +682,11 @@ function findMissingAttachment(
  * `.pcad` のバイト列から部品文書と添付を取り出す。
  * 壊れていても例外を投げず、日本語の理由を返す(FR-504、NFR-RE-1)。
  */
-export function readPcadFile(bytes: Uint8Array): ReadPcadFileResult {
-  const archive = readArchive(bytes, { shouldExtract: isPcadArchiveEntry });
+/** 比較など複数文書を同時に開く用途の、展開前の資源上限。省略時は通常の上限。 */
+export interface ReadPcadFileOptions { readonly limits?: ArchiveReadLimits }
+
+export function readPcadFile(bytes: Uint8Array, options: ReadPcadFileOptions = {}): ReadPcadFileResult {
+  const archive = readArchive(bytes, { shouldExtract: isPcadArchiveEntry, limits: options.limits });
   if (!archive.ok) {
     const message =
       archive.error.kind === 'compressedInput' ||

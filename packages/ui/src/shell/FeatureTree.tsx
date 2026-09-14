@@ -1,3 +1,4 @@
+import { useRevealNamedTreeRow } from './useRevealNamedTreeRow.js';
 import { featureFolderAncestors } from '../history/featureFolderAncestors.js';
 import { FeatureFolderTree } from '../history/FeatureFolderTree.js';
 import { FeatureFolderDialog, type FeatureFolderDraft } from '../history/FeatureFolderDialog.js';
@@ -349,6 +350,7 @@ function withTimelineConsumed(
  * コンポーネントに持つ(rules/04-設計の規律.md)。形の正本はストアの `document` だけ。
  */
 export function FeatureTree(): React.JSX.Element {
+  const searchReveal = useRevealNamedTreeRow();
   const part = useAppStore((state) => state.document);
   const documentVersion = useAppStore((state) => state.documentVersion);
   const [noteDraft, setNoteDraft] = useState<FeatureNoteDraft | null>(null);
@@ -760,6 +762,7 @@ export function FeatureTree(): React.JSX.Element {
       <li key={group.sketchId}>
         <div
           className={rowClassName}
+          data-name-search-key={featureFolderMemberKey({ kind: 'sketch', id: group.sketchId })}
           onContextMenu={(event) => {
             event.preventDefault();
             setMenu({
@@ -895,7 +898,7 @@ export function FeatureTree(): React.JSX.Element {
     sketchId?: string,
   ): React.JSX.Element => {
     const KindIcon = KIND_ICONS[row.kind];
-    const selected = selectedIds.has(row.id);
+    const selected = selectedIds.has(row.id) && (sectionKey !== 'sketch' || (sketchId ?? part.activeSketchId) === part.activeSketchId);
     /*
      * タイムラインのつまみが付く行か(FR-507)。付くのは帯に出る行、つまり基準
      * ジオメトリと立体の行だけ。つまみより後ろの行は「いまは形になっていない」ので
@@ -930,6 +933,7 @@ export function FeatureTree(): React.JSX.Element {
         <div
           className={rowClassName}
           // 落とし先は指の下の行から引く(`dropIndexAtPoint`)。帯に出る行だけが持つ。
+          data-name-search-key={featureFolderMemberKey(noteTargetForRow(part, row.id, sectionKey, sketchId))}
           data-timeline-index={stop === undefined ? undefined : stop.entry.index}
           title={stop === undefined ? undefined : t('timeline.dragTooltip')}
           onPointerDown={(event) => {
@@ -1132,10 +1136,11 @@ export function FeatureTree(): React.JSX.Element {
     return <li className="pcad-tree__hint">{t('historyFolder.missing').replace('{name}', member.id)}</li>;
   };
   return (
-    <section className="pcad-panel pcad-panel--left">
+    <section ref={searchReveal.ref} className="pcad-panel pcad-panel--left">
       <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
       <DocumentNameSearch key={part.id} helpTopic="feature-tree" getEntries={() => partNameSearchEntries(sections, sketchGroups)}
         onSelect={entry => {
+          searchReveal.reveal(entry.key);
           setIsExpanded(true);
           if (entry.historyTarget !== undefined) {
             const target = entry.historyTarget;
@@ -1185,7 +1190,7 @@ export function FeatureTree(): React.JSX.Element {
                           (P4 仕上げ (g))。入れ子のボタンは作れないので、見出しの
                           折りたたみボタンと「＋」を器の div へ横に並べる。
                         */}
-                        <div className="pcad-tree__section">
+                        <div className="pcad-tree__section" data-name-search-key={!grouped && section.key === 'sketch' ? featureFolderMemberKey({ kind: 'sketch', id: part.activeSketchId }) : undefined}>
                           <button
                             type="button"
                             className="pcad-tree__row pcad-tree__row--section"

@@ -1,3 +1,4 @@
+import { DocumentDiffDialog } from '../diff/DocumentDiffDialog.js';
 /**
  * ツールバー(FR-901〜904、NFR-UX-7)。**ここは区画を並べるだけ**で、
  * 一覧の中身は `toolbarMenus.ts`、押したときの配線と区画の部品は `menus/` にある
@@ -142,6 +143,7 @@ export function Toolbar(): React.JSX.Element {
    * ここで持つ(`SettingsPanel` の開閉と同じ扱い。rules/04 の「状態はストア 1 本」は
    * 部品文書と端末の好みが対象)。
    */
+  const [comparisonOpen, setComparisonOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [functionOpen, setFunctionOpen] = useState(false);
@@ -244,6 +246,7 @@ export function Toolbar(): React.JSX.Element {
                   setTemplateSaveCount((count) => count + 1);
                 },
                 () => { setExportOpen(false); setImportOpen(true); },
+                () => { setExportOpen(false); setImportOpen(false); setComparisonOpen(true); },
               );
             }}
           />
@@ -251,6 +254,7 @@ export function Toolbar(): React.JSX.Element {
             書き出しのパネル(FR-803、§0.a-0.20)。一覧の「書き出す」を選んだときだけ出す。
             **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
           */}
+          {documentKind === 'part' && comparisonOpen ? <DocumentDiffDialog onClose={() => setComparisonOpen(false)} /> : null}
           {documentKind === 'part' ? <ScriptToolsMenu /> : null}
           {documentKind === 'part' && importOpen ? <ImportFormatPanel onClose={() => { setImportOpen(false); }} /> : null}
           {documentKind === 'part' && exportOpen ? (

@@ -1,0 +1,974 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "document-definition-diff",
+      "script": "e2e/tests/documentDiffFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-document-diff-validation-2fnxppzj",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-document-diff-manual-capture-ep_cx1mr",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-13 2つの実保存ファイルの追加・削除・原式を比較し、元ファイルと編集中の部品を保持する",
+        "scriptSha256": "a79d75e9053d74d577ea980d2e643efc6b3261344887efd249a83678a7c2f470",
+        "fixture": {
+          "filename": "document-definition-diff-fixture.json",
+          "sha256": "3e7ca03a2a8c1a26c1d4ae260a432fc90fdb2d18e51c2b0a5a372a17fefb6b2d"
+        },
+        "screen": {
+          "filename": "document-definition-diff-screen.png",
+          "sha256": "47743d26aba35a92d5987400244e1448a4bf6d2738940b75ba6d979083e7a9d1"
+        },
+        "detail": {
+          "filename": "document-definition-diff-detail.png",
+          "sha256": "557663baf4b017704ed281b5e8598f0f34538a2bce0ea61bf2c7a5e05f12b56c"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 260,
+          "y": 47.25,
+          "width": 920,
+          "height": 805.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "two-saved-part-definitions",
+        "before": {
+          "id": "part-1",
+          "name": "取付部品",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "base",
+              "name": "台座",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            },
+            {
+              "id": "old",
+              "name": "旧補助箱",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "after": {
+          "id": "part-1",
+          "name": "取付部品",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "base",
+              "name": "台座",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "10+10",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "30",
+                  "value": 30,
+                  "display": "30"
+                }
+              }
+            },
+            {
+              "id": "new",
+              "name": "追加の補助箱",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "relationship": "versions"
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true
+    },
+    {
+      "name": "document-definition-fields",
+      "script": "e2e/tests/documentDiffFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-document-diff-validation-2fnxppzj",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-document-diff-manual-capture-ep_cx1mr",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-13 2つの実保存ファイルの追加・削除・原式を比較し、元ファイルと編集中の部品を保持する",
+        "scriptSha256": "a79d75e9053d74d577ea980d2e643efc6b3261344887efd249a83678a7c2f470",
+        "fixture": {
+          "filename": "document-definition-fields-fixture.json",
+          "sha256": "3e7ca03a2a8c1a26c1d4ae260a432fc90fdb2d18e51c2b0a5a372a17fefb6b2d"
+        },
+        "screen": {
+          "filename": "document-definition-fields-screen.png",
+          "sha256": "a27f1ab1ab291a3c1d016d5f83db243f80d4a68f10c57e9e703e2f0c266b74eb"
+        },
+        "detail": {
+          "filename": "document-definition-fields-detail.png",
+          "sha256": "db7aa50c3b0de7f57935e0110b2ce7adaf0a955a2c0e61e46477788256ed17bf"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 279,
+          "y": 505,
+          "width": 882,
+          "height": 382
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "two-saved-part-definitions",
+        "before": {
+          "id": "part-1",
+          "name": "取付部品",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "base",
+              "name": "台座",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            },
+            {
+              "id": "old",
+              "name": "旧補助箱",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "after": {
+          "id": "part-1",
+          "name": "取付部品",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "base",
+              "name": "台座",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "10+10",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "30",
+                  "value": 30,
+                  "display": "30"
+                }
+              }
+            },
+            {
+              "id": "new",
+              "name": "追加の補助箱",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "relationship": "versions"
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true
+    }
+  ]
+}

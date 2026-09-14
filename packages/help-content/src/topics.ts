@@ -131,6 +131,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '履歴へ設計メモを残す',
     path: 'docs/ja/history-notes.md',
   },
+  { id: 'document-diff', title: '2つの保存ファイルの変更を比較する', path: 'docs/ja/document-diff.md' },
   {
     id: 'timeline',
     title: '途中まで戻して確かめる(タイムライン)',

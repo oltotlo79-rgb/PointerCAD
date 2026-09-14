@@ -334,10 +334,12 @@ class ScopeHookTests(unittest.TestCase):
         before = len(fixture.calls())
         fixture.git('push', 'origin', 'HEAD:main')
         actual_push = fixture.calls()[before:]
-        self.assertIn('exec playwright install chromium firefox', actual_push)
-        self.assertIn('--filter @pointercad/desktop exec install-electron', actual_push)
-        self.assertEqual([call for call in actual_push if call.startswith('run ') or call in unit_calls],
-                         expected_checks + ['run test:e2e --project=viewport-performance --project=startup-firefox --project=startup-electron'])
+        # The real Unix gate installs browser OS dependencies; Windows does not.
+        # Compare the complete sequence so missing preparation or extra calls cannot hide in a filter.
+        browser_install = 'exec playwright install ' + ('--with-deps ' if os.name != 'nt' else '') + 'chromium firefox'
+        self.assertEqual(actual_push, [browser_install,
+                         '--filter @pointercad/desktop exec install-electron', *expected_checks,
+                         'run test:e2e --project=viewport-performance --project=startup-firefox --project=startup-electron'])
         self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
         fixture.env['CI'] = 'true'
         before = len(fixture.calls())

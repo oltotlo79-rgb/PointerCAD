@@ -1,4 +1,8 @@
 {
+  "math.palette.binomial-pmf.label": "二項分布の確率（ちょうどk回）",
+  "math.palette.binomial-pmf.meaning": "引数は試行回数n、成功確率p、成功回数kの順。同じ成功確率の独立なn回の試行で、成功がちょうどk回になる確率です。nは0以上の整数、pは0以上1以下。整数・小数・分数に確定できる式を使います。",
+  "math.palette.binomial-cdf.label": "二項分布の累積確率（x回以下）",
+  "math.palette.binomial-cdf.meaning": "引数は試行回数n、成功確率p、成功回数の上限xの順。同じ成功確率の独立なn回の試行で、成功がx回以下になる確率です。xの端点を含み、小数ならその値以下の整数回を数えます。",
   "math.component.title": "座標に使う成分を選ぶ",
   "math.component.hint": "配列の各軸の番号を1から指定します。XYZの軸とは別です。選んだ成分を求める式を入力欄へ戻します。",
   "math.component.axis": "配列の軸",

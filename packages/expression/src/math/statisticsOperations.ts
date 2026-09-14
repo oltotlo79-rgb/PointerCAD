@@ -1,3 +1,4 @@
+import { normalizeBinomialProbability } from './binomialProbability.js';
 /** Sample/population conventions are separate operations, never a hidden default. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { exact, observations, observation, rationalNode, mean, deviations, dot, divide, multiply,
@@ -11,6 +12,7 @@ const sqrt = (value: MathNode): MathNode => ({ kind: 'operation', operation: 'sq
 export function normalizeStatisticsOperation(node: Extract<MathNode, { kind: 'operation' }>): MathNode {
   if (!operations.has(node.operation)) return node;
   const { operation, operands } = node;
+  if (operation === 'binomial-pmf' || operation === 'binomial-cdf') return normalizeBinomialProbability(node);
   const values = observations(operands[0], operation.startsWith('sample-') ? 2 : 1);
   if (operation === 'mean') return rationalNode(mean(values));
   if (operation === 'median') return rationalNode(quantile(values, exact(1n, 2n)));

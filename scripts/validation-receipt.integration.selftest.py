@@ -208,6 +208,21 @@ if (args === '--silent run validation:runtime') {
         self.assertFalse(proof.exists())
         self.assertEqual(self.calls()[len(before):], ['run typecheck', 'run lint', 'run test', 'run build'])
 
+    def test_real_hooks_share_a_checked_merge_without_repeating_the_full_check(self):
+        self.full_check()
+        self.git('commit', '-qm', 'feature change')
+        base = self.git('rev-parse', 'HEAD^').strip()
+        tree = self.git('rev-parse', base + '^{tree}').strip()
+        other = self.git('commit-tree', tree, '-p', base, '-m', 'parallel history').strip()
+        self.git('merge', '--no-ff', '--no-commit', other)
+        self.full_check()
+        checked = self.calls()
+        output = self.git('commit', '-qm', 'checked merge')
+        self.assertEqual(self.calls(), checked, output)
+        output = self.git('push', 'origin', 'HEAD:main')
+        self.assertEqual(self.calls(), checked, output)
+        self.assertFalse((self.root / '.git/validation-receipt.json').exists())
+
     def test_e2e_target_diagnostic_cannot_replace_full_ci_or_hook_checks(self):
         entry = [self.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(self.root / 'scripts/check.ps1')]
         selected = ['-E2EOnly', '-E2EGrep', 'fixture-selected', '-E2ENoDependencies']

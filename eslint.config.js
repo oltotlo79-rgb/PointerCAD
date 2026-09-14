@@ -22,6 +22,7 @@ const reviewModuleFiles = [
   'packages/ui/src/solid/springPropertyUpdates.ts',
   'packages/ui/src/solid/holeThreadPropertyUpdates.ts',
   'packages/ui/src/solid/chamferPropertyUpdates.ts',
+  'packages/ui/src/solid/surfacePropertyUpdates.ts',
   'packages/ui/src/solid/solidLabels.ts',
   'packages/ui/src/solid/solidHistoryState.ts',
   'packages/ui/src/solid/treeSummary.ts',
@@ -92,7 +93,7 @@ const uiRuntimeImportGuards = [{
 
 const propertyPanelImportGuard = {
   selector: ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression)[source.value=/PropertyPanel(\\.js)?$/]',
-  message: '外観と入力単位の担当モジュールから大きなプロパティパネルを参照し直さないでください（レビューR14/F11）。',
+  message: '外観・測定・入力単位の担当モジュールから大きなプロパティパネルを参照し直さないでください（レビューR14/F11）。',
 };
 
 const e2eSyntaxGuards = [{
@@ -152,7 +153,14 @@ export default tseslint.config(
       'packages/model/src/kernelBridge/*Conversions.ts',
       'packages/ui/src/appearance/AppearanceMenu.tsx', 'packages/ui/src/appearance/AppearanceSection.tsx',
       'packages/ui/src/appearance/appearancePropertyValues.ts', 'packages/ui/src/shell/propertyFieldUnits.ts',
-      'packages/ui/src/sketch/numericFieldUnits.ts', 'packages/ui/src/sketch/numericInputTools.ts'],
+      'packages/ui/src/sketch/numericFieldUnits.ts', 'packages/ui/src/sketch/numericInputTools.ts',
+      'packages/ui/src/solid/MeasurementSections.tsx', 'packages/ui/src/solid/measureFormatting.ts',
+      'packages/ui/src/solid/SectionViewSection.tsx',
+      'packages/ui/src/solid/SelectionSetSection.tsx',
+      'packages/ui/src/sketch/CanvasSection.tsx',
+      'packages/ui/src/solid/PrintCheckSection.tsx',
+      'packages/ui/src/sketch/InferConstraintsSection.tsx',
+      'packages/ui/src/shell/propertySectionText.ts'],
     rules: { 'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }] },
   },
   {
@@ -258,6 +266,13 @@ export default tseslint.config(
     files: [
       'packages/ui/src/appearance/AppearanceMenu.tsx',
       'packages/ui/src/appearance/AppearanceSection.tsx',
+      'packages/ui/src/solid/MeasurementSections.tsx',
+      'packages/ui/src/solid/SectionViewSection.tsx',
+      'packages/ui/src/solid/SelectionSetSection.tsx',
+      'packages/ui/src/sketch/CanvasSection.tsx',
+      'packages/ui/src/solid/PrintCheckSection.tsx',
+      'packages/ui/src/sketch/InferConstraintsSection.tsx',
+      'packages/ui/src/shell/propertySectionText.ts',
       'packages/ui/src/appearance/appearancePropertyValues.ts',
       'packages/ui/src/shell/propertyFieldUnits.ts',
       'packages/ui/src/sketch/numericFieldUnits.ts',
@@ -266,6 +281,16 @@ export default tseslint.config(
       'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
       'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard],
+    },
+  },
+  {
+    files: ['packages/ui/src/shell/propertySectionText.ts'],
+    rules: {
+      'max-lines': ['error', { max: 60, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[source.value!='../i18n/t.js'], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
+        message: '件数の表示は文言だけを参照し、画面・ストア・計算の実行処理を戻さないでください（レビューF11）。',
+      }],
     },
   },
   {
@@ -280,7 +305,8 @@ export default tseslint.config(
     },
   },
   {
-    files: ['packages/ui/src/appearance/appearancePropertyValues.ts', 'packages/ui/src/sketch/numericFieldUnits.ts'],
+    files: ['packages/ui/src/appearance/appearancePropertyValues.ts', 'packages/ui/src/sketch/numericFieldUnits.ts',
+      'packages/ui/src/solid/measureFormatting.ts'],
     rules: {
       'max-lines': ['error', { max: 180, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
@@ -333,14 +359,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ['packages/ui/src/solid/holeThreadPropertyUpdates.ts', 'packages/ui/src/solid/chamferPropertyUpdates.ts'],
+    files: ['packages/ui/src/solid/holeThreadPropertyUpdates.ts', 'packages/ui/src/solid/chamferPropertyUpdates.ts',
+      'packages/ui/src/solid/surfacePropertyUpdates.ts'],
     rules: {
       'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, {
         selector: "ImportDeclaration[importKind!='type'][source.value!=/^@pointercad\\/(model|expression)$/]",
-        message: '穴・ねじ・面取りの値更新は式とモデルだけを使い、表示・通信・入力状態へ依存しません。',
+        message: '穴・ねじ・面取り・曲面の値更新は式とモデルだけを使い、表示・通信・入力状態へ依存しません。',
       }, {
         selector: 'ImportExpression, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
-        message: '穴・ねじ・面取りの値更新へ通信・Worker・非同期処理を追加しません。',
+        message: '穴・ねじ・面取り・曲面の値更新へ通信・Worker・非同期処理を追加しません。',
       }],
     },
   },

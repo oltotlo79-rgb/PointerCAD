@@ -1,3 +1,4 @@
+import { mathBinomialFlow } from './mathBinomialFlow.js';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { savePart } from './scriptsFlow.js';
 import { reopenPart } from './reopenPart.js';
@@ -47,4 +48,5 @@ export async function mathStatisticsFlow(page: Page, info: TestInfo, app?: Elect
   await expect(page.locator('.pcad-help__article')).toContainText('データから統計量を求める');
   await page.keyboard.press('Escape');
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await mathBinomialFlow(page, info, app);
 }

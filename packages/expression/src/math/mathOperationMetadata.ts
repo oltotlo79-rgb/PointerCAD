@@ -13,6 +13,7 @@ export const LINEAR_DEFINITIONS = [
 ] as const;
 
 export const STATISTICS_DEFINITIONS = [
+  ['binomial-pmf', 'BinomialPmf', 3], ['binomial-cdf', 'BinomialCdf', 3],
   ['mean', 'Mean', 1], ['median', 'Median', 1], ['modes', 'Modes', 1], ['quantile', 'Quantile', 2],
   ['population-variance', 'PopulationVariance', 1], ['sample-variance', 'SampleVariance', 1],
   ['population-standard-deviation', 'PopulationStandardDeviation', 1],

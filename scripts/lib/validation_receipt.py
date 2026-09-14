@@ -21,7 +21,7 @@ import subprocess
 import sys
 import time
 
-VERSION = 1
+VERSION = 2
 LIFETIME_SECONDS = 20 * 60
 GIT_CONTEXT = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX',
                'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_QUARANTINE_PATH')
@@ -191,6 +191,8 @@ def capture(root: Path, tools: dict[str, str]) -> dict:
     if inherited_index and Path(inherited_index).resolve() != (storage(root) / 'index').resolve():
         raise ValueError('An alternate commit index requires ordinary checks')
     head = git(root, 'rev-parse', 'HEAD').decode().strip()
+    merge_path = storage(root) / 'MERGE_HEAD'
+    merge_heads = merge_path.read_text(encoding='ascii').split() if merge_path.exists() else []
     index = git(root, 'ls-files', '--stage', '-z')
     if any(not line.startswith(b'H ') for line in git(root, 'ls-files', '-v', '-z').split(b'\0') if line):
         raise ValueError('Hidden index flags cannot authorize reuse')
@@ -251,7 +253,7 @@ def capture(root: Path, tools: dict[str, str]) -> dict:
     configuration.add((Path(config_base) if config_base else user_directory / '.config') / 'pnpm/rc')
     if sys.platform == 'darwin':
         configuration.add(user_directory / 'Library/Preferences/pnpm/rc')
-    state = {'root': str(root), 'head': head, 'tree': tree, 'index': hashlib.sha256(index).hexdigest(),
+    state = {'root': str(root), 'head': head, 'mergeHeads': merge_heads, 'tree': tree, 'index': hashlib.sha256(index).hexdigest(),
              'source': digest(files), 'dependencies': directory_digest(module_roots, root, dependencies=True),
              'outputs': directory_digest(outputs, root, dependencies=False),
              'tools': {name: digest([path, tool_files[name]]) for name, path in tool_paths.items()},
@@ -259,7 +261,8 @@ def capture(root: Path, tools: dict[str, str]) -> dict:
              'browsers': browser_digest(browser_roots(root, tool_paths['node_runtime']), root),
              'environment': digest([environment, [[str(path), file_hash(path)] for path in environment_files],
                                     directory_digest(sorted(configuration), root, dependencies=False), platform.platform(), platform.machine(), sys.version])}
-    if head != git(root, 'rev-parse', 'HEAD').decode().strip() or index != git(root, 'ls-files', '--stage', '-z'):
+    final_merge_heads = merge_path.read_text(encoding='ascii').split() if merge_path.exists() else []
+    if head != git(root, 'rev-parse', 'HEAD').decode().strip() or index != git(root, 'ls-files', '--stage', '-z') or merge_heads != final_merge_heads:
         raise ValueError('Git changed during fingerprint')
     return state
 
@@ -355,9 +358,16 @@ def operate(action: str, root: Path, tools: dict[str, str], phase: str, token: s
     if receipt != reuse_receipt:
         raise ValueError('Receipt changed during input scan')
     ancestry = git(root, 'rev-list', '--parents', '-n', '1', 'HEAD').decode().split() if phase == 'Push' else []
-    parent = ancestry[1] if len(ancestry) == 2 else ''
+    parent = ancestry[1] if len(ancestry) >= 2 else ''
     if phase == 'Push' and git(root, 'rev-parse', 'HEAD^{tree}').decode().strip() != current['tree']:
         raise ValueError('Push HEAD does not contain the checked index')
+    if phase == 'Push' and receipt.get('phase') == 'commit':
+        before = receipt['state']
+        if current['mergeHeads'] or ancestry[1:] != [before['head'], *before.get('mergeHeads', [])]:
+            raise ValueError('Push commit parents differ from the checked merge')
+        # Git removes MERGE_HEAD on commit. Normalize only after every parent,
+        # including their order and count, matches the full check's recorded inputs.
+        current['mergeHeads'] = before.get('mergeHeads', [])
     if not eligible(receipt, current, phase, parent, time.time(), time.monotonic(), repeats):
         before = receipt.get('state', {})
         changed = [name for name in current if name != 'head' and before.get(name) != current[name]]

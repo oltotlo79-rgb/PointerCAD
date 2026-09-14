@@ -82,6 +82,54 @@ class ReceiptTests(unittest.TestCase):
             capture.assert_not_called()
         self.assert_no_receipt()
 
+    def prepare_merge(self):
+        self.git('commit', '-qm', 'feature change')
+        base = self.git('rev-parse', 'HEAD^').decode().strip()
+        tree = self.git('rev-parse', base + '^{tree}').decode().strip()
+        other = self.git('commit-tree', tree, '-p', base, '-m', 'parallel history').decode().strip()
+        self.git('merge', '--no-ff', '--no-commit', other)
+        return base, tree, other
+
+    def test_checked_merge_preserves_all_parents_and_shares_once(self):
+        self.prepare_merge()
+        self.complete()
+        self.assertTrue(self.run_action('reuse', 'Commit')['used'])
+        self.git('commit', '-qm', 'checked merge')
+        self.assertEqual(len(self.git('rev-list', '--parents', '-n', '1', 'HEAD').split()), 3)
+        self.assertTrue(self.run_action('reuse', 'Push')['used'])
+        self.assert_no_receipt()
+
+    def test_changed_merge_parent_invalidates_running_check(self):
+        base, tree, _ = self.prepare_merge()
+        start = self.run_action('start')
+        other = self.git('commit-tree', tree, '-p', base, '-m', 'different history').decode().strip()
+        # Git's own metadata uses LF bytes even on Windows.
+        (self.folder / 'MERGE_HEAD').write_bytes((other + '\n').encode('ascii'))
+        with self.assertRaisesRegex(ValueError, 'mergeHeads'):
+            self.run_action('finish', token=start['token'])
+        self.assert_no_receipt()
+
+    def test_unchanged_tree_with_replaced_merge_parent_is_rejected(self):
+        base, tree, _ = self.prepare_merge()
+        self.complete()
+        self.run_action('reuse', 'Commit')
+        other = self.git('commit-tree', tree, '-p', base, '-m', 'different history').decode().strip()
+        (self.folder / 'MERGE_HEAD').write_bytes((other + '\n').encode('ascii'))
+        self.git('commit', '-qm', 'changed merge')
+        with self.assertRaisesRegex(ValueError, 'parents differ'):
+            self.run_action('reuse', 'Push')
+        self.assert_no_receipt()
+
+    def test_unchanged_tree_with_removed_merge_parent_is_rejected(self):
+        self.prepare_merge()
+        self.complete()
+        self.run_action('reuse', 'Commit')
+        self.git('merge', '--quit')
+        self.git('commit', '--allow-empty', '-qm', 'missing merge parent')
+        with self.assertRaisesRegex(ValueError, 'parents differ'):
+            self.run_action('reuse', 'Push')
+        self.assert_no_receipt()
+
     def test_modified_receipt_rejects_before_reading_dependencies_or_browsers(self):
         key = b'k' * 32
         (self.folder / 'validation-receipt.key').write_bytes(key)

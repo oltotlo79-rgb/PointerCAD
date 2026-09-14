@@ -26,6 +26,8 @@ export const MATH_PALETTE_EXAMPLES: readonly {
   {"id": "prime-factors", "selection": "360", "slots": [], "expected": "matrix"},
   {"id": "divisors", "selection": "36", "slots": [], "expected": "vector"},
   {"id": "euler-totient", "selection": "36", "slots": [], "expected": 12},
+  { id: 'binomial-pmf', selection: '4', slots: ['1/2', '2'], expected: 0.375 },
+  { id: 'binomial-cdf', selection: '4', slots: ['1/2', '2'], expected: 0.6875 },
   { id: 'singular-values', selection: '[[3,0],[0,4]]', slots: [], expected: 'vector' },
   { id: 'eigenvalues', selection: '[[2,1],[1,2]]', slots: [], expected: 'vector' },
   { id: 'row-reduce', selection: '[[1,2,3],[2,4,6]]', slots: [], expected: 'matrix' },

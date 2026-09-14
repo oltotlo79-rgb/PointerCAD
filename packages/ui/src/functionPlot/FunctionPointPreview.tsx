@@ -3,18 +3,10 @@ import type {SolidBody,ResolvedSpline,Vec3} from '@pointercad/model';
 import type {PointCalculationCandidate} from '@pointercad/expression/math/contracts';
 import {useFunctionPreviewFocus} from './useFunctionPreviewFocus.js';
 import {t} from '../i18n/t.js';
+import {createFunctionPointPreviewProjection} from './functionPreviewProjection.js';
 import {drawFunctionCurve} from './drawFunctionCurve.js';
 
 const initialRotation={yaw:-Math.PI/4,pitch:0.6};
-function pointProjection(minimum:Vec3,maximum:Vec3,rotation:typeof initialRotation){
-  const spans=maximum.map((value,index)=>value-minimum[index]),span=Math.max(...spans);
-  const center=minimum.map((value,index)=>value+spans[index]/2);
-  return (point:Vec3,width:number,height:number):readonly [number,number]=>{
-    const [x,y,z]=point.map((value,index)=>(value-center[index])/span);
-    const horizontal=Math.cos(rotation.yaw)*x-Math.sin(rotation.yaw)*y,depth=Math.sin(rotation.yaw)*x+Math.cos(rotation.yaw)*y;
-    return [width/2+horizontal*height*0.65,height/2-(Math.cos(rotation.pitch)*z-Math.sin(rotation.pitch)*depth)*height*0.65];
-  };
-}
 /** Show the existing CAD geometry and explicit candidate buttons without changing the document. */
 export function FunctionPointPreview({minimum,maximum,body,curves,candidates,selected,onSelect,direction}:{
   readonly minimum:Vec3;readonly maximum:Vec3;readonly body?:SolidBody;readonly curves:readonly ResolvedSpline[];
@@ -25,13 +17,15 @@ export function FunctionPointPreview({minimum,maximum,body,curves,candidates,sel
   const canvas=useRef<HTMLCanvasElement>(null),figure=useFunctionPreviewFocus();
   const drag=useRef<{x:number;y:number}|null>(null),[rotation,setRotation]=useState(initialRotation);
   const [size,setSize]=useState({width:1,height:1});
-  const project=pointProjection(minimum,maximum,rotation);
+  const project=createFunctionPointPreviewProjection(minimum,maximum,rotation);
   useEffect(()=>{
     const element=canvas.current,context=element?.getContext('2d');if(!element||!context)return;
-    const projection=pointProjection(minimum,maximum,rotation);
-    const project=(point:Vec3)=>projection(point,element.width,element.height);
+    const projection=createFunctionPointPreviewProjection(minimum,maximum,rotation);
     const draw=()=>{
       const size=element.getBoundingClientRect(),ratio=window.devicePixelRatio||1;
+      const project=(point:Vec3):readonly [number,number]=>{
+        const [x,y]=projection(point,size.width,size.height);return [x*ratio,y*ratio];
+      };
       element.width=Math.max(1,Math.round(size.width*ratio));element.height=Math.max(1,Math.round(size.height*ratio));
       setSize(previous=>previous.width===size.width&&previous.height===size.height?previous:{width:size.width,height:size.height});
       context.clearRect(0,0,element.width,element.height);context.strokeStyle=getComputedStyle(element).color;context.lineWidth=ratio;
@@ -48,8 +42,15 @@ export function FunctionPointPreview({minimum,maximum,body,curves,candidates,sel
         }
       }
       for(const curve of curves)drawFunctionCurve(context,curve,project);
-      context.stroke();context.globalAlpha=1;context.fillStyle=context.strokeStyle;context.font=`${12*ratio}px sans-serif`;
-      for(const [label,corner]of [['X',corners[1]],['Y',corners[2]],['Z',corners[4]]]as const)context.fillText(label,...project(corner));
+      context.stroke();
+      // Keep every axis name outside the candidate buttons, including when an
+      // axis corner projects onto the centre of the box. Leaders retain its meaning.
+      context.globalAlpha=0.35;context.beginPath();
+      for(const [index,corner]of [corners[1],corners[2],corners[4]].entries()) {
+        context.moveTo(...project(corner));
+        context.lineTo((size.width-30)*ratio,size.height*(index+1)/4*ratio);
+      }
+      context.stroke();context.globalAlpha=1;context.fillStyle=context.strokeStyle;
       if(direction){
         const from=project(direction.from),to=project(direction.to),angle=Math.atan2(to[1]-from[1],to[0]-from[0]);
         context.lineWidth=3*ratio;context.beginPath();context.moveTo(...from);context.lineTo(...to);
@@ -68,6 +69,8 @@ export function FunctionPointPreview({minimum,maximum,body,curves,candidates,sel
         const dx=event.clientX-previous.x,dy=event.clientY-previous.y;drag.current={x:event.clientX,y:event.clientY};
         setRotation(value=>({yaw:value.yaw+dx*0.01,pitch:Math.max(-Math.PI/2,Math.min(Math.PI/2,value.pitch+dy*0.01))}));
       }} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}/>
+      {['X','Y','Z'].map((axis,index)=><span key={axis} className="pcad-function-axis-label"
+        style={{left:size.width-20,top:size.height*(index+1)/4}}>{axis}</span>)}
       {candidates.map((candidate,index)=>{
         const [left,top]=project(candidate.point,size.width,size.height);
         return <button type="button" className="pcad-function-point-marker" key={index} aria-pressed={selected===candidate}

@@ -620,6 +620,8 @@
 
 .pcad-shell {
   display: grid;
+  /* Progress and status content must not move the canvas or property controls. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
   height: 100%;
   min-height: 0;

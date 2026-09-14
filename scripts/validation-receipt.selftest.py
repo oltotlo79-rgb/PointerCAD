@@ -9,6 +9,9 @@ import sys
 import tempfile
 import time
 import unittest
+from lib.task_workspace import configure_project_temp
+
+configure_project_temp(Path(__file__).resolve().parents[1])
 from unittest.mock import patch
 
 sys.dont_write_bytecode = True
@@ -70,6 +73,60 @@ class ReceiptTests(unittest.TestCase):
         self.assert_no_receipt()
         with self.assertRaises(OSError):
             self.run_action('reuse', 'Push')
+
+    def test_absent_receipt_rejects_before_reading_dependencies_or_browsers(self):
+        (self.folder / 'validation-receipt.key').write_bytes(b'k' * 32)
+        with patch.object(receipt, 'capture', side_effect=AssertionError('Unnecessary input scan')) as capture:
+            with self.assertRaises(FileNotFoundError):
+                self.run_action('reuse', 'Commit')
+            capture.assert_not_called()
+        self.assert_no_receipt()
+
+    def test_modified_receipt_rejects_before_reading_dependencies_or_browsers(self):
+        key = b'k' * 32
+        (self.folder / 'validation-receipt.key').write_bytes(key)
+        path = self.folder / 'validation-receipt.json'
+        receipt.write_record(path, {'phase': 'prepared'}, key)
+        modified = json.loads(path.read_text(encoding='utf8'))
+        modified['payload']['phase'] = 'commit'
+        path.write_text(json.dumps(modified), encoding='utf8')
+        with patch.object(receipt, 'capture', side_effect=AssertionError('Unnecessary input scan')) as capture:
+            with self.assertRaisesRegex(ValueError, 'Receipt was modified'):
+                self.run_action('reuse', 'Commit')
+            capture.assert_not_called()
+        self.assert_no_receipt()
+
+    def test_valid_receipt_still_fingerprints_all_inputs_before_reuse(self):
+        self.complete()
+        with patch.object(receipt, 'capture', wraps=receipt.capture) as capture:
+            self.assertTrue(self.run_action('reuse', 'Commit')['used'])
+            capture.assert_called_once_with(self.root, self.tools)
+
+    def test_receipt_changed_or_removed_during_input_scan_is_rejected(self):
+        original_capture = receipt.capture
+        for mutation in ('modified', 'replaced', 'removed'):
+            with self.subTest(mutation=mutation):
+                self.complete()
+                path = self.folder / 'validation-receipt.json'
+
+                def capture_then_change(root, tools):
+                    state = original_capture(root, tools)
+                    if mutation == 'removed':
+                        path.unlink()
+                    else:
+                        record = json.loads(path.read_text(encoding='utf8'))
+                        record['payload']['token'] = 'replacement-token'
+                        if mutation == 'replaced':
+                            key = (self.folder / 'validation-receipt.key').read_bytes()
+                            receipt.write_record(path, record['payload'], key)
+                        else:
+                            path.write_text(json.dumps(record), encoding='utf8')
+                    return state
+
+                with patch.object(receipt, 'capture', side_effect=capture_then_change):
+                    with self.assertRaises((OSError, ValueError)):
+                        self.run_action('reuse', 'Commit')
+                self.assert_no_receipt()
 
     def test_unix_hook_git_hashes_both_shipped_entries_and_rejects_other_copies(self):
         core = self.root / 'git-layout/lib/git-core'

@@ -3,15 +3,8 @@ import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { exact, observations, observation, rationalNode, mean, deviations, dot, divide, multiply,
   subtract, quantile, compare } from './statisticsData.js';
 
-export const STATISTICS_DEFINITIONS = [
-  ['mean', 'Mean', 1], ['median', 'Median', 1], ['modes', 'Modes', 1], ['quantile', 'Quantile', 2],
-  ['population-variance', 'PopulationVariance', 1], ['sample-variance', 'SampleVariance', 1],
-  ['population-standard-deviation', 'PopulationStandardDeviation', 1],
-  ['sample-standard-deviation', 'SampleStandardDeviation', 1],
-  ['population-covariance', 'PopulationCovariance', 2], ['sample-covariance', 'SampleCovariance', 2],
-  ['correlation', 'Correlation', 2], ['regression-slope', 'RegressionSlope', 2],
-  ['regression-intercept', 'RegressionIntercept', 2], ['r-squared', 'RSquared', 2],
-] as const;
+import { STATISTICS_DEFINITIONS } from './mathOperationMetadata.js';
+export { STATISTICS_DEFINITIONS } from './mathOperationMetadata.js';
 const operations = new Set<string>(STATISTICS_DEFINITIONS.map(([id]) => id));
 const sqrt = (value: MathNode): MathNode => ({ kind: 'operation', operation: 'sqrt', operands: [value] });
 

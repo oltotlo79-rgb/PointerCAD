@@ -49,20 +49,52 @@ export async function functionCoefficientFlow(page: Page, info: TestInfo, app?: 
   await expect(search).toHaveValue(''); await expect(search).toBeFocused();
   await search.fill(curve.name); await search.press('ArrowDown'); await result.press('Enter');
   await expect(search).toHaveValue('');
+  // Exercise the scrollable property panel at the failing Electron window size on every host.
+  await page.setViewportSize({ width: 1008, height: 681 });
   const panel = page.getByRole('region', { name: coefficient('title'), exact: true });
   const slider = panel.getByRole('slider', { name: `${coefficient('value')}: 高さ`, exact: true });
   await expect(slider).toBeVisible();
   await expect(panel).toContainText(coefficient('replacesExpression'));
   await panel.getByRole('spinbutton', { name: coefficient('minimum'), exact: true }).fill('0');
   await panel.getByRole('spinbutton', { name: coefficient('maximum'), exact: true }).fill('4');
+  // Layout visibility alone also accepts a range input clipped below the scroll panel.
+  // Raw mouse coordinates do not scroll it into view as locator.click() would.
+  // Set focus before measuring: native focus can scroll the document horizontally.
+  await slider.focus();
+  await expect(slider).toBeFocused();
+  await slider.scrollIntoViewIfNeeded();
+  await expect(slider).toBeInViewport({ ratio: 1 });
+  await expect.poll(() => slider.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element;
+  }), { message: '係数のつまみへ実際のマウス操作が届くこと', timeout: 5_000 }).toBe(true);
   const box = await slider.boundingBox();
   if (box === null) throw new Error('The coefficient slider is not laid out');
+  const dragLayout = () => slider.evaluate(element => {
+    if (!(element instanceof HTMLInputElement)) throw new Error('The coefficient slider is not an input');
+    const body = document.querySelector('.pcad-shell__body');
+    if (!(body instanceof HTMLElement)) throw new Error('The application layout is missing');
+    const { x, y, width } = element.getBoundingClientRect();
+    return { x, y, width, bodyWidth: body.getBoundingClientRect().width,
+      viewportWidth: window.innerWidth, value: element.value };
+  });
+  const beforeDrag = await dragLayout();
   const changed = await beginRecompute(page);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   try {
     await page.mouse.move(box.x + box.width * 0.74, box.y + box.height / 2, { steps: 24 });
   } finally { await page.mouse.up(); }
+  const afterDrag = await dragLayout();
+  console.log('[係数ドラッグ位置]', JSON.stringify({ before: beforeDrag, after: afterDrag }));
+  expect(afterDrag.x, 'ドラッグ中に係数のつまみの横位置がずれないこと').toBeCloseTo(beforeDrag.x, 1);
+  expect(afterDrag.width, 'ドラッグ中に係数のつまみの幅が変わらないこと').toBeCloseTo(beforeDrag.width, 1);
+  expect(afterDrag.bodyWidth, '係数の変更で画面の内側が窓幅より広がらないこと').toBeLessThanOrEqual(afterDrag.viewportWidth);
+  await expect(slider).toBeInViewport({ ratio: 1 });
+  await expect.poll(async () => {
+    const value = Number(await slider.inputValue());
+    return value > 2.7 && value < 3.3;
+  }, { message: 'ドラッグで係数の値が変わってから再計算を待つこと', timeout: 5_000 }).toBe(true);
   await waitForRecompute(page, changed);
   const dragged = await savePart(page, info, 'function-coefficient-dragged.pcad', app);
   const draggedValue = dragged.parameters[0].value.value;

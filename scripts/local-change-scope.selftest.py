@@ -7,6 +7,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from lib.task_workspace import configure_project_temp
+
+configure_project_temp(Path(__file__).resolve().parents[1])
 from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
@@ -262,6 +265,8 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(scope.classify(['scripts/check.ps1'])['packages'], ['desktop', 'test-utils'])
         self.assertEqual(scope.classify(['scripts/hooks/commit-msg', 'scripts/lib/commit_message.py',
                                         'scripts/commit-message.selftest.py'])['packages'], ['desktop', 'test-utils'])
+        for path in ['scripts/lib/task_workspace.py', 'scripts/task-workspace.selftest.py']:
+            self.assertEqual(scope.classify([path])['packages'], ['desktop', 'test-utils'], path)
         self.assertEqual(scope.classify(['packages/unknown/src/new.test.ts'])['mode'], 'full')
         self.assertEqual(scope.classify(['packages/expression/vitest.config.ts'])['packages'], ['expression', 'test-utils'])
         self.assertEqual(scope.classify(['packages/expression/unknown.config.ts'])['mode'], 'full')

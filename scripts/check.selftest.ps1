@@ -21,6 +21,12 @@ if (-not (Test-Path -LiteralPath $libPath -PathType Leaf)) {
 $isolatedEntry = Start-IsolatedGitSelftest -ScriptPath $MyInvocation.MyCommand.Path
 if ($isolatedEntry.Restarted) { exit $isolatedEntry.ExitCode }
 
+$projectTemp = & python -B -X utf8 (Join-Path $scriptDirectory 'lib/task_workspace.py') --temp-root
+if ($LASTEXITCODE -ne 0) { throw 'プロジェクト内の自己試験保存先を用意できませんでした。' }
+foreach ($tempVariable in @('TEMP', 'TMP', 'TMPDIR')) {
+    [Environment]::SetEnvironmentVariable($tempVariable, ($projectTemp -join "`n").Trim(), 'Process')
+}
+
 $failures = 0
 
 function Assert-True {
@@ -43,6 +49,12 @@ if (Test-Path -LiteralPath $messageSelftest -PathType Leaf) {
     Assert-True $false 'コミットコメントの自己試験が存在すること'
 }
 
+if ($failures -gt 0) { exit 1 }
+
+$workspaceSelftest = Join-Path $scriptDirectory 'task-workspace.selftest.py'
+if (-not (Test-Path -LiteralPath $workspaceSelftest -PathType Leaf)) { throw '保存範囲の自己試験が見つかりません。' }
+& python -B -X utf8 $workspaceSelftest
+Assert-True ($LASTEXITCODE -eq 0) '作業ファイルはプロジェクト内に限定し、外部・Git・外へ向かうリンクを作成前に拒否する'
 if ($failures -gt 0) { exit 1 }
 
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("pointercad-checkselftest-" + [Guid]::NewGuid().ToString("N"))
@@ -539,24 +551,24 @@ Assert-True ($null -ne $perfModeShellCommand) "シナリオ12 前提: powershell
 if ($null -ne $perfModeShellCommand) {
     $originalCIEnvValue = $env:CI
     try {
-        # 12a: CI 未設定 + -Level Push は従来どおり厳密
+        # 12a: CI 未設定でも旧速度目標を厳密な公開条件に戻さない
         Remove-Item Env:CI -ErrorAction SilentlyContinue
         # 2>&1 は使わない(Windows PowerShell 5.1 でネイティブコマンドのstderrをリダイレクトすると
         # $ErrorActionPreference='Stop' 下で終端エラー扱いになる実測がある。rules/06 10.7)。
         $output12a = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath -Level Push -ShowPerfModeOnly | Out-String
-        Assert-True ($output12a -match [regex]::Escape("性能検査: 厳密(-Level Push)")) `
-            "シナリオ12a: CI未設定 + -Level Push は「性能検査: 厳密(-Level Push)」と表示する"
+        Assert-True ($output12a -match [regex]::Escape("性能検査: 正確性優先(-Level Push)")) `
+            "シナリオ12a: CI未設定 + -Level Push でも正確性優先と表示する"
 
-        # 12b: CI=true + -Level Push は参考(CI)に切り替わる(上限の数値・段は変えない)
+        # 12b: CIでも同じ性能方針を表示する
         $env:CI = 'true'
         $output12b = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath -Level Push -ShowPerfModeOnly | Out-String
-        Assert-True ($output12b -match [regex]::Escape("性能検査: 参考(CI)")) `
-            "シナリオ12b: CI=true + -Level Push は「性能検査: 参考(CI)」と表示する"
+        Assert-True ($output12b -match [regex]::Escape("性能検査: 正確性優先(CI)")) `
+            "シナリオ12b: CI=true + -Level Push でも正確性優先と表示する"
 
-        # 12c: CI=true でも -Level Commit の表示は変わらない(pre-commitは元々参考のまま)
+        # 12c: Commitでも同じ性能方針を表示する
         $output12c = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath -Level Commit -ShowPerfModeOnly | Out-String
-        Assert-True ($output12c -match [regex]::Escape("性能検査: 参考(-Level Commit)")) `
-            "シナリオ12c: CI=true でも -Level Commit は従来どおり「性能検査: 参考(-Level Commit)」と表示する"
+        Assert-True ($output12c -match [regex]::Escape("性能検査: 正確性優先(-Level Commit)")) `
+            "シナリオ12c: CI=true + -Level Commit でも正確性優先と表示する"
     }
     finally {
         if ($null -eq $originalCIEnvValue) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $originalCIEnvValue }

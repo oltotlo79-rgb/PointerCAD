@@ -4,6 +4,11 @@ export interface CalculationRequest { readonly identity: MathRequestIdentity }
 
 /** Platform-independent transport. DOM Worker construction belongs to the UI adapter. */
 export interface CalculationWorkerPort {
+  /** Optional host allowance for the first request, including module/backend loading.
+   * Read after posting so a lazy shared transport can expose the actual Worker state.
+   * Warm requests must return zero; cancellation and the absolute 30s ceiling remain.
+   */
+  readonly startupTimeoutMs?: number;
   onmessage:((event:{readonly data:unknown})=>void)|null;
   onerror:((event:{readonly preventDefault:()=>void})=>void)|null;
   onmessageerror:(()=>void)|null;
@@ -121,10 +126,22 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
         worker.onerror = event => { event.preventDefault(); failure(); };
         worker.onmessageerror = failure;
       }
-      this.timeout = setTimeout(() => {
+      const expire = () => {
         if (this.active?.serial === work.serial) this.complete({ status: 'deadline', identity: work.request.identity }, true);
-      }, work.timeoutMs);
+      };
+      this.timeout = setTimeout(expire, work.timeoutMs);
+      const postedAt = performance.now();
       this.worker.postMessage(this.options.createEnvelope(work.serial,work.request));
+      // A synchronous transport can already have completed/cancelled this work.
+      if (this.active !== work) return;
+      const startupTimeoutMs = this.worker.startupTimeoutMs ?? 0;
+      if (!Number.isSafeInteger(startupTimeoutMs) || startupTimeoutMs < 0 || startupTimeoutMs > 30_000) {
+        throw new RangeError('Invalid math startup deadline');
+      }
+      if (startupTimeoutMs > work.timeoutMs) {
+        if (this.timeout !== null) clearTimeout(this.timeout);
+        this.timeout = setTimeout(expire, Math.max(0, Math.ceil(startupTimeoutMs - (performance.now() - postedAt))));
+      }
     } catch {
       this.complete({ status: 'worker-error', identity: work.request.identity }, true);
     }

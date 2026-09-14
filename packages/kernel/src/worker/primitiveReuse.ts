@@ -6,6 +6,9 @@ import type { BooleanResult } from '../occt/booleanOp.js';
 import { IDENTITY_TRANSFORM, makeTransform } from '../occt/transformShape.js';
 import type { CachedSolid } from './recomputeSolids.js';
 import type { ShapeCache } from './shapeCache.js';
+import type { KnownTriangulation } from '../occt/triangulationReuse.js';
+
+interface PrimitiveCopy extends BooleanResult { readonly triangulation?: KnownTriangulation }
 
 function signature(spec: SolidStepSpec): { key: string; origin: Vec3Tuple } | null {
   if (spec.kind !== 'primitive' || spec.originQuery !== null || spec.targetKey !== null || !spec.origin.every(Number.isFinite)) return null;
@@ -32,7 +35,7 @@ export function createPrimitiveReuse(oc: OpenCascadeInstance, cache: ShapeCache<
       // 複製を次の複製元へ重ねず、最初の実形状を使って座標の丸めを累積させない。
       if (previous === undefined || !cache.has(previous.key)) prototypes.set(local.key, { key, origin: local.origin });
     },
-    copy(spec: SolidStepSpec): BooleanResult | null {
+    copy(spec: SolidStepSpec): PrimitiveCopy | null {
       const local = signature(spec);
       if (local === null) return null;
       const prototype = prototypes.get(local.key);
@@ -52,7 +55,7 @@ export function createPrimitiveReuse(oc: OpenCascadeInstance, cache: ShapeCache<
         const transform = makeTransform(oc, { ...IDENTITY_TRANSFORM, translation: delta }, owned.keep);
         const location = owned.keep(new oc.TopLoc_Location_2(transform));
         const moved = owned.keep(copied.Moved(location, true));
-        return { shape: moved, volume: source.mesh.volume, delete: owned.release };
+        return { shape: moved, volume: source.mesh.volume, triangulation: source.triangulation, delete: owned.release };
       } catch (error) { owned.release(); throw error; }
     },
   };

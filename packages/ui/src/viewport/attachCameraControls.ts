@@ -3,6 +3,8 @@ import { HOME_ORBIT, orbit, pan, zoom, type OrbitState } from './cameraMath.js';
 /** 視点の正本。ビューキューブなど外側の部品もここを通してだけ視点を読み書きする。 */
 export interface CameraControls {
   getOrbit(): OrbitState;
+  /** 開始時の操作を保持する。ドラッグ途中でAltを離しても作図へ切り替えない。 */
+  isDragging(): boolean;
   /** ビューキューブなど、外から視点を差し替えるための入口。視点の正本はこの1箇所に置く。 */
   setOrbit(next: OrbitState): void;
   goHome(): void;
@@ -172,6 +174,7 @@ export function attachCameraControls(
 
   return {
     getOrbit,
+    isDragging: () => dragMode !== null,
     setOrbit,
     goHome,
     detach: () => {

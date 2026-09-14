@@ -47,9 +47,12 @@ const startup = { loader: typeof globalThis.__playwright_run === 'function', rea
 if (!startup.loader || startup.ready || startup.windows !== 0) throw new Error('Electron startup barrier missing');
 require('node:fs').writeFileSync(${JSON.stringify(join(directory, 'bootstrap.json'))}, JSON.stringify(startup));
 app.setPath('userData', ${JSON.stringify(profile)});
-// Native desktop keystrokes must not enter an automated test window.
+// Native desktop input must not enter an automated test window.
 // Playwright sends input directly to webContents; the real window still renders.
-app.on('browser-window-created', (_event, window) => window.setFocusable(false));
+app.on('browser-window-created', (_event, window) => {
+  window.setFocusable(false);
+  window.setIgnoreMouseEvents(true);
+});
 require(${JSON.stringify(join(root, 'apps/desktop/dist/main/main.cjs'))});
 `);
   // Explicit WebGL software rendering works without a physical GPU on hosted CI.
@@ -57,5 +60,17 @@ require(${JSON.stringify(join(root, 'apps/desktop/dist/main/main.cjs'))});
   // https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md
   const app = await playwright._electron.launch({ executablePath: executable,
     args: ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader', entry], cwd: root, timeout: 30_000 });
-  return { app, directory };
+  try {
+    await app.firstWindow();
+    // CDP can attach before ready-to-show. Start gestures only after the actual
+    // window is shown and its initial main-frame navigation has finished.
+    await expect.poll(() => app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      return window !== undefined && window.isVisible() && !window.webContents.isLoadingMainFrame();
+    }), { message: '実Electronの表示と初回の読込が完了すること', timeout: 30_000 }).toBe(true);
+    return { app, directory };
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
 }

@@ -391,6 +391,7 @@ export function attachSketchInteraction(
   canvas: HTMLCanvasElement,
   scene: ViewportScene,
   getOrbit: () => OrbitState,
+  isCameraDragging: () => boolean,
 ): SketchInteraction {
   // メソッドをそのまま値として渡さない(@typescript-eslint/unbound-method)。
   const project: ProjectToScreen = (point) => scene.worldToScreen(point);
@@ -1110,6 +1111,14 @@ export function attachSketchInteraction(
 
   function onPointerMove(event: PointerEvent): void {
     const state = useAppStore.getState();
+    // 視点操作の間は吸着・当たり判定・編集予告を更新しない。古い予告は最初の1回で消す。
+    // ボタンの現在値ではなく、視点操作側が保持する開始から解除までの状態を使う。
+    if (isCameraDragging()) {
+      if (state.hoveredElementId !== null) state.setHovered(null);
+      if (state.editPreview !== null) state.setEditPreview(null);
+      clearSnapIndicators();
+      return;
+    }
     const pointer = pointerPosition(event);
 
     if (sectionDrag !== null) {

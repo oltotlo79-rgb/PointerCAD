@@ -23,6 +23,7 @@ GATE_FILES = {
     'scripts/check-commit-batch.selftest.ps1', 'scripts/git-selftest-environment.selftest.py',
     'scripts/hooks/commit-msg', 'scripts/lib/commit_message.py', 'scripts/commit-message.selftest.py',
     'scripts/validation-receipt.integration.selftest.py',
+    'scripts/lib/task_workspace.py', 'scripts/task-workspace.selftest.py',
 }
 NOTICE_BUILD_FILES = {'scripts/vite/mathNotices.mjs', 'scripts/vite/mathNotices.d.mts',
                       'scripts/vite/mathDependencyInventory.mjs', 'scripts/vite/mathDependencyInventory.d.mts'}

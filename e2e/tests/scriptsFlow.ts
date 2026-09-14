@@ -4,6 +4,7 @@ import { decodeScriptFile, readPcadFile } from '../../packages/io/src/index.js';
 import { chooseToolMenuItem, openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
+import { SCRIPT_LIMITS } from '../../packages/model/src/scripting/scriptTypes.js';
 
 export const panel = (page: Page): Locator => page.getByRole('region', { name: '自動作図', exact: true });
 export const source = (page: Page): Locator => panel(page).getByRole('textbox', { name: 'JavaScript user-script.js', exact: true });
@@ -13,9 +14,15 @@ export async function writeDraft(page: Page, name: string, code: string): Promis
 }
 export async function savePart(page: Page, info: TestInfo, name: string, app?: ElectronApplication) {
   const path = info.outputPath(name);
+  // Applying mathematics commits asynchronously. An open native dialog makes the
+  // canvas inert, so focus() alone can succeed without receiving the save keys.
+  await expect(page.locator('dialog[open]'), '保存前に数式などの確定処理が終わること').toHaveCount(0);
+  const canvas = page.locator('canvas.pcad-viewport__canvas');
+  await canvas.focus();
+  await expect(canvas, '保存キーを送る作図面に焦点があること').toBeFocused();
   if (app !== undefined) await saveTarget(app, path);
   const download = app === undefined ? page.waitForEvent('download') : undefined;
-  await page.locator('canvas.pcad-viewport__canvas').focus(); await page.keyboard.press('Control+Shift+s');
+  await page.keyboard.press('Control+Shift+s');
   if (download !== undefined) await (await download).saveAs(path); else await diskFile(path);
   const file = await readPcadFile(new Uint8Array(await readFile(path)));
   if (!file.ok) throw new Error(JSON.stringify(file.error)); return file.document;
@@ -23,8 +30,15 @@ export async function savePart(page: Page, info: TestInfo, name: string, app?: E
 export async function successfulRun(page: Page): Promise<void> {
   const token = await beginRecompute(page);
   await panel(page).getByRole('button', { name: '実行', exact: true }).first().click();
-  await expect(panel(page).getByRole('status').filter({ hasText: /^実行が完了しました$/u })).toBeVisible({ timeout: 35000 });
+  await waitForScriptSuccess(page);
   await waitForRecompute(page, token);
+}
+async function waitForScriptSuccess(page: Page): Promise<void> {
+  const terminal = panel(page).getByRole('status').filter({ hasText: /^(実行が完了しました|実行できませんでした|中止しました)/u });
+  await expect(terminal).toBeVisible({ timeout: SCRIPT_LIMITS.totalMs + 5000 });
+  // Report a real failure immediately instead of waiting out the success timeout.
+  const messages = await panel(page).getByRole('alert').allTextContents();
+  await expect(terminal, messages.join('\n')).toHaveText('実行が完了しました', { timeout: 0 });
 }
 export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -86,10 +100,11 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   await page.keyboard.press('Escape');
   await page.reload(); await expect(page.getByRole('button', { name: '新規', exact: true })).toBeVisible();
   // Loading the library does not run it. Explicit toolbar execution restores its input and creates the part.
+  const toolExecution = await beginRecompute(page);
   await chooseToolMenuItem(page, '自動作図', '穴あき板');
   await expect(panel(page)).toBeVisible();
-  await expect(panel(page)).toContainText('実行が完了しました', { timeout: 35000 });
-  await expect.poll(async () => (await readRecomputeStats(page)).lastOutcome).toBe('success');
+  await waitForScriptSuccess(page);
+  await waitForRecompute(page, toolExecution);
   // Error line is the user's original source, and an earlier successful command is discarded.
   const beforeFailure = await savePart(page, info, 'script-before-failure.pcad', app);
   await writeDraft(page, '失敗の例', "cad.solid.box({x:'3',y:'3',z:'3'});\nthrow new Error('2行目の停止');");
@@ -117,7 +132,7 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   await source(page).focus(); await page.keyboard.press('F1');
   const help = page.getByRole('dialog', { name: 'PointerCAD ヘルプ', exact: true });
   await expect(help.getByRole('heading', { level: 1 })).toHaveText('JavaScriptで自動作図する');
-  await expect(help).toContainText('30秒');
+  await expect(help).toContainText(`${SCRIPT_LIMITS.totalMs / 1000}秒`);
   await expect.poll(() => help.locator('img').evaluateAll(images => images.filter(image => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0).length)).toBeGreaterThanOrEqual(2);
   await page.keyboard.press('Escape');
   for (const chapter of [{ button: 'APIの説明', title: '自動作図APIリファレンス', images: 1 }, { button: '道具登録の説明', title: '処理を保存し、道具として登録する', images: 2 }]) {

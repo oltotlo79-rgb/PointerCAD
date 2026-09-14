@@ -10,13 +10,22 @@ export function reduceExactMatrixRank(node: MathNode,
   if (matrix?.kind !== 'operation' || matrix.operation !== 'list' || matrix.operands.length === 0) {
     throw new MathInputProblem('domain','行列の階数には長方形に並んだ成分を指定してください。');
   }
+  // Validate every row before an algebraic entry can defer exact elimination.
+  // Otherwise an unknown first entry would hide a malformed later row.
+  const width = matrix.operands[0].kind === 'operation' && matrix.operands[0].operation === 'list'
+    ? matrix.operands[0].operands.length : 0;
+  if (width === 0 || matrix.operands.some(row => row.kind !== 'operation' || row.operation !== 'list'
+    || row.operands.length !== width)) {
+    throw new MathInputProblem('domain','行列の各行の成分数を揃えてください。');
+  }
+  if (matrix.operands.length > 256 || width > 256 || matrix.operands.length * width > 4096) {
+    throw new MathInputProblem('budget','行列は256行・256列・4096成分以内で指定してください。');
+  }
   const rows: ExactRational[][] = [];
-  let width = -1;
   for (const row of matrix.operands) {
-    if (row.kind !== 'operation' || row.operation !== 'list' || row.operands.length === 0 || (width >= 0 && row.operands.length !== width)) {
+    if (row.kind !== 'operation' || row.operation !== 'list') {
       throw new MathInputProblem('domain','行列の各行の成分数を揃えてください。');
     }
-    width = row.operands.length;
     const values: ExactRational[] = [];
     for (const component of row.operands) {
       const exact = rationalOfExpression(component,resolveExactSymbol);

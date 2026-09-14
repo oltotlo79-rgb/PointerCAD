@@ -8,7 +8,7 @@ import { createScriptSnapshot } from './scriptSnapshot.js';
 import { sha256ScriptSource, validateScriptProgram } from './scriptModules.js';
 import { prepareScriptTransaction, type PreparedScriptTransaction } from './scriptTransaction.js';
 import { runScriptWorker, type ScriptWorkerFactory } from './scriptWorkerClient.js';
-import { SCRIPT_LIMITS, type ScriptConsoleLine, type ScriptFailure, type ScriptProgram } from './scriptTypes.js';
+import { SCRIPT_LIMITS, SCRIPT_TOTAL_TIMEOUT_MESSAGE, type ScriptConsoleLine, type ScriptFailure, type ScriptProgram } from './scriptTypes.js';
 
 export interface ScriptRequest {
   readonly requestId: string; readonly documentEpoch: string; readonly document: PartDocument;
@@ -31,7 +31,7 @@ export function createScriptExecutor(bridge: AssemblyKernelBridge, factory?: Scr
     if (signal.aborted) return failure('cancelled', '処理を中止しました。');
     signal.addEventListener('abort', cancel, { once: true });
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, SCRIPT_LIMITS.totalMs);
-    const stopped = (): ScriptRunResult => failure(timedOut ? 'timeout' : 'cancelled', timedOut ? '実行全体の上限30秒を超えました。' : '処理を中止しました。');
+    const stopped = (): ScriptRunResult => failure(timedOut ? 'timeout' : 'cancelled', timedOut ? SCRIPT_TOTAL_TIMEOUT_MESSAGE : '処理を中止しました。');
     try {
       onPhase('validating');
       const checked = await validateScriptProgram(request.program);

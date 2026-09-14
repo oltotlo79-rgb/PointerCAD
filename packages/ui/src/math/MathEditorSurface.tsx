@@ -36,6 +36,7 @@ export interface MathEditorSurfaceProps {
   readonly createField:()=>StructuredMathField;readonly labels:MathEditorLabels;
   readonly groups:readonly MathInsertGroup[];readonly palette:readonly MathPaletteItem[];
   readonly query:string;readonly onQuery:(query:string)=>void;
+  readonly resultActions?:React.ReactNode;
   readonly resultMessage:string;readonly resultDetail:string;readonly hasError:boolean;readonly busy:boolean;
   readonly canApply:boolean;readonly canChangeNotation:boolean;readonly readOnly:boolean;
   readonly onHelp:()=>void;readonly maximumSourceLength:number;
@@ -127,6 +128,7 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
     <div id={messageId} className={props.hasError?'pcad-math-editor__result pcad-math-editor__result--error':'pcad-math-editor__result'}
       role="status" aria-live="polite" aria-atomic="true"><p>{props.resultMessage}</p>
       {props.resultDetail===''?null:<p>{props.resultDetail}</p>}</div>
+    {props.resultActions}
     <footer className="pcad-math-editor__actions">
       <button type="button" className="pcad-button" onClick={controller.cancel}>{labels.cancel}</button>
       <button type="button" className="pcad-button pcad-button--primary" disabled={!props.canApply||editingBlocked} onClick={controller.apply}>{labels.apply}</button>

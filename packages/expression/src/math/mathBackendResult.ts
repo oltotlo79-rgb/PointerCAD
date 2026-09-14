@@ -2,6 +2,7 @@
 import {MathInputProblem,MATH_INPUT_LIMITS,validateMathDecimal,type MathNode,type MathEvaluation,
   type MathSymbolReference,type MathOperationDefinition} from './mathInputContract.js';
 import {engineSymbolOf} from './mathSymbolScope.js';
+import {decimalRational} from './exactRational.js';
 
 const CONSTANTS:ReadonlyMap<string,Extract<MathNode,{kind:'constant'}>['name']>=new Map([
   ['Pi','pi'],['ExponentialE','e'],['ImaginaryUnit','imaginary-unit'],['PositiveInfinity','infinity'],
@@ -65,8 +66,14 @@ export function decodeMathBackendNode(value:unknown,operations:ReadonlyMap<strin
     if(raw[0]==='Rational') {
       if(raw.length!==3)throw new MathInputProblem('syntax','有理数の結果が不正です。');
       const numerator=visit(raw[1],depth+1),denominator=visit(raw[2],depth+1);
-      if(numerator.kind!=='number'||denominator.kind!=='number'||!/^[-+]?[0-9]+$/u.test(numerator.decimal)
-        ||!/^[-+]?[0-9]+$/u.test(denominator.decimal)||BigInt(denominator.decimal)===0n) {
+      if(numerator.kind!=='number'||denominator.kind!=='number') {
+        throw new MathInputProblem('domain','有理数の分子・分母を確認できません。');
+      }
+      // The engine can serialize exact integers as decimal exponent strings, e.g. 1e+40.
+      // Decide integrality with bounded exact arithmetic, never a rounded Number conversion.
+      const a=decimalRational(numerator.decimal),b=decimalRational(denominator.decimal);
+      if(a===null||b===null)throw new MathInputProblem('budget','有理数の分子・分母が計算範囲を超えています。');
+      if(a.denominator!==1n||b.denominator!==1n||b.numerator===0n) {
         throw new MathInputProblem('domain','有理数の分子・分母を確認できません。');
       }
       return op('divide',numerator,denominator);

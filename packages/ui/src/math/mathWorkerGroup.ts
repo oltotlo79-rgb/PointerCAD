@@ -53,6 +53,7 @@ export function createMathWorkerGroup(createWorker: () => MathWorkerPort): {
     if (disposed) throw new Error('Calculation Worker is closed');
     if (ports.size >= 16) throw new RangeError('Too many recomputation Worker clients');
     const port: MathWorkerPort = { onmessage: null, onerror: null, onmessageerror: null,
+      get startupTimeoutMs() { return worker?.startupTimeoutMs ?? 0; },
       postMessage(value) {
         if (!ports.has(port)) throw new Error('Calculation Worker client is closed');
         if ((active?.port === port && !dispatching) || queue.some(work => work.port === port)) throw new Error('Client already has pending work');

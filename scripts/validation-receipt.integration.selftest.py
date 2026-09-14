@@ -12,6 +12,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from lib.task_workspace import configure_project_temp
+
+configure_project_temp(Path(__file__).resolve().parents[1])
 
 SOURCE = Path(__file__).resolve().parent
 
@@ -51,7 +54,7 @@ class ReceiptHookTests(unittest.TestCase):
                          'lib/gitTreeGuard.ps1', 'lib/pushTreeFingerprint.ps1', 'lib/directoryLinks.ps1',
                          'lib/commitBatchGuard.ps1', 'lib/validationReceipt.ps1',
                          'lib/validation_receipt.py', 'lib/validationRuntime.mjs', 'lib/WindowsValidationQos.cs',
-                         'lib/local_change_scope.py'):
+                         'lib/local_change_scope.py', 'lib/task_workspace.py'):
             target = self.root / 'scripts' / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(SOURCE / relative, target)
@@ -65,7 +68,7 @@ $shell = (Get-Process -Id $PID).Path
 if ($LASTEXITCODE -eq 0) { exit 1 }
 exit 0
 ''')
-        self.write('.gitignore', 'node_modules/\ndist/\nbrowsers/\ngate-calls.log\n')
+        self.write('.gitignore', 'node_modules/\ndist/\nbrowsers/\ngate-calls.log\nscratchpad/\n')
         self.write('a.txt', 'baseline')
         self.write('package.json', json.dumps({'scripts': {name: 'fixture' for name in (
             'typecheck', 'lint', 'test', 'build', 'test:e2e', 'validation:runtime')}}))

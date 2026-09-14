@@ -53,6 +53,35 @@ function fixture(source = '1/3') {
   return { controller, sent, terminated, applied, cancel, reply, changeGeneration: () => { generation += 1; } };
 }
 describe('数式画面の確定・変換・文書世代を1つの制御に接続する', () => {
+  it('配列の成分選択は原式を保持して再計算し、座標の確定を勝手に行わない', async () => {
+    const state = fixture('tensorproduct([1,2],[3,4])');
+    state.controller.apply(); await state.reply(0);
+    expect(state.controller.getSnapshot().state).toMatchObject({ status: 'evaluated', canApply: false });
+    const before = state.controller.current();
+    expect(state.controller.chooseResultComponent(before, [2])).toBe(false);
+    expect(state.controller.current()).toEqual(before);
+    expect(state.controller.chooseResultComponent(before, [2,1])).toBe(true);
+    expect(state.controller.current().source).toBe('tensorelement(tensorproduct([1,2],[3,4]),[2,1])');
+    expect(state.applied).toHaveLength(0);
+    expect(state.controller.chooseResultComponent(before, [1,1])).toBe(false);
+    state.controller.apply(); await state.reply(state.sent.length - 1);
+    expect(state.applied).toHaveLength(1);
+    expect(state.applied[0].definition?.source).toBe(state.controller.current().source);
+    expect(state.applied[0].evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: 6 });
+  });
+  it.each(['source','angle','document','close'] as const)('%s変更前の配列の成分選択で現在の入力を書き換えない', async change => {
+    const state = fixture('tensorproduct([1,2],[3,4])');
+    state.controller.apply(); await state.reply(0);
+    const before = state.controller.current();
+    if (change === 'source') state.controller.sourceChanged('[8,9]');
+    else if (change === 'angle') state.controller.changeAngleUnit('degree');
+    else if (change === 'document') state.changeGeneration();
+    else state.controller.cancel();
+    const current = state.controller.current();
+    expect(state.controller.chooseResultComponent(before, [2,1])).toBe(false);
+    expect(state.controller.current()).toEqual(current);
+    expect(state.applied).toHaveLength(0);
+  });
   it('確定操作は現在の入力の検証済み原式を返す', async () => {
     const state = fixture();
     state.controller.apply();

@@ -50,7 +50,7 @@ describe('基本形状の平行移動複製は独立した形状・参照と精�
         const actual = measureMassProperties(oc, clone.shape), expected = measureMassProperties(oc, direct.shape);
         for (let axis = 0; axis < 3; axis++) expect(actual.centreOfMass[axis]).toBeCloseTo(expected.centreOfMass[axis], 8);
         // 同じ面でも新規の三角形分割は対角線の選択が異なる。複製は元の分割そのものを保つ。
-        const actualMesh = tessellate(oc, clone.shape), sourceMesh = result.bodies[0];
+        const actualMesh = tessellate(oc, clone.shape, {}, clone.triangulation), sourceMesh = result.bodies[0];
         expect(actualMesh.indices).toEqual(sourceMesh.indices);
         expect(actualMesh.normals).toEqual(sourceMesh.normals);
         expect(actualMesh.positions.length).toBe(sourceMesh.positions.length);
@@ -100,12 +100,15 @@ describe('基本形状の平行移動複製は独立した形状・参照と精�
   });
   it('履歴内の同じ寸法は構築1回で16個を返し、別寸法の構築と全参照番号を保つ', async () => {
     const cache = createShapeCache<CachedSolid>(), build = vi.spyOn(primitive, 'makePrimitive'), read = vi.spyOn(cache, 'get');
+    // Native constructors require their own new protocol; observe completion without replacing construction.
+    const mesher = vi.spyOn(oc.BRepMesh_IncrementalMesh_2.prototype, 'IsDone');
     try {
       const steps = Array.from({ length: 16 }, (_, i) => request(`box-${i}`, spec(shapes[0], [i * 40, 0, 0])));
       steps.push(request('different', spec({ kind: 'box', sizeX: 11, sizeY: 20, sizeZ: 30 })));
       const result = await recomputeSolids({ oc, cache }, { generation: 1, steps });
       expect(result.failures).toEqual([]); expect(result.bodies).toHaveLength(17); expect(build).toHaveBeenCalledTimes(2);
       expect(read.mock.calls.filter(([key]) => key === 'box-0')).toHaveLength(16);
+      expect(mesher).toHaveBeenCalledTimes(2);
       expect(result.bodies.map(body => body.id)).toEqual(steps.map(step => step.id));
       for (const body of result.bodies.slice(0, 16)) {
         expect(body.volume).toBeCloseTo(6000, 7);
@@ -114,6 +117,50 @@ describe('基本形状の平行移動複製は独立した形状・参照と精�
         expect(body.vertices.map(vertex => vertex.index)).toEqual(result.bodies[0].vertices.map(vertex => vertex.index));
       }
       expect(result.bodies[16].volume).toBeCloseTo(6600, 7);
-    } finally { build.mockRestore(); read.mockRestore(); cache.clear(); }
+    } finally { mesher.mockRestore(); build.mockRestore(); read.mockRestore(); cache.clear(); }
+  });
+  it.each([
+    { name: '長さ', coarseReady: true, coarse: { linearDeflection: 1, angularDeflection: 0.5 }, fine: { linearDeflection: 0.02, angularDeflection: 0.5 } },
+    { name: '角度', coarseReady: false, coarse: { linearDeflection: 1, angularDeflection: 1 }, fine: { linearDeflection: 1, angularDeflection: 0.15 } },
+  ])('$nameの精度が異なる複製は分割し直し、元の粗い分割へ置き換わらない', async ({ coarse, fine, coarseReady }) => {
+    const cache = createShapeCache<CachedSolid>(), mesher = vi.spyOn(oc.BRepMesh_IncrementalMesh_2.prototype, 'IsDone');
+    try {
+      const steps = [
+        { ...request('coarse', spec(shapes[1])), tessellation: coarse },
+        { ...request('fine', spec(shapes[1], [100, 0, 0])), tessellation: fine },
+        { ...request('coarse-copy', spec(shapes[1], [200, 0, 0])), tessellation: coarse },
+      ];
+      const result = await recomputeSolids({ oc, cache }, { generation: 1, steps });
+      expect(result.failures).toEqual([]); expect(result.bodies).toHaveLength(3);
+      const original = cache.get('coarse');
+      if (original === undefined) throw new Error('Original shape missing');
+      // At an angular deflection of 1, the native validator rejects this coarse sphere.
+      // Reusing the completion record alone would therefore incorrectly skip remeshing.
+      expect(oc.BRepTools.Triangulation(original.shape, coarse.linearDeflection, false)).toBe(coarseReady);
+      expect(mesher).toHaveBeenCalledTimes(coarseReady ? 2 : 3);
+      expect(result.bodies[1].triangleCount).toBeGreaterThan(result.bodies[0].triangleCount);
+      expect(result.bodies[2].indices).toEqual(result.bodies[0].indices);
+      expect(result.bodies[2].normals).toEqual(result.bodies[0].normals);
+    } finally { mesher.mockRestore(); cache.clear(); }
+  });
+  it('元の分割完了記録があっても、複製の実分割が消えていれば作り直す', async () => {
+    const cache = createShapeCache<CachedSolid>(), reuse = createPrimitiveReuse(oc, cache), input = spec();
+    try {
+      const result = await recomputeSolids({ oc, cache }, { generation: 1, steps: [request('source', input)] });
+      expect(result.failures).toEqual([]); reuse.remember(input, 'source');
+      const copy = reuse.copy(spec(shapes[0], [10, 20, 30]));
+      if (copy === null || copy.triangulation === undefined) throw new Error('分割を持つ複製なし');
+      try {
+        oc.BRepTools.Clean(copy.shape, true);
+        expect(oc.BRepTools.Triangulation(copy.shape, 0.1, false)).toBe(false);
+        const mesher = vi.spyOn(oc.BRepMesh_IncrementalMesh_2.prototype, 'IsDone');
+        try {
+          const actual = tessellate(oc, copy.shape, {}, copy.triangulation);
+          expect(mesher).toHaveBeenCalledOnce();
+          expect(actual.mesherDone).toBe(true); expect(actual.missingTriangulationFaces).toBe(0);
+          expect(actual.triangleCount).toBe(result.bodies[0].triangleCount);
+        } finally { mesher.mockRestore(); }
+      } finally { copy.delete(); }
+    } finally { cache.clear(); }
   });
 });

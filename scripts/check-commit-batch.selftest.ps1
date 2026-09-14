@@ -4,6 +4,12 @@
 $isolatedEntry = Start-IsolatedGitSelftest -ScriptPath $MyInvocation.MyCommand.Path
 if ($isolatedEntry.Restarted) { exit $isolatedEntry.ExitCode }
 
+$projectTemp = & python -B -X utf8 (Join-Path $PSScriptRoot 'lib/task_workspace.py') --temp-root
+if ($LASTEXITCODE -ne 0) { throw 'プロジェクト内の自己試験保存先を用意できませんでした。' }
+foreach ($tempVariable in @('TEMP', 'TMP', 'TMPDIR')) {
+    [Environment]::SetEnvironmentVariable($tempVariable, ($projectTemp -join "`n").Trim(), 'Process')
+}
+
 $libraryPath = Join-Path $PSScriptRoot 'lib\commitBatchGuard.ps1'
 if (-not (Test-Path -LiteralPath $libraryPath -PathType Leaf)) {
     Write-Host "[NG] 一括コミット検査のライブラリが見つかりません: $libraryPath" -ForegroundColor Red

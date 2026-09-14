@@ -1,6 +1,6 @@
 import { METRIC_THREADS, type BeamSectionKind, type StrengthCalculation, type TensileAreaMethod, type ThreadSeries } from '@pointercad/model';
 import { t } from '../i18n/t.js';
-import { FIELD_VALUE_DISPLAY_DIGITS, roundToSignificantDigits } from '../sketch/numericInput.js';
+import { FIELD_VALUE_DISPLAY_DIGITS, roundToSignificantDigits } from '../sketch/numericInputPresentation.js';
 import { StrengthSelect } from './StrengthSelect.js';
 import { strengthSessionArea, type StrengthEdit, type StrengthSession } from './strengthSession.js';
 

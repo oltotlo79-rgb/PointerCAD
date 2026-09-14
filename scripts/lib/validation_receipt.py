@@ -328,6 +328,9 @@ def operate(action: str, root: Path, tools: dict[str, str], phase: str, token: s
     key = key_path.read_bytes()
     if len(key) != 32:
         raise ValueError('Invalid local receipt key')
+    # A missing or modified receipt cannot be reused. Reject it before hashing
+    # every installed dependency and browser; valid receipts still compare all inputs.
+    reuse_receipt = read_record(receipt_path, key) if action == 'reuse' else None
     current = capture(root, tools)
     if action == 'start':
         token = secrets.token_hex(24)
@@ -344,7 +347,13 @@ def operate(action: str, root: Path, tools: dict[str, str], phase: str, token: s
         running_path.unlink(); return {'ok': True}
     if action != 'reuse':
         raise ValueError('Unknown receipt operation')
+    if reuse_receipt is None:
+        raise ValueError('Missing reuse receipt')
+    # Keep the original verification after the potentially long input scan too.
+    # Early rejection must not let a removed or replaced receipt survive in memory.
     receipt = read_record(receipt_path, key)
+    if receipt != reuse_receipt:
+        raise ValueError('Receipt changed during input scan')
     ancestry = git(root, 'rev-list', '--parents', '-n', '1', 'HEAD').decode().split() if phase == 'Push' else []
     parent = ancestry[1] if len(ancestry) == 2 else ''
     if phase == 'Push' and git(root, 'rev-parse', 'HEAD^{tree}').decode().strip() != current['tree']:

@@ -51,7 +51,7 @@ param(
     [string[]]$UnitTests = @(),
     # 実装途中の診断専用。既定・pre-commit・pre-pushの必須段数は変えない。
     [switch]$StaticOnly,
-    # 診断用: 性能検査の判定モード(厳密/参考)の表示だけを行って終了する(pnpmは一切実行しない)。
+    # 診断用: 正確性優先の性能判定と実行場所の表示だけを行って終了する(pnpmは一切実行しない)。
     # 統括の動作確認、および scripts/check.selftest.ps1 からの検証に使う。
     [switch]$ShowPerfModeOnly
 )
@@ -118,28 +118,33 @@ function Invoke-LocalPackageChecks {
 $validationQos = $null
 $receiptToken = ''
 $receiptCompleted = $false
+$savedTemporaryEnvironment = @{}
 Push-Location $root
 try {
-    # 性能検査(NFR-PF-2/PF-3、packages/kernel/src/worker/solidPerformance.test.ts、および
-    # packages/model/src/sketch/constraints の solve.test.ts / diagnose.test.ts が同じ流儀で読む)の
-    # 上限判定を厳密にするか参考にとどめるかの切替。並列作業中の CPU 競合で境界値の検査が
-    # 落ちる問題への対策(rules/06-過去の失敗と対策.md 10.3)。上限の数値は変えない。
-    # -Level Push(pre-push・統括の手動実行)は厳密、-Level Commit(pre-commit)は明示的に空にして参考とする。
-    # ただし -Level Push であっても CI(共有ランナー)上では厳密判定をしない。共有ランナーは基準の
-    # 機械より遅く、実行のたびの速さも揃わないため、ミリ秒単位の上限判定がCPU競合と無関係に揺れて
-    # 落ちる(実測: GitHub Actions run 33972658785。rules/06-過去の失敗と対策.md 10.12)。CIでは実測を
-    # ログに残すだけにとどめ、厳密な合否判定は基準の機械で行う手元のpre-push(-Level Push、CI以外)に
-    # 委ねる。`CI` 環境変数はGitHub Actionsが自動で `true` を設定する(ci.ymlでの追加設定は不要)。
+    # Keep this project's own check output and child-process temporary files in
+    # the project. The helper rejects an external path or an escaping junction.
+    $temporaryRootOutput = & python -B -X utf8 (Join-Path $scriptDirectory 'lib/task_workspace.py') --repository $root --temp-root
+    if ($LASTEXITCODE -ne 0) { throw 'プロジェクト内の一時保存先を用意できませんでした。' }
+    $temporaryRoot = ($temporaryRootOutput -join "`n").Trim()
+    if (-not (Test-Path -LiteralPath $temporaryRoot -PathType Container)) { throw '一時保存先が存在しません。' }
+    foreach ($temporaryVariable in @('TEMP', 'TMP', 'TMPDIR')) {
+        $savedTemporaryEnvironment[$temporaryVariable] = [Environment]::GetEnvironmentVariable($temporaryVariable, 'Process')
+        [Environment]::SetEnvironmentVariable($temporaryVariable, $temporaryRoot, 'Process')
+    }
+    # 2026-09-14利用者指示: 正確性を優先し、元の速度目標は改善用に記録する。
+    # 全環境で共通の実用性の境界を使う(releasePerformance.ts)。
+    # 旧PERF_STRICTの値は測定順・HighQoS・B3の実行条件識別に残す。
+    # 速度目標そのものの合否を環境変数で切り替える用途には使わない。
     $isRunningOnCI = $env:CI -eq 'true'
     if ($Level -eq "Push" -and -not $isRunningOnCI) {
         $env:POINTERCAD_PERF_STRICT = '1'
-        Write-Host "性能検査: 厳密(-Level Push)" -ForegroundColor Cyan
+        Write-Host "性能検査: 正確性優先(-Level Push)" -ForegroundColor Cyan
     } elseif ($Level -eq "Push" -and $isRunningOnCI) {
         $env:POINTERCAD_PERF_STRICT = ''
-        Write-Host "性能検査: 参考(CI)" -ForegroundColor Cyan
+        Write-Host "性能検査: 正確性優先(CI)" -ForegroundColor Cyan
     } else {
         $env:POINTERCAD_PERF_STRICT = ''
-        Write-Host "性能検査: 参考(-Level Commit)" -ForegroundColor Cyan
+        Write-Host "性能検査: 正確性優先(-Level Commit)" -ForegroundColor Cyan
     }
 
     if ($ShowPerfModeOnly) {
@@ -467,6 +472,11 @@ finally {
             Write-Host "性能検査: HighQoS対象 $($validationQos.ObservedCount) プロセスの後片付けを完了しました" -ForegroundColor Cyan
         }
     }
-    finally { Pop-Location }
+    finally {
+        foreach ($temporaryVariable in $savedTemporaryEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($temporaryVariable, $savedTemporaryEnvironment[$temporaryVariable], 'Process')
+        }
+        Pop-Location
+    }
 }
 exit 0

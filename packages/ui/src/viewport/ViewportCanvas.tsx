@@ -814,7 +814,7 @@ export function ViewportCanvas(): React.JSX.Element {
     assemblyInteraction = attachAssemblyInteraction(canvas, scene, {
       viewDirection: () => viewDirection(controls.getOrbit()),
     });
-    const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit());
+    const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging());
     setControlsReady(true);
 
     const observer = new ResizeObserver(() => {

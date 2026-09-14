@@ -16,6 +16,7 @@ import {
 } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { matchesTriangulation, type KnownTriangulation } from './triangulationReuse.js';
 
 /**
  * 面 1 枚ぶんの三角形の位置。indices の三角形単位(3 個で 1 枚)で数える。
@@ -357,6 +358,7 @@ export function tessellate(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   options: TessellationOptions = {},
+  copiedTriangulation?: KnownTriangulation,
 ): SurfaceMesh {
   const linearDeflection = options.linearDeflection ?? DEFAULT_LINEAR_DEFLECTION;
   const angularDeflection = options.angularDeflection ?? DEFAULT_ANGULAR_DEFLECTION;
@@ -372,13 +374,20 @@ export function tessellate(
   const shared = createAllocations();
 
   try {
-    const mesher = shared.keep(
-      new oc.BRepMesh_IncrementalMesh_2(shape, linearDeflection, false, angularDeflection, false),
-    );
-    mesherDone = mesher.IsDone();
-    // opencascade.js は戻り値を未定義の Graphic3d_ZLayerId と束縛しているため、
-    // 実体である整数へ実行時変換してから外へ返す。
-    mesherStatus = Number(mesher.GetStatusFlags());
+    // 独立した幾何と三角形を平行移動複製した直後だけ、元の実完了状態を使う。
+    // 長さ・角度の両条件が同じでも、実形状の分割が失われていれば通常分割へ戻す。
+    if (matchesTriangulation(copiedTriangulation, linearDeflection, angularDeflection)
+      && oc.BRepTools.Triangulation(shape, linearDeflection, false)) {
+      mesherDone = copiedTriangulation.mesherDone;
+      mesherStatus = copiedTriangulation.mesherStatus;
+    } else {
+      const mesher = shared.keep(
+        new oc.BRepMesh_IncrementalMesh_2(shape, linearDeflection, false, angularDeflection, false),
+      );
+      mesherDone = mesher.IsDone();
+      // opencascade.jsの未定義な戻り型を、実体の整数へ変換する。
+      mesherStatus = Number(mesher.GetStatusFlags());
+    }
 
     // 第3・第4引数は「向きと位置を親からたどって積み上げる」指定で、
     // TopExp_Explorer と同じ結果になる既定値。

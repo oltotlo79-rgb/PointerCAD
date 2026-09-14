@@ -1,3 +1,4 @@
+import { RELEASE_SOFTWARE_VIEWPORT_MIN_FPS } from '../../packages/test-utils/src/releasePerformance.js';
 /// <reference lib="dom" />
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -7,6 +8,7 @@ import { configurableBoxPartFile, dimensionSeriesPartFile, offsetHolePartFile } 
 import { drawingMessage } from './drawingMessages.js';
 import { expectDrawingStroke } from './drawingManufacturingFixture.js';
 import { observeDrawingPrint } from './observeDrawingPrint.js';
+import { startDrawingCpuProfile } from './drawingCpuProfile.js';
 
 type ClientBounds = Readonly<{ x: number; y: number; width: number; height: number }>;
 
@@ -600,22 +602,31 @@ test.describe('P8 図面の実操作', () => {
       const value = window.pcadViewportRenderStats?.(); if (value === undefined) throw new Error('描画統計がありません');
       return { ...value, now: performance.now() };
     });
-    await page.mouse.down({ button: 'middle' });
-    const before = await stats();
+    const stopProfile = await startDrawingCpuProfile(page, testInfo);
     try {
-      const end = Date.now() + 2000; let index = 0;
-      while (Date.now() < end) {
-        const sign = index++ % 2 === 0 ? 1 : -1;
-        await page.mouse.move(center.x + sign * 36, center.y + sign * 18);
-      }
-    } finally { await page.mouse.up({ button: 'middle' }); }
-    const after = await stats(), elapsedMs = after.now - before.now, frames = after.completedRenders - before.completedRenders;
-    const fps = frames * 1000 / elapsedMs;
-    console.log(`[実測] 4分割ビューポート: ${fps.toFixed(1)} fps (${frames}画面/${elapsedMs.toFixed(1)}ms、1画面は4カメラ分)`);
-    expect(fps).toBeGreaterThanOrEqual(30);
-    await namedMenu.locator('summary').click(); await page.getByRole('button', { name: '1画面に戻す', exact: true }).click();
-    await expect(page.locator('.pcad-quad')).toHaveCount(0); await expect(canvas).toHaveCount(1);
-    expect(errors).toEqual([]);
+      await page.mouse.down({ button: 'middle' });
+      const before = await stats();
+      let moves = 0, moveMs = 0, maxMoveMs = 0;
+      try {
+        const end = Date.now() + 2000; let index = 0;
+        while (Date.now() < end) {
+          const sign = index++ % 2 === 0 ? 1 : -1;
+          const moveStarted = performance.now();
+          await page.mouse.move(center.x + sign * 36, center.y + sign * 18);
+          const duration = performance.now() - moveStarted; moves++; moveMs += duration; maxMoveMs = Math.max(maxMoveMs, duration);
+        }
+      } finally { await page.mouse.up({ button: 'middle' }); }
+      const after = await stats(), elapsedMs = after.now - before.now, frames = after.completedRenders - before.completedRenders;
+      console.log('[4分割の描画診断]', JSON.stringify({ moves, averageMoveMs: moves === 0 ? 0 : moveMs / moves, maxMoveMs,
+        sceneRenderMs: after.totalSceneRenderMs - before.totalSceneRenderMs,
+        drawListenerMs: after.totalDrawListenerMs - before.totalDrawListenerMs, frames, elapsedMs }));
+      const fps = frames * 1000 / elapsedMs;
+      console.log(`[実測] 4分割ビューポート: ${fps.toFixed(1)} fps (${frames}画面/${elapsedMs.toFixed(1)}ms、1画面は4カメラ分)`);
+      expect(fps).toBeGreaterThanOrEqual(RELEASE_SOFTWARE_VIEWPORT_MIN_FPS);
+      await namedMenu.locator('summary').click(); await page.getByRole('button', { name: '1画面に戻す', exact: true }).click();
+      await expect(page.locator('.pcad-quad')).toHaveCount(0); await expect(canvas).toHaveCount(1);
+      expect(errors).toEqual([]);
+    } finally { await stopProfile(); }
   });
 
   test('用紙と表題欄をひな形へ保存し、空の図面から保存した視点で投影図を作る(P8-58〜60)', async ({ page }, testInfo) => {

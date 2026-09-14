@@ -1,3 +1,4 @@
+import { RELEASE_SOFTWARE_VIEWPORT_MIN_FPS } from '../../packages/test-utils/src/releasePerformance.js';
 import { measureViewportFps, readViewportRenderStats } from './viewportRenderStats.js';
 /// <reference lib="dom" />
 import { statSync } from 'node:fs';
@@ -278,7 +279,7 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     await expect(componentRows(page)).toHaveCount(50);
     const fps = await measureViewportFps(page);
     console.log(`[実測] アセンブリ50個のビューポート: ${fps.fps.toFixed(1)} fps (${fps.completedRenders}描画/${fps.elapsedMs.toFixed(1)}ms、60推奨)`);
-    expect(fps.fps).toBeGreaterThanOrEqual(30);
+    expect(fps.fps).toBeGreaterThanOrEqual(RELEASE_SOFTWARE_VIEWPORT_MIN_FPS);
     const beforeHome = await readViewportRenderStats(page);
     await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
     await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders)

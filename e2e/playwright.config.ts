@@ -31,7 +31,7 @@ export default defineConfig({
    * この機械(12 コア)では 6 になる)。検査は 1 本ごとに新しいブラウザ文脈を作り、文脈ごとに
    * 50MB の OCCT WASM をコンパイルし直すため、**初回のカーネル読み込みが 1 並列の 17〜30 秒から
    * 6 並列では 55〜80 秒へ延び**、spec 側の待ちの上限(KERNEL_TIMEOUT_MS = 60 秒)を越えて落ちた
-   * (push #14 の赤 3 本。docs/報告記録.md 2026-09-06 12:04)。上限 60 秒は緩めない。
+   * (push #14 の赤 3 本。docs/報告記録.md 2026-09-06 12:04)。初回読み込みを含む待機は利用者承認の90秒とする。
    * FPS・図面応答の測定は先行projectで専有し、残りの操作検査は2並列で実行する。
    */
   workers: 2,
@@ -51,7 +51,7 @@ export default defineConfig({
       workers: 1,
       grep: VIEWPORT_PERFORMANCE_TEST,
       // GPUの有無を揃え、別テストのWASM初期化とCPUを奪い合わずに測る。
-      // 50部品・実描画回数・30fpsの下限は手元でもCIでも同じ。
+      // 50部品・実描画回数・releasePerformanceの下限は手元でもCIでも同じ。
       // swiftshaderだけではブラウザの合成まで仮想GPUへ入り、Linuxでコンテキスト
       // 切替が律速になる。WebGL専用のソフトウェア経路を明示する(実測5.0→42.3fps)。
       // Chromium公式: https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md

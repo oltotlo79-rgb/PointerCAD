@@ -35,6 +35,8 @@ import { matchFace } from '../occt/matchSubShape.js';
 import { sewSolid } from '../occt/sewSolid.js';
 import { mirrorShape, scaleShape, transformShape } from '../occt/transformShape.js';
 import { buildSolidBodyMesh, measureArea } from '../occt/solidMesh.js';
+import { tessellate } from '../occt/tessellate.js';
+import { rememberTriangulation, type KnownTriangulation } from '../occt/triangulationReuse.js';
 import { boundingDiagonal } from '../occt/subShapes.js';
 import type {
   AppearanceMatch,
@@ -220,6 +222,7 @@ function withMeasuredArea(
  */
 export interface CachedSolid {
   readonly shape: TopoDS_Shape;
+  readonly triangulation?: KnownTriangulation;
   readonly mesh: SolidBodyMesh;
   delete(): void;
 }
@@ -800,8 +803,10 @@ function buildCachedSolid(
   measureAreas: boolean,
   knownVolume?: number,
   knownArea?: number,
+  copiedTriangulation?: KnownTriangulation,
 ): CachedSolid {
   try {
+    const surface = tessellate(oc, handle.shape, options, copiedTriangulation);
     const mesh = buildSolidBodyMesh(
       oc,
       id,
@@ -811,10 +816,12 @@ function buildCachedSolid(
       measureAreas,
       knownVolume,
       knownArea,
+      surface,
     );
     return {
       shape: handle.shape,
       mesh,
+      triangulation: rememberTriangulation(surface, options),
       delete(): void {
         handle.delete();
       },
@@ -991,7 +998,9 @@ export async function recomputeSolids(
     }
 
     try {
-      const reused = sheetBodies.copy(step.step) ?? primitives.copy(step.step);
+      const sheetCopy = sheetBodies.copy(step.step);
+      const primitiveCopy = sheetCopy === null ? primitives.copy(step.step) : null;
+      const reused = sheetCopy ?? primitiveCopy;
       const stepResult = reused === null ? createStepSolid(oc, step.step, options, cache, failedLabels) : noMarks(reused, reused.volume);
       const meshOptions = resolveTessellationOptions(options, step);
       const meshStarted = performance.now();
@@ -1004,6 +1013,7 @@ export async function recomputeSolids(
         measureAreas,
         stepResult.volume,
         stepResult.area,
+        primitiveCopy?.triangulation,
       );
       if (step.step.kind === 'functionSurface') console.debug('[pcad:function-phase]', JSON.stringify({ phase: 'display-mesh', elapsedMs: performance.now() - meshStarted }));
       cache.set(step.key, entry);

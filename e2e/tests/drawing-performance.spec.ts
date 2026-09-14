@@ -1,4 +1,5 @@
 /// <reference lib="dom" />
+import { RELEASE_DRAWING_OPEN_MAX_MS } from '../../packages/test-utils/src/releasePerformance.js';
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { createBox } from './drawingManufacturingFixture.js';
@@ -13,7 +14,7 @@ declare global {
   }
 }
 
-test('P8 100フィーチャー・三面図・50寸法を5秒以内で開き、字体1秒・寸法ドラッグ16msを満たす', async ({ page }, testInfo) => {
+test('P8 100フィーチャー・三面図・50寸法をリリース上限内で開き、字体1秒・寸法ドラッグ16msを満たす', async ({ page }, testInfo) => {
   const fixture = await drawingPerformanceFixture();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => {
@@ -93,8 +94,8 @@ test('P8 100フィーチャー・三面図・50寸法を5秒以内で開き、�
     return { openingMs: trace.drawingAt - trace.openedAt, fontMs: trace.fontAt - font.startTime, bytes: 0, workerMs: trace.workerMs };
   });
   loading.bytes = fixture.byteLength;
-  console.log(`[実測] 100フィーチャー/三面図/50寸法: ${JSON.stringify(loading)}`);
-  expect(loading.openingMs).toBeLessThanOrEqual(5000); expect(loading.fontMs).toBeLessThanOrEqual(1000);
+  console.log(`[実測] 100フィーチャー/三面図/50寸法: ${JSON.stringify(loading)}（開く上限${RELEASE_DRAWING_OPEN_MAX_MS}ms）`);
+  expect(loading.openingMs).toBeLessThanOrEqual(RELEASE_DRAWING_OPEN_MAX_MS); expect(loading.fontMs).toBeLessThanOrEqual(1000);
   await expect(page.locator('.pcad-statusbar')).not.toContainText('作り直しています');
   const dimension = page.locator('.pcad-drawing-svg [data-owner-id="perf-dim-0"] [aria-label="20"]');
   const bounds = await dimension.boundingBox(); if (bounds === null) throw new Error('ドラッグする寸法の文字なし');

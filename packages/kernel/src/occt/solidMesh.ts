@@ -10,7 +10,7 @@ import type {
 } from '../types.js';
 import { extractEdges } from './extractEdges.js';
 import { collectSubShapes } from './subShapes.js';
-import { tessellate } from './tessellate.js';
+import { tessellate, type SurfaceMesh } from './tessellate.js';
 import { computeVolumeProperties } from './volumeProperties.js';
 
 /**
@@ -137,8 +137,9 @@ export function buildSolidBodyMesh(
   measureAreas = true,
   knownVolume?: number,
   knownArea?: number,
+  preparedSurface?: SurfaceMesh,
 ): SolidBodyMesh {
-  const surface = tessellate(oc, shape, options);
+  const surface = preparedSurface ?? tessellate(oc, shape, options);
   const edges = extractEdges(oc, shape, options);
   const subShapes = collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges);
   const bodyKind: SolidBodyKind = shapeBodyKind(oc, shape);

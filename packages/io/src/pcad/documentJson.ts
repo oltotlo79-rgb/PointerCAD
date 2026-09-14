@@ -1,3 +1,6 @@
+import { missingHistoryTarget } from './codecs/historyTargets.js';
+import { readFeatureFolders, serializeFeatureFolders } from './codecs/featureFolders.js';
+import { readFeatureNotes, serializeFeatureNotes } from './codecs/featureNotes.js';
 /**
  * 部品文書と `.pcad` の `document.json` の相互変換(計画書 docs/plans/P2-ソリッド基礎.md タスク14、要件§8)。
  *
@@ -101,8 +104,10 @@ function serializePartDocument(document: PartDocument): PartDocument {
   if (document.mathParameterSerial !== undefined && (!Number.isSafeInteger(document.mathParameterSerial) || document.mathParameterSerial < 0)) {
     throw new RangeError('係数の参照番号が不正です。');
   }
-  return {
+  const serialized: PartDocument = {
     ...(document.mathParameterSerial === undefined ? {} : { mathParameterSerial: document.mathParameterSerial }),
+    ...(document.featureNotes === undefined ? {} : { featureNotes: serializeFeatureNotes(document.featureNotes) }),
+    ...(document.featureFolders === undefined ? {} : { featureFolders: serializeFeatureFolders(document.featureFolders) }),
     id: document.id,
     name: document.name,
     schemaVersion: document.schemaVersion,
@@ -121,6 +126,8 @@ function serializePartDocument(document: PartDocument): PartDocument {
     configurations: serializeConfigurations(document.configurations),
     activeConfigurationId: document.activeConfigurationId,
   };
+  if (missingHistoryTarget(serialized, 'document') !== null) throw new RangeError('設計メモまたはフォルダの対象が見つからないため保存できません。');
+  return serialized;
 }
 
 export interface SerializeOptions {
@@ -242,14 +249,18 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!configurations.ok) return configurations;
   const sheetUnfolds = readSheetUnfolds(record.value, path);
   if (!sheetUnfolds.ok) return sheetUnfolds;
+  const featureNotes = readFeatureNotes(Object.hasOwn(record.value, 'featureNotes') ? record.value.featureNotes : [], `${path}.featureNotes`);
+  if (!featureNotes.ok) return featureNotes;
+  const featureFolders = readFeatureFolders(Object.hasOwn(record.value, 'featureFolders') ? record.value.featureFolders : [], `${path}.featureFolders`);
+  if (!featureFolders.ok) return featureFolders;
   const mathParameterSerial = record.value.mathParameterSerial;
   if (Object.hasOwn(record.value, 'mathParameterSerial') && (typeof mathParameterSerial !== 'number'
     || !Number.isSafeInteger(mathParameterSerial) || mathParameterSerial < 0)) {
     return fieldProblem(`${path}.mathParameterSerial`, 'type');
   }
-  return {
-    ok: true,
-    value: {
+  const document: PartDocument = {
+      ...(Object.hasOwn(record.value, 'featureNotes') ? { featureNotes: featureNotes.value } : {}),
+      ...(Object.hasOwn(record.value, 'featureFolders') ? { featureFolders: featureFolders.value } : {}),
       ...(typeof mathParameterSerial === 'number' ? { mathParameterSerial } : {}),
       id: id.value,
       name: name.value,
@@ -265,8 +276,9 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
       canvases: canvases.value,
       namedViews: namedViews.value,
       ...configurations.value,
-    },
   };
+  const missing = missingHistoryTarget(document, path);
+  return missing === null ? { ok: true, value: document } : fieldProblem(missing, 'type');
 }
 
 // ---------------------------------------------------------------------------

@@ -127,6 +127,11 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/feature-tree.md',
   },
   {
+    id: 'history-notes',
+    title: '履歴へ設計メモを残す',
+    path: 'docs/ja/history-notes.md',
+  },
+  {
     id: 'timeline',
     title: '途中まで戻して確かめる(タイムライン)',
     path: 'docs/ja/timeline.md',

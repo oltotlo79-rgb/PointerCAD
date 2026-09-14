@@ -1,0 +1,9 @@
+.pcad-feature-folders, .pcad-feature-folder__children { list-style: none; margin: 0; padding: 0; }
+.pcad-feature-folder__children { padding-left: calc(10px * var(--pcad-scale)); }
+.pcad-feature-folder { border-left: 1px solid var(--pcad-border); }
+.pcad-feature-folder__heading { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pcad-feature-folder__heading button { min-width: 0; padding: calc(6px * var(--pcad-scale)); background: transparent; border: 0; color: var(--pcad-text); font: inherit; }
+.pcad-feature-folder__heading button:first-child { flex: 1; overflow-wrap: anywhere; text-align: left; }
+.pcad-feature-folder__heading button:last-child { flex-shrink: 0; font-size: 0.85em; }
+.pcad-feature-folder__heading button:hover { background: var(--pcad-surface); }
+.pcad-feature-note input, .pcad-feature-note select { width: 100%; box-sizing: border-box; color: var(--pcad-text); font: inherit; border: 1px solid var(--pcad-border); background: var(--pcad-surface); padding: calc(6px * var(--pcad-scale)); }

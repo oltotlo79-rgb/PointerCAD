@@ -326,7 +326,9 @@ export function AppShell(): React.JSX.Element {
         return;
       }
       if (helpState.helpTopicId !== null) return;
-      if (event.key !== 'Escape' || isTextEntry(event.target) || isInsideMenu(event.target)) {
+      // モーダルのEscはその画面だけへ渡し、背後の計算パネルや測定結果を閉じない。
+      if (event.key !== 'Escape' || isTextEntry(event.target) || isInsideMenu(event.target)
+        || (event.target instanceof Element && event.target.closest('dialog[open]') !== null)) {
         return;
       }
       const store = useAppStore.getState();

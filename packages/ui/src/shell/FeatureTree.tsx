@@ -1,3 +1,9 @@
+import { featureFolderAncestors } from '../history/featureFolderAncestors.js';
+import { FeatureFolderTree } from '../history/FeatureFolderTree.js';
+import { FeatureFolderDialog, type FeatureFolderDraft } from '../history/FeatureFolderDialog.js';
+import { featureFolderMemberKey } from '@pointercad/model';
+import { FeatureNoteDialog, type FeatureNoteDraft } from '../history/FeatureNoteDialog.js';
+import { featureNoteOf, featureNoteTargetExists, type FeatureNoteTarget } from '@pointercad/model';
 import { useEffect, useRef, useState } from 'react';
 import { DocumentNameSearch } from './DocumentNameSearch.js';
 import { partNameSearchEntries } from './nameSearch.js';
@@ -231,6 +237,8 @@ const SECTION_ICONS: Readonly<Record<TreeSectionKey, (props: IconProps) => React
  * 固定して出す(位置は開いた瞬間のボタンかカーソルの場所)。
  */
 interface RowMenuState {
+  readonly name: string;
+  readonly sketchId?: string;
   readonly featureId: string;
   /**
    * どちらの節の行から開いたか。ソリッドだけ抑制・改名を持つ(P3 §0.a-0.23 ②)。
@@ -247,12 +255,17 @@ interface RowMenuState {
  */
 type RowMenuSection = TreeSectionKey | 'sketchDocument';
 
+function noteTargetForRow(part: PartDocument, id: string, section: RowMenuSection, sketchId?: string): FeatureNoteTarget {
+  if (section === 'sketch') return { kind: 'sketch-feature', sketchId: sketchId ?? part.activeSketchId, id };
+  return { kind: section === 'sketchDocument' ? 'sketch' : section, id };
+}
+
 /**
  * 一覧の高さの見込み(画素)。下端からはみ出すときに上へ出すかを決めるのに使う。
  * いちばん項目が多いのは基準点の行で、表示の切替・1 つ上へ・1 つ下へ・原点にする・改名・
- * 削除の 6 つ(P4b タスク20 で並べ替えの 2 つが増えた)。
+ * 設計メモ・フォルダ移動・削除の 8 つ。
  */
-const ROW_MENU_HEIGHT = 192;
+const ROW_MENU_HEIGHT = 256;
 /** 一覧の幅の見込み(画素)。css の .pcad-menu__item の min-width と左右の余白から。 */
 const ROW_MENU_WIDTH = 132;
 /** ボタンやカーソルと一覧の間の隙間、および画面の端との余白(画素)。 */
@@ -337,6 +350,14 @@ function withTimelineConsumed(
  */
 export function FeatureTree(): React.JSX.Element {
   const part = useAppStore((state) => state.document);
+  const documentVersion = useAppStore((state) => state.documentVersion);
+  const [noteDraft, setNoteDraft] = useState<FeatureNoteDraft | null>(null);
+  const [folderDraft, setFolderDraft] = useState<FeatureFolderDraft | null>(null);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<ReadonlySet<string>>(() => new Set());
+  const folders = part.featureFolders ?? [];
+  const folderContext = () => ({ documentId: part.id, documentVersion, originalFolders: JSON.stringify(folders) });
+  const owned = new Set(folders.flatMap(folder => folder.children.map(featureFolderMemberKey)));
+  const ownedRow = (id: string, section: RowMenuSection, sketchId?: string) => owned.has(featureFolderMemberKey(noteTargetForRow(part, id, section, sketchId)));
   const selection = useAppStore((state) => state.selection);
   const hoveredElementId = useAppStore((state) => state.hoveredElementId);
   const sketchErrors = useAppStore((state) => state.sketchErrors);
@@ -390,7 +411,7 @@ export function FeatureTree(): React.JSX.Element {
    * 増やすだけの得が無い。NFR-UX-6「はじめの一歩を邪魔しない」)。
    */
   const sketchGroups = buildSketchGroups(part, sketchErrors);
-  const grouped = sketchGroups.length > 1;
+  const grouped = sketchGroups.length > 1 || folders.some(folder => folder.children.some(child => child.kind === 'sketch'));
   /*
    * タイムラインの段(FR-507)。並びは model の `buildTimeline` が正本で、
    * 「基準(順)→ ソリッド(順)」の 1 本の通し。木の行の id はフィーチャーの id
@@ -743,6 +764,7 @@ export function FeatureTree(): React.JSX.Element {
             event.preventDefault();
             setMenu({
               featureId: group.sketchId,
+              name: group.name,
               sectionKey: 'sketchDocument',
               x: menuRight(event.clientX),
               y: menuTop(event.clientY, event.clientY),
@@ -809,6 +831,7 @@ export function FeatureTree(): React.JSX.Element {
             <span className="pcad-tree__badge">{t('featureTree.sketchActive')}</span>
           ) : null}
           <span className="pcad-tree__count">{group.rows.length}</span>
+          {featureNoteOf(part, { kind: 'sketch', id: group.sketchId }) === '' ? null : <span className="pcad-tree__badge" title={t('historyNote.edit')}>{t('historyNote.badge')}</span>}
           <button
             type="button"
             className="pcad-tree__more"
@@ -820,6 +843,7 @@ export function FeatureTree(): React.JSX.Element {
               const rect = event.currentTarget.getBoundingClientRect();
               setMenu({
                 featureId: group.sketchId,
+              name: group.name,
                 sectionKey: 'sketchDocument',
                 x: menuRight(rect.right),
                 y: menuTop(rect.bottom, rect.top),
@@ -833,7 +857,7 @@ export function FeatureTree(): React.JSX.Element {
           <p className="pcad-tree__hint pcad-tree__hint--nested">{t('featureTree.sketchEmpty')}</p>
         ) : (
           <ul className="pcad-tree__children pcad-tree__children--nested">
-            {group.rows.map((row) => renderRow(row, 'sketch', group.sketchId))}
+            {group.rows.filter(row => !ownedRow(row.id, 'sketch', group.sketchId)).map((row) => renderRow(row, 'sketch', group.sketchId))}
           </ul>
         )}
       </li>
@@ -948,6 +972,8 @@ export function FeatureTree(): React.JSX.Element {
             useAppStore.getState().setSelection([row.id]);
             setMenu({
               featureId: row.id,
+              name: row.name,
+              sketchId,
               sectionKey,
               x: menuRight(event.clientX),
               y: menuTop(event.clientY, event.clientY),
@@ -1064,6 +1090,7 @@ export function FeatureTree(): React.JSX.Element {
             スケッチ・ソリッドどちらの行も同じ「⋮」の非モーダル一覧を開く(P3 §0.a-0.23 ②)。
             一覧の中身(抑制・改名の有無)は sectionKey で決める。
           */}
+          {featureNoteOf(part, noteTargetForRow(part, row.id, sectionKey, sketchId)) === '' ? null : <span className="pcad-tree__badge" title={t('historyNote.edit')}>{t('historyNote.badge')}</span>}
           <button
             type="button"
             className="pcad-tree__more"
@@ -1075,6 +1102,8 @@ export function FeatureTree(): React.JSX.Element {
               const rect = event.currentTarget.getBoundingClientRect();
               setMenu({
                 featureId: row.id,
+                name: row.name,
+                sketchId,
                 sectionKey,
                 x: menuRight(rect.right),
                 y: menuTop(rect.bottom, rect.top),
@@ -1088,13 +1117,39 @@ export function FeatureTree(): React.JSX.Element {
     );
   };
 
+  const renderFolderMember = (member: FeatureNoteTarget): React.JSX.Element => {
+    if (member.kind === 'sketch') {
+      const group = sketchGroups.find(item => item.sketchId === member.id);
+      if (group !== undefined) return renderSketchGroup(group);
+    } else if (member.kind === 'sketch-feature') {
+      const group = sketchGroups.find(item => item.sketchId === member.sketchId);
+      const row = group?.rows.find(item => item.id === member.id);
+      if (row !== undefined) return renderRow(row, 'sketch', member.sketchId);
+    } else {
+      const row = sections.find(section => section.key === member.kind)?.rows.find(item => item.id === member.id);
+      if (row !== undefined) return renderRow(row, member.kind);
+    }
+    return <li className="pcad-tree__hint">{t('historyFolder.missing').replace('{name}', member.id)}</li>;
+  };
   return (
     <section className="pcad-panel pcad-panel--left">
       <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
       <DocumentNameSearch key={part.id} helpTopic="feature-tree" getEntries={() => partNameSearchEntries(sections, sketchGroups)}
-        onSelect={entry => { activateRowSketch(entry.sketchId); useAppStore.getState().setSelection(entry.selectionId === null ? [] : [entry.selectionId]); }} />
+        onSelect={entry => {
+          setIsExpanded(true);
+          if (entry.historyTarget !== undefined) {
+            const target = entry.historyTarget;
+            const section = target.kind === 'sketch-feature' ? 'sketch' : target.kind;
+            setCollapsed(previous => previous.filter(key => key !== section));
+            const ancestors = featureFolderAncestors(folders, target);
+            setCollapsedFolderIds(previous => new Set([...previous].filter(id => !ancestors.has(id))));
+          }
+          if (entry.sketchId !== undefined) setCollapsedSketchIds(previous => previous.filter(id => id !== entry.sketchId));
+          activateRowSketch(entry.sketchId); useAppStore.getState().setSelection(entry.selectionId === null ? [] : [entry.selectionId]);
+        }} />
       <div className="pcad-panel__body">
-        {rowCount === 0 ? (
+        <button type="button" className="pcad-button" data-help-topic="history-notes" title={t('historyFolder.create')} onClick={() => setFolderDraft({ ...folderContext(), mode: 'create' })}>{t('historyFolder.create')}</button>
+        {rowCount === 0 && folders.length === 0 ? (
           <div className="pcad-panel__empty">
             <EmptyBoxIcon size={28} />
             <p className="pcad-panel__empty-text">{t('featureTree.empty')}</p>
@@ -1117,6 +1172,9 @@ export function FeatureTree(): React.JSX.Element {
               </button>
               {isExpanded ? (
                 <ul className="pcad-tree__sections">
+                  {folders.length === 0 ? null : <FeatureFolderTree key={part.id} folders={folders} collapsed={collapsedFolderIds} renderMember={renderFolderMember}
+                    onToggle={id => setCollapsedFolderIds(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
+                    onEdit={folder => setFolderDraft({ ...folderContext(), mode: 'edit', folderId: folder.id })} />}
                   {sections.map((section) => {
                     const SectionIcon = SECTION_ICONS[section.key];
                     const open = !collapsed.includes(section.key);
@@ -1172,7 +1230,7 @@ export function FeatureTree(): React.JSX.Element {
                         {!open ? null : grouped && section.key === 'sketch' ? (
                           // スケッチが 2 本以上ある文書だけ、親行で束ねて出す(P4 仕上げ (g))。
                           <ul className="pcad-tree__children">
-                            {sketchGroups.map((group) => renderSketchGroup(group))}
+                            {sketchGroups.filter(group => !ownedRow(group.sketchId, 'sketchDocument')).map((group) => renderSketchGroup(group))}
                           </ul>
                         ) : section.rows.length === 0 ? (
                           <p className="pcad-tree__hint">
@@ -1186,7 +1244,7 @@ export function FeatureTree(): React.JSX.Element {
                           </p>
                         ) : (
                           <ul className="pcad-tree__children">
-                            {section.rows.map((row) => renderRow(row, section.key))}
+                            {section.rows.filter(row => !ownedRow(row.id, section.key)).map((row) => renderRow(row, section.key))}
                           </ul>
                         )}
                       </li>
@@ -1305,6 +1363,15 @@ export function FeatureTree(): React.JSX.Element {
           >
             {t('featureTree.rename')}
           </button>
+          <button type="button" role="menuitem" className="pcad-button pcad-menu__item" data-help-topic="history-notes" title={t('historyNote.edit')} onClick={() => {
+            const target = noteTargetForRow(part, menu.featureId, menu.sectionKey, menu.sketchId);
+            setNoteDraft({ target, name: menu.name, documentId: part.id, documentVersion, original: featureNoteOf(part, target) });
+            setMenu(null);
+          }}>{t('historyNote.edit')}</button>
+          <button type="button" role="menuitem" className="pcad-button pcad-menu__item" data-help-topic="history-notes" title={t('historyFolder.moveTitle')} onClick={() => {
+            setFolderDraft({ ...folderContext(), mode: 'move', target: noteTargetForRow(part, menu.featureId, menu.sectionKey, menu.sketchId), name: menu.name });
+            setMenu(null);
+          }}>{t('historyFolder.moveTitle')}</button>
           {/*
             消せないスケッチ(最後の 1 本、要素を立体が使っているもの)は押せなくし、
             理由を吹き出しで読めるようにする(仕上げ (g)、FR-503、NFR-UX-5)。
@@ -1325,6 +1392,10 @@ export function FeatureTree(): React.JSX.Element {
           </button>
         </div>
       )}
+      {folderDraft !== null && folderDraft.documentId === part.id && folderDraft.documentVersion === documentVersion
+        ? <FeatureFolderDialog draft={folderDraft} onClose={() => setFolderDraft(null)} /> : null}
+      {noteDraft !== null && noteDraft.documentId === part.id && noteDraft.documentVersion === documentVersion
+        && featureNoteTargetExists(part, noteDraft.target) ? <FeatureNoteDialog draft={noteDraft} onClose={() => setNoteDraft(null)} /> : null}
     </section>
   );
 }

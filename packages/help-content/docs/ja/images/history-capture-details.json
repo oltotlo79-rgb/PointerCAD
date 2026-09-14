@@ -1,0 +1,145 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "history-design-note",
+      "script": "e2e/tests/historyNotesFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-history-notes-validation-2t451581",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-history-manual-capture-ws6uswe4",
+      "checkedTree": null,
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-11/P12-12 設計メモと履歴フォルダを再計算なしで編集・取消・Undo・保存再開し、F1を開く",
+        "scriptSha256": "cbcd6c447baff358ce0d2def18e391ef9f2d69c01bc3a0cceb030ff1cea45475",
+        "fixture": {
+          "filename": "history-design-note-fixture.json",
+          "sha256": "513e165bacf44fb448aeeb3471f1e1e4c66d2ec60b1329678e06dfbcf701158a"
+        },
+        "screen": {
+          "filename": "history-design-note-screen.png",
+          "sha256": "4d4aa9ceef6a3d4e2788600439116e65c26b87031960012057c63b2326f3ec77"
+        },
+        "detail": {
+          "filename": "history-design-note-detail.png",
+          "sha256": "bd3f1542ce0a7f5c2719819177e199eb16d402c8412a0806a23d60879e6d77b8"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 440,
+          "y": 264.28125,
+          "width": 560,
+          "height": 371.4375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "feature-design-note",
+        "notes": [
+          {
+            "target": {
+              "kind": "solid",
+              "id": "box-1"
+            },
+            "text": "固定面を残して加工する。\n<script>文章を勝手に実行しない</script>"
+          }
+        ]
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true
+    },
+    {
+      "name": "history-design-folder",
+      "script": "e2e/tests/historyFoldersFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-history-notes-validation-2t451581",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-history-manual-capture-ws6uswe4",
+      "checkedTree": null,
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-11/P12-12 設計メモと履歴フォルダを再計算なしで編集・取消・Undo・保存再開し、F1を開く",
+        "scriptSha256": "4bb43f6c0e7aa5de067373fd1825d4b2c907866f9d743431c746e14c7b054ba4",
+        "fixture": {
+          "filename": "history-design-folder-fixture.json",
+          "sha256": "d5a0716bc27f11caa2379927d819ba4f70729898ddbaf988a9abd349c6e20f72"
+        },
+        "screen": {
+          "filename": "history-design-folder-screen.png",
+          "sha256": "7215fe90bd164dad949e4a1ca67b03731c3b3a6bda39ff800bbe5bca5b736a72"
+        },
+        "detail": {
+          "filename": "history-design-folder-detail.png",
+          "sha256": "eb91e0345c12c60e2715fccf39d5d793b856f3764b2fa8078d74f27ccf552cd2"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 440,
+          "y": 298.28125,
+          "width": 560,
+          "height": 303.4375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "history-folder",
+        "folders": [
+          {
+            "id": "folder-1",
+            "name": "本体の加工",
+            "children": [
+              {
+                "kind": "folder",
+                "id": "folder-2"
+              }
+            ]
+          },
+          {
+            "id": "folder-2",
+            "name": "仕上げ",
+            "children": [
+              {
+                "kind": "solid",
+                "id": "box-1"
+              }
+            ]
+          }
+        ]
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true
+    }
+  ]
+}

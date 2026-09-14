@@ -35,7 +35,7 @@ export const MANUAL_VOLUMES: readonly ManualVolume[] = [
     'sheet-metal', 'sheet-metal-flange', 'sheet-metal-bend-relief', 'sheet-metal-flat', 'scripts', 'script-api', 'script-tools', 'cam',
   ] },
   { id: 'settings-and-history', title: '設定・履歴・表示', topics: [
-    'feature-tree', 'timeline', 'display-settings', 'selection', 'named-view', 'section-view', 'font-licenses',
+    'feature-tree', 'history-notes', 'timeline', 'display-settings', 'selection', 'named-view', 'section-view', 'font-licenses',
   ] },
 ];
 

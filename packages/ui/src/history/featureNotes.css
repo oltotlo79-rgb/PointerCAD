@@ -1,0 +1,31 @@
+.pcad-feature-note {
+  box-sizing: border-box;
+  width: min(calc(560px * var(--pcad-scale)), calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  padding: calc(16px * var(--pcad-scale));
+  color: var(--pcad-text);
+  background: var(--pcad-surface);
+  font: inherit;
+}
+.pcad-feature-note::backdrop { background: rgb(0 0 0 / 45%); }
+.pcad-feature-note form { display: grid; gap: calc(10px * var(--pcad-scale)); }
+.pcad-feature-note h2 { margin: 0; font-size: 1.1em; }
+.pcad-feature-note p { margin: 0; overflow-wrap: anywhere; }
+.pcad-feature-note textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  min-height: calc(120px * var(--pcad-scale));
+  font: inherit;
+  color: inherit;
+  background: var(--pcad-surface);
+  border: 1px solid var(--pcad-border);
+  padding: calc(8px * var(--pcad-scale));
+}
+.pcad-feature-note footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: calc(8px * var(--pcad-scale)); }
+.pcad-feature-note button { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-border); padding: calc(6px * var(--pcad-scale)); }
+.pcad-feature-note [role="alert"] { color: var(--pcad-danger-text); }

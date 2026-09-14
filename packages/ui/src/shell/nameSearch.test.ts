@@ -15,6 +15,7 @@ describe('名前検索の結果を実際の所属と選択先へ結び付ける'
     const matches = searchNamedEntries(entries, '基準点');
     expect(matches.map(item => [item.entry.selectionId, item.entry.sketchId])).toEqual([['point-1', 'first'], ['point-1', 'second']]);
     expect(new Set(matches.map(item => item.entry.key)).size).toBe(2);
+    expect(matches.map(item => item.entry.historyTarget)).toEqual([{ kind: 'sketch-feature', sketchId: 'first', id: 'point-1' }, { kind: 'sketch-feature', sketchId: 'second', id: 'point-1' }]);
     expect(searchNamedEntries(entries, '側面 基準点').map(item => item.entry.sketchId)).toEqual(['second']);
     expect(searchNamedEntries(entries, '正面')[0].entry.selectionId).toBeNull();
   });

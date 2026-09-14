@@ -41,7 +41,7 @@ describe('数学定義を失わないJSON保存と入力境界', () => {
     expect(serializeDocument(source)).not.toContain('mathDefinition');
     expect(serializeDocument(source)).not.toContain('mathParameterSerial');
   });
-  it('版13の旧短式は原文と数値を変えず版14へ移行する', () => {
+  it('版13の旧短式は原文と数値を変えず現行版へ移行する', () => {
     const source = createEmptyPartDocument();
     const raw: unknown = JSON.parse(serializeDocument({ ...source, schemaVersion: 13 }));
     const result = parseDocument(JSON.stringify(raw));

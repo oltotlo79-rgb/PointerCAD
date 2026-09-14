@@ -220,6 +220,8 @@ export function templateFromDocument(
       ...document,
       name: options.name ?? document.name,
       ...emptyHistory(),
+      ...(document.featureNotes === undefined ? {} : { featureNotes: [] }),
+      ...(document.featureFolders === undefined ? {} : { featureFolders: [] }),
     },
     lengthUnit: options.lengthUnit,
     toolDefaults: options.toolDefaults,

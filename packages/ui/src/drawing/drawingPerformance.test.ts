@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -101,10 +102,21 @@ describe('図面の測定・配置・出力の性能と決定性（P8-70/P9-20�
 
   it.each([['pdf', 2000], ['svg', 500], ['dxf', 500]] as const)('5000線・実字体500文字の%s出力を%dms以内で作る', (format, limit) => {
     const started = performance.now(), sheet = outputSheet();
-    const output = () => format === 'pdf' ? toPdf(sheet) : format === 'svg' ? toSvg(sheet) : writeDrawingDxf(sheet, document.layers);
+    if (format === 'pdf') {
+      const result = toPdf(sheet), elapsed = performance.now() - started;
+      const repeated = toPdf(sheet);
+      expect(result.ok).toBe(true); expect(repeated.ok).toBe(true);
+      if (!result.ok || !repeated.ok) throw new Error('同じ実図面のPDF出力に失敗しました');
+      const verificationStarted = performance.now();
+      // 全バイトと長さを直接比較する。巨大な配列の各要素を汎用の深い比較へ渡さない。
+      expect(Buffer.compare(result.bytes, repeated.bytes)).toBe(0);
+      console.log(`[実測] PDF全バイト照合: ${(performance.now() - verificationStarted).toFixed(3)}ms / ${result.bytes.byteLength}バイト`);
+      budget(`5000線/500文字 ${format}`, elapsed, limit);
+      return;
+    }
+    const output = () => format === 'svg' ? toSvg(sheet) : writeDrawingDxf(sheet, document.layers);
     const result = output(), elapsed = performance.now() - started;
     expect(result).toEqual(output()); expect(result).not.toBeNull();
-    if (format === 'pdf') expect(result).toMatchObject({ ok: true });
     if (format === 'dxf') expect(result).toMatchObject({ skippedPrimitiveCount: 0 });
     budget(`5000線/500文字 ${format}`, elapsed, limit);
   });

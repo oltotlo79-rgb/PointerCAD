@@ -55,9 +55,20 @@ import {
   projectionSourcesRejection,
 } from './projectionCommands.js';
 import { commitReferenceInput } from './referenceCommands.js';
-import { commitSketchInput } from './sketchCommands.js';
+import { commitFace, commitSketchInput } from './sketchCommands.js';
 import { prepareNumericMathCommit } from './numericMathValues.js';
 import { tryMathComposition } from '../math/tryMathComposition.js';
+
+/** Both canvas Enter and guided Enter publish a face through the same document transaction. */
+export function applySelectedFace(): boolean {
+  const state = useAppStore.getState();
+  const outcome = commitFace(state.sketch, state.resolvedSketch, state.workPlaneId, state.selection);
+  if (!outcome.ok) { state.setFaceError(outcome.reasonKey); return false; }
+  state.setFaceError(null);
+  state.setSketch(outcome.document);
+  state.setSelection([]);
+  return true;
+}
 
 /** Keep coefficient identities private until the same operation publishes a real feature. */
 function mathCommitBase(inputs: unknown): PartDocument | null {

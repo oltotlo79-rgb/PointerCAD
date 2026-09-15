@@ -73,11 +73,11 @@ export function FeatureFolderDialog({ draft, onClose }: {
       <h2 id={titleId}>{t(draft.mode === 'move' ? 'historyFolder.moveTitle' : 'historyFolder.title')}</h2>
       {draft.mode === 'move' ? <p>{draft.name}</p> : <>
         <label htmlFor={nameId}>{t('historyFolder.name')}</label>
-        <input id={nameId} value={name} aria-invalid={invalidName} onChange={event => { setName(event.currentTarget.value); setProblem(null); }} />
+        <input title={t('historyFolder.nameHint').replace('{max}', String(FEATURE_FOLDER_NAME_MAX_LENGTH))} id={nameId} value={name} aria-invalid={invalidName} onChange={event => { setName(event.currentTarget.value); setProblem(null); }} />
         <p>{t('historyFolder.nameHint').replace('{max}', String(FEATURE_FOLDER_NAME_MAX_LENGTH))}</p>
       </>}
       <label htmlFor={parentIdInput}>{t('historyFolder.parent')}</label>
-      <select id={parentIdInput} value={parentId} onChange={event => { setParentId(event.currentTarget.value); setProblem(null); }}>
+      <select title={t('controlGuide.folder.parent')} id={parentIdInput} value={parentId} onChange={event => { setParentId(event.currentTarget.value); setProblem(null); }}>
         <option value="">{t('historyFolder.root')}</option>
         {folders.map(folder => <option key={folder.id} value={folder.id} disabled={excluded.has(folder.id)}>{labels.get(folder.id)?.path ?? folder.name}</option>)}
       </select>

@@ -39,28 +39,28 @@ export function DrawingAnnotationPopover({ target, annotation, inline = false }:
     else addDrawingSurfaceFinish({ target, position, process, parameter, value, height: number(height) });
   }}>
     <strong>{t('drawing.tool.annotation')}</strong>
-    <label>{t('drawing.annotation.kind')}<select aria-label={t('drawing.annotation.kind')} value={kind} disabled={annotation !== undefined} onChange={(event) => setKind(event.target.value)}>
+    <label title={t('drawing.annotation.kind.controlHint')}>{t('drawing.annotation.kind')}<select aria-label={t('drawing.annotation.kind')} value={kind} disabled={annotation !== undefined} onChange={(event) => setKind(event.target.value)}>
       <option value="surface">{t('drawing.annotation.surface')}</option>
       <option value="machining">{t('drawing.annotation.machining')}</option>
     </select></label>
     {kind === 'machining' ? <output>{machining?.tokens.filter((token) => token.kind === 'text').map((token) => token.text).join(' ') ?? t('drawing.error.machiningSourceMissing')}</output> : <>
-      <label>{t('drawing.annotation.process')}<select aria-label={t('drawing.annotation.process')} value={process} onChange={(event) => {
+      <label title={t('drawing.annotation.process.controlHint')}>{t('drawing.annotation.process')}<select aria-label={t('drawing.annotation.process')} value={process} onChange={(event) => {
         const next = event.target.value; if (next === 'basic' || next === 'removal' || next === 'noRemoval') setProcess(next);
       }}>
         <option value="basic">{t('drawing.annotation.basic')}</option><option value="removal">{t('drawing.annotation.removal')}</option>
         <option value="noRemoval">{t('drawing.annotation.noRemoval')}</option>
       </select></label>
-      <label>{t('drawing.annotation.parameter')}<select aria-label={t('drawing.annotation.parameter')} value={parameter} onChange={(event) => setParameter(event.target.value === 'Rz' ? 'Rz' : 'Ra')}>
+      <label title={t('drawing.annotation.parameter.controlHint')}>{t('drawing.annotation.parameter')}<select aria-label={t('drawing.annotation.parameter')} value={parameter} onChange={(event) => setParameter(event.target.value === 'Rz' ? 'Rz' : 'Ra')}>
         <option value="Ra">Ra</option><option value="Rz">Rz</option>
       </select></label>
-      <label>{t('drawing.annotation.roughness')}<input value={value} onChange={(event) => setValue(event.target.value)} autoFocus={annotation === undefined} /></label>
+      <label title={t('drawing.annotation.roughness.controlHint')}>{t('drawing.annotation.roughness')}<input value={value} onChange={(event) => setValue(event.target.value)} autoFocus={annotation === undefined} /></label>
     </>}
-    <label>{t('drawing.note.height')}<input value={height} inputMode="decimal" onChange={(event) => setHeight(event.target.value)} /></label>
+    <label title={t('drawing.note.height.controlHint')}>{t('drawing.note.height')}<input value={height} inputMode="decimal" onChange={(event) => setHeight(event.target.value)} /></label>
     {annotation === undefined ? null : <>
-      <label>{t('drawing.note.x')}<input value={x} inputMode="decimal" onChange={(event) => setX(event.target.value)} /></label>
-      <label>{t('drawing.note.y')}<input value={y} inputMode="decimal" onChange={(event) => setY(event.target.value)} /></label>
+      <label title={t('drawing.note.x.controlHint')}>{t('drawing.note.x')}<input value={x} inputMode="decimal" onChange={(event) => setX(event.target.value)} /></label>
+      <label title={t('drawing.note.y.controlHint')}>{t('drawing.note.y')}<input value={y} inputMode="decimal" onChange={(event) => setY(event.target.value)} /></label>
     </>}
-    <div><button type="submit" className="pcad-button" disabled={busy}>{t('drawing.action.apply')}</button>
-      <button type="button" className="pcad-button" onClick={close}>{t('drawing.action.close')}</button></div>
+    <div><button title={t('drawing.controlHint.applyAnnotation')} type="submit" className="pcad-button" disabled={busy}>{t('drawing.action.apply')}</button>
+      <button title={t('drawing.controlHint.closeAnnotation')} type="button" className="pcad-button" onClick={close}>{t('drawing.action.close')}</button></div>
   </form>;
 }

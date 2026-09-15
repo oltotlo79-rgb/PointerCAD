@@ -37,7 +37,7 @@ export function ConfigurationPanel(): React.JSX.Element {
   return <section aria-label={t('configuration.label')} className="pcad-section">
     <label className="pcad-field">
       <span className="pcad-field__label">{t('configuration.label')}</span>
-      <select disabled={busy} className="pcad-field__input" aria-label={t('configuration.label')} value={active ?? ''}
+      <select title={t('controlGuide.configuration.choose')} disabled={busy} className="pcad-field__input" aria-label={t('configuration.label')} value={active ?? ''}
         onChange={(event) => { run({ kind: 'activate', id: event.target.value }); }}>
         {active === null ? <option value="">{t('configuration.none')}</option> : null}
         {document.configurations.map((configuration) => <option key={configuration.id} value={configuration.id}>{configuration.name}</option>)}
@@ -45,7 +45,7 @@ export function ConfigurationPanel(): React.JSX.Element {
     </label>
     <label className="pcad-field">
       <span className="pcad-field__label">{t('configuration.name')}</span>
-    <input disabled={busy} className="pcad-field__input" aria-label={t('configuration.name')} value={name} onChange={(event) => { setName(event.target.value); setMessage(null); }}
+    <input title={t('controlGuide.configuration.name')} disabled={busy} className="pcad-field__input" aria-label={t('configuration.name')} value={name} onChange={(event) => { setName(event.target.value); setMessage(null); }}
         onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); run({ kind: 'create', name }); } }} />
     </label>
     <div className="pcad-parameter__actions">
@@ -56,7 +56,7 @@ export function ConfigurationPanel(): React.JSX.Element {
       <button type="button" className="pcad-button" disabled={busy || active === null} title={t('configuration.deleteHint')}
         onClick={() => { if (active !== null) run({ kind: 'delete', id: active }); }}>{t('configuration.delete')}</button>
     </div>
-    {busy ? <div role="status">{t('math.calculating')} <button type="button" className="pcad-button" onClick={() => {
+    {busy ? <div role="status">{t('math.calculating')} <button title={t('controlGuide.configuration.stop')} type="button" className="pcad-button" onClick={() => {
       pending.current?.abort(); pending.current = null; setBusy(false); setMessage(null);
     }}>{t('math.cancel')}</button></div> : null}
     {message === null ? null : <p role="alert" className="pcad-panel__error">{message}</p>}

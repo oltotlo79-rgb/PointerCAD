@@ -18,11 +18,11 @@ export function FunctionSurfaceProperties({ feature }: { readonly feature: Funct
     <dl className="pcad-properties">{functionSurfaceDetails(feature).map(entry => <Fragment key={entry.labelKey}>
       <dt className="pcad-properties__key">{t(entry.labelKey)}</dt><dd className="pcad-properties__value">{entry.text}</dd>
     </Fragment>)}</dl>
-    <button type="button" disabled={!supported} onClick={() => setOpen(true)}>{t('functionPlot.edit')}</button>
+    <button title={t('controlGuide.button.functionEdit')} type="button" disabled={!supported} onClick={() => setOpen(true)}>{t('functionPlot.edit')}</button>
     <FunctionCoefficientSliders definition={feature.definition} />
-    <button type="button" disabled={feature.suppressed} onClick={() => setSectionOpen(true)}>{t('functionSection.title')}</button>
+    <button title={t('controlGuide.button.functionSection')} type="button" disabled={feature.suppressed} onClick={() => setSectionOpen(true)}>{t('functionSection.title')}</button>
     {sectionOpen ? <FunctionSectionDialog parentId={feature.id} onClose={() => setSectionOpen(false)} /> : null}
-    <button type="button" disabled={feature.suppressed} onClick={()=>setPointOpen(true)}>{t('functionPoint.title')}</button>
+    <button title={t('controlGuide.button.functionPoint')} type="button" disabled={feature.suppressed} onClick={()=>setPointOpen(true)}>{t('functionPoint.title')}</button>
     {pointOpen?<FunctionPointDialog parent={{kind:'surface',featureId:feature.id}} onClose={()=>setPointOpen(false)}/>:null}
     {open ? <FunctionPlotDialog featureId={feature.id} onClose={() => setOpen(false)} /> : null}
   </section>;

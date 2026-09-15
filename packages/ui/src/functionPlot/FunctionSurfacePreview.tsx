@@ -62,6 +62,6 @@ export function FunctionSurfacePreview({ definition, body, onDisplay }: {
     <p>{t(body.bodyKind === 'solid' ? 'functionPlot.closedSurface' : body.bodyKind === 'mixed' ? 'functionPlot.mixedSurface' : 'functionPlot.openSurface')}
       {body.area === undefined ? null : ` / ${t('functionPlot.area')}: ${body.area.toLocaleString(undefined, { maximumSignificantDigits: 8 })} mm²`}
       {body.bodyKind === 'shell' ? null : ` / ${t('functionPlot.volume')}: ${body.volume.toLocaleString(undefined, { maximumSignificantDigits: 8 })} mm³`}</p>
-    <button type="button" onClick={() => reset.current?.()}>{t('functionPlot.resetView')}</button>
+    <button title={t('controlGuide.button.previewReset')} type="button" onClick={() => reset.current?.()}>{t('functionPlot.resetView')}</button>
   </figure>;
 }

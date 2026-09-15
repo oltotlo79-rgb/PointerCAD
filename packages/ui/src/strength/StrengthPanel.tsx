@@ -32,8 +32,8 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
     <div className="pcad-strength__actions">
       <button type="submit" className="pcad-button pcad-button--primary" disabled={!evaluation.ok} title={evaluation.ok ? t('strength.tooltip') : evaluation.message}>
         {t(session.result === null ? 'strength.calculate' : 'strength.recalculate')}</button>
-      <button type="button" className="pcad-button" onClick={close}>{t('strength.close')}</button>
-      <button type="button" className="pcad-button" onClick={() => help('strength')}>{t('strength.help')}</button>
+      <button type="button" className="pcad-button" title={t('strength.guide.close')} onClick={close}>{t('strength.close')}</button>
+      <button type="button" className="pcad-button" title={t('strength.guide.help')} onClick={() => help('strength')}>{t('strength.help')}</button>
     </div>
     {session.result === null ? null : <StrengthResults snapshot={session.result} edited={session.edited} />}
   </form>;

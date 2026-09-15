@@ -28,11 +28,11 @@ function HandoffContent({ handoff }: { readonly handoff: ExportHandoff }): React
   return <section className="pcad-card pcad-cam-handoff" role="dialog" aria-label={t('cam.title')} data-help-topic="cam"
     onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }}>
     <div className="pcad-cam-handoff__heading"><h2>{t('cam.title')}</h2>
-      <button className="pcad-button" type="button" ref={closeRef} onClick={close}>{t('cam.close')}</button></div>
+      <button title={t('controlGuide.button.handoffClose')} className="pcad-button" type="button" ref={closeRef} onClick={close}>{t('cam.close')}</button></div>
     <p>{t('cam.saved').replace('{format}', handoff.format.toUpperCase())}</p>
     <p>{t('cam.noUpload')}</p>
     {openWith(handoff.format, handoff.token !== null && gateway.openExport !== undefined).map((action) =>
-      <button className="pcad-button pcad-button--action" type="button" key={action} disabled={running} onClick={() => { act(action); }}>{t(labels[action])}</button>)}
+      <button title={t(`controlGuide.button.handoff.${action}`)} className="pcad-button pcad-button--action" type="button" key={action} disabled={running} onClick={() => { act(action); }}>{t(labels[action])}</button>)}
     {handoff.format === 'step' && <p>{t('cam.stepHint')}</p>}
     {failed && <p role="alert">{t('cam.openFailed')}</p>}
   </section>;

@@ -33,16 +33,16 @@ function CoefficientSlider({ parameter, documentId, documentVersion }: {
     <p>{parameter.value.source}{parameter.unit === 'none' ? '' : parameter.unit === 'degree' ? ' °' : ' mm'}</p>
     <div className="pcad-function-coefficient__bounds">
       <label htmlFor={`${id}-minimum`}>{t('functionCoefficient.minimum')}
-        <input id={`${id}-minimum`} type="number" step="any" value={minimum}
+        <input title={t('functionPlot.control.coefficientMinimum')} id={`${id}-minimum`} type="number" step="any" value={minimum}
           onChange={event => { finish(); setMinimum(event.currentTarget.value); }} />
       </label>
       <label htmlFor={`${id}-maximum`}>{t('functionCoefficient.maximum')}
-        <input id={`${id}-maximum`} type="number" step="any" value={maximum}
+        <input title={t('functionPlot.control.coefficientMaximum')} id={`${id}-maximum`} type="number" step="any" value={maximum}
           onChange={event => { finish(); setMaximum(event.currentTarget.value); }} />
       </label>
     </div>
     <label htmlFor={`${id}-value`}>{t('functionCoefficient.value')}: {parameter.name}</label>
-    <input id={`${id}-value`} className="pcad-function-coefficient__range" type="range" step="any"
+    <input title={t('functionPlot.control.coefficientValue')} id={`${id}-value`} className="pcad-function-coefficient__range" type="range" step="any"
       min={range?.minimum ?? -1} max={range?.maximum ?? 1} value={Number.isFinite(value) ? value : 0}
       disabled={!enabled} aria-describedby={`${id}-status`}
       onPointerDown={event => { begin(); event.currentTarget.setPointerCapture(event.pointerId); }}

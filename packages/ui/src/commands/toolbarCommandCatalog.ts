@@ -81,6 +81,9 @@ function toolbarHelpTopic(group: ToolbarCommandGroup, id: string): string {
   if (group === 'view' && id === 'matchWorkPlane') return 'work-plane';
   if (group === 'view' && id === 'chaining') return 'sketch-tools';
   if (group === 'drawing') {
+    if (id === 'annotation') return 'surface-finish';
+    if (id === 'refreshSource') return 'drawing';
+    if (['centerMark', 'hidden', 'centers'].includes(id)) return 'drawing-views';
     if (['datum', 'gdt', 'duplicateGdt'].includes(id)) return 'gdt';
     if (id === 'weld') return 'welding';
     if (id === 'bom') return 'drawing-bom';

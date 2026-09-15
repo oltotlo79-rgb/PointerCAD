@@ -64,9 +64,9 @@ export function ShortcutAssignmentsForm({ current, onApply }: {
     <h3>{t('settings.shortcuts.title')}</h3>
     <p>{t('settings.shortcuts.hint')}</p>
     <label htmlFor={`${id}-search`}>{t('settings.shortcuts.search')}</label>
-    <input id={`${id}-search`} className="pcad-field__input" value={query} onChange={event => setQuery(event.currentTarget.value)} />
+    <input title={t('settings.shortcuts.searchGuide')} id={`${id}-search`} className="pcad-field__input" value={query} onChange={event => setQuery(event.currentTarget.value)} />
     <label htmlFor={`${id}-command`}>{t('settings.shortcuts.command')}</label>
-    <select id={`${id}-command`} value={command?.id ?? ''} disabled={command === undefined} onChange={event => {
+    <select title={t('settings.shortcuts.commandGuide')} id={`${id}-command`} value={command?.id ?? ''} disabled={command === undefined} onChange={event => {
       const next = commandDefinition(event.currentTarget.value);
       if (next !== null) { setSelected(next.id); setCaptureError(null); }
     }}>
@@ -75,7 +75,7 @@ export function ShortcutAssignmentsForm({ current, onApply }: {
     {command === undefined ? <p role="status">{t('settings.shortcuts.notFound')}</p> : <>
       <p>{t('settings.shortcuts.current')}: <kbd>{labels(command.id, current)}</kbd></p>
       <label htmlFor={`${id}-capture`}>{t('settings.shortcuts.capture')}</label>
-      <input id={`${id}-capture`} className="pcad-field__input" readOnly disabled={!adjustable}
+      <input title={t(adjustable ? 'settings.shortcuts.captureHint' : 'settings.shortcuts.fixed')} id={`${id}-capture`} className="pcad-field__input" readOnly disabled={!adjustable}
         value={labels(command.id, values)} aria-describedby={`${id}-capture-hint`} onKeyDown={event => {
           const result = captureShortcutKey(event.nativeEvent);
           if (result.status === 'pass-through') return;
@@ -88,9 +88,9 @@ export function ShortcutAssignmentsForm({ current, onApply }: {
         }} />
       <p id={`${id}-capture-hint`}>{t(adjustable ? 'settings.shortcuts.captureHint' : 'settings.shortcuts.fixed')}</p>
       <div className="pcad-shortcut-settings__actions">
-        <button type="button" className="pcad-button" disabled={!adjustable} onClick={() => change({ ...values, [command.id]: null })}>
+        <button type="button" className="pcad-button" title={t('settings.shortcuts.removeGuide')} disabled={!adjustable} onClick={() => change({ ...values, [command.id]: null })}>
           {t('settings.shortcuts.remove')}</button>
-        <button type="button" className="pcad-button" disabled={!adjustable} onClick={() => {
+        <button type="button" className="pcad-button" title={t('settings.shortcuts.restoreOneGuide')} disabled={!adjustable} onClick={() => {
           const next = { ...values }; delete next[command.id]; change(next);
         }}>{t('settings.shortcuts.restoreOne')}</button>
       </div>
@@ -100,11 +100,11 @@ export function ShortcutAssignmentsForm({ current, onApply }: {
     {stale ? <p role="alert">{t('settings.shortcuts.stale')}</p> : null}
     {status === null ? null : <p role="status">{status}</p>}
     <div className="pcad-shortcut-settings__actions">
-      <button type="submit" className="pcad-button" disabled={draft === null || stale || !validation.ok}>
+      <button type="submit" className="pcad-button" title={t('settings.shortcuts.applyGuide')} disabled={draft === null || stale || !validation.ok}>
         {t('settings.shortcuts.apply')}</button>
-      <button type="button" className="pcad-button" disabled={draft === null && captureError === null} onClick={cancel}>
+      <button type="button" className="pcad-button" title={t('settings.shortcuts.cancelGuide')} disabled={draft === null && captureError === null} onClick={cancel}>
         {t('settings.shortcuts.cancel')}</button>
-      <button type="button" className="pcad-button" onClick={() => change({})}>
+      <button type="button" className="pcad-button" title={t('settings.shortcuts.restoreAllGuide')} onClick={() => change({})}>
         {t('settings.shortcuts.restoreAll')}</button>
     </div>
   </form>;

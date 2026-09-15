@@ -460,7 +460,7 @@ export function AssemblyTree(): React.JSX.Element {
           role="menu"
           style={{ left: menu.x, top: menu.y }}
         >
-          {menuComponent === undefined ? null : <><button
+          {menuComponent === undefined ? null : <><button title={t('controlGuide.button.assemblyDuplicate')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -471,7 +471,7 @@ export function AssemblyTree(): React.JSX.Element {
           >
             {t('assembly.tool.duplicate')}
           </button>
-          <button
+          <button title={t('controlGuide.button.assemblyDelete')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -482,7 +482,7 @@ export function AssemblyTree(): React.JSX.Element {
           >
             {t('assembly.tool.delete')}
           </button>
-          <button
+          <button title={t('controlGuide.button.assemblyFixed')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -493,7 +493,7 @@ export function AssemblyTree(): React.JSX.Element {
           >
             {t(menuComponent.fixed ? 'assembly.tree.unfix' : 'assembly.tool.fixComponent')}
           </button>
-          <button
+          <button title={t('controlGuide.button.assemblyVisible')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -504,7 +504,7 @@ export function AssemblyTree(): React.JSX.Element {
           >
             {t(menuComponent.visible ? 'featureTree.hide' : 'featureTree.show')}
           </button>
-          <button
+          <button title={t('controlGuide.button.assemblySuppress')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -516,15 +516,15 @@ export function AssemblyTree(): React.JSX.Element {
             {t(menuComponent.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
           </button></>}
           {menuMate === undefined ? null : <>
-            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+            <button title={t('controlGuide.button.mateEdit')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
               onClick={() => { editAssemblyMate(menu.rowId); setMenu(null); }}>
               {t('assembly.mate.edit')}
             </button>
-            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+            <button title={t('controlGuide.button.mateFlip')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
               onClick={() => { flipAssemblyMate(menu.rowId); setMenu(null); }}>
               {t('assembly.mate.flip')}
             </button>
-            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+            <button title={t('controlGuide.button.mateDelete')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
               onClick={() => { deleteAssemblyMate(menu.rowId); setMenu(null); }}>
               {t('assembly.mate.delete')}
             </button>

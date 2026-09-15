@@ -30,10 +30,10 @@ export function DrawingConstructedViewPanel({ drawing, view, kind, sourceViewId:
   const [error, setError] = useState(false);
   const busy = useAppStore((state) => state.drawingBusy);
   const input = (key: keyof ConstructedViewFields, label: MessageKey) => <label key={key}>{t(label)}
-    <input className="pcad-field__input" aria-label={t(label)} value={fields[key]} onChange={(event) => setFields({ ...fields, [key]: event.target.value })} /></label>;
+    <input title={t(`drawing.controlHint.construct.field.${key}`)} className="pcad-field__input" aria-label={t(label)} value={fields[key]} onChange={(event) => setFields({ ...fields, [key]: event.target.value })} /></label>;
   function select<K extends keyof ConstructedViewChoices>(key: K, label: MessageKey,
     options: readonly { readonly value: ConstructedViewChoices[K]; readonly label: string }[]): React.JSX.Element {
-    return <label>{t(label)}<select className="pcad-field__input" aria-label={t(label)} value={String(choices[key])} onChange={(event) => {
+    return <label>{t(label)}<select title={t(`drawing.controlHint.construct.choice.${key}`)} className="pcad-field__input" aria-label={t(label)} value={String(choices[key])} onChange={(event) => {
       const option = options.find((item) => String(item.value) === event.target.value);
       if (option !== undefined) {
         setChoices({ ...choices, [key]: option.value });
@@ -56,8 +56,8 @@ export function DrawingConstructedViewPanel({ drawing, view, kind, sourceViewId:
     {input('name', 'drawing.view.name')}
     {select('sourceViewId', 'drawing.advanced.source', drawing.views.filter((item) => item.id !== view?.id).map((item) => ({ value: item.id, label: item.name })))}
     {input('x', 'drawing.view.x')}{input('y', 'drawing.view.y')}{input('scale', 'drawing.view.scale')}
-    <label><input type="checkbox" checked={hidden} onChange={(event) => setHidden(event.target.checked)} />{t('drawing.view.hidden')}</label>
-    <label><input type="checkbox" checked={centers} onChange={(event) => setCenters(event.target.checked)} />{t('drawing.view.centers')}</label>
+    <label><input title={t('drawing.controlHint.hiddenLines')} type="checkbox" checked={hidden} onChange={(event) => setHidden(event.target.checked)} />{t('drawing.view.hidden')}</label>
+    <label><input title={t('drawing.controlHint.centerLines')} type="checkbox" checked={centers} onChange={(event) => setCenters(event.target.checked)} />{t('drawing.view.centers')}</label>
     {showPlane ? <>
       {select('planeKind', 'drawing.advanced.plane', [
         { value: 'workPlane', label: t('drawing.advanced.workPlane') }, { value: 'face', label: t('drawing.advanced.face') },
@@ -78,7 +78,7 @@ export function DrawingConstructedViewPanel({ drawing, view, kind, sourceViewId:
         { value: 'stepped', label: t('drawing.advanced.stepped') },
       ])}
       {select('keepSide', 'drawing.advanced.keepSide', [{ value: 'positive', label: t('drawing.advanced.positive') }, { value: 'negative', label: t('drawing.advanced.negative') }])}
-      <label><input type="checkbox" checked={choices.reversed} onChange={(event) => setChoices({ ...choices, reversed: event.target.checked })} />{t('drawing.advanced.reversed')}</label>
+      <label><input title={t('drawing.controlHint.reverseSection')} type="checkbox" checked={choices.reversed} onChange={(event) => setChoices({ ...choices, reversed: event.target.checked })} />{t('drawing.advanced.reversed')}</label>
       {input('label', 'drawing.advanced.label')}
     </> : null}
     {kind === 'partial' ? select('regionKind', 'drawing.advanced.region', [{ value: 'circle', label: t('drawing.advanced.circle') }, { value: 'polygon', label: t('drawing.advanced.polygon') }]) : null}
@@ -90,12 +90,12 @@ export function DrawingConstructedViewPanel({ drawing, view, kind, sourceViewId:
       {select('axis', 'drawing.advanced.axis', [{ value: 'u', label: t('drawing.advanced.horizontal') }, { value: 'v', label: t('drawing.advanced.vertical') }])}
       {input('from', 'drawing.advanced.from')}{input('to', 'drawing.advanced.to')}{input('gap', 'drawing.advanced.gap')}
     </> : null}
-    {showBoundary ? <><label>{t('drawing.advanced.boundary')}<textarea className="pcad-field__input" aria-label={t('drawing.advanced.boundary')}
+    {showBoundary ? <><label>{t('drawing.advanced.boundary')}<textarea title={t('drawing.controlHint.construct.field.boundary')} className="pcad-field__input" aria-label={t('drawing.advanced.boundary')}
       rows={4} value={fields.boundary} onChange={(event) => setFields({ ...fields, boundary: event.target.value })} /></label>
       <p>{t(kind === 'section' && choices.mode === 'half' ? 'drawing.advanced.halfHint'
         : kind === 'section' && choices.mode === 'stepped' ? 'drawing.advanced.steppedHint' : 'drawing.advanced.boundaryHint')}</p></> : null}
     {error ? <p role="alert">{t('drawing.advanced.invalid')}</p> : null}
-    <button className="pcad-button" type="submit" disabled={busy}>{t(view === undefined ? 'drawing.view.add' : 'drawing.view.apply')}</button>
-    <button className="pcad-button" type="button" onClick={() => useAppStore.getState().selectDrawingIds([])}>{t('drawing.advanced.cancel')}</button>
+    <button title={t('drawing.controlHint.applyConstructedView')} className="pcad-button" type="submit" disabled={busy}>{t(view === undefined ? 'drawing.view.add' : 'drawing.view.apply')}</button>
+    <button title={t('drawing.controlHint.closeConstructedView')} className="pcad-button" type="button" onClick={() => useAppStore.getState().selectDrawingIds([])}>{t('drawing.advanced.cancel')}</button>
   </form>;
 }

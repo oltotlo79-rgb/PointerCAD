@@ -73,12 +73,12 @@ export function FunctionPointPreview({minimum,maximum,body,curves,candidates,sel
         style={{left:size.width-20,top:size.height*(index+1)/4}}>{axis}</span>)}
       {candidates.map((candidate,index)=>{
         const [left,top]=project(candidate.point,size.width,size.height);
-        return <button type="button" className="pcad-function-point-marker" key={index} aria-pressed={selected===candidate}
+        return <button title={t('controlGuide.button.pointCandidate')} type="button" className="pcad-function-point-marker" key={index} aria-pressed={selected===candidate}
           aria-label={`${t('functionPoint.candidate')} ${index+1}: ${candidate.point.map((value,axis)=>`${['X','Y','Z'][axis]}=${value}`).join(', ')}`}
           style={{left,top}} onClick={()=>onSelect(candidate)}>{index+1}</button>;
       })}
     </div>
     <figcaption>{t(direction?'functionDirection.previewHint':'functionPoint.previewHint')}</figcaption>
-    <button type="button" onClick={()=>setRotation(initialRotation)}>{t('functionPlot.resetView')}</button>
+    <button title={t('controlGuide.button.previewReset')} type="button" onClick={()=>setRotation(initialRotation)}>{t('functionPlot.resetView')}</button>
   </figure>;
 }

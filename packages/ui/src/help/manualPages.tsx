@@ -49,7 +49,7 @@ export function buildManualPages(sources: ReadonlyMap<string, string>, images: R
   }
   const index = renderToStaticMarkup(<><h1>{ja['help.manualTitle']}</h1>
     <section id="manual-search" aria-label={ja['help.manualSearch']}>
-      <label htmlFor="manual-query">{ja['help.manualSearch']}</label><input id="manual-query" type="search" aria-describedby="manual-search-hint" />
+      <label htmlFor="manual-query">{ja['help.manualSearch']}</label><input title={ja['help.manualSearchHint']} id="manual-query" type="search" aria-describedby="manual-search-hint" />
       <p id="manual-search-hint">{ja['help.manualSearchHint']}</p><p id="manual-search-status" role="status" aria-live="polite" />
       <ol id="manual-search-results" aria-label={ja['help.manualSearchResults']} />
     </section>

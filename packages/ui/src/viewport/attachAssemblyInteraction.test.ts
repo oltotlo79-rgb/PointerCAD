@@ -182,6 +182,25 @@ function interactionFixture() {
 }
 
 describe('assemblyの実listener', () => {
+  it.each([
+    { key: 's', ctrlKey: true, shiftKey: false },
+    { key: 'S', ctrlKey: true, shiftKey: true },
+    { key: 's', metaKey: true, shiftKey: false },
+    { key: 'o', ctrlKey: true },
+    { key: 'z', ctrlKey: true },
+    { key: 'k' },
+  ])('組立で処理しないキー%jを共通の保存・操作へ渡し、文書を変えない', properties => {
+    const f = interactionFixture();
+    try {
+      const before = useAppStore.getState();
+      const event = f.send('keydown', properties);
+      expect(event.defaultPrevented).toBe(false);
+      expect(f.downstream).toHaveBeenCalledExactlyOnceWith(event);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { f.interaction.detach(); }
+  });
   it('円筒面は解析軸のある実対象へ解決し、同心候補として確定できる', () => {
     const f = interactionFixture();
     try {

@@ -43,7 +43,7 @@ export function SelectionSetSection(): React.JSX.Element {
           {sets.map((set) => (
             <li key={`selectionSet:${set.id}`} className="pcad-constraint-row">
               {renaming !== null && renaming.id === set.id ? (
-                <input
+                <input title={t('controlGuide.selectionSet.rename')}
                   className="pcad-field__input"
                   type="text"
                   autoComplete="off"
@@ -121,7 +121,7 @@ export function SelectionSetSection(): React.JSX.Element {
       )}
       <div className="pcad-field">
         <span className="pcad-field__label">{t('propertyPanel.selectionSetName')}</span>
-        <input
+        <input title={t('controlGuide.selectionSet.name')}
           className="pcad-field__input"
           type="text"
           autoComplete="off"

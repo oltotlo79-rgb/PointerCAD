@@ -68,3 +68,15 @@ test('入力・IME・ダイアログのキーを横取りせずF1と生成一覧
   await expect(article).toContainText('入力欄でも有効');
   await expect(article.locator('text=pointercad:current-shortcuts')).toHaveCount(0);
 });
+
+test('P12-5 キー移動でも入力と同じ説明を読み、元の値・操作・拡大表示を保つ', async ({ page }, info) => {
+  const { controlHintsFlow } = await import('./controlHintsFlow.js');
+  await page.goto('/'); await waitForStartupHealth(page, info);
+  await controlHintsFlow(page, info);
+});
+
+test('P12-2・3 全ての説明章と画像を開き、検索・F1後も入力と保存文書を保つ', async ({ page }, info) => {
+  const { helpReaderFlow } = await import('./helpReaderFlow.js');
+  await page.goto('/'); await waitForStartupHealth(page, info);
+  await helpReaderFlow(page, info);
+});

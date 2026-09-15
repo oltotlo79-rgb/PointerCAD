@@ -104,7 +104,7 @@ export function DocumentDiffDialog({ onClose }: { readonly onClose: () => void }
       </section>;
     })}</div>
     <label htmlFor={relationId}>{t('documentDiff.relationship')}</label>
-    <select id={relationId} value={relationship} disabled={busy !== null} onChange={event => {
+    <select title={t('documentDiff.relationshipHint')} id={relationId} value={relationship} disabled={busy !== null} onChange={event => {
       const value = event.currentTarget.value;
       if (value === '' || value === 'versions' || value === 'unrelated') { setRelationship(value); setResult(null); setPage(0); }
     }}><option value="">{t('documentDiff.chooseRelationship')}</option><option value="versions">{t('documentDiff.versions')}</option><option value="unrelated">{t('documentDiff.unrelated')}</option></select>

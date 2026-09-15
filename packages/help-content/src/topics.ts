@@ -272,10 +272,16 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/template.md',
   },
   {
+    id: 'tutorial',
+    title: '初めての作図',
+    path: 'docs/ja/tutorial.md',
+  },
+  {
     id: 'print-save-as',
     title: '印刷する・別名で保存する',
     path: 'docs/ja/print-save-as.md',
   },
+  { id: 'radial-menu', title: '右クリックで道具を選ぶ', path: 'docs/ja/radial-menu.md' },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

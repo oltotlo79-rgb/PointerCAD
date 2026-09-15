@@ -16,9 +16,9 @@ export function FunctionCurveProperties({ feature }: { readonly feature: SketchF
     {draft.form==='implicit' ? <><p>{draft.equation.source} = 0</p><p>{draft.fixedAxis} = {draft.scalars.fixedCoordinate.source} mm</p></>
       : activeFunctionOutputs(draft).map(axis => <p key={axis}>{axis} = {draft.outputs[axis].source}</p>)}
     <dl>{FUNCTION_AXES.map(axis => <div key={axis}><dt>{axis} (mm)</dt><dd>{feature.definition.bounds[axis].min.source}{t('display.rangeSeparator')}{feature.definition.bounds[axis].max.source}</dd></div>)}</dl>
-    <button type="button" onClick={() => setOpen(true)}>{t('functionPlot.edit')}</button>
+    <button title={t('controlGuide.button.functionEdit')} type="button" onClick={() => setOpen(true)}>{t('functionPlot.edit')}</button>
     <FunctionCoefficientSliders definition={feature.definition} />
-    {sketchId?<button type="button" onClick={()=>setPointOpen(true)}>{t('functionPoint.title')}</button>:null}
+    {sketchId?<button title={t('controlGuide.button.functionPoint')} type="button" onClick={()=>setPointOpen(true)}>{t('functionPoint.title')}</button>:null}
     {pointOpen&&sketchId?<FunctionPointDialog parent={{kind:'curve',sketchId,featureId:feature.id}} onClose={()=>setPointOpen(false)}/>:null}
     {open ? <FunctionPlotDialog featureId={feature.id} onClose={() => setOpen(false)} /> : null}
   </section>;

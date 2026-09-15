@@ -179,7 +179,7 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
           aria-label={groupLabel}
         >
           {choice.options.map((option) => (
-            <button
+            <button title={t('controlGuide.button.choose').replace('{group}', groupLabel).replace('{value}', numericChoiceOptionLabel(option))}
               key={option.value}
               ref={option.value === choice.value ? registerRef : null}
               type="button"
@@ -204,7 +204,7 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
     <div className="pcad-popover__choice">
       <span className="pcad-popover__choice-label">{groupLabel}</span>
       <div className="pcad-menu" ref={containerRef}>
-        <button
+        <button title={t('controlGuide.button.expand').replace('{group}', groupLabel)}
           ref={registerRef}
           type="button"
           className="pcad-button pcad-menu__trigger"
@@ -220,7 +220,7 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
         {open ? (
           <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
             {choice.options.map((option) => (
-              <button
+              <button title={t('controlGuide.button.choose').replace('{group}', groupLabel).replace('{value}', numericChoiceOptionLabel(option))}
                 key={option.value}
                 type="button"
                 role="menuitem"
@@ -366,7 +366,7 @@ export function NumericInputPopover({
         <p className="pcad-field__error" role="alert">{evaluation.carriedError.message}</p>
       )}
       {state.previousStage === undefined ? null : (
-        <button type="button" className="pcad-button"
+        <button title={t('controlGuide.button.numericPrevious')} type="button" className="pcad-button"
           onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}
           onClick={() => { if (state.previousStage !== undefined) update(state.previousStage); }}>
           {t('numericInput.previousStage')}
@@ -445,7 +445,7 @@ export function NumericInputPopover({
       {state.toggles.length === 0 ? null : (
         <div className="pcad-popover__toggles">
           {state.toggles.map((toggle, index) => (
-            <button
+            <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
               key={toggle.key}
               ref={(element) => {
                 toggleRefs.current[index] = element;

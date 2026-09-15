@@ -10,6 +10,9 @@ export const FUNCTIONAL_TEST_TIMEOUT_MS = 60_000;
  * 実計算の時間目標の記録と、製品の中止・数式期限は別に保持する。
  */
 export const RECOMPUTE_TIMEOUT_MS = 90_000;
+/** 進捗と中止を持つ干渉計算は10秒を有限の待ち時間とする。描画・入力応答には使わない。 */
+export const INTERFERENCE_PRACTICAL_LIMIT_MS = 10_000;
+export type DurationProfile = 'general' | 'interference';
 
 export interface PerformanceMeasurement {
   readonly label: string;
@@ -35,9 +38,9 @@ function recordMeasurement(measurement: PerformanceMeasurement): PerformanceMeas
   return measurement;
 }
 
-/** 元の時間目標を記録し、5倍（短い処理でも100ms）を超える遅延は拒否する。 */
-export function reportDuration(actualMs: number, targetMs: number, label: string): PerformanceMeasurement {
-  const practicalLimit = Math.max(100, targetMs * 5);
+/** 元の時間目標を記録し、処理の種類ごとに共通の有限上限を適用する。 */
+export function reportDuration(actualMs: number, targetMs: number, label: string, profile: DurationProfile = 'general'): PerformanceMeasurement {
+  const practicalLimit = Math.max(profile === 'interference' ? INTERFERENCE_PRACTICAL_LIMIT_MS : 100, targetMs * 5);
   return recordMeasurement({ label, actual: actualMs, target: targetMs, practicalLimit, unit: 'ms',
     meetsTarget: actualMs < targetMs, usable: actualMs <= practicalLimit });
 }

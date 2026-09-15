@@ -1,0 +1,110 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "radial-menu",
+      "script": "e2e/tests/radialMenuFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-p12-label-resume-_95aejon",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-p12-radial-tutorial-captures-8w2x_nt4",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-9 右クリックで部品の8道具を選び、取消・実保存・Undo・F1を通す",
+        "scriptSha256": "670a5fad9fc66dd309bd66fa86d2c3fa3c3bec659522b3de0dc1c1d20e7e5db6",
+        "fixture": {
+          "filename": "radial-menu-fixture.json",
+          "sha256": "a66d14688d75f680b2c09c9f662cf2d2f590434c716a72d529099b4a8277b9c6"
+        },
+        "screen": {
+          "filename": "radial-menu-screen.png",
+          "sha256": "827eddf5fc220fdf0194885525bb5c2755375332399dca9d4bef1239534e591f"
+        },
+        "detail": {
+          "filename": "radial-menu-detail.png",
+          "sha256": "bae4d59a9f2014251add9a017015464c2cf2c57fd8bc83f606a93cf95ad5487f"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 548,
+          "y": 317.75,
+          "width": 304,
+          "height": 304
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "selectedImage": "detail",
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    },
+    {
+      "name": "tutorial",
+      "script": "e2e/tests/tutorialFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-p12-label-resume-_95aejon",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-p12-radial-tutorial-captures-8w2x_nt4",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-10 初回案内でEnterで点から穴のある板を作り、実保存・再開と再実行まで通す",
+        "scriptSha256": "c4470c84d800cfaecf3a7e53d33f9d594933cc856a98f4f8244493a2607d8718",
+        "fixture": {
+          "filename": "tutorial-fixture.json",
+          "sha256": "594c70a8fe13a9c7bac7de75bac84de6c8b35c1c2e36c68ebfbffa42563a1cf9"
+        },
+        "screen": {
+          "filename": "tutorial-screen.png",
+          "sha256": "1065eef4610805396c5e4237c0a8fc73a4034768346768368a04309ec78d345c"
+        },
+        "detail": {
+          "filename": "tutorial-detail.png",
+          "sha256": "57aa5519de6fea9ea7e79b881e487ab1bf3b33dcf95da4eb82e0c2b782253475"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 6,
+          "completedGeneration": 6,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 252,
+          "y": 80.5,
+          "width": 320,
+          "height": 215.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "selectedImage": "screen",
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    }
+  ]
+}

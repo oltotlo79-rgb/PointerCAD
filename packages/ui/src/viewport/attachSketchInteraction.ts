@@ -40,7 +40,7 @@ import {
   type WorkPlane,
 } from '@pointercad/model';
 
-import { applyProjectionCommit, applySketchCommit } from '../sketch/commitToStore.js';
+import { applyProjectionCommit, applySelectedFace, applySketchCommit } from '../sketch/commitToStore.js';
 import {
   cancelConstraintTool,
   constraintContextOfStore,
@@ -99,7 +99,6 @@ import {
 } from '../sketch/projectionCommands.js';
 import { resolveShapePoints } from '../sketch/shapeCommands.js';
 import {
-  commitFace,
   commitSphereGridPoint,
   commitSubShapePoint,
   selectedSphereFeature,
@@ -1901,23 +1900,7 @@ export function attachSketchInteraction(
   }
 
   /** 面を張る(FR-309)。断られたら理由を帯に出し、履歴は変えない(FR-504、NFR-UX-5)。 */
-  function commitSelectedFace(): void {
-    const state = useAppStore.getState();
-    const outcome = commitFace(
-      state.sketch,
-      state.resolvedSketch,
-      state.workPlaneId,
-      state.selection,
-    );
-    if (!outcome.ok) {
-      // 計算そのものの失敗とは分けて持つ。帯は「面を作れませんでした:」で出す(FR-504)。
-      state.setFaceError(outcome.reasonKey);
-      return;
-    }
-    state.setFaceError(null);
-    state.setSketch(outcome.document);
-    state.setSelection([]);
-  }
+  function commitSelectedFace(): void { applySelectedFace(); }
 
   /**
    * canvas に焦点があるときだけ来る(ViewportCanvas の tabIndex={0})。
@@ -1926,6 +1909,8 @@ export function attachSketchInteraction(
    */
   function onKeyDown(event: KeyboardEvent): void {
     const state = useAppStore.getState();
+    // Assembly keys pass through to common shortcuts, never to the hidden part's sketch.
+    if (state.assembly !== null) return;
     if (event.key === 'Shift') {
       /*
         拘束の自動推定の一時停止(FR-333、§0.a-0.50)。押した瞬間に予告を消す

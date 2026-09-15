@@ -46,7 +46,7 @@ export function AppearanceMenu({
     <div className="pcad-choice">
       <span className="pcad-choice__label">{groupLabel}</span>
       <div className="pcad-menu" ref={containerRef}>
-        <button
+        <button title={t('controlGuide.button.expand').replace('{group}', groupLabel)}
           type="button"
           className="pcad-button pcad-menu__trigger"
           aria-haspopup="true"
@@ -61,7 +61,7 @@ export function AppearanceMenu({
         {open ? (
           <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
             {options.map((option) => (
-              <button
+              <button title={t('controlGuide.button.choose').replace('{group}', groupLabel).replace('{value}', t(option.labelKey))}
                 key={option.value}
                 type="button"
                 role="menuitem"

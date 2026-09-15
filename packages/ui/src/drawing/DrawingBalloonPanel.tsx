@@ -22,10 +22,10 @@ export function DrawingBalloonPanel({ balloon }: { readonly balloon: Balloon }):
       if (drag !== null) finishDrawingTableDrag(drag, position);
     }}>
     <output>{t('drawing.table.balloon')} {row?.number ?? '—'} {row?.name ?? ''}</output>
-    <label>{t('drawing.table.positionX')}<input className="pcad-field__input" value={x} inputMode="decimal" onChange={(event) => setX(event.target.value)} /></label>
-    <label>{t('drawing.table.positionY')}<input className="pcad-field__input" value={y} inputMode="decimal" onChange={(event) => setY(event.target.value)} /></label>
-    <button type="submit" className="pcad-button" disabled={busy}>{t('drawing.action.apply')}</button>
-    <button type="button" className="pcad-button" disabled={busy} onClick={deleteDrawingTables}>{t('drawing.table.delete')}</button>
-    <button type="button" className="pcad-button" onClick={() => useAppStore.getState().setDrawingTool('select')}>{t('drawing.action.close')}</button>
+    <label title={t('drawing.controlHint.balloonX')}>{t('drawing.table.positionX')}<input className="pcad-field__input" value={x} inputMode="decimal" onChange={(event) => setX(event.target.value)} /></label>
+    <label title={t('drawing.controlHint.balloonY')}>{t('drawing.table.positionY')}<input className="pcad-field__input" value={y} inputMode="decimal" onChange={(event) => setY(event.target.value)} /></label>
+    <button title={t('drawing.controlHint.applyDimensionPlacement')} type="submit" className="pcad-button" disabled={busy}>{t('drawing.action.apply')}</button>
+    <button title={t('drawing.controlHint.deleteBalloon')} type="button" className="pcad-button" disabled={busy} onClick={deleteDrawingTables}>{t('drawing.table.delete')}</button>
+    <button title={t('drawing.controlHint.closeDimensionPlacement')} type="button" className="pcad-button" onClick={() => useAppStore.getState().setDrawingTool('select')}>{t('drawing.action.close')}</button>
   </form>;
 }

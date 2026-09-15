@@ -58,19 +58,19 @@ export function FunctionSectionDialog({ parentId, edit, onClose }: {
       <form onSubmit={event => { event.preventDefault(); void apply(); }}>
         <fieldset disabled={busy}>
           <legend>{t('functionSection.coordinate')}</legend>
-          {FUNCTION_AXES.map(value => <label key={value}><input type="radio" name={`${id}-axis`} value={value} checked={axis === value}
+          {FUNCTION_AXES.map(value => <label key={value}><input title={t('functionPlot.control.sectionAxis')} type="radio" name={`${id}-axis`} value={value} checked={axis === value}
             onChange={() => { setAxis(value); setMessage(''); }} />{value}</label>)}
           <div className="pcad-function-field"><label htmlFor={`${id}-coordinate`}>{axis} (mm)</label>
-            <input id={`${id}-coordinate`} required value={field.source} onChange={event => { setField(editFunctionField(field, event.target.value)); setMessage(''); }} />
-            <button type="button" aria-label={t('math.open')} onClick={() => setEditor(true)}>ƒ</button>
+            <input title={t('functionPlot.control.sectionCoordinate')} id={`${id}-coordinate`} required value={field.source} onChange={event => { setField(editFunctionField(field, event.target.value)); setMessage(''); }} />
+            <button title={t('functionPlot.control.mathEditor')} type="button" aria-label={t('math.open')} onClick={() => setEditor(true)}>ƒ</button>
           </div>
           {parent?.kind === 'functionSurface' ? <p>{axis}: {parent.definition.bounds[axis].min.source}{t('display.rangeSeparator')}{parent.definition.bounds[axis].max.source} mm</p> : null}
         </fieldset>
         {message ? <p role="alert">{message}</p> : null}
         {busy ? <p role="status">{t('functionSection.calculating')}</p> : null}
-        <div className="pcad-function-actions"><button type="button" onClick={close}>{t('math.cancel')}</button>
-          {busy ? <button type="button" onClick={() => { running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
-            : <button type="submit">{t(edit ? 'functionSection.update' : 'functionSection.apply')}</button>}
+        <div className="pcad-function-actions"><button title={t('functionPlot.control.cancelSection')} type="button" onClick={close}>{t('math.cancel')}</button>
+          {busy ? <button title={t('functionPlot.control.stopSection')} type="button" onClick={() => { running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
+            : <button title={t('functionPlot.control.applySection')} type="submit">{t(edit ? 'functionSection.update' : 'functionSection.apply')}</button>}
         </div>
       </form>
     </dialog>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createSheetBaseFeature, createSheetFlangeFeature, createSheetBendFeature, createSheetReliefFeature, resolveSheetSeams, availableSheetBoundaryEdges, resolvePart, sheetFlangeProfileEdges, pickSheetBoundary,
   type SheetMetalFeature, type SheetFlangeFeature, type SheetBendFeature, type SheetReliefFeature, type SheetPanelBoundaryRef, type SketchFaceRef } from '@pointercad/model';
-import { t, type MessageKey } from '../i18n/t.js';
+import { t } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import { parseSubShapeId } from '../solid/subShapeSelection.js';
 import { formatVolume } from '../solid/solidSummary.js';
@@ -136,11 +136,11 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
     void applySheetCreation(session, result, commit);
   };
   const toggle = (items: readonly string[], key: string, on: boolean) => on ? [...items.filter((item) => item !== key), key] : items.filter((item) => item !== key);
-  const profileControls = (label: MessageKey) => <>
+  const profileControls = (label: 'sheetMetal.profile' | 'sheetMetal.flangeProfile') => <>
     {faces.length === 0 ? <p>{t('sheetMetal.needFace')}</p> : select(label, profile === undefined ? '' : faceKey(profile.ref),
       (value) => { setProfileKey(value); setBaselineId(''); }, faces.map((item) => ({ key: faceKey(item.ref), name: item.name })))}
     <fieldset><legend>{t('sheetMetal.holes')}</legend>{faces.filter((item) => profile === undefined || faceKey(item.ref) !== faceKey(profile.ref))
-      .map((item) => checkbox(item.name, holeKeys.includes(faceKey(item.ref)), (on) => setHoleKeys(toggle(holeKeys, faceKey(item.ref), on)), faceKey(item.ref)))}</fieldset>
+      .map((item) => checkbox(item.name, holeKeys.includes(faceKey(item.ref)), (on) => setHoleKeys(toggle(holeKeys, faceKey(item.ref), on)), faceKey(item.ref), 'sheetMetal.guide.hole'))}</fieldset>
   </>;
   const titleKey = session.kind === 'sheetBase' ? 'sheetMetal.base' : session.kind === 'sheetBend' ? 'sheetMetal.lineBend' : session.kind === 'sheetRelief' ? 'sheetMetal.relief' : 'sheetMetal.flange';
   const hintKey = session.kind === 'sheetBase' ? 'sheetMetal.baseHint' : session.kind === 'sheetBend' ? 'sheetMetal.lineBendHint' : session.kind === 'sheetRelief' ? 'sheetMetal.reliefHint' : 'sheetMetal.flangeHint';
@@ -151,13 +151,13 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
     <h3>{t(titleKey)}{editing === undefined ? '' : ` — ${t('sheetMetal.editing')}`}</h3>
     <p>{t(hintKey)}</p>
     {missingReferences ? <p role="alert">
-      {t('sheetMetal.missingReferences')} <button type="button" className="pcad-button" onClick={() => {
+      {t('sheetMetal.missingReferences')} <button type="button" className="pcad-button" title={t('sheetMetal.guide.removeMissing')} onClick={() => {
         useAppStore.getState().clearSheetMetalPreview(); setSelectedEdges(selectedEdges.filter((key) => !missingEdges.includes(key)));
         setHoleKeys(holeKeys.filter((key) => !missingHoles.includes(key)));
       }}>{t('sheetMetal.removeMissing')}</button></p> : null}
     {session.kind === 'sheetBase' ? <>
       {profileControls('sheetMetal.profile')}
-      {checkbox(t('sheetMetal.reverse'), reversed, setReversed, 'reverse')}
+      {checkbox(t('sheetMetal.reverse'), reversed, setReversed, 'reverse', 'sheetMetal.guide.reverse')}
     </> : <>
       {targets.length === 0 ? <p>{t(computing ? 'sheetMetal.waitingForBody' : 'sheetMetal.needBase')}</p> : select('sheetMetal.target', target?.id ?? '', (value) => { setTargetId(value); setPanelId(''); setSelectedEdges([]); setReliefEdgeKey(''); setReliefSeams(null); }, targets.map((item) => ({ key: item.id, name: item.name })))}
       {session.kind === 'sheetBend' ? <>
@@ -172,13 +172,13 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
           [{ key: 'rectangle', name: t('sheetMetal.rectangle') }, { key: 'slot', name: t('sheetMetal.reliefSlot') }])}
         <fieldset><legend>{t('sheetMetal.seams')}</legend><p>{t('sheetMetal.seamsHint')}</p>
           {sheet?.bends.map((bend, index) => checkbox(`${t('sheetMetal.bend')} ${index + 1}`, selectedSeams.includes(bend.id),
-            (on) => setReliefSeams(toggle(selectedSeams, bend.id, on)), bend.id))}
-          {mappedSeams?.ok === false ? <p role="alert">{mappedSeams.message} <button type="button" className="pcad-button"
+            (on) => setReliefSeams(toggle(selectedSeams, bend.id, on)), bend.id, 'sheetMetal.seamsHint'))}
+          {mappedSeams?.ok === false ? <p role="alert">{mappedSeams.message} <button type="button" className="pcad-button" title={t('sheetMetal.guide.removeMissing')}
             onClick={() => { useAppStore.getState().clearSheetMetalPreview(); setReliefSeams([]); }}>{t('sheetMetal.removeMissing')}</button></p> : null}
         </fieldset>
       </> : <>
       <fieldset><legend>{t('sheetMetal.edges')}</legend>{edges.map((item) => checkbox(item.label, selectedEdges.includes(boundaryKey(item.ref)),
-        (on) => setSelectedEdges(toggle(selectedEdges, boundaryKey(item.ref), on)), boundaryKey(item.ref)))}</fieldset>
+        (on) => setSelectedEdges(toggle(selectedEdges, boundaryKey(item.ref), on)), boundaryKey(item.ref), 'sheetMetal.guide.edge'))}</fieldset>
       {select('sheetMetal.profileMode', profileMode, (value) => { if (value === 'rectangle' || value === 'profile') setProfileMode(value); },
         [{ key: 'rectangle', name: t('sheetMetal.rectangle') }, { key: 'profile', name: t('sheetMetal.customProfile') }])}
       {profileMode === 'rectangle' ? select('sheetMetal.lengthBasis', basis, (value) => { if (value === 'tangent' || value === 'outer' || value === 'inner') setBasis(value); },
@@ -190,8 +190,8 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
       </>}
       </>}
       {session.kind === 'sheetRelief' ? null : <>
-        {checkbox(t('sheetMetal.overrideRadius'), overrideRadius, setOverrideRadius, 'radius')}
-        {checkbox(t('sheetMetal.overrideK'), overrideK, setOverrideK, 'k')}
+        {checkbox(t('sheetMetal.overrideRadius'), overrideRadius, setOverrideRadius, 'radius', 'sheetMetal.guide.overrideRadius')}
+        {checkbox(t('sheetMetal.overrideK'), overrideK, setOverrideK, 'k', 'sheetMetal.guide.overrideK')}
       </>}
     </>}
     {candidate === null ? null : sheetFieldValues(candidate).map(([key, value]) => {
@@ -211,8 +211,8 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
     {computeError === null ? null : <p role="alert" className="pcad-field__error">{computeError}</p>}
     {requested ? <p role="status">{t('sheetMetal.computing')}</p> : preview?.session !== session ? null : <p role="status">
       {t(editing === undefined ? 'sheetMetal.previewHint' : 'sheetMetal.editPreviewHint')} {t(editing === undefined ? 'sheetMetal.previewVolume' : 'sheetMetal.previewTotalVolume').replace('{volume}', formatVolume(preview.volume))}</p>}
-    <button className="pcad-button" type="button" disabled={candidate === null || computing || requested} onClick={() => submit(false)}>{t('sheetMetal.preview')}</button>
-    <div className="pcad-sheet-metal__actions"><button className="pcad-button pcad-button--primary" type="submit" disabled={candidate === null || computing || requested}>{t(editing === undefined ? 'sheetMetal.create' : 'sheetMetal.applyEdit')}</button>
-      <button className="pcad-button" type="button" onClick={() => useAppStore.getState().closeSheetMetalTool()}>{t('sheetMetal.cancel')}</button></div>
+    <button className="pcad-button" type="button" title={t('sheetMetal.guide.preview')} disabled={candidate === null || computing || requested} onClick={() => submit(false)}>{t('sheetMetal.preview')}</button>
+    <div className="pcad-sheet-metal__actions"><button className="pcad-button pcad-button--primary" type="submit" title={t('sheetMetal.guide.commit')} disabled={candidate === null || computing || requested}>{t(editing === undefined ? 'sheetMetal.create' : 'sheetMetal.applyEdit')}</button>
+      <button className="pcad-button" type="button" title={t('sheetMetal.guide.cancel')} onClick={() => useAppStore.getState().closeSheetMetalTool()}>{t('sheetMetal.cancel')}</button></div>
   </form>;
 }

@@ -39,6 +39,7 @@ export const THEME_IDS: readonly ThemeId[] = [
 ];
 
 export interface DisplaySettings {
+  readonly tutorialCompleted?: boolean;
   readonly shortcutAssignments?: ShortcutAssignments;
   readonly numericToolDefaults?: NumericDefaultSources;
   /** 旧設定は未指定のまま5分。1～60分の間隔を端末へ保存する。 */
@@ -95,6 +96,7 @@ export interface DisplaySettings {
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  tutorialCompleted: false,
   shortcutAssignments: EMPTY_SHORTCUT_ASSIGNMENTS,
   numericToolDefaults: {},
   autoSaveIntervalMs: readAutoSaveIntervalMs({}),
@@ -388,6 +390,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       return DEFAULT_DISPLAY_SETTINGS;
     }
     return {
+      tutorialCompleted: 'tutorialCompleted' in parsed && parsed.tutorialCompleted === true,
       shortcutAssignments: readStoredShortcutAssignments(parsed),
       theme: parsed.theme,
       uiScale: parsed.uiScale,

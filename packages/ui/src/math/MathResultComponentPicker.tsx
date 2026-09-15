@@ -34,7 +34,7 @@ export function MathResultComponentPicker({ axes, disabled, onChoose }: MathResu
     <div className="pcad-math-editor__options">
       {axes.map((size,axis) => <label key={axis}>
         <span>{t('math.component.axis')} {axis+1} (1–{size})</span>
-        <input type="number" min={1} max={size} step={1} value={values[axis] ?? ''}
+        <input title={`${t('math.component.hint')} (1–${size})`} type="number" min={1} max={size} step={1} value={values[axis] ?? ''}
           aria-label={`${t('math.component.axis')} ${axis+1}`}
           onChange={event => {
             const value = event.currentTarget.value;

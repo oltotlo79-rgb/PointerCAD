@@ -21,7 +21,7 @@
  * 決定の記録は `docs/plans/P6-入出力.md` §0.a-0.60 / §0.a-0.68(利用者の承認)。
  */
 
-import { reportDuration } from './releasePerformance.js';
+import { reportDuration, type DurationProfile } from './releasePerformance.js';
 
 /**
  * 元の目標と実測を記録し、実用上の大幅な遅延だけを失敗にする。
@@ -30,6 +30,6 @@ import { reportDuration } from './releasePerformance.js';
  * @param limitMs リリース後も追跡する元の速度目標(ミリ秒)。
  * @param label 何の所要かを示す日本語。
  */
-export function expectWithinBudget(actualMs: number, limitMs: number, label: string): void {
-  reportDuration(actualMs, limitMs, label);
+export function expectWithinBudget(actualMs: number, limitMs: number, label: string, profile?: DurationProfile): void {
+  reportDuration(actualMs, limitMs, label, profile);
 }

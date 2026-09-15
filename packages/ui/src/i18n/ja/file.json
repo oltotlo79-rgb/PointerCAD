@@ -102,5 +102,12 @@
   "template.missing": "選んだひな形が見つかりません。",
   "exchange.targetActiveSketch": "いま編集しているスケッチ",
   "exchange.dxfCurveNotice": "楕円となめらかな曲線は、細かい折れ線に直して書き出します。",
-  "exchange.dxfNothingToExport": "書き出せる図形がありません。スケッチに線や円を描いてから書き出してください。"
+  "exchange.dxfNothingToExport": "書き出せる図形がありません。スケッチに線や円を描いてから書き出してください。",
+  "controlGuide.exchange.format": "受け渡すファイルの形式を選びます。DXFでは編集中のスケッチ、それ以外では立体を書き出します。",
+  "controlGuide.exchange.scope": "書き出す立体を、全体または選択中の立体から選びます。",
+  "controlGuide.exchange.quality": "曲面を三角形で表す細かさを選びます。細かくすると滑らかになりますが、計算時間やファイル容量が増えます。",
+  "controlGuide.exchange.ascii": "STLを文字で読める形式にします。切ると小さい容量のバイナリ形式になります。",
+  "controlGuide.exchange.colors": "色を保存できる形式へ、立体の色を含めます。",
+  "controlGuide.exchange.apply": "指定した形式と条件で形を書き出し、ファイルとして保存します。保存先の取消では元の文書は変わりません。",
+  "controlGuide.exchange.close": "書き出し条件の画面を閉じます。"
 }

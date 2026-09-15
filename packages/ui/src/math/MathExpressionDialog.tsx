@@ -130,8 +130,8 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
     {owner.kind === 'function' ? <p>{t('math.functionRangeHint')}</p> : null}
     {problem === null ? null : <p role="alert">{problem}</p>}
     {ready === null ? <div><p role="status">{problem === null ? t('math.loading') : t('math.loadFailed')}</p>
-      {problem === null ? null : <button type="button" className="pcad-button" onClick={() => { setProblem(null); setAttempt(value => value + 1); }}>{t('math.retry')}</button>}
-      <button type="button" className="pcad-button" onClick={owner.onClose}>{t('math.cancel')}</button>
+      {problem === null ? null : <button type="button" className="pcad-button" title={t('math.guide.retry')} onClick={() => { setProblem(null); setAttempt(value => value + 1); }}>{t('math.retry')}</button>}
+      <button type="button" className="pcad-button" title={t('math.guide.cancel')} onClick={owner.onClose}>{t('math.cancel')}</button>
     </div> : <>
       {ready.coefficientProblem === null ? null : <p role="status">{t('math.coefficientsUnavailable')} {ready.coefficientProblem}</p>}
       <MathEditorPanel {...ready} palette={MATH_INPUT_PALETTE} readOnly={busy} onHelp={() => useAppStore.getState().openHelpTopic('math-input')} />

@@ -11,7 +11,7 @@ export function FunctionDirectionProperties({feature}:{readonly feature:SketchLi
   return <section className="pcad-section" data-help-topic="function-point">
     <h3 className="pcad-section__title">{t('functionDirection.edit')}</h3>
     <p>{t(`functionDirection.${direction.kind}`)} · {direction.length.source} mm{direction.reverse?` · ${t('functionDirection.reverse')}`:''}</p>
-    <button type="button" onClick={()=>setOpen(true)}>{t('functionDirection.edit')}</button>
+    <button title={t('controlGuide.button.directionEdit')} type="button" onClick={()=>setOpen(true)}>{t('functionDirection.edit')}</button>
     {open?<FunctionDirectionDialog pointId={direction.sourcePointId} reference={reference} lineId={feature.id} onClose={()=>setOpen(false)}/>:null}
   </section>;
 }

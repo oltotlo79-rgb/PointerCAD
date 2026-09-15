@@ -19,7 +19,7 @@ export class ViewportBoundary extends Component<{ readonly children: ReactNode }
       <div className="pcad-card pcad-viewport__failure" role="alert">
         <p>{t('viewport.failed')}</p>
         <p>{t('viewport.failedAdvice')}</p>
-        <button className="pcad-button" type="button" onClick={() => { this.setState({ failed: false }); }}>
+        <button title={t('controlGuide.button.viewportRetry')} className="pcad-button" type="button" onClick={() => { this.setState({ failed: false }); }}>
           {t('viewport.retry')}
         </button>
       </div>

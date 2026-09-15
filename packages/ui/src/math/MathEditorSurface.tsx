@@ -19,7 +19,12 @@ export interface MathEditorViewController {
   readonly requestNotation:(notation:'text'|'latex')=>void;
   readonly changeAngleUnit:(unit:'degree'|'radian')=>void;
 }
+export interface MathEditorControlHints {
+  readonly text:string;readonly structured:string;readonly angleUnit:string;readonly category:string;
+  readonly search:string;readonly apply:string;readonly cancel:string;readonly help:string;
+}
 export interface MathEditorLabels {
+  readonly hints:MathEditorControlHints;
   readonly title:string;readonly text:string;readonly structured:string;readonly input:string;readonly angleUnit:string;
   readonly degree:string;readonly radian:string;readonly palette:string;readonly search:string;readonly noSymbols:string;
   readonly apply:string;readonly cancel:string;readonly help:string;readonly keyboardHint:string;readonly sourceTooLong:string;
@@ -42,9 +47,9 @@ export interface MathEditorSurfaceProps {
   readonly onHelp:()=>void;readonly maximumSourceLength:number;
 }
 
-function StructuredField({input,controller,createField,readOnly,maximumSourceLength,label,descriptionId}:{
+function StructuredField({input,controller,createField,readOnly,maximumSourceLength,label,descriptionId,hint}:{
   readonly input:MathEditorInput;readonly controller:MathEditorViewController;readonly createField:()=>StructuredMathField;
-  readonly readOnly:boolean;readonly maximumSourceLength:number;readonly label:string;readonly descriptionId:string;
+  readonly readOnly:boolean;readonly maximumSourceLength:number;readonly label:string;readonly descriptionId:string;readonly hint:string;
 }):React.JSX.Element {
   const container=useRef<HTMLDivElement>(null),binding=useRef<ReturnType<typeof attachMathField>|null>(null);
   useEffect(()=>{
@@ -53,11 +58,12 @@ function StructuredField({input,controller,createField,readOnly,maximumSourceLen
       initialSource:controller.current().source,maximumSourceLength,isCurrent:controller.isCurrent,
       onInput:controller.sourceChanged,onApply:source=>{controller.sourceChanged(source);controller.apply();},
       onCancel:controller.cancel,onMoveOut:controller.moveOut,onSourceLimit:controller.sourceLimit});
+    field.element.title=hint;
     binding.current=field;
     const detach=controller.bindInsertion(field.insertTemplate);
     field.element.focus();
     return()=>{detach();field.dispose();binding.current=null;};
-  },[controller,createField,maximumSourceLength,label,descriptionId]);
+  },[controller,createField,maximumSourceLength,label,descriptionId,hint]);
   useEffect(()=>{binding.current?.updateSource(input.source);},[input.source]);
   useEffect(()=>{binding.current?.setReadOnly(readOnly);},[readOnly]);
   return <div className="pcad-math-editor__structured" ref={container}/>;
@@ -75,24 +81,24 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
   const editingBlocked=props.readOnly;
   return <section className="pcad-math-editor" aria-labelledby={`${id}-title`}>
     <header className="pcad-math-editor__header"><h3 id={`${id}-title`}>{labels.title}</h3>
-      <button type="button" className="pcad-button" onClick={props.onHelp} title={labels.help}>{labels.help}</button>
+      <button type="button" className="pcad-button" onClick={props.onHelp} title={labels.hints.help}>{labels.help}</button>
     </header>
     <div className="pcad-math-editor__options">
       <div role="group" aria-label={labels.input}>
-        <button type="button" aria-pressed={input.notation==='text'} disabled={!props.canChangeNotation||editingBlocked}
+        <button type="button" title={labels.hints.text} aria-pressed={input.notation==='text'} disabled={!props.canChangeNotation||editingBlocked}
           onClick={()=>controller.requestNotation('text')}>{labels.text}</button>
-        <button type="button" aria-pressed={input.notation==='latex'} disabled={!props.canChangeNotation||editingBlocked}
+        <button type="button" title={labels.hints.structured} aria-pressed={input.notation==='latex'} disabled={!props.canChangeNotation||editingBlocked}
           onClick={()=>controller.requestNotation('latex')}>{labels.structured}</button>
       </div>
-      <label><span id={`${id}-angle-label`}>{labels.angleUnit}</span><select aria-labelledby={`${id}-angle-label`} value={input.angleUnit} disabled={editingBlocked}
+      <label><span id={`${id}-angle-label`}>{labels.angleUnit}</span><select title={labels.hints.angleUnit} aria-labelledby={`${id}-angle-label`} value={input.angleUnit} disabled={editingBlocked}
         onChange={event=>controller.changeAngleUnit(event.currentTarget.value==='degree'?'degree':'radian')}>
         <option value="degree">{labels.degree}</option><option value="radian">{labels.radian}</option>
       </select></label>
     </div>
     <div className="pcad-math-editor__expression" aria-busy={props.busy}>
       {input.notation==='latex'?<StructuredField input={input} controller={controller} createField={props.createField}
-        readOnly={editingBlocked} maximumSourceLength={props.maximumSourceLength} label={labels.input} descriptionId={`${messageId} ${hintId}`}/>
-        :<label>{labels.input}<textarea ref={textRef} value={input.source} spellCheck={false} readOnly={editingBlocked}
+        readOnly={editingBlocked} maximumSourceLength={props.maximumSourceLength} label={labels.input} descriptionId={`${messageId} ${hintId}`} hint={labels.keyboardHint}/>
+        :<label>{labels.input}<textarea title={labels.keyboardHint} ref={textRef} value={input.source} spellCheck={false} readOnly={editingBlocked}
           aria-invalid={props.hasError} aria-describedby={`${messageId} ${hintId}`}
           onChange={event=>controller.sourceChanged(event.currentTarget.value)}
           onKeyDown={event=>{
@@ -111,13 +117,13 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
       </fieldset>)}
     </div>
     <details className="pcad-math-editor__palette"><summary>{labels.palette}</summary>
-      <label><span id={`${id}-category-label`}>{labels.category}</span><select aria-labelledby={`${id}-category-label`} value={category} onChange={event=>{
+      <label><span id={`${id}-category-label`}>{labels.category}</span><select title={labels.hints.category} aria-labelledby={`${id}-category-label`} value={category} onChange={event=>{
         const value=event.currentTarget.value;
         setCategory(categories.find(group=>group===value)??'all');
       }}><option value="all">{labels.allCategories}</option>
         {categories.map(group=><option value={group} key={group}>{labels.categories[group]}</option>)}
       </select></label>
-      <label>{labels.search}<input type="search" value={props.query} onChange={event=>props.onQuery(event.currentTarget.value)}
+      <label>{labels.search}<input title={labels.hints.search} type="search" value={props.query} onChange={event=>props.onQuery(event.currentTarget.value)}
         autoComplete="off" spellCheck={false}/></label>
       {palette.length===0?<p>{labels.noSymbols}</p>:<ul>{palette.map(item=><li key={item.id}>
         <button type="button" disabled={editingBlocked} title={item.meaning} onClick={()=>controller.insert(item.template)}>
@@ -130,8 +136,8 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
       {props.resultDetail===''?null:<p>{props.resultDetail}</p>}</div>
     {props.resultActions}
     <footer className="pcad-math-editor__actions">
-      <button type="button" className="pcad-button" onClick={controller.cancel}>{labels.cancel}</button>
-      <button type="button" className="pcad-button pcad-button--primary" disabled={!props.canApply||editingBlocked} onClick={controller.apply}>{labels.apply}</button>
+      <button type="button" className="pcad-button" title={labels.hints.cancel} onClick={controller.cancel}>{labels.cancel}</button>
+      <button type="button" className="pcad-button pcad-button--primary" title={labels.hints.apply} disabled={!props.canApply||editingBlocked} onClick={controller.apply}>{labels.apply}</button>
     </footer>
   </section>;
 }

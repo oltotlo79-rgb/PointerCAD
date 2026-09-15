@@ -14,6 +14,7 @@
     { "path": "./packages/test-utils" },
     { "path": "./packages/expression" },
     { "path": "./packages/model" },
+    { "path": "./packages/help-content" },
     { "path": "./packages/io" }
   ],
   "include": [

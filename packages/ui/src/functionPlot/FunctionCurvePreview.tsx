@@ -54,6 +54,6 @@ export function FunctionCurvePreview({ definition, curves }: {
     }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} />
     <figcaption>{t('functionPlot.previewHint')}</figcaption>
     <p role="status">{t('functionPlot.curveCount')}: {curves.length} / {t('functionPlot.closedCurveCount')}: {curves.filter(curve=>curve.closed).length}</p>
-    <button type="button" onClick={() => setRotation({ yaw: -Math.PI / 4, pitch: 0.6 })}>{t('functionPlot.resetView')}</button>
+    <button title={t('controlGuide.button.previewReset')} type="button" onClick={() => setRotation({ yaw: -Math.PI / 4, pitch: 0.6 })}>{t('functionPlot.resetView')}</button>
   </figure>;
 }

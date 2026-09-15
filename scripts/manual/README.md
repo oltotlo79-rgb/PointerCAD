@@ -38,3 +38,17 @@ node scripts/manual/generate-pdf.mjs manual-preview-20260912 manual-pdf-preview-
 本文はHTMLと同じものを使う。日本語字体の読み込み、画像の欠落、章の順序、移動先、生成前後の入力を確認してから出力する。途中で失敗した記録は残し、既存の出力は上書きしない。
 
 この生成は未認定の出力を作る。配布前に全ページの文字・画像・表・改頁・リンクを実物で確認し、本文や撮影元と照合する。`releaseCertified`などの値を手で変更して確認の代用にはしない。
+
+## 機能と操作の説明先
+
+生成時に要件の正本と`FEATURE_HELP_BINDINGS`を照合し、全要件の説明先を`feature-coverage.json`と`manifest.json`へ記録する。要件・操作・章の重複、要件の割当忘れ、存在しない説明先は生成を止める。操作一覧はアプリが実際に使う`COMMAND_DEFINITIONS`を参照し、別の一覧を手で維持しない。
+
+公開・オフライン起動など、説明の未作成を明示した項目は`pending`に残し、確認用の説明書では不足を読めるようにする。公開の判定では`assertDocumentedFeatureCoverage`が未作成の項目を拒否する。この対応情報だけで本文や撮影の確認が完了したとは扱わず、`contentCertified`と`releaseCertified`はfalseを保持する。最終公開の確認への接続はP13で実施する。
+
+設定と書き出し形式も`feature-coverage.json`の`supplementary`と`manifest.json`の`supplementaryCoverage`へ記録する。端末設定の型、実際の保存形式表、座標・板金・図面の既定値入力欄から名称・説明を取得する。未対応のDWGは出力形式に含めない。設定の追加、形式の追加、説明先の削除を検出する。これは目録の確認であり、各操作・本文・実画面・印刷結果の完成証拠は別に必要。
+
+### 入力欄とボタンの説明の棚卸し
+
+`manifest.json` の `nativeControlCoverage` と `feature-coverage.json` の `nativeControls` は、実際のUIのTSXからinput/select/textarea/buttonを列挙する。名前だけ、空のtitle、無関係な外枠のtitleは説明に数えない。明示された非表示欄だけを除外し、動的な説明・後から値を重ねる記述には実画面の確認を残す。読み取ったTSXの内容も入力の照合対象に含める。
+
+これはnative JSXの説明の入口を調べるもので、全画面・全状態・独自の入力部品の表示確認や本文の正確さを認証しない。未確認・不足を一覧に残し、`contentCertified` と `releaseCertified` はfalseのまま。P12-5では残る実入力の棚卸しとマウス・キーボードの確認を閉じ、P12-20で公開用の全条件を照合する。

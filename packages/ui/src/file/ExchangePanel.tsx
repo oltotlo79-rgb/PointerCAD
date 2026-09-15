@@ -261,7 +261,7 @@ export function ExchangePanel({
         <span className="pcad-exchange__label">{t('exchange.format')}</span>
         <div className="pcad-exchange__choices" role="radiogroup" aria-label={t('exchange.format')}>
           {EXPORT_PANEL_FORMAT_ORDER.map((candidate) => (
-            <button
+            <button title={t('controlGuide.exchange.format')}
               key={`format-${candidate}`}
               type="button"
               className="pcad-exchange__choice"
@@ -291,7 +291,7 @@ export function ExchangePanel({
             aria-label={t('exchange.target')}
           >
             {SCOPES.map((candidate) => (
-              <button
+              <button title={t('controlGuide.exchange.scope')}
                 key={`scope-${candidate}`}
                 type="button"
                 className="pcad-exchange__choice"
@@ -327,7 +327,7 @@ export function ExchangePanel({
             aria-label={t('exchange.quality')}
           >
             {EXPORT_QUALITIES.map((candidate) => (
-              <button
+              <button title={t('controlGuide.exchange.quality')}
                 key={`quality-${candidate}`}
                 type="button"
                 className="pcad-exchange__choice"
@@ -348,7 +348,7 @@ export function ExchangePanel({
       {/* 文字で書くのは STL だけ(§0.a-0.14)。 */}
       {shape.showsAscii ? (
         <label className="pcad-exchange__toggle">
-          <input
+          <input title={t('controlGuide.exchange.ascii')}
             type="checkbox"
             checked={ascii}
             onChange={(event) => {
@@ -362,7 +362,7 @@ export function ExchangePanel({
       {/* 色を含めるのは色を持てる形式だけ。既定は入(§0.a-0.22)。 */}
       {shape.showsColor ? (
         <label className="pcad-exchange__toggle">
-          <input
+          <input title={t('controlGuide.exchange.colors')}
             type="checkbox"
             checked={withColors}
             onChange={(event) => {
@@ -398,10 +398,10 @@ export function ExchangePanel({
       )}
 
       <div className="pcad-exchange__actions">
-        <button type="submit" className="pcad-button" disabled={refusal !== null || running}>
+        <button title={t('controlGuide.exchange.apply')} type="submit" className="pcad-button" disabled={refusal !== null || running}>
           {t('exchange.export')}
         </button>
-        <button type="button" className="pcad-button" onClick={onClose}>
+        <button title={t('controlGuide.exchange.close')} type="button" className="pcad-button" onClick={onClose}>
           {t('exchange.cancel')}
         </button>
       </div>

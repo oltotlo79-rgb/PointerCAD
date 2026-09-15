@@ -225,5 +225,7 @@ export function resetTestStore(): void {
     viewCameraController: null,
     utilityPanel: null,
     templateListRevision: 0,
+    tutorialSession: null,
+    tutorialOpen: false,
   });
 }

@@ -34,30 +34,30 @@ function LayerForm({ drawing, layer }: { readonly drawing: DrawingDocument; read
     onSubmit={(event) => { event.preventDefault();
       commitDrawingLayer({ name, visible, printable, color, lineType, lineWidth: width.trim() === '' ? NaN : Number(width) }, layer?.id);
     }}>
-    <label>{t('drawing.layer.name')}<input className="pcad-field__input" value={name} onChange={(event) => setName(event.target.value)} autoFocus={layer === undefined} /></label>
-    <label><input type="checkbox" checked={visible} onChange={(event) => setVisible(event.target.checked)} />{t('drawing.layer.visible')}</label>
-    <label><input type="checkbox" checked={printable} onChange={(event) => setPrintable(event.target.checked)} />{t('drawing.layer.printable')}</label>
-    <label>{t('drawing.layer.color')}<input className="pcad-field__input" value={color} onChange={(event) => setColor(event.target.value)} /></label>
-    <label>{t('drawing.layer.lineType')}<select className="pcad-field__input" value={lineType} onChange={(event) => {
+    <label title={t('drawing.layer.name.controlHint')}>{t('drawing.layer.name')}<input className="pcad-field__input" value={name} onChange={(event) => setName(event.target.value)} autoFocus={layer === undefined} /></label>
+    <label><input title={t('drawing.controlHint.layerVisible')} type="checkbox" checked={visible} onChange={(event) => setVisible(event.target.checked)} />{t('drawing.layer.visible')}</label>
+    <label><input title={t('drawing.controlHint.layerPrintable')} type="checkbox" checked={printable} onChange={(event) => setPrintable(event.target.checked)} />{t('drawing.layer.printable')}</label>
+    <label title={t('drawing.layer.color.controlHint')}>{t('drawing.layer.color')}<input className="pcad-field__input" value={color} onChange={(event) => setColor(event.target.value)} /></label>
+    <label title={t('drawing.layer.lineType.controlHint')}>{t('drawing.layer.lineType')}<select className="pcad-field__input" value={lineType} onChange={(event) => {
       const choice = lineTypes.find((entry) => entry.kind === event.target.value); if (choice !== undefined) setLineType(choice.kind);
     }}>{lineTypes.map((entry) => <option key={entry.kind} value={entry.kind}>{t(entry.key)}</option>)}</select></label>
-    <label>{t('drawing.layer.width')}<input className="pcad-field__input" value={width} inputMode="decimal" onChange={(event) => setWidth(event.target.value)} /></label>
+    <label title={t('drawing.layer.width.controlHint')}>{t('drawing.layer.width')}<input className="pcad-field__input" value={width} inputMode="decimal" onChange={(event) => setWidth(event.target.value)} /></label>
     <div className="pcad-segmented">
-      <button type="submit" className="pcad-button" disabled={busy}>{t(layer === undefined ? 'drawing.layer.add' : 'drawing.action.apply')}</button>
-      <button type="button" className="pcad-button" onClick={close}>{t('drawing.action.close')}</button>
+      <button title={t('drawing.controlHint.applyLayer')} type="submit" className="pcad-button" disabled={busy}>{t(layer === undefined ? 'drawing.layer.add' : 'drawing.action.apply')}</button>
+      <button title={t('drawing.controlHint.closeLayer')} type="button" className="pcad-button" onClick={close}>{t('drawing.action.close')}</button>
     </div>
     {layer === undefined ? null : <>
       <div className="pcad-segmented">
-        <button type="button" className="pcad-button" disabled={busy || index <= 0} onClick={() => moveDrawingLayer(layer.id, index - 1)}>{t('drawing.layer.moveUp')}</button>
-        <button type="button" className="pcad-button" disabled={busy || index >= drawing.layers.length - 1} onClick={() => moveDrawingLayer(layer.id, index + 1)}>{t('drawing.layer.moveDown')}</button>
+        <button title={t('drawing.controlHint.layerUp')} type="button" className="pcad-button" disabled={busy || index <= 0} onClick={() => moveDrawingLayer(layer.id, index - 1)}>{t('drawing.layer.moveUp')}</button>
+        <button title={t('drawing.controlHint.layerDown')} type="button" className="pcad-button" disabled={busy || index >= drawing.layers.length - 1} onClick={() => moveDrawingLayer(layer.id, index + 1)}>{t('drawing.layer.moveDown')}</button>
       </div>
       <button type="button" className="pcad-button" disabled={busy || drawing.layers.length <= 1}
         title={drawing.layers.length <= 1 ? t('drawing.layer.last') : t('drawing.layer.delete')}
         onClick={() => setConfirming(drawing)}>{t('drawing.layer.delete')}</button>
       {confirming !== drawing ? null : <div role="group" aria-label={t('drawing.layer.delete')}>
         <p>{t('drawing.layer.deleteConfirm').replace('{name}', layer.name).replace('{count}', String(deletion?.removedElementCount ?? 0))}</p>
-        <button type="button" className="pcad-button" disabled={busy} onClick={() => deleteDrawingLayer(layer.id, confirming)}>{t('drawing.layer.confirmDelete')}</button>
-        <button type="button" className="pcad-button" onClick={() => setConfirming(null)}>{t('drawing.action.close')}</button>
+        <button title={t('drawing.controlHint.confirmLayerDelete')} type="button" className="pcad-button" disabled={busy} onClick={() => deleteDrawingLayer(layer.id, confirming)}>{t('drawing.layer.confirmDelete')}</button>
+        <button title={t('drawing.controlHint.cancelLayerDelete')} type="button" className="pcad-button" onClick={() => setConfirming(null)}>{t('drawing.action.close')}</button>
       </div>}
     </>}
   </form>;

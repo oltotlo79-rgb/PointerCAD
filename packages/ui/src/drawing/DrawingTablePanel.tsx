@@ -52,20 +52,20 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
       ...(kind === 'revision' ? { rows: rows.filter((row) => row.some((value) => value.trim() !== '')) } : {}) }, table?.id);
   };
   return <div className="pcad-drawing-table-editor pcad-drawing-settings" data-help-topic={kind === 'bom' ? 'drawing-bom' : kind === 'hole' && drawing.source.flatSheet !== undefined ? 'sheet-metal-flat' : 'drawing-table'}>
-    <label>{t('drawing.table.title')}<select className="pcad-field__input" aria-label={t('drawing.table.title')} value={kind} disabled={table !== undefined} onChange={(event) => {
+    <label title={t('drawing.table.title.controlHint')}>{t('drawing.table.title')}<select className="pcad-field__input" aria-label={t('drawing.table.title')} value={kind} disabled={table !== undefined} onChange={(event) => {
       const value = event.target.value; if (value === 'bom' || value === 'hole' || value === 'revision') setKind(value);
     }}>{(['bom', 'hole', 'revision'] as const).map((value) => <option key={value} value={value}
       disabled={value === 'bom' ? drawing.source.sourceKind !== 'assembly' : value === 'hole' && drawing.source.sourceKind !== 'part'}>{t(kindLabels[value])}</option>)}</select></label>
-    <label>{t('drawing.table.positionX')}<input className="pcad-field__input" aria-label={t('drawing.table.positionX')} inputMode="decimal" value={x} onChange={(event) => setX(event.target.value)} /></label>
-    <label>{t('drawing.table.positionY')}<input className="pcad-field__input" aria-label={t('drawing.table.positionY')} inputMode="decimal" value={y} onChange={(event) => setY(event.target.value)} /></label>
-    <label>{t('drawing.table.rowHeight')}<input className="pcad-field__input" aria-label={t('drawing.table.rowHeight')} inputMode="decimal" value={rowHeight} onChange={(event) => setRowHeight(event.target.value)} /></label>
-    <label>{t('drawing.table.textHeight')}<input className="pcad-field__input" aria-label={t('drawing.table.textHeight')} inputMode="decimal" value={textHeight} onChange={(event) => setTextHeight(event.target.value)} /></label>
+    <label title={t('drawing.table.positionX.controlHint')}>{t('drawing.table.positionX')}<input className="pcad-field__input" aria-label={t('drawing.table.positionX')} inputMode="decimal" value={x} onChange={(event) => setX(event.target.value)} /></label>
+    <label title={t('drawing.table.positionY.controlHint')}>{t('drawing.table.positionY')}<input className="pcad-field__input" aria-label={t('drawing.table.positionY')} inputMode="decimal" value={y} onChange={(event) => setY(event.target.value)} /></label>
+    <label title={t('drawing.table.rowHeight.controlHint')}>{t('drawing.table.rowHeight')}<input className="pcad-field__input" aria-label={t('drawing.table.rowHeight')} inputMode="decimal" value={rowHeight} onChange={(event) => setRowHeight(event.target.value)} /></label>
+    <label title={t('drawing.table.textHeight.controlHint')}>{t('drawing.table.textHeight')}<input className="pcad-field__input" aria-label={t('drawing.table.textHeight')} inputMode="decimal" value={textHeight} onChange={(event) => setTextHeight(event.target.value)} /></label>
     {kind === 'bom' ? <>
       <fieldset><legend>{t('drawing.table.columns')}</legend>{BOM_COLUMN_IDS.map((id) => <label key={id}>
-        <input type="checkbox" checked={columns.includes(id)} onChange={(event) => setColumns(event.target.checked ? [...columns, id] : columns.filter((entry) => entry !== id))} />{t(columnsLabels[id])}
+        <input title={t('drawing.controlHint.bomColumn')} type="checkbox" checked={columns.includes(id)} onChange={(event) => setColumns(event.target.checked ? [...columns, id] : columns.filter((entry) => entry !== id))} />{t(columnsLabels[id])}
       </label>)}
         {columns.map((id, index) => <div key={id} className="pcad-drawing-table-column">
-          <label>{t(columnsLabels[id])} {t('drawing.table.width')}<input className="pcad-field__input" aria-label={`${t(columnsLabels[id])} ${t('drawing.table.width')}`} inputMode="decimal"
+          <label>{t(columnsLabels[id])} {t('drawing.table.width')}<input title={t('drawing.controlHint.bomWidth')} className="pcad-field__input" aria-label={`${t(columnsLabels[id])} ${t('drawing.table.width')}`} inputMode="decimal"
             value={widths[id] ?? ''} onChange={(event) => setWidths({ ...widths, [id]: event.target.value })} /></label>
           <button type="button" title={t('drawing.table.moveLeft')} aria-label={`${t(columnsLabels[id])} ${t('drawing.table.moveLeft')}`} disabled={index === 0}
             onClick={() => { const next = [...columns]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setColumns(next); }}>←</button>
@@ -73,26 +73,26 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
             onClick={() => { const next = [...columns]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; setColumns(next); }}>→</button>
         </div>)}
       </fieldset>
-      <label>{t('drawing.table.direction')}<select className="pcad-field__input" aria-label={t('drawing.table.direction')} value={direction} onChange={(event) => setDirection(event.target.value)}>
+      <label title={t('drawing.table.direction.controlHint')}>{t('drawing.table.direction')}<select className="pcad-field__input" aria-label={t('drawing.table.direction')} value={direction} onChange={(event) => setDirection(event.target.value)}>
         <option value="bottomToTop">{t('drawing.table.bottomToTop')}</option><option value="topToBottom">{t('drawing.table.topToBottom')}</option>
       </select></label>
-      <label>{t('drawing.table.sortBy')}<select className="pcad-field__input" aria-label={t('drawing.table.sortBy')} value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+      <label title={t('drawing.table.sortBy.controlHint')}>{t('drawing.table.sortBy')}<select className="pcad-field__input" aria-label={t('drawing.table.sortBy')} value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
         {(['number', 'name', 'quantity', 'mass'] as const).map((id) => <option key={id} value={id}>{t(columnsLabels[id])}</option>)}
       </select></label>
-      <label><input type="checkbox" checked={sortDescending} onChange={(event) => setSortDescending(event.target.checked)} />{t('drawing.table.sortDescending')}</label>
+      <label><input title={t('drawing.controlHint.bomDescending')} type="checkbox" checked={sortDescending} onChange={(event) => setSortDescending(event.target.checked)} />{t('drawing.table.sortDescending')}</label>
     </> : null}
     {kind === 'hole' ? <>
-      <label>{t('drawing.table.view')}<select className="pcad-field__input" aria-label={t('drawing.table.view')} value={viewId} onChange={(event) => setViewId(event.target.value)}>
+      <label title={t('drawing.table.view.controlHint')}>{t('drawing.table.view')}<select className="pcad-field__input" aria-label={t('drawing.table.view')} value={viewId} onChange={(event) => setViewId(event.target.value)}>
         {drawing.views.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
       </select></label>
       <fieldset><legend>{datumLabel}</legend>{['X', 'Y', 'Z'].map((axis, index) => <label key={axis}>{axis}
-        <input className="pcad-field__input" aria-label={`${datumLabel} ${axis}`} inputMode="decimal" value={datum[index]}
+        <input title={t('drawing.controlHint.holeDatum')} className="pcad-field__input" aria-label={`${datumLabel} ${axis}`} inputMode="decimal" value={datum[index]}
           onChange={(event) => setDatum(datum.map((value, at) => at === index ? event.target.value : value))} /></label>)}</fieldset>
     </> : null}
     {kind === 'revision' ? <fieldset><legend>{t('drawing.table.rows')}</legend>
       {rows.map((row, rowIndex) => <fieldset key={`revision-row:${rowIndex}`} className="pcad-drawing-revision-row">
         <legend>{t('drawing.table.rowNumber').replace('{number}', String(rowIndex + 1))}</legend>
-        {revisionLabels.map((key, column) => <label key={key}>{t(key)}<input className="pcad-field__input"
+        {revisionLabels.map((key, column) => <label key={key}>{t(key)}<input title={t('drawing.controlHint.revisionCell')} className="pcad-field__input"
           aria-label={`${rowIndex + 1} ${t(key)}`} value={row[column] ?? ''} onChange={(event) => setRows(rows.map((item, index) =>
             index === rowIndex ? revisionLabels.map((_, at) => at === column ? event.target.value : item[at] ?? '') : item))} /></label>)}
         <button type="button" className="pcad-button" title={t('drawing.table.removeRow')}

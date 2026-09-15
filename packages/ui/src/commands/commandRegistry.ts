@@ -159,7 +159,7 @@ export function isActivatedBySpace(target: EventTarget | null): boolean {
 }
 
 export function isInsideMenu(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && target.closest('.pcad-menu, .pcad-name-search') !== null;
+  return target instanceof HTMLElement && target.closest('.pcad-menu, .pcad-name-search, .pcad-radial-menu') !== null;
 }
 
 export function isInsideDialog(target: EventTarget | null): boolean {

@@ -11,6 +11,7 @@ import { DEFAULT_WORK_PLANE_ID, isBaseWorkPlaneId, type PlaneSpec } from '@point
 import type { StateCreator } from 'zustand';
 import { type DisplaySettings, loadSettings, saveSettings } from '../settings/settings.js';
 import type { AppState } from './appState.js';
+import type { TutorialSession } from '../tutorial/tutorialProgress.js';
 import type { ViewCameraController } from '../viewport/namedCamera.js';
 import { orbitFromNamedCamera } from '../viewport/namedCamera.js';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
@@ -45,6 +46,10 @@ export interface SectionViewState {
 export type UtilityPanel = 'export' | 'import' | 'comparison' | 'functionPlot' | 'drawingPrint' | 'drawingExport';
 
 export interface ViewSlice {
+  readonly tutorialOpen: boolean;
+  readonly tutorialSession: TutorialSession | null;
+  readonly setTutorialOpen: (open: boolean) => void;
+  readonly setTutorialSession: (session: TutorialSession | null) => void;
   readonly utilityPanel: UtilityPanel | null;
   readonly setUtilityPanelOpen: (panel: UtilityPanel, open: boolean) => void;
   readonly templateListRevision: number;
@@ -170,6 +175,10 @@ export const createViewSlice: StateCreator<
   [],
   Omit<ViewSlice, keyof ViewInitialState>
 > = (set) => ({
+  tutorialOpen: false,
+  tutorialSession: null,
+  setTutorialOpen: tutorialOpen => set({ tutorialOpen }),
+  setTutorialSession: tutorialSession => set({ tutorialSession }),
   utilityPanel: null,
   setUtilityPanelOpen: (panel, open) => set(state => {
     const utilityPanel = open ? panel : state.utilityPanel === panel ? null : state.utilityPanel;

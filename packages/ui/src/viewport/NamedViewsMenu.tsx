@@ -37,7 +37,7 @@ function NamedViewsForm(): React.JSX.Element {
         onClick={() => useAppStore.getState().setQuadViewEnabled(!quadEnabled)}>
         {t(quadEnabled ? 'view.quad.single' : 'view.quad.enable')}
       </button>
-      <label>{t('view.named.choose')}<select className="pcad-field__input" aria-label={t('view.named.choose')} value={selectedView?.id ?? ''}
+      <label>{t('view.named.choose')}<select title={t('controlGuide.namedView.choose')} className="pcad-field__input" aria-label={t('view.named.choose')} value={selectedView?.id ?? ''}
         onChange={(event) => {
           const view = views.find((entry) => entry.id === event.target.value);
           setSelected(view?.id ?? ''); setName(view?.name ?? '');
@@ -48,7 +48,7 @@ function NamedViewsForm(): React.JSX.Element {
       <button type="button" className="pcad-button" disabled={!ready || selectedView === undefined}
         title={t('view.named.restore')}
         onClick={() => run({ kind: 'restore', id: selected })}>{t('view.named.restore')}</button>
-      <label>{t('view.named.name')}<input className="pcad-field__input" aria-label={t('view.named.name')} value={name} maxLength={120}
+      <label>{t('view.named.name')}<input title={t('controlGuide.namedView.name')} className="pcad-field__input" aria-label={t('view.named.name')} value={name} maxLength={120}
         onChange={(event) => setName(event.target.value)} /></label>
       <div className="pcad-segmented">
         <button type="button" className="pcad-button" title={t('view.named.save')} disabled={!ready} onClick={() => run({ kind: 'save', name })}>{t('view.named.save')}</button>

@@ -23,9 +23,20 @@ describe('速度目標の未達を記録し、異常値と実用上の大幅な�
     expect(() => reportViewportRate(0, '50部品')).toThrow('実用上の遅延');
   });
 
+  it.each([500, 2_000])('干渉計算の目標%sは保持し、部品数によらず10秒を超えたら拒否する', target => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    expect(reportDuration(4_939.5501, target, '干渉', 'interference')).toMatchObject({
+      target, actual: 4_939.5501, practicalLimit: 10_000, meetsTarget: false, usable: true,
+    });
+    expect(reportDuration(10_000, target, '干渉', 'interference').usable).toBe(true);
+    expect(() => reportDuration(10_001, target, '干渉', 'interference')).toThrow('実用上の遅延');
+    expect(() => reportDuration(4_939.5501, 500, '通常の短い操作')).toThrow('実用上の遅延');
+  });
+
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1])('不正な実測%sを成功にしない', actual => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     expect(() => reportDuration(actual, 500, '測定')).toThrow('不正');
+    expect(() => reportDuration(actual, 500, '測定', 'interference')).toThrow('不正');
     expect(() => reportViewportRate(actual, '測定')).toThrow('不正');
     expect(log).not.toHaveBeenCalled();
   });
@@ -33,6 +44,7 @@ describe('速度目標の未達を記録し、異常値と実用上の大幅な�
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1, 0, Number.MAX_VALUE])('不正または許容境界が表現できない目標%sを拒否する', target => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     expect(() => reportDuration(1, target, '測定')).toThrow('不正');
+    expect(() => reportDuration(1, target, '測定', 'interference')).toThrow('不正');
   });
 
   it('対象名の欠落を拒否して追跡不能な測定を作らない', () => {

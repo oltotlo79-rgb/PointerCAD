@@ -1281,7 +1281,7 @@ export function FeatureTree(): React.JSX.Element {
           style={{ left: menu.x, top: menu.y }}
         >
           {menu.sectionKey === 'solid' && menuFeature !== undefined ? (
-            <button
+            <button title={t('controlGuide.button.featureSuppress')}
               type="button"
               role="menuitem"
               className="pcad-button pcad-menu__item"
@@ -1294,7 +1294,7 @@ export function FeatureTree(): React.JSX.Element {
             </button>
           ) : null}
           {menu.sectionKey === 'reference' && menuReference !== undefined ? (
-            <button
+            <button title={t('controlGuide.button.referenceVisible')}
               type="button"
               role="menuitem"
               className="pcad-button pcad-menu__item"
@@ -1357,7 +1357,7 @@ export function FeatureTree(): React.JSX.Element {
               {t('originCommand.action')}
             </button>
           ) : null}
-          <button
+          <button title={t('controlGuide.button.featureRename')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"

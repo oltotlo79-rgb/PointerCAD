@@ -248,7 +248,7 @@ export function AppearanceSection({
             aria-label={t('propertyPanel.appearancePattern')}
           >
             {PATTERN_KINDS.map((kind) => (
-              <button
+              <button title={t('controlGuide.button.pattern').replace('{name}', t(PATTERN_LABEL_KEYS[kind]))}
                 key={kind}
                 type="button"
                 className="pcad-button"
@@ -271,7 +271,7 @@ export function AppearanceSection({
           {renderPercentField('roughness')}
         </div>
         <div className="pcad-appearance__actions">
-          <button
+          <button title={t('controlGuide.button.appearanceRemove')}
             type="button"
             className="pcad-button"
             disabled={directEntry === undefined}
@@ -283,7 +283,7 @@ export function AppearanceSection({
           >
             {t('propertyPanel.appearanceRemove')}
           </button>
-          <button
+          <button title={t('controlGuide.button.appearanceClear')}
             type="button"
             className="pcad-button"
             onClick={() => {

@@ -310,5 +310,15 @@
   "settings.toolDefaults.reset": "全ての道具を既定値へ戻す",
   "settings.toolDefaults.otherErrors": "ほかの入力にも修正が必要です。",
   "settings.toolDefaults.invalidCurrent": "現在の道具の初期値を、この部品のパラメータで計算できません。初期値かパラメータを直してから、ひな形を保存してください。文書と設定は保持しています。",
-  "settings.toolDefaults.invalidTemplate": "ひな形の道具の初期値が使えません。ひな形のパラメータで計算できる式と、各道具で使える範囲を確認してください。現在の文書と設定は保持しています。"
+  "settings.toolDefaults.invalidTemplate": "ひな形の道具の初期値が使えません。ひな形のパラメータで計算できる式と、各道具で使える範囲を確認してください。現在の文書と設定は保持しています。",
+  "settings.toolDefaults.searchGuide": "道具の名前を入力して、初期値を変更する道具を絞り込みます。",
+  "settings.toolDefaults.groupGuide": "変更する道具と入力段を選びます。既に作った形の値は変わりません。",
+  "settings.toolDefaults.applyGuide": "入力した初期値を保存し、次に始める道具へ使います。既存の形や入力途中の値は変えません。",
+  "settings.toolDefaults.cancelGuide": "この画面でまだ適用していない初期値の変更を取り消します。",
+  "settings.toolDefaults.resetGuide": "全ての道具の初期値を元の値に戻す案を表示します。適用するまでは保存済みの設定を変えません。",
+  "controlGuide.folder.parent": "項目をまとめる親フォルダを選びます。自分自身やその下のフォルダへは移せません。形を作る順番は変わりません。",
+  "controlGuide.namedView.choose": "保存した視点を選びます。選んだだけでは画面は動かず、復元ボタンでその視点へ移ります。",
+  "controlGuide.namedView.name": "保存または改名に使う視点の名前を、120文字以内で入力します。",
+  "controlGuide.section.offset": "断面表示の位置を、表示された長さの単位の数値または式で指定します。元の立体は切りません。",
+  "controlGuide.canvas.realLength": "下絵で選んだ2点間の実際の長さを、表示された単位の正の数値または式で指定します。確定すると画像の大きさを合わせます。"
 }

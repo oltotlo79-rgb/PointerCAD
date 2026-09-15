@@ -360,7 +360,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
                   {RECTANGLE_VIEWS.map((view) => {
                     const option = choice.options.find((candidate) => candidate.value === view);
                     return option === undefined ? null : (
-                      <button
+                      <button title={t('controlGuide.button.rectangleInput')}
                         key={view}
                         type="button"
                         className="pcad-button"
@@ -461,7 +461,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
                   aria-label={t(choice.labelKey)}
                 >
                   {choice.options.map((option) => (
-                    <button
+                    <button title={t('controlGuide.button.choose').replace('{group}', t(choice.labelKey)).replace('{value}', t(option.labelKey))}
                       key={option.value}
                       type="button"
                       className="pcad-button"
@@ -479,7 +479,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
           {summary.toggles.length === 0 ? null : (
             <div className="pcad-toggles">
               {summary.toggles.map((toggle) => (
-                <button
+                <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
                   key={toggle.key}
                   type="button"
                   role="switch"
@@ -682,7 +682,7 @@ function ChoiceButtons({
         <span className="pcad-choice__label">{groupLabel}</span>
         <div className="pcad-segmented pcad-choice__options" role="group" aria-label={groupLabel}>
           {choice.options.map((option) => (
-            <button
+            <button title={t('controlGuide.button.choose').replace('{group}', groupLabel).replace('{value}', numericChoiceOptionLabel(option))}
               key={option.value}
               type="button"
               className="pcad-button"
@@ -705,7 +705,7 @@ function ChoiceButtons({
     <div className="pcad-choice">
       <span className="pcad-choice__label">{groupLabel}</span>
       <div className="pcad-menu" ref={containerRef}>
-        <button
+        <button title={t('controlGuide.button.expand').replace('{group}', groupLabel)}
           type="button"
           className="pcad-button pcad-menu__trigger"
           aria-haspopup="true"
@@ -722,7 +722,7 @@ function ChoiceButtons({
         {open ? (
           <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
             {choice.options.map((option) => (
-              <button
+              <button title={t('controlGuide.button.choose').replace('{group}', groupLabel).replace('{value}', numericChoiceOptionLabel(option))}
                 key={option.value}
                 type="button"
                 role="menuitem"
@@ -926,7 +926,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
                   aria-label={t('propertyPanel.axis')}
                 >
                   {WORLD_AXIS_CHOICES.map((choice) => (
-                    <button
+                    <button title={t('controlGuide.button.solidAxis')}
                       key={choice.axis}
                       type="button"
                       className="pcad-button"
@@ -956,7 +956,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           {summary.toggles.length === 0 ? null : (
             <div className="pcad-toggles">
               {summary.toggles.map((toggle) => (
-                <button
+                <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
                   key={toggle.key}
                   type="button"
                   role="switch"
@@ -1168,7 +1168,7 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
             aria-label={t('propertyPanel.primitiveAxis')}
           >
             {WORLD_AXIS_CHOICES.map((choice) => (
-              <button
+              <button title={t('controlGuide.button.primitiveAxis')}
                 key={choice.axis}
                 type="button"
                 className="pcad-button"
@@ -1283,7 +1283,7 @@ function SphereGridSection(): React.JSX.Element {
         <p className="pcad-panel__note">{t('propertyPanel.sphereGridStepRange')}</p>
       ) : null}
       <div className="pcad-toggles">
-        <button
+        <button title={t('controlGuide.button.sphereGridAlways')}
           type="button"
           role="switch"
           className="pcad-switch"
@@ -1684,7 +1684,7 @@ function ReferenceProperties({
           </div>
         )}
         <div className="pcad-toggles">
-          <button
+          <button title={t('controlGuide.button.referenceVisible')}
             type="button"
             role="switch"
             className="pcad-switch"
@@ -1964,7 +1964,7 @@ export function PropertyPanel(): React.JSX.Element {
     <section className="pcad-panel pcad-panel--right">
       <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
       <div className="pcad-panel__tabs" role="tablist" aria-label={t('propertyPanel.tabsLabel')}>
-        <button
+        <button title={t('controlGuide.button.propertiesTab')}
           type="button"
           role="tab"
           className="pcad-tab"
@@ -1976,7 +1976,7 @@ export function PropertyPanel(): React.JSX.Element {
         >
           {t('propertyPanel.tabProperties')}
         </button>
-        <button
+        <button title={t('controlGuide.button.parametersTab')}
           type="button"
           role="tab"
           className="pcad-tab"

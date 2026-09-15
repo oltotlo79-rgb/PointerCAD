@@ -1,5 +1,8 @@
+import { KeyboardControlHint } from '../help/KeyboardControlHint.js';
+import { RadialCommandMenu } from '../commands/RadialCommandMenu.js';
 import { lazy, Suspense, useEffect, useRef } from 'react';
 import { ViewportBoundary } from '../viewport/ViewportBoundary.js';
+import { TutorialPanel, TutorialWelcome } from '../tutorial/TutorialPanel.js';
 
 import {
   discardAutoSave,
@@ -158,6 +161,7 @@ export function AppShell(): React.JSX.Element {
     */
     <div className="pcad-shell" data-document-kind={documentKind}>
       <HelpHost />
+      <KeyboardControlHint />
       <ExportHandoffPanel />
       {documentKind === 'drawing' ? <DrawingToolbar /> : <Toolbar />}
       <div className="pcad-shell__body">
@@ -239,7 +243,7 @@ export function AppShell(): React.JSX.Element {
                 </dl>
                 <div className="pcad-restore__actions">
                   {restorePrompt.unrecoverable ? (
-                    <button
+                    <button title={t('controlGuide.button.backupExport')}
                       type="button"
                       className="pcad-button pcad-button--action pcad-button--primary"
                       onClick={() => {
@@ -249,7 +253,7 @@ export function AppShell(): React.JSX.Element {
                       {t('restore.export')}
                     </button>
                   ) : (
-                    <button
+                    <button title={t('controlGuide.button.backupRestore')}
                       type="button"
                       className="pcad-button pcad-button--action pcad-button--primary"
                       onClick={() => {
@@ -259,7 +263,7 @@ export function AppShell(): React.JSX.Element {
                       {t('restore.restore')}
                     </button>
                   )}
-                  <button
+                  <button title={t('controlGuide.button.backupDiscard')}
                     type="button"
                     className="pcad-button pcad-button--action"
                     onClick={() => {
@@ -288,6 +292,7 @@ export function AppShell(): React.JSX.Element {
             <div className="pcad-viewport__empty-state">
               <PlotPointIcon size={18} />
               <p className="pcad-viewport__empty-text">{t('emptyState.firstStep')}</p>
+              <TutorialWelcome />
             </div>
           ) : isEmptyAssembly ? (
             /* まだ部品を 1 つも置いていないアセンブリ(P7 タスク5)。案内の作りは部品側と同じ。 */
@@ -302,6 +307,7 @@ export function AppShell(): React.JSX.Element {
             決まった 1 手をストアへ反映するのは commitToStore.ts の applyNumericTransition
             (ポップアップとコマンドラインの共通の入口。P4b タスク18 でここから移した)。
           */}
+          <TutorialPanel />
           {documentKind === 'assembly' ? (
             <>
               <PlaceComponentPopover />
@@ -345,6 +351,7 @@ export function AppShell(): React.JSX.Element {
           <PropertyPanel />
         )}
       </div>
+      <RadialCommandMenu viewport={viewportRef} />
       {documentKind === 'drawing' ? <DrawingStatusBar /> : <StatusBar />}
     </div>
   );

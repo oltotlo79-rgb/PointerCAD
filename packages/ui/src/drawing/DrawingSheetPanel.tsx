@@ -44,38 +44,38 @@ function SheetForm({ drawing, embedded }: { readonly drawing: DrawingDocument; r
   return <section className="pcad-section pcad-drawing-settings">
     {embedded ? null : <h3 className="pcad-section__title">{t('drawing.property.sheet')}</h3>}
     <form onSubmit={(event) => { event.preventDefault(); apply(); }}>
-      <label>{t('drawing.sheet.paper')}<select className="pcad-field__input" aria-label={t('drawing.sheet.paper')} value={paperId} onChange={(event) => setPaperId(event.target.value)}>
+      <label title={t('drawing.sheet.paper.controlHint')}>{t('drawing.sheet.paper')}<select className="pcad-field__input" aria-label={t('drawing.sheet.paper')} value={paperId} onChange={(event) => setPaperId(event.target.value)}>
         {PAPER_SIZES.map((paper) => <option key={paper.id} value={paper.id}>{paper.label}</option>)}
       </select></label>
-      <label>{t('drawing.sheet.scale')}<input className="pcad-field__input" value={scale} inputMode="decimal" onChange={(event) => setScale(event.target.value)} /></label>
-      <label>{t('drawing.sheet.scales')}<input className="pcad-field__input" value={scaleOptions} onChange={(event) => setScaleOptions(event.target.value)} /></label>
-      <label>{t('drawing.table.textHeight')}<input className="pcad-field__input" value={textHeight} inputMode="decimal" onChange={(event) => setTextHeight(event.target.value)} /></label>
-      <label>{t('drawing.sheet.tolerance')}<input className="pcad-field__input" value={tolerance} maxLength={40} onChange={(event) => setTolerance(event.target.value)} /></label>
-      <label><input type="checkbox" checked={frame} onChange={(event) => setFrame(event.target.checked)} />{t('drawing.sheet.frame')}</label>
-      {titleKeys.map(({ key, label }) => <label key={key}>{t(label)}<input className="pcad-field__input" value={title[key]} maxLength={240}
+      <label title={t('drawing.sheet.scale.controlHint')}>{t('drawing.sheet.scale')}<input className="pcad-field__input" value={scale} inputMode="decimal" onChange={(event) => setScale(event.target.value)} /></label>
+      <label title={t('drawing.sheet.scales.controlHint')}>{t('drawing.sheet.scales')}<input className="pcad-field__input" value={scaleOptions} onChange={(event) => setScaleOptions(event.target.value)} /></label>
+      <label title={t('drawing.table.textHeight.controlHint')}>{t('drawing.table.textHeight')}<input className="pcad-field__input" value={textHeight} inputMode="decimal" onChange={(event) => setTextHeight(event.target.value)} /></label>
+      <label title={t('drawing.sheet.tolerance.controlHint')}>{t('drawing.sheet.tolerance')}<input className="pcad-field__input" value={tolerance} maxLength={40} onChange={(event) => setTolerance(event.target.value)} /></label>
+      <label><input title={t('drawing.controlHint.paperFrame')} type="checkbox" checked={frame} onChange={(event) => setFrame(event.target.checked)} />{t('drawing.sheet.frame')}</label>
+      {titleKeys.map(({ key, label }) => <label key={key}>{t(label)}<input title={t('drawing.controlHint.titleField')} className="pcad-field__input" value={title[key]} maxLength={240}
         onChange={(event) => setTitle((previous) => ({ ...previous, [key]: event.target.value }))} /></label>)}
       <details>
         <summary>{t('drawing.sheet.fields')}</summary>
         {fields.map((field, index) => <div key={`field:${field.key}`} className="pcad-drawing-settings__field">
-          <label>{t('drawing.sheet.fieldLabel')}<input className="pcad-field__input" value={field.label} onChange={(event) => updateField(index, { label: event.target.value })} /></label>
-          <label>{t('drawing.sheet.fixedText')}<input className="pcad-field__input" value={field.fixedText ?? ''} onChange={(event) => updateField(index, { fixedText: event.target.value })} /></label>
-          <label>{t('drawing.sheet.fieldWidth')}<input className="pcad-field__input" type="number" min="0.1" step="0.1" value={field.widthWeight ?? 1}
+          <label title={t('drawing.sheet.fieldLabel.controlHint')}>{t('drawing.sheet.fieldLabel')}<input className="pcad-field__input" value={field.label} onChange={(event) => updateField(index, { label: event.target.value })} /></label>
+          <label title={t('drawing.sheet.fixedText.controlHint')}>{t('drawing.sheet.fixedText')}<input className="pcad-field__input" value={field.fixedText ?? ''} onChange={(event) => updateField(index, { fixedText: event.target.value })} /></label>
+          <label title={t('drawing.sheet.fieldWidth.controlHint')}>{t('drawing.sheet.fieldWidth')}<input className="pcad-field__input" type="number" min="0.1" step="0.1" value={field.widthWeight ?? 1}
             onChange={(event) => updateField(index, { widthWeight: Number(event.target.value) })} /></label>
-          <button type="button" className="pcad-button" disabled={index === 0} aria-label={`${field.label}: ${t('drawing.sheet.moveUp')}`}
+          <button title={t('drawing.controlHint.titleFieldUp')} type="button" className="pcad-button" disabled={index === 0} aria-label={`${field.label}: ${t('drawing.sheet.moveUp')}`}
             onClick={() => setFields((previous) => { const next = [...previous]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })}>{t('drawing.sheet.moveUp')}</button>
-          <button type="button" className="pcad-button" disabled={fields.length === 1} aria-label={`${field.label}: ${t('drawing.table.removeRow')}`}
+          <button title={t('drawing.controlHint.removeTitleField')} type="button" className="pcad-button" disabled={fields.length === 1} aria-label={`${field.label}: ${t('drawing.table.removeRow')}`}
             onClick={() => setFields((previous) => previous.filter((_, row) => row !== index))}>{t('drawing.table.removeRow')}</button>
         </div>)}
-        <button type="button" className="pcad-button" onClick={() => {
+        <button title={t('drawing.controlHint.addTitleField')} type="button" className="pcad-button" onClick={() => {
           let index = 1; while (fields.some((field) => field.key === `custom-${index}`)) index++;
           setFields((previous) => [...previous, { key: `custom-${index}`, label: t('drawing.sheet.newField'), fixedText: '' }]);
         }}>{t('drawing.sheet.addField')}</button>
       </details>
       {error ? <p role="alert">{t('drawing.template.invalid')}</p> : null}
-      <button type="submit" className="pcad-button" disabled={busy || saving}>{t('drawing.sheet.apply')}</button>
+      <button title={t('drawing.controlHint.applySheet')} type="submit" className="pcad-button" disabled={busy || saving}>{t('drawing.sheet.apply')}</button>
     </form>
-    <label>{t('drawing.template.name')}<input className="pcad-field__input" value={templateName} maxLength={120} onChange={(event) => setTemplateName(event.target.value)} /></label>
-    <button type="button" className="pcad-button" disabled={busy || saving} onClick={() => {
+    <label title={t('drawing.template.name.controlHint')}>{t('drawing.template.name')}<input className="pcad-field__input" value={templateName} maxLength={120} onChange={(event) => setTemplateName(event.target.value)} /></label>
+    <button title={t('drawing.controlHint.saveTemplate')} type="button" className="pcad-button" disabled={busy || saving} onClick={() => {
       // 未確定の欄も同じ検証・Undoを経由して保存する。
       if (!apply()) return;
       setSaving(true);

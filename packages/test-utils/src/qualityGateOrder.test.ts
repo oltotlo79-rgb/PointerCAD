@@ -136,8 +136,16 @@ describe('品質ゲートのテスト実行順', () => {
       }
     }
     const budget = readRootFile('packages/test-utils/src/perfBudget.ts');
-    expect(budget).toContain('reportDuration(actualMs, limitMs, label)');
+    expect(budget).toContain('reportDuration(actualMs, limitMs, label, profile)');
     expect(budget).not.toContain('process.env');
+  });
+
+  it('干渉計算は全条件を同じ有限上限へ渡し、環境や球の条件だけで判定を変えない', () => {
+    const source = readRootFile('packages/kernel/src/worker/interferencePerformance.test.ts');
+    expect(source).toContain("expectWithinBudget(Math.max(...samples), budget, id, 'interference')");
+    expect(source).not.toContain('process.env');
+    expect(source).toContain('assertResult(result, total, volumes)');
+    expect(source).toContain('expect(native.live).toBe(0)');
   });
 
   it('検索・PDF・STEP・中止表示の速度だけの判定も共通の記録へ揃える', () => {

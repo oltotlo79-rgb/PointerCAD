@@ -33,7 +33,7 @@ export function DocumentNameSearch({ getEntries, onSelect, helpTopic }: {
       <ul id={`${id}-results`} ref={resultsElement} aria-label={t('nameSearch.results')} onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setQuery(''); input.current?.focus(); }
       }}>{results.map(({ entry, ordinal }) => <li key={entry.key}>
-        <button type="button" onClick={() => { onSelect(entry); setQuery(''); input.current?.focus(); }}>
+        <button title={t('controlGuide.button.nameSearchResult').replace('{context}', entry.context).replace('{name}', entry.name)} type="button" onClick={() => { onSelect(entry); setQuery(''); input.current?.focus(); }}>
           <span>{ordinal}. {entry.name}</span><small>{entry.context}</small>
           {entry.badges.length === 0 ? null : <small>{entry.badges.map(key => t(key)).join(t('display.listSeparator'))}</small>}
         </button>

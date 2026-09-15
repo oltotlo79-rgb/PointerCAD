@@ -78,5 +78,14 @@
   "strength.result.polarMoment": "断面二次極モーメント Ip（mm⁴）",
   "strength.result.polarModulus": "極断面係数 Zp（mm³）",
   "strength.result.shearStress": "最大せん断応力 τ（MPa）",
-  "strength.result.twist": "ねじれ角 θ（rad）"
+  "strength.result.twist": "ねじれ角 θ（rad）",
+  "strength.guide.kind": "はりの曲げ・軸のねじり・ボルトの引張りから、調べる力のかかり方を選びます。",
+  "strength.guide.section": "はりの断面形状を選び、必要な幅・高さ・直径を入力します。",
+  "strength.guide.support": "はりの支え方を選び、曲げ応力とたわみの計算条件を切り替えます。",
+  "strength.guide.thread": "ボルトの呼び径を選び、選択したねじの有効断面積で引張応力を求めます。",
+  "strength.guide.series": "並目・細目を選び、ねじのピッチと有効断面積を切り替えます。",
+  "strength.guide.areaMethod": "有効断面積を表の値から選ぶか、表示した式で近似するかを選びます。",
+  "strength.guide.material": "材質と状態が合う条件を選びます。独自の値を使う場合は材料値を入力します。",
+  "strength.guide.close": "強度計算の入力と結果を閉じます。作成した形や文書は変更しません。",
+  "strength.guide.help": "計算の前提、単位、材料条件と結果の読み方を説明する章を開きます。"
 }

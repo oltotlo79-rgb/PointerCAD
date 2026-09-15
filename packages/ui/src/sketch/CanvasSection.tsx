@@ -59,7 +59,7 @@ export function CanvasSection(): React.JSX.Element {
               </dl>
               <div className="pcad-field">
                 <span className="pcad-field__label">{t('propertyPanel.canvasOpacity')}</span>
-                <input
+                <input title={t('controlGuide.canvas.opacity')}
                   className="pcad-field__input"
                   type="text"
                   inputMode="decimal"

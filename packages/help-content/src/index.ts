@@ -8,3 +8,6 @@ export { adjacentHelpTopics, initialHelpHistory, stepHelpHistory, visitHelp, typ
 
 export { HELP_TOPICS, findHelpTopic, type HelpTopic } from './topics.js';
 export { buildManualManifest, MANUAL_CHAPTERS, MANUAL_VOLUMES, type ManualChapter, type ManualVolume } from './manualManifest.js';
+export { FEATURE_HELP_BINDINGS, type FeatureHelpBinding } from './featureHelpBindings.js';
+export { parseHelpRequirements, buildHelpFeatureCoverage, buildCommandHelpCoverage, assertDocumentedFeatureCoverage,
+  type HelpRequirement, type HelpFeatureCoverageEntry, type HelpFeatureCoverage, type CommandHelpCoverageEntry } from './helpFeatureCoverage.js';

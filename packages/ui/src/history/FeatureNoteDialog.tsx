@@ -45,7 +45,7 @@ export function FeatureNoteDialog({ draft, onClose }: { readonly draft: FeatureN
       <h2 id={titleId}>{t('historyNote.title')}</h2>
       <p className="pcad-feature-note__target">{draft.name}</p>
       <label htmlFor={inputId}>{t('historyNote.label')}</label>
-      <textarea id={inputId} ref={input} value={text} rows={8} aria-describedby={helpId} aria-invalid={tooLong}
+      <textarea title={t('historyNote.hint').replace('{max}', String(FEATURE_NOTE_MAX_LENGTH))} id={inputId} ref={input} value={text} rows={8} aria-describedby={helpId} aria-invalid={tooLong}
         onChange={event => setText(event.currentTarget.value)} />
       <p id={helpId}>{t('historyNote.hint').replace('{max}', String(FEATURE_NOTE_MAX_LENGTH))}</p>
       {tooLong ? <p role="alert">{t('historyNote.tooLong').replace('{max}', String(FEATURE_NOTE_MAX_LENGTH))}</p> : null}

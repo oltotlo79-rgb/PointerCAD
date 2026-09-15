@@ -42,9 +42,9 @@ export function ToolDefaultsForm(): React.JSX.Element {
     <h3>{t('settings.toolDefaults.title')}</h3>
     <p>{t('settings.toolDefaults.hint')}</p>
     <label htmlFor={`${id}-search`}>{t('settings.toolDefaults.search')}</label>
-    <input id={`${id}-search`} className="pcad-field__input" value={query} onChange={event => setQuery(event.currentTarget.value)} />
+    <input title={t('settings.toolDefaults.searchGuide')} id={`${id}-search`} className="pcad-field__input" value={query} onChange={event => setQuery(event.currentTarget.value)} />
     <label htmlFor={`${id}-group`}>{t('settings.toolDefaults.group')}</label>
-    <select id={`${id}-group`} value={group ?? ''} disabled={visibleGroups.length === 0} onChange={event => setSelected(event.currentTarget.value)}>
+    <select title={t('settings.toolDefaults.groupGuide')} id={`${id}-group`} value={group ?? ''} disabled={visibleGroups.length === 0} onChange={event => setSelected(event.currentTarget.value)}>
       {visibleGroups.map(entry => <option key={entry.group} value={entry.group}>{groupName(entry)}</option>)}
     </select>
     {fields.length === 0 ? <p role="status">{t('settings.toolDefaults.notFound')}</p> : fields.map(entry => {
@@ -64,9 +64,9 @@ export function ToolDefaultsForm(): React.JSX.Element {
       {errors.filter(error => error.entry.group !== group).map(error => <span key={error.entry.id}>{groupName(error.entry)}: {error.message} </span>)}
     </p> : null}
     <div className="pcad-tool-defaults__actions">
-      <button type="submit" className="pcad-button" title={t('settings.toolDefaults.apply')} disabled={draft === null || errors.length > 0}>{t('settings.toolDefaults.apply')}</button>
-      <button type="button" className="pcad-button" title={t('settings.toolDefaults.cancel')} disabled={draft === null} onClick={() => setDraft(null)}>{t('settings.toolDefaults.cancel')}</button>
-      <button type="button" className="pcad-button" title={t('settings.toolDefaults.reset')} onClick={() => setDraft({})}>{t('settings.toolDefaults.reset')}</button>
+      <button type="submit" className="pcad-button" title={t('settings.toolDefaults.applyGuide')} disabled={draft === null || errors.length > 0}>{t('settings.toolDefaults.apply')}</button>
+      <button type="button" className="pcad-button" title={t('settings.toolDefaults.cancelGuide')} disabled={draft === null} onClick={() => setDraft(null)}>{t('settings.toolDefaults.cancel')}</button>
+      <button type="button" className="pcad-button" title={t('settings.toolDefaults.resetGuide')} onClick={() => setDraft({})}>{t('settings.toolDefaults.reset')}</button>
     </div>
   </form>;
 }

@@ -19,6 +19,15 @@ describe('toolbar command catalog', () => {
     expect(toolbarCommandId('solidCombine', 'subtract')).toBe('toolbar.solidCombine.subtract');
   });
 
+  it.each([
+    ['annotation', 'surface-finish'], ['note', 'drawing-note'], ['refreshSource', 'drawing'],
+    ['centerMark', 'drawing-views'], ['hidden', 'drawing-views'], ['centers', 'drawing-views'],
+    ['return', 'drawing-export'], ['datum', 'gdt'], ['weld', 'welding'],
+  ])('図面の%sは同じメニュー内の別操作ではなく、その操作の説明を開く', (action, topic) => {
+    expect(commandDefinition(toolbarCommandId('drawing', action))?.helpTopic).toBe(topic);
+    expect(findHelpTopic(topic)).toBeDefined();
+  });
+
   it('全項目に実際の実行登録と存在する説明を持ち、一覧から黙って落とさない', () => {
     for (const entry of TOOLBAR_COMMAND_CATALOG) {
       expect(commandDefinition(entry.id)?.labelKey, entry.id).toBe(entry.labelKey);

@@ -372,6 +372,8 @@ export function numericChoiceOptionLabel(option: NumericChoiceOption): string {
 }
 
 export interface NumericInputState {
+  /** A guided operation may finish once without changing the user's repeat setting. */
+  readonly repeatAfterCommit?: boolean;
   /** この道具を開いた時点の既定値。次の段と選択肢変更へ持ち越す。 */
   readonly defaultSources?: NumericDefaultSources;
   /** 二段入力の修正先。文書や履歴へ保存しない入力中の状態。 */
@@ -2911,6 +2913,7 @@ export function toggleValueOf(state: NumericInputState, key: NumericToggleKey): 
 
 /** ポップアップを開くときに外から渡せるもの。無くても既定で成り立つ(NFR-UX-4)。 */
 export interface NumericInputOptions {
+  readonly repeatAfterCommit?: boolean;
   readonly defaultSources?: NumericDefaultSources;
   readonly sweepGuides?: readonly NumericChoiceOption[];
   /**
@@ -2961,6 +2964,7 @@ export function createNumericInput(
     step,
     mode,
     ...(options.defaultSources === undefined ? {} : { defaultSources: options.defaultSources }),
+    ...(options.repeatAfterCommit === undefined ? {} : { repeatAfterCommit: options.repeatAfterCommit }),
     // 段を開いた時点の選択肢・つまみで出す欄を決める(`visibleWhen`、タスク49)。
     fields: toFields(
       applyNumericDefaultSources(step, mode,
@@ -2977,7 +2981,8 @@ export function createNumericInput(
 /** 状態を進める間に端末設定を読み直さず、開始時の既定値を保つ。 */
 function createNextNumericInput(state: NumericInputState, step: NumericInputStep,
   mode?: CoordinateMode, options: NumericInputOptions = {}): NumericInputState {
-  return createNumericInput(state.toolId, step, mode, { ...options, defaultSources: state.defaultSources });
+  return createNumericInput(state.toolId, step, mode, { ...options, defaultSources: state.defaultSources,
+    ...(state.repeatAfterCommit === undefined ? {} : { repeatAfterCommit: state.repeatAfterCommit }) });
 }
 
 /** 設定画面も実際の入力と同じ欄・範囲を読む。選択肢で現れる欄も含める。 */
@@ -4878,8 +4883,9 @@ export function commitNumericInput(
  */
 export function nextNumericInput(
   state: NumericInputState,
-  chaining: boolean,
+  requestedChaining: boolean,
 ): NumericInputState | null {
+  const chaining = state.repeatAfterCommit ?? requestedChaining;
   switch (state.step) {
     case 'lineStart':
       return createNextNumericInput(state, 'lineEnd');

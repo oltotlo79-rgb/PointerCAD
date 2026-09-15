@@ -171,8 +171,12 @@ export const createViewSlice: StateCreator<
   Omit<ViewSlice, keyof ViewInitialState>
 > = (set) => ({
   utilityPanel: null,
-  setUtilityPanelOpen: (panel, open) => set(state => open ? { utilityPanel: panel }
-    : state.utilityPanel === panel ? { utilityPanel: null } : {}),
+  setUtilityPanelOpen: (panel, open) => set(state => {
+    const utilityPanel = open ? panel : state.utilityPanel === panel ? null : state.utilityPanel;
+    // A document-bound editor may close from inside a store notification.
+    // Returning the same state for repeated closure prevents recursive notifications.
+    return utilityPanel === state.utilityPanel ? state : { utilityPanel };
+  }),
   templateListRevision: 0,
   refreshTemplateEntries: () => set(state => ({ templateListRevision: state.templateListRevision + 1 })),
   quadCamera: null,

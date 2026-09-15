@@ -14,8 +14,6 @@ import type { SelectionKind, SubShapeBody } from '../../solid/subShapeSelection.
 import { useAppStore } from '../../store/useAppStore.js';
 import { AppearanceIcon } from '../icons.js';
 import { LOOK_MENU_ITEMS, type LookToolId } from '../toolbarMenus.js';
-import { addCanvasFromFile } from './lookToolActions.js';
-import { runMeasureTool } from './solidToolActions.js';
 import { ToolMenu } from './ToolMenu.js';
 
 interface LookGroupProps {
@@ -90,45 +88,7 @@ export function LookGroup({
           GroupIcon={AppearanceIcon}
           activeTool={activeTool}
           readinessOf={readinessOf}
-          onChoose={(id, pressed) => {
-            if (id === 'strength') {
-              const store = useAppStore.getState();
-              store.setActiveTool('select');
-              store.toggleStrength();
-              return;
-            }
-            if (id === 'measure') {
-              runMeasureTool(readinessOf(id));
-              return;
-            }
-            if (id === 'canvas') {
-              // 下絵(FR-332、タスク39)。画像を選ぶ窓を出し、選ばれたらその場で貼る。
-              void addCanvasFromFile();
-              return;
-            }
-            if (id === 'printCheck') {
-              /*
-                3D プリントの点検(FR-815、タスク46)。**もう一度押すと閉じる**
-                (色が消えて元の外観に戻る。他の一覧の「同じ道具をもう一度選んだら解除」と
-                同じ約束、NFR-UX-3)。走らせるのも閉じるのも文書を 1 バイトも変えない。
-              */
-              const printStore = useAppStore.getState();
-              if (printStore.printability !== null) {
-                printStore.setPrintability(null);
-                return;
-              }
-              printStore.inspectPrintability();
-              return;
-            }
-            const store = useAppStore.getState();
-            // 同じ道具をもう一度選んだら解除して選択へ戻す(他の一覧と同じ約束、NFR-UX-3)。
-            store.setActiveTool(pressed ? 'select' : id);
-            store.requestViewportFocus();
-            if (!readiness.ok) {
-              // 押せなくても、ツールチップだけでなく帯にも理由を出す(NFR-UX-5)。
-              store.setAppearanceError(readiness.reasonKey);
-            }
-          }}
+          commandGroup="look"
         />
       </div>
     </div>

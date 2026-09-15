@@ -1,3 +1,7 @@
+import { executeCommand } from '../../commands/commandRegistry.js';
+import { toolbarCommandId } from '../../commands/toolbarCommandCatalog.js';
+import { currentCommandLabel } from '../../commands/commandLabels.js';
+import { currentShortcutAssignments } from '../../settings/shortcutSettings.js';
 /**
  * 吸い付きの種類の一覧(FR-107、FR-322)。一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
  */
@@ -31,6 +35,7 @@ export function SnapKindsMenu({
   snapKinds,
   trackAngleStep,
 }: SnapKindsMenuProps): React.JSX.Element {
+  const assignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -97,10 +102,11 @@ export function SnapKindsMenu({
               key={entry.kind}
               type="button"
               className="pcad-button pcad-menu__item"
-              title={t(entry.tooltipKey)}
+              data-command-id={toolbarCommandId('snap', entry.kind)} data-help-topic="snap"
+              title={`${currentCommandLabel(toolbarCommandId('snap', entry.kind), assignments, 'part')}: ${t(entry.tooltipKey)}`}
               aria-pressed={snapKinds.includes(entry.kind)}
               onClick={() => {
-                useAppStore.getState().toggleSnapKind(entry.kind);
+                executeCommand(toolbarCommandId('snap', entry.kind));
               }}
             >
               <entry.Icon />

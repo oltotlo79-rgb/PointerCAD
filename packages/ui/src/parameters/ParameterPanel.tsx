@@ -233,7 +233,7 @@ export function ParameterPanel(): React.JSX.Element {
         <span className="pcad-field__label" title={t(labelKey)}>
           {t(labelKey)}
         </span>
-        <input
+        <input title={t(`controlGuide.parameter.${field}`)}
           className="pcad-field__input"
           type="text"
           inputMode="text"
@@ -371,7 +371,7 @@ export function ParameterPanel(): React.JSX.Element {
           sourceMessage(row),
           row.circular || row.failureMessage !== null || draftOf(row, 'source')?.message != null,
         )}
-        <button type="button" className="pcad-button" onMouseDown={event => event.preventDefault()}
+        <button title={t('controlGuide.parameter.math')} type="button" className="pcad-button" onMouseDown={event => event.preventDefault()}
           onClick={() => {
             const parameter = document.parameters.find(parameter => parameter.name === row.name);
             if (parameter === undefined) return;
@@ -388,7 +388,7 @@ export function ParameterPanel(): React.JSX.Element {
             aria-label={t('parameterPanel.unitLabel')}
           >
             {PARAMETER_UNITS.map((unit) => (
-              <button
+              <button title={t('controlGuide.parameter.unit')}
                 key={unit}
                 type="button"
                 className="pcad-button"
@@ -418,7 +418,7 @@ export function ParameterPanel(): React.JSX.Element {
   return (
     <div className="pcad-section pcad-parameters">
       {renameBusy ? <p role="status">{t('math.rename.busy')}
-        <button type="button" className="pcad-button" onClick={() => pendingRename.current?.abort()}>{t('math.cancel')}</button>
+        <button title={t('controlGuide.parameter.stopRename')} type="button" className="pcad-button" onClick={() => pendingRename.current?.abort()}>{t('math.cancel')}</button>
       </p> : null}
       <fieldset className="pcad-parameters__fields" disabled={renameBusy}>
       <ConfigurationPanel key={documentVersion} />

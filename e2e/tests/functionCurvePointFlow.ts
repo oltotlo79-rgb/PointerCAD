@@ -7,6 +7,7 @@ import {beginRecompute,waitForRecompute} from './recompute.js';
 import {waitForFunctionPreview} from './waitForFunctionPreview.js';
 import {functionDirectionFlow} from './functionDirectionFlow.js';
 import {observeMathWorkers} from './mathWorkerDiagnostics.js';
+import {checkFunctionPreviewBounds} from './functionPreviewBounds.js';
 
 const text = functionPointMessage;
 const plot = functionPlotMessage;
@@ -63,6 +64,7 @@ async function runFunctionCurvePointFlow(page:Page,info:TestInfo,form:'coordinat
       });
     }),{message:'原式から求めた両候補の位置を、確認画面の実曲線が通ること'}).toEqual([true,true]);
   }
+  await checkFunctionPreviewBounds(page,info,dialog.locator('.pcad-function-point-preview'),`curve-point-${form}`);
   await page.screenshot({path:info.outputPath(`curve-point-${form}-candidates.png`),fullPage:true});
   const first=await beginRecompute(page);await dialog.getByRole('button',{name:text('apply'),exact:true}).click();await waitForRecompute(page,first);
   const file=`curve-point-${form}.pcad`,saved=await savePart(page,info,file,app);

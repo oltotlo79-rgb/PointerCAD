@@ -26,6 +26,7 @@
 .pcad-function-dialog input:is([type="checkbox"], [type="radio"]) { width: auto; flex: 0 0 auto; }
 .pcad-function-point-choice { display: flex; align-items: center; gap: 8px; padding: 6px; overflow-wrap: anywhere; }
 .pcad-function-point-preview { position: relative; }
+.pcad-function-axis-label { position: absolute; transform: translate(-50%, -50%); width: 20px; height: 20px; line-height: 20px; font-size: 12px; text-align: center; pointer-events: none; }
 .pcad-function-dialog .pcad-function-point-marker { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; min-width: 28px; min-height: 28px; padding: 2px; color: var(--pcad-text); background: var(--pcad-surface); border: 2px solid var(--pcad-accent); }
 .pcad-function-dialog .pcad-function-point-marker[aria-pressed="true"] { color: var(--pcad-bg); background: var(--pcad-text); box-shadow: 0 0 0 2px var(--pcad-accent); }
 .pcad-function-dialog .pcad-function-field > label { flex: 0 0 auto; min-width: 70px; }

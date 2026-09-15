@@ -42,6 +42,11 @@ export type { GdtShapeTarget, GdtToleranceValue, WeldKind, WeldLengthValue, Weld
 export {
   createDirectKernelBridge,
   createDirectInterferenceKernelBridge,
+  createDirectMaterialComparisonBridge,
+  type MaterialComparisonBridge,
+  type MaterialComparisonResult,
+  type MaterialComparisonGeometry,
+  type MaterialDifferenceRegion,
   type InterferenceKernelBridge,
   type AssemblyInterferenceInput,
   type AssemblyInterferenceOptions,
@@ -1131,3 +1136,12 @@ export { sheetFlatReferenceIssue } from './sheetMetal/flatSheetReference.js';
 export { buildSheetFlatHoleSchedule } from './sheetMetal/flatHoleSchedule.js';
 export {readFunctionPointChoice,functionPointReferenceKey,type FunctionPointReference,type FunctionPointParent,type FunctionPointChoice} from './functionGeometry/functionPointReference.js';
 export {functionPointRequest} from './functionGeometry/functionPointRequest.js';
+
+export { FEATURE_NOTE_MAX_LENGTH, featureNoteTargetKey, featureNoteTargetExists, featureNoteOf, setFeatureNote, pruneRemovedFeatureNotes } from './history/featureNotes.js';
+export type { FeatureNoteTarget, FeatureNote } from './history/featureNotes.js';
+
+export { checkFeatureFolders, featureFolderMemberKey, createFeatureFolder, moveFeatureFolderMember, renameFeatureFolder, removeFeatureFolder, pruneRemovedFolderMembers, FEATURE_FOLDER_MAX_COUNT, FEATURE_FOLDER_MAX_DEPTH, FEATURE_FOLDER_NAME_MAX_LENGTH, FeatureFolderError } from './history/featureFolders.js';
+export type { FeatureFolder, FeatureFolderMember, FeatureFolderProblem, FeatureFolderCheck } from './history/featureFolders.js';
+
+export { compareDocuments, DocumentComparisonLimit, type DocumentRelationship, type DocumentDefinitionComparison, type DocumentDefinitionChange, type DocumentDefinitionEntry, type DefinitionGroup } from './diff/compareDocuments.js';
+export type { DefinitionDifference } from './diff/definitionValues.js';

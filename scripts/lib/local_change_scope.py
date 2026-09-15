@@ -11,9 +11,9 @@ from pathlib import Path
 import re
 import subprocess
 
-PACKAGE_NAMES = {'desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression'}
+PACKAGE_NAMES = {'web', 'desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression'}
 WORKSPACE_FOLDERS = {
-    **{name: 'packages/' + name for name in PACKAGE_NAMES - {'desktop'}},
+    **{name: 'packages/' + name for name in PACKAGE_NAMES - {'desktop', 'web'}},
     'desktop': 'apps/desktop', 'web': 'apps/web',
 }
 GATE_FILES = {
@@ -23,6 +23,7 @@ GATE_FILES = {
     'scripts/check-commit-batch.selftest.ps1', 'scripts/git-selftest-environment.selftest.py',
     'scripts/hooks/commit-msg', 'scripts/lib/commit_message.py', 'scripts/commit-message.selftest.py',
     'scripts/validation-receipt.integration.selftest.py',
+    'scripts/lib/task_workspace.py', 'scripts/task-workspace.selftest.py',
 }
 NOTICE_BUILD_FILES = {'scripts/vite/mathNotices.mjs', 'scripts/vite/mathNotices.d.mts',
                       'scripts/vite/mathDependencyInventory.mjs', 'scripts/vite/mathDependencyInventory.d.mts'}
@@ -69,8 +70,6 @@ def workspace_dependencies(git):
             raise ValueError('Invalid workspace scripts')
         if name in PACKAGE_NAMES and (not isinstance(scripts.get('test'), str) or not scripts['test'].strip()):
             raise ValueError('A required whole-package test command is missing')
-        if name == 'web' and scripts.get('test'):
-            raise ValueError('A new Web test command needs an explicit gate mapping')
         dependencies = set()
         for field in ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']:
             mapping = document.get(field, {})
@@ -122,6 +121,7 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
     packages = set()
     areas = set()
     runtime = set()
+    all_e2e = False
     for path in paths:
         if path == '.gitattributes':
             permitted = {'docs/standards/licenses/*.txt -text', 'scripts/hooks/commit-msg text eol=lf'}
@@ -146,13 +146,22 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
         elif re.fullmatch(r'packages/help-content/docs/[^\x00-\x1f]+\.md', path):
             packages.add('help-content')
             areas.add('help-content')
+        elif re.fullmatch(r'packages/help-content/docs/ja/images/[^/\x00-\x1f]+\.(png|json)', path):
+            packages.add('help-content')
+            areas.add('help-images')
+        elif re.fullmatch(r'e2e/tests/[^\x00-\x1f]+\.ts', path):
+            # Run every operation, including shared helpers and all startup dependencies.
+            # This narrows only unrelated unit packages, never the changed E2E coverage.
+            packages.add('test-utils')
+            areas.add('all-e2e')
+            all_e2e = True
         elif runtime_package(path) is not None:
             if runtime_graph is None:
                 return full('Runtime dependency coverage is unavailable: ' + path)
             runtime.add(runtime_package(path))
             areas.add('runtime-and-dependents')
         else:
-            match = re.fullmatch(r'(?:packages/([^/]+)|apps/(desktop))/src/[^\x00-\x1f]+\.test\.tsx?', path)
+            match = re.fullmatch(r'(?:packages/([^/]+)|apps/(desktop|web))/src/[^\x00-\x1f]+\.test\.tsx?', path)
             package = (match[1] or match[2]) if match else None
             if package not in PACKAGE_NAMES:
                 return full('Runtime, dependencies, configuration, E2E or unknown impact: ' + path)
@@ -164,8 +173,9 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
         # Keep mathematics early, as in the complete gate. No package is run twice.
         ordered = sorted(packages, key=lambda name: (name != 'expression', name))
         return {'mode': 'targeted', 'reason': ', '.join(sorted(areas)), 'packages': ordered,
-                'runtimeChecks': True, 'changedPackages': sorted(runtime)}
-    return {'mode': 'targeted', 'reason': ', '.join(sorted(areas)), 'packages': sorted(packages)}
+                'runtimeChecks': True, 'allE2EChecks': all_e2e, 'changedPackages': sorted(runtime)}
+    return {'mode': 'targeted', 'reason': ', '.join(sorted(areas)), 'packages': sorted(packages),
+            'allE2EChecks': all_e2e}
 
 
 def inspect(root: Path, level: str, phase: str, comparison_base: str, force: bool):

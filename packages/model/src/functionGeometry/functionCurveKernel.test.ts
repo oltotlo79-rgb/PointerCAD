@@ -54,18 +54,27 @@ function create(formula: ExplicitFunctionCurveFormula, resolved = ranges()) {
 }
 
 describe('有限XYZの関数入力から実CADの曲線へ接続する（ADD-4）', () => {
-  it('放物線の曲線自体をY境界で切り、全ての内点・端点が指定範囲と原関数の精度を満たす', () => {
-    const curve = create({ kind: 'coordinate-curve', independent: 'X', outputs: { Y: math('X^2'), Z: math('0') } });
+  it.each([
+    ['X^2', 2],
+    ['tensorelement(tensorproduct([X,X^2],[1,2]),[2,1])', 1],
+  ] as const)('%sの曲線自体をY境界で切り、全ての内点・端点が指定範囲と原関数の精度を満たす', (source, maximumY) => {
+    const limits: FunctionClipBox = { ...box, maximum: [2, maximumY, 1] };
+    const curve = create({ kind: 'coordinate-curve', independent: 'X', outputs: { Y: math(source), Z: math('0') } }, ranges(limits));
     if (curve.status !== 'shape') throw new Error('Expected CAD curve');
     try {
       expect(isValidShape(oc, curve.shape)).toBe(true);
       const components = samples(curve.shape); expect(components).toHaveLength(1);
       for (const [x, y, z] of components.flat()) {
         expect(x).toBeGreaterThanOrEqual(-2-1e-6); expect(x).toBeLessThanOrEqual(2+1e-6);
-        expect(y).toBeGreaterThanOrEqual(-0.5-1e-6); expect(y).toBeLessThanOrEqual(2+1e-6);
+        expect(y).toBeGreaterThanOrEqual(-0.5-1e-6); expect(y).toBeLessThanOrEqual(maximumY+1e-6);
         expect(Math.abs(y-x*x)).toBeLessThanOrEqual(0.001); expect(z).toBeCloseTo(0, 10);
       }
-      expect(components[0][0][1]).toBeCloseTo(2, 8); expect(components[0].at(-1)?.[1]).toBeCloseTo(2, 8);
+      expect(components[0][0][1]).toBeCloseTo(maximumY, 8); expect(components[0].at(-1)?.[1]).toBeCloseTo(maximumY, 8);
+      expect(Math.abs(components[0][0][0])).toBeCloseTo(Math.sqrt(maximumY), 3);
+      expect(Math.abs(components[0].at(-1)?.[0] ?? NaN)).toBeCloseTo(Math.sqrt(maximumY), 3);
+      for (const component of components) for (const point of component) {
+        expect(point[2]).toBeGreaterThanOrEqual(-1); expect(point[2]).toBeLessThanOrEqual(1);
+      }
     } finally { curve.delete(); }
   });
 

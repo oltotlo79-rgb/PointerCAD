@@ -13,7 +13,9 @@ function request(source: string): MathWorkRequest {
     coefficients: [{ id: 'thickness', label: 'log', decimal: '3' }] };
 }
 describe('Workerで意味を照合してから数式入力方式を切り替える', () => {
-  it.each(['coef("log")*sin(30)', 'sum(i^2,i,1,10)', '1/3', 'log(100,10)', 'log(8,2)', 'log10(100)', 'log2(8)'])('%sを構造入力へ変えて再評価し、テキストにも戻せる', source => {
+  it.each(['coef("log")*sin(30)', 'sum(i^2,i,1,10)', '1/3', 'log(100,10)', 'log(8,2)', 'log10(100)', 'log2(8)',
+    'sqrt(8)/2', 'sqrt(8)/2-sqrt(2)', 'component([[sqrt(8)/2,0],[0,1]],1,1)',
+  ])('%sを構造入力へ変えて再評価し、テキストにも戻せる', source => {
     const original = request(source);
     const output = executeMathWorkRequest(createMathWorkEnvelope(1, original), backend);
     const first = decodeMathWorkReply(output, original, context).result;

@@ -29,17 +29,17 @@ export function SketchTextPopover({ origin, plane, anchor }: {
       setBusy(true); void applySketchText({ text, heightSource: height, angleSource: angle, align, origin, plane }).then(() => setBusy(false));
     }}>
     <strong>{t('text.tool')}</strong>
-    <label className="pcad-field">{t('text.input.text')}<input className="pcad-field__input" value={text} autoFocus disabled={busy} maxLength={1000}
+    <label className="pcad-field">{t('text.input.text')}<input title={t('controlGuide.text.value')} className="pcad-field__input" value={text} autoFocus disabled={busy} maxLength={1000}
       onChange={(event) => { const state = useAppStore.getState(); if (state.numericInput !== null) state.updateNumericInput({ ...state.numericInput, textValue: event.target.value }); }} /></label>
-    <label className="pcad-field">{t('text.input.height')} ({unit})<input className="pcad-field__input" value={height} disabled={busy}
+    <label className="pcad-field">{t('text.input.height')} ({unit})<input title={t('controlGuide.text.height')} className="pcad-field__input" value={height} disabled={busy}
       onChange={(event) => setHeight(event.target.value)} /></label>
-    <label className="pcad-field">{t('text.input.angle')}<input className="pcad-field__input" value={angle} disabled={busy}
+    <label className="pcad-field">{t('text.input.angle')}<input title={t('controlGuide.text.angle')} className="pcad-field__input" value={angle} disabled={busy}
       onChange={(event) => setAngle(event.target.value)} /></label>
-    <label className="pcad-field">{t('text.input.align')}<select aria-label={t('text.input.align')} value={align} disabled={busy} onChange={(event) => {
+    <label className="pcad-field">{t('text.input.align')}<select title={t('controlGuide.text.align')} aria-label={t('text.input.align')} value={align} disabled={busy} onChange={(event) => {
       const value = event.target.value; if (value === 'start' || value === 'middle' || value === 'end') setAlign(value);
     }}><option value="start">{t('text.input.start')}</option><option value="middle">{t('text.input.middle')}</option><option value="end">{t('text.input.end')}</option></select></label>
     {error === null ? null : <p role="status">{error}</p>}
-    <div><button type="submit" className="pcad-button" disabled={busy}>{t('drawing.action.apply')}</button>
-      <button type="button" className="pcad-button" onClick={() => useAppStore.getState().setActiveTool('select')}>{t('drawing.action.close')}</button></div>
+    <div><button title={t('controlGuide.text.apply')} type="submit" className="pcad-button" disabled={busy}>{t('drawing.action.apply')}</button>
+      <button title={t('controlGuide.text.close')} type="button" className="pcad-button" onClick={() => useAppStore.getState().setActiveTool('select')}>{t('drawing.action.close')}</button></div>
   </form>;
 }

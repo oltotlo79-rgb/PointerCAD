@@ -82,3 +82,15 @@
 .pcad-math-editor__result p { margin: calc(4px * var(--pcad-scale)) 0; }
 .pcad-math-editor__result--error { color: var(--pcad-danger-text); border-color: var(--pcad-danger); }
 .pcad-math-editor__actions { justify-content: flex-end; }
+.pcad-math-editor__component {
+  display: grid;
+  gap: calc(6px * var(--pcad-scale));
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--pcad-border);
+  padding: calc(8px * var(--pcad-scale));
+}
+.pcad-math-editor__component p { margin: 0; overflow-wrap: anywhere; }
+.pcad-math-editor__component input { width: 5em; }
+.pcad-math-editor__component > button { justify-self: start; }
+.pcad-math-editor__component [role="alert"] { color: var(--pcad-danger-text); }

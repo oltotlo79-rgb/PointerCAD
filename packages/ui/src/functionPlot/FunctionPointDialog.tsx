@@ -76,9 +76,9 @@ export function FunctionPointDialog({parent,pointId,onClose}:{readonly parent:Fu
         <fieldset disabled={busy}><legend>{t('functionPoint.known')}</legend>
           {FUNCTION_AXES.filter(axis=>axis!==fixed).map(axis=>{
             const field=fields[axis];return <div className="pcad-function-field" key={axis}>
-              <label><input type="checkbox" checked={field!==null} disabled={field===null&&coordinateCount>=2} onChange={event=>change({...fields,[axis]:event.target.checked?{source:'',angleUnit:'degree'}:null})}/>{axis} (mm)</label>
-              {field===null?null:<><input aria-label={`${axis} ${t('functionPoint.coordinate')}`} required value={field.source} onChange={event=>change({...fields,[axis]:editFunctionField(field,event.target.value)})}/>
-                <button type="button" aria-label={`${axis}: ${t('math.open')}`} onClick={()=>setEditor(axis)}>ƒ</button></>}
+              <label><input title={t('functionPlot.control.knownAxis')} type="checkbox" checked={field!==null} disabled={field===null&&coordinateCount>=2} onChange={event=>change({...fields,[axis]:event.target.checked?{source:'',angleUnit:'degree'}:null})}/>{axis} (mm)</label>
+              {field===null?null:<><input title={t('functionPlot.control.knownCoordinate')} aria-label={`${axis} ${t('functionPoint.coordinate')}`} required value={field.source} onChange={event=>change({...fields,[axis]:editFunctionField(field,event.target.value)})}/>
+                <button title={t('functionPlot.control.mathEditor')} type="button" aria-label={`${axis}: ${t('math.open')}`} onClick={()=>setEditor(axis)}>ƒ</button></>}
             </div>;
           })}
           {fixed&&definition?.formula.kind==='implicit-curve'?<p>{fixed} = {definition.formula.fixedCoordinate.source} mm</p>:null}
@@ -88,7 +88,7 @@ export function FunctionPointDialog({parent,pointId,onClose}:{readonly parent:Fu
         {busy?<p role="status">{t('functionPoint.calculating')}</p>:null}
         {search?<fieldset><legend>{t('functionPoint.candidates')} ({search.candidates.length})</legend>
           {search.candidates.length===0&&search.exhaustive?<p>{t('functionPoint.empty')}</p>:search.candidates.map((candidate,index)=><label key={index} className="pcad-function-point-choice">
-            <input type="radio" name={`${id}-candidate`} checked={selected===candidate} onChange={()=>setSelected(candidate)}/>
+            <input title={t('functionPlot.control.pointCandidate')} type="radio" name={`${id}-candidate`} checked={selected===candidate} onChange={()=>setSelected(candidate)}/>
             {index+1}: {candidate.point.map((value,axis)=>`${FUNCTION_AXES[axis]} = ${String(value)}`).join(', ')} mm
             {candidate.location.kind==='curve'&&candidate.location.independent==='T'?<span> — {t('functionPoint.parameter')}: T = {candidate.location.interval.lower}{t('display.rangeSeparator')}{candidate.location.interval.upper}</span>:null}
             {candidate.location.kind==='parametric-surface'?<span> — {t('functionPoint.parameter')}: {candidate.location.box.map((range,axis)=>`${axis===0?'U':'V'} = ${range.lower}${t('display.rangeSeparator')}${range.upper}`).join(', ')}</span>:null}
@@ -98,9 +98,9 @@ export function FunctionPointDialog({parent,pointId,onClose}:{readonly parent:Fu
         {search&&search.candidates.length>0?<FunctionPointPreview minimum={search.request.minimum} maximum={search.request.maximum}
           body={parentBody} curves={parentCurves} candidates={search.candidates} selected={selected} onSelect={setSelected}/>:null}
         <div className="pcad-function-actions">
-          <button type="button" onClick={close}>{t('math.cancel')}</button>
-            {busy?<button type="button" onClick={()=>{running.current?.abort();setBusy(false);}}>{t('functionPlot.stop')}</button>:<button type="submit" disabled={coordinateCount===0}>{t('functionPoint.search')}</button>}
-            <button type="button" disabled={busy||!search||!selected||!search.exhaustive||search.unresolved!==0} onClick={()=>{
+          <button title={t('functionPlot.control.cancelPoint')} type="button" onClick={close}>{t('math.cancel')}</button>
+            {busy?<button title={t('functionPlot.control.stopPoint')} type="button" onClick={()=>{running.current?.abort();setBusy(false);}}>{t('functionPlot.stop')}</button>:<button title={t('functionPlot.control.searchPoint')} type="submit" disabled={coordinateCount===0}>{t('functionPoint.search')}</button>}
+            <button title={t('functionPlot.control.applyPoint')} type="button" disabled={busy||!search||!selected||!search.exhaustive||search.unresolved!==0} onClick={()=>{
             if(!isCurrent()||busy||!search||!selected)return;
             try{useAppStore.getState().applyDocument(applyFunctionPointChoice(search,selected,pointId));close();}
             catch(error){setMessage(error instanceof Error?error.message:t('functionPoint.changedChoice'));}

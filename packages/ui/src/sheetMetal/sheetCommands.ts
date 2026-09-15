@@ -5,12 +5,13 @@ import type { SheetFieldKey } from './sheetFields.js';
 import { evaluateSheetDraft } from './sheetDraft.js';
 
 export function buildSheetCreation(document: PartDocument, feature: SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature,
-  sources: Readonly<Partial<Record<SheetFieldKey, string>>>, lengthUnit: LengthUnit, options: EvaluateOptions, original?: SheetMetalFeature):
+  sources: Readonly<Partial<Record<SheetFieldKey, string>>>, lengthUnit: LengthUnit, options: EvaluateOptions,
+  original?: SheetMetalFeature, millimetreSourceKeys: ReadonlySet<SheetFieldKey> = new Set()):
   { readonly ok: true; readonly document: PartDocument; readonly feature: SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature }
   | { readonly ok: false; readonly message: string; readonly field?: SheetFieldKey } {
   if (original !== undefined && (document.solids.find((item) => item.id === original.id) !== original || original.id !== feature.id || original.kind !== feature.kind))
     return { ok: false, message: '編集元の板金が変わりました。選び直してから編集してください。' };
-  const evaluated = evaluateSheetDraft(feature, sources, lengthUnit, options); if (!evaluated.ok) return evaluated;
+  const evaluated = evaluateSheetDraft(feature, sources, lengthUnit, options, millimetreSourceKeys); if (!evaluated.ok) return evaluated;
   const next = evaluated.feature;
   const candidate = original === undefined ? appendSolid(document, next) : replaceSolid(document, original.id, next);
   const resolved = resolvePart(candidate);

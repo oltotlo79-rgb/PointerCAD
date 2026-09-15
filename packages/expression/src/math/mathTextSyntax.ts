@@ -4,7 +4,7 @@ import {decodeMathJson,type DecodeMathOptions} from './decodeMathJson.js';
 type Raw=string|{num:string}|{str:string}|[string,...Raw[]];
 interface Token {readonly kind:'number'|'name'|'string'|'operator'|'end';readonly text:string;readonly start:number}
 const OPERATORS=['<=','>=','!=','==','**','&&','!!'];
-const SINGLE=new Set('+-−*/×·÷^!%=<≤>≥≠∧∨¬()[],|√∛⌊⌋⌈⌉{}');
+const SINGLE=new Set('+-−*/×·⊗⊙÷^!%=<≤>≥≠∧∨¬()[],|√∛⌊⌋⌈⌉{}');
 function own<T>(values:Readonly<Record<string,T>>,key:string):T|undefined {return Object.hasOwn(values,key)?values[key]:undefined;}
 function fail(message:string,position:number):never {throw new MathInputProblem('syntax',`${message}（${position+1}文字目）`);}
 function normalizeNumericWidth(source:string):string {
@@ -49,6 +49,7 @@ function tokenize(source:string):readonly Token[] {
 }
 const INFIX:Readonly<Record<string,readonly [head:string,binding:number]>>={
   '+':['Add',50],'-':['Subtract',50],'−':['Subtract',50],'*':['Multiply',60],'/':['Divide',60],'÷':['Divide',60],
+  '⊗':['TensorProduct',60],'⊙':['HadamardProduct',60],
   '×':['PcadTimesToken',60],'·':['PcadDotToken',60],'^':['Power',80],'**':['Power',80],
   '∧':['And',20],'&&':['And',20],'∨':['Or',10],
 };

@@ -49,5 +49,14 @@
   "configuration.error.unknownParameter": "この構成に、表にないパラメータ名が含まれています。",
   "configuration.error.missingParameter": "この構成に、必要なパラメータの式がありません。",
   "configuration.error.invalidExpression": "構成の式を計算できません。式の誤りや循環する参照を直してください。",
-  "configuration.error.partRequired": "設計表は部品を開いているときに使えます。"
+  "configuration.error.partRequired": "設計表は部品を開いているときに使えます。",
+  "controlGuide.configuration.choose": "保存してある構成を選び、係数の組合せを切り替えます。形に関係する係数は再計算へ反映されます。",
+  "controlGuide.configuration.name": "構成の新しい名前を入力します。Enterで新規作成でき、選択中の構成の改名にも使います。",
+  "controlGuide.configuration.stop": "実行中の構成の切替や変更を中止します。中止後に届いた計算結果は適用しません。",
+  "controlGuide.parameter.name": "式から参照する係数の名前を入力します。Enterまたは欄から離れる操作で確定し、参照している式の名前も合わせて更新します。",
+  "controlGuide.parameter.source": "係数の値を決める数値または式を入力します。Enterまたは欄から離れる操作で確定します。",
+  "controlGuide.parameter.description": "係数の用途などの説明を入力します。Enterまたは欄から離れる操作で確定し、形の寸法は変えません。",
+  "controlGuide.parameter.math": "この係数の式を、数学入力で確認・編集します。",
+  "controlGuide.parameter.unit": "この係数の単位の種類を選びます。式が表す値と、他の係数からの参照を確認してください。",
+  "controlGuide.parameter.stopRename": "係数の改名と参照式の更新を中止します。"
 }

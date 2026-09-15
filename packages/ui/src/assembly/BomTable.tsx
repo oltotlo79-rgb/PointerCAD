@@ -89,7 +89,7 @@ export function BomTable(): React.JSX.Element {
           <span>{t('assembly.bom.sort')}</span>
           <select
             value={document.bom.sortBy}
-            aria-label={t('assembly.bom.sort')}
+            aria-label={t('assembly.bom.sort')} title={t('assembly.guide.bomSort')}
             onChange={(event) => {
               if (isBomSortKey(event.target.value)) {
                 applySettings({ ...document.bom, sortBy: event.target.value });
@@ -107,7 +107,7 @@ export function BomTable(): React.JSX.Element {
             <label key={column}>
               <input
                 type="checkbox"
-                checked={document.bom.columns.includes(column)}
+                title={t('assembly.guide.bomColumn').replace('{column}', t(COLUMN_LABEL_KEYS[column]))} checked={document.bom.columns.includes(column)}
                 onChange={(event) => {
                   const columns = BOM_COLUMN_IDS.filter((candidate) =>
                     candidate === column ? event.target.checked : document.bom.columns.includes(candidate));
@@ -121,7 +121,7 @@ export function BomTable(): React.JSX.Element {
         <label className="pcad-bom__expand">
           <input
             type="checkbox"
-            checked={document.bom.expandSubAssemblies}
+            title={t('assembly.guide.bomExpand')} checked={document.bom.expandSubAssemblies}
             onChange={(event) => {
               applySettings({ ...document.bom, expandSubAssemblies: event.target.checked });
             }}

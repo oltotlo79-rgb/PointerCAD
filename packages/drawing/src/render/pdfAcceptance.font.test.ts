@@ -2,6 +2,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { createFontStore } from '../text/fontStore.js';
 import { toPdf } from './toPdf.js';
 import { toSvg } from './toSvg.js';
@@ -74,7 +75,7 @@ describe('実字体のPDF出力と500文字の実測（P8-46）', () => {
     expect(baseline.byteLength).toBeGreaterThanOrEqual(175000);
     expect(baseline.byteLength).toBeLessThanOrEqual(525000);
     expect(bytes.byteLength).toBeGreaterThan(baseline.byteLength);
-    expect(elapsedMs).toBeLessThan(2000);
+    expectWithinBudget(elapsedMs, 2000, 'A3・線5000本・文字500個のPDF作成');
     artifact('pdf-5000-lines-500-characters.pdf', bytes);
     artifact('pdf-measurement.json', JSON.stringify(measured, null, 2));
   });

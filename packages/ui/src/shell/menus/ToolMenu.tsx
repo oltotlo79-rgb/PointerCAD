@@ -1,3 +1,10 @@
+import { executeCommand } from '../../commands/commandRegistry.js';
+import { commandDefinition } from '../../commands/commandDefinitions.js';
+import { currentCommandLabel } from '../../commands/commandLabels.js';
+import { toolbarCommandId, type ToolbarCommandGroup } from '../../commands/toolbarCommandCatalog.js';
+import { currentShortcutAssignments } from '../../settings/shortcutSettings.js';
+import { activeDocumentKind } from '../../store/documentKind.js';
+import { useAppStore } from '../../store/useAppStore.js';
 /**
  * 畳んだ一覧の共通の見た目(FR-904、NFR-UX-7)。中身の表は `toolbarMenus.ts` にある。
  * 一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
@@ -47,7 +54,8 @@ interface ToolMenuProps<Id extends string> {
    */
   readonly showPressed?: boolean;
   /** 項目を選んだときの処理。`pressed` は「同じ道具をもう一度押した」かどうか。 */
-  readonly onChoose: (id: Id, pressed: boolean) => void;
+  readonly commandGroup?: ToolbarCommandGroup;
+  readonly onChoose?: (id: Id, pressed: boolean) => void;
 }
 
 /**
@@ -74,7 +82,10 @@ export function ToolMenu<Id extends string>({
   readinessOf,
   showPressed = true,
   onChoose,
+  commandGroup,
 }: ToolMenuProps<Id>): React.JSX.Element {
+  const documentKind = useAppStore(state => activeDocumentKind(state));
+  const assignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const [open, setOpen] = useState(false);
   const [recentId, setRecentId] = useState<Id | null>(null);
   /** キーボードで選んでいる位置(0 起点)。開くたびに今の道具の行から始める。 */
@@ -117,6 +128,15 @@ export function ToolMenu<Id extends string>({
    * 見出しの 3 か所が必ず同じ名前になる。
    */
   const nameOf = (item: ToolMenuItem<Id>): string => item.label ?? t(item.labelKey);
+  const commandOf = (id: Id) => commandGroup === undefined ? null : commandDefinition(toolbarCommandId(commandGroup, id));
+  const shortcutNameOf = (item: ToolMenuItem<Id>): string => {
+    const command = commandOf(item.id);
+    if (command === null || item.label !== undefined) return nameOf(item);
+    // Preserve context-specific labels (e.g. drawing from an assembly) and append only current keys.
+    const caption = currentCommandLabel(command.id, assignments, documentKind);
+    return caption.replace(t(command.labelKey), nameOf(item));
+  };
+  const helpItem = shown ?? items[0];
   const activeHere = items.some((item) => item.id === activeTool);
 
   function openMenu(): void {
@@ -129,7 +149,7 @@ export function ToolMenu<Id extends string>({
   // 一覧の開き方・選び方をここだけで読み切れるようにする(NFR-UX-7)。
   const tooltip = [
     `${groupLabel}${LABEL_SEPARATOR}${t(groupTooltipKey)}`,
-    shown === null ? null : `${nameOf(shown)}${LABEL_SEPARATOR}${t(shown.tooltipKey)}`,
+    shown === null ? null : `${shortcutNameOf(shown)}${LABEL_SEPARATOR}${t(shown.tooltipKey)}`,
     t('toolbar.menu.keyboardHint'),
   ]
     .filter((line) => line !== null)
@@ -138,6 +158,7 @@ export function ToolMenu<Id extends string>({
   return (
     <div
       className="pcad-menu"
+      data-help-topic={helpItem === undefined ? undefined : commandOf(helpItem.id)?.helpTopic}
       ref={containerRef}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && open) {
@@ -199,9 +220,11 @@ export function ToolMenu<Id extends string>({
                 className="pcad-button pcad-menu__item"
                 title={
                   ready
-                    ? `${nameOf(item)}${LABEL_SEPARATOR}${t(item.tooltipKey)}`
+                    ? `${shortcutNameOf(item)}${LABEL_SEPARATOR}${t(item.tooltipKey)}`
                     : unavailableTooltip(item.labelKey, readiness?.reasonKey ?? null)
                 }
+                data-command-id={commandOf(item.id)?.id}
+                data-help-topic={commandOf(item.id)?.helpTopic}
                 aria-pressed={activeTool === item.id}
                 aria-disabled={!ready}
                 onFocus={() => {
@@ -209,7 +232,9 @@ export function ToolMenu<Id extends string>({
                 }}
                 onClick={() => {
                   setRecentId(rememberRecentTool(items, recentId, item.id));
-                  onChoose(item.id, activeTool === item.id);
+                  const command = commandOf(item.id);
+                  if (command !== null) executeCommand(command.id);
+                  else onChoose?.(item.id, activeTool === item.id);
                   setOpen(false);
                 }}
               >

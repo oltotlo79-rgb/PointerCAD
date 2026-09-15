@@ -12,6 +12,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from lib.task_workspace import configure_project_temp
+
+configure_project_temp(Path(__file__).resolve().parents[1])
 
 SOURCE = Path(__file__).resolve().parent
 
@@ -51,7 +54,7 @@ class ReceiptHookTests(unittest.TestCase):
                          'lib/gitTreeGuard.ps1', 'lib/pushTreeFingerprint.ps1', 'lib/directoryLinks.ps1',
                          'lib/commitBatchGuard.ps1', 'lib/validationReceipt.ps1',
                          'lib/validation_receipt.py', 'lib/validationRuntime.mjs', 'lib/WindowsValidationQos.cs',
-                         'lib/local_change_scope.py'):
+                         'lib/local_change_scope.py', 'lib/task_workspace.py'):
             target = self.root / 'scripts' / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(SOURCE / relative, target)
@@ -65,7 +68,7 @@ $shell = (Get-Process -Id $PID).Path
 if ($LASTEXITCODE -eq 0) { exit 1 }
 exit 0
 ''')
-        self.write('.gitignore', 'node_modules/\ndist/\nbrowsers/\ngate-calls.log\n')
+        self.write('.gitignore', 'node_modules/\ndist/\nbrowsers/\ngate-calls.log\nscratchpad/\n')
         self.write('a.txt', 'baseline')
         self.write('package.json', json.dumps({'scripts': {name: 'fixture' for name in (
             'typecheck', 'lint', 'test', 'build', 'test:e2e', 'validation:runtime')}}))
@@ -204,6 +207,21 @@ if (args === '--silent run validation:runtime') {
         self.git('commit', '-qm', 'changed source')
         self.assertFalse(proof.exists())
         self.assertEqual(self.calls()[len(before):], ['run typecheck', 'run lint', 'run test', 'run build'])
+
+    def test_real_hooks_share_a_checked_merge_without_repeating_the_full_check(self):
+        self.full_check()
+        self.git('commit', '-qm', 'feature change')
+        base = self.git('rev-parse', 'HEAD^').strip()
+        tree = self.git('rev-parse', base + '^{tree}').strip()
+        other = self.git('commit-tree', tree, '-p', base, '-m', 'parallel history').strip()
+        self.git('merge', '--no-ff', '--no-commit', other)
+        self.full_check()
+        checked = self.calls()
+        output = self.git('commit', '-qm', 'checked merge')
+        self.assertEqual(self.calls(), checked, output)
+        output = self.git('push', 'origin', 'HEAD:main')
+        self.assertEqual(self.calls(), checked, output)
+        self.assertFalse((self.root / '.git/validation-receipt.json').exists())
 
     def test_e2e_target_diagnostic_cannot_replace_full_ci_or_hook_checks(self):
         entry = [self.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(self.root / 'scripts/check.ps1')]

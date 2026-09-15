@@ -15,3 +15,5 @@ export { t } from './i18n/t.js';
 export { PointerCadApp } from './app/PointerCadApp.js';
 export { setFileGateway } from './file/installFileGateway.js';
 export type { FileGateway, PickedFile } from './file/fileGateway.js';
+export { setOfflineGateway } from './settings/offlineGateway.js';
+export type { OfflineGateway, OfflineStatus } from './settings/offlineGateway.js';

@@ -1,0 +1,445 @@
+{
+  "format": "pointercad-exact-runtime/1",
+  "approvedOn": "2026-09-15",
+  "versions": {
+    "pyodide": "314.0.6",
+    "sympy": "1.14.0",
+    "mpmath": "1.3.0"
+  },
+  "preparedManifestSha256": "4b7a023a5973dae6a0fbc957e77ab1275304b66cf010e3f339a3742234859e3c",
+  "files": {
+    "runtime/pyodide.mjs": {
+      "bytes": 17931,
+      "sha256": "69e3f6ccec3e14b465df60be577ca62f536251406b9a00cce019eac5252a2495",
+      "provenance": {
+        "kind": "candidate-runtime",
+        "name": "runtime/pyodide.mjs"
+      }
+    },
+    "runtime/pyodide.asm.mjs": {
+      "bytes": 1250344,
+      "sha256": "2ac5eba365ec12839c75c03b39b3be1dd63b798852cc460b014b52238be042f7",
+      "provenance": {
+        "kind": "candidate-runtime",
+        "name": "runtime/pyodide.asm.mjs"
+      }
+    },
+    "runtime/pyodide.asm.wasm": {
+      "bytes": 9598218,
+      "sha256": "3a0a00dfeaa348ac20f9ef09904233d32d33f644339662d4af368f8a2010f37a",
+      "provenance": {
+        "kind": "candidate-runtime",
+        "name": "runtime/pyodide.asm.wasm"
+      }
+    },
+    "runtime/python_stdlib.zip": {
+      "bytes": 2545564,
+      "sha256": "80c5be6babfe03297069703410c3c29404dcf2525d2b128746bae5536f94831f",
+      "provenance": {
+        "kind": "candidate-runtime",
+        "name": "runtime/python_stdlib.zip"
+      }
+    },
+    "runtime/sympy-1.14.0-py3-none-any.whl": {
+      "bytes": 4185567,
+      "sha256": "28f3303c4409a3c3983409040b9e88b750a70da89cb56968fbf16327f7408f0e",
+      "provenance": {
+        "kind": "candidate-runtime",
+        "name": "runtime/sympy-1.14.0-py3-none-any.whl"
+      }
+    },
+    "runtime/mpmath-1.3.0-py3-none-any.whl": {
+      "bytes": 536198,
+      "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c",
+      "provenance": {
+        "kind": "candidate-runtime",
+        "name": "runtime/mpmath-1.3.0-py3-none-any.whl"
+      }
+    },
+    "runtime/pyodide-lock.json": {
+      "bytes": 964,
+      "sha256": "74b12aa65fcbe5323af4954ea480faa33339f81cf2a636f1eb990a57657d8022",
+      "provenance": {
+        "kind": "candidate-runtime",
+        "name": "runtime/pyodide-lock.json"
+      }
+    },
+    "notices/pyodide-314.0.6-LICENSE.txt": {
+      "bytes": 16725,
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/pyodide/pyodide/314.0.6/LICENSE",
+        "originalName": "pyodide-314.0.6-LICENSE.txt"
+      }
+    },
+    "notices/cpython-3.14.2-LICENSE.txt": {
+      "bytes": 13804,
+      "sha256": "b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.14.2/LICENSE",
+        "originalName": "cpython-3.14.2-LICENSE.txt"
+      }
+    },
+    "notices/cpython-3.14.2-Doc-license.rst": {
+      "bytes": 57595,
+      "sha256": "c695d550b135e53e38807e76496d1db17d22c40e461d1f3f354c86188d3305dd",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.14.2/Doc/license.rst",
+        "originalName": "cpython-3.14.2-Doc-license.rst"
+      }
+    },
+    "notices/emscripten-5.0.3-LICENSE.txt": {
+      "bytes": 5093,
+      "sha256": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/emscripten-core/emscripten/5.0.3/LICENSE",
+        "originalName": "emscripten-5.0.3-LICENSE.txt"
+      }
+    },
+    "notices/libffi-f08493d-LICENSE.txt": {
+      "bytes": 1132,
+      "sha256": "2c9c2acb9743e6b007b91350475308aee44691d96aa20eacef8e199988c8c388",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/libffi/libffi/f08493d249d2067c8b3207ba46693dd858f95db3/LICENSE",
+        "originalName": "libffi-f08493d-LICENSE.txt"
+      }
+    },
+    "notices/hiwire-6a1e672-LICENSE.txt": {
+      "bytes": 16725,
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/pyodide/hiwire/6a1e67280a15d929ebeceee54a6358c9c8d5f697/LICENSE",
+        "originalName": "hiwire-6a1e672-LICENSE.txt"
+      }
+    },
+    "notices/zlib-1.3.1-LICENSE.txt": {
+      "bytes": 1002,
+      "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/madler/zlib/v1.3.1/LICENSE",
+        "originalName": "zlib-1.3.1-LICENSE.txt"
+      }
+    },
+    "notices/bzip2-1.0.6-LICENSE.txt": {
+      "bytes": 1901,
+      "sha256": "4919cfb14a73cd64fcef67b107613970cf1659a09aa675dba31314f373bc7204",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/emscripten-ports/bzip2/1.0.6/LICENSE",
+        "originalName": "bzip2-1.0.6-LICENSE.txt"
+      }
+    },
+    "notices/xz-5.2.2-COPYING.txt": {
+      "bytes": 2774,
+      "sha256": "c4f8e14fafe458d84808a4cd8b69f94673ebe2bf8fc992291629a69ac12218f8",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.2.2/COPYING",
+        "originalName": "xz-5.2.2-COPYING.txt"
+      }
+    },
+    "notices/zstd-1.5.7-LICENSE.txt": {
+      "bytes": 1549,
+      "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/python/cpython-source-deps/zstd-1.5.7/LICENSE",
+        "originalName": "zstd-1.5.7-LICENSE.txt"
+      }
+    },
+    "notices/sqlite-3.39.0-LICENSE.txt": {
+      "bytes": 263,
+      "sha256": "9c6479123f32a1ed50d9a0af203dfe8972e65035b0cdeef436b5f8d0924517fe",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/sqlite/sqlite/version-3.39.0/LICENSE.md",
+        "originalName": "sqlite-3.39.0-LICENSE.txt"
+      }
+    },
+    "notices/emscripten-5.0.3-musl-COPYRIGHT.txt": {
+      "bytes": 6204,
+      "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/emscripten-core/emscripten/5.0.3/system/lib/libc/musl/COPYRIGHT",
+        "originalName": "emscripten-5.0.3-musl-COPYRIGHT.txt"
+      }
+    },
+    "notices/emscripten-5.0.3-libcxx-LICENSE.txt": {
+      "bytes": 16703,
+      "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/emscripten-core/emscripten/5.0.3/system/lib/libcxx/LICENSE.TXT",
+        "originalName": "emscripten-5.0.3-libcxx-LICENSE.txt"
+      }
+    },
+    "notices/emscripten-5.0.3-libcxxabi-LICENSE.txt": {
+      "bytes": 16706,
+      "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/emscripten-core/emscripten/5.0.3/system/lib/libcxxabi/LICENSE.TXT",
+        "originalName": "emscripten-5.0.3-libcxxabi-LICENSE.txt"
+      }
+    },
+    "notices/emscripten-5.0.3-compiler-rt-LICENSE.txt": {
+      "bytes": 16708,
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/emscripten-core/emscripten/5.0.3/system/lib/compiler-rt/LICENSE.TXT",
+        "originalName": "emscripten-5.0.3-compiler-rt-LICENSE.txt"
+      }
+    },
+    "notices/emscripten-5.0.3-mini-lz4.js": {
+      "bytes": 10269,
+      "sha256": "ac1eaa04b68d792d962d5946504ee5141ef58a9df86a0dfcf0ffa63d08634e46",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/emscripten-core/emscripten/5.0.3/third_party/mini-lz4.js",
+        "originalName": "emscripten-5.0.3-mini-lz4.js"
+      }
+    },
+    "notices/cpython-3.14.2-hacl-Hacl_Hash_SHA2.c": {
+      "bytes": 44266,
+      "sha256": "f8af382de7e29a73c726f9c70770498ddd99e2c4702489ed6e634f0b68597c95",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.14.2/Modules/_hacl/Hacl_Hash_SHA2.c",
+        "originalName": "cpython-3.14.2-hacl-Hacl_Hash_SHA2.c"
+      }
+    },
+    "notices/cpython-3.14.2-hacl-README.md": {
+      "bytes": 1044,
+      "sha256": "8c0c0d4c6e65b349a8b116862174669fbd4c9ce037c6fee32f19994ddb6fbf6c",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.14.2/Modules/_hacl/README.md",
+        "originalName": "cpython-3.14.2-hacl-README.md"
+      }
+    },
+    "notices/cpython-3.14.2-libmpdec-mpdecimal.h": {
+      "bytes": 41684,
+      "sha256": "ea0b9c6b296c13aed6ecaa50b463e39a9c1bdc059b84f50507fd8247b2e660f9",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.14.2/Modules/_decimal/libmpdec/mpdecimal.h",
+        "originalName": "cpython-3.14.2-libmpdec-mpdecimal.h"
+      }
+    },
+    "notices/cpython-3.14.2-libmpdec-README.txt": {
+      "bytes": 3642,
+      "sha256": "89926cd0fe6cfb33a2b5b7416c101e9b5d42b0d639d348e0871acf6ffc8258a3",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.14.2/Modules/_decimal/libmpdec/README.txt",
+        "originalName": "cpython-3.14.2-libmpdec-README.txt"
+      }
+    },
+    "notices/cpython-3.14.2-expat-COPYING.txt": {
+      "bytes": 1144,
+      "sha256": "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.14.2/Modules/expat/COPYING",
+        "originalName": "cpython-3.14.2-expat-COPYING.txt"
+      }
+    },
+    "notices/pyodide-314.0.6-stackframe-LICENSE.txt": {
+      "bytes": 1080,
+      "sha256": "899da9d991cb211a3642b84e82a9ae0b4b4e44546fd207e34d7d4ec2eb40f420",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/pyodide/pyodide/314.0.6/src/js/vendor/stackframe/LICENSE",
+        "originalName": "pyodide-314.0.6-stackframe-LICENSE.txt"
+      }
+    },
+    "notices/pyodide-314.0.6-stackframe.ts": {
+      "bytes": 5635,
+      "sha256": "f1ac1bce24f9a936957975f6205cf49337c46f6b32591e807f168ca377b392a4",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/pyodide/pyodide/314.0.6/src/js/vendor/stackframe/stackframe.ts",
+        "originalName": "pyodide-314.0.6-stackframe.ts"
+      }
+    },
+    "notices/pyodide-314.0.6-error-stack-parser.ts": {
+      "bytes": 4899,
+      "sha256": "06cb52d1e4ae6a0f9c3f349ba4751b1839dfe7a3515f74373f0a7fab62c52b8d",
+      "provenance": {
+        "url": "https://raw.githubusercontent.com/pyodide/pyodide/314.0.6/src/js/vendor/stackframe/error-stack-parser.ts",
+        "originalName": "pyodide-314.0.6-error-stack-parser.ts"
+      }
+    },
+    "notices/sympy-1.14.0-0-LICENSE.txt.txt": {
+      "bytes": 1075,
+      "sha256": "007bc30a58fa40a996e772047120de4eaf31f5110e4f9c3b5f93fcdfbe2eaca1",
+      "provenance": {
+        "wheel": "sympy-1.14.0-py3-none-any.whl",
+        "wheelSha256": "28f3303c4409a3c3983409040b9e88b750a70da89cb56968fbf16327f7408f0e",
+        "member": "sympy/parsing/latex/LICENSE.txt"
+      }
+    },
+    "notices/sympy-1.14.0-1-AUTHORS.txt": {
+      "bytes": 55779,
+      "sha256": "82b1038521b0696c63c90b31ed4a0a2c9c4c16871c648b157b07ca44b6f18f8d",
+      "provenance": {
+        "wheel": "sympy-1.14.0-py3-none-any.whl",
+        "wheelSha256": "28f3303c4409a3c3983409040b9e88b750a70da89cb56968fbf16327f7408f0e",
+        "member": "sympy-1.14.0.dist-info/licenses/AUTHORS"
+      }
+    },
+    "notices/sympy-1.14.0-2-LICENSE.txt": {
+      "bytes": 7885,
+      "sha256": "07a5e9819f727b4986ad2829c7a29a6320d42575f720eb24d71b7fef573a0286",
+      "provenance": {
+        "wheel": "sympy-1.14.0-py3-none-any.whl",
+        "wheelSha256": "28f3303c4409a3c3983409040b9e88b750a70da89cb56968fbf16327f7408f0e",
+        "member": "sympy-1.14.0.dist-info/licenses/LICENSE"
+      }
+    },
+    "notices/mpmath-1.3.0-0-LICENSE.txt": {
+      "bytes": 1537,
+      "sha256": "c26cae81da4508e5e249985777a33821f183223ebb74d7f8cfbf90fe7eef2fb7",
+      "provenance": {
+        "wheel": "mpmath-1.3.0-py3-none-any.whl",
+        "wheelSha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c",
+        "member": "mpmath-1.3.0.dist-info/LICENSE"
+      }
+    },
+    "evidence/cpython-archive-mapping.json": {
+      "bytes": 405455,
+      "sha256": "8025c8245ce552549e70749c16e83db1ce79bb6719abba3c10cd496636f98124",
+      "provenance": {
+        "sourceInventory": "cpython-archive-mapping.json"
+      }
+    },
+    "evidence/pyodide-archive-mapping.json": {
+      "bytes": 14959,
+      "sha256": "e5bd9ae7e6774320a1fb894be99586302e7fb734d61bc65a9d465a506aff0941",
+      "provenance": {
+        "sourceInventory": "pyodide-archive-mapping.json"
+      }
+    },
+    "evidence/emscripten-archive-notices.json": {
+      "bytes": 538390,
+      "sha256": "2bf8cff8519b58ddce1e334cc7bf647f19738712c63d064eb315d822f105c134",
+      "provenance": {
+        "sourceInventory": "emscripten-archive-notices.json"
+      }
+    },
+    "evidence/stdlib-final-source-mapping.json": {
+      "bytes": 2207,
+      "sha256": "9efcbc6cb09740f0455c3f47b3a6af49ff1755c81047266596614627939e189c",
+      "provenance": {
+        "sourceInventory": "stdlib-final-source-mapping.json"
+      }
+    },
+    "evidence/wasm-export-component-mapping.json": {
+      "bytes": 101301,
+      "sha256": "ea354df8bb0f71a9ce9f803aa4291d9ff71e9baab6b2e3dbc9a9e8c9fee5dfa6",
+      "provenance": {
+        "sourceInventory": "wasm-export-component-mapping.json"
+      }
+    },
+    "evidence/bundle-source-mapping.json": {
+      "bytes": 2804,
+      "sha256": "f0f6f2f1503577f14976faa236fcf059dafbf2368453d083258a6a6c37038e26",
+      "provenance": {
+        "sourceInventory": "bundle-source-mapping.json"
+      }
+    },
+    "sources/Python-3.14.2.tgz": {
+      "bytes": 30601597,
+      "sha256": "c609e078adab90e2c6bacb6afafacd5eaf60cd94cf670f1e159565725fcd448d",
+      "provenance": {
+        "kind": "unmodified-upstream-source-archive",
+        "url": "https://www.python.org/ftp/python/3.14.2/Python-3.14.2.tgz"
+      }
+    },
+    "sources/pyodide-source-8cec1b9bb8ead68c7c09b0a6443576bec7512268.tgz": {
+      "bytes": 1464597,
+      "sha256": "b47bd4b8cc66a2342b426585693a09aae1637a12665ae7af7daac15927458788",
+      "provenance": {
+        "kind": "unmodified-upstream-source-archive",
+        "url": "https://codeload.github.com/pyodide/pyodide/tar.gz/8cec1b9bb8ead68c7c09b0a6443576bec7512268"
+      }
+    },
+    "sources/emscripten-source-285c424dfa9e83b03cf8490c65ceadb7c45f28eb.tgz": {
+      "bytes": 34477324,
+      "sha256": "8c8c413026dd7b86b0acf7e4b48cb718956c21a053887f2a628168dd1ba2cb33",
+      "provenance": {
+        "kind": "unmodified-upstream-source-archive",
+        "url": "https://codeload.github.com/emscripten-core/emscripten/tar.gz/285c424dfa9e83b03cf8490c65ceadb7c45f28eb"
+      }
+    },
+    "sources/hiwire-6a1e67280a15d929ebeceee54a6358c9c8d5f697.tgz": {
+      "bytes": 27264,
+      "sha256": "0d64144f149c0de3bd157551421833c6c16fdc0492c312a6325ffc25d185c93c",
+      "provenance": {
+        "kind": "unmodified-upstream-source-archive",
+        "url": "https://codeload.github.com/pyodide/hiwire/tar.gz/6a1e67280a15d929ebeceee54a6358c9c8d5f697",
+        "commit": "6a1e67280a15d929ebeceee54a6358c9c8d5f697",
+        "licenseMatchesVerifiedOriginal": true,
+        "implementationFiles": 22
+      }
+    }
+  },
+  "components": {
+    "Pyodide 314.0.6": [
+      "pyodide-314.0.6-LICENSE.txt"
+    ],
+    "CPython 3.14.2": [
+      "cpython-3.14.2-LICENSE.txt",
+      "cpython-3.14.2-Doc-license.rst"
+    ],
+    "Emscripten 5.0.3": [
+      "emscripten-5.0.3-LICENSE.txt"
+    ],
+    "libffi f08493d249d2067c8b3207ba46693dd858f95db3": [
+      "libffi-f08493d-LICENSE.txt"
+    ],
+    "Hiwire 6a1e67280a15d929ebeceee54a6358c9c8d5f697": [
+      "hiwire-6a1e672-LICENSE.txt"
+    ],
+    "zlib 1.3.1": [
+      "zlib-1.3.1-LICENSE.txt"
+    ],
+    "bzip2 1.0.6": [
+      "bzip2-1.0.6-LICENSE.txt"
+    ],
+    "liblzma from XZ 5.2.2": [
+      "xz-5.2.2-COPYING.txt"
+    ],
+    "zstd 1.5.7": [
+      "zstd-1.5.7-LICENSE.txt"
+    ],
+    "SQLite 3.39.0": [
+      "sqlite-3.39.0-LICENSE.txt"
+    ],
+    "musl in Emscripten 5.0.3": [
+      "emscripten-5.0.3-musl-COPYRIGHT.txt"
+    ],
+    "libc++ in Emscripten 5.0.3": [
+      "emscripten-5.0.3-libcxx-LICENSE.txt"
+    ],
+    "libc++abi in Emscripten 5.0.3": [
+      "emscripten-5.0.3-libcxxabi-LICENSE.txt"
+    ],
+    "compiler-rt in Emscripten 5.0.3": [
+      "emscripten-5.0.3-compiler-rt-LICENSE.txt"
+    ],
+    "MiniLZ4 in Emscripten 5.0.3": [
+      "emscripten-5.0.3-mini-lz4.js"
+    ],
+    "HACL in CPython 3.14.2": [
+      "cpython-3.14.2-hacl-Hacl_Hash_SHA2.c",
+      "cpython-3.14.2-hacl-README.md"
+    ],
+    "libmpdec in CPython 3.14.2": [
+      "cpython-3.14.2-libmpdec-mpdecimal.h",
+      "cpython-3.14.2-libmpdec-README.txt"
+    ],
+    "Expat in CPython 3.14.2": [
+      "cpython-3.14.2-expat-COPYING.txt"
+    ],
+    "StackFrame and ErrorStackParser in Pyodide 314.0.6": [
+      "pyodide-314.0.6-stackframe-LICENSE.txt",
+      "pyodide-314.0.6-stackframe.ts",
+      "pyodide-314.0.6-error-stack-parser.ts"
+    ],
+    "sympy 1.14.0": [
+      "sympy-1.14.0-0-LICENSE.txt.txt",
+      "sympy-1.14.0-1-AUTHORS.txt",
+      "sympy-1.14.0-2-LICENSE.txt"
+    ],
+    "mpmath 1.3.0": [
+      "mpmath-1.3.0-0-LICENSE.txt"
+    ]
+  }
+}

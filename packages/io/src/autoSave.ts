@@ -443,6 +443,8 @@ export interface AutoSaverOptions {
 }
 
 export interface AutoSaver {
+  /** 任意の旧実装との互換口。内蔵の保存処理は待機中の次回だけを変更する。 */
+  setIntervalMs?(intervalMs: number): boolean;
   /** 文書が変わったことを記録する。次の間隔の到来で、変更があるときだけ書く。 */
   markDirty(document: AutoSaveDocument): void;
   /** 間隔を待たず、いま渡した文書をすぐ書く(変更の有無を問わない)。 */
@@ -456,6 +458,7 @@ export interface AutoSaver {
 }
 
 export interface DocumentAutoSaver extends AutoSaver {
+  setIntervalMs(intervalMs: number): boolean;
   listRecords(): Promise<readonly AutoSaveRecord[]>;
 }
 
@@ -467,9 +470,14 @@ export interface DocumentAutoSaver extends AutoSaver {
  * (「書き込み中の重複を避ける」)。例外は外へ出さない: 失敗は `onError` へ渡すだけで、
  * `saveNow` の戻り値の `Promise` は常に解決する。
  */
+function validAutoSaveInterval(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
+}
+
 export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
   const { storage, onError, onSuccess } = options;
-  const intervalMs = options.intervalMs ?? AUTO_SAVE_INTERVAL_MS;
+  let intervalMs = options.intervalMs ?? AUTO_SAVE_INTERVAL_MS;
+  if (!validAutoSaveInterval(intervalMs)) throw new RangeError('自動保存の間隔が正しくありません。');
   const now = options.now ?? Date.now;
   const scheduleFn = options.setTimeout ?? defaultScheduleFn;
   const cancelFn = options.clearTimeout ?? defaultCancelFn;
@@ -558,6 +566,15 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
   scheduleTick();
 
   return {
+    setIntervalMs(value) {
+      if (stopped || !validAutoSaveInterval(value)) return false;
+      if (value === intervalMs) return true;
+      // 進行中の保存・次に書く文書・最後の成功記録は維持する。
+      // 同じ設定を再通知した場合は時刻を延ばさない。
+      if (timerHandle !== null) cancelFn(timerHandle);
+      intervalMs = value; timerHandle = null; scheduleTick();
+      return true;
+    },
     markDirty(document) {
       latestDocument = document;
     },

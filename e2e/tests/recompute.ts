@@ -83,6 +83,15 @@ async function readSnapshot(page: Page): Promise<RecomputeSnapshot> {
  * 失敗時はロードを含む待機時間・最後に見えた進捗・世代・結末を 1 つのメッセージへ出す。
  */
 export async function waitForRecompute(page: Page, token?: RecomputeToken): Promise<void> {
+  await waitForRecomputeOutcome(page, token, 'success');
+}
+
+/** 期待した失敗も、成功と同じ有限上限・世代・途中経過の確認で待つ。 */
+export async function waitForRecomputeOutcome(
+  page: Page,
+  token: RecomputeToken | undefined,
+  outcome: 'success' | 'failed',
+): Promise<void> {
   const current = token === undefined ? await readRecomputeStats(page) : null;
   const baseline = token?.requestedGeneration ?? (current?.requestedGeneration ?? 0) - 1;
   const startedAtMs = token?.startedAtMs ?? Date.now();
@@ -101,18 +110,18 @@ export async function waitForRecompute(page: Page, token?: RecomputeToken): Prom
         },
         {
           timeout: KERNEL_TIMEOUT_MS,
-          message: '操作後の最新世代の再計算が success で完了すること',
+          message: `操作後の最新世代の再計算が ${outcome} で完了すること`,
         },
       )
       .not.toBe('waiting');
-    expect(last.stats?.lastOutcome, '最新世代が失敗した場合は再計算の上限まで待たず失敗を知らせる').toBe('success');
+    expect(last.stats?.lastOutcome, '最新世代の結末が期待と異なる場合は上限まで待たず知らせる').toBe(outcome);
     const elapsedMs = Date.now() - startedAtMs;
     if (elapsedMs > 60_000) console.log(`[実測] 初回読み込みを含む再計算待ち: ${elapsedMs}ms / 上限${KERNEL_TIMEOUT_MS}ms`);
   } catch (error: unknown) {
     const stats = last.stats;
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `再計算待ち失敗: ロード/待機時間=${String(Date.now() - startedAtMs)}ms, ` +
+      `再計算待ち失敗: 期待=${outcome}, ロード/待機時間=${String(Date.now() - startedAtMs)}ms, ` +
         `操作前requestedGeneration=${String(baseline)}, ` +
         `最後のrequestedGeneration=${stats === null ? '未取得' : String(stats.requestedGeneration)}, ` +
         `completedGeneration=${stats === null ? '未取得' : String(stats.completedGeneration)}, ` +

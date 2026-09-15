@@ -2,6 +2,7 @@ import { expect, type Page, type TestInfo } from '@playwright/test';
 import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { sheetHelpFlow } from './sheetHelpFlow.js';
+import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 
 async function openStrength(page: Page): Promise<void> {
   await page.getByRole('button', { name: /^見た目/u }).click();
@@ -16,6 +17,7 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   const panel = page.getByRole('form', { name: '簡易強度計算', exact: true });
   const result = (name: string) => panel.locator(`[data-strength-result="${name}"]`);
   await expect(panel.getByLabel('幅 b', { exact: true })).toHaveValue('10mm');
+  await assertRenderedControlDescriptions(panel);
   await page.screenshot({ path: info.outputPath('strength-beam-input.png') });
   await panel.getByRole('button', { name: '計算する', exact: true }).click();
   await expect(result('stress')).toHaveText('6');
@@ -42,6 +44,7 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   await panel.getByLabel('材料と製品条件', { exact: true }).selectOption('ss400-plate-16-40');
   await expect(panel.getByLabel('降伏点・0.2%耐力 σy（MPa）', { exact: true })).toHaveValue('235');
   await panel.getByLabel('計算の種類', { exact: true }).selectOption('shaft');
+  await assertRenderedControlDescriptions(panel);
   await panel.getByLabel('材料と製品条件', { exact: true }).selectOption('sus304-solution-cold-rolled');
   await expect(panel.getByLabel('横弾性係数 G（MPa）', { exact: true })).toHaveValue('');
   await expect(panel.getByRole('button', { name: '計算し直す', exact: true })).toBeDisabled();
@@ -52,6 +55,7 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   await result('twist').scrollIntoViewIfNeeded(); await page.screenshot({ path: info.outputPath('strength-shaft-results.png') });
   await panel.getByLabel('計算の種類', { exact: true }).selectOption('bolt');
   await expect(panel.getByText('有効断面積 As（mm²）: 58', { exact: true })).toBeVisible();
+  await assertRenderedControlDescriptions(panel);
   await panel.getByLabel('力 F（N）', { exact: true }).fill('10kN');
   await panel.getByRole('button', { name: '計算し直す', exact: true }).click();
   await expect.poll(async () => Number(await result('stress').textContent())).toBeCloseTo(10000 / 58, 6);

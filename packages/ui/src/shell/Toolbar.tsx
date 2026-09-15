@@ -1,3 +1,8 @@
+import { DocumentDiffDialog } from '../diff/DocumentDiffDialog.js';
+import { executeCommand } from '../commands/commandRegistry.js';
+import { toolbarCommandId } from '../commands/toolbarCommandCatalog.js';
+import { currentCommandLabel } from '../commands/commandLabels.js';
+import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 /**
  * ツールバー(FR-901〜904、NFR-UX-7)。**ここは区画を並べるだけ**で、
  * 一覧の中身は `toolbarMenus.ts`、押したときの配線と区画の部品は `menus/` にある
@@ -18,8 +23,6 @@ import { HelpButton } from '../help/HelpButton.js';
 import { ScriptToolsMenu } from '../scripting/ScriptToolsMenu.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
 import {
-  cancelConstraintTool,
-  chooseConstraintTool,
   constraintToolReadinessOf,
 } from '../sketch/constraintActions.js';
 import { editToolReadiness } from '../sketch/editCommands.js';
@@ -52,14 +55,12 @@ import {
   FILE_ACTIONS,
   fileTooltip,
   loadTemplateEntries,
-  runFileAction,
   runFileMenuAction,
 } from './menus/fileToolbarActions.js';
 import { LookGroup } from './menus/LookGroup.js';
 import { ImportFormatPanel } from '../file/ImportFormatPanel.js';
 import { AssemblyGroup } from './menus/AssemblyGroup.js';
 import { PlaneMenu } from './menus/PlaneMenu.js';
-import { activateEditTool, activateShapeTool, activateTool } from './menus/sketchToolActions.js';
 import { TOOLS } from './menus/sketchToolTables.js';
 import { SnapKindsMenu } from './menus/SnapKindsMenu.js';
 import { SolidGroup } from './menus/SolidGroup.js';
@@ -99,7 +100,8 @@ import {
  * 必ず読み上げ名(aria-label)と、名前で始まるツールチップを付ける(FR-904、NFR-UX-7)。
  */
 export function Toolbar(): React.JSX.Element {
-  const documentKind = useAppStore(activeDocumentKind);
+  const documentKind = useAppStore(state => activeDocumentKind(state));
+  const shortcutAssignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const projection = useAppStore((state) => state.projection);
   const displayStyle = useAppStore((state) => state.displayStyle);
   const showGrid = useAppStore((state) => state.showGrid);
@@ -142,9 +144,13 @@ export function Toolbar(): React.JSX.Element {
    * ここで持つ(`SettingsPanel` の開閉と同じ扱い。rules/04 の「状態はストア 1 本」は
    * 部品文書と端末の好みが対象)。
    */
-  const [exportOpen, setExportOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [functionOpen, setFunctionOpen] = useState(false);
+  const utilityPanel = useAppStore(state => state.utilityPanel);
+  const comparisonOpen = utilityPanel === 'comparison', exportOpen = utilityPanel === 'export', importOpen = utilityPanel === 'import';
+  const setComparisonOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('comparison', open);
+  const setExportOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('export', open);
+  const setImportOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('import', open);
+  const functionOpen = utilityPanel === 'functionPlot';
+  const setFunctionOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('functionPlot', open);
   /*
    * 「ファイル」の一覧に並べる、数の決まらない行の材料(P6 タスク33)。
    *  - 保存したひな形(FR-814): ブラウザの中の置き場から**非同期**で読む。
@@ -157,7 +163,7 @@ export function Toolbar(): React.JSX.Element {
    */
   const fileName = useAppStore(activeFileName);
   const [templateEntries, setTemplateEntries] = useState<readonly NamedMenuEntry[]>([]);
-  const [templateSaveCount, setTemplateSaveCount] = useState(0);
+  const templateSaveCount = useAppStore(state => state.templateListRevision);
   const [recentEntries, setRecentEntries] = useState<readonly NamedMenuEntry[]>([]);
   useEffect(() => {
     setRecentEntries(loadRecentFiles().map((entry) => ({ id: entry.name, name: entry.name })));
@@ -195,10 +201,13 @@ export function Toolbar(): React.JSX.Element {
               key={action.id}
               type="button"
               className="pcad-button pcad-button--icon"
-              title={fileTooltip(action.id, action.tooltipKey)}
+              title={fileTooltip(action.id, shortcutAssignments, documentKind)}
               aria-label={t(action.labelKey)}
+              data-command-id={toolbarCommandId('file', action.id)}
               onClick={(event) => {
-                runFileAction(action.id, event.shiftKey);
+                executeCommand(action.id === 'save' && event.shiftKey
+                  ? toolbarCommandId('fileMenu', 'saveAs')
+                  : toolbarCommandId('file', action.id));
               }}
             >
               <action.Icon />
@@ -224,6 +233,7 @@ export function Toolbar(): React.JSX.Element {
               recentEntries,
               documentKind === 'assembly' ? 'assembly' : 'part',
             )}
+            commandGroup="fileMenu"
             groupLabelKey="toolbar.fileMenu.groupLabel"
             groupTooltipKey="toolbar.fileMenu.tooltip"
             GroupIcon={FileMenuIcon}
@@ -241,9 +251,10 @@ export function Toolbar(): React.JSX.Element {
                 },
                 () => {
                   // 保存し終えたひな形が一覧へすぐ並ぶよう、読み直しの切っ掛けを立てる。
-                  setTemplateSaveCount((count) => count + 1);
+                  useAppStore.getState().refreshTemplateEntries();
                 },
                 () => { setExportOpen(false); setImportOpen(true); },
+                () => { setExportOpen(false); setImportOpen(false); setComparisonOpen(true); },
               );
             }}
           />
@@ -251,6 +262,7 @@ export function Toolbar(): React.JSX.Element {
             書き出しのパネル(FR-803、§0.a-0.20)。一覧の「書き出す」を選んだときだけ出す。
             **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
           */}
+          {documentKind === 'part' && comparisonOpen ? <DocumentDiffDialog onClose={() => setComparisonOpen(false)} /> : null}
           {documentKind === 'part' ? <ScriptToolsMenu /> : null}
           {documentKind === 'part' && importOpen ? <ImportFormatPanel onClose={() => { setImportOpen(false); }} /> : null}
           {documentKind === 'part' && exportOpen ? (
@@ -266,14 +278,13 @@ export function Toolbar(): React.JSX.Element {
             type="button"
             className="pcad-button pcad-button--icon"
             title={
-              canUndo ? t('toolbar.history.undoTooltip') : t('toolbar.history.undoUnavailable')
+              canUndo ? currentCommandLabel('history.undo', shortcutAssignments, documentKind) : t('toolbar.history.undoUnavailable')
             }
             aria-label={t('toolbar.history.undo')}
             aria-disabled={!canUndo}
+            data-command-id="history.undo"
             onClick={() => {
-              if (canUndo) {
-                useAppStore.getState().undo();
-              }
+              executeCommand('history.undo');
             }}
           >
             <UndoIcon />
@@ -282,14 +293,13 @@ export function Toolbar(): React.JSX.Element {
             type="button"
             className="pcad-button pcad-button--icon"
             title={
-              canRedo ? t('toolbar.history.redoTooltip') : t('toolbar.history.redoUnavailable')
+              canRedo ? currentCommandLabel('history.redo', shortcutAssignments, documentKind) : t('toolbar.history.redoUnavailable')
             }
             aria-label={t('toolbar.history.redo')}
             aria-disabled={!canRedo}
+            data-command-id="history.redo"
             onClick={() => {
-              if (canRedo) {
-                useAppStore.getState().redo();
-              }
+              executeCommand('history.redo');
             }}
           >
             <RedoIcon />
@@ -325,11 +335,12 @@ export function Toolbar(): React.JSX.Element {
               key={tool.id}
               type="button"
               className="pcad-button pcad-button--collapsible"
-              title={t(tool.tooltipKey)}
+              title={`${currentCommandLabel(toolbarCommandId('sketch', tool.id), shortcutAssignments, documentKind)}: ${t(tool.tooltipKey)}`}
+              data-command-id={toolbarCommandId('sketch', tool.id)}
               aria-label={t(tool.labelKey)}
               aria-pressed={activeTool === tool.id}
               onClick={() => {
-                activateTool(tool.id, activeTool === tool.id);
+                executeCommand(toolbarCommandId('sketch', tool.id));
               }}
             >
               <tool.Icon />
@@ -349,10 +360,7 @@ export function Toolbar(): React.JSX.Element {
             groupTooltipKey="toolbar.shape.tooltip"
             GroupIcon={ShapeGroupIcon}
             activeTool={activeTool}
-            onChoose={(id, pressed) => {
-              if (id === 'functionPlot') { useAppStore.getState().setActiveTool('select'); setFunctionOpen(true); }
-              else activateShapeTool(id, pressed);
-            }}
+            commandGroup="shape"
           />
           {functionOpen ? <FunctionPlotDialog onClose={() => setFunctionOpen(false)} /> : null}
           <ToolMenu
@@ -368,7 +376,7 @@ export function Toolbar(): React.JSX.Element {
               いつでも押せる(§0.a-0.26、タスク22)。
             */
             readinessOf={(id) => editToolReadiness(id, resolvedSketch, selection)}
-            onChoose={activateEditTool}
+            commandGroup="edit"
           />
           {/*
             「拘束」(FR-313、P4b タスク13)。区画も段も増やさず、畳んだ一覧を 1 つ足すだけ
@@ -386,14 +394,7 @@ export function Toolbar(): React.JSX.Element {
             GroupIcon={ConstraintGroupIcon}
             activeTool={activeConstraintKind ?? ''}
             readinessOf={constraintReadinessOf}
-            onChoose={(kind, pressed) => {
-              if (pressed) {
-                // 同じ道具をもう一度押したらやめる(トリム・延長と同じ、NFR-UX-1)。
-                cancelConstraintTool();
-                return;
-              }
-              chooseConstraintTool(kind);
-            }}
+            commandGroup="constraint"
           />
         </div>
       </div>
@@ -430,10 +431,11 @@ export function Toolbar(): React.JSX.Element {
           <button
             type="button"
             className="pcad-button pcad-button--icon"
-            title={t('toolbar.plane.matchViewTooltip')}
+            data-command-id={toolbarCommandId('view', 'matchWorkPlane')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'matchWorkPlane'), shortcutAssignments, documentKind)}: ${t('toolbar.plane.matchViewTooltip')}`}
             aria-label={t('toolbar.plane.matchView')}
             onClick={() => {
-              useAppStore.getState().requestMatchWorkPlaneToView();
+              executeCommand(toolbarCommandId('view', 'matchWorkPlane'));
             }}
           >
             <MatchViewIcon />
@@ -470,9 +472,7 @@ export function Toolbar(): React.JSX.Element {
               いま効いているほうは図柄が示す。
             */
             showPressed={false}
-            onChoose={(mode) => {
-              useAppStore.getState().setProjection(mode);
-            }}
+            commandGroup="projection"
           />
         </div>
       </div>
@@ -494,11 +494,12 @@ export function Toolbar(): React.JSX.Element {
           <button
             type="button"
             className="pcad-button pcad-button--icon"
-            title={t('toolbar.displayStyle.shaded')}
+            data-command-id={toolbarCommandId('view', 'shaded')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'shaded'), shortcutAssignments, documentKind)}: ${t('toolbar.displayStyle.shaded')}`}
             aria-label={t('toolbar.displayStyle.shaded')}
             aria-pressed={displayStyle === 'shaded'}
             onClick={() => {
-              useAppStore.getState().setDisplayStyle('shaded');
+              executeCommand(toolbarCommandId('view', 'shaded'));
             }}
           >
             <ShadedIcon />
@@ -506,11 +507,12 @@ export function Toolbar(): React.JSX.Element {
           <button
             type="button"
             className="pcad-button pcad-button--icon"
-            title={t('toolbar.displayStyle.shadedWithEdges')}
+            data-command-id={toolbarCommandId('view', 'shadedWithEdges')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'shadedWithEdges'), shortcutAssignments, documentKind)}: ${t('toolbar.displayStyle.shadedWithEdges')}`}
             aria-label={t('toolbar.displayStyle.shadedWithEdges')}
             aria-pressed={displayStyle === 'shadedWithEdges'}
             onClick={() => {
-              useAppStore.getState().setDisplayStyle('shadedWithEdges');
+              executeCommand(toolbarCommandId('view', 'shadedWithEdges'));
             }}
           >
             <ShadedWithEdgesIcon />
@@ -518,11 +520,12 @@ export function Toolbar(): React.JSX.Element {
           <button
             type="button"
             className="pcad-button pcad-button--icon"
-            title={t('toolbar.displayStyle.wireframe')}
+            data-command-id={toolbarCommandId('view', 'wireframe')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'wireframe'), shortcutAssignments, documentKind)}: ${t('toolbar.displayStyle.wireframe')}`}
             aria-label={t('toolbar.displayStyle.wireframe')}
             aria-pressed={displayStyle === 'wireframe'}
             onClick={() => {
-              useAppStore.getState().setDisplayStyle('wireframe');
+              executeCommand(toolbarCommandId('view', 'wireframe'));
             }}
           >
             <WireframeIcon />
@@ -536,11 +539,12 @@ export function Toolbar(): React.JSX.Element {
           {documentKind === 'part' ? <button
             type="button"
             className="pcad-button pcad-button--icon"
-            title={t('toolbar.sectionView.tooltip')}
+            data-command-id={toolbarCommandId('view', 'section')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'section'), shortcutAssignments, documentKind)}: ${t('toolbar.sectionView.tooltip')}`}
             aria-label={t('toolbar.sectionView.label')}
             aria-pressed={sectionViewOn}
             onClick={() => {
-              useAppStore.getState().toggleSectionView();
+              executeCommand(toolbarCommandId('view', 'section'));
             }}
           >
             <PlaneSectionIcon />
@@ -557,11 +561,12 @@ export function Toolbar(): React.JSX.Element {
           <button
             type="button"
             className="pcad-button pcad-button--icon"
-            title={t('toolbar.grid.tooltip')}
+            data-command-id={toolbarCommandId('view', 'grid')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'grid'), shortcutAssignments, documentKind)}: ${t('toolbar.grid.tooltip')}`}
             aria-label={t('toolbar.grid.label')}
             aria-pressed={showGrid}
             onClick={() => {
-              useAppStore.getState().setShowGrid(!showGrid);
+              executeCommand(toolbarCommandId('view', 'grid'));
             }}
           >
             <GridIcon />
@@ -569,11 +574,12 @@ export function Toolbar(): React.JSX.Element {
           {documentKind === 'part' ? <button
             type="button"
             className="pcad-button pcad-button--collapsible"
-            title={t('toolbar.chain.tooltip')}
+            data-command-id={toolbarCommandId('view', 'chaining')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'chaining'), shortcutAssignments, documentKind)}: ${t('toolbar.chain.tooltip')}`}
             aria-label={t('toolbar.chain.label')}
             aria-pressed={chaining}
             onClick={() => {
-              useAppStore.getState().setChaining(!chaining);
+              executeCommand(toolbarCommandId('view', 'chaining'));
             }}
           >
             <ChainIcon />
@@ -590,11 +596,12 @@ export function Toolbar(): React.JSX.Element {
           <button
             type="button"
             className="pcad-button pcad-button--icon"
-            title={t('toolbar.snap.tooltip')}
+            data-command-id={toolbarCommandId('view', 'snap')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'snap'), shortcutAssignments, documentKind)}: ${t('toolbar.snap.tooltip')}`}
             aria-label={t('toolbar.snap.label')}
             aria-pressed={snapEnabled}
             onClick={() => {
-              useAppStore.getState().setSnapEnabled(!snapEnabled);
+              executeCommand(toolbarCommandId('view', 'snap'));
             }}
           >
             <SnapIcon />
@@ -615,10 +622,11 @@ export function Toolbar(): React.JSX.Element {
           <button
             type="button"
             className="pcad-button pcad-button--action pcad-button--icon"
-            title={t('toolbar.home.tooltip')}
+            data-command-id={toolbarCommandId('view', 'home')}
+            title={`${currentCommandLabel(toolbarCommandId('view', 'home'), shortcutAssignments, documentKind)}: ${t('toolbar.home.tooltip')}`}
             aria-label={t('toolbar.home.label')}
             onClick={() => {
-              useAppStore.getState().requestHomeView();
+              executeCommand(toolbarCommandId('view', 'home'));
             }}
           >
             <HomeIcon />

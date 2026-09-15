@@ -301,7 +301,7 @@ export function DrawingCanvas(): React.JSX.Element {
     {fontStatus === 'failed' ? <p role="alert" className="pcad-drawing-notice">{t('drawing.error.fontFailed')}</p> : null}
     {shown !== null && shown.tables.unresolved.length > 0 ? <p role="alert" className="pcad-drawing-notice">{t('drawing.table.unresolved')}</p> : null}
     {shown?.manufacturing.some((item) => item.unresolved) === true ? <div role="alert" className="pcad-drawing-notice"><p>{t('drawing.manufacturing.outputUnresolved')}</p>
-      <ul>{shown.manufacturing.filter((item) => item.unresolved).map((item) => <li key={item.id}><button type="button" className="pcad-button"
+      <ul>{shown.manufacturing.filter((item) => item.unresolved).map((item) => <li key={item.id}><button title={t('controlGuide.button.unresolvedDrawing')} type="button" className="pcad-button"
         onClick={() => useAppStore.getState().selectDrawingIds([item.id])}>{item.id}: {item.messages.join(' ')}</button></li>)}</ul></div> : null}
     {targets.length > 0 ? <p className="pcad-drawing-notice">{t('drawing.dimension.selectHint')}</p> : null}
     {tool === 'note' && notePlacement !== null ? <DrawingNotePopover key={`new:${JSON.stringify(notePlacement.point)}`} position={notePlacement.point} anchor={notePlacement.anchor} /> : null}

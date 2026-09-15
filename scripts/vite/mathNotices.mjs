@@ -66,7 +66,7 @@ export function collectMathNotices(root = repositoryRoot) {
     '<title>PointerCAD 数学機能の著作権・許諾表示</title>' +
     '<h1>数学機能の著作権・許諾表示</h1>' +
     '<p>数学入力・計算ライブラリと数式用字体の原文です。字体には独自の許諾が適用されます。</p>' +
-    `<ul>${links}</ul></html>`, 'utf8'));
+    `<ul>${links}</ul><p><a href="./exact-math/">追加計算部の許諾原文・関連ソース</a></p></html>`, 'utf8'));
   return { assets, fonts };
 }
 

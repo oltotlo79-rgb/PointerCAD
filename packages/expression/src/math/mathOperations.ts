@@ -1,9 +1,10 @@
-import { LINEAR_DEFINITIONS } from './exactLinearOperations.js';
+import { LINEAR_DEFINITIONS, STATISTICS_DEFINITIONS, TENSOR_DEFINITIONS, INTEGER_DEFINITIONS } from './mathOperationMetadata.js';
 /** Candidate pure-operation registry. Entries need independent acceptance before product enablement. */
-import { STATISTICS_DEFINITIONS } from './statisticsOperations.js';
 import type { MathOperationDefinition } from './mathInputContract.js';
 
 const definitions: readonly [id: string, head: string, minimum: number, maximum: number, structural?: boolean][] = [
+  ...INTEGER_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
+  ...TENSOR_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
   ...LINEAR_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
   ...STATISTICS_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
   ['add', 'Add', 2, 256], ['subtract', 'Subtract', 2, 2], ['negate', 'Negate', 1, 1],

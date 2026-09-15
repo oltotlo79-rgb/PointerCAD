@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import { KERNEL_TIMEOUT_MS } from './recompute.js';
 import { drawingFromBox, chooseDrawingMenu } from './drawingManufacturingFixture.js';
 import { drawingMessage } from './drawingMessages.js';
+import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 
 test.describe('P9 溶接記号の実操作', () => {
   test('8種類・両側・式・断続・現場・全周・折れ矢を作り、編集Undo・保存と5形式出力でも指示が残る', async ({ page }, testInfo) => {
@@ -62,6 +63,7 @@ test.describe('P9 溶接記号の実操作', () => {
         await field('side').selectOption('center'); await field('size.diameter').fill('6');
         await field('count').fill('3'); await field('pitch').fill('30');
       } else if (kind === 'seam') await field('allAround').check();
+      await assertRenderedControlDescriptions(form);
       await form.getByRole('button', { name: drawingMessage('drawing.action.apply'), exact: true }).click();
       await expect.poll(() => owner(`weld-${index + 1}`).locator('path').count()).toBeGreaterThan(0);
       await expect(tree.getByRole('button', { name: `${drawingMessage('drawing.weld.title')} ${index + 1}`, exact: true })).toBeVisible();

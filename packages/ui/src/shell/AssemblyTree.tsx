@@ -1,3 +1,4 @@
+import { useRevealNamedTreeRow } from './useRevealNamedTreeRow.js';
 import { useEffect, useRef, useState } from 'react';
 import { DocumentNameSearch } from './DocumentNameSearch.js';
 import { assemblyNameSearchEntries } from './nameSearch.js';
@@ -161,6 +162,7 @@ export function assemblyMateRowDetails(rowId: string, view: AssemblyView | null 
  * 持つ(`FeatureTree` と同じ)。形の正本はストアの `assembly` だけ。
  */
 export function AssemblyTree(): React.JSX.Element {
+  const searchReveal = useRevealNamedTreeRow();
   const assembly = useAppStore(activeAssemblyDocument);
   const view = useAppStore((state) => state.assemblyView);
   const selection = useAppStore((state) => state.selection);
@@ -211,7 +213,7 @@ export function AssemblyTree(): React.JSX.Element {
       幅が動かないようにするため。
     */
     return (
-      <section className="pcad-panel pcad-panel--left">
+      <section ref={searchReveal.ref} className="pcad-panel pcad-panel--left">
         <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
         <div className="pcad-panel__body">
           <div className="pcad-panel__empty">
@@ -253,6 +255,7 @@ export function AssemblyTree(): React.JSX.Element {
       <li key={row.key}>
         <div
           className={rowClassName}
+          data-name-search-key={row.key}
           onPointerEnter={() => {
             useAppStore.getState().setHovered(row.id);
           }}
@@ -364,10 +367,19 @@ export function AssemblyTree(): React.JSX.Element {
   };
 
   return (
-    <section className="pcad-panel pcad-panel--left">
+    <section ref={searchReveal.ref} className="pcad-panel pcad-panel--left">
       <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
       <DocumentNameSearch key={assembly.id} helpTopic="assembly" getEntries={() => assemblyNameSearchEntries(sections)}
-        onSelect={entry => useAppStore.getState().setSelection(entry.selectionId === null ? [] : [entry.selectionId])} />
+        onSelect={entry => {
+          setIsExpanded(true);
+          const reveal = entry.assemblyReveal;
+          if (reveal !== undefined) {
+            setCollapsed(previous => previous.filter(section => section !== reveal.section));
+            setCollapsedComponents(previous => previous.filter(id => !reveal.parents.includes(id)));
+          }
+          searchReveal.reveal(entry.key);
+          useAppStore.getState().setSelection(entry.selectionId === null ? [] : [entry.selectionId]);
+        }} />
       <div className="pcad-panel__body">
         <ul className="pcad-tree">
           <li>
@@ -448,7 +460,7 @@ export function AssemblyTree(): React.JSX.Element {
           role="menu"
           style={{ left: menu.x, top: menu.y }}
         >
-          {menuComponent === undefined ? null : <><button
+          {menuComponent === undefined ? null : <><button title={t('controlGuide.button.assemblyDuplicate')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -459,7 +471,7 @@ export function AssemblyTree(): React.JSX.Element {
           >
             {t('assembly.tool.duplicate')}
           </button>
-          <button
+          <button title={t('controlGuide.button.assemblyDelete')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -470,7 +482,7 @@ export function AssemblyTree(): React.JSX.Element {
           >
             {t('assembly.tool.delete')}
           </button>
-          <button
+          <button title={t('controlGuide.button.assemblyFixed')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -481,7 +493,7 @@ export function AssemblyTree(): React.JSX.Element {
           >
             {t(menuComponent.fixed ? 'assembly.tree.unfix' : 'assembly.tool.fixComponent')}
           </button>
-          <button
+          <button title={t('controlGuide.button.assemblyVisible')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -492,7 +504,7 @@ export function AssemblyTree(): React.JSX.Element {
           >
             {t(menuComponent.visible ? 'featureTree.hide' : 'featureTree.show')}
           </button>
-          <button
+          <button title={t('controlGuide.button.assemblySuppress')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"
@@ -504,15 +516,15 @@ export function AssemblyTree(): React.JSX.Element {
             {t(menuComponent.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
           </button></>}
           {menuMate === undefined ? null : <>
-            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+            <button title={t('controlGuide.button.mateEdit')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
               onClick={() => { editAssemblyMate(menu.rowId); setMenu(null); }}>
               {t('assembly.mate.edit')}
             </button>
-            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+            <button title={t('controlGuide.button.mateFlip')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
               onClick={() => { flipAssemblyMate(menu.rowId); setMenu(null); }}>
               {t('assembly.mate.flip')}
             </button>
-            <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+            <button title={t('controlGuide.button.mateDelete')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
               onClick={() => { deleteAssemblyMate(menu.rowId); setMenu(null); }}>
               {t('assembly.mate.delete')}
             </button>

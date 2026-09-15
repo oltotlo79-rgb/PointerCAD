@@ -1,0 +1,41 @@
+.pcad-radial-menu {
+  box-sizing: border-box;
+  position: fixed;
+  z-index: 80;
+  border: 1px solid var(--pcad-border);
+  border-radius: 50%;
+  background: var(--pcad-surface);
+  color: var(--pcad-text);
+  box-shadow: 0 4px 20px #0008;
+}
+.pcad-radial-menu__item, .pcad-radial-menu__cancel {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--pcad-border);
+  border-radius: 6px;
+  color: inherit;
+  background: var(--pcad-bg);
+  padding: 4px;
+  font: inherit;
+  font-size: inherit;
+  line-height: 1.3;
+}
+.pcad-radial-menu__item { width: 74px; min-height: 42px; }
+.pcad-radial-menu__item[data-selected="true"], .pcad-radial-menu__item:focus-visible {
+  outline: 3px solid var(--pcad-accent);
+  outline-offset: 1px;
+}
+.pcad-radial-menu__cancel { left: 50%; top: 50%; width: 58px; height: 58px; border-radius: 50%; }
+.pcad-radial-menu__hint {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 4px 0 0;
+  padding: 6px;
+  border: 1px solid var(--pcad-border);
+  border-radius: 4px;
+  background: var(--pcad-surface);
+  font-size: inherit;
+  line-height: 1.4;
+}

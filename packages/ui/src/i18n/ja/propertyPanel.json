@@ -286,5 +286,8 @@
   "propertyPanel.printCheckCloseTooltip": "点検の色を消して、元の見た目に戻します",
   "propertyPanel.sectionInferConstraints": "拘束の推定",
   "propertyPanel.inferConstraintsOn": "推定する",
-  "propertyPanel.inferConstraintsShift": "Shift を押している間は推定しません。線を引き終えた瞬間に拘束が付きます。"
+  "propertyPanel.inferConstraintsShift": "Shift を押している間は推定しません。線を引き終えた瞬間に拘束が付きます。",
+  "controlGuide.selectionSet.rename": "この選択の組の名前を変更し、Enterで確定します。欄から離れると変更を取り消します。",
+  "controlGuide.selectionSet.name": "現在の選択を覚えておく名前を入力します。Enterまたは作成ボタンで登録します。",
+  "controlGuide.canvas.opacity": "下絵の濃さを0〜1で指定します。0は透明、1は不透明です。図形の寸法は変わりません。"
 }

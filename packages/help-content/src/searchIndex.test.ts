@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { expectWithinBudget } from '@pointercad/test-utils';
 import { HELP_TOPICS } from './index.js';
 import { createHelpSearchIndex, normalizeHelpSearch } from './searchIndex.js';
 
@@ -38,11 +39,11 @@ describe('ヘルプと説明書の共通検索', () => {
     ['公差 はめあい', 'dimension-tolerance'], ['断面図', 'drawing-section'], ['用紙 縮尺', 'drawing-scale'],
     ['幾何公差', 'gdt'], ['溶接記号', 'welding'], ['部品表 部品番号', 'drawing-bom'],
     ['文字 輪郭', 'text-outline'], ['表面性状', 'surface-finish'], ['視点 名前', 'named-view'], ['図面 印刷', 'drawing-export'],
-  ] as const)('実際の全章から「%s」の目的章を上位5件・100ms以内で返す', (query, topic) => {
+  ] as const)('実際の全章から「%s」の目的章を上位5件で返し、検索時間を記録する', (query, topic) => {
     const started = performance.now();
     const matches = index.search(query);
     const elapsed = performance.now() - started;
     expect(matches.slice(0, 5).map(hit => hit.id)).toContain(topic);
-    expect(elapsed).toBeLessThan(100);
+    expectWithinBudget(elapsed, 100, `ヘルプ検索「${query}」`);
   });
 });

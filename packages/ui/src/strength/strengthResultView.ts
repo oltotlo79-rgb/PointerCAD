@@ -1,7 +1,7 @@
 import { strengthFormulas, type StrengthFieldName, type StrengthResultName } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import type { StrengthSnapshot } from './strengthSession.js';
-import { FIELD_VALUE_DISPLAY_DIGITS, roundToSignificantDigits } from '../sketch/numericInput.js';
+import { FIELD_VALUE_DISPLAY_DIGITS, roundToSignificantDigits } from '../sketch/numericInputPresentation.js';
 
 const resultLabels: Readonly<Record<StrengthResultName, MessageKey>> = {
   secondMoment: 'strength.result.secondMoment', sectionModulus: 'strength.result.sectionModulus', innerDiameter: 'strength.result.innerDiameter',

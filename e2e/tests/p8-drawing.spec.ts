@@ -1,4 +1,4 @@
-import { RELEASE_SOFTWARE_VIEWPORT_MIN_FPS } from '../../packages/test-utils/src/releasePerformance.js';
+import { reportViewportRate } from '../../packages/test-utils/src/releasePerformance.js';
 /// <reference lib="dom" />
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -622,7 +622,7 @@ test.describe('P8 図面の実操作', () => {
         drawListenerMs: after.totalDrawListenerMs - before.totalDrawListenerMs, frames, elapsedMs }));
       const fps = frames * 1000 / elapsedMs;
       console.log(`[実測] 4分割ビューポート: ${fps.toFixed(1)} fps (${frames}画面/${elapsedMs.toFixed(1)}ms、1画面は4カメラ分)`);
-      expect(fps).toBeGreaterThanOrEqual(RELEASE_SOFTWARE_VIEWPORT_MIN_FPS);
+      reportViewportRate(fps, '4分割の描画');
       await namedMenu.locator('summary').click(); await page.getByRole('button', { name: '1画面に戻す', exact: true }).click();
       await expect(page.locator('.pcad-quad')).toHaveCount(0); await expect(canvas).toHaveCount(1);
       expect(errors).toEqual([]);

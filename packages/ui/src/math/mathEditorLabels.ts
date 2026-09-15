@@ -2,6 +2,9 @@ import { t } from '../i18n/t.js';
 import type { MathEditorLabels } from './MathEditorSurface.js';
 export function mathEditorLabels(): MathEditorLabels {
   return {
+    hints: { text: t('math.guide.text'), structured: t('math.guide.structured'), angleUnit: t('math.guide.angleUnit'),
+      category: t('math.guide.category'), search: t('math.guide.search'), apply: t('math.guide.apply'),
+      cancel: t('math.guide.cancel'), help: t('math.guide.help') },
     title: t('math.title'), text: t('math.text'), structured: t('math.structured'), input: t('math.input'),
     angleUnit: t('math.angleUnit'), degree: t('math.degree'), radian: t('math.radian'), palette: t('math.palette'),
     search: t('math.search'), noSymbols: t('math.noSymbols'), apply: t('math.apply'), cancel: t('math.cancel'),

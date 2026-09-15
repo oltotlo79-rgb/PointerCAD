@@ -163,7 +163,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
           aria-label={t('commandLine.suggestionsLabel')}
         >
           {suggestions.map((word, index) => (
-            <button
+            <button title={t('controlGuide.button.commandSuggestion').replace('{name}', t(word.labelKey))}
               key={word.tool}
               type="button"
               role="option"

@@ -24,3 +24,31 @@ node scripts/manual/generate.mjs manual-preview-20260912
 HTMLの閲覧画面を記録する台本は`capture-html.mjs`。生成済みの出力名と新しい撮影出力名を渡す。例: `node scripts/manual/capture-html.mjs manual-preview-20260912 manual-reader-20260912`。既存のChromium/Firefoxでローカルファイルを開き、検索、キーボード移動、全章と全巻の画像・字体、狭い画面を確認してPNGと結果を`dist/<撮影出力名>`へ保存する。本文と出力の指紋を前後で照合し、途中の失敗も保存して過去の結果を上書きしない。この台本で撮るのは説明書を閲覧する画面であり、全機能を操作したアプリ画面の撮影・PDFの目視確認・通常の品質ゲートの代わりにはしない。
 
 受入条件は[ヘルプと仕上げの計画](../../docs/plans/P12-ヘルプと仕上げ.md)を正とする。通常のコミット・push検査を短い生成処理で代用したり、生成のために検査の途中でソースを変えたりしない。
+
+## 同じHTMLからPDFを生成する
+
+通常の検査が終了し、入力が固定された状態で実行する。
+
+```powershell
+node scripts/manual/generate-pdf.mjs manual-preview-20260912 manual-pdf-preview-20260915
+```
+
+第1引数は生成済みHTMLの出力名、第2引数は新しいPDFの出力名。`dist/<第2引数>`へ各巻のPDFと字体の許諾原文、生成結果の`pdf-manifest.json`を保存する。各PDFには巻内の目次・章内移動・全巻索引・ページ番号を含める。別の巻への参照は巻名と章名を本文へ記し、元のパソコンのファイル位置に依存させない。
+
+本文はHTMLと同じものを使う。日本語字体の読み込み、画像の欠落、章の順序、移動先、生成前後の入力を確認してから出力する。途中で失敗した記録は残し、既存の出力は上書きしない。
+
+この生成は未認定の出力を作る。配布前に全ページの文字・画像・表・改頁・リンクを実物で確認し、本文や撮影元と照合する。`releaseCertified`などの値を手で変更して確認の代用にはしない。
+
+## 機能と操作の説明先
+
+生成時に要件の正本と`FEATURE_HELP_BINDINGS`を照合し、全要件の説明先を`feature-coverage.json`と`manifest.json`へ記録する。要件・操作・章の重複、要件の割当忘れ、存在しない説明先は生成を止める。操作一覧はアプリが実際に使う`COMMAND_DEFINITIONS`を参照し、別の一覧を手で維持しない。
+
+公開・オフライン起動など、説明の未作成を明示した項目は`pending`に残し、確認用の説明書では不足を読めるようにする。公開の判定では`assertDocumentedFeatureCoverage`が未作成の項目を拒否する。この対応情報だけで本文や撮影の確認が完了したとは扱わず、`contentCertified`と`releaseCertified`はfalseを保持する。最終公開の確認への接続はP13で実施する。
+
+設定と書き出し形式も`feature-coverage.json`の`supplementary`と`manifest.json`の`supplementaryCoverage`へ記録する。端末設定の型、実際の保存形式表、座標・板金・図面の既定値入力欄から名称・説明を取得する。未対応のDWGは出力形式に含めない。設定の追加、形式の追加、説明先の削除を検出する。これは目録の確認であり、各操作・本文・実画面・印刷結果の完成証拠は別に必要。
+
+### 入力欄とボタンの説明の棚卸し
+
+`manifest.json` の `nativeControlCoverage` と `feature-coverage.json` の `nativeControls` は、実際のUIのTSXからinput/select/textarea/buttonを列挙する。名前だけ、空のtitle、無関係な外枠のtitleは説明に数えない。明示された非表示欄だけを除外し、動的な説明・後から値を重ねる記述には実画面の確認を残す。読み取ったTSXの内容も入力の照合対象に含める。
+
+これはnative JSXの説明の入口を調べるもので、全画面・全状態・独自の入力部品の表示確認や本文の正確さを認証しない。未確認・不足を一覧に残し、`contentCertified` と `releaseCertified` はfalseのまま。P12-5では残る実入力の棚卸しとマウス・キーボードの確認を閉じ、P12-20で公開用の全条件を照合する。

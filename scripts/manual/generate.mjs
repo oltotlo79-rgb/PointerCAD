@@ -3,10 +3,11 @@ import { createHash } from 'node:crypto';
 import { argv } from 'node:process';
 import { log } from 'node:console';
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, writeFile, lstat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, lstat, readdir } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, build, createLogger } from 'vite';
+import { buildNativeControlInventory } from './control-inventory.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const argument = argv.slice(2);
@@ -18,7 +19,7 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const manifest = { format: 'pointercad-manual/1', releaseCertified: false,
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
   dirtySources: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim() !== '',
-  inputs: {}, images: {}, outputs: {}, chapters: [], volumes: [], buildId: '' };
+  inputs: {}, images: {}, outputs: {}, chapters: [], volumes: [], featureCoverage: null, commandCoverage: [], supplementaryCoverage: null, nativeControlCoverage: null, buildId: '' };
 const inputs = new Map();
 const buildErrors = [], logger = createLogger('warn'), writeBuildError = logger.error.bind(logger);
 logger.error = (message, options) => { buildErrors.push(message); writeBuildError(message, options); };
@@ -27,6 +28,20 @@ const readInput = async path => {
   if (relative(root, absolute).startsWith(`..${sep}`)) throw new Error(`Input escapes project: ${path}`);
   const bytes = await readFile(absolute); inputs.set(path, bytes); manifest.inputs[path] = hash(bytes); return bytes;
 };
+const controlSources = [];
+const readControls = async folder => {
+  for (const entry of (await readdir(join(root, folder), { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
+    const path = `${folder}/${entry.name}`;
+    if (entry.isSymbolicLink()) throw new Error(`Control source must stay inside the project: ${path}`);
+    if (entry.isDirectory()) await readControls(path);
+    else if (entry.isFile() && entry.name.endsWith('.tsx') && !entry.name.endsWith('.test.tsx')) {
+      controlSources.push({ path, source: (await readInput(path)).toString('utf8') });
+    }
+  }
+};
+await readControls('packages/ui/src');
+manifest.nativeControlCoverage = buildNativeControlInventory(controlSources);
+await readInput('scripts/manual/control-inventory.mjs');
 const server = await createServer({ configFile: false, root, logLevel: 'warn', customLogger: logger,
   // This server only loads the listed SSR sources; it must not scan unrelated HTML experiments in the workspace.
   optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, watch: null, hmr: false },
@@ -35,6 +50,15 @@ let pages;
 let validateManualLinks;
 try {
   const { MANUAL_CHAPTERS, MANUAL_VOLUMES } = await server.ssrLoadModule('/packages/help-content/src/manualManifest.ts');
+  const { FEATURE_HELP_BINDINGS } = await server.ssrLoadModule('/packages/help-content/src/featureHelpBindings.ts');
+  const { parseHelpRequirements, buildHelpFeatureCoverage, buildCommandHelpCoverage } =
+    await server.ssrLoadModule('/packages/help-content/src/helpFeatureCoverage.ts');
+  const { COMMAND_DEFINITIONS } = await server.ssrLoadModule('/packages/ui/src/commands/commandDefinitions.ts');
+  manifest.featureCoverage = buildHelpFeatureCoverage(
+    parseHelpRequirements((await readInput('docs/requirements.md')).toString('utf8')), MANUAL_CHAPTERS, FEATURE_HELP_BINDINGS);
+  manifest.commandCoverage = buildCommandHelpCoverage(COMMAND_DEFINITIONS, MANUAL_CHAPTERS);
+  const { buildSupplementaryHelpCoverage } = await server.ssrLoadModule('/packages/ui/src/help/supplementaryHelpCoverage.ts');
+  manifest.supplementaryCoverage = buildSupplementaryHelpCoverage(MANUAL_CHAPTERS);
   const { buildManualPages } = await server.ssrLoadModule('/packages/ui/src/help/manualPages.tsx');
   ({ validateManualLinks } = await server.ssrLoadModule('/packages/ui/src/help/manualLinks.ts'));
   const sources = new Map(), images = {}, imageFiles = new Map();
@@ -52,13 +76,32 @@ try {
     }
   }
   pages = new Map(buildManualPages(sources, images));
+  pages.set('feature-coverage.json', JSON.stringify({ format: 'pointercad-help-coverage/1',
+    features: manifest.featureCoverage, commands: manifest.commandCoverage, supplementary: manifest.supplementaryCoverage, nativeControls: manifest.nativeControlCoverage, releaseCertified: false }, null, 2));
   for (const [name, bytes] of imageFiles) pages.set(name, bytes);
-  for (const path of ['packages/help-content/src/topics.ts', 'packages/help-content/src/manualManifest.ts',
+  for (const path of ['packages/help-content/src/featureHelpBindings.ts', 'packages/help-content/src/helpFeatureCoverage.ts',
+    'packages/help-content/src/topics.ts', 'packages/help-content/src/manualManifest.ts',
     'packages/help-content/src/searchIndex.ts', 'packages/help-content/src/uiReferences.ts',
     'packages/ui/src/help/manualPages.tsx', 'packages/ui/src/help/manualHtml.tsx', 'packages/ui/src/help/HelpMarkdown.tsx',
     'packages/ui/src/help/helpLibrary.ts', 'packages/ui/src/help/manualSearch.ts', 'packages/ui/src/help/manualSearchEntry.ts', 'packages/ui/src/help/manualLinks.ts',
+    'packages/ui/src/help/offlineManualNavigation.ts', 'scripts/vite/offlineProtocol.mjs',
     'scripts/manual/generate.mjs', 'scripts/manual/manual.css', 'pnpm-lock.yaml', 'package.json',
     'packages/ui/package.json', 'packages/help-content/package.json', 'tsconfig.base.json', 'packages/ui/tsconfig.json']) await readInput(path);
+  // The runtime action catalog owns its source IDs, labels and description routes.
+  const { readdir: commandFiles } = await import('node:fs/promises');
+  for (const folder of ['packages/ui/src/commands', 'packages/ui/src/shell/menus']) {
+    for (const name of (await commandFiles(join(root, folder))).filter(name => /\.tsx?$/u.test(name) && !name.endsWith('.test.ts')).sort()) {
+      await readInput(`${folder}/${name}`);
+    }
+  }
+  for (const path of ['packages/ui/src/drawing/drawingToolbarItems.ts',
+    'packages/ui/src/sheetMetal/sheetMetalMenuItems.ts', 'packages/ui/src/scripting/scriptMenuItems.ts']) await readInput(path);
+  for (const path of ['packages/ui/src/help/supplementaryHelpCoverage.ts', 'packages/ui/src/settings/settings.ts',
+    'packages/ui/src/settings/numericToolDefaults.ts', 'packages/ui/src/settings/autoSaveSettings.ts',
+    'packages/ui/src/settings/shortcutSettings.ts', 'packages/ui/src/sketch/numericInput.ts',
+    'packages/ui/src/sketch/numericDefaultSources.ts', 'packages/ui/src/sheetMetal/sheetMetalDefaultSources.ts',
+    'packages/ui/src/sheetMetal/sheetFields.ts', 'packages/ui/src/drawing/drawingToolDefaults.ts',
+    'packages/ui/src/file/fileContracts.ts']) await readInput(path);
   // The translation resolver imports the whole dictionary, including labels outside help.
   const { readdir } = await import('node:fs/promises');
   for (const name of (await readdir(join(root, 'packages/ui/src/i18n/ja'))).filter(name => name.endsWith('.json')).sort()) {

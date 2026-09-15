@@ -6,6 +6,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from lib.task_workspace import configure_project_temp
+
+configure_project_temp(Path(__file__).resolve().parents[1])
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('commit_message', HERE / 'lib/commit_message.py')

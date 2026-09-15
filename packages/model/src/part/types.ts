@@ -1,3 +1,5 @@
+import type { FeatureFolder } from '../history/featureFolders.js';
+import type { FeatureNote } from '../history/featureNotes.js';
 /**
  * 部品(パート)文書の保存形式(計画書 docs/plans/P2-ソリッド基礎.md §2.1、
  * docs/plans/P3-加工フィーチャー.md §2.4 / §2.6 / §2.7 / §2.7b、要件§8)。
@@ -1488,6 +1490,10 @@ export interface SketchCanvas {
  * (FR-505、FR-801)。変更のたびに新しい配列を作る(不変)。
  */
 export interface PartDocument {
+  /** 版15: 設計メモは付加情報であり、形状と履歴の順序には影響しない。 */
+  readonly featureNotes?: readonly FeatureNote[];
+  /** 履歴の表示上の所属。計算の並び順とは独立して保存する。 */
+  readonly featureFolders?: readonly FeatureFolder[];
   /** Mathematics coefficient high-water mark. Deletion never makes a previously issued ID available again. */
   readonly mathParameterSerial?: number;
   readonly id: string;

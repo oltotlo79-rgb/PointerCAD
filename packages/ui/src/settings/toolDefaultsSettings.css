@@ -1,0 +1,10 @@
+.pcad-tool-defaults,
+.pcad-tool-defaults__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  min-width: 0;
+}
+.pcad-tool-defaults select { max-width: 100%; }
+.pcad-tool-defaults__actions { display: flex; flex-wrap: wrap; gap: var(--pcad-space-1); }
+.pcad-tool-defaults [role="alert"] { color: var(--pcad-danger-text); overflow-wrap: anywhere; }

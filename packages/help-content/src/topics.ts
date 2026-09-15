@@ -8,6 +8,8 @@ export interface HelpTopic {
 
 export const HELP_TOPICS: readonly HelpTopic[] = [
   { id: 'help-reader', title: 'ヘルプを探す・説明の続きを読んで戻る', path: 'docs/ja/help-reader.md' },
+  { id: 'offline-use', title: '通信なしで使う準備と更新', path: 'docs/ja/offline-use.md' },
+  { id: 'shortcuts', title: 'ショートカット一覧', path: 'docs/ja/shortcuts.md' },
   { id: 'scripts', title: 'JavaScriptで自動作図する', path: 'docs/ja/scripts.md' },
   { id: 'script-api', title: '自動作図APIリファレンス', path: 'docs/ja/script-api.md' },
   { id: 'script-tools', title: '処理を保存し、道具として登録する', path: 'docs/ja/script-tools.md' },
@@ -126,6 +128,12 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     title: '作ったものの一覧と、やり直し',
     path: 'docs/ja/feature-tree.md',
   },
+  {
+    id: 'history-notes',
+    title: '履歴へ設計メモを残す',
+    path: 'docs/ja/history-notes.md',
+  },
+  { id: 'document-diff', title: '2つの保存ファイルの変更を比較する', path: 'docs/ja/document-diff.md' },
   {
     id: 'timeline',
     title: '途中まで戻して確かめる(タイムライン)',
@@ -265,10 +273,16 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     path: 'docs/ja/template.md',
   },
   {
+    id: 'tutorial',
+    title: '初めての作図',
+    path: 'docs/ja/tutorial.md',
+  },
+  {
     id: 'print-save-as',
     title: '印刷する・別名で保存する',
     path: 'docs/ja/print-save-as.md',
   },
+  { id: 'radial-menu', title: '右クリックで道具を選ぶ', path: 'docs/ja/radial-menu.md' },
 ];
 
 export function findHelpTopic(id: string): HelpTopic | undefined {

@@ -74,7 +74,7 @@ export function DrawingPropertyPanel(): React.JSX.Element {
       {selection.kind === 'multiple' ? <p>{t('drawing.property.multiple').replace('{count}', String(selection.count))}</p> : null}
       {singleElement === null || drawing === null ? null : <label className="pcad-drawing-element-layer">
         {t('drawing.property.elementLayer')}
-        <select className="pcad-field__input" aria-label={t('drawing.property.elementLayer')} value={singleElement.layerId} disabled={busy}
+        <select title={t('drawing.controlHint.elementLayer')} className="pcad-field__input" aria-label={t('drawing.property.elementLayer')} value={singleElement.layerId} disabled={busy}
           onChange={(event) => setDrawingElementLayer(selection, event.target.value)}>
           {drawing.layers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
         </select>

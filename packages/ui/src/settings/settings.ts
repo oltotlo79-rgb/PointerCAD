@@ -14,12 +14,17 @@
 import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
+import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
+import { readStoredShortcutAssignments } from './shortcutSettings.js';
+import type { NumericDefaultSources } from '../sketch/numericDefaultSources.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
   ALL_SELECTABLE,
   isSelectionFilter,
   type SelectionFilter,
 } from '../solid/selectionFilter.js';
+import { readAutoSaveIntervalMs } from './autoSaveSettings.js';
+import { readNumericToolDefaults } from './numericToolDefaults.js';
 
 /** 表示テーマ 5 種(FR-908)。既定は `dark`(現状の配色をそのまま複製)。 */
 export type ThemeId = 'dark' | 'light' | 'darkModern' | 'lightModern' | 'modern';
@@ -34,6 +39,11 @@ export const THEME_IDS: readonly ThemeId[] = [
 ];
 
 export interface DisplaySettings {
+  readonly tutorialCompleted?: boolean;
+  readonly shortcutAssignments?: ShortcutAssignments;
+  readonly numericToolDefaults?: NumericDefaultSources;
+  /** 旧設定は未指定のまま5分。1～60分の間隔を端末へ保存する。 */
+  readonly autoSaveIntervalMs?: number;
   readonly theme: ThemeId;
   /** 表示の拡大率(%)。90〜150(FR-909)。 */
   readonly uiScale: number;
@@ -86,6 +96,10 @@ export interface DisplaySettings {
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  tutorialCompleted: false,
+  shortcutAssignments: EMPTY_SHORTCUT_ASSIGNMENTS,
+  numericToolDefaults: {},
+  autoSaveIntervalMs: readAutoSaveIntervalMs({}),
   theme: 'dark',
   uiScale: 100,
   trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
@@ -376,6 +390,8 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       return DEFAULT_DISPLAY_SETTINGS;
     }
     return {
+      tutorialCompleted: 'tutorialCompleted' in parsed && parsed.tutorialCompleted === true,
+      shortcutAssignments: readStoredShortcutAssignments(parsed),
       theme: parsed.theme,
       uiScale: parsed.uiScale,
       trackAngleStep: readTrackAngleStep(parsed),
@@ -383,6 +399,8 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       lengthUnit: readLengthUnit(parsed),
       selectionFilter: readSelectionFilter(parsed),
       inferConstraints: readInferConstraints(parsed),
+      numericToolDefaults: readNumericToolDefaults('numericToolDefaults' in parsed ? parsed.numericToolDefaults : undefined),
+      autoSaveIntervalMs: readAutoSaveIntervalMs('autoSaveIntervalMs' in parsed ? { autoSaveIntervalMs: parsed.autoSaveIntervalMs } : {}),
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;

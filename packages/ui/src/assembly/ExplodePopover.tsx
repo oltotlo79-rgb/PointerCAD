@@ -40,7 +40,7 @@ export function ExplodePopover(): React.JSX.Element | null {
       <div className="pcad-popover__fields">
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.explode.direction')}</span>
-          <select className="pcad-field__input" value={axis}
+          <select title={t('assembly.guide.explodeAxis')} className="pcad-field__input" value={axis}
             onChange={(event) => {
               const value = event.currentTarget.value;
               if (value === 'x' || value === 'y' || value === 'z') setAxis(value);
@@ -50,7 +50,7 @@ export function ExplodePopover(): React.JSX.Element | null {
         </label>
         <label className={'pcad-field' + (error === null ? '' : ' pcad-field--error')}>
           <span className="pcad-field__label">{t('assembly.explode.distance')}</span>
-          <input ref={input} className="pcad-field__input" value={source}
+          <input title={t('assembly.guide.explodeDistance')} ref={input} className="pcad-field__input" value={source}
             aria-invalid={error === null ? undefined : true}
             onChange={(event) => { setSource(event.currentTarget.value); }} />
           <span className="pcad-field__unit">mm</span>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FunctionDefinition, ResolvedSpline, Vec3 } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { useFunctionPreviewFocus } from './useFunctionPreviewFocus.js';
+import { createFunctionPreviewProjection } from './functionPreviewProjection.js';
 import { drawFunctionCurve } from './drawFunctionCurve.js';
 
 /** Rotate the actual CAD curves, preserving native cubic spans and separate clipped polylines. */
@@ -14,18 +15,14 @@ export function FunctionCurvePreview({ definition, curves }: {
   useEffect(() => {
     const element = canvas.current, context = element?.getContext('2d');
     if (!element || !context) return;
-    const { X, Y, Z } = definition.bounds, intervals = [X, Y, Z];
-    const spans = intervals.map(axis => axis.max.value - axis.min.value), span = Math.max(...spans);
-    const center = intervals.map((axis, i) => axis.min.value + spans[i] / 2);
-    const project = (point: Vec3): readonly [number, number] => {
-      const [x, y, z] = point.map((value, i) => (value - center[i]) / span);
-      const horizontal = Math.cos(rotation.yaw) * x - Math.sin(rotation.yaw) * y;
-      const depth = Math.sin(rotation.yaw) * x + Math.cos(rotation.yaw) * y;
-      return [element.width / 2 + horizontal * element.height * 0.65,
-        element.height / 2 - (Math.cos(rotation.pitch) * z - Math.sin(rotation.pitch) * depth) * element.height * 0.65];
-    };
+    const { X, Y, Z } = definition.bounds;
+    const projection = createFunctionPreviewProjection([X.min.value, Y.min.value, Z.min.value],
+      [X.max.value, Y.max.value, Z.max.value], rotation);
     const draw = () => {
       const size = element.getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
+      const project = (point: Vec3): readonly [number, number] => {
+        const [x,y] = projection(point,size.width,size.height); return [x*ratio,y*ratio];
+      };
       element.width = Math.max(1, Math.round(size.width * ratio)); element.height = Math.max(1, Math.round(size.height * ratio));
       context.clearRect(0, 0, element.width, element.height);
       context.strokeStyle = getComputedStyle(element).color; context.lineWidth = ratio;
@@ -57,6 +54,6 @@ export function FunctionCurvePreview({ definition, curves }: {
     }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} />
     <figcaption>{t('functionPlot.previewHint')}</figcaption>
     <p role="status">{t('functionPlot.curveCount')}: {curves.length} / {t('functionPlot.closedCurveCount')}: {curves.filter(curve=>curve.closed).length}</p>
-    <button type="button" onClick={() => setRotation({ yaw: -Math.PI / 4, pitch: 0.6 })}>{t('functionPlot.resetView')}</button>
+    <button title={t('controlGuide.button.previewReset')} type="button" onClick={() => setRotation({ yaw: -Math.PI / 4, pitch: 0.6 })}>{t('functionPlot.resetView')}</button>
   </figure>;
 }

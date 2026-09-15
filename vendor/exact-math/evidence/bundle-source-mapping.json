@@ -1,0 +1,70 @@
+{
+  "at": "2026-09-14T18:29:13.464533",
+  "candidateAdopted": false,
+  "closureVerified": false,
+  "outerBundle": {
+    "path": ".git\\math-cas-study\\runtime\\pyodide.mjs",
+    "sha256": "69e3f6ccec3e14b465df60be577ca62f536251406b9a00cce019eac5252a2495"
+  },
+  "sourceMap": {
+    "sha256": "dbf9ce906a6ec36adb266e699be2ff01ae726ac67cf74840f7a9a2981000d04c",
+    "matchesPinnedArchive": true
+  },
+  "sources": [
+    {
+      "source": "../src/js/vendor/stackframe/stackframe.ts",
+      "sourceSha256": "f1ac1bce24f9a936957975f6205cf49337c46f6b32591e807f168ca377b392a4",
+      "primarySource": "https://raw.githubusercontent.com/pyodide/pyodide/314.0.6/src/js/vendor/stackframe/stackframe.ts",
+      "primaryBytesMatch": true
+    },
+    {
+      "source": "../src/js/vendor/stackframe/error-stack-parser.ts",
+      "sourceSha256": "06cb52d1e4ae6a0f9c3f349ba4751b1839dfe7a3515f74373f0a7fab62c52b8d",
+      "primarySource": "https://raw.githubusercontent.com/pyodide/pyodide/314.0.6/src/js/vendor/stackframe/error-stack-parser.ts",
+      "primaryBytesMatch": true
+    },
+    {
+      "source": "../src/js/environments.ts",
+      "sourceSha256": "27b8c89f8b33c42ca78b4118e0c629731736e92e4a76d45a7515bbeae3313f12"
+    },
+    {
+      "source": "../src/js/compat.ts",
+      "sourceSha256": "516505fb9eb14546ce45991cd6f0ccc2613e7e9d1559b22c24f48073ec008e5d"
+    },
+    {
+      "source": "../src/js/nativefs.ts",
+      "sourceSha256": "415b262962d2a85ba65cebfc81aa3319d30dd7960910f2a56bed34b0364c1938"
+    },
+    {
+      "source": "../src/core/jsverror.ts",
+      "sourceSha256": "ccb7cec7bae3b8b3bae66ae5a3cc03e621dc03289605e5667097f8885fd75adc"
+    },
+    {
+      "source": "../src/js/emscripten-settings.ts",
+      "sourceSha256": "5ed6960e60f16c713adcc2bff7bd1439a7c71088afb56b49ed88033af8a556d3",
+      "primarySource": "https://raw.githubusercontent.com/pyodide/pyodide/314.0.6/src/js/emscripten-settings.ts",
+      "primaryBytesMatch": true
+    },
+    {
+      "source": "../src/js/version.ts",
+      "sourceSha256": "0569a5cfa64b39339f5b836751e0d5996ede01d114f82356ec6820694a7becba"
+    },
+    {
+      "source": "../src/js/common/path.ts",
+      "sourceSha256": "ba3152133cf09428c19a06230b9af252a239659ec1747db8139f68ee6dfe69f9"
+    },
+    {
+      "source": "../src/js/pyodide.ts",
+      "sourceSha256": "4a651baeba2f57f192cf2ccdf45ff052bc34baa986abae01624147d11ad6df1b"
+    }
+  ],
+  "stdlib": {
+    "sha256": "80c5be6babfe03297069703410c3c29404dcf2525d2b128746bae5536f94831f",
+    "entryCount": 614,
+    "noticePaths": []
+  },
+  "limits": [
+    "The source map describes the outer JS bundle, not the full WebAssembly dependency closure.",
+    "A source match does not by itself certify all required notices or distribution rights."
+  ]
+}

@@ -40,6 +40,7 @@ import { openErrorMessageKey, readPartDocument } from './partFile.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { activeDocument } from '../store/documentKind.js';
 import { hasSaveRecoveryCopy } from './saveFailure.js';
+import { readAutoSaveIntervalMs } from '../settings/autoSaveSettings.js';
 
 // ---------------------------------------------------------------------------
 // 保管庫を選ぶ
@@ -447,6 +448,7 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
   const sessionId = options.sessionId ?? WINDOW_SESSION_ID;
   let detached = false;
   let identity = '';
+  let intervalMs: number | null = null;
   let revision = 0;
   let stopCurrent: (() => void) | null = null;
   let saver: AutoSaver | null = null;
@@ -456,13 +458,18 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
     const state = useAppStore.getState();
     const active = activeDocument(state);
     const nextIdentity = `${active.kind}:${active.documentId}`;
-    if (identity === nextIdentity) return;
+    const nextInterval = readAutoSaveIntervalMs(state.displaySettings);
+    if (identity === nextIdentity) {
+      if (intervalMs !== nextInterval) { intervalMs = nextInterval; saver?.setIntervalMs?.(nextInterval); }
+      return;
+    }
+    intervalMs = nextInterval;
     identity = nextIdentity;
     revision += 1;
     const currentRevision = revision;
     stopCurrent?.();
     const current = factory({ storage: createUnsavedOnlyStorage(storage), kind: active.kind,
-      documentId: active.documentId, sessionId,
+      documentId: active.documentId, sessionId, intervalMs: nextInterval,
       onError: () => { if (!detached && currentRevision === revision) reportAutoSaveFailure(); },
       onSuccess: () => { if (!detached && currentRevision === revision) clearAutoSaveFailure(); },
     });

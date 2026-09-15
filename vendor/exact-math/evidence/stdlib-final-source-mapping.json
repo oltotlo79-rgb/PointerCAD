@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-14T11:00:52.593654+00:00",
+  "candidateAdopted": false,
+  "closureVerified": false,
+  "stdlibFileCount": 567,
+  "exactSourceOrPatchMatches": 566,
+  "overridesAndPatches": [
+    {
+      "runtimePath": "ssl.py",
+      "sourcePath": "src/py/ssl.py",
+      "sha256": "0fc98ae56cec05cf5d9b59b68ba4d6a01b890eb4ca690009dd73111c20287837",
+      "bytesMatch": true
+    },
+    {
+      "runtimePath": "webbrowser.py",
+      "sourcePath": "src/py/webbrowser.py",
+      "sha256": "90ccd56425f5c2a19931a9bd7ee95aff604b98c32a0311d9f3ea7a6f5a8ae2b2",
+      "bytesMatch": true
+    },
+    {
+      "runtimePath": "json/encoder.py",
+      "sourcePath": "Python-3.14.2/Lib/json/encoder.py",
+      "patchPath": "cpython/patches/0006-Teach-json-encoder.py-to-encode-jsnull.patch",
+      "exactHunks": 5,
+      "sha256": "82f8b6912da367214cbcfca3b00dfd769b4a2522ec4c2dd59d67e6ab78036d97",
+      "bytesMatch": true
+    },
+    {
+      "runtimePath": "zoneinfo/_common.py",
+      "sourcePath": "Python-3.14.2/Lib/zoneinfo/_common.py",
+      "patchPath": "cpython/patches/0007-Warn-if-ZoneInfo-is-imported-without-tzdata.patch",
+      "exactHunks": 1,
+      "sha256": "a60e6962d5d62b3ac46e5349b0339c456fc3904135a8773f433f752229fbe8d7",
+      "bytesMatch": true
+    }
+  ],
+  "generatedSysconfig": {
+    "sha256": "bc3c87c5dd4e997d905bfe833402380515fbc5bfbbc4855570d8cac2a9c80267",
+    "generatorSource": "cpython/adjust_sysconfig.py",
+    "generatorSha256": "01ecaea90028b73048150a5a075a6fd59a440a1b9a45a2279de7883e6a9714e1",
+    "constants": {
+      "VERSION": "3.14",
+      "SOABI": "cpython-314-wasm32-emscripten",
+      "HOST_GNU_TYPE": "wasm32-unknown-emscripten",
+      "MACHDEP": "emscripten",
+      "PYODIDE_ABI_VERSION": "2026_0",
+      "PYEMSCRIPTEN_PLATFORM_VERSION": "2026_0",
+      "CC": "cc",
+      "LIBS": "-ldl  -lpthread",
+      "SYSLIBS": "-lm",
+      "LDLIBRARY": "libpython3.14.a",
+      "CONFIG_ARGS": null
+    },
+    "reproducedFromBuild": false
+  },
+  "remaining": [
+    "The generated sysconfig is inspected but not independently rebuilt.",
+    "Complete the Emscripten/WASM component-to-notice mapping and distribution checks."
+  ]
+}

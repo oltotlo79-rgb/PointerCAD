@@ -1,5 +1,5 @@
 import { readScriptOutcome } from './scriptOutcome.js';
-import { SCRIPT_LIMITS, type ScriptExecutionInput, type ScriptExecutionOutcome } from './scriptTypes.js';
+import { SCRIPT_LIMITS, SCRIPT_TOTAL_TIMEOUT_MESSAGE, type ScriptExecutionInput, type ScriptExecutionOutcome } from './scriptTypes.js';
 
 export type ScriptWorkerFactory = () => Worker;
 export const createScriptWorker: ScriptWorkerFactory = () => new Worker(new URL('./script.worker.ts', import.meta.url), { type: 'module' });
@@ -28,7 +28,7 @@ export function runScriptWorker(input: ScriptExecutionInput, signal: AbortSignal
       });
       worker.addEventListener('error', () => { fail('worker', '処理が停止しました。もう一度実行できます。'); });
       worker.addEventListener('messageerror', () => { fail('worker', '処理結果を受け取れません。'); });
-      timer = setTimeout(() => { fail('timeout', '実行全体の上限30秒を超えました。'); }, SCRIPT_LIMITS.totalMs);
+      timer = setTimeout(() => { fail('timeout', SCRIPT_TOTAL_TIMEOUT_MESSAGE); }, SCRIPT_LIMITS.totalMs);
       worker.postMessage(input);
     } catch { fail('worker', '処理を開始できませんでした。もう一度実行してください。'); }
   });

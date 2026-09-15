@@ -1,4 +1,4 @@
-import { createElement, Fragment, type ReactNode } from 'react';
+import { Children, createElement, Fragment, isValidElement, type ReactNode } from 'react';
 import { resolveHelpLink } from './helpLibrary.js';
 
 export interface HelpMarkdownProps {
@@ -13,6 +13,13 @@ export interface HelpMarkdownProps {
 
 export function helpHeadingId(text: string): string {
   return text.normalize('NFKC').toLowerCase().replace(/[`*_]/gu, '').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s+/gu, '-');
+}
+
+function inlineLabelText(node: ReactNode): string {
+  return Children.toArray(node).map(child => {
+    if (typeof child === 'string' || typeof child === 'number') return String(child);
+    return isValidElement<{ readonly children?: ReactNode }>(child) ? inlineLabelText(child.props.children) : '';
+  }).join('');
 }
 
 /** 同梱本文で使用するMarkdownをReactへ変換する。生HTMLをDOMへ挿入しない。 */
@@ -31,7 +38,7 @@ export function HelpMarkdown({ source, onTopic, onAnchor, images = {}, topicHref
         if (link === null) node = label;
         else if (link.kind === 'external') node = <a href={link.href} target="_blank" rel="noopener noreferrer">{label}</a>;
         else if (topicHref) node = <a href={link.kind === 'topic' ? topicHref(link.id, link.anchor) : `#${headingPrefix}${link.anchor}`}>{label}</a>;
-        else node = <button className="pcad-help__link" type="button" onClick={() => link.kind === 'topic' ? onTopic(link.id, link.anchor) : onAnchor(link.anchor)}>{label}</button>;
+        else node = <button title={inlineLabelText(label)} className="pcad-help__link" type="button" onClick={() => link.kind === 'topic' ? onTopic(link.id, link.anchor) : onAnchor(link.anchor)}>{label}</button>;
       } else if (match[7] !== undefined) node = <em>{inline(match[7], depth + 1)}</em>;
       else if (match[9] !== undefined) {
         const href = match[10] ?? '', src = Object.hasOwn(images, href) ? images[href] : undefined;

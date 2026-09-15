@@ -6,19 +6,13 @@ import { exactLinearNode as exactNode, exactLinearValue as exactValue, exactList
 import { exactQrDecomposition } from './exactQrDecomposition.js';
 import { exactLuDecomposition } from './exactLuDecomposition.js';
 import { exactCharacteristicPolynomial } from './exactCharacteristicPolynomial.js';
+import { exactEigenspace } from './exactEigenspace.js';
 import { exactEigenvalues } from './exactEigenvalues.js';
+import { exactSvdDecomposition } from './exactSvdDecomposition.js';
 import { exactSingularValues } from './exactSingularValues.js';
 
-export const LINEAR_DEFINITIONS = [
-  ['row-reduce', 'RowReduce', 1], ['null-space', 'NullSpace', 1],
-  ['column-space', 'ColumnSpace', 1], ['row-space', 'RowSpace', 1],
-  ['linear-solve', 'LinearSolve', 2], ['linear-solution-space', 'LinearSolutionSpace', 2],
-  ['qr-q', 'QrQ', 1], ['qr-r', 'QrR', 1],
-  ['lu-p', 'LuP', 1], ['lu-l', 'LuL', 1], ['lu-u', 'LuU', 1],
-  ['characteristic-coefficients', 'CharacteristicCoefficients', 1],
-  ['eigenvalues', 'Eigenvalues', 1],
-  ['singular-values', 'SingularValues', 1],
-] as const;
+import { LINEAR_DEFINITIONS } from './mathOperationMetadata.js';
+export { LINEAR_DEFINITIONS } from './mathOperationMetadata.js';
 const IDS = new Set<string>(LINEAR_DEFINITIONS.map(([id]) => id));
 const ZERO: ExactRational = { numerator: 0n, denominator: 1n };
 const ONE: ExactRational = { numerator: 1n, denominator: 1n };
@@ -41,7 +35,12 @@ function kernelBasis(rows: readonly (readonly ExactRational[])[], pivots: readon
 export function normalizeExactLinearOperation(node: Extract<MathNode, { kind: 'operation' }>): MathNode {
   if (!IDS.has(node.operation)) return node;
   const input = readRows(node.operands[0]), width = input[0].length;
+  if (node.operation === 'eigenspace') return exactEigenspace(input, node.operands[1]);
   if (node.operation === 'eigenvalues') return exactEigenvalues(input);
+  if (['svd-u','svd-s','svd-v'].includes(node.operation)) {
+    const result = exactSvdDecomposition(input);
+    return node.operation === 'svd-u' ? result.u : node.operation === 'svd-s' ? result.s : result.v;
+  }
   if (node.operation === 'singular-values') return exactSingularValues(input);
   if (node.operation === 'characteristic-coefficients') return exactCharacteristicPolynomial(input);
   if (node.operation === 'qr-q' || node.operation === 'qr-r') {

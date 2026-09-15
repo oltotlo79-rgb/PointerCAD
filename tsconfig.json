@@ -11,6 +11,7 @@
     { "path": "./packages/io" },
     { "path": "./packages/ui" },
     { "path": "./apps/web" },
+    { "path": "./apps/web/service-worker" },
     { "path": "./apps/desktop" }
   ]
 }

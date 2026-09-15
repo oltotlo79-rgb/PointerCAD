@@ -13,37 +13,23 @@ import {
   makeSketchChamfer,
   makeSketchFillet,
   type createKernelApi,
-  matchEdge,
-  matchFace,
-  matchVertex,
-  type AppearanceMatch,
-  type AppearanceQuery,
   type FaceMeshData,
   type KernelApi,
   type ManagedKernelApi,
+  type MaterialComparisonKernelApi,
   type InterferenceComponentSpec,
   type InterferenceRequest,
   type InterferenceResult,
   type InterferenceProgress,
-  type OffsetJoinType,
-  type PlaneCurve,
   type PrintabilityProgress,
-  type ShapeExportItem,
-  type ShapeInspectRequest,
-  type SketchOffsetItem,
-  type SketchOffsetOutcome,
-  type SketchPlaneFrame,
-  type SketchProjectionItem,
-  type SketchProjectionOutcome,
-  type SketchSectionItem,
   type SketchTessellationFailure,
-  type SolidBodyMesh,
   type SolidProgress,
   type SolidRecomputeRequest,
-  type SolidRecomputeResult,
-  type Vec2Tuple,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
+import type { MaterialComparisonBridge, MaterialComparisonResult } from './kernelBridge/materialComparisonContracts.js';
+import { readMaterialComparison } from './kernelBridge/readMaterialComparison.js';
+export type { MaterialComparisonBridge, MaterialComparisonResult, MaterialComparisonGeometry, MaterialDifferenceRegion } from './kernelBridge/materialComparisonContracts.js';
 import { readFunctionCurveGeometry, type FunctionKernelBridge } from './functionGeometry/functionCurveGeometry.js';
 import type {
   DrawingProjectionResult,
@@ -51,37 +37,27 @@ import type {
 } from './drawing/resolveDrawing.js';
 
 import type { ExportMeshQuality } from './exchange/types.js';
-import type { ResolvedSubShape } from './geometry/planeSpec.js';
-import type {
-  SubShapeRef,
-} from './geometry/subShapeRef.js';
-import type { ResolvedSolidStep } from './part/resolvePart.js';
-
-import type { WorkPlane } from './sketch/planeMath.js';
 
 import type {
-  OffsetCornerKind,
-  ResolvedCurve,
   ResolvedFace,
   SketchFaceMesh,
 } from './sketch/types.js';
-import { addVec3, scaleVec3, type Vec3 } from './sketch/vec3.js';
 
-import { toCurveSpec, toFaceRequest, fromCurveSpec } from './kernelBridge/curveConversions.js';
-import { toSubShapeQuery } from './kernelBridge/subShapeQuery.js';
+import { toFaceRequest } from './kernelBridge/curveConversions.js';
+import {
+  toOffsetItem, toOffsetResult, toProjectionItem, toSectionItem, toProjectionResult,
+} from './kernelBridge/sketchConversions.js';
+export { toOffsetResult, fromPlaneCurve, toProjectionResult } from './kernelBridge/sketchConversions.js';
 import { toMeasureRequest, toMeasureOutcome } from './kernelBridge/measureConversions.js';
+import { toShapeInspectRequest, toShapeInspectItems, printabilityProgressOf, toPrintabilityOutcome } from './kernelBridge/inspectionConversions.js';
+export { toPrintabilityOutcome } from './kernelBridge/inspectionConversions.js';
 import { toShapeExportItems, toShapeExportRequest, toShapeExportOutcome, toShapeImportRequest, toShapeImportOutcome } from './kernelBridge/exchangeConversions.js';
-import { toSolidStepRequest } from './kernelBridge/solidRequests.js';
+import { toSolidRecomputeRequest, toSolidOutcome } from './kernelBridge/solidConversions.js';
+export { toAppearanceQueries, toAppearanceMatches, toSolidOutcome } from './kernelBridge/solidConversions.js';
 import type {
   SketchFaceFailure,
   SketchTessellationOutcome,
-  SketchOffsetRequestItem,
-  SketchOffsetEntry,
-  SketchOffsetFailure,
   SketchOffsetResult,
-  SketchProjectionRequestItem,
-  SketchProjectionEntry,
-  SketchProjectionFailure,
   SketchProjectionResult,
   SketchCornerSegment,
   SketchCornerPlane,
@@ -107,15 +83,9 @@ export type {
   SolidBodyMeshData,
 } from './kernelBridge/sketchContracts.js';
 import type {
-  AppearanceFaceRequest,
-  AppearanceMatchEntry,
-  SolidBody,
-  SolidBodyFailure,
   SolidRecomputeOutcome,
   PartProgressCallback,
   PartCancelToken,
-  SolidRecomputeOptions,
-  MateSubShapeGeometry,
 } from './kernelBridge/solidContracts.js';
 export type {
   SolidFaceEntry,
@@ -138,7 +108,6 @@ import type {
   MeasureOutcome,
   PrintabilityProgressCallback,
   PrintabilityOutcome,
-  PrintabilityOptions,
 } from './kernelBridge/analysisContracts.js';
 import type { ShapeExportOutcome, ShapeImportOutcome } from './kernelBridge/exchangeContracts.js';
 export type {
@@ -324,642 +293,11 @@ export {
  */
 const PRINTABILITY_NO_BODY_MESSAGE = '点検できる形がありません。';
 
-/** 点検の依頼をカーネルの言葉へ詰め替える。 */
-function toShapeInspectRequest(
-  items: readonly ShapeExportItem[],
-  options: PrintabilityOptions,
-): ShapeInspectRequest {
-  const quality = options.meshQuality ?? DISPLAY_MESH_QUALITY;
-  return {
-    partId: options.partId,
-    bodies: items,
-    deviationMm: quality.deviationMm,
-    angularDeflectionRad: quality.angularDeflectionRad,
-    minThicknessMm: options.minThicknessMm,
-    overhangAngleDeg: options.overhangAngleDeg,
-  };
-}
-
-/**
- * 点検する立体を、書き出しと同じ「段の鍵の一覧」へ引き直す。
- *
- * **名前も色も点検では使わない**(`ShapeInspectRequest` の注釈)ので `null` を入れる。
- * 引き直しそのものは書き出しと同じ関数(`toShapeExportItems`)に任せる——鍵が引けない
- * ときの判断を 2 か所に書かないため。
- */
-function toShapeInspectItems(
-  steps: readonly ResolvedSolidStep[],
-  bodies: readonly string[],
-): readonly ShapeExportItem[] | null {
-  return toShapeExportItems(
-    steps,
-    bodies.map((featureId) => ({ featureId, name: null, color: null })),
-  );
-}
-
-/**
- * 点検の進捗を model の言葉へ写す(Comlink を通らない直結の橋のぶん)。
- *
- * Worker 版は `toPrintabilityProgressProxy` が同じ写しを Comlink.proxy で包んで行う。
- * 写しそのものを 2 か所に書かないよう、包まない版をここに置いてあちらから使う。
- */
-function printabilityProgressOf(
-  onProgress: PrintabilityProgressCallback | undefined,
-): ((progress: PrintabilityProgress) => void) | undefined {
-  if (onProgress === undefined) {
-    return undefined;
-  }
-  return (progress: PrintabilityProgress) => {
-    onProgress({
-      phase: progress.phase,
-      processed: progress.processed,
-      total: progress.total,
-      ratio: progress.ratio,
-    });
-  };
-}
-
-/** 点検の結果を model の言葉へ詰め替える(kernel の型を外へ出さない、NFR-MA-1)。 */
-type KernelPrintabilityResult = Awaited<ReturnType<KernelApi['inspectPrintability']>>;
-
-export function toPrintabilityOutcome(result: KernelPrintabilityResult): PrintabilityOutcome {
-  return {
-    kind: 'inspected',
-    report: {
-      triangleCount: result.triangleCount,
-      thinTriangles: result.thinTriangles,
-      overhangTriangles: result.overhangTriangles,
-      openEdgeTriangles: result.openEdgeTriangles,
-      meshes: result.meshes,
-      summary: {
-        triangleCount: result.summary.triangleCount,
-        degenerateCount: result.summary.degenerateCount,
-        inspectedTriangleCount: result.summary.inspectedTriangleCount,
-        thinCount: result.summary.thinCount,
-        overhangCount: result.summary.overhangCount,
-        openEdgeCount: result.summary.openEdgeCount,
-        openEdgeTriangleCount: result.summary.openEdgeTriangleCount,
-        watertight: result.summary.watertight,
-        minThicknessFoundMm: result.summary.minThicknessFoundMm,
-        minThicknessMm: result.summary.minThicknessMm,
-        overhangAngleDeg: result.summary.overhangAngleDeg,
-        cellSizeMm: result.summary.cellSizeMm,
-      },
-      cancelled: result.cancelled,
-    },
-  };
-}
-
-/** 角の作り方(model の言葉)をカーネルの言葉へ直す。 */
-function toJoinType(corner: OffsetCornerKind): OffsetJoinType {
-  return corner === 'sharp' ? 'intersection' : 'arc';
-}
-
-/** オフセット 1 件の依頼をカーネルの言葉へ直す。 */
-function toOffsetItem(request: SketchOffsetRequestItem): SketchOffsetItem {
-  return {
-    id: request.featureId,
-    curves: request.curves.map((curve) => toCurveSpec(curve)),
-    distance: request.distance,
-    joinType: toJoinType(request.corner),
-  };
-}
-
-/** オフセットが返らなかったとき(カーネルが id を返さなかったとき)に付ける理由。 */
-const MISSING_OFFSET_MESSAGE = 'カーネルからオフセットの結果が返りませんでした。';
-
-/**
- * オフセットの結果を model の言葉へ詰め替える。
- * 頼んだのに結果も理由も返らなかった id は、理由を補って失敗として扱う(FR-504。
- * 面の詰め替え `toOutcome` と同じ書き方)。
- */
-export function toOffsetResult(
-  requests: readonly SketchOffsetRequestItem[],
-  outcome: SketchOffsetOutcome,
-): SketchOffsetResult {
-  const results: SketchOffsetEntry[] = outcome.results.map((result) => ({
-    featureId: result.id,
-    contours: result.contours.map((contour) => ({
-      curves: contour.curves.map((curve) => fromCurveSpec(curve, result.id)),
-      closed: contour.closed,
-    })),
-  }));
-  const failures: SketchOffsetFailure[] = outcome.failures.map((failure) => ({
-    featureId: failure.id,
-    message: failure.message,
-  }));
-
-  const reported = new Set<string>(results.map((result) => result.featureId));
-  for (const failure of failures) {
-    reported.add(failure.featureId);
-  }
-  for (const request of requests) {
-    if (!reported.has(request.featureId)) {
-      failures.push({ featureId: request.featureId, message: MISSING_OFFSET_MESSAGE });
-    }
-  }
-
-  return { results, failures };
-}
-
-/* ------------------------------------------------------------------ *
- * 投影・交差の詰め替え(FR-325、P4 タスク25)
- * ------------------------------------------------------------------ */
-
-/** 作図面の 2 次元座標をワールド座標へ戻す。第 2 軸は `WorkPlane.axisV`(= 法線 × 第 1 軸)。 */
-function planePointToWorld(plane: WorkPlane, uv: Vec2Tuple): Vec3 {
-  return addVec3(
-    plane.origin,
-    addVec3(scaleVec3(plane.axisU, uv[0]), scaleVec3(plane.axisV, uv[1])),
-  );
-}
-
-/**
- * カーネルが返した作図面の上の曲線を、model の解決済みの曲線へ戻す(FR-325)。
- *
- * - 線分・円弧は形のまま残る(投影のほとんどの用途がここに入る。`makeProjection.ts`)。
- * - 点列(傾いた円・楕円・自由曲線)は**通過点のスプライン**として受ける。
- *   `ResolvedSpline` は通過点しか持たない型なので、そのまま詰められる
- *   (`fromCurveSpec` の注釈が予告していた「B スプラインが返る道」がこれ)。
- *
- * 円弧の角度は「第 1 軸から第 2 軸へ回る向きが正」で、`ResolvedArc` の約束と同じ
- * (`makeProjection.ts` の `PlaneArc` の注釈)。そのまま渡してよい。
- */
-export function fromPlaneCurve(
-  curve: PlaneCurve,
-  plane: WorkPlane,
-  featureId: string,
-): ResolvedCurve {
-  switch (curve.kind) {
-    case 'segment':
-      return {
-        kind: 'segment',
-        featureId,
-        from: planePointToWorld(plane, curve.from),
-        to: planePointToWorld(plane, curve.to),
-      };
-    case 'arc':
-      return {
-        kind: 'arc',
-        featureId,
-        center: planePointToWorld(plane, curve.center),
-        normal: plane.normal,
-        xAxis: plane.axisU,
-        radius: curve.radius,
-        startAngle: curve.startAngle,
-        endAngle: curve.endAngle,
-      };
-    case 'polyline':
-      return {
-        kind: 'spline',
-        featureId,
-        mode: 'interpolate',
-        points: curve.points.map((point) => planePointToWorld(plane, point)),
-        closed: curve.closed,
-      };
-  }
-}
-
-/** 作図面を kernel の言葉へ直す。第 2 軸は kernel が「法線 × 第 1 軸」で作り直す。 */
-function toPlaneFrame(plane: WorkPlane): SketchPlaneFrame {
-  return { origin: plane.origin, axisU: plane.axisU, normal: plane.normal };
-}
-
-/** 投影の依頼をカーネルの言葉へ直す。 */
-function toProjectionItem(request: SketchProjectionRequestItem): SketchProjectionItem {
-  return {
-    id: request.featureId,
-    shapeKey: request.bodyKey,
-    subShape: request.source === null ? null : toSubShapeQuery(request.source),
-    plane: toPlaneFrame(request.plane),
-  };
-}
-
-/** 交差の依頼をカーネルの言葉へ直す(切るのは立体そのものなので指紋は渡さない)。 */
-function toSectionItem(request: SketchProjectionRequestItem): SketchSectionItem {
-  return {
-    id: request.featureId,
-    ...(request.curveToleranceMm === undefined ? {} : { curveToleranceMm: request.curveToleranceMm }),
-    shapeKey: request.bodyKey,
-    plane: toPlaneFrame(request.plane),
-  };
-}
-
-/** 投影・交差が返らなかったとき(カーネルが id を返さなかったとき)に付ける理由。 */
-const MISSING_PROJECTION_MESSAGE = 'カーネルから投影・交差の結果が返りませんでした。';
-
-/**
- * 投影・交差の結果を model の言葉へ詰め替える。
- * 頼んだのに結果も理由も返らなかった id は理由を補って失敗にする(`toOffsetResult` と同じ)。
- */
-export function toProjectionResult(
-  requests: readonly SketchProjectionRequestItem[],
-  outcome: SketchProjectionOutcome,
-): SketchProjectionResult {
-  const planeByFeature = new Map(requests.map((request) => [request.featureId, request.plane]));
-  const preciseFeatures = new Set(requests.filter((request) => request.curveToleranceMm !== undefined).map((request) => request.featureId));
-  const results: SketchProjectionEntry[] = [];
-  const failures: SketchProjectionFailure[] = outcome.failures.map((failure) => ({
-    featureId: failure.id,
-    message: failure.message,
-  }));
-
-  for (const result of outcome.results) {
-    const plane = planeByFeature.get(result.id);
-    if (plane === undefined) {
-      // 頼んでいない id が返ることは無いが、返ってきても黙って捨てず理由を残す。
-      failures.push({ featureId: result.id, message: MISSING_PROJECTION_MESSAGE });
-      continue;
-    }
-    results.push({
-      featureId: result.id,
-      curves: result.curves.flatMap((curve) => {
-        if (curve.kind !== 'polyline' || !preciseFeatures.has(result.id)) return [fromPlaneCurve(curve, plane, result.id)];
-        // 精密出力の折線を補間スプラインへ読み替えない。受け取った弦をそのまま保持する。
-        return curve.points.slice(0, curve.closed ? undefined : -1).map((point, index) => fromPlaneCurve({
-          kind: 'segment', from: point, to: curve.points[(index + 1) % curve.points.length],
-        }, plane, result.id));
-      }),
-    });
-  }
-
-  const reported = new Set<string>(results.map((result) => result.featureId));
-  for (const failure of failures) {
-    reported.add(failure.featureId);
-  }
-  for (const request of requests) {
-    if (!reported.has(request.featureId)) {
-      failures.push({ featureId: request.featureId, message: MISSING_PROJECTION_MESSAGE });
-    }
-  }
-
-  return { results, failures };
-}
-
-/* ------------------------------------------------------------------ *
- * 外観の面の照合(FR-1106、P5 §2.2.3、タスク4)
- * ------------------------------------------------------------------ */
-
-/**
- * 外観を割り当てた面を、カーネルへの照合の依頼へ詰め替える(§2.2.3)。
- *
- * **依頼が 1 件も無ければ空配列を返す。** カーネルは空なら照合の段そのものを飛ばし、
- * 物差し(境界箱の対角長)を測るための OCCT の呼び出しも 1 回も行わない
- * (§0.a-0.54「外観の追加で所要を増やさない」)。
- *
- * 次の 2 つは依頼に乗せずに落とす。落とした割り当ては `toAppearanceMatches` が
- * `faceIndex: null`(= 見つからない)で必ず補うので、件数は依頼元と食い違わない。
- *
- * - **段が見つからない割り当て**: そのフィーチャーが履歴から消えた、抑制された、
- *   ブーリアンに消費された場合。鍵が引けないので照合しようがない。
- * - **面以外の指紋**: 外観は面にしか付かない(`AppearanceTarget`)が、指紋の型は
- *   辺・頂点も表せるので、種類で守る(カーネルも面以外は断る)。
- */
-export function toAppearanceQueries(
-  steps: readonly ResolvedSolidStep[],
-  requests: readonly AppearanceFaceRequest[],
-): readonly AppearanceQuery[] {
-  if (requests.length === 0) {
-    return [];
-  }
-  const keyByFeatureId = new Map(steps.map((step) => [step.featureId, step.key]));
-  const queries: AppearanceQuery[] = [];
-  for (const request of requests) {
-    const bodyKey = keyByFeatureId.get(request.bodyFeatureId);
-    if (bodyKey === undefined || request.ref.fingerprint.kind !== 'face') {
-      continue;
-    }
-    queries.push({ id: request.id, bodyKey, query: toSubShapeQuery(request.ref) });
-  }
-  return queries;
-}
-
-/**
- * 照合の結果を model の言葉へ詰め替える(§2.2.3)。
- *
- * **戻りは依頼(`requests`)と同じ並び・同じ件数**で、依頼に乗せなかったもの・
- * カーネルが返さなかったものは `faceIndex: null` で補う。呼び出し側(ui)は
- * 「見つからない割り当てが n 件」を数えるだけでよく、どこで落ちたかを気にしなくて済む。
- *
- * ボディの id は**文書側の値をそのまま返す**。カーネルは面の属するボディが
- * 見つからないときに空文字を返す約束だが、見つかったときの値は「段の id = ボディの id」
- * (§0.a-0.5)より必ず `request.bodyFeatureId` と同じなので、空文字を外へ出す意味が無い。
- */
-export function toAppearanceMatches(
-  requests: readonly AppearanceFaceRequest[],
-  matches: readonly AppearanceMatch[] | undefined,
-): readonly AppearanceMatchEntry[] {
-  if (requests.length === 0) {
-    return [];
-  }
-  const faceIndexById = new Map((matches ?? []).map((match) => [match.id, match.faceIndex]));
-  return requests.map((request) => ({
-    id: request.id,
-    bodyFeatureId: request.bodyFeatureId,
-    faceIndex: faceIndexById.get(request.id) ?? null,
-  }));
-}
-
-/**
- * 立体の再計算の依頼を 1 つ組み立てる(Worker 版と直結版で同じものを使う)。
- *
- * ## 段ごとの三角形分割の粗さ(§2.13、§0.a-0.54)について
- *
- * `SolidStepRequest.tessellation` にはここでは何も入れず、**粗さの規則はカーネルに
- * 1 か所だけ置いたままにする**(`recomputeSolids.ts` の `isRelaxableSweepStep`。
- * ばねと実らせんのねじ穴を 0.15 / 0.7 へ緩める、P3 仕上げ (a) の実測)。
- * 同じ規則を model にも書くと 2 か所になり、片方だけ直したときに食い違うため。
- * カーネルは「段ごとの指定 > 全体の指定 > 段の種類の既定」の順で選ぶので、ここで
- * 値を添えるとカーネルの既定の方が負けてしまう。基本形状(球・トーラス)を緩める案は
- * **効き目が無いことがタスク14 で実測された**(球 r10 は 0.8 を添えても 978 枚のまま)
- * ので入れない。利用者が粗さを選べるようにする段になったら、その値だけをここへ通す。
- */
-function toSolidRecomputeRequest(
-  steps: readonly ResolvedSolidStep[],
-  options: SolidRecomputeOptions,
-): SolidRecomputeRequest {
-  return {
-    partId: options.partId,
-    steps: steps.map((step) => toSolidStepRequest(step)),
-    generation: options.generation ?? 0,
-    appearanceQueries: toAppearanceQueries(steps, options.appearance ?? []),
-    measureAreas: options.measureAreas ?? false,
-  };
-}
-
 /* ------------------------------------------------------------------ *
  * 部分形状の選び直し(FR-325・FR-328〜330 の上流追従、P4 タスク25)— 同期の純関数
  * ------------------------------------------------------------------ */
 
-/**
- * 位置の点を部品の大きさで割るための長さ(境界箱の対角長の半分)。
- *
- * カーネル側(`makeHole.ts` 等)は `boundingDiagonal`(OCCT の `Bnd_Box`)で測るが、
- * model は B-rep を持たないので**三角形の頂点の並び**から同じ量を測る。
- * 三角形は形の表面を覆っているので、境界箱は実用上ほぼ一致する(曲面では
- * 近似の分だけわずかに小さく出るが、位置の点は 0〜1 の連続な値で、しきい値
- * (`SUB_SHAPE_MATCH_THRESHOLD`)の判定がこの差で覆るほど敏感ではない)。
- */
-function matchScaleOf(body: SolidBody): number {
-  const positions = body.mesh.positions;
-  if (positions.length < 3) {
-    return 0;
-  }
-  const low: [number, number, number] = [positions[0], positions[1], positions[2]];
-  const high: [number, number, number] = [positions[0], positions[1], positions[2]];
-  for (let index = 3; index + 2 < positions.length; index += 3) {
-    for (let axis = 0; axis < 3; axis += 1) {
-      const value = positions[index + axis];
-      low[axis] = Math.min(low[axis], value);
-      high[axis] = Math.max(high[axis], value);
-    }
-  }
-  return Math.hypot(high[0] - low[0], high[1] - low[1], high[2] - low[2]) * 0.5;
-}
-
-/**
- * 指紋に最も近い面・辺・頂点を、いまのボディの中から選び直す(FR-325、FR-330、タスク25)。
- *
- * 採点は kernel の `matchFace` / `matchEdge` / `matchVertex`(OCCT を使わない純関数)を
- * そのまま使うので、**重み・しきい値・同点の決め方は加工フィーチャーと完全に同じ**である
- * (§0.a-0.4)。この関数を通すと、スケッチの頂点参照・作業平面・基準ジオメトリが
- * 「保存された指紋の位置」ではなく「いまの形の位置」を見るようになる。
- *
- * 届かなければ null(呼び出し側が `missingSubShape` で断る、FR-504)。
- * Worker を通らない同期の純関数なので、`KernelBridge` のメソッドにはしない
- * (`sketchFilletGeometry` と同じ扱い、このファイルの §「なぜ Worker を往復しないのか」)。
- */
-export function selectSubShape(body: SolidBody, reference: SubShapeRef): ResolvedSubShape | null {
-  const query = toSubShapeQuery(reference);
-  const scale = matchScaleOf(body);
-  switch (query.kind) {
-    case 'face': {
-      const match = matchFace(body.faces, query, scale);
-      const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
-      if (found === undefined) {
-        return null;
-      }
-      return {
-        kind: 'face',
-        position: found.centroid,
-        axis: found.axis,
-        surfaceKind: found.surfaceKind,
-        curveKind: null,
-      };
-    }
-    case 'edge': {
-      const match = matchEdge(body.edges, query, scale);
-      const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
-      if (found === undefined) {
-        return null;
-      }
-      return {
-        kind: 'edge',
-        position: found.midpoint,
-        axis: found.axis,
-        surfaceKind: null,
-        curveKind: found.curveKind,
-      };
-    }
-    case 'vertex': {
-      const match = matchVertex(body.vertices, query, scale);
-      const found =
-        match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
-      if (found === undefined) {
-        return null;
-      }
-      return {
-        kind: 'vertex',
-        position: found.position,
-        axis: null,
-        surfaceKind: null,
-        curveKind: null,
-      };
-    }
-  }
-}
-
-/**
- * 合致のため、現在の形から種類・大きさ・重心・解析軸上点を選び直す(P7-14b)。
- * selectSubShape と同じ kernel の採点を使い、重心を解析点で置き換えない。
- * body は部品座標の形。アセンブリの配置は resolveMateTarget が1回だけ掛ける。
- */
-export function selectMateTargetGeometry(
-  body: SolidBody,
-  reference: SubShapeRef,
-): MateSubShapeGeometry | null {
-  if (body.featureId !== reference.bodyFeatureId) return null;
-  const query = toSubShapeQuery(reference);
-  const scale = matchScaleOf(body);
-  switch (query.kind) {
-    case 'face': {
-      const match = matchFace(body.faces, query, scale);
-      const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
-      if (found === undefined) return null;
-      return {
-        kind: 'face',
-        surfaceKind: found.surfaceKind,
-        area: found.area,
-        position: found.centroid,
-        axis: found.axis,
-        radius: found.radius,
-        ...(found.axisOrigin == null ? {} : { axisOrigin: found.axisOrigin }),
-      };
-    }
-    case 'edge': {
-      const match = matchEdge(body.edges, query, scale);
-      const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
-      if (found === undefined) return null;
-      return {
-        kind: 'edge',
-        curveKind: found.curveKind,
-        length: found.length,
-        position: found.midpoint,
-        axis: found.axis,
-        radius: found.radius,
-        ...(found.axisOrigin == null ? {} : { axisOrigin: found.axisOrigin }),
-      };
-    }
-    case 'vertex': {
-      const match = matchVertex(body.vertices, query, scale);
-      const found =
-        match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
-      return found === undefined ? null : { kind: 'vertex', position: found.position };
-    }
-  }
-}
-
-/**
- * 部品を差し替えた後のボディから、保存し直せる部分形状参照を作る(FR-614)。
- * 採点・しきい値・同点時の選択は `selectSubShape` と同じ kernel の純関数を使う。
- * 見つからなければ元の参照を消さずに残せるよう `null` を返す。
- */
-export function rematchSubShapeRef(
-  bodies: readonly SolidBody[],
-  reference: SubShapeRef,
-): SubShapeRef | null {
-  const preferred = bodies.filter((body) => body.featureId === reference.bodyFeatureId);
-  const candidates = preferred.length > 0 ? preferred : bodies;
-  const query = toSubShapeQuery(reference);
-  for (const body of candidates) {
-    const scale = matchScaleOf(body);
-    switch (query.kind) {
-      case 'face': {
-        const match = matchFace(body.faces, query, scale);
-        const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
-        if (found !== undefined) {
-          return {
-            bodyFeatureId: body.featureId,
-            index: found.index,
-            fingerprint: {
-              kind: 'face', surfaceKind: found.surfaceKind, area: found.area,
-              position: found.centroid, axis: found.axis, radius: found.radius,
-            },
-          };
-        }
-        break;
-      }
-      case 'edge': {
-        const match = matchEdge(body.edges, query, scale);
-        const found = match === null ? undefined : body.edges.find((edge) => edge.index === match.index);
-        if (found !== undefined) {
-          return {
-            bodyFeatureId: body.featureId,
-            index: found.index,
-            fingerprint: {
-              kind: 'edge', curveKind: found.curveKind, length: found.length,
-              position: found.midpoint, axis: found.axis, radius: found.radius,
-            },
-          };
-        }
-        break;
-      }
-      case 'vertex': {
-        const match = matchVertex(body.vertices, query, scale);
-        const found = match === null ? undefined : body.vertices.find((vertex) => vertex.index === match.index);
-        if (found !== undefined) {
-          return {
-            bodyFeatureId: body.featureId,
-            index: found.index,
-            fingerprint: { kind: 'vertex', position: found.position },
-          };
-        }
-        break;
-      }
-    }
-  }
-  return null;
-}
-
-/** 立体が消えたとき(画面に出すはずの段の結果も理由も返らなかったとき)に付ける理由。 */
-const MISSING_BODY_MESSAGE = 'カーネルから立体が返りませんでした。';
-
-/**
- * カーネルの結果を model のボディへ詰め替える。妥当性の判定は SolidBody.isValid の注釈のとおり。
- * `faces` / `edges` / `vertices` / `threadMarks` は kernel の一覧と欄の名前・形が同じなので
- * (計画書 §2.8)、詰め替えは配列をそのまま渡すだけで済む(model 独自の型として持つのは
- * `SolidFaceEntry` 等の型そのものを kernel から再輸出しないためで、値の変形は要らない)。
- */
-function toSolidBody(mesh: SolidBodyMesh): SolidBody {
-  return {
-    featureId: mesh.id,
-    mesh: {
-      positions: mesh.positions,
-      normals: mesh.normals,
-      indices: mesh.indices,
-      edgePositions: mesh.edgePositions,
-      triangleCount: mesh.triangleCount,
-    },
-    volume: mesh.volume,
-    // 表面積は依頼が求めたときだけカーネルが測る(SolidRecomputeOptions.measureAreas)。
-    // 測っていなければ欄ごと空のまま渡し、0 と偽らない。
-    area: mesh.area,
-    // 形の種類はカーネルの必須の欄(§0.a-0.77、タスク42b)なので、そのまま写す。
-    // 判定は kernel の `hasSolid` そのままで、体積では決めない(体積 8000 の開いた殻がある)。
-    bodyKind: mesh.bodyKind,
-    isValid: mesh.triangleCount > 0 && Number.isFinite(mesh.volume) && (mesh.bodyKind === 'shell' || mesh.volume > 0),
-    faces: mesh.faces,
-    edges: mesh.edges,
-    vertices: mesh.vertices,
-    threadMarks: mesh.threadMarks,
-  };
-}
-
-/**
- * カーネルの結果を model の言葉へ詰め替える。
- * 画面に出すはずの段(visible)なのにボディも理由も返らなかったものは、
- * 黙って消えないよう理由を補って失敗として扱う(FR-504。面の詰め替えと同じ書き方)。
- */
-export function toSolidOutcome(
-  steps: readonly ResolvedSolidStep[],
-  result: SolidRecomputeResult,
-  appearance: readonly AppearanceFaceRequest[] = [],
-): SolidRecomputeOutcome {
-  const bodies = result.bodies.map((mesh) => toSolidBody(mesh));
-  const collected: SolidBodyFailure[] = result.failures.map((failure) => ({
-    featureId: failure.id,
-    message: failure.message,
-  }));
-
-  const reported = new Set<string>(bodies.map((body) => body.featureId));
-  for (const failure of collected) {
-    reported.add(failure.featureId);
-  }
-  for (const step of steps) {
-    // 途中で打ち切られた段は「まだ計算していない」だけなので、失敗にしない(NFR-PF-4)。
-    if (step.visible && !reported.has(step.featureId) && !result.cancelled) {
-      collected.push({ featureId: step.featureId, message: MISSING_BODY_MESSAGE });
-    }
-  }
-
-  return {
-    bodies,
-    failures: collected,
-    cacheHits: result.cacheHits,
-    cancelled: result.cancelled,
-    appearanceMatches: toAppearanceMatches(appearance, result.appearanceMatches),
-  };
-}
+export { selectSubShape, selectMateTargetGeometry, rematchSubShapeRef } from './kernelBridge/subShapeMatching.js';
 
 /** 1ジョブが貸すcallbackと、その輸送に使ったportの所有者。 */
 interface KernelCallbackScope {
@@ -1434,7 +772,7 @@ function refusedInterference(request: InterferenceRequest, failure: AssemblyInte
   return cancelled ? { ...report, kind: 'checked', failure: null } : { ...report, kind: 'failed', failure };
 }
 
-export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridge & FunctionKernelBridge {
+export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridge & FunctionKernelBridge & MaterialComparisonBridge {
   const health = createKernelHealth();
   const counts: Record<KernelOperationStatus, number> = {
     success: 0, failed: 0, cancelled: 0, workerBroken: 0,
@@ -1462,6 +800,16 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
 
   return {
     pendingWaiters: () => connection.waiters.size,
+    async compareMaterials(beforeKeys, afterKeys, shouldCancel): Promise<MaterialComparisonResult> {
+      const active = connection, callbacks = callbackScope();
+      const failed = (): MaterialComparisonResult => active.interruption === 'cancelled'
+        ? { kind: 'cancelled' } : { kind: 'failed', message: KERNEL_BROKEN_MESSAGE };
+      return raceWithBroken(active, async () => {
+        try { return readMaterialComparison(await active.remote.compareMaterials({ beforeKeys, afterKeys },
+          toCancelProxy(shouldCancel, callbacks))); }
+        catch (error) { return { kind: 'failed' as const, message: toFailureMessage(error) }; }
+      }, failed, callbacks);
+    },
     async hiddenLineViews(request, options = {}) {
       if (health.broken && !disposed) restart();
       const active = connection;
@@ -1727,7 +1075,7 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
         active,
         () => active.remote
           .inspectPrintability(
-            toShapeInspectRequest(items, options),
+            toShapeInspectRequest(items, options, DISPLAY_MESH_QUALITY),
             toPrintabilityProgressProxy(options.onProgress, callbacks),
             toCancelProxy(options.shouldCancel, callbacks),
           )
@@ -1769,6 +1117,20 @@ export function createDirectInterferenceKernelBridge(api: ManagedKernelApi): Int
           onProgress === undefined ? undefined : (progress) => { if (!disposed) onProgress(interferenceProgressOf(progress)); },
           () => disposed || (shouldCancel?.() ?? false)));
       } catch (error) { return refusedInterference(request, { code: 'rpcFailed', message: toFailureMessage(error) }); }
+    },
+    dispose() { disposed = true; bridge.dispose(); },
+  };
+}
+
+/** 実OCCT統合検査用。既存の部分的なKernelApiへ比較能力を要求しない。 */
+export function createDirectMaterialComparisonBridge(api: MaterialComparisonKernelApi): AssemblyKernelBridge & DrawingKernelBridge & FunctionKernelBridge & MaterialComparisonBridge {
+  const bridge = createDirectKernelBridge(api); let disposed = false;
+  return { ...bridge,
+    async compareMaterials(beforeKeys, afterKeys, shouldCancel) {
+      if (disposed) return { kind: 'cancelled' };
+      try { return readMaterialComparison(await api.compareMaterials({ beforeKeys, afterKeys },
+        () => disposed || (shouldCancel?.() ?? false))); }
+      catch (error) { return { kind: 'failed', message: toFailureMessage(error) }; }
     },
     dispose() { disposed = true; bridge.dispose(); },
   };
@@ -1917,7 +1279,7 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
         // Comlink を通らないので、進捗・中止の関数は proxy で包まずそのまま渡せる。
         return toPrintabilityOutcome(
           await api.inspectPrintability(
-            toShapeInspectRequest(items, options),
+            toShapeInspectRequest(items, options, DISPLAY_MESH_QUALITY),
             printabilityProgressOf(options.onProgress),
             options.shouldCancel,
           ),

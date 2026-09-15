@@ -70,6 +70,24 @@ describe('表面性状と加工注記の操作・再評価(P8-36)', () => {
     addDrawingSurfaceFinish({ ...input, process: 'removal' });
     expect(displays()[0].curves).toHaveLength(5);
   });
+  it('新規の参照注記は指定した高さで保存・描画され、Undoで一つずつ戻る', () => {
+    expect(addDrawingSurfaceFinish({ ...input, height: 6 })).toBe(true);
+    const first = state().drawing;
+    expect(first?.annotations[0]).toMatchObject({ height: 6, sourceTarget: target });
+    expect(displays()[0].texts?.[0].sizeMm).toBe(6);
+    expect(addDrawingMachiningNote(target, [150, 100], 8)).toBe(true);
+    expect(state().drawing?.annotations[1]).toMatchObject({ height: 8, machiningFeatureId: thread.id });
+    expect(displays().flatMap(element => element.texts ?? []).some(item => item.text === 'M8×1.25' && item.sizeMm === 8)).toBe(true);
+    state().undo(); expect(state().drawing).toBe(first);
+    state().redo(); expect(state().drawing?.annotations.map(item => item.height)).toEqual([6, 8]);
+  });
+  it.each([0, -1, NaN, Infinity, 101])('不正な高さ%sでは表面性状も加工注記も作成せず、元の履歴を保つ', height => {
+    const before = state().drawing;
+    expect(addDrawingSurfaceFinish({ ...input, height })).toBe(false);
+    expect(addDrawingMachiningNote(target, input.position, height)).toBe(false);
+    expect(state().drawing).toBe(before); expect(state().canUndo).toBe(false);
+    expect(state().drawingSelectedIds).toEqual([]);
+  });
   it('除去加工禁止は丸で区別する', () => {
     addDrawingSurfaceFinish({ ...input, process: 'noRemoval', parameter: 'Rz' });
     expect(displays()[1].curves?.[0].kind).toBe('arc'); expect(text()).toBe('Rz 3.2');

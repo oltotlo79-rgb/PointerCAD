@@ -70,9 +70,9 @@ export function JointSliderControls(props: {
         return (
           <label key={`joint-slider:${key}`} className="pcad-assembly-motion__joint" htmlFor={id}>
             <span>{coordinateLabel(coordinate)}</span>
-            <input id={id} type="range" min={domain.min} max={domain.max} step={domain.step}
+            <input id={id} title={t(coordinate === 'angle' ? 'assembly.motion.angleGuide' : 'assembly.motion.translationGuide')} type="range" min={domain.min} max={domain.max} step={domain.step}
               value={value} disabled={domain.disabled} onChange={(event) => { apply(event.currentTarget.value); }} />
-            <input type="number" className="pcad-field__input" value={value} step={domain.step}
+            <input type="number" aria-label={coordinateLabel(coordinate)} title={t(coordinate === 'angle' ? 'assembly.motion.angleGuide' : 'assembly.motion.translationGuide')} className="pcad-field__input" value={value} step={domain.step}
               onChange={(event) => { apply(event.currentTarget.value); }} />
             <span className="pcad-field__unit">{coordinate === 'angle' ? '°' : 'mm'}</span>
             {notice?.kind === 'rangeEnd' ? (
@@ -166,7 +166,7 @@ export function AssemblyMotionControls(): React.JSX.Element | null {
         <span aria-hidden="true">{playing ? 'Ⅱ' : '▶'}</span>
       </button>
       <input type="range" min={0} max={1} step={1 / 30} value={time} disabled={!hasSteps || !ready}
-        aria-label={t('assembly.motion.timeline')}
+        aria-label={t('assembly.motion.timeline')} title={t('assembly.motion.timelineGuide')}
         onChange={(event) => { useAppStore.getState().setAssemblyMotionPlaying(false);
           useAppStore.getState().setAssemblyMotionTime(Number(event.currentTarget.value)); }} />
       <output aria-label={t('assembly.motion.time')}>{Math.round(time * 100)}%</output>

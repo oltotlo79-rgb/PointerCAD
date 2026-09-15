@@ -174,4 +174,3 @@ export function toShapeImportOutcome(result: ShapeImportResult): ShapeImportOutc
     unit: result.unit,
   };
 }
-

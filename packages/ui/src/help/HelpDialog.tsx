@@ -4,13 +4,17 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { HELP_IMAGES, helpLibrary } from './helpContent.js';
 import { HelpMarkdown } from './HelpMarkdown.js';
+import { resolveShortcutTable } from '../commands/shortcutMarkdown.js';
+import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
+import type { ShortcutAssignments } from '../commands/shortcutAssignments.js';
 import { HelpTableOfContents } from './HelpTableOfContents.js';
 
 export function HelpDialog({ topicId }: { readonly topicId: string }): React.JSX.Element {
+  const assignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const dialog = useRef<HTMLDialogElement>(null); const article = useRef<HTMLElement>(null);
   const [query, setQuery] = useState(''); const [retry, setRetry] = useState(0);
   const [content, setContent] = useState<{ readonly id: string; readonly body: string | null; readonly failed: boolean } | null>(null);
-  const [search, setSearch] = useState<{ readonly query: string; readonly topics: readonly HelpTopic[]; readonly failed: number } | null>(null);
+  const [search, setSearch] = useState<{ readonly query: string; readonly assignments: ShortcutAssignments; readonly topics: readonly HelpTopic[]; readonly failed: number } | null>(null);
   const pendingAnchor = useRef('');
   const pendingScroll = useRef<number | null>(null);
   const [history, setHistory] = useState(() => initialHelpHistory(topicId));
@@ -43,12 +47,13 @@ export function HelpDialog({ topicId }: { readonly topicId: string }): React.JSX
     if (query.trim() === '') return;
     let active = true;
     const timer = setTimeout(() => {
-      void helpLibrary.search(query).then((result) => { if (active) setSearch({ query, ...result }); });
+      void helpLibrary.search(query, assignments).then((result) => { if (active) setSearch({ query, assignments, ...result }); });
     }, 160);
     return () => { active = false; clearTimeout(timer); };
-  }, [query, retry]);
-  const searching = query.trim() !== '' && search?.query !== query;
-  const topics = query.trim() === '' ? MANUAL_CHAPTERS : search?.query === query ? search.topics : [];
+  }, [query, retry, assignments]);
+  const searchMatches = search !== null && search.query === query && search.assignments === assignments;
+  const searching = query.trim() !== '' && !searchMatches;
+  const topics = query.trim() === '' ? MANUAL_CHAPTERS : searchMatches ? search.topics : [];
   const choose = (id: string, anchor = ''): void => {
     setHistory(visitHelp(history, { topicId: id, anchor, scrollTop: 0 }, article.current?.scrollTop ?? 0));
     pendingScroll.current = null;
@@ -68,26 +73,27 @@ export function HelpDialog({ topicId }: { readonly topicId: string }): React.JSX
   return <dialog ref={dialog} className="pcad-help" aria-labelledby="pcad-help-title" onCancel={(event) => { event.preventDefault(); useAppStore.getState().closeHelp(); }}
     onKeyDown={(event) => event.stopPropagation()}>
     <header className="pcad-help__header"><h2 id="pcad-help-title">{t('help.title')}</h2>
-      <button type="button" onClick={() => choose('help-reader')}>{t('help.howToRead')}</button>
+      <button title={t('controlGuide.help.howToRead')} type="button" onClick={() => choose('help-reader')}>{t('help.howToRead')}</button>
       <nav className="pcad-help__history" aria-label={t('help.history')}>
-        <button type="button" disabled={history.index === 0} onClick={() => move(-1)}>{t('help.back')}</button>
-        <button type="button" disabled={history.index + 1 === history.visits.length} onClick={() => move(1)}>{t('help.forward')}</button>
+        <button title={t('controlGuide.help.back')} type="button" disabled={history.index === 0} onClick={() => move(-1)}>{t('help.back')}</button>
+        <button title={t('controlGuide.help.forward')} type="button" disabled={history.index + 1 === history.visits.length} onClick={() => move(1)}>{t('help.forward')}</button>
       </nav>
       <button className="pcad-button" type="button" title={t('help.close')} onClick={() => useAppStore.getState().closeHelp()}>{t('help.close')}</button></header>
     <div className="pcad-help__body"><nav className="pcad-help__nav" aria-label={t('help.contents')}>
-      <label>{t('help.search')}<input type="search" className="pcad-field__input" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+      <label>{t('help.search')}<input title={t('controlGuide.help.search')} type="search" className="pcad-field__input" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
       {searching ? <p role="status">{t('help.searching')}</p> : null}
       {!searching && topics.length === 0 ? <p role="status">{t('help.noResults')}</p> : null}
-      {query.trim() !== '' && search?.query === query && search.failed > 0 ? <p role="alert">{t('help.searchIncomplete')}
-        <button type="button" onClick={() => { setSearch(null); setRetry((value) => value + 1); }}>{t('help.retry')}</button></p> : null}
+      {query.trim() !== '' && searchMatches && search.failed > 0 ? <p role="alert">{t('help.searchIncomplete')}
+        <button title={t('controlGuide.help.retrySearch')} type="button" onClick={() => { setSearch(null); setRetry((value) => value + 1); }}>{t('help.retry')}</button></p> : null}
       <HelpTableOfContents topics={topics} topicId={topicId} searching={query.trim() !== ''} onChoose={choose} />
-    </nav><article ref={article} className="pcad-help__article" aria-label={t('help.article')} tabIndex={0}>
+    </nav><article ref={article} className="pcad-help__article" aria-label={t('help.article')}
+      data-help-topic={topicId} aria-busy={content?.id !== topicId} tabIndex={0}>
       {content?.id !== topicId ? <p role="status">{t('help.loading')}</p> : content.failed ? <p role="alert">{t('help.loadFailed')}
-        <button type="button" onClick={() => { setContent(null); setRetry((value) => value + 1); }}>{t('help.retry')}</button></p>
-        : <HelpMarkdown source={content.body ?? ''} onTopic={choose} onAnchor={anchor => choose(topicId, anchor)} images={HELP_IMAGES} />}
+        <button title={t('controlGuide.help.retryChapter')} type="button" onClick={() => { setContent(null); setRetry((value) => value + 1); }}>{t('help.retry')}</button></p>
+        : <HelpMarkdown source={resolveShortcutTable(content.body ?? '', assignments)} onTopic={choose} onAnchor={anchor => choose(topicId, anchor)} images={HELP_IMAGES} />}
       <nav className="pcad-help__adjacent" aria-label={t('help.chapters')}>
-        {previousChapter ? <button type="button" onClick={() => choose(previousChapter.id)}>{t('help.previousChapter')}: {previousChapter.title}</button> : <span />}
-        {nextChapter ? <button type="button" onClick={() => choose(nextChapter.id)}>{t('help.nextChapter')}: {nextChapter.title}</button> : null}
+        {previousChapter ? <button title={t('controlGuide.help.previousChapter')} type="button" onClick={() => choose(previousChapter.id)}>{t('help.previousChapter')}: {previousChapter.title}</button> : <span />}
+        {nextChapter ? <button title={t('controlGuide.help.nextChapter')} type="button" onClick={() => choose(nextChapter.id)}>{t('help.nextChapter')}: {nextChapter.title}</button> : null}
       </nav>
     </article></div>
   </dialog>;

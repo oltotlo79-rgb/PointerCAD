@@ -3,6 +3,7 @@ import { useEffect, useId, useRef } from 'react';
 import type { LengthUnit } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
+import { usesDisplayInputUnit } from './numericFieldUnits.js';
 import {
   fieldUnitLabelKey,
   fieldValueText,
@@ -15,7 +16,8 @@ export interface ExpressionFieldProps {
   readonly result: NumericFieldResult;
   /**
    * 画面に出している長さの単位(FR-811、P6 タスク3b)。省くと mm。
-   * **長さの欄の札と、下に添える値だけ**に効く(打った式も保存する式も変えない)。
+   * 手入力する長さの単位と、下に添える評価値の単位。設定値・クリック値・空欄の
+   * 既定値は内部のmmなので、欄の札もmmとする(元の式は変えない)。
    */
   readonly lengthUnit?: LengthUnit;
   /**
@@ -63,6 +65,8 @@ export function ExpressionField({
   const messageId = `${inputId}-message`;
   const inputRef = useRef<HTMLInputElement>(null);
   const hasError = result.error !== null;
+  // fieldExpressionと同じ条件。内部mmの初期値をinchと表示しない。
+  const sourceUnit = usesDisplayInputUnit(field) ? lengthUnit : 'mm';
 
   useEffect(() => {
     const input = inputRef.current;
@@ -104,7 +108,7 @@ export function ExpressionField({
       {onMath === undefined ? null : <button type="button" className="pcad-button pcad-field__math"
         title={`${t(field.labelKey)}: ${t('math.open')}`} aria-label={`${t(field.labelKey)}: ${t('math.open')}`}
         onKeyDown={event => event.stopPropagation()} onClick={onMath}>ƒx</button>}</span>
-      <span className="pcad-field__unit">{t(fieldUnitLabelKey(field.unit, lengthUnit))}</span>
+      <span className="pcad-field__unit">{t(fieldUnitLabelKey(field.unit, sourceUnit))}</span>
       <p
         id={messageId}
         className={

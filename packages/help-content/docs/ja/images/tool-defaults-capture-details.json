@@ -1,0 +1,220 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "tool-defaults-radius",
+      "script": "e2e/tests/toolDefaultsSettingsFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-tool-defaults-validation-5p5vr440",
+      "sourceValidationStatus": "failed",
+      "sourceTestStatus": "passed",
+      "sourceTestLog": "✓   8 [functional] › e2e\\tests\\tool-defaults-auto-save-settings.spec.ts:7:1 › P12-8 道具の数値初期値を取消・適用し、開始時の写し・保存・再読込・Undo・F1を通す (7.1s)",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-tool-defaults-final-evidence-9qd1a8t2",
+      "correctedDrawingValidation": "scratchpad/tasks/6131650ed8c2-drawing-settings-entry-validation-crsaldgj",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-8 道具の数値初期値を取消・適用し、開始時の写し・保存・再読込・Undo・F1を通す",
+        "scriptSha256": "22e37a2ff190ac537d2857b17bcee065d296ebe6353c15e9bfdf8e415595a707",
+        "fixture": {
+          "filename": "tool-defaults-radius-fixture.json",
+          "sha256": "bde35d905788c3d4b93ad9187d2ece2b7dade4d474a8bc505f0a1b1259d77b67"
+        },
+        "screen": {
+          "filename": "tool-defaults-radius-screen.png",
+          "sha256": "678c4889b7b14f496ed2c754a69c16e174862b7e61006251805d78cea174328b"
+        },
+        "detail": {
+          "filename": "tool-defaults-radius-detail.png",
+          "sha256": "67afe5f740442973dd83e2012678bef1e8f3b7c005ab46f634d4609109d837b9"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 1171,
+          "y": 297.5,
+          "width": 248,
+          "height": 390.203125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "document": {
+          "id": "part-1",
+          "name": "部品1",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": [
+                {
+                  "id": "arc-1",
+                  "name": "円弧1",
+                  "planeId": "xy",
+                  "kind": "arc",
+                  "center": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "y": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "z": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "radius": {
+                    "source": "10",
+                    "value": 10,
+                    "display": "10"
+                  },
+                  "startAngle": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "endAngle": {
+                    "source": "360",
+                    "value": 360,
+                    "display": "360"
+                  },
+                  "construction": false
+                }
+              ]
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1"
+        },
+        "radiusSource": "12.5"
+      },
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    }
+  ]
+}

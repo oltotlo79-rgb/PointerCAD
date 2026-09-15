@@ -3,8 +3,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { HELP_IMAGES, HELP_LOADERS } from './helpContent.js';
 import { DRAWING_TOOL_GROUPS } from '../drawing/drawingToolbarItems.js';
 import { createHelpLibrary, resolveHelpLink } from './helpLibrary.js';
+import { SHORTCUT_TABLE_MARKER } from '../commands/shortcutMarkdown.js';
+import { validateShortcutAssignments } from '../commands/shortcutAssignments.js';
 
 describe('同梱ヘルプの本文と検索', () => {
+  it('現在のキーを本文と同じ形で検索し、割当を戻すと古い検索結果を使わない', async () => {
+    const loaders = Object.fromEntries(HELP_TOPICS.map(topic => [topic.id,
+      () => Promise.resolve(topic.id === 'shortcuts' ? SHORTCUT_TABLE_MARKER : '別の説明')]));
+    const library = createHelpLibrary(loaders);
+    expect((await library.search('F2')).topics).toEqual([]);
+    const proposed = validateShortcutAssignments({ 'history.undo': { key: 'f2', primary: false, shift: false, alt: false } });
+    if (!proposed.ok) throw new Error('Fixture must be a valid assignment');
+    expect((await library.search('F2', proposed.assignments)).topics.map(topic => topic.id)).toEqual(['shortcuts']);
+    expect(await library.load('shortcuts')).toBe(SHORTCUT_TABLE_MARKER);
+    expect((await library.search('F2')).topics).toEqual([]);
+  });
   it('目録の全章に本文があり、実際の動的読込も空にならない', async () => {
     expect(Object.keys(HELP_LOADERS).sort()).toEqual(HELP_TOPICS.map((topic) => topic.id).sort());
     for (const topic of HELP_TOPICS) expect((await HELP_LOADERS[topic.id]?.())?.trim().startsWith('#'), topic.path).toBe(true);

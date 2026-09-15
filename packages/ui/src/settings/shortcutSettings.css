@@ -1,0 +1,11 @@
+.pcad-shortcut-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  min-width: 0;
+}
+.pcad-shortcut-settings select { max-width: 100%; }
+.pcad-shortcut-settings > h3, .pcad-shortcut-settings > p { margin: 0; }
+.pcad-shortcut-settings > h3 { font-size: var(--pcad-font-size-heading); }
+.pcad-shortcut-settings__actions { display: flex; flex-wrap: wrap; gap: var(--pcad-space-1); }
+.pcad-shortcut-settings [role="alert"] { color: var(--pcad-danger-text); overflow-wrap: anywhere; }

@@ -4,6 +4,7 @@ import { MathEditorSession, type MathEditorInput, type MathEditorOutput, type Ma
 import { MathEditorInsertion } from './mathEditorInsertion.js';
 import { createMathSessionCalculation } from './mathSessionWorker.js';
 import { convertMathSessionNotation } from './convertMathSessionNotation.js';
+import { chooseMathResultComponent } from './mathResultComponent.js';
 import type { MathEditorViewController } from './MathEditorSurface.js';
 
 export interface MathEditorSnapshot {
@@ -76,6 +77,14 @@ export class MathEditorController implements MathEditorViewController {
     if (!this.isCurrent() || source === this.current().source) return;
     this.invalidate();
     this.session.update(source, this.current().notation, this.current().angleUnit);
+  };
+  readonly chooseResultComponent = (expected: MathEditorInput, indices: readonly number[]): boolean => {
+    const state = this.snapshot.state;
+    if (!this.sameInput(expected) || state.status !== 'evaluated') return false;
+    const source = chooseMathResultComponent(expected, state.output.evaluation, indices);
+    if (source === null) return false;
+    this.sourceChanged(source);
+    return true;
   };
   readonly changeAngleUnit = (unit: 'degree' | 'radian'): void => {
     if (!this.isCurrent() || unit === this.current().angleUnit) return;

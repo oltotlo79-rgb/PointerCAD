@@ -1744,3 +1744,8 @@ export function RecentFileIcon(props: IconProps): React.JSX.Element {
 export function TextToolIcon(props: IconProps): React.JSX.Element {
   return <SvgIcon {...props}><path d="M3 13 8 3l5 10M5 9h6" /></SvgIcon>;
 }
+
+/** 2枚の保存文書を並べ、変更箇所を照合する。 */
+export function DocumentCompareIcon(props: IconProps): React.JSX.Element {
+  return <SvgIcon {...props}><path d="M1.5 2h5v12h-5zM9.5 2h5v12h-5zM3 5h2M11 5h2M3 8h2M11 8h2M3 11h2M11 11h2" /><path d="M7.5 4v8" strokeDasharray="1 2" /></SvgIcon>;
+}

@@ -919,3 +919,66 @@ describe('控えの時刻の見せ方', () => {
     expect(formatSavedAt('いつか')).toBe('いつか');
   });
 });
+
+
+describe('保存間隔の変更は現在の文書の保存キューへ接続する', () => {
+  it('文書と保存処理を保ったまま間隔を更新し、他の設定や再通知で時刻を延ばさない', async () => {
+    const previousSettings = useAppStore.getState().displaySettings;
+    useAppStore.getState().setDisplaySettings({ ...previousSettings, autoSaveIntervalMs: 300_000 });
+    const storage = createMemoryAutoSaveStorage(), timer = createManualTimer(), created: AutoSaver[] = [];
+    const detach = startAutoSave({ storage, sessionId: 'interval-window', createSaver: options => {
+      const saver = createAutoSaver({ ...options, setTimeout: timer.schedule, clearTimeout: timer.cancel });
+      created.push(saver); return saver;
+    } });
+    try {
+      const document = partWithPoint(); useAppStore.getState().applyDocument(document);
+      const original = useAppStore.getState(), saver = original.autoSaver;
+      const version = original.documentVersion, identity = original.activeDocumentId;
+      const generation = original.requestedGeneration;
+      const writes = timer.scheduledMs.length;
+      original.setDisplaySettings({ ...original.displaySettings, autoSaveIntervalMs: 60_000 });
+      expect(useAppStore.getState().autoSaver).toBe(saver); expect(created).toHaveLength(1);
+      expect(timer.scheduledMs.slice(writes)).toEqual([60_000]); expect(timer.pendingCount()).toBe(1);
+      const current = useAppStore.getState();
+      current.setDisplaySettings({ ...current.displaySettings, theme: 'light' });
+      useAppStore.getState().setDisplaySettings({ ...useAppStore.getState().displaySettings });
+      expect(timer.scheduledMs.slice(writes)).toEqual([60_000]);
+      expect(useAppStore.getState().documentVersion).toBe(version);
+      expect(useAppStore.getState().activeDocumentId).toBe(identity);
+      expect(useAppStore.getState().requestedGeneration).toBe(generation);
+      timer.fire(); await vi.waitFor(async () => expect(await storage.listRecords()).toHaveLength(1));
+      const [record] = await storage.listRecords();
+      const opened = readPcadFile(record.bytes);
+      if (!opened.ok || opened.kind !== 'part') throw new Error('保存した部品を読み取れません');
+      expect(opened.document).toEqual(document);
+    } finally { detach(); useAppStore.getState().setDisplaySettings(previousSettings); }
+    expect(timer.pendingCount()).toBe(0);
+  });
+
+  it('間隔を変えた直後に別の文書を開いても、旧控えと新しい文書の保存先を混ぜない', async () => {
+    const previousSettings = useAppStore.getState().displaySettings;
+    useAppStore.getState().setDisplaySettings({ ...previousSettings, autoSaveIntervalMs: 300_000 });
+    const storage = createMemoryAutoSaveStorage(), timer = createManualTimer();
+    const detach = startAutoSave({ storage, sessionId: 'interval-switch', createSaver: options =>
+      createAutoSaver({ ...options, setTimeout: timer.schedule, clearTimeout: timer.cancel }) });
+    try {
+      const old = partWithPoint(); useAppStore.getState().applyDocument(old);
+      const oldState = useAppStore.getState(), oldId = oldState.activeDocumentId;
+      await oldState.autoSaver?.saveNow(createPartDocumentBundle(old));
+      const [preserved] = await storage.listRecords();
+      oldState.setDisplaySettings({ ...oldState.displaySettings, autoSaveIntervalMs: 60_000 });
+      const assembly = createAssemblyDocument('間隔変更後の組立'); useAppStore.getState().openAssembly(assembly);
+      const edited = { ...assembly, name: '変更した組立' }; useAppStore.getState().applyAssembly(edited);
+      const nextId = useAppStore.getState().activeDocumentId;
+      expect(nextId).not.toBe(oldId); expect(timer.pendingCount()).toBe(1); expect(timer.scheduledMs.at(-1)).toBe(60_000);
+      timer.fire(); await vi.waitFor(async () => expect(await storage.listRecords()).toHaveLength(2));
+      const records = await storage.listRecords();
+      expect(records.find(record => record.documentId === oldId)).toEqual(preserved);
+      const current = records.find(record => record.documentId === nextId);
+      if (current === undefined) throw new Error('新しい文書の控えがありません');
+      const opened = await readDocumentBundle(current.bytes, 'assembly');
+      if (!opened.ok || opened.bundle.kind !== 'assembly') throw new Error('組立を開けません');
+      expect(opened.bundle.document).toEqual(edited);
+    } finally { detach(); useAppStore.getState().setDisplaySettings(previousSettings); }
+  });
+});

@@ -1,0 +1,227 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "auto-save-interval",
+      "script": "e2e/tests/autoSaveSettingsFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-material-diff-validation-50a83tn6",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-material-autosave-manual-capture-4pftu8yj",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-8 自動保存の間隔を取消・変更し、実際の控えと保存・再起動・F1へ接続する",
+        "scriptSha256": "9bd088b704409cc9753a2ede645ec40f317dc8a023c3662e25818879ee541d11",
+        "fixture": {
+          "filename": "auto-save-interval-fixture.json",
+          "sha256": "a37bcb255cfcad6455d49f273e34f963a477e49f1cf7279d7db224b3f2811d47"
+        },
+        "screen": {
+          "filename": "auto-save-interval-screen.png",
+          "sha256": "191c6f7c27f54646eeebd6c3a46b78c6829f7920aa336b99c5e55e42b7b18c72"
+        },
+        "detail": {
+          "filename": "auto-save-interval-detail.png",
+          "sha256": "eb1553276e8159185657f7aa494d7ff9917c5d15a3a76fa4ef97d967c8bad67b"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 1171,
+          "y": 447,
+          "width": 248,
+          "height": 242.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "before": {
+          "id": "part-1",
+          "name": "部品1",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "box-1",
+              "name": "箱1",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1"
+        },
+        "autoSaveMinutes": 1,
+        "originalGeneration": 2
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "visualNote": "既に表示確認した同じ内容の実画像と、全バイトのSHA-256が一致した。"
+    }
+  ]
+}

@@ -26,7 +26,7 @@ export function AssemblyInterferencePanel(): React.JSX.Element | null {
     <section className="pcad-interference" aria-label={t('assembly.interference.title')}>
       <header className="pcad-interference__header">
         <strong>{t('assembly.interference.title')}</strong>
-        <button type="button" className="pcad-button pcad-interference__close"
+        <button title={t('controlGuide.button.interferenceClose')} type="button" className="pcad-button pcad-interference__close"
           aria-label={t('assembly.interference.close')}
           onClick={() => { useAppStore.getState().closeAssemblyInterference(); }}>
           <span aria-hidden="true">×</span>
@@ -46,7 +46,7 @@ export function AssemblyInterferencePanel(): React.JSX.Element | null {
       ) : null}
       <div className="pcad-interference__rows">
         {rows.map((row) => (
-          <button type="button" className="pcad-interference__row" key={row.key}
+          <button title={t('controlGuide.button.interferencePair')} type="button" className="pcad-interference__row" key={row.key}
             aria-pressed={selectedKey === row.key}
             onClick={() => { useAppStore.getState().selectAssemblyInterference(row.key); }}>
             <span>{row.aName} × {row.bName}</span>

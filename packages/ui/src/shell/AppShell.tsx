@@ -1,5 +1,8 @@
+import { KeyboardControlHint } from '../help/KeyboardControlHint.js';
+import { RadialCommandMenu } from '../commands/RadialCommandMenu.js';
 import { lazy, Suspense, useEffect, useRef } from 'react';
 import { ViewportBoundary } from '../viewport/ViewportBoundary.js';
+import { TutorialPanel, TutorialWelcome } from '../tutorial/TutorialPanel.js';
 
 import {
   discardAutoSave,
@@ -10,18 +13,9 @@ import {
 import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
 import { ImportUnitPanel } from '../file/ImportUnitPanel.js';
 import { ExportHandoffPanel } from '../file/ExportHandoffPanel.js';
-import {
-  createDefaultPartFileDeps,
-  newPart,
-  openPart,
-  savePart,
-  windowTitle,
-} from '../file/partFile.js';
+import { windowTitle } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
 import { HelpHost } from '../help/HelpHost.js';
-import { contextualHelpTopic } from '../help/helpContext.js';
-import { commitDrawingDimension, deleteSelectedDrawingElements } from '../drawing/dimensionCommands.js';
-import { commitDrawingDimensionSeries } from '../drawing/dimensionSeriesCommands.js';
 import {
   DrawingPropertyPanel,
   DrawingStatusBar,
@@ -39,7 +33,6 @@ import { ReplacementPopover } from '../assembly/ReplacementPopover.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { SketchTextInputHost } from '../sketch/SketchTextInputHost.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
-import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { StrengthPropertyPanel } from '../strength/StrengthPropertyPanel.js';
@@ -49,6 +42,7 @@ import { PlotPointIcon } from './icons.js';
 import { PropertyPanel } from './PropertyPanel.js';
 import { StatusBar } from './StatusBar.js';
 import { Toolbar } from './Toolbar.js';
+import { dispatchCommandKey } from '../commands/commandRegistry.js';
 
 /**
  * 3D 表示は three.js を伴って重いので、画面の枠より後から読み込む(NFR-PF-5)。
@@ -58,59 +52,6 @@ const ViewportCanvas = lazy(async () => {
   const viewportModule = await import('../viewport/ViewportCanvas.js');
   return { default: viewportModule.ViewportCanvas };
 });
-
-/**
- * 文字を打っている最中かどうか。式の欄や名前の欄で Ctrl+Z / Ctrl+Y を押したときは、
- * 打った文字の取り消し(ブラウザの働き)を邪魔しない(NFR-UX-3)。ファイル系の
- * ショートカット(Ctrl+S 等)はここを見ない(§0.a-0.23 ⑪)。
- */
-function isTextEntry(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-}
-
-/**
- * `Space` が「押す」意味を持つ相手か(FR-208、P4b タスク18)。
- *
- * ボタン・スイッチ・一覧の項目に焦点があるとき、`Space` はブラウザの決まりで「押す」操作に
- * なる(その場入力のつまみの入切もこれに当たる)。コマンドラインの欄へ入る `Space`
- * (§0.a-0.10 の③)は**ビューポートに焦点があるとき**のものなので、こういう相手からは
- * 横取りしない。横取りすると、いまあるボタンの操作が 1 つ変わってしまう。
- */
-function activatedBySpace(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  return (
-    target.closest(
-      'button, select, summary, a[href], [role="switch"], [role="menuitem"], [role="option"], [role="tab"]',
-    ) !== null
-  );
-}
-
-/**
- * 畳んだ一覧(ツールバー・プロパティ欄)の中に焦点があるか(P5 タスク32)。
- *
- * 一覧が開いているあいだの Esc は「一覧を閉じる」ための押下(`ToolMenu` / `PlaneMenu` が
- * 自分で受ける)なので、測定の結果を消す Esc はそれを横取りしない。
- */
-function isInsideMenu(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && target.closest('.pcad-menu, .pcad-name-search') !== null;
-}
-
-/**
- * 選択の種類の手動切替(§0.a-0.6、タスク26)。`1` = 頂点、`2` = 辺、`3` = 面、`4` = 立体。
- * 数字キーそのものを使うので、修飾キー付き(Ctrl+1 等、将来ブラウザやOSの割当と衝突し得る)
- * とは区別する。
- */
-const SELECTION_KIND_SHORTCUTS: Readonly<Record<string, SelectionKind>> = {
-  '1': 'vertex',
-  '2': 'edge',
-  '3': 'face',
-  '4': 'body',
-};
 
 /**
  * 画面の5区画(ツールバー / ツリー / ビューポート+ビューキューブ / プロパティ / ステータスバー)。
@@ -188,114 +129,8 @@ export function AppShell(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    /*
-     * 元に戻す・やり直す(FR-505、§0.a-0.13)とファイルの操作(FR-806、§2.11)。
-     * 窓のどこにいても効くように window で受ける。
-     *
-     * 元に戻す・やり直すだけは、文字を打っている最中は横取りしない(§0.a-0.23 ⑪)。
-     * ファイル系の 4 つ(保存・名前を付けて保存・開く・新規)は入力欄に焦点があっても
-     * 効かせる(式の欄を編集中でも保存できるのが利用者の期待、NFR-UX-7)。
-     *
-     * Ctrl+N はブラウザ自身が新しい窓を開く操作に割り当てていて、頁の側からは
-     * 止められないことがある。そのときはツールバーの「新規」を使う(デスクトップ版では効く)。
-     */
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (useAppStore.getState().helpTopicId !== null) return;
-      // 文書の種類や入力欄の判定より先に扱い、図面にも保存・開く・新規を届ける。
-      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
-        const fileKey = event.key.toLowerCase();
-        if (fileKey === 's') {
-          event.preventDefault();
-          void savePart(createDefaultPartFileDeps(), event.shiftKey);
-          return;
-        }
-        if (fileKey === 'o' && !event.shiftKey) {
-          event.preventDefault();
-          void openPart(createDefaultPartFileDeps());
-          return;
-        }
-        if (fileKey === 'n' && !event.shiftKey) {
-          event.preventDefault();
-          void newPart(createDefaultPartFileDeps());
-          return;
-        }
-      }
-      if (activeDocumentKind(useAppStore.getState()) === 'drawing') {
-        if (isTextEntry(event.target) || event.altKey) return;
-        const state = useAppStore.getState();
-        if (event.ctrlKey || event.metaKey) {
-          const key = event.key.toLowerCase();
-          if (key === 'z' || key === 'y') {
-            event.preventDefault();
-            if (key === 'y' || event.shiftKey) state.redo(); else state.undo();
-          }
-        } else if (event.key === 'Escape') { event.preventDefault(); state.setDrawingTool('select'); }
-        else if (event.key === 'Enter' && !event.repeat && !activatedBySpace(event.target)) {
-          event.preventDefault();
-          if (state.drawingTool === 'dimensionSeries') void commitDrawingDimensionSeries(); else commitDrawingDimension();
-        }
-        else if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteSelectedDrawingElements(); }
-        return;
-      }
-      /*
-       * 選択の種類の手動切替(§0.a-0.6、§2.11「選択の種類の切替」)。修飾キーなしの
-       * 1/2/3/4 だけを見るので、Ctrl 系の分岐(この下)より前に置く。文字入力中
-       * (式の欄・名前の欄)は横取りしない(NFR-UX-3、isTextEntry と同じ判断)。
-       */
-      if (
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey &&
-        !event.shiftKey &&
-        !isTextEntry(event.target)
-      ) {
-        const kind = SELECTION_KIND_SHORTCUTS[event.key];
-        if (kind !== undefined) {
-          event.preventDefault();
-          useAppStore.getState().setSelectionKind(kind);
-          return;
-        }
-        /*
-         * コマンドラインの欄へ入る(FR-208、§0.a-0.10 の③)。`Space` は P0〜P4 のどこにも
-         * 割り当てが無いことを Grep で確かめてある(その場入力のつまみの入切だけが Space を
-         * 使うが、あれはポップアップの中(`NumericInputPopover.tsx`)で止まるのでここへ来ない)。
-         *
-         * **文字を打っている最中は横取りしない**(上の `isTextEntry`)。式の欄で空白が
-         * 打てなくなり、コマンドラインの欄そのものでも空白が打てなくなるため。
-         * 欄から出るのは `Esc`(欄の中で受ける。`CommandLine.tsx`)。
-         */
-        if (event.key === ' ' && !activatedBySpace(event.target)) {
-          event.preventDefault();
-          useAppStore.getState().requestCommandLineFocus();
-          return;
-        }
-      }
-      if (!event.ctrlKey || event.altKey) {
-        return;
-      }
-      const key = event.key.toLowerCase();
-      const store = useAppStore.getState();
-      // 元に戻す・やり直すだけは、文字を打っている最中は横取りしない(式の欄の中の
-      // 取り消しというブラウザの働きを邪魔しないため、§0.a-0.23 ⑪)。ファイル系の
-      // 4 つ(保存・名前を付けて保存・開く・新規)は焦点に関係なく効かせる
-      // (式の途中でも保存できるのが利用者の期待)。
-      if (key === 'z' && !event.shiftKey) {
-        if (isTextEntry(event.target)) {
-          return;
-        }
-        event.preventDefault();
-        store.undo();
-        return;
-      }
-      // やり直すは Ctrl+Y と Ctrl+Shift+Z のどちらでも効かせる(どちらの流儀にも合わせる)。
-      if (key === 'y' || (key === 'z' && event.shiftKey)) {
-        if (isTextEntry(event.target)) {
-          return;
-        }
-        event.preventDefault();
-        store.redo();
-        return;
-      }
+      dispatchCommandKey(event, 'bubble');
     };
     globalThis.addEventListener('keydown', onKeyDown);
     return () => {
@@ -304,45 +139,12 @@ export function AppShell(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    /*
-     * Esc で測定の結果を消す(FR-1102、§0.a-0.68、P5 タスク32)。
-     *
-     * **捕捉の段(capture)で受ける。** Esc はビューポート(`attachSketchInteraction`)でも
-     * 「選択と取りかけの取り消し」に使われていて、そちらは canvas に付いているので普通に
-     * 待つと先に走ってしまう。測定の結果が出ているときは**先にそれを消す**(統括の決定
-     * 2026-09-05 13:19)ので、捕捉の段で受けて `stopPropagation` でその 1 回を止める。
-     * 何も測っていなければ `clearMeasurement` は何もせず、`cleared` が偽になるので、
-     * これまでどおり道具の取り消しへそのまま流れる。
-     *
-     * 畳んだ一覧が開いているとき(`.pcad-menu` の中に焦点がある)は横取りしない。
-     * その Esc は「一覧を閉じる」ための押下で、測定とは関係がないため。
-     */
-    const onEscape = (event: KeyboardEvent): void => {
-      const helpState = useAppStore.getState();
-      if (event.key === 'F1') {
-        event.preventDefault(); event.stopPropagation();
-        const explicit = event.target instanceof HTMLElement ? event.target.closest('[data-help-topic]')?.getAttribute('data-help-topic') : null;
-        helpState.openHelpTopic(contextualHelpTopic(helpState, explicit, isTextEntry(event.target)));
-        return;
-      }
-      if (helpState.helpTopicId !== null) return;
-      if (event.key !== 'Escape' || isTextEntry(event.target) || isInsideMenu(event.target)) {
-        return;
-      }
-      const store = useAppStore.getState();
-      if (store.strengthSession !== null) {
-        event.preventDefault(); event.stopPropagation(); store.closeStrength(); return;
-      }
-      if (store.measurement === null && store.massProperties === null) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      store.clearMeasurement();
+    const onCaptureKeyDown = (event: KeyboardEvent): void => {
+      dispatchCommandKey(event, 'capture');
     };
-    globalThis.addEventListener('keydown', onEscape, true);
+    globalThis.addEventListener('keydown', onCaptureKeyDown, true);
     return () => {
-      globalThis.removeEventListener('keydown', onEscape, true);
+      globalThis.removeEventListener('keydown', onCaptureKeyDown, true);
     };
   }, []);
 
@@ -359,6 +161,7 @@ export function AppShell(): React.JSX.Element {
     */
     <div className="pcad-shell" data-document-kind={documentKind}>
       <HelpHost />
+      <KeyboardControlHint />
       <ExportHandoffPanel />
       {documentKind === 'drawing' ? <DrawingToolbar /> : <Toolbar />}
       <div className="pcad-shell__body">
@@ -440,7 +243,7 @@ export function AppShell(): React.JSX.Element {
                 </dl>
                 <div className="pcad-restore__actions">
                   {restorePrompt.unrecoverable ? (
-                    <button
+                    <button title={t('controlGuide.button.backupExport')}
                       type="button"
                       className="pcad-button pcad-button--action pcad-button--primary"
                       onClick={() => {
@@ -450,7 +253,7 @@ export function AppShell(): React.JSX.Element {
                       {t('restore.export')}
                     </button>
                   ) : (
-                    <button
+                    <button title={t('controlGuide.button.backupRestore')}
                       type="button"
                       className="pcad-button pcad-button--action pcad-button--primary"
                       onClick={() => {
@@ -460,7 +263,7 @@ export function AppShell(): React.JSX.Element {
                       {t('restore.restore')}
                     </button>
                   )}
-                  <button
+                  <button title={t('controlGuide.button.backupDiscard')}
                     type="button"
                     className="pcad-button pcad-button--action"
                     onClick={() => {
@@ -489,6 +292,7 @@ export function AppShell(): React.JSX.Element {
             <div className="pcad-viewport__empty-state">
               <PlotPointIcon size={18} />
               <p className="pcad-viewport__empty-text">{t('emptyState.firstStep')}</p>
+              <TutorialWelcome />
             </div>
           ) : isEmptyAssembly ? (
             /* まだ部品を 1 つも置いていないアセンブリ(P7 タスク5)。案内の作りは部品側と同じ。 */
@@ -503,6 +307,7 @@ export function AppShell(): React.JSX.Element {
             決まった 1 手をストアへ反映するのは commitToStore.ts の applyNumericTransition
             (ポップアップとコマンドラインの共通の入口。P4b タスク18 でここから移した)。
           */}
+          <TutorialPanel />
           {documentKind === 'assembly' ? (
             <>
               <PlaceComponentPopover />
@@ -546,6 +351,7 @@ export function AppShell(): React.JSX.Element {
           <PropertyPanel />
         )}
       </div>
+      <RadialCommandMenu viewport={viewportRef} />
       {documentKind === 'drawing' ? <DrawingStatusBar /> : <StatusBar />}
     </div>
   );

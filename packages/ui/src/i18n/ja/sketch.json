@@ -236,5 +236,11 @@
   "shapeError.noSurfaceSource": "曲面のもとになる輪郭も面も選ばれていません。",
   "shapeError.noCutPlane": "切る面を決めるものが足りません。決め方に合わせて点・辺・面を選んでください。",
   "shapeError.notYetAvailable": "この道具はまだ使えません。",
-  "shapeError.unknownChoice": "選んだ内容を読み取れませんでした。選び直してください。"
+  "shapeError.unknownChoice": "選んだ内容を読み取れませんでした。選び直してください。",
+  "controlGuide.text.value": "輪郭にする文字列を入力します。数式として計算せず、文字の形を作ります。最大1000文字です。",
+  "controlGuide.text.height": "文字の高さを正の数値または式で指定します。長さは欄に表示された単位で扱います。",
+  "controlGuide.text.angle": "作図面の上で文字を回す角度を、度の数値または式で指定します。",
+  "controlGuide.text.align": "指定した位置に、文字列の左端・中央・右端のどこを合わせるか選びます。",
+  "controlGuide.text.apply": "指定した文字の輪郭を作図面へ追加します。追加した全ての辺は、元に戻す1回で戻せます。",
+  "controlGuide.text.close": "文字の入力を閉じ、選択の道具へ戻ります。未確定の文字は追加しません。"
 }

@@ -14,6 +14,7 @@
 import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
+import { readAutoSaveIntervalMs } from './autoSaveSettings.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
   ALL_SELECTABLE,
@@ -34,6 +35,8 @@ export const THEME_IDS: readonly ThemeId[] = [
 ];
 
 export interface DisplaySettings {
+  /** 旧設定は未指定のまま5分。1～60分の間隔を端末へ保存する。 */
+  readonly autoSaveIntervalMs?: number;
   readonly theme: ThemeId;
   /** 表示の拡大率(%)。90〜150(FR-909)。 */
   readonly uiScale: number;
@@ -86,6 +89,7 @@ export interface DisplaySettings {
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  autoSaveIntervalMs: readAutoSaveIntervalMs({}),
   theme: 'dark',
   uiScale: 100,
   trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
@@ -383,6 +387,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       lengthUnit: readLengthUnit(parsed),
       selectionFilter: readSelectionFilter(parsed),
       inferConstraints: readInferConstraints(parsed),
+      autoSaveIntervalMs: readAutoSaveIntervalMs('autoSaveIntervalMs' in parsed ? { autoSaveIntervalMs: parsed.autoSaveIntervalMs } : {}),
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;

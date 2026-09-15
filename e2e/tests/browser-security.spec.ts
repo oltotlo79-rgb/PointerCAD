@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { beginRecompute, waitForRecompute } from './recompute.js';
+import { withBrowserFailureDiagnostics } from './browserFailureDiagnostics.js';
 
 test('画面のinline scriptとevalを拒否し、外部送信を許可しない（R11）', async ({ page }) => {
   await page.goto('/');
@@ -59,4 +61,47 @@ test('画面のinline scriptとevalを拒否し、外部送信を許可しない
   await expect.poll(() => page.locator('.pcad-drawing-svg [data-owner-id="view-1"] path').evaluateAll((elements) =>
     elements.reduce((sum, element) => sum + (element instanceof SVGPathElement ? element.getTotalLength() : 0), 0)),
   { timeout: 60_000 }).toBeGreaterThan(0);
+});
+
+test('終了診断は実際の画面終了を残し、元の不一致を上書きしない', async ({ page }, info) => {
+  const before = info.attachments.length;
+  await withBrowserFailureDiagnostics(page, info, async (stage) => {
+    stage('正常な読み取り');
+    expect(await page.title()).toBe('');
+  });
+  expect(info.attachments).toHaveLength(before);
+  const failure = new Error('確認用の元の不一致');
+  await expect(withBrowserFailureDiagnostics(page, info, async (stage) => {
+    stage('確認用の画面終了');
+    await page.close();
+    throw failure;
+  })).rejects.toBe(failure);
+  const attachment = info.attachments.filter((entry) => entry.name === 'browser-failure-diagnostics').at(-1);
+  if (attachment === undefined) throw new Error('終了診断が保存されていません');
+  const text = attachment.body?.toString('utf8') ?? await readFile(attachment.path ?? '', 'utf8');
+  const diagnostic: unknown = JSON.parse(text);
+  expect(diagnostic).toMatchObject({ stage: '確認用の画面終了', lifecycle: [
+    { event: 'page-closed', stage: '確認用の画面終了' },
+  ] });
+});
+
+test('終了診断は実際のブラウザー切断を成功扱いせずに保存する', async ({ playwright, browserName }, info) => {
+  // Only this owned, blank browser is closed; the test runner's browser stays alive.
+  const browser = await playwright[browserName].launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await expect(withBrowserFailureDiagnostics(page, info, async (stage) => {
+      stage('確認用のブラウザー終了');
+      await browser.close();
+    })).rejects.toThrow('操作中に画面またはブラウザーが終了しました');
+    const attachment = info.attachments.filter((entry) => entry.name === 'browser-failure-diagnostics').at(-1);
+    if (attachment === undefined) throw new Error('切断の診断が保存されていません');
+    const text = attachment.body?.toString('utf8') ?? await readFile(attachment.path ?? '', 'utf8');
+    const diagnostic: unknown = JSON.parse(text);
+    expect(diagnostic).toMatchObject({ stage: '確認用のブラウザー終了', lifecycle: expect.arrayContaining([
+      { event: 'browser-disconnected', stage: '確認用のブラウザー終了', elapsedMs: expect.any(Number) },
+    ]) });
+  } finally {
+    await browser.close();
+  }
 });

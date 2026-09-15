@@ -1,0 +1,17 @@
+.pcad-settings {
+  max-height: min(70dvh, calc(100dvh - 100px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.pcad-auto-save-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+}
+
+.pcad-auto-save-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pcad-space-1);
+}

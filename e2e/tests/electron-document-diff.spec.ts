@@ -1,3 +1,4 @@
+import { documentMaterialDiffFlow } from './documentMaterialDiffFlow.js';
 import { expect, test } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { documentDiffFlow } from './documentDiffFlow.js';
@@ -7,5 +8,13 @@ test('P12-13 実Electronで2ファイルを比較し、読込みの取消・破�
   try {
     const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await documentDiffFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('P12-14 実Electronで保存した2つの立体の追加・削除・共通部分を表示し、現在の部品とUndoを保つ', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await documentMaterialDiffFlow(page, info, app); expect(errors).toEqual([]);
   } finally { await app.close(); }
 });

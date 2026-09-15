@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { AutoSaveIntervalForm } from './AutoSaveIntervalForm.js';
 import { GearIcon } from '../shell/icons.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
@@ -210,6 +211,7 @@ export function SettingsPanel(): React.JSX.Element {
             </div>
           </div>
 
+          <AutoSaveIntervalForm />
           <p className="pcad-settings__hint">{t('settings.hint')}</p>
         </div>
       ) : null}

@@ -42,6 +42,11 @@ export type { GdtShapeTarget, GdtToleranceValue, WeldKind, WeldLengthValue, Weld
 export {
   createDirectKernelBridge,
   createDirectInterferenceKernelBridge,
+  createDirectMaterialComparisonBridge,
+  type MaterialComparisonBridge,
+  type MaterialComparisonResult,
+  type MaterialComparisonGeometry,
+  type MaterialDifferenceRegion,
   type InterferenceKernelBridge,
   type AssemblyInterferenceInput,
   type AssemblyInterferenceOptions,

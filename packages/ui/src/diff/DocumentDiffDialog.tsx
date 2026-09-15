@@ -6,6 +6,7 @@ import { runDefinitionDiff } from './definitionDiffClient.js';
 import { createDefinitionDiffWorker } from './browserDefinitionDiffWorker.js';
 import { pickComparisonFile, type ComparisonFile, type DefinitionDiffExecutor } from './pickComparisonFile.js';
 import './documentDiff.css';
+import { MaterialDiffPanel } from './MaterialDiffPanel.js';
 
 const execute: DefinitionDiffExecutor = (request, signal) => runDefinitionDiff(request, signal, createDefinitionDiffWorker);
 const FIELD_NAMES: Readonly<Record<string, MessageKey>> = {
@@ -91,6 +92,7 @@ export function DocumentDiffDialog({ onClose }: { readonly onClose: () => void }
   const pageSize = 50, changes = result?.changes ?? [];
   return <dialog ref={element} className="pcad-document-diff" aria-labelledby={titleId} data-help-topic="document-diff"
     onCancel={event => { event.preventDefault(); close(); }}>
+    <div className="pcad-document-diff__definition">
     <header><h2 id={titleId}>{t('documentDiff.title')}</h2><button type="button" onClick={close} title={t('documentDiff.close')}>{t('documentDiff.close')}</button></header>
     <p>{t('documentDiff.intro')}</p>
     <div className="pcad-document-diff__files">{(['before', 'after'] as const).map(side => {
@@ -126,5 +128,7 @@ export function DocumentDiffDialog({ onClose }: { readonly onClose: () => void }
         <button type="button" disabled={(page + 1) * pageSize >= changes.length} title={t('documentDiff.next')} onClick={() => setPage(page + 1)}>{t('documentDiff.next')}</button>
       </nav>}
     </section>}
+    </div>
+    {result === null || before === null || after === null ? null : <MaterialDiffPanel beforeBytes={before.bytes} afterBytes={after.bytes} />}
   </dialog>;
 }

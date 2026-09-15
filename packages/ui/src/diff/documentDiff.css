@@ -32,3 +32,13 @@
 .pcad-document-diff dd { margin: 0; }
 .pcad-document-diff [role="alert"] { color: var(--pcad-danger-text); }
 @media (max-width: 640px) { .pcad-document-diff__files { grid-template-columns: minmax(0, 1fr); } }
+
+.pcad-material-diff { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--pcad-border); }
+.pcad-material-diff__preview { margin: 12px 0; }
+.pcad-material-diff__preview canvas { display: block; width: 100%; height: 300px; border: 1px solid var(--pcad-border); border-radius: var(--pcad-radius-small); touch-action: none; }
+.pcad-material-diff [role="group"] ul { list-style: none; padding: 0; }
+.pcad-material-diff__region { padding: 8px; border-left: 4px solid; margin: 6px 0; }
+.pcad-material-diff__region--added { border-color: #2fa778; }
+.pcad-material-diff__region--removed { border-color: #e38b52; }
+.pcad-material-diff__region--common { border-color: #a5adba; }
+.pcad-material-diff button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }

@@ -14,6 +14,12 @@ export async function writeDraft(page: Page, name: string, code: string): Promis
 }
 export async function savePart(page: Page, info: TestInfo, name: string, app?: ElectronApplication) {
   const path = info.outputPath(name);
+  if (app === undefined && await page.evaluate(() => {
+    const browser: object = globalThis;
+    return 'showSaveFilePicker' in browser && typeof browser.showSaveFilePicker === 'function';
+  })) {
+    throw new Error('ダウンロードを使う保存検査では、起動前に保存方式をダウンロードへ揃えてください。別方式の保存画面を開いて完了待ちにしないでください。');
+  }
   // Applying mathematics commits asynchronously. An open native dialog makes the
   // canvas inert, so focus() alone can succeed without receiving the save keys.
   await expect(page.locator('dialog[open]'), '保存前に数式などの確定処理が終わること').toHaveCount(0);

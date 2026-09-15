@@ -53,7 +53,7 @@ export async function documentDiffFlow(page: Page, info: TestInfo, app?: Electro
   await expect(results.locator('[data-diff-status="added"]')).toContainText('追加の補助箱');
   await expect(results.locator('[data-diff-status="removed"]')).toContainText('旧補助箱');
   const changed = results.locator('[data-diff-status="changed"]');
-  await captureManualDetail(page, info, { name: 'document-definition-diff', dialog, script: new URL(import.meta.url),
+  await captureManualDetail(page, info, { name: 'document-definition-diff', dialog: dialog.locator('.pcad-document-diff__definition'), script: new URL(import.meta.url),
     fixture: { kind: 'two-saved-part-definitions', before, after, relationship: 'versions' } });
   await changed.locator('summary').click();
   await expect(changed).toContainText('式変更（保存値は同じ）'); await expect(changed).toContainText('式と保存値の変更');

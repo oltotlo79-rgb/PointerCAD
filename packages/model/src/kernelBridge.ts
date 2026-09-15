@@ -16,6 +16,7 @@ import {
   type FaceMeshData,
   type KernelApi,
   type ManagedKernelApi,
+  type MaterialComparisonKernelApi,
   type InterferenceComponentSpec,
   type InterferenceRequest,
   type InterferenceResult,
@@ -26,6 +27,9 @@ import {
   type SolidRecomputeRequest,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
+import type { MaterialComparisonBridge, MaterialComparisonResult } from './kernelBridge/materialComparisonContracts.js';
+import { readMaterialComparison } from './kernelBridge/readMaterialComparison.js';
+export type { MaterialComparisonBridge, MaterialComparisonResult, MaterialComparisonGeometry, MaterialDifferenceRegion } from './kernelBridge/materialComparisonContracts.js';
 import { readFunctionCurveGeometry, type FunctionKernelBridge } from './functionGeometry/functionCurveGeometry.js';
 import type {
   DrawingProjectionResult,
@@ -768,7 +772,7 @@ function refusedInterference(request: InterferenceRequest, failure: AssemblyInte
   return cancelled ? { ...report, kind: 'checked', failure: null } : { ...report, kind: 'failed', failure };
 }
 
-export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridge & FunctionKernelBridge {
+export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridge & FunctionKernelBridge & MaterialComparisonBridge {
   const health = createKernelHealth();
   const counts: Record<KernelOperationStatus, number> = {
     success: 0, failed: 0, cancelled: 0, workerBroken: 0,
@@ -796,6 +800,16 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
 
   return {
     pendingWaiters: () => connection.waiters.size,
+    async compareMaterials(beforeKeys, afterKeys, shouldCancel): Promise<MaterialComparisonResult> {
+      const active = connection, callbacks = callbackScope();
+      const failed = (): MaterialComparisonResult => active.interruption === 'cancelled'
+        ? { kind: 'cancelled' } : { kind: 'failed', message: KERNEL_BROKEN_MESSAGE };
+      return raceWithBroken(active, async () => {
+        try { return readMaterialComparison(await active.remote.compareMaterials({ beforeKeys, afterKeys },
+          toCancelProxy(shouldCancel, callbacks))); }
+        catch (error) { return { kind: 'failed' as const, message: toFailureMessage(error) }; }
+      }, failed, callbacks);
+    },
     async hiddenLineViews(request, options = {}) {
       if (health.broken && !disposed) restart();
       const active = connection;
@@ -1103,6 +1117,20 @@ export function createDirectInterferenceKernelBridge(api: ManagedKernelApi): Int
           onProgress === undefined ? undefined : (progress) => { if (!disposed) onProgress(interferenceProgressOf(progress)); },
           () => disposed || (shouldCancel?.() ?? false)));
       } catch (error) { return refusedInterference(request, { code: 'rpcFailed', message: toFailureMessage(error) }); }
+    },
+    dispose() { disposed = true; bridge.dispose(); },
+  };
+}
+
+/** 実OCCT統合検査用。既存の部分的なKernelApiへ比較能力を要求しない。 */
+export function createDirectMaterialComparisonBridge(api: MaterialComparisonKernelApi): AssemblyKernelBridge & DrawingKernelBridge & FunctionKernelBridge & MaterialComparisonBridge {
+  const bridge = createDirectKernelBridge(api); let disposed = false;
+  return { ...bridge,
+    async compareMaterials(beforeKeys, afterKeys, shouldCancel) {
+      if (disposed) return { kind: 'cancelled' };
+      try { return readMaterialComparison(await api.compareMaterials({ beforeKeys, afterKeys },
+        () => disposed || (shouldCancel?.() ?? false))); }
+      catch (error) { return { kind: 'failed', message: toFailureMessage(error) }; }
     },
     dispose() { disposed = true; bridge.dispose(); },
   };

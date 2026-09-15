@@ -123,6 +123,7 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
     packages = set()
     areas = set()
     runtime = set()
+    all_e2e = False
     for path in paths:
         if path == '.gitattributes':
             permitted = {'docs/standards/licenses/*.txt -text', 'scripts/hooks/commit-msg text eol=lf'}
@@ -147,6 +148,15 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
         elif re.fullmatch(r'packages/help-content/docs/[^\x00-\x1f]+\.md', path):
             packages.add('help-content')
             areas.add('help-content')
+        elif re.fullmatch(r'packages/help-content/docs/ja/images/[^/\x00-\x1f]+\.(png|json)', path):
+            packages.add('help-content')
+            areas.add('help-images')
+        elif re.fullmatch(r'e2e/tests/[^\x00-\x1f]+\.ts', path):
+            # Run every operation, including shared helpers and all startup dependencies.
+            # This narrows only unrelated unit packages, never the changed E2E coverage.
+            packages.add('test-utils')
+            areas.add('all-e2e')
+            all_e2e = True
         elif runtime_package(path) is not None:
             if runtime_graph is None:
                 return full('Runtime dependency coverage is unavailable: ' + path)
@@ -165,8 +175,9 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
         # Keep mathematics early, as in the complete gate. No package is run twice.
         ordered = sorted(packages, key=lambda name: (name != 'expression', name))
         return {'mode': 'targeted', 'reason': ', '.join(sorted(areas)), 'packages': ordered,
-                'runtimeChecks': True, 'changedPackages': sorted(runtime)}
-    return {'mode': 'targeted', 'reason': ', '.join(sorted(areas)), 'packages': sorted(packages)}
+                'runtimeChecks': True, 'allE2EChecks': all_e2e, 'changedPackages': sorted(runtime)}
+    return {'mode': 'targeted', 'reason': ', '.join(sorted(areas)), 'packages': sorted(packages),
+            'allE2EChecks': all_e2e}
 
 
 def inspect(root: Path, level: str, phase: str, comparison_base: str, force: bool):

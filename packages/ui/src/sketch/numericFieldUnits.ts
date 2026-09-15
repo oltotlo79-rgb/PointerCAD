@@ -2,6 +2,11 @@ import { parseDisplayInput, type LengthUnit } from '@pointercad/model';
 
 export type FieldUnit = 'mm' | 'degree' | 'count' | 'ratio' | 'N' | 'MPa' | 'Nmm';
 
+/** 初期値・吸着値・空欄は内部mm。文字を入力した欄だけ表示単位で読む。 */
+export function usesDisplayInputUnit(field: { readonly typed?: boolean; readonly source: string }): boolean {
+  return field.typed === true && field.source.trim() !== '';
+}
+
 /**
  * **どの欄が長さかを決める唯一の表**(P6 タスク3b、FR-811・FR-814・FR-205)。
  *

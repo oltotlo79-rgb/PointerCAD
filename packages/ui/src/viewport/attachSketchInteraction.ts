@@ -1,3 +1,4 @@
+import { createConfiguredNumericInput as createNumericInput } from '../settings/createConfiguredNumericInput.js';
 /**
  * ビューポートの上でのホバー・選択・吸着・形の作り始めを結ぶ
  * (計画書 docs/plans/P1-式とスケッチ.md タスク21 手順4)。
@@ -61,7 +62,6 @@ import { commitExtend, commitTrim } from '../sketch/editCommands.js';
 import { freeClickPlane, picksSolidVertices } from '../sketch/freeSketch.js';
 import {
   commitNumericInput,
-  createNumericInput,
   DEFAULT_COORDINATE_BASE,
   DEFAULT_SKETCH_CHAMFER_DISTANCE_MM,
   DEFAULT_SKETCH_FILLET_RADIUS_MM,

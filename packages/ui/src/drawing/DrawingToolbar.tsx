@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { t } from '../i18n/t.js';
 import { HelpButton } from '../help/HelpButton.js';
+import { SettingsPanel } from '../settings/SettingsPanel.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CubeIcon, OpenFileIcon, SaveIcon, UndoIcon, RedoIcon } from '../shell/icons.js';
 import { ToolMenu } from '../shell/menus/ToolMenu.js';
@@ -55,6 +56,7 @@ export function DrawingToolbar(): React.JSX.Element {
               onClick={() => choose(action.id)}><action.Icon /></button>)}
           </div>
         </div>
+        <SettingsPanel />
         <HelpButton />
       </div>
     </header>

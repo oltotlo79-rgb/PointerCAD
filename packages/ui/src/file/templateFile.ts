@@ -504,7 +504,8 @@ export type NewFromTemplateOutcome =
  * ひな形から新しい部品を起こす(FR-814、§2.10)。
  *
  * **読み切って中身も確かめられたときだけ**新しい部品を返す(NFR-RE-1)。呼び出し側は
- * 返ってきた文書をそのまま差し替えればよく、途中で失敗した場合は今の部品を触らずに済む。
+ * 返ってきた値を利用先で検証してから文書と設定を差し替える。
+ * 読み込み中や利用先での拒否では現在の保存先を変えない。保存先の解除は採用する側が行う。
  */
 export async function newFromTemplate(
   deps: TemplateDeps,
@@ -515,12 +516,7 @@ export async function newFromTemplate(
     if (stored === null) {
       return { ok: false, missing: true };
     }
-    const outcome = readTemplateBytes(stored.bytes);
-    if (outcome.ok) {
-      // ひな形は「開いた文書」ではなく新しい文書の出発点なので、前の保存先を持ち越さない。
-      deps.gateway.clearSaveTarget?.();
-    }
-    return outcome;
+    return readTemplateBytes(stored.bytes);
   }
   let picked;
   try {
@@ -532,9 +528,5 @@ export async function newFromTemplate(
     // 窓を取り消した。何も起きなかったので断りも出さない。
     return { ok: false, cancelled: true };
   }
-  const outcome = readTemplateBytes(picked.bytes);
-  if (outcome.ok) {
-    deps.gateway.clearSaveTarget?.();
-  }
-  return outcome;
+  return readTemplateBytes(picked.bytes);
 }

@@ -211,6 +211,7 @@ try {
     $ordinaryGate = -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and -not $Install
     $localScope = $null
     $localRuntimeChecks = $false
+    $localAllE2EChecks = $false
     if ($ordinaryGate -and -not $Full -and -not $isRunningOnCI -and $E2ERepeats -eq 1 -and $ReceiptPhase -ne 'Disabled') {
         $scopeScript = Join-Path $scriptDirectory 'lib/local_change_scope.py'
         if (Test-Path -LiteralPath $scopeScript -PathType Leaf) {
@@ -228,15 +229,21 @@ try {
                         if ($candidateScope.runtimeChecks -isnot [bool]) { throw 'Invalid runtime scope flag' }
                         $localRuntimeChecks = $candidateScope.runtimeChecks
                     }
+                    if ($candidateScope.PSObject.Properties.Name -contains 'allE2EChecks') {
+                        if ($candidateScope.allE2EChecks -isnot [bool]) { throw 'Invalid complete E2E scope flag' }
+                        $localAllE2EChecks = $candidateScope.allE2EChecks
+                    }
                     Write-Host "[検査範囲] 変更箇所別: $($localScope.reason) / $($localScope.packages -join ', ')。全検査は両OS CIで実施します。" -ForegroundColor Cyan
                 } else { Write-Host "[検査範囲] 全体: $($candidateScope.reason)" }
             } catch {
                 $localScope = $null
                 $localRuntimeChecks = $false
+                $localAllE2EChecks = $false
                 Write-Host "[検査範囲] 判定できないため全体検査へ戻します: $($_.Exception.Message)"
             }
         } else { Write-Host '[検査範囲] 判定処理が無いため全体検査へ戻します' }
     }
+    if ($localAllE2EChecks -and -not $hasE2E) { throw 'Changed E2E tests require the test:e2e script' }
     $receiptPhaseMatches = ($ReceiptPhase -eq 'Commit' -and $Level -eq 'Commit') -or
         ($ReceiptPhase -eq 'Push' -and $Level -eq 'Push')
     if ($ordinaryGate -and $receiptPhaseMatches -and -not $isRunningOnCI) {
@@ -328,7 +335,7 @@ try {
             Write-Host "[警告] stage 済みのファイルが無いため、検査前後の比較を省略します" -ForegroundColor Yellow
         }
 
-        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and ($null -eq $localScope -or $localRuntimeChecks)
+        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and ($null -eq $localScope -or $localRuntimeChecks -or $localAllE2EChecks)
         if ($E2EOnly -and -not $runE2E) {
             Write-Host "[NG] -E2EOnly を指定しましたが test:e2e スクリプトがありません" -ForegroundColor Red
             exit 1
@@ -395,7 +402,7 @@ try {
                 $repeatLabel = ""
                 if ($E2ERepeats -gt 1) { $repeatLabel = " ($e2eRun/$E2ERepeats)" }
                 $e2eArgs = @("run", "test:e2e")
-                if ($localRuntimeChecks) {
+                if ($localRuntimeChecks -and -not $localAllE2EChecks) {
                     # All unit tests of changed packages and their consumers ran above.
                     # Retain strict rendering and actual Firefox/Electron startup locally;
                     # the same commit's CI and release -Full run every existing operation.

@@ -14,13 +14,15 @@
 import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
-import { readAutoSaveIntervalMs } from './autoSaveSettings.js';
+import type { NumericDefaultSources } from '../sketch/numericDefaultSources.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
   ALL_SELECTABLE,
   isSelectionFilter,
   type SelectionFilter,
 } from '../solid/selectionFilter.js';
+import { readAutoSaveIntervalMs } from './autoSaveSettings.js';
+import { readNumericToolDefaults } from './numericToolDefaults.js';
 
 /** 表示テーマ 5 種(FR-908)。既定は `dark`(現状の配色をそのまま複製)。 */
 export type ThemeId = 'dark' | 'light' | 'darkModern' | 'lightModern' | 'modern';
@@ -35,6 +37,7 @@ export const THEME_IDS: readonly ThemeId[] = [
 ];
 
 export interface DisplaySettings {
+  readonly numericToolDefaults?: NumericDefaultSources;
   /** 旧設定は未指定のまま5分。1～60分の間隔を端末へ保存する。 */
   readonly autoSaveIntervalMs?: number;
   readonly theme: ThemeId;
@@ -89,6 +92,7 @@ export interface DisplaySettings {
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  numericToolDefaults: {},
   autoSaveIntervalMs: readAutoSaveIntervalMs({}),
   theme: 'dark',
   uiScale: 100,
@@ -387,6 +391,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       lengthUnit: readLengthUnit(parsed),
       selectionFilter: readSelectionFilter(parsed),
       inferConstraints: readInferConstraints(parsed),
+      numericToolDefaults: readNumericToolDefaults('numericToolDefaults' in parsed ? parsed.numericToolDefaults : undefined),
       autoSaveIntervalMs: readAutoSaveIntervalMs('autoSaveIntervalMs' in parsed ? { autoSaveIntervalMs: parsed.autoSaveIntervalMs } : {}),
     };
   } catch {

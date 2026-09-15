@@ -3,6 +3,7 @@ import type { Annotation, Point2 } from '@pointercad/drawing';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { saveDrawingNote } from './noteCommands.js';
+import { useDrawingToolDefaults } from './useDrawingToolDefaults.js';
 
 export function DrawingNotePopover({ annotation, position = [80, 200], anchor, inline = false }: {
   readonly annotation?: Annotation;
@@ -10,8 +11,9 @@ export function DrawingNotePopover({ annotation, position = [80, 200], anchor, i
   readonly anchor?: Point2;
   readonly inline?: boolean;
 }): React.JSX.Element {
+  const defaults = useDrawingToolDefaults();
   const [text, setText] = useState(annotation?.text ?? '');
-  const [height, setHeight] = useState(String(annotation?.height ?? 3.5));
+  const [height, setHeight] = useState(() => annotation === undefined ? defaults.number('noteHeight') : String(annotation.height));
   const [x, setX] = useState(String(annotation?.position[0] ?? position[0]));
   const [y, setY] = useState(String(annotation?.position[1] ?? position[1]));
   const [leader, setLeader] = useState(annotation?.kind === 'leaderNote');

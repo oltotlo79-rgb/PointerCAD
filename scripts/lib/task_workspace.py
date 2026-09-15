@@ -46,9 +46,15 @@ def create_workspace(repository: Path, task: str, base: Path | None = None) -> P
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', task):
         raise ValueError('Task name must contain only lowercase letters, digits and hyphens')
     git_directory, scratchpad = _workspace_locations(repository)
-    base = (base if base is not None else scratchpad / 'tasks').resolve()
+    requested_base = base if base is not None else scratchpad / 'tasks'
+    # A linked worktree has its own .git entry outside the common Git directory.
+    # Reject that namespace before resolving '..' or attempting directory creation.
+    if any(part.casefold() == '.git' for part in requested_base.parts):
+        raise ValueError('Task output must not use a Git metadata entry')
+    base = requested_base.resolve()
     # resolve() follows existing Windows junctions before creating any output.
-    if not base.is_relative_to(scratchpad) or base.is_relative_to(git_directory):
+    if (not base.is_relative_to(scratchpad) or base.is_relative_to(git_directory)
+            or any(part.casefold() == '.git' for part in base.parts)):
         raise ValueError('Task output must stay inside the project scratchpad')
     base.mkdir(parents=True, exist_ok=True)
     key = hashlib.sha256(str(git_directory).casefold().encode()).hexdigest()[:12]

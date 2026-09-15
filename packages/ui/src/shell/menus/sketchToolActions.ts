@@ -1,3 +1,4 @@
+import { createConfiguredNumericInput as createNumericInput } from '../../settings/createConfiguredNumericInput.js';
 /**
  * スケッチの道具を押したときの配線(FR-313〜318、FR-322〜326、FR-328〜330)。
  *
@@ -11,7 +12,6 @@ import { mirrorAxisAvailability } from '../../sketch/copyCommands.js';
 import { cornerFromSelection } from '../../sketch/cornerCommands.js';
 import { editToolReadiness, offsetContourIsOpen } from '../../sketch/editCommands.js';
 import {
-  createNumericInput,
   EDIT_TOOL_STEPS,
   type EditMenuToolId,
   type EditToolId,

@@ -4,6 +4,7 @@ import { removeDrawingLayer } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { commitDrawingLayer, deleteDrawingLayer, moveDrawingLayer } from './layerCommands.js';
+import { useDrawingToolDefaults } from './useDrawingToolDefaults.js';
 
 const lineTypes: readonly { readonly kind: DrawingLineType; readonly key: MessageKey }[] = [
   { kind: 'solid', key: 'drawing.layer.solid' }, { kind: 'dashed', key: 'drawing.layer.dashed' },
@@ -12,12 +13,13 @@ const lineTypes: readonly { readonly kind: DrawingLineType; readonly key: Messag
 ];
 
 function LayerForm({ drawing, layer }: { readonly drawing: DrawingDocument; readonly layer?: DrawingLayer }): React.JSX.Element {
+  const defaults = useDrawingToolDefaults();
   const [name, setName] = useState(layer?.name ?? '');
   const [visible, setVisible] = useState(layer?.visible ?? true);
   const [printable, setPrintable] = useState(layer?.printable ?? true);
   const [color, setColor] = useState(layer?.color ?? '#000000');
   const [lineType, setLineType] = useState<DrawingLineType>(layer?.lineType ?? 'solid');
-  const [width, setWidth] = useState(String(layer?.lineWidth ?? 0.25));
+  const [width, setWidth] = useState(() => layer === undefined ? defaults.number('layerWidth') : String(layer.lineWidth));
   const [confirming, setConfirming] = useState<DrawingDocument | null>(null);
   const busy = useAppStore((state) => state.drawingBusy);
   const index = drawing.layers.findIndex((entry) => entry.id === layer?.id);

@@ -250,13 +250,47 @@ class ScopeTests(unittest.TestCase):
         self.write('README.md', 'dirty after commit')
         self.assertEqual(self.inspect('Push', 'Push', intermediate)['mode'], 'full')
 
+    def test_e2e_helpers_and_specs_keep_all_operations_with_runtime_consumers(self):
+        self.install_workspace()
+        self.write('packages/ui/src/newFeature.tsx', 'changed UI')
+        self.write('e2e/tests/newFeatureFlow.ts', 'shared operation')
+        self.write('e2e/tests/new-feature.spec.ts', 'browser test')
+        result = self.inspect()
+        self.assertEqual(result['packages'], ['desktop', 'test-utils', 'ui'])
+        self.assertTrue(result['runtimeChecks'])
+        self.assertTrue(result['allE2EChecks'])
+        self.assertEqual(self.inspect(force=True)['mode'], 'full')
+
+    def test_e2e_deletion_and_rename_do_not_hide_the_all_operations_requirement(self):
+        self.write('e2e/tests/sharedFlow.ts', 'old operation')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'operation baseline')
+        self.git('update-ref', 'refs/remotes/origin/main', self.git('rev-parse', 'HEAD').decode().strip())
+        self.git('mv', 'e2e/tests/sharedFlow.ts', 'docs/removed-flow.md')
+        result = self.inspect('Commit', 'Commit')
+        self.assertEqual(result['packages'], ['help-content', 'test-utils'])
+        self.assertTrue(result['allE2EChecks'])
+
+    def test_help_images_have_bounded_paths_and_do_not_skip_changed_operations(self):
+        result = scope.classify(['packages/help-content/docs/ja/images/new-detail.png',
+                                 'packages/help-content/docs/ja/images/new-capture-details.json'])
+        self.assertEqual(result['packages'], ['help-content'])
+        self.assertFalse(result['allE2EChecks'])
+        result = scope.classify(['packages/help-content/docs/ja/images/new-detail.png',
+                                 'e2e/tests/captureManualDetail.ts'])
+        self.assertEqual(result['packages'], ['help-content', 'test-utils'])
+        self.assertTrue(result['allE2EChecks'])
+        for path in ['e2e/playwright.config.ts', 'e2e/tests/config.json', 'e2e/fixtures/shape.pcad',
+                     'packages/help-content/docs/ja/images/tool.js', 'e2e/scripts/setup.ts']:
+            self.assertEqual(scope.classify([path])['mode'], 'full', path)
+
     def test_ci_forced_full_multiple_updates_and_unknown_configuration_remain_full(self):
         self.write('README.md', 'updated')
         self.assertEqual(self.inspect(force=True)['mode'], 'full')
         self.assertEqual(self.inspect(phase='Disabled')['mode'], 'full')
         with patch.dict(os.environ, {'CI': 'true'}):
             self.assertEqual(scope.inspect(self.root, 'Push', 'Manual', '', False)['mode'], 'full')
-        for path in ['pnpm-lock.yaml', '.github/workflows/ci.yml', 'e2e/tests/smoke.spec.ts', 'scripts/unknown.py']:
+        for path in ['pnpm-lock.yaml', '.github/workflows/ci.yml', 'e2e/playwright.config.ts', 'scripts/unknown.py']:
             self.assertEqual(scope.classify(['README.md', path])['mode'], 'full', path)
 
     def test_unit_changes_select_the_whole_package_and_gate_changes_test_the_gate(self):
@@ -351,6 +385,38 @@ class ScopeHookTests(unittest.TestCase):
         fixture.full_check()
         self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    def test_e2e_changes_keep_every_operation_on_actual_push_and_ci_keeps_all_units(self):
+        self.install_runtime_workspace()
+        fixture = self.fixture
+        fixture.write('packages/ui/src/feature.tsx', 'changed UI')
+        fixture.write('e2e/tests/sharedFlow.ts', 'changed operation helper')
+        fixture.git('add', '.')
+        fixture.git('commit', '-qm', 'UI and operation change')
+        expected = ['run typecheck', 'run lint', '--filter @pointercad/desktop run test',
+                    '--filter @pointercad/test-utils run test', '--filter @pointercad/ui run test', 'run build']
+        self.assertEqual(fixture.calls(), expected)
+        before = len(fixture.calls())
+        fixture.git('push', 'origin', 'HEAD:main')
+        browser_install = 'exec playwright install ' + ('--with-deps ' if os.name != 'nt' else '') + 'chromium firefox'
+        self.assertEqual(fixture.calls()[before:], [browser_install,
+                         '--filter @pointercad/desktop exec install-electron', *expected, 'run test:e2e'])
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
+        fixture.env['CI'] = 'true'
+        before = len(fixture.calls())
+        fixture.full_check()
+        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    def test_e2e_only_failure_fails_gate_and_never_creates_full_success_receipt(self):
+        fixture = self.fixture
+        fixture.write('e2e/tests/new-operation.spec.ts', 'new operation')
+        fixture.write('.git/fail-step', 'run test:e2e')
+        fixture.full_check(success=False)
+        self.assertIn('--filter @pointercad/test-utils run test', fixture.calls())
+        self.assertEqual(fixture.calls()[-1], 'run test:e2e')
+        self.assertNotIn('run test', fixture.calls())
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
 
     def test_runtime_manual_scope_has_startup_and_explicit_full_has_no_project_filter(self):
         self.install_runtime_workspace()

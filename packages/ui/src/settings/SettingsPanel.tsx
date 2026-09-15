@@ -11,6 +11,7 @@ import {
   UI_SCALE_STEPS,
   type ThemeId,
 } from './settings.js';
+import { ToolDefaultsForm } from './ToolDefaultsForm.js';
 
 /**
  * 表示設定(計画書 docs/plans/P4-スケッチ拡張.md タスク2、§0.a-0.3、§2.2)。
@@ -212,6 +213,7 @@ export function SettingsPanel(): React.JSX.Element {
           </div>
 
           <AutoSaveIntervalForm />
+          <ToolDefaultsForm />
           <p className="pcad-settings__hint">{t('settings.hint')}</p>
         </div>
       ) : null}

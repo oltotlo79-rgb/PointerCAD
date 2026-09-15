@@ -4,6 +4,8 @@ import { createPaperFrame, paperSizeOf, type DrawingTable } from '@pointercad/dr
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { commitDrawingTable, deleteDrawingTables, startDrawingBalloon } from './tableCommands.js';
+import { useDrawingToolDefaults } from './useDrawingToolDefaults.js';
+import { drawingDefaultDefinition } from './drawingToolDefaults.js';
 
 const columnsLabels: Readonly<Record<BomColumnId, MessageKey>> = { number: 'assembly.bom.column.number', name: 'assembly.bom.column.name',
   quantity: 'assembly.bom.column.quantity', material: 'assembly.bom.column.material', mass: 'assembly.bom.column.mass', configuration: 'assembly.bom.column.configuration' };
@@ -12,14 +14,17 @@ const revisionLabels: readonly MessageKey[] = ['drawing.table.revision', 'drawin
 function isColumn(value: string): value is BomColumnId { return BOM_COLUMN_IDS.some((id) => value === id); }
 
 function TableEditor({ table, initialKind }: { readonly table: DrawingTable | undefined; readonly initialKind: DrawingTable['kind'] | undefined }): React.JSX.Element {
+  const defaults = useDrawingToolDefaults();
   const drawing = useAppStore((state) => state.drawing);
   const busy = useAppStore((state) => state.drawingBusy);
   const paper = drawing === null ? undefined : paperSizeOf(drawing.sheet.paperSizeId);
   const [kind, setKind] = useState<DrawingTable['kind']>(table?.kind ?? initialKind ?? (drawing?.source.sourceKind === 'assembly' ? 'bom' : 'hole'));
   const [x, setX] = useState(String(table?.position[0] ?? 20));
   const [y, setY] = useState(String(table?.position[1] ?? (paper === undefined ? 270 : createPaperFrame(paper).inner.top - 10)));
-  const [rowHeight, setRowHeight] = useState(String(table?.options.rowHeight ?? 7));
-  const [textHeight, setTextHeight] = useState(String(table?.options.textHeight ?? drawing?.sheet.textHeight ?? 3.5));
+  const [rowHeight, setRowHeight] = useState(() => table === undefined ? defaults.number('tableRowHeight')
+    : String(table.options.rowHeight ?? drawingDefaultDefinition('tableRowHeight').field.defaultSource));
+  const [textHeight, setTextHeight] = useState(() => table === undefined ? defaults.number('tableTextHeight', drawing?.sheet.textHeight)
+    : String(table.options.textHeight ?? drawing?.sheet.textHeight ?? drawingDefaultDefinition('tableTextHeight').field.defaultSource));
   const [columns, setColumns] = useState<readonly BomColumnId[]>(table?.columns.filter(isColumn) ?? ['number', 'name', 'quantity', 'material', 'mass']);
   const [widths, setWidths] = useState<Partial<Record<BomColumnId, string>>>(() => Object.fromEntries(columns.map((id) => [id, String(table?.options[`width.${id}`] ?? '')])));
   const [direction, setDirection] = useState(String(table?.options.direction ?? 'bottomToTop'));

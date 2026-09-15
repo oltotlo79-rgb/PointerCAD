@@ -15,6 +15,8 @@ import { sheetInputDocument, sheetInitialProfile, preserveSheetEditValues } from
 import { SheetBendSummary } from './SheetBendSummary.js';
 import { sheetHelpTopic } from './sheetHelpTopic.js';
 import { sheetCheckbox as checkbox, sheetSelect as select } from './sheetFormControls.js';
+import { SHEET_DEFAULT_KEYS } from './sheetMetalDefaultSources.js';
+import { sheetSourceLengthUnit } from './sheetDraft.js';
 import './sheetMetal.css';
 
 const faceKey = (ref: SketchFaceRef) => JSON.stringify([ref.sketchId, ref.faceFeatureId]);
@@ -42,7 +44,9 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
   const [reliefShape, setReliefShape] = useState<SheetReliefFeature['shape']>(editing?.kind === 'sheetRelief' ? editing.shape : 'rectangle');
   const [reliefSeams, setReliefSeams] = useState<readonly string[] | null>(editing?.kind === 'sheetRelief' ? editing.seamConnectionIds ?? [] : null);
   const [holeKeys, setHoleKeys] = useState<readonly string[]>(initialProfile?.holes.map(faceKey) ?? []);
-  const [sources, setSources] = useState<Partial<Record<SheetFieldKey, string>>>({});
+  const [sources, setSources] = useState<Partial<Record<SheetFieldKey, string>>>(() => ({ ...(session.defaultSources ?? {}) }));
+  // 作成時の値・保存済みの式・設定値は内部mm。手入力した欄だけ表示単位へ切り替える。
+  const [millimetreSourceKeys, setMillimetreSourceKeys] = useState<ReadonlySet<SheetFieldKey>>(() => new Set(SHEET_DEFAULT_KEYS));
   const [reversed, setReversed] = useState(editing?.kind === 'sheetBase' && editing.reversed);
   const [basis, setBasis] = useState<SheetFlangeFeature['lengthBasis']>(editing?.kind === 'sheetFlange' ? editing.lengthBasis : 'tangent');
   const [profileMode, setProfileMode] = useState<'rectangle' | 'profile'>(editing?.kind === 'sheetFlange' && editing.profile !== null ? 'profile' : 'rectangle');
@@ -127,7 +131,7 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
       || state.assembly !== null || state.drawing !== null || state.isComputing || candidate === null || missingReferences) return;
     const result = buildSheetCreation(state.document, candidate, sources, lengthUnit, {
       variables: state.parameterAnalysis.variables, exactVariables: state.parameterAnalysis.exactVariables, nonLengthVariables: state.nonLengthVariables,
-    }, editing);
+    }, editing, millimetreSourceKeys);
     if (!result.ok) { setMessage(result.message); setInvalidField(result.field ?? null); return; }
     void applySheetCreation(session, result, commit);
   };
@@ -195,10 +199,13 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
       return <label className="pcad-field" key={key}><span>{t(definition.labelKey)}</span>
         <input type="text" className={`pcad-field__input${invalidField === key ? ' pcad-field__input--error' : ''}`} aria-invalid={invalidField === key}
           value={sources[key] ?? value.source} title={t(definition.tooltipKey)}
-          onChange={(event) => { useAppStore.getState().clearSheetMetalPreview(); setSources({ ...sources, [key]: event.target.value }); setMessage(null); setInvalidField(null); }} />
-        <span>{t(fieldUnitLabelKey(definition.unit, lengthUnit))}</span></label>;
+          onChange={(event) => { useAppStore.getState().clearSheetMetalPreview(); setSources({ ...sources, [key]: event.target.value });
+            setMillimetreSourceKeys(previous => new Set([...previous].filter(item => item !== key)));
+            setMessage(null); setInvalidField(null); }} />
+        <span>{t(fieldUnitLabelKey(definition.unit, sheetSourceLengthUnit(key, lengthUnit, millimetreSourceKeys)))}</span></label>;
     })}
-    {candidate === null ? null : <SheetBendSummary feature={candidate} rule={sheet?.rule} sources={sources} lengthUnit={lengthUnit} />}
+    {candidate === null ? null : <SheetBendSummary feature={candidate} rule={sheet?.rule} sources={sources}
+      lengthUnit={lengthUnit} millimetreSourceKeys={millimetreSourceKeys} />}
     {session.kind === 'sheetRelief' ? null : <p>{t('sheetMetal.kFactorHint')}</p>}
     {message === null ? null : <p role="alert" className="pcad-field__error">{message}</p>}
     {computeError === null ? null : <p role="alert" className="pcad-field__error">{computeError}</p>}

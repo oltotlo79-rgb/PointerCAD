@@ -5,10 +5,11 @@
  * 一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
  */
 
-import { DEFAULT_TOOL_DEFAULTS } from '@pointercad/model';
+import { analyzeParameters } from '@pointercad/model';
+import { useEffect, useRef } from 'react';
+
 import { createDrawingFromCurrentPart } from '../../drawing/createDrawingCommands.js';
 import { createDrawingFromTemplateFile } from '../../drawing/drawingTemplateActions.js';
-import { useEffect, useRef } from 'react';
 import { activeHasUnsavedChanges, newAssembly } from '../../file/assemblyFile.js';
 import { createExchangeDeps } from '../../file/exchangeActions.js';
 import { exportBaseNameOf } from '../../file/exchangeFile.js';
@@ -38,6 +39,7 @@ import {
   type TemplateSource,
 } from '../../file/templateFile.js';
 import { type MessageKey, t } from '../../i18n/t.js';
+import { mergeTemplateToolDefaults, templateToolDefaults } from '../../settings/numericToolDefaults.js';
 import { useAppStore } from '../../store/useAppStore.js';
 import { NewFileIcon, OpenFileIcon, SaveIcon } from '../icons.js';
 import {
@@ -162,15 +164,22 @@ function templateNameOf(fileName: string | null): string {
  * いまの部品をひな形として保存する(FR-814)。
  *
  * 名前は開いているファイルの名前(まだ保存していなければ部品の名前)を使う。
- * **道具の既定値は今のところ既定のまま**で持ち運ぶ——利用者が既定値を変えられるように
- * するのは P12 の環境設定(FR-1104)で、それまでは変わりようがないためである。
+ * 既存のひな形形式が持つ5項目へ、現在の端末設定を写す(FR-1104)。
  */
 async function runSaveAsTemplate(): Promise<void> {
   const state = useAppStore.getState();
+  const toolDefaults = templateToolDefaults(state.displaySettings.numericToolDefaults, {
+    variables: state.parameterAnalysis.variables, exactVariables: state.parameterAnalysis.exactVariables,
+    nonLengthVariables: state.nonLengthVariables,
+  });
+  if (toolDefaults === null) {
+    state.setFileMessage({ key: 'settings.toolDefaults.invalidCurrent', failed: true });
+    return;
+  }
   const outcome = await saveTemplate(createTemplateDeps(), {
     document: state.document,
     lengthUnit: state.displaySettings.lengthUnit,
-    toolDefaults: DEFAULT_TOOL_DEFAULTS,
+    toolDefaults,
     name: templateNameOf(state.fileName),
   });
   useAppStore
@@ -191,16 +200,25 @@ async function runSaveAsTemplate(): Promise<void> {
  * 差し替えの順は「単位 → 文書 → ファイルの名前」。単位は文書の欄ではない(§0.a-0.1)ので
  * 先に配り、**再計算が走るのは `resetDocument` の 1 回だけ**にする。
  */
-async function runNewFromTemplate(source: TemplateSource): Promise<void> {
+export async function runNewFromTemplate(source: TemplateSource): Promise<void> {
   const before = useAppStore.getState();
+  const stillCurrent = (): boolean => {
+    const current = useAppStore.getState();
+    return current.activeDocumentId === before.activeDocumentId && current.documentVersion === before.documentVersion
+      // documentVersionは文書の差替え時だけ進む。通常編集は文書そのものの同一性で検出する。
+      && current.document === before.document && current.assembly === before.assembly && current.drawing === before.drawing
+      && current.fileGateway === before.fileGateway;
+  };
   if (
     activeHasUnsavedChanges(before) &&
     !(await createDefaultPartFileDeps().confirmDiscard('file.discardConfirm'))
   ) {
     return;
   }
+  if (!stillCurrent()) return;
   const outcome = await newFromTemplate(createTemplateDeps(), source);
   const store = useAppStore.getState();
+  if (!stillCurrent()) return;
   if (!outcome.ok) {
     if ('cancelled' in outcome) {
       // 窓を取り消した。何も起きなかったので断りも出さない。
@@ -212,7 +230,16 @@ async function runNewFromTemplate(source: TemplateSource): Promise<void> {
     });
     return;
   }
-  store.setDisplaySettings({ ...store.displaySettings, lengthUnit: outcome.lengthUnit });
+  const templateAnalysis = analyzeParameters(outcome.document.parameters, Object.values(outcome.toolDefaults));
+  const numericToolDefaults = mergeTemplateToolDefaults(store.displaySettings.numericToolDefaults,
+    outcome.toolDefaults, templateAnalysis);
+  if (numericToolDefaults === null) {
+    store.setFileMessage({ key: 'settings.toolDefaults.invalidTemplate', failed: true }); return;
+  }
+  // 読み込みと初期値の確認が成功し、元の文書が同じときだけ保存先を解除する。
+  // 組立からの切替ではresetDocumentが解除するため二重に呼ばない。
+  if (store.assembly === null) store.fileGateway.clearSaveTarget?.();
+  store.setDisplaySettings({ ...store.displaySettings, lengthUnit: outcome.lengthUnit, numericToolDefaults });
   // 履歴のスタックごと作り直す(ひな形から始めた前へは戻れない。「新規」と同じ)。
   store.resetDocument(outcome.document);
   store.setFileState(null, null);

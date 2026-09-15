@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
+import type { ExpressionValue } from '@pointercad/expression';
 import type { DatumDefinition, DatumReference, GdtFeature, GdtFrameSegment, GeometricToleranceFrame, MaterialRequirement } from '@pointercad/drawing';
 import { compatibleGdtSizeDimensions, defaultGdtToleranceZone, drawingDimensionContext, GDT_RULES, nextDatumLabel, resolveDrawingDimensions, resolveGdtFeature } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { commitDrawingDatum, commitDrawingGdtFrame, drawingGdtFeature, startDrawingGdt } from './gdtCommands.js';
 import { drawingCreationLayer } from './drawingCreationLayer.js';
+import { useDrawingToolDefaults } from './useDrawingToolDefaults.js';
 
 const featureKinds = ['surface', 'line', 'axis', 'medianPlane'] as const;
 const characteristics = ['straightness', 'flatness', 'roundness', 'cylindricity', 'lineProfile', 'surfaceProfile', 'parallelism',
   'perpendicularity', 'angularity', 'position', 'coaxiality', 'symmetry', 'circularRunout', 'totalRunout'] as const;
-const initialSegment = (): GdtFrameSegment => ({ characteristic: 'flatness', zone: 'betweenPlanes',
-  tolerance: { expression: { source: '0.05', value: 0.05, display: '0.05' }, unit: 'mm' }, material: 'none', datums: [], basicDimensionIds: [] });
+const initialSegment = (expression: ExpressionValue): GdtFrameSegment => ({ characteristic: 'flatness', zone: 'betweenPlanes',
+  tolerance: { expression, unit: 'mm' }, material: 'none', datums: [], basicDimensionIds: [] });
 const number = (text: string): number => text.trim() === '' ? NaN : Number(text);
 
 function DatumCell({ value, datums, index, onChange }: { readonly value?: DatumReference; readonly datums: readonly DatumDefinition[];
@@ -42,14 +44,15 @@ function DatumCell({ value, datums, index, onChange }: { readonly value?: DatumR
 
 export function DrawingGdtPanel({ kind, datum, frame }: { readonly kind: 'datum' | 'gdt'; readonly datum?: DatumDefinition;
   readonly frame?: GeometricToleranceFrame }): React.JSX.Element {
+  const defaults = useDrawingToolDefaults();
   const document = useAppStore((state) => state.drawing), source = useAppStore((state) => state.drawingSourceResolution);
   const targets = useAppStore((state) => state.drawingTargets), busy = useAppStore((state) => state.drawingBusy);
   const dimensions = useMemo(() => document === null || source === null ? [] : resolveDrawingDimensions(document, drawingDimensionContext(source)), [document, source]);
   const current = datum ?? frame;
   const [featureKind, setFeatureKind] = useState<GdtFeature['kind']>(current?.feature.kind ?? 'surface');
   const [label, setLabel] = useState(datum?.label ?? (document === null ? 'A' : nextDatumLabel(document) ?? ''));
-  const [segments, setSegments] = useState<readonly GdtFrameSegment[]>(frame?.segments ?? [initialSegment()]);
-  const [height, setHeight] = useState(String(current?.height ?? 3.5));
+  const [segments, setSegments] = useState<readonly GdtFrameSegment[]>(() => frame?.segments ?? [initialSegment(defaults.expression('gdtTolerance'))]);
+  const [height, setHeight] = useState(() => current === undefined ? defaults.number(kind === 'datum' ? 'datumHeight' : 'gdtHeight') : String(current.height));
   const [x, setX] = useState(current === undefined ? '' : String(current.position[0]));
   const [y, setY] = useState(current === undefined ? '' : String(current.position[1]));
   const [sizeId, setSizeId] = useState(current?.sizeDimensionId ?? '');
@@ -117,7 +120,7 @@ export function DrawingGdtPanel({ kind, datum, frame }: { readonly kind: 'datum'
               {t('drawing.gdt.missingBasic').replace('{number}', String(missingIndex + 1))}</label>)}</fieldset>
           <button type="button" className="pcad-button" disabled={segments.length === 1} onClick={() => setSegments(segments.filter((_, i) => i !== index))}>{t('drawing.gdt.removeRow')}</button>
         </fieldset>)}
-      {kind === 'gdt' ? <button type="button" className="pcad-button" disabled={segments.length >= 8} onClick={() => setSegments([...segments, initialSegment()])}>{t('drawing.gdt.addRow')}</button> : null}
+      {kind === 'gdt' ? <button type="button" className="pcad-button" disabled={segments.length >= 8} onClick={() => setSegments([...segments, initialSegment(defaults.expression('gdtTolerance'))])}>{t('drawing.gdt.addRow')}</button> : null}
       <label>{t('drawing.note.height')}<input value={height} inputMode="decimal" onChange={(event) => setHeight(event.target.value)} /></label>
       <label>{t('drawing.note.x')}<input value={x} inputMode="decimal" placeholder={String((resolved?.paperPoint[0] ?? 0) + 20)} onChange={(event) => setX(event.target.value)} /></label>
       <label>{t('drawing.note.y')}<input value={y} inputMode="decimal" placeholder={String((resolved?.paperPoint[1] ?? 0) + 20)} onChange={(event) => setY(event.target.value)} /></label>

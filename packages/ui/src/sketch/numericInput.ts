@@ -33,6 +33,7 @@ import {
   type ExpressionError,
   type ExpressionValue,
 } from '@pointercad/expression';
+import { applyNumericDefaultSources, type NumericDefaultSources } from './numericDefaultSources.js';
 import { evaluateNumericMath } from './numericMathValues.js';
 import {
   DEFAULT_BOX_SIZE_MM,
@@ -137,7 +138,7 @@ import {
 } from './numericInputTools.js';
 export * from './numericInputTools.js';
 
-import { applyDisplayUnit, type FieldUnit } from './numericFieldUnits.js';
+import { applyDisplayUnit, usesDisplayInputUnit, type FieldUnit } from './numericFieldUnits.js';
 export { applyDisplayUnit, isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
 
 /**
@@ -371,6 +372,8 @@ export function numericChoiceOptionLabel(option: NumericChoiceOption): string {
 }
 
 export interface NumericInputState {
+  /** この道具を開いた時点の既定値。次の段と選択肢変更へ持ち越す。 */
+  readonly defaultSources?: NumericDefaultSources;
   /** 二段入力の修正先。文書や履歴へ保存しない入力中の状態。 */
   readonly previousStage?: NumericInputState;
   readonly textValue?: string;
@@ -2908,6 +2911,7 @@ export function toggleValueOf(state: NumericInputState, key: NumericToggleKey): 
 
 /** ポップアップを開くときに外から渡せるもの。無くても既定で成り立つ(NFR-UX-4)。 */
 export interface NumericInputOptions {
+  readonly defaultSources?: NumericDefaultSources;
   readonly sweepGuides?: readonly NumericChoiceOption[];
   /**
    * 回転軸・パターンの向き・ばねの軸に選べるスケッチの線分(§0.a-0.9)。
@@ -2956,9 +2960,11 @@ export function createNumericInput(
     toolId,
     step,
     mode,
+    ...(options.defaultSources === undefined ? {} : { defaultSources: options.defaultSources }),
     // 段を開いた時点の選択肢・つまみで出す欄を決める(`visibleWhen`、タスク49)。
     fields: toFields(
-      visibleDefinitions(definitionsFor(step, mode, choices, options), choices, toggles),
+      applyNumericDefaultSources(step, mode,
+        visibleDefinitions(definitionsFor(step, mode, choices, options), choices, toggles), options.defaultSources),
     ),
     focusedIndex: 0,
     toggles,
@@ -2966,6 +2972,27 @@ export function createNumericInput(
     axisLine: options.axisLine,
     referenceAxes: options.referenceAxes,
   };
+}
+
+/** 状態を進める間に端末設定を読み直さず、開始時の既定値を保つ。 */
+function createNextNumericInput(state: NumericInputState, step: NumericInputStep,
+  mode?: CoordinateMode, options: NumericInputOptions = {}): NumericInputState {
+  return createNumericInput(state.toolId, step, mode, { ...options, defaultSources: state.defaultSources });
+}
+
+/** 設定画面も実際の入力と同じ欄・範囲を読む。選択肢で現れる欄も含める。 */
+export function numericDefaultDefinitions(step: NumericInputStep, mode: CoordinateMode): readonly NumericFieldDefinition[] {
+  const choices = choicesFor(step, {});
+  const variants = [choices, ...choices.flatMap(choice => choice.options.map(option =>
+    choices.map(item => item.key === choice.key ? { ...item, value: option.value } : item)))];
+  // 3D複写の3成分も設定できるようにし、表示条件や選択の意味は変更しない。
+  const byKey = new Map<string, NumericFieldDefinition>();
+  for (const variant of variants) {
+    for (const field of definitionsFor(step, mode, variant, { freeSketch: true })) {
+      if (!byKey.has(field.key)) byKey.set(field.key, field);
+    }
+  }
+  return [...byKey.values()];
 }
 
 /**
@@ -2977,7 +3004,7 @@ function editStage2StateFrom(
   state: NumericInputState,
   step: EditNumericInputStep,
 ): NumericInputState {
-  const next = createNumericInput(state.toolId, step);
+  const next = createNextNumericInput(state, step);
   return {
     ...next,
     previousStage: state,
@@ -3005,7 +3032,7 @@ function solidStage2StateFrom(
   state: NumericInputState,
   step: SolidNumericInputStep,
 ): NumericInputState {
-  const next = createNumericInput(state.toolId, step, undefined, { axisLine: state.axisLine });
+  const next = createNextNumericInput(state, step, undefined, { axisLine: state.axisLine });
   return {
     ...next,
     previousStage: state,
@@ -3032,7 +3059,7 @@ const SOLID_SECOND_STEPS: Readonly<Partial<Record<SolidNumericInputStep, SolidNu
  * (ツールバーの決定・二重クリック等)を受けてここを呼ぶ。
  */
 export function splineFinishStateFrom(state: NumericInputState): NumericInputState {
-  return createNumericInput(state.toolId, 'splineShape');
+  return createNextNumericInput(state, 'splineShape');
 }
 
 /**
@@ -3044,7 +3071,7 @@ function referenceStep(
   state: NumericInputState,
   step: ReferenceNumericInputStep,
 ): NumericInputState {
-  return createNumericInput(state.toolId, step, undefined, {
+  return createNextNumericInput(state, step, undefined, {
     referenceAxes: state.referenceAxes,
   });
 }
@@ -3211,7 +3238,8 @@ function rebuiltFields(
     choices,
     toggles,
   );
-  const fields = mergeFieldValues(state.fields, definitions);
+  const fields = mergeFieldValues(state.fields,
+    applyNumericDefaultSources(state.step, state.mode, definitions, state.defaultSources));
   const focusedIndex =
     fields.length === state.fields.length
       ? state.focusedIndex
@@ -3257,7 +3285,8 @@ export function reduceNumericInput(
       return {
         ...state,
         mode: event.mode,
-        fields: toFields(definitionsFor(state.step, event.mode, state.choices)),
+        fields: toFields(applyNumericDefaultSources(state.step, event.mode,
+          definitionsFor(state.step, event.mode, state.choices), state.defaultSources)),
         focusedIndex: 0,
       };
     }
@@ -3527,7 +3556,7 @@ export function effectiveSource(field: NumericField): string {
  * P1〜P5 の振る舞いは 1 文字も変わらない。
  */
 export function fieldExpression(field: NumericField, unit: LengthUnit = 'mm'): string {
-  if (field.typed !== true || field.source.trim() === '') {
+  if (!usesDisplayInputUnit(field)) {
     return effectiveSource(field);
   }
   return applyDisplayUnit(field.source, field.unit, unit);
@@ -4853,79 +4882,79 @@ export function nextNumericInput(
 ): NumericInputState | null {
   switch (state.step) {
     case 'lineStart':
-      return createNumericInput(state.toolId, 'lineEnd');
+      return createNextNumericInput(state, 'lineEnd');
     case 'arcCenter':
-      return createNumericInput(state.toolId, 'arcShape');
+      return createNextNumericInput(state, 'arcShape');
     case 'pointArrayBase':
-      return createNumericInput(state.toolId, 'pointArrayShape');
+      return createNextNumericInput(state, 'pointArrayShape');
     case 'circleCenter':
-      return createNumericInput(state.toolId, 'circleRadius');
+      return createNextNumericInput(state, 'circleRadius');
     case 'twoPointArcStart':
-      return createNumericInput(state.toolId, 'twoPointArcEnd');
+      return createNextNumericInput(state, 'twoPointArcEnd');
     case 'twoPointArcEnd':
-      return createNumericInput(state.toolId, 'twoPointArcRadius');
+      return createNextNumericInput(state, 'twoPointArcRadius');
     case 'threePointArcStart':
-      return createNumericInput(state.toolId, 'threePointArcEnd');
+      return createNextNumericInput(state, 'threePointArcEnd');
     case 'threePointArcEnd':
-      return createNumericInput(state.toolId, 'threePointArcVia');
+      return createNextNumericInput(state, 'threePointArcVia');
     case 'rectangleCorner1':
-      return createNumericInput(state.toolId, 'rectangleCorner2');
+      return createNextNumericInput(state, 'rectangleCorner2');
     case 'polygonCenter':
-      return createNumericInput(state.toolId, 'polygonShape');
+      return createNextNumericInput(state, 'polygonShape');
     case 'slotCenter1':
-      return createNumericInput(state.toolId, 'slotCenter2');
+      return createNextNumericInput(state, 'slotCenter2');
     case 'slotCenter2':
-      return createNumericInput(state.toolId, 'slotShape');
+      return createNextNumericInput(state, 'slotShape');
     case 'ellipseCenter':
-      return createNumericInput(state.toolId, 'ellipseShape');
+      return createNextNumericInput(state, 'ellipseShape');
     case 'ellipseShape':
-      return createNumericInput(state.toolId, 'ellipseAngles');
+      return createNextNumericInput(state, 'ellipseAngles');
     case 'ellipseAngles':
       // 「一部だけ(楕円弧)」が入なら開始角・終了角を続けて聞く。切なら全周でここで終わる。
       if (toggleValueOf(state, 'ellipseArc')) {
-        return createNumericInput(state.toolId, 'ellipseArcAngles');
+        return createNextNumericInput(state, 'ellipseArcAngles');
       }
-      return chaining ? createNumericInput(state.toolId, 'ellipseCenter') : null;
+      return chaining ? createNextNumericInput(state, 'ellipseCenter') : null;
     case 'pointArrayShape':
       // 格子は「行」「列」の 2 段に分けてある(欄を 1 段 2 個までにするため)。
       if (choiceValueFrom(state.choices, 'pointArrayLayout') === 'grid') {
-        return createNumericInput(state.toolId, 'pointArrayGridColumns');
+        return createNextNumericInput(state, 'pointArrayGridColumns');
       }
-      return chaining ? createNumericInput(state.toolId, 'pointArrayBase') : null;
+      return chaining ? createNextNumericInput(state, 'pointArrayBase') : null;
     case 'splinePoint':
       // 点は「続けてかく」の入切に関わらず積み上げる。曲線にするのは splineFinishStateFrom
       // が開く splineShape の段(タスク12 が Enter 以外の合図で呼ぶ)。
-      return createNumericInput(state.toolId, 'splinePoint', state.mode);
+      return createNextNumericInput(state, 'splinePoint', state.mode);
     case 'point':
       // 点は 1 段階で終わるので、同じ指定方法のまま次の点を聞く。
-      return chaining ? createNumericInput(state.toolId, 'point', state.mode) : null;
+      return chaining ? createNextNumericInput(state, 'point', state.mode) : null;
     case 'lineEnd': {
       if (!chaining) return null;
-      const next = createNumericInput(state.toolId, 'lineEnd');
+      const next = createNextNumericInput(state, 'lineEnd');
       const split = state.toggles.find((toggle) => toggle.key === 'splitIntersections');
       return split === undefined ? next : { ...next, toggles: next.toggles.map((toggle) =>
         toggle.key === 'splitIntersections' ? { ...toggle, value: split.value } : toggle) };
     }
     case 'arcShape':
-      return chaining ? createNumericInput(state.toolId, 'arcCenter') : null;
+      return chaining ? createNextNumericInput(state, 'arcCenter') : null;
     case 'circleRadius':
-      return chaining ? createNumericInput(state.toolId, 'circleCenter') : null;
+      return chaining ? createNextNumericInput(state, 'circleCenter') : null;
     case 'twoPointArcRadius':
-      return chaining ? createNumericInput(state.toolId, 'twoPointArcStart') : null;
+      return chaining ? createNextNumericInput(state, 'twoPointArcStart') : null;
     case 'threePointArcVia':
-      return chaining ? createNumericInput(state.toolId, 'threePointArcStart') : null;
+      return chaining ? createNextNumericInput(state, 'threePointArcStart') : null;
     case 'rectangleCorner2':
-      return chaining ? createNumericInput(state.toolId, 'rectangleCorner1') : null;
+      return chaining ? createNextNumericInput(state, 'rectangleCorner1') : null;
     case 'polygonShape':
-      return chaining ? createNumericInput(state.toolId, 'polygonCenter') : null;
+      return chaining ? createNextNumericInput(state, 'polygonCenter') : null;
     case 'slotShape':
-      return chaining ? createNumericInput(state.toolId, 'slotCenter1') : null;
+      return chaining ? createNextNumericInput(state, 'slotCenter1') : null;
     case 'ellipseArcAngles':
-      return chaining ? createNumericInput(state.toolId, 'ellipseCenter') : null;
+      return chaining ? createNextNumericInput(state, 'ellipseCenter') : null;
     case 'pointArrayGridColumns':
-      return chaining ? createNumericInput(state.toolId, 'pointArrayBase') : null;
+      return chaining ? createNextNumericInput(state, 'pointArrayBase') : null;
     case 'splineShape':
-      return chaining ? createNumericInput(state.toolId, 'splinePoint') : null;
+      return chaining ? createNextNumericInput(state, 'splinePoint') : null;
     case 'springShape':
       return springLengthStateFrom(state);
     // 移動/回転(FR-424、タスク49)。1 段目(動かす量)から 2 段目(回す角度)へ進む。

@@ -4,10 +4,12 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { addDrawingMachiningNote, addDrawingSurfaceFinish, defaultDrawingAnnotationPosition, editDrawingSourceAnnotation } from './annotationCommands.js';
 import { resolveMachiningAnnotation } from './annotationDisplay.js';
+import { useDrawingToolDefaults } from './useDrawingToolDefaults.js';
 
 export function DrawingAnnotationPopover({ target, annotation, inline = false }: {
   readonly target: DimensionTarget; readonly annotation?: Annotation; readonly inline?: boolean;
 }): React.JSX.Element {
+  const defaults = useDrawingToolDefaults();
   const document = useAppStore((state) => state.drawing);
   const source = useAppStore((state) => state.drawingSourceResolution);
   const library = useAppStore((state) => state.drawingSources);
@@ -16,8 +18,8 @@ export function DrawingAnnotationPopover({ target, annotation, inline = false }:
   const [kind, setKind] = useState(annotation === undefined ? machining === null ? 'surface' : 'machining' : annotation.kind === 'surfaceFinish' ? 'surface' : 'machining');
   const [process, setProcess] = useState<SurfaceFinishProcess>(annotation?.surfaceFinish?.process ?? 'basic');
   const [parameter, setParameter] = useState<'Ra' | 'Rz'>(annotation?.surfaceFinish?.parameter ?? 'Ra');
-  const [value, setValue] = useState(annotation?.surfaceFinish?.value.source ?? '3.2');
-  const [height, setHeight] = useState(String(annotation?.height ?? 3.5));
+  const [value, setValue] = useState(() => annotation?.surfaceFinish?.value.source ?? defaults.source('roughness'));
+  const [height, setHeight] = useState(() => annotation === undefined ? defaults.number('annotationHeight') : String(annotation.height));
   const [x, setX] = useState(String(annotation?.position[0] ?? 0));
   const [y, setY] = useState(String(annotation?.position[1] ?? 0));
   const number = (text: string): number => text.trim() === '' ? NaN : Number(text);
@@ -33,8 +35,8 @@ export function DrawingAnnotationPopover({ target, annotation, inline = false }:
     }
     const position = defaultDrawingAnnotationPosition(target);
     if (position === null) { useAppStore.getState().setDrawingMessage(t('drawing.error.dimensionSourceMissing')); return; }
-    if (kind === 'machining') addDrawingMachiningNote(target, position);
-    else addDrawingSurfaceFinish({ target, position, process, parameter, value });
+    if (kind === 'machining') addDrawingMachiningNote(target, position, number(height));
+    else addDrawingSurfaceFinish({ target, position, process, parameter, value, height: number(height) });
   }}>
     <strong>{t('drawing.tool.annotation')}</strong>
     <label>{t('drawing.annotation.kind')}<select aria-label={t('drawing.annotation.kind')} value={kind} disabled={annotation !== undefined} onChange={(event) => setKind(event.target.value)}>
@@ -53,8 +55,8 @@ export function DrawingAnnotationPopover({ target, annotation, inline = false }:
       </select></label>
       <label>{t('drawing.annotation.roughness')}<input value={value} onChange={(event) => setValue(event.target.value)} autoFocus={annotation === undefined} /></label>
     </>}
+    <label>{t('drawing.note.height')}<input value={height} inputMode="decimal" onChange={(event) => setHeight(event.target.value)} /></label>
     {annotation === undefined ? null : <>
-      <label>{t('drawing.note.height')}<input value={height} inputMode="decimal" onChange={(event) => setHeight(event.target.value)} /></label>
       <label>{t('drawing.note.x')}<input value={x} inputMode="decimal" onChange={(event) => setX(event.target.value)} /></label>
       <label>{t('drawing.note.y')}<input value={y} inputMode="decimal" onChange={(event) => setY(event.target.value)} /></label>
     </>}

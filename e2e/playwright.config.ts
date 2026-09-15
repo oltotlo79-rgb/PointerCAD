@@ -74,7 +74,7 @@ export default defineConfig({
       testIgnore: [ELECTRON_TEST_FILE, WEB_STARTUP_TEST],
       // 実カーネル・保存再読込・復元・製作図・F1・CSPを既存の同じ操作で検査する。
       // 板金の操作検査は分割した新ファイルも自動的に対象へ入れる。
-      testMatch: /(?:smoke|solid|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|name-search|auto-save-settings|function-plot|sheet-[\w-]+)\.spec\.ts$/u,
+      testMatch: /(?:smoke|solid|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|name-search|auto-save-settings|command-registry|shortcut-settings|function-plot|sheet-[\w-]+)\.spec\.ts$/u,
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       use: FIREFOX_USE,
       dependencies: ['viewport-performance', 'startup-firefox'],

@@ -14,6 +14,8 @@
 import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
+import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
+import { readStoredShortcutAssignments } from './shortcutSettings.js';
 import type { NumericDefaultSources } from '../sketch/numericDefaultSources.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
@@ -37,6 +39,7 @@ export const THEME_IDS: readonly ThemeId[] = [
 ];
 
 export interface DisplaySettings {
+  readonly shortcutAssignments?: ShortcutAssignments;
   readonly numericToolDefaults?: NumericDefaultSources;
   /** 旧設定は未指定のまま5分。1～60分の間隔を端末へ保存する。 */
   readonly autoSaveIntervalMs?: number;
@@ -92,6 +95,7 @@ export interface DisplaySettings {
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  shortcutAssignments: EMPTY_SHORTCUT_ASSIGNMENTS,
   numericToolDefaults: {},
   autoSaveIntervalMs: readAutoSaveIntervalMs({}),
   theme: 'dark',
@@ -384,6 +388,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       return DEFAULT_DISPLAY_SETTINGS;
     }
     return {
+      shortcutAssignments: readStoredShortcutAssignments(parsed),
       theme: parsed.theme,
       uiScale: parsed.uiScale,
       trackAngleStep: readTrackAngleStep(parsed),

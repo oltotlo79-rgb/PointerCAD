@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { HELP_TOPICS, MANUAL_CHAPTERS, MANUAL_VOLUMES, resolveHelpUiReferences, type HelpSearchDocument } from '@pointercad/help-content';
 import { ja } from '../i18n/ja.js';
 import { renderManualChapter } from './manualHtml.js';
+import { resolveShortcutTable } from '../commands/shortcutMarkdown.js';
 
 function page(title: string, body: string, root: string, data = ''): string {
   const windowTitle = title === ja['help.manualTitle'] ? title : `${title} — ${ja['help.manualTitle']}`;
@@ -25,7 +26,7 @@ export function buildManualPages(sources: ReadonlyMap<string, string>, images: R
     for (const image of markdown.matchAll(/!\[[^\]]*\]\(([^\s)]+)\)/gu)) {
       if (!Object.hasOwn(images, image[1])) throw new Error(`Missing manual image in ${chapter.id}: ${image[1]}`);
     }
-    search.push({ id: chapter.id, title: chapter.title, body: resolveHelpUiReferences(markdown, ja) });
+    search.push({ id: chapter.id, title: chapter.title, body: resolveShortcutTable(resolveHelpUiReferences(markdown, ja)) });
     const previous = MANUAL_CHAPTERS[chapter.order - 1], next = MANUAL_CHAPTERS[chapter.order + 1];
     const navigation = renderToStaticMarkup(<nav className="manual-chapters" aria-label={ja['help.chapters']}>
       {previous && <a rel="prev" href={`${previous.id}.html`}>{ja['help.previousChapter']}: {previous.title}</a>}

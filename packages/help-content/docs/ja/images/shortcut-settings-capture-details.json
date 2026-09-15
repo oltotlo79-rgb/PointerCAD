@@ -1,0 +1,199 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "shortcut-settings",
+      "script": "e2e/tests/shortcutSettingsFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-command-settings-corrected-validation-ap49ultp",
+      "sourceValidationStatus": "passed",
+      "sourceTestStatus": "passed",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-command-settings-final-evidence-pztinuti",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-7 キー設定の割当の適用・保存再開・同じUndo・現在の説明",
+        "scriptSha256": "38bdafa839c3f5985a74f91501ec96c441bb4530714a5f395903dc1d9cdf3dc8",
+        "fixture": {
+          "filename": "shortcut-settings-fixture.json",
+          "sha256": "a66d14688d75f680b2c09c9f662cf2d2f590434c716a72d529099b4a8277b9c6"
+        },
+        "screen": {
+          "filename": "shortcut-settings-screen.png",
+          "sha256": "8d9e7489e5f4767517718d5786fe3267bb6533170ff93b33817e7cd2c5ff99f1"
+        },
+        "detail": {
+          "filename": "shortcut-settings-detail.png",
+          "sha256": "d2d2ebdf19bc9cdb0823fdd75716d08de8b07ab55ee90db8c67fa25cb5b786cb"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 1171,
+          "y": 160.703125,
+          "width": 248,
+          "height": 554.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "id": "part-1",
+        "name": "部品1",
+        "schemaVersion": 15,
+        "sketches": [
+          {
+            "id": "sketch-1",
+            "name": "スケッチ1",
+            "features": [
+              {
+                "id": "point-1",
+                "name": "点1",
+                "planeId": "xy",
+                "kind": "point",
+                "at": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "12",
+                    "value": 12,
+                    "display": "12"
+                  },
+                  "y": {
+                    "source": "34",
+                    "value": 34,
+                    "display": "34"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "activeSketchId": "sketch-1",
+        "references": [],
+        "solids": [],
+        "sheetUnfolds": [],
+        "parameters": [],
+        "appearance": {
+          "entries": []
+        },
+        "selectionSets": [],
+        "canvases": [],
+        "namedViews": [
+          {
+            "id": "namedView-front",
+            "name": "正面",
+            "position": [
+              0,
+              -200,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-top",
+            "name": "平面",
+            "position": [
+              0,
+              0,
+              200
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-right",
+            "name": "右側面",
+            "position": [
+              200,
+              0,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-isometric",
+            "name": "等角",
+            "position": [
+              115.47005383792516,
+              -115.47005383792516,
+              115.47005383792516
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "perspective",
+            "zoom": 1
+          }
+        ],
+        "configurations": [
+          {
+            "id": "configuration-1",
+            "name": "既定",
+            "values": {}
+          }
+        ],
+        "activeConfigurationId": "configuration-1"
+      },
+      "image": "images/shortcut-settings-detail.png",
+      "imageSha256": "d2d2ebdf19bc9cdb0823fdd75716d08de8b07ab55ee90db8c67fa25cb5b786cb"
+    }
+  ]
+}

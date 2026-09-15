@@ -38,10 +38,12 @@ import {
   type TemplateDeps,
   type TemplateSource,
 } from '../../file/templateFile.js';
-import { type MessageKey, t } from '../../i18n/t.js';
+import { t } from '../../i18n/t.js';
+import { currentCommandLabel } from '../../commands/commandLabels.js';
+import type { CommandDocumentKind } from '../../commands/commandDefinitions.js';
+import type { ShortcutAssignments } from '../../commands/shortcutAssignments.js';
 import { mergeTemplateToolDefaults, templateToolDefaults } from '../../settings/numericToolDefaults.js';
 import { useAppStore } from '../../store/useAppStore.js';
-import { NewFileIcon, OpenFileIcon, SaveIcon } from '../icons.js';
 import {
   type FileMenuActionId,
   type FileMenuItemId,
@@ -49,49 +51,23 @@ import {
   isStoredTemplateMenuId,
   type NamedMenuEntry,
   storedTemplateIdOf,
-} from '../toolbarMenus.js';
-import { type ButtonEntry, TOOLTIP_LINE_BREAK } from './toolbarShared.js';
+} from './fileMenuItems.js';
+import { TOOLTIP_LINE_BREAK } from './toolbarShared.js';
 
-/**
- * ファイルの操作(FR-806)。図柄だけのボタンで、名前は読み上げ名とツールチップが担う。
- *
- * ボタンは 3 つのまま増やさない(§0.a-0.15)。「名前を付けて保存」は保存ボタンを
- * Shift を押しながら押すか、Ctrl+Shift+S で行う。その旨はツールチップに書く(NFR-UX-7)。
- */
-export const FILE_ACTIONS = [
-  {
-    id: 'new',
-    labelKey: 'toolbar.file.new',
-    tooltipKey: 'toolbar.file.newTooltip',
-    Icon: NewFileIcon,
-  },
-  {
-    id: 'open',
-    labelKey: 'toolbar.file.open',
-    tooltipKey: 'toolbar.file.openTooltip',
-    Icon: OpenFileIcon,
-  },
-  {
-    id: 'save',
-    labelKey: 'toolbar.file.save',
-    tooltipKey: 'toolbar.file.saveTooltip',
-    Icon: SaveIcon,
-  },
-] as const satisfies readonly (ButtonEntry & { readonly id: FileActionId })[];
-
-/** ファイルのボタン 3 つ。 */
-type FileActionId = 'new' | 'open' | 'save';
+export { FILE_ACTIONS } from './fileToolbarDescriptors.js';
+import type { FileActionId } from './fileToolbarDescriptors.js';
 
 /**
  * ファイルのボタンのツールチップ。保存のときは「名前を付けて保存」の出し方も添える。
  * 場所を選べない環境(File System Access API の無いブラウザ)では、ダウンロードで
  * 保存されることも添える(NFR-UX-5「できないことは理由とともに」)。
  */
-export function fileTooltip(id: FileActionId, tooltipKey: MessageKey): string {
+export function fileTooltip(id: FileActionId, assignments: ShortcutAssignments, documentKind: CommandDocumentKind): string {
+  const label = currentCommandLabel(`file.${id}`, assignments, documentKind);
   if (id !== 'save') {
-    return t(tooltipKey);
+    return label;
   }
-  const lines = [t(tooltipKey), t('toolbar.file.saveAsHint')];
+  const lines = [label, t('toolbar.file.saveAsHint')];
   if (!hasFileSystemAccess()) {
     lines.push(t('file.fsaUnavailable'));
   }

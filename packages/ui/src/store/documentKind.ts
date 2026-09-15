@@ -78,6 +78,9 @@ export interface DocumentKindState {
  * いま開いている文書の種類。**アセンブリが開いていれば必ず `'assembly'`**
  * (同時に 2 つ開かないので、部品の欄に何が残っていても見ない)。
  */
+/** A store with a part document cannot be the document-less state. Nullable callers keep that case. */
+export function activeDocumentKind(state: DocumentKindState & { readonly document: PartDocument }): Exclude<DocumentKind, 'empty'>;
+export function activeDocumentKind(state: DocumentKindState): DocumentKind;
 export function activeDocumentKind(state: DocumentKindState): DocumentKind {
   if (state.drawing !== null) {
     return 'drawing';

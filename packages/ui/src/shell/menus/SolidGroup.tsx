@@ -14,7 +14,6 @@ import {
 import type { SubShapeBody } from '../../solid/subShapeSelection.js';
 import { CombineGroupIcon, CreateGroupIcon, MachiningGroupIcon } from '../icons.js';
 import { COMBINE_MENU_ITEMS, CREATE_MENU_ITEMS, MACHINING_MENU_ITEMS } from '../toolbarMenus.js';
-import { runCombineTool, runSolidTool } from './solidToolActions.js';
 import { ToolMenu } from './ToolMenu.js';
 
 interface SolidGroupProps {
@@ -71,9 +70,7 @@ export function SolidGroup({
           GroupIcon={CreateGroupIcon}
           activeTool={activeTool}
           readinessOf={readinessOf}
-          onChoose={(id) => {
-            runSolidTool(id, readinessOf(id));
-          }}
+          commandGroup="solidCreate"
         />
         <ToolMenu
           items={COMBINE_MENU_ITEMS}
@@ -86,9 +83,7 @@ export function SolidGroup({
           */
           activeTool={activeTool}
           readinessOf={readinessOf}
-          onChoose={(operation) => {
-            runCombineTool(operation, readinessOf(operation));
-          }}
+          commandGroup="solidCombine"
         />
         <ToolMenu
           items={MACHINING_MENU_ITEMS}
@@ -97,9 +92,7 @@ export function SolidGroup({
           GroupIcon={MachiningGroupIcon}
           activeTool={activeTool}
           readinessOf={readinessOf}
-          onChoose={(id) => {
-            runSolidTool(id, readinessOf(id));
-          }}
+          commandGroup="solidMachining"
         />
       </div>
     </div>

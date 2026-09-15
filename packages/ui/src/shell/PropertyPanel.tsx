@@ -13,7 +13,7 @@ import { FunctionPointProperties } from '../functionPlot/FunctionPointProperties
 import { FunctionDirectionProperties } from '../functionPlot/FunctionDirectionProperties.js';
 import { FunctionSectionProperties } from '../functionPlot/FunctionSectionProperties.js';
 import { tryMathComposition } from '../math/tryMathComposition.js';
-import { surfaceHelpTopic } from '../solid/surfaceHelpTopic.js';
+import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { SheetMetalPanel } from '../sheetMetal/SheetMetalPanel.js';
 import { ScriptPanel } from '../scripting/ScriptPanel.js';
 import { SheetUnfoldPanel } from '../sheetMetal/SheetUnfoldPanel.js';
@@ -907,7 +907,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
       summary.toggles.length === 0 &&
       summary.choices.length === 0 &&
       axis === null ? null : (
-        <div className="pcad-section" data-help-topic={surfaceHelpTopic(feature.kind)}>
+        <div className="pcad-section" data-help-topic={toolCommandHelpTopic(feature.kind)}>
           <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
           {summary.fields.length === 0 ? null : (
             <div className="pcad-coordinate__fields">

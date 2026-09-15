@@ -8,6 +8,7 @@ export interface HelpTopic {
 
 export const HELP_TOPICS: readonly HelpTopic[] = [
   { id: 'help-reader', title: 'ヘルプを探す・説明の続きを読んで戻る', path: 'docs/ja/help-reader.md' },
+  { id: 'shortcuts', title: 'ショートカット一覧', path: 'docs/ja/shortcuts.md' },
   { id: 'scripts', title: 'JavaScriptで自動作図する', path: 'docs/ja/scripts.md' },
   { id: 'script-api', title: '自動作図APIリファレンス', path: 'docs/ja/script-api.md' },
   { id: 'script-tools', title: '処理を保存し、道具として登録する', path: 'docs/ja/script-tools.md' },

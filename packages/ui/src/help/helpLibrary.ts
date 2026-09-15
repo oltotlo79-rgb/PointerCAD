@@ -1,4 +1,6 @@
 import { createHelpSearchIndex, normalizeHelpSearch, HELP_TOPICS, type HelpTopic } from '@pointercad/help-content';
+import { resolveShortcutTable } from '../commands/shortcutMarkdown.js';
+import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
 
 export type HelpLoader = () => Promise<string>;
 export const helpTopic = (id: string): HelpTopic | undefined => HELP_TOPICS.find((topic) => topic.id === id);
@@ -6,7 +8,7 @@ export const helpTopic = (id: string): HelpTopic | undefined => HELP_TOPICS.find
 /** 章の失敗をキャッシュせず再試行できる。検索時にだけ本文を全件読む。 */
 export function createHelpLibrary(loaders: Readonly<Record<string, HelpLoader>>) {
   const cache = new Map<string, Promise<string>>();
-  let index: ReturnType<typeof createHelpSearchIndex> | null = null;
+  let index: { readonly assignments: ShortcutAssignments; readonly value: ReturnType<typeof createHelpSearchIndex> } | null = null;
   const load = (id: string): Promise<string> => {
     const existing = cache.get(id);
     if (existing !== undefined) return existing;
@@ -18,17 +20,17 @@ export function createHelpLibrary(loaders: Readonly<Record<string, HelpLoader>>)
   };
   return {
     load,
-    async search(query: string): Promise<{ readonly topics: readonly HelpTopic[]; readonly failed: number }> {
+    async search(query: string, assignments: ShortcutAssignments = EMPTY_SHORTCUT_ASSIGNMENTS): Promise<{ readonly topics: readonly HelpTopic[]; readonly failed: number }> {
       if (normalizeHelpSearch(query) === '') return { topics: HELP_TOPICS, failed: 0 };
-      if (index !== null) return { topics: index.search(query).flatMap(hit => helpTopic(hit.id) ?? []), failed: 0 };
+      if (index?.assignments === assignments) return { topics: index.value.search(query).flatMap(hit => helpTopic(hit.id) ?? []), failed: 0 };
       const loaded = await Promise.allSettled(HELP_TOPICS.map(async (topic) => ({ topic, body: await load(topic.id) })));
       const documents = []; let failed = 0;
       for (const result of loaded) {
         if (result.status === 'rejected') { failed += 1; continue; }
-        documents.push({ ...result.value.topic, body: result.value.body });
+        documents.push({ ...result.value.topic, body: resolveShortcutTable(result.value.body, assignments) });
       }
       const current = createHelpSearchIndex(documents);
-      if (failed === 0) index = current;
+      if (failed === 0) index = { assignments, value: current };
       const topics = current.search(query).flatMap(hit => helpTopic(hit.id) ?? []);
       return { topics, failed };
     },

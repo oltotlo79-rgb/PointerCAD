@@ -42,7 +42,13 @@ export interface SectionViewState {
 }
 
 /** 表示のスライスが持つ欄と操作。 */
+export type UtilityPanel = 'export' | 'import' | 'comparison' | 'functionPlot' | 'drawingPrint' | 'drawingExport';
+
 export interface ViewSlice {
+  readonly utilityPanel: UtilityPanel | null;
+  readonly setUtilityPanelOpen: (panel: UtilityPanel, open: boolean) => void;
+  readonly templateListRevision: number;
+  readonly refreshTemplateEntries: () => void;
   readonly quadCamera: QuadCameraState | null;
   readonly setQuadViewEnabled: (enabled: boolean) => void;
   readonly setQuadActivePane: (pane: QuadViewId) => void;
@@ -164,6 +170,11 @@ export const createViewSlice: StateCreator<
   [],
   Omit<ViewSlice, keyof ViewInitialState>
 > = (set) => ({
+  utilityPanel: null,
+  setUtilityPanelOpen: (panel, open) => set(state => open ? { utilityPanel: panel }
+    : state.utilityPanel === panel ? { utilityPanel: null } : {}),
+  templateListRevision: 0,
+  refreshTemplateEntries: () => set(state => ({ templateListRevision: state.templateListRevision + 1 })),
   quadCamera: null,
   setQuadViewEnabled: (enabled) => {
     set((state) => {

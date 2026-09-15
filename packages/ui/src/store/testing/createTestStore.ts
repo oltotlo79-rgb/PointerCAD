@@ -223,5 +223,7 @@ export function resetTestStore(): void {
     // 文書間では保つ表示専用の状態も、独立した試験の間では持ち越さない。
     quadCamera: null,
     viewCameraController: null,
+    utilityPanel: null,
+    templateListRevision: 0,
   });
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
-import { surfaceHelpTopic } from '../solid/surfaceHelpTopic.js';
+import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { applyNumericTransition } from './commitToStore.js';
 import { ExpressionField } from './ExpressionField.js';
@@ -345,7 +345,7 @@ export function NumericInputPopover({
   return (
     <><div
       className="pcad-popover"
-      data-help-topic={surfaceHelpTopic(state.toolId)}
+      data-help-topic={toolCommandHelpTopic(state.toolId)}
       style={{ left: `${String(position.left)}px`, top: `${String(position.top)}px` }}
       role="dialog"
       aria-label={t(STEP_TITLE_KEYS[state.step])}

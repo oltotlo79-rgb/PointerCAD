@@ -11,9 +11,9 @@ from pathlib import Path
 import re
 import subprocess
 
-PACKAGE_NAMES = {'desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression'}
+PACKAGE_NAMES = {'web', 'desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression'}
 WORKSPACE_FOLDERS = {
-    **{name: 'packages/' + name for name in PACKAGE_NAMES - {'desktop'}},
+    **{name: 'packages/' + name for name in PACKAGE_NAMES - {'desktop', 'web'}},
     'desktop': 'apps/desktop', 'web': 'apps/web',
 }
 GATE_FILES = {
@@ -70,8 +70,6 @@ def workspace_dependencies(git):
             raise ValueError('Invalid workspace scripts')
         if name in PACKAGE_NAMES and (not isinstance(scripts.get('test'), str) or not scripts['test'].strip()):
             raise ValueError('A required whole-package test command is missing')
-        if name == 'web' and scripts.get('test'):
-            raise ValueError('A new Web test command needs an explicit gate mapping')
         dependencies = set()
         for field in ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']:
             mapping = document.get(field, {})
@@ -163,7 +161,7 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
             runtime.add(runtime_package(path))
             areas.add('runtime-and-dependents')
         else:
-            match = re.fullmatch(r'(?:packages/([^/]+)|apps/(desktop))/src/[^\x00-\x1f]+\.test\.tsx?', path)
+            match = re.fullmatch(r'(?:packages/([^/]+)|apps/(desktop|web))/src/[^\x00-\x1f]+\.test\.tsx?', path)
             package = (match[1] or match[2]) if match else None
             if package not in PACKAGE_NAMES:
                 return full('Runtime, dependencies, configuration, E2E or unknown impact: ' + path)

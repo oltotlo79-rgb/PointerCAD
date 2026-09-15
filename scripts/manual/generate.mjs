@@ -84,6 +84,7 @@ try {
     'packages/help-content/src/searchIndex.ts', 'packages/help-content/src/uiReferences.ts',
     'packages/ui/src/help/manualPages.tsx', 'packages/ui/src/help/manualHtml.tsx', 'packages/ui/src/help/HelpMarkdown.tsx',
     'packages/ui/src/help/helpLibrary.ts', 'packages/ui/src/help/manualSearch.ts', 'packages/ui/src/help/manualSearchEntry.ts', 'packages/ui/src/help/manualLinks.ts',
+    'packages/ui/src/help/offlineManualNavigation.ts', 'scripts/vite/offlineProtocol.mjs',
     'scripts/manual/generate.mjs', 'scripts/manual/manual.css', 'pnpm-lock.yaml', 'package.json',
     'packages/ui/package.json', 'packages/help-content/package.json', 'tsconfig.base.json', 'packages/ui/tsconfig.json']) await readInput(path);
   // The runtime action catalog owns its source IDs, labels and description routes.

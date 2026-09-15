@@ -19,17 +19,27 @@ export const KERNEL_CONTENT_SECURITY_POLICY = [
   "default-src 'none'", "script-src 'self' 'unsafe-eval'", "connect-src 'self'", "worker-src 'none'",
 ].join('; ');
 
+/** Standalone manuals embed their verified font so the same files also work without a server. */
+export const MANUAL_CONTENT_SECURITY_POLICY = [
+  "default-src 'none'", "script-src 'self'", "style-src 'self'", "img-src 'self'", "font-src 'self' data:",
+  "connect-src 'none'", "worker-src 'none'", "object-src 'none'", "base-uri 'none'",
+  "form-action 'none'", "frame-ancestors 'none'",
+].join('; ');
+
 /** 固定の配信名だけ。未知のassets/*.js全体へ例外を拡げない。 */
 export function isKernelWorkerAsset(pathname: string): boolean {
   return /^\/assets\/kernel\.worker-[A-Za-z0-9_-]+\.js$/u.test(pathname);
 }
 
 export function contentSecurityPolicyFor(pathname: string): string {
+  if (pathname === '/manual' || pathname.startsWith('/manual/')) return MANUAL_CONTENT_SECURITY_POLICY;
   return isKernelWorkerAsset(pathname) ? KERNEL_CONTENT_SECURITY_POLICY : APP_CONTENT_SECURITY_POLICY;
 }
 
 /** metaで無効なframe-ancestorsはHTTP応答/X-Frame-Options側で指定する。 */
 export const APP_META_CONTENT_SECURITY_POLICY = APP_CONTENT_SECURITY_POLICY
+  .split('; ').filter((directive) => !directive.startsWith('frame-ancestors ')).join('; ');
+export const MANUAL_META_CONTENT_SECURITY_POLICY = MANUAL_CONTENT_SECURITY_POLICY
   .split('; ').filter((directive) => !directive.startsWith('frame-ancestors ')).join('; ');
 
 /** Cloudflareは重なる同名ヘッダーを連結するため、CSPの対象を重ねない。
@@ -42,7 +52,13 @@ export function appendCloudflareSecurityHeaders(base: string): string {
   return [base.trimEnd(), '',
     '/*', '  X-Frame-Options: DENY', '  Referrer-Policy: no-referrer',
     '', '/', `  Content-Security-Policy: ${APP_CONTENT_SECURITY_POLICY}`,
-    '', '/*.html', `  Content-Security-Policy: ${APP_CONTENT_SECURITY_POLICY}`,
+    // A placeholder cannot cross a slash. A *.html splat would also match the manual
+    // and Cloudflare would concatenate both policies, rejecting its embedded font.
+    '', '/:page.html', `  Content-Security-Policy: ${APP_CONTENT_SECURITY_POLICY}`,
+    '', '/licenses', `  Content-Security-Policy: ${APP_CONTENT_SECURITY_POLICY}`,
+    '', '/licenses/*', `  Content-Security-Policy: ${APP_CONTENT_SECURITY_POLICY}`,
+    '', '/manual', `  Content-Security-Policy: ${MANUAL_CONTENT_SECURITY_POLICY}`,
+    '', '/manual/*', `  Content-Security-Policy: ${MANUAL_CONTENT_SECURITY_POLICY}`,
     '', '/assets/kernel.worker-*.js', `  Content-Security-Policy: ${KERNEL_CONTENT_SECURITY_POLICY}`, '',
   ].join('\n');
 }

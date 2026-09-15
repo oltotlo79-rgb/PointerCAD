@@ -46,7 +46,7 @@ param(
     # 対象原因の調査専用。前提projectを省いた結果を通常ゲート・CIへ使用しない。
     [switch]$E2ENoDependencies,
     # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
-    [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content", "expression")]
+    [ValidateSet("", "desktop", "web", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content", "expression")]
     [string]$UnitPackage = "",
     [string[]]$UnitTests = @(),
     # 実装途中の診断専用。既定・pre-commit・pre-pushの必須段数は変えない。
@@ -106,7 +106,7 @@ function Invoke-Check {
 function Invoke-LocalPackageChecks {
     param([string[]]$Packages)
     foreach ($packageName in $Packages) {
-        $folder = if ($packageName -eq 'desktop') { 'apps/desktop' } else { "packages/$packageName" }
+        $folder = if ($packageName -in @('desktop', 'web')) { "apps/$packageName" } else { "packages/$packageName" }
         $packageFile = Join-Path (Get-Location).Path "$folder/package.json"
         if (-not (Test-Path -LiteralPath $packageFile -PathType Leaf)) { throw "Required local package is missing: $packageName" }
         $packageInfo = Get-Content -LiteralPath $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -170,7 +170,7 @@ try {
             Write-Host "[NG] ユニット診断には src/ 配下のテストファイルを指定してください" -ForegroundColor Red
             exit 1
         }
-        $unitFolder = if ($UnitPackage -eq "desktop") { "apps/desktop" } else { "packages/$UnitPackage" }
+        $unitFolder = if ($UnitPackage -in @("desktop", "web")) { "apps/$UnitPackage" } else { "packages/$UnitPackage" }
         $unitTestPath = Join-Path (Join-Path $root $unitFolder) $unitTest
         if (-not (Test-Path -LiteralPath $unitTestPath -PathType Leaf)) {
             Write-Host "[NG] 指定したユニットテストが見つかりません: $unitFolder/$unitTest" -ForegroundColor Red
@@ -221,7 +221,7 @@ try {
                 $scopeJson = & python @scopeArgs
                 if ($LASTEXITCODE -ne 0) { throw 'Local scope inspection failed' }
                 $candidateScope = ($scopeJson -join "`n") | ConvertFrom-Json
-                $allowedPackages = @('desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression')
+                $allowedPackages = @('desktop', 'web', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression')
                 if ($candidateScope.mode -eq 'targeted' -and @($candidateScope.packages).Count -gt 0 -and
                     @($candidateScope.packages | Where-Object { $allowedPackages -notcontains $_ }).Count -eq 0) {
                     $localScope = $candidateScope

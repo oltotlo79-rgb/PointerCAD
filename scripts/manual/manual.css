@@ -28,5 +28,7 @@ img { max-width: 100%; height: auto; border: 1px solid #c3cfd7; }
   h1, h2, h3, h4 { break-after: avoid; }
   p { orphans: 3; widows: 3; } img, tr { break-inside: avoid; }
   table { font-size: 9pt; } thead { display: table-header-group; }
+  th:first-child, td:first-child { min-width: 8em; }
+  #manual-all-volumes li:nth-last-child(-n + 3) { break-before: avoid-page; }
   .pcad-help__table { overflow: visible; } a { color: black; }
 }

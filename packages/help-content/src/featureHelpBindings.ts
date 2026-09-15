@@ -73,7 +73,7 @@ export const FEATURE_HELP_BINDINGS: readonly FeatureHelpBinding[] = [
   { featureId: 'FR-1001', topicIds: [], pending: 'P13: 公開版の導入先と対応環境の説明が未作成' },
   { featureId: 'FR-1002', topicIds: [], pending: 'P13: 公開版での保存場所と外部送信の扱いを説明する章が未作成' },
   { featureId: 'FR-1003', topicIds: [], pending: 'P13: 公開環境の条件と起動できない場合の案内が未作成' },
-  { featureId: 'FR-1004', topicIds: [], pending: 'P12-21以降: オフライン用の準備と更新の説明が未作成' },
+  ...chapters([1004], 'offline-use'),
   ...chapters([1101], 'mass-properties'), ...chapters([1102], 'measure'),
   { featureId: 'FR-1103', topicIds: ['appearance-color', 'appearance-pattern', 'appearance-glass'], mergedInto: 'FR-1107' },
   ...chapters([1104], 'display-settings', 'shortcuts', 'template', 'save-and-open'),

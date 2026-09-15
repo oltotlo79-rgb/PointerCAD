@@ -117,6 +117,10 @@ export default tseslint.config(
       // `eslint .` が生成物で落ちるのを防ぐ(docs/報告記録.md 2026-09-06 14:2x・15:5x)。
       'scratchpad/**',
       'shots/**',
+      // 承認済みの外部原文。変更せず、配布時に一覧・サイズ・全バイトを照合する。
+      // アプリが作成する受渡し処理はpackages配下に置き、通常の検査対象を維持する。
+      'vendor/exact-math/runtime/**',
+      'vendor/exact-math/notices/**',
     ],
   },
   js.configs.recommended,

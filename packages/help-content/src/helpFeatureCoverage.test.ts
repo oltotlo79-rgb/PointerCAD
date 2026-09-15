@@ -18,7 +18,8 @@ describe('要件と操作から説明の実在する章へ対応付ける', () =
     expect(coverage.entries.filter(entry => ['FR-433', 'FR-434', 'FR-435', 'FR-436'].includes(entry.id))).toHaveLength(4);
     expect(coverage.entries.find(entry => entry.id === 'FR-1103')?.mergedInto).toBe('FR-1107');
     expect(coverage.entries.find(entry => entry.id === 'FR-908')?.topicIds).toContain('display-settings');
-    expect(coverage.pending).toEqual(['FR-1001', 'FR-1002', 'FR-1003', 'FR-1004']);
+    expect(coverage.entries.find(entry => entry.id === 'FR-1004')?.topicIds).toEqual(['offline-use']);
+    expect(coverage.pending).toEqual(['FR-1001', 'FR-1002', 'FR-1003']);
     expect(coverage.contentCertified).toBe(false);
     expect(() => assertDocumentedFeatureCoverage(coverage)).toThrow('Undocumented features');
   });

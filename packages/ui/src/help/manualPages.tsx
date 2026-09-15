@@ -3,12 +3,13 @@ import { HELP_TOPICS, MANUAL_CHAPTERS, MANUAL_VOLUMES, resolveHelpUiReferences, 
 import { ja } from '../i18n/ja.js';
 import { renderManualChapter } from './manualHtml.js';
 import { resolveShortcutTable } from '../commands/shortcutMarkdown.js';
+import { MANUAL_META_CONTENT_SECURITY_POLICY } from '../security/contentSecurityPolicy.js';
 
 function page(title: string, body: string, root: string, data = ''): string {
   const windowTitle = title === ja['help.manualTitle'] ? title : `${title} — ${ja['help.manualTitle']}`;
   const head = renderToStaticMarkup(<head><meta charSet="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta httpEquiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; font-src 'self' data:; base-uri 'none'; form-action 'none'" />
-    <title>{windowTitle}</title><link rel="stylesheet" href={`${root}manual.css`} /></head>);
+    <meta httpEquiv="Content-Security-Policy" content={MANUAL_META_CONTENT_SECURITY_POLICY} />
+    <title>{windowTitle}</title><link rel="stylesheet" href={`${root}manual.css`} /><script src={`${root}manualSearch.js`} defer /></head>);
   const header = renderToStaticMarkup(<header><a href={`${root}index.html`}>{ja['help.manualTitle']}</a>
     <nav aria-label={ja['help.manualIndex']}><a href={`${root}index.html#manual-search`}>{ja['help.manualIndex']}</a></nav></header>);
   return `<!doctype html><html lang="ja">${head}<body>${header}<main id="main">${body}</main>${data}</body></html>`;
@@ -68,6 +69,6 @@ export function buildManualPages(sources: ReadonlyMap<string, string>, images: R
   const payload = JSON.stringify({ documents, empty: ja['help.noResults'], count: ja['help.manualSearchCount'] })
     .replace(/</gu, '\\u003c').replace(/>/gu, '\\u003e').replace(/&/gu, '\\u0026');
   files.set('index.html', page(ja['help.manualTitle'], index, '',
-    `<script id="manual-search-data" type="application/json">${payload}</script><script src="manualSearch.js" defer></script>`));
+    `<script id="manual-search-data" type="application/json">${payload}</script>`));
   return files;
 }

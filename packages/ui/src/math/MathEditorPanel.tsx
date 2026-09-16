@@ -5,6 +5,8 @@ import type { MathEditorController } from './MathEditorController.js';
 import type { MathPaletteItem } from './mathPalette.js';
 import type { StructuredMathField } from './mathFieldHost.js';
 import { mathEditorLabels } from './mathEditorLabels.js';
+import { mathResultAxes } from './mathResultComponent.js';
+import { MathResultComponentPicker } from './MathResultComponentPicker.js';
 import { mathEditorResultText } from './mathEditorResult.js';
 
 export interface MathEditorPanelProps {
@@ -21,9 +23,14 @@ export interface MathEditorPanelProps {
 export function MathEditorPanel(props: MathEditorPanelProps): React.JSX.Element {
   const snapshot = useSyncExternalStore(props.controller.subscribe, props.controller.getSnapshot, props.controller.getSnapshot);
   const description = mathEditorResultText(snapshot);
+  const axes = snapshot.state.status === 'evaluated' ? mathResultAxes(snapshot.state.output.evaluation) : null;
   return <MathEditorSurface input={snapshot.state.input} controller={props.controller}
     createField={props.createField} labels={mathEditorLabels()} groups={props.groups} palette={props.palette}
     query={snapshot.query} onQuery={props.controller.setQuery} resultMessage={description.message}
+    resultActions={axes === null ? null : <MathResultComponentPicker
+      key={snapshot.state.input.identity.inputRevision} axes={axes}
+      disabled={props.readOnly || !props.controller.isCurrent()}
+      onChoose={indices => props.controller.chooseResultComponent(snapshot.state.input, indices)}/>}
     resultDetail={description.detail} hasError={description.hasError} busy={description.busy}
     canApply={snapshot.state.status === 'evaluated' && snapshot.state.canApply}
     canChangeNotation={props.controller.isCurrent()} readOnly={props.readOnly}

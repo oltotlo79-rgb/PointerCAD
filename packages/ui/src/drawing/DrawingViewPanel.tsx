@@ -47,7 +47,7 @@ function ViewForm({ drawing, view, cameras, cameraId: initialCameraId, embedded 
       setError(!commitDrawingView({ cameraId, name, position: [x.trim() === '' ? NaN : Number(x), y.trim() === '' ? NaN : Number(y)],
         scale: scale.trim() === '' ? null : Number(scale), showHidden: hidden, showCenterLines: centers }, view?.id));
     }}>
-      <label>{t('drawing.view.camera')}<select className="pcad-field__input" aria-label={t('drawing.view.camera')} value={cameraId} onChange={(event) => {
+      <label title={t('drawing.view.camera.controlHint')}>{t('drawing.view.camera')}<select className="pcad-field__input" aria-label={t('drawing.view.camera')} value={cameraId} onChange={(event) => {
         setCameraId(event.target.value); const camera = cameras.find((entry) => entry.id === event.target.value);
         if (camera !== undefined) setName(camera.name);
       }}>
@@ -55,17 +55,17 @@ function ViewForm({ drawing, view, cameras, cameraId: initialCameraId, embedded 
         {cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}
       </select></label>
       <p>{t('drawing.view.cameraHint')}</p>
-      <label>{t('drawing.view.name')}<input className="pcad-field__input" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label>
-      <label>{t('drawing.view.x')}<input className="pcad-field__input" value={x} inputMode="decimal" onChange={(event) => setX(event.target.value)} /></label>
-      <label>{t('drawing.view.y')}<input className="pcad-field__input" value={y} inputMode="decimal" onChange={(event) => setY(event.target.value)} /></label>
-      <label>{t('drawing.view.scale')}<input className="pcad-field__input" value={scale} inputMode="decimal" onChange={(event) => setScale(event.target.value)} /></label>
-      <label><input type="checkbox" checked={hidden} onChange={(event) => setHidden(event.target.checked)} />{t('drawing.view.hidden')}</label>
-      <label><input type="checkbox" checked={centers} onChange={(event) => setCenters(event.target.checked)} />{t('drawing.view.centers')}</label>
+      <label title={t('drawing.view.name.controlHint')}>{t('drawing.view.name')}<input className="pcad-field__input" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label>
+      <label title={t('drawing.view.x.controlHint')}>{t('drawing.view.x')}<input className="pcad-field__input" value={x} inputMode="decimal" onChange={(event) => setX(event.target.value)} /></label>
+      <label title={t('drawing.view.y.controlHint')}>{t('drawing.view.y')}<input className="pcad-field__input" value={y} inputMode="decimal" onChange={(event) => setY(event.target.value)} /></label>
+      <label title={t('drawing.view.scale.controlHint')}>{t('drawing.view.scale')}<input className="pcad-field__input" value={scale} inputMode="decimal" onChange={(event) => setScale(event.target.value)} /></label>
+      <label><input title={t('drawing.controlHint.hiddenLines')} type="checkbox" checked={hidden} onChange={(event) => setHidden(event.target.checked)} />{t('drawing.view.hidden')}</label>
+      <label><input title={t('drawing.controlHint.centerLines')} type="checkbox" checked={centers} onChange={(event) => setCenters(event.target.checked)} />{t('drawing.view.centers')}</label>
       {error ? <p role="alert">{t('drawing.view.invalid')}</p> : null}
-      <button type="submit" className="pcad-button" disabled={busy || view === undefined && cameras.length === 0}>
+      <button title={t('drawing.controlHint.applyView')} type="submit" className="pcad-button" disabled={busy || view === undefined && cameras.length === 0}>
         {t(view === undefined ? 'drawing.view.add' : 'drawing.view.apply')}
       </button>
-      {view === undefined ? null : <button type="button" className="pcad-button" onClick={() => useAppStore.getState().openDrawingEditor({ kind: 'view' })}>{t('drawing.view.new')}</button>}
+      {view === undefined ? null : <button title={t('drawing.controlHint.newView')} type="button" className="pcad-button" onClick={() => useAppStore.getState().openDrawingEditor({ kind: 'view' })}>{t('drawing.view.new')}</button>}
     </form>
   </section>;
 }

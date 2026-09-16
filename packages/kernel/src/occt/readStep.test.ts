@@ -369,7 +369,7 @@ describe('STEP の読み込み(P6 タスク8)', () => {
       }
       // 数値そのものは環境差が大きいので、上限判定は §2.17 の性能検査(タスク16)へ譲る。
       console.log(`STEP 往復(箱 1 つ): ${elapsedMs.toFixed(0)} ms`);
-      expect(elapsedMs).toBeLessThan(5000);
+      expectWithinBudget(elapsedMs, 5000, 'STEPの箱1つの書込み・読込み');
     } finally {
       handle.delete();
     }

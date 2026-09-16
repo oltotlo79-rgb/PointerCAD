@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import { KERNEL_TIMEOUT_MS } from './recompute.js';
 import { drawingFromBox, chooseDrawingMenu, waitForDrawingReady } from './drawingManufacturingFixture.js';
 import { drawingMessage } from './drawingMessages.js';
+import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 import {installDrawingRefreshHold,controlDrawingRefresh,expectDrawingRefreshHeld} from './holdDrawingRefresh.js';
 
 test.describe('P9 幾何公差の実操作', () => {
@@ -28,6 +29,7 @@ test.describe('P9 幾何公差の実操作', () => {
     await expect(form).toBeVisible(); await form.getByLabel('公差の値・式', { exact: true }).fill('0.1/2');
     await form.getByLabel('横の位置 (mm)', { exact: true }).fill('110');
     await form.getByLabel('縦の位置 (mm)', { exact: true }).fill('80');
+    await assertRenderedControlDescriptions(form);
     await form.getByRole('button', { name: '決定', exact: true }).click();
     await expect(owner('gdt-1').locator('[aria-label="0.05"]')).toHaveCount(1);
     await expect(tree.getByRole('button', { name: '幾何公差 1', exact: true })).toBeVisible();
@@ -35,6 +37,7 @@ test.describe('P9 幾何公差の実操作', () => {
     const datum = page.getByRole('form', { name: 'データム', exact: true });
     await datum.getByLabel('横の位置 (mm)', { exact: true }).fill('140');
     await datum.getByLabel('縦の位置 (mm)', { exact: true }).fill('240');
+    await assertRenderedControlDescriptions(datum);
     await datum.getByRole('button', { name: '決定', exact: true }).click();
     await expect(owner('datum-1').locator('[aria-label="A"]')).toHaveCount(1);
     await chooseDrawingMenu(page, drawingMessage('drawing.toolbar.annotations'), drawingMessage('drawing.gdt.title')); await face('view-1');
@@ -43,6 +46,7 @@ test.describe('P9 幾何公差の実操作', () => {
     await form.getByRole('group', { name: '第1データム', exact: true }).getByLabel('データム', { exact: true }).selectOption({ label: 'A' });
     await form.getByLabel('横の位置 (mm)', { exact: true }).fill('150');
     await form.getByLabel('縦の位置 (mm)', { exact: true }).fill('80');
+    await assertRenderedControlDescriptions(form);
     await form.getByRole('button', { name: '決定', exact: true }).click();
     await expect(owner('gdt-2').locator('[aria-label="0.02"]')).toHaveCount(1);
     await expect(owner('gdt-2').locator('[aria-label="A"]')).toHaveCount(1);

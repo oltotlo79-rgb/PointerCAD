@@ -39,14 +39,14 @@ export function DrawingTolerancePopover({ dimension, inline = false }: { readonl
   }}>
     <strong>{t('drawing.tolerance.title')}</strong>
     <output title={t('drawing.error.dimensionReadOnly')}>{value ?? '…'}</output>
-    <label>{t('drawing.dimension.prefix')}<input value={prefix} maxLength={100} onChange={(event) => setPrefix(event.target.value)} /></label>
-    <label>{t('drawing.dimension.suffix')}<input value={suffix} maxLength={100} onChange={(event) => setSuffix(event.target.value)} /></label>
-    <label><input type="checkbox" checked={reference} disabled={basic} onChange={(event) => setReference(event.target.checked)} />{t('drawing.dimension.reference')}</label>
-    <label><input type="checkbox" checked={basic} onChange={(event) => {
+    <label title={t('drawing.dimension.prefix.controlHint')}>{t('drawing.dimension.prefix')}<input value={prefix} maxLength={100} onChange={(event) => setPrefix(event.target.value)} /></label>
+    <label title={t('drawing.dimension.suffix.controlHint')}>{t('drawing.dimension.suffix')}<input value={suffix} maxLength={100} onChange={(event) => setSuffix(event.target.value)} /></label>
+    <label><input title={t('drawing.controlHint.referenceDimension')} type="checkbox" checked={reference} disabled={basic} onChange={(event) => setReference(event.target.checked)} />{t('drawing.dimension.reference')}</label>
+    <label><input title={t('drawing.controlHint.basicDimensionMode')} type="checkbox" checked={basic} onChange={(event) => {
       setBasic(event.target.checked); if (event.target.checked) { setReference(false); setKind('none'); }
     }} />{t('drawing.dimension.basic')}</label>
     <label>{t('drawing.tolerance.kind')}
-      <select value={kind} disabled={basic} onChange={(event) => {
+      <select title={t('drawing.controlHint.toleranceKind')} value={kind} disabled={basic} onChange={(event) => {
         const value = event.target.value;
         if (value === 'none' || value === 'symmetric' || value === 'deviation' || value === 'fit') setKind(value);
       }}>
@@ -56,27 +56,27 @@ export function DrawingTolerancePopover({ dimension, inline = false }: { readonl
         <option value="fit">{t('drawing.tolerance.fit')}</option>
       </select>
     </label>
-    {kind === 'symmetric' ? <label>±<input aria-label={t('drawing.tolerance.symmetric')} value={symmetric} onChange={(event) => setSymmetric(event.target.value)} /></label> : null}
+    {kind === 'symmetric' ? <label>±<input title={t('drawing.controlHint.symmetricTolerance')} aria-label={t('drawing.tolerance.symmetric')} value={symmetric} onChange={(event) => setSymmetric(event.target.value)} /></label> : null}
     {kind === 'deviation' ? <>
-      <label>{t('drawing.tolerance.upper')}<input value={upper} onChange={(event) => setUpper(event.target.value)} /></label>
-      <label>{t('drawing.tolerance.lower')}<input value={lower} onChange={(event) => setLower(event.target.value)} /></label>
+      <label title={t('drawing.tolerance.upper.controlHint')}>{t('drawing.tolerance.upper')}<input value={upper} onChange={(event) => setUpper(event.target.value)} /></label>
+      <label title={t('drawing.tolerance.lower.controlHint')}>{t('drawing.tolerance.lower')}<input value={lower} onChange={(event) => setLower(event.target.value)} /></label>
     </> : null}
     {kind === 'fit' ? <>
-      <label>{t('drawing.tolerance.fit')}<select value={symbol} onChange={(event) => setSymbol(event.target.value)}>
+      <label title={t('drawing.tolerance.fit.controlHint')}>{t('drawing.tolerance.fit')}<select value={symbol} onChange={(event) => setSymbol(event.target.value)}>
         {FIT_SYMBOLS.map((item) => <option key={`fit:${item}`} value={item}>{item}</option>)}
       </select></label>
-      <label><input type="checkbox" checked={showDeviation} onChange={(event) => setShowDeviation(event.target.checked)} />{t('drawing.tolerance.showDeviation')}</label>
+      <label><input title={t('drawing.controlHint.showFitDeviation')} type="checkbox" checked={showDeviation} onChange={(event) => setShowDeviation(event.target.checked)} />{t('drawing.tolerance.showDeviation')}</label>
     </> : null}
     {dimension.kind === 'length' || dimension.kind === 'thickness' || dimension.kind === 'coordinate'
-      ? <label>{t('drawing.dimension.offset')}<input value={offset} inputMode="decimal" onChange={(event) => setOffset(event.target.value)} /></label> : null}
-    <label><input type="checkbox" checked={automaticText} onChange={(event) => setAutomaticText(event.target.checked)} />{t('drawing.dimension.automaticText')}</label>
+      ? <label title={t('drawing.dimension.offset.controlHint')}>{t('drawing.dimension.offset')}<input value={offset} inputMode="decimal" onChange={(event) => setOffset(event.target.value)} /></label> : null}
+    <label><input title={t('drawing.controlHint.automaticDimensionText')} type="checkbox" checked={automaticText} onChange={(event) => setAutomaticText(event.target.checked)} />{t('drawing.dimension.automaticText')}</label>
     {automaticText ? null : <>
-      <label>{t('drawing.dimension.textX')}<input value={textX} inputMode="decimal" onChange={(event) => setTextX(event.target.value)} /></label>
-      <label>{t('drawing.dimension.textY')}<input value={textY} inputMode="decimal" onChange={(event) => setTextY(event.target.value)} /></label>
+      <label title={t('drawing.dimension.textX.controlHint')}>{t('drawing.dimension.textX')}<input value={textX} inputMode="decimal" onChange={(event) => setTextX(event.target.value)} /></label>
+      <label title={t('drawing.dimension.textY.controlHint')}>{t('drawing.dimension.textY')}<input value={textY} inputMode="decimal" onChange={(event) => setTextY(event.target.value)} /></label>
     </>}
     <div className="pcad-segmented">
-      <button type="submit" className="pcad-button" disabled={busy}>{t('drawing.action.apply')}</button>
-      <button type="button" className="pcad-button" onClick={() => useAppStore.getState().selectDrawingIds([])}>{t('drawing.action.close')}</button>
+      <button title={t('drawing.controlHint.applyTolerance')} type="submit" className="pcad-button" disabled={busy}>{t('drawing.action.apply')}</button>
+      <button title={t('drawing.controlHint.closeTolerance')} type="button" className="pcad-button" onClick={() => useAppStore.getState().selectDrawingIds([])}>{t('drawing.action.close')}</button>
     </div>
   </form>;
 }

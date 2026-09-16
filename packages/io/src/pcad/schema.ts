@@ -85,7 +85,7 @@ import { isRecord } from './guards.js';
  * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
 /** 版14: 数学定義と係数ID。旧アプリが式を落としてキャッシュだけで作図することを防ぐ。 */
-export const PCAD_SCHEMA_VERSION = 14;
+export const PCAD_SCHEMA_VERSION = 15;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -628,5 +628,10 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
   13: (raw) => {
     if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
     return { ...raw, schema: 14, document: { ...raw['document'], schemaVersion: 14 } };
+  },
+  /** 版14→15: メモのない文書をそのまま移行し、存在する不正なメモは読込み時に拒否する。 */
+  14: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 15, document: { ...raw['document'], schemaVersion: 15 } };
   },
 };

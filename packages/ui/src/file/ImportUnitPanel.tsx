@@ -36,14 +36,14 @@ export function ImportUnitPanel(): React.JSX.Element {
     >
       <p className="pcad-import-unit__title">{t('exchange.importUnitQuestion')}</p>
       <div className="pcad-import-unit__actions">
-        <button
+        <button title={t('controlGuide.button.importMm')}
           type="submit"
           className="pcad-button pcad-button--action pcad-button--primary"
           autoFocus
         >
           {t('exchange.importUnitMillimeter')}
         </button>
-        <button
+        <button title={t('controlGuide.button.importInch')}
           type="button"
           className="pcad-button pcad-button--action"
           onClick={() => {
@@ -52,7 +52,7 @@ export function ImportUnitPanel(): React.JSX.Element {
         >
           {t('exchange.importUnitInch')}
         </button>
-        <button
+        <button title={t('controlGuide.button.importUnitCancel')}
           type="button"
           className="pcad-button pcad-button--action"
           onClick={() => {

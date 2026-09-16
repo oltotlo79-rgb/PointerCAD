@@ -51,6 +51,7 @@ export function DrawingCanvas(): React.JSX.Element {
   }), []);
   useEffect(() => () => { dimensionSvgPreview.current?.restore(); viewSvgPreview.current?.restore(); }, []);
   const [fontStatus, setFontStatus] = useState(drawingFont.status);
+  const [fontAttempt, setFontAttempt] = useState(0);
   // ポインター中の表示だけ。離すまで保存文書・Undo履歴は変えない。
   const [dragPoint, setDragPoint] = useState<Point2 | null>(null);
   const [dimensionDragStart, setDimensionDragStart] = useState(0);
@@ -58,7 +59,7 @@ export function DrawingCanvas(): React.JSX.Element {
     let detached = false;
     void drawingFont.load().then((status) => { if (!detached) setFontStatus(status); });
     return () => { detached = true; };
-  }, []);
+  }, [fontAttempt]);
   // 保存参照の照合は再評価結果を共有する。選択やドラッグの毎フレームには持ち込まない。
   const dimensions = useMemo(() => {
     if (drawing === null || source === null) return [];
@@ -295,13 +296,17 @@ export function DrawingCanvas(): React.JSX.Element {
       onKeyDown={(event) => { if (event.key === 'Escape') { dimensionSvgPreview.current?.restore(); dimensionSvgPreview.current = null;
         viewSvgPreview.current?.restore(); viewSvgPreview.current = null; viewDrag.current = null;
         drag.current = null; noteDrag.current = null; tableDrag.current = null; gdtDrag.current = null; setDragPoint(null); } }}>
-      {shown?.svg == null ? <p className="pcad-viewport__empty-text">{t(fontStatus === 'ready' ? 'drawing.viewport.empty' : 'drawing.status.computing')}</p>
+      {shown?.svg == null ? <p className="pcad-viewport__empty-text">{t(fontStatus === 'failed' ? 'drawing.status.fontUnavailable'
+        : fontStatus === 'ready' ? 'drawing.viewport.empty' : 'drawing.status.computing')}</p>
         : <div className="pcad-drawing-svg" dangerouslySetInnerHTML={{ __html: shown.svg }} />}
     </div>
-    {fontStatus === 'failed' ? <p role="alert" className="pcad-drawing-notice">{t('drawing.error.fontFailed')}</p> : null}
+    {fontStatus === 'failed' ? <div role="alert" className="pcad-drawing-notice"><p>{t('drawing.error.fontFailed')}</p>
+      <button type="button" className="pcad-button" title={t('drawing.font.retryHelp')} onClick={() => {
+        setFontStatus('loading'); setFontAttempt(attempt => attempt + 1);
+      }}>{t('drawing.font.retry')}</button></div> : null}
     {shown !== null && shown.tables.unresolved.length > 0 ? <p role="alert" className="pcad-drawing-notice">{t('drawing.table.unresolved')}</p> : null}
     {shown?.manufacturing.some((item) => item.unresolved) === true ? <div role="alert" className="pcad-drawing-notice"><p>{t('drawing.manufacturing.outputUnresolved')}</p>
-      <ul>{shown.manufacturing.filter((item) => item.unresolved).map((item) => <li key={item.id}><button type="button" className="pcad-button"
+      <ul>{shown.manufacturing.filter((item) => item.unresolved).map((item) => <li key={item.id}><button title={t('controlGuide.button.unresolvedDrawing')} type="button" className="pcad-button"
         onClick={() => useAppStore.getState().selectDrawingIds([item.id])}>{item.id}: {item.messages.join(' ')}</button></li>)}</ul></div> : null}
     {targets.length > 0 ? <p className="pcad-drawing-notice">{t('drawing.dimension.selectHint')}</p> : null}
     {tool === 'note' && notePlacement !== null ? <DrawingNotePopover key={`new:${JSON.stringify(notePlacement.point)}`} position={notePlacement.point} anchor={notePlacement.anchor} /> : null}

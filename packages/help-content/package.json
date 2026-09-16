@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@pointercad/test-utils": "workspace:*",
     "vitest": "catalog:"
   }
 }

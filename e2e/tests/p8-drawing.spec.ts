@@ -1,4 +1,4 @@
-import { RELEASE_SOFTWARE_VIEWPORT_MIN_FPS } from '../../packages/test-utils/src/releasePerformance.js';
+import { reportViewportRate } from '../../packages/test-utils/src/releasePerformance.js';
 /// <reference lib="dom" />
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -64,6 +64,40 @@ async function drawingFromBox(page: Page): Promise<void> {
   await expect.poll(() => page.locator('.pcad-drawing-svg [data-owner-id="view-1"] path').count(), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
   await expect(page.locator('.pcad-statusbar')).not.toContainText('作り直しています');
 }
+
+test('図面の字体が一度だけ取得できなくても同じ図面を表示する', async ({ page }) => {
+  let reads = 0;
+  await page.route('**/fonts/NotoSansJP-Regular.otf', async route => {
+    reads += 1;
+    // Playwright's supported failure produces the same rejected fetch boundary.
+    if (reads === 1) await route.abort('failed'); else await route.continue();
+  });
+  await drawingFromBox(page);
+  expect(reads).toBe(2);
+  await expect(page.getByRole('alert').filter({ hasText: '字体を読み込めませんでした' })).toHaveCount(0);
+});
+
+test('字体の取得失敗は有限回で停止し、再試行で編集中の図面を表示する', async ({ page }) => {
+  let reads = 0, refuse = true;
+  await page.route('**/fonts/NotoSansJP-Regular.otf', async route => {
+    reads += 1;
+    if (refuse) await route.abort('failed'); else await route.continue();
+  });
+  await createBox(page);
+  await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイル/ }).first().click();
+  await page.getByRole('button', { name: 'この部品から図面を作成', exact: true }).click();
+  await expect(page.getByRole('button', { name: '字体の読込みを再試行', exact: true })).toBeVisible();
+  expect(reads).toBe(3);
+  await expect(page.locator('.pcad-viewport__empty-text')).toContainText('編集中の図面は保持しています');
+  await expect(page.getByRole('button', { name: '正面図', exact: true })).toBeVisible();
+  await expect(page.locator('.pcad-drawing-svg')).toHaveCount(0);
+  refuse = false;
+  await page.getByRole('button', { name: '字体の読込みを再試行', exact: true }).click();
+  await expect(page.locator('.pcad-drawing-svg svg')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+  await expectDrawingStroke(page.locator('.pcad-drawing-svg [data-owner-id="view-1"] path'));
+  expect(reads).toBe(4);
+  await expect(page.getByRole('button', { name: '元に戻す', exact: true })).toBeDisabled();
+});
 
 /** 保存文書を注入せず、実際に画面へ描かれた輪郭の中点を押す。 */
 async function clickFrontEdge(page: Page): Promise<void> {
@@ -622,7 +656,7 @@ test.describe('P8 図面の実操作', () => {
         drawListenerMs: after.totalDrawListenerMs - before.totalDrawListenerMs, frames, elapsedMs }));
       const fps = frames * 1000 / elapsedMs;
       console.log(`[実測] 4分割ビューポート: ${fps.toFixed(1)} fps (${frames}画面/${elapsedMs.toFixed(1)}ms、1画面は4カメラ分)`);
-      expect(fps).toBeGreaterThanOrEqual(RELEASE_SOFTWARE_VIEWPORT_MIN_FPS);
+      reportViewportRate(fps, '4分割の描画');
       await namedMenu.locator('summary').click(); await page.getByRole('button', { name: '1画面に戻す', exact: true }).click();
       await expect(page.locator('.pcad-quad')).toHaveCount(0); await expect(canvas).toHaveCount(1);
       expect(errors).toEqual([]);

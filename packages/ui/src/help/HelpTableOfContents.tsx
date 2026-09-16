@@ -5,7 +5,7 @@ export function HelpTableOfContents({ topics, topicId, searching, onChoose }: {
   readonly onChoose: (id: string) => void;
 }): React.JSX.Element {
   const list = (entries: readonly HelpTopic[]) => <ul>{entries.map(topic => <li key={topic.id}>
-    <button type="button" className="pcad-help__topic" aria-current={topic.id === topicId ? 'page' : undefined}
+    <button title={topic.title} type="button" className="pcad-help__topic" aria-current={topic.id === topicId ? 'page' : undefined}
       onClick={() => onChoose(topic.id)}>{topic.title}</button>
   </li>)}</ul>;
   if (searching) return list(topics);

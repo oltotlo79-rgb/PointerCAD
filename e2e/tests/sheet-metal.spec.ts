@@ -4,6 +4,7 @@ import { readPcadFile } from '../../packages/io/src/index.js';
 import { sheetFlatDrawingFlow } from './sheetDrawingFlow.js';
 import { sheetExportFlow, verifySheetStepFiles } from './sheetExportFlow.js';
 import { sheetHelpFlow } from './sheetHelpFlow.js';
+import { withBrowserFailureDiagnostics } from './browserFailureDiagnostics.js';
 
 import { tree, command, chooseSheet, volume, rectangleFace } from './sheetUiFlow.js';
 
@@ -158,7 +159,8 @@ test('P10 板金基板とフランジを画面で作り、保存往復・式編�
   expect(errors).toEqual([]);
 });
 
-test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開・保存・再編集・Undoする', async ({ page }, testInfo) => {
+test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開・保存・再編集・Undoする', async ({ page }, testInfo) => withBrowserFailureDiagnostics(page, testInfo, async (stage) => {
+  stage('板金基板と曲げた板の作成');
   await page.setViewportSize({ width: 1440, height: 900 });
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -179,6 +181,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await expect(tree(page, 'フランジ1')).toBeVisible(); await tree(page, 'フランジ1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(5000 + 200 * Math.PI, 4);
   await chooseSheet(page, '曲げリリーフ');
+  stage('切欠きの試し表示と作成');
   const relief = page.getByRole('form', { name: '曲げリリーフ', exact: true });
   await relief.getByRole('combobox', { name: '切欠きの入口の縁', exact: true }).selectOption({ label: 'パネル 1 / 縁 1' });
   await relief.getByRole('combobox', { name: '切欠きの形', exact: true }).selectOption('slot');
@@ -196,6 +199,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   const foldedVolume = 5000 + 200 * Math.PI - 78 * (6 + Math.PI) / 19;
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(foldedVolume, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-relief-created.png') });
+  stage('切欠きのある板をパネル2から展開');
   await chooseSheet(page, '板金の展開');
   const unfold = page.getByRole('form', { name: '板金の展開', exact: true });
   await unfold.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 2' });
@@ -203,6 +207,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
   expect(Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(4976 + 186 * Math.PI, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-relief-flat.png') });
+  stage('保存した板金の再読込');
   const downloaded = page.waitForEvent('download'); await fileAction(page, '保存').click();
   const savedPath = testInfo.outputPath('sheet-relief.pcad'); await (await downloaded).saveAs(savedPath);
   const decoded = readPcadFile(await readFile(savedPath)); if (!decoded.ok) throw new Error(decoded.error.message);
@@ -213,6 +218,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(foldedVolume, 4);
   const depth = page.locator('.pcad-panel--right .pcad-field').filter({ has: page.locator('.pcad-field__label', { hasText: /^切欠きの深さ$/ }) }).locator('input');
   await expect(depth).toHaveValue('5'); await depth.fill('6'); await depth.press('Tab');
+  stage('切欠きと曲げ条件の再編集と取消');
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(foldedVolume - 312 / 38, 4);
   await page.locator('canvas.pcad-viewport__canvas').press('Control+z'); await expect(depth).toHaveValue('5');
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(foldedVolume, 4);
@@ -250,6 +256,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await page.locator('canvas.pcad-viewport__canvas').press('Control+z');
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(foldedVolume, 4);
   await chooseSheet(page, '板金の展開');
+  stage('再編集後の展開とファイルへの出力');
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
   const exports = await sheetExportFlow(page, testInfo);
@@ -257,4 +264,4 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await verifySheetStepFiles(page, savedPath, exports);
 
   expect(errors).toEqual([]);
-});
+}));

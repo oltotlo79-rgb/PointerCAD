@@ -5,6 +5,13 @@ import { HelpMarkdown } from './HelpMarkdown.js';
 
 const render = (source: string): string => renderToStaticMarkup(createElement(HelpMarkdown, { source, onTopic: () => undefined, onAnchor: () => undefined }));
 describe('ヘルプMarkdownの表示', () => {
+  it('強調とコードを含むリンクでも、説明は画面と同じ文字列になり装飾要素を渡さない', () => {
+    const html = render('[**図面**と`公差`の説明](drawing.md) [**手順**](#手順)');
+    expect(html).toContain('title="図面と公差の説明"');
+    expect(html).toContain('title="手順"');
+    expect(html).toContain('<strong>図面</strong>と<code>公差</code>の説明</button>');
+    expect(html).not.toContain('[object Object]');
+  });
   it('同梱の実画面だけを表示し、外部画像や存在しないパスは説明文として残す', () => {
     const html = renderToStaticMarkup(createElement(HelpMarkdown, { source: '![実画面](images/welding.png) ![外部](https://example.com/tracking.png) ![不明](constructor)',
       images: { 'images/welding.png': '/assets/welding.png' }, onTopic: () => undefined, onAnchor: () => undefined }));

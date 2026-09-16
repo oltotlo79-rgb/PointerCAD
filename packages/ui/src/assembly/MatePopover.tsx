@@ -52,7 +52,7 @@ export function MatePopover(): React.JSX.Element | null {
       </p>
       {jointKind === undefined ? <label className="pcad-field">
         <span className="pcad-field__label">{t('assembly.mate.kind')}</span>
-        <select value={draft.kind} onChange={(event) => {
+        <select title={t('assembly.guide.mateKind')} value={draft.kind} onChange={(event) => {
           const item = ASSEMBLY_MATE_TOOLS.find((candidate) => candidate.kind === event.target.value);
           if (item !== undefined) startMate(item.kind);
         }}>
@@ -63,7 +63,7 @@ export function MatePopover(): React.JSX.Element | null {
         </select>
       </label> : <label className="pcad-field">
         <span className="pcad-field__label">{t('assembly.tool.joint')}</span>
-        <select value={jointKind} onChange={(event) => {
+        <select title={t('assembly.guide.jointKind')} value={jointKind} onChange={(event) => {
           const item = ASSEMBLY_JOINT_TOOLS.find((candidate) => candidate.kind === event.target.value);
           if (item !== undefined) startJoint(item.kind);
         }}>
@@ -79,7 +79,7 @@ export function MatePopover(): React.JSX.Element | null {
             : t(`selection.kind.${target.ref.fingerprint.kind}`);
           return <li key={target.componentId}>
             {t('assembly.mate.target').replace('{count}', String(index + 1)).replace('{name}', (component?.name ?? target.componentId) + ' / ' + element)}
-            <button type="button" className="pcad-button" title={t('assembly.mate.removeTarget')}
+            <button type="button" className="pcad-button" title={t('assembly.guide.removeTarget')}
               onClick={() => { removeDraftTarget(index); }}>{t('assembly.mate.removeTarget')}</button>
           </li>;
         })}
@@ -87,7 +87,7 @@ export function MatePopover(): React.JSX.Element | null {
       <div className="pcad-popover__actions pcad-popover__actions--mate-targets">
         {(['origin', 'x', 'y', 'z', 'xy', 'xz', 'yz'] as const).map((element) => (
           <button key={element} type="button" className="pcad-button" aria-disabled={!componentSelected}
-            title={componentSelected ? t(`assembly.mate.origin.${element}`) : t('assembly.mate.selectComponent')}
+            title={componentSelected ? t('assembly.guide.originTarget').replace('{target}', t(`assembly.mate.origin.${element}`)) : t('assembly.mate.selectComponent')}
             onClick={() => { if (componentSelected) addSelectedOriginTarget(element); }}>
             {t(`assembly.mate.origin.${element}`)}
           </button>
@@ -96,7 +96,7 @@ export function MatePopover(): React.JSX.Element | null {
       {needsValue ? (
         <label className="pcad-field">
           <span className="pcad-field__label">{t(draft.kind === 'angle' ? 'assembly.mate.angle' : draft.kind === 'coincident' ? 'assembly.mate.offset' : 'assembly.mate.distance')}</span>
-          <input className="pcad-field__input" value={draft.source} aria-invalid={error !== null}
+          <input title={t(draft.kind === 'angle' ? 'assembly.guide.mateAngle' : 'assembly.guide.mateDistance')} className="pcad-field__input" value={draft.source} aria-invalid={error !== null}
             onChange={(event) => { updateMateSource(event.target.value); }} />
           <span className="pcad-field__unit">{t(draft.kind === 'angle' ? 'numericInput.unit.degree' : 'numericInput.unit.mm')}</span>
         </label>
@@ -105,19 +105,19 @@ export function MatePopover(): React.JSX.Element | null {
         <p className="pcad-popover__hint">{t('assembly.joint.rangeHint')}</p>
         {(['min', 'max'] as const).map((bound) => <label className="pcad-field" key={bound}>
           <span className="pcad-field__label">{t(bound === 'min' ? 'assembly.joint.rangeMinimum' : 'assembly.joint.rangeMaximum')}</span>
-          <input className="pcad-field__input" value={bound === 'min' ? draft.minSource : draft.maxSource}
+          <input title={t('assembly.joint.rangeHint')} className="pcad-field__input" value={bound === 'min' ? draft.minSource : draft.maxSource}
             aria-invalid={error !== null} onChange={(event) => { updateJointRangeSource(bound, event.target.value); }} />
           <span className="pcad-field__unit">{t(jointKind === 'slider' ? 'numericInput.unit.mm' : 'numericInput.unit.degree')}</span>
         </label>)}
       </> : null}
       {error === null ? null : <p role="status" className="pcad-field__message pcad-field__message--error">{error}</p>}
       {jointKind === undefined ? <label className="pcad-checkbox">
-        <input type="checkbox" checked={draft.flipped} onChange={() => { toggleDraftFlipped(); }} />
+        <input title={t('assembly.guide.mateFlipped')} type="checkbox" checked={draft.flipped} onChange={() => { toggleDraftFlipped(); }} />
         {t('assembly.mate.flipped')}
       </label> : null}
       <div className="pcad-popover__actions">
         <button type="button" className="pcad-button pcad-button--action" aria-disabled={!ready}
-          title={jointKind === undefined ? mateFailureText(check) ?? t('assembly.mate.commit') : t('assembly.joint.title')}
+          title={jointKind === undefined ? mateFailureText(check) ?? t('assembly.guide.commitMate') : t('assembly.guide.commitJoint')}
           onClick={() => {
             if (!ready) return;
             if (jointKind === undefined) commitMateDraft();
@@ -127,7 +127,7 @@ export function MatePopover(): React.JSX.Element | null {
             ? draft.editingMateId === null ? 'assembly.mate.commit' : 'assembly.mate.update'
             : 'assembly.joint.commit')}
         </button>
-        <button type="button" className="pcad-button" onClick={cancelMate}>{t('assembly.mate.cancel')}</button>
+        <button type="button" className="pcad-button" title={t('assembly.guide.cancelMate')} onClick={cancelMate}>{t('assembly.mate.cancel')}</button>
       </div>
     </div>
   );

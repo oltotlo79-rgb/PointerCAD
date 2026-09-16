@@ -3,12 +3,15 @@ import type { PartDocument, PartRecomputeResult, ResolvedSheetBody, SolidBody, S
 import type { StateCreator } from 'zustand';
 import type { AppState } from './appState.js';
 import type { SheetOutputComputer } from '../sheetMetal/sheetOutputComputer.js';
+import { snapshotSheetMetalDefaultSources, type SheetMetalDefaultSourceSnapshot } from '../sheetMetal/sheetMetalDefaultSources.js';
 
 export type SheetMetalToolKind = 'sheetBase' | 'sheetFlange' | 'sheetBend' | 'sheetRelief' | 'sheetUnfold';
 export interface SheetMetalToolSession {
   readonly id: string; readonly kind: SheetMetalToolKind;
   readonly document: PartDocument; readonly documentId: string;
   readonly editingFeature?: SheetMetalFeature;
+  /** 開始時の端末設定。既存の有効な編集欄は含めない。 */
+  readonly defaultSources?: SheetMetalDefaultSourceSnapshot;
 }
 export interface SheetMetalPreview {
   readonly session: SheetMetalToolSession; readonly candidate: PartDocument;
@@ -53,9 +56,10 @@ export const createSheetMetalSlice: StateCreator<AppState, [], [], Omit<SheetMet
     if (featureId !== undefined && (editing === undefined || editing.kind !== kind)) return;
     const editingFeature = editing?.kind === 'sheetBase' || editing?.kind === 'sheetFlange' || editing?.kind === 'sheetBend' || editing?.kind === 'sheetRelief' ? editing : undefined;
     const selection = state.selection;
+    const defaultSources = snapshotSheetMetalDefaultSources(state.displaySettings.numericToolDefaults, editingFeature);
     state.setActiveTool('select');
     set({ ...emptySheetMetalTool(), sheetMetalTool: { id: crypto.randomUUID(), kind, document: state.document, documentId: state.activeDocumentId,
-      ...(editingFeature === undefined ? {} : { editingFeature }) }, selection,
+      defaultSources, ...(editingFeature === undefined ? {} : { editingFeature }) }, selection,
       selectionKind: kind === 'sheetFlange' || kind === 'sheetRelief' ? 'edge' : 'face' });
   },
   closeSheetMetalTool: () => set(emptySheetMetalTool()),

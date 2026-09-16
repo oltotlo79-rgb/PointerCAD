@@ -3,6 +3,7 @@ import type { Annotation, Point2 } from '@pointercad/drawing';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { saveDrawingNote } from './noteCommands.js';
+import { useDrawingToolDefaults } from './useDrawingToolDefaults.js';
 
 export function DrawingNotePopover({ annotation, position = [80, 200], anchor, inline = false }: {
   readonly annotation?: Annotation;
@@ -10,8 +11,9 @@ export function DrawingNotePopover({ annotation, position = [80, 200], anchor, i
   readonly anchor?: Point2;
   readonly inline?: boolean;
 }): React.JSX.Element {
+  const defaults = useDrawingToolDefaults();
   const [text, setText] = useState(annotation?.text ?? '');
-  const [height, setHeight] = useState(String(annotation?.height ?? 3.5));
+  const [height, setHeight] = useState(() => annotation === undefined ? defaults.number('noteHeight') : String(annotation.height));
   const [x, setX] = useState(String(annotation?.position[0] ?? position[0]));
   const [y, setY] = useState(String(annotation?.position[1] ?? position[1]));
   const [leader, setLeader] = useState(annotation?.kind === 'leaderNote');
@@ -34,19 +36,19 @@ export function DrawingNotePopover({ annotation, position = [80, 200], anchor, i
       const state = useAppStore.getState(); state.setDrawingTool('select'); state.selectDrawingIds([]); } }}
     onSubmit={(event) => { event.preventDefault(); apply(); }}>
     <strong>{t('drawing.note.title')}</strong>
-    <label>{t('drawing.note.text')}<textarea aria-label={t('drawing.note.text')} value={text} onChange={(event) => setText(event.target.value)} rows={4} maxLength={10000} autoFocus={annotation === undefined} /></label>
-    <label>{t('drawing.note.height')}<input value={height} onChange={(event) => setHeight(event.target.value)} inputMode="decimal" /></label>
-    <label>{t('drawing.note.x')}<input value={x} onChange={(event) => setX(event.target.value)} inputMode="decimal" /></label>
-    <label>{t('drawing.note.y')}<input value={y} onChange={(event) => setY(event.target.value)} inputMode="decimal" /></label>
-    <label><input type="checkbox" checked={leader} onChange={(event) => setLeader(event.target.checked)} />{t('drawing.note.leader')}</label>
+    <label title={t('drawing.note.text.controlHint')}>{t('drawing.note.text')}<textarea aria-label={t('drawing.note.text')} value={text} onChange={(event) => setText(event.target.value)} rows={4} maxLength={10000} autoFocus={annotation === undefined} /></label>
+    <label title={t('drawing.note.height.controlHint')}>{t('drawing.note.height')}<input value={height} onChange={(event) => setHeight(event.target.value)} inputMode="decimal" /></label>
+    <label title={t('drawing.note.x.controlHint')}>{t('drawing.note.x')}<input value={x} onChange={(event) => setX(event.target.value)} inputMode="decimal" /></label>
+    <label title={t('drawing.note.y.controlHint')}>{t('drawing.note.y')}<input value={y} onChange={(event) => setY(event.target.value)} inputMode="decimal" /></label>
+    <label><input title={t('drawing.controlHint.noteLeader')} type="checkbox" checked={leader} onChange={(event) => setLeader(event.target.checked)} />{t('drawing.note.leader')}</label>
     {leader ? <>
-      <label>{t('drawing.note.targetX')}<input value={targetX} onChange={(event) => setTargetX(event.target.value)} inputMode="decimal" /></label>
-      <label>{t('drawing.note.targetY')}<input value={targetY} onChange={(event) => setTargetY(event.target.value)} inputMode="decimal" /></label>
-      <label>{t('drawing.note.end')}<select aria-label={t('drawing.note.end')} value={end} onChange={(event) => setEnd(event.target.value === 'dot' ? 'dot' : 'arrow')}>
+      <label title={t('drawing.note.targetX.controlHint')}>{t('drawing.note.targetX')}<input value={targetX} onChange={(event) => setTargetX(event.target.value)} inputMode="decimal" /></label>
+      <label title={t('drawing.note.targetY.controlHint')}>{t('drawing.note.targetY')}<input value={targetY} onChange={(event) => setTargetY(event.target.value)} inputMode="decimal" /></label>
+      <label title={t('drawing.note.end.controlHint')}>{t('drawing.note.end')}<select aria-label={t('drawing.note.end')} value={end} onChange={(event) => setEnd(event.target.value === 'dot' ? 'dot' : 'arrow')}>
         <option value="arrow">{t('drawing.note.arrow')}</option><option value="dot">{t('drawing.note.dot')}</option>
       </select></label>
     </> : null}
-    <div><button type="submit" className="pcad-button">{t('drawing.action.apply')}</button>
-      <button type="button" className="pcad-button" onClick={() => { const state = useAppStore.getState(); state.setDrawingTool('select'); state.selectDrawingIds([]); }}>{t('drawing.action.close')}</button></div>
+    <div><button title={t('drawing.controlHint.applyAnnotation')} type="submit" className="pcad-button">{t('drawing.action.apply')}</button>
+      <button title={t('drawing.controlHint.closeAnnotation')} type="button" className="pcad-button" onClick={() => { const state = useAppStore.getState(); state.setDrawingTool('select'); state.selectDrawingIds([]); }}>{t('drawing.action.close')}</button></div>
   </form>;
 }

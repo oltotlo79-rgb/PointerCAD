@@ -1,3 +1,11 @@
+import { SectionViewSection } from '../solid/SectionViewSection.js';
+import { SelectionSetSection } from '../solid/SelectionSetSection.js';
+import { CanvasSection } from '../sketch/CanvasSection.js';
+import { PrintCheckSection } from '../solid/PrintCheckSection.js';
+import { InferConstraintsSection } from '../sketch/InferConstraintsSection.js';
+import { AppearanceSection } from '../appearance/AppearanceSection.js';
+import { FACE_COLORS } from '../appearance/appearancePropertyValues.js';
+import { useFieldUnits, evaluateFieldSource, committedFieldSource } from './propertyFieldUnits.js';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { FunctionCurveProperties } from '../functionPlot/FunctionCurveProperties.js';
 import { FunctionSurfaceProperties } from '../functionPlot/FunctionSurfaceProperties.js';
@@ -5,7 +13,7 @@ import { FunctionPointProperties } from '../functionPlot/FunctionPointProperties
 import { FunctionDirectionProperties } from '../functionPlot/FunctionDirectionProperties.js';
 import { FunctionSectionProperties } from '../functionPlot/FunctionSectionProperties.js';
 import { tryMathComposition } from '../math/tryMathComposition.js';
-import { surfaceHelpTopic } from '../solid/surfaceHelpTopic.js';
+import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { SheetMetalPanel } from '../sheetMetal/SheetMetalPanel.js';
 import { ScriptPanel } from '../scripting/ScriptPanel.js';
 import { SheetUnfoldPanel } from '../sheetMetal/SheetUnfoldPanel.js';
@@ -13,53 +21,28 @@ import { sheetFieldUnitError } from '../sheetMetal/sheetFieldError.js';
 
 import {
   evaluateExpression,
-  expressionValueFromNumber,
-  type ExpressionResult,
   type ExpressionValue,
 } from '@pointercad/expression';
 import {
-  appearanceOf,
   baseWorkPlane,
-  DENSITY_MATERIALS,
   findReference,
   findSolid,
-  formatLength,
-  formatMass,
-  isBaseWorkPlaneId,
-  isSameAppearanceTarget,
-  MATERIAL_PRESETS,
   replaceReference,
   replaceSolid,
   resolveSketch,
-  WOOD_SPECIES,
-  type AppearancePattern,
-  type AppearancePresetId,
-  type AppearanceSpec,
-  type BaseWorkPlaneId,
   type CutFeature,
-  type LengthUnit,
   type ReferenceFeature,
   type LoftFeature,
   type PrimitiveFeature,
   type RuledFeature,
   type SketchFeature,
   type SolidFeature,
-  type WoodSpecies,
 } from '@pointercad/model';
 
 import {
   appearanceOfSelection,
   appearanceReadiness,
-  appearanceTargetsOf,
-  appearanceWithColor,
-  appearanceWithNumber,
-  appearanceWithPattern,
-  appearanceWithPreset,
-  appearanceWithWoodSpecies,
-  isSameAppearanceSpec,
-  missingAppearanceIds,
   type AppearanceContext,
-  type AppearanceNumberField,
 } from '../appearance/appearanceCommands.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { ParameterPanel } from '../parameters/ParameterPanel.js';
@@ -96,51 +79,32 @@ import {
   setPrimitiveField,
   setPrimitiveOriginCoordinate,
 } from '../solid/primitiveCommands.js';
-import {
-  measureKindLabel,
-} from '../solid/measure.js';
-import { partMeasureReadiness, type PartMeasureReadiness } from '../sketch/sketchMeasure.js';
-import {
-  defaultDensityMaterialId,
-  densityOf,
-  describeMeasureKinds,
-  describeMeasureTargets,
-  formatMeasurePoint,
-  formatMeasureValue,
-  formatMoments,
-  massPropertiesView,
-} from '../solid/measureCommands.js';
+import { partMeasureReadiness } from '../sketch/sketchMeasure.js';
+import { MeasureSection, MassPropertiesSection } from '../solid/MeasurementSections.js';
+import { formatVolume, VOLUME_UNIT_KEYS } from '../solid/measureFormatting.js';
 import {
   cutPlaneRejection,
   inferPlaneSpec,
   type CutContext,
 } from '../solid/cutCommands.js';
 import { ruledTwistNoteKey } from '../solid/ruledCommands.js';
-// 選択セット(FR-112、タスク43)。断りの文言の鍵は solid の純関数 1 か所から引く。
-import { selectionSetRefusalMessageKey } from '../solid/selectionSetCommands.js';
 import { isValidSphereGridStep } from '../viewport/buildSphereGrid.js';
-// 下絵(FR-332、タスク39・43)。式から置き方を取り出すのは viewport の純関数 1 か所。
-import { canvasPlacementOf } from '../viewport/canvasLayer.js';
 import {
-  applyDisplayUnit,
+  isLengthFieldUnit,
+  numericChoiceOptionLabel,
+  rangeErrorFor,
+  type NumericField,
+} from '../sketch/numericInput.js';
+import {
   COORDINATE_MODES,
   fieldUnitLabelKey,
   fieldValueNumberText,
   fieldValueText,
-  isLengthFieldUnit,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
-  numericChoiceOptionLabel,
-  rangeErrorFor,
   roundToSignificantDigits,
-  type FieldUnit,
-  type NumericField,
-  type NumericFieldRange,
-} from '../sketch/numericInput.js';
+} from '../sketch/numericInputPresentation.js';
 import {
-  AREA_UNIT_KEYS,
-  formatArea,
-  formatVolume,
   missingValueKey,
   partErrorMessage,
   PLANE_SPEC_LABEL_KEYS,
@@ -155,7 +119,6 @@ import {
   solidForSelection,
   summarizeReference,
   summarizeSolid,
-  VOLUME_UNIT_KEYS,
   WORLD_AXIS_CHOICES,
   type SolidChoiceSummary,
   type SolidFieldKey,
@@ -164,72 +127,10 @@ import {
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 
-/**
- * 面の塗り色の見本(FR-310、§0.a-0.5)。ここが履歴へ保存する値の正本で、
- * appShell.css の --pcad-swatch-1〜8 は同じ色を見本の下地に使うための写し。
- * 任意色は P2 以降。
- */
-const FACE_COLORS: readonly string[] = [
-  '#7aa2f7',
-  '#7dcfff',
-  '#9ece6a',
-  '#e0af68',
-  '#f7768e',
-  '#bb9af7',
-  '#c0caf5',
-  '#8c93a3',
-];
-
 /** 打っている途中の欄。式として読めるようになるまで履歴へは書き戻さない。 */
 interface FieldDraft {
   readonly path: string;
   readonly source: string;
-}
-
-/**
- * 式の欄が要る材料(P6 タスク3b)。**式を受け付ける 3 つの入口へ同じ表を渡す**という
- * 決まり(`useAppStore.ts` の `parameterAnalysis` の注釈)に、表示の単位と
- * 「長さでないパラメータ」を足したもの。
- */
-interface FieldUnits {
-  readonly exactVariables: ReadonlyMap<string, string>;
-  /** パラメータ表の変数表(FR-207)。押し出しの距離に `板厚 * 2` と書けるようにする。 */
-  readonly variables: ReadonlyMap<string, number>;
-  /** 長さでないパラメータの名前(§0.a-0.63)。inch の空間で倍率を掛けない名前。 */
-  readonly nonLengthVariables: ReadonlySet<string>;
-  /** 画面に出している長さの単位(FR-811)。 */
-  readonly lengthUnit: LengthUnit;
-}
-
-/** 式の欄が要る材料を 1 か所で取る。欄を持つ節がすべてこれを呼ぶ(タスク3b)。 */
-function useFieldUnits(): FieldUnits {
-  const analysis = useAppStore((state) => state.parameterAnalysis);
-  const variables = analysis.variables;
-  const nonLengthVariables = useAppStore((state) => state.nonLengthVariables);
-  const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
-  return { variables, nonLengthVariables, lengthUnit, exactVariables: analysis.exactVariables };
-}
-
-/**
- * 欄 1 つを評価する(P6 タスク3b、§0.a-0.63)。
- *
- * `drafted` は「いま利用者が打っている文字か」。**打った文字だけ**を表示の単位で包み
- * (`applyDisplayUnit`)、履歴に保存されている式はそのまま評価する。保存された `10` は
- * 10mm であって、表示を inch へ切り替えたからといって 254mm に変わってはならない
- * (FR-202「式は文字列のまま保存される」・§2.9.1「切り替えで式は 1 文字も変わらない」)。
- */
-function evaluateFieldSource(
-  source: string,
-  unit: FieldUnit,
-  drafted: boolean,
-  units: FieldUnits,
-): ExpressionResult {
-  return evaluateExpression(drafted ? applyDisplayUnit(source, unit, units.lengthUnit) : source, units);
-}
-
-/** 打ち込みを履歴へ書き戻すときの式(打った文字を表示の単位で包む。タスク3b)。 */
-function committedFieldSource(source: string, unit: FieldUnit, units: FieldUnits): string {
-  return applyDisplayUnit(source, unit, units.lengthUnit);
 }
 
 /**
@@ -459,7 +360,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
                   {RECTANGLE_VIEWS.map((view) => {
                     const option = choice.options.find((candidate) => candidate.value === view);
                     return option === undefined ? null : (
-                      <button
+                      <button title={t('controlGuide.button.rectangleInput')}
                         key={view}
                         type="button"
                         className="pcad-button"
@@ -560,7 +461,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
                   aria-label={t(choice.labelKey)}
                 >
                   {choice.options.map((option) => (
-                    <button
+                    <button title={t('controlGuide.button.choose').replace('{group}', t(choice.labelKey)).replace('{value}', t(option.labelKey))}
                       key={option.value}
                       type="button"
                       className="pcad-button"
@@ -578,7 +479,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
           {summary.toggles.length === 0 ? null : (
             <div className="pcad-toggles">
               {summary.toggles.map((toggle) => (
-                <button
+                <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
                   key={toggle.key}
                   type="button"
                   role="switch"
@@ -781,7 +682,7 @@ function ChoiceButtons({
         <span className="pcad-choice__label">{groupLabel}</span>
         <div className="pcad-segmented pcad-choice__options" role="group" aria-label={groupLabel}>
           {choice.options.map((option) => (
-            <button
+            <button title={t('controlGuide.button.choose').replace('{group}', groupLabel).replace('{value}', numericChoiceOptionLabel(option))}
               key={option.value}
               type="button"
               className="pcad-button"
@@ -804,7 +705,7 @@ function ChoiceButtons({
     <div className="pcad-choice">
       <span className="pcad-choice__label">{groupLabel}</span>
       <div className="pcad-menu" ref={containerRef}>
-        <button
+        <button title={t('controlGuide.button.expand').replace('{group}', groupLabel)}
           type="button"
           className="pcad-button pcad-menu__trigger"
           aria-haspopup="true"
@@ -821,7 +722,7 @@ function ChoiceButtons({
         {open ? (
           <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
             {choice.options.map((option) => (
-              <button
+              <button title={t('controlGuide.button.choose').replace('{group}', groupLabel).replace('{value}', numericChoiceOptionLabel(option))}
                 key={option.value}
                 type="button"
                 role="menuitem"
@@ -1006,7 +907,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
       summary.toggles.length === 0 &&
       summary.choices.length === 0 &&
       axis === null ? null : (
-        <div className="pcad-section" data-help-topic={surfaceHelpTopic(feature.kind)}>
+        <div className="pcad-section" data-help-topic={toolCommandHelpTopic(feature.kind)}>
           <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
           {summary.fields.length === 0 ? null : (
             <div className="pcad-coordinate__fields">
@@ -1025,7 +926,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
                   aria-label={t('propertyPanel.axis')}
                 >
                   {WORLD_AXIS_CHOICES.map((choice) => (
-                    <button
+                    <button title={t('controlGuide.button.solidAxis')}
                       key={choice.axis}
                       type="button"
                       className="pcad-button"
@@ -1055,7 +956,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           {summary.toggles.length === 0 ? null : (
             <div className="pcad-toggles">
               {summary.toggles.map((toggle) => (
-                <button
+                <button title={t('controlGuide.button.toggle').replace('{name}', t(toggle.labelKey))}
                   key={toggle.key}
                   type="button"
                   role="switch"
@@ -1267,7 +1168,7 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
             aria-label={t('propertyPanel.primitiveAxis')}
           >
             {WORLD_AXIS_CHOICES.map((choice) => (
-              <button
+              <button title={t('controlGuide.button.primitiveAxis')}
                 key={choice.axis}
                 type="button"
                 className="pcad-button"
@@ -1382,7 +1283,7 @@ function SphereGridSection(): React.JSX.Element {
         <p className="pcad-panel__note">{t('propertyPanel.sphereGridStepRange')}</p>
       ) : null}
       <div className="pcad-toggles">
-        <button
+        <button title={t('controlGuide.button.sphereGridAlways')}
           type="button"
           role="switch"
           className="pcad-switch"
@@ -1783,7 +1684,7 @@ function ReferenceProperties({
           </div>
         )}
         <div className="pcad-toggles">
-          <button
+          <button title={t('controlGuide.button.referenceVisible')}
             type="button"
             role="switch"
             className="pcad-switch"
@@ -1876,717 +1777,6 @@ function OriginSection({ origin }: { readonly origin: OriginSelection }): React.
   );
 }
 
-/* ---------------------------------------------------------------------------
- * 外観(FR-1106〜1110、要件§4.12、計画書 P5 タスク12)
- * ------------------------------------------------------------------------- */
-
-/** 材質プリセットの見出し(§2.4.1、11 種)。id → ja.json のキーの対応はここ 1 か所に置く。 */
-const PRESET_LABEL_KEYS: Readonly<Record<AppearancePresetId, MessageKey>> = {
-  default: 'appearance.preset.default',
-  steel: 'appearance.preset.steel',
-  checkerPlate: 'appearance.preset.checkerPlate',
-  expandedMetal: 'appearance.preset.expandedMetal',
-  aluminum: 'appearance.preset.aluminum',
-  stainless: 'appearance.preset.stainless',
-  plastic: 'appearance.preset.plastic',
-  wood: 'appearance.preset.wood',
-  mirror: 'appearance.preset.mirror',
-  glass: 'appearance.preset.glass',
-  custom: 'appearance.preset.custom',
-};
-
-/** 木材の樹種の見出し(§0.a-0.5、6 種)。 */
-const WOOD_LABEL_KEYS: Readonly<Record<WoodSpecies, MessageKey>> = {
-  hinoki: 'appearance.wood.hinoki',
-  sugi: 'appearance.wood.sugi',
-  oak: 'appearance.wood.oak',
-  walnut: 'appearance.wood.walnut',
-  teak: 'appearance.wood.teak',
-  maple: 'appearance.wood.maple',
-};
-
-/** 柄の種類の見出し(FR-1108、4 種)。 */
-const PATTERN_LABEL_KEYS: Readonly<Record<AppearancePattern['kind'], MessageKey>> = {
-  none: 'appearance.pattern.none',
-  expandedMetal: 'appearance.pattern.expandedMetal',
-  checkerPlate: 'appearance.pattern.checkerPlate',
-  woodGrain: 'appearance.pattern.woodGrain',
-};
-
-/** 柄の選択肢の並び順(FR-1108)。 */
-const PATTERN_KINDS: readonly AppearancePattern['kind'][] = [
-  'none',
-  'expandedMetal',
-  'checkerPlate',
-  'woodGrain',
-];
-
-/**
- * 柄を「なし」から選んだときの、繰り返しの間隔の既定値(mm)。プリセット経由
- * (model の `appearanceFromPreset`)は柄ごとに違う既定値を使うが、ここは柄だけを直に
- * 選んだときの初期値なので 1 つでよい(選んだ直後に打ち直せる。NFR-UX-4)。
- */
-const DEFAULT_PATTERN_SPACING_MM = 10;
-
-/** 柄を「なし」から木目へ選んだときの、樹種の既定値(§0.a-0.5 の表の先頭)。 */
-const DEFAULT_WOOD_SPECIES_FOR_PATTERN: WoodSpecies = 'hinoki';
-
-/**
- * 柄の種類だけを差し替える(FR-1108)。間隔・樹種は引き継ぎ、無ければ既定値を補う。
- * 色・光沢・粗さ・プリセットの扱いは呼び出し側(`appearanceWithPattern`)に任せる。
- */
-function patternWithKind(
-  current: AppearancePattern,
-  kind: AppearancePattern['kind'],
-): AppearancePattern {
-  if (current.kind === kind) {
-    return current;
-  }
-  if (kind === 'none') {
-    return { kind: 'none' };
-  }
-  const spacing =
-    current.kind === 'none'
-      ? expressionValueFromNumber(DEFAULT_PATTERN_SPACING_MM)
-      : current.spacing;
-  if (kind === 'woodGrain') {
-    return {
-      kind: 'woodGrain',
-      spacing,
-      species: current.kind === 'woodGrain' ? current.species : DEFAULT_WOOD_SPECIES_FOR_PATTERN,
-    };
-  }
-  return { kind, spacing };
-}
-
-/** 柄の間隔だけを差し替える(FR-1108)。「なし」には間隔が無いのでそのまま返す。 */
-function patternWithSpacing(pattern: AppearancePattern, spacing: ExpressionValue): AppearancePattern {
-  switch (pattern.kind) {
-    case 'none':
-      return pattern;
-    case 'expandedMetal':
-    case 'checkerPlate':
-    case 'woodGrain':
-      return { ...pattern, spacing };
-  }
-}
-
-/** 16進として読めるか(`#rrggbb`)。大文字で打っても小文字にそろえる(FR-1109)。 */
-const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
-
-function normalizeHexColor(source: string): string | null {
-  const trimmed = source.trim();
-  return HEX_COLOR_PATTERN.test(trimmed) ? trimmed.toLowerCase() : null;
-}
-
-/** 透過率・光沢・粗さの範囲(0〜100、FR-1109)。`rangeErrorFor` に渡す形だけ揃える。 */
-const PERCENT_RANGE: NumericFieldRange = {
-  min: 0,
-  minInclusive: true,
-  max: 100,
-  maxInclusive: true,
-};
-
-/** 透過率・光沢・粗さの見出しキー(タスク6の表)。 */
-const PERCENT_FIELD_LABEL_KEYS: Readonly<Record<AppearanceNumberField, MessageKey>> = {
-  transmission: 'propertyPanel.appearanceTransmission',
-  gloss: 'propertyPanel.appearanceGloss',
-  roughness: 'propertyPanel.appearanceRoughness',
-};
-
-/**
- * 百分率の記号。ASCII の文字なので ja.json へ分けない(i18n.test.ts が禁じるのは日本語の
- * 直書きだけ)。`numericInput.ts` の `FieldUnit` に「%」を増やすのはここだけのために
- * 割に合わないので、`ExpressionField` は使わず自前で組み立てる(範囲判定だけ
- * `rangeErrorFor` を借りる、下の `renderPercentField` の注釈)。
- */
-const PERCENT_SIGN = '%';
-
-/** 打っている途中の外観の欄。式として読めて範囲にも収まるまで確定しない。 */
-interface AppearanceFieldDraft {
-  readonly key: 'color' | AppearanceNumberField | 'spacing';
-  readonly source: string;
-}
-
-/**
- * いくつかから 1 つを選ぶ、畳んだ一覧(材質プリセット・樹種。`Toolbar.tsx` の `PlaneMenu`
- * と同じ作り、`ChoiceButtons` の長い一覧の分岐と同じ見た目)。値と選択肢は文字列 1 つずつ
- * なので、`SolidChoiceSummary` を要る `ChoiceButtons` とは別に置く(数値の書式が要らない
- * ぶん単純)。開閉は見た目だけの一時状態(rules/04-設計の規律.md)。
- */
-function AppearanceMenu({
-  groupLabelKey,
-  value,
-  options,
-  onChoose,
-}: {
-  readonly groupLabelKey: MessageKey;
-  readonly value: string;
-  readonly options: readonly { readonly value: string; readonly labelKey: MessageKey }[];
-  readonly onChoose: (value: string) => void;
-}): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const groupLabel = t(groupLabelKey);
-
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-    // 外を押したら閉じる。モーダルの覆いを作らないので、押した先の操作はそのまま通る。
-    const onPointerDown = (event: PointerEvent): void => {
-      const container = containerRef.current;
-      if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-    globalThis.addEventListener('pointerdown', onPointerDown);
-    return () => {
-      globalThis.removeEventListener('pointerdown', onPointerDown);
-    };
-  }, [open]);
-
-  const selected = options.find((option) => option.value === value) ?? null;
-
-  return (
-    <div className="pcad-choice">
-      <span className="pcad-choice__label">{groupLabel}</span>
-      <div className="pcad-menu" ref={containerRef}>
-        <button
-          type="button"
-          className="pcad-button pcad-menu__trigger"
-          aria-haspopup="true"
-          aria-expanded={open}
-          onClick={() => {
-            setOpen(!open);
-          }}
-        >
-          <span className="pcad-menu__count">{selected === null ? '' : t(selected.labelKey)}</span>
-          <ChevronRightIcon className="pcad-menu__chevron" />
-        </button>
-        {open ? (
-          <div className="pcad-menu__panel" role="group" aria-label={groupLabel}>
-            {options.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                role="menuitem"
-                className="pcad-button pcad-menu__item"
-                aria-pressed={option.value === value}
-                onClick={() => {
-                  onChoose(option.value);
-                  setOpen(false);
-                }}
-              >
-                {t(option.labelKey)}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-/**
- * 外観の節(FR-1106〜1110、要件§4.12、計画書タスク12)。立体または面を選んでいるときだけ
- * 描く(呼び出し側の `PropertyPanel` が `appearanceReadiness` で判定済み。§0.a-0.13
- * 「専用パネル/ダイアログは作らず、プロパティの節+ツールバーのボタン1つ」)。
- *
- * 確定は `useAppStore.getState().assignAppearance` を呼ぶだけにし、選択から割り当て先を
- * 決める判断・範囲外(NFR-UX-5)・上限(§0.a-0.11)の判定は
- * `appearance/appearanceCommands.ts`(タスク11)に任せて、ここで二重に作らない。
- * ただし透過率・光沢・粗さは打っている途中に赤くしたい(NFR-UX-5「実行してから
- * 失敗させない」)ので、確定する前に `numericInput.ts` の `rangeErrorFor` で
- * 範囲外を確かめる(コマンド側の断りは、欄を経ない入口からの保険として残る)。
- *
- * 選ぶ対象が変わるたびに `key`(呼び出し側が選択から作る文字列)で作り直され、
- * 打っている途中の下書きも消える(`FeatureProperties`/`SolidProperties` と同じ流儀)。
- */
-function AppearanceSection({
-  context,
-}: {
-  readonly context: AppearanceContext;
-}): React.JSX.Element | null {
-  const documentVersion = useAppStore((state) => state.documentVersion);
-  const units = useFieldUnits();
-  const [draftState, setDraftState] = useState(() =>
-    initialDraftVersionState<AppearanceFieldDraft>(documentVersion),
-  );
-  const reconciled = reconcileDraftVersion(draftState, documentVersion);
-  if (reconciled !== draftState) {
-    setDraftState(reconciled);
-  }
-  const draft = reconciled.draft;
-
-  const targets = appearanceTargetsOf(context);
-  if (targets.length === 0) {
-    return null;
-  }
-  const spec = appearanceOfSelection(context);
-  const table = appearanceOf(context.document);
-  const directEntry = table.entries.find((entry) =>
-    isSameAppearanceTarget(entry.target, targets[0]),
-  );
-  const missingIds = missingAppearanceIds(context.document, context.matches);
-  const missingEntries = table.entries.filter((entry) => missingIds.includes(entry.id));
-
-  /** 外観を確定する。中身が変わらないときは何もしない(無駄な Undo の段を積まない)。 */
-  const apply = (next: AppearanceSpec): void => {
-    if (isSameAppearanceSpec(next, spec)) {
-      return;
-    }
-    useAppStore.getState().assignAppearance(next);
-  };
-
-  const renderHexField = (): React.JSX.Element => {
-    const source = draft !== null && draft.key === 'color' ? draft.source : spec.color;
-    const hasError = normalizeHexColor(source) === null;
-    return (
-      <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'}>
-        <span className="pcad-field__label" title={t('propertyPanel.appearanceColor')}>
-          {t('propertyPanel.appearanceColor')}
-        </span>
-        <input
-          className="pcad-field__input"
-          type="text"
-          inputMode="text"
-          autoComplete="off"
-          spellCheck={false}
-          value={source}
-          aria-invalid={hasError}
-          title={t('propertyPanel.appearanceColor')}
-          onChange={(event) => {
-            const next = event.target.value;
-            setDraftState({ draft: { key: 'color', source: next }, seenVersion: documentVersion });
-            const normalized = normalizeHexColor(next);
-            if (normalized !== null) {
-              apply(appearanceWithColor(spec, normalized));
-            }
-          }}
-        />
-        <span className="pcad-field__unit" />
-        <p className="pcad-field__message" />
-      </div>
-    );
-  };
-
-  /** 透過率・光沢・粗さの 1 欄(百分率、FR-1109)。単位は「%」を直に置く(上の注釈)。 */
-  const renderPercentField = (field: AppearanceNumberField): React.JSX.Element => {
-    const value = spec[field];
-    const source = draft !== null && draft.key === field ? draft.source : value.source;
-    const evaluated = evaluateExpression(source, units);
-    const numericField: NumericField = {
-      key: field,
-      labelKey: PERCENT_FIELD_LABEL_KEYS[field],
-      tooltipKey: PERCENT_FIELD_LABEL_KEYS[field],
-      // 表示には使わない(単位は「%」を直に置く)。範囲判定にだけ使う仮値。
-      unit: 'count',
-      defaultSource: value.source,
-      source,
-      range: PERCENT_RANGE,
-    };
-    const fieldError = evaluated.ok ? rangeErrorFor(numericField, evaluated.value) : evaluated.error;
-    const hasError = fieldError !== null;
-    return (
-      <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'} key={field}>
-        <span className="pcad-field__label" title={t(PERCENT_FIELD_LABEL_KEYS[field])}>
-          {t(PERCENT_FIELD_LABEL_KEYS[field])}
-        </span>
-        <input
-          className="pcad-field__input"
-          type="text"
-          inputMode="text"
-          autoComplete="off"
-          spellCheck={false}
-          value={source}
-          aria-invalid={hasError}
-          title={t(PERCENT_FIELD_LABEL_KEYS[field])}
-          onChange={(event) => {
-            const next = event.target.value;
-            setDraftState({ draft: { key: field, source: next }, seenVersion: documentVersion });
-            const parsed = evaluateExpression(next, units);
-            if (!parsed.ok || rangeErrorFor(numericField, parsed.value) !== null) {
-              return;
-            }
-            apply(appearanceWithNumber(spec, field, parsed.value));
-          }}
-        />
-        <span className="pcad-field__unit">{PERCENT_SIGN}</span>
-        <p className={hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'}>
-          {fieldError === null ? (evaluated.ok ? `= ${evaluated.value.display}` : '') : fieldError.message}
-        </p>
-      </div>
-    );
-  };
-
-  /** 柄の間隔(mm、FR-1108)。「なし」以外のときだけ呼ばれる。 */
-  const renderSpacingField = (spacingValue: ExpressionValue): React.JSX.Element => {
-    const drafted = draft !== null && draft.key === 'spacing';
-    const source = drafted ? draft.source : spacingValue.source;
-    const evaluated = evaluateFieldSource(source, 'mm', drafted, units);
-    return (
-      <ExpressionField
-        key="spacing"
-        lengthUnit={units.lengthUnit}
-        field={{
-          key: 'spacing',
-          labelKey: 'propertyPanel.appearanceSpacing',
-          tooltipKey: 'propertyPanel.appearanceSpacing',
-          unit: 'mm',
-          defaultSource: spacingValue.source,
-          source,
-        }}
-        result={
-          evaluated.ok
-            ? { key: 'spacing', value: evaluated.value, error: null }
-            : { key: 'spacing', value: null, error: evaluated.error }
-        }
-        focused={false}
-        onFocus={() => undefined}
-        onChange={(next) => {
-          setDraftState({ draft: { key: 'spacing', source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(committedFieldSource(next, 'mm', units), units);
-          if (!parsed.ok) {
-            return;
-          }
-          apply(appearanceWithPattern(spec, patternWithSpacing(spec.pattern, parsed.value)));
-        }}
-      />
-    );
-  };
-
-  return (
-    <>
-      <div className="pcad-section">
-        <h3 className="pcad-section__title">{t('propertyPanel.sectionAppearance')}</h3>
-        <AppearanceMenu
-          groupLabelKey="propertyPanel.appearancePreset"
-          value={spec.preset}
-          options={MATERIAL_PRESETS.map((preset) => ({
-            value: preset.id,
-            labelKey: PRESET_LABEL_KEYS[preset.id],
-          }))}
-          onChoose={(value) => {
-            const preset = MATERIAL_PRESETS.find((candidate) => candidate.id === value);
-            if (preset !== undefined) {
-              apply(appearanceWithPreset(spec, preset.id));
-            }
-          }}
-        />
-        {spec.pattern.kind !== 'woodGrain' ? null : (
-          <AppearanceMenu
-            groupLabelKey="propertyPanel.appearanceSpecies"
-            value={spec.pattern.species}
-            options={WOOD_SPECIES.map((species) => ({
-              value: species.id,
-              labelKey: WOOD_LABEL_KEYS[species.id],
-            }))}
-            onChoose={(value) => {
-              const info = WOOD_SPECIES.find((candidate) => candidate.id === value);
-              if (info !== undefined) {
-                apply(appearanceWithWoodSpecies(spec, info.id));
-              }
-            }}
-          />
-        )}
-        <div className="pcad-choice">
-          <span className="pcad-choice__label">{t('propertyPanel.appearanceColor')}</span>
-          <div
-            className="pcad-swatches"
-            role="group"
-            aria-label={t('propertyPanel.appearanceColor')}
-          >
-            {FACE_COLORS.map((color, index) => (
-              <button
-                key={color}
-                type="button"
-                className={`pcad-swatch pcad-swatch--${String(index + 1)}`}
-                aria-pressed={spec.color === color}
-                aria-label={color}
-                title={t('propertyPanel.appearanceColor')}
-                onClick={() => {
-                  apply(appearanceWithColor(spec, color));
-                }}
-              />
-            ))}
-          </div>
-          {renderHexField()}
-        </div>
-        <div className="pcad-choice">
-          <span className="pcad-choice__label">{t('propertyPanel.appearancePattern')}</span>
-          <div
-            className="pcad-segmented pcad-choice__options"
-            role="group"
-            aria-label={t('propertyPanel.appearancePattern')}
-          >
-            {PATTERN_KINDS.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                className="pcad-button"
-                aria-pressed={spec.pattern.kind === kind}
-                onClick={() => {
-                  apply(appearanceWithPattern(spec, patternWithKind(spec.pattern, kind)));
-                }}
-              >
-                {t(PATTERN_LABEL_KEYS[kind])}
-              </button>
-            ))}
-          </div>
-        </div>
-        {spec.pattern.kind === 'none' ? null : (
-          <div className="pcad-coordinate__fields">{renderSpacingField(spec.pattern.spacing)}</div>
-        )}
-        <div className="pcad-coordinate__fields">
-          {renderPercentField('transmission')}
-          {renderPercentField('gloss')}
-          {renderPercentField('roughness')}
-        </div>
-        <div className="pcad-appearance__actions">
-          <button
-            type="button"
-            className="pcad-button"
-            disabled={directEntry === undefined}
-            onClick={() => {
-              if (directEntry !== undefined) {
-                useAppStore.getState().removeAppearance(directEntry.id);
-              }
-            }}
-          >
-            {t('propertyPanel.appearanceRemove')}
-          </button>
-          <button
-            type="button"
-            className="pcad-button"
-            onClick={() => {
-              useAppStore.getState().clearAppearance();
-            }}
-          >
-            {t('propertyPanel.appearanceClear')}
-          </button>
-        </div>
-      </div>
-      {missingEntries.length === 0 ? null : (
-        <div className="pcad-section">
-          <h3 className="pcad-section__title">{t('propertyPanel.appearanceMissing')}</h3>
-          <ul className="pcad-appearance-missing">
-            {missingEntries.map((entry) => (
-              <li className="pcad-appearance-missing__row" key={entry.id}>
-                <span className="pcad-appearance-missing__label">
-                  {t(PRESET_LABEL_KEYS[entry.appearance.preset])}
-                </span>
-                <button
-                  type="button"
-                  className="pcad-button pcad-coordinate__action"
-                  title={t('propertyPanel.appearanceRemove')}
-                  aria-label={t('propertyPanel.appearanceRemove')}
-                  onClick={() => {
-                    useAppStore.getState().removeAppearance(entry.id);
-                  }}
-                >
-                  {t('propertyPanel.removePointMark')}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </>
-  );
-}
-
-/**
- * 質量の材料 19 種の見出し(§2.4.2、`densityMaterials.ts` の `DENSITY_MATERIALS` と同じ id)。
- *
- * **id は `string`**(木材が `wood-<樹種>` で作られる合成の id なので、model 側にも
- * 合併型が無い)ので、`Record<string, MessageKey>` で持ち、引けなかった id は
- * 呼び出し側が既定の材料へ落とす。文言は `ja.json` の `material.*`(タスク6 で追加済み)。
- */
-const DENSITY_MATERIAL_LABEL_KEYS: Readonly<Record<string, MessageKey>> = {
-  steel: 'material.steel',
-  stainless: 'material.stainless',
-  aluminum: 'material.aluminum',
-  brass: 'material.brass',
-  copper: 'material.copper',
-  titanium: 'material.titanium',
-  abs: 'material.abs',
-  pc: 'material.pc',
-  nylon: 'material.nylon',
-  acrylic: 'material.acrylic',
-  pla: 'material.pla',
-  glass: 'material.glass',
-  rubber: 'material.rubber',
-  'wood-hinoki': 'material.wood-hinoki',
-  'wood-sugi': 'material.wood-sugi',
-  'wood-oak': 'material.wood-oak',
-  'wood-walnut': 'material.wood-walnut',
-  'wood-teak': 'material.wood-teak',
-  'wood-maple': 'material.wood-maple',
-};
-
-/** 材料の見出しキー。知らない id は既定の材料(鋼)の見出しにする。 */
-function densityMaterialLabelKey(id: string): MessageKey {
-  return DENSITY_MATERIAL_LABEL_KEYS[id] ?? 'material.steel';
-}
-
-/**
- * 「測定」の節(FR-1102、要件§7.1、計画書タスク32、§2.10.3)。
- *
- * 出すのは 3 つと 1 ボタン。**選んでいるもの / 測れるもの / 結果 / 「測り直す」**。
- * 測る 1 手はストアの `measureSelection`(判断は `solid/measureCommands.ts`)1 か所に
- * あるので、ツールバーの「測る」を押したときとまったく同じ道を通る。
- *
- * **結果はモデルを変えるまで残る**(FR-1102、§0.a-0.29)ので、選び直しても消えない。
- * だから「選んでいるもの」と「結果」が食い違うことがあり、結果には**何を測った値か**
- * (種類の見出し)を必ず添える。消したいときは Esc(§0.a-0.68)。
- */
-function MeasureSection({
-  readiness,
-}: {
-  readonly readiness: PartMeasureReadiness;
-}): React.JSX.Element {
-  const measurement = useAppStore((state) => state.measurement);
-  return (
-    <div className="pcad-section">
-      <h3 className="pcad-section__title">{t('propertyPanel.sectionMeasure')}</h3>
-      <dl className="pcad-properties">
-        <dt className="pcad-properties__key">{t('propertyPanel.measureTargets')}</dt>
-        <dd className="pcad-properties__value">
-          {readiness.ready
-            ? describeMeasureTargets(readiness.targets)
-            : (readiness.message ?? '')}
-        </dd>
-        <dt className="pcad-properties__key">{t('propertyPanel.measureKinds')}</dt>
-        <dd className="pcad-properties__value">
-          {readiness.ready ? describeMeasureKinds(readiness.kinds) : ''}
-        </dd>
-        <dt className="pcad-properties__key">{t('propertyPanel.measureResult')}</dt>
-        <dd className="pcad-properties__value">
-          {measurement === null
-            ? t('propertyPanel.measureNotYet')
-            : `${measureKindLabel(measurement.result.kind)}: ${formatMeasureValue(measurement.result)}`}
-        </dd>
-      </dl>
-      <div className="pcad-appearance__actions">
-        <button
-          type="button"
-          className="pcad-button"
-          title={t('propertyPanel.measureAgainTooltip')}
-          disabled={!readiness.ready}
-          onClick={() => {
-            useAppStore.getState().measureSelection();
-          }}
-        >
-          {t('propertyPanel.measureAgain')}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * 「質量特性」の節(FR-1101、§0.a-0.31、§0.a-0.32、計画書タスク32)。立体を 1 つ選んで
- * いるときだけ出す。
- *
- * **材料と密度はこの節が持つ**(文書には保存しない)。密度を変えるたびに文書が変わると
- * 取り消しの段が積まれ、形が変わっていないのに再計算の判定を通ることになるため
- * (rules/04-設計の規律.md「導出できるものは保存しない」)。立体を選び直すと `key` で
- * 作り直され、その立体の**外観のプリセットに対応する材料**から始まる(§0.a-0.31)。
- *
- * 体積・重心・慣性モーメントはカーネルが測った密度なしの値で、**密度の掛け算は model の
- * 関数だけ**を通す(`massPropertiesView` → `massFromVolume` / `inertiaWithDensity`。
- * 統括の決定: 密度の掛け算は model の 1 か所)。
- */
-function MassPropertiesSection({
-  spec,
-}: {
-  readonly spec: AppearanceSpec;
-}): React.JSX.Element {
-  const massProperties = useAppStore((state) => state.massProperties);
-  const units = useFieldUnits();
-  const [materialId, setMaterialId] = useState(() =>
-    defaultDensityMaterialId(spec.preset, spec.pattern.kind === 'woodGrain' ? spec.pattern.species : null),
-  );
-  /** 密度の欄の式。材料を選び直すとその材料の密度で置き換わる(式で上書きもできる)。 */
-  const [densitySource, setDensitySource] = useState(() => String(densityOf(materialId)));
-
-  const evaluated = evaluateExpression(densitySource, units);
-  const density = evaluated.ok ? evaluated.value.value : densityOf(materialId);
-  const view = massProperties === null ? null : massPropertiesView(massProperties, density);
-
-  return (
-    <div className="pcad-section">
-      <h3 className="pcad-section__title">{t('propertyPanel.sectionMassProperties')}</h3>
-      <AppearanceMenu
-        groupLabelKey="propertyPanel.massMaterial"
-        value={materialId}
-        options={DENSITY_MATERIALS.map((material) => ({
-          value: material.id,
-          labelKey: densityMaterialLabelKey(material.id),
-        }))}
-        onChoose={(value) => {
-          setMaterialId(value);
-          // 材料を選び直したら、密度の欄もその材料の値へ戻す(打った式は上書きされる)。
-          setDensitySource(String(densityOf(value)));
-        }}
-      />
-      <div className="pcad-coordinate__fields">
-        <div className={evaluated.ok ? 'pcad-field' : 'pcad-field pcad-field--error'}>
-          <span className="pcad-field__label" title={t('propertyPanel.massDensity')}>
-            {t('propertyPanel.massDensity')}
-          </span>
-          <input
-            className="pcad-field__input"
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            spellCheck={false}
-            value={densitySource}
-            aria-invalid={!evaluated.ok}
-            title={t('propertyPanel.massDensity')}
-            onChange={(event) => {
-              setDensitySource(event.target.value);
-            }}
-          />
-          <span className="pcad-field__unit">
-            {t('propertyPanel.unitGramPerCubicCentimeter')}
-          </span>
-          <p
-            className={
-              evaluated.ok ? 'pcad-field__message' : 'pcad-field__message pcad-field__message--error'
-            }
-          >
-            {evaluated.ok ? `= ${evaluated.value.display}` : evaluated.error.message}
-          </p>
-        </div>
-      </div>
-      {massProperties === null || view === null ? (
-        <p className="pcad-panel__note">{t('propertyPanel.massNotYet')}</p>
-      ) : (
-        <dl className="pcad-properties">
-          <dt className="pcad-properties__key">{t('propertyPanel.massVolume')}</dt>
-          <dd className="pcad-properties__value">
-            {`${formatVolume(massProperties.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.massArea')}</dt>
-          <dd className="pcad-properties__value">
-            {`${formatArea(massProperties.area, units.lengthUnit)} ${t(AREA_UNIT_KEYS[units.lengthUnit])}`}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.massMass')}</dt>
-          <dd className="pcad-properties__value">{formatMass(view.mass)}</dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.massCentre')}</dt>
-          <dd className="pcad-properties__value">
-            {formatMeasurePoint(massProperties.centreOfMass)}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.massInertia')}</dt>
-          <dd className="pcad-properties__value">{formatMoments(view.moments)}</dd>
-        </dl>
-      )}
-    </div>
-  );
-}
-
 /**
  * 外観の節の `key` に付ける接頭辞(P5 仕上げ (d))。
  *
@@ -2598,456 +1788,6 @@ function MassPropertiesSection({
  * `appearance:` で始まることは無いので、この接頭辞を付ければ兄弟の鍵は必ず食い違う。
  */
 const APPEARANCE_KEY_PREFIX = 'appearance:';
-
-/* ---------------------------------------------------------------------------
- * P6 の 5 つの節(FR-111、FR-112、FR-332、FR-333、FR-815。計画書 §2.18、タスク43)
- *
- * **区画は増やさない**(rules/04)。5 つともプロパティの中の節で、選んでいるものが
- * 何であっても、外観・測定の節と同じくその下に続けて出す。
- * ------------------------------------------------------------------------- */
-
-/**
- * 下絵を貼ってある作図面の札。基準の 3 面は `ja.json` から、任意の作業平面はその id を出す。
- *
- * **同じ対応表が `StatusBar.tsx`(`planeLabel`)にもある。** あちらは作業平面の名前まで
- * 引くので入力が違い(文書の一覧が要る)、ここは下絵の行に短く出すだけなので分けてある。
- * 1 か所へまとめるならタスク45(図柄と札の整理)でまとめて行う。
- */
-const CANVAS_PLANE_LABEL_KEYS = {
-  xy: 'toolbar.plane.xy',
-  xz: 'toolbar.plane.xz',
-  yz: 'toolbar.plane.yz',
-} as const satisfies Record<BaseWorkPlaneId, MessageKey>;
-
-function canvasPlaneLabel(planeId: string): string {
-  return isBaseWorkPlaneId(planeId) ? t(CANVAS_PLANE_LABEL_KEYS[planeId]) : planeId;
-}
-
-/** 「{count}」を数で埋める(`t()` は置換をしない。`sketch/constraintActions.ts` と同じ書き方)。 */
-function withCount(key: MessageKey, count: number): string {
-  return t(key).replace('{count}', String(count));
-}
-
-/**
- * 「断面表示」の節(FR-111、§2.18)。
- *
- * **状態の表示と入切だけに絞る。** 切る位置のつまみとその場の数値入力はビューポートの
- * 浮かぶ欄(タスク35)が持っている。同じ値の入口を 2 か所に作ると、打っている途中の
- * 下書きが 2 つに分かれてどちらが本物か分からなくなる(P4b の「同じ値の入口を 2 つ
- * 作らない」)。ここは**いまどの面で・どれだけずらして・どちら側を残しているか**を読み、
- * 浮かぶ欄には無い「切る位置を 0 へ戻す」だけを足す。
- *
- * **再計算は走らない**(文書に触らない。§2.17-7)。
- */
-function SectionViewSection(): React.JSX.Element {
-  const sectionView = useAppStore((state) => state.sectionView);
-  return (
-    <div className="pcad-section">
-      <h3 className="pcad-section__title">{t('sectionView.title')}</h3>
-      {sectionView === null ? (
-        <p className="pcad-panel__note">{t('propertyPanel.sectionViewOff')}</p>
-      ) : (
-        <dl className="pcad-properties">
-          <dt className="pcad-properties__key">{t('propertyPanel.sectionViewPlane')}</dt>
-          <dd className="pcad-properties__value">
-            {t(PLANE_SPEC_LABEL_KEYS[sectionView.plane.kind])}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.sectionViewOffset')}</dt>
-          <dd className="pcad-properties__value">{formatLength(sectionView.offsetMm)}</dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.sectionViewSide')}</dt>
-          <dd className="pcad-properties__value">
-            {t(
-              sectionView.flipped
-                ? 'propertyPanel.sectionViewSideBack'
-                : 'propertyPanel.sectionViewSideFront',
-            )}
-          </dd>
-        </dl>
-      )}
-      <div className="pcad-appearance__actions">
-        <button
-          type="button"
-          className="pcad-button"
-          aria-pressed={sectionView !== null}
-          title={t(
-            sectionView === null
-              ? 'propertyPanel.sectionViewOnTooltip'
-              : 'propertyPanel.sectionViewOffTooltip',
-          )}
-          onClick={() => {
-            useAppStore.getState().toggleSectionView();
-          }}
-        >
-          {t(sectionView === null ? 'propertyPanel.sectionViewOn' : 'sectionView.close')}
-        </button>
-        <button
-          type="button"
-          className="pcad-button"
-          title={t('propertyPanel.sectionViewResetTooltip')}
-          disabled={sectionView === null || sectionView.offsetMm === 0}
-          onClick={() => {
-            useAppStore.getState().setSectionOffset(0);
-          }}
-        >
-          {t('propertyPanel.sectionViewReset')}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * 「選択セット」の節(FR-112、§2.13、§0.a-0.44)。
- *
- * 一覧(名前と員数)・新しく作る・名前を変える・消す・選ぶ・足すを 1 か所に置く。
- * 判断は `solid/selectionSetCommands.ts` と model の `part/selectionSets.ts` にあり、
- * ここは画面だけを描く。**組を触っても再計算は走らない**(`affectsShape` が偽、§0.a-0.44)。
- *
- * 覚えられるのは**立体・面・辺・頂点の 4 種すべて**(利用者の決定、2026-09-06)。
- */
-function SelectionSetSection(): React.JSX.Element {
-  const sets = useAppStore((state) => state.document.selectionSets);
-  const selection = useAppStore((state) => state.selection);
-  const [name, setName] = useState('');
-  /** 断り・知らせの 1 行(NFR-UX-5)。押すたびに入れ替わる、画面だけの状態。 */
-  const [notice, setNotice] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState<{ readonly id: string; readonly text: string } | null>(
-    null,
-  );
-
-  const create = (): void => {
-    const refusal = useAppStore.getState().createSelectionSetFromSelection(name);
-    if (refusal !== null) {
-      setNotice(t(selectionSetRefusalMessageKey(refusal)));
-      return;
-    }
-    setName('');
-    setNotice(null);
-  };
-
-  return (
-    <div className="pcad-section">
-      <h3 className="pcad-section__title">{t('propertyPanel.sectionSelectionSets')}</h3>
-      {sets.length === 0 ? (
-        <p className="pcad-panel__note">{t('propertyPanel.selectionSetEmpty')}</p>
-      ) : (
-        <ul className="pcad-constraint-list">
-          {sets.map((set) => (
-            <li key={`selectionSet:${set.id}`} className="pcad-constraint-row">
-              {renaming !== null && renaming.id === set.id ? (
-                <input
-                  className="pcad-field__input"
-                  type="text"
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-label={t('propertyPanel.selectionSetName')}
-                  value={renaming.text}
-                  onChange={(event) => {
-                    setRenaming({ id: set.id, text: event.target.value });
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter') {
-                      return;
-                    }
-                    const refusal = useAppStore
-                      .getState()
-                      .renameSelectionSet(set.id, renaming.text);
-                    setNotice(refusal === null ? null : t(selectionSetRefusalMessageKey(refusal)));
-                    if (refusal === null) {
-                      setRenaming(null);
-                    }
-                  }}
-                  onBlur={() => {
-                    setRenaming(null);
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="pcad-constraint-row__pick"
-                  title={t('propertyPanel.selectionSetSelectTooltip')}
-                  onClick={() => {
-                    const missing = useAppStore.getState().selectSelectionSet(set.id);
-                    setNotice(
-                      missing === 0
-                        ? null
-                        : withCount('propertyPanel.selectionSetMissing', missing),
-                    );
-                  }}
-                  onDoubleClick={() => {
-                    setRenaming({ id: set.id, text: set.name });
-                  }}
-                >
-                  <span className="pcad-constraint-row__label">{set.name}</span>
-                  <span className="pcad-constraint-row__detail">
-                    {withCount('propertyPanel.selectionSetCount', set.members.length)}
-                  </span>
-                </button>
-              )}
-              <button
-                type="button"
-                className="pcad-button"
-                title={t('propertyPanel.selectionSetAddTooltip')}
-                disabled={selection.length === 0}
-                onClick={() => {
-                  useAppStore.getState().addSelectionToSet(set.id);
-                  setNotice(null);
-                }}
-              >
-                {t('propertyPanel.selectionSetAdd')}
-              </button>
-              <button
-                type="button"
-                className="pcad-button pcad-constraint-row__remove"
-                title={t('propertyPanel.selectionSetRemoveTooltip')}
-                onClick={() => {
-                  useAppStore.getState().removeSelectionSet(set.id);
-                  setNotice(null);
-                }}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="pcad-field">
-        <span className="pcad-field__label">{t('propertyPanel.selectionSetName')}</span>
-        <input
-          className="pcad-field__input"
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder={t('propertyPanel.selectionSetNamePlaceholder')}
-          aria-label={t('propertyPanel.selectionSetName')}
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              // Enter だけで作れる(NFR-UX-4)。
-              event.preventDefault();
-              create();
-            }
-          }}
-        />
-      </div>
-      <div className="pcad-appearance__actions">
-        <button
-          type="button"
-          className="pcad-button"
-          title={t('propertyPanel.selectionSetCreateTooltip')}
-          onClick={create}
-        >
-          {t('propertyPanel.selectionSetCreate')}
-        </button>
-      </div>
-      {notice === null ? null : <p className="pcad-panel__note">{notice}</p>}
-    </div>
-  );
-}
-
-/**
- * 「下絵」の節(FR-332、§2.14、タスク39・43)。
- *
- * 敷いてある下絵を並べ、**濃さ・入切・削除・寸法合わせ**を持つ。幅・高さ・中心・向きは
- * 読むだけにしてある——これらを直す口はストアに無く(2 点の寸法合わせ `applyCanvasScale`
- * がまとめて決める)、ここで文書を直に書き換えると同じ判断が 2 か所に分かれるため。
- * **どの操作でも再計算は走らない**(§2.14 の表)。
- */
-function CanvasSection(): React.JSX.Element {
-  const canvases = useAppStore((state) => state.document.canvases);
-  const scaling = useAppStore((state) => state.canvasScale);
-  return (
-    <div className="pcad-section">
-      <h3 className="pcad-section__title">{t('propertyPanel.sectionCanvas')}</h3>
-      {canvases.length === 0 ? (
-        <p className="pcad-panel__note">{t('propertyPanel.canvasEmpty')}</p>
-      ) : (
-        canvases.map((canvas) => {
-          const placement = canvasPlacementOf(canvas);
-          return (
-            <div key={`canvas:${canvas.id}`} className="pcad-boundary">
-              <dl className="pcad-properties">
-                <dt className="pcad-properties__key">{t('propertyPanel.selectionSetName')}</dt>
-                <dd className="pcad-properties__value">{canvas.name}</dd>
-                <dt className="pcad-properties__key">{t('propertyPanel.canvasPlane')}</dt>
-                <dd className="pcad-properties__value">{canvasPlaneLabel(canvas.plane)}</dd>
-                <dt className="pcad-properties__key">{t('propertyPanel.canvasSize')}</dt>
-                <dd className="pcad-properties__value">
-                  {`${formatLength(placement.widthMm)} × ${formatLength(placement.heightMm)}`}
-                </dd>
-                <dt className="pcad-properties__key">{t('propertyPanel.canvasCenter')}</dt>
-                <dd className="pcad-properties__value">
-                  {`(${formatLength(placement.centerU)}, ${formatLength(placement.centerV)})`}
-                </dd>
-                <dt className="pcad-properties__key">{t('propertyPanel.canvasRotation')}</dt>
-                <dd className="pcad-properties__value">{`${String(placement.rotationDegrees)}°`}</dd>
-              </dl>
-              <div className="pcad-field">
-                <span className="pcad-field__label">{t('propertyPanel.canvasOpacity')}</span>
-                <input
-                  className="pcad-field__input"
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-label={`${t('propertyPanel.canvasOpacity')} ${canvas.name}`}
-                  value={canvas.opacity.source}
-                  onChange={(event) => {
-                    // 数にならない値はストアが据え置く(NFR-RE-1。打っている途中で消さない)。
-                    useAppStore.getState().setCanvasOpacity(canvas.id, Number(event.target.value));
-                  }}
-                />
-              </div>
-              <div className="pcad-appearance__actions">
-                <button
-                  type="button"
-                  className="pcad-button"
-                  aria-pressed={canvas.visible}
-                  title={t('propertyPanel.canvasVisibleTooltip')}
-                  onClick={() => {
-                    useAppStore.getState().setCanvasVisible(canvas.id, !canvas.visible);
-                  }}
-                >
-                  {t('propertyPanel.canvasVisible')}
-                </button>
-                <button
-                  type="button"
-                  className="pcad-button"
-                  aria-pressed={scaling !== null && scaling.canvasId === canvas.id}
-                  title={t('propertyPanel.canvasScaleTooltip')}
-                  onClick={() => {
-                    useAppStore.getState().startCanvasScale(canvas.id);
-                  }}
-                >
-                  {t('propertyPanel.canvasScale')}
-                </button>
-                <button
-                  type="button"
-                  className="pcad-button"
-                  title={t('propertyPanel.canvasRemoveTooltip')}
-                  onClick={() => {
-                    useAppStore.getState().removeCanvas(canvas.id);
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-/**
- * 「3D プリントの点検」の節(FR-815、§0.53、§2.16)。
- *
- * 43b が結果の入れ物を描き、タスク46 が点検を走らせる入口(ツールバーの「表示」)と
- * 色の層をつないだ。点検をまだ 1 度もしていなければ `printability` は `null` で、
- * 「まだ点検していません。」と説明だけが出る。
- * 数の意味は model の `PrintabilitySummary` の注釈のとおり。
- */
-function PrintCheckSection(): React.JSX.Element {
-  const report = useAppStore((state) => state.printability);
-  return (
-    <div className="pcad-section">
-      <h3 className="pcad-section__title">{t('propertyPanel.sectionPrintCheck')}</h3>
-      {report === null ? (
-        <p className="pcad-panel__note">{t('propertyPanel.printCheckNotYet')}</p>
-      ) : (
-        <dl className="pcad-properties">
-          <dt className="pcad-properties__key">{t('propertyPanel.printCheckWatertight')}</dt>
-          <dd className="pcad-properties__value">
-            {t(
-              report.summary.watertight
-                ? 'propertyPanel.printCheckWatertightYes'
-                : 'propertyPanel.printCheckWatertightNo',
-            )}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.printCheckThin')}</dt>
-          <dd className="pcad-properties__value">
-            {withCount('propertyPanel.printCheckPlaceCount', report.summary.thinCount)}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.printCheckOverhang')}</dt>
-          <dd className="pcad-properties__value">
-            {withCount('propertyPanel.printCheckPlaceCount', report.summary.overhangCount)}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.printCheckOpenEdges')}</dt>
-          <dd className="pcad-properties__value">
-            {withCount('propertyPanel.printCheckPlaceCount', report.summary.openEdgeCount)}
-          </dd>
-          <dt className="pcad-properties__key">{t('propertyPanel.printCheckMinThickness')}</dt>
-          <dd className="pcad-properties__value">
-            {report.summary.minThicknessFoundMm === null
-              ? t('propertyPanel.printCheckUnknown')
-              : formatLength(report.summary.minThicknessFoundMm)}
-          </dd>
-        </dl>
-      )}
-      {report !== null && (
-        <>
-          {/* 色と意味の対応(§0.53)。ヘルプ(`print-check.md`)と同じ言い方にそろえる。 */}
-          <p className="pcad-panel__note">{t('propertyPanel.printCheckColors')}</p>
-          <div className="pcad-appearance__actions">
-            <button
-              type="button"
-              className="pcad-button"
-              title={t('propertyPanel.printCheckCloseTooltip')}
-              onClick={() => {
-                // 閉じると色が消えて元の外観に戻る(形も体積も 1 つも変わらない、§0.53)。
-                useAppStore.getState().setPrintability(null);
-              }}
-            >
-              {t('propertyPanel.printCheckClose')}
-            </button>
-          </div>
-        </>
-      )}
-      <p className="pcad-panel__note">
-        {report !== null && report.cancelled
-          ? t('propertyPanel.printCheckCancelled')
-          : t('propertyPanel.printCheckHint')}
-      </p>
-    </div>
-  );
-}
-
-/**
- * 「拘束の推定」の節(FR-333、§0.a-0.49、タスク41・43)。
- *
- * **値はステータスバーの入切とまったく同じ 1 つ**(`displaySettings.inferConstraints`)で、
- * 同じ setter を通す。2 か所で別々に持つと、片方を押したときにもう片方が古い値のまま
- * 残る(rules/04「同じ状態を 2 か所に持たない」)。しきい値の数は出さない(§0.a-0.48)。
- */
-function InferConstraintsSection(): React.JSX.Element {
-  const displaySettings = useAppStore((state) => state.displaySettings);
-  return (
-    <div className="pcad-section">
-      <h3 className="pcad-section__title">{t('propertyPanel.sectionInferConstraints')}</h3>
-      <div className="pcad-appearance__actions">
-        <button
-          type="button"
-          className="pcad-button"
-          aria-pressed={displaySettings.inferConstraints}
-          title={t('statusBar.inferConstraintsHint')}
-          onClick={() => {
-            useAppStore.getState().setDisplaySettings({
-              ...displaySettings,
-              inferConstraints: !displaySettings.inferConstraints,
-            });
-          }}
-        >
-          {t('propertyPanel.inferConstraintsOn')}
-        </button>
-      </div>
-      <p className="pcad-panel__note">{t('propertyPanel.inferConstraintsShift')}</p>
-    </div>
-  );
-}
 
 /**
  * 外観の節の `key`(上の接頭辞 + いまの選択)。**同じ親に並ぶ他の節の `key`
@@ -3224,7 +1964,7 @@ export function PropertyPanel(): React.JSX.Element {
     <section className="pcad-panel pcad-panel--right">
       <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
       <div className="pcad-panel__tabs" role="tablist" aria-label={t('propertyPanel.tabsLabel')}>
-        <button
+        <button title={t('controlGuide.button.propertiesTab')}
           type="button"
           role="tab"
           className="pcad-tab"
@@ -3236,7 +1976,7 @@ export function PropertyPanel(): React.JSX.Element {
         >
           {t('propertyPanel.tabProperties')}
         </button>
-        <button
+        <button title={t('controlGuide.button.parametersTab')}
           type="button"
           role="tab"
           className="pcad-tab"

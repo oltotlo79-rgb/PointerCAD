@@ -30,21 +30,21 @@ export function ImportFormatPanel({ onClose }: { readonly onClose: () => void })
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } }}>
       <span className="pcad-exchange__title">{t('exchange.importTitle')}</span>
       <p className="pcad-exchange__notice">{t('exchange.chooseImportFormat')}</p>
-      <button type="button" className="pcad-button pcad-button--action" autoFocus onClick={() => { choose(); }}>{t('exchange.chooseImportFile')}</button>
+      <button title={t('controlGuide.button.importChoose')} type="button" className="pcad-button pcad-button--action" autoFocus onClick={() => { choose(); }}>{t('exchange.chooseImportFile')}</button>
       <div className="pcad-import-format__kinds" role="group" aria-label={t('exchange.format')}>
-        {IMPORT_FILE_KINDS.map(kind => <button key={kind} type="button" className="pcad-button pcad-button--action"
+        {IMPORT_FILE_KINDS.map(kind => <button title={t(kind === 'dwg' ? 'controlGuide.button.importDwg' : 'controlGuide.button.importFormat')} key={kind} type="button" className="pcad-button pcad-button--action"
           onClick={() => { choose(kind); }} aria-pressed={kind === 'dwg' && dwg}>
           {kind === 'glb' ? 'glTF' : kind.toUpperCase()}{kind === 'dwg' ? ` (${t('exchange.conversionRequired')})` : ''}
         </button>)}
       </div>
       {dwg ? <div className="pcad-import-format__guide" role="status">
         <p>{t('exchange.dwgGuide')}</p>
-        <button type="button" className="pcad-button pcad-button--action" onClick={() => {
+        <button title={t('controlGuide.button.importDwgHelp')} type="button" className="pcad-button pcad-button--action" onClick={() => {
           useAppStore.getState().openHelpTopic('dxf');
         }}>{t('exchange.dwgHelp')}</button>
-        <button type="button" className="pcad-button pcad-button--action" onClick={() => { choose('dxf'); }}>{t('exchange.chooseConvertedDxf')}</button>
+        <button title={t('controlGuide.button.importConvertedDxf')} type="button" className="pcad-button pcad-button--action" onClick={() => { choose('dxf'); }}>{t('exchange.chooseConvertedDxf')}</button>
       </div> : null}
-      <button type="button" className="pcad-button pcad-button--action" onClick={onClose}>{t('exchange.cancel')}</button>
+      <button title={t('controlGuide.button.importClose')} type="button" className="pcad-button pcad-button--action" onClick={onClose}>{t('exchange.cancel')}</button>
     </form>
   </div>;
 }

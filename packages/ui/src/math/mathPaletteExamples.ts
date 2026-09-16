@@ -3,8 +3,31 @@ import { MATH_PALETTE_DRAFT } from './mathPalette.js';
 /** Shared runnable examples: the browser palette and its real-engine acceptance use exactly the same templates. */
 export const MATH_PALETTE_EXAMPLES: readonly {
   readonly id: string; readonly selection: string; readonly slots: readonly string[];
-  readonly expected: number | 'complex' | 'matrix' | 'vector';
+  readonly expected: number | 'complex' | 'matrix' | 'vector' | 'boolean';
 }[] = [
+  {"id": "svd-u", "selection": "[[3,0],[4,0]]", "slots": [], "expected": "matrix"},
+  {"id": "svd-s", "selection": "[[3,0],[4,0]]", "slots": [], "expected": "matrix"},
+  {"id": "svd-v", "selection": "[[3,0],[4,0]]", "slots": [], "expected": "matrix"},
+  {"id": "eigenspace", "selection": "[[2,1],[0,2]]", "slots": ["2"], "expected": "matrix"},
+  {"id": "tensor-product", "selection": "[1,2]", "slots": ["[3,4]"], "expected": "matrix"},
+  {"id": "hadamard-product", "selection": "[[1,2],[3,4]]", "slots": ["[[2,3],[4,5]]"], "expected": "matrix"},
+  {"id": "tensor-contract", "selection": "[[1,2],[3,4]]", "slots": ["1", "2"], "expected": 5},
+  {"id": "tensor-permute", "selection": "[[1,2,3],[4,5,6]]", "slots": ["[2,1]"], "expected": "matrix"},
+  {"id": "tensor-shape", "selection": "[[1,2,3],[4,5,6]]", "slots": [], "expected": "vector"},
+  {"id": "tensor-element", "selection": "[[[1,2],[3,4]],[[5,6],[7,8]]]", "slots": ["[2,1,2]"], "expected": 6},
+  {"id": "kronecker-delta", "selection": "2", "slots": ["2"], "expected": 1},
+  {"id": "levi-civita", "selection": "[2,3,1]", "slots": [], "expected": 1},
+  {"id": "integer-quotient", "selection": "-7", "slots": ["3"], "expected": -3},
+  {"id": "integer-remainder", "selection": "-7", "slots": ["-3"], "expected": 2},
+  {"id": "divides", "selection": "4", "slots": ["20"], "expected": "boolean"},
+  {"id": "congruent-modulo", "selection": "-1", "slots": ["5", "3"], "expected": "boolean"},
+  {"id": "is-prime", "selection": "13", "slots": [], "expected": "boolean"},
+  {"id": "next-prime", "selection": "97", "slots": [], "expected": 101},
+  {"id": "prime-factors", "selection": "360", "slots": [], "expected": "matrix"},
+  {"id": "divisors", "selection": "36", "slots": [], "expected": "vector"},
+  {"id": "euler-totient", "selection": "36", "slots": [], "expected": 12},
+  { id: 'binomial-pmf', selection: '4', slots: ['1/2', '2'], expected: 0.375 },
+  { id: 'binomial-cdf', selection: '4', slots: ['1/2', '2'], expected: 0.6875 },
   { id: 'singular-values', selection: '[[3,0],[0,4]]', slots: [], expected: 'vector' },
   { id: 'eigenvalues', selection: '[[2,1],[1,2]]', slots: [], expected: 'vector' },
   { id: 'row-reduce', selection: '[[1,2,3],[2,4,6]]', slots: [], expected: 'matrix' },

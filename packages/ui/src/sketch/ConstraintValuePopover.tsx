@@ -123,7 +123,7 @@ export function ConstraintValuePopover(): React.JSX.Element | null {
       </div>
       <p className="pcad-popover__hint">{t('constraint.value.hint')}</p>
       <div className="pcad-popover__actions">
-        <button
+        <button title={t('controlGuide.button.constraintApply')}
           type="button"
           className="pcad-button pcad-button--action"
           aria-disabled={value === null}
@@ -134,7 +134,7 @@ export function ConstraintValuePopover(): React.JSX.Element | null {
         >
           {t('constraint.value.commit')}
         </button>
-        <button
+        <button title={t('controlGuide.button.constraintCancel')}
           type="button"
           className="pcad-button"
           onMouseDown={keepFocus}

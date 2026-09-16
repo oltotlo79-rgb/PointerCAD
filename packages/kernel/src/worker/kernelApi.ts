@@ -91,6 +91,9 @@ import {
   initialInterferenceResult, interferenceRootFailure, type InterferenceProgressCallback,
 } from './checkInterference.js';
 
+import { compareCachedMaterials, type MaterialComparisonRequest } from './compareCachedMaterials.js';
+import type { MaterialComparisonOutcome } from './compareMaterialBodies.js';
+
 const DEFAULT_PART_ID = 'part:current';
 
 /** Comlink でも name は残る。鍵の一覧は checkShapeAvailability から構造化して取得する。 */
@@ -518,6 +521,10 @@ export interface ManagedKernelApi extends InterferenceKernelApi {
   checkShapeAvailability(partId: string, bodyKeys: readonly string[]): Promise<ShapeAvailability>;
 }
 
+export interface MaterialComparisonKernelApi extends ManagedKernelApi {
+  compareMaterials(request: MaterialComparisonRequest, shouldCancel?: SolidCancelToken): Promise<MaterialComparisonOutcome>;
+}
+
 interface PartShapes {
   token: AcquireToken | undefined;
   meshes: ReadonlyMap<string, DisplayMeshEntry>;
@@ -553,7 +560,7 @@ function recomputeKeys(request: SolidRecomputeRequest): Set<string> {
  * OCCT の読み込み手続きを受け取って、寿命管理を含む KernelApi を組み立てる。
  * ブラウザでは loadOcctForBrowser、Node のテストでは loadOcctForNode を渡す。
  */
-export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, shapeCache?: AcquiringShapeCache<CachedSolid>): ManagedKernelApi {
+export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, shapeCache?: AcquiringShapeCache<CachedSolid>): MaterialComparisonKernelApi {
   // 形状キャッシュは窓口 1 つにつき 1 つ。再計算をまたいで残すことで、
   // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
   // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない(2026-09-03 統括判断)。
@@ -578,6 +585,7 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
   }
 
   return {
+    compareMaterials(request, shouldCancel) { return compareCachedMaterials(request, cache, loadOcct, shouldCancel); },
     async checkInterference(request, onProgress, shouldCancel, callbackDelivery): Promise<InterferenceResult> {
       const snapshot = snapshotInterferenceRequest(request);
       const preparation = prepareInterference(snapshot);

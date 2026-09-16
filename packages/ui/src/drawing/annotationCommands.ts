@@ -6,6 +6,7 @@ import { resolveMachiningAnnotation } from './annotationDisplay.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { drawingCreationLayer } from './drawingCreationLayer.js';
+import { drawingDefaultDefinition } from './drawingToolDefaults.js';
 
 export type DrawingSourceAnnotationEdit = {
   readonly position: Point2;
@@ -45,6 +46,7 @@ export function addDrawingSurfaceFinish(input: {
   readonly process: SurfaceFinishProcess;
   readonly parameter: 'Ra' | 'Rz';
   readonly value: string;
+  readonly height?: number;
 }): boolean {
   const state = useAppStore.getState();
   const document = state.drawing, source = state.drawingSourceResolution;
@@ -54,10 +56,14 @@ export function addDrawingSurfaceFinish(input: {
   const point = resolveDrawingAnnotationTarget(input.target, document, drawingDimensionContext(source));
   const value = evaluateExpression(input.value, analyzeParameters(document.parameters, [input.value]));
   if (point === null || !value.ok) { state.setDrawingMessage(t('drawing.error.dimensionSourceMissing')); return false; }
-  const geometry = surfaceFinish({ process: input.process, parameter: input.parameter, value: value.value.value, position: input.position, target: point });
+  const height = input.height ?? Number(drawingDefaultDefinition('annotationHeight').field.defaultSource);
+  if (!Number.isFinite(height) || height <= 0 || height > 100) {
+    state.setDrawingMessage(t('drawing.error.sourceAnnotationInvalid')); return false;
+  }
+  const geometry = surfaceFinish({ process: input.process, parameter: input.parameter, value: value.value.value, position: input.position, target: point, sizeMm: height });
   if (geometry === null) { state.setDrawingMessage(t('drawing.error.surfaceFinishInvalid')); return false; }
   const annotation: Annotation = { id: nextDrawingAnnotationId(document), kind: 'surfaceFinish', text: '', position: input.position,
-    height: 3.5, layerId, sourceTarget: input.target,
+    height, layerId, sourceTarget: input.target,
     surfaceFinish: { process: input.process, parameter: input.parameter, value: value.value },
   };
   state.applyDrawing({ ...document, annotations: [...document.annotations, annotation] });
@@ -89,9 +95,13 @@ export function defaultDrawingAnnotationPosition(target: DimensionTarget): Point
   return [anchor[0] + 20, top + 8];
 }
 
-export function addDrawingMachiningNote(target: DimensionTarget, position: Point2): boolean {
+export function addDrawingMachiningNote(target: DimensionTarget, position: Point2,
+  height = Number(drawingDefaultDefinition('annotationHeight').field.defaultSource)): boolean {
   const state = useAppStore.getState(), document = state.drawing, source = state.drawingSourceResolution;
   if (document === null || source === null || state.drawingBusy) return false;
+  if (!Number.isFinite(height) || height <= 0 || height > 100) {
+    state.setDrawingMessage(t('drawing.error.sourceAnnotationInvalid')); return false;
+  }
   const layerId = drawingCreationLayer(document, 'layer-5');
   if (layerId === null) return false;
   const point = resolveDrawingAnnotationTarget(target, document, drawingDimensionContext(source));
@@ -99,7 +109,7 @@ export function addDrawingMachiningNote(target: DimensionTarget, position: Point
   if (point === null || note === null || !position.every(Number.isFinite)) {
     state.setDrawingMessage(t('drawing.error.machiningSourceMissing')); return false;
   }
-  const annotation: Annotation = { id: nextDrawingAnnotationId(document), kind: 'leaderNote', text: '', height: 3.5,
+  const annotation: Annotation = { id: nextDrawingAnnotationId(document), kind: 'leaderNote', text: '', height,
     position, layerId, sourceTarget: target, machiningFeatureId: note.featureId };
   state.applyDrawing({ ...document, annotations: [...document.annotations, annotation] });
   state.setDrawingTool('select'); state.selectDrawingIds([annotation.id]);

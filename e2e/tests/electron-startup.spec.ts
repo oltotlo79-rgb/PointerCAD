@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { waitForStartupHealth } from './startupHealth.js';
+import { chooseToolMenuItem } from './assemblyTestSupport.js';
 
 // Each case uses a fresh real process and profile. These are separate required
 // starts, not retries that could turn a failed launch into an apparent success.
@@ -17,6 +18,14 @@ for (let attempt = 1; attempt <= 5; attempt += 1) {
         loader: true, ready: false, windows: 0,
       });
       const page = await app.firstWindow();
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window =>
+        window.isVisible() && !window.webContents.isLoadingMainFrame()))).toBe(true);
+      // Exercise an item selection immediately after launch while native pointer
+      // input is excluded. A visible trigger alone did not prove this was ready.
+      await chooseToolMenuItem(page, '作図', '関数作図');
+      await expect(page.locator('.pcad-function-dialog')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.pcad-function-dialog')).toHaveCount(0);
       await expect(page.getByRole('button', { name: '開く', exact: true })).toBeVisible();
       await waitForStartupHealth(page, info);
       expect(page.url()).toBe('app://pointercad/index.html');

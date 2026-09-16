@@ -16,6 +16,20 @@ import tseslint from 'typescript-eslint';
  */
 const TEST_ONLY_PACKAGE_EXCEPTION = '!@pointercad/test-utils';
 
+const reviewModuleFiles = [
+  'packages/ui/src/solid/referenceSummary.ts',
+  'packages/ui/src/solid/solidReferenceNames.ts',
+  'packages/ui/src/solid/springPropertyUpdates.ts',
+  'packages/ui/src/solid/holeThreadPropertyUpdates.ts',
+  'packages/ui/src/solid/chamferPropertyUpdates.ts',
+  'packages/ui/src/solid/surfacePropertyUpdates.ts',
+  'packages/ui/src/solid/solidLabels.ts',
+  'packages/ui/src/solid/solidHistoryState.ts',
+  'packages/ui/src/solid/treeSummary.ts',
+  'packages/ui/src/solid/solidPropertyContracts.ts',
+  'packages/ui/src/solid/solidPropertyFields.ts',
+];
+
 /** 依存方向 apps → ui → model → kernel / expression / drawing を機械施行する(rules/04)。 */
 const layerRules = [
   { files: ['packages/expression/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
@@ -39,8 +53,59 @@ const layerRules = [
   },
   // UI から幾何カーネルへ直接依存しない(ドキュメントモデル経由)
   { files: ['packages/ui/**/*.{ts,tsx}'], forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*'] },
+  // 分割した表示・参照の処理を巨大な呼出元へ依存させない。既存の層制約も維持する。
+  {
+    files: reviewModuleFiles,
+    forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*', '**/solidSummary.js', '**/solidSummary'],
+  },
+    {
+      files: ['packages/model/src/part/solidSketchReferences.ts'],
+      forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content', '**/resolvePart.js', '**/resolvePart'],
+    },
+    {
+      files: ['packages/model/src/part/solidPlanKey*.ts'],
+      forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content', '@pointercad/kernel',
+        'comlink', 'opencascade.js', 'opencascade.js/*'],
+    },
+  {
+    files: ['packages/model/src/kernelBridge/*Conversions.ts'],
+    forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content', '**/kernelBridge.js', '**/kernelBridge'],
+  },
+  {
+    files: ['packages/model/src/kernelBridge/subShapeMatching.ts'],
+    forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content', 'comlink',
+      '**/kernelBridge.js', '**/kernelBridge', 'opencascade.js', 'opencascade.js/*'],
+  },
   { files: ['apps/**/*.{ts,tsx}'], forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*'] },
 ];
+
+// 追加の責務制約でも、画面から数学の計算部を呼ぶ禁止を維持する。
+const uiRuntimeImportGuards = [{
+  selector: "ImportDeclaration[importKind!='type'][source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
+  message: '画面の実行時は数学のcontracts/client入口を使い、計算処理はWorkerへ依頼してください。型だけならimport typeを使います（レビューF09）。',
+}, {
+  selector: "ImportExpression[source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
+  message: '画面から数学の計算部を動的に読み込まず、計算Workerへ依頼してください（レビューF09）。',
+}, {
+  selector: ":matches(ExportNamedDeclaration, ExportAllDeclaration)[exportKind!='type'][source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
+  message: '画面用の入口から数学の計算部を再公開せず、通信に必要な型だけを公開してください（レビューF09）。',
+}];
+
+const propertyPanelImportGuard = {
+  selector: ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression)[source.value=/PropertyPanel(\\.js)?$/]',
+  message: '外観・測定・入力単位の担当モジュールから大きなプロパティパネルを参照し直さないでください（レビューR14/F11）。',
+};
+
+const e2eSyntaxGuards = [{
+        selector: 'CallExpression[callee.property.name="toBeVisible"] CallExpression[callee.property.name="locator"] > Literal.arguments[value=/(^| )path$/]',
+        message: 'SVGの線は幅か高さが0でも描かれます。pathの面積をtoBeVisibleで判定せずexpectDrawingStrokeで実線長・線幅・表示状態を確認してください。',
+      }, {
+        selector: 'CallExpression[callee.name="Number"] > MemberExpression.arguments > CallExpression.object[callee.name="getComputedStyle"]',
+        message: 'CSSの計算済み長さにはpx等の単位が付くため、Number.parseFloatで読む（rules/06）。',
+      }, {
+        selector: 'ImportDeclaration[source.value=/\\.json$/]',
+        message: 'E2EのJSONはNodeのimport属性差を避けてreadFileSyncで読み、操作ラベルはuiMessageの共通入口を使ってください（rules/06 §10.91）。',
+      }];
 
 export default tseslint.config(
   {
@@ -55,6 +120,10 @@ export default tseslint.config(
       // `eslint .` が生成物で落ちるのを防ぐ(docs/報告記録.md 2026-09-06 14:2x・15:5x)。
       'scratchpad/**',
       'shots/**',
+      // 承認済みの外部原文。変更せず、配布時に一覧・サイズ・全バイトを照合する。
+      // アプリが作成する受渡し処理はpackages配下に置き、通常の検査対象を維持する。
+      'vendor/exact-math/runtime/**',
+      'vendor/exact-math/notices/**',
     ],
   },
   js.configs.recommended,
@@ -80,6 +149,47 @@ export default tseslint.config(
     },
   },
   {
+    files: [...reviewModuleFiles, 'packages/model/src/part/solidSketchReferences.ts'],
+    rules: {
+      'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 200, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: [...reviewModuleFiles, 'packages/model/src/part/solidSketchReferences.ts',
+      'packages/model/src/kernelBridge/*Conversions.ts',
+      'packages/ui/src/appearance/AppearanceMenu.tsx', 'packages/ui/src/appearance/AppearanceSection.tsx',
+      'packages/ui/src/appearance/appearancePropertyValues.ts', 'packages/ui/src/shell/propertyFieldUnits.ts',
+      'packages/ui/src/sketch/numericFieldUnits.ts', 'packages/ui/src/sketch/numericInputTools.ts',
+      'packages/ui/src/sketch/numericInputEvaluation.ts', 'packages/ui/src/sketch/twoPointArcInput.ts',
+      'packages/ui/src/sketch/splineInputDraft.ts', 'packages/ui/src/sketch/numericInputChoices.ts',
+      'packages/ui/src/solid/MeasurementSections.tsx', 'packages/ui/src/solid/measureFormatting.ts',
+      'packages/ui/src/solid/SectionViewSection.tsx',
+      'packages/ui/src/solid/SelectionSetSection.tsx',
+      'packages/ui/src/sketch/CanvasSection.tsx',
+      'packages/ui/src/solid/PrintCheckSection.tsx',
+      'packages/ui/src/sketch/InferConstraintsSection.tsx',
+      'packages/ui/src/shell/propertySectionText.ts'],
+    rules: { 'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }] },
+  },
+  {
+    files: ['packages/model/src/kernelBridge/*Conversions.ts'],
+    rules: {
+      'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 200, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', {
+        selector: "ImportDeclaration[source.value='@pointercad/kernel'][importKind!='type']",
+        message: '依頼・結果の変換はkernelの型だけを参照し、カーネルの実行を通信の入口へ残してください（レビューF08）。',
+      }, {
+        selector: "ImportDeclaration[source.value='comlink'], ImportExpression, AwaitExpression, FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], FunctionExpression[async=true]",
+        message: '変換処理へ非同期ジョブや通信を戻さず、Workerの寿命・中止・失敗を所有する入口へ置いてください（レビューF08）。',
+      }, {
+        selector: 'NewExpression[callee.name=/^(Worker|SharedWorker|MessageChannel)$/]',
+        message: '依頼・結果の変換ではWorkerや通信ポートを作成しないでください（レビューF08）。',
+      }],
+    },
+  },
+  {
     files: ['packages/model/src/kernelBridge/*Contracts.ts'],
     rules: {
       'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
@@ -92,6 +202,39 @@ export default tseslint.config(
       }],
     },
   },
+    {
+      files: ['packages/model/src/kernelBridge/subShapeMatching.ts'],
+      rules: {
+      'max-lines': ['error', { max: 250, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
+      'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }],
+      'no-restricted-syntax': ['error', {
+        selector: "ImportDeclaration[source.value='@pointercad/kernel'] > ImportSpecifier[imported.name!=/^(matchFace|matchEdge|matchVertex)$/]",
+        message: '部分形状の照合は既存の採点関数だけを使い、形状生成やWorkerの実行を持ち込まないでください（レビューF08）。',
+      }, {
+        selector: "ImportDeclaration[source.value='@pointercad/kernel'] > :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)",
+        message: '部分形状の照合では採点関数を明示し、カーネルの一括参照を使わないでください（レビューF08）。',
+      }, {
+        selector: 'ImportExpression, AwaitExpression, FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], FunctionExpression[async=true], NewExpression[callee.name=/^(Worker|SharedWorker|MessageChannel)$/]',
+        message: '部分形状の照合は同期の純粋な処理を保ち、通信やWorkerの寿命を管理しないでください（レビューF08）。',
+      }],
+      },
+    },
+    {
+      files: ['packages/model/src/part/solidPlanKey*.ts'],
+      rules: {
+        'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
+        'max-lines-per-function': ['error', { max: 260, skipBlankLines: true, skipComments: true }],
+        'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }],
+        'no-restricted-syntax': ['error', {
+          selector: ":matches(ImportDeclaration[importKind!='type'], ExportNamedDeclaration[exportKind!='type'], ExportAllDeclaration[exportKind!='type'])[source.value=/resolvePart/]",
+          message: 'キャッシュの鍵は解決済みの型だけを参照し、履歴の再計算を呼び戻さないでください（レビューF11）。',
+        }, {
+          selector: 'ImportExpression, AwaitExpression, FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], FunctionExpression[async=true], NewExpression[callee.name=/^(Worker|SharedWorker|MessageChannel)$/]',
+          message: '鍵の変換に通信や形状計算を混ぜず、解決済みの入力から同期して材料を作ってください（レビューF11）。',
+        }],
+      },
+    },
   {
     files: ['packages/kernel/src/occt/**/*.ts'],
     ignores: ['**/*.test.ts'],
@@ -108,12 +251,16 @@ export default tseslint.config(
   {
     files: ['e2e/**/*.ts'],
     rules: {
-      'no-restricted-syntax': ['error', {
-        selector: 'CallExpression[callee.name="Number"] > MemberExpression.arguments > CallExpression.object[callee.name="getComputedStyle"]',
-        message: 'CSSの計算済み長さにはpx等の単位が付くため、Number.parseFloatで読む（rules/06）。',
-      }, {
-        selector: 'ImportDeclaration[source.value=/\\.json$/]',
-        message: 'E2EのJSONはNodeのimport属性差を避けてreadFileSyncで読み、操作ラベルはuiMessageの共通入口を使ってください（rules/06 §10.91）。',
+      'no-restricted-syntax': ['error', ...e2eSyntaxGuards],
+    },
+  },
+  {
+    files: ['e2e/tests/**/*.ts'],
+    ignores: ['e2e/tests/recompute.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...e2eSyntaxGuards, {
+        selector: 'CallExpression[callee.property.name="poll"] :matches(MemberExpression[property.name=/^(requestedGeneration|completedGeneration|lastOutcome|isComputing)$/], CallExpression[callee.name="readRecomputeStats"])',
+        message: '再計算の待機はrecompute.tsの共通関数を使い、世代・結末・有限上限を個別に作り直さないでください。',
       }],
     },
   },
@@ -121,15 +268,157 @@ export default tseslint.config(
     files: ['packages/ui/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
     ignores: ['**/*.test.ts', '**/*.test.tsx', '**/*.worker.ts'],
     rules: {
-      'no-restricted-syntax': ['error', {
-        selector: "ImportDeclaration[importKind!='type'][source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
-        message: '画面の実行時は数学のcontracts/client入口を使い、計算処理はWorkerへ依頼してください。型だけならimport typeを使います（レビューF09）。',
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards],
+    },
+  },
+  {
+    files: [
+      'packages/ui/src/appearance/AppearanceMenu.tsx',
+      'packages/ui/src/appearance/AppearanceSection.tsx',
+      'packages/ui/src/solid/MeasurementSections.tsx',
+      'packages/ui/src/solid/SectionViewSection.tsx',
+      'packages/ui/src/solid/SelectionSetSection.tsx',
+      'packages/ui/src/sketch/CanvasSection.tsx',
+      'packages/ui/src/solid/PrintCheckSection.tsx',
+      'packages/ui/src/sketch/InferConstraintsSection.tsx',
+      'packages/ui/src/shell/propertySectionText.ts',
+      'packages/ui/src/appearance/appearancePropertyValues.ts',
+      'packages/ui/src/shell/propertyFieldUnits.ts',
+      'packages/ui/src/sketch/numericFieldUnits.ts',
+    ],
+    rules: {
+      'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard],
+    },
+  },
+  {
+    files: ['packages/ui/src/shell/propertySectionText.ts'],
+    rules: {
+      'max-lines': ['error', { max: 60, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[source.value!='../i18n/t.js'], ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration",
+        message: '件数の表示は文言だけを参照し、画面・ストア・計算の実行処理を戻さないでください（レビューF11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/sketch/numericInputTools.ts'],
+    rules: {
+      'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 30, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, {
+        selector: 'ImportDeclaration, ImportExpression, ExportNamedDeclaration[source], ExportAllDeclaration',
+        message: '道具と入力段の契約へ状態機械・画面・ストア等の依存を戻さないでください（レビューR14/F11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/appearance/appearancePropertyValues.ts', 'packages/ui/src/sketch/numericFieldUnits.ts',
+      'packages/ui/src/solid/measureFormatting.ts'],
+    rules: {
+      'max-lines': ['error', { max: 180, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[importKind!='type'][source.value!=/^@pointercad\\/(expression|model)$/]",
+        message: '値・単位の純粋な処理へReact・ストア・入力状態機械の実行依存を戻さないでください（レビューR14/F11）。',
       }, {
-        selector: "ImportExpression[source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
-        message: '画面から数学の計算部を動的に読み込まず、計算Workerへ依頼してください（レビューF09）。',
+        selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration',
+        message: '値・単位の純粋な処理へ動的読込や別モジュールの実行処理の再公開を加えないでください（レビューR14/F11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/sketch/numericInputPresentation.ts'],
+    rules: {
+      'max-lines': ['error', { max: 180, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
+      'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[source.value!=/^(?:@pointercad\\/model|\\.\\.\\/i18n\\/t\\.js|\\.\\/numericFieldUnits\\.js|\\.\\/numericInputTools\\.js)$/]",
+        message: '入力表示の札と値の整形へ、入力状態機械・文書の更新・画面やストアの依存を戻さないでください（レビューR14/F11）。',
       }, {
-        selector: ":matches(ExportNamedDeclaration, ExportAllDeclaration)[exportKind!='type'][source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
-        message: '画面用の入口から数学の計算部を再公開せず、通信に必要な型だけを公開してください（レビューF09）。',
+        selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration',
+        message: '入力表示の担当へ動的読込や他の実行処理の再公開を戻さないでください（レビューR14/F11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/sketch/numericInputChoices.ts'],
+    rules: {
+      'max-lines': ['error', { max: 550, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 120, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[importKind!='type'][source.value!='@pointercad/model']",
+        message: '選択肢の表はmodelの定数だけを使い、入力遷移・画面・ストアの実行依存を戻さないでください（レビューF11）。',
+      }, {
+        selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], FunctionExpression[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: '選択肢の表へ通信・Worker・非同期処理・別の実行処理の再公開を追加しないでください（レビューF11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/sketch/numericInputEvaluation.ts'],
+    rules: {
+      'max-lines': ['error', { max: 220, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[importKind!='type'][source.value!=/^(?:@pointercad\\/expression|\\.\\.\\/i18n\\/t\\.js|\\.\\/numericFieldUnits\\.js|\\.\\/numericMathValues\\.js)$/]",
+        message: '入力欄の評価へ、道具の段階遷移・文書の更新・画面やストアの実行依存を戻さないでください（レビューR14/F11）。',
+      }, {
+        selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: '入力欄の評価へ通信・Worker・非同期処理や他の実行処理の再公開を追加しないでください（レビューR14/F11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/sketch/twoPointArcInput.ts', 'packages/ui/src/sketch/splineInputDraft.ts'],
+    rules: {
+      'max-lines': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 40, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[source.value!=/^(?:@pointercad\\/model|\\.\\.\\/i18n\\/t\\.js)$/]",
+        message: '円弧とスプラインの下書きへ、入力状態機械・画面・ストアの依存を戻さないでください（レビューR14/F11）。',
+      }, {
+        selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: '円弧とスプラインの下書きへ通信・Worker・非同期処理を追加しないでください（レビューR14/F11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/solid/solidReferenceNames.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, {
+        selector: "ImportDeclaration[importKind!='type'][source.value!=/^(@pointercad\\/model|\\.\\.\\/sketch\\/featureSummary\\.js)$/]",
+        message: '参照名の変換はモデルと点の表示だけを使い、通信・入力状態へ依存しません。',
+      }, {
+        selector: 'ImportExpression, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: '参照名の変換へ通信・Worker・非同期処理を追加しません。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/solid/springPropertyUpdates.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, {
+        selector: "ImportDeclaration[importKind!='type'][source.value!=/^\\.\\/springExpressions\\.js$/]",
+        message: 'ばねの値更新は共通のばね式だけを使い、表示・通信・入力状態へ依存しません。',
+      }, {
+        selector: 'ImportExpression, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: 'ばねの値更新へ通信・Worker・非同期処理を追加しません。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/solid/holeThreadPropertyUpdates.ts', 'packages/ui/src/solid/chamferPropertyUpdates.ts',
+      'packages/ui/src/solid/surfacePropertyUpdates.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, {
+        selector: "ImportDeclaration[importKind!='type'][source.value!=/^@pointercad\\/(model|expression)$/]",
+        message: '穴・ねじ・面取り・曲面の値更新は式とモデルだけを使い、表示・通信・入力状態へ依存しません。',
+      }, {
+        selector: 'ImportExpression, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: '穴・ねじ・面取り・曲面の値更新へ通信・Worker・非同期処理を追加しません。',
       }],
     },
   },

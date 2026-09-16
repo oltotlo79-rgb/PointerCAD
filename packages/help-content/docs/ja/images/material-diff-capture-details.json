@@ -1,0 +1,886 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "document-material-diff-summary",
+      "script": "e2e/tests/documentMaterialDiffFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-material-diff-validation-50a83tn6",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-material-autosave-manual-capture-4pftu8yj",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-14 実ファイルの穴開け前後を形と体積で比較し、中止と元の部品の保持を通す",
+        "scriptSha256": "300f03e5d0ca880cad1e6cea34345e29dd0ea7b810ebfa273b8f78f4912c17fd",
+        "fixture": {
+          "filename": "document-material-diff-summary-fixture.json",
+          "sha256": "a8d5e900b402fecd6d399cc456b5c87fec389bef967555a7ae8a414faed2c181"
+        },
+        "screen": {
+          "filename": "document-material-diff-summary-screen.png",
+          "sha256": "192759b932447c01420f56c3db24339a0e91c292c4bae90c68b09c049d8c5fbd"
+        },
+        "detail": {
+          "filename": "document-material-diff-summary-detail.png",
+          "sha256": "36015b3321516703032f4b375b3acbea12a0e4840c8d3929b6c99dce4c737b8b"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 279,
+          "y": 258,
+          "width": 882,
+          "height": 272
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "twenty-mm-box-through-six-mm-hole",
+        "before": {
+          "id": "part-1",
+          "name": "穴開けを比較する部品",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "base",
+              "name": "台座",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "after": {
+          "id": "part-1",
+          "name": "穴開けを比較する部品",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "base",
+              "name": "台座",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            },
+            {
+              "id": "tool",
+              "name": "直径6の穴の工具",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "-11",
+                    "value": -11,
+                    "display": "-11"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "cylinder",
+                "radius": {
+                  "source": "3",
+                  "value": 3,
+                  "display": "3"
+                },
+                "height": {
+                  "source": "22",
+                  "value": 22,
+                  "display": "22"
+                }
+              }
+            },
+            {
+              "id": "cut",
+              "name": "貫通穴",
+              "kind": "boolean",
+              "suppressed": false,
+              "operation": "subtract",
+              "targetFeatureId": "base",
+              "toolFeatureId": "tool"
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "expectedRemoved": 565.4866776461628
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "visualNote": "既に表示確認した同じ内容の実画像と、全バイトのSHA-256が一致した。"
+    },
+    {
+      "name": "document-material-diff-preview",
+      "script": "e2e/tests/documentMaterialDiffFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-material-diff-validation-50a83tn6",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-material-autosave-manual-capture-4pftu8yj",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-14 実ファイルの穴開け前後を形と体積で比較し、中止と元の部品の保持を通す",
+        "scriptSha256": "300f03e5d0ca880cad1e6cea34345e29dd0ea7b810ebfa273b8f78f4912c17fd",
+        "fixture": {
+          "filename": "document-material-diff-preview-fixture.json",
+          "sha256": "a8d5e900b402fecd6d399cc456b5c87fec389bef967555a7ae8a414faed2c181"
+        },
+        "screen": {
+          "filename": "document-material-diff-preview-screen.png",
+          "sha256": "5e1c257a2b8e7effaedc4d13b2319eb0d56f52e7ac3f6a9a20a8097fbd4c8f8e"
+        },
+        "detail": {
+          "filename": "document-material-diff-preview-detail.png",
+          "sha256": "7f40b0690b37123ea90e8bc1ae4d37e661c57fea4f3e3323fb7e9ae033f73e98"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 279,
+          "y": 532,
+          "width": 882,
+          "height": 355
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "twenty-mm-box-through-six-mm-hole",
+        "before": {
+          "id": "part-1",
+          "name": "穴開けを比較する部品",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "base",
+              "name": "台座",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "after": {
+          "id": "part-1",
+          "name": "穴開けを比較する部品",
+          "schemaVersion": 15,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "base",
+              "name": "台座",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            },
+            {
+              "id": "tool",
+              "name": "直径6の穴の工具",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "-11",
+                    "value": -11,
+                    "display": "-11"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "cylinder",
+                "radius": {
+                  "source": "3",
+                  "value": 3,
+                  "display": "3"
+                },
+                "height": {
+                  "source": "22",
+                  "value": 22,
+                  "display": "22"
+                }
+              }
+            },
+            {
+              "id": "cut",
+              "name": "貫通穴",
+              "kind": "boolean",
+              "suppressed": false,
+              "operation": "subtract",
+              "targetFeatureId": "base",
+              "toolFeatureId": "tool"
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "expectedRemoved": 565.4866776461628
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "visualNote": "既に表示確認した同じ内容の実画像と、全バイトのSHA-256が一致した。"
+    }
+  ]
+}

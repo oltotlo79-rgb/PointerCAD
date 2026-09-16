@@ -1,3 +1,4 @@
+import { createConfiguredNumericInput as createNumericInput } from '../settings/createConfiguredNumericInput.js';
 /**
  * コマンドラインの欄が打った 1 行を、道具の切替・欄への流し込み・段の確定へつなぐ
  * (計画書 docs/plans/P4b-スケッチの仕上げ.md タスク18、§0.a-0.8〜0.11、§2.5。FR-208)。
@@ -30,7 +31,6 @@ import {
 import {
   applyNumericInputKey,
   asksCoordinate,
-  createNumericInput,
   evaluateNumericInput,
   reduceNumericInput,
   SHAPE_TOOL_STEPS,

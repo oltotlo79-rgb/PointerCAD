@@ -28,12 +28,10 @@
  */
 
 import {
-  evaluateExpression,
   expressionValueFromNumber,
-  type ExpressionError,
   type ExpressionValue,
 } from '@pointercad/expression';
-import { evaluateNumericMath } from './numericMathValues.js';
+import { applyNumericDefaultSources, type NumericDefaultSources } from './numericDefaultSources.js';
 import {
   DEFAULT_BOX_SIZE_MM,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
@@ -52,19 +50,14 @@ import {
   DEFAULT_DRAFT_ANGLE_DEGREES,
   DEFAULT_EMBOSS_HEIGHT_MM,
   DEFAULT_EMBOSS_RAISED,
-  DEFAULT_EXTRUDE_END,
   DEFAULT_EXTRUDE_THICKNESS_MM,
   DEFAULT_FILLET_RADIUS_END_MM,
   DEFAULT_FILLET_RADIUS_MM,
   DEFAULT_HOLE_DEPTH_MM,
   DEFAULT_HOLE_DIAMETER_MM,
-  DEFAULT_HOLE_ENTRY,
-  DEFAULT_MIRROR_PLANE_ID,
   DEFAULT_PATTERN_COUNT,
   DEFAULT_PATTERN_SPACING_MM,
-  DEFAULT_RIB_SIDE,
   DEFAULT_RIB_THICKNESS_MM,
-  DEFAULT_RULED_SPHERE_SEGMENTS,
   DEFAULT_RULED_TWIST,
   DEFAULT_SCALE_FACTOR,
   DEFAULT_SHELL_OUTWARD,
@@ -79,9 +72,7 @@ import {
   DEFAULT_SURFACE_OFFSET_MM,
   DEFAULT_SWEEP_FRENET,
   DEFAULT_TAPER_ANGLE_DEGREES,
-  DEFAULT_THICKNESS_SIDE,
   DEFAULT_THREAD_DESIGNATION,
-  DEFAULT_THREAD_SHAFT_FROM_END,
   DEFAULT_THREAD_SHAFT_LENGTH_MM,
   DEFAULT_TORUS_MAJOR_RADIUS_MM,
   DEFAULT_TORUS_MINOR_RADIUS_MM,
@@ -93,21 +84,13 @@ import {
   MAX_PATTERN_COUNT,
   MAX_POINT_ARRAY_COUNT,
   MAX_SCALE,
-  MAX_SPLINE_POINTS,
   MAX_SPRING_TURNS,
   MAX_TAPER_ANGLE_DEGREES,
-  METRIC_THREAD_DESIGNATIONS,
   metricThreadPitch,
-  MIN_CLOSED_SPLINE_POINTS,
   MIN_COPY_COUNT,
   MIN_SCALE,
-  MIN_SPLINE_POINTS,
-  parseDisplayInput,
-  RULED_SPHERE_SEGMENT_CHOICES,
-  toDisplayLength,
   type ChamferSize,
   type CoordinateInput,
-  type LengthUnit,
   type PointReference,
   type RevolveAxis,
   type RuledSphereSegments,
@@ -119,520 +102,42 @@ import {
 
 import { t, type MessageKey } from '../i18n/t.js';
 
-/** ツールバーで選べるスケッチの道具(FR-301〜309)。ストアの activeTool の型でもある。 */
-export type SketchToolId = 'select' | 'point' | 'line' | 'arc' | 'pointArray' | 'face';
+// 道具と入力段の契約は状態機械から独立した定義を参照する。
+import {
+  type SolidToolId,
+  type ShapeToolId,
+  type EditToolId,
+  type ReferenceToolId,
+  type NumericInputToolId,
+  type CoordinateMode,
+  type CoordinateNumericInputStep,
+  type ShapeNumericInputStep,
+  type SketchNumericInputStep,
+  type SolidNumericInputStep,
+  type ReferenceCoordinateStep,
+  type ReferenceShapeStep,
+  type ReferenceNumericInputStep,
+  type EditNumericInputStep,
+  type NumericInputStep,
+} from './numericInputTools.js';
+export * from './numericInputTools.js';
 
-/**
- * 数値を聞くソリッドの道具(FR-401〜403、P3 で加工6種+ばねを追加)。
- * ブーリアン(和・差・積)は選んで押すだけで数値を聞かないので含めない(§2.11 の表)。
- */
-export type SolidToolId =
-  | 'extrude'
-  | 'revolve'
-  | 'sew'
-  | 'hole'
-  | 'threadHole'
-  | 'fillet'
-  | 'chamfer'
-  | 'linearPattern'
-  | 'circularPattern'
-  /** ばね(FR-414)。2段で聞く(§2.11)。 */
-  | 'spring'
-  /*
-    基本形状5種(FR-429、P5 タスク18、§2.15 の段の表)。押し出し・回転・縫合・ばねと同じ
-    「新しいボディを1つ作る」道具で、対象を消費しない(§0.a-0.19)ので加工には入れない。
-    **何も選ばなくても置ける**(中心の既定は原点、NFR-UX-4)ので押せない条件を持たない。
-  */
-  | 'sphere'
-  | 'box'
-  | 'cylinder'
-  | 'cone'
-  | 'torus'
-  /**
-   * 球面上の点(FR-431、P5 タスク22)。**立体ではなく 3D スケッチの点を 1 つ作る**道具だが、
-   * 「球を選んでから押し、1 段だけ数値を聞いて確定する」流れが基本形状とまったく同じなので、
-   * 道具の一覧・段の表・ツールバーの「作る」を基本形状と共有する(利用者から見ても
-   * 球のとなりに並んでいるほうが探しやすい)。作る先だけが違うので、確定は
-   * `solidCommands.ts` から `sketchCommands.ts` の `commitSphereGridPoint` へ回す。
-   */
-  | 'sphereGridPoint'
-  /*
-    面をつなぐ(罫線面、FR-430)とロフト(FR-410。P5 タスク27、§2.9)。どちらも
-    「輪郭を選んでから 1 段だけ数値を聞き、新しいボディを作る」道具で、対象を消費しない
-    (§0.a-0.27)。押し出し・回転と同じく**選んでから押す**道具なので、基本形状と違って
-    押せない条件を持つ(`ruledCommands.ts` の `ruledToolReadiness` / `loftToolReadiness`)。
-  */
-  | 'ruled'
-  | 'loft'
-  /*
-    P5 の Should / Could 群(FR-401、FR-409、FR-415〜428、FR-432。タスク49、§2.15 の段の表)。
-    どれも「押すと段が 1 つ開き、確定で立体を 1 つ作る/変える」道具なのでここへ足す。
-    コマンドの本体はタスク50(切断はタスク27e)で、いまは段と案内だけがある。
+import { choicesFor, type MirrorAxisOptions, type ReferenceAxisOption } from './numericInputChoices.js';
+export { DEFAULT_REVOLVE_AXIS, REFERENCE_AXIS_VALUE_PREFIX, type MirrorAxisOptions, type ReferenceAxisOption } from './numericInputChoices.js';
 
-    **タスク50 で既存の段へ畳み直した(統括の決定 2026-09-06)**: タスク49 は
-    「押し出しの終端・傾き」「薄板押し出し」「ざぐり/皿もみ」「可変半径の R 面取り」を
-    独立した道具(`extrudeEnd` / `extrudeThin` / `counterbore` / `variableFillet`)に
-    していたが、利用者から見て「押し出し」の 1 つの道具で終わり方・傾き・薄板を選べるのが
-    自然なので、計画書 §2.15 の本来の形どおり**既存の押し出し・穴・R 面取りの段へ**
-    選択肢・つまみ・欄として足した。足した欄は `visibleWhen` で伏せてあるので、**段を開いた
-    ときの欄と値は P1〜P4 のときと 1 つも変わらない**(既存の検査は選択肢・つまみが増えた
-    ぶんの追記だけで通る)。
-  */
-  /** 抜き勾配(FR-417)。 */
-  | 'draft'
-  /**
-   * 立体のミラー(FR-419)。整形系の `mirror`(スケッチの鏡像複写、FR-324)と id が
-   * ぶつかるので別の名前にしてある(`GUIDE_KEYS` も `isEditTool` も道具の id 1 本で
-   * 引くため、同じ文字列にすると立体の道具がスケッチの道具として扱われる)。
-   */
-  | 'mirrorSolid'
-  /** 移動/回転(FR-424)。2 段(動かす量 → 回す角度)。 */
-  | 'transform'
-  /** 拡大縮小(FR-424)。 */
-  | 'scale'
-  /** スイープ(FR-409)。 */
-  | 'sweep'
-  /** リブ(FR-420)。 */
-  | 'rib'
-  /** エンボス(FR-421)。 */
-  | 'emboss'
-  /** 外ねじ(FR-423)。 */
-  | 'threadShaft'
-  /** 点集合パターン(FR-425)。数値を 1 つも聞かないが、確定の合図として段を持つ。 */
-  | 'pointPattern'
-  /** 曲面(FR-428)。 */
-  | 'surface'
-  /** くり抜き(シェル、FR-418)。 */
-  | 'shell'
-  /** 平面による切断(FR-432)。 */
-  | 'cut';
+import type { FieldUnit } from './numericFieldUnits.js';
+export { applyDisplayUnit, isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
 
-/**
- * P4 で足す新しい図形の道具(FR-314〜318、FR-326)。
- *
- * 既存の `SketchToolId` へ足さないのは、`SketchToolId` がツールバーの「基本」区画の並び
- * (`Toolbar.tsx` の `SKETCH_TOOLS` と `FIRST_STEP`)と1対1に結び付いているため。
- * 新しい図形は タスク32 で畳んだ「作図」の一覧へ入るので、別の型にして区画の対応を崩さない。
- */
-export type ShapeToolId =
-  /** 円(中心+半径、FR-326)。model は既存の `arc` の全周として保存する。 */
-  | 'circle'
-  /** 2 点+半径の円弧(FR-326)。中心は 2 点と半径から求める(§0.a-0.18)。 */
-  | 'twoPointArc'
-  /**
-   * 3 点(始点・終点・通過点)の円弧(FR-330、P4 タスク36、2026-09-04 追加要件)。
-   * 3D スケッチ専用として追加した決定だが、通常の作図面上でも同じ道具で描ける
-   * (道具そのものは平面に依らない)。
-   */
-  | 'threePointArc'
-  | 'rectangle'
-  | 'polygon'
-  | 'slot'
-  | 'ellipse'
-  | 'spline';
+import { fillDefaults, evaluateNumericInput, evaluateNumericField, commitValues,
+  type NumericInputEvaluation, type DisplayUnitOptions } from './numericInputEvaluation.js';
+export { rangeErrorFor, effectiveSource, fieldExpression, fillDefaults, evaluateNumericInput,
+  commitValues, valueByFieldKey, type NumericFieldResult, type NumericInputEvaluation,
+  type DisplayUnitOptions } from './numericInputEvaluation.js';
 
-/**
- * P4 で足す、既存要素を参照して整形する道具(FR-321〜324、タスク21〜24)。
- *
- * `ShapeToolId` と同じ理由で `SketchToolId` へは足さない(ツールバーの「基本」区画とは
- * 1対1に結び付かない)。タスク21 がオフセット、タスク24 がミラー・複写・直線配列・円形配列
- * (FR-324)を足した。フィレット/面取り(タスク23)もここへ足す(計画書ファイル構成)。
- */
-export type EditToolId =
-  | 'offset'
-  /** 鏡像複写(FR-324)。鏡にするものを選ぶ 1 段だけ。 */
-  | 'mirror'
-  /** 平行移動の複写(FR-324)。移動量の 1 段だけ。 */
-  | 'copy'
-  /** 直線状の配列複写(FR-324)。向き+間隔 → 個数 の 2 段。 */
-  | 'linearArray'
-  /** 円形の配列複写(FR-324)。中心 → 角度+個数 の 2 段。 */
-  | 'circularArray'
-  /** スケッチの角の丸め(FR-323、タスク23)。角を指してから半径の 1 段。 */
-  | 'sketchFillet'
-  /** スケッチの角の面取り(FR-323、タスク23)。角を指してから距離の 1 段。 */
-  | 'sketchChamfer';
-
-/**
- * 整形系のうち、**角(端点を共有する 2 本の線分)を指してから数値を聞く**道具
- * (FR-323、タスク23)。
- *
- * オフセット・複製系は「選んでから道具」だけだが、この 2 つは**どちらの順でも成立させる**
- * (NFR-UX-1)。道具を先に選んだときはビューポートで角を指し、指した 2 本がそのまま選択に
- * 入って段が開く(`attachSketchInteraction.ts`)。2 本を先に選んでから道具を押したときは
- * その場で段が開く(`Toolbar.tsx` の `activateEditTool`)。どちらの道でも、確定が読むのは
- * 「選択に入っている 2 本」の 1 通りだけになる。
- */
-const CORNER_EDIT_TOOLS: Readonly<Record<'sketchFillet' | 'sketchChamfer', true>> = {
-  sketchFillet: true,
-  sketchChamfer: true,
-};
-
-/** 角を指して使う整形系の道具かどうか。一覧は `CORNER_EDIT_TOOLS` の 1 か所だけ。 */
-export type CornerEditToolId = keyof typeof CORNER_EDIT_TOOLS;
-
-export function isCornerEditTool(tool: NumericInputToolId): tool is CornerEditToolId {
-  return tool in CORNER_EDIT_TOOLS;
-}
-
-/**
- * 整形系のうち、**数値をひとつも聞かない**道具(FR-322、タスク22)。
- *
- * トリム・延長は「道具を選んで、消したい部分/伸ばしたい端の近くをクリック」で決まる
- * (§0.a-0.26 の利用者の決定 2026-09-04)。距離も角度も聞かないので `EDIT_TOOL_STEPS`
- * には入れず、段を持たない道具として別の型にしてある(段の表へ嘘の段を書かないため)。
- * ツールバーの「編集」の一覧には `EditToolId` と一緒に並ぶ。
- */
-export type ClickEditToolId = 'trim' | 'extend';
-
-/**
- * 整形系のうち、**数値を聞かず、ビューポートで立体の一部を押して決まる**道具
- * (FR-325、タスク27)。
- *
- * 投影は「立体の面の外周・辺を、いまの作図面へ写す」、断面(交差)は「立体と作図面が
- * 交わってできる線を取り込む」道具で、どちらも距離も角度も聞かない。`ClickEditToolId`
- * (トリム・延長)と分けてあるのは、**押す相手がスケッチの曲線ではなく立体の部分形状・
- * 立体そのもの**だからで、当たり判定も選択の種類の切替(`selectionKindForTool`)も
- * 別の道を通る。ツールバーの「編集」の一覧には他の整形系と一緒に並ぶ。
- */
-export type PickEditToolId = 'projectedCurve' | 'planeSection';
-
-/** ツールバーの「編集」の一覧に並ぶ道具(段のあるものと、クリックだけのもの)。 */
-export type EditMenuToolId = EditToolId | ClickEditToolId | PickEditToolId;
-
-/** 一覧の正本。`EDIT_TOOL_STEPS` と同じ役目で、こちらは段を持たない側。 */
-const CLICK_EDIT_TOOLS: Readonly<Record<ClickEditToolId, true>> = {
-  trim: true,
-  extend: true,
-};
-
-/** クリックだけで決まる整形系の道具かどうか。一覧は `CLICK_EDIT_TOOLS` の 1 か所だけ。 */
-export function isClickEditTool(tool: NumericInputToolId): tool is ClickEditToolId {
-  return tool in CLICK_EDIT_TOOLS;
-}
-
-/** 一覧の正本。立体の一部を押して決まる側(タスク27)。 */
-const PICK_EDIT_TOOLS: Readonly<Record<PickEditToolId, true>> = {
-  projectedCurve: true,
-  planeSection: true,
-};
-
-/** 立体を押して決まる整形系の道具かどうか。一覧は `PICK_EDIT_TOOLS` の 1 か所だけ。 */
-export function isPickEditTool(tool: NumericInputToolId): tool is PickEditToolId {
-  return tool in PICK_EDIT_TOOLS;
-}
-
-/**
- * P4 タスク13 で足す基準ジオメトリの道具(FR-328 の任意の作業平面、FR-329 の基準軸・
- * 基準点・座標系)。
- *
- * 作った平面・軸・点・座標系は**スケッチではなく部品文書**の `references` へ積む
- * (`referenceCommands.ts`)。既存の面からのオフセットのように立体を見ないと決まらない
- * 決め方があり、スケッチ 1 本は立体を知らないため(model 側タスク9 の判断)。
- *
- * 平面は 4 つの道具に分けてある。決め方によって**置く点の個数そのものが違う**ので、
- * 1 つの道具の選択肢で切り替えると欄と段の並びが大きく変わり、その場で決められなくなる
- * (NFR-UX-2)。7 通りの決め方(`PlaneSpec`)との対応は次のとおり。
- *
- *   3 点                 → referencePlaneThreePoints(threePoints)
- *   面/基準面のオフセット → referencePlaneOffset(face / workPlane)
- *   基準面を軸で傾ける    → referencePlaneTilted(tilted)
- *   点+辺/面/軸          → referencePlaneThroughPoint(pointAndEdge / pointAndParallelFace / pointAndAxis)
- */
-export type ReferenceToolId =
-  | 'referencePlaneThreePoints'
-  | 'referencePlaneOffset'
-  | 'referencePlaneTilted'
-  | 'referencePlaneThroughPoint'
-  | 'referenceAxis'
-  | 'referencePoint'
-  | 'referenceCoordinateSystem';
-
-/**
- * 外観の道具(FR-1106〜1110、P5 タスク11)。
- *
- * 数値を 1 つも聞かない(色・材質はプロパティの「外観」節で選ぶ)ので段の表には入れず、
- * トリム・延長(`ClickEditToolId`)や投影・断面(`PickEditToolId`)と同じく別の型にする。
- * 立体か面を選んでから色を付ける道具なので、選ぶ種類は面になる
- * (`solid/subShapeSelection.ts` の `selectionKindForTool`)。
- */
-export type AppearanceToolId = 'appearance';
-
-/**
- * 測る道具(FR-1101、FR-1102、P5 タスク32)。
- *
- * 外観と同じく数値を 1 つも聞かない(測る種類は選んでいるものから決まる)ので段の表には
- * 入れず、別の型にする。**選ぶ種類を切り替えない**唯一の道具でもある(§2.15 の表、
- * `solid/subShapeSelection.ts` の `keepsSelectionKind`)。いま選んでいるものをそのまま
- * 測るので、押した瞬間に選択が消えては何も測れないため。
- */
-export type MeasureToolId = 'measure';
-
-/** ポップアップを開ける道具。スケッチの道具より広い。 */
-export type NumericInputToolId =
-  | SketchToolId
-  | 'text'
-  | SolidToolId
-  | ShapeToolId
-  | ReferenceToolId
-  | EditToolId
-  | ClickEditToolId
-  | PickEditToolId
-  | AppearanceToolId
-  | MeasureToolId;
-
-/** 座標の指定方法(FR-301〜303)。 */
-export type CoordinateMode = 'absolute' | 'relative' | 'polar';
-
-/** 座標を1点聞く段階。線分は始点→終点、円弧は中心→形の2段階になる(FR-304、FR-307)。 */
-export type CoordinateNumericInputStep =
-  | 'point'
-  | 'lineStart'
-  | 'lineEnd'
-  | 'arcCenter'
-  | 'pointArrayBase'
-  /** 円の中心(FR-326)。 */
-  | 'circleCenter'
-  /** 2 点+半径の円弧の 1 点目・2 点目(FR-326)。 */
-  | 'twoPointArcStart'
-  | 'twoPointArcEnd'
-  /** 3 点の円弧の始点・終点・通過点(FR-330、タスク36)。欄は無く、3 クリックで確定する。 */
-  | 'threePointArcStart'
-  | 'threePointArcEnd'
-  | 'threePointArcVia'
-  /** 矩形の対角 2 点(FR-314)。 */
-  | 'rectangleCorner1'
-  | 'rectangleCorner2'
-  /** 正多角形の中心(FR-315)。 */
-  | 'polygonCenter'
-  /** 長穴の 2 つの中心(FR-316)。 */
-  | 'slotCenter1'
-  | 'slotCenter2'
-  /** 楕円の中心(FR-318)。 */
-  | 'ellipseCenter'
-  /**
-   * スプラインの通過点・制御点(FR-317)。確定するたびに同じ段が開き直り、点が積み上がる
-   * (下書きは `SplineDraft`。積んだ点を曲線にするのは `splineFinishStateFrom` が開く
-   * `splineShape` の段)。
-   */
-  | 'splinePoint';
-
-/** 座標ではなく形の値を聞く段階(FR-305、FR-308、P4 で FR-314〜318 / FR-326 / FR-327 を追加)。 */
-export type ShapeNumericInputStep =
-  | 'arcShape'
-  | 'pointArrayShape'
-  /** 格子状の点列の 2 段目(列の間隔・列数、FR-327)。 */
-  | 'pointArrayGridColumns'
-  | 'circleRadius'
-  | 'twoPointArcRadius'
-  | 'polygonShape'
-  | 'slotShape'
-  /** 楕円の長半径・短半径(FR-318)。 */
-  | 'ellipseShape'
-  /** 楕円の傾きと、「一部だけ(楕円弧)」のつまみ(FR-318)。 */
-  | 'ellipseAngles'
-  /** 楕円弧の開始角・終了角(FR-318)。「一部だけ」を入にしたときだけ通る。 */
-  | 'ellipseArcAngles'
-  /** スプラインの決め方(通過点/制御点・閉じる・構築線)。欄は持たない(FR-317)。 */
-  | 'splineShape';
-
-/** スケッチの段階。確定結果 NumericInputCommit の step はここに限る。 */
-export type SketchNumericInputStep = CoordinateNumericInputStep | ShapeNumericInputStep;
-
-/** ソリッドの段階(P2 タスク19、P3 タスク24)。ばね以外はいずれも1段で終わる。 */
-export type SolidNumericInputStep =
-  | 'extrudeDistance'
-  | 'revolveAngle'
-  | 'sewTolerance'
-  | 'holeSize'
-  | 'threadSize'
-  | 'filletRadius'
-  | 'chamferSize'
-  | 'linearPattern'
-  | 'circularPattern'
-  /** ばねの1段目(形)。確定すると springLength へ進む(§2.11)。 */
-  | 'springShape'
-  /** ばねの2段目(長さ)。確定でようやく閉じる。 */
-  | 'springLength'
-  /*
-    基本形状5種の寸法の段(FR-429、§2.15 の段の表)。どれも1段で終わる。
-    **箱(3欄)と円錐(3欄)だけが欄3つ**で、P4 の「1段2欄まで」の目安を広げてある
-    (§2.15「3 つまでは 1 行に収まる」。座標の段が X / Y / Z の3欄で成立しているのと同じ)。
-    4欄が要る道具は従来どおり段を分ける(ばねの前例)。
-  */
-  | 'sphereSize'
-  | 'boxSize'
-  | 'cylinderSize'
-  | 'coneSize'
-  | 'torusSize'
-  /**
-   * 球面上の点の緯度・経度(FR-431、タスク22、§2.15 の段の表)。1 段・欄 2 つで終わる。
-   * ビューポートで案内の交点に吸い付くと、この 2 欄が吸い付いた先の値で埋まる。
-   */
-  | 'sphereGridPoint'
-  /*
-    面をつなぐ・ロフトのねじれの段(FR-430、FR-410。P5 タスク27、§2.15 の段の表)。
-    どちらも 1 段で終わる。罫線面だけは「なめらかさ」の選択肢を添えるが、**球を含まない
-    断面では効かない**(§0.a-0.87)ので欄ごと伏せる(`ruledHasSphere`)。
-
-    計画書 §2.15 の表はロフトの段を `loftOptions`(「閉じる」のつまみ)と書いていたが、
-    `closed` は常に true で文書にも UI にも出さない決まりになった(タスク25 の統括の決定、
-    docs/報告記録.md 2026-09-05 18:15)ので、残る欄はねじれ 1 つだけである。中身と名前を
-    合わせて `loftTwist` にした(判断に迷った点として報告する)。
-  */
-  | 'ruledTwist'
-  | 'loftTwist'
-  /*
-    P5 の Should / Could 群の段(タスク49、§2.15 の段の表)。**欄は 1 段 3 つまで**で、
-    4 つ以上が要るものは段を分ける(移動/回転だけが 2 段。ばね・配列複写の前例)。
-    出したり隠したりする欄は `NumericFieldDefinition.visibleWhen` で切り替える。
-
-    **押し出しの終わり方・傾き・薄板、穴の入口、可変半径の R 面取りは段を持たない**
-    (タスク50 で既存の `extrudeDistance` / `holeSize` / `filletRadius` へ畳んだ。
-    統括の決定 2026-09-06)。
-  */
-  /** 抜き勾配の角度。 */
-  | 'draftAngle'
-  /** ミラーの鏡にする面。欄は持たない。 */
-  | 'mirrorPlane'
-  /** 移動/回転の 1 段目(X / Y / Z へ動かす量。**欄 3 つ**)。 */
-  | 'transformTranslation'
-  /** 移動/回転の 2 段目(回す角度と軸)。確定でようやく閉じる。 */
-  | 'transformRotation'
-  /** 拡大縮小の倍率。つまみ「軸ごと」で欄が 1 つ ↔ 3 つに変わる。 */
-  | 'scaleAmount'
-  /** スイープの向きの決め方。欄は持たない。 */
-  | 'sweepOptions'
-  /** リブの厚みと厚みを付ける側。 */
-  | 'ribThickness'
-  /** エンボスの高さ(彫るときは深さ)。 */
-  | 'embossHeight'
-  /** 外ねじのピッチと長さ。 */
-  | 'threadShaftSize'
-  /** 点集合パターン。欄もつまみも選択肢も持たない(確定の合図だけ)。 */
-  | 'pointPattern'
-  /** 曲面の作り方。選んだ作り方で欄が入れ替わる。 */
-  | 'surfaceShape'
-  /** くり抜きの壁の厚さ。 */
-  | 'shellThickness'
-  /** 切断面の決め方。「点と軸」のときだけ傾きの欄が出る。 */
-  | 'cutPlane';
-
-/**
- * 基準ジオメトリで座標を 1 点聞く段(P4 タスク13、FR-328・FR-329)。
- *
- * スケッチの段(`CoordinateNumericInputStep`)とは別の型にしてある。積む先が
- * スケッチではなく部品文書なので、確定の受け取り手(`referenceCommands.ts`)も
- * `sketchCommands.ts` / `shapeCommands.ts` とは別になるため。
- */
-export type ReferenceCoordinateStep =
-  /** 3 点で決める平面の 1〜3 点目。 */
-  | 'referencePlanePoint1'
-  | 'referencePlanePoint2'
-  | 'referencePlanePoint3'
-  /** 点+辺/面/軸で決める平面が通る点。 */
-  | 'referencePlaneBasePoint'
-  /** 2 点で決める基準軸の 1 点目・2 点目。 */
-  | 'referenceAxisStart'
-  | 'referenceAxisEnd'
-  /** 座標で決める基準点。 */
-  | 'referencePointAt'
-  /** 基準座標系の原点。 */
-  | 'referenceCsOrigin';
-
-/** 基準ジオメトリで座標以外(距離・角度・決め方)を聞く段(P4 タスク13)。 */
-export type ReferenceShapeStep =
-  /** もとにする面と、そこから離す距離。 */
-  | 'referencePlaneOffset'
-  /** 傾ける軸と角度。もとにする平面はいまの作図面。 */
-  | 'referencePlaneTilt'
-  /** 点を通る平面の決め方(辺に垂直/辺を含む/面に平行/軸に垂直)。 */
-  | 'referencePlaneThrough'
-  /** 基準軸の決め方(2 点/辺/面の法線/2 面の交線)。 */
-  | 'referenceAxisKind'
-  /** 基準点の決め方(座標/頂点/辺の中点/面の中心)。 */
-  | 'referencePointKind'
-  /** 基準座標系の 2 軸の向き。 */
-  | 'referenceCsAxes';
-
-/** 基準ジオメトリの段。確定結果 `ReferenceInputCommit` の step はここに限る。 */
-export type ReferenceNumericInputStep = ReferenceCoordinateStep | ReferenceShapeStep;
-
-/**
- * 整形系の道具の段(P4 タスク21〜24、FR-321〜324)。オフセットは「距離」の 1 段だけで
- * 終わる(選択はすでに済んでいる前提。§0.a-0.10「複製系」)。
- *
- * 複製系(タスク24、FR-324)は**欄を 1 段あたり 2 個まで**にする統括の指示に合わせ、
- * 配列複写だけ 2 段に分けてある(直線は「向き+間隔」→「個数」、円形は「中心」→「角度+個数」)。
- */
-export type EditNumericInputStep =
-  | 'offsetDistance'
-  /** ミラーの鏡にするもの(作図面の横軸/縦軸/選んだ線)。欄は持たない。 */
-  | 'mirrorBasis'
-  /** 複写の移動量(作図面の 2 軸ぶん。3D スケッチでは 3 つ目の欄も出る)。 */
-  | 'copyDelta'
-  /** 直線配列の 1 段目(向き・間隔)。 */
-  | 'linearArrayDirection'
-  /** 直線配列の 2 段目(個数)。 */
-  | 'linearArrayCount'
-  /** 円形配列の 1 段目(中心の座標)。 */
-  | 'circularArrayCenter'
-  /** 円形配列の 2 段目(角度・個数・全周)。 */
-  | 'circularArrayShape'
-  /** スケッチの角を丸める半径(FR-323)。 */
-  | 'sketchFilletRadius'
-  /** スケッチの角の面取りの距離(FR-323)。等距離なら 1 欄、2 距離なら 2 欄。 */
-  | 'sketchChamferSize';
-
-/** ポップアップの段階。 */
-export type NumericInputStep =
-  | SketchNumericInputStep
-  | SolidNumericInputStep
-  | ReferenceNumericInputStep
-  | EditNumericInputStep;
-
-export type FieldUnit = 'mm' | 'degree' | 'count' | 'ratio' | 'N' | 'MPa' | 'Nmm';
-
-/**
- * **どの欄が長さかを決める唯一の表**(P6 タスク3b、FR-811・FR-814・FR-205)。
- *
- * 欄ごとに「これは長さ」と書き分けず、欄の定義がすでに持っている `unit` 1 本で決める。
- * 角度(`degree`)・回数や個数(`count`)は長さではないので、表示の単位(mm / inch)の
- * 影響を 1 つも受けない(FR-205)。`switch` に `default` を書かないので、欄の単位が
- * 増えたら型検査で落ちて、この表を直し忘れられない。
- *
- * model 側にも同じ形の判定(`isLengthParameterUnit`、パラメータの単位 `mm|degree|none`)が
- * あるが、あちらが見るのは**パラメータ表の単位**、こちらは**ポップアップの欄の単位**で、
- * 型そのものが違う(`count` はパラメータには無い)。同じ規則の重複ではない。
- */
-export function isLengthFieldUnit(unit: FieldUnit): boolean {
-  switch (unit) {
-    case 'mm':
-      return true;
-    case 'degree':
-    case 'N':
-    case 'MPa':
-    case 'Nmm':
-    case 'count':
-    case 'ratio':
-      return false;
-  }
-}
-
-/**
- * 打たれた文字列を、**保存する式の文字列**へ直す(§0.a-0.63、§2.9.1 ②)。
- *
- * 長さの欄のときだけ model の `parseDisplayInput` へ回す(表示が inch で単位が 1 つも
- * 書かれていなければ `(<打った式>)in` で包む。mm のときは包まない)。**規則そのものは
- * model の 1 か所にしかない**——ここへ写すと「どの綴りが単位か」の判定が ui と model で
- * 食い違うため、この関数は「長さの欄かどうか」を足すだけの薄い層にしてある。
- *
- * 長さでない欄(角度・個数)は打った文字をそのまま返す。引用符の正規化(`3/8”` → `3/8"`)も
- * かけない——角度の欄に inch の記号が入る余地を作らないため。
- */
-export function applyDisplayUnit(source: string, fieldUnit: FieldUnit, unit: LengthUnit): string {
-  return isLengthFieldUnit(fieldUnit) ? parseDisplayInput(source, unit) : source;
-}
+export { twoPointArcCenterOffset, twoPointArcRadiusRejection } from './twoPointArcInput.js';
+import type { SplineDraft } from './splineInputDraft.js';
+export { EMPTY_SPLINE_DRAFT, appendSplinePoint, removeLastSplinePoint, checkSplineDraft,
+  type SplineDraft, type SplineDraftOutcome, type SplineDraftCheck } from './splineInputDraft.js';
 
 /**
  * 欄が受け付ける値の範囲(NFR-UX-5)。
@@ -865,6 +370,10 @@ export function numericChoiceOptionLabel(option: NumericChoiceOption): string {
 }
 
 export interface NumericInputState {
+  /** A guided operation may finish once without changing the user's repeat setting. */
+  readonly repeatAfterCommit?: boolean;
+  /** この道具を開いた時点の既定値。次の段と選択肢変更へ持ち越す。 */
+  readonly defaultSources?: NumericDefaultSources;
   /** 二段入力の修正先。文書や履歴へ保存しない入力中の状態。 */
   readonly previousStage?: NumericInputState;
   readonly textValue?: string;
@@ -1426,32 +935,6 @@ const RULED_TWIST_FIELDS: readonly NumericFieldDefinition[] = [
     defaultSource: String(DEFAULT_RULED_TWIST),
   },
 ];
-
-/**
- * なめらかさ(球へつなぐときの接点の数、§0.a-0.74)の選択肢。
- *
- * 値は model の `RULED_SPHERE_SEGMENT_CHOICES`(= カーネルの `SphereSegmentCount`)から
- * 組み立てるので、選べる数の正本は 1 か所しかない。見出しだけをここで日本語に付け替える
- * (24 / 48 / 72 という数そのものは利用者にとって意味が無く、「どれくらい細かいか」だけが
- * 伝わればよい。24b の文言案、docs/報告記録.md 2026-09-05 17:23)。
- */
-const RULED_SPHERE_SEGMENT_LABEL_KEYS: Readonly<Record<RuledSphereSegments, MessageKey>> = {
-  24: 'numericInput.choice.ruledSphereSegments24',
-  48: 'numericInput.choice.ruledSphereSegments48',
-  72: 'numericInput.choice.ruledSphereSegments72',
-};
-
-function ruledSphereSegmentsChoice(): NumericChoice {
-  return {
-    key: 'ruledSphereSegments',
-    labelKey: 'numericInput.choice.ruledSphereSegments',
-    value: String(DEFAULT_RULED_SPHERE_SEGMENTS),
-    options: RULED_SPHERE_SEGMENT_CHOICES.map((count) => ({
-      value: String(count),
-      labelKey: RULED_SPHERE_SEGMENT_LABEL_KEYS[count],
-    })),
-  };
-}
 
 /* ---- P5 タスク49: Should / Could 群の欄(§2.15 の段の表) ---- */
 
@@ -2617,749 +2100,7 @@ const TOGGLE_DEFAULT_VALUES: Readonly<Record<NumericToggleKey, boolean>> = {
   cutKeepBoth: false,
 };
 
-/** ワールドの X / Y / Z 軸(+選んだ線分)の選択肢。回転軸・円形パターン・ばねの軸で共用する。 */
-const WORLD_AXIS_OPTIONS: readonly NumericChoiceOption[] = [
-  { value: 'x', labelKey: 'numericInput.axis.x' },
-  { value: 'y', labelKey: 'numericInput.axis.y' },
-  { value: 'z', labelKey: 'numericInput.axis.z' },
-];
-
-/** 選んだ線分を軸にする選択肢の見出し(P2 タスク21 で専用のキーを追加した)。 */
-const AXIS_LINE_LABEL_KEY: MessageKey = 'numericInput.axis.line';
-
-function axisLikeOptions(axisLine: SketchLineRef | undefined): readonly NumericChoiceOption[] {
-  return axisLine === undefined
-    ? WORLD_AXIS_OPTIONS
-    : [...WORLD_AXIS_OPTIONS, { value: 'line', labelKey: AXIS_LINE_LABEL_KEY }];
-}
-
-/** 回転軸の既定(§0.a-0.9)。XY 面にかいた断面を Z 軸まわりに回すのが最も多い。 */
-export const DEFAULT_REVOLVE_AXIS: RevolveAxisChoice = 'z';
-
-/** 回転・円形パターン・ばねの軸(見出しは「回転軸」で共用、§2.11)。 */
-function axisChoice(axisLine: SketchLineRef | undefined, defaultValue: string): NumericChoice {
-  return {
-    key: 'axis',
-    labelKey: 'numericInput.axisGroupLabel',
-    value: defaultValue,
-    options: axisLikeOptions(axisLine),
-  };
-}
-
-/** 直線パターンの向き(§0.a-0.21。既定は X)。回転軸とは別のキー・見出しにする。 */
-function patternDirectionChoice(axisLine: SketchLineRef | undefined): NumericChoice {
-  return {
-    key: 'patternDirection',
-    labelKey: 'numericInput.choice.patternDirection',
-    value: 'x',
-    options: axisLikeOptions(axisLine),
-  };
-}
-
-/** ねじ穴の呼び(M2〜M64)。ラベルは METRIC_THREAD_DESIGNATIONS の文字をそのまま使う(§2.11)。 */
-function threadDesignationChoice(): NumericChoice {
-  return {
-    key: 'threadDesignation',
-    labelKey: 'numericInput.choice.threadDesignation',
-    value: DEFAULT_THREAD_DESIGNATION,
-    options: METRIC_THREAD_DESIGNATIONS.map((designation) => ({ value: designation, label: designation })),
-  };
-}
-
-/** ねじの系列(並目/細目)。既定は並目。 */
-function threadSeriesChoice(): NumericChoice {
-  return {
-    key: 'threadSeries',
-    labelKey: 'numericInput.choice.threadSeries',
-    value: 'coarse',
-    options: [
-      { value: 'coarse', labelKey: 'numericInput.threadSeries.coarse' },
-      { value: 'fine', labelKey: 'numericInput.threadSeries.fine' },
-    ],
-  };
-}
-
-/** C面取りの決め方。既定は距離(等距離)。 */
-function chamferModeChoice(): NumericChoice {
-  return {
-    key: 'chamferMode',
-    labelKey: 'numericInput.choice.chamferMode',
-    value: 'equal',
-    options: [
-      { value: 'equal', labelKey: 'numericInput.chamferMode.equal' },
-      { value: 'twoDistances', labelKey: 'numericInput.chamferMode.twoDistances' },
-      { value: 'distanceAngle', labelKey: 'numericInput.chamferMode.distanceAngle' },
-    ],
-  };
-}
-
-/** ばねの巻き方向。既定は右巻き(§0.a-0.33)。 */
-function springHandednessChoice(): NumericChoice {
-  return {
-    key: 'springHandedness',
-    labelKey: 'numericInput.choice.springHandedness',
-    value: 'right',
-    options: [
-      { value: 'right', labelKey: 'numericInput.springHandedness.right' },
-      { value: 'left', labelKey: 'numericInput.springHandedness.left' },
-    ],
-  };
-}
-
-/** ばねの求める値(全長/ピッチ/巻数)。既定は全長(§0.a-0.30)。 */
-function springDerivedChoice(): NumericChoice {
-  return {
-    key: 'springDerived',
-    labelKey: 'numericInput.choice.springDerived',
-    value: 'length',
-    options: [
-      { value: 'length', labelKey: 'numericInput.springDerived.length' },
-      { value: 'pitch', labelKey: 'numericInput.springDerived.pitch' },
-      { value: 'turns', labelKey: 'numericInput.springDerived.turns' },
-    ],
-  };
-}
-
-/**
- * 正多角形の半径の測り方(FR-315)。既定は外接(頂点を通る)。
- * 計画書タスク12 が「UI の既定値は 'circumscribed'(FR-315 の主要な指定方法)」と決めている。
- */
-function polygonRadiusModeChoice(): NumericChoice {
-  return {
-    key: 'polygonRadiusMode',
-    labelKey: 'numericInput.choice.polygonRadiusMode',
-    value: 'circumscribed',
-    options: [
-      { value: 'circumscribed', labelKey: 'numericInput.polygonRadiusMode.circumscribed' },
-      { value: 'inscribed', labelKey: 'numericInput.polygonRadiusMode.inscribed' },
-    ],
-  };
-}
-
-/** 点列の並べ方(FR-327)。既定は直線(P1 からの振る舞いをそのまま既定にする)。 */
-function pointArrayLayoutChoice(): NumericChoice {
-  return {
-    key: 'pointArrayLayout',
-    labelKey: 'numericInput.choice.pointArrayLayout',
-    value: 'linear',
-    options: [
-      { value: 'linear', labelKey: 'numericInput.pointArrayLayout.linear' },
-      { value: 'circular', labelKey: 'numericInput.pointArrayLayout.circular' },
-      { value: 'grid', labelKey: 'numericInput.pointArrayLayout.grid' },
-    ],
-  };
-}
-
-/** スプラインの点の使い方(FR-317)。既定は通過点(指定した点を必ず通る)。 */
-function splineModeChoice(): NumericChoice {
-  return {
-    key: 'splineMode',
-    labelKey: 'numericInput.choice.splineMode',
-    value: 'interpolate',
-    options: [
-      { value: 'interpolate', labelKey: 'numericInput.splineMode.interpolate' },
-      { value: 'control', labelKey: 'numericInput.splineMode.control' },
-    ],
-  };
-}
-
-/**
- * 2 点+半径の円弧のふくらむ向き(FR-326)。1 点目から 2 点目へ進む向きに対して
- * 左右どちらへふくらむかで、2 つある中心のどちらを採るかが決まる(§0.a-0.18)。
- * どちらを選んでも短い方の弧(劣弧)になるので、既定は左でよい(NFR-UX-4)。
- */
-function arcBulgeChoice(): NumericChoice {
-  return {
-    key: 'arcBulge',
-    labelKey: 'numericInput.choice.arcBulge',
-    value: 'left',
-    options: [
-      { value: 'left', labelKey: 'numericInput.arcBulge.left' },
-      { value: 'right', labelKey: 'numericInput.arcBulge.right' },
-    ],
-  };
-}
-
-/* ---- P4 タスク21: 編集(オフセット)の選択肢(FR-321) ---- */
-
-/**
- * オフセットのどちら側か(FR-321)。**値は常に `outside` / `inside`**(model の `OffsetSide`)
- * だが、見出しは閉じた輪郭なら「外/内」、開いた曲線なら「左/右」に替える
- * (`types.ts` の `OffsetSide` の注釈、開いた曲線は「進む向きから見た左が outside」)。
- * どちらへずらしても結果は見えるので、既定は外側(左)でよい(NFR-UX-4)。
- */
-function offsetSideChoice(open: boolean): NumericChoice {
-  return {
-    key: 'offsetSide',
-    labelKey: 'numericInput.choice.offsetSide',
-    value: 'outside',
-    options: open
-      ? [
-          { value: 'outside', labelKey: 'numericInput.offsetSide.left' },
-          { value: 'inside', labelKey: 'numericInput.offsetSide.right' },
-        ]
-      : [
-          { value: 'outside', labelKey: 'numericInput.offsetSide.outside' },
-          { value: 'inside', labelKey: 'numericInput.offsetSide.inside' },
-        ],
-  };
-}
-
-/** オフセットの角の作り方(FR-321)。既定は丸め(NFR-UX-4、角のとがりを避ける方が安全)。 */
-function offsetCornerChoice(): NumericChoice {
-  return {
-    key: 'offsetCorner',
-    labelKey: 'numericInput.choice.offsetCorner',
-    value: 'round',
-    options: [
-      { value: 'round', labelKey: 'numericInput.offsetCorner.round' },
-      { value: 'sharp', labelKey: 'numericInput.offsetCorner.sharp' },
-    ],
-  };
-}
-
-/* ---- P4 タスク24: ミラーの選択肢(FR-324) ---- */
-
-/**
- * ミラーで鏡にできるものの一覧(P4 タスク24)。ツールバーが選択と作図面から見込んで渡す
- * (`copyCommands.ts` の `mirrorAxisAvailability`)。渡されなければ「作図面の軸が使える」
- * として扱う(基準の 3 面の上でかいているのが普通のため)。
- */
-export interface MirrorAxisOptions {
-  /** 作図面の横軸・縦軸で折り返せるか。基準の 3 面(XY・XZ・YZ)のときだけ真。 */
-  readonly planeAxes: boolean;
-  /** 選択の中に、鏡にできる線分があるか。 */
-  readonly selectedLine: boolean;
-}
-
-/** 何も渡されなかったときの見込み。基準の 3 面の上でかいている前提。 */
-const DEFAULT_MIRROR_AXES: MirrorAxisOptions = { planeAxes: true, selectedLine: false };
-
-/**
- * 鏡にするもの(FR-324)。
- *
- * 見出しを「作図面の X 軸 / Y 軸」ではなく「横軸 / 縦軸」にしてある。XZ 面の縦向きの軸は Z、
- * YZ 面の横向きの軸は Y なので、「Y 軸」と書くと作図面によっては嘘になるため(統括の指示
- * との違いとして報告する)。ヘルプでは「XY 面なら X 軸」と言い添える。
- */
-function mirrorBasisChoice(axes: MirrorAxisOptions): NumericChoice {
-  const options: NumericChoiceOption[] = [];
-  if (axes.planeAxes) {
-    options.push(
-      { value: 'axisU', labelKey: 'numericInput.mirrorBasis.axisU' },
-      { value: 'axisV', labelKey: 'numericInput.mirrorBasis.axisV' },
-    );
-  }
-  if (axes.selectedLine) {
-    options.push({ value: 'line', labelKey: 'numericInput.mirrorBasis.line' });
-  }
-  return {
-    key: 'mirrorBasis',
-    labelKey: 'numericInput.choice.mirrorBasis',
-    // 使えるものの先頭を既定にする(押せない選択肢を初期値にしない、NFR-UX-5)。
-    value: options[0]?.value ?? 'axisU',
-    options,
-  };
-}
-
-/* ---- P4 タスク13: 基準ジオメトリの選択肢(FR-328、FR-329) ---- */
-
-/** 選択肢の値で「文書にある基準軸」を指すときの頭(`reference:基準軸-1` の形)。 */
-export const REFERENCE_AXIS_VALUE_PREFIX = 'reference:';
-
-/** ポップアップの軸の選択肢に並べる、文書にある基準軸(FR-329)。 */
-export interface ReferenceAxisOption {
-  readonly id: string;
-  /** ツリーに出るのと同じ名前。ja.json に置けないので札の文字をそのまま使う。 */
-  readonly name: string;
-}
-
-/**
- * 軸の選択肢。ワールドの X / Y / Z に、文書にある基準軸を足す(FR-329)。
- * 基準軸の名前は利用者が付け替えられるので `labelKey` ではなく `label` に入れる
- * (ねじの呼び径と同じ扱い、§2.11「手順3」)。
- */
-function referenceAxisOptions(
-  axes: readonly ReferenceAxisOption[] | undefined,
-): readonly NumericChoiceOption[] {
-  const named = (axes ?? []).map((axis) => ({
-    value: `${REFERENCE_AXIS_VALUE_PREFIX}${axis.id}`,
-    label: axis.name,
-  }));
-  return [...WORLD_AXIS_OPTIONS, ...named];
-}
-
-function referenceAxisChoice(
-  key: 'referenceAxisSpec' | 'referenceCsXAxis' | 'referenceCsYAxis',
-  labelKey: MessageKey,
-  defaultValue: string,
-  axes: readonly ReferenceAxisOption[] | undefined,
-): NumericChoice {
-  return { key, labelKey, value: defaultValue, options: referenceAxisOptions(axes) };
-}
-
-/**
- * オフセットのもとにする面(FR-328)。既定は「いまの作図面」で、Enter を続けて押すだけで
- * いま描いている面から離れた平面ができる(NFR-UX-4)。「選んだ面」は立体の平らな面を
- * 選んでいないときは確定で断る(NFR-UX-5。選択の有無で選択肢を出し分けると、
- * 選び直すたびに欄の並びが変わって落ち着かないため)。
- */
-function referencePlaneBaseChoice(): NumericChoice {
-  return {
-    key: 'referencePlaneBase',
-    labelKey: 'numericInput.choice.referencePlaneBase',
-    value: 'current',
-    options: [
-      { value: 'current', labelKey: 'numericInput.referencePlaneBase.current' },
-      { value: 'xy', labelKey: 'toolbar.plane.xy' },
-      { value: 'xz', labelKey: 'toolbar.plane.xz' },
-      { value: 'yz', labelKey: 'toolbar.plane.yz' },
-      { value: 'face', labelKey: 'numericInput.referencePlaneBase.face' },
-    ],
-  };
-}
-
-/** 点を通る平面の決め方(FR-328)。既定は「辺に垂直」。 */
-function referencePlaneThroughModeChoice(): NumericChoice {
-  return {
-    key: 'referencePlaneThroughMode',
-    labelKey: 'numericInput.choice.referencePlaneThroughMode',
-    value: 'perpendicularEdge',
-    options: [
-      { value: 'perpendicularEdge', labelKey: 'numericInput.referencePlaneThrough.perpendicularEdge' },
-      { value: 'containingEdge', labelKey: 'numericInput.referencePlaneThrough.containingEdge' },
-      { value: 'parallelFace', labelKey: 'numericInput.referencePlaneThrough.parallelFace' },
-      { value: 'axis', labelKey: 'numericInput.referencePlaneThrough.axis' },
-    ],
-  };
-}
-
-/** 基準軸の決め方(FR-329)。既定は 2 点(何も選んでいなくても作れる)。 */
-function referenceAxisKindChoice(): NumericChoice {
-  return {
-    key: 'referenceAxisKind',
-    labelKey: 'numericInput.choice.referenceAxisKind',
-    value: 'twoPoints',
-    options: [
-      { value: 'twoPoints', labelKey: 'numericInput.referenceAxisKind.twoPoints' },
-      { value: 'edge', labelKey: 'numericInput.referenceAxisKind.edge' },
-      { value: 'faceNormal', labelKey: 'numericInput.referenceAxisKind.faceNormal' },
-      { value: 'faceIntersection', labelKey: 'numericInput.referenceAxisKind.faceIntersection' },
-    ],
-  };
-}
-
-/** 基準点の決め方(FR-329)。既定は座標(何も選んでいなくても作れる)。 */
-function referencePointKindChoice(): NumericChoice {
-  return {
-    key: 'referencePointKind',
-    labelKey: 'numericInput.choice.referencePointKind',
-    value: 'coordinate',
-    options: [
-      { value: 'coordinate', labelKey: 'numericInput.referencePointKind.coordinate' },
-      { value: 'vertex', labelKey: 'numericInput.referencePointKind.vertex' },
-      { value: 'edgeMidpoint', labelKey: 'numericInput.referencePointKind.edgeMidpoint' },
-      { value: 'faceCenter', labelKey: 'numericInput.referencePointKind.faceCenter' },
-    ],
-  };
-}
-
-/* ---- P4 タスク23: スケッチの角の面取りの選択肢(FR-323) ---- */
-
-/**
- * スケッチの角の面取りの決め方(FR-323)。既定は等距離(Enter 連打で正方形の切り落とし、
- * NFR-UX-4)。選択肢の鍵と見出しは立体の C 面取り(`chamferModeChoice`)と同じものを使い、
- * 「距離と角度」だけを外す(`SKETCH_CHAMFER_FIELDS` の注釈)。
- */
-function sketchChamferModeChoice(): NumericChoice {
-  return {
-    key: 'chamferMode',
-    labelKey: 'numericInput.choice.chamferMode',
-    value: 'equal',
-    options: [
-      { value: 'equal', labelKey: 'numericInput.chamferMode.equal' },
-      { value: 'twoDistances', labelKey: 'numericInput.chamferMode.twoDistances' },
-    ],
-  };
-}
-
-/* ---- P5 タスク49: Should / Could 群の選択肢(§2.15 の段の表) ---- */
-
-/*
-  既定はすべて model の定数から引く(同じ値を 2 か所に書かない)。model に定数の無い
-  2 つ(曲面の作り方・切断面の決め方)だけ、ここで「何も選ばなくても意味のある形になる」
-  ものを既定にした(NFR-UX-4)。統括へ報告する判断点。
-*/
-
-/** 押し出しの終わり方(FR-415)。既定は model の `DEFAULT_EXTRUDE_END`(= 距離)。 */
-function extrudeEndChoice(): NumericChoice {
-  return {
-    key: 'extrudeEnd',
-    labelKey: 'numericInput.choice.extrudeEnd',
-    value: DEFAULT_EXTRUDE_END.kind,
-    options: [
-      { value: 'distance', labelKey: 'numericInput.extrudeEnd.distance' },
-      { value: 'toFace', labelKey: 'numericInput.extrudeEnd.toFace' },
-      { value: 'toNext', labelKey: 'numericInput.extrudeEnd.toNext' },
-    ],
-  };
-}
-
-/** 薄板押し出しの厚みを付ける側(FR-416)。既定は内側(輪郭が壁の外の境界になる)。 */
-function thicknessSideChoice(): NumericChoice {
-  return {
-    key: 'thicknessSide',
-    labelKey: 'numericInput.choice.thicknessSide',
-    value: DEFAULT_THICKNESS_SIDE,
-    options: [
-      { value: 'inner', labelKey: 'numericInput.thicknessSide.inner' },
-      { value: 'outer', labelKey: 'numericInput.thicknessSide.outer' },
-      { value: 'both', labelKey: 'numericInput.thicknessSide.both' },
-    ],
-  };
-}
-
-/**
- * ミラーの鏡にする面(FR-419、§0.a-0.36)。基準の 3 面と「選んだ面」の 4 つだけで、
- * 3 点指定のような決め方は持たない(§0.a-0.36 が認めた範囲。切断とはここが違う)。
- */
-function mirrorPlaneChoice(): NumericChoice {
-  return {
-    key: 'mirrorPlane',
-    labelKey: 'numericInput.choice.mirrorPlane',
-    value: DEFAULT_MIRROR_PLANE_ID,
-    options: [
-      { value: 'xy', labelKey: 'numericInput.mirrorPlane.xy' },
-      { value: 'xz', labelKey: 'numericInput.mirrorPlane.xz' },
-      { value: 'yz', labelKey: 'numericInput.mirrorPlane.yz' },
-      { value: 'face', labelKey: 'numericInput.mirrorPlane.face' },
-    ],
-  };
-}
-
-/** リブの厚みを付ける側(FR-420)。既定は両側へ半分ずつ(輪郭が壁の中心になる)。 */
-function ribSideChoice(): NumericChoice {
-  return {
-    key: 'ribSide',
-    labelKey: 'numericInput.choice.ribSide',
-    value: DEFAULT_RIB_SIDE,
-    options: [
-      { value: 'both', labelKey: 'numericInput.ribSide.both' },
-      { value: 'positive', labelKey: 'numericInput.ribSide.positive' },
-      { value: 'negative', labelKey: 'numericInput.ribSide.negative' },
-    ],
-  };
-}
-
-/** 穴の入口の広げ方(FR-422)。既定は広げない(欄が 0 個の段になる)。 */
-function holeEntryChoice(): NumericChoice {
-  return {
-    key: 'holeEntry',
-    labelKey: 'numericInput.choice.holeEntry',
-    value: DEFAULT_HOLE_ENTRY.kind,
-    options: [
-      { value: 'plain', labelKey: 'numericInput.holeEntry.plain' },
-      { value: 'counterbore', labelKey: 'numericInput.holeEntry.counterbore' },
-      { value: 'countersink', labelKey: 'numericInput.holeEntry.countersink' },
-    ],
-  };
-}
-
-/** 外ねじを切り始める端(FR-423)。既定は軸のパラメータが小さいほうの端。 */
-function threadShaftEndChoice(): NumericChoice {
-  return {
-    key: 'threadShaftEnd',
-    labelKey: 'numericInput.choice.threadShaftEnd',
-    value: DEFAULT_THREAD_SHAFT_FROM_END,
-    options: [
-      { value: 'first', labelKey: 'numericInput.threadShaftEnd.first' },
-      { value: 'last', labelKey: 'numericInput.threadShaftEnd.last' },
-    ],
-  };
-}
-
-/**
- * 曲面の作り方(FR-428)。値は model の `SurfaceOperation` の 6 種と同じ言葉にしてある
- * (同じ操作を 2 通りの名前で呼ばないため)。model に既定の定数が無いので、ここでは
- * 「輪郭 1 本からでも作れる」押し出しを既定にする(NFR-UX-4)。
- */
-function surfaceOperationChoice(): NumericChoice {
-  return {
-    key: 'surfaceOperation',
-    labelKey: 'numericInput.choice.surfaceOperation',
-    value: 'extrude',
-    options: [
-      { value: 'extrude', labelKey: 'numericInput.surfaceOperation.extrude' },
-      { value: 'revolve', labelKey: 'numericInput.surfaceOperation.revolve' },
-      { value: 'planar', labelKey: 'numericInput.surfaceOperation.planar' },
-      { value: 'loft', labelKey: 'numericInput.surfaceOperation.loft' },
-      { value: 'face', labelKey: 'numericInput.surfaceOperation.face' },
-      { value: 'offset', labelKey: 'numericInput.surfaceOperation.offset' },
-    ],
-  };
-}
-
-/**
- * 切断面の決め方(FR-432、§0.a-0.56)。基準の 3 面・選んだ面・3 点・点と辺・点と軸の 7 つ。
- * 値は model の `PlaneSpec` の種類(と作業平面の id)へそのまま読み替えられる言葉にしてある。
- * 既定は XY 面——何も選ばなくても切れる唯一の決め方だから(NFR-UX-4)。
- */
-function cutPlaneKindChoice(): NumericChoice {
-  return {
-    key: 'cutPlaneKind',
-    labelKey: 'numericInput.choice.cutPlaneKind',
-    value: 'xy',
-    options: [
-      { value: 'xy', labelKey: 'numericInput.cutPlaneKind.xy' },
-      { value: 'xz', labelKey: 'numericInput.cutPlaneKind.xz' },
-      { value: 'yz', labelKey: 'numericInput.cutPlaneKind.yz' },
-      { value: 'face', labelKey: 'numericInput.cutPlaneKind.face' },
-      { value: 'threePoints', labelKey: 'numericInput.cutPlaneKind.threePoints' },
-      { value: 'pointAndEdge', labelKey: 'numericInput.cutPlaneKind.pointAndEdge' },
-      { value: 'pointAndAxis', labelKey: 'numericInput.cutPlaneKind.pointAndAxis' },
-    ],
-  };
-}
-
-/** 段階ごとの選択肢の並び。持たない段は空配列。 */
-function choicesFor(step: NumericInputStep, options: NumericInputOptions): readonly NumericChoice[] {
-  switch (step) {
-    case 'sweepOptions':
-      return [{ key: 'sweepGuide', labelKey: 'numericInput.choice.sweepGuide', value: 'none', presentation: 'menu',
-        options: [{ value: 'none', labelKey: 'numericInput.sweepGuide.none' }, ...(options.sweepGuides ?? [])] }];
-    case 'sketchChamferSize':
-      return [sketchChamferModeChoice()];
-    case 'offsetDistance':
-      return [offsetSideChoice(options.offsetOpenContour ?? false), offsetCornerChoice()];
-    case 'mirrorBasis':
-      return [mirrorBasisChoice(options.mirrorAxes ?? DEFAULT_MIRROR_AXES)];
-    case 'referencePlaneOffset':
-      return [referencePlaneBaseChoice()];
-    case 'referencePlaneTilt':
-      return [
-        referenceAxisChoice(
-          'referenceAxisSpec',
-          'numericInput.choice.referenceAxisSpec',
-          'x',
-          options.referenceAxes,
-        ),
-      ];
-    case 'referencePlaneThrough':
-      return [
-        referencePlaneThroughModeChoice(),
-        referenceAxisChoice(
-          'referenceAxisSpec',
-          'numericInput.choice.referenceAxisSpec',
-          'z',
-          options.referenceAxes,
-        ),
-      ];
-    case 'referenceAxisKind':
-      return [referenceAxisKindChoice()];
-    case 'referencePointKind':
-      return [referencePointKindChoice()];
-    case 'referenceCsAxes':
-      return [
-        referenceAxisChoice(
-          'referenceCsXAxis',
-          'numericInput.choice.referenceCsXAxis',
-          'x',
-          options.referenceAxes,
-        ),
-        referenceAxisChoice(
-          'referenceCsYAxis',
-          'numericInput.choice.referenceCsYAxis',
-          'y',
-          options.referenceAxes,
-        ),
-      ];
-    case 'polygonShape':
-      return [polygonRadiusModeChoice()];
-    case 'pointArrayShape':
-      return [pointArrayLayoutChoice()];
-    case 'splineShape':
-      return [splineModeChoice()];
-    case 'twoPointArcRadius':
-      return [arcBulgeChoice()];
-    case 'revolveAngle':
-      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
-    case 'threadSize':
-      return [threadDesignationChoice(), threadSeriesChoice()];
-    case 'chamferSize':
-      return [chamferModeChoice()];
-    case 'linearPattern':
-      return [patternDirectionChoice(options.axisLine)];
-    case 'circularPattern':
-      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
-    case 'springShape':
-      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS), springHandednessChoice()];
-    case 'springLength':
-      return [springDerivedChoice()];
-    /*
-      基本形状5種の向き(§2.15 の「つまみ」列)。回転軸(FR-402)と同じ `RevolveAxis` を
-      流用するので選択肢も同じもの(X / Y / Z、線分が選ばれていれば「選んだ線分」)を使う
-      (§0.a-0.16「同じものを2つ作らない」)。既定は Z(model の `DEFAULT_PRIMITIVE_AXIS`)。
-      球とトーラスは向きを変えても見た目が変わらないが、種類ごとに出し分けない
-      (5 種で同じ欄立てにしたほうが操作の勘が働く。model 側の型も5種で共通)。
-    */
-    case 'sphereSize':
-    case 'boxSize':
-    case 'cylinderSize':
-    case 'coneSize':
-    case 'torusSize':
-      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
-    /*
-      面をつなぐ(FR-430、タスク27)の「なめらかさ」(§0.a-0.74)。
-      **球を含まない断面では形に効かない**(§0.a-0.87)ので、そのときは選択肢ごと伏せる。
-      効かない欄を出すと「変えたのに形が変わらない」ことになり、利用者は理由を推し量れない
-      (NFR-UX-5「できないことは示す」の裏返し)。球を含むかどうかはツールバーが選択から
-      見込んで `ruledHasSphere` で渡す。ロフト(`loftTwist`)には球を置けないので選択肢は無い。
-    */
-    case 'ruledTwist':
-      return options.ruledHasSphere === true ? [ruledSphereSegmentsChoice()] : [];
-    /* ---- P5 タスク49: Should / Could 群(§2.15 の段の表) ---- */
-    /*
-      押し出し(FR-401、FR-415、FR-416)。タスク50 で終わり方と厚みの側をここへ畳んだ。
-      どちらも選択肢なので**段を開いた直後から出る**が、欄は既定(終わり方＝距離、
-      薄板にする＝切)では距離 1 つのままである。
-    */
-    case 'extrudeDistance':
-      return [extrudeEndChoice(), thicknessSideChoice()];
-    case 'mirrorPlane':
-      return [mirrorPlaneChoice()];
-    // 回す軸は回転・円形パターン・ばねと同じ選択肢を使い回す(§0.a-0.16)。既定も同じ Z。
-    case 'transformRotation':
-      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
-    case 'ribThickness':
-      return [ribSideChoice()];
-    // 穴(FR-405、FR-422)。タスク50 で入口の広げ方をここへ畳んだ。
-    case 'holeSize':
-      return [holeEntryChoice()];
-    // 呼びと系列はねじ穴とまったく同じ表を使う(規格表を 2 か所に持たない、FR-406)。
-    case 'threadShaftSize':
-      return [threadDesignationChoice(), threadSeriesChoice(), threadShaftEndChoice()];
-    case 'surfaceShape':
-      return [surfaceOperationChoice()];
-    case 'cutPlane':
-      return [cutPlaneKindChoice()];
-    default:
-      return [];
-  }
-}
-
-/** 座標モードのタブの並び(§2.9)。Alt+1 / Alt+2 / Alt+3 の順でもある。 */
-export const COORDINATE_MODES: readonly CoordinateMode[] = ['absolute', 'relative', 'polar'];
-
-/** タブの見出し。 */
-export const MODE_LABEL_KEYS: Readonly<Record<CoordinateMode, MessageKey>> = {
-  absolute: 'numericInput.mode.absolute',
-  relative: 'numericInput.mode.relative',
-  polar: 'numericInput.mode.polar',
-};
-
-/** タブのホバー説明(FR-904、NFR-UX-7)。 */
-export const MODE_TOOLTIP_KEYS: Readonly<Record<CoordinateMode, MessageKey>> = {
-  absolute: 'numericInput.mode.absoluteTooltip',
-  relative: 'numericInput.mode.relativeTooltip',
-  polar: 'numericInput.mode.polarTooltip',
-};
-
-/** 欄の中に置く単位札(NFR-RE-3)。 */
-export const UNIT_KEYS: Readonly<Record<FieldUnit, MessageKey>> = {
-  mm: 'numericInput.unit.mm',
-  degree: 'numericInput.unit.degree',
-  count: 'numericInput.unit.count',
-  ratio: 'numericInput.unit.ratio',
-  N: 'strength.unit.N',
-  MPa: 'strength.unit.MPa',
-  Nmm: 'strength.unit.Nmm',
-};
-
-/**
- * 表示が inch のときに長さの欄へ出す札(P6 タスク3b、FR-811)。
- * 測定の帯と同じ文言(`measure.unit.inch` = `in`)を引く——同じ語を 2 か所に書かない。
- */
-const INCH_FIELD_UNIT_KEY: MessageKey = 'measure.unit.inch';
-
-/**
- * 欄の単位札のキー(P6 タスク3b)。**長さの欄だけ**が表示の単位で変わり、角度・個数は
- * `UNIT_KEYS` のまま(FR-205)。`unit` を省くと mm なので、P1〜P5 の呼び出しは変わらない。
- */
-export function fieldUnitLabelKey(unit: FieldUnit, lengthUnit: LengthUnit = 'mm'): MessageKey {
-  return isLengthFieldUnit(unit) && lengthUnit === 'inch' ? INCH_FIELD_UNIT_KEY : UNIT_KEYS[unit];
-}
-
-/**
- * 欄の下へ添える値の桁数(有効数字。P6 タスク3b)。
- *
- * 利用者の決定「解の表示は 9 桁で丸める」(docs/報告記録.md 2026-09-05)と同じ桁にする。
- * mm を inch へ割ると `10 / 25.4 = 0.3937007874015748` のように末尾が伸びるので、
- * **表示だけ**をここで丸める。**保存する式には 1 文字も書き戻さない**(丸めた値を式へ
- * 入れると、単位を切り替えるたびに文書が変わってしまう)。
- */
-export const FIELD_VALUE_DISPLAY_DIGITS = 9;
-
-/**
- * 数値 1 つを有効数字 `digits` 桁へ丸める(末尾の 0 は落ちる。`String()` の癖どおり)。
- * `0` と有限でない値はそのまま返す(`log10(0)` が `-Infinity` になるのを避ける)。
- *
- * P4b タスク23b-1 で `shell/PropertyPanel.tsx` に置いた同名の関数をここへ移した
- * (タスク3b)。**丸め方を 2 通り持たない**ため、あちらはこれを輸入して使う。
- */
-export function roundToSignificantDigits(value: number, digits: number): number {
-  if (value === 0 || !Number.isFinite(value)) {
-    return value;
-  }
-  const magnitude = Math.floor(Math.log10(Math.abs(value)));
-  const factor = Math.pow(10, digits - 1 - magnitude);
-  return Math.round(value * factor) / factor;
-}
-
-/**
- * 欄の下へ添える「= 値」の右辺(P6 タスク3b)。
- *
- * 長さの欄で表示が inch のときだけ、**評価した値だけ**を inch へ直して単位を添える
- * (例: 内部 `10`mm → `0.393700787 in`)。式そのものは書き換えない(FR-202)。
- * それ以外(mm・角度・個数)は式エンジンの表示文字列をそのまま出す(P1 からの見え方)。
- */
-export function fieldValueText(
-  unit: FieldUnit,
-  /* `ExpressionValue` をそのまま渡せる形。パラメータ表のように式を持たない値も渡せる。 */
-  value: { readonly value: number; readonly display: string },
-  lengthUnit: LengthUnit = 'mm',
-): string {
-  const text = fieldValueNumberText(unit, value, lengthUnit);
-  return isLengthFieldUnit(unit) && lengthUnit === 'inch'
-    ? `${text} ${t(INCH_FIELD_UNIT_KEY)}`
-    : text;
-}
-
-/**
- * 同じ値の**数だけ**(単位の札を添えない)。単位を別の場所へ出す欄——読み取り専用の
- * 欄(derived、§0.a-0.30)のように、札が横に並んでいる場所で使う。
- */
-export function fieldValueNumberText(
-  unit: FieldUnit,
-  value: { readonly value: number; readonly display: string },
-  lengthUnit: LengthUnit = 'mm',
-): string {
-  if (!isLengthFieldUnit(unit) || lengthUnit !== 'inch') {
-    return value.display;
-  }
-  return String(
-    roundToSignificantDigits(toDisplayLength(value.value, 'inch'), FIELD_VALUE_DISPLAY_DIGITS),
-  );
-}
-
-/** ポップアップ共通の文字列キー。文言そのものは持たない(NFR-MA-5)。 */
-export const NUMERIC_INPUT_KEYS: Readonly<
-  Record<'commit' | 'commitTooltip' | 'cancel' | 'cancelTooltip', MessageKey>
-> = {
-  commit: 'numericInput.commit',
-  commitTooltip: 'numericInput.commitTooltip',
-  cancel: 'numericInput.cancel',
-  cancelTooltip: 'numericInput.cancelTooltip',
-};
+export * from './numericInputPresentation.js';
 
 /** 相対・極の基準点の既定。直前に作った点からの続きが自然(FR-302、FR-307)。 */
 export const DEFAULT_COORDINATE_BASE: PointReference = { kind: 'previous' };
@@ -3514,6 +2255,8 @@ export function toggleValueOf(state: NumericInputState, key: NumericToggleKey): 
 
 /** ポップアップを開くときに外から渡せるもの。無くても既定で成り立つ(NFR-UX-4)。 */
 export interface NumericInputOptions {
+  readonly repeatAfterCommit?: boolean;
+  readonly defaultSources?: NumericDefaultSources;
   readonly sweepGuides?: readonly NumericChoiceOption[];
   /**
    * 回転軸・パターンの向き・ばねの軸に選べるスケッチの線分(§0.a-0.9)。
@@ -3562,9 +2305,12 @@ export function createNumericInput(
     toolId,
     step,
     mode,
+    ...(options.defaultSources === undefined ? {} : { defaultSources: options.defaultSources }),
+    ...(options.repeatAfterCommit === undefined ? {} : { repeatAfterCommit: options.repeatAfterCommit }),
     // 段を開いた時点の選択肢・つまみで出す欄を決める(`visibleWhen`、タスク49)。
     fields: toFields(
-      visibleDefinitions(definitionsFor(step, mode, choices, options), choices, toggles),
+      applyNumericDefaultSources(step, mode,
+        visibleDefinitions(definitionsFor(step, mode, choices, options), choices, toggles), options.defaultSources),
     ),
     focusedIndex: 0,
     toggles,
@@ -3572,6 +2318,28 @@ export function createNumericInput(
     axisLine: options.axisLine,
     referenceAxes: options.referenceAxes,
   };
+}
+
+/** 状態を進める間に端末設定を読み直さず、開始時の既定値を保つ。 */
+function createNextNumericInput(state: NumericInputState, step: NumericInputStep,
+  mode?: CoordinateMode, options: NumericInputOptions = {}): NumericInputState {
+  return createNumericInput(state.toolId, step, mode, { ...options, defaultSources: state.defaultSources,
+    ...(state.repeatAfterCommit === undefined ? {} : { repeatAfterCommit: state.repeatAfterCommit }) });
+}
+
+/** 設定画面も実際の入力と同じ欄・範囲を読む。選択肢で現れる欄も含める。 */
+export function numericDefaultDefinitions(step: NumericInputStep, mode: CoordinateMode): readonly NumericFieldDefinition[] {
+  const choices = choicesFor(step, {});
+  const variants = [choices, ...choices.flatMap(choice => choice.options.map(option =>
+    choices.map(item => item.key === choice.key ? { ...item, value: option.value } : item)))];
+  // 3D複写の3成分も設定できるようにし、表示条件や選択の意味は変更しない。
+  const byKey = new Map<string, NumericFieldDefinition>();
+  for (const variant of variants) {
+    for (const field of definitionsFor(step, mode, variant, { freeSketch: true })) {
+      if (!byKey.has(field.key)) byKey.set(field.key, field);
+    }
+  }
+  return [...byKey.values()];
 }
 
 /**
@@ -3583,7 +2351,7 @@ function editStage2StateFrom(
   state: NumericInputState,
   step: EditNumericInputStep,
 ): NumericInputState {
-  const next = createNumericInput(state.toolId, step);
+  const next = createNextNumericInput(state, step);
   return {
     ...next,
     previousStage: state,
@@ -3611,7 +2379,7 @@ function solidStage2StateFrom(
   state: NumericInputState,
   step: SolidNumericInputStep,
 ): NumericInputState {
-  const next = createNumericInput(state.toolId, step, undefined, { axisLine: state.axisLine });
+  const next = createNextNumericInput(state, step, undefined, { axisLine: state.axisLine });
   return {
     ...next,
     previousStage: state,
@@ -3638,7 +2406,7 @@ const SOLID_SECOND_STEPS: Readonly<Partial<Record<SolidNumericInputStep, SolidNu
  * (ツールバーの決定・二重クリック等)を受けてここを呼ぶ。
  */
 export function splineFinishStateFrom(state: NumericInputState): NumericInputState {
-  return createNumericInput(state.toolId, 'splineShape');
+  return createNextNumericInput(state, 'splineShape');
 }
 
 /**
@@ -3650,7 +2418,7 @@ function referenceStep(
   state: NumericInputState,
   step: ReferenceNumericInputStep,
 ): NumericInputState {
-  return createNumericInput(state.toolId, step, undefined, {
+  return createNextNumericInput(state, step, undefined, {
     referenceAxes: state.referenceAxes,
   });
 }
@@ -3817,7 +2585,8 @@ function rebuiltFields(
     choices,
     toggles,
   );
-  const fields = mergeFieldValues(state.fields, definitions);
+  const fields = mergeFieldValues(state.fields,
+    applyNumericDefaultSources(state.step, state.mode, definitions, state.defaultSources));
   const focusedIndex =
     fields.length === state.fields.length
       ? state.focusedIndex
@@ -3863,7 +2632,8 @@ export function reduceNumericInput(
       return {
         ...state,
         mode: event.mode,
-        fields: toFields(definitionsFor(state.step, event.mode, state.choices)),
+        fields: toFields(applyNumericDefaultSources(state.step, event.mode,
+          definitionsFor(state.step, event.mode, state.choices), state.defaultSources)),
         focusedIndex: 0,
       };
     }
@@ -3945,309 +2715,6 @@ function choiceValueFrom(choices: readonly NumericChoice[], key: NumericChoiceKe
 /** 指定したつまみの現在値。持たない・見つからないときは null。 */
 export function choiceValueOf(state: NumericInputState, key: NumericChoiceKey): string | null {
   return choiceValueFrom(state.choices, key) ?? null;
-}
-
-/* ---- P4 タスク11: 2 点+半径の円弧(FR-326、統括の決定 §0.a-0.18) ---- */
-
-/** 断りの文へ長さを差し込むときの丸め(1μm 単位)。桁が伸びて読みにくくなるのを防ぐ。 */
-function lengthText(millimetres: number): string {
-  return String(Math.round(millimetres * 1000) / 1000);
-}
-
-/**
- * 2 点の中点から、2 点+半径の円弧の中心までの距離(FR-326)。
- *
- * 中心は 2 点を結ぶ線分の垂直二等分線上にあり、弦の半分を h とすると
- * 中点から √(半径² − h²) 進んだところにある(解は 2 つで、どちらを採るかは
- * 「ふくらむ向き」の選択肢が決める)。半径が弦の半分より小さいと 2 点を通る円が
- * 引けないので null を返す。
- *
- * 向きを持たない長さだけをここで受け持ち、作図面の中で実際の中心を組み立てるのは
- * タスク12 の `shapeCommands.ts`(`arcCenterFromTwoPointsAndRadius`)。
- */
-export function twoPointArcCenterOffset(chordLength: number, radius: number): number | null {
-  if (!Number.isFinite(chordLength) || !Number.isFinite(radius)) {
-    return null;
-  }
-  const half = chordLength / 2;
-  if (half <= 0 || radius < half) {
-    return null;
-  }
-  return Math.sqrt(radius * radius - half * half);
-}
-
-/**
- * 2 点と半径で円弧が引けないときの断りの文(NFR-UX-5)。引けるなら null。
- * 限界値(弦の半分)を差し込んだ文になるので ja.json のキー1つでは組み立てられない
- * (`describeRange` と同じ事情)。見出しの語だけ ja.json から引く。
- */
-export function twoPointArcRadiusRejection(chordLength: number, radius: number): string | null {
-  if (twoPointArcCenterOffset(chordLength, radius) !== null) {
-    return null;
-  }
-  if (!Number.isFinite(chordLength) || chordLength <= 0) {
-    return '2 点が同じ位置にあるので円弧になりません。';
-  }
-  const label = t('numericInput.field.radius');
-  return `${label}は 2 点の間の長さの半分(${lengthText(chordLength / 2)}mm)以上にしてください。`;
-}
-
-/* ---- P4 タスク11: スプラインの下書き(FR-317、計画書タスク11 の splineDraft) ---- */
-
-/**
- * 置いた点をためておく下書き。
- *
- * スプラインだけは「クリックのたびに点を積み、最後にまとめて 1 本の曲線にする」進行なので、
- * 「1 段 = 1 要素」の `NumericInputState` では表せない。どこへ置くか(ストアの欄)は
- * タスク12 が決め、ここでは形と規則(足せるか・曲線にできるか)だけを純関数で持つ。
- */
-export interface SplineDraft {
-  /** 置いた順がそのまま曲線の向きになる。 */
-  readonly points: readonly CoordinateInput[];
-  readonly mode: 'interpolate' | 'control';
-  readonly closed: boolean;
-}
-
-/** 道具を選んだ直後の下書き(点なし・通過点・開いた曲線)。 */
-export const EMPTY_SPLINE_DRAFT: SplineDraft = {
-  points: [],
-  mode: 'interpolate',
-  closed: false,
-};
-
-export type SplineDraftOutcome =
-  | { readonly ok: true; readonly draft: SplineDraft }
-  /** 断った理由。文言は限界値を差し込むのでここで組み立てる(`describeRange` と同じ事情)。 */
-  | { readonly ok: false; readonly reason: string };
-
-/** 点を 1 つ置く。上限(model の MAX_SPLINE_POINTS)を超えるときは断って下書きを変えない。 */
-export function appendSplinePoint(draft: SplineDraft, point: CoordinateInput): SplineDraftOutcome {
-  if (draft.points.length >= MAX_SPLINE_POINTS) {
-    return {
-      ok: false,
-      reason: `スプラインの点は ${String(MAX_SPLINE_POINTS)} 個までです。`,
-    };
-  }
-  return { ok: true, draft: { ...draft, points: [...draft.points, point] } };
-}
-
-/** 最後に置いた点を取り消す。点が無ければ同じ下書きをそのまま返す。 */
-export function removeLastSplinePoint(draft: SplineDraft): SplineDraft {
-  return draft.points.length === 0 ? draft : { ...draft, points: draft.points.slice(0, -1) };
-}
-
-export type SplineDraftCheck =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly reason: string };
-
-/**
- * 下書きを 1 本の曲線にできるか(FR-317)。下限・上限は model の `splineMath.ts` と同じ値を
- * 使い、UI 側で数を持たない(開いた曲線は 2 点以上、閉じた曲線は 3 点以上、上限 100 点)。
- */
-export function checkSplineDraft(draft: SplineDraft): SplineDraftCheck {
-  const count = draft.points.length;
-  if (draft.closed && count < MIN_CLOSED_SPLINE_POINTS) {
-    return {
-      ok: false,
-      reason: `閉じたスプラインには点が ${String(MIN_CLOSED_SPLINE_POINTS)} 個以上必要です。`,
-    };
-  }
-  if (!draft.closed && count < MIN_SPLINE_POINTS) {
-    return {
-      ok: false,
-      reason: `スプラインには点が ${String(MIN_SPLINE_POINTS)} 個以上必要です。`,
-    };
-  }
-  if (count > MAX_SPLINE_POINTS) {
-    return { ok: false, reason: `スプラインの点は ${String(MAX_SPLINE_POINTS)} 個までです。` };
-  }
-  return { ok: true };
-}
-
-export interface NumericFieldResult {
-  readonly key: string;
-  readonly value: ExpressionValue | null;
-  readonly error: ExpressionError | null;
-}
-
-export interface NumericInputEvaluation {
-  readonly carriedError?: ExpressionError;
-  readonly results: readonly NumericFieldResult[];
-  /** すべての欄が妥当なら true。false のときは決定させない(NFR-UX-5)。 */
-  readonly canCommit: boolean;
-  /** 最初にエラーになった欄。無ければ -1。 */
-  readonly firstErrorIndex: number;
-}
-
-/** 範囲外を表す識別子(packages/expression の ExpressionErrorCode、P3 §0.a-0.23 ①)。 */
-const RANGE_ERROR_CODE = 'outOfRange';
-
-/**
- * 範囲外の理由文を組み立てる。
- * 限界値を差し込んだ文になるので ja.json のキー1つでは組み立てられない
- * (packages/expression/src/errors.ts が日本語を持っているのと同じ事情)。
- * 見出しの語だけは ja.json から引く(NFR-MA-5)。
- */
-function describeRange(label: string, range: NumericFieldRange): string {
-  const min = String(range.min);
-  if (range.max === null) {
-    const lower = range.minInclusive ? `${min} 以上の` : `${min} より大きい`;
-    return `${label}は ${lower}値を入れてください。`;
-  }
-  const lower = range.minInclusive ? `${min} 以上` : `${min} より大きく`;
-  const upper = `${String(range.max)} ${range.maxInclusive ? '以下' : '未満'}`;
-  return `${label}は ${lower} ${upper}の値を入れてください。`;
-}
-
-/** 欄の範囲を確かめる。範囲内なら null(NFR-UX-5)。 */
-export function rangeErrorFor(field: NumericField, value: ExpressionValue): ExpressionError | null {
-  const { range } = field;
-  if (range === undefined) {
-    return null;
-  }
-  const belowMin = range.minInclusive ? value.value < range.min : value.value <= range.min;
-  const aboveMax =
-    range.max !== null && (range.maxInclusive ? value.value > range.max : value.value >= range.max);
-  if (!belowMin && !aboveMax) {
-    return null;
-  }
-  return {
-    code: RANGE_ERROR_CODE,
-    message: describeRange(t(field.labelKey), range),
-    position: -1,
-  };
-}
-
-/** 空欄は既定値として扱う。Enter を連打するだけで意味のある形になる(NFR-UX-4)。 */
-export function effectiveSource(field: NumericField): string {
-  return field.source.trim() === '' ? field.defaultSource : field.source;
-}
-
-/**
- * その欄を評価する式の文字列(P6 タスク3b、§0.a-0.63)。**保存されるのもこの文字列**で、
- * 評価した値ではない(FR-202)。
- *
- * 打った文字が残っている長さの欄だけを、表示の単位で包む(`applyDisplayUnit`)。
- * 空欄(= 既定値で埋まる)と、吸い付きで入った座標は**すでに内部の mm** なので包まない
- * (`NumericField.typed` の注釈を見よ)。表示が mm のときは何を通しても包まれないので、
- * P1〜P5 の振る舞いは 1 文字も変わらない。
- */
-export function fieldExpression(field: NumericField, unit: LengthUnit = 'mm'): string {
-  if (field.typed !== true || field.source.trim() === '') {
-    return effectiveSource(field);
-  }
-  return applyDisplayUnit(field.source, field.unit, unit);
-}
-
-/**
- * 空欄を既定値の文字列で埋めた状態を返す(NFR-UX-4)。
- * 決定のときに一度だけ通し、利用者が実際に使われた値を目で確かめられるようにする。
- * 埋めるものが無ければ同じ状態をそのまま返す。
- */
-export function fillDefaults(state: NumericInputState): NumericInputState {
-  if (state.fields.every((field) => field.source === effectiveSource(field))) {
-    return state;
-  }
-  return {
-    ...state,
-    // 埋めるのは既定値(内部の mm)なので、打った文字の印は落とす(タスク3b)。
-    fields: state.fields.map((field) => ({
-      ...field,
-      source: effectiveSource(field),
-      typed: field.source.trim() === '' ? false : field.typed,
-    })),
-  };
-}
-
-/**
- * 表示の単位に関わる選択肢(P6 タスク3b、§0.a-0.63)。
- *
- * どちらも省くと**表示が mm・パラメータはすべて長さ**になる。つまり P1〜P5 の呼び出しと
- * 検査は 1 文字も書き換えずに同じ値を返す(安全側の既定)。
- */
-export interface DisplayUnitOptions {
-  /** パラメータ間の精度を決定時まで保持する。 */
-  readonly exactVariables?: ReadonlyMap<string, string>;
-  /** 画面に出している長さの単位(`DisplaySettings.lengthUnit`)。省くと mm。 */
-  readonly lengthUnit?: LengthUnit;
-  /**
-   * 長さでないパラメータの名前(model の `nonLengthVariables(document.parameters)`)。
-   * 単位の空間の中で「個数や角度まで倍率で割る」のを防ぐ(§0.a-0.63)。
-   */
-  readonly nonLengthVariables?: ReadonlySet<string>;
-}
-
-/** すべての欄を評価する。1 文字打つごとに呼んでよい軽さにする。 */
-export function evaluateNumericInput(
-  state: NumericInputState,
-  variables: ReadonlyMap<string, number> = new Map(),
-  display: DisplayUnitOptions = {},
-): NumericInputEvaluation {
-  const results: NumericFieldResult[] = state.fields.map((field) => {
-    const result = evaluateNumericField(field, variables, display);
-    if (!result.ok) {
-      return { key: field.key, value: null, error: result.error };
-    }
-    // 式としては読めても、その道具が使えない値は決定させない(NFR-UX-5)。
-    // 個数(パターンの count)が整数かどうかはここでは確かめない。NumericFieldRange は
-    // min/max しか表現できず、ここへ整数判定を足すと他の欄(距離等)へ影響しない設計を
-    // 保つのが難しいため、整数かどうかの検査は加工コマンド側(タスク25
-    // machiningCommands.ts)で行う判断とした(計画書タスク24 検証表の注記への回答)。
-    const rangeError = rangeErrorFor(field, result.value);
-    return rangeError === null
-      ? { key: field.key, value: result.value, error: null }
-      : { key: field.key, value: null, error: rangeError };
-  });
-  const firstErrorIndex = results.findIndex((result) => result.error !== null);
-  for (const field of state.carriedStage1?.fields ?? []) {
-    const result = evaluateNumericField(field, variables, display);
-    const error = result.ok ? rangeErrorFor(field, result.value) : result.error;
-    if (error !== null) {
-      return { results, canCommit: false, firstErrorIndex: Math.max(0, firstErrorIndex),
-        carriedError: { ...error, message: `前の入力「${t(field.labelKey)}」: ${error.message}` } };
-    }
-  }
-  return { results, canCommit: firstErrorIndex === -1, firstErrorIndex };
-}
-
-/** Use the same validation for visible fields and values carried from a previous step. */
-function evaluateNumericField(field: NumericField, variables: ReadonlyMap<string, number>, display: DisplayUnitOptions) {
-  if (field.mathValue !== undefined) {
-    if (field.source !== field.mathValue.source) return { ok: false as const, error: { code: 'unknownVariable' as const,
-      position: -1, message: '数式を変更したため再確認が必要です。「数式で入力」を開いてください。' } };
-    return evaluateNumericMath(field.mathValue, variables, display.exactVariables);
-  }
-  return evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
-    variables, nonLengthVariables: display.nonLengthVariables, exactVariables: display.exactVariables,
-  });
-}
-
-/** 評価できた値だけを順に取り出す。決定のときに使う。 */
-export function commitValues(evaluation: NumericInputEvaluation): ExpressionValue[] | null {
-  if (!evaluation.canCommit) {
-    return null;
-  }
-  const values: ExpressionValue[] = [];
-  for (const result of evaluation.results) {
-    if (result.value === null) {
-      return null;
-    }
-    values.push(result.value);
-  }
-  return values;
-}
-
-/**
- * 決定した値を欄の名前で引く(円弧の `radius` など)。
- * 並び順の取り違えを防ぐため、タスク17 が履歴へ積むときはこちらを使う。
- */
-export function valueByFieldKey(
-  state: NumericInputState,
-  values: readonly ExpressionValue[],
-  key: string,
-): ExpressionValue | undefined {
-  const index = state.fields.findIndex((field) => field.key === key);
-  return index === -1 ? undefined : values[index];
 }
 
 /**
@@ -5455,83 +3922,84 @@ export function commitNumericInput(
  */
 export function nextNumericInput(
   state: NumericInputState,
-  chaining: boolean,
+  requestedChaining: boolean,
 ): NumericInputState | null {
+  const chaining = state.repeatAfterCommit ?? requestedChaining;
   switch (state.step) {
     case 'lineStart':
-      return createNumericInput(state.toolId, 'lineEnd');
+      return createNextNumericInput(state, 'lineEnd');
     case 'arcCenter':
-      return createNumericInput(state.toolId, 'arcShape');
+      return createNextNumericInput(state, 'arcShape');
     case 'pointArrayBase':
-      return createNumericInput(state.toolId, 'pointArrayShape');
+      return createNextNumericInput(state, 'pointArrayShape');
     case 'circleCenter':
-      return createNumericInput(state.toolId, 'circleRadius');
+      return createNextNumericInput(state, 'circleRadius');
     case 'twoPointArcStart':
-      return createNumericInput(state.toolId, 'twoPointArcEnd');
+      return createNextNumericInput(state, 'twoPointArcEnd');
     case 'twoPointArcEnd':
-      return createNumericInput(state.toolId, 'twoPointArcRadius');
+      return createNextNumericInput(state, 'twoPointArcRadius');
     case 'threePointArcStart':
-      return createNumericInput(state.toolId, 'threePointArcEnd');
+      return createNextNumericInput(state, 'threePointArcEnd');
     case 'threePointArcEnd':
-      return createNumericInput(state.toolId, 'threePointArcVia');
+      return createNextNumericInput(state, 'threePointArcVia');
     case 'rectangleCorner1':
-      return createNumericInput(state.toolId, 'rectangleCorner2');
+      return createNextNumericInput(state, 'rectangleCorner2');
     case 'polygonCenter':
-      return createNumericInput(state.toolId, 'polygonShape');
+      return createNextNumericInput(state, 'polygonShape');
     case 'slotCenter1':
-      return createNumericInput(state.toolId, 'slotCenter2');
+      return createNextNumericInput(state, 'slotCenter2');
     case 'slotCenter2':
-      return createNumericInput(state.toolId, 'slotShape');
+      return createNextNumericInput(state, 'slotShape');
     case 'ellipseCenter':
-      return createNumericInput(state.toolId, 'ellipseShape');
+      return createNextNumericInput(state, 'ellipseShape');
     case 'ellipseShape':
-      return createNumericInput(state.toolId, 'ellipseAngles');
+      return createNextNumericInput(state, 'ellipseAngles');
     case 'ellipseAngles':
       // 「一部だけ(楕円弧)」が入なら開始角・終了角を続けて聞く。切なら全周でここで終わる。
       if (toggleValueOf(state, 'ellipseArc')) {
-        return createNumericInput(state.toolId, 'ellipseArcAngles');
+        return createNextNumericInput(state, 'ellipseArcAngles');
       }
-      return chaining ? createNumericInput(state.toolId, 'ellipseCenter') : null;
+      return chaining ? createNextNumericInput(state, 'ellipseCenter') : null;
     case 'pointArrayShape':
       // 格子は「行」「列」の 2 段に分けてある(欄を 1 段 2 個までにするため)。
       if (choiceValueFrom(state.choices, 'pointArrayLayout') === 'grid') {
-        return createNumericInput(state.toolId, 'pointArrayGridColumns');
+        return createNextNumericInput(state, 'pointArrayGridColumns');
       }
-      return chaining ? createNumericInput(state.toolId, 'pointArrayBase') : null;
+      return chaining ? createNextNumericInput(state, 'pointArrayBase') : null;
     case 'splinePoint':
       // 点は「続けてかく」の入切に関わらず積み上げる。曲線にするのは splineFinishStateFrom
       // が開く splineShape の段(タスク12 が Enter 以外の合図で呼ぶ)。
-      return createNumericInput(state.toolId, 'splinePoint', state.mode);
+      return createNextNumericInput(state, 'splinePoint', state.mode);
     case 'point':
       // 点は 1 段階で終わるので、同じ指定方法のまま次の点を聞く。
-      return chaining ? createNumericInput(state.toolId, 'point', state.mode) : null;
+      return chaining ? createNextNumericInput(state, 'point', state.mode) : null;
     case 'lineEnd': {
       if (!chaining) return null;
-      const next = createNumericInput(state.toolId, 'lineEnd');
+      const next = createNextNumericInput(state, 'lineEnd');
       const split = state.toggles.find((toggle) => toggle.key === 'splitIntersections');
       return split === undefined ? next : { ...next, toggles: next.toggles.map((toggle) =>
         toggle.key === 'splitIntersections' ? { ...toggle, value: split.value } : toggle) };
     }
     case 'arcShape':
-      return chaining ? createNumericInput(state.toolId, 'arcCenter') : null;
+      return chaining ? createNextNumericInput(state, 'arcCenter') : null;
     case 'circleRadius':
-      return chaining ? createNumericInput(state.toolId, 'circleCenter') : null;
+      return chaining ? createNextNumericInput(state, 'circleCenter') : null;
     case 'twoPointArcRadius':
-      return chaining ? createNumericInput(state.toolId, 'twoPointArcStart') : null;
+      return chaining ? createNextNumericInput(state, 'twoPointArcStart') : null;
     case 'threePointArcVia':
-      return chaining ? createNumericInput(state.toolId, 'threePointArcStart') : null;
+      return chaining ? createNextNumericInput(state, 'threePointArcStart') : null;
     case 'rectangleCorner2':
-      return chaining ? createNumericInput(state.toolId, 'rectangleCorner1') : null;
+      return chaining ? createNextNumericInput(state, 'rectangleCorner1') : null;
     case 'polygonShape':
-      return chaining ? createNumericInput(state.toolId, 'polygonCenter') : null;
+      return chaining ? createNextNumericInput(state, 'polygonCenter') : null;
     case 'slotShape':
-      return chaining ? createNumericInput(state.toolId, 'slotCenter1') : null;
+      return chaining ? createNextNumericInput(state, 'slotCenter1') : null;
     case 'ellipseArcAngles':
-      return chaining ? createNumericInput(state.toolId, 'ellipseCenter') : null;
+      return chaining ? createNextNumericInput(state, 'ellipseCenter') : null;
     case 'pointArrayGridColumns':
-      return chaining ? createNumericInput(state.toolId, 'pointArrayBase') : null;
+      return chaining ? createNextNumericInput(state, 'pointArrayBase') : null;
     case 'splineShape':
-      return chaining ? createNumericInput(state.toolId, 'splinePoint') : null;
+      return chaining ? createNextNumericInput(state, 'splinePoint') : null;
     case 'springShape':
       return springLengthStateFrom(state);
     // 移動/回転(FR-424、タスク49)。1 段目(動かす量)から 2 段目(回す角度)へ進む。

@@ -1,4 +1,4 @@
-import type { MathWorkerPort } from '@pointercad/expression/math/client';
+import { isMathWorkProgress, type MathWorkerPort } from '@pointercad/expression/math/client';
 
 interface Work { readonly port: MathWorkerPort; readonly value: unknown }
 
@@ -22,7 +22,7 @@ export function createMathWorkerGroup(createWorker: () => MathWorkerPort): {
     try {
       if (worker === null) {
         const current = createWorker(); worker = current;
-        current.onmessage = event => dispatch(current, port => port.onmessage?.(event));
+        current.onmessage = event => dispatch(current, port => port.onmessage?.(event), isMathWorkProgress(event.data));
         current.onerror = event => dispatch(current, port => port.onerror?.(event));
         current.onmessageerror = () => dispatch(current, port => port.onmessageerror?.());
       }
@@ -37,7 +37,7 @@ export function createMathWorkerGroup(createWorker: () => MathWorkerPort): {
       pump();
     }
   }
-  function dispatch(source: MathWorkerPort, deliver: (port: MathWorkerPort) => void): void {
+  function dispatch(source: MathWorkerPort, deliver: (port: MathWorkerPort) => void, progress = false): void {
     if (source !== worker || active === null) return;
     const work = active;
     // A decoder rejecting this reply terminates its still-active port, discarding the Worker.
@@ -45,7 +45,7 @@ export function createMathWorkerGroup(createWorker: () => MathWorkerPort): {
     try { deliver(work.port); }
     finally {
       dispatching = false;
-      if (active === work) active = null;
+      if (!progress && active === work) active = null;
       pump();
     }
   }
@@ -54,6 +54,7 @@ export function createMathWorkerGroup(createWorker: () => MathWorkerPort): {
     if (ports.size >= 16) throw new RangeError('Too many recomputation Worker clients');
     const port: MathWorkerPort = { onmessage: null, onerror: null, onmessageerror: null,
       get startupTimeoutMs() { return worker?.startupTimeoutMs ?? 0; },
+      get retireAfterReply() { return worker?.retireAfterReply === true; },
       postMessage(value) {
         if (!ports.has(port)) throw new Error('Calculation Worker client is closed');
         if ((active?.port === port && !dispatching) || queue.some(work => work.port === port)) throw new Error('Client already has pending work');

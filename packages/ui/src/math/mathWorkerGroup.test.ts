@@ -3,11 +3,11 @@ import { MathWorkerClient, type MathWorkerPort, type MathWorkRequest } from '@po
 import { createMathWorkerGroup } from './mathWorkerGroup.js';
 
 afterEach(() => vi.useRealTimers());
-function fixture() {
+function fixture(startupTimeoutMs = 0) {
   const created: { port: MathWorkerPort; sent: unknown[]; terminate: ReturnType<typeof vi.fn> }[] = [];
   const owner = createMathWorkerGroup(() => {
     const sent: unknown[] = [], terminate = vi.fn();
-    const port: MathWorkerPort = { onmessage: null, onerror: null, onmessageerror: null,
+    const port: MathWorkerPort = { onmessage: null, onerror: null, onmessageerror: null, startupTimeoutMs,
       postMessage: value => { sent.push(value); }, terminate };
     created.push({ port, sent, terminate }); return port;
   });
@@ -17,6 +17,39 @@ const request: MathWorkRequest = { identity: { documentId: 'part', documentVersi
   source: '2', notation: 'text', angleUnit: 'degree', coefficients: [] };
 
 describe('一回の再計算の数値と形状の計算部を共有する', () => {
+  it('交換直後に待機中の次の依頼を開始しても、新しい実体の初回読込み猶予を保持する', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const { owner, created } = fixture(15_000);
+    const client = new MathWorkerClient({ createWorker: owner.createPort,
+      decodeReply: value => typeof value === 'number' ? { serial: value, result: { definition: null,
+        evaluation: { status: 'stopped', reason: 'budget' } } } : null });
+    const first = client.evaluate(request, 5000), next = client.evaluate(request, 5000);
+    Object.defineProperty(created[0].port, 'retireAfterReply', { value: true });
+    created[0].port.onmessage?.({ data: 1 }); expect(await first).toMatchObject({ status: 'result' });
+    expect(created[0].terminate).toHaveBeenCalledOnce(); expect(created).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(6500); expect(created[1].terminate).not.toHaveBeenCalled();
+    created[1].port.onmessage?.({ data: 2 }); expect(await next).toMatchObject({ status: 'result' });
+    client.dispose(); owner.dispose();
+  });
+  it('数値の準備通知で次の形状計算を始めず、取消した実体へ次の要求を送らない', async () => {
+    const { owner, created } = fixture(), client = new MathWorkerClient({ createWorker: owner.createPort, decodeReply: () => null });
+    const abort = new AbortController(), pending = client.evaluate(request, 5000, abort.signal);
+    const next = owner.createPort(), received = vi.fn(); next.onmessage = received; next.postMessage('surface');
+    created[0].port.onmessage?.({ data: { kind: 'math-phase', serial: 1, identity: request.identity, phase: 'runtime-loading' } });
+    expect(created[0].sent).toHaveLength(1); expect(received).not.toHaveBeenCalled();
+    const late = created[0].port.onmessage; abort.abort();
+    expect(await pending).toMatchObject({ status: 'cancelled' }); expect(created[0].terminate).toHaveBeenCalledOnce();
+    expect(created[1].sent).toEqual(['surface']); late?.({ data: { kind: 'math-phase', serial: 1, identity: request.identity, phase: 'calculating' } });
+    expect(received).not.toHaveBeenCalled(); created[1].port.onmessage?.({ data: 'surface-result' });
+    expect(received).toHaveBeenCalledWith({ data: 'surface-result' }); client.dispose(); owner.dispose();
+  });
+  it('共有中でも不正な準備通知を受けた実体を捨て、後続だけを新しく始める', async () => {
+    const { owner, created } = fixture(), client = new MathWorkerClient({ createWorker: owner.createPort, decodeReply: () => null });
+    const pending = client.evaluate(request, 5000), next = owner.createPort(); next.postMessage('next');
+    created[0].port.onmessage?.({ data: { kind: 'math-phase', serial: 99, identity: request.identity, phase: 'runtime-loading' } });
+    expect(await pending).toMatchObject({ status: 'worker-error' }); expect(created[0].terminate).toHaveBeenCalledOnce();
+    expect(created[1].sent).toEqual(['next']); client.dispose(); owner.dispose();
+  });
   it('同じ番号の別の依頼を順に送り、内容を変えず元の呼出し側へ返信する', () => {
     const { owner, created } = fixture(), a = owner.createPort(), b = owner.createPort();
     const first = { kind: 'math-evaluate', serial: 1 }, second = { kind: 'sample-function-implicit-surface', serial: 1 };

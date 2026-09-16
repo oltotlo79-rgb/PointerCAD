@@ -2,8 +2,9 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { KERNEL_TIMEOUT_MS } from './recompute.js';
-import { drawingFromBox, chooseDrawingMenu } from './drawingManufacturingFixture.js';
+import { drawingFromBox, chooseDrawingMenu, expectDrawingStroke } from './drawingManufacturingFixture.js';
 import { drawingMessage } from './drawingMessages.js';
+import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 
 test.describe('P9 溶接記号の実操作', () => {
   test('8種類・両側・式・断続・現場・全周・折れ矢を作り、編集Undo・保存と5形式出力でも指示が残る', async ({ page }, testInfo) => {
@@ -62,6 +63,7 @@ test.describe('P9 溶接記号の実操作', () => {
         await field('side').selectOption('center'); await field('size.diameter').fill('6');
         await field('count').fill('3'); await field('pitch').fill('30');
       } else if (kind === 'seam') await field('allAround').check();
+      await assertRenderedControlDescriptions(form);
       await form.getByRole('button', { name: drawingMessage('drawing.action.apply'), exact: true }).click();
       await expect.poll(() => owner(`weld-${index + 1}`).locator('path').count()).toBeGreaterThan(0);
       await expect(tree.getByRole('button', { name: `${drawingMessage('drawing.weld.title')} ${index + 1}`, exact: true })).toBeVisible();
@@ -113,7 +115,9 @@ test.describe('P9 溶接記号の実操作', () => {
     }
     await page.reload(); const chooser = page.waitForEvent('filechooser'); await page.getByRole('button', { name: '開く', exact: true }).click();
     await (await chooser).setFiles({ name: '溶接図.pcadd', mimeType: 'application/zip', buffer: bytes });
-    await expect(owner('weld-8').locator('path').first()).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+    // 一つの溶接指示は線と文字の複数グループに分かれる。全体を単一要素とみなさない。
+    await expect(owner('weld-8').first()).toBeAttached({ timeout: KERNEL_TIMEOUT_MS });
+    await expectDrawingStroke(owner('weld-8').locator('path'));
     await tree.getByRole('button', { name: `${drawingMessage('drawing.weld.title')} 1`, exact: true }).click();
     await expect(field('size.throat')).toHaveValue('10/2'); await expect(field('pitch')).toHaveValue('200');
     await form.locator('strong').scrollIntoViewIfNeeded();

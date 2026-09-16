@@ -1,0 +1,19 @@
+.pcad-keyboard-control-hint {
+  position: fixed;
+  z-index: 10000;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(calc(360px * var(--pcad-scale, 1)), calc(100vw - 16px));
+  padding: calc(6px * var(--pcad-scale, 1)) calc(9px * var(--pcad-scale, 1));
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius);
+  background: var(--pcad-surface);
+  color: var(--pcad-text);
+  font-size: calc(12px * var(--pcad-scale, 1));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  pointer-events: none;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 30%);
+}
+@media print { .pcad-keyboard-control-hint { display: none; } }

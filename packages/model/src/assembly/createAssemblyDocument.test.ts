@@ -151,6 +151,7 @@ describe('createAssemblyDocument', () => {
       references: true, schemaVersion: true, selectionSets: true, sheetUnfolds: true,
       sketches: true, solids: true,
       mathParameterSerial: 'optional',
+      featureNotes: 'optional', featureFolders: 'optional',
     } satisfies Record<keyof PartDocument, true | 'optional'>;
     expect(Object.keys(createEmptyPartDocument()).sort()).toEqual(
       Object.entries(savedFields).filter(([, presence]) => presence === true).map(([field]) => field).sort(),

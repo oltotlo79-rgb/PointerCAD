@@ -1,10 +1,9 @@
-import {LINEAR_DEFINITIONS} from './exactLinearOperations.js';
+import { LINEAR_DEFINITIONS, STATISTICS_DEFINITIONS, TENSOR_DEFINITIONS, INTEGER_DEFINITIONS } from './mathOperationMetadata.js';
 /** The editor's positive LaTeX grammar is separate from evaluation and persistent ASTs. */
 import {LatexSyntax,LATEX_DICTIONARY,type MathJsonExpression} from '@cortex-js/compute-engine/latex-syntax';
 import {MathInputProblem,validateMathSource} from './mathInputContract.js';
 import type {DisplayMathJson} from './mathNotationConversion.js';
 import {CANDIDATE_MATH_OPERATIONS} from './mathOperations.js';
-import {STATISTICS_DEFINITIONS} from './statisticsOperations.js';
 
 function mutableDisplayJson(value:DisplayMathJson):MathJsonExpression {
   if(typeof value==='string')return value;
@@ -17,8 +16,8 @@ export function createMathLatexCodec():{
   readonly parse:(source:string)=>unknown;
   readonly serialize:(expression:DisplayMathJson)=>string;
 } {
-  const replaced=new Set([String.raw`\cdot`,String.raw`\times`,String.raw`\log`]);
-  const explicitHeads=new Set<string>([...STATISTICS_DEFINITIONS,...LINEAR_DEFINITIONS].map(([,head])=>head));
+  const replaced=new Set([String.raw`\cdot`,String.raw`\times`,String.raw`\log`,String.raw`\otimes`,String.raw`\odot`]);
+  const explicitHeads=new Set<string>([...STATISTICS_DEFINITIONS,...LINEAR_DEFINITIONS,...TENSOR_DEFINITIONS,...INTEGER_DEFINITIONS].map(([,head])=>head));
   const dictionary=LATEX_DICTIONARY.filter(entry=>{
     // Keep application arities and explicit list arguments for statistics and linear
     // algebra unchanged through text/LaTeX conversion, independently of engine display rules.
@@ -28,12 +27,24 @@ export function createMathLatexCodec():{
     return !replaced.has(typeof trigger==='string'?trigger:Array.isArray(trigger)?trigger.join(''):'');
   });
   const extraFunctions=[...CANDIDATE_MATH_OPERATIONS.values()].filter(operation=>!operation.structural
-    && !dictionary.some(entry=>entry.name===operation.engineHead) && !['PcadCoefficient','Rank'].includes(operation.engineHead))
+    && !dictionary.some(entry=>entry.name===operation.engineHead) && !['PcadCoefficient','Rank','Log','TensorProduct','HadamardProduct'].includes(operation.engineHead))
     .map(operation=>({kind:'function' as const,name:operation.engineHead,symbolTrigger:operation.engineHead.toLowerCase()}));
   const syntax=new LatexSyntax({dictionary:[...dictionary,...extraFunctions,
-    // The upstream names exist without the public operator-name spellings used by our palette.
-    {kind:'function',name:'Arccot',symbolTrigger:'arccot'},
-    {kind:'function',name:'Arctan2',symbolTrigger:'arctan2'},
+    {kind:'infix',name:'TensorProduct',latexTrigger:String.raw`\otimes`,precedence:390,associativity:'left'},
+    {kind:'infix',name:'HadamardProduct',latexTrigger:String.raw`\odot`,precedence:390,associativity:'left'},
+    // Parse-only synonyms keep one serializer per name, while accepting both operator and function notation.
+    {kind:'function',symbolTrigger:'tensorproduct',parse:parser=>{
+      const args=parser.parseArguments('enclosure');return args===null?'TensorProduct':['TensorProduct',...args];
+    }},
+    {kind:'function',symbolTrigger:'hadamardproduct',parse:parser=>{
+      const args=parser.parseArguments('enclosure');return args===null?'HadamardProduct':['HadamardProduct',...args];
+    }},
+    {kind:'function',symbolTrigger:'arccot',parse:parser=>{
+      const args=parser.parseArguments('enclosure');return args===null?'Arccot':['Arccot',...args];
+    }},
+    {kind:'function',symbolTrigger:'arctan2',parse:parser=>{
+      const args=parser.parseArguments('enclosure');return args===null?'Arctan2':['Arctan2',...args];
+    }},
     {kind:'infix',name:'PcadDotToken',latexTrigger:String.raw`\cdot`,precedence:390,associativity:'left'},
     {kind:'infix',name:'PcadTimesToken',latexTrigger:String.raw`\times`,precedence:390,associativity:'left'},
     {kind:'function',name:'PcadCoefficient',symbolTrigger:'coef'},
@@ -55,7 +66,9 @@ export function createMathLatexCodec():{
   return {
     parse:source=>{validateMathSource(source);return syntax.parse(source);},
     serialize:expression=>{
-      const source=syntax.serialize(mutableDisplayJson(expression),{prettify:false,fractionalDigits:'max'});
+      // The default nested-root style becomes a fractional power. Keep the
+      // user's root operation intact at every depth for the semantic round trip.
+      const source=syntax.serialize(mutableDisplayJson(expression),{prettify:false,fractionalDigits:'max',rootStyle:'radical'});
       validateMathSource(source);return source;
     },
   };

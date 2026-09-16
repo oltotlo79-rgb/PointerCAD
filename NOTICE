@@ -1,0 +1,18 @@
+PointerCAD
+
+PointerCADのコードには同梱のLICENSE（Apache License 2.0）が適用されます。
+利用部品・字体・追加計算部には、それぞれ別の許諾が適用されます。
+各原文の著作権表示と条件は次の同梱先で確認できます。
+
+Web版ではアプリのフォルダー、デスクトップ版ではresources/app/dist/rendererの下:
+- licenses/runtime/index.html: 実行時に利用するJavaScript部品の原文と版
+- licenses/index.html: 数学入力と数式用字体
+- licenses/exact-math/index.html: 追加計算部の原文と関連ソース
+- fonts/LICENSES.txt: 画面・図面用の字体
+
+デスクトップ版の実行ファイルと同じフォルダー:
+- LICENSE.electron.txt（またはLICENSE）: Electron
+- LICENSES.chromium.html: Chromiumと同梱部品
+
+上記の一覧で原文未取得と記された部品の確認は未完了です。
+開発中の配布候補の作成だけで正式公開可能と認定しません。

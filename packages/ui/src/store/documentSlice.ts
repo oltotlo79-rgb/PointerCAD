@@ -12,6 +12,8 @@ import {
   type ParameterAnalysis,
   type PartDocument,
   pruneDocumentAppearance,
+  pruneRemovedFeatureNotes,
+  pruneRemovedFolderMembers,
   pushUndo,
   redo as redoStep,
   replaceSketch,
@@ -276,7 +278,8 @@ export const createDocumentSlice: StateCreator<
        * 掃除は取り消しに積む前に行うので、**取り消し 1 回で立体も色も一緒に戻る**
        * (NFR-UX-3)。
        */
-      const placed = placement.document;
+      const placed = options?.replacesDocument === true ? placement.document
+        : pruneRemovedFolderMembers(state.document, pruneRemovedFeatureNotes(state.document, placement.document));
       const next =
         options?.replacesDocument !== true && placed.solids.length < state.document.solids.length
           ? pruneDocumentAppearance(placed)

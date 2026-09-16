@@ -10,7 +10,7 @@
  * `useAppStore.test.ts` の側にある。
  */
 import { createAssemblyDocument, createDrawingDocument, createEmptyPartDocument } from '@pointercad/model';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { useAppStore } from './useAppStore.js';
 
 import {
@@ -32,6 +32,13 @@ const drawing = createDrawingDocument('図面1', {
 });
 
 describe('いま開いている文書の種類(P7 タスク5)', () => {
+  it('文書を必ず持つ呼出しと、文書がない可能性のある呼出しの型を区別する', () => {
+    expectTypeOf(activeDocumentKind({ document: part, assembly: null, drawing: null }))
+      .toEqualTypeOf<Exclude<DocumentKind, 'empty'>>();
+    expectTypeOf(activeDocumentKind({ document: null, assembly: null, drawing: null }))
+      .toEqualTypeOf<DocumentKind>();
+    expect(activeDocumentKind({ document: null, assembly: null, drawing: null })).toBe('empty');
+  });
   it('共通入口の part は従来の文書・保存済み文書・名前を返す', () => {
     const state = { ...useAppStore.getState(), document: part, assembly: null, drawing: null,
       savedDocument: part, fileName: 'part.pcad' };

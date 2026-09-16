@@ -66,7 +66,7 @@ export function PlaceComponentPopover(): React.JSX.Element | null {
             <label key={labelKey} className={'pcad-field' + (error === null ? '' : ' pcad-field--error')}>
               <span className="pcad-field__label">{t(labelKey)}</span>
               <input
-                ref={index === 0 ? firstField : null}
+                title={t('assembly.guide.placeCoordinate')} ref={index === 0 ? firstField : null}
                 className="pcad-field__input"
                 value={sources[index]}
                 disabled={committing}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { AutoSaveIntervalForm } from './AutoSaveIntervalForm.js';
 import { GearIcon } from '../shell/icons.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
@@ -10,6 +11,10 @@ import {
   UI_SCALE_STEPS,
   type ThemeId,
 } from './settings.js';
+import { ToolDefaultsForm } from './ToolDefaultsForm.js';
+import { ShortcutSettingsForm } from './ShortcutSettingsForm.js';
+import { openTutorial } from '../tutorial/tutorialActions.js';
+import { OfflineSettings } from './OfflineSettings.js';
 
 /**
  * 表示設定(計画書 docs/plans/P4-スケッチ拡張.md タスク2、§0.a-0.3、§2.2)。
@@ -195,7 +200,7 @@ export function SettingsPanel(): React.JSX.Element {
               aria-label={t('settings.scale.label')}
             >
               {UI_SCALE_STEPS.map((step) => (
-                <button
+                <button title={t('controlGuide.button.uiScale')}
                   key={step}
                   type="button"
                   className="pcad-button"
@@ -210,6 +215,12 @@ export function SettingsPanel(): React.JSX.Element {
             </div>
           </div>
 
+          <button type="button" className="pcad-button" data-help-topic="tutorial" title={t('tutorial.startHint')}
+            onClick={() => { setOpen(false); openTutorial(); }}>{t('tutorial.start')}</button>
+          <AutoSaveIntervalForm />
+          <ToolDefaultsForm />
+          <ShortcutSettingsForm />
+          <OfflineSettings />
           <p className="pcad-settings__hint">{t('settings.hint')}</p>
         </div>
       ) : null}

@@ -16,6 +16,7 @@ catalog:
   comlink: 4.4.2
   decimal.js: 10.6.0
   electron: 44.1.0
+  electron-builder: 26.15.3
   eslint: 10.9.1
   eslint-plugin-react-hooks: 7.1.1
   fflate: 0.8.3
@@ -35,11 +36,12 @@ catalog:
 
 minimumReleaseAgeStrict: true
 
-# pnpm 10 以降は既定でインストール後スクリプトを実行しないため、明示的に許可する。
-# 記述場所はここ(pnpm-workspace.yaml)で pnpm 11.25.0 に認識される(`pnpm config list` で確認)。
+# pnpm 11ではallowBuildsで導入時の処理を明示する。旧onlyBuiltDependenciesは廃止済み。
 # ただし electron 44 は package.json に postinstall を持たず、バイナリは
 # 初回の `electron .` 実行時か `install-electron` コマンドで取得される(タスク16 実測)。
 # そのためこの許可は electron に対しては現状働かない。将来 postinstall が復活した場合と、
 # 他の依存が増えた場合に備えて残す。
-onlyBuiltDependencies:
-  - electron
+allowBuilds:
+  electron: true
+  # 採用したNSIS形式ではSquirrel用の7z配置処理を使わない。
+  electron-winstaller: false

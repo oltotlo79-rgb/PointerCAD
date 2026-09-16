@@ -75,7 +75,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
       <div className="pcad-popover__fields">
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.standardPart.category')}</span>
-          <select ref={first} className="pcad-field__input" value={category}
+          <select title={t('assembly.guide.standardCategory')} ref={first} className="pcad-field__input" value={category}
             onChange={(event) => {
               const next = categoryFrom(event.currentTarget.value);
               if (next === null) return;
@@ -92,7 +92,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         {standardPartUsesDimensionSeries(category) ? (
           <label className="pcad-field">
             <span className="pcad-field__label">{t('assembly.standardPart.dimensionSeries')}</span>
-            <select className="pcad-field__input" value={dimensionSeries}
+            <select title={t('assembly.guide.standardDimensions')} className="pcad-field__input" value={dimensionSeries}
               onChange={(event) => {
                 const next: FastenerDimensionSeries = event.currentTarget.value === 'main'
                   ? 'main' : 'annexJA';
@@ -108,7 +108,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         {standardPartUsesThreadSeries(category) ? (
           <label className="pcad-field">
             <span className="pcad-field__label">{t('assembly.standardPart.threadSeries')}</span>
-            <select className="pcad-field__input" value={threadSeries}
+            <select title={t('assembly.guide.standardThread')} className="pcad-field__input" value={threadSeries}
               onChange={(event) => {
                 setThreadSeries(event.currentTarget.value === 'fine' ? 'fine' : 'coarse');
                 setError(null);
@@ -120,7 +120,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         ) : null}
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.standardPart.size')}</span>
-          <select className="pcad-field__input" value={choice.key}
+          <select title={t('assembly.guide.standardSize')} className="pcad-field__input" value={choice.key}
             onChange={(event) => { setChoiceKey(event.currentTarget.value); setError(null); }}>
             {choices.map((item) => (
               <option key={item.key} value={item.key}>
@@ -132,7 +132,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         {choice.requiresLength ? (
           <label className={'pcad-field' + (error === 'invalidLength' ? ' pcad-field--error' : '')}>
             <span className="pcad-field__label">{t('assembly.standardPart.length')}</span>
-            <input className="pcad-field__input" value={lengthSource}
+            <input title={t('assembly.guide.standardLength')} className="pcad-field__input" value={lengthSource}
               aria-invalid={error === 'invalidLength' ? true : undefined}
               onChange={(event) => { setLengthSource(event.currentTarget.value); setError(null); }} />
             <span className="pcad-field__unit">mm</span>
@@ -152,10 +152,10 @@ export function StandardPartPicker(): React.JSX.Element | null {
       )}
       <p className="pcad-popover__hint">{t('assembly.standardPart.hint')}</p>
       <div className="pcad-popover__actions">
-        <button type="submit" className="pcad-button pcad-button--action">
+        <button type="submit" className="pcad-button pcad-button--action" title={t('assembly.guide.standardPlace')}>
           {t('assembly.standardPart.place')}
         </button>
-        <button type="button" className="pcad-button"
+        <button type="button" className="pcad-button" title={t('assembly.guide.standardCancel')}
           onClick={() => { useAppStore.getState().closeStandardPartPicker(); }}>
           {t('assembly.standardPart.close')}
         </button>

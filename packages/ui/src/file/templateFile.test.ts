@@ -294,7 +294,8 @@ describe('ひな形から新規(FR-814、§2.10)', () => {
     expect(outcome.document.sketches[0].features).toEqual([]);
     // ひな形とは別の id を採る(取り違えを起こさない)。
     expect(outcome.document.id).not.toBe(createEmptyPartDocument().id);
-    expect(deps.gateway.clearCalls()).toBe(1);
+    // 利用先が値を検証して採用するまで、元の保存先を保持する。
+    expect(deps.gateway.clearCalls()).toBe(0);
   });
 
   it('形の入っていないひな形では知らせを出さない', async () => {
@@ -327,7 +328,7 @@ describe('ひな形から新規(FR-814、§2.10)', () => {
     const deps = createDeps(gateway);
     const outcome = await newFromTemplate(deps, { from: 'file' });
     expect(outcome.ok && outcome.lengthUnit).toBe('inch');
-    expect(gateway.clearCalls()).toBe(1);
+    expect(gateway.clearCalls()).toBe(0);
   });
 
   it('ファイルの窓を取り消したら断りを出さない', async () => {

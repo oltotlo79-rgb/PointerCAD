@@ -3,6 +3,7 @@ import { DRAWING_FONT_ASSET } from './fontAsset.js';
 import { textOutline, type GlyphPathCommand } from './textOutline.js';
 import { createOutlineCache } from './outlineCache.js';
 import { freezeFontSubpaths } from '../render/immutableSubpaths.js';
+import { fetchDrawingFont } from './fetchDrawingFont.js';
 
 /** 字体の解析と取得を注入できる境界。文字の配置・輪郭化は同じ字体から求める。 */
 export interface DrawingFont {
@@ -33,12 +34,6 @@ export async function parseDrawingFont(bytes: ArrayBuffer): Promise<DrawingFont>
   };
 }
 
-async function fetchFont(url: string): Promise<ArrayBuffer> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Font HTTP ${response.status}`);
-  return response.arrayBuffer();
-}
-
 function fallback(status: OutlinedText['status'], sizeMm: number, missingCharacters: readonly string[] = []): OutlinedText {
   // これは欠字/未読込の印であり、文字幅を推測した代替の字形ではない。
   const size = Number.isFinite(sizeMm) && sizeMm > 0 ? sizeMm : 3.5;
@@ -62,7 +57,7 @@ export function createFontStore(options: {
     if (status === 'ready') return Promise.resolve(status);
     if (pending !== null) return pending;
     status = 'loading';
-    pending = Promise.resolve().then(() => (options.read ?? fetchFont)(options.url ?? DRAWING_FONT_ASSET.url))
+    pending = Promise.resolve().then(() => (options.read ?? fetchDrawingFont)(options.url ?? DRAWING_FONT_ASSET.url))
       .then((bytes) => (options.parse ?? parseDrawingFont)(bytes))
       .then((loaded) => { font = loaded; status = 'ready' as const; return status; })
       .catch(() => { font = null; status = 'failed' as const; return status; })

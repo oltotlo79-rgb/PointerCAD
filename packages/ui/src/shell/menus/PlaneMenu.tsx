@@ -1,14 +1,19 @@
+import { executeCommand } from '../../commands/commandRegistry.js';
+import { commandDefinition } from '../../commands/commandDefinitions.js';
+import { toolbarCommandId } from '../../commands/toolbarCommandCatalog.js';
+import { currentCommandLabel } from '../../commands/commandLabels.js';
+import { currentShortcutAssignments } from '../../settings/shortcutSettings.js';
+import { useAppStore } from '../../store/useAppStore.js';
 /**
  * 作図面の一覧(FR-328、FR-330)。一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
  */
 
-import { FREE_WORK_PLANE_ID, isFreeWorkPlaneId, type WorkPlaneId } from '@pointercad/model';
+import { isFreeWorkPlaneId, type WorkPlaneId } from '@pointercad/model';
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../../i18n/t.js';
 import type { NumericInputToolId } from '../../sketch/numericInput.js';
 import type { WorkPlaneEntry } from '../../sketch/referenceCommands.js';
 import { ChevronRightIcon } from '../icons.js';
-import { activateReferenceTool } from './sketchToolActions.js';
 import { PLANE_TOOLS, PLANES, REFERENCE_TOOLS, selectWorkPlane } from './sketchToolTables.js';
 import { LABEL_SEPARATOR } from './toolbarShared.js';
 
@@ -32,6 +37,7 @@ interface PlaneMenuProps {
  * 開いている間も背後の操作はそのまま効く。
  */
 export function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuProps): React.JSX.Element {
+  const assignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -99,10 +105,12 @@ export function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuPr
               key={plane.id}
               type="button"
               className="pcad-button pcad-menu__item"
-              title={t(plane.tooltipKey)}
+              data-command-id={toolbarCommandId('plane', plane.id)}
+              data-help-topic="work-plane"
+              title={`${currentCommandLabel(toolbarCommandId('plane', plane.id), assignments, 'part')}: ${t(plane.tooltipKey)}`}
               aria-pressed={workPlaneId === plane.id}
               onClick={() => {
-                selectWorkPlane(plane.id);
+                executeCommand(toolbarCommandId('plane', plane.id));
                 setOpen(false);
               }}
             >
@@ -132,10 +140,11 @@ export function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuPr
           <button
             type="button"
             className="pcad-button pcad-menu__item"
-            title={t('toolbar.plane.freeTooltip')}
+            data-command-id={toolbarCommandId('plane', 'free')} data-help-topic="work-plane"
+            title={`${currentCommandLabel(toolbarCommandId('plane', 'free'), assignments, 'part')}: ${t('toolbar.plane.freeTooltip')}`}
             aria-pressed={free}
             onClick={() => {
-              selectWorkPlane(FREE_WORK_PLANE_ID);
+              executeCommand(toolbarCommandId('plane', 'free'));
               setOpen(false);
             }}
           >
@@ -148,10 +157,12 @@ export function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuPr
               key={tool.id}
               type="button"
               className="pcad-button pcad-menu__item"
-              title={t(tool.tooltipKey)}
+              data-command-id={toolbarCommandId('reference', tool.id)}
+              data-help-topic={commandDefinition(toolbarCommandId('reference', tool.id))?.helpTopic}
+              title={`${currentCommandLabel(toolbarCommandId('reference', tool.id), assignments, 'part')}: ${t(tool.tooltipKey)}`}
               aria-pressed={activeTool === tool.id}
               onClick={() => {
-                activateReferenceTool(tool.id, activeTool === tool.id);
+                executeCommand(toolbarCommandId('reference', tool.id));
                 setOpen(false);
               }}
             >
@@ -164,10 +175,12 @@ export function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuPr
               key={tool.id}
               type="button"
               className="pcad-button pcad-menu__item"
-              title={t(tool.tooltipKey)}
+              data-command-id={toolbarCommandId('reference', tool.id)}
+              data-help-topic={commandDefinition(toolbarCommandId('reference', tool.id))?.helpTopic}
+              title={`${currentCommandLabel(toolbarCommandId('reference', tool.id), assignments, 'part')}: ${t(tool.tooltipKey)}`}
               aria-pressed={activeTool === tool.id}
               onClick={() => {
-                activateReferenceTool(tool.id, activeTool === tool.id);
+                executeCommand(toolbarCommandId('reference', tool.id));
                 setOpen(false);
               }}
             >

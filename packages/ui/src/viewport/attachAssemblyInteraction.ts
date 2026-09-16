@@ -170,19 +170,19 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
   const onKeyDown = (event: KeyboardEvent): void => {
     const state = useAppStore.getState();
     if (state.assembly === null || event.isComposing) return;
-    event.stopImmediatePropagation();
     if (event.key === 'Escape' && captured !== null) {
-      event.preventDefault(); event.stopPropagation(); cancelDrag(); return;
+      event.preventDefault(); event.stopImmediatePropagation(); cancelDrag(); return;
     }
     if (handleMateKey(event.key, event.isComposing)) {
-      event.preventDefault(); event.stopPropagation(); return;
+      event.preventDefault(); event.stopImmediatePropagation(); return;
     }
     const kinds = new Map<string, SelectionKind>([['1', 'vertex'], ['2', 'edge'], ['3', 'face'], ['4', 'body']]);
     const kind = kinds.get(event.key);
     if (kind !== undefined && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault(); event.stopPropagation();
+      event.preventDefault(); event.stopImmediatePropagation();
       useAppStore.setState({ selectionKind: kind, hoveredElementId: null });
     }
+    // Unhandled keys continue to the common file and command shortcuts.
   };
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);

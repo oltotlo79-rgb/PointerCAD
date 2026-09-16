@@ -1,0 +1,61 @@
+import { historyFoldersFlow } from './historyFoldersFlow.js';
+import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
+import { chooseToolMenuItem } from './assemblyTestSupport.js';
+import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
+import { savePart } from './scriptsFlow.js';
+import { reopenPart } from './reopenPart.js';
+import { captureManualDetail } from './captureManualDetail.js';
+
+export async function historyNotesFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await chooseToolMenuItem(page, '作る', '箱');
+  const start = await beginRecompute(page);
+  await page.locator('.pcad-popover input.pcad-field__input').first().press('Enter');
+  await waitForRecompute(page, start);
+  await chooseToolMenuItem(page, '見た目', '簡易強度計算');
+  const strength = page.getByRole('form', { name: '簡易強度計算', exact: true });
+  await expect(strength).toBeVisible();
+  const tree = page.locator('.pcad-panel--left'), feature = tree.getByRole('button', { name: '箱1', exact: true });
+  const row = tree.locator('.pcad-tree__row').filter({ has: page.getByRole('button', { name: '箱1', exact: true }) });
+  const dialog = page.getByRole('dialog', { name: '設計メモ', exact: true });
+  const open = async () => {
+    await feature.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '設計メモを編集', exact: true }).click();
+    await expect(dialog.getByRole('textbox', { name: 'メモの文章', exact: true })).toBeFocused();
+  };
+  const text = '固定面を残して加工する。\n<script>文章を勝手に実行しない</script>';
+  await open(); await dialog.getByRole('textbox').fill(text);
+  const before = await readRecomputeStats(page);
+  await dialog.getByRole('button', { name: 'メモを確定', exact: true }).click();
+  await expect(dialog).toHaveCount(0); await expect(row.getByText('メモ', { exact: true })).toBeVisible();
+  expect((await readRecomputeStats(page)).requestedGeneration).toBe(before.requestedGeneration);
+  await open(); await expect(dialog.getByRole('textbox')).toHaveValue(text);
+  await dialog.getByRole('textbox').fill('取消する下書き');
+  await dialog.getByRole('button', { name: '取消', exact: true }).focus(); await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0); await expect(strength).toBeVisible();
+  await open(); await expect(dialog.getByRole('textbox')).toHaveValue(text);
+  const tooLong = 'あ'.repeat(16_385);
+  await dialog.getByRole('textbox').fill(tooLong);
+  await expect(dialog.getByRole('button', { name: 'メモを確定', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('textbox')).toHaveValue(tooLong);
+  await expect(dialog.getByRole('alert')).toContainText('16384');
+  await dialog.getByRole('textbox').fill('別の設計理由'); await dialog.getByRole('button', { name: 'メモを確定', exact: true }).click();
+  await page.locator('canvas.pcad-viewport__canvas').focus(); await page.keyboard.press('Control+z');
+  await open(); await expect(dialog.getByRole('textbox')).toHaveValue(text);
+  await dialog.getByRole('button', { name: 'メモを削除', exact: true }).click();
+  await expect(row.getByText('メモ', { exact: true })).toHaveCount(0);
+  await page.locator('canvas.pcad-viewport__canvas').focus(); await page.keyboard.press('Control+z');
+  await expect(row.getByText('メモ', { exact: true })).toBeVisible();
+  expect((await readRecomputeStats(page)).requestedGeneration).toBe(before.requestedGeneration);
+  const saved = await savePart(page, info, 'history-notes.pcad', app);
+  expect(saved.featureNotes).toEqual([{ target: { kind: 'solid', id: saved.solids[0].id }, text }]);
+  await reopenPart(page, info, 'history-notes.pcad', app);
+  await open(); await expect(dialog.getByRole('textbox')).toHaveValue(text);
+  await expect(dialog.locator('script')).toHaveCount(0);
+  await page.keyboard.press('F1'); await expect(page.locator('.pcad-help__article')).toContainText('履歴へ設計メモを残す');
+  await page.keyboard.press('Escape'); await expect(dialog.getByRole('textbox')).toHaveValue(text);
+  await captureManualDetail(page, info, { name: 'history-design-note', dialog, script: new URL(import.meta.url),
+    fixture: { kind: 'feature-design-note', notes: saved.featureNotes } });
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await historyFoldersFlow(page, info, app);
+}

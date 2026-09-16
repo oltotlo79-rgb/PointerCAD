@@ -1,5 +1,4 @@
 import type {
-  BRepAlgoAPI_BooleanOperation,
   Message_ProgressRange,
   OpenCascadeInstance,
   TopoDS_Shape,
@@ -8,6 +7,7 @@ import type {
 // 和・差・積の別 BooleanOperation は、依頼の型と同じ場所(types.ts)に置いてある。
 import type { BooleanOperation } from '../types.js';
 import type { Allocations } from './allocations.js';
+import { buildBooleanShape } from './buildBooleanShape.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
@@ -44,25 +44,6 @@ export interface BooleanResult extends OcctShapeHandle {
   readonly volume: number;
 }
 
-/**
- * 演算前に非破壊モードを指定できるよう、空の maker を作る。
- * 2026-09-07 に固定 WASM で、引数なしの構築 → 入力指定 → Build を3演算とも実証。
- * 各節は return で閉じる(no-fallthrough)。
- */
-function createBooleanMaker(
-  oc: OpenCascadeInstance,
-  operation: BooleanOperation,
-): BRepAlgoAPI_BooleanOperation {
-  switch (operation) {
-    case 'union':
-      return new oc.BRepAlgoAPI_Fuse_1();
-    case 'subtract':
-      return new oc.BRepAlgoAPI_Cut_1();
-    case 'intersect':
-      return new oc.BRepAlgoAPI_Common_1();
-  }
-}
-
 /** hasSolid と同じ判定。FindKey が返す形も含め、走査中の例外でも全て解放する。 */
 function hasResultSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
   const { keep, release } = createAllocations();
@@ -92,33 +73,7 @@ function buildBooleanResult(
   range: Message_ProgressRange,
   allocations: Allocations,
 ): BooleanResult {
-  const maker = allocations.keep(createBooleanMaker(oc, operation));
-  const inputs = createAllocations();
-  try {
-    const argumentsList = inputs.keep(new oc.TopTools_ListOfShape_1());
-    const toolsList = inputs.keep(new oc.TopTools_ListOfShape_1());
-    // Append_1 は入力と別のラッパーを返す(2026-09-07 固定 WASM 実測)。
-    // その戻りも解放するが、target / tool の所有は移さない。
-    inputs.keep(argumentsList.Append_1(target));
-    for (const tool of tools) inputs.keep(toolsList.Append_1(tool));
-    maker.SetArguments(argumentsList);
-    maker.SetTools(toolsList);
-    // Build より前に立て、許容値や pcurve の更新をキャッシュの入力へ書き戻させない。
-    maker.SetNonDestructive(true);
-    maker.Build(range);
-  } finally {
-    inputs.release();
-  }
-
-  // 成否は HasErrors() と IsDone() だけで見る。Error() の戻り値は
-  // 型定義で空の型 `{}` になっており、比較に強制変換が要るため使わない
-  // (makePlanarFace.ts と同じ理由)。
-  if (maker.HasErrors() || !maker.IsDone()) {
-    throw new Error(COMBINE_FAILED_MESSAGE);
-  }
-
-  const shape = allocations.keep(maker.Shape());
-
+  const shape = buildBooleanShape(oc, operation, target, tools, range, allocations);
   // 2026-09-03 の実測では、交わらない 2 体の積や、含まれる側から含む側を引いた結果も
   // IsDone() は true・HasErrors() は false で、中身が空の COMPOUND が返る
   // (体積 0、IsNull() は false)。空かどうかはここで別に確かめる。

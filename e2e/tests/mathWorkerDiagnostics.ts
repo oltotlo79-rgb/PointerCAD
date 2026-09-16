@@ -21,7 +21,7 @@ function install(): void {
           record({ event: 'reply', worker: current.id, serial: reply?.serial, kind: reply?.kind,
             elapsedMs: pending === undefined ? null : performance.now() - pending.at,
             status: result?.status, reason: result?.reason, detail: result?.detail });
-          if (typeof reply?.serial === 'number') current.pending.delete(reply.serial);
+          if (reply?.kind !== 'math-phase' && typeof reply?.serial === 'number') current.pending.delete(reply.serial);
         }, { capture: true });
         this.addEventListener('error', event => record({ event: 'error', worker: current.id, message: event.message }));
         this.addEventListener('messageerror', () => record({ event: 'messageerror', worker: current.id }));

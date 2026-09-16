@@ -40,41 +40,41 @@ export function ScriptPanel(): React.JSX.Element {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); useAppStore.getState().closeScriptPanel(); }
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); event.stopPropagation(); if (!running) void runScript(); }
   }}>
-    <div className="pcad-script__heading"><h2>{t('script.title')}</h2><button type="button" onClick={() => useAppStore.getState().closeScriptPanel()}>{t('script.close')}</button></div>
-    <label>{t('script.name')}<input value={draft.name} maxLength={80} placeholder={t('script.namePlaceholder')} onChange={event => update({ name: event.target.value })} /></label>
-    <label>{t('script.icon')}<select aria-label={t('script.icon')} value={draft.icon} onChange={event => { const icon = SCRIPT_ICONS.find(item => item === event.target.value); if (icon !== undefined) update({ icon }); }}>
+    <div className="pcad-script__heading"><h2>{t('script.title')}</h2><button title={t('script.control.close')} type="button" onClick={() => useAppStore.getState().closeScriptPanel()}>{t('script.close')}</button></div>
+    <label>{t('script.name')}<input title={t('script.control.name')} value={draft.name} maxLength={80} placeholder={t('script.namePlaceholder')} onChange={event => update({ name: event.target.value })} /></label>
+    <label>{t('script.icon')}<select title={t('script.control.icon')} aria-label={t('script.icon')} value={draft.icon} onChange={event => { const icon = SCRIPT_ICONS.find(item => item === event.target.value); if (icon !== undefined) update({ icon }); }}>
       {SCRIPT_ICONS.map(icon => <option key={icon} value={icon}>{t(`script.icon.${icon}`)}</option>)}
     </select></label>
-    <label>{t('script.example')}<select aria-label={t('script.example')} value="" onChange={event => {
+    <label>{t('script.example')}<select title={t('script.control.example')} aria-label={t('script.example')} value="" onChange={event => {
       const example = SCRIPT_EXAMPLES.find(item => item.id === event.target.value); if (example === undefined) return;
       update({ name: t(example.label), source: example.source, modules: [], scriptId: crypto.randomUUID() }); setActiveFile('user-script.js');
     }}><option value="">{t('script.example')}</option>{SCRIPT_EXAMPLES.map(example => <option key={example.id} value={example.id}>{t(example.label)}</option>)}</select></label>
-    <label>{t('script.source')}<select aria-label={t('script.modules')} value={fileName} onChange={event => setActiveFile(event.target.value)}>
+    <label>{t('script.source')}<select title={t('script.control.sourceFile')} aria-label={t('script.modules')} value={fileName} onChange={event => setActiveFile(event.target.value)}>
       <option value="user-script.js">user-script.js</option>{draft.modules.map(item => <option key={item.name}>{item.name}</option>)}
     </select></label>
-    <textarea ref={editor} className="pcad-script__source" aria-label={`${t('script.source')} ${fileName}`} value={source} spellCheck={false}
+    <textarea title={t('script.control.source')} ref={editor} className="pcad-script__source" aria-label={`${t('script.source')} ${fileName}`} value={source} spellCheck={false}
       placeholder={t('script.empty')} onChange={event => updateSource(event.target.value)} />
     <div className="pcad-script__actions"><button type="button" title={t('script.runTooltip')} disabled={running} onClick={() => { void runScript(); }}>{t('script.run')}</button>
-      <button type="button" disabled={!running} onClick={() => useAppStore.getState().cancelScript()}>{t('script.cancel')}</button></div>
+      <button title={t('script.control.stop')} type="button" disabled={!running} onClick={() => useAppStore.getState().cancelScript()}>{t('script.cancel')}</button></div>
     <p role="status">{t(`script.phase.${phase}`)}</p>
-    {error === null ? null : <div className="pcad-script__error" role="alert"><p>{error.message}</p>{error.location === null ? null : <button type="button" onClick={jumpToError}>
+    {error === null ? null : <div className="pcad-script__error" role="alert"><p>{error.message}</p>{error.location === null ? null : <button title={t('script.control.errorLine')} type="button" onClick={jumpToError}>
       {t('script.errorLine')} {error.location.file}:{error.location.line}{error.location.column === null ? '' : `:${error.location.column}`}</button>}</div>}
     {message === null ? null : <p role="status">{message}</p>}
-    <div className="pcad-script__actions"><button type="button" onClick={() => { void openScriptFile(); }}>{t('script.open')}</button>
-      <button type="button" onClick={() => { void saveScriptFile(); }}>{t('script.save')}</button>
+    <div className="pcad-script__actions"><button title={t('script.control.open')} type="button" onClick={() => { void openScriptFile(); }}>{t('script.open')}</button>
+      <button title={t('script.control.save')} type="button" onClick={() => { void saveScriptFile(); }}>{t('script.save')}</button>
       <button type="button" title={t('script.registerTooltip')} disabled={libraryBusy} onClick={() => { void registerScript(); }}>{t('script.register')}</button></div>
     <details><summary>{t('script.inputSettings')}</summary><p>{t('script.inputHint')}</p>
-      <label>{t('script.seed')}<input inputMode="numeric" value={draft.seed} onChange={event => update({ seed: event.target.value })} /></label>
-      <label>{t('script.time')}<input value={draft.time} onChange={event => update({ time: event.target.value })} /></label>
-      <button type="button" onClick={() => update({ time: new Date().toISOString() })}>{t('script.timeNow')}</button>
+      <label>{t('script.seed')}<input title={t('script.control.seed')} inputMode="numeric" value={draft.seed} onChange={event => update({ seed: event.target.value })} /></label>
+      <label>{t('script.time')}<input title={t('script.control.time')} value={draft.time} onChange={event => update({ time: event.target.value })} /></label>
+      <button title={t('script.control.timeNow')} type="button" onClick={() => update({ time: new Date().toISOString() })}>{t('script.timeNow')}</button>
     </details>
-    <details><summary>{t('script.modules')}</summary><label>{t('script.moduleName')}<input maxLength={128} value={newModuleName} onChange={event => setNewModuleName(event.target.value)} /></label>
-      <div className="pcad-script__actions"><button type="button" onClick={() => {
+    <details><summary>{t('script.modules')}</summary><label>{t('script.moduleName')}<input title={t('script.control.moduleName')} maxLength={128} value={newModuleName} onChange={event => setNewModuleName(event.target.value)} /></label>
+      <div className="pcad-script__actions"><button title={t('script.control.addModule')} type="button" onClick={() => {
         if (!isScriptModuleName(newModuleName) || draft.modules.some(item => item.name === newModuleName) || draft.modules.length >= SCRIPT_LIMITS.modules) {
           useAppStore.setState({ scriptMessage: t('script.moduleInvalid') }); return;
         }
         update({ modules: [...draft.modules, { name: newModuleName, source: '' }] }); setActiveFile(newModuleName); setNewModuleName('');
-      }}>{t('script.moduleAdd')}</button>{module === undefined ? null : <button type="button" onClick={() => {
+      }}>{t('script.moduleAdd')}</button>{module === undefined ? null : <button title={t('script.control.deleteModule')} type="button" onClick={() => {
         update({ modules: draft.modules.filter(item => item !== module) }); setActiveFile('user-script.js');
       }}>{t('script.moduleDelete')}</button>}</div>
     </details>
@@ -86,10 +86,10 @@ export function ScriptPanel(): React.JSX.Element {
       const Icon = SCRIPT_ICON_COMPONENTS[tool.icon];
       return <div key={tool.scriptId} className="pcad-script__tool"><span><Icon />{tool.name}</span><div className="pcad-script__actions">
         <button type="button" disabled={running} title={`${tool.name}: ${t('script.runTooltip')}`} onClick={() => { void runScript(tool); }}>{t('script.run')}</button>
-        <button type="button" onClick={() => { openScriptPanel(tool); setActiveFile('user-script.js'); }}>{t('script.edit')}</button>
-        <button type="button" disabled={libraryBusy} onClick={() => { void deleteScriptTool(tool.scriptId); }}>{t('script.delete')}</button></div></div>;
-    })}{deleted === null ? null : <button type="button" disabled={libraryBusy} onClick={() => { void restoreScriptTool(); }}>{t('script.restore')}</button>}</details>
+        <button title={t('script.control.editTool')} type="button" onClick={() => { openScriptPanel(tool); setActiveFile('user-script.js'); }}>{t('script.edit')}</button>
+        <button title={t('script.control.deleteTool')} type="button" disabled={libraryBusy} onClick={() => { void deleteScriptTool(tool.scriptId); }}>{t('script.delete')}</button></div></div>;
+    })}{deleted === null ? null : <button title={t('script.control.restoreTool')} type="button" disabled={libraryBusy} onClick={() => { void restoreScriptTool(); }}>{t('script.restore')}</button>}</details>
     <div className="pcad-script__actions">{[['scripts', 'script.help'], ['script-api', 'script.apiHelp'], ['script-tools', 'script.toolsHelp']].map(([topic, key]) =>
-      <button key={topic} type="button" onClick={() => useAppStore.getState().openHelpTopic(topic)}>{key === 'script.help' ? t('script.help') : key === 'script.apiHelp' ? t('script.apiHelp') : t('script.toolsHelp')}</button>)}</div>
+      <button title={t('script.control.help')} key={topic} type="button" onClick={() => useAppStore.getState().openHelpTopic(topic)}>{key === 'script.help' ? t('script.help') : key === 'script.apiHelp' ? t('script.apiHelp') : t('script.toolsHelp')}</button>)}</div>
   </section>;
 }

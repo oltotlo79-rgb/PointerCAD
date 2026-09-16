@@ -55,6 +55,15 @@ export class MathEditorSession {
     if(this.timer!==null){clearTimeout(this.timer);this.timer=null;}
     this.active?.abort();this.active=null;
   }
+  /** A notation conversion owns the same input and client; do not queue its scalar evaluation twice. */
+  pause(): void {
+    if (this.disposed) return;
+    this.cancelWork(); this.applyRevision = null;
+    this.publish({ status: 'editing', input: this.current });
+  }
+  resume(): void {
+    if (!this.disposed && this.active === null && this.timer === null && this.state.status === 'editing') this.schedule();
+  }
   update(source: string, notation: MathEditorInput['notation'], angleUnit: MathEditorInput['angleUnit']): void {
     if(this.disposed)return;
     if(this.current.source===source&&this.current.notation===notation&&this.current.angleUnit===angleUnit)return;

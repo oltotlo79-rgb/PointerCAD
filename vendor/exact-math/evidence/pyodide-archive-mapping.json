@@ -1,0 +1,327 @@
+{
+  "at": "2026-09-14T10:58:17.809206+00:00",
+  "candidateAdopted": false,
+  "closureVerified": false,
+  "pyodideCommit": "8cec1b9bb8ead68c7c09b0a6443576bec7512268",
+  "downloads": [
+    {
+      "url": "https://api.github.com/repos/pyodide/pyodide/git/ref/tags/314.0.6",
+      "file": "pyodide-314.0.6-tag-ref.json",
+      "bytes": 380,
+      "sha256": "a687673477b32a7d091560d5cb755893837dbe61c7866b65d6fc97e06465d4df"
+    },
+    {
+      "url": "https://codeload.github.com/pyodide/pyodide/tar.gz/8cec1b9bb8ead68c7c09b0a6443576bec7512268",
+      "file": "pyodide-source-8cec1b9bb8ead68c7c09b0a6443576bec7512268.tgz",
+      "bytes": 1464597,
+      "sha256": "b47bd4b8cc66a2342b426585693a09aae1637a12665ae7af7daac15927458788"
+    }
+  ],
+  "verifiedBuildSources": {
+    "pyodide-314.0.6-Makefile.envs": true,
+    "pyodide-314.0.6-cpython-Makefile": true,
+    "pyodide-314.0.6-cpython-Setup.local": true,
+    "pyodide-314.0.6-LICENSE.txt": true
+  },
+  "additionalStdlib": [
+    {
+      "runtimePath": "_sysconfigdata__emscripten_wasm32-emscripten.py",
+      "sha256": "bc3c87c5dd4e997d905bfe833402380515fbc5bfbbc4855570d8cac2a9c80267",
+      "exactSourceMatches": [],
+      "sourceCandidates": []
+    },
+    {
+      "runtimePath": "_ssl.py",
+      "sha256": "fc983d9c8fe8cb1120cf9510eb64bdf684e6108f1439bfc1572bbe2d1a22f61a",
+      "exactSourceMatches": [
+        "src/py/_ssl.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_ssl.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/__init__.py",
+      "sha256": "de655c1598120f699d84a90a4d88ff1cc372e8d9fc14d5b66d505b80414857ca",
+      "exactSourceMatches": [
+        "src/py/_pyodide/__init__.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/__init__.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/_base.py",
+      "sha256": "30f2cbd385ce02fe1e7868255e35b012145bb53b9fed7bfb4e180982a4f24bc6",
+      "exactSourceMatches": [
+        "src/py/_pyodide/_base.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/_base.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/_core_docs.py",
+      "sha256": "c1e3fc8d65051df42637dcee8b909985805cced48edb4d07a770f7cc2d5917d1",
+      "exactSourceMatches": [
+        "src/py/_pyodide/_core_docs.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/_core_docs.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/_future_helper.py",
+      "sha256": "e8b4263fad8e857e8a244f6556e34b47486cf654396228137229f03b3e1824ac",
+      "exactSourceMatches": [
+        "src/py/_pyodide/_future_helper.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/_future_helper.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/_importhook.py",
+      "sha256": "a7e84a42d411c76a3606a141f765a10a42d682b81389a7a65fbc7de3063b702b",
+      "exactSourceMatches": [
+        "src/py/_pyodide/_importhook.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/_importhook.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/docs_argspec.py",
+      "sha256": "978b0855958c89c7e1209f18da280a46985e1bbe5e351cf193bcc751eb75fb5b",
+      "exactSourceMatches": [
+        "src/py/_pyodide/docs_argspec.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/docs_argspec.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/docstring.py",
+      "sha256": "c50fd26c0dac8690009018db9f6832e77880aa7155f03e366235519cb64c852c",
+      "exactSourceMatches": [
+        "src/py/_pyodide/docstring.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/docstring.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/jsbind.py",
+      "sha256": "1f6cdda94963d1496db13711a8aba16f81fb20e7e528d720e21b4e55bddcb489",
+      "exactSourceMatches": [
+        "src/py/_pyodide/jsbind.py"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/jsbind.py"
+      ]
+    },
+    {
+      "runtimePath": "_pyodide/py.typed",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exactSourceMatches": [
+        "src/py/_pyodide/py.typed"
+      ],
+      "sourceCandidates": [
+        "src/py/_pyodide/py.typed"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/_core.py",
+      "sha256": "52d212cd61b846bac239b37fcec0fa919006b2b810e5c69cd87ba34545af497b",
+      "exactSourceMatches": [
+        "src/py/pyodide/_core.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/_core.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/_nodesock_transport.py",
+      "sha256": "b438b744d96f267d6d85c09daf48fab09f5b99fb2482cc6a7d1d2876947da527",
+      "exactSourceMatches": [
+        "src/py/pyodide/_nodesock_transport.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/_nodesock_transport.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/_package_loader.py",
+      "sha256": "66bc0d856252e3c3690a9c9cc2f73a4e88d7a9cc5beafa712194cadda4eb2b70",
+      "exactSourceMatches": [
+        "src/py/pyodide/_package_loader.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/_package_loader.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/_run_js.py",
+      "sha256": "66dbf5911d7f9845611df9d788c02aa395ed1290e168e368af361923d814d1f4",
+      "exactSourceMatches": [
+        "src/py/pyodide/_run_js.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/_run_js.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/_state.py",
+      "sha256": "f7891a2b4ed7e6e8606779d813be3829ae171445c41eebb2d9d37a910e80879e",
+      "exactSourceMatches": [
+        "src/py/pyodide/_state.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/_state.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/code.py",
+      "sha256": "58cb66cc8f7049b73f790a69f16378b039d0a55bf2f0bd07f467af811756d556",
+      "exactSourceMatches": [
+        "src/py/pyodide/code.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/code.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/common.py",
+      "sha256": "fb1f3d764f43efb1a451363557df712abbd4f409ad5bc3650fe6a1d50a8e9ec7",
+      "exactSourceMatches": [
+        "src/py/pyodide/common.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/common.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/console.py",
+      "sha256": "bcf2346f19c5b968afda3a14222cd5ff5d67806f492aebb09dca24172e91736b",
+      "exactSourceMatches": [
+        "src/py/pyodide/console.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/console.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/py.typed",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exactSourceMatches": [
+        "src/py/pyodide/py.typed"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/py.typed"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/webloop.py",
+      "sha256": "034ceb64c2a49dae32cb021625155ccb7e05f8b7768de5e3c248f7dd8651a802",
+      "exactSourceMatches": [
+        "src/py/pyodide/webloop.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/webloop.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/__init__.py",
+      "sha256": "1ed47a6e4891389f8378a46ae7d3659188a4c4fe0d8ee14dd1bb869095948cd8",
+      "exactSourceMatches": [
+        "src/py/pyodide/__init__.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/__init__.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/ffi/__init__.py",
+      "sha256": "9564c32e290be1730d9e5dcec0a55320715f8865186f43c8201d32a643735ed1",
+      "exactSourceMatches": [
+        "src/py/pyodide/ffi/__init__.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/ffi/__init__.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/ffi/wrappers.py",
+      "sha256": "55744176706464efc7480c728154fcdc46c789d7de0b827ab2115fa7dad7197d",
+      "exactSourceMatches": [
+        "src/py/pyodide/ffi/wrappers.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/ffi/wrappers.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/http/__init__.py",
+      "sha256": "b6c1cf4493aaa143c70ae23dd935eddb6f25150d1bbf9e99c92f2bf5d9a7a075",
+      "exactSourceMatches": [
+        "src/py/pyodide/http/__init__.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/http/__init__.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/http/_exceptions.py",
+      "sha256": "49cdec97800dd844b987ce7e775118fb34f8cbaade8ed8652a150e9c7fb005b9",
+      "exactSourceMatches": [
+        "src/py/pyodide/http/_exceptions.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/http/_exceptions.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/http/_pyfetch.py",
+      "sha256": "bed6d98c09e1e2c2f7a10b77d06e86b033ea21fafb1ea810fd32e8b3d4d0c969",
+      "exactSourceMatches": [
+        "src/py/pyodide/http/_pyfetch.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/http/_pyfetch.py"
+      ]
+    },
+    {
+      "runtimePath": "pyodide/http/pyxhr.py",
+      "sha256": "39a7a2c74eb0d28e94fec89007c96cfc3a63ccb41ddc819cb56944e7a39c1621",
+      "exactSourceMatches": [
+        "src/py/pyodide/http/pyxhr.py"
+      ],
+      "sourceCandidates": [
+        "src/py/pyodide/http/pyxhr.py"
+      ]
+    }
+  ],
+  "matchingPatches": [
+    {
+      "sourcePath": "cpython/patches/0006-Teach-json-encoder.py-to-encode-jsnull.patch",
+      "sha256": "ba13244a5c1003f55c4ddfb4087c977c38b5fdeccf68f819deb0617bf04adc6a",
+      "affectedRuntimePaths": [
+        "json/encoder.py"
+      ],
+      "patchText": "From 72f3c4e3ff5febcf1ac4bb03b0bb7d96fb626525 Mon Sep 17 00:00:00 2001\nFrom: Hood Chatham <roberthoodchatham@gmail.com>\nDate: Wed, 9 Jul 2025 17:00:12 +0200\nSubject: [PATCH 6/9] Teach json encoder.py to encode jsnull\n\n---\n Lib/json/encoder.py | 9 +++++++++\n Modules/_json.c     | 8 +++++---\n 2 files changed, 14 insertions(+), 3 deletions(-)\n\ndiff --git a/Lib/json/encoder.py b/Lib/json/encoder.py\nindex 5cf6d64f3ea..a75ea21baff 100644\n--- a/Lib/json/encoder.py\n+++ b/Lib/json/encoder.py\n@@ -33,6 +33,7 @@\n del i\n \n INFINITY = float('inf')\n+_JSNULL = None\n \n def py_encode_basestring(s):\n     \"\"\"Return a JSON representation of a Python string\n@@ -303,6 +304,8 @@ def _iterencode_list(lst, _current_indent_level):\n                     yield buf + _encoder(value)\n                 elif value is None:\n                     yield buf + 'null'\n+                elif value is _JSNULL:\n+                    yield buf + 'null'\n                 elif value is True:\n                     yield buf + 'true'\n                 elif value is False:\n@@ -372,6 +375,8 @@ def _iterencode_dict(dct, _current_indent_level):\n                 key = 'false'\n             elif key is None:\n                 key = 'null'\n+            elif key is _JSNULL:\n+                key = 'null'\n             elif isinstance(key, int):\n                 # see comment for int/float in _make_iterencode\n                 key = _intstr(key)\n@@ -393,6 +398,8 @@ def _iterencode_dict(dct, _current_indent_level):\n                     yield _encoder(value)\n                 elif value is None:\n                     yield 'null'\n+                elif value is _JSNULL:\n+                    yield 'null'\n                 elif value is True:\n                     yield 'true'\n                 elif value is False:\n@@ -428,6 +435,8 @@ def _iterencode(o, _current_indent_level):\n             yield _encoder(o)\n         elif o is None:\n             yield 'null'\n+        elif o is _JSNULL:\n+            yield 'null'\n         elif o is True:\n             yield 'true'\n         elif o is False:\ndiff --git a/Modules/_json.c b/Modules/_json.c\nindex 2f82a69a157..83d1c3e2f62 100644\n--- a/Modules/_json.c\n+++ b/Modules/_json.c\n@@ -1398,11 +1398,13 @@ encoder_call(PyObject *op, PyObject *args, PyObject *kwds)\n     return result;\n }\n \n+extern PyObject* py_jsnull;\n+\n static PyObject *\n _encoded_const(PyObject *obj)\n {\n     /* Return the JSON string representation of None, True, False */\n-    if (obj == Py_None) {\n+    if (obj == Py_None || obj == py_jsnull) {\n         return &_Py_ID(null);\n     }\n     else if (obj == Py_True) {\n@@ -1482,7 +1484,7 @@ encoder_listencode_obj(PyEncoderObject *s, PyUnicodeWriter *writer,\n     PyObject *newobj;\n     int rv;\n \n-    if (obj == Py_None) {\n+    if (obj == Py_None || obj == py_jsnull) {\n       return PyUnicodeWriter_WriteASCII(writer, \"null\", 4);\n     }\n     else if (obj == Py_True) {\n@@ -1592,7 +1594,7 @@ encoder_encode_key_value(PyEncoderObject *s, PyUnicodeWriter *writer, bool *firs\n     else if (PyFloat_Check(key)) {\n         keystr = encoder_encode_float(s, key);\n     }\n-    else if (key == Py_True || key == Py_False || key == Py_None) {\n+    else if (key == Py_True || key == Py_False || key == Py_None || key == py_jsnull) {\n                     /* This must come before the PyLong_Check because\n                        True and False are also 1 and 0.*/\n         keystr = _encoded_const(key);\n-- \n2.43.0\n\n"
+    },
+    {
+      "sourcePath": "cpython/patches/0007-Warn-if-ZoneInfo-is-imported-without-tzdata.patch",
+      "sha256": "bcf92273acce4b4b0ea8bed3fab3f375e944a2874a27b0f8e7b79ecb40f5a685",
+      "affectedRuntimePaths": [
+        "zoneinfo/_common.py"
+      ],
+      "patchText": "From ed8839cb9af25461c12a8d2403931ccd5c07e5e8 Mon Sep 17 00:00:00 2001\nFrom: Hood Chatham <roberthoodchatham@gmail.com>\nDate: Thu, 25 Jul 2024 14:28:57 +0200\nSubject: [PATCH 7/9] Warn if ZoneInfo is imported without tzdata\n\n---\n Lib/zoneinfo/_common.py | 6 ++++++\n 1 file changed, 6 insertions(+)\n\ndiff --git a/Lib/zoneinfo/_common.py b/Lib/zoneinfo/_common.py\nindex 03cc42149f9..2767edb9c6a 100644\n--- a/Lib/zoneinfo/_common.py\n+++ b/Lib/zoneinfo/_common.py\n@@ -15,6 +15,12 @@ def load_tzdata(key):\n             raise IsADirectoryError\n         return path.open(\"rb\")\n     except (ImportError, FileNotFoundError, UnicodeEncodeError, IsADirectoryError):\n+        import sys\n+        if \"tzdata\" not in sys.modules:\n+            raise ZoneInfoNotFoundError(\n+               f\"No time zone found with key {key}. \\n\"\n+                \" On Pyodide you must do pyodide.loadPackage('tzdata')\"\n+                \" package before you use zoneinfo.\")\n         # There are four types of exception that can be raised that all amount\n         # to \"we cannot find this key\":\n         #\n-- \n2.43.0\n\n"
+    }
+  ],
+  "limits": [
+    "Patch mentions identify sources but do not prove the patched file bytes match.",
+    "The generated sysconfig must be mapped to the actual build configuration.",
+    "This source inventory is not a completed distribution license inventory."
+  ]
+}

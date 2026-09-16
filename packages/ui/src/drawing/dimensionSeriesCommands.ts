@@ -7,6 +7,7 @@ import type { DrawingEditor } from '../store/drawingSlice.js';
 import { drawingCreationLayer } from './drawingCreationLayer.js';
 import { drawingFont } from './drawingFont.js';
 import type { OutlineDrawingText } from './dimensionDisplay.js';
+import { snapshotDrawingToolDefaults } from './useDrawingToolDefaults.js';
 
 type Options = Pick<DimensionSeriesInput, 'kind' | 'axis' | 'baseIndex'> & { readonly offset: number };
 export function createDrawingDimensionSeries(document: DrawingDocument, source: DrawingSourceResolution, targets: readonly DimensionTarget[],
@@ -53,7 +54,7 @@ export function createDrawingDimensionSeries(document: DrawingDocument, source: 
 
 export function startDrawingDimensionSeries(kind: DimensionSeriesInput['kind']): void {
   const state = useAppStore.getState(), targets = state.drawingTargets;
-  state.openDrawingEditor({ kind: 'dimension', seriesKind: kind, axis: 'x', baseIndex: 0, offset: '8' });
+  state.openDrawingEditor({ kind: 'dimension', seriesKind: kind, axis: 'x', baseIndex: 0, offset: snapshotDrawingToolDefaults().number('seriesOffset') });
   if (useAppStore.getState().drawingEditor?.kind === 'dimension') state.setDrawingTargets(targets);
 }
 

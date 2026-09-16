@@ -1,0 +1,45 @@
+# 配布作成だけに使用する。公開操作と自動更新は行わない。
+appId: org.pointercad.desktop
+productName: PointerCAD
+executableName: PointerCAD
+asar: false
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+forceCodeSigning: false
+publish: null
+compression: normal
+files:
+  - package.json
+  - desktop-package.json
+  - LICENSE
+  - NOTICE
+  - dist/**/*
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  signExecutable: false
+  signAndEditExecutable: true
+  artifactName: PointerCAD-${version}-windows-${arch}-setup.${ext}
+nsis:
+  include: installer.nsh
+  oneClick: false
+  perMachine: false
+  selectPerMachineByDefault: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false
+  packElevateHelper: false
+  useZip: true
+  differentialPackage: false
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  installerLanguages: [ja_JP, en_US]
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Graphics
+  artifactName: PointerCAD-${version}-linux-${arch}.${ext}

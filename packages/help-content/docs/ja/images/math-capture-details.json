@@ -1,0 +1,234 @@
+{
+  "format": "pointercad-math-help-captures/1",
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "math-tensor-component-picker",
+      "script": "e2e/tests/mathTensorFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "ADD-19 テンソルの添字指定・XYZ座標・保存再編集・Undo・F1を通す",
+        "scriptSha256": "369445b68e070b169ceea205a19b7efcf8a77e71429df54ac086dbc781cb1169",
+        "fixture": {
+          "filename": "math-tensor-component-picker-fixture.json",
+          "sha256": "fb4e8657b5f215163eed8ad6f1cec89185896bd15ec1b30940af456cdb3c171c"
+        },
+        "screen": {
+          "filename": "math-tensor-component-picker-screen.png",
+          "sha256": "aec509cb6e43f27cdc5d8dbe15c0f3cae335f7247adce213cf9400ac0da37d00"
+        },
+        "detail": {
+          "filename": "math-tensor-component-picker-detail.png",
+          "sha256": "9ba5ed64b4202b2a369bf4e355bc983d372bc41a3bd73b58eb352b9961c7fdf5"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 101,
+          "width": 720,
+          "height": 697.984375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "mathematics-input-example",
+        "coordinate": "X",
+        "source": "tensorproduct([1,2],[3,4])",
+        "indices": [
+          "2",
+          "1"
+        ]
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "checkedTree": "2c759c5d33d170c9c9d3e16700098873a19021b8",
+      "sourceGate": "scratchpad/tasks/6131650ed8c2-math-delivery-26a0dqac"
+    },
+    {
+      "name": "math-svd-selected-component",
+      "script": "e2e/tests/mathSvdFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "ADD-20 特異値分解の成分選択・保存再編集・Undo・F1を独立した文書で通す",
+        "scriptSha256": "73aa33839f18e5fdea80984b30cea28e1d52384017db6ea561f0f6d1a8ad1210",
+        "fixture": {
+          "filename": "math-svd-selected-component-fixture.json",
+          "sha256": "fb638c8c1d82e460603a817c61c60ee80d35385f2e6bf8204f9332335eeaaab4"
+        },
+        "screen": {
+          "filename": "math-svd-selected-component-screen.png",
+          "sha256": "6b51a9298357abb399bbdddc0d8f3350e46e326065a7f4be736f748e4b3a6cee"
+        },
+        "detail": {
+          "filename": "math-svd-selected-component-detail.png",
+          "sha256": "05daebdb2c44a2fdb96a18112bcf437ac205d2e6e1018486a558ab7454513654"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 180.5,
+          "width": 720,
+          "height": 538.984375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "mathematics-input-example",
+        "parameter": "分解した行列の成分",
+        "source": "tensorelement(svdu([[3,0],[4,0]]),[1,1])",
+        "result": "= 0.6"
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "checkedTree": "2c759c5d33d170c9c9d3e16700098873a19021b8",
+      "sourceGate": "scratchpad/tasks/6131650ed8c2-math-delivery-26a0dqac"
+    },
+    {
+      "name": "math-eigenspace-complex-component",
+      "script": "e2e/tests/mathEigenspaceFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "ADD-20 固有空間の成分選択・保存再編集・Undo・F1を独立した文書で通す",
+        "scriptSha256": "00bfd32f4793d638813cd1a2eccd917be9b42b7175b6138d12710ecd884c55fe",
+        "fixture": {
+          "filename": "math-eigenspace-complex-component-fixture.json",
+          "sha256": "0fe0ef152c1375752a3915a3463ba08170db68243f98ec5cfb638d1c2d318fa8"
+        },
+        "screen": {
+          "filename": "math-eigenspace-complex-component-screen.png",
+          "sha256": "ccf4217f001f07a3796fb0ee14d96936b8ad486f85b1b61008fa21a92197f2d0"
+        },
+        "detail": {
+          "filename": "math-eigenspace-complex-component-detail.png",
+          "sha256": "fe95e98635b09f2880c1d7352b793ea8e712c9eb3abb487703669585ae39a401"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 180.5,
+          "width": 720,
+          "height": 538.984375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "mathematics-input-example",
+        "parameter": "固有方向の成分",
+        "source": "Im(tensorelement(eigenspace([[0,-1],[1,0]],i),[1,1]))",
+        "result": "= 1"
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "checkedTree": "2c759c5d33d170c9c9d3e16700098873a19021b8",
+      "sourceGate": "scratchpad/tasks/6131650ed8c2-math-delivery-26a0dqac"
+    },
+    {
+      "name": "math-binomial-cumulative",
+      "script": "e2e/tests/mathBinomialFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-binomial-review-manual-validation-3bgmnyp1",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-binomial-manual-capture-pafckbjv",
+      "checkedTree": null,
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "ADD-17 数学入力の実画面・係数追従・改名・Undo・保存再編集",
+        "scriptSha256": "4e9ba8ba20ae06771446b0faa598319e62966670d3dbb0b88e112095bf240349",
+        "fixture": {
+          "filename": "math-binomial-cumulative-fixture.json",
+          "sha256": "afaa7128346a3783db1964ba4cbf1b51d12935bc9b1ff219aa662d95661392ac"
+        },
+        "screen": {
+          "filename": "math-binomial-cumulative-screen.png",
+          "sha256": "f4df7473b2694465d3e941e2df0ab9db7e903974a8e5497f869027454ebae1f5"
+        },
+        "detail": {
+          "filename": "math-binomial-cumulative-detail.png",
+          "sha256": "2df432004c4baad1a4eb8b6f85017a9dd9f1994a536836855fb0e2055c72fc38"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 162.75,
+          "width": 720,
+          "height": 574.484375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "fixture": {
+        "kind": "mathematics-input-example",
+        "parameter": "二項確率",
+        "source": "binomialcdf(4,1/2,5/2)",
+        "result": "= 0.6875"
+      },
+      "imageEdited": false,
+      "visuallyReviewed": true
+    }
+  ]
+}

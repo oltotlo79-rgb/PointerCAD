@@ -1,3 +1,4 @@
+import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import type { AppState } from '../store/appState.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { helpTopic } from './helpLibrary.js';
@@ -27,5 +28,5 @@ export function contextualHelpTopic(state: AppState, explicit?: string | null, t
     return 'assembly';
   }
   if (state.activeConstraintKind !== null) return 'constraints';
-  return state.activeTool === 'select' ? 'viewport' : 'sketch-tools';
+  return state.activeTool === 'select' ? 'viewport' : toolCommandHelpTopic(state.activeTool) ?? 'numeric-input';
 }

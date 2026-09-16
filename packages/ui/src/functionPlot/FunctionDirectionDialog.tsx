@@ -52,12 +52,12 @@ export function FunctionDirectionDialog({pointId,reference,onClose,lineId}:{read
     <h2 id={`${id}-title`}>{t(lineId?'functionDirection.edit':'functionDirection.title')}</h2><p>{t('functionDirection.hint')}</p>
     <form onSubmit={event=>{event.preventDefault();void calculate();}}>
       <fieldset disabled={busy}><legend>{t('functionDirection.kind')}</legend>{kinds.map(value=><label key={value} className="pcad-function-point-choice">
-        <input type="radio" name={`${id}-kind`} checked={kind===value} onChange={()=>{invalidate();setKind(value);}}/>{t(`functionDirection.${value}`)}
+        <input title={t('functionPlot.control.directionKind')} type="radio" name={`${id}-kind`} checked={kind===value} onChange={()=>{invalidate();setKind(value);}}/>{t(`functionDirection.${value}`)}
       </label>)}</fieldset>
       <fieldset disabled={busy}><legend>{t('functionDirection.length')}</legend><div className="pcad-function-field">
-        <input aria-label={t('functionDirection.length')} required value={length.source} onChange={event=>{invalidate();setLength(editFunctionField(length,event.target.value));}}/>
-        <button type="button" aria-label={`${t('functionDirection.length')}: ${t('math.open')}`} onClick={()=>setEditor(true)}>ƒ</button>
-      </div><label><input type="checkbox" checked={reverse} onChange={event=>{invalidate();setReverse(event.target.checked);}}/>{t('functionDirection.reverse')}</label></fieldset>
+        <input title={t('functionPlot.control.directionLength')} aria-label={t('functionDirection.length')} required value={length.source} onChange={event=>{invalidate();setLength(editFunctionField(length,event.target.value));}}/>
+        <button title={t('functionPlot.control.mathEditor')} type="button" aria-label={`${t('functionDirection.length')}: ${t('math.open')}`} onClick={()=>setEditor(true)}>ƒ</button>
+      </div><label><input title={t('functionPlot.control.reverseDirection')} type="checkbox" checked={reverse} onChange={event=>{invalidate();setReverse(event.target.checked);}}/>{t('functionDirection.reverse')}</label></fieldset>
       <p>{t(normalHint)}</p>
       {message?<p role="alert">{message}</p>:null}{busy?<p role="status">{t('functionDirection.calculating')}</p>:null}
       {preview?<section aria-label={t('functionDirection.result')}><p role="status">{t('functionDirection.ready')}</p><dl>
@@ -65,9 +65,9 @@ export function FunctionDirectionDialog({pointId,reference,onClose,lineId}:{read
         <dt>{t('functionDirection.to')}</dt><dd>{preview.to.map((value,axis)=>`${['X','Y','Z'][axis]} = ${value}`).join(', ')} mm</dd>
       </dl>{prepared!==owner.document?<p>{t('functionDirection.lineOnly')}</p>:null}<FunctionPointPreview minimum={preview.minimum} maximum={preview.maximum} body={parentBody} curves={parentCurves}
         candidates={[]} selected={null} onSelect={()=>undefined} direction={preview}/></section>:null}
-      <div className="pcad-function-actions"><button type="button" onClick={close}>{t('math.cancel')}</button>
-        {busy?<button type="button" onClick={invalidate}>{t('functionPlot.stop')}</button>:<button type="submit">{t('functionDirection.preview')}</button>}
-        <button type="button" disabled={busy||!preview} onClick={()=>{if(isCurrent()&&!busy&&preview){useAppStore.getState().applyDocument(preview.document);close();}}}>{t(lineId?'functionDirection.update':'functionDirection.apply')}</button>
+      <div className="pcad-function-actions"><button title={t('functionPlot.control.cancelDirection')} type="button" onClick={close}>{t('math.cancel')}</button>
+        {busy?<button title={t('functionPlot.control.stopDirection')} type="button" onClick={invalidate}>{t('functionPlot.stop')}</button>:<button title={t('functionPlot.control.previewDirection')} type="submit">{t('functionDirection.preview')}</button>}
+        <button title={t('functionPlot.control.applyDirection')} type="button" disabled={busy||!preview} onClick={()=>{if(isCurrent()&&!busy&&preview){useAppStore.getState().applyDocument(preview.document);close();}}}>{t(lineId?'functionDirection.update':'functionDirection.apply')}</button>
       </div>
     </form>
   </dialog>{editor?<MathExpressionDialog document={prepared} documentVersion={owner.documentVersion} isCurrent={isCurrent}

@@ -5,6 +5,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from lib.task_workspace import configure_project_temp
+
+configure_project_temp(Path(__file__).resolve().parents[1])
 
 SOURCE = Path(__file__).resolve().parent
 NAMES = ('GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_PREFIX', 'GIT_COMMON_DIR',

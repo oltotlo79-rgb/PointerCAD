@@ -7,6 +7,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from lib.task_workspace import configure_project_temp
+
+configure_project_temp(Path(__file__).resolve().parents[1])
 from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
@@ -40,7 +43,7 @@ def install_workspace_fixture(write):
     for name, folder in FIXTURE_FOLDERS.items():
         write(folder + '/package.json', json.dumps({
             'name': '@pointercad/' + name,
-            'scripts': {} if name == 'web' else {'test': 'fixture'},
+            'scripts': {'test': 'fixture'},
             'dependencies': {'@pointercad/' + dependency: 'workspace:*'
                              for dependency in FIXTURE_DEPENDENCIES.get(name, [])},
         }))
@@ -91,12 +94,12 @@ class ScopeTests(unittest.TestCase):
         self.write('packages/expression/src/evaluate.ts', 'changed mathematics')
         result = self.inspect()
         self.assertEqual(result['mode'], 'targeted')
-        self.assertEqual(result['packages'], ['expression', 'desktop', 'io', 'model', 'test-utils', 'ui'])
+        self.assertEqual(result['packages'], ['expression', 'desktop', 'io', 'model', 'test-utils', 'ui', 'web'])
         self.assertTrue(result['runtimeChecks'])
         self.assertEqual(result['changedPackages'], ['expression'])
         self.write('packages/drawing/src/project.ts', 'changed drawing')
         result = self.inspect()
-        self.assertEqual(result['packages'], ['expression', 'desktop', 'drawing', 'io', 'model', 'test-utils', 'ui'])
+        self.assertEqual(result['packages'], ['expression', 'desktop', 'drawing', 'io', 'model', 'test-utils', 'ui', 'web'])
 
     def test_runtime_deletion_rename_and_all_unsent_commits_keep_their_consumers(self):
         self.install_workspace()
@@ -106,7 +109,7 @@ class ScopeTests(unittest.TestCase):
         self.git('add', '.')
         self.git('commit', '-qm', 'documentation')
         result = self.inspect('Push', 'Push', self.base)
-        self.assertEqual(result['packages'], ['desktop', 'help-content', 'io', 'model', 'test-utils', 'ui'])
+        self.assertEqual(result['packages'], ['desktop', 'help-content', 'io', 'model', 'test-utils', 'ui', 'web'])
         self.assertTrue(result['runtimeChecks'])
         self.write('packages/kernel/src/original.ts', 'kernel')
         self.git('add', '.')
@@ -121,7 +124,7 @@ class ScopeTests(unittest.TestCase):
         self.write('packages/ui/package.json', json.dumps({'name': '@pointercad/ui', 'scripts': {'test': 'fixture'}}))
         staged = self.inspect('Commit', 'Commit')
         self.assertTrue(staged['runtimeChecks'])
-        self.assertEqual(staged['packages'], ['desktop', 'io', 'model', 'test-utils', 'ui'])
+        self.assertEqual(staged['packages'], ['desktop', 'io', 'model', 'test-utils', 'ui', 'web'])
         self.assertEqual(self.inspect()['mode'], 'full')
 
     def test_peer_optional_dev_dependencies_and_cycles_do_not_omit_consumers(self):
@@ -138,7 +141,7 @@ class ScopeTests(unittest.TestCase):
         self.git('update-ref', 'refs/remotes/origin/main', self.git('rev-parse', 'HEAD').decode().strip())
         self.write('packages/expression/src/evaluate.ts', 'changed')
         result = self.inspect()
-        self.assertEqual(result['packages'], ['expression', 'desktop', 'drawing', 'io', 'kernel', 'model', 'test-utils', 'ui'])
+        self.assertEqual(result['packages'], ['expression', 'desktop', 'drawing', 'io', 'kernel', 'model', 'test-utils', 'ui', 'web'])
 
     def test_missing_unknown_invalid_manifests_and_unmapped_local_dependencies_fall_back(self):
         self.install_workspace()
@@ -185,16 +188,28 @@ class ScopeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             scope.workspace_dependencies(self.git)
 
-    def test_web_runtime_retains_global_builds_and_local_startup_without_inventing_a_unit_command(self):
+    def test_web_runtime_includes_its_unit_suite_and_retains_builds_startup_and_full_ci(self):
         self.install_workspace()
         self.write('apps/web/src/main.tsx', 'changed')
         result = self.inspect()
-        self.assertEqual(result['packages'], ['test-utils'])
+        self.assertEqual(result['packages'], ['test-utils', 'web'])
         self.assertTrue(result['runtimeChecks'])
         self.assertEqual(result['changedPackages'], ['web'])
         self.assertEqual(self.inspect(force=True)['mode'], 'full')
         with patch.dict(os.environ, {'CI': 'true'}):
             self.assertEqual(scope.inspect(self.root, 'Push', 'Manual', '', False)['mode'], 'full')
+
+    def test_web_test_file_maps_to_web_and_missing_test_script_fails_closed(self):
+        self.install_workspace()
+        self.write('apps/web/src/pwa/offlinePreparation.test.ts', 'new unit coverage')
+        self.assertEqual(self.inspect()['packages'], ['web'])
+        path = 'apps/web/package.json'
+        manifest = json.loads((self.root / path).read_text(encoding='utf8'))
+        manifest['scripts'].pop('test')
+        self.write(path, json.dumps(manifest))
+        self.git('add', path)
+        with self.assertRaises(ValueError):
+            scope.workspace_dependencies(self.git)
 
     def test_notice_and_documentation_are_targeted_but_runtime_is_not(self):
         self.write('README.md', 'updated')
@@ -247,13 +262,47 @@ class ScopeTests(unittest.TestCase):
         self.write('README.md', 'dirty after commit')
         self.assertEqual(self.inspect('Push', 'Push', intermediate)['mode'], 'full')
 
+    def test_e2e_helpers_and_specs_keep_all_operations_with_runtime_consumers(self):
+        self.install_workspace()
+        self.write('packages/ui/src/newFeature.tsx', 'changed UI')
+        self.write('e2e/tests/newFeatureFlow.ts', 'shared operation')
+        self.write('e2e/tests/new-feature.spec.ts', 'browser test')
+        result = self.inspect()
+        self.assertEqual(result['packages'], ['desktop', 'test-utils', 'ui', 'web'])
+        self.assertTrue(result['runtimeChecks'])
+        self.assertTrue(result['allE2EChecks'])
+        self.assertEqual(self.inspect(force=True)['mode'], 'full')
+
+    def test_e2e_deletion_and_rename_do_not_hide_the_all_operations_requirement(self):
+        self.write('e2e/tests/sharedFlow.ts', 'old operation')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'operation baseline')
+        self.git('update-ref', 'refs/remotes/origin/main', self.git('rev-parse', 'HEAD').decode().strip())
+        self.git('mv', 'e2e/tests/sharedFlow.ts', 'docs/removed-flow.md')
+        result = self.inspect('Commit', 'Commit')
+        self.assertEqual(result['packages'], ['help-content', 'test-utils'])
+        self.assertTrue(result['allE2EChecks'])
+
+    def test_help_images_have_bounded_paths_and_do_not_skip_changed_operations(self):
+        result = scope.classify(['packages/help-content/docs/ja/images/new-detail.png',
+                                 'packages/help-content/docs/ja/images/new-capture-details.json'])
+        self.assertEqual(result['packages'], ['help-content'])
+        self.assertFalse(result['allE2EChecks'])
+        result = scope.classify(['packages/help-content/docs/ja/images/new-detail.png',
+                                 'e2e/tests/captureManualDetail.ts'])
+        self.assertEqual(result['packages'], ['help-content', 'test-utils'])
+        self.assertTrue(result['allE2EChecks'])
+        for path in ['e2e/playwright.config.ts', 'e2e/tests/config.json', 'e2e/fixtures/shape.pcad',
+                     'packages/help-content/docs/ja/images/tool.js', 'e2e/scripts/setup.ts']:
+            self.assertEqual(scope.classify([path])['mode'], 'full', path)
+
     def test_ci_forced_full_multiple_updates_and_unknown_configuration_remain_full(self):
         self.write('README.md', 'updated')
         self.assertEqual(self.inspect(force=True)['mode'], 'full')
         self.assertEqual(self.inspect(phase='Disabled')['mode'], 'full')
         with patch.dict(os.environ, {'CI': 'true'}):
             self.assertEqual(scope.inspect(self.root, 'Push', 'Manual', '', False)['mode'], 'full')
-        for path in ['pnpm-lock.yaml', '.github/workflows/ci.yml', 'e2e/tests/smoke.spec.ts', 'scripts/unknown.py']:
+        for path in ['pnpm-lock.yaml', '.github/workflows/ci.yml', 'e2e/playwright.config.ts', 'scripts/unknown.py']:
             self.assertEqual(scope.classify(['README.md', path])['mode'], 'full', path)
 
     def test_unit_changes_select_the_whole_package_and_gate_changes_test_the_gate(self):
@@ -262,6 +311,8 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(scope.classify(['scripts/check.ps1'])['packages'], ['desktop', 'test-utils'])
         self.assertEqual(scope.classify(['scripts/hooks/commit-msg', 'scripts/lib/commit_message.py',
                                         'scripts/commit-message.selftest.py'])['packages'], ['desktop', 'test-utils'])
+        for path in ['scripts/lib/task_workspace.py', 'scripts/task-workspace.selftest.py']:
+            self.assertEqual(scope.classify([path])['packages'], ['desktop', 'test-utils'], path)
         self.assertEqual(scope.classify(['packages/unknown/src/new.test.ts'])['mode'], 'full')
         self.assertEqual(scope.classify(['packages/expression/vitest.config.ts'])['packages'], ['expression', 'test-utils'])
         self.assertEqual(scope.classify(['packages/expression/unknown.config.ts'])['mode'], 'full')
@@ -328,7 +379,7 @@ class ScopeHookTests(unittest.TestCase):
         fixture.git('add', 'packages/expression/src/evaluate.ts')
         fixture.git('commit', '-qm', 'runtime change')
         unit_calls = ['--filter @pointercad/' + name + ' run test'
-                      for name in ['expression', 'desktop', 'io', 'model', 'test-utils', 'ui']]
+                      for name in ['expression', 'desktop', 'io', 'model', 'test-utils', 'ui', 'web']]
         expected_checks = ['run typecheck', 'run lint', *unit_calls, 'run build']
         self.assertEqual(fixture.calls(), expected_checks)
         before = len(fixture.calls())
@@ -347,6 +398,39 @@ class ScopeHookTests(unittest.TestCase):
         self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
 
+    def test_e2e_changes_keep_every_operation_on_actual_push_and_ci_keeps_all_units(self):
+        self.install_runtime_workspace()
+        fixture = self.fixture
+        fixture.write('packages/ui/src/feature.tsx', 'changed UI')
+        fixture.write('e2e/tests/sharedFlow.ts', 'changed operation helper')
+        fixture.git('add', '.')
+        fixture.git('commit', '-qm', 'UI and operation change')
+        expected = ['run typecheck', 'run lint', '--filter @pointercad/desktop run test',
+                    '--filter @pointercad/test-utils run test', '--filter @pointercad/ui run test',
+                    '--filter @pointercad/web run test', 'run build']
+        self.assertEqual(fixture.calls(), expected)
+        before = len(fixture.calls())
+        fixture.git('push', 'origin', 'HEAD:main')
+        browser_install = 'exec playwright install ' + ('--with-deps ' if os.name != 'nt' else '') + 'chromium firefox'
+        self.assertEqual(fixture.calls()[before:], [browser_install,
+                         '--filter @pointercad/desktop exec install-electron', *expected, 'run test:e2e'])
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
+        fixture.env['CI'] = 'true'
+        before = len(fixture.calls())
+        fixture.full_check()
+        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    def test_e2e_only_failure_fails_gate_and_never_creates_full_success_receipt(self):
+        fixture = self.fixture
+        fixture.write('e2e/tests/new-operation.spec.ts', 'new operation')
+        fixture.write('.git/fail-step', 'run test:e2e')
+        fixture.full_check(success=False)
+        self.assertIn('--filter @pointercad/test-utils run test', fixture.calls())
+        self.assertEqual(fixture.calls()[-1], 'run test:e2e')
+        self.assertNotIn('run test', fixture.calls())
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
+
     def test_runtime_manual_scope_has_startup_and_explicit_full_has_no_project_filter(self):
         self.install_runtime_workspace()
         fixture = self.fixture
@@ -359,6 +443,24 @@ class ScopeHookTests(unittest.TestCase):
                          str(fixture.root / 'scripts/check.ps1'), '-Full'])
         self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    def test_web_diagnostic_resolves_apps_folder_and_a_failed_web_suite_stops_the_real_gate(self):
+        self.install_runtime_workspace()
+        fixture = self.fixture
+        name = 'src/pwa/offlinePreparation.test.ts'
+        fixture.write('apps/web/' + name, 'Web unit fixture')
+        fixture.command([fixture.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                         str(fixture.root / 'scripts/check.ps1'), '-Level', 'Push',
+                         '-UnitPackage', 'web', '-UnitTests', name])
+        self.assertEqual(fixture.calls(), ['--filter @pointercad/web exec vitest run ' + name])
+        fixture.write('apps/web/src/main.tsx', 'changed browser preparation')
+        fixture.write('.git/fail-step', '--filter @pointercad/web run test')
+        before = len(fixture.calls())
+        fixture.full_check(success=False)
+        calls = fixture.calls()[before:]
+        self.assertIn('--filter @pointercad/web run test', calls)
+        self.assertNotIn('run build', calls)
+        self.assertFalse(any(call.startswith('run test:e2e') for call in calls))
 
     def test_runtime_failure_stops_before_build_and_invalidates_any_old_receipt(self):
         self.install_runtime_workspace()

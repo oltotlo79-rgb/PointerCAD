@@ -25,5 +25,13 @@
   "help.noResults": "一致する項目がありません。別の言葉で検索してください。",
   "help.searchIncomplete": "一部の本文を読み込めませんでした。読み込めた項目を表示しています。",
   "help.loadFailed": "ヘルプを読み込めませんでした。接続を確認して再試行してください。",
-  "help.retry": "再試行"
+  "help.retry": "再試行",
+  "controlGuide.help.search": "操作名や困っている内容で説明書を検索します。文字を消すと全ての章を表示します。",
+  "controlGuide.help.howToRead": "説明書の目次・検索・移動の使い方を開きます。",
+  "controlGuide.help.back": "直前に読んだ説明へ戻り、読んでいた位置も戻します。",
+  "controlGuide.help.forward": "戻る前に読んでいた説明へ進みます。",
+  "controlGuide.help.retrySearch": "読み込めなかった説明を含めて検索をやり直します。",
+  "controlGuide.help.retryChapter": "現在の章の読み込みをやり直します。",
+  "controlGuide.help.previousChapter": "説明書の並び順で、前の章を開きます。",
+  "controlGuide.help.nextChapter": "説明書の並び順で、次の章を開きます。"
 }

@@ -12,6 +12,8 @@ export function intervalUnion(lower: number, upper = lower): IntervalUnion {
   return { ranges: [{ lower, upper }], continuous: true };
 }
 function normalize(ranges: readonly MathInterval[], continuous: boolean): IntervalUnion {
+  // Empty and singleton ranges need no sorting or merging; retain the independent array.
+  if (ranges.length < 2) return { ranges: [...ranges], continuous };
   const sorted = [...ranges].sort((a, b) => a.lower - b.lower);
   const merged: MathInterval[] = [];
   for (const interval of sorted) {

@@ -330,7 +330,9 @@ export {
   type SolidProgressCallback,
   type SolidRecomputeDeps,
 } from './worker/recomputeSolids.js';
-export { createKernelApi, type KernelApi, type ManagedKernelApi, type InterferenceKernelApi } from './worker/kernelApi.js';
+export { createKernelApi, type KernelApi, type ManagedKernelApi, type InterferenceKernelApi, type MaterialComparisonKernelApi } from './worker/kernelApi.js';
+export type { MaterialComparisonRequest } from './worker/compareCachedMaterials.js';
+export type { MaterialComparisonOutcome } from './worker/compareMaterialBodies.js';
 export type {
   DrawingKernelCancelToken,
   DrawingBodyInstance,

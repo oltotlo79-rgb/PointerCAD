@@ -1,9 +1,11 @@
+import { STATISTICS_DEFINITIONS } from './mathOperationMetadata.js';
 /** Resolve multiplication glyphs from declared scalar types and explicit vector shapes, never from spelling. */
 import { MATH_INPUT_LIMITS, MathInputProblem, type MathNode, type MathSymbolReference } from './mathInputContract.js';
-import { STATISTICS_DEFINITIONS } from './statisticsOperations.js';
 
 const SCALAR_STATISTICS = new Set<string>(STATISTICS_DEFINITIONS.map(([id])=>id).filter(id=>id!=='modes'));
-const SCALAR_LINEAR_RESULTS = new Set(['determinant', 'trace', 'rank', 'norm', 'dot']);
+const SCALAR_LINEAR_RESULTS = new Set(['determinant', 'trace', 'rank', 'norm', 'dot',
+  'tensor-element', 'kronecker-delta', 'levi-civita',
+  'integer-quotient', 'integer-remainder', 'next-prime', 'euler-totient']);
 
 const SCALAR_OPERATIONS = new Set([
   'add', 'subtract', 'negate', 'multiply', 'divide', 'power', 'sqrt', 'root', 'square',
@@ -30,7 +32,17 @@ export function resolveTypedMathProduct(token: 'times' | 'dot', operands: readon
     // The data argument is a vector, but its statistic is scalar. Invalid data is still
     // rejected by domain preparation before any surrounding multiplication is simplified.
     if (SCALAR_STATISTICS.has(node.operation) || SCALAR_LINEAR_RESULTS.has(node.operation)) return { kind: 'scalar' };
+    if (node.operation === 'prime-factors') return { kind: 'matrix', height: null, width: 2 };
+    if (node.operation === 'tensor-contract') {
+      // A valid two-axis contraction of a matrix has no remaining axes. Invalid
+      // axes/dimensions are rejected in preparation before scalar simplification.
+      const input = shape(node.operands[0], depth + 1);
+      return input.kind === 'matrix' ? { kind: 'scalar' } : { kind: 'unknown' };
+    }
     if (node.operation === 'component') {
+      const source = node.operands[0];
+      if (node.operands.length === 2 && source.kind === 'operation'
+          && ['divisors', 'tensor-shape'].includes(source.operation)) return { kind: 'scalar' };
       let selected = shape(node.operands[0], depth + 1);
       // One index selects a row of a matrix, not an arbitrary scalar. Bounds are still
       // checked during preparation before simplification (including multiplication by 0).
@@ -50,19 +62,20 @@ export function resolveTypedMathProduct(token: 'times' | 'dot', operands: readon
       return { kind: 'unknown' };
     }
     if (['row-reduce', 'null-space', 'column-space', 'row-space', 'linear-solve', 'linear-solution-space',
-      'qr-q', 'qr-r', 'lu-p', 'lu-l', 'lu-u', 'characteristic-coefficients', 'eigenvalues', 'singular-values'].includes(node.operation)) {
+      'qr-q', 'qr-r', 'lu-p', 'lu-l', 'lu-u', 'characteristic-coefficients', 'eigenvalues', 'singular-values', 'eigenspace', 'svd-u', 'svd-s', 'svd-v'].includes(node.operation)) {
       const input = shape(node.operands[0], depth + 1);
       if (input.kind !== 'matrix') return { kind: 'unknown' };
       if (node.operation === 'singular-values') return input.height === null ? { kind: 'unknown' }
         : { kind: 'vector', length: Math.min(input.height, input.width) };
       if (node.operation === 'linear-solve' || node.operation === 'eigenvalues') return { kind: 'vector', length: input.width };
       if (node.operation === 'characteristic-coefficients') return { kind: 'vector', length: input.width + 1 };
-      if (['qr-q', 'lu-p', 'lu-l'].includes(node.operation)) {
+      if (['qr-q', 'lu-p', 'lu-l', 'svd-u'].includes(node.operation)) {
         return input.height === null ? { kind: 'unknown' } : { kind: 'matrix', height: input.height, width: input.height };
       }
+      if (node.operation === 'svd-v') return { kind: 'matrix', height: input.width, width: input.width };
       if (node.operation === 'column-space') return input.height === null ? { kind: 'unknown' }
         : { kind: 'matrix', height: null, width: input.height };
-      if (['null-space', 'row-space', 'linear-solution-space'].includes(node.operation)) return { ...input, height: null };
+      if (['null-space', 'row-space', 'linear-solution-space', 'eigenspace'].includes(node.operation)) return { ...input, height: null };
       return input;
     }
     if (SCALAR_OPERATIONS.has(node.operation) && node.operands.every(child => shape(child, depth + 1).kind === 'scalar')) return { kind: 'scalar' };

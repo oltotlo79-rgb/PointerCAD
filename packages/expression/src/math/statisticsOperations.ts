@@ -1,23 +1,18 @@
+import { normalizeBinomialProbability } from './binomialProbability.js';
 /** Sample/population conventions are separate operations, never a hidden default. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { exact, observations, observation, rationalNode, mean, deviations, dot, divide, multiply,
   subtract, quantile, compare } from './statisticsData.js';
 
-export const STATISTICS_DEFINITIONS = [
-  ['mean', 'Mean', 1], ['median', 'Median', 1], ['modes', 'Modes', 1], ['quantile', 'Quantile', 2],
-  ['population-variance', 'PopulationVariance', 1], ['sample-variance', 'SampleVariance', 1],
-  ['population-standard-deviation', 'PopulationStandardDeviation', 1],
-  ['sample-standard-deviation', 'SampleStandardDeviation', 1],
-  ['population-covariance', 'PopulationCovariance', 2], ['sample-covariance', 'SampleCovariance', 2],
-  ['correlation', 'Correlation', 2], ['regression-slope', 'RegressionSlope', 2],
-  ['regression-intercept', 'RegressionIntercept', 2], ['r-squared', 'RSquared', 2],
-] as const;
+import { STATISTICS_DEFINITIONS } from './mathOperationMetadata.js';
+export { STATISTICS_DEFINITIONS } from './mathOperationMetadata.js';
 const operations = new Set<string>(STATISTICS_DEFINITIONS.map(([id]) => id));
 const sqrt = (value: MathNode): MathNode => ({ kind: 'operation', operation: 'sqrt', operands: [value] });
 
 export function normalizeStatisticsOperation(node: Extract<MathNode, { kind: 'operation' }>): MathNode {
   if (!operations.has(node.operation)) return node;
   const { operation, operands } = node;
+  if (operation === 'binomial-pmf' || operation === 'binomial-cdf') return normalizeBinomialProbability(node);
   const values = observations(operands[0], operation.startsWith('sample-') ? 2 : 1);
   if (operation === 'mean') return rationalNode(mean(values));
   if (operation === 'median') return rationalNode(quantile(values, exact(1n, 2n)));

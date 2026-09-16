@@ -255,7 +255,7 @@ function SectionOffsetField(): React.JSX.Element | null {
       <span className="pcad-popover__title">{t('sectionView.title')}</span>
       <label className="pcad-field">
         <span className="pcad-field__label">{t('sectionView.offset')}</span>
-        <input
+        <input title={t('controlGuide.section.offset')}
           className="pcad-field__input"
           type="text"
           inputMode="text"
@@ -401,7 +401,7 @@ function CanvasScaleField(): React.JSX.Element | null {
       {ready ? (
         <label className="pcad-field">
           <span className="pcad-field__label">{t('canvas.realLength')}</span>
-          <input
+          <input title={t('controlGuide.canvas.realLength')}
             className="pcad-field__input"
             type="text"
             inputMode="text"

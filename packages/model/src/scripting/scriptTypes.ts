@@ -7,7 +7,8 @@ export const SCRIPT_LIMITS = Object.freeze({
   heapBytes: 64 * 1024 * 1024,
   stackBytes: 128 * 1024,
   javascriptMs: 5000,
-  totalMs: 30000,
+  // Loading and CAD calculation have a separate practical limit from guest JS.
+  totalMs: 90000,
   commands: 1000,
   commandBytes: 8 * 1024 * 1024,
   consoleLines: 1000,
@@ -20,6 +21,8 @@ export const SCRIPT_LIMITS = Object.freeze({
   // floor((2^64 - 1) / 1,000,000): WASI stores the fixed clock in uint64 nanoseconds.
   maximumTimeMs: 18446744073709,
 });
+
+export const SCRIPT_TOTAL_TIMEOUT_MESSAGE = `実行全体の上限${SCRIPT_LIMITS.totalMs / 1000}秒を超えました。`;
 
 export interface ScriptLocation {
   readonly file: string;

@@ -5,6 +5,7 @@
  */
 
 import {
+  DocumentCompareIcon,
   DrawingSheetIcon,
   DrawingTemplateIcon,
   ExportIcon,
@@ -44,6 +45,7 @@ export type FileMenuActionId =
   | 'newDrawingFromTemplate'
   | 'newAssembly'
   | 'saveAs'
+  | 'compareDocuments'
   | 'exportShape'
   | 'importShape'
   | 'saveAsTemplate'
@@ -62,6 +64,7 @@ export type FileMenuActionId =
  * 画面を見るだけで見つかる(NFR-UX-7)。Shift 押しと Ctrl+Shift+S はそのまま残す。
  */
 export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
+  { id: 'compareDocuments', labelKey: 'documentDiff.title', tooltipKey: 'documentDiff.tooltip', Icon: DocumentCompareIcon },
   { id: 'newDrawingFromPart', labelKey: 'drawing.file.fromPart', tooltipKey: 'drawing.file.fromPart', Icon: DrawingSheetIcon },
   { id: 'newDrawingFromTemplate', labelKey: 'drawing.template.new', tooltipKey: 'drawing.template.newTooltip', Icon: DrawingTemplateIcon },
   {

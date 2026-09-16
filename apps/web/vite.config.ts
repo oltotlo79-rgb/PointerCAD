@@ -6,7 +6,10 @@ import { gzipSync } from 'node:zlib';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { webSecurityPolicy } from './build/securityPolicy.js';
+import { runtimeNotices } from '../../scripts/vite/runtimeNotices.mjs';
 import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
+import { exactMathAssets } from '../../scripts/vite/exactMathAssets.mjs';
+import { offlineServiceWorker } from '../../scripts/vite/offlineServiceWorker.mjs';
 
 const OCCT_WASM_IMPORT = 'opencascade.js/dist/opencascade.full.wasm?url';
 const OCCT_WASM_VIRTUAL_ID = '\0pointercad:occt-wasm-url-disabled';
@@ -128,7 +131,7 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react(), occtAssets(), webSecurityPolicy(), mathNotices()],
+  plugins: [react(), occtAssets(), webSecurityPolicy(), mathNotices(), runtimeNotices(), exactMathAssets(), offlineServiceWorker()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },
   // 幾何カーネルの Worker は ES モジュールとして出力する。

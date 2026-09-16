@@ -24,6 +24,7 @@ import sheetMetal from './ja/sheetMetal.json';
 import strength from './ja/strength.json';
 import script from './ja/script.json';
 import math from './ja/math.json';
+import commands from './ja/commands.json';
 
 /** 機能ごとの表を 1 つに合わせたもの。鍵の型(`MessageKey`)はここから導く。 */
 export const ja = {
@@ -58,6 +59,8 @@ export const ja = {
   ...strength,
   ...script,
   ...math,
+  // 共通command登録。ショートカット一覧もこの名前を参照する。
+  ...commands,
 };
 
 /** 分けた表そのもの(重なりの検査が読む)。並びは `ja` を合わせる順と同じ。 */
@@ -78,4 +81,5 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['help', help],
   ['sheetMetal', sheetMetal],
   ['strength', strength],
+  ['commands', commands],
 ];

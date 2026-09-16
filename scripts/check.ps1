@@ -46,12 +46,12 @@ param(
     # 対象原因の調査専用。前提projectを省いた結果を通常ゲート・CIへ使用しない。
     [switch]$E2ENoDependencies,
     # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
-    [ValidateSet("", "desktop", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content", "expression")]
+    [ValidateSet("", "desktop", "web", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content", "expression")]
     [string]$UnitPackage = "",
     [string[]]$UnitTests = @(),
     # 実装途中の診断専用。既定・pre-commit・pre-pushの必須段数は変えない。
     [switch]$StaticOnly,
-    # 診断用: 性能検査の判定モード(厳密/参考)の表示だけを行って終了する(pnpmは一切実行しない)。
+    # 診断用: 正確性優先の性能判定と実行場所の表示だけを行って終了する(pnpmは一切実行しない)。
     # 統括の動作確認、および scripts/check.selftest.ps1 からの検証に使う。
     [switch]$ShowPerfModeOnly
 )
@@ -106,7 +106,7 @@ function Invoke-Check {
 function Invoke-LocalPackageChecks {
     param([string[]]$Packages)
     foreach ($packageName in $Packages) {
-        $folder = if ($packageName -eq 'desktop') { 'apps/desktop' } else { "packages/$packageName" }
+        $folder = if ($packageName -in @('desktop', 'web')) { "apps/$packageName" } else { "packages/$packageName" }
         $packageFile = Join-Path (Get-Location).Path "$folder/package.json"
         if (-not (Test-Path -LiteralPath $packageFile -PathType Leaf)) { throw "Required local package is missing: $packageName" }
         $packageInfo = Get-Content -LiteralPath $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -118,28 +118,33 @@ function Invoke-LocalPackageChecks {
 $validationQos = $null
 $receiptToken = ''
 $receiptCompleted = $false
+$savedTemporaryEnvironment = @{}
 Push-Location $root
 try {
-    # 性能検査(NFR-PF-2/PF-3、packages/kernel/src/worker/solidPerformance.test.ts、および
-    # packages/model/src/sketch/constraints の solve.test.ts / diagnose.test.ts が同じ流儀で読む)の
-    # 上限判定を厳密にするか参考にとどめるかの切替。並列作業中の CPU 競合で境界値の検査が
-    # 落ちる問題への対策(rules/06-過去の失敗と対策.md 10.3)。上限の数値は変えない。
-    # -Level Push(pre-push・統括の手動実行)は厳密、-Level Commit(pre-commit)は明示的に空にして参考とする。
-    # ただし -Level Push であっても CI(共有ランナー)上では厳密判定をしない。共有ランナーは基準の
-    # 機械より遅く、実行のたびの速さも揃わないため、ミリ秒単位の上限判定がCPU競合と無関係に揺れて
-    # 落ちる(実測: GitHub Actions run 33972658785。rules/06-過去の失敗と対策.md 10.12)。CIでは実測を
-    # ログに残すだけにとどめ、厳密な合否判定は基準の機械で行う手元のpre-push(-Level Push、CI以外)に
-    # 委ねる。`CI` 環境変数はGitHub Actionsが自動で `true` を設定する(ci.ymlでの追加設定は不要)。
+    # Keep this project's own check output and child-process temporary files in
+    # the project. The helper rejects an external path or an escaping junction.
+    $temporaryRootOutput = & python -B -X utf8 (Join-Path $scriptDirectory 'lib/task_workspace.py') --repository $root --temp-root
+    if ($LASTEXITCODE -ne 0) { throw 'プロジェクト内の一時保存先を用意できませんでした。' }
+    $temporaryRoot = ($temporaryRootOutput -join "`n").Trim()
+    if (-not (Test-Path -LiteralPath $temporaryRoot -PathType Container)) { throw '一時保存先が存在しません。' }
+    foreach ($temporaryVariable in @('TEMP', 'TMP', 'TMPDIR')) {
+        $savedTemporaryEnvironment[$temporaryVariable] = [Environment]::GetEnvironmentVariable($temporaryVariable, 'Process')
+        [Environment]::SetEnvironmentVariable($temporaryVariable, $temporaryRoot, 'Process')
+    }
+    # 2026-09-14利用者指示: 正確性を優先し、元の速度目標は改善用に記録する。
+    # 全環境で共通の実用性の境界を使う(releasePerformance.ts)。
+    # 旧PERF_STRICTの値は測定順・HighQoS・B3の実行条件識別に残す。
+    # 速度目標そのものの合否を環境変数で切り替える用途には使わない。
     $isRunningOnCI = $env:CI -eq 'true'
     if ($Level -eq "Push" -and -not $isRunningOnCI) {
         $env:POINTERCAD_PERF_STRICT = '1'
-        Write-Host "性能検査: 厳密(-Level Push)" -ForegroundColor Cyan
+        Write-Host "性能検査: 正確性優先(-Level Push)" -ForegroundColor Cyan
     } elseif ($Level -eq "Push" -and $isRunningOnCI) {
         $env:POINTERCAD_PERF_STRICT = ''
-        Write-Host "性能検査: 参考(CI)" -ForegroundColor Cyan
+        Write-Host "性能検査: 正確性優先(CI)" -ForegroundColor Cyan
     } else {
         $env:POINTERCAD_PERF_STRICT = ''
-        Write-Host "性能検査: 参考(-Level Commit)" -ForegroundColor Cyan
+        Write-Host "性能検査: 正確性優先(-Level Commit)" -ForegroundColor Cyan
     }
 
     if ($ShowPerfModeOnly) {
@@ -165,7 +170,7 @@ try {
             Write-Host "[NG] ユニット診断には src/ 配下のテストファイルを指定してください" -ForegroundColor Red
             exit 1
         }
-        $unitFolder = if ($UnitPackage -eq "desktop") { "apps/desktop" } else { "packages/$UnitPackage" }
+        $unitFolder = if ($UnitPackage -in @("desktop", "web")) { "apps/$UnitPackage" } else { "packages/$UnitPackage" }
         $unitTestPath = Join-Path (Join-Path $root $unitFolder) $unitTest
         if (-not (Test-Path -LiteralPath $unitTestPath -PathType Leaf)) {
             Write-Host "[NG] 指定したユニットテストが見つかりません: $unitFolder/$unitTest" -ForegroundColor Red
@@ -206,6 +211,7 @@ try {
     $ordinaryGate = -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and -not $Install
     $localScope = $null
     $localRuntimeChecks = $false
+    $localAllE2EChecks = $false
     if ($ordinaryGate -and -not $Full -and -not $isRunningOnCI -and $E2ERepeats -eq 1 -and $ReceiptPhase -ne 'Disabled') {
         $scopeScript = Join-Path $scriptDirectory 'lib/local_change_scope.py'
         if (Test-Path -LiteralPath $scopeScript -PathType Leaf) {
@@ -215,7 +221,7 @@ try {
                 $scopeJson = & python @scopeArgs
                 if ($LASTEXITCODE -ne 0) { throw 'Local scope inspection failed' }
                 $candidateScope = ($scopeJson -join "`n") | ConvertFrom-Json
-                $allowedPackages = @('desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression')
+                $allowedPackages = @('desktop', 'web', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression')
                 if ($candidateScope.mode -eq 'targeted' -and @($candidateScope.packages).Count -gt 0 -and
                     @($candidateScope.packages | Where-Object { $allowedPackages -notcontains $_ }).Count -eq 0) {
                     $localScope = $candidateScope
@@ -223,15 +229,21 @@ try {
                         if ($candidateScope.runtimeChecks -isnot [bool]) { throw 'Invalid runtime scope flag' }
                         $localRuntimeChecks = $candidateScope.runtimeChecks
                     }
+                    if ($candidateScope.PSObject.Properties.Name -contains 'allE2EChecks') {
+                        if ($candidateScope.allE2EChecks -isnot [bool]) { throw 'Invalid complete E2E scope flag' }
+                        $localAllE2EChecks = $candidateScope.allE2EChecks
+                    }
                     Write-Host "[検査範囲] 変更箇所別: $($localScope.reason) / $($localScope.packages -join ', ')。全検査は両OS CIで実施します。" -ForegroundColor Cyan
                 } else { Write-Host "[検査範囲] 全体: $($candidateScope.reason)" }
             } catch {
                 $localScope = $null
                 $localRuntimeChecks = $false
+                $localAllE2EChecks = $false
                 Write-Host "[検査範囲] 判定できないため全体検査へ戻します: $($_.Exception.Message)"
             }
         } else { Write-Host '[検査範囲] 判定処理が無いため全体検査へ戻します' }
     }
+    if ($localAllE2EChecks -and -not $hasE2E) { throw 'Changed E2E tests require the test:e2e script' }
     $receiptPhaseMatches = ($ReceiptPhase -eq 'Commit' -and $Level -eq 'Commit') -or
         ($ReceiptPhase -eq 'Push' -and $Level -eq 'Push')
     if ($ordinaryGate -and $receiptPhaseMatches -and -not $isRunningOnCI) {
@@ -323,7 +335,7 @@ try {
             Write-Host "[警告] stage 済みのファイルが無いため、検査前後の比較を省略します" -ForegroundColor Yellow
         }
 
-        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and ($null -eq $localScope -or $localRuntimeChecks)
+        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and ($null -eq $localScope -or $localRuntimeChecks -or $localAllE2EChecks)
         if ($E2EOnly -and -not $runE2E) {
             Write-Host "[NG] -E2EOnly を指定しましたが test:e2e スクリプトがありません" -ForegroundColor Red
             exit 1
@@ -390,7 +402,7 @@ try {
                 $repeatLabel = ""
                 if ($E2ERepeats -gt 1) { $repeatLabel = " ($e2eRun/$E2ERepeats)" }
                 $e2eArgs = @("run", "test:e2e")
-                if ($localRuntimeChecks) {
+                if ($localRuntimeChecks -and -not $localAllE2EChecks) {
                     # All unit tests of changed packages and their consumers ran above.
                     # Retain strict rendering and actual Firefox/Electron startup locally;
                     # the same commit's CI and release -Full run every existing operation.
@@ -467,6 +479,11 @@ finally {
             Write-Host "性能検査: HighQoS対象 $($validationQos.ObservedCount) プロセスの後片付けを完了しました" -ForegroundColor Cyan
         }
     }
-    finally { Pop-Location }
+    finally {
+        foreach ($temporaryVariable in $savedTemporaryEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($temporaryVariable, $savedTemporaryEnvironment[$temporaryVariable], 'Process')
+        }
+        Pop-Location
+    }
 }
 exit 0

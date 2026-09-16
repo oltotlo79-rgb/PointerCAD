@@ -13,7 +13,7 @@ export function DrawingCenterMarksPanel({ drawing, view }: { readonly drawing: D
     <summary>{t('drawing.centers.individual')}</summary>
     <p>{t('drawing.centers.hint')}</p>
     {marks.map((mark, index) => <label key={mark.id} className="pcad-field">
-      <input type="checkbox" checked={!mark.sourceIds.some((id) => hidden.has(id))} disabled={busy || resolution.document !== drawing}
+      <input title={t('drawing.controlHint.centerMark')} type="checkbox" checked={!mark.sourceIds.some((id) => hidden.has(id))} disabled={busy || resolution.document !== drawing}
         onChange={(event) => setDrawingCenterMarkVisible(drawing, view.id, mark.id, event.target.checked)} />
       {t('drawing.centers.item').replace('{number}', String(index + 1))}
     </label>)}

@@ -1,3 +1,4 @@
+import { createConfiguredNumericInput as createNumericInput } from '../../settings/createConfiguredNumericInput.js';
 /**
  * ソリッドの道具を押したときの配線(FR-401〜、FR-1101・FR-1102)。
  *
@@ -6,7 +7,6 @@
 
 import type { BooleanOperation } from '@pointercad/model';
 import {
-  createNumericInput,
   SOLID_TOOL_STEPS,
   type SolidToolId,
 } from '../../sketch/numericInput.js';

@@ -36,9 +36,9 @@ export function ReplacementPopover(): React.JSX.Element | null {
         {replacementPreviewText(plan.affectedCount, plan.unmatchedCount)}
       </p>
       <div className="pcad-popover__actions">
-        <button type="button" className="pcad-button pcad-button--action"
+        <button title={t('controlGuide.button.replacementApply')} type="button" className="pcad-button pcad-button--action"
           onClick={confirmReplacementPreview}>{t('assembly.replace.confirm')}</button>
-        <button type="button" className="pcad-button"
+        <button title={t('controlGuide.button.replacementCancel')} type="button" className="pcad-button"
           onClick={cancelReplacementPreview}>{t('assembly.place.cancel')}</button>
       </div>
     </div>

@@ -17,7 +17,7 @@ catalog:
   decimal.js: 10.6.0
   electron: 44.1.0
   electron-builder: 26.15.3
-  eslint: 10.9.1
+  eslint: 10.10.0
   eslint-plugin-react-hooks: 7.1.1
   fflate: 0.8.3
   globals: 17.11.0

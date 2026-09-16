@@ -170,7 +170,7 @@ describe('品質ゲートのテスト実行順', () => {
     expect(recompute).toContain("waitForRecomputeOutcome(page, token, 'success')");
     expect(reopen).toContain('waitForRecompute(page, before)');
     const policy = readRootFile('packages/test-utils/src/releasePerformance.ts');
-    expect(policy).toContain('export const RECOMPUTE_TIMEOUT_MS = 90_000');
+    expect(policy).toContain('export const RECOMPUTE_TIMEOUT_MS = 150_000');
     expect(policy).not.toMatch(/process\.env|import\.meta\.env/u);
   });
 });

@@ -9,7 +9,8 @@ export const FUNCTIONAL_TEST_TIMEOUT_MS = 60_000;
 /** 初回のWASM取得・展開・初期化を含む画面検査の待機上限。
  * 実計算の時間目標の記録と、製品の中止・数式期限は別に保持する。
  */
-export const RECOMPUTE_TIMEOUT_MS = 90_000;
+// Windows全件確認の完了74.332秒と同時初期化での90秒超を受けた有限上限。60秒の改善目標は保持する。
+export const RECOMPUTE_TIMEOUT_MS = 150_000;
 /** 進捗と中止を持つ干渉計算は10秒を有限の待ち時間とする。描画・入力応答には使わない。 */
 export const INTERFERENCE_PRACTICAL_LIMIT_MS = 10_000;
 export type DurationProfile = 'general' | 'interference';

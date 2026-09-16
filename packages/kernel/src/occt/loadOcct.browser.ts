@@ -75,6 +75,7 @@ async function fetchAssetManifest(): Promise<FetchedOcctAssetManifest | undefine
 
 async function fetchCompressedWasm(
   fetched: FetchedOcctAssetManifest,
+  stage: (name: string) => void,
 ): Promise<ArrayBuffer> {
   const downloaded: DownloadedOcctAssetPart[] = [];
   for (const part of fetched.manifest.parts) {
@@ -84,7 +85,10 @@ async function fetchCompressedWasm(
     }
     downloaded.push({ order: part.order, data: await response.arrayBuffer() });
   }
-  return await decompressAndVerifyOcctAsset(fetched.manifest, downloaded);
+  stage('downloaded');
+  const binary = await decompressAndVerifyOcctAsset(fetched.manifest, downloaded);
+  stage('verified');
+  return binary;
 }
 
 async function importOcctGlue(): Promise<unknown> {
@@ -104,22 +108,36 @@ async function importOcctGlue(): Promise<unknown> {
  */
 export function loadOcctForBrowser(): Promise<OpenCascadeInstance> {
   cached ??= (async (): Promise<OpenCascadeInstance> => {
+    const started = performance.now();
+    const stage = (name: string): void => {
+      if (import.meta.env.VITE_PCAD_E2E === '1') {
+        console.debug('[pcad:kernel-startup]', JSON.stringify({ phase: name, elapsedMs: performance.now() - started }));
+      }
+    };
+    stage('start');
     const gluePromise = importOcctGlue();
     const manifestPromise = fetchAssetManifest();
     const glueModule = await gluePromise;
     const fetchedManifest = await manifestPromise;
+    stage('glue-ready');
     if (!isOcctGlueModule(glueModule)) {
       throw new Error(
         `OCCT のグルーコードを読み込めませんでした(既定の書き出しが見つかりません): ${ocGlueUrl}`,
       );
     }
     if (fetchedManifest !== undefined) {
-      const wasmBinary = await fetchCompressedWasm(fetchedManifest);
-      return await new glueModule.default({ wasmBinary });
+      const wasmBinary = await fetchCompressedWasm(fetchedManifest, stage);
+      stage('instantiate');
+      const instance = await new glueModule.default({ wasmBinary });
+      stage('ready');
+      return instance;
     }
-    return await new glueModule.default({
+    stage('instantiate-fallback');
+    const instance = await new glueModule.default({
       locateFile: (path: string): string => (path.endsWith('.wasm') ? ocWasmUrl : path),
     });
+    stage('ready');
+    return instance;
   })();
   return cached;
 }

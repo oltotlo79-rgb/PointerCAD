@@ -1,4 +1,6 @@
 /** Worker-owned symbolic engine, source preparation and request execution. Never import into the editor. */
+export { decodeMathWorkEnvelope } from './mathWorkRequest.js';
+export type { MathWorkEnvelope } from './mathWorkRequest.js';
 export { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 export type { ExactMathEngine, ExactMathWorkOptions } from './exactMathWorkExecution.js';
 export {executeCurvePointWorkRequest} from './curvePointWorkExecution.js';

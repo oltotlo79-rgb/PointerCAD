@@ -28,13 +28,10 @@
  */
 
 import {
-  evaluateExpression,
   expressionValueFromNumber,
-  type ExpressionError,
   type ExpressionValue,
 } from '@pointercad/expression';
 import { applyNumericDefaultSources, type NumericDefaultSources } from './numericDefaultSources.js';
-import { evaluateNumericMath } from './numericMathValues.js';
 import {
   DEFAULT_BOX_SIZE_MM,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
@@ -94,19 +91,15 @@ import {
   MAX_PATTERN_COUNT,
   MAX_POINT_ARRAY_COUNT,
   MAX_SCALE,
-  MAX_SPLINE_POINTS,
   MAX_SPRING_TURNS,
   MAX_TAPER_ANGLE_DEGREES,
   METRIC_THREAD_DESIGNATIONS,
   metricThreadPitch,
-  MIN_CLOSED_SPLINE_POINTS,
   MIN_COPY_COUNT,
   MIN_SCALE,
-  MIN_SPLINE_POINTS,
   RULED_SPHERE_SEGMENT_CHOICES,
   type ChamferSize,
   type CoordinateInput,
-  type LengthUnit,
   type PointReference,
   type RevolveAxis,
   type RuledSphereSegments,
@@ -138,8 +131,19 @@ import {
 } from './numericInputTools.js';
 export * from './numericInputTools.js';
 
-import { applyDisplayUnit, usesDisplayInputUnit, type FieldUnit } from './numericFieldUnits.js';
+import type { FieldUnit } from './numericFieldUnits.js';
 export { applyDisplayUnit, isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
+
+import { fillDefaults, evaluateNumericInput, evaluateNumericField, commitValues,
+  type NumericInputEvaluation, type DisplayUnitOptions } from './numericInputEvaluation.js';
+export { rangeErrorFor, effectiveSource, fieldExpression, fillDefaults, evaluateNumericInput,
+  commitValues, valueByFieldKey, type NumericFieldResult, type NumericInputEvaluation,
+  type DisplayUnitOptions } from './numericInputEvaluation.js';
+
+export { twoPointArcCenterOffset, twoPointArcRadiusRejection } from './twoPointArcInput.js';
+import type { SplineDraft } from './splineInputDraft.js';
+export { EMPTY_SPLINE_DRAFT, appendSplinePoint, removeLastSplinePoint, checkSplineDraft,
+  type SplineDraft, type SplineDraftOutcome, type SplineDraftCheck } from './splineInputDraft.js';
 
 /**
  * 欄が受け付ける値の範囲(NFR-UX-5)。
@@ -3373,309 +3377,6 @@ function choiceValueFrom(choices: readonly NumericChoice[], key: NumericChoiceKe
 /** 指定したつまみの現在値。持たない・見つからないときは null。 */
 export function choiceValueOf(state: NumericInputState, key: NumericChoiceKey): string | null {
   return choiceValueFrom(state.choices, key) ?? null;
-}
-
-/* ---- P4 タスク11: 2 点+半径の円弧(FR-326、統括の決定 §0.a-0.18) ---- */
-
-/** 断りの文へ長さを差し込むときの丸め(1μm 単位)。桁が伸びて読みにくくなるのを防ぐ。 */
-function lengthText(millimetres: number): string {
-  return String(Math.round(millimetres * 1000) / 1000);
-}
-
-/**
- * 2 点の中点から、2 点+半径の円弧の中心までの距離(FR-326)。
- *
- * 中心は 2 点を結ぶ線分の垂直二等分線上にあり、弦の半分を h とすると
- * 中点から √(半径² − h²) 進んだところにある(解は 2 つで、どちらを採るかは
- * 「ふくらむ向き」の選択肢が決める)。半径が弦の半分より小さいと 2 点を通る円が
- * 引けないので null を返す。
- *
- * 向きを持たない長さだけをここで受け持ち、作図面の中で実際の中心を組み立てるのは
- * タスク12 の `shapeCommands.ts`(`arcCenterFromTwoPointsAndRadius`)。
- */
-export function twoPointArcCenterOffset(chordLength: number, radius: number): number | null {
-  if (!Number.isFinite(chordLength) || !Number.isFinite(radius)) {
-    return null;
-  }
-  const half = chordLength / 2;
-  if (half <= 0 || radius < half) {
-    return null;
-  }
-  return Math.sqrt(radius * radius - half * half);
-}
-
-/**
- * 2 点と半径で円弧が引けないときの断りの文(NFR-UX-5)。引けるなら null。
- * 限界値(弦の半分)を差し込んだ文になるので ja.json のキー1つでは組み立てられない
- * (`describeRange` と同じ事情)。見出しの語だけ ja.json から引く。
- */
-export function twoPointArcRadiusRejection(chordLength: number, radius: number): string | null {
-  if (twoPointArcCenterOffset(chordLength, radius) !== null) {
-    return null;
-  }
-  if (!Number.isFinite(chordLength) || chordLength <= 0) {
-    return '2 点が同じ位置にあるので円弧になりません。';
-  }
-  const label = t('numericInput.field.radius');
-  return `${label}は 2 点の間の長さの半分(${lengthText(chordLength / 2)}mm)以上にしてください。`;
-}
-
-/* ---- P4 タスク11: スプラインの下書き(FR-317、計画書タスク11 の splineDraft) ---- */
-
-/**
- * 置いた点をためておく下書き。
- *
- * スプラインだけは「クリックのたびに点を積み、最後にまとめて 1 本の曲線にする」進行なので、
- * 「1 段 = 1 要素」の `NumericInputState` では表せない。どこへ置くか(ストアの欄)は
- * タスク12 が決め、ここでは形と規則(足せるか・曲線にできるか)だけを純関数で持つ。
- */
-export interface SplineDraft {
-  /** 置いた順がそのまま曲線の向きになる。 */
-  readonly points: readonly CoordinateInput[];
-  readonly mode: 'interpolate' | 'control';
-  readonly closed: boolean;
-}
-
-/** 道具を選んだ直後の下書き(点なし・通過点・開いた曲線)。 */
-export const EMPTY_SPLINE_DRAFT: SplineDraft = {
-  points: [],
-  mode: 'interpolate',
-  closed: false,
-};
-
-export type SplineDraftOutcome =
-  | { readonly ok: true; readonly draft: SplineDraft }
-  /** 断った理由。文言は限界値を差し込むのでここで組み立てる(`describeRange` と同じ事情)。 */
-  | { readonly ok: false; readonly reason: string };
-
-/** 点を 1 つ置く。上限(model の MAX_SPLINE_POINTS)を超えるときは断って下書きを変えない。 */
-export function appendSplinePoint(draft: SplineDraft, point: CoordinateInput): SplineDraftOutcome {
-  if (draft.points.length >= MAX_SPLINE_POINTS) {
-    return {
-      ok: false,
-      reason: `スプラインの点は ${String(MAX_SPLINE_POINTS)} 個までです。`,
-    };
-  }
-  return { ok: true, draft: { ...draft, points: [...draft.points, point] } };
-}
-
-/** 最後に置いた点を取り消す。点が無ければ同じ下書きをそのまま返す。 */
-export function removeLastSplinePoint(draft: SplineDraft): SplineDraft {
-  return draft.points.length === 0 ? draft : { ...draft, points: draft.points.slice(0, -1) };
-}
-
-export type SplineDraftCheck =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly reason: string };
-
-/**
- * 下書きを 1 本の曲線にできるか(FR-317)。下限・上限は model の `splineMath.ts` と同じ値を
- * 使い、UI 側で数を持たない(開いた曲線は 2 点以上、閉じた曲線は 3 点以上、上限 100 点)。
- */
-export function checkSplineDraft(draft: SplineDraft): SplineDraftCheck {
-  const count = draft.points.length;
-  if (draft.closed && count < MIN_CLOSED_SPLINE_POINTS) {
-    return {
-      ok: false,
-      reason: `閉じたスプラインには点が ${String(MIN_CLOSED_SPLINE_POINTS)} 個以上必要です。`,
-    };
-  }
-  if (!draft.closed && count < MIN_SPLINE_POINTS) {
-    return {
-      ok: false,
-      reason: `スプラインには点が ${String(MIN_SPLINE_POINTS)} 個以上必要です。`,
-    };
-  }
-  if (count > MAX_SPLINE_POINTS) {
-    return { ok: false, reason: `スプラインの点は ${String(MAX_SPLINE_POINTS)} 個までです。` };
-  }
-  return { ok: true };
-}
-
-export interface NumericFieldResult {
-  readonly key: string;
-  readonly value: ExpressionValue | null;
-  readonly error: ExpressionError | null;
-}
-
-export interface NumericInputEvaluation {
-  readonly carriedError?: ExpressionError;
-  readonly results: readonly NumericFieldResult[];
-  /** すべての欄が妥当なら true。false のときは決定させない(NFR-UX-5)。 */
-  readonly canCommit: boolean;
-  /** 最初にエラーになった欄。無ければ -1。 */
-  readonly firstErrorIndex: number;
-}
-
-/** 範囲外を表す識別子(packages/expression の ExpressionErrorCode、P3 §0.a-0.23 ①)。 */
-const RANGE_ERROR_CODE = 'outOfRange';
-
-/**
- * 範囲外の理由文を組み立てる。
- * 限界値を差し込んだ文になるので ja.json のキー1つでは組み立てられない
- * (packages/expression/src/errors.ts が日本語を持っているのと同じ事情)。
- * 見出しの語だけは ja.json から引く(NFR-MA-5)。
- */
-function describeRange(label: string, range: NumericFieldRange): string {
-  const min = String(range.min);
-  if (range.max === null) {
-    const lower = range.minInclusive ? `${min} 以上の` : `${min} より大きい`;
-    return `${label}は ${lower}値を入れてください。`;
-  }
-  const lower = range.minInclusive ? `${min} 以上` : `${min} より大きく`;
-  const upper = `${String(range.max)} ${range.maxInclusive ? '以下' : '未満'}`;
-  return `${label}は ${lower} ${upper}の値を入れてください。`;
-}
-
-/** 欄の範囲を確かめる。範囲内なら null(NFR-UX-5)。 */
-export function rangeErrorFor(field: NumericField, value: ExpressionValue): ExpressionError | null {
-  const { range } = field;
-  if (range === undefined) {
-    return null;
-  }
-  const belowMin = range.minInclusive ? value.value < range.min : value.value <= range.min;
-  const aboveMax =
-    range.max !== null && (range.maxInclusive ? value.value > range.max : value.value >= range.max);
-  if (!belowMin && !aboveMax) {
-    return null;
-  }
-  return {
-    code: RANGE_ERROR_CODE,
-    message: describeRange(t(field.labelKey), range),
-    position: -1,
-  };
-}
-
-/** 空欄は既定値として扱う。Enter を連打するだけで意味のある形になる(NFR-UX-4)。 */
-export function effectiveSource(field: NumericField): string {
-  return field.source.trim() === '' ? field.defaultSource : field.source;
-}
-
-/**
- * その欄を評価する式の文字列(P6 タスク3b、§0.a-0.63)。**保存されるのもこの文字列**で、
- * 評価した値ではない(FR-202)。
- *
- * 打った文字が残っている長さの欄だけを、表示の単位で包む(`applyDisplayUnit`)。
- * 空欄(= 既定値で埋まる)と、吸い付きで入った座標は**すでに内部の mm** なので包まない
- * (`NumericField.typed` の注釈を見よ)。表示が mm のときは何を通しても包まれないので、
- * P1〜P5 の振る舞いは 1 文字も変わらない。
- */
-export function fieldExpression(field: NumericField, unit: LengthUnit = 'mm'): string {
-  if (!usesDisplayInputUnit(field)) {
-    return effectiveSource(field);
-  }
-  return applyDisplayUnit(field.source, field.unit, unit);
-}
-
-/**
- * 空欄を既定値の文字列で埋めた状態を返す(NFR-UX-4)。
- * 決定のときに一度だけ通し、利用者が実際に使われた値を目で確かめられるようにする。
- * 埋めるものが無ければ同じ状態をそのまま返す。
- */
-export function fillDefaults(state: NumericInputState): NumericInputState {
-  if (state.fields.every((field) => field.source === effectiveSource(field))) {
-    return state;
-  }
-  return {
-    ...state,
-    // 埋めるのは既定値(内部の mm)なので、打った文字の印は落とす(タスク3b)。
-    fields: state.fields.map((field) => ({
-      ...field,
-      source: effectiveSource(field),
-      typed: field.source.trim() === '' ? false : field.typed,
-    })),
-  };
-}
-
-/**
- * 表示の単位に関わる選択肢(P6 タスク3b、§0.a-0.63)。
- *
- * どちらも省くと**表示が mm・パラメータはすべて長さ**になる。つまり P1〜P5 の呼び出しと
- * 検査は 1 文字も書き換えずに同じ値を返す(安全側の既定)。
- */
-export interface DisplayUnitOptions {
-  /** パラメータ間の精度を決定時まで保持する。 */
-  readonly exactVariables?: ReadonlyMap<string, string>;
-  /** 画面に出している長さの単位(`DisplaySettings.lengthUnit`)。省くと mm。 */
-  readonly lengthUnit?: LengthUnit;
-  /**
-   * 長さでないパラメータの名前(model の `nonLengthVariables(document.parameters)`)。
-   * 単位の空間の中で「個数や角度まで倍率で割る」のを防ぐ(§0.a-0.63)。
-   */
-  readonly nonLengthVariables?: ReadonlySet<string>;
-}
-
-/** すべての欄を評価する。1 文字打つごとに呼んでよい軽さにする。 */
-export function evaluateNumericInput(
-  state: NumericInputState,
-  variables: ReadonlyMap<string, number> = new Map(),
-  display: DisplayUnitOptions = {},
-): NumericInputEvaluation {
-  const results: NumericFieldResult[] = state.fields.map((field) => {
-    const result = evaluateNumericField(field, variables, display);
-    if (!result.ok) {
-      return { key: field.key, value: null, error: result.error };
-    }
-    // 式としては読めても、その道具が使えない値は決定させない(NFR-UX-5)。
-    // 個数(パターンの count)が整数かどうかはここでは確かめない。NumericFieldRange は
-    // min/max しか表現できず、ここへ整数判定を足すと他の欄(距離等)へ影響しない設計を
-    // 保つのが難しいため、整数かどうかの検査は加工コマンド側(タスク25
-    // machiningCommands.ts)で行う判断とした(計画書タスク24 検証表の注記への回答)。
-    const rangeError = rangeErrorFor(field, result.value);
-    return rangeError === null
-      ? { key: field.key, value: result.value, error: null }
-      : { key: field.key, value: null, error: rangeError };
-  });
-  const firstErrorIndex = results.findIndex((result) => result.error !== null);
-  for (const field of state.carriedStage1?.fields ?? []) {
-    const result = evaluateNumericField(field, variables, display);
-    const error = result.ok ? rangeErrorFor(field, result.value) : result.error;
-    if (error !== null) {
-      return { results, canCommit: false, firstErrorIndex: Math.max(0, firstErrorIndex),
-        carriedError: { ...error, message: `前の入力「${t(field.labelKey)}」: ${error.message}` } };
-    }
-  }
-  return { results, canCommit: firstErrorIndex === -1, firstErrorIndex };
-}
-
-/** Use the same validation for visible fields and values carried from a previous step. */
-function evaluateNumericField(field: NumericField, variables: ReadonlyMap<string, number>, display: DisplayUnitOptions) {
-  if (field.mathValue !== undefined) {
-    if (field.source !== field.mathValue.source) return { ok: false as const, error: { code: 'unknownVariable' as const,
-      position: -1, message: '数式を変更したため再確認が必要です。「数式で入力」を開いてください。' } };
-    return evaluateNumericMath(field.mathValue, variables, display.exactVariables);
-  }
-  return evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
-    variables, nonLengthVariables: display.nonLengthVariables, exactVariables: display.exactVariables,
-  });
-}
-
-/** 評価できた値だけを順に取り出す。決定のときに使う。 */
-export function commitValues(evaluation: NumericInputEvaluation): ExpressionValue[] | null {
-  if (!evaluation.canCommit) {
-    return null;
-  }
-  const values: ExpressionValue[] = [];
-  for (const result of evaluation.results) {
-    if (result.value === null) {
-      return null;
-    }
-    values.push(result.value);
-  }
-  return values;
-}
-
-/**
- * 決定した値を欄の名前で引く(円弧の `radius` など)。
- * 並び順の取り違えを防ぐため、タスク17 が履歴へ積むときはこちらを使う。
- */
-export function valueByFieldKey(
-  state: NumericInputState,
-  values: readonly ExpressionValue[],
-  key: string,
-): ExpressionValue | undefined {
-  const index = state.fields.findIndex((field) => field.key === key);
-  return index === -1 ? undefined : values[index];
 }
 
 /**

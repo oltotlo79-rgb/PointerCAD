@@ -9,6 +9,7 @@ import { reopenPart } from './reopenPart.js';
 import { savePart } from './scriptsFlow.js';
 import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
 import { readAssemblyStats } from './assemblyTestSupport.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 const rowForKey = (panel: Locator, key: string) => panel.locator(`[data-name-search-key=${JSON.stringify(key)}]`);
 async function choose(panel: Locator, query: string, afterCancel?: () => Promise<void>): Promise<void> {
@@ -42,6 +43,8 @@ export async function partNameSearchFlow(page: Page, info: TestInfo, app?: Elect
   await panel.getByRole('button', { name: '側面の作図', exact: true }).click(); await expect(target).toHaveCount(0);
   const token = await beginRecompute(page);
   await search.fill('共有点'); await expect(panel.locator('.pcad-name-search li button')).toHaveCount(2);
+  await captureManualDetail(page, info, { name: 'name-search-part-matching-names', dialog: panel,
+    fixture: { document, query: '共有点' }, script: new URL('./nameSearchFlow.ts', import.meta.url) });
   await search.press('Escape'); await expect(search).toHaveValue('');
   await choose(panel, '側面 共有点', async () => {
     expect((await readRecomputeStats(page)).requestedGeneration).toBe(token.requestedGeneration);
@@ -83,6 +86,8 @@ export async function assemblyNameSearchFlow(page: Page, info: TestInfo, app?: E
     .locator('.pcad-tree__row--section').click();
   const before = await readAssemblyStats(page);
   await search.fill('同名部品'); await expect(panel.locator('.pcad-name-search li button')).toHaveCount(2);
+  await captureManualDetail(page, info, { name: 'name-search-assembly-matching-names', dialog: panel,
+    fixture: { assembly, nested, part, query: '同名部品' }, script: new URL('./nameSearchFlow.ts', import.meta.url) });
   await search.press('Escape'); await expect(search).toHaveValue('');
   await choose(panel, '奥の組立 同名部品');
   await expect(target).toBeInViewport(); await expect(target.locator('.pcad-tree__select')).toHaveAttribute('aria-pressed', 'true');

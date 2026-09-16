@@ -6,6 +6,7 @@ import { gzipSync } from 'node:zlib';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { webSecurityPolicy } from './build/securityPolicy.js';
+import { runtimeNotices } from '../../scripts/vite/runtimeNotices.mjs';
 import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
 import { exactMathAssets } from '../../scripts/vite/exactMathAssets.mjs';
 import { offlineServiceWorker } from '../../scripts/vite/offlineServiceWorker.mjs';
@@ -130,7 +131,7 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react(), occtAssets(), webSecurityPolicy(), mathNotices(), exactMathAssets(), offlineServiceWorker()],
+  plugins: [react(), occtAssets(), webSecurityPolicy(), mathNotices(), runtimeNotices(), exactMathAssets(), offlineServiceWorker()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },
   // 幾何カーネルの Worker は ES モジュールとして出力する。

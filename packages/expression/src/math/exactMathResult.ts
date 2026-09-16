@@ -119,7 +119,7 @@ function shape(node: MathNode, references: ReadonlyMap<string, MathSymbolReferen
   if (SCALARS.has(operation) && children.every(value => value === 'scalar')) return 'scalar';
   if (RELATIONS.has(operation) && children.every(value => value === 'scalar')) return 'boolean';
   if (LOGIC.has(operation) && children.every(value => value === 'boolean')) return 'boolean';
-  if (operation === 'list' && operands.length > 0 && children.every(value => value === 'scalar')) return 'vector';
+  if (operation === 'list' && children.every(value => value === 'scalar')) return 'vector';
   if (operation === 'set' && children.every(value => value === 'scalar')) return 'set';
   if (['union', 'intersection', 'set-minus'].includes(operation) && children.every(value => value === 'set' || value === 'interval')) return 'set';
   return invalid();

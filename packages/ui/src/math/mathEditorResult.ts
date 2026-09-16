@@ -12,6 +12,10 @@ export function mathEditorResultText(snapshot: MathEditorSnapshot): MathEditorRe
   if (snapshot.problem === 'source-limit') return result(t('math.sourceTooLong'), '', true);
   if (snapshot.problem === 'conversion') return result(t('math.conversionFailed'), '', true);
   if (snapshot.problem === 'insertion') return result(t('math.insertionFailed'), '', true);
+  if (snapshot.phase === 'runtime-loading' || snapshot.phase === 'symbolic-import') {
+    return result(t('math.preparingExact'), t('math.preparingExactHint'), false, true);
+  }
+  if (snapshot.phase === 'calculating') return result(t('math.calculating'), '', false, true);
   const state = snapshot.state;
   if (state.status === 'editing') return result(t('math.editing'));
   if (state.status === 'calculating') return result(t('math.calculating'), '', false, true);

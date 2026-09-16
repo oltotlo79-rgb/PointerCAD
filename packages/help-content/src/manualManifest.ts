@@ -10,7 +10,7 @@ export interface ManualChapter extends HelpTopic { readonly volumeId: string; re
 /** Ordering only: chapter titles and sources remain in the single help catalog. */
 export const MANUAL_VOLUMES: readonly ManualVolume[] = [
   { id: 'getting-started', title: '導入・画面操作・ファイル', topics: [
-    'help-reader', 'offline-use', 'tutorial', 'shortcuts', 'viewport', 'units', 'save-and-open', 'template', 'import', 'export', 'dxf', 'print-save-as',
+    'help-reader', 'offline-use', 'local-data', 'startup-checks', 'tutorial', 'shortcuts', 'viewport', 'units', 'save-and-open', 'template', 'import', 'export', 'dxf', 'print-save-as',
   ] },
   { id: 'sketch-and-functions', title: 'スケッチ・座標・関数', topics: [
     'numeric-input', 'math-input', 'parameters', 'work-plane', 'work-plane-custom', 'reference-geometry', 'origin',

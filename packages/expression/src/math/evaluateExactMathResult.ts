@@ -20,7 +20,7 @@ export function evaluateExactMathResult(raw: unknown, source: MathNode, context:
   try {
     return context.backend.withinDeadline(() => {
       // Never let a simplified result or an omitted engine condition erase an invalid source operand.
-      const original = prepareMathCalculation(source, { ...context, deferNonRationalRank: true });
+      const original = prepareMathCalculation(source, { ...context, deferNonRationalRank: true, deferNonRationalLinear: true });
       if (original.status !== 'ready') return missing(original.operations);
       const result = decodeExactMathResult(raw, source, {
         operationsById: context.backend.operationsById,

@@ -42,7 +42,7 @@ export async function executeExactMathWorkRequest(value: unknown, options: Exact
     // This also freshens the bound IDs of expanded coefficient expressions.
     const expanded = substituteCoefficientExpressions(source, coefficients);
     const prepared = options.backend.withinDeadline(() => prepareMathCalculation(expanded, {
-      angleUnit: request.angleUnit, resolve: () => null, deferNonRationalRank: true,
+      angleUnit: request.angleUnit, resolve: () => null, deferNonRationalRank: true, deferNonRationalLinear: true,
     }));
     if (prepared.status !== 'ready') return reply({ status: 'unresolved', reason: 'missing-condition', names: prepared.operations });
     const before = options.shouldStop(); if (before !== undefined) return reply({ status: 'stopped', reason: before });

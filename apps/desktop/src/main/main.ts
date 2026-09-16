@@ -22,7 +22,7 @@ const rendererRoot = join(currentDirectory, '..', 'renderer');
 const preloadPath = join(currentDirectory, '..', 'preload', 'preload.cjs');
 
 /** 開発時は Vite の開発サーバーを読む。統括が起動して環境変数で渡す。 */
-const devServerUrl = process.env['PCAD_DEV_SERVER_URL'];
+const devServerUrl = app.isPackaged ? undefined : process.env['PCAD_DEV_SERVER_URL'];
 
 registerAppScheme();
 

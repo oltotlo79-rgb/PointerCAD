@@ -1,5 +1,5 @@
 /** One editor owns its input, cancellation, and conversion; the view only subscribes to this state. */
-import { sameMathIdentity, type MathWorkerClient, type MathWorkRequest, type MathRequestIdentity } from '@pointercad/expression/math/client';
+import { sameMathIdentity, type MathWorkerClient, type MathWorkRequest, type MathRequestIdentity, type ExactMathEnginePhase } from '@pointercad/expression/math/client';
 import { MathEditorSession, type MathEditorInput, type MathEditorOutput, type MathEditorState } from './mathEditorSession.js';
 import { MathEditorInsertion } from './mathEditorInsertion.js';
 import { createMathSessionCalculation } from './mathSessionWorker.js';
@@ -11,6 +11,7 @@ export interface MathEditorSnapshot {
   readonly state: MathEditorState;
   readonly query: string;
   readonly problem: 'source-limit' | 'conversion' | 'insertion' | null;
+  readonly phase?: ExactMathEnginePhase | null;
 }
 export interface MathEditorControllerOptions {
   readonly initial: MathEditorInput;
@@ -31,8 +32,10 @@ export class MathEditorController implements MathEditorViewController {
   private readonly listeners = new Set<() => void>();
   private snapshot: MathEditorSnapshot;
   private conversion: AbortController | null = null;
+  private insertionConversion: AbortSignal | null = null;
   private previousNotation: { readonly original: MathEditorInput; readonly converted: MathEditorInput } | null = null;
   private disposed = false;
+  private readonly detachProgress: () => void;
   constructor(options: MathEditorControllerOptions) {
     this.options = options;
     this.snapshot = { state: { status: 'editing', input: options.initial }, query: '', problem: null };
@@ -40,14 +43,21 @@ export class MathEditorController implements MathEditorViewController {
       initial: options.initial,
       calculate: createMathSessionCalculation({ client: options.client, requestFor: options.requestFor, deadlineMs: 5_000 }),
       isCurrentDocument: options.isCurrentDocument, canApply: options.canApply,
-      onState: state => this.publish({ ...this.snapshot, state }),
+      onState: state => this.publish({ ...this.snapshot, state, phase: null }),
       onApply: output => { if (!this.disposed) options.onApply(output); },
     });
     this.insertion = new MathEditorInsertion({
       current: this.current, isCurrent: this.isCurrent,
-      toLatex: (input, signal) => convertMathSessionNotation(options.client, input, options.requestFor(input), 'latex', signal),
+      toLatex: (input, signal) => this.convertInsertion(input, signal),
       applyConverted: (input, source) => this.applyConverted(input, source, 'latex'),
       onProblem: problem => this.publish({ ...this.snapshot, problem }),
+    });
+    this.detachProgress = options.client.subscribeProgress(({ request, phase }) => {
+      const current = this.current();
+      if (!this.isCurrent() || !sameMathIdentity(request.identity, current.identity)
+        || request.source !== current.source || request.notation !== current.notation || request.angleUnit !== current.angleUnit
+        || (this.snapshot.state.status !== 'calculating' && this.conversion === null && this.insertionConversion === null)) return;
+      this.publish({ ...this.snapshot, phase });
     });
   }
   readonly getSnapshot = (): MathEditorSnapshot => this.snapshot;
@@ -64,13 +74,17 @@ export class MathEditorController implements MathEditorViewController {
   readonly current = (): MathEditorInput => this.snapshot.state.input;
   readonly isCurrent = (): boolean => !this.disposed && this.options.isCurrentDocument(this.current().identity);
   private cancelConversion(): void {
+    const wasConverting = this.conversion !== null;
     this.conversion?.abort();
     this.conversion = null;
+    if (this.snapshot.phase !== undefined && this.snapshot.phase !== null) this.publish({ ...this.snapshot, phase: null });
+    if (wasConverting) this.session.resume();
   }
   private invalidate(): void {
     this.cancelConversion();
     this.previousNotation = null;
     this.insertion.invalidate();
+    this.insertionConversion = null;
     if (this.snapshot.problem !== null) this.publish({ ...this.snapshot, problem: null });
   }
   readonly sourceChanged = (source: string): void => {
@@ -91,7 +105,9 @@ export class MathEditorController implements MathEditorViewController {
     this.invalidate();
     this.session.update(this.current().source, this.current().notation, unit);
   };
-  readonly apply = (): void => { if (this.isCurrent()) this.session.requestApply(); };
+  readonly apply = (): void => {
+    if (this.isCurrent() && this.conversion === null && this.insertionConversion === null) this.session.requestApply();
+  };
   readonly cancel = (): void => {
     if (this.disposed) return;
     this.dispose();
@@ -112,6 +128,23 @@ export class MathEditorController implements MathEditorViewController {
     return this.isCurrent() && sameMathIdentity(input.identity, current.identity)
       && input.source === current.source && input.notation === current.notation && input.angleUnit === current.angleUnit;
   }
+  private async convertInsertion(input: MathEditorInput, signal: AbortSignal): Promise<string> {
+    this.session.pause();
+    this.insertionConversion = signal;
+    try {
+      return await convertMathSessionNotation(this.options.client, input, this.options.requestFor(input), 'latex', signal);
+    } finally {
+      if (this.insertionConversion === signal) {
+        this.insertionConversion = null;
+        // Successful insertion updates the notation in the following microtask,
+        // cancelling this debounce. A rejected conversion restores normal editing.
+        if (this.sameInput(input) && this.conversion === null) {
+          this.publish({ ...this.snapshot, phase: null });
+          this.session.resume();
+        }
+      }
+    }
+  }
   private applyConverted(input: MathEditorInput, source: string, notation: 'text' | 'latex'): MathEditorInput | null {
     if (!this.sameInput(input)) return null;
     this.session.update(source, notation, input.angleUnit);
@@ -131,6 +164,7 @@ export class MathEditorController implements MathEditorViewController {
       return;
     }
     const input = this.current(), controller = new AbortController();
+    this.session.pause();
     this.conversion = controller;
     void this.convert(input, notation, controller);
   };
@@ -139,11 +173,13 @@ export class MathEditorController implements MathEditorViewController {
       const source = await convertMathSessionNotation(this.options.client, input, this.options.requestFor(input), target, controller.signal);
       if (controller.signal.aborted || this.conversion !== controller) return;
       this.conversion = null;
+      this.publish({ ...this.snapshot, phase: null });
       this.applyConverted(input, source, target);
     } catch {
       if (controller.signal.aborted || this.conversion !== controller || !this.sameInput(input)) return;
       this.conversion = null;
-      this.publish({ ...this.snapshot, problem: 'conversion' });
+      this.publish({ ...this.snapshot, problem: 'conversion', phase: null });
+      this.session.resume();
     }
   }
   refresh(identity: Omit<MathRequestIdentity, 'inputRevision'>): void {
@@ -154,6 +190,7 @@ export class MathEditorController implements MathEditorViewController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.detachProgress();
     this.cancelConversion();
     this.previousNotation = null;
     this.insertion.dispose();

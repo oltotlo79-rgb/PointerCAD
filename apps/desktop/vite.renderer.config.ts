@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { APP_META_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
+import { runtimeNotices } from '../../scripts/vite/runtimeNotices.mjs';
 import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
 import { exactMathAssets } from '../../scripts/vite/exactMathAssets.mjs';
 
@@ -73,7 +74,7 @@ export default defineConfig({
   base: './',
   // Webと同じ字体を通常の静的資産として配り、JSへバイト列を埋め込まない。
   publicDir: 'resources',
-  plugins: [react(), mathNotices(), exactMathAssets(), {
+  plugins: [react(), mathNotices(), runtimeNotices(), exactMathAssets(), {
     name: 'pointercad-renderer-security-policy',
     apply: 'build',
     transformIndexHtml: { order: 'post', handler: () => [{

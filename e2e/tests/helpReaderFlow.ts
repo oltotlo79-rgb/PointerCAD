@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { HELP_TOPICS } from '../../packages/help-content/src/topics.js';
 import { savePart } from './scriptsFlow.js';
 import { uiMessage } from './uiMessages.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 /** Open the actual chapter catalog while a real numeric edit remains underneath. */
 export async function helpReaderFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -53,6 +54,15 @@ export async function helpReaderFlow(page: Page, info: TestInfo, app?: ElectronA
       if (topic === undefined) throw new Error('Required search topic missing: ' + topicId);
       await search.fill(query);
       await expect.poll(async () => (await topics.allTextContents()).slice(0, 5)).toContain(topic.title);
+      if (topicId === 'function-surface') {
+        await contents.getByRole('button', { name: topic.title, exact: true }).click();
+        await expect(article).toHaveAttribute('data-help-topic', topic.id);
+        await expect(article).toHaveAttribute('aria-busy', 'false');
+        await expect(article.getByRole('alert')).toHaveCount(0);
+        await captureManualDetail(page, info, { name: 'help-search-function-surface', dialog: help,
+          fixture: { document: original, pendingCoordinate: '12/2', search: query, topic: topic.id },
+          script: new URL('./helpReaderFlow.ts', import.meta.url) });
+      }
     }
     for (const query of ['!!!', '存在しない検索語'.repeat(100)]) {
       await search.fill(query);

@@ -1,11 +1,12 @@
 """Construct exact objects from MathNode data without parsing user program text.
 
 Angle conventions, symbol identity, and binder scope belong to the saved input.
-The fixed optional runtime invokes this module; construction alone certifies no
-coordinate and does not enable the unadopted runtime in the application.
+The fixed bundled runtime invokes this module; construction alone certifies no
+coordinate. The application validates the returned type and original domain.
 """
 import re
 import sympy as s
+from cas_linear import LINEAR_OPERATIONS, linear_operation, component
 
 
 class CasInputProblem(ValueError):
@@ -148,6 +149,10 @@ class Decoder:
 
     def operation(self, operation, args):
         count = len(args)
+        if operation in LINEAR_OPERATIONS:
+            return linear_operation(operation, args, lambda rows: self.operation('matrix', [rows]), CasInputProblem)
+        if operation == 'component':
+            return component(args, CasInputProblem)
         if operation == 'list':
             return tuple(args)
         if operation == 'matrix':

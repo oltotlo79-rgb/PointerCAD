@@ -2,6 +2,7 @@ import { expect, type Page, type TestInfo } from '@playwright/test';
 import { readRecomputeStats } from './recompute.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 import { uiMessage } from './uiMessages.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 async function keyboardFocus(page: Page, control: ReturnType<Page['locator']>): Promise<void> {
   await control.focus();
@@ -36,6 +37,9 @@ export async function controlHintsFlow(page: Page, info: TestInfo): Promise<void
   expect(bounds).not.toBeNull();
   if (bounds !== null) { expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(1440); }
   await page.screenshot({ path: info.outputPath('keyboard-input-explanation.png') });
+  await captureManualDetail(page, info, { name: 'keyboard-numeric-input-hint', dialog: hint,
+    fixture: { operation: 'point', pendingCoordinate: '12/2', inputTitle: await input.getAttribute('title') },
+    script: new URL('./controlHintsFlow.ts', import.meta.url) });
   await input.click(); await expect(hint).toHaveCount(0);
   // The real field already has the same title on its label. Exercise that legacy route
   // and restore the actual input title before proceeding with document operations.

@@ -34,6 +34,7 @@ describe('厳密な式と成立条件を受け取り、数値座標の判定を�
     ['boolean', constant('false')],
     ['complex', operation('add', number('2'), constant('imaginary-unit'))],
     ['vector', operation('list', number('1'), constant('imaginary-unit'))],
+    ['vector', operation('list')],
     ['matrix', operation('matrix', operation('list', operation('list', number('1'), number('2')), operation('list', number('3'), number('4'))))],
     ['set', constant('naturals')],
     ['interval', operation('interval', operation('open-endpoint', operation('negate', constant('infinity'))), number('2'))],
@@ -50,6 +51,8 @@ describe('厳密な式と成立条件を受け取り、数値座標の判定を�
     ['real', constant('infinity')],
     ['real', operation('multiply', number('0'), constant('infinity'))],
     ['vector', operation('list', operation('list', number('1')))],
+    ['real', operation('list')],
+    ['matrix', operation('matrix', operation('list'))],
     ['matrix', operation('matrix', operation('list', operation('list', number('1')), operation('list', number('2'), number('3'))))],
     ['real', operation('open-endpoint', number('1'))],
   ])('宣言%sと式の形が合わない結果を拒否する', (kind, exact) => {

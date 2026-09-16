@@ -1,0 +1,266 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "help-search-function-surface",
+      "script": "e2e/tests/helpReaderFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-exact-integration-check-kz26v8bd",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-exact-and-guidance-captures-23ehp5uu",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-2・3 全ての説明章と画像を開き、検索・F1後も入力と保存文書を保つ",
+        "scriptSha256": "4118c50cbfbf58fe962ca7fd90d41416d72c3477c1f240a63b6b59d3c1507e2e",
+        "fixture": {
+          "filename": "help-search-function-surface-fixture.json",
+          "sha256": "a173d51ec6abc663ac0c11675d6f032e8eea6d7c78ed4472dbcec2b186a4992b"
+        },
+        "screen": {
+          "filename": "help-search-function-surface-screen.png",
+          "sha256": "8289a5e5149dbc65be845ac0b69dcd81e58be98fa724164ee9d1336becd5fd33"
+        },
+        "detail": {
+          "filename": "help-search-function-surface-detail.png",
+          "sha256": "18769ac29bea189929ccf5f6f2378537cb8c43c5e17c94af41341b05fde65f53"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 159,
+          "y": 49,
+          "width": 1122,
+          "height": 802
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "selectedImage": "detail",
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    },
+    {
+      "name": "keyboard-numeric-input-hint",
+      "script": "e2e/tests/controlHintsFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-exact-integration-check-kz26v8bd",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-exact-and-guidance-captures-23ehp5uu",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-5 キー移動でも入力と同じ説明を読み、元の値・操作・拡大表示を保つ",
+        "scriptSha256": "2c62bbf2efce462f755c154340363317dde78283bfebed8df4bd520d5cb0336f",
+        "fixture": {
+          "filename": "keyboard-numeric-input-hint-fixture.json",
+          "sha256": "a40d951477b3b751e12a53e27c6b972990b34971f4b376392171879a517b0685"
+        },
+        "screen": {
+          "filename": "keyboard-numeric-input-hint-screen.png",
+          "sha256": "02017c4158e99c90c0cb65885c1ac65949a15ae6f19a652a836e00c2a17f7c25"
+        },
+        "detail": {
+          "filename": "keyboard-numeric-input-hint-detail.png",
+          "sha256": "1702dc0831615907b5c6f893bfb1aab2154794d317ccd5ce3e1fdab204caffd0"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 722.59375,
+          "y": 599,
+          "width": 239.46875,
+          "height": 32
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "selectedImage": "detail",
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    },
+    {
+      "name": "name-search-part-matching-names",
+      "script": "e2e/tests/nameSearchFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-exact-integration-check-kz26v8bd",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-exact-and-guidance-captures-23ehp5uu",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-15 名前検索から200要素の別スケッチ同名点の所属を開いて対象行へ移動し、取消でも文書を保つ",
+        "scriptSha256": "c5db77ed47545fc1f36d9ae17c71b776336afe72ba3c2d02aede021b66e87142",
+        "fixture": {
+          "filename": "name-search-part-matching-names-fixture.json",
+          "sha256": "f02fb4088a22efaaa79ef8f5e22e36e278e2df9a53440e02a806c6355f2aa5b0"
+        },
+        "screen": {
+          "filename": "name-search-part-matching-names-screen.png",
+          "sha256": "26d6aebb9b6503c16c6ecaf8e182763395444b8f2695753ce4165e133f6cdbea"
+        },
+        "detail": {
+          "filename": "name-search-part-matching-names-detail.png",
+          "sha256": "d3473779a9847bbd1643152b585f9a14a41ca062d934f1b839351afd72db4e1f"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 68.5,
+          "width": 240,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "selectedImage": "detail",
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    },
+    {
+      "name": "name-search-assembly-matching-names",
+      "script": "e2e/tests/nameSearchFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-exact-integration-check-kz26v8bd",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-exact-and-guidance-captures-23ehp5uu",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "P12-15 名前検索から50部品の入れ子と非表示部品の所属を開いて対象行へ移動し、取消でも文書を保つ",
+        "scriptSha256": "c5db77ed47545fc1f36d9ae17c71b776336afe72ba3c2d02aede021b66e87142",
+        "fixture": {
+          "filename": "name-search-assembly-matching-names-fixture.json",
+          "sha256": "5529cd6f7a7cf0e71912a2d2cc8f0d01b122b9e78913bc7c758a755713bac60f"
+        },
+        "screen": {
+          "filename": "name-search-assembly-matching-names-screen.png",
+          "sha256": "35e28487985f0ea9daecd84d4e1a3c05117b29a234eddb18207bae1c5f0b7d5d"
+        },
+        "detail": {
+          "filename": "name-search-assembly-matching-names-detail.png",
+          "sha256": "ea308074f1c5f91fe0bc3da6531279f06784c111496ef252eada309f380b88fe"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "assembly",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 68.5,
+          "width": 240,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "selectedImage": "detail",
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    },
+    {
+      "name": "math-exact-rank-degree",
+      "script": "e2e/tests/mathExactRuntimeFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-exact-integration-check-kz26v8bd",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-exact-and-guidance-captures-23ehp5uu",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "採用済みの追加計算部で厳密な階数・度とラジアン・交換・保存再編集を通す",
+        "scriptSha256": "62edab32f1cb594a49a0e0926f1173034b86a31213d926ca1093613d04ff966a",
+        "fixture": {
+          "filename": "math-exact-rank-degree-fixture.json",
+          "sha256": "87f7f9fed92355f224e0a7d07bfa81a605ec7dd3824191ad62a68bf569e01657"
+        },
+        "screen": {
+          "filename": "math-exact-rank-degree-screen.png",
+          "sha256": "c828d7998729ed85b83781e4c01d91b014930db8dc8ab2cc053df37075abe3e1"
+        },
+        "detail": {
+          "filename": "math-exact-rank-degree-detail.png",
+          "sha256": "a264756db025316115557d9303fed6013df80a32a1a745b0821905d8d176c808"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 180.5,
+          "width": 720,
+          "height": 538.984375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      },
+      "selectedImage": "detail",
+      "imageEdited": false,
+      "visuallyReviewed": true,
+      "releaseCertified": false
+    }
+  ]
+}

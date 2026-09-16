@@ -7,3 +7,9 @@ export function assembleOfflineDistribution(webFiles: readonly OfflineAssetInput
     readonly pdfVolumes: number;
     readonly releaseCertified: false;
   };
+
+export function assembleManualDistribution(manualFiles: readonly OfflineAssetInput[], pdfFiles: readonly OfflineAssetInput[]): {
+  readonly files: ReadonlyMap<string, Uint8Array>;
+  readonly manualBuildId: string;
+  readonly pdfVolumes: number;
+};

@@ -6,6 +6,30 @@ import { mathIntegerFlow } from './mathIntegerFlow.js';
 import { mathLinearFlow } from './mathLinearFlow.js';
 import { mathEigenspaceFlow } from './mathEigenspaceFlow.js';
 import { mathSvdFlow } from './mathSvdFlow.js';
+import { mathExactRuntimeFlow } from './mathExactRuntimeFlow.js';
+import { mathExactLinearFlow } from './mathExactLinearFlow.js';
+
+test('追加計算部で平方根の連立式・基底・解なし・非一意と保存再編集を実Electronで通す', async ({ playwright }, info) => {
+  test.setTimeout(360_000);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mathExactLinearFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('採用済みの追加計算部で厳密な階数・度とラジアン・交換・保存再編集を実Electronで通す', async ({ playwright }, info) => {
+  test.setTimeout(360_000);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mathExactRuntimeFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
 
 test('ADD-17 数学入力の実Electron・係数追従・改名・Undo・保存再編集', async ({ playwright }, info) => {
   const { app } = await launchDesktop(playwright, info);

@@ -35,7 +35,7 @@ function verifiedFiles(files, expected, label) {
 
 /** All volumes come from the same HTML edition. Source and capture certification remain separate. */
 export function assembleOfflineDistribution(webFiles, manualFiles, pdfFiles) {
-  const web = fileMap(webFiles), manual = fileMap(manualFiles), pdf = fileMap(pdfFiles);
+  const web = fileMap(webFiles);
   if (!web.has('index.html') || !web.has('service-worker.js') || !web.has('_headers')) {
     throw new Error('Web entry, offline worker and deployment headers are required');
   }
@@ -46,6 +46,21 @@ export function assembleOfflineDistribution(webFiles, manualFiles, pdfFiles) {
   const verifiedWeb = verifiedFiles(web, webManifest.outputs, 'Web');
   if (web.size !== verifiedWeb.size + 1 || verifiedWeb.has('web-build.json')) throw new Error('Unexpected Web output');
   for (const name of web.keys()) if (name.startsWith('manual/')) throw new Error('Web output already contains a manual');
+  const manuals = assembleManualDistribution(manualFiles, pdfFiles);
+  const assembled = new Map(web);
+  const add = (name, bytes) => { if (assembled.has(name)) throw new Error('Distribution path collision'); assembled.set(name, bytes); };
+  for (const [name, bytes] of manuals.files) add(name, bytes);
+  const assets = [...assembled].filter(([path]) => !OFFLINE_CONTROL_FILES.includes(path) && !OFFLINE_DEPLOYMENT_FILES.includes(path))
+    .map(([path, bytes]) => ({ path, bytes }));
+  const manifest = createOfflineAssetManifest(assets, assets.map(file => file.path));
+  add('offline-assets.json', new globalThis.TextEncoder().encode(JSON.stringify(manifest)));
+  return { files: assembled, manifest, manualBuildId: manuals.manualBuildId,
+    pdfVolumes: manuals.pdfVolumes, releaseCertified: false };
+}
+
+/** Share the complete matching HTML/PDF edition with both distribution formats. */
+export function assembleManualDistribution(manualFiles, pdfFiles) {
+  const manual = fileMap(manualFiles), pdf = fileMap(pdfFiles);
   const manualBytes = manual.get('manifest.json'), manualManifest = parse(manualBytes, 'manual manifest');
   if (!record(manualManifest) || manualManifest.format !== 'pointercad-manual/1'
     || !sha(manualManifest.buildId) || !record(manualManifest.inputs) || !record(manualManifest.outputs)
@@ -93,16 +108,11 @@ export function assembleOfflineDistribution(webFiles, manualFiles, pdfFiles) {
   if (assigned.size !== chapters.size) throw new Error('Some manual chapters have no PDF volume');
   const selectedPdf = verifiedFiles(pdf, expectedPdf, 'PDF');
   if (pdf.size !== selectedPdf.size + 1) throw new Error('Unexpected PDF output');
-  const assembled = new Map(web);
-  const add = (name, bytes) => { if (assembled.has(name)) throw new Error('Distribution path collision'); assembled.set(name, bytes); };
+  const assembled = new Map();
+  const add = (name, bytes) => { if (assembled.has(name)) throw new Error("Manual path collision"); assembled.set(name, bytes); };
   for (const [name, bytes] of selectedManual) add('manual/' + name, bytes);
   add('manual/manifest.json', manualBytes);
   for (const [name, bytes] of selectedPdf) add('manual/pdf/' + name, bytes);
   add('manual/pdf/pdf-manifest.json', pdfBytes);
-  const assets = [...assembled].filter(([path]) => !OFFLINE_CONTROL_FILES.includes(path) && !OFFLINE_DEPLOYMENT_FILES.includes(path))
-    .map(([path, bytes]) => ({ path, bytes }));
-  const manifest = createOfflineAssetManifest(assets, assets.map(file => file.path));
-  add('offline-assets.json', new globalThis.TextEncoder().encode(JSON.stringify(manifest)));
-  return { files: assembled, manifest, manualBuildId: manualManifest.buildId,
-    pdfVolumes: pdfManifest.volumes.length, releaseCertified: false };
+  return { files: assembled, manualBuildId: manualManifest.buildId, pdfVolumes: pdfManifest.volumes.length };
 }

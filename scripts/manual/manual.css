@@ -24,9 +24,12 @@ img { max-width: 100%; height: auto; border: 1px solid #c3cfd7; }
   :root { color: black; background: white; font-size: 10.5pt; }
   header, .manual-chapters, #manual-search { display: none; }
   main { max-width: none; padding: 0; margin: 0; border: 0; }
+  article { padding-block: 0; }
   .manual-volume-intro + article, article + article { break-before: page; border: 0; margin-top: 0; }
+  h2 { margin-top: 1.3rem; } h3 { margin-top: 1.1rem; }
   h1, h2, h3, h4 { break-after: avoid; }
   p { orphans: 3; widows: 3; } img, tr { break-inside: avoid; }
+  article > p:last-child { break-before: avoid-page; break-inside: avoid-page; }
   table { font-size: 9pt; } thead { display: table-header-group; }
   th:first-child, td:first-child { min-width: 8em; }
   #manual-all-volumes li:nth-last-child(-n + 3) { break-before: avoid-page; }

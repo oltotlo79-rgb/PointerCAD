@@ -97,6 +97,9 @@ const propertyPanelImportGuard = {
 };
 
 const e2eSyntaxGuards = [{
+        selector: 'CallExpression[callee.property.name="toBeVisible"] CallExpression[callee.property.name="locator"] > Literal.arguments[value=/(^| )path$/]',
+        message: 'SVGの線は幅か高さが0でも描かれます。pathの面積をtoBeVisibleで判定せずexpectDrawingStrokeで実線長・線幅・表示状態を確認してください。',
+      }, {
         selector: 'CallExpression[callee.name="Number"] > MemberExpression.arguments > CallExpression.object[callee.name="getComputedStyle"]',
         message: 'CSSの計算済み長さにはpx等の単位が付くため、Number.parseFloatで読む（rules/06）。',
       }, {
@@ -158,6 +161,8 @@ export default tseslint.config(
       'packages/ui/src/appearance/AppearanceMenu.tsx', 'packages/ui/src/appearance/AppearanceSection.tsx',
       'packages/ui/src/appearance/appearancePropertyValues.ts', 'packages/ui/src/shell/propertyFieldUnits.ts',
       'packages/ui/src/sketch/numericFieldUnits.ts', 'packages/ui/src/sketch/numericInputTools.ts',
+      'packages/ui/src/sketch/numericInputEvaluation.ts', 'packages/ui/src/sketch/twoPointArcInput.ts',
+      'packages/ui/src/sketch/splineInputDraft.ts',
       'packages/ui/src/solid/MeasurementSections.tsx', 'packages/ui/src/solid/measureFormatting.ts',
       'packages/ui/src/solid/SectionViewSection.tsx',
       'packages/ui/src/solid/SelectionSetSection.tsx',
@@ -335,6 +340,34 @@ export default tseslint.config(
       }, {
         selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration',
         message: '入力表示の担当へ動的読込や他の実行処理の再公開を戻さないでください（レビューR14/F11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/sketch/numericInputEvaluation.ts'],
+    rules: {
+      'max-lines': ['error', { max: 220, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[importKind!='type'][source.value!=/^(?:@pointercad\\/expression|\\.\\.\\/i18n\\/t\\.js|\\.\\/numericFieldUnits\\.js|\\.\\/numericMathValues\\.js)$/]",
+        message: '入力欄の評価へ、道具の段階遷移・文書の更新・画面やストアの実行依存を戻さないでください（レビューR14/F11）。',
+      }, {
+        selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: '入力欄の評価へ通信・Worker・非同期処理や他の実行処理の再公開を追加しないでください（レビューR14/F11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/sketch/twoPointArcInput.ts', 'packages/ui/src/sketch/splineInputDraft.ts'],
+    rules: {
+      'max-lines': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 40, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[source.value!=/^(?:@pointercad\\/model|\\.\\.\\/i18n\\/t\\.js)$/]",
+        message: '円弧とスプラインの下書きへ、入力状態機械・画面・ストアの依存を戻さないでください（レビューR14/F11）。',
+      }, {
+        selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: '円弧とスプラインの下書きへ通信・Worker・非同期処理を追加しないでください（レビューR14/F11）。',
       }],
     },
   },

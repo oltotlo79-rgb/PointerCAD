@@ -9,6 +9,8 @@ export interface CalculationWorkerPort {
    * Warm requests must return zero; cancellation and the absolute 30s ceiling remain.
    */
   readonly startupTimeoutMs?: number;
+  /** A transport may require replacement after the validated terminal reply. */
+  readonly retireAfterReply?: boolean;
   onmessage:((event:{readonly data:unknown})=>void)|null;
   onerror:((event:{readonly preventDefault:()=>void})=>void)|null;
   onmessageerror:(()=>void)|null;
@@ -32,6 +34,11 @@ export interface CalculationClientOptions<Request extends CalculationRequest, Re
   readonly createWorker: () => CalculationWorkerPort;
   /** Validate the untrusted Worker envelope and value; a malformed reply never becomes a CAD coordinate. */
   readonly decodeReply: (value: unknown, request: Request) => { readonly serial: number; readonly result: Result } | null;
+  /** Optional host-owned preparation protocol. Geometry clients do not opt into this. */
+  readonly progress?: {
+    readonly maximumDurationMs: number;
+    readonly createReceiver: (request: Request, serial: number, startedAt: number) => (value: unknown) => number | null;
+  };
 }
 
 export class BoundedCalculationClient<Request extends CalculationRequest, Result> {
@@ -42,8 +49,18 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
   private timeout: ReturnType<typeof setTimeout> | null = null;
   private serial = 0;
   private disposed = false;
+  private startedAt = 0;
+  private deadline = 0;
+  private receivedProgress = false;
+  private receiveProgress: ((value: unknown) => number | null) | null = null;
 
-  constructor(options: CalculationClientOptions<Request, Result>) { this.options = options; }
+  constructor(options: CalculationClientOptions<Request, Result>) {
+    const maximum = options.progress?.maximumDurationMs;
+    if (maximum !== undefined && (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 300_000)) {
+      throw new RangeError('Invalid preparation deadline');
+    }
+    this.options = options;
+  }
 
   evaluate(request: Request, timeoutMs: number, signal?: AbortSignal): Promise<CalculationCompletion<Result>> {
     // Own a validated immutable snapshot even while another request occupies the Worker.
@@ -80,6 +97,8 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
     const work = this.active;
     if (!work) return;
     this.active = null;
+    this.receiveProgress = null;
+    this.receivedProgress = false;
     if (this.timeout !== null) { clearTimeout(this.timeout); this.timeout = null; }
     if (replaceWorker) this.stopWorker();
     work.detachAbort();
@@ -104,7 +123,11 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
     const work = this.pending.shift();
     if (!work) return;
     this.active = work;
+    this.startedAt = performance.now();
+    this.deadline = this.startedAt + work.timeoutMs;
+    this.receivedProgress = false;
     try {
+      this.receiveProgress = this.options.progress?.createReceiver(work.request, work.serial, this.startedAt) ?? null;
       if (this.worker === null) {
         const worker = this.options.createWorker();
         this.worker = worker;
@@ -112,12 +135,30 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
           if (this.worker !== worker) return;
           const active = this.active;
           if (!active) return;
+          if (performance.now() >= this.deadline) {
+            this.complete({ status: 'deadline', identity: active.request.identity }, true); return;
+          }
+          try {
+            const end = this.receiveProgress?.(event.data) ?? null;
+            // A progress listener may have cancelled this request or disposed its owner.
+            if (this.active !== active) return;
+            if (end !== null) {
+              const maximum = this.options.progress?.maximumDurationMs ?? 0;
+              if (!Number.isFinite(end) || end > this.startedAt + maximum) throw new RangeError('Invalid progress deadline');
+              this.receivedProgress = true;
+              this.armDeadline(end, active);
+              return;
+            }
+          } catch {
+            if (this.active === active) this.complete({ status: 'worker-error', identity: active.request.identity }, true);
+            return;
+          }
           let decoded: ReturnType<CalculationClientOptions<Request, Result>['decodeReply']>;
           try { decoded = this.options.decodeReply(event.data, active.request); }
           catch { decoded = null; }
           if (decoded === null || decoded.serial !== active.serial) {
             this.complete({ status: 'worker-error', identity: active.request.identity }, true);
-          } else this.complete({ status: 'result', identity: active.request.identity, result: decoded.result }, false);
+          } else this.complete({ status: 'result', identity: active.request.identity, result: decoded.result }, worker.retireAfterReply === true);
         };
         const failure = () => {
           if (this.worker !== worker || !this.active) return;
@@ -126,25 +167,40 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
         worker.onerror = event => { event.preventDefault(); failure(); };
         worker.onmessageerror = failure;
       }
-      const expire = () => {
-        if (this.active?.serial === work.serial) this.complete({ status: 'deadline', identity: work.request.identity }, true);
-      };
-      this.timeout = setTimeout(expire, work.timeoutMs);
-      const postedAt = performance.now();
+      this.armDeadline(this.deadline, work);
       this.worker.postMessage(this.options.createEnvelope(work.serial,work.request));
       // A synchronous transport can already have completed/cancelled this work.
       if (this.active !== work) return;
+      // A shared transport finishes its current dispatch before selecting the next
+      // physical Worker. Read its cold-start allowance after that selection, without
+      // moving the request's original start time or overwriting a preparation phase.
+      queueMicrotask(() => this.allowStartup(work));
+    } catch {
+      if (this.active === work) this.complete({ status: 'worker-error', identity: work.request.identity }, true);
+    }
+  }
+
+  private allowStartup(work: PendingWork<Request, Result>): void {
+    if (this.active !== work || this.worker === null) return;
+    try {
       const startupTimeoutMs = this.worker.startupTimeoutMs ?? 0;
       if (!Number.isSafeInteger(startupTimeoutMs) || startupTimeoutMs < 0 || startupTimeoutMs > 30_000) {
         throw new RangeError('Invalid math startup deadline');
       }
-      if (startupTimeoutMs > work.timeoutMs) {
-        if (this.timeout !== null) clearTimeout(this.timeout);
-        this.timeout = setTimeout(expire, Math.max(0, Math.ceil(startupTimeoutMs - (performance.now() - postedAt))));
+      if (!this.receivedProgress && startupTimeoutMs > work.timeoutMs) {
+        this.armDeadline(this.startedAt + startupTimeoutMs, work);
       }
     } catch {
-      this.complete({ status: 'worker-error', identity: work.request.identity }, true);
+      if (this.active === work) this.complete({ status: 'worker-error', identity: work.request.identity }, true);
     }
+  }
+
+  private armDeadline(end: number, work: PendingWork<Request, Result>): void {
+    if (this.timeout !== null) clearTimeout(this.timeout);
+    this.deadline = end;
+    this.timeout = setTimeout(() => {
+      if (this.active === work) this.complete({ status: 'deadline', identity: work.request.identity }, true);
+    }, Math.max(0, Math.ceil(end - performance.now())));
   }
 
   dispose(): void {

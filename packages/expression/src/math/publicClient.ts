@@ -1,4 +1,6 @@
 /** Disposable calculation Worker clients. No symbolic engine or geometry evaluation executes here. */
+export { isMathWorkProgress } from './mathWorkProgress.js';
+export type { MathWorkProgress } from './mathWorkProgress.js';
 export { ExactMathEngineClient, ExactMathEngineStopped, EXACT_MATH_ENGINE_LIMITS } from './exactMathEngineClient.js';
 export type { ExactMathEnginePhase } from './exactMathEngineClient.js';
 export {CurvePointWorkerClient,CurvePointContinuationWorkerClient} from './curvePointWorkerClient.js';

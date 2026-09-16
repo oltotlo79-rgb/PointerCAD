@@ -94,10 +94,35 @@ export function collectExactMathAssets(folder = rootFolder) {
 }
 
 export function exactMathAssets() {
+  let building = true, base = '/';
   return {
     name: 'pointercad-exact-math-assets',
-    apply: 'build',
+    configResolved(config) {
+      building = config.command === 'build';
+      base = new URL(config.base, 'http://pointercad.invalid/').pathname;
+    },
+    configureServer(server) {
+      const runtime = new Map([...collectExactMathAssets()].filter(([name]) => name.startsWith('exact-math/runtime/')));
+      const prefix = base + 'exact-math/runtime/';
+      server.middlewares.use((request, response, next) => {
+        const url = new URL(request.url ?? '/', 'http://pointercad.invalid');
+        if (!url.pathname.startsWith(prefix)) { next(); return; }
+        const file = url.pathname.slice(base.length), bytes = runtime.get(file);
+        if (url.search !== '' || bytes === undefined) { response.statusCode = 404; response.end(); return; }
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          response.statusCode = 405; response.end(); return;
+        }
+        response.setHeader('Content-Type', file.endsWith('.mjs') ? 'text/javascript'
+          : file.endsWith('.json') ? 'application/json' : file.endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream');
+        response.setHeader('Content-Length', String(bytes.byteLength));
+        response.setHeader('Cache-Control', 'no-store');
+        response.setHeader('X-Content-Type-Options', 'nosniff');
+        response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+        response.end(request.method === 'HEAD' ? undefined : bytes);
+      });
+    },
     buildStart() {
+      if (!building) return;
       for (const [fileName, source] of collectExactMathAssets()) this.emitFile({ type: 'asset', fileName, source });
     },
   };

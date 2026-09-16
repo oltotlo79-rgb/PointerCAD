@@ -1,0 +1,277 @@
+{
+  "format": "pointercad-runtime-notices/1",
+  "scope": "Declared production dependencies; additional binaries and fonts have their own notices.",
+  "packages": [
+    {
+      "name": "@arnog/colors",
+      "version": "0.5.0",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/arnog/colors"
+      },
+      "status": "unresolved",
+      "notices": [],
+      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
+    },
+    {
+      "name": "@arnog/colors",
+      "version": "0.7.0",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/arnog/colors"
+      },
+      "status": "unresolved",
+      "notices": [],
+      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
+    },
+    {
+      "name": "@cortex-js/compute-engine",
+      "version": "0.128.6",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/cortex-js/compute-engine.git"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-cortex-js-compute-engine-0.128.6-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "f9270498fcb583f1a8aa4664e1986910d005303ff9c5cbab432bb4d1f292f225"
+        }
+      ]
+    },
+    {
+      "name": "@cortex-js/compute-engine",
+      "version": "0.58.0",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/cortex-js/compute-engine.git"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-cortex-js-compute-engine-0.58.0-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "f9270498fcb583f1a8aa4664e1986910d005303ff9c5cbab432bb4d1f292f225"
+        }
+      ]
+    },
+    {
+      "name": "comlink",
+      "version": "4.4.2",
+      "license": "Apache-2.0",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/GoogleChromeLabs/comlink.git"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-comlink-4.4.2-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "bcf29b4fd3ec2cb5f9d40a0866da446f6da62170d2ccedf4aeca9cf9406dd20c"
+        }
+      ]
+    },
+    {
+      "name": "complex-esm",
+      "version": "2.1.1-esm1",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git://github.com/holgerengels/Complex.js.git"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-complex-esm-2.1.1-esm1-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "5bce81708ac83821fc48be1e97d89a5c8e733632ddb375d2c7101fb60dbfe6b2"
+        }
+      ]
+    },
+    {
+      "name": "decimal.js",
+      "version": "10.6.0",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/MikeMcl/decimal.js.git"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-decimal.js-10.6.0-licence-md.txt",
+          "installedFile": "LICENCE.md",
+          "sha256": "3108b546bcff5d346923a82f48b2d252ca722f9088076db6d145f6b67757ad6c"
+        }
+      ]
+    },
+    {
+      "name": "fflate",
+      "version": "0.8.3",
+      "license": "MIT",
+      "repository": "https://github.com/101arrowz/fflate",
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-fflate-0.8.3-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "0a1df3a083d0c010560aa342e87959c8c1070e6fd54545741f083f22d0c8b551"
+        }
+      ]
+    },
+    {
+      "name": "mathlive",
+      "version": "0.110.0",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/arnog/mathlive.git"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-mathlive-0.110.0-license-txt.txt",
+          "installedFile": "LICENSE.txt",
+          "sha256": "3caebd18611959ca725ab976a004d408017eb1d7093d6c9b9b09c5a4790eaff8"
+        }
+      ]
+    },
+    {
+      "name": "opencascade.js",
+      "version": "2.0.0-beta.b5ff984",
+      "license": "LGPL-2.1-only",
+      "repository": "github:donalffons/opencascade.js",
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-opencascade.js-2.0.0-beta.b5ff984-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331"
+        }
+      ]
+    },
+    {
+      "name": "opentype.js",
+      "version": "2.0.0",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git://github.com/opentypejs/opentype.js.git"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-opentype.js-2.0.0-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "a5b87c9bc191e7f9c06b07bd7cbbed3ed846dfdb50e859484b2c245aa1ab2e61"
+        }
+      ]
+    },
+    {
+      "name": "quickjs-wasi",
+      "version": "3.6.0",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git://github.com/vercel-labs/quickjs-wasi.git"
+      },
+      "status": "unresolved",
+      "notices": [],
+      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
+    },
+    {
+      "name": "react",
+      "version": "19.2.8",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/react/react.git",
+        "directory": "packages/react"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-react-19.2.8-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.8",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/react/react.git",
+        "directory": "packages/react-dom"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-react-dom-19.2.8-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "scheduler",
+      "version": "0.27.0",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/facebook/react.git",
+        "directory": "packages/scheduler"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-scheduler-0.27.0-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "three",
+      "version": "0.185.1",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/mrdoob/three.js"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-three-0.185.1-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
+        }
+      ]
+    },
+    {
+      "name": "zustand",
+      "version": "5.0.15",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/pmndrs/zustand.git"
+      },
+      "status": "verified",
+      "notices": [
+        {
+          "file": "runtime-zustand-5.0.15-license.txt",
+          "installedFile": "LICENSE",
+          "sha256": "c1e6e266563517467b1bf874817d23e426f3149252bd7d42758cd697514b8417"
+        }
+      ]
+    }
+  ]
+}

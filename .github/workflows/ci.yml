@@ -9,11 +9,12 @@ on:
     branches: [main]
 
 jobs:
-  checks:
+  sharded-checks:
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
+        shard: [1, 2, 3]
     runs-on: ${{ matrix.os }}
     steps:
       - name: リポジトリの取得
@@ -35,13 +36,31 @@ jobs:
 
       - name: 一括検査 (scripts/check.ps1)
         shell: pwsh
-        run: ./scripts/check.ps1 -Install
+        run: ./scripts/check.ps1 -Install -E2EShard '${{ matrix.shard }}/3'
 
       - name: 失敗した実画面検査の記録を保存
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: e2e-failure-${{ matrix.os }}
+          name: e2e-failure-${{ matrix.os }}-${{ matrix.shard }}
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  # Preserve the existing required check names. One missing, cancelled or failed
+  # shard must not turn either OS's overall check green.
+  checks:
+    if: always()
+    needs: sharded-checks
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: 両OSの全3組の成功を確認
+        shell: pwsh
+        env:
+          SHARDED_RESULT: ${{ needs.sharded-checks.result }}
+        run: |
+          if ($env:SHARDED_RESULT -ne 'success') { throw '両OSの全3組が成功していません。' }
+          Write-Host '[OK] 同じ版のWindows・Linux全検査が成功しました。'

@@ -58,6 +58,12 @@ Assert-True ($LASTEXITCODE -eq 0) '作業ファイルはプロジェクト内に
 if ($failures -gt 0) { exit 1 }
 
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("pointercad-checkselftest-" + [Guid]::NewGuid().ToString("N"))
+$independentSelftest = Join-Path $scriptDirectory 'isolated-checkout-preflight.selftest.py'
+if (-not (Test-Path -LiteralPath $independentSelftest -PathType Leaf)) { throw '独立コピーの準備確認が見つかりません。' }
+& python -B -X utf8 $independentSelftest
+Assert-True ($LASTEXITCODE -eq 0) '独立コピーの保存範囲・長さ・依存参照・通常フックを送信前に確認する'
+if ($failures -gt 0) { exit 1 }
+
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 
 try {

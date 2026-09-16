@@ -39,6 +39,8 @@ param(
     [string]$ComparisonBase = '',
     [ValidateRange(1, 10)]
     [int]$E2ERepeats = 1,
+    # CIだけで画面操作を3台へ分配する。全3組×両OSの成功が全体合格の条件。
+    [string]$E2EShard = '',
     # 診断用: 1〜4段を省きE2Eだけを実行する。最終のPushゲートは必ずこの指定なしで通す。
     [switch]$E2EOnly,
     # -E2EOnly のときだけPlaywrightの--grepへ渡す。空なら全E2Eを実行する。
@@ -84,6 +86,9 @@ function Invoke-Check {
     $checkExitCode = 1
     # 直前のコマンドの終了コードが残って偽の合格にならないよう必ずリセットする
     $global:LASTEXITCODE = 0
+    # 全ての子検査を現在の検査場所へ限定する。PushでもフックのGit保存先を
+    # 渡すと、検査内のgit init/addが呼出元の設定・indexを変更してしまう。
+    $savedCommandGitEnvironment = Clear-InheritedGitEnv
     # コマンド不在などの起動失敗はここでcatchして確実に失敗終了させる
     try {
         & $Command @CommandArgs
@@ -92,6 +97,7 @@ function Invoke-Check {
         Write-Host "[NG] $Name を起動できませんでした: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     } finally {
+        Restore-InheritedGitEnv -Saved $savedCommandGitEnvironment
         $checkTimer.Stop()
         Write-Host ("[終了] {0:yyyy-MM-ddTHH:mm:ss.fffzzz} / {1} / 所要 {2:F3} 秒 / 終了コード {3}" -f `
             [DateTimeOffset]::Now, $Name, $checkTimer.Elapsed.TotalSeconds, $checkExitCode)
@@ -156,6 +162,13 @@ try {
         exit 1
     }
     $unitDiagnostic = -not [string]::IsNullOrWhiteSpace($UnitPackage)
+    if (-not [string]::IsNullOrWhiteSpace($E2EShard) -and (
+        $E2EShard -notmatch '^[1-3]/3$' -or -not $isRunningOnCI -or $Level -ne 'Push' -or
+        $ReceiptPhase -ne 'Manual' -or $E2ERepeats -ne 1 -or $StaticOnly -or $unitDiagnostic -or
+        $E2EOnly -or $E2ENoDependencies -or -not [string]::IsNullOrWhiteSpace($E2EGrep))) {
+        Write-Host '[NG] E2Eの3分割はCIの通常Push検査だけで使用できます。診断・フック・連続検査とは併用できません。' -ForegroundColor Red
+        exit 1
+    }
     if ($StaticOnly -and ($Level -ne "Push" -or $E2EOnly -or $unitDiagnostic -or $UnitTests.Count -gt 0)) {
         Write-Host "[NG] -StaticOnly は -Level Push で他の診断指定と分けてください" -ForegroundColor Red
         exit 1
@@ -207,6 +220,7 @@ try {
         exit 1
     }
     $hasE2E = $definedScripts -contains "test:e2e"
+    if (-not [string]::IsNullOrWhiteSpace($E2EShard) -and -not $hasE2E) { throw 'CIの3分割にはtest:e2eが必要です。' }
 
     $ordinaryGate = -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and -not $Install
     $localScope = $null
@@ -402,6 +416,10 @@ try {
                 $repeatLabel = ""
                 if ($E2ERepeats -gt 1) { $repeatLabel = " ($e2eRun/$E2ERepeats)" }
                 $e2eArgs = @("run", "test:e2e")
+                if (-not [string]::IsNullOrWhiteSpace($E2EShard)) {
+                    # Playwrightが同じ設定から分配し、各組でも性能・起動の前提を保持する。
+                    $e2eArgs += "--shard=$E2EShard"
+                }
                 if ($localRuntimeChecks -and -not $localAllE2EChecks) {
                     # All unit tests of changed packages and their consumers ran above.
                     # Retain strict rendering and actual Firefox/Electron startup locally;
@@ -458,6 +476,9 @@ try {
     }
     elseif ($null -ne $localScope) {
         Write-Host '[OK] 変更箇所別のローカル検査に合格しました。完成確定には同一SHAの両OS CI全検査が必要です。' -ForegroundColor Green
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($E2EShard)) {
+        Write-Host "[OK] CIの全単体・型・lint・ビルドと画面操作の分割 $E2EShard が成功しました。全体合格には両OSの全3組の成功が必要です。" -ForegroundColor Green
     }
     else {
         Write-Host "[OK] 全ての検査に合格しました" -ForegroundColor Green

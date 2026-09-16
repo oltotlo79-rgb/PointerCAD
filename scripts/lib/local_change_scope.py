@@ -17,6 +17,7 @@ WORKSPACE_FOLDERS = {
     'desktop': 'apps/desktop', 'web': 'apps/web',
 }
 GATE_FILES = {
+    '.github/workflows/ci.yml',
     'scripts/check.ps1', 'scripts/check.selftest.ps1', 'scripts/hooks/pre-commit', 'scripts/hooks/pre-push',
     'scripts/lib/local_change_scope.py', 'scripts/local-change-scope.selftest.py',
     'scripts/lib/gitTreeGuard.ps1',
@@ -24,6 +25,9 @@ GATE_FILES = {
     'scripts/hooks/commit-msg', 'scripts/lib/commit_message.py', 'scripts/commit-message.selftest.py',
     'scripts/validation-receipt.integration.selftest.py',
     'scripts/lib/task_workspace.py', 'scripts/task-workspace.selftest.py',
+    'scripts/lib/isolated_checkout_preflight.py', 'scripts/isolated-checkout-preflight.selftest.py',
+    'scripts/lib/gitEnvironment.mjs', 'scripts/lib/gitEnvironment.d.mts',
+    'scripts/vite/webBuildSources.mjs', 'scripts/vite/webBuildSources.d.mts',
 }
 NOTICE_BUILD_FILES = {'scripts/vite/mathNotices.mjs', 'scripts/vite/mathNotices.d.mts',
                       'scripts/vite/mathDependencyInventory.mjs', 'scripts/vite/mathDependencyInventory.d.mts'}

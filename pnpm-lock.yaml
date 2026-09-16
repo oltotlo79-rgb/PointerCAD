@@ -37,8 +37,8 @@ catalogs:
       specifier: 10.6.0
       version: 10.6.0
     electron:
-      specifier: 44.1.0
-      version: 44.1.0
+      specifier: 44.3.0
+      version: 44.3.0
     electron-builder:
       specifier: 26.15.3
       version: 26.15.3
@@ -152,7 +152,7 @@ importers:
         version: 6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
       electron:
         specifier: 'catalog:'
-        version: 44.1.0(supports-color@7.2.0)
+        version: 44.3.0(supports-color@7.2.0)
       vite:
         specifier: 'catalog:'
         version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
@@ -956,11 +956,11 @@ packages:
     resolution: {integrity: sha512-d0II/GO9uf9lfUHH2BQsjxzRJZBdsjgsBiW4BvhWk/3qoKwQFjIDVN19PfX8F2D/r9PCMTtLWjYVCFrpeYUzsw==}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
-  brace-expansion@1.1.21:
-    resolution: {integrity: sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==}
+  brace-expansion@1.1.18:
+    resolution: {integrity: sha512-Edep/X9fGqVNmzKBVsDYIOtD+z1tuezV70LBjdCst9Tqu76lsnvRiZ6oTic1n+/BIwX6QDGAO94PN4N2SADvtw==}
 
-  brace-expansion@2.1.7:
-    resolution: {integrity: sha512-uZbew1NqdmPDTMJ8ah1y+b+9QEJrfkXFk3RcTQw3X0jW/xRUvFKsg1CfQdSYGdTbXZWExtU3J3ccxtnfw1Fi0g==}
+  brace-expansion@2.1.4:
+    resolution: {integrity: sha512-hGfVzPxthbf3+2yjg/RBs60cB0FhqBS/zvdV/4wn4/BmN0bNMMHPc4V/BbFieqf1TKAGGAHnY4eSjajCl0f2Xg==}
 
   brace-expansion@5.0.9:
     resolution: {integrity: sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==}
@@ -1166,8 +1166,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@44.1.0:
-    resolution: {integrity: sha512-kmLg8axOg22DC3fXx5NCwBYW8fx0rK2zzJ3Tf67GjNCkxfoxEcd+yo0QfDjlBtHJs3xeA8fTg64b6iVzFTVErg==}
+  electron@44.3.0:
+    resolution: {integrity: sha512-St9EV7F2VtYaYWD2qaAjBwUgKxx39eJOUsUJ5+/1113sqbVfNqv4Dbm/W1rN7qmYSPa+mWwR6yr+b7MfgjgVfQ==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -3053,12 +3053,12 @@ snapshots:
   boolean@3.2.0:
     optional: true
 
-  brace-expansion@1.1.21:
+  brace-expansion@1.1.18:
     dependencies:
       balanced-match: 1.0.2
       concat-map: 0.0.1
 
-  brace-expansion@2.1.7:
+  brace-expansion@2.1.4:
     dependencies:
       balanced-match: 1.0.2
 
@@ -3311,7 +3311,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.1.0(supports-color@7.2.0):
+  electron@44.3.0(supports-color@7.2.0):
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0(supports-color@7.2.0)
@@ -3835,15 +3835,15 @@ snapshots:
 
   minimatch@3.1.5:
     dependencies:
-      brace-expansion: 1.1.21
+      brace-expansion: 1.1.18
 
   minimatch@5.1.9:
     dependencies:
-      brace-expansion: 2.1.7
+      brace-expansion: 2.1.4
 
   minimatch@9.0.9:
     dependencies:
-      brace-expansion: 2.1.7
+      brace-expansion: 2.1.4
 
   minimist@1.2.8: {}
 

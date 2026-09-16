@@ -22,7 +22,7 @@ catalog:
   fflate: 0.8.3
   globals: 17.11.0
   mathlive: 0.110.0
-  opencascade.js: 2.0.0-beta.b5ff984
+  opencascade.js: 2.0.0-beta.5780049
   opentype.js: 2.0.0
   quickjs-wasi: 3.6.0
   react: 19.2.8
